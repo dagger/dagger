@@ -739,3 +739,33 @@ func testValueTransferImportConcurrent(t *testing.T) {
 		require.NoError(t, <-closed)
 	})
 }
+
+func TestValueTransferSelectsAliasedOutput(t *testing.T) {
+	ctx, c, srv := transferTestCache(t)
+	source := persistedListTestResult(t, ctx, c, srv, "aliased-output-source", &transferTestValue{Text: "pending"})
+	frame := source.cacheSharedResult().loadResultCall().clone()
+	frame.Field = "aliased-output-producer"
+	fact := ResultFact{Namespace: "source-test", Payload: json.RawMessage(`{"path":"/producer"}`)}
+	alias, err := c.GetOrInitCall(ctx, "test-session", srv, &CallRequest{ResultCall: frame, ResultFacts: []ResultFact{fact}, ResultFactsPrepared: true}, func(context.Context) (AnyResult, error) {
+		return source, nil
+	})
+	require.NoError(t, err)
+	require.NotEqual(t, source.cacheSharedResult().id, alias.cacheSharedResult().id)
+	selection := ValueSelection{
+		Roots:   []AnyResult{alias},
+		Outputs: []SelectedValueOutput{{Result: alias, Address: PersistedPartAddress{Part: "snapshot"}}},
+	}
+	var bundle ValueBundle
+	require.NoError(t, c.WithExportedValues(ctx, selection, config.RefConfig{}, func(_ context.Context, values *ExportedValues) error {
+		bundle = values.Bundle
+		return nil
+	}))
+	require.Len(t, bundle.Values, 2)
+	require.Len(t, bundle.Outputs, 1)
+	producer := bundle.Values[int(bundle.Roots[0].Ordinal)-1]
+	require.Equal(t, persistedResultKindAlias, producer.Record.Envelope.Kind)
+	require.Equal(t, []ResultFact{fact}, producer.Record.Envelope.ResultFacts)
+	require.Equal(t, TransferOrdinal(producer.Record.Envelope.ValueResultID), bundle.Outputs[0].Ordinal, "the selected part belongs to the borrowed value")
+	require.NotEqual(t, producer.Ordinal, bundle.Outputs[0].Ordinal, "the root still names its producer")
+	assertCacheOwnershipExact(t, c)
+}

@@ -78,11 +78,15 @@ var generateCmd = &cobra.Command{
 				}
 				dag := engineClient.Dagger()
 				ws := core.NewQuery(dag).CurrentWorkspace()
-				all, err := commandArtifactsWithFlags(ctx, dag, ws, cmd, args, generateRequireLoad)
+				all, ws, err := commandArtifactsWithFlags(ctx, dag, ws, cmd, args, generateRequireLoad)
 				if err != nil {
 					return err
 				}
-				generators, err := commandArtifactTargets(ctx, dag, cmd, all)
+				generators, err := commandArtifactTargets(ctx, dag, ws, cmd, all)
+				if err != nil {
+					return err
+				}
+				generators, err = filterArtifactsBySource(ctx, dag, ws, generators, cmd)
 				if err != nil {
 					return err
 				}

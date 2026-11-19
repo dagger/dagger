@@ -208,6 +208,10 @@ func TestPersistedModuleObjectPayloadRelocation(t *testing.T) {
 	obj := &ModuleObject{
 		Module:  modRes,
 		TypeDef: objDef,
+		ArtifactView: &ArtifactView{
+			state:   artifactViewState{Origins: []string{"source description"}},
+			sources: []dagql.AnyObjectResult{handleA},
+		},
 		Fields: map[string]any{
 			// A declared-looking child the module returned: an attached row.
 			"child": dirA,
@@ -247,14 +251,17 @@ func TestPersistedModuleObjectPayloadRelocation(t *testing.T) {
 	out, err := dagql.VisitEncodedReferences(rec, reloc.visit)
 	require.NoError(t, err)
 	require.Equal(t, map[string]uint64{
+		"objectJSON.artifactView.Sources[0]":             ids["handleA"],
 		"objectJSON.fields.child.resultID":               ids["dirA"],
 		"objectJSON.fields.private.fields.handle.callID": ids["handleA"],
-	}, reloc.childIDs(), "the module object visitor reports the attached child and the handle, and nothing else")
+	}, reloc.childIDs(), "the module object visitor reports the view source, attached child and handle")
 	require.Equal(t, before, recordJSON(t, rec), "the input record is untouched")
 
 	var rewritten persistedModuleObjectPayload
 	require.NoError(t, dagql.UnmarshalLosslessJSON(out.Envelope.ObjectJSON, &rewritten))
 	require.Equal(t, ids["dirB"], rewritten.Fields["child"].ResultID)
+	require.Equal(t, []uint64{ids["handleB"]}, rewritten.ArtifactView.Sources)
+	require.Equal(t, obj.ArtifactView.state, rewritten.ArtifactView.State, "view state is descriptive data")
 	private := rewritten.Fields["private"].Fields
 	require.Equal(t, recipeEncoded, private["recipe"].CallID, "a recipe ID names no row and is unchanged")
 	require.Equal(t, bigInt, string(private["counts"].Items[0].ScalarJSON), "exact numbers are data, not references")
@@ -270,6 +277,7 @@ func TestPersistedModuleObjectPayloadRelocation(t *testing.T) {
 	require.NoError(t, err)
 	decoded, ok := decodedTyped.(*ModuleObject)
 	require.True(t, ok)
+	require.Equal(t, ids["handleB"], persistedRowID(t, cache, decoded.ArtifactView.sources[0]))
 	child, ok := decoded.Fields["child"].(dagql.AnyResult)
 	require.True(t, ok)
 	require.Equal(t, ids["dirB"], persistedRowID(t, cache, child))

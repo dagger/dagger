@@ -321,6 +321,8 @@ type valueMergePrep struct {
 	// has no refs.
 	records map[uint64]PersistedRecord
 	refs    map[uint64][]uint64
+	// payloadInputs are the provisional numbers of fixed recipe children.
+	payloadInputs map[uint64][]uint64
 	// recordBytes are, on a blob-backed cache only, each record's size as
 	// persistence writes it, by ordinal (encodedRecordBytes), measured once
 	// the record is prepared with its payload: relocation changes only
@@ -567,7 +569,8 @@ func (c *Cache) privateMergeCache(ctx context.Context, prep *valueMergePrep, hel
 			deps[sharedResultID(prep.firstID+dep-1)] = struct{}{}
 		}
 		prep.records[id] = rec
-		res := &sharedResult{id: sharedResultID(rec.ResultID), imported: true, isObject: rec.Envelope.Kind == persistedResultKindObject, persistedEnvelope: &rec.Envelope, deps: deps, expiresAtUnix: row.ExpiresAtUnix, sessionResourceHandle: rec.Envelope.SessionResourceHandle}
+		res := &sharedResult{id: sharedResultID(rec.ResultID), imported: true, isObject: rec.Envelope.Kind == persistedResultKindObject, persistedEnvelope: &rec.Envelope, deps: deps, expiresAtUnix: row.ExpiresAtUnix, sessionResourceHandle: rec.Envelope.SessionResourceHandle,
+			resultFacts: cloneResultFacts(rec.Envelope.ResultFacts), resultFactsIncomplete: rec.Envelope.FactsCoverageVersion != resultFactsCoverageVersion, resultFactBytes: resultFactPayloadBytes(rec.Envelope.ResultFacts)}
 		res.storeResultCall(rec.Call)
 		if !c.blobBacked {
 			// The private offers attach to the sender's holding, as they will
@@ -733,7 +736,7 @@ func (prep *valueMergePrep) prepareRecordPayload(id uint64, relocate PersistedRe
 	// The complete parts are read from the parts' addresses and states,
 	// which relocation leaves as sent, so they're described as sent.
 	completeParts := memoRecordCompletePartKeys(row.Record, memos)
-	var refs []uint64
+	var refs, inputs []uint64
 	collect := func(ref *PersistedRef) error {
 		if err := relocate(ref); err != nil {
 			return err
@@ -750,7 +753,13 @@ func (prep *valueMergePrep) prepareRecordPayload(id uint64, relocate PersistedRe
 		if err := checkDirect(ref); err != nil {
 			return fmt.Errorf("row %d: %w", id, err)
 		}
-		return collect(ref)
+		if err := collect(ref); err != nil {
+			return err
+		}
+		if ref.Kind == PersistedRefChild && ref.ImmutableInput && ref.RecipeID == nil && ref.ResultID != 0 {
+			inputs = append(inputs, ref.ResultID)
+		}
+		return nil
 	})
 	if err != nil {
 		return err
@@ -765,6 +774,12 @@ func (prep *valueMergePrep) prepareRecordPayload(id uint64, relocate PersistedRe
 	}
 	slices.Sort(refs)
 	prep.refs[id] = slices.Compact(refs)
+	if len(inputs) != 0 {
+		if prep.payloadInputs == nil {
+			prep.payloadInputs = make(map[uint64][]uint64)
+		}
+		prep.payloadInputs[id] = inputs
+	}
 	rec.Envelope.Imported = true
 	// The record shares its call with the private cache's entry, whose
 	// identity merge applies.
@@ -960,8 +975,9 @@ type mergeRow struct {
 	keptExpired bool
 	// rec and deps are the record relocated to the final numbers, for an
 	// action that installs it.
-	rec  PersistedRecord
-	deps []sharedResultID
+	rec           PersistedRecord
+	deps          []sharedResultID
+	payloadInputs *payloadInputIDs
 	// recordBytes is rec's size, on a blob-backed cache.
 	recordBytes int64
 	// offers are the record's incoming offers, and admitted those this row's
@@ -1304,6 +1320,15 @@ func (c *Cache) relocateMergeRowsLocked(commit *valueMergeCommit) error {
 			}
 			moved = moved || uint64(n) != provisional
 		}
+		var inputs []uint64
+		for _, provisional := range prep.payloadInputs[row.ordinal] {
+			n, err := final(provisional)
+			if err != nil {
+				return err
+			}
+			inputs = append(inputs, uint64(n))
+		}
+		row.payloadInputs = newPayloadInputIDs(inputs)
 		rec := source
 		if moved {
 			var err error
@@ -1517,6 +1542,10 @@ func (c *Cache) commitValueMergeLocked(ctx context.Context, commit *valueMergeCo
 	for _, row := range commit.rows {
 		switch row.action {
 		case mergeKeep:
+			// A kept row has no relocated row.rec: only installed payloads
+			// need relocation. Its fact JSON comes from the validated input.
+			incoming := row.value.Record.Envelope
+			c.setResultFactsLocked(row.res, unionResultFacts(row.res.resultFacts, incoming.ResultFacts), row.res.resultFactsIncomplete || incoming.FactsCoverageVersion != resultFactsCoverageVersion)
 			continue
 		case mergeRetire:
 			c.retireResultLocked(row.target)
@@ -1736,6 +1765,7 @@ type mergeReplacement struct {
 // replacement. Requires egraphMu for writing.
 func (c *Cache) installMergedRecordLocked(res *sharedResult, row *mergeRow, committedAt int64) {
 	rec := row.rec
+	res.payloadInputs = row.payloadInputs
 	res.imported = true
 	// The record's own parts and offers decide its value's sources now.
 	res.unavailableParts = nil
@@ -1751,6 +1781,7 @@ func (c *Cache) installMergedRecordLocked(res *sharedResult, row *mergeRow, comm
 	res.payloadMu.Lock()
 	res.isObject = rec.Envelope.Kind == persistedResultKindObject
 	res.hasValue = false
+	res.valueSource = nil
 	res.self = nil
 	res.persistedEnvelope = &rec.Envelope
 	res.payloadRevision++
@@ -1759,6 +1790,9 @@ func (c *Cache) installMergedRecordLocked(res *sharedResult, row *mergeRow, comm
 		res.createdAtUnixNano = time.Now().UnixNano()
 	}
 	res.payloadMu.Unlock()
+	// Installing a record starts a value generation on a new or value-less
+	// entry. A holding's old coverage does not describe the incoming value.
+	c.setResultFactsLocked(res, rec.Envelope.ResultFacts, rec.Envelope.FactsCoverageVersion != resultFactsCoverageVersion)
 	if c.blobBacked {
 		// On the Cloud, an export that stores a value uses it.
 		touchSharedResultLastUsed(res, time.Now().UnixNano())
@@ -1986,12 +2020,16 @@ func completePartKeysCoverageLocked(res *sharedResult) ([]string, bool) {
 func (c *Cache) failMergedEntryLocked(ctx context.Context, res *sharedResult, queue collectionQueue) collectionQueue {
 	if c.blobBacked {
 		res.storedRecordBytes = 0
+		res.payloadInputs = nil
 		res.storedTransfer.Store(nil)
 		res.payloadMu.Lock()
+		res.valueSource = nil
+		res.self = nil
 		res.persistedEnvelope = nil
 		res.hasValue = false
 		res.payloadRevision++
 		res.payloadMu.Unlock()
+		c.setResultFactsLocked(res, nil, false)
 		c.setResultPayloadBytesLocked(res, 0)
 		return queue
 	}

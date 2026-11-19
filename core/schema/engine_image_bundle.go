@@ -73,10 +73,17 @@ func (s *hostSchema) engineImageBundle(ctx context.Context, parent dagql.ObjectR
 			containers = append(containers, res)
 		case dagql.ObjectResult[*core.ModuleSource]:
 			src := res.Self()
-			if src.Kind != core.ModuleSourceKindGit || src.Git == nil || src.Git.UnfilteredContextDir.Self() == nil {
+			if src.Kind != core.ModuleSourceKindGit || src.Git == nil {
 				return inst, fmt.Errorf("engine image bundle: module source %q is not a Git module source", src.AsString())
 			}
-			add(src.Git.UnfilteredContextDir, "snapshot")
+			tree, err := gitModuleTree(ctx, src)
+			if err != nil {
+				return inst, err
+			}
+			if tree.Self() == nil {
+				return inst, fmt.Errorf("engine image bundle: module source %q has no Git checkout", src.AsString())
+			}
+			add(tree, "snapshot")
 		default:
 			return inst, fmt.Errorf("engine image bundle: a %s is not a directory, file, container or Git module source", res.ObjectType().TypeName())
 		}

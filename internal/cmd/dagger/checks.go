@@ -75,11 +75,15 @@ func runChecksCommand(cmd *cobra.Command, args []string) error {
 		func(ctx context.Context, engineClient *client.Client) error {
 			dag := engineClient.Dagger()
 			ws := core.NewQuery(dag).CurrentWorkspace()
-			artifacts, err := commandArtifactsWithFlags(ctx, dag, ws, cmd, args, false)
+			artifacts, ws, err := commandArtifactsWithFlags(ctx, dag, ws, cmd, args, false)
 			if err != nil {
 				return err
 			}
-			checks, err := commandArtifactTargets(ctx, dag, cmd, artifacts)
+			checks, err := commandArtifactTargets(ctx, dag, ws, cmd, artifacts)
+			if err != nil {
+				return err
+			}
+			checks, err = filterArtifactsBySource(ctx, dag, ws, checks, cmd)
 			if err != nil {
 				return err
 			}
@@ -114,7 +118,7 @@ func runChecks(ctx context.Context, dag *dagger.Client, ws *core.Workspace, chec
 	if err != nil {
 		return err
 	}
-	if len(results) == 0 {
+	if len(results) == 0 && !artifactSourceFilterEnabled(cmd) {
 		// A check whose collection has no items runs nothing, but it was
 		// still selected.
 		empty, err := emptyCheckPaths(ctx, dag, ws, checks, cmd, include)
@@ -131,8 +135,10 @@ func runChecks(ctx context.Context, dag *dagger.Client, ws *core.Workspace, chec
 			return nil
 		}
 	}
-	if err := validateCheckSelection(include, len(results)); err != nil {
-		return err
+	if !artifactSourceFilterEnabled(cmd) {
+		if err := validateCheckSelection(include, len(results)); err != nil {
+			return err
+		}
 	}
 	if err := artifactResultErrors(results); err != nil {
 		return idtui.ExitError{OriginalCode: 1, Original: err}

@@ -143,11 +143,12 @@ func (t *ModuleObjectType) ConvertToSDKInput(ctx context.Context, value dagql.Ty
 			}
 			x = scoped.(dagql.ObjectResult[*ModuleObject])
 		}
+		rememberSDKInput(ctx, x)
 		parentCall, err := x.ResultCall()
 		if err != nil {
 			return nil, fmt.Errorf("module object SDK input call frame: %w", err)
 		}
-		return t.objectToSDKInput(ctx, parentCall, x.Self())
+		return t.objectToSDKInput(ctx, parentCall, x.Self(), x)
 	case dagql.AnyResult:
 		// Nullable wrapping can erase the ObjectResult wrapper while keeping
 		// its shared result and call frame. Restore the selectable view before
@@ -166,7 +167,7 @@ func (t *ModuleObjectType) ConvertToSDKInput(ctx context.Context, value dagql.Ty
 		}
 		return t.ConvertToSDKInput(ctx, obj)
 	case *ModuleObject:
-		return t.objectToSDKInput(ctx, dagql.CurrentCall(ctx), x)
+		return t.objectToSDKInput(ctx, dagql.CurrentCall(ctx), x, dagql.ObjectResult[*ModuleObject]{})
 	case dagql.IDable:
 		dag, err := CurrentDagqlServer(ctx)
 		if err != nil {
@@ -189,7 +190,7 @@ func (t *ModuleObjectType) ConvertToSDKInput(ctx context.Context, value dagql.Ty
 			if err != nil {
 				return nil, fmt.Errorf("loaded module object SDK input call frame: %w", err)
 			}
-			return t.objectToSDKInput(ctx, parentCall, x.Self())
+			return t.objectToSDKInput(ctx, parentCall, x.Self(), x)
 		default:
 			return nil, fmt.Errorf("unexpected value type %T", x)
 		}
@@ -198,7 +199,7 @@ func (t *ModuleObjectType) ConvertToSDKInput(ctx context.Context, value dagql.Ty
 	}
 }
 
-func (t *ModuleObjectType) objectToSDKInput(ctx context.Context, parentCall *dagql.ResultCall, obj *ModuleObject) (map[string]any, error) {
+func (t *ModuleObjectType) objectToSDKInput(ctx context.Context, parentCall *dagql.ResultCall, obj *ModuleObject, owner dagql.ObjectResult[*ModuleObject]) (map[string]any, error) {
 	if obj.ArtifactView != nil {
 		var err error
 		parentCall, err = artifactViewSourceCall(ctx, parentCall)
@@ -210,10 +211,10 @@ func (t *ModuleObjectType) objectToSDKInput(ctx context.Context, parentCall *dag
 	if err != nil {
 		return nil, err
 	}
-	return moduleObjectFieldsToSDKInput(ctx, t, parentCall, fields)
+	return moduleObjectFieldsToSDKInput(ctx, t, parentCall, fields, owner)
 }
 
-func moduleObjectFieldsToSDKInput(ctx context.Context, t *ModuleObjectType, parentCall *dagql.ResultCall, fields map[string]any) (map[string]any, error) {
+func moduleObjectFieldsToSDKInput(ctx context.Context, t *ModuleObjectType, parentCall *dagql.ResultCall, fields map[string]any, owner dagql.ObjectResult[*ModuleObject]) (map[string]any, error) {
 	if len(fields) == 0 {
 		return map[string]any{}, nil
 	}
@@ -239,6 +240,16 @@ func moduleObjectFieldsToSDKInput(ctx context.Context, t *ModuleObjectType, pare
 		}
 		if !ok {
 			return nil, fmt.Errorf("could not find mod type for field %q", name)
+		}
+		if owner.Self() != nil && compositeSDKInputType(modType) {
+			updated, selected, err := storedSDKFieldToInput(ctx, owner, fieldTypeDef, modType, value)
+			if err != nil {
+				return nil, fmt.Errorf("convert stored field %q: %w", name, err)
+			}
+			if selected {
+				converted[name] = updated
+				continue
+			}
 		}
 		fieldCtx := ctx
 		if fieldCall := dagql.ChildFieldCall(parentCall, fieldTypeDef.Name, fieldTypeDef.TypeDef.Self().ToType()); fieldCall != nil {
@@ -270,6 +281,7 @@ func moduleObjectValueToSDKInput(ctx context.Context, modType ModType, value any
 					if err != nil {
 						return nil, err
 					}
+					rememberSDKInput(ctx, value)
 				}
 			}
 			id, err := value.ID()
@@ -381,6 +393,7 @@ func unknownModuleObjectValueToSDKInput(ctx context.Context, value any) (any, er
 			if err != nil {
 				return nil, err
 			}
+			rememberSDKInput(ctx, value)
 		}
 		id, err := value.ID()
 		if err != nil {
@@ -647,6 +660,7 @@ type ModuleObject struct {
 }
 
 var _ dagql.HasDependencyResults = (*ModuleObject)(nil)
+var _ dagql.HasDependencyResultsKinds = (*ModuleObject)(nil)
 var _ dagql.HasResultReference = (*ModuleObject)(nil)
 
 const (
@@ -678,16 +692,42 @@ func (obj *ModuleObject) AttachDependencyResults(
 	self dagql.AnyResult,
 	attach func(dagql.AnyResult) (dagql.AnyResult, error),
 ) ([]dagql.AnyResult, error) {
+	deps, err := obj.AttachDependencyResultsKinds(ctx, self, attach)
+	if err != nil {
+		return nil, err
+	}
+	var results []dagql.AnyResult
+	for _, dep := range deps {
+		results = append(results, dep.Result)
+	}
+	return results, nil
+}
+
+// AttachDependencyResultsKinds owns the attached results and marks references
+// stored in fixed payload fields as immutable inputs. The module that provides
+// the object's class is ownership-only unless a field also stores it.
+func (obj *ModuleObject) AttachDependencyResultsKinds(
+	ctx context.Context,
+	self dagql.AnyResult,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.DependencyResult, error) {
 	if obj == nil {
 		return nil, nil
 	}
-	view, owned, err := obj.ArtifactView.attach(attach)
+	var owned []dagql.DependencyResult
+	addInputs := func(results []dagql.AnyResult) {
+		for _, result := range results {
+			owned = append(owned, dagql.DependencyResult{Result: result, Owned: true, ImmutableInput: true})
+		}
+	}
+	view, sources, err := obj.ArtifactView.attach(attach)
 	if err != nil {
 		return nil, err
 	}
 	obj.ArtifactView = view
+	addInputs(sources)
 	base, err := obj.attachCollectionBase(self, attach)
-	owned = append(owned, base...)
+	addInputs(base)
 	if err != nil {
 		return nil, err
 	}
@@ -708,7 +748,7 @@ func (obj *ModuleObject) AttachDependencyResults(
 			return nil, fmt.Errorf("attach module object module: unexpected result %T", attached)
 		}
 		obj.Module = module
-		owned = append(owned, module)
+		owned = append(owned, dagql.DependencyResult{Result: module, Owned: true})
 	}
 	if len(obj.Fields) == 0 {
 		return owned, nil
@@ -721,7 +761,7 @@ func (obj *ModuleObject) AttachDependencyResults(
 				return nil, fmt.Errorf("attach module object field %q: %w", name, err)
 			}
 			obj.Fields[name] = updated
-			owned = append(owned, deps...)
+			addInputs(deps)
 		}
 		return owned, nil
 	}
@@ -744,7 +784,7 @@ func (obj *ModuleObject) AttachDependencyResults(
 				return nil, fmt.Errorf("attach module object field %q: %w", name, err)
 			}
 			obj.Fields[name] = updated
-			owned = append(owned, deps...)
+			addInputs(deps)
 			continue
 		}
 
@@ -776,7 +816,7 @@ func attachTypedModuleObjectValue(
 	modType ModType,
 	val any,
 	attach func(dagql.AnyResult) (dagql.AnyResult, error),
-) (any, []dagql.AnyResult, error) {
+) (any, []dagql.DependencyResult, error) {
 	switch x := modType.(type) {
 	case *NullableType:
 		if val == nil {
@@ -792,7 +832,7 @@ func attachTypedModuleObjectValue(
 			return nil, nil, fmt.Errorf("expected []any, got %T", val)
 		}
 		updatedItems := make([]any, 0, len(items))
-		owned := make([]dagql.AnyResult, 0)
+		owned := make([]dagql.DependencyResult, 0)
 		for i, item := range items {
 			itemCtx := ctx
 			if curCall := dagql.CurrentCall(ctx); curCall != nil {
@@ -843,15 +883,19 @@ func attachTypedModuleObjectValue(
 				// object is a field call on the owner, so it depends on the
 				// owner and owning it would make each depend on the other.
 				// The owner owns the results the fields refer to instead.
-				return fields, inlineModuleObjectResults(fields), nil
+				var deps []dagql.DependencyResult
+				for _, result := range inlineModuleObjectResults(fields) {
+					deps = append(deps, dagql.DependencyResult{Result: result, Owned: true, ImmutableInput: true})
+				}
+				return fields, deps, nil
 			}
 		}
 		// Handles retain the attached result so persistence can relocate them.
 		switch val.(type) {
 		case dagql.AnyResult, dagql.IDable, string:
-			return attached, []dagql.AnyResult{attached}, nil
+			return attached, []dagql.DependencyResult{{Result: attached, Owned: true, ImmutableInput: true}}, nil
 		default:
-			return val, []dagql.AnyResult{attached}, nil
+			return val, []dagql.DependencyResult{{Result: attached, Owned: true}}, nil
 		}
 	default:
 		return val, nil, nil
@@ -1531,7 +1575,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 				})
 			}
 			// Constructors build the source graph. Selection applies the view to the result.
-			return fn.Call(dagql.WithResultScope(ctx, nil), &CallOpts{
+			return fn.callFromResolver(dagql.WithResultScope(ctx, nil), &CallOpts{
 				Inputs:       callInput,
 				ParentTyped:  nil,
 				ParentFields: nil,
@@ -1825,22 +1869,21 @@ func objField(mod dagql.ObjectResult[*Module], field *FieldTypeDef) (dagql.Field
 	return dagql.Field[*ModuleObject]{
 		Spec: spec,
 		Func: func(ctx context.Context, obj dagql.ObjectResult[*ModuleObject], _ map[string]dagql.Input, view call.View) (dagql.AnyResult, error) {
-			modType, ok, err := NewUserMod(mod).ModTypeFor(ctx, field.TypeDef.Self(), true)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get mod type for field %q: %w", field.Name, err)
-			}
-			if !ok {
-				return nil, fmt.Errorf("could not find mod type for field %q", field.Name)
-			}
-			fieldVal, found := obj.Self().Fields[field.OriginalName]
-			if !found {
-				// the field *might* not have been set yet on the object (even
-				// though the typedef has it) - so just pick a suitable zero value
-				fieldVal = nil
-			}
-			return modType.ConvertFromSDKResult(ctx, fieldVal)
+			return moduleObjectStoredField(ctx, mod, obj, field)
 		},
 	}, nil
+}
+
+func moduleObjectStoredField(ctx context.Context, mod dagql.ObjectResult[*Module], obj dagql.ObjectResult[*ModuleObject], field *FieldTypeDef) (dagql.AnyResult, error) {
+	modType, ok, err := NewUserMod(mod).ModTypeFor(ctx, field.TypeDef.Self(), true)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get mod type for field %q: %w", field.Name, err)
+	}
+	if !ok {
+		return nil, fmt.Errorf("could not find mod type for field %q", field.Name)
+	}
+	// An unset declared field uses the decoder's existing zero value.
+	return modType.ConvertFromSDKResult(ctx, obj.Self().Fields[field.OriginalName])
 }
 
 // installedServer is the server a module object type's resolvers were
@@ -1954,7 +1997,7 @@ func objFun(ctx context.Context, mod dagql.ObjectResult[*Module], objDef *Object
 				return opts.Inputs[i].Name < opts.Inputs[j].Name
 			})
 
-			return modFun.Call(ctx, opts)
+			return modFun.callFromResolver(ctx, opts)
 		},
 	}, nil
 }

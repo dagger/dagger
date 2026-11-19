@@ -176,6 +176,9 @@ func AroundFunc(
 	}
 	ctx, span := Tracer(ctx).Start(startCtx, spanName, trace.WithAttributes(attrs...))
 	initCacheEvidence(span, req)
+	if span.IsRecording() {
+		enableWorkspaceInputTelemetry(ctx, req)
+	}
 
 	// Fill any gaps in this call's recipe closure over the payload log lane.
 	// A recording span carries its own frame, so its root is not logged; the
@@ -193,7 +196,7 @@ func AroundFunc(
 		)
 
 		defer telemetry.EndWithCause(span, err)
-		span.SetAttributes(callEndAttrs(ctx, span, req, res, cached)...)
+		span.SetAttributes(callEndAttrs(ctx, span, req, res, cached, err != nil && *err != nil)...)
 		logResult(ctx, res, req.ResultCall)
 	}
 }
@@ -566,11 +569,12 @@ func normalizeRef(ref string) string {
 // go on the span in one call: each SetAttributes that outgrows the span's
 // attribute slice copies the whole slice. 16 holds a typical call's status
 // and cache evidence.
-func callEndAttrs(ctx context.Context, span trace.Span, req *dagql.CallRequest, res dagql.AnyResult, cached bool) []attribute.KeyValue {
+func callEndAttrs(ctx context.Context, span trace.Span, req *dagql.CallRequest, res dagql.AnyResult, cached, failed bool) []attribute.KeyValue {
 	attrs := make([]attribute.KeyValue, 0, 16)
 	attrs = appendStatusAttrs(ctx, attrs, res, cached, req.ResultCall)
 	if span.IsRecording() {
 		attrs = dagql.AppendContentPreferredDigestAttr(ctx, attrs, req.ResultCall, res)
+		attrs = appendWorkspaceInputAttrs(ctx, attrs, req, failed)
 	}
 	attrs = appendPendingAttrs(attrs, res)
 	return appendCacheEvidenceAttrs(ctx, attrs, req.CacheEvidence, res)

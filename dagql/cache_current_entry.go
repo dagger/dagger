@@ -139,6 +139,7 @@ func (c *Cache) replaceResultValueInPlaceLocked(ctx context.Context, cur, fresh 
 		old.deps = append(old.deps, depID)
 	}
 	cur.deps = nil
+	cur.payloadInputs = fresh.payloadInputs
 	cur.dependencyOwnershipRevision++
 	cur.transferRevision++
 	if !cur.noValueLocked() {
@@ -158,6 +159,7 @@ func (c *Cache) replaceResultValueInPlaceLocked(ctx context.Context, cur, fresh 
 	cur.storeResultCall(fresh.loadResultCall())
 
 	cur.payloadMu.Lock()
+	cur.valueSource = fresh.valueSource
 	cur.self = fresh.self
 	cur.isObject = fresh.isObject
 	cur.objClass = fresh.objClass
@@ -165,7 +167,7 @@ func (c *Cache) replaceResultValueInPlaceLocked(ctx context.Context, cur, fresh 
 	cur.hasValue = fresh.hasValue
 	cur.persistedEnvelope = fresh.persistedEnvelope
 	cur.payloadRevision++
-	c.setResultPayloadBytesLocked(cur, fresh.payloadBytes)
+	c.setResultPayloadBytesLocked(cur, fresh.payloadBytes-fresh.resultFactBytes)
 	// fresh was never registered, so its own lease cleanup does nothing.
 	cur.onRelease = joinOnRelease(c.resultSnapshotLeaseCleanup(cur), fresh.onRelease)
 	cur.createdAtUnixNano = fresh.createdAtUnixNano
@@ -173,6 +175,9 @@ func (c *Cache) replaceResultValueInPlaceLocked(ctx context.Context, cur, fresh 
 	cur.cacheUsageSizeByIdentity = nil
 	cur.cacheUsageRecordTypeByID = nil
 	cur.payloadMu.Unlock()
+	// Facts belong to this value generation. Recomputing an expired value
+	// replaces its old paths and coverage before joining current equivalents.
+	c.setResultFactsLocked(cur, fresh.resultFacts, fresh.resultFactsIncomplete)
 
 	if edge, retained := c.persistedEdgesByResult[cur.id]; retained && !edge.unpruneable {
 		edge.expiresAtUnix = retentionExpiresAtUnix

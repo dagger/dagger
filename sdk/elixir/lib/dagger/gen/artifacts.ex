@@ -202,6 +202,45 @@ defmodule Dagger.Artifacts do
   end
 
   @doc """
+  Keep artifacts that may depend on paths changed in any listed changeset. Paths limit changed paths before matching dependencies. Inputs with unresolved source origins stay selected for nonempty changes.
+  """
+  @spec filter_affected_by_diff(t(), [String.t()], [
+          {:paths, [Dagger.WorkspacePath.t()]},
+          {:kinds, [String.t()]}
+        ]) :: Dagger.Artifacts.t()
+  def filter_affected_by_diff(%__MODULE__{} = artifacts, changes, optional_args \\ []) do
+    query_builder =
+      artifacts.query_builder
+      |> QB.select("filterAffectedByDiff")
+      |> QB.put_arg("changes", changes)
+      |> QB.maybe_put_arg("paths", optional_args[:paths])
+      |> QB.maybe_put_arg("kinds", optional_args[:kinds])
+
+    %Dagger.Artifacts{
+      query_builder: query_builder,
+      client: artifacts.client
+    }
+  end
+
+  @doc """
+  Keep artifacts that may depend on any listed workspace-root path. Enumerates collections but does not run artifact leaves.
+  """
+  @spec filter_affected_by_path(t(), [Dagger.WorkspacePath.t()], [{:kinds, [String.t()]}]) ::
+          Dagger.Artifacts.t()
+  def filter_affected_by_path(%__MODULE__{} = artifacts, paths, optional_args \\ []) do
+    query_builder =
+      artifacts.query_builder
+      |> QB.select("filterAffectedByPath")
+      |> QB.put_arg("paths", paths)
+      |> QB.maybe_put_arg("kinds", optional_args[:kinds])
+
+    %Dagger.Artifacts{
+      query_builder: query_builder,
+      client: artifacts.client
+    }
+  end
+
+  @doc """
   Keep artifacts with any listed key in this dimension. Replace collection references with matching subsets. Skip absent keys and leave the source view unchanged.
   """
   @spec filter_dimension_keys(t(), String.t(), [String.t()]) :: Dagger.Artifacts.t()
@@ -452,6 +491,20 @@ defmodule Dagger.Artifacts do
          }
        end}
     end
+  end
+
+  @doc """
+  Combine the source dependencies of the selected artifacts without running their bodies.
+  """
+  @spec provenance(t()) :: Dagger.WorkspaceProvenance.t()
+  def provenance(%__MODULE__{} = artifacts) do
+    query_builder =
+      artifacts.query_builder |> QB.select("provenance")
+
+    %Dagger.WorkspaceProvenance{
+      query_builder: query_builder,
+      client: artifacts.client
+    }
   end
 
   @doc """

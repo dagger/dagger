@@ -162,8 +162,14 @@ func EntrypointSources(
 	// do through their module context.
 	nestedClientMetadata.ClientVersion = engine.ModuleAPIViewVersion(src.EngineVersion)
 	module := dangModule{name: src.ModuleName, originalName: src.ModuleOriginalName, namer: src.Namer()}
+	call := &core.FunctionCall{
+		Name:      EntrypointSourcesMember,
+		Parent:    core.JSON("{}"),
+		InputArgs: []*core.FunctionCallArgValue{workspaceArg},
+	}
+	ctx, capture := core.CaptureEntrypointSourceInputs(ctx, src, workspace, call)
 
-	_, err = dangshared.WithNestedClientServer(ctx, query, nestedClientMetadata, true, nil, dagql.ObjectResult[*core.Module]{}, func(ctx context.Context, client graphql.Client) ([]byte, error) {
+	_, err = dangshared.WithNestedClientServer(ctx, query, nestedClientMetadata, true, call, dagql.ObjectResult[*core.Module]{}, func(ctx context.Context, client graphql.Client) ([]byte, error) {
 		return nil, entryDir.Self().Mount(ctx, entryDir, func(dir string) error {
 			ctx, err := ContextWithDangVersion(ctx, src.DangVersion)
 			if err != nil {
@@ -186,12 +192,8 @@ func EntrypointSources(
 			if err != nil {
 				return err
 			}
-			value, err := callDangFunction(ctx, env, &core.FunctionCall{
-				Name:       EntrypointSourcesMember,
-				ParentName: entrypointName,
-				Parent:     core.JSON("{}"),
-				InputArgs:  []*core.FunctionCallArgValue{workspaceArg},
-			}, module)
+			call.ParentName = entrypointName
+			value, err := callDangFunction(ctx, env, call, module)
 			if err != nil {
 				return err
 			}
@@ -202,7 +204,7 @@ func EntrypointSources(
 	if err != nil {
 		return sources, convertError(err)
 	}
-	return sources, nil
+	return capture(sources)
 }
 
 func loadEntrypointDirectory(ctx context.Context, dag *dagql.Server, value dang.Value) (dagql.ObjectResult[*core.Directory], error) {

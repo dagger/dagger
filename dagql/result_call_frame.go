@@ -847,6 +847,16 @@ func (frame *ResultCall) ReceiverCallIn(c *Cache) (*ResultCall, error) {
 	return frame.receiverCall(c)
 }
 
+func (frame *ResultCall) Clone() *ResultCall { return frame.clone() }
+
+// ResultCallForRef describes a reference without evaluating its value.
+func (c *Cache) ResultCallForRef(ref *ResultCallRef) (*ResultCall, error) {
+	if err := ref.Validate(); err != nil {
+		return nil, err
+	}
+	return (*ResultCall)(nil).refCall(c, ref)
+}
+
 func (frame *ResultCall) receiverCall(c *Cache) (*ResultCall, error) {
 	if frame == nil || frame.Receiver == nil {
 		return nil, nil

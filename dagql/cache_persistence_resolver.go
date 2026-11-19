@@ -3,7 +3,6 @@ package dagql
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/dagger/dagger/engine/wcprof"
 )
@@ -12,13 +11,9 @@ type sharedResultLookupMode uint8
 
 const (
 	sharedResultLookupExact sharedResultLookupMode = iota
-	sharedResultLookupCanonicalEquivalent
-	// sharedResultLookupCanonicalEquivalentForSession additionally refuses to
-	// serve a result whose required session resources the session has not
-	// bound. Value loads use it: without the check, an exact-ID load served
-	// the result whenever no canonical candidate passed the session filter,
-	// omitting the resource checks that request and digest lookups enforce.
-	sharedResultLookupCanonicalEquivalentForSession
+	// Value loads retain the exact producer and require the session to bind
+	// its resources. Metadata reads use Exact without this value-load check.
+	sharedResultLookupExactForSession
 )
 
 func (c *Cache) PersistedSnapshotLinksByResultID(ctx context.Context, resultID uint64) ([]PersistedSnapshotRefLink, error) {
@@ -73,7 +68,7 @@ func (c *Cache) sharedResultByResultID(ctx context.Context, sessionID string, re
 		return sharedResultLookup{}, fmt.Errorf("resolve result: zero result ID")
 	}
 	if mode != sharedResultLookupExact && sessionID == "" {
-		return sharedResultLookup{}, fmt.Errorf("resolve result %d: canonical equivalent lookup requires session ID", resultID)
+		return sharedResultLookup{}, fmt.Errorf("resolve result %d: session lookup requires session ID", resultID)
 	}
 	if sessionID == "" {
 		wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
@@ -96,7 +91,7 @@ func (c *Cache) sharedResultByResultID(ctx context.Context, sessionID string, re
 		return sharedResultLookup{res: res, requiredGenAtCheck: requiredGenAtCheck}, nil
 	}
 
-	// The canonical pick and the session claim only read the e-graph, so
+	// Producer lookup and the session claim only read the e-graph, so
 	// concurrent ID loads share the lock (see acquireSessionResultLocked).
 	// The deferred unlock matters on panic: resolvePath recovers a panic
 	// raised in this section, and a lock left held would block every later
@@ -115,15 +110,7 @@ func (c *Cache) sharedResultByResultID(ctx context.Context, sessionID string, re
 	if c.testInResultIDLookup != nil {
 		c.testInResultIDLookup(res)
 	}
-	if mode != sharedResultLookupExact {
-		// Require clean attachment, as publication adoption does: without it
-		// the canonicalization can redirect an ID load onto a sibling whose
-		// attachment is still open or has failed, and the load then inherits
-		// that sibling's barrier wait or attachment error even though the
-		// exact result it asked for is settled and healthy.
-		res = c.canonicalEquivalentSharedResultLocked(sessionID, res, time.Now().Unix(), true)
-	}
-	if mode == sharedResultLookupCanonicalEquivalentForSession &&
+	if mode == sharedResultLookupExactForSession &&
 		!c.sessionSatisfiesResourceRequirementsLocked(sessionID, res) {
 		return sharedResultLookup{}, fmt.Errorf("resolve result %d: session %q has not bound the session resources this result requires", resultID, sessionID)
 	}
@@ -148,7 +135,7 @@ func (c *Cache) sharedResultByResultID(ctx context.Context, sessionID string, re
 func (c *Cache) loadResultByResultID(ctx context.Context, sessionID string, dag *Server, resultID uint64) (AnyResult, error) {
 	mode := sharedResultLookupExact
 	if sessionID != "" {
-		mode = sharedResultLookupCanonicalEquivalentForSession
+		mode = sharedResultLookupExactForSession
 	}
 
 	lookup, err := c.sharedResultByResultID(ctx, sessionID, sharedResultID(resultID), mode)
@@ -212,12 +199,7 @@ func (c *Cache) ResultCallByResultID(ctx context.Context, sessionID string, resu
 }
 
 func (c *Cache) loadResultCallByResultID(ctx context.Context, sessionID string, resultID uint64) (*ResultCall, error) {
-	mode := sharedResultLookupExact
-	if sessionID != "" {
-		mode = sharedResultLookupCanonicalEquivalent
-	}
-
-	lookup, err := c.sharedResultByResultID(ctx, sessionID, sharedResultID(resultID), mode)
+	lookup, err := c.sharedResultByResultID(ctx, sessionID, sharedResultID(resultID), sharedResultLookupExact)
 	if err != nil {
 		return nil, err
 	}
@@ -237,7 +219,7 @@ func (c *Cache) resultCallRefByResultID(ctx context.Context, sessionID string, r
 		ctx,
 		sessionID,
 		sharedResultID(resultID),
-		sharedResultLookupCanonicalEquivalent,
+		sharedResultLookupExact,
 	)
 	var ref *ResultCallRef
 	if lookupErr == nil {

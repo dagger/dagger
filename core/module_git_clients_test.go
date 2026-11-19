@@ -2,7 +2,10 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 
@@ -174,24 +177,91 @@ func TestModuleDeclaredGitClientsReadOncePerTree(t *testing.T) {
 	server.memo = NewSchemaBuilderMemo()
 	require.Equal(t, []string{"github.com/acme/private/hello"}, declared(dirModule(original)))
 	require.Equal(t, 4, trees.reads)
+	t.Run("workspace lookup records exactly the visited files on cold and warm calls", func(t *testing.T) {
+		srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*Workspace]{}))
+		// The backing directory is a Git tree; the retained Workspace has no preselected directory view.
+		root := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(root, "dagger.toml"), []byte(gitClientsTestConfig("github.com/acme/private/hello")), 0600))
+		d := original.Self()
+		d.Dir = containerPersistenceTestDirectory("client-test", "/").Dir
+		d.Snapshot = containerPersistenceTestDirectory("client-test", "/").Snapshot
+		d.SetSnapshot(&operationTreeRef{cacheVolumeTestImmutableRef: &cacheVolumeTestImmutableRef{id: "client-tree", snapshotID: "client-tree"}, root: root})
+		ws := &Workspace{Address: "https://example.com/repo", rootfs: original, source: &WorkspaceSourceGitRef{}}
+		frame := &dagql.ResultCall{Kind: dagql.ResultCallKindSynthetic, SyntheticOp: "workspace-git-client-lookup", Type: dagql.NewResultCallType(ws.Type())}
+		detached, e := dagql.NewObjectResultForCall(ws, srv, frame)
+		require.NoError(t, e)
+		const boundary = "git-workspace:https://example.com/repo"
+		payload, e := json.Marshal(workspaceInputFact{Operation: workspaceInputOperation(ctx, frame), Complete: true, CapabilitiesComplete: true, Boundary: boundary})
+		require.NoError(t, e)
+		v, e := cache.GetOrInitCall(ctx, session, srv, &dagql.CallRequest{ResultCall: frame, ResultFactsPrepared: true, ResultFacts: []dagql.ResultFact{{Namespace: workspaceInputsNamespace, Payload: payload}}}, dagql.ValueFunc(detached))
+		require.NoError(t, e)
+		src := gitModule(dagql.ObjectResult[*Directory]{})
+		src.Workspace = v.(dagql.ObjectResult[*Workspace])
+		before := trees.reads
+		for range 2 {
+			reads := &workspaceInputReads{}
+			callCtx := context.WithValue(dagql.ContextWithServer(ctx, srv), workspaceInputReadsKey{}, reads)
+			refs, e := ModuleDeclaredGitClients(callCtx, srv, src)
+			require.NoError(t, e)
+			require.Equal(t, []string{"github.com/acme/private/hello"}, refs)
+			selectors, issues := reads.snapshot().forWorkspace(boundary)
+			require.Empty(t, issues)
+			var paths []string
+			for _, sel := range selectors {
+				paths = append(paths, sel.Path)
+			}
+			require.ElementsMatch(t, []string{"/modules/caller/dagger.toml", "/modules/dagger.toml", "/dagger.toml"}, paths)
+		}
+		require.Equal(t, before+1, trees.reads)
+
+		srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*Changeset]{}))
+		changes := &Changeset{Before: original, After: edited}
+		changesFrame := &dagql.ResultCall{Kind: dagql.ResultCallKindSynthetic, SyntheticOp: "config-overlay", Type: dagql.NewResultCallType(changes.Type())}
+		changeResult, err := dagql.NewObjectResultForCall(changes, srv, changesFrame)
+		require.NoError(t, err)
+		overlay := &Workspace{Address: ws.Address, rootfs: original, source: NewWorkspaceSourceOverlay(ws.Source(), []string{"dagger.toml"}, nil, changeResult)}
+		overlayFrame := &dagql.ResultCall{Kind: dagql.ResultCallKindSynthetic, SyntheticOp: "edited-workspace", Type: dagql.NewResultCallType(overlay.Type())}
+		src.Workspace, err = dagql.NewObjectResultForCall(overlay, srv, overlayFrame)
+		require.NoError(t, err)
+		require.Equal(t, []string{"github.com/acme/private/other"}, declared(src))
+
+		mounted := overlay.WithMountsDir(original)
+		mountedFrame := &dagql.ResultCall{Kind: dagql.ResultCallKindSynthetic, SyntheticOp: "mounted-workspace", Type: dagql.NewResultCallType(mounted.Type())}
+		handle, err := dagql.NewObjectResultForCall(mounted, srv, mountedFrame)
+		require.NoError(t, err)
+		v, err = cache.GetOrInitCall(ctx, session, srv, &dagql.CallRequest{ResultCall: mountedFrame}, dagql.ValueFunc(handle))
+		require.NoError(t, err)
+		src.Workspace = v.(dagql.ObjectResult[*Workspace])
+		var rootReads int
+		dagql.Fields[*Workspace]{dagql.NodeFunc("directory", func(ctx context.Context, parent dagql.ObjectResult[*Workspace], a struct{ Path string }) (dagql.ObjectResult[*Directory], error) {
+			require.Equal(t, "/", a.Path)
+			require.Same(t, mounted, parent.Self())
+			rootReads++
+			return original, nil
+		})}.Install(srv)
+		refs, err := ModuleDeclaredGitClients(dagql.ContextWithServer(ctx, srv), srv, src)
+		require.NoError(t, err)
+		require.Equal(t, []string{"github.com/acme/private/hello"}, refs)
+		require.Equal(t, 1, rootReads)
+	})
 }
 
 func TestDeclaredGitClientsRetriesFailedRead(t *testing.T) {
 	memo := NewSchemaBuilderMemo()
 	key := declaredGitClientsKey{treeID: 1, moduleDir: "."}
 	reads := 0
-	failing := func() ([]string, error) {
+	failing := func() (declaredGitClientsRead, error) {
 		reads++
-		return nil, fmt.Errorf("read failed")
+		return declaredGitClientsRead{}, fmt.Errorf("read failed")
 	}
 	_, err := memo.declaredGitClients(key, failing)
 	require.Error(t, err)
-	declared, err := memo.declaredGitClients(key, func() ([]string, error) {
+	declared, err := memo.declaredGitClients(key, func() (declaredGitClientsRead, error) {
 		reads++
-		return []string{"github.com/acme/private/hello"}, nil
+		return declaredGitClientsRead{declared: []string{"github.com/acme/private/hello"}}, nil
 	})
 	require.NoError(t, err)
-	require.Equal(t, []string{"github.com/acme/private/hello"}, declared)
+	require.Equal(t, []string{"github.com/acme/private/hello"}, declared.declared)
 	_, err = memo.declaredGitClients(key, failing)
 	require.NoError(t, err)
 	require.Equal(t, 2, reads)

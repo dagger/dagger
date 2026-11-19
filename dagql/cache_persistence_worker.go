@@ -162,6 +162,9 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 			payload.snapshotOwnerLinks = cloneSnapshotRefLinks(payload.snapshotLinkIntent.Links)
 		}
 		snapshot.results = append(snapshot.results, persistResultSnapshot{
+			valueSource:           payload.valueSource,
+			resultFacts:           cloneResultFacts(res.resultFacts),
+			resultFactsIncomplete: res.resultFactsIncomplete,
 			resultID:              resultID,
 			imported:              res.imported,
 			persistDeclined:       res.persistDeclined,
@@ -590,6 +593,7 @@ func resultSnapshotLinkRows(resultID sharedResultID, links []PersistedSnapshotRe
 func (c *Cache) persistResultEnvelope(ctx context.Context, snapshot *persistResultSnapshot) (encoding PersistedResultEncoding, rerr error) {
 	defer func() {
 		if rerr == nil && snapshot != nil {
+			setEnvelopeResultFacts(&encoding.Envelope, snapshot.resultFacts, snapshot.resultFactsIncomplete)
 			encoding.Envelope.Imported = snapshot.imported
 			encoding.Envelope.PersistDeclined = snapshot.persistDeclined
 			encoding.Envelope.PendingOffers, rerr = clonePartOffers(snapshot.pendingOffers)
@@ -626,6 +630,7 @@ func (c *Cache) persistResultEnvelope(ctx context.Context, snapshot *persistResu
 			return PersistedResultEncoding{}, fmt.Errorf("result has no call frame and no persisted envelope")
 		}
 		shared := &sharedResult{
+			valueSource:           snapshot.valueSource,
 			self:                  snapshot.self,
 			isObject:              snapshot.isObject,
 			hasValue:              snapshot.hasValue,
@@ -635,6 +640,7 @@ func (c *Cache) persistResultEnvelope(ctx context.Context, snapshot *persistResu
 		return DefaultPersistedSelfCodec.EncodeResult(context.WithoutCancel(ctx), c, Result[Typed]{shared: shared})
 	}
 	shared := &sharedResult{
+		valueSource:           snapshot.valueSource,
 		self:                  snapshot.self,
 		isObject:              snapshot.isObject,
 		hasValue:              snapshot.hasValue,

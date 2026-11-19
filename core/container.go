@@ -1364,7 +1364,7 @@ func (container *Container) AttachDependencyResultsKinds(
 		// call's install span — failures attribute to the parent's own
 		// install span via direct lookup.
 		for _, dep := range deps {
-			owned = append(owned, dagql.DependencyResult{Result: dep, Owned: false})
+			owned = append(owned, dagql.DependencyResult{Result: dep, ImmutableInput: true})
 		}
 	}
 

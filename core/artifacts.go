@@ -361,9 +361,11 @@ type Artifacts struct {
 var _ dagql.PersistedObject = (*Artifact)(nil)
 var _ dagql.PersistedObjectDecoder = (*Artifact)(nil)
 var _ dagql.HasDependencyResults = (*Artifact)(nil)
+var _ dagql.HasDependencyResultsKinds = (*Artifact)(nil)
 var _ dagql.PersistedObject = (*Artifacts)(nil)
 var _ dagql.PersistedObjectDecoder = (*Artifacts)(nil)
 var _ dagql.HasDependencyResults = (*Artifacts)(nil)
+var _ dagql.HasDependencyResultsKinds = (*Artifacts)(nil)
 
 func (*Artifacts) Type() *ast.Type { return &ast.Type{NamedType: "Artifacts", NonNull: true} }
 func (*Artifacts) TypeDescription() string {
@@ -982,8 +984,19 @@ func BoundArtifacts(ctx context.Context, mod dagql.ObjectResult[*Module], root d
 // server for the module binds the provenance to results this session owns, so
 // evaluation does not depend on the discovering session being alive.
 func (a *Artifact) Evaluate(ctx context.Context, dest any, inputs ...dagql.NamedInput) error {
+	artifact, err := a.withEvaluationServers(ctx)
+	if err != nil {
+		return err
+	}
+	if a.View != nil {
+		ctx = dagql.WithResultScope(ctx, a.View)
+	}
+	return artifact.Node.dagqlValue(ctx, dest, inputs)
+}
+
+func (a *Artifact) withEvaluationServers(ctx context.Context) (*Artifact, error) {
 	if a.Node == nil {
-		return fmt.Errorf("artifact %s has no module tree", strings.Join(a.Path, "/"))
+		return nil, fmt.Errorf("artifact %s has no module tree", strings.Join(a.Path, "/"))
 	}
 	artifact := a.Clone()
 	// Within an expansion, start from the nearest receiver it has already
@@ -1001,30 +1014,27 @@ func (a *Artifact) Evaluate(ctx context.Context, dest any, inputs ...dagql.Named
 		if node.Module.Self() == nil {
 			srv, err := CurrentDagqlServer(ctx)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			node.DagqlServer = srv
 			continue
 		}
 		moduleID, err := node.Module.ID()
 		if err != nil {
-			return fmt.Errorf("artifact module ID: %w", err)
+			return nil, fmt.Errorf("artifact module ID: %w", err)
 		}
 		key := moduleID.EngineResultID()
 		srv, ok := servers[key]
 		if !ok {
 			srv, err = dagqlServerForModule(ctx, node.Module)
 			if err != nil {
-				return fmt.Errorf("artifact %s: %w", strings.Join(artifact.Path, "/"), err)
+				return nil, fmt.Errorf("artifact %s: %w", strings.Join(artifact.Path, "/"), err)
 			}
 			servers[key] = srv
 		}
 		node.DagqlServer = srv
 	}
-	if a.View != nil {
-		ctx = dagql.WithResultScope(ctx, a.View)
-	}
-	return artifact.Node.dagqlValue(ctx, dest, inputs)
+	return artifact, nil
 }
 
 // ModuleArtifactNodes discovers object fields without evaluating their values.
@@ -1182,6 +1192,12 @@ type ArtifactItems struct {
 }
 
 var _ dagql.HasDependencyResults = ArtifactItems{}
+var _ dagql.HasDependencyResultsKinds = ArtifactItems{}
+
+// AttachDependencyResultsKinds declares fixed inputs from the list's embedded artifacts.
+func (items ArtifactItems) AttachDependencyResultsKinds(ctx context.Context, self dagql.AnyResult, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.DependencyResult, error) {
+	return immutableInputDependencies(items.AttachDependencyResults(ctx, self, attach))
+}
 
 func (items ArtifactItems) AttachDependencyResults(ctx context.Context, _ dagql.AnyResult, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
 	var owned []dagql.AnyResult
@@ -1193,6 +1209,11 @@ func (items ArtifactItems) AttachDependencyResults(ctx context.Context, _ dagql.
 		owned = append(owned, deps...)
 	}
 	return owned, nil
+}
+
+// AttachDependencyResultsKinds declares fixed inputs from the artifact's stored tree, workspaces, and view.
+func (a *Artifact) AttachDependencyResultsKinds(ctx context.Context, self dagql.AnyResult, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.DependencyResult, error) {
+	return immutableInputDependencies(a.AttachDependencyResults(ctx, self, attach))
 }
 
 func (a *Artifact) AttachDependencyResults(_ context.Context, _ dagql.AnyResult, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
@@ -1231,6 +1252,12 @@ func (a *Artifact) AttachDependencyResults(_ context.Context, _ dagql.AnyResult,
 	a.View = view
 	return append(owned, deps...), nil
 }
+
+// AttachDependencyResultsKinds declares fixed inputs from both entry and collection-root artifacts.
+func (a *Artifacts) AttachDependencyResultsKinds(ctx context.Context, self dagql.AnyResult, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.DependencyResult, error) {
+	return immutableInputDependencies(a.AttachDependencyResults(ctx, self, attach))
+}
+
 func (a *Artifacts) AttachDependencyResults(ctx context.Context, _ dagql.AnyResult, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
 	var owned []dagql.AnyResult
 	for _, entry := range slices.Concat(a.Entries, a.CollectionRoots) {

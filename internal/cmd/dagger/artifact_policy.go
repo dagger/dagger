@@ -41,7 +41,7 @@ func commandArtifactTypes(cmd *cobra.Command) []string {
 	return nil
 }
 
-func commandArtifactTargets(ctx context.Context, dag *dagger.Client, cmd *cobra.Command, all *core.Artifacts) (*core.Artifacts, error) {
+func commandArtifactTargets(ctx context.Context, dag *dagger.Client, ws *core.Workspace, cmd *cobra.Command, all *core.Artifacts) (*core.Artifacts, error) {
 	types := commandArtifactTypes(cmd)
 	if len(types) == 0 {
 		return nil, fmt.Errorf("command %q does not select artifacts", cmd.Name())
@@ -61,7 +61,7 @@ func commandArtifactTargets(ctx context.Context, dag *dagger.Client, cmd *cobra.
 	if cmd.Name() == "agent" || cmd.Name() == "shell" {
 		return selected, nil
 	}
-	cfg, err := artifactWorkspaceConfig(ctx, core.NewQuery(dag).CurrentWorkspace())
+	cfg, err := artifactWorkspaceConfig(ctx, ws)
 	if err != nil {
 		return nil, err
 	}

@@ -202,7 +202,7 @@ func attachFilesystemDependencyResultsKinds[T dagql.Typed](
 		// Liveness-only: receiver/prerequisite chain. Failures attribute to
 		// the parent's own install span via direct lookup, not transitively
 		// onto downstream chained calls.
-		deps = append(deps, dagql.DependencyResult{Result: dep, Owned: false})
+		deps = append(deps, dagql.DependencyResult{Result: dep, ImmutableInput: true})
 	}
 	return deps, nil
 }

@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -928,24 +927,9 @@ func (fn *ModuleFunction) declaredClientsDigest(ctx context.Context) (string, er
 			return "", err
 		}
 	}
-	if ws.HostPath() == "" {
-		return "", nil
-	}
-	modulePath, err := filepath.Rel(ws.HostPath(), filepath.Join(src.Local.ContextDirectoryPath, src.SourceRootSubpath))
+	targets, err := declaredClientTargets(ws, src)
 	if err != nil {
 		return "", err
-	}
-
-	targets := map[string]bool{}
-	pending := slices.Clone(ws.ModuleClients(filepath.ToSlash(modulePath)))
-	for len(pending) > 0 {
-		target := pending[0]
-		pending = pending[1:]
-		if targets[target] {
-			continue
-		}
-		targets[target] = true
-		pending = append(pending, ws.ModuleClients(target)...)
 	}
 	if len(targets) == 0 {
 		return "", nil
@@ -960,7 +944,7 @@ func (fn *ModuleFunction) declaredClientsDigest(ctx context.Context) (string, er
 		return "", err
 	}
 	inputs := []string{declaredClientsInput}
-	for _, target := range slices.Sorted(maps.Keys(targets)) {
+	for _, target := range targets {
 		var targetDigest string
 		if err := dag.Select(ctx, wsRes, &targetDigest,
 			dagql.Selector{
@@ -1020,7 +1004,15 @@ func (fn *ModuleFunction) loadFunctionRuntime(ctx context.Context) (_ ModuleRunt
 	return runtime, nil
 }
 
-func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.AnyResult, rerr error) {
+func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (dagql.AnyResult, error) {
+	return fn.call(ctx, opts, nil)
+}
+
+func (fn *ModuleFunction) callFromResolver(ctx context.Context, opts *CallOpts) (dagql.AnyResult, error) {
+	return fn.call(ctx, opts, fn.resolverWorkspaceInputObservation(ctx))
+}
+
+func (fn *ModuleFunction) call(ctx context.Context, opts *CallOpts, observation *workspaceInputCall) (t dagql.AnyResult, rerr error) {
 	mod := fn.mod.Self()
 
 	lg := bklog.G(ctx).WithField("module", mod.Name()).WithField("function", fn.metadata.Name)
@@ -1106,8 +1098,10 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	if err != nil {
 		return nil, fmt.Errorf("failed to load runtime: %w", err)
 	}
+	recordWorkspaceRuntimeInputs(ctx, fn, fnCall, runtime, observation)
 
 	// Delegate the actual function execution to the runtime
+	ctx = withWorkspaceInputFunction(ctx, fnCall)
 	err = runtime.Call(ctx, &execMD, fnCall, fn.mod)
 	returned, returnedSet, returnStateErr := fnCall.returnResult()
 	if returnStateErr != nil {
@@ -1174,19 +1168,29 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 // the whole collection, so convert an attached receiver once per session and
 // scope; concurrent calls wait for the first conversion.
 func moduleFunctionReceiverJSON(ctx context.Context, opts *CallOpts) ([]byte, error) {
-	convert := func(ctx context.Context) ([]byte, error) {
+	convert := func(ctx context.Context) (sdkReceiverInput, error) {
+		inputs := &sdkInputResults{}
+		ctx = context.WithValue(ctx, sdkInputResultsKey{}, inputs)
 		parentFields, err := moduleFunctionReceiverFields(ctx, opts)
 		if err != nil {
-			return nil, fmt.Errorf("convert receiver: %w", err)
+			return sdkReceiverInput{}, fmt.Errorf("convert receiver: %w", err)
 		}
 		parentJSON, err := json.Marshal(parentFields)
 		if err != nil {
-			return nil, fmt.Errorf("marshal parent value: %w", err)
+			return sdkReceiverInput{}, fmt.Errorf("marshal parent value: %w", err)
 		}
-		return parentJSON, nil
+		return inputs.snapshot(parentJSON), nil
+	}
+	uncached := func() ([]byte, error) {
+		input, err := convert(ctx)
+		if err != nil {
+			return nil, err
+		}
+		importSDKInputs(ctx, input.Inputs)
+		return input.JSON, nil
 	}
 	if _, ok := dagql.UnwrapAs[*ModuleObject](opts.ParentTyped); !ok {
-		return convert(ctx)
+		return uncached()
 	}
 	// Scopes other than artifact views have no identity to key the result by.
 	var scopeKey string
@@ -1195,11 +1199,11 @@ func moduleFunctionReceiverJSON(ctx context.Context, opts *CallOpts) ([]byte, er
 	case *ArtifactView:
 		scopeKey = scope.key
 	default:
-		return convert(ctx)
+		return uncached()
 	}
 	id, err := opts.ParentTyped.ID()
 	if err != nil || id == nil || id.EngineResultID() == 0 {
-		return convert(ctx)
+		return uncached()
 	}
 	cache, err := dagql.EngineCache(ctx)
 	if err != nil {
@@ -1218,11 +1222,12 @@ func moduleFunctionReceiverJSON(ctx context.Context, opts *CallOpts) ([]byte, er
 	if err != nil {
 		return nil, err
 	}
-	parentJSON, ok := res.Value().([]byte)
+	input, ok := res.Value().(sdkReceiverInput)
 	if !ok {
 		return nil, fmt.Errorf("invalid converted receiver %T", res.Value())
 	}
-	return parentJSON, nil
+	input.preparation.importInputs(ctx, input.Inputs)
+	return input.JSON, nil
 }
 
 // Serialize receivers through the same scoped conversion as object arguments.
@@ -1495,14 +1500,14 @@ func (fn *ModuleFunction) loadContextualGitArg(
 	}
 }
 
-// callerInModuleFunction reports whether ctx is executing inside a module
+// CallerInModuleFunction reports whether ctx is executing inside a module
 // function body. It keys off an active function call, not merely a module in
 // context: a direct client (CLI/SDK) and schema-walking flows like `dagger
 // generate` load a module but run no function, and must still be allowed to
 // auto-inject a Workspace. ErrNoCurrentModule and ErrNoCurrentFunctionCall are
 // the direct-client signals and are swallowed; any other error is a real lookup
 // failure.
-func callerInModuleFunction(ctx context.Context) (bool, error) {
+func CallerInModuleFunction(ctx context.Context) (bool, error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return false, fmt.Errorf("get current query: %w", err)
@@ -1535,9 +1540,9 @@ func (fn *ModuleFunction) loadWorkspaceArg(
 	// group resolves the same workspace under the same ID.
 	//
 	// This bound-workspace preference MUST be checked before the
-	// callerInModuleFunction guard below: a generator/check leaf's
+	// CallerInModuleFunction guard below: a generator/check leaf's
 	// auto-injected Workspace! is resolved while running inside the module
-	// runtime, so checking callerInModuleFunction first would reject the
+	// runtime, so checking CallerInModuleFunction first would reject the
 	// seeded workspace and leave the leaf reading stale source. The workspace
 	// is still explicit here — the group threaded it via WorkspaceToContext —
 	// so this does not silently inherit a caller's workspace across modules.
@@ -1554,7 +1559,7 @@ func (fn *ModuleFunction) loadWorkspaceArg(
 	// `dagger generate`). A running module function must pass a Workspace to its
 	// dependencies explicitly, so a dependency does not silently inherit its
 	// caller's workspace.
-	if inModuleFunction, err := callerInModuleFunction(ctx); err != nil {
+	if inModuleFunction, err := CallerInModuleFunction(ctx); err != nil {
 		return nil, err
 	} else if inModuleFunction {
 		return nil, fmt.Errorf("%w: workspace arguments are not inherited by module runtime calls; pass a Workspace explicitly", ErrNoCurrentWorkspace)

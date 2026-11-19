@@ -134,6 +134,13 @@ type persistedContainerExecLazy struct {
 	VolatileCacheHitVolatileEnv    []string                      `json:"volatileCacheHitVolatileEnv,omitempty"`
 }
 
+func (p persistedContainerExecLazy) validate() error {
+	if p.VolatileCacheHitParentResultID != 0 && (p.ParentResultID != 0 || p.ModuleContextResultID != 0) {
+		return fmt.Errorf("persisted container withExec recipe mixes regular and volatile cache-hit references")
+	}
+	return nil
+}
+
 // ContainerVolatileExecCacheHitLazy materializes from a broad volatile exec
 // cache hit, then restores the request-local volatile environment for
 // descendants of the returned container.
@@ -420,6 +427,9 @@ func (container *Container) execMeta(
 			return nil, fmt.Errorf("failed to get implementation-scoped module digest from exec module context: %w", err)
 		}
 	} else if callerMod, err := query.CurrentModule(ctx); err == nil && callerMod.Self() != nil {
+		// This native operation consumes an ambient module to set its service
+		// search domain. It is an input of this execution, not payload ancestry.
+		recordWorkspaceContextInput(ctx, callerMod)
 		implementationScopedMod, err := ImplementationScopedModule(ctx, callerMod)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get caller implementation-scoped module: %w", err)
@@ -2591,6 +2601,9 @@ func decodePersistedContainerExecLazy(
 	var persisted persistedContainerExecLazy
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted container withExec lazy payload: %w", err)
+	}
+	if err := persisted.validate(); err != nil {
+		return nil, err
 	}
 	if persisted.VolatileCacheHitParentResultID != 0 {
 		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.VolatileCacheHitParentResultID, "container volatile exec cache hit parent")

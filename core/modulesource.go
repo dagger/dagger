@@ -180,6 +180,8 @@ type ModuleSource struct {
 	ConfigExists                  bool `field:"true" name:"configExists" doc:"Whether an existing module config file was found."`
 	ConfigFilename                string
 	Entrypoint                    *modules.ModuleEntrypointConfig
+	EntrypointSources             bool
+	EntrypointInputsKey           string
 	ModuleName                    string `field:"true" name:"moduleName" doc:"The name of the module, including any setting via the withName API."`
 	ModuleOriginalName            string `field:"true" name:"moduleOriginalName" doc:"The original name of the module as read from the module config file (or set for the first time with the withName API)."`
 	EngineVersion                 string `field:"true" name:"engineVersion" doc:"The engine version of the module."`
@@ -292,6 +294,7 @@ func (src *ModuleSource) TypeDescription() string {
 }
 
 var _ dagql.HasDependencyResults = (*ModuleSource)(nil)
+var _ dagql.HasDependencyResultsKinds = (*ModuleSource)(nil)
 var _ dagql.PersistedObject = (*ModuleSource)(nil)
 var _ dagql.PersistedObjectDecoder = (*ModuleSource)(nil)
 
@@ -362,14 +365,24 @@ func (src *ModuleSource) Sync(ctx context.Context) error {
 
 func (src *ModuleSource) AttachDependencyResults(
 	ctx context.Context,
-	_ dagql.AnyResult,
+	self dagql.AnyResult,
 	attach func(dagql.AnyResult) (dagql.AnyResult, error),
 ) ([]dagql.AnyResult, error) {
+	return dependencyResultValues(src.AttachDependencyResultsKinds(ctx, self, attach))
+}
+
+// AttachDependencyResultsKinds marks stored source references as fixed inputs.
+// SDK implementation dependencies remain owned provider references only.
+func (src *ModuleSource) AttachDependencyResultsKinds(
+	ctx context.Context,
+	_ dagql.AnyResult,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.DependencyResult, error) {
 	if src == nil {
 		return nil, nil
 	}
 
-	owned := make([]dagql.AnyResult, 0, 5+len(src.Dependencies)+len(src.Toolchains))
+	owned := make([]dagql.DependencyResult, 0, 5+len(src.Dependencies)+len(src.Toolchains))
 
 	if src.Workspace.Self() != nil {
 		attached, err := attach(src.Workspace)
@@ -381,7 +394,7 @@ func (src *ModuleSource) AttachDependencyResults(
 			return nil, fmt.Errorf("attach module source workspace: unexpected result %T", attached)
 		}
 		src.Workspace = typed
-		owned = append(owned, typed)
+		owned = append(owned, dagql.DependencyResult{Result: typed, Owned: true, ImmutableInput: true})
 	}
 
 	if src.ContextDirectory.Self() != nil {
@@ -394,7 +407,7 @@ func (src *ModuleSource) AttachDependencyResults(
 			return nil, fmt.Errorf("attach module source context directory: unexpected result %T", attached)
 		}
 		src.ContextDirectory = typed
-		owned = append(owned, typed)
+		owned = append(owned, dagql.DependencyResult{Result: typed, Owned: true, ImmutableInput: true})
 	}
 
 	if src.SDKImpl != nil {
@@ -402,7 +415,9 @@ func (src *ModuleSource) AttachDependencyResults(
 		if err != nil {
 			return nil, fmt.Errorf("attach module source sdk implementation: %w", err)
 		}
-		owned = append(owned, sdkDeps...)
+		for _, dep := range sdkDeps {
+			owned = append(owned, dagql.DependencyResult{Result: dep, Owned: true})
+		}
 	}
 
 	for i, dep := range src.Dependencies {
@@ -418,7 +433,7 @@ func (src *ModuleSource) AttachDependencyResults(
 			return nil, fmt.Errorf("attach module source dependency %d: unexpected result %T", i, attached)
 		}
 		src.Dependencies[i] = typed
-		owned = append(owned, typed)
+		owned = append(owned, dagql.DependencyResult{Result: typed, Owned: true, ImmutableInput: true})
 	}
 
 	if src.Blueprint.Self() != nil {
@@ -431,7 +446,7 @@ func (src *ModuleSource) AttachDependencyResults(
 			return nil, fmt.Errorf("attach module source blueprint: unexpected result %T", attached)
 		}
 		src.Blueprint = typed
-		owned = append(owned, typed)
+		owned = append(owned, dagql.DependencyResult{Result: typed, Owned: true, ImmutableInput: true})
 	}
 
 	for i, toolchain := range src.Toolchains {
@@ -447,7 +462,7 @@ func (src *ModuleSource) AttachDependencyResults(
 			return nil, fmt.Errorf("attach module source toolchain %d: unexpected result %T", i, attached)
 		}
 		src.Toolchains[i] = typed
-		owned = append(owned, typed)
+		owned = append(owned, dagql.DependencyResult{Result: typed, Owned: true, ImmutableInput: true})
 	}
 
 	if src.Git != nil && src.Git.UnfilteredContextDir.Self() != nil {
@@ -460,7 +475,7 @@ func (src *ModuleSource) AttachDependencyResults(
 			return nil, fmt.Errorf("attach module source git unfiltered context dir: unexpected result %T", attached)
 		}
 		src.Git.UnfilteredContextDir = typed
-		owned = append(owned, typed)
+		owned = append(owned, dagql.DependencyResult{Result: typed, Owned: true, ImmutableInput: true})
 	}
 
 	if src.DirSrc != nil {
@@ -468,7 +483,9 @@ func (src *ModuleSource) AttachDependencyResults(
 		if err != nil {
 			return nil, err
 		}
-		owned = append(owned, dirOwned...)
+		for _, dep := range dirOwned {
+			owned = append(owned, dagql.DependencyResult{Result: dep, Owned: true, ImmutableInput: true})
+		}
 	}
 
 	return owned, nil
@@ -532,14 +549,15 @@ type persistedDirModuleSourcePayload struct {
 }
 
 type persistedModuleSourceSDKCapabilities struct {
-	Runtime           bool `json:"runtime,omitempty"`
-	ModuleTypes       bool `json:"moduleTypes,omitempty"`
-	CodeGenerator     bool `json:"codeGenerator,omitempty"`
-	ClientGenerator   bool `json:"clientGenerator,omitempty"`
-	SelfCallsAlways   bool `json:"selfCallsAlways,omitempty"`
-	ModuleInitializer bool `json:"moduleInitializer,omitempty"`
-	ClientInitializer bool `json:"clientInitializer,omitempty"`
-	RuntimeTarget     bool `json:"runtimeTarget,omitempty"`
+	ModuleBacked      *bool `json:"moduleBacked,omitempty"`
+	Runtime           bool  `json:"runtime,omitempty"`
+	ModuleTypes       bool  `json:"moduleTypes,omitempty"`
+	CodeGenerator     bool  `json:"codeGenerator,omitempty"`
+	ClientGenerator   bool  `json:"clientGenerator,omitempty"`
+	SelfCallsAlways   bool  `json:"selfCallsAlways,omitempty"`
+	ModuleInitializer bool  `json:"moduleInitializer,omitempty"`
+	ClientInitializer bool  `json:"clientInitializer,omitempty"`
+	RuntimeTarget     bool  `json:"runtimeTarget,omitempty"`
 }
 
 type persistedModuleSourcePayload struct {
@@ -547,6 +565,8 @@ type persistedModuleSourcePayload struct {
 	ConfigFilename                      string                                `json:"configFilename,omitempty"`
 	Entrypoint                          *modules.ModuleEntrypointConfig       `json:"entrypoint,omitempty"`
 	EntrypointOnlyDependencies          bool                                  `json:"entrypointOnlyDependencies,omitempty"`
+	EntrypointSources                   bool                                  `json:"entrypointSources,omitempty"`
+	EntrypointInputsKey                 string                                `json:"entrypointInputsKey,omitempty"`
 	ModuleName                          string                                `json:"moduleName,omitempty"`
 	ModuleOriginalName                  string                                `json:"moduleOriginalName,omitempty"`
 	EngineVersion                       string                                `json:"engineVersion,omitempty"`
@@ -896,6 +916,8 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, enc *dagql.P
 		ConfigFilename:                      src.ConfigFilename,
 		Entrypoint:                          src.Entrypoint,
 		EntrypointOnlyDependencies:          src.EntrypointOnlyDependencies,
+		EntrypointSources:                   src.EntrypointSources,
+		EntrypointInputsKey:                 src.EntrypointInputsKey,
 		ModuleName:                          src.ModuleName,
 		ModuleOriginalName:                  src.ModuleOriginalName,
 		EngineVersion:                       src.EngineVersion,
@@ -927,6 +949,11 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, enc *dagql.P
 			return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted module source: sdk config is set but sdk impl is not initialized")
 		}
 		_, hasRuntime := src.SDKImpl.AsRuntime()
+		_, hasModule := src.SDKImpl.AsModule()
+		moduleBacked := &hasModule
+		if sdk, ok := src.SDKImpl.(*persistedModuleSourceLazySDK); ok {
+			moduleBacked = sdk.capabilities.ModuleBacked
+		}
 		_, hasModuleTypes := src.SDKImpl.AsModuleTypes()
 		_, hasCodeGenerator := src.SDKImpl.AsCodeGenerator()
 		_, hasClientGenerator := src.SDKImpl.AsClientGenerator()
@@ -938,6 +965,7 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, enc *dagql.P
 		_, hasClientInitializer := src.SDKImpl.AsClientInitializer()
 		_, hasRuntimeTarget := src.SDKImpl.AsRuntimeTarget()
 		payload.SDKCapabilities = &persistedModuleSourceSDKCapabilities{
+			ModuleBacked:      moduleBacked,
 			Runtime:           hasRuntime,
 			ModuleTypes:       hasModuleTypes,
 			CodeGenerator:     hasCodeGenerator,
@@ -1075,6 +1103,8 @@ func (*ModuleSource) DecodePersistedObject(ctx context.Context, dec *dagql.Persi
 		ConfigFilename:                      persisted.ConfigFilename,
 		Entrypoint:                          persisted.Entrypoint,
 		EntrypointOnlyDependencies:          persisted.EntrypointOnlyDependencies,
+		EntrypointSources:                   persisted.EntrypointSources,
+		EntrypointInputsKey:                 persisted.EntrypointInputsKey,
 		ModuleName:                          persisted.ModuleName,
 		ModuleOriginalName:                  persisted.ModuleOriginalName,
 		EngineVersion:                       persisted.EngineVersion,
@@ -1662,24 +1692,11 @@ func (src *ModuleSource) SourceImplementationDigest(ctx context.Context) (digest
 // context counts by that identity, so the module's identity changes exactly
 // when its checkout's does.
 func (src *ModuleSource) contextDigest(ctx context.Context, dag *dagql.Server) (string, error) {
-	var checkoutDigest digest.Digest
-	if src.Kind == ModuleSourceKindGit && src.Git != nil && src.Git.UnfilteredContextDir.Self() != nil {
-		checkoutCall, err := src.Git.UnfilteredContextDir.ResultCall()
-		if err != nil {
-			return "", fmt.Errorf("module source git checkout call: %w", err)
-		}
-		checkoutDigest = checkoutCall.ContentDigest()
+	checkoutDigest, err := src.includedGitCheckoutDigest(ctx, dag)
+	if err != nil {
+		return "", err
 	}
-	var hasGitDir dagql.Boolean
-	if checkoutDigest != "" {
-		if err := dag.Select(ctx, src.ContextDirectory, &hasGitDir, dagql.Selector{
-			Field: "exists",
-			Args:  []dagql.NamedInput{{Name: "path", Value: dagql.String(".git")}},
-		}); err != nil {
-			return "", fmt.Errorf("module source context directory .git: %w", err)
-		}
-	}
-	if !hasGitDir {
+	if checkoutDigest == "" {
 		var contextDigest string
 		if err := dag.Select(ctx, src.ContextDirectory, &contextDigest, dagql.Selector{Field: "digest"}); err != nil {
 			return "", fmt.Errorf("failed to get module source context directory digest: %w", err)
@@ -1691,6 +1708,54 @@ func (src *ModuleSource) contextDigest(ctx context.Context, dag *dagql.Server) (
 		return "", fmt.Errorf("failed to get module source context directory digest: %w", err)
 	}
 	return hashutil.HashStrings("gitContext", filesDigest, checkoutDigest.String()).String(), nil
+}
+
+// An ordinary context needs no unfiltered workspace checkout. For a saved
+// checkout, preserve the historical order of the identity and existence checks.
+func (src *ModuleSource) includedGitCheckoutDigest(ctx context.Context, dag *dagql.Server) (digest.Digest, error) {
+	if src.Kind != ModuleSourceKindGit || src.Git == nil {
+		return "", nil
+	}
+	hasGit := func() (dagql.Boolean, error) {
+		var exists dagql.Boolean
+		err := dag.Select(ctx, src.ContextDirectory, &exists, dagql.Selector{Field: "exists", Args: []dagql.NamedInput{{Name: "path", Value: dagql.String(".git")}}})
+		return exists, err
+	}
+	checkout := src.Git.UnfilteredContextDir
+	var included dagql.Boolean
+	var statErr error
+	if checkout.Self() == nil {
+		if src.Workspace.Self() == nil {
+			return "", nil
+		}
+		included, statErr = hasGit()
+		if statErr == nil && !included {
+			return "", nil
+		}
+		var err error
+		checkout, err = NewModuleSourceFS(nil, src).ContextDirectory(ctx, CopyFilter{})
+		if err != nil {
+			return "", err
+		}
+	}
+	frame, err := checkout.ResultCall()
+	if err != nil {
+		return "", fmt.Errorf("module source git checkout call: %w", err)
+	}
+	identity := frame.ContentDigest()
+	if identity == "" {
+		return "", nil
+	}
+	if src.Git.UnfilteredContextDir.Self() != nil {
+		included, statErr = hasGit()
+	}
+	if statErr != nil {
+		return "", fmt.Errorf("module source context directory .git: %w", statErr)
+	}
+	if !included {
+		return "", nil
+	}
+	return identity, nil
 }
 
 func ImplementationScopedModuleSource(
@@ -2058,9 +2123,13 @@ func (src *ModuleSource) LoadContextFile(
 	dag *dagql.Server,
 	path string,
 ) (inst dagql.ObjectResult[*File], err error) {
-	if src.Workspace.Self() != nil {
+	ws := src.Workspace
+	if bound, ok := WorkspaceFromContext(ctx); ok && src.contextIsWorkspace(bound.Self()) {
+		ws = bound
+	}
+	if ws.Self() != nil {
 		workspacePath := workspaceContextDirPath(src.SourceRootSubpath, path)
-		if err := dag.Select(ctx, src.Workspace, &inst, dagql.Selector{
+		if err := dag.Select(ctx, ws, &inst, dagql.Selector{
 			Field: "file",
 			Args:  []dagql.NamedInput{{Name: "path", Value: dagql.String(workspacePath)}},
 		}); err != nil {

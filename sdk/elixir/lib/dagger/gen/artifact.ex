@@ -16,6 +16,36 @@ defmodule Dagger.Artifact do
   @type t() :: %__MODULE__{}
 
   @doc """
+  Whether this artifact may depend on changed workspace paths.
+  """
+  @spec affected_by_diff(t(), Dagger.Changeset.t(), [{:kinds, [String.t()]}]) ::
+          {:ok, boolean()} | {:error, term()}
+  def affected_by_diff(%__MODULE__{} = artifact, changes, optional_args \\ []) do
+    query_builder =
+      artifact.query_builder
+      |> QB.select("affectedByDiff")
+      |> QB.put_arg("changes", Dagger.ID.id!(changes))
+      |> QB.maybe_put_arg("kinds", optional_args[:kinds])
+
+    Client.execute(artifact.client, query_builder)
+  end
+
+  @doc """
+  Whether this artifact may depend on a workspace-root path.
+  """
+  @spec affected_by_path(t(), Dagger.WorkspacePath.t(), [{:kinds, [String.t()]}]) ::
+          {:ok, boolean()} | {:error, term()}
+  def affected_by_path(%__MODULE__{} = artifact, path, optional_args \\ []) do
+    query_builder =
+      artifact.query_builder
+      |> QB.select("affectedByPath")
+      |> QB.put_arg("path", path)
+      |> QB.maybe_put_arg("kinds", optional_args[:kinds])
+
+    Client.execute(artifact.client, query_builder)
+  end
+
+  @doc """
   The arguments accepted by the artifact field.
   """
   @spec arguments(t()) :: {:ok, [Dagger.FunctionArg.t()]} | {:error, term()}
@@ -125,6 +155,20 @@ defmodule Dagger.Artifact do
       artifact.query_builder |> QB.select("path")
 
     Client.execute(artifact.client, query_builder)
+  end
+
+  @doc """
+  Inspect source dependencies from current inputs without running the artifact body.
+  """
+  @spec provenance(t()) :: Dagger.WorkspaceProvenance.t()
+  def provenance(%__MODULE__{} = artifact) do
+    query_builder =
+      artifact.query_builder |> QB.select("provenance")
+
+    %Dagger.WorkspaceProvenance{
+      query_builder: query_builder,
+      client: artifact.client
+    }
   end
 
   @doc """

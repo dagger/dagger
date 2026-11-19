@@ -1,0 +1,10 @@
+kind: Added
+body: |
+  Select checks and other artifacts by source paths with `--path`, `--commit`,
+  and `--uncommitted`. Inspect the same source dependencies through
+  `Artifact.provenance` and `Artifacts.provenance`. Selection prepares inputs
+  and enumerates collections without running artifact bodies.
+time: 2026-11-10T18:00:00Z
+custom:
+  Author: shykes
+  PR: "15011"

@@ -105,6 +105,7 @@ func (c *Cache) dropValueLocked(ctx context.Context, res *sharedResult) ([]*shar
 		h.executed = false
 	}
 	res.deps = nil
+	res.payloadInputs = nil
 	res.storedParts = nil
 	res.storedRecordBytes = 0
 	res.storedTransfer.Store(nil)
@@ -118,6 +119,7 @@ func (c *Cache) dropValueLocked(ctx context.Context, res *sharedResult) ([]*shar
 	}
 	res.storeResultCall(nil)
 	res.payloadMu.Lock()
+	res.valueSource = nil
 	res.self = nil
 	res.isObject = false
 	res.objClass = objectClassRef{}
@@ -126,6 +128,7 @@ func (c *Cache) dropValueLocked(ctx context.Context, res *sharedResult) ([]*shar
 	res.createdAtUnixNano = 0
 	res.payloadRevision++
 	res.payloadMu.Unlock()
+	c.setResultFactsLocked(res, nil, false)
 	c.setResultPayloadBytesLocked(res, 0)
 	return deps, rerr
 }

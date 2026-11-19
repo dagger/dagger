@@ -59,7 +59,11 @@ func callerTreeModuleSource(
 			}
 			git.repo = repo
 		}
-		return directoryTreeModuleSource(ctx, dag, src.Git.UnfilteredContextDir, target, &src.Git.CloneRef, git)
+		tree, err := gitModuleTree(ctx, src)
+		if err != nil {
+			return inst, err
+		}
+		return directoryTreeModuleSource(ctx, dag, tree, target, &src.Git.CloneRef, git)
 	case core.ModuleSourceKindDir:
 		return directoryTreeModuleSource(ctx, dag, src.DirSrc.OriginalContextDir, target, src.DirSrc.OriginRoot, treeGit{hostPath: src.DirSrc.OriginHostPath, repo: src.DirSrc.OriginGit})
 	case core.ModuleSourceKindLocal:
@@ -67,6 +71,14 @@ func callerTreeModuleSource(
 	default:
 		return inst, fmt.Errorf("module %q has no tree to resolve %q in", caller.Self().Name(), address)
 	}
+}
+
+// gitModuleTree preserves a stored checkout, including those restored from older engines.
+func gitModuleTree(ctx context.Context, src *core.ModuleSource) (dagql.ObjectResult[*core.Directory], error) {
+	if tree := src.Git.UnfilteredContextDir; tree.Self() != nil || src.Workspace.Self() == nil {
+		return tree, nil
+	}
+	return core.NewModuleSourceFS(nil, src).ContextDirectory(ctx, core.CopyFilter{})
 }
 
 // directoryTreeModuleSource loads the module at target in tree. The source

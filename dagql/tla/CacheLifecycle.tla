@@ -4554,7 +4554,7 @@ LiveSpec ==
 (* FnComplete's reuse), waits for a result the session itself produced,    *)
 (* and result-ID value loads, which refuse the session when neither a      *)
 (* clean canonical candidate nor the exact result satisfies it             *)
-(* (sharedResultLookupCanonicalEquivalentForSession,                       *)
+(* (sharedResultLookupExactForSession,                                     *)
 (* cache_persistence_resolver.go; before that check existed, the exact     *)
 (* fallback bypassed the filter). The filter runs at selection AND is      *)
 (* re-validated at the serve (the ReadBarrierOk disjunct /                 *)

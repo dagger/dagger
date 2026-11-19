@@ -17,6 +17,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/gitref"
 	"github.com/dagger/dagger/core/modules"
+	"github.com/dagger/dagger/core/provenance"
 	"github.com/dagger/dagger/core/sdk"
 	dangv2 "github.com/dagger/dagger/core/sdk/dang/v2"
 	"github.com/dagger/dagger/core/sdk/entrypoint"
@@ -475,8 +476,16 @@ func moduleConfigDirDepth(dir string) int {
 }
 
 func moduleConfigInDir(ctx context.Context, statFS core.StatFS, dir string) (filename string, found bool, err error) {
+	return probeModuleConfigInDir(ctx, statFS, dir, nil)
+}
+
+func probeModuleConfigInDir(ctx context.Context, statFS core.StatFS, dir string, beforeProbe func(string)) (string, bool, error) {
 	for _, filename := range modules.ConfigFilenames() {
-		_, exists, err := core.StatFSExists(ctx, statFS, filepath.Join(dir, filename))
+		candidate := filepath.Join(dir, filename)
+		if beforeProbe != nil {
+			beforeProbe(candidate)
+		}
+		_, exists, err := core.StatFSExists(ctx, statFS, candidate)
 		if err != nil {
 			return "", false, err
 		}
@@ -1057,11 +1066,26 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 		dirSrc.SourceRootSubpath = "."
 	}
 
-	configFilename, found, err := moduleConfigInDir(ctx, &core.DirectoryStatFS{Dir: contextDir}, filepath.Join("/", dirSrc.SourceRootSubpath))
+	var beforeProbe func(string)
+	if dirSrc.Workspace.Self() != nil {
+		beforeProbe = func(candidate string) {
+			core.RecordWorkspaceRead(ctx, dirSrc.Workspace, provenance.Selector{
+				Path: filepath.ToSlash(candidate), Kind: provenance.WorkspaceRead, Origin: "Workspace.moduleSource",
+			})
+		}
+	}
+	// Probe the same unmounted tree that supplied the source in Workspace.moduleSource.
+	configFilename, found, err := probeModuleConfigInDir(ctx, &core.DirectoryStatFS{Dir: contextDir}, filepath.Join("/", dirSrc.SourceRootSubpath), beforeProbe)
 	if err != nil {
 		return inst, fmt.Errorf("failed to find dir module config: %w", err)
 	}
 	if !found {
+		if dirSrc.Workspace.Self() != nil {
+			// This branch checks ignore rules and can retain the full context.
+			core.RecordWorkspaceRead(ctx, dirSrc.Workspace, provenance.Selector{
+				Path: "/", Kind: provenance.WorkspaceRead, Origin: "Workspace.moduleSource",
+			})
+		}
 		if err := rejectGitignoredModulePaths(ctx, contextDir, dirSrc.SourceRootSubpath); err != nil {
 			return inst, err
 		}
@@ -1151,19 +1175,7 @@ func (s *moduleSourceSchema) workspaceModuleSource(
 		if err != nil {
 			return inst, fmt.Errorf("workspace module source URL: %w", err)
 		}
-		// The tree a git module was loaded from, where the modules it serves
-		// and the git clients its config declares are found: the workspace's
-		// own, read as its other files are.
-		dag, err := core.CurrentDagqlServer(ctx)
-		if err != nil {
-			return inst, err
-		}
-		if err := dag.Select(ctx, workspaceResult, &src.Git.UnfilteredContextDir, dagql.Selector{
-			Field: "directory",
-			Args:  []dagql.NamedInput{{Name: "path", Value: dagql.String("/")}},
-		}); err != nil {
-			return inst, fmt.Errorf("workspace module source tree: %w", err)
-		}
+		// The retained workspace supplies the original tree when a caller needs it.
 	default:
 		return inst, fmt.Errorf("workspace module source: unsupported workspace backing %T", base)
 	}
@@ -1556,6 +1568,8 @@ func (s *moduleSourceSchema) reloadModuleSourceContext(ctx context.Context, src 
 // already holds the included files, and an engine that predates include runs
 // sources instead, so one module can carry both.
 func (s *moduleSourceSchema) loadEntrypointSources(ctx context.Context, src *core.ModuleSource) (rerr error) {
+	src.EntrypointSources = false
+	src.EntrypointInputsKey = ""
 	if src.Entrypoint == nil {
 		return nil
 	}
@@ -1580,6 +1594,7 @@ func (s *moduleSourceSchema) loadEntrypointSources(ctx context.Context, src *cor
 	if err != nil {
 		return fmt.Errorf("scan module entrypoint source: %w", err)
 	}
+	src.EntrypointSources = declared
 	if !declared {
 		return nil
 	}
@@ -1641,6 +1656,10 @@ func (s *moduleSourceSchema) loadEntrypointSources(ctx context.Context, src *cor
 		}
 	}
 	contextDir, err := mergeEntrypointSources(ctx, dag, sources, moduleContext)
+	if err != nil {
+		return fail(err)
+	}
+	contextDir, err = core.CaptureWorkspaceInputDirectory(ctx, contextDir, sources)
 	if err != nil {
 		return fail(err)
 	}

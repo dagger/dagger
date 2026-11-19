@@ -329,6 +329,9 @@ func directTransferReferences(direct map[uint64]bool) PersistedRefVisitor {
 }
 
 func validateTransferEnvelope(env PersistedResultEnvelope, typ *ResultCallType, root bool) error {
+	if err := validateResultFacts(env, root); err != nil {
+		return err
+	}
 	if typ == nil {
 		return fmt.Errorf("missing envelope type")
 	}
@@ -345,6 +348,11 @@ func validateTransferEnvelope(env PersistedResultEnvelope, typ *ResultCallType, 
 // one case per envelope kind.
 func validateTransferEnvelopeKind(env PersistedResultEnvelope, typ *ResultCallType, root bool) error {
 	switch env.Kind {
+	case persistedResultKindAlias:
+		if !root || env.ValueResultID == 0 || env.ValueResultID == env.ResultID || env.TypeName != "" || env.ObjectCodec != "" || len(env.Items) != 0 || len(env.ObjectJSON) != 0 || len(env.ScalarJSON) != 0 {
+			return fmt.Errorf("invalid call result reference")
+		}
+
 	case persistedResultKindNull:
 		if typ.NonNull {
 			return fmt.Errorf("null under non-null type")
@@ -382,13 +390,21 @@ func validateTransferEnvelopeKind(env PersistedResultEnvelope, typ *ResultCallTy
 // validateTransferEnvelopeStructure checks what visitPersistedEnvelope checks
 // of an envelope's structure, without decoding object payloads.
 func validateTransferEnvelopeStructure(env PersistedResultEnvelope, root bool) error {
-	if env.Version != persistedResultEnvelopeVersion {
+	if err := validateResultFacts(env, root); err != nil {
+		return err
+	}
+	if env.Version != persistedResultEnvelopeVersion && env.Version != 5 {
 		return fmt.Errorf("unsupported envelope version %d", env.Version)
 	}
 	if !root && (env.Imported || len(env.PendingOffers) != 0) {
 		return fmt.Errorf("root metadata on inline value")
 	}
 	switch env.Kind {
+	case persistedResultKindAlias:
+		if !root || env.ValueResultID == 0 || env.ValueResultID == env.ResultID || len(env.Items) != 0 || len(env.ObjectJSON) != 0 || len(env.ScalarJSON) != 0 {
+			return fmt.Errorf("invalid call result reference")
+		}
+
 	case persistedResultKindNull, persistedResultKindScalar:
 		if len(env.Items) != 0 || len(env.ObjectJSON) != 0 {
 			return fmt.Errorf("%s kind carries a body", env.Kind)
@@ -491,8 +507,9 @@ func validateLayerDigest(d digest.Digest) error {
 	return d.Validate()
 }
 
-// A result_ref selects the separately owned row. Inline list paths keep the
-// envelope's field/index spelling and never interpret arbitrary payload JSON.
+// References and call-result aliases select the row that owns the value.
+// Inline list paths keep the envelope's field/index spelling and never
+// interpret arbitrary payload JSON.
 func resolveSelectedRecord(id uint64, address PersistedPartAddress, lookup func(uint64) (PersistedRecord, bool)) (uint64, PersistedPartAddress, error) {
 	if _, err := partAddressKey(address); err != nil {
 		return 0, address, err
@@ -506,8 +523,12 @@ func resolveSelectedRecord(id uint64, address PersistedPartAddress, lookup func(
 	consumed := 0
 	seen := map[uint64]bool{id: true}
 	for {
-		if env.Kind == persistedResultKindRef {
-			id = env.ResultID
+		if env.Kind == persistedResultKindRef || env.Kind == persistedResultKindAlias {
+			if env.Kind == persistedResultKindAlias {
+				id = env.ValueResultID
+			} else {
+				id = env.ResultID
+			}
 			if seen[id] {
 				return 0, address, fmt.Errorf("cycle in selected value")
 			}

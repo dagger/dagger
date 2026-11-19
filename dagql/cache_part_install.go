@@ -686,6 +686,9 @@ func (c *Cache) CommitReadyPart(ctx context.Context, p *PreparedReadyPart) (_ *R
 	} else {
 		p.store.Publish()
 	}
+	// Acquired parts can replace payload references. The old recipe proof
+	// is unavailable unless the installed representation declares it again.
+	row.payloadInputs = nil
 	row.payloadRevision++
 	gate.managed = true
 	row.partGate.active.Store(true)

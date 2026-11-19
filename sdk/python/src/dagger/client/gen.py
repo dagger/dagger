@@ -31,6 +31,12 @@ class Void(Scalar):
     resolvers that do not return anything."""
 
 
+class WorkspacePath(Scalar):
+    """A path within a workspace. A leading slash starts at the workspace
+    boundary. Each operation defines how it resolves relative input paths.
+    Output source paths start at the workspace boundary."""
+
+
 class AcronymStyle(Enum):
     """How acronyms and terms are written where a word starts with a
     capital."""
@@ -1549,6 +1555,60 @@ class Artifact(Type):
     keys. Reading metadata does not evaluate the value. Different
     addresses remain distinct even if they return the same object."""
 
+    async def affected_by_diff(
+        self,
+        changes: "Changeset",
+        *,
+        kinds: list[str] | None = None,
+    ) -> bool:
+        """Whether this artifact may depend on changed workspace paths.
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("changes", changes),
+            Arg("kinds", [] if kinds is None else kinds, []),
+        ]
+        _ctx = self._select("affectedByDiff", _args)
+        return await _ctx.execute(bool)
+
+    async def affected_by_path(
+        self,
+        path: WorkspacePath,
+        *,
+        kinds: list[str] | None = None,
+    ) -> bool:
+        """Whether this artifact may depend on a workspace-root path.
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("path", path),
+            Arg("kinds", [] if kinds is None else kinds, []),
+        ]
+        _ctx = self._select("affectedByPath", _args)
+        return await _ctx.execute(bool)
+
     async def arguments(self) -> list["FunctionArg"]:
         """The arguments accepted by the artifact field."""
         _args: list[Arg] = []
@@ -1696,6 +1756,14 @@ class Artifact(Type):
         _args: list[Arg] = []
         _ctx = self._select("path", _args)
         return await _ctx.execute(list[str])
+
+    def provenance(self) -> "WorkspaceProvenance":
+        """Inspect source dependencies from current inputs without running the
+        artifact body.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("provenance", _args)
+        return WorkspaceProvenance(_ctx)
 
     async def uri(
         self,
@@ -2298,6 +2366,42 @@ class Artifacts(Type):
         _ctx = self._select("dimensions", _args)
         return await _ctx.execute(list[str])
 
+    def filter_affected_by_diff(
+        self,
+        changes: list["Changeset"],
+        *,
+        paths: list[WorkspacePath] | None = None,
+        kinds: list[str] | None = None,
+    ) -> Self:
+        """Keep artifacts that may depend on paths changed in any listed
+        changeset. Paths limit changed paths before matching dependencies.
+        Inputs with unresolved source origins stay selected for nonempty
+        changes.
+        """
+        _args = [
+            Arg("changes", changes),
+            Arg("paths", [] if paths is None else paths, []),
+            Arg("kinds", [] if kinds is None else kinds, []),
+        ]
+        _ctx = self._select("filterAffectedByDiff", _args)
+        return Artifacts(_ctx)
+
+    def filter_affected_by_path(
+        self,
+        paths: list[WorkspacePath],
+        *,
+        kinds: list[str] | None = None,
+    ) -> Self:
+        """Keep artifacts that may depend on any listed workspace-root path.
+        Enumerates collections but does not run artifact leaves.
+        """
+        _args = [
+            Arg("paths", paths),
+            Arg("kinds", [] if kinds is None else kinds, []),
+        ]
+        _ctx = self._select("filterAffectedByPath", _args)
+        return Artifacts(_ctx)
+
     def filter_dimension_keys(self, dimension: str, keys: list[str]) -> Self:
         """Keep artifacts with any listed key in this dimension. Replace
         collection references with matching subsets. Skip absent keys and
@@ -2525,6 +2629,14 @@ class Artifacts(Type):
         ]
         _ctx = self._select("pathDefinitions", _args)
         return await _ctx.execute_object_list(ArtifactPath)
+
+    def provenance(self) -> "WorkspaceProvenance":
+        """Combine the source dependencies of the selected artifacts without
+        running their bodies.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("provenance", _args)
+        return WorkspaceProvenance(_ctx)
 
     async def types(self) -> list["TypeDef"]:
         """List concrete type definitions represented in this selection, sorted
@@ -21325,6 +21437,121 @@ class WorkspaceModuleSetting(Type):
 
 
 @typecheck
+class WorkspaceProvenance(Type):
+    async def affected_by_diff(
+        self,
+        changes: Changeset,
+        *,
+        kinds: list[str] | None = None,
+    ) -> bool:
+        """Whether an input region overlaps paths in this changeset. Paths must
+        use this workspace's boundary.
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("changes", changes),
+            Arg("kinds", [] if kinds is None else kinds, []),
+        ]
+        _ctx = self._select("affectedByDiff", _args)
+        return await _ctx.execute(bool)
+
+    async def affected_by_path(
+        self,
+        path: WorkspacePath,
+        *,
+        kinds: list[str] | None = None,
+    ) -> bool:
+        """Whether an input region overlaps this workspace-root path. Directory
+        queries can match conservatively.
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("path", path),
+            Arg("kinds", [] if kinds is None else kinds, []),
+        ]
+        _ctx = self._select("affectedByPath", _args)
+        return await _ctx.execute(bool)
+
+    async def id(self) -> str:
+        """A unique identifier for this WorkspaceProvenance.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def issues(self) -> list[str]:
+        """Inputs whose source origin could not be determined. These retain a
+        conservative root dependency.
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("issues", _args)
+        return await _ctx.execute(list[str])
+
+    async def selectors(self) -> list["WorkspaceSelector"]:
+        """The source regions on which the artifact depends."""
+        _args: list[Arg] = []
+        _ctx = self._select("selectors", _args)
+        return await _ctx.execute_object_list(WorkspaceSelector)
+
+
+@typecheck
 class WorkspaceSDK(Type):
     """An installed SDK: a module marked for scaffolding other modules and
     clients."""
@@ -21447,6 +21674,161 @@ class WorkspaceSDK(Type):
         ]
         _ctx = self._select("scopeSetting", _args)
         return await _ctx.execute_object(JSONValue)
+
+
+@typecheck
+class WorkspaceSelector(Type):
+    async def conservative(self) -> bool:
+        """Whether this region is an upper bound on possible inputs.
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("conservative", _args)
+        return await _ctx.execute(bool)
+
+    async def exclude(self) -> list[str]:
+        """Exclude patterns relative to path.
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("exclude", _args)
+        return await _ctx.execute(list[str])
+
+    async def id(self) -> str:
+        """A unique identifier for this WorkspaceSelector.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def include(self) -> list[str]:
+        """Include patterns relative to path.
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("include", _args)
+        return await _ctx.execute(list[str])
+
+    async def kind(self) -> str:
+        """WORKSPACE_READ or MODULE_SOURCE.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("kind", _args)
+        return await _ctx.execute(str)
+
+    async def origin(self) -> str:
+        """The input that contributes this dependency.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("origin", _args)
+        return await _ctx.execute(str)
+
+    async def path(self) -> WorkspacePath:
+        """The path relative to the workspace boundary.
+
+        Returns
+        -------
+        WorkspacePath
+            A path within a workspace. A leading slash starts at the workspace
+            boundary. Each operation defines how it resolves relative input
+            paths. Output source paths start at the workspace boundary.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("path", _args)
+        return await _ctx.execute(WorkspacePath)
 
 
 class Client(Query):
@@ -21594,6 +21976,9 @@ __all__ = [
     "WorkspaceMigrationStep",
     "WorkspaceModule",
     "WorkspaceModuleSetting",
+    "WorkspacePath",
+    "WorkspaceProvenance",
     "WorkspaceSDK",
+    "WorkspaceSelector",
     "dag",
 ]

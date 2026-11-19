@@ -454,6 +454,7 @@ func validateStoredOwnership(res *sharedResult) error {
 		}
 	}
 	env.PendingOffers = nil
+	var inputs []uint64
 	_, err := VisitEncodedReferences(PersistedRecord{ResultID: uint64(res.id), Envelope: env, Call: res.loadResultCall(), SnapshotLinks: res.loadSnapshotOwnerLinks()}, func(ref *PersistedRef) error {
 		if ref.RecipeID != nil {
 			return nil
@@ -464,10 +465,14 @@ func validateStoredOwnership(res *sharedResult) error {
 				return fmt.Errorf("reference %s to %d is not a direct dependency", ref.Path, ref.ResultID)
 			}
 		}
+		if ref.Kind == PersistedRefChild && ref.ImmutableInput {
+			inputs = append(inputs, ref.ResultID)
+		}
 		return nil
 	})
 	if err != nil {
 		return fmt.Errorf("result %d: %w", res.id, err)
 	}
+	res.payloadInputs = newPayloadInputIDs(inputs)
 	return nil
 }
