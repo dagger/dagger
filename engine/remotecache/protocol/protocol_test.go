@@ -194,6 +194,10 @@ func derefBody(v any) any {
 		return *b
 	case *Restored:
 		return *b
+	case *Probe:
+		return *b
+	case *Probed:
+		return *b
 	case *Error:
 		return *b
 	}
