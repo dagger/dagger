@@ -602,6 +602,9 @@ func (cm *snapshotManager) RemoveLease(ctx context.Context, leaseID string) erro
 	delete(cm.leaseOwnedSnapshots, leaseID)
 	cm.mu.Unlock()
 
+	if !managed {
+		return nil
+	}
 	// The owner lease is gone first: until the ancestors leave the ancestry
 	// lease, they are only kept longer than needed.
 	return cm.deleteAncestryResources(ctx, released)
@@ -615,6 +618,7 @@ func (cm *snapshotManager) DeleteStaleDaggerOwnerLeases(ctx context.Context, kee
 
 	var rerr error
 	var staleAncestry []string
+	unattachedKept := 0
 	for _, lease := range leasesList {
 		if strings.HasPrefix(lease.ID, ownerAncestryLeasePrefix) {
 			if lease.ID != cm.ownerAncestryLeaseID() {
@@ -626,6 +630,12 @@ func (cm *snapshotManager) DeleteStaleDaggerOwnerLeases(ctx context.Context, kee
 			continue
 		}
 		if _, ok := keep[lease.ID]; ok {
+			cm.mu.Lock()
+			attached := len(cm.leaseOwnedSnapshots[lease.ID]) > 0
+			cm.mu.Unlock()
+			if !attached {
+				unattachedKept++
+			}
 			continue
 		}
 		rerr = stderrors.Join(rerr, cm.RemoveLease(ctx, lease.ID))
@@ -633,6 +643,14 @@ func (cm *snapshotManager) DeleteStaleDaggerOwnerLeases(ctx context.Context, kee
 	// An earlier process's ancestry lease holds the ancestors of the owner
 	// leases it attached. The kept owner leases have been attached again in
 	// this process, which holds their ancestors in its own, so it goes last.
+	// A kept owner lease this process has not attached may still need it to
+	// keep its ancestors: it is left for a later start then.
+	if unattachedKept > 0 {
+		if len(staleAncestry) > 0 {
+			bklog.G(ctx).Warnf("keeping %d stale owner ancestry leases: %d kept owner leases are not attached", len(staleAncestry), unattachedKept)
+		}
+		return rerr
+	}
 	for _, id := range staleAncestry {
 		if err := cm.LeaseManager.Delete(ctx, leases.Lease{ID: id}); err != nil && !cerrdefs.IsNotFound(err) {
 			rerr = stderrors.Join(rerr, pkgerrors.Wrapf(err, "delete stale owner ancestry lease %s", id))
