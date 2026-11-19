@@ -19,6 +19,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/clientdb"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
 // A Dang tool call's result is shaped as a module tool call's: the report
@@ -409,20 +410,31 @@ func TestDangToolCallLogsReportOnce(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			_, ctx := recordingTestRecorder(t)
+			sr, ctx := recordingTestRecorder(t)
 			recorder := &stateRecorder{}
 			ctx = telemetry.WithLoggerProvider(ctx, sdklog.NewLoggerProvider(sdklog.WithProcessor(recorder)))
 
 			m := newMCP()
 			tools := NewLLMToolSet()
 			m.addDangTools(&dagql.Server{}, tools, tc.impl)
-			res := m.CallContent(ctx, tools.Order, &LLMToolCall{CallID: "call_1", Name: tc.tool, Arguments: JSON(tc.args)})
+			displays := newDisplayPhases(ctx, "", tools.Order)
+			displays.EmitToolCall(0, "call_1", tc.tool, tc.args)
+			results, rest := m.CallBatch(ctx, tools.Order, []*LLMToolCall{{CallID: "call_1", Name: tc.tool, Arguments: JSON(tc.args)}}, displays.toolCalls, nil)
+			require.Empty(t, rest)
+			require.Len(t, results, 1)
+			res := results[0].Content[0]
+			require.Len(t, sr.Ended(), 1)
+			tokens, ok := spanAttr(sr.Ended()[0], telemetryattrs.LLMToolResultTokensAttr)
+			require.True(t, ok)
+			require.Equal(t, estimateTextTokens(len(res.ContentText())), tokens.AsInt64())
 
 			recorder.mu.Lock()
 			defer recorder.mu.Unlock()
 			var logs strings.Builder
 			for _, rec := range recorder.records {
-				logs.WriteString(rec.body)
+				if rec.contentType != "application/json" { // exclude streamed arguments
+					logs.WriteString(rec.body)
+				}
 			}
 			if tc.want == "" {
 				// No report: the error result is the call's logs.

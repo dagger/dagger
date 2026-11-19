@@ -105,7 +105,7 @@ func (c *AnthropicClient) IsRetryable(err error) bool {
 func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool, opts *LLMCallOpts) (res *LLMResponse, rerr error) {
 	// Stream this turn's content into per-block display spans (thinking, text
 	// response, tool-call arguments) as it arrives.
-	dp := newDisplayPhases(ctx, opts.CallDigest, tools)
+	dp := newDisplayPhases(withToolResultTokenModel(ctx, c.endpoint), opts.CallDigest, tools)
 	defer func() {
 		dp.CloseAll()
 		if rerr != nil {

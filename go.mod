@@ -143,6 +143,7 @@ require (
 	github.com/spf13/pflag v1.0.10
 	github.com/stretchr/testify v1.12.1
 	github.com/tidwall/gjson v1.19.0
+	github.com/tiktoken-go/tokenizer v0.10.0
 	github.com/tonistiigi/go-archvariant v1.0.0
 	github.com/tonistiigi/go-csvvalue v0.0.0-20240710180619-ddb21b71c0b4
 	github.com/tonistiigi/units v0.0.0-20180711220420-6950e57a87ea
@@ -257,6 +258,7 @@ require (
 	github.com/danielgatis/go-utf8 v1.0.1 // indirect
 	github.com/danielgatis/go-vte v1.0.11 // indirect
 	github.com/dlclark/regexp2 v1.11.5 // indirect
+	github.com/dlclark/regexp2/v2 v2.5.1 // indirect
 	github.com/docker/docker-credential-helpers v0.9.3 // indirect
 	github.com/dylibso/observe-sdk/go v0.0.0-20240828172851-9145d8ad07e1 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect

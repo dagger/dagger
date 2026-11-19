@@ -34,7 +34,6 @@ import (
 	"github.com/sourcegraph/conc/pool"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
 	"google.golang.org/protobuf/proto"
@@ -2161,13 +2160,9 @@ func (m *MCP) CallContent(ctx context.Context, tools []LLMTool, toolCall *LLMToo
 	)
 	span.SetAttributes(attrs...)
 
-	var telemetryErr error
-	defer telemetry.EndWithCause(span, &telemetryErr)
-	defer func() {
-		if res.Errored {
-			telemetryErr = fmt.Errorf("tool call %q failed", tool.Name)
-		}
-	}()
+	// The caller owns the display span. In particular CallBatch may still
+	// annotate the result after an MCP workspace sync; it must record the
+	// final result's token count before ending the span.
 
 	defer func() {
 		// Validate media independently from text bounding: truncating base64
@@ -2408,22 +2403,17 @@ func toolCallCtx(ctx context.Context, displays map[string]toolCallDisplay, callI
 	return ctx
 }
 
-// endToolCallDisplay ends a tool call's display span once the tool returns,
-// marking it errored if the call failed. It also stamps the span with an
-// estimated token count for the result the tool fed back into context, so the
-// TUI can flag tool calls whose output is an outsized driver of context growth.
+// endToolCallDisplay records the final, bounded result before ending its
+// display span. CallContent must not end it: ended OTel spans ignore attributes.
 // No-op when there's no display span.
-func endToolCallDisplay(displays map[string]toolCallDisplay, callID string, errored bool, result string) {
+func endToolCallDisplay(displays map[string]toolCallDisplay, callID string, result *LLMContentBlock) {
 	if tc, ok := displays[callID]; ok {
-		if tokens := estimateTextTokens(len(result)); tokens > 0 {
-			tc.Span.SetAttributes(
-				attribute.Int64(telemetryattrs.LLMToolResultTokensAttr, tokens),
-			)
+		tc.Span.SetAttributes(toolResultTokenAttrs(tc.Ctx, result)...)
+		var err error
+		if result.Errored {
+			err = errors.New(result.ContentText())
 		}
-		if errored {
-			tc.Span.SetStatus(codes.Error, result)
-		}
-		tc.Span.End()
+		telemetry.EndWithCause(tc.Span, &err)
 	}
 }
 
@@ -2467,7 +2457,7 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []*LLMTo
 		position[call] = i
 	}
 	record := func(call *LLMToolCall, result *LLMContentBlock) {
-		endToolCallDisplay(toolCallDisplays, call.CallID, result.Errored, result.ContentText())
+		endToolCallDisplay(toolCallDisplays, call.CallID, result)
 		results[position[call]] = &LLMMessage{
 			Role:    LLMMessageRoleUser, // Anthropic only allows tool call results in user messages
 			Content: []*LLMContentBlock{result},
@@ -3665,7 +3655,7 @@ func (m *MCP) timeoutTool(allTools *LLMToolSet) LLMToolFunc {
 		displays := newDisplayPhases(ctx, "", allTools.Order)
 		displays.EmitToolCall(0, call.CallID, toolName, string(encodedArgs))
 		res := m.CallContent(toolCallCtx(ctx, displays.toolCalls, call.CallID), allTools.Order, call)
-		endToolCallDisplay(displays.toolCalls, call.CallID, res.Errored, res.ContentText())
+		endToolCallDisplay(displays.toolCalls, call.CallID, res)
 		if res.Errored && errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			return nil, fmt.Errorf("tool %q did not finish within %s: %w", toolName, duration, ctx.Err())
 		}

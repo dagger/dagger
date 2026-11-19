@@ -238,13 +238,19 @@ const (
 	// a running call's header is the one it ends with. ([]string)
 	LLMToolHeaderArgNamesAttr = "dagger.io/llm.tool.header_arg_names"
 
-	// LLMToolResultTokensAttr is set on a tool-call telemetry span with an
-	// estimated token count for the result the tool fed back into the model's
-	// context. It lets the TUI flag tool calls whose (often huge) output is
-	// the biggest driver of context growth, so an inordinate one is easy to
-	// spot in a conversation. The count is an estimate (chars/4), not a
-	// provider-reported figure. (int64)
+	// LLMToolResultTokensAttr counts the final bounded tool-result text. It is
+	// not provider-reported usage or a billable total: chat framing and media
+	// are excluded. Zero is recorded for an empty result. (int64)
 	LLMToolResultTokensAttr = "dagger.io/llm.tool.result_tokens" //nolint:gosec // attribute name, not a credential
+	// Method is "tokenizer" for a locally tokenized known model, otherwise
+	// "bytes_div_4" (ceil UTF-8 byte length / 4). Encoding is present only for
+	// tokenizer counts; Model is the generating endpoint's model when known.
+	LLMToolResultTokensMethodAttr   = "dagger.io/llm.tool.result_tokens.method"   //nolint:gosec // attribute name, not a credential
+	LLMToolResultTokensEncodingAttr = "dagger.io/llm.tool.result_tokens.encoding" //nolint:gosec // attribute name, not a credential
+	LLMToolResultTokensModelAttr    = "dagger.io/llm.tool.result_tokens.model"    //nolint:gosec // attribute name, not a credential
+	// Scope is "text", or "text_projection" when media is represented by
+	// placeholders; a projection always uses the estimate, not a tokenizer.
+	LLMToolResultTokensScopeAttr = "dagger.io/llm.tool.result_tokens.scope" //nolint:gosec // attribute name, not a credential
 
 	// LLM message origin (dagger.io/llm.origin.*).
 	//

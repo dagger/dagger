@@ -197,8 +197,8 @@ func TestRecordedResponseProviderEmitsPerToolCallDisplaySpans(t *testing.T) {
 
 	// The loop ends them exactly as it does for a live provider: CallBatch ends
 	// the tool-call spans, step() ends the rest.
-	endToolCallDisplay(res.ToolCallDisplays, "call_1", false, "file contents")
-	endToolCallDisplay(res.ToolCallDisplays, "call_2", false, "")
+	endToolCallDisplay(res.ToolCallDisplays, "call_1", &LLMContentBlock{Kind: LLMContentToolResult, Text: "file contents"})
+	endToolCallDisplay(res.ToolCallDisplays, "call_2", &LLMContentBlock{Kind: LLMContentToolResult})
 	endedByCallBatch := map[trace.Span]bool{}
 	for _, tc := range res.ToolCallDisplays {
 		endedByCallBatch[tc.Span] = true
@@ -390,8 +390,9 @@ func TestToolCallDisplaySpanNamesHeaderArgsAtStart(t *testing.T) {
 
 			p.writeToolArgs(tc.args)
 			dp.Close(int64(i))
-			_, failed := newMCP().Call(p.ctx, tools, &LLMToolCall{Name: tc.tool, Arguments: JSON(tc.args)})
-			require.False(t, failed)
+			results, rest := newMCP().CallBatch(ctx, tools, []*LLMToolCall{{CallID: "call", Name: tc.tool, Arguments: JSON(tc.args)}}, dp.toolCalls, nil)
+			require.Empty(t, rest)
+			require.False(t, results[0].Content[0].Errored)
 
 			var ended sdktrace.ReadOnlySpan
 			for _, s := range sr.Ended() {
