@@ -3,6 +3,7 @@ package dagql
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -82,16 +83,44 @@ func firstUseTestValue(t *testing.T, bundle ValueBundle, number uint64) *Transfe
 // hit, and the text of the value it got.
 func firstUseTestLookup(t *testing.T, ctx context.Context, c *Cache, srv *Server, field string) (bool, string) {
 	t.Helper()
+	_, value, hit := firstUseTestCall(t, ctx, c, srv, field)
+	return hit, value.Text
+}
+
+// firstUseTestCall looks the field up on the engine, running its call on a
+// miss, and returns the result, its value and whether it hit.
+func firstUseTestCall(t *testing.T, ctx context.Context, c *Cache, srv *Server, field string) (AnyResult, *transferTestValue, bool) {
+	t.Helper()
+	return firstUseTestCallIn(t, ctx, c, srv, "test-session", field)
+}
+
+// firstUseTestCallIn is firstUseTestCall in the session.
+func firstUseTestCallIn(t *testing.T, ctx context.Context, c *Cache, srv *Server, session, field string) (AnyResult, *transferTestValue, bool) {
+	t.Helper()
 	frame := &ResultCall{Kind: ResultCallKindField, Field: field, Type: NewResultCallType((&transferTestValue{}).Type())}
 	ran := false
-	res, err := c.GetOrInitCall(ctx, "test-session", srv, &CallRequest{ResultCall: frame, IsPersistable: true}, func(context.Context) (AnyResult, error) {
+	res, err := c.GetOrInitCall(ctx, session, srv, &CallRequest{ResultCall: frame, IsPersistable: true}, func(context.Context) (AnyResult, error) {
 		ran = true
 		return NewResultForCall(&transferTestValue{Text: "ran " + field}, frame)
 	})
 	require.NoError(t, err)
 	value, ok := res.Unwrap().(*transferTestValue)
 	require.True(t, ok, "the lookup returns the field's value")
-	return !ran, value.Text
+	return res, value, !ran
+}
+
+// firstUseTestReplyParts returns the complete parts the merge reply reports
+// for the bundle's row of the Cloud's entry number.
+func firstUseTestReplyParts(t *testing.T, bundle ValueBundle, reply MergeReply, number uint64) []PersistedPartAddress {
+	t.Helper()
+	ordinal := firstUseTestValue(t, bundle, number).Ordinal
+	for _, value := range reply.Values {
+		if value.Ordinal == ordinal {
+			return value.Parts
+		}
+	}
+	t.Fatalf("the reply has no value of row %d", ordinal)
+	return nil
 }
 
 // firstUseTestEntry returns the engine's entry of the merge reply's value of
@@ -218,4 +247,91 @@ func TestFirstUseCountsWhatCallsPrepared(t *testing.T) {
 	require.Equal(t, int64(1), stats.Refused, "and the bad one")
 	require.Positive(t, stats.Longest)
 	require.GreaterOrEqual(t, stats.Total, stats.Longest)
+}
+
+// A record from the Cloud that replaces an expired entry in place is
+// prepared at its first use as any merged record is: its payload's
+// reference to its dependency names the engine's entry, not the Cloud's.
+func TestMergedRecordReplacingAnEntryInPlaceIsPreparedAtItsFirstUse(t *testing.T) {
+	t.Parallel()
+	set := firstUseTestCloud(t)
+	ctx, engine, srv := transferTestCache(t)
+	// The engine's numbers run apart from the Cloud's.
+	for i := range 4 {
+		persistedListTestResult(t, ctx, engine, srv, fmt.Sprintf("fu-pad-%d", i), &transferTestValue{Text: "pad"})
+	}
+	local := persistedListTestResult(t, ctx, engine, srv, "fu-bad", &transferTestValue{Text: "local"})
+	require.NoError(t, engine.ReleaseSession(ctx, "test-session"))
+	mergeTestExpire(engine, local.cacheSharedResult())
+
+	reply, err := engine.MergeValues(ctx, cloudCacheID, set.bundle)
+	require.NoError(t, err)
+	require.Equal(t, uint64(local.cacheSharedResult().id), firstUseTestEntry(t, set.bundle, reply, set.bad), "the record replaces the expired entry in place")
+	depEntry := firstUseTestEntry(t, set.bundle, reply, set.dep)
+	require.NotEqual(t, set.dep, depEntry, "the engine numbers the dependency apart from the Cloud")
+
+	_, value, hit := firstUseTestCallIn(t, ctx, engine, srv, "later-session", "fu-bad")
+	require.True(t, hit, "the record hits")
+	require.Equal(t, "bad", value.Text)
+	require.Equal(t, depEntry, value.Child, "its reference names the engine's entry of its dependency")
+}
+
+// A value computed again over an expired record from the Cloud, before its
+// first use, replaces it in place, and leaves nothing of the record to
+// prepare: an export of the entry captures the computed value.
+func TestComputedValueReplacingAMergedRecordLeavesNothingToPrepare(t *testing.T) {
+	t.Parallel()
+	set := firstUseTestCloud(t)
+	ctx, engine, srv := transferTestCache(t)
+	reply, err := engine.MergeValues(ctx, cloudCacheID, set.bundle)
+	require.NoError(t, err)
+	goodEntry := firstUseTestEntry(t, set.bundle, reply, set.good)
+	engine.egraphMu.RLock()
+	good := engine.resultsByID[sharedResultID(goodEntry)]
+	engine.egraphMu.RUnlock()
+	require.True(t, good.holdsUnpreparedPayload())
+	mergeTestExpire(engine, good)
+
+	res, value, hit := firstUseTestCall(t, ctx, engine, srv, "fu-good")
+	require.False(t, hit, "the expired record misses")
+	require.Equal(t, "ran fu-good", value.Text)
+	require.Same(t, good, res.cacheSharedResult(), "the computed value replaces the record in place")
+	require.False(t, good.holdsUnpreparedPayload(), "nothing of the record is left to prepare")
+
+	exported := exportTestBundle(t, ctx, engine, res)
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal(firstUseTestValue(t, exported, goodEntry).Record.Envelope.ObjectJSON, &payload))
+	require.Equal(t, "ran fu-good", payload["text"], "an export captures the computed value")
+}
+
+// A record from the Cloud that a capture prepares while a later merge of it
+// is between its warming and its commit is replied with the complete parts
+// its bundle carried, as when the merge prepared it: preparing a record
+// keeps what it proves complete.
+func TestMergedRecordPreparedBeforeAMergeCommitsKeepsItsCompleteParts(t *testing.T) {
+	t.Parallel()
+	set := firstUseTestCloud(t)
+	ctx, engine, _ := transferTestCache(t)
+	first, err := engine.MergeValues(ctx, cloudCacheID, set.bundle)
+	require.NoError(t, err)
+	want := firstUseTestReplyParts(t, set.bundle, first, set.good)
+	require.NotEmpty(t, want, "the good record proves a part complete")
+	engine.egraphMu.RLock()
+	good := engine.resultsByID[sharedResultID(firstUseTestEntry(t, set.bundle, first, set.good))]
+	engine.egraphMu.RUnlock()
+
+	captured := false
+	engine.testBeforeTransferCommit = func() {
+		if captured {
+			return
+		}
+		captured = true
+		_, err := engine.captureRowRecord(ctx, good)
+		require.NoError(t, err)
+		require.False(t, good.holdsUnpreparedPayload(), "the capture prepared the record")
+	}
+	second, err := engine.MergeValues(ctx, cloudCacheID, set.bundle)
+	require.NoError(t, err)
+	require.True(t, captured)
+	require.Equal(t, want, firstUseTestReplyParts(t, set.bundle, second, set.good))
 }

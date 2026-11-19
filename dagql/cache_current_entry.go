@@ -168,6 +168,9 @@ func (c *Cache) replaceResultValueInPlaceLocked(ctx context.Context, cur, fresh 
 	// A nil new value leaves hasValue false, as its fresh publication would.
 	cur.hasValue = fresh.hasValue
 	cur.persistedEnvelope = fresh.persistedEnvelope
+	// A record merged unprepared brings what its first use prepares it
+	// with; any other value leaves none (mergedFirstUse).
+	cur.firstUse = fresh.firstUse
 	cur.stored = fresh.stored
 	cur.payloadRevision++
 	c.setResultPayloadBytesLocked(cur, fresh.payloadBytes)
