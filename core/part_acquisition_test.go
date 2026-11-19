@@ -416,6 +416,39 @@ func (l *partSourceLogs) computed(t *testing.T) []string {
 	return out
 }
 
+// ranAgainLine is a "remote cache record run again" line's fields.
+type ranAgainLine struct {
+	Entry    uint64 `json:"entry"`
+	Field    string `json:"field"`
+	Recipe   string `json:"recipe"`
+	Origin   string `json:"origin"`
+	MergedAt int64  `json:"merged_at"`
+}
+
+// ranAgain returns each record logged as run again for want of a download
+// address, in log order.
+func (l *partSourceLogs) ranAgain(t *testing.T) []ranAgainLine {
+	t.Helper()
+	l.mu.Lock()
+	text := l.buf.String()
+	l.mu.Unlock()
+	var out []ranAgainLine
+	for line := range strings.SplitSeq(strings.TrimSpace(text), "\n") {
+		if line == "" {
+			continue
+		}
+		var fields struct {
+			Msg string `json:"msg"`
+			ranAgainLine
+		}
+		require.NoError(t, json.Unmarshal([]byte(line), &fields))
+		if fields.Msg == "remote cache record run again: no part offered" {
+			out = append(out, fields.ranAgainLine)
+		}
+	}
+	return out
+}
+
 type partTestRef struct {
 	bkcache.ImmutableRef
 	id       string
