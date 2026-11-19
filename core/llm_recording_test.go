@@ -87,7 +87,7 @@ func TestDisplayToolArgsAreLineTerminatedOnce(t *testing.T) {
 			provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(recorder))
 			ctx = telemetry.WithLoggerProvider(ctx, provider)
 
-			dp := newDisplayPhases(ctx, "", nil)
+			dp := newDisplayPhases(ctx, "", nil, toolResultTokenModel{})
 			dp.EmitToolCall(0, "call_1", "read", args)
 
 			recorder.mu.Lock()
@@ -271,7 +271,7 @@ func TestStampResponseDigestPointsDisplaySpansAtResponse(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEqual(t, requestDigest, responseDigest)
 
-	dp := newDisplayPhases(ctx, requestDigest.String(), nil)
+	dp := newDisplayPhases(ctx, requestDigest.String(), nil, toolResultTokenModel{})
 	dp.StartText(0)
 	dp.Close(0)
 	dp.EmitToolCall(1, "call_1", "read", `{"path":"main.go"}`)
@@ -300,7 +300,7 @@ func TestToolCallDisplaySpanIdentifiesToolAtStart(t *testing.T) {
 	dp := newDisplayPhases(ctx, "", []LLMTool{
 		{Name: "editor_generate", Server: "editor"},
 		{Name: "CallMethod", HideSelf: true},
-	})
+	}, toolResultTokenModel{})
 	dp.StartToolCall(0, "call_1", "editor_generate")
 	dp.StartToolCall(1, "call_2", "CallMethod")
 	dp.StartToolCall(2, "call_3", "unknown_tool")
@@ -371,7 +371,7 @@ func TestToolCallDisplaySpanNamesHeaderArgsAtStart(t *testing.T) {
 		{dangEvalToolName, `{"source":"1 + 1","at":"notes","limit":5}`, []string{"source", "offset", "limit", "args", "at", "search"}},
 	} {
 		t.Run(tc.tool, func(t *testing.T) {
-			dp := newDisplayPhases(ctx, "", tools)
+			dp := newDisplayPhases(ctx, "", tools, toolResultTokenModel{})
 			p := dp.StartToolCall(int64(i), "call", tc.tool)
 			var display sdktrace.ReadOnlySpan
 			for _, s := range sr.Started() {

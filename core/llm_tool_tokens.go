@@ -1,7 +1,6 @@
 package core
 
 import (
-	"context"
 	"net/url"
 	"strings"
 	"sync"
@@ -20,14 +19,12 @@ type toolResultTokenModel struct {
 	trusted  bool
 }
 
-type toolResultTokenModelKey struct{}
-
-func withToolResultTokenModel(ctx context.Context, endpoint *LLMEndpoint) context.Context {
-	return context.WithValue(ctx, toolResultTokenModelKey{}, toolResultTokenModel{
+func newToolResultTokenModel(endpoint *LLMEndpoint) toolResultTokenModel {
+	return toolResultTokenModel{
 		provider: endpoint.Provider,
 		model:    endpoint.Model,
 		trusted:  toolResultTokenizerTrusted(endpoint),
-	})
+	}
 }
 
 // The OpenAI provider can also route to compatible servers and Azure deployment
@@ -107,9 +104,8 @@ var (
 	})
 )
 
-func toolResultTokenAttrs(ctx context.Context, result *LLMContentBlock) []attribute.KeyValue {
+func toolResultTokenAttrs(model toolResultTokenModel, result *LLMContentBlock) []attribute.KeyValue {
 	text := result.ContentText()
-	model, _ := ctx.Value(toolResultTokenModelKey{}).(toolResultTokenModel)
 	count := estimateTextTokens(len(text))
 	method, encoding, scope := "bytes_div_4", "", "text"
 	if llmContentHasMedia(result.Content) {

@@ -152,7 +152,7 @@ func TestGenaiThinkingCapture(t *testing.T) {
 	}
 	noUsage := func(*genai.GenerateContentResponseUsageMetadata) LLMTokenUsage { return LLMTokenUsage{} }
 
-	blocks, _, err := c.processStreamResponse(stream, newDisplayPhases(context.Background(), "", nil), noUsage)
+	blocks, _, err := c.processStreamResponse(stream, newDisplayPhases(context.Background(), "", nil, toolResultTokenModel{}), noUsage)
 	require.NoError(t, err)
 	require.Len(t, blocks, 3)
 
@@ -189,7 +189,7 @@ func TestGenaiParallelToolCallIDs(t *testing.T) {
 	stream := func(yield func(*genai.GenerateContentResponse, error) bool) { yield(resp, nil) }
 	noUsage := func(*genai.GenerateContentResponseUsageMetadata) LLMTokenUsage { return LLMTokenUsage{} }
 
-	blocks, _, err := c.processStreamResponse(stream, newDisplayPhases(context.Background(), "", nil), noUsage)
+	blocks, _, err := c.processStreamResponse(stream, newDisplayPhases(context.Background(), "", nil, toolResultTokenModel{}), noUsage)
 	require.NoError(t, err)
 	require.Len(t, blocks, 2)
 
@@ -218,7 +218,7 @@ func TestGenaiToolCallUsesProvidedID(t *testing.T) {
 	stream := func(yield func(*genai.GenerateContentResponse, error) bool) { yield(resp, nil) }
 	noUsage := func(*genai.GenerateContentResponseUsageMetadata) LLMTokenUsage { return LLMTokenUsage{} }
 
-	blocks, _, err := c.processStreamResponse(stream, newDisplayPhases(context.Background(), "", nil), noUsage)
+	blocks, _, err := c.processStreamResponse(stream, newDisplayPhases(context.Background(), "", nil, toolResultTokenModel{}), noUsage)
 	require.NoError(t, err)
 	require.Len(t, blocks, 1)
 	assert.Equal(t, "gemini-id-1", blocks[0].CallID)
@@ -276,7 +276,7 @@ func TestGenaiTextAnswerSignature(t *testing.T) {
 	stream := func(yield func(*genai.GenerateContentResponse, error) bool) { yield(resp, nil) }
 	noUsage := func(*genai.GenerateContentResponseUsageMetadata) LLMTokenUsage { return LLMTokenUsage{} }
 
-	blocks, _, err := c.processStreamResponse(stream, newDisplayPhases(context.Background(), "", nil), noUsage)
+	blocks, _, err := c.processStreamResponse(stream, newDisplayPhases(context.Background(), "", nil, toolResultTokenModel{}), noUsage)
 	require.NoError(t, err)
 	require.Len(t, blocks, 1)
 	assert.Equal(t, LLMContentText, blocks[0].Kind)
@@ -321,7 +321,7 @@ func TestGenaiMultipleThinkingSegments(t *testing.T) {
 	stream := func(yield func(*genai.GenerateContentResponse, error) bool) { yield(resp, nil) }
 	noUsage := func(*genai.GenerateContentResponseUsageMetadata) LLMTokenUsage { return LLMTokenUsage{} }
 
-	blocks, _, err := c.processStreamResponse(stream, newDisplayPhases(context.Background(), "", nil), noUsage)
+	blocks, _, err := c.processStreamResponse(stream, newDisplayPhases(context.Background(), "", nil, toolResultTokenModel{}), noUsage)
 	require.NoError(t, err)
 	require.Len(t, blocks, 4)
 

@@ -417,7 +417,7 @@ func TestDangToolCallLogsReportOnce(t *testing.T) {
 			m := newMCP()
 			tools := NewLLMToolSet()
 			m.addDangTools(&dagql.Server{}, tools, tc.impl)
-			displays := newDisplayPhases(ctx, "", tools.Order)
+			displays := newDisplayPhases(ctx, "", tools.Order, toolResultTokenModel{})
 			displays.EmitToolCall(0, "call_1", tc.tool, tc.args)
 			results, rest := m.CallBatch(ctx, tools.Order, []*LLMToolCall{{CallID: "call_1", Name: tc.tool, Arguments: JSON(tc.args)}}, displays.toolCalls, nil)
 			require.Empty(t, rest)

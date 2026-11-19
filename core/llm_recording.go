@@ -196,7 +196,7 @@ func (c *RecordedResponseProvider) SendQuery(ctx context.Context, history []*LLM
 	if opts != nil {
 		callDigest = opts.CallDigest
 	}
-	dp := newDisplayPhases(ctx, callDigest, tools)
+	dp := newDisplayPhases(ctx, callDigest, tools, toolResultTokenModel{})
 	defer func() {
 		dp.CloseAll()
 		if rerr != nil {

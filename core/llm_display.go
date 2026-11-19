@@ -120,6 +120,10 @@ type displayPhases struct {
 	// span can identify its tool (bare name, server) from the moment it starts.
 	tools []LLMTool
 
+	// tokenModel belongs to the provider response that issued these calls,
+	// not the ambient execution context or a later continuation's endpoint.
+	tokenModel toolResultTokenModel
+
 	// toolAnchorCtx is the most recent non-tool assistant content phase. Tool
 	// calls are parented beneath it so they read as details of the reply that
 	// introduced them instead of as unrelated top-level messages. Parallel tool
@@ -140,15 +144,17 @@ type displayPhases struct {
 
 // toolCallDisplay bundles the context and span for a tool call's display phase.
 type toolCallDisplay struct {
-	Ctx  context.Context
-	Span trace.Span
+	Ctx        context.Context
+	Span       trace.Span
+	TokenModel toolResultTokenModel
 }
 
-func newDisplayPhases(parentCtx context.Context, callDigest string, tools []LLMTool) *displayPhases {
+func newDisplayPhases(parentCtx context.Context, callDigest string, tools []LLMTool, tokenModel toolResultTokenModel) *displayPhases {
 	return &displayPhases{
 		parentCtx:  parentCtx,
 		callDigest: callDigest,
 		tools:      tools,
+		tokenModel: tokenModel,
 		phases:     map[int64]*displayPhase{},
 		toolCalls:  map[string]toolCallDisplay{},
 	}
@@ -313,8 +319,9 @@ func (dp *displayPhases) Close(idx int64) {
 	dp.displaySpans = append(dp.displaySpans, p.span)
 	if p.callID != "" {
 		dp.toolCalls[p.callID] = toolCallDisplay{
-			Ctx:  p.ctx,
-			Span: p.span,
+			Ctx:        p.ctx,
+			Span:       p.span,
+			TokenModel: dp.tokenModel,
 		}
 	}
 	delete(dp.phases, idx)

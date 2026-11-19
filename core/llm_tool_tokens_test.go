@@ -20,8 +20,8 @@ import (
 
 func tokenAttrs(t *testing.T, provider LLMProvider, model, text string) attribute.Set {
 	t.Helper()
-	ctx := withToolResultTokenModel(t.Context(), &LLMEndpoint{Provider: provider, Model: model})
-	return attribute.NewSet(toolResultTokenAttrs(ctx, &LLMContentBlock{Kind: LLMContentToolResult, Text: text})...)
+	tokenModel := newToolResultTokenModel(&LLMEndpoint{Provider: provider, Model: model})
+	return attribute.NewSet(toolResultTokenAttrs(tokenModel, &LLMContentBlock{Kind: LLMContentToolResult, Text: text})...)
 }
 
 func requireTokenAttr(t *testing.T, attrs attribute.Set, key string, want any) {
@@ -90,8 +90,8 @@ func TestToolResultTokenizerEndpointTrust(t *testing.T) {
 		t.Run(string(tt.endpoint.Provider)+"/"+tt.endpoint.BaseURL+"/"+tt.endpoint.azureVersion, func(t *testing.T) {
 			require.Equal(t, tt.trusted, toolResultTokenizerTrusted(&tt.endpoint))
 			tt.endpoint.Model = "gpt-4o"
-			ctx := withToolResultTokenModel(t.Context(), &tt.endpoint)
-			attrs := attribute.NewSet(toolResultTokenAttrs(ctx, &LLMContentBlock{Kind: LLMContentToolResult, Text: "hello"})...)
+			tokenModel := newToolResultTokenModel(&tt.endpoint)
+			attrs := attribute.NewSet(toolResultTokenAttrs(tokenModel, &LLMContentBlock{Kind: LLMContentToolResult, Text: "hello"})...)
 			method := "bytes_div_4"
 			if tt.trusted {
 				method = "tokenizer"
@@ -173,7 +173,7 @@ func TestToolResultTokensThroughDispatch(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			sr, ctx := recordingTestRecorder(t)
 			ep := &LLMEndpoint{Provider: OpenAI, Model: "gpt-4o"}
-			ctx = withToolResultTokenModel(ctx, ep)
+			tokenModel := newToolResultTokenModel(ep)
 			// Captured by value: finalization must not re-resolve a changed
 			// endpoint or accidentally use a continuation's model.
 			ep.Model = "unknown"
@@ -197,7 +197,7 @@ func TestToolResultTokensThroughDispatch(t *testing.T) {
 			if len(args) == 0 {
 				args = JSON("{}")
 			}
-			displays := newDisplayPhases(ctx, "", tools)
+			displays := newDisplayPhases(ctx, "", tools, tokenModel)
 			displays.EmitToolCall(0, "call", tool.Name, string(args))
 			results, rest := newMCP().CallBatch(ctx, tools, []*LLMToolCall{{CallID: "call", Name: tool.Name, Arguments: args}}, displays.toolCalls, nil)
 			require.Empty(t, rest)
@@ -226,7 +226,7 @@ func TestToolResultTokensThroughDispatch(t *testing.T) {
 
 func TestToolResultTokensTimeout(t *testing.T) {
 	sr, ctx := recordingTestRecorder(t)
-	ctx = withToolResultTokenModel(ctx, &LLMEndpoint{Provider: OpenAI, Model: "gpt-4"})
+	tokenModel := newToolResultTokenModel(&LLMEndpoint{Provider: OpenAI, Model: "gpt-4"})
 	m := newMCP()
 	tools := NewLLMToolSet()
 	tools.Add(LLMTool{Name: "wait", Call: func(ctx context.Context, _ any) (any, error) {
@@ -235,7 +235,7 @@ func TestToolResultTokensTimeout(t *testing.T) {
 	}})
 	m.loadBuiltins(nil, tools)
 	args := JSON(`{"tool":"wait","duration":"1ms","arguments":{}}`)
-	displays := newDisplayPhases(ctx, "", tools.Order)
+	displays := newDisplayPhases(ctx, "", tools.Order, tokenModel)
 	displays.EmitToolCall(0, "timeout", "Timeout", string(args))
 	results, _ := m.CallBatch(ctx, tools.Order, []*LLMToolCall{{CallID: "timeout", Name: "Timeout", Arguments: args}}, displays.toolCalls, nil)
 	require.True(t, results[0].Content[0].Errored)
@@ -250,7 +250,87 @@ func TestToolResultTokensTimeout(t *testing.T) {
 	}
 }
 
-func TestToolResultTokensProviderContext(t *testing.T) {
+func TestToolResultTokensExplicitOwnership(t *testing.T) {
+	// Share the dispatcher and tool definitions across simultaneous invocations.
+	// Per-call models must live in the displays, never in either shared object.
+	m := newMCP()
+	tools := NewLLMToolSet()
+	tools.Add(LLMTool{Name: "read", ReadOnly: true, Call: func(context.Context, any) (any, error) {
+		return "お誕生日おめでとう", nil
+	}})
+	m.loadBuiltins(nil, tools)
+	for _, tt := range []struct {
+		model  string
+		method string
+		count  int64
+	}{
+		{"gpt-4", "tokenizer", 9},
+		{"gpt-4o", "tokenizer", 8},
+		{"unknown", "bytes_div_4", 7},
+	} {
+		t.Run(tt.model, func(t *testing.T) {
+			t.Parallel()
+			sr, ctx := recordingTestRecorder(t)
+			tokenModel := newToolResultTokenModel(&LLMEndpoint{Provider: OpenAI, Model: tt.model})
+			// Two layers exercise explicit inheritance through recursive wrappers.
+			args := JSON(`{"tool":"Timeout","duration":"1s","arguments":{"tool":"read","duration":"1s","arguments":{}}}`)
+			displays := newDisplayPhases(ctx, "", tools.Order, tokenModel)
+			displays.EmitToolCall(0, "timeout", "Timeout", string(args))
+			results, _ := m.CallBatch(ctx, tools.Order, []*LLMToolCall{{CallID: "timeout", Name: "Timeout", Arguments: args}}, displays.toolCalls, nil)
+			require.False(t, results[0].Content[0].Errored)
+			require.Len(t, sr.Ended(), 3)
+			for _, span := range sr.Ended() {
+				attrs := attribute.NewSet(span.Attributes()...)
+				requireTokenAttr(t, attrs, telemetryattrs.LLMToolResultTokensModelAttr, tt.model)
+				requireTokenAttr(t, attrs, telemetryattrs.LLMToolResultTokensMethodAttr, tt.method)
+				requireTokenAttr(t, attrs, telemetryattrs.LLMToolResultTokensAttr, tt.count)
+			}
+		})
+	}
+}
+
+func TestToolResultTokensKeepIssuingModel(t *testing.T) {
+	sr, ctx := recordingTestRecorder(t)
+	endpoint := &LLMEndpoint{Provider: OpenAI, Model: "gpt-4"}
+	tokenModel := newToolResultTokenModel(endpoint)
+	tools := []LLMTool{{Name: "continue", ReturnsLLM: true, Call: func(context.Context, any) (any, error) {
+		return "お誕生日おめでとう", nil
+	}}}
+	displays := newDisplayPhases(ctx, "", tools, tokenModel)
+	displays.EmitToolCall(0, "call", "continue", "{}")
+	beforeContinuation := func(context.Context) error {
+		// The continuation adopts a different endpoint before the tool returns.
+		// Neither changing the endpoint nor replacing the caller's descriptor
+		// may reinterpret the result of the response that issued this call.
+		endpoint.Model = "gpt-4o"
+		tokenModel = newToolResultTokenModel(endpoint)
+		return nil
+	}
+	results, _ := newMCP().CallBatch(ctx, tools, []*LLMToolCall{{CallID: "call", Name: "continue"}}, displays.toolCalls, beforeContinuation)
+	require.False(t, results[0].Content[0].Errored)
+	require.Equal(t, "gpt-4o", tokenModel.model)
+	require.Len(t, sr.Ended(), 1)
+	attrs := attribute.NewSet(sr.Ended()[0].Attributes()...)
+	requireTokenAttr(t, attrs, telemetryattrs.LLMToolResultTokensModelAttr, "gpt-4")
+	requireTokenAttr(t, attrs, telemetryattrs.LLMToolResultTokensEncodingAttr, "cl100k_base")
+	requireTokenAttr(t, attrs, telemetryattrs.LLMToolResultTokensAttr, int64(9))
+}
+
+func TestToolResultTokensDirectTimeoutUsesUnknownModel(t *testing.T) {
+	sr, ctx := recordingTestRecorder(t)
+	tool := timeoutToolForTest(t, LLMTool{Name: "read", Call: func(context.Context, any) (any, error) {
+		return "お誕生日おめでとう", nil
+	}})
+	_, err := tool.Call(ctx, map[string]any{"tool": "read", "duration": "1s", "arguments": map[string]any{}})
+	require.NoError(t, err)
+	require.Len(t, sr.Ended(), 1)
+	attrs := attribute.NewSet(sr.Ended()[0].Attributes()...)
+	requireTokenAttr(t, attrs, telemetryattrs.LLMToolResultTokensMethodAttr, "bytes_div_4")
+	requireTokenAttr(t, attrs, telemetryattrs.LLMToolResultTokensAttr, int64(7))
+	require.False(t, attrs.HasValue(telemetryattrs.LLMToolResultTokensModelAttr))
+}
+
+func TestToolResultTokensProviderDisplayModel(t *testing.T) {
 	sr, ctx := recordingTestRecorder(t)
 	var requests atomic.Int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -267,8 +347,8 @@ func TestToolResultTokensProviderContext(t *testing.T) {
 		Role: LLMMessageRoleUser, Content: []*LLMContentBlock{{Kind: LLMContentText, Text: "read"}},
 	}}, tools, &LLMCallOpts{})
 	require.NoError(t, err)
-	// Dispatch uses the original ambient context, not the provider's context:
-	// only the returned tool display can carry the already-resolved model.
+	// The plain tracing context supplies no model metadata: dispatch gets the
+	// already-resolved model explicitly from the returned tool display.
 	newMCP().CallBatch(ctx, tools, []*LLMToolCall{{CallID: "call", Name: "read"}}, response.ToolCallDisplays, nil)
 	require.Equal(t, int64(1), requests.Load(), "counting must not make another request")
 	var found bool
@@ -289,14 +369,14 @@ func TestToolResultTokensProviderContext(t *testing.T) {
 
 func TestToolResultTokensMediaProjection(t *testing.T) {
 	sr, ctx := recordingTestRecorder(t)
-	ctx = withToolResultTokenModel(ctx, &LLMEndpoint{Provider: OpenAI, Model: "gpt-4o"})
+	tokenModel := newToolResultTokenModel(&LLMEndpoint{Provider: OpenAI, Model: "gpt-4o"})
 	tools := []LLMTool{{Name: "image", Call: func(context.Context, any) (any, error) {
 		return &LLMContentBlock{Kind: LLMContentToolResult, Content: []*LLMContentBlock{
 			{Kind: LLMContentText, Text: "caption"},
 			{Kind: LLMContentImage, MIMEType: "image/png", Data: []byte("image")},
 		}}, nil
 	}}}
-	displays := newDisplayPhases(ctx, "", tools)
+	displays := newDisplayPhases(ctx, "", tools, tokenModel)
 	displays.EmitToolCall(0, "image", "image", "{}")
 	results, _ := newMCP().CallBatch(ctx, tools, []*LLMToolCall{{CallID: "image", Name: "image"}}, displays.toolCalls, nil)
 	require.Len(t, sr.Ended(), 1)

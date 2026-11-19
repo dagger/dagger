@@ -85,6 +85,11 @@ type LLMTool struct {
 	Field *ast.FieldDefinition `json:"-"`
 	// Function implementing the tool.
 	Call LLMToolFunc `json:"-"`
+
+	// Only wrappers such as Timeout need the issuing model to dispatch child
+	// calls. This stateless hook receives it per invocation; ordinary tools
+	// keep the public Call signature and no shared tool stores model state.
+	callWithTokenModel func(context.Context, any, toolResultTokenModel) (any, error)
 }
 
 type LLMToolFunc = func(context.Context, any) (any, error)
@@ -2136,7 +2141,11 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall *LLMToolCall) 
 }
 
 // CallContent executes a tool and preserves its ordered, typed result blocks.
-func (m *MCP) CallContent(ctx context.Context, tools []LLMTool, toolCall *LLMToolCall) (res *LLMContentBlock) {
+func (m *MCP) CallContent(ctx context.Context, tools []LLMTool, toolCall *LLMToolCall) *LLMContentBlock {
+	return m.callContent(ctx, tools, toolCall, toolResultTokenModel{})
+}
+
+func (m *MCP) callContent(ctx context.Context, tools []LLMTool, toolCall *LLMToolCall, tokenModel toolResultTokenModel) (res *LLMContentBlock) {
 	errorResult := func(text string) *LLMContentBlock {
 		return &LLMContentBlock{Kind: LLMContentToolResult, CallID: toolCall.CallID, Text: guardToolResult(text), Errored: true}
 	}
@@ -2183,7 +2192,12 @@ func (m *MCP) CallContent(ctx context.Context, tools []LLMTool, toolCall *LLMToo
 		// Workspace-typed args resolve against it, not the ambient workspace.
 		toolCtx = WorkspaceToContext(toolCtx, m.workspace)
 	}
-	result, err := tool.Call(toolCtx, args)
+	var result any
+	if tool.callWithTokenModel != nil {
+		result, err = tool.callWithTokenModel(toolCtx, args, tokenModel)
+	} else {
+		result, err = tool.Call(toolCtx, args)
+	}
 	if err != nil {
 		return errorResult(m.toolErrorResponse(ctx, err))
 	}
@@ -2408,7 +2422,7 @@ func toolCallCtx(ctx context.Context, displays map[string]toolCallDisplay, callI
 // No-op when there's no display span.
 func endToolCallDisplay(displays map[string]toolCallDisplay, callID string, result *LLMContentBlock) {
 	if tc, ok := displays[callID]; ok {
-		tc.Span.SetAttributes(toolResultTokenAttrs(tc.Ctx, result)...)
+		tc.Span.SetAttributes(toolResultTokenAttrs(tc.TokenModel, result)...)
 		var err error
 		if result.Errored {
 			err = errors.New(result.ContentText())
@@ -2474,7 +2488,7 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []*LLMTo
 				}
 			}
 		}
-		return m.CallContent(toolCallCtx(ctx, toolCallDisplays, call.CallID), tools, call)
+		return m.callContent(toolCallCtx(ctx, toolCallDisplays, call.CallID), tools, call, toolCallDisplays[call.CallID].TokenModel)
 	}
 
 	// runSteps executes a plan, handing each call's result to emit.
@@ -3603,7 +3617,11 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 			"required":             []string{"tool", "duration", "arguments"},
 			"additionalProperties": false,
 		},
-		Call: m.timeoutTool(allTools),
+		Call: func(ctx context.Context, args any) (any, error) {
+			// A direct invocation has no issuing provider response.
+			return m.timeoutTool(allTools)(ctx, args, toolResultTokenModel{})
+		},
+		callWithTokenModel: m.timeoutTool(allTools),
 	})
 }
 
@@ -3614,8 +3632,8 @@ const timeoutToolName = "Timeout"
 // timeoutTool runs one of the currently exposed tools under a deadline. The
 // nested call is dispatched the way the loop dispatches every tool call, so it
 // shows up in the trace as a tool call of its own beneath the Timeout call.
-func (m *MCP) timeoutTool(allTools *LLMToolSet) LLMToolFunc {
-	return func(ctx context.Context, rawArgs any) (any, error) {
+func (m *MCP) timeoutTool(allTools *LLMToolSet) func(context.Context, any, toolResultTokenModel) (any, error) {
+	return func(ctx context.Context, rawArgs any, tokenModel toolResultTokenModel) (any, error) {
 		args, ok := rawArgs.(map[string]any)
 		if !ok {
 			return nil, fmt.Errorf("invalid arguments: %T", rawArgs)
@@ -3652,9 +3670,9 @@ func (m *MCP) timeoutTool(allTools *LLMToolSet) LLMToolFunc {
 		// and through MCP.Call, for the tool attributes, workspace binding and
 		// result bounding that path applies.
 		call := &LLMToolCall{CallID: toolName, Name: toolName, Arguments: JSON(encodedArgs)}
-		displays := newDisplayPhases(ctx, "", allTools.Order)
+		displays := newDisplayPhases(ctx, "", allTools.Order, tokenModel)
 		displays.EmitToolCall(0, call.CallID, toolName, string(encodedArgs))
-		res := m.CallContent(toolCallCtx(ctx, displays.toolCalls, call.CallID), allTools.Order, call)
+		res := m.callContent(toolCallCtx(ctx, displays.toolCalls, call.CallID), allTools.Order, call, tokenModel)
 		endToolCallDisplay(displays.toolCalls, call.CallID, res)
 		if res.Errored && errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			return nil, fmt.Errorf("tool %q did not finish within %s: %w", toolName, duration, ctx.Err())
