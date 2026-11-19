@@ -193,6 +193,14 @@ type MemoryCake {
         # workload's prune collected.
         focus: "\\(\\*cacheMetadata\\)\\.SetExternal|engine/contenthash\\.\\(\\*cacheContext\\)\\.save",
       ),
+      Demo(
+        pr: "15232",
+        title: "engine/snapshots: one ancestry lease for dagql owners",
+        # Lease records in the in-memory containerd metadata store (fastbolt,
+        # which replaces bbolt), the manager's owner maps, and the PR's
+        # ancestry bookkeeping.
+        focus: "go\\.etcd\\.io/bbolt|internal/fastbolt|\\(\\*snapshotManager\\)\\.(AttachLease|addSnapshotOwner|createOwnerLease|attachOwner\\w*)|engine/snapshots/owner_ancestry\\.go",
+      ),
     ]
   }
 
@@ -223,6 +231,21 @@ type MemoryCake {
     env: [String!]! = [],
   ): Measurement! @cache(policy: FunctionCachePolicy.Never) {
     measure(pr: "15212", ref: ref, env: env)
+  }
+
+  """
+  #15232: owner leases naming whole snapshot chains. One session builds
+  CHAINS (default 16) withNewFile chains DEPTH (default 1000) results deep,
+  each result synced and owning its snapshot. On main each owner lease names
+  its snapshot's whole chain (up to 128 layers before a flatten), so lease
+  records grow with results x depth; with the fix, with results + depth.
+  Scale with env, e.g. ["CHAINS=8"].
+  """
+  demo15232(
+    ref: String! = "main",
+    env: [String!]! = [],
+  ): Measurement! @cache(policy: FunctionCachePolicy.Never) {
+    measure(pr: "15232", ref: ref, env: env)
   }
 
   """
