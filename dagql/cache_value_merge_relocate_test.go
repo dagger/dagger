@@ -288,9 +288,11 @@ func mergeTestStateByRecipe(t *testing.T, c *Cache) []string {
 // again. The root is relocated again before its commit takes the lock when
 // the other restore committed during its preparation, and under the lock
 // when it committed after. Either way the same entries hold the same
-// records, and the reply names, for each record, the entry of its recipe.
-// Entry numbers can differ with the order the merges reserved them in, so
-// entries are compared by their recipes.
+// records, and the reply says the same of each record and root: the entry
+// of its recipe, that entry's dependencies, replacements, expiry and parts,
+// and each root's retention. Entry numbers can differ with the order the
+// merges reserved them in, so entries are compared by their recipes, and a
+// retention's expiry, which is read off the clock, by whether it is set.
 func TestRestoreValuesOvertakenAsPreparedLandsTheSame(t *testing.T) {
 	t.Parallel()
 	sctx, source, srv := transferTestCache(t)
@@ -349,22 +351,35 @@ func TestRestoreValuesOvertakenAsPreparedLandsTheSame(t *testing.T) {
 		c.egraphMu.RLock()
 		names := mergeTestEntryNames(c)
 		c.egraphMu.RUnlock()
+		named := func(numbers []uint64) []string {
+			out := make([]string, 0, len(numbers))
+			for _, n := range numbers {
+				out = append(out, names[n])
+			}
+			slices.Sort(out)
+			return out
+		}
 		var landed []string
 		for _, value := range reply.Values {
-			landed = append(landed, fmt.Sprintf("%d=%s", value.Ordinal, names[value.Number]))
+			landed = append(landed, fmt.Sprintf("value %d=%s replacements=%d expires=%d deps=%v parts=%v offered=%v",
+				value.Ordinal, names[value.Number], value.Replacements, value.ExpiresAtUnix, named(value.Deps), value.Parts, value.OfferedParts))
+		}
+		for _, root := range reply.Roots {
+			landed = append(landed, fmt.Sprintf("root %d=%s expired=%t retained=%t retention-expires=%t",
+				root.Ordinal, names[root.Number], root.Expired, root.Retained, root.RetentionExpiresAtUnix != 0))
 		}
 		slices.Sort(landed)
 		return landing{state: mergeTestStateByRecipe(t, c), reply: landed, rows: reply.Rows, under: int(under.Load())}
 	}
 	want := land(t, "one after the other")
-	require.Len(t, want.reply, 3)
+	require.Len(t, want.reply, 4, "three records and the root")
 	require.Zero(t, want.under)
 	for order, under := range map[string]int{"overtaken as it prepares": 0, "overtaken before its commit": 1} {
 		t.Run(order, func(t *testing.T) {
 			t.Parallel()
 			got := land(t, order)
 			require.Equal(t, want.state, got.state, "the same entries hold the same records")
-			require.Equal(t, want.reply, got.reply, "each record's reply names the entry of its recipe")
+			require.Equal(t, want.reply, got.reply, "the reply says the same of each record and root")
 			require.Equal(t, want.rows, got.rows)
 			require.Equal(t, under, got.under, "records relocated again under the lock")
 		})
