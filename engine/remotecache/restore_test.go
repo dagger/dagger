@@ -423,7 +423,8 @@ func TestRestoreGivesUpAStalledDownload(t *testing.T) {
 }
 
 // A file this engine process merged whole is answered at once, with no
-// download, on this connection or a later one, and each hello names it.
+// download, on this connection or a later one, with the entries its merge
+// answered, and each hello names it.
 func TestRestoreOfAFileMergedWholeDoesNothing(t *testing.T) {
 	t.Parallel()
 	adapter := newFakeAdapter()
@@ -439,7 +440,7 @@ func TestRestoreOfAFileMergedWholeDoesNothing(t *testing.T) {
 
 	s.dispatch(request(t, 2, protocol.TypeRestore, restoreOf("c", nil, &file)))
 	again := decode[protocol.Restored](t, conn.next(t)).Files[0]
-	require.Equal(t, protocol.RestoredFile{Digest: file.Digest, Complete: true, Already: true}, again)
+	require.Equal(t, protocol.RestoredFile{Digest: file.Digest, Complete: true, Already: true, Entries: protocol.EntryNumbers{1}}, again)
 	require.True(t, nextReport(t, adapter).Already)
 	require.Equal(t, 1, files.getsOf("whole"))
 
@@ -449,6 +450,57 @@ func TestRestoreOfAFileMergedWholeDoesNothing(t *testing.T) {
 	go func() { _, _ = next.serve() }()
 	hello := next.conn.(*recordingConn).next(t)
 	require.Equal(t, []digest.Digest{file.Digest}, decode[protocol.Hello](t, hello).Restored)
+}
+
+// A file this engine process merged whole, offered again on a later
+// connection, is answered already, with the entries and complete parts its
+// first merge noted, and isn't fetched or merged again. The service offers
+// such a file again only when it never read the first answer, as when the
+// connection dropped before it did: without the entries it can't hold the
+// file's records by file, and holdings built on them look incomplete.
+func TestRestoreOfAFileMergedWholeOnAnEarlierConnectionAnswersItsEntries(t *testing.T) {
+	t.Parallel()
+	adapter := newFakeAdapter()
+	adapter.restore = func(_ context.Context, part dagql.ValueBundle, _ *dagql.KnownRows) (dagql.MergeReply, error) {
+		reply := merged(part, time.Now())
+		for i := range reply.Values {
+			reply.Values[i].Number *= 10
+			if part.Values[0].SenderNumber == 2 {
+				reply.Values[i].Parts = []dagql.PersistedPartAddress{{Part: "metadata"}}
+			}
+		}
+		return reply, nil
+	}
+	s, conn := restoreSession(t, adapter)
+	files := newFileServer(t)
+	file := files.add("whole", setFile(t, dagql.ValueBundleVersion, part(1), part(2)))
+	s.dispatch(request(t, 1, protocol.TypeRestore, restoreOf("c", nil, &file)))
+	first := decode[protocol.Restored](t, conn.next(t)).Files[0]
+	require.True(t, first.Complete)
+	require.Equal(t, protocol.EntryNumbers{10, 20}, first.Entries)
+	nextReport(t, adapter)
+
+	// The connection drops before the service reads that answer. The same
+	// process connects again, and is offered the file again.
+	s.close()
+	nextConn := newRecordingConn()
+	next := newSession(t.Context(), nextConn, adapter, s.cfg)
+	t.Cleanup(next.close)
+	next.go_(next.restorer.run)
+	next.dispatch(request(t, 1, protocol.TypeRestore, restoreOf("c", nil, &file)))
+	again := decode[protocol.Restored](t, nextConn.next(t)).Files[0]
+	require.True(t, again.Complete)
+	require.True(t, again.Already)
+	require.Equal(t, first.Entries, again.Entries, "the entries its first merge noted")
+	require.Equal(t, first.PartsTable, again.PartsTable)
+	require.Equal(t, first.CompleteParts, again.CompleteParts, "and their complete parts")
+	complete, err := protocol.UnpackCompleteParts(again.PartsTable, again.CompleteParts)
+	require.NoError(t, err)
+	require.Equal(t, map[int][]dagql.PersistedPartAddress{1: {{Part: "metadata"}}}, complete)
+	require.Zero(t, again.Parts, "nothing merged this time")
+	require.Zero(t, again.Records)
+	require.True(t, nextReport(t, adapter).Already)
+	require.Equal(t, 1, files.getsOf("whole"), "not fetched again")
 }
 
 // A part counts the lookups that missed before it committed and that it
@@ -514,7 +566,7 @@ func TestRestoreStopsWithItsConnection(t *testing.T) {
 	require.Equal(t, queued.Digest, left.Digest)
 	require.Equal(t, errRestoreConnectionEnded.Error(), left.Error)
 	conn.none(t)
-	require.False(t, s.cfg.restored.has(whole.Digest))
+	require.NotContains(t, s.cfg.restored.list(), whole.Digest, "a later hello doesn't name it merged")
 }
 
 // setFileOf is a set file of the parts with their header entries' unretained
