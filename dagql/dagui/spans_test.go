@@ -2,6 +2,7 @@ package dagui
 
 import (
 	"context"
+	"encoding/json"
 	"reflect"
 	"testing"
 	"time"
@@ -37,6 +38,31 @@ func newTestLogRecord(traceID trace.TraceID, spanID trace.SpanID, body string, a
 	r.SetAttributes(attrs...)
 
 	return *r
+}
+
+func TestProcessAttributeLLMToolResultBytes(t *testing.T) {
+	for _, value := range []any{int64(0), float64(0), int64(123), float64(123)} {
+		var snapshot SpanSnapshot
+		if snapshot.LLMToolResultBytes != nil {
+			t.Fatal("absent bytes must not be measured zero")
+		}
+		snapshot.ProcessAttribute(telemetryattrs.LLMToolResultBytesAttr, value)
+		snapshot.ProcessAttribute(telemetryattrs.LLMToolResultBytesScopeAttr, "text_only")
+		if snapshot.LLMToolResultBytes == nil || *snapshot.LLMToolResultBytes != asInt64(value) {
+			t.Fatalf("bytes not ingested: %+v", snapshot)
+		}
+		data, err := json.Marshal(snapshot)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var decoded SpanSnapshot
+		if err := json.Unmarshal(data, &decoded); err != nil {
+			t.Fatal(err)
+		}
+		if decoded.LLMToolResultBytes == nil || *decoded.LLMToolResultBytes != asInt64(value) || decoded.LLMToolResultBytesScope != "text_only" {
+			t.Fatalf("bytes lost in JSON: %s", data)
+		}
+	}
 }
 
 func TestProcessAttributeLLMToolResultTokens(t *testing.T) {

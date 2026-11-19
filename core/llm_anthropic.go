@@ -105,7 +105,7 @@ func (c *AnthropicClient) IsRetryable(err error) bool {
 func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool, opts *LLMCallOpts) (res *LLMResponse, rerr error) {
 	// Stream this turn's content into per-block display spans (thinking, text
 	// response, tool-call arguments) as it arrives.
-	dp := newDisplayPhases(ctx, opts.CallDigest, tools, newToolResultTokenModel(c.endpoint))
+	dp := newDisplayPhases(ctx, opts.CallDigest, tools)
 	defer func() {
 		dp.CloseAll()
 		if rerr != nil {
@@ -402,7 +402,7 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 				dp.StartText(ev.Index)
 			case "tool_use":
 				toolInputs[ev.Index] = new(strings.Builder)
-				dp.StartToolCall(ev.Index, ev.ContentBlock.ID, ev.ContentBlock.Name)
+				dp.StartToolCall(ev.Index, ev.ContentBlock.ID, ev.ContentBlock.Name, modelToolArguments)
 			}
 		case anthropic.ContentBlockDeltaEvent:
 			switch ev.Delta.Type {

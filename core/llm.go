@@ -957,9 +957,8 @@ func (m *LLMMessage) estimateTokens() int64 {
 	return estimateTextTokens(chars)
 }
 
-// estimateTextTokens turns a UTF-8 byte length into a cheap token estimate,
-// using the same bytes/4 heuristic as LLMMessage.estimateTokens. Tool-result
-// telemetry uses it when a local tokenizer for the model is not available.
+// estimateTextTokens turns a byte length into a cheap token estimate for
+// LLMMessage.estimateTokens. Tool footprints are measured separately in bytes.
 func estimateTextTokens(chars int) int64 {
 	if chars == 0 {
 		return 0

@@ -159,7 +159,7 @@ func (c *OpenAIResponsesClient) IsRetryable(err error) bool {
 //nolint:gocyclo // streaming response handling is clearest as one protocol state machine
 func (c *OpenAIResponsesClient) SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool, opts *LLMCallOpts) (_ *LLMResponse, rerr error) {
 	// Stream this turn's content into per-block display spans.
-	dp := newDisplayPhases(ctx, opts.CallDigest, tools, newToolResultTokenModel(c.endpoint))
+	dp := newDisplayPhases(ctx, opts.CallDigest, tools)
 	defer func() {
 		dp.CloseAll()
 		if rerr != nil {
@@ -299,7 +299,7 @@ func (c *OpenAIResponsesClient) SendQuery(ctx context.Context, history []*LLMMes
 					Arguments: JSON(fc.Arguments),
 				})
 				toolIdx++
-				dp.EmitToolCall(toolIdx, fc.CallID, fc.Name, fc.Arguments)
+				dp.EmitToolCall(toolIdx, fc.CallID, fc.Name, fc.Arguments, modelToolArguments)
 			case "reasoning":
 				// Capture the reasoning item (its id, encrypted content, and
 				// summary) so it can be resubmitted before the function call it

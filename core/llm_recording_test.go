@@ -87,8 +87,8 @@ func TestDisplayToolArgsAreLineTerminatedOnce(t *testing.T) {
 			provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(recorder))
 			ctx = telemetry.WithLoggerProvider(ctx, provider)
 
-			dp := newDisplayPhases(ctx, "", nil, toolResultTokenModel{})
-			dp.EmitToolCall(0, "call_1", "read", args)
+			dp := newDisplayPhases(ctx, "", nil)
+			dp.EmitToolCall(0, "call_1", "read", args, modelToolArguments)
 
 			recorder.mu.Lock()
 			defer recorder.mu.Unlock()
@@ -241,14 +241,22 @@ func TestRecordedResponseProviderEmitsPerToolCallDisplaySpans(t *testing.T) {
 		require.True(t, ok, "%s: missing GenAI agent name", toolName)
 		require.Equal(t, "reviewer", v.AsString())
 
+		// Replayed arguments have their actual footprint but no new generation.
+		v, ok = spanAttr(s, telemetryattrs.LLMToolArgumentBytesSourceAttr)
+		require.True(t, ok)
+		require.Equal(t, "recorded", v.AsString())
+		v, ok = spanAttr(s, telemetryattrs.LLMToolArgumentBytesAttr)
+		require.True(t, ok)
+		require.Positive(t, v.AsInt64())
+
 		// Tool calls hang off the assistant text that introduced them, the
 		// same anchoring the streaming providers use.
 		require.Equal(t, byName["LLM response"].SpanContext().SpanID(), s.Parent().SpanID())
 	}
 
 	// The result-size badge lands on the call that produced output.
-	v, ok := spanAttr(byName["read"], telemetryattrs.LLMToolResultTokensAttr)
-	require.True(t, ok, "read: missing result tokens attr")
+	v, ok := spanAttr(byName["read"], telemetryattrs.LLMToolResultBytesAttr)
+	require.True(t, ok, "read: missing result bytes attr")
 	require.Greater(t, v.AsInt64(), int64(0))
 }
 
@@ -271,10 +279,10 @@ func TestStampResponseDigestPointsDisplaySpansAtResponse(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEqual(t, requestDigest, responseDigest)
 
-	dp := newDisplayPhases(ctx, requestDigest.String(), nil, toolResultTokenModel{})
+	dp := newDisplayPhases(ctx, requestDigest.String(), nil)
 	dp.StartText(0)
 	dp.Close(0)
-	dp.EmitToolCall(1, "call_1", "read", `{"path":"main.go"}`)
+	dp.EmitToolCall(1, "call_1", "read", `{"path":"main.go"}`, modelToolArguments)
 	spans, _ := dp.Response()
 	require.Len(t, spans, 2)
 
@@ -300,10 +308,10 @@ func TestToolCallDisplaySpanIdentifiesToolAtStart(t *testing.T) {
 	dp := newDisplayPhases(ctx, "", []LLMTool{
 		{Name: "editor_generate", Server: "editor"},
 		{Name: "CallMethod", HideSelf: true},
-	}, toolResultTokenModel{})
-	dp.StartToolCall(0, "call_1", "editor_generate")
-	dp.StartToolCall(1, "call_2", "CallMethod")
-	dp.StartToolCall(2, "call_3", "unknown_tool")
+	})
+	dp.StartToolCall(0, "call_1", "editor_generate", modelToolArguments)
+	dp.StartToolCall(1, "call_2", "CallMethod", modelToolArguments)
+	dp.StartToolCall(2, "call_3", "unknown_tool", modelToolArguments)
 
 	started := map[string]sdktrace.ReadOnlySpan{}
 	for _, s := range sr.Started() {
@@ -371,8 +379,8 @@ func TestToolCallDisplaySpanNamesHeaderArgsAtStart(t *testing.T) {
 		{dangEvalToolName, `{"source":"1 + 1","at":"notes","limit":5}`, []string{"source", "offset", "limit", "args", "at", "search"}},
 	} {
 		t.Run(tc.tool, func(t *testing.T) {
-			dp := newDisplayPhases(ctx, "", tools, toolResultTokenModel{})
-			p := dp.StartToolCall(int64(i), "call", tc.tool)
+			dp := newDisplayPhases(ctx, "", tools)
+			p := dp.StartToolCall(int64(i), "call", tc.tool, modelToolArguments)
 			var display sdktrace.ReadOnlySpan
 			for _, s := range sr.Started() {
 				if s.SpanContext().SpanID() == p.span.SpanContext().SpanID() {

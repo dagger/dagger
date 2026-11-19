@@ -196,7 +196,7 @@ func (c *RecordedResponseProvider) SendQuery(ctx context.Context, history []*LLM
 	if opts != nil {
 		callDigest = opts.CallDigest
 	}
-	dp := newDisplayPhases(ctx, callDigest, tools, toolResultTokenModel{})
+	dp := newDisplayPhases(ctx, callDigest, tools)
 	defer func() {
 		dp.CloseAll()
 		if rerr != nil {
@@ -223,7 +223,7 @@ func (c *RecordedResponseProvider) SendQuery(ctx context.Context, history []*LLM
 		case LLMContentToolCall:
 			// The tool-call span stays open; the loop ends it (with the
 			// result-size badge) via endToolCallDisplay once the tool returns.
-			dp.EmitToolCall(idx, block.CallID, block.ToolName, string(block.Arguments))
+			dp.EmitToolCall(idx, block.CallID, block.ToolName, string(block.Arguments), recordedToolArguments)
 		}
 	}
 

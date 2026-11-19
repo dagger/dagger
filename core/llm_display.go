@@ -107,6 +107,8 @@ type displayPhase struct {
 	callID              string
 	toolArgsWritten     bool
 	toolArgsEndsNewline bool
+	argumentProvenance  toolArgumentProvenance
+	argumentBytes       int64
 }
 
 // displayPhases manages the lifecycle of display spans during LLM streaming.
@@ -119,10 +121,6 @@ type displayPhases struct {
 	// tools are the tools offered to the model this turn, so a tool call's
 	// span can identify its tool (bare name, server) from the moment it starts.
 	tools []LLMTool
-
-	// tokenModel belongs to the provider response that issued these calls,
-	// not the ambient execution context or a later continuation's endpoint.
-	tokenModel toolResultTokenModel
 
 	// toolAnchorCtx is the most recent non-tool assistant content phase. Tool
 	// calls are parented beneath it so they read as details of the reply that
@@ -144,17 +142,15 @@ type displayPhases struct {
 
 // toolCallDisplay bundles the context and span for a tool call's display phase.
 type toolCallDisplay struct {
-	Ctx        context.Context
-	Span       trace.Span
-	TokenModel toolResultTokenModel
+	Ctx  context.Context
+	Span trace.Span
 }
 
-func newDisplayPhases(parentCtx context.Context, callDigest string, tools []LLMTool, tokenModel toolResultTokenModel) *displayPhases {
+func newDisplayPhases(parentCtx context.Context, callDigest string, tools []LLMTool) *displayPhases {
 	return &displayPhases{
 		parentCtx:  parentCtx,
 		callDigest: callDigest,
 		tools:      tools,
-		tokenModel: tokenModel,
 		phases:     map[int64]*displayPhase{},
 		toolCalls:  map[string]toolCallDisplay{},
 	}
@@ -228,7 +224,7 @@ func (dp *displayPhases) StartThinking(idx int64) *displayPhase {
 // StartToolCall creates or returns a tool call display phase at the given
 // index. Tool call phases stream JSON arguments, and their span parents the
 // tool's execution so its sub-spans and logs roll up beneath the call.
-func (dp *displayPhases) StartToolCall(idx int64, callID, toolName string) *displayPhase {
+func (dp *displayPhases) StartToolCall(idx int64, callID, toolName string, provenance toolArgumentProvenance) *displayPhase {
 	dp.mu.Lock()
 	defer dp.mu.Unlock()
 	if p, ok := dp.phases[idx]; ok {
@@ -261,9 +257,10 @@ func (dp *displayPhases) StartToolCall(idx int64, callID, toolName string) *disp
 		}, toolAttrs...))...),
 	)
 	p := &displayPhase{
-		ctx:    phaseCtx,
-		span:   span,
-		callID: callID,
+		ctx:                phaseCtx,
+		span:               span,
+		callID:             callID,
+		argumentProvenance: provenance,
 	}
 	p.Stdio = telemetry.SpanStdio(phaseCtx, InstrumentationLibrary,
 		log.String(telemetry.ContentTypeAttr, "application/json"),
@@ -277,6 +274,7 @@ func (p *displayPhase) writeToolArgs(args string) {
 		return
 	}
 	fmt.Fprint(p.Stdio.Stdout, args)
+	p.argumentBytes += int64(len(args))
 	p.toolArgsWritten = true
 	p.toolArgsEndsNewline = args[len(args)-1] == '\n'
 }
@@ -285,8 +283,8 @@ func (p *displayPhase) writeToolArgs(args string) {
 // opens the tool-call span, writes its arguments, and closes the phase so the
 // span is handed back for execution nesting. Use this for providers that
 // deliver tool calls whole rather than streaming their arguments.
-func (dp *displayPhases) EmitToolCall(idx int64, callID, toolName, args string) {
-	p := dp.StartToolCall(idx, callID, toolName)
+func (dp *displayPhases) EmitToolCall(idx int64, callID, toolName, args string, provenance toolArgumentProvenance) {
+	p := dp.StartToolCall(idx, callID, toolName, provenance)
 	p.writeToolArgs(args)
 	dp.Close(idx)
 }
@@ -318,10 +316,13 @@ func (dp *displayPhases) Close(idx int64) {
 	p.Stdio.Close()
 	dp.displaySpans = append(dp.displaySpans, p.span)
 	if p.callID != "" {
+		// Measure the original argument text before dispatch can decode/default
+		// it, even when generation is rejected or execution is later skipped.
+		// The display's trailing newline is not part of these bytes.
+		p.span.SetAttributes(toolArgumentByteAttrs(p.argumentBytes, p.argumentProvenance)...)
 		dp.toolCalls[p.callID] = toolCallDisplay{
-			Ctx:        p.ctx,
-			Span:       p.span,
-			TokenModel: dp.tokenModel,
+			Ctx:  p.ctx,
+			Span: p.span,
 		}
 	}
 	delete(dp.phases, idx)

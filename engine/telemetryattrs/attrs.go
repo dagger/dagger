@@ -238,19 +238,29 @@ const (
 	// a running call's header is the one it ends with. ([]string)
 	LLMToolHeaderArgNamesAttr = "dagger.io/llm.tool.header_arg_names"
 
-	// LLMToolResultTokensAttr counts the final bounded tool-result text. It is
-	// not provider-reported usage or a billable total: chat framing and media
-	// are excluded. Zero is recorded for an empty result. (int64)
+	// LLMToolResultTokensAttr is the legacy estimated token count for a tool
+	// result. Readers retain it for older traces; new producers measure bytes
+	// with LLMToolResultBytesAttr instead. Its units remain tokens. (int64)
 	LLMToolResultTokensAttr = "dagger.io/llm.tool.result_tokens" //nolint:gosec // attribute name, not a credential
-	// Method is "tokenizer" for a locally tokenized known model, otherwise
-	// "bytes_div_4" (ceil UTF-8 byte length / 4). Encoding is present only for
-	// tokenizer counts; Model is the generating endpoint's model when known.
-	LLMToolResultTokensMethodAttr   = "dagger.io/llm.tool.result_tokens.method"   //nolint:gosec // attribute name, not a credential
-	LLMToolResultTokensEncodingAttr = "dagger.io/llm.tool.result_tokens.encoding" //nolint:gosec // attribute name, not a credential
-	LLMToolResultTokensModelAttr    = "dagger.io/llm.tool.result_tokens.model"    //nolint:gosec // attribute name, not a credential
-	// Scope is "text", or "text_projection" when media is represented by
-	// placeholders; a projection always uses the estimate, not a tokenizer.
-	LLMToolResultTokensScopeAttr = "dagger.io/llm.tool.result_tokens.scope" //nolint:gosec // attribute name, not a credential
+
+	// LLMToolArgumentBytesAttr is the UTF-8 byte length of captured argument
+	// JSON before dispatch decoding, defaults or injection. It excludes tool
+	// names, definitions and protocol framing; it is not token or billed usage.
+	// Empty arguments record zero. Source is "model", "forwarded", "recorded"
+	// or "unknown"; all carry actual lengths, but only "model" is fresh model
+	// output. Scope is "argument_json" or "reserialized_argument_json" when a
+	// provider SDK exposes an object rather than the original JSON string.
+	LLMToolArgumentBytesAttr       = "dagger.io/llm.tool.argument_bytes"
+	LLMToolArgumentBytesSourceAttr = "dagger.io/llm.tool.argument_bytes.source"
+	LLMToolArgumentBytesScopeAttr  = "dagger.io/llm.tool.argument_bytes.scope"
+
+	// LLMToolResultBytesAttr sums UTF-8 lengths of the final bounded result's
+	// text fields, before its span ends. No serialization/framing, media data,
+	// base64 or display placeholders are counted. Scope is "text", or
+	// "text_only" when the result also contains media. Zero is measured, not
+	// missing. This does not change the units of legacy LLMToolResultTokensAttr.
+	LLMToolResultBytesAttr      = "dagger.io/llm.tool.result_bytes"
+	LLMToolResultBytesScopeAttr = "dagger.io/llm.tool.result_bytes.scope"
 
 	// LLM message origin (dagger.io/llm.origin.*).
 	//
