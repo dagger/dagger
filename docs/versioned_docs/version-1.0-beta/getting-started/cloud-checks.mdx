@@ -26,11 +26,9 @@ Dagger gets the repository from the Git `origin` remote. The command prints `che
 
 If setup is needed, the command can open the browser in an interactive terminal. In non-interactive mode, it prints the missing step and exits.
 
-For manual setup, run `dagger cloud signup` if you need to sign in or create a Dagger Cloud organization. Open **Integrations** in your Cloud organization to grant repository access.
+For manual setup, run `dagger cloud signup` if you need to sign in or create an organization. In your Cloud organization, open **Integrations**, select the integration for your repository, and follow the steps to grant access.
 
-- **GitHub.** If you need to connect your GitHub account, run `dagger cloud integration create github --open`. Under **Dagger for GitHub**, select **Install Dagger for GitHub app**. Install it for the repository owner and grant it access to the repository.
-- **GitLab.com.** Under **Dagger for GitLab**, select **Connect GitLab**. Authorize Dagger and add the account or group that owns the project.
-- **Entire.** Under **Dagger for Entire**, select **Install Dagger for Entire plugin**. Choose the project that contains the repository.
+If you still need to connect your GitHub account, `dagger cloud integration create github --open` opens the authorization page.
 
 After manual setup, rerun the enable command.
 
