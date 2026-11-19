@@ -312,6 +312,57 @@ func TestRestoreMergesHeadsBesideWholes(t *testing.T) {
 	require.Equal(t, uint64(2), conn.next(t).Re)
 }
 
+// Two wholes whose parts merge in turn, one of each file after the other,
+// each answer with their own records' entries, complete: a whole's reply is
+// built from its own parts' merges alone, on its own lane.
+func TestRestoreRepliesWithEachWholesOwnEntriesWhenTheyInterleave(t *testing.T) {
+	t.Parallel()
+	adapter := newFakeAdapter()
+	// Each part merges once the one before it in turn has.
+	turns := []uint64{11, 21, 12, 22}
+	done := map[uint64]chan struct{}{}
+	for _, sender := range turns {
+		done[sender] = make(chan struct{})
+	}
+	var mu sync.Mutex
+	var order []uint64
+	adapter.restore = func(_ context.Context, part dagql.ValueBundle, _ *dagql.KnownRows) (dagql.MergeReply, error) {
+		sender := part.Values[0].SenderNumber
+		if i := slices.Index(turns, sender); i > 0 {
+			select {
+			case <-done[turns[i-1]]:
+			case <-time.After(10 * time.Second):
+				return dagql.MergeReply{}, fmt.Errorf("part %d's turn never came", sender)
+			}
+		}
+		defer close(done[sender])
+		mu.Lock()
+		order = append(order, sender)
+		mu.Unlock()
+		return merged(part, time.Now()), nil
+	}
+	s, conn := restoreSession(t, adapter)
+	files := newFileServer(t)
+	wholeA := files.add("wholeA", setFile(t, dagql.ValueBundleVersion, part(11), part(12)))
+	wholeB := files.add("wholeB", setFile(t, dagql.ValueBundleVersion, part(21), part(22)))
+	s.dispatch(request(t, 1, protocol.TypeRestore, restoreOf("a", nil, &wholeA)))
+	s.dispatch(request(t, 2, protocol.TypeRestore, restoreOf("b", nil, &wholeB)))
+	replies := map[uint64]protocol.RestoredFile{}
+	for range 2 {
+		reply := conn.next(t)
+		replies[reply.Re] = decode[protocol.Restored](t, reply).Files[0]
+	}
+	mu.Lock()
+	require.Equal(t, turns, order, "the files' parts merged in turn")
+	mu.Unlock()
+	for re, want := range map[uint64]protocol.EntryNumbers{1: {11, 12}, 2: {21, 22}} {
+		file := replies[re]
+		require.True(t, file.Complete, "restore %d is complete", re)
+		require.Equal(t, 2, file.Parts)
+		require.Equal(t, want, file.Entries, "restore %d names its own records' entries", re)
+	}
+}
+
 // A whole whose download hasn't finished doesn't hold up a head that
 // arrives meanwhile.
 func TestRestoreHeadDoesntWaitForAWholesDownload(t *testing.T) {
