@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -334,4 +335,34 @@ func TestMergedRecordPreparedBeforeAMergeCommitsKeepsItsCompleteParts(t *testing
 	require.NoError(t, err)
 	require.True(t, captured)
 	require.Equal(t, want, firstUseTestReplyParts(t, set.bundle, second, set.good))
+}
+
+// An engine that closes with records from the Cloud nothing used saves them
+// prepared, and leaves out the one whose payload is refused: after a
+// restart, a good record hits with its value, and the refused one misses and
+// runs its call. The save counts what it prepared and refused.
+func TestSaveLeavesOutARecordRefusedAtItsPreparation(t *testing.T) {
+	t.Parallel()
+	set := firstUseTestCloud(t).spoil(t)
+	path := filepath.Join(t.TempDir(), "cache.db")
+	ctx, engine, srv := persistedListTestCache(t, path)
+	srv.InstallObject(NewClass(srv, ClassOpts[*transferTestValue]{}))
+	_, err := engine.MergeValues(ctx, cloudCacheID, set.bundle)
+	require.NoError(t, err)
+	require.NoError(t, engine.Close(ctx), "the save stands")
+	stats := engine.FirstUse()
+	require.Equal(t, int64(2), stats.SavePrepared, "the save prepared the two good records")
+	require.Equal(t, int64(1), stats.SaveRefused, "and refused the bad one")
+	require.Positive(t, stats.SaveWall)
+	require.Zero(t, stats.Prepared+stats.Refused, "no call used a record")
+
+	ctx, restarted, srv := persistedListTestCache(t, path)
+	srv.InstallObject(NewClass(srv, ClassOpts[*transferTestValue]{}))
+	require.Equal(t, CachePersistenceResetNone, restarted.PersistenceResetReason())
+	hit, text := firstUseTestLookup(t, ctx, restarted, srv, "fu-good")
+	require.True(t, hit, "a good record hits after the restart")
+	require.Equal(t, "ready", text)
+	hit, text = firstUseTestLookup(t, ctx, restarted, srv, "fu-bad")
+	require.False(t, hit, "the refused record misses after the restart")
+	require.Equal(t, "ran fu-bad", text)
 }
