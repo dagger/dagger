@@ -88,6 +88,14 @@ func (*transferTestValue) DecodePersistedObject(ctx context.Context, dec *Persis
 type transferTestCodec struct{}
 
 func (transferTestCodec) VisitPersistedReferences(v PersistedPayloadVisit, visit PersistedRefVisitor) (json.RawMessage, error) {
+	if steps := transferTestCodecSteps.Load(); steps != nil {
+		(*steps)("visit", v)
+	}
+	return transferTestVisit(v, visit)
+}
+
+// transferTestVisit visits a transferTestValue payload's references.
+func transferTestVisit(v PersistedPayloadVisit, visit PersistedRefVisitor) (json.RawMessage, error) {
 	if err := VisitPersistedSnapshotRoles(visit, PersistedRefOutputRole, v.Path, v.SnapshotLinks); err != nil {
 		return nil, err
 	}
@@ -112,14 +120,15 @@ func (transferTestCodec) NormalizeForeign(v PersistedPayloadVisit) (ForeignPaylo
 }
 
 // transferTestCodecSteps, when set, sees each payload visit the codec's
-// ValidateForeign and MapSnapshotParts get, by step.
+// ValidateForeign, MapSnapshotParts and VisitPersistedReferences get, by
+// step: validate, map and visit.
 var transferTestCodecSteps atomic.Pointer[func(step string, v PersistedPayloadVisit)]
 
 func (transferTestCodec) ValidateForeign(v PersistedPayloadVisit) error {
 	if steps := transferTestCodecSteps.Load(); steps != nil {
 		(*steps)("validate", v)
 	}
-	_, err := (transferTestCodec{}).VisitPersistedReferences(v, func(*PersistedRef) error { return nil })
+	_, err := transferTestVisit(v, func(*PersistedRef) error { return nil })
 	return err
 }
 func (transferTestCodec) MapSnapshotParts(v PersistedPayloadVisit) ([]CapturedCodecOutput, error) {
