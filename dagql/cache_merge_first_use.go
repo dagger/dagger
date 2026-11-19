@@ -128,6 +128,13 @@ func (c *Cache) prepareMergedPayload(ctx context.Context, res *sharedResult) err
 		res.persistedEnvelope = &prepared.Envelope
 		res.firstUse = nil
 		res.payloadRevision++
+		// The prepared record proves the parts its bundle carried, as
+		// describing it finds them: a merge that warmed nothing for the
+		// entry while it was unprepared replies with them still.
+		res.completeParts.Store(&rowCompleteParts{
+			stamp: completePartsStamp{payloadRevision: res.payloadRevision, hasValue: res.hasValue, isObject: res.isObject},
+			keys:  use.complete.list(),
+		})
 	}
 	res.payloadMu.Unlock()
 	return nil
