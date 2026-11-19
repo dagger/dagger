@@ -14,10 +14,12 @@ import (
 	"io"
 	"log/slog"
 	"math/rand/v2"
+	"net"
 	"net/http"
 	"net/http/httptrace"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
@@ -192,6 +194,10 @@ type settings struct {
 	peakRSS    func() int64
 	maxMessage int
 	jitter     func() float64
+	// probeInterval and probeTimeout are protocol.ProbeInterval and
+	// protocol.ProbeTimeout but in tests.
+	probeInterval time.Duration
+	probeTimeout  time.Duration
 	// restored are the set files this engine process merged whole.
 	restored restoredFiles
 }
@@ -201,12 +207,14 @@ func newSettings(cfg Config) *settings {
 		cfg.Logger = slog.New(slog.DiscardHandler)
 	}
 	s := &settings{
-		Config:     cfg,
-		put:        httpPut(uploadClient(uploadResponseTimeout), uploadIdleTimeout),
-		getFile:    getSetFile(&http.Client{}, restoreIdleTimeout),
-		peakRSS:    PeakResident,
-		maxMessage: protocol.MaxMessageBytes,
-		jitter:     rand.Float64,
+		Config:        cfg,
+		put:           httpPut(uploadClient(uploadResponseTimeout), uploadIdleTimeout),
+		getFile:       getSetFile(&http.Client{}, restoreIdleTimeout),
+		peakRSS:       PeakResident,
+		maxMessage:    protocol.MaxMessageBytes,
+		jitter:        rand.Float64,
+		probeInterval: protocol.ProbeInterval,
+		probeTimeout:  protocol.ProbeTimeout,
 	}
 	s.dial = s.dialService
 	return s
@@ -263,7 +271,9 @@ func (s *settings) serve(ctx context.Context, adapter Adapter) (bool, error) {
 func (s *settings) dialService(ctx context.Context) (wsConn, error) {
 	header := http.Header{}
 	header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(s.Token+":")))
+	arrived := &arrivals{}
 	conn, resp, err := websocket.Dial(ctx, strings.TrimSuffix(s.URL, "/")+protocol.EnginePath, &websocket.DialOptions{
+		HTTPClient:      &http.Client{Transport: arrived.transport()},
 		HTTPHeader:      header,
 		CompressionMode: websocket.CompressionNoContextTakeover,
 	})
@@ -274,19 +284,24 @@ func (s *settings) dialService(ctx context.Context) (wsConn, error) {
 		return nil, err
 	}
 	conn.SetReadLimit(protocol.MaxMessageBytes)
-	return websocketConn{conn}, nil
+	return websocketConn{c: conn, arrived: arrived}, nil
 }
 
 // wsConn is the connection a session uses: coder/websocket's Conn, which may
-// be written, pinged and closed from any goroutine, and read from one.
+// be written and closed from any goroutine, and read from one.
 type wsConn interface {
 	Read(ctx context.Context) ([]byte, error)
 	Write(ctx context.Context, data []byte) error
-	Ping(ctx context.Context) error
+	// Arrived returns when the last byte arrived on the connection, or the
+	// zero time if none has.
+	Arrived() time.Time
 	CloseNow() error
 }
 
-type websocketConn struct{ c *websocket.Conn }
+type websocketConn struct {
+	c       *websocket.Conn
+	arrived *arrivals
+}
 
 func (w websocketConn) Read(ctx context.Context) ([]byte, error) {
 	for {
@@ -304,8 +319,48 @@ func (w websocketConn) Write(ctx context.Context, data []byte) error {
 	return w.c.Write(ctx, websocket.MessageText, data)
 }
 
-func (w websocketConn) Ping(ctx context.Context) error { return w.c.Ping(ctx) }
-func (w websocketConn) CloseNow() error                { return w.c.CloseNow() }
+func (w websocketConn) Arrived() time.Time { return w.arrived.last() }
+func (w websocketConn) CloseNow() error    { return w.c.CloseNow() }
+
+// arrivals records when bytes last arrived on a connection, counted as they
+// are read off the network, below TLS: part of a message still on its way
+// counts, as does a message whole.
+type arrivals struct{ at atomic.Int64 }
+
+// transport is http.DefaultTransport, its connections recording arrivals.
+func (a *arrivals) transport() *http.Transport {
+	t := http.DefaultTransport.(*http.Transport).Clone()
+	dial := t.DialContext
+	t.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		conn, err := dial(ctx, network, addr)
+		if err != nil {
+			return nil, err
+		}
+		return arrivalConn{Conn: conn, arrivals: a}, nil
+	}
+	return t
+}
+
+func (a *arrivals) last() time.Time {
+	at := a.at.Load()
+	if at == 0 {
+		return time.Time{}
+	}
+	return time.Unix(0, at)
+}
+
+type arrivalConn struct {
+	net.Conn
+	arrivals *arrivals
+}
+
+func (c arrivalConn) Read(p []byte) (int, error) {
+	n, err := c.Conn.Read(p)
+	if n > 0 {
+		c.arrivals.at.Store(time.Now().UnixNano())
+	}
+	return n, err
+}
 
 // backoff is the reconnection wait: backoffMin doubling to backoffMax, each
 // wait moved by up to backoffJitter of itself either way.
