@@ -643,7 +643,9 @@ The basic idea is:
 This is how pruning avoids double-counting shared snapshots or other shared
 storage.
 
-A snapshot's owner lease retains its whole parent chain, so a result's usage
+A result retains its snapshot's whole parent chain: its owner lease names the
+snapshot, and the snapshot manager's owner ancestry lease names the snapshot's
+ancestors (`engine/snapshots/owner_ancestry.go`). So a result's usage
 identities are that chain, not only the snapshots its value reports. The usage
 pass resolves each snapshot's parent outside the lock and adds the ancestors as
 identities (`snapshotChains` in `dagql/cache_usage.go`). Ancestors are sized
