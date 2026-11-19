@@ -145,7 +145,7 @@ func (h *HeldBy) holdsLocked(res *sharedResult, nowUnix int64) bool {
 // Expiry, of a donor of its class and of a holding of held's cache, is
 // judged at nowUnix, the reader's clock, so a bundle agrees with what its
 // reader judged of the cache at that moment.
-func (c *Cache) StoredBundle(ctx context.Context, roots []uint64, nowUnix int64, held *HeldBy) (StoredBundleResult, error) {
+func (c *Cache) StoredBundle(ctx context.Context, roots []uint64, nowUnix int64, held *HeldBy, opts ...StoredBundleOption) (StoredBundleResult, error) {
 	var out StoredBundleResult
 	if !c.blobBacked {
 		return out, fmt.Errorf("stored bundle: the cache has no blob store")
@@ -153,7 +153,11 @@ func (c *Cache) StoredBundle(ctx context.Context, roots []uint64, nowUnix int64,
 	if err := context.Cause(ctx); err != nil {
 		return out, err
 	}
-	out, frames, err := c.storedBundle(roots, nowUnix, held)
+	var o storedBundleOptions
+	for _, opt := range opts {
+		opt(&o)
+	}
+	out, frames, err := c.storedBundle(roots, nowUnix, held, o)
 	if err != nil || len(frames) == 0 {
 		return out, err
 	}
@@ -173,10 +177,39 @@ func (c *Cache) StoredBundle(ctx context.Context, roots []uint64, nowUnix int64,
 	return out, nil
 }
 
+// StoredBundleOption sets how StoredBundle builds a bundle.
+type StoredBundleOption func(*storedBundleOptions)
+
+type storedBundleOptions struct {
+	alsoRoots func(number uint64) bool
+}
+
+// StoredBundleAlsoRoots has StoredBundle carry as roots too the entries it
+// carries in full that alsoRoot names, of those it wasn't asked for as
+// roots. The bundle is the one StoredBundle builds when asked for those
+// entries as roots after the others, in the bundle's order: the same
+// records, outputs and calls, each of those entries a root with the expiry
+// a root travels with, and a call's input among them no longer a root for
+// the call alone (StoredBundleResult.CallInputs). So a caller that needs as
+// roots whichever of some entries a bundle carries builds it once, not once
+// to find them and again with them. alsoRoot is called under egraphMu, from
+// builds that may run at once, so it reads only what doesn't change under
+// it.
+func StoredBundleAlsoRoots(alsoRoot func(number uint64) bool) StoredBundleOption {
+	return func(o *storedBundleOptions) {
+		o.alsoRoots = alsoRoot
+	}
+}
+
+// StoredBundleBuilds counts the bundles StoredBundle has built.
+func (c *Cache) StoredBundleBuilds() uint64 {
+	return c.storedBundleBuilds.Load()
+}
+
 // storedBundle builds StoredBundle's answer in one hold of egraphMu.RLock,
 // with held rows' recipes left empty, and returns the call frame of each held
 // row by ordinal. A bundle without held rows is validated here.
-func (c *Cache) storedBundle(roots []uint64, nowUnix int64, held *HeldBy) (StoredBundleResult, map[TransferOrdinal]entryFrame, error) {
+func (c *Cache) storedBundle(roots []uint64, nowUnix int64, held *HeldBy, opts storedBundleOptions) (StoredBundleResult, map[TransferOrdinal]entryFrame, error) {
 	var out StoredBundleResult
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
@@ -198,11 +231,15 @@ func (c *Cache) storedBundle(roots []uint64, nowUnix int64, held *HeldBy) (Store
 	if len(rootEntries) == 0 {
 		return out, nil, nil
 	}
+	c.storedBundleBuilds.Add(1)
 	build, notWhole, err := c.storedBundleWholeWalkLocked(rootEntries, nowUnix, held)
 	if err != nil {
 		return StoredBundleResult{}, nil, err
 	}
 	out.NotWhole = notWhole
+	if opts.alsoRoots != nil {
+		rootEntries = build.alsoRoots(rootEntries, opts.alsoRoots)
+	}
 	rootEntries = append(rootEntries, build.callRoots...)
 	var frames map[TransferOrdinal]entryFrame
 	waiting := false
@@ -434,6 +471,41 @@ type storedBundleBuild struct {
 	// stored has, by ordinal, the declared parts of each value the build
 	// carries compressed (addStoredValue).
 	stored map[uint64][]declaredPart
+}
+
+// alsoRoots returns the roots asked for, rootEntries, with the entries the
+// build carries in full that alsoRoot names added after them, in the build's
+// order (StoredBundleAlsoRoots), and takes those out of the build's call
+// roots: a walk with them as roots would have seen each as a root before
+// its call's input, and added no call root for it. Nothing else of the
+// build differs from that walk's: its order, its ordinals and each entry's
+// owner are the same. Requires egraphMu.
+func (build *storedBundleBuild) alsoRoots(rootEntries []*sharedResult, alsoRoot func(uint64) bool) []*sharedResult {
+	asked := make(map[sharedResultID]bool, len(rootEntries))
+	for _, res := range rootEntries {
+		asked[res.id] = true
+	}
+	added := map[sharedResultID]bool{}
+	for _, res := range build.order {
+		if build.held[res.id] || asked[res.id] || !alsoRoot(uint64(res.id)) {
+			continue
+		}
+		added[res.id] = true
+		rootEntries = append(rootEntries, res)
+	}
+	if len(added) == 0 {
+		return rootEntries
+	}
+	var callRoots []*sharedResult
+	var callInputs []uint64
+	for i, res := range build.callRoots {
+		if !added[res.id] {
+			callRoots = append(callRoots, res)
+			callInputs = append(callInputs, build.callInputs[i])
+		}
+	}
+	build.callRoots, build.callInputs = callRoots, callInputs
+	return rootEntries
 }
 
 // holdsLocked reports whether the recipient holds res, as heldBy says,
