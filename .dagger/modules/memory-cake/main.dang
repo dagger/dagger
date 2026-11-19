@@ -349,9 +349,10 @@ type MemoryCake {
   #15212: contenthash trees of collected snapshots never forgotten. Separate
   sessions hash EDITS one-file edits (default 200) of a FILES-file directory
   (default 20000), then a local cache prune collects their snapshots; on main
-  their serialized trees (~350 MiB at the defaults) stay in memory, with the
-  fix only contenthash's LRU of 20 (~36 MiB) does. Scale with env, e.g.
-  ["EDITS=100"].
+  their serialized trees (~355 MiB at the defaults) stay in memory. With the
+  fix, 36 MiB after the session (what contenthash's LRU of 20 cacheContexts
+  references), and 42-131 MiB live: some collected trees are only forgotten
+  by a later collection. Scale with env, e.g. ["EDITS=100"].
   """
   demo15212(
     ref: String! = "main",
