@@ -726,6 +726,19 @@ func (c *Cache) PersistedResults() int {
 	return c.persistedResults
 }
 
+// PersistSnapshotHeld returns how long the snapshot of the cache's last
+// successful persistence held the cache's lock for reading, in one hold
+// (snapshotPersistState): the longest a writer of the cache, and every
+// reader behind that writer, can have waited for it.
+func (c *Cache) PersistSnapshotHeld() time.Duration {
+	if c == nil {
+		return 0
+	}
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	return c.persistSnapshotHeld
+}
+
 // CacheIdentity names a persistent cache across the engine processes that open
 // it: ID is a random ID created with the cache's database, and Generation
 // counts the opens of that database, 1 for the first.
@@ -2732,11 +2745,13 @@ type Cache struct {
 	// engineInstanceID names the engine instance that owns the cache, for the
 	// debug snapshot. bootRestoredResults counts the entries the boot restore
 	// installed that are not type definitions, and persistedResults the
-	// entries the last successful persistence wrote. The counts are guarded by
-	// egraphMu.
+	// entries the last successful persistence wrote, and
+	// persistSnapshotHeld how long its snapshot held egraphMu for reading.
+	// They are guarded by egraphMu.
 	engineInstanceID    string
 	bootRestoredResults int
 	persistedResults    int
+	persistSnapshotHeld time.Duration
 	// blobBacked marks a cache that keeps parts in a blob store: only it
 	// accepts SetStoredPart (WithBlobStore).
 	blobBacked bool
