@@ -157,9 +157,17 @@ type snapshotManager struct {
 	// leaseOwnedSnapshots is snapshotOwnerLeases by lease: the snapshots
 	// each lease owns, so that removing a lease visits only those.
 	leaseOwnedSnapshots map[string]map[string]struct{}
-	importLayerLocker   keyedLocker
-	exportLayerLocker   keyedLocker
-	ownerLeaseLocker    *locker.Locker
+	// ancestry holds the ancestors of the snapshots dagql owner leases own
+	// in one lease, ancestryLeaseID, rather than in each owner lease: see
+	// owner_ancestry.go. Its counts and parents are changed only with both
+	// ancestryMu and mu held, and read with either; its blobs are guarded
+	// by mu.
+	ancestry          ownerAncestry
+	ancestryMu        sync.Mutex
+	ancestryLeaseID   string
+	importLayerLocker keyedLocker
+	exportLayerLocker keyedLocker
+	ownerLeaseLocker  *locker.Locker
 	// layerImported is closed, and replaced, whenever a layer is added to
 	// the import indexes: chain imports waiting for a layer's blob look
 	// again. Under mu.
@@ -207,6 +215,7 @@ func NewSnapshotManager(opt SnapshotManagerOpt) (SnapshotManager, error) {
 		layerImported:          make(chan struct{}),
 		snapshotOwnerLeases:    make(map[string]map[string]struct{}),
 		leaseOwnedSnapshots:    make(map[string]map[string]struct{}),
+		ancestryLeaseID:        newOwnerAncestryLeaseID(),
 		ownerLeaseLocker:       locker.New(),
 		backgroundReleases:     newBackgroundReleases(maxPendingReleases),
 		localMounter:           opt.LocalMounter,

@@ -111,7 +111,8 @@ func TestAttachLeaseDoesNotBlockSnapshotReopen(t *testing.T) {
 }
 
 // AttachLease makes its lease writes in one metadata transaction: the
-// lease, every snapshot of the chain, and their blobs.
+// lease, every snapshot of the chain, and their blobs. A dagql owner lease
+// names its own snapshot and blob, and the owner ancestry lease the rest.
 func TestAttachLeaseWritesInOneTransaction(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -130,8 +131,20 @@ func TestAttachLeaseWritesInOneTransaction(t *testing.T) {
 	require.NoError(t, store.Manager.AttachLease(ctx, owner, child.SnapshotID()))
 	require.EqualValues(t, 1, commits.Load(), "one metadata commit for the lease, two snapshots and two blobs")
 	_, snapshots, contents := leaseResources(t, store, owner)
+	require.Equal(t, []string{child.SnapshotID()}, snapshots)
+	require.Equal(t, blobs[1:], contents)
+	snapshots, contents = ancestryHoldings(t, store)
+	require.Equal(t, []string{parent.SnapshotID()}, snapshots)
+	require.Equal(t, blobs[:1], contents)
+
+	// A non-dagql lease names the whole chain itself.
+	const pin = "whole-chain"
+	require.NoError(t, store.Manager.AttachLease(ctx, pin, child.SnapshotID()))
+	require.EqualValues(t, 2, commits.Load())
+	_, snapshots, contents = leaseResources(t, store, pin)
 	require.ElementsMatch(t, []string{parent.SnapshotID(), child.SnapshotID()}, snapshots)
 	require.ElementsMatch(t, blobs, contents)
+	require.NoError(t, store.Manager.RemoveLease(ctx, pin))
 
 	require.NoError(t, child.Release(ctx))
 	require.NoError(t, parent.Release(ctx))
@@ -281,7 +294,7 @@ func TestAttachLeaseConcurrentOwners(t *testing.T) {
 			require.Empty(t, all, "removed owner %s is gone", id)
 			continue
 		}
-		_, snapshots, contents := leaseResources(t, store, id)
+		snapshots, contents := ownerHoldings(t, store, id)
 		require.ElementsMatch(t, []string{parent.SnapshotID(), child.SnapshotID()}, snapshots, "owner %s holds the chain", id)
 		require.ElementsMatch(t, blobs, contents, "owner %s holds the chain's blobs", id)
 	}
@@ -471,8 +484,9 @@ func TestAttachLeaseRecordsCommittedPrefixAfterLaterFailure(t *testing.T) {
 	recorded := layers(uncompressed)
 
 	// The walk lists top, middle, base; the base's snapshot write fails, so
-	// the top and middle writes commit.
-	const owner = "dagql/result/prefix"
+	// the top and middle writes commit. A lease that names its whole chain
+	// itself, as every lease but dagql owner leases does.
+	const owner = "operation/prefix"
 	injected := errors.New("injected base write failure")
 	store.BeforeAdd = func(_ context.Context, l leases.Lease, r leases.Resource) error {
 		if l.ID == owner && r.ID == base.SnapshotID() {
