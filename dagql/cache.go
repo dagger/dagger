@@ -5962,7 +5962,7 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 		}
 		g.attempt = attempt
 		shared.lazyMu.Unlock()
-		if spec == nil && lazyEval != nil {
+		if spec == nil && lazyEval != nil && storedPart == "" {
 			c.logRecordRunForWantOfOffers(stackCtx, shared)
 		}
 
