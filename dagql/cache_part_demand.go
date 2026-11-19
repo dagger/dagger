@@ -748,7 +748,9 @@ func (c *Cache) logPartWithoutSource(ctx context.Context, row *sharedResult, add
 // as a body of its own operation starts (runLazyTask): it runs its recipe, as
 // a value restored from local disk does (decodeArmsRecipe), and no part of it
 // is searched for, so no "part without a source" line names it. A demand
-// that finds its group's work already done runs no body and logs nothing.
+// that finds its group's work already done runs no body and logs nothing,
+// and a body that opens a part saved on this engine (LazyGroupStoredPart),
+// as a restart's restored value does, runs no recipe and logs nothing.
 // The entry, its field and its recipe say what ran again; origin and
 // merged_at are as logPartWithoutSource gives them.
 func (c *Cache) logRecordRunForWantOfOffers(ctx context.Context, row *sharedResult) {
