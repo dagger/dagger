@@ -40,12 +40,12 @@ var Rules = []Rule{
 	{"prepared", regexp.MustCompile(`cachedPreparedDangDir|preparedDangPrograms|dang\.PrepareDir|\(\*PreparedDirectory\)`)},
 	// Schema building (#15202, #15215, #15216). Before the arbitrary
 	// results: schema memos may be kept as arbitrary values too.
-	{"schema", regexp.MustCompile(`core\.buildSchema|schemaJSONFile|core\.\(\*SchemaBuilder|SchemaBuilderMemo|SchemaIntrospection|SchemaASTCache|schemaASTCache|dagql\.\(\*Server\)\.Fork|\(\*CoreSchemaBase\)\.Fork|core\.\(\*ModDeps\)|moduleServer|introspection\.`)},
+	{"schema", regexp.MustCompile(`core\.buildSchema|schemaJSONFile|cachedDangSchema|loadDangSchema|core/sdk\.sessionModuleInstance|\(\*CoreMod\)\.Install|core\.\(\*SchemaBuilder|SchemaBuilderMemo|SchemaIntrospection|SchemaASTCache|schemaASTCache|dagql\.\(\*Server\)\.Fork|\(\*CoreSchemaBase\)\.Fork|core\.\(\*ModDeps\)|moduleServer|introspection\.`)},
 	// Other session-owned arbitrary results: received Dang values (#15224),
 	// converted module receivers (#15226), and the rest kept by key.
-	{"arbitrary", regexp.MustCompile(`decodeReceived|receivedValues|receivedInterner|moduleFunctionReceiver|convertedReceivers|GetOrInitArbitrary`)},
+	{"arbitrary", regexp.MustCompile(`decodeReceived|receivedValues|receivedInterner|moduleFunctionReceiver|convertedReceivers|dagql\.\(\*Cache\)\.\w*[aA]rbitrary`)},
 	// dagql's own result bookkeeping (no PR).
-	{"dagql", regexp.MustCompile(`dagql\.\(\*Cache\)\.initCompletedResult|sessionResultInstall|dagql\.\(\*Cache\)\.(recordSession|attachSession|newShared|captureSession)\w*`)},
+	{"dagql", regexp.MustCompile(`dagql\.\(\*Cache\)\.initCompletedResult|sessionResultInstall|dagql\.\(\*Cache\)\.(recordSession|attachSession|newShared|captureSession|trackSessionResult|acquireSessionResult)\w*`)},
 }
 
 // Layer is one layer's share of a profile.

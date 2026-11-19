@@ -419,7 +419,7 @@ func (a *agent) runTurn(ctx context.Context) error {
 		}
 	}
 	if t%4 == 0 {
-		if _, err := step("editor.grep", map[string]any{"regex": "func (Unify|Generalize|New)", "glob": "pkg/hm/*.go", "content": true}); err != nil {
+		if _, err := step("editor.grep", map[string]any{"regex": "func New", "glob": "pkg/hm/*.go", "content": true}); err != nil {
 			return err
 		}
 	}
@@ -438,9 +438,19 @@ func (a *agent) runTurn(ctx context.Context) error {
 	// Workspace-taking tool such as the editor's write sees the host
 	// checkout every time and edits never accumulate. DangEval reads and
 	// writes the bound workspace (`ws`), so the agent edits through it.
+	// The first turn writes the files; every turn then edits them as the
+	// editor's edit does, File.withReplaced on the workspace's file, so the
+	// workspace is a chain of small edits.
+	if t == 1 {
+		if _, err := step("DangEval", map[string]any{"source": fmt.Sprintf(
+			"ws = ws.withNewFile(\"pkg/cake/turns.go\", %s).withNewFile(\"pkg/cake/turns_test.go\", %s)\nws.directory(\"pkg/cake\").entries",
+			dangString(goFile(0)), dangString(testFile(0)))}); err != nil {
+			return err
+		}
+	}
 	if _, err := step("DangEval", map[string]any{"source": fmt.Sprintf(
-		"ws = ws.withNewFile(\"pkg/cake/turns.go\", %s).withNewFile(\"pkg/cake/turns_test.go\", %s)\nws.directory(\"pkg/cake\").entries",
-		dangString(goFile(t)), dangString(testFile(t)))}); err != nil {
+		"ws = ws.withFile(\"pkg/cake/turns.go\", ws.file(\"pkg/cake/turns.go\").withReplaced(%s, %s))\nws = ws.withFile(\"pkg/cake/turns_test.go\", ws.file(\"pkg/cake/turns_test.go\").withReplaced(%s, %s))\nws.directory(\"pkg/cake\").entries",
+		dangString(marker), dangString(turnFunc(t)+marker), dangString(marker), dangString(turnTest(t)+marker))}); err != nil {
 		return err
 	}
 
@@ -466,8 +476,15 @@ func (a *agent) runTurn(ctx context.Context) error {
 	}
 
 	// Develop a module: edit it and load it again.
+	if t == 1 {
+		if _, err := step("DangEval", map[string]any{"source": fmt.Sprintf(
+			"ws = ws.withNewFile(\".dagger/modules/probe/main.dang\", %s)\nws.directory(\".dagger/modules/probe\").entries", dangString(probeFile(0)))}); err != nil {
+			return err
+		}
+	}
 	if _, err := step("DangEval", map[string]any{"source": fmt.Sprintf(
-		"ws = ws.withNewFile(\".dagger/modules/probe/main.dang\", %s)\nws.directory(\".dagger/modules/probe\").entries", dangString(probeFile(t)))}); err != nil {
+		"ws = ws.withFile(\".dagger/modules/probe/main.dang\", ws.file(\".dagger/modules/probe/main.dang\").withReplaced(%s, %s))\nws.directory(\".dagger/modules/probe\").entries",
+		dangString(probeMarker), dangString(probeTurn(t)+probeMarker))}); err != nil {
 		return err
 	}
 	// Load it as a module (its type definitions come from running it), and
@@ -557,6 +574,12 @@ func turnTest(t int) string {
 	return fmt.Sprintf("func TestTurn%d(t *testing.T) {\n\tif len(Turn%d()) != 1024 {\n\t\tt.Fatalf(\"turn %d: got %%d bytes\", len(Turn%d()))\n\t}\n\tt.Log(\"turn %d ok\")\n}\n\n", t, t, t, t, t)
 }
 
+// The markers each turn's edits insert before.
+const (
+	marker      = "// cake: next turn"
+	probeMarker = "# cake: next turn"
+)
+
 // goFile is pkg/cake/turns.go after turn t: a function per turn.
 func goFile(t int) string {
 	var b strings.Builder
@@ -564,7 +587,7 @@ func goFile(t int) string {
 	for i := 1; i <= t; i++ {
 		b.WriteString(turnFunc(i))
 	}
-	return b.String()
+	return b.String() + marker + "\n"
 }
 
 // testFile is pkg/cake/turns_test.go after turn t: a test per turn.
@@ -574,19 +597,24 @@ func testFile(t int) string {
 	for i := 1; i <= t; i++ {
 		b.WriteString(turnTest(i))
 	}
-	return b.String()
+	return b.String() + marker + "\n"
 }
 
 // probeFile is the probe module after turn t: a function per turn.
 func probeFile(t int) string {
 	var b strings.Builder
 	b.WriteString("# A module the memory cake's synthetic agent edits every turn and loads\n# again, as an agent developing a module does: every edit is a new module.\n\n")
-	b.WriteString("\"\"\"\nGrows by a function each turn.\n\"\"\"\ntype Probe {\n  \"\"\"\n  The base of every turn's greeting.\n  \"\"\"\n  greeting: String! {\n    \"hello from probe\"\n  }\n")
+	b.WriteString("\"\"\"\nGrows by a function each turn.\n\"\"\"\ntype Probe {\n  \"\"\"\n  The base of every turn's greeting.\n  \"\"\"\n  greeting: String! {\n    \"hello from probe\"\n  }\n\n  ")
 	for i := 1; i <= t; i++ {
-		fmt.Fprintf(&b, "\n  \"\"\"\n  Turn %d's greeting.\n  \"\"\"\n  turn%d: String! {\n    greeting + \" at turn %d\"\n  }\n", i, i, i)
+		b.WriteString(probeTurn(i))
 	}
-	b.WriteString("}\n")
+	b.WriteString(probeMarker + "\n}\n")
 	return b.String()
+}
+
+// probeTurn is the probe module's function for turn t.
+func probeTurn(t int) string {
+	return fmt.Sprintf("\n  \"\"\"\n  Turn %d's greeting.\n  \"\"\"\n  turn%d: String! {\n    greeting + \" at turn %d\"\n  }\n\n  ", t, t, t)
 }
 
 // dangString quotes s as a Dang string literal.
