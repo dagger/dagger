@@ -1336,6 +1336,15 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 			if installSite {
 				addToSpanSet(&span.installSites, linked)
 			}
+		case telemetryattrs.LinkPurposeWait:
+			if linkedCtx.TraceID == span.TraceID && linkedCtx.SpanID != span.ID {
+				// Register the operation the span waited on, so that a view
+				// holding only part of the trace knows to fetch it (see
+				// TimeBreakdownSpans), and that until it does, the span's
+				// time breakdown knows the wait is unresolved rather than on
+				// something outside the trace.
+				db.initSpan(linkedCtx.SpanID)
+			}
 		case telemetry.LinkPurposeErrorOrigin:
 			if linkedCtx.SpanID == span.ID {
 				// defense in depth; it's technically possible to link to yourself, and

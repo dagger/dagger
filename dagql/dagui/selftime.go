@@ -149,6 +149,20 @@ func (span *Span) TimeBreakdown(now time.Time) *TimeBreakdown {
 	span.collectInferredWaits(&raw, now)
 	merged := mergeWaitWindows(raw)
 
+	// A view holding part of a trace may not have loaded what the row
+	// waited on. Until it does, whether the row waited on another operation
+	// or ran nested work of its own is unknown, so it reads as working the
+	// whole time. TimeBreakdownSpans names what to load.
+	for _, w := range merged {
+		if w.target.unloaded() || resolveBlocker(w.target).unloaded() {
+			for _, p := range painted {
+				hb.addSegment(TimeSegment{Start: p.Start, End: p.End})
+			}
+			hb.Self = paintedTotal
+			return hb
+		}
+	}
+
 	// Resolve each stretch transitively into per-instant blockers, then
 	// smooth out sub-visual slivers.
 	var resolved []resolvedWait
@@ -283,6 +297,11 @@ func (span *Span) TimeBreakdown(now time.Time) *TimeBreakdown {
 // turn waiting resolve deeper.
 func resolveWaitChain(win waitWindow, viaLabel string, blockers []*Span, depth int, visited map[*Span]bool, now time.Time) []resolvedWait {
 	blocker := resolveBlocker(win.target)
+	if blocker.unloaded() {
+		// further down the chain than the row's own blockers, which
+		// TimeBreakdown resolves first, it is as good as outside the trace
+		blocker = nil
+	}
 	blockers = appendResolvedBlocker(blockers, blocker)
 	self := resolvedWait{
 		start:    win.start,
@@ -875,6 +894,12 @@ func (span *Span) execArgv(depth int) string {
 		}
 	}
 	return ""
+}
+
+// unloaded reports whether span is a placeholder for a span of the trace this
+// DB holds only a reference to: a parent, link or wait target not received.
+func (span *Span) unloaded() bool {
+	return span != nil && !span.Received
 }
 
 func spanInSubtree(span, root *Span) bool {

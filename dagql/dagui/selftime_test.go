@@ -1208,3 +1208,101 @@ func TestResentCallKeepsDeferredTime(t *testing.T) {
 		t.Fatalf("a snapshot carrying activity should replace it: got %v", got)
 	}
 }
+
+// A view that loads a trace in parts may not hold what a row waited on: the
+// row's own resolver run (a module function's runtime span), or another
+// operation. Until it does, the row reads as working the whole time, and its
+// breakdown names the span to load. Once that arrives, the breakdown is the
+// one a whole trace gives.
+func TestTimeBreakdownWaitOnUnloadedSpan(t *testing.T) {
+	q := testID(1)
+	a := testID(2)
+	n := testID(3)
+	partial := []SpanSnapshot{
+		{ID: q, Name: "query", StartTime: at(0), EndTime: at(20)},
+		{ID: a, ParentID: q, Name: "Mod.publish", StartTime: at(0), EndTime: at(10),
+			Links: []SpanLink{waitLink(n, "call_exec", at(0), at(10))}},
+	}
+	for _, tc := range []struct {
+		name    string
+		parent  SpanID
+		waiting time.Duration
+	}{
+		{"nested work", a, 0},
+		{"another operation", q, 10 * time.Second},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := NewDB()
+			db.ImportSnapshots(partial)
+			row := db.Spans.Map[a]
+			hb := row.TimeBreakdown(at(20))
+			if hb.Material || hb.Waiting != 0 || hb.Self != 10*time.Second {
+				t.Fatalf("a wait on an unloaded span should leave the row whole: %+v", hb)
+			}
+			if !visitedBreakdownSpans(row)[n] {
+				t.Fatal("the breakdown should name the unloaded span to load")
+			}
+
+			db.ImportSnapshots([]SpanSnapshot{
+				{ID: n, ParentID: tc.parent, Name: "Mod.publish runtime", StartTime: at(0), EndTime: at(10)},
+			})
+			hb = row.TimeBreakdown(at(20))
+			if hb.Waiting != tc.waiting {
+				t.Fatalf("once loaded, the row should wait %v: %+v", tc.waiting, hb)
+			}
+		})
+	}
+}
+
+// A deferred evaluation a row forced resolves to the call it evaluates; until
+// that call is loaded, the row reads as working, as for any unloaded blocker.
+func TestTimeBreakdownEvaluationOfUnloadedCall(t *testing.T) {
+	q := testID(1)
+	a := testID(2)
+	r := testID(3)
+	w := testID(4)
+	db := NewDB()
+	db.ImportSnapshots([]SpanSnapshot{
+		{ID: q, Name: "query", StartTime: at(0), EndTime: at(20)},
+		{ID: a, ParentID: q, Name: "Container.stdout", StartTime: at(0), EndTime: at(10)},
+		{ID: r, ParentID: a, Name: "resume withExec", StartTime: at(0), EndTime: at(10),
+			Links: []SpanLink{evalLink(w)}},
+	})
+	row := db.Spans.Map[a]
+	if hb := row.TimeBreakdown(at(20)); hb.Material || hb.Self != 10*time.Second {
+		t.Fatalf("an evaluation of an unloaded call should leave the row whole: %+v", hb)
+	}
+	if !visitedBreakdownSpans(row)[w] {
+		t.Fatal("the breakdown should name the unloaded call to load")
+	}
+
+	db.ImportSnapshots([]SpanSnapshot{
+		{ID: w, ParentID: q, Name: "Container.withExec", StartTime: at(0), EndTime: at(0.5)},
+	})
+	segs := waitingSegments(row.TimeBreakdown(at(20)))
+	if len(segs) != 1 || segs[0].Target != w || segs[0].Duration() != 10*time.Second {
+		t.Fatalf("once loaded, the row should wait on the call: %+v", segs)
+	}
+}
+
+// A wait on an operation of another trace is a wait outside this one, which
+// no load of this trace resolves.
+func TestTimeBreakdownWaitOutsideTrace(t *testing.T) {
+	q := testID(1)
+	a := testID(2)
+	other := testID(3)
+	db := NewDB()
+	link := waitLink(other, "test", at(0), at(10))
+	link.SpanContext.TraceID = TraceID{TraceID: [16]byte{1}}
+	db.ImportSnapshots([]SpanSnapshot{
+		{ID: q, Name: "query", StartTime: at(0), EndTime: at(20)},
+		{ID: a, ParentID: q, Name: "A", StartTime: at(0), EndTime: at(10), Links: []SpanLink{link}},
+	})
+	if _, ok := db.Spans.Map[other]; ok {
+		t.Fatal("a span of another trace should not be registered")
+	}
+	segs := waitingSegments(db.Spans.Map[a].TimeBreakdown(at(20)))
+	if len(segs) != 1 || segs[0].Label != "an operation outside this trace" || segs[0].Duration() != 10*time.Second {
+		t.Fatalf("the row should wait outside this trace: %+v", segs)
+	}
+}
