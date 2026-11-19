@@ -186,6 +186,13 @@ type MemoryCake {
         # on both sides, so they are left out.
         focus: "\\(\\*cacheMetadata\\)\\.SetExternal|engine/contenthash\\.\\(\\*cacheContext\\)\\.save",
       ),
+      Demo(
+        pr: "15223",
+        title: "dang: bound prepared programs kept per session",
+        # Everything a prepared program holds is allocated under PrepareDir
+        # (its syntax copy and inferred types), called from the cache.
+        focus: "cachedPreparedDangDir|preparedDangPrograms|dang\\.PrepareDir",
+      ),
     ]
   }
 
@@ -201,6 +208,20 @@ type MemoryCake {
     env: [String!]! = [],
   ): Measurement! @cache(policy: FunctionCachePolicy.Never) {
     measure(pr: "15213", ref: ref, env: env)
+  }
+
+  """
+  #15223: Dang prepared programs kept per session. One session loads
+  VARIANTS copies of a Dang module with FUNCS functions (default 40 and
+  300), each differing by a comment so each has its own source ID, and calls
+  a function on each; main keeps every variant's prepared program (~8 MiB
+  each, ~340 MiB at the defaults), the fix the 4 most recent.
+  """
+  demo15223(
+    ref: String! = "main",
+    env: [String!]! = [],
+  ): Measurement! @cache(policy: FunctionCachePolicy.Never) {
+    measure(pr: "15223", ref: ref, env: env)
   }
 
   """
