@@ -2,6 +2,7 @@ package dagui
 
 import (
 	"encoding/json"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -50,6 +51,10 @@ type TimeSegment struct {
 	Indirect bool
 	// Via names the row's direct wait target for an Indirect segment.
 	Via string
+
+	// unplaced marks a stretch whose blocker is a span of the trace not
+	// loaded, rather than outside the trace.
+	unplaced bool
 }
 
 func (seg TimeSegment) Duration() time.Duration {
@@ -69,6 +74,10 @@ type TimeBreakdown struct {
 	// DominantTarget/DominantLabel identify the single largest blocker.
 	DominantTarget SpanID
 	DominantLabel  string
+
+	// unresolved marks a breakdown that reads as working because what the
+	// row waited on isn't loaded.
+	unresolved bool
 }
 
 // Materiality thresholds: decompose only when the row waited at least
@@ -96,22 +105,125 @@ type resolvedWait struct {
 	blockers   []*Span
 	indirect   bool
 	via        string
+	// unplaced marks a blocker of the trace not loaded (see TimeSegment)
+	unplaced bool
 }
 
 // TimeBreakdown computes the own-vs-waiting decomposition for the span's
-// row at the given time.
+// row at the given time. Once the DB computes the waiting below rows
+// (UpdateRowWaits), the row's waiting includes it.
+func (span *Span) TimeBreakdown(now time.Time) *TimeBreakdown {
+	return span.timeBreakdown(now, nil)
+}
+
+// timeBreakdown computes the row's breakdown. While the waiting below rows is
+// being computed, below holds it: a wait chain continues through the waits
+// recorded below a step, and the row's published waiting is left out.
 //
 //nolint:gocyclo // the decomposition is clearer as one flow.
-func (span *Span) TimeBreakdown(now time.Time) *TimeBreakdown {
+func (span *Span) timeBreakdown(now time.Time, below *rowWaitsState) *TimeBreakdown {
 	hb := &TimeBreakdown{}
 	if span == nil || span.db == nil {
 		return hb
 	}
 
-	// Painted intervals: the row's activity (its own interval plus deferred
-	// executions attributed back via causal links) plus children that ran
-	// outside the span's own interval (deferred work recorded under the
-	// original call, e.g. a withExec's container run happening when forced).
+	painted := span.paintedIntervals(now)
+	if len(painted) == 0 {
+		return hb
+	}
+	var paintedTotal time.Duration
+	for _, p := range painted {
+		paintedTotal += p.End.Sub(p.Start)
+	}
+
+	var waiting []TimeSegment
+	if resolved, ok := span.resolvedWaits(now, paintedTotal, below); ok {
+		waiting = span.waitingSegments(resolved)
+	} else {
+		hb.unresolved = true
+	}
+	if below == nil {
+		// The waiting computed from the row's whole subtree holds its own
+		// waits as well: it wins where both cover.
+		waiting = overlaySegments(span.rowWaitSegments(now), waiting)
+	}
+
+	// Tile each painted interval into own/waiting segments; waiting wins
+	// where they overlap.
+	perTarget := map[SpanID]time.Duration{}
+	targetLabels := map[SpanID]string{}
+	perLabel := map[string]time.Duration{}
+	for _, p := range painted {
+		cursor := p.Start
+		for _, w := range waiting {
+			if !w.End.After(p.Start) || !w.Start.Before(p.End) {
+				continue
+			}
+			seg := w
+			if seg.Start.Before(cursor) {
+				seg.Start = cursor
+			}
+			if seg.End.After(p.End) {
+				seg.End = p.End
+			}
+			if !seg.End.After(seg.Start) {
+				continue
+			}
+			if seg.Start.After(cursor) {
+				hb.addSegment(TimeSegment{Start: cursor, End: seg.Start})
+			}
+			if seg.Target.IsValid() {
+				perTarget[seg.Target] += seg.Duration()
+				targetLabels[seg.Target] = seg.Label
+			}
+			perLabel[seg.Label] += seg.Duration()
+			hb.addSegment(seg)
+			cursor = seg.End
+		}
+		if cursor.Before(p.End) {
+			hb.addSegment(TimeSegment{Start: cursor, End: p.End})
+		}
+	}
+
+	for _, seg := range hb.Segments {
+		if seg.Waiting {
+			hb.Waiting += seg.Duration()
+		} else {
+			hb.Self += seg.Duration()
+		}
+	}
+
+	total := hb.Self + hb.Waiting
+	hb.Material = hb.Waiting >= materialWaitMin &&
+		total > 0 &&
+		float64(hb.Waiting) >= materialWaitFrac*float64(total)
+
+	var dominantDur time.Duration
+	for target, dur := range perTarget {
+		if dur > dominantDur {
+			hb.DominantTarget, dominantDur = target, dur
+		}
+	}
+	if hb.DominantTarget.IsValid() {
+		hb.DominantLabel = targetLabels[hb.DominantTarget]
+	} else {
+		var labelDur time.Duration
+		for label, dur := range perLabel {
+			if dur > labelDur {
+				hb.DominantLabel, labelDur = label, dur
+			}
+		}
+	}
+
+	return hb
+}
+
+// paintedIntervals returns the row's painted intervals: its activity (its
+// own interval plus deferred executions attributed back via causal links)
+// plus children that ran outside the span's own interval (deferred work
+// recorded under the original call, e.g. a withExec's container run
+// happening when forced).
+func (span *Span) paintedIntervals(now time.Time) []Interval {
 	var painted []Interval
 	for ival := range span.Activity.Intervals(now) {
 		painted = append(painted, ival)
@@ -126,15 +238,12 @@ func (span *Span) TimeBreakdown(now time.Time) *TimeBreakdown {
 			painted = append(painted, ival)
 		}
 	}
-	painted = mergeSpanIntervals(painted)
-	if len(painted) == 0 {
-		return hb
-	}
-	var paintedTotal time.Duration
-	for _, p := range painted {
-		paintedTotal += p.End.Sub(p.Start)
-	}
+	return mergeSpanIntervals(painted)
+}
 
+// resolvedWaits returns the row's own waits, each resolved to the op working
+// during it, or false when what the row waited on isn't loaded.
+func (span *Span) resolvedWaits(now time.Time, paintedTotal time.Duration, below *rowWaitsState) ([]resolvedWait, bool) {
 	// Gather the row's direct wait windows and merge them into disjoint
 	// stretches, keeping the dominant direct target for each.
 	var raw []waitWindow
@@ -155,11 +264,7 @@ func (span *Span) TimeBreakdown(now time.Time) *TimeBreakdown {
 	// whole time. TimeBreakdownSpans names what to load.
 	for _, w := range merged {
 		if w.target.unloaded() || !blockerAncestry(resolveBlocker(w.target), span, nil) {
-			for _, p := range painted {
-				hb.addSegment(TimeSegment{Start: p.Start, End: p.End})
-			}
-			hb.Self = paintedTotal
-			return hb
+			return nil, false
 		}
 	}
 
@@ -173,7 +278,7 @@ func (span *Span) TimeBreakdown(now time.Time) *TimeBreakdown {
 			via = blockerLabel(shownBlocker(direct, span))
 		}
 		visited := map[*Span]bool{}
-		resolved = append(resolved, resolveWaitChain(w, via, nil, 0, visited, now)...)
+		resolved = append(resolved, resolveWaitChain(w, via, nil, 0, visited, now, below)...)
 	}
 	// A blocker rendered inside the row's own subtree is the row hosting its
 	// own nested work (a module call running its function, a group span
@@ -195,112 +300,87 @@ func (span *Span) TimeBreakdown(now time.Time) *TimeBreakdown {
 	}
 	resolved = genuine
 	resolved = coalesceResolvedWaits(resolved)
-	resolved = absorbWaitSlivers(resolved, paintedTotal)
+	return absorbWaitSlivers(resolved, paintedTotal), true
+}
 
-	// Tile each painted interval into own/waiting segments; waiting wins
-	// where they overlap.
-	perTarget := map[*Span]time.Duration{}
-	perLabel := map[string]time.Duration{}
-	for _, p := range painted {
-		cursor := p.Start
-		for _, w := range resolved {
-			if !w.end.After(p.Start) || !w.start.Before(p.End) {
+// waitingSegments names the blockers of resolved waits by the rows the view
+// draws for them, as waiting segments in time order.
+func (span *Span) waitingSegments(resolved []resolvedWait) []TimeSegment {
+	var segs []TimeSegment
+	for _, w := range resolved {
+		if !w.end.After(w.start) {
+			continue
+		}
+		seg := TimeSegment{
+			Start:    w.start,
+			End:      w.end,
+			Waiting:  true,
+			Indirect: w.indirect,
+			unplaced: w.unplaced,
+		}
+		for _, blocker := range w.blockers {
+			blocker = shownBlocker(blocker, span)
+			if n := len(seg.Blockers); n > 0 && seg.Blockers[n-1].Target == blocker.ID {
 				continue
 			}
-			start, end := w.start, w.end
-			if start.Before(cursor) {
-				start = cursor
-			}
-			if end.After(p.End) {
-				end = p.End
-			}
-			if !end.After(start) {
-				continue
-			}
-			if start.After(cursor) {
-				hb.addSegment(TimeSegment{Start: cursor, End: start})
-			}
-			seg := TimeSegment{
-				Start:    start,
-				End:      end,
-				Waiting:  true,
-				Indirect: w.indirect,
-			}
-			for _, blocker := range w.blockers {
-				blocker = shownBlocker(blocker, span)
-				if n := len(seg.Blockers); n > 0 && seg.Blockers[n-1].Target == blocker.ID {
-					continue
-				}
-				seg.Blockers = append(seg.Blockers, TimeBlocker{
-					Target: blocker.ID,
-					Label:  blockerLabel(blocker),
-				})
-			}
-			if w.indirect {
-				seg.Via = w.via
-			}
-			if w.blocker != nil {
-				blocker := shownBlocker(w.blocker, span)
-				seg.Target = blocker.ID
-				seg.Label = blockerLabel(blocker)
-				perTarget[blocker] += end.Sub(start)
-			} else {
-				seg.Label = "an operation outside this trace"
-			}
-			perLabel[seg.Label] += end.Sub(start)
-			hb.addSegment(seg)
-			cursor = end
+			seg.Blockers = append(seg.Blockers, TimeBlocker{
+				Target: blocker.ID,
+				Label:  blockerLabel(blocker),
+			})
 		}
-		if cursor.Before(p.End) {
-			hb.addSegment(TimeSegment{Start: cursor, End: p.End})
+		if w.indirect {
+			seg.Via = w.via
 		}
-	}
-
-	for _, seg := range hb.Segments {
-		if seg.Waiting {
-			hb.Waiting += seg.Duration()
+		if w.blocker != nil {
+			blocker := shownBlocker(w.blocker, span)
+			seg.Target = blocker.ID
+			seg.Label = blockerLabel(blocker)
 		} else {
-			hb.Self += seg.Duration()
+			seg.Label = "an operation outside this trace"
+		}
+		segs = append(segs, seg)
+	}
+	return segs
+}
+
+// overlaySegments returns the waiting segments of base plus the parts of
+// those of extra base doesn't cover, in time order.
+func overlaySegments(base, extra []TimeSegment) []TimeSegment {
+	if len(base) == 0 {
+		return extra
+	}
+	if len(extra) == 0 {
+		return base
+	}
+	covered := make([]Interval, 0, len(base))
+	for _, seg := range base {
+		covered = append(covered, Interval{Start: seg.Start, End: seg.End})
+	}
+	covered = mergeSpanIntervals(covered)
+	out := slices.Clone(base)
+	for _, seg := range extra {
+		for _, ival := range subtractIntervals([]Interval{{Start: seg.Start, End: seg.End}}, covered) {
+			part := seg
+			part.Start, part.End = ival.Start, ival.End
+			out = append(out, part)
 		}
 	}
-
-	total := hb.Self + hb.Waiting
-	hb.Material = hb.Waiting >= materialWaitMin &&
-		total > 0 &&
-		float64(hb.Waiting) >= materialWaitFrac*float64(total)
-
-	var dominant *Span
-	var dominantDur time.Duration
-	for target, dur := range perTarget {
-		if dur > dominantDur {
-			dominant, dominantDur = target, dur
-		}
-	}
-	if dominant != nil {
-		hb.DominantTarget = dominant.ID
-		hb.DominantLabel = blockerLabel(dominant)
-	} else {
-		var labelDur time.Duration
-		for label, dur := range perLabel {
-			if dur > labelDur {
-				hb.DominantLabel, labelDur = label, dur
-			}
-		}
-	}
-
-	return hb
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Start.Before(out[j].Start) })
+	return out
 }
 
 // resolveWaitChain attributes the wait window to the ops actually working
 // during it by recursing through the target's own waits. Stretches where the
 // target itself was working resolve to the target; stretches where it was in
 // turn waiting resolve deeper.
-func resolveWaitChain(win waitWindow, viaLabel string, blockers []*Span, depth int, visited map[*Span]bool, now time.Time) []resolvedWait {
+func resolveWaitChain(win waitWindow, viaLabel string, blockers []*Span, depth int, visited map[*Span]bool, now time.Time, below *rowWaitsState) []resolvedWait {
 	blocker := resolveBlocker(win.target)
+	unplaced := false
 	if blocker.unloaded() {
 		// further down the chain than the row's own blockers, which
 		// TimeBreakdown resolves first, it is as good as outside the trace
 		blocker = nil
+		unplaced = true
 	}
 	blockers = appendResolvedBlocker(blockers, blocker)
 	self := resolvedWait{
@@ -310,6 +390,7 @@ func resolveWaitChain(win waitWindow, viaLabel string, blockers []*Span, depth i
 		blockers: append([]*Span(nil), blockers...),
 		indirect: depth > 0,
 		via:      viaLabel,
+		unplaced: unplaced,
 	}
 	if win.target == nil || depth >= waitChainMaxDepth || visited[win.target] {
 		return []resolvedWait{self}
@@ -334,20 +415,14 @@ func resolveWaitChain(win waitWindow, viaLabel string, blockers []*Span, depth i
 	if resolved := resolveBlocker(win.target); resolved != nil && resolved != win.target && !visited[resolved] {
 		resolved.collectInferredWaits(&subs, now)
 	}
-	// Clip to this window.
-	clipped := subs[:0]
-	for _, s := range subs {
-		if s.start.Before(win.start) {
-			s.start = win.start
-		}
-		if s.end.After(win.end) {
-			s.end = win.end
-		}
-		if s.end.After(s.start) {
-			clipped = append(clipped, s)
-		}
+	mergedSubs := mergeWaitWindows(clipWaitWindows(subs, win))
+	if below != nil {
+		// A step that waited on work outside it from below, while nothing
+		// under it worked, was waiting too: the chain goes on there, where
+		// the step's own waits don't cover. Those stretches are resolved
+		// already, each to its own blocker, so they aren't merged.
+		mergedSubs = overlayWaitWindows(mergedSubs, clipWaitWindows(below.chainWaits(win.target), win))
 	}
-	mergedSubs := mergeWaitWindows(clipped)
 	if len(mergedSubs) == 0 {
 		return []resolvedWait{self}
 	}
@@ -361,7 +436,7 @@ func resolveWaitChain(win waitWindow, viaLabel string, blockers []*Span, depth i
 			gap.start, gap.end = cursor, sub.start
 			out = append(out, gap)
 		}
-		out = append(out, resolveWaitChain(sub, viaLabel, blockers, depth+1, visited, now)...)
+		out = append(out, resolveWaitChain(sub, viaLabel, blockers, depth+1, visited, now, below)...)
 		cursor = sub.end
 	}
 	if cursor.Before(win.end) {
@@ -393,7 +468,7 @@ func coalesceResolvedWaits(wins []resolvedWait) []resolvedWait {
 	out := wins[:1]
 	for _, w := range wins[1:] {
 		last := &out[len(out)-1]
-		if w.blocker == last.blocker &&
+		if w.blocker == last.blocker && w.unplaced == last.unplaced &&
 			sameResolvedBlockers(w.blockers, last.blockers) &&
 			!w.start.After(last.end) {
 			if w.end.After(last.end) {
@@ -968,6 +1043,47 @@ func mergeSpanIntervals(ivals []Interval) []Interval {
 		}
 		out = append(out, ival)
 	}
+	return out
+}
+
+// clipWaitWindows clips wins to win, in place.
+func clipWaitWindows(wins []waitWindow, win waitWindow) []waitWindow {
+	clipped := wins[:0]
+	for _, w := range wins {
+		if w.start.Before(win.start) {
+			w.start = win.start
+		}
+		if w.end.After(win.end) {
+			w.end = win.end
+		}
+		if w.end.After(w.start) {
+			clipped = append(clipped, w)
+		}
+	}
+	return clipped
+}
+
+// overlayWaitWindows returns the disjoint windows base plus the parts of
+// extra neither base nor an earlier window of extra covers, in time order.
+func overlayWaitWindows(base, extra []waitWindow) []waitWindow {
+	if len(extra) == 0 {
+		return base
+	}
+	out := slices.Clone(base)
+	covered := make([]Interval, 0, len(base)+len(extra))
+	for _, w := range base {
+		covered = append(covered, Interval{Start: w.start, End: w.end})
+	}
+	for _, w := range extra {
+		covered = mergeSpanIntervals(covered)
+		for _, ival := range subtractIntervals([]Interval{{Start: w.start, End: w.end}}, covered) {
+			part := w
+			part.start, part.end = ival.Start, ival.End
+			out = append(out, part)
+			covered = append(covered, ival)
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].start.Before(out[j].start) })
 	return out
 }
 

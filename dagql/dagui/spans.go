@@ -373,6 +373,12 @@ type SpanSnapshot struct {
 
 	HasLogs bool `json:",omitempty"`
 
+	// childrenReported is the number of children the trace's stream reported
+	// for the span (telemetryattrs.UIChildCountAttr), plus one; zero when it
+	// reported none. Unlike ChildCount, it is never raised to the children
+	// received, so it tells whether they all have (see DB.PartialTrace).
+	childrenReported int32
+
 	// Test attributes
 	TestCaseName  string     `json:",omitempty"`
 	TestSuiteName string     `json:",omitempty"`
@@ -472,6 +478,12 @@ type SpanSnapshot struct {
 	// span, folded from progress log records. It lives in the snapshot so
 	// remote frontends receive it without reprocessing the raw records.
 	Progress *SpanProgress `json:",omitempty"`
+
+	// RowWaits holds the row's waiting computed from its whole subtree, once
+	// the DB computes it (DB.UpdateRowWaits). It lives in the snapshot so
+	// remote frontends receive it rather than compute it from a part of the
+	// trace.
+	RowWaits *RowWaits `json:",omitempty"`
 
 	ExtraAttributes SpanAttributes `json:",omitempty"`
 }
@@ -712,6 +724,7 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 		// Cloud's incremental view: children exist that this snapshot's
 		// stream did not carry, so the span stays expandable.
 		snapshot.ChildCount = int(asInt64(val))
+		snapshot.childrenReported = int32(min(asInt64(val), math.MaxInt32-1)) + 1
 
 	case telemetryattrs.UIHasLogsAttr:
 		snapshot.HasLogs = val.(bool)

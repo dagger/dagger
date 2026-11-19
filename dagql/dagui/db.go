@@ -148,6 +148,13 @@ type DB struct {
 	// demand fetches the primary output once, at exit, instead.
 	PrimaryLogsOnDemand bool
 
+	// PartialTrace marks a DB holding only part of a trace, loaded in parts
+	// by span. A row's waiting is then computed only once its whole subtree
+	// is loaded, as the trace's stream reported it (see UpdateRowWaits). A
+	// span imported from a stream that marks it partial
+	// (telemetryattrs.UIPartialAttr) sets it.
+	PartialTrace bool
+
 	Epoch, End time.Time
 
 	Spans    *OrderedSet[SpanID, *Span]
@@ -292,6 +299,10 @@ type DB struct {
 	rewindsInit bool
 
 	testIndex *TestIndex
+
+	// rowWaits is what UpdateRowWaits keeps between updates; nil until the
+	// first.
+	rowWaits *rowWaitsState
 }
 
 // MutationCount reports how many span adds/updates the DB has seen, for
@@ -507,6 +518,14 @@ func (db *DB) ImportSnapshots(snapshots []SpanSnapshot) {
 			// predates it
 			snapshot.Progress = span.Progress
 		}
+		if snapshot.RowWaits == nil {
+			// a raw snapshot carries none: keep what was computed
+			snapshot.RowWaits = span.RowWaits
+		}
+		if snapshot.childrenReported == 0 {
+			// a stream reading a span by ID may not count its children
+			snapshot.childrenReported = span.childrenReported
+		}
 		if snapshot.Activity.isZero() && !isLazyEvaluationName(snapshot.Name) {
 			// A raw snapshot, decoded from the span alone, carries no
 			// activity. Keep what this DB credited the span with from its
@@ -575,6 +594,7 @@ func (db *DB) update(span *Span) {
 	db.mutations++
 	db.noteTestSpanUpdated(span)
 	db.noteRunning(span)
+	db.noteRowWaitsChange(span)
 	if span.Final {
 		// don't bump versions for final spans; leave the remote as the
 		// source of truth, lest we stray forward and miss an actual version bump
@@ -1083,6 +1103,10 @@ func (db *DB) recordOTelSpan(span sdktrace.ReadOnlySpan) *Span {
 
 	// populate snapshot from otel attributes
 	for _, attr := range span.Attributes() {
+		if string(attr.Key) == telemetryattrs.UIPartialAttr && attr.Value.AsBool() {
+			// the stream carrying the span holds only part of the trace
+			db.PartialTrace = true
+		}
 		spanData.ProcessAttribute(
 			string(attr.Key),
 			attr.Value.AsInterface(),
