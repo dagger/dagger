@@ -47,7 +47,7 @@ func TestExportReusedLayerWritesNoOwnerLeases(t *testing.T) {
 	}
 	owns := func(owner string, blobs []string) {
 		t.Helper()
-		_, _, contents := leaseResources(t, store, owner)
+		_, contents := ownerHoldings(t, store, owner)
 		require.Subset(t, contents, blobs, "owner %s has the blobs of the snapshots it owns", owner)
 	}
 
