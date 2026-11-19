@@ -8,6 +8,7 @@ import (
 
 	"github.com/containerd/containerd/v2/core/leases"
 	cerrdefs "github.com/containerd/errdefs"
+	"github.com/dagger/dagger/engine/wcprof"
 	digest "github.com/opencontainers/go-digest"
 	pkgerrors "github.com/pkg/errors"
 )
@@ -324,6 +325,35 @@ func (cm *snapshotManager) attachOwnerLease(ctx context.Context, leaseID, snapsh
 		}
 	}
 	return cm.validateAttached(ctx, leaseID, append([]string{snapshotID}, named...))
+}
+
+// recordAncestryContent attaches dgst, just recorded as snapshotID's blob,
+// to the ancestry lease if it names the snapshot, and counts it there.
+//
+// It holds ancestryMu from the check to the count, as the attach and the
+// removal that change the ancestry do: a removal that releases the snapshot
+// in between would otherwise either have the blob added to the lease after
+// the release, where nothing counts it and nothing deletes it, or, for a
+// blob another released snapshot shares, delete it from the lease before it
+// is counted for this snapshot, which stays kept with its blob unleased.
+func (cm *snapshotManager) recordAncestryContent(ctx context.Context, snapshotID string, dgst digest.Digest) error {
+	ancestryLeaseID := cm.ownerAncestryLeaseID()
+	cm.ancestryMu.Lock()
+	defer cm.ancestryMu.Unlock()
+	wcprof.Lock(ctx, &cm.mu, managerMuProfIdent)
+	_, counted := cm.ancestry.blobs[snapshotID][dgst]
+	named := cm.ancestry.named(snapshotID)
+	cm.mu.Unlock()
+	if !named || counted {
+		return nil
+	}
+	if err := cm.attachOwnerContent(context.WithoutCancel(ctx), ancestryLeaseID, snapshotID, dgst); err != nil {
+		return err
+	}
+	wcprof.Lock(ctx, &cm.mu, managerMuProfIdent)
+	cm.ancestry.addBlobLocked(snapshotID, dgst)
+	cm.mu.Unlock()
+	return nil
 }
 
 // attachPendingAncestryBlobs attaches to the ancestry lease the blobs

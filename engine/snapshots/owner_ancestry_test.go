@@ -8,10 +8,14 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
+	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/leases"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/snapshots/testutil"
+	digest "github.com/opencontainers/go-digest"
+	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
 )
 
@@ -194,6 +198,144 @@ func TestOwnerAncestryHoldsBlobRecordedLater(t *testing.T) {
 	require.False(t, snapshotPresent(t, store, child.SnapshotID()))
 	require.False(t, blobPresent(t, store, parentBlob))
 	require.False(t, blobPresent(t, store, childBlob))
+}
+
+// writeBlob writes data to the content store as a layer blob, which nothing
+// keeps once it returns.
+func writeBlob(t *testing.T, store *testutil.Store, data string) ocispecs.Descriptor {
+	t.Helper()
+	ctx := context.Background()
+	write, err := store.Leases.Create(ctx, leases.WithRandomID())
+	require.NoError(t, err)
+	desc := ocispecs.Descriptor{MediaType: ocispecs.MediaTypeImageLayer, Digest: digest.FromString(data), Size: int64(len(data))}
+	require.NoError(t, content.WriteBlob(leases.WithLease(ctx, write.ID), store.Content, desc.Digest.String(), strings.NewReader(data), desc))
+	require.NoError(t, store.Leases.Delete(ctx, write))
+	return desc
+}
+
+// holdUntilRemoved runs remove while hold is held, giving it a moment to
+// finish, then lets hold go and waits for remove: the removal either ran in
+// the middle of what hold interrupts, or waits for it.
+func holdUntilRemoved(t *testing.T, entered <-chan struct{}, resume chan<- struct{}, held <-chan error, remove func() error) {
+	t.Helper()
+	<-entered
+	removed := make(chan error, 1)
+	go func() { removed <- remove() }()
+	select {
+	case err := <-removed:
+		removed <- err
+	case <-time.After(200 * time.Millisecond):
+	}
+	close(resume)
+	require.NoError(t, <-held)
+	require.NoError(t, <-removed)
+}
+
+// A blob recorded for an ancestor while the last owner above it is removed
+// is either counted before the removal, which then deletes it from the
+// ancestry lease with the ancestor, or not attached at all: it is never left
+// in the ancestry lease with nothing counting it.
+func TestOwnerAncestryBlobRecordedDuringRemoval(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store := testutil.NewStore(t)
+	refs, build := buildChain(t, store, 2)
+	blob := writeBlob(t, store, "ancestor blob")
+	owner := resultLeaseID(1)
+	require.NoError(t, store.Manager.AttachLease(ctx, owner, refs[1].SnapshotID()))
+
+	entered, resume := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	store.BeforeAdd = func(_ context.Context, l leases.Lease, r leases.Resource) error {
+		if strings.HasPrefix(l.ID, ancestryLeasePrefix) && r.ID == blob.Digest.String() {
+			once.Do(func() {
+				close(entered)
+				<-resume
+			})
+		}
+		return nil
+	}
+	recorded := make(chan error, 1)
+	go func() { recorded <- bkcache.RecordSnapshotContent(store.Manager, refs[0].SnapshotID(), blob) }()
+	holdUntilRemoved(t, entered, resume, recorded, func() error { return store.Manager.RemoveLease(ctx, owner) })
+	store.BeforeAdd = nil
+
+	releaseChain(t, store, refs, build)
+	require.Zero(t, leaseResourceCount(t, store, ancestryLeasePrefix), "the ancestry lease names nothing")
+	requireKept(t, store, refs, func(int) bool { return false }, "with the owner removed")
+	require.False(t, blobPresent(t, store, blob.Digest), "the ancestor's blob goes with it")
+}
+
+// Two ancestors share a blob. Recording it for the second while the first is
+// released never leaves the second, still kept, without its blob.
+func TestOwnerAncestryBlobSharedWithReleasedAncestor(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store := testutil.NewStore(t)
+	first, firstBuild := buildChain(t, store, 2)
+	second, secondBuild := buildChain(t, store, 2)
+	blob := writeBlob(t, store, "shared blob")
+	firstOwner, secondOwner := resultLeaseID(1), resultLeaseID(2)
+	require.NoError(t, store.Manager.AttachLease(ctx, firstOwner, first[1].SnapshotID()))
+	require.NoError(t, store.Manager.AttachLease(ctx, secondOwner, second[1].SnapshotID()))
+	require.NoError(t, bkcache.RecordSnapshotContent(store.Manager, first[0].SnapshotID(), blob))
+
+	entered, resume := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	store.AfterAdd = func(_ context.Context, l leases.Lease, r leases.Resource) {
+		if strings.HasPrefix(l.ID, ancestryLeasePrefix) && r.ID == blob.Digest.String() {
+			once.Do(func() {
+				close(entered)
+				<-resume
+			})
+		}
+	}
+	recorded := make(chan error, 1)
+	go func() { recorded <- bkcache.RecordSnapshotContent(store.Manager, second[0].SnapshotID(), blob) }()
+	holdUntilRemoved(t, entered, resume, recorded, func() error { return store.Manager.RemoveLease(ctx, firstOwner) })
+	store.AfterAdd = nil
+
+	releaseChain(t, store, first, firstBuild)
+	releaseChain(t, store, second, secondBuild)
+	requireKept(t, store, second, func(int) bool { return true }, "the second chain's owner keeps it")
+	require.True(t, blobPresent(t, store, blob.Digest), "and its ancestor's blob")
+	require.NoError(t, store.Manager.RemoveLease(ctx, secondOwner))
+	requireKept(t, store, second, func(int) bool { return false }, "with no owner left")
+	require.False(t, blobPresent(t, store, blob.Digest))
+}
+
+// A blob recorded for an ancestor after an attach read the ancestor's blobs,
+// and before the attach counted the ancestor, is attached to the ancestry
+// lease by the attach.
+func TestOwnerAncestryAttachesBlobRecordedDuringAttach(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store := testutil.NewStore(t)
+	refs, build := buildChain(t, store, 2)
+	blob := writeBlob(t, store, "ancestor blob")
+	owner := resultLeaseID(1)
+	var once sync.Once
+	var recordErr error
+	store.BeforeAdd = func(_ context.Context, l leases.Lease, r leases.Resource) error {
+		if strings.HasPrefix(l.ID, ancestryLeasePrefix) && r.ID == refs[0].SnapshotID() {
+			// Within the attach's metadata transaction. No owner lease names
+			// the ancestor, so recording its blob writes nothing.
+			once.Do(func() { recordErr = bkcache.RecordSnapshotContent(store.Manager, refs[0].SnapshotID(), blob) })
+		}
+		return nil
+	}
+	require.NoError(t, store.Manager.AttachLease(ctx, owner, refs[1].SnapshotID()))
+	store.BeforeAdd = nil
+	require.NoError(t, recordErr)
+	_, contents := ancestryHoldings(t, store)
+	require.Equal(t, []string{blob.Digest.String()}, contents)
+
+	releaseChain(t, store, refs, build)
+	requireKept(t, store, refs, func(int) bool { return true }, "with the owner")
+	require.True(t, blobPresent(t, store, blob.Digest), "the ancestry lease keeps the ancestor's blob")
+	require.NoError(t, store.Manager.RemoveLease(ctx, owner))
+	requireKept(t, store, refs, func(int) bool { return false }, "with the owner removed")
+	require.False(t, blobPresent(t, store, blob.Digest))
 }
 
 // A failed write to the ancestry lease fails AttachLease and records nothing;
