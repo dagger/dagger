@@ -463,7 +463,7 @@ func validateStoredOwnership(res *sharedResult) error {
 	env.PendingOffers = nil
 	if res.stored != nil {
 		// A record held compressed names what its body's facts say.
-		refs, _, err := res.storedFactsLocked()
+		refs, _, _, err := res.storedFactsLocked()
 		if err != nil {
 			return fmt.Errorf("result %d: %w", res.id, err)
 		}

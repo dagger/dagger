@@ -96,6 +96,12 @@ type TransferredValue struct {
 	// held rows to an engine (StoredBundle's HeldBy), with no dependencies
 	// and no outputs, and an engine sends them to the Cloud in an export.
 	Held digest.Digest `json:"held,omitempty"`
+	// Parts are, on a value a blob-backed cache sends, the parts its record
+	// proves complete and those it declares absent or pending, as the cache
+	// worked them out when it stored the record: a receiver reads them here
+	// instead of decoding the record's payload. Nil on a value whose sender
+	// doesn't carry them, an engine's.
+	Parts *TransferredRecordParts `json:"parts,omitempty"`
 
 	// storedEnvelope is, in a bundle a blob-backed cache built, the record's
 	// envelope as the cache holds it, compressed (storedBody), in place of
@@ -151,7 +157,25 @@ func (v TransferredValue) storedJSON() (storedValueJSON, error) {
 		DependencyIDs:      v.DependencyIDs,
 		ExpiresAtUnix:      v.ExpiresAtUnix,
 		Held:               v.Held,
+		Parts:              v.Parts,
 	}, nil
+}
+
+// TransferredRecordParts are a record's parts as its sender worked them out
+// (TransferredValue.Parts): those it proves complete
+// (memoRecordCompletePartKeys) and those it declares absent or pending
+// (declaredPartsOf), each sorted by its key.
+type TransferredRecordParts struct {
+	Complete []PersistedPartAddress    `json:"complete,omitempty"`
+	Declared []TransferredDeclaredPart `json:"declared,omitempty"`
+}
+
+// TransferredDeclaredPart is a part a record declares absent or pending, its
+// state and the kind of its value (declaredPart).
+type TransferredDeclaredPart struct {
+	Address PersistedPartAddress `json:"address"`
+	State   string               `json:"state"`
+	Kind    string               `json:"kind,omitempty"`
 }
 
 // storedValueJSON is TransferredValue's encoding, field for field, with its
@@ -164,6 +188,8 @@ type storedValueJSON struct {
 	DependencyIDs      []uint64         `json:"dependencyIDs,omitempty"`
 	ExpiresAtUnix      int64            `json:"expiresAtUnix,omitempty"`
 	Held               digest.Digest    `json:"held,omitempty"`
+
+	Parts *TransferredRecordParts `json:"parts,omitempty"`
 }
 
 // storedRecordJSON is a PersistedRecord with its envelope and call as
@@ -235,7 +261,10 @@ type ImportedValue struct {
 // writes, and the only one it merges: a merge refuses a bundle of any other.
 // cmd/engine-image-entries compares another engine image's bundle with it, to
 // know whether an engine of this source can start from those entries.
-const ValueBundleVersion = 8
+//
+// 9: a value a blob-backed cache sends carries its record's complete and
+// declared parts (TransferredValue.Parts).
+const ValueBundleVersion = 9
 
 // PersistedTransferCodec operates only on encoded copies, without resolving
 // schemas, operations, result references or storage.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 	"sync/atomic"
 )
 
@@ -591,7 +592,7 @@ func (c *Cache) storedBundleValueLocked(build *storedBundleBuild, res *sharedRes
 	if body := res.stored; body != nil {
 		// A body goes as it is held, compressed, and the bundle's encoding
 		// writes it out (TransferredValue.MarshalJSON).
-		refs, parts, err := res.storedFactsLocked()
+		refs, parts, complete, err := res.storedFactsLocked()
 		if err != nil {
 			return fmt.Errorf("stored bundle: entry %d: %w", res.id, err)
 		}
@@ -601,7 +602,7 @@ func (c *Cache) storedBundleValueLocked(build *storedBundleBuild, res *sharedRes
 		build.stored[uint64(build.ordinals[res.id])] = parts
 		if body.frame != nil {
 			// So does the frame it holds, which is its transfer form.
-			if err := build.addStoredValue(res, PersistedRecord{ResultID: uint64(res.id)}, body.envelope, refs); err != nil {
+			if err := build.addStoredValue(res, PersistedRecord{ResultID: uint64(res.id)}, body.envelope, refs, transferredRecordParts(parts, complete)); err != nil {
 				return err
 			}
 			value := &build.bundle.Values[len(build.bundle.Values)-1]
@@ -612,7 +613,7 @@ func (c *Cache) storedBundleValueLocked(build *storedBundleBuild, res *sharedRes
 		if err != nil {
 			return fmt.Errorf("stored bundle: entry %d: %w", res.id, err)
 		}
-		return build.addStoredValue(res, PersistedRecord{ResultID: uint64(res.id), Call: call}, body.envelope, refs)
+		return build.addStoredValue(res, PersistedRecord{ResultID: uint64(res.id), Call: call}, body.envelope, refs, transferredRecordParts(parts, complete))
 	}
 	kept, err := c.storedTransferLocked(res)
 	if err != nil {
@@ -627,21 +628,34 @@ func (c *Cache) storedBundleValueLocked(build *storedBundleBuild, res *sharedRes
 		return fmt.Errorf("stored bundle: entry %d: %w", res.id, err)
 	}
 	rec.Call = rec.Call.clone()
-	return build.addStoredValue(res, rec, nil, kept.refs)
+	return build.addStoredValue(res, rec, nil, kept.refs, transferredRecordParts(kept.parts, kept.complete))
+}
+
+// transferredRecordParts are a stored record's parts as a bundle carries
+// them (TransferredValue.Parts): those it proves complete and those it
+// declares absent or pending, each sorted by its key.
+func transferredRecordParts(declared []declaredPart, complete *partKeySet) *TransferredRecordParts {
+	parts := &TransferredRecordParts{Complete: complete.addresses()}
+	sorted := slices.Clone(declared)
+	slices.SortStableFunc(sorted, func(a, b declaredPart) int { return strings.Compare(a.key, b.key) })
+	for _, part := range sorted {
+		parts.Declared = append(parts.Declared, TransferredDeclaredPart{Address: part.address, State: part.state, Kind: part.kind})
+	}
+	return parts
 }
 
 // addStoredValue adds res's record to the build, with its envelope
-// compressed in storedEnvelope when it is held so. The bundle is validated by
-// shape (validateStoredBundle), so each reference is checked against the
-// record's dependencies here, from what normalizing the record found it names
-// (refs). Requires egraphMu.
-func (build *storedBundleBuild) addStoredValue(res *sharedResult, rec PersistedRecord, storedEnvelope []byte, refs []uint64) error {
+// compressed in storedEnvelope when it is held so, and its parts. The bundle
+// is validated by shape (validateStoredBundle), so each reference is checked
+// against the record's dependencies here, from what normalizing the record
+// found it names (refs). Requires egraphMu.
+func (build *storedBundleBuild) addStoredValue(res *sharedResult, rec PersistedRecord, storedEnvelope []byte, refs []uint64, parts *TransferredRecordParts) error {
 	for _, ref := range refs {
 		if _, ok := res.deps[sharedResultID(ref)]; !ok {
 			return fmt.Errorf("stored bundle: entry %d: reference to %d is not a direct dependency", res.id, ref)
 		}
 	}
-	value := TransferredValue{Ordinal: build.ordinals[res.id], SenderNumber: uint64(res.id), SenderReplacements: res.replacements, Record: rec, ExpiresAtUnix: res.expiresAtUnix, storedEnvelope: storedEnvelope}
+	value := TransferredValue{Ordinal: build.ordinals[res.id], SenderNumber: uint64(res.id), SenderReplacements: res.replacements, Record: rec, ExpiresAtUnix: res.expiresAtUnix, Parts: parts, storedEnvelope: storedEnvelope}
 	for dep := range res.deps {
 		value.DependencyIDs = append(value.DependencyIDs, uint64(build.ordinals[dep]))
 	}
@@ -674,6 +688,9 @@ type storedTransferRecord struct {
 	// parts it declares absent or pending.
 	refs  []uint64
 	parts []declaredPart
+	// complete are the parts the record proves complete
+	// (storedBody.complete).
+	complete *partKeySet
 	// size is the entry's value's encoded size in a bundle, once StoredSizes
 	// has measured it (measureStoredValue), with what else it read.
 	size atomic.Pointer[storedValueSize]
@@ -758,11 +775,13 @@ func normalizeStoredTransfer(res *sharedResult, env *PersistedResultEnvelope, ca
 	}
 	rec.Envelope.PendingOffers = nil
 	// A build validates its bundle by shape, so the record's payloads are
-	// checked by their codecs, and its outputs mapped, here.
-	if err := validateTransferPayloads(rec); err != nil {
+	// checked by their codecs, its outputs mapped and its complete parts
+	// described, here, each from one decode of each payload.
+	memos := payloadMemos{}
+	if err := validateMemoTransferPayloads(rec, memos); err != nil {
 		return nil, err
 	}
-	outputs, err := mapTransferredOutputs(rec)
+	outputs, err := mapMemoTransferredOutputs(rec, memos)
 	if err != nil {
 		return nil, err
 	}
@@ -775,7 +794,8 @@ func normalizeStoredTransfer(res *sharedResult, env *PersistedResultEnvelope, ca
 	if err != nil {
 		return nil, err
 	}
-	return &storedTransferRecord{envelope: env, call: call, record: rec, refs: refs, parts: parts}, nil
+	complete := sharedPartKeys(memoRecordCompletePartKeys(rec, memos))
+	return &storedTransferRecord{envelope: env, call: call, record: rec, refs: refs, parts: parts, complete: complete}, nil
 }
 
 // storedBundleOutputsLocked adds res's outputs to the build: its own stored

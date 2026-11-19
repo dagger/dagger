@@ -241,7 +241,10 @@ const cachePersistenceSchemaVersion = "24"
 // records in (encodeStoredRow), on top of the schema: it saves in a format of
 // its own, so an engine's store keeps its version when only the Cloud's
 // format changes.
-const blobBackedStoreFormat = "compressed-records-1"
+//
+// 2: a stored record's saved row carries the parts its record proves
+// complete (storedRowHeader.Complete).
+const blobBackedStoreFormat = "compressed-records-2"
 
 // persistenceSchemaVersion is the schema version the cache saves under, and
 // restores only from.

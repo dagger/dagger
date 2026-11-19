@@ -38,7 +38,7 @@ func TestEncodeEnvelopeIsTheEnvelopesJSON(t *testing.T) {
 		body any
 	}{
 		"merge":  {0, TypeMerge, sharedLayersMerge()},
-		"lookup": {0, TypeMerge, Merge{Bundle: dagql.ValueBundle{Version: 8}, Lookup: 7}},
+		"lookup": {0, TypeMerge, Merge{Bundle: dagql.ValueBundle{Version: 9}, Lookup: 7}},
 		"reply":  {41, TypeError, Error{Message: "<no & such>"}},
 		"hello":  {0, TypeHello, Hello{CacheID: "cache-a", Generation: 2}},
 	} {
