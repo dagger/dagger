@@ -533,11 +533,7 @@ func (env *publishCheckEnv) releaseEngine(ctx context.Context) (*dagger.Service,
 
 // client is a container with the CLI of the release engine's version, bound
 // to engine.
-func (env *publishCheckEnv) client(ctx context.Context, engine *dagger.Service) (*dagger.Container, error) {
-	endpoint, err := engine.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: 1234, Scheme: "tcp"})
-	if err != nil {
-		return nil, err
-	}
+func (env *publishCheckEnv) client(engine *dagger.Service) *dagger.Container {
 	cli := core.NewContainer().From(env.releaseEngineImage).File(publishCheckEngineCLIPath)
 	return wolfi.New().
 		Container(wolfi.WolfiContainerOpts{
@@ -554,10 +550,10 @@ func (env *publishCheckEnv) client(ctx context.Context, engine *dagger.Service) 
 		WithServiceBinding("github.test", env.mockSvc).
 		WithMountedFile("/github-ca.pem", env.certs.caRootCert).
 		WithServiceBinding("dagger-engine", engine).
-		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://dagger-engine:1234").
 		WithMountedFile("/.dagger-cli", cli).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/.dagger-cli").
-		WithSymlink("/.dagger-cli", "/usr/local/bin/dagger"), nil
+		WithSymlink("/.dagger-cli", "/usr/local/bin/dagger")
 }
 
 // publishWorkflowEngineImage is the engine image the Publish workflow runs
@@ -626,11 +622,7 @@ cat /tmp/publish.log
 exit "$status"
 `
 
-	client, err := env.client(ctx, engine)
-	if err != nil {
-		return "", err
-	}
-	out, err := client.
+	out, err := env.client(engine).
 		WithSecretVariable("REGISTRY_PASSWORD", core.SetSecret("release-registry-password-"+randomID(), registryPassword)).
 		WithSecretVariable("FAKE_GITHUB_TOKEN", core.SetSecret("fake-github-token-"+randomID(), publishCheckRegistryPass)).
 		WithSecretVariable("FAKE_NETLIFY_TOKEN", core.SetSecret("fake-netlify-token-"+randomID(), "fake-netlify-token"+tokenSuffix)).
