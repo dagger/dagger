@@ -37,7 +37,7 @@ func TestRestoreValuesHoldsWhatAPartLandsUntilReleased(t *testing.T) {
 			}
 
 			bctx, b, _ := transferTestCache(t)
-			reply, err := b.RestoreValues(bctx, bundle, leave)
+			reply, err := b.RestoreValues(bctx, bundle, leave, "")
 			require.NoError(t, err)
 			require.NotNil(t, reply.Release, "a restore's merge holds what it lands")
 			require.Len(t, reply.Roots, 1)

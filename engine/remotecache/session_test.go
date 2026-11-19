@@ -167,7 +167,7 @@ func newFakeAdapter() *fakeAdapter {
 	}
 }
 
-func (a *fakeAdapter) RestorePart(ctx context.Context, part dagql.ValueBundle, unretained []dagql.TransferOrdinal, known *dagql.KnownRows) (dagql.MergeReply, error) {
+func (a *fakeAdapter) RestorePart(ctx context.Context, part dagql.ValueBundle, unretained []dagql.TransferOrdinal, known *dagql.KnownRows, source string) (dagql.MergeReply, error) {
 	a.unretainedSeen <- unretained
 	a.restoreSeen <- part
 	return a.restore(ctx, part, known)

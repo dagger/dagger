@@ -42,11 +42,14 @@ type persistResultSnapshot struct {
 	hasValue              bool
 	sessionResourceHandle SessionResourceHandle
 	persistedEnvelope     *PersistedResultEnvelope
-	stored                *storedBody
-	snapshotOwnerLinks    []PersistedSnapshotRefLink
-	row                   persistdb.MirrorResult
-	resultDeps            []persistdb.MirrorResultDep
-	resultSnapshotLinks   []persistdb.MirrorResultSnapshotLink
+	// firstUse is set when persistedEnvelope is a record merged unprepared
+	// (sharedResult.firstUse): a save writes it prepared.
+	firstUse            *mergedFirstUse
+	stored              *storedBody
+	snapshotOwnerLinks  []PersistedSnapshotRefLink
+	row                 persistdb.MirrorResult
+	resultDeps          []persistdb.MirrorResultDep
+	resultSnapshotLinks []persistdb.MirrorResultSnapshotLink
 }
 
 type persistStateSnapshot struct {

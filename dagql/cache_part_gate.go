@@ -165,6 +165,13 @@ func (c *Cache) completePartsHeld(ctx context.Context, row *sharedResult, reader
 		return cached.keys, cached.sizes, nil
 	}
 	if reader == nil {
+		// A record merged unprepared proves the parts its bundle carried.
+		row.payloadMu.RLock()
+		carried, unprepared := row.firstUseCompletePartsLocked()
+		row.payloadMu.RUnlock()
+		if unprepared {
+			return carried, nil, nil
+		}
 		keys, version, err := c.describeRowPartsHeld(ctx, row, hold)
 		if err != nil {
 			return completePartsFellBack(ctx, row, err), nil, err

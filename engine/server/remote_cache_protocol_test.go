@@ -264,7 +264,7 @@ func TestRemoteCacheAdapterRestoresAPart(t *testing.T) {
 	target := newGCTestCache(t)
 	adapter := newTestRemoteCacheAdapter(t, target)
 	known := dagql.NewKnownRows()
-	reply, err := adapter.RestorePart(t.Context(), bundle, nil, known)
+	reply, err := adapter.RestorePart(t.Context(), bundle, nil, known, "")
 	require.NoError(t, err)
 	require.NotNil(t, reply.Release, "a restore's part holds what it landed")
 	defer func() { require.NoError(t, reply.Release(t.Context())) }()
@@ -277,7 +277,7 @@ func TestRemoteCacheAdapterRestoresAPart(t *testing.T) {
 	require.NoError(t, err, "the part's record is in the cache")
 	require.NoError(t, release(t.Context()))
 
-	again, err := adapter.RestorePart(t.Context(), bundle, nil, known)
+	again, err := adapter.RestorePart(t.Context(), bundle, nil, known, "")
 	require.NoError(t, err)
 	require.NoError(t, again.Release(t.Context()))
 	require.Equal(t, 1, again.Rows.Kept, "a record the cache holds is kept")
@@ -294,7 +294,7 @@ func TestRemoteCacheAdapterRestoreWaitsForLookupMerges(t *testing.T) {
 		<-release
 		return dagql.MergeReply{}, errors.New("refused")
 	}
-	adapter.restoreValues = func(context.Context, dagql.ValueBundle, []dagql.TransferOrdinal) (dagql.MergeReply, error) {
+	adapter.restoreValues = func(context.Context, dagql.ValueBundle, []dagql.TransferOrdinal, string) (dagql.MergeReply, error) {
 		entered <- "restore"
 		return dagql.MergeReply{}, errors.New("refused")
 	}
@@ -306,7 +306,7 @@ func TestRemoteCacheAdapterRestoreWaitsForLookupMerges(t *testing.T) {
 	require.Equal(t, "lookup", <-entered)
 	restored := make(chan error, 1)
 	go func() {
-		_, err := adapter.RestorePart(t.Context(), dagql.ValueBundle{}, nil, nil)
+		_, err := adapter.RestorePart(t.Context(), dagql.ValueBundle{}, nil, nil, "")
 		restored <- err
 	}()
 	select {

@@ -12,7 +12,7 @@ import (
 // validateValueBundle checks a bundle and every record's payload, and returns
 // its ordinals in dependency order.
 func validateValueBundle(bundle ValueBundle) ([]uint64, error) {
-	return checkValueBundle(bundle, false, nil)
+	return checkValueBundle(bundle, false, nil, nil)
 }
 
 // validateValueBundleShape checks a bundle as validateValueBundle does, except
@@ -20,7 +20,7 @@ func validateValueBundle(bundle ValueBundle) ([]uint64, error) {
 // and a payload is decoded only to find the parts the record's offers and
 // outputs name. The caller checks the payloads it uses.
 func validateValueBundleShape(bundle ValueBundle) ([]uint64, error) {
-	return checkValueBundle(bundle, true, nil)
+	return checkValueBundle(bundle, true, nil, nil)
 }
 
 // ResolveChainPrefixes gives each of the bundle's outputs that names a chain
@@ -96,10 +96,13 @@ func ResolveChainPrefixes(bundle *ValueBundle) error {
 // record a blob-backed cache sends as it holds it, compressed, the parts the
 // record declares (storedBody.parts): its content was checked when its body
 // was made, and its references by the build, so the row is checked by its
-// dependencies and call, and its outputs against those parts.
+// dependencies and call, and its outputs against those parts. declared has,
+// for each row whose record carries its parts (TransferredValue.Parts), the
+// parts it declares: its outputs are checked against those parts, without
+// mapping them from its payload.
 //
 //nolint:gocyclo // one check per bundle field and record kind; splitting hides the order of the checks
-func checkValueBundle(bundle ValueBundle, shapeOnly bool, stored map[uint64][]declaredPart) ([]uint64, error) {
+func checkValueBundle(bundle ValueBundle, shapeOnly bool, stored, declared map[uint64][]declaredPart) ([]uint64, error) {
 	if bundle.Version != ValueBundleVersion {
 		return nil, fmt.Errorf("unsupported value bundle version %d", bundle.Version)
 	}
@@ -186,6 +189,10 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool, stored map[uint64][]de
 			storedMapped[id] = true
 			continue
 		}
+		if _, ok := declared[id]; ok {
+			storedMapped[id] = true
+			continue
+		}
 		outputs, err := mapTransferredOutputs(row.Record)
 		if err != nil {
 			return nil, err
@@ -201,10 +208,13 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool, stored map[uint64][]de
 	}
 	// partAt returns the part a row's record has at an address key, as
 	// mapped above: the last of its declared parts at the key, for a row
-	// carried compressed.
+	// carried compressed or carrying its parts.
 	partAt := func(id uint64, key string) (CapturedCodecOutput, bool) {
 		if id < uint64(len(storedMapped)) && storedMapped[id] {
-			parts := stored[id]
+			parts, ok := stored[id]
+			if !ok {
+				parts = declared[id]
+			}
 			for i := len(parts) - 1; i >= 0; i-- {
 				if parts[i].key == key {
 					return parts[i].output(), true

@@ -48,7 +48,9 @@ func TestTransferRoundTripState(t *testing.T) {
 	require.NotEmpty(t, second.Held, "the second bundle carries held rows")
 
 	// B holds each record as the Cloud stores it, references renamed from
-	// B's entries to the Cloud's of the same recipe.
+	// B's entries to the Cloud's of the same recipe, once each record's
+	// payload is prepared, as its first use prepares it.
+	firstUseTestPrepareAll(t, bctx, b)
 	require.Equal(t, roundTripRecords(t, cloud, nil), roundTripRecords(t, b, roundTripNumbers(t, b, cloud)))
 
 	lines := append(roundTripStateLines(t, "cloud", cloud), roundTripStateLines(t, "b", b)...)

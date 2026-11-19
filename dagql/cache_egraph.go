@@ -1346,6 +1346,14 @@ func (c *Cache) lookupCacheForRequest(
 			}
 			return nil, false, nil
 		}
+		if errors.Is(err, errMergedPayloadRefused) {
+			// The hit's record, merged from the Cloud, failed its check at
+			// its first use, or one it depends on did: they are taken back
+			// (takeBackRefused), and the call runs instead, as it would
+			// have had the record never arrived.
+			c.takeBackRefused(ctx, hitShared, err)
+			return nil, false, nil
+		}
 		return nil, false, err
 	}
 	if c.testBeforeServeRequirementRecheck != nil {
