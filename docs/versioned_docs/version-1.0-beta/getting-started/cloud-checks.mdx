@@ -24,34 +24,15 @@ dagger cloud checks on
 
 Dagger gets the repository from the Git `origin` remote. The command prints `checks for repo <repository> enabled` when Cloud Checks are enabled. If they are already enabled, it makes no change.
 
-In an interactive terminal, the command offers to complete missing prerequisites:
+If setup is needed, the command can open the browser in an interactive terminal. In non-interactive mode, it prints the missing step and exits.
 
-- Sign in or create a Dagger Cloud account and organization.
-- In the browser, grant Dagger access to the repository.
+For manual setup, run `dagger cloud signup` if you need to sign in or create a Dagger Cloud organization. Open **Integrations** in your Cloud organization to grant repository access.
 
-Each prerequisite must finish before the command enables Cloud Checks. You can decline a prompt and complete it later.
+- **GitHub.** If you need to connect your GitHub account, run `dagger cloud integration create github --open`. Under **Dagger for GitHub**, select **Install Dagger for GitHub app**. Install it for the repository owner and grant it access to the repository.
+- **GitLab.com.** Under **Dagger for GitLab**, select **Connect GitLab**. Authorize Dagger and add the account or group that owns the project.
+- **Entire.** Under **Dagger for Entire**, select **Install Dagger for Entire plugin**. Choose the project that contains the repository.
 
-In non-interactive mode, the command stops and tells you how to finish setup. It does not open a browser or wait for input.
-
-You can also complete the prerequisites separately for GitHub:
-
-```shell
-dagger cloud signup
-dagger cloud integration create github --open
-```
-
-In the browser, install the Dagger for GitHub app for the account or organization that owns the repository and grant it access.
-
-For GitLab.com or Entire, run `dagger cloud signup` if needed, then connect in the browser.
-
-- **GitLab.com.** Open **Dagger for GitLab** under **Integrations** and select **Connect GitLab**. Authorize Dagger and add the account or group that contains the project.
-- **Entire.** Install the Dagger for Entire plugin on the project that contains the repository.
-
-Complete the browser steps, then retry:
-
-```shell
-dagger cloud checks on
-```
+After manual setup, rerun the enable command.
 
 ## Trigger Cloud Checks
 
