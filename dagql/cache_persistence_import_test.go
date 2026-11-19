@@ -392,6 +392,16 @@ func TestCachePersistenceImportedObjectAliasSupportsChainedSelect(t *testing.T) 
 	err = srvA.Select(rootCtxA, srvA.root, &seed, Selector{Field: "objCanonical"})
 	assert.NilError(t, err)
 
+	alias, err := cacheA.GetOrInitCall(rootCtxA, cacheTestSessionID(t, rootCtxA), srvA, &CallRequest{
+		ResultCall:          &ResultCall{Kind: ResultCallKindField, Field: "persistedObjectAlias", Type: NewResultCallType(seed.Type())},
+		IsPersistable:       true,
+		ResultFactsPrepared: true,
+	}, func(context.Context) (AnyResult, error) { return seed, nil })
+	assert.NilError(t, err)
+	assert.Equal(t, alias.cacheSharedResult().loadPayloadState().valueSource, seed.cacheSharedResult())
+	aliasID, err := cacheA.PersistedResultID(alias)
+	assert.NilError(t, err)
+
 	cacheTestReleaseSession(t, cacheA, rootCtxA)
 	assert.NilError(t, cacheA.persistCurrentState(ctx))
 	assert.NilError(t, cacheA.Close(context.Background()))
@@ -417,6 +427,16 @@ func TestCachePersistenceImportedObjectAliasSupportsChainedSelect(t *testing.T) 
 		Selector{Field: "name"},
 	)
 	assert.NilError(t, err)
+	assert.Equal(t, String("x"), name)
+
+	restored, err := cacheB.LoadResultByResultID(rootCtxB, cacheTestSessionID(t, rootCtxB), srvB, aliasID)
+	assert.NilError(t, err)
+	object, ok := restored.(AnyObjectResult)
+	assert.Assert(t, ok)
+	frame, err := object.ResultCall()
+	assert.NilError(t, err)
+	assert.Equal(t, frame.Field, "persistedObjectAlias")
+	assert.NilError(t, srvB.Select(rootCtxB, object, &name, Selector{Field: "name"}))
 	assert.Equal(t, String("x"), name)
 
 	cacheTestReleaseSession(t, cacheB, rootCtxB)

@@ -589,13 +589,7 @@ func decodePersistedObjectEnvelope(ctx context.Context, dec *PersistDecodeContex
 	if err != nil {
 		return nil, fmt.Errorf("decode object_id envelope instantiate: %w", err)
 	}
-	decoded := persistedNullableView(objRes, call)
-	// Installers copy this classification. Preserve object results without
-	// turning a nullable view into a non-null object on reconstruction.
-	if _, ok := decoded.(AnyObjectResult); ok {
-		decoded.cacheSharedResult().isObject = true
-	}
-	return decoded, nil
+	return persistedNullableView(objRes, call), nil
 }
 
 // decodePersistedScalarEnvelope decodes a scalar_json envelope through the

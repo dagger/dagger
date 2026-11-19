@@ -510,6 +510,8 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 		decodeCtx := ContextWithCall(ctx, call)
 		decodeCtx = context.WithValue(decodeCtx, copiedDecodeRolesKey{}, &copiedDecodeRoles{ResultID: uint64(res.id), Links: cloneSnapshotRefLinks(state.snapshotOwnerLinks), Imported: state.imported, ArmRecipe: c.decodeArmsRecipe(res, state.imported), Host: c.partHostFor(res)})
 		if decoded, err := DefaultPersistedSelfCodec.DecodeResult(decodeCtx, nil, uint64(resultID), call, *state.persistedEnvelope); err == nil && decoded != nil {
+			decodedState := decoded.cacheSharedResult().loadPayloadState()
+			isObject := restoredPayloadIsObject(state.persistedEnvelope, decoded, decodedState)
 			res.payloadMu.Lock()
 			if res.hasValue || res.persistedEnvelope == nil || res.payloadRevision != state.payloadRevision {
 				res.payloadMu.Unlock()
@@ -522,8 +524,8 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			}
 			if !res.hasValue && res.persistedEnvelope != nil && res.payloadRevision == state.payloadRevision {
 				markRestoredPartDelegation(res, *state.persistedEnvelope, call, state.snapshotOwnerLinks)
-				res.valueSource = decoded.cacheSharedResult().loadPayloadState().valueSource
-				res.isObject = decoded.cacheSharedResult().loadPayloadState().isObject
+				res.valueSource = decodedState.valueSource
+				res.isObject = isObject
 				c.bindPartHost(res, decoded)
 				if withSelf, ok := UnwrapAs[HasResultReference](decoded); ok && res.valueSource == nil {
 					withSelf.InitializeResultReference(Result[Typed]{shared: res})
@@ -742,6 +744,16 @@ func persistedEnvelopeTypeNames(env PersistedResultEnvelope, names []persistedEn
 		}
 	}
 	return names
+}
+
+// restoredPayloadIsObject keeps the cache's object view for native nullable
+// objects. Explicit nullable views of native non-null objects stay wrapped.
+func restoredPayloadIsObject(env *PersistedResultEnvelope, decoded AnyResult, state sharedResultPayloadState) bool {
+	if env.Kind != persistedResultKindObject {
+		return state.isObject
+	}
+	_, isObject := decoded.(AnyObjectResult)
+	return isObject || state.self != nil && !state.self.Type().NonNull
 }
 
 // retainDecodedDependencyResults records the explicit dependency edges from a
@@ -1022,6 +1034,8 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 				return nil, err
 			}
 
+			decodedState := decoded.cacheSharedResult().loadPayloadState()
+			isObject := restoredPayloadIsObject(state.persistedEnvelope, decoded, decodedState)
 			wcprof.WriteLock(ctx, &res.payloadMu, resultPayloadLockIdent)
 			if res.hasValue || res.persistedEnvelope == nil || res.payloadRevision != state.payloadRevision {
 				res.payloadMu.Unlock()
@@ -1036,8 +1050,8 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 			}
 			if !res.hasValue && res.persistedEnvelope != nil && res.payloadRevision == state.payloadRevision {
 				markRestoredPartDelegation(res, *state.persistedEnvelope, call, roles)
-				res.valueSource = decoded.cacheSharedResult().loadPayloadState().valueSource
-				res.isObject = decoded.cacheSharedResult().loadPayloadState().isObject
+				res.valueSource = decodedState.valueSource
+				res.isObject = isObject
 				c.bindPartHost(res, decoded)
 				if withSelf, ok := UnwrapAs[HasResultReference](decoded); ok && res.valueSource == nil {
 					withSelf.InitializeResultReference(Result[Typed]{shared: res})
