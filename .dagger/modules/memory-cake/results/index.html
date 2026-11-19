@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>The memory cake</title>
+<style>
+body{font-family:system-ui,-apple-system,Segoe UI,Helvetica,Arial,sans-serif;margin:24px auto;max-width:1280px;color:#111;padding:0 12px}
+table{border-collapse:collapse;font-size:13px;margin:12px 0}
+th,td{border:1px solid #ddd;padding:4px 6px;vertical-align:top}
+th{background:#f4f4f4}
+td.n{text-align:right;white-space:nowrap}
+code{font-size:11px;word-break:break-all}
+.sw{display:inline-block;width:10px;height:10px;margin-right:4px}
+.svg svg{max-width:100%;height:auto}
+ol{font-size:13px}
+</style></head><body>
+<h1>The memory cake</h1>
+<p>BEFORE = <code>fcce0f890ef1fd1230fed302fe9b973b37b9be05</code> (main), AFTER = <code>memory-cake-all</code> @ <code>88dadbd582e4ec2b2553f19a2e8d0f1513e0817d</code> (that main plus all memory PRs). Sum of per-PR targeted workloads, each measured in its own session; not one combined workload. Raw numbers: <a href="data.json">data.json</a>.</p>
+<div class="svg">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 1548" width="1240" height="1548" font-family="system-ui, -apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+<style>
+.h1{font-size:22px;font-weight:700;fill:#111}
+.h2{font-size:17px;font-weight:700;fill:#111}
+.sub{font-size:12px;fill:#555}
+.lbl{font-size:12px;fill:#222}
+.small{font-size:11px;fill:#333}
+.bar{font-size:13px;font-weight:700;fill:#111}
+.total{font-size:13px;font-weight:700;fill:#111}
+.delta{font-size:14px;font-weight:700;fill:#1e7b3a}
+.leader{fill:none;stroke:#999;stroke-width:0.8}
+.axis{stroke:#333;stroke-width:1}
+</style>
+<rect width="100%" height="100%" fill="#fff"/>
+<text x="20.0" y="34.0" text-anchor="start" class="h1">The memory cake: what each memory PR frees</text>
+<text x="20.0" y="54.0" text-anchor="start" class="sub">Focus bytes of the live Go heap (inuse_space, gc=1), BEFORE = fcce0f89 (main) vs AFTER = memory-cake-all @ 88dadbd5 (main + all memory PRs).</text>
+<text x="20.0" y="70.0" text-anchor="start" class="sub">Sum of per-PR targeted workloads, each measured in its own session on a fresh engine; not one combined workload.</text>
+<rect x="20.0" y="85.0" width="14" height="14" fill="#3b78d8"/>
+<text x="40.0" y="96.0" text-anchor="start" class="lbl">schema servers</text>
+<rect x="162.0" y="85.0" width="14" height="14" fill="#e8741c"/>
+<text x="182.0" y="96.0" text-anchor="start" class="lbl">contenthash + leases</text>
+<rect x="352.0" y="85.0" width="14" height="14" fill="#3fae5c"/>
+<text x="372.0" y="96.0" text-anchor="start" class="lbl">Dang + receivers</text>
+<rect x="510.0" y="85.0" width="14" height="14" fill="#8e5cc4"/>
+<text x="530.0" y="96.0" text-anchor="start" class="lbl">telemetry</text>
+<text x="20.0" y="136.0" text-anchor="start" class="h2">Engine cake: the engine&#39;s retained heap, per PR</text>
+<text x="20.0" y="156.0" text-anchor="start" class="sub">Each layer: one PR&#39;s focus bytes at the end of its workload, session still open.</text>
+<polygon points="550.00,701.33 730.00,723.48 730.00,724.00 550.00,724.00" fill="#1f4e9c" opacity="0.18"/>
+<polygon points="550.00,654.41 730.00,700.02 730.00,723.48 550.00,701.33" fill="#3b78d8" opacity="0.18"/>
+<polygon points="550.00,637.27 730.00,699.80 730.00,700.02 550.00,654.41" fill="#8fb4ee" opacity="0.18"/>
+<polygon points="550.00,560.02 730.00,699.80 730.00,699.80 550.00,637.27" fill="#a34100" opacity="0.18"/>
+<polygon points="550.00,483.16 730.00,699.80 730.00,699.80 550.00,560.02" fill="#e8741c" opacity="0.18"/>
+<polygon points="550.00,428.73 730.00,687.90 730.00,699.80 550.00,483.16" fill="#f6b26b" opacity="0.18"/>
+<polygon points="550.00,352.23 730.00,680.92 730.00,687.90 550.00,428.73" fill="#1e7b3a" opacity="0.18"/>
+<polygon points="550.00,285.22 730.00,673.30 730.00,680.92 550.00,352.23" fill="#3fae5c" opacity="0.18"/>
+<polygon points="550.00,239.63 730.00,664.44 730.00,673.30 550.00,285.22" fill="#94d6a4" opacity="0.18"/>
+<polygon points="550.00,207.81 730.00,654.68 730.00,664.44 550.00,239.63" fill="#5b2a86" opacity="0.18"/>
+<polygon points="550.00,204.00 730.00,652.07 730.00,654.68 550.00,207.81" fill="#8e5cc4" opacity="0.18"/>
+<rect x="400.00" y="701.33" width="150.0" height="22.67" fill="#1f4e9c"><title>#15202 core: dedupe and bound schema builder memos: 104.1 MiB</title></rect>
+<rect x="400.00" y="654.41" width="150.0" height="46.92" fill="#3b78d8"><title>#15215 core: share module schemas across client roots: 215.4 MiB</title></rect>
+<rect x="400.00" y="637.27" width="150.0" height="17.14" fill="#8fb4ee"><title>#15216 core: share artifact module servers across clients: 78.7 MiB</title></rect>
+<rect x="400.00" y="560.02" width="150.0" height="77.26" fill="#a34100"><title>#15213 engine: keep contenthash trees on disk: 354.7 MiB</title></rect>
+<rect x="400.00" y="483.16" width="150.0" height="76.86" fill="#e8741c"><title>#15212 engine: forget contenthash trees of collected snapshots: 352.9 MiB</title></rect>
+<rect x="400.00" y="428.73" width="150.0" height="54.43" fill="#f6b26b"><title>#15232 engine/snapshots: one ancestry lease for dagql owners: 249.9 MiB</title></rect>
+<rect x="400.00" y="352.23" width="150.0" height="76.50" fill="#1e7b3a"><title>#15223 dang: bound prepared programs kept per session: 351.2 MiB</title></rect>
+<rect x="400.00" y="285.22" width="150.0" height="67.01" fill="#3fae5c"><title>#15224 dang: bound received values kept per session: 307.7 MiB</title></rect>
+<rect x="400.00" y="239.63" width="150.0" height="45.59" fill="#94d6a4"><title>#15226 core: bound receivers a session keeps converted: 209.3 MiB</title></rect>
+<rect x="400.00" y="207.81" width="150.0" height="31.81" fill="#5b2a86"><title>#15220 clientdb: intern the span index&#39;s span IDs: 146.0 MiB</title></rect>
+<rect x="400.00" y="204.00" width="150.0" height="3.81" fill="#8e5cc4"><title>#15221 clientdb: intern the log index, pack row metadata: 17.5 MiB</title></rect>
+<rect x="730.00" y="723.48" width="150.0" height="0.52" fill="#1f4e9c"><title>#15202 core: dedupe and bound schema builder memos: 2.4 MiB</title></rect>
+<rect x="730.00" y="700.02" width="150.0" height="23.46" fill="#3b78d8"><title>#15215 core: share module schemas across client roots: 107.7 MiB</title></rect>
+<rect x="730.00" y="699.80" width="150.0" height="0.22" fill="#8fb4ee"><title>#15216 core: share artifact module servers across clients: 1.0 MiB</title></rect>
+<rect x="730.00" y="699.80" width="150.0" height="0.00" fill="#a34100"><title>#15213 engine: keep contenthash trees on disk: 0.0 MiB</title></rect>
+<rect x="730.00" y="699.80" width="150.0" height="0.00" fill="#e8741c"><title>#15212 engine: forget contenthash trees of collected snapshots: 0.0 MiB</title></rect>
+<rect x="730.00" y="687.90" width="150.0" height="11.90" fill="#f6b26b"><title>#15232 engine/snapshots: one ancestry lease for dagql owners: 54.6 MiB</title></rect>
+<rect x="730.00" y="680.92" width="150.0" height="6.98" fill="#1e7b3a"><title>#15223 dang: bound prepared programs kept per session: 32.0 MiB</title></rect>
+<rect x="730.00" y="673.30" width="150.0" height="7.62" fill="#3fae5c"><title>#15224 dang: bound received values kept per session: 35.0 MiB</title></rect>
+<rect x="730.00" y="664.44" width="150.0" height="8.86" fill="#94d6a4"><title>#15226 core: bound receivers a session keeps converted: 40.7 MiB</title></rect>
+<rect x="730.00" y="654.68" width="150.0" height="9.76" fill="#5b2a86"><title>#15220 clientdb: intern the span index&#39;s span IDs: 44.8 MiB</title></rect>
+<rect x="730.00" y="652.07" width="150.0" height="2.61" fill="#8e5cc4"><title>#15221 clientdb: intern the log index, pack row metadata: 12.0 MiB</title></rect>
+<polyline points="364.0,712.67 386.0,712.67 400.0,712.67" class="leader"/>
+<text x="360.0" y="716.7" text-anchor="end" class="lbl">#15202 schema builder memos · 104.1 MiB</text>
+<polyline points="364.0,677.87 386.0,677.87 400.0,677.87" class="leader"/>
+<text x="360.0" y="681.9" text-anchor="end" class="lbl">#15215 module schemas per client root · 215.4 MiB</text>
+<polyline points="364.0,645.84 386.0,645.84 400.0,645.84" class="leader"/>
+<text x="360.0" y="649.8" text-anchor="end" class="lbl">#15216 artifact module servers per client · 78.7 MiB</text>
+<polyline points="364.0,598.65 386.0,598.65 400.0,598.65" class="leader"/>
+<text x="360.0" y="602.6" text-anchor="end" class="lbl">#15213 contenthash trees on disk · 354.7 MiB</text>
+<polyline points="364.0,521.59 386.0,521.59 400.0,521.59" class="leader"/>
+<text x="360.0" y="525.6" text-anchor="end" class="lbl">#15212 trees of collected snapshots · 352.9 MiB</text>
+<polyline points="364.0,455.94 386.0,455.94 400.0,455.94" class="leader"/>
+<text x="360.0" y="459.9" text-anchor="end" class="lbl">#15232 one ancestry lease per owner · 249.9 MiB</text>
+<polyline points="364.0,390.48 386.0,390.48 400.0,390.48" class="leader"/>
+<text x="360.0" y="394.5" text-anchor="end" class="lbl">#15223 Dang prepared programs · 351.2 MiB</text>
+<polyline points="364.0,318.72 386.0,318.72 400.0,318.72" class="leader"/>
+<text x="360.0" y="322.7" text-anchor="end" class="lbl">#15224 Dang received values · 307.7 MiB</text>
+<polyline points="364.0,262.42 386.0,262.42 400.0,262.42" class="leader"/>
+<text x="360.0" y="266.4" text-anchor="end" class="lbl">#15226 converted module receivers · 209.3 MiB</text>
+<polyline points="364.0,223.72 386.0,223.72 400.0,223.72" class="leader"/>
+<text x="360.0" y="227.7" text-anchor="end" class="lbl">#15220 span index span IDs · 146.0 MiB</text>
+<polyline points="364.0,205.91 386.0,205.91 400.0,205.91" class="leader"/>
+<text x="360.0" y="209.9" text-anchor="end" class="lbl">#15221 log index interning · 17.5 MiB</text>
+<polyline points="880.0,723.74 894.0,724.00 916.0,724.00" class="leader"/>
+<text x="920.0" y="728.0" text-anchor="start" class="lbl">#15202 · 2.4 MiB · Δ −101.7 MiB (43.9×)</text>
+<polyline points="880.0,711.75 894.0,709.00 916.0,709.00" class="leader"/>
+<text x="920.0" y="713.0" text-anchor="start" class="lbl">#15215 · 107.7 MiB · Δ −107.7 MiB (2.0×)</text>
+<polyline points="880.0,699.91 894.0,694.00 916.0,694.00" class="leader"/>
+<text x="920.0" y="698.0" text-anchor="start" class="lbl">#15216 · 1.0 MiB · Δ −77.7 MiB (78.1×)</text>
+<polyline points="880.0,699.80 894.0,679.00 916.0,679.00" class="leader"/>
+<text x="920.0" y="683.0" text-anchor="start" class="lbl">#15213 · 0.0 MiB · Δ −354.7 MiB (→0)</text>
+<polyline points="880.0,699.80 894.0,664.00 916.0,664.00" class="leader"/>
+<text x="920.0" y="668.0" text-anchor="start" class="lbl">#15212 · 0.0 MiB · Δ −352.9 MiB (→0)</text>
+<polyline points="880.0,693.85 894.0,649.00 916.0,649.00" class="leader"/>
+<text x="920.0" y="653.0" text-anchor="start" class="lbl">#15232 · 54.6 MiB · Δ −195.2 MiB (4.6×)</text>
+<polyline points="880.0,684.41 894.0,634.00 916.0,634.00" class="leader"/>
+<text x="920.0" y="638.0" text-anchor="start" class="lbl">#15223 · 32.0 MiB · Δ −319.2 MiB (11.0×)</text>
+<polyline points="880.0,677.11 894.0,619.00 916.0,619.00" class="leader"/>
+<text x="920.0" y="623.0" text-anchor="start" class="lbl">#15224 · 35.0 MiB · Δ −272.7 MiB (8.8×)</text>
+<polyline points="880.0,668.87 894.0,604.00 916.0,604.00" class="leader"/>
+<text x="920.0" y="608.0" text-anchor="start" class="lbl">#15226 · 40.7 MiB · Δ −168.6 MiB (5.1×)</text>
+<polyline points="880.0,659.56 894.0,589.00 916.0,589.00" class="leader"/>
+<text x="920.0" y="593.0" text-anchor="start" class="lbl">#15220 · 44.8 MiB · Δ −101.2 MiB (3.3×)</text>
+<polyline points="880.0,653.37 894.0,574.00 916.0,574.00" class="leader"/>
+<text x="920.0" y="578.0" text-anchor="start" class="lbl">#15221 · 12.0 MiB · Δ −5.5 MiB (1.5×)</text>
+<text x="475.0" y="194.0" text-anchor="middle" class="total">2387.3 MiB</text>
+<text x="805.0" y="642.1" text-anchor="middle" class="total">330.2 MiB</text>
+<line x1="380.0" y1="724.00" x2="900.0" y2="724.00" class="axis"/>
+<text x="475.0" y="746.0" text-anchor="middle" class="bar">BEFORE</text>
+<text x="475.0" y="762.0" text-anchor="middle" class="sub">fcce0f89 (main)</text>
+<text x="805.0" y="746.0" text-anchor="middle" class="bar">AFTER</text>
+<text x="805.0" y="762.0" text-anchor="middle" class="sub">memory-cake-all (88dadbd5)</text>
+<text x="640.0" y="746.0" text-anchor="middle" class="delta">−2057.0 MiB (7.2×)</text>
+<text x="20.0" y="816.0" text-anchor="start" class="h2">CLI cake: the `dagger` CLI process heap, per PR</text>
+<text x="20.0" y="836.0" text-anchor="start" class="sub">Each layer: one PR&#39;s focus bytes in the CLI (headless pretty TUI) once its workload&#39;s telemetry is ingested.</text>
+<polygon points="550.00,1160.43 730.00,1183.82 730.00,1184.00 550.00,1184.00" fill="#c3a6e6" opacity="0.18"/>
+<polygon points="550.00,924.71 730.00,1173.85 730.00,1183.82 550.00,1160.43" fill="#5b2a86" opacity="0.18"/>
+<polygon points="550.00,884.00 730.00,1151.58 730.00,1173.85 550.00,924.71" fill="#8e5cc4" opacity="0.18"/>
+<rect x="400.00" y="1160.43" width="150.0" height="23.57" fill="#c3a6e6"><title>#15227 dagui: cut CLI telemetry memory: 66.0 MiB</title></rect>
+<rect x="400.00" y="924.71" width="150.0" height="235.72" fill="#5b2a86"><title>#15228 idtui: stop pruned span trees pinning walkers: 660.2 MiB</title></rect>
+<rect x="400.00" y="884.00" width="150.0" height="40.71" fill="#8e5cc4"><title>#15229 dagui: intern span digests and share attributes: 114.0 MiB</title></rect>
+<rect x="730.00" y="1183.82" width="150.0" height="0.18" fill="#c3a6e6"><title>#15227 dagui: cut CLI telemetry memory: 0.5 MiB</title></rect>
+<rect x="730.00" y="1173.85" width="150.0" height="9.97" fill="#5b2a86"><title>#15228 idtui: stop pruned span trees pinning walkers: 27.9 MiB</title></rect>
+<rect x="730.00" y="1151.58" width="150.0" height="22.27" fill="#8e5cc4"><title>#15229 dagui: intern span digests and share attributes: 62.4 MiB</title></rect>
+<polyline points="364.0,1172.22 386.0,1172.22 400.0,1172.22" class="leader"/>
+<text x="360.0" y="1176.2" text-anchor="end" class="lbl">#15227 CLI metric points + log churn · 66.0 MiB</text>
+<polyline points="364.0,1042.57 386.0,1042.57 400.0,1042.57" class="leader"/>
+<text x="360.0" y="1046.6" text-anchor="end" class="lbl">#15228 pruned span trees pin walkers · 660.2 MiB</text>
+<polyline points="364.0,904.35 386.0,904.35 400.0,904.35" class="leader"/>
+<text x="360.0" y="908.4" text-anchor="end" class="lbl">#15229 interned span digests/attrs · 114.0 MiB</text>
+<polyline points="880.0,1183.91 894.0,1184.00 916.0,1184.00" class="leader"/>
+<text x="920.0" y="1188.0" text-anchor="start" class="lbl">#15227 · 0.5 MiB · Δ −65.5 MiB (132.0×)</text>
+<polyline points="880.0,1178.84 894.0,1169.00 916.0,1169.00" class="leader"/>
+<text x="920.0" y="1173.0" text-anchor="start" class="lbl">#15228 · 27.9 MiB · Δ −632.3 MiB (23.6×)</text>
+<polyline points="880.0,1162.72 894.0,1154.00 916.0,1154.00" class="leader"/>
+<text x="920.0" y="1158.0" text-anchor="start" class="lbl">#15229 · 62.4 MiB · Δ −51.6 MiB (1.8×)</text>
+<text x="475.0" y="874.0" text-anchor="middle" class="total">840.2 MiB</text>
+<text x="805.0" y="1141.6" text-anchor="middle" class="total">90.8 MiB</text>
+<line x1="380.0" y1="1184.00" x2="900.0" y2="1184.00" class="axis"/>
+<text x="475.0" y="1206.0" text-anchor="middle" class="bar">BEFORE</text>
+<text x="475.0" y="1222.0" text-anchor="middle" class="sub">fcce0f89 (main)</text>
+<text x="805.0" y="1206.0" text-anchor="middle" class="bar">AFTER</text>
+<text x="805.0" y="1222.0" text-anchor="middle" class="sub">memory-cake-all (88dadbd5)</text>
+<text x="640.0" y="1206.0" text-anchor="middle" class="delta">−749.4 MiB (9.3×)</text>
+<text x="20.0" y="1276.0" text-anchor="start" class="h2">Transient: LLM trace tools per search (#15218 FindSpans, #15219 FindCalls)</text>
+<text x="20.0" y="1296.0" text-anchor="start" class="sub">Engine heap, 20k cheap calls in the session. Nothing is retained after a search, so this is not part of the cakes.</text>
+<text x="20.0" y="1328.0" text-anchor="start" class="bar">allocated per search</text>
+<text x="20.0" y="1362.0" text-anchor="start" class="lbl">FindSpans (#15218)</text>
+<rect x="170.0" y="1342.0" width="320.00" height="12" fill="#9a9a9a"/>
+<text x="496.0" y="1352.0" text-anchor="start" class="small">before 1568.1 MiB</text>
+<rect x="170.0" y="1358.0" width="11.67" height="12" fill="#8e5cc4"/>
+<text x="187.7" y="1368.0" text-anchor="start" class="small">after 57.2 MiB</text>
+<text x="20.0" y="1406.0" text-anchor="start" class="lbl">FindCalls (#15219)</text>
+<rect x="170.0" y="1386.0" width="190.25" height="12" fill="#9a9a9a"/>
+<text x="366.2" y="1396.0" text-anchor="start" class="small">before 932.3 MiB</text>
+<rect x="170.0" y="1402.0" width="160.36" height="12" fill="#8e5cc4"/>
+<text x="336.4" y="1412.0" text-anchor="start" class="small">after 785.9 MiB</text>
+<text x="640.0" y="1328.0" text-anchor="start" class="bar">live heap peak during searches</text>
+<text x="640.0" y="1362.0" text-anchor="start" class="lbl">FindSpans (#15218)</text>
+<rect x="790.0" y="1342.0" width="320.00" height="12" fill="#9a9a9a"/>
+<text x="1116.0" y="1352.0" text-anchor="start" class="small">before +462.6 MiB</text>
+<rect x="790.0" y="1358.0" width="31.13" height="12" fill="#8e5cc4"/>
+<text x="827.1" y="1368.0" text-anchor="start" class="small">after +45.0 MiB</text>
+<text x="640.0" y="1406.0" text-anchor="start" class="lbl">FindCalls (#15219)</text>
+<rect x="790.0" y="1386.0" width="144.94" height="12" fill="#9a9a9a"/>
+<text x="940.9" y="1396.0" text-anchor="start" class="small">before +209.5 MiB</text>
+<rect x="790.0" y="1402.0" width="19.02" height="12" fill="#8e5cc4"/>
+<text x="815.0" y="1412.0" text-anchor="start" class="small">after +27.5 MiB</text>
+<text x="20.0" y="1446.0" text-anchor="start" class="small">Baseline (the LLM&#39;s own overhead, a ListServices call with no trace search): before 9.2 MiB/search, peak +10.0 MiB; after 9.1 MiB/search, peak +1.3 MiB.</text>
+<text x="20.0" y="1478.0" text-anchor="start" class="small">Notes: each cake sums per-PR targeted workloads, each measured in its own session on a fresh engine; not one combined workload.</text>
+<text x="20.0" y="1493.0" text-anchor="start" class="small">#15212 and #15213 share one focus (serialized contenthash trees); #15212 alone, against its own branch: 360 → 53 MiB.</text>
+<text x="20.0" y="1508.0" text-anchor="start" class="small">#15226 frees memory only for Dang and dang-entrypoint Go modules; legacy Go/Python/TS runtimes keep receiver JSON via</text>
+<text x="20.0" y="1523.0" text-anchor="start" class="small">session-owned currentFunctionCall / FunctionCall.parent results. #15218&#39;s idle-LoadTrace release is not measured (needs Cloud).</text>
+</svg>
+</div>
+<h2>Every demo</h2>
+<table><tr><th>PR</th><th>workload</th><th>focus regexp</th><th>live before</th><th>live after</th><th>focus before</th><th>focus after</th><th>Δ focus</th><th>ratio</th></tr>
+<tr><td><span class="sw" style="background:#1f4e9c"></span><a href="https://github.com/dagger/dagger/pull/15202">#15202</a> core: dedupe and bound schema builder memos</td><td>1 session loads 300 distinct Dang modules (Directory.asModule), 10 per query</td><td><code>core\.buildSchema|schemaJSONFile|core\.\(\*SchemaBuilder|SchemaBuilderMemo|SchemaIntrospection|SchemaASTCache|dagql\.\(\*Server\)\.Fork|\(\*CoreSchemaBase\)\.Fork|core\.\(\*ModDeps\)|introspection\.</code></td><td class=n>183.2 MiB</td><td class=n>76.5 MiB</td><td class=n>104.1 MiB</td><td class=n>2.4 MiB</td><td class=n>−101.7 MiB</td><td class=n>43.9×</td></tr>
+<tr><td><span class="sw" style="background:#3b78d8"></span><a href="https://github.com/dagger/dagger/pull/15215">#15215</a> core: share module schemas across client roots</td><td>300 nested-client calls of a Go module function that calls a Dang dependency</td><td><code>dagql\.\(\*Server\)\.Fork|core\.buildSchema</code></td><td class=n>758.4 MiB</td><td class=n>601.4 MiB</td><td class=n>215.4 MiB</td><td class=n>107.7 MiB</td><td class=n>−107.7 MiB</td><td class=n>2.0×</td></tr>
+<tr><td><span class="sw" style="background:#8fb4ee"></span><a href="https://github.com/dagger/dagger/pull/15216">#15216</a> core: share artifact module servers across clients</td><td>40 concurrent nested clients run the checks of a 10-module Dang workspace</td><td><code>core\.dagqlServerForModule</code></td><td class=n>318.9 MiB</td><td class=n>154.2 MiB</td><td class=n>78.7 MiB</td><td class=n>1.0 MiB</td><td class=n>−77.7 MiB</td><td class=n>78.1×</td></tr>
+<tr><td><span class="sw" style="background:#a34100"></span><a href="https://github.com/dagger/dagger/pull/15213">#15213</a> engine: keep contenthash trees on disk</td><td>1 session hashes a 20k-file directory and 200 one-file edits of it</td><td><code>\(\*cacheMetadata\)\.SetExternal|engine/contenthash\.\(\*cacheContext\)\.save</code></td><td class=n>585.9 MiB</td><td class=n>236.1 MiB</td><td class=n>354.7 MiB</td><td class=n>0.0 MiB</td><td class=n>−354.7 MiB</td><td class=n>→0</td></tr>
+<tr><td><span class="sw" style="background:#e8741c"></span><a href="https://github.com/dagger/dagger/pull/15212">#15212</a> engine: forget contenthash trees of collected snapshots</td><td>200 one-file edits of a 20k-file directory hashed in separate sessions, then a cache prune</td><td><code>\(\*cacheMetadata\)\.SetExternal|engine/contenthash\.\(\*cacheContext\)\.save</code></td><td class=n>599.8 MiB</td><td class=n>227.8 MiB</td><td class=n>352.9 MiB</td><td class=n>0.0 MiB</td><td class=n>−352.9 MiB</td><td class=n>→0</td></tr>
+<tr><td><span class="sw" style="background:#f6b26b"></span><a href="https://github.com/dagger/dagger/pull/15232">#15232</a> engine/snapshots: one ancestry lease for dagql owners</td><td>16 withNewFile chains of 1000 synced results each, each owning its snapshot</td><td><code>go\.etcd\.io/bbolt|internal/fastbolt|\(\*snapshotManager\)\.(AttachLease|addSnapshotOwner|createOwnerLease|attachOwner\w*)|engine/snapshots/owner_ancestry\.go</code></td><td class=n>449.6 MiB</td><td class=n>256.0 MiB</td><td class=n>249.9 MiB</td><td class=n>54.6 MiB</td><td class=n>−195.2 MiB</td><td class=n>4.6×</td></tr>
+<tr><td><span class="sw" style="background:#1e7b3a"></span><a href="https://github.com/dagger/dagger/pull/15223">#15223</a> dang: bound prepared programs kept per session</td><td>40 comment-only variants of a 300-function Dang module, one call each</td><td><code>cachedPreparedDangDir|preparedDangPrograms|dang\.PrepareDir</code></td><td class=n>723.2 MiB</td><td class=n>447.7 MiB</td><td class=n>351.2 MiB</td><td class=n>32.0 MiB</td><td class=n>−319.2 MiB</td><td class=n>11.0×</td></tr>
+<tr><td><span class="sw" style="background:#3fae5c"></span><a href="https://github.com/dagger/dagger/pull/15224">#15224</a> dang: bound received values kept per session</td><td>250 chained calls on a Dang object whose list state grows by 256 per call</td><td><code>decodeReceived|receivedValues|receivedInterner</code></td><td class=n>688.5 MiB</td><td class=n>411.7 MiB</td><td class=n>307.7 MiB</td><td class=n>35.0 MiB</td><td class=n>−272.7 MiB</td><td class=n>8.8×</td></tr>
+<tr><td><span class="sw" style="background:#94d6a4"></span><a href="https://github.com/dagger/dagger/pull/15226">#15226</a> core: bound receivers a session keeps converted</td><td>200 distinct results of a 1 MiB Dang object, one function call each</td><td><code>moduleFunctionReceiver|convertedReceivers</code></td><td class=n>479.5 MiB</td><td class=n>294.2 MiB</td><td class=n>209.3 MiB</td><td class=n>40.7 MiB</td><td class=n>−168.6 MiB</td><td class=n>5.1×</td></tr>
+<tr><td><span class="sw" style="background:#5b2a86"></span><a href="https://github.com/dagger/dagger/pull/15220">#15220</a> clientdb: intern the span index&#39;s span IDs</td><td>60k cheap uncached API calls with the session&#39;s telemetry index open</td><td><code>clientdb\.\(\*spanLookup\)|clientdb\.newSpanLookup</code></td><td class=n>1120.7 MiB</td><td class=n>996.9 MiB</td><td class=n>146.0 MiB</td><td class=n>44.8 MiB</td><td class=n>−101.2 MiB</td><td class=n>3.3×</td></tr>
+<tr><td><span class="sw" style="background:#8e5cc4"></span><a href="https://github.com/dagger/dagger/pull/15221">#15221</a> clientdb: intern the log index, pack row metadata</td><td>60k cheap uncached API calls, each logging its payload, log index open</td><td><code>clientdb\.\(\*logLookup\)|clientdb\.newLogLookup</code></td><td class=n>1146.8 MiB</td><td class=n>1011.1 MiB</td><td class=n>17.5 MiB</td><td class=n>12.0 MiB</td><td class=n>−5.5 MiB</td><td class=n>1.5×</td></tr>
+<tr><td><span class="sw" style="background:#c3a6e6"></span><a href="https://github.com/dagger/dagger/pull/15227">#15227</a> dagui: cut CLI telemetry memory <em>(CLI heap)</em></td><td>a long agent session&#39;s telemetry streamed into a headless-TUI `dagger run`: 100 metric exports x 200 calls x 8 gauges, exemplars</td><td><code>client\.\(\*Client\)\.exportMetrics|dagui\.DBMetricExporter</code></td><td class=n>1627.9 MiB</td><td class=n>644.3 MiB</td><td class=n>66.0 MiB</td><td class=n>0.5 MiB</td><td class=n>−65.5 MiB</td><td class=n>132.0×</td></tr>
+<tr><td>#15227 alloc focus (churn: alloc_space, garbage included)</td><td>same run</td><td><code>sdk/log\.\(\*BatchProcessor\)|sdk/log\.\(\*queue\)|telemetry\.\(\*DroppingLogProcessor\)|telemetry\.newDroppingLogProcessor</code></td><td class=n>18404.8 MiB</td><td class=n>18039.3 MiB</td><td class=n>337.3 MiB</td><td class=n>0.0 MiB</td><td class=n>−337.3 MiB</td><td class=n>→0</td></tr>
+<tr><td><span class="sw" style="background:#5b2a86"></span><a href="https://github.com/dagger/dagger/pull/15228">#15228</a> idtui: stop pruned span trees pinning walkers <em>(CLI heap)</em></td><td>300k spans of a long agent session (tests, logs) streamed into a headless TUI rendering frames</td><td><code>dagui\.\(\*spanWalker\)</code></td><td class=n>1504.9 MiB</td><td class=n>690.4 MiB</td><td class=n>660.2 MiB</td><td class=n>27.9 MiB</td><td class=n>−632.3 MiB</td><td class=n>23.6×</td></tr>
+<tr><td><span class="sw" style="background:#8e5cc4"></span><a href="https://github.com/dagger/dagger/pull/15229">#15229</a> dagui: intern span digests and share attributes <em>(CLI heap)</em></td><td>300k spans, mostly dagql calls with frames, inputs, outputs, cache attrs, into a headless TUI</td><td><code>consumeStringValidateUTF8 &amp;&amp; client\.\(\*Client\)\.exportTraces|callpbv1\.\(\*Call\)\.Decode || dagui\.\(\*SpanAttributes\)|dagui\.\(\*digestTable\)|dagui\.\(\*DB\)\.(intern|shareAttrPairs)|dagui\.intern</code></td><td class=n>1586.7 MiB</td><td class=n>717.6 MiB</td><td class=n>114.0 MiB</td><td class=n>62.4 MiB</td><td class=n>−51.6 MiB</td><td class=n>1.8×</td></tr>
+</table>
+<h2>Transient: trace tools per search</h2>
+<table><tr><th>tool</th><th>alloc/search before</th><th>alloc/search after</th><th>live peak before</th><th>live peak after</th></tr>
+<tr><td>ListServices (baseline: the LLM's own overhead)</td><td class=n>9.2 MiB</td><td class=n>9.1 MiB</td><td class=n>+10.0 MiB</td><td class=n>+1.3 MiB</td></tr>
+<tr><td>FindSpans (#15218)</td><td class=n>1568.1 MiB</td><td class=n>57.2 MiB</td><td class=n>+462.6 MiB</td><td class=n>+45.0 MiB</td></tr>
+<tr><td>FindCalls (#15219)</td><td class=n>932.3 MiB</td><td class=n>785.9 MiB</td><td class=n>+209.5 MiB</td><td class=n>+27.5 MiB</td></tr>
+</table>
+<p style="font-size:13px">Live peak: the highest HeapAlloc right after forced GCs while searches ran, over the live heap just before them. 20k cheap uncached calls in the session; query <code>withEnvVariable</code>.</p>
+<h2>Notes</h2>
+<ol>
+<li>Each layer is one PR's <em>focus bytes</em>: the live heap's inuse_space in samples with a stack frame matching the PR's focus regexp (table), taken at the end of that PR's own targeted workload with its session still open. The cakes are the <strong>sum of per-PR targeted workloads, each measured in its own session (a fresh engine per measurement); not one combined workload</strong>. Live totals in the table are the whole process heap at that point, for context; they do not add up.</li>
+<li>#15212 and #15213 share the same focus (the serialized contenthash trees SetExternal keeps). On AFTER, #15213 already keeps those trees on disk, so #15212's layer is 0 there; #15212 alone, measured against its own branch, takes it from 360 to 53 MiB.</li>
+<li>#15226 only frees memory for Dang modules and Go modules with a dang entrypoint; the legacy Go/Python/TypeScript runtimes keep the receiver JSON alive through session-owned currentFunctionCall / FunctionCall.parent results.</li>
+<li>#15218's release of idle LoadTrace data is not measured (it needs Dagger Cloud); only its per-search cost is (transient panel).</li>
+<li>The CLI cake is the <code>dagger</code> CLI process heap (headless pretty TUI under <code>dagger run</code>), not the engine's. #15227 also stops idle log batch processors' buffer churn: its alloc_space focus row.</li>
+<li>tracePeaks AFTER was run twice: FindSpans&#39; live peak measured +103.0 MiB in the first run and +45.0 MiB in the rerun shown here (allocation per search agreed: 57.1 vs 57.2 MiB). The polled peak is noisy; the before side was measured once (+462.6 MiB).</li>
+<li>#15202&#39;s BEFORE focus measured 103.2 and 104.1 MiB in two runs (earlier per-PR reference: 89.7 MiB); AFTER 4.3 and 2.4 MiB.</li>
+</ol>
+<p style="font-size:12px;color:#666">Measured with the memory-cake Dang module (<code>.dagger/modules/memory-cake</code>, <code>cakeJson</code> and <code>tracePeaksJson</code>); drawn by its <code>render/</code>.</p>
+</body></html>
