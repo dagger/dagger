@@ -246,6 +246,18 @@ type MemoryCake {
         # ancestry bookkeeping.
         focus: "go\\.etcd\\.io/bbolt|internal/fastbolt|\\(\\*snapshotManager\\)\\.(AttachLease|addSnapshotOwner|createOwnerLease|attachOwner\\w*)|engine/snapshots/owner_ancestry\\.go",
       ),
+      Demo(
+        pr: "15220",
+        title: "clientdb: intern the span index's span IDs",
+        # The span index's own structures. The span ID strings its maps
+        # keep alive on main are allocated by the span decoder, outside it.
+        focus: "clientdb\\.\\(\\*spanLookup\\)|clientdb\\.newSpanLookup",
+      ),
+      Demo(
+        pr: "15221",
+        title: "clientdb: intern the log index, pack row metadata",
+        focus: "clientdb\\.\\(\\*logLookup\\)|clientdb\\.newLogLookup",
+      ),
     ]
   }
 
@@ -374,6 +386,34 @@ type MemoryCake {
     env: [String!]! = [],
   ): Measurement! @cache(policy: FunctionCachePolicy.Never) {
     measure(pr: "15232", ref: ref, env: env)
+  }
+
+  """
+  #15220: the telemetry store's span index on string-keyed maps. One
+  session opens its store's index (a log search, as the TUI's first read
+  does) and runs CALLS cheap uncached API calls (default 60000), a few spans
+  each; the index keeps every span for the session's life, ~360-410 B each
+  on main, ~135 B with the fix. Scale with env, e.g. ["CALLS=30000"].
+  """
+  demo15220(
+    ref: String! = "main",
+    env: [String!]! = [],
+  ): Measurement! @cache(policy: FunctionCachePolicy.Never) {
+    measure(pr: "15220", ref: ref, env: env)
+  }
+
+  """
+  #15221: the telemetry store's log index on string-keyed tables, with a
+  32 B row meta. The #15220 workload's shape: CALLS cheap uncached API calls
+  (default 60000), each logging its call payload under its own span and
+  digest, which the fix interns by their bytes. Scale with env, e.g.
+  ["CALLS=30000"].
+  """
+  demo15221(
+    ref: String! = "main",
+    env: [String!]! = [],
+  ): Measurement! @cache(policy: FunctionCachePolicy.Never) {
+    measure(pr: "15221", ref: ref, env: env)
   }
 
   """
