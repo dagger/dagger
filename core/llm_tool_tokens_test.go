@@ -54,7 +54,7 @@ func TestToolResultTokenModel(t *testing.T) {
 		{Google, "gemini-2.5-pro", ""},
 	} {
 		t.Run(string(tt.provider)+"/"+tt.model, func(t *testing.T) {
-			require.Equal(t, tt.encoding, (toolResultTokenModel{tt.provider, tt.model}).encoding())
+			require.Equal(t, tt.encoding, (toolResultTokenModel{provider: tt.provider, model: tt.model, trusted: true}).encoding())
 			attrs := tokenAttrs(t, tt.provider, tt.model, "hello")
 			requireTokenAttr(t, attrs, telemetryattrs.LLMToolResultTokensModelAttr, tt.model)
 			if tt.encoding == "" {
@@ -64,6 +64,39 @@ func TestToolResultTokenModel(t *testing.T) {
 				requireTokenAttr(t, attrs, telemetryattrs.LLMToolResultTokensMethodAttr, "tokenizer")
 				requireTokenAttr(t, attrs, telemetryattrs.LLMToolResultTokensEncodingAttr, tt.encoding)
 			}
+		})
+	}
+}
+
+func TestToolResultTokenizerEndpointTrust(t *testing.T) {
+	for _, tt := range []struct {
+		endpoint LLMEndpoint
+		trusted  bool
+	}{
+		{LLMEndpoint{Provider: OpenAI}, true},
+		{LLMEndpoint{Provider: OpenAI, BaseURL: "https://api.openai.com/v1"}, true},
+		{LLMEndpoint{Provider: OpenAI, BaseURL: "https://api.openai.com:443/v1"}, true},
+		{LLMEndpoint{Provider: OpenAICodex, BaseURL: "https://chatgpt.com/backend-api"}, true},
+		{LLMEndpoint{Provider: OpenAI, BaseURL: "http://localhost:8080/v1"}, false},
+		{LLMEndpoint{Provider: OpenAI, BaseURL: "https://compatible.example/v1"}, false},
+		{LLMEndpoint{Provider: OpenAI, BaseURL: "https://api.openai.com.example/v1"}, false},
+		{LLMEndpoint{Provider: OpenAI, BaseURL: "http://api.openai.com/v1"}, false},
+		{LLMEndpoint{Provider: OpenAI, BaseURL: "https://api.openai.com:8443/v1"}, false},
+		{LLMEndpoint{Provider: OpenAI, BaseURL: ":invalid"}, false},
+		{LLMEndpoint{Provider: OpenAI, azureVersion: "2024-06-01"}, false},
+		{LLMEndpoint{Provider: OpenAICodex, BaseURL: "https://compatible.example"}, false},
+		{LLMEndpoint{Provider: Other, BaseURL: "https://api.openai.com/v1"}, false},
+	} {
+		t.Run(string(tt.endpoint.Provider)+"/"+tt.endpoint.BaseURL+"/"+tt.endpoint.azureVersion, func(t *testing.T) {
+			require.Equal(t, tt.trusted, toolResultTokenizerTrusted(&tt.endpoint))
+			tt.endpoint.Model = "gpt-4o"
+			ctx := withToolResultTokenModel(t.Context(), &tt.endpoint)
+			attrs := attribute.NewSet(toolResultTokenAttrs(ctx, &LLMContentBlock{Kind: LLMContentToolResult, Text: "hello"})...)
+			method := "bytes_div_4"
+			if tt.trusted {
+				method = "tokenizer"
+			}
+			requireTokenAttr(t, attrs, telemetryattrs.LLMToolResultTokensMethodAttr, method)
 		})
 	}
 }
@@ -243,9 +276,12 @@ func TestToolResultTokensProviderContext(t *testing.T) {
 		if span.Name() == "read" {
 			found = true
 			attrs := attribute.NewSet(span.Attributes()...)
-			requireTokenAttr(t, attrs, telemetryattrs.LLMToolResultTokensAttr, int64(8))
+			requireTokenAttr(t, attrs, telemetryattrs.LLMToolResultTokensAttr, int64(7))
 			requireTokenAttr(t, attrs, telemetryattrs.LLMToolResultTokensModelAttr, "gpt-4o")
-			requireTokenAttr(t, attrs, telemetryattrs.LLMToolResultTokensEncodingAttr, "o200k_base")
+			// Custom base URLs retain Provider=OpenAI, but model aliases on
+			// compatible servers must not silently use OpenAI's tokenizer.
+			requireTokenAttr(t, attrs, telemetryattrs.LLMToolResultTokensMethodAttr, "bytes_div_4")
+			require.False(t, attrs.HasValue(telemetryattrs.LLMToolResultTokensEncodingAttr))
 		}
 	}
 	require.True(t, found)

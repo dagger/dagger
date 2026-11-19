@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"net/url"
 	"strings"
 	"sync"
 
@@ -16,6 +17,7 @@ import (
 type toolResultTokenModel struct {
 	provider LLMProvider
 	model    string
+	trusted  bool
 }
 
 type toolResultTokenModelKey struct{}
@@ -24,7 +26,31 @@ func withToolResultTokenModel(ctx context.Context, endpoint *LLMEndpoint) contex
 	return context.WithValue(ctx, toolResultTokenModelKey{}, toolResultTokenModel{
 		provider: endpoint.Provider,
 		model:    endpoint.Model,
+		trusted:  toolResultTokenizerTrusted(endpoint),
 	})
+}
+
+// The OpenAI provider can also route to compatible servers and Azure deployment
+// aliases. A known-looking model name there does not establish its tokenizer.
+func toolResultTokenizerTrusted(endpoint *LLMEndpoint) bool {
+	if endpoint.azureVersion != "" {
+		return false
+	}
+	var host string
+	switch endpoint.Provider {
+	case OpenAI:
+		host = "api.openai.com"
+	case OpenAICodex:
+		host = "chatgpt.com"
+	default:
+		return false
+	}
+	if endpoint.BaseURL == "" {
+		return true // the provider's default endpoint
+	}
+	u, err := url.Parse(endpoint.BaseURL)
+	return err == nil && u.Scheme == "https" && u.Hostname() == host &&
+		(u.Port() == "" || u.Port() == "443") && u.User == nil
 }
 
 // Only trusted provider/model pairs use a tokenizer. An OpenAI-compatible API
@@ -32,7 +58,7 @@ func withToolResultTokenModel(ctx context.Context, endpoint *LLMEndpoint) contex
 // openai/tiktoken's model.py; unknown names (including deployment aliases) fall
 // back rather than guessing from arbitrary model-name prefixes.
 func (m toolResultTokenModel) encoding() string {
-	if m.provider != OpenAI && m.provider != OpenAICodex {
+	if !m.trusted || (m.provider != OpenAI && m.provider != OpenAICodex) {
 		return ""
 	}
 	// Accept dated snapshots of the listed models, not arbitrary suffixes.
