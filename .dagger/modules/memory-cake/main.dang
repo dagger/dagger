@@ -181,17 +181,20 @@ type MemoryCake {
       Demo(
         pr: "15213",
         title: "engine: keep contenthash trees on disk",
-        focus: "engine/contenthash\\.|\\(\\*cacheMetadata\\)\\.SetExternal|engine/snapshots\\.",
+        # The serialized trees SetExternal keeps: what the PR moves to disk.
+        # The parsed trees contenthash caches (cacheContext.checksum) stay
+        # on both sides, so they are left out.
+        focus: "\\(\\*cacheMetadata\\)\\.SetExternal|engine/contenthash\\.\\(\\*cacheContext\\)\\.save",
       ),
     ]
   }
 
   """
   #15213: contenthash trees kept in memory for every derived snapshot. One
-  session hashes a FILES-file directory (default 10000) and EDITS one-file
-  edits of it (default 60); each edit is rescanned and its whole tree kept
-  in memory on main (serialized and parsed, ~1 KB/file in all). Scale with
-  env, e.g. ["FILES=20000", "EDITS=100"].
+  session hashes a FILES-file directory (default 20000) and EDITS one-file
+  edits of it (default 200); each edit is rescanned and its serialized tree
+  (~90 B/file) kept in memory via SetExternal on main, ~360 MiB at the
+  defaults, ~0 with the fix. Scale with env, e.g. ["EDITS=100"].
   """
   demo15213(
     ref: String! = "main",
@@ -222,7 +225,9 @@ type MemoryCake {
     } else {
       demos.filter { d => prs.contains(d.pr) }
     }
-    let header = "| PR | " + before + " live | " + after + " live | delta | focus " + before + " | focus " + after + " |\n|---|---:|---:|---:|---:|---:|"
+    let b = shortRef(before)
+    let a = shortRef(after)
+    let header = "| PR | " + b + " live | " + a + " live | delta | focus " + b + " | focus " + a + " |\n|---|---:|---:|---:|---:|---:|"
     let rows = selected.map { d =>
       cakeRow(d, before, after) rescue {
         e: Error! => "| #" + d.pr + " | error: " + e.message.replace("\n", " ").replace("|", "/").truncate(300) + " | | | | |"
@@ -335,11 +340,7 @@ type MemoryCake {
   """
   engine(ref: String! = "main"): Engine! @cache(policy: FunctionCachePolicy.Never) {
     let repo = git(daggerRepo)
-    let sha = if (ref.containsMatch(`^[0-9a-f]{40}$`)) {
-      ref
-    } else {
-      repo.ref(ref).commit
-    }
+    let sha = resolveRef(ref)
     let src = repo.commit(sha).tree
     # The ref's engine, built with engine-dev from this checkout; the same
     # service engine-lab's start runs (fresh state, incremented subnet for
@@ -373,6 +374,28 @@ type MemoryCake {
   }
 
   # ---- helpers ------------------------------------------------------------
+
+  # The commit a branch or tag points at now. GitRepository.ref can answer
+  # from a stale remote listing cached by the engine (a freshly pushed branch
+  # then "does not exist"), so ask the remote with a nonce'd git ls-remote.
+  let resolveRef(ref: String!): String! {
+    if (ref.containsMatch(`^[0-9a-f]{40}$`)) {
+      return ref
+    }
+    let out = container
+      .from("alpine:3.20")
+      .withExec(["apk", "add", "--no-cache", "git"])
+      .withEnvVariable("CAKE_NONCE", Random.string)
+      .withExec(["git", "ls-remote", daggerRepo, "refs/heads/" + ref, "refs/tags/" + ref + "^{}", "refs/tags/" + ref])
+      .stdout
+    let lines = out.split("\n").filter { l => l.trimSpace != "" }
+    # An annotated tag's peeled line ("^{}") names its commit.
+    let line = lines.find { l => l.hasSuffix("^{}") } ?? lines[0]
+    if (line == null) {
+      raise "memory-cake: " + daggerRepo + " has no branch or tag " + ref
+    }
+    line.split("\t")[0] ?? ""
+  }
 
   # heapstat/, a static binary for the alpine client.
   let heapstatBin: File! {
@@ -413,6 +436,15 @@ let statTop(stat: String!): String! {
       mib((parts[1] ?? "0").toInt) + " " + (parts[2] ?? "")
     }
     .join("\n")
+}
+
+# A commit sha cut to 8 characters; other refs as they are.
+let shortRef(ref: String!): String! {
+  if (ref.containsMatch(`^[0-9a-f]{40}$`)) {
+    ref.truncate(8)
+  } else {
+    ref
+  }
 }
 
 # Bytes as MiB with one decimal, e.g. "123.4 MiB".

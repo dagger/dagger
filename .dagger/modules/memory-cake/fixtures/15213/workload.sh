@@ -12,8 +12,8 @@
 # in one query (they hash concurrently); batches run one after another.
 set -eu
 
-FILES=${FILES:-10000}
-EDITS=${EDITS:-60}
+FILES=${FILES:-20000}
+EDITS=${EDITS:-200}
 BATCH=${BATCH:-10}
 DIRS=$((FILES / 100))
 
