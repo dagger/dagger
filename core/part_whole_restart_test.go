@@ -89,6 +89,41 @@ func TestPartRecordWithoutAddressesRunAgainIsLoggedOnce(t *testing.T) {
 	}))
 }
 
+// A record from another engine with no download address for any part, whose
+// metadata its record already carries, runs nothing when its metadata is
+// demanded, and isn't logged as run again: the line follows an operation's
+// start, as TestPartRecordWithoutAddressesRunAgainIsLoggedOnce has it, not a
+// demand. (Its filesystem isn't demanded here: the fixture has no image
+// resolver to pull with.)
+func TestPartRecordMetadataDemandIsNotLoggedAsRunAgain(t *testing.T) {
+	aStore, bStore := testutil.NewStore(t), testutil.NewStore(t)
+	actx, a, asrv := transferCache(t, aStore, "", "a")
+	bctx, b, bsrv := transferCache(t, bStore, "", "b")
+	var logs partSourceLogs
+	bctx = logs.into(bctx)
+	platform := Platform{OS: "linux", Architecture: "amd64"}
+	parent := attachTransferObject(t, actx, a, asrv, "a", "parent", NewContainer(platform))
+	child := NewContainer(platform)
+	child.Config.WorkingDir = "/metadata-carried"
+	child.Lazy = &ContainerFromImageRefLazy{LazyState: NewLazyState(), Parent: parent, CanonicalRef: "example.invalid/image@sha256:" + strings.Repeat("b", 64), Config: child.Config, Platform: platform}
+	original := attachTransferObject(t, actx, a, asrv, "a", "from", child)
+	require.NoError(t, a.EvaluateParts(actx, original, ContainerPartMetadata))
+	require.NoError(t, a.WithExportedValues(actx, dagql.ValueSelection{Roots: []dagql.AnyResult{original}}, config.RefConfig{}, func(_ context.Context, exported *dagql.ExportedValues) error {
+		reply, err := b.MergeValues(bctx, dagql.CloudCacheID, exported.Bundle)
+		require.NoError(t, err)
+		loaded, err := b.LoadResultByResultID(bctx, "", bsrv, reply.Imported()[0].ResultID)
+		require.NoError(t, err)
+		result := loaded.(dagql.ObjectResult[*Container])
+		ctr := result.Self()
+		require.True(t, ctr.containerPartComputed(bctx, ctr.lazyOpForRouting(), ContainerPartMetadata), "the record carries its metadata")
+		require.NoError(t, b.EvaluateParts(bctx, result, ContainerPartMetadata))
+		require.Equal(t, "/metadata-carried", ctr.Config.WorkingDir)
+		require.Empty(t, logs.ranAgain(t), "a metadata demand runs nothing")
+		require.False(t, ctr.containerPartComputed(bctx, ctr.lazyOpForRouting(), ContainerPartFS), "the filesystem stays pending")
+		return nil
+	}))
+}
+
 func TestPartPendingImageMetadataStaysSelective(t *testing.T) {
 	aStore, bStore := testutil.NewStore(t), testutil.NewStore(t)
 	actx, a, asrv := transferCache(t, aStore, "", "a")
