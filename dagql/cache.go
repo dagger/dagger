@@ -2631,6 +2631,10 @@ type Cache struct {
 
 	// partsWithoutSource counts the parts read with no source.
 	partsWithoutSource partsWithoutSource
+	// firstUseStats are what first uses prepared of the records merges left
+	// unprepared (FirstUse). Guarded by firstUseMu.
+	firstUseMu    sync.Mutex
+	firstUseStats FirstUseStats
 
 	// testBetweenLateMissHolds, nil but in tests, runs between
 	// LateRemoteMisses's two holds of the lookups' lock.

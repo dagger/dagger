@@ -1197,6 +1197,19 @@ type EngineStopEvent struct {
 	// restored part could count them as late (EngineRestorePart.Late): a
 	// run with any undercounts its late lookups.
 	UncountedMisses uint64 `json:"uncountedMisses,omitempty"`
+	// FirstUse is what the engine's calls spent preparing the payloads of
+	// records restores left for their first use (dagql.Cache.FirstUse).
+	FirstUse EngineFirstUse `json:"firstUse,omitzero"`
+}
+
+// EngineFirstUse counts the payloads of restored records the engine's calls
+// prepared at their first use, and those refused, with the time preparing
+// took in all and at the longest, in nanoseconds.
+type EngineFirstUse struct {
+	Prepared int64 `json:"prepared,omitempty"`
+	Refused  int64 `json:"refused,omitempty"`
+	Total    int64 `json:"total,omitempty"`
+	Longest  int64 `json:"longest,omitempty"`
 }
 
 // EngineRestore is what an engine did with one set file: the check's name,
@@ -1206,6 +1219,8 @@ type EngineStopEvent struct {
 // every part merged, whether the engine had merged it whole already, and
 // what stopped it. PeakBefore and PeakAfter are the engine's peak resident
 // memory in bytes before its first part and after its last, 0 when unknown.
+// Decode, Prepare and Commit are the wall time its parts took to decode, to
+// prepare their merges and to commit them, in all, in nanoseconds.
 type EngineRestore struct {
 	Check        string              `json:"check"`
 	Kind         string              `json:"kind"`
@@ -1220,6 +1235,9 @@ type EngineRestore struct {
 	Error        string              `json:"error,omitempty"`
 	PeakBefore   int64               `json:"peakBefore,omitempty"`
 	PeakAfter    int64               `json:"peakAfter,omitempty"`
+	Decode       int64               `json:"decode,omitempty"`
+	Prepare      int64               `json:"prepare,omitempty"`
+	Commit       int64               `json:"commit,omitempty"`
 }
 
 // EngineRestorePart is one merged part of a set file: its records, when it
