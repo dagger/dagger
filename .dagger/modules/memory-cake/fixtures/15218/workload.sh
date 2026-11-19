@@ -8,23 +8,27 @@
 # (~21 MB peak). Both costs are TRANSIENT: nothing stays allocated after the
 # search, so the retained heap shows nothing. This workload measures the
 # transient cost itself, from the engine's /debug/vars memstats: TotalAlloc
-# per search, and the highest HeapAlloc polled while the searches run (with
-# the live heap after a GC just before them). It writes one line per tool to
-# /out/peak.txt. TotalAlloc is the robust figure: the polled peak follows GC
-# pacing too (GOGC=100 lets garbage reach about the live heap's size).
-# ListServices, a trace-free builtin, is the LLM's own overhead.
+# per search over SEARCHES searches, and the highest live heap over PEAKS
+# more searches: while those run, a poller forces a GC
+# (/debug/pprof/heap?gc=1) and reads HeapAlloc right after, over and over,
+# so the peak is what a search holds live rather than GC pacing (the PRs'
+# benchmarks use GOGC=5 for that). The poller allocates too, so the two are
+# measured apart. It writes one line per tool to /out/peak.txt, with the
+# live heap just before the polled searches. ListServices, a trace-free
+# builtin, is the LLM's own overhead.
 #
 # Workload: CALLS cheap uncached API calls (default 20000), a few spans and
-# a call payload each. Then, per tool in TOOLS, SEARCHES searches for QUERY
-# one after another, each an LLM whose replayed recording (a recording/
-# model: no provider) makes that one tool call. Every LLM's tools include
-# the trace tools, and they search the session's main client's telemetry:
-# this session's.
+# a call payload each. Then, per tool in TOOLS, a warm-up search and
+# SEARCHES + PEAKS searches for QUERY one after another, each an LLM whose
+# replayed recording (a recording/ model: no provider) makes that one tool
+# call. Every LLM's tools include the trace tools, and they search the
+# session's main client's telemetry: this session's.
 set -eu
 
 CALLS=${CALLS:-20000}
 BATCH=${BATCH:-2000}
 SEARCHES=${SEARCHES:-10}
+PEAKS=${PEAKS:-3}
 TOOLS=${TOOLS:-ListServices FindSpans FindCalls}
 QUERY=${QUERY:-withEnvVariable}
 
@@ -60,11 +64,16 @@ search() {
     dagger api query --no-load-module --var-json "$(cat "$tmp/vars.json")" >"$tmp/search.out" 2>&1 || true
 }
 
-# Poll HeapAlloc in the background, for the peak.
+# liveHeap: HeapAlloc right after a forced GC.
+liveHeap() {
+  curl -sSf --max-time 300 "http://dagger-engine:6060/debug/pprof/heap?gc=1" -o /dev/null
+  vars | jq '.memstats.HeapAlloc'
+}
+
+# Poll the live heap in the background, for the peak.
 poll() {
   while [ -f "$tmp/polling" ]; do
-    vars | jq '.memstats.HeapAlloc' || true
-    sleep 0.05
+    liveHeap || true
   done
 }
 
@@ -74,13 +83,7 @@ for tool in $TOOLS; do
   # A warm-up search: the first opens the store and builds its indexes.
   search "$tool" warmup
   tail -n "${SHOW:-5}" "$tmp/search.out"
-  # Collect the warm-up's garbage, so the peak is measured from the live
-  # heap.
-  curl -sSf --max-time 300 "http://dagger-engine:6060/debug/pprof/heap?gc=1" -o /dev/null
-  start=$(vars | jq '.memstats.HeapAlloc')
-  touch "$tmp/polling"
-  poll >"$tmp/heap.$tool" &
-  poller=$!
+  # Allocation, unpolled: the poller's GCs and profiles allocate too.
   before=$(totalAlloc)
   n=0
   while [ "$n" -lt "$SEARCHES" ]; do
@@ -88,6 +91,16 @@ for tool in $TOOLS; do
     n=$((n + 1))
   done
   after=$(totalAlloc)
+  # Peak, polled, over PEAKS more searches.
+  start=$(liveHeap)
+  touch "$tmp/polling"
+  poll >"$tmp/heap.$tool" &
+  poller=$!
+  n=0
+  while [ "$n" -lt "$PEAKS" ]; do
+    search "$tool" "peak-$n"
+    n=$((n + 1))
+  done
   rm -f "$tmp/polling"
   wait "$poller" || true
   peak=$(sort -n "$tmp/heap.$tool" | tail -n 1)

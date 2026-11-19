@@ -423,8 +423,8 @@ type MemoryCake {
   (default 20000), then SEARCHES searches per tool, each an LLM replaying a
   recording that makes one tool call, and reports per tool (ListServices is
   the LLM's own overhead) the bytes allocated per search (TotalAlloc) and the
-  highest HeapAlloc polled during the searches, against the live heap
-  before them.
+  peak live heap during the searches (HeapAlloc right after forced GCs,
+  polled), against the live heap before them.
   """
   tracePeaks(
     ref: String! = "main",
@@ -441,7 +441,7 @@ type MemoryCake {
       let alloc = (f[4] ?? "0").toInt
       let start = (f[6] ?? "0").toInt
       let peak = (f[8] ?? "0").toInt
-      (f[0] ?? "") + ": " + mib(alloc) + " allocated per search, peak heap " + signedMib(peak - start) + " over the live " + mib(start)
+      (f[0] ?? "") + ": " + mib(alloc) + " allocated per search, peak live heap " + signedMib(peak - start) + " over " + mib(start)
     }
     "trace tools @ " + ref + " (" + m.sha.truncate(8) + "):\n" + lines.join("\n")
   }
