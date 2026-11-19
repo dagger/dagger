@@ -238,7 +238,7 @@ is-module = true
 clients = ["./.dagger/modules/engine-dev"]
 
 [sdks.dang.scopes.".dagger/modules/engine-lab"]
-clients = ["./.dagger/modules/cli-dev", "./.dagger/modules/engine-dev", "github.com/dagger/go@79a92beb4df0898400ef7f7a632009035290383b"]
+clients = ["./.dagger/modules/cli-dev", "./.dagger/modules/engine-dev", "github.com/dagger/go@79a92beb4df0898400ef7f7a632009035290383b", "github.com/dagger/wolfi@fdec349f9aad840f2853bc2e6534f2555788da04"]
 is-module = true
 
 [sdks.dang.scopes.".dagger/modules/go-cli"]
@@ -246,14 +246,14 @@ is-module = true
 
 [sdks.dang.scopes.".dagger/modules/sdl-diff"]
 is-module = true
-clients = ["github.com/dagger/go@79a92beb4df0898400ef7f7a632009035290383b"]
+clients = ["github.com/dagger/go@79a92beb4df0898400ef7f7a632009035290383b", "github.com/dagger/wolfi@fdec349f9aad840f2853bc2e6534f2555788da04"]
 
 [sdks.dang.scopes.".dagger/modules/mcp-lab"]
-clients = ["./.dagger/modules/cli-dev", "./.dagger/modules/engine-dev", "github.com/dagger/go@79a92beb4df0898400ef7f7a632009035290383b"]
+clients = ["./.dagger/modules/cli-dev", "./.dagger/modules/engine-dev", "github.com/dagger/go@79a92beb4df0898400ef7f7a632009035290383b", "github.com/dagger/wolfi@fdec349f9aad840f2853bc2e6534f2555788da04"]
 is-module = true
 
 [sdks.dang.scopes.".dagger/modules/tui-qa"]
-clients = ["./.dagger/modules/cli-dev"]
+clients = ["./.dagger/modules/cli-dev", "github.com/dagger/wolfi@fdec349f9aad840f2853bc2e6534f2555788da04"]
 is-module = true
 
 [sdks.dang.scopes.".dagger/modules/go-client-dev"]
@@ -318,7 +318,7 @@ targetVersion = "v1.0.0-beta.26"
 
 [sdks.go.scopes.".dagger/modules/engine-dev"]
 is-module = true
-clients = ["github.com/dagger/alpine@e746b9763b6f4d004954deb35f66e693edfd854a", "./.dagger/modules/cli-dev", "github.com/dagger/go@79a92beb4df0898400ef7f7a632009035290383b", "github.com/dagger/wolfi@fdec349f9aad840f2853bc2e6534f2555788da04", "./.dagger/modules/engine-dev/notify"]
+clients = ["github.com/dagger/alpine@f2518dba32ade8493771a155620ef890aa6aa7c9", "./.dagger/modules/cli-dev", "github.com/dagger/go@79a92beb4df0898400ef7f7a632009035290383b", "github.com/dagger/wolfi@fdec349f9aad840f2853bc2e6534f2555788da04", "./.dagger/modules/engine-dev/notify"]
 
 [sdks.go.scopes.".dagger/modules/engine-dev".settings]
 dangEntrypoint = true

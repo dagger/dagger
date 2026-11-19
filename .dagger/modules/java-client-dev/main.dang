@@ -100,7 +100,6 @@ type JavaClientDev {
   ): Void @check {
     let version = sourceTag.trimPrefix(sourcePath + "/v")
     devContainer
-      .withExec(["apk", "add", "--no-cache", "gpg"])
       .withExec(["mvn", "versions:set", "-DnewVersion=" + version])
       .withExec(["mvn", "clean", "deploy", "-Prelease", "-Dmaven.deploy.skip=true"])
       .withExec(["find", ".", "-name", "*.jar"])

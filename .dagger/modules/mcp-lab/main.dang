@@ -124,9 +124,7 @@ type McpLab {
     # nesting forwards to the outer session, which may not have that pipe.
     # Connect directly to an engine instead: use the supplied address, or
     # start an isolated engine built from the same workspace as the CLI.
-    let lean = container
-      .from("alpine:3.20")
-      .withExec(["apk", "add", "--no-cache", "git"])
+    let lean = wolfi.container(packages: ["git"])
     let base = if (engineAddress == "") {
       let svc = engineDev(ws: source).service(name: "mcp-lab").start
       self.engineService = svc
@@ -167,9 +165,7 @@ type McpLab {
       ] + extraArgs)
       .start
 
-    self.client = container
-      .from("alpine:3.20")
-      .withExec(["apk", "add", "--no-cache", "curl"])
+    self.client = wolfi.container(packages: ["curl"])
       .withServiceBinding("mcp-lab", svc)
     self.service = svc
     self.url = "http://mcp-lab:" + toString(port)

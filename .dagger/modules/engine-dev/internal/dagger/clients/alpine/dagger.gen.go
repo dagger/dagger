@@ -16,6 +16,7 @@ import (
 )
 
 type Container = core.Container
+type Directory = core.Directory
 type ID = core.ID
 type Node = core.Node
 type NodeClient = core.NodeClient
@@ -42,7 +43,7 @@ func Connect(connections ...*dagger.Client) *Client {
 	if len(connections) == 1 {
 		connection = connections[0]
 	}
-	q := querybuilder.Query().Client(dagger.ModuleGraphQLClient(connection, "github.com/dagger/alpine@e746b9763b6f4d004954deb35f66e693edfd854a", "e746b9763b6f4d004954deb35f66e693edfd854a"))
+	q := querybuilder.Query().Client(dagger.ModuleGraphQLClient(connection, "github.com/dagger/alpine@f2518dba32ade8493771a155620ef890aa6aa7c9", "f2518dba32ade8493771a155620ef890aa6aa7c9"))
 	return &Client{Query: &Query{query: q}}
 }
 
