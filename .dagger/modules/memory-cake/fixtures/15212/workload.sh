@@ -11,9 +11,11 @@
 # demo does, but in SEPARATE top-level sessions (the open session's
 # variables unset), so nothing holds the results once those sessions end.
 # Then prune the local cache: the edits' snapshots are collected, and on
-# main their trees stay behind (~350 MiB at the defaults). With the fix
-# ~36 MiB remains: contenthash's LRU of 20 cacheContexts still references
-# the metadata of the last snapshots it hashed.
+# main their trees stay behind (~355 MiB at the defaults). With the fix
+# 36 MiB remains after the session: contenthash's LRU of 20 cacheContexts
+# still references the metadata of the last snapshots it hashed. Live, it
+# varies from run to run (42-131 MiB): some collected trees are only
+# forgotten by a later collection.
 set -eu
 
 FILES=${FILES:-20000}
@@ -49,9 +51,14 @@ summ='.engine.localCache.entrySet | {entryCount, diskSpaceBytes, active: ([.entr
 echo "$stats" | own_session | jq -c "$summ"
 
 # Prune every releasable entry; a prune collects the released snapshots
-# before it returns. Twice, in case a batch session was still closing.
-for i in 1 2; do
+# before it returns. With the fix, a collection that removed snapshots then
+# forgets those already gone from the snapshotter, whose own cleanup can
+# lag; so, as a long-lived engine's next GC would, prune again after
+# releasing a fresh throwaway snapshot, so that collection removes
+# something too and forgets the rest.
+for i in 1 2 3; do
   echo '{ engine { localCache { prune } } }' | own_session >/dev/null
   echo "$stats" | own_session | jq -c "$summ"
   sleep 3
+  echo "{ directory { withNewFile(path: \"x\", contents: \"${CAKE_NONCE:-x}-$i\") { sync } } }" | own_session >/dev/null
 done
