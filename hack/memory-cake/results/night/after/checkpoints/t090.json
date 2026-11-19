@@ -1,0 +1,457 @@
+{
+  "side": "after",
+  "turn": 90,
+  "time": "2026-11-19T09:59:23Z",
+  "elapsedSeconds": 377.419112253,
+  "toolErrors": 22,
+  "heap": {
+    "totalBytes": 937780342,
+    "totalObjects": 7941618,
+    "layers": [
+      {
+        "id": "spans",
+        "bytes": 10272376,
+        "objects": 32893,
+        "top": [
+          {
+            "func": "github.com/dagger/dagger/engine/clientdb.(*spanLookup).internLocked \u003c clientdb.(*spanLookup).addLocked",
+            "bytes": 5742818
+          },
+          {
+            "func": "github.com/dagger/dagger/engine/clientdb.(*idTable).intern \u003c clientdb.(*spanLookup).internLocked",
+            "bytes": 2147742
+          },
+          {
+            "func": "github.com/dagger/dagger/engine/clientdb.(*spanLookup).linkSetLocked \u003c clientdb.(*spanLookup).addCauseLinksLocked",
+            "bytes": 1857520
+          },
+          {
+            "func": "github.com/dagger/dagger/engine/clientdb.(*spanLookup).addCauseLinksLocked \u003c clientdb.(*spanLookup).addLocked",
+            "bytes": 524296
+          }
+        ]
+      },
+      {
+        "id": "logs",
+        "bytes": 2978465,
+        "objects": 49153,
+        "top": [
+          {
+            "func": "github.com/dagger/dagger/engine/clientdb.(*logLookup).addAll \u003c clientdb.openStoreStreams.func3",
+            "bytes": 2978465
+          }
+        ]
+      },
+      {
+        "id": "telemetry",
+        "bytes": 8265951,
+        "objects": 24390,
+        "top": [
+          {
+            "func": "github.com/dagger/dagger/engine/clientdb.(*logStream[go.shape.struct { ID int64; TraceID string; SpanID string; TraceState string; ParentSpanID database/sql.NullString; Flags int64; Name string; Kind string; StartTime int64; EndTime database/sql.NullInt64; Attributes []uint8; DroppedAttributesCount int64; Events []uint8; DroppedEventsCount int64; Links []uint8; DroppedLinksCount int64; StatusCode int64; StatusMessage string; InstrumentationScope []uint8; Resource []uint8; ResourceSchemaURL string }]).append \u003c clientdb.(*DB).AppendSpans",
+            "bytes": 3966989
+          },
+          {
+            "func": "github.com/dagger/dagger/engine/clientdb.(*logStream[go.shape.struct { ID int64; TraceID database/sql.NullString; SpanID database/sql.NullString; Timestamp int64; SeverityNumber int64; SeverityText string; Body []uint8; Attributes []uint8; InstrumentationScope []uint8; Resource []uint8; ResourceSchemaURL string }]).append \u003c clientdb.(*DB).AppendLogs",
+            "bytes": 1060864
+          },
+          {
+            "func": "github.com/dagger/dagger/engine/clientdb.AppendTraceRequestPB \u003c server.fetchTraceStreamBatchFiltered.func1",
+            "bytes": 970719
+          },
+          {
+            "func": "github.com/dagger/dagger/engine/clientdb.MarshalKeyValueList \u003c server.(*spanRowEncoder).row",
+            "bytes": 680649
+          },
+          {
+            "func": "github.com/dagger/dagger/engine/clientdb.(*callLookup).addSpans \u003c clientdb.openStoreStreams.func2",
+            "bytes": 538038
+          },
+          {
+            "func": "google.golang.org/protobuf/proto.MarshalOptions.marshal \u003c proto.MarshalOptions.MarshalAppend",
+            "bytes": 524392
+          },
+          {
+            "func": "github.com/dagger/dagger/engine/clientdb.wireStringValue \u003c clientdb.listStringAttr",
+            "bytes": 524300
+          }
+        ]
+      },
+      {
+        "id": "contenthash",
+        "bytes": 6291900,
+        "objects": 105561,
+        "top": [
+          {
+            "func": "github.com/hashicorp/go-immutable-radix/v2.(*Txn[go.shape.*uint8]).writeNode \u003c v2.(*Txn[go.shape.*uint8]).insert",
+            "bytes": 2097352
+          },
+          {
+            "func": "github.com/hashicorp/go-immutable-radix/v2.(*Txn[go.shape.*uint8]).insert \u003c v2.(*Txn[go.shape.*uint8]).insert",
+            "bytes": 1048656
+          },
+          {
+            "func": "github.com/opencontainers/go-digest.NewDigestFromEncoded \u003c go-digest.NewDigestFromBytes",
+            "bytes": 1048656
+          },
+          {
+            "func": "github.com/dagger/dagger/engine/contenthash.(*cacheContext).checksum \u003c contenthash.(*cacheContext).checksum",
+            "bytes": 1048624
+          },
+          {
+            "func": "github.com/dagger/dagger/engine/contenthash.convertPathToKey \u003c contenthash.insertScanRecord",
+            "bytes": 1048612
+          }
+        ]
+      },
+      {
+        "id": "leases",
+        "bytes": 10513960,
+        "objects": 185097,
+        "top": [
+          {
+            "func": "github.com/dagger/dagger/engine/snapshots.(*snapshotManager).addSnapshotOwner \u003c snapshots.(*snapshotManager).recordOwner",
+            "bytes": 2635526
+          },
+          {
+            "func": "go.etcd.io/bbolt.(*Bucket).Put \u003c boltutil.writeMap",
+            "bytes": 1572960
+          },
+          {
+            "func": "go.etcd.io/bbolt.(*Bucket).create \u003c bbolt.(*Bucket).CreateBucketIfNotExists",
+            "bytes": 1572936
+          },
+          {
+            "func": "go.etcd.io/bbolt.(*Bucket).create \u003c bbolt.(*Bucket).CreateBucket",
+            "bytes": 1572920
+          },
+          {
+            "func": "go.etcd.io/bbolt.upsert \u003c bbolt.upsert",
+            "bytes": 1048640
+          },
+          {
+            "func": "github.com/dagger/dagger/engine/snapshots.(*snapshotManager).attachOwnerLease \u003c snapshots.(*snapshotManager).AttachLease",
+            "bytes": 538038
+          },
+          {
+            "func": "go.etcd.io/bbolt.(*Bucket).open \u003c bbolt.(*Bucket).Bucket",
+            "bytes": 524320
+          },
+          {
+            "func": "go.etcd.io/bbolt.upsert \u003c bbolt.(*Bucket).Put",
+            "bytes": 524320
+          },
+          {
+            "func": "go.etcd.io/bbolt.(*Bucket).Put \u003c metadata.(*leaseManager).Create.func1",
+            "bytes": 524300
+          }
+        ]
+      },
+      {
+        "id": "prepared",
+        "bytes": 45123833,
+        "objects": 560746,
+        "top": [
+          {
+            "func": "github.com/vito/dang/v2/pkg/dang.(*syntaxCopyState).copyInto \u003c dang.(*syntaxCopyState).copyInto",
+            "bytes": 14681104
+          },
+          {
+            "func": "github.com/vito/dang/v2/pkg/dang.setIn[go.shape.string,go.shape.*uint8] \u003c dang.(*Type).Add",
+            "bytes": 4196192
+          },
+          {
+            "func": "github.com/vito/dang/v2/pkg/dang.setIn[go.shape.string,go.shape.struct { Kind github.com/vito/dang/v2/pkg/dang.BindingOriginKind; ImportNames []string; Qualified bool }] \u003c dang.(*Type).Add",
+            "bytes": 3681238
+          },
+          {
+            "func": "github.com/vito/dang/v2/pkg/dang.NewType \u003c dang.(*Type).Clone",
+            "bytes": 3147840
+          },
+          {
+            "func": "github.com/vito/dang/v2/pkg/dang.setIn[go.shape.string,go.shape.string] \u003c dang.(*Type).SetDocString",
+            "bytes": 2101027
+          },
+          {
+            "func": "github.com/vito/dang/v2/pkg/dang.NewType \u003c dang.TypeScopeFromSchema",
+            "bytes": 2098560
+          },
+          {
+            "func": "github.com/vito/dang/v2/pkg/dang.(*Type).Add \u003c dang.TypeScopeFromSchema",
+            "bytes": 1573216
+          },
+          {
+            "func": "github.com/vito/dang/v2/pkg/dang.TypeScopeFromSchema \u003c dang.(*ImportDecl).Infer.func1",
+            "bytes": 1573176
+          },
+          {
+            "func": "github.com/vito/dang/v2/pkg/hm.NewScheme \u003c dang.TypeScopeFromSchema",
+            "bytes": 1572936
+          },
+          {
+            "func": "github.com/vito/dang/v2/pkg/dang.wrapCoerce \u003c dang.(*FunCall).checkArgumentTypeWithSubs",
+            "bytes": 1048656
+          },
+          {
+            "func": "github.com/vito/dang/v2/pkg/hm.NewFnType \u003c dang.(*BlockArg).Infer.func1",
+            "bytes": 1048640
+          },
+          {
+            "func": "github.com/vito/dang/v2/pkg/hm.NewFnType \u003c dang.TypeScopeFromSchema",
+            "bytes": 1048640
+          },
+          {
+            "func": "github.com/vito/dang/v2/pkg/dang.setIn[go.shape.string,go.shape.struct { Kind github.com/vito/dang/v2/pkg/dang.BindingOriginKind; ImportNames []string; Qualified bool }] \u003c dang.(*Type).AddObject",
+            "bytes": 532522
+          },
+          {
+            "func": "github.com/vito/dang/v2/pkg/dang.setIn[go.shape.string,go.shape.int] \u003c dang.(*Type).Add",
+            "bytes": 527558
+          },
+          {
+            "func": "github.com/vito/dang/v2/pkg/dang.NewType \u003c dang.(*ObjectLiteral).Infer",
+            "bytes": 524640
+          }
+        ]
+      },
+      {
+        "id": "schema",
+        "bytes": 232213767,
+        "objects": 2768917,
+        "top": [
+          {
+            "func": "github.com/dagger/dagger/dagql.InputSpecs.ArgumentDefinitions \u003c dagql.FieldSpec.FieldDefinition",
+            "bytes": 23070748
+          },
+          {
+            "func": "github.com/dagger/dagger/dagql.Class[go.shape.*uint8].ForkObjectType \u003c dagql.(*Server).Fork",
+            "bytes": 22062643
+          },
+          {
+            "func": "github.com/dagger/dagger/dagql.FieldSpec.FieldDefinition \u003c dagql.Field[go.shape.*uint8].FieldDefinition",
+            "bytes": 21498316
+          },
+          {
+            "func": "github.com/dagger/dagger/core.(*SourceMap).TypeDirective \u003c core.(*Function).FieldSpec",
+            "bytes": 12059576
+          },
+          {
+            "func": "github.com/dagger/dagger/core/schema.(*querySchema).schemaJSONFile \u003c core.File] }].func1",
+            "bytes": 9765225
+          },
+          {
+            "func": "github.com/dagger/dagger/dagql.InputSpecs.visibleInputs \u003c dagql.InputSpecs.inputs",
+            "bytes": 8917896
+          },
+          {
+            "func": "github.com/dagger/dagger/dagql.(*InputSpecs).Add \u003c core.(*Function).FieldSpec",
+            "bytes": 7347915
+          },
+          {
+            "func": "github.com/dagger/dagger/core.formatGqlDescription \u003c core.(*Function).FieldSpec",
+            "bytes": 6818848
+          },
+          {
+            "func": "github.com/dagger/dagger/core.objFun \u003c core.(*ModuleObject).functions",
+            "bytes": 5244184
+          },
+          {
+            "func": "encoding/json/v2.makeString \u003c v2.makeStringArshaler.func2",
+            "bytes": 5243916
+          },
+          {
+            "func": "github.com/dagger/dagger/dagql/call.(*LiteralPrimitiveType[go.shape.bool,go.shape.*uint8]).ToAST \u003c dagql.InputSpecs.ArgumentDefinitions",
+            "bytes": 5243360
+          },
+          {
+            "func": "github.com/dagger/dagger/core.(*userMod).FieldModule \u003c core.objFun",
+            "bytes": 5243336
+          },
+          {
+            "func": "github.com/dagger/dagger/dagql.InputSpecs.inputs \u003c dagql.InputSpecs.ArgumentDefinitions",
+            "bytes": 4719168
+          },
+          {
+            "func": "github.com/dagger/dagger/dagql/call.(*LiteralPrimitiveType[go.shape.string,go.shape.*uint8]).ToAST \u003c dagql.InputSpecs.ArgumentDefinitions",
+            "bytes": 4719024
+          },
+          {
+            "func": "github.com/dagger/dagger/core.NewModFunction \u003c core.objFun",
+            "bytes": 4194824
+          }
+        ]
+      },
+      {
+        "id": "arbitrary",
+        "bytes": 48717850,
+        "objects": 135092,
+        "top": [
+          {
+            "func": "encoding/json/v2.makeString \u003c v2.makeStringArshaler.func2",
+            "bytes": 23115817
+          },
+          {
+            "func": "encoding/json/v2.Marshal \u003c json.Marshal",
+            "bytes": 20227790
+          },
+          {
+            "func": "encoding/json/v2.makeMapArshaler.func3 \u003c v2.makeInterfaceArshaler.func2",
+            "bytes": 3673635
+          },
+          {
+            "func": "github.com/dagger/dagger/core/sdk/dang/v2.(*receivedInterner).intern \u003c v2.(*receivedInterner).intern",
+            "bytes": 1048596
+          },
+          {
+            "func": "encoding/json/internal/jsonwire.AppendQuote \u003c jsontext.Token.appendString",
+            "bytes": 652012
+          }
+        ]
+      },
+      {
+        "id": "dagql",
+        "bytes": 303140942,
+        "objects": 2277715,
+        "top": [
+          {
+            "func": "github.com/dagger/dagger/dagql.(*ResultCallLiteral).cloneWith \u003c dagql.(*ResultCallArg).cloneWith",
+            "bytes": 50340772
+          },
+          {
+            "func": "github.com/dagger/dagger/dagql.(*Cache).initCompletedResult \u003c dagql.(*Cache).wait.func1",
+            "bytes": 35670968
+          },
+          {
+            "func": "github.com/dagger/dagger/dagql.(*Cache).associateResultWithTermLocked \u003c dagql.(*Cache).indexWaitResultInEgraphLocked",
+            "bytes": 24318772
+          },
+          {
+            "func": "github.com/dagger/dagger/dagql.(*Cache).indexWaitResultInEgraphLocked \u003c dagql.(*Cache).initCompletedResult",
+            "bytes": 23209786
+          },
+          {
+            "func": "github.com/dagger/dagger/dagql.(*ResultCallLiteral).cloneWith \u003c dagql.(*ResultCallLiteral).cloneWith",
+            "bytes": 20975272
+          },
+          {
+            "func": "github.com/dagger/dagger/dagql.(*Cache).addResultOutputEqClassLocked \u003c dagql.(*Cache).associateResultWithTermLocked",
+            "bytes": 16815972
+          },
+          {
+            "func": "github.com/dagger/dagger/dagql.(*sessionResultInstalls).record \u003c dagql.(*Cache).recordSessionResultInstallSpanLocked",
+            "bytes": 16294033
+          },
+          {
+            "func": "github.com/dagger/dagger/dagql.(*Cache).rememberDependencyEdgeLocked \u003c dagql.(*Cache).addExplicitDependenciesLocked",
+            "bytes": 14912050
+          },
+          {
+            "func": "github.com/dagger/dagger/dagql.(*Cache).addExplicitDependenciesLocked \u003c dagql.(*Cache).addExplicitDependencies",
+            "bytes": 13134427
+          },
+          {
+            "func": "github.com/dagger/dagger/dagql.(*ResultCall).cloneWith \u003c dagql.(*ResultCall).clone",
+            "bytes": 11013260
+          },
+          {
+            "func": "github.com/dagger/dagger/dagql.(*Cache).ensureEqClassForDigestLocked \u003c dagql.(*Cache).indexWaitResultInEgraphLocked",
+            "bytes": 9712093
+          },
+          {
+            "func": "github.com/dagger/dagger/dagql.(*Cache).addResultDigestPostingLocked \u003c dagql.(*Cache).addFramePostingsLocked",
+            "bytes": 8623359
+          },
+          {
+            "func": "github.com/dagger/dagger/core.attachModuleObjectValue \u003c core.attachModuleObjectValue",
+            "bytes": 7867820
+          },
+          {
+            "func": "github.com/dagger/dagger/dagql.(*ResultCallArg).cloneWith \u003c dagql.(*ResultCallLiteral).cloneWith",
+            "bytes": 7340256
+          },
+          {
+            "func": "github.com/dagger/dagger/dagql.(*Cache).rememberDependencyEdgeLocked \u003c dagql.(*Cache).initCompletedResult",
+            "bytes": 4737850
+          }
+        ]
+      },
+      {
+        "id": "other",
+        "bytes": 270261298,
+        "objects": 1802054,
+        "top": [
+          {
+            "func": "encoding/json/v2.makeString \u003c v2.makeStringArshaler.func2",
+            "bytes": 54371522
+          },
+          {
+            "func": "github.com/dagger/dagger/core.JSON.ToLiteral \u003c dagql.resultCallLiteralFromInput",
+            "bytes": 28561979
+          },
+          {
+            "func": "github.com/dagger/dagger/core.ObjectTypeDef.Clone \u003c core.(*ObjectTypeDef).WithFunction",
+            "bytes": 26910750
+          },
+          {
+            "func": "github.com/vito/dang/v2/pkg/dang.(*syntaxCopyState).copyInto \u003c dang.(*syntaxCopyState).copyInto",
+            "bytes": 8914432
+          },
+          {
+            "func": "github.com/dagger/dagger/engine/server.(*callPayloadDeliveryStore).CoverCallPayloadClosures \u003c core.walkCallPayloads",
+            "bytes": 8417324
+          },
+          {
+            "func": "github.com/dagger/dagger/dagql.(*PartHost).RunNative \u003c core.(*filesystemOutput).lazyEvalFunc.func3",
+            "bytes": 8390616
+          },
+          {
+            "func": "github.com/dagger/dagger/core/schema.(*fileSchema).contents \u003c dagql.NodeFuncWithDynamicInputs[go.shape.*uint8,go.shape.struct { OffsetLines *int; LimitLines *int },go.shape.string].func1",
+            "bytes": 7529405
+          },
+          {
+            "func": "github.com/dagger/dagger/dagql.(*Cache).publishUsageMeasurementsLocked \u003c dagql.(*Cache).pruneUsageIdentitiesLocked",
+            "bytes": 6816536
+          },
+          {
+            "func": "github.com/dagger/dagger/engine/server.(*callPayloadDeliveryStore).ClaimCallPayloadRoot \u003c core.claimCallPayload",
+            "bytes": 6292704
+          },
+          {
+            "func": "runtime.mallocgc",
+            "bytes": 5254210
+          },
+          {
+            "func": "google.golang.org/protobuf/proto.MarshalOptions.marshal \u003c proto.Marshal",
+            "bytes": 3193669
+          },
+          {
+            "func": "github.com/dagger/dagger/engine/snapshots.(*metadataStore).getOrCreate \u003c snapshots.(*snapshotManager).ensureMetadata",
+            "bytes": 2649028
+          },
+          {
+            "func": "go.etcd.io/bbolt.own \u003c bbolt.upsert",
+            "bytes": 2621600
+          },
+          {
+            "func": "net/http/internal/http2.(*Framer).startWriteDataPadded \u003c http2.(*serverConn).startFrameWrite",
+            "bytes": 2195466
+          },
+          {
+            "func": "github.com/dagger/dagger/core.Function.Clone \u003c core.(*Function).WithArg",
+            "bytes": 2098784
+          }
+        ]
+      }
+    ]
+  },
+  "memstats": {
+    "HeapAlloc": 893420264,
+    "HeapIdle": 982745088,
+    "HeapInuse": 1259896832,
+    "HeapReleased": 814809088,
+    "HeapSys": 2242641920,
+    "NumGC": 439,
+    "StackInuse": 5505024,
+    "Sys": 2321329176
+  }
+}
