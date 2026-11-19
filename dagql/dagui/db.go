@@ -507,6 +507,17 @@ func (db *DB) ImportSnapshots(snapshots []SpanSnapshot) {
 			// predates it
 			snapshot.Progress = span.Progress
 		}
+		if snapshot.Activity.isZero() && !isLazyEvaluationName(snapshot.Name) {
+			// A raw snapshot, decoded from the span alone, carries no
+			// activity. Keep what this DB credited the span with from its
+			// deferred evaluations, received earlier: nothing would credit
+			// it again, as they are integrated already. A snapshot from a
+			// DB that derived the span's activity itself carries it. A lazy
+			// evaluation takes no time from the evaluations it links on to
+			// (see attributedCauses), so whatever it was credited while it
+			// was a nameless placeholder was never its own.
+			snapshot.Activity = span.Activity
+		}
 		if name, ok := db.namesFromLog[span.ID]; ok && snapshot.EndTime.Before(snapshot.StartTime) {
 			// Live name updates arrive on logs because repeated in-flight span
 			// exports retain their start-time name. Do not let one roll the newer
@@ -1221,6 +1232,11 @@ func (activity *Activity) Add(span *Span) bool {
 	activity.mergeIntervalsFrom(max(idx-1, 0))
 	changed = true
 	return changed
+}
+
+// isZero reports whether the activity records nothing at all.
+func (activity *Activity) isZero() bool {
+	return len(activity.CompletedIntervals) == 0 && activity.EarliestRunning.IsZero()
 }
 
 func (activity *Activity) IsRunning() bool {

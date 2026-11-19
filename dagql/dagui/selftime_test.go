@@ -1160,3 +1160,51 @@ func TestTimeBreakdownLazyEvaluationOfInternalCall(t *testing.T) {
 	}
 	assertBlockers(t, segs[0], pub)
 }
+
+// A call's deferred evaluation credits the call with its time. Cloud resends
+// a call's span when it changes (more children, logs), as a raw snapshot that
+// carries no activity; the credit must survive it, whichever arrived first.
+func TestResentCallKeepsDeferredTime(t *testing.T) {
+	q := testID(1)
+	w := testID(2)
+	f := testID(3)
+	r := testID(4)
+	root := SpanSnapshot{ID: q, Name: "query", StartTime: at(0), EndTime: at(20)}
+	call := SpanSnapshot{ID: w, ParentID: q, Name: "Container.withExec", StartTime: at(1), EndTime: at(1.5)}
+	forcing := SpanSnapshot{ID: f, ParentID: q, Name: "Container.stdout", StartTime: at(3), EndTime: at(13)}
+	resume := SpanSnapshot{ID: r, ParentID: f, Name: "resume withExec", StartTime: at(3), EndTime: at(13),
+		Links: []SpanLink{evalLink(w)}}
+	resent := call
+	resent.ChildCount = 3
+	resent.HasLogs = true
+	want := 10*time.Second + 500*time.Millisecond
+
+	for name, batches := range map[string][][]SpanSnapshot{
+		"call first":   {{root, call, forcing}, {resume}, {resent}},
+		"resume first": {{root, forcing, resume}, {call}, {resent}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			db := NewDB()
+			for _, batch := range batches {
+				db.ImportSnapshots(batch)
+			}
+			span := db.Spans.Map[w]
+			if got := span.Activity.Duration(at(20)); got != want {
+				t.Fatalf("resent call should keep its deferred time: got %v, want %v", got, want)
+			}
+			if hb := span.TimeBreakdown(at(20)); hb.Self != want || hb.Material {
+				t.Fatalf("resent call's own work should be %v: %+v", want, hb)
+			}
+		})
+	}
+
+	// A snapshot from a DB that derived the activity itself is authoritative.
+	db := NewDB()
+	db.ImportSnapshots([]SpanSnapshot{root, call, forcing, resume})
+	final := db.Spans.Map[w].Snapshot()
+	final.Activity = Activity{CompletedIntervals: []Interval{{Start: at(1), End: at(2)}}}
+	db.ImportSnapshots([]SpanSnapshot{final})
+	if got := db.Spans.Map[w].Activity.Duration(at(20)); got != time.Second {
+		t.Fatalf("a snapshot carrying activity should replace it: got %v", got)
+	}
+}

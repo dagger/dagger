@@ -1309,8 +1309,12 @@ func (span *Span) laterContinuations(evaluated bool, f func(*Span) bool, seen ma
 // isLazyEvaluation reports whether the span evaluates a lazy result for the
 // call that returned it: a resume, or the opening of a stored part.
 func (span *Span) isLazyEvaluation() bool {
-	return strings.HasPrefix(span.Name, "resume ") ||
-		strings.HasPrefix(span.Name, "open stored part (")
+	return isLazyEvaluationName(span.Name)
+}
+
+func isLazyEvaluationName(name string) bool {
+	return strings.HasPrefix(name, "resume ") ||
+		strings.HasPrefix(name, "open stored part (")
 }
 
 func (span *Span) PendingReason() (bool, []string) {
