@@ -1849,30 +1849,10 @@ func (c *Cache) relocateMergeRowsLocked(commit *valueMergeCommit) error {
 		}
 		rec := source
 		if pre, ok := prep.prerelocated[row.ordinal]; ok && pre.from != nil {
-			// Relocated as it was prepared: with the numbers the commit
-			// decides, it is the record relocation here would give, and
-			// with any other it is relocated from its numbers to those.
 			delete(prep.prerelocated, row.ordinal)
-			rec = pre.rec
-			if !pre.holds(final) {
-				if c.testRelocatedUnderLock != nil {
-					c.testRelocatedUnderLock(row.ordinal)
-				}
-				var err error
-				if rec, err = VisitEncodedReferences(pre.rec, func(ref *PersistedRef) error {
-					if ref.RecipeID != nil || ref.ResultID == 0 {
-						return nil
-					}
-					provisional, ok := pre.from[ref.ResultID]
-					if !ok {
-						return fmt.Errorf("merge values: row %d's reference %d names no row", row.ordinal, ref.ResultID)
-					}
-					n, err := final(provisional)
-					ref.ResultID = uint64(n)
-					return err
-				}); err != nil {
-					return err
-				}
+			var err error
+			if rec, err = c.relocatePreparedRecordLocked(row.ordinal, pre, final); err != nil {
+				return err
 			}
 		} else if moved {
 			if pre, ok := prep.prerelocated[row.ordinal]; ok && pre.holds(final) {
@@ -1927,6 +1907,31 @@ func (c *Cache) relocateMergeRowsLocked(commit *valueMergeCommit) error {
 		}
 	}
 	return nil
+}
+
+// relocatePreparedRecordLocked returns a record relocated as it was prepared
+// (earlyNumbers) at the commit's numbers, final: as it is when those are the
+// numbers it was given, and otherwise relocated from those, each of which
+// names one provisional number (prerelocatedRecord.from). Requires egraphMu.
+func (c *Cache) relocatePreparedRecordLocked(ordinal uint64, pre *prerelocatedRecord, final func(uint64) (sharedResultID, error)) (PersistedRecord, error) {
+	if pre.holds(final) {
+		return pre.rec, nil
+	}
+	if c.testRelocatedUnderLock != nil {
+		c.testRelocatedUnderLock(ordinal)
+	}
+	return VisitEncodedReferences(pre.rec, func(ref *PersistedRef) error {
+		if ref.RecipeID != nil || ref.ResultID == 0 {
+			return nil
+		}
+		provisional, ok := pre.from[ref.ResultID]
+		if !ok {
+			return fmt.Errorf("merge values: row %d's reference %d names no row", ordinal, ref.ResultID)
+		}
+		n, err := final(provisional)
+		ref.ResultID = uint64(n)
+		return err
+	})
 }
 
 // compactOfferOwners lists each offer owner's dependencies once, sorted. Two
