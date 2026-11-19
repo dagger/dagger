@@ -223,3 +223,60 @@ func TestRequestBreakdownSpansInReport(t *testing.T) {
 		t.Error("an empty view should request nothing")
 	}
 }
+
+// TestRenderWaitsBelowInFinalReport: a module function row whose step waited
+// on another module's step reads as waiting in the final report, as the step
+// itself does, rather than as solid work.
+func TestRenderWaitsBelowInFinalReport(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	db := dagui.NewDB()
+	root := prettyTestSpanID(1)
+	other := prettyTestSpanID(2)
+	fn := prettyTestSpanID(3)
+	from := prettyTestSpanID(4)
+	exitCode := prettyTestSpanID(5)
+
+	base := time.Now().Add(-time.Hour)
+	at := func(sec float64) time.Time {
+		return base.Add(time.Duration(sec * float64(time.Second)))
+	}
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: root, TraceID: prettyTestTraceID(), Name: "root",
+			StartTime: at(0), EndTime: at(80), Final: true},
+		{ID: other, TraceID: prettyTestTraceID(), ParentID: root, Name: "apt-get install",
+			StartTime: at(10), EndTime: at(60), Final: true},
+		{ID: fn, TraceID: prettyTestTraceID(), ParentID: root, Name: "Project.build",
+			StartTime: at(5), EndTime: at(70), Final: true},
+		{ID: from, TraceID: prettyTestTraceID(), ParentID: fn, Name: "Container.from",
+			StartTime: at(5), EndTime: at(10), Final: true},
+		{ID: exitCode, TraceID: prettyTestTraceID(), ParentID: fn, Name: "Container.exitCode",
+			StartTime: at(10), EndTime: at(65), Final: true,
+			Links: []dagui.SpanLink{waitLink(other, at(10), at(60))}},
+	})
+	db.SetPrimarySpan(root)
+
+	fnLine := func(out string) string {
+		for _, line := range strings.Split(out, "\n") {
+			if strings.Contains(line, "Project.build") {
+				return line
+			}
+		}
+		t.Fatalf("no row for the function call:\n%s", out)
+		return ""
+	}
+	if line := fnLine(renderedLines(db)); !strings.Contains(line, "1m5s") {
+		t.Fatalf("until the waiting below rows is computed, the row reads as its wall-clock time:\n%s", line)
+	}
+
+	fe := NewWithDB(io.Discard, db)
+	fe.Verbosity = dagui.ShowCompletedVerbosity
+	fe.ExpandCompleted = true
+	fe.GCThreshold = time.Hour
+	var buf strings.Builder
+	if err := fe.FinalRender(&buf); err != nil {
+		t.Fatal(err)
+	}
+	if line := fnLine(buf.String()); !strings.Contains(line, "15.0s ⋯ waited 50.0s on apt-get install") {
+		t.Errorf("the function call should say how long it waited below, and on what:\n%s", line)
+	}
+}

@@ -1080,6 +1080,50 @@ type statusIconHost interface {
 	durationForStatus(dagui.SpanID) *DurationView
 }
 
+// rowWaitsInterval is how often the live view brings the waiting below rows
+// up to date (dagui.DB.UpdateRowWaits). On the largest traces an update can
+// take a sizable fraction of a second, so it runs apart from drawing, on a
+// beat of its own; the durations ticking in between read the last result.
+const rowWaitsInterval = time.Second
+
+// startRowWaits keeps the waiting below rows up to date while the view runs.
+func (fe *frontendPretty) startRowWaits() (stop func()) {
+	done := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		ticker := time.NewTicker(rowWaitsInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				fe.dispatch(fe.updateRowWaitsLocked)
+			}
+		}
+	})
+	return func() {
+		close(done)
+		wg.Wait()
+	}
+}
+
+// updateRowWaitsLocked brings the waiting below rows up to date, and redraws
+// the rows whose waiting changed.
+func (fe *frontendPretty) updateRowWaitsLocked() {
+	changed := fe.db.UpdateRowWaits(time.Now())
+	if len(changed) == 0 {
+		return
+	}
+	for _, span := range changed {
+		if sr, ok := fe.spanTrees[span.ID]; ok {
+			sr.Update()
+		}
+	}
+	fe.viewDirty = true
+	fe.Update()
+}
+
 // durationTickInterval is how often a running span's DurationView re-renders.
 // FormatDuration shows tenths of a second (%.1fs) under a minute, so ~100ms
 // keeps the ticking duration visually smooth without excess repaints.
@@ -1867,10 +1911,14 @@ func (fe *frontendPretty) Run(ctx context.Context, opts dagui.FrontendOpts, run 
 		fe.err = err
 	} else if fe.console != "" {
 		// serve the TUI over HTTP instead of attaching to a terminal
+		stopRowWaits := fe.startRowWaits()
 		fe.err = fe.runWithConsole(ctx, run)
+		stopRowWaits()
 	} else {
 		// run the function wrapped in the TUI
+		stopRowWaits := fe.startRowWaits()
 		fe.err = fe.runWithTUI(ctx, run)
+		stopRowWaits()
 	}
 
 	if failure := outputDrainFailure(fe.err); failure != nil {
@@ -3385,6 +3433,8 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 		return ExitError{OriginalCode: exitCode, Original: fe.err}
 	}
 
+	// the final report's rows read the waiting below them as of the end
+	fe.updateRowWaitsLocked()
 	fe.setupFinalRenderLocked()
 
 	out := NewOutput(w, termenv.WithProfile(fe.profile))
