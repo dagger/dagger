@@ -419,6 +419,7 @@ func (class Class[T]) ParseField(ctx context.Context, view call.View, astField *
 	if !ok {
 		return Selector{}, nil, fmt.Errorf("%s has no such field: %q", class.TypeName(), astField.Name)
 	}
+	src := astSource(astField.Position)
 	args := make([]NamedInput, len(astField.Arguments))
 	for i, arg := range astField.Arguments {
 		argSpec, ok := field.Spec.Args.Input(arg.Name, view)
@@ -434,12 +435,13 @@ func (class Class[T]) ParseField(ctx context.Context, view call.View, astField *
 		if err != nil {
 			return Selector{}, nil, err
 		}
-		input, err := argSpec.Type.Decoder().DecodeInput(val)
+		input, err := argSpec.Type.Decoder().DecodeInput(detachValue(src, val))
 		if err != nil {
 			return Selector{}, nil, fmt.Errorf("init arg %q value as %T (%s) using %T: %w", arg.Name, argSpec.Type, argSpec.Type.Type(), argSpec.Type.Decoder(), err)
 		}
 		args[i] = NamedInput{
-			Name:  arg.Name,
+			// The schema's name, not the query's: see detachString.
+			Name:  argSpec.Name,
 			Value: input,
 		}
 	}
@@ -449,7 +451,7 @@ func (class Class[T]) ParseField(ctx context.Context, view call.View, astField *
 		view = ""
 	}
 	return Selector{
-		Field: astField.Name,
+		Field: field.Spec.Name,
 		Args:  args,
 		View:  view,
 	}, field.Spec.Type.Type(), nil
