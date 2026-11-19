@@ -1,0 +1,9 @@
+type Probe {
+  pub greeting(name: String! = "world"): String! {
+    "hello, " + name
+  }
+
+  pub alpine: Container! {
+    container.from("alpine:3.20")
+  }
+}

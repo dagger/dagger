@@ -186,6 +186,28 @@ type MemoryCake {
         # on both sides, so they are left out.
         focus: "\\(\\*cacheMetadata\\)\\.SetExternal|engine/contenthash\\.\\(\\*cacheContext\\)\\.save",
       ),
+      Demo(
+        pr: "15202",
+        title: "core: dedupe and bound schema builder memos",
+        # Every schema server's cost: forking the core schema, building and
+        # installing the set, its introspection JSON and AST.
+        focus: "core\\.buildSchema|schemaJSONFile|core\\.\\(\\*SchemaBuilder|SchemaBuilderMemo|SchemaIntrospection|SchemaASTCache|dagql\\.\\(\\*Server\\)\\.Fork|\\(\\*CoreSchemaBase\\)\\.Fork|core\\.\\(\\*ModDeps\\)|introspection\\.",
+      ),
+      Demo(
+        pr: "15215",
+        title: "core: share module schemas across client roots",
+        # The servers themselves (core fork + module installs). The schema
+        # AST cache is an engine-wide LRU, the same on both sides, so it is
+        # left out.
+        focus: "dagql\\.\\(\\*Server\\)\\.Fork|core\\.buildSchema",
+      ),
+      Demo(
+        pr: "15216",
+        title: "core: share artifact module servers across clients",
+        # The standalone module servers artifact discovery, evaluation and
+        # checks select through.
+        focus: "core\\.dagqlServerForModule",
+      ),
     ]
   }
 
@@ -201,6 +223,47 @@ type MemoryCake {
     env: [String!]! = [],
   ): Measurement! @cache(policy: FunctionCachePolicy.Never) {
     measure(pr: "15213", ref: ref, env: env)
+  }
+
+  """
+  #15202: one schema server per module load. One session loads MODS
+  (default 300) distinct Dang modules with Directory.asModule, 10 per query;
+  each load wraps core in a new *CoreMod, and the session memo keyed core by
+  pointer, so main builds and keeps a server for the unchanged dependency set
+  on every load (~630 servers, ~90 MiB); with the fix, one per client.
+  """
+  demo15202(
+    ref: String! = "main",
+    env: [String!]! = [],
+  ): Measurement! @cache(policy: FunctionCachePolicy.Never) {
+    measure(pr: "15202", ref: ref, env: env)
+  }
+
+  """
+  #15215: one schema server per client root. One session makes CALLS
+  (default 300) distinct calls of a Go module function that calls a Dang
+  dependency, 10 per query; each call is a nested client, and main builds
+  its module sets on every client's root and keeps them for the session;
+  with the fix the session shares one per set.
+  """
+  demo15215(
+    ref: String! = "main",
+    env: [String!]! = [],
+  ): Measurement! @cache(policy: FunctionCachePolicy.Never) {
+    measure(pr: "15215", ref: ref, env: env)
+  }
+
+  """
+  #15216: one artifact module server per client. CLIENTS (default 40)
+  concurrent nested clients run the checks of a workspace of MODS (default
+  10) Dang modules and stay connected; main builds a standalone server per
+  client per module (dagqlServerForModule), the fix one per module.
+  """
+  demo15216(
+    ref: String! = "main",
+    env: [String!]! = [],
+  ): Measurement! @cache(policy: FunctionCachePolicy.Never) {
+    measure(pr: "15216", ref: ref, env: env)
   }
 
   """
