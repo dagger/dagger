@@ -1,0 +1,430 @@
+# memory-cake: scripted, per-PR memory reproducers for the dagger engine.
+#
+# Each demo is one PR's reproducer: a workload script that makes an engine
+# retain memory the PR frees, plus a regexp over stack frames naming the PR's
+# code. `measure` runs a demo against an engine built from any ref of
+# github.com/dagger/dagger and reports its heap at three points (see
+# Measurement); `cake` runs every demo on two refs (main vs. a branch with
+# the memory fixes) and returns a markdown table, so each PR's slice of
+# retained heap shows clearly.
+#
+# How a measurement runs (driver.sh, session.sh):
+#
+#   - `engine` builds the engine and its matching CLI from the ref (with
+#     engine-dev from THIS checkout, as hack/memory-cake/run.dang did), runs
+#     it with its debug server on :6060 and a fresh state volume, and binds
+#     it into a client container as `dagger-engine`.
+#   - The driver warms the engine with a trivial session and takes the
+#     baseline heap (/debug/pprof/heap?gc=1).
+#   - It then runs the workload under `dagger run`, which opens a session
+#     and passes its port and token to the child as DAGGER_SESSION_PORT and
+#     DAGGER_SESSION_TOKEN. `dagger` commands the workload runs (dagger api
+#     query, dagger -c, dagger call) join that session as nested clients
+#     (engine/client.Connect), so session-scoped memory stays live; the live
+#     heap, /debug/vars and /debug/client-lifecycle are taken before the
+#     session returns.
+#   - After the session closes and a settle wait, the after heap.
+#   - heapstat (heapstat/) sums each profile's inuse_space, and the part of
+#     it in samples with a frame matching the demo's focus regexp.
+#
+# The engine service is bound to the driver's single exec, so it starts with
+# the measurement and stops when the exec ends: one engine per measurement,
+# and `cake` measures one at a time.
+#
+# Adding a demo:
+#
+#   1. fixtures/<pr>/workload.sh: a POSIX sh script, run with the fixture
+#      directory as its cwd, `dagger` (the ref's CLI), curl and jq on PATH,
+#      and inside the open session. Read sizes from env vars with defaults
+#      (FILES=${FILES:-20000}) so callers can scale it with `env`. Keep the
+#      engine under ~4 GB. Any other files it needs go beside it.
+#   2. An entry in `demos` below: pr, title, focus regexp.
+#   3. A `demo<pr>(ref, env)` function calling `measure`, like demo15213.
+
+let daggerRepo = "https://github.com/dagger/dagger"
+let debugPort = 6060
+
+"""
+One PR's memory reproducer. Its workload is fixtures/<pr>/workload.sh in
+this module.
+"""
+type Demo {
+  """
+  The PR number, e.g. "15213".
+  """
+  pr: String!
+  """
+  The PR's title.
+  """
+  title: String!
+  """
+  Regexp over heap profile stack frames ("<function> <file>") naming the
+  PR's code: samples with a matching frame are the demo's focus bytes.
+  """
+  focus: String!
+}
+
+"""
+An engine built from a ref of github.com/dagger/dagger, with a client
+container bound to it.
+"""
+type Engine {
+  """
+  The ref it was built from, as given.
+  """
+  ref: String!
+  """
+  The commit the ref resolved to.
+  """
+  sha: String!
+  """
+  The engine service (debug server on :6060, fresh state volume). Bound to
+  `client` as `dagger-engine`.
+  """
+  service: Service!
+  """
+  Alpine with the ref's `dagger` CLI pointed at the engine, curl, jq and
+  heapstat.
+  """
+  client: Container!
+}
+
+"""
+One demo's heap on one engine. Bytes are Go inuse_space from
+/debug/pprof/heap?gc=1.
+"""
+type Measurement {
+  """
+  The demo's PR number.
+  """
+  pr: String!
+  """
+  The ref measured, as given.
+  """
+  ref: String!
+  """
+  The commit the ref resolved to.
+  """
+  sha: String!
+  """
+  Heap after a trivial warm-up session.
+  """
+  baselineBytes: Int!
+  """
+  Heap at the end of the workload, its session still open.
+  """
+  liveBytes: Int!
+  """
+  Heap after the workload's session closed and settled.
+  """
+  afterBytes: Int!
+  """
+  Bytes of the live heap in samples matching the demo's focus regexp.
+  """
+  focusBytes: Int!
+  """
+  Focus bytes of the baseline heap.
+  """
+  focusBaselineBytes: Int!
+  """
+  Focus bytes of the after heap.
+  """
+  focusAfterBytes: Int!
+  """
+  The heaviest focus sites of the live heap, one "<MiB> <function>" per
+  line (each sample counted at its leaf-most matching frame).
+  """
+  focusTop: String!
+  """
+  How long the workload's session took, in seconds.
+  """
+  seconds: Int!
+  """
+  The live heap profile.
+  """
+  liveProfile: File!
+  """
+  The after heap profile.
+  """
+  afterProfile: File!
+  """
+  The baseline heap profile.
+  """
+  baselineProfile: File!
+  """
+  /debug/vars at the live point.
+  """
+  liveVars: File!
+  """
+  /debug/client-lifecycle at the live point: the session and its clients.
+  """
+  liveClients: File!
+  """
+  Everything the driver wrote: profiles, vars, heapstat output, logs.
+  """
+  out: Directory!
+
+  """
+  One human-readable line.
+  """
+  summary: String! {
+    "#" + pr + " @ " + ref + " (" + sha.truncate(8) + "): baseline " + mib(baselineBytes) + ", live " + mib(liveBytes) + " (" + signedMib(liveBytes - baselineBytes) + "), after " + mib(afterBytes) + "; focus live " + mib(focusBytes) + ", after " + mib(focusAfterBytes) + "; " + toString(seconds) + "s"
+  }
+}
+
+type MemoryCake {
+  """
+  Every demo, in the order the cake runs them.
+  """
+  demos: [Demo!]! {
+    [
+      Demo(
+        pr: "15213",
+        title: "engine: keep contenthash trees on disk",
+        focus: "engine/contenthash\\.|\\(\\*cacheMetadata\\)\\.SetExternal|engine/snapshots\\.",
+      ),
+    ]
+  }
+
+  """
+  #15213: contenthash trees kept in memory for every derived snapshot. One
+  session hashes a FILES-file directory (default 10000) and EDITS one-file
+  edits of it (default 60); each edit is rescanned and its whole tree kept
+  in memory on main (serialized and parsed, ~1 KB/file in all). Scale with
+  env, e.g. ["FILES=20000", "EDITS=100"].
+  """
+  demo15213(
+    ref: String! = "main",
+    env: [String!]! = [],
+  ): Measurement! @cache(policy: FunctionCachePolicy.Never) {
+    measure(pr: "15213", ref: ref, env: env)
+  }
+
+  """
+  Run every demo (or those in `prs`) on `before` and `after`, one engine at
+  a time, and return a markdown table of their live heaps and focus slices.
+  A demo that fails gets an error row; the others still run.
+  """
+  cake(
+    """
+    The baseline ref: main at the commit memory-cake-all is built on, so
+    before and after differ only by the memory PRs.
+    """
+    before: String! = "fcce0f890ef1fd1230fed302fe9b973b37b9be05",
+    after: String! = "memory-cake-all",
+    """
+    PR numbers of the demos to run; empty runs them all.
+    """
+    prs: [String!]! = [],
+  ): String! @cache(policy: FunctionCachePolicy.Never) {
+    let selected = if (prs.isEmpty) {
+      demos
+    } else {
+      demos.filter { d => prs.contains(d.pr) }
+    }
+    let header = "| PR | " + before + " live | " + after + " live | delta | focus " + before + " | focus " + after + " |\n|---|---:|---:|---:|---:|---:|"
+    let rows = selected.map { d =>
+      cakeRow(d, before, after) rescue {
+        e: Error! => "| #" + d.pr + " | error: " + e.message.replace("\n", " ").replace("|", "/").truncate(300) + " | | | | |"
+      }
+    }
+    header + "\n" + rows.join("\n")
+  }
+
+  """
+  Measure the demo for PR `pr` on an engine built from `ref` (a branch, tag
+  or commit of github.com/dagger/dagger).
+  """
+  measure(
+    pr: String!,
+    ref: String! = "main",
+    """
+    KEY=VALUE environment variables for the workload, e.g. ["FILES=40000"].
+    """
+    env: [String!]! = [],
+    """
+    Seconds to wait after the warm-up and after the session closes, before
+    taking the heap.
+    """
+    settle: Int! = 10,
+  ): Measurement! @cache(policy: FunctionCachePolicy.Never) {
+    let demo = demos.find { d => d.pr == pr }
+    if (demo == null) {
+      raise "memory-cake: no demo for PR " + pr + " (demos: " + demos.map { d => d.pr }.join(", ") + ")"
+    }
+    measureWorkload(
+      pr: pr,
+      ref: ref,
+      workload: currentModule.source.directory("fixtures/" + pr),
+      focus: demo.focus,
+      env: env,
+      settle: settle,
+    )
+  }
+
+  """
+  Measure any workload: `workload` is a directory holding workload.sh (see
+  the module docs), `focus` the regexp its focus bytes match. The core of
+  `measure`, for trying a workload before it is a demo.
+  """
+  measureWorkload(
+    """
+    Label for the measurement.
+    """
+    pr: String!,
+    ref: String! = "main",
+    workload: Directory!,
+    focus: String! = "",
+    env: [String!]! = [],
+    settle: Int! = 10,
+  ): Measurement! @cache(policy: FunctionCachePolicy.Never) {
+    let eng = engine(ref: ref)
+    let scripts = currentModule.source.directory(".").filter(include: ["driver.sh", "session.sh"])
+    let configured = eng.client
+      .withDirectory("/cake", scripts)
+      .withMountedDirectory("/fixture", workload)
+      .withWorkdir("/fixture")
+      .withEnvVariable("CAKE_FOCUS", focus)
+      .withEnvVariable("CAKE_SETTLE", toString(settle))
+      .withEnvVariable("CAKE_NONCE", Random.string)
+    let withEnv = env.reduce(configured) { c, kv =>
+      let kvParts = kv.split("=", limit: 2)
+      c.withEnvVariable(kvParts[0] ?? kv, kvParts[1] ?? "")
+    }
+    # The engine is bound to this exec alone: it starts for it and stops
+    # when it ends. The outer session's variables are unset so the CLI
+    # reaches the engine under test (see engine-dev's withoutOuterSession).
+    let ran = withEnv.withExec(
+      ["env", "-u", "DAGGER_SESSION_PORT", "-u", "DAGGER_SESSION_TOKEN", "sh", "/cake/driver.sh"],
+      expect: ReturnType.ANY,
+    )
+    let status = ran.{{exitCode, stderr}}
+    if (status.exitCode != 0) {
+      raise "memory-cake: #" + pr + " on " + ref + " (" + eng.sha + ") failed:\n" + status.stderr
+    }
+    let out = ran.directory("/out")
+    let baseline = out.file("baseline.stat").contents
+    let live = out.file("live.stat").contents
+    let after = out.file("after.stat").contents
+    Measurement(
+      pr: pr,
+      ref: ref,
+      sha: eng.sha,
+      baselineBytes: statValue(baseline, "inuse"),
+      liveBytes: statValue(live, "inuse"),
+      afterBytes: statValue(after, "inuse"),
+      focusBytes: statValue(live, "focus"),
+      focusBaselineBytes: statValue(baseline, "focus"),
+      focusAfterBytes: statValue(after, "focus"),
+      focusTop: statTop(live),
+      seconds: out.file("session.seconds").contents.trimSpace.toInt,
+      liveProfile: out.file("live.pb.gz"),
+      afterProfile: out.file("after.pb.gz"),
+      baselineProfile: out.file("baseline.pb.gz"),
+      liveVars: out.file("live-vars.json"),
+      liveClients: out.file("live-clients.json"),
+      out: out,
+    )
+  }
+
+  """
+  Build the engine and CLI at `ref` (a branch, tag or commit of
+  github.com/dagger/dagger) and bind a fresh engine into a client
+  container. The service starts when the client first runs, and each call
+  gets its own state volume.
+  """
+  engine(ref: String! = "main"): Engine! @cache(policy: FunctionCachePolicy.Never) {
+    let repo = git(daggerRepo)
+    let sha = if (ref.containsMatch(`^[0-9a-f]{40}$`)) {
+      ref
+    } else {
+      repo.ref(ref).commit
+    }
+    let src = repo.commit(sha).tree
+    # The ref's engine, built with engine-dev from this checkout; the same
+    # service engine-lab's start runs (fresh state, incremented subnet for
+    # nesting), plus the debug server.
+    let dev = engineDev(ws: src.asWorkspace).incrementSubnet
+    let svc = dev.container
+      .withExposedPort(1234)
+      .withMountedCache("/var/lib/dagger", cacheVolume("memory-cake-state-" + Random.string))
+      .asService(
+        args: [
+          "--addr", "tcp://0.0.0.0:1234",
+          "--network-name", "dagger-cake",
+          "--network-cidr", dev.networkCidr,
+          "--debugaddr", "0.0.0.0:" + toString(debugPort),
+        ],
+        useEntrypoint: true,
+        insecureRootCapabilities: true,
+      )
+    let base = container
+      .from("alpine:3.20")
+      .withExec(["apk", "add", "--no-cache", "curl", "jq"])
+      .withFile("/usr/local/bin/heapstat", heapstatBin)
+    # installClient binds the service as dagger-engine, points the CLI at it
+    # and installs the CLI built from the same source.
+    Engine(
+      ref: ref,
+      sha: sha,
+      service: svc,
+      client: dev.installClient(client: base, service: svc),
+    )
+  }
+
+  # ---- helpers ------------------------------------------------------------
+
+  # heapstat/, a static binary for the alpine client.
+  let heapstatBin: File! {
+    container
+      .from("golang:1.27")
+      .withMountedCache("/go/pkg/mod", cacheVolume("memory-cake-gomod"))
+      .withEnvVariable("CGO_ENABLED", "0")
+      .withDirectory("/src", currentModule.source.directory("heapstat"))
+      .withWorkdir("/src")
+      .withExec(["go", "build", "-mod=mod", "-o", "/heapstat", "."])
+      .file("/heapstat")
+  }
+
+  let cakeRow(d: Demo!, before: String!, after: String!): String! {
+    let b = measure(pr: d.pr, ref: before)
+    let a = measure(pr: d.pr, ref: after)
+    "| #" + d.pr + " " + d.title + " | " + mib(b.liveBytes) + " | " + mib(a.liveBytes) + " | " + signedMib(a.liveBytes - b.liveBytes) + " | " + mib(b.focusBytes) + " | " + mib(a.focusBytes) + " |"
+  }
+}
+
+# The value of a heapstat line "<key> <n>" (0 when absent).
+let statValue(stat: String!, key: String!): Int! {
+  let line = stat.split("\n").find { l => l.hasPrefix(key + " ") }
+  if (line == null) {
+    0
+  } else {
+    line.trimPrefix(key + " ").trimSpace.toInt
+  }
+}
+
+# heapstat's "top <bytes> <function>" lines as "<MiB> <function>".
+let statTop(stat: String!): String! {
+  stat
+    .split("\n")
+    .filter { l => l.hasPrefix("top ") }
+    .map { l =>
+      let parts = l.split(" ", limit: 3)
+      mib((parts[1] ?? "0").toInt) + " " + (parts[2] ?? "")
+    }
+    .join("\n")
+}
+
+# Bytes as MiB with one decimal, e.g. "123.4 MiB".
+let mib(b: Int!): String! {
+  let tenths = (b * 10 + 524288) / 1048576
+  toString(tenths / 10) + "." + toString(tenths % 10) + " MiB"
+}
+
+let signedMib(b: Int!): String! {
+  if (b < 0) {
+    "-" + mib(0 - b)
+  } else {
+    "+" + mib(b)
+  }
+}
