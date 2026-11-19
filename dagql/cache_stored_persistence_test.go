@@ -174,6 +174,25 @@ func TestCloudRestoreKeepsEveryRecord(t *testing.T) {
 	require.True(t, reply.Committed)
 }
 
+// A save times how long its snapshot held the cache for reading, in one
+// hold (PersistSnapshotHeld): the longest a writer of the cache, and every
+// reader behind it, waits behind the save. It is part of the save's time.
+func TestCloudSaveTimesItsSnapshotsReadHold(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "cloud.db")
+	ctx, cloud := storedPersistenceTestCloud(t, path)
+	defer func() { require.NoError(t, cloud.Close(ctx)) }()
+	require.Zero(t, cloud.PersistSnapshotHeld(), "no save yet")
+	saved, _ := mergeTestSource(t, "checkpointed", "saved")
+	storedPersistenceTestMerge(t, ctx, cloud, saved)
+	start := time.Now()
+	require.NoError(t, cloud.Checkpoint(ctx))
+	took := time.Since(start)
+	held := cloud.PersistSnapshotHeld()
+	require.Positive(t, held, "the save's snapshot is timed")
+	require.LessOrEqual(t, held, took, "within the save")
+}
+
 // A blob-backed cache restores its last save whatever ended the process:
 // a store checkpointed and never closed comes back, without what changed
 // after the save. An engine's cache still wipes a store it never closed.
