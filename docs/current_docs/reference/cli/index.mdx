@@ -633,13 +633,21 @@ dagger cloud integration
 ### SEE ALSO
 
 * [dagger cloud](#dagger-cloud)	 - Manage Dagger Cloud (checks, engines, traces, billing, etc.)
-* [dagger cloud integration create](#dagger-cloud-integration-create)	 - Create a new integration of the given provider type
-* [dagger cloud integration list](#dagger-cloud-integration-list)	 - List configured integrations (optionally filtered by provider type)
+* [dagger cloud integration create](#dagger-cloud-integration-create)	 - Start connecting a forge to Dagger Cloud
+* [dagger cloud integration list](#dagger-cloud-integration-list)	 - List integrations for a provider (defaults to GitHub)
 * [dagger cloud integration rm](#dagger-cloud-integration-rm)	 - Remove a configured integration
 
 ## dagger cloud integration create
 
-Create a new integration of the given provider type
+Start connecting a forge to Dagger Cloud
+
+### Synopsis
+
+Return the browser step to connect GitHub, GitLab.com, or Entire to Dagger Cloud.
+With --json, the action_required status includes the next action and its URL.
+For GitLab.com, pass --namespace to grant access to a specific account or group.
+After setup, use integration list &lt;provider&gt; to verify the installation or grant.
+Use cloud checks on separately to enable checks for a repository.
 
 ```
 dagger cloud integration create <provider>
@@ -648,13 +656,14 @@ dagger cloud integration create <provider>
 ### Examples
 
 ```
-dagger cloud integration create github
+dagger cloud integration create gitlab --org my-org --namespace team/group --json
 ```
 
 ### Options
 
 ```
-      --open   Open the setup URL in a browser
+      --namespace string   GitLab.com account or group path to grant to the Cloud organization
+      --open               Open the setup URL in a browser
 ```
 
 ### Options inherited from parent commands
@@ -670,7 +679,11 @@ dagger cloud integration create github
 
 ## dagger cloud integration list
 
-List configured integrations (optionally filtered by provider type)
+List integrations for a provider (defaults to GitHub)
+
+### Synopsis
+
+List GitHub installations visible to the signed-in account, GitLab grants saved for the selected Cloud organization, or Entire installations available to that organization.
 
 ```
 dagger cloud integration list [type]
