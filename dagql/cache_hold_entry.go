@@ -34,7 +34,9 @@ func (c *Cache) HoldEntry(ctx context.Context, number uint64) (AnyResult, func(c
 	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 	res := c.resultsByID[sharedResultID(number)]
 	switch {
-	case res == nil:
+	case res == nil, res.refusedPayloadLocked():
+		// An entry whose merged payload was refused at its first use
+		// (prepareMergedPayload) is gone, though something still owns it.
 		c.egraphMu.Unlock()
 		return nil, nil, fmt.Errorf("hold entry %d: %w", number, ErrUnknownEntry)
 	case res.noValueLocked():

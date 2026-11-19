@@ -673,7 +673,7 @@ func (build *storedBundleBuild) addStoredValue(res *sharedResult, rec PersistedR
 // is normalized (normalizeStoredTransfer) or compressed (newStoredBody), and
 // each reference is checked against its dependencies (addStoredValue).
 func validateStoredBundle(bundle ValueBundle, stored map[uint64][]declaredPart) error {
-	_, err := checkValueBundle(bundle, true, stored)
+	_, err := checkValueBundle(bundle, true, stored, nil)
 	return err
 }
 

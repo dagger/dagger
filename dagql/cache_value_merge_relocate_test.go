@@ -315,7 +315,7 @@ func TestRestoreValuesOvertakenAsPreparedLandsTheSame(t *testing.T) {
 		var under atomic.Int64
 		c.testRelocatedUnderLock = func(uint64) { under.Add(1) }
 		restore := func(bundle ValueBundle) MergeReply {
-			reply, err := c.RestoreValues(ctx, bundle, nil)
+			reply, err := c.RestoreValues(ctx, bundle, nil, "")
 			require.NoError(t, err)
 			require.True(t, reply.Committed)
 			t.Cleanup(func() { require.NoError(t, reply.Release(context.Background())) })

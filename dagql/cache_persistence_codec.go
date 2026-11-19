@@ -699,6 +699,29 @@ func VisitEncodedReferences(rec PersistedRecord, visit PersistedRefVisitor) (Per
 	return out, nil
 }
 
+// visitEncodedPayloadReferences walks the declared references of a row's
+// envelope, and its snapshot links, as VisitEncodedReferences does, but not
+// the row's own identity or its recorded call, which it passes to the
+// payload's family as its owner call: a record merged unprepared, whose
+// identity and call are already the cache's, relocates only its payload at
+// its first use (prepareFirstUseRecord). It returns the rewritten envelope,
+// whose identity is rec's, and links.
+func visitEncodedPayloadReferences(rec PersistedRecord, visit PersistedRefVisitor) (PersistedResultEnvelope, []PersistedSnapshotRefLink, error) {
+	if visit == nil {
+		return PersistedResultEnvelope{}, nil, fmt.Errorf("visit encoded payload references: nil visitor")
+	}
+	scopes, err := partitionSnapshotLinks(rec.Envelope, cloneSnapshotRefLinks(rec.SnapshotLinks))
+	if err != nil {
+		return PersistedResultEnvelope{}, nil, err
+	}
+	env, err := visitPersistedEnvelope(rec.Envelope, rec.Call, scopes, nil, true, visit)
+	if err != nil {
+		return PersistedResultEnvelope{}, nil, err
+	}
+	env.ResultID = rec.Envelope.ResultID
+	return env, scopes.links, nil
+}
+
 func visitPersistedEnvelope(env PersistedResultEnvelope, ownerCall *ResultCall, scopes *snapshotLinkScopes, path PersistedRefPath, root bool, visit PersistedRefVisitor) (PersistedResultEnvelope, error) {
 	if env.Version != persistedResultEnvelopeVersion {
 		return PersistedResultEnvelope{}, fmt.Errorf("visit persisted envelope at %q: unsupported version %d", path, env.Version)

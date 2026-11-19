@@ -286,6 +286,12 @@ func fileKind(head bool) string {
 	return "whole"
 }
 
+// source names the file, for the log of a record of it whose payload fails
+// at its first use: its check, its kind and its digest.
+func (f *restoreFile) source() string {
+	return f.check + " " + fileKind(f.head) + " " + f.file.Digest.String()
+}
+
 // run merges the queued files until the connection ends: heads on a lane of
 // their own, so a head never waits for a whole, and each whole on a lane of
 // its own, so a whole never waits for another check's.
@@ -427,7 +433,7 @@ func (r *restorer) mergePart(ctx context.Context, f *restoreFile) error {
 	}
 	fillAddresses(&bundle, f.file.Table)
 	records := len(bundle.Values)
-	reply, err := r.s.adapter.RestorePart(ctx, bundle, f.unretained[f.next], r.s.known)
+	reply, err := r.s.adapter.RestorePart(ctx, bundle, f.unretained[f.next], r.s.known, f.source())
 	if reply.Release != nil {
 		f.releases = append(f.releases, reply.Release)
 	}
