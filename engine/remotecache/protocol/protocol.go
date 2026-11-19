@@ -171,7 +171,11 @@ type Hello struct {
 	Period  uint64 `json:"period"`
 	Settled bool   `json:"settled,omitempty"`
 	// Restored are the set files (Restore) this engine process merged
-	// whole, by digest: the service doesn't offer them again.
+	// whole, by digest. The service doesn't offer one again once it has
+	// read its answer, which says where its records landed; one whose
+	// answer it never read, as when the connection dropped first, it offers
+	// again, and the engine answers it Already, with the entries its merge
+	// answered.
 	Restored []digest.Digest `json:"restored,omitempty"`
 }
 
@@ -618,15 +622,15 @@ type Restored struct {
 }
 
 // RestoredFile is what the engine did with one file: Complete when every
-// part merged, Already when this engine process had merged it whole and did
-// nothing. Parts counts the parts that merged, Records the records they
-// carried, and Rows what their merges did with them. FirstCommit is the
-// engine's clock, in Unix nanoseconds, when its first part committed, and
-// Error is what stopped it, if anything did.
+// part merged, Already when this engine process had merged it whole and
+// merged nothing this time. Parts counts the parts that merged, Records the
+// records they carried, and Rows what their merges did with them.
+// FirstCommit is the engine's clock, in Unix nanoseconds, when its first
+// part committed, and Error is what stopped it, if anything did.
 //
-// Entries, set when Complete and Already isn't, are the engine entries the
-// file's records landed on, by the numbers the engine's rows, replies and
-// prune events name them by: one for each record the file carries in full
+// Entries, set when Complete, are the engine entries the file's records
+// landed on, by the numbers the engine's rows, replies and prune events
+// name them by: one for each record the file carries in full
 // (a value with no Held), in the file's order, part by part and within a
 // part in its bundle's Values order, at its first appearance only. A record
 // that landed on no entry, such as a root that had expired, is 0.
@@ -634,6 +638,8 @@ type Restored struct {
 // complete as the merge of the part that first carried its record left it
 // (PackCompleteParts): the engine's own parts for a record it kept. Both
 // are set when Entries is, and empty when no entry has a complete part.
+// With Already, all three are what this engine process's merge of the file
+// answered, on this connection or an earlier one.
 type RestoredFile struct {
 	Digest      digest.Digest `json:"digest"`
 	Complete    bool          `json:"complete,omitempty"`
