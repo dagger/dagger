@@ -122,8 +122,6 @@ func (span *Span) TimeBreakdown(now time.Time) *TimeBreakdown {
 // timeBreakdown computes the row's breakdown. While the waiting below rows is
 // being computed, below holds it: a wait chain continues through the waits
 // recorded below a step, and the row's published waiting is left out.
-//
-//nolint:gocyclo // the decomposition is clearer as one flow.
 func (span *Span) timeBreakdown(now time.Time, below *rowWaitsState) *TimeBreakdown {
 	hb := &TimeBreakdown{}
 	if span == nil || span.db == nil {
@@ -838,25 +836,7 @@ func (span *Span) TimeBreakdownSpans(visit func(*Span)) {
 		}
 	}
 	walk(span, 0)
-
-	// The waiting computed from the row's whole subtree (RowWaits) names
-	// blockers the row's own waits don't reach. A view draws them, and
-	// jumps to them, from its tree, so it needs each with its ancestors.
-	if rw := span.RowWaits; rw != nil {
-		visitPlaced := func(id SpanID) {
-			for s, depth := span.db.Spans.Map[id], 0; s != nil && depth < 100; s, depth = s.ParentSpan, depth+1 {
-				visitOnce(s)
-			}
-		}
-		for _, seg := range rw.Segments {
-			if seg.Target.IsValid() {
-				visitPlaced(seg.Target)
-			}
-			for _, b := range seg.Blockers {
-				visitPlaced(b.Target)
-			}
-		}
-	}
+	span.rowWaitBlockers(visitOnce)
 }
 
 // resolveBlocker maps internal plumbing spans (lazy "resume" markers)
