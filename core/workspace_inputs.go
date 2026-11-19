@@ -745,7 +745,7 @@ func (c *workspaceInputCollector) retainedValue(value dagql.AnyResult) {
 			for _, tool := range llm.mcp.boundTools {
 				if tool.object != nil {
 					c.retainedValue(tool.object)
-				} else if tool.id != nil && tool.id.EngineResultID() != 0 {
+				} else if tool.id.IsHandle() && tool.id.EngineResultID() != 0 {
 					c.ref(&dagql.ResultCallRef{ResultID: tool.id.EngineResultID()})
 				} else {
 					c.issue("lazy tool %s has no materialized input scope", tool.typeName())
