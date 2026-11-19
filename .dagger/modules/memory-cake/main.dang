@@ -44,7 +44,7 @@
 # script) reuses one run. A new session measures again. `cake` and
 # `tracePeaks` return strings and are never cached.
 #
-# Adding a demo:
+# Adding a demo (skills/memory-cake/SKILL.md has the details and lessons):
 #
 #   1. fixtures/<pr>/workload.sh: a POSIX sh script, run with the fixture
 #      directory as its cwd, `dagger` (the ref's CLI), curl and jq on PATH,
@@ -226,6 +226,18 @@ type Measurement {
 }
 
 type MemoryCake {
+  # The skills shipped alongside this module (skills/<name>/SKILL.md).
+  let skills: Directory! = currentModule.source.directory("skills")
+
+  """
+  Install the memory-cake skill onto a base LLM. Skills only: the demo and
+  measurement functions are not exposed as tools, so they stay out of every
+  workspace agent's toolset; the skill explains how to call them.
+  """
+  agent(base: LLM!): LLM! @agent {
+    base.withSkills(skills)
+  }
+
   """
   Every demo, in the order the cake runs them.
   """
