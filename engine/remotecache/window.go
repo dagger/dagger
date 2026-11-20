@@ -28,9 +28,10 @@ type CacheWork struct {
 // file landed. Every count is the engine's, whatever it was for, and
 // windows of files that land together overlap. Wall is the window's span,
 // from the moments its restore stamped; its counts are read beside the
-// restore, each reading starting as the window begins or ends and taking
-// about 15 µs for each of the engine's threads, so a count can take in up
-// to a reading's time past either end.
+// restore, each reading started as the window begins or ends, so a count can
+// take in work past either end: the time until the reading's goroutine runs,
+// which grows when the engine is short of CPU, and the reading's own, about
+// 15 µs for each of the engine's threads.
 //
 // CPU is the engine process's CPU time, user and system, and GCCPU the part
 // the Go runtime estimates its garbage collector took, GCAssist the part of

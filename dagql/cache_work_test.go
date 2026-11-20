@@ -174,6 +174,38 @@ func TestSharingCountsPassesByKindOfClass(t *testing.T) {
 	require.Equal(t, sharing.Total, alone.PrepareTotal)
 }
 
+// A pass over a class of a merged record and a value computed here with no
+// part to give is counted as a class with no donor's. The merged record is
+// prepared by a sharing pass's probe once, this one's or, where a record
+// alone in its class is queued too, its own class's before: every first use
+// by sharing is a pass's.
+func TestSharingCountsANoDonorClassWithItsFirstUses(t *testing.T) {
+	set := firstUseTestCloud(t)
+	ctx, c, srv, _ := shareTestCache(t)
+	barrier := newSharePassBarrier(c)
+	reply, err := c.MergeValues(ctx, cloudCacheID, set.bundle)
+	require.NoError(t, err)
+	c.egraphMu.RLock()
+	merged := c.resultsByID[sharedResultID(firstUseTestEntry(t, set.bundle, reply, set.good))]
+	c.egraphMu.RUnlock()
+	computed := persistedListTestResult(t, ctx, c, srv, "computed-beside", &transferTestValue{Text: "ready"})
+	shareTestUnite(t, ctx, c, "share-no-donor", Result[Typed]{shared: merged}, computed)
+	shareTestAwaitQuiet(t, c, barrier)
+
+	stats := c.Sharing()
+	noDonor := stats.Kinds["no_donor"]
+	require.Positive(t, noDonor.Passes, "%+v", stats.Kinds)
+	require.GreaterOrEqual(t, noDonor.Members, 2*noDonor.Passes)
+	require.Zero(t, noDonor.Slotted)
+	require.False(t, merged.holdsUnpreparedPayload(), "a pass's probe prepared the merged record")
+	var prepared int64
+	for _, kind := range stats.Kinds {
+		prepared += kind.Prepared
+	}
+	require.Positive(t, prepared)
+	require.Equal(t, c.FirstUse().Paths["sharing"].Prepared, prepared, "the passes made every first use by sharing")
+}
+
 // A pass over a class with a member holding a part ready to give is counted
 // as a donor class's, with the slot it made.
 func TestSharingCountsADonorClassWithItsSlot(t *testing.T) {
