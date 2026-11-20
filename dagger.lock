@@ -57,6 +57,7 @@
 ["","git-sha",["github.com/dagger/go","refs/tags/v0.1.0"],"0b68a41656546134aa6b5c0a439fd1ffcd2ecae9"]
 ["","git-sha",["github.com/dagger/go","refs/tags/v0.2.0"],"334136faaa1cd36ac26dfdc648eda907ce99c063"]
 ["","git-sha",["github.com/dagger/go","refs/tags/v0.4.0"],"e327bee9103fe60cb66c9d11bf2e1604686021df"]
+["","git-sha",["github.com/dagger/go-sdk","format-identifiers"],"b7398adf0329f0ea358e33dec1762518773fd0f6"]
 ["","git-sha",["github.com/dagger/go-sdk","main"],"3e4a483c7626dac6ff28e23d115d8445cd132a96"]
 ["","git-sha",["github.com/dagger/go-sdk","refs/tags/v0.1"],"ec2d1ff3ea14032cc0ae5de842b81cea3ce8f8c1"]
 ["","git-sha",["github.com/dagger/go-sdk","refs/tags/v1.4.0"],"8c1d739c0de53daa6f26eb8c0de851d649597bba"]
