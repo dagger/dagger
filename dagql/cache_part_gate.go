@@ -177,6 +177,7 @@ func (c *Cache) completePartsHeld(ctx context.Context, row *sharedResult, reader
 			return completePartsFellBack(ctx, row, err), nil, err
 		}
 		row.completeParts.Store(&rowCompleteParts{stamp: newCompletePartsStamp(version), keys: keys})
+		c.logOffersOnCompleteParts(ctx, row, keys)
 		return keys, nil, nil
 	}
 	// A size is read from its part's descriptor, which only the row's record
@@ -224,6 +225,7 @@ func (c *Cache) completePartsHeld(ctx context.Context, row *sharedResult, reader
 		}
 	}
 	row.completeParts.Store(&rowCompleteParts{stamp: newCompletePartsStamp(version), keys: keys, sizes: sizes})
+	c.logOffersOnCompleteParts(ctx, row, keys)
 	return keys, sizes, nil
 }
 
@@ -324,6 +326,17 @@ func (res *sharedResult) taskSettledPartKeys(task *PartTaskToken) []string {
 
 // settledPartKeys returns the address keys of the outputs the row's gate has
 // settled, sorted.
+// partSettled reports whether the row's gate has settled the part at key.
+func (res *sharedResult) partSettled(key string) bool {
+	gate := res.partGate.gate.Load()
+	if gate == nil {
+		return false
+	}
+	gate.mu.Lock()
+	defer gate.mu.Unlock()
+	return gate.outputs[key].phase == PartComplete
+}
+
 func (res *sharedResult) settledPartKeys() []string {
 	gate := res.partGate.gate.Load()
 	if gate == nil {
