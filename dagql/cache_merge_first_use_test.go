@@ -445,6 +445,9 @@ func TestSharingQueuesAClassOnlyWhenItCouldHaveADonor(t *testing.T) {
 	}
 	engine.queueSnapshotShareRowLocked(ctx, good)
 	queuedUntouched := len(engine.sharePending)
+	// Read before a donor joins: once the class is queued and the lock let
+	// go, the sharing worker may prepare the record.
+	unprepared := good.holdsUnpreparedPayload()
 	for class := range classes {
 		engine.addResultOutputEqClassLocked(local.cacheSharedResult().id, class)
 	}
@@ -456,5 +459,5 @@ func TestSharingQueuesAClassOnlyWhenItCouldHaveADonor(t *testing.T) {
 	require.Zero(t, queuedAlone, "a class of one merged record queues no pass")
 	require.Zero(t, queuedUntouched, "nor does a class of merged records none of which holds a part here")
 	require.Equal(t, len(classes), queuedWithDonor, "a class with a value computed here is queued")
-	require.True(t, good.holdsUnpreparedPayload())
+	require.True(t, unprepared, "until then nothing prepared the merged record")
 }
