@@ -10,6 +10,7 @@ import (
 
 	"github.com/containerd/containerd/v2/core/snapshots"
 	"github.com/dagger/dagger/internal/buildkit/client"
+	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 )
@@ -499,14 +500,22 @@ func (md *cacheMetadata) GetExternal(s string) ([]byte, error) {
 
 func (md *cacheMetadata) SetExternal(s string, dt []byte) error {
 	if md.store.contentHashOnDisk(s) {
-		if err := md.store.hashFiles.write(md.id, dt, func() bool { return md.contentHashGone }); err != nil {
-			return err
+		err := md.store.hashFiles.write(md.id, dt, func() bool { return md.contentHashGone })
+		if err == nil {
+			// The tree on disk replaces one kept in memory before.
+			md.store.mu.Lock()
+			delete(md.external, s)
+			md.store.mu.Unlock()
+			return nil
 		}
-		// The tree on disk replaces one kept in memory when it was loaded.
-		md.store.mu.Lock()
-		delete(md.external, s)
-		md.store.mu.Unlock()
-		return nil
+		// Keep the tree in memory, where trees were kept before, as loading
+		// one that can't be written does, rather than fail the save: a host
+		// sync would fail with it, and a background save would lose it. The
+		// tree on disk, if any, is older: drop it, so this one is read and
+		// checkpointed. The next save tries the disk again.
+		bklog.G(context.TODO()).WithError(err).WithField("snapshot", md.id).
+			Error("failed to write content hash records; keeping them in memory")
+		md.store.hashFiles.remove(md.id, nil)
 	}
 	md.store.mu.Lock()
 	defer md.store.mu.Unlock()

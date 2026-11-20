@@ -56,6 +56,51 @@ func TestContentHashFilesLoadKeepsUnwritableTreesInMemory(t *testing.T) {
 	require.Equal(t, []byte("tree a"), dt)
 }
 
+// breakDir replaces files' directory with a file, so writing a tree fails.
+func breakDir(t *testing.T, files *contentHashFiles) {
+	t.Helper()
+	require.NoError(t, os.RemoveAll(files.dir))
+	require.NoError(t, os.WriteFile(files.dir, nil, 0o600))
+}
+
+// A tree that can't be written when saved is kept in memory too, rather than
+// failing the save (and with it a host sync) or being lost, and replaces the
+// older tree on disk; the next save that can write moves it to disk.
+func TestContentHashFilesSaveKeepsUnwritableTreesInMemory(t *testing.T) {
+	s := newMetadataStore()
+	files, err := newContentHashFiles(filepath.Join(t.TempDir(), "contenthash"))
+	require.NoError(t, err)
+	s.hashFiles = files
+	cm := &snapshotManager{
+		metadataStore:       s,
+		records:             map[string]*cacheRecord{},
+		snapshotOwnerLeases: map[string]map[string]struct{}{"a": {"owner": {}}},
+	}
+	md := s.getOrCreate("a")
+	require.NoError(t, md.SetExternal(ContentHashMetadataKey, []byte("tree 1")))
+	require.True(t, files.has("a"))
+
+	breakDir(t, files)
+	require.NoError(t, md.SetExternal(ContentHashMetadataKey, []byte("tree 2")))
+	require.False(t, files.has("a"), "the older tree on disk is dropped")
+	dt, err := md.GetExternal(ContentHashMetadataKey)
+	require.NoError(t, err)
+	require.Equal(t, []byte("tree 2"), dt)
+	require.Equal(t, []SnapshotContentHashRow{{SnapshotID: "a", Data: []byte("tree 2")}},
+		cm.PersistentMetadataRows().ContentHashes, "the next checkpoint keeps it")
+
+	require.NoError(t, os.Remove(files.dir))
+	require.NoError(t, os.Mkdir(files.dir, 0o700))
+	require.NoError(t, md.SetExternal(ContentHashMetadataKey, []byte("tree 3")))
+	require.True(t, files.has("a"))
+	s.mu.RLock()
+	require.Empty(t, md.external, "the tree on disk replaces the one in memory")
+	s.mu.RUnlock()
+	dt, err = md.GetExternal(ContentHashMetadataKey)
+	require.NoError(t, err)
+	require.Equal(t, []byte("tree 3"), dt)
+}
+
 // A tree saved after its metadata was dropped, as a background save can be,
 // is discarded rather than left on disk with nothing to remove it.
 func TestContentHashFilesDiscardWritesForDroppedMetadata(t *testing.T) {
