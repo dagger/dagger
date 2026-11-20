@@ -113,6 +113,34 @@ func sealClientMetadataForTest(sess *daggerSession, client *clientRuntime) error
 	return sess.sealClientMetadataLocked(client.clientRecord)
 }
 
+func TestNestedClientScopeRegistersChildrenOfTheClient(t *testing.T) {
+	t.Parallel()
+
+	srv, sess, parent, ctx, requestScope := newNestedTransportTestFixture(t)
+	defer requestScope.Lease().Release()
+	metadata := nestedTransportTestMetadata("entrypoint")
+	transport, err := srv.RegisterNestedClientTransport(ctx, metadata, parent.clientID)
+	require.NoError(t, err)
+	defer transport.Close()
+	sess.clientMu.RLock()
+	entrypoint := sess.clientRuntimes[metadata.ClientID]
+	sess.clientMu.RUnlock()
+	require.NoError(t, sealClientMetadataForTest(sess, entrypoint))
+
+	_, _, err = srv.NestedClientScope(ctx, engine.NewNestedClientTransport(nil), metadata)
+	require.ErrorContains(t, err, "ownership does not match")
+
+	scoped, release, err := srv.NestedClientScope(ctx, transport, metadata)
+	require.NoError(t, err)
+	defer release()
+	child, err := srv.RegisterNestedClientTransport(scoped, nestedTransportTestMetadata("call"), metadata.ClientID)
+	require.NoError(t, err)
+	defer child.Close()
+	sess.clientMu.RLock()
+	defer sess.clientMu.RUnlock()
+	require.Equal(t, []string{parent.clientID, metadata.ClientID}, sess.clientRuntimes["call"].parentClientIDs)
+}
+
 func TestNestedTransportRegistrationIsStrictUniqueAndPermanent(t *testing.T) {
 	t.Parallel()
 

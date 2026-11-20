@@ -445,3 +445,60 @@ func TestContainerNestedTransportManagerDoesNotCacheFailedRegistration(t *testin
 	wg.Wait()
 	require.Equal(t, int32(1), handler.registered.Load())
 }
+
+type bindingSessionHandler struct {
+	nestedTransportSessionHandler
+	registration [3]string
+}
+
+func (handler *bindingSessionHandler) RegisterNestedClientTransportForExec(
+	ctx context.Context,
+	metadata *engine.ClientMetadata,
+	parentClientID string,
+	attachablesClientID string,
+	fromExecHelper bool,
+) (*engine.NestedClientTransport, error) {
+	handler.registration = [3]string{metadata.ClientID, parentClientID, attachablesClientID}
+	return handler.nestedTransportSessionHandler.RegisterNestedClientTransportForExec(ctx, metadata, parentClientID, attachablesClientID, fromExecHelper)
+}
+
+// A module server's call client is a child of the client that binds it, not
+// of the exec, and has no attachables of the exec's.
+func TestContainerNestedTransportsServeBoundClients(t *testing.T) {
+	t.Parallel()
+
+	handler := &bindingSessionHandler{}
+	manager := newNestedClientTransportManager(t.Context(), handler, &engine.ClientMetadata{
+		SessionID:         "session",
+		ClientID:          "server",
+		ClientSecretToken: "server-secret",
+		ClientVersion:     "v0.21.6",
+	}, "server-parent", true)
+	defer manager.Close()
+	lease := engine.NewClientLifecycleLease(engine.ClientLeaseRequest, "test", func() {}, nil)
+	t.Cleanup(lease.Release)
+	scope, err := engine.NewClientScope(&engine.ClientMetadata{SessionID: "session", ClientID: "entrypoint"}, lease)
+	require.NoError(t, err)
+	ctx, err := engine.ContextWithClientScope(t.Context(), scope)
+	require.NoError(t, err)
+
+	unbind, err := manager.bind(ctx, "call", nil)
+	require.NoError(t, err)
+	require.Equal(t, [3]string{"call", "entrypoint", "call"}, handler.registration)
+	require.False(t, handler.fromExecHelper.Load())
+
+	req := httptest.NewRequest(http.MethodPost, "/query", nil)
+	req.Header = engine.ClientMetadata{ClientID: "call"}.AppendToHTTPHeaders(req.Header)
+	transport, metadata, _, err := manager.transportForRequest(req)
+	require.NoError(t, err)
+	require.Equal(t, "v0.21.6", metadata.ClientVersion)
+	require.Equal(t, "server-secret", metadata.ClientSecretToken)
+	require.Equal(t, "entrypoint", manager.bound("call").parentClientID)
+	require.Nil(t, manager.bound("server"))
+
+	_, err = manager.bind(ctx, "call", nil)
+	require.ErrorContains(t, err, "cannot be bound")
+
+	unbind()
+	require.True(t, transport.Closed())
+}

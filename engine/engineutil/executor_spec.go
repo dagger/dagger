@@ -146,6 +146,7 @@ type execState struct {
 	nestedClientMetadata     *engine.ClientMetadata
 	nestedClientModule       dagql.AnyObjectResult
 	nestedClientFunctionCall dagql.Typed
+	nestedClients            *nestedClientTransportManager
 
 	// profExecOpID is the wcprof exec.run op of this run (0 when not
 	// profiling): the op nested clients of this exec are linked to.
@@ -1370,6 +1371,7 @@ func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	transports.profExecOpID = state.profExecOpID
 	transports.otelHostExec = dagql.OTelHostExec{ExecRun: state.otelExecRunSpanCtx, Propagated: state.otelPropagatedSpanCtx}
 	state.cleanups.Add("close nested client transports", cleanups.Infallible(transports.Close))
+	state.nestedClients = transports
 
 	if fromExecHelper {
 		fail, done, err := c.SessionHandler.ExpectNestedExecAttachables(state.nestedClientMetadata.SessionID, state.nestedClientMetadata.ClientID)
@@ -1426,6 +1428,10 @@ func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr 
 			transport, metadata, status, err := transports.transportForRequest(req)
 			if err != nil {
 				http.Error(resp, err.Error(), status)
+				return
+			}
+			if bound := transports.bound(metadata.ClientID); bound != nil {
+				c.SessionHandler.ServeHTTPToNestedClient(resp, transports.hostedRequest(req), transport, metadata, bound.parentClientID, true, bound.moduleContext, nil)
 				return
 			}
 			c.SessionHandler.ServeHTTPToNestedClient(resp, transports.hostedRequest(req), transport, metadata, transports.parentClientID, false, state.nestedClientModule, state.nestedClientFunctionCall)
@@ -1529,6 +1535,11 @@ type nestedClientTransport struct {
 	ready     chan struct{}
 	transport *engine.NestedClientTransport
 	err       error
+
+	// A client that bind registered is served as the child of
+	// parentClientID, with moduleContext as its module.
+	parentClientID string
+	moduleContext  dagql.AnyObjectResult
 }
 
 func newNestedClientTransportManager(
@@ -1646,6 +1657,61 @@ func (manager *nestedClientTransportManager) register(client *nestedClientTransp
 		wcprof.Link(manager.registrationCtx, wcprof.LinkKindNestedClient, manager.profExecOpID, 0, client.metadata.ClientID, 0)
 	}
 	close(client.ready)
+}
+
+// BindNestedClient registers clientID as a child of the client whose scope
+// ctx holds, served by the running container containerID with moduleContext
+// as its module, until the returned func closes it. The client reaches no
+// host, as an in-engine SDK client does not.
+func (c *Client) BindNestedClient(ctx context.Context, containerID, clientID string, moduleContext dagql.AnyObjectResult) (func(), error) {
+	c.runningMu.RLock()
+	state, ok := c.running[containerID]
+	c.runningMu.RUnlock()
+	if !ok || state.nestedClients == nil {
+		return nil, fmt.Errorf("container %s serves no nested clients", containerID)
+	}
+	return state.nestedClients.bind(ctx, clientID, moduleContext)
+}
+
+func (manager *nestedClientTransportManager) bind(ctx context.Context, clientID string, moduleContext dagql.AnyObjectResult) (func(), error) {
+	parentClientID, err := engine.NestedClientParentID(ctx, manager.baseMetadata.SessionID)
+	if err != nil {
+		return nil, err
+	}
+	metadata := *manager.baseMetadata
+	metadata.ClientID = clientID
+	metadata.ClientStableID = rand.Text()
+	transport, err := manager.sessionHandler.RegisterNestedClientTransportForExec(ctx, &metadata, parentClientID, clientID, false)
+	if err != nil {
+		return nil, fmt.Errorf("register nested client transport: %w", err)
+	}
+	ready := make(chan struct{})
+	close(ready)
+
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+	if manager.closed || manager.transports[clientID] != nil {
+		transport.Close()
+		return nil, fmt.Errorf("nested client %q cannot be bound", clientID)
+	}
+	manager.transports[clientID] = &nestedClientTransport{
+		metadata:       &metadata,
+		ready:          ready,
+		transport:      transport,
+		parentClientID: parentClientID,
+		moduleContext:  moduleContext,
+	}
+	return transport.Close, nil
+}
+
+// bound returns the entry bind registered for clientID, if any.
+func (manager *nestedClientTransportManager) bound(clientID string) *nestedClientTransport {
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+	if client := manager.transports[clientID]; client != nil && client.parentClientID != "" {
+		return client
+	}
+	return nil
 }
 
 // await returns the outcome of the registration that created this entry,

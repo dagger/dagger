@@ -69,6 +69,10 @@ func (ms *mockServer) RegisterNestedClientTransport(context.Context, *engine.Cli
 	return engine.NewNestedClientTransport(nil), nil
 }
 
+func (*mockServer) NestedClientScope(context.Context, *engine.NestedClientTransport, *engine.ClientMetadata) (context.Context, func(), error) {
+	panic("unexpected NestedClientScope")
+}
+
 func (ms *mockServer) ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.NestedClientTransport, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed) {
 }
 

@@ -50,6 +50,39 @@ func (srv *Server) RegisterNestedClientTransportForExec(
 	return srv.registerNestedClientTransport(ctx, metadata, parentClientID, attachablesClientID, fromExecHelper, false)
 }
 
+// NestedClientScope returns ctx holding a scope of the nested client that
+// transport owns, and the release of that scope. Owning the transport is the
+// authority: work outside the client's requests can then register the
+// client's own children.
+func (srv *Server) NestedClientScope(
+	ctx context.Context,
+	transport *engine.NestedClientTransport,
+	metadata *engine.ClientMetadata,
+) (context.Context, func(), error) {
+	srv.daggerSessionsMu.RLock()
+	sess := srv.daggerSessions[metadata.SessionID]
+	srv.daggerSessionsMu.RUnlock()
+	if sess == nil {
+		return nil, nil, fmt.Errorf("session %q not found", metadata.SessionID)
+	}
+	sess.clientMu.RLock()
+	client := sess.clientRuntimes[metadata.ClientID]
+	sess.clientMu.RUnlock()
+	if client == nil || client.nestedTransport != transport {
+		return nil, nil, fmt.Errorf("nested client %q transport ownership does not match", metadata.ClientID)
+	}
+	scope, err := sess.acquireRootClientScope(client, engine.ClientLeaseRequest, "nested client scope")
+	if err != nil {
+		return nil, nil, err
+	}
+	ctx, err = engine.ContextWithClientScope(ctx, scope)
+	if err != nil {
+		scope.Lease().Release()
+		return nil, nil, err
+	}
+	return ctx, scope.Lease().Release, nil
+}
+
 // ExpectNestedExecAttachables records that a nested exec's session helper
 // will register attachablesClientID's attachables, starting alongside the
 // exec's command. Queries then wait for them as long as the exec runs instead
