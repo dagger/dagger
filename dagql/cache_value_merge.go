@@ -2973,7 +2973,7 @@ func (c *Cache) applyMergedOffersLocked(ctx context.Context, commit *valueMergeC
 				continue
 			}
 			offer.Owner = owner.record
-			attached := &partOffer{record: offer, owner: owner}
+			attached := &partOffer{record: offer, owner: owner, came: offerCameByMerge}
 			if err := c.attachPartOfferLocked(res, offer.Address, attached); err != nil {
 				more, releaseErr := c.releaseOfferOwnerLocked(ctx, owner)
 				queue = append(queue, more...)
