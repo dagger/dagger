@@ -1057,7 +1057,11 @@ func (c *Cache) lookupCacheForRequestLocked(
 		if hitRes != nil {
 			ev.HitRoute = match.route
 			ev.HitRemote = hitRes.imported
-			ev.HitMergedAtUnixNano = hitRes.mergedAtUnixNano
+			if origin := hitRes.merged; origin != nil {
+				ev.HitMergedAtUnixNano = origin.committedAt
+				ev.HitMergedRoute, ev.HitMerge, ev.HitMergedFile = origin.route, origin.number, origin.file
+				ev.HitFirstUse = hitRes.holdsUnpreparedPayload()
+			}
 		} else {
 			ev.MissSawExpired = match.expired.any
 			ev.MissExpiredRemote = match.expired.remote

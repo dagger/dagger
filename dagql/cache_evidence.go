@@ -57,6 +57,16 @@ type CacheDecision struct {
 	// hits.
 	HitRemote           bool
 	HitMergedAtUnixNano int64
+	// HitMergedRoute is the route of that merge (MergeRoute), and HitMerge
+	// the service's number for it or HitMergedFile its set file; unknown,
+	// as HitMergedAtUnixNano, after a restart. HitFirstUse records that the
+	// record's payload was still left for its first use as the lookup chose
+	// it, so that the hit's decode prepares it, unless a use that raced it
+	// did first. Meaningful only for hits.
+	HitMergedRoute MergeRoute
+	HitMerge       uint64
+	HitMergedFile  string
+	HitFirstUse    bool
 
 	// LookupAtUnixNano is the time the lookup chose its candidates, under
 	// egraphMu; 0 when no lookup ran.

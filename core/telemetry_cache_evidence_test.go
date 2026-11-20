@@ -261,7 +261,8 @@ func TestRecordCacheEvidenceMappingJoinedStampsNoMissFacts(t *testing.T) {
 }
 
 // A hit on a value from the remote cache says so, with the merge's commit
-// time, beside the lookup's own time.
+// time, route and number, and that it was the record's first use, beside
+// the lookup's own time.
 func TestRecordCacheEvidenceMappingRemoteHit(t *testing.T) {
 	t.Parallel()
 	sr, span := evidenceTestRecordingSpan(t)
@@ -272,6 +273,9 @@ func TestRecordCacheEvidenceMappingRemoteHit(t *testing.T) {
 		HitRoute:              dagql.CacheHitRouteRecipe,
 		HitRemote:             true,
 		HitMergedAtUnixNano:   1760000000123456789,
+		HitMergedRoute:        dagql.MergeRoutePlacement,
+		HitMerge:              42,
+		HitFirstUse:           true,
 		LookupAtUnixNano:      1760000000987654321,
 		MissUnknownInputIndex: -1,
 		SelfDigest:            selfDig,
@@ -280,14 +284,17 @@ func TestRecordCacheEvidenceMappingRemoteHit(t *testing.T) {
 
 	got := evidenceTestCacheAttrs(t, evidenceTestEndedAttrs(t, sr, span))
 	assert.DeepEqual(t, got, map[string]string{
-		telemetryattrs.CacheContractAttr:      telemetryattrs.CacheContractV1,
-		telemetryattrs.CacheOutcomeAttr:       "hit",
-		telemetryattrs.CacheHitRouteAttr:      "recipe",
-		telemetryattrs.CacheHitRemoteAttr:     "true",
-		telemetryattrs.CacheHitMergedAtAttr:   "1760000000123456789",
-		telemetryattrs.CacheLookupAtAttr:      "1760000000987654321",
-		telemetryattrs.CacheSelfDigestAttr:    selfDig.String(),
-		telemetryattrs.CachePairingDigestAttr: selfDig.String(),
+		telemetryattrs.CacheContractAttr:       telemetryattrs.CacheContractV1,
+		telemetryattrs.CacheOutcomeAttr:        "hit",
+		telemetryattrs.CacheHitRouteAttr:       "recipe",
+		telemetryattrs.CacheHitRemoteAttr:      "true",
+		telemetryattrs.CacheHitMergedAtAttr:    "1760000000123456789",
+		telemetryattrs.CacheHitMergedRouteAttr: "placement",
+		telemetryattrs.CacheHitMergeAttr:       "42",
+		telemetryattrs.CacheHitFirstUseAttr:    "true",
+		telemetryattrs.CacheLookupAtAttr:       "1760000000987654321",
+		telemetryattrs.CacheSelfDigestAttr:     selfDig.String(),
+		telemetryattrs.CachePairingDigestAttr:  selfDig.String(),
 	})
 }
 
