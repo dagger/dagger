@@ -212,9 +212,18 @@ type Opened struct{}
 // what it wants of the engine for Period: Sessions are the sessions that
 // ended and that no Settled has covered, kept across canceled requests and
 // reconnections.
+//
+// IdleSince is when, by the engine's clock, the period's last live session
+// ended, which started the engine's bound, and Bound is how long the engine
+// waits for Settled from then before it gives up the period's remote-cache
+// work. A settle sent again in the same period carries the same two. The
+// service records them with the settle, for a run's reader to time its
+// answer against the engine's own bound; it decides nothing with them.
 type Settle struct {
-	Period   uint64          `json:"period"`
-	Sessions []SettleSession `json:"sessions"`
+	Period    uint64          `json:"period"`
+	Sessions  []SettleSession `json:"sessions"`
+	IdleSince time.Time       `json:"idleSince"`
+	Bound     time.Duration   `json:"bound"`
 }
 
 // SettleSession is one ended session: ID is the engine session's ID, as its
