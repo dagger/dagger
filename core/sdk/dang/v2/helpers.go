@@ -59,11 +59,14 @@ func (r *runtime) eval(
 	// Only the module-initialization call builds type definitions from the
 	// environment; a function call never reads object directives.
 	forTypeDefs := fnCall.ParentName == ""
+	src := r.modSource.Self()
 	return evalDangSource(ctx, query, r.modSource, schemaFile, nestedClientMetadata, inertAttachables, fnCall, moduleContext, forTypeDefs, func(ctx context.Context, modSrcDir string) (dang.ValueScope, error) {
-		if forTypeDefs {
-			return dang.RunDir(ctx, modSrcDir, false)
-		}
-		return runPreparedDangDir(ctx, modSrcDir, r.modSource, schemaFile, moduleContext)
+		return runStagedDangSource(ctx, src, modSrcDir, func(ctx context.Context, source stagedDangSource, staged bool) (dang.ValueScope, error) {
+			if forTypeDefs || !staged {
+				return dang.RunDir(ctx, source.dir, false)
+			}
+			return runPreparedDangDir(ctx, source, src.EngineVersion, schemaFile, moduleContext)
+		})
 	}, func(ctx context.Context, env dang.ValueScope) ([]byte, error) {
 		if fnCall.ParentName == "" {
 			srv, err := core.CurrentDagqlServer(ctx)

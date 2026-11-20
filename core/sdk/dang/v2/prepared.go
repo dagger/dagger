@@ -16,31 +16,26 @@ import (
 )
 
 // Compilation is an invocation-local acceleration, never a replacement for a
-// function result or its distributed cache identity. A complete immutable
-// source/schema identity identifies a compilation, and the session delimits
-// its lifetime. The mounted path is part of the identity so retained source
-// locations always describe the current mount.
+// function result or its distributed cache identity. The session delimits its
+// lifetime, and what is compiled identifies it: the staged source, whose
+// directory names its content (see stagedDangSource), the Dang version it is
+// compiled as, and the schema File it imports. A module source's recipe is no
+// such identity: each load of a module (a session's, a client's, a dependent
+// module's) has its own recipe for the same content. The staged directory is
+// also where the compiled source's locations point, and it stays the same for
+// as long as the source content does, however often the source is mounted
+// again.
 //
-// The mounted path changes whenever the source is mounted again (an idle
-// shared mount is released after a linger period, and each mount is made at
-// a new temporary path), and an edited module gets a new source identity, so
-// a long session sees many identities for one module. Only the
-// maxPreparedDangPrograms most recently used of them are kept per module; see
-// preparedDangPrograms.
-func runPreparedDangDir(ctx context.Context, dir string, source dagql.ObjectResult[*core.ModuleSource], schema dagql.Result[*core.File], module dagql.ObjectResult[*core.Module]) (dang.ValueScope, error) {
+// An edited module is a new identity, so a long session can see many
+// identities for one module. Only the maxPreparedDangPrograms most recently
+// used of them are kept per module; see preparedDangPrograms.
+func runPreparedDangDir(ctx context.Context, staged stagedDangSource, engineVersion string, schema dagql.Result[*core.File], module dagql.ObjectResult[*core.Module]) (dang.ValueScope, error) {
+	dir := staged.dir
 	run := func() (dang.ValueScope, error) { return dang.RunDir(ctx, dir, false) }
 	_, cacheErr := dagql.EngineCache(ctx)
 	metadata, metadataErr := engine.ClientMetadataFromContext(ctx)
 	if cacheErr != nil || metadataErr != nil {
 		return run()
-	}
-	sourceID, err := source.ID()
-	if err != nil {
-		return run()
-	}
-	sourceKey, err := sourceID.Encode()
-	if err != nil {
-		return nil, err
 	}
 	schemaID, err := schema.ID()
 	if err != nil {
@@ -55,7 +50,7 @@ func runPreparedDangDir(ctx context.Context, dir string, source dagql.ObjectResu
 		return run()
 	}
 	modKey := preparedDangKey(metadata.SessionID, self.Name(), self.OriginalName)
-	key := preparedDangKey(sourceKey, schemaKey, dir)
+	key := preparedDangCompilationKey(staged, engineVersion, schemaKey)
 	program, err := cachedPreparedDangDir(ctx, modKey, key, func(ctx context.Context) (*dang.PreparedDirectory, error) {
 		program, err := dang.PrepareDir(ctx, dir)
 		if errors.Is(err, dang.ErrUnpreparableDirectory) {
@@ -71,6 +66,13 @@ func runPreparedDangDir(ctx context.Context, dir string, source dagql.ObjectResu
 	}
 	// Evaluation failures must not fall back and repeat initializers/effects.
 	return program.Evaluate(ctx)
+}
+
+// preparedDangCompilationKey identifies the compilation of the staged source
+// for a module of engineVersion, importing the schema File encoded as
+// schemaKey.
+func preparedDangCompilationKey(source stagedDangSource, engineVersion, schemaKey string) string {
+	return preparedDangKey(source.dir, source.version.String(), engineVersion, schemaKey)
 }
 
 func preparedDangKey(parts ...string) string {
