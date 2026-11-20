@@ -112,6 +112,11 @@ func (container *Container) persistedPayloadLocked(ctx context.Context, enc *dag
 		Metadata: persistedContainerMetadata{Consumed: container.containerPartComputedLocked(ctx, lazy, ContainerPartMetadata), Value: metadata},
 		Parts:    parts,
 	}
+	if pending && container.completedElsewhere {
+		// Its operation completed on the engine it came from, though not
+		// here: a record of it says so, as the one it came in did.
+		payload.OperationState = "evaluated"
+	}
 	recipe := lazy
 	if restore, ok := recipe.(*ContainerRestoreLazy); ok {
 		recipe = restore.recipe
