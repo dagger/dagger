@@ -153,6 +153,94 @@ func exportTestBundle(t *testing.T, ctx context.Context, c *Cache, roots ...AnyR
 	require.NoError(t, c.WithExportedValues(ctx, ValueSelection{Roots: roots}, config.RefConfig{}, func(_ context.Context, values *ExportedValues) error { bundle = values.Bundle; return nil }))
 	return bundle
 }
+
+// cloudTestBundle exports roots from c and sends each offer on a row of the
+// bundle as the Cloud sends a part it stores (StoredBundle): as that row's
+// output, with its owner, and the rows its owner and its Services name in the
+// bundle, beside the roots' closure rather than as roots. An engine's export
+// carries no offers, so a test of what an engine does with an offer it is
+// sent builds its bundle here. An expired row an owner names, which an export
+// refuses as a root, is exported unexpired and goes with its expiry.
+func cloudTestBundle(t *testing.T, ctx context.Context, c *Cache, roots ...AnyResult) ValueBundle {
+	t.Helper()
+	sent := slices.Clone(roots)
+	lifted := map[*sharedResult]int64{}
+	defer func() {
+		c.egraphMu.Lock()
+		for row, expiry := range lifted {
+			row.expiresAtUnix = expiry
+		}
+		c.egraphMu.Unlock()
+	}()
+	for {
+		bundle := exportTestBundle(t, ctx, c, sent...)
+		ordinals := map[uint64]uint64{}
+		for _, value := range bundle.Values {
+			ordinals[value.SenderNumber] = uint64(value.Ordinal)
+		}
+		var offers []TransferredOutput
+		var missing []AnyResult
+		named := map[uint64]bool{}
+		relocate := func(id *uint64) {
+			if ordinal, ok := ordinals[*id]; ok {
+				*id = ordinal
+				return
+			}
+			if named[*id] {
+				return
+			}
+			named[*id] = true
+			c.egraphMu.Lock()
+			row := c.resultsByID[sharedResultID(*id)]
+			if row != nil && row.expiresAtUnix != 0 && row.expiresAtUnix <= time.Now().Unix() {
+				lifted[row] = row.expiresAtUnix
+				row.expiresAtUnix = 0
+			}
+			c.egraphMu.Unlock()
+			require.NotNil(t, row, "an offer names row %d", *id)
+			missing = append(missing, Result[Typed]{shared: row})
+		}
+		for _, value := range bundle.Values {
+			c.egraphMu.RLock()
+			held := c.resultsByID[sharedResultID(value.SenderNumber)].testPartOffers()
+			c.egraphMu.RUnlock()
+			for _, slot := range held {
+				copied, err := clonePartOffers([]PersistedPartOffer{slot.record})
+				require.NoError(t, err)
+				offer := copied[0]
+				for i := range offer.Owner.DependencyIDs {
+					relocate(&offer.Owner.DependencyIDs[i])
+				}
+				for i := range offer.Value.Services {
+					relocate(&offer.Value.Services[i].ServiceResultID)
+				}
+				offers = append(offers, TransferredOutput{Ordinal: value.Ordinal, Address: offer.Address, State: "completed", Value: &offer.Value, Chain: &offer.Chain, Owner: &offer.Owner})
+			}
+		}
+		if len(missing) > 0 {
+			sent = append(sent, missing...)
+			continue
+		}
+		bundle.Roots = bundle.Roots[:len(roots)]
+		for row, expiry := range lifted {
+			for i := range bundle.Values {
+				if bundle.Values[i].SenderNumber == uint64(row.id) {
+					bundle.Values[i].ExpiresAtUnix = expiry
+				}
+			}
+		}
+		for _, offer := range offers {
+			key, err := partAddressKey(offer.Address)
+			require.NoError(t, err)
+			bundle.Outputs = slices.DeleteFunc(bundle.Outputs, func(output TransferredOutput) bool {
+				other, _ := partAddressKey(output.Address)
+				return output.Ordinal == offer.Ordinal && other == key
+			})
+			bundle.Outputs = append(bundle.Outputs, offer)
+		}
+		return bundle
+	}
+}
 func transferTestDependency(c *Cache, ctx context.Context, parent, child AnyResult) {
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
@@ -193,15 +281,13 @@ func TestValueTransferCapturePhases(t *testing.T) {
 	require.GreaterOrEqual(t, phases.WalkWait, time.Duration(0))
 	require.Positive(t, phases.Walk)
 	require.Positive(t, phases.Copy)
-	require.Zero(t, phases.RetriedStale)
 }
 
 // An offer can be left on a part its value already has: a part can complete
 // without its gate settling it, and only a settlement retires the offer on
-// it. Such an offer is obsolete. A capture that finds one retires it, as boot
-// does, and captures the value; the offer no longer holds every capture of
-// the value busy.
-func TestValueTransferCaptureRetiresAnOfferOnACompletedOutput(t *testing.T) {
+// it. Such an offer is obsolete, and boot retires it. A capture copies no
+// offers, so it captures the value at once and leaves the offer as it is.
+func TestValueTransferCaptureTakesAValueWithAnOfferOnACompletedOutput(t *testing.T) {
 	ctx, c, srv := statePartCache(t, "")
 	t.Cleanup(func() { require.NoError(t, c.CloseDiscardingPersistence()) })
 	value := &statePartValue{}
@@ -216,18 +302,16 @@ func TestValueTransferCaptureRetiresAnOfferOnACompletedOutput(t *testing.T) {
 	owners := res.incomingOwnershipCount.Load()
 
 	var bundle ValueBundle
-	var phases ExportPhases
 	require.NoError(t, c.WithExportedValues(ctx, ValueSelection{Roots: []AnyResult{root}}, config.RefConfig{}, func(_ context.Context, values *ExportedValues) error {
-		bundle, phases = values.Bundle, values.Phases
+		bundle = values.Bundle
 		return nil
 	}))
-	require.Equal(t, 1, phases.RetriedStale, "the capture ran again")
 	require.Len(t, bundle.Values, 1)
 	require.Empty(t, bundle.Values[0].Record.Envelope.PendingOffers)
 	c.egraphMu.RLock()
 	offers := len(res.testPartOffers())
 	c.egraphMu.RUnlock()
-	require.Zero(t, offers, "the capture retired the obsolete offer")
+	require.Equal(t, 1, offers, "the capture leaves the offer for boot to retire")
 	require.Equal(t, owners, res.incomingOwnershipCount.Load())
 	require.Zero(t, c.activeGlobalOperations.Load())
 }
@@ -245,14 +329,15 @@ func TestValueTransferCapture(t *testing.T) {
 		transferTestDependency(c, ctx, root, left)
 		transferTestOffer(t, c, ctx, root, right)
 		bundle := exportTestBundle(t, ctx, c, root)
-		require.Len(t, bundle.Values, 4)
+		// The root's record carries no offers, so the row only its offer's
+		// owner reaches doesn't go.
+		require.Equal(t, map[uint64]bool{rowNumber(root): true, rowNumber(left): true, rowNumber(leaf): true}, senderNumbers(bundle))
 		rootValue := bundle.Values[int(bundle.Roots[0].Ordinal)-1]
 		require.Len(t, rootValue.DependencyIDs, 1)
-		require.Len(t, rootValue.Record.Envelope.PendingOffers, 1)
-		require.Len(t, rootValue.Record.Envelope.PendingOffers[0].Owner.DependencyIDs, 1)
+		require.Empty(t, rootValue.Record.Envelope.PendingOffers)
 		require.Zero(t, c.activeGlobalOperations.Load())
 	})
-	for _, kind := range []string{"output", "payload", "offer", "ownership", "requirements", "frame", "busy"} {
+	for _, kind := range []string{"output", "payload", "transfer", "ownership", "requirements", "frame", "busy"} {
 		t.Run(kind, func(t *testing.T) {
 			ctx, c, srv := transferTestCache(t)
 			object := &transferTestValue{Text: "pending"}
@@ -267,7 +352,7 @@ func TestValueTransferCapture(t *testing.T) {
 					res.payloadMu.Lock()
 					res.payloadRevision++
 					res.payloadMu.Unlock()
-				case "offer":
+				case "transfer":
 					c.egraphMu.Lock()
 					res.transferRevision++
 					c.egraphMu.Unlock()
@@ -687,12 +772,14 @@ func testValueTransferCaptureConcurrent(t *testing.T) {
 			require.NoError(t, err)
 		}
 		require.NoError(t, c.ReleaseSession(ctx, "test-session"))
+		// The capture holds no offer: the replaced offer's owner goes with the
+		// replacement, and the row only it owned with it.
 		snapshot := c.snapshotPruneState(pruneSnapshotMetadata, 10)
-		require.Contains(t, pruneActiveClosure(snapshot, nil), old.cacheSharedResult().id)
+		require.NotContains(t, pruneActiveClosure(snapshot, nil), old.cacheSharedResult().id)
 		c.egraphMu.RLock()
 		ownerCount := len(c.offerOwners)
 		c.egraphMu.RUnlock()
-		require.Equal(t, 2, ownerCount)
+		require.Equal(t, 1, ownerCount)
 		close(finish)
 		require.NoError(t, <-done)
 		require.Empty(t, c.resultsByID)

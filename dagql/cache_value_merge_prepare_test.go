@@ -186,17 +186,18 @@ func TestMergeValuesCloudChecksClosureAfterDroppingParts(t *testing.T) {
 			owner := persistedListTestResult(t, ctx, source, srv, "offer-owner", String("owner"))
 			root := persistedListTestResult(t, ctx, source, srv, "offered-root", &transferTestValue{Text: "pending"})
 			mergeTestOfferOn(t, ctx, source, root, "/offered", owner)
-			bundle := exportTestBundle(t, ctx, source, root)
+			bundle := cloudTestBundle(t, ctx, source, root)
 			require.Len(t, bundle.Values, 2)
-			if output {
-				for i := range bundle.Values {
-					row := &bundle.Values[i]
-					for _, offer := range row.Record.Envelope.PendingOffers {
-						bundle.Outputs = append(bundle.Outputs, TransferredOutput{Ordinal: row.Ordinal, Address: offer.Address, State: "completed", Value: &offer.Value, Chain: &offer.Chain, Owner: &offer.Owner})
+			require.Len(t, bundle.Outputs, 1)
+			if !output {
+				for _, out := range bundle.Outputs {
+					for i := range bundle.Values {
+						if row := &bundle.Values[i]; row.Ordinal == out.Ordinal {
+							row.Record.Envelope.PendingOffers = append(row.Record.Envelope.PendingOffers, PersistedPartOffer{Address: out.Address, Value: *out.Value, Chain: *out.Chain, Owner: *out.Owner})
+						}
 					}
-					row.Record.Envelope.PendingOffers = nil
 				}
-				require.Len(t, bundle.Outputs, 1)
+				bundle.Outputs = nil
 			}
 			_, err := validateValueBundle(bundle)
 			require.NoError(t, err)

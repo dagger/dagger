@@ -18,10 +18,11 @@ func testLiveOffer() PersistedPartOffer {
 
 // An offer delivered again, decoded afresh as the protocol delivers it, is
 // the offer the row holds: its copy compares equal to the held one, so it
-// replaces nothing and leaves the transfer revision as it was.
+// replaces nothing and leaves the offer revision as it was.
 func TestOfferDeliveredAgainIsKept(t *testing.T) {
 	ctx, c, srv := transferTestCache(t)
 	r := persistedListTestResult(t, ctx, c, srv, "receiver", &transferTestValue{Text: "pending"})
+	row := r.cacheSharedResult()
 	data, err := json.Marshal(storedBenchPart(1))
 	require.NoError(t, err)
 	deliver := func() OfferDisposition {
@@ -33,10 +34,11 @@ func TestOfferDeliveredAgainIsKept(t *testing.T) {
 		require.Equal(t, OfferAccepted, out[0].Outcome)
 		return out[0]
 	}
-	first := deliver()
+	deliver()
+	rev := row.offerRevision
 	again := deliver()
 	require.False(t, again.Replaced)
-	require.Equal(t, first.OfferRev, again.OfferRev)
+	require.Equal(t, rev, row.offerRevision)
 }
 
 func TestOfferPartsBeforeStart(t *testing.T) {
@@ -116,10 +118,11 @@ func TestOfferPartsOwnership(t *testing.T) {
 	owner := row.testPartOffers()[key].owner
 	require.Equal(t, int64(1), owner.holds)
 	require.Equal(t, base+1, dep.cacheSharedResult().incomingOwnershipCount.Load())
-	rev := row.transferRevision
+	rev := row.offerRevision
 	out, err = c.testOfferParts(ctx, r, []PersistedPartOffer{offer})
 	require.NoError(t, err)
-	require.Equal(t, rev, out[0].OfferRev)
+	require.False(t, out[0].Replaced)
+	require.Equal(t, rev, row.offerRevision)
 	offer.Value.Services[0].Aliases[0] = "caller mutation"
 	require.Equal(t, "a", row.testPartOffers()[key].record.Value.Services[0].Aliases[0])
 	offer.Value.Services[0].Aliases[0] = "a"

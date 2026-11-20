@@ -15,6 +15,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// An offer that can't be copied fails the record's local persistence, which
+// saves its offers, and not its transfer, which carries none.
 func TestValueTransferOfferCopyFailure(t *testing.T) {
 	ctx, c, srv := transferTestCache(t)
 	root := persistedListTestResult(t, ctx, c, srv, "root", &transferTestValue{Text: "pending"})
@@ -30,12 +32,14 @@ func TestValueTransferOfferCopyFailure(t *testing.T) {
 	c.egraphMu.Unlock()
 	_, err := c.CapturePersistedRecord(ctx, root)
 	require.ErrorIs(t, err, ErrPersistStateNotReady)
-	err = c.WithExportedValues(ctx, ValueSelection{Roots: []AnyResult{root}}, config.RefConfig{}, func(context.Context, *ExportedValues) error {
-		t.Fatal("invalid offer must not reach consumer")
+	var bundle ValueBundle
+	require.NoError(t, c.WithExportedValues(ctx, ValueSelection{Roots: []AnyResult{root}}, config.RefConfig{}, func(_ context.Context, values *ExportedValues) error {
+		bundle = values.Bundle
 		return nil
-	})
-	require.ErrorIs(t, err, ErrPersistStateNotReady)
-	// Both failed captures released the graph lock and leaked no capture hold.
+	}))
+	require.Len(t, bundle.Values, 1, "the value goes without its offer or the offer's owner")
+	require.Empty(t, bundle.Values[0].Record.Envelope.PendingOffers)
+	// Both captures released the graph lock and leaked no capture hold.
 	c.egraphMu.Lock()
 	after := row.incomingOwnershipCount.Load()
 	for _, offer := range row.testPartOffers() {

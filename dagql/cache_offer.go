@@ -21,7 +21,6 @@ type OfferDisposition struct {
 	Address  PersistedPartAddress
 	Outcome  OfferOutcome
 	Replaced bool
-	OfferRev uint64
 	Err      error
 	// Target is the row the offer's address resolved to, the receiver or a
 	// descendant, and TargetAddress the address re-rooted at it. Target is 0
@@ -358,7 +357,6 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, item CloudPar
 			}
 		}
 	}
-	out.OfferRev = row.transferRevision
 	if out.Outcome == OfferAccepted {
 		// A native caller that selected its callback before this publication must
 		// return to the acquisition dispatcher before entering the body.
