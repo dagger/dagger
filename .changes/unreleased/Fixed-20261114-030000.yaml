@@ -1,0 +1,8 @@
+kind: Fixed
+body: |
+  `Container.Terminal` no longer fails with "failed to close terminal: EOF"
+  when the CLI's stdout is redirected to a file or pipe.
+time: 2026-11-14T03:00:00Z
+custom:
+  Author: cicada0007
+  PR: 15186
