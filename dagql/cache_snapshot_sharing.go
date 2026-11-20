@@ -1170,16 +1170,16 @@ func shareSkipCause(err error, outcome GateOutcome) error {
 func (c *Cache) runSnapshotSharePass(ctx context.Context, item *snapshotShareItem) {
 	prepared, members := c.firstUsesBy(workSharing), len(item.members)
 	states, deferred := c.planSharePass(ctx, item)
-	// Counted once every slot has ended, with the first uses the pass made:
-	// the worker runs one pass at a time, and only its pass's work carries
-	// workSharing.
-	defer func() { c.countSharePass(item.kind, members, len(states), prepared) }()
 	if c.testBeforeSharePass != nil {
 		c.testBeforeSharePass(item, len(states))
 	}
 	if c.testAfterSharePass != nil {
 		defer func() { c.testAfterSharePass(item) }()
 	}
+	// Counted once every slot has ended, with the first uses the pass made,
+	// before anything learns the pass ended: the worker runs one pass at a
+	// time, and only its pass's work carries workSharing.
+	defer func() { c.countSharePass(item.kind, members, len(states), prepared) }()
 	membersReleased := make(chan struct{})
 	membersOnce := sync.Once{}
 	// successors are the decoded receivers whose one slot Installed while
