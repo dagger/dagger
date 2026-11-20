@@ -168,8 +168,8 @@ func (cm *snapshotManager) loadContentHashFiles(files *contentHashFiles, rows []
 			}
 			s.mu.Unlock()
 			// Dropped from disk once in memory, as SetExternal does.
-			files.remove(row.SnapshotID, nil)
 			s.contentHashMoves.Add(1)
+			files.remove(row.SnapshotID, nil)
 		}
 	}
 	for _, id := range files.list() {

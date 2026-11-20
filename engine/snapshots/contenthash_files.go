@@ -30,6 +30,9 @@ type contentHashFiles struct {
 	mu     sync.Mutex
 	ids    map[string]struct{} // snapshots with a tree on disk
 	closed bool
+
+	// failWrite, set by tests, fails the writes it returns an error for.
+	failWrite func() error
 }
 
 func newContentHashFiles(root string) (*contentHashFiles, error) {
@@ -50,6 +53,11 @@ func (f *contentHashFiles) path(id string) string {
 // write stores id's tree. A tree written for metadata that was dropped
 // meanwhile (gone) is discarded, so a snapshot's tree never outlives it.
 func (f *contentHashFiles) write(id string, dt []byte, gone func() bool) error {
+	if f.failWrite != nil {
+		if err := f.failWrite(); err != nil {
+			return err
+		}
+	}
 	tmp, err := os.CreateTemp(f.dir, ".tmp-"+id+"-")
 	if err != nil {
 		return errors.Wrap(err, "create content hash file")

@@ -101,7 +101,7 @@ type metadataStore struct {
 	// in external and pendingContentHashes.
 	hashFiles *contentHashFiles
 	// contentHashMoves counts the trees moved between disk and memory, each
-	// stored at its new place before it is dropped from the old one. A
+	// stored at its new place, counted, then dropped from the old one. A
 	// lookup that finds a tree in neither place while one moved looks
 	// again; see findContentHash.
 	contentHashMoves atomic.Uint64
@@ -346,6 +346,9 @@ type cacheMetadata struct {
 	// contentHashGone is set, under store.hashFiles.mu, once the metadata is
 	// dropped: a tree saved for it later is discarded.
 	contentHashGone bool
+	// contentHashSaveMu serializes saves of the content-hash tree kept on
+	// disk; see SetExternal.
+	contentHashSaveMu sync.Mutex
 }
 
 func (cm *snapshotManager) Search(ctx context.Context, idx string, prefixOnly bool) ([]RefMetadata, error) {
@@ -553,17 +556,22 @@ func (md *cacheMetadata) setExternalInMemory(s string, dt []byte) {
 
 func (md *cacheMetadata) SetExternal(s string, dt []byte) error {
 	if md.store.contentHashOnDisk(s) {
+		// Saves of one tree, which can come from more than one cache
+		// context, each store it and then drop the older copy: one at a
+		// time, or one's drop could remove the other's tree.
+		md.contentHashSaveMu.Lock()
+		defer md.contentHashSaveMu.Unlock()
 		err := md.store.hashFiles.write(md.id, dt, func() bool { return md.contentHashGone })
 		if err == nil {
 			// The tree on disk replaces one kept in memory before: a move,
-			// stored on disk before it is dropped from memory.
+			// stored on disk before it is dropped from memory, and counted
+			// before the drop, for findContentHash.
 			md.store.mu.Lock()
-			_, moved := md.external[s]
-			delete(md.external, s)
-			md.store.mu.Unlock()
-			if moved {
+			if _, moved := md.external[s]; moved {
 				md.store.contentHashMoves.Add(1)
+				delete(md.external, s)
 			}
+			md.store.mu.Unlock()
 			return nil
 		}
 		// Keep the tree in memory, where trees were kept before, as loading
@@ -575,8 +583,8 @@ func (md *cacheMetadata) SetExternal(s string, dt []byte) error {
 		bklog.G(context.TODO()).WithError(err).WithField("snapshot", md.id).
 			Error("failed to write content hash records; keeping them in memory")
 		md.setExternalInMemory(s, dt)
-		md.store.hashFiles.remove(md.id, nil)
 		md.store.contentHashMoves.Add(1)
+		md.store.hashFiles.remove(md.id, nil)
 		return nil
 	}
 	md.setExternalInMemory(s, dt)

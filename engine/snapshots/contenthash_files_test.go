@@ -1,10 +1,14 @@
 package snapshots
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -147,6 +151,61 @@ func TestFindContentHashLooksAgainAfterMoves(t *testing.T) {
 		return nil, false
 	}, nil)
 	require.ErrorContains(t, err, "kept moving")
+}
+
+// Concurrent saves of one tree, some of which can't write it, and lookups of
+// it: every lookup finds a tree, and once the saves are done, the last one is
+// kept in exactly one place.
+func TestContentHashFilesConcurrentSavesAndLookups(t *testing.T) {
+	s := newMetadataStore()
+	files, err := newContentHashFiles(filepath.Join(t.TempDir(), "contenthash"))
+	require.NoError(t, err)
+	s.hashFiles = files
+	md := s.getOrCreate("a")
+	require.NoError(t, md.SetExternal(ContentHashMetadataKey, []byte("tree")))
+
+	var wg sync.WaitGroup
+	done := make(chan struct{})
+	for range 4 {
+		wg.Go(func() {
+			for {
+				select {
+				case <-done:
+					return
+				default:
+				}
+				dt, err := md.GetExternal(ContentHashMetadataKey)
+				if !assert.NoError(t, err) {
+					return
+				}
+				assert.Equal(t, []byte("tree"), dt)
+			}
+		})
+	}
+	// Every other write fails.
+	var writes atomic.Int64
+	files.failWrite = func() error {
+		if writes.Add(1)%2 == 0 {
+			return errors.New("disk on fire")
+		}
+		return nil
+	}
+	var saves sync.WaitGroup
+	for range 4 {
+		saves.Go(func() {
+			for range 50 {
+				assert.NoError(t, md.SetExternal(ContentHashMetadataKey, []byte("tree")))
+			}
+		})
+	}
+	saves.Wait()
+	close(done)
+	wg.Wait()
+
+	s.mu.RLock()
+	_, inMemory := md.external[ContentHashMetadataKey]
+	s.mu.RUnlock()
+	require.NotEqual(t, inMemory, files.has("a"), "the tree is kept in exactly one place")
 }
 
 // A registered tree whose file is missing was deleted by something other than
