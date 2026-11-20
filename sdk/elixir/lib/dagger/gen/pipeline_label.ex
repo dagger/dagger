@@ -9,4 +9,7 @@ defmodule Dagger.PipelineLabel do
   @type t() :: %__MODULE__{name: String.t(), value: String.t()}
 
   defstruct [:name, :value]
+
+  @doc false
+  def __field_names__(), do: %{name: "name", value: "value"}
 end
