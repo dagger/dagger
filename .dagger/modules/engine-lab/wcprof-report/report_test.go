@@ -49,6 +49,15 @@ func (b *dumpBuilder) wait(waiter, target uint64, reason, ident string, start, e
 	})
 }
 
+// lockWait records a lock wait on ident that the kind of writer holder let
+// in.
+func (b *dumpBuilder) lockWait(waiter uint64, ident, holder string, start, end int64) {
+	b.events = append(b.events, wcprof.DumpEvent{
+		Type: "wait", Reason: "lock", ParentID: waiter, IdentID: b.id(ident), ClassID: b.id(holder),
+		StartNS: start * msNS, EndNS: end * msNS,
+	})
+}
+
 // call records a call op executed through its own call_exec op (id+1): the
 // call's only content is waiting on the exec, like a real dagql miss.
 func (b *dumpBuilder) call(opID, parent uint64, class, client string, start, end int64) {
@@ -644,6 +653,21 @@ func TestWaits(t *testing.T) {
 	if strings.Contains(out, "lock:foo") {
 		t.Errorf("excludeClass on the waiter leaked the lock wait:\n%s", out)
 	}
+}
+
+// Lock waits on a tracked lock are told apart by the kind of writer that let
+// each in.
+func TestWaitsByLockHolder(t *testing.T) {
+	b := newDump(t)
+	b.op(1, 0, "call", "Query.a", "c", "hit", 0, 100)
+	b.lockWait(1, "dagql.egraph", "sharing", 10, 30)
+	b.lockWait(1, "dagql.egraph", "sharing", 40, 50)
+	b.lockWait(1, "dagql.egraph", "restore", 60, 65)
+	out := report(t, b.graph(), Options{View: "waits"})
+	assertContains(t, out,
+		"        2       1    30.00ms   10.00ms   20.00ms  lock         dagql.egraph behind sharing\n",
+		"        1       1     5.00ms    5.00ms    5.00ms  lock         dagql.egraph behind restore\n",
+	)
 }
 
 func TestEvents(t *testing.T) {

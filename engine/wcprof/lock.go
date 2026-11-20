@@ -5,6 +5,7 @@ import (
 	"math"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // Holders a recorded wait on an RWMutex can name in place of an op.
@@ -26,6 +27,11 @@ const (
 // read overlaps a change of holder reads HolderUnknown too. Readers are
 // counted while a recorder is active, so the lock stays held by
 // HolderReaders until the last of them leaves.
+//
+// Whether or not anything records, a writer can name the kind of work it
+// is (WriteLockAs, LockHolder), and a waited acquisition (ReadLockWaited,
+// WriteLockAs) returns how long it waited and the kind of the writer that
+// let it in (LockWait).
 type RWMutex struct {
 	sync.RWMutex
 	holder atomic.Uint64
@@ -41,6 +47,74 @@ type RWMutex struct {
 	readers atomic.Int64
 	// observe, when set, sees each holder an acquisition marks (ObserveMarks).
 	observe atomic.Pointer[func(holder uint64)]
+	// kind is the kind of work its writer named (WriteLockAs), 0 when it
+	// named none. Only the writer that holds m reads or writes it: it is
+	// set after the writer takes m, and read and cleared as it releases m.
+	kind LockHolder
+	// released counts the releases of m by writers, in its bits above the
+	// low 8, and holds in the low 8 the kind of the last writer to release
+	// it. Only the writer that holds m writes it, with a plain load and
+	// store: a waiter that reads it before and after its wait tells from
+	// the count whether a writer let it in, and from the kind which.
+	released atomic.Uint64
+}
+
+// LockHolder names the kind of work holding an RWMutex for writing, as
+// WriteLockAs gives it, so that a waiter can tell what it waited behind
+// (LockWait). A package registers its kinds with NewLockHolder. The zero
+// LockHolder is a writer that named no kind.
+type LockHolder uint8
+
+// LockHolders bounds the LockHolder values, LockHolderReaders included, so
+// that a counter by kind is a small fixed array: every LockHolder is below
+// it.
+const LockHolders = 16
+
+// LockHolderReaders is the holder of a waited acquisition that no writer
+// let in: it waited only for readers to leave.
+const LockHolderReaders LockHolder = LockHolders - 1
+
+// lockHolderNames are the registered kinds' names, by LockHolder. They're
+// written only while packages initialize, before any lock is taken.
+var (
+	lockHolderNames     = [LockHolders]string{0: "other", LockHolderReaders: "readers"}
+	lockHolderNameCount = 1
+)
+
+// NewLockHolder registers a kind of work that holds an RWMutex for
+// writing, named name. Call it from a package-level var, so it runs while
+// packages initialize: there are at most LockHolders-2.
+func NewLockHolder(name string) LockHolder {
+	if lockHolderNameCount == int(LockHolderReaders) {
+		panic("wcprof: too many lock holder kinds")
+	}
+	h := LockHolder(lockHolderNameCount)
+	lockHolderNames[h] = name
+	lockHolderNameCount++
+	return h
+}
+
+// String is the kind's name: its registered name, "other" for a writer
+// that named none, or "readers".
+func (h LockHolder) String() string {
+	if int(h) < len(lockHolderNames) && lockHolderNames[h] != "" {
+		return lockHolderNames[h]
+	}
+	return "other"
+}
+
+// LockWait is an acquisition of an RWMutex that had to wait, as
+// ReadLockWaited and WriteLockAs return it: how long it waited, and the
+// kind of the writer whose release let it in, or LockHolderReaders when no
+// writer released the lock while it waited. A reader that waits is always
+// let in by a writer: the one that held the lock, or the one waiting for
+// it that the reader queued behind. A writer that waits can be let in by
+// the last reader to leave. When writers took turns ahead of a waiting
+// writer, the last of them is named. The zero LockWait is an acquisition
+// that didn't wait.
+type LockWait struct {
+	Waited time.Duration
+	Holder LockHolder
 }
 
 // Lock locks m for writing, its holder unknown.
@@ -58,10 +132,39 @@ func (m *RWMutex) TryLock() bool {
 	return true
 }
 
-// Unlock unlocks m for writing.
+// Unlock unlocks m for writing. It records, for a waiter, that a writer of
+// its kind released m (released), and clears the kind for the next writer.
 func (m *RWMutex) Unlock() {
+	kind := m.kind
+	m.kind = 0
+	m.released.Store((m.released.Load()>>8+1)<<8 | uint64(kind))
 	m.release()
 	m.RWMutex.Unlock()
+}
+
+// waitFor takes m, for reading when read is set and for writing otherwise,
+// once a try to take it at once failed, and returns how long it waited and
+// the kind of the writer that let it in. While work under ctx is recorded,
+// the wait is a lock wait of ctx's op on the resource ident, naming m's
+// holder when the wait began and that kind. A writer marks itself after.
+func (m *RWMutex) waitFor(ctx context.Context, ident string, read bool) LockWait {
+	w := beginLockWait(ctx, m, ident)
+	before := m.released.Load()
+	start := time.Now()
+	if read {
+		m.RLock()
+	} else {
+		m.RWMutex.Lock()
+	}
+	lw := LockWait{Waited: time.Since(start), Holder: LockHolderReaders}
+	if after := m.released.Load(); after>>8 != before>>8 {
+		lw.Holder = LockHolder(after & 0xff)
+	}
+	if w != nil {
+		w.holderKind = w.r.Intern(lw.Holder.String())
+	}
+	w.End()
+	return lw
 }
 
 // RLock locks m for reading.

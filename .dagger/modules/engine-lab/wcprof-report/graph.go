@@ -59,8 +59,12 @@ type Wait struct {
 	Target   *Op // nil for resource waits or unrecorded targets
 	Reason   string
 	Ident    string
-	Start    int64
-	End      int64
+	// Holder is, for a lock wait on a tracked lock, the kind of work of the
+	// writer whose release let it in, "readers" when none did; "" when the
+	// dump doesn't say.
+	Holder string
+	Start  int64
+	End    int64
 }
 
 // Dur is the wait's wall duration.
@@ -132,6 +136,7 @@ func Build(header *wcprof.DumpHeader, events []wcprof.DumpEvent) *Graph {
 				TargetID: ev.TargetID,
 				Reason:   ev.Reason,
 				Ident:    str(ev.IdentID),
+				Holder:   str(ev.ClassID),
 				Start:    ev.StartNS,
 				End:      max(ev.EndNS, ev.StartNS),
 			})
