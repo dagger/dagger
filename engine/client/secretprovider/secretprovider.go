@@ -22,6 +22,7 @@ var resolvers = map[string]SecretResolver{
 	"file":      fileProvider,
 	"cmd":       cmdProvider,
 	"op":        opProvider,
+	"infisical": infisicalProvider,
 	"vault":     vaultProvider,
 	"libsecret": libsecretProvider,
 	"gcp":       gcpProvider,
