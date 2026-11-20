@@ -162,7 +162,11 @@ func (c *Cache) dropValueLocked(ctx context.Context, res *sharedResult) ([]*shar
 // disk stage counts the distinct layer blobs its values' stored parts name,
 // each at its descriptor's size: a blob shared by several values is counted
 // once, and freed only when the last value that names it goes, as an engine
-// counts a shared snapshot. Neither depends on the e-graph's classes, which
+// counts a shared snapshot. Engines can describe one blob at different
+// sizes, and the cache holds such layers apart (storedLayers), but the
+// store holds the blob once: a value counts it at the largest size its parts
+// give it, and the disk stage counts it once, at the largest size a value
+// of the pool gives it, whichever the stage meets first. Neither depends on the e-graph's classes, which
 // the Cloud compacts on collection (compactEqClassesAfterCollectionLocked),
 // so a prune of a blob-backed cache leaves compaction to it.
 
@@ -214,7 +218,7 @@ func encodedRecordBytes(rec PersistedRecord) int64 {
 }
 
 // storedBlobsLocked returns the distinct layer blobs res's stored parts name,
-// with their sizes. Requires egraphMu.
+// each at the largest size they give it. Requires egraphMu.
 func (res *sharedResult) storedBlobsLocked() map[digest.Digest]int64 {
 	if len(res.storedParts) == 0 {
 		return nil
@@ -222,7 +226,10 @@ func (res *sharedResult) storedBlobsLocked() map[digest.Digest]int64 {
 	blobs := make(map[digest.Digest]int64)
 	for _, part := range res.storedParts {
 		for _, layer := range part.layers {
-			blobs[layer.layer.Descriptor.Digest] = layer.layer.Descriptor.Size
+			blob, size := layer.layer.Descriptor.Digest, layer.layer.Descriptor.Size
+			if seen, ok := blobs[blob]; !ok || size > seen {
+				blobs[blob] = size
+			}
 		}
 	}
 	return blobs
@@ -239,12 +246,14 @@ type storedBlobUsage struct {
 
 // storedBlobUsageLocked measures a blob-backed cache's blobs. Every value
 // counts as a member of the blobs it names, in the pool or not, so a blob
-// that a value outside the pool names is never simulated freed. Requires
-// egraphMu.
+// that a value outside the pool names is never simulated freed. A blob's
+// size is the largest a value of the pool gives it, as the pool's kept
+// measure counts it (cache_pool_measure.go), or, for a blob only values
+// outside the pool name, the largest any gives it. Requires egraphMu.
 func (c *Cache) storedBlobUsageLocked(checker *pruneCancellationChecker) (*storedBlobUsage, error) {
 	usage := &storedBlobUsage{byResult: map[sharedResultID][]string{}, sizes: map[string]int64{}}
 	pool := c.storedPoolLocked()
-	counted := map[string]bool{}
+	inPool := map[string]bool{}
 	for id, res := range c.resultsByID {
 		if checker != nil {
 			if err := checker.check(); err != nil {
@@ -255,19 +264,24 @@ func (c *Cache) storedBlobUsageLocked(checker *pruneCancellationChecker) (*store
 		if len(blobs) == 0 || !res.hasOwnValueLocked() {
 			continue
 		}
-		_, inPool := pool[id]
+		_, member := pool[id]
 		identities := make([]string, 0, len(blobs))
 		for blob, size := range blobs {
 			identity := blob.String()
 			identities = append(identities, identity)
-			usage.sizes[identity] = size
-			if inPool && !counted[identity] {
-				counted[identity] = true
-				usage.poolBytes += size
+			switch seen, ok := usage.sizes[identity]; {
+			case member && !inPool[identity]:
+				inPool[identity] = true
+				usage.sizes[identity] = size
+			case member == inPool[identity] && (!ok || size > seen):
+				usage.sizes[identity] = size
 			}
 		}
 		slices.Sort(identities)
 		usage.byResult[id] = identities
+	}
+	for identity := range inPool {
+		usage.poolBytes += usage.sizes[identity]
 	}
 	return usage, nil
 }

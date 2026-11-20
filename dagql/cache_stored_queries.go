@@ -301,7 +301,8 @@ type BlobCacheUsage struct {
 	PoolValues int
 	PoolBytes  int64
 	// PoolBlobs and PoolBlobBytes are the distinct layer blobs the pool's
-	// stored parts name, as the disk stage measures them.
+	// stored parts name, each at the largest size they give it, as the disk
+	// stage measures them.
 	PoolBlobs     int
 	PoolBlobBytes int64
 	// Entries, Terms, ClassSlots and Holdings are the counts the service's
