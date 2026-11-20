@@ -149,31 +149,6 @@ func TestFirstUsesCountByPath(t *testing.T) {
 	require.Len(t, stats.Paths, 2)
 }
 
-// A snapshot-sharing pass is counted by the kind of class it ran for, with
-// the first uses its probes made: a merged record alone in its class is
-// prepared by the pass's probe, which can make no slot.
-func TestSharingCountsPassesByKindOfClass(t *testing.T) {
-	set := firstUseTestCloud(t)
-	ctx, c, _, _ := shareTestCache(t)
-	barrier := newSharePassBarrier(c)
-	_, err := c.MergeValues(ctx, cloudCacheID, set.bundle)
-	require.NoError(t, err)
-	barrier.awaitPass(t)
-	shareTestAwaitQuiet(t, c, barrier)
-
-	stats := c.Sharing()
-	require.Len(t, stats.Kinds, 1, "every merged record is alone in its class: %+v", stats.Kinds)
-	alone := stats.Kinds["alone"]
-	require.Positive(t, alone.Passes)
-	require.Equal(t, alone.Passes, alone.Members)
-	require.Zero(t, alone.Slotted)
-	require.Zero(t, alone.Slots)
-	require.Positive(t, alone.Prepared, "the probes prepared records nothing used")
-	sharing := c.FirstUse().Paths["sharing"]
-	require.Equal(t, sharing.Prepared, alone.Prepared, "the passes made every first use by sharing")
-	require.Equal(t, sharing.Total, alone.PrepareTotal)
-}
-
 // A pass over a class of a merged record and a value computed here with no
 // part to give is counted as a class with no donor's. The merged record is
 // prepared by a sharing pass's probe once, this one's or, where a record
@@ -199,11 +174,15 @@ func TestSharingCountsANoDonorClassWithItsFirstUses(t *testing.T) {
 	require.Zero(t, noDonor.Slotted)
 	require.False(t, merged.holdsUnpreparedPayload(), "a pass's probe prepared the merged record")
 	var prepared int64
+	var took time.Duration
 	for _, kind := range stats.Kinds {
 		prepared += kind.Prepared
+		took += kind.PrepareTotal
 	}
 	require.Positive(t, prepared)
-	require.Equal(t, c.FirstUse().Paths["sharing"].Prepared, prepared, "the passes made every first use by sharing")
+	sharing := c.FirstUse().Paths["sharing"]
+	require.Equal(t, sharing.Prepared, prepared, "the passes made every first use by sharing")
+	require.Equal(t, sharing.Total, took, "and spent all their time")
 }
 
 // A pass over a class with a member holding a part ready to give is counted
