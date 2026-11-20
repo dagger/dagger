@@ -18,7 +18,7 @@ func footprintRows(tb testing.TB, n int) []Span {
 	tb.Helper()
 	const traceID = "0f0e0d0c0b0a09080706050403020100"
 	spanHex := func(i int) string { return fmt.Sprintf("%016x", uint64(i+1)*0x9e3779b97f4a7c15) }
-	agentAttrs := []byte(agentIDAttrMarker)
+	agentAttrs := bytes.Clone(agentIDAttrMarker)
 	rows := make([]Span, 0, 2*n)
 	for i := range n {
 		row := Span{TraceID: traceID, SpanID: spanHex(i), Name: "span"}

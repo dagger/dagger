@@ -393,16 +393,15 @@ func eachInList(head, next []uint32, parent uint32, f func(uint32) bool) bool {
 // false: those first added under it in the order they were, then those it
 // gained as the same span ID in another trace. Every caller treats the
 // children as a set.
-func (l *spanLookup) eachChildLocked(parent uint32, f func(uint32) bool) bool {
+func (l *spanLookup) eachChildLocked(parent uint32, f func(uint32) bool) {
 	if !eachInList(l.childHead, l.childNext, parent, f) {
-		return false
+		return
 	}
 	for _, kid := range l.extraChildren[parent] {
 		if !f(kid) {
-			return false
+			return
 		}
 	}
-	return true
 }
 
 // isChildLocked reports whether span is on parent's children list.

@@ -56,19 +56,6 @@ func newRefSpanLookup() *refSpanLookup {
 	}
 }
 
-func (l *refSpanLookup) addAll(rows []Span) {
-	targets := make([][]string, len(rows))
-	for i, row := range rows {
-		targets[i] = causalLinkTargets(row)
-	}
-	l.mu.Lock()
-	for i, row := range rows {
-		l.addLocked(row, targets[i])
-	}
-	l.gen.Add(1)
-	l.mu.Unlock()
-}
-
 func (l *refSpanLookup) generation() uint64 { return l.gen.Load() }
 
 func (l *refSpanLookup) addLocked(row Span, causalTargets []string) {
