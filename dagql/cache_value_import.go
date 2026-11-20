@@ -99,7 +99,9 @@ func ResolveChainPrefixes(bundle *ValueBundle) error {
 // dependencies and call, and its outputs against those parts. declared has,
 // for each row whose record carries its parts (TransferredValue.Parts), the
 // parts it declares: its outputs are checked against those parts, without
-// mapping them from its payload.
+// mapping them from its payload. Only an engine has a declared, and with
+// shapeOnly and a declared, a row whose record carries its parts is checked
+// without its payloads' JSON (validateUnpreparedRecordShape).
 //
 //nolint:gocyclo // one check per bundle field and record kind; splitting hides the order of the checks
 func checkValueBundle(bundle ValueBundle, shapeOnly bool, stored, declared map[uint64][]declaredPart) ([]uint64, error) {
@@ -148,6 +150,12 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool, stored, declared map[u
 		validate := validateTransferRecord
 		if shapeOnly {
 			validate = validateTransferRecordShape
+			// An engine merges a record that carries its parts with its
+			// payload unprepared (valueMergePrep.markUnprepared), and its
+			// first use checks the payload.
+			if declared != nil && row.Parts != nil {
+				validate = validateUnpreparedRecordShape
+			}
 		}
 		if _, ok := stored[id]; ok {
 			validate = validateStoredRecordShape
