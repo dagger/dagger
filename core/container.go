@@ -1873,13 +1873,13 @@ func armedContainerParts(armed bool, recipe Lazy[*Container], envelope persisted
 	return envelope.Metadata.Consumed, envelope.Parts
 }
 
-// PartTransferShell reports whether the container decoded from another
-// engine's record without its recipe, so that its parts come only through
-// part acquisition.
 // OperationCompletedElsewhere reports whether the container decoded from
 // another engine's record of an operation that completed there.
 func (container *Container) OperationCompletedElsewhere() bool { return container.completedElsewhere }
 
+// PartTransferShell reports whether the container decoded from another
+// engine's record without its recipe, so that its parts come only through
+// part acquisition.
 func (container *Container) PartTransferShell() bool {
 	return container.acquiredOutput.Load() != nil
 }
