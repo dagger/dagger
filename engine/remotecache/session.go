@@ -135,6 +135,7 @@ func (s *session) hello() error {
 		Period:        settle.Period,
 		Settled:       settle.Settled && !settle.Live,
 		Restored:      s.cfg.restored.list(),
+		Image:         s.adapter.ImageEntries(),
 	})
 	if err != nil {
 		return fmt.Errorf("hello: %w", err)

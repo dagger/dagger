@@ -2938,8 +2938,8 @@ func (c *Cache) applyMergedOffersLocked(ctx context.Context, commit *valueMergeC
 	for _, row := range commit.rows {
 		if commit.from == cloudCacheID {
 			if _, image := row.res.imageHoldingLocked(); image != nil {
-				// The image offers the entry's parts from the engine's own
-				// disk: the Cloud's offers of them are left out.
+				// The image ships the entry: its Cloud offers are left out,
+				// whether or not the image ships those parts (ImageEntries).
 				continue
 			}
 		}

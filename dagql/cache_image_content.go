@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"slices"
 	"strings"
 	"time"
 
@@ -211,7 +212,9 @@ type imageBlobReader struct {
 func (r imageBlobReader) Size() int64 { return r.size }
 
 // ErrFromImage refuses to export an entry the engine image ships: every engine
-// built from the image has it, so the Cloud carries only what engines made.
+// built from the image has its record, so the Cloud carries only what engines
+// made. Its parts are never exported either, whether or not the image ships
+// them (ImageEntries).
 var ErrFromImage = errors.New("the engine image ships this entry")
 
 // FromImage reports whether the engine image ships result: the image's merge
@@ -233,6 +236,25 @@ func (c *Cache) FromImage(result AnyResult) bool {
 func fromImageLocked(res *sharedResult) bool {
 	_, image := res.imageHoldingLocked()
 	return image != nil
+}
+
+// ImageEntries returns the numbers of the entries the engine image ships,
+// sorted: every entry the image's merge gave an image holding. Such an entry
+// takes no Cloud part, offered or merged, whether or not the image ships
+// that part (offerPart, applyMergedOffersLocked), and is never exported
+// (FromImage). Only the image's merge at start makes image holdings, so the
+// set changes no more once the cache serves.
+func (c *Cache) ImageEntries() []uint64 {
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	var numbers []uint64
+	for id, res := range c.resultsByID {
+		if fromImageLocked(res) {
+			numbers = append(numbers, uint64(id))
+		}
+	}
+	slices.Sort(numbers)
+	return numbers
 }
 
 // ImageEntryByContent returns the number of an entry the engine image ships
