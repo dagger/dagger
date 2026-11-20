@@ -59,9 +59,10 @@ func collect(t *testing.T, store *testutil.Store) {
 	require.NoError(t, forgetter.ForgetCollectedSnapshots(context.Background()))
 }
 
-// Each hashed snapshot keeps its serialized content-hash tree in the
-// manager's in-memory metadata. Releasing the refs and the owners, and
-// collecting the snapshots, must not leave those trees behind.
+// Each hashed snapshot keeps its serialized content-hash tree with the
+// manager's metadata, on disk. Releasing the refs and the owners, and
+// collecting the snapshots, must not leave those trees, or the metadata,
+// behind.
 func TestContentHashMetadataMemory(t *testing.T) {
 	ctx := context.Background()
 	store := testutil.NewStore(t)
@@ -86,9 +87,10 @@ func TestContentHashMetadataMemory(t *testing.T) {
 	t.Logf("before: %+v", before)
 	t.Logf("hashed %d more snapshots of %d files: %+v (%d tree bytes per snapshot)",
 		hashedSnapshots, hashedDirs*hashedFiles, hashed,
-		(hashed.ExternalBytes-withKept.ExternalBytes)/hashedSnapshots)
+		(hashed.ContentHashBytes()-withKept.ContentHashBytes())/hashedSnapshots)
 	require.Equal(t, withKept.Metadata+hashedSnapshots, hashed.Metadata)
-	require.Greater(t, hashed.ExternalBytes, withKept.ExternalBytes)
+	require.Greater(t, hashed.ContentHashBytes(), withKept.ContentHashBytes())
+	require.Zero(t, hashed.ExternalBytes, "the trees are kept on disk")
 
 	for i, ref := range refs {
 		require.NoError(t, ref.Release(ctx))
@@ -190,15 +192,16 @@ func TestContentHashPendingRecordsForgottenWhenCollected(t *testing.T) {
 	store.Reload(t)
 	require.NoError(t, store.Manager.LoadPersistentMetadata(rows))
 	loaded := bkcache.MetadataMemory(store.Manager)
-	require.Equal(t, 2, loaded.PendingContentHashes)
+	require.Equal(t, 2, loaded.ContentHashFiles)
+	require.Zero(t, loaded.ExternalBytes, "loaded trees are kept on disk")
 
 	require.NoError(t, store.Manager.RemoveLease(ctx, droppedOwner))
 	collect(t, store)
 	_, err := store.Snapshots.Stat(ctx, droppedID)
 	require.Error(t, err)
 	got := bkcache.MetadataMemory(store.Manager)
-	require.Equal(t, 1, got.PendingContentHashes)
-	require.Less(t, got.ExternalBytes, loaded.ExternalBytes)
+	require.Equal(t, 1, got.ContentHashFiles)
+	require.Less(t, got.ContentHashBytes(), loaded.ContentHashBytes())
 	left := store.Manager.PersistentMetadataRows()
 	require.Equal(t, keptRows.SnapshotContent, left.SnapshotContent)
 	require.Equal(t, keptRows.ImportedByBlob, left.ImportedByBlob)

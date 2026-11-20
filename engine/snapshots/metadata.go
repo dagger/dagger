@@ -1,6 +1,7 @@
 package snapshots
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"sort"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/containerd/containerd/v2/core/snapshots"
 	"github.com/dagger/dagger/internal/buildkit/client"
+	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 )
@@ -91,7 +93,13 @@ type metadataStore struct {
 	closed bool
 
 	// Persisted hash records for snapshots whose metadata has not been opened.
+	// Unused with hashFiles.
 	pendingContentHashes map[string][]byte
+
+	// hashFiles, when set, keeps the content-hash trees, on disk or, when
+	// they can't be written, in memory of its own, instead of in external
+	// and pendingContentHashes.
+	hashFiles *contentHashFiles
 }
 
 func newMetadataStore() *metadataStore {
@@ -99,6 +107,11 @@ func newMetadataStore() *metadataStore {
 		refs:  make(map[string]*cacheMetadata),
 		index: make(map[string]map[string]struct{}),
 	}
+}
+
+// contentHashOnDisk says key's values are kept in hashFiles.
+func (s *metadataStore) contentHashOnDisk(key string) bool {
+	return s.hashFiles != nil && key == ContentHashMetadataKey
 }
 
 func (s *metadataStore) get(id string) (*cacheMetadata, bool) {
@@ -129,11 +142,40 @@ func (s *metadataStore) getOrCreate(id string) *cacheMetadata {
 	return md
 }
 
+// clear drops id's metadata, and deletes its content-hash tree's file. Only
+// that one: callers hold cm.mu, and the files ForgetCollectedSnapshots left
+// are its own to delete.
 func (s *metadataStore) clear(id string) {
+	s.forget(id)
+	s.purgeContentHashes(id)
+}
+
+// purgeContentHashes deletes the files of the trees forget dropped: those of
+// ids, or with none, all of them.
+func (s *metadataStore) purgeContentHashes(ids ...string) {
+	if s.hashFiles == nil {
+		return
+	}
+	if err := s.hashFiles.purge(ids...); err != nil {
+		bklog.G(context.TODO()).WithError(err).
+			Error("failed to delete content hash records; retrying after the next snapshot GC")
+	}
+}
+
+// forget drops id's metadata and its content-hash tree, leaving the tree's
+// file for purgeContentHashes to delete.
+func (s *metadataStore) forget(id string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.pendingContentHashes, id)
 	md, ok := s.refs[id]
+	if s.hashFiles != nil {
+		s.hashFiles.remove(id, func() {
+			if ok {
+				md.contentHashGone = true
+			}
+		})
+	}
 	if !ok {
 		return
 	}
@@ -154,11 +196,12 @@ func (s *metadataStore) clear(id string) {
 }
 
 // CollectedSnapshotForgetter is a snapshot manager that keeps metadata for
-// snapshots in memory, and can drop it once the snapshots are gone.
+// snapshots, and can drop it once the snapshots are gone.
 type CollectedSnapshotForgetter interface {
-	// ForgetCollectedSnapshots drops the in-memory metadata, content-hash
-	// trees included, of the snapshots the snapshotter no longer has. Run it
-	// after garbage collection.
+	// ForgetCollectedSnapshots drops the metadata of the snapshots the
+	// snapshotter no longer has: what is kept in memory, and their
+	// content-hash trees, in memory or on disk. Run it after garbage
+	// collection.
 	ForgetCollectedSnapshots(ctx context.Context) error
 }
 
@@ -167,9 +210,10 @@ type CollectedSnapshotForgetter interface {
 // loaded hash records, their recorded blobs, and the imported layers that
 // name them. Nothing else tells the manager a snapshot is gone: only a later
 // Get of it notices, and most collected snapshots are never asked for again,
-// so without this their metadata, and the serialized content-hash tree each
-// hashed snapshot keeps there, would stay in memory for the life of the
-// engine, and the blob rows in every checkpoint.
+// so without this their metadata would stay in memory, and the serialized
+// content-hash tree each hashed snapshot keeps in memory or on disk would
+// stay there, for the life of the engine, and the blob rows in every
+// checkpoint.
 //
 // Every snapshot ID is a fresh random ID, or that of a snapshot that exists
 // when its metadata is made, and every snapshot is made before its metadata
@@ -185,6 +229,11 @@ func (cm *snapshotManager) ForgetCollectedSnapshots(ctx context.Context) error {
 	}
 	for id := range cm.metadataStore.pendingContentHashes {
 		candidates[id] = struct{}{}
+	}
+	if cm.metadataStore.hashFiles != nil {
+		for _, id := range cm.metadataStore.hashFiles.list() {
+			candidates[id] = struct{}{}
+		}
 	}
 	cm.metadataStore.mu.RUnlock()
 	for id := range cm.records {
@@ -223,6 +272,9 @@ func (cm *snapshotManager) ForgetCollectedSnapshots(ctx context.Context) error {
 		return candidate && !exists
 	}
 
+	// The trees' files are deleted after cm.mu is released, rather than
+	// one by one under it while every snapshot operation waits.
+	defer cm.metadataStore.purgeContentHashes()
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 	for key, id := range cm.importedLayerByBlob {
@@ -254,7 +306,7 @@ func (cm *snapshotManager) ForgetCollectedSnapshots(ctx context.Context) error {
 		} else if md, ok := cm.metadataStore.get(id); ok && md.getSnapshotID() != id {
 			continue
 		}
-		cm.metadataStore.clear(id)
+		cm.metadataStore.forget(id)
 	}
 	return nil
 }
@@ -266,6 +318,9 @@ func (s *metadataStore) close() error {
 	s.refs = nil
 	s.index = nil
 	s.pendingContentHashes = nil
+	if s.hashFiles != nil {
+		s.hashFiles.close()
+	}
 	return nil
 }
 
@@ -276,6 +331,9 @@ type cacheMetadata struct {
 	indexes  map[string]string // key -> index
 	external map[string][]byte
 	queue    []func(*cacheMetadata) error
+	// contentHashGone is set, under store.hashFiles.mu, once the metadata is
+	// dropped: a tree saved for it later is discarded.
+	contentHashGone bool
 }
 
 func (cm *snapshotManager) Search(ctx context.Context, idx string, prefixOnly bool) ([]RefMetadata, error) {
@@ -441,24 +499,59 @@ func (md *cacheMetadata) GetCreatedAt() time.Time {
 	return md.getTime(keyCreatedAt)
 }
 
+// ErrExternalNotFound is GetExternal's error for a key with no value. Any
+// other error is a failure to read the value.
+var ErrExternalNotFound = errors.New("not found")
+
 func (md *cacheMetadata) GetExternal(s string) ([]byte, error) {
+	if md.store.contentHashOnDisk(s) {
+		dt, ok, err := md.store.hashFiles.read(md.id, md.contentHashDropped)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, ErrExternalNotFound
+		}
+		return dt, nil
+	}
+	if dt, ok := md.getExternalInMemory(s); ok {
+		return dt, nil
+	}
+	return nil, ErrExternalNotFound
+}
+
+func (md *cacheMetadata) getExternalInMemory(s string) ([]byte, bool) {
 	md.store.mu.RLock()
 	defer md.store.mu.RUnlock()
 	dt, ok := md.external[s]
 	if !ok {
-		return nil, errors.New("not found")
+		return nil, false
 	}
-	cpy := make([]byte, len(dt))
-	copy(cpy, dt)
-	return cpy, nil
+	return bytes.Clone(dt), true
+}
+
+// contentHashDropped says the metadata was dropped. Requires
+// store.hashFiles.mu.
+func (md *cacheMetadata) contentHashDropped() bool {
+	return md.contentHashGone
 }
 
 func (md *cacheMetadata) SetExternal(s string, dt []byte) error {
+	if md.store.contentHashOnDisk(s) {
+		// A tree that can't be written is kept in memory, where trees were
+		// kept before, as loading one that can't be written does, rather
+		// than fail the save: a host sync would fail with it, and a
+		// background save would lose it. The next save tries the disk
+		// again.
+		if err := md.store.hashFiles.store(md.id, dt, md.contentHashDropped); err != nil {
+			bklog.G(context.TODO()).WithError(err).WithField("snapshot", md.id).
+				Error("failed to write content hash records; keeping them in memory")
+		}
+		return nil
+	}
 	md.store.mu.Lock()
 	defer md.store.mu.Unlock()
-	cpy := make([]byte, len(dt))
-	copy(cpy, dt)
-	md.external[s] = cpy
+	md.external[s] = bytes.Clone(dt)
 	return nil
 }
 
