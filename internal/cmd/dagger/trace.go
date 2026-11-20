@@ -41,6 +41,9 @@ type traceViewOptions struct {
 	log     bool
 	output  string
 	timeout time.Duration
+	// work shows the trace's new, repeat and cached work, which Dagger Cloud
+	// computes on request.
+	work bool
 	// engine reads a trace the engine still retains before falling back to
 	// Dagger Cloud. Only 'dagger trace' sets it: the 'dagger cloud' commands
 	// read Cloud alone and never connect to an engine.
@@ -75,6 +78,18 @@ func init() {
 // engine's retained archive before Dagger Cloud, for 'dagger trace'.
 func newTraceViewCmd(use string, log, engine bool) *cobra.Command {
 	o := &traceViewOptions{log: log, engine: engine}
+	var workHelp, workExample string
+	if !log {
+		workHelp = `
+
+Use --work to show which operations did new work, and which repeated work
+your organization already ran in the last 30 days: a cache hit reused it, or it
+ran again. Each span that did work is marked NEW or REPEAT, and a WORK section
+ends the report with the share of new, repeat, uncached repeat and cached
+work. Dagger Cloud computes the work when you ask for it, from the work of
+Dagger Cloud Engines, once the trace has ended.`
+		workExample = "\ndagger cloud traces view --last --work"
+	}
 	short := "View a Dagger Cloud trace"
 	what := `View a Dagger Cloud trace: the overall result, the commands that caused a
 failure, check results and failed tests, each with the end of its logs, and the
@@ -105,12 +120,12 @@ open in a pager: press esc to go to the tree, and L to go back to the logs.
 When the output is not a terminal, or with --output, the command writes the
 raw logs.
 
-Use --web (-w) to open the trace in the Dagger Cloud web UI.`,
+Use --web (-w) to open the trace in the Dagger Cloud web UI.` + workHelp,
 		Example: `dagger cloud traces view 2f123ba77bf7bd2d4db2f70ed20613e8
 dagger cloud traces view --last --check build:lint
 dagger cloud traces view --last --log --test TestFoo
 dagger cloud traces view https://dagger.cloud/acme/traces/2f123ba77bf7bd2d4db2f70ed20613e8 -w
-dagger cloud traces view --last --log --check build:lint -o lint.log`,
+dagger cloud traces view --last --log --check build:lint -o lint.log` + workExample,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runTraceView(cmd, args, o)
 		},
@@ -126,12 +141,18 @@ dagger cloud traces view --last --log --check build:lint -o lint.log`,
 	flags.BoolVar(&o.sel.descendants, "descendants", false, "With --log and --span, include the logs of the span's descendants")
 	flags.StringVarP(&o.output, "output", "o", "", "With --log, write the logs to this file")
 	flags.DurationVar(&o.timeout, "timeout", 2*time.Minute, "With --log, the maximum time to write logs, when the command does not open a pager")
+	if !log {
+		flags.BoolVar(&o.work, "work", false, "Show the new, repeat and cached work of the trace")
+	}
 	return cmd
 }
 
 func runTraceView(cmd *cobra.Command, args []string, o *traceViewOptions) error {
 	if !o.log && (o.sel.descendants || o.output != "") {
 		return fmt.Errorf("--descendants and --output need --log")
+	}
+	if o.log && o.work {
+		return fmt.Errorf("--work shows the trace, not its logs: use it without --log")
 	}
 	ref, err := resolveTraceViewArg(cmd.Context(), args, o.last)
 	if err != nil {
@@ -264,8 +285,12 @@ func traceRun(cmd *cobra.Command, traceID string, sel spanSelector, o *traceView
 	// later expand or zoom reads through the source and its engine
 	// connection. Atomic for the same reason as statsClient.
 	var heldCleanup atomic.Pointer[cleanups.CleanupF]
+	// work hands the trace's work to a frontend that cannot show it, which
+	// gets it printed after the run. Atomic for the same reason as
+	// statsClient.
+	var work atomic.Pointer[cloud.TraceWork]
 	runErr := Frontend.Run(cmd.Context(), opts, func(ctx context.Context) (cleanups.CleanupF, error) {
-		cleanup, err := traceRunSource(ctx, tf, traceID, sel, o, &statsClient)
+		cleanup, err := traceRunSource(ctx, tf, traceID, sel, o, &statsClient, &work)
 		if cleanup != nil {
 			heldCleanup.Store(&cleanup)
 		}
@@ -273,6 +298,17 @@ func traceRun(cmd *cobra.Command, traceID string, sel spanSelector, o *traceView
 	})
 	if cleanup := heldCleanup.Load(); cleanup != nil {
 		runErr = errors.Join(runErr, (*cleanup)())
+	}
+
+	// A frontend that cannot show the work gets it after its output.
+	if w := work.Load(); w != nil && runErr == nil {
+		if _, ok := Frontend.(idtui.WorkFrontend); !ok {
+			out := idtui.NewOutput(cmd.ErrOrStderr())
+			fmt.Fprintln(cmd.ErrOrStderr())
+			for _, line := range idtui.WorkReportLines(out, idtui.RunningInAgent(), w, "") {
+				fmt.Fprintln(cmd.ErrOrStderr(), line)
+			}
+		}
 	}
 
 	// With --debug, report how much data the run pulled from Cloud so expensive
@@ -287,7 +323,7 @@ func traceRun(cmd *cobra.Command, traceID string, sel spanSelector, o *traceView
 
 // traceRunSource is traceRun's work within the frontend's run. Its cleanup
 // closes the selected source.
-func traceRunSource(ctx context.Context, tf idtui.TraceFrontend, traceID string, sel spanSelector, o *traceViewOptions, statsClient *atomic.Pointer[cloud.OTLPClient]) (cleanups.CleanupF, error) {
+func traceRunSource(ctx context.Context, tf idtui.TraceFrontend, traceID string, sel spanSelector, o *traceViewOptions, statsClient *atomic.Pointer[cloud.OTLPClient], work *atomic.Pointer[cloud.TraceWork]) (cleanups.CleanupF, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	var cloudAuth *auth.Cloud
 	source, closeSource, err := openTraceSource(ctx, o.engine,
@@ -350,6 +386,31 @@ func traceRunSource(ctx context.Context, tf idtui.TraceFrontend, traceID string,
 			setTraceCIContext(ctx, tf, cloudAuth, traceID)
 			return nil
 		})
+	}
+
+	// --work: ask Cloud for the trace's work. Cloud computes it on request,
+	// which takes seconds for a large trace, so a trace frontend gets it
+	// beside the fetch: the pre-report drain below waits for it, and its
+	// final render shows it. The plain, dots and logs frontends print each span
+	// as the stream reaches it, so they get the work before the spans. A
+	// failure fails the command.
+	if o.work {
+		fetchWork := func() error {
+			w, err := fetchTraceWork(ctx, statsClient.Load(), traceID)
+			if err != nil {
+				return fmt.Errorf("work of trace %s: %w", traceID, err)
+			}
+			work.Store(w)
+			if wf, ok := Frontend.(idtui.WorkFrontend); ok {
+				wf.SetTraceWork(w)
+			}
+			return nil
+		}
+		if tf != nil {
+			logFg.Go(fetchWork)
+		} else if err := fetchWork(); err != nil {
+			return cleanup, err
+		}
 	}
 
 	// Fetch spans incrementally, mirroring the Cloud web UI: stream the
@@ -487,6 +548,21 @@ func traceRunSource(ctx context.Context, tf idtui.TraceFrontend, traceID string,
 	}
 
 	return cleanup, nil
+}
+
+// fetchTraceWork asks Dagger Cloud for the trace's work, through the client
+// that read the trace, or a new one when the trace came from the engine.
+func fetchTraceWork(ctx context.Context, client *cloud.OTLPClient, traceID string) (*cloud.TraceWork, error) {
+	if client == nil {
+		cloudAuth, err := auth.GetCloudAuth(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("cloud auth: %w", err)
+		}
+		if client, err = cloud.NewOTLPClient(ctx, cloudAuth); err != nil {
+			return nil, fmt.Errorf("cloud client: %w", err)
+		}
+	}
+	return client.FetchWork(ctx, traceID)
 }
 
 // openTraceLogPager opens the frontend's pager on target's full logs, or on

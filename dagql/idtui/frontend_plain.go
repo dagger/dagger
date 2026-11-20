@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -16,6 +17,7 @@ import (
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/internal/cloud"
 	"github.com/dagger/dagger/util/cleanups"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/muesli/termenv"
@@ -41,6 +43,15 @@ type frontendPlain struct {
 	db       *dagui.DB
 	data     map[dagui.SpanID]*spanData
 	testLogs map[dagui.SpanID]*Vterm
+
+	// work is the trace's work, set by 'dagger trace --work': the NEW and
+	// REPEAT statuses of the spans that did work, and the WORK section that
+	// ends the output.
+	work       *cloud.TraceWork
+	workBySpan map[dagui.SpanID]*cloud.WorkRun
+	// workVerbosity is SpanVerbosity once revealWorkSpans has added the
+	// spans that did work to it.
+	workVerbosity map[dagui.SpanID]int
 
 	// idx is an incrementing counter to assign human-readable names to spans
 	idx uint
@@ -137,6 +148,15 @@ func NewPlain(w io.Writer) Frontend {
 		done:   make(chan struct{}),
 		ticker: time.NewTicker(50 * time.Millisecond),
 	}
+}
+
+// SetTraceWork sets the work the frontend shows.
+func (fe *frontendPlain) SetTraceWork(work *cloud.TraceWork) {
+	bySpan := workRunsBySpan(work)
+	fe.mu.Lock()
+	defer fe.mu.Unlock()
+	fe.work = work
+	fe.workBySpan = bySpan
 }
 
 func (fe *frontendPlain) SetSidebarContent(SidebarSection) {}
@@ -485,6 +505,12 @@ func (fe *frontendPlain) finalRender() {
 	if !fe.Silent && fe.renderFinalTests() {
 		fmt.Fprintln(stderr)
 	}
+	if lines := WorkReportLines(fe.output, agentStyle(fe.Opts()), fe.work, ""); len(lines) > 0 {
+		for _, line := range lines {
+			fmt.Fprintln(stderr, line)
+		}
+		fmt.Fprintln(stderr)
+	}
 
 	var telemetryErr error
 	if p := fe.telemetryError.Load(); p != nil {
@@ -516,6 +542,7 @@ func (fe *frontendPlain) renderFinalTests() bool {
 }
 
 func (fe *frontendPlain) renderProgress() {
+	fe.revealWorkSpans()
 	rowsView := fe.db.RowsView(fe.FrontendOpts)
 
 	// quickly sanity check the context - if a span from it has gone missing
@@ -542,6 +569,33 @@ func (fe *frontendPlain) renderProgress() {
 
 	for _, row := range rowsView.Body {
 		fe.renderRow(row)
+	}
+}
+
+// revealWorkSpans shows the spans that did work, with their NEW or REPEAT
+// status, and the spans above them, at any verbosity: work often runs in a
+// module's internal calls, which are otherwise hidden. A span's ancestors can
+// arrive after it, so each render walks up from every work span until it
+// meets a span it has already revealed.
+func (fe *frontendPlain) revealWorkSpans() {
+	if len(fe.workBySpan) == 0 {
+		return
+	}
+	if fe.workVerbosity == nil {
+		// Run copied the caller's options, whose map this must not change.
+		fe.workVerbosity = maps.Clone(fe.SpanVerbosity)
+		if fe.workVerbosity == nil {
+			fe.workVerbosity = map[dagui.SpanID]int{}
+		}
+		fe.SpanVerbosity = fe.workVerbosity
+	}
+	for id := range fe.workBySpan {
+		for span := fe.db.Spans.Map[id]; span != nil; span = span.ParentSpan {
+			if v, ok := fe.workVerbosity[span.ID]; ok && v >= dagui.ShowInternalVerbosity {
+				break
+			}
+			fe.workVerbosity[span.ID] = max(fe.Verbosity, dagui.ShowInternalVerbosity)
+		}
 	}
 }
 
@@ -640,6 +694,9 @@ func (fe *frontendPlain) renderStep(span *dagui.Span, depth int, done bool) {
 	if done {
 		if span.IsFailedOrCausedFailure() {
 			fmt.Fprint(fe.output, fe.output.String(" ERROR").Foreground(termenv.ANSIRed))
+		} else if renderWorkStatus(fe.output, fe.workBySpan[span.ID]) {
+			// The span did work: NEW or REPEAT, also when its call was a
+			// cache hit on a result whose work then ran.
 		} else if span.IsCached() {
 			fmt.Fprint(fe.output, fe.output.String(" CACHED").Foreground(termenv.ANSIBlue))
 		} else {
