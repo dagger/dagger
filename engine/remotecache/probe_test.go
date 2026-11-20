@@ -33,9 +33,10 @@ func TestSlowConnectionStaysUp(t *testing.T) {
 	served := probedSession(t, link.addr)
 	svc.serve(t)
 
-	// Compression can't shrink it much: about 4 s through the link, three
-	// probe timeouts.
-	random := make([]byte, 256<<10)
+	// Base64 carries 6 bits a character, so no compression brings the message
+	// under the random bytes' own size: at the link's rate it takes at least
+	// 3.6 s, past the third probe's check at about 3.25 s.
+	random := make([]byte, 704<<10)
 	_, err := rand.Read(random)
 	require.NoError(t, err)
 	filler, err := protocol.EncodeEnvelope(svc.next.Add(1), 1<<40, protocol.TypeMerged, map[string]string{"pad": base64.StdEncoding.EncodeToString(random)})
@@ -244,8 +245,6 @@ func newSlowLink(t *testing.T, server string, rate int) *slowLink {
 				engine.Close()
 				continue
 			}
-			const buffer = 16 << 10
-			_ = service.(*net.TCPConn).SetReadBuffer(buffer)
 			closeBoth := func() {
 				engine.Close()
 				service.Close()
@@ -260,8 +259,12 @@ func newSlowLink(t *testing.T, server string, rate int) *slowLink {
 				defer pumps.Done()
 				defer closeBoth()
 				// Small pieces, so that bytes cross a slow link only a few
-				// tens of milliseconds apart.
+				// tens of milliseconds apart, each sent no sooner than the
+				// rate allows: sleeping until a schedule, not for a span, so
+				// a sleep's own overruns don't slow the link below its rate,
+				// and an idle link saves up no burst.
 				buf := make([]byte, 4<<10)
+				var next time.Time
 				for {
 					link.wait()
 					n, err := service.Read(buf)
@@ -270,7 +273,11 @@ func newSlowLink(t *testing.T, server string, rate int) *slowLink {
 							return
 						}
 						if rate > 0 {
-							time.Sleep(time.Duration(n) * time.Second / time.Duration(rate))
+							if now := time.Now(); next.Before(now) {
+								next = now
+							}
+							next = next.Add(time.Duration(n) * time.Second / time.Duration(rate))
+							time.Sleep(time.Until(next))
 						}
 					}
 					if err != nil {
