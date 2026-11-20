@@ -64,7 +64,8 @@ type SnapshotManagerOpt struct {
 	// trees are kept under, instead of in memory; see contentHashFiles. The
 	// manager keeps them in a fresh subdirectory of its own and deletes
 	// nothing else: what earlier managers left there is the caller's to
-	// sweep.
+	// sweep. When it can't make that subdirectory, it keeps the trees in
+	// memory.
 	ContentHashDir string
 }
 
@@ -222,11 +223,15 @@ func NewSnapshotManager(opt SnapshotManagerOpt) (SnapshotManager, error) {
 		cm.localMounter = func(ms []mount.Mount) Mounter { return LocalMounterWithMounts(ms) }
 	}
 	if opt.ContentHashDir != "" {
+		// Without a directory for them, the trees are kept in memory, as a
+		// tree that can't be written is, rather than failing the start.
 		files, err := newContentHashFiles(opt.ContentHashDir)
 		if err != nil {
-			return nil, err
+			bklog.G(context.TODO()).WithError(err).WithField("dir", opt.ContentHashDir).
+				Error("failed to create content hash directory; keeping content hash records in memory")
+		} else {
+			cm.metadataStore.hashFiles = files
 		}
-		cm.metadataStore.hashFiles = files
 	}
 	cm.sharedMounts = newSharedMounts(opt.SharedMountLinger, opt.MaxIdleSharedMounts, cm.backgroundReleases.run)
 
