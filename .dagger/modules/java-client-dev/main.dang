@@ -63,26 +63,19 @@ type JavaClientDev {
   }
 
   """
-  Test the Java SDK
+  Check the Java SDK's formatting, and test it. The two run at once.
   """
   test: Void @check {
-    devContainer
-      .withExec(["mvn", "clean", "verify", "-Ddaggerengine.version=local"])
-      .sync
-
-    null
-  }
-
-  """
-  Lint the Java SDK
-  """
-  lint: Void @check {
-    mavenImage
-      .withDirectory(workspacePath, workspaceDir)
-      .withWorkdir(workspacePath + "/" + sourcePath)
-      .withExec(["mvn", "fmt:check"])
-      .sync
-
+    let ran = {{
+      lint: mavenImage
+        .withDirectory(workspacePath, workspaceDir)
+        .withWorkdir(workspacePath + "/" + sourcePath)
+        .withExec(["mvn", "fmt:check"])
+        .sync,
+      tests: devContainer
+        .withExec(["mvn", "clean", "verify", "-Ddaggerengine.version=local"])
+        .sync,
+    }}
     null
   }
 
@@ -107,7 +100,6 @@ type JavaClientDev {
   ): Void @check {
     let version = sourceTag.trimPrefix(sourcePath + "/v")
     devContainer
-      .withExec(["apk", "add", "--no-cache", "gpg"])
       .withExec(["mvn", "versions:set", "-DnewVersion=" + version])
       .withExec(["mvn", "clean", "deploy", "-Prelease", "-Dmaven.deploy.skip=true"])
       .withExec(["find", ".", "-name", "*.jar"])

@@ -71,3 +71,30 @@ Create the name of the service account to use
 {{- default "default" .Values.engine.existingServiceAccount.name }}
 {{- end }}
 {{- end }}
+
+{{/*
+The engine's stop budget, passed as --graceful-stop-timeout. The engine has to
+finish its stop, including marking its cache as cleanly shut down, before the
+kubelet kills it at terminationGracePeriodSeconds; otherwise the next start
+discards the whole local cache. Empty when the chart does not pass the flag.
+*/}}
+{{- define "dagger.gracefulStopTimeout" -}}
+{{- $timeout := toString (.Values.engine.gracefulStopTimeout | default "") -}}
+{{- if eq $timeout "auto" -}}
+{{- $setByUser := contains "gracefulStopTimeout" (toString (.Values.engine.configJson | default "")) -}}
+{{- range .Values.engine.args -}}
+{{- if hasPrefix "--graceful-stop-timeout" (toString .) -}}
+{{- $setByUser = true -}}
+{{- end -}}
+{{- end -}}
+{{- if not (or $setByUser .Values.engine.image.ref) -}}
+{{- $budget := sub (int .Values.engine.terminationGracePeriodSeconds) (int .Values.engine.gracefulStopMarginSeconds) -}}
+{{- if le $budget 0 -}}
+{{- fail (printf "engine.terminationGracePeriodSeconds (%v) must be greater than engine.gracefulStopMarginSeconds (%v)" .Values.engine.terminationGracePeriodSeconds .Values.engine.gracefulStopMarginSeconds) -}}
+{{- end -}}
+{{- printf "%ds" $budget -}}
+{{- end -}}
+{{- else -}}
+{{- $timeout -}}
+{{- end -}}
+{{- end }}

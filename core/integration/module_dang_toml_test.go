@@ -437,11 +437,19 @@ func dangTypePattern(pattern string) string {
 `
 }
 
+// dangInterpolation is a Dang module whose size is the length of a string
+// with `${...}` in it: 9 from Dang 2.5 on, which interpolates it, and 12
+// before, which keeps it literal.
+const dangInterpolation = `type Tiny {
+  pub size: Int! { "${12345}6789".length }
+}
+`
+
 // A Dang SDK module that declares no Dang version is pinned to the one the
 // engines of its engineVersion evaluated it as: Dang 2.1 before
-// v1.0.0-beta.28, where a type pattern may leave out the `!`, and Dang 2.4
-// from it on, where it must not. v1.0.0-beta.27 is the last version before
-// the cut.
+// v1.0.0-beta.28, where a type pattern may leave out the `!`, and Dang 2.5
+// from it on, where it must not and strings interpolate `${...}`.
+// v1.0.0-beta.27 is the last version before the cut.
 //
 // An engine caps a module's view, and so its default Dang version, at its own
 // version, so the modules run on a nested dev engine that reports
@@ -463,13 +471,17 @@ func (DangSuite) TestDangTomlTypePatternVersion(ctx context.Context, t *testctx.
 		manifest string
 		source   string
 		files    map[string]string
+		want     string // empty: "9"
 	}{
-		{name: "before Dang 2.4, bare", manifest: before, source: bare},
-		{name: "before Dang 2.4, bare, dang.toml without keys", manifest: before, source: bare, files: map[string]string{"dang.toml": ""}},
-		{name: "before Dang 2.4, banged", manifest: before, source: banged},
-		{name: "Dang 2.4, banged", manifest: from, source: banged},
-		{name: "Dang 2.4, banged, dang.toml without keys", manifest: from, source: banged, files: map[string]string{"dang.toml": ""}},
-		{name: "Dang 2.4 engine declares Dang 2.1, bare", manifest: from, source: bare, files: map[string]string{"dang.toml": "dang = \"2.1\"\n"}},
+		{name: "before Dang 2.5, bare", manifest: before, source: bare},
+		{name: "before Dang 2.5, bare, dang.toml without keys", manifest: before, source: bare, files: map[string]string{"dang.toml": ""}},
+		{name: "before Dang 2.5, banged", manifest: before, source: banged},
+		{name: "before Dang 2.5, no interpolation", manifest: before, source: dangInterpolation, want: "12"},
+		{name: "Dang 2.5, banged", manifest: from, source: banged},
+		{name: "Dang 2.5, banged, dang.toml without keys", manifest: from, source: banged, files: map[string]string{"dang.toml": ""}},
+		{name: "Dang 2.5, interpolation", manifest: from, source: dangInterpolation},
+		{name: "Dang 2.5 engine declares Dang 2.1, bare", manifest: from, source: bare, files: map[string]string{"dang.toml": "dang = \"2.1\"\n"}},
+		{name: "Dang 2.5 engine declares Dang 2.4, no interpolation", manifest: from, source: dangInterpolation, files: map[string]string{"dang.toml": "dang = \"2.4\"\n"}, want: "12"},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			out, err := dangTomlModule(t, c, tc.manifest, tc.source, tc.files).
@@ -477,7 +489,11 @@ func (DangSuite) TestDangTomlTypePatternVersion(ctx context.Context, t *testctx.
 				With(call).
 				Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "9", strings.TrimSpace(out))
+			want := tc.want
+			if want == "" {
+				want = "9"
+			}
+			require.Equal(t, want, strings.TrimSpace(out))
 		})
 	}
 
@@ -485,8 +501,8 @@ func (DangSuite) TestDangTomlTypePatternVersion(ctx context.Context, t *testctx.
 		name  string
 		files map[string]string
 	}{
-		{name: "Dang 2.4, bare"},
-		{name: "Dang 2.4, bare, dang.toml without keys", files: map[string]string{"dang.toml": ""}},
+		{name: "Dang 2.5, bare"},
+		{name: "Dang 2.5, bare, dang.toml without keys", files: map[string]string{"dang.toml": ""}},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			_, err := dangTomlModule(t, c, from, bare, tc.files).

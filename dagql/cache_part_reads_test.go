@@ -100,6 +100,10 @@ func TestCacheReportsPartsRead(t *testing.T) {
 	mu.Unlock()
 
 	cacheTestReleaseSession(t, c, ctx)
+	// A lazy evaluation's operation can still be ending when ReleaseSession
+	// returns, and the release's cleanup, which forgets the entries' reads,
+	// then runs when it ends.
+	assert.NilError(t, c.WaitSessionRelease(ctx, cacheTestSessionID(t, ctx)))
 	c.partReads.mu.Lock()
 	defer c.partReads.mu.Unlock()
 	assert.Equal(t, 0, len(c.partReads.seen), "released entries' reads are forgotten")

@@ -19,6 +19,8 @@ import (
 	"github.com/dagger/dagger/cmd/codegen/generator"
 	"github.com/dagger/dagger/cmd/codegen/generator/go/templates"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
+	"github.com/dagger/dagger/cmd/codegen/trace"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/dschmidt/go-layerfs"
 	"github.com/iancoleman/strcase"
 	"github.com/psanford/memfs"
@@ -54,7 +56,9 @@ func (g *GoGenerator) GenerateModule(ctx context.Context, schema *introspection.
 
 	genSt := &generator.GeneratedState{}
 
+	_, bootstrapSpan := trace.Tracer().Start(ctx, "bootstrap go.mod")
 	pkgInfo, partial, err := g.bootstrapMod(mfs, genSt, false)
+	telemetry.EndWithCause(bootstrapSpan, &err)
 	if err != nil {
 		return nil, fmt.Errorf("bootstrap package: %w", err)
 	}
@@ -81,7 +85,7 @@ func (g *GoGenerator) GenerateModule(ctx context.Context, schema *introspection.
 		pkgInfo.PackageName = "main"
 
 		// generate an initial dagger.gen.go from the base Dagger API
-		if err := generateCode(ctx, g.Config, schema, schemaVersion, mfs, pkgInfo, nil, nil, 0); err != nil {
+		if err := generateCodeTraced(ctx, g.Config, schema, schemaVersion, mfs, pkgInfo, nil, nil, 0); err != nil {
 			return nil, fmt.Errorf("generate code: %w", err)
 		}
 
@@ -156,10 +160,12 @@ func (g *GoGenerator) GenerateModule(ctx context.Context, schema *introspection.
 			}
 			depsJSON = string(data)
 		}
+		mergeCtx, mergeSpan := trace.Tracer().Start(ctx, "merge module types")
 		merged, err := core.NewQuery(g.Config.Dag).
 			Schema(core.JSON(depsJSON)).
 			Merge(core.JSON(moduleTypesJSON), moduleName).
-			Contents(ctx)
+			Contents(mergeCtx)
+		telemetry.EndWithCause(mergeSpan, &err)
 		if err != nil {
 			return nil, fmt.Errorf("merge module types into schema: %w", err)
 		}
@@ -172,7 +178,7 @@ func (g *GoGenerator) GenerateModule(ctx context.Context, schema *introspection.
 		generator.SetSchema(schema)
 	}
 
-	if err := generateCode(ctx, g.Config, schema, schemaVersion, mfs, pkgInfo, pkg, fset, 1); err != nil {
+	if err := generateCodeTraced(ctx, g.Config, schema, schemaVersion, mfs, pkgInfo, pkg, fset, 1); err != nil {
 		return nil, fmt.Errorf("generate code: %w", err)
 	}
 

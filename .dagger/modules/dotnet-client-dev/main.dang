@@ -35,63 +35,51 @@ type DotnetClientDev {
   let originalWorkspace: Directory! = workspaceDir
 
   let baseContainer: Container! {
-    let ctr = container
+    container
       .from(dotnetSdkImage)
       .withWorkdir("/src")
-
-    ctr = engineDev(ws: self.ws).installClient(ctr)
   }
 
-  ######################################
-  #### ### #### Public API #### ### ####
   """
-  Return the Dotnet SDK workspace mounted in a dev container,
-  and working directory set to the SDK source.
+  The Dotnet SDK workspace mounted in a container without a Dagger engine,
+  with working directory set to the SDK source, for what doesn't run a
+  Dagger client.
   """
-  pub devContainer: Container! {
+  let sdkContainer: Container! {
     baseContainer
       .withMountedDirectory(".", workspaceDir)
       .withWorkdir(sourcePath)
   }
 
+  ######################################
+  #### ### #### Public API #### ### ####
   """
-  Lint the Dotnet SDK with Csharpier (https://csharpier.com)
+  Return the Dotnet SDK workspace mounted in a dev container, with a client
+  of a dev engine built from the workspace, and working directory set to the
+  SDK source.
   """
-  pub csharpier: Void @check {
-    devContainer
-      .withExec(["dotnet", "tool", "restore"])
-      .withExec(["dotnet", "csharpier", "--check", "."])
-      .sync
-
-    null
+  pub devContainer: Container! {
+    engineDev(ws: self.ws).installClient(sdkContainer)
   }
 
   """
-  Run tests on the Dotnet SDK
+  Lint the Dotnet SDK with Csharpier (https://csharpier.com), and run its
+  tests, the source generator's among them: they are a project of its
+  solution. The two run at once.
   """
   pub test: Void @check {
-    devContainer
-      .withFile("Dagger.SDK/introspection.json", engineDev(ws: self.ws).introspectionJson)
-      .withExec(["dotnet", "restore"])
-      .withExec(["dotnet", "build", "--no-restore"])
-      .withExec(["dagger", "run", "dotnet", "test", "--no-build"])
-      .sync
-
-    null
-  }
-
-  """
-  Run source generator tests without compiling the generated SDK client.
-  """
-  pub sourceGeneratorTest: Void @check {
-    devContainer
-      .withExec([
-        "dotnet",
-        "test",
-        "Dagger.SDK.SourceGenerator.Tests/Dagger.SDK.SourceGenerator.Tests.csproj",
-      ])
-      .sync
-
+    let ran = {{
+      csharpier: sdkContainer
+        .withExec(["dotnet", "tool", "restore"])
+        .withExec(["dotnet", "csharpier", "--check", "."])
+        .sync,
+      tests: devContainer
+        .withFile("Dagger.SDK/introspection.json", engineDev(ws: self.ws).introspectionJson)
+        .withExec(["dotnet", "restore"])
+        .withExec(["dotnet", "build", "--no-restore"])
+        .withExec(["dagger", "run", "dotnet", "test", "--no-build"])
+        .sync,
+    }}
     null
   }
 

@@ -44,7 +44,6 @@ var functions = []functionSpec{
 	{Name: "clientLibrary", Receiver: "PythonClientDev", FnName: "ClientLibrary", Args: map[string]argumentSpec{}},
 	{Name: "devContainer", Receiver: "PythonClientDev", FnName: "DevContainer", Args: map[string]argumentSpec{}},
 	{Name: "docs", Receiver: "PythonClientDev", FnName: "Docs", Args: map[string]argumentSpec{}},
-	{Name: "format", Receiver: "PythonClientDev", FnName: "Format", Args: map[string]argumentSpec{"paths": {Required: false, Default: "[]", Encoding: "json"}}},
 	{Name: "lint", Receiver: "PythonClientDev", FnName: "Lint", Args: map[string]argumentSpec{"paths": {Required: false, Default: "[]", Encoding: "json"}}},
 	{Name: "lintDocsSnippets", Receiver: "PythonClientDev", FnName: "LintDocsSnippets", Args: map[string]argumentSpec{"workspace": {Required: false, Default: "", Encoding: "string"}}},
 	{Name: "provision", Receiver: "PythonClientDev", FnName: "Provision", Args: map[string]argumentSpec{"cliBin": {Required: false, Default: "", Encoding: "string"}, "runnerHost": {Required: false, Default: "", Encoding: "string"}}},
@@ -98,6 +97,7 @@ func main() {
 	default:
 		err = fmt.Errorf("unknown mode %q", os.Args[1])
 	}
+
 	// fatalf exits without running deferred calls, so spans are flushed first.
 	telemetry.Close()
 	if err != nil {
@@ -116,6 +116,7 @@ func fatalf(format string, args ...any) {
 	}
 	encoded, _ := json.Marshal(reported)
 	fmt.Fprintf(os.Stderr, "%s\n%s%s\n", message, "::dagger-function-error::", encoded)
+
 	os.Exit(2)
 }
 

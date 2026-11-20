@@ -133,6 +133,10 @@ func (ms *mockServer) CurrentFunctionCall(context.Context) (*FunctionCall, error
 	return ms.functionCall, nil
 }
 
+func (ms *mockServer) EnclosingFunctionCall(ctx context.Context) (*FunctionCall, error) {
+	return ms.CurrentFunctionCall(ctx)
+}
+
 func (ms *mockServer) CurrentServedDeps(context.Context) (*SchemaBuilder, error) {
 	return NewSchemaBuilder(nil, nil), nil
 }
@@ -213,7 +217,6 @@ func (ms *mockServer) MCPSessions(context.Context) (*MCPSessions, error) { retur
 
 func (ms *mockServer) Platform() Platform                  { return Platform{} }
 func (ms *mockServer) OCIStore() content.Store             { return nil }
-func (ms *mockServer) BuiltinOCIStore() content.Store      { return nil }
 func (ms *mockServer) DNS() *oci.DNSConfig                 { return nil }
 func (ms *mockServer) LeaseManager() *bkcache.LeaseManager { return nil }
 func (ms *mockServer) EngineLocalCacheEntries(context.Context) (*EngineCacheEntrySet, error) {

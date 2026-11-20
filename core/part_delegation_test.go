@@ -103,7 +103,6 @@ func TestPartDelegationRealStore(t *testing.T) {
 			observed := &partObservedManager{SnapshotManager: bStore.Manager}
 			bStore.Manager = observed
 			bctx, b, bsrv := transferCache(t, bStore, filepath.Join(t.TempDir(), "b.db"), "b")
-			b.EnableTransferFixtureParts()
 			if mode != "pending-parent" && mode != "child-chain-first" && mode != "late-child" && mode != "child-and-parent-failure" {
 				localRef, _ := bStore.Build(t, nil, "payload", "delegated bytes")
 				local := NewContainer(base.Platform)
@@ -199,7 +198,7 @@ func TestPartDelegationRealStore(t *testing.T) {
 				snapshot, ok := dir.Snapshot.Peek()
 				require.True(t, ok)
 				testutil.CheckFile(t, snapshot, "payload", "delegated bytes")
-				assertDelegationReport(t, bctx, b, provider, mode, imported[0].ResultID)
+				assertDelegationRoute(t, bctx, b, bsrv, provider, mode, parentID, snapshot.SnapshotID())
 				return nil
 			}))
 		})
@@ -271,28 +270,24 @@ func testChildAndParentChainFailure(t *testing.T, bctx context.Context, b *dagql
 	require.EqualValues(t, 2, provider.Reads.Load())
 }
 
-// assertDelegationReport checks the fixture's part events for the mode: one
-// delegation installation on the child unless a donor or the child's own chain
-// served the part, and chain reads only where the parent was pending.
-func assertDelegationReport(t *testing.T, bctx context.Context, b *dagql.Cache, provider *testutil.Provider, mode string, childID uint64) {
+// assertDelegationRoute checks the route that served the child's fs for the
+// mode: delegation installs the exact parent's fs snapshot, unless a donor or
+// the child's own chain served the part, and chain reads happen only where the
+// parent was pending.
+func assertDelegationRoute(t *testing.T, bctx context.Context, b *dagql.Cache, bsrv *dagql.Server, provider *testutil.Provider, mode string, parentID uint64, childSnapshot string) {
 	t.Helper()
-	report, err := b.TransferFixtureSnapshot(bctx, "b", nil)
+	parent, err := b.LoadResultByResultID(bctx, "", bsrv, parentID)
 	require.NoError(t, err)
-	installs := 0
-	for _, event := range report.Parts {
-		if event.Kind == "installed-delegation" {
-			installs++
-			require.Equal(t, childID, event.ResultID)
-			require.NotNil(t, event.Source)
-			require.Equal(t, dagql.PersistedPartAddress{Part: "fs"}, event.Source.Address)
-		} else if event.Kind != "selected-delegation" {
-			require.Nil(t, event.Source)
-		}
+	record, err := b.CapturePersistedRecord(bctx, parent)
+	require.NoError(t, err)
+	shared := false
+	for _, link := range record.SnapshotLinks {
+		shared = shared || link.RefKey == childSnapshot
 	}
 	if mode == "ordinary-ready-tie" || mode == "child-chain-first" || mode == "late-child" {
-		require.Zero(t, installs)
+		require.False(t, shared, "the child's fs came from a donor or its own chain, not its parent")
 	} else {
-		require.Equal(t, 1, installs)
+		require.True(t, shared, "the child's fs is its parent's, by delegation")
 	}
 	if mode == "pending-parent" || mode == "child-chain-first" || mode == "late-child" {
 		require.Positive(t, provider.Reads.Load())
@@ -325,14 +320,19 @@ func testNativeDelegationRestart(t *testing.T, store *testutil.Store, snapshotID
 	observed := &partObservedManager{SnapshotManager: store.Manager}
 	store.Manager = observed
 	ctx, cache, srv = transferCache(t, store, path, "reopened")
-	cache.EnableTransferFixtureParts()
 	require.Zero(t, observed.bodies.Load())
 	loaded, err := cache.LoadResultByResultID(ctx, "", srv, id)
 	require.NoError(t, err)
-	report, err := cache.TransferFixtureSnapshot(ctx, "reopened", nil)
-	require.NoError(t, err)
-	for _, row := range report.Rows {
-		require.False(t, row.Imported)
+	for row := id; ; {
+		value, err := cache.LoadResultByResultID(ctx, "", srv, row)
+		require.NoError(t, err)
+		record, err := cache.CapturePersistedRecord(ctx, value)
+		require.NoError(t, err)
+		require.False(t, record.Envelope.Imported, "native row %d restored as imported", row)
+		if record.Call.Receiver == nil {
+			break
+		}
+		row = record.Call.Receiver.ResultID
 	}
 	started := time.Now()
 	observed.ownerAttempts.Store(0)
@@ -340,15 +340,6 @@ func testNativeDelegationRestart(t *testing.T, store *testutil.Store, snapshotID
 	require.NoError(t, cache.EvaluateParts(ctx, loaded, ContainerPartFS))
 	t.Logf("native delegation depth=%d bookkeeping latency=%s pins=%d owner-syncs=%d independent-accessor-refs=%d", depth, time.Since(started), observed.pins.Load(), observed.ownerAttempts.Load(), observed.accessorRefs.Load())
 	require.EqualValues(t, depth, observed.pins.Load())
-	report, err = cache.TransferFixtureSnapshot(ctx, "reopened", nil)
-	require.NoError(t, err)
-	installs := 0
-	for _, event := range report.Parts {
-		if event.Kind == "installed-delegation" {
-			installs++
-		}
-	}
-	require.Equal(t, depth, installs)
 	record, err := cache.CapturePersistedRecord(ctx, loaded)
 	require.NoError(t, err)
 	require.Equal(t, snapshotID, record.SnapshotLinks[0].RefKey)

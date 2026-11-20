@@ -1,0 +1,97 @@
+package tracesource
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net/http"
+	"testing"
+
+	"github.com/dagger/dagger/engine/archive"
+	"github.com/stretchr/testify/require"
+)
+
+func TestSelectOnlyFallsBackBeforeImport(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		err      error
+		fallback bool
+	}{
+		{"miss", archive.ErrCleanMiss, true},
+		{"unavailable", archive.ErrTransient, true},
+		{"unsupported", &archive.RequestError{Kind: archive.ErrorTransient, StatusCode: http.StatusNotImplemented}, true},
+		{"corrupt", archive.ErrCorrupt, false},
+		{"state", archive.ErrState, false},
+		{"unauthorized", &archive.RequestError{Kind: archive.ErrorTransient, StatusCode: http.StatusUnauthorized}, false},
+		{"forbidden", &archive.RequestError{Kind: archive.ErrorTransient, StatusCode: http.StatusForbidden}, false},
+		{"bad request", &archive.RequestError{Kind: archive.ErrorTransient, StatusCode: http.StatusBadRequest}, false},
+		{"canceled", errors.Join(archive.ErrTransient, context.Canceled), false},
+		{"deadline", errors.Join(archive.ErrTransient, context.DeadlineExceeded), false},
+		{"unknown", errors.New("connection configuration invalid"), false},
+		{"engine unavailable", fmt.Errorf("%w: %w", ErrEngineUnavailable, errors.New("no container runtime")), true},
+		{"engine connect timeout", fmt.Errorf("%w: %w", ErrEngineUnavailable, context.DeadlineExceeded), true},
+		// A nested client is never asked: the CLI reports it as unavailable
+		// before connecting, while a refusal it did receive stays final.
+		{"nested client", fmt.Errorf("%w: nested client", ErrEngineUnavailable), true},
+		{"nested client refused", &archive.RequestError{Kind: archive.ErrorTransient, StatusCode: http.StatusUnauthorized, Err: errors.New("archive API requires main client authority")}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			opened, closed := false, false
+			_, _, err := Select(t.Context(), func(context.Context) (Source, func() error, error) {
+				return nil, func() error { closed = true; return nil }, tc.err
+			}, func(context.Context) (Source, func() error, error) {
+				require.True(t, closed)
+				opened = true
+				return nil, nil, nil
+			})
+			require.Equal(t, tc.fallback, opened)
+			if !tc.fallback {
+				require.ErrorIs(t, err, tc.err)
+			}
+		})
+	}
+}
+
+func TestSelectFallbackFailureNamesLocalFailure(t *testing.T) {
+	local := fmt.Errorf("%w: %w", ErrEngineUnavailable, errors.New("no container runtime"))
+	remote := errors.New("cloud auth: not logged in")
+	_, close, err := Select(t.Context(), func(context.Context) (Source, func() error, error) {
+		return nil, nil, local
+	}, func(context.Context) (Source, func() error, error) {
+		return nil, nil, remote
+	})
+	require.Nil(t, close)
+	require.ErrorIs(t, err, remote)
+	require.ErrorContains(t, err, "no container runtime")
+	require.NotErrorIs(t, err, ErrEngineUnavailable, "the local failure is context, not the error's cause")
+}
+
+func TestSelectPinsAndCleanup(t *testing.T) {
+	remote := func(context.Context) (Source, func() error, error) {
+		t.Fatal("must not open Cloud")
+		return nil, nil, nil
+	}
+	t.Run("cancellation", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+		_, _, err := Select(ctx, func(context.Context) (Source, func() error, error) { return nil, nil, archive.ErrCleanMiss }, remote)
+		require.Error(t, err)
+	})
+	t.Run("cleanup failure", func(t *testing.T) {
+		failure := errors.New("engine close")
+		_, _, err := Select(t.Context(), func(context.Context) (Source, func() error, error) {
+			return nil, func() error { return failure }, archive.ErrCleanMiss
+		}, remote)
+		require.ErrorIs(t, err, failure)
+	})
+	t.Run("local lifetime", func(t *testing.T) {
+		closed := false
+		_, close, err := Select(t.Context(), func(context.Context) (Source, func() error, error) {
+			return nil, func() error { closed = true; return nil }, nil
+		}, remote)
+		require.NoError(t, err)
+		require.False(t, closed, "selection must keep the source alive for lazy reads")
+		require.NoError(t, close())
+		require.True(t, closed)
+	})
+}

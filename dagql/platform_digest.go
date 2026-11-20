@@ -54,7 +54,9 @@ type BuildPlatform struct {
 //
 // An input's content digest counts only once it is known: a declaration
 // made before an input learns its content is identified by the input's
-// recipe, and doesn't find one made after.
+// recipe, and doesn't find one made after. A declaration can take the later
+// identity too by computing this again once its inputs are evaluated, as
+// Directory.withPlatform's result does when it is evaluated.
 func (c *Cache) PlatformDigest(frame *ResultCall, platform string, build BuildPlatform) (digest.Digest, error) {
 	walk := &platformDigestWalk{cache: c, build: build, frames: map[platformDigestKey]digest.Digest{}, results: map[uint64]*ResultCall{}}
 	dig, err := walk.digest(frame, false)

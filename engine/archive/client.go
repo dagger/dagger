@@ -1,6 +1,7 @@
 package archive
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -139,7 +140,7 @@ type UnsealedArchive struct {
 // with an ErrState request error for any other state, including a sealed
 // (closed) archive.
 func (c *Client) Unsealed(ctx context.Context, traceID string) (UnsealedArchive, error) {
-	resp, err := c.get(ctx, archivePath+"/"+url.PathEscape(traceID), url.Values{"unsealed": {"1"}}, "application/json", 0)
+	resp, err := c.get(ctx, archivePath+"/"+url.PathEscape(traceID), url.Values{"unsealed": {"1"}}, "application/json")
 	if err != nil {
 		return UnsealedArchive{}, err
 	}
@@ -157,6 +158,31 @@ func (c *Client) Unsealed(ctx context.Context, traceID string) (UnsealedArchive,
 	return UnsealedArchive{Cut: manifest.HighWater}, nil
 }
 
+// Inspect discovers a sealed archive's identity and fixed cut without
+// downloading the bootstrap or historical telemetry. Any other state fails
+// with an ErrState request error; see Unsealed for a best-effort read.
+func (c *Client) Inspect(ctx context.Context, traceID string) (Manifest, error) {
+	resp, err := c.get(ctx, archivePath+"/"+url.PathEscape(traceID), nil, "application/json")
+	if err != nil {
+		return Manifest{}, err
+	}
+	defer resp.Body.Close()
+	if err := expectOK(resp); err != nil {
+		return Manifest{}, err
+	}
+	if err := expectContentType(resp, "application/json"); err != nil {
+		return Manifest{}, corrupt(err)
+	}
+	var m Manifest
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&m); err != nil {
+		return Manifest{}, corrupt(fmt.Errorf("decode archive manifest: %w", err))
+	}
+	if m.TraceID != traceID || m.State != StateClosed || m.SealAt == nil || m.HighWater.Spans < 0 || m.HighWater.Logs < 0 || m.HighWater.Metrics < 0 {
+		return Manifest{}, corrupt(errors.New("archive manifest identity, state or cut mismatch"))
+	}
+	return m, nil
+}
+
 // List returns one page of archives.
 func (c *Client) List(ctx context.Context, opts ListOptions) (Page, error) {
 	query := make(url.Values)
@@ -166,7 +192,7 @@ func (c *Client) List(ctx context.Context, opts ListOptions) (Page, error) {
 	if opts.Limit != 0 {
 		query.Set("limit", strconv.Itoa(opts.Limit))
 	}
-	resp, err := c.get(ctx, archivePath, query, "application/json", 0)
+	resp, err := c.get(ctx, archivePath, query, "application/json")
 	if err != nil {
 		return Page{}, err
 	}
@@ -230,7 +256,7 @@ type BootstrapResult struct {
 // telemetry. The engine verified the roster and recipe closure when it built
 // the bootstrap.
 func (c *Client) Bootstrap(ctx context.Context, traceID string, consume func(BootstrapHeader, BootstrapBatch) error) (BootstrapResult, error) {
-	resp, err := c.get(ctx, archiveResourcePath(traceID, AgentBootstrapResource), nil, BootstrapContentType, 0)
+	resp, err := c.get(ctx, archiveResourcePath(traceID, AgentBootstrapResource), nil, BootstrapContentType)
 	if err != nil {
 		return BootstrapResult{}, err
 	}
@@ -278,6 +304,10 @@ type StreamOptions struct {
 	Cursor    int64
 	HighWater int64
 	Unsealed  bool
+	// Selections are independent reads; resume a cursor only with the same selection.
+	Spans   *SpanSelection
+	Logs    *LogSelection
+	Metrics *MetricSelection
 }
 
 // Traces reads a finite framed trace stream. It returns the last safe resume
@@ -325,15 +355,82 @@ func (c *Client) Metrics(ctx context.Context, traceID string, opts StreamOptions
 }
 
 func (c *Client) stream(ctx context.Context, traceID, signal string, opts StreamOptions, consume func(int64, []byte) error) (int64, error) {
+	return c.streamBody(ctx, traceID, signal, opts, nil, consume)
+}
+
+// LogQuery reads the display text of the spans q names (see LogQuery) at the
+// archive's fixed cut, opts.HighWater. opts carries no other selection.
+// q.Follow is ignored: archives are finite. It returns the last safe resume
+// cursor.
+func (c *Client) LogQuery(ctx context.Context, traceID string, opts StreamOptions, q LogQuery, consume func(int64, *collogspb.ExportLogsServiceRequest) error) (int64, error) {
+	if opts.Spans != nil || opts.Logs != nil {
+		return opts.Cursor, errors.New("a log query excludes stream selections")
+	}
+	if err := q.Validate(); err != nil {
+		return opts.Cursor, err
+	}
+	body, err := json.Marshal(q)
+	if err != nil {
+		return opts.Cursor, err
+	}
+	return c.streamBody(ctx, traceID, "logs", opts, body, func(cursor int64, payload []byte) error {
+		batch := &collogspb.ExportLogsServiceRequest{}
+		if err := proto.Unmarshal(payload, batch); err != nil {
+			return corrupt(fmt.Errorf("decode archive logs: %w", err))
+		}
+		if consume == nil {
+			return nil
+		}
+		return consume(cursor, batch)
+	})
+}
+
+// SearchLogs searches an archive's display text up to its cut. unsealed reads
+// an interrupted archive, as StreamOptions.Unsealed.
+func (c *Client) SearchLogs(ctx context.Context, traceID string, unsealed bool, search LogSearch) (LogSearchResult, error) {
+	if _, err := search.Matcher(); err != nil {
+		return LogSearchResult{}, err
+	}
+	body, err := json.Marshal(search)
+	if err != nil {
+		return LogSearchResult{}, err
+	}
+	query := url.Values{}
+	if unsealed {
+		query.Set("unsealed", "1")
+	}
+	resp, err := c.do(ctx, http.MethodPost, archiveResourcePath(traceID, "search"), query, body, "application/json", 0)
+	if err != nil {
+		return LogSearchResult{}, err
+	}
+	defer resp.Body.Close()
+	if err := expectOK(resp); err != nil {
+		return LogSearchResult{}, err
+	}
+	var result LogSearchResult
+	if err := json.NewDecoder(io.LimitReader(resp.Body, MaxLogQueryBytes*8)).Decode(&result); err != nil {
+		return LogSearchResult{}, corrupt(fmt.Errorf("decode archive search: %w", err))
+	}
+	return result, nil
+}
+
+func (c *Client) streamBody(ctx context.Context, traceID, signal string, opts StreamOptions, body []byte, consume func(int64, []byte) error) (int64, error) {
 	cursor := opts.Cursor
 	if cursor < 0 || opts.HighWater < 0 || cursor > opts.HighWater {
 		return cursor, fmt.Errorf("invalid archive stream cursors: cursor=%d high-water=%d", cursor, opts.HighWater)
 	}
-	query := make(url.Values)
+	query, err := opts.SelectionQuery(signal)
+	if err != nil {
+		return cursor, err
+	}
 	if opts.Unsealed {
 		query.Set("unsealed", "1")
 	}
-	resp, err := c.get(ctx, archiveResourcePath(traceID, signal), query, enginetel.LiveContentType, cursor)
+	method := http.MethodGet
+	if body != nil {
+		method = http.MethodPost
+	}
+	resp, err := c.do(ctx, method, archiveResourcePath(traceID, signal), query, body, enginetel.LiveContentType, cursor)
 	if err != nil {
 		return cursor, err
 	}
@@ -343,6 +440,11 @@ func (c *Client) stream(ctx context.Context, traceID, signal string, opts Stream
 	}
 	if err := expectContentType(resp, enginetel.LiveContentType); err != nil {
 		return cursor, corrupt(err)
+	}
+	if opts.Metrics != nil && !selectionApplied(resp, SelectionMetrics) {
+		// An older engine ignored the selection and is streaming every
+		// metric: stop before reading any of it.
+		return cursor, fmt.Errorf("%w: metric names", ErrSelectionUnsupported)
 	}
 
 	for {
@@ -385,17 +487,30 @@ func (c *Client) stream(ctx context.Context, traceID, signal string, opts Stream
 	}
 }
 
-// get issues one GET against the archive API. Every archive read is a GET.
-func (c *Client) get(ctx context.Context, path string, query url.Values, accept string, cursor int64) (*http.Response, error) {
+// get issues one GET against the archive API.
+func (c *Client) get(ctx context.Context, path string, query url.Values, accept string) (*http.Response, error) {
+	return c.do(ctx, http.MethodGet, path, query, nil, accept, 0)
+}
+
+// do issues one request against the archive API. Every archive read is a GET
+// except multi-span log reads and searches, which POST their JSON selection.
+func (c *Client) do(ctx context.Context, method, path string, query url.Values, body []byte, accept string, cursor int64) (*http.Response, error) {
 	if c == nil || c.http == nil || c.baseURL == nil {
 		return nil, transient(errors.New("archive HTTP client is not configured"))
 	}
 	target := *c.baseURL
 	target.Path = strings.TrimRight(target.Path, "/") + path
 	target.RawQuery = query.Encode()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), nil)
+	var reqBody io.Reader
+	if body != nil {
+		reqBody = bytes.NewReader(body)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, target.String(), reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("create archive request: %w", err)
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", LogQueryContentType)
 	}
 	if accept != "" {
 		req.Header.Set("Accept", accept)
@@ -446,6 +561,19 @@ func expectOK(resp *http.Response) error {
 		Kind: kind, Failure: failure.Failure, State: failure.State,
 		StatusCode: resp.StatusCode, Err: errors.New(message),
 	}
+}
+
+// selectionApplied reports whether the response lists selection in its
+// SelectionHeader.
+func selectionApplied(resp *http.Response, selection string) bool {
+	for _, value := range resp.Header.Values(SelectionHeader) {
+		for _, applied := range strings.Split(value, ",") {
+			if strings.TrimSpace(applied) == selection {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func expectContentType(resp *http.Response, want string) error {

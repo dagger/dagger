@@ -3,6 +3,7 @@ package daggercmd
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"slices"
 	"time"
 
@@ -26,11 +27,22 @@ var oauthProviders = []string{"anthropic", "openai-codex"}
 // cannot be parsed (llmconfig.ErrMalformed) fails the command instead:
 // dropping it would silently route differently from what the user asked for.
 func assembleLLMConfig() (*engine.LLMConfig, error) {
+	policy, err := cliHostPolicy()
+	if err != nil {
+		return nil, err
+	}
 	cwd, err := os.Getwd()
 	if err != nil {
 		cwd = "." // the same directory, by a relative name
 	}
-	cfg, warnings, err := llmconfig.Assemble(cwd)
+	var cfg *engine.LLMConfig
+	var warnings []error
+	if policy.AllowsRead(filepath.Join(cwd, ".env")) {
+		cfg, warnings, err = llmconfig.Assemble(cwd)
+	} else {
+		// The CLI reads .env itself, so the host policy must allow it here.
+		cfg, warnings, err = llmconfig.AssembleWithoutDotEnv()
+	}
 	for _, w := range warnings {
 		slog.Warn("ignoring unreadable LLM configuration", "error", w)
 	}

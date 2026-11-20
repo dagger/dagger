@@ -33,6 +33,7 @@ func TestPromptSlashCommandMapping(t *testing.T) {
 		{"/config", "", false},
 		{"/show-config", "", false},
 		{"/logout", ".logout", true},
+		{"/backfill", ".backfill", true},
 		{"/add-key anthropic", "", false},
 		{"/remove-key openai", "", false},
 		{"/set-default openai-codex gpt-6-astra", "", false},

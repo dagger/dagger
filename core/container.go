@@ -430,6 +430,7 @@ type ContainerWithMountedTempLazy struct {
 	Parent dagql.ObjectResult[*Container]
 	Target string
 	Size   int
+	Disk   bool
 }
 
 // ContainerWithMountedSecretLazy resolves named ownership in its metadata
@@ -534,6 +535,10 @@ type MountedFile struct {
 type TmpfsMountSource struct {
 	// Configure the size of the mounted tmpfs in bytes.
 	Size int
+	// Disk keeps the temporary directory on the engine's disk instead of in
+	// memory: an empty directory of its own for each process, removed in the
+	// background once the process ends. Size doesn't apply to it.
+	Disk bool
 }
 
 type ContainerMounts []ContainerMount
@@ -545,6 +550,7 @@ type persistedContainerMountPayload struct {
 	CacheSourceResultID  uint64 `json:"cacheSourceResultID,omitempty"`
 	VolumeSourceResultID uint64 `json:"volumeSourceResultID,omitempty"`
 	TmpfsSize            int    `json:"tmpfsSize,omitempty"`
+	TmpfsDisk            bool   `json:"tmpfsDisk,omitempty"`
 	// FilesSourceResultIDs and FilesSourceNames pair up, one per file.
 	FilesSourceResultIDs []uint64 `json:"filesSourceResultIDs,omitempty"`
 	FilesSourceNames     []string `json:"filesSourceNames,omitempty"`
@@ -866,6 +872,7 @@ type persistedContainerWithMountedTempLazy struct {
 	ParentResultID uint64 `json:"parentResultID"`
 	Target         string `json:"target"`
 	Size           int    `json:"size,omitempty"`
+	Disk           bool   `json:"disk,omitempty"`
 }
 
 type persistedContainerWithMountedSecretLazy struct {
@@ -1714,6 +1721,7 @@ func (container *Container) encodeContainerMetadata(enc *dagql.PersistEncodeCont
 		case mnt.TmpfsSource != nil:
 			encoded.Kind = persistedContainerMountKindTmpfs
 			encoded.TmpfsSize = mnt.TmpfsSource.Size
+			encoded.TmpfsDisk = mnt.TmpfsSource.Disk
 		default:
 			return persistedContainerMetadataValue{}, fmt.Errorf("encode persisted container mount %q: unsupported mount source", mnt.Target)
 		}
@@ -1781,7 +1789,7 @@ func decodePersistedContainerResources(ctx context.Context, dec *dagql.PersistDe
 			}
 			mnt.FilesSource = &FilesMountSource{Files: files}
 		case persistedContainerMountKindTmpfs:
-			mnt.TmpfsSource = &TmpfsMountSource{Size: persistedMount.TmpfsSize}
+			mnt.TmpfsSource = &TmpfsMountSource{Size: persistedMount.TmpfsSize, Disk: persistedMount.TmpfsDisk}
 		default:
 			return nil, nil, nil, fmt.Errorf("decode persisted container mount %q: unsupported kind %q", persistedMount.Target, persistedMount.Kind)
 		}
@@ -4529,7 +4537,7 @@ func (lazy *ContainerWithMountedTempLazy) ContainerLazyGroups(_ context.Context,
 
 func (lazy *ContainerWithMountedTempLazy) EvaluateContainerGroup(ctx context.Context, container *Container, group dagql.LazyGroupKey) error {
 	return evaluateTemplateAContainerGroup(ctx, lazy, "Container.withMountedTemp", container, lazy.Parent, group, func(ctx context.Context) error {
-		_, err := container.WithMountedTemp(ctx, lazy.Target, lazy.Size)
+		_, err := container.WithMountedTemp(ctx, lazy.Target, lazy.Size, lazy.Disk)
 		return err
 	})
 }
@@ -4552,6 +4560,7 @@ func (lazy *ContainerWithMountedTempLazy) EncodePersisted(ctx context.Context, e
 		ParentResultID: parentID,
 		Target:         lazy.Target,
 		Size:           lazy.Size,
+		Disk:           lazy.Disk,
 	})
 }
 
@@ -4874,9 +4883,6 @@ func decodePersistedContainerRecipe(
 	payload json.RawMessage,
 ) (Lazy[*Container], error) {
 	switch call.Field {
-	case "_builtinContainer":
-		return decodeContainerBuiltinLazy(payload)
-
 	case "withEntrypoint":
 		var persisted persistedContainerWithEntrypointLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
@@ -5520,6 +5526,7 @@ func decodePersistedContainerRecipe(
 			Parent:    parent,
 			Target:    persisted.Target,
 			Size:      persisted.Size,
+			Disk:      persisted.Disk,
 		}, nil
 	case "withMountedSecret":
 		var persisted persistedContainerWithMountedSecretLazy
@@ -6699,13 +6706,14 @@ func (container *Container) WithMountedFiles(
 }
 
 // mutates container caller must have handled cloning or creating a new child.
-func (container *Container) WithMountedTemp(ctx context.Context, target string, size int) (*Container, error) {
+func (container *Container) WithMountedTemp(ctx context.Context, target string, size int, disk bool) (*Container, error) {
 	target = absPath(container.Config.WorkingDir, target)
 
 	container.Mounts = container.Mounts.With(ContainerMount{
 		Target: target,
 		TmpfsSource: &TmpfsMountSource{
 			Size: size,
+			Disk: disk,
 		},
 	})
 

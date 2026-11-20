@@ -1,0 +1,10 @@
+kind: Fixed
+body: |
+  `GitRef.push` without `to` now applies the caller's `pushInsteadOf`/`insteadOf`
+  to a remote's fetch URL, as git does, so a workspace checked out from an HTTPS
+  URL pushes over SSH when the host routes it that way. A remote's push URL is
+  still used as is.
+time: 2026-11-16T22:00:00-08:00
+custom:
+  Author: vito
+  PR: 15195

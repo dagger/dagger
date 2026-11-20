@@ -367,6 +367,129 @@ func TestOTLPStaticCredentialsRemainUnauthorized(t *testing.T) {
 	}
 }
 
+// TestFetchKeepsReadingWhileTheSinkIsSlow: Cloud ends a stream the client
+// has stopped reading for about 30 seconds, without a terminal frame; the
+// server here does the same with a shorter deadline on each frame write. A
+// sink that imports more slowly than the network delivers, such
+// as `dagger trace` rendering a large trace, must not stop the reading:
+// otherwise the stream is cut partway once the sink pauses past the deadline.
+func TestFetchKeepsReadingWhileTheSinkIsSlow(t *testing.T) {
+	t.Parallel()
+
+	// Far more than the loopback socket buffers hold, so a client that stops
+	// reading blocks the server's writes.
+	const frames, frameSize = 48, 512 << 10
+	var serverErr atomic.Pointer[error]
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", otlpstream.ContentType)
+		rc := http.NewResponseController(w)
+		fw := otlpstream.NewFrameWriter(w)
+		write := func(f func() error) bool {
+			if err := rc.SetWriteDeadline(time.Now().Add(250 * time.Millisecond)); err != nil {
+				serverErr.Store(&err)
+				return false
+			}
+			err := f()
+			if err == nil {
+				err = rc.Flush()
+			}
+			if err != nil {
+				serverErr.Store(&err)
+				return false
+			}
+			return true
+		}
+		payload := make([]byte, frameSize)
+		for range frames {
+			if !write(func() error { return fw.WriteData(payload) }) {
+				return
+			}
+		}
+		write(fw.WriteTerminal)
+	}))
+	t.Cleanup(srv.Close)
+
+	c := testOTLPClient(t, srv, 0)
+
+	var payloads int
+	err := c.consumeStream(t.Context(), otlpTraces, "large-trace", nil, func([]byte) error {
+		payloads++
+		if payloads == 1 {
+			// A sink pause four times the server's write deadline.
+			time.Sleep(time.Second)
+		}
+		return nil
+	})
+	if p := serverErr.Load(); p != nil {
+		t.Logf("server write failed: %v", *p)
+	}
+	require.NoError(t, err)
+	require.Equal(t, frames, payloads)
+	require.Nil(t, serverErr.Load(), "the server's writes timed out: the client stopped reading")
+}
+
+// TestSlowSinkIsNotAStall: the watchdog judges the network alone. A sink
+// that takes longer than the stall window over one payload, while the whole
+// stream has already arrived, is not a stalled server.
+func TestSlowSinkIsNotAStall(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(framedHandler(func(fw *otlpstream.FrameWriter, flush func()) {
+		_ = fw.WriteData([]byte("payload-1"))
+		_ = fw.WriteData([]byte("payload-2"))
+		_ = fw.WriteTerminal()
+		flush()
+	}))
+	t.Cleanup(srv.Close)
+
+	c := testOTLPClient(t, srv, 100*time.Millisecond)
+
+	var payloads int
+	err := c.consumeStream(t.Context(), otlpTraces, "slow-sink-trace", nil, func([]byte) error {
+		payloads++
+		if payloads == 1 {
+			time.Sleep(500 * time.Millisecond)
+		}
+		return nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, 2, payloads)
+}
+
+// TestCancelStopsTheBacklog: a fetch canceled while the sink is behind
+// returns the cancellation at once, rather than feeding the sink everything
+// already queued and reporting success.
+func TestCancelStopsTheBacklog(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(framedHandler(func(fw *otlpstream.FrameWriter, flush func()) {
+		for i := range 3 {
+			_ = fw.WriteData([]byte(fmt.Sprintf("payload-%d", i+1)))
+		}
+		_ = fw.WriteTerminal()
+		flush()
+	}))
+	t.Cleanup(srv.Close)
+
+	c := testOTLPClient(t, srv, 0)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	var payloads int
+	err := c.consumeStream(ctx, otlpTraces, "canceled-trace", nil, func([]byte) error {
+		payloads++
+		if payloads == 1 {
+			// The whole stream is queued by now; cancel while the sink is
+			// still on its first payload.
+			time.Sleep(200 * time.Millisecond)
+			cancel()
+		}
+		return nil
+	})
+	require.ErrorIs(t, err, context.Canceled)
+	require.Equal(t, 1, payloads, "the queued payloads must not reach the sink after cancellation")
+}
+
 func TestStallWatchdogCountsHeartbeatsAsProgress(t *testing.T) {
 	t.Parallel()
 

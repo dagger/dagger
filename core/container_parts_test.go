@@ -330,7 +330,7 @@ func TestContainerMetadataOnlyMountMutationParts(t *testing.T) {
 		{
 			name: "mounted temp",
 			apply: func(t *testing.T, ctx context.Context, _ *dagql.Cache, _ *dagql.Server, _ string, parent dagql.ObjectResult[*Container], child *Container) Lazy[*Container] {
-				_, err := child.WithMountedTemp(ctx, "/tmp", 1024)
+				_, err := child.WithMountedTemp(ctx, "/tmp", 1024, false)
 				require.NoError(t, err)
 				return &ContainerWithMountedTempLazy{LazyState: NewLazyState(), Parent: parent, Target: "/tmp", Size: 1024}
 			},

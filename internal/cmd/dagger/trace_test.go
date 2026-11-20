@@ -3,25 +3,30 @@ package daggercmd
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
+	"github.com/dagger/dagger/engine/archive"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/internal/cloud"
 	"github.com/dagger/dagger/internal/cloud/auth"
 	"github.com/dagger/dagger/internal/cloud/otlpstream"
+	"github.com/dagger/dagger/internal/tracesource"
 	"github.com/dagger/dagger/util/cleanups"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
@@ -30,6 +35,41 @@ import (
 	"golang.org/x/oauth2"
 	"google.golang.org/protobuf/proto"
 )
+
+type sealedTraceSource struct {
+	tracesource.Source
+	seal time.Time
+}
+
+func (s sealedTraceSource) SealTime() time.Time { return s.seal }
+
+func TestTraceLoaderUsesArchiveSeal(t *testing.T) {
+	loader, db, _ := testTraceLoader(t)
+	seal := time.Unix(123, 0)
+	loader.client = sealedTraceSource{seal: seal}
+	span := &tracepb.Span{SpanId: []byte{1, 2, 3, 4, 5, 6, 7, 8}, StartTimeUnixNano: uint64(time.Unix(100, 0).UnixNano())}
+	require.NoError(t, loader.ingest(t.Context(), spanExport(span)))
+	require.NoError(t, loader.seal(t.Context()))
+	for _, got := range db.Spans.Map {
+		require.Equal(t, seal, got.EndTime)
+	}
+}
+
+func TestTraceLoaderIgnoresRequestsAfterClose(t *testing.T) {
+	loader, _, _ := testTraceLoader(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	loader.ctx = ctx
+	var fg fetchGroup
+	id := dagui.SpanID{}
+	id.SpanID[0] = 1
+	loader.fetchLogs(&fg, id, false)
+	loader.listen(id)
+	require.NoError(t, fg.Wait())
+	require.NoError(t, loader.wait())
+	require.Empty(t, loader.logReq)
+	require.Empty(t, loader.pending)
+}
 
 func TestTraceUsesGlobalFrontendOpts(t *testing.T) {
 	prevFrontend := Frontend
@@ -294,6 +334,159 @@ func TestTraceLoaderFetchLogs(t *testing.T) {
 	mu.Unlock()
 }
 
+// logSource serves each span's selected records, and reports what each
+// request's callback kept of them.
+type logSource struct {
+	tracesource.Source
+	records map[string][]*logspb.LogRecord // span_id -> records it selects
+	// fail holds the errors a span's next requests fail with, before
+	// importing anything.
+	fail map[string][]error
+	// started, when set, makes every request signal it, then block until
+	// cancelled.
+	started chan struct{}
+	mu      sync.Mutex
+	sels    []cloud.LogSelection
+	kept    [][]byte // span IDs of the records the callbacks left to import
+}
+
+func (s *logSource) FetchLogs(ctx context.Context, _ string, sel cloud.LogSelection, cb func(context.Context, *collogspb.ExportLogsServiceRequest) error) error {
+	if s.started != nil {
+		close(s.started)
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	s.mu.Lock()
+	s.sels = append(s.sels, sel)
+	var fail error
+	if errs := s.fail[sel.SpanID]; len(errs) > 0 {
+		fail, s.fail[sel.SpanID] = errs[0], errs[1:]
+	}
+	s.mu.Unlock()
+	if fail != nil {
+		return fail
+	}
+	req := &collogspb.ExportLogsServiceRequest{ResourceLogs: []*logspb.ResourceLogs{{
+		ScopeLogs: []*logspb.ScopeLogs{{LogRecords: slices.Clone(s.records[sel.SpanID])}},
+	}}}
+	err := cb(ctx, req)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, record := range req.ResourceLogs[0].ScopeLogs[0].LogRecords {
+		s.kept = append(s.kept, record.SpanId)
+	}
+	return err
+}
+
+// With the whole span tree loaded (a restored session's history), a roll-up
+// is one request for every record class, whose records keep their own span
+// IDs. Spans another fetch owns are left out of it, and the spans it imported
+// are not fetched again on their own.
+func TestTraceLoaderFullTreeRollUp(t *testing.T) {
+	rollUp, child, grandchild := []byte{1, 0, 0, 0, 0, 0, 0, 1}, []byte{2, 0, 0, 0, 0, 0, 0, 2}, []byte{3, 0, 0, 0, 0, 0, 0, 3}
+	id := func(b []byte) dagui.SpanID {
+		var id dagui.SpanID
+		copy(id.SpanID[:], b)
+		return id
+	}
+	text := func(span []byte) *logspb.LogRecord {
+		return &logspb.LogRecord{SpanId: span, Body: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "out\n"}}}
+	}
+	source := &logSource{records: map[string][]*logspb.LogRecord{
+		id(grandchild).String(): {text(grandchild)},
+		id(rollUp).String():     {text(rollUp), text(child), text(grandchild)},
+	}}
+	loader, _, _ := testTraceLoader(t)
+	loader.client = source
+	loader.fullTree = true
+
+	var fg fetchGroup
+	loader.fetchLogs(&fg, id(grandchild), false)
+	require.NoError(t, fg.Wait())
+	loader.fetchLogs(&fg, id(rollUp), true)
+	require.NoError(t, fg.Wait())
+	loader.fetchLogs(&fg, id(child), false)
+	loader.fetchLogs(&fg, id(grandchild), true)
+	require.NoError(t, fg.Wait())
+
+	require.Equal(t, []cloud.LogSelection{
+		{SpanID: id(grandchild).String()},
+		{SpanID: id(rollUp).String(), Descendants: true},
+	}, source.sels, "a roll-up is one request for every record; owned spans are not fetched again")
+	require.Equal(t, [][]byte{grandchild, rollUp, child}, source.kept,
+		"records keep their own span IDs, without the records another fetch imported")
+}
+
+// A transient failure before anything was imported is retried. A fetch that
+// fails anyway releases what it owned: an enclosing roll-up imports the
+// span's records, and the span can be fetched again.
+func TestTraceLoaderFailedFetchReleasesSpans(t *testing.T) {
+	parent, child := []byte{1, 0, 0, 0, 0, 0, 0, 1}, []byte{2, 0, 0, 0, 0, 0, 0, 2}
+	id := func(b []byte) dagui.SpanID {
+		var id dagui.SpanID
+		copy(id.SpanID[:], b)
+		return id
+	}
+	text := func(span []byte) *logspb.LogRecord {
+		return &logspb.LogRecord{SpanId: span, Body: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "out\n"}}}
+	}
+	transient := fmt.Errorf("%w: engine busy", archive.ErrTransient)
+	source := &logSource{
+		records: map[string][]*logspb.LogRecord{
+			id(child).String():  {text(child)},
+			id(parent).String(): {text(parent), text(child)},
+		},
+		fail: map[string][]error{
+			id(child).String():  {transient, transient, transient, errors.New("gone")},
+			id(parent).String(): {transient},
+		},
+	}
+	loader, _, _ := testTraceLoader(t)
+	loader.client = source
+	loader.fullTree = true
+	var fg fetchGroup
+
+	// Three transient attempts, then a fetch of nothing more.
+	loader.fetchLogs(&fg, id(child), false)
+	require.ErrorIs(t, fg.Wait(), archive.ErrTransient)
+	require.Len(t, source.sels, 3, "a transient failure is retried twice")
+
+	// The roll-up is retried once, and imports the child's records too.
+	var rollUpFg fetchGroup
+	loader.fetchLogs(&rollUpFg, id(parent), true)
+	require.NoError(t, rollUpFg.Wait())
+	require.Equal(t, [][]byte{parent, child}, source.kept, "a failed fetch must not keep owning its span")
+
+	// A span released by a permanent failure is fetched on its next request.
+	loader2, _, _ := testTraceLoader(t)
+	loader2.client = source
+	loader2.fullTree = true
+	source.sels = nil
+	var fg2 fetchGroup
+	loader2.fetchLogs(&fg2, id(child), false)
+	require.Error(t, fg2.Wait())
+	var fg3 fetchGroup
+	loader2.fetchLogs(&fg3, id(child), false)
+	require.NoError(t, fg3.Wait())
+	require.Len(t, source.sels, 2, "a permanent failure is not retried, but the span can be requested again")
+}
+
+// Exit cancels in-flight fetches; that is not worth a warning.
+func TestTraceLoaderCancelledFetchIsQuiet(t *testing.T) {
+	warnings := captureRestoreWarnings(t)
+	loader, _, _ := testTraceLoader(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	loader.ctx = ctx
+	source := &logSource{started: make(chan struct{})}
+	loader.client = source
+	var fg fetchGroup
+	loader.fetchLogs(&fg, dagui.SpanID{SpanID: [8]byte{1}}, false)
+	<-source.started
+	cancel()
+	require.NoError(t, fg.Wait())
+	require.NotContains(t, warnings.String(), "error streaming span logs")
+}
+
 // resolvingFrontend is the slice of TraceFrontend resolveTraceTarget drives.
 type resolvingFrontend struct {
 	idtui.TraceFrontend
@@ -357,4 +550,93 @@ func TestResolveTraceTarget(t *testing.T) {
 		_, _, err = resolveTraceTarget(fe, spanSelector{test: "TestFoo"}, "abc123")
 		require.EqualError(t, err, `no test named "TestFoo" in trace abc123`)
 	})
+}
+
+// supportSource answers the initial load with a partial root, and an exact
+// selection with the spans it names; it records the selections, and fails
+// exact ones with fail when set.
+type supportSource struct {
+	tracesource.Source
+	mu   sync.Mutex
+	sels []cloud.SpanSelection
+	fail error
+}
+
+func (s *supportSource) FetchSpans(ctx context.Context, _ string, sel cloud.SpanSelection, cb func(context.Context, *coltracepb.ExportTraceServiceRequest) error) error {
+	s.mu.Lock()
+	s.sels = append(s.sels, sel)
+	fail := s.fail
+	s.mu.Unlock()
+	start, end := uint64(time.Unix(100, 0).UnixNano()), uint64(time.Unix(110, 0).UnixNano())
+	if len(sel.Exact) == 0 {
+		return cb(ctx, spanExport(&tracepb.Span{
+			SpanId: []byte{9, 9, 9, 9, 9, 9, 9, 9}, StartTimeUnixNano: start, EndTimeUnixNano: end,
+			Attributes: []*commonpb.KeyValue{boolAttr(telemetryattrs.UIPartialAttr, true)},
+		}))
+	}
+	if fail != nil {
+		return fail
+	}
+	var spans []*tracepb.Span
+	for _, hex := range sel.Exact {
+		id, err := trace.SpanIDFromHex(hex)
+		if err != nil {
+			return err
+		}
+		spans = append(spans, &tracepb.Span{SpanId: id[:], StartTimeUnixNano: start, EndTimeUnixNano: end})
+	}
+	return cb(ctx, spanExport(spans...))
+}
+
+func (s *supportSource) exactSelections(t *testing.T) [][]string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var exact [][]string
+	for _, sel := range s.sels {
+		if len(sel.Exact) > 0 {
+			require.True(t, sel.NoRoot && len(sel.Listen) == 0, "an exact selection selects nothing else")
+			exact = append(exact, sel.Exact)
+		}
+	}
+	return exact
+}
+
+// The frontend asks for the spans its rows' time breakdowns draw on that it
+// holds only references to; the loader fetches each once, exactly, and a
+// failure leaves the view as it was rather than failing the command.
+func TestTraceLoaderFetchSupport(t *testing.T) {
+	warnings := captureRestoreWarnings(t)
+	loader, db, _ := testTraceLoader(t)
+	source := &supportSource{}
+	loader.client = source
+	a := dagui.SpanID{SpanID: [8]byte{1}}
+	b := dagui.SpanID{SpanID: [8]byte{2}}
+	c := dagui.SpanID{SpanID: [8]byte{3}}
+
+	// Asked for before the initial load decides whether anything is left to
+	// fetch: deferred until it does.
+	loader.fetchSupport([]dagui.SpanID{a})
+	require.Empty(t, source.exactSelections(t))
+	require.NoError(t, loader.loadInitial(t.Context()))
+	loader.fetchSupport([]dagui.SpanID{a, b})
+	require.NoError(t, loader.wait())
+	require.ElementsMatch(t, [][]string{{a.String()}, {b.String()}}, source.exactSelections(t), "each span is fetched once")
+	require.True(t, db.Spans.Map[a].Received)
+	require.True(t, db.Spans.Map[b].Received)
+
+	source.fail = errors.New("exact selection unavailable")
+	loader.fetchSupport([]dagui.SpanID{c})
+	require.NoError(t, loader.wait(), "a failed fetch only leaves breakdowns unresolved")
+	require.Contains(t, warnings.String(), "error fetching spans for time breakdowns")
+
+	// A whole trace has nothing left to fetch.
+	whole, _, _ := testTraceLoader(t)
+	whole.client = source
+	whole.mu.Lock()
+	whole.initialLoaded = true
+	whole.mu.Unlock()
+	before := len(source.exactSelections(t))
+	whole.fetchSupport([]dagui.SpanID{{SpanID: [8]byte{4}}})
+	require.NoError(t, whole.wait())
+	require.Len(t, source.exactSelections(t), before)
 }

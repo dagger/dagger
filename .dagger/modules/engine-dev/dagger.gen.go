@@ -47,8 +47,6 @@ func convertSlice[I any, O any](in []I, f func(I) O) []O {
 func (r EngineDev) MarshalJSON() ([]byte, error) {
 	var concrete struct {
 		Source             *dagger.Directory
-		VCSCommit          string
-		VCSDirty           bool
 		EngineConfig       []string
 		LogLevel           string
 		SubnetNumber       int
@@ -59,8 +57,6 @@ func (r EngineDev) MarshalJSON() ([]byte, error) {
 		Ws                 *dagger.Workspace
 	}
 	concrete.Source = r.Source
-	concrete.VCSCommit = r.VCSCommit
-	concrete.VCSDirty = r.VCSDirty
 	concrete.EngineConfig = r.EngineConfig
 	concrete.LogLevel = r.LogLevel
 	concrete.SubnetNumber = r.SubnetNumber
@@ -75,8 +71,6 @@ func (r EngineDev) MarshalJSON() ([]byte, error) {
 func (r *EngineDev) UnmarshalJSON(bs []byte) error {
 	var concrete struct {
 		Source             *dagger.Directory
-		VCSCommit          string
-		VCSDirty           bool
 		EngineConfig       []string
 		LogLevel           string
 		SubnetNumber       int
@@ -91,8 +85,6 @@ func (r *EngineDev) UnmarshalJSON(bs []byte) error {
 		return err
 	}
 	r.Source = concrete.Source
-	r.VCSCommit = concrete.VCSCommit
-	r.VCSDirty = concrete.VCSDirty
 	r.EngineConfig = concrete.EngineConfig
 	r.LogLevel = concrete.LogLevel
 	r.SubnetNumber = concrete.SubnetNumber
@@ -210,6 +202,34 @@ func DaggerDispatch(ctx context.Context, parentJSON []byte, parentName string, f
 				}
 			}
 			return (*EngineDev).Container(&parent, ctx, platform, gpuSupport, version)
+		case "ExportDriver":
+			var parent EngineDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*EngineDev).ExportDriver(&parent, ctx)
+		case "GoEnv":
+			var parent EngineDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var source *core.Directory
+			if inputArgs["source"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["source"]), &source)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg source", err))
+				}
+			}
+			var cgo bool
+			if inputArgs["cgo"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["cgo"]), &cgo)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg cgo", err))
+				}
+			}
+			return (*EngineDev).GoEnv(&parent, source, cgo), nil
 		case "GraphqlSchema":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -272,7 +292,7 @@ func DaggerDispatch(ctx context.Context, parentJSON []byte, parentName string, f
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			return (*EngineDev).IntrospectionTool(&parent), nil
+			return (*EngineDev).IntrospectionTool(&parent, ctx)
 		case "LoadToDocker":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -364,6 +384,13 @@ func DaggerDispatch(ctx context.Context, parentJSON []byte, parentName string, f
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return nil, (*EngineDev).ReleaseDryRun(&parent, ctx)
+		case "ReproducibleBuild":
+			var parent EngineDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return nil, (*EngineDev).ReproducibleBuild(&parent, ctx)
 		case "Service":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -504,6 +531,62 @@ func DaggerDispatch(ctx context.Context, parentJSON []byte, parentName string, f
 				}
 			}
 			return nil, (*EngineDev).Test(&parent, ctx, run, skip, pkg, failFast, parallel, timeout, race, count, envFile, testVerbose, update, ebpfProgs, ebpf, dumpAfter)
+		case "TestModule":
+			var parent EngineDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var container *core.Container
+			if inputArgs["container"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["container"]), &container)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg container", err))
+				}
+			}
+			var source *core.Directory
+			if inputArgs["source"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["source"]), &source)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg source", err))
+				}
+			}
+			var module string
+			if inputArgs["module"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["module"]), &module)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg module", err))
+				}
+			}
+			var run string
+			if inputArgs["run"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["run"]), &run)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg run", err))
+				}
+			}
+			var skip string
+			if inputArgs["skip"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["skip"]), &skip)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg skip", err))
+				}
+			}
+			var pkg string
+			if inputArgs["pkg"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["pkg"]), &pkg)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg pkg", err))
+				}
+			}
+			var testVerbose bool
+			if inputArgs["testVerbose"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["testVerbose"]), &testVerbose)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg testVerbose", err))
+				}
+			}
+			return nil, (*EngineDev).TestModule(&parent, ctx, container, source, module, run, skip, pkg, testVerbose)
 		case "TestProfile":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -769,7 +852,7 @@ func DaggerDispatch(ctx context.Context, parentJSON []byte, parentName string, f
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg clientDockerConfig", err))
 				}
 			}
-			return New(ctx, ws, subnetNumber, clientDockerConfig), nil
+			return New(ws, subnetNumber, clientDockerConfig), nil
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}

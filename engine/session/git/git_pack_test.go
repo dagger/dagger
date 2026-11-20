@@ -303,6 +303,63 @@ func TestPackCheckoutRejectsUnexpectedState(t *testing.T) {
 	require.Equal(t, CHECKOUT_STATE_MISMATCH, srv.metadata(t).GetError().GetType())
 }
 
+// TestPackCheckoutRelativeToHaves checks that a pack relative to what the
+// engine already holds carries only the objects the checkout gained, with the
+// checkout's complete refs, and nothing at all when it gained none.
+func TestPackCheckoutRelativeToHaves(t *testing.T) {
+	skipIfNoGit(t)
+
+	repo, home := initRepo(t, "main")
+	commitFile(t, repo, home, "a.txt", "one", "first")
+	first := gitCmd(t, home, repo, "rev-parse", "HEAD")
+	gitCmd(t, home, repo, "tag", "-a", "v1", "-m", "v1")
+	tag := gitCmd(t, home, repo, "rev-parse", "v1")
+	commitFile(t, repo, home, "b.txt", "two", "second")
+	second := gitCmd(t, home, repo, "rev-parse", "HEAD")
+	gitCmd(t, home, repo, "branch", "old", first)
+	wantRefs := []*CheckoutRef{
+		{Name: "refs/heads/main", Sha: second},
+		{Name: "refs/heads/old", Sha: first},
+		{Name: "refs/tags/v1", Sha: tag},
+	}
+	pack := func(haves ...string) *fakePackCheckoutServer {
+		t.Helper()
+		srv := &fakePackCheckoutServer{ctx: context.Background()}
+		require.NoError(t, GitAttachable{}.PackCheckout(&PackCheckoutRequest{CheckoutPath: repo, HaveShas: haves}, srv))
+		return srv
+	}
+
+	// The engine holds the first state: only the second commit is sent.
+	srv := pack(first, tag, strings.Repeat("0", 40))
+	meta := srv.metadata(t)
+	require.True(t, meta.GetRelativeToHaves())
+	require.Equal(t, second, meta.GetHeadSha())
+	require.Equal(t, wantRefs, meta.GetRefs())
+	verifyRepo := filepath.Join(t.TempDir(), "verify")
+	gitCmd(t, home, "", "init", verifyRepo)
+	require.Error(t, exec.Command("git", "-C", verifyRepo, "bundle", "verify", srv.writeBundle(t)).Run(),
+		"the bundle must require the commit the engine holds")
+	gitCmd(t, home, verifyRepo, "fetch", "-q", repo, "refs/heads/old")
+	gitCmd(t, home, verifyRepo, "bundle", "unbundle", srv.writeBundle(t))
+	gitCmd(t, home, verifyRepo, "cat-file", "-e", second)
+
+	// The engine holds everything: no bundle at all.
+	srv = pack(second, tag)
+	meta = srv.metadata(t)
+	require.True(t, meta.GetRelativeToHaves())
+	require.Equal(t, wantRefs, meta.GetRefs())
+	require.Zero(t, srv.chunkCount())
+
+	// Nothing the engine holds is in the checkout: a complete pack.
+	srv = pack(strings.Repeat("0", 40))
+	meta = srv.metadata(t)
+	require.False(t, meta.GetRelativeToHaves())
+	require.Empty(t, meta.GetRefs())
+	cloneDir := filepath.Join(t.TempDir(), "clone")
+	gitCmd(t, home, "", "clone", "-q", srv.writeBundle(t), cloneDir)
+	require.Equal(t, second, gitCmd(t, home, cloneDir, "rev-parse", "HEAD"))
+}
+
 func TestPackCheckoutWorktree(t *testing.T) {
 	skipIfNoGit(t)
 

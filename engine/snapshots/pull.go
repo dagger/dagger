@@ -2,9 +2,7 @@ package snapshots
 
 import (
 	"context"
-	"crypto/rand"
 	"fmt"
-	"io"
 	"time"
 
 	"github.com/containerd/containerd/v2/core/content"
@@ -14,7 +12,6 @@ import (
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/dagger/dagger/internal/buildkit/client"
-	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/tracing"
 	telemetry "github.com/dagger/otel-go"
 	digest "github.com/opencontainers/go-digest"
@@ -321,6 +318,17 @@ func (cm *snapshotManager) applyLayer(ctx context.Context, mut MutableRef, desc 
 	if apart {
 		mounts = upperOverlay(mounts)
 	}
+	// The engine trusts its own image's blobs, which the content store holds
+	// in place: their layers were checked when the image was pulled, and
+	// their sizes when the engine started. An uncompressed one, whose diff ID
+	// is its own digest, unpacks unhashed. A layer that names such a blob but
+	// claims another diff ID is checked, so the snapshot is never recorded
+	// under a diff ID its content isn't.
+	expectedDiffID, diffIDErr := diffIDFromDescriptor(desc)
+	trusted := diffIDErr == nil && expectedDiffID == desc.Digest && cm.inPlaceContent != nil && cm.inPlaceContent(desc.Digest)
+	if trusted {
+		ctx = withTrustedLayer(ctx)
+	}
 	applyStart := clock.now()
 	// A chain layer applied apart is decompressed ahead of its apply, which
 	// then reads the layer's tar: the decompression and the file creation
@@ -367,7 +375,7 @@ func (cm *snapshotManager) applyLayer(ctx context.Context, mut MutableRef, desc 
 	// The snapshot is found again by diffID, so its content must be the
 	// diffID's, as containerd's unpacker also requires.
 	diffID, err := diffIDFromDescriptor(desc)
-	if err == nil && appliedDesc.Digest != diffID {
+	if err == nil && !trusted && appliedDesc.Digest != diffID {
 		err = errors.Errorf("wrong diff id %s calculated on extraction, expected %s", appliedDesc.Digest, diffID)
 	}
 	if err != nil {
@@ -381,6 +389,19 @@ func (cm *snapshotManager) applyLayer(ctx context.Context, mut MutableRef, desc 
 		unpack.Finish()
 	}
 	return unmount()
+}
+
+type trustedLayerKey struct{}
+
+// withTrustedLayer marks an apply of a layer whose blob the engine trusts
+// to be its diff ID's: the applier need not hash it, and reports no digest.
+func withTrustedLayer(ctx context.Context) context.Context {
+	return context.WithValue(ctx, trustedLayerKey{}, true)
+}
+
+func trustedLayer(ctx context.Context) bool {
+	trusted, _ := ctx.Value(trustedLayerKey{}).(bool)
+	return trusted
 }
 
 // upperOverlay turns the bind mount of a snapshot prepared with no parent
@@ -565,11 +586,6 @@ func setImportedImageMetadata(ref *immutableRef, opts ImportImageOpts) error {
 	return nil
 }
 
-// BuiltinLayersLeaseID is the persistent lease holding the blobs a chain
-// import copied from the builtin image store: builtin blobs, so engine
-// lifetime like the rest of the builtin images' content.
-const BuiltinLayersLeaseID = "dagger/builtin-image/layers"
-
 // chainLayer is what a chain import passes each of its layer imports: the
 // chain whose import it is, its download of the layer's blob started ahead,
 // if any, and what to run once the layer's blob is in the content store.
@@ -580,29 +596,15 @@ type chainLayer struct {
 }
 
 // importLayerContent pins local bytes before asking the supplied provider.
-// A chain import consults the builtin image store between the two: a layer
-// of a builtin image is then copied from the engine's own files, with no
-// network, and held for the engine's lifetime under BuiltinLayersLeaseID.
 // The provider's download goes through the fetch coordinator, which joins a
 // download of the same blob already in progress. It returns where the blob
 // came from: present (already there, including a blob downloaded ahead that
-// is in by then), builtin (the builtin image store), download (this import's
-// own download), or joined (another import's download), and whether it
-// joined another import's download.
+// is in by then), download (this import's own download), or joined (another
+// import's download), and whether it joined another import's download.
 func (cm *snapshotManager) importLayerContent(ctx context.Context, desc ocispecs.Descriptor, provider content.Provider, chainMode bool, chain *chainLayer) (string, bool, error) {
 	present, err := cm.pinContent(ctx, desc)
 	if err != nil || present {
 		return layerSourcePresent, false, err
-	}
-	if chainMode {
-		copied, err := cm.copyBuiltinLayer(ctx, desc)
-		if err != nil {
-			// The provider is the fallback, as a service outage never
-			// blocks an import: log and download as today.
-			bklog.G(ctx).WithError(err).Warnf("builtin image store could not supply layer %s; downloading it", desc.Digest)
-		} else if copied {
-			return layerSourceBuiltin, false, nil
-		}
 	}
 	if provider == nil {
 		return layerSourceDownload, false, chainError(ctx, chainMode, desc, "provider", errors.Wrapf(cerrdefs.ErrNotFound, "missing local layer %s", desc.Digest))
@@ -639,7 +641,6 @@ func downloadSource(joined, read bool, err error) string {
 // Where importLayerContent found a layer's blob.
 const (
 	layerSourcePresent  = "present"
-	layerSourceBuiltin  = "builtin"
 	layerSourceDownload = "download"
 	layerSourceJoined   = "joined"
 )
@@ -681,70 +682,4 @@ func recordImportPhase(ctx context.Context, class string, desc ocispecs.Descript
 		outcome = wcprof.OutcomeError
 	}
 	wcprof.RecordOpAt(ctx, wcprof.OpKindIO, class, opts, start, end, outcome)
-}
-
-// copyBuiltinLayer copies the blob desc names from the builtin image store
-// into the content store when that store has exactly that digest with the
-// same size, binds it to the context lease and to the builtin layers lease,
-// and reports whether it did. A store without the digest reports false with
-// no error; a failure to read or write is an error for the caller to fall
-// through on. Nothing but the exact digest matches: a re-diffed form of a
-// builtin layer has another digest and is not found here.
-func (cm *snapshotManager) copyBuiltinLayer(ctx context.Context, desc ocispecs.Descriptor) (copied bool, rerr error) {
-	if cm.builtinContent == nil || desc.Digest == "" {
-		return false, nil
-	}
-	info, err := cm.builtinContent.Info(ctx, desc.Digest)
-	if cerrdefs.IsNotFound(err) {
-		return false, nil
-	}
-	if err != nil {
-		return false, errors.Wrapf(err, "look up %s in the builtin image store", desc.Digest)
-	}
-	// Exact digest and exact size, always: a layer that says another size,
-	// zero included, is not this blob.
-	if info.Size != desc.Size {
-		return false, errors.Errorf("builtin image store has %s with size %d, the layer says %d", desc.Digest, info.Size, desc.Size)
-	}
-	ref := "builtin-layer-" + rand.Text()
-	writer, err := content.OpenWriter(ctx, cm.ContentStore, content.WithRef(ref), content.WithDescriptor(desc))
-	if cerrdefs.IsAlreadyExists(err) {
-		return cm.pinBuiltinLayer(ctx, desc)
-	}
-	if err != nil {
-		return false, err
-	}
-	defer func() {
-		_ = writer.Close()
-		if rerr != nil {
-			_ = cm.ContentStore.Abort(context.WithoutCancel(ctx), ref)
-		}
-	}()
-	reader, err := cm.builtinContent.ReaderAt(ctx, ocispecs.Descriptor{Digest: desc.Digest, Size: info.Size})
-	if err != nil {
-		return false, errors.Wrapf(err, "read %s from the builtin image store", desc.Digest)
-	}
-	defer reader.Close()
-	if err := content.Copy(ctx, writer, io.NewSectionReader(reader, 0, reader.Size()), info.Size, desc.Digest); err != nil {
-		return false, errors.Wrapf(err, "copy %s from the builtin image store", desc.Digest)
-	}
-	return cm.pinBuiltinLayer(ctx, desc)
-}
-
-// pinBuiltinLayer binds a blob the builtin store supplied to the context
-// lease, so the import's own protection covers it, and to the persistent
-// builtin layers lease.
-func (cm *snapshotManager) pinBuiltinLayer(ctx context.Context, desc ocispecs.Descriptor) (bool, error) {
-	present, err := cm.pinContent(ctx, desc)
-	if err != nil {
-		return false, err
-	}
-	if !present {
-		return false, errors.Errorf("builtin layer %s is missing after its copy", desc.Digest)
-	}
-	if err := cm.PinContent(ctx, BuiltinLayersLeaseID, []ocispecs.Descriptor{desc}); err != nil {
-		return false, err
-	}
-	bklog.G(ctx).Debugf("layer %s copied from the builtin image store", desc.Digest)
-	return true, nil
 }

@@ -1928,12 +1928,6 @@ func (s *moduleSchema) functionWithCachePolicy(
 				args.TimeToLive.Value,
 			)
 
-		case ttlDuration > core.MaxFunctionCacheTTLSeconds*time.Second:
-			return nil, fmt.Errorf("time to live duration must be at most %q, got %q",
-				(core.MaxFunctionCacheTTLSeconds * time.Second).String(),
-				args.TimeToLive.Value,
-			)
-
 		default:
 			fn.CacheTTLSeconds = dagql.NonNull(dagql.Int(int(ttlDuration.Seconds())))
 		}
@@ -2345,6 +2339,16 @@ func (s *moduleSchema) serveModule(ctx context.Context, self *core.Query, args s
 				return void, fmt.Errorf("serve module %q: %w; declare it as a client of module %q's scope", args.Address, err, caller.Self().Name())
 			}
 			return void, fmt.Errorf("serve module %q: %w", args.Address, err)
+		}
+		if declared {
+			// The source may have been fetched with the credentials the
+			// session lent, which the key of the function call this serves
+			// doesn't name: its result requires them.
+			fnCall, err := self.Server.EnclosingFunctionCall(ctx)
+			if err != nil && !errors.Is(err, core.ErrNoCurrentFunctionCall) {
+				return void, fmt.Errorf("serve module %q from module %q: %w", args.Address, caller.Self().Name(), err)
+			}
+			fnCall.BorrowSessionResourcesOf(src)
 		}
 	} else if caller, err := self.Server.ModuleParent(ctx); err == nil {
 		// A module's code may run in a process the engine does not treat as the

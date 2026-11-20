@@ -1,0 +1,17 @@
+kind: Changed
+body: |
+  The embedded Dang is now 2.5 (vito/dang v2.5.0). Modules with no `dang`
+  version get it from `engineVersion` v1.0.0-beta.28 on; older ones keep 2.1.
+  In 2.5, `"..."` and `"""..."""` interpolate `${...}` and process escapes,
+  only a language tag may follow an opening `"""`, `'...'` and `'''...'''` are
+  verbatim, and type patterns take a `!`. Pin `dang = "2.1"` (or `"2.4"`) in
+  `dang.toml`, or run `dang migrate -w --from 2.1`. At every version, values
+  print as Dang literals and objects as lazy queries (select `.id`), bare
+  `JSON` is Dang's scalar (Dagger's is `Dagger.JSON`), and Dang interfaces are
+  structural. See the release notes for
+  [2.4](https://danglang.org/releases/v2.4.1.html) and
+  [2.5](https://danglang.org/v2.5).
+time: 2026-11-10T04:30:00Z
+custom:
+  Author: vito
+  PR: "15128"

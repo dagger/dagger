@@ -1,8 +1,0 @@
-{
-  "name": "dep",
-  "engineVersion": "latest",
-  "sdk": {
-    "source": "go"
-  },
-  "source": "."
-}

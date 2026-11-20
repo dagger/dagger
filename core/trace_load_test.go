@@ -134,6 +134,7 @@ func TestLoadTraceInspectionTools(t *testing.T) {
 	}
 	loadTool, err := m.LookupTool("LoadTrace", tools.Order)
 	require.NoError(t, err)
+	require.False(t, loadTool.ReadOnly, "LoadTrace changes what the inspection tools see, so a batch must run it in order")
 	mcpTool, err := genMcpTool(*loadTool)
 	require.NoError(t, err)
 	require.Equal(t, "LoadTrace", mcpTool.Name)
@@ -293,7 +294,7 @@ func TestImportedTraceCannotOverrideLive(t *testing.T) {
 	got, err = findSpansIn(ctx, live, "impostor", "", 100, imported)
 	require.NoError(t, err)
 	require.Contains(t, got, "no spans matching")
-	got, err = findCallsIn(ctx, live, regexp.MustCompile(".*"), 100)
+	got, err = findCallsIn(ctx, live, regexp.MustCompile(".*"), 100, "")
 	require.NoError(t, err)
 	require.Contains(t, got, "withDirectory")
 	require.NotContains(t, got, "impostor")

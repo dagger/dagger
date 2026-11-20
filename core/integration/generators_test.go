@@ -11,6 +11,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -1166,6 +1167,51 @@ func (GeneratorsSuite) TestSDKScopeGenerationRepairsLocalDependency(ctx context.
 	require.Contains(t, parseSchemaContents(t, clientSchema).typeNames(), "Query")
 }
 
+// TestSDKScopeGenerationRunsIndependentScopesAtOnce generates two scopes that
+// do not depend on each other and a third that generates clients for both.
+// The fixture's SDK fails left or right unless the other one generates at the
+// same time, and top needs both of their generated modules.
+func (GeneratorsSuite) TestSDKScopeGenerationRunsIndependentScopesAtOnce(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	fixture := func() *core.Container {
+		bust := rand.Text()
+		return workspaceFixture(t, c, "sdk-scope-concurrent").
+			WithNewFile("left/bust.txt", bust).
+			WithNewFile("right/bust.txt", bust).
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", testCLIBinPath).
+			With(nonNestedDevEngine(c))
+	}
+
+	t.Run("independent scopes generate at once", func(ctx context.Context, t *testctx.T) {
+		generated := fixture().With(daggerNonNestedExec("generate", "-y"))
+		out, err := generated.CombinedOutput(ctx)
+		require.NoError(t, err, out)
+
+		for _, scope := range []string{"left", "right", "top"} {
+			manifest, err := generated.File(scope + "/dagger-module.toml").Contents(ctx)
+			require.NoError(t, err)
+			require.Contains(t, manifest, `name = "`+scope+`"`)
+		}
+		// Each client schema comes from loading the module its scope generated.
+		for _, client := range []string{"left", "right"} {
+			schema, err := generated.File("top/generated/" + client + ".schema.json").Contents(ctx)
+			require.NoError(t, err)
+			require.Contains(t, parseSchemaContents(t, schema).typeNames(), "Query")
+		}
+	})
+
+	t.Run("a failed scope fails the run with its error", func(ctx context.Context, t *testctx.T) {
+		out, err := fixture().
+			WithNewFile("right/fail.txt", "").
+			With(daggerNonNestedExecFail("generate", "-y")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "right cannot generate")
+		// left met right and generated; only right failed.
+		require.NotContains(t, out, "did not generate")
+	})
+}
+
 // TestWorkspaceListsSyntheticGeneratorWithoutLoadingSDK proves that generator
 // discovery uses only workspace configuration. The SDK can be temporarily
 // invalid because generation can be the operation that repairs it.
@@ -1231,15 +1277,16 @@ func (GeneratorsSuite) TestWorkspaceGenerateNarrowsToRequestedModule(ctx context
 		// Enumerating all generators loads modules best-effort: the broken
 		// module is still loaded (unlike the narrowed cases above, which never
 		// touch it) but its failure is tolerated, so listing still succeeds and
-		// shows the healthy generator instead of aborting. The skip itself is
-		// surfaced as a span on the run path (asserted below), not in the list
-		// table.
+		// shows the healthy generator instead of aborting. The skip is reported
+		// beside the list (SKIPPED MODULES), with the load error, which quotes
+		// the broken source, so unlike the narrowed cases this one can't assert
+		// the source never shows up.
 		out, err := base.
 			With(daggerExec("generate", "-l", "-f=link")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "good/generate")
-		require.NotContains(t, out, "intentionally invalid")
+		require.Contains(t, out, "SKIPPED MODULES")
 	})
 
 	t.Run("unscoped generate runs healthy generators despite a broken module", func(ctx context.Context, t *testctx.T) {

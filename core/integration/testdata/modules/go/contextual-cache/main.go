@@ -14,7 +14,7 @@ func (m *Test) ContextDir(
 	// +defaultPath="."
 	dir *dagger.Directory,
 ) (string, error) {
-	contents, err := dir.File("dagger.json").Contents(ctx)
+	contents, err := dir.File("dagger-module.toml").Contents(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -23,7 +23,7 @@ func (m *Test) ContextDir(
 
 func (m *Test) ContextFile(
 	ctx context.Context,
-	// +defaultPath="dagger.json"
+	// +defaultPath="dagger-module.toml"
 	file *dagger.File,
 ) (string, error) {
 	contents, err := file.Contents(ctx)

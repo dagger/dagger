@@ -18,7 +18,7 @@ inputs:
 
   version:
     description: "Dagger version to run against"
-    default: "v1.0.0-beta.27"
+    default: "v1.0.0-beta.28"
     required: false
 
   commit:
@@ -66,7 +66,9 @@ runs:
           echo "::endgroup::"
         else
           echo "::group::Installing dagger"
-          curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=/usr/local/bin/ sudo -E sh
+          # sudo on newer runner images doesn't keep the caller's environment
+          # with -E, so pass every installer setting through env.
+          curl -fsSL https://dl.dagger.io/dagger/install.sh | sudo env BIN_DIR=/usr/local/bin DAGGER_VERSION="$DAGGER_VERSION" DAGGER_COMMIT="$DAGGER_COMMIT" sh
           echo "::endgroup::"
         fi
 

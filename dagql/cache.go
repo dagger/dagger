@@ -212,7 +212,12 @@ type persistedEdge struct {
 // (DeclinePersistence). An older engine reading a newer store drops the mark
 // when it saves, and a declined value would then gain a retention edge from
 // its next persistable hit, so stores of another version are wiped on import.
-const cachePersistenceSchemaVersion = "23"
+//
+// 24: the engine image's built-in SDK container operation
+// (Query._builtinContainer) is gone: the built-in SDKs' files come through the
+// image's entries. Older stores holding its records cannot decode them, so
+// they are wiped on import.
+const cachePersistenceSchemaVersion = "24"
 
 var ErrCacheRecursiveCall = fmt.Errorf("recursive call detected")
 var ErrCacheSessionReleased = errors.New("cache session released")
@@ -1091,6 +1096,12 @@ func (c *Cache) captureSessionLazySpanContext(ctx context.Context, sessionID str
 	if !spanCtx.IsValid() {
 		return
 	}
+	// A call the server's telemetry didn't span, such as a repeat it
+	// deduplicated or a trivial accessor, runs under the span of whatever
+	// made it, typically the client's request. That span names no call, so
+	// a capture under a call's own span replaces it.
+	own, _ := ownCallSpan(ctx, CurrentCall(ctx))
+	provisional := !own.IsValid() || own.SpanID() != spanCtx.SpanID()
 
 	wcprof.Lock(ctx, &c.sessionMu, sessionsLockIdent)
 	// A detached writer arriving after release must not recreate the session
@@ -1106,8 +1117,24 @@ func (c *Cache) captureSessionLazySpanContext(ctx context.Context, sessionID str
 	if c.sessionLazySpansBySession[sessionID] == nil {
 		c.sessionLazySpansBySession[sessionID] = make(map[sharedResultID]trace.SpanContext)
 	}
-	if _, exists := c.sessionLazySpansBySession[sessionID][shared.id]; !exists {
-		c.sessionLazySpansBySession[sessionID][shared.id] = spanCtx
+	spans := c.sessionLazySpansBySession[sessionID]
+	_, exists := spans[shared.id]
+	_, wasProvisional := c.sessionLazySpansProvisional[sessionID][shared.id]
+	switch {
+	case !exists:
+		spans[shared.id] = spanCtx
+		if provisional {
+			if c.sessionLazySpansProvisional == nil {
+				c.sessionLazySpansProvisional = make(map[string]map[sharedResultID]struct{})
+			}
+			if c.sessionLazySpansProvisional[sessionID] == nil {
+				c.sessionLazySpansProvisional[sessionID] = make(map[sharedResultID]struct{})
+			}
+			c.sessionLazySpansProvisional[sessionID][shared.id] = struct{}{}
+		}
+	case wasProvisional && !provisional:
+		spans[shared.id] = spanCtx
+		delete(c.sessionLazySpansProvisional[sessionID], shared.id)
 	}
 	c.sessionMu.Unlock()
 }
@@ -1189,6 +1216,10 @@ type sessionResultInstalls struct {
 	first sessionResultInstallSpan
 	few   []sessionResultInstallSpan
 	many  map[spanKey]sessionResultInstallSpan
+	// ownsClosure records that one of the spans owns the result's closure.
+	// An ancestor walk asks it of every result above the one resuming, and
+	// most own none.
+	ownsClosure bool
 }
 
 // maxFewInstallSpans is how many further install spans a result keeps in a
@@ -1196,6 +1227,7 @@ type sessionResultInstalls struct {
 const maxFewInstallSpans = 8
 
 func (installs *sessionResultInstalls) record(spanCtx trace.SpanContext, ownsClosure bool) {
+	installs.ownsClosure = installs.ownsClosure || ownsClosure
 	key := spanKeyOf(spanCtx)
 	merge := func(install *sessionResultInstallSpan) {
 		install.spanCtx = spanCtx
@@ -1272,36 +1304,71 @@ func (c *Cache) recordSessionResultInstallSpanLocked(ctx context.Context, sessio
 }
 
 // installAncestorIDsLocked returns the IDs of results that transitively
-// depend on rootID, found by walking direct dep edges upward via depParents.
-// rootID itself is excluded. Caller must hold egraphMu at least for read.
+// depend on rootID, found by walking direct dep edges upward via depParents,
+// nearest first. rootID itself is excluded. Caller must hold egraphMu at
+// least for read.
+//
+// A result low in a large graph, such as a package the engine image ships
+// built, has thousands of ancestors, and every resume of one walks them all,
+// so the walk allocates nothing per ancestor: it marks what it visited in a
+// pooled bitset, and its result is its own queue.
 func (c *Cache) installAncestorIDsLocked(rootID sharedResultID) []sharedResultID {
 	if rootID == 0 {
 		return nil
 	}
 	root := c.resultsByID[rootID]
-	if root == nil || root.depParents == nil || root.depParents.Empty() {
+	if root == nil || len(root.depParents) == 0 {
 		return nil
 	}
-	seen := map[sharedResultID]struct{}{rootID: {}}
-	queue := []sharedResultID{rootID}
+	marks := ancestorMarksPool.Get().(*ancestorMarks)
+	marks.visit(rootID)
 	var out []sharedResultID
-	for len(queue) > 0 {
-		id := queue[0]
-		queue = queue[1:]
-		res := c.resultsByID[id]
-		if res == nil || res.depParents == nil {
-			continue
-		}
-		for parentID := range res.depParents.Items() {
-			if _, ok := seen[parentID]; ok {
-				continue
-			}
-			seen[parentID] = struct{}{}
+	for parentID := range root.depParents {
+		if marks.visit(parentID) {
 			out = append(out, parentID)
-			queue = append(queue, parentID)
 		}
 	}
+	for i := 0; i < len(out); i++ {
+		res := c.resultsByID[out[i]]
+		if res == nil {
+			continue
+		}
+		for parentID := range res.depParents {
+			if marks.visit(parentID) {
+				out = append(out, parentID)
+			}
+		}
+	}
+	marks.unvisit(rootID)
+	for _, id := range out {
+		marks.unvisit(id)
+	}
+	ancestorMarksPool.Put(marks)
 	return out
+}
+
+// ancestorMarks is an ancestor walk's visited set: a bit per result number.
+// Result numbers are dense, so the bitset stays small; a walk clears the bits
+// it set before it returns the set to the pool.
+type ancestorMarks struct{ words []uint64 }
+
+var ancestorMarksPool = sync.Pool{New: func() any { return new(ancestorMarks) }}
+
+// visit marks id and reports whether it was unmarked.
+func (m *ancestorMarks) visit(id sharedResultID) bool {
+	word, bit := int(id/64), uint64(1)<<(id%64)
+	if word >= len(m.words) {
+		m.words = append(m.words, make([]uint64, word+1-len(m.words))...)
+	}
+	if m.words[word]&bit != 0 {
+		return false
+	}
+	m.words[word] |= bit
+	return true
+}
+
+func (m *ancestorMarks) unvisit(id sharedResultID) {
+	m.words[id/64] &^= uint64(1) << (id % 64)
 }
 
 // ResultInstallSpans returns install span contexts recorded for res in the
@@ -1343,7 +1410,7 @@ func (c *Cache) sessionResultInstallSpanContexts(sessionID string, resultID shar
 	var out []trace.SpanContext
 	appendInstalls := func(id sharedResultID, closureOwnersOnly bool) {
 		installs := byResult[id]
-		if installs == nil {
+		if installs == nil || closureOwnersOnly && !installs.ownsClosure {
 			return
 		}
 		for install := range installs.all {
@@ -1658,6 +1725,7 @@ func (c *Cache) cleanupReleasedSession(plan *cacheSessionReleasePlan) error {
 	delete(c.sessionResultIDsBySession, plan.sessionID)
 	delete(c.sessionArbitraryCallKeysBySession, plan.sessionID)
 	delete(c.sessionLazySpansBySession, plan.sessionID)
+	delete(c.sessionLazySpansProvisional, plan.sessionID)
 	delete(c.sessionResultInstallSpans, plan.sessionID)
 	delete(c.sessionResourcesBySession, plan.sessionID)
 	delete(c.sessionVolatileVarsBySession, plan.sessionID)
@@ -2354,11 +2422,13 @@ const (
 )
 
 type Cache struct {
-	partFixture              atomic.Pointer[partFixtureState]
 	testTransferCopied       func(uint64)
 	testTransferPlanPrepared func(int) error
 	testBeforeTransferCommit func()
 	testAfterTransferCommit  func()
+	// testPartInstalled runs as a part install's last act, after it has
+	// released every lock.
+	testPartInstalled func()
 
 	// testStoredSizeMeasure runs before StoredSizes measures each value,
 	// testStoredSizesHold after each hold of egraphMu it takes, with the
@@ -2567,6 +2637,10 @@ type Cache struct {
 	sessionResultIDsBySession         map[string]map[sharedResultID]struct{}
 	sessionArbitraryCallKeysBySession map[string]map[string]struct{}
 	sessionLazySpansBySession         map[string]map[sharedResultID]trace.SpanContext
+	// sessionLazySpansProvisional marks the sessionLazySpansBySession entries
+	// captured under a span that is not the call's own, which a capture
+	// under a call's own span replaces (captureSessionLazySpanContext).
+	sessionLazySpansProvisional map[string]map[sharedResultID]struct{}
 	// sessionResultInstallSpans records which API spans returned/own which
 	// results in a session. Lazy resume spans cause-link the install spans of
 	// the result being evaluated so dagui can resolve pending state and mark
@@ -2590,6 +2664,9 @@ type Cache struct {
 
 	snapshotManager   bkcache.SnapshotManager
 	partContentSource *PartContentSource
+	// imageEntriesCause, once set, is why some of the engine image's entries
+	// aren't in the cache (SetImageEntriesCause).
+	imageEntriesCause atomic.Pointer[string]
 	snapshotGC        func(context.Context) error
 
 	// partPrefetcher, started on the first accepted offer, prefetches
@@ -2879,8 +2956,9 @@ type sharedResult struct {
 	deps map[sharedResultID]struct{}
 	// depParents is the reverse index for direct deps. It lets install-span
 	// lookups walk dep edges upward on demand to find closure-owning installs
-	// (module API call returns) for the result being evaluated.
-	depParents *set.TreeSet[sharedResultID]
+	// (module API call returns) for the result being evaluated. Nothing reads
+	// it in order.
+	depParents map[sharedResultID]struct{}
 	// sessionResourceHandle is set when this result is itself an attached
 	// session-resource handle leaf. requiredSessionResources is the flattened
 	// transitive set of handle requirements for cache-hit validation.
@@ -3459,7 +3537,10 @@ type ongoingCall struct {
 	resDeclined    bool
 	ttlSeconds     int64
 	// expiryLimit is the resolver's ExpireBy, in sharedWorkCtx.
-	expiryLimit             *expiryLimit
+	expiryLimit *expiryLimit
+	// borrowed is the resolver's RequireSessionResourcesOf, in
+	// sharedWorkCtx.
+	borrowed                *borrowedResults
 	initCompletedResultOnce sync.Once
 	handoffHoldActive       bool
 	initCompletedResultErr  error
@@ -4028,10 +4109,10 @@ func (c *Cache) addExplicitDependenciesLocked(
 		if err != nil {
 			return err
 		}
-		if !changed || res.depParents == nil {
+		if !changed {
 			continue
 		}
-		for ancestorID := range res.depParents.Items() {
+		for ancestorID := range res.depParents {
 			if ancestor := c.resultsByID[ancestorID]; ancestor != nil {
 				queue = append(queue, ancestor)
 			}
@@ -4046,9 +4127,9 @@ func (c *Cache) rememberDependencyEdgeLocked(parentRes *sharedResult, depRes *sh
 		return
 	}
 	if depRes.depParents == nil {
-		depRes.depParents = newSharedResultIDSet()
+		depRes.depParents = map[sharedResultID]struct{}{}
 	}
-	depRes.depParents.Insert(parentRes.id)
+	depRes.depParents[parentRes.id] = struct{}{}
 }
 
 func (c *Cache) forgetDependencyEdgeLocked(parentID sharedResultID, depID sharedResultID) {
@@ -4056,8 +4137,8 @@ func (c *Cache) forgetDependencyEdgeLocked(parentID sharedResultID, depID shared
 	if depRes == nil || depRes.depParents == nil {
 		return
 	}
-	depRes.depParents.Remove(parentID)
-	if depRes.depParents.Empty() {
+	delete(depRes.depParents, parentID)
+	if len(depRes.depParents) == 0 {
 		depRes.depParents = nil
 	}
 }
@@ -6590,6 +6671,8 @@ func (c *Cache) getOrInitCallInner(
 	sharedWorkCtx = context.WithValue(sharedWorkCtx, persistDeclineKey{}, decline)
 	expiry := &expiryLimit{}
 	sharedWorkCtx = context.WithValue(sharedWorkCtx, expiryLimitKey{}, expiry)
+	borrowed := &borrowedResults{}
+	sharedWorkCtx = context.WithValue(sharedWorkCtx, borrowedResultsKey{}, borrowed)
 	sharedWorkCtx = withoutCallScopes(sharedWorkCtx)
 	oc := &ongoingCall{
 		callConcurrencyKeys:     callConcKeys,
@@ -6601,6 +6684,7 @@ func (c *Cache) getOrInitCallInner(
 		sharedWorkCtx:           sharedWorkCtx,
 		persistDecline:          decline,
 		expiryLimit:             expiry,
+		borrowed:                borrowed,
 		releaseOperationLeaseFn: releaseOperationLease,
 		profOpID:                execOp.ID(),
 		// snapshot the target's skip decision for the OTel wait condition (oc.res is not
@@ -7587,6 +7671,13 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		c.rememberDependencyEdgeLocked(oc.res, depRes)
 		c.incrementIncomingOwnershipLocked(ctx, depRes)
 		c.traceResultCallDepAdded(ctx, oc.res.id, depID, dep.path)
+	}
+	// In the critical section that indexes the call's key, so no lookup by
+	// it is served the result before it requires what the resolver borrowed.
+	if borrowed := oc.borrowed.load(); len(borrowed) > 0 {
+		if err := c.requireBorrowedSessionResourcesLocked(ctx, oc.res, borrowed); err != nil {
+			return failPartialPublication(err)
+		}
 	}
 	if _, err := c.recomputeRequiredSessionResourcesLocked(oc.res); err != nil {
 		return failPartialPublication(err)

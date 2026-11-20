@@ -323,3 +323,53 @@ func TestCallOpStartsWithItsSpan(t *testing.T) {
 	}
 	t.Fatal("no call op")
 }
+
+// TestLazySpanFromCallPath: through the server's own calls, with wcprof
+// off as in production, a call its telemetry doesn't span (a repeat it
+// deduplicated, say) obtains its result under the request's span; the same
+// call made with a span of its own then names that span as the call the
+// result's evaluation evaluates.
+func TestLazySpanFromCallPath(t *testing.T) {
+	sr, tr := newLazySkipRecorder()
+	c, err := NewCache(t.Context(), "", nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, c.Close(context.Background())) })
+	srv := newDagqlServerForTest(t, &persistCodecRoot{})
+	Fields[*persistCodecRoot]{
+		Func("value", func(context.Context, *persistCodecRoot, struct{}) (Int, error) { return NewInt(1), nil }),
+	}.Install(srv)
+	spanCalls := false
+	srv.Around(func(ctx context.Context, req *CallRequest) (context.Context, func(AnyResult, bool, *error)) {
+		if !spanCalls {
+			return ctx, NoopDone
+		}
+		ctx, span := tr.Start(ctx, "Query.value")
+		return ctx, func(AnyResult, bool, *error) { span.End() }
+	})
+	const session = "lazy-span-call-path"
+	ctx := persistDecodeOwnerContext(t, c, srv, session)
+	require.False(t, wcprof.Enabled(ctx), "the production path records no wcprof")
+	ctx, request := tr.Start(ctx, "POST /query")
+	defer request.End()
+
+	res, err := srv.root.Select(ctx, srv, Selector{Field: "value"})
+	require.NoError(t, err)
+	id := res.cacheSharedResult().id
+	recorded, ok := c.sessionLazySpanContext(session, id)
+	require.True(t, ok)
+	require.Equal(t, request.SpanContext().SpanID(), recorded.SpanID())
+
+	spanCalls = true
+	_, err = srv.root.Select(ctx, srv, Selector{Field: "value"})
+	require.NoError(t, err)
+	var called trace.SpanID
+	for _, s := range sr.Ended() {
+		if s.Name() == "Query.value" {
+			called = s.SpanContext().SpanID()
+		}
+	}
+	require.True(t, called.IsValid())
+	recorded, ok = c.sessionLazySpanContext(session, id)
+	require.True(t, ok)
+	require.Equal(t, called, recorded.SpanID(), "the call's own span replaces the request's")
+}

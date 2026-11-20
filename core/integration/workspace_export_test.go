@@ -980,11 +980,18 @@ func (WorkspaceSuite) TestWorkspaceExportRereadsHost(ctx context.Context, t *tes
 	git("add", ".")
 	git("commit", "-m", "version 1")
 	c := connect(ctx, t, dagger.WithWorkdir(checkout))
+	clean := func() bool {
+		t.Helper()
+		empty, err := core.NewQuery(c).CurrentWorkspace().Git().Uncommitted().IsEmpty(ctx)
+		require.NoError(t, err)
+		return empty
+	}
 
 	// Prime the per-client host cache, as an agent reading before editing does.
 	contents, err := core.NewQuery(c).CurrentWorkspace().File("VERSION").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "1", contents)
+	require.True(t, clean())
 
 	require.NoError(t, core.NewQuery(c).CurrentWorkspace().WithNewFile("VERSION", "2").Export(ctx))
 	onDisk, err := os.ReadFile(versionPath)
@@ -996,6 +1003,7 @@ func (WorkspaceSuite) TestWorkspaceExportRereadsHost(ctx context.Context, t *tes
 	contents, err = core.NewQuery(c).CurrentWorkspace().File("VERSION").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "2", contents)
+	require.False(t, clean(), "the exported edit is an uncommitted change")
 
 	// A second export diffs against what is on disk now, so reverting to the
 	// original contents is a real change and is written.
@@ -1006,4 +1014,5 @@ func (WorkspaceSuite) TestWorkspaceExportRereadsHost(ctx context.Context, t *tes
 	contents, err = core.NewQuery(c).CurrentWorkspace().File("VERSION").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "1", contents)
+	require.True(t, clean(), "reverting the edit leaves nothing uncommitted")
 }

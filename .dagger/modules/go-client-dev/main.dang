@@ -31,8 +31,8 @@ type GoClientDev {
   Build a container to run the go toolchain
   """
   pub devContainer: Container! {
-    let ctr = go(ws: self.ws, source: workspaceDir)
-      .env
+    let ctr = engineDev(ws: self.ws)
+      .goEnv(source: workspaceDir)
       .withWorkdir(sourcePath)
     # "sdk" is an arbitrary name for state persistence
     let engine = engineDev(ws: self.ws)
@@ -47,10 +47,22 @@ type GoClientDev {
   Test the Go SDK
   """
   pub test: Void @check {
-    devContainer
-      .withExec(["go", "test", "-v", "-skip=TestProvision", "./..."])
-      .sync
-
+    # As the engine's tests run: each package's test binary built by
+    # dagger/go's per-package build, and run from its package's directory.
+    # The tests never run the go command, so they run with the dev engine's
+    # client installed and no Go toolchain.
+    let engine = engineDev(ws: self.ws)
+    # "sdk" is an arbitrary name for state persistence
+    let client = engine
+      .installClient(service: engine.service("sdk"))
+      .withMountedDirectory("/app", workspaceDir)
+    engine.testModule(
+      container: client,
+      source: workspaceDir,
+      module: sourcePath,
+      skip: "TestProvision",
+      testVerbose: true,
+    )
     null
   }
 
@@ -58,11 +70,34 @@ type GoClientDev {
   Regenerate the Go SDK API
   """
   pub generate: Changeset! @generate {
-    devContainer
-      .withExec(["go", "generate", "-v", "."])
-      .withExec(["go", "mod", "tidy"])
-      .directory("../..") # pop back to repo root
-      .changes(workspaceDir)
+    # As the Go SDK's code generation runs: codegen, on the API schema the
+    # introspect tool computes from the engine's source without an engine,
+    # loading what sdk/go imports through the export driver from dagger/go's
+    # archives, so no go command compiles anything. Generating writes only Go
+    # files, never go.mod.
+    let engine = engineDev(ws: self.ws)
+    let src = engine.source
+    let sdk = src.directory(sourcePath).asWorkspace
+    let golang = go(version: "1.27")
+    let archives = golang
+      .module(ws: sdk, path: ".", findUp: false)
+      .archives(ws: sdk, dependencies: true, packages: ["."], noTests: true)
+    # A Go image: codegen lists sdk/go's module with the go command.
+    container
+      .from(golang.image(version: "1.27"))
+      .withFile("/usr/local/bin/codegen", codegen.binary)
+      .withFile("/usr/local/bin/export-driver", engine.exportDriver)
+      .withMountedFile("/schema.json", engine.introspectionJson)
+      .withMountedDirectory("/gobuild-archives", archives)
+      .withEnvVariable("GOPACKAGESDRIVER", "/usr/local/bin/export-driver")
+      .withEnvVariable("GOLANGCI_EXPORT_ARCHIVES", "/gobuild-archives")
+      .withEnvVariable("GOLANGCI_EXPORT_WORKDIR", "/tmp/export-driver")
+      .withEnvVariable("GOLANGCI_EXPORT_COMPILE", "never")
+      .withDirectory("/src", src)
+      .withWorkdir("/src")
+      .withExec(["codegen", "generate-library", "--lang", "go", "--introspection-json-path", "/schema.json", "--output", "./" + sourcePath])
+      .directory("/src")
+      .changes(src)
   }
 
   """

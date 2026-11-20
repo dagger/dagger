@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -214,6 +215,66 @@ func (DirectorySuite) TestWithNewFile(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, res.Directory.WithNewFile.ID)
 	require.Equal(t, []string{"some-file"}, res.Directory.WithNewFile.Entries)
+}
+
+// Each edit of a directory stacks a layer on its snapshot, and a mount stacks
+// only so many layers. However long a series of edits gets, the directory
+// still mounts, reads and runs in a container, with every write and deletion
+// in it.
+func (DirectorySuite) TestLongEditChain(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	const edits = 700
+	want := map[string]string{}
+	dir := sdkcore.NewQuery(c).Directory()
+	for i := range edits {
+		if i%10 == 9 {
+			// Delete a file written some layers below.
+			name := fmt.Sprintf("f%03d", i-5)
+			dir = dir.WithoutFile(name)
+			delete(want, name)
+		} else {
+			name := fmt.Sprintf("f%03d", i)
+			dir = dir.WithNewFile(name, fmt.Sprintf("content %d", i))
+			want[name] = fmt.Sprintf("content %d", i)
+		}
+		if i%50 == 49 {
+			// Evaluate as the chain grows, so each query stays small.
+			var err error
+			dir, err = dir.Sync(ctx)
+			require.NoError(t, err)
+		}
+	}
+	// Change the first layer's files from the last.
+	dir = dir.WithoutFile("f000").WithNewFile("f001", "rewritten")
+	delete(want, "f000")
+	want["f001"] = "rewritten"
+
+	names := make([]string, 0, len(want))
+	var listing strings.Builder
+	for name := range want {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	for _, name := range names {
+		fmt.Fprintf(&listing, "%s %s\n", name, want[name])
+	}
+
+	entries, err := dir.Entries(ctx)
+	require.NoError(t, err)
+	require.Equal(t, names, entries)
+
+	contents, err := dir.File("f001").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "rewritten", contents)
+
+	out, err := sdkcore.NewQuery(c).Container().From(alpineImage).
+		WithMountedDirectory("/mnt", dir).
+		WithWorkdir("/mnt").
+		WithExec([]string{"sh", "-c", `for f in *; do echo "$f $(cat $f)"; done`}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, listing.String(), out)
 }
 
 func (DirectorySuite) TestEntries(ctx context.Context, t *testctx.T) {

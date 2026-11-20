@@ -467,6 +467,11 @@ type DirectoryWithDirectoryLazy struct {
 	Filter      CopyFilter
 	Owner       string
 	Permissions *int
+	// DeclaredPlatform is the platform Directory.withPlatform declares the
+	// result as made for, when it is that declaration: evaluated, the result
+	// also takes the identity the declaration has with Source's inputs'
+	// contents known (DeclaredPlatformDigest).
+	DeclaredPlatform *Platform
 }
 
 type DirectoryWithDirectoryDockerfileCompatLazy struct {
@@ -607,12 +612,13 @@ type DirectoryChownLazy struct {
 }
 
 type persistedDirectoryWithDirectoryLazy struct {
-	ParentResultID uint64     `json:"parentResultID"`
-	DestDir        string     `json:"destDir"`
-	SourceResultID uint64     `json:"sourceResultID"`
-	Filter         CopyFilter `json:"filter"`
-	Owner          string     `json:"owner,omitempty"`
-	Permissions    *int       `json:"permissions,omitempty"`
+	ParentResultID   uint64     `json:"parentResultID"`
+	DestDir          string     `json:"destDir"`
+	SourceResultID   uint64     `json:"sourceResultID"`
+	Filter           CopyFilter `json:"filter"`
+	Owner            string     `json:"owner,omitempty"`
+	Permissions      *int       `json:"permissions,omitempty"`
+	DeclaredPlatform *Platform  `json:"declaredPlatform,omitempty"`
 }
 
 type persistedDirectoryWithDirectoryDockerfileCompatLazy struct {
@@ -882,13 +888,14 @@ func decodePersistedDirectoryLazy(ctx context.Context, dec *dagql.PersistDecodeC
 			return nil, err
 		}
 		return &DirectoryWithDirectoryLazy{
-			LazyState:   NewLazyState(),
-			Parent:      parent,
-			DestDir:     persisted.DestDir,
-			Source:      source,
-			Filter:      persisted.Filter,
-			Owner:       persisted.Owner,
-			Permissions: persisted.Permissions,
+			LazyState:        NewLazyState(),
+			Parent:           parent,
+			DestDir:          persisted.DestDir,
+			Source:           source,
+			Filter:           persisted.Filter,
+			Owner:            persisted.Owner,
+			Permissions:      persisted.Permissions,
+			DeclaredPlatform: persisted.DeclaredPlatform,
 		}, nil
 	case persistedDirectoryLazyKindWithDirectoryDockerfileCompat:
 		var persisted persistedDirectoryWithDirectoryDockerfileCompatLazy
@@ -1077,7 +1084,27 @@ func decodePersistedDirectoryLazy(ctx context.Context, dec *dagql.PersistDecodeC
 
 func (lazy *DirectoryWithDirectoryLazy) Evaluate(ctx context.Context, dir *Directory) error {
 	return dir.evaluateLazy(ctx, &lazy.LazyState, "Directory.withDirectory", func(ctx context.Context) error {
-		return dir.WithDirectory(ctx, lazy.Parent, lazy.DestDir, lazy.Source, lazy.Filter, lazy.Owner, lazy.Permissions)
+		if err := dir.WithDirectory(ctx, lazy.Parent, lazy.DestDir, lazy.Source, lazy.Filter, lazy.Owner, lazy.Permissions); err != nil {
+			return err
+		}
+		if lazy.DeclaredPlatform == nil {
+			return nil
+		}
+		// Copying Source evaluated it and its inputs, so the contents they
+		// learned on the way count now, as they do for a declaration made
+		// after them, such as one on an engine that merged them.
+		frame, err := lazy.Source.ResultCall()
+		if err != nil {
+			return err
+		}
+		dig, err := DeclaredPlatformDigest(ctx, frame, *lazy.DeclaredPlatform)
+		if err != nil {
+			return err
+		}
+		if host := dir.PartHostBinding(); host != nil {
+			return host.SetContentDigestAfterEvaluation(ctx, dig, dagql.ExtraDigestLabelPlatform)
+		}
+		return nil
 	})
 }
 
@@ -1105,12 +1132,13 @@ func (lazy *DirectoryWithDirectoryLazy) EncodePersisted(ctx context.Context, enc
 		return nil, err
 	}
 	return json.Marshal(persistedDirectoryWithDirectoryLazy{
-		ParentResultID: parentID,
-		DestDir:        lazy.DestDir,
-		SourceResultID: sourceID,
-		Filter:         lazy.Filter,
-		Owner:          lazy.Owner,
-		Permissions:    lazy.Permissions,
+		ParentResultID:   parentID,
+		DestDir:          lazy.DestDir,
+		SourceResultID:   sourceID,
+		Filter:           lazy.Filter,
+		Owner:            lazy.Owner,
+		Permissions:      lazy.Permissions,
+		DeclaredPlatform: lazy.DeclaredPlatform,
 	})
 }
 

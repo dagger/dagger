@@ -72,6 +72,8 @@ func (db *DB) addCall(digest string, decoded *callpbv1.Call) bool {
 	}
 	db.Calls[digest] = decoded
 	for _, span := range db.Intervals[digest] {
+		// the call names the span as a blocker (blockerLabel)
+		db.noteRowWaitsChange(span)
 		delete(db.spanCalls, span)
 	}
 	return true

@@ -406,13 +406,13 @@ func (ModuleSuite) TestCrossSessionContextDirectoryDefaultPath(ctx context.Conte
 
 	c1 := connect(ctx, t)
 	entries1 := callEntries(c1, rand.Text())
-	require.Contains(t, entries1, "dagger.json")
+	require.Contains(t, entries1, "dagger-module.toml")
 	require.Contains(t, entries1, "foo.txt")
 	require.NoError(t, c1.Close())
 
 	c2 := connect(ctx, t)
 	entries2 := callEntries(c2, rand.Text())
-	require.Contains(t, entries2, "dagger.json")
+	require.Contains(t, entries2, "dagger-module.toml")
 	require.Contains(t, entries2, "foo.txt")
 }
 
@@ -1657,7 +1657,7 @@ func (DockerfileSuite) TestCrossSessionDockerbuildSockets(ctx context.Context, t
 }
 
 func (ModuleSuite) TestCrossSessionGitSockets(ctx context.Context, t *testctx.T) {
-	tc := getVCSTestCase(t, "git@bitbucket.org:dagger-modules/private-modules-test.git")
+	tc := getVCSTestCase(t, "git@ssh.bitbucket.org:dagger-modules/private-modules-test.git")
 	url := tc.gitTestRepoRef
 	ref := tc.gitTestRepoCommit
 

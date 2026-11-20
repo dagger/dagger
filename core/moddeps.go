@@ -11,6 +11,8 @@ import (
 	"sync"
 	"sync/atomic"
 
+	lru "github.com/hashicorp/golang-lru/v2"
+
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
@@ -142,41 +144,128 @@ func (b *SchemaBuilder) Append(mods ...Mod) *SchemaBuilder {
 // provenance, ObjectTypeAndServerForID, and persisted-envelope decoding too.
 //
 // The engine keeps one memo per client and drops it with the client's other
-// heavy state, so its entries live exactly as long as the client that loaded
-// them. It is unbounded by design: entries are only created for module sets
-// the client actually loads through, that count grows with distinct module
-// results (e.g. one per reload in a dev loop) rather than with load volume,
-// and an entry costs roughly one forked core schema plus its modules' types.
+// heavy state. It also keeps one memo per session for the schemas of builders
+// that are not client-owned, such as a Module's Deps (see
+// SchemaBuilder.Schema). The session's memo is shared by its clients,
+// including the nested client of every function call, and dropped when the
+// session ends.
 //
-// The engine also keeps one memo per session for the schemas of builders that
-// are not client-owned, such as a Module's Deps (see SchemaBuilder.Schema).
-// It is shared by the session's clients, including the nested client of every
-// function call, and dropped when the session ends; its entries grow with the
-// distinct module sets the session uses.
+// A session can live for hours (an interactive agent's does), and its module
+// sets keep changing: every reload of a module is a new Module result, and so
+// a new module set. So every table of a memo is a bounded LRU: an entry costs
+// up to a forked core schema plus its modules' types (hundreds of KiB), and
+// one unused for a while is rebuilt on its next use for a few ms (a core fork
+// and module installs). A server, builder or entry evicted while a caller
+// holds it stays valid for that caller: eviction only stops sharing it, and
+// the garbage collector frees it once nothing holds it. Schema servers are
+// already built to be dropped (module resolvers and classes hold their server
+// weakly), and the bounds sit well above the working set of the workloads the
+// memo was made for (see maxMemoizedSchemaBuilders). A rebuild after an
+// eviction counts as RepeatedOnSameRoot in SchemaBuilds.
 //
 // A built server is an immutable type registry; the dagql result cache is
 // engine-wide and never held by a server, so sharing one shares no results.
 type SchemaBuilderMemo struct {
 	mu       sync.Mutex
-	builders map[string]*SchemaBuilder
+	builders *lru.Cache[string, *SchemaBuilder]
 
 	// canonicalArgTypes reuses immutable argument metadata across the schemas
 	// of nested clients. It never shares their query roots or installed fields.
-	canonicalArgTypes map[string]*canonicalArgType
-	modTypes          map[modTypeMemoKey]*modTypeMemoEntry
-	gitClients        map[declaredGitClientsKey]*declaredGitClientsEntry
+	canonicalArgTypes *lru.Cache[string, *canonicalArgType]
+	modTypes          *lru.Cache[modTypeMemoKey, *modTypeMemoEntry]
+	gitClients        *lru.Cache[declaredGitClientsKey, *declaredGitClientsEntry]
 	// moduleServers holds the client's standalone server for each module
 	// whose artifacts it discovers, evaluates or checks
 	// (dagqlServerForModule).
-	moduleServers map[string]*moduleServerEntry
+	moduleServers *lru.Cache[string, *moduleServerEntry]
 	// builtModuleSets holds what this session built a schema server for, by
-	// module set, and builtServers how many it holds (countSchemaBuild).
+	// module set, and builtServers how many it holds (countSchemaBuild). It
+	// keeps keys only, a few hundred bytes each, and stops recording at
+	// maxTrackedModuleSets.
 	builtModuleSets map[string]*sessionBuilds
 	builtServers    int
+	// workspaceModules holds the modules installed in a value workspace, by
+	// its recipe digest (see MCP.loadBase).
+	workspaceModules *lru.Cache[string, *InstalledWorkspaceModules]
 }
 
+const (
+	// maxMemoizedSchemaBuilders bounds a memo's builders, each with the
+	// schema server it built, and maxMemoizedModuleServers its standalone
+	// module servers. A memo serves a few distinct module sets at a time: the
+	// handles a client loads (an agent's conversation references the modules
+	// it was composed with), the dependency schemas of the modules a session
+	// loads (those that depend on core alone share one), one server per
+	// module a listing visits.
+	maxMemoizedSchemaBuilders = 256
+	maxMemoizedModuleServers  = 256
+	// maxMemoizedTypes bounds the module types and argument types resolved
+	// for module schemas: a few per function of each module installed. Each
+	// is small, but keeps its Module result alive.
+	maxMemoizedTypes = 8192
+	// maxMemoizedGitClients bounds the git clients read per module tree: a
+	// short list each.
+	maxMemoizedGitClients = 1024
+	// maxMemoizedWorkspaces bounds the modules loaded per value workspace:
+	// each keeps every Module result the workspace installs, and an agent's
+	// workspace is a new value at every edit. Every agent of a session asks
+	// for its own workspace's modules at each step, so the bound sits well
+	// above the agents a session runs at once (a staff of dozens): fewer
+	// would reload, and rebuild the failing modules of, every agent in turn.
+	maxMemoizedWorkspaces = 256
+)
+
 func NewSchemaBuilderMemo() *SchemaBuilderMemo {
-	return &SchemaBuilderMemo{builders: map[string]*SchemaBuilder{}}
+	return &SchemaBuilderMemo{
+		builders:          newMemoTable[string, *SchemaBuilder](maxMemoizedSchemaBuilders),
+		canonicalArgTypes: newMemoTable[string, *canonicalArgType](maxMemoizedTypes),
+		modTypes:          newMemoTable[modTypeMemoKey, *modTypeMemoEntry](maxMemoizedTypes),
+		gitClients:        newMemoTable[declaredGitClientsKey, *declaredGitClientsEntry](maxMemoizedGitClients),
+		moduleServers:     newMemoTable[string, *moduleServerEntry](maxMemoizedModuleServers),
+		workspaceModules:  newMemoTable[string, *InstalledWorkspaceModules](maxMemoizedWorkspaces),
+	}
+}
+
+func newMemoTable[K comparable, V any](size int) *lru.Cache[K, V] {
+	table, err := lru.New[K, V](size)
+	if err != nil {
+		panic(err) // only for a size that is not positive
+	}
+	return table
+}
+
+// memoEntry returns table's entry for key, adding an empty one if there is
+// none, for the caller to fill under the entry's own lock. An entry evicted
+// while a caller fills it is still filled for that caller.
+func memoEntry[K comparable, E any](m *SchemaBuilderMemo, table *lru.Cache[K, *E], key K) *E {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if entry, ok := table.Get(key); ok {
+		return entry
+	}
+	entry := new(E)
+	table.Add(key, entry)
+	return entry
+}
+
+// WorkspaceModules returns the modules installed in the workspace key names,
+// loading them with load the first time. A failed load is not kept. Two
+// callers may load the same key at once; the last load is kept. A nil memo
+// loads every time.
+func (m *SchemaBuilderMemo) WorkspaceModules(key string, load func() (*InstalledWorkspaceModules, error)) (*InstalledWorkspaceModules, error) {
+	if m == nil {
+		return load()
+	}
+	if cached, ok := m.workspaceModules.Get(key); ok {
+		return cached, nil
+	}
+	// Loading builds schemas through this memo, so it runs unlocked.
+	loaded, err := load()
+	if err != nil {
+		return nil, err
+	}
+	m.workspaceModules.Add(key, loaded)
+	return loaded, nil
 }
 
 // Get returns the client-owned builder memoized for exactly b's root and
@@ -196,26 +285,36 @@ func (m *SchemaBuilderMemo) Get(b *SchemaBuilder) *SchemaBuilder {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if cached := m.builders[key]; cached != nil && !cached.loadSchemaFailed.Load() {
+	if cached, ok := m.builders.Get(key); ok && !cached.loadSchemaFailed.Load() {
 		return cached
 	}
 	owned := b.ClientOwned()
-	m.builders[key] = owned
+	m.builders.Add(key, owned)
 	return owned
 }
 
 // memoKey identifies b's root and entries: user modules by attached result,
-// anything else (core) by instance. Entry order and install options are part
-// of the key, since both shape the built schema.
+// core by its schema base and view (SchemaASTCacheKey), anything else by
+// instance. Entry order and install options are part of the key, since both
+// shape the built schema.
+//
+// Core is keyed by content because every module load wraps it in a CoreMod
+// of its own (CoreMod.WithView): keyed by instance, each reload of a module
+// built another server for its unchanged dependency schema. A CoreMod is its
+// base and view and nothing else, so two with the same key build the same
+// schema.
 func (b *SchemaBuilder) memoKey() (string, bool) {
-	entries, ok := schemaEntriesKey(b.entries, false)
+	entries, ok := schemaEntriesKey(b.entries, true)
 	if !ok {
 		return "", false
 	}
 	return fmt.Sprintf("r%p;%s", b.root, entries), true
 }
 
-func schemaEntriesKey(entries []modDepEntry, metadataOnly bool) (string, bool) {
+// schemaEntriesKey identifies entries: user modules by attached result, and
+// other modules by instance, or, with byContent, by their SchemaASTCacheKey
+// when they have one.
+func schemaEntriesKey(entries []modDepEntry, byContent bool) (string, bool) {
 	var key strings.Builder
 	for _, e := range entries {
 		switch mod := e.mod.(type) {
@@ -226,7 +325,7 @@ func schemaEntriesKey(entries []modDepEntry, metadataOnly bool) (string, bool) {
 			}
 			fmt.Fprintf(&key, "m%d", id.EngineResultID())
 		default:
-			if metadataOnly {
+			if byContent {
 				if stable, ok := mod.(interface{ SchemaASTCacheKey() string }); ok {
 					if identity := stable.SchemaASTCacheKey(); identity != "" {
 						fmt.Fprintf(&key, "c%d:%s", len(identity), identity)
@@ -262,6 +361,54 @@ func (b *SchemaBuilder) With(mod Mod, opts InstallOpts) *SchemaBuilder {
 		}
 	}
 	cp.entries = append(cp.entries, modDepEntry{mod: mod, opts: opts})
+	return cp
+}
+
+// WithPrimaryMods returns b serving mods with their constructors, and without
+// the primary entries named in removed (by LatestNamer.CLIName). An entry
+// named as a module of mods serves that module instead, with its install
+// options and its constructor; the rest of mods are appended. An entry whose
+// module is the same as its replacement is kept as it is, so the result
+// builds the same schema, and if that leaves every entry as it was, the
+// result is b itself, with the server it may keep.
+func (b *SchemaBuilder) WithPrimaryMods(mods []Mod, removed []string) *SchemaBuilder {
+	cp := b.Clone()
+	byName := make(map[string]Mod, len(mods))
+	for _, mod := range mods {
+		byName[mod.Name()] = mod
+	}
+	changed := false
+	entries := cp.entries[:0]
+	for _, e := range cp.entries {
+		name := e.mod.Name()
+		mod, named := byName[name]
+		switch {
+		case name == ModuleName:
+		case named:
+			if same, err := e.mod.Same(mod); err != nil || !same {
+				e.mod, changed = mod, true
+			}
+			if e.opts.SkipConstructor {
+				e.opts.SkipConstructor, changed = false, true
+			}
+			delete(byName, name)
+		case !e.opts.SkipConstructor && slices.Contains(removed, LatestNamer.CLIName(name)):
+			changed = true
+			continue
+		}
+		entries = append(entries, e)
+	}
+	cp.entries = entries
+	for _, mod := range mods {
+		if _, ok := byName[mod.Name()]; ok {
+			cp.entries = append(cp.entries, modDepEntry{mod: mod})
+			delete(byName, mod.Name())
+			changed = true
+		}
+	}
+	if !changed {
+		return b
+	}
 	return cp
 }
 

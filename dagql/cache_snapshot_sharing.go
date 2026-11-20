@@ -825,10 +825,7 @@ func (c *Cache) selectShareSlots(ctx context.Context, item *snapshotShareItem) [
 	return slots
 }
 
-// traceShareSkip records one pass diagnostic. Sharing adds no fixture event
-// kind: a sharing Commit emits the existing installed-ready, and until batch
-// 7's sharing report group exists the absence of selected-ready distinguishes
-// it from a demand install.
+// traceShareSkip records one pass diagnostic.
 func (c *Cache) traceShareSkip(ctx context.Context, row *sharedResult, address PersistedPartAddress, cause error) {
 	_ = ctx
 	if errors.Is(cause, engine.ErrSnapshotShareEvaluation) {

@@ -1,6 +1,6 @@
 module dagger/hello-with-checks
 
-go 1.25.3
+go 1.27
 
 require (
 	dagger.io/dagger v0.19.11

@@ -1,0 +1,269 @@
+package archive
+
+import (
+	"errors"
+	"fmt"
+	"net/url"
+	"strconv"
+	"time"
+
+	"go.opentelemetry.io/otel/trace"
+)
+
+// SpanSelection selects the priority view and/or listened subtrees of a fixed
+// archive cut. Nil in StreamOptions preserves the unfiltered history stream.
+// Unlike Cloud, archives are finite: no time-based follow/backfill is needed.
+type SpanSelection struct {
+	// Full bypasses priority filtering while retaining optional UI annotations.
+	Full   bool
+	NoRoot bool
+	Listen []string
+	// Exact selects exactly these spans, without their children or
+	// ancestors: spans a view holds only references to, such as what a
+	// row's time breakdown waited on. It requires NoRoot and no Listen.
+	Exact []string
+	// Conversation narrows the root view's priority spans to agent
+	// conversations (loop and message spans, and each tool call's execution
+	// span, which holds its result), leaving out checks, tests, revealed and
+	// failed spans. An engine that predates it ignores it and serves the
+	// broader priority view.
+	Conversation bool
+	DagUIView    bool
+}
+
+const (
+	LogRecordsAll          = ""
+	LogRecordsLogs         = "logs"
+	LogRecordsCallPayloads = "call_payloads"
+	LogRecordsMetadata     = "metadata"
+)
+
+// MaxListenSpans bounds the subtrees one span selection may listen to.
+// Callers with more split them across requests.
+const MaxListenSpans = 256
+
+// LogSelection selects a span's own or descendant records. Records selects
+// ordinary output (including media), call payloads, or all historical records.
+// Control records remain exclusive to the verified bootstrap in every mode.
+type LogSelection struct {
+	SpanID      string
+	Descendants bool
+	After       *time.Time
+	Records     string
+}
+
+// MetricSelection narrows a metric stream to the metrics with these names:
+// e.g. the LLM token counts a cost total sums, without every exec's resource
+// metrics. An engine that predates it ignores it and streams every metric, so
+// the response says whether it applied one (SelectionHeader), and the client
+// fails the read with ErrSelectionUnsupported before consuming any of it.
+type MetricSelection struct {
+	Names []string
+}
+
+// MaxMetricNames bounds the names one metric selection may name.
+const MaxMetricNames = 64
+
+// SelectionHeader is the response header in which an engine lists the
+// selections it applied that an older engine would ignore: "metrics" for a
+// MetricSelection.
+const SelectionHeader = "X-Dagger-Archive-Selection"
+
+// SelectionMetrics is the SelectionHeader value for an applied
+// MetricSelection.
+const SelectionMetrics = "metrics"
+
+// ErrSelectionUnsupported fails a read whose selection the engine did not
+// apply: it predates it, and would stream the unselected history instead.
+var ErrSelectionUnsupported = errors.New("engine archive does not support the selection")
+
+func (s StreamOptions) SelectionQuery(signal string) (url.Values, error) {
+	q := make(url.Values)
+	if s.Spans != nil {
+		if signal != "traces" {
+			return nil, fmt.Errorf("span selection requires traces")
+		}
+		q.Set("root", strconv.FormatBool(!s.Spans.NoRoot))
+		if s.Spans.Full {
+			q.Set("full", "true")
+		}
+		for _, id := range s.Spans.Listen {
+			q.Add("listen", id)
+		}
+		for _, id := range s.Spans.Exact {
+			q.Add("exact", id)
+		}
+		if s.Spans.Conversation {
+			q.Set("conversation", "true")
+		}
+		if s.Spans.DagUIView {
+			q.Set("view", "dagui")
+		}
+	}
+	if s.Logs != nil {
+		if signal != "logs" {
+			return nil, fmt.Errorf("log selection requires logs")
+		}
+		q.Set("span_id", s.Logs.SpanID)
+		q.Set("descendants", strconv.FormatBool(s.Logs.Descendants))
+		q.Set("records", s.Logs.Records)
+		if s.Logs.After != nil {
+			q.Set("after", s.Logs.After.UTC().Format(time.RFC3339Nano))
+		}
+	}
+	if s.Metrics != nil {
+		if signal != "metrics" {
+			return nil, fmt.Errorf("metric selection requires metrics")
+		}
+		if len(s.Metrics.Names) == 0 {
+			return nil, fmt.Errorf("metric selection names no metrics")
+		}
+		for _, name := range s.Metrics.Names {
+			q.Add("metric", name)
+		}
+	}
+	if _, _, err := ParseSelection(signal, q); err != nil {
+		return nil, err
+	}
+	if _, err := ParseMetricSelection(signal, q); err != nil {
+		return nil, err
+	}
+	return q, nil
+}
+
+// ParseMetricSelection validates a metric stream's selection: nil when the
+// query selects none.
+func ParseMetricSelection(signal string, q url.Values) (*MetricSelection, error) {
+	if !q.Has("metric") {
+		return nil, nil
+	}
+	if signal != "metrics" {
+		return nil, fmt.Errorf("metric selection requires metrics")
+	}
+	names := q["metric"]
+	if len(names) > MaxMetricNames {
+		return nil, fmt.Errorf("too many selected metrics")
+	}
+	for _, name := range names {
+		if name == "" {
+			return nil, fmt.Errorf("empty metric name")
+		}
+	}
+	return &MetricSelection{Names: names}, nil
+}
+
+// ParseSelection validates the shared archive client/server query contract.
+func ParseSelection(signal string, q url.Values) (*SpanSelection, *LogSelection, error) {
+	var spans *SpanSelection
+	var logs *LogSelection
+	var err error
+	if q.Has("root") || q.Has("listen") || q.Has("exact") || q.Has("view") || q.Has("full") || q.Has("conversation") {
+		if signal != "traces" {
+			return nil, nil, fmt.Errorf("span selection requires traces")
+		}
+		spans, err = parseSpanSelection(q)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	if q.Has("span_id") || q.Has("descendants") || q.Has("records") || q.Has("after") {
+		if signal != "logs" {
+			return nil, nil, fmt.Errorf("log selection requires logs")
+		}
+		logs, err = parseLogSelection(q)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	return spans, logs, nil
+}
+
+func validSelectionSpanID(id string) error {
+	if _, err := trace.SpanIDFromHex(id); err != nil {
+		return fmt.Errorf("invalid span ID %q: %w", id, err)
+	}
+	return nil
+}
+
+func selectionBool(q url.Values, key string, def bool) (bool, error) {
+	if !q.Has(key) {
+		return def, nil
+	}
+	return strconv.ParseBool(q.Get(key))
+}
+
+func parseSpanSelection(q url.Values) (*SpanSelection, error) {
+	root, err := selectionBool(q, "root", true)
+	if err != nil {
+		return nil, err
+	}
+	if v := q.Get("view"); v != "" && v != "dagui" {
+		return nil, fmt.Errorf("invalid archive view %q", v)
+	}
+	if len(q["listen"]) > MaxListenSpans {
+		return nil, fmt.Errorf("too many listened spans")
+	}
+	for _, id := range q["listen"] {
+		if err := validSelectionSpanID(id); err != nil {
+			return nil, err
+		}
+	}
+	if len(q["exact"]) > MaxListenSpans {
+		return nil, fmt.Errorf("too many exact spans")
+	}
+	for _, id := range q["exact"] {
+		if err := validSelectionSpanID(id); err != nil {
+			return nil, err
+		}
+	}
+	if len(q["exact"]) != 0 && (root || len(q["listen"]) != 0) {
+		return nil, fmt.Errorf("exact spans cannot be selected with roots or subtrees")
+	}
+	full, err := selectionBool(q, "full", false)
+	if err != nil {
+		return nil, err
+	}
+	if full && (!root || len(q["listen"]) != 0) {
+		return nil, fmt.Errorf("full view cannot select roots or subtrees")
+	}
+	conversation, err := selectionBool(q, "conversation", false)
+	if err != nil {
+		return nil, err
+	}
+	if conversation && (full || !root) {
+		return nil, fmt.Errorf("conversation view requires the priority roots")
+	}
+	return &SpanSelection{
+		Full: full, NoRoot: !root, Listen: q["listen"], Exact: q["exact"],
+		Conversation: conversation, DagUIView: q.Get("view") == "dagui",
+	}, nil
+}
+
+func parseLogSelection(q url.Values) (*LogSelection, error) {
+	descendants, err := selectionBool(q, "descendants", false)
+	if err != nil {
+		return nil, err
+	}
+	logs := &LogSelection{SpanID: q.Get("span_id"), Descendants: descendants, Records: q.Get("records")}
+	if logs.SpanID != "" {
+		if err := validSelectionSpanID(logs.SpanID); err != nil {
+			return nil, err
+		}
+	}
+	if (descendants || logs.Records == LogRecordsLogs) && logs.SpanID == "" {
+		return nil, fmt.Errorf("log selection requires a span ID")
+	}
+	switch logs.Records {
+	case LogRecordsAll, LogRecordsLogs, LogRecordsCallPayloads, LogRecordsMetadata:
+	default:
+		return nil, fmt.Errorf("invalid log record class %q", logs.Records)
+	}
+	if q.Has("after") {
+		t, err := time.Parse(time.RFC3339Nano, q.Get("after"))
+		if err != nil {
+			return nil, err
+		}
+		logs.After = &t
+	}
+	return logs, nil
+}

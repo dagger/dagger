@@ -13,6 +13,7 @@ import (
 	dangshared "github.com/dagger/dagger/core/sdk/dang/shared"
 	"github.com/dagger/dagger/core/sdk/entrypoint"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/util/hashutil"
@@ -54,8 +55,9 @@ func EntrypointModuleTypes(
 	}
 	nestedClientMetadata.SDKEntrypoint = true
 
-	contract := entrypointContract{dangVersion: src.Self().DangVersion}
+	contract := entrypointContract{dangVersion: src.Self().DangVersion, member: EntrypointDescriptionMember}
 	var typeDefs dagql.ObjectResultArray[*core.TypeDef]
+	var description string
 	_, err = evalDangSource(
 		ctx,
 		query,
@@ -92,17 +94,35 @@ func EntrypointModuleTypes(
 				return nil, fmt.Errorf("call module entrypoint types: %w", err)
 			}
 			typeDefs, err = loadEntrypointTypeDefs(ctx, dag, result)
-			return nil, err
+			if err != nil || !contract.declaresMember {
+				return nil, err
+			}
+			value, err := callEntrypointMethod(ctx, env, entrypointName, EntrypointDescriptionMember, moduleContext, nil)
+			if err != nil {
+				return nil, fmt.Errorf("call module entrypoint %s: %w", EntrypointDescriptionMember, err)
+			}
+			str, ok := value.(dang.StringValue)
+			if !ok {
+				return nil, fmt.Errorf("module entrypoint %s returned %T instead of a String", EntrypointDescriptionMember, value)
+			}
+			description = str.Val
+			return nil, nil
 		},
 	)
 	if err != nil {
-		return inst, dangshared.ConvertError(err)
+		return inst, convertError(err)
 	}
 	if err := entrypoint.ValidateConstructors(typeDefs); err != nil {
 		return inst, err
 	}
-	return entrypoint.ModuleFromTypeDefs(ctx, dag, typeDefs)
+	return entrypoint.ModuleFromTypeDefs(ctx, dag, description, typeDefs)
 }
+
+// EntrypointDescriptionMember is the optional entrypoint member that returns
+// the module's description, as a module SDK's runtime gives it with
+// Module.withDescription, such as from the doc comment of the module's
+// package. The engine calls it without arguments when it calls types.
+const EntrypointDescriptionMember = "description"
 
 type entrypointRuntime struct {
 	deps      *core.SchemaBuilder
@@ -129,7 +149,7 @@ func (r *entrypointRuntime) Call(
 ) (rerr error) {
 	defer func() {
 		if rerr != nil {
-			rerr = dangshared.ConvertError(rerr)
+			rerr = convertError(rerr)
 		}
 	}()
 
@@ -207,16 +227,27 @@ func (r *entrypointRuntime) Call(
 			// can expire before that TTL when a call with a shorter one
 			// returned the same result. So it runs again whenever dagql
 			// evaluates it, also after a pruned result or a failed attempt.
+			// A call that tracks what its work borrows may be lent the
+			// session's credentials in the process, which nothing in the
+			// exec's recipe names: its exec runs again in each session, and
+			// the call's own result requires what it borrowed.
 			if execMD != nil && execMD.CallDigest != "" {
 				callDigest := execMD.CallDigest
-				if fnCall.CacheTTLSeconds() > 0 {
+				switch {
+				case fnCall.CacheTTLSeconds() > 0:
 					callDigest = hashutil.HashStrings(callDigest.String(), rand.Text())
+				case fnCall.TracksBorrowing():
+					clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+					if err != nil {
+						return nil, err
+					}
+					callDigest = hashutil.HashStrings(callDigest.String(), "session", clientMetadata.SessionID)
 				}
 				callArgs = append(callArgs, entrypoint.StringCallArg("callDigest", callDigest.String()))
 			}
 			result, err := callEntrypointMethod(ctx, env, entrypointName, "call", moduleContext, callArgs)
 			if err != nil {
-				return nil, fmt.Errorf("call module entrypoint: %w", err)
+				return nil, fmt.Errorf("call module entrypoint: %w", returnRaisedError(ctx, fnCall, err))
 			}
 			resultJSON, err = entrypointJSONResult(result)
 			return nil, err
@@ -294,7 +325,7 @@ func evalEntrypointMember(
 ) (declared bool, rerr error) {
 	defer func() {
 		if rerr != nil {
-			rerr = dangshared.ConvertError(rerr)
+			rerr = convertError(rerr)
 		}
 	}()
 	if !mod.Self().Source.Valid {

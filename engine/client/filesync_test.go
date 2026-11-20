@@ -231,6 +231,52 @@ exit 2
 	})
 }
 
+// TestSearchHostPathWithGrep covers host search on a host without ripgrep. A
+// search path is a file name, even when it starts with "-", and the search
+// does not follow a symlink out of the search root.
+func TestSearchHostPathWithGrep(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the grep fallback is for Unix hosts")
+	}
+	grep, err := exec.LookPath("grep")
+	if err != nil {
+		t.Skip("grep not installed")
+	}
+	// A PATH with grep and no rg.
+	bin := t.TempDir()
+	require.NoError(t, os.Symlink(grep, filepath.Join(bin, "grep")))
+	t.Setenv("PATH", bin)
+
+	outside := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("needle outside\n"), 0o600))
+
+	root := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(root, "-R"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "-R", "inside.txt"), []byte("needle inside\n"), 0o600))
+	require.NoError(t, os.Symlink(outside, filepath.Join(root, "link")))
+
+	for _, tc := range []struct {
+		name  string
+		paths []string
+	}{
+		{"whole root", nil},
+		{"path that looks like an option", []string{"-R"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			results, err := searchHostPath(context.Background(), root, &engine.LocalSearchOpts{
+				Pattern: "needle",
+				Paths:   tc.paths,
+			})
+			require.NoError(t, err)
+			var files []string
+			for _, r := range results {
+				files = append(files, r.FilePath)
+			}
+			require.Equal(t, []string{"-R/inside.txt"}, files)
+		})
+	}
+}
+
 // fileSendStream feeds a file stream export its chunks.
 type fileSendStream struct {
 	grpc.ServerStream
@@ -342,4 +388,27 @@ func TestFilesyncSourceFindUp(t *testing.T) {
 		"dagger.json": filepath.ToSlash(mod),
 		".env":        filepath.ToSlash(root),
 	}, resp.Found)
+}
+
+// A local import's stats carry what the engine's Linux mirror can hold. A
+// symlink there is always 0777, so the bits a host such as macOS records for
+// a link are not sent. A file's and a directory's bits are.
+func TestNormalizeLocalImportStatSymlinkPermissions(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name string
+		mode os.FileMode
+		want os.FileMode
+	}{
+		{"symlink created under umask 022 on macOS", os.ModeSymlink | 0o755, os.ModeSymlink | 0o777},
+		{"symlink created under umask 077 on macOS", os.ModeSymlink | 0o700, os.ModeSymlink | 0o777},
+		{"symlink on Linux", os.ModeSymlink | 0o777, os.ModeSymlink | 0o777},
+		{"file", 0o640, 0o640},
+		{"directory", os.ModeDir | 0o750, os.ModeDir | 0o750},
+	} {
+		st := &fstypes.Stat{Mode: uint32(tc.mode)}
+		normalizeLocalImportStat(st)
+		require.Equal(t, tc.want, os.FileMode(st.Mode), tc.name)
+	}
 }

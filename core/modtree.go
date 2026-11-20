@@ -148,16 +148,7 @@ type moduleServerEntry struct {
 // moduleServer returns the module server built for key, building it at most
 // once while builds succeed. A failed build is retried by the next call.
 func (m *SchemaBuilderMemo) moduleServer(key string, build func() (*dagql.Server, error)) (*dagql.Server, error) {
-	m.mu.Lock()
-	if m.moduleServers == nil {
-		m.moduleServers = make(map[string]*moduleServerEntry)
-	}
-	entry := m.moduleServers[key]
-	if entry == nil {
-		entry = &moduleServerEntry{}
-		m.moduleServers[key] = entry
-	}
-	m.mu.Unlock()
+	entry := memoEntry(m, m.moduleServers, key)
 	entry.mu.Lock()
 	defer entry.mu.Unlock()
 	if entry.srv != nil {

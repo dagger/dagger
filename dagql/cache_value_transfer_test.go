@@ -110,11 +110,22 @@ func (transferTestCodec) VisitPersistedReferences(v PersistedPayloadVisit, visit
 func (transferTestCodec) NormalizeForeign(v PersistedPayloadVisit) (ForeignPayload, error) {
 	return ForeignPayload{JSON: slices.Clone(v.Payload)}, nil
 }
+
+// transferTestCodecSteps, when set, sees each payload visit the codec's
+// ValidateForeign and MapSnapshotParts get, by step.
+var transferTestCodecSteps atomic.Pointer[func(step string, v PersistedPayloadVisit)]
+
 func (transferTestCodec) ValidateForeign(v PersistedPayloadVisit) error {
+	if steps := transferTestCodecSteps.Load(); steps != nil {
+		(*steps)("validate", v)
+	}
 	_, err := (transferTestCodec{}).VisitPersistedReferences(v, func(*PersistedRef) error { return nil })
 	return err
 }
 func (transferTestCodec) MapSnapshotParts(v PersistedPayloadVisit) ([]CapturedCodecOutput, error) {
+	if steps := transferTestCodecSteps.Load(); steps != nil {
+		(*steps)("map", v)
+	}
 	return []CapturedCodecOutput{{Address: PersistedPartAddress{OutputPath: v.Path, Part: "snapshot"}, State: "pending", Value: &SnapshotValue{Kind: "directory"}}}, nil
 }
 func init() {
@@ -633,4 +644,98 @@ func TestExportLeavesOutOutputsOutsideTheClosureOnRequest(t *testing.T) {
 	require.Len(t, bundle.Values, 1)
 	require.Len(t, bundle.Outputs, 1, "only the output inside the closure")
 	require.Equal(t, bundle.Values[0].Ordinal, bundle.Outputs[0].Ordinal)
+}
+
+func testValueTransferCaptureConcurrent(t *testing.T) {
+	t.Run("concurrent replacement and pruning", func(t *testing.T) {
+		ctx, c, srv := transferTestCache(t)
+		root := persistedListTestResult(t, ctx, c, srv, "root", &transferTestValue{Text: "pending"})
+		old := persistedListTestResult(t, ctx, c, srv, "old", String("old"))
+		next := persistedListTestResult(t, ctx, c, srv, "next", String("next"))
+		transferTestOffer(t, c, ctx, root, old)
+		entered, finish := make(chan struct{}), make(chan struct{})
+		done := make(chan error, 1)
+		go func() {
+			done <- c.WithExportedValues(ctx, ValueSelection{Roots: []AnyResult{root}}, config.RefConfig{}, func(context.Context, *ExportedValues) error { close(entered); <-finish; return nil })
+		}()
+		<-entered
+		c.egraphMu.Lock()
+		owner, err := c.newOfferOwnerLocked(ctx, PersistedOfferOwner{DependencyIDs: []uint64{uint64(next.cacheSharedResult().id)}})
+		var releases []OnReleaseFunc
+		if err == nil {
+			address := PersistedPartAddress{Part: "snapshot"}
+			var queue []*sharedResult
+			queue, err = c.testReplacePartOfferLocked(ctx, root.cacheSharedResult(), address, &partOffer{owner: owner, record: PersistedPartOffer{Address: address, Owner: owner.record, Value: SnapshotValue{Kind: "directory"}}})
+			if err == nil {
+				releases, err = c.collectUnownedResultsLocked(ctx, queue)
+			}
+		}
+		c.egraphMu.Unlock()
+		require.NoError(t, err)
+		require.NoError(t, runOnReleaseFuncs(ctx, releases))
+		for _, row := range []AnyResult{root, old, next} {
+			_, _, err := c.removePersistedEdge(ctx, row.cacheSharedResult().id)
+			require.NoError(t, err)
+		}
+		require.NoError(t, c.ReleaseSession(ctx, "test-session"))
+		snapshot := c.snapshotPruneState(pruneSnapshotMetadata, 10)
+		require.Contains(t, pruneActiveClosure(snapshot, nil), old.cacheSharedResult().id)
+		c.egraphMu.RLock()
+		ownerCount := len(c.offerOwners)
+		c.egraphMu.RUnlock()
+		require.Equal(t, 2, ownerCount)
+		close(finish)
+		require.NoError(t, <-done)
+		require.Empty(t, c.resultsByID)
+		require.Empty(t, c.offerOwners)
+	})
+}
+
+func testValueTransferImportConcurrent(t *testing.T) {
+	t.Run("lookup at commit boundary", func(t *testing.T) {
+		ctx, a, srv := transferTestCache(t)
+		leaf := persistedListTestResult(t, ctx, a, srv, "leaf", String("value"))
+		root := persistedListTestResult(t, ctx, a, srv, "root", DynamicResultArrayOutput{Elem: String(""), Values: []AnyResult{leaf}})
+		bundle := exportTestBundle(t, ctx, a, root)
+		ctx, b, bsrv := transferTestCache(t)
+		entered, commit := make(chan struct{}), make(chan struct{})
+		b.testBeforeTransferCommit = func() { close(entered); <-commit }
+		done := make(chan error, 1)
+		go func() { _, err := b.MergeValues(ctx, cloudCacheID, bundle); done <- err }()
+		<-entered
+		for _, value := range bundle.Values {
+			_, err := b.LoadResultByResultID(ctx, "consumer", bsrv, uint64(value.Ordinal))
+			require.ErrorContains(t, err, "missing shared result")
+		}
+		close(commit)
+		require.NoError(t, <-done)
+		b.egraphMu.RLock()
+		resultCount := len(b.resultsByID)
+		b.egraphMu.RUnlock()
+		require.Equal(t, len(bundle.Values), resultCount)
+		for _, value := range bundle.Values {
+			_, err := b.LoadResultByResultID(ctx, "consumer", bsrv, uint64(value.Ordinal))
+			require.NoError(t, err)
+		}
+	})
+	t.Run("close waits for admitted import", func(t *testing.T) {
+		ctx, a, srv := transferTestCache(t)
+		bundle := exportTestBundle(t, ctx, a, persistedListTestResult(t, ctx, a, srv, "root", String("value")))
+		ctx, b, _ := transferTestCache(t)
+		entered, commit := make(chan struct{}), make(chan struct{})
+		b.testBeforeTransferCommit = func() { close(entered); <-commit }
+		done := make(chan error, 1)
+		go func() { _, err := b.MergeValues(ctx, cloudCacheID, bundle); done <- err }()
+		<-entered
+		closed := make(chan error, 1)
+		go func() { closed <- b.Close(ctx) }()
+		select {
+		case err := <-closed:
+			t.Fatalf("close passed admitted import: %v", err)
+		case <-time.After(10 * time.Millisecond):
+		}
+		close(commit)
+		require.NoError(t, <-done)
+		require.NoError(t, <-closed)
+	})
 }

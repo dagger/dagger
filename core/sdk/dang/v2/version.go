@@ -40,13 +40,14 @@ const DefaultEntrypointEngineVersion = "v1.0.0-beta.25"
 // DefaultEntrypointEngineVersion.
 var DefaultEntrypointDangVersion = dang.Version2_1
 
-// Dang24ModuleVersion is the first engine version whose Dang SDK modules
-// default to Dang 2.4 (dang.Version2_4), the first Dang version this engine
-// embeds that requires `!` on type patterns. Modules written for an earlier
-// engine keep Dang 2.1, which that engine evaluated them as. Until a release
-// ships Dang 2.4, if the release it names ships without it, move it to a
-// later one.
-const Dang24ModuleVersion = "v1.0.0-beta.28"
+// Dang25ModuleVersion is the first engine version whose Dang SDK modules
+// default to Dang 2.5 (dang.Version2_5): the first Dang version this engine
+// embeds after 2.1, which requires `!` on type patterns (from Dang 2.4) and
+// interpolates `${...}` in strings (from Dang 2.5). No released engine
+// defaulted to Dang 2.4. Modules written for an earlier engine keep Dang 2.1,
+// which that engine evaluated them as. Until a release ships Dang 2.5, if the
+// release it names ships without it, move it to a later one.
+const Dang25ModuleVersion = "v1.0.0-beta.28"
 
 // Versions are the versions a Dang module is written against.
 type Versions struct {
@@ -109,8 +110,8 @@ func ResolveEntrypointVersions(ctx context.Context, configPath string, data []by
 //
 //   - Before engine.MinimumDangV2ModuleVersion: Dang 1.0 (dang.Version1_0),
 //     the language of the Dang v1 line.
-//   - Before Dang24ModuleVersion: Dang 2.1 (dang.Version2_1).
-//   - From Dang24ModuleVersion on: Dang 2.4 (dang.Version2_4).
+//   - Before Dang25ModuleVersion: Dang 2.1 (dang.Version2_1).
+//   - From Dang25ModuleVersion on: Dang 2.5 (dang.Version2_5).
 //
 // A new Dang language version that changes the meaning of existing source
 // adds a cut here, at the first engine version that embeds it.
@@ -119,10 +120,10 @@ func DefaultModuleDangVersion(engineVersion string) dang.Version {
 	switch {
 	case !engine.CheckVersionCompatibility(engine.BaseVersion(engineVersion), engine.MinimumDangV2ModuleVersion):
 		return dang.Version1_0
-	case !engine.APIVersionAtLeast(engineVersion, Dang24ModuleVersion):
+	case !engine.APIVersionAtLeast(engineVersion, Dang25ModuleVersion):
 		return dang.Version2_1
 	default:
-		return dang.Version2_4
+		return dang.Version2_5
 	}
 }
 

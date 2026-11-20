@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -40,7 +39,7 @@ source = "dang"
 	require.NoError(t, err)
 	depRef := strings.Replace(repoURL, gitHost, tsClientGitHost, 1) + "#main"
 
-	e := startDefinitionEngine(ctx, t, outer, "ts-client", func(ctr *core.Container) *core.Container {
+	e := startClientEngine(ctx, t, outer, "ts-client", func(ctr *core.Container) *core.Container {
 		return ctr.WithServiceBinding(tsClientGitHost, gitDaemon)
 	})
 
@@ -80,19 +79,7 @@ directory = "client"
 		require.NoError(t, err)
 		out.pin, err = deps[0].Pin(ctx)
 		require.NoError(t, err)
-		var report transferFixtureReport
-		require.NoError(t, transferFixture(ctx, client, "report", "", []string{}, &report))
-		for _, row := range report.Rows {
-			if row.Call == nil || row.Call.Field != "withExec" {
-				continue
-			}
-			args, err := json.Marshal(row.Call.Args)
-			require.NoError(t, err)
-			if strings.Contains(string(args), `"generate-client"`) {
-				t.Logf("generate-client exec row %d args=%s", row.ResultID, args)
-				out.execArgs = append(out.execArgs, string(args))
-			}
-		}
+		out.execArgs = e.generateClientExecs(ctx, t, outer)
 		return out
 	}
 

@@ -269,6 +269,17 @@ func TestParse(t *testing.T) {
 				SourceUser:     "",
 			},
 		},
+		// Bitbucket SSH is served from ssh.bitbucket.org; the web view stays on bitbucket.org
+		{
+			urlStr: "git@ssh.bitbucket.org:test-travail/test.git/depth1",
+			want: Parsed{
+				ModPath:        "ssh.bitbucket.org/test-travail/test.git/depth1",
+				RepoRoot:       &vcs.RepoRoot{Root: "ssh.bitbucket.org:test-travail/test.git", Repo: "https://bitbucket.org/test-travail/test"},
+				RepoRootSubdir: "depth1",
+				Scheme:         SchemeSCPLike,
+				SourceUser:     "git",
+			},
+		},
 		{
 			urlStr: "git@github.com:shykes/daggerverse/ci",
 			want: Parsed{

@@ -148,15 +148,27 @@ var ErrMalformed = errors.New("malformed LLM configuration")
 // Literal credentials read from .env are remembered for ResolveSecret, which
 // serves them as llmconfig:// secrets; the last Assemble call wins.
 func Assemble(cwd string) (cfg *engine.LLMConfig, warnings []error, err error) {
+	return assembleFrom(filepath.Join(cwd, ".env"))
+}
+
+// AssembleWithoutDotEnv is Assemble without a .env file.
+func AssembleWithoutDotEnv() (cfg *engine.LLMConfig, warnings []error, err error) {
+	return assembleFrom("")
+}
+
+func assembleFrom(dotEnvPath string) (cfg *engine.LLMConfig, warnings []error, err error) {
 	file, err := Load()
 	if err != nil {
 		warnings = append(warnings, err)
 		file = nil
 	}
-	dotenv, err := readDotEnv(filepath.Join(cwd, ".env"))
-	if err != nil {
-		warnings = append(warnings, err)
-		dotenv = nil
+	var dotenv map[string]string
+	if dotEnvPath != "" {
+		dotenv, err = readDotEnv(dotEnvPath)
+		if err != nil {
+			warnings = append(warnings, err)
+			dotenv = nil
+		}
 	}
 	cfg, literals, err := assemble(file, os.LookupEnv, dotenv)
 	if err != nil {

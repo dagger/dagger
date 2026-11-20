@@ -107,6 +107,20 @@ type Span struct {
 	causesViaLinks  *SpanSet
 	effectsViaLinks *SpanSet
 
+	// installSites holds the causes of a lazy evaluation that are sites its
+	// result was installed at (the calls that returned or received it), not
+	// the call it evaluates. The engine links the evaluated call with no
+	// purpose, and each install site as a cause, so that a failure of the
+	// evaluation reaches every call the user sees holding the result, and a
+	// pending call is resolved by it. The evaluation's time belongs to the
+	// evaluated call alone.
+	installSites *SpanSet
+
+	// credited marks a span whose Activity holds time propagated from the
+	// deferred evaluations of it or of spans beneath it, so that a span
+	// joining its parent late passes that time on (recreditAncestors).
+	credited bool
+
 	// Pre-computed RollUp state for rendering progress bars
 	// Maintained incrementally for all spans, not just those marked RollUp
 	rollUpState *RollUpState
@@ -359,6 +373,12 @@ type SpanSnapshot struct {
 
 	HasLogs bool `json:",omitempty"`
 
+	// childrenReported is the number of children the trace's stream reported
+	// for the span (telemetryattrs.UIChildCountAttr), plus one; zero when it
+	// reported none. Unlike ChildCount, it is never raised to the children
+	// received, so it tells whether they all have (see DB.PartialTrace).
+	childrenReported int32
+
 	// Test attributes
 	TestCaseName  string     `json:",omitempty"`
 	TestSuiteName string     `json:",omitempty"`
@@ -417,7 +437,11 @@ type SpanSnapshot struct {
 	LLMToolServer    string   `json:",omitempty"`
 	LLMToolArgNames  []string `json:",omitempty"`
 	LLMToolArgValues []string `json:",omitempty"`
-	LLMCallDigest    string   `json:",omitempty"`
+	// LLMToolHeaderArgs names the arguments a tool call's header summarizes,
+	// recorded when its display span starts, before their values
+	// (LLMToolArgValues) arrive with its end (see DB.ToolArgsSummary).
+	LLMToolHeaderArgs []string `json:",omitempty"`
+	LLMCallDigest     string   `json:",omitempty"`
 
 	// LLM message origin: recorded provenance for a user-role message that
 	// arrived through an agent mailbox (engine/telemetryattrs' llm.origin.*
@@ -454,6 +478,12 @@ type SpanSnapshot struct {
 	// span, folded from progress log records. It lives in the snapshot so
 	// remote frontends receive it without reprocessing the raw records.
 	Progress *SpanProgress `json:",omitempty"`
+
+	// RowWaits holds the row's waiting computed from its whole subtree, once
+	// the DB computes it (DB.UpdateRowWaits). It lives in the snapshot so
+	// remote frontends receive it rather than compute it from a part of the
+	// trace.
+	RowWaits *RowWaits `json:",omitempty"`
 
 	ExtraAttributes SpanAttributes `json:",omitempty"`
 }
@@ -660,6 +690,9 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 	case telemetry.LLMToolArgValuesAttr:
 		snapshot.LLMToolArgValues = sliceOf[string](val)
 
+	case telemetryattrs.LLMToolHeaderArgNamesAttr:
+		snapshot.LLMToolHeaderArgs = sliceOf[string](val)
+
 	case telemetryattrs.LLMCallDigestAttr:
 		snapshot.LLMCallDigest = val.(string)
 
@@ -691,6 +724,7 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 		// Cloud's incremental view: children exist that this snapshot's
 		// stream did not carry, so the span stays expandable.
 		snapshot.ChildCount = int(asInt64(val))
+		snapshot.childrenReported = int32(min(asInt64(val), math.MaxInt32-1)) + 1
 
 	case telemetryattrs.UIHasLogsAttr:
 		snapshot.HasLogs = val.(bool)
@@ -761,9 +795,9 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 	// Update the span's own activity to reflect its current state
 	span.Activity.Add(span)
 
-	propagate := func(parent *Span, causal, activity bool) bool {
+	propagate := func(parent *Span, causal, running, activity bool) bool {
 		var changed bool
-		if span.IsRunningOrEffectsRunning() {
+		if running && span.IsRunningOrEffectsRunning() {
 			changed = addToSpanSet(&parent.RunningSpans, span)
 		} else {
 			changed = removeFromSpanSet(&parent.RunningSpans, span)
@@ -789,8 +823,11 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 		if causal && span.IsCanceled() {
 			changed = addToSpanSet(&parent.CanceledLinks, span) || changed
 		}
-		if activity && parent.Activity.Add(span) {
-			changed = true
+		if activity {
+			parent.credited = true
+			if parent.Activity.Add(span) {
+				changed = true
+			}
 		}
 		return changed
 	}
@@ -798,21 +835,25 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 	for parent := range span.Parents {
 		// don't propagate failure, to respect encapsulation
 		// don't propagate activity, since these are direct parents
-		if propagate(parent, false, false) {
+		if propagate(parent, false, true, false) {
 			span.db.update(parent)
 		}
 	}
 
-	for causal := range span.attributedCauses {
-		// propagate activity and failure, since causal spans inherit both
-		if propagate(causal, true, true) {
+	for causal, timed := range span.attributedCauses {
+		// propagate failure, since causal spans inherit it, and running
+		// state and activity too when the span's time is theirs
+		if propagate(causal, true, timed, timed) {
 			span.db.update(causal)
+		}
+		if !timed {
+			continue
 		}
 
 		for parent := range causal.Parents {
 			// don't propagate failure, to respect encapsulation
 			// do propagate activity, since these are indirect parents
-			if propagate(parent, false, true) {
+			if propagate(parent, false, true, true) {
 				span.db.update(parent)
 			}
 		}
@@ -886,7 +927,7 @@ func (span *Span) updateRollUpAncestors() {
 	}
 
 	// Add causal parents to queue
-	span.attributedCauses(func(causal *Span) bool {
+	span.attributedCauses(func(causal *Span, _ bool) bool {
 		queue = append(queue, causal)
 		return true
 	})
@@ -919,7 +960,7 @@ func (span *Span) updateRollUpAncestors() {
 		}
 
 		// Add this ancestor's causal parents to queue
-		current.attributedCauses(func(causal *Span) bool {
+		current.attributedCauses(func(causal *Span, _ bool) bool {
 			queue = append(queue, causal)
 			return true
 		})
@@ -1152,10 +1193,58 @@ func (span *Span) CausalSpans(f func(*Span) bool) {
 // lazy result may link an earlier one rather than the call that returned the
 // result; its status and activity belong to that call, not to the earlier
 // evaluation or the call that started it.
-func (span *Span) attributedCauses(f func(*Span) bool) {
-	span.CausalSpans(func(cause *Span) bool {
-		return cause.isLazyEvaluation() || f(cause)
-	})
+//
+// It also reports whether the span's time belongs to each cause: not to a
+// site a lazy evaluation's result was only installed at (see installSites),
+// nor to anything reached through one.
+func (span *Span) attributedCauses(f func(cause *Span, timed bool) bool) {
+	if span.causesViaLinks.Len() == 0 {
+		// Most spans have no causes; skip allocating the recursive visitor.
+		return
+	}
+	var visit func(s *Span, timed bool) bool
+	visit = func(s *Span, timed bool) bool {
+		for _, cause := range s.causesViaLinks.Spans() {
+			causeTimed := timed && !s.installedAt(cause)
+			if !cause.isLazyEvaluation() && !f(cause, causeTimed) {
+				return false
+			}
+			if !visit(cause, causeTimed) {
+				return false
+			}
+		}
+		return true
+	}
+	visit(span, true)
+}
+
+// recreditAncestors propagates again the evaluations that credited span, or
+// spans beneath it, with their time while span had no parent. A span that
+// arrives after the spans beneath it, or after its own evaluations, joins
+// its ancestors only then, and their share of that time stopped at it.
+func (span *Span) recreditAncestors() {
+	var visit func(s *Span, depth int)
+	visit = func(s *Span, depth int) {
+		if !s.credited || depth > 100 {
+			return
+		}
+		for effect := range s.evaluations {
+			effect.PropagateStatusToParentsAndLinks()
+		}
+		for _, child := range s.ChildSpans.Spans() {
+			if child.ParentSpan == s {
+				visit(child, depth+1)
+			}
+		}
+	}
+	visit(span, 0)
+}
+
+// installedAt reports whether span is a lazy evaluation linked to site only
+// as a site its result was installed at, not as the call it evaluates.
+func (span *Span) installedAt(site *Span) bool {
+	_, ok := span.installSites.Get(site.ID)
+	return ok
 }
 
 func (span *Span) EffectSpans(f func(*Span) bool) {
@@ -1205,8 +1294,22 @@ func (span *Span) hasResolvedEffects() bool {
 // later evaluation of a lazy result may link an earlier one rather than the
 // call that returned the result.
 func (span *Span) continuations(f func(*Span) bool) {
+	span.continuationsOf(false, f)
+}
+
+// evaluations iterates over the continuations that evaluate this span's own
+// result: those of its lazy evaluations it isn't linked to only as an install
+// site (see installSites). They carry the deferred part of its time.
+func (span *Span) evaluations(f func(*Span) bool) {
+	span.continuationsOf(true, f)
+}
+
+func (span *Span) continuationsOf(evaluated bool, f func(*Span) bool) {
 	var seen map[*Span]bool
 	for _, effect := range span.effectsViaLinks.Spans() {
+		if evaluated && effect.installedAt(span) {
+			continue
+		}
 		if !f(effect) {
 			return
 		}
@@ -1217,27 +1320,29 @@ func (span *Span) continuations(f func(*Span) bool) {
 			// a later evaluation may link both this span and an earlier one
 			seen = map[*Span]bool{span: true}
 			for _, direct := range span.effectsViaLinks.Spans() {
-				seen[direct] = true
+				if !evaluated || !direct.installedAt(span) {
+					seen[direct] = true
+				}
 			}
 		}
-		if !effect.laterContinuations(f, seen) {
+		if !effect.laterContinuations(evaluated, f, seen) {
 			return
 		}
 	}
 }
 
 // laterContinuations iterates over the effects of a lazy evaluation not yet
-// seen, and in turn theirs, for continuations.
-func (span *Span) laterContinuations(f func(*Span) bool, seen map[*Span]bool) bool {
+// seen, and in turn theirs, for continuationsOf.
+func (span *Span) laterContinuations(evaluated bool, f func(*Span) bool, seen map[*Span]bool) bool {
 	for _, effect := range span.effectsViaLinks.Spans() {
-		if seen[effect] {
+		if seen[effect] || evaluated && effect.installedAt(span) {
 			continue
 		}
 		seen[effect] = true
 		if !f(effect) {
 			return false
 		}
-		if effect.isLazyEvaluation() && !effect.laterContinuations(f, seen) {
+		if effect.isLazyEvaluation() && !effect.laterContinuations(evaluated, f, seen) {
 			return false
 		}
 	}
@@ -1247,8 +1352,12 @@ func (span *Span) laterContinuations(f func(*Span) bool, seen map[*Span]bool) bo
 // isLazyEvaluation reports whether the span evaluates a lazy result for the
 // call that returned it: a resume, or the opening of a stored part.
 func (span *Span) isLazyEvaluation() bool {
-	return strings.HasPrefix(span.Name, "resume ") ||
-		strings.HasPrefix(span.Name, "open stored part (")
+	return isLazyEvaluationName(span.Name)
+}
+
+func isLazyEvaluationName(name string) bool {
+	return strings.HasPrefix(name, "resume ") ||
+		strings.HasPrefix(name, "open stored part (")
 }
 
 func (span *Span) PendingReason() (bool, []string) {

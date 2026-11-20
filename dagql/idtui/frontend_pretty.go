@@ -230,9 +230,34 @@ type frontendPretty struct {
 	// logProvider lazily fetches a span's logs on demand (e.g. on expand, or
 	// when a failure is surfaced). The bool is whether to roll up descendant
 	// logs (span.RollUpLogs). Set by 'dagger trace' to pull recorded logs per
-	// span; nil for live runs. requestedLogs dedups so each span is fetched once.
+	// span; nil for live runs. requestedLogs dedups so each span is fetched once
+	// (until log_cache.go evicts it).
 	logProvider   func(dagui.SpanID, bool)
 	requestedLogs map[dagui.SpanID]bool
+	// traceLogProviders route the requests for one trace's spans
+	// (SetTraceLogProvider), ahead of logProvider. A resumed agent session
+	// renders its archived trace beside its own live one, whose logs stream
+	// in: a span of a trace with no provider is never requested.
+	traceLogProviders map[dagui.TraceID]func(dagui.SpanID, bool)
+	// deferredLogs holds log requests for spans not received yet -- unloaded,
+	// or a placeholder a log record created -- whose roll-up decision (and
+	// trace) is unknown until the span arrives.
+	deferredLogs map[dagui.SpanID]bool
+	// liveLogsTrace is the live session's trace while its display text is
+	// read on demand (SetLiveLogs). Display text of its spans arriving on
+	// LogExporter -- this process's own, which the store returns too -- is
+	// dropped; what is read for it arrives on the exporter SetLiveLogs
+	// returns.
+	liveLogsTrace dagui.TraceID
+	// liveRequests holds the live trace's requested spans, each with
+	// whether it rolls up its descendants (LiveLogsCoverage).
+	liveRequests map[dagui.SpanID]bool
+	// logCache bounds the logs read on demand to what is shown, plus a few
+	// recently shown (log_cache.go).
+	logCache logCache
+	// finalLogs makes the eager surfaced-failure fetch run in interactive
+	// mode too, so the final render has what it shows (RequestFinalLogs).
+	finalLogs bool
 
 	// spanProvider lazily fetches a span's children on demand when the user
 	// expands it (or it's surfaced/zoomed). Set by 'dagger trace' to fetch
@@ -240,6 +265,22 @@ type frontendPretty struct {
 	// nil for live runs. requestedSpans dedups so each span is fetched once.
 	spanProvider   func(dagui.SpanID)
 	requestedSpans map[dagui.SpanID]bool
+
+	// supportProvider fetches spans the view holds only references to that
+	// its rows' time breakdowns draw on (dagui.Span.TimeBreakdownSpans): what
+	// a row waited on, which a trace loaded in parts may leave out. Without
+	// them the row reads as working the whole time. nil for live runs, which
+	// receive every span. requestedSupport dedups so each is fetched once.
+	supportProvider  func([]dagui.SpanID)
+	requestedSupport map[dagui.SpanID]bool
+
+	// callProvider fetches the recipe closures of call digests this client
+	// lacks (CallFetcher); nil unless the trace was loaded only in part.
+	// requestedCalls dedups so each digest is asked for once, and
+	// fetchingCalls holds those still being fetched.
+	callProvider   func(digests, known []string) error
+	requestedCalls map[string]bool
+	fetchingCalls  map[string]bool
 
 	// fetchWaiter, when set, blocks until in-flight background span/log fetches
 	// have completed. The console settle calls it so a request reflects fetches
@@ -287,6 +328,9 @@ type frontendPretty struct {
 	// of every dagql call the call happened to make.
 	reportHideSpanTree bool
 
+	// reportHideConversation lets a caller replace the transcript with a summary.
+	reportHideConversation bool
+
 	// reportPrimary overrides the primary span for this render WITHOUT
 	// touching the shared DB. A report is scoped by pointing it at a root
 	// span; doing that by mutating db.PrimarySpan (as this used to) leaves
@@ -309,9 +353,13 @@ type frontendPretty struct {
 	cloudURL string
 
 	// traceID is the trace being rendered, set by 'dagger trace' so surfaced
-	// failure logs can point at 'dagger cloud traces view <trace> --log' for the full,
+	// failure logs can point at '<traceCommand> <trace> --log' for the full,
 	// untruncated output. Empty for live runs (no follow-up command applies).
 	traceID string
+	// traceCommand is the command that reads traceID from the source it was
+	// opened from ('dagger trace' or 'dagger cloud traces view'); see
+	// traceViewCommand.
+	traceCommand string
 
 	// ciMeta is the trace's source commit / CI change, set by 'dagger trace' from
 	// the Cloud trace metadata so the report can suggest re-run commands scoped to
@@ -380,6 +428,13 @@ type frontendPretty struct {
 	logsViews     map[logsViewKey]*LogsView
 	renderVersion uint64 // bumped on global render config changes (verbosity, zoom)
 
+	// dangHighlightPending is set once a Dang snippet rendered plain while
+	// Dang's highlighter warmed up; the rows re-render when it's ready.
+	dangHighlightPending bool
+	// codeStreams holds the highlights of tool calls' code bodies streaming
+	// in, by tool-call span (see streamingHighlight).
+	codeStreams map[dagui.SpanID]*codeStreamHighlight
+
 	// rewindsKey fingerprints the set of messages rewinds have abandoned as
 	// of the last recalculation, so a change to it can bump renderVersion
 	// (see syncRewindsLocked).
@@ -411,6 +466,16 @@ type frontendPretty struct {
 	searchMatchSpans     map[dagui.SpanID]bool // fast lookup: does this span have any match?
 	prevSearchMatchSpans map[dagui.SpanID]bool // previous frame's matchSpans for diff-based dirtying
 	searchIdx            int                   // current match index (-1 = none)
+	// logSearches search the sources of logs read on demand, keyed like the
+	// log providers (SetLogSearch); searchRemote holds the spans their
+	// search found the query in, for the search searchGen numbers;
+	// searchPartial is set when a source's search stopped early, and
+	// searchUnplaced counts its hits in spans the view cannot place.
+	logSearches    map[dagui.TraceID]LogSearchFunc
+	searchRemote   map[dagui.SpanID]bool
+	searchGen      uint64
+	searchPartial  bool
+	searchUnplaced int
 	// searchNames memoizes the spans whose name matches the search, until
 	// the query or the DB's spans change (see searchNameMatches).
 	searchNames struct {
@@ -779,7 +844,13 @@ func (s *SpanTreeView) renderRowExtras(ctx tuist.Context, r *renderer, row *dagu
 		testsExclude.commit()
 	}
 
+	// Whether the row rolls up what it ran -- its checks, tests or
+	// generators: a tool call's raw result, which reports the same, then
+	// stays out of its collapsed row. A SERVICES rollup doesn't: what a call
+	// returns of the services it started (an endpoint, say) isn't in it.
+	var rolledUp bool
 	if inlineTests := s.renderInlineTests(ctx, r, row, testsExclude); len(inlineTests) > 0 {
+		rolledUp = true
 		s.selfLineCount += len(inlineTests)
 		ctx.Lines(inlineTests...)
 	}
@@ -788,11 +859,13 @@ func (s *SpanTreeView) renderRowExtras(ctx tuist.Context, r *renderer, row *dagu
 		inlineChecks = s.renderInlineChecks(ctx, r, row)
 	}
 	if len(inlineChecks) > 0 {
+		rolledUp = true
 		s.selfLineCount += len(inlineChecks)
 		ctx.Lines(inlineChecks...)
 	}
 
 	if inlineGenerators := s.renderInlineGenerators(ctx, r, row); len(inlineGenerators) > 0 {
+		rolledUp = true
 		s.selfLineCount += len(inlineGenerators)
 		ctx.Lines(inlineGenerators...)
 	}
@@ -804,7 +877,7 @@ func (s *SpanTreeView) renderRowExtras(ctx tuist.Context, r *renderer, row *dagu
 
 	// Render this row's own inline logs via its memoized LogsView child, so the
 	// expensive Vterm.View() is skipped on unrelated parent repaints.
-	if inlineLogs := s.renderInlineLogs(ctx, r, row, visualFocused); len(inlineLogs) > 0 {
+	if inlineLogs := s.renderInlineLogs(ctx, r, row, visualFocused, rolledUp); len(inlineLogs) > 0 {
 		s.selfLineCount += len(inlineLogs)
 		ctx.Lines(inlineLogs...)
 	}
@@ -1005,6 +1078,73 @@ type statusIconHost interface {
 	RenderChildInline(tuist.Context, tuist.Component) string
 	spinnerForStatus(dagui.SpanID) *tuist.Spinner
 	durationForStatus(dagui.SpanID) *DurationView
+}
+
+// rowWaitsInterval is how often the live view brings the waiting below rows
+// up to date (dagui.DB.UpdateRowWaits). It runs on the event loop, which
+// draws and takes input too, so it works in slices of rowWaitsSlice, yielding
+// rowWaitsYield between them; the durations ticking meanwhile read the last
+// result.
+const (
+	rowWaitsInterval = time.Second
+	rowWaitsSlice    = 20 * time.Millisecond
+	rowWaitsYield    = 20 * time.Millisecond
+)
+
+// startRowWaits keeps the waiting below rows up to date while the view runs.
+func (fe *frontendPretty) startRowWaits() (stop func()) {
+	done := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		ticker := time.NewTicker(rowWaitsInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+			}
+			for {
+				more := make(chan bool, 1)
+				fe.dispatch(func() { more <- fe.updateRowWaitsLocked(rowWaitsSlice) })
+				var left bool
+				select {
+				case <-done:
+					return
+				case left = <-more:
+				}
+				if !left {
+					break
+				}
+				select {
+				case <-done:
+					return
+				case <-time.After(rowWaitsYield):
+				}
+			}
+		}
+	})
+	return func() {
+		close(done)
+		wg.Wait()
+	}
+}
+
+// updateRowWaitsLocked brings the waiting below rows up to date, within
+// budget when it's above zero, redraws the rows whose waiting changed, and
+// reports whether work is left.
+func (fe *frontendPretty) updateRowWaitsLocked(budget time.Duration) bool {
+	changed, more := fe.db.UpdateRowWaits(time.Now(), budget)
+	if len(changed) > 0 {
+		for _, span := range changed {
+			if sr, ok := fe.spanTrees[span.ID]; ok {
+				sr.Update()
+			}
+		}
+		fe.viewDirty = true
+		fe.Update()
+	}
+	return more
 }
 
 // durationTickInterval is how often a running span's DurationView re-renders.
@@ -1712,13 +1852,33 @@ func (fe *frontendPretty) SetCloudURL(ctx context.Context, url string, msg strin
 	})
 }
 
-// SetTraceID records the trace being rendered so surfaced failure logs can point
-// at 'dagger cloud traces view <trace> --log' for the full output. Called by 'dagger
-// trace'; no-op for live runs.
-func (fe *frontendPretty) SetTraceID(traceID string) {
+// SetTraceID records the trace being rendered, and the command that can read it
+// again, so surfaced failure logs and drill-in suggestions can point at
+// '<command> <trace> --log' for the full output. Called by 'dagger trace' and
+// 'dagger cloud traces view'; never for live runs.
+func (fe *frontendPretty) SetTraceID(traceID, command string) {
 	fe.dispatch(func() {
 		fe.traceID = traceID
+		fe.traceCommand = command
 	})
+}
+
+// defaultTraceCommand reads a trace from Dagger Cloud, which is where a trace
+// is found when the caller did not say otherwise.
+const defaultTraceCommand = "dagger cloud traces view"
+
+// traceViewCommand is the copy-paste prefix of the follow-up commands that
+// address the rendered trace, e.g. 'dagger trace <trace>', or empty when no
+// trace was set (live runs).
+func (fe *frontendPretty) traceViewCommand() string {
+	if fe.traceID == "" {
+		return ""
+	}
+	command := fe.traceCommand
+	if command == "" {
+		command = defaultTraceCommand
+	}
+	return command + " " + fe.traceID
 }
 
 // ciContext is the trace's source git/CI context: the commit it ran on. It
@@ -1774,10 +1934,14 @@ func (fe *frontendPretty) Run(ctx context.Context, opts dagui.FrontendOpts, run 
 		fe.err = err
 	} else if fe.console != "" {
 		// serve the TUI over HTTP instead of attaching to a terminal
+		stopRowWaits := fe.startRowWaits()
 		fe.err = fe.runWithConsole(ctx, run)
+		stopRowWaits()
 	} else {
 		// run the function wrapped in the TUI
+		stopRowWaits := fe.startRowWaits()
 		fe.err = fe.runWithTUI(ctx, run)
+		stopRowWaits()
 	}
 
 	if failure := outputDrainFailure(fe.err); failure != nil {
@@ -2276,6 +2440,9 @@ type ReportRenderOpts struct {
 	// and the target's own output. See frontendPretty.reportHideSpanTree.
 	HideSpanTree bool
 
+	// HideConversation omits the surfaced conversation, for callers rendering a summary.
+	HideConversation bool
+
 	// RerunSuggestion replaces the "RUN LOCALLY" section's heading and body,
 	// for a reader that has no `dagger` CLI to run. See
 	// dagui.FrontendOpts.RerunSuggestion; nil keeps the default CLI commands.
@@ -2318,6 +2485,7 @@ func (fe *frontendPretty) SetReportRenderOpts(opts ReportRenderOpts) {
 		fe.reportHideLogSpans = opts.HideLogSpans
 		fe.reportScopedSubtree = opts.ScopedSubtree
 		fe.reportHideSpanTree = opts.HideSpanTree
+		fe.reportHideConversation = opts.HideConversation
 		fe.reportPrimary = opts.Root
 		fe.renderVersion++
 		fe.Update()
@@ -2400,6 +2568,35 @@ func (fe *frontendPretty) SetLogProvider(provider func(dagui.SpanID, bool)) {
 	fe.dispatch(func() {
 		fe.logProvider = provider
 	})
+}
+
+// SetTraceLogProvider registers the log provider for the spans of one trace
+// only, ahead of any SetLogProvider provider. `dagger agent -r` uses it for
+// the restored trace, so the resumed session's own live spans, whose logs
+// stream in, are never requested from the archive.
+func (fe *frontendPretty) SetTraceLogProvider(traceID dagui.TraceID, provider func(dagui.SpanID, bool)) {
+	fe.dispatch(func() {
+		if fe.traceLogProviders == nil {
+			fe.traceLogProviders = make(map[dagui.TraceID]func(dagui.SpanID, bool))
+		}
+		fe.traceLogProviders[traceID] = provider
+	})
+}
+
+// hasLogProvider reports whether any span's logs are fetched lazily.
+func (fe *frontendPretty) hasLogProvider() bool {
+	return fe.logProvider != nil || len(fe.traceLogProviders) > 0
+}
+
+// logProviderFor is the provider for a span's trace, else the provider for
+// every trace; nil when the span's logs are not fetched.
+func (fe *frontendPretty) logProviderFor(id dagui.SpanID) func(dagui.SpanID, bool) {
+	if span, ok := fe.db.Spans.Map[id]; ok && span.Received {
+		if provider := fe.traceLogProviders[span.TraceID]; provider != nil {
+			return provider
+		}
+	}
+	return fe.logProvider
 }
 
 // RequestSurfacedLogs asks the log provider for the logs of every failed span
@@ -2556,18 +2753,41 @@ func (fe *frontendPretty) requestLogsOnRender(id dagui.SpanID) {
 	if fe.reportOnly {
 		return
 	}
+	fe.touchLogs(id)
 	fe.requestLogs(id)
 }
 
 // requestLogs asks the log provider for a span's logs, once. It rolls up
 // descendant logs when the span is marked RollUpLogs (e.g. a check or test
 // whose real output lives in a sub-operation), mirroring the web UI.
+//
+// A span not received yet -- unloaded, or only a placeholder a log record
+// created -- doesn't carry the metadata that decision (or its trace's
+// provider) needs, so the request is deferred until the span arrives
+// (requestArrivedSpanLogs) instead of latching an own-logs-only fetch the
+// roll-up could never replace.
 func (fe *frontendPretty) requestLogs(id dagui.SpanID) {
-	if _, ok := fe.db.Spans.Map[id]; !ok {
-		// Span not loaded yet; it'll be requested once it's surfaced.
+	if !fe.hasLogProvider() || !id.IsValid() || fe.requestedLogs[id] {
+		return
+	}
+	if span, ok := fe.db.Spans.Map[id]; !ok || !span.Received {
+		if fe.deferredLogs == nil {
+			fe.deferredLogs = make(map[dagui.SpanID]bool)
+		}
+		fe.deferredLogs[id] = true
 		return
 	}
 	fe.requestLogsWith(id, fe.logDescendants(id))
+}
+
+// requestArrivedSpanLogs finishes a log request that waited for its span to
+// arrive. Called by every path that imports spans (ExportSpans,
+// ImportSnapshots).
+func (fe *frontendPretty) requestArrivedSpanLogs(id dagui.SpanID) {
+	if fe.deferredLogs[id] || fe.SpanExpanded[id] {
+		delete(fe.deferredLogs, id)
+		fe.requestLogs(id)
+	}
 }
 
 // logDescendants decides whether a span's log fetch should roll up its
@@ -2607,18 +2827,29 @@ func (fe *frontendPretty) isFailingLeafTestSpan(id dagui.SpanID) bool {
 // to roll up descendant logs. Used to roll up failed leaf test cases, whose real
 // output lives in a sub-operation even though the test span isn't marked
 // RollUpLogs.
+//
+// The request goes to the provider for the span's trace; a span whose trace
+// has none (a resumed session's live spans) is not requested, nor latched.
 func (fe *frontendPretty) requestLogsWith(id dagui.SpanID, descendants bool) {
-	if fe.logProvider == nil || !id.IsValid() {
+	if !id.IsValid() || fe.requestedLogs[id] {
 		return
 	}
-	if fe.requestedLogs[id] {
+	provider := fe.logProviderFor(id)
+	if provider == nil {
 		return
 	}
 	if fe.requestedLogs == nil {
 		fe.requestedLogs = make(map[dagui.SpanID]bool)
 	}
 	fe.requestedLogs[id] = true
-	fe.logProvider(id, descendants)
+	delete(fe.deferredLogs, id)
+	if descendants {
+		fe.logCache.init()
+		fe.logCache.rollUps[id] = true
+	}
+	fe.touchLogs(id)
+	fe.scheduleLogSweep()
+	provider(id, descendants)
 }
 
 // SetSpanProvider registers a callback that lazily supplies a span's children.
@@ -2630,6 +2861,169 @@ func (fe *frontendPretty) SetSpanProvider(provider func(dagui.SpanID)) {
 	fe.dispatch(func() {
 		fe.spanProvider = provider
 	})
+}
+
+// SetSupportProvider registers the fetcher for spans the rows' time
+// breakdowns draw on that the view holds only references to.
+func (fe *frontendPretty) SetSupportProvider(provider func([]dagui.SpanID)) {
+	fe.dispatch(func() {
+		fe.supportProvider = provider
+	})
+}
+
+// RequestBreakdownSpans recalculates the view, which requests the spans its
+// rows' time breakdowns draw on that it hasn't loaded, and reports whether
+// it requested any.
+func (fe *frontendPretty) RequestBreakdownSpans() bool {
+	var requested bool
+	done := make(chan struct{})
+	fe.dispatch(func() {
+		defer close(done)
+		before := len(fe.requestedSupport)
+		fe.recalculateViewLocked()
+		requested = len(fe.requestedSupport) > before
+	})
+	<-done
+	return requested
+}
+
+// requestBreakdownSpansLocked asks the support provider for the spans the
+// rows' time breakdowns draw on that the view holds only references to,
+// each once.
+func (fe *frontendPretty) requestBreakdownSpansLocked() {
+	if fe.supportProvider == nil {
+		return
+	}
+	var ids []dagui.SpanID
+	for _, row := range fe.rows.Order {
+		if row.Span == nil {
+			continue
+		}
+		row.Span.TimeBreakdownSpans(func(dep *dagui.Span) {
+			if dep.Received || fe.requestedSupport[dep.ID] {
+				return
+			}
+			if fe.requestedSupport == nil {
+				fe.requestedSupport = make(map[dagui.SpanID]bool)
+			}
+			fe.requestedSupport[dep.ID] = true
+			ids = append(ids, dep.ID)
+		})
+	}
+	if len(ids) > 0 {
+		fe.supportProvider(ids)
+	}
+}
+
+// SetCallProvider registers the fetcher for call payloads this client lacks
+// (CallFetcher).
+func (fe *frontendPretty) SetCallProvider(provider func(digests, known []string) error) {
+	fe.dispatch(func() {
+		fe.callProvider = provider
+	})
+}
+
+// requestCalls asks the call provider, off the event loop, for the recipe
+// closures of the digests not asked for before (leaving out those of known
+// calls, which this client holds), then runs then on the event loop with the
+// fetch's error. It reports true while any of the digests is still being
+// fetched: an action repeated meanwhile waits for the first fetch's
+// continuation rather than failing. It reports false, running nothing, when
+// there is no provider or every digest's fetch has finished: whatever failed
+// for want of the payloads stands as it is.
+func (fe *frontendPretty) requestCalls(digests, known []string, then func(error)) bool {
+	if fe.callProvider == nil {
+		return false
+	}
+	var fresh []string
+	var inflight bool
+	for _, digest := range digests {
+		if digest == "" {
+			continue
+		}
+		if fe.requestedCalls[digest] {
+			inflight = inflight || fe.fetchingCalls[digest]
+			continue
+		}
+		if fe.requestedCalls == nil {
+			fe.requestedCalls = make(map[string]bool)
+			fe.fetchingCalls = make(map[string]bool)
+		}
+		fe.requestedCalls[digest] = true
+		fe.fetchingCalls[digest] = true
+		fresh = append(fresh, digest)
+	}
+	if len(fresh) == 0 {
+		return inflight
+	}
+	provider := fe.callProvider
+	go func() {
+		err := provider(fresh, known)
+		fe.dispatch(func() {
+			for _, digest := range fresh {
+				delete(fe.fetchingCalls, digest)
+			}
+			if then != nil {
+				then(err)
+			}
+			fe.Update()
+		})
+	}()
+	return true
+}
+
+// messageCallDigests are the digests whose recipe closures an action on a
+// conversation row needs: the LLM state the row carries, and the abandoned
+// conversations of the rewinds not placed yet, through which alone a message
+// they abandoned reaches its neighbors; and the calls whose closures bound
+// those (see unplacedRewindDigests). The row's state is left out when this
+// client can already rebuild it.
+func (fe *frontendPretty) messageCallDigests(span *dagui.Span) (digests, known []string) {
+	if fe.callHistoryMissing(span) {
+		digests = append(digests, dagui.LLMCallCarrier(span).LLMCallDigest)
+	}
+	abandoned, adopted := fe.unplacedRewindDigests()
+	return append(digests, abandoned...), adopted
+}
+
+// callHistoryMissing reports whether this client lacks part of the recipe
+// of the LLM state span's row carries, so an action on the row that failed
+// may succeed once it is fetched -- and one that failed for another reason
+// (an image prompt, which the editor cannot hold) fetches nothing.
+func (fe *frontendPretty) callHistoryMissing(span *dagui.Span) bool {
+	carrier := dagui.LLMCallCarrier(span)
+	if carrier == nil {
+		return false
+	}
+	_, err := fe.db.CallIDForDigest(carrier.LLMCallDigest)
+	return err != nil
+}
+
+// retryOnSpan continues an action on the row id once the call payloads it
+// asked for have been fetched: a failed fetch says why; otherwise, while the
+// row is still focused, the action runs again if check now passes, or says
+// why it still cannot.
+func (fe *frontendPretty) retryOnSpan(id dagui.SpanID, what string, action func(), check func() error) func(error) {
+	return func(err error) {
+		if err != nil {
+			fe.setPromptError(callHistoryError("cannot "+what+" from here", err))
+			return
+		}
+		if fe.FocusedSpan != id {
+			return
+		}
+		if err := check(); err != nil {
+			fe.setPromptError(fmt.Errorf("cannot %s from here: %w", what, err))
+			return
+		}
+		action()
+	}
+}
+
+// callHistoryError explains a failed fetch of the call payloads an action
+// needed, and how to get them.
+func callHistoryError(what string, err error) error {
+	return fmt.Errorf("%s: the call history it needs could not be loaded (%w); /backfill loads all of it", what, err)
 }
 
 // SetFetchWaiter registers a callback that blocks until in-flight background
@@ -2703,6 +3097,7 @@ func (fe *frontendPretty) ImportSnapshots(snapshots []dagui.SpanSnapshot) {
 	fe.dispatch(func() {
 		fe.db.ImportSnapshots(snapshots)
 		for _, id := range ids {
+			fe.requestArrivedSpanLogs(id)
 			if fe.logs.flushResolvedLogsForSpan(id) {
 				fe.updateSpanTreesForLogs(id)
 				fe.updateLogPagerForLogs(id)
@@ -3061,6 +3456,8 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 		return ExitError{OriginalCode: exitCode, Original: fe.err}
 	}
 
+	// the final report's rows read the waiting below them as of the end
+	fe.updateRowWaitsLocked(0)
 	fe.setupFinalRenderLocked()
 
 	out := NewOutput(w, termenv.WithProfile(fe.profile))
@@ -3161,6 +3558,7 @@ func (fe prettySpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.R
 	fe.dispatch(func() {
 		fe.db.ExportSpans(context.Background(), spansCopy)
 		for _, id := range spanIDs {
+			fe.requestArrivedSpanLogs(id)
 			if fe.logs.flushResolvedLogsForSpan(id) {
 				fe.updateSpanTreesForLogs(id)
 				fe.updateLogPagerForLogs(id)
@@ -3239,18 +3637,25 @@ func (fe *frontendPretty) Shutdown(ctx context.Context) error {
 }
 
 func (fe *frontendPretty) LogExporter() sdklog.Exporter {
-	return prettyLogExporter{fe}
+	return prettyLogExporter{frontendPretty: fe}
 }
 
 type prettyLogExporter struct {
 	*frontendPretty
+	// read is set for the exporter display text read on demand arrives on
+	// (SetLiveLogs), which the live trace's own display text must reach.
+	read bool
 }
 
 func (fe prettyLogExporter) Export(ctx context.Context, logs []sdklog.Record) error {
 	// Copy the slice — the OTel SDK reuses it after Export returns.
 	logsCopy := make([]sdklog.Record, len(logs))
 	copy(logsCopy, logs)
+	filter := LiveLogsFilter(ctx)
 	fe.dispatch(func() {
+		if fe.read && filter != nil {
+			logsCopy = filter(logsCopy, fe.logs.placement)
+		}
 		logSpanIDs := make(map[dagui.SpanID]struct{})
 		for _, log := range logsCopy {
 			spanID := fe.db.LogTargetSpanID(log)
@@ -3258,6 +3663,14 @@ func (fe prettyLogExporter) Export(ctx context.Context, logs []sdklog.Record) er
 			fe.updateSpanTreesForLogs(spanID)
 		}
 		logsCopy = fe.db.IngestLogs(logsCopy)
+		if live := fe.liveLogsTrace; live.IsValid() && !fe.read {
+			// This process's own display text: the store returns it to
+			// the spans that read it, so rendering it here would show it
+			// twice.
+			logsCopy = slices.DeleteFunc(logsCopy, func(log sdklog.Record) bool {
+				return log.TraceID() == live.TraceID
+			})
+		}
 		fe.logs.Export(context.Background(), logsCopy)
 		for spanID := range logSpanIDs {
 			fe.updateLogPagerForLogs(spanID)
@@ -3660,10 +4073,12 @@ func (fe *frontendPretty) escHelp() string {
 }
 
 func (fe *frontendPretty) searchCountHint(base string) string {
+	// Logs not loaded may be left out of what was searched.
+	scope := fe.searchScope()
 	if len(fe.searchMatches) == 0 {
-		return base + " (0)"
+		return base + " (0" + scope + ")"
 	}
-	return fmt.Sprintf("%s (%d/%d)", base, fe.searchIdx+1, len(fe.searchMatches))
+	return fmt.Sprintf("%s (%d/%d%s)", base, fe.searchIdx+1, len(fe.searchMatches), scope)
 }
 
 func KeyEnabled(enabled bool) key.BindingOpt {
@@ -4146,7 +4561,7 @@ func (fe *frontendPretty) renderZoomedFinalLogs(out TermOutput, indent string) [
 		return nil
 	}
 	rawLines := strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
-	return errorWindowLines(out, rawLines, indent, fe.traceID, cloudLogsHintTarget(span))
+	return errorWindowLines(out, rawLines, indent, fe.traceViewCommand(), traceLogsHintTarget(span))
 }
 
 // renderZoomedCheckTests renders the tests beneath a zoomed check as inline
@@ -4168,14 +4583,20 @@ func (fe *frontendPretty) renderZoomedCheckTests(ctx tuist.Context, span *dagui.
 		RequestLogs:     fe.requestLogsOnRender,
 		SummaryIndent:   2,
 		SummaryLogLines: -1,
-		TraceID:         fe.traceID,
+		TraceCommand:    fe.traceViewCommand(),
+		// On screen, and in a rollup a shell's transcript frames, its log
+		// windows fit the width they're given.
+		FitWidth: fe.framesRollups(),
 	}
 	width := ctx.Width
 	if width <= 0 {
 		width = finalRenderTestsWidth
 	}
+	if !tv.FitWidth {
+		width = max(width, finalRenderTestsWidth)
+	}
 	out := NewOutput(new(strings.Builder), termenv.WithProfile(fe.profile))
-	lines := tv.renderTestSummaryLines(out, view, max(width, finalRenderTestsWidth), finalTestViewHeight(tv))
+	lines := tv.renderTestSummaryLines(out, view, width, finalTestViewHeight(tv))
 	if len(lines) == 0 {
 		return nil
 	}
@@ -4230,7 +4651,9 @@ func reportSectionLines(out TermOutput, agent bool, title string, body []string)
 	return lines
 }
 
-// renderSuggestionsSection prints copy-paste 'dagger trace' commands that
+// renderSuggestionsSection prints copy-paste trace view commands (prefixed by
+// traceViewCommand: 'dagger trace' or 'dagger cloud traces view', whichever
+// reads the trace from where it was found) that
 // scope the report to a single failure, so the reader learns how to drill in
 // with --check/--test. At the root it points at failed checks (and any failed
 // tests not under a check); zoomed to a check it points at that check's failed
@@ -4247,7 +4670,7 @@ func (fe *frontendPretty) renderSuggestionsSection(zoomed *dagui.Span) []string 
 		if span == nil {
 			return
 		}
-		sel := cloudLogsTarget(span)
+		sel := traceSpanTarget(span)
 		if sel == "" || seen[sel] {
 			return
 		}
@@ -4299,9 +4722,10 @@ func (fe *frontendPretty) renderSuggestionsSection(zoomed *dagui.Span) []string 
 	}
 
 	out := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
+	traceCommand := fe.traceViewCommand()
 	body := make([]string, 0, len(targets))
 	for _, sel := range targets {
-		body = append(body, fmt.Sprintf("dagger cloud traces view %s %s", fe.traceID, sel))
+		body = append(body, traceCommand+" "+sel)
 	}
 	return reportSectionLines(out, fe.agentStyle(), "MORE DETAILS", body)
 }
@@ -4556,11 +4980,15 @@ func checkBreakdownPartsFor(out TermOutput, nodes []*dagui.CheckNode) []string {
 func (fe *frontendPretty) renderLogsLines(prefix string) []string {
 	fe.requestLogsOnRender(fe.ZoomedSpan)
 	logs := fe.logs.Logs[fe.ZoomedSpan]
-	if logs == nil || logs.UsedHeight() == 0 || fe.claims.hasLog(fe.ZoomedSpan) || fe.hasShownRootError() {
+	if logs == nil || fe.claims.hasLog(fe.ZoomedSpan) || fe.hasShownRootError() {
+		return nil
+	}
+	// Prefix first: the screen is laid out at the width the prefix leaves.
+	logs.SetPrefix(prefix)
+	if logs.UsedHeight() == 0 {
 		return nil
 	}
 	logs.SetHeight(fe.window.Height / 3)
-	logs.SetPrefix(prefix)
 	view := logs.View()
 	if view == "" {
 		return nil
@@ -4691,7 +5119,12 @@ func (fe *frontendPretty) recalculateViewLocked() {
 		fe.requestSubtree(fe.ZoomedSpan)
 	}
 
-	if fe.logProvider != nil {
+	// The rows' time breakdowns may draw on spans a trace loaded in parts
+	// left out, such as what a row waited on: fetch them, so the row's time
+	// reads as the waiting it was.
+	fe.requestBreakdownSpansLocked()
+
+	if fe.hasLogProvider() {
 		// The primary output is written at end of run from OUTSIDE the render
 		// tree (renderPrimaryOutput reads db.PrimaryLogs), so no view fetches it
 		// on render -- request it eagerly in both modes. It's a single span
@@ -4699,7 +5132,9 @@ func (fe *frontendPretty) recalculateViewLocked() {
 		// over-fetch interactive cares about.
 		if fe.zoomKind() == zoomRoot && len(fe.reportChecks()) == 0 {
 			if tv := fe.reportTestView(); tv == nil || !tv.HasTests() {
-				if prim := fe.primarySpan(); prim.IsValid() {
+				// A live session reading on demand fetches the primary
+				// output once, at exit (SetPrimaryOutput).
+				if prim := fe.primarySpan(); prim.IsValid() && !fe.primaryOutputOnDemand() {
 					fe.requestLogsWith(prim, false)
 				}
 			}
@@ -4735,14 +5170,19 @@ func (fe *frontendPretty) recalculateViewLocked() {
 					// bare. So fetch the exec span's own logs directly too -- that's
 					// the result (or error) the LLM saw (see renderMessageLogs).
 					fe.requestLogsWith(n.Span.ID, false)
+					fe.logInView(n.Span.ID)
 					if exec := toolCallExecSpan(n.Span); exec != nil {
 						fe.requestLogsWith(exec.ID, false)
+						fe.logInView(exec.ID)
 					}
 				}
 				reqConversationLogs(n.Children)
 			}
 		}
-		reqConversationLogs(fe.reportConversation())
+		fe.markLogsInView()
+		if !fe.reportHideConversation {
+			reqConversationLogs(fe.reportConversation())
+		}
 
 		// Eager failure-detail fetch is REPORT-ONLY. The non-interactive report
 		// renders once and can't wait for a fetch dispatched mid-render, so it
@@ -4753,7 +5193,9 @@ func (fe *frontendPretty) recalculateViewLocked() {
 		// TestView.RequestLogs for test cases, renderErrorCause / renderCauseDetail
 		// for root causes). Fetching here would pull logs for collapsed/off-screen
 		// failures the user never opened -- the over-fetch we're eliminating.
-		if fe.reportOnly {
+		// A live session reading on demand runs it for the interactive final
+		// render too, at exit (RequestFinalLogs), which has no later pass.
+		if fe.reportOnly || fe.finalLogs {
 			for _, row := range fe.rows.Order {
 				if row.Span != nil && row.Span.IsFailed() {
 					fe.requestLogs(row.Span.ID)
@@ -4973,12 +5415,17 @@ func (fe *frontendPretty) focusAgentIndex(n int) bool {
 // well; see cycleAgent for why that does not make this key redundant.)
 // Returns focusAgent's (claimed, moved) pair.
 func (fe *frontendPretty) focusLastAgent() (claimed, moved bool) {
+	return fe.focusLastAgentThen(nil)
+}
+
+// focusLastAgentThen is focusLastAgent with focusAgentThen's onMoved.
+func (fe *frontendPretty) focusLastAgentThen(onMoved func()) (claimed, moved bool) {
 	if fe.lastFocusedAgent == "" {
 		return false, false
 	}
 	for _, entry := range fe.agentRosterEntries() {
 		if entry.ID == fe.lastFocusedAgent {
-			return fe.focusAgent(entry)
+			return fe.focusAgentThen(entry, onMoved)
 		}
 	}
 	return false, false
@@ -5024,7 +5471,7 @@ func (fe *frontendPretty) navFocusAgent(n int) bool {
 	if n < 0 || n >= len(entries) {
 		return false
 	}
-	claimed, moved := fe.focusAgent(entries[n])
+	claimed, moved := fe.focusAgentThen(entries[n], fe.returnToPromptAfterFocus)
 	if moved {
 		fe.returnToPromptAfterFocus()
 	}
@@ -5102,7 +5549,7 @@ func (fe *frontendPretty) navFocusLastAgent() bool {
 	if len(fe.navRosterEntries()) == 0 {
 		return false
 	}
-	claimed, moved := fe.focusLastAgent()
+	claimed, moved := fe.focusLastAgentThen(fe.returnToPromptAfterFocus)
 	if !claimed {
 		return false
 	}
@@ -5141,6 +5588,14 @@ func (fe *frontendPretty) returnToPromptAfterFocus() {
 // Focus moves only by a keypress -- never by an event -- so this is only ever
 // called from a key handler, or from settleFocus finishing what one started.
 func (fe *frontendPretty) focusAgent(entry AgentRosterEntry) (claimed, moved bool) {
+	return fe.focusAgentThen(entry, nil)
+}
+
+// focusAgentThen is focusAgent for a key that does more once focus moves
+// (returnToPromptAfterFocus): when the move waits for call history to be
+// fetched, onMoved runs once it happens, as the caller would have run it on a
+// move reported at once.
+func (fe *frontendPretty) focusAgentThen(entry AgentRosterEntry, onMoved func()) (claimed, moved bool) {
 	if entry.ID == "" || entry.Focused {
 		return false, false
 	}
@@ -5164,6 +5619,30 @@ func (fe *frontendPretty) focusAgent(entry AgentRosterEntry) (claimed, moved boo
 	// value, and that call's payload is on a span like any other (§9).
 	encodedID, err := encodedIDForCallDigest(fe.db, fe.agentCallDigest(entry.ID))
 	if err != nil {
+		// A partly loaded trace may lack the agent's recipe: fetch it, then
+		// try again, unless focus has moved on meanwhile.
+		from := fe.focusedAgentID()
+		if fe.requestCalls([]string{fe.agentCallDigest(entry.ID)}, nil, func(err error) {
+			if err != nil {
+				fe.markAgentUnaddressable(entry.ID)
+				fe.setPromptError(callHistoryError(fmt.Sprintf("agent %q cannot be addressed", entry.Name), err))
+				return
+			}
+			if fe.focusedAgentID() != from {
+				return
+			}
+			for _, retry := range fe.agentRosterEntries() {
+				if retry.ID == entry.ID {
+					if _, moved := fe.focusAgentThen(retry, onMoved); moved && onMoved != nil {
+						onMoved()
+					}
+					fe.updateAgentRoster()
+					return
+				}
+			}
+		}) {
+			return true, false
+		}
 		// A frame whose span never reached this client cannot be rebuilt; the
 		// entry is read-only from here on, and says so.
 		fe.markAgentUnaddressable(entry.ID)
@@ -5656,6 +6135,31 @@ func (fe *frontendPretty) syncRewindsLocked() {
 		fe.rewindsKey = fingerprint
 		fe.renderVersion++
 	}
+	// A marker whose abandoned conversation this client cannot walk -- its
+	// payloads were never loaded -- asks for them; once they apply, the
+	// rewinds rebuild and the fingerprint above repaints the rows.
+	abandoned, adopted := fe.unplacedRewindDigests()
+	fe.requestCalls(abandoned, adopted, func(err error) {
+		if err != nil {
+			slog.Debug("could not load the calls a rewind abandoned", "err", err)
+		}
+	})
+}
+
+// unplacedRewindDigests are the abandoned conversations of the rewind
+// markers this client could not walk yet -- an action on a message they may
+// have abandoned needs their payloads too -- and the adopted states it holds,
+// which bound those conversations from the prefix they share.
+func (fe *frontendPretty) unplacedRewindDigests() (abandoned, adopted []string) {
+	for _, rewind := range fe.db.Rewinds() {
+		if len(rewind.Abandoned) == 0 && rewind.Span.AgentRewindFrom != "" {
+			abandoned = append(abandoned, rewind.Span.AgentRewindFrom)
+			if to := rewind.Span.AgentRewindTo; to != "" && fe.db.Call(to) != nil {
+				adopted = append(adopted, to)
+			}
+		}
+	}
+	return abandoned, adopted
 }
 
 // conversationToPromote is the transcript the live tree should show, and the
@@ -6207,7 +6711,10 @@ func (fe *frontendPretty) findFocusLine(topGapCounts []int) int {
 			// Add lines from siblings before this node.
 			idx := node.indexInParent
 			if len(parent.childGapCounts) != len(parent.children) ||
-				len(parent.childLineCounts) != len(parent.children) {
+				len(parent.childLineCounts) != len(parent.children) ||
+				idx >= len(parent.children) || parent.children[idx] != node {
+				// Stale: the node isn't among its parent's children
+				// anymore, e.g. since the parent collapsed.
 				return -1
 			}
 			for s := range idx {
@@ -7129,6 +7636,7 @@ func (fe *frontendPretty) confirmSearch(query string) {
 	}
 	fe.searchQuery = query
 	fe.searchIdx = -1
+	fe.startLogSearch(query)
 	// Push query to all vterms (triggers midterm Search), read results,
 	// navigate to first match, then update highlights + dirty trees.
 	fe.syncVtermSearchHighlights()
@@ -7173,12 +7681,7 @@ func (fe *frontendPretty) editablePrompt(span *dagui.Span) bool {
 // payload-only so the key-help hot path does not rebuild and encode a full ID on
 // every render; promptEditTarget pays for that only after e is pressed.
 func (fe *frontendPretty) promptEditCall(span *dagui.Span) *callpbv1.Call {
-	if fe.shell == nil || fe.serialRunning || span == nil || !fe.spanBelongsToFocusedAgent(span) {
-		return nil
-	}
-	if span.LLMRole != telemetry.LLMRoleUser || span.Internal || span.LLMEventOriginMessage() {
-		// Not a prompt the user submitted: a reply, a tool call, the system
-		// prompt, or an engine event (a rewind marker included).
+	if !fe.promptEditCandidate(span) {
 		return nil
 	}
 	promptCall := fe.db.LLMMessageCall(span)
@@ -7187,6 +7690,17 @@ func (fe *frontendPretty) promptEditCall(span *dagui.Span) *callpbv1.Call {
 		return nil
 	}
 	return promptCall
+}
+
+// promptEditCandidate reports whether span is a prompt the user submitted to
+// the focused agent, which e may edit once its call is known.
+func (fe *frontendPretty) promptEditCandidate(span *dagui.Span) bool {
+	if fe.shell == nil || fe.serialRunning || span == nil || !fe.spanBelongsToFocusedAgent(span) {
+		return false
+	}
+	// Not a prompt the user submitted: a reply, a tool call, the system
+	// prompt, or an engine event (a rewind marker included).
+	return span.LLMRole == telemetry.LLMRoleUser && !span.Internal && !span.LLMEventOriginMessage()
 }
 
 // promptEditTarget returns the originating submitted prompt and the encoded LLM
@@ -7236,8 +7750,20 @@ func (fe *frontendPretty) editPrompt() {
 	if !fe.FocusedSpan.IsValid() || fe.shell == nil {
 		return
 	}
-	prompt, encoded, ok := fe.promptEditTarget(fe.db.Spans.Map[fe.FocusedSpan])
+	focused := fe.db.Spans.Map[fe.FocusedSpan]
+	prompt, encoded, ok := fe.promptEditTarget(focused)
 	if !ok {
+		if fe.promptEditCandidate(focused) && fe.callHistoryMissing(focused) {
+			// A partly loaded trace may lack the prompt's payloads: fetch
+			// them, then try again from the same row.
+			_, known := fe.unplacedRewindDigests()
+			fe.requestCalls([]string{dagui.LLMCallCarrier(focused).LLMCallDigest}, known, fe.retryOnSpan(focused.ID, "edit", fe.editPrompt, func() error {
+				if _, _, ok := fe.promptEditTarget(fe.db.Spans.Map[focused.ID]); !ok {
+					return errors.New("the prompt's call history is incomplete")
+				}
+				return nil
+			}))
+		}
 		return
 	}
 	work := fe.shell.EditFromID(fe.shellCtx, encoded)
@@ -7325,6 +7851,15 @@ func (fe *frontendPretty) branch() {
 
 	target, err := fe.branchTargetFor(focused)
 	if err != nil {
+		// A partly loaded trace may lack the payloads: fetch them, then try
+		// again from the same row.
+		digests, known := fe.messageCallDigests(focused)
+		if fe.requestCalls(digests, known, fe.retryOnSpan(focused.ID, "branch", fe.branch, func() error {
+			_, err := fe.branchTargetFor(fe.db.Spans.Map[focused.ID])
+			return err
+		})) {
+			return
+		}
 		slog.Warn("could not resolve the LLM state to branch to", "digest", focused.LLMCallDigest, "err", err)
 		return
 	}
@@ -7415,6 +7950,20 @@ func (fe *frontendPretty) terminal() {
 
 	callback := fe.terminalCallback(focused)
 	if callback != nil {
+		if _, err := focused.CallID(); err != nil {
+			// A partly loaded trace may lack the call's recipe: fetch it,
+			// then try again from the same row.
+			if fe.requestCalls([]string{focused.CallDigest}, nil, fe.retryOnSpan(focused.ID, "open a terminal", fe.terminal, func() error {
+				span := fe.db.Spans.Map[focused.ID]
+				if span == nil {
+					return errors.New("the span is gone")
+				}
+				_, err := span.CallID()
+				return err
+			})) {
+				return
+			}
+		}
 		go func() {
 			err := callback()
 			if err != nil {
@@ -7849,7 +8398,13 @@ func (fe *frontendPretty) openOrGoIn() {
 		return
 	}
 	if row := fe.rows.BySpan[fe.FocusedSpan]; row != nil && row.Expanded {
-		// already expanded; go in
+		// Already expanded; go in. A row the view opened by itself -- a
+		// canceled span, or any at a verbosity that expands completed ones
+		// -- was never toggled open (setExpanded), so a lazy view has not
+		// fetched its children yet: expanding it asks for them, as opening
+		// it would have. Fetching every such row as it renders instead would
+		// walk the whole trace a span at a time.
+		fe.requestSpans(fe.FocusedSpan)
 		fe.goIn()
 		return
 	}
@@ -7951,6 +8506,14 @@ func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput
 		!fe.shouldRenderInlineTests(row) && !fe.rollsUpSubChecks(row) {
 		// in shell mode, we print top-level command logs unindented, like shells
 		// usually does
+		if fe.shellTranscript() {
+			// Collapsed, so no LogsView asks for them: a restored history's
+			// command output is fetched as the row renders.
+			fe.requestLogsOnRender(row.Span.ID)
+		} else if row.Span.RollUpLogs && (row.IsRunningOrChildRunning || row.Span.IsFailedOrCausedFailure()) {
+			// Likewise the rolled-up logs shown below, read on demand.
+			fe.requestLogsOnRender(row.Span.ID)
+		}
 		if logs := fe.logs.Logs[row.Span.ID]; logs != nil && logs.UsedHeight() > 0 {
 			if fe.shellTranscript() {
 				unindent := *row
@@ -8191,8 +8754,9 @@ func transferSummary(srcs []*dagui.Span) string {
 }
 
 // renderMergedProgressRow folds completed transfers into one summary line
-// beneath the given row: a count by kind and the merged wall-clock
-// duration of their activity. The interval union means parallel transfers
+// beneath the given row: labeled as transfers, so it doesn't read as a
+// breakdown of the row's own time, a count by kind and the merged
+// wall-clock duration of their activity. The interval union means parallel transfers
 // don't double-count, and byte totals are deliberately omitted — fetch and
 // unpack read the same bytes, so summing would double the apparent size.
 // The "p" keybind expands the fold into individual rows.
@@ -8202,7 +8766,7 @@ func (fe *frontendPretty) renderMergedProgressRow(out TermOutput, r *renderer, r
 	// indent past the parent's icon column so the line reads as its detail
 	fmt.Fprint(out, "  ")
 	fmt.Fprint(out, out.String(IconSuccess).Foreground(termenv.ANSIGreen))
-	fmt.Fprint(out, out.String(" "+transferSummary(srcs)).Faint())
+	fmt.Fprint(out, out.String(" transfers: "+transferSummary(srcs)).Faint())
 	var activity dagui.Activity
 	for _, src := range srcs {
 		activity.Add(src)
@@ -8703,7 +9267,17 @@ func (fe *frontendPretty) renderSpanErrorMessage(out TermOutput, r *renderer, ro
 }
 
 func (fe *frontendPretty) renderToolOutputSummary(out TermOutput, span *dagui.Span) {
-	if !isToolCallDisplay(span) || !dagui.ToolNameIs(span.LLMTool, "grep") {
+	if !isToolCallDisplay(span) {
+		return
+	}
+	tool := span.LLMTool
+	if dagui.RendersToolArgs(tool) {
+		// a Timeout summarizes as the call it wraps
+		tool = fe.db.ToolCallView(span).Tool
+	}
+	grep := dagui.ToolNameIs(tool, "grep")
+	dangCheck := dagui.ToolNameIs(tool, "DangCheck")
+	if !grep && !dangCheck {
 		return
 	}
 	logs := fe.logs.Logs[span.ID]
@@ -8713,10 +9287,46 @@ func (fe *frontendPretty) renderToolOutputSummary(out TermOutput, span *dagui.Sp
 	if logs == nil {
 		return
 	}
+	if dangCheck {
+		renderDangCheckStatus(out, logs)
+		return
+	}
 	summary := dagui.SanitizeInline(strings.TrimSpace(ansi.Strip(logs.LastLine())))
 	if summary != "" {
 		fmt.Fprint(out, out.String(" - "+summary).Faint())
 	}
+}
+
+// renderDangCheckStatus renders a DangCheck's status in its header, from its
+// report's footer (e.g. "1 error · workspace scope · nothing ran"), so a
+// check that failed shows while its row is collapsed: its errors in red,
+// else its warnings in yellow. A check that passed says nothing more.
+func renderDangCheckStatus(out TermOutput, logs *Vterm) {
+	status := dangCheckStatus(logs)
+	if status == "" || status == "ok" {
+		return
+	}
+	color := termenv.ANSIYellow
+	if strings.Contains(status, "error") {
+		color = termenv.ANSIRed
+	}
+	fmt.Fprint(out, out.String(" - ").Faint().String()+out.String(dagui.SanitizeInline(status)).Foreground(color).String())
+}
+
+// dangCheckStatus returns the status a DangCheck's report ends with: its
+// footer's first field, "ok", "1 error" or "2 errors, 1 warning". The footer
+// is among the report's last lines (a nudge to read the Dang skill can
+// follow it), read as written: a footer naming a long scope can be wider
+// than the log's rows. "" when there's none.
+func dangCheckStatus(logs *Vterm) string {
+	lines := logs.RawTail(4)
+	for i := len(lines) - 1; i >= 0; i-- {
+		fields := strings.Split(strings.TrimSpace(lines[i]), " · ")
+		if len(fields) >= 2 && fields[len(fields)-1] == "nothing ran" {
+			return fields[0]
+		}
+	}
+	return ""
 }
 
 func (fe *frontendPretty) renderStepTitle(ctx tuist.Context, out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, statusHost statusIconHost, focused bool, abridged bool) error {
@@ -9904,6 +10514,24 @@ func (l *prettyLogs) extractSpanContext(span *dagui.Span) string {
 }
 
 func (l *prettyLogs) findRollUpSpan(origID dagui.SpanID) (*multiprefixw.Writer, dagui.SpanID, bool) {
+	id, ok := l.rollUpSpanOf(origID)
+	if !ok {
+		return nil, dagui.SpanID{}, false
+	}
+	// Found a roll-up span; find-or-create a prefixed writer for it.
+	pw, found := l.PrefixWriters[id]
+	if !found {
+		vterm := l.spanLogs(id)
+		pw = multiprefixw.New(vterm)
+		l.PrefixWriters[id] = pw
+	}
+	return pw, id, true
+}
+
+// rollUpSpanOf finds the span rolling up origID's logs, if any: origID or
+// its nearest RollUpLogs ancestor, short of a boundary, an encapsulating or
+// internal span, or a span it does not know yet.
+func (l *prettyLogs) rollUpSpanOf(origID dagui.SpanID) (dagui.SpanID, bool) {
 	id := origID
 	for {
 		span := l.DB.Spans.Map[id]
@@ -9914,14 +10542,7 @@ func (l *prettyLogs) findRollUpSpan(origID dagui.SpanID) (*multiprefixw.Writer, 
 			break
 		}
 		if span.RollUpLogs {
-			// Found a roll-up span; find-or-create a prefixed writer for it.
-			pw, found := l.PrefixWriters[id]
-			if !found {
-				vterm := l.spanLogs(id)
-				pw = multiprefixw.New(vterm)
-				l.PrefixWriters[id] = pw
-			}
-			return pw, id, true
+			return id, true
 		}
 		if span.ParentID.IsValid() {
 			// Keep walking upward
@@ -9930,7 +10551,38 @@ func (l *prettyLogs) findRollUpSpan(origID dagui.SpanID) (*multiprefixw.Writer, 
 			break
 		}
 	}
-	return nil, dagui.SpanID{}, false
+	return dagui.SpanID{}, false
+}
+
+// placement is where Export renders rec (see LogPlacement).
+func (l *prettyLogs) placement(rec sdklog.Record) LogPlacement {
+	spanID := l.DB.LogTargetSpanID(rec)
+	if !spanID.IsValid() {
+		return LogPlacement{}
+	}
+	p := LogPlacement{Span: spanID}
+	var verbose, global bool
+	var contentType string
+	for attr := range rec.WalkAttributes {
+		switch attr.Key {
+		case telemetry.ContentTypeAttr:
+			contentType, _ = dagui.LogValueString(attr.Value)
+		case telemetry.LogsGlobalAttr:
+			global, _ = dagui.LogValueBool(attr.Value)
+		case telemetry.LogsVerboseAttr:
+			verbose, _ = dagui.LogValueBool(attr.Value)
+		}
+	}
+	if rollUp, ok := l.rollUpSpanOf(spanID); ok && rollUp != spanID && !verbose && !global {
+		p.RollUp = rollUp
+	}
+	if contentType == "application/json" {
+		if span := l.DB.Spans.Map[spanID]; span != nil && span.LLMRole != "" && span.LLMTool != "" {
+			_, isMedia := dagui.ParseMediaRecord(rec)
+			p.ToolArgs = !isMedia
+		}
+	}
+	return p
 }
 
 func (l *prettyLogs) spanLogs(spanID dagui.SpanID) *Vterm {

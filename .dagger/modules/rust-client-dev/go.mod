@@ -1,9 +1,9 @@
 module dagger/rust-client-dev
 
-go 1.26.6
+go 1.27
 
 require (
-	dagger.io/dagger v1.0.0-beta.25
+	dagger.io/dagger v1.0.0-beta.26
 	github.com/BurntSushi/toml v1.5.0
 	github.com/Khan/genqlient v0.8.1
 	github.com/dagger/otel-go v1.43.1-0.20261102220336-aa07da582c21

@@ -1,11 +1,6 @@
 module github.com/dagger/dagger
 
-go 1.26.6
-
-require (
-	dagger.io/dagger v0.21.9
-	github.com/dagger/dagger/engine/distconsts v0.21.9
-)
+go 1.27
 
 replace (
 	dagger.io/dagger => ./sdk/go
@@ -17,6 +12,7 @@ require (
 	charm.land/glamour/v2 v2.0.1
 	charm.land/lipgloss/v2 v2.0.5
 	cloud.google.com/go/secretmanager v1.16.0
+	dagger.io/dagger v0.21.9
 	github.com/1password/onepassword-sdk-go v0.3.1
 	github.com/99designs/gqlgen v0.17.94
 	github.com/BurntSushi/toml v1.6.0
@@ -63,6 +59,7 @@ require (
 	github.com/coreos/go-systemd/v22 v22.7.0
 	github.com/creachadair/tomledit v0.0.29
 	github.com/creack/pty v1.1.24
+	github.com/dagger/dagger/engine/distconsts v0.21.9
 	github.com/dagger/otel-go v1.43.1-0.20261102220336-aa07da582c21
 	github.com/dagger/querybuilder v0.0.0-20260402040506-574a5e81cb59
 	github.com/dagger/testctx v0.1.2
@@ -154,7 +151,7 @@ require (
 	github.com/vektah/gqlparser/v2 v2.5.36
 	github.com/vishvananda/netlink v1.3.1
 	github.com/vito/bubbline v0.0.0-20250312195236-5f4f49d6ebcb
-	github.com/vito/dang/v2 v2.4.1
+	github.com/vito/dang/v2 v2.5.0
 	github.com/vito/go-interact v1.0.2
 	github.com/vito/go-sse v1.1.3
 	github.com/vito/midterm v0.2.5
@@ -205,8 +202,6 @@ require (
 	resenje.org/singleflight v0.4.3
 	sigs.k8s.io/knftables v0.0.18
 )
-
-require github.com/mattn/go-pointer v0.0.1 // indirect
 
 require (
 	cloud.google.com/go v0.123.0 // indirect
@@ -303,6 +298,7 @@ require (
 	github.com/lunixbochs/vtclean v1.0.0 // indirect
 	github.com/matryer/moq v0.6.0 // indirect
 	github.com/mattn/go-localereader v0.0.1 // indirect
+	github.com/mattn/go-pointer v0.0.1 // indirect
 	github.com/mattn/go-runewidth v0.0.30 // indirect
 	github.com/mattn/goveralls v0.0.12 // indirect
 	github.com/microcosm-cc/bluemonday v1.0.27 // indirect
@@ -340,7 +336,6 @@ require (
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/tidwall/sjson v1.2.5 // indirect
-	github.com/tree-sitter/go-tree-sitter v0.25.0 // indirect
 	github.com/vbatts/tar-split v0.12.3 // indirect
 	github.com/vishvananda/netns v0.0.5 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect

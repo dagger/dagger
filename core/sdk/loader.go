@@ -15,7 +15,6 @@ import (
 	"github.com/dagger/dagger/engine/distconsts"
 	iversion "github.com/dagger/dagger/internal/version"
 	telemetry "github.com/dagger/otel-go"
-	"github.com/opencontainers/go-digest"
 )
 
 var (
@@ -143,9 +142,9 @@ func (l *Loader) namedSDK(
 	case sdkDang:
 		return &dangSDK{root: root, rawConfig: sdk.Config}, nil
 	case sdkPython:
-		return l.loadBuiltinSDK(ctx, root, sdk, digest.Digest(os.Getenv(distconsts.PythonSDKManifestDigestEnvName)))
+		return l.loadBuiltinSDK(ctx, root, sdk, os.Getenv(distconsts.PythonSDKDigestEnvName))
 	case sdkTypescript:
-		return l.loadBuiltinSDK(ctx, root, sdk, digest.Digest(os.Getenv(distconsts.TypescriptSDKManifestDigestEnvName)))
+		return l.loadBuiltinSDK(ctx, root, sdk, os.Getenv(distconsts.TypescriptSDKDigestEnvName))
 	case sdkJava, sdkPHP, sdkElixir:
 		sdkMod, ok := workspaceModuleForBuiltinSDK(sdkNamedParsed, sdkSuffix)
 		if !ok {
@@ -198,12 +197,13 @@ func (l *Loader) namedSDK(
 
 // loads an SDK implemented as a module that is "builtin" to engine, which means its
 // pre-packaged with the engine container in order to enable use w/out hard dependencies
-// on the internet
+// on the internet: its files are a directory the engine image's entries hold,
+// named by its content digest, filesDigest.
 func (l *Loader) loadBuiltinSDK(
 	ctx context.Context,
 	root *core.Query,
 	sdk *core.SDKConfig,
-	manifestDigest digest.Digest,
+	filesDigest string,
 ) (*module, error) {
 	dag, err := root.Server.Server(ctx)
 	if err != nil {
@@ -216,19 +216,13 @@ func (l *Loader) loadBuiltinSDK(
 	var fullSDKDir dagql.ObjectResult[*core.Directory]
 	if err := dag.Select(ctx, dag.Root(), &fullSDKDir,
 		dagql.Selector{
-			Field: "_builtinContainer",
+			Field: "__bundledDirectory",
 			Args: []dagql.NamedInput{
-				{
-					Name:  "digest",
-					Value: dagql.String(manifestDigest.String()),
-				},
+				{Name: "digest", Value: dagql.String(filesDigest)},
 			},
 		},
-		dagql.Selector{
-			Field: "rootfs",
-		},
 	); err != nil {
-		return nil, fmt.Errorf("failed to import full sdk source for sdk %s from engine container filesystem: %w", sdk.Source, err)
+		return nil, fmt.Errorf("failed to load the files of sdk %s from the engine image: %w", sdk.Source, err)
 	}
 
 	var sdkMod dagql.ObjectResult[*core.Module]

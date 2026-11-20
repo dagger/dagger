@@ -78,6 +78,9 @@ type daggerSession struct {
 	// cloudClaimID is the Dagger Cloud claim the main client connected under,
 	// set when the session is initialized.
 	cloudClaimID string
+	// startedAt is when the session initialized. Among plain sessions
+	// sharing a trace, the earliest-started (outermost) one retains it.
+	startedAt time.Time
 
 	// schemaBuilderMemo holds the schemas built for module dependency sets
 	// (e.g. a Module's Deps) by any of the session's clients. A function
@@ -1185,6 +1188,7 @@ func (srv *Server) initializeDaggerSession(
 		sess.releaseEBPF = release
 		failureCleanups.Add("release eBPF programs", cleanups.Infallible(release))
 	}
+	sess.startedAt = time.Now()
 	sess.attachables = newSessionAttachableManager()
 	sess.endpoints = map[string]http.Handler{}
 	sess.closingCtx, sess.cancelClosing = context.WithCancelCause(context.Background())
@@ -1810,7 +1814,22 @@ func (srv *Server) initializeClientRuntime(
 		if len(client.mod.Self().ObjectDefs) > 0 {
 			servedMods = servedMods.Append(core.NewUserMod(client.mod))
 		}
+		if deps := nestedServedDeps(client.clientMetadata); deps != nil && opts.InertAttachables {
+			// A DangEval snippet in a module's scope also reaches the
+			// conversation's bound tool objects: their modules' types,
+			// beside the module's own API.
+			for _, mod := range deps.Mods() {
+				if mod.Name() != core.ModuleName {
+					servedMods = servedMods.With(mod, core.InstallOpts{SkipConstructor: true})
+				}
+			}
+		}
 		client.servedMods = servedMods.ClientOwned()
+	} else if deps := nestedServedDeps(client.clientMetadata); deps != nil && opts.InertAttachables {
+		// An in-engine client running for a conversation (DangEval) serves
+		// the conversation's API, as a module client serves its module's
+		// dependencies, without the conversation's host access.
+		client.servedMods = deps.WithRoot(client.dagqlRoot).ClientOwned()
 	} else if !opts.InertAttachables {
 		// Only a client that can read its host detects its own workspace. An
 		// in-engine SDK client without a module, such as one that evaluates an
@@ -1839,6 +1858,16 @@ func (srv *Server) initializeClientRuntime(
 
 	client.state = clientStateInitialized
 	return nil
+}
+
+// nestedServedDeps is the schema an in-engine nested client was given to
+// serve (engine.ClientMetadata.ServedDeps), or nil.
+func nestedServedDeps(md *engine.ClientMetadata) *core.SchemaBuilder {
+	if md == nil {
+		return nil
+	}
+	deps, _ := md.ServedDeps.(*core.SchemaBuilder)
+	return deps
 }
 
 func (sess *daggerSession) resolveClientAttachableCaller(
@@ -2546,6 +2575,7 @@ func (srv *Server) ServeHTTPToNestedClient(
 		return
 	}
 	clientMetadata := nestedClientMetadataForRequest(r.Header, nestedClientMetadata)
+	clientMetadata.InertAttachables = inertAttachables
 
 	var moduleContext dagql.ObjectResult[*core.Module]
 	if moduleCtx != nil {
@@ -2717,7 +2747,7 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 
 	var mux *http.ServeMux
 	switch path := r.URL.Path; {
-	case len(childMetadata) == 0 && (path == "/v1/traces" || path == "/v1/logs" || path == "/v1/metrics"):
+	case len(childMetadata) == 0 && (path == "/v1/traces" || path == "/v1/logs" || path == "/v1/metrics" || path == "/v1/logs/query" || path == "/v1/logs/search" || path == enginetel.LiveFlushPath):
 		// Telemetry subscriptions require only the stable client record.
 		record, err := srv.clientRecordFromIDs(clientMetadata.SessionID, clientMetadata.ClientID)
 		if err != nil {
@@ -2727,6 +2757,14 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 		mux.HandleFunc("GET /v1/traces", httpHandlerFunc(srv.telemetryPubSub.TracesSubscribeHandler, record))
 		mux.HandleFunc("GET /v1/logs", httpHandlerFunc(srv.telemetryPubSub.LogsSubscribeHandler, record))
 		mux.HandleFunc("GET /v1/metrics", httpHandlerFunc(srv.telemetryPubSub.MetricsSubscribeHandler, record))
+		mux.HandleFunc("POST /v1/logs/query", httpHandlerFunc(srv.telemetryPubSub.LogsQueryHandler, record))
+		mux.HandleFunc("POST /v1/logs/search", httpHandlerFunc(srv.telemetryPubSub.LogsSearchHandler, record))
+		mux.HandleFunc("POST "+enginetel.LiveFlushPath, httpHandlerFunc(srv.telemetryPubSub.FlushHandler, record))
+		// The client's own telemetry (engine.ClientTelemetryIngestHeader).
+		ps := srv.telemetryPubSub
+		mux.HandleFunc("POST /v1/traces", ps.clientIngestHandler(ps.ingestClientTraces, record))
+		mux.HandleFunc("POST /v1/logs", ps.clientIngestHandler(ps.ingestClientLogs, record))
+		mux.HandleFunc("POST /v1/metrics", ps.clientIngestHandler(ps.ingestClientMetrics, record))
 	default:
 		requestOpts := *opts
 		requestOpts.requestOwner = r.Method + " " + r.URL.Path
@@ -4004,6 +4042,30 @@ func (srv *Server) ModuleParent(ctx context.Context) (dagql.ObjectResult[*core.M
 	return zero, core.ErrNoCurrentModule
 }
 
+// EnclosingFunctionCall returns the function call whose work the current
+// client does: the nearest of the client and its ancestors that a function
+// call created. A process that a call's code starts, a module entrypoint's
+// included, does that call's work.
+func (srv *Server) EnclosingFunctionCall(ctx context.Context) (*core.FunctionCall, error) {
+	client, err := srv.executableClientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if client.fnCall != nil {
+		return client.fnCall, nil
+	}
+	ancestors, err := client.daggerSession.ancestorRuntimes(client.clientRecord)
+	if err != nil {
+		return nil, fmt.Errorf("resolve enclosing function call: %w", err)
+	}
+	for i := len(ancestors) - 1; i >= 0; i-- {
+		if ancestors[i].fnCall != nil {
+			return ancestors[i].fnCall, nil
+		}
+	}
+	return nil, core.ErrNoCurrentFunctionCall
+}
+
 // If the current client is coming from a function, return the function call metadata
 func (srv *Server) CurrentFunctionCall(ctx context.Context) (*core.FunctionCall, error) {
 	client, err := srv.executableClientFromContext(ctx)
@@ -4784,10 +4846,6 @@ func (srv *Server) Platform() core.Platform {
 // The content store for the engine as a whole
 func (srv *Server) OCIStore() content.Store {
 	return srv.contentStore
-}
-
-func (srv *Server) BuiltinOCIStore() content.Store {
-	return srv.builtinContentStore
 }
 
 // The dns configuration for the engine as a whole

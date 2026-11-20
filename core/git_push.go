@@ -20,8 +20,8 @@ const GitPushTimeout = 2 * time.Minute
 type GitPushOpts struct {
 	Branch            string
 	ExpectedRemoteSHA string
-	// Registered remote routing is already explicit (and captured URLs have
-	// already had host rewrites applied).
+	// The destination is a remote's push URL, which is final: like git, the
+	// caller's rewrites apply only to a fetch URL used for pushing.
 	SkipDestinationRewrite bool
 }
 

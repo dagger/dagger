@@ -1,12 +1,14 @@
 package dagql
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"math/rand/v2"
 	"slices"
+	"sync"
 	"testing"
 	"time"
 
@@ -2487,4 +2489,38 @@ func TestMergeCommitNamesItsHolder(t *testing.T) {
 		require.Equal(t, mergeOp.ID(), h, "each take names the merge")
 	}
 	require.Equal(t, wcprof.HolderUnknown, released, "each release clears the holder")
+}
+
+// A merge decodes each payload once for the steps that read it as sent: its
+// validation and its part mapping share one memo, and its validation leaves
+// the references to the merge's own visit, which relocates them.
+func TestMergeValuesSharesEachPayloadsDecode(t *testing.T) {
+	// Not parallel: the codec's step hook is the package's.
+	bundle, _ := mergeTestSource(t, "root", "decoded-once")
+	var mu sync.Mutex
+	memos := map[string][]*PayloadMemo{}
+	var apart []bool
+	steps := func(step string, v PersistedPayloadVisit) {
+		if !bytes.Contains(v.Payload, []byte("decoded-once")) {
+			return
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		memos[step] = append(memos[step], v.Memo)
+		if step == "validate" {
+			apart = append(apart, v.ReferencesVisitedApart)
+		}
+	}
+	transferTestCodecSteps.Store(&steps)
+	defer transferTestCodecSteps.Store(nil)
+	bctx, b, _ := transferTestCache(t)
+	_, err := b.MergeValues(bctx, cloudCacheID, bundle)
+	require.NoError(t, err)
+	mu.Lock()
+	defer mu.Unlock()
+	require.Len(t, memos["validate"], 1)
+	require.Len(t, memos["map"], 1)
+	require.NotNil(t, memos["validate"][0])
+	require.Same(t, memos["validate"][0], memos["map"][0], "one memo for the payload's steps")
+	require.Equal(t, []bool{true}, apart, "the merge visits the references itself")
 }

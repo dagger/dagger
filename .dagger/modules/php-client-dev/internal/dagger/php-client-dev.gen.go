@@ -67,8 +67,8 @@ type PhpClientDevDevContainerOpts struct {
 	RunInstall bool
 }
 
-// Returns the PHP SDK workspace mounted in a dev container,
-// and working directory set to the SDK source
+// Returns the PHP SDK workspace mounted in a dev container, with a client of a
+// dev engine built from the workspace, and working directory set to the SDK source
 func (r *PhpClientDev) DevContainer(opts ...PhpClientDevDevContainerOpts) *Container {
 	q := r.query.Select("devContainer")
 	for i := len(opts) - 1; i >= 0; i-- {

@@ -68,6 +68,20 @@ type LLMTool struct {
 	// CallBatch runs these after every other call in the turn, so the
 	// conversation they receive already reflects the turn's effects.
 	ReturnsLLM bool `json:"-"`
+	// Continues, if set, reports whether a call with these arguments acts as
+	// a continuation, for a tool that only sometimes does: DangEval, when its
+	// snippet reassigns `chat`. CallBatch schedules such a call as it does a
+	// ReturnsLLM tool's.
+	Continues func(arguments []byte) bool `json:"-"`
+	// Whether the tool logs its own result to the tool call's span, as
+	// DangCheck and DangEval log their reports (streaming a snippet's prints
+	// as they happen). CallContent then doesn't log a result the tool
+	// returned a second time; it still logs an errored one, which the tool
+	// never produced. The span's logs are then the tool's own, not the
+	// result the model sees: a Dang call logs its whole report, while its
+	// result bounds it (see MCP.dangToolResult) and points at ReadLogs for
+	// the rest.
+	LogsOwnResult bool `json:"-"`
 	// GraphQL API field that this tool corresponds to
 	Field *ast.FieldDefinition `json:"-"`
 	// Function implementing the tool.
@@ -82,6 +96,80 @@ func NewLLMToolSet() *LLMToolSet {
 	return dagui.NewOrderedSet[string, LLMTool](func(t LLMTool) string {
 		return t.Name
 	})
+}
+
+// ToolSchemaProperties is a tool schema's "properties" listed in a deliberate
+// order, which it keeps when marshaled: a map would have encoding/json sort
+// them by name. Models tend to write a call's arguments in the order its
+// schema offers them, so a tool whose arguments stream (see Timeout) lists
+// first the ones a frontend needs early. It goes in LLMTool.Schema as the
+// value of "properties", in place of a map; schemaPropertiesMap reads either.
+//
+// The order reaches every provider: Anthropic, OpenAI, Codex and MCP's
+// tools/list get the schema as JSON, written in order, and Gemini, whose
+// typed genai.Schema keeps properties in a map, gets it as PropertyOrdering.
+type ToolSchemaProperties []ToolSchemaProperty
+
+// ToolSchemaProperty is one of ToolSchemaProperties: an argument's name and
+// its JSON schema.
+type ToolSchemaProperty struct {
+	Name   string
+	Schema map[string]any
+}
+
+// MarshalJSON marshals the properties as a JSON object, in order.
+func (props ToolSchemaProperties) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	for i, prop := range props {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		name, err := json.Marshal(prop.Name)
+		if err != nil {
+			return nil, err
+		}
+		schema, err := json.Marshal(prop.Schema)
+		if err != nil {
+			return nil, fmt.Errorf("property %q: %w", prop.Name, err)
+		}
+		buf.Write(name)
+		buf.WriteByte(':')
+		buf.Write(schema)
+	}
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+// Map returns the properties by name, without their order.
+func (props ToolSchemaProperties) Map() map[string]any {
+	m := make(map[string]any, len(props))
+	for _, prop := range props {
+		m[prop.Name] = prop.Schema
+	}
+	return m
+}
+
+// Names returns the properties' names, in order.
+func (props ToolSchemaProperties) Names() []string {
+	names := make([]string, len(props))
+	for i, prop := range props {
+		names[i] = prop.Name
+	}
+	return names
+}
+
+// schemaPropertiesMap returns a schema's "properties" value by name, whether
+// it's a map or ToolSchemaProperties.
+func schemaPropertiesMap(properties any) (map[string]any, bool) {
+	switch props := properties.(type) {
+	case map[string]any:
+		return props, true
+	case ToolSchemaProperties:
+		return props.Map(), true
+	default:
+		return nil, false
+	}
 }
 
 // Internal implementation of the MCP standard,
@@ -106,6 +194,11 @@ type MCP struct {
 	// the model through ListSkills/ReadSkill alongside the engine-embedded and
 	// workspace-discovered skills.
 	skillDirs []ownedSkillDirectory
+	// readSkills are the skills ReadSkill read on this MCP, by name (see
+	// hasReadSkill): a step's reads, before they are on the conversation's
+	// record, or a standalone server's (dagger mcp), which has no record.
+	// Transient: cleared by Clone; across steps, the record says.
+	readSkills map[string]bool
 	// selfLLM is the conversation dispatching the current step's tool calls —
 	// inst + withResponse, i.e. up to and including the in-flight tool call.
 	// The object-tool adapter passes it explicitly to hidden LLM arguments.
@@ -194,6 +287,7 @@ func (m *MCP) Clone() *MCP {
 	cp.selfLLM = dagql.ObjectResult[*LLM]{}
 	cp.continuation = dagql.ObjectResult[*LLM]{}
 	cp.stateChanged = false
+	cp.readSkills = nil
 	cp.mu = &sync.Mutex{}
 	return &cp
 }
@@ -289,34 +383,185 @@ func (m *MCP) LastResult() dagql.Typed {
 }
 
 // baseServer provides the schema for core tools and dispatch. Bound module
-// tools retain their own defining schemas. Value workspaces use only core here;
-// their modules are loaded from their trees during explicit agent composition.
-// Live workspaces load their modules best-effort: a broken module is left out
-// of the schema (and listed by FindArtifacts as a load failure) instead of
-// failing every step.
+// tools retain their own defining schemas.
+//
+// A bound workspace's installed modules are part of it, live or value alike
+// (a snapshot is a workspace too): a live workspace's as its owning client
+// serves them, a value workspace's loaded from its own tree, and either's
+// as its pending edits leave them, so a module a tool installs or
+// uninstalls (`withModule`, `withoutModule`) joins or leaves the next step's
+// schema. Loading is best-effort: a broken module is left out of the schema
+// (and listed by FindArtifacts as a load failure) instead of failing every
+// step, and if the installed modules don't fit together, the schema goes
+// without them.
 func (m *MCP) baseServer(ctx context.Context) (*dagql.Server, error) {
-	query, err := CurrentQuery(ctx)
+	ctx, base, err := m.loadBase(ctx)
 	if err != nil {
 		return nil, err
 	}
+	srv, err := base.deps.Schema(ctx)
+	if err != nil && base.deps != base.served {
+		return base.served.Schema(ctx)
+	}
+	return srv, err
+}
 
-	var deps *SchemaBuilder
+// mcpBase is what baseServer serves.
+type mcpBase struct {
+	// deps is the schema's dependencies: served with the workspace's
+	// installed modules.
+	deps *SchemaBuilder
+	// served is the schema without the workspace's installed modules: the
+	// calling client's or the owning client's served modules, or core.
+	served *SchemaBuilder
+	// installed is what loading the workspace's installed modules found,
+	// or installedErr why it couldn't; neither is set without a workspace.
+	installed    *InstalledWorkspaceModules
+	installedErr error
+}
+
+// loadBase loads what baseServer serves, with the context to build it in (a
+// live workspace's owner context).
+func (m *MCP) loadBase(ctx context.Context) (context.Context, *mcpBase, error) {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	ws := m.workspace
+	var served *SchemaBuilder
 	switch {
-	case m.workspace.Self() == nil:
-		deps, err = query.CurrentServedDeps(ctx)
-	case m.workspace.Self().IsValueWorkspace():
-		deps, err = query.DefaultDeps(ctx)
+	case ws.Self() == nil:
+		served, err = query.CurrentServedDeps(ctx)
+	case ws.Self().IsValueWorkspace():
+		// No client serves a value's modules: they load from its tree.
+		served, err = query.DefaultDeps(ctx)
 	default:
-		ctx, err = loadWorkspaceOwnerContext(ctx, m.workspace)
+		ctx, err = loadWorkspaceOwnerContext(ctx, ws)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		deps, err = query.CurrentServedDeps(ctx)
+		served, err = query.CurrentServedDeps(ctx)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("load tool base schema dependencies: %w", err)
+		return nil, nil, fmt.Errorf("load tool base schema dependencies: %w", err)
 	}
-	return deps.Schema(ctx)
+	base := &mcpBase{deps: served, served: served}
+	if ws.Self() == nil {
+		return ctx, base, nil
+	}
+	base.installed, base.installedErr = installedWorkspaceModules(ctx, served, ws)
+	if base.installedErr == nil {
+		bound := m.boundModules()
+		mods := make([]Mod, len(base.installed.Loaded))
+		for i, mod := range base.installed.Loaded {
+			mods[i] = NewUserMod(mod)
+			// A bound object's types are its own module's: where the
+			// workspace installs another revision of it that no client
+			// serves (one loaded from a snapshot's tree, or whose source
+			// the agent is editing), the bound object's module takes its
+			// place, as the session's served copy keeps it for a live one.
+			boundMod, ok := bound[mods[i].Name()]
+			if !ok {
+				continue
+			}
+			if same, err := boundMod.Same(mods[i]); err == nil && same {
+				continue
+			}
+			if servedMod, ok := served.Lookup(mods[i].Name()); ok {
+				if same, err := servedMod.Same(mods[i]); err == nil && same {
+					continue
+				}
+			}
+			mods[i] = boundMod
+		}
+		// A bound object's module that no longer loads (an edit broke its
+		// source) keeps serving the bound object's types: the session's
+		// copy for a live workspace, else the bound object's own.
+		var removed []string
+		for _, name := range base.installed.Removed {
+			if boundMod, ok := boundByCLIName(bound, name); ok {
+				if _, isServed := served.Lookup(boundMod.Name()); !isServed {
+					mods = append(mods, boundMod)
+				}
+				continue
+			}
+			removed = append(removed, name)
+		}
+		base.deps = served.WithPrimaryMods(mods, removed)
+	}
+	return ctx, base, nil
+}
+
+// boundByCLIName finds the bound module named name in CLI case.
+func boundByCLIName(bound map[string]Mod, name string) (Mod, bool) {
+	for modName, mod := range bound {
+		if LatestNamer.CLIName(modName) == name {
+			return mod, true
+		}
+	}
+	return nil, false
+}
+
+// boundModules are the modules of the bound tool objects and their
+// dependencies, by name.
+func (m *MCP) boundModules() map[string]Mod {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	mods := map[string]Mod{}
+	add := func(mod Mod) {
+		if _, seen := mods[mod.Name()]; !seen && mod.Name() != ModuleName {
+			mods[mod.Name()] = mod
+		}
+	}
+	for _, b := range m.boundTools {
+		objType := b.objType
+		if b.object != nil {
+			objType = b.object.ObjectType()
+		}
+		mod, ok := ModuleObjectTypeModule(objType)
+		if !ok {
+			continue
+		}
+		add(NewUserMod(mod))
+		if deps := mod.Self().Deps; deps != nil {
+			for _, dep := range deps.Mods() {
+				add(dep)
+			}
+		}
+	}
+	return mods
+}
+
+// installedWorkspaceModules loads the modules installed in ws (see
+// LoadWorkspaceModules) with the schema of served. A value workspace's,
+// identified by its content, are kept by the session, failures included,
+// while it is among the session's most recently used
+// (maxMemoizedWorkspaces): every step asks for them, and a module that
+// failed to build would otherwise build again each time. A live workspace's
+// change with its host, and its owning client keeps its own record of what
+// failed.
+func installedWorkspaceModules(ctx context.Context, served *SchemaBuilder, ws dagql.ObjectResult[*Workspace]) (*InstalledWorkspaceModules, error) {
+	srv, err := served.Schema(ctx)
+	if err != nil {
+		return nil, err
+	}
+	load := func() (*InstalledWorkspaceModules, error) {
+		installed, err := LoadWorkspaceModules(dagql.ContextWithServer(ctx, srv), ws)
+		if err == nil && ctx.Err() != nil {
+			// Failures of a canceled load say nothing about the modules.
+			return nil, ctx.Err()
+		}
+		return installed, err
+	}
+	if !ws.Self().IsValueWorkspace() {
+		return load()
+	}
+	key, err := ws.RecipeDigest(ctx)
+	if err != nil {
+		return load()
+	}
+	return currentSessionSchemaBuilderMemo(ctx).WorkspaceModules(key.String(), load)
 }
 
 func (m *MCP) WithMCPServer(srv *MCPServerConfig) *MCP {
@@ -358,6 +603,7 @@ func (m *MCP) Tools(ctx context.Context) ([]LLMTool, error) {
 	}
 	m.loadSkillTools(srv, allTools)
 	m.loadArtifactTools(srv, allTools)
+	m.loadDangTools(srv, allTools)
 	m.loadBuiltins(srv, allTools)
 	return allTools.Order, nil
 }
@@ -1849,29 +2095,40 @@ func toolSpanAttrs(tool *LLMTool) []attribute.KeyValue {
 	return attrs
 }
 
-func toolArgHeaderValue(name string, value any) (string, bool) {
-	if value == nil {
-		return "", false
-	}
-	if str, ok := value.(string); ok {
-		return str, true
-	}
-	switch name {
-	case "offset", "limit":
-		return fmt.Sprint(value), true
-	case "args":
-		values, ok := value.([]any)
-		if !ok {
-			return "", false
+// toolHeaderArgNames returns the names of the arguments a call of tool
+// summarizes in its header, in order: its required arguments, Read's
+// pagination controls and generic argv arrays (useful context even though
+// they are not required), and the Dang builtins' snippet and scope, which
+// frontends show in full (see dagui.ToolCallView).
+//
+// The tool-call display span records them when it starts (see
+// displayPhases.StartToolCall), and MCP.CallContent records their values,
+// formatted by dagui.ToolArgHeaderValue, when the call runs: a live frontend
+// fills in the same values from the arguments the span streams in between,
+// so the header doesn't change when the span ends.
+func toolHeaderArgNames(tool *LLMTool) []string {
+	var names []string
+	seen := map[string]bool{}
+	add := func(name string) {
+		if !seen[name] {
+			seen[name] = true
+			names = append(names, name)
 		}
-		parts := make([]string, 0, len(values))
-		for _, value := range values {
-			parts = append(parts, fmt.Sprint(value))
-		}
-		return strings.Join(parts, " "), true
-	default:
-		return "", false
 	}
+	if requiredArgs, ok := tool.Schema["required"].([]string); ok {
+		for _, arg := range requiredArgs {
+			add(arg)
+		}
+	}
+	for _, arg := range []string{"offset", "limit", "args"} {
+		add(arg)
+	}
+	if tool.Name == dangCheckToolName || tool.Name == dangEvalToolName {
+		for _, arg := range []string{"at", "search", "source"} {
+			add(arg)
+		}
+	}
+	return names
 }
 
 // Call returns the plain-text projection for callers that only need text.
@@ -1898,31 +2155,7 @@ func (m *MCP) CallContent(ctx context.Context, tools []LLMTool, toolCall *LLMToo
 		}
 	}
 
-	var toolArgNames []string
-	var toolArgValues []string
-	seenToolArgs := map[string]bool{}
-	appendToolArg := func(name string) {
-		if seenToolArgs[name] {
-			return
-		}
-		val, ok := toolArgHeaderValue(name, args[name])
-		if !ok {
-			return
-		}
-		toolArgNames = append(toolArgNames, name)
-		toolArgValues = append(toolArgValues, val)
-		seenToolArgs[name] = true
-	}
-	if requiredArgs, ok := tool.Schema["required"].([]string); ok {
-		for _, arg := range requiredArgs {
-			appendToolArg(arg)
-		}
-	}
-	// Header-specific optional values: Read's pagination controls and generic
-	// argv arrays are useful context even though they are not required args.
-	for _, arg := range []string{"offset", "limit", "args"} {
-		appendToolArg(arg)
-	}
+	toolArgNames, toolArgValues := dagui.ToolHeaderArgs(toolHeaderArgNames(tool), args)
 	span := trace.SpanFromContext(ctx)
 	attrs := append(toolSpanAttrs(tool),
 		attribute.StringSlice(telemetry.LLMToolArgNamesAttr, toolArgNames),
@@ -1946,7 +2179,9 @@ func (m *MCP) CallContent(ctx context.Context, tools []LLMTool, toolCall *LLMToo
 		}
 		guardToolContent(res)
 
-		emitToolResultLogs(ctx, res)
+		if !tool.LogsOwnResult || res.Errored {
+			emitToolResultLogs(ctx, res)
+		}
 	}()
 
 	toolCtx := context.WithValue(ctx, agentToolCallKey{}, true)
@@ -2306,10 +2541,31 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []*LLMTo
 }
 
 // isContinuationCall reports whether call is to a tool that returns an LLM — a
-// continuation (see adoptLLM) — directly or wrapped in the Timeout builtin.
+// continuation (see adoptLLM) — or, for a tool that only sometimes is one
+// (LLMTool.Continues), whether this call is, directly or wrapped in the
+// Timeout builtin.
 func (m *MCP) isContinuationCall(call *LLMToolCall, tools []LLMTool) bool {
 	tool, err := m.planningTool(call, tools)
-	return err == nil && tool.ReturnsLLM
+	if err != nil {
+		return false
+	}
+	if tool.ReturnsLLM {
+		return true
+	}
+	if tool.Continues == nil {
+		return false
+	}
+	args := []byte(call.Arguments)
+	if call.Name == timeoutToolName && tool.Name != timeoutToolName {
+		var timeout struct {
+			Arguments json.RawMessage `json:"arguments"`
+		}
+		if json.Unmarshal(args, &timeout) != nil {
+			return false
+		}
+		args = timeout.Arguments
+	}
+	return tool.Continues(args)
 }
 
 // annotateMCPSyncFailure rewrites the results of an MCP server's calls after
@@ -3071,7 +3327,10 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 		Name: "LoadTrace",
 		Description: "Load a historical trace from Dagger Cloud into this session for inspection. Use this when asked to investigate a trace ID, Cloud trace URL, or `dagger cloud traces view <id>`; do not run the interactive CLI.\n" +
 			"Uses the connecting client's Cloud authentication. No recipes are executed or agents restored. Returns root span IDs for ReadTrace and ReadLogs; FindSpans, FindCalls and InspectCall also see loaded traces. Repeated loads reuse the snapshot; failed loads import nothing.",
-		ReadOnly: true,
+		// Not pure: it imports spans into the session that the inspection
+		// tools read, so it must land before the calls written after it in
+		// the same batch (e.g. [LoadTrace, ReadTrace]).
+		ReadOnly: false,
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -3129,11 +3388,13 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 	})
 	allTools.Add(LLMTool{
 		Name: "ReadTrace",
-		Description: "Read the trace of this session or a trace imported with LoadTrace at a span, in one of three views." + "\n" +
-			"- report (default): a bounded trace report with recorded error origins first, failed check/test links separately, and diagnostic output. Failed scopes collapse successful work; follow the supplied span IDs to expand a branch rather than searching again." + "\n" +
+		Description: "Read the trace of this session or a trace imported with LoadTrace at a span, in one of five views." + "\n" +
+			"- report (default): a bounded trace report with recorded error origins first, failed check/test links separately, and diagnostic output. Failed scopes collapse successful work; follow the supplied span IDs to expand a branch rather than searching again. A long agent conversation beneath the span is summarized (opening prompt, final reply) with a pointer to the transcript view." + "\n" +
 			"- inspect: one span in depth -- status, error and its origins, timing, the flags that shape how the UI treats it (internal, passthrough, roll-up, ...), the parent chain up to the root, and its direct children. Use it to navigate up and down from a span, or to answer why a span is hidden or its logs didn't show." + "\n" +
 			"- timings: the span's raw-parent subtree as a chronological wall-time table (span, parent, start offset, duration, name), internal spans included; cause links are not traversed. Durations are each span's own wall interval, may overlap, and are not total execution or CPU self time. Imported spans with unrecorded completion have unknown duration." + "\n" +
-			"Pass a span ID from a report's footer or use FindSpans first to find a check, test, service, or other step by name, then pass its span ID here." + "\n" +
+			"- agents: the agents (LLM agents, staff workers) as a tree, each with its handle, name, state and loop span ID. span is optional: without it, every agent in the session and loaded traces; with it, those at or beneath it." + "\n" +
+			"- transcript: one agent's conversation as readable messages -- prompts, replies and thinking verbatim, tool calls with their arguments, tool results with the tool that produced them -- decoded from its recorded checkpoint, in pages. Pass agent (a handle or unique name from the agents view), or a span: the agent whose loop span it is, the agent beneath it (e.g. a staff_spawn tool call), or the agent enclosing it. Filter with role, tool or grep; the page header says where the next page starts." + "\n" +
+			"Pass a span ID from a report's footer or use FindSpans first to find a check, test, service, or other step by name, then pass its span ID here. To read what an agent did, start from the agents view instead of searching spans." + "\n" +
 			"Use ReadLogs when you want the raw log lines beneath a span.",
 		ReadOnly: true, // Read-only operation
 		Schema: map[string]any{
@@ -3141,11 +3402,11 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 			"properties": map[string]any{
 				"span": map[string]any{
 					"type":        "string",
-					"description": "Span ID (hex) to read, scoped to that span's subtree.",
+					"description": "Span ID (hex) to read, scoped to that span's subtree. Required except for the agents view, and for transcript when agent is given.",
 				},
 				"view": map[string]any{
 					"type":        "string",
-					"enum":        []string{traceViewReport, traceViewInspect, traceViewTimings},
+					"enum":        []string{traceViewReport, traceViewInspect, traceViewTimings, traceViewAgents, traceViewTranscript},
 					"description": "Which view to render.",
 					"default":     traceViewReport,
 				},
@@ -3155,36 +3416,72 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 				},
 				"limit": map[string]any{
 					"type":        "integer",
-					"description": "timings view only: maximum number of rows (0 = unlimited).",
+					"description": fmt.Sprintf("timings view: maximum number of rows (default %d, 0 = unlimited). transcript view: messages per page (1-%d, default %d; a page also ends at about 40KiB).", traceTimingsDefaultLimit, transcriptMaxLimit, transcriptDefaultLimit),
 					"minimum":     0,
-					"default":     200,
+				},
+				"agent": map[string]any{
+					"type":        "string",
+					"description": "transcript view only: the agent's handle, or its name when unique (see the agents view).",
+				},
+				"role": map[string]any{
+					"type":        "string",
+					"enum":        []string{"", "user", "assistant", "tool", "system", "gap"},
+					"description": "transcript view only: keep only prompts (user), replies (assistant), tool results (tool), system prompts, or gaps where the checkpoint could not be decoded. Empty keeps all but system prompts.",
+				},
+				"tool": map[string]any{
+					"type":        "string",
+					"description": "transcript view only: keep only the calls to this tool and their results.",
+				},
+				"grep": map[string]any{
+					"type":        "string",
+					"description": "transcript view only: regexp over message text, tool names and arguments.",
+				},
+				"offset": map[string]any{
+					"type":        "integer",
+					"description": "transcript view only: matching messages to skip from the oldest (filters apply first).",
+					"minimum":     0,
+					"default":     0,
+				},
+				"clip": map[string]any{
+					"type":        "integer",
+					"description": "transcript view only: bytes kept of each tool call's arguments and each tool result (0 = all). Prose is never clipped.",
+					"minimum":     0,
+					"default":     transcriptDefaultClip,
 				},
 			},
-			"required":             []string{"span"},
+			"required":             []string{},
 			"additionalProperties": false,
 		},
 		Call: m.readTraceTool(srv),
 	})
 	allTools.Add(LLMTool{
 		Name: "FindSpans",
-		Description: "Find spans in this session and traces imported with LoadTrace by name: one line per match -- span ID, status (ERROR: the span errored; FAIL: a failure rides on one of its links; run; ok), name -- oldest start time first (ties: trace ID, then span ID; unknown starts first), with running services tagged by hostname." + "\n" +
-			"This is how you get a span ID for something you didn't get a handle to: a step you saw in a report, a service, a check or test, a nested call. Then ReadTrace (report, inspect, timings) or ReadLogs it." + "\n" +
-			"Matching is a substring test on span name, full test identity/ancestor path, or service hostname. Rows include bounded breadcrumbs; matching uses the full text. Empty query matches all. Only the newest limit matches are returned; offset skips that many newest matches after filtering, and the result gives an exact next-page call. Status filtering is navigation, never proof of error causality.",
+		Description: "Find spans in this session and traces imported with LoadTrace by name: one line per match -- span ID, status (ERROR: the span errored; FAIL: a failure rides on one of its links; run; idle: an agent's loop span while the agent is parked between turns; ok), name -- oldest start time first (ties: trace ID, then span ID; unknown starts first), with running services tagged by hostname." + "\n" +
+			"This is how you get a span ID for something you didn't get a handle to: a step you saw in a report, a service, a check or test, a nested call, an agent (\"agent: <name>\"). Then ReadTrace (report, inspect, timings, transcript) or ReadLogs it. To find an agent, ReadTrace(view: \"agents\") lists them all with their spans." + "\n" +
+			"By default the query is a substring test on the span's own name, service hostname, or full test identity; match \"path\" also tests its whole ancestor path, matching everything beneath a named parent. Rows carry breadcrumbs whose long middles are elided as …(N)…. Your own spans (your tool calls and messages) are left out unless includeSelf. Empty query matches all. Only the newest limit matches are returned; offset skips that many newest matches after filtering, and the result gives an exact next-page call. Status filtering is navigation, never proof of error causality.",
 		ReadOnly: true,
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"query": map[string]any{
 					"type":        "string",
-					"description": "Substring of span name, full test identity/ancestor path, or service hostname. Empty matches every span.",
+					"description": "Substring of the span's name, service hostname, or full test identity (with match \"path\": of any level of its ancestor path). Empty matches every span.",
 					"default":     "",
+				},
+				"match": map[string]any{
+					"type": "string", "enum": []string{spanMatchName, spanMatchPath}, "default": spanMatchName,
+					"description": "name: match the span itself. path: also match its ancestors, e.g. every span beneath a test or agent.",
+				},
+				"includeSelf": map[string]any{
+					"type": "boolean", "default": false,
+					"description": "Also list your own spans: the tool calls and messages of the agent making this call.",
 				},
 				"span": map[string]any{
 					"type":        "string",
 					"description": "Restrict the search to this span's subtree (hex span ID). Empty searches the whole session.",
 				},
 				"status": map[string]any{
-					"type": "string", "enum": []string{"", "ERROR", "FAIL", "failed", "run", "ok"}, "default": "",
+					"type": "string", "enum": []string{"", "ERROR", "FAIL", "failed", "run", "idle", "ok"}, "default": "",
 					"description": "Filter by displayed span status; failed includes ERROR and FAIL. Does not establish causality or classify a span as a test.",
 				},
 				"offset": map[string]any{
@@ -3255,7 +3552,7 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 		Name: "FindCalls",
 		Description: "Content-search every dagql call in this session and traces imported with LoadTrace: one line per match -- \"<digest>  field(args) -> Type  recv=<receiver digest>\" -- sorted by digest." + "\n" +
 			"This is how you find which call references a path, image, module or value, and how you walk a chain: grep for the digest another line names as its receiver or argument, then InspectCall it." + "\n" +
-			"`query` searches the full rendered line before truncation. Displayed strings are capped at 200 characters, with excerpts around deep matches and explicit omitted-character counts. Lines are capped at 4 KiB and responses at 32 KiB; narrow the query if matches are omitted.",
+			"`query` searches the full rendered line before truncation. Displayed strings are capped at 200 characters, with excerpts around deep matches and explicit omitted-character counts; opaque provider signatures are left out. Lines are capped at 4 KiB and responses at 32 KiB; narrow the query if matches are omitted. Your own conversation's calls (withPrompt, withResponse, ...) are left out unless includeSelf.",
 		ReadOnly: true,
 		Schema: map[string]any{
 			"type": "object",
@@ -3263,6 +3560,10 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 				"query": map[string]any{
 					"type":        "string",
 					"description": "Regexp matched against each full call line before display truncation.",
+				},
+				"includeSelf": map[string]any{
+					"type": "boolean", "default": false,
+					"description": "Also match the calls recording your own conversation: the prompts, responses and tool results of the agent making this call.",
 				},
 				"limit": map[string]any{
 					"type":        "integer",
@@ -3296,22 +3597,25 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 		Description: "Run one currently exposed tool with a timeout.",
 		Schema: map[string]any{
 			"type": "object",
-			"properties": map[string]any{
-				"duration": map[string]any{
-					"type":        "string",
-					"description": "Maximum duration for the nested tool as a Go duration string, for example \"30s\" or \"2m\".",
-				},
-				"tool": map[string]any{
+			// The wrapped tool first: a frontend can only show the call as
+			// the one it wraps once it has arrived, and the arguments, which
+			// can be long (a Dang snippet), stream in after it.
+			"properties": ToolSchemaProperties{
+				{Name: "tool", Schema: map[string]any{
 					"type":        "string",
 					"description": "Name of the currently exposed tool to invoke.",
-				},
-				"arguments": map[string]any{
+				}},
+				{Name: "duration", Schema: map[string]any{
+					"type":        "string",
+					"description": "Maximum duration for the nested tool as a Go duration string, for example \"30s\" or \"2m\".",
+				}},
+				{Name: "arguments", Schema: map[string]any{
 					"type":                 "object",
 					"description":          "Arguments to pass to the nested tool.",
 					"additionalProperties": true,
-				},
+				}},
 			},
-			"required":             []string{"duration", "tool", "arguments"},
+			"required":             []string{"tool", "duration", "arguments"},
 			"additionalProperties": false,
 		},
 		Call: m.timeoutTool(allTools),
@@ -3553,13 +3857,21 @@ func emptyLogsResultIn(store *clientdb.DB, spanID string) (string, error) {
 // tool call's own result is rendered as (the target's own output, then the
 // report), so what the reader gets back is in the vocabulary it already
 // sees, just scoped to the target it asked about. The inspect and timings
-// views are the TUI console's span views, answered from the engine.
+// views are the TUI console's span views, and the agents and transcript views
+// its agent roster and transcript reader, answered from the engine.
 func (m *MCP) readTraceTool(srv *dagql.Server) LLMToolFunc {
 	return ToolFunc(srv, func(ctx context.Context, args struct {
-		Span        string
+		Span        string `default:""`
 		View        string `default:"report"`
 		MinDuration string `default:""`
-		Limit       int    `default:"200"`
+		// Limit's default depends on the view; -1 means "not given".
+		Limit  int    `default:"-1"`
+		Agent  string `default:""`
+		Role   string `default:""`
+		Tool   string `default:""`
+		Grep   string `default:""`
+		Offset int    `default:"0"`
+		Clip   int    `default:"4000"`
 	}) (any, error) {
 		var minDuration time.Duration
 		if args.MinDuration != "" {
@@ -3571,8 +3883,21 @@ func (m *MCP) readTraceTool(srv *dagql.Server) LLMToolFunc {
 		}
 		switch args.View {
 		case traceViewReport, traceViewInspect, traceViewTimings:
+		case traceViewAgents:
+			return readTraceAgents(ctx, args.Span)
+		case traceViewTranscript:
+			limit := args.Limit
+			if limit < 0 {
+				limit = transcriptDefaultLimit
+			}
+			return readTraceTranscript(ctx, transcriptOpts{
+				Span: args.Span, Agent: strings.TrimSpace(args.Agent),
+				Role: args.Role, Tool: args.Tool, Grep: args.Grep,
+				Offset: args.Offset, Limit: limit, Clip: args.Clip,
+			})
 		default:
-			return nil, fmt.Errorf("unknown view %q: want %s, %s or %s", args.View, traceViewReport, traceViewInspect, traceViewTimings)
+			return nil, fmt.Errorf("unknown view %q: want %s, %s, %s, %s or %s", args.View,
+				traceViewReport, traceViewInspect, traceViewTimings, traceViewAgents, traceViewTranscript)
 		}
 		spanID, err := resolveTraceTarget(ctx, args.Span)
 		if err != nil {
@@ -3582,7 +3907,11 @@ func (m *MCP) readTraceTool(srv *dagql.Server) LLMToolFunc {
 		case traceViewInspect:
 			return inspectSpan(ctx, spanID)
 		case traceViewTimings:
-			return spanTimings(ctx, spanID, minDuration, args.Limit)
+			limit := args.Limit
+			if limit < 0 {
+				limit = traceTimingsDefaultLimit
+			}
+			return spanTimings(ctx, spanID, minDuration, limit)
 		}
 		result, err := m.inspectSpanResult(ctx, spanID, readTraceReportOpts())
 		if err != nil {
@@ -3602,11 +3931,13 @@ func (m *MCP) readTraceTool(srv *dagql.Server) LLMToolFunc {
 // findSpansTool searches the session's trace by span name; see findSpans.
 func (m *MCP) findSpansTool(srv *dagql.Server) LLMToolFunc {
 	return ToolFunc(srv, func(ctx context.Context, args struct {
-		Query  string `default:""`
-		Span   string `default:""`
-		Limit  int    `default:"100"`
-		Status string `default:""`
-		Offset int    `default:"0"`
+		Query       string `default:""`
+		Span        string `default:""`
+		Limit       int    `default:"100"`
+		Status      string `default:""`
+		Offset      int    `default:"0"`
+		Match       string `default:"name"`
+		IncludeSelf bool   `default:"false"`
 	}) (any, error) {
 		root := ""
 		if strings.TrimSpace(args.Span) != "" {
@@ -3618,7 +3949,16 @@ func (m *MCP) findSpansTool(srv *dagql.Server) LLMToolFunc {
 		if args.Limit <= 0 {
 			args.Limit = findSpansDefaultLimit
 		}
-		return findSpans(ctx, args.Query, root, args.Status, args.Limit, args.Offset)
+		return findSpans(ctx, spanSearch{
+			Query:       args.Query,
+			Root:        root,
+			Status:      args.Status,
+			Match:       args.Match,
+			Limit:       args.Limit,
+			Offset:      args.Offset,
+			Caller:      traceCallerFromContext(ctx),
+			IncludeSelf: args.IncludeSelf,
+		})
 	})
 }
 
@@ -3692,8 +4032,9 @@ func normalizeDigestArg(arg string) string {
 // findCallsTool content-searches the session's calls; see findCalls.
 func (m *MCP) findCallsTool(srv *dagql.Server) LLMToolFunc {
 	return ToolFunc(srv, func(ctx context.Context, args struct {
-		Query string
-		Limit int `default:"200"`
+		Query       string
+		Limit       int  `default:"200"`
+		IncludeSelf bool `default:"false"`
 	}) (any, error) {
 		re, err := regexp.Compile(args.Query)
 		if err != nil {
@@ -3702,7 +4043,11 @@ func (m *MCP) findCallsTool(srv *dagql.Server) LLMToolFunc {
 		if args.Limit <= 0 {
 			args.Limit = findCallsDefaultLimit
 		}
-		return findCalls(ctx, re, args.Limit)
+		var exclude string
+		if !args.IncludeSelf {
+			exclude = traceCallerFromContext(ctx).AgentID
+		}
+		return findCalls(ctx, re, args.Limit, exclude)
 	})
 }
 
@@ -3716,6 +4061,11 @@ func readTraceReportOpts() traceReportOpts {
 	// ReadTrace is the "show me the shape of what ran" tool: it keeps the span
 	// tree the tool-call result drops.
 	opts.HideSpanTree = false
+	// ...and the nested conversation, which is where the tool-call result's
+	// sub-agent pointer sends the reader -- inline when short, otherwise as a
+	// bounded summary pointing at the transcript view, which pages it.
+	opts.HideConversation = false
+	opts.SummarizeConversation = true
 	return opts
 }
 

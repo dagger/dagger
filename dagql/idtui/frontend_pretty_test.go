@@ -3,9 +3,11 @@ package idtui
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"image/color"
 	"io"
+	"maps"
 	"reflect"
 	"regexp"
 	"slices"
@@ -217,6 +219,81 @@ func TestTerminalTitleFollowsPrimaryZoomAndLiveName(t *testing.T) {
 
 func TestSanitizeTerminalTitle(t *testing.T) {
 	require.Equal(t, "safename", sanitizeTerminalTitle("safe\x1b]2;injected\x07\nname"))
+}
+
+// TestLogRequestsRouteByTraceAndWaitForSpans: a resumed agent session renders
+// its archived trace beside its own live one. Requests for the archived
+// trace's spans go to its provider; a live span's are neither sent nor
+// latched. A span known only from a log record (a placeholder) is requested
+// once it arrives, with the roll-up decision its metadata carries.
+func TestLogRequestsRouteByTraceAndWaitForSpans(t *testing.T) {
+	archived := dagui.TraceID{TraceID: trace.TraceID{1}}
+	live := dagui.TraceID{TraceID: trace.TraceID{2}}
+	rollUp, liveSpan, early := prettyTestSpanID(1), prettyTestSpanID(2), prettyTestSpanID(3)
+	start := time.Unix(100, 0)
+
+	db := dagui.NewDB()
+	fe := newWithTerminal(io.Discard, db, tuist.NewHeadlessTerminal(120, 20))
+	got := map[dagui.SpanID]bool{}
+	fe.SetTraceLogProvider(archived, func(id dagui.SpanID, descendants bool) { got[id] = descendants })
+	fe.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: liveSpan, TraceID: live, Name: "live", StartTime: start, Final: true},
+		{ID: rollUp, TraceID: archived, Name: "check", StartTime: start, EndTime: start.Add(time.Second), RollUpLogs: true, Final: true},
+	})
+	// The resumed session's own command span is the primary; its eager
+	// primary-output request must not reach the archive either.
+	fe.SetPrimary(liveSpan)
+	fe.tui.Step()
+
+	fe.requestLogs(rollUp)
+	fe.requestLogs(liveSpan)
+	require.Equal(t, map[dagui.SpanID]bool{rollUp: true}, got)
+	require.False(t, fe.requestedLogs[liveSpan], "a live span's request was latched")
+
+	// A metadata record ahead of its span makes a placeholder.
+	nameRecord := frontendTestLogRecord(early.SpanID, otellog.StringValue("early"),
+		otellog.String(telemetryattrs.LogRoleAttr, telemetryattrs.LogRoleSpanName))
+	require.NoError(t, fe.LogExporter().Export(context.Background(), []sdklog.Record{nameRecord}))
+	fe.tui.Step()
+	require.NotNil(t, db.Spans.Map[early])
+	fe.requestLogs(early)
+	require.NotContains(t, got, early, "a placeholder was requested")
+	require.False(t, fe.requestedLogs[early])
+
+	fe.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: early, TraceID: archived, Name: "early", StartTime: start, EndTime: start.Add(time.Second), RollUpLogs: true, Final: true},
+	})
+	fe.tui.Step()
+	require.Equal(t, map[dagui.SpanID]bool{rollUp: true, early: true}, got, "the arrived span was not requested with its roll-up")
+}
+
+// TestShellTranscriptRequestsCollapsedCommandLogs: the shell transcript shows
+// a top-level command's output under its collapsed row, where no LogsView
+// mounts to ask for it, so a restored history's command requests it as it
+// renders.
+func TestShellTranscriptRequestsCollapsedCommandLogs(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	archived := dagui.TraceID{TraceID: trace.TraceID{1}}
+	rootID, commandID := prettyTestSpanID(1), prettyTestSpanID(2)
+	start := time.Unix(100, 0)
+	db := dagui.NewDB()
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: rootID, TraceID: archived, Name: "root", StartTime: start, EndTime: start.Add(2 * time.Second), Final: true},
+		{ID: commandID, TraceID: archived, ParentID: rootID, Name: "command", StartTime: start, EndTime: start.Add(time.Second), Final: true},
+	})
+	db.SetPrimarySpan(rootID)
+	fe := NewWithDB(io.Discard, db)
+	fe.shell = stubShellHandler{}
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+	fe.FrontendOpts.GCThreshold = time.Hour
+	fe.ZoomedSpan = rootID
+	got := map[dagui.SpanID]bool{}
+	fe.traceLogProviders = map[dagui.TraceID]func(dagui.SpanID, bool){
+		archived: func(id dagui.SpanID, _ bool) { got[id] = true },
+	}
+	fe.recalculateViewLocked()
+	_ = fe.tui.RenderLines()
+	require.True(t, got[commandID], "the collapsed command's logs were not requested; got %v", got)
 }
 
 func renderDump(t *testing.T, id *call.ID, dump Dump) string {
@@ -2431,6 +2508,133 @@ func TestPromptEditTarget(t *testing.T) {
 	}, time.Second, 10*time.Millisecond)
 }
 
+// TestEditPromptFetchesMissingCallHistory: in a trace loaded only in part, a
+// prompt whose call payloads never arrived asks the call provider for them,
+// once, then edits as usual; a failed fetch says why above the prompt.
+func TestEditPromptFetchesMissingCallHistory(t *testing.T) {
+	db := dagui.NewDB()
+	base := &callpbv1.Call{Digest: "xxh3:fetch-base", Field: "llm", Type: &callpbv1.Type{NamedType: "LLM"}}
+	prompt := &callpbv1.Call{
+		Digest: "xxh3:fetch-prompt", Field: "withPrompt", Type: &callpbv1.Type{NamedType: "LLM"}, ReceiverDigest: base.Digest,
+		Args: []*callpbv1.Argument{{Name: "prompt", Value: &callpbv1.Literal{Value: &callpbv1.Literal_String_{String_: "fetched words"}}}},
+	}
+	start := time.Unix(100, 0)
+	chiefID := prettyTestSpanID(120)
+	promptID := prettyTestSpanID(121)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: chiefID, Agent: true, AgentID: "chief", StartTime: start},
+		{ID: promptID, ParentID: chiefID, LLMRole: "user", LLMCallDigest: prompt.Digest, StartTime: start.Add(time.Second)},
+	})
+	db.SetPrimarySpan(chiefID)
+	handler := &focusedEditShellHandler{target: "chief", called: make(chan string, 1)}
+	live := newWithTerminal(io.Discard, db, tuist.NewHeadlessTerminal(100, 12))
+	live.setupTUI()
+	live.startShell(context.Background(), handler)
+	live.enterNavMode()
+	live.FocusedSpan = promptID
+
+	requested := make(chan []string, 4)
+	var fail error
+	var release chan struct{}
+	live.callProvider = func(digests, _ []string) error {
+		requested <- digests
+		if fail != nil {
+			return fail
+		}
+		if release != nil {
+			<-release
+		}
+		applied := make(chan struct{})
+		live.dispatch(func() {
+			db.Calls[base.Digest], db.Calls[prompt.Digest] = base, prompt
+			close(applied)
+		})
+		<-applied
+		return nil
+	}
+	step := func(until func() bool) {
+		t.Helper()
+		require.Eventually(t, func() bool {
+			live.tui.Step()
+			return until()
+		}, time.Second, 10*time.Millisecond)
+	}
+
+	fail = errors.New("archive gone")
+	live.editPrompt()
+	require.Equal(t, []string{prompt.Digest}, <-requested)
+	step(func() bool { return live.promptErr != nil })
+	require.ErrorContains(t, live.promptErr, "archive gone")
+	require.ErrorContains(t, live.promptErr, "/backfill")
+
+	// Asked for once: a digest whose fetch failed is not asked for again.
+	live.editPrompt()
+	select {
+	case digests := <-requested:
+		t.Fatalf("asked again for %v", digests)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	fail = nil
+	release = make(chan struct{})
+	live.requestedCalls = nil
+	live.clearPromptError()
+	live.editPrompt()
+	require.Equal(t, []string{prompt.Digest}, <-requested)
+	// Pressed again while the fetch is out: it waits for that fetch rather
+	// than failing or asking again.
+	live.editPrompt()
+	live.tui.Step()
+	require.NoError(t, live.promptErr)
+	select {
+	case digests := <-requested:
+		t.Fatalf("asked again for %v", digests)
+	default:
+	}
+	close(release)
+	step(func() bool { return len(handler.called) > 0 })
+	want, err := encodedIDForCallDigest(db, base.Digest)
+	require.NoError(t, err)
+	require.Equal(t, want, <-handler.called, "the edit runs once the payloads apply")
+	step(func() bool { return live.textInput.Value() == "fetched words" })
+}
+
+// TestEditPromptFetchesOnlyMissingCallHistory: e on a prompt the editor
+// cannot hold (an image prompt), whose payloads are all here, fetches
+// nothing and says nothing, as without a call provider.
+func TestEditPromptFetchesOnlyMissingCallHistory(t *testing.T) {
+	db := dagui.NewDB()
+	base := &callpbv1.Call{Digest: "xxh3:img-base", Field: "llm", Type: &callpbv1.Type{NamedType: "LLM"}}
+	content := &callpbv1.Call{Digest: "xxh3:img-content", Field: "withContent", Type: &callpbv1.Type{NamedType: "LLM"}, ReceiverDigest: base.Digest}
+	db.Calls[base.Digest], db.Calls[content.Digest] = base, content
+	start := time.Unix(100, 0)
+	chiefID := prettyTestSpanID(130)
+	promptID := prettyTestSpanID(131)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: chiefID, Agent: true, AgentID: "chief", StartTime: start},
+		{ID: promptID, ParentID: chiefID, LLMRole: "user", LLMCallDigest: content.Digest, StartTime: start.Add(time.Second)},
+	})
+	db.SetPrimarySpan(chiefID)
+	live := newWithTerminal(io.Discard, db, tuist.NewHeadlessTerminal(100, 12))
+	live.setupTUI()
+	live.startShell(context.Background(), &focusedEditShellHandler{target: "chief", called: make(chan string, 1)})
+	live.enterNavMode()
+	live.FocusedSpan = promptID
+	requested := make(chan []string, 1)
+	live.callProvider = func(digests, _ []string) error {
+		requested <- digests
+		return nil
+	}
+	live.editPrompt()
+	live.tui.Step()
+	select {
+	case digests := <-requested:
+		t.Fatalf("fetched %v for a prompt whose history is here", digests)
+	default:
+	}
+	require.NoError(t, live.promptErr)
+}
+
 // branchShellHandler records which rewind path a branch took.
 type branchShellHandler struct {
 	stubShellHandler
@@ -3168,6 +3372,51 @@ func TestConversationTranscriptRewindRepaintsAbandonedRows(t *testing.T) {
 	}
 	if !containsStyledLine(frame, "run the linter instead", "\x1b[48;2;30;30;30m") {
 		t.Errorf("resumed prompt lost its shaded card:\n%s", visibleEscapes(frame))
+	}
+}
+
+// TestRewindFetchesItsAbandonedConversation: in a trace loaded only in part,
+// a rewind marker whose abandoned conversation's payloads never arrived asks
+// the call provider for them, once, and the messages collapse when they apply.
+func TestRewindFetchesItsAbandonedConversation(t *testing.T) {
+	f := newRewindFixture()
+	abandoned := map[string]*callpbv1.Call{}
+	for _, digest := range []string{"xxh3:old", "xxh3:old-tool", "xxh3:old-result", "xxh3:tip"} {
+		abandoned[digest] = f.db.Calls[digest]
+		delete(f.db.Calls, digest)
+	}
+	fe := newWithTerminal(io.Discard, f.db, tuist.NewHeadlessTerminal(120, 40))
+	fe.setupTUI()
+	fe.shell = stubShellHandler{}
+	requested := make(chan []string, 4)
+	knownCalls := make(chan []string, 4)
+	fe.callProvider = func(digests, known []string) error {
+		requested <- digests
+		knownCalls <- known
+		applied := make(chan struct{})
+		fe.dispatch(func() {
+			maps.Copy(f.db.Calls, abandoned)
+			// Payloads reach the DB as a mutation, as the log exporter's do.
+			f.db.ImportSnapshots([]dagui.SpanSnapshot{f.marker})
+			close(applied)
+		})
+		<-applied
+		return nil
+	}
+
+	fe.recalculateViewLocked()
+	require.Nil(t, f.db.SupersededBy(f.db.Spans.Map[f.oldPromptID]), "the abandoned chain cannot be walked yet")
+	require.Equal(t, []string{"xxh3:tip"}, <-requested)
+	require.Equal(t, []string{"xxh3:kept-reply"}, <-knownCalls, "the adopted state bounds the abandoned conversation")
+	require.Eventually(t, func() bool {
+		fe.tui.Step()
+		fe.recalculateViewLocked()
+		return f.db.SupersededBy(f.db.Spans.Map[f.oldPromptID]) != nil
+	}, time.Second, 10*time.Millisecond, "the abandoned messages collapse once their payloads apply")
+	select {
+	case digests := <-requested:
+		t.Fatalf("asked again for %v", digests)
+	default:
 	}
 }
 

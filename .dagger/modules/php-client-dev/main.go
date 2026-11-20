@@ -54,6 +54,11 @@ func New(
 }
 
 func (t PhpClientDev) BaseContainer() *dagger.Container {
+	return t.installClient(t.base())
+}
+
+// base is the PHP base container, without a Dagger engine.
+func (t PhpClientDev) base() *dagger.Container {
 	// Extract the PHP base container from the native SDK dev module
 	// - We build the base container eagerly, to avoid keeping a reference to DaggerDev
 	// - But we build the full dev container *lazily*, because we may have mutated our workspace with generated files
@@ -70,22 +75,32 @@ func (t PhpClientDev) BaseContainer() *dagger.Container {
 		WithEnvVariable("COMPOSER_HOME", "/root/.composer").
 		WithEnvVariable("COMPOSER_NO_INTERACTION", "1").
 		WithEnvVariable("COMPOSER_ALLOW_SUPERUSER", "1").
-		WithWorkdir("/src").
-		With(func(c *dagger.Container) *dagger.Container {
-			return enginedev.New(t.Ws, enginedev.EngineDevOpts{
-				ClientDockerConfig: t.ClientDockerConfig,
-			}).InstallClient(enginedev.EngineDevInstallClientOpts{Client: c})
-		})
+		WithWorkdir("/src")
 }
 
-// Returns the PHP SDK workspace mounted in a dev container,
-// and working directory set to the SDK source
+// Returns the PHP SDK workspace mounted in a dev container, with a client of a
+// dev engine built from the workspace, and working directory set to the SDK source
 func (t PhpClientDev) DevContainer(
 	// Run composer install before returning the container
 	//+default="false"
 	runInstall bool,
 ) *dagger.Container {
-	ctr := t.BaseContainer().
+	return t.installClient(t.container(runInstall))
+}
+
+// installClient binds a dev engine built from the workspace to the given
+// container, and installs its CLI.
+func (t PhpClientDev) installClient(ctr *dagger.Container) *dagger.Container {
+	return enginedev.New(t.Ws, enginedev.EngineDevOpts{
+		ClientDockerConfig: t.ClientDockerConfig,
+	}).InstallClient(enginedev.EngineDevInstallClientOpts{Client: ctr})
+}
+
+// container is the PHP SDK workspace mounted in a container without a Dagger
+// engine, with working directory set to the SDK source, for what doesn't run a
+// Dagger client.
+func (t PhpClientDev) container(runInstall bool) *dagger.Container {
+	ctr := t.base().
 		WithMountedDirectory(".", t.Workspace).
 		WithWorkdir(t.SourcePath)
 
@@ -108,7 +123,7 @@ func (t PhpClientDev) Source() *dagger.Directory {
 // Lint the PHP code with PHP CodeSniffer (https://github.com/squizlabs/PHP_CodeSniffer)
 // +check
 func (t PhpClientDev) PhpCodeSniffer(ctx context.Context) error {
-	_, err := t.DevContainer(true).
+	_, err := t.container(true).
 		WithExec([]string{"phpcs"}).
 		Sync(ctx)
 
@@ -119,7 +134,7 @@ func (t PhpClientDev) PhpCodeSniffer(ctx context.Context) error {
 // +check
 func (t PhpClientDev) PhpStan(ctx context.Context) error {
 	_, err := t.
-		DevContainer(true).
+		container(true).
 		WithExec([]string{"phpstan", "--no-progress", "--memory-limit=1G"}).
 		Sync(ctx)
 

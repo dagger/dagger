@@ -359,9 +359,7 @@ func newPublishCheckEnv(ctx context.Context, source *dagger.Directory, ws *dagge
 		platformArchive:    platformArchive,
 	}
 
-	gitSetup := core.NewContainer().
-		From("alpine:latest").
-		WithExec([]string{"apk", "add", "git"}).
+	gitSetup := publishCheckTools("git").
 		WithDirectory("/root/repo", source).
 		WithNewFile("/root/create-release-repo.sh", `#!/bin/sh
 set -e -u -x
@@ -495,8 +493,12 @@ func (env *publishCheckEnv) releaseEngine(ctx context.Context) (*dagger.Service,
 	// one built from the tree: that is the engine a real publish runs on.
 	// This replaces the image's default engine.json, so keep a docker.io
 	// mirror: without it the release engine pulls straight from Docker Hub.
+	// The cache entries the image ships are left out, with an empty directory
+	// in their place: the v1.0.0-beta.26 and v1.0.0-beta.27 engines refuse to
+	// start once one of those entries has expired, and start without them.
 	engineCtr := core.NewContainer().
 		From(env.releaseEngineImage).
+		WithMountedDirectory("/usr/local/share/dagger/entries", core.NewDirectory()).
 		WithNewFile("/etc/dagger/engine.json", `{
   "registries": {
     "docker.io": {
@@ -531,11 +533,7 @@ func (env *publishCheckEnv) releaseEngine(ctx context.Context) (*dagger.Service,
 
 // client is a container with the CLI of the release engine's version, bound
 // to engine.
-func (env *publishCheckEnv) client(ctx context.Context, engine *dagger.Service) (*dagger.Container, error) {
-	endpoint, err := engine.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: 1234, Scheme: "tcp"})
-	if err != nil {
-		return nil, err
-	}
+func (env *publishCheckEnv) client(engine *dagger.Service) *dagger.Container {
 	cli := core.NewContainer().From(env.releaseEngineImage).File(publishCheckEngineCLIPath)
 	return wolfi.New().
 		Container(wolfi.WolfiContainerOpts{
@@ -552,10 +550,10 @@ func (env *publishCheckEnv) client(ctx context.Context, engine *dagger.Service) 
 		WithServiceBinding("github.test", env.mockSvc).
 		WithMountedFile("/github-ca.pem", env.certs.caRootCert).
 		WithServiceBinding("dagger-engine", engine).
-		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://dagger-engine:1234").
 		WithMountedFile("/.dagger-cli", cli).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/.dagger-cli").
-		WithSymlink("/.dagger-cli", "/usr/local/bin/dagger"), nil
+		WithSymlink("/.dagger-cli", "/usr/local/bin/dagger")
 }
 
 // publishWorkflowEngineImage is the engine image the Publish workflow runs
@@ -599,13 +597,13 @@ func (env *publishCheckEnv) runReleasePublish(ctx context.Context, engine *dagge
   --github-host "github.test" \
   --github-ca-cert "/github-ca.pem" \
   --netlify-token=env://FAKE_NETLIFY_TOKEN \
-  --netlify-apiurl "http://mock:8080/netlify/api/v1" \
+  --netlify-api-url "http://mock:8080/netlify/api/v1" \
   --pypi-token=env://FAKE_PYPI_TOKEN \
   --pypi-url "http://mock:8080/pypi/legacy/" \
   --npm-token=env://FAKE_NPM_TOKEN \
   --npm-registry-url "http://verdaccio:4873" \
-  --hex-apikey=env://FAKE_HEX_API_KEY \
-  --hex-apiurl "http://mock:8080/hex/api" \
+  --hex-api-key=env://FAKE_HEX_API_KEY \
+  --hex-api-url "http://mock:8080/hex/api" \
   --cargo-registry-token=env://FAKE_CARGO_REGISTRY_TOKEN \
   --cargo-registry-index "sparse+http://mock:8080/cargo/" \
   --aws-access-key-id=env://AWS_ACCESS_KEY_ID \
@@ -624,11 +622,7 @@ cat /tmp/publish.log
 exit "$status"
 `
 
-	client, err := env.client(ctx, engine)
-	if err != nil {
-		return "", err
-	}
-	out, err := client.
+	out, err := env.client(engine).
 		WithSecretVariable("REGISTRY_PASSWORD", core.SetSecret("release-registry-password-"+randomID(), registryPassword)).
 		WithSecretVariable("FAKE_GITHUB_TOKEN", core.SetSecret("fake-github-token-"+randomID(), publishCheckRegistryPass)).
 		WithSecretVariable("FAKE_NETLIFY_TOKEN", core.SetSecret("fake-netlify-token-"+randomID(), "fake-netlify-token"+tokenSuffix)).
@@ -655,9 +649,7 @@ exit "$status"
 }
 
 func (env *publishCheckEnv) gitStdout(ctx context.Context, script string) (string, error) {
-	out, err := core.NewContainer().
-		From("alpine:latest").
-		WithExec([]string{"apk", "add", "git"}).
+	out, err := publishCheckTools("git").
 		With(gitUserConfig).
 		WithServiceBinding(env.gitHost, env.gitSvc).
 		WithWorkdir("/src").
@@ -676,9 +668,7 @@ func (env *publishCheckEnv) gitStdout(ctx context.Context, script string) (strin
 }
 
 func (env *publishCheckEnv) gitWorktreeStdout(ctx context.Context, script string) (string, error) {
-	out, err := core.NewContainer().
-		From("alpine:latest").
-		WithExec([]string{"apk", "add", "git"}).
+	out, err := publishCheckTools("git").
 		With(gitUserConfig).
 		WithServiceBinding(env.gitHost, env.gitSvc).
 		WithDirectory("/src", env.gitWorktree).
@@ -695,14 +685,17 @@ func (env *publishCheckEnv) gitWorktreeStdout(ctx context.Context, script string
 	return strings.TrimSpace(out), nil
 }
 
-func (env *publishCheckEnv) awsCLI(opts ...dagger.ContainerOpts) *dagger.Container {
-	var containerOpts dagger.ContainerOpts
-	if len(opts) > 0 {
-		containerOpts = opts[0]
-	}
-	return core.NewContainer(containerOpts).
-		From("alpine:latest").
-		WithExec([]string{"apk", "add", "aws-cli", "curl"}).
+// publishCheckTools is a Wolfi container with pkgs, for the check's own steps.
+// It is for the engine's platform, which is the check's platform too (see
+// publishCheckPlatform).
+func publishCheckTools(pkgs ...string) *dagger.Container {
+	return wolfi.New().Container(wolfi.WolfiContainerOpts{Packages: pkgs})
+}
+
+// awsCLI is a container with the AWS CLI, curl and pkgs, set up to talk to the
+// mock AWS service.
+func (env *publishCheckEnv) awsCLI(pkgs ...string) *dagger.Container {
+	return publishCheckTools(append([]string{"aws-cli-v2", "curl"}, pkgs...)...).
 		WithServiceBinding("moto", env.motoSvc).
 		WithEnvVariable("AWS_ACCESS_KEY_ID", "test").
 		WithEnvVariable("AWS_SECRET_ACCESS_KEY", "test").
@@ -795,8 +788,7 @@ func (env *publishCheckEnv) assertNothingPublished(ctx context.Context, ref stri
 }
 
 func (env *publishCheckEnv) checkPublishWrites(ctx context.Context, ref string, since time.Time, expectNothing bool) error {
-	out, err := env.awsCLI().
-		WithExec([]string{"apk", "add", "python3"}).
+	out, err := env.awsCLI("python3").
 		WithMountedCache("/records", env.mockRecords).
 		WithMountedCache("/registry", env.registryStorage).
 		WithEnvVariable("AWS_BUCKET", env.awsBucket).
@@ -949,8 +941,7 @@ func (env *publishCheckEnv) assertCLIPublishMetadata(ctx context.Context) error 
 	if semver.Prerelease(env.releaseTag) != "" {
 		isPrerelease = "1"
 	}
-	_, err := env.awsCLI().
-		WithExec([]string{"apk", "add", "python3"}).
+	_, err := env.awsCLI("python3").
 		WithEnvVariable("AWS_BUCKET", env.awsBucket).
 		WithEnvVariable("AWS_CLOUDFRONT_DISTRIBUTION", env.awsCloudfrontDistribution).
 		WithEnvVariable("RELEASE_TAG", env.releaseTag).
@@ -1067,8 +1058,7 @@ func (env *publishCheckEnv) assertS3ArchiveSet(ctx context.Context, dir string, 
 		inspect = "1"
 	}
 
-	_, err := env.awsCLI().
-		WithExec([]string{"apk", "add", "coreutils", "python3", "unzip"}).
+	_, err := env.awsCLI("coreutils", "python3", "unzip").
 		WithEnvVariable("AWS_BUCKET", env.awsBucket).
 		WithEnvVariable("S3_DIR", dir).
 		WithEnvVariable("INSPECT_ARCHIVES", inspect).
@@ -1280,8 +1270,7 @@ fi
 
 func (env *publishCheckEnv) assertCLIGitHubRelease(ctx context.Context) error {
 	assets := append(publishCheckArchiveNames(env.releaseTag), "checksums.txt")
-	_, err := env.awsCLI().
-		WithExec([]string{"apk", "add", "python3"}).
+	_, err := env.awsCLI("python3").
 		WithMountedCache("/records", env.mockRecords).
 		WithEnvVariable("AWS_BUCKET", env.awsBucket).
 		WithEnvVariable("RELEASE_TAG", env.releaseTag).
@@ -1457,8 +1446,7 @@ if unexpected_components:
 }
 
 func (env *publishCheckEnv) assertCLIPackageManagers(ctx context.Context) error {
-	_, err := env.awsCLI().
-		WithExec([]string{"apk", "add", "python3"}).
+	_, err := env.awsCLI("python3").
 		WithMountedCache("/records", env.mockRecords).
 		WithEnvVariable("AWS_BUCKET", env.awsBucket).
 		WithEnvVariable("RELEASE_TAG", env.releaseTag).
@@ -1834,9 +1822,7 @@ func (env *publishCheckEnv) assertRegistryTags(ctx context.Context) error {
 	if semver.Prerelease(env.releaseTag) != "" {
 		isPrerelease = "1"
 	}
-	tags, err := core.NewContainer().
-		From("alpine:latest").
-		WithExec([]string{"apk", "add", "curl"}).
+	tags, err := publishCheckTools("curl").
 		WithServiceBinding("registry", env.registrySvc).
 		WithEnvVariable("REGISTRY_USERNAME", publishCheckRegistryUser).
 		WithSecretVariable("REGISTRY_PASSWORD", core.SetSecret("registry-list-password-"+randomID(), publishCheckRegistryPass)).
@@ -1993,7 +1979,7 @@ func (env *publishCheckEnv) assertEngineVersion(ctx context.Context) error {
 }
 
 func (env *publishCheckEnv) assertCLIVersion(ctx context.Context) error {
-	version, err := env.awsCLI(dagger.ContainerOpts{Platform: env.platform}).
+	version, err := env.awsCLI().
 		WithEnvVariable("AWS_BUCKET", env.awsBucket).
 		WithExec([]string{"sh", "-ec", `
 aws --endpoint-url "$AWS_ENDPOINT_URL" s3 cp "s3://$AWS_BUCKET/dagger/releases/` + env.releaseVersion + `/dagger_` + env.releaseTag + `_` + env.platformArchive + `.tar.gz" /tmp/dagger.tgz
@@ -2084,9 +2070,7 @@ JS
 }
 
 func (env *publishCheckEnv) assertHelmTags(ctx context.Context) error {
-	tags, err := core.NewContainer().
-		From("alpine:latest").
-		WithExec([]string{"apk", "add", "curl"}).
+	tags, err := publishCheckTools("curl").
 		WithServiceBinding("registry", env.registrySvc).
 		WithEnvVariable("REGISTRY_USERNAME", publishCheckRegistryUser).
 		WithSecretVariable("REGISTRY_PASSWORD", core.SetSecret("registry-helm-list-password-"+randomID(), publishCheckRegistryPass)).
@@ -2099,9 +2083,7 @@ func (env *publishCheckEnv) assertHelmTags(ctx context.Context) error {
 		return err
 	}
 
-	_, err = core.NewContainer(dagger.ContainerOpts{Platform: env.platform}).
-		From("alpine:latest").
-		WithExec([]string{"apk", "add", "curl", "python3"}).
+	_, err = publishCheckTools("curl", "python3").
 		WithServiceBinding("registry", env.registrySvc).
 		WithEnvVariable("REGISTRY_USERNAME", publishCheckRegistryUser).
 		WithSecretVariable("REGISTRY_PASSWORD", core.SetSecret("registry-helm-password-"+randomID(), publishCheckRegistryPass)).
@@ -2251,10 +2233,8 @@ type releaseCheckCerts struct {
 
 func newReleaseCheckCerts(caHostname string) *releaseCheckCerts {
 	const password = "hunter4"
-	ctr := core.NewContainer().
-		From("alpine:latest").
-		WithExec([]string{"apk", "add", "openssl"}).
-		WithExec([]string{"openssl", "genrsa", "-des3", "-out", "/ca.key", "-passout", "pass:" + password, "2048"}).
+	ctr := publishCheckTools("openssl").
+		WithExec([]string{"openssl", "genrsa", "-aes256", "-out", "/ca.key", "-passout", "pass:" + password, "2048"}).
 		WithExec([]string{"openssl", "req", "-new", "-key", "/ca.key", "-out", "/ca.csr", "-passin", "pass:" + password, "-subj", "/C=US/ST=CA/L=San Francisco/O=Example/CN=" + caHostname}).
 		WithNewFile("/ca.ext", fmt.Sprintf(`basicConstraints=critical,CA:TRUE,pathlen:0
 keyUsage=critical,keyCertSign,cRLSign

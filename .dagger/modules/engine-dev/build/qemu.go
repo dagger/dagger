@@ -54,21 +54,17 @@ func (build *Builder) qemuBins() (*dagger.Directory, []string) {
 
 	// Cross-compile on the build platform with xx rather than building under
 	// emulation for other target platforms.
-	return core.NewContainer().
-		From(consts.AlpineImage).
-		WithExec([]string{"apk", "add", "--no-cache",
-			"clang", "lld", "llvm", "make", "ninja", "pkgconf", "python3", "perl", "bash", "patch", "xz",
-		}).
-		WithDirectory("/", core.NewContainer().From(consts.XxImage).Rootfs()).
-		WithEnvVariable("TARGETPLATFORM", string(build.platform)).
-		// The target packages' install scripts would run target binaries;
-		// static linking doesn't need them.
-		WithExec([]string{"xx-apk", "add", "--no-cache", "--no-scripts",
-			"musl-dev", "gcc", "glib-dev", "glib-static", "linux-headers", "pcre2-dev", "pcre2-static", "zlib-static",
-		}).
+	return build.xxToolchain(
+		[]string{"clang", "lld", "llvm", "make", "ninja", "pkgconf", "python3", "perl", "bash", "patch", "xz"},
+		[]string{"musl-dev", "gcc", "glib-dev", "glib-static", "linux-headers", "pcre2-dev", "pcre2-static", "zlib-static"},
+	).
 		WithMountedFile("/qemu.tar.xz", src).
 		WithMountedDirectory("/patches", patches).
 		WithEnvVariable("QEMU_TARGETS", strings.Join(targets, " ")).
+		// QEMU's decodetree.py orders the code it generates through a Python
+		// set, so with Python's random hash seed the arm, ppc and riscv
+		// emulators would come out different on every build.
+		WithEnvVariable("PYTHONHASHSEED", "0").
 		WithExec([]string{"sh", "-euc", `
 mkdir /src /out
 tar -xJf /qemu.tar.xz -C /src --strip-components=1 --exclude='*/roms'

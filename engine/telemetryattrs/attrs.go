@@ -75,6 +75,14 @@ const (
 	// session. The engine's store-to-Cloud forwarder leaves it out. (bool)
 	TelemetryCloudPublishedAttr = "dagger.io/telemetry.cloud_published"
 
+	// TelemetryClientIngestedAttr is a resource attribute the engine stamps on
+	// the telemetry a client posts about itself over its session connection
+	// (engine.ClientTelemetryIngestHeader): the ID of that client. The
+	// client's own telemetry streams leave these records out, since the
+	// client emitted them; everything else that reads the store sees them
+	// like any other record. (string)
+	TelemetryClientIngestedAttr = "dagger.io/telemetry.client_ingested"
+
 	UIResumeOutputAttr = "dagger.io/ui.resume.output"
 
 	// UIFunctionPlumbingAttr marks the span of the work that runs a module
@@ -111,6 +119,19 @@ const (
 	// frontends fold it into the live span instead of rendering it as text.
 	LogRoleAttr     = "dagger.io/log.role"
 	LogRoleSpanName = "span.name"
+	// LogRolePresence marks a body-less record standing in for a span's
+	// display text in a push that omits it (GET /v1/logs?display=presence):
+	// the span (or, with dagger.io/dag.digest, the digest's creator span)
+	// has logs, to be read on demand.
+	LogRolePresence = "log.presence"
+	// LogRowAttr is a log record's row ID in the engine's live store it was
+	// read from (clientdb.Log.ID), positive and increasing in storage order.
+	// It is transport-only: the engine sets it on the records of on-demand
+	// log queries (POST /v1/logs/query) alone, so a reader can tell a row it
+	// already holds from a new one when two reads return it. IDs are
+	// per-store, so they compare only within one store's reads. A record
+	// without it has no identity. (int)
+	LogRowAttr = "dagger.io/log.row"
 
 	// LogHumanOnlyAttr marks a log record written for people reading the
 	// trace, not for a model: frontends render it as usual, while the logs an
@@ -207,6 +228,15 @@ const (
 	// they open with the request state's digest and are re-stamped with the
 	// withResponse digest before they end. (string)
 	LLMCallDigestAttr = "dagger.io/llm.call.digest"
+
+	// LLMToolHeaderArgNamesAttr is set on a tool call's display span when it
+	// starts: the names of the arguments its header summarizes, in order,
+	// without their values -- the tool's required arguments, then a few
+	// optional ones worth showing (see core's toolHeaderArgNames). Its
+	// values arrive with llm.tool.arg_values once the call ends; until then,
+	// a live frontend fills them in from the arguments the span streams, so
+	// a running call's header is the one it ends with. ([]string)
+	LLMToolHeaderArgNamesAttr = "dagger.io/llm.tool.header_arg_names"
 
 	// LLMToolResultTokensAttr is set on a tool-call telemetry span with an
 	// estimated token count for the result the tool fed back into the model's

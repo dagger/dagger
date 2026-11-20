@@ -64,6 +64,10 @@ func (s *currentTypeDefsTestServer) CurrentFunctionCall(context.Context) (*core.
 	return nil, nil
 }
 
+func (s *currentTypeDefsTestServer) EnclosingFunctionCall(context.Context) (*core.FunctionCall, error) {
+	return nil, nil
+}
+
 func (s *currentTypeDefsTestServer) CurrentWorkspace(context.Context) (*core.Workspace, error) {
 	return nil, nil
 }
@@ -161,8 +165,6 @@ func (s *currentTypeDefsTestServer) MCPSessions(context.Context) (*core.MCPSessi
 }
 
 func (s *currentTypeDefsTestServer) OCIStore() content.Store { return nil }
-
-func (s *currentTypeDefsTestServer) BuiltinOCIStore() content.Store { return nil }
 
 func (s *currentTypeDefsTestServer) DNS() *oci.DNSConfig { return nil }
 
