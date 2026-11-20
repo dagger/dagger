@@ -2621,9 +2621,14 @@ type Cache struct {
 	testTransferCopied       func(uint64)
 	testTransferPlanPrepared func(int) error
 	testBeforeTransferCommit func()
-	testAfterTransferCommit  func()
-	testPartRouted           func(uint64)
-	testOwnerWalked          func(uint64)
+
+	// testFirstUseInstall, nil but in tests, runs as a first use has
+	// prepared a record's payload and is about to take the entry's payload
+	// lock to install it (prepareMerged).
+	testFirstUseInstall     func(*sharedResult)
+	testAfterTransferCommit func()
+	testPartRouted          func(uint64)
+	testOwnerWalked         func(uint64)
 
 	// testWarmStarted, nil but in tests, runs as a merge's commit starts
 	// timing its warming (CommitValueMerge, MergeReply.Warm).

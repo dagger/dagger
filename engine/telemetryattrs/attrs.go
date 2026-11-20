@@ -1213,19 +1213,26 @@ type EngineStopEvent struct {
 
 // EngineFirstUse counts the payloads of restored records the engine's calls
 // prepared at their first use, and those refused, with the time preparing
-// took in all and at the longest, in nanoseconds. The Save fields count the
-// payloads of the records nothing used, which the engine's save prepared
-// before it wrote them, and those refused, with the time that took summed
-// over them and the save's wall time spent on them, in nanoseconds.
+// took in all and at the longest, in nanoseconds. The longest is named: its
+// record's recipe, its payload's size in bytes, and its time split into
+// preparing the payload and waiting for the entry's payload lock, in
+// nanoseconds. The Save fields count the payloads of the records nothing
+// used, which the engine's save prepared before it wrote them, and those
+// refused, with the time that took summed over them and the save's wall time
+// spent on them, in nanoseconds.
 type EngineFirstUse struct {
-	Prepared     int64 `json:"prepared,omitempty"`
-	Refused      int64 `json:"refused,omitempty"`
-	Total        int64 `json:"total,omitempty"`
-	Longest      int64 `json:"longest,omitempty"`
-	SavePrepared int64 `json:"savePrepared,omitempty"`
-	SaveRefused  int64 `json:"saveRefused,omitempty"`
-	SaveTotal    int64 `json:"saveTotal,omitempty"`
-	SaveWall     int64 `json:"saveWall,omitempty"`
+	Prepared        int64  `json:"prepared,omitempty"`
+	Refused         int64  `json:"refused,omitempty"`
+	Total           int64  `json:"total,omitempty"`
+	Longest         int64  `json:"longest,omitempty"`
+	LongestRecipe   string `json:"longestRecipe,omitempty"`
+	LongestBytes    int64  `json:"longestBytes,omitempty"`
+	LongestPrepare  int64  `json:"longestPrepare,omitempty"`
+	LongestLockWait int64  `json:"longestLockWait,omitempty"`
+	SavePrepared    int64  `json:"savePrepared,omitempty"`
+	SaveRefused     int64  `json:"saveRefused,omitempty"`
+	SaveTotal       int64  `json:"saveTotal,omitempty"`
+	SaveWall        int64  `json:"saveWall,omitempty"`
 }
 
 // EngineRestore is what an engine did with one set file: the check's name,

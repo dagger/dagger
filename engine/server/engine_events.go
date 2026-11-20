@@ -321,13 +321,17 @@ func (srv *Server) restoreEvents() []telemetryattrs.EngineRestore {
 // carries them.
 func engineFirstUse(stats dagql.FirstUseStats) telemetryattrs.EngineFirstUse {
 	return telemetryattrs.EngineFirstUse{
-		Prepared:     stats.Prepared,
-		Refused:      stats.Refused,
-		Total:        int64(stats.Total),
-		Longest:      int64(stats.Longest),
-		SavePrepared: stats.SavePrepared,
-		SaveRefused:  stats.SaveRefused,
-		SaveTotal:    int64(stats.SaveTotal),
-		SaveWall:     int64(stats.SaveWall),
+		Prepared:        stats.Prepared,
+		Refused:         stats.Refused,
+		Total:           int64(stats.Total),
+		Longest:         int64(stats.Longest),
+		LongestRecipe:   stats.LongestRecipe,
+		LongestBytes:    stats.LongestBytes,
+		LongestPrepare:  int64(stats.LongestPrepare),
+		LongestLockWait: int64(stats.LongestLockWait),
+		SavePrepared:    stats.SavePrepared,
+		SaveRefused:     stats.SaveRefused,
+		SaveTotal:       int64(stats.SaveTotal),
+		SaveWall:        int64(stats.SaveWall),
 	}
 }
