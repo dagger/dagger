@@ -205,9 +205,6 @@ func (c *converter) convertHTTPSource(op *engineutil.HTTPOp) (*call.ID, error) {
 		}
 	}
 
-	if attrs[pb.AttrHTTPChecksum] != "" {
-		return nil, unsupported(opDigest(op.OpDAG), "source(http)", "http checksum enforcement is unsupported")
-	}
 	if attrs[pb.AttrHTTPUID] != "" || attrs[pb.AttrHTTPGID] != "" {
 		return nil, unsupported(opDigest(op.OpDAG), "source(http)", "http uid/gid override is unsupported")
 	}
@@ -234,6 +231,10 @@ func (c *converter) convertHTTPSource(op *engineutil.HTTPOp) (*call.ID, error) {
 			return nil, unsupported(opDigest(op.OpDAG), "source(http)", fmt.Sprintf("invalid permissions %q", permStr))
 		}
 		httpArgs = append(httpArgs, argInt("permissions", perm))
+	}
+
+	if checksum := attrs[pb.AttrHTTPChecksum]; checksum != "" {
+		httpArgs = append(httpArgs, argString("checksum", checksum))
 	}
 
 	fileID := appendCall(call.New(), fileType(), "http", httpArgs...)

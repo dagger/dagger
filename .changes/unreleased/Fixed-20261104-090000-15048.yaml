@@ -1,0 +1,7 @@
+kind: Fixed
+body: |
+  `dockerBuild` supports `ADD --checksum=sha256:… <url>` again instead of failing with `http checksum enforcement is unsupported`. A mismatching digest fails the build with `http checksum mismatch`.
+time: 2026-11-04T09:00:00Z
+custom:
+  Author: danielwegener
+  PR: "15048"

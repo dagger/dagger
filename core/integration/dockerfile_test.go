@@ -177,8 +177,6 @@ CMD ["cat", "/SHA256SUMS.d/buildkit-v0.1"]
 	})
 
 	t.Run("add-http-with-checksum-success", func(ctx context.Context, t *testctx.T) {
-		t.Skip("TODO: enable once llbtodagger supports HTTP checksum enforcement in source(http) conversion")
-
 		const sourceURL = "https://raw.githubusercontent.com/octocat/Hello-World/master/README"
 
 		sourceContents, err := sdkcore.NewQuery(c).HTTP(sourceURL).Contents(ctx)
@@ -196,8 +194,6 @@ CMD ["cat", "/downloads/README"]
 	})
 
 	t.Run("add-http-with-checksum-mismatch", func(ctx context.Context, t *testctx.T) {
-		t.Skip("TODO: enable once llbtodagger supports HTTP checksum enforcement in source(http) conversion")
-
 		const sourceURL = "https://raw.githubusercontent.com/octocat/Hello-World/master/README"
 
 		wrong := digest.FromString("wrong-checksum").String()
