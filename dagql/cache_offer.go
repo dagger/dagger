@@ -327,9 +327,11 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, item CloudPar
 	var accepted *partOffer
 	if out.Outcome == OfferAccepted {
 		if _, image := row.imageHoldingLocked(); image != nil {
-			// The engine image ships the row and offers its parts from the
-			// engine's own disk: the Cloud's offer is left out, and the row
-			// takes no Cloud holding from it.
+			// The engine image ships the row: the row takes no Cloud part
+			// and no Cloud holding, whether or not the image ships this
+			// part. The image ships parts for its results, from the
+			// engine's own disk, and its closures' records without any;
+			// the service knows these rows from the hello (ImageEntries).
 			out.Outcome = OfferUnavailable
 		}
 	}
