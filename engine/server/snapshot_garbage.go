@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"fmt"
 	"sync/atomic"
 
 	ctdmetadata "github.com/containerd/containerd/v2/core/metadata"
@@ -55,6 +54,10 @@ func newSnapshotGarbage(db *ctdmetadata.DB, sm bkcache.SnapshotManager) *snapsho
 
 // Collect runs containerd garbage collection unconditionally, then drops the
 // in-memory metadata of the snapshots it removed.
+//
+// Forgetting is best-effort: the collection has already reclaimed the data,
+// so a failure to forget is logged rather than failing the collection (and
+// with it the prune or GC pass that ran it), and the next collection retries.
 func (g *snapshotGarbage) Collect(ctx context.Context) error {
 	// Clear before collecting: a deletion that lands during the collection
 	// sets the flag again and is picked up by the next pass.
@@ -71,7 +74,7 @@ func (g *snapshotGarbage) Collect(ctx context.Context) error {
 		g.forgetPending.Store(false)
 		if err := g.forget(ctx); err != nil {
 			g.forgetPending.Store(true)
-			return fmt.Errorf("forget collected snapshots: %w", err)
+			slog.Warn("failed to forget collected snapshots; retrying after the next collection", "err", err)
 		}
 	}
 	return nil

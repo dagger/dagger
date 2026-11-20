@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -89,6 +90,50 @@ func TestSnapshotGarbageForgetsOnlyAfterRemovals(t *testing.T) {
 	requireSnapshotCollected(t, store, releasedID)
 	require.Equal(t, 2, forgets)
 	_, ok, err := store.Manager.SnapshotRecordMetadata(ctx, releasedID)
+	require.NoError(t, err)
+	require.False(t, ok)
+}
+
+// A failure to forget does not fail the collection, which has already
+// reclaimed the data: the prune or GC pass that ran it succeeds, and the next
+// collection forgets again, even when it removes no snapshot.
+func TestSnapshotGarbageRetriesFailedForget(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store := testutil.NewStore(t)
+	garbage := newSnapshotGarbage(store.DB, store.Manager)
+	forget := garbage.forget
+	forgets := 0
+	fail := true
+	garbage.forget = func(ctx context.Context) error {
+		forgets++
+		if fail {
+			return errors.New("walk failed")
+		}
+		return forget(ctx)
+	}
+	require.NoError(t, garbage.Collect(ctx))
+	require.Equal(t, 1, forgets)
+
+	released, releasedOwner := store.Build(t, nil, "released", "released data")
+	releasedID := released.SnapshotID()
+	require.NoError(t, released.Release(ctx))
+	require.NoError(t, store.Manager.RemoveLease(ctx, releasedOwner))
+	require.NoError(t, garbage.CollectIfPending(ctx), "a failed forget must not fail the collection")
+	require.Equal(t, 2, forgets)
+	requireSnapshotCollected(t, store, releasedID)
+	require.False(t, garbage.pending.Load())
+	require.True(t, garbage.forgetPending.Load(), "a failed forget must be retried")
+	_, ok, err := store.Manager.SnapshotRecordMetadata(ctx, releasedID)
+	require.NoError(t, err)
+	require.True(t, ok, "the failed forget dropped nothing")
+
+	// The next collection removes no snapshot, but forgets again.
+	fail = false
+	require.NoError(t, garbage.Collect(ctx))
+	require.Equal(t, 3, forgets)
+	require.False(t, garbage.forgetPending.Load())
+	_, ok, err = store.Manager.SnapshotRecordMetadata(ctx, releasedID)
 	require.NoError(t, err)
 	require.False(t, ok)
 }
