@@ -110,7 +110,8 @@ func TestRowsSetTheLastUse(t *testing.T) {
 }
 
 // BlobCacheUsage reports the pool as the cache keeps it, reading no walk:
-// R and P, and the blob they share counted once.
+// R and P, and the blob they share counted once. It answers while a writer
+// holds a pool value's payload, which a walk would wait for.
 func TestBlobCacheUsageReadsTheKeptPool(t *testing.T) {
 	t.Parallel()
 	ctx, cloud, r, _ := storedPartServiceTestCloud(t)
@@ -126,8 +127,24 @@ func TestBlobCacheUsageReadsTheKeptPool(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, ok)
 	}
-	usage, err := cloud.BlobCacheUsage()
-	require.NoError(t, err)
+	entry := storedBundleTestEntry(cloud, r)
+	entry.payloadMu.Lock()
+	read := make(chan BlobCacheUsage, 1)
+	go func() {
+		usage, _ := cloud.BlobCacheUsage()
+		read <- usage
+	}()
+	var usage BlobCacheUsage
+	select {
+	case usage = <-read:
+	case <-time.After(30 * time.Second):
+		t.Error("the usage waited for a pool value's payload")
+	}
+	entry.payloadMu.Unlock()
+	if t.Failed() {
+		<-read
+		return
+	}
 	require.Equal(t, 2, usage.PoolValues, "R and P")
 	require.Equal(t, 2, usage.PoolBlobs)
 	require.Equal(t, int64(110), usage.PoolBlobBytes, "the shared blob once, and R's own")

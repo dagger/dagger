@@ -6,6 +6,7 @@ import (
 	"os"
 	"sync"
 	"testing"
+	"time"
 )
 
 // TestMain has every merge of the package's tests decided by both the
@@ -20,15 +21,19 @@ func TestMain(m *testing.M) {
 		disagreements []string
 		pools         int
 		poolDrifts    []string
+		poolChecked   time.Duration
 	)
 	testCacheClosing = func(c *Cache) {
 		if !c.blobBacked {
 			return
 		}
+		at := time.Now()
 		err := c.VerifyPoolMeasure()
+		took := time.Since(at)
 		mu.Lock()
 		defer mu.Unlock()
 		pools++
+		poolChecked += took
 		if err != nil {
 			poolDrifts = append(poolDrifts, err.Error())
 		}
@@ -53,13 +58,13 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "merge graph judge: %d merges, no disagreement\n", judged)
 	}
 	if len(poolDrifts) > 0 {
-		fmt.Fprintf(os.Stderr, "the kept pool measure differed from a walk in %d of %d blob-backed caches:\n", len(poolDrifts), pools)
+		fmt.Fprintf(os.Stderr, "the kept pool measure differed from a walk in %d of %d blob-backed caches, checked in %s:\n", len(poolDrifts), pools, poolChecked)
 		for _, d := range poolDrifts {
 			fmt.Fprintln(os.Stderr, "  "+d)
 		}
 		code = 1
 	} else {
-		fmt.Fprintf(os.Stderr, "kept pool measure: %d blob-backed caches checked, none differed\n", pools)
+		fmt.Fprintf(os.Stderr, "kept pool measure: %d blob-backed caches checked in %s, none differed\n", pools, poolChecked)
 	}
 	mu.Unlock()
 	os.Exit(code)
