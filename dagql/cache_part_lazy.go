@@ -8,7 +8,6 @@ import (
 	"sync"
 
 	"github.com/dagger/dagger/engine/snapshots"
-	"github.com/dagger/dagger/engine/wcprof"
 )
 
 // partCleanup releases what a part's install or a lazy operation built, once.
@@ -85,7 +84,7 @@ func (c *Cache) prepareEvaluatedParts(ctx context.Context, res AnyResult, demand
 			rerr = errors.Join(rerr, p.Release(ctx))
 		}
 	}()
-	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+	c.lockGraphForCtx(ctx, workPart)
 	if c.resultsByID[row.id] != row || original.task != PartTaskFromContext(ctx) {
 		c.egraphMu.Unlock()
 		return nil, fmt.Errorf("operation publication: invalid owner")
@@ -146,7 +145,7 @@ func (c *Cache) prepareEvaluatedParts(ctx context.Context, res AnyResult, demand
 	if len(descriptors) == 0 {
 		return nil, p.Release(ctx)
 	}
-	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+	c.lockGraphForCtx(ctx, workPart)
 	ids := c.partResourceLeavesLocked(row)
 	for _, d := range descriptors {
 		ids = append(ids, d.DependencyIDs...)

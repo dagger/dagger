@@ -149,6 +149,12 @@ type fakeAdapter struct {
 	// the first part's file name.
 	unretainedSeen chan []dagql.TransferOrdinal
 	sourceSeen     chan string
+	// priorityWait is what RestorePart returns as its part's wait behind
+	// lookup merges; landing counts the wholes marked landing now, and work
+	// is what CacheWork returns.
+	priorityWait time.Duration
+	landing      atomic.Int64
+	work         func() CacheWork
 }
 
 type settledCall struct {
@@ -172,14 +178,28 @@ func newFakeAdapter() *fakeAdapter {
 	}
 }
 
-func (a *fakeAdapter) RestorePart(ctx context.Context, part dagql.ValueBundle, unretained []dagql.TransferOrdinal, known *dagql.KnownRows, source string) (dagql.MergeReply, error) {
+func (a *fakeAdapter) RestorePart(ctx context.Context, part dagql.ValueBundle, unretained []dagql.TransferOrdinal, known *dagql.KnownRows, source string) (dagql.MergeReply, time.Duration, error) {
 	a.unretainedSeen <- unretained
 	select {
 	case a.sourceSeen <- source:
 	default:
 	}
 	a.restoreSeen <- part
-	return a.restore(ctx, part, known)
+	reply, err := a.restore(ctx, part, known)
+	return reply, a.priorityWait, err
+}
+
+func (a *fakeAdapter) Landing() func() {
+	a.landing.Add(1)
+	var once sync.Once
+	return func() { once.Do(func() { a.landing.Add(-1) }) }
+}
+
+func (a *fakeAdapter) CacheWork() CacheWork {
+	if a.work == nil {
+		return CacheWork{}
+	}
+	return a.work()
 }
 
 func (a *fakeAdapter) LateMisses(before time.Time, entries map[uint64]struct{}) []dagql.RemoteMiss {

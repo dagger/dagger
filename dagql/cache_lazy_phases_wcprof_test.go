@@ -91,7 +91,7 @@ func TestEndPartTaskBodyWaitsForGraphLockWcprof(t *testing.T) {
 		defer close(done)
 		c.endPartTaskBody(stepCtx, token, true)
 	}()
-	waitBlockedIn(t, "wcprof.WriteLock(")
+	waitBlockedIn(t, "wcprof.WriteLockAs(")
 	c.egraphMu.Unlock()
 	<-done
 	step.End(nil)
@@ -118,7 +118,7 @@ func TestLazySpanCacheStateWaitsForGraphLockWcprof(t *testing.T) {
 		defer close(done)
 		c.lazySpanCacheState(evalCtx, row, nil)
 	}()
-	waitBlockedIn(t, "wcprof.WriteLock(")
+	waitBlockedIn(t, "wcprof.WriteLockAs(")
 	c.egraphMu.Unlock()
 	<-done
 	lazyOp.End(wcprof.OutcomeOK)

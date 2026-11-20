@@ -767,7 +767,7 @@ func (c *Cache) sessionStillSatisfiesResourceRequirements(ctx context.Context, s
 	if res.requiredSessionResourcesGen.Load() == requiredGenAtSelection {
 		return true
 	}
-	wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
+	c.lookupReadLockGraph(ctx)
 	defer c.egraphMu.RUnlock()
 	return c.sessionSatisfiesResourceRequirementsLocked(sessionID, res)
 }
@@ -1295,7 +1295,7 @@ func (c *Cache) lookupCacheForRequest(
 	// the e-graph, and the hit's session claim changes only state with its
 	// own synchronization, so they run under the read lock and concurrent
 	// lookups do not queue behind each other.
-	wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
+	c.lookupReadLockGraph(ctx)
 	retRes, hit, persistedEdgeExpiresAtUnix, needsWrite, err := c.lookupCacheForRequestLocked(ctx, sessionID, req, requestDigest, requestSelf, requestInputs, requestInputRefs, true)
 	if err != nil || (!hit && !needsWrite) {
 		c.egraphMu.RUnlock()
@@ -1312,7 +1312,7 @@ func (c *Cache) lookupCacheForRequest(
 	} else {
 		// The hit teaches the e-graph: look it up again under the write lock.
 		c.egraphMu.RUnlock()
-		wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+		c.lookupLockGraph(ctx)
 		// One collector for this E interval: identity teaching can union
 		// classes or insert a new membership, and both are flushed before
 		// the unlock.
@@ -1377,11 +1377,11 @@ func (c *Cache) lookupCacheForRequest(
 		// expiry captured at hit selection even if the barrier wait took long
 		// enough to cross a wall-clock second. A value its call declined to
 		// persist stays unpersisted.
-		wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
+		c.lookupReadLockGraph(ctx)
 		unchanged := hitShared.persistDeclined || c.persistedEdgeUpsertUnchangedLocked(hitShared, persistedEdgeExpiresAtUnix)
 		c.egraphMu.RUnlock()
 		if !unchanged {
-			wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+			c.lookupLockGraph(ctx)
 			if !hitShared.persistDeclined {
 				c.upsertPersistedEdgeLocked(ctx, hitShared, persistedEdgeExpiresAtUnix, false)
 			}

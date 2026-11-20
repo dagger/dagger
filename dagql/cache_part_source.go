@@ -162,7 +162,7 @@ func (s *PartSourceLease) Release(ctx context.Context) error {
 	s.once.Do(func() {
 		ctx = context.WithoutCancel(ctx)
 		c := s.cache
-		wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+		c.lockGraphForCtx(ctx, workPart)
 		var queue collectionQueue
 		if s.source != nil {
 			queue, s.releaseErr = c.decrementIncomingOwnershipLocked(ctx, s.source, queue)
@@ -498,7 +498,7 @@ func (c *Cache) scanPartSources(ctx context.Context, receiver AnyResult, address
 	key, _ := partAddressKey(address)
 	wcprof.Lock(ctx, &row.partGate.scanMu, "dagql.partGate.scanMu")
 	defer row.partGate.scanMu.Unlock()
-	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+	c.lockGraphForCtx(ctx, workPart)
 	candidates := c.collectPartCandidatesLocked(row, lookup, session)
 	held := 0
 	defer func() {
@@ -585,7 +585,7 @@ func (c *Cache) scanPartSources(ctx context.Context, receiver AnyResult, address
 			}
 		}
 	}
-	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+	c.lockGraphForCtx(ctx, workPart)
 	for i := range candidates {
 		candidate := &candidates[i]
 		if candidate.facts != c.partFactsLocked(candidate.row) || !c.sessionSatisfiesResourceRequirementsLocked(session, candidate.row) {
@@ -745,7 +745,7 @@ func (c *Cache) newSessionlessPartSourceLease(ctx context.Context, receiver, don
 			return nil, err
 		}
 	}
-	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+	c.lockGraphForCtx(ctx, workPart)
 	defer c.egraphMu.Unlock()
 	return c.newSessionlessPartSourceLeaseLocked(ctx, receiver, donor, target, address, probe, lookup)
 }

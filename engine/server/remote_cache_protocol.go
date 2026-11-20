@@ -587,9 +587,9 @@ func knowMerged(known *dagql.KnownRows, reply dagql.MergeReply) {
 // stale held rows, such as a later part naming an earlier part's record the
 // engine no longer has, is an error, and holds nothing. source names the set
 // file, for the log of a record whose payload fails at its first use.
-func (a *RemoteCacheAdapter) RestorePart(ctx context.Context, part dagql.ValueBundle, unretained []dagql.TransferOrdinal, known *dagql.KnownRows, source string) (dagql.MergeReply, error) {
+func (a *RemoteCacheAdapter) RestorePart(ctx context.Context, part dagql.ValueBundle, unretained []dagql.TransferOrdinal, known *dagql.KnownRows, source string) (dagql.MergeReply, time.Duration, error) {
 	if a.stopped.Load() {
-		return dagql.MergeReply{}, ErrRemoteCacheAdapterClosed
+		return dagql.MergeReply{}, 0, ErrRemoteCacheAdapterClosed
 	}
 	start := time.Now()
 	reply, priorityWait, err := a.merge(ctx, "remotecache.restore", "", false, func(ctx context.Context) (dagql.MergeReply, error) {
@@ -607,16 +607,30 @@ func (a *RemoteCacheAdapter) RestorePart(ctx context.Context, part dagql.ValueBu
 		"priority_wait", priorityWait,
 		"error", err)
 	if err == nil && len(reply.Stale) > 0 {
-		return dagql.MergeReply{}, fmt.Errorf("%d held rows are stale", len(reply.Stale))
+		return dagql.MergeReply{}, priorityWait, fmt.Errorf("%d held rows are stale", len(reply.Stale))
 	}
 	if !reply.Committed {
-		return dagql.MergeReply{}, err
+		return dagql.MergeReply{}, priorityWait, err
 	}
 	if err != nil {
 		slog.Warn("remote cache restore merge committed, then a release failed", "error", err)
 	}
 	knowMerged(known, reply)
-	return reply, nil
+	return reply, priorityWait, nil
+}
+
+// Landing marks a whole set landing on the cache (dagql.Cache.Landing).
+func (a *RemoteCacheAdapter) Landing() func() {
+	return a.cache.Landing()
+}
+
+// CacheWork returns the cache's counts a restore's window reads.
+func (a *RemoteCacheAdapter) CacheWork() remotecache.CacheWork {
+	return remotecache.CacheWork{
+		LookupLockWaits: a.cache.LookupLockWaits(),
+		FirstUse:        a.cache.FirstUse(),
+		Sharing:         a.cache.Sharing(),
+	}
 }
 
 // LateMisses returns the cache's misses on this connection that a merge
