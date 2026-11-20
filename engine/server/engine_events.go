@@ -344,7 +344,21 @@ func engineFirstUse(stats dagql.FirstUseStats) telemetryattrs.EngineFirstUse {
 		SaveRefused:     stats.SaveRefused,
 		SaveTotal:       int64(stats.SaveTotal),
 		SaveWall:        int64(stats.SaveWall),
+		Routes:          engineFirstUseRoutes(stats.Routes),
 	}
+}
+
+// engineFirstUseRoutes are first uses by route as the engine.stop event
+// carries them.
+func engineFirstUseRoutes(routes map[string]dagql.FirstUseRoute) map[string]telemetryattrs.EngineFirstUseRoute {
+	if len(routes) == 0 {
+		return nil
+	}
+	out := make(map[string]telemetryattrs.EngineFirstUseRoute, len(routes))
+	for route, counted := range routes {
+		out[route] = telemetryattrs.EngineFirstUseRoute{Merges: counted.Merges, Sent: counted.Sent, Merged: counted.Merged, FirstUses: counted.FirstUses, Total: int64(counted.Total), Used: counted.Used}
+	}
+	return out
 }
 
 // engineFirstUsePaths are first uses by path as the engine.stop event

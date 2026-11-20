@@ -65,9 +65,9 @@ type RemoteCacheAdapter struct {
 	// exportsCut is set by Stop when its drain cut exports off at the
 	// drain's deadline.
 	exportsCut bool
-	// mergeValues is the cache's MergeValues. A test replaces it to return a
-	// committed reply with a release error.
-	mergeValues func(context.Context, dagql.CacheID, dagql.ValueBundle) (dagql.MergeReply, error)
+	// mergeValues is the cache's MergeServiceValues. A test replaces it to
+	// return a committed reply with a release error.
+	mergeValues func(context.Context, dagql.ValueBundle, dagql.MergeSource) (dagql.MergeReply, error)
 	// restoreValues merges a restore's part from the Cloud, as mergeValues
 	// does a merge's bundle. A test replaces it.
 	restoreValues func(context.Context, dagql.ValueBundle, []dagql.TransferOrdinal, string) (dagql.MergeReply, error)
@@ -169,7 +169,7 @@ func newRemoteCacheAdapter(cache *dagql.Cache, bridge *dagql.RemoteCacheBridge) 
 		bridge:        bridge,
 		cancel:        func(error) {},
 		runDone:       make(chan struct{}),
-		mergeValues:   cache.MergeValues,
+		mergeValues:   cache.MergeServiceValues,
 		restoreValues: cache.RestoreValues,
 		stopReserve:   remoteCacheStopReserve,
 	}

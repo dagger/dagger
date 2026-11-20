@@ -79,6 +79,20 @@ func (c *Cache) MergeValues(ctx context.Context, from CacheID, input ValueBundle
 	return c.CommitValueMerge(ctx, p)
 }
 
+// MergeServiceValues merges a bundle the remote cache service sent an
+// engine, as MergeValues merges one from the Cloud, with the same reply,
+// errors and locks; source names the route that brought it and the
+// service's number for it (PreparedValueMerge.Source).
+func (c *Cache) MergeServiceValues(ctx context.Context, input ValueBundle, source MergeSource) (MergeReply, error) {
+	ctx = withCacheWork(ctx, workMerge)
+	p, err := c.PrepareValueMerge(ctx, cloudCacheID, input)
+	if err != nil {
+		return MergeReply{}, err
+	}
+	p.Source(source)
+	return c.CommitValueMerge(ctx, p)
+}
+
 // RestoreValues merges a part of a file of the Cloud's records that an engine
 // restores, as MergeValues merges a bundle from the Cloud, with the same
 // reply, errors and locks. Only prefetching tells them apart: the offers a
@@ -91,7 +105,8 @@ func (c *Cache) MergeValues(ctx context.Context, from CacheID, input ValueBundle
 // rows, and a part's roots in unretained, the closure of a root that a later
 // part carries, are merged with no retention edge (Unretained), so that only
 // the hold keeps them until the root lands. source names the set file, for
-// the log of a record whose payload fails at its first use (Source).
+// the log of a record whose payload fails at its first use, and its
+// records' route is a set file's (Source).
 func (c *Cache) RestoreValues(ctx context.Context, bundle ValueBundle, unretained []TransferOrdinal, source string) (MergeReply, error) {
 	ctx = withCacheWork(ctx, workRestore)
 	began := time.Now()
@@ -102,7 +117,7 @@ func (c *Cache) RestoreValues(ctx context.Context, bundle ValueBundle, unretaine
 	prepared := time.Now()
 	p.restore, p.hold = true, true
 	p.Unretained(unretained...)
-	p.Source(source)
+	p.Source(MergeSource{Route: MergeRouteSetFile, File: source})
 	reply, err := c.CommitValueMerge(ctx, p)
 	reply.Prepare, reply.Commit = prepared.Sub(began), time.Since(prepared)
 	return reply, err
@@ -133,15 +148,17 @@ type PreparedValueMerge struct {
 	restore bool
 	hold    bool
 	// source names where the bundle came from (Source).
-	source string
+	source MergeSource
 	// ended is set once, by the terminal action.
 	ended atomic.Bool
 }
 
-// Source names the set file the bundle came in, for the log of a record
-// installed with its payload unprepared whose payload then fails at its
-// first use (mergedFirstUse). Call it before CommitValueMerge.
-func (p *PreparedValueMerge) Source(source string) {
+// Source names where the bundle came from, on an engine: the route that
+// brought it and the service's number for it or its set file
+// (MergeSource). The entries the merge installs keep it, and the first uses
+// of their records are counted by it (FirstUseStats.Routes). Call it
+// before CommitValueMerge.
+func (p *PreparedValueMerge) Source(source MergeSource) {
 	p.source = source
 }
 
@@ -260,7 +277,11 @@ func (c *Cache) CommitValueMerge(ctx context.Context, p *PreparedValueMerge) (Me
 	ctx = withCacheWork(ctx, work)
 	p.input, p.prep = ValueBundle{}, nil
 	prep.unretained = p.unretained
-	prep.source = p.source
+	var origin *mergeOrigin
+	if !c.blobBacked {
+		origin = &mergeOrigin{route: p.source.Route, number: p.source.Merge, file: p.source.File}
+	}
+	prep.origin = origin
 	if len(prep.stale) > 0 {
 		return c.staleMergeReply(prep.stale), nil
 	}
@@ -309,7 +330,7 @@ func (c *Cache) CommitValueMerge(ctx context.Context, p *PreparedValueMerge) (Me
 			}
 			prep.lockWaits.addAll(waited)
 			prep.unretained = p.unretained
-			prep.source = p.source
+			prep.origin = origin
 			if len(prep.stale) > 0 {
 				return c.staleMergeReply(prep.stale), nil
 			}
@@ -325,15 +346,27 @@ func (c *Cache) CommitValueMerge(ctx context.Context, p *PreparedValueMerge) (Me
 		reply.LockWait = locked.Sub(asked)
 		reply.PrepareLockWait, reply.PrepareLockWaits = prep.lockWaits.total(), prep.lockWaits.byHolder()
 		var stored []*sharedResult
-		if c.blobBacked {
-			for _, row := range commit.rows {
-				if row.action.installs() {
-					stored = append(stored, row.res)
-				}
+		merged := 0
+		for _, row := range commit.rows {
+			switch {
+			case !row.action.installs():
+			case c.blobBacked:
+				stored = append(stored, row.res)
+			case row.firstUse != nil:
+				merged++
 			}
 		}
 		c.egraphMu.Unlock()
 		c.queueStoredBodies(stored)
+		if origin != nil {
+			sent := 0
+			for _, value := range prep.bundle.Values {
+				if value.Held == "" {
+					sent++
+				}
+			}
+			c.mergeCommitted(origin, sent, merged)
+		}
 		// A recording engine records the commit's hold of the graph lock as
 		// an op of the merge's.
 		wcprof.RecordOpAt(ctx, wcprof.OpKindRemoteCache, "remotecache.merge.commit", wcprof.OpOpts{}, locked, locked.Add(reply.CommitHold), wcprof.OutcomeOK)
@@ -532,10 +565,10 @@ type valueMergePrep struct {
 	// parts (TransferredValue.Parts), the Cloud's: each is prepared from
 	// its call and offers only, its complete parts are the ones it carries,
 	// and an install leaves its payload for its first use
-	// (mergedFirstUse). source names the file the bundle came in
-	// (PreparedValueMerge.Source).
+	// (mergedFirstUse). origin is, on an engine, the merge that installs
+	// them (mergeOrigin), nil on the Cloud.
 	unprepared map[uint64]bool
-	source     string
+	origin     *mergeOrigin
 	// held are the held rows, by ordinal. Each is prepared from its
 	// recipe's current entry's call frame, with no record or payload, and
 	// its plan has only its recipe. stale are the held rows the cache didn't
@@ -1936,7 +1969,7 @@ func relocateUnpreparedRowLocked(prep *valueMergePrep, row *mergeRow, source Per
 	}
 	compactOfferOwners(offers)
 	rec.Envelope.PendingOffers = offers
-	use := &mergedFirstUse{numbers: make(map[uint64]sharedResultID, len(row.value.DependencyIDs)), complete: sharedPartKeys(prep.completeParts[row.ordinal]), source: prep.source}
+	use := &mergedFirstUse{numbers: make(map[uint64]sharedResultID, len(row.value.DependencyIDs)), complete: sharedPartKeys(prep.completeParts[row.ordinal]), origin: prep.origin}
 	seen := map[sharedResultID]bool{}
 	for _, dep := range row.value.DependencyIDs {
 		n, err := number(dep)
@@ -2441,7 +2474,12 @@ func (c *Cache) commitValueMergeLocked(ctx context.Context, commit *valueMergeCo
 		change   RemoteChange
 		created  collectionQueue
 	)
-	committedAt := time.Now().UnixNano()
+	// The merge's origin commits now, before any entry names it. The Cloud
+	// keeps none.
+	origin := commit.prep.origin
+	if origin != nil {
+		origin.committedAt = time.Now().UnixNano()
+	}
 
 	// The values.
 	for _, row := range commit.rows {
@@ -2452,19 +2490,19 @@ func (c *Cache) commitValueMergeLocked(ctx context.Context, commit *valueMergeCo
 			c.retireResultLocked(row.target)
 			fallthrough
 		case mergeCreate:
-			c.installMergedRecordLocked(row.res, row, committedAt)
+			c.installMergedRecordLocked(row.res, row, origin)
 			c.putResultLocked(row.res)
 			row.res.onRelease = c.resultSnapshotLeaseCleanup(row.res)
 			c.indexRecipeLocked(row.plan.recipe, row.res)
 			created = append(created, row.res)
 		case mergeStore:
-			c.installMergedRecordLocked(row.res, row, committedAt)
+			c.installMergedRecordLocked(row.res, row, origin)
 			if row.res.onRelease == nil {
 				row.res.onRelease = c.resultSnapshotLeaseCleanup(row.res)
 			}
 		case mergeReplace:
 			fresh := &sharedResult{}
-			c.installMergedRecordLocked(fresh, row, committedAt)
+			c.installMergedRecordLocked(fresh, row, origin)
 			oldFrame := row.res.entryFrameLocked()
 			old, more, err := c.replaceResultValueInPlaceLocked(ctx, row.res, fresh, row.value.ExpiresAtUnix)
 			queue = append(queue, more...)
@@ -2695,16 +2733,14 @@ type mergeReplacement struct {
 }
 
 // installMergedRecordLocked gives res the row's relocated record as its
-// value: stored and not decoded, from the merge that commits at committedAt.
+// value: stored and not decoded, from the merge of origin, nil on the Cloud.
 // res is a new entry, an entry with no value, or the fresh value of a
 // replacement. Requires egraphMu for writing.
-func (c *Cache) installMergedRecordLocked(res *sharedResult, row *mergeRow, committedAt int64) {
+func (c *Cache) installMergedRecordLocked(res *sharedResult, row *mergeRow, origin *mergeOrigin) {
 	rec := row.rec
 	// The record's own parts and offers decide its value's sources now.
 	res.unavailableParts = nil
-	if !c.blobBacked {
-		res.mergedAtUnixNano = committedAt
-	}
+	res.merged = origin
 	res.storedRecordBytes = row.recordBytes
 	res.expiresAtUnix = row.value.ExpiresAtUnix
 	// A capture reads these with the value (loadPayloadState).
