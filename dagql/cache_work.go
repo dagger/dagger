@@ -33,8 +33,22 @@ const (
 	// workOffer is the placing of the Cloud's offered parts on entries.
 	workOffer
 	// workPart is the fetching, installing and settling of an entry's
-	// parts: a call's demand for one, and the prefetcher's.
+	// parts: a call's demand for one, and the prefetcher's, and a capture's
+	// hold of the rows whose parts it reads.
 	workPart
+	// workTeach is a call's teaching of what its result is the same as: its
+	// content's digest, or another call's.
+	workTeach
+	// workDependency is a call's explicit dependencies and retention.
+	workDependency
+	// workEvaluation is a lazy evaluation's own bookkeeping, such as the
+	// ownership its attempt takes.
+	workEvaluation
+	// workUpkeep is the engine's housekeeping: a session's release, a
+	// prune, the usage and size measurements, and a save.
+	workUpkeep
+	// workHold is the service's holds on entries, and their release.
+	workHold
 	numCacheWork
 )
 
@@ -48,6 +62,11 @@ var cacheWorkNames = [numCacheWork]string{
 	workExport:      "export",
 	workOffer:       "offer",
 	workPart:        "part",
+	workTeach:       "teach",
+	workDependency:  "dependency",
+	workEvaluation:  "evaluation",
+	workUpkeep:      "upkeep",
+	workHold:        "hold",
 }
 
 func (w cacheWork) String() string { return cacheWorkNames[w] }
@@ -203,9 +222,12 @@ type LockWaitStats struct {
 // over the cache's life, by the kind of writer whose release let each in:
 // lookup, publication, restore (a set file's part's merge), merge (another
 // merge of the Cloud's records), sharing (a snapshot-sharing pass), export,
-// offer, part (fetching, installing or settling parts), other (a writer
-// that names no kind), or readers (no writer: the lookup waited for
-// readers to leave). Landing counts the waits that ended while a set of
+// offer, part (fetching, installing or settling parts), teach (a call's
+// teaching of what its result is the same as), dependency (a call's
+// explicit dependencies), evaluation (a lazy evaluation's bookkeeping),
+// upkeep (a session's release, a prune, a measurement or a save), hold (the
+// service's holds on entries), other (a writer that names no kind), or
+// readers (no writer: the lookup waited for readers to leave). Landing counts the waits that ended while a set of
 // the Cloud's records was landing (Landing), Other the rest. A kind with no
 // wait is left out.
 type LookupLockWaits struct {

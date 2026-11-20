@@ -177,7 +177,7 @@ func (c *Cache) PruneMetadataEstimate(ctx context.Context, maximumBytes, targetB
 		if c != nil && c.changes != nil {
 			// A pass releases the graph lock between its drops; what they
 			// changed is handed back once it ends.
-			c.egraphMu.Lock()
+			c.lockGraphFor(ctx, workUpkeep)
 			c.takeChangesLocked(&report.Change)
 			c.egraphMu.Unlock()
 		}
@@ -379,7 +379,7 @@ func (c *Cache) Prune(ctx context.Context, policies []CachePrunePolicy) (CachePr
 	if c.changes != nil {
 		// A run releases the graph lock between its drops; what they changed
 		// is handed back once it ends.
-		c.egraphMu.Lock()
+		c.lockGraphFor(ctx, workUpkeep)
 		c.takeChangesLocked(&report.Change)
 		c.egraphMu.Unlock()
 	}
