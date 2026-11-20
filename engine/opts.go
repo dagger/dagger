@@ -298,6 +298,14 @@ type ClientMetadata struct {
 	// never read from client headers.
 	CallerAgent any `json:"-"`
 
+	// LiveLookups, set on an in-engine nested client whose queries are
+	// model-written code (a DangEval snippet's), resolves the lookups its
+	// queries select live, as noLock: true asks: they neither read the
+	// workspace lockfile's pins nor record new ones (see
+	// schema.WithLiveLookupSelections). Engine-internal: never read from
+	// client headers.
+	LiveLookups bool `json:"-"`
+
 	// InertAttachables marks an in-engine nested client the server denies
 	// every host session attachable (see ServeHTTPToNestedClient), so
 	// operations that read the caller's host, such as finding its outer

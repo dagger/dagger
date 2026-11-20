@@ -10,36 +10,39 @@ import (
 	"github.com/dagger/dagger/engine"
 )
 
-// A nested client's served schema, host inertness and caller agent are
-// engine-internal metadata: they never cross the wire, so they must survive
-// the JSON round trip that snapshots a client's metadata.
+// A nested client's served schema, host inertness, caller agent and live
+// lookups are engine-internal metadata: they never cross the wire, so they
+// must survive the JSON round trip that snapshots a client's metadata.
 func TestClientMetadataKeepsEngineInternalFields(t *testing.T) {
 	t.Parallel()
 	deps := &core.SchemaBuilder{}
 	agent := dagql.ObjectResult[*core.Agent]{}
-	cloned, err := cloneClientMetadata(&engine.ClientMetadata{ClientID: "nested", ServedDeps: deps, InertAttachables: true, CallerAgent: agent})
+	cloned, err := cloneClientMetadata(&engine.ClientMetadata{ClientID: "nested", ServedDeps: deps, InertAttachables: true, CallerAgent: agent, LiveLookups: true})
 	require.NoError(t, err)
 	require.Same(t, deps, nestedServedDeps(cloned))
 	require.True(t, cloned.InertAttachables)
 	require.Equal(t, any(agent), cloned.CallerAgent)
+	require.True(t, cloned.LiveLookups)
 	require.Nil(t, nestedServedDeps(&engine.ClientMetadata{}))
 	require.Nil(t, nestedServedDeps(nil))
 }
 
 // Requests run with the metadata of their client scope, not the record's:
 // a host-inert client's requests must still say it is inert, or host lookups
-// (an outer .env for a git module source) ask a host the server denies.
+// (an outer .env for a git module source) ask a host the server denies. A
+// live-lookups client's say so too.
 func TestClientScopeKeepsInertAttachables(t *testing.T) {
 	t.Parallel()
 	lease := engine.NewClientLifecycleLease(engine.ClientLeaseRequest, "test", func() {}, nil)
 	t.Cleanup(lease.Release)
-	scope, err := engine.NewClientScope(&engine.ClientMetadata{SessionID: "session", ClientID: "inert", InertAttachables: true}, lease)
+	scope, err := engine.NewClientScope(&engine.ClientMetadata{SessionID: "session", ClientID: "inert", InertAttachables: true, LiveLookups: true}, lease)
 	require.NoError(t, err)
 	ctx, err := engine.ContextWithClientScope(t.Context(), scope)
 	require.NoError(t, err)
 	md, err := engine.ClientMetadataFromContext(ctx)
 	require.NoError(t, err)
 	require.True(t, md.InertAttachables)
+	require.True(t, md.LiveLookups)
 }
 
 // A client nested under an inert one inherits the server's denial without

@@ -164,6 +164,8 @@ type ClientScope struct {
 	// callerAgent is ClientMetadata.CallerAgent, also off the wire: shared,
 	// not copied, as the agent result is immutable.
 	callerAgent any
+	// liveLookups is ClientMetadata.LiveLookups, also off the wire.
+	liveLookups bool
 	lease       *ClientLifecycleLease
 }
 
@@ -191,6 +193,7 @@ func NewClientScope(metadata *ClientMetadata, lease *ClientLifecycleLease) (Clie
 		sdkEntrypoint:         metadata.SDKEntrypoint,
 		inertAttachables:      metadata.InertAttachables,
 		callerAgent:           metadata.CallerAgent,
+		liveLookups:           metadata.LiveLookups,
 		lease:                 lease,
 	}, nil
 }
@@ -219,6 +222,7 @@ func (scope ClientScope) Metadata() (*ClientMetadata, error) {
 	metadata.SDKEntrypoint = scope.sdkEntrypoint
 	metadata.InertAttachables = scope.inertAttachables
 	metadata.CallerAgent = scope.callerAgent
+	metadata.LiveLookups = scope.liveLookups
 	return &metadata, nil
 }
 

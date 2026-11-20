@@ -443,6 +443,9 @@ func (class Class[T]) ParseField(ctx context.Context, view call.View, astField *
 			Value: input,
 		}
 	}
+	if fill := selectorArgs(ctx); fill != nil {
+		args = fill(ctx, field.Spec, view, args)
+	}
 	if field.Spec.ViewFilter == nil {
 		// fields in the global view shouldn't attach the current view to the
 		// selector (since they're global from all perspectives)
