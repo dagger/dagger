@@ -366,3 +366,50 @@ func TestSaveLeavesOutARecordRefusedAtItsPreparation(t *testing.T) {
 	require.False(t, hit, "the refused record misses after the restart")
 	require.Equal(t, "ran fu-bad", text)
 }
+
+// A cache names its longest first-use preparation: the record's recipe, its
+// payload's size, and its time split into preparing the payload and waiting
+// for the entry's payload lock, here held by a reader for a while, to
+// install it.
+func TestFirstUseNamesItsLongestPreparation(t *testing.T) {
+	t.Parallel()
+	set := firstUseTestCloud(t)
+	ctx, engine, srv := transferTestCache(t)
+	reply, err := engine.MergeValues(ctx, cloudCacheID, set.bundle)
+	require.NoError(t, err)
+	engine.egraphMu.RLock()
+	good := engine.resultsByID[sharedResultID(firstUseTestEntry(t, set.bundle, reply, set.good))]
+	engine.egraphMu.RUnlock()
+	recipe, err := good.loadResultCall().deriveRecipeDigest(engine)
+	require.NoError(t, err)
+	good.payloadMu.RLock()
+	bytes := persistedEnvelopePayloadBytes(good.persistedEnvelope)
+	good.payloadMu.RUnlock()
+	require.Positive(t, bytes)
+
+	// A reader takes the entry's payload lock just as the preparation is
+	// about to install, and holds it a while.
+	const hold = 100 * time.Millisecond
+	released := make(chan struct{})
+	engine.testFirstUseInstall = func(res *sharedResult) {
+		if res != good {
+			return
+		}
+		res.payloadMu.RLock()
+		go func() {
+			time.Sleep(hold)
+			res.payloadMu.RUnlock()
+			close(released)
+		}()
+	}
+	hit, _ := firstUseTestLookup(t, ctx, engine, srv, "fu-good")
+	<-released
+	require.True(t, hit, "the lookup hits")
+
+	stats := engine.FirstUse()
+	require.Equal(t, int64(1), stats.Prepared)
+	require.Equal(t, recipe.String(), stats.LongestRecipe, "the longest preparation names its record's recipe")
+	require.Equal(t, bytes, stats.LongestBytes, "and its payload's size")
+	require.GreaterOrEqual(t, stats.LongestLockWait, hold/2, "the wait for the payload lock is told apart")
+	require.Equal(t, stats.Longest, stats.LongestPrepare+stats.LongestLockWait)
+}
