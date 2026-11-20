@@ -206,6 +206,26 @@ func (c *Cache) StoredState() (StoredState, error) {
 	return state, nil
 }
 
+// StoredParts returns the parts the cache stores for the entry numbered
+// number, as StoredState names them, sorted by their address keys: none for
+// an entry that stores none or that the cache doesn't have. It reads that
+// entry alone, so a reader asks for one entry's parts without walking the
+// cache, and without keeping a copy of every entry's that has to change with
+// it.
+func (c *Cache) StoredParts(number uint64) []PersistedPartAddress {
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	res := c.resultsByID[sharedResultID(number)]
+	if res == nil {
+		return nil
+	}
+	var parts []PersistedPartAddress
+	for _, part := range res.storedPartsLocked() {
+		parts = append(parts, part.address())
+	}
+	return parts
+}
+
 // LiveBlobs returns every layer blob a stored part names, in the pool or
 // not, sorted: the blobs a sweep of the blob store keeps. Only a blob-backed
 // cache answers.
