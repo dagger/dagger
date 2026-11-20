@@ -297,6 +297,24 @@ func TestContentHashFilesPurgeKeepsUndeletedFiles(t *testing.T) {
 	require.NoFileExists(t, files.path("a"))
 }
 
+// Clearing one snapshot's metadata, which callers do under cm.mu, deletes
+// only its own tree's file: the files snapshot GC left are its own purge's.
+func TestContentHashFilesClearPurgesOnlyItsOwn(t *testing.T) {
+	s := newMetadataStore()
+	files, err := newContentHashFiles(filepath.Join(t.TempDir(), "contenthash"))
+	require.NoError(t, err)
+	s.hashFiles = files
+	for _, id := range []string{"collected", "released"} {
+		require.NoError(t, s.getOrCreate(id).SetExternal(ContentHashMetadataKey, []byte("tree")))
+	}
+	s.forget("collected")
+	s.clear("released")
+	require.NoFileExists(t, files.path("released"))
+	require.FileExists(t, files.path("collected"))
+	s.purgeContentHashes()
+	require.NoFileExists(t, files.path("collected"))
+}
+
 // A save renames its tree over a file left to purge, which then leaves it.
 func TestContentHashFilesSaveReplacesFileToPurge(t *testing.T) {
 	s := newMetadataStore()

@@ -219,17 +219,20 @@ func (f *contentHashFiles) remove(id string, markGone func()) {
 	}
 }
 
-// purge deletes the files of removed trees, each under mu: a save of the
-// same snapshot meanwhile renames its tree over the file and takes it off
-// the list. A file that can't be deleted is kept on the list for the next
-// purge, and the error says why.
-func (f *contentHashFiles) purge() error {
-	f.mu.Lock()
-	ids := make([]string, 0, len(f.orphans))
-	for id := range f.orphans {
-		ids = append(ids, id)
+// purge deletes the files of removed trees: those of ids, or with none, all
+// of them. Each is deleted under mu: a save of the same snapshot meanwhile
+// renames its tree over the file and takes it off the list. A file that
+// can't be deleted is kept on the list for the next purge, and the error says
+// why.
+func (f *contentHashFiles) purge(ids ...string) error {
+	if len(ids) == 0 {
+		f.mu.Lock()
+		ids = make([]string, 0, len(f.orphans))
+		for id := range f.orphans {
+			ids = append(ids, id)
+		}
+		f.mu.Unlock()
 	}
-	f.mu.Unlock()
 	var errs []error
 	for _, id := range ids {
 		f.mu.Lock()

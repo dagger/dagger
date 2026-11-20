@@ -142,20 +142,23 @@ func (s *metadataStore) getOrCreate(id string) *cacheMetadata {
 	return md
 }
 
-// clear drops id's metadata, and deletes its content-hash tree's file.
+// clear drops id's metadata, and deletes its content-hash tree's file. Only
+// that one: callers hold cm.mu, and the files ForgetCollectedSnapshots left
+// are its own to delete.
 func (s *metadataStore) clear(id string) {
 	s.forget(id)
-	s.purgeContentHashes()
+	s.purgeContentHashes(id)
 }
 
-// purgeContentHashes deletes the files of the trees forget dropped.
-func (s *metadataStore) purgeContentHashes() {
+// purgeContentHashes deletes the files of the trees forget dropped: those of
+// ids, or with none, all of them.
+func (s *metadataStore) purgeContentHashes(ids ...string) {
 	if s.hashFiles == nil {
 		return
 	}
-	if err := s.hashFiles.purge(); err != nil {
+	if err := s.hashFiles.purge(ids...); err != nil {
 		bklog.G(context.TODO()).WithError(err).
-			Error("failed to delete content hash records; retrying at the next deletion")
+			Error("failed to delete content hash records; retrying after the next snapshot GC")
 	}
 }
 
