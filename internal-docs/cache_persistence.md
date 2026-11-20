@@ -508,6 +508,22 @@ unopened rows are carried forward on shutdown. Changes to the key or record
 format require a `cachePersistenceSchemaVersion` bump. An incompatible record
 makes `Checksum` fail rather than trigger a filesystem rescan.
 
+While the engine runs, the snapshot manager keeps each hashed snapshot's tree
+(about 100 bytes per file) in a file rather than in memory, under
+`worker/contenthash/`, in a directory each manager makes for itself. A tree is
+written when contenthash saves it and when a checkpoint loads it, read when the
+contenthash package no longer holds it parsed and when a checkpoint is written,
+and deleted with its snapshot's metadata, including when snapshot GC forgets a
+collected snapshot. The files are a cache of the process, not a record: the
+dagql checkpoint stays authoritative across restarts, so its format is
+unchanged, and at startup the engine moves what the previous process left to
+the trash, for the background sweeper, before the checkpoint loads the trees it
+keeps. A tree that can't be written stays in memory instead; a tree file that
+can't be read fails `Checksum` rather than trigger a rescan. The files are not
+counted toward any cache entry's size, so `MaxUsedSpace`-style limits don't see
+them; they are bounded by snapshot GC, and free-space limits see them as any
+disk use.
+
 ### Immutable snapshot transfers
 
 Local snapshot export now populates the same parent/blob and parent/diff
