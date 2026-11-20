@@ -178,3 +178,49 @@ func TestAContentDigestOverridesTheCarriedContentPreferredDigest(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, content, got, "a frame's own content digest comes first")
 }
+
+// A service whose record a fresh engine takes from the Cloud keeps the
+// content-preferred digest, and so the hostname, its producer gave it, before
+// its first use, after it, and in the result a lookup returns.
+func TestAServiceFromTheCloudKeepsItsNameThroughItsFirstUse(t *testing.T) {
+	t.Parallel()
+	actx, a, asrv := transferTestCache(t)
+	file := contentPreferredTestBinary(t, actx, a, asrv, "binary")
+	service := contentPreferredTestService(t, actx, a, asrv, file)
+	recipe := contentPreferredTestRecipe(t, a, service)
+	produced := contentPreferredTestDigest(t, a, service.cacheSharedResult())
+
+	cloudCtx, cloud := storedPartTestCache(t, WithBlobStore())
+	numbers := storedPersistenceTestMerge(t, cloudCtx, cloud, exportTestBundle(t, actx, a, service))
+	require.Len(t, numbers, 1)
+	sent, err := cloud.StoredBundle(cloudCtx, numbers, time.Now().Unix(), nil)
+	require.NoError(t, err)
+
+	for _, arm := range []string{"unprepared", "prepared at merge"} {
+		bctx, b, bsrv := transferTestCache(t)
+		own := contentPreferredTestBinary(t, bctx, b, bsrv, "binary")
+		require.NoError(t, b.TeachContentDigest(bctx, own, digest.FromString("binary content")))
+		bundle, err := cloneValueBundle(sent.Bundle)
+		require.NoError(t, err)
+		if arm == "prepared at merge" {
+			for i := range bundle.Values {
+				bundle.Values[i].Parts = nil
+			}
+		}
+		_, err = b.MergeValues(bctx, cloudCacheID, bundle)
+		require.NoError(t, err)
+		installed := b.EquivalentEntries(recipe.String())
+		require.Len(t, installed, 1, "%s: b holds the Cloud's service", arm)
+		b.egraphMu.RLock()
+		received := b.resultsByID[sharedResultID(installed[0])]
+		b.egraphMu.RUnlock()
+		require.Equal(t, arm == "unprepared", received.holdsUnpreparedPayload(), "%s: how the record was installed", arm)
+		before := contentPreferredTestDigest(t, b, received)
+		hit := contentPreferredTestService(t, bctx, b, bsrv, own)
+		require.Same(t, received, hit.cacheSharedResult(), "%s: the lookup hits the Cloud's service", arm)
+		after := contentPreferredTestDigest(t, b, received)
+		t.Logf("%s: produced %s, before first use %s, after %s", arm, produced, before, after)
+		require.Equal(t, produced, before, "%s: before its first use", arm)
+		require.Equal(t, produced, after, "%s: after its first use", arm)
+	}
+}
