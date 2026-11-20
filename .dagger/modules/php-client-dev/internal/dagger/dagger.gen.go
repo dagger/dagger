@@ -16,7 +16,6 @@ import (
 )
 
 type Changeset = core.Changeset
-type Check = core.Check
 type Container = core.Container
 type ContainerWithEnvVariableOpts = core.ContainerWithEnvVariableOpts
 type Directory = core.Directory
@@ -25,7 +24,6 @@ type GitRepository = core.GitRepository
 type ID = core.ID
 type Node = core.Node
 type Secret = core.Secret
-type Void = core.Void
 type Workspace = core.Workspace
 
 // Client borrows a shared connection. Its API contains only the bound module.

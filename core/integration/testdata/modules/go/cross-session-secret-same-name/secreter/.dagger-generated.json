@@ -4,7 +4,6 @@
     "dagger.dispatch.gen.go": "b1ec71d454fc0a088597874bcc7a2cfeda60fec28e44636337bc585d66c90e76",
     "dagger.gen.go": "3f1f7f83569775a2d1222185b123cbc9f4a68404e39ba15fe36ed9b47253bb27",
     "internal/dagger/dagger.gen.go": "dbf824bcddde6096e3e3359e75079afff6a2e1f5f9d3c828c3c82b59061552d8",
-    "internal/dagger/entrypoint/main.dang": "7d7e89bf2e9f74105887427434f77c044ad01899fa84f6244520b20d4f0e799b",
-    "internal/dagger/secreter.gen.go": "9c39f5b7f2665ee1fc3b79d6a311a6a132706b63e721b55b569755050f57abe3"
+    "internal/dagger/entrypoint/main.dang": "8c9bfcfde7e6c8516efee5841f77467920d983266da006deb3a74d51ea12cb9c"
   }
 }

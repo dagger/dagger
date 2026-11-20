@@ -160,7 +160,7 @@ type PhpClientDevReleaseOpts struct {
 	// Default: "https://github.com/dagger/dagger-php-sdk.git"
 	Dest string // php-client-dev (../../main.go:224:2)
 
-	GithubToken *Secret // php-client-dev (../../main.go:226:2)
+	GitHubToken *Secret // php-client-dev (../../main.go:226:2)
 }
 
 // Publish the PHP SDK
@@ -179,8 +179,8 @@ func (r *PhpClientDev) Release(ctx context.Context, sourceTag string, opts ...Ph
 			q = q.Arg("dest", opts[i].Dest)
 		}
 		// `githubToken` optional argument
-		if !querybuilder.IsZeroValue(opts[i].GithubToken) {
-			q = q.Arg("githubToken", opts[i].GithubToken)
+		if !querybuilder.IsZeroValue(opts[i].GitHubToken) {
+			q = q.Arg("githubToken", opts[i].GitHubToken)
 		}
 	}
 	q = q.Arg("sourceTag", sourceTag)

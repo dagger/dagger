@@ -111,7 +111,7 @@ type GoClientDevReleaseOpts struct {
 	//
 	DestRemote string // go-client-dev (../../:0:0)
 
-	GithubToken *Secret // go-client-dev (../../:0:0)
+	GitHubToken *Secret // go-client-dev (../../:0:0)
 
 	Callback *File // go-client-dev (../../:0:0)
 }
@@ -132,8 +132,8 @@ func (r *GoClientDev) Release(ctx context.Context, sourceTag string, opts ...GoC
 			q = q.Arg("destRemote", opts[i].DestRemote)
 		}
 		// `githubToken` optional argument
-		if !querybuilder.IsZeroValue(opts[i].GithubToken) {
-			q = q.Arg("githubToken", opts[i].GithubToken)
+		if !querybuilder.IsZeroValue(opts[i].GitHubToken) {
+			q = q.Arg("githubToken", opts[i].GitHubToken)
 		}
 		// `callback` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Callback) {

@@ -91,7 +91,7 @@ func (r *Alpine) Distro(ctx context.Context) (AlpineDistro, error) { // alpine (
 }
 
 // Where to download additional keys from
-func (r *Alpine) ExtraKeyUrls(ctx context.Context) ([]string, error) { // alpine (https://github.com/dagger/alpine/tree/f2518dba32ade8493771a155620ef890aa6aa7c9/main.go#L96)
+func (r *Alpine) ExtraKeyURLs(ctx context.Context) ([]string, error) { // alpine (https://github.com/dagger/alpine/tree/f2518dba32ade8493771a155620ef890aa6aa7c9/main.go#L96)
 	q := r.query.Select("extraKeyUrls")
 
 	var response []string
@@ -217,7 +217,7 @@ type AlpineOpts struct {
 	//
 	// Extra keys needed to authenticate the extra repositories
 	//
-	ExtraKeyUrls []string // alpine (https://github.com/dagger/alpine/tree/f2518dba32ade8493771a155620ef890aa6aa7c9/main.go#L44)
+	ExtraKeyURLs []string // alpine (https://github.com/dagger/alpine/tree/f2518dba32ade8493771a155620ef890aa6aa7c9/main.go#L44)
 	//
 	// Alpine distribution to use
 	//
@@ -247,8 +247,8 @@ func (r *Query) Alpine(opts ...AlpineOpts) *Alpine { // alpine (https://github.c
 			q = q.Arg("extraRepositories", opts[i].ExtraRepositories)
 		}
 		// `extraKeyUrls` optional argument
-		if !querybuilder.IsZeroValue(opts[i].ExtraKeyUrls) {
-			q = q.Arg("extraKeyUrls", opts[i].ExtraKeyUrls)
+		if !querybuilder.IsZeroValue(opts[i].ExtraKeyURLs) {
+			q = q.Arg("extraKeyUrls", opts[i].ExtraKeyURLs)
 		}
 		// `distro` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Distro) {

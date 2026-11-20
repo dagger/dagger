@@ -3,8 +3,7 @@
   "files": {
     "dagger.dispatch.gen.go": "7997a736cd9da356150802cd93a8247f158f6cd37f7baf6cc21b685ac560db87",
     "dagger.gen.go": "584c8f189b66faacc5e195a1c83c19eca3054813309b5be8c5d681cbb2a2c062",
-    "internal/dagger/dagger.gen.go": "7f6097af790cdc116994c902836a6b6435f9cb28915987d21765a438a5ed0976",
-    "internal/dagger/entrypoint/main.dang": "187368b0581cca386296e31a2426b5dde8eb34208320bb5b60a36ba02960452f",
-    "internal/dagger/rust-client-dev.gen.go": "a3246928ed04a863c73f7f4b479ae5d97b46014c7be35737d5b7a0355f0bc69d"
+    "internal/dagger/dagger.gen.go": "f558dab4c76ab5ff6df21cd3ef1dcf7dabb01b233bfe9628a3bc54df6d5dbd8b",
+    "internal/dagger/entrypoint/main.dang": "c125156e494e3e7fa31ab0fdc5f5665292a30ecf95e453c3915297edd9332b55"
   }
 }

@@ -86,7 +86,7 @@ type ApkoBuildOpts struct {
 	//
 	//
 	// Default: true
-	Vcs bool // apko (../../main.go:215:2)
+	VCS bool // apko (../../main.go:215:2)
 }
 
 // Build an image from a YAML configuration file.
@@ -127,8 +127,8 @@ func (r *Apko) Build(config *File, tag string, opts ...ApkoBuildOpts) *ApkoBuild
 			q = q.Arg("repositoryAppend", opts[i].RepositoryAppend)
 		}
 		// `vcs` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Vcs) {
-			q = q.Arg("vcs", opts[i].Vcs)
+		if !querybuilder.IsZeroValue(opts[i].VCS) {
+			q = q.Arg("vcs", opts[i].VCS)
 		}
 	}
 	q = q.Arg("config", config)
@@ -253,7 +253,7 @@ type ApkoPublishOpts struct {
 	//
 	//
 	// Default: true
-	Vcs bool // apko (../../main.go:312:2)
+	VCS bool // apko (../../main.go:312:2)
 }
 
 // Publish a built image from a YAML configuration file.
@@ -293,8 +293,8 @@ func (r *Apko) Publish(ctx context.Context, config *File, tag string, opts ...Ap
 			q = q.Arg("repositoryAppend", opts[i].RepositoryAppend)
 		}
 		// `vcs` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Vcs) {
-			q = q.Arg("vcs", opts[i].Vcs)
+		if !querybuilder.IsZeroValue(opts[i].VCS) {
+			q = q.Arg("vcs", opts[i].VCS)
 		}
 	}
 	q = q.Arg("config", config)

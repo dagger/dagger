@@ -64,7 +64,7 @@ type WolfiContainerOpts struct {
 	//
 	// Extra keys needed to authenticate the extra repositories
 	//
-	ExtraKeyUrls []string // wolfi (../../:0:0)
+	ExtraKeyURLs []string // wolfi (../../:0:0)
 	//
 	// Overlay images to merge on top of the base.
 	// See https://twitter.com/ibuildthecloud/status/1721306361999597884
@@ -89,8 +89,8 @@ func (r *Wolfi) Container(opts ...WolfiContainerOpts) *Container { // wolfi (../
 			q = q.Arg("extraRepositories", opts[i].ExtraRepositories)
 		}
 		// `extraKeyUrls` optional argument
-		if !querybuilder.IsZeroValue(opts[i].ExtraKeyUrls) {
-			q = q.Arg("extraKeyUrls", opts[i].ExtraKeyUrls)
+		if !querybuilder.IsZeroValue(opts[i].ExtraKeyURLs) {
+			q = q.Arg("extraKeyUrls", opts[i].ExtraKeyURLs)
 		}
 		// `overlays` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Overlays) {

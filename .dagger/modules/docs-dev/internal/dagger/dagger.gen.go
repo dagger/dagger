@@ -16,7 +16,6 @@ import (
 )
 
 type Changeset = core.Changeset
-type Check = core.Check
 type Directory = core.Directory
 type File = core.File
 type GitRef = core.GitRef
@@ -24,7 +23,6 @@ type ID = core.ID
 type Node = core.Node
 type Secret = core.Secret
 type Service = core.Service
-type Void = core.Void
 type Workspace = core.Workspace
 
 // Client borrows a shared connection. Its API contains only the bound module.
