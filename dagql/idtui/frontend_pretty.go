@@ -6199,11 +6199,11 @@ func pruneSpanTrees(trees map[dagui.SpanID]*SpanTreeView, ts *treeSync, owners m
 // their parent still set to it. Its TraceTree would keep the walk that built
 // it alive, memos and all: one per frame that pruned a tree, on a live
 // session whose completed rows keep leaving the view.
-func (st *SpanTreeView) release() {
-	st.tree = nil
-	st.parent = nil
-	st.children = nil
-	st.childMap = nil
+func (s *SpanTreeView) release() {
+	s.tree = nil
+	s.parent = nil
+	s.children = nil
+	s.childMap = nil
 }
 
 // syncTreeNode recursively syncs a SpanTreeView and its children with

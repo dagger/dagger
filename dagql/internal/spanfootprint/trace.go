@@ -131,8 +131,9 @@ func str(key, val string) attribute.KeyValue {
 	return attribute.String(string([]byte(key)), string([]byte(val)))
 }
 
-func boolean(key string, val bool) attribute.KeyValue {
-	return attribute.Bool(string([]byte(key)), val)
+// flag sets a boolean attribute to true, the only value the trace uses.
+func flag(key string) attribute.KeyValue {
+	return attribute.Bool(string([]byte(key)), true)
 }
 
 // Stub returns span i as exported when it starts (done=false) or ends.
@@ -158,7 +159,7 @@ func (tr *Trace) Stub(i int, done bool) sdktrace.ReadOnlySpan {
 	case i < LongLived:
 		stub.Name = fmt.Sprintf("agent loop %d", i)
 		attrs = append(attrs,
-			boolean(telemetryattrs.AgentAttr, true),
+			flag(telemetryattrs.AgentAttr),
 			str(telemetryattrs.AgentIDAttr, fmt.Sprintf("agent-%d", i)),
 			str(telemetryattrs.AgentNameAttr, fmt.Sprintf("worker-%d", i)),
 			str(telemetryattrs.AgentCallDigestAttr, digest("agent", i)),
@@ -177,7 +178,7 @@ func (tr *Trace) Stub(i int, done bool) sdktrace.ReadOnlySpan {
 		stub.Name = "read"
 		attrs = append(attrs,
 			str(telemetry.LLMToolAttr, "read"),
-			boolean(telemetry.UIBoundaryAttr, true),
+			flag(telemetry.UIBoundaryAttr),
 			attribute.StringSlice(telemetry.LLMToolArgNamesAttr, []string{"filePath"}),
 			attribute.StringSlice(telemetry.LLMToolArgValuesAttr, []string{fmt.Sprintf("dagql/file%d.go", i)}),
 		)
@@ -195,7 +196,7 @@ func (tr *Trace) Stub(i int, done bool) sdktrace.ReadOnlySpan {
 		stub.Name = fmt.Sprintf("check-%d", i%40)
 		attrs = append(attrs, str(telemetry.CheckNameAttr, stub.Name))
 		if done {
-			attrs = append(attrs, boolean(telemetry.CheckPassedAttr, true))
+			attrs = append(attrs, flag(telemetry.CheckPassedAttr))
 		}
 	case kind < 25:
 		// exec
@@ -231,7 +232,7 @@ func (tr *Trace) Stub(i int, done bool) sdktrace.ReadOnlySpan {
 			str(telemetryattrs.DagContentPreferredDigestAttr, digest("content", i)),
 		)
 		if kind < 70 {
-			attrs = append(attrs, boolean(telemetry.UIInternalAttr, true))
+			attrs = append(attrs, flag(telemetry.UIInternalAttr))
 		}
 		if done {
 			attrs = append(attrs,
@@ -242,7 +243,7 @@ func (tr *Trace) Stub(i int, done bool) sdktrace.ReadOnlySpan {
 				str(telemetryattrs.CacheTypeAttr, call.typ),
 			)
 			if h>>16%4 == 0 {
-				attrs = append(attrs, boolean(telemetry.CachedAttr, true))
+				attrs = append(attrs, flag(telemetry.CachedAttr))
 			}
 		}
 	}
