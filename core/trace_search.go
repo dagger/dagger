@@ -472,39 +472,9 @@ func (sc *spanSearchScan) renderPage(ctx context.Context) (string, int, error) {
 	}
 	hidden := 0
 	if ownership {
-		owners := map[*searchSpan]bool{} // agent loop spans: the caller's or not
-		for _, sp := range sc.order {
-			if !sp.agent {
-				continue
-			}
-			if span := spanOf(probeDB, sp); span != nil && span.Agent && span.AgentID != "" {
-				c := sc.search.Caller
-				owners[sp] = span.AgentID == c.AgentID && (c.TraceID == "" || span.TraceID.String() == c.TraceID)
-			}
-		}
-		owned := map[*searchSpan]bool{}
-		kept := matches[:0]
-		for _, sp := range matches {
-			if sc.owns(sp, owners, owned) {
-				hidden++
-				continue
-			}
-			kept = append(kept, sp)
-		}
-		matches = kept
+		matches, hidden = sc.dropOwned(matches, probeDB)
 	}
-	slices.SortFunc(matches, func(a, b *searchSpan) int {
-		if a.start != b.start {
-			if a.start < b.start {
-				return -1
-			}
-			return 1
-		}
-		if c := strings.Compare(a.traceID, b.traceID); c != 0 {
-			return c
-		}
-		return strings.Compare(a.spanID, b.spanID)
-	})
+	slices.SortFunc(matches, compareSearchSpans)
 	// The page: the rows renderSpanMatches can reach.
 	search := sc.search
 	end := len(matches) - search.Offset
@@ -528,6 +498,47 @@ func (sc *spanSearchScan) renderPage(ctx context.Context) (string, int, error) {
 		}
 	}
 	return renderSpanMatches(db, db.TestView(), spans, search), hidden, nil
+}
+
+// dropOwned removes the matches that are the caller's own work, as decided
+// by the agent loop spans in probeDB, and counts them.
+func (sc *spanSearchScan) dropOwned(matches []*searchSpan, probeDB *dagui.DB) ([]*searchSpan, int) {
+	owners := map[*searchSpan]bool{} // agent loop spans: the caller's or not
+	for _, sp := range sc.order {
+		if !sp.agent {
+			continue
+		}
+		if span := spanOf(probeDB, sp); span != nil && span.Agent && span.AgentID != "" {
+			c := sc.search.Caller
+			owners[sp] = span.AgentID == c.AgentID && (c.TraceID == "" || span.TraceID.String() == c.TraceID)
+		}
+	}
+	owned := map[*searchSpan]bool{}
+	hidden := 0
+	kept := matches[:0]
+	for _, sp := range matches {
+		if sc.owns(sp, owners, owned) {
+			hidden++
+			continue
+		}
+		kept = append(kept, sp)
+	}
+	return kept, hidden
+}
+
+// compareSearchSpans orders spans as FindSpans lists them: by start time,
+// then trace ID, then span ID.
+func compareSearchSpans(a, b *searchSpan) int {
+	if a.start != b.start {
+		if a.start < b.start {
+			return -1
+		}
+		return 1
+	}
+	if c := strings.Compare(a.traceID, b.traceID); c != 0 {
+		return c
+	}
+	return strings.Compare(a.spanID, b.spanID)
 }
 
 // matchesExactly is the query test renderSpanSearch applies.
