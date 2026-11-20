@@ -29,13 +29,13 @@ import (
 func TestSlowConnectionStaysUp(t *testing.T) {
 	t.Parallel()
 	svc := newProbedService(t)
-	link := newSlowLink(t, svc.addr, 128<<10)
+	link := newSlowLink(t, svc.addr, 192<<10)
 	served := probedSession(t, link.addr)
 	svc.serve(t)
 
-	// Compression can't shrink it much: about 2 s through the link, several
+	// Compression can't shrink it much: about 4 s through the link, three
 	// probe timeouts.
-	random := make([]byte, 128<<10)
+	random := make([]byte, 256<<10)
 	_, err := rand.Read(random)
 	require.NoError(t, err)
 	filler, err := protocol.EncodeEnvelope(svc.next.Add(1), 1<<40, protocol.TypeMerged, map[string]string{"pad": base64.StdEncoding.EncodeToString(random)})
@@ -76,19 +76,21 @@ func TestSilentConnectionEnds(t *testing.T) {
 
 	select {
 	case err := <-served:
-		require.ErrorContains(t, err, "probe: nothing arrived for 300ms")
+		require.ErrorContains(t, err, "probe: nothing arrived for 1s")
 	case <-time.After(time.Minute):
 		t.Fatal("the session stayed up on a connection on which nothing arrived")
 	}
 }
 
 // probedSession dials addr as an engine does, and serves a session on the
-// connection with a short probe interval and timeout. It returns what the
-// session ends with.
+// connection with a short probe interval and timeout. The timeout is long
+// beside the gaps between the link's bytes, so that a busy host's scheduling
+// delays don't read as a connection on which nothing arrives. It returns what
+// the session ends with.
 func probedSession(t *testing.T, addr string) <-chan error {
 	t.Helper()
 	cfg := newSettings(Config{URL: "http://" + addr, Token: "token"})
-	cfg.probeInterval, cfg.probeTimeout = 200*time.Millisecond, 300*time.Millisecond
+	cfg.probeInterval, cfg.probeTimeout = 250*time.Millisecond, time.Second
 	conn, err := cfg.dialService(t.Context())
 	require.NoError(t, err)
 	s := newSession(t.Context(), conn, newFakeAdapter(), cfg)
@@ -257,7 +259,9 @@ func newSlowLink(t *testing.T, server string, rate int) *slowLink {
 			go func() {
 				defer pumps.Done()
 				defer closeBoth()
-				buf := make([]byte, buffer)
+				// Small pieces, so that bytes cross a slow link only a few
+				// tens of milliseconds apart.
+				buf := make([]byte, 4<<10)
 				for {
 					link.wait()
 					n, err := service.Read(buf)
