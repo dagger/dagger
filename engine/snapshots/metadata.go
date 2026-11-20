@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/containerd/containerd/v2/core/snapshots"
 	"github.com/dagger/dagger/internal/buildkit/client"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
@@ -150,6 +151,112 @@ func (s *metadataStore) clear(id string) {
 		}
 	}
 	delete(s.refs, id)
+}
+
+// CollectedSnapshotForgetter is a snapshot manager that keeps metadata for
+// snapshots in memory, and can drop it once the snapshots are gone.
+type CollectedSnapshotForgetter interface {
+	// ForgetCollectedSnapshots drops the in-memory metadata, content-hash
+	// trees included, of the snapshots the snapshotter no longer has. Run it
+	// after garbage collection.
+	ForgetCollectedSnapshots(ctx context.Context) error
+}
+
+// ForgetCollectedSnapshots drops what the manager keeps in memory about
+// snapshots that garbage collection removed: their records, metadata and
+// loaded hash records, their recorded blobs, and the imported layers that
+// name them. Nothing else tells the manager a snapshot is gone: only a later
+// Get of it notices, and most collected snapshots are never asked for again,
+// so without this their metadata, and the serialized content-hash tree each
+// hashed snapshot keeps there, would stay in memory for the life of the
+// engine, and the blob rows in every checkpoint.
+//
+// Every snapshot ID is a fresh random ID, or that of a snapshot that exists
+// when its metadata is made, and every snapshot is made before its metadata
+// or under cm.mu; blobs and imported layers are recorded for snapshots that
+// exist. So an entry present before the walk whose snapshot the walk does
+// not see is gone for good, and the walk runs without cm.mu.
+func (cm *snapshotManager) ForgetCollectedSnapshots(ctx context.Context) error {
+	cm.mu.Lock()
+	cm.metadataStore.mu.RLock()
+	candidates := make(map[string]struct{}, len(cm.metadataStore.refs)+len(cm.metadataStore.pendingContentHashes))
+	for id := range cm.metadataStore.refs {
+		candidates[id] = struct{}{}
+	}
+	for id := range cm.metadataStore.pendingContentHashes {
+		candidates[id] = struct{}{}
+	}
+	cm.metadataStore.mu.RUnlock()
+	for id := range cm.records {
+		candidates[id] = struct{}{}
+	}
+	for id := range cm.snapshotContentDigests {
+		candidates[id] = struct{}{}
+	}
+	for id := range cm.snapshotContentOwned {
+		candidates[id] = struct{}{}
+	}
+	for _, id := range cm.importedLayerByBlob {
+		candidates[id] = struct{}{}
+	}
+	for _, id := range cm.importedLayerByDiff {
+		candidates[id] = struct{}{}
+	}
+	cm.mu.Unlock()
+	if len(candidates) == 0 {
+		return nil
+	}
+
+	existing := make(map[string]struct{}, len(candidates))
+	if err := cm.Snapshotter.Walk(ctx, func(_ context.Context, info snapshots.Info) error {
+		if _, ok := candidates[info.Name]; ok {
+			existing[info.Name] = struct{}{}
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "walk snapshots")
+	}
+
+	gone := func(id string) bool {
+		_, candidate := candidates[id]
+		_, exists := existing[id]
+		return candidate && !exists
+	}
+
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	for key, id := range cm.importedLayerByBlob {
+		if gone(id) {
+			delete(cm.importedLayerByBlob, key)
+		}
+	}
+	for key, id := range cm.importedLayerByDiff {
+		if gone(id) {
+			delete(cm.importedLayerByDiff, key)
+		}
+	}
+	for id := range candidates {
+		if _, ok := existing[id]; ok {
+			continue
+		}
+		delete(cm.snapshotContentDigests, id)
+		delete(cm.snapshotContentOwned, id)
+		if rec, ok := cm.records[id]; ok {
+			if rec.mutable && rec.locked {
+				// In use: its holder finds the snapshot gone.
+				continue
+			}
+			if sid := rec.md.getSnapshotID(); sid != id {
+				// Not keyed by its snapshot; leave it to getRecord.
+				continue
+			}
+			delete(cm.records, id)
+		} else if md, ok := cm.metadataStore.get(id); ok && md.getSnapshotID() != id {
+			continue
+		}
+		cm.metadataStore.clear(id)
+	}
+	return nil
 }
 
 func (s *metadataStore) close() error {
