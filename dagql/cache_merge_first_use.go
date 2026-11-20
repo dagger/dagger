@@ -117,8 +117,11 @@ func (c *Cache) prepareMerged(ctx context.Context, res *sharedResult, atSave boo
 	}
 	use.done = true
 	began := time.Now()
-	defer func() { c.firstUsePrepared(time.Since(began), use.err != nil, atSave) }()
+	var waited time.Duration
 	rec := PersistedRecord{ResultID: uint64(res.id), Envelope: *env, Call: res.loadResultCall(), SnapshotLinks: res.loadSnapshotOwnerLinks()}
+	defer func() {
+		c.firstUsePrepared(firstUsePreparation{took: time.Since(began), waited: waited, refused: use.err != nil, atSave: atSave, frame: rec.Call, env: env})
+	}()
 	prepared, err := prepareFirstUseRecord(rec, use)
 	if err != nil {
 		use.err = &mergedPayloadRefusedError{res: res, cause: err}
@@ -136,7 +139,12 @@ func (c *Cache) prepareMerged(ctx context.Context, res *sharedResult, atSave boo
 		slog.ErrorContext(ctx, "remote cache record's payload refused", "at", at, "file", use.source, "recipe", recipe, "entry", uint64(res.id), "error", err)
 		return use.err
 	}
+	if c.testFirstUseInstall != nil {
+		c.testFirstUseInstall(res)
+	}
+	locking := time.Now()
 	res.payloadMu.Lock()
+	waited = time.Since(locking)
 	if res.firstUse == use && res.persistedEnvelope == env {
 		res.persistedEnvelope = &prepared.Envelope
 		res.firstUse = nil
@@ -276,39 +284,73 @@ func (res *sharedResult) holdsUnpreparedPayload() bool {
 // FirstUseStats counts the payloads of records merged from the Cloud that a
 // first use prepared (prepareMergedPayload) and those it refused, with the
 // time preparing took in all and at the longest: the work a restore defers
-// onto the calls that use its records. The Save fields count the same for
-// the records nothing used, which a save prepared before it wrote them
-// (prepareMergedPayloadsForSave), with SaveWall the time the save spent
-// preparing them, in parallel.
+// onto the calls that use its records. The longest preparation is named:
+// its record's recipe, its payload's size (persistedEnvelopePayloadBytes),
+// and its time split into preparing the payload and waiting for the entry's
+// payload lock to install it, so a long one shows whether it was the record
+// or a wait. The Save fields count the same for the records nothing used,
+// which a save prepared before it wrote them (prepareMergedPayloadsForSave),
+// with SaveWall the time the save spent preparing them, in parallel.
 type FirstUseStats struct {
-	Prepared, Refused         int64
-	Total, Longest            time.Duration
-	SavePrepared, SaveRefused int64
-	SaveTotal, SaveWall       time.Duration
+	Prepared, Refused               int64
+	Total, Longest                  time.Duration
+	LongestRecipe                   string
+	LongestBytes                    int64
+	LongestPrepare, LongestLockWait time.Duration
+	SavePrepared, SaveRefused       int64
+	SaveTotal, SaveWall             time.Duration
 }
 
-// firstUsePrepared counts one payload a first use, or a save when atSave is
-// set, prepared or refused in d.
-func (c *Cache) firstUsePrepared(d time.Duration, refused, atSave bool) {
+// firstUsePreparation is one preparation of a merged record's payload, as
+// firstUsePrepared counts it: how long it took, how much of that waited for
+// the entry's payload lock, whether it was refused, whether a save made it,
+// and the record's frame and envelope as it found them.
+type firstUsePreparation struct {
+	took, waited    time.Duration
+	refused, atSave bool
+	frame           *ResultCall
+	env             *PersistedResultEnvelope
+}
+
+// firstUsePrepared counts one preparation. One longer than every first use
+// before it is named, its recipe derived outside firstUseMu.
+func (c *Cache) firstUsePrepared(p firstUsePreparation) {
 	c.firstUseMu.Lock()
-	defer c.firstUseMu.Unlock()
-	if atSave {
-		if refused {
+	if p.atSave {
+		if p.refused {
 			c.firstUseStats.SaveRefused++
 		} else {
 			c.firstUseStats.SavePrepared++
 		}
-		c.firstUseStats.SaveTotal += d
+		c.firstUseStats.SaveTotal += p.took
+		c.firstUseMu.Unlock()
 		return
 	}
-	if refused {
+	if p.refused {
 		c.firstUseStats.Refused++
 	} else {
 		c.firstUseStats.Prepared++
 	}
-	c.firstUseStats.Total += d
-	if d > c.firstUseStats.Longest {
-		c.firstUseStats.Longest = d
+	c.firstUseStats.Total += p.took
+	longest := p.took > c.firstUseStats.Longest
+	c.firstUseMu.Unlock()
+	if !longest {
+		return
+	}
+	var recipe string
+	if p.frame != nil {
+		if dig, err := p.frame.deriveRecipeDigest(c); err == nil {
+			recipe = dig.String()
+		}
+	}
+	c.firstUseMu.Lock()
+	defer c.firstUseMu.Unlock()
+	if p.took > c.firstUseStats.Longest {
+		c.firstUseStats.Longest = p.took
+		c.firstUseStats.LongestRecipe = recipe
+		c.firstUseStats.LongestBytes = persistedEnvelopePayloadBytes(p.env)
+		c.firstUseStats.LongestPrepare = p.took - p.waited
+		c.firstUseStats.LongestLockWait = p.waited
 	}
 }
 
