@@ -916,6 +916,20 @@ func (c *Cache) planMergeIdentities(prep *valueMergePrep, private *Cache) error 
 	return nil
 }
 
+// preparesPayload reports whether the merge prepares record id with its
+// payload: one that isn't light, held, or left for its first use
+// (valueMergePrep.unprepared).
+func (prep *valueMergePrep) preparesPayload(id uint64) bool {
+	return !prep.light[id] && !prep.held[id] && !prep.unprepared[id]
+}
+
+// preparesPayloads reports whether the merge prepares any record with its
+// payload (preparesPayload). A restore of a set file, whose every record
+// carries its parts, prepares none.
+func (prep *valueMergePrep) preparesPayloads() bool {
+	return slices.ContainsFunc(prep.order, prep.preparesPayload)
+}
+
 // prepareRecordPayloads prepares every record but a light one with its
 // payload (prepareRecordPayload), on up to GOMAXPROCS goroutines
 // (forEachIndexParallel), and applies the prepared records in dependency
@@ -928,7 +942,7 @@ func (c *Cache) planMergeIdentities(prep *valueMergePrep, private *Cache) error 
 func (prep *valueMergePrep) prepareRecordPayloads(ctx context.Context, relocateRecord, relocate PersistedRefVisitor) error {
 	ids := make([]uint64, 0, len(prep.order))
 	for _, id := range prep.order {
-		if !prep.light[id] && !prep.held[id] && !prep.unprepared[id] {
+		if prep.preparesPayload(id) {
 			ids = append(ids, id)
 		}
 	}
@@ -1002,8 +1016,15 @@ type preparedRecordPayload struct {
 // would decide them as the cache stands (decideMergeRowsLocked), for each
 // record's preparation to relocate it to its final numbers (earlyNumbers).
 // It decides nothing, and returns nil, when the decision installs a light
-// record: the commit prepares the bundle in full again first.
+// record: the commit prepares the bundle in full again first. Nor does it
+// decide anything for a merge that prepares no record with its payload
+// (preparesPayloads), as a restore of a set file, whose every record
+// carries its parts: there is nothing to relocate so, and the merge decides
+// its rows once, in its commit.
 func (c *Cache) earlyMergeRows(ctx context.Context, prep *valueMergePrep) *valueMergeCommit {
+	if !prep.preparesPayloads() {
+		return nil
+	}
 	commit := &valueMergeCommit{prep: prep, byOrdinal: map[uint64]*mergeRow{}, now: time.Now().Unix()}
 	c.readLockGraphGathered(ctx)
 	c.decideMergeRowsLocked(commit)
@@ -1832,9 +1853,11 @@ func (p *prerelocatedRecord) holds(final func(uint64) (sharedResultID, error)) b
 // (relocateMergeRowsLocked); any other is relocated under the lock, as
 // before. Decoding and encoding a record's payload is most of a commit's
 // hold of the lock on an engine taking a stream of merges, whose records
-// mostly reference entries earlier merges made.
+// mostly reference entries earlier merges made. A merge that prepares no
+// record with its payload (preparesPayloads) relocates nothing here, and
+// doesn't decide its rows before its commit.
 func (c *Cache) prerelocateMergeRows(ctx context.Context, prep *valueMergePrep) {
-	if c.testNoPrerelocation || len(prep.stale) > 0 {
+	if c.testNoPrerelocation || len(prep.stale) > 0 || !prep.preparesPayloads() {
 		return
 	}
 	commit := &valueMergeCommit{prep: prep, byOrdinal: map[uint64]*mergeRow{}, now: time.Now().Unix()}

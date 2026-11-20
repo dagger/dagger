@@ -311,6 +311,25 @@ func TestMergedRecordReplacingAnEntryInPlaceIsPreparedAtItsFirstUse(t *testing.T
 	require.Equal(t, depEntry, value.Child, "its reference names the engine's entry of its dependency")
 }
 
+// A set from the Cloud, whose records all carry their parts, prepares none
+// of them with its payload, so its merge decides its rows once, in its
+// commit: deciding them before, to relocate prepared payloads early, would
+// serve no record.
+func TestMergedSetDecidesItsRowsOnlyInItsCommit(t *testing.T) {
+	t.Parallel()
+	bundle := firstUseTestCloud(t).bundle
+	ctx, c, _ := transferTestCache(t)
+	prerelocated := false
+	c.testPrerelocated = func(map[uint64]map[uint64]sharedResultID) { prerelocated = true }
+	p, err := c.PrepareValueMerge(ctx, cloudCacheID, bundle)
+	require.NoError(t, err)
+	require.Nil(t, p.prep.early, "the rows aren't decided as the records are prepared")
+	require.False(t, prerelocated, "nor again before the commit")
+	reply, err := c.CommitValueMerge(ctx, p)
+	require.NoError(t, err)
+	require.True(t, reply.Committed)
+}
+
 // A value computed again over an expired record from the Cloud, before its
 // first use, replaces it in place, and leaves nothing of the record to
 // prepare: an export of the entry captures the computed value.
