@@ -184,6 +184,15 @@ type Hello struct {
 	// again, and the engine answers it Already, with the entries its merge
 	// answered.
 	Restored []digest.Digest `json:"restored,omitempty"`
+	// Image are the engine's entries its image ships: those the merge of the
+	// image's bundle at start landed on. Such an entry takes no part from
+	// the service, offered or merged, and the engine never exports it. That
+	// holds for every part, whether or not the image ships that part: the
+	// image ships parts for the results it was built from, and the records
+	// of their closures without any. The image merges before the engine
+	// first connects and never again, so the set is the process's: every
+	// hello of the process names the same entries.
+	Image EntryNumbers `json:"image,omitempty"`
 }
 
 // Welcome is the service's reply to Hello.

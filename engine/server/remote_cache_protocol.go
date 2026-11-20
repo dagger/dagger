@@ -84,6 +84,12 @@ func (a *RemoteCacheAdapter) CacheIdentity() (string, uint64) {
 	return identity.ID, identity.Generation
 }
 
+// ImageEntries returns the numbers of the cache's entries its engine image
+// ships, which the remote cache integration says in hello.
+func (a *RemoteCacheAdapter) ImageEntries() []uint64 {
+	return a.cache.ImageEntries()
+}
+
 // Export holds the requested entries by number and captures the held roots
 // once, with the selected outputs, leaving out those outside the captured
 // closure. A missing root is skipped as gone. A root whose closure reaches a
@@ -144,7 +150,8 @@ func (a *RemoteCacheAdapter) Export(ctx context.Context, req protocol.Export, kn
 		case err != nil:
 			return err
 		case a.cache.FromImage(res):
-			// The image supplies the part to every engine built from it.
+			// An entry the image ships exports no part, whether or not the
+			// image ships that part (dagql.ErrFromImage).
 		default:
 			outputs = append(outputs, dagql.SelectedValueOutput{Result: res, Address: output.Address})
 		}
