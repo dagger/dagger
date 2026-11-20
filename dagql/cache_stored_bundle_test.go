@@ -701,6 +701,7 @@ func TestStoredPartKeepsTheEntriesItNames(t *testing.T) {
 	stored, _, err := cloud.SetStoredPart(ctx, r, storedPartNaming(service), 0)
 	require.NoError(t, err)
 	require.True(t, stored)
+	require.NoError(t, cloud.VerifyPoolMeasure(), "the pool's kept measure follows the dependency the part adds")
 
 	_, _, err = cloud.CollectRemoteHoldings(ctx, cloud.ReleaseRemoteCache(ctx, "cache-b").Candidates, nil)
 	require.NoError(t, err)
@@ -742,6 +743,7 @@ func TestStoredPartDependenciesGoWithTheValue(t *testing.T) {
 	require.Equal(t, uint64(1), replacements, "replaced in place")
 	require.NotContains(t, storedPartTestDeps(cloud, r), service)
 	require.Nil(t, storedBundleTestEntry(cloud, service), "the service is collected")
+	require.NoError(t, cloud.VerifyPoolMeasure(), "the pool's kept measure follows the dependency the replacement took away")
 }
 
 // A part that names an entry the cache doesn't have, through its owner or a
