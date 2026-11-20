@@ -149,7 +149,6 @@ func TestHoldingFactsAnswersAsRemoteHoldingInfo(t *testing.T) {
 			h.TypeName = []string{"Directory", "File", "Container", ""}[n%4]
 			h.ExpiresAtUnix = int64(n % 3 * 1000)
 			h.Executed = n%2 == 0
-			h.Image = n == 5
 			h.Replacements = n % 2
 			h.ContentDigest = testDigest(fmt.Sprintf("content-%d", n%3))
 			h.Parts = []PersistedPartAddress{{Part: "fs"}, {Part: PartKey(fmt.Sprintf("mount:/m%d", n))}}
@@ -184,7 +183,6 @@ func TestHoldingFactsAnswersAsRemoteHoldingInfo(t *testing.T) {
 			RetentionExpiresAtUnix: h.RetentionExpiresAtUnix,
 			Replacements:           h.Replacements,
 			Executed:               h.Executed,
-			Image:                  h.Image,
 			Deps:                   h.Deps,
 			UnknownDeps:            h.UnknownDeps,
 			Parts:                  h.Parts,
@@ -259,7 +257,7 @@ func TestHoldingFactsOnAStoredEntry(t *testing.T) {
 		require.Equal(t, HoldingFacts{
 			Number: held.Number, Stored: true, StoredExpiresAtUnix: info.StoredExpiresAtUnix,
 			TypeName: h.TypeName, ExpiresAtUnix: h.ExpiresAtUnix, Retained: h.Retained, RetentionExpiresAtUnix: h.RetentionExpiresAtUnix,
-			Replacements: h.Replacements, Executed: h.Executed, Image: h.Image, Deps: h.Deps, UnknownDeps: h.UnknownDeps, Parts: h.Parts,
+			Replacements: h.Replacements, Executed: h.Executed, Deps: h.Deps, UnknownDeps: h.UnknownDeps, Parts: h.Parts,
 		}, facts, "%v", k)
 	}
 }
