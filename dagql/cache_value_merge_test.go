@@ -411,6 +411,7 @@ func TestMergeValuesReplacesAnExpiredCloudRecord(t *testing.T) {
 	stored, _, err := cloud.SetStoredPart(ctx, number, testLiveOffer(), 0)
 	require.NoError(t, err)
 	require.True(t, stored)
+	require.NoError(t, cloud.VerifyPoolMeasure())
 	cloud.egraphMu.RLock()
 	entry := cloud.resultsByID[sharedResultID(number)]
 	cloud.egraphMu.RUnlock()
@@ -424,6 +425,7 @@ func TestMergeValuesReplacesAnExpiredCloudRecord(t *testing.T) {
 	storedParts := len(entry.storedParts)
 	cloud.egraphMu.RUnlock()
 	require.Zero(t, storedParts, "the old record's stored parts are dropped")
+	require.NoError(t, cloud.VerifyPoolMeasure(), "the pool's kept measure follows the replacement")
 }
 
 // mergeTestThroughTheCloud merges an engine's export into a new Cloud cache,

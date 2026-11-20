@@ -140,6 +140,7 @@ func TestReplacementDropsStoredParts(t *testing.T) {
 	replaced := storedPartTestPublish(t, ctx, c, "b", "stored-part-replaced", &captureTestValue{text: "new"})
 	require.Equal(t, old.cacheSharedResult().id, replaced.cacheSharedResult().id, "replaced in place")
 	require.Empty(t, storedPartTestStored(c, replaced))
+	require.NoError(t, c.VerifyPoolMeasure(), "the pool's kept measure follows the replacement")
 	require.NoError(t, c.ReleaseSession(ctx, "b"))
 }
 
