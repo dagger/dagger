@@ -11,9 +11,9 @@ type MetadataMemoryStats struct {
 	Metadata int
 	// PendingContentHashes counts loaded hash records not yet opened.
 	PendingContentHashes int
-	// ExternalBytes sums the external values of the metadata entries and
-	// the pending hash records: the serialized content-hash trees held in
-	// memory.
+	// ExternalBytes sums the external values of the metadata entries, the
+	// pending hash records and the trees that could not be written to disk:
+	// the serialized content-hash trees held in memory.
 	ExternalBytes int
 	// ContentHashFiles counts the content-hash trees kept on disk, and
 	// ContentHashFileBytes sums their sizes.
@@ -42,12 +42,17 @@ func MetadataMemory(m SnapshotManager) MetadataMemoryStats {
 	for _, dt := range s.pendingContentHashes {
 		stats.ExternalBytes += len(dt)
 	}
-	if s.hashFiles != nil {
-		for _, id := range s.hashFiles.list() {
+	if files := s.hashFiles; files != nil {
+		files.mu.Lock()
+		defer files.mu.Unlock()
+		for id := range files.ids {
 			stats.ContentHashFiles++
-			if fi, err := os.Stat(s.hashFiles.path(id)); err == nil {
+			if fi, err := os.Stat(files.path(id)); err == nil {
 				stats.ContentHashFileBytes += int(fi.Size())
 			}
+		}
+		for _, dt := range files.mem {
+			stats.ExternalBytes += len(dt)
 		}
 	}
 	return stats

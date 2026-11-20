@@ -19,6 +19,28 @@ func breakDir(t *testing.T, files *contentHashFiles) {
 	require.NoError(t, os.WriteFile(files.dir, nil, 0o600))
 }
 
+// failWrites makes files' writes fail while fail is set.
+func failWrites(files *contentHashFiles) *atomic.Bool {
+	var fail atomic.Bool
+	files.failWrite = func() error {
+		if fail.Load() {
+			return errors.New("disk on fire")
+		}
+		return nil
+	}
+	return &fail
+}
+
+// treePlaces returns where id's tree is: in a file, in memory, or both (a
+// file left to delete beside the tree in memory).
+func treePlaces(files *contentHashFiles, id string) (onDisk, inMemory bool) {
+	files.mu.Lock()
+	defer files.mu.Unlock()
+	_, onDisk = files.ids[id]
+	_, inMemory = files.mem[id]
+	return onDisk, inMemory
+}
+
 // A new process's manager starts without the last one's trees, the
 // checkpoint loading the ones it keeps, in a fresh directory of its own: it
 // deletes nothing it did not write, leaving what is under its root to the
@@ -27,7 +49,7 @@ func TestContentHashFilesStartInFreshDirectory(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "contenthash")
 	first, err := newContentHashFiles(root)
 	require.NoError(t, err)
-	require.NoError(t, first.write("a", []byte("tree a"), nil))
+	require.NoError(t, first.store("a", []byte("tree a"), nil))
 
 	second, err := newContentHashFiles(root)
 	require.NoError(t, err)
@@ -60,7 +82,9 @@ func TestContentHashFilesLoadKeepsUnwritableTreesInMemory(t *testing.T) {
 	require.NoError(t, cm.LoadPersistentMetadata(PersistentMetadataRows{
 		ContentHashes: []SnapshotContentHashRow{{SnapshotID: "a", Data: []byte("tree a")}},
 	}))
-	require.Empty(t, files.list())
+	onDisk, inMemory := treePlaces(files, "a")
+	require.False(t, onDisk)
+	require.True(t, inMemory)
 	require.Equal(t, []SnapshotContentHashRow{{SnapshotID: "a", Data: []byte("tree a")}},
 		cm.PersistentMetadataRows().ContentHashes, "the next checkpoint keeps it")
 
@@ -78,6 +102,7 @@ func TestContentHashFilesSaveKeepsUnwritableTreesInMemory(t *testing.T) {
 	files, err := newContentHashFiles(filepath.Join(t.TempDir(), "contenthash"))
 	require.NoError(t, err)
 	s.hashFiles = files
+	fail := failWrites(files)
 	cm := &snapshotManager{
 		metadataStore:       s,
 		records:             map[string]*cacheRecord{},
@@ -85,24 +110,27 @@ func TestContentHashFilesSaveKeepsUnwritableTreesInMemory(t *testing.T) {
 	}
 	md := s.getOrCreate("a")
 	require.NoError(t, md.SetExternal(ContentHashMetadataKey, []byte("tree 1")))
-	require.True(t, files.has("a"))
+	onDisk, inMemory := treePlaces(files, "a")
+	require.True(t, onDisk)
+	require.False(t, inMemory)
 
-	breakDir(t, files)
+	fail.Store(true)
 	require.NoError(t, md.SetExternal(ContentHashMetadataKey, []byte("tree 2")))
-	require.False(t, files.has("a"), "the older tree on disk is dropped")
+	onDisk, inMemory = treePlaces(files, "a")
+	require.False(t, onDisk, "the older tree on disk is dropped")
+	require.True(t, inMemory)
+	require.NoFileExists(t, files.path("a"))
 	dt, err := md.GetExternal(ContentHashMetadataKey)
 	require.NoError(t, err)
 	require.Equal(t, []byte("tree 2"), dt)
 	require.Equal(t, []SnapshotContentHashRow{{SnapshotID: "a", Data: []byte("tree 2")}},
 		cm.PersistentMetadataRows().ContentHashes, "the next checkpoint keeps it")
 
-	require.NoError(t, os.Remove(files.dir))
-	require.NoError(t, os.Mkdir(files.dir, 0o700))
+	fail.Store(false)
 	require.NoError(t, md.SetExternal(ContentHashMetadataKey, []byte("tree 3")))
-	require.True(t, files.has("a"))
-	s.mu.RLock()
-	require.Empty(t, md.external, "the tree on disk replaces the one in memory")
-	s.mu.RUnlock()
+	onDisk, inMemory = treePlaces(files, "a")
+	require.True(t, onDisk)
+	require.False(t, inMemory, "the tree on disk replaces the one in memory")
 	dt, err = md.GetExternal(ContentHashMetadataKey)
 	require.NoError(t, err)
 	require.Equal(t, []byte("tree 3"), dt)
@@ -111,50 +139,47 @@ func TestContentHashFilesSaveKeepsUnwritableTreesInMemory(t *testing.T) {
 	// moved it to memory, finds it there.
 	rows, hashIDs := cm.persistentMetadataRows()
 	require.Equal(t, []string{"a"}, hashIDs)
-	breakDir(t, files)
+	fail.Store(true)
 	require.NoError(t, md.SetExternal(ContentHashMetadataKey, []byte("tree 4")))
 	require.Equal(t, []SnapshotContentHashRow{{SnapshotID: "a", Data: []byte("tree 4")}},
 		cm.readContentHashRows(rows, hashIDs).ContentHashes)
 }
 
-// A lookup that misses a tree while a move completed looks again, so a tree
-// that two moves overlap (to memory, then back to disk) is found; one that
-// keeps moving for every lookup is an error, not no tree.
-func TestFindContentHashLooksAgainAfterMoves(t *testing.T) {
+// Saves that land while a lookup reads a tree's file don't make it miss the
+// tree: the lookup opened the file under the lock saves publish under, and
+// reads the tree it opened. Two failed and two successful saves within one
+// read made the lookup that looked for the file by name again report it
+// missing.
+func TestContentHashFilesSavesDuringRead(t *testing.T) {
 	s := newMetadataStore()
 	files, err := newContentHashFiles(filepath.Join(t.TempDir(), "contenthash"))
 	require.NoError(t, err)
 	s.hashFiles = files
+	fail := failWrites(files)
+	md := s.getOrCreate("a")
+	require.NoError(t, md.SetExternal(ContentHashMetadataKey, []byte("tree 1")))
 
-	lookups := 0
-	dt, ok, err := s.findContentHash("a", func() ([]byte, bool) {
-		lookups++
-		if lookups == 2 {
-			// Both moves land between this lookup's looks.
-			s.contentHashMoves.Add(2)
+	saves := 0
+	files.afterOpen = func() {
+		files.afterOpen = nil
+		for i, failed := range []bool{true, false, true, false} {
+			fail.Store(failed)
+			saves++
+			require.NoError(t, md.SetExternal(ContentHashMetadataKey, []byte{'t', byte('2' + i)}))
 		}
-		if lookups < 3 {
-			return nil, false
-		}
-		return []byte("tree"), true
-	}, nil)
+	}
+	dt, err := md.GetExternal(ContentHashMetadataKey)
 	require.NoError(t, err)
-	require.True(t, ok)
-	require.Equal(t, []byte("tree"), dt)
+	require.Equal(t, 4, saves)
+	require.Equal(t, []byte("tree 1"), dt, "the tree opened")
 
-	_, ok, err = s.findContentHash("a", func() ([]byte, bool) { return nil, false }, nil)
+	dt, err = md.GetExternal(ContentHashMetadataKey)
 	require.NoError(t, err)
-	require.False(t, ok, "a tree in no place while none moved is no tree")
-
-	_, _, err = s.findContentHash("a", func() ([]byte, bool) {
-		s.contentHashMoves.Add(1)
-		return nil, false
-	}, nil)
-	require.ErrorContains(t, err, "kept moving")
+	require.Equal(t, []byte("t5"), dt, "the last save")
 }
 
 // Concurrent saves of one tree, some of which can't write it, and lookups of
-// it: every lookup finds a tree, and once the saves are done, the last one is
+// it: every lookup finds a tree, and once the saves are done, the tree is
 // kept in exactly one place.
 func TestContentHashFilesConcurrentSavesAndLookups(t *testing.T) {
 	s := newMetadataStore()
@@ -202,14 +227,12 @@ func TestContentHashFilesConcurrentSavesAndLookups(t *testing.T) {
 	close(done)
 	wg.Wait()
 
-	s.mu.RLock()
-	_, inMemory := md.external[ContentHashMetadataKey]
-	s.mu.RUnlock()
-	require.NotEqual(t, inMemory, files.has("a"), "the tree is kept in exactly one place")
+	onDisk, inMemory := treePlaces(files, "a")
+	require.NotEqual(t, onDisk, inMemory, "the tree is kept in exactly one place")
 }
 
 // A registered tree whose file is missing was deleted by something other than
-// the manager, which unregisters a tree before deleting its file: reading it
+// the manager, which unregisters a tree when it deletes its file: reading it
 // fails, rather than reporting no tree, which would make an imported
 // snapshot's digests come from a rescan. A tree the manager removed is no
 // tree.
@@ -228,7 +251,7 @@ func TestContentHashFilesMissingFileIsAnError(t *testing.T) {
 	require.ErrorContains(t, err, "missing")
 	require.NotErrorIs(t, err, ErrExternalNotFound)
 
-	files.remove("a", nil)
+	require.NoError(t, files.remove("a", nil))
 	_, ok, err := files.read("a", nil)
 	require.NoError(t, err)
 	require.False(t, ok)
@@ -236,13 +259,40 @@ func TestContentHashFilesMissingFileIsAnError(t *testing.T) {
 	require.ErrorIs(t, err, ErrExternalNotFound)
 }
 
+// A tree file that can't be deleted stays registered, so the next removal
+// (the next ForgetCollectedSnapshots, which lists it) deletes it, rather than
+// being left on disk with nothing to remove it.
+func TestContentHashFilesRemoveKeepsUndeletedFiles(t *testing.T) {
+	s := newMetadataStore()
+	files, err := newContentHashFiles(filepath.Join(t.TempDir(), "contenthash"))
+	require.NoError(t, err)
+	s.hashFiles = files
+	md := s.getOrCreate("a")
+	require.NoError(t, md.SetExternal(ContentHashMetadataKey, []byte("tree")))
+
+	// A non-empty directory can't be unlinked.
+	require.NoError(t, os.Remove(files.path("a")))
+	require.NoError(t, os.MkdirAll(filepath.Join(files.path("a"), "busy"), 0o700))
+	s.clear("a")
+	require.Equal(t, []string{"a"}, files.list(), "kept for the next removal")
+	_, err = md.GetExternal(ContentHashMetadataKey)
+	require.ErrorIs(t, err, ErrExternalNotFound, "the dropped metadata has no tree")
+
+	require.NoError(t, os.Remove(filepath.Join(files.path("a"), "busy")))
+	s.clear("a")
+	require.Empty(t, files.list())
+	require.NoFileExists(t, files.path("a"))
+}
+
 // A tree saved after its metadata was dropped, as a background save can be,
-// is discarded rather than left on disk with nothing to remove it.
+// is discarded rather than left on disk, or in memory, with nothing to remove
+// it.
 func TestContentHashFilesDiscardWritesForDroppedMetadata(t *testing.T) {
 	s := newMetadataStore()
 	files, err := newContentHashFiles(t.TempDir())
 	require.NoError(t, err)
 	s.hashFiles = files
+	fail := failWrites(files)
 	md := s.getOrCreate("snap")
 
 	require.NoError(t, md.SetExternal(ContentHashMetadataKey, []byte("tree")))
@@ -262,6 +312,15 @@ func TestContentHashFilesDiscardWritesForDroppedMetadata(t *testing.T) {
 	entries, err := os.ReadDir(files.dir)
 	require.NoError(t, err)
 	require.Empty(t, entries)
+
+	// Nor kept in memory when it can't be written.
+	fail.Store(true)
+	require.NoError(t, md.SetExternal(ContentHashMetadataKey, []byte("late tree")))
+	require.Empty(t, files.list())
+	s.mu.RLock()
+	require.Empty(t, md.external)
+	s.mu.RUnlock()
+	fail.Store(false)
 
 	// Other external keys stay in memory.
 	other := s.getOrCreate("other")

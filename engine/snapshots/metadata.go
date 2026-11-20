@@ -7,7 +7,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/containerd/containerd/v2/core/snapshots"
@@ -94,49 +93,13 @@ type metadataStore struct {
 	closed bool
 
 	// Persisted hash records for snapshots whose metadata has not been opened.
-	// With hashFiles, only those that could not be written to disk.
+	// Unused with hashFiles.
 	pendingContentHashes map[string][]byte
 
-	// hashFiles, when set, keeps the content-hash trees on disk instead of
-	// in external and pendingContentHashes.
+	// hashFiles, when set, keeps the content-hash trees, on disk or, when
+	// they can't be written, in memory of its own, instead of in external
+	// and pendingContentHashes.
 	hashFiles *contentHashFiles
-	// contentHashMoves counts the trees moved between disk and memory, each
-	// stored at its new place, counted, then dropped from the old one. A
-	// lookup that finds a tree in neither place while one moved looks
-	// again; see findContentHash.
-	contentHashMoves atomic.Uint64
-}
-
-// maxContentHashLookups bounds findContentHash's lookups of a tree that keeps
-// moving while it is looked up.
-const maxContentHashLookups = 100
-
-// findContentHash returns id's tree, kept on disk or, by inMemory, in memory.
-//
-// A tree moves between the two in two steps, stored at its new place before
-// it is dropped from the old one, so looking in memory, then on disk, then in
-// memory again finds a tree that one move overlaps. A lookup that finds it in
-// no place while a move completed looks again, and a tree that kept moving
-// for every lookup is an error, rather than no tree, which would make an
-// imported snapshot's digests come from a rescan.
-func (s *metadataStore) findContentHash(id string, inMemory func() ([]byte, bool), gone func() bool) ([]byte, bool, error) {
-	for range maxContentHashLookups {
-		moves := s.contentHashMoves.Load()
-		if dt, ok := inMemory(); ok {
-			return dt, true, nil
-		}
-		dt, ok, err := s.hashFiles.read(id, gone)
-		if err != nil || ok {
-			return dt, ok, err
-		}
-		if dt, ok := inMemory(); ok {
-			return dt, true, nil
-		}
-		if s.contentHashMoves.Load() == moves {
-			return nil, false, nil
-		}
-	}
-	return nil, false, errors.Errorf("content hash records of %s kept moving between disk and memory", id)
 }
 
 func newMetadataStore() *metadataStore {
@@ -185,11 +148,14 @@ func (s *metadataStore) clear(id string) {
 	delete(s.pendingContentHashes, id)
 	md, ok := s.refs[id]
 	if s.hashFiles != nil {
-		s.hashFiles.remove(id, func() {
+		if err := s.hashFiles.remove(id, func() {
 			if ok {
 				md.contentHashGone = true
 			}
-		})
+		}); err != nil {
+			bklog.G(context.TODO()).WithError(err).WithField("snapshot", id).
+				Error("failed to remove content hash records; retrying at the next removal")
+		}
 	}
 	if !ok {
 		return
@@ -346,9 +312,6 @@ type cacheMetadata struct {
 	// contentHashGone is set, under store.hashFiles.mu, once the metadata is
 	// dropped: a tree saved for it later is discarded.
 	contentHashGone bool
-	// contentHashSaveMu serializes saves of the content-hash tree kept on
-	// disk; see SetExternal.
-	contentHashSaveMu sync.Mutex
 }
 
 func (cm *snapshotManager) Search(ctx context.Context, idx string, prefixOnly bool) ([]RefMetadata, error) {
@@ -520,10 +483,7 @@ var ErrExternalNotFound = errors.New("not found")
 
 func (md *cacheMetadata) GetExternal(s string) ([]byte, error) {
 	if md.store.contentHashOnDisk(s) {
-		// Kept on disk, or in memory when it couldn't be written.
-		dt, ok, err := md.store.findContentHash(md.id,
-			func() ([]byte, bool) { return md.getExternalInMemory(s) },
-			func() bool { return md.contentHashGone })
+		dt, ok, err := md.store.hashFiles.read(md.id, md.contentHashDropped)
 		if err != nil {
 			return nil, err
 		}
@@ -548,46 +508,28 @@ func (md *cacheMetadata) getExternalInMemory(s string) ([]byte, bool) {
 	return bytes.Clone(dt), true
 }
 
-func (md *cacheMetadata) setExternalInMemory(s string, dt []byte) {
-	md.store.mu.Lock()
-	defer md.store.mu.Unlock()
-	md.external[s] = bytes.Clone(dt)
+// contentHashDropped says the metadata was dropped. Requires
+// store.hashFiles.mu.
+func (md *cacheMetadata) contentHashDropped() bool {
+	return md.contentHashGone
 }
 
 func (md *cacheMetadata) SetExternal(s string, dt []byte) error {
 	if md.store.contentHashOnDisk(s) {
-		// Saves of one tree, which can come from more than one cache
-		// context, each store it and then drop the older copy: one at a
-		// time, or one's drop could remove the other's tree.
-		md.contentHashSaveMu.Lock()
-		defer md.contentHashSaveMu.Unlock()
-		err := md.store.hashFiles.write(md.id, dt, func() bool { return md.contentHashGone })
-		if err == nil {
-			// The tree on disk replaces one kept in memory before: a move,
-			// stored on disk before it is dropped from memory, and counted
-			// before the drop, for findContentHash.
-			md.store.mu.Lock()
-			if _, moved := md.external[s]; moved {
-				md.store.contentHashMoves.Add(1)
-				delete(md.external, s)
-			}
-			md.store.mu.Unlock()
-			return nil
+		// A tree that can't be written is kept in memory, where trees were
+		// kept before, as loading one that can't be written does, rather
+		// than fail the save: a host sync would fail with it, and a
+		// background save would lose it. The next save tries the disk
+		// again.
+		if err := md.store.hashFiles.store(md.id, dt, md.contentHashDropped); err != nil {
+			bklog.G(context.TODO()).WithError(err).WithField("snapshot", md.id).
+				Error("failed to write content hash records; keeping them in memory")
 		}
-		// Keep the tree in memory, where trees were kept before, as loading
-		// one that can't be written does, rather than fail the save: a host
-		// sync would fail with it, and a background save would lose it. The
-		// tree on disk, if any, is older: drop it once this one is in
-		// memory, so this one is read and checkpointed. The next save tries
-		// the disk again.
-		bklog.G(context.TODO()).WithError(err).WithField("snapshot", md.id).
-			Error("failed to write content hash records; keeping them in memory")
-		md.setExternalInMemory(s, dt)
-		md.store.contentHashMoves.Add(1)
-		md.store.hashFiles.remove(md.id, nil)
 		return nil
 	}
-	md.setExternalInMemory(s, dt)
+	md.store.mu.Lock()
+	defer md.store.mu.Unlock()
+	md.external[s] = bytes.Clone(dt)
 	return nil
 }
 

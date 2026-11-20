@@ -140,10 +140,6 @@ func (cm *snapshotManager) LoadPersistentMetadata(rows PersistentMetadataRows) e
 // Requires cm.mu.
 func (cm *snapshotManager) loadContentHashFiles(files *contentHashFiles, rows []SnapshotContentHashRow) {
 	s := cm.metadataStore
-	s.mu.Lock()
-	s.pendingContentHashes = make(map[string][]byte)
-	s.mu.Unlock()
-
 	loaded := make(map[string]struct{}, len(rows))
 	for _, row := range rows {
 		if row.SnapshotID == "" || len(row.Data) == 0 {
@@ -152,34 +148,27 @@ func (cm *snapshotManager) loadContentHashFiles(files *contentHashFiles, rows []
 		loaded[row.SnapshotID] = struct{}{}
 		var gone func() bool
 		if md, ok := s.get(row.SnapshotID); ok {
-			gone = func() bool { return md.contentHashGone }
+			gone = md.contentHashDropped
 		}
-		if err := files.write(row.SnapshotID, row.Data, gone); err != nil {
-			// Failing the load would make dagql discard the whole cache,
-			// and dropping the tree would make an imported snapshot's
-			// digests come from a rescan: keep it in memory instead.
+		// A tree that can't be written is kept in memory: failing the load
+		// would make dagql discard the whole cache, and dropping the tree
+		// would make an imported snapshot's digests come from a rescan.
+		if err := files.store(row.SnapshotID, row.Data, gone); err != nil {
 			bklog.G(context.TODO()).WithError(err).WithField("snapshot", row.SnapshotID).
 				Error("failed to write content hash records; keeping them in memory")
-			s.mu.Lock()
-			if md, ok := s.refs[row.SnapshotID]; ok {
-				md.external[ContentHashMetadataKey] = row.Data
-			} else {
-				s.pendingContentHashes[row.SnapshotID] = row.Data
-			}
-			s.mu.Unlock()
-			// Dropped from disk once in memory, as SetExternal does.
-			s.contentHashMoves.Add(1)
-			files.remove(row.SnapshotID, nil)
 		}
 	}
 	for _, id := range files.list() {
 		if _, ok := loaded[id]; ok {
 			continue
 		}
-		if _, ok := cm.metadataStore.get(id); ok {
+		if _, ok := s.get(id); ok {
 			continue
 		}
-		files.remove(id, nil)
+		if err := files.remove(id, nil); err != nil {
+			bklog.G(context.TODO()).WithError(err).WithField("snapshot", id).
+				Error("failed to remove content hash records; retrying at the next removal")
+		}
 	}
 }
 
@@ -188,7 +177,7 @@ func (cm *snapshotManager) PersistentMetadataRows() PersistentMetadataRows {
 	return cm.readContentHashRows(rows, hashIDs)
 }
 
-// readContentHashRows adds the trees of hashIDs, kept on disk when
+// readContentHashRows adds the trees of hashIDs, kept in files when
 // persistentMetadataRows listed them, to rows. They are read without the
 // manager's locks: a checkpoint holds every tree, and reading them all takes
 // a while.
@@ -198,17 +187,15 @@ func (cm *snapshotManager) readContentHashRows(rows PersistentMetadataRows, hash
 		return rows
 	}
 	for _, snapshotID := range hashIDs {
-		// On disk when listed, or moved to memory since by a save that
-		// couldn't write it.
-		data, ok, err := cm.metadataStore.findContentHash(snapshotID, func() ([]byte, bool) {
-			data := cm.metadataStore.contentHashInMemory(snapshotID)
-			return data, len(data) > 0
-		}, nil)
+		data, ok, err := files.read(snapshotID, nil)
 		if err != nil {
-			// A tree left out is lost to the next process: an imported
-			// snapshot's digests would then come from a rescan.
+			// Left out of the checkpoint, unlike Checksum, which fails on a
+			// tree it can't read: failing the checkpoint would discard the
+			// whole persisted cache. The next process rescans this snapshot
+			// when it is hashed, so an imported snapshot's digests then
+			// come from a rescan.
 			bklog.G(context.TODO()).WithError(err).WithField("snapshot", snapshotID).
-				Error("failed to read content hash records for checkpoint")
+				Error("failed to read content hash records for checkpoint; leaving them out")
 			continue
 		}
 		if !ok || len(data) == 0 {
@@ -221,18 +208,6 @@ func (cm *snapshotManager) readContentHashRows(rows PersistentMetadataRows, hash
 		})
 	}
 	return rows
-}
-
-// contentHashInMemory returns a copy of snapshotID's tree kept in memory, if
-// any: one that could not be written to disk, or, without files, every tree.
-func (s *metadataStore) contentHashInMemory(snapshotID string) []byte {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	data := s.pendingContentHashes[snapshotID]
-	if md, ok := s.refs[snapshotID]; ok {
-		data = md.external[ContentHashMetadataKey]
-	}
-	return bytes.Clone(data)
 }
 
 // persistentMetadataRows returns the rows, and, when the trees are kept on
@@ -285,12 +260,12 @@ func (cm *snapshotManager) persistentMetadataRows() (PersistentMetadataRows, []s
 		if rec, ok := cm.records[snapshotID]; ok && rec.mutable {
 			continue
 		}
-		if files != nil && files.has(snapshotID) {
-			hashIDs = append(hashIDs, snapshotID)
+		if files != nil {
+			if files.has(snapshotID) {
+				hashIDs = append(hashIDs, snapshotID)
+			}
 			continue
 		}
-		// In memory: always without files, and with them, a loaded tree
-		// that could not be written.
 		data := cm.metadataStore.pendingContentHashes[snapshotID]
 		if md, ok := cm.metadataStore.refs[snapshotID]; ok {
 			data = md.external[ContentHashMetadataKey]
