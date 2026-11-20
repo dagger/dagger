@@ -360,11 +360,15 @@ type frontendPretty struct {
 	pendingForms []*promptFormRequest
 
 	// Pending approvals, oldest first. Unlike forms they are not serialized
-	// and never take focus on arrival: each renders under the call that
-	// requested it (see approval.go).
+	// and only take focus with the row they render under: each renders under
+	// the call that requested it (see approval.go).
 	approvals    []*pendingApproval
 	approvalSeq  uint64
 	approvalsGen uint64
+	// approvalsLeftAt is the row whose approvals the user left with esc (or
+	// whose row a search landed on): they stay folded, and the row keeps its
+	// own keys, until the cursor moves to another row.
+	approvalsLeftAt dagui.SpanID
 	// progressWindow is the [start, end) range of the last rendered progress
 	// lines that is on screen, and progressTopGaps the gaps between its top
 	// trees: together they tell whether an approval's row scrolled away.
@@ -2946,8 +2950,14 @@ func (fe *frontendPretty) navigationFocused() bool {
 	return false
 }
 
+// navigationTarget is the component navigation hands keyboard focus to: the
+// approval on the cursor's row, if any -- which it arms, as focus is about to
+// land on it -- else the row.
 func (fe *frontendPretty) navigationTarget() tuist.Component {
 	if a := fe.focusableApproval(); a != nil {
+		if !a.armed {
+			fe.armApproval(a)
+		}
 		return a.view
 	}
 	if fe.FocusedSpan.IsValid() {
@@ -6405,10 +6415,19 @@ func (fe *frontendPretty) focus(row *dagui.TraceRow) {
 		newSpan = row.Span.ID
 		fe.FocusedSpan = newSpan
 	}
-	// An approval holds focus only while the cursor is on it: one under
+	if newSpan != fe.approvalsLeftAt {
+		// The cursor left the row whose approvals were left: coming back
+		// unfolds them again.
+		fe.approvalsLeftAt = dagui.SpanID{}
+	}
+	// An approval holds focus only while the cursor is on its row: one under
 	// another row loses it, and so does a floating one once the cursor moves
 	// at all (a search jump, say).
 	fe.disarmApprovals(newSpan, oldSpan != newSpan)
+	if oldSpan != newSpan {
+		// Folded approvals say how to reach them from where the cursor is.
+		fe.updateApprovalViews()
+	}
 	if moveKeyboard {
 		fe.focusNavigationTarget()
 	}
@@ -6428,9 +6447,11 @@ func (fe *frontendPretty) focus(row *dagui.TraceRow) {
 // manualFocus is like focus but also deselects the current search match
 // so that n/N seek relative to the new position.
 func (fe *frontendPretty) manualFocus(row *dagui.TraceRow) {
-	// Navigating to a row leaves any approval the cursor was on: approvals
-	// are stops of their own (see stepApproval), never the row's.
-	fe.disarmApprovals(dagui.SpanID{}, true)
+	// Navigating to a row leaves any approval the cursor was on; one under
+	// the new row takes focus afresh, on its default choice.
+	for _, a := range fe.approvals {
+		fe.disarmApproval(a)
+	}
 	fe.focus(row)
 	if fe.searchQuery != "" {
 		fe.searchIdx = -1

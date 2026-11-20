@@ -18,8 +18,8 @@ import (
 )
 
 // Approvals are scoped to the call that asked for them: they render under its
-// LLM tool call, never take focus on arrival, gain it when the user navigates
-// onto that row, and give it back once answered.
+// LLM tool call, take focus with that row (and only that row), and give it
+// back once answered or left.
 
 // Span IDs clear of rosterTrace's, so the shell test can combine the two.
 var (
@@ -175,7 +175,7 @@ func TestApprovalAttachesUnderToolCall(t *testing.T) {
 	header := lineIndex(t, frame, pushQuestion)
 	require.Less(t, tool, header, "the approval sits beneath its tool call")
 	require.Less(t, header, lineIndex(t, frame, "Publish"), "and before the next row")
-	require.Contains(t, frame[header+1], "contributor · ↓ to answer",
+	require.Contains(t, frame[header+1], "contributor · a to answer",
 		"unfocused, it folds to two lines: the question, then the module and how to answer")
 	require.Equal(t, header+2, lineIndex(t, frame, "Publish"))
 	text := frameText(frame)
@@ -202,53 +202,88 @@ func TestApprovalAttachesUnderToolCall(t *testing.T) {
 	require.Contains(t, strings.Join(fe.approvalLines(b, false, 0), "\n"), "(requested by agent")
 }
 
-func TestApprovalDoesNotTakeFocusOnArrival(t *testing.T) {
+// An approval arriving under another row leaves focus alone; one arriving
+// under the cursor's row, which has navigation's focus, takes it at once.
+func TestApprovalTakesFocusOnArrivalOnlyUnderTheCursor(t *testing.T) {
 	fe := approvalTestFrontend(t)
 	before := fe.tui.Focused()
 	a, _ := startApproval(t, fe, t.Context(), pushApproval(approvalPushID, ""))
 	fe.tui.Step()
-	require.Same(t, before, fe.tui.Focused(), "an arriving approval must not move focus")
+	require.Same(t, before, fe.tui.Focused(), "an approval under another row must not move focus")
 	require.False(t, fe.tui.IsFocused(a.view))
 
-	// Even with the cursor sitting on its row when it arrives -- moved there by
-	// a re-render rather than by the user -- it waits to be navigated to.
 	fe.autoFocus = false
 	fe.focus(fe.rows.BySpan[approvalTool2ID])
 	b, _ := startApproval(t, fe, t.Context(), pushApproval(approvalPush2ID, ""))
 	fe.recalculateViewLocked()
 	fe.tui.Step()
 	require.Equal(t, approvalTool2ID, b.anchor)
-	require.False(t, fe.tui.IsFocused(b.view), "an approval appearing under the cursor must not take focus")
-	require.True(t, fe.navigationFocused())
+	require.True(t, fe.tui.IsFocused(b.view), "an approval appearing under the cursor's row takes its focus")
+	require.False(t, fe.tui.IsFocused(a.view))
+	frame := frameText(fe.tui.Step())
+	require.Contains(t, frame, "▶ n  Deny", "and unfolds, ready to answer")
+	require.Contains(t, frame, "contributor · alt+a to answer",
+		"the other one names the jump key, as `a` answers the focused one")
 }
 
-func TestApprovalTakesFocusOnNavigation(t *testing.T) {
+// Following output onto a row whose approval takes focus pauses following,
+// so new rows cannot move the cursor off it; answering resumes following.
+func TestApprovalUnderFollowedRowPausesFollowing(t *testing.T) {
 	fe := approvalTestFrontend(t)
-	a, results := startApproval(t, fe, t.Context(), pushApproval(approvalPushID, ""))
+	require.True(t, fe.autoFocus, "precondition: following output")
+	a, results := startApproval(t, fe, t.Context(), pushApproval(approvalOtherID, ""))
+	fe.tui.Step()
+	require.Equal(t, approvalOtherID, a.anchor)
+	require.True(t, fe.tui.IsFocused(a.view), "the followed row's approval takes focus")
+	require.False(t, fe.autoFocus, "following pauses while it waits")
 
-	// The approval is a stop of its own, just below its tool call:
-	// other -> publish -> the approval.
-	pressKeys(fe, "k", "k")
-	require.Equal(t, approvalToolID, fe.FocusedSpan, "the cursor sits on the approval's tool call")
-	require.True(t, fe.tui.IsFocused(a.view), "navigating onto the approval focuses it")
-	require.Contains(t, frameText(fe.tui.Step()), "enter confirm", "a focused approval says how to answer")
+	start := time.Unix(100, 0).Add(4 * time.Second)
+	fe.db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: approvalLateTool, TraceID: prettyTestTraceID(), ParentID: approvalRootID, Name: "late",
+			LLMRole: "assistant", LLMTool: "late", StartTime: start},
+	})
+	fe.recalculateViewLocked()
+	fe.tui.Step()
+	require.Equal(t, approvalOtherID, fe.FocusedSpan, "new output does not move the cursor off it")
+	require.True(t, fe.tui.IsFocused(a.view))
 
-	// Moving away hands focus back to navigation without answering: Deny is
-	// selected on arrival, the bottom of the list, so ↓ leaves at once.
-	pressKeys(fe, "j")
+	pressKeys(fe, "y")
+	awaitApproval(t, fe, results)
+	require.True(t, fe.autoFocus, "answering resumes following")
+	require.Equal(t, approvalLateTool, fe.FocusedSpan)
+}
+
+func TestApprovalTakesFocusWithItsRow(t *testing.T) {
+	fe := approvalTestFrontend(t)
+	a, results := startApproval(t, fe, t.Context(), pushApproval(approvalPush2ID, ""))
+	require.False(t, fe.tui.IsFocused(a.view), "under another row, it stays folded")
+
+	// One step onto its row unfolds it, ready to answer: the row and its
+	// approval are one stop.
+	pressKeys(fe, "k")
 	require.Equal(t, approvalTool2ID, fe.FocusedSpan)
-	require.False(t, fe.tui.IsFocused(a.view))
-	require.Same(t, fe.spanTrees[approvalTool2ID], fe.tui.Focused())
-	require.False(t, a.finished)
+	require.True(t, fe.tui.IsFocused(a.view), "the row's approval takes focus with it")
+	frame := frameText(fe.tui.Step())
+	require.Contains(t, frame, "▶ n  Deny")
+	require.Contains(t, frame, "enter confirm", "a focused approval says how to answer")
 
-	// ↑ walks the choices, and past the first one leaves for the tool call row.
+	// ↓ past Deny leaves for the row below without answering, folding it.
+	pressKeys(fe, "j")
+	require.Equal(t, approvalOtherID, fe.FocusedSpan)
+	require.Same(t, fe.spanTrees[approvalOtherID], fe.tui.Focused())
+	require.False(t, a.finished)
+	require.Contains(t, frameText(fe.tui.Step()), "contributor · a to answer")
+
+	// ↑ walks the choices, and past the first one leaves for the row above:
+	// the approval's own row is the stop it is already on.
 	pressKeys(fe, "k")
 	require.True(t, fe.tui.IsFocused(a.view))
 	pressKeys(fe, "k", "k")
 	require.True(t, fe.tui.IsFocused(a.view), "still choosing")
 	require.Equal(t, 0, a.selected)
 	pressKeys(fe, "k")
-	require.Same(t, fe.spanTrees[approvalToolID], fe.tui.Focused(), "the tool call row is its own stop")
+	require.Equal(t, approvalToolID, fe.FocusedSpan, "past the first choice, on to the row above")
+	require.Same(t, fe.spanTrees[approvalToolID], fe.tui.Focused())
 	pressKeys(fe, "j")
 	require.True(t, fe.tui.IsFocused(a.view))
 	require.Equal(t, approvalDefaultChoice(a.choices), a.selected, "each visit starts on Deny")
@@ -258,23 +293,73 @@ func TestApprovalTakesFocusOnNavigation(t *testing.T) {
 	res := awaitApproval(t, fe, results)
 	require.NoError(t, res.err)
 	require.Equal(t, prompt.APPROVAL_ALLOW_ONCE, res.decision)
-	require.Same(t, fe.spanTrees[approvalToolID], fe.tui.Focused(),
+	require.Same(t, fe.spanTrees[approvalTool2ID], fe.tui.Focused(),
 		"focus returns to the row the approval sat under")
 	require.Empty(t, fe.approvals)
 	require.NotContains(t, frameText(fe.tui.Step()), pushQuestion)
 }
 
-// The tool call row keeps its own keys: enter there zooms, as everywhere,
-// rather than answering the approval beneath it with its default.
-func TestApprovalLeavesRowKeysAlone(t *testing.T) {
+// esc gives the row its own keys back: its approval stays folded, even
+// across re-renders, until ↓ steps onto it or the cursor leaves the row and
+// comes back. Then enter zooms, as on any row, rather than answering.
+func TestApprovalEscGivesRowItsKeys(t *testing.T) {
 	fe := approvalTestFrontend(t)
-	a, _ := startApproval(t, fe, t.Context(), pushApproval(approvalPushID, ""))
-	pressKeys(fe, "k", "k", "k", "k", "k")
-	require.Same(t, fe.spanTrees[approvalToolID], fe.tui.Focused())
+	a, _ := startApproval(t, fe, t.Context(), pushApproval(approvalPush2ID, ""))
+	pressKeys(fe, "k")
+	require.True(t, fe.tui.IsFocused(a.view))
 
-	pressKeys(fe, "enter")
-	require.False(t, a.finished, "enter on the row must not answer the approval")
-	require.Equal(t, approvalToolID, fe.ZoomedSpan, "enter on the row zooms")
+	pressKeys(fe, "esc")
+	require.False(t, a.finished, "esc leaves the approval unanswered")
+	require.Same(t, fe.spanTrees[approvalTool2ID], fe.tui.Focused(), "and focus on the row")
+	fe.recalculateViewLocked()
+	frame := fe.tui.Step()
+	require.Same(t, fe.spanTrees[approvalTool2ID], fe.tui.Focused(), "it does not take focus back")
+	require.Contains(t, frame[lineIndex(t, frame, pushQuestion)+1], "contributor · ↓ to answer",
+		"folded under the cursor's row, it is one step down")
+
+	// ↓ steps onto it again.
+	pressKeys(fe, "j")
+	require.Equal(t, approvalTool2ID, fe.FocusedSpan)
+	require.True(t, fe.tui.IsFocused(a.view))
+
+	// Away and back unfolds it too.
+	pressKeys(fe, "esc", "k")
+	require.Equal(t, approvalToolID, fe.FocusedSpan)
+	pressKeys(fe, "j")
+	require.True(t, fe.tui.IsFocused(a.view), "coming back to the row unfolds it")
+
+	pressKeys(fe, "esc", "enter")
+	require.False(t, a.finished, "enter on the left row must not answer the approval")
+	require.Equal(t, approvalTool2ID, fe.ZoomedSpan, "enter on the row zooms")
+}
+
+// Several approvals under one row take focus in turn: the first with the
+// row, the next one ↓ past its Deny, and the next once it is answered.
+func TestApprovalsUnderOneRow(t *testing.T) {
+	fe := approvalTestFrontend(t)
+	first, firstResult := startApproval(t, fe, t.Context(), pushApproval(approvalPush2ID, ""))
+	second, secondResult := startApproval(t, fe, t.Context(), pushApproval(approvalPush2ID, ""))
+	require.Equal(t, first.anchor, second.anchor)
+
+	pressKeys(fe, "k")
+	require.True(t, fe.tui.IsFocused(first.view), "the first takes focus with the row")
+	require.Contains(t, frameText(fe.tui.Step()), "contributor · ↓ to answer",
+		"the second waits one step down")
+	pressKeys(fe, "j")
+	require.Equal(t, approvalTool2ID, fe.FocusedSpan)
+	require.True(t, fe.tui.IsFocused(second.view), "↓ past the first's Deny reaches the second")
+	pressKeys(fe, "k", "k", "k")
+	require.True(t, fe.tui.IsFocused(first.view), "↑ past the second's first choice goes back to the first")
+	require.Equal(t, approvalDefaultChoice(first.choices), first.selected)
+
+	pressKeys(fe, "n")
+	res := awaitApproval(t, fe, firstResult)
+	require.Equal(t, prompt.APPROVAL_DENY, res.decision)
+	require.True(t, fe.tui.IsFocused(second.view), "once the first is answered, the row's next takes focus")
+	pressKeys(fe, "s")
+	res = awaitApproval(t, fe, secondResult)
+	require.Equal(t, prompt.APPROVAL_ALLOW_SESSION, res.decision)
+	require.Same(t, fe.spanTrees[approvalTool2ID], fe.tui.Focused())
 }
 
 func TestApprovalEscLeavesItPending(t *testing.T) {
@@ -286,6 +371,18 @@ func TestApprovalEscLeavesItPending(t *testing.T) {
 	pressKeys(fe, "esc")
 	require.False(t, a.finished, "esc leaves the approval unanswered")
 	require.Same(t, fe.spanTrees[approvalToolID], fe.tui.Focused(), "and focus back on the row")
+}
+
+// A search landing on an approval's row leaves it folded: n seeks the next
+// match rather than denying.
+func TestSearchLeavesRowApprovalFolded(t *testing.T) {
+	fe := approvalTestFrontend(t)
+	a, _ := startApproval(t, fe, t.Context(), pushApproval(approvalPushID, ""))
+	pressKeys(fe, "/", "P", "u", "s", "h", "enter")
+	require.Equal(t, approvalToolID, fe.FocusedSpan, "the search moved the cursor onto the approval's row")
+	require.False(t, fe.tui.IsFocused(a.view), "the approval stays folded")
+	pressKeys(fe, "n")
+	require.False(t, a.finished, "n searches rather than denying")
 }
 
 func TestApprovalAnswers(t *testing.T) {
@@ -490,9 +587,9 @@ func TestSearchLeavesFloatingApproval(t *testing.T) {
 func TestApprovalJumpKeepsZoomOnItsCall(t *testing.T) {
 	fe := approvalTestFrontend(t)
 	a, _ := startApproval(t, fe, t.Context(), pushApproval(approvalPushID, ""))
-	// Up past the publish row and the approval's three choices onto the tool
-	// call, then zoom into it.
-	pressKeys(fe, "k", "k", "k", "k", "k", "enter")
+	// Up onto the tool call, leave its approval for the row's own keys, then
+	// zoom into it.
+	pressKeys(fe, "k", "k", "esc", "enter")
 	require.Equal(t, approvalToolID, fe.ZoomedSpan)
 
 	pressKeys(fe, "a")
