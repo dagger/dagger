@@ -78,7 +78,7 @@ func (c *Cache) usesPartAcquisition(ctx context.Context, res AnyResult, row *sha
 			lookup = l
 		}
 	}
-	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+	c.lockGraphForCtx(ctx, workPart)
 	defer c.egraphMu.Unlock()
 	shell := transferShellLocked(res, row)
 	equivalent := !shell && lookup.frame != nil && !row.hasPartOffersLocked() && c.hasEquivalentLocked(row, lookup)
@@ -158,6 +158,7 @@ func (c *Cache) evaluateAcquiredParts(ctx context.Context, res AnyResult, row *s
 	return c.evaluateAcquiredScope(ctx, res, row, nil, parts)
 }
 func (c *Cache) evaluateAcquiredScope(ctx context.Context, res AnyResult, row *sharedResult, path PersistedRefPath, parts []PartKey) (rerr error) {
+	ctx = withCacheWork(ctx, workPart)
 	if c.reuseAcquiredScope(ctx, row, path, parts) {
 		return nil
 	}
@@ -166,7 +167,7 @@ func (c *Cache) evaluateAcquiredScope(ctx context.Context, res AnyResult, row *s
 	if whole {
 		seen = c.capturePartReuse(row)
 	}
-	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+	c.lockGraphForCtx(ctx, workPart)
 	if c.resultsByID[row.id] != row {
 		c.egraphMu.Unlock()
 		return fmt.Errorf("part demand: unregistered receiver")
@@ -249,6 +250,7 @@ func (c *Cache) joinPartInstallation(ctx context.Context, res AnyResult, token *
 
 //nolint:gocyclo // Intrinsically long demand state machine: probe, route, select, obtain, delegate, run.
 func (c *Cache) demandPart(ctx context.Context, res AnyResult, address PersistedPartAddress) error {
+	ctx = withCacheWork(ctx, workPart)
 	if err := engine.CheckSnapshotSharePreparation(ctx, "demand part"); err != nil {
 		return err
 	}
@@ -496,7 +498,7 @@ func (c *Cache) CheckPartSources(ctx context.Context, res AnyResult, address Per
 		check.demandRevision = demand.revision
 		demand.mu.Unlock()
 	}
-	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+	c.lockGraphForCtx(ctx, workPart)
 	defer c.egraphMu.Unlock()
 	if drain == nil || drain.task.row != res.cacheSharedResult() {
 		return PartSourceScan{}, fmt.Errorf("source scan: wrong drain")
@@ -812,7 +814,7 @@ func (c *Cache) runCallForPart(ctx context.Context, res AnyResult, key string) e
 			kept = keptParts(probes, nil, key)
 		}
 	}
-	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+	c.lockGraphForCtx(ctx, workPart)
 	if row.unavailableParts == nil {
 		row.unavailableParts = map[string]struct{}{}
 	}

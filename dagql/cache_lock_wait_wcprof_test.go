@@ -24,7 +24,7 @@ func TestCallWaitsForEgraphLockWcprof(t *testing.T) {
 
 	c.egraphMu.Lock()
 	done := lockWaitTestCall(ctx, c, call, nil)
-	waitBlockedIn(t, "wcprof.ReadLock(")
+	waitBlockedIn(t, "wcprof.ReadLockWaited(")
 	c.egraphMu.Unlock()
 	require.NoError(t, <-done)
 

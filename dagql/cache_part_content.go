@@ -941,7 +941,7 @@ func (c *Cache) installChainPart(ctx context.Context, receiver AnyResult, source
 			return err
 		}
 		watch.again(ctx, receiver.cacheSharedResult(), source.target)
-		wcprof.WriteLock(commitCtx, &c.egraphMu, egraphLockIdent)
+		c.lockGraphForCtx(commitCtx, workPart)
 		if !c.offerAllowedLocked(source.sessionID, source.offerOwner) {
 			c.egraphMu.Unlock()
 			return partRefused("chain: offer owner not allowed")
@@ -1013,7 +1013,7 @@ func (c *Cache) installChainPart(ctx context.Context, receiver AnyResult, source
 // including replacements made after this acquisition was admitted.
 func (c *Cache) settlePart(ctx context.Context, row *sharedResult, address PersistedPartAddress, ownerTask *PartTaskToken, generation uint64) error {
 	ctx = context.WithoutCancel(ctx)
-	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+	c.lockGraphForCtx(ctx, workPart)
 	gate := row.partGate.loadOrCreate()
 	gate.mu.Lock()
 	key, _ := partAddressKey(address)

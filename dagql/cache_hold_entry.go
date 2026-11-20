@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"sync"
-
-	"github.com/dagger/dagger/engine/wcprof"
 )
 
 // ErrUnknownEntry is returned for an entry number the cache has not
@@ -31,7 +29,7 @@ func (c *Cache) HoldEntry(ctx context.Context, number uint64) (AnyResult, func(c
 		return nil, nil, err
 	}
 	defer op.finish(false)
-	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+	c.lockGraphForCtx(ctx, workOther)
 	res := c.resultsByID[sharedResultID(number)]
 	switch {
 	case res == nil, res.refusedPayloadLocked():
@@ -51,7 +49,7 @@ func (c *Cache) HoldEntry(ctx context.Context, number uint64) (AnyResult, func(c
 		var err error
 		once.Do(func() {
 			ctx = context.WithoutCancel(ctx)
-			wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+			c.lockGraphForCtx(ctx, workOther)
 			queue, decErr := c.decrementIncomingOwnershipLocked(ctx, res, nil)
 			releases, collectErr := c.collectUnownedResultsLocked(ctx, queue)
 			c.egraphMu.Unlock()
@@ -71,7 +69,7 @@ func (c *Cache) releaseHeld(held []*sharedResult) func(context.Context) error {
 		var err error
 		once.Do(func() {
 			ctx = context.WithoutCancel(ctx)
-			wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+			c.lockGraphForCtx(ctx, workOther)
 			var queue collectionQueue
 			for _, res := range held {
 				var decErr error

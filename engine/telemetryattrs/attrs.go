@@ -1209,6 +1209,58 @@ type EngineStopEvent struct {
 	// payloads of records restores left for their first use
 	// (dagql.Cache.FirstUse).
 	FirstUse EngineFirstUse `json:"firstUse,omitzero"`
+	// LookupLockWaits are the calls' lookups' waits for the cache's graph
+	// lock (dagql.Cache.LookupLockWaits).
+	LookupLockWaits EngineLookupLockWaits `json:"lookupLockWaits,omitzero"`
+	// Sharing is what the snapshot-sharing passes did, by the kind of class
+	// each ran for: "alone" (a class of one member), "no_donor" (several,
+	// none of which held a part ready to give) and "donor"
+	// (dagql.Cache.Sharing).
+	Sharing map[string]EngineSharePasses `json:"sharing,omitempty"`
+}
+
+// EngineLookupLockWaits are the calls' lookups' waits for the cache's graph
+// lock over the engine's life, by the kind of writer whose release let each
+// in: "lookup", "publication", "restore" (a set file's part's merge),
+// "merge" (another merge of the service's records), "sharing", "export",
+// "offer", "part" (fetching, installing or settling parts), "other" (a
+// writer that named no kind), or "readers" (no writer let it in: the lookup
+// waited for readers to leave). Landing are the waits begun while a whole
+// set file was landing on the engine, from its arrival to its end, and
+// Other the rest. A lookup that took the lock at once isn't counted.
+type EngineLookupLockWaits struct {
+	Landing map[string]EngineLockWaits `json:"landing,omitempty"`
+	Other   map[string]EngineLockWaits `json:"other,omitempty"`
+}
+
+// EngineLockWaits count waits for a lock: how many, their summed time, and
+// the longest, in nanoseconds. A restore's window has no longest.
+type EngineLockWaits struct {
+	Waits   int64 `json:"waits"`
+	Total   int64 `json:"total"`
+	Longest int64 `json:"longest,omitempty"`
+}
+
+// EngineFirstUsePath counts the first uses that came by one path: the
+// payloads prepared, refused ones included, and the time that took in all
+// and at the longest, in nanoseconds. A restore's window has no longest.
+type EngineFirstUsePath struct {
+	Prepared int64 `json:"prepared"`
+	Total    int64 `json:"total"`
+	Longest  int64 `json:"longest,omitempty"`
+}
+
+// EngineSharePasses count the snapshot-sharing passes of one kind of
+// class: how many ran, the members they probed, how many selected a slot and
+// the slots they selected, and the payloads their first uses prepared, with
+// the time that took, in nanoseconds.
+type EngineSharePasses struct {
+	Passes       int64 `json:"passes"`
+	Members      int64 `json:"members,omitempty"`
+	Slotted      int64 `json:"slotted,omitempty"`
+	Slots        int64 `json:"slots,omitempty"`
+	Prepared     int64 `json:"prepared,omitempty"`
+	PrepareTotal int64 `json:"prepareTotal,omitempty"`
 }
 
 // EngineFirstUse counts the payloads of restored records the engine's calls
@@ -1219,7 +1271,11 @@ type EngineStopEvent struct {
 // nanoseconds. The Save fields count the payloads of the records nothing
 // used, which the engine's save prepared before it wrote them, and those
 // refused, with the time that took summed over them and the save's wall time
-// spent on them, in nanoseconds.
+// spent on them, in nanoseconds. Paths splits the first uses by the path
+// they came by: "lookup" (a call's decode of its hit), "export", "offer",
+// "part" (fetching or installing an entry's parts), "sharing" (a
+// snapshot-sharing pass), "merge" or "restore" (a merge warming the parts of
+// the entries it lands on), and "other".
 type EngineFirstUse struct {
 	Prepared        int64  `json:"prepared,omitempty"`
 	Refused         int64  `json:"refused,omitempty"`
@@ -1229,10 +1285,12 @@ type EngineFirstUse struct {
 	LongestBytes    int64  `json:"longestBytes,omitempty"`
 	LongestPrepare  int64  `json:"longestPrepare,omitempty"`
 	LongestLockWait int64  `json:"longestLockWait,omitempty"`
-	SavePrepared    int64  `json:"savePrepared,omitempty"`
-	SaveRefused     int64  `json:"saveRefused,omitempty"`
-	SaveTotal       int64  `json:"saveTotal,omitempty"`
-	SaveWall        int64  `json:"saveWall,omitempty"`
+	// Paths are the first uses by path.
+	Paths        map[string]EngineFirstUsePath `json:"paths,omitempty"`
+	SavePrepared int64                         `json:"savePrepared,omitempty"`
+	SaveRefused  int64                         `json:"saveRefused,omitempty"`
+	SaveTotal    int64                         `json:"saveTotal,omitempty"`
+	SaveWall     int64                         `json:"saveWall,omitempty"`
 }
 
 // EngineRestore is what an engine did with one set file: the check's name,
@@ -1243,37 +1301,85 @@ type EngineFirstUse struct {
 // what stopped it. PeakBefore and PeakAfter are the engine's peak resident
 // memory in bytes before its first part and after its last, 0 when unknown.
 // Decode, Prepare and Commit are the wall time its parts took to decode, to
-// prepare their merges and to commit them, in all, in nanoseconds.
+// prepare their merges and to commit them, in all, in nanoseconds. Window is
+// what the engine did from the file's arrival to its end, for a file it
+// downloaded and ended.
 type EngineRestore struct {
-	Check        string              `json:"check"`
-	Kind         string              `json:"kind"`
-	Digest       string              `json:"digest"`
-	Bytes        int64               `json:"bytes"`
-	Arrived      int64               `json:"arrived"`
-	FetchStarted int64               `json:"fetchStarted,omitempty"`
-	Fetched      int64               `json:"fetched,omitempty"`
-	Parts        []EngineRestorePart `json:"parts,omitempty"`
-	Complete     bool                `json:"complete,omitempty"`
-	Already      bool                `json:"already,omitempty"`
-	Error        string              `json:"error,omitempty"`
-	PeakBefore   int64               `json:"peakBefore,omitempty"`
-	PeakAfter    int64               `json:"peakAfter,omitempty"`
-	Decode       int64               `json:"decode,omitempty"`
-	Prepare      int64               `json:"prepare,omitempty"`
-	Commit       int64               `json:"commit,omitempty"`
+	Check        string               `json:"check"`
+	Kind         string               `json:"kind"`
+	Digest       string               `json:"digest"`
+	Bytes        int64                `json:"bytes"`
+	Arrived      int64                `json:"arrived"`
+	FetchStarted int64                `json:"fetchStarted,omitempty"`
+	Fetched      int64                `json:"fetched,omitempty"`
+	Parts        []EngineRestorePart  `json:"parts,omitempty"`
+	Complete     bool                 `json:"complete,omitempty"`
+	Already      bool                 `json:"already,omitempty"`
+	Error        string               `json:"error,omitempty"`
+	PeakBefore   int64                `json:"peakBefore,omitempty"`
+	PeakAfter    int64                `json:"peakAfter,omitempty"`
+	Decode       int64                `json:"decode,omitempty"`
+	Prepare      int64                `json:"prepare,omitempty"`
+	Commit       int64                `json:"commit,omitempty"`
+	Window       *EngineRestoreWindow `json:"window,omitempty"`
+}
+
+// EngineRestoreWindow is what the engine did between a set file's arrival
+// and its end, its last commit or what stopped it: what else used the engine
+// while the file landed. Every count is the engine's, whatever it was for,
+// and the windows of files that land together overlap. Durations are in
+// nanoseconds.
+//
+// Wall is the window's length. CPU is the engine process's CPU time, user
+// and system, and GCCPU the part of it the Go runtime estimates its garbage
+// collector took, GCAssist the part of that the goroutines that allocated
+// were made to do themselves, and GCCycles the collections that completed. SchedWaits
+// and SchedWait are the waits of runnable goroutines for a processor, as the
+// Go runtime samples them in its /sched/latencies histogram, how many and
+// their time estimated from the histogram's buckets: the engine's own
+// goroutines waiting their turn. RunqWait is the time the engine process's
+// threads were runnable and waiting for a CPU, as the kernel counts it: the
+// engine waiting for cores that others, such as the check's execs, hold. It
+// is absent when it couldn't be read. LookupLockWaits are the lookups' waits
+// for the graph lock begun in the window, by the kind of writer that let
+// each in (EngineLookupLockWaits); FirstUses the first uses in it, by path
+// (EngineFirstUse); Sharing the sharing passes, by kind of class.
+type EngineRestoreWindow struct {
+	Wall            int64                         `json:"wall"`
+	CPU             int64                         `json:"cpu"`
+	GCCPU           int64                         `json:"gcCpu,omitempty"`
+	GCAssist        int64                         `json:"gcAssist,omitempty"`
+	GCCycles        int64                         `json:"gcCycles,omitempty"`
+	SchedWaits      int64                         `json:"schedWaits,omitempty"`
+	SchedWait       int64                         `json:"schedWait,omitempty"`
+	RunqWait        *int64                        `json:"runqWait,omitempty"`
+	LookupLockWaits map[string]EngineLockWaits    `json:"lookupLockWaits,omitempty"`
+	FirstUses       map[string]EngineFirstUsePath `json:"firstUses,omitempty"`
+	Sharing         map[string]EngineSharePasses  `json:"sharing,omitempty"`
 }
 
 // EngineRestorePart is one merged part of a set file: its records, when it
 // committed (Unix nanoseconds), and the lookups that missed before it
 // committed and that it would have served, with the longest and shortest
 // time from such a miss to the commit; then how long its commit waited for
-// the cache's lock and held it. Durations are in nanoseconds.
+// the cache's lock and held it; then its own decode, the preparation of its
+// merge and the merge's commit, and how long the merge waited behind the
+// merges that answer lookups before it began; then how long its merge's
+// preparation waited for the cache's lock, in all and by the kind of writer
+// that let each wait in, as EngineLookupLockWaits names them. Durations are
+// in nanoseconds.
 type EngineRestorePart struct {
-	Records    int   `json:"records"`
-	Committed  int64 `json:"committed"`
-	Late       int   `json:"late,omitempty"`
-	WorstLate  int64 `json:"worstLate,omitempty"`
-	LeastLate  int64 `json:"leastLate,omitempty"`
-	LockWait   int64 `json:"lockWait,omitempty"`
-	CommitHold int64 `json:"commitHold,omitempty"`
+	Records          int              `json:"records"`
+	Committed        int64            `json:"committed"`
+	Late             int              `json:"late,omitempty"`
+	WorstLate        int64            `json:"worstLate,omitempty"`
+	LeastLate        int64            `json:"leastLate,omitempty"`
+	LockWait         int64            `json:"lockWait,omitempty"`
+	CommitHold       int64            `json:"commitHold,omitempty"`
+	Decode           int64            `json:"decode,omitempty"`
+	Prepare          int64            `json:"prepare,omitempty"`
+	Commit           int64            `json:"commit,omitempty"`
+	PriorityWait     int64            `json:"priorityWait,omitempty"`
+	PrepareLockWait  int64            `json:"prepareLockWait,omitempty"`
+	PrepareLockWaits map[string]int64 `json:"prepareLockWaits,omitempty"`
 }

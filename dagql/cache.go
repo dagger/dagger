@@ -2640,6 +2640,16 @@ type Cache struct {
 	// unprepared (FirstUse). Guarded by firstUseMu.
 	firstUseMu    sync.Mutex
 	firstUseStats FirstUseStats
+	firstUsePaths [numCacheWork]FirstUsePath
+	// lookupWaits counts the lookups' waits for the graph lock, and landing
+	// the sets of the Cloud's records landing now (LookupLockWaits,
+	// Landing).
+	lookupWaits lookupLockWaits
+	landing     atomic.Int32
+	// shareStats are what the snapshot-sharing passes did, by the kind of
+	// class (Sharing). Guarded by shareStatsMu.
+	shareStatsMu sync.Mutex
+	shareStats   [numShareClassKinds]SharePassStats
 
 	// testBetweenLateMissHolds, nil but in tests, runs between
 	// LateRemoteMisses's two holds of the lookups' lock.
@@ -7256,7 +7266,7 @@ func (c *Cache) lookupCacheForDigests(
 		return nil, false, nil
 	}
 
-	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+	c.lookupLockGraph(ctx)
 	now := time.Now()
 	nowUnix := now.Unix()
 	match := c.lookupMatchForDigestsLocked(recipeDigest, extraDigests, nowUnix)
@@ -7552,7 +7562,7 @@ func (c *Cache) releaseOngoingCallHandoff(ctx context.Context, oc *ongoingCall) 
 		return nil
 	}
 
-	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+	c.lockGraphFor(ctx, workPublication)
 	if oc.needsPersistedEdge {
 		c.upsertPersistedEdgeLocked(ctx, oc.res, oc.persistedEdgeExpiresAtUnix, false)
 		oc.pendingEdge.created = true
@@ -7642,7 +7652,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 	oc.res = &sharedResult{}
 	if oc.val != nil {
 		if existingRes := oc.val.cacheSharedResult(); existingRes != nil && existingRes.id != 0 {
-			wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+			c.lockGraphFor(ctx, workPublication)
 			oc.res = c.canonicalEquivalentSharedResultLocked(sessionID, existingRes, time.Now().Unix(), true)
 			// Take the publication handoff hold inside the same critical
 			// section as the canonical pick: the adopted result may be owned
@@ -7904,7 +7914,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 	if c.testBeforePublicationIndex != nil {
 		c.testBeforePublicationIndex(oc)
 	}
-	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+	c.lockGraphFor(ctx, workPublication)
 	// One current entry per recipe (cache_current_entry.go). A fresh value is
 	// indexed under the recipe of its stored frame, unless that recipe
 	// already has a current entry: then it adopts a live one (D1), waits for
@@ -7977,7 +7987,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 				select {
 				case <-waitCh:
 					wait.end(ctx)
-					wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+					c.lockGraphFor(ctx, workPublication)
 					continue
 				case <-released:
 				case <-ctx.Done():
@@ -7989,7 +7999,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 				// attachment lasts, so the value registers beside the entry,
 				// not indexed, as for a session that does not cover the
 				// entry's requirements.
-				wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+				c.lockGraphFor(ctx, workPublication)
 				unindexed = true
 				break
 			}
@@ -8010,7 +8020,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 				if _, derived, _ := frame.derivedRecipeDigest(); !derived {
 					c.egraphMu.Unlock()
 					_, _ = frame.deriveRecipeDigest(c) // a failure is kept on the frame, and indexing returns it
-					wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+					c.lockGraphFor(ctx, workPublication)
 					continue
 				}
 			}
@@ -8201,7 +8211,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 	// attachment-time claim.
 	failAttachment := func(err error, refusedByRelease bool) error {
 		cleanupCtx := context.WithoutCancel(ctx)
-		wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+		c.lockGraphFor(ctx, workPublication)
 		if !resWasCacheBacked {
 			c.unindexRecipesLocked(oc.res)
 		}

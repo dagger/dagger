@@ -130,6 +130,10 @@ type RestoreReport struct {
 	// Decode, Prepare and Commit are the wall time its parts took to decode,
 	// to prepare their merges and to commit them, in all.
 	Decode, Prepare, Commit time.Duration
+	// Window is what the engine did from the file's arrival to its end, for
+	// a file that was downloaded and ended; nil for one answered at once or
+	// left when its connection ended.
+	Window *RestoreWindow
 }
 
 // RestoredPartReport is one merged part: its records, when it committed on
@@ -142,15 +146,27 @@ type RestoreReport struct {
 // miss's and the latest's.
 //
 // LockWait is how long its commit waited for the cache's lock, and
-// CommitHold how long the commit held it (dagql.MergeReply).
+// CommitHold how long the commit held it (dagql.MergeReply). Decode,
+// Prepare and Commit are the part's own decode, the preparation of its
+// merge and the merge's commit, and PriorityWait how long its merge waited
+// behind the merges that answer lookups before it began (Adapter.RestorePart).
+// PrepareLockWait is how long the preparation waited for the cache's lock,
+// and PrepareLockWaits that time by the kind of writer that let each wait in
+// (dagql.MergeReply).
 type RestoredPartReport struct {
-	Records    int
-	Committed  time.Time
-	Late       int
-	WorstLate  time.Duration
-	LeastLate  time.Duration
-	LockWait   time.Duration
-	CommitHold time.Duration
+	Records          int
+	Committed        time.Time
+	Late             int
+	WorstLate        time.Duration
+	LeastLate        time.Duration
+	LockWait         time.Duration
+	CommitHold       time.Duration
+	Decode           time.Duration
+	Prepare          time.Duration
+	Commit           time.Duration
+	PriorityWait     time.Duration
+	PrepareLockWait  time.Duration
+	PrepareLockWaits map[string]time.Duration
 }
 
 // restoreFile is one file of a restore: queued, being fetched, being merged,
@@ -169,6 +185,12 @@ type restoreFile struct {
 	fetchStarted time.Time
 	fetchEnded   time.Time
 	timing       fetchTiming
+	// windowStart is the engine's counters as the file arrived, read beside
+	// its download (RestoreReport.Window); set before fetched closes.
+	windowStart restoreReading
+	// landed ends the cache's mark of a whole landing (Adapter.Landing),
+	// from its arrival to its end; nil for a head.
+	landed func()
 
 	// started is set, under the restorer's lock, once a lane of its own
 	// takes a whole.
@@ -265,6 +287,7 @@ func (r *restorer) handleRestore(env protocol.Envelope) {
 		if f.head {
 			r.heads = append(r.heads, f)
 		} else {
+			f.landed = r.s.adapter.Landing()
 			r.wholes = append(r.wholes, f)
 		}
 	}
@@ -432,13 +455,14 @@ func (r *restorer) open(f *restoreFile) error {
 func (r *restorer) mergePart(ctx context.Context, f *restoreFile) error {
 	began := time.Now()
 	bundle, err := decodePart(f.parts[f.next])
-	f.report.Decode += time.Since(began)
+	decoded := time.Since(began)
+	f.report.Decode += decoded
 	if err != nil {
 		return fmt.Errorf("part %d: %w", f.next, err)
 	}
 	fillAddresses(&bundle, f.file.Table)
 	records := len(bundle.Values)
-	reply, err := r.s.adapter.RestorePart(ctx, bundle, f.unretained[f.next], r.s.known, f.source())
+	reply, priorityWait, err := r.s.adapter.RestorePart(ctx, bundle, f.unretained[f.next], r.s.known, f.source())
 	f.report.Prepare += reply.Prepare
 	f.report.Commit += reply.Commit
 	if reply.Release != nil {
@@ -457,7 +481,18 @@ func (r *restorer) mergePart(ctx context.Context, f *restoreFile) error {
 	if f.result.FirstCommit == 0 {
 		f.result.FirstCommit = reply.EngineTimeUnixNano
 	}
-	part := RestoredPartReport{Records: records, Committed: committed, LockWait: reply.LockWait, CommitHold: reply.CommitHold}
+	part := RestoredPartReport{
+		Records:          records,
+		Committed:        committed,
+		LockWait:         reply.LockWait,
+		CommitHold:       reply.CommitHold,
+		Decode:           decoded,
+		Prepare:          reply.Prepare,
+		Commit:           reply.Commit,
+		PriorityWait:     priorityWait,
+		PrepareLockWait:  reply.PrepareLockWait,
+		PrepareLockWaits: reply.PrepareLockWaits,
+	}
 	r.lateMisses(reply, &part)
 	f.report.Parts = append(f.report.Parts, part)
 	return nil
@@ -523,6 +558,10 @@ func (r *restorer) lateMisses(reply dagql.MergeReply, part *RestoredPartReport) 
 // finish ends a file's restore, with the error that stopped it if any, and
 // answers its restore once its last file is done.
 func (r *restorer) finish(f *restoreFile, err error) {
+	f.report.Window = readRestoreWindow(r.s.adapter.CacheWork).since(f.windowStart)
+	if f.landed != nil {
+		f.landed()
+	}
 	r.mu.Lock()
 	r.heads = slices.DeleteFunc(r.heads, func(g *restoreFile) bool { return g == f })
 	r.wholes = slices.DeleteFunc(r.wholes, func(g *restoreFile) bool { return g == f })
@@ -577,6 +616,9 @@ func (r *restorer) abandon() {
 	r.heads, r.wholes = nil, nil
 	r.mu.Unlock()
 	for _, f := range left {
+		if f.landed != nil {
+			f.landed()
+		}
 		f.result.Error = errRestoreConnectionEnded.Error()
 		f.report.Error = f.result.Error
 		// A download still running is the session's, and is dropped with it.
@@ -648,11 +690,16 @@ func (r *restorer) reply(req *restoreRequest) {
 	_ = r.s.reply(req.env, protocol.TypeRestored, protocol.Restored{Generation: generation, EngineTime: time.Now().UnixNano(), Files: files})
 }
 
-// fetch downloads a file whole, and checks its size and digest.
+// fetch downloads a file whole, and checks its size and digest. Beside the
+// download, it reads the engine's counters at the file's arrival, for its
+// window (RestoreReport.Window).
 func (r *restorer) fetch(f *restoreFile) {
+	read := make(chan restoreReading, 1)
+	go func() { read <- readRestoreWindow(r.s.adapter.CacheWork) }()
 	f.fetchStarted = time.Now()
 	f.data, f.timing, f.err = r.s.cfg.getFile(r.s.ctx, f.file)
 	f.fetchEnded = time.Now()
+	f.windowStart = <-read
 	close(f.fetched)
 }
 
