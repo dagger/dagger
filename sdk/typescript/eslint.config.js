@@ -11,6 +11,11 @@ export default [
   {
     ignores: [
       "dist/",
+      // packages/core is copied verbatim from dagger/typescript-sdk and
+      // regenerated there against a running engine — client.gen.ts alone is 23k
+      // lines. Linting or reformatting it here would be a local edit that
+      // vanishes on the next copy, which is what its README forbids.
+      "packages/core/**",
       "**/testdata/**",
       "dev/**",
       "runtime/template/src/**",

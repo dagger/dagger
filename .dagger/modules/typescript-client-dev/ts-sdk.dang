@@ -130,8 +130,35 @@ type TypescriptClientDev {
       .changes(workspaceDir)
   }
 
-  pub releaseDryRun: Void @check {
-    release(
+  """
+  Build the SDK and check it produces a dist/.
+
+  This is what `release` proved on the way to publishing `@dagger.io/dagger`,
+  kept after that publish went away: the aggregate is generated per scope by
+  dagger/typescript-sdk now, and `@dagger.io/core` is what this repo releases.
+  Nothing else here runs the build — the test checks run `yarn test:node` and
+  `bun test:bun` against the sources, and the lint check only lints them.
+  """
+  pub buildTypescript: Void @check {
+    nodejsDevContainer
+      .withWorkdir(sourcePath)
+      .withExec(["npm", "run", "build"])
+      .directory("dist")
+      .entries
+
+    null
+  }
+
+  """
+  Where @dagger.io/core lives, relative to the workspace root.
+  """
+  pub corePath: String! = sourcePath + "/packages/core"
+
+  """
+  Rehearse a core release with no side effects.
+  """
+  pub releaseCoreDryRun: Void @check {
+    releaseCore(
       dryRun: true,
       sourceTag: "HEAD",
       npmToken: null,
@@ -139,7 +166,19 @@ type TypescriptClientDev {
     )
   }
 
-  pub release(
+  """
+  Publish @dagger.io/core.
+
+  Its version is the **engine** release, not the SDK's, so the tag is taken as
+  it comes rather than having the `sdk/typescript/` prefix stripped off it: core
+  is the generated bindings for one engine, so the two move together and nothing
+  else here does.
+
+  @dagger.io/session is a published dependency, so `npm install` below fetches it
+  from the registry. That is deliberate — it is the only thing that proves the
+  package boundary holds before the tarball is built.
+  """
+  pub releaseCore(
     """
     Source git tag to release
     """
@@ -157,31 +196,46 @@ type TypescriptClientDev {
     """
     npmRegistryURL: String! = "",
   ): Void {
-    let version = versionFromTag(sourceTag)
-    let versionFlag = if (isSemver(version)) {
-      version.trimPrefix("v")
+    let versionFlag = if (isSemver(sourceTag)) {
+      sourceTag.trimPrefix("v")
     } else {
       "prepatch"
     }
-    let prerelease = if (isSemver(version)) {
-      prereleaseFromVersion(version)
+    let prerelease = if (isSemver(sourceTag)) {
+      # "" for a stable tag, so the publish below moves `latest`; the channel
+      # otherwise, so a beta engine never does.
+      prereleaseFromVersion(sourceTag)
     } else {
-      ""
+      # Only a dry run gets here. `npm version prepatch` invents a prerelease,
+      # and npm refuses to publish a prerelease of a name it has never seen
+      # without a tag — which @dagger.io/core is.
+      "dev"
     }
-    let build = nodejsDevContainer
-      .withWorkdir(sourcePath)
+
+    let build = nodejsBase(nodeVersionLts)
+      .withDirectory(".", workspaceDir)
+      .withWorkdir(corePath)
+      .withExec(["npm", "install", "--no-audit", "--no-fund"])
       .withExec(["npm", "run", "build"])
-      .withExec(["npm", "version", versionFlag])
+      # --allow-same-version so a re-run is not fatal: the committed manifest
+      # records the last release, so it already holds this version whenever a
+      # release is retried.
+      .withExec([
+        "npm",
+        "version",
+        versionFlag,
+        "--allow-same-version",
+        "--no-git-tag-version",
+      ])
     # Check that dist/ exists in the build
     build.directory("dist").entries
+
     let publishArgs = ["npm", "publish", "--access", "public"]
     if (prerelease != "") {
       publishArgs += ["--tag", prerelease]
     }
     if (dryRun == true) {
       publishArgs += ["--dry-run"]
-      # TODO(vito): in dang, if exprs have to have same return type on all
-      # branches, which gets awkward here
       null
     } else if (npmToken != null) {
       let registry = if (npmRegistryURL != "") {
@@ -198,8 +252,54 @@ type TypescriptClientDev {
       build = build.withMountedSecret(".npmrc", setSecret("npmrc", npmrc))
       null
     }
-    build.withExec(publishArgs).sync
+    let published = build.withExec(publishArgs)
+
+    # The publish above leaves `latest` where it is for a prerelease. That is
+    # right for a package with stable releases behind it and wrong for this
+    # one: core has only ever been a prerelease, so `latest` stayed on an old
+    # beta whose bindings target a different engine view than the one
+    # `@dagger.io/session`'s own `latest` announces — the mismatch this package
+    # exists to avoid, sitting on the default install path.
+    #
+    # Moving it only when the new version sorts above the current one stops on
+    # its own the day a stable core ships: 1.0.0-beta.29 sorts below 1.0.0, so
+    # there is no flag to remember to turn off.
+    let released = if (dryRun == true) {
+      published
+    } else {
+      published.withExec(["sh", "-ec", moveLatestScript])
+    }
+    released.sync
     null
+  }
+
+  """
+  Point `latest` at the version just published, unless it already names a
+  higher one.
+
+  Reads the name and version from the manifest rather than taking them as
+  arguments, so it cannot disagree with what was published. `semver` comes
+  from the registry at release time: the comparison has to be semver's, not a
+  string's — `1.0.0-beta.9` is above `1.0.0-beta.28` to `sort`, and the
+  alphanumeric-outranks-numeric rule that makes `1.0.0-beta.25-2` sort above
+  every later beta is exactly the kind of thing a hand-rolled compare gets
+  wrong.
+
+  A failure here fails the release. The publish has already happened by then,
+  so the alternative is a release that looks green with `latest` left behind,
+  which is the bug being fixed.
+  """
+  let moveLatestScript: String! {
+    [
+      "name=$(node -p \"require('./package.json').name\")",
+      "version=$(node -p \"require('./package.json').version\")",
+      "current=$(npm view \"$name\" dist-tags.latest 2>/dev/null || true)",
+      "if [ -n \"$current\" ] && [ \"$(npx -y semver \"$version\" \"$current\" | tail -1)\" != \"$version\" ]; then",
+      "  echo \"latest stays at $current: $version does not sort above it\"",
+      "  exit 0",
+      "fi",
+      "npm dist-tag add \"$name@$version\" latest",
+    ].join("\n")
   }
 
   pub isSemver(version: String!): Boolean! {
@@ -225,10 +325,6 @@ type TypescriptClientDev {
       let channel = prerelease.captures[0]
       if (channel == null) { "" } else { channel }
     }
-  }
-
-  let versionFromTag(tag: String!): String! {
-    tag.trimPrefix(sourcePath.trimRight("/") + "/")
   }
 
   # Build a nodejs dev environment, with the SDK source code mounted and its dependencies installed
