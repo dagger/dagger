@@ -1226,8 +1226,10 @@ func (c *Cache) embedMergedParts(bundle *ValueBundle) {
 }
 
 // cloneValueBundle copies a bundle for merge to change, leaving the input
-// untouched, without encoding its payloads: each record field by field, and
-// the outputs, which carry no payload, by a JSON round trip.
+// untouched, without encoding its payloads: each record and each output
+// field by field. Layers, the bundle's and its chains', are copied no deeper
+// than their slices: an offered layer is never written after it's built
+// (clonePartOffer).
 func cloneValueBundle(in ValueBundle) (ValueBundle, error) {
 	out := ValueBundle{Version: in.Version, Roots: slices.Clone(in.Roots), Calls: slices.Clone(in.Calls), Layers: slices.Clone(in.Layers), Addresses: maps.Clone(in.Addresses)}
 	if in.Values != nil {
@@ -1262,15 +1264,46 @@ func cloneValueBundle(in ValueBundle) (ValueBundle, error) {
 		out.Values[i] = value
 	}
 	if in.Outputs != nil {
-		raw, err := json.Marshal(in.Outputs)
-		if err != nil {
-			return ValueBundle{}, err
-		}
-		if err := json.Unmarshal(raw, &out.Outputs); err != nil {
-			return ValueBundle{}, err
+		out.Outputs = make([]TransferredOutput, len(in.Outputs))
+		for i, output := range in.Outputs {
+			cloned, err := cloneTransferredOutput(output)
+			if err != nil {
+				return ValueBundle{}, err
+			}
+			out.Outputs[i] = cloned
 		}
 	}
 	return out, nil
+}
+
+// cloneTransferredOutput copies output for merge to change, as
+// clonePartOffer copies an offer: every nested map, slice and pointer of its
+// address, value, chain, prefix and owner, sharing the chain's layers. It
+// refuses an output whose chain can't be encoded as the bundle is.
+func cloneTransferredOutput(output TransferredOutput) (TransferredOutput, error) {
+	output.Address = clonePartAddress(output.Address)
+	if output.Value != nil {
+		value := cloneSnapshotValue(*output.Value)
+		output.Value = &value
+	}
+	if output.Chain != nil {
+		chain, err := cloneOfferedChain(*output.Chain)
+		if err != nil {
+			return TransferredOutput{}, err
+		}
+		output.Chain = &chain
+	}
+	if output.Prefix != nil {
+		prefix := *output.Prefix
+		prefix.Address = clonePartAddress(prefix.Address)
+		output.Prefix = &prefix
+	}
+	if output.Owner != nil {
+		owner := PersistedOfferOwner{DependencyIDs: slices.Clone(output.Owner.DependencyIDs)}
+		output.Owner = &owner
+	}
+	output.Layers = slices.Clone(output.Layers)
+	return output, nil
 }
 
 // transferIdentityPlanOf derives the identity of res, a record in the private

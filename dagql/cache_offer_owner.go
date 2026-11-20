@@ -308,25 +308,43 @@ func clonePartOffers(offers []PersistedPartOffer) ([]PersistedPartOffer, error) 
 // can make it.
 func clonePartOffer(offer PersistedPartOffer) (PersistedPartOffer, error) {
 	offer.Address.OutputPath = slices.Clone(offer.Address.OutputPath)
-	offer.Value.Platform = clonePlatform(offer.Value.Platform)
-	offer.Value.Services = slices.Clone(offer.Value.Services)
-	for i := range offer.Value.Services {
-		offer.Value.Services[i].Aliases = slices.Clone(offer.Value.Services[i].Aliases)
+	offer.Value = cloneSnapshotValue(offer.Value)
+	chain, err := cloneOfferedChain(offer.Chain)
+	if err != nil {
+		return PersistedPartOffer{}, err
 	}
-	for _, layer := range offer.Chain.Layers {
+	offer.Chain = chain
+	offer.Owner.DependencyIDs = slices.Clone(offer.Owner.DependencyIDs)
+	return offer, nil
+}
+
+// cloneSnapshotValue copies value's platform and service bindings.
+func cloneSnapshotValue(value SnapshotValue) SnapshotValue {
+	value.Platform = clonePlatform(value.Platform)
+	value.Services = slices.Clone(value.Services)
+	for i := range value.Services {
+		value.Services[i].Aliases = slices.Clone(value.Services[i].Aliases)
+	}
+	return value
+}
+
+// cloneOfferedChain copies chain's maps and shares its layers, as
+// clonePartOffer says. It refuses a chain that can't be encoded, which only
+// a layer's creation time can make it.
+func cloneOfferedChain(chain OfferedChain) (OfferedChain, error) {
+	for _, layer := range chain.Layers {
 		if layer.CreatedAt != nil {
 			if _, err := layer.CreatedAt.MarshalJSON(); err != nil {
-				return PersistedPartOffer{}, err
+				return OfferedChain{}, err
 			}
 		}
 	}
 	// Clipped, so that an append to the copy's layers can't write over the
 	// original's.
-	offer.Chain.Layers = slices.Clip(offer.Chain.Layers)
-	offer.Chain.Addresses = maps.Clone(offer.Chain.Addresses)
-	offer.Chain.Packs = maps.Clone(offer.Chain.Packs)
-	offer.Owner.DependencyIDs = slices.Clone(offer.Owner.DependencyIDs)
-	return offer, nil
+	chain.Layers = slices.Clip(chain.Layers)
+	chain.Addresses = maps.Clone(chain.Addresses)
+	chain.Packs = maps.Clone(chain.Packs)
+	return chain, nil
 }
 
 func clonePlatform(platform *ocispecs.Platform) *ocispecs.Platform {
