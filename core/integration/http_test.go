@@ -129,6 +129,35 @@ func (HTTPSuite) TestHTTPChecksumInvalid(ctx context.Context, t *testctx.T) {
 	require.ErrorContains(t, err, `invalid checksum "not-a-digest"`)
 }
 
+func (HTTPSuite) TestHTTPChecksumSkipsRevalidation(ctx context.Context, t *testctx.T) {
+	port := counterService(ctx, t, false)
+	checksum := digest.FromString("count: 1").String()
+
+	fetch := func() (string, error) {
+		c := connect(ctx, t)
+		svc := core.NewQuery(c).Host().Service([]core.PortForward{{
+			Backend:  port,
+			Frontend: port,
+		}})
+		hostname, err := svc.Hostname(ctx)
+		require.NoError(t, err)
+		return core.NewQuery(c).HTTP(fmt.Sprintf("http://%s:%d?add=true", hostname, port), core.HTTPOpts{
+			ExperimentalServiceHost: svc,
+			Checksum:                checksum,
+		}).Contents(ctx)
+	}
+
+	contents, err := fetch()
+	require.NoError(t, err)
+	require.Equal(t, "count: 1", contents)
+
+	// a new session would get "count: 2" from the server; the checksum pins
+	// the content the engine already holds, so it must not ask again
+	contents, err = fetch()
+	require.NoError(t, err)
+	require.Equal(t, "count: 1", contents)
+}
+
 func (HTTPSuite) TestHTTPService(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
