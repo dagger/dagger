@@ -91,6 +91,25 @@ func TestSettleListsTheEndedSessions(t *testing.T) {
 	conn.none(t)
 }
 
+// The settle tells the service when the engine's bound started and how long
+// it is, as the settle state has them, for the service to record.
+func TestSettleCarriesTheEnginesBound(t *testing.T) {
+	t.Parallel()
+	adapter := newFakeAdapter()
+	adapter.setSettle(SettleState{Period: 1, Live: true})
+	_, conn, _ := servedSession(t, adapter)
+	conn.none(t)
+
+	idle := time.Date(2026, 11, 20, 12, 0, 3, 0, time.UTC)
+	sessions := []protocol.SettleSession{{ID: "sess-1", Marker: true}}
+	adapter.setSettle(SettleState{Period: 1, Sessions: sessions, IdleSince: idle, Bound: 20 * time.Second})
+	settle := conn.next(t)
+	require.Equal(t, protocol.TypeSettle, settle.Type)
+	got := decode[protocol.Settle](t, settle)
+	require.True(t, idle.Equal(got.IdleSince), "idleSince %s", got.IdleSince)
+	require.Equal(t, 20*time.Second, got.Bound)
+}
+
 // A session that starts on an engine with none live opens a new idle period,
 // which the engine tells the service at once.
 func TestOpenTellsTheServiceOfANewPeriod(t *testing.T) {
