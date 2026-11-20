@@ -78,9 +78,12 @@ var windowMetrics = []string{
 	"/cpu/classes/gc/mark/assist:cpu-seconds",
 }
 
-// readRestoreWindow reads the engine's counters now, with the cache's work.
-func readRestoreWindow(work func() CacheWork) restoreReading {
-	r := restoreReading{at: time.Now()}
+// readRestoreWindow reads the engine's counters, with the cache's work, for
+// the moment at: a reading takes about 15 µs for each of the process's
+// threads, so it is taken beside the restore, not in its way, and stands
+// for the moment its caller stamped.
+func readRestoreWindow(at time.Time, work func() CacheWork) restoreReading {
+	r := restoreReading{at: at}
 	var ru unix.Rusage
 	if unix.Getrusage(unix.RUSAGE_SELF, &ru) == nil {
 		r.cpu = time.Duration(ru.Utime.Nano() + ru.Stime.Nano())
