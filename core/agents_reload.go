@@ -109,7 +109,7 @@ func loadRecomposeBinding(ctx context.Context, srv *dagql.Server, binding boundT
 	obj := binding.object
 	if obj == nil {
 		var err error
-		obj, err = srv.Load(ctx, binding.id)
+		obj, err = LoadBoundObject(ctx, srv, binding.id)
 		if err != nil {
 			return nil, fmt.Errorf("load current state for %q: %w", binding.typeName(), err)
 		}

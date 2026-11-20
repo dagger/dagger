@@ -95,4 +95,19 @@ type Hirer {
     }
     worker
   }
+
+  """
+  A tool object holding a secret this module mints itself, the way a worker's
+  module might build one into its tools: a container running script with the
+  secret at uri as $TOKEN. The module's function client has no host, so the
+  secret reads as nothing here; a restored worker bound to it must not read
+  it from its owner's host unasked either.
+  """
+  secretTool(image: String!, uri: String!, bust: String!, script: String!): Container! {
+    Dagger.container
+      .from(image)
+      .withEnvVariable("CACHEBUSTER", bust)
+      .withSecretVariable("TOKEN", secret(uri: uri))
+      .withExec(["sh", "-c", script])
+  }
 }

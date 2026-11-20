@@ -48,6 +48,10 @@ func (*currentTypeDefsTestServer) AuthorizeGitRead(context.Context, string) (*en
 	panic("unexpected AuthorizeGitRead")
 }
 
+func (*currentTypeDefsTestServer) AuthorizeSecret(context.Context, string) (*engine.ClientMetadata, error) {
+	return nil, nil
+}
+
 func (s *currentTypeDefsTestServer) ServeModule(context.Context, dagql.ObjectResult[*core.Module], bool, bool) error {
 	return nil
 }
@@ -132,6 +136,10 @@ func (s *currentTypeDefsTestServer) RegisterNestedClientTransport(context.Contex
 }
 
 func (s *currentTypeDefsTestServer) ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.NestedClientTransport, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed) {
+}
+
+func (*currentTypeDefsTestServer) WithHostlessClient(context.Context, func(context.Context) error) error {
+	panic("unexpected WithHostlessClient")
 }
 
 func (s *currentTypeDefsTestServer) Auth(context.Context) (*auth.RegistryAuthProvider, error) {

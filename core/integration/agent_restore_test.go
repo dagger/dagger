@@ -21,6 +21,7 @@ package core
 import (
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -647,6 +648,268 @@ func (AgentRestoreSuite) TestRestoreNotificationGraph(ctx context.Context, t *te
 	require.Equal(t, "worker", out.Get("snapshot.messages.0.origin.agentName").String())
 	require.Equal(t, "IDLE", restoredRemoved.state(ctx, t))
 	require.Empty(t, restoredRemoved.mustRun(ctx, t, "snapshot { messages { role } }").Get("snapshot.messages").Array())
+}
+
+// TestRestoredWorkerReadsHostSecret is the staff shape across a restore:
+// agents bound to tool objects that hold HOST secrets or files, whose loops
+// are driven by a module function (staff's sendTo: resume, send, response) or
+// by the restoring client itself, as a restored chief's is.
+//
+// Before the restore a binding loads from the recipe the session already
+// evaluated. After it, nothing in the new session has, and the lazily bound
+// tool object is rebuilt from its recipe — in a host-less client of its own,
+// whichever client drives the loop: nothing gains access by being resumed. So
+// every secret in it is asked of the owner, which here cannot prompt and
+// refuses, whether the owner minted it (the "owned" agent's tool), a module
+// built it into its own tool object (the "minter" worker's), or the owner's
+// workspace config set it for a module (the "configured" worker's keeper,
+// whose recipe records the setting's secret as its constructor's argument);
+// and a host file is never read from the restorer's disk (the "host-file"
+// agent's). Resuming someone else's trace must never read your secrets or
+// files unasked.
+func (AgentRestoreSuite) TestRestoredWorkerReadsHostSecret(ctx context.Context, t *testctx.T) {
+	ctx, cancel := context.WithTimeout(ctx, 8*time.Minute)
+	defer cancel()
+
+	run := rand.Text()
+	token := "host-token-" + run
+	tokenPath := filepath.Join(t.TempDir(), "token")
+	require.NoError(t, os.WriteFile(tokenPath, []byte(token), 0o600))
+
+	// Every session runs in a workspace whose dagger.toml sets the keeper
+	// module's token setting to env://KEEPER_TOKEN, read from the CLI's host.
+	// Its value differs from the file's: equal secrets are one result, which
+	// a recipe may spell either way.
+	keeperToken := "keeper-token-" + run
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+	require.NoError(t, os.CopyFS(workdir, os.DirFS(filepath.Join("testdata", "workspaces", "workspace-agent-secrets"))))
+	connectWorkspace := func() (*dagger.Client, *agentTraceSink) {
+		return connectWithTrace(ctx, t, engineconn.Config{
+			Workdir:              workdir,
+			ExtraEnv:             []string{"KEEPER_TOKEN=" + keeperToken},
+			LoadWorkspaceModules: true,
+		})
+	}
+
+	const (
+		firstPrompt  = "use the token"
+		firstReply   = "first use done"
+		secondPrompt = "use the token again"
+		secondReply  = "second use done"
+	)
+	// The exec checks the secret without printing it or naming the success
+	// marker literally, so an error message quoting the command cannot pass
+	// for a successful read.
+	checkScript := fmt.Sprintf(`[ "${#TOKEN}" -eq %d ] && echo "secret-read-$((6*7))"`, len(token))
+	checkSecret := func(c *dagger.Client) core.ID {
+		id, err := core.NewQuery(c).Container().From(alpineImage).
+			WithEnvVariable("CACHEBUSTER", run).
+			WithSecretVariable("TOKEN", core.NewQuery(c).Secret("file://"+tokenPath)).
+			WithExec([]string{"sh", "-c", checkScript}).
+			ID(ctx)
+		require.NoError(t, err)
+		return id
+	}
+	const (
+		readMarker    = "secret-read-42"
+		settingMarker = "token matches"
+		fileMarker    = "file-read-42"
+		refused       = "for a restored agent requires approval"
+		hostDenied    = "SDK client access to host session attachables is denied"
+	)
+
+	toolTurn := func(tool, args string) func(llm *core.LLM, prompt, callID, reply string) *core.LLM {
+		return func(llm *core.LLM, prompt, callID, reply string) *core.LLM {
+			call := core.LLMContentBlockInput{Kind: core.LLMContentBlockKindToolCall, CallID: callID, ToolName: tool}
+			if args != "" {
+				call.Arguments = core.JSON(args)
+			}
+			return llm.WithPrompt(prompt).
+				WithResponse([]core.LLMContentBlockInput{call}).
+				// Placeholder: the replayer really dispatches the call, and
+				// tool results are excluded from its history matching.
+				WithToolResult(callID, "", false).
+				WithResponse([]core.LLMContentBlockInput{
+					{Kind: core.LLMContentBlockKindText, Text: reply},
+				})
+		}
+	}
+
+	serveHirer := func(c *dagger.Client) {
+		modDir := t.TempDir()
+		copyTestdataFixture(ctx, t, modDir, "modules", "dang", "agent-hirer")
+		require.NoError(t, core.NewQuery(c).ModuleSource(modDir).AsModule().Serve(ctx))
+	}
+	// askViaModule drives the agent the way staff's sendTo does: from a
+	// module function's own client, which has no host of its own.
+	askViaModule := func(c *dagger.Client, agentID, message string) (string, error) {
+		var res struct {
+			Hirer struct {
+				AskAgent string
+			}
+		}
+		err := c.Do(ctx, &dagger.Request{
+			Query: `query($agent: ID!, $message: String!) {
+				hirer { askAgent(agent: $agent, message: $message) }
+			}`,
+			Variables: map[string]any{"agent": agentID, "message": message},
+		}, &dagger.Response{Data: &res})
+		return res.Hirer.AskAgent, err
+	}
+
+	source, sink := connectWorkspace()
+	serveHirer(source)
+	recording := func(tool, args string) string {
+		turn := toolTurn(tool, args)
+		return cannedRecordingModel(ctx, t, source,
+			turn(turn(core.NewQuery(source).LLM(), firstPrompt, "call_1", firstReply),
+				secondPrompt, "call_2", secondReply))
+	}
+	readToken := recording("stdout", "")
+
+	// The client evaluates the tool object (and thus mints the secret) before
+	// handing it to the worker, the way a chief's own toolset already holds
+	// its objects when staff passes them on.
+	owned := spawnAgent(ctx, t, source, spawnOpts{model: readToken, name: "owned", toolIDs: []core.ID{checkSecret(source)}})
+	reply, err := askViaModule(source, owned.agentID, firstPrompt)
+	require.NoError(t, err)
+	require.Equal(t, firstReply, reply)
+	transcript, _ := owned.snapshot(ctx, t)
+	require.Equal(t, 1, strings.Count(transcript, readMarker),
+		"the worker could not read the host secret before the restore:\n%s", transcript)
+
+	// The module mints its own secret, from the same path, into a tool object
+	// it builds: its function client has no host, so the secret reads as
+	// nothing for the worker bound to it.
+	var built struct {
+		Hirer struct {
+			SecretTool struct {
+				ID core.ID
+			}
+		}
+	}
+	require.NoError(t, source.Do(ctx, &dagger.Request{
+		Query: `query($image: String!, $uri: String!, $bust: String!, $script: String!) {
+			hirer { secretTool(image: $image, uri: $uri, bust: $bust, script: $script) { id } }
+		}`,
+		Variables: map[string]any{"image": alpineImage, "uri": "file://" + tokenPath, "bust": run, "script": checkScript},
+	}, &dagger.Response{Data: &built}))
+	minter := spawnAgent(ctx, t, source, spawnOpts{model: readToken, name: "minter", toolIDs: []core.ID{built.Hirer.SecretTool.ID}})
+	_, reply, err = minter.sendAndWait(ctx, t, firstPrompt)
+	require.NoError(t, err)
+	require.Equal(t, firstReply, reply)
+	transcript, _ = minter.snapshot(ctx, t)
+	require.Zero(t, strings.Count(transcript, readMarker),
+		"the module's own secret read the owner's host before the restore:\n%s", transcript)
+
+	// The workspace's keeper module, constructed with its configured token.
+	var keeper struct {
+		Keeper struct {
+			ID core.ID
+		}
+	}
+	require.NoError(t, source.Do(ctx, &dagger.Request{Query: `{ keeper { id } }`}, &dagger.Response{Data: &keeper}))
+	wantToken, err := json.Marshal(map[string]string{"want": keeperToken})
+	require.NoError(t, err)
+	configured := spawnAgent(ctx, t, source, spawnOpts{model: recording("tokenMatches", string(wantToken)), name: "configured", toolIDs: []core.ID{keeper.Keeper.ID}})
+	_, reply, err = configured.sendAndWait(ctx, t, firstPrompt)
+	require.NoError(t, err)
+	require.Equal(t, firstReply, reply)
+	transcript, _ = configured.snapshot(ctx, t)
+	require.Equal(t, 1, strings.Count(transcript, settingMarker),
+		"the worker could not read the configured setting before the restore:\n%s", transcript)
+
+	// A tool object that is a file on the client's host, not a secret: the
+	// File itself, whose recipe is host.file. A restored binding loads
+	// host-less, so the recipe cannot read the restorer's disk: on another
+	// engine, host.file is denied. On this one, though, the content read in
+	// the recorded session is still in the engine's cache under the recipe's
+	// key, and a cache hit reads no host at all, so the test only checks that
+	// the restorer's disk, changed since, is not read.
+	filePath := filepath.Join(t.TempDir(), "marker")
+	require.NoError(t, os.WriteFile(filePath, []byte(fileMarker), 0o600))
+	fileToolID, err := core.NewQuery(source).Host().File(filePath).ID(ctx)
+	require.NoError(t, err)
+	hostFile := spawnAgent(ctx, t, source, spawnOpts{model: recording("contents", ""), name: "host-file", toolIDs: []core.ID{fileToolID}})
+	_, reply, err = hostFile.sendAndWait(ctx, t, firstPrompt)
+	require.NoError(t, err)
+	require.Equal(t, firstReply, reply)
+	transcript, _ = hostFile.snapshot(ctx, t)
+	require.Equal(t, 1, strings.Count(transcript, fileMarker),
+		"the worker could not read the host file before the restore:\n%s", transcript)
+
+	sink.awaitRestorable(t, 4)
+	require.NoError(t, source.Close())
+	traces, logs := sink.capture()
+	// What the restorer's disk holds now, which a restored binding must not
+	// read.
+	const fileChanged = "file-changed-on-disk"
+	require.NoError(t, os.WriteFile(filePath, []byte(fileChanged), 0o600))
+
+	// Each driver restores the same capture into a session of its own, so
+	// neither can warm the other's cache. Sequential, not subtests: the
+	// helpers above close over this test's context.
+	for _, driver := range []string{"client", "module"} {
+		db := importCapture(ctx, t, traces, logs)
+		plan := planByName(t, db.RestorePlan())
+		require.Len(t, plan, 4)
+		target, _ := connectWorkspace()
+		restoredOwned := restoreAgent(ctx, t, target, db, plan["owned"])
+		restoredMinter := restoreAgent(ctx, t, target, db, plan["minter"])
+		restoredConfigured := restoreAgent(ctx, t, target, db, plan["configured"])
+		restoredHostFile := restoreAgent(ctx, t, target, db, plan["host-file"])
+
+		ask := func(h *agentHandle) string {
+			t.Helper()
+			var reply string
+			var err error
+			switch driver {
+			case "client":
+				// The restoring client drives the loop itself, as for a
+				// restored chief: its host lends the bindings nothing.
+				_, reply, err = h.sendAndWait(ctx, t, secondPrompt)
+			default:
+				reply, err = askViaModule(target, h.agentID, secondPrompt)
+			}
+			require.NoError(t, err, "driven by the %s", driver)
+			require.Equal(t, secondReply, reply, "driven by the %s", driver)
+			transcript, _ := h.snapshot(ctx, t)
+			return transcript
+		}
+		if driver == "module" {
+			serveHirer(target)
+		}
+
+		// Restored bindings load host-less. Whoever minted a secret in one,
+		// the owner, a module, or the owner's workspace config, the owner is
+		// asked before its host is read, and cannot prompt: the tool call
+		// fails rather than read the host. Each worker's marker counts only
+		// its read before the restore.
+		for _, tc := range []struct {
+			worker *agentHandle
+			marker string
+			before int
+		}{
+			{restoredOwned, readMarker, 1},
+			{restoredMinter, readMarker, 0},
+			{restoredConfigured, settingMarker, 1},
+		} {
+			transcript := ask(tc.worker)
+			require.Contains(t, transcript, refused,
+				"driven by the %s, the restored binding was not host-less:\n%s", driver, transcript)
+			require.Equal(t, tc.before, strings.Count(transcript, tc.marker),
+				"driven by the %s, a restored worker read the host unasked:\n%s", driver, transcript)
+		}
+		// The host file is denied, or found in this engine's cache as the
+		// recorded session read it; never read from the restorer's disk.
+		transcript := ask(restoredHostFile)
+		require.NotContains(t, transcript, fileChanged,
+			"driven by the %s, a restored worker read the restorer's disk:\n%s", driver, transcript)
+		require.True(t, strings.Contains(transcript, hostDenied) || strings.Count(transcript, fileMarker) == 2,
+			"driven by the %s:\n%s", driver, transcript)
+		require.NoError(t, target.Close())
+	}
 }
 
 // startArchiveEngine starts ctr as a dev engine service tunneled to the host and

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"maps"
 	"slices"
 	"strconv"
@@ -2014,6 +2015,34 @@ func agentLoopContext(ctx context.Context, self dagql.ObjectResult[*Agent]) cont
 	return WithComposingAgent(AgentToContext(ctx, self), "")
 }
 
+// restoredBindingContext marks the tool bindings a restored agent was
+// restored with, so they load host-less (see LoadBoundObject), whichever
+// client drives the loop. The bindings are read from the seed, which a
+// restore fixes as the restored conversation; bindings the agent gains later
+// load in the loop's own client, as for a fresh agent.
+func (rt *AgentRuntime) restoredBindingContext(ctx context.Context) context.Context {
+	rt.mu.Lock()
+	restored, seed := rt.restored, rt.seed
+	rt.mu.Unlock()
+	if !restored || seed.Self() == nil || seed.Self().mcp == nil {
+		return ctx
+	}
+	bindings, err := seed.Self().mcp.BoundToolBindings()
+	if err != nil {
+		slog.Warn("agent restore: cannot read restored tool bindings", "agent", rt.name, "error", err)
+		return ctx
+	}
+	recipes := make(map[*call.ID]struct{}, len(bindings))
+	for _, binding := range bindings {
+		// Handle-form IDs name results held in this session, which loading
+		// does not re-evaluate; only recipes are rebuilt.
+		if binding.ID != nil && !binding.ID.IsHandle() {
+			recipes[binding.ID] = struct{}{}
+		}
+	}
+	return withRestoredBindings(ctx, recipes)
+}
+
 // loop is the agent's evaluation loop, run on a goroutine under a detached
 // context. It mirrors LLM.Loop (core/llm.go) with the mailbox spliced in:
 // drain queued messages onto the conversation (each recorded as a
@@ -2033,6 +2062,7 @@ func (rt *AgentRuntime) loop(ctx context.Context) {
 	// Resume-retry relaunch too, which re-enters here on a fresh detached
 	// context.
 	ctx = agentLoopContext(ctx, rt.self)
+	ctx = rt.restoredBindingContext(ctx)
 	ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("agent: %s", rt.name),
 		agentSpanAttrs(ctx, rt.name, rt.self)...)
 

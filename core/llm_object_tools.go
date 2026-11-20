@@ -194,7 +194,7 @@ func (m *MCP) boundToolObject(ctx context.Context, srv *dagql.Server, typeName s
 		return nil, false, nil
 	}
 
-	obj, err := srv.Load(ctx, toLoad)
+	obj, err := LoadBoundObject(ctx, srv, toLoad)
 	if err != nil {
 		return nil, true, fmt.Errorf("load bound object of type %q: %w", typeName, err)
 	}
@@ -221,6 +221,67 @@ func (m *MCP) boundToolObject(ctx context.Context, srv *dagql.Server, typeName s
 		return obj, true, nil
 	}
 	return obj, true, nil
+}
+
+type restoredBindingsKey struct{}
+
+// withRestoredBindings marks recipes as the bindings a restored agent was
+// restored with: the very IDs the restored conversation holds, compared by
+// identity. A digest would not do: an ID's digest is whatever its encoding
+// claims, so an ID built elsewhere could carry a restored recipe's digest
+// over different calls.
+func withRestoredBindings(ctx context.Context, recipes map[*call.ID]struct{}) context.Context {
+	if len(recipes) == 0 {
+		return ctx
+	}
+	return context.WithValue(ctx, restoredBindingsKey{}, recipes)
+}
+
+// LoadBoundObject loads a lazily bound object's recipe with srv.
+//
+// The bindings a restored agent was restored with (see withRestoredBindings)
+// load in a fresh host-less client instead of whichever client drives the
+// agent's loop (see Server.WithHostlessClient), marked as such (see
+// IsRestoredBindingLoad). Nothing gains access by being resumed: in the
+// session that composed a binding, its recipe was evaluated where its host
+// inputs were read, but a resume re-evaluates it, and the client driving the
+// loop now (the CLI that restored a chief, say) must lend it none of its own
+// host. IDs are recipes, not authority. So a host.* call in the recipe is
+// denied, as for a module client, and a secret asks the owner, for the agent
+// (see Server.AuthorizeSecret), never forever: no approval of the recorded
+// session carries over. Bindings the agent gains after the restore load as
+// for a fresh agent.
+func LoadBoundObject(ctx context.Context, srv *dagql.Server, id *call.ID) (dagql.AnyObjectResult, error) {
+	recipes, _ := ctx.Value(restoredBindingsKey{}).(map[*call.ID]struct{})
+	if _, restored := recipes[id]; !restored || id == nil {
+		return srv.Load(ctx, id)
+	}
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var obj dagql.AnyObjectResult
+	err = query.WithHostlessClient(ctx, func(ctx context.Context) error {
+		var err error
+		obj, err = srv.Load(ContextWithRestoredBindingLoad(ctx), id)
+		return err
+	})
+	return obj, err
+}
+
+type restoredBindingLoadKey struct{}
+
+// ContextWithRestoredBindingLoad marks ctx as loading a restored agent's
+// binding (see LoadBoundObject).
+func ContextWithRestoredBindingLoad(ctx context.Context) context.Context {
+	return context.WithValue(ctx, restoredBindingLoadKey{}, true)
+}
+
+// IsRestoredBindingLoad reports whether ctx is loading a restored agent's
+// binding (see LoadBoundObject).
+func IsRestoredBindingLoad(ctx context.Context) bool {
+	restored, _ := ctx.Value(restoredBindingLoadKey{}).(bool)
+	return restored
 }
 
 // rebindBoundTool replaces the object for typeName's binding with newObj — the
