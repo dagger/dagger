@@ -217,8 +217,11 @@ func (c *Cache) PrepareValueMerge(ctx context.Context, from CacheID, input Value
 	// commit takes each one whose numbers still hold, and relocates any
 	// other under the graph lock (relocateMergeRowsLocked).
 	if len(prep.stale) == 0 {
-		c.warmMergeTargetParts(ctx, prep)
-		c.prerelocateMergeRows(prep)
+		// The warming's and renumbering's waits for egraphMu are the
+		// preparation's.
+		warmCtx := withGraphLockWaits(ctx, prep.lockWaits)
+		c.warmMergeTargetParts(warmCtx, prep)
+		c.prerelocateMergeRows(warmCtx, prep)
 	}
 	// A prepare cancelled while it warmed fails, as one cancelled before
 	// it did: its caller has no merge to commit or release.
@@ -482,9 +485,10 @@ func (r MergeReply) Imported() []ImportedValue {
 type valueMergePrep struct {
 	// payloadPreparing is the cache's testRecordPayloadPreparing.
 	payloadPreparing func(uint64) error
-	// lockWaits are the preparation's waits for egraphMu, by the kind of
-	// writer that let each in (MergeReply.PrepareLockWaits).
-	lockWaits graphLockWaits
+	// lockWaits gathers the preparation's waits for egraphMu, by the kind of
+	// writer that let each in (MergeReply.PrepareLockWaits): its own
+	// sections', and its warming's.
+	lockWaits *graphLockWaits
 	// prerelocated are the records relocated before the commit took
 	// egraphMu, by ordinal (prerelocateMergeRows); the commit takes each
 	// whose numbers still hold.
@@ -640,13 +644,14 @@ func (c *Cache) prepareValueMerge(ctx context.Context, from CacheID, input Value
 		}
 		recordBytes = map[uint64]int64{}
 	}
-	prep := &valueMergePrep{payloadPreparing: c.testRecordPayloadPreparing, from: from, bundle: bundle, order: order, index: map[uint64]*TransferredValue{}, plans: map[uint64]transferIdentityPlan{}, records: map[uint64]PersistedRecord{}, refs: map[uint64][]uint64{}, recordBytes: recordBytes, completeParts: map[uint64][]string{}, held: map[uint64]bool{}, heldParts: heldParts}
+	prep := &valueMergePrep{lockWaits: &graphLockWaits{}, payloadPreparing: c.testRecordPayloadPreparing, from: from, bundle: bundle, order: order, index: map[uint64]*TransferredValue{}, plans: map[uint64]transferIdentityPlan{}, records: map[uint64]PersistedRecord{}, refs: map[uint64][]uint64{}, recordBytes: recordBytes, completeParts: map[uint64][]string{}, held: map[uint64]bool{}, heldParts: heldParts}
 	prep.rows = make(map[uint64]uint64, len(prep.bundle.Values))
 	for i := range prep.bundle.Values {
 		row := &prep.bundle.Values[i]
 		prep.index[uint64(row.Ordinal)] = row
 		prep.rows[row.SenderNumber] = uint64(row.Ordinal)
 	}
+	ctx = withGraphLockWaits(ctx, prep.lockWaits)
 	prep.senders = transferSenders(prep.bundle)
 	prep.markUnprepared(c)
 	if prep.calls, err = c.prepareMergedCalls(prep.bundle.Calls); err != nil {
@@ -657,7 +662,7 @@ func (c *Cache) prepareValueMerge(ctx context.Context, from CacheID, input Value
 		return prep, nil
 	}
 
-	prep.lockWaits.add(c.lockGraphForCtx(ctx, workMerge))
+	c.lockGraphForCtx(ctx, workMerge)
 	if c.nextSharedResultID == 0 {
 		c.nextSharedResultID = 1
 	}
@@ -967,7 +972,7 @@ type preparedRecordPayload struct {
 // record: the commit prepares the bundle in full again first.
 func (c *Cache) earlyMergeRows(ctx context.Context, prep *valueMergePrep) *valueMergeCommit {
 	commit := &valueMergeCommit{prep: prep, byOrdinal: map[uint64]*mergeRow{}, now: time.Now().Unix()}
-	prep.lockWaits.add(wcprof.ReadLockWaited(ctx, &c.egraphMu, egraphLockIdent))
+	c.readLockGraphGathered(ctx)
 	c.decideMergeRowsLocked(commit)
 	c.egraphMu.RUnlock()
 	if commit.installsLight() {
@@ -1057,7 +1062,7 @@ func (prep *valueMergePrep) checkHeldRecipes() error {
 // cache.
 func (c *Cache) resolveHeldRows(ctx context.Context, prep *valueMergePrep) map[uint64]entryFrame {
 	frames := map[uint64]entryFrame{}
-	prep.lockWaits.add(wcprof.ReadLockWaited(ctx, &c.egraphMu, egraphLockIdent))
+	c.readLockGraphGathered(ctx)
 	now := time.Now().Unix()
 	for _, row := range prep.bundle.Values {
 		if row.Held == "" {
@@ -1203,7 +1208,7 @@ func (prep *valueMergePrep) prepareRecordPayload(id uint64, relocateRecord, relo
 func (c *Cache) keptMergeRecords(ctx context.Context, prep *valueMergePrep) map[uint64]bool {
 	kept := map[uint64]bool{}
 	now := time.Now().Unix()
-	prep.lockWaits.add(wcprof.ReadLockWaited(ctx, &c.egraphMu, egraphLockIdent))
+	c.readLockGraphGathered(ctx)
 	defer c.egraphMu.RUnlock()
 	for _, id := range prep.order {
 		if prep.held[id] {
@@ -1365,7 +1370,7 @@ func (c *Cache) warmMergeTargetParts(ctx context.Context, prep *valueMergePrep) 
 		return
 	}
 	reader := c.completePartSizeReader()
-	c.egraphMu.RLock()
+	c.readLockGraphGathered(ctx)
 	targets := make([]*sharedResult, 0, len(prep.plans))
 	seen := map[*sharedResult]bool{}
 	for _, plan := range prep.plans {
@@ -1795,12 +1800,12 @@ func (p *prerelocatedRecord) holds(final func(uint64) (sharedResultID, error)) b
 // before. Decoding and encoding a record's payload is most of a commit's
 // hold of the lock on an engine taking a stream of merges, whose records
 // mostly reference entries earlier merges made.
-func (c *Cache) prerelocateMergeRows(prep *valueMergePrep) {
+func (c *Cache) prerelocateMergeRows(ctx context.Context, prep *valueMergePrep) {
 	if c.testNoPrerelocation || len(prep.stale) > 0 {
 		return
 	}
 	commit := &valueMergeCommit{prep: prep, byOrdinal: map[uint64]*mergeRow{}, now: time.Now().Unix()}
-	c.egraphMu.RLock()
+	c.readLockGraphGathered(ctx)
 	c.decideMergeRowsLocked(commit)
 	c.egraphMu.RUnlock()
 	if commit.installsLight() {

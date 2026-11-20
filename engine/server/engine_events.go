@@ -302,6 +302,7 @@ func (srv *Server) restoreEvents() []telemetryattrs.EngineRestore {
 			Decode:       int64(report.Decode),
 			Prepare:      int64(report.Prepare),
 			Commit:       int64(report.Commit),
+			Ended:        unix(report.Ended),
 			Window:       engineRestoreWindow(report.Window),
 		}
 		for _, part := range report.Parts {

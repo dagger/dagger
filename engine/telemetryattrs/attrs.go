@@ -1301,9 +1301,10 @@ type EngineFirstUse struct {
 // what stopped it. PeakBefore and PeakAfter are the engine's peak resident
 // memory in bytes before its first part and after its last, 0 when unknown.
 // Decode, Prepare and Commit are the wall time its parts took to decode, to
-// prepare their merges and to commit them, in all, in nanoseconds. Window is
-// what the engine did from the file's arrival to its end, for a file it
-// downloaded and ended.
+// prepare their merges and to commit them, in all, in nanoseconds. Ended is
+// when the file's restore ended, on the engine's clock, in Unix nanoseconds,
+// and Window what the engine did from the file's arrival to then, for a file
+// it downloaded and ended.
 type EngineRestore struct {
 	Check        string               `json:"check"`
 	Kind         string               `json:"kind"`
@@ -1321,6 +1322,7 @@ type EngineRestore struct {
 	Decode       int64                `json:"decode,omitempty"`
 	Prepare      int64                `json:"prepare,omitempty"`
 	Commit       int64                `json:"commit,omitempty"`
+	Ended        int64                `json:"ended,omitempty"`
 	Window       *EngineRestoreWindow `json:"window,omitempty"`
 }
 

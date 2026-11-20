@@ -99,9 +99,18 @@ func cacheWorkOf(ctx context.Context, otherwise cacheWork) cacheWork {
 }
 
 // lockGraphFor takes the graph lock for writing as work, so that a lookup
-// it keeps waiting can tell what held it, and returns its own wait.
+// it keeps waiting can tell what held it, and returns its own wait, which
+// it also adds to the waits ctx gathers (withGraphLockWaits).
 func (c *Cache) lockGraphFor(ctx context.Context, work cacheWork) wcprof.LockWait {
-	return wcprof.WriteLockAs(ctx, &c.egraphMu, egraphLockIdent, graphHolders[work])
+	lw := wcprof.WriteLockAs(ctx, &c.egraphMu, egraphLockIdent, graphHolders[work])
+	gatherGraphLockWait(ctx, lw)
+	return lw
+}
+
+// readLockGraphGathered takes the graph lock for reading, adding a wait for
+// it to the waits ctx gathers (withGraphLockWaits).
+func (c *Cache) readLockGraphGathered(ctx context.Context) {
+	gatherGraphLockWait(ctx, wcprof.ReadLockWaited(ctx, &c.egraphMu, egraphLockIdent))
 }
 
 // lockGraphForCtx takes the graph lock for writing as the work ctx
@@ -115,18 +124,28 @@ func (c *Cache) lockGraphForCtx(ctx context.Context, otherwise cacheWork) wcprof
 // lookupReadLockGraph takes the graph lock for reading for a call's lookup,
 // and counts a wait for it (LookupLockWaits).
 func (c *Cache) lookupReadLockGraph(ctx context.Context) {
-	c.lookupWaits.add(c.landing.Load() > 0, wcprof.ReadLockWaited(ctx, &c.egraphMu, egraphLockIdent))
+	c.countLookupWait(wcprof.ReadLockWaited(ctx, &c.egraphMu, egraphLockIdent))
 }
 
 // lookupLockGraph takes the graph lock for writing for a call's lookup, and
 // counts a wait for it (LookupLockWaits).
 func (c *Cache) lookupLockGraph(ctx context.Context) {
-	c.lookupWaits.add(c.landing.Load() > 0, wcprof.WriteLockAs(ctx, &c.egraphMu, egraphLockIdent, graphHolders[workLookup]))
+	c.countLookupWait(wcprof.WriteLockAs(ctx, &c.egraphMu, egraphLockIdent, graphHolders[workLookup]))
+}
+
+// countLookupWait counts a lookup's wait for the graph lock, if it waited,
+// by whether a set was landing as the wait ended: a lookup that took the
+// lock at once reads and writes nothing more.
+func (c *Cache) countLookupWait(lw wcprof.LockWait) {
+	if lw.Waited <= 0 {
+		return
+	}
+	c.lookupWaits.add(c.landing.Load() > 0, lw)
 }
 
 // Landing marks a set of the Cloud's records landing on the cache, from its
 // arrival to its last commit, until the returned func is called: a lookup's
-// wait for the graph lock begun while any set lands is counted apart
+// wait for the graph lock that ends while any set lands is counted apart
 // (LookupLockWaits.Landing).
 func (c *Cache) Landing() (landed func()) {
 	c.landing.Add(1)
@@ -168,9 +187,6 @@ type lookupLockWaits struct {
 }
 
 func (l *lookupLockWaits) add(landing bool, lw wcprof.LockWait) {
-	if lw.Waited <= 0 {
-		return
-	}
 	i := 0
 	if landing {
 		i = 1
@@ -191,8 +207,8 @@ type LockWaitStats struct {
 // merge of the Cloud's records), sharing (a snapshot-sharing pass), export,
 // offer, part (fetching, installing or settling parts), other (a writer
 // that names no kind), or readers (no writer: the lookup waited for
-// readers to leave). Landing counts the waits begun while a set of the
-// Cloud's records was landing (Landing), Other the rest. A kind with no
+// readers to leave). Landing counts the waits that ended while a set of
+// the Cloud's records was landing (Landing), Other the rest. A kind with no
 // wait is left out.
 type LookupLockWaits struct {
 	Landing, Other map[string]LockWaitStats
@@ -226,27 +242,34 @@ func graphHolderName(h wcprof.LockHolder) string {
 	return work.String()
 }
 
-// graphLockWaits are one piece of work's waits for the graph lock, by the
-// kind of writer that let each in (wcprof.LockWait); the work's own, so
-// counted without atomics.
-type graphLockWaits [wcprof.LockHolders]time.Duration
+// graphLockWaits gathers one piece of work's waits for the graph lock, such
+// as a merge's preparation's, by the kind of writer that let each in
+// (wcprof.LockWait). Work gathers them in its context (withGraphLockWaits),
+// so a wait is gathered wherever the work takes the lock: in its own
+// sections, and in the captures and holds it calls.
+type graphLockWaits struct {
+	byKind [wcprof.LockHolders]atomic.Int64
+}
 
 func (w *graphLockWaits) add(lw wcprof.LockWait) {
 	if lw.Waited > 0 {
-		w[lw.Holder] += lw.Waited
+		w.byKind[lw.Holder].Add(int64(lw.Waited))
 	}
 }
 
-func (w *graphLockWaits) addAll(more graphLockWaits) {
-	for h, waited := range more {
-		w[h] += waited
+// addAll gathers more's waits too.
+func (w *graphLockWaits) addAll(more *graphLockWaits) {
+	for h := range more.byKind {
+		if waited := more.byKind[h].Load(); waited != 0 {
+			w.byKind[h].Add(waited)
+		}
 	}
 }
 
 func (w *graphLockWaits) total() time.Duration {
 	var total time.Duration
-	for _, waited := range w {
-		total += waited
+	for h := range w.byKind {
+		total += time.Duration(w.byKind[h].Load())
 	}
 	return total
 }
@@ -255,7 +278,8 @@ func (w *graphLockWaits) total() time.Duration {
 // LookupLockWaits names them, or nil when there were none.
 func (w *graphLockWaits) byHolder() map[string]time.Duration {
 	var out map[string]time.Duration
-	for h, waited := range w {
+	for h := range w.byKind {
+		waited := time.Duration(w.byKind[h].Load())
 		if waited == 0 {
 			continue
 		}
@@ -265,4 +289,23 @@ func (w *graphLockWaits) byHolder() map[string]time.Duration {
 		out[graphHolderName(wcprof.LockHolder(h))] += waited
 	}
 	return out
+}
+
+type graphLockWaitsKey struct{}
+
+// withGraphLockWaits returns ctx gathering the graph-lock waits of the work
+// under it into w.
+func withGraphLockWaits(ctx context.Context, w *graphLockWaits) context.Context {
+	return context.WithValue(ctx, graphLockWaitsKey{}, w)
+}
+
+// gatherGraphLockWait adds a wait for the graph lock to the waits ctx
+// gathers, if it waited and ctx gathers any: only a wait looks into ctx.
+func gatherGraphLockWait(ctx context.Context, lw wcprof.LockWait) {
+	if lw.Waited <= 0 {
+		return
+	}
+	if w, ok := ctx.Value(graphLockWaitsKey{}).(*graphLockWaits); ok {
+		w.add(lw)
+	}
 }

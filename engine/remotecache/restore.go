@@ -130,9 +130,11 @@ type RestoreReport struct {
 	// Decode, Prepare and Commit are the wall time its parts took to decode,
 	// to prepare their merges and to commit them, in all.
 	Decode, Prepare, Commit time.Duration
+	// Ended is when the file's restore ended; zero for one answered at once.
 	// Window is what the engine did from the file's arrival to its end, for
 	// a file that was downloaded and ended; nil for one answered at once or
 	// left when its connection ended.
+	Ended  time.Time
 	Window *RestoreWindow
 }
 
@@ -235,6 +237,9 @@ type restorer struct {
 	// arrival order: the head lane's queue, and the wholes that have a lane
 	// of their own (started) or wait for one.
 	heads, wholes []*restoreFile
+	// abandoned is set once the connection's end has abandoned the files
+	// left (abandon): a restore that arrives after is queued no more.
+	abandoned bool
 	// headQueued and wholeQueued hold a signal when a head or a whole was
 	// queued.
 	headQueued, wholeQueued chan struct{}
@@ -283,6 +288,12 @@ func (r *restorer) handleRestore(env protocol.Envelope) {
 		return
 	}
 	r.mu.Lock()
+	if r.abandoned {
+		// The connection ended as the restore arrived: nothing would merge
+		// its files or answer it.
+		r.mu.Unlock()
+		return
+	}
 	for _, f := range queue {
 		if f.head {
 			r.heads = append(r.heads, f)
@@ -558,7 +569,7 @@ func (r *restorer) lateMisses(reply dagql.MergeReply, part *RestoredPartReport) 
 // finish ends a file's restore, with the error that stopped it if any, and
 // answers its restore once its last file is done.
 func (r *restorer) finish(f *restoreFile, err error) {
-	f.report.Window = readRestoreWindow(r.s.adapter.CacheWork).since(f.windowStart)
+	ended := time.Now()
 	if f.landed != nil {
 		f.landed()
 	}
@@ -581,7 +592,14 @@ func (r *restorer) finish(f *restoreFile, err error) {
 	f.report.Complete, f.report.Error = f.result.Complete, f.result.Error
 	f.data, f.parts, f.placed, f.complete = nil, nil, nil, nil
 	r.release(f)
-	r.s.adapter.Restored(f.report)
+	// The window's end is read beside the restore, and the file reported
+	// once it is read.
+	f.report.Ended = ended
+	report, start := f.report, f.windowStart
+	r.s.go_(func() {
+		report.Window = readRestoreWindow(ended, r.s.adapter.CacheWork).since(start)
+		r.s.adapter.Restored(report)
+	})
 	level := "info"
 	if err != nil {
 		level = "warn"
@@ -614,6 +632,7 @@ func (r *restorer) abandon() {
 	r.mu.Lock()
 	left := slices.Concat(r.heads, r.wholes)
 	r.heads, r.wholes = nil, nil
+	r.abandoned = true
 	r.mu.Unlock()
 	for _, f := range left {
 		if f.landed != nil {
@@ -629,6 +648,7 @@ func (r *restorer) abandon() {
 		}
 		f.parts = nil
 		r.release(f)
+		f.report.Ended = time.Now()
 		r.s.adapter.Restored(f.report)
 		r.logFile(f, "warn")
 	}
@@ -694,8 +714,9 @@ func (r *restorer) reply(req *restoreRequest) {
 // download, it reads the engine's counters at the file's arrival, for its
 // window (RestoreReport.Window).
 func (r *restorer) fetch(f *restoreFile) {
+	arrived := time.Now()
 	read := make(chan restoreReading, 1)
-	go func() { read <- readRestoreWindow(r.s.adapter.CacheWork) }()
+	r.s.go_(func() { read <- readRestoreWindow(arrived, r.s.adapter.CacheWork) })
 	f.fetchStarted = time.Now()
 	f.data, f.timing, f.err = r.s.cfg.getFile(r.s.ctx, f.file)
 	f.fetchEnded = time.Now()

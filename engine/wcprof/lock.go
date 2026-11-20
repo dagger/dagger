@@ -51,11 +51,15 @@ type RWMutex struct {
 	// named none. Only the writer that holds m reads or writes it: it is
 	// set after the writer takes m, and read and cleared as it releases m.
 	kind LockHolder
-	// released counts the releases of m by writers, in its bits above the
-	// low 8, and holds in the low 8 the kind of the last writer to release
-	// it. Only the writer that holds m writes it, with a plain load and
-	// store: a waiter that reads it before and after its wait tells from
-	// the count whether a writer let it in, and from the kind which.
+	// waiting counts the acquisitions waiting for m now (waitFor). A writer
+	// records its release (released) only while one waits, so a release
+	// that keeps no one waiting adds a plain load of it and no write.
+	waiting atomic.Int32
+	// released counts the releases of m by writers that someone waited
+	// for, in its bits above the low 8, and holds in the low 8 the kind of
+	// the last of them. Only the writer that holds m writes it: a waiter
+	// that reads it before and after its wait tells from the count whether
+	// a writer let it in, and from the kind which.
 	released atomic.Uint64
 }
 
@@ -105,13 +109,18 @@ func (h LockHolder) String() string {
 
 // LockWait is an acquisition of an RWMutex that had to wait, as
 // ReadLockWaited and WriteLockAs return it: how long it waited, and the
-// kind of the writer whose release let it in, or LockHolderReaders when no
-// writer released the lock while it waited. A reader that waits is always
-// let in by a writer: the one that held the lock, or the one waiting for
-// it that the reader queued behind. A writer that waits can be let in by
-// the last reader to leave. When writers took turns ahead of a waiting
-// writer, the last of them is named. The zero LockWait is an acquisition
-// that didn't wait.
+// kind of the writer whose release let it in.
+//
+// A reader waits only for a writer: the one that held the lock, or the one
+// waiting for it that the reader queued behind, whose release lets it in.
+// A writer can wait for readers too, and one that no writer's release let
+// in is LockHolderReaders. A writer records its release only while someone
+// waits, so a wait that began as a writer was releasing the lock, in the
+// few instructions between its look at the waiting count and its unlock,
+// may see no release: a reader then names no kind ("other", never
+// "readers"), and a writer LockHolderReaders. When writers took turns ahead
+// of a waiting writer, the last of them is named. The zero LockWait is an
+// acquisition that didn't wait.
 type LockWait struct {
 	Waited time.Duration
 	Holder LockHolder
@@ -132,14 +141,22 @@ func (m *RWMutex) TryLock() bool {
 	return true
 }
 
-// Unlock unlocks m for writing. It records, for a waiter, that a writer of
-// its kind released m (released), and clears the kind for the next writer.
+// Unlock unlocks m for writing. While someone waits for m, it records for
+// them that a writer of its kind released m (released). It clears the kind
+// for the next writer.
 func (m *RWMutex) Unlock() {
-	kind := m.kind
+	if m.waiting.Load() != 0 {
+		m.recordRelease()
+	}
 	m.kind = 0
-	m.released.Store((m.released.Load()>>8+1)<<8 | uint64(kind))
 	m.release()
 	m.RWMutex.Unlock()
+}
+
+// recordRelease records, for a waiter, that a writer of m's kind released m.
+// The writer that holds m calls it as it unlocks.
+func (m *RWMutex) recordRelease() {
+	m.released.Store((m.released.Load()>>8+1)<<8 | uint64(m.kind))
 }
 
 // waitFor takes m, for reading when read is set and for writing otherwise,
@@ -149,6 +166,7 @@ func (m *RWMutex) Unlock() {
 // holder when the wait began and that kind. A writer marks itself after.
 func (m *RWMutex) waitFor(ctx context.Context, ident string, read bool) LockWait {
 	w := beginLockWait(ctx, m, ident)
+	m.waiting.Add(1)
 	before := m.released.Load()
 	start := time.Now()
 	if read {
@@ -156,9 +174,18 @@ func (m *RWMutex) waitFor(ctx context.Context, ident string, read bool) LockWait
 	} else {
 		m.RWMutex.Lock()
 	}
-	lw := LockWait{Waited: time.Since(start), Holder: LockHolderReaders}
-	if after := m.released.Load(); after>>8 != before>>8 {
+	lw := LockWait{Waited: time.Since(start)}
+	after := m.released.Load()
+	m.waiting.Add(-1)
+	switch {
+	case after>>8 != before>>8:
 		lw.Holder = LockHolder(after & 0xff)
+	case read:
+		// A writer kept the reader out, as it released the lock: which
+		// one isn't known (LockWait).
+		lw.Holder = 0
+	default:
+		lw.Holder = LockHolderReaders
 	}
 	if w != nil {
 		w.holderKind = w.r.Intern(lw.Holder.String())

@@ -471,7 +471,7 @@ func TestEngineStopEventCarriesWhereLandingTimeWent(t *testing.T) {
 	adapter := newTestRemoteCacheAdapter(t, cache)
 	srv.remoteCacheAdapter = adapter
 	adapter.Restored(remotecache.RestoreReport{
-		Check: "test-base", Kind: "whole", Digest: digest.FromString("whole"), Arrived: time.Unix(100, 0),
+		Check: "test-base", Kind: "whole", Digest: digest.FromString("whole"), Arrived: time.Unix(100, 0), Ended: time.Unix(102, 0),
 		Parts: []remotecache.RestoredPartReport{{
 			Records: 3, Committed: time.Unix(101, 0),
 			Decode: time.Millisecond, Prepare: 2 * time.Millisecond, Commit: 3 * time.Millisecond, PriorityWait: 4 * time.Millisecond,
@@ -485,17 +485,20 @@ func TestEngineStopEventCarriesWhereLandingTimeWent(t *testing.T) {
 			Sharing:         map[string]dagql.SharePassStats{"alone": {Passes: 9, Members: 9, Prepared: 9, PrepareTotal: 8 * time.Millisecond}},
 		},
 	})
-	adapter.Restored(remotecache.RestoreReport{Check: "test-base", Kind: "head", Digest: digest.FromString("head"), Arrived: time.Unix(100, 0), Window: &remotecache.RestoreWindow{Wall: time.Second}})
+	// The head ended first, though its report came in after the whole's.
+	adapter.Restored(remotecache.RestoreReport{Check: "test-base", Kind: "head", Digest: digest.FromString("head"), Arrived: time.Unix(100, 0), Ended: time.Unix(101, 0), Window: &remotecache.RestoreWindow{Wall: time.Second}})
 	require.NoError(t, cache.Close(ctx))
 	srv.stopEngineEvents(ctx, true)
 	events := exporter.events(t)
 	stop := decodeEngineEvent[telemetryattrs.EngineStopEvent](t, events[len(events)-1])
 	require.Len(t, stop.Restores, 2)
+	require.Equal(t, []string{"head", "whole"}, []string{stop.Restores[0].Kind, stop.Restores[1].Kind}, "in the order they ended")
+	require.Equal(t, time.Unix(102, 0).UnixNano(), stop.Restores[1].Ended)
 	require.Equal(t, []telemetryattrs.EngineRestorePart{{
 		Records: 3, Committed: time.Unix(101, 0).UnixNano(),
 		Decode: int64(time.Millisecond), Prepare: int64(2 * time.Millisecond), Commit: int64(3 * time.Millisecond), PriorityWait: int64(4 * time.Millisecond),
 		PrepareLockWait: int64(5 * time.Millisecond), PrepareLockWaits: map[string]int64{"sharing": int64(5 * time.Millisecond)},
-	}}, stop.Restores[0].Parts)
+	}}, stop.Restores[1].Parts)
 	runq := int64(7 * time.Millisecond)
 	require.Equal(t, &telemetryattrs.EngineRestoreWindow{
 		Wall: int64(time.Second), CPU: int64(2 * time.Second), GCCPU: int64(300 * time.Millisecond), GCAssist: int64(100 * time.Millisecond), GCCycles: 2,
@@ -503,8 +506,8 @@ func TestEngineStopEventCarriesWhereLandingTimeWent(t *testing.T) {
 		LookupLockWaits: map[string]telemetryattrs.EngineLockWaits{"sharing": {Waits: 2, Total: int64(6 * time.Millisecond)}},
 		FirstUses:       map[string]telemetryattrs.EngineFirstUsePath{"sharing": {Prepared: 9, Total: int64(8 * time.Millisecond)}},
 		Sharing:         map[string]telemetryattrs.EngineSharePasses{"alone": {Passes: 9, Members: 9, Prepared: 9, PrepareTotal: int64(8 * time.Millisecond)}},
-	}, stop.Restores[0].Window)
-	require.Equal(t, &telemetryattrs.EngineRestoreWindow{Wall: int64(time.Second)}, stop.Restores[1].Window, "a run-queue wait that couldn't be read is absent, not 0")
+	}, stop.Restores[1].Window)
+	require.Equal(t, &telemetryattrs.EngineRestoreWindow{Wall: int64(time.Second)}, stop.Restores[0].Window, "a run-queue wait that couldn't be read is absent, not 0")
 
 	require.Equal(t, telemetryattrs.EngineLookupLockWaits{
 		Landing: map[string]telemetryattrs.EngineLockWaits{"restore": {Waits: 1, Total: 5, Longest: 5}},
