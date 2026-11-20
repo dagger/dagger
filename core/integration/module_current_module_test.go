@@ -11,10 +11,14 @@ package core
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 
+	"dagger.io/dagger"
 	"dagger.io/dagger/core"
 
+	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -151,4 +155,101 @@ func (ModuleSuite) TestCurrentFunctionCallOutsideFunction(ctx context.Context, t
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "no current function call")
+}
+
+const currentModuleGitRefProbe = `type Probe {
+  pub loaded: String! {
+    currentModule.contextDirectory.file("m/dirty.txt").contents
+  }
+
+  @cache(policy: FunctionCachePolicy.NEVER)
+  pub git: String! {
+    let ref = currentModule.gitRef
+    if (ref == null) {
+      "null"
+    } else {
+      let changes = ref.asRepository.uncommitted
+      ref.commitSha + " head=" + ref.asRepository.head.commitSha +
+        " modified=" + changes.modifiedPaths.join(",") +
+        " added=" + changes.addedPaths.join(",") +
+        " removed=" + changes.removedPaths.join(",") +
+        " dirty=" + changes.after.file("m/dirty.txt").contents
+    }
+  }
+}
+`
+
+func (ModuleSuite) TestCurrentModuleGitRef(ctx context.Context, t *testctx.T) {
+	committedRepo := func(ctx context.Context, t *testctx.T, c *dagger.Client, then string) (*core.Directory, string) {
+		ctr := core.NewQuery(c).Container().From(alpineImage).
+			WithExec([]string{"apk", "add", "git"}).
+			With(gitUserConfig).
+			WithWorkdir("/repo").
+			WithNewFile("m/dagger.json", `{"name": "probe", "engineVersion": "latest", "sdk": {"source": "dang"}, "include": ["!excluded.txt"]}`).
+			WithNewFile("m/main.dang", currentModuleGitRefProbe).
+			WithNewFile("m/dirty.txt", "v0").
+			WithNewFile("m/excluded.txt", "tracked, excluded by the module").
+			WithNewFile("outside.txt", "tracked, outside the module").
+			WithExec([]string{"sh", "-c", "git init -q && git add -A && git commit -qm module && git rev-parse HEAD > /pinned" + then})
+		pinned, err := ctr.File("/pinned").Contents(ctx)
+		require.NoError(t, err)
+		return ctr.Directory("/repo"), strings.TrimSpace(pinned)
+	}
+	queryProbe := func(c *dagger.Client, t *testctx.T) (string, string) {
+		res, err := testutil.QueryWithClient[struct {
+			Probe struct{ Loaded, Git string }
+		}](c, t, `{probe{loaded git}}`, nil)
+		require.NoError(t, err)
+		return res.Probe.Loaded, res.Probe.Git
+	}
+
+	t.Run("git", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		repo, pinned := committedRepo(ctx, t, c, " && echo moved > outside.txt && git commit -qam moved")
+		gitSrv, _ := gitSmartHTTPServiceDirAuth(ctx, t, c, "", makeGitDir(c, repo, "main"), "", nil)
+		gitSrv, err := gitSrv.Start(ctx)
+		require.NoError(t, err)
+		t.Cleanup(func() { _, _ = gitSrv.Stop(ctx) })
+		hostname, err := gitSrv.Hostname(ctx)
+		require.NoError(t, err)
+		modRef := "http://" + resolveServiceIP(ctx, t, c, hostname) + "/repo.git#" + pinned + ":m"
+
+		out, err := core.NewQuery(c).Container().From(alpineImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			With(daggerCallAt(modRef, "git")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, pinned+" head="+pinned+" modified= added= removed= dirty=v0", out)
+	})
+
+	t.Run("local", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		repo, head := committedRepo(ctx, t, c, "")
+		host := t.TempDir()
+		_, err := repo.Export(ctx, host)
+		require.NoError(t, err)
+		write := func(path, contents string) {
+			require.NoError(t, os.WriteFile(filepath.Join(host, path), []byte(contents), 0o644))
+		}
+		write("m/dirty.txt", "v1")
+		write("m/new.txt", "untracked")
+
+		require.NoError(t, core.NewQuery(c).ModuleSource(filepath.Join(host, "m")).AsModule().Serve(ctx))
+		write("m/dirty.txt", "v2")
+		loaded, git := queryProbe(c, t)
+		require.Equal(t, "v1", loaded)
+		require.Equal(t, head+" head="+head+" modified=m/dirty.txt added=m/new.txt removed= dirty=v2", git)
+
+		write("m/dirty.txt", "v3")
+		_, again := queryProbe(c, t)
+		require.Equal(t, git, again)
+	})
+
+	t.Run("directory", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		repo, _ := committedRepo(ctx, t, c, "")
+		require.NoError(t, repo.AsModuleSource(core.DirectoryAsModuleSourceOpts{SourceRootPath: "m"}).AsModule().Serve(ctx))
+		_, git := queryProbe(c, t)
+		require.Equal(t, "null", git)
+	})
 }
