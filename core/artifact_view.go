@@ -54,56 +54,97 @@ type artifactViewState struct {
 
 // Remove view wrappers from call inputs to match a collection's source across
 // scoped execution. Keep arguments: different calls can create different keys.
+// The ambient Workspace as an argument of the source's own calls stands as its
+// type name: on a host checkout it is keyed per call, and one view holds a
+// single ambient Workspace. A rebuilt call names its module rather than holding
+// its recipe, which differs per session. A call with nothing to remove keeps its
+// own digest, which a cache key or a content digest may have set.
 func artifactViewOrigin(id *call.ID) string {
-	memo := map[string]*call.ID{}
-	var origin func(*call.ID) *call.ID
-	var literal func(call.Literal) call.Literal
-	args := func(values []*call.Argument) []*call.Argument {
-		result := make([]*call.Argument, len(values))
-		for i, value := range values {
-			result[i] = value.WithValue(literal(value.Value()))
-		}
-		return result
+	type memoKey struct {
+		digest string
+		spine  bool
 	}
-	literal = func(value call.Literal) call.Literal {
+	memo := map[memoKey]*call.ID{}
+	var origin func(*call.ID, bool) *call.ID
+	var literal func(call.Literal, bool) call.Literal
+	args := func(values []*call.Argument, spine bool) ([]*call.Argument, bool) {
+		result := make([]*call.Argument, len(values))
+		changed := false
+		for i, value := range values {
+			scoped := literal(value.Value(), spine)
+			if scoped == value.Value() {
+				result[i] = value
+				continue
+			}
+			result[i] = value.WithValue(scoped)
+			changed = true
+		}
+		return result, changed
+	}
+	literal = func(value call.Literal, spine bool) call.Literal {
 		switch value := value.(type) {
 		case *call.LiteralID:
-			return call.NewLiteralID(origin(value.Value()))
+			if spine && value.Value().Type().NamedType() == workspaceTypeName && value.Value().Field() == "currentWorkspace" && value.Value().Receiver() == nil {
+				return call.NewLiteralString(workspaceTypeName)
+			}
+			scoped := origin(value.Value(), false)
+			if scoped.Digest() == value.Value().Digest() {
+				return value
+			}
+			return call.NewLiteralID(scoped)
 		case *call.LiteralList:
 			values := make([]call.Literal, value.Len())
+			changed := false
 			for i, item := range value.Values() {
-				values[i] = literal(item)
+				values[i] = literal(item, spine)
+				changed = changed || values[i] != item
+			}
+			if !changed {
+				return value
 			}
 			return call.NewLiteralList(values...)
 		case *call.LiteralObject:
-			values := make([]*call.Argument, value.Len())
-			for i, arg := range value.Args() {
-				values[i] = arg.WithValue(literal(arg.Value()))
+			fields := make([]*call.Argument, 0, value.Len())
+			for _, arg := range value.Args() {
+				fields = append(fields, arg)
+			}
+			values, changed := args(fields, spine)
+			if !changed {
+				return value
 			}
 			return call.NewLiteralObject(values...)
 		default:
 			return value
 		}
 	}
-	origin = func(id *call.ID) *call.ID {
+	origin = func(id *call.ID, spine bool) *call.ID {
 		if id == nil {
 			return nil
 		}
-		key := string(id.Digest())
+		key := memoKey{string(id.Digest()), spine}
 		if cached, ok := memo[key]; ok {
 			return cached
 		}
-		receiver := origin(id.Receiver())
+		receiver := origin(id.Receiver(), spine)
 		result := receiver
 		if id.Field() != artifactViewField {
-			result = receiver.Append(id.Type().ToAST(), id.Field(),
-				call.WithModule(id.Module()), call.WithView(id.View()), call.WithNth(int(id.Nth())),
-				call.WithArgs(args(id.Args())...), call.WithImplicitInputs(args(id.ImplicitInputs())...))
+			explicit, explicitChanged := args(id.Args(), spine)
+			implicit, implicitChanged := args(id.ImplicitInputs(), spine)
+			if receiver.Digest() == id.Receiver().Digest() && !explicitChanged && !implicitChanged {
+				result = id
+			} else {
+				if mod := id.Module(); mod != nil {
+					implicit = append(implicit, call.NewArgument("artifactViewModule", call.NewLiteralString(mod.Name()), false))
+				}
+				result = receiver.Append(id.Type().ToAST(), id.Field(),
+					call.WithView(id.View()), call.WithNth(int(id.Nth())),
+					call.WithArgs(explicit...), call.WithImplicitInputs(implicit...))
+			}
 		}
 		memo[key] = result
 		return result
 	}
-	return string(origin(id).Digest())
+	return string(origin(id, true).Digest())
 }
 
 // Paths identify collection dimensions across calls on scoped receivers.
