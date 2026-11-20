@@ -142,20 +142,36 @@ func (s *metadataStore) getOrCreate(id string) *cacheMetadata {
 	return md
 }
 
+// clear drops id's metadata, and deletes its content-hash tree's file.
 func (s *metadataStore) clear(id string) {
+	s.forget(id)
+	s.purgeContentHashes()
+}
+
+// purgeContentHashes deletes the files of the trees forget dropped.
+func (s *metadataStore) purgeContentHashes() {
+	if s.hashFiles == nil {
+		return
+	}
+	if err := s.hashFiles.purge(); err != nil {
+		bklog.G(context.TODO()).WithError(err).
+			Error("failed to delete content hash records; retrying at the next deletion")
+	}
+}
+
+// forget drops id's metadata and its content-hash tree, leaving the tree's
+// file for purgeContentHashes to delete.
+func (s *metadataStore) forget(id string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.pendingContentHashes, id)
 	md, ok := s.refs[id]
 	if s.hashFiles != nil {
-		if err := s.hashFiles.remove(id, func() {
+		s.hashFiles.remove(id, func() {
 			if ok {
 				md.contentHashGone = true
 			}
-		}); err != nil {
-			bklog.G(context.TODO()).WithError(err).WithField("snapshot", id).
-				Error("failed to remove content hash records; retrying at the next removal")
-		}
+		})
 	}
 	if !ok {
 		return
@@ -253,6 +269,9 @@ func (cm *snapshotManager) ForgetCollectedSnapshots(ctx context.Context) error {
 		return candidate && !exists
 	}
 
+	// The trees' files are deleted after cm.mu is released, rather than
+	// one by one under it while every snapshot operation waits.
+	defer cm.metadataStore.purgeContentHashes()
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 	for key, id := range cm.importedLayerByBlob {
@@ -284,7 +303,7 @@ func (cm *snapshotManager) ForgetCollectedSnapshots(ctx context.Context) error {
 		} else if md, ok := cm.metadataStore.get(id); ok && md.getSnapshotID() != id {
 			continue
 		}
-		cm.metadataStore.clear(id)
+		cm.metadataStore.forget(id)
 	}
 	return nil
 }

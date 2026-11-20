@@ -15,8 +15,8 @@ type MetadataMemoryStats struct {
 	// pending hash records and the trees that could not be written to disk:
 	// the serialized content-hash trees held in memory.
 	ExternalBytes int
-	// ContentHashFiles counts the content-hash trees kept on disk, and
-	// ContentHashFileBytes sums their sizes.
+	// ContentHashFiles counts the content-hash tree files on disk, those
+	// still to delete included, and ContentHashFileBytes sums their sizes.
 	ContentHashFiles     int
 	ContentHashFileBytes int
 }
@@ -45,10 +45,12 @@ func MetadataMemory(m SnapshotManager) MetadataMemoryStats {
 	if files := s.hashFiles; files != nil {
 		files.mu.Lock()
 		defer files.mu.Unlock()
-		for id := range files.ids {
-			stats.ContentHashFiles++
-			if fi, err := os.Stat(files.path(id)); err == nil {
-				stats.ContentHashFileBytes += int(fi.Size())
+		for _, ids := range []map[string]struct{}{files.ids, files.orphans} {
+			for id := range ids {
+				stats.ContentHashFiles++
+				if fi, err := os.Stat(files.path(id)); err == nil {
+					stats.ContentHashFileBytes += int(fi.Size())
+				}
 			}
 		}
 		for _, dt := range files.mem {

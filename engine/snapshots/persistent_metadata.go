@@ -165,11 +165,9 @@ func (cm *snapshotManager) loadContentHashFiles(files *contentHashFiles, rows []
 		if _, ok := s.get(id); ok {
 			continue
 		}
-		if err := files.remove(id, nil); err != nil {
-			bklog.G(context.TODO()).WithError(err).WithField("snapshot", id).
-				Error("failed to remove content hash records; retrying at the next removal")
-		}
+		files.remove(id, nil)
 	}
+	s.purgeContentHashes()
 }
 
 func (cm *snapshotManager) PersistentMetadataRows() PersistentMetadataRows {

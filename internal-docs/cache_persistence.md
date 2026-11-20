@@ -526,11 +526,14 @@ outside it, then under it either renames the file into place and drops the
 tree from memory, or keeps the tree in memory and deletes the old file; a
 lookup takes the tree from memory or opens its file under it, and reads the
 opened file outside it. So a tree is in one place at a time, and a lookup
-finds it whatever saves run meanwhile. A tree file that can't be read fails
-`Checksum` rather than trigger a rescan. Writing a checkpoint is the
-exception: a tree it can't read is left out of the checkpoint, and logged,
-because failing the checkpoint would discard the whole persisted cache; the
-next process rescans that snapshot when it is hashed. The files are not
+finds it whatever saves run meanwhile. A dropped tree's file is deleted after
+the manager's lock is released (when snapshot GC forgets many at once), and
+one that can't be deleted is retried at the next deletion. A tree file that
+can't be read fails `Checksum` rather than trigger a rescan. Writing a
+checkpoint is the exception: a tree it can't read is left out of the
+checkpoint, and logged, because failing the checkpoint would discard the
+whole persisted cache; the next process rescans that snapshot when it is
+hashed. The files are not
 counted toward any cache entry's size, so `MaxUsedSpace`-style limits don't see
 them; they are bounded by snapshot GC, and free-space limits see them as any
 disk use.

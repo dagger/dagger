@@ -251,7 +251,7 @@ func TestContentHashFilesMissingFileIsAnError(t *testing.T) {
 	require.ErrorContains(t, err, "missing")
 	require.NotErrorIs(t, err, ErrExternalNotFound)
 
-	require.NoError(t, files.remove("a", nil))
+	files.remove("a", nil)
 	_, ok, err := files.read("a", nil)
 	require.NoError(t, err)
 	require.False(t, ok)
@@ -259,10 +259,11 @@ func TestContentHashFilesMissingFileIsAnError(t *testing.T) {
 	require.ErrorIs(t, err, ErrExternalNotFound)
 }
 
-// A tree file that can't be deleted stays registered, so the next removal
-// (the next ForgetCollectedSnapshots, which lists it) deletes it, rather than
-// being left on disk with nothing to remove it.
-func TestContentHashFilesRemoveKeepsUndeletedFiles(t *testing.T) {
+// Dropping a tree leaves its file to purge, which runs outside the callers'
+// locks. A file that can't be deleted is kept for the next purge rather than
+// left on disk with nothing to delete it, and is not a tree: metadata made
+// again for the same snapshot, as a mutable snapshot's is, has none.
+func TestContentHashFilesPurgeKeepsUndeletedFiles(t *testing.T) {
 	s := newMetadataStore()
 	files, err := newContentHashFiles(filepath.Join(t.TempDir(), "contenthash"))
 	require.NoError(t, err)
@@ -270,18 +271,47 @@ func TestContentHashFilesRemoveKeepsUndeletedFiles(t *testing.T) {
 	md := s.getOrCreate("a")
 	require.NoError(t, md.SetExternal(ContentHashMetadataKey, []byte("tree")))
 
+	s.forget("a")
+	require.Empty(t, files.list())
+	require.FileExists(t, files.path("a"), "left to purge")
+	s.purgeContentHashes()
+	require.NoFileExists(t, files.path("a"))
+	require.Empty(t, files.orphans)
+
+	md = s.getOrCreate("a")
+	require.NoError(t, md.SetExternal(ContentHashMetadataKey, []byte("tree")))
 	// A non-empty directory can't be unlinked.
 	require.NoError(t, os.Remove(files.path("a")))
 	require.NoError(t, os.MkdirAll(filepath.Join(files.path("a"), "busy"), 0o700))
 	s.clear("a")
-	require.Equal(t, []string{"a"}, files.list(), "kept for the next removal")
+	require.Contains(t, files.orphans, "a", "kept for the next purge")
+	require.Empty(t, files.list())
 	_, err = md.GetExternal(ContentHashMetadataKey)
 	require.ErrorIs(t, err, ErrExternalNotFound, "the dropped metadata has no tree")
+	_, err = s.getOrCreate("a").GetExternal(ContentHashMetadataKey)
+	require.ErrorIs(t, err, ErrExternalNotFound, "new metadata has no tree")
 
 	require.NoError(t, os.Remove(filepath.Join(files.path("a"), "busy")))
-	s.clear("a")
-	require.Empty(t, files.list())
+	s.purgeContentHashes()
+	require.Empty(t, files.orphans)
 	require.NoFileExists(t, files.path("a"))
+}
+
+// A save renames its tree over a file left to purge, which then leaves it.
+func TestContentHashFilesSaveReplacesFileToPurge(t *testing.T) {
+	s := newMetadataStore()
+	files, err := newContentHashFiles(filepath.Join(t.TempDir(), "contenthash"))
+	require.NoError(t, err)
+	s.hashFiles = files
+	require.NoError(t, s.getOrCreate("a").SetExternal(ContentHashMetadataKey, []byte("old")))
+	s.forget("a")
+
+	md := s.getOrCreate("a")
+	require.NoError(t, md.SetExternal(ContentHashMetadataKey, []byte("new")))
+	s.purgeContentHashes()
+	dt, err := md.GetExternal(ContentHashMetadataKey)
+	require.NoError(t, err)
+	require.Equal(t, []byte("new"), dt)
 }
 
 // A tree saved after its metadata was dropped, as a background save can be,

@@ -41,12 +41,15 @@ type contentHashFiles struct {
 	dir string
 
 	mu sync.Mutex
-	// ids are the snapshots with a tree file. A snapshot can also have a
-	// tree in mem when the file could not be deleted: the one in mem is its
-	// tree, and the file is left for a later remove to delete.
-	ids    map[string]struct{}
-	mem    map[string][]byte
-	closed bool
+	// ids are the snapshots whose tree is in a file, and mem those whose
+	// tree is in memory; a snapshot is in at most one of them.
+	ids map[string]struct{}
+	mem map[string][]byte
+	// orphans are files of trees that were removed, or replaced by a tree
+	// in memory, and are still to delete: not trees, but files under the
+	// paths of snapshots that may get a tree again. See purge.
+	orphans map[string]struct{}
+	closed  bool
 
 	// failWrite, set by tests, fails the writes it returns an error for.
 	failWrite func() error
@@ -64,9 +67,10 @@ func newContentHashFiles(root string) (*contentHashFiles, error) {
 		return nil, errors.Wrap(err, "create content hash directory")
 	}
 	return &contentHashFiles{
-		dir: dir,
-		ids: make(map[string]struct{}),
-		mem: make(map[string][]byte),
+		dir:     dir,
+		ids:     make(map[string]struct{}),
+		mem:     make(map[string][]byte),
+		orphans: make(map[string]struct{}),
 	}, nil
 }
 
@@ -94,6 +98,8 @@ func (f *contentHashFiles) store(id string, dt []byte, gone func() bool) error {
 		if err == nil {
 			f.ids[id] = struct{}{}
 			delete(f.mem, id)
+			// Replaced by the tree, if it was left to delete.
+			delete(f.orphans, id)
 			return nil
 		}
 		os.Remove(tmpPath)
@@ -130,15 +136,16 @@ func (f *contentHashFiles) writeTemp(id string, dt []byte) (string, error) {
 }
 
 // unlinkLocked deletes id's tree file, if it has one. A file that can't be
-// deleted stays registered, so a later remove deletes it. Requires f.mu.
+// deleted is left to purge. Requires f.mu.
 func (f *contentHashFiles) unlinkLocked(id string) error {
 	if _, ok := f.ids[id]; !ok {
 		return nil
 	}
+	delete(f.ids, id)
 	if err := os.Remove(f.path(id)); err != nil && !os.IsNotExist(err) {
+		f.orphans[id] = struct{}{}
 		return errors.Wrap(err, "delete content hash file")
 	}
-	delete(f.ids, id)
 	return nil
 }
 
@@ -196,21 +203,49 @@ func (f *contentHashFiles) has(id string) bool {
 }
 
 // remove drops id's tree. markGone runs under the same lock as store's check,
-// so a save racing the removal is discarded. A file that can't be deleted
-// stays registered, for a later remove (the next ForgetCollectedSnapshots)
-// to delete, and the error says why.
-func (f *contentHashFiles) remove(id string, markGone func()) error {
+// so a save racing the removal is discarded. The tree's file is left to
+// purge, so a caller dropping many trees under its own locks doesn't delete
+// their files under them.
+func (f *contentHashFiles) remove(id string, markGone func()) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if markGone != nil {
 		markGone()
 	}
 	delete(f.mem, id)
-	return f.unlinkLocked(id)
+	if _, ok := f.ids[id]; ok {
+		delete(f.ids, id)
+		f.orphans[id] = struct{}{}
+	}
 }
 
-// list returns the snapshots with a tree, on disk or in memory, or a file
-// left to delete.
+// purge deletes the files of removed trees, each under mu: a save of the
+// same snapshot meanwhile renames its tree over the file and takes it off
+// the list. A file that can't be deleted is kept on the list for the next
+// purge, and the error says why.
+func (f *contentHashFiles) purge() error {
+	f.mu.Lock()
+	ids := make([]string, 0, len(f.orphans))
+	for id := range f.orphans {
+		ids = append(ids, id)
+	}
+	f.mu.Unlock()
+	var errs []error
+	for _, id := range ids {
+		f.mu.Lock()
+		if _, ok := f.orphans[id]; ok {
+			if err := os.Remove(f.path(id)); err != nil && !os.IsNotExist(err) {
+				errs = append(errs, errors.Wrap(err, "delete content hash file"))
+			} else {
+				delete(f.orphans, id)
+			}
+		}
+		f.mu.Unlock()
+	}
+	return stderrors.Join(errs...)
+}
+
+// list returns the snapshots with a tree, on disk or in memory.
 func (f *contentHashFiles) list() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -219,9 +254,7 @@ func (f *contentHashFiles) list() []string {
 		ids = append(ids, id)
 	}
 	for id := range f.mem {
-		if _, ok := f.ids[id]; !ok {
-			ids = append(ids, id)
-		}
+		ids = append(ids, id)
 	}
 	return ids
 }
