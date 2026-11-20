@@ -205,8 +205,7 @@ func (c *Cache) attachPartOfferLocked(res *sharedResult, address PersistedPartAd
 	cloud.setPartLocked(key, heldPart{state: heldPartComplete, offer: offer})
 	offer.owner.slots++
 	offer.owner.origin, offer.owner.address = res.id, address
-	res.transferRevision++
-	res.dependencyOwnershipRevision++
+	res.offerRevision++
 	return nil
 }
 func (c *Cache) replacePartOfferLocked(ctx context.Context, res *sharedResult, address PersistedPartAddress, offer *partOffer) (collectionQueue, error) {
@@ -227,8 +226,7 @@ func (c *Cache) replacePartOfferLocked(ctx context.Context, res *sharedResult, a
 	offer.owner.slots++
 	offer.owner.origin, offer.owner.address = res.id, address
 	old.owner.slots--
-	res.transferRevision++
-	res.dependencyOwnershipRevision++
+	res.offerRevision++
 	return c.releaseOfferOwnerLocked(ctx, old.owner)
 }
 func (c *Cache) retirePartOfferLocked(ctx context.Context, res *sharedResult, address PersistedPartAddress) (collectionQueue, error) {
@@ -244,8 +242,7 @@ func (c *Cache) retirePartOfferLocked(ctx context.Context, res *sharedResult, ad
 	cloud.deletePartLocked(key)
 	c.partOfferGone(old)
 	old.owner.slots--
-	res.transferRevision++
-	res.dependencyOwnershipRevision++
+	res.offerRevision++
 	return c.releaseOfferOwnerLocked(ctx, old.owner)
 }
 

@@ -253,7 +253,7 @@ func TestImportValuesKeepsTheSendersNumber(t *testing.T) {
 	out, err := a.testOfferParts(actx, receiver, []PersistedPartOffer{testLiveOffer()})
 	require.NoError(t, err)
 	require.Equal(t, OfferAccepted, out[0].Outcome)
-	bundle := exportTestBundle(t, actx, a, receiver)
+	bundle := cloudTestBundle(t, actx, a, receiver)
 	require.Len(t, bundle.Values, 1)
 	require.Equal(t, uint64(receiver.cacheSharedResult().id), bundle.Values[0].SenderNumber)
 

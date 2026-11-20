@@ -232,7 +232,7 @@ type partSourceFacts struct {
 }
 
 func (c *Cache) partFactsLocked(row *sharedResult) partSourceFacts {
-	f := partSourceFacts{offers: row.transferRevision, resources: row.requiredSessionResourcesGen.Load(), ownership: row.dependencyOwnershipRevision, expires: row.expiresAtUnix}
+	f := partSourceFacts{offers: row.offerRevision, resources: row.requiredSessionResourcesGen.Load(), ownership: row.dependencyOwnershipRevision, expires: row.expiresAtUnix}
 	if gate := row.partGate.gate.Load(); gate != nil {
 		gate.mu.Lock()
 		f.gate = gate.revision

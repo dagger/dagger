@@ -109,7 +109,7 @@ func TestCommitReadyPartChangedRefusals(t *testing.T) {
 		}, "commit: donor version", true, func(_, donor *sharedResult) *sharedResult { return donor }},
 		{"donor offers moved", func(c *Cache, _ *PreparedReadyPart, _, donor *sharedResult) {
 			c.egraphMu.Lock()
-			donor.transferRevision++
+			donor.offerRevision++
 			c.egraphMu.Unlock()
 		}, "commit: donor facts changed", true, func(_, donor *sharedResult) *sharedResult { return donor }},
 		{"donor expiry alone", func(c *Cache, _ *PreparedReadyPart, _, donor *sharedResult) {
