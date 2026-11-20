@@ -106,10 +106,11 @@ func TestOfferPendingRestartAndForward(t *testing.T) {
 	require.Equal(t, OfferAccepted, out[0].Outcome)
 	requireForwardedOffer(t, a, uint64(receiver.cacheSharedResult().id))
 
-	// A to B forwards the pending offer without typed decode or bytes.
+	// A sends B the pending offer as the Cloud does, without typed decode or
+	// bytes.
 	path := filepath.Join(t.TempDir(), "b.db")
 	bctx, b := reopenTransferTestCache(t, path)
-	mappingReply, err := b.MergeValues(bctx, cloudCacheID, exportTestBundle(t, actx, a, receiver))
+	mappingReply, err := b.MergeValues(bctx, cloudCacheID, cloudTestBundle(t, actx, a, receiver))
 	mapping := mappingReply.Imported()
 	require.NoError(t, err)
 	id := mapping[0].ResultID
@@ -145,12 +146,17 @@ func TestOfferPendingRestartAndForward(t *testing.T) {
 	taken := renewalConsumer(t, bridge, renewChain(chain))
 	require.Equal(t, RenewalReplyDiscarded, bridge.ReplyRenewal(RenewalReply{ID: oldRequest.ID, Chain: oldRequest.Chain, Unavailable: true}), "an old engine's reply cannot enter")
 
-	// B to C forwards the restored offer, still without any request.
+	// B's export to C carries the entry without the restored offer, and asks
+	// for nothing.
 	cctx, c, _ := transferTestCache(t)
 	forwardedReply, err := c.MergeValues(cctx, cloudCacheID, exportTestBundle(t, bctx, b, Result[Typed]{shared: b.resultsByID[sharedResultID(id)]}))
 	forwarded := forwardedReply.Imported()
 	require.NoError(t, err)
-	requireForwardedOffer(t, c, forwarded[0].ResultID)
+	c.egraphMu.RLock()
+	forwardedOffers := len(c.resultsByID[sharedResultID(forwarded[0].ResultID)].testPartOffers())
+	c.egraphMu.RUnlock()
+	require.Zero(t, forwardedOffers, "an engine's export carries no offer")
+	require.Empty(t, c.offerOwners)
 	require.Zero(t, transport.total())
 	require.Empty(t, taken())
 

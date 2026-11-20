@@ -107,8 +107,8 @@ func imageTestLayerOffer(address func(digest.Digest) BlobAddress) PersistedPartO
 	}
 }
 
-// mergeTestImageOffered is a bundle of one root whose record carries one
-// pending offer of offer.
+// mergeTestImageOffered is a bundle of one root sent with one part, offer,
+// as an output with its chain, as an image's bundle carries its parts.
 func mergeTestImageOffered(t *testing.T, field string, offer PersistedPartOffer) ValueBundle {
 	t.Helper()
 	ctx, c, srv := transferTestCache(t)
@@ -116,8 +116,8 @@ func mergeTestImageOffered(t *testing.T, field string, offer PersistedPartOffer)
 	out, err := c.testOfferParts(ctx, root, []PersistedPartOffer{offer})
 	require.NoError(t, err)
 	require.Equal(t, OfferAccepted, out[0].Outcome)
-	bundle := exportTestBundle(t, ctx, c, root)
-	require.Len(t, bundle.Values[0].Record.Envelope.PendingOffers, 1)
+	bundle := cloudTestBundle(t, ctx, c, root)
+	require.Len(t, bundle.Outputs, 1)
 	return bundle
 }
 

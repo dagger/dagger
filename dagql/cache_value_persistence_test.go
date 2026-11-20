@@ -15,7 +15,7 @@ func TestValueTransferPersistence(t *testing.T) {
 	root := persistedListTestResult(t, ctx, a, srv, "root", &transferTestValue{Text: "pending"})
 	leaf := persistedListTestResult(t, ctx, a, srv, "leaf", String("owner input"))
 	transferTestOffer(t, a, ctx, root, leaf)
-	bundle := exportTestBundle(t, ctx, a, root)
+	bundle := cloudTestBundle(t, ctx, a, root)
 	path := filepath.Join(t.TempDir(), "b.db")
 	bctx, b, _ := persistedListTestCache(t, path)
 	mappingReply, err := b.MergeValues(bctx, cloudCacheID, bundle)
@@ -45,7 +45,7 @@ func TestValueTransferPersistence(t *testing.T) {
 	third := thirdReply.Imported()
 	require.NoError(t, err)
 	require.Len(t, third, 1)
-	require.Len(t, c.offerOwners, 1)
-	require.Len(t, c.resultsByID, 2)
+	require.Empty(t, c.offerOwners, "an engine forwards no offer")
+	require.Len(t, c.resultsByID, 1, "nor a row only an offer's owner reaches")
 	require.Empty(t, c.resultsByID[sharedResultID(third[0].ResultID)].deps)
 }

@@ -58,7 +58,7 @@ func TestMergeGraphRefusesACycleThroughANewOffer(t *testing.T) {
 		n := persistedListTestResult(t, ctx, a, srv, "new-owner-n", String("n"))
 		require.NoError(t, a.AddExplicitDependency(ctx, n, m, "test"))
 		mergeTestOfferOn(t, ctx, a, k, "/sent", n)
-		bundle := exportTestBundle(t, ctx, a, k)
+		bundle := cloudTestBundle(t, ctx, a, k)
 
 		bctx, b, bsrv := transferTestCache(t)
 		keptK := persistedListTestResult(t, bctx, b, bsrv, "new-owner-k", &transferTestValue{Text: "pending"})
@@ -79,7 +79,7 @@ func TestMergeGraphRefusesACycleThroughANewOffer(t *testing.T) {
 		x := persistedListTestResult(t, ctx, a, srv, "old-owner-x", &transferTestValue{Text: "pending"})
 		y := persistedListTestResult(t, ctx, a, srv, "old-owner-y", String("y"))
 		mergeTestOfferOn(t, ctx, a, x, "/sent", y)
-		bundle := exportTestBundle(t, ctx, a, x)
+		bundle := cloudTestBundle(t, ctx, a, x)
 
 		bctx, b, bsrv := transferTestCache(t)
 		keptX := persistedListTestResult(t, bctx, b, bsrv, "old-owner-x", &transferTestValue{Text: "pending"})
