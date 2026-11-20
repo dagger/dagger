@@ -4042,6 +4042,30 @@ func (srv *Server) ModuleParent(ctx context.Context) (dagql.ObjectResult[*core.M
 	return zero, core.ErrNoCurrentModule
 }
 
+// EnclosingFunctionCall returns the function call whose work the current
+// client does: the nearest of the client and its ancestors that a function
+// call created. A process that a call's code starts, a module entrypoint's
+// included, does that call's work.
+func (srv *Server) EnclosingFunctionCall(ctx context.Context) (*core.FunctionCall, error) {
+	client, err := srv.executableClientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if client.fnCall != nil {
+		return client.fnCall, nil
+	}
+	ancestors, err := client.daggerSession.ancestorRuntimes(client.clientRecord)
+	if err != nil {
+		return nil, fmt.Errorf("resolve enclosing function call: %w", err)
+	}
+	for i := len(ancestors) - 1; i >= 0; i-- {
+		if ancestors[i].fnCall != nil {
+			return ancestors[i].fnCall, nil
+		}
+	}
+	return nil, core.ErrNoCurrentFunctionCall
+}
+
 // If the current client is coming from a function, return the function call metadata
 func (srv *Server) CurrentFunctionCall(ctx context.Context) (*core.FunctionCall, error) {
 	client, err := srv.executableClientFromContext(ctx)
