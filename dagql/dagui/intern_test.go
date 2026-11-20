@@ -35,7 +35,6 @@ func TestIngestSharesDigests(t *testing.T) {
 	w := wireSpans{spanfootprint.New(3_000)}
 	db := NewDB()
 	require.NoError(t, w.ExportSpans(context.Background(), db))
-	data := func(s string) *byte { return unsafe.StringData(s) }
 	var calls, shared int
 	for _, span := range db.Spans.Order {
 		if span.CallDigest == "" || span.Output == "" {
@@ -46,16 +45,16 @@ func TestIngestSharesDigests(t *testing.T) {
 		require.NotNil(t, frame, span.CallDigest)
 		require.Equal(t, span.CallDigest, frame.Digest)
 		require.Equal(t, span.CallDigest, span.Output, "the wire trace's outputs are the calls' own recipes")
-		require.Same(t, data(span.CallDigest), data(frame.Digest))
-		require.Same(t, data(span.CallDigest), data(span.Output))
+		require.Same(t, unsafe.StringData(span.CallDigest), unsafe.StringData(frame.Digest))
+		require.Same(t, unsafe.StringData(span.CallDigest), unsafe.StringData(span.Output))
 		require.Len(t, span.Inputs, 2)
 		require.Equal(t, frame.ReceiverDigest, span.Inputs[0])
-		require.Same(t, data(frame.ReceiverDigest), data(span.Inputs[0]))
+		require.Same(t, unsafe.StringData(frame.ReceiverDigest), unsafe.StringData(span.Inputs[0]))
 		if receiver := db.Calls[frame.ReceiverDigest]; receiver != nil {
-			require.Same(t, data(receiver.Digest), data(frame.ReceiverDigest))
+			require.Same(t, unsafe.StringData(receiver.Digest), unsafe.StringData(frame.ReceiverDigest))
 			shared++
 		}
-		require.Same(t, data(frame.Field), data(db.internName(frame.Field)))
+		require.Same(t, unsafe.StringData(frame.Field), unsafe.StringData(db.internName(frame.Field)))
 	}
 	require.NotZero(t, calls)
 	require.NotZero(t, shared)
