@@ -3,6 +3,7 @@ package schema
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -44,6 +45,11 @@ func (args workspacePullArgs) opts() core.WorkspacePullOpts {
 
 // Capture local receivers at the explicit integration boundary, then select
 // pure helpers over pinned values. Source capture is always explicit.
+//
+// The committer is the default identity: only a pull that creates commits
+// asks to share the owner's (see selectWorkspacePull), so planning one never
+// does. A plan reports the source's commits, whose statuses do not depend on
+// who replays them.
 func (s *workspaceSchema) pullInputs(ctx context.Context, receiver dagql.ObjectResult[*core.Workspace], args workspaceCommitsFromArgs) (dagql.ObjectResult[*core.Workspace], workspacePullArgs, error) {
 	resolved := workspacePullArgs{Source: args.Source, Commits: args.Commits, MaxCommits: args.MaxCommits}
 	if err := resolved.opts().ValidateSelection(); err != nil {
@@ -64,13 +70,7 @@ func (s *workspaceSchema) pullInputs(ctx context.Context, receiver dagql.ObjectR
 	if err != nil {
 		return receiver, resolved, err
 	}
-	resolved.CommitterName, resolved.CommitterEmail, err = workspaceGitAuthor(ctx)
-	if err != nil {
-		return receiver, resolved, err
-	}
-	if err := validateWorkspaceGitAuthor(resolved.CommitterName, resolved.CommitterEmail); err != nil {
-		return receiver, resolved, err
-	}
+	resolved.CommitterName, resolved.CommitterEmail = workspaceDefaultGitAuthorName, workspaceDefaultGitAuthorEmail
 	source, err = s.freeze(ctx, source)
 	if err != nil {
 		return receiver, resolved, err
@@ -141,8 +141,8 @@ func (s *workspaceSchema) withCommitsFrom(ctx context.Context, parent dagql.Obje
 	if err != nil {
 		return inst, err
 	}
-	var repo dagql.ObjectResult[*core.GitRepository]
-	if err := srv.Select(ctx, parent, &repo, dagql.Selector{Field: "__pullRepository", Args: resolved.selectors()}); err != nil {
+	repo, err := selectWorkspacePull(ctx, srv, parent, resolved)
+	if err != nil {
 		return inst, err
 	}
 	if err := srv.Select(ctx, repo, &inst, dagql.Selector{Field: "head"}, dagql.Selector{Field: "asWorkspace", Args: []dagql.NamedInput{{Name: "cwd", Value: dagql.NewString(parent.Self().Cwd)}}}); err != nil {
@@ -165,6 +165,73 @@ func (s *workspaceSchema) withCommitsFrom(ctx context.Context, parent dagql.Obje
 		return inst, err
 	}
 	return inst, nil
+}
+
+// selectWorkspacePull selects the pull of resolved's source into parent. Only
+// cherry-picked commits record a committer, so the owner is asked to share
+// their identity (see workspaceGitAuthor) only for a pull that creates
+// commits: a fast-forward, or a pull with nothing to take, commits as nobody.
+//
+// When the source's HEAD already contains the receiver's, the pull likely
+// fast-forwards: it runs with the default committer first, and only when it
+// did create commits (an explicit selection that skips part of the range
+// cherry-picks) is the identity resolved and, if shared, the pull run again
+// with it. Otherwise the pull cherry-picks, and the identity is resolved up
+// front, even if every pick turns out redundant.
+func selectWorkspacePull(ctx context.Context, srv *dagql.Server, parent dagql.ObjectResult[*core.Workspace], resolved workspacePullArgs) (repo dagql.ObjectResult[*core.GitRepository], _ error) {
+	pull := func(args workspacePullArgs) error {
+		return srv.Select(ctx, parent, &repo, dagql.Selector{Field: "__pullRepository", Args: args.selectors()})
+	}
+	withCommitter := func() (workspacePullArgs, error) {
+		args := resolved
+		var err error
+		args.CommitterName, args.CommitterEmail, err = workspaceGitAuthor(ctx)
+		if err != nil {
+			return args, err
+		}
+		return args, validateWorkspaceGitAuthor(args.CommitterName, args.CommitterEmail)
+	}
+	source, err := resolved.Source.Load(ctx, srv)
+	if err != nil {
+		return repo, err
+	}
+	var receiverHead, sourceHead dagql.ObjectResult[*core.GitRef]
+	if err := srv.Select(ctx, parent, &receiverHead, dagql.Selector{Field: "git"}, dagql.Selector{Field: "head"}); err != nil {
+		return repo, err
+	}
+	if err := srv.Select(ctx, source, &sourceHead, dagql.Selector{Field: "git"}, dagql.Selector{Field: "head"}); err != nil {
+		return repo, err
+	}
+	// An error only loses the shortcut: ask, as for any cherry-pick.
+	mayFastForward, err := sourceHead.Self().Contains(ctx, receiverHead.Self())
+	if err != nil || !mayFastForward {
+		args, err := withCommitter()
+		if err != nil {
+			return repo, err
+		}
+		return repo, pull(args)
+	}
+	if err := pull(resolved); err != nil {
+		return repo, err
+	}
+	var head dagql.ObjectResult[*core.GitRef]
+	if err := srv.Select(ctx, repo, &head, dagql.Selector{Field: "head"}); err != nil {
+		return repo, err
+	}
+	// A fast-forward lands on a source commit: the tip of the selection, or
+	// of the source when none was selected. Anything else is a new commit.
+	sha := head.Self().Ref.SHA
+	if sha == receiverHead.Self().Ref.SHA || sha == sourceHead.Self().Ref.SHA || slices.Contains(resolved.Commits, sha) {
+		return repo, nil
+	}
+	args, err := withCommitter()
+	if err != nil {
+		return repo, err
+	}
+	if args.CommitterName == resolved.CommitterName && args.CommitterEmail == resolved.CommitterEmail {
+		return repo, nil
+	}
+	return repo, pull(args)
 }
 
 func (s *workspaceSchema) computeWorkspacePull(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspacePullArgs, apply bool) (*core.Directory, []core.WorkspacePullPick, dagql.ObjectResult[*core.GitRef], error) {
