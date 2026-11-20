@@ -258,7 +258,7 @@ func (c *Cache) lazySpanCacheState(ctx context.Context, row *sharedResult, frame
 	state.deps = sortedResultIDs(row.deps)
 	state.replacements = row.replacements
 	state.remote = row.imported
-	state.mergedAt = row.mergedAtUnixNano
+	state.mergedAt = row.merged.mergedAt()
 	return state
 }
 

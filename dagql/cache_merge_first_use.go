@@ -61,9 +61,9 @@ type mergedFirstUse struct {
 	// complete are the parts the record proves complete, as the bundle
 	// carried them: the entry's complete parts until it is prepared.
 	complete *partKeySet
-	// source names the set file the record came in, for the log of a
-	// failure (PreparedValueMerge.Source).
-	source string
+	// origin is the merge that installed the record (mergeOrigin), which
+	// a first use is counted by and a failure's log names.
+	origin *mergeOrigin
 
 	// mu orders the preparations of the record: the first prepares it, and
 	// a later one returns what it found (done, err). refused is set once
@@ -124,7 +124,7 @@ func (c *Cache) prepareMerged(ctx context.Context, res *sharedResult, atSave boo
 	var waited time.Duration
 	rec := PersistedRecord{ResultID: uint64(res.id), Envelope: *env, Call: res.loadResultCall(), SnapshotLinks: res.loadSnapshotOwnerLinks()}
 	defer func() {
-		c.firstUsePrepared(firstUsePreparation{took: time.Since(began), waited: waited, refused: use.err != nil, atSave: atSave, path: cacheWorkOf(ctx, otherwise), frame: rec.Call, env: env})
+		c.firstUsePrepared(firstUsePreparation{took: time.Since(began), waited: waited, refused: use.err != nil, atSave: atSave, path: cacheWorkOf(ctx, otherwise), origin: use.origin, frame: rec.Call, env: env})
 	}()
 	prepared, err := prepareFirstUseRecord(rec, use)
 	if err != nil {
@@ -140,7 +140,7 @@ func (c *Cache) prepareMerged(ctx context.Context, res *sharedResult, atSave boo
 		if atSave {
 			at = "save"
 		}
-		slog.ErrorContext(ctx, "remote cache record's payload refused", "at", at, "file", use.source, "recipe", recipe, "entry", uint64(res.id), "error", err)
+		slog.ErrorContext(ctx, "remote cache record's payload refused", "at", at, "route", use.origin.route.String(), "merge", use.origin.number, "file", use.origin.file, "recipe", recipe, "entry", uint64(res.id), "error", err)
 		return use.err
 	}
 	if c.testFirstUseInstall != nil {
@@ -300,7 +300,10 @@ func (res *sharedResult) holdsUnpreparedPayload() bool {
 // with none is left out. The Save fields count the same for the records
 // nothing used, which a save prepared before it wrote them
 // (prepareMergedPayloadsForSave), with SaveWall the time the save spent
-// preparing them, in parallel.
+// preparing them, in parallel. Routes splits the first uses by the route
+// that brought their records to the engine (MergeRoute), each beside what
+// that route merged (FirstUseRoute); a route that merged nothing is left
+// out.
 type FirstUseStats struct {
 	Prepared, Refused               int64
 	Total, Longest                  time.Duration
@@ -310,6 +313,100 @@ type FirstUseStats struct {
 	Paths                           map[string]FirstUsePath
 	SavePrepared, SaveRefused       int64
 	SaveTotal, SaveWall             time.Duration
+	Routes                          map[string]FirstUseRoute
+}
+
+// FirstUseRoute counts what one route brought to the engine (MergeRoute)
+// and what of it the engine's calls first used: the merges committed and
+// the records they carried, held rows aside; the records they installed
+// with their payloads left for a first use, a record the engine already
+// held a value for not being installed; the first uses of those records,
+// refused ones included, and the time they took; and the merges at least
+// one of whose records was first used. A save's preparation of a record
+// nothing used is not a first use (FirstUseStats.SavePrepared).
+type FirstUseRoute struct {
+	Merges, Sent, Merged int64
+	FirstUses            int64
+	Total                time.Duration
+	Used                 int64
+}
+
+// MergeRoute is the route by which a merge brought the Cloud's records to
+// an engine (MergeSource).
+type MergeRoute uint8
+
+const (
+	// MergeRouteUnnamed is a merge that named no route: the image's, and
+	// a test's.
+	MergeRouteUnnamed MergeRoute = iota
+	// MergeRouteSetFile is a part of a set file a restore merged
+	// (RestoreValues).
+	MergeRouteSetFile
+	// MergeRoutePlacement is a merge the service sent on its own while
+	// the engine ran, answering no lookup of the engine's.
+	MergeRoutePlacement
+	// MergeRouteLookup is a merge that answered a lookup of the engine's.
+	MergeRouteLookup
+	numMergeRoutes
+)
+
+var mergeRouteNames = [numMergeRoutes]string{
+	MergeRouteUnnamed:   "unnamed",
+	MergeRouteSetFile:   "set_file",
+	MergeRoutePlacement: "placement",
+	MergeRouteLookup:    "lookup",
+}
+
+func (r MergeRoute) String() string { return mergeRouteNames[r] }
+
+// MergeSource names where a merge of the Cloud's records came from: its
+// route, and the service's number for the merge or the set file it came
+// in.
+type MergeSource struct {
+	Route MergeRoute
+	// Merge is the service's number for a placement's or a lookup's merge.
+	Merge uint64
+	// File names the set file of a set file's part.
+	File string
+}
+
+// mergeOrigin is, on an engine, the merge from the Cloud that installed an
+// entry's value: its source, and when it committed. Every entry the merge
+// installed shares it, as does each one's first-use state
+// (mergedFirstUse.origin), so it costs an entry a pointer. used is set at
+// the first first use of any record it installed, which counts the merge
+// as used (FirstUseRoute.Used).
+type mergeOrigin struct {
+	route  MergeRoute
+	number uint64
+	file   string
+	// committedAt is when the merge committed, in Unix nanoseconds: set
+	// under egraphMu by the commit before any entry names the origin, and
+	// read under egraphMu.
+	committedAt int64
+	used        atomic.Bool
+}
+
+// mergedAt is when the merge that installed an entry's value committed, or
+// 0 for an entry with no origin: a value computed here, or one restored
+// after a restart. Requires egraphMu.
+func (o *mergeOrigin) mergedAt() int64 {
+	if o == nil {
+		return 0
+	}
+	return o.committedAt
+}
+
+// mergeCommitted counts a committed merge of origin's route: the records
+// its bundle carried, held rows aside, and those it installed for a first
+// use.
+func (c *Cache) mergeCommitted(origin *mergeOrigin, sent, merged int) {
+	c.firstUseMu.Lock()
+	defer c.firstUseMu.Unlock()
+	route := &c.firstUseRoutes[origin.route]
+	route.Merges++
+	route.Sent += int64(sent)
+	route.Merged += int64(merged)
 }
 
 // FirstUsePath counts the first uses that came by one path: the payloads
@@ -336,6 +433,7 @@ type firstUsePreparation struct {
 	took, waited    time.Duration
 	refused, atSave bool
 	path            cacheWork
+	origin          *mergeOrigin
 	frame           *ResultCall
 	env             *PersistedResultEnvelope
 }
@@ -361,6 +459,12 @@ func (c *Cache) firstUsePrepared(p firstUsePreparation) {
 	}
 	c.firstUseStats.Total += p.took
 	c.firstUsePaths[p.path].add(p.took)
+	route := &c.firstUseRoutes[p.origin.route]
+	route.FirstUses++
+	route.Total += p.took
+	if p.origin.used.CompareAndSwap(false, true) {
+		route.Used++
+	}
 	longest := p.took > c.firstUseStats.Longest
 	c.firstUseMu.Unlock()
 	if !longest {
@@ -396,6 +500,15 @@ func (c *Cache) FirstUse() FirstUseStats {
 			stats.Paths = map[string]FirstUsePath{}
 		}
 		stats.Paths[cacheWork(path).String()] = counted
+	}
+	for route, counted := range c.firstUseRoutes {
+		if counted.Merges == 0 {
+			continue
+		}
+		if stats.Routes == nil {
+			stats.Routes = map[string]FirstUseRoute{}
+		}
+		stats.Routes[MergeRoute(route).String()] = counted
 	}
 	return stats
 }

@@ -271,7 +271,9 @@ func TestFirstUseCountsWhatCallsPrepared(t *testing.T) {
 	ctx, engine, srv := transferTestCache(t)
 	_, err := engine.MergeValues(ctx, cloudCacheID, set.bundle)
 	require.NoError(t, err)
-	require.Zero(t, engine.FirstUse(), "a merge prepares no payload")
+	merged := engine.FirstUse()
+	require.Equal(t, FirstUseStats{Routes: merged.Routes}, merged, "a merge prepares no payload")
+	require.Equal(t, int64(3), merged.Routes["unnamed"].Merged, "it only merges the records")
 	for _, field := range []string{"fu-good", "fu-dep", "fu-bad", "fu-good"} {
 		firstUseTestLookup(t, ctx, engine, srv, field)
 	}

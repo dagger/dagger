@@ -154,7 +154,7 @@ func TestRemoteCacheAdapterMergeLogsItsClock(t *testing.T) {
 // release after its commit fails.
 func TestRemoteCacheAdapterAnswersACommittedMergeDespiteAReleaseError(t *testing.T) {
 	adapter := newTestRemoteCacheAdapter(t, newGCTestCache(t))
-	adapter.mergeValues = func(context.Context, dagql.CacheID, dagql.ValueBundle) (dagql.MergeReply, error) {
+	adapter.mergeValues = func(context.Context, dagql.ValueBundle, dagql.MergeSource) (dagql.MergeReply, error) {
 		return dagql.MergeReply{
 			Committed:          true,
 			Generation:         4,
@@ -177,11 +177,31 @@ func TestRemoteCacheAdapterAnswersACommittedMergeDespiteAReleaseError(t *testing
 	}, merged)
 }
 
+// A merge names its route to the cache by whether it answers a lookup, with
+// the service's number for it: a lookup's merge is the lookup's route, and
+// any other merge a placement.
+func TestRemoteCacheAdapterMergeNamesItsRoute(t *testing.T) {
+	adapter := newTestRemoteCacheAdapter(t, newGCTestCache(t))
+	var got []dagql.MergeSource
+	adapter.mergeValues = func(_ context.Context, _ dagql.ValueBundle, source dagql.MergeSource) (dagql.MergeReply, error) {
+		got = append(got, source)
+		return dagql.MergeReply{}, errors.New("refused")
+	}
+	_, err := adapter.Merge(t.Context(), 21, protocol.Merge{}, nil)
+	require.Error(t, err)
+	_, err = adapter.Merge(t.Context(), 22, protocol.Merge{Lookup: 5}, nil)
+	require.Error(t, err)
+	require.Equal(t, []dagql.MergeSource{
+		{Route: dagql.MergeRoutePlacement, Merge: 21},
+		{Route: dagql.MergeRouteLookup, Merge: 22},
+	}, got)
+}
+
 // A merge refused for stale held rows committed nothing, and is answered
 // with them, so the service resends their records.
 func TestRemoteCacheAdapterAnswersAStaleMerge(t *testing.T) {
 	adapter := newTestRemoteCacheAdapter(t, newGCTestCache(t))
-	adapter.mergeValues = func(context.Context, dagql.CacheID, dagql.ValueBundle) (dagql.MergeReply, error) {
+	adapter.mergeValues = func(context.Context, dagql.ValueBundle, dagql.MergeSource) (dagql.MergeReply, error) {
 		return dagql.MergeReply{Generation: 4, EngineTimeUnixNano: 42, Stale: []dagql.TransferOrdinal{2, 5}}, nil
 	}
 	merged, err := adapter.Merge(t.Context(), 1, protocol.Merge{}, nil)
@@ -198,7 +218,7 @@ func TestRemoteCacheAdapterAnswersAStaleMerge(t *testing.T) {
 // A merge that changed nothing is answered with its error.
 func TestRemoteCacheAdapterMergeRefused(t *testing.T) {
 	adapter := newTestRemoteCacheAdapter(t, newGCTestCache(t))
-	adapter.mergeValues = func(context.Context, dagql.CacheID, dagql.ValueBundle) (dagql.MergeReply, error) {
+	adapter.mergeValues = func(context.Context, dagql.ValueBundle, dagql.MergeSource) (dagql.MergeReply, error) {
 		return dagql.MergeReply{}, errors.New("the bundle would close a cycle")
 	}
 	_, err := adapter.Merge(t.Context(), 1, protocol.Merge{}, nil)
@@ -213,7 +233,7 @@ func TestRemoteCacheAdapterLookupMergesGoFirst(t *testing.T) {
 	const lookupVersion, placementVersion = 1, 2
 	entered := make(chan int, 4)
 	release := map[int]chan struct{}{lookupVersion: make(chan struct{}), placementVersion: make(chan struct{})}
-	adapter.mergeValues = func(_ context.Context, _ dagql.CacheID, bundle dagql.ValueBundle) (dagql.MergeReply, error) {
+	adapter.mergeValues = func(_ context.Context, bundle dagql.ValueBundle, _ dagql.MergeSource) (dagql.MergeReply, error) {
 		entered <- bundle.Version
 		<-release[bundle.Version]
 		return dagql.MergeReply{}, errors.New("refused")
@@ -289,7 +309,7 @@ func TestRemoteCacheAdapterRestoreWaitsForLookupMerges(t *testing.T) {
 	adapter := newTestRemoteCacheAdapter(t, newGCTestCache(t))
 	entered := make(chan string, 2)
 	release := make(chan struct{})
-	adapter.mergeValues = func(context.Context, dagql.CacheID, dagql.ValueBundle) (dagql.MergeReply, error) {
+	adapter.mergeValues = func(context.Context, dagql.ValueBundle, dagql.MergeSource) (dagql.MergeReply, error) {
 		entered <- "lookup"
 		<-release
 		return dagql.MergeReply{}, errors.New("refused")
