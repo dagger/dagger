@@ -454,6 +454,9 @@ func (fe *frontendPretty) goToSearchMatch(idx int) {
 			return
 		}
 	}
+	// A match on a row with an approval beneath leaves the approval folded:
+	// n and N must keep seeking matches rather than answer it.
+	fe.approvalsLeftAt = m.spanID
 	fe.focus(row)
 
 	// For log matches, expand the span and scroll the vterm. A remote

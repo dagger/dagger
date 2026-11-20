@@ -2753,8 +2753,10 @@ func (LLMSuite) TestPrivateGitToolArgs(ctx context.Context, t *testctx.T) {
 
 	t.Run("an approved module's conversation reads with the owner's credentials", func(ctx context.Context, t *testctx.T) {
 		// Answering the prompt takes a terminal, so run the CLI on the host
-		// under a PTY. The model tries twice: the first attempt is denied,
-		// and the denial must not stick.
+		// under a PTY. The plain frontend asks a yes/no question on the
+		// terminal (the approval fallback); the pretty TUI renders approvals
+		// inline, with keys of its own. The model tries twice: the first
+		// attempt is denied, and the denial must not stick.
 		const prompt = "which commit is the approved private branch?"
 		workdir := t.TempDir()
 		initGitRepo(ctx, t, workdir)
@@ -2765,28 +2767,43 @@ func (LLMSuite) TestPrivateGitToolArgs(ctx context.Context, t *testctx.T) {
 		defer console.Close()
 		tty := console.Tty()
 		require.NoError(t, pty.Setsize(tty, &pty.Winsize{Rows: 20, Cols: 200}))
-		cmd := hostDaggerCommand(ctx, t, workdir, "-c",
+		cmd := hostDaggerCommand(ctx, t, workdir, "--progress=plain", "-c",
 			fmt.Sprintf(`runner | delegate --model="%s" --prompt=%q`, recording(prompt, 2), prompt))
 		cmd.Env = append(cmd.Env, remote.hostEnv(t)...)
 		cmd.Stdin, cmd.Stdout, cmd.Stderr = tty, tty, tty
 		require.NoError(t, cmd.Start())
+		// The expect timeouts only bound silence, and the CLI keeps printing
+		// while a prompt it never shows waits: bound the whole exchange, so a
+		// prompt that is missed or never answered fails rather than hangs.
+		exchange, cancel := context.WithTimeout(ctx, 3*time.Minute)
+		defer cancel()
+		stop := context.AfterFunc(exchange, func() {
+			_ = cmd.Process.Kill()
+			console.Close()
+		})
+		defer stop()
+		expectString := func(s string) {
+			t.Helper()
+			_, err := console.ExpectString(s)
+			require.NoError(t, err, "waiting for %q (deadline: %v)", s, exchange.Err())
+		}
 
-		// The TUI redraws a prompt while it is open, so wait for each answer
-		// to land before expecting the next prompt.
+		// The plain frontend asks on the terminal at once, while it prints
+		// spans (the first attempt's denial among them) as they end: expect
+		// the questions in order, and the denial wherever it lands.
 		for _, answer := range []string{"n", "y"} {
-			_, err = console.ExpectString("Allow an agent to read")
-			require.NoError(t, err)
+			expectString("Allow an agent to read")
 			_, err = console.SendLine(answer)
 			require.NoError(t, err)
-			if answer == "n" {
-				_, err = console.ExpectString("was denied by the owning client")
-				require.NoError(t, err)
-			}
 		}
-		_, err = console.ExpectString("commit: ")
-		require.NoError(t, err)
+		expectString("commit: ")
+		const denied = "was denied by the owning client"
+		if !strings.Contains(console.output.String(), denied) {
+			expectString(denied)
+		}
 		go console.ExpectEOF()
 		require.NoError(t, cmd.Wait())
+		require.NoError(t, exchange.Err(), "the exchange ran out of time")
 	})
 }
 
