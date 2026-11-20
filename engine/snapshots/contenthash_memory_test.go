@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -182,9 +183,9 @@ func TestContentHashPendingRecordsForgottenWhenCollected(t *testing.T) {
 		}
 	}
 	keptRows, droppedRows := snapshotRows(keptID), snapshotRows(droppedID)
-	rows.SnapshotContent = append(keptRows.SnapshotContent, droppedRows.SnapshotContent...)
-	rows.ImportedByBlob = append(keptRows.ImportedByBlob, droppedRows.ImportedByBlob...)
-	rows.ImportedByDiff = append(keptRows.ImportedByDiff, droppedRows.ImportedByDiff...)
+	rows.SnapshotContent = slices.Concat(keptRows.SnapshotContent, droppedRows.SnapshotContent)
+	rows.ImportedByBlob = slices.Concat(keptRows.ImportedByBlob, droppedRows.ImportedByBlob)
+	rows.ImportedByDiff = slices.Concat(keptRows.ImportedByDiff, droppedRows.ImportedByDiff)
 
 	store.Reload(t)
 	require.NoError(t, store.Manager.LoadPersistentMetadata(rows))
