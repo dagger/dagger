@@ -145,7 +145,7 @@ func (c *Cache) holdRowsForCapture(ctx context.Context, rows []*sharedResult) ([
 		if c.testCaptureWriteLock != nil {
 			c.testCaptureWriteLock()
 		}
-		c.lockGraphForCtx(ctx, workOther)
+		c.lockGraphForCtx(ctx, workPart)
 		for i := start; i < min(start+piece, len(rows)); i++ {
 			shared := rows[i]
 			held[i].row = shared
@@ -179,7 +179,7 @@ func (c *Cache) holdRowsForCapture(ctx context.Context, rows []*sharedResult) ([
 			if c.testCaptureWriteLock != nil {
 				c.testCaptureWriteLock()
 			}
-			c.lockGraphForCtx(cleanupCtx, workOther)
+			c.lockGraphForCtx(cleanupCtx, workPart)
 			var queue []*sharedResult
 			for _, shared := range owned[start:min(start+piece, len(owned))] {
 				var decErr error

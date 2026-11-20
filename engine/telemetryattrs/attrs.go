@@ -1237,9 +1237,13 @@ type EngineStopEvent struct {
 // lock over the engine's life, by the kind of writer whose release let each
 // in: "lookup", "publication", "restore" (a set file's part's merge),
 // "merge" (another merge of the service's records), "sharing", "export",
-// "offer", "part" (fetching, installing or settling parts), "other" (a
-// writer that named no kind), or "readers" (no writer let it in: the lookup
-// waited for readers to leave). Landing are the waits begun while a whole
+// "offer", "part" (fetching, installing or settling parts), "teach" (a
+// call's teaching of what its result is the same as), "dependency" (a
+// call's explicit dependencies), "evaluation" (a lazy evaluation's
+// bookkeeping), "upkeep" (a session's release, a prune, a measurement or a
+// save), "hold" (the service's holds on entries), "other" (a writer that
+// named no kind), or "readers" (no writer let it in: the lookup waited for
+// readers to leave). Landing are the waits begun while a whole
 // set file was landing on the engine, from its arrival to its end, and
 // Other the rest. A lookup that took the lock at once isn't counted.
 type EngineLookupLockWaits struct {

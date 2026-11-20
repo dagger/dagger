@@ -1446,7 +1446,7 @@ func (c *Cache) TeachCallEquivalentToResult(ctx context.Context, sessionID strin
 		requestInputs = append(requestInputs, dig)
 	}
 
-	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+	c.lockGraphFor(ctx, workTeach)
 	notify, notifyOwner := c.beginShareNotificationsLocked()
 	defer func() {
 		c.flushShareNotificationsLocked(ctx, notify, notifyOwner)
@@ -1547,7 +1547,7 @@ func (c *Cache) teachContentDigest(ctx context.Context, shared *sharedResult, co
 			}
 		}
 
-		wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+		c.lockGraphFor(ctx, workTeach)
 		// A fresh collector for every acquisition of E: the changed-frame
 		// retry below unlocks and starts over, and a collector is never
 		// carried across an unlock.
