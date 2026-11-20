@@ -108,7 +108,10 @@ func cloudAuthFromLocalTokenWithoutOrg(ctx context.Context, err error) (*cloudau
 }
 
 func (cli *CloudCLI) resolveCloudOrg(ctx context.Context, client *cloudapi.Client, cloudAuth *cloudauth.Cloud) (*cloudapi.OrgResponse, error) {
-	orgName := cloudOrgFlag
+	return cli.resolveCloudOrgName(ctx, client, cloudAuth, cloudOrgFlag)
+}
+
+func (cli *CloudCLI) resolveCloudOrgName(ctx context.Context, client *cloudapi.Client, cloudAuth *cloudauth.Cloud, orgName string) (*cloudapi.OrgResponse, error) {
 	if orgName == "" && cloudAuth.Org != nil {
 		orgName = cloudAuth.Org.Name
 	}
