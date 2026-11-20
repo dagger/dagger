@@ -85,6 +85,11 @@ type Container struct {
 	// Only a newly constructed scratch container starts out safe; operations that
 	// do not change container state can preserve it by returning the same value.
 	fromContentDigestSafe bool
+	// completedElsewhere is set when the container decoded from another
+	// engine's record of an operation that completed there, and never
+	// changes after. Schema children are built field by field, so it stays
+	// with the container the record made.
+	completedElsewhere bool
 
 	// Allocated only when the internal container-part diagnostic is enabled.
 	partDiagnostics *containerPartDiagnostics
@@ -1871,6 +1876,10 @@ func armedContainerParts(armed bool, recipe Lazy[*Container], envelope persisted
 // PartTransferShell reports whether the container decoded from another
 // engine's record without its recipe, so that its parts come only through
 // part acquisition.
+// OperationCompletedElsewhere reports whether the container decoded from
+// another engine's record of an operation that completed there.
+func (container *Container) OperationCompletedElsewhere() bool { return container.completedElsewhere }
+
 func (container *Container) PartTransferShell() bool {
 	return container.acquiredOutput.Load() != nil
 }
@@ -1880,6 +1889,9 @@ func (*Container) DecodePersistedObject(ctx context.Context, dec *dagql.PersistD
 	if err := json.Unmarshal(payload, &envelope); err != nil {
 		return nil, fmt.Errorf("decode persisted container payload: %w", err)
 	}
+	// Read before arming, which clears the operation state: a container
+	// decoded with its recipe armed still completed where it came from.
+	completedElsewhere := envelope.OperationState == "evaluated"
 	armed, err := armTransferredContainer(dec, &envelope)
 	if err != nil {
 		return nil, err
@@ -1921,6 +1933,7 @@ func (*Container) DecodePersistedObject(ctx context.Context, dec *dagql.PersistD
 		DefaultArgs:        persisted.DefaultArgs,
 
 		fromContentDigestSafe: persisted.FromContentDigestSafe,
+		completedElsewhere:    completedElsewhere,
 	}
 	// Local persistence may contain an unchanged pending part without a recipe.
 	// Admit only the same closed, recorded-parent mapping used after transfer.
