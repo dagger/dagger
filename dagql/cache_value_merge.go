@@ -2764,7 +2764,7 @@ func (c *Cache) installMergedRecordLocked(res *sharedResult, row *mergeRow, orig
 	// The record's own parts and offers decide its value's sources now.
 	res.unavailableParts = nil
 	res.merged = origin
-	res.storedRecordBytes = row.recordBytes
+	c.setStoredRecordBytesLocked(res, row.recordBytes)
 	res.expiresAtUnix = row.value.ExpiresAtUnix
 	// A capture reads these with the value (loadPayloadState).
 	res.payloadMu.Lock()
@@ -2808,6 +2808,7 @@ func (c *Cache) installMergedRecordLocked(res *sharedResult, row *mergeRow, orig
 	if c.resultsByID[res.id] == res {
 		c.markEntryClassLocked(res.id, StampMergeInstall)
 	}
+	c.poolSettleLocked(res)
 }
 
 // mergeSenderHoldingLocked records, on the Cloud, the sending engine's holding
@@ -3061,7 +3062,7 @@ func completePartKeysCoverageLocked(res *sharedResult) ([]string, bool) {
 func (c *Cache) failMergedEntryLocked(ctx context.Context, res *sharedResult, queue collectionQueue) collectionQueue {
 	if c.blobBacked {
 		c.markEntryClassLocked(res.id, StampMergeFailed)
-		res.storedRecordBytes = 0
+		c.setStoredRecordBytesLocked(res, 0)
 		res.storedTransfer.Store(nil)
 		res.payloadMu.Lock()
 		res.persistedEnvelope = nil
@@ -3070,11 +3071,13 @@ func (c *Cache) failMergedEntryLocked(ctx context.Context, res *sharedResult, qu
 		res.payloadRevision++
 		res.payloadMu.Unlock()
 		c.setResultPayloadBytesLocked(res, 0)
+		c.poolSettleLocked(res)
 		return queue
 	}
 	c.unindexRecipesLocked(res)
 	if _, retained := c.persistedEdgesByResult[res.id]; retained {
 		delete(c.persistedEdgesByResult, res.id)
+		c.poolRootLocked(res, -1)
 		queue, _ = c.decrementIncomingOwnershipLocked(ctx, res, queue)
 	}
 	return append(queue, res)

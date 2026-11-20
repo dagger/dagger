@@ -109,20 +109,11 @@ func TestRowsSetTheLastUse(t *testing.T) {
 	}
 }
 
-// DropStoredParts removes every stored part whose chain names the blob, on
-// every entry, and nothing else: the entries' other parts, values and
-// dependencies stay.
-// The service reads BlobCacheUsage for every status request and metrics
-// scrape, outside its work lock, so the read is in pieces (readInPieces): it
-// lets egraphMu go every readPieceSteps values of the pool, and a writer
-// waiting for the lock waits for one piece, not a walk of the whole pool.
-// With no write during it, it counts what one hold would. The Cloud's body
-// worker is stopped: it takes egraphMu by itself, when it installs a body,
-// and the hook's TryLock would take its hold for the read's.
-func TestBlobCacheUsageGivesUpTheLockBetweenValues(t *testing.T) {
+// BlobCacheUsage reports the pool as the cache keeps it, reading no walk:
+// R and P, and the blob they share counted once.
+func TestBlobCacheUsageReadsTheKeptPool(t *testing.T) {
 	t.Parallel()
 	ctx, cloud, r, _ := storedPartServiceTestCloud(t)
-	storedTestHoldWhole(cloud)
 	p := storedPartTestDeps(cloud, r)[0]
 	for _, stored := range []struct {
 		number uint64
@@ -135,25 +126,17 @@ func TestBlobCacheUsageGivesUpTheLockBetweenValues(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, ok)
 	}
-	whole, err := cloud.BlobCacheUsage()
+	usage, err := cloud.BlobCacheUsage()
 	require.NoError(t, err)
-	require.Equal(t, 2, whole.PoolValues, "R and P")
-	require.Equal(t, 2, whole.PoolBlobs)
-	require.Equal(t, int64(110), whole.PoolBlobBytes, "the shared blob once, and R's own")
-
-	cloud.readPieceSize = 1
-	var yields int
-	cloud.testReadPieceYielded = func() {
-		yields++
-		require.True(t, cloud.egraphMu.TryLock(), "the lock is free between two pieces")
-		cloud.egraphMu.Unlock()
-	}
-	pieces, err := cloud.BlobCacheUsage()
-	require.NoError(t, err)
-	require.Positive(t, yields, "the read let the lock go")
-	require.Equal(t, whole, pieces)
+	require.Equal(t, 2, usage.PoolValues, "R and P")
+	require.Equal(t, 2, usage.PoolBlobs)
+	require.Equal(t, int64(110), usage.PoolBlobBytes, "the shared blob once, and R's own")
+	require.NoError(t, cloud.VerifyPoolMeasure())
 }
 
+// DropStoredParts removes every stored part whose chain names the blob, on
+// every entry, and nothing else: the entries' other parts, values and
+// dependencies stay.
 func TestDropStoredParts(t *testing.T) {
 	t.Parallel()
 	ctx, cloud, r, p := storedBundleTestCloud(t, "root")

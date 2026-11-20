@@ -1981,6 +1981,9 @@ func (c *Cache) upsertPersistedEdgeLocked(ctx context.Context, res *sharedResult
 		edge.expiresAtUnix = mergeSharedResultExpiryUnix(edge.expiresAtUnix, expiresAtUnix)
 	}
 	c.persistedEdgesByResult[res.id] = edge
+	if !found {
+		c.poolRootLocked(res, 1)
+	}
 }
 
 // resultState reads what a span reports of res: its complete parts, then,
@@ -2081,6 +2084,7 @@ func (c *Cache) removePrunedEdge(ctx context.Context, resultID sharedResultID) (
 	entriesBefore := len(c.resultsByID)
 	res = c.resultsByID[resultID]
 	if res != nil {
+		c.poolRootLocked(res, -1)
 		var err error
 		queue, err = c.decrementIncomingOwnershipLocked(ctx, res, queue)
 		rerr = errors.Join(rerr, err)
@@ -2787,6 +2791,10 @@ type Cache struct {
 	// storedLayers holds each distinct layer of the stored parts' chains
 	// once. Set with blobBacked.
 	storedLayers *storedLayers
+	// pool is a blob-backed cache's pool, kept as the cache changes, as
+	// its prunes' two stages measure it (cache_pool_measure.go). Guarded by
+	// egraphMu.
+	pool poolMeasure
 	// entriesByRecipe maps each recipe digest to its entry. remoteCaches
 	// keeps each held engine cache's own indexes, the entry of each of its
 	// holdings among them. All guarded by egraphMu. See
@@ -3230,13 +3238,20 @@ type sharedResult struct {
 	recipeRunLogged atomic.Bool
 	// storedParts are the parts whose layer chains are in this cache's own
 	// blob store, by part address key, their layers the cache's
-	// (storedLayers). Only a blob-backed cache (the Cloud) sets them. Guarded
-	// by egraphMu.
+	// (storedLayers). Only a blob-backed cache (the Cloud) sets them, in
+	// changeStoredPartsLocked. Guarded by egraphMu.
 	storedParts map[string]storedPart
 	// storedRecordBytes is the size of the record a blob-backed cache stores
 	// for the entry, as persistence writes it (encodedRecordBytes), or 0.
-	// Guarded by egraphMu.
+	// Written through setStoredRecordBytesLocked. Guarded by egraphMu.
 	storedRecordBytes int64
+	// poolRefs counts what keeps the entry in a blob-backed cache's pool:
+	// one for its retention edge, and one for each entry in the pool that
+	// depends on it. inPool is whether the pool's kept measure counts it:
+	// it has a value of its own and poolRefs is above 0
+	// (cache_pool_measure.go). Both guarded by egraphMu.
+	poolRefs int32
+	inPool   bool
 	// storedTransfer is the entry's stored record normalized for transfer,
 	// which StoredBundle keeps (storedTransferRecordLocked) and dropping or
 	// replacing the value releases. Builds hold egraphMu for reading, so it is set
@@ -4542,7 +4557,11 @@ func (c *Cache) addExplicitDependenciesLocked(
 	return nil
 }
 
+// rememberDependencyEdgeLocked records that parentRes depends on depRes,
+// which its deps already name: depRes's reverse edge, and its hold in the
+// pool if parentRes is there. Requires egraphMu for writing.
 func (c *Cache) rememberDependencyEdgeLocked(parentRes *sharedResult, depRes *sharedResult) {
+	c.poolDependencyLocked(parentRes, depRes, 1)
 	if parentRes == nil || depRes == nil || parentRes.id == 0 || depRes.id == 0 || parentRes.id == depRes.id {
 		return
 	}
@@ -4552,8 +4571,13 @@ func (c *Cache) rememberDependencyEdgeLocked(parentRes *sharedResult, depRes *sh
 	depRes.depParents[parentRes.id] = struct{}{}
 }
 
+// forgetDependencyEdgeLocked forgets that the entry numbered parentID
+// depends on the one numbered depID, which its deps no longer name, or won't
+// once the caller has forgotten them all: the reverse edge, and the hold in
+// the pool if the parent is there. Requires egraphMu for writing.
 func (c *Cache) forgetDependencyEdgeLocked(parentID sharedResultID, depID sharedResultID) {
 	depRes := c.resultsByID[depID]
+	c.poolDependencyLocked(c.resultsByID[parentID], depRes, -1)
 	if depRes == nil || depRes.depParents == nil {
 		return
 	}
@@ -6222,6 +6246,9 @@ func (c *Cache) Close(ctx context.Context) error {
 // returns that earlier result and makes no checkpoint attempt.
 func (c *Cache) CloseWithShutdownError(ctx context.Context, cause error) error {
 	c.closeOnce.Do(func() {
+		if testCacheClosing != nil {
+			testCacheClosing(c)
+		}
 		// A nil cause leaves ordinary Close unchanged.
 		c.closeErr = errors.Join(cause)
 		slog.Info(
@@ -6289,6 +6316,9 @@ func (c *Cache) CloseWithShutdownError(ctx context.Context, cause error) error {
 
 func (c *Cache) CloseDiscardingPersistence() error {
 	c.closeOnce.Do(func() {
+		if testCacheClosing != nil {
+			testCacheClosing(c)
+		}
 		c.closeRemoteCacheBridge()
 		c.closePartPrefetch()
 		c.closeStoredBodies()
@@ -6413,6 +6443,9 @@ func (c *Cache) deleteResultLocked(res *sharedResult) {
 	c.resultPayloadBytes -= res.payloadBytes
 	delete(c.resultsByID, res.id)
 	c.partReads.forget(res.id)
+	// An entry that leaves the cache leaves its pool, with what it held
+	// there.
+	c.poolSettleLocked(res)
 }
 
 // setResultPayloadBytesLocked replaces res's payload size, keeping the
@@ -7700,6 +7733,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 			}
 			oc.res.hasValue = true
 			oc.res.payloadRevision++
+			c.poolSettleLocked(oc.res)
 
 			if onReleaser, ok := UnwrapAs[OnReleaser](oc.val); ok && oc.res.inlineBorrow == nil {
 				oc.res.onRelease = onReleaser.OnRelease
@@ -8107,7 +8141,10 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 			// A replaced entry is rolled back like a fresh one: its retention
 			// edge, which kept the old value, goes with it, and so does the
 			// ownership its old value's dependency edges held.
-			delete(c.persistedEdgesByResult, oc.res.id)
+			if _, retained := c.persistedEdgesByResult[oc.res.id]; retained {
+				delete(c.persistedEdgesByResult, oc.res.id)
+				c.poolRootLocked(oc.res, -1)
+			}
 			releaseQueue, replacedErr = c.releaseReplacedDependenciesLocked(cleanupCtx, replaced, releaseQueue)
 		}
 		releases, rollbackErr := c.rollbackPartialPublicationLocked(cleanupCtx, oc.res)
@@ -8226,6 +8263,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		if replacedInPlace {
 			if _, retained := c.persistedEdgesByResult[oc.res.id]; retained {
 				delete(c.persistedEdgesByResult, oc.res.id)
+				c.poolRootLocked(oc.res, -1)
 				queue, decErr = c.decrementIncomingOwnershipLocked(ctx, oc.res, queue)
 			}
 		}
