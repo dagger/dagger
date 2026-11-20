@@ -225,15 +225,18 @@ func evalDangSource(
 	})
 }
 
-// dangSourceDir returns the directory to run a module's source in srcDir
-// from. Dang finds the dang.toml that decides the source's version by
-// walking up from it, to a .git or the filesystem root, while the engine
-// reads only one up to the module directory moduleDir (see
-// ModuleSource.DangVersion), whatever else the module context holds above it.
-// When Dang's walk would reach a dang.toml above moduleDir, the source runs
-// from a copy of its .dang files that no dang.toml governs, so the version
-// the engine resolved, set with ContextWithDangVersion, decides; otherwise
-// from srcDir itself. cleanup removes the copy.
+// dangSourceDir returns the directory to read a module's source in srcDir
+// from, whose version Dang decides as the engine does. The module runtime
+// stages the source from there (see runStagedDangSource) and runs the staged
+// copy, at the version this directory decides. Dang finds the dang.toml that
+// decides the source's version by walking up from it, to a .git or the
+// filesystem root, while the engine reads only one up to the module directory
+// moduleDir (see ModuleSource.DangVersion), whatever else the module context
+// holds above it. When Dang's walk would reach a dang.toml above moduleDir,
+// the source is read from a copy of its .dang files that no dang.toml
+// governs, so the version the engine resolved, set with
+// ContextWithDangVersion, decides; otherwise from srcDir itself. cleanup
+// removes the copy.
 func dangSourceDir(srcDir, moduleDir string) (dir string, cleanup func(), rerr error) {
 	noop := func() {}
 	configPath, _, err := dang.FindProjectConfig(srcDir)
