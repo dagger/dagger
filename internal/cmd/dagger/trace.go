@@ -82,10 +82,11 @@ func newTraceViewCmd(use string, log, engine bool) *cobra.Command {
 	if !log {
 		workHelp = `
 
-Use --work to show which operations did new work, which repeated work your
-organization already ran in the last 30 days, and which were cache hits: each
-span that did work is marked NEW or REPEAT, and a WORK section ends the
-report. Dagger Cloud computes the work when you ask for it, from the work of
+Use --work to show which operations did new work, and which repeated work
+your organization already ran in the last 30 days: a cache hit reused it, or it
+ran again. Each span that did work is marked NEW or REPEAT, and a WORK section
+ends the report with the share of new, repeat, uncached repeat and cached
+work. Dagger Cloud computes the work when you ask for it, from the work of
 Dagger Cloud Engines, once the trace has ended.`
 		workExample = "\ndagger cloud traces view --last --work"
 	}

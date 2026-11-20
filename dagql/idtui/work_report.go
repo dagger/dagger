@@ -91,9 +91,15 @@ func (fe *frontendPretty) renderWorkSection() []string {
 	return WorkReportLines(out, fe.agentStyle(), fe.work, fe.traceCommand)
 }
 
-// WorkReportLines renders a trace's work: the new, repeat and cached totals,
-// then the new and repeat runs with the most CPU time, each with its span, so
-// it can be shown with '<command> <trace> --span <span>'.
+// WorkReportLines renders a trace's work: the share of each class of the
+// trace's operations, then the uncached repeat runs and the new runs with the
+// most CPU time, each with its span, so it can be shown with
+// '<command> <trace> --span <span>'.
+//
+// The operations are the runs with work, new or repeat, and the cache hits. A
+// cache hit is repeat work too: it reused a result of work that ran before.
+// So the repeat work is the uncached repeat runs, which ran again, and the
+// cache hits.
 func WorkReportLines(out TermOutput, agent bool, work *cloud.TraceWork, command string) []string {
 	if work == nil {
 		return nil
@@ -102,16 +108,28 @@ func WorkReportLines(out TermOutput, agent bool, work *cloud.TraceWork, command 
 		command = defaultTraceCommand
 	}
 	s := work.Summary
-	runs := func(n int) string {
-		if n == 1 {
-			return "1 run"
+	newOps, uncached, cached := s.New.Runs, s.Repeat.Runs, s.Cached.Calls
+	repeat := uncached + cached
+	total := newOps + repeat
+	pct := func(n, of int) string {
+		if of == 0 {
+			return "-"
 		}
-		return fmt.Sprintf("%d runs", n)
+		return fmt.Sprintf("%.1f%%", 100*float64(n)/float64(of))
 	}
+	label := func(text string, color termenv.Color) string {
+		return out.String(fmt.Sprintf("%-10s", text)).Foreground(color).String()
+	}
+	faint := func(text string) string { return out.String(text).Faint().String() }
 	body := []string{
-		fmt.Sprintf("%s  %s, %s CPU", padLabel(out, cloud.WorkNew), runs(s.New.Runs), formatCPU(s.New.CPUSeconds)),
-		fmt.Sprintf("%s  %s, %s CPU", padLabel(out, cloud.WorkRepeat), runs(s.Repeat.Runs), formatCPU(s.Repeat.CPUSeconds)),
-		fmt.Sprintf("%s  %d cache hits", out.String(fmt.Sprintf("%-6s", "CACHED")).Foreground(termenv.ANSIBlue).String(), s.Cached.Calls),
+		fmt.Sprintf("%s %7d  %6s  %s", label("NEW", termenv.ANSICyan), newOps, pct(newOps, total),
+			faint(formatCPU(s.New.CPUSeconds)+" CPU")),
+		fmt.Sprintf("%s %7d  %6s", label("REPEAT", termenv.ANSIMagenta), repeat, pct(repeat, total)),
+		fmt.Sprintf("%s %7d  %6s  %s", label("  uncached", termenv.ANSIMagenta), uncached, pct(uncached, total),
+			faint(fmt.Sprintf("%s of repeat work, %s CPU", pct(uncached, repeat), formatCPU(s.Repeat.CPUSeconds)))),
+		fmt.Sprintf("%s %7d  %6s  %s", label("  cached", termenv.ANSIBlue), cached, pct(cached, total),
+			faint(pct(cached, repeat)+" of repeat work")),
+		faint(fmt.Sprintf("%d operations: runs that did work, and cache hits", total)),
 	}
 	for _, class := range []string{cloud.WorkRepeat, cloud.WorkNew} {
 		var list []cloud.WorkRun
@@ -124,7 +142,7 @@ func WorkReportLines(out TermOutput, agent bool, work *cloud.TraceWork, command 
 			continue
 		}
 		sort.SliceStable(list, func(i, j int) bool { return list[i].CPUSeconds > list[j].CPUSeconds })
-		title := "Repeat work"
+		title := "Uncached repeat work"
 		if class == cloud.WorkNew {
 			title = "New work"
 		}
@@ -133,25 +151,13 @@ func WorkReportLines(out TermOutput, agent bool, work *cloud.TraceWork, command 
 			body = append(body, workRunLine(out, work.TraceID, run))
 		}
 		if len(list) > workReportRuns {
-			body = append(body, out.String(fmt.Sprintf("  ... and %d more", len(list)-workReportRuns)).Faint().String())
+			body = append(body, faint(fmt.Sprintf("  ... and %d more", len(list)-workReportRuns)))
 		}
 	}
-	body = append(body, "", out.String(fmt.Sprintf(
-		"Repeat work ran before in this organization, within %d days, on Dagger Cloud Engines. Show a run with '%s %s --span <span>'.",
-		work.RepeatWindowDays, command, work.TraceID)).Faint().String())
+	body = append(body, "", faint(fmt.Sprintf(
+		"Uncached repeat work ran before in this organization, within %d days, on Dagger Cloud Engines, and ran again. Show a run with '%s %s --span <span>'.",
+		work.RepeatWindowDays, command, work.TraceID)))
 	return reportSectionLines(out, agent, "WORK", body)
-}
-
-func padLabel(out TermOutput, work string) string {
-	label := "NEW   "
-	if work == cloud.WorkRepeat {
-		label = "REPEAT"
-	}
-	color := termenv.ANSICyan
-	if work == cloud.WorkRepeat {
-		color = termenv.ANSIMagenta
-	}
-	return out.String(label).Foreground(color).String()
 }
 
 func workRunLine(out TermOutput, traceID string, run cloud.WorkRun) string {

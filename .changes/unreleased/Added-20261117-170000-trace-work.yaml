@@ -3,9 +3,10 @@ body: |
   `dagger cloud traces view --work` and `dagger trace --work` show the work of
   a trace: each span that did work is marked `NEW`, or `REPEAT` when your
   organization already ran the same work in the last 30 days, and a `WORK`
-  section ends the report with the new, repeat and cached totals and the runs
-  with the most CPU time. Dagger Cloud computes the work on request, from the
-  work of Dagger Cloud Engines, once the trace has ended.
+  section ends the report with the share of new and repeat work, the repeat
+  work split into uncached (it ran again) and cached, and the runs with the
+  most CPU time. Dagger Cloud computes the work on request, from the work of
+  Dagger Cloud Engines, once the trace has ended.
 time: 2026-11-17T17:00:00Z
 custom:
   Author: marcosnils
