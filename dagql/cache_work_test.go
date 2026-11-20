@@ -159,18 +159,7 @@ func TestSharingCountsPassesByKindOfClass(t *testing.T) {
 	_, err := c.MergeValues(ctx, cloudCacheID, set.bundle)
 	require.NoError(t, err)
 	barrier.awaitPass(t)
-	// Every pass, until none is queued and none ends for a while.
-	for quiet := false; !quiet; {
-		if pending, _ := shareTestQueueDepth(c); pending > 0 {
-			barrier.awaitPass(t)
-			continue
-		}
-		select {
-		case <-barrier.passes:
-		case <-time.After(300 * time.Millisecond):
-			quiet = true
-		}
-	}
+	shareTestAwaitQuiet(t, c, barrier)
 
 	stats := c.Sharing()
 	require.Len(t, stats.Kinds, 1, "every merged record is alone in its class: %+v", stats.Kinds)
@@ -198,8 +187,32 @@ func TestSharingCountsADonorClassWithItsSlot(t *testing.T) {
 	shareTestUnite(t, ctx, c, "share-counts", donor, receiver)
 
 	require.Equal(t, 1, barrier.awaitPass(t), "one planned slot")
+	shareTestAwaitQuiet(t, c, barrier)
+	// The install queues the class again, for a pass with nothing left to
+	// give.
 	donorPasses := c.Sharing().Kinds["donor"]
-	require.Equal(t, SharePassStats{Passes: 1, Members: 2, Slotted: 1, Slots: 1}, donorPasses)
+	require.Positive(t, donorPasses.Passes)
+	require.Equal(t, 2*donorPasses.Passes, donorPasses.Members, "each pass probed both members")
+	require.Equal(t, int64(1), donorPasses.Slotted, "one pass made a slot")
+	require.Equal(t, int64(1), donorPasses.Slots)
+	require.Zero(t, donorPasses.Prepared, "nothing merged was prepared")
+}
+
+// shareTestAwaitQuiet waits until no sharing pass is queued and none ends for
+// a while.
+func shareTestAwaitQuiet(t *testing.T, c *Cache, barrier *sharePassBarrier) {
+	t.Helper()
+	for quiet := false; !quiet; {
+		if pending, _ := shareTestQueueDepth(c); pending > 0 {
+			barrier.awaitPass(t)
+			continue
+		}
+		select {
+		case <-barrier.passes:
+		case <-time.After(300 * time.Millisecond):
+			quiet = true
+		}
+	}
 }
 
 // A first use, or a hold of the graph lock, is the work of the pathway that

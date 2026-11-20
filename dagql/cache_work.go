@@ -99,12 +99,10 @@ func cacheWorkOf(ctx context.Context, otherwise cacheWork) cacheWork {
 }
 
 // lockGraphFor takes the graph lock for writing as work, so that a lookup
-// it keeps waiting can tell what held it, and returns its own wait, which
-// it also adds to the waits ctx gathers (withGraphLockWaits).
-func (c *Cache) lockGraphFor(ctx context.Context, work cacheWork) wcprof.LockWait {
-	lw := wcprof.WriteLockAs(ctx, &c.egraphMu, egraphLockIdent, graphHolders[work])
-	gatherGraphLockWait(ctx, lw)
-	return lw
+// it keeps waiting can tell what held it, and adds its own wait to the waits
+// ctx gathers (withGraphLockWaits).
+func (c *Cache) lockGraphFor(ctx context.Context, work cacheWork) {
+	gatherGraphLockWait(ctx, wcprof.WriteLockAs(ctx, &c.egraphMu, egraphLockIdent, graphHolders[work]))
 }
 
 // readLockGraphGathered takes the graph lock for reading, adding a wait for
@@ -117,8 +115,8 @@ func (c *Cache) readLockGraphGathered(ctx context.Context) {
 // carries, or otherwise when it carries none: for code that runs for
 // several kinds of work, such as the parts machinery, which a sharing
 // pass's slots run too.
-func (c *Cache) lockGraphForCtx(ctx context.Context, otherwise cacheWork) wcprof.LockWait {
-	return c.lockGraphFor(ctx, cacheWorkOf(ctx, otherwise))
+func (c *Cache) lockGraphForCtx(ctx context.Context, otherwise cacheWork) {
+	c.lockGraphFor(ctx, cacheWorkOf(ctx, otherwise))
 }
 
 // lookupReadLockGraph takes the graph lock for reading for a call's lookup,
