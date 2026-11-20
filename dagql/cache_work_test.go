@@ -2,6 +2,7 @@ package dagql
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -46,6 +47,45 @@ func TestLookupLockWaitsNameTheirHolder(t *testing.T) {
 		require.GreaterOrEqual(t, stats.Total, time.Millisecond, name)
 		require.Equal(t, stats.Total, stats.Longest, name)
 	}
+}
+
+// A lookup that waits while a restore's part commits is let in by the
+// restore.
+func TestLookupBehindARestoreCommitNamesTheRestore(t *testing.T) {
+	t.Parallel()
+	set := firstUseTestCloud(t)
+	ctx, engine, srv := transferTestCache(t)
+	inCommit, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	engine.testMergeCommitLocked = func() {
+		once.Do(func() {
+			close(inCommit)
+			<-release
+		})
+	}
+	restored := make(chan error, 1)
+	go func() {
+		reply, err := engine.RestoreValues(ctx, set.bundle, nil, "test")
+		if err == nil && reply.Release != nil {
+			err = reply.Release(ctx)
+		}
+		restored <- err
+	}()
+	<-inCommit
+	looked := make(chan error, 1)
+	go func() {
+		frame := &ResultCall{Kind: ResultCallKindField, Field: "behind-restore", Type: NewResultCallType((&transferTestValue{}).Type())}
+		_, err := engine.GetOrInitCall(ctx, "test-session", srv, &CallRequest{ResultCall: frame}, func(context.Context) (AnyResult, error) {
+			return NewResultForCall(&transferTestValue{Text: "ran"}, frame)
+		})
+		looked <- err
+	}()
+	waitBlockedIn(t, "lookupReadLockGraph(")
+	close(release)
+	require.NoError(t, <-restored)
+	require.NoError(t, <-looked)
+	waits := engine.LookupLockWaits()
+	require.Equal(t, int64(1), waits.Other["restore"].Waits, "%+v", waits)
 }
 
 // A merge's preparation reports how long it waited for the graph lock, by
