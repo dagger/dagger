@@ -137,8 +137,24 @@ func TestSharedSchemaKeepsClientState(t *testing.T) {
 			probesMu.Lock()
 			probes = append(probes, probed{self: self, current: current})
 			probesMu.Unlock()
-			return dagql.Boolean(!current.hostHistories().empty()), nil
+			hostHistories, err := current.hostHistories()
+			if err != nil {
+				return false, err
+			}
+			return dagql.Boolean(!hostHistories.empty()), nil
 		}).DoNotCache("reads the calling client's state"),
+		// A Query field that wrongly reads client state from its receiver.
+		dagql.Func("receiverProbe", func(ctx context.Context, self *Query, args struct{ State string }) (dagql.Boolean, error) {
+			switch args.State {
+			case "hostHistories":
+				_, err := self.hostHistories()
+				return err == nil, err
+			case "cacheVolumes":
+				_, err := self.cacheVolumes()
+				return err == nil, err
+			}
+			return false, fmt.Errorf("unknown state %q", args.State)
+		}).DoNotCache("reads the receiver's state"),
 	}.Install(f.dag)
 	coreMod := &sharedTestCoreMod{base: f.dag}
 
@@ -186,8 +202,11 @@ func TestSharedSchemaKeepsClientState(t *testing.T) {
 
 	// Client a approves a host history donor and opens a cache volume; b
 	// does neither. Through the one server, each sees only its own.
-	a.root.hostHistories().register(hostHistoryKey{sha: "a"}, hostHistoryDonor{owner: "client-a", path: "/a"})
-	a.root.cacheVolumes()
+	aHostHistories, err := a.root.hostHistories()
+	require.NoError(t, err)
+	aHostHistories.register(hostHistoryKey{sha: "a"}, hostHistoryDonor{owner: "client-a", path: "/a"})
+	_, err = a.root.cacheVolumes()
+	require.NoError(t, err)
 	probe := func(c client) bool {
 		t.Helper()
 		var out dagql.Boolean
@@ -204,9 +223,24 @@ func TestSharedSchemaKeepsClientState(t *testing.T) {
 		require.Same(t, want, probes[i].current, "the context holds the calling client's root")
 	}
 	probesMu.Unlock()
-	require.True(t, sharedRoot.hostHistories().empty(), "the shared root holds no client's host histories")
+	require.Nil(t, sharedRoot.hostHistory, "the shared root holds no client's host histories")
 	require.Nil(t, sharedRoot.cacheVolumeStore, "nor cache volumes")
 	require.Nil(t, sharedRoot.ConstructorArgs, "nor constructor arguments")
+
+	// Reading a client's state from the shared root, rather than from the
+	// calling client's, fails instead of quietly finding none: through the
+	// server, and on its `with` clones, which carry constructor arguments.
+	for _, state := range []string{"hostHistories", "cacheVolumes"} {
+		var out dagql.Boolean
+		err := srvA.Select(a.ctx, srvA.Root(), &out,
+			dagql.Selector{Field: "receiverProbe", Args: []dagql.NamedInput{{Name: "state", Value: dagql.NewString(state)}}})
+		require.ErrorIs(t, err, ErrSharedRootClientState, state)
+	}
+	withClone := sharedRoot.Clone()
+	_, err = withClone.hostHistories()
+	require.ErrorIs(t, err, ErrSharedRootClientState, "a clone of the shared root is shared too")
+	_, err = withClone.cacheVolumes()
+	require.ErrorIs(t, err, ErrSharedRootClientState)
 
 	runtime.mu.Lock()
 	require.Equal(t, map[*Query]struct{}{a.root: {}}, runtime.roots["client-a"],
@@ -223,4 +257,9 @@ func TestSharedSchemaKeepsClientState(t *testing.T) {
 	require.NotSame(t, envA, envB, "a module with .env defaults is not shared")
 	require.Same(t, a.root, envA.Root().Unwrap(), "it is built on its client's root")
 	require.Same(t, b.root, envB.Root().Unwrap())
+	// whose state the guard leaves readable
+	var owned dagql.Boolean
+	require.NoError(t, envA.Select(a.ctx, envA.Root(), &owned,
+		dagql.Selector{Field: "receiverProbe", Args: []dagql.NamedInput{{Name: "state", Value: dagql.NewString("hostHistories")}}}))
+	require.True(t, bool(owned))
 }

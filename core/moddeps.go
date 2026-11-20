@@ -335,7 +335,9 @@ func (b *SchemaBuilder) memoKey() (string, bool) {
 // always the calling client's root, never a server's; and ConstructorArgs,
 // which no client root has: `with` sets them on a clone that queries chain
 // from. So the shared builder builds on a neutral root of the same facade,
-// as the core schema's views (CoreSchemaBase.viewState) already do.
+// as the core schema's views (CoreSchemaBase.viewState) already do. That
+// root is marked shared, so reading a client's state from it fails
+// (ErrSharedRootClientState) instead of reading none.
 //
 // What a client may still put in a schema is what its context gives the
 // install: only expanding a module's .env user defaults, against the host of
@@ -364,7 +366,7 @@ func (m *SchemaBuilderMemo) sharedBuilder(b *SchemaBuilder) *SchemaBuilder {
 		if m.neutralRoots == nil {
 			m.neutralRoots = map[Server]*Query{}
 		}
-		root = NewRoot(facade)
+		root = newSharedRoot(facade)
 		m.neutralRoots[facade] = root
 	}
 	shared := &SchemaBuilder{
