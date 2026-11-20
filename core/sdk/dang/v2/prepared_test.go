@@ -99,12 +99,11 @@ func keptPreparedDangPrograms(t *testing.T, ctx context.Context, modKey string) 
 func TestPreparedDangKeepsRecentCompilations(t *testing.T) {
 	ctx := schemaCacheContext(t)
 	var builds atomic.Int32
-	prepare := func(context.Context) (*dang.PreparedDirectory, error) {
-		builds.Add(1)
-		return &dang.PreparedDirectory{}, nil
-	}
 	get := func(modKey, key string) *dang.PreparedDirectory {
-		program, err := cachedPreparedDangDir(ctx, modKey, key, prepare)
+		program, err := cachedPreparedDangDir(ctx, modKey, key, func(context.Context) (*dang.PreparedDirectory, error) {
+			builds.Add(1)
+			return &dang.PreparedDirectory{}, nil
+		})
 		require.NoError(t, err)
 		return program
 	}
