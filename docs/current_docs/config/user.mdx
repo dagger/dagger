@@ -60,3 +60,32 @@ leave_old_engines = true
 ```
 
 The `DAGGER_LEAVE_OLD_ENGINE` environment variable, when set, takes precedence over this setting. The setting takes precedence over the `cleanup` parameter of an `image://` engine URL.
+
+## Desktop notifications
+
+When the terminal UI needs you, it asks your terminal to raise a desktop notification: an approval or a prompt is waiting, or the agent you are driving has finished its turn or failed. A command that ran for more than 30 seconds also notifies when it finishes, if you have switched to another window. Notifications are terminal escape sequences, so only the interactive terminal UI sends them, never `--progress=plain` or other non-interactive output.
+
+The `DAGGER_TUI_NOTIFY` environment variable selects how to notify:
+
+| Value | Notification |
+|---|---|
+| `auto` (default) | Detected from the terminal, see below |
+| `iterm2` | OSC 9: iTerm2, WezTerm, and other terminals that support it |
+| `iterm2_with_bell` | OSC 9, followed by the terminal bell |
+| `kitty` | OSC 99: kitty |
+| `ghostty` | OSC 777: Ghostty, and other terminals with rxvt-style notifications |
+| `bell` | The terminal bell only |
+| `off` | Never notify |
+
+The values Claude Code's notification setting uses work too: `terminal_bell` for `bell`, and `notifications_disabled` for `off`. `osc9`, `osc99` and `osc777` name the escape sequences directly, and `none`, `disabled`, `0`, `false` and `no` also turn notifications off. An unrecognized value falls back to `auto`.
+
+With `auto`, Dagger recognizes iTerm2, WezTerm, kitty and Ghostty from `TERM_PROGRAM` and `TERM`, then from `LC_TERMINAL`, `KITTY_WINDOW_ID` and `GHOSTTY_RESOURCES_DIR`, which still identify the terminal inside tmux. Terminal.app gets the bell. Any other terminal gets no notifications: set `DAGGER_TUI_NOTIFY` to opt in.
+
+Notifications are skipped while the terminal is focused. Dagger asks the terminal to report focus changes; a terminal that does not report them is treated as unfocused, so it notifies for every approval, prompt and finished turn, though never for a finished command.
+
+Inside tmux, notifications pass through to the outer terminal only if tmux allows it, and tmux reports focus only if asked to. Add to your `~/.tmux.conf`:
+
+```text
+set -g allow-passthrough on  # tmux 3.3 or later
+set -g focus-events on
+```
