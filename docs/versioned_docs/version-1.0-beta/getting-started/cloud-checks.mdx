@@ -6,13 +6,13 @@ description: "Run workspace Checks automatically after Git events"
 
 # Set up Cloud Checks
 
-In this guide, you will connect your GitHub repository to Dagger Cloud, and run your Checks automatically after each push.
+In this guide, you will connect your repository to Dagger Cloud and run your Checks automatically.
 
 Complete the [Quickstart](./quickstart.mdx) before you start.
 
-A Git event, such as a push or pull request, starts Cloud Checks. They run your Checks on Cloud Engines. You do not need a CI workflow file.
+A repository event you enable, such as a push or review update, starts Cloud Checks. They run your Checks on Cloud Engines. You do not need a CI workflow file.
 
-Your project must be a GitHub repository, and its Git `origin` remote must point to that repository.
+Your project must be hosted on GitHub, GitLab.com, or Entire, and its Git `origin` remote must point to that repository.
 
 ## Enable Cloud Checks
 
@@ -24,27 +24,13 @@ dagger cloud checks on
 
 Dagger gets the repository from the Git `origin` remote. The command prints `checks for repo <repository> enabled` when Cloud Checks are enabled. If they are already enabled, it makes no change.
 
-In an interactive terminal, the command offers to complete missing prerequisites:
+If setup is needed, the command can open the browser in an interactive terminal. In non-interactive mode, it prints the missing step and exits.
 
-- Sign in or create a Dagger Cloud account and organization.
-- Connect the GitHub account or organization that owns the repository. In the browser, grant Dagger access to the repository.
+For manual setup, run `dagger cloud signup` if you need to sign in or create an organization. In your Cloud organization, open **Integrations**, select the integration for your repository, and follow the steps to grant access.
 
-Each prerequisite must finish before the command enables Cloud Checks. You can decline a prompt and complete it later.
+If you still need to connect your GitHub account, `dagger cloud integration create github --open` opens the authorization page.
 
-In non-interactive mode, the command stops and prints the required command followed by the command to retry. It does not open a browser or wait for input.
-
-You can also complete the prerequisites separately:
-
-```shell
-dagger cloud signup
-dagger cloud integration create github --open
-```
-
-Complete the browser steps, then retry:
-
-```shell
-dagger cloud checks on
-```
+After manual setup, rerun the enable command.
 
 ## Trigger Cloud Checks
 
@@ -58,9 +44,11 @@ git push -u origin HEAD
 
 If `dagger generate` changed other files, stage those too. Run `git status --short` to list them.
 
+`dagger cloud checks on` enables checks for the default branch and for pull requests on GitHub, merge requests on GitLab.com, or Trails on Entire. If you pushed to another branch, open or update the corresponding review to start Checks. You can change when Checks run under **Sources** in Dagger Cloud.
+
 ## Watch the Checks pass
 
-The push started your Checks. Watch them run:
+Watch your Checks run:
 
 ```shell
 dagger workspace activity
@@ -74,9 +62,9 @@ Green means that every Check passed.
 
 ## What you accomplished
 
-Your project now checks itself. Every push and every pull request runs your Checks automatically, on Dagger's Cloud Engines.
+Your project now checks itself. The events you enabled run your Checks automatically on Dagger's Cloud Engines.
 
-You did not write a CI workflow file. You do not maintain a build server. The Checks that run on each push are the same Checks that `dagger check` runs on your machine, so the two cannot drift apart.
+You did not write a CI workflow file. You do not maintain a build server. The Checks that run on Cloud Engines are the same Checks that `dagger check` runs on your machine, so the two cannot drift apart.
 
 ## Next steps
 
