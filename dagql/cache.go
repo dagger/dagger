@@ -2641,6 +2641,9 @@ type Cache struct {
 	firstUseMu    sync.Mutex
 	firstUseStats FirstUseStats
 	firstUsePaths [numCacheWork]FirstUsePath
+	// firstUseRoutes are what each route merged and what first uses made
+	// of it (FirstUseStats.Routes). Guarded by firstUseMu.
+	firstUseRoutes [numMergeRoutes]FirstUseRoute
 	// lookupWaits counts the lookups' waits for the graph lock, and landing
 	// the sets of the Cloud's records landing now (LookupLockWaits,
 	// Landing).
@@ -3215,11 +3218,11 @@ type sharedResult struct {
 	// replacement in place installs another. Guarded by egraphMu once
 	// indexed.
 	persistDeclined bool
-	// mergedAtUnixNano is when the Cloud merge that installed the entry's
-	// value committed, on an engine; 0 for a value the engine computed, and
-	// for one restored after a restart. It goes with the value. Guarded by
-	// egraphMu.
-	mergedAtUnixNano int64
+	// merged is the Cloud merge that installed the entry's value, on an
+	// engine: its route and when it committed (mergeOrigin). Nil for a
+	// value the engine computed, and for one restored after a restart. It
+	// goes with the value. Guarded by egraphMu.
+	merged *mergeOrigin
 	// recipeRunLogged is set once the entry's value, a record from another
 	// engine with no download address for any part, has been logged as run
 	// again (logRecordRunForWantOfOffers).
@@ -8038,7 +8041,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 			adoptedCurrent = true
 			oc.adopted = true
 			oc.adoptedRemote = cur.imported
-			oc.adoptedMergedAt = cur.mergedAtUnixNano
+			oc.adoptedMergedAt = cur.merged.mergedAt()
 			break
 		}
 		// A declined value doesn't take over the entry's retention edge, as

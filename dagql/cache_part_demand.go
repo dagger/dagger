@@ -712,7 +712,7 @@ func (c *Cache) logPartWithoutSource(ctx context.Context, row *sharedResult, add
 		kept = keptParts(probes, route.WriteSet, key)
 	}
 	wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
-	replacements, mergedAt := row.replacements, row.mergedAtUnixNano
+	replacements, mergedAt := row.replacements, row.merged.mergedAt()
 	dependents, more := c.mergedDependentsLocked(row, rebuildMixCountLimit)
 	c.egraphMu.RUnlock()
 	origin := "restored"
@@ -760,7 +760,7 @@ func (c *Cache) logRecordRunForWantOfOffers(ctx context.Context, row *sharedResu
 		return
 	}
 	wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
-	offers, mergedAt := row.hasPartOffersLocked(), row.mergedAtUnixNano
+	offers, mergedAt := row.hasPartOffersLocked(), row.merged.mergedAt()
 	c.egraphMu.RUnlock()
 	if offers || !row.recipeRunLogged.CompareAndSwap(false, true) {
 		return

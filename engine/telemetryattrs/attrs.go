@@ -704,6 +704,20 @@ const (
 	// Unix nanoseconds, comparable with CacheLookupAtAttr. The engine keeps it
 	// in memory only, so it is absent for a value restored after a restart.
 	CacheHitMergedAtAttr = "dagger.io/cache.hit.merged_at_unix_ns"
+	// CacheHitMergedRouteAttr (with CacheHitMergedAtAttr) is the route that
+	// merge brought the served value by: "set_file" (a part of a set file
+	// the engine restored), "placement" (a merge the service sent on its
+	// own), "lookup" (a merge answering one of the engine's lookups), or
+	// "unnamed". CacheHitMergeAttr is the service's number for a placement's
+	// or a lookup's merge, as in its remotecache.merge spans, in decimal;
+	// CacheHitMergedFileAttr names a set file's. CacheHitFirstUseAttr
+	// ("true", absent otherwise) records that the record's payload was still
+	// left for its first use when the lookup chose it: this hit's decode
+	// prepared it, unless another use racing it did first.
+	CacheHitMergedRouteAttr = "dagger.io/cache.hit.merged_route"
+	CacheHitMergeAttr       = "dagger.io/cache.hit.merge"
+	CacheHitMergedFileAttr  = "dagger.io/cache.hit.merged_file"
+	CacheHitFirstUseAttr    = "dagger.io/cache.hit.first_use"
 
 	// CacheLookupAtAttr is the time the call's cache lookup chose its
 	// candidates, in decimal-string absolute Unix nanoseconds, for hit,
@@ -1275,7 +1289,8 @@ type EngineSharePasses struct {
 // they came by: "lookup" (a call's decode of its hit), "export", "offer",
 // "part" (fetching or installing an entry's parts), "sharing" (a
 // snapshot-sharing pass), "merge" or "restore" (a merge warming the parts of
-// the entries it lands on), and "other".
+// the entries it lands on), and "other". Routes splits them by the route
+// that brought their records (EngineFirstUseRoute).
 type EngineFirstUse struct {
 	Prepared        int64  `json:"prepared,omitempty"`
 	Refused         int64  `json:"refused,omitempty"`
@@ -1291,6 +1306,28 @@ type EngineFirstUse struct {
 	SaveRefused  int64                         `json:"saveRefused,omitempty"`
 	SaveTotal    int64                         `json:"saveTotal,omitempty"`
 	SaveWall     int64                         `json:"saveWall,omitempty"`
+	// Routes are the first uses by route.
+	Routes map[string]EngineFirstUseRoute `json:"routes,omitempty"`
+}
+
+// EngineFirstUseRoute counts what one route brought the engine and what of
+// it the engine's calls first used, over the engine's life. The route is
+// "set_file" (the parts of the set files the engine restored), "placement"
+// (the merges the service sent on its own while the engine ran), "lookup"
+// (the merges answering the engine's lookups) or "unnamed". Merges are the
+// merges committed, a set file's parts each one; Sent the records they
+// carried, held rows aside; Merged the records they installed, which leaves
+// out those the engine already held a value for; FirstUses the first uses
+// of those records, refused ones included, with Total their time in
+// nanoseconds; and Used the merges at least one of whose records was first
+// used. A record merged and never used is Merged less FirstUses.
+type EngineFirstUseRoute struct {
+	Merges    int64 `json:"merges"`
+	Sent      int64 `json:"sent"`
+	Merged    int64 `json:"merged"`
+	FirstUses int64 `json:"firstUses,omitempty"`
+	Total     int64 `json:"total,omitempty"`
+	Used      int64 `json:"used,omitempty"`
 }
 
 // EngineRestore is what an engine did with one set file: the check's name,

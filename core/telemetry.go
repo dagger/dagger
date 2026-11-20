@@ -438,7 +438,18 @@ func appendCacheEvidenceAttrs(ctx context.Context, attrs []attribute.KeyValue, e
 	if ev.Outcome == dagql.CacheOutcomeHit && ev.HitRemote {
 		attrs = append(attrs, attribute.String(telemetryattrs.CacheHitRemoteAttr, "true"))
 		if ev.HitMergedAtUnixNano != 0 {
-			attrs = append(attrs, attribute.String(telemetryattrs.CacheHitMergedAtAttr, strconv.FormatInt(ev.HitMergedAtUnixNano, 10)))
+			attrs = append(attrs,
+				attribute.String(telemetryattrs.CacheHitMergedAtAttr, strconv.FormatInt(ev.HitMergedAtUnixNano, 10)),
+				attribute.String(telemetryattrs.CacheHitMergedRouteAttr, ev.HitMergedRoute.String()))
+			if ev.HitMerge != 0 {
+				attrs = append(attrs, attribute.String(telemetryattrs.CacheHitMergeAttr, strconv.FormatUint(ev.HitMerge, 10)))
+			}
+			if ev.HitMergedFile != "" {
+				attrs = append(attrs, attribute.String(telemetryattrs.CacheHitMergedFileAttr, ev.HitMergedFile))
+			}
+			if ev.HitFirstUse {
+				attrs = append(attrs, attribute.String(telemetryattrs.CacheHitFirstUseAttr, "true"))
+			}
 		}
 	}
 	if ev.Outcome == dagql.CacheOutcomeExecuted {
