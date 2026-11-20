@@ -37,7 +37,7 @@ defmodule Dagger.Codegen do
     types
     |> Stream.reject(&graphql_primitive_types/1)
     |> Stream.map(&modify_type/1)
-    |> Task.async_stream(&generate.(&1), ordered: false)
+    |> Task.async_stream(&generate.(&1), ordered: false, timeout: :infinity)
   end
 
   defp modify_type(type) do

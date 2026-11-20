@@ -10,6 +10,28 @@ defmodule Dagger.CodegenTest do
     def format(value), do: value
   end
 
+  defmodule SlowGenerator do
+    # Longer than Task.async_stream's default 5_000 ms timeout.
+    def generate_object(_type), do: Process.sleep(5_500)
+    def filename(_type), do: "type"
+    def format(_value), do: "code"
+  end
+
+  @tag timeout: 30_000
+  test "generation of a slow type does not time out" do
+    schema =
+      Schema.from_map(%{
+        "__schemaVersion" => "v1.0.0",
+        "__schema" => %{
+          "queryType" => %{"name" => "Query"},
+          "types" => [%{"kind" => "OBJECT", "name" => "Query"}]
+        }
+      })
+
+    assert [ok: {"type", "code"}] =
+             Dagger.Codegen.generate(SlowGenerator, schema) |> Enum.to_list()
+  end
+
   test "reads the schema version" do
     schema =
       Schema.from_map(%{
