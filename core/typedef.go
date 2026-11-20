@@ -2531,11 +2531,10 @@ func (k TypeDefKind) ToLiteral() call.Literal {
 }
 
 type FunctionCall struct {
-	ResultScope dagql.ResultScope       `json:"-"`
-	Name        string                  `field:"true" doc:"The name of the function being called."`
-	ParentName  string                  `field:"true" doc:"The name of the parent object of the function being called. If the function is top-level to the module, this is the name of the module."`
-	Parent      JSON                    `field:"true" doc:"The value of the parent object of the function being called. If the function is top-level to the module, this is always an empty object."`
-	InputArgs   []*FunctionCallArgValue `field:"true" doc:"The argument values the function is being invoked with."`
+	Name       string                  `field:"true" doc:"The name of the function being called."`
+	ParentName string                  `field:"true" doc:"The name of the parent object of the function being called. If the function is top-level to the module, this is the name of the module."`
+	Parent     JSON                    `field:"true" doc:"The value of the parent object of the function being called. If the function is top-level to the module, this is always an empty object."`
+	InputArgs  []*FunctionCallArgValue `field:"true" doc:"The argument values the function is being invoked with."`
 
 	returnState *functionCallReturnState
 
