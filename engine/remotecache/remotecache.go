@@ -167,6 +167,11 @@ type SettleState struct {
 	// sorted by session ID (protocol.Claims): those live, and those ended
 	// that no Settled has covered.
 	Claims []protocol.SessionClaim
+	// IdleSince is when the period's last live session ended, starting the
+	// engine's bound, zero while a session is live; Bound is the bound's
+	// length. The settle tells the service both (protocol.Settle).
+	IdleSince time.Time
+	Bound     time.Duration
 }
 
 // settling reports whether the engine should ask the service to settle:
