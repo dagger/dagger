@@ -185,6 +185,11 @@ func TestDropStoredParts(t *testing.T) {
 		r: {{Part: "mount:/kept"}},
 		p: {{Part: "snapshot"}},
 	}, state.Parts)
+	// One entry's parts, read alone, are what the whole state names of it.
+	for _, number := range []uint64{r, q, p} {
+		require.Equal(t, state.Parts[number], cloud.StoredParts(number), "entry %d", number)
+	}
+	require.Empty(t, cloud.StoredParts(1<<40), "an entry the cache doesn't have stores nothing")
 	require.Equal(t, deps, storedPartTestDeps(cloud, r))
 	for _, number := range []uint64{r, q, p} {
 		require.True(t, storedPruneTestEntryState(cloud, number).value)
