@@ -222,11 +222,17 @@ func (c *Cache) queueSnapshotShareLocked(ctx context.Context, class eqClassID) {
 		return
 	}
 	members := c.snapshotShareMembersLocked(class)
-	if !shareClassHasReceiver(members) {
-		// No imported member can receive, so this class cannot produce work.
-		// Pending-part determination belongs to the unlocked probe, so a
-		// conservatively queued completed imported row may still yield an
-		// empty pass.
+	if !shareClassCouldProduceWorkLocked(members) {
+		// A pass produces a slot only for an imported receiver and another
+		// member whose part is complete here (shareDonorReady). A class with
+		// no member that could donate yet cannot produce work, and its pass
+		// would only probe every member, which prepares each record merged
+		// unprepared. The class is queued again when a member could donate:
+		// a completion queues the classes of the row that completed
+		// (notifySnapshotShareCompletion), and a merge, a publication or an
+		// equivalence change queues the classes it touches. Pending-part
+		// determination belongs to the unlocked probe, so a conservatively
+		// queued class may still yield an empty pass.
 		return
 	}
 	item := c.sharePending[class]
@@ -321,11 +327,51 @@ func removeShareClass(queue []eqClassID, class eqClassID) []eqClassID {
 	return out
 }
 
-// shareClassHasReceiver filters on graph-visible origin facts alone: no task
-// is instantiated and no native body is probed on this path.
-func shareClassHasReceiver(members map[sharedResultID]*sharedResult) bool {
+// shareClassCouldProduceWorkLocked reports whether the class's members, as
+// the graph knows them, could make a sharing slot: an imported member to
+// receive and another member that could donate
+// (shareMemberCouldDonateLocked). It reads graph-visible facts alone: no
+// task is instantiated and no native body is probed on this path. Requires
+// E.
+func shareClassCouldProduceWorkLocked(members map[sharedResultID]*sharedResult) bool {
+	var receiver, donor *sharedResult
+	receivers, donors := 0, 0
 	for _, row := range members {
 		if row.imported {
+			receivers++
+			receiver = row
+		}
+		if shareMemberCouldDonateLocked(row) {
+			donors++
+			donor = row
+		}
+	}
+	if receivers == 0 || donors == 0 {
+		return false
+	}
+	return receivers > 1 || donors > 1 || receiver != donor
+}
+
+// shareMemberCouldDonateLocked reports whether row could hold a complete part
+// on this engine, which the pass's probe then decides (shareDonorReady). Any
+// row with a value could, but one: a record merged from the Cloud that holds
+// its payload unprepared (holdsUnpreparedPayload) holds no part here until
+// its part gate installs or completes an output. Requires E.
+func shareMemberCouldDonateLocked(row *sharedResult) bool {
+	if row.noValueLocked() {
+		return false
+	}
+	if !row.holdsUnpreparedPayload() {
+		return true
+	}
+	gate := row.partGate.gate.Load()
+	if gate == nil {
+		return false
+	}
+	gate.mu.Lock()
+	defer gate.mu.Unlock()
+	for _, state := range gate.outputs {
+		if state.phase != PartPending {
 			return true
 		}
 	}

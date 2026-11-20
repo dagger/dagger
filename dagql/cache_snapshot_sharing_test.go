@@ -1845,14 +1845,33 @@ func TestSnapshotSharingImportTriggers(t *testing.T) {
 	root := persistedListTestResult(t, ctx, a, srv, "import-root", String("value"))
 	bundle := exportTestBundle(t, ctx, a, root)
 
-	t.Run("live import queues the imported classes", func(t *testing.T) {
+	t.Run("a live import into a class that could have no donor queues nothing", func(t *testing.T) {
 		ctx, b, _, _ := shareTestCache(t)
-		barrier := newSharePassBarrier(b)
 		mappingReply, err := b.MergeValues(ctx, cloudCacheID, bundle)
 		mapping := mappingReply.Imported()
 		require.NoError(t, err)
 		require.Len(t, mapping, 1)
-		require.Equal(t, 0, barrier.awaitPass(t), "the import queued a cohort; with no donor it plans nothing")
+		b.egraphMu.RLock()
+		pendingCount := len(b.sharePending)
+		workerStarted := b.shareWorkerStarted
+		b.egraphMu.RUnlock()
+		require.Zero(t, pendingCount, "the imported row is alone in its class: nothing could donate to it")
+		require.False(t, workerStarted)
+	})
+	t.Run("a live import into a class with a donor queues it", func(t *testing.T) {
+		content := digest.FromString("import-trigger-content")
+		ctx, a, srv := transferTestCache(t)
+		root := persistedListTestResult(t, ctx, a, srv, "import-root-donated", String("value"))
+		require.NoError(t, a.TeachContentDigest(ctx, root, content))
+		bundle := exportTestBundle(t, ctx, a, root)
+		bctx, b, bsrv, _ := shareTestCache(t)
+		donor := persistedListTestResult(t, bctx, b, bsrv, "import-local-donor", String("value"))
+		require.NoError(t, b.TeachContentDigest(bctx, donor, content))
+		barrier := newSharePassBarrier(b)
+		mappingReply, err := b.MergeValues(bctx, cloudCacheID, bundle)
+		require.NoError(t, err)
+		require.Len(t, mappingReply.Imported(), 1)
+		require.Equal(t, 0, barrier.awaitPass(t), "the import queued its class beside a value computed here; a scalar has no part to plan")
 	})
 	for name, arm := range map[string]func(*Cache, context.CancelFunc){
 		"a failed identity plan queues nothing": func(b *Cache, _ context.CancelFunc) {
