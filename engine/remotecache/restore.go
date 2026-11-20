@@ -573,6 +573,17 @@ func (r *restorer) finish(f *restoreFile, err error) {
 	if f.landed != nil {
 		f.landed()
 	}
+	// The window's end is read beside the restore, from its end on, before
+	// the file's cleanup can wait for the cache's lock; the file is reported
+	// once both its report and its window are ready.
+	reported := make(chan RestoreReport, 1)
+	start := f.windowStart
+	r.s.go_(func() {
+		end := readRestoreWindow(ended, r.s.adapter.CacheWork)
+		report := <-reported
+		report.Window = end.since(start)
+		r.s.adapter.Restored(report)
+	})
 	r.mu.Lock()
 	r.heads = slices.DeleteFunc(r.heads, func(g *restoreFile) bool { return g == f })
 	r.wholes = slices.DeleteFunc(r.wholes, func(g *restoreFile) bool { return g == f })
@@ -592,14 +603,8 @@ func (r *restorer) finish(f *restoreFile, err error) {
 	f.report.Complete, f.report.Error = f.result.Complete, f.result.Error
 	f.data, f.parts, f.placed, f.complete = nil, nil, nil, nil
 	r.release(f)
-	// The window's end is read beside the restore, and the file reported
-	// once it is read.
 	f.report.Ended = ended
-	report, start := f.report, f.windowStart
-	r.s.go_(func() {
-		report.Window = readRestoreWindow(ended, r.s.adapter.CacheWork).since(start)
-		r.s.adapter.Restored(report)
-	})
+	reported <- f.report
 	level := "info"
 	if err != nil {
 		level = "warn"

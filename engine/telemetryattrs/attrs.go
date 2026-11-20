@@ -1330,7 +1330,10 @@ type EngineRestore struct {
 // and its end, its last commit or what stopped it: what else used the engine
 // while the file landed. Every count is the engine's, whatever it was for,
 // and the windows of files that land together overlap. Durations are in
-// nanoseconds.
+// nanoseconds. Wall is exact; the counts are read beside the restore as
+// the window begins and ends, each reading taking about 15 µs for each of
+// the engine's threads, so a count can take in up to that much past either
+// end.
 //
 // Wall is the window's length. CPU is the engine process's CPU time, user
 // and system, and GCCPU the part of it the Go runtime estimates its garbage

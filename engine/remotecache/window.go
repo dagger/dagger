@@ -26,7 +26,11 @@ type CacheWork struct {
 // RestoreWindow is what the engine did between a file's arrival and its end,
 // its last commit or what stopped it: what else used the engine while the
 // file landed. Every count is the engine's, whatever it was for, and
-// windows of files that land together overlap.
+// windows of files that land together overlap. Wall is the window's span,
+// from the moments its restore stamped; its counts are read beside the
+// restore, each reading starting as the window begins or ends and taking
+// about 15 µs for each of the engine's threads, so a count can take in up
+// to a reading's time past either end.
 //
 // CPU is the engine process's CPU time, user and system, and GCCPU the part
 // the Go runtime estimates its garbage collector took, GCAssist the part of
@@ -79,9 +83,9 @@ var windowMetrics = []string{
 }
 
 // readRestoreWindow reads the engine's counters, with the cache's work, for
-// the moment at: a reading takes about 15 µs for each of the process's
-// threads, so it is taken beside the restore, not in its way, and stands
-// for the moment its caller stamped.
+// the moment at, which its caller stamped as it started the reading: a
+// reading takes about 15 µs for each of the process's threads, so it is
+// taken beside the restore, not in its way.
 func readRestoreWindow(at time.Time, work func() CacheWork) restoreReading {
 	r := restoreReading{at: at}
 	var ru unix.Rusage
