@@ -115,6 +115,9 @@ func TestRowsSetTheLastUse(t *testing.T) {
 func TestBlobCacheUsageReadsTheKeptPool(t *testing.T) {
 	t.Parallel()
 	ctx, cloud, r, _ := storedPartServiceTestCloud(t)
+	// The body worker takes the graph lock and then a value's payload, which
+	// the test holds: it stops first.
+	storedTestHoldWhole(cloud)
 	p := storedPartTestDeps(cloud, r)[0]
 	for _, stored := range []struct {
 		number uint64
