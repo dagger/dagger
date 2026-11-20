@@ -19,6 +19,7 @@ type source struct {
 	selection    SelectionSource
 	rootHandle   *os.Root
 	root         string
+	boundary     string
 	realRoot     string
 	layers       []string
 	overlay      bool
@@ -68,7 +69,7 @@ func newSource(m Mount) (*source, error) {
 		return nil, fmt.Errorf("source root is empty")
 	}
 
-	s := &source{root: m.Root, realRoot: m.Root}
+	s := &source{root: m.Root, realRoot: m.Root, boundary: m.Boundary}
 	if m.Mount == nil {
 		return s, nil
 	}
@@ -95,7 +96,7 @@ func (s *source) selectBase(srcPath string, followFinalSymlink bool) error {
 		return nil
 	}
 
-	baseView, err := rootPath(s.root, srcPath, followFinalSymlink)
+	baseView, err := BoundedRootPath(s.root, s.boundary, srcPath, followFinalSymlink)
 	if err != nil {
 		return err
 	}

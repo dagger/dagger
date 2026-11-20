@@ -1,0 +1,18 @@
+kind: Changed
+body: |
+  A Directory's root is now a boundary nothing escapes, as in a chroot: a subdirectory reaches only its own files, whatever it came from. `..` stops at its root, a symlink in it that is absolute or climbs above it resolves inside it, writes land inside it, and operations that read files you didn't name read the subdirectory's own. Before, `dir.directory("app").file("../x")`, links out of `app` and those hidden reads reached the parent's files, and two subdirectories with equal files but different parents could be taken for each other, so such a read could return the other parent's file.
+
+  This applies to every path given to a subdirectory, except that calls which already rejected a path argument climbing out, such as `withNewDirectory("../c")` and `search` paths, still reject it: reads, `stat`, `exists`, `entries`, `search` paths, selecting a file or directory, the destinations of `withNewFile`, `withFile`, `withFiles`, `withDirectory`, `withNewDirectory`, `withSymlink` and `withChanges`, `without*` and `chown`; to paths below a Directory mounted in a container, selected with `Container.file` or `Container.directory`; and to what a Dockerfile build takes from a build context that is a subdirectory: the Dockerfile path, `COPY` and local `ADD` sources, and `RUN --mount=type=bind` sources. Sources taken from another stage read that stage, as before.
+
+  Other changes that follow from it:
+  - A user or group name given to `withDirectory`, `withFile`, `withFiles` or `chown` on a subdirectory is looked up in its own `/etc/passwd` and `/etc/group`, not its parent's. Numeric ids and `root` need no lookup.
+  - Gitignore filtering applies `.gitignore` files from the subdirectory down, not from the directories above it. `search` with `skipIgnored` applies only the `.gitignore`, `.ignore` and `.rgignore` files within the Directory it is called on, not those above it (its `paths` narrow what is searched, not which of those files apply), and applies `.gitignore` whether or not there is a repository, as filtering does.
+  - Git finds no repository above a Directory: `asGit` on a subdirectory of a repository fails instead of opening the parent's repository.
+  - Selecting a file or directory through a symlink keeps the name it was selected by, unless resolving it leaves the subdirectory; then it is named after what it resolves to inside it. A `stat` that resolves to the directory itself reports the directory's own name.
+  - Copying into a subdirectory through a symlink that leads out of it, to a directory that doesn't exist inside it, replaces the symlink with a directory instead of writing through it.
+  - A subdirectory cached by its content, as one of a host directory, Git tree, module context or filtered read is, is now keyed by its name as well as its files, so equal subdirectories under different names keep their own names. Nothing around it is part of that key, so equal subdirectories under the same name, of such parents that differ elsewhere, share cached results.
+  - `File.chown` with a user or group name resolves it when called and is cached by the ids it finds, so equal files whose snapshots define the name differently no longer share a result.
+  - The Dang SDK reads a module's sources with their symlinks resolved inside the module's context, as the engine API does, instead of following a link out of it.
+time: 2026-10-22T16:22:38Z
+custom:
+  Author: sipsma
