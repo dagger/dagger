@@ -3274,10 +3274,21 @@ type sharedResult struct {
 	// of the last write that changed what a stored bundle carries of the
 	// entry (stampEntryLocked), and stampCause what that write was
 	// (StampCause), for diagnostics. Guarded by egraphMu.
-	changedAt                   uint64
-	stampCause                  StampCause
+	changedAt  uint64
+	stampCause StampCause
+	// transferRevision and dependencyOwnershipRevision move when what a
+	// transfer capture copies of the row changes: its value, payload or
+	// expiry (a replacement, a prune, a merge), or its dependencies. A
+	// capture checks both after copying (checkCopied), and a recipient knows
+	// the row at them (KnownRows). Guarded by egraphMu.
 	transferRevision            uint64
 	dependencyOwnershipRevision uint64
+	// offerRevision moves when one of the row's part offers is attached,
+	// replaced or retired. Where a demand gets a part reads it (the part's
+	// source facts, partFactsLocked): an offer is a source. A transfer
+	// capture copies no offers, so an offer moves neither revision above.
+	// Guarded by egraphMu.
+	offerRevision uint64
 	// Reverse offer ownership does not propagate lookup requirements.
 	offerParents map[offerOwnerID]struct{}
 	// id is the stable cache-local identity for this materialized result.

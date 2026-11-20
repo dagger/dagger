@@ -250,7 +250,8 @@ func (v MergedValue) recipeForTest(c *Cache) digest.Digest {
 }
 
 // mergeTestOffered publishes a root in a sending cache with the Cloud's offer
-// of its snapshot part, and exports it: the bundle carries the offer.
+// of its snapshot part, and sends it as the Cloud does: the bundle carries the
+// offer as the root's output.
 func mergeTestOffered(t *testing.T, field string) ValueBundle {
 	t.Helper()
 	ctx, c, srv := transferTestCache(t)
@@ -258,8 +259,8 @@ func mergeTestOffered(t *testing.T, field string) ValueBundle {
 	out, err := c.testOfferParts(ctx, root, []PersistedPartOffer{testLiveOffer()})
 	require.NoError(t, err)
 	require.Equal(t, OfferAccepted, out[0].Outcome)
-	bundle := exportTestBundle(t, ctx, c, root)
-	require.Len(t, bundle.Values[0].Record.Envelope.PendingOffers, 1)
+	bundle := cloudTestBundle(t, ctx, c, root)
+	require.Len(t, bundle.Outputs, 1)
 	return bundle
 }
 
@@ -1311,7 +1312,7 @@ func TestMergeValuesRelocatesOfferOwnersToTheTargets(t *testing.T) {
 	root := persistedListTestResult(t, actx, a, asrv, "root", &transferTestValue{Text: "pending"})
 	dep := persistedListTestResult(t, actx, a, asrv, "dep", String("dep"))
 	transferTestOffer(t, a, actx, root, dep)
-	bundle := exportTestBundle(t, actx, a, root)
+	bundle := cloudTestBundle(t, actx, a, root)
 
 	bctx, b, bsrv := transferTestCache(t)
 	for i := range 3 {
@@ -1525,7 +1526,7 @@ func mergeTestTwoValues(t *testing.T, oldOffer, freshOffer string, expireFresh b
 		mergeTestExpire(a, fresh.cacheSharedResult())
 		roots = []AnyResult{both}
 	}
-	bundle := exportTestBundle(t, ctx, a, roots...)
+	bundle := cloudTestBundle(t, ctx, a, roots...)
 	require.Len(t, bundle.Values, 3)
 	t.Cleanup(func() { require.NoError(t, a.ReleaseSession(ctx, "fresh-session")) })
 	return bundle, old.cacheSharedResult(), fresh.cacheSharedResult()
@@ -1904,7 +1905,7 @@ func TestMergeValuesChecksOnlyTheAdmittedOffers(t *testing.T) {
 	out, err := a.testOfferParts(ctx, old, []PersistedPartOffer{offer})
 	require.NoError(t, err)
 	require.Equal(t, OfferAccepted, out[0].Outcome)
-	bundle := exportTestBundle(t, ctx, a, root)
+	bundle := cloudTestBundle(t, ctx, a, root)
 	require.Len(t, bundle.Values, 3)
 
 	bctx, b, _ := transferTestCache(t)
@@ -1999,7 +2000,7 @@ func TestMergeValuesChecksTheOffersTheCommitLeaves(t *testing.T) {
 			root := persistedListTestResult(t, ctx, a, srv, "leaves-root", String("root"))
 			require.NoError(t, a.AddExplicitDependency(ctx, root, x, "test"))
 			require.NoError(t, a.AddExplicitDependency(ctx, root, y, "test"))
-			bundle := exportTestBundle(t, ctx, a, root)
+			bundle := cloudTestBundle(t, ctx, a, root)
 
 			bctx, b, bsrv := transferTestCache(t)
 			keptX := persistedListTestResult(t, bctx, b, bsrv, "leaves-x", &transferTestValue{Text: "pending"})
@@ -2037,7 +2038,7 @@ func TestMergeValuesAppliesTheCheckedOfferGraph(t *testing.T) {
 	y := persistedListTestResult(t, ctx, a, srv, "applied-y", &transferTestValue{Text: "pending"})
 	mergeTestOfferOn(t, ctx, a, x, "/new-x", z)
 	mergeTestOfferOn(t, ctx, a, y, "/new-y")
-	bundle := exportTestBundle(t, ctx, a, x, y)
+	bundle := cloudTestBundle(t, ctx, a, x, y)
 	require.Less(t, mergeTestOrdinalOf(t, bundle, x.cacheSharedResult()), mergeTestOrdinalOf(t, bundle, y.cacheSharedResult()))
 
 	bctx, b, bsrv := transferTestCache(t)
@@ -2070,7 +2071,7 @@ func TestMergeValuesAppliesTheCheckedOfferGraphOfABestRecord(t *testing.T) {
 	y := persistedListTestResult(t, ctx, a, srv, "applied-best-y", &transferTestValue{Text: "pending"})
 	mergeTestOfferOn(t, ctx, a, y, "/sent-y", oldX)
 	mergeTestOfferOn(t, ctx, a, freshX, "/new-x")
-	bundle := exportTestBundle(t, ctx, a, y, freshX)
+	bundle := cloudTestBundle(t, ctx, a, y, freshX)
 	require.Len(t, bundle.Values, 3)
 
 	bctx, b, bsrv := transferTestCache(t)
@@ -2136,7 +2137,7 @@ func TestMergeValuesAttachesOnlyTheFinalOfferOfAPart(t *testing.T) {
 	y := persistedListTestResult(t, ctx, a, srv, "final-offer-y", &transferTestValue{Text: "pending"})
 	mergeTestOfferOn(t, ctx, a, first, "/first", y)
 	mergeTestOfferOn(t, ctx, a, second, "/second")
-	bundle := exportTestBundle(t, ctx, a, first, second, y)
+	bundle := cloudTestBundle(t, ctx, a, first, second, y)
 	require.Less(t, mergeTestOrdinalOf(t, bundle, first.cacheSharedResult()), mergeTestOrdinalOf(t, bundle, second.cacheSharedResult()))
 
 	bctx, b, bsrv := transferTestCache(t)
@@ -2209,7 +2210,7 @@ func TestMergeValuesOfferOwnerNamingOneEntryTwice(t *testing.T) {
 	require.NoError(t, err)
 	root := persistedListTestResult(t, ctx, a, srv, "owned-twice", &transferTestValue{Text: "pending"})
 	mergeTestOfferOn(t, ctx, a, root, "/", old, fresh)
-	bundle := exportTestBundle(t, ctx, a, root)
+	bundle := cloudTestBundle(t, ctx, a, root)
 	require.Len(t, bundle.Values, 3, "the root and the owner's two records")
 	rootOrdinal := mergeTestOrdinalOf(t, bundle, root.cacheSharedResult())
 	freshOrdinal := mergeTestOrdinalOf(t, bundle, fresh.cacheSharedResult())

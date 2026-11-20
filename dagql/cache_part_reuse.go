@@ -13,11 +13,12 @@ import (
 // session's resource requirements, which are access control.
 
 // partReuse is the state of a row a part was found complete and opened at.
-// A gate change (an installation, a permit, a settlement), an offer's
-// attachment, replacement or retirement, a dependency change (whose
-// snapshots a demand's owner lease sync would cover), a value replacement or
-// a payload change (a stored-part prune) each move one of them, and a reuse
-// then demands the part again.
+// A gate change (an installation, a permit, a settlement), a dependency
+// change (whose snapshots a demand's owner lease sync would cover), a value
+// replacement or a payload change (a stored-part prune) each move one of
+// them, and a reuse then demands the part again. An offer moves none: it is
+// a source of a part not complete, and the part reused is complete and
+// open.
 type partReuse struct {
 	gateRevision       uint64
 	transferRevision   uint64

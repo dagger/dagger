@@ -810,7 +810,7 @@ func TestExportLogAttrsPhases(t *testing.T) {
 		Bundle:    dagql.ValueBundle{Values: make([]dagql.TransferredValue, 3)},
 		Rows:      dagql.ExportedRows{Held: []uint64{4, 5}},
 		ChainTime: time.Second,
-		Phases:    dagql.ExportPhases{WalkWait: 6 * time.Microsecond, Walk: 7 * time.Microsecond, Copy: 8 * time.Microsecond, Bundle: 12 * time.Microsecond, BundleKnown: time.Microsecond, BundleCheck: 2 * time.Microsecond, BundleSettle: 3 * time.Microsecond, BundleRecipes: 4 * time.Microsecond, BundleValues: 5 * time.Microsecond, BundlePasses: 2, RetriedStale: 1},
+		Phases:    dagql.ExportPhases{WalkWait: 6 * time.Microsecond, Walk: 7 * time.Microsecond, Copy: 8 * time.Microsecond, Bundle: 12 * time.Microsecond, BundleKnown: time.Microsecond, BundleCheck: 2 * time.Microsecond, BundleSettle: 3 * time.Microsecond, BundleRecipes: 4 * time.Microsecond, BundleValues: 5 * time.Microsecond, BundlePasses: 2},
 		Chains:    &dagql.SelectedChains{Stats: bkcache.ExportStats{Layers: 3, LayersReused: 1, LayersDiffed: 2, RawBytes: 900, BlobBytes: 300, DiffTime: 9 * time.Millisecond, LockWait: 10 * time.Microsecond, BuildWait: 11 * time.Microsecond, LayersMerged: 1, MergedRawBytes: 400, MergedBlobBytes: 100, MergedDiffTime: 3 * time.Millisecond}},
 	}
 	// One record carries its engine's content-preferred digest, and one is a
@@ -833,7 +833,6 @@ func TestExportLogAttrsPhases(t *testing.T) {
 		"bundle_settle", 3 * time.Microsecond,
 		"bundle_recipes", 4 * time.Microsecond,
 		"bundle_values", 5 * time.Microsecond,
-		"retried_stale", 1,
 		"layers", 3,
 		"layers_reused", 1,
 		"layers_diffed", 2,
@@ -870,7 +869,6 @@ func TestExportLogAttrsPhases(t *testing.T) {
 		"bundle_settle", time.Duration(0),
 		"bundle_recipes", time.Duration(0),
 		"bundle_values", time.Duration(0),
-		"retried_stale", 0,
 		"layers", 0,
 		"layers_reused", 0,
 		"layers_diffed", 0,

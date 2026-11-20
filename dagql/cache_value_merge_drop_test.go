@@ -12,8 +12,8 @@ import (
 
 // mergeTestDropStreams are bundle streams that exercise what a prepared merge
 // lets go of: a record renumbered before its commit (a root whose child
-// landed first), and a root whose record carries an offer, which an engine
-// keeps and the Cloud drops.
+// landed first), and a root sent with an offer as the Cloud sends a part
+// (an output with its owner), which an engine keeps and the Cloud drops.
 func mergeTestDropStreams(t *testing.T) map[string][]ValueBundle {
 	t.Helper()
 	child, root := mergeTestMovingStream(t)
@@ -21,16 +21,26 @@ func mergeTestDropStreams(t *testing.T) map[string][]ValueBundle {
 	owner := persistedListTestResult(t, ctx, source, srv, "drop-offer-owner", String("owner"))
 	offered := persistedListTestResult(t, ctx, source, srv, "drop-offered-root", &transferTestValue{Text: "offered"})
 	mergeTestOfferOn(t, ctx, source, offered, "/offered", owner)
-	withOffer := exportTestBundle(t, ctx, source, offered)
-	var offers int
-	for _, row := range withOffer.Values {
-		offers += len(row.Record.Envelope.PendingOffers)
-	}
-	require.Equal(t, 1, offers, "the offered root's record carries its offer")
+	withOffer := cloudTestBundle(t, ctx, source, offered)
+	require.Len(t, withOffer.Values, 2, "the offered root and its offer's owner")
+	require.Len(t, withOffer.Outputs, 1, "the offered root goes with its offer")
 	return map[string][]ValueBundle{
 		"moved":   {child, root},
 		"offered": {withOffer},
 	}
+}
+
+// mergeTestSentOffers counts the offers the bundle sends for the row at
+// ordinal: its record's and its outputs with chains, which an engine embeds
+// in the record as offers (embedMergedParts).
+func mergeTestSentOffers(bundle ValueBundle, ordinal TransferOrdinal) int {
+	n := len(mergeTestBundleRow(bundle, ordinal).Record.Envelope.PendingOffers)
+	for _, output := range bundle.Outputs {
+		if output.Ordinal == ordinal && output.Chain != nil {
+			n++
+		}
+	}
+	return n
 }
 
 // mergeTestDropSkip reports a stream a kind of cache doesn't merge: the
@@ -76,7 +86,7 @@ func TestPreparedMergeHoldsNoCopyOfItsRecords(t *testing.T) {
 						require.Equal(t, PersistedRecord{Envelope: PersistedResultEnvelope{PendingOffers: row.Record.Envelope.PendingOffers}}, row.Record,
 							"row %d holds no copy of its record", row.Ordinal)
 						if !c.blobBacked {
-							require.Equal(t, len(mergeTestBundleRow(bundle, row.Ordinal).Record.Envelope.PendingOffers), len(row.Record.Envelope.PendingOffers),
+							require.Equal(t, mergeTestSentOffers(bundle, row.Ordinal), len(row.Record.Envelope.PendingOffers),
 								"an engine's row keeps its offers")
 						}
 					}
