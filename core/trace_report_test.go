@@ -611,7 +611,7 @@ func TestImportedFailureNavigationThroughTools(t *testing.T) {
 	attr := func(key, value string) *otlpcommonv1.KeyValue {
 		return &otlpcommonv1.KeyValue{Key: key, Value: stringLogBody(value)}
 	}
-	_, err = live.ImportTrace(t.Context(), traceID, func(store *clientdb.DB) error {
+	imported, err := live.ImportTrace(t.Context(), traceID, func(store *clientdb.DB) error {
 		spans := []clientdb.Span{
 			{TraceID: traceID, SpanID: rootID, Name: "SDK checks"},
 			{TraceID: traceID, SpanID: checkID, ParentSpanID: validSpanID(rootID), Name: "installer check", StatusCode: int64(codes.Error),
@@ -642,6 +642,7 @@ func TestImportedFailureNavigationThroughTools(t *testing.T) {
 		return err
 	})
 	require.NoError(t, err)
+	require.NoError(t, imported.Close())
 	ctx := ContextWithQuery(t.Context(), &Query{Server: &logCaptureTestServer{mockServer: &mockServer{}, dbs: dbs}})
 	m := newMCP()
 	tools := NewLLMToolSet()
@@ -663,19 +664,21 @@ func TestImportedFailureNavigationThroughTools(t *testing.T) {
 
 func TestEmptyLogsDistinguishesHistorical(t *testing.T) {
 	live, ids := traceInspectStore(t)
-	text, err := emptyLogsResultIn(live, ids["test"])
+	ctx := t.Context()
+	text, err := emptyLogsResultIn(ctx, live, ids["test"])
 	require.NoError(t, err)
 	require.Contains(t, text, "yet")
 	const historicalID = "00000000000000ff"
-	_, err = live.ImportTrace(t.Context(), "history", func(store *clientdb.DB) error {
+	imported, err := live.ImportTrace(ctx, "history", func(store *clientdb.DB) error {
 		_, err := store.AppendSpans([]clientdb.Span{{TraceID: "000102030405060708090a0b0c0d0e0f", SpanID: historicalID, Name: "old"}})
 		return err
 	})
 	require.NoError(t, err)
-	text, err = emptyLogsResultIn(live, historicalID)
+	require.NoError(t, imported.Close())
+	text, err = emptyLogsResultIn(ctx, live, historicalID)
 	require.NoError(t, err)
 	require.Contains(t, text, "no logs recorded")
 	require.NotContains(t, text, "yet")
-	_, err = emptyLogsResultIn(live, "00000000000000ee")
+	_, err = emptyLogsResultIn(ctx, live, "00000000000000ee")
 	require.ErrorContains(t, err, "not found")
 }

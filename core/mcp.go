@@ -2887,7 +2887,11 @@ func (m *MCP) captureLogLines(ctx context.Context, spanID string, excludeService
 		return out, err
 	}
 	defer q.Close()
-	q = inspectionStoreForSpan(q, spanID)
+	q, release, err := inspectionStoreForSpan(ctx, q, spanID)
+	if err != nil {
+		return out, err
+	}
+	defer release()
 
 	// internalSpans skips subtrees hidden as internal, mirroring the TUI's
 	// roll-up behavior. Its subtree is the capture's full log scope, even
@@ -3838,11 +3842,15 @@ func (m *MCP) emptyLogsResult(ctx context.Context, spanID string) (string, error
 		return "", fmt.Errorf("check log availability for span %s: %w", spanID, err)
 	}
 	defer store.Close()
-	return emptyLogsResultIn(store, spanID)
+	return emptyLogsResultIn(ctx, store, spanID)
 }
 
-func emptyLogsResultIn(store *clientdb.DB, spanID string) (string, error) {
-	selected := inspectionStoreForSpan(store, spanID)
+func emptyLogsResultIn(ctx context.Context, store *clientdb.DB, spanID string) (string, error) {
+	selected, release, err := inspectionStoreForSpan(ctx, store, spanID)
+	if err != nil {
+		return "", fmt.Errorf("check log availability for span %s: %w", spanID, err)
+	}
+	defer release()
 	if !selected.HasSpan(spanID) {
 		return "", fmt.Errorf("span %q not found in this session's telemetry; use a span ID from a tool result, ListServices, or an error's traceparent", spanID)
 	}
@@ -4007,7 +4015,11 @@ func (m *MCP) inspectCallTool(srv *dagql.Server) LLMToolFunc {
 				return nil, err
 			}
 			defer clientDB.Close()
-			read := inspectionStoreForSpan(clientDB, span)
+			read, release, err := inspectionStoreForSpan(ctx, clientDB, span)
+			if err != nil {
+				return nil, err
+			}
+			defer release()
 			digest, err = spanCallDigest(ctx, read, span)
 			if err != nil {
 				return nil, err
