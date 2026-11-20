@@ -255,7 +255,9 @@ type ModuleSource struct {
 	SourceSubpath string
 
 	// OriginalRefString is the exact ref string used to instantiate this module
-	// source. Internal only, used for user-facing follow-up commands.
+	// source. Internal only, used for user-facing follow-up commands and as the
+	// declared ref a parent's config names this source by, so it is persisted
+	// with the source.
 	OriginalRefString string
 
 	OriginalSubpath string
@@ -572,6 +574,7 @@ type persistedModuleSourcePayload struct {
 	ConfigClients                       []*modules.ModuleConfigClient         `json:"configClients,omitempty"`
 	SourceRootSubpath                   string                                `json:"sourceRootSubpath,omitempty"`
 	SourceSubpath                       string                                `json:"sourceSubpath,omitempty"`
+	OriginalRefString                   string                                `json:"originalRefString,omitempty"`
 	OriginalSubpath                     string                                `json:"originalSubpath,omitempty"`
 	ContextDirectoryResultID            uint64                                `json:"contextDirectoryResultID,omitempty"`
 	WorkspaceResultID                   uint64                                `json:"workspaceResultID,omitempty"`
@@ -918,6 +921,7 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, enc *dagql.P
 		ConfigClients:                       slices.Clone(src.ConfigClients),
 		SourceRootSubpath:                   src.SourceRootSubpath,
 		SourceSubpath:                       src.SourceSubpath,
+		OriginalRefString:                   src.OriginalRefString,
 		OriginalSubpath:                     src.OriginalSubpath,
 		Kind:                                src.Kind,
 		Local:                               src.Local,
@@ -1100,6 +1104,7 @@ func (*ModuleSource) DecodePersistedObject(ctx context.Context, dec *dagql.Persi
 		ConfigClients:                       slices.Clone(persisted.ConfigClients),
 		SourceRootSubpath:                   persisted.SourceRootSubpath,
 		SourceSubpath:                       persisted.SourceSubpath,
+		OriginalRefString:                   persisted.OriginalRefString,
 		OriginalSubpath:                     persisted.OriginalSubpath,
 		ContextDirectory:                    contextDirectory,
 		Workspace:                           workspace,
