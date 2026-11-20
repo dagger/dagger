@@ -61,8 +61,10 @@ type SnapshotManagerOpt struct {
 	SharedMountLinger   time.Duration
 	MaxIdleSharedMounts int
 	// ContentHashDir, when set, is the directory the snapshots' content-hash
-	// trees are kept in, instead of in memory; see contentHashFiles. The
-	// manager owns it, and empties it when it is made.
+	// trees are kept under, instead of in memory; see contentHashFiles. The
+	// manager keeps them in a fresh subdirectory of its own and deletes
+	// nothing else: what earlier managers left there is the caller's to
+	// sweep.
 	ContentHashDir string
 }
 

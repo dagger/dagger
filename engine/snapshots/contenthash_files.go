@@ -18,9 +18,12 @@ import (
 // few the contenthash package keeps parsed, and at a checkpoint.
 //
 // The files are a cache of this process: the dagql checkpoint is what keeps
-// trees across restarts, and the directory is emptied when the manager is
-// made. They hold the same bytes the trees held in memory, so neither the
-// checkpoint nor its format change.
+// trees across restarts. Each manager keeps its trees in a fresh directory of
+// its own under the root it is given, so it starts without any, and it never
+// deletes anything it did not write: what earlier processes left under the
+// root is for the caller to sweep (the engine moves the root to its trash at
+// startup). The files hold the same bytes the trees held in memory, so
+// neither the checkpoint nor its format change.
 type contentHashFiles struct {
 	dir string
 
@@ -29,11 +32,12 @@ type contentHashFiles struct {
 	closed bool
 }
 
-func newContentHashFiles(dir string) (*contentHashFiles, error) {
-	if err := os.RemoveAll(dir); err != nil {
-		return nil, errors.Wrap(err, "clear content hash directory")
+func newContentHashFiles(root string) (*contentHashFiles, error) {
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		return nil, errors.Wrap(err, "create content hash directory")
 	}
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	dir, err := os.MkdirTemp(root, "trees-")
+	if err != nil {
 		return nil, errors.Wrap(err, "create content hash directory")
 	}
 	return &contentHashFiles{dir: dir, ids: make(map[string]struct{})}, nil
@@ -148,8 +152,8 @@ func (f *contentHashFiles) list() []string {
 	return ids
 }
 
-// close discards later writes. The files stay until the next manager on the
-// directory empties it.
+// close discards later writes. The files stay for the caller to sweep with
+// the root.
 func (f *contentHashFiles) close() {
 	f.mu.Lock()
 	defer f.mu.Unlock()

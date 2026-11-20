@@ -50,13 +50,20 @@ const (
 // for background removal, returning the trash path. A missing dir is a no-op
 // returning "".
 func moveLocalCacheStateToTrash(dir string) (string, error) {
+	return moveToTrash(dir, filepath.Dir(dir))
+}
+
+// moveToTrash renames dir to a trash directory in parent, which must be on
+// dir's filesystem, returning the trash path. A missing dir is a no-op
+// returning "". The sweeper finds trash directories in the engine's root
+// directory only.
+func moveToTrash(dir, parent string) (string, error) {
 	if _, err := os.Lstat(dir); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return "", nil
 		}
 		return "", err
 	}
-	parent := filepath.Dir(dir)
 	for attempt := range 3 {
 		trashDir := filepath.Join(parent, workerTrashPrefix+strconv.FormatInt(time.Now().UnixNano(), 10))
 		err := os.Rename(dir, trashDir)
@@ -80,6 +87,19 @@ func moveLocalCacheStateToTrash(dir string) (string, error) {
 func moveDiskTempMountsToTrash(rootDir string) {
 	if _, err := moveLocalCacheStateToTrash(filepath.Join(rootDir, core.DiskTempMountDir)); err != nil {
 		slog.Warn("failed to move a previous engine's disk temp mounts aside", "err", err)
+	}
+}
+
+// moveContentHashTreesToTrash moves the content-hash trees a previous engine
+// left in dir, under the worker root, aside for the trash sweeper, before the
+// snapshot manager makes a fresh directory of its own there. They are a cache
+// of that process: the dagql checkpoint loads the ones still owned again. An
+// engine that hashed many snapshots leaves many of them, so they are not
+// deleted inline at startup. A failure leaves them where they are, still
+// unread, until a later start moves them.
+func moveContentHashTreesToTrash(rootDir, dir string) {
+	if _, err := moveToTrash(dir, rootDir); err != nil {
+		slog.Warn("failed to move a previous engine's content hash trees aside", "dir", dir, "err", err)
 	}
 }
 

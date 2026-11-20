@@ -8,31 +8,42 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestContentHashFilesStartEmpty(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "contenthash")
-	files, err := newContentHashFiles(dir)
-	require.NoError(t, err)
-	require.NoError(t, files.write("a", []byte("tree a"), nil))
+// breakDir replaces files' directory with a file, so writing a tree fails.
+func breakDir(t *testing.T, files *contentHashFiles) {
+	t.Helper()
+	require.NoError(t, os.RemoveAll(files.dir))
+	require.NoError(t, os.WriteFile(files.dir, nil, 0o600))
+}
 
-	// A new process's manager starts without the last one's trees: the
-	// checkpoint loads the ones it keeps.
-	files, err = newContentHashFiles(dir)
+// A new process's manager starts without the last one's trees, the
+// checkpoint loading the ones it keeps, in a fresh directory of its own: it
+// deletes nothing it did not write, leaving what is under its root to the
+// caller, which sweeps it.
+func TestContentHashFilesStartInFreshDirectory(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "contenthash")
+	first, err := newContentHashFiles(root)
 	require.NoError(t, err)
-	_, ok, err := files.read("a", nil)
+	require.NoError(t, first.write("a", []byte("tree a"), nil))
+
+	second, err := newContentHashFiles(root)
+	require.NoError(t, err)
+	require.NotEqual(t, first.dir, second.dir)
+	require.Equal(t, root, filepath.Dir(second.dir))
+	_, ok, err := second.read("a", nil)
 	require.NoError(t, err)
 	require.False(t, ok)
-	entries, err := os.ReadDir(dir)
+	entries, err := os.ReadDir(second.dir)
 	require.NoError(t, err)
 	require.Empty(t, entries)
+	require.FileExists(t, first.path("a"), "the manager deletes nothing it did not write")
 }
 
 // A tree that can't be written at load is kept in memory, rather than failing
 // the load, and with it the whole persisted cache, or being lost to a rescan
 // that gives an imported snapshot other digests.
 func TestContentHashFilesLoadKeepsUnwritableTreesInMemory(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "contenthash")
 	s := newMetadataStore()
-	files, err := newContentHashFiles(dir)
+	files, err := newContentHashFiles(filepath.Join(t.TempDir(), "contenthash"))
 	require.NoError(t, err)
 	s.hashFiles = files
 	cm := &snapshotManager{
@@ -40,8 +51,7 @@ func TestContentHashFilesLoadKeepsUnwritableTreesInMemory(t *testing.T) {
 		records:             map[string]*cacheRecord{},
 		snapshotOwnerLeases: map[string]map[string]struct{}{"a": {"owner": {}}},
 	}
-	require.NoError(t, os.RemoveAll(dir))
-	require.NoError(t, os.WriteFile(dir, nil, 0o600))
+	breakDir(t, files)
 
 	require.NoError(t, cm.LoadPersistentMetadata(PersistentMetadataRows{
 		ContentHashes: []SnapshotContentHashRow{{SnapshotID: "a", Data: []byte("tree a")}},
@@ -54,13 +64,6 @@ func TestContentHashFilesLoadKeepsUnwritableTreesInMemory(t *testing.T) {
 	dt, err := md.GetExternal(ContentHashMetadataKey)
 	require.NoError(t, err)
 	require.Equal(t, []byte("tree a"), dt)
-}
-
-// breakDir replaces files' directory with a file, so writing a tree fails.
-func breakDir(t *testing.T, files *contentHashFiles) {
-	t.Helper()
-	require.NoError(t, os.RemoveAll(files.dir))
-	require.NoError(t, os.WriteFile(files.dir, nil, 0o600))
 }
 
 // A tree that can't be written when saved is kept in memory too, rather than
@@ -132,9 +135,8 @@ func TestContentHashFilesMissingFileIsAnError(t *testing.T) {
 // A tree saved after its metadata was dropped, as a background save can be,
 // is discarded rather than left on disk with nothing to remove it.
 func TestContentHashFilesDiscardWritesForDroppedMetadata(t *testing.T) {
-	dir := t.TempDir()
 	s := newMetadataStore()
-	files, err := newContentHashFiles(dir)
+	files, err := newContentHashFiles(t.TempDir())
 	require.NoError(t, err)
 	s.hashFiles = files
 	md := s.getOrCreate("snap")
@@ -153,7 +155,7 @@ func TestContentHashFilesDiscardWritesForDroppedMetadata(t *testing.T) {
 	require.NoError(t, md.SetExternal(ContentHashMetadataKey, []byte("late tree")))
 	_, err = md.GetExternal(ContentHashMetadataKey)
 	require.Error(t, err)
-	entries, err := os.ReadDir(dir)
+	entries, err := os.ReadDir(files.dir)
 	require.NoError(t, err)
 	require.Empty(t, entries)
 
@@ -167,7 +169,7 @@ func TestContentHashFilesDiscardWritesForDroppedMetadata(t *testing.T) {
 	// After the store closes, saves are discarded too.
 	require.NoError(t, s.close())
 	require.NoError(t, other.SetExternal(ContentHashMetadataKey, []byte("tree")))
-	entries, err = os.ReadDir(dir)
+	entries, err = os.ReadDir(files.dir)
 	require.NoError(t, err)
 	require.Empty(t, entries)
 }
