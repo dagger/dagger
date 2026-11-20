@@ -268,6 +268,12 @@ type daggerSession struct {
 
 	// approvals remembers the owners' session grants (see requestApproval)
 	approvals approvalGrants
+	// gitRemoteDefaults remembers push destinations' default branches, and
+	// ownerOrigins the origins of the owners' workspace checkouts (see
+	// git_push_policy.go).
+	gitRemoteDefaults gitRemoteDefaults
+	ownerOrigins      ownerOrigins
+	checkoutOrigins   checkoutOrigins
 
 	lockFiles  map[workspaceLockKey]*workspaceLockState
 	lockFileMu sync.RWMutex

@@ -762,6 +762,15 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 		return fmt.Errorf("building workspace: %w", err)
 	}
 	coreWS.SetCompatWorkspace(compatWorkspace)
+	if sess := client.daggerSession; sess != nil && isLocal && ws.HasGitRoot {
+		// Remember the checkout's origin as the session first sees it, before
+		// any module or agent of this session can have written its .git
+		// (see Server.gitPushToOwnerOrigin).
+		sess.checkoutOrigins.record(gitPushPolicyKey{owner: coreWS.ClientID, remote: ws.Root}, func() string {
+			origin, _ := localWorkspaceGitOrigin(ctx, readFile, ws.Root)
+			return origin
+		})
+	}
 	coreWS.SetModuleClients(workspace.ModuleScopeLocalClients(wsConfig, filepath.Dir(ws.ConfigFile)))
 	if hasWorkspaceEnv {
 		coreWS.SetSelectedEnv(workspaceEnv)
@@ -1009,9 +1018,23 @@ func localWorkspaceUserConfigKey(
 	readFile func(context.Context, string) ([]byte, error),
 	root string,
 ) string {
+	origin, ok := localWorkspaceGitOrigin(ctx, readFile, root)
+	if !ok {
+		return ""
+	}
+	return workspace.NormalizeGitRemote(origin)
+}
+
+// localWorkspaceGitOrigin reads the URL of the origin remote of the local Git
+// checkout at root, resolved the way `git config --get` would see it.
+func localWorkspaceGitOrigin(
+	ctx context.Context,
+	readFile func(context.Context, string) ([]byte, error),
+	root string,
+) (string, bool) {
 	data, configPath, gitDir, err := readLocalGitConfig(ctx, readFile, root)
 	if err != nil {
-		return ""
+		return "", false
 	}
 	branch := ""
 	if headData, herr := readFile(ctx, filepath.Join(gitDir, "HEAD")); herr == nil {
@@ -1022,11 +1045,7 @@ func localWorkspaceUserConfigKey(
 		GitDir:     gitDir,
 		Branch:     branch,
 	}, data)
-	origin, ok := workspace.GitRemoteURL(data, "origin")
-	if !ok {
-		return ""
-	}
-	return workspace.NormalizeGitRemote(origin)
+	return workspace.GitRemoteURL(data, "origin")
 }
 
 // readLocalGitConfig reads <root>/.git/config, following a .git worktree or

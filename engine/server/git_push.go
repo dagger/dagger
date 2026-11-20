@@ -45,6 +45,13 @@ func gitPushApproval(remote, ref string, force bool) approvalSpec {
 	return spec
 }
 
+// AuthorizeGitPush resolves the destination of a push of ref to remote and
+// returns the owner whose credentials it may use. A direct call by the owner
+// is its own authorization; a module's or an agent's push asks the owner
+// first, about the exact ref for the remote's default branch, a tag or any
+// other non-branch ref, and otherwise about the remote, once (see
+// git_push_policy.go).
+//
 //nolint:gocyclo // keep owner routing, destination validation, and approval in one auditable flow
 func (srv *Server) AuthorizeGitPush(ctx context.Context, remote, ref string, force, resolveURL bool) (*core.GitPushAuthorization, error) {
 	client, err := srv.executableClientFromContext(ctx)
@@ -109,7 +116,20 @@ func (srv *Server) AuthorizeGitPush(ctx context.Context, remote, ref string, for
 	if !delegated && !core.IsAgentToolCall(ctx) {
 		return authorized()
 	}
-	allowed, err := srv.requestApproval(ctx, client, owner, gitPushApproval(remote, ref, force))
+	// The default branch and non-branch refs ask about the exact ref; other
+	// branches only need the remote approved (see git_push_policy.go).
+	var remoteDefault gitRemoteDefault
+	if !gitPushRefAlwaysAsks(ref) {
+		remoteDefault = srv.gitRemoteDefault(ctx, owner, remote)
+	}
+	spec := gitPushApproval(remote, ref, force)
+	if !gitPushNeedsRefApproval(ref, force, remoteDefault) {
+		if srv.gitPushToOwnerOrigin(ctx, owner, remote) {
+			return authorized()
+		}
+		spec = gitPushRemoteApproval(remote, remoteDefault)
+	}
+	allowed, err := srv.requestApproval(ctx, client, owner, spec)
 	if err != nil {
 		return nil, fmt.Errorf("git push requires approval: %w", err)
 	}
@@ -138,7 +158,8 @@ func (srv *Server) AuthorizeGitPush(ctx context.Context, remote, ref string, for
 // is a boundary even when it serves no module: its host access ends there, so
 // it cannot be its own owner (prompting it, or reading through it, could only
 // be denied). Escalating to the client that started it is deliberate, and is
-// always gated by the owner's approval.
+// gated as a module's request is: by the owner's approval, or for routine
+// pushes by the policy that stands in for it (see git_push_policy.go).
 func gitPushOwner(client *clientRuntime) (*clientRuntime, bool, error) {
 	sess := client.daggerSession
 	parents, err := sess.ancestorRuntimes(client.clientRecord)
