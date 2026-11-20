@@ -2036,7 +2036,7 @@ func (c *Cache) MakeResultUnpruneable(ctx context.Context, res AnyResult) error 
 		return fmt.Errorf("make result unpruneable: result is not cache-backed")
 	}
 
-	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+	c.lockGraphFor(ctx, workDependency)
 	if _, found := c.resultsByID[shared.id]; !found {
 		c.egraphMu.Unlock()
 		return fmt.Errorf("make result unpruneable: result %d was already collected", shared.id)
@@ -2583,10 +2583,11 @@ const (
 // a pass the engine starts by itself: a wait behind the hold names the step,
 // and the step's op spans the wait and the hold. unlockGraphAs releases the
 // lock and ends the step. When nothing records, the step is empty and costs
-// a nil check.
+// a nil check. Its callers are the engine's own passes: it holds the lock as
+// upkeep.
 func (c *Cache) lockGraphAs(ctx context.Context, name string) Step {
 	ctx, step := BeginStep(ctx, name)
-	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+	c.lockGraphFor(ctx, workUpkeep)
 	return step
 }
 
@@ -4451,7 +4452,7 @@ func (c *Cache) addExplicitDependencies(ctx context.Context, parent AnyResult, d
 	if parentShared == nil || parentShared.id == 0 {
 		return fmt.Errorf("add explicit dependency: parent %T is not an attached result in this cache", parent)
 	}
-	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+	c.lockGraphFor(ctx, workDependency)
 	defer c.egraphMu.Unlock()
 
 	// Numeric result IDs are engine-lifetime unique, so registration under
@@ -6003,7 +6004,7 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 
 		if spec != nil {
 			ownCtx, ownStep := BeginStep(evalCtx, "lazy.ownership")
-			wcprof.WriteLock(ownCtx, &c.egraphMu, egraphLockIdent)
+			c.lockGraphFor(ownCtx, workEvaluation)
 			c.incrementIncomingOwnershipLocked(ctx, shared)
 			c.egraphMu.Unlock()
 			ownStep.End(nil)

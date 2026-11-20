@@ -848,7 +848,7 @@ func persistedEnvelopeTypeNames(env PersistedResultEnvelope, names []persistedEn
 // Callers hold no cache locks: sizing may take the value's own lock.
 func (c *Cache) updateDecodedPayloadBytes(ctx context.Context, res *sharedResult, decoded Typed, revision uint64) {
 	n := cachePayloadBytes(decoded)
-	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+	c.lockGraphForCtx(ctx, workLookup)
 	defer c.egraphMu.Unlock()
 	res.payloadMu.RLock()
 	current := res.payloadRevision == revision

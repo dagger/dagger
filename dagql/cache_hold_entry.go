@@ -29,7 +29,7 @@ func (c *Cache) HoldEntry(ctx context.Context, number uint64) (AnyResult, func(c
 		return nil, nil, err
 	}
 	defer op.finish(false)
-	c.lockGraphForCtx(ctx, workOther)
+	c.lockGraphForCtx(ctx, workHold)
 	res := c.resultsByID[sharedResultID(number)]
 	switch {
 	case res == nil, res.refusedPayloadLocked():
@@ -49,7 +49,7 @@ func (c *Cache) HoldEntry(ctx context.Context, number uint64) (AnyResult, func(c
 		var err error
 		once.Do(func() {
 			ctx = context.WithoutCancel(ctx)
-			c.lockGraphForCtx(ctx, workOther)
+			c.lockGraphForCtx(ctx, workHold)
 			queue, decErr := c.decrementIncomingOwnershipLocked(ctx, res, nil)
 			releases, collectErr := c.collectUnownedResultsLocked(ctx, queue)
 			c.egraphMu.Unlock()
@@ -69,7 +69,7 @@ func (c *Cache) releaseHeld(held []*sharedResult) func(context.Context) error {
 		var err error
 		once.Do(func() {
 			ctx = context.WithoutCancel(ctx)
-			c.lockGraphForCtx(ctx, workOther)
+			c.lockGraphForCtx(ctx, workHold)
 			var queue collectionQueue
 			for _, res := range held {
 				var decErr error
