@@ -376,11 +376,11 @@ func Lock(ctx context.Context, mu *sync.Mutex, ident string) {
 // does. On an RWMutex the wait names the lock's holder, as ReadLockWaited's
 // does.
 func ReadLock(ctx context.Context, mu RWLocker, ident string) {
-	if m, tracked := mu.(*RWMutex); tracked {
-		ReadLockWaited(ctx, m, ident)
+	if mu.TryRLock() {
 		return
 	}
-	if mu.TryRLock() {
+	if m, tracked := mu.(*RWMutex); tracked {
+		m.waitFor(ctx, ident, true)
 		return
 	}
 	w := BeginWaitIdent(ctx, ident, WaitReasonLock)
@@ -392,16 +392,20 @@ func ReadLock(ctx context.Context, mu RWLocker, ident string) {
 // does. On an RWMutex the wait names the lock's holder, the op of ctx is
 // its holder from then, and it names no kind of work (WriteLockAs).
 func WriteLock(ctx context.Context, mu RWLocker, ident string) {
-	if m, tracked := mu.(*RWMutex); tracked {
-		WriteLockAs(ctx, m, ident, 0)
+	m, tracked := mu.(*RWMutex)
+	if !tracked {
+		if mu.TryLock() {
+			return
+		}
+		w := BeginWaitIdent(ctx, ident, WaitReasonLock)
+		mu.Lock()
+		w.End()
 		return
 	}
-	if mu.TryLock() {
-		return
+	if !m.RWMutex.TryLock() {
+		m.waitFor(ctx, ident, false)
 	}
-	w := BeginWaitIdent(ctx, ident, WaitReasonLock)
-	mu.Lock()
-	w.End()
+	m.markOp(ctx)
 }
 
 // ReadLockWaited acquires m for reading, and returns how long it waited and

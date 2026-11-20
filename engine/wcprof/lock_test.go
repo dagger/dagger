@@ -284,6 +284,39 @@ func TestReadWaitNamesTheWriterThatLetItIn(t *testing.T) {
 	}
 }
 
+// A reader that begins to wait as a writer is releasing the lock, after its
+// look for waiters, sees no release recorded: it names no kind, and never
+// the readers, since a reader waits only for writers.
+func TestReadWaitBehindAReleasingWriterIsNeverReaders(t *testing.T) {
+	withoutRecorder(t)
+	var mu RWMutex
+	WriteLockAs(context.Background(), &mu, "test.mu", testHolder)
+	// The writer looked for waiters and saw none; it is about to unlock.
+	got := make(chan LockWait)
+	go func() {
+		lw := ReadLockWaited(context.Background(), &mu, "test.mu")
+		mu.RUnlock()
+		got <- lw
+	}()
+	blockedIn(t, "wcprof.ReadLockWaited(")
+	mu.kind = 0
+	mu.RWMutex.Unlock()
+	if lw := <-got; lw.Holder != 0 || lw.Waited <= 0 {
+		t.Fatalf("wait %+v: want behind an unnamed writer", lw)
+	}
+}
+
+// A release that keeps no one waiting writes nothing for waiters.
+func TestReleaseWithNoWaiterRecordsNothing(t *testing.T) {
+	withoutRecorder(t)
+	var mu RWMutex
+	WriteLockAs(context.Background(), &mu, "test.mu", testHolder)
+	mu.Unlock()
+	if got := mu.released.Load(); got != 0 {
+		t.Fatalf("an unwaited release recorded %x", got)
+	}
+}
+
 // A writer that waits only for readers is told it waited for readers; one
 // that waits for a writer that named no kind is told "other".
 func TestWriteWaitNamesReadersOrAnUnnamedWriter(t *testing.T) {

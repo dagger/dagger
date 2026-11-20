@@ -637,15 +637,27 @@ func TestRestoreStopsWithItsConnection(t *testing.T) {
 	s.dispatch(request(t, 2, protocol.TypeRestore, restoreOf("d", nil, &queued)))
 	require.Equal(t, []uint64{1, 2}, seen(t, adapter, 2))
 	s.cancel(errors.New("gone"))
-	stopped := nextReport(t, adapter)
-	require.Equal(t, whole.Digest, stopped.Digest)
+	reports := map[digest.Digest]RestoreReport{}
+	for range 2 {
+		report := nextReport(t, adapter)
+		reports[report.Digest] = report
+	}
+	stopped := reports[whole.Digest]
 	require.Len(t, stopped.Parts, 1, "the part that merged stays")
 	require.False(t, stopped.Complete)
-	left := nextReport(t, adapter)
-	require.Equal(t, queued.Digest, left.Digest)
+	require.NotNil(t, stopped.Window, "a file that ended has its window")
+	left := reports[queued.Digest]
 	require.Equal(t, errRestoreConnectionEnded.Error(), left.Error)
+	require.Nil(t, left.Window, "a file left as its connection ended has none")
+	require.False(t, left.Ended.Before(stopped.Ended), "and ended after")
 	conn.none(t)
 	require.NotContains(t, s.cfg.restored.list(), whole.Digest, "a later hello doesn't name it merged")
+	require.Zero(t, adapter.landing.Load(), "no whole is left landing")
+	// A restore that arrives once the connection's end abandoned the files
+	// left is queued no more: nothing would end its whole's landing.
+	late := files.add("late", setFile(t, dagql.ValueBundleVersion, part(5)))
+	s.restorer.handleRestore(request(t, 3, protocol.TypeRestore, restoreOf("e", nil, &late)))
+	require.Zero(t, adapter.landing.Load(), "no whole is left landing")
 }
 
 // setFileOf is a set file of the parts with their header entries' unretained

@@ -185,6 +185,23 @@ func TestSharingCountsPassesByKindOfClass(t *testing.T) {
 	require.Equal(t, sharing.Total, alone.PrepareTotal)
 }
 
+// A pass over a class with a member holding a part ready to give is counted
+// as a donor class's, with the slot it made.
+func TestSharingCountsADonorClassWithItsSlot(t *testing.T) {
+	ctx, c, srv, _ := shareTestCache(t)
+	barrier := newSharePassBarrier(c)
+	donorValue := &transferTestValue{Text: "snapshot", links: []PersistedSnapshotRefLink{{Role: "snapshot", RefKey: "donor-snapshot"}}}
+	donor := persistedListTestResult(t, ctx, c, srv, "donor", donorValue)
+	receiver := persistedListTestResult(t, ctx, c, srv, "receiver", &transferTestValue{Text: "pending"})
+	shareTestEncodedReceiver(t, ctx, c, receiver)
+	partTestEquivalent(t, c, receiver, donor)
+	shareTestUnite(t, ctx, c, "share-counts", donor, receiver)
+
+	require.Equal(t, 1, barrier.awaitPass(t), "one planned slot")
+	donorPasses := c.Sharing().Kinds["donor"]
+	require.Equal(t, SharePassStats{Passes: 1, Members: 2, Slotted: 1, Slots: 1}, donorPasses)
+}
+
 // A first use, or a hold of the graph lock, is the work of the pathway that
 // started it: a later pathway's mark doesn't replace the first's.
 func TestCacheWorkKeepsTheFirstPathway(t *testing.T) {
