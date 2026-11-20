@@ -25,8 +25,6 @@ type Node = core.Node
 const ReturnTypeAny = core.ReturnTypeAny
 
 type Secret = core.Secret
-type Terminal = core.Terminal
-type Void = core.Void
 
 // Client borrows a shared connection. Its API contains only the bound module.
 type Client struct{ *Query }

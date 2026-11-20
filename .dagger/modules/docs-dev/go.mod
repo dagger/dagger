@@ -3,11 +3,12 @@ module dagger/docs
 go 1.27
 
 require (
-	dagger.io/dagger v1.0.0-beta.26
+	dagger.io/dagger v1.0.0-beta.27
 	github.com/Khan/genqlient v0.8.1
 	github.com/dagger/otel-go v1.43.1-0.20261102220336-aa07da582c21
 	github.com/dagger/querybuilder v0.0.0-20260402040506-574a5e81cb59
 	github.com/netlify/open-api/v2 v2.36.0
+	github.com/vektah/gqlparser/v2 v2.5.36
 	go.opentelemetry.io/otel v1.46.0
 	go.opentelemetry.io/otel/sdk v1.43.0
 	go.opentelemetry.io/otel/trace v1.46.0
@@ -42,7 +43,6 @@ require (
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/mitchellh/mapstructure v1.4.0 // indirect
 	github.com/sosodev/duration v1.4.0 // indirect
-	github.com/vektah/gqlparser/v2 v2.5.36 // indirect
 	go.mongodb.org/mongo-driver v1.4.4 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.17.0 // indirect

@@ -15,7 +15,6 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
-type Check = core.Check
 type Directory = core.Directory
 type ID = core.ID
 type Node = core.Node

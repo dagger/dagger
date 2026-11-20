@@ -16,14 +16,12 @@ import (
 )
 
 type Changeset = core.Changeset
-type Check = core.Check
 type Container = core.Container
 type Directory = core.Directory
 type DirectoryFilterOpts = core.DirectoryFilterOpts
 type ID = core.ID
 type Node = core.Node
 type Secret = core.Secret
-type Void = core.Void
 type Workspace = core.Workspace
 type WorkspaceDirectoryOpts = core.WorkspaceDirectoryOpts
 
