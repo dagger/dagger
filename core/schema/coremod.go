@@ -249,6 +249,7 @@ func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server, _ ...core.Inst
 		&cacheSchema{},
 		&volumeSchema{},
 		&secretSchema{},
+		&promptSchema{},
 		&serviceSchema{},
 		&hostSchema{},
 		&httpSchema{},

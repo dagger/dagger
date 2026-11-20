@@ -241,6 +241,7 @@
                 "reference/api/node",
                 "reference/api/object-type-def",
                 "reference/api/port",
+                "reference/api/prompt",
                 "reference/api/remote-git-mirror",
                 "reference/api/scalar-type-def",
                 "reference/api/schema",

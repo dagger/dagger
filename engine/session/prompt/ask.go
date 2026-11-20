@@ -94,6 +94,9 @@ func (p PromptAttachable) PromptAsk(ctx context.Context, req *AskRequest) (*AskR
 // text through HandlePrompt, the rest through a form. Must hold promptMutex.
 func (p PromptAttachable) askFallback(ctx context.Context, req *AskRequest) (*AskResponse, error) {
 	text := AskPromptText(req)
+	if note := RememberedNote(req); note != "" {
+		text += "\n" + note
+	}
 	switch input := req.GetInput().(type) {
 	case *AskRequest_Boolean:
 		confirm := input.Boolean.GetDefault()
@@ -215,6 +218,16 @@ func AskPromptText(req *AskRequest) string {
 		text += "\n\n(requested by " + by + ")"
 	}
 	return text
+}
+
+// RememberedNote tells the user their answer to req will be remembered
+// beyond the session, and where, so they can forget it; "" when it will not
+// be. Client-side only: it names this client's configuration.
+func RememberedNote(req *AskRequest) string {
+	if req.GetPersistentKey() == "" || req.GetSecret() != nil {
+		return ""
+	}
+	return "Your answer will be remembered in " + promptAnswersFile + "."
 }
 
 // RequesterText names who asks, e.g. `agent "worker", module "keeper",
