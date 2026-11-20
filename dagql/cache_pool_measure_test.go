@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -113,4 +114,60 @@ func TestPoolMeasureIsKeptThroughEveryWrite(t *testing.T) {
 	require.Equal(t, saved.PoolValues, restored.PoolValues)
 	require.Equal(t, saved.PoolBytes, restored.PoolBytes)
 	require.Equal(t, saved.PoolBlobBytes, restored.PoolBlobBytes)
+}
+
+// One blob that two roots' parts name at different sizes, as two engines can
+// describe it, is still one blob, as the store holds it: the kept measure and
+// the disk stage's snapshot both count it once, at the larger size. A prune
+// frees it only with the last root that names it, so a maximum the larger
+// size alone doesn't pass drops neither root, and one it passes drops both;
+// the blobs a sweep keeps (LiveBlobs) follow.
+func TestOneBlobAtTwoSizesIsOneBlob(t *testing.T) {
+	t.Parallel()
+	ctx, cloud := storedPartTestCache(t, WithBlobStore())
+	newer := storedPruneTestRoot(t, ctx, cloud, "two-sizes-newer")
+	older := storedPruneTestRoot(t, ctx, cloud, "two-sizes-older")
+	storedPruneTestUse(cloud, older, time.Now().Add(-2*time.Hour))
+	storedPruneTestUse(cloud, newer, time.Now().Add(-time.Hour))
+	for number, size := range map[uint64]int64{newer: 60_000_000, older: 61_000_000} {
+		stored, _, err := cloud.SetStoredPart(ctx, number, storedPruneTestPart("snapshot", map[string]int64{"the toolchain": size}), 0)
+		require.NoError(t, err)
+		require.True(t, stored)
+	}
+	storedPruneTestPlace(t, ctx, cloud, []uint64{newer, older})
+	usage := func() BlobCacheUsage {
+		t.Helper()
+		require.NoError(t, cloud.VerifyPoolMeasure())
+		u, err := cloud.BlobCacheUsage()
+		require.NoError(t, err)
+		require.Equal(t, u.PoolBlobBytes, cloud.snapshotPruneState(pruneSnapshotDisk, 0).usedBytes, "the prune's snapshot measures what the cache keeps")
+		return u
+	}
+	live := func() []digest.Digest {
+		t.Helper()
+		blobs, err := cloud.LiveBlobs()
+		require.NoError(t, err)
+		return blobs
+	}
+	before := usage()
+	require.Equal(t, 1, before.PoolBlobs, "one blob")
+	require.Equal(t, int64(61_000_000), before.PoolBlobBytes, "at the larger size")
+	require.Equal(t, []digest.Digest{testDigest("the toolchain")}, live())
+
+	report, err := cloud.Prune(ctx, []CachePrunePolicy{{MaxUsedSpace: 100_000_000, TargetSpace: 75_000_000}})
+	require.NoError(t, err)
+	require.Zero(t, report.DroppedValues, "under the maximum, nothing goes")
+	require.True(t, storedPruneTestEntryState(cloud, older).value)
+	require.True(t, storedPruneTestEntryState(cloud, newer).value)
+	require.Equal(t, before, usage())
+
+	report, err = cloud.Prune(ctx, []CachePrunePolicy{{MaxUsedSpace: 50_000_000, TargetSpace: 10_000_000}})
+	require.NoError(t, err)
+	require.Equal(t, int64(61_000_000), report.ReclaimedBytes, "the blob, once")
+	require.False(t, storedPruneTestEntryState(cloud, older).value)
+	require.False(t, storedPruneTestEntryState(cloud, newer).value, "the blob goes only with the last root that names it")
+	after := usage()
+	require.Zero(t, after.PoolBlobs)
+	require.Zero(t, after.PoolBlobBytes)
+	require.Empty(t, live())
 }
