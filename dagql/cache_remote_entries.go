@@ -114,11 +114,6 @@ type RemoteHolding struct {
 	// counts executed evidence: once the cache has dropped a value, only a
 	// computation after the drop may bring it back (holding.executed).
 	Executed bool
-	// Image reports that the engine image ships the entry: every engine built
-	// from the image has its parts, and none exports them. The holding takes
-	// it from each call span, as an engine whose new image no longer ships
-	// the entry reports (holding.image).
-	Image bool
 	// UsedAtUnixNano is when the span was recorded where the service read
 	// it, a use of the entry (0: unknown). The entry's last use never moves
 	// back.
@@ -331,10 +326,6 @@ type holding struct {
 	// copies from placement, and entries a cache only hit, are never
 	// flagged.
 	executed bool
-	// image marks a holding whose cache has the entry from its engine image,
-	// as its latest call span reported (RemoteHolding.Image). The engine
-	// never exports such an entry or its parts.
-	image bool
 }
 
 // hasUnexpiredHoldingLocked reports whether another cache holds a copy of res
@@ -520,10 +511,6 @@ func (c *Cache) attachRemoteHoldingLocked(ctx context.Context, key HolderKey, de
 	}
 	if desc.Executed && !h.executed {
 		h.executed = true
-		c.markHoldingLocked(key)
-	}
-	if h.image != desc.Image {
-		h.image = desc.Image
 		c.markHoldingLocked(key)
 	}
 	touchSharedResultLastUsed(entry, desc.UsedAtUnixNano)
@@ -1797,9 +1784,6 @@ type RemoteHoldingInfo struct {
 	// Executed reports that the holding's cache computed the entry since
 	// the cache last dropped the entry's value (RemoteHolding.Executed).
 	Executed bool
-	// Image reports that the holding's cache has the entry from its engine
-	// image (RemoteHolding.Image).
-	Image bool
 }
 
 // RemoteEntryInfo returns what the cache holds for the entry of one holding,
@@ -2104,7 +2088,6 @@ func holdingInfo(key HolderKey, h *holding) RemoteHoldingInfo {
 		Dependents:    int(h.dependents),
 		Replacements:  h.replacements,
 		Executed:      h.executed,
-		Image:         h.image,
 		Deps:          slices.Clone(h.deps),
 		UnknownDeps:   slices.Clone(h.unknownDeps),
 	}
@@ -2154,7 +2137,6 @@ type HoldingFacts struct {
 	RetentionExpiresAtUnix int64
 	Replacements           uint64
 	Executed               bool
-	Image                  bool
 	Deps                   []uint64
 	UnknownDeps            []uint64
 	// Parts are the copy's complete parts, as RemoteHoldingInfo.Parts.
@@ -2178,7 +2160,6 @@ func (c *Cache) HoldingFacts(key HolderKey) (HoldingFacts, bool) {
 		Retained:      h.retention.retained,
 		Replacements:  h.replacements,
 		Executed:      h.executed,
-		Image:         h.image,
 		Deps:          h.deps,
 		UnknownDeps:   h.unknownDeps,
 	}

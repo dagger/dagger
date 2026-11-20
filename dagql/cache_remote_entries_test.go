@@ -1671,27 +1671,6 @@ func TestCompactEqClassesRefusesAndChangesNothing(t *testing.T) {
 	})
 }
 
-// A holding is from its engine's image while its latest call span says so:
-// another holding of the entry doesn't take it, and a later span that
-// doesn't say so, as an engine whose new image no longer ships the entry
-// reports, clears it.
-func TestRemoteHoldingFromTheImage(t *testing.T) {
-	t.Parallel()
-	cloud := newCloudCache(t)
-	a := newCloudApplier(t, cloud)
-	image := HolderKey{Cache: "engine-a", Number: 1}
-	own := HolderKey{Cache: "engine-b", Number: 1}
-	desc := holdingOf("from-image")
-	desc.Image = true
-	a.call(callRow{key: image, session: "s", holding: desc})
-	a.call(callRow{key: own, session: "s", holding: holdingOf("from-image")})
-	require.True(t, requireHolding(t, cloud, image).Image)
-	require.False(t, requireHolding(t, cloud, own).Image)
-
-	a.call(callRow{key: image, session: "s", holding: holdingOf("from-image")})
-	require.False(t, requireHolding(t, cloud, image).Image)
-}
-
 // A stored entry outlives the holdings engines had of it, and once the last
 // one goes it holds nothing for them: attaching a holding to every stored
 // entry and then releasing them all leaves the live heap where it was. An
