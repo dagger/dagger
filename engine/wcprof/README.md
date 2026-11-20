@@ -92,9 +92,10 @@ Current hook points:
   sharing`. The kinds are kept whether or not anything records: a waited
   acquisition returns its wait and that kind, and the cache counts its
   lookups' waits by kind for the engine's stop event
-  (`dagql.Cache.LookupLockWaits`), at the cost of one store by each writer
-  as it releases the lock and two clock reads by each acquisition that
-  waits.
+  (`dagql.Cache.LookupLockWaits`). An acquisition that doesn't wait pays
+  nothing more, and a writer's release one load of the lock's waiting
+  count, and a store only while someone waits; an acquisition that waits
+  pays two clock reads and two updates of that count.
 - `engine/server/resolver`, registry I/O: an `io` op per image pull
   (`image.pull`), resolve (`image.resolve`) and push (`image.push`), with the
   ref as ident and external work type. Under a pull, an `image.fetch` op

@@ -655,11 +655,14 @@ func (a *RemoteCacheAdapter) uncountedMisses() uint64 {
 }
 
 // restoreReports returns what the restores did, in the order their files
-// ended.
+// ended: a file's report can come in after a later one's, once its window
+// is read (remotecache.RestoreReport.Window).
 func (a *RemoteCacheAdapter) restoreReports() []remotecache.RestoreReport {
 	a.restoresMu.Lock()
-	defer a.restoresMu.Unlock()
-	return slices.Clone(a.restores)
+	reports := slices.Clone(a.restores)
+	a.restoresMu.Unlock()
+	slices.SortStableFunc(reports, func(x, y remotecache.RestoreReport) int { return x.Ended.Compare(y.Ended) })
+	return reports
 }
 
 // mergedReply is the merged message for a committed merge's reply.
