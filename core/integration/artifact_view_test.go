@@ -290,6 +290,64 @@ type Case {
 	require.JSONEq(t, `{"currentWorkspace":{"artifacts":{"filterTypes":{"filterDimensionKeys":{"items":[{"value":{"name":"b","selected":["b"],"removed":["a","c"]}}]}}}},"cases":{"keys":["a","b","c"]}}`, out)
 }
 
+// A setting is resolved as without a selection, even when resolving it reads
+// another instance of the collection the selection narrows.
+func (ArtifactsSuite) TestFilteredViewSkipsSettingResolution(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := nativeWorkspaceBase(t, c).
+		WithNewFile("dagger.toml", `[modules.lib]
+source = "./lib"
+settings.base = "dag://provider/base"
+[modules.provider]
+source = "./provider"
+`).
+		WithNewFile("lib/dagger-module.toml", "name = \"lib\"\nengineVersion = \"v1.0.0\"\n[runtime]\nsource = \"dang\"\n").
+		WithNewFile("lib/main.dang", `type Lib {
+  pub base: Container!
+  pub packages: Packages! { Packages(names: ["a", "b"], base: base) }
+}
+type Packages @collection {
+  pub names: [String!]! @keys
+  pub base: Container!
+  lookup(name: String!): Package! @get { Package(name: name, base: base) }
+}
+type Package {
+  pub name: String!
+  pub base: Container!
+  test: Void @check {
+    if (base.file("/marker").contents != "b") { raise "wrong base" }
+    null
+  }
+}
+`).
+		WithNewFile("provider/dagger-module.toml", `name = "provider"
+engineVersion = "v1.0.0"
+[runtime]
+source = "dang"
+[[dependencies]]
+name = "lib"
+source = "../lib"
+`).
+		WithNewFile("provider/main.dang", `type Provider {
+  pub base: Container! {
+    container.withNewFile("/marker", lib(base: container).packages.get("b").name)
+  }
+}
+`)
+	for _, tc := range []struct {
+		args   []string
+		passed string
+	}{
+		{nil, "2 passed"},
+		{[]string{"--lib-package=a"}, "1 passed"},
+		{[]string{"--lib-package=b"}, "1 passed"},
+	} {
+		out, err := base.With(daggerExec(append([]string{"--progress=report", "check"}, tc.args...)...)).CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Contains(t, out, tc.passed)
+	}
+}
+
 func (ArtifactsSuite) TestCollectionArgumentCheckUnderInstalledName(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	source := `type View {

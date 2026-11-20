@@ -490,6 +490,9 @@ func (ud *UserDefault) Value(ctx context.Context) (any, error) {
 		return nil, fmt.Errorf("access main client: %w", err)
 	}
 	mainCtx := engine.ContextWithClientMetadata(ctx, mainClient)
+	// A setting is an input of the module, not part of any artifact a
+	// selection narrows: resolve it as it resolves without one.
+	mainCtx = dagql.WithResultScope(mainCtx, nil)
 	// Module settings belong to the caller's workspace.
 	servedDeps, err := query.Server.CurrentServedDeps(mainCtx)
 	if err != nil {
@@ -1314,6 +1317,9 @@ func moduleAnalyticsProps(mod *Module, prefix string, props map[string]string) {
 
 // loadContainerFromAddress loads a Container from a given address using the Address API.
 func loadContainerFromAddress(ctx context.Context, dag *dagql.Server, address string) (dagql.IDType, error) {
+	// A default is an input of the function, as a setting is (see
+	// UserDefault.Value): resolve it as it resolves without a selection.
+	ctx = dagql.WithResultScope(ctx, nil)
 	addr, err := resolveUserAddress(ctx, dag, address)
 	if err != nil {
 		return nil, fmt.Errorf("load address %q for container default: %w", address, err)
