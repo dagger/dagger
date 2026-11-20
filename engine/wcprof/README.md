@@ -87,8 +87,10 @@ Current hook points:
   whose release let it in (`WriteLockAs`, `LockWait`): for the graph lock,
   `lookup`, `publication`, `restore` (a set file's part's merge), `merge`,
   `sharing`, `export`, `offer`, `part` (fetching, installing or settling
-  parts), `other` (a writer that named no kind) or `readers` (no writer let
-  it in). wcprof-report's `waits` view shows it as `dagql.egraph behind
+  parts), `teach`, `dependency`, `evaluation`, `upkeep` (a session's
+  release, a prune, a measurement or a save), `hold` (the service's holds
+  on entries), `other` (a writer that named no kind) or `readers` (no
+  writer let it in). wcprof-report's `waits` view shows it as `dagql.egraph behind
   sharing`. The kinds are kept whether or not anything records: a waited
   acquisition returns its wait and that kind, and the cache counts its
   lookups' waits by kind for the engine's stop event

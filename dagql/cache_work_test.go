@@ -2,10 +2,14 @@ package dagql
 
 import (
 	"context"
+	"path/filepath"
+	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -223,6 +227,99 @@ func shareTestAwaitQuiet(t *testing.T, c *Cache, barrier *sharePassBarrier) {
 		case <-time.After(300 * time.Millisecond):
 			quiet = true
 		}
+	}
+}
+
+// Every exclusive take of the graph lock on a call's path, and in the
+// service's holds and the engine's own passes, names its kind of work, so a
+// lookup that waits behind it can tell what held it: none is left "other".
+func TestCacheWritersNameTheirKind(t *testing.T) {
+	ctx := cacheTestContext(context.Background())
+	c, err := NewCache(ctx, filepath.Join(t.TempDir(), "cache.db"), nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, c.CloseDiscardingPersistence()) })
+	takes := lockTakes(t, c)
+
+	call := func(field string) AnyResult {
+		t.Helper()
+		frame := cacheTestIntCall(field)
+		res, err := c.GetOrInitCall(ctx, "kinds", noopTypeResolver{}, &CallRequest{ResultCall: frame, IsPersistable: true}, ValueFunc(cacheTestIntResult(frame, 1)))
+		require.NoError(t, err)
+		return res
+	}
+	parent := call("kinds-parent")
+	dep := call("kinds-dep")
+	call("kinds-parent")
+	require.NoError(t, c.TeachContentDigest(ctx, parent, digest.FromString("kinds-content")))
+	require.NoError(t, c.addExplicitDependency(ctx, parent, dep, "test"))
+	require.NoError(t, c.MakeResultUnpruneable(ctx, dep))
+	_, release, err := c.HoldEntry(ctx, uint64(parent.cacheSharedResult().id))
+	require.NoError(t, err)
+	require.NoError(t, release(ctx))
+	require.NoError(t, c.ReleaseSession(ctx, "kinds"))
+	require.NoError(t, c.persistCurrentState(ctx))
+	_, err = c.Prune(ctx, []CachePrunePolicy{{All: true}})
+	require.NoError(t, err)
+
+	byKind := map[string][]string{}
+	for name, marks := range takes() {
+		for _, mark := range marks {
+			kind := mark.kind.String()
+			if !slices.Contains(byKind[kind], name) {
+				byKind[kind] = append(byKind[kind], name)
+			}
+		}
+	}
+	require.Empty(t, byKind["other"], "takes that named no kind (all: %v)", byKind)
+	for kind, taker := range map[string]string{
+		"publication": "initCompletedResult",
+		"teach":       "teachContentDigest",
+		"dependency":  "addExplicitDependencies",
+		"hold":        "HoldEntry",
+		"upkeep":      "lockGraphAs",
+	} {
+		require.True(t, slices.ContainsFunc(byKind[kind], func(name string) bool { return strings.HasPrefix(name, taker) }), "%s took the graph lock as %s (all: %v)", taker, kind, byKind)
+	}
+}
+
+// The remote cache's writers of the graph lock name their kind too: a
+// restore's commit and the release of its holds, a hit's decode of a merged
+// record, a lazy task's ownership, and a call's teaching of an equivalent
+// call.
+func TestRemoteCacheWritersNameTheirKind(t *testing.T) {
+	set := firstUseTestCloud(t)
+	ctx, c, srv, _ := shareTestCache(t)
+	takes := lockTakes(t, c)
+
+	reply, err := c.RestoreValues(ctx, set.bundle, nil, "test")
+	require.NoError(t, err)
+	hit, _ := firstUseTestLookup(t, ctx, c, srv, "fu-good")
+	require.True(t, hit)
+	require.NotNil(t, reply.Release)
+	require.NoError(t, reply.Release(ctx))
+	row := persistedListTestResult(t, ctx, c, srv, "kinds-lazy", &transferTestValue{Text: "lazy"})
+	require.NoError(t, c.RunLazyTask(ctx, row, partTaskKey("obtain", PersistedPartAddress{Part: "kinds"}), LazyTaskSpec{Body: func(context.Context) error { return nil }}))
+	alias := &ResultCall{Kind: ResultCallKindField, Field: "kinds-alias", Type: NewResultCallType((&transferTestValue{}).Type())}
+	require.NoError(t, c.TeachCallEquivalentToResult(ctx, "test-session", alias, row))
+
+	byKind := map[string][]string{}
+	for name, marks := range takes() {
+		for _, mark := range marks {
+			kind := mark.kind.String()
+			if !slices.Contains(byKind[kind], name) {
+				byKind[kind] = append(byKind[kind], name)
+			}
+		}
+	}
+	require.Empty(t, byKind["other"], "takes that named no kind (all: %v)", byKind)
+	for kind, taker := range map[string]string{
+		"restore":    "CommitValueMerge",
+		"lookup":     "updateDecodedPayloadBytes",
+		"hold":       "releaseHeld",
+		"evaluation": "runLazyTask",
+		"teach":      "TeachCallEquivalentToResult",
+	} {
+		require.True(t, slices.ContainsFunc(byKind[kind], func(name string) bool { return strings.HasPrefix(name, taker) }), "%s took the graph lock as %s (all: %v)", taker, kind, byKind)
 	}
 }
 

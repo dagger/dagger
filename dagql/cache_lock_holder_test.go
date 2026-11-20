@@ -28,10 +28,32 @@ import (
 // their callers are.
 func lockTakers(t *testing.T, c *Cache) func() map[string][]uint64 {
 	t.Helper()
+	takes := lockTakes(t, c)
+	return func() map[string][]uint64 {
+		takers := map[string][]uint64{}
+		for name, marks := range takes() {
+			for _, mark := range marks {
+				takers[name] = append(takers[name], mark.holder)
+			}
+		}
+		return takers
+	}
+}
+
+// lockMark is one exclusive take of the graph lock: the op it marked as
+// holder, and the kind of work it named.
+type lockMark struct {
+	holder uint64
+	kind   wcprof.LockHolder
+}
+
+// lockTakes is lockTakers with each take's kind of work.
+func lockTakes(t *testing.T, c *Cache) func() map[string][]lockMark {
+	t.Helper()
 	wcprof.EnsureRecorder()
 	var mu sync.Mutex
-	takers := map[string][]uint64{}
-	stop := c.egraphMu.ObserveMarks(func(holder uint64) {
+	takes := map[string][]lockMark{}
+	stop := c.egraphMu.ObserveMarks(func(holder uint64, kind wcprof.LockHolder) {
 		pcs := make([]uintptr, 32)
 		frames := runtime.CallersFrames(pcs[:runtime.Callers(2, pcs)])
 		for {
@@ -42,7 +64,7 @@ func lockTakers(t *testing.T, c *Cache) func() map[string][]uint64 {
 					name = name[i+2:]
 				}
 				mu.Lock()
-				takers[name] = append(takers[name], holder)
+				takes[name] = append(takes[name], lockMark{holder, kind})
 				mu.Unlock()
 				return
 			}
@@ -52,10 +74,10 @@ func lockTakers(t *testing.T, c *Cache) func() map[string][]uint64 {
 		}
 	})
 	t.Cleanup(stop)
-	return func() map[string][]uint64 {
+	return func() map[string][]lockMark {
 		mu.Lock()
 		defer mu.Unlock()
-		return maps.Clone(takers)
+		return maps.Clone(takes)
 	}
 }
 

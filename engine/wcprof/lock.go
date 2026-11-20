@@ -45,8 +45,9 @@ type RWMutex struct {
 	// was active isn't counted, and its leaving can make the holder
 	// unknown while counted readers still hold m: unknown, never wrong.
 	readers atomic.Int64
-	// observe, when set, sees each holder an acquisition marks (ObserveMarks).
-	observe atomic.Pointer[func(holder uint64)]
+	// observe, when set, sees each holder an acquisition marks, and the
+	// kind of work it named (ObserveMarks).
+	observe atomic.Pointer[func(holder uint64, kind LockHolder)]
 	// kind is the kind of work its writer named (WriteLockAs), 0 when it
 	// named none. Only the writer that holds m reads or writes it: it is
 	// set after the writer takes m, and read and cleared as it releases m.
@@ -248,17 +249,18 @@ func (m *RWMutex) mark(holder uint64) {
 }
 
 // ObserveMarks calls f, in the acquiring goroutine, with the holder each
-// exclusive acquisition of m marks while a recorder is active, until the
-// returned stop is called; for tests, which can tell from f's caller which
-// code took m and whether it named its op.
-func (m *RWMutex) ObserveMarks(f func(holder uint64)) (stop func()) {
+// exclusive acquisition of m marks while a recorder is active, and the kind
+// of work it named (WriteLockAs), until the returned stop is called; for
+// tests, which can tell from f's caller which code took m and whether it
+// named its op and its kind.
+func (m *RWMutex) ObserveMarks(f func(holder uint64, kind LockHolder)) (stop func()) {
 	m.observe.Store(&f)
 	return func() { m.observe.Store(nil) }
 }
 
 func (m *RWMutex) observed(holder uint64) {
 	if f := m.observe.Load(); f != nil {
-		(*f)(holder)
+		(*f)(holder, m.kind)
 	}
 }
 
