@@ -414,6 +414,20 @@ func (c *Cache) prune(ctx context.Context, policies []CachePrunePolicy) (CachePr
 	if len(policies) == 0 {
 		return report, nil
 	}
+	// A blob-backed cache keeps the bytes its disk stage measures, the
+	// distinct blobs of its pool (cache_pool_measure.go): it measures only
+	// when a policy will act on them, to plan what to drop.
+	if c.blobBacked {
+		step := c.readLockGraphAs(ctx, "dagql.prune.decide")
+		used := c.pool.blobBytes
+		c.runlockGraphAs(step)
+		if !slices.ContainsFunc(policies, func(policy CachePrunePolicy) bool {
+			target, _ := pruneTargetBytes(policy, used)
+			return target > 0
+		}) {
+			return report, nil
+		}
+	}
 
 	now := time.Now()
 	compactedNeeded := false

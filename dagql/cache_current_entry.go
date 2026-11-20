@@ -124,11 +124,11 @@ func (c *Cache) replaceResultValueInPlaceLocked(ctx context.Context, cur, fresh 
 	// The stored parts, like the offers, belonged to the old value, and so
 	// did its normalized record and its place in a list's items
 	// (cache_list_items.go).
-	cur.storedParts = nil
+	c.changeStoredPartsLocked(cur, func() { cur.storedParts = nil })
 	cur.storedTransfer.Store(nil)
 	cur.unavailableParts = nil
 	c.forgetListItemLocked(cur)
-	cur.storedRecordBytes = fresh.storedRecordBytes
+	c.setStoredRecordBytesLocked(cur, fresh.storedRecordBytes)
 	for _, offer := range cur.partOffersLocked() {
 		more, err := c.retirePartOfferLocked(ctx, cur, offer.record.Address)
 		queue = append(queue, more...)
@@ -181,6 +181,7 @@ func (c *Cache) replaceResultValueInPlaceLocked(ctx context.Context, cur, fresh 
 	cur.cacheUsageSizeByIdentity = nil
 	cur.cacheUsageRecordTypeByID = nil
 	cur.payloadMu.Unlock()
+	c.poolSettleLocked(cur)
 
 	if edge, retained := c.persistedEdgesByResult[cur.id]; retained && !edge.unpruneable {
 		edge.expiresAtUnix = retentionExpiresAtUnix
