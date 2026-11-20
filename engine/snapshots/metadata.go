@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/containerd/containerd/v2/core/snapshots"
@@ -99,6 +100,43 @@ type metadataStore struct {
 	// hashFiles, when set, keeps the content-hash trees on disk instead of
 	// in external and pendingContentHashes.
 	hashFiles *contentHashFiles
+	// contentHashMoves counts the trees moved between disk and memory, each
+	// stored at its new place before it is dropped from the old one. A
+	// lookup that finds a tree in neither place while one moved looks
+	// again; see findContentHash.
+	contentHashMoves atomic.Uint64
+}
+
+// maxContentHashLookups bounds findContentHash's lookups of a tree that keeps
+// moving while it is looked up.
+const maxContentHashLookups = 100
+
+// findContentHash returns id's tree, kept on disk or, by inMemory, in memory.
+//
+// A tree moves between the two in two steps, stored at its new place before
+// it is dropped from the old one, so looking in memory, then on disk, then in
+// memory again finds a tree that one move overlaps. A lookup that finds it in
+// no place while a move completed looks again, and a tree that kept moving
+// for every lookup is an error, rather than no tree, which would make an
+// imported snapshot's digests come from a rescan.
+func (s *metadataStore) findContentHash(id string, inMemory func() ([]byte, bool), gone func() bool) ([]byte, bool, error) {
+	for range maxContentHashLookups {
+		moves := s.contentHashMoves.Load()
+		if dt, ok := inMemory(); ok {
+			return dt, true, nil
+		}
+		dt, ok, err := s.hashFiles.read(id, gone)
+		if err != nil || ok {
+			return dt, ok, err
+		}
+		if dt, ok := inMemory(); ok {
+			return dt, true, nil
+		}
+		if s.contentHashMoves.Load() == moves {
+			return nil, false, nil
+		}
+	}
+	return nil, false, errors.Errorf("content hash records of %s kept moving between disk and memory", id)
 }
 
 func newMetadataStore() *metadataStore {
@@ -478,23 +516,21 @@ func (md *cacheMetadata) GetCreatedAt() time.Time {
 var ErrExternalNotFound = errors.New("not found")
 
 func (md *cacheMetadata) GetExternal(s string) ([]byte, error) {
-	if dt, ok := md.getExternalInMemory(s); ok {
-		return dt, nil
-	}
 	if md.store.contentHashOnDisk(s) {
-		dt, ok, err := md.store.hashFiles.read(md.id, func() bool { return md.contentHashGone })
+		// Kept on disk, or in memory when it couldn't be written.
+		dt, ok, err := md.store.findContentHash(md.id,
+			func() ([]byte, bool) { return md.getExternalInMemory(s) },
+			func() bool { return md.contentHashGone })
 		if err != nil {
 			return nil, err
 		}
-		if ok {
-			return dt, nil
+		if !ok {
+			return nil, ErrExternalNotFound
 		}
-		// A tree moves to memory, when it can't be written, before it is
-		// dropped from disk, and to disk before it is dropped from memory:
-		// looking in memory before and after the disk finds it either way.
-		if dt, ok := md.getExternalInMemory(s); ok {
-			return dt, nil
-		}
+		return dt, nil
+	}
+	if dt, ok := md.getExternalInMemory(s); ok {
+		return dt, nil
 	}
 	return nil, ErrExternalNotFound
 }
@@ -519,10 +555,15 @@ func (md *cacheMetadata) SetExternal(s string, dt []byte) error {
 	if md.store.contentHashOnDisk(s) {
 		err := md.store.hashFiles.write(md.id, dt, func() bool { return md.contentHashGone })
 		if err == nil {
-			// The tree on disk replaces one kept in memory before.
+			// The tree on disk replaces one kept in memory before: a move,
+			// stored on disk before it is dropped from memory.
 			md.store.mu.Lock()
+			_, moved := md.external[s]
 			delete(md.external, s)
 			md.store.mu.Unlock()
+			if moved {
+				md.store.contentHashMoves.Add(1)
+			}
 			return nil
 		}
 		// Keep the tree in memory, where trees were kept before, as loading
@@ -535,6 +576,7 @@ func (md *cacheMetadata) SetExternal(s string, dt []byte) error {
 			Error("failed to write content hash records; keeping them in memory")
 		md.setExternalInMemory(s, dt)
 		md.store.hashFiles.remove(md.id, nil)
+		md.store.contentHashMoves.Add(1)
 		return nil
 	}
 	md.setExternalInMemory(s, dt)

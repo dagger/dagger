@@ -169,6 +169,7 @@ func (cm *snapshotManager) loadContentHashFiles(files *contentHashFiles, rows []
 			s.mu.Unlock()
 			// Dropped from disk once in memory, as SetExternal does.
 			files.remove(row.SnapshotID, nil)
+			s.contentHashMoves.Add(1)
 		}
 	}
 	for _, id := range files.list() {
@@ -197,7 +198,12 @@ func (cm *snapshotManager) readContentHashRows(rows PersistentMetadataRows, hash
 		return rows
 	}
 	for _, snapshotID := range hashIDs {
-		data, ok, err := files.read(snapshotID, nil)
+		// On disk when listed, or moved to memory since by a save that
+		// couldn't write it.
+		data, ok, err := cm.metadataStore.findContentHash(snapshotID, func() ([]byte, bool) {
+			data := cm.metadataStore.contentHashInMemory(snapshotID)
+			return data, len(data) > 0
+		}, nil)
 		if err != nil {
 			// A tree left out is lost to the next process: an imported
 			// snapshot's digests would then come from a rescan.
@@ -205,12 +211,8 @@ func (cm *snapshotManager) readContentHashRows(rows PersistentMetadataRows, hash
 				Error("failed to read content hash records for checkpoint")
 			continue
 		}
-		if !ok {
-			// Moved to memory since, by a save that couldn't write it, or
-			// gone with its snapshot.
-			data = cm.metadataStore.contentHashInMemory(snapshotID)
-		}
-		if len(data) == 0 {
+		if !ok || len(data) == 0 {
+			// Gone with its snapshot since.
 			continue
 		}
 		rows.ContentHashes = append(rows.ContentHashes, SnapshotContentHashRow{

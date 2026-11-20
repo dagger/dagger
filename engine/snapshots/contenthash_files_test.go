@@ -113,6 +113,42 @@ func TestContentHashFilesSaveKeepsUnwritableTreesInMemory(t *testing.T) {
 		cm.readContentHashRows(rows, hashIDs).ContentHashes)
 }
 
+// A lookup that misses a tree while a move completed looks again, so a tree
+// that two moves overlap (to memory, then back to disk) is found; one that
+// keeps moving for every lookup is an error, not no tree.
+func TestFindContentHashLooksAgainAfterMoves(t *testing.T) {
+	s := newMetadataStore()
+	files, err := newContentHashFiles(filepath.Join(t.TempDir(), "contenthash"))
+	require.NoError(t, err)
+	s.hashFiles = files
+
+	lookups := 0
+	dt, ok, err := s.findContentHash("a", func() ([]byte, bool) {
+		lookups++
+		if lookups == 2 {
+			// Both moves land between this lookup's looks.
+			s.contentHashMoves.Add(2)
+		}
+		if lookups < 3 {
+			return nil, false
+		}
+		return []byte("tree"), true
+	}, nil)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, []byte("tree"), dt)
+
+	_, ok, err = s.findContentHash("a", func() ([]byte, bool) { return nil, false }, nil)
+	require.NoError(t, err)
+	require.False(t, ok, "a tree in no place while none moved is no tree")
+
+	_, _, err = s.findContentHash("a", func() ([]byte, bool) {
+		s.contentHashMoves.Add(1)
+		return nil, false
+	}, nil)
+	require.ErrorContains(t, err, "kept moving")
+}
+
 // A registered tree whose file is missing was deleted by something other than
 // the manager, which unregisters a tree before deleting its file: reading it
 // fails, rather than reporting no tree, which would make an imported
