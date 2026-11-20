@@ -126,7 +126,7 @@ func (c *Cache) selectDemandPartSource(ctx context.Context, receiver AnyResult, 
 	if mapping == nil || mapping.ParentResultID != route.Delegation.ParentResultID || !containsPart([]PersistedPartAddress{mapping.Address}, route.Delegation.Address) {
 		return nil, nil, partRefused("delegation: mapping changed")
 	}
-	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+	c.lockGraphForCtx(ctx, workPart)
 	parent := c.resultsByID[sharedResultID(mapping.ParentResultID)]
 	_, direct := row.deps[sharedResultID(mapping.ParentResultID)]
 	if c.resultsByID[row.id] != row || parent == nil || parent == row || !direct {
@@ -166,7 +166,7 @@ func (c *Cache) selectDemandPartSource(ctx context.Context, receiver AnyResult, 
 	if probe != nil {
 		hold.descriptor = probe.Descriptor
 	}
-	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+	c.lockGraphForCtx(ctx, workPart)
 	valid := proof.currentLocked(c, hold, row) && c.partFactsLocked(parent) == facts
 	if valid && ready {
 		hold.descriptor.DependencyIDs = append(hold.descriptor.DependencyIDs, c.partResourceLeavesLocked(parent)...)

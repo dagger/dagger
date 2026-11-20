@@ -5,8 +5,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"runtime/metrics"
 	"slices"
 	"strings"
 	"sync"
@@ -603,8 +607,12 @@ func TestRestoreCountsLateMisses(t *testing.T) {
 	require.Equal(t, commit, first.before)
 	require.Equal(t, map[uint64]struct{}{1: {}}, first.entries)
 	report := nextReport(t, adapter)
-	require.Equal(t, RestoredPartReport{Records: 1, Committed: commit, Late: 2, WorstLate: 3 * time.Second, LeastLate: time.Second, LockWait: time.Millisecond, CommitHold: 2 * time.Millisecond}, report.Parts[0])
-	require.Equal(t, RestoredPartReport{Records: 1, Committed: commit, LockWait: time.Millisecond, CommitHold: 2 * time.Millisecond}, report.Parts[1])
+	for i := range report.Parts {
+		require.Positive(t, report.Parts[i].Decode)
+		report.Parts[i].Decode = 0
+	}
+	require.Equal(t, RestoredPartReport{Records: 1, Committed: commit, Late: 2, WorstLate: 3 * time.Second, LeastLate: time.Second, LockWait: time.Millisecond, CommitHold: 2 * time.Millisecond, Prepare: 3 * time.Millisecond, Commit: 4 * time.Millisecond}, report.Parts[0])
+	require.Equal(t, RestoredPartReport{Records: 1, Committed: commit, LockWait: time.Millisecond, CommitHold: 2 * time.Millisecond, Prepare: 3 * time.Millisecond, Commit: 4 * time.Millisecond}, report.Parts[1])
 }
 
 // A restore whose connection ends stops: what merged stays, the file is
@@ -831,4 +839,105 @@ func TestRestoreRepliesWithEachRecordsEntry(t *testing.T) {
 			}, complete, "each entry's complete parts, at the place of its entry")
 		})
 	}
+}
+
+// A restore reports each part's own stages: its decode, the preparation and
+// commit of its merge, and its merge's wait behind the merges that answer
+// lookups. Each file's report has its window: what the engine did from the
+// file's arrival to its end, the cache's counts among it. A whole is marked
+// landing on the cache from its arrival to its end; a head isn't.
+func TestRestoreReportsEachPartsStagesAndItsWindow(t *testing.T) {
+	t.Parallel()
+	adapter := newFakeAdapter()
+	adapter.priorityWait = 5 * time.Millisecond
+	var reads atomic.Int64
+	adapter.work = func() CacheWork {
+		n := reads.Add(1)
+		return CacheWork{
+			LookupLockWaits: dagql.LookupLockWaits{Landing: map[string]dagql.LockWaitStats{"sharing": {Waits: n, Total: time.Duration(n) * time.Millisecond}}},
+			FirstUse:        dagql.FirstUseStats{Paths: map[string]dagql.FirstUsePath{"sharing": {Prepared: 10 * n, Total: time.Duration(n) * time.Second}}},
+			Sharing:         dagql.SharingStats{Kinds: map[string]dagql.SharePassStats{"alone": {Passes: 2 * n, Members: 2 * n, Prepared: 10 * n, PrepareTotal: time.Duration(n) * time.Second}}},
+		}
+	}
+	landing := make(chan int64, 8)
+	adapter.restore = func(_ context.Context, part dagql.ValueBundle, _ *dagql.KnownRows) (dagql.MergeReply, error) {
+		landing <- adapter.landing.Load()
+		reply := merged(part, time.Now())
+		reply.PrepareLockWait, reply.PrepareLockWaits = 6*time.Millisecond, map[string]time.Duration{"restore": 6 * time.Millisecond}
+		return reply, nil
+	}
+	s, _ := restoreSession(t, adapter)
+	files := newFileServer(t)
+	head := files.add("head", setFile(t, dagql.ValueBundleVersion, part(10)))
+	whole := files.add("whole", setFile(t, dagql.ValueBundleVersion, part(11), part(12)))
+
+	s.dispatch(request(t, 7, protocol.TypeRestore, restoreOf("test-base", &head, nil)))
+	require.Equal(t, int64(0), <-landing, "a head isn't marked landing")
+	headReport := nextReport(t, adapter)
+	require.NotNil(t, headReport.Window, "a head has its window")
+	s.dispatch(request(t, 8, protocol.TypeRestore, restoreOf("test-base", nil, &whole)))
+	require.Equal(t, int64(1), <-landing, "a whole is marked landing as it merges")
+	require.Equal(t, int64(1), <-landing)
+	report := nextReport(t, adapter)
+	require.Zero(t, adapter.landing.Load(), "and no longer once it ended")
+
+	require.Len(t, report.Parts, 2)
+	for _, p := range report.Parts {
+		require.Positive(t, p.Decode, "the part's own decode")
+		require.Equal(t, 3*time.Millisecond, p.Prepare, "its merge's preparation")
+		require.Equal(t, 4*time.Millisecond, p.Commit, "and commit")
+		require.Equal(t, 5*time.Millisecond, p.PriorityWait, "and its wait behind lookup merges")
+		require.Equal(t, 6*time.Millisecond, p.PrepareLockWait, "and its preparation's wait for the cache's lock")
+		require.Equal(t, map[string]time.Duration{"restore": 6 * time.Millisecond}, p.PrepareLockWaits, "by who let it in")
+	}
+	require.Equal(t, report.Parts[0].Decode+report.Parts[1].Decode, report.Decode)
+
+	w := report.Window
+	require.NotNil(t, w)
+	require.GreaterOrEqual(t, w.Wall, report.Fetched.Sub(report.FetchStarted), "the window spans the download")
+	require.GreaterOrEqual(t, w.CPU, time.Duration(0))
+	waits := w.LookupLockWaits["sharing"].Waits
+	require.Positive(t, waits, "the cache's counts grew between the window's readings")
+	require.Equal(t, map[string]dagql.LockWaitStats{"sharing": {Waits: waits, Total: time.Duration(waits) * time.Millisecond}}, w.LookupLockWaits)
+	require.Equal(t, map[string]dagql.FirstUsePath{"sharing": {Prepared: 10 * waits, Total: time.Duration(waits) * time.Second}}, w.FirstUses)
+	require.Equal(t, map[string]dagql.SharePassStats{"alone": {Passes: 2 * waits, Members: 2 * waits, Prepared: 10 * waits, PrepareTotal: time.Duration(waits) * time.Second}}, w.Sharing)
+}
+
+// A window's goroutine waits are the scheduler latency samples the runtime
+// took in it, their time estimated from each bucket's middle, or its finite
+// edge for an unbounded bucket.
+func TestRestoreWindowEstimatesSchedulerWaits(t *testing.T) {
+	t.Parallel()
+	buckets := []float64{math.Inf(-1), 0, 0.001, 0.003, math.Inf(1)}
+	start := &metrics.Float64Histogram{Buckets: buckets, Counts: []uint64{0, 5, 1, 0}}
+	end := &metrics.Float64Histogram{Buckets: buckets, Counts: []uint64{0, 7, 3, 1}}
+	n, total := histogramSince(end, start)
+	require.Equal(t, int64(5), n)
+	require.InDelta(t, float64(2*500*time.Microsecond+2*2*time.Millisecond+3*time.Millisecond), float64(total), float64(time.Microsecond))
+	n, total = histogramSince(end, nil)
+	require.Zero(t, n)
+	require.Zero(t, total)
+}
+
+// The engine's threads' wait for a CPU is the sum of each thread's, the
+// second field of its schedstat, over the threads whose counts read.
+func TestRestoreWindowSumsThreadsRunqWait(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	for task, stat := range map[string]string{
+		"1":  "9000 1500 12\n",
+		"7":  "100 250 3\n",
+		"9":  "garbled\n",
+		"12": "",
+	} {
+		require.NoError(t, os.MkdirAll(filepath.Join(dir, task), 0o755))
+		if stat != "" {
+			require.NoError(t, os.WriteFile(filepath.Join(dir, task, "schedstat"), []byte(stat), 0o644))
+		}
+	}
+	waited, ok := threadsRunqWait(dir)
+	require.True(t, ok)
+	require.Equal(t, 1750*time.Nanosecond, waited)
+	_, ok = threadsRunqWait(filepath.Join(dir, "missing"))
+	require.False(t, ok)
 }

@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-
-	"github.com/dagger/dagger/engine/wcprof"
 )
 
 // CapturePersistedRecord copies one registered row without evaluating it or
@@ -147,7 +145,7 @@ func (c *Cache) holdRowsForCapture(ctx context.Context, rows []*sharedResult) ([
 		if c.testCaptureWriteLock != nil {
 			c.testCaptureWriteLock()
 		}
-		wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+		c.lockGraphForCtx(ctx, workOther)
 		for i := start; i < min(start+piece, len(rows)); i++ {
 			shared := rows[i]
 			held[i].row = shared
@@ -181,7 +179,7 @@ func (c *Cache) holdRowsForCapture(ctx context.Context, rows []*sharedResult) ([
 			if c.testCaptureWriteLock != nil {
 				c.testCaptureWriteLock()
 			}
-			wcprof.WriteLock(cleanupCtx, &c.egraphMu, egraphLockIdent)
+			c.lockGraphForCtx(cleanupCtx, workOther)
 			var queue []*sharedResult
 			for _, shared := range owned[start:min(start+piece, len(owned))] {
 				var decErr error
@@ -281,7 +279,7 @@ func capturedRowValue(shared *sharedResult, payload sharedResultPayloadState, fr
 // checkpoint capture it may run inside a synthetic coordination task.
 func (c *Cache) capturePartRecord(ctx context.Context, shared *sharedResult, imported bool, offers []PersistedPartOffer, version *capturedRowRevision) (PersistedRecord, error) {
 	// A record merged unprepared is prepared before it is read.
-	if err := c.prepareMergedPayload(ctx, shared); err != nil {
+	if err := c.prepareMergedPayload(ctx, shared, workOther); err != nil {
 		return PersistedRecord{}, err
 	}
 	var err error

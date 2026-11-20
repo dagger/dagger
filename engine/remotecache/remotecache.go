@@ -117,8 +117,16 @@ type Adapter interface {
 	// every entry it lands on until the reply's Release
 	// (dagql.Cache.RestoreValues). known are as for Merge: the rows the part
 	// lands on join them. source names the set file, for the log of a record
-	// whose payload fails at its first use.
-	RestorePart(ctx context.Context, part dagql.ValueBundle, unretained []dagql.TransferOrdinal, known *dagql.KnownRows, source string) (dagql.MergeReply, error)
+	// whose payload fails at its first use. It also returns how long the
+	// part's merge waited behind the merges that answer lookups before it
+	// began.
+	RestorePart(ctx context.Context, part dagql.ValueBundle, unretained []dagql.TransferOrdinal, known *dagql.KnownRows, source string) (dagql.MergeReply, time.Duration, error)
+	// Landing marks a whole set landing on the cache, from its arrival to
+	// its end, until the returned func is called (dagql.Cache.Landing).
+	Landing() func()
+	// CacheWork returns the cache's counts a restore's window reads at its
+	// start and end (RestoreWindow).
+	CacheWork() CacheWork
 	// LateMisses returns the cache's lookup misses on this connection before
 	// before, not returned already, whose lookup now finds one of entries,
 	// by the engine's numbers (dagql.Cache.LateRemoteMisses).

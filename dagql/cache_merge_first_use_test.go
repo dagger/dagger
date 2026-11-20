@@ -256,7 +256,7 @@ func firstUseTestPrepareAll(t *testing.T, ctx context.Context, c *Cache) {
 	}
 	c.egraphMu.RUnlock()
 	for _, res := range entries {
-		require.NoError(t, c.prepareMergedPayload(ctx, res))
+		require.NoError(t, c.prepareMergedPayload(ctx, res, workLookup))
 		require.False(t, res.holdsUnpreparedPayload())
 	}
 }
