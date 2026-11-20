@@ -68,6 +68,17 @@ func (set firstUseTestSet) spoil(t *testing.T) firstUseTestSet {
 	return set
 }
 
+// spoilJSON leaves the bad record's payload no longer JSON, and returns the
+// set.
+func (set firstUseTestSet) spoilJSON(t *testing.T) firstUseTestSet {
+	t.Helper()
+	bad := firstUseTestValue(t, set.bundle, set.bad)
+	payload := bad.Record.Envelope.ObjectJSON
+	require.True(t, json.Valid(payload))
+	bad.Record.Envelope.ObjectJSON = payload[:len(payload)-1]
+	return set
+}
+
 // firstUseTestValue returns the bundle's value of the Cloud's entry number.
 func firstUseTestValue(t *testing.T, bundle ValueBundle, number uint64) *TransferredValue {
 	t.Helper()
@@ -171,6 +182,27 @@ func TestMergedSetWithOneBadPayloadMissesOnlyThatRecord(t *testing.T) {
 	require.Equal(t, "ran fu-bad", text, "its caller gets the call's result")
 	_, _, err = engine.HoldEntry(ctx, badEntry)
 	require.ErrorIs(t, err, ErrUnknownEntry, "the bad record's entry is gone for an export that names it")
+}
+
+// A record from the Cloud whose payload isn't JSON is a bad payload like any
+// other: its set lands, and only that record, refused at its first use,
+// misses.
+func TestMergedSetWithOnePayloadNotJSONMissesOnlyThatRecord(t *testing.T) {
+	t.Parallel()
+	set := firstUseTestCloud(t).spoilJSON(t)
+
+	ctx, engine, srv := transferTestCache(t)
+	reply, err := engine.MergeValues(ctx, cloudCacheID, set.bundle)
+	require.NoError(t, err, "the set lands")
+	require.True(t, reply.Committed)
+
+	hit, text := firstUseTestLookup(t, ctx, engine, srv, "fu-good")
+	require.True(t, hit, "a good record hits")
+	require.Equal(t, "ready", text)
+	hit, text = firstUseTestLookup(t, ctx, engine, srv, "fu-bad")
+	require.False(t, hit, "the record whose payload isn't JSON misses at its first use")
+	require.Equal(t, "ran fu-bad", text, "its caller gets the call's result")
+	require.Equal(t, int64(1), engine.FirstUse().Refused)
 }
 
 // A set from the Cloud, whose records carry their parts, lands as the same
