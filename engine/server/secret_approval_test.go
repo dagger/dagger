@@ -8,6 +8,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/session/prompt"
+	"github.com/dagger/dagger/internal/buildkit/session/secrets"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 )
@@ -186,10 +187,23 @@ func TestSecretApprovalInertRoot(t *testing.T) {
 	require.Empty(t, s.questions.asked())
 }
 
+// owns marks c as serving attachables of its own, as the engine registers an
+// interactive CLI in a container (see RegisterNestedCLITransportForExec).
+func owns(c *clientRuntime) *clientRuntime {
+	c.ownsAttachables = true
+	return c
+}
+
+// inert marks c as having no host of its own, as an in-engine SDK client.
+func inert(c *clientRuntime) *clientRuntime {
+	c.inertAttachables = true
+	return c
+}
+
 func TestGitPushOwnerBoundaries(t *testing.T) {
 	s := newApprovalTestSession(t, func(*grpc.Server) {})
-	inert := func(c *clientRuntime) *clientRuntime {
-		c.inertAttachables = true
+	bound := func(c *clientRuntime, attachables string) *clientRuntime {
+		c.attachablesClientID = attachables
 		return c
 	}
 	none := dagql.ObjectResult[*core.Module]{}
@@ -224,6 +238,34 @@ func TestGitPushOwnerBoundaries(t *testing.T) {
 			s.client("under-inert-root", none, nil, "inert-root"), "", true, "no owning client"},
 		{"a module root has no owner",
 			s.client("module-root", mod, nil), "", true, "no owning client"},
+
+		// A CLI in a container a module runs, serving its own attachables
+		// (see RegisterNestedCLITransportForExec), owns its host.
+		{"a module's exec client asks the module's caller",
+			s.client("exec", none, nil, "owner", "module"), "owner", true, ""},
+		{"a CLI owning its host under a module owns itself",
+			owns(s.client("nested-cli", none, nil, "owner", "module", "exec")), "nested-cli", false, ""},
+		{"an inert client under a nested owner asks it",
+			inert(s.client("nested-eval", none, nil, "owner", "module", "exec", "nested-cli")), "nested-cli", true, ""},
+		{"a module under a nested owner asks it",
+			s.client("nested-module", mod, nil, "owner", "module", "exec", "nested-cli"), "nested-cli", true, ""},
+		{"a module's client under a nested owner asks it",
+			s.client("nested-module-sdk", none, nil, "owner", "module", "exec", "nested-cli", "nested-module"), "nested-cli", true, ""},
+		{"a nested owner's own non-module client owns itself",
+			s.client("nested-cli-exec", none, nil, "owner", "module", "exec", "nested-cli"), "nested-cli-exec", false, ""},
+		{"an SDK bound to a module's exec bootstrap asks the module's caller",
+			bound(s.client("exec-sdk", none, nil, "owner", "module"), "exec"), "owner", true, ""},
+		{"an attachables binding to itself is no claim to a host",
+			bound(s.client("self-bound", none, nil, "owner", "module"), "self-bound"), "owner", true, ""},
+		{"an inert client cannot own a host",
+			inert(owns(s.client("inert-owner", none, nil, "owner", "module"))), "owner", true, ""},
+		// E.g. a CLI in a debug terminal of a module's runtime container.
+		{"a module client serving its own attachables asks its caller",
+			owns(s.client("owning-module", mod, nil, "owner")), "owner", true, ""},
+		{"a client under a module serving its own attachables asks the module's caller",
+			s.client("owning-module-sdk", none, nil, "owner", "owning-module"), "owner", true, ""},
+		{"a nested owner under an inert root owns itself",
+			owns(s.client("owner-under-inert-root", none, nil, "inert-root")), "owner-under-inert-root", false, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			owner, delegated, err := gitPushOwner(tc.client)
@@ -237,6 +279,56 @@ func TestGitPushOwnerBoundaries(t *testing.T) {
 			require.Equal(t, tc.delegated, delegated)
 		})
 	}
+}
+
+// hostSecrets serves a host's secrets attachable: every secret reads value.
+type hostSecrets struct {
+	secrets.UnimplementedSecretsServer
+	value string
+}
+
+func (h *hostSecrets) GetSecret(context.Context, *secrets.GetSecretRequest) (*secrets.GetSecretResponse, error) {
+	return &secrets.GetSecretResponse{Data: []byte(h.value)}, nil
+}
+
+// TestSecretApprovalNestedOwnerHost covers an agent under a CLI that serves
+// its own attachables in a container a module runs (as tuiQa runs `dagger
+// agent`): the CLI is asked, not the session's owner, and whatever it answers,
+// the secret is read from its own host, the container. A module could start
+// such a CLI with a prompt handler that always says yes, so the CLI must not
+// be able to grant the outer owner's secrets.
+func TestSecretApprovalNestedOwnerHost(t *testing.T) {
+	outer := &approvalPromptServer{decide: allowSecret(prompt.APPROVAL_ALLOW_SESSION)}
+	s := newApprovalTestSession(t, func(srv *grpc.Server) {
+		prompt.RegisterPromptServer(srv, outer)
+		secrets.RegisterSecretsServer(srv, &hostSecrets{value: "outer-token"})
+	})
+	none := dagql.ObjectResult[*core.Module]{}
+	s.client("module", sessionTestModuleResult(t, "tuiqa"), &core.FunctionCall{ParentName: "TuiQa", Name: "start"}, "owner")
+	s.client("exec", none, nil, "owner", "module")
+	cli := owns(s.client("nested-cli", none, nil, "owner", "module", "exec"))
+	nested := &approvalPromptServer{decide: allowSecret(prompt.APPROVAL_ALLOW_ONCE)}
+	s.sess.attachables.callers[cli.clientID] = &sessionAttachableCaller{ctx: t.Context(), conn: promptTestConn(t, func(srv *grpc.Server) {
+		prompt.RegisterPromptServer(srv, nested)
+		secrets.RegisterSecretsServer(srv, &hostSecrets{value: "container-token"})
+	})}
+	eval := inert(s.client("nested-eval", none, nil, "owner", "module", "exec", "nested-cli"))
+	ctx := core.AgentToContext(s.ctx(eval), testAgent(t, "agent-1", "worker"))
+
+	md, err := s.srv.AuthorizeSecret(ctx, "env://TOKEN")
+	require.NoError(t, err)
+	require.Equal(t, "nested-cli", md.ClientID, "the secret is read through the nested CLI's own host")
+	require.Empty(t, outer.asked(), "the outer owner is not asked about the nested CLI's agents")
+	require.Len(t, nested.asked(), 1)
+	require.Equal(t, &prompt.ApprovalRequester{AgentName: "worker", AgentHandle: "agent-1"}, nested.asked()[0].Requester,
+		"the module above the nested CLI does not drive its agents' requests")
+
+	conn, ok, err := s.srv.SpecificClientAttachableConn(ctx, md.ClientID, core.SpecificClientAttachableConnOpts{})
+	require.NoError(t, err)
+	require.True(t, ok)
+	resp, err := secrets.NewSecretsClient(conn).GetSecret(ctx, &secrets.GetSecretRequest{ID: "env://TOKEN"})
+	require.NoError(t, err)
+	require.Equal(t, "container-token", string(resp.Data), "the outer owner's env is out of the nested CLI's reach")
 }
 
 func TestSecretApprovalPrompt(t *testing.T) {

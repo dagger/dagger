@@ -44,6 +44,14 @@ const (
 	ShutdownEndpoint  = "/shutdown"
 	LLMConfigEndpoint = "/llm-config"
 
+	// NestedClientAttachablesEnv is set beside NestedClientIDEnv, to the
+	// exec's session port, by engines that let a logical nested client of that
+	// port serve attachables of its own, e.g. an interactive CLI's prompts, by
+	// sending SessionAttachablesEndpoint as its first request. Older engines
+	// bind every logical client to the exec's bootstrap attachables, and so do
+	// session proxies a process in the exec serves on other ports.
+	NestedClientAttachablesEnv = "_DAGGER_NESTED_CLIENT_ATTACHABLES"
+
 	// Buildkit-interpreted session keys, can't change
 	SessionIDMetaKey         = "X-Docker-Expose-Session-Uuid"
 	SessionNameMetaKey       = "X-Docker-Expose-Session-Name"

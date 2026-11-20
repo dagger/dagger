@@ -22,7 +22,8 @@ import (
 //
 // As with approvals, the engine resolves both ends itself, never taking the
 // caller's word for either: who is asked is the owner, the trusted client
-// before the first module or inert boundary (see gitPushOwner), whose
+// before the first module or inert boundary below the nearest client owning
+// its host, such as a nested interactive CLI (see gitPushOwner), whose
 // terminal the user answers on; who asks is the agent, module and function
 // running the calling client (see resolveApprovalRequester), which the
 // question names. The calling span anchors the question, so a frontend can
@@ -400,6 +401,13 @@ const approvalKindLLM = "llm"
 // an approval like any other (see requestApproval): allowed once, for the
 // session, or forever, for the module asking, by the owner whose terminal
 // it is.
+//
+// The owner can be a nested client that owns its own host, such as an
+// interactive CLI in a container a module runs (see gitPushOwner). Its
+// approval lends nothing of the session's main client: LLM configuration is
+// seeded from the main client for every client (see core.loadLLMRouter), so
+// the nested owner could already use the same LLM access directly, and the
+// approval only lets a module below it do what it can do itself.
 func (srv *Server) AuthorizeLLM(ctx context.Context, moduleURL string) error {
 	client, err := srv.executableClientFromContext(ctx)
 	if err != nil {
