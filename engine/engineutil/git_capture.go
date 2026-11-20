@@ -18,6 +18,14 @@ const captureGitMethod = "/dagger.git.Git/CaptureGit"
 // ErrGitCaptureUnsupported means capture is unavailable for this client or checkout.
 var ErrGitCaptureUnsupported = errors.New("client cannot capture git workspaces")
 
+// ErrGitCaptureTooLarge means the checkout's capture exceeds the caller's
+// bundle limit.
+var ErrGitCaptureTooLarge = errors.New("git checkout is too large to capture")
+
+func formatMiB(n int64) string {
+	return fmt.Sprintf("%.1f MiB", float64(n)/(1<<20))
+}
+
 // GitCaptureApprovalError contains only metadata for paths awaiting approval.
 // No candidate file or Git object bytes have been sent.
 type GitCaptureApprovalError struct {
@@ -32,12 +40,20 @@ func (e *GitCaptureApprovalError) Error() string { return e.Message }
 // digest checks happen after the stream ends. A GitCaptureApprovalError means
 // no candidate bytes were sent and can be used to prompt before an exact-path
 // approval retry.
+//
+// maxBundleBytes bounds the bundle the caller will accept. A larger capture
+// fails with ErrGitCaptureTooLarge as soon as its metadata declares the size,
+// before any bundle bytes are received.
 func (c *Client) CaptureGit(
 	ctx context.Context,
 	checkoutPath string,
 	policy *git.CaptureGitPolicy,
+	maxBundleBytes int64,
 	consume func(git.CaptureGitChunk_Kind, []byte) error,
 ) (*git.CaptureGitMetadata, error) {
+	if maxBundleBytes <= 0 || maxBundleBytes > MaxFileContentsSize {
+		maxBundleBytes = MaxFileContentsSize
+	}
 	md, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -83,6 +99,10 @@ func (c *Client) CaptureGit(
 					return nil, errors.New(errInfo.Message)
 				}
 			}
+			if metadata.BundleBytes > maxBundleBytes {
+				return nil, fmt.Errorf("%w: its bundle of unpushed commits and pending changes is %s, over the %s limit; push local commits, or commit or drop large pending files",
+					ErrGitCaptureTooLarge, formatMiB(metadata.BundleBytes), formatMiB(maxBundleBytes))
+			}
 		case *git.CaptureGitResponse_Chunk:
 			if metadata == nil {
 				return nil, errors.New("received git capture bytes before metadata")
@@ -91,7 +111,7 @@ func (c *Client) CaptureGit(
 			switch chunk.GetKind() {
 			case git.CAPTURE_CHUNK_BUNDLE:
 				bundleBytes += int64(len(chunk.Data))
-				if bundleBytes > MaxFileContentsSize || bundleBytes > metadata.BundleBytes {
+				if bundleBytes > maxBundleBytes || bundleBytes > metadata.BundleBytes {
 					return nil, errors.New("git capture bundle exceeds declared size")
 				}
 				_, _ = bundleHash.Write(chunk.Data)
