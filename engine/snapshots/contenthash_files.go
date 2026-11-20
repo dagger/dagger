@@ -86,15 +86,34 @@ func (f *contentHashFiles) read(id string, gone func() bool) (_ []byte, ok bool,
 	if !ok {
 		return nil, false, nil
 	}
-	dt, err := os.ReadFile(f.path(id))
-	if err != nil {
-		if os.IsNotExist(err) {
+	for attempt := 0; ; attempt++ {
+		dt, err := os.ReadFile(f.path(id))
+		if err == nil {
+			return dt, true, nil
+		}
+		if !os.IsNotExist(err) {
+			return nil, false, errors.Wrap(err, "read content hash file")
+		}
+		// remove unregisters a tree before it deletes the file, and write
+		// replaces one in a rename, so a missing file whose tree is still
+		// registered was removed and written again since the check above,
+		// or deleted by something else. A tree deleted by something else is
+		// not a tree that was never saved: a rescan of an imported snapshot
+		// gives other digests.
+		f.mu.Lock()
+		_, registered := f.ids[id]
+		if gone != nil && gone() {
+			registered = false
+		}
+		f.mu.Unlock()
+		if !registered {
 			// Removed since.
 			return nil, false, nil
 		}
-		return nil, false, errors.Wrap(err, "read content hash file")
+		if attempt > 0 {
+			return nil, false, errors.Errorf("content hash file of %s is missing", id)
+		}
 	}
-	return dt, true, nil
 }
 
 func (f *contentHashFiles) has(id string) bool {

@@ -101,6 +101,34 @@ func TestContentHashFilesSaveKeepsUnwritableTreesInMemory(t *testing.T) {
 	require.Equal(t, []byte("tree 3"), dt)
 }
 
+// A registered tree whose file is missing was deleted by something other than
+// the manager, which unregisters a tree before deleting its file: reading it
+// fails, rather than reporting no tree, which would make an imported
+// snapshot's digests come from a rescan. A tree the manager removed is no
+// tree.
+func TestContentHashFilesMissingFileIsAnError(t *testing.T) {
+	s := newMetadataStore()
+	files, err := newContentHashFiles(filepath.Join(t.TempDir(), "contenthash"))
+	require.NoError(t, err)
+	s.hashFiles = files
+	md := s.getOrCreate("a")
+	require.NoError(t, md.SetExternal(ContentHashMetadataKey, []byte("tree")))
+
+	require.NoError(t, os.Remove(files.path("a")))
+	_, _, err = files.read("a", nil)
+	require.ErrorContains(t, err, "missing")
+	_, err = md.GetExternal(ContentHashMetadataKey)
+	require.ErrorContains(t, err, "missing")
+	require.NotErrorIs(t, err, ErrExternalNotFound)
+
+	files.remove("a", nil)
+	_, ok, err := files.read("a", nil)
+	require.NoError(t, err)
+	require.False(t, ok)
+	_, err = md.GetExternal(ContentHashMetadataKey)
+	require.ErrorIs(t, err, ErrExternalNotFound)
+}
+
 // A tree saved after its metadata was dropped, as a background save can be,
 // is discarded rather than left on disk with nothing to remove it.
 func TestContentHashFilesDiscardWritesForDroppedMetadata(t *testing.T) {
