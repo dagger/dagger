@@ -84,6 +84,7 @@ var runCmd = &cobra.Command{
 var waitDelay time.Duration
 var runFocus bool
 var runLoadWorkspaceModules bool
+var runVersion string
 
 func init() {
 	// don't require -- to disambiguate subcommand flags
@@ -113,6 +114,16 @@ func init() {
 	}
 	if err := runCmd.Flags().MarkHidden("load-workspace-modules"); err != nil {
 		fmt.Fprintln(stderr, "Error hiding flag: load-workspace-modules", err)
+		os.Exit(1)
+	}
+	apiWithSessionCmd.Flags().StringVar(&runVersion, "version", "", "client version the run's own client, and SDK clients that reuse its session, announce to the engine")
+	runCmd.Flags().StringVar(&runVersion, "version", "", "client version the run's own client, and SDK clients that reuse its session, announce to the engine")
+	if err := apiWithSessionCmd.Flags().MarkHidden("version"); err != nil {
+		fmt.Fprintln(stderr, "Error hiding flag: version", err)
+		os.Exit(1)
+	}
+	if err := runCmd.Flags().MarkHidden("version"); err != nil {
+		fmt.Fprintln(stderr, "Error hiding flag: version", err)
 		os.Exit(1)
 	}
 }
@@ -155,10 +166,7 @@ func run(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("setup telemetry proxy: %w", err)
 	}
 
-	return withEngine(ctx, client.Params{
-		SecretToken:          sessionToken,
-		LoadWorkspaceModules: runLoadWorkspaceModules,
-	}, func(ctx context.Context, engineClient *client.Client) error {
+	return withEngine(ctx, runClientParams(sessionToken), func(ctx context.Context, engineClient *client.Client) error {
 		sessionL, err := net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {
 			return fmt.Errorf("session listen: %w", err)
@@ -210,6 +218,14 @@ func run(cmd *cobra.Command, args []string) error {
 
 		return cmdErr
 	})
+}
+
+func runClientParams(sessionToken string) client.Params {
+	return client.Params{
+		SecretToken:          sessionToken,
+		Version:              runVersion,
+		LoadWorkspaceModules: runLoadWorkspaceModules,
+	}
 }
 
 // sessionServer serves the session of `dagger run` or `dagger session` to
