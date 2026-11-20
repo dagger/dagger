@@ -155,6 +155,8 @@ type fakeAdapter struct {
 	priorityWait time.Duration
 	landing      atomic.Int64
 	work         func() CacheWork
+	// image is what ImageEntries returns.
+	image []uint64
 }
 
 type settledCall struct {
@@ -249,6 +251,8 @@ func (a *fakeAdapter) Settled(period uint64, sessions []protocol.SettleSession) 
 }
 
 func (a *fakeAdapter) CacheIdentity() (string, uint64) { return "cache-1", 3 }
+
+func (a *fakeAdapter) ImageEntries() []uint64 { return a.image }
 
 func (a *fakeAdapter) Export(ctx context.Context, req protocol.Export, known *dagql.KnownRows, consume func(context.Context, Export) error) error {
 	a.known.Store(known)
@@ -346,10 +350,11 @@ func TestBackoff(t *testing.T) {
 	require.InDelta(t, float64(2400*time.Millisecond), float64(b.next(0.99999)), float64(time.Millisecond))
 }
 
-// The engine's first message says hello with its identity and that it merges
-// held rows, numbered 1; the session is served once the service welcomes it.
+// The engine's first message says hello with its identity and the entries its
+// image ships, numbered 1; the session is served once the service welcomes it.
 func TestHello(t *testing.T) {
 	adapter := newFakeAdapter()
+	adapter.image = []uint64{1, 2, 3, 7}
 	adapter.renewals <- renewalRequest(time.Minute)
 	s, conn := testSession(t, adapter)
 	served := make(chan bool, 1)
@@ -360,7 +365,7 @@ func TestHello(t *testing.T) {
 	hello := conn.next(t)
 	require.Equal(t, protocol.TypeHello, hello.Type)
 	require.Equal(t, uint64(1), hello.ID, "IDs start at 1")
-	require.Equal(t, protocol.Hello{CacheID: "cache-1", Generation: 3, EngineVersion: "v0.20.0", EngineName: "dagger-engine"}, decode[protocol.Hello](t, hello))
+	require.Equal(t, protocol.Hello{CacheID: "cache-1", Generation: 3, EngineVersion: "v0.20.0", EngineName: "dagger-engine", Image: protocol.EntryNumbers{1, 2, 3, 7}}, decode[protocol.Hello](t, hello))
 	s.dispatch(protocol.Envelope{ID: 1, Re: hello.ID, Type: protocol.TypeWelcome, Body: json.RawMessage(`{}`)})
 	// Renewals start only after the welcome is consumed. Wait for one before
 	// canceling so the hello reply cannot race with cancellation.

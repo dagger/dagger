@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -259,9 +260,6 @@ func TestExportImageBundleFailsOnARowBusyUntilALaterEvaluation(t *testing.T) {
 	require.ErrorContains(t, err, "export image bundle: 1 of 1 results left out")
 }
 
-// A call's span reports that the engine image ships its result: an entry the
-// image's merge gave an image holding reports it, and one the engine made
-// itself doesn't.
 // The cache snapshot marks the entries the engine image ships: those its
 // merge at start gave an image holding, which every engine of the image has.
 // An entry the engine made is not marked.
@@ -279,21 +277,35 @@ func TestDebugCacheSnapshotMarksImageEntries(t *testing.T) {
 	require.False(t, entry.FromImage, "the engine made the entry")
 }
 
-func TestCacheResultStateImage(t *testing.T) {
+// The entries the engine image ships are every entry its merge gave an image
+// holding: the result it ships a part for, and the records of its closure,
+// which come without parts. An entry the engine made is not one of them.
+func TestImageEntries(t *testing.T) {
 	t.Parallel()
-	bundle := mergeTestImageOffered(t, "root", imageTestLayerOffer(ImageBlobAddress))
-	ctx, b, srv := transferTestCache(t)
-	reply, err := b.MergeValues(ctx, ImageCacheID, bundle)
+	ctx, c, srv := transferTestCache(t)
+	dep := persistedListTestResult(t, ctx, c, srv, "dep", &transferTestValue{Text: "dep"})
+	root := persistedListTestResult(t, ctx, c, srv, "root", &transferTestValue{Text: "pending"})
+	require.NoError(t, c.AddExplicitDependency(ctx, root, dep, "root reads dep"))
+	out, err := c.testOfferParts(ctx, root, []PersistedPartOffer{imageTestLayerOffer(ImageBlobAddress)})
 	require.NoError(t, err)
-	b.egraphMu.RLock()
-	row := b.resultsByID[sharedResultID(reply.Imported()[0].ResultID)]
-	b.egraphMu.RUnlock()
-	state, ok := b.resultState(ctx, row, nil)
-	require.True(t, ok)
-	require.True(t, state.Image, "the image ships the entry")
+	require.Equal(t, OfferAccepted, out[0].Outcome)
+	bundle := cloudTestBundle(t, ctx, c, root)
+	require.Len(t, bundle.Values, 2, "the root and its closure's record")
+	require.Len(t, bundle.Outputs, 1, "a part for the root alone")
 
-	own := persistedListTestResult(t, ctx, b, srv, "own", &transferTestValue{Text: "own"})
-	state, ok = b.resultState(ctx, own.cacheSharedResult(), nil)
-	require.True(t, ok)
-	require.False(t, state.Image, "the engine made the entry")
+	bctx, b, bsrv := transferTestCache(t)
+	require.Empty(t, b.ImageEntries(), "no image merged yet")
+	reply, err := b.MergeValues(bctx, ImageCacheID, bundle)
+	require.NoError(t, err)
+	var merged []uint64
+	for _, value := range reply.Values {
+		merged = append(merged, value.Number)
+	}
+	slices.Sort(merged)
+	merged = slices.Compact(merged)
+	require.Len(t, merged, 2)
+	own := persistedListTestResult(t, bctx, b, bsrv, "own", &transferTestValue{Text: "own"})
+	entries := b.ImageEntries()
+	require.Equal(t, merged, entries)
+	require.NotContains(t, entries, uint64(own.cacheSharedResult().id), "the engine made the entry")
 }

@@ -94,6 +94,9 @@ type Config struct {
 type Adapter interface {
 	// CacheIdentity returns the engine cache's identity and generation.
 	CacheIdentity() (cacheID string, generation uint64)
+	// ImageEntries returns the numbers of the cache's entries its engine
+	// image ships, sorted (protocol.Hello's Image).
+	ImageEntries() []uint64
 	// Export captures the requested roots and calls consume exactly once,
 	// while the captured chains stay open. The export's Bundle is nil when no
 	// root survived. The chains are released when consume returns. known are
