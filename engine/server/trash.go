@@ -97,11 +97,28 @@ func moveDiskTempMountsToTrash(rootDir string) {
 // snapshot manager makes a fresh directory of its own there. They are a cache
 // of that process: the dagql checkpoint loads the ones still owned again. An
 // engine that hashed many snapshots leaves many of them, so they are not
-// deleted inline at startup. A failure leaves them where they are, still
-// unread, until a later start moves them.
-func moveContentHashTreesToTrash(rootDir, dir string) {
-	if _, err := moveToTrash(dir, rootDir); err != nil {
+// deleted inline at startup, unless the disk is under the pressure that
+// triggers cache GC (policies): then the trees the checkpoint loads again
+// would need room beside the old ones, and those that don't fit would stay in
+// memory, so the old ones are removed first, as the sweeper itself blocks
+// startup under pressure. A failure to move them leaves them where they are,
+// still unread, until a later start moves them.
+func moveContentHashTreesToTrash(ctx context.Context, rootDir, dir string, policies []dagqlCachePrunePolicy) {
+	trashDir, err := moveToTrash(dir, rootDir)
+	if err != nil {
 		slog.Warn("failed to move a previous engine's content hash trees aside", "dir", dir, "err", err)
+		return
+	}
+	if trashDir == "" || len(policies) == 0 {
+		return
+	}
+	dstat, err := disk.GetDiskStat(rootDir)
+	if err != nil || !localCacheDiskPressureGCNeeded(policies, dstat) {
+		return
+	}
+	slog.Info("disk pressure detected; removing a previous engine's content hash trees before startup continues", "dir", trashDir)
+	if err := removeAllPaced(ctx, trashDir, &trashPacer{}); err != nil {
+		slog.Warn("failed to remove a previous engine's content hash trees; the sweeper retries", "dir", trashDir, "err", err)
 	}
 }
 

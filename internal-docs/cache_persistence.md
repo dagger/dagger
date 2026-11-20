@@ -518,8 +518,10 @@ collected snapshot. The files are a cache of the process, not a record: the
 dagql checkpoint stays authoritative across restarts, so its format is
 unchanged, and at startup the engine moves what the previous process left to
 the trash, for the background sweeper, before the checkpoint loads the trees it
-keeps. A tree that can't be written stays in memory instead; a tree file that
-can't be read fails `Checksum` rather than trigger a rescan. The files are not
+keeps (under disk pressure it removes them first, so the loaded trees have
+room). A tree that can't be written stays in memory instead, as all of them do
+when the manager can't make its directory; a tree file that can't be read
+fails `Checksum` rather than trigger a rescan. The files are not
 counted toward any cache entry's size, so `MaxUsedSpace`-style limits don't see
 them; they are bounded by snapshot GC, and free-space limits see them as any
 disk use.

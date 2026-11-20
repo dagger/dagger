@@ -810,7 +810,7 @@ func (srv *Server) initLocalCacheStateOnce(ctx context.Context, cfg config.Confi
 	// this process's in a fresh directory under contentHashDir; the ones the
 	// previous process left go to the trash.
 	contentHashDir := filepath.Join(srv.workerRootDir, "contenthash")
-	moveContentHashTreesToTrash(srv.rootDir, contentHashDir)
+	moveContentHashTreesToTrash(ctx, srv.rootDir, contentHashDir, workerGCPolicies)
 	srv.workerCache, err = bkcache.NewSnapshotManager(bkcache.SnapshotManagerOpt{
 		Snapshotter:  workerSnapshotter,
 		ContentStore: srv.contentStore,
