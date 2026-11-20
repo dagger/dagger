@@ -920,7 +920,7 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 		return hit, nil
 	}
 	// A record merged unprepared is prepared before its payload is decoded.
-	if err := c.prepareMergedPayload(ctx, res); err != nil {
+	if err := c.prepareMergedPayload(ctx, res, workLookup); err != nil {
 		return nil, err
 	}
 	wcprof.Lock(ctx, &res.attachDepsMu, resultDepsLockIdent)

@@ -67,6 +67,9 @@ type snapshotShareItem struct {
 	class   eqClassID
 	members map[sharedResultID]*sharedResult
 	ops     []cacheOperation
+	// kind is the kind of class its pass found, once it probed the members
+	// (selectShareSlots).
+	kind shareClassKind
 }
 
 // EnableSnapshotSharing admits early sharing on a live cache. The engine
@@ -287,7 +290,7 @@ func (c *Cache) notifySnapshotShareCompletion(ctx context.Context, row *sharedRe
 	if c.shareAdmissionState() != snapshotShareOn {
 		return
 	}
-	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+	c.lockGraphFor(ctx, workSharing)
 	c.queueSnapshotShareRowLocked(ctx, row)
 	duplicates := c.takeShareDuplicateHoldsLocked()
 	c.egraphMu.Unlock()
@@ -427,12 +430,13 @@ func (c *Cache) takeSnapshotShareItemLocked() *snapshotShareItem {
 }
 
 func (c *Cache) runSnapshotShareWorker(ctx context.Context) {
+	ctx = withCacheWork(ctx, workSharing)
 	for {
 		// Each turn is a profile op, on an engine that records, so a wait
 		// behind the worker's hold on the graph lock names it. A turn that
 		// finds no item ends with no outcome.
 		jobCtx, op := wcprof.BeginOp(ctx, wcprof.OpKindInternal, "snapshot.share", wcprof.OpOpts{})
-		wcprof.WriteLock(jobCtx, &c.egraphMu, egraphLockIdent)
+		c.lockGraphFor(jobCtx, workSharing)
 		item := c.takeSnapshotShareItemLocked()
 		duplicates := c.takeShareDuplicateHoldsLocked()
 		c.egraphMu.Unlock()
@@ -776,6 +780,7 @@ func (c *Cache) selectShareSlots(ctx context.Context, item *snapshotShareItem) [
 	rows := shareMemberOrder(item.members)
 	now := time.Now().Unix()
 	observed := c.probeShareMembers(ctx, rows)
+	item.kind = shareClassKindOf(observed)
 
 	// Lookup preparation resolves a frame's numeric references through E, so
 	// it precedes the E section, as in newSessionlessPartSourceLease. A
@@ -801,7 +806,7 @@ func (c *Cache) selectShareSlots(ctx context.Context, item *snapshotShareItem) [
 	type sharePair struct{ receiver, donor sharedResultID }
 	eligible := make(map[sharedResultID]bool, len(rows))
 	admits := map[sharePair]bool{}
-	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+	c.lockGraphFor(ctx, workSharing)
 	for _, row := range rows {
 		lookup, prepared := lookups[row.id]
 		eligible[row.id] = prepared && c.shareReceiverEligibleLocked(row, now)
@@ -928,7 +933,7 @@ func (c *Cache) preflightShareDecode(ctx context.Context, srv *Server, roots []u
 			continue
 		}
 		seen[id] = true
-		wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+		c.lockGraphFor(ctx, workSharing)
 		row := c.resultsByID[sharedResultID(id)]
 		if row != nil {
 			c.incrementIncomingOwnershipLocked(ctx, row)
@@ -1163,7 +1168,12 @@ func shareSkipCause(err error, outcome GateOutcome) error {
 // every selected slot, commit in a fixed order, release every cohort hold,
 // then externally finish every receipt exactly once.
 func (c *Cache) runSnapshotSharePass(ctx context.Context, item *snapshotShareItem) {
+	prepared, members := c.firstUsesBy(workSharing), len(item.members)
 	states, deferred := c.planSharePass(ctx, item)
+	// Counted once every slot has ended, with the first uses the pass made:
+	// the worker runs one pass at a time, and only its pass's work carries
+	// workSharing.
+	defer func() { c.countSharePass(item.kind, members, len(states), prepared) }()
 	if c.testBeforeSharePass != nil {
 		c.testBeforeSharePass(item, len(states))
 	}
@@ -1477,7 +1487,7 @@ func (c *Cache) planSharePass(ctx context.Context, item *snapshotShareItem) ([]*
 // has run and a receiver costs at most one pass per part.
 func (c *Cache) releaseSnapshotShareMembers(ctx context.Context, item *snapshotShareItem, successors []*sharedResult) {
 	cleanupCtx := context.WithoutCancel(ctx)
-	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+	c.lockGraphFor(ctx, workSharing)
 	for _, row := range successors {
 		c.queueSnapshotShareRowLocked(cleanupCtx, row)
 	}
@@ -1497,4 +1507,101 @@ func (c *Cache) releaseSnapshotShareMembers(ctx context.Context, item *snapshotS
 	if err != nil {
 		c.recordShareCleanupError(err)
 	}
+}
+
+// shareClassKind is the kind of class a snapshot-sharing pass ran for, as
+// its probes found the members (SharingStats).
+type shareClassKind uint8
+
+const (
+	// shareClassAlone is a class of one member, which has no other member
+	// to share with.
+	shareClassAlone shareClassKind = iota
+	// shareClassNoDonor is a class of several members none of which held a
+	// part ready to give.
+	shareClassNoDonor
+	// shareClassDonor is a class with a member that held one.
+	shareClassDonor
+	numShareClassKinds
+)
+
+var shareClassKindNames = [numShareClassKinds]string{
+	shareClassAlone:   "alone",
+	shareClassNoDonor: "no_donor",
+	shareClassDonor:   "donor",
+}
+
+func (k shareClassKind) String() string { return shareClassKindNames[k] }
+
+// shareClassKindOf is the kind of class whose members' probes are observed.
+func shareClassKindOf(observed map[sharedResultID]*shareRowProbe) shareClassKind {
+	if len(observed) <= 1 {
+		return shareClassAlone
+	}
+	for _, member := range observed {
+		if !member.usable {
+			continue
+		}
+		for _, p := range member.probes {
+			if shareDonorReady(p) {
+				return shareClassDonor
+			}
+		}
+	}
+	return shareClassNoDonor
+}
+
+// SharingStats are what the snapshot-sharing passes did over the cache's
+// life, by the kind of class each pass ran for: alone (a class of one
+// member), no_donor (a class of several, none of which held a part ready to
+// give) and donor (a class with a member that held one). A kind with no pass
+// is left out.
+type SharingStats struct {
+	Kinds map[string]SharePassStats
+}
+
+// SharePassStats count the snapshot-sharing passes of one kind of class:
+// how many ran, the members they probed, how many selected a slot and the
+// slots they selected, and the payloads of merged records their first uses
+// prepared, with the time that took.
+type SharePassStats struct {
+	Passes, Members int64
+	Slotted, Slots  int64
+	Prepared        int64
+	PrepareTotal    time.Duration
+}
+
+// countSharePass counts one pass over a class of kind, which probed members
+// and planned slots slots, with the first uses by sharing passes before it
+// began, prepared.
+func (c *Cache) countSharePass(kind shareClassKind, members, slots int, prepared FirstUsePath) {
+	after := c.firstUsesBy(workSharing)
+	c.shareStatsMu.Lock()
+	defer c.shareStatsMu.Unlock()
+	stats := &c.shareStats[kind]
+	stats.Passes++
+	stats.Members += int64(members)
+	if slots > 0 {
+		stats.Slotted++
+		stats.Slots += int64(slots)
+	}
+	stats.Prepared += after.Prepared - prepared.Prepared
+	stats.PrepareTotal += after.Total - prepared.Total
+}
+
+// Sharing returns the cache's SharingStats so far.
+func (c *Cache) Sharing() SharingStats {
+	c.shareStatsMu.Lock()
+	defer c.shareStatsMu.Unlock()
+	var out SharingStats
+	for kind, stats := range c.shareStats {
+		if stats.Passes == 0 {
+			continue
+		}
+		if out.Kinds == nil {
+			out.Kinds = map[string]SharePassStats{}
+		}
+		out.Kinds[shareClassKind(kind).String()] = stats
+	}
+	return out
 }

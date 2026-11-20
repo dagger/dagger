@@ -94,13 +94,17 @@ type mergedFirstUse struct {
 // leaves it out (snapshotPersistedRootClosureLocked). It takes only the
 // record's own mutex and res.payloadMu, so a caller can hold res's lazyMu,
 // but no other lock.
-func (c *Cache) prepareMergedPayload(ctx context.Context, res *sharedResult) error {
-	return c.prepareMerged(ctx, res, false)
+//
+// A preparation is counted by the path it came by (FirstUseStats.Paths):
+// the kind of work ctx carries (withCacheWork), or otherwise when it carries
+// none.
+func (c *Cache) prepareMergedPayload(ctx context.Context, res *sharedResult, otherwise cacheWork) error {
+	return c.prepareMerged(ctx, res, false, otherwise)
 }
 
 // prepareMerged is prepareMergedPayload, counted as a save's preparation
 // when atSave is set (FirstUseStats).
-func (c *Cache) prepareMerged(ctx context.Context, res *sharedResult, atSave bool) error {
+func (c *Cache) prepareMerged(ctx context.Context, res *sharedResult, atSave bool, otherwise cacheWork) error {
 	if res == nil {
 		return nil
 	}
@@ -120,7 +124,7 @@ func (c *Cache) prepareMerged(ctx context.Context, res *sharedResult, atSave boo
 	var waited time.Duration
 	rec := PersistedRecord{ResultID: uint64(res.id), Envelope: *env, Call: res.loadResultCall(), SnapshotLinks: res.loadSnapshotOwnerLinks()}
 	defer func() {
-		c.firstUsePrepared(firstUsePreparation{took: time.Since(began), waited: waited, refused: use.err != nil, atSave: atSave, frame: rec.Call, env: env})
+		c.firstUsePrepared(firstUsePreparation{took: time.Since(began), waited: waited, refused: use.err != nil, atSave: atSave, path: cacheWorkOf(ctx, otherwise), frame: rec.Call, env: env})
 	}()
 	prepared, err := prepareFirstUseRecord(rec, use)
 	if err != nil {
@@ -188,7 +192,7 @@ func (c *Cache) prepareMergedPayloadsForSave(ctx context.Context) {
 	for range min(runtime.GOMAXPROCS(0), len(pending)) {
 		workers.Go(func() {
 			for i := next.Add(1) - 1; i < int64(len(pending)); i = next.Add(1) - 1 {
-				_ = c.prepareMerged(ctx, pending[i], true)
+				_ = c.prepareMerged(ctx, pending[i], true, workOther)
 			}
 		})
 	}
@@ -288,17 +292,40 @@ func (res *sharedResult) holdsUnpreparedPayload() bool {
 // its record's recipe, its payload's size (persistedEnvelopePayloadBytes),
 // and its time split into preparing the payload and waiting for the entry's
 // payload lock to install it, so a long one shows whether it was the record
-// or a wait. The Save fields count the same for the records nothing used,
-// which a save prepared before it wrote them (prepareMergedPayloadsForSave),
-// with SaveWall the time the save spent preparing them, in parallel.
+// or a wait. Paths splits the first uses by the path they came by, so work a
+// call needed can be told from work nothing asked for: lookup (a call's
+// decode of its hit), export, offer, part (fetching or installing an
+// entry's parts), sharing (a snapshot-sharing pass), merge or restore (a
+// merge warming the parts of the entries it lands on), and other; a path
+// with none is left out. The Save fields count the same for the records
+// nothing used, which a save prepared before it wrote them
+// (prepareMergedPayloadsForSave), with SaveWall the time the save spent
+// preparing them, in parallel.
 type FirstUseStats struct {
 	Prepared, Refused               int64
 	Total, Longest                  time.Duration
 	LongestRecipe                   string
 	LongestBytes                    int64
 	LongestPrepare, LongestLockWait time.Duration
+	Paths                           map[string]FirstUsePath
 	SavePrepared, SaveRefused       int64
 	SaveTotal, SaveWall             time.Duration
+}
+
+// FirstUsePath counts the first uses that came by one path: the payloads
+// prepared, refused ones included, and the time that took in all and at the
+// longest.
+type FirstUsePath struct {
+	Prepared       int64
+	Total, Longest time.Duration
+}
+
+func (p *FirstUsePath) add(took time.Duration) {
+	p.Prepared++
+	p.Total += took
+	if took > p.Longest {
+		p.Longest = took
+	}
 }
 
 // firstUsePreparation is one preparation of a merged record's payload, as
@@ -308,6 +335,7 @@ type FirstUseStats struct {
 type firstUsePreparation struct {
 	took, waited    time.Duration
 	refused, atSave bool
+	path            cacheWork
 	frame           *ResultCall
 	env             *PersistedResultEnvelope
 }
@@ -332,6 +360,7 @@ func (c *Cache) firstUsePrepared(p firstUsePreparation) {
 		c.firstUseStats.Prepared++
 	}
 	c.firstUseStats.Total += p.took
+	c.firstUsePaths[p.path].add(p.took)
 	longest := p.took > c.firstUseStats.Longest
 	c.firstUseMu.Unlock()
 	if !longest {
@@ -358,5 +387,22 @@ func (c *Cache) firstUsePrepared(p firstUsePreparation) {
 func (c *Cache) FirstUse() FirstUseStats {
 	c.firstUseMu.Lock()
 	defer c.firstUseMu.Unlock()
-	return c.firstUseStats
+	stats := c.firstUseStats
+	for path, counted := range c.firstUsePaths {
+		if counted.Prepared == 0 {
+			continue
+		}
+		if stats.Paths == nil {
+			stats.Paths = map[string]FirstUsePath{}
+		}
+		stats.Paths[cacheWork(path).String()] = counted
+	}
+	return stats
+}
+
+// firstUsesBy returns the first uses that came by path so far.
+func (c *Cache) firstUsesBy(path cacheWork) FirstUsePath {
+	c.firstUseMu.Lock()
+	defer c.firstUseMu.Unlock()
+	return c.firstUsePaths[path]
 }

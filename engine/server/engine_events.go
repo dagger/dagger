@@ -237,6 +237,8 @@ func (srv *Server) stopEngineEvents(ctx context.Context, clean bool) {
 			PartsWithoutSource: srv.engineCache.PartsWithoutSource(),
 			UncountedMisses:    srv.uncountedMisses(),
 			FirstUse:           engineFirstUse(srv.engineCache.FirstUse()),
+			LookupLockWaits:    engineLookupLockWaits(srv.engineCache.LookupLockWaits()),
+			Sharing:            engineSharing(srv.engineCache.Sharing().Kinds),
 		})
 	}
 	shutdownCtx := context.WithoutCancel(ctx)
@@ -300,16 +302,23 @@ func (srv *Server) restoreEvents() []telemetryattrs.EngineRestore {
 			Decode:       int64(report.Decode),
 			Prepare:      int64(report.Prepare),
 			Commit:       int64(report.Commit),
+			Window:       engineRestoreWindow(report.Window),
 		}
 		for _, part := range report.Parts {
 			event.Parts = append(event.Parts, telemetryattrs.EngineRestorePart{
-				Records:    part.Records,
-				Committed:  unix(part.Committed),
-				Late:       part.Late,
-				WorstLate:  int64(part.WorstLate),
-				LeastLate:  int64(part.LeastLate),
-				LockWait:   int64(part.LockWait),
-				CommitHold: int64(part.CommitHold),
+				Records:          part.Records,
+				Committed:        unix(part.Committed),
+				Late:             part.Late,
+				WorstLate:        int64(part.WorstLate),
+				LeastLate:        int64(part.LeastLate),
+				LockWait:         int64(part.LockWait),
+				CommitHold:       int64(part.CommitHold),
+				Decode:           int64(part.Decode),
+				Prepare:          int64(part.Prepare),
+				Commit:           int64(part.Commit),
+				PriorityWait:     int64(part.PriorityWait),
+				PrepareLockWait:  int64(part.PrepareLockWait),
+				PrepareLockWaits: nanoseconds(part.PrepareLockWaits),
 			})
 		}
 		events[i] = event
@@ -329,9 +338,97 @@ func engineFirstUse(stats dagql.FirstUseStats) telemetryattrs.EngineFirstUse {
 		LongestBytes:    stats.LongestBytes,
 		LongestPrepare:  int64(stats.LongestPrepare),
 		LongestLockWait: int64(stats.LongestLockWait),
+		Paths:           engineFirstUsePaths(stats.Paths),
 		SavePrepared:    stats.SavePrepared,
 		SaveRefused:     stats.SaveRefused,
 		SaveTotal:       int64(stats.SaveTotal),
 		SaveWall:        int64(stats.SaveWall),
 	}
+}
+
+// engineFirstUsePaths are first uses by path as the engine.stop event
+// carries them.
+func engineFirstUsePaths(paths map[string]dagql.FirstUsePath) map[string]telemetryattrs.EngineFirstUsePath {
+	if len(paths) == 0 {
+		return nil
+	}
+	out := make(map[string]telemetryattrs.EngineFirstUsePath, len(paths))
+	for path, uses := range paths {
+		out[path] = telemetryattrs.EngineFirstUsePath{Prepared: uses.Prepared, Total: int64(uses.Total), Longest: int64(uses.Longest)}
+	}
+	return out
+}
+
+// engineLookupLockWaits are the cache's LookupLockWaits as the engine.stop
+// event carries them.
+func engineLookupLockWaits(waits dagql.LookupLockWaits) telemetryattrs.EngineLookupLockWaits {
+	return telemetryattrs.EngineLookupLockWaits{Landing: engineLockWaits(waits.Landing), Other: engineLockWaits(waits.Other)}
+}
+
+func engineLockWaits(byHolder map[string]dagql.LockWaitStats) map[string]telemetryattrs.EngineLockWaits {
+	if len(byHolder) == 0 {
+		return nil
+	}
+	out := make(map[string]telemetryattrs.EngineLockWaits, len(byHolder))
+	for holder, waits := range byHolder {
+		out[holder] = telemetryattrs.EngineLockWaits{Waits: waits.Waits, Total: int64(waits.Total), Longest: int64(waits.Longest)}
+	}
+	return out
+}
+
+// engineSharing are the sharing passes by kind of class as the engine.stop
+// event carries them.
+func engineSharing(kinds map[string]dagql.SharePassStats) map[string]telemetryattrs.EngineSharePasses {
+	if len(kinds) == 0 {
+		return nil
+	}
+	out := make(map[string]telemetryattrs.EngineSharePasses, len(kinds))
+	for kind, stats := range kinds {
+		out[kind] = telemetryattrs.EngineSharePasses{
+			Passes:       stats.Passes,
+			Members:      stats.Members,
+			Slotted:      stats.Slotted,
+			Slots:        stats.Slots,
+			Prepared:     stats.Prepared,
+			PrepareTotal: int64(stats.PrepareTotal),
+		}
+	}
+	return out
+}
+
+// engineRestoreWindow is a restore's window as the engine.stop event
+// carries it.
+func engineRestoreWindow(w *remotecache.RestoreWindow) *telemetryattrs.EngineRestoreWindow {
+	if w == nil {
+		return nil
+	}
+	out := &telemetryattrs.EngineRestoreWindow{
+		Wall:            int64(w.Wall),
+		CPU:             int64(w.CPU),
+		GCCPU:           int64(w.GCCPU),
+		GCAssist:        int64(w.GCAssist),
+		GCCycles:        w.GCCycles,
+		SchedWaits:      w.SchedWaits,
+		SchedWait:       int64(w.SchedWait),
+		LookupLockWaits: engineLockWaits(w.LookupLockWaits),
+		FirstUses:       engineFirstUsePaths(w.FirstUses),
+		Sharing:         engineSharing(w.Sharing),
+	}
+	if w.RunqWaitKnown {
+		runq := int64(w.RunqWait)
+		out.RunqWait = &runq
+	}
+	return out
+}
+
+// nanoseconds is durations by name as the engine.stop event carries them.
+func nanoseconds(durations map[string]time.Duration) map[string]int64 {
+	if len(durations) == 0 {
+		return nil
+	}
+	out := make(map[string]int64, len(durations))
+	for name, d := range durations {
+		out[name] = int64(d)
+	}
+	return out
 }

@@ -466,7 +466,7 @@ func (c *Cache) TryAcquire(ctx context.Context, receiver AnyResult, address Pers
 	if err != nil {
 		return nil, GateReselect, err
 	}
-	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+	c.lockGraphForCtx(ctx, workPart)
 	defer c.egraphMu.Unlock()
 	row, err := c.validatePartTaskLocked(receiver, task)
 	if err != nil {
@@ -533,7 +533,7 @@ func (c *Cache) PrepareOriginal(ctx context.Context, receiver AnyResult, group L
 			return nil, GateReselect, err
 		}
 	}
-	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+	c.lockGraphForCtx(ctx, workPart)
 	defer c.egraphMu.Unlock()
 	row, err := c.validatePartTaskLocked(receiver, task)
 	if err != nil {
@@ -595,7 +595,7 @@ func (c *Cache) TryAcquireForDecision(ctx context.Context, receiver AnyResult, a
 	if _, err := partAddressKey(address); err != nil {
 		return nil, GateReselect, err
 	}
-	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+	c.lockGraphForCtx(ctx, workPart)
 	defer c.egraphMu.Unlock()
 	row, err := c.validatePartTaskLocked(receiver, task)
 	if err != nil {
@@ -624,7 +624,7 @@ func (c *Cache) BeginOriginal(ctx context.Context, check *SourceCheck) (*Origina
 		return nil, GateReselect, fmt.Errorf("lazy: missing source check")
 	}
 	drain := check.drain
-	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+	c.lockGraphForCtx(ctx, workPart)
 	defer c.egraphMu.Unlock()
 	if c.resultsByID[drain.task.row.id] != drain.task.row {
 		return nil, GateReselect, fmt.Errorf("lazy: unregistered receiver")
@@ -653,7 +653,7 @@ func (c *Cache) endPartTaskBody(ctx context.Context, task *PartTaskToken, succes
 	if gate == nil {
 		return
 	}
-	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+	c.lockGraphForCtx(ctx, workPart)
 	gate.mu.Lock()
 	for _, group := range gate.groups {
 		if group.task != task {

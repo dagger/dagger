@@ -108,7 +108,7 @@ func (capture *HeldCapturedClosure) Release(ctx context.Context) error {
 	capture.releaseOnce.Do(func() {
 		ctx = context.WithoutCancel(ctx)
 		c := capture.cache
-		wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+		c.lockGraphForCtx(ctx, workExport)
 		var queue collectionQueue
 		for _, owner := range capture.owners {
 			q, err := c.releaseOfferOwnerLocked(ctx, owner)
@@ -188,7 +188,7 @@ func (c *Cache) holdTransferClosure(ctx context.Context, selection ValueSelectio
 		}
 	}
 	lockStart := time.Now()
-	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+	c.lockGraphForCtx(ctx, workExport)
 	walkStart := time.Now()
 	capture.walkWait = walkStart.Sub(lockStart)
 	// seen is 1 while a row's walk is under way, 2 once it's done, and 3
@@ -408,7 +408,7 @@ func (err *staleOffersError) Unwrap() error { return ErrPersistStateNotReady }
 // next capture to judge.
 func (c *Cache) retireStaleOffers(ctx context.Context, stale []staleOffer) error {
 	ctx = context.WithoutCancel(ctx)
-	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+	c.lockGraphForCtx(ctx, workExport)
 	var queue collectionQueue
 	var rerr error
 	// Each row is judged once, before any of its offers is retired: a
@@ -1217,6 +1217,7 @@ func (capture *HeldCapturedClosure) checkRecords() {
 //
 //nolint:gocyclo // one step per export phase over the held closure; splitting hides the order of the steps
 func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection, cfg config.RefConfig, consume func(context.Context, *ExportedValues) error) (rerr error) {
+	ctx = withCacheWork(ctx, workExport)
 	op, err := c.beginCacheOperation()
 	if err != nil {
 		return err

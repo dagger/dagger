@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
@@ -19,6 +20,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/remotecache"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
@@ -455,4 +457,58 @@ func TestEngineStopEventCountsUncountedMisses(t *testing.T) {
 	stop := events[len(events)-1]
 	require.Equal(t, telemetryattrs.EngineEventStop, stop.kind)
 	require.Equal(t, uncounted, decodeEngineEvent[telemetryattrs.EngineStopEvent](t, stop).UncountedMisses)
+}
+
+// The stop event carries, for each restored file, its parts' own stages
+// and its window, and for the engine, its lookups' waits for the graph lock,
+// its first uses by path and its sharing passes.
+func TestEngineStopEventCarriesWhereLandingTimeWent(t *testing.T) {
+	t.Parallel()
+	ctx := boundedContext(t)
+	cache := openEngineEventTestCache(t, "")
+	srv, exporter := engineEventTestServer(cache)
+	srv.startEngineEvents()
+	adapter := newTestRemoteCacheAdapter(t, cache)
+	srv.remoteCacheAdapter = adapter
+	adapter.Restored(remotecache.RestoreReport{
+		Check: "test-base", Kind: "whole", Digest: digest.FromString("whole"), Arrived: time.Unix(100, 0),
+		Parts: []remotecache.RestoredPartReport{{
+			Records: 3, Committed: time.Unix(101, 0),
+			Decode: time.Millisecond, Prepare: 2 * time.Millisecond, Commit: 3 * time.Millisecond, PriorityWait: 4 * time.Millisecond,
+			PrepareLockWait: 5 * time.Millisecond, PrepareLockWaits: map[string]time.Duration{"sharing": 5 * time.Millisecond},
+		}},
+		Window: &remotecache.RestoreWindow{
+			Wall: time.Second, CPU: 2 * time.Second, GCCPU: 300 * time.Millisecond, GCAssist: 100 * time.Millisecond, GCCycles: 2,
+			SchedWaits: 40, SchedWait: 5 * time.Millisecond, RunqWait: 7 * time.Millisecond, RunqWaitKnown: true,
+			LookupLockWaits: map[string]dagql.LockWaitStats{"sharing": {Waits: 2, Total: 6 * time.Millisecond}},
+			FirstUses:       map[string]dagql.FirstUsePath{"sharing": {Prepared: 9, Total: 8 * time.Millisecond}},
+			Sharing:         map[string]dagql.SharePassStats{"alone": {Passes: 9, Members: 9, Prepared: 9, PrepareTotal: 8 * time.Millisecond}},
+		},
+	})
+	adapter.Restored(remotecache.RestoreReport{Check: "test-base", Kind: "head", Digest: digest.FromString("head"), Arrived: time.Unix(100, 0), Window: &remotecache.RestoreWindow{Wall: time.Second}})
+	require.NoError(t, cache.Close(ctx))
+	srv.stopEngineEvents(ctx, true)
+	events := exporter.events(t)
+	stop := decodeEngineEvent[telemetryattrs.EngineStopEvent](t, events[len(events)-1])
+	require.Len(t, stop.Restores, 2)
+	require.Equal(t, []telemetryattrs.EngineRestorePart{{
+		Records: 3, Committed: time.Unix(101, 0).UnixNano(),
+		Decode: int64(time.Millisecond), Prepare: int64(2 * time.Millisecond), Commit: int64(3 * time.Millisecond), PriorityWait: int64(4 * time.Millisecond),
+		PrepareLockWait: int64(5 * time.Millisecond), PrepareLockWaits: map[string]int64{"sharing": int64(5 * time.Millisecond)},
+	}}, stop.Restores[0].Parts)
+	runq := int64(7 * time.Millisecond)
+	require.Equal(t, &telemetryattrs.EngineRestoreWindow{
+		Wall: int64(time.Second), CPU: int64(2 * time.Second), GCCPU: int64(300 * time.Millisecond), GCAssist: int64(100 * time.Millisecond), GCCycles: 2,
+		SchedWaits: 40, SchedWait: int64(5 * time.Millisecond), RunqWait: &runq,
+		LookupLockWaits: map[string]telemetryattrs.EngineLockWaits{"sharing": {Waits: 2, Total: int64(6 * time.Millisecond)}},
+		FirstUses:       map[string]telemetryattrs.EngineFirstUsePath{"sharing": {Prepared: 9, Total: int64(8 * time.Millisecond)}},
+		Sharing:         map[string]telemetryattrs.EngineSharePasses{"alone": {Passes: 9, Members: 9, Prepared: 9, PrepareTotal: int64(8 * time.Millisecond)}},
+	}, stop.Restores[0].Window)
+	require.Equal(t, &telemetryattrs.EngineRestoreWindow{Wall: int64(time.Second)}, stop.Restores[1].Window, "a run-queue wait that couldn't be read is absent, not 0")
+
+	require.Equal(t, telemetryattrs.EngineLookupLockWaits{
+		Landing: map[string]telemetryattrs.EngineLockWaits{"restore": {Waits: 1, Total: 5, Longest: 5}},
+	}, engineLookupLockWaits(dagql.LookupLockWaits{Landing: map[string]dagql.LockWaitStats{"restore": {Waits: 1, Total: 5, Longest: 5}}}))
+	require.Equal(t, map[string]telemetryattrs.EngineFirstUsePath{"lookup": {Prepared: 2, Total: 9, Longest: 7}},
+		engineFirstUsePaths(map[string]dagql.FirstUsePath{"lookup": {Prepared: 2, Total: 9, Longest: 7}}))
 }

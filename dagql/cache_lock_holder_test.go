@@ -23,7 +23,9 @@ import (
 // lockTakers records, for each exclusive take of c's graph lock while a
 // recorder is active, the cache function that took it and the holder it
 // marked; the returned function reads them, by the function's name after
-// its receiver (holdTransferClosure, HoldEntry.func1).
+// its receiver (holdTransferClosure, HoldEntry.func1). The cache's helpers
+// that take the lock for a kind of work (graphLockHelpers) aren't takers:
+// their callers are.
 func lockTakers(t *testing.T, c *Cache) func() map[string][]uint64 {
 	t.Helper()
 	wcprof.EnsureRecorder()
@@ -34,7 +36,7 @@ func lockTakers(t *testing.T, c *Cache) func() map[string][]uint64 {
 		frames := runtime.CallersFrames(pcs[:runtime.Callers(2, pcs)])
 		for {
 			f, more := frames.Next()
-			if !strings.Contains(f.Function, "/engine/wcprof.") {
+			if !strings.Contains(f.Function, "/engine/wcprof.") && !graphLockHelpers[strings.TrimPrefix(f.Function, "github.com/dagger/dagger/dagql.(*Cache).")] {
 				name := f.Function
 				if i := strings.Index(name, ")."); i >= 0 {
 					name = name[i+2:]
@@ -55,6 +57,15 @@ func lockTakers(t *testing.T, c *Cache) func() map[string][]uint64 {
 		defer mu.Unlock()
 		return maps.Clone(takers)
 	}
+}
+
+// graphLockHelpers are the cache's functions that take the graph lock for a
+// kind of work on their callers' behalf.
+var graphLockHelpers = map[string]bool{
+	"lockGraphFor":        true,
+	"lockGraphForCtx":     true,
+	"lookupReadLockGraph": true,
+	"lookupLockGraph":     true,
 }
 
 // requireTakesNamed checks that every take by a function whose name starts

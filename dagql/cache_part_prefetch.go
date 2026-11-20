@@ -306,7 +306,9 @@ func (c *Cache) partPrefetch(ctx context.Context) *partPrefetcher {
 	if c.partPrefetchConfig != nil {
 		cfg = *c.partPrefetchConfig
 	}
-	base, cancel := context.WithCancel(context.Background())
+	// The prefetcher's work is the parts': a first use it makes, or a hold of
+	// the graph lock, is named so (withCacheWork).
+	base, cancel := context.WithCancel(withCacheWork(context.Background(), workPart))
 	p := &partPrefetcher{cache: c, cfg: cfg, snapshot: snapshot, importer: importer, ctx: base, cancel: cancel, logger: slog.FromContext(ctx), wake: make(chan struct{}, 1), jobs: map[partPrefetchJobKey]*partPrefetchJob{}, outcomes: map[string]int64{}, placeFetched: map[int64]int64{}, placeUsed: map[int64]int64{}, holds: map[digest.Digest]*partPrefetchHold{}, fetching: map[digest.Digest]*partPrefetchDownload{}, changed: make(chan struct{}), consumed: map[digest.Digest]time.Time{}, aheads: map[*partOffer]*partPrefetchAhead{}, rows: map[*partOffer]sharedResultID{}, aheadBytes: map[digest.Digest]int64{}, aheadLayers: map[digest.Digest]int{}}
 	p.cond = sync.NewCond(&p.mu)
 	p.wg.Add(cfg.workers + cfg.smallWorkers + 1)
