@@ -778,7 +778,7 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 			require.NoError(t, err)
 
 			tty := console.Tty()
-			err = pty.Setsize(tty, &pty.Winsize{Rows: 10, Cols: 80}) // for plain, we should make this wider, like 150
+			err = pty.Setsize(tty, &pty.Winsize{Rows: 20, Cols: 120})
 			require.NoError(t, err)
 
 			cmd := hostDaggerCommand(
@@ -805,14 +805,12 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 				allowLLM: "",
 				module:   directModuleRef,
 			},
-			// TODO: find a way to test plain tui.
-			// under test, it doesn't acknowledge input, but works fine irl
-			// {
-			// 	name:     "plain tui direct remote module call",
-			// 	allowLLM: "",
-			// 	module:   directModuleRef,
-			// 	plain:    true,
-			// },
+			{
+				name:     "plain tui direct remote module call",
+				allowLLM: "",
+				module:   directModuleRef,
+				plain:    true,
+			},
 			{
 				name:     "allowed unrelated, calling direct",
 				allowLLM: "github.com/dagger/dagger",
@@ -846,12 +844,27 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 				err := cmd.Start()
 				require.NoError(t, err)
 
-				_, err = console.ExpectString("Allow LLM access?")
-				require.NoError(t, err)
-
-				// only test the  "no" case- the yes case persists history and requires special handling
-				_, err = console.SendLine("n")
-				require.NoError(t, err)
+				// LLM access is an approval. The plain frontend asks it as a
+				// yes/no question naming who asks; the pretty TUI renders it
+				// inline under the call, without taking focus: `a` jumps to
+				// it. Only test the "no" case: the yes case may persist.
+				if tc.plain {
+					_, err = console.ExpectString("Allow LLM access for github.com/dagger/dagger-test-modules/llm/direct (requested by")
+					require.NoError(t, err)
+					_, err = console.SendLine("n")
+					require.NoError(t, err)
+				} else {
+					_, err = console.ExpectString("Use the LLM API?")
+					require.NoError(t, err)
+					_, err = console.Send("a")
+					require.NoError(t, err)
+					// Focused, it lists its choices. (Match unstyled text:
+					// the raw output styles keys apart from their labels.)
+					_, err = console.ExpectString("Allow for this session")
+					require.NoError(t, err)
+					_, err = console.Send("n")
+					require.NoError(t, err)
+				}
 
 				_, err = console.ExpectString("was denied LLM access")
 				require.NoError(t, err)
