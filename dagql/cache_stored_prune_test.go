@@ -222,6 +222,7 @@ func storedPruneTestPlace(t *testing.T, ctx context.Context, cloud *Cache, roots
 func TestPoolEstimateCountsTheStoredRootsClosure(t *testing.T) {
 	t.Parallel()
 	ctx, cloud, r, service := storedPartServiceTestCloud(t)
+	require.NoError(t, cloud.VerifyPoolMeasure(), "the pool's kept measure follows a part whose service it depends on")
 	_, err := cloud.AttachRemoteHolding(ctx, HolderKey{Cache: "cache-x", Number: 3}, holdingOf("holdings-only"))
 	require.NoError(t, err)
 

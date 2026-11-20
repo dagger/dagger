@@ -185,6 +185,7 @@ func TestStoredBundleKeepsATaughtContentDigestAcrossAReplacement(t *testing.T) {
 	number := storedPersistenceTestMerge(t, ctx, cloud, bundle)[0]
 	storedContentTestTeach(t, ctx, cloud, aNumber, content)
 	storedContentTestWait(t, cloud, number, content)
+	require.NoError(t, cloud.VerifyPoolMeasure(), "the pool's kept measure follows the record the digest grew")
 
 	mergeTestExpire(cloud, storedBundleTestEntry(cloud, number))
 	second, err := cloud.MergeValues(ctx, "cache-a", bundle)
@@ -192,6 +193,7 @@ func TestStoredBundleKeepsATaughtContentDigestAcrossAReplacement(t *testing.T) {
 	require.Equal(t, number, second.Imported()[0].ResultID)
 	require.Equal(t, uint64(1), second.Values[0].Replacements, "the expired record was replaced")
 	storedContentTestWait(t, cloud, number, content)
+	require.NoError(t, cloud.VerifyPoolMeasure(), "the pool's kept measure follows the replacement")
 }
 
 // An entry whose record is replaced while the body worker gives its old
