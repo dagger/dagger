@@ -139,10 +139,12 @@ func (c *Cache) setStoredPartLocked(ctx context.Context, number uint64, key stri
 	if !ok {
 		return false, nil
 	}
-	if res.storedParts == nil {
-		res.storedParts = make(map[string]storedPart)
-	}
-	res.storedParts[key] = stored
+	c.changeStoredPartsLocked(res, func() {
+		if res.storedParts == nil {
+			res.storedParts = make(map[string]storedPart)
+		}
+		res.storedParts[key] = stored
+	})
 	c.markEntryClassLocked(res.id, StampPartStored)
 	// The Cloud serves no sessions, so there are no requirements to carry.
 	c.applyPartDependenciesLocked(ctx, res, named, nil)
@@ -192,25 +194,26 @@ func (res *sharedResult) storedPartsLocked() []storedPart {
 // without them. callFrameBytes and payloadBytes are the sizes of the row's
 // saved call frame and envelope. Requires egraphMu for writing.
 func (c *Cache) restoreStoredPartsLocked(res *sharedResult, env *PersistedResultEnvelope, callFrameBytes, payloadBytes int) error {
-	res.storedRecordBytes = int64(callFrameBytes + payloadBytes)
+	c.setStoredRecordBytesLocked(res, int64(callFrameBytes+payloadBytes))
 	if len(env.StoredParts) == 0 {
 		return nil
 	}
 	parts := env.StoredParts
 	env.StoredParts = nil
-	res.storedParts = make(map[string]storedPart, len(parts))
+	restored := make(map[string]storedPart, len(parts))
 	for _, part := range parts {
 		key, err := partAddressKey(part.Address)
 		if err != nil {
 			return err
 		}
-		res.storedParts[key] = c.storedLayers.part(part)
+		restored[key] = c.storedLayers.part(part)
 	}
+	c.changeStoredPartsLocked(res, func() { res.storedParts = restored })
 	stripped, err := json.Marshal(env)
 	if err != nil {
 		return err
 	}
-	res.storedRecordBytes = int64(callFrameBytes + len(stripped))
+	c.setStoredRecordBytesLocked(res, int64(callFrameBytes+len(stripped)))
 	return nil
 }
 
@@ -259,17 +262,28 @@ func (c *Cache) dropStoredParts(drop func(storedPart) bool) (dropped []StoredPar
 	defer c.egraphMu.Unlock()
 	defer c.takeChangesLocked(&change)
 	for id, res := range c.resultsByID {
-		for key, part := range res.storedParts {
-			if !drop(part) {
-				continue
+		names := false
+		for _, part := range res.storedParts {
+			if names = drop(part); names {
+				break
 			}
-			delete(res.storedParts, key)
-			c.markEntryClassLocked(id, StampPartDropped)
-			dropped = append(dropped, StoredPart{Number: uint64(id), Address: part.address()})
 		}
-		if len(res.storedParts) == 0 {
-			res.storedParts = nil
+		if !names {
+			continue
 		}
+		c.changeStoredPartsLocked(res, func() {
+			for key, part := range res.storedParts {
+				if !drop(part) {
+					continue
+				}
+				delete(res.storedParts, key)
+				c.markEntryClassLocked(id, StampPartDropped)
+				dropped = append(dropped, StoredPart{Number: uint64(id), Address: part.address()})
+			}
+			if len(res.storedParts) == 0 {
+				res.storedParts = nil
+			}
+		})
 	}
 	slices.SortFunc(dropped, func(a, b StoredPart) int {
 		return cmp.Or(cmp.Compare(a.Number, b.Number), comparePartAddresses(a.Address, b.Address))
