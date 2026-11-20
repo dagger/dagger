@@ -102,6 +102,15 @@ func TestContentHashFilesSaveKeepsUnwritableTreesInMemory(t *testing.T) {
 	dt, err = md.GetExternal(ContentHashMetadataKey)
 	require.NoError(t, err)
 	require.Equal(t, []byte("tree 3"), dt)
+
+	// A checkpoint that listed the tree on disk, and reads it after a save
+	// moved it to memory, finds it there.
+	rows, hashIDs := cm.persistentMetadataRows()
+	require.Equal(t, []string{"a"}, hashIDs)
+	breakDir(t, files)
+	require.NoError(t, md.SetExternal(ContentHashMetadataKey, []byte("tree 4")))
+	require.Equal(t, []SnapshotContentHashRow{{SnapshotID: "a", Data: []byte("tree 4")}},
+		cm.readContentHashRows(rows, hashIDs).ContentHashes)
 }
 
 // A registered tree whose file is missing was deleted by something other than

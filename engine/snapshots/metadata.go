@@ -1,6 +1,7 @@
 package snapshots
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"sort"
@@ -477,6 +478,9 @@ func (md *cacheMetadata) GetCreatedAt() time.Time {
 var ErrExternalNotFound = errors.New("not found")
 
 func (md *cacheMetadata) GetExternal(s string) ([]byte, error) {
+	if dt, ok := md.getExternalInMemory(s); ok {
+		return dt, nil
+	}
 	if md.store.contentHashOnDisk(s) {
 		dt, ok, err := md.store.hashFiles.read(md.id, func() bool { return md.contentHashGone })
 		if err != nil {
@@ -485,17 +489,30 @@ func (md *cacheMetadata) GetExternal(s string) ([]byte, error) {
 		if ok {
 			return dt, nil
 		}
-		// A loaded tree that could not be written is kept in memory.
+		// A tree moves to memory, when it can't be written, before it is
+		// dropped from disk, and to disk before it is dropped from memory:
+		// looking in memory before and after the disk finds it either way.
+		if dt, ok := md.getExternalInMemory(s); ok {
+			return dt, nil
+		}
 	}
+	return nil, ErrExternalNotFound
+}
+
+func (md *cacheMetadata) getExternalInMemory(s string) ([]byte, bool) {
 	md.store.mu.RLock()
 	defer md.store.mu.RUnlock()
 	dt, ok := md.external[s]
 	if !ok {
-		return nil, ErrExternalNotFound
+		return nil, false
 	}
-	cpy := make([]byte, len(dt))
-	copy(cpy, dt)
-	return cpy, nil
+	return bytes.Clone(dt), true
+}
+
+func (md *cacheMetadata) setExternalInMemory(s string, dt []byte) {
+	md.store.mu.Lock()
+	defer md.store.mu.Unlock()
+	md.external[s] = bytes.Clone(dt)
 }
 
 func (md *cacheMetadata) SetExternal(s string, dt []byte) error {
@@ -511,17 +528,16 @@ func (md *cacheMetadata) SetExternal(s string, dt []byte) error {
 		// Keep the tree in memory, where trees were kept before, as loading
 		// one that can't be written does, rather than fail the save: a host
 		// sync would fail with it, and a background save would lose it. The
-		// tree on disk, if any, is older: drop it, so this one is read and
-		// checkpointed. The next save tries the disk again.
+		// tree on disk, if any, is older: drop it once this one is in
+		// memory, so this one is read and checkpointed. The next save tries
+		// the disk again.
 		bklog.G(context.TODO()).WithError(err).WithField("snapshot", md.id).
 			Error("failed to write content hash records; keeping them in memory")
+		md.setExternalInMemory(s, dt)
 		md.store.hashFiles.remove(md.id, nil)
+		return nil
 	}
-	md.store.mu.Lock()
-	defer md.store.mu.Unlock()
-	cpy := make([]byte, len(dt))
-	copy(cpy, dt)
-	md.external[s] = cpy
+	md.setExternalInMemory(s, dt)
 	return nil
 }
 
