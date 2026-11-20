@@ -958,8 +958,10 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).`),
 			),
 
-		dagql.Func("imageRef", s.imageRef).
-			Doc(`The unique image reference which can only be retrieved immediately after the 'Container.From' call.`),
+		dagql.NodeFunc("imageRef", s.imageRef).
+			Doc(`The reference of the image this container was created from, pinned by digest (e.g., "docker.io/library/alpine:3.20@sha256:..."). Can only be retrieved immediately after the 'Container.From' call.`,
+				`References that resolve to the same image share one cached result, so the repository and tag may be those of any such reference. The digest always identifies this image.`,
+				`After 'Container.import' with a tag, it returns that tag instead, without a digest.`),
 
 		dagql.NodeFunc("manifest", s.manifest).
 			View(AfterVersion("v1.0.0-0")).
@@ -4874,8 +4876,15 @@ func (s *containerSchema) withoutRegistryAuth(ctx context.Context, parent dagql.
 	return parent, nil
 }
 
-func (s *containerSchema) imageRef(ctx context.Context, parent *core.Container, args struct{}) (string, error) {
-	return parent.ImageRefOrErr(ctx)
+func (s *containerSchema) imageRef(ctx context.Context, parent dagql.ObjectResult[*core.Container], args struct{}) (string, error) {
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return "", err
+	}
+	if err := cache.EvaluateParts(ctx, parent, core.ContainerPartMetadata); err != nil {
+		return "", err
+	}
+	return parent.Self().ImageRefOrErr(ctx)
 }
 
 type containerManifestArgs struct {
