@@ -60,14 +60,23 @@ func TestSchemaBuildsCountRepeats(t *testing.T) {
 
 	before = SchemaBuilds()
 	build(client(session), NewSchemaBuilder(root, []Mod{&keyedInstallMod{key: key}}))
-	require.Equal(t, SchemaBuildStats{Servers: 1, RepeatedInSession: 1, RepeatedOnSameRoot: 1}, delta(before),
-		"the same modules on the same root, under another builder identity")
+	require.Equal(t, SchemaBuildStats{}, delta(before),
+		"the same modules on the same root, under another instance of an equivalent module: the memo has it")
 
 	before = SchemaBuilds()
 	session.Get(deps).loadSchemaFailed.Store(true)
 	build(client(session), deps)
 	require.Equal(t, SchemaBuildStats{Servers: 1, RepeatedInSession: 1, RepeatedOnSameRoot: 1, RepeatedIdentical: 1}, delta(before),
 		"the same server again, its memoized builder having failed")
+
+	// Once the memo no longer has the set (here its builder failed; an
+	// eviction is alike), another instance of an equivalent module builds on
+	// the same root a server that is not the same instances as before.
+	before = SchemaBuilds()
+	session.Get(deps).loadSchemaFailed.Store(true)
+	build(client(session), NewSchemaBuilder(root, []Mod{&keyedInstallMod{key: key}}))
+	require.Equal(t, SchemaBuildStats{Servers: 1, RepeatedInSession: 1, RepeatedOnSameRoot: 1}, delta(before),
+		"the same modules on the same root, under another instance of an equivalent module, rebuilt")
 
 	// A main module's builder also builds the schema without it as main: the
 	// server built before for the same modules.

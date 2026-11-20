@@ -535,10 +535,12 @@ func (m *MCP) boundModules() map[string]Mod {
 
 // installedWorkspaceModules loads the modules installed in ws (see
 // LoadWorkspaceModules) with the schema of served. A value workspace's,
-// identified by its content, are loaded once per session, failures
-// included: every step asks for them, and a module that failed to build
-// would otherwise build again each time. A live workspace's change with its
-// host, and its owning client keeps its own record of what failed.
+// identified by its content, are kept by the session, failures included,
+// while it is among the session's most recently used
+// (maxMemoizedWorkspaces): every step asks for them, and a module that
+// failed to build would otherwise build again each time. A live workspace's
+// change with its host, and its owning client keeps its own record of what
+// failed.
 func installedWorkspaceModules(ctx context.Context, served *SchemaBuilder, ws dagql.ObjectResult[*Workspace]) (*InstalledWorkspaceModules, error) {
 	srv, err := served.Schema(ctx)
 	if err != nil {
