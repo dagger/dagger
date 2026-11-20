@@ -400,13 +400,6 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []*LLMMessage, too
 
 	choice := chatCompletion.Choices[0]
 
-	// A filtered or truncated choice can still carry partial content, so the
-	// finish reason is checked on its own rather than only when no blocks come
-	// out of it below. See anthropicStoppedCleanly.
-	if !openAIFinishedCleanly(choice.FinishReason) {
-		return nil, &ModelFinishedError{Reason: choice.FinishReason}
-	}
-
 	// Convert the OpenAI response into content blocks.
 	var contentBlocks []*LLMContentBlock
 	if choice.Message.Content != "" {
@@ -431,7 +424,14 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []*LLMMessage, too
 			Arguments: JSON(args),
 			Signature: signatures[int64(i)],
 		})
-		dp.EmitToolCall(int64(i+1), call.ID, call.Function.Name, args)
+		dp.EmitToolCall(int64(i+1), call.ID, call.Function.Name, call.Function.Arguments, modelToolArguments)
+	}
+
+	// A rejected generation still produced argument text. Export its display
+	// spans before failing, but never return calls for execution. The deferred
+	// Abort closes them on this path, including incomplete/invalid JSON.
+	if !openAIFinishedCleanly(choice.FinishReason) {
+		return nil, &ModelFinishedError{Reason: choice.FinishReason}
 	}
 
 	if len(contentBlocks) == 0 {

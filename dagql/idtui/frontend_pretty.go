@@ -9405,9 +9405,8 @@ func (fe *frontendPretty) renderStepTitle(ctx tuist.Context, out TermOutput, r *
 		fe.renderDurationDynamic(ctx, out, r, span, statusHost, !empty)
 		fe.renderToolOutputSummary(out, span)
 
-		// Flag how many tokens a tool call's result added to the model's
-		// context, so an outsized one stands out at a glance.
-		r.renderToolResultTokens(out, span)
+		// Show the tool result's text footprint (legacy traces use tokens).
+		r.renderToolResultSize(out, span)
 
 		// Show where a ready service is reachable, right on its own row.
 		r.renderServiceURLs(out, span)

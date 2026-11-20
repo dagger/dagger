@@ -460,6 +460,11 @@ type SpanSnapshot struct {
 	// to spot.
 	LLMToolResultTokens int64 `json:",omitempty"`
 
+	// Bytes are authoritative for new traces. A pointer preserves measured
+	// zero versus an old trace with only the legacy token estimate.
+	LLMToolResultBytes      *int64 `json:",omitempty"`
+	LLMToolResultBytesScope string `json:",omitempty"`
+
 	Inputs []string `json:",omitempty"`
 	Output string   `json:",omitempty"`
 
@@ -710,6 +715,13 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 
 	case telemetryattrs.LLMToolResultTokensAttr:
 		snapshot.LLMToolResultTokens = asInt64(val)
+
+	case telemetryattrs.LLMToolResultBytesAttr:
+		bytes := asInt64(val)
+		snapshot.LLMToolResultBytes = &bytes
+
+	case telemetryattrs.LLMToolResultBytesScopeAttr:
+		snapshot.LLMToolResultBytesScope = val.(string)
 
 	case telemetry.DagInputsAttr:
 		snapshot.Inputs = sliceOf[string](val)

@@ -365,12 +365,6 @@ func (c *GenaiClient) processStreamResponse(
 		if candidate.Content == nil {
 			return contentBlocks, tokenUsage, &ModelFinishedError{Reason: string(candidate.FinishReason)}
 		}
-		// A blocked or truncated candidate can arrive with content attached, so
-		// the finish reason is checked even when Content is set.
-		if !genaiFinishedCleanly(candidate.FinishReason) {
-			return contentBlocks, tokenUsage, &ModelFinishedError{Reason: string(candidate.FinishReason)}
-		}
-
 		for _, part := range candidate.Content.Parts {
 			sig := ""
 			if len(part.ThoughtSignature) > 0 {
@@ -413,7 +407,7 @@ func (c *GenaiClient) processStreamResponse(
 					Arguments: JSON(args),
 					Signature: sig,
 				})
-				dp.EmitToolCall(toolSeq, callID, x.Name, string(args))
+				dp.EmitToolCall(toolSeq, callID, x.Name, string(args), reserializedToolArguments)
 			case part.Text != "":
 				flushThinking()
 				fmt.Fprint(dp.StartText(textIdx).MarkdownW, part.Text)
@@ -424,6 +418,11 @@ func (c *GenaiClient) processStreamResponse(
 			default:
 				slog.Warn("ignoring unhandled genai part", "part", fmt.Sprintf("%+v", part), "content", fmt.Sprintf("%+v", candidate.Content))
 			}
+		}
+		// Retain argument footprints attached to rejected candidates, but still
+		// fail the response so none of these calls reaches execution.
+		if !genaiFinishedCleanly(candidate.FinishReason) {
+			return contentBlocks, tokenUsage, &ModelFinishedError{Reason: string(candidate.FinishReason)}
 		}
 	}
 	// Flush any trailing accumulated thinking/text.

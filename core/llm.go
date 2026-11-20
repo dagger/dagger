@@ -957,10 +957,8 @@ func (m *LLMMessage) estimateTokens() int64 {
 	return estimateTextTokens(chars)
 }
 
-// estimateTextTokens turns a character count into a conservative token estimate
-// using the same chars/4 heuristic as LLMMessage.estimateTokens. It backs the
-// per-tool-call result size the TUI surfaces so an inordinate result is easy to
-// spot even though providers only report usage per API call, not per result.
+// estimateTextTokens turns a byte length into a cheap token estimate for
+// LLMMessage.estimateTokens. Tool footprints are measured separately in bytes.
 func estimateTextTokens(chars int) int64 {
 	if chars == 0 {
 		return 0
@@ -2035,7 +2033,7 @@ func (d *toolDispatch) run(ctx context.Context, toolCalls []*LLMToolCall, displa
 		if err := d.continueOn(ctx, cont); err != nil {
 			text := fmt.Sprintf("not run: failed to load the tools of the conversation continued by an earlier call: %s", err)
 			for _, tc := range rest {
-				endToolCallDisplay(displays, tc.CallID, true, text)
+				endToolCallDisplay(displays, tc.CallID, &LLMContentBlock{Kind: LLMContentToolResult, Text: text, Errored: true})
 				results = append(results, &LLMMessage{
 					Role: LLMMessageRoleUser,
 					Content: []*LLMContentBlock{{
