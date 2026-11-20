@@ -18,7 +18,7 @@ Dagger makes your software delivery *programmable*, *local-first*, *repeatable* 
 
 **Repeatable**. Tools run in containers, orchestrated by sandboxed functions. Host dependencies are explicit and strictly typed. Intermediate artifacts are built just-in-time. Every operation is incremental by default, with advanced cache control. Whether it's a test report, a build or a deployment, Dagger gives you an output you can trust.
 
-**Observable**. Every operation emits a full OpenTelemetry trace, enriched by granular logs and metrics. Visualize the trace in directly in the terminal, or in a web view. Debug complex workflows immediately instead of guessing what went wrong from a wall of text logs.
+**Observable**. Every operation emits a full OpenTelemetry trace, enriched by granular logs and metrics. Visualize the trace directly in the terminal, or in a web view. Debug complex workflows immediately instead of guessing what went wrong from a wall of text logs.
 
 ## Features
 
