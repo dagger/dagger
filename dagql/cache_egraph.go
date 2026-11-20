@@ -1585,7 +1585,7 @@ func (c *Cache) teachContentDigest(ctx context.Context, shared *sharedResult, co
 			c.setStoredBodyLocked(shared, shared.persistedEnvelope, body)
 		}
 		if shared.storedRecordBytes != 0 {
-			shared.storedRecordBytes += grown
+			c.setStoredRecordBytesLocked(shared, shared.storedRecordBytes+grown)
 		}
 		// A stored bundle of the entry carries the new frame, and those of its
 		// class mates whatever the identity taught joined; this write hands

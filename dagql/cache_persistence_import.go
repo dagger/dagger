@@ -209,7 +209,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				if body := row.body; body != nil {
 					// As merge measured it: the call and the envelope
 					// encoded.
-					res.storedRecordBytes = int64(row.callFrameBytes) + body.envelopeBytes
+					c.setStoredRecordBytesLocked(res, int64(row.callFrameBytes)+body.envelopeBytes)
 					c.setStoredBodyLocked(res, env, body)
 				}
 			} else if env.Kind == persistedResultKindNull {
@@ -513,6 +513,9 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 		if c.nextEgraphTermID == 0 {
 			c.nextEgraphTermID = 1
 		}
+		// The restore wrote every entry at once, outside the pool's kept
+		// measure: it is counted once, from the walk.
+		c.poolRecountLocked()
 
 		return nil
 	}()

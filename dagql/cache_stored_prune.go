@@ -124,8 +124,8 @@ func (c *Cache) dropValueLocked(ctx context.Context, res *sharedResult) ([]*shar
 	// digests to: what it records of it is dropped, as after a replacement
 	// (applyTaughtContent).
 	res.taughtFrame++
-	res.storedParts = nil
-	res.storedRecordBytes = 0
+	c.changeStoredPartsLocked(res, func() { res.storedParts = nil })
+	c.setStoredRecordBytesLocked(res, 0)
 	res.storedTransfer.Store(nil)
 	res.dependencyOwnershipRevision++
 	res.transferRevision++
@@ -150,6 +150,7 @@ func (c *Cache) dropValueLocked(ctx context.Context, res *sharedResult) ([]*shar
 	res.payloadRevision++
 	res.payloadMu.Unlock()
 	c.setResultPayloadBytesLocked(res, 0)
+	c.poolSettleLocked(res)
 	return deps, rerr
 }
 
@@ -198,14 +199,10 @@ func (res *sharedResult) storedValueBytes() int64 {
 }
 
 // poolEstimateLocked is the memory stage's measure of a blob-backed cache:
-// its pool's values and their bytes. Requires egraphMu.
+// its pool's values and their bytes, as the cache keeps them
+// (cache_pool_measure.go). Requires egraphMu.
 func (c *Cache) poolEstimateLocked() CacheMetadataEstimate {
-	pool := c.storedPoolLocked()
-	estimate := CacheMetadataEstimate{ResultCount: len(pool)}
-	for _, res := range pool {
-		estimate.EstimatedBytes += res.storedValueBytes()
-	}
-	return estimate
+	return CacheMetadataEstimate{ResultCount: c.pool.values, EstimatedBytes: c.pool.bytes}
 }
 
 // encodedRecordBytes is a record's size as persistence writes it: its call

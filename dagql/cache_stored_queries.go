@@ -312,72 +312,27 @@ type BlobCacheUsage struct {
 	Holdings   int
 }
 
-// BlobCacheUsage measures the cache. Only a blob-backed cache answers.
-//
-// The service reads it for every status request and metrics scrape, outside
-// its work lock, so the pool's walk is a read in pieces (readInPieces): it
-// lets egraphMu go every readPieceSteps values and takes it again, so a
-// writer waiting for the lock waits for one piece, not a walk of the whole
-// pool. A value is read whole within one piece, by its number. A write that
-// lands between two pieces is seen by the rest of the walk, so the figures
-// are of every value as the cache held it when the walk reached it, not of
-// the pool at one moment; with no write during it, the walk counts what one
-// hold would. The counts beside the pool's are read at the walk's start.
+// BlobCacheUsage reads what the cache holds, as its limits count it, under
+// one hold of egraphMu for reading: the pool's measure as the cache keeps it
+// (cache_pool_measure.go), and the counts beside it. It walks nothing. Only
+// a blob-backed cache answers.
 func (c *Cache) BlobCacheUsage() (BlobCacheUsage, error) {
 	if !c.blobBacked {
 		return BlobCacheUsage{}, fmt.Errorf("blob cache usage: the cache has no blob store")
 	}
-	hold := c.readInPieces()
-	defer hold.done()
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
 	usage := BlobCacheUsage{
-		Entries:    len(c.resultsByID),
-		Terms:      len(c.egraphTerms),
-		ClassSlots: c.eqClassSlotsLocked(),
+		PoolValues:    c.pool.values,
+		PoolBytes:     c.pool.bytes,
+		PoolBlobs:     len(c.pool.blobs),
+		PoolBlobBytes: c.pool.blobBytes,
+		Entries:       len(c.resultsByID),
+		Terms:         len(c.egraphTerms),
+		ClassSlots:    c.eqClassSlotsLocked(),
 	}
 	for _, state := range c.remoteCaches {
 		usage.Holdings += state.holdings
 	}
-	// The pool as storedPoolLocked walks it, from the stored roots through
-	// each value's dependencies; only the pool's values name the blobs it
-	// counts, each counted once. Each entry the walk takes off its stack is
-	// a step, reached before or not. The stored roots are copied in the first
-	// hold, as a map's iteration can't let the lock go partway: about 0.4 ms
-	// for 50,000 roots and 1.6 ms for 200,000 on a c8gd machine.
-	stack := make([]sharedResultID, 0, len(c.persistedEdgesByResult))
-	for id := range c.persistedEdgesByResult {
-		stack = append(stack, id)
-	}
-	visited := map[sharedResultID]struct{}{}
-	poolBlobs := map[digest.Digest]struct{}{}
-	for len(stack) > 0 {
-		id := stack[len(stack)-1]
-		stack = stack[:len(stack)-1]
-		hold.step()
-		if _, seen := visited[id]; seen {
-			continue
-		}
-		visited[id] = struct{}{}
-		res := c.resultsByID[id]
-		if res == nil || !res.hasOwnValueLocked() {
-			continue
-		}
-		usage.PoolValues++
-		usage.PoolBytes += res.storedValueBytes()
-		for _, part := range res.storedParts {
-			for _, layer := range part.layers {
-				blob := layer.layer.Descriptor.Digest
-				if _, counted := poolBlobs[blob]; !counted {
-					poolBlobs[blob] = struct{}{}
-					usage.PoolBlobBytes += layer.layer.Descriptor.Size
-				}
-			}
-		}
-		for dep := range res.deps {
-			if _, seen := visited[dep]; !seen {
-				stack = append(stack, dep)
-			}
-		}
-	}
-	usage.PoolBlobs = len(poolBlobs)
 	return usage, nil
 }
