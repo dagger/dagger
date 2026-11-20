@@ -292,7 +292,7 @@ func (s *session) settle(state SettleState) {
 			}
 		}
 	}()
-	reply, err := s.request(ctx, protocol.TypeSettle, protocol.Settle{Period: state.Period, Sessions: state.Sessions})
+	reply, err := s.request(ctx, protocol.TypeSettle, protocol.Settle{Period: state.Period, Sessions: state.Sessions, IdleSince: state.IdleSince, Bound: state.Bound})
 	switch {
 	case err == nil && reply.Type == protocol.TypeSettled:
 		s.adapter.Settled(state.Period, state.Sessions)

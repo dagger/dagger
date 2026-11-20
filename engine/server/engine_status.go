@@ -125,6 +125,9 @@ type remoteSettle struct {
 	// bound passed without the engine settling, until a session starts.
 	settled, timedOut bool
 	timer             *time.Timer
+	// idleSince is when the period's last live session ended, which
+	// started its bound (sessionEnded): zero while a session is live.
+	idleSince time.Time
 }
 
 // sessionClaim is a session's claim, and when the session started.
@@ -168,7 +171,7 @@ func (l *sessionLedger) sessionStarted(sessionID, clientID, claimID string) {
 	}
 	if r := l.remote; r != nil && l.sessions == 1 {
 		r.period++
-		r.settled = false
+		r.settled, r.idleSince = false, time.Time{}
 		if r.timer != nil {
 			r.timer.Stop()
 			r.timer = nil
@@ -202,6 +205,7 @@ func (l *sessionLedger) sessionEnded(sessionID, clientID, claimID string, marker
 		r.unacked = append(r.unacked, protocol.SettleSession{ID: sessionID, Marker: marker})
 		if l.sessions == 0 {
 			period := r.period
+			r.idleSince = l.clock()
 			r.timer = time.AfterFunc(r.bound, func() { l.settleTimedOut(r, period) })
 		}
 		l.notifyLocked()
@@ -316,12 +320,14 @@ func (l *sessionLedger) settleState() (remotecache.SettleState, <-chan struct{})
 	}
 	slices.SortFunc(claims, func(a, b protocol.SessionClaim) int { return strings.Compare(a.ID, b.ID) })
 	return remotecache.SettleState{
-		Period:   r.period,
-		Live:     l.sessions > 0,
-		Sessions: slices.Clone(r.unacked),
-		Settled:  r.settled,
-		TimedOut: r.timedOut,
-		Claims:   claims,
+		Period:    r.period,
+		Live:      l.sessions > 0,
+		Sessions:  slices.Clone(r.unacked),
+		Settled:   r.settled,
+		TimedOut:  r.timedOut,
+		Claims:    claims,
+		IdleSince: r.idleSince,
+		Bound:     r.bound,
 	}, l.changed
 }
 
