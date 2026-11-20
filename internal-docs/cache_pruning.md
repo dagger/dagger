@@ -771,12 +771,13 @@ GC stops the engine from choosing entries to drop, but nothing references this
 data anymore.
 
 Containerd's collection does not tell the snapshot manager which snapshots it
-removed, and the manager keeps each snapshot's metadata in memory, including
-the serialized content-hash tree of every hashed snapshot (about 100 bytes per
-file). So after a collection that removed snapshots (`GCStats.SnapshotD` is
-set), on the first collection after startup, and after a failed attempt,
-`snapshotGarbage` runs `ForgetCollectedSnapshots`. It walks the snapshotter
-once and drops the records, metadata, loaded hash records, recorded blobs and
+removed, and the manager keeps each snapshot's metadata in memory, and the
+serialized content-hash tree of every hashed snapshot (about 100 bytes per
+file) in a file under `worker/contenthash/` (see `cache_persistence.md`). So
+after a collection that removed snapshots (`GCStats.SnapshotD` is set), on the
+first collection after startup, and after a failed attempt, `snapshotGarbage`
+runs `ForgetCollectedSnapshots`. It walks the snapshotter once and drops the
+records, metadata, tree files, loaded hash records, recorded blobs and
 imported-layer entries of snapshots that no longer exist, which also keeps
 them out of later checkpoints. Candidates are picked under the manager lock
 before the walk, so a snapshot created during the walk is never dropped. The

@@ -24,9 +24,11 @@ import (
 // cache mounts, ...) can be enormous — tens of GB across millions of inodes —
 // so deleting it inline at startup both blocks the engine from serving and
 // saturates the disk queue with unlink/journal traffic for as long as the
-// delete takes. Instead the invalid state is renamed aside to a sibling
-// "worker-trash-<unique>" directory (an O(1) rename; always the same
-// filesystem since the trash dir is a sibling), and a background sweeper
+// delete takes. Instead the invalid state is renamed aside to a
+// "worker-trash-<unique>" directory in the engine's root dir (an O(1) rename;
+// the same filesystem, as the worker root is in the root dir, and the other
+// state moved aside, such as the previous process's content-hash trees, is
+// in the worker root or the root dir itself), and a background sweeper
 // removes the tree with a bounded duty cycle so the filesystem journal can
 // drain between bursts. Leftover trash dirs from an interrupted sweep are
 // picked up on the next startup.
