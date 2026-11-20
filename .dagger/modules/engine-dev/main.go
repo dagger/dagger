@@ -744,14 +744,13 @@ func (dev *EngineDev) InstallClient(
 		}
 	}
 	cliPath := "/.dagger-cli"
-	endpoint, err := service.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: 1234, Scheme: "tcp"})
-	if err != nil {
-		return nil, err
-	}
 	client = client.
+		// Reach the engine by the alias it is bound under. The service's
+		// own hostname is chosen by the engine, and two engines can choose
+		// differently; as an environment variable it would be in the cache
+		// key of everything run in this container.
 		WithServiceBinding("dagger-engine", service).
-		// FIXME: retrieve endpoint dynamically?
-		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://dagger-engine:1234").
 		WithMountedFile(cliPath, clidev.New(clidev.CliDevOpts{Source: dev.cliDevSource(), Ws: dev.Ws}).Binary()).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliPath).
 		WithSymlink(cliPath, "/usr/local/bin/dagger")
