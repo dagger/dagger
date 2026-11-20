@@ -38,7 +38,13 @@ func (p PipeAttachable) Register(srv *grpc.Server) {
 func (p PipeAttachable) IO(srv Pipe_IOServer) error {
 	ctx := p.rootCtx
 	pio := &PipeIO{GRPC: srv}
-	go io.Copy(pio, newCtxReader(ctx, p.stdin))
+	go func() {
+		// Forward stdin until it ends, then tell the engine so its reader
+		// sees io.EOF. The stream stays open for the engine's output, which
+		// is what ends this handler.
+		io.Copy(pio, newCtxReader(ctx, p.stdin))
+		pio.CloseWrite()
+	}()
 	_, err := io.Copy(p.stdout, newCtxReader(ctx, pio))
 	return err
 }
@@ -50,6 +56,7 @@ type PipeIO struct {
 		Recv() (*Data, error)
 	}
 	rem []byte // remainder buffer
+	eof bool   // the peer signalled the end of its input
 }
 
 func (pio *PipeIO) Write(p []byte) (n int, err error) {
@@ -67,6 +74,9 @@ func (pio *PipeIO) Read(p []byte) (n int, err error) {
 	pio.rem = pio.rem[n:]
 	if len(p) == 0 || n != 0 {
 		return n, nil
+	}
+	if pio.eof {
+		return 0, io.EOF
 	}
 	req, err := pio.GRPC.Recv()
 	if err != nil {
@@ -91,10 +101,25 @@ func (pio *PipeIO) Read(p []byte) (n int, err error) {
 		}
 		return 0, fmt.Errorf("error reading dagger pipe: %w", err)
 	}
+	if req.GetEof() {
+		pio.eof = true
+	}
 	pio.rem = req.GetData()
 	n = copy(p, pio.rem)
 	pio.rem = pio.rem[n:]
+	if n == 0 && pio.eof {
+		return 0, io.EOF
+	}
 	return n, nil
+}
+
+// CloseWrite signals the end of this side's input. Unlike Close it keeps the
+// stream open, so the peer can still write until it ends the stream itself.
+func (pio *PipeIO) CloseWrite() error {
+	if err := pio.GRPC.Send(&Data{Eof: true}); err != nil {
+		return fmt.Errorf("error closing dagger pipe for writing: %w", err)
+	}
+	return nil
 }
 
 func (pio *PipeIO) Close() error {

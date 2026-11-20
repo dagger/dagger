@@ -1,0 +1,10 @@
+kind: Fixed
+body: |
+  `dagger mcp` now exits when the MCP client closes its stdin, which is the
+  first step of the MCP stdio shutdown sequence. The session pipe forwards the
+  end of the CLI's stdin to the engine, so the server stops reading and the
+  command returns instead of waiting to be signalled.
+time: 2026-09-21T21:45:00Z
+custom:
+  Author: awss1i
+  PR: "14268"
