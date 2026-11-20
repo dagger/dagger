@@ -171,3 +171,55 @@ func (WorkspaceSuite) TestSDKScopeFieldsCLI(ctx context.Context, t *testctx.T) {
 		require.NotContains(t, cfg.SDKs["python"].Scopes, "apps/api")
 	})
 }
+
+func (WorkspaceSuite) TestModuleListTree(ctx context.Context, t *testctx.T) {
+	workdir := newWorkspaceConfigWorkdir(ctx, t, `[modules.app]
+source = "app"
+
+[modules.broken]
+source = "broken"
+
+[modules.other]
+source = "other"
+
+[modules.test-sdk]
+source = "test-sdk"
+
+[sdks.test]
+module = "test-sdk"
+
+[sdks.test.scopes.app]
+clients = ["./other"]
+
+[sdks.test.scopes.tools]
+clients = ["./app"]
+`)
+	for name, deps := range map[string]string{
+		"app":      `[{"name":"lib","source":"../lib"}]`,
+		"lib":      `[{"name":"shared","source":"../shared"}]`,
+		"other":    `[{"name":"shared","source":"../shared"}]`,
+		"shared":   `[]`,
+		"test-sdk": `[]`,
+	} {
+		require.NoError(t, os.MkdirAll(filepath.Join(workdir, name), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(workdir, name, "dagger.json"),
+			[]byte(`{"name":"`+name+`","sdk":{"source":"dang"},"dependencies":`+deps+`}`), 0o644))
+	}
+
+	require.NoError(t, os.MkdirAll(filepath.Join(workdir, "broken"), 0o755))
+
+	out, err := hostDaggerOutput(ctx, t, workdir, "module", "list", "--tree")
+	require.NoError(t, err)
+	require.Equal(t, `.
+├── app (./app)
+│   ├── dependency lib (./lib)
+│   │   └── dependency shared (./shared)
+│   └── client other (./other) (*)
+├── broken (./broken) (error: workspace module source "broken" does not contain a dagger config file)
+├── other (./other)
+│   └── dependency shared (./shared) (*)
+├── test-sdk (./test-sdk)
+└── scope tools (./tools)
+    └── client app (./app) (*)
+`, string(out))
+}

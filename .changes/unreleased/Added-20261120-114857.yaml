@@ -1,0 +1,10 @@
+kind: Added
+body: |
+  `dagger module list --tree` shows the workspace's modules as a tree, with
+  the dependencies each module declares in its manifest and the clients its SDK
+  scope declares in `dagger.toml`. A module that appears more than once is
+  expanded the first time and marked `(*)` afterwards.
+time: 2026-11-20T11:48:57Z
+custom:
+  Author: eunomie
+  PR: ""
