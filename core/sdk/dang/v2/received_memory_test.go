@@ -78,11 +78,13 @@ func TestReceivedRetention(t *testing.T) {
 func TestReceivedSizeEstimate(t *testing.T) {
 	const items = 10000
 	shapes := map[string]func(i int) any{
-		"long strings":   func(i int) any { return fmt.Sprintf("%d:%s", i, strings.Repeat("h", 300)) },
-		"short strings":  func(i int) any { return fmt.Sprintf("s%d", i) },
-		"numbers":        func(i int) any { return i },
-		"small objects":  func(i int) any { return map[string]any{"name": fmt.Sprintf("n%d", i), "value": i} },
-		"larger objects": func(i int) any { return map[string]any{"a": i, "b": "x", "c": true, "d": nil, "e": "y", "f": i, "g": "z", "h": i, "i": "w", "j": i} },
+		"long strings":  func(i int) any { return fmt.Sprintf("%d:%s", i, strings.Repeat("h", 300)) },
+		"short strings": func(i int) any { return fmt.Sprintf("s%d", i) },
+		"numbers":       func(i int) any { return i },
+		"small objects": func(i int) any { return map[string]any{"name": fmt.Sprintf("n%d", i), "value": i} },
+		"larger objects": func(i int) any {
+			return map[string]any{"a": i, "b": "x", "c": true, "d": nil, "e": "y", "f": i, "g": "z", "h": i, "i": "w", "j": i}
+		},
 	}
 	for name, shape := range shapes {
 		t.Run(name, func(t *testing.T) {
