@@ -3236,12 +3236,17 @@ func (c *Cache) finishMergedReplacement(ctx context.Context, r mergeReplacement)
 		err = errors.Join(err, collectErr, runOnReleaseFuncs(ctx, releases))
 	}
 	r.res.attachDepsMu.Lock()
-	if r.res.attachDepsWaitCh != nil {
+	ended := r.res.attachDepsWaitCh != nil
+	if ended {
 		r.res.attachDepsErr = err
 		close(r.res.attachDepsWaitCh)
 		r.res.attachHolder = nil
 	}
 	r.res.attachDepsMu.Unlock()
+	// The attachment kept the row busy for a capture (BusyRows).
+	if ended {
+		c.busyEnded()
+	}
 	return err
 }
 

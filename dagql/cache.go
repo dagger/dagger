@@ -2853,9 +2853,9 @@ type Cache struct {
 	// owedParts are the entries whose span reported only their settled
 	// parts, each owing a report of its complete parts; see owedPartReports.
 	owedParts owedPartReports
-	// evaluationEnds are the watches of lazy evaluations' ends; see
-	// WatchEvaluationEnds.
-	evaluationEnds evaluationEnds
+	// busyEnds are the watches of the ends of what keeps rows busy; see
+	// WatchBusyEnds.
+	busyEnds busyEnds
 	// testOwedPartsRead, when set, runs after a pass of owed reports has read
 	// an entry's parts, before the pass ends.
 	testOwedPartsRead func(*sharedResult)
@@ -6222,7 +6222,7 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 			// parts: owed reports may now be made, and a capture it kept the
 			// row out of may take it.
 			c.wakeOwedPartReports()
-			c.evaluationEnded()
+			c.busyEnded()
 		}()
 
 		// Native profiling is full detail and emits the leader wait
@@ -7746,12 +7746,17 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 			return
 		}
 		oc.res.attachDepsMu.Lock()
-		if oc.res.attachDepsWaitCh != nil {
+		ended := oc.res.attachDepsWaitCh != nil
+		if ended {
 			oc.res.attachDepsErr = err
 			close(oc.res.attachDepsWaitCh)
 			oc.res.attachHolder = nil
 		}
 		oc.res.attachDepsMu.Unlock()
+		// The attachment kept the row busy for a capture (BusyRows).
+		if ended {
+			c.busyEnded()
+		}
 	}
 
 	// Materialize shared result for this completed call.
