@@ -1,0 +1,94 @@
+{
+  "Roots": [
+    4
+  ],
+  "Values": [
+    {
+      "SenderNumber": 2,
+      "SenderReplacements": 0,
+      "Record": {
+        "resultID": 2,
+        "envelope": {
+          "version": 0,
+          "kind": ""
+        },
+        "call": null
+      },
+      "Dependencies": null,
+      "Expires": false,
+      "Held": "xxh3:ebcf79ba72607117"
+    },
+    {
+      "SenderNumber": 4,
+      "SenderReplacements": 0,
+      "Record": {
+        "resultID": 4,
+        "envelope": {
+          "version": 5,
+          "kind": "object_self",
+          "typeName": "HeldPartTestValue",
+          "objectCodec": "dagql_test.HeldPart",
+          "resultID": 4,
+          "objectJSON": {
+            "snapshotID": "b"
+          }
+        },
+        "call": {
+          "kind": "field",
+          "type": {
+            "namedType": "HeldPartTestValue",
+            "nonNull": true
+          },
+          "field": "reads-busy-b"
+        }
+      },
+      "Dependencies": [
+        2
+      ],
+      "Expires": false,
+      "Held": ""
+    }
+  ],
+  "Outputs": [
+    {
+      "Row": 4,
+      "Address": {
+        "part": "snapshot"
+      },
+      "State": "completed",
+      "Value": {
+        "kind": "directory"
+      },
+      "Chain": [
+        "b"
+      ],
+      "Prefix": "",
+      "Owner": null
+    }
+  ],
+  "Chains": [
+    {
+      "Row": 4,
+      "Address": {
+        "part": "snapshot"
+      },
+      "Layers": [
+        "b"
+      ]
+    }
+  ],
+  "LeftOut": [
+    {
+      "Index": 0,
+      "Row": 1,
+      "Kind": "bookkeeping"
+    }
+  ],
+  "Full": [
+    4
+  ],
+  "Held": [
+    2
+  ],
+  "Passes": 1
+}
