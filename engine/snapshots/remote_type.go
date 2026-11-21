@@ -44,6 +44,9 @@ type ExportChain struct {
 	// Stats are what exporting the chain took.
 	Stats ExportStats
 	pin   *resourcePin
+	// packs is how its import reads the packs that hold its blobs, set
+	// when ImportChain starts.
+	packs *chainPacks
 }
 
 // ExportStats sum what exporting chains took, over their layers.

@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -37,20 +38,47 @@ type packProvider struct {
 	fail error
 	// opened, when set, sees each OpenPack's context.
 	opened func(context.Context)
+	// ranged serves ranges of the pack, and ranges records each
+	// OpenPackRange's offset and size. Without it every OpenPackRange is
+	// answered with ErrNoPackRanges, as a provider that reads none answers,
+	// and the pack is read whole.
+	ranged   bool
+	rangesMu sync.Mutex
+	ranges   [][2]int64
 }
 
 // newPackProvider packs the given layers' blobs, read from inner, in order.
 func newPackProvider(t *testing.T, inner content.InfoReaderProvider, layers ...ocispecs.Descriptor) *packProvider {
 	t.Helper()
+	members := make([]any, len(layers))
+	for i, l := range layers {
+		members[i] = l
+	}
+	return newMixedPackProvider(t, inner, members...)
+}
+
+// newMixedPackProvider packs, in order, each member: a layer's blob read from
+// inner (an ocispecs.Descriptor), or other bytes ([]byte), as another
+// chain's blob that shares the pack.
+func newMixedPackProvider(t *testing.T, inner content.InfoReaderProvider, in ...any) *packProvider {
+	t.Helper()
 	p := &packProvider{InfoReaderProvider: inner, members: map[digest.Digest]bool{}}
 	var members []pack.Member
 	var blobs [][]byte
-	for _, desc := range layers {
-		data, err := content.ReadBlob(context.Background(), inner, desc)
-		require.NoError(t, err)
-		members = append(members, pack.Member{Digest: desc.Digest, Size: desc.Size})
+	for _, x := range in {
+		var data []byte
+		switch v := x.(type) {
+		case ocispecs.Descriptor:
+			var err error
+			data, err = content.ReadBlob(context.Background(), inner, v)
+			require.NoError(t, err)
+		case []byte:
+			data = v
+		}
+		dgst := digest.FromBytes(data)
+		members = append(members, pack.Member{Digest: dgst, Size: int64(len(data))})
 		blobs = append(blobs, data)
-		p.members[desc.Digest] = true
+		p.members[dgst] = true
 	}
 	header, err := pack.Header(members)
 	require.NoError(t, err)
@@ -68,6 +96,28 @@ func (p *packProvider) ReaderAt(ctx context.Context, desc ocispecs.Descriptor) (
 		return nil, errors.New("a packed blob read alone")
 	}
 	return p.InfoReaderProvider.ReaderAt(ctx, desc)
+}
+
+func (p *packProvider) OpenPackRange(_ context.Context, _ digest.Digest, off, size int64) (io.ReadCloser, error) {
+	if !p.ranged {
+		return nil, bkcache.ErrNoPackRanges
+	}
+	p.rangesMu.Lock()
+	p.ranges = append(p.ranges, [2]int64{off, size})
+	p.rangesMu.Unlock()
+	end := min(off+size, int64(len(p.data)))
+	return io.NopCloser(bytes.NewReader(p.data[off:end])), nil
+}
+
+// rangeBytes sums the bytes the provider's range reads asked for, cut at the
+// pack's end.
+func (p *packProvider) rangeBytes() (n int64, reads int) {
+	p.rangesMu.Lock()
+	defer p.rangesMu.Unlock()
+	for _, r := range p.ranges {
+		n += min(r[0]+r[1], int64(len(p.data))) - r[0]
+	}
+	return n, len(p.ranges)
 }
 
 func (p *packProvider) PackOf(blob digest.Digest) (digest.Digest, bool) {
@@ -418,4 +468,89 @@ func TestPackReadCutOffAtItsLimit(t *testing.T) {
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 	require.Less(t, time.Since(start), 10*time.Second, "the read was cut off at its limit")
 	require.EqualValues(t, 1, provider.opens.Load())
+}
+
+// otherChainBlob is n bytes of another chain's blob, different for each seed.
+func otherChainBlob(seed string, n int) []byte {
+	b := bytes.Repeat([]byte(seed), n/len(seed)+1)
+	return b[:n]
+}
+
+// A chain that needs a small share of a pack reads its header and then only
+// its own members, in a range each where they lie apart, never the whole
+// pack: the other chains' blobs between them stay unread.
+func TestImportChainReadsOnlyItsMembersOfAPack(t *testing.T) {
+	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+	a, _ := producer.Build(t, nil, "a.txt", "lower")
+	ab, _ := producer.Build(t, a, "b.txt", "upper")
+	chain := exportChain(t, ab)
+	provider := newMixedPackProvider(t, chain.Provider,
+		chain.Layers[0].Descriptor, otherChainBlob("other one", 2<<20),
+		chain.Layers[1].Descriptor, otherChainBlob("other two", 2<<20))
+	provider.ranged = true
+	ref := importChain(t, consumer, supplied(chain, provider))
+	testutil.CheckFile(t, ref, "a.txt", "lower")
+	testutil.CheckFile(t, ref, "b.txt", "upper")
+	require.Zero(t, provider.opens.Load(), "the pack isn't read whole")
+	read, reads := provider.rangeBytes()
+	require.Equal(t, 3, reads, "the header, then one range for each member, 2 MiB apart")
+	require.Less(t, read, int64(256<<10), "the other chains' 4 MiB stay unread")
+}
+
+// A chain that needs most of a pack reads it whole, once, after its header.
+func TestImportChainReadsMostOfAPackWhole(t *testing.T) {
+	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+	a, _ := producer.Build(t, nil, "a.txt", strings.Repeat("lower ", 100<<10))
+	ab, _ := producer.Build(t, a, "b.txt", "upper")
+	chain := exportChain(t, ab)
+	provider := newMixedPackProvider(t, chain.Provider,
+		chain.Layers[0].Descriptor, otherChainBlob("other", 1<<10), chain.Layers[1].Descriptor)
+	provider.ranged = true
+	ref := importChain(t, consumer, supplied(chain, provider))
+	testutil.CheckFile(t, ref, "a.txt", strings.Repeat("lower ", 100<<10))
+	testutil.CheckFile(t, ref, "b.txt", "upper")
+	require.EqualValues(t, 1, provider.opens.Load(), "read whole, once")
+	_, reads := provider.rangeBytes()
+	require.Equal(t, 1, reads, "only the header by range")
+}
+
+// A provider that reads no ranges has every pack read whole.
+func TestImportChainReadsAPackWholeWithoutRanges(t *testing.T) {
+	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+	a, _ := producer.Build(t, nil, "a.txt", "lower")
+	chain := exportChain(t, a)
+	provider := newMixedPackProvider(t, chain.Provider, chain.Layers[0].Descriptor, otherChainBlob("other", 2<<20))
+	ref := importChain(t, consumer, supplied(chain, provider))
+	testutil.CheckFile(t, ref, "a.txt", "lower")
+	require.EqualValues(t, 1, provider.opens.Load())
+}
+
+// A member a range read finds corrupt fails the import, as a whole read's
+// does: nothing is applied from bytes that aren't the blob's.
+func TestImportChainFromPackRangeWithCorruptMember(t *testing.T) {
+	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+	a, _ := producer.Build(t, nil, "a.txt", "lower")
+	chain := exportChain(t, a)
+	provider := newMixedPackProvider(t, chain.Provider, chain.Layers[0].Descriptor, otherChainBlob("other", 2<<20))
+	header, err := pack.Header([]pack.Member{{Digest: chain.Layers[0].Descriptor.Digest, Size: chain.Layers[0].Descriptor.Size}, {Digest: digest.FromBytes(otherChainBlob("other", 2<<20)), Size: 2 << 20}})
+	require.NoError(t, err)
+	provider.data[len(header)] ^= 0xff
+	provider.ranged = true
+	_, err = consumer.Manager.ImportChain(context.Background(), supplied(chain, provider))
+	require.Error(t, err)
+	require.Zero(t, provider.opens.Load(), "the pack isn't read whole")
+}
+
+// A pack whose header doesn't hash to its ID fails a range read's import,
+// as it fails a whole read's.
+func TestImportChainFromPackRangeWithWrongID(t *testing.T) {
+	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+	a, _ := producer.Build(t, nil, "a.txt", "lower")
+	chain := exportChain(t, a)
+	provider := newMixedPackProvider(t, chain.Provider, chain.Layers[0].Descriptor, otherChainBlob("other", 2<<20))
+	provider.ranged = true
+	provider.id = digest.FromString("another pack")
+	_, err := consumer.Manager.ImportChain(context.Background(), supplied(chain, provider))
+	require.Error(t, err)
+	require.Zero(t, provider.opens.Load())
 }

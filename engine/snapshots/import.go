@@ -32,6 +32,9 @@ func (cm *snapshotManager) ImportChain(ctx context.Context, chain *ExportChain) 
 	if len(chain.Layers) == 0 {
 		return cm.Scratch(ctx)
 	}
+	if chain.packs == nil {
+		chain.packs = &chainPacks{}
+	}
 	pin, ctx, err := cm.newResourcePin(ctx)
 	if err != nil {
 		return nil, err
