@@ -216,10 +216,11 @@ func (cm *snapshotManager) ensureExportBlob(
 		}
 
 		compressorFunc, finalize := refCfg.Type.Compress(ctx, refCfg)
-		// The diff's time in the compressor, against its reading and
-		// archiving the layer: on a whole pull request's fill a stopping
-		// engine's export waited 9.8 s on one layer, 3.3 GB raw, with no
-		// record of which.
+		// The diff's time in the compressor, against the rest of it: reading
+		// and archiving the layer, hashing the archive and committing the
+		// blob (ExportStats.CompressTime). On a whole pull request's fill a
+		// stopping engine's export waited 9.8 s on one layer, 3.3 GB raw,
+		// with no record of which.
 		var compressSpent atomic.Int64
 		compressorFunc = timedCompressor(compressorFunc, &compressSpent)
 		mediaType := refCfg.Type.MediaType()
@@ -449,8 +450,9 @@ func ensureCompression(ctx context.Context, ref *immutableRef, comp compression.
 
 // timedCompressor wraps compress so that the time its writer takes, each
 // write of a layer's archive into it and its close, adds to spent: a diff's
-// time in compressing and writing the blob, apart from its reading and
-// archiving the layer. Two clock reads a write; the blob is compress's.
+// time in compressing and writing the blob, apart from the rest of the diff
+// (ExportStats.CompressTime). Two clock reads a write; the blob is
+// compress's.
 func timedCompressor(compress compression.Compressor, spent *atomic.Int64) compression.Compressor {
 	return func(dest io.Writer, mediaType string) (io.WriteCloser, error) {
 		start := time.Now()
