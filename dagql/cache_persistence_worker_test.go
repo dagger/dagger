@@ -381,3 +381,42 @@ func TestCachePersistenceCleanShutdownToggleOnClose(t *testing.T) {
 	assert.Check(t, found)
 	assert.Check(t, cmp.Equal(val, "1"))
 }
+
+func TestCachePersistenceClosePersistsPastExpiredStopBudget(t *testing.T) {
+	t.Parallel()
+
+	ctx := cacheTestContext(t.Context())
+	dbPath := filepath.Join(t.TempDir(), "cache.db")
+	cacheIface, err := NewCache(ctx, dbPath, nil, nil)
+	assert.NilError(t, err)
+	c := cacheIface
+
+	key := cacheTestIntCall("persist-close-expired-budget")
+	_, err = c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{
+		ResultCall:    key,
+		IsPersistable: true,
+	}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(key, 42), nil
+	})
+	assert.NilError(t, err)
+	cacheTestReleaseSession(t, cacheIface, ctx)
+
+	// The engine's stop budget can run out before or during the close phase:
+	// an already-done caller context must not cut the save, or the next start
+	// wipes the store as an unclean shutdown.
+	expiredCtx, expiredCancel := context.WithCancel(context.Background())
+	expiredCancel()
+	assert.NilError(t, c.Close(expiredCtx))
+
+	restarted, err := NewCache(ctx, dbPath, nil, nil)
+	assert.NilError(t, err)
+	defer func() {
+		assert.NilError(t, restarted.Close(context.Background()))
+	}()
+	assert.Equal(t, CachePersistenceResetNone, restarted.PersistenceResetReason())
+
+	var rowCount int
+	err = restarted.sqlDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM results`).Scan(&rowCount)
+	assert.NilError(t, err)
+	assert.Equal(t, 1, rowCount)
+}
