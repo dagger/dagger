@@ -108,7 +108,7 @@ func TestMergePreparationReportsItsLockWaits(t *testing.T) {
 		reply, err := engine.RestoreValues(ctx, set.bundle, nil, "test")
 		done <- restored{reply, err}
 	}()
-	waitBlockedIn(t, "prepareValueMerge(")
+	waitBlockedIn(t, "prepareCheckedValueMerge(")
 	time.Sleep(time.Millisecond)
 	engine.egraphMu.Unlock()
 	got := <-done
