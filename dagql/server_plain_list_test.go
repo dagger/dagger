@@ -31,7 +31,12 @@ func TestResolvePlainObjectList(t *testing.T) {
 		require.NoError(t, c.Close(ctx))
 	}()
 	srv := newDagqlServerForTest(t, cacheTestQuery{})
-	Fields[*reflectedAccessorTestObject]{}.Install(srv)
+	// a hand-written getter marked Trivial is still a call
+	doubled := Func("doubled", func(_ context.Context, self *reflectedAccessorTestObject, _ struct{}) (Int, error) {
+		return Int(self.Value * 2), nil
+	})
+	doubled.Spec.Trivial = true
+	Fields[*reflectedAccessorTestObject]{doubled}.Install(srv)
 	Fields[*plainHolderTestObject]{}.Install(srv)
 	opt := "set"
 	var holders Array[*plainHolderTestObject]
@@ -92,6 +97,20 @@ func TestResolvePlainObjectList(t *testing.T) {
 			"child": map[string]any{"value": Int(20), "names": []any{String("c")}},
 		},
 	}, plain)
+
+	// a hand-written getter resolves as usual
+	computed := resolve([]Selection{{Selector: Selector{Field: "value"}}, {Selector: Selector{Field: "doubled"}}})
+	require.Equal(t, []any{
+		map[string]any{"value": Int(1), "doubled": Int(2)},
+		map[string]any{"value": Int(2), "doubled": Int(4)},
+	}, computed)
+
+	// an object without a selection of subfields is still an error
+	_, err = srv.Resolve(ctx, srv.Root(), Selection{Selector: Selector{Field: "items"}, Subselections: []Selection{
+		{Selector: Selector{Field: "value"}},
+		{Selector: Selector{Field: "child"}},
+	}})
+	require.ErrorContains(t, err, "must have a selection of subfields")
 
 	// a struct field holding a result resolves its selections on the result
 	var held ObjectResult[*reflectedAccessorTestObject]

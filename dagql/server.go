@@ -1543,15 +1543,20 @@ func (s *Server) plainSelections(objType ObjectType, sels []Selection) bool {
 			return false
 		}
 		spec, ok := objType.FieldSpec(sel.Selector.Field, sel.Selector.View)
-		if !ok || !spec.Trivial || spec.Type == nil {
+		if !ok || !spec.Trivial || !spec.reflected || spec.Type == nil {
 			return false
-		}
-		if len(sel.Subselections) == 0 {
-			continue
 		}
 		named := spec.Type.Type()
 		for named.Elem != nil {
 			named = named.Elem
+		}
+		if len(sel.Subselections) == 0 {
+			if s.isObjectType(named.Name()) {
+				// an object without a selection of subfields is an error,
+				// which the usual path reports
+				return false
+			}
+			continue
 		}
 		if _, ok := s.plainObjectType(named, sel.Subselections); !ok {
 			return false

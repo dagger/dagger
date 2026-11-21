@@ -294,6 +294,8 @@ func (class Class[T]) Install(fields ...Field[T]) {
 			// a little hacky, but preserve a couple values
 			field.Spec.Type = oldSpec.Type
 			field.Spec.ViewFilter = oldSpec.ViewFilter
+			// the extension brings its own Func, not the struct getter
+			field.Spec.reflected = false
 		}
 
 		for _, other := range class.fields[field.Spec.Name] {
@@ -349,6 +351,8 @@ func (class Class[T]) Interfaces() []*Interface {
 }
 
 func (class Class[T]) Extend(spec FieldSpec, fun FieldFunc) {
+	// fun is not the struct getter, even if spec was copied from one
+	spec.reflected = false
 	class.fieldsL.Lock()
 	f := &Field[T]{
 		Spec: &spec,
@@ -1140,6 +1144,11 @@ type FieldSpec struct {
 	// they merely return.
 	Trivial bool
 
+	// reflected marks the getters Fields.Install reflects from struct fields:
+	// the field's value is the receiver's struct field of the same name, so
+	// it can be read from a plain value without a call (see plainSelections).
+	reflected bool
+
 	// PassthroughTelemetry keeps this field's telemetry span available for call
 	// metadata while asking the UI to show its children in its place.
 	PassthroughTelemetry bool
@@ -1666,7 +1675,8 @@ func (fields Fields[T]) Install(server *Server) {
 			DoNotCache:         field.Field.Tag.Get("doNotCache"),
 			// Reflected struct fields are pure getter accessors. Keep their spans
 			// available as internal trace detail without presenting them as work.
-			Trivial: true,
+			Trivial:   true,
+			reflected: true,
 		}
 		if dep, ok := field.Field.Tag.Lookup("deprecated"); ok {
 			reason := dep // keep "" if that’s what the module author wrote: @deprecated("") != @deprecated()
