@@ -173,7 +173,7 @@ func TestLoadTraceInspectionTools(t *testing.T) {
 	require.Contains(t, invoke("FindCalls", map[string]any{"query": "example.com/repo"}), "git(")
 	require.Contains(t, invoke("InspectCall", map[string]any{"span": callID, "view": "tree"}), "https://example.com/repo")
 	require.Contains(t, invoke("InspectCall", map[string]any{"digest": digest, "view": "stats"}), "distinct calls: 5")
-	imported := inspectionStoreForSpan(live, unfinishedID)
+	imported := testStoreForSpan(t, live, unfinishedID)
 	importedRows, err := imported.SelectSpansLatest(ctx, map[string]struct{}{unfinishedID: {}})
 	require.NoError(t, err)
 	require.True(t, importedRows[0].EndTime.Valid, "historical work must not remain live")
@@ -189,8 +189,8 @@ func TestLoadTraceInspectionTools(t *testing.T) {
 	other, err := dbs.Open(ctx, "other-session")
 	require.NoError(t, err)
 	defer other.Close()
-	require.Len(t, other.InspectionStores(), 1)
-	require.False(t, inspectionStoreForSpan(other, rootID).HasSpan(rootID))
+	require.Len(t, testInspectionStores(t, other), 1)
+	require.False(t, testStoreForSpan(t, other, rootID).HasSpan(rootID))
 
 	// Credentials and Cloud response bodies must not reach the model on errors.
 	denied.Store(true)
@@ -202,7 +202,7 @@ func TestLoadTraceInspectionTools(t *testing.T) {
 	_, err = m.loadTraceTool(&dagql.Server{})(freshCtx, map[string]any{"trace": traceID})
 	require.ErrorContains(t, err, "no data was imported")
 	require.NotContains(t, err.Error(), secret)
-	require.Len(t, fresh.InspectionStores(), 1)
+	require.Len(t, testInspectionStores(t, fresh), 1)
 	meta.CloudAuth = nil
 	_, err = m.loadTraceTool(&dagql.Server{})(freshCtx, map[string]any{"trace": traceID})
 	require.ErrorContains(t, err, "dagger login")
@@ -256,7 +256,7 @@ func TestLoadTracePreservesOrdinaryWorkInReport(t *testing.T) {
 				return sink.ImportSpans(ctx, &coltracepb.ExportTraceServiceRequest{ResourceSpans: telemetry.SpansToPB(spans)})
 			})
 			require.NoError(t, err)
-			after := render(inspectionStoreForSpan(live, rootID))
+			after := render(testStoreForSpan(t, live, rootID))
 			t.Logf("original report:\n%s\nloaded report:\n%s", before, after)
 			require.Contains(t, after, "ordinary successful work", "loading a trace must not drop unrevealed work")
 			require.Equal(t, before, after)
@@ -286,7 +286,8 @@ func TestImportedTraceCannotOverrideLive(t *testing.T) {
 		return err
 	})
 	require.NoError(t, err)
-	require.Same(t, live, inspectionStoreForSpan(live, "0000000000000002"))
+	defer imported.Close()
+	require.Same(t, live, testStoreForSpan(t, live, "0000000000000002"))
 	got, err := findSpansIn(ctx, live, "", "", 100, imported)
 	require.NoError(t, err)
 	require.Contains(t, got, "Container.withDirectory")
@@ -329,7 +330,7 @@ func TestLoadTraceFailedImportIsRetryable(t *testing.T) {
 		})
 		require.Error(t, err)
 		require.NotContains(t, err.Error(), "secret response")
-		require.Len(t, live.InspectionStores(), 1)
+		require.Len(t, testInspectionStores(t, live), 1)
 	}
 	result, err := loadCloudTrace(t.Context(), live, id, func(ctx context.Context, _ string, sink cloud.TraceImportSink) error {
 		if err := partial(ctx, sink); err != nil {
@@ -339,5 +340,24 @@ func TestLoadTraceFailedImportIsRetryable(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Contains(t, result, "1 spans")
-	require.Len(t, live.InspectionStores(), 2)
+	require.Len(t, testInspectionStores(t, live), 2)
+}
+
+// testInspectionStores opens live's inspection stores for the rest of the
+// test.
+func testInspectionStores(t *testing.T, live *clientdb.DB) []*clientdb.DB {
+	t.Helper()
+	stores, release, err := live.InspectionStores(t.Context())
+	require.NoError(t, err)
+	t.Cleanup(release)
+	return stores
+}
+
+// testStoreForSpan is inspectionStoreForSpan for the rest of the test.
+func testStoreForSpan(t *testing.T, live *clientdb.DB, span string) *clientdb.DB {
+	t.Helper()
+	read, release, err := inspectionStoreForSpan(t.Context(), live, span)
+	require.NoError(t, err)
+	t.Cleanup(release)
+	return read
 }

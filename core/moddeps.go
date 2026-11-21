@@ -61,6 +61,10 @@ type SchemaBuilder struct {
 	// clientOwned marks a builder that may keep the server it builds. It is
 	// never copied: every derived builder starts unowned.
 	clientOwned bool
+	// shared marks the builder a session memo keeps for every client of the
+	// session (SchemaBuilderMemo.sharedBuilder): its root is the memo's
+	// neutral root, and it builds its server itself. It is never copied.
+	shared bool
 
 	lazilyLoadedServer *dagql.Server
 	loadSchemaErr      error
@@ -165,6 +169,9 @@ func (b *SchemaBuilder) Append(mods ...Mod) *SchemaBuilder {
 //
 // A built server is an immutable type registry; the dagql result cache is
 // engine-wide and never held by a server, so sharing one shares no results.
+// A session's memo also shares one server per module set across all of its
+// clients, built on a neutral root (see sharedBuilder): each client's own
+// builders, and the entries of its client memo, serve that server.
 type SchemaBuilderMemo struct {
 	mu       sync.Mutex
 	builders *lru.Cache[string, *SchemaBuilder]
@@ -174,9 +181,10 @@ type SchemaBuilderMemo struct {
 	canonicalArgTypes *lru.Cache[string, *canonicalArgType]
 	modTypes          *lru.Cache[modTypeMemoKey, *modTypeMemoEntry]
 	gitClients        *lru.Cache[declaredGitClientsKey, *declaredGitClientsEntry]
-	// moduleServers holds the client's standalone server for each module
-	// whose artifacts it discovers, evaluates or checks
-	// (dagqlServerForModule).
+	// moduleServers holds the standalone server for each module whose
+	// artifacts a client discovers, evaluates or checks
+	// (dagqlServerForModule): in a session memo, shared by its clients; in
+	// a client memo, a module's that is not shared.
 	moduleServers *lru.Cache[string, *moduleServerEntry]
 	// builtModuleSets holds what this session built a schema server for, by
 	// module set, and builtServers how many it holds (countSchemaBuild). It
@@ -187,6 +195,9 @@ type SchemaBuilderMemo struct {
 	// workspaceModules holds the modules installed in a value workspace, by
 	// its recipe digest (see MCP.loadBase).
 	workspaceModules *lru.Cache[string, *InstalledWorkspaceModules]
+	// neutralRoots holds the root the memo's shared builders build on, one
+	// per engine Server facade (see sharedBuilder).
+	neutralRoots map[Server]*Query
 }
 
 const (
@@ -309,6 +320,115 @@ func (b *SchemaBuilder) memoKey() (string, bool) {
 		return "", false
 	}
 	return fmt.Sprintf("r%p;%s", b.root, entries), true
+}
+
+// sharedBuilder returns the builder this memo shares among all of its
+// clients for b's module set, whatever b's root, or nil when b's schema may
+// depend on the client that builds it. A session memo hands it out, so one
+// server serves the set to every client of the session: each function call's
+// nested client, each agent tool call, each handle load.
+//
+// Why a server built for one client can serve another: a built server holds
+// its root only as the receiver of Query fields, and a client's root is
+// core.NewRoot of the engine's one Server facade, whose methods all find the
+// client from the context. A root's own state is the client's cache volumes
+// and approved host histories, read through CurrentQuery(ctx), which is
+// always the calling client's root, never a server's; and ConstructorArgs,
+// which no client root has: `with` sets them on a clone that queries chain
+// from. So the shared builder builds on a neutral root of the same facade,
+// as the core schema's views (CoreSchemaBase.viewState) already do. That
+// root is marked shared, so reading a client's state from it fails
+// (ErrSharedRootClientState) instead of reading none.
+//
+// What a client may still put in a schema is what its context gives the
+// install: only expanding a module's .env user defaults, against the host of
+// the building client, does that. A set with such defaults, or with a
+// module the memo can't vouch for, is never shared (clientIndependentSchema).
+func (m *SchemaBuilderMemo) sharedBuilder(b *SchemaBuilder) *SchemaBuilder {
+	key, facade, ok := m.sharedKey(b)
+	if !ok {
+		return nil
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if cached, ok := m.builders.Get(key); ok && !cached.loadSchemaFailed.Load() {
+		return cached
+	}
+	shared := &SchemaBuilder{
+		root:        m.neutralRootLocked(facade),
+		entries:     slices.Clone(b.entries),
+		clientOwned: true,
+		shared:      true,
+	}
+	m.builders.Add(key, shared)
+	return shared
+}
+
+// sharedKey identifies b's module set for every client of the memo, by the
+// engine Server facade of b's root and the set, or reports false when the
+// set's schema may depend on its client (see sharedBuilder).
+func (m *SchemaBuilderMemo) sharedKey(b *SchemaBuilder) (string, Server, bool) {
+	if m == nil || b == nil || b.root == nil || !clientIndependentSchema(b.entries) {
+		return "", nil, false
+	}
+	facade := b.root.Server
+	if facade == nil || reflect.ValueOf(facade).Kind() != reflect.Pointer {
+		return "", nil, false
+	}
+	entries, ok := schemaEntriesKey(b.entries, true)
+	if !ok {
+		return "", nil, false
+	}
+	return fmt.Sprintf("s%p;%s", facade, entries), facade, true
+}
+
+// neutralRoot returns the root the memo's shared servers build on for the
+// given engine Server facade.
+func (m *SchemaBuilderMemo) neutralRoot(facade Server) *Query {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.neutralRootLocked(facade)
+}
+
+func (m *SchemaBuilderMemo) neutralRootLocked(facade Server) *Query {
+	root, ok := m.neutralRoots[facade]
+	if !ok {
+		if m.neutralRoots == nil {
+			m.neutralRoots = map[Server]*Query{}
+		}
+		root = newSharedRoot(facade)
+		m.neutralRoots[facade] = root
+	}
+	return root
+}
+
+// clientIndependentSchema reports whether installing entries builds the same
+// schema for every client: they are user modules, whose installs depend only
+// on their results, and core modules identified by content, and no user
+// module has .env user defaults, which installing expands against the
+// building client's host (ModuleFunction.mergeUserDefaultsTypeDefs).
+func clientIndependentSchema(entries []modDepEntry) bool {
+	for _, entry := range entries {
+		switch mod := entry.mod.(type) {
+		case *userMod:
+			self := mod.res.Self()
+			if self == nil {
+				return false
+			}
+			if source := self.GetSource(); source != nil && source.UserDefaults != nil && len(source.UserDefaults.Environ) > 0 {
+				return false
+			}
+		case coreSchemaForker:
+			// Core metadata varies by view, which its key covers.
+			if stable, ok := mod.(interface{ SchemaASTCacheKey() string }); !ok || stable.SchemaASTCacheKey() == "" {
+				return false
+			}
+		default:
+			// Other module implementations may install context-dependent metadata.
+			return false
+		}
+	}
+	return true
 }
 
 // schemaEntriesKey identifies entries: user modules by attached result, and
@@ -476,8 +596,10 @@ func (b *SchemaBuilder) Schema(ctx context.Context) (*dagql.Server, error) {
 	}
 	owner := b
 	if !b.clientOwned {
-		owner = currentSessionSchemaBuilderMemo(ctx).Get(b)
-		if !owner.clientOwned {
+		session := currentSessionSchemaBuilderMemo(ctx)
+		if shared := session.sharedBuilder(b); shared != nil {
+			owner = shared
+		} else if owner = session.Get(b); !owner.clientOwned {
 			// No session can hold this module set's server: build it for
 			// this call alone rather than keep it on b.
 			owner = b.Clone()
@@ -565,6 +687,22 @@ func (b *SchemaBuilder) lazilyLoadSchema(ctx context.Context) (loadedSchema *dag
 	}
 	if b.loadSchemaErr != nil {
 		return nil, b.loadSchemaErr
+	}
+	if !b.shared {
+		// A client's own builder (its served modules, a handle load's module
+		// set) serves the server its session shares for the set, and keeps
+		// it: the session memo evicting it only stops sharing it. A failure
+		// is the shared builder's, possibly another client's build that
+		// this one waited on; the memo replaces a failed shared builder, so
+		// keep none of it here and ask the memo again next time.
+		if shared := currentSessionSchemaBuilderMemo(ctx).sharedBuilder(b); shared != nil {
+			srv, err := shared.lazilyLoadSchema(ctx)
+			if err != nil {
+				return nil, err
+			}
+			b.lazilyLoadedServer = srv
+			return srv, nil
+		}
 	}
 	defer func() {
 		if rerr != nil && ctx.Err() != nil {

@@ -42,12 +42,24 @@ type Query struct {
 	// Clones share the registry.
 	hostHistoryMu sync.Mutex
 	hostHistory   *hostHistoryRegistry
+
+	// shared marks a root no client owns: the one a session's memo builds
+	// shared schema servers on (SchemaBuilderMemo.sharedBuilder), and its
+	// clones. It is only ever a receiver; reading a client's state from it
+	// is a bug, so its accessors of that state fail with
+	// ErrSharedRootClientState.
+	shared bool
 }
 
 var (
 	ErrNoCurrentModule       = fmt.Errorf("no current module")
 	ErrNoCurrentFunctionCall = fmt.Errorf("no current function call")
 	ErrNoCurrentWorkspace    = fmt.Errorf("no current workspace")
+	// ErrSharedRootClientState is returned for client state read from a
+	// root that no client owns, such as the receiver of a schema server a
+	// session shares among its clients. A client's state is read from its
+	// own root, CurrentQuery(ctx).
+	ErrSharedRootClientState = fmt.Errorf("client state read from a shared root: read it from the calling client's root (CurrentQuery)")
 )
 
 type SpecificClientAttachableConnOpts struct {
@@ -306,6 +318,20 @@ func NewRoot(srv Server) *Query {
 	return &Query{Server: srv}
 }
 
+// newSharedRoot returns a root of srv that no client owns (see Query.shared).
+func newSharedRoot(srv Server) *Query {
+	return &Query{Server: srv, shared: true}
+}
+
+// clientState returns an error naming state when q is a shared root, which
+// holds no client's state.
+func (q *Query) clientState(state string) error {
+	if q.shared {
+		return fmt.Errorf("%s: %w", state, ErrSharedRootClientState)
+	}
+	return nil
+}
+
 func (*Query) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "Query",
@@ -320,6 +346,7 @@ func (*Query) TypeDescription() string {
 func (q *Query) Clone() *Query {
 	cp := &Query{
 		Server: q.Server,
+		shared: q.shared,
 	}
 	if q.ConstructorArgs != nil {
 		cp.ConstructorArgs = make(map[string]dagql.Input, len(q.ConstructorArgs))
@@ -333,8 +360,11 @@ func (q *Query) Clone() *Query {
 	q.cacheVolumeStoreMu.Unlock()
 
 	// Allocate the donor registry before sharing it, so a registration through
-	// either the original or the clone is visible to both.
-	cp.hostHistory = q.hostHistories()
+	// either the original or the clone is visible to both. A shared root has
+	// none, and neither has its clone.
+	if hostHistory, err := q.hostHistories(); err == nil {
+		cp.hostHistory = hostHistory
+	}
 
 	return cp
 }

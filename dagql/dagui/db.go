@@ -172,7 +172,8 @@ type DB struct {
 
 	CreatorSpans map[string]*SpanSet
 
-	// Map of call digest -> metric name -> data points
+	// Map of call digest -> metric name -> data points. Only the latest
+	// point of each metric is kept (see exportDataPoints).
 	// NOTE: this is hard coded for Gauge int64 metricdata essentially right now,
 	// needs generalization as more metric types get added
 	MetricsByCall map[string]map[string][]metricdata.DataPoint[int64]
@@ -216,6 +217,10 @@ type DB struct {
 	// names interns span names, which repeat heavily: a dagql call span is
 	// named for its Type.field.
 	names map[string]string
+	// digests interns call digests (see intern.go).
+	digests digestTable
+	// attrPairs shares low-cardinality span attributes (see shareAttrPairs).
+	attrPairs map[[2]string]*spanAttribute
 
 	// unsentAncestors holds ancestors of surfaced spans (see
 	// Span.IsSurfacedKind) that UpdatedSnapshots needed to send but couldn't,
@@ -231,6 +236,13 @@ type DB struct {
 	// reused across the many reads of a single render frame but never survives
 	// new span data.
 	mutations uint64
+
+	// breakdowns memoizes Span.TimeBreakdown for the rows rendered since
+	// the DB last changed, at mutation count breakdownsAt, and
+	// blockerLabels the labels they name their blockers by.
+	breakdowns    map[*Span]breakdownMemo
+	blockerLabels map[*Span]string
+	breakdownsAt  uint64
 
 	// The surfacing memos below key on BOTH db.mutations and the root the walk
 	// was relative to (see surfaceRoot): a zoom change doesn't bump mutations,
@@ -946,7 +958,18 @@ func (db DBMetricExporter) exportDataPoints(metric metricdata.Metrics, dataPoint
 			continue
 		}
 
-		metricsByName[metric.Name] = append(metricsByName[metric.Name], point)
+		// Keep only the latest point of each metric: every reader shows the
+		// last one, and a long session exports a point per series every few
+		// seconds, so a history here grows without bound. Exemplars are
+		// dropped too; nothing displays them, and they cost more than the
+		// point itself. (Exporters to Cloud and collectors convert their own
+		// copy of the data, so they keep them.)
+		point.Exemplars = nil
+		if points := metricsByName[metric.Name]; len(points) > 0 {
+			points[len(points)-1] = point
+		} else {
+			metricsByName[metric.Name] = []metricdata.DataPoint[int64]{point}
+		}
 
 		// Aggregate LLM token metrics across all spans/models for the status
 		// line's cost/context display.
@@ -1112,6 +1135,7 @@ func (db *DB) recordOTelSpan(span sdktrace.ReadOnlySpan) *Span {
 			attr.Value.AsInterface(),
 		)
 	}
+	db.internSnapshotStrings(&spanData.SpanSnapshot)
 
 	// integrate the span's data into the DB's live objects
 	db.integrateSpan(spanData)
@@ -1227,7 +1251,7 @@ func (activity *Activity) Add(span *Span) bool {
 		return changed
 	}
 
-	idx, _ := slices.BinarySearchFunc(activity.CompletedIntervals, ival, func(a, b Interval) int {
+	idx, found := slices.BinarySearchFunc(activity.CompletedIntervals, ival, func(a, b Interval) int {
 		if a.Start.Before(b.Start) {
 			return -1
 		} else if a.Start.After(b.Start) {
@@ -1241,13 +1265,22 @@ func (activity *Activity) Add(span *Span) bool {
 	// interval we can skip adding it. this is also handled by mergeIntervals,
 	// but it's harder to return false after the fact.
 	//
-	// The intervals are sorted and merged, so only the last one starting
-	// before ival can hold it: any earlier one ends before that one starts.
-	if idx > 0 {
-		existing := activity.CompletedIntervals[idx-1]
-		if ival.Start.After(existing.Start) && ival.End.Before(existing.End) {
-			return changed
-		}
+	// The intervals are sorted and merged, so only the one starting with
+	// ival, or else the last one starting before it, can hold it: any
+	// earlier one ends before that one starts.
+	//
+	// Containment is inclusive: a span's own interval is added again every
+	// time its status propagates (integrateSpan, then
+	// PropagateStatusToParentsAndLinks), and inserting the duplicate would
+	// grow the slice to twice the room it keeps holding after the merge.
+	contains := func(existing Interval) bool {
+		return !ival.Start.Before(existing.Start) && !ival.End.After(existing.End)
+	}
+	if found && contains(activity.CompletedIntervals[idx]) {
+		return changed
+	}
+	if idx > 0 && contains(activity.CompletedIntervals[idx-1]) {
+		return changed
 	}
 
 	activity.CompletedIntervals = slices.Insert(activity.CompletedIntervals, idx, ival)
@@ -1306,6 +1339,12 @@ func (activity *Activity) mergeIntervalsFrom(from int) {
 
 	// Resize the slice to only include the merged intervals.
 	activity.CompletedIntervals = activity.CompletedIntervals[:lastIndex+1]
+	if merged := len(activity.CompletedIntervals); cap(activity.CompletedIntervals) > 2*merged+4 {
+		// A span whose causes ran one after another holds an interval
+		// apiece until its own interval merges them into one; don't keep
+		// room for all of them once it has.
+		activity.CompletedIntervals = slices.Clone(activity.CompletedIntervals)
+	}
 }
 
 // integrateSpan takes a possibly newly created span and updates

@@ -22,10 +22,13 @@ func resolveTraceTarget(ctx context.Context, span string) (string, error) {
 		return "", err
 	}
 	defer clientDB.Close()
-	for _, read := range clientDB.InspectionStores() {
-		if read.HasSpan(span) {
-			return span, nil
-		}
+	read, release, err := inspectionStoreForSpan(ctx, clientDB, span)
+	if err != nil {
+		return "", err
+	}
+	defer release()
+	if read.HasSpan(span) {
+		return span, nil
 	}
 	return "", fmt.Errorf("no span %q in this trace; use FindSpans to find a span ID", span)
 }

@@ -112,23 +112,91 @@ type resolvedWait struct {
 	unplaced bool
 }
 
-// TimeBreakdown computes the own-vs-waiting decomposition for the span's
-// row at the given time. Once the DB computes the waiting below rows
-// (UpdateRowWaits), the row's waiting includes it.
-func (span *Span) TimeBreakdown(now time.Time) *TimeBreakdown {
-	return span.timeBreakdown(now, nil)
+// breakdownClock is the time a TimeBreakdown is computed at. It records
+// whether the computation used it: an interval still open, a wait reaching
+// past it, cut off at now, or published waiting extended to it. A breakdown
+// that did not is the same at any later time, until the DB changes.
+type breakdownClock struct {
+	now  time.Time
+	live bool
 }
 
-// timeBreakdown computes the row's breakdown. While the waiting below rows is
-// being computed, below holds it: a wait chain continues through the waits
-// recorded below a step, and the row's published waiting is left out.
-func (span *Span) timeBreakdown(now time.Time, below *rowWaitsState) *TimeBreakdown {
+// clip returns t, or now if t is later.
+func (clk *breakdownClock) clip(t time.Time) time.Time {
+	if t.After(clk.now) {
+		clk.live = true
+		return clk.now
+	}
+	return t
+}
+
+// observed returns the span's interval, ending now while it is running.
+func (clk *breakdownClock) observed(span *Span) Interval {
+	if span.EndTime.IsZero() || span.EndTime.Before(span.StartTime) {
+		clk.live = true
+	}
+	return span.observedInterval(clk.now)
+}
+
+// breakdownMemo is a span's TimeBreakdown as of db.breakdownsAt, computed at
+// now; live when it depends on now (see breakdownClock).
+type breakdownMemo struct {
+	hb   *TimeBreakdown
+	now  time.Time
+	live bool
+}
+
+// TimeBreakdown computes the own-vs-waiting decomposition for the span's
+// row at the given time. Once the DB computes the waiting below rows
+// (UpdateRowWaits), the row's waiting includes it. The result is shared:
+// callers must not modify it.
+//
+// Every frame asks it for every row it renders, so it is memoized per span
+// until the DB next changes: a row whose breakdown did not depend on the time
+// (nothing in it still running) is reused at any later time, and a running
+// one only at the same time.
+func (span *Span) TimeBreakdown(now time.Time) *TimeBreakdown {
+	if span == nil || span.db == nil {
+		return &TimeBreakdown{}
+	}
+	db := span.db
+	db.syncBreakdownMemos()
+	if memo, ok := db.breakdowns[span]; ok &&
+		(now.Equal(memo.now) || (!memo.live && now.After(memo.now))) {
+		return memo.hb
+	}
+	clk := &breakdownClock{now: now}
+	hb := span.timeBreakdown(clk, nil)
+	db.breakdowns[span] = breakdownMemo{hb: hb, now: now, live: clk.live}
+	return hb
+}
+
+// syncBreakdownMemos empties the breakdown and blocker label memos when the
+// DB has changed since they were filled.
+func (db *DB) syncBreakdownMemos() {
+	if db.breakdowns != nil && db.breakdownsAt == db.mutations {
+		return
+	}
+	if db.breakdowns == nil {
+		db.breakdowns = map[*Span]breakdownMemo{}
+		db.blockerLabels = map[*Span]string{}
+	} else {
+		clear(db.breakdowns)
+		clear(db.blockerLabels)
+	}
+	db.breakdownsAt = db.mutations
+}
+
+// timeBreakdown computes the row's breakdown at clk. While the waiting below
+// rows is being computed, below holds it: a wait chain continues through the
+// waits recorded below a step, and the row's published waiting is left out.
+func (span *Span) timeBreakdown(clk *breakdownClock, below *rowWaitsState) *TimeBreakdown {
 	hb := &TimeBreakdown{}
 	if span == nil || span.db == nil {
 		return hb
 	}
 
-	painted := span.paintedIntervals(now)
+	painted := span.paintedIntervals(clk)
 	if len(painted) == 0 {
 		return hb
 	}
@@ -138,7 +206,7 @@ func (span *Span) timeBreakdown(now time.Time, below *rowWaitsState) *TimeBreakd
 	}
 
 	var waiting []TimeSegment
-	if resolved, ok := span.resolvedWaits(now, paintedTotal, below); ok {
+	if resolved, ok := span.resolvedWaits(clk, paintedTotal, below); ok {
 		waiting = span.waitingSegments(resolved, below)
 	} else {
 		hb.unresolved = true
@@ -146,7 +214,7 @@ func (span *Span) timeBreakdown(now time.Time, below *rowWaitsState) *TimeBreakd
 	if below == nil {
 		// The waiting computed from the row's whole subtree holds its own
 		// waits as well: it wins where both cover.
-		waiting = overlaySegments(span.rowWaitSegments(now), waiting)
+		waiting = overlaySegments(span.rowWaitSegments(clk), waiting)
 	}
 
 	// Tile each painted interval into own/waiting segments; waiting wins
@@ -224,9 +292,12 @@ func (span *Span) timeBreakdown(now time.Time, below *rowWaitsState) *TimeBreakd
 // plus children that ran outside the span's own interval (deferred work
 // recorded under the original call, e.g. a withExec's container run
 // happening when forced).
-func (span *Span) paintedIntervals(now time.Time) []Interval {
+func (span *Span) paintedIntervals(clk *breakdownClock) []Interval {
 	var painted []Interval
-	for ival := range span.Activity.Intervals(now) {
+	if !span.Activity.EarliestRunning.IsZero() {
+		clk.live = true
+	}
+	for ival := range span.Activity.Intervals(clk.now) {
 		painted = append(painted, ival)
 	}
 	for _, child := range span.ChildSpans.Spans() {
@@ -235,7 +306,7 @@ func (span *Span) paintedIntervals(now time.Time) []Interval {
 			// time is the evaluated call's
 			continue
 		}
-		if ival := child.observedInterval(now); ival.End.After(ival.Start) {
+		if ival := clk.observed(child); ival.End.After(ival.Start) {
 			painted = append(painted, ival)
 		}
 	}
@@ -244,11 +315,11 @@ func (span *Span) paintedIntervals(now time.Time) []Interval {
 
 // resolvedWaits returns the row's own waits, each resolved to the op working
 // during it, or false when what the row waited on isn't loaded.
-func (span *Span) resolvedWaits(now time.Time, paintedTotal time.Duration, below *rowWaitsState) ([]resolvedWait, bool) {
+func (span *Span) resolvedWaits(clk *breakdownClock, paintedTotal time.Duration, below *rowWaitsState) ([]resolvedWait, bool) {
 	// Gather the row's direct wait windows and merge them into disjoint
 	// stretches, keeping the dominant direct target for each.
 	var raw []waitWindow
-	span.collectWaitWindows(&raw, span, now)
+	span.collectWaitWindows(&raw, span, clk)
 	// Wait edges are only emitted when a wait ENDS, and they land on spans
 	// that may stay open long after (a resume span's links only re-export on
 	// heartbeat or its own end). So in addition to the explicit edges, infer
@@ -256,7 +327,7 @@ func (span *Span) resolvedWaits(now time.Time, paintedTotal time.Duration, below
 	// deferred work hanging off this row's execution means the row was
 	// blocked on it for that work's interval — including right now, when the
 	// work is still running. Overlaps with explicit edges merge away.
-	span.collectInferredWaits(&raw, now)
+	span.collectInferredWaits(&raw, clk)
 
 	// A view holding part of a trace may not have loaded what the row
 	// waited on. Until it does, whether the row waited on another operation
@@ -280,7 +351,7 @@ func (span *Span) resolvedWaits(now time.Time, paintedTotal time.Duration, below
 			via = below.label(shownBlocker(direct, span))
 		}
 		visited := map[*Span]bool{}
-		resolved = append(resolved, resolveWaitChain(w, via, nil, 0, visited, now, below)...)
+		resolved = append(resolved, resolveWaitChain(w, via, nil, 0, visited, clk, below)...)
 	}
 	// A blocker rendered inside the row's own subtree is the row hosting its
 	// own nested work (a module call running its function, a group span
@@ -375,7 +446,7 @@ func overlaySegments(base, extra []TimeSegment) []TimeSegment {
 // during it by recursing through the target's own waits. Stretches where the
 // target itself was working resolve to the target; stretches where it was in
 // turn waiting resolve deeper.
-func resolveWaitChain(win waitWindow, viaLabel string, blockers []*Span, depth int, visited map[*Span]bool, now time.Time, below *rowWaitsState) []resolvedWait {
+func resolveWaitChain(win waitWindow, viaLabel string, blockers []*Span, depth int, visited map[*Span]bool, clk *breakdownClock, below *rowWaitsState) []resolvedWait {
 	blocker := resolveBlocker(win.target)
 	unplaced := false
 	if blocker.unloaded() {
@@ -402,10 +473,10 @@ func resolveWaitChain(win waitWindow, viaLabel string, blockers []*Span, depth i
 
 	// The target's own waits, including those recorded on its execution twins.
 	var subs []waitWindow
-	win.target.collectWaitWindows(&subs, win.target, now)
+	win.target.collectWaitWindows(&subs, win.target, clk)
 	for _, child := range win.target.ChildSpans.Spans() {
 		if child.Name == win.target.Name {
-			child.collectWaitWindows(&subs, win.target, now)
+			child.collectWaitWindows(&subs, win.target, clk)
 		}
 	}
 	// Live analog of the closed-edge descent: the window's target — and the
@@ -413,9 +484,9 @@ func resolveWaitChain(win waitWindow, viaLabel string, blockers []*Span, depth i
 	// the chain — may itself be blocked right now with no wait edge emitted
 	// yet. Descend through their inferred blocked state so live labels
 	// resolve to the op actually working this instant, not the next hop.
-	win.target.collectInferredWaits(&subs, now)
+	win.target.collectInferredWaits(&subs, clk)
 	if resolved := resolveBlocker(win.target); resolved != nil && resolved != win.target && !visited[resolved] {
-		resolved.collectInferredWaits(&subs, now)
+		resolved.collectInferredWaits(&subs, clk)
 	}
 	mergedSubs := mergeWaitWindows(clipWaitWindows(subs, win))
 	if below != nil {
@@ -441,7 +512,7 @@ func resolveWaitChain(win waitWindow, viaLabel string, blockers []*Span, depth i
 		if sub.below != nil {
 			out = append(out, sub.below.resolved(sub, viaLabel, blockers))
 		} else {
-			out = append(out, resolveWaitChain(sub, viaLabel, blockers, depth+1, visited, now, below)...)
+			out = append(out, resolveWaitChain(sub, viaLabel, blockers, depth+1, visited, clk, below)...)
 		}
 		cursor = sub.end
 	}
@@ -573,29 +644,29 @@ func sameTimeBlockers(a, b []TimeBlocker) bool {
 }
 
 // collectWaitWindows appends span's wait edges as raw windows attributed to row.
-func (span *Span) collectWaitWindows(dst *[]waitWindow, row *Span, now time.Time) {
-	span.collectOwnWaits(dst, row, now)
+func (span *Span) collectWaitWindows(dst *[]waitWindow, row *Span, clk *breakdownClock) {
+	span.collectOwnWaits(dst, row, clk)
 	// Wait edges recorded on the row's execution twins (call_exec spans share
 	// the caller's name and nest directly under it) and on its deferred
 	// executions (effect spans, e.g. lazy resumes) belong to the row too.
 	if span == row {
 		for _, child := range span.ChildSpans.Spans() {
 			if child.Name == span.Name {
-				child.collectOwnWaits(dst, row, now)
+				child.collectOwnWaits(dst, row, clk)
 			}
 		}
 		for effect := range span.evaluations {
-			effect.collectOwnWaits(dst, row, now)
+			effect.collectOwnWaits(dst, row, clk)
 			for _, child := range effect.ChildSpans.Spans() {
 				if child.Name == effect.Name {
-					child.collectOwnWaits(dst, row, now)
+					child.collectOwnWaits(dst, row, clk)
 				}
 			}
 		}
 	}
 }
 
-func (span *Span) collectOwnWaits(dst *[]waitWindow, row *Span, now time.Time) {
+func (span *Span) collectOwnWaits(dst *[]waitWindow, row *Span, clk *breakdownClock) {
 	for i := range span.Links {
 		link := &span.Links[i]
 		if !link.IsWait() {
@@ -610,10 +681,7 @@ func (span *Span) collectOwnWaits(dst *[]waitWindow, row *Span, now time.Time) {
 			continue
 		}
 
-		end := link.WaitEnd
-		if end.After(now) {
-			end = now
-		}
+		end := clk.clip(link.WaitEnd)
 		if !end.After(link.WaitStart) {
 			continue
 		}
@@ -636,7 +704,7 @@ func (span *Span) collectOwnWaits(dst *[]waitWindow, row *Span, now time.Time) {
 // creates a window). Running markers block the row until now; completed ones
 // cover their own interval, preserving past blocked stretches whose explicit
 // wait edges haven't reached us yet.
-func (span *Span) collectInferredWaits(dst *[]waitWindow, now time.Time) {
+func (span *Span) collectInferredWaits(dst *[]waitWindow, clk *breakdownClock) {
 	seen := map[*Span]bool{span: true}
 	var visit func(s *Span, depth int)
 	visit = func(s *Span, depth int) {
@@ -688,11 +756,8 @@ func (span *Span) collectInferredWaits(dst *[]waitWindow, now time.Time) {
 			}
 			win := waitWindow{
 				start:  c.StartTime,
-				end:    c.observedInterval(now).End,
+				end:    clk.clip(clk.observed(c).End),
 				target: c,
-			}
-			if win.end.After(now) {
-				win.end = now
 			}
 			if win.end.After(win.start) {
 				*dst = append(*dst, win)
@@ -934,7 +999,23 @@ func blockerAncestry(op, row *Span, visit func(*Span)) bool {
 	return true
 }
 
+// blockerLabel names blocker in a breakdown, memoized like the breakdowns:
+// it decodes exec argv JSON, and a breakdown asks for it per segment.
 func blockerLabel(blocker *Span) string {
+	db := blocker.db
+	if db == nil {
+		return computeBlockerLabel(blocker)
+	}
+	db.syncBreakdownMemos()
+	if label, ok := db.blockerLabels[blocker]; ok {
+		return label
+	}
+	label := computeBlockerLabel(blocker)
+	db.blockerLabels[blocker] = label
+	return label
+}
+
+func computeBlockerLabel(blocker *Span) string {
 	// A container exec's real command beats its generic call name (three rows
 	// all reading "Container.withExec" tell the user nothing).
 	if argv := blocker.execArgv(0); argv != "" {

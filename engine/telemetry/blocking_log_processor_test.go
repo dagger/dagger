@@ -92,6 +92,58 @@ func TestBlockingLogProcessorLosesNothing(t *testing.T) {
 	}
 }
 
+// Against a stalled exporter, a DroppingLogProcessor never makes the producer
+// wait: a full queue loses its oldest records, like the SDK BatchProcessor's.
+// A failed export is not retried.
+func TestDroppingLogProcessorDropsOldest(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+	defer cancel()
+	exporter := &gatedLogExporter{release: make(chan struct{}), entered: make(chan struct{}), failures: 1}
+	p := NewDroppingLogProcessor(exporter, 4, 2, time.Millisecond)
+
+	// The first batch is stuck in the export, which then fails.
+	require.NoError(t, p.OnEmit(ctx, blockingTestRecord(0)))
+	require.NoError(t, p.OnEmit(ctx, blockingTestRecord(1)))
+	select {
+	case <-exporter.entered:
+	case <-ctx.Done():
+		t.Fatal("no export started")
+	}
+	for i := 2; i < 100; i++ {
+		require.NoError(t, p.OnEmit(ctx, blockingTestRecord(i)))
+	}
+	close(exporter.release)
+	require.NoError(t, p.ForceFlush(ctx))
+	require.NoError(t, p.Shutdown(ctx))
+
+	exporter.mu.Lock()
+	defer exporter.mu.Unlock()
+	require.Equal(t, []string{"96", "97", "98", "99"}, exporter.bodies)
+}
+
+// NewLiveLogProcessor takes the SDK BatchProcessor's OTEL_BLRP_* settings,
+// as the SDK processor telemetry.Init used to wrap live exporters in did.
+func TestLiveLogProcessorHonorsBLRPEnv(t *testing.T) {
+	for _, key := range []string{"OTEL_BLRP_MAX_QUEUE_SIZE", "OTEL_BLRP_MAX_EXPORT_BATCH_SIZE", "OTEL_BLRP_EXPORT_TIMEOUT"} {
+		t.Setenv(key, "")
+	}
+	p := NewLiveLogProcessor(failingLogExporter{})
+	require.Equal(t, LogQueueSize, p.limit)
+	require.Equal(t, 512, p.batchSize)
+	require.Equal(t, 30*time.Second, p.exportTimeout)
+	require.NoError(t, p.Shutdown(t.Context()))
+
+	t.Setenv("OTEL_BLRP_MAX_QUEUE_SIZE", "4")
+	t.Setenv("OTEL_BLRP_MAX_EXPORT_BATCH_SIZE", "8")
+	t.Setenv("OTEL_BLRP_EXPORT_TIMEOUT", "1500")
+	p = NewLiveLogProcessor(failingLogExporter{})
+	require.Equal(t, 4, p.limit)
+	require.Equal(t, 4, p.batchSize, "clamped to the queue size, like the SDK")
+	require.Equal(t, 1500*time.Millisecond, p.exportTimeout)
+	require.NoError(t, p.Shutdown(t.Context()))
+}
+
 type failingLogExporter struct{}
 
 func (failingLogExporter) Export(context.Context, []sdklog.Record) error {

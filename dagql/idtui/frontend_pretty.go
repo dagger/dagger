@@ -6326,7 +6326,22 @@ func pruneSpanTrees(trees map[dagui.SpanID]*SpanTreeView, ts *treeSync, owners m
 		if p := st.parent; p != nil && p.childMap[id] == st {
 			delete(p.childMap, id)
 		}
+		st.release()
 	}
+}
+
+// release lets go of what a pruned tree rendered from. Nothing renders it
+// again (a row that comes back gets a fresh tree), but it can outlive the
+// prune: tuist keeps a dismounted child's parent pointer, and children the
+// frontend keeps by span (LogsViews, inline TestViews) are dismounted with
+// their parent still set to it. Its TraceTree would keep the walk that built
+// it alive, memos and all: one per frame that pruned a tree, on a live
+// session whose completed rows keep leaving the view.
+func (s *SpanTreeView) release() {
+	s.tree = nil
+	s.parent = nil
+	s.children = nil
+	s.childMap = nil
 }
 
 // syncTreeNode recursively syncs a SpanTreeView and its children with

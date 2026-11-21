@@ -1,0 +1,11 @@
+kind: Fixed
+body: |
+  The engine no longer keeps the metadata of snapshots its garbage collection
+  removed. Each hashed snapshot's content-hash tree (about 100 bytes per file)
+  stayed in memory for the life of the engine, so a long-running engine's
+  memory grew with every directory it had ever hashed, and its cache
+  checkpoints carried rows for snapshots that no longer existed.
+time: 2026-11-20T03:00:00Z
+custom:
+  Author: vito
+  PR: 15212

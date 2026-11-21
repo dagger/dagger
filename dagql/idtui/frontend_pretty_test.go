@@ -10,6 +10,7 @@ import (
 	"maps"
 	"reflect"
 	"regexp"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"testing"
 	"time"
 	"unsafe"
+	"weak"
 
 	"github.com/charmbracelet/bubbles/key"
 	uv "github.com/charmbracelet/ultraviolet"
@@ -1334,6 +1336,45 @@ func TestSpanTreesPrunedWhenRowsLeaveView(t *testing.T) {
 	require.Same(t, fe.spanTrees[groupID].childMap[innerID], fe.spanTrees[innerID],
 		"re-expanded row's span tree is not the one rendered")
 	require.Same(t, fe.spanTrees[innerID], fe.testOwnerTrees[innerID])
+}
+
+// TestPrunedSpanTreeReleasesItsWalk verifies that a pruned span tree lets go
+// of the TraceTree it rendered, so that whatever outlives the prune with a
+// pointer to it -- a dismounted LogsView or inline TestView, whose tuist
+// parent pointer stays set -- doesn't keep the walk that built the tree alive,
+// with the memos it holds for every span the walk considered.
+func TestPrunedSpanTreeReleasesItsWalk(t *testing.T) {
+	db := dagui.NewDB()
+	id := prettyTestSpanID
+	rootID, aID, bID, innerID := id(1), id(2), id(3), id(4)
+	start := time.Unix(100, 0)
+	end := start.Add(2 * time.Second)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: rootID, TraceID: prettyTestTraceID(), Name: "root", StartTime: start},
+		{ID: aID, TraceID: prettyTestTraceID(), ParentID: rootID, Name: "a", StartTime: start, EndTime: end, Final: true},
+		{ID: innerID, TraceID: prettyTestTraceID(), ParentID: aID, Name: "inner", StartTime: start, EndTime: end, Final: true},
+		{ID: bID, TraceID: prettyTestTraceID(), ParentID: rootID, Name: "b", StartTime: start, EndTime: end, Final: true},
+	})
+	db.SetPrimarySpan(rootID)
+
+	fe := newWithTerminal(io.Discard, db, tuist.NewHeadlessTerminal(120, 40))
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+	fe.FrontendOpts.GCThreshold = time.Hour
+	fe.SetPrimary(rootID)
+	fe.tui.Step()
+	pruned := fe.spanTrees[bID]
+	require.NotNil(t, pruned)
+	require.NotNil(t, pruned.tree)
+	oldTree := weak.Make(pruned.tree)
+
+	// Zoomed into a, b's row leaves the view and its span tree is pruned;
+	// pruned stands in for whatever still points to it.
+	fe.ZoomToSpan(aID)
+	fe.tui.Step()
+	require.Nil(t, fe.spanTrees[bID])
+	runtime.GC()
+	require.Nil(t, oldTree.Value(), "a pruned span tree keeps its TraceTree, and its walk, alive")
+	runtime.KeepAlive(pruned)
 }
 
 // TestShellToolInlineTestsAlignWithToolDot verifies a shell transcript's tool

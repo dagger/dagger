@@ -1,0 +1,29 @@
+"""
+An object holding a large state, called through many distinct results.
+"""
+type Holder {
+  """
+  The state.
+  """
+  data: String! = ""
+
+  """
+  A copy holding n bytes of state.
+  """
+  fill(n: Int!): Holder! {
+    self.data = "".padLeft(n)
+    self
+  }
+
+  """
+  The same state, as a new result for each i.
+  """
+  touch(i: Int!): Holder! {
+    self
+  }
+
+  """
+  The state's length.
+  """
+  size: Int! { data.length }
+}

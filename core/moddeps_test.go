@@ -3,8 +3,11 @@ package core
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -153,6 +156,163 @@ func TestSchemaBuilderServerLivesInSessionMemo(t *testing.T) {
 	other, err := deps.Schema(client(NewSchemaBuilderMemo()))
 	require.NoError(t, err)
 	require.NotSame(t, srv, other, "another session builds its own")
+}
+
+// flakyCoreMod is a core module, identified by content, whose first fork
+// fails once it is released.
+type flakyCoreMod struct {
+	Mod
+	base    *dagql.Server
+	forks   atomic.Int32
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (*flakyCoreMod) Name() string              { return ModuleName }
+func (*flakyCoreMod) View() (call.View, bool)   { return "", false }
+func (*flakyCoreMod) SchemaASTCacheKey() string { return "flaky-core" }
+func (m *flakyCoreMod) ForkSchema(ctx context.Context, root *Query, _ call.View) (*dagql.Server, error) {
+	if m.forks.Add(1) == 1 {
+		close(m.entered)
+		<-m.release
+		return nil, errors.New("transient fork failure")
+	}
+	return m.base.Fork(ctx, root)
+}
+
+// Clients of a session share one server for a module set, whatever their
+// roots. A client that waited on another client's build that failed keeps
+// none of that failure: its next load builds the set again.
+func TestSchemaBuilderSharedAcrossRoots(t *testing.T) {
+	session := NewSchemaBuilderMemo()
+	facade := &memoTestServer{mockServer: &mockServer{}, client: NewSchemaBuilderMemo(), session: session}
+	base, err := dagql.NewServer(t.Context(), &Query{})
+	require.NoError(t, err)
+	coreMod := &flakyCoreMod{base: base, entered: make(chan struct{}), release: make(chan struct{})}
+	client := func() (context.Context, *SchemaBuilder) {
+		root := &Query{Server: facade}
+		return ContextWithQuery(t.Context(), root), NewSchemaBuilder(root, []Mod{coreMod}).ClientOwned()
+	}
+	ctxA, servedA := client()
+	ctxB, servedB := client()
+
+	failedA := make(chan error, 1)
+	go func() {
+		_, err := servedA.Schema(ctxA)
+		failedA <- err
+	}()
+	<-coreMod.entered
+	waitedB := make(chan error, 1)
+	go func() {
+		_, err := servedB.Schema(ctxB)
+		waitedB <- err
+	}()
+	time.Sleep(50 * time.Millisecond) // let b wait on a's build
+	close(coreMod.release)
+	require.ErrorContains(t, <-failedA, "transient fork failure")
+	if err := <-waitedB; err != nil {
+		require.ErrorContains(t, err, "transient fork failure", "b got a's failure")
+	}
+
+	srvB, err := servedB.Schema(ctxB)
+	require.NoError(t, err, "a failure b waited on does not stick to b")
+	srvA, err := servedA.Schema(ctxA)
+	require.NoError(t, err, "nor to a")
+	require.Same(t, srvA, srvB, "the clients share the server")
+	require.NotSame(t, ctxA.Value(queryKey{}), srvA.Root().Unwrap(), "it is built on neither client's root")
+	require.NotSame(t, ctxB.Value(queryKey{}), srvA.Root().Unwrap())
+
+	deps, err := NewSchemaBuilder(&Query{Server: facade}, []Mod{coreMod}).Schema(ctxA)
+	require.NoError(t, err)
+	require.Same(t, srvA, deps, "a builder that is not client-owned takes the session's server too")
+	require.Equal(t, int32(2), coreMod.forks.Load(), "built once more after the failure, and only once")
+}
+
+// cancelingCoreMod is a core module, identified by content, whose first fork
+// blocks until its caller gives up, and fails with the caller's cause.
+type cancelingCoreMod struct {
+	Mod
+	base    *dagql.Server
+	forks   atomic.Int32
+	entered chan struct{}
+}
+
+func (*cancelingCoreMod) Name() string              { return ModuleName }
+func (*cancelingCoreMod) View() (call.View, bool)   { return "", false }
+func (*cancelingCoreMod) SchemaASTCacheKey() string { return "canceling-core" }
+func (m *cancelingCoreMod) ForkSchema(ctx context.Context, root *Query, _ call.View) (*dagql.Server, error) {
+	if m.forks.Add(1) == 1 {
+		close(m.entered)
+		<-ctx.Done()
+		return nil, fmt.Errorf("fork: %w", context.Cause(ctx))
+	}
+	return m.base.Fork(ctx, root)
+}
+
+// The first client to load a shared module set builds it with its own
+// context. If that client gives up mid-build, a client waiting on the same
+// build gets a working server, not the first one's cancellation: the canceled
+// build is not kept, so the waiter builds the set itself. Later loads share
+// that server.
+func TestSchemaBuilderSharedBuildOwnerCanceled(t *testing.T) {
+	errGaveUp := errors.New("client a gave up")
+	for name, withCancel := range map[string]func(context.Context) (context.Context, func()){
+		"cancel": func(ctx context.Context) (context.Context, func()) {
+			return context.WithCancel(ctx)
+		},
+		"cause": func(ctx context.Context) (context.Context, func()) {
+			ctx, cancel := context.WithCancelCause(ctx)
+			return ctx, func() { cancel(errGaveUp) }
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			session := NewSchemaBuilderMemo()
+			facade := &memoTestServer{mockServer: &mockServer{}, client: NewSchemaBuilderMemo(), session: session}
+			base, err := dagql.NewServer(t.Context(), &Query{})
+			require.NoError(t, err)
+			coreMod := &cancelingCoreMod{base: base, entered: make(chan struct{})}
+			client := func() (context.Context, *SchemaBuilder) {
+				root := &Query{Server: facade}
+				return ContextWithQuery(t.Context(), root), NewSchemaBuilder(root, []Mod{coreMod}).ClientOwned()
+			}
+			ctxA, servedA := client()
+			ctxB, servedB := client()
+			ctxA, cancelA := withCancel(ctxA)
+			defer cancelA()
+
+			failedA := make(chan error, 1)
+			go func() {
+				_, err := servedA.Schema(ctxA)
+				failedA <- err
+			}()
+			<-coreMod.entered
+			type loaded struct {
+				srv *dagql.Server
+				err error
+			}
+			waitedB := make(chan loaded, 1)
+			go func() {
+				srv, err := servedB.Schema(ctxB)
+				waitedB <- loaded{srv, err}
+			}()
+			time.Sleep(50 * time.Millisecond) // let b wait on a's build
+			cancelA()
+
+			errA := <-failedA
+			require.ErrorIs(t, errA, context.Cause(ctxA), "a gets its own cancellation")
+			b := <-waitedB
+			require.NoError(t, b.err, "b does not get a's cancellation")
+			require.NotNil(t, b.srv)
+
+			later, err := servedA.Schema(ContextWithQuery(t.Context(), ctxA.Value(queryKey{}).(*Query)))
+			require.NoError(t, err, "a's later load succeeds")
+			require.Same(t, b.srv, later, "and shares the server b built")
+			deps, err := NewSchemaBuilder(&Query{Server: facade}, []Mod{coreMod}).Schema(ctxB)
+			require.NoError(t, err)
+			require.Same(t, b.srv, deps)
+			require.Equal(t, int32(2), coreMod.forks.Load(), "the canceled build, then b's, and no other")
+		})
+	}
 }
 
 // With no session to hold it, the server is built for the one call.
