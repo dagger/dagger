@@ -2,10 +2,12 @@ package dagql
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/snapshots"
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 )
@@ -341,4 +343,40 @@ func TestRemoteHoldingInfosAnswerAsRemoteHoldingInfo(t *testing.T) {
 		require.Equal(t, want, held[i], "key %v", key)
 	}
 	require.Equal(t, []bool{true, false, true}, ok)
+}
+
+// A reader that asks only what the cache has of a part pays nothing for the
+// part's contents: the answer for a stored part of 64 layers costs what the
+// answer for one of a single layer does. The layers are as an engine's
+// export describes them, with annotations and a creation time, which a copy
+// of the part would copy.
+//
+// Not parallel: it measures the process's allocations, which tests running
+// beside it would add to.
+func TestAvailablePartStateCopiesNothing(t *testing.T) {
+	ctx, c := storedPartTestCache(t, WithBlobStore())
+	answerBytes := func(layers int) uint64 {
+		t.Helper()
+		chain := make([]snapshots.ExportLayer, layers)
+		for i := range chain {
+			chain[i] = storedLayersTestLayer(fmt.Sprintf("state-only-%d-%d", layers, i), "a layer of the part")
+		}
+		res := storedPartTestPublish(t, ctx, c, "s", fmt.Sprintf("state-only-%d", layers), &captureTestValue{text: "v"})
+		number := uint64(res.cacheSharedResult().id)
+		part := storedLayersTestPart("snapshot", chain, nil)
+		stored, _, err := c.SetStoredPart(ctx, number, part, 0)
+		require.NoError(t, err)
+		require.True(t, stored)
+		now := time.Now().Unix()
+		answered := true
+		bytes := allocatedBytesPerRun(100, func() {
+			av, err := c.AvailablePart(number, part.Address, now)
+			answered = answered && err == nil && av.State == PartStored && av.Donor == number
+		})
+		require.True(t, answered, "every answer is the entry's own stored part")
+		return bytes
+	}
+	one, many := answerBytes(1), answerBytes(64)
+	t.Logf("an answer for a stored part allocates %d bytes with 1 layer, %d with 64", one, many)
+	require.Less(t, many, one+512, "an answer that reads only the state grew with the part's layers")
 }
