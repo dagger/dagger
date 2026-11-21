@@ -1581,6 +1581,11 @@ func (s *Server) resolvePlainList(ctx context.Context, values valueEnumerable, o
 // object of objType (nil for a leaf).
 func (s *Server) resolvePlainValue(ctx context.Context, val Typed, objType ObjectType, sels []Selection) (any, error) {
 	if res, ok := val.(AnyResult); ok {
+		if len(sels) > 0 {
+			// a struct field holding a result: resolve its selections on the
+			// result, as the field's call would have
+			return s.resolveResult(ctx, res, sels)
+		}
 		val = res.Unwrap()
 	}
 	if nullable, ok := val.(Derefable); ok {
@@ -1642,6 +1647,40 @@ func (s *Server) resolvePlainValue(ctx context.Context, val Typed, objType Objec
 		}
 	}
 	return obj, nil
+}
+
+// resolveResult resolves sels on a result: an object, or a list of them.
+func (s *Server) resolveResult(ctx context.Context, res AnyResult, sels []Selection) (any, error) {
+	res, ok := res.DerefValue()
+	if !ok || res == nil || res.Unwrap() == nil {
+		return nil, nil
+	}
+	list, ok := res.Unwrap().(Enumerable)
+	if !ok {
+		node, err := s.toSelectable(ctx, res)
+		if err != nil {
+			return nil, fmt.Errorf("instantiate: %w", err)
+		}
+		return s.Resolve(ctx, node, sels...)
+	}
+	results := make([]any, list.Len())
+	for nth := 1; nth <= len(results); nth++ {
+		elem, err := s.loadNthValue(ctx, res, nth, false)
+		if err != nil {
+			return nil, err
+		}
+		if elem == nil {
+			continue
+		}
+		node, err := s.toSelectable(ctx, elem)
+		if err != nil {
+			return nil, fmt.Errorf("instantiate %dth array element: %w", nth, err)
+		}
+		if results[nth-1], err = s.Resolve(ctx, node, sels...); err != nil {
+			return nil, err
+		}
+	}
+	return results, nil
 }
 
 // viewLeaf renders a query leaf in the caller's view, including enum values

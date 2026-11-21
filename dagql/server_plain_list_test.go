@@ -6,7 +6,17 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/vektah/gqlparser/v2/ast"
 )
+
+type plainHolderTestObject struct {
+	Name string                                     `field:"true"`
+	Held ObjectResult[*reflectedAccessorTestObject] `field:"true"`
+}
+
+func (*plainHolderTestObject) Type() *ast.Type {
+	return &ast.Type{NamedType: "PlainHolderTestObject", NonNull: true}
+}
 
 // A client selecting only struct fields of a list of plain objects gets them
 // read from the list's values: no result per element, and no call per field.
@@ -22,8 +32,16 @@ func TestResolvePlainObjectList(t *testing.T) {
 	}()
 	srv := newDagqlServerForTest(t, cacheTestQuery{})
 	Fields[*reflectedAccessorTestObject]{}.Install(srv)
+	Fields[*plainHolderTestObject]{}.Install(srv)
 	opt := "set"
+	var holders Array[*plainHolderTestObject]
 	Fields[cacheTestQuery]{
+		Func("held", func(context.Context, cacheTestQuery, struct{}) (*reflectedAccessorTestObject, error) {
+			return &reflectedAccessorTestObject{Value: 42}, nil
+		}),
+		Func("holders", func(context.Context, cacheTestQuery, struct{}) (Array[*plainHolderTestObject], error) {
+			return holders, nil
+		}),
 		Func("items", func(context.Context, cacheTestQuery, struct{}) (Array[*reflectedAccessorTestObject], error) {
 			return Array[*reflectedAccessorTestObject]{
 				{Value: 1, Name: "one", Names: []string{"a", "b"}, Child: &reflectedAccessorTestObject{Value: 10}},
@@ -74,6 +92,17 @@ func TestResolvePlainObjectList(t *testing.T) {
 			"child": map[string]any{"value": Int(20), "names": []any{String("c")}},
 		},
 	}, plain)
+
+	// a struct field holding a result resolves its selections on the result
+	var held ObjectResult[*reflectedAccessorTestObject]
+	require.NoError(t, srv.Select(ctx, srv.Root(), &held, Selector{Field: "held"}))
+	holders = Array[*plainHolderTestObject]{{Name: "holder", Held: held}}
+	res, err := srv.Resolve(ctx, srv.Root(), Selection{Selector: Selector{Field: "holders"}, Subselections: []Selection{
+		{Selector: Selector{Field: "name"}},
+		{Selector: Selector{Field: "held"}, Subselections: []Selection{{Selector: Selector{Field: "value"}}}},
+	}})
+	require.NoError(t, err)
+	require.Equal(t, []any{map[string]any{"name": String("holder"), "held": map[string]any{"value": Int(42)}}}, res["holders"])
 
 	// id needs each element's own result: the usual path, same values
 	withID := resolve(append([]Selection{{Selector: Selector{Field: "id"}}}, fields...))
