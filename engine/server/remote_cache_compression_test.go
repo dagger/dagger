@@ -19,8 +19,9 @@ import (
 	"github.com/dagger/dagger/engine/snapshots/testutil"
 )
 
-// An export compresses the layers it diffs with zstd, and another snapshot
-// manager imports the exported chain back to the same file.
+// An export writes the layers it diffs as listings compressed with zstd, as
+// the remote cache carries them, and another snapshot manager imports the
+// exported chain back to the same file.
 func TestRemoteCacheAdapterExportCompressesWithZstd(t *testing.T) {
 	t.Parallel()
 	e := newAdapterTestEngine(t)
@@ -36,7 +37,7 @@ func TestRemoteCacheAdapterExportCompressesWithZstd(t *testing.T) {
 		require.NotNil(t, chain)
 		require.NotEmpty(t, chain.Layers)
 		for _, layer := range chain.Layers {
-			require.Equal(t, ocispecs.MediaTypeImageLayerZstd, layer.Descriptor.MediaType)
+			require.Equal(t, bkcache.MediaTypeListingZstd, layer.Descriptor.MediaType, "a small file stays in its listing")
 		}
 		ref, err := consumer.Manager.ImportChain(ctx, &bkcache.ExportChain{Layers: chain.Layers, Provider: blobProvider{exp.Blobs}})
 		require.NoError(t, err)
