@@ -677,6 +677,9 @@ func (c *Cache) appendOutputEqClassResultsLocked(candidates *set.TreeSet[*shared
 // servableCandidateLocked returns the result lookup may serve for resID, or
 // nil. expired is filled as in appendDigestResultsLocked.
 func (c *Cache) servableCandidateLocked(resID sharedResultID, nowUnix int64, expired *expirySeen) *sharedResult {
+	if c.testServableVisited != nil {
+		c.testServableVisited(resID)
+	}
 	res := c.resultsByID[resID]
 	if res == nil {
 		return nil
