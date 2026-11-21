@@ -365,12 +365,15 @@ func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID) (root eqClassID, ab
 	srcResults := c.outputEqClassResults[rb]
 	joinsEntries := len(dstResults) > 0 && len(srcResults) > 0
 	if joinsEntries {
-		// Every entry of both classes now answers from the other's: one
-		// mark of the union's class widens to all of them when handed back.
+		// Every entry of both classes now answers from the other's holders:
+		// one mark of the union's class, for the stamps of the bundles that
+		// borrow from it, and the entries of each side whose answers that
+		// changes, for readers (markJoinLocked).
 		for resID := range srcResults {
 			c.markEntryClassLocked(resID, StampJoin)
 			break
 		}
+		c.markJoinLocked(srcResults, dstResults)
 	}
 	if len(srcResults) > 0 {
 		if dstResults == nil {
