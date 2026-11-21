@@ -169,6 +169,7 @@ type RestoredPartReport struct {
 	PriorityWait     time.Duration
 	PrepareLockWait  time.Duration
 	PrepareLockWaits map[string]time.Duration
+	DecodeWait       time.Duration
 }
 
 // restoreFile is one file of a restore: queued, being fetched, being merged,
@@ -465,7 +466,7 @@ func (r *restorer) open(f *restoreFile) error {
 // served.
 func (r *restorer) mergePart(ctx context.Context, f *restoreFile) error {
 	began := time.Now()
-	bundle, err := decodePart(f.parts[f.next])
+	bundle, err := r.s.cfg.decode(f.parts[f.next])
 	decoded := time.Since(began)
 	f.report.Decode += decoded
 	if err != nil {

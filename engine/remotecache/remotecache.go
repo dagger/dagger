@@ -210,6 +210,7 @@ type settings struct {
 	dial       func(context.Context) (wsConn, error)
 	put        func(ctx context.Context, url string, body io.Reader, size int64) error
 	getFile    func(context.Context, protocol.SetFile) ([]byte, fetchTiming, error)
+	decode     func([]byte) (dagql.ValueBundle, error)
 	peakRSS    func() int64
 	maxMessage int
 	jitter     func() float64
@@ -229,6 +230,7 @@ func newSettings(cfg Config) *settings {
 		Config:        cfg,
 		put:           httpPut(uploadClient(uploadResponseTimeout), uploadIdleTimeout),
 		getFile:       getSetFile(&http.Client{}, restoreIdleTimeout),
+		decode:        decodePart,
 		peakRSS:       PeakResident,
 		maxMessage:    protocol.MaxMessageBytes,
 		jitter:        rand.Float64,
