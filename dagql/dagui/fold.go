@@ -20,8 +20,9 @@ import (
 // A DB built WithFold keeps in full (a *Span) only the spans it may render:
 // the RETAINED spans, which a FoldRetain policy picks as they arrive, and
 // the ancestors of every retained span. Every other span is FOLDED: all the
-// DB keeps of it is a stub of ~30 bytes -- its place in the tree, its last
-// roll-up category and a few flags -- and its contribution to the aggregates
+// DB keeps of it is a stub of ~50 bytes -- its place in the tree, its
+// interval, its interned name, its last roll-up category and a few flags --
+// and its contribution to the aggregates
 // its retained ancestors show: roll-up counts, child counts, has-logs, and
 // whether something beneath them is running. A folded span is read back in
 // full (FoldOptions.Load) when something needs it: a retained descendant, or
@@ -32,10 +33,10 @@ import (
 // whole (the local CLI, the engine's trace tools). Folding is not demoted:
 // what was retained stays.
 //
-// What a retained row with folded spans beneath it shows differs from a
-// full DB in one way: its waiting is unknown, as it depends on what ran
-// beneath it, so its time breakdown is left empty (its plain duration shows)
-// rather than computed from part of its subtree (see FoldedBeneath).
+// A retained row's waiting below it reads its folded children's intervals
+// from their stubs (foldedWork), and the spans that waiting needs in full
+// are retained whatever the policy (neededForWaits), so its time breakdown
+// is the one a full DB computes.
 
 // foldState packs a stub's state: its roll-up category in the low 3 bits,
 // then flags.
@@ -107,6 +108,9 @@ type FoldOptions struct {
 	// to ExportSpans or ImportSnapshots with a context from FoldFill. Nil
 	// reads nothing back: the spans are retained when they next arrive.
 	Load func(ids []SpanID)
+	// Foldable reports whether the spans of a trace may fold: those Load
+	// can read back. Nil folds every trace's.
+	Foldable func(trace TraceID) bool
 }
 
 // WithFold builds a DB that folds the spans opts.Retain doesn't retain (see
@@ -369,6 +373,7 @@ func (f *Fold) lookup(id SpanID) (uint32, bool) {
 // foldInfo is what the fold reads of an arriving span.
 type foldInfo struct {
 	id, parent SpanID
+	trace      TraceID
 	flags      foldState
 	cat        spanStateCategory
 	start, end time.Time
@@ -385,6 +390,7 @@ func otelFoldInfo(s sdktrace.ReadOnlySpan) foldInfo {
 	info := foldInfo{
 		id:     SpanID{s.SpanContext().SpanID()},
 		parent: SpanID{s.Parent().SpanID()},
+		trace:  TraceID{s.SpanContext().TraceID()},
 		start:  s.StartTime(),
 		end:    s.EndTime(),
 		name:   s.Name(),
@@ -429,7 +435,7 @@ func otelFoldInfo(s sdktrace.ReadOnlySpan) foldInfo {
 }
 
 func snapshotFoldInfo(s *SpanSnapshot) foldInfo {
-	info := foldInfo{id: s.ID, parent: s.ParentID, start: s.StartTime, end: s.EndTime, name: s.Name,
+	info := foldInfo{id: s.ID, parent: s.ParentID, trace: s.TraceID, start: s.StartTime, end: s.EndTime, name: s.Name,
 		callDigest: s.CallDigest, callPayload: s.CallPayload}
 	set := func(on bool, flag foldState) {
 		if on {
@@ -660,7 +666,7 @@ func (f *Fold) ingest(info foldInfo, fill bool) bool {
 	retained := f.state[i]&foldRetained != 0
 	if !retained {
 		f.setCategory(i, info.cat)
-		if f.shouldRetain(i) {
+		if f.shouldRetain(i) || (f.opts.Foldable != nil && !f.opts.Foldable(info.trace)) {
 			f.promote(i, i)
 			retained = true
 		}

@@ -63,8 +63,8 @@ func (fe *frontendPretty) searchScope() string {
 	if fe.searchPartial {
 		scope = append(scope, "more not searched")
 	}
-	if fe.searchUnplaced > 0 {
-		scope = append(scope, fmt.Sprintf("%d in spans not loaded", fe.searchUnplaced))
+	if n := fe.searchUnplaced + fe.searchFoldedMore; n > 0 {
+		scope = append(scope, fmt.Sprintf("%d in spans not loaded", n))
 	}
 	if len(scope) == 0 {
 		return ""
@@ -96,6 +96,8 @@ func (fe *frontendPretty) startLogSearch(query string) {
 				fe.searchPartial = fe.searchPartial || hits.Partial
 				for _, t := range hits.Targets {
 					if id := fe.db.LogTarget(t.Trace, t.Span, t.Digest); id.IsValid() {
+						// a match in a folded span places once it's read
+						fe.readFoldedTargetLocked(id)
 						if fe.searchRemote == nil {
 							fe.searchRemote = make(map[dagui.SpanID]bool)
 						}
@@ -501,6 +503,7 @@ func (fe *frontendPretty) clearSearch() {
 	fe.searchRemote = nil
 	fe.searchPartial = false
 	fe.searchUnplaced = 0
+	fe.searchFoldedMore = 0
 	for _, logs := range []map[dagui.SpanID]*Vterm{fe.logs.Logs, fe.logs.ToolArgs} {
 		for _, vt := range logs {
 			vt.SetSearchHighlight("", -1)

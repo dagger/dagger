@@ -266,6 +266,11 @@ type frontendPretty struct {
 	spanProvider   func(dagui.SpanID)
 	requestedSpans map[dagui.SpanID]bool
 
+	// fold reads back the spans the DB folded (dagui.WithFold) from a live
+	// session, once it serves span queries (SetSpanQuery); nil for a DB
+	// that doesn't fold.
+	fold *liveFold
+
 	// supportProvider fetches spans the view holds only references to that
 	// its rows' time breakdowns draw on (dagui.Span.TimeBreakdownSpans): what
 	// a row waited on, which a trace loaded in parts may leave out. Without
@@ -476,6 +481,9 @@ type frontendPretty struct {
 	searchGen      uint64
 	searchPartial  bool
 	searchUnplaced int
+	// searchFoldedMore counts the folded spans whose name matches that the
+	// search reads no more of (foldSearchLimit).
+	searchFoldedMore int
 	// searchNames memoizes the spans whose name matches the search, until
 	// the query or the DB's spans change (see searchNameMatches).
 	searchNames struct {
@@ -1261,7 +1269,7 @@ func (fe *frontendPretty) SetClient(client *dagger.Client) {
 }
 
 func NewPretty(w io.Writer) Frontend {
-	return NewWithDB(w, newLocalDB())
+	return newFolding(w, false)
 }
 
 // newLocalDB builds the DB of a frontend that serves no remote frontend.
@@ -1270,9 +1278,7 @@ func newLocalDB() *dagui.DB {
 }
 
 func NewReporter(w io.Writer) Frontend {
-	fe := NewWithDB(w, newLocalDB())
-	fe.reportOnly = true
-	return fe
+	return newFolding(w, true)
 }
 
 // dispatch runs fn on the TUI event loop goroutine (when the TUI is running)
@@ -3556,39 +3562,42 @@ func (fe prettySpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.R
 	// and Dispatch runs asynchronously on the UI goroutine.
 	spansCopy := make([]sdktrace.ReadOnlySpan, len(spans))
 	copy(spansCopy, spans)
-	spanIDs := make([]dagui.SpanID, len(spans))
-	for i, s := range spans {
-		spanIDs[i] = dagui.SpanID{SpanID: s.SpanContext().SpanID()}
-	}
 	fe.dispatch(func() {
-		fe.db.ExportSpans(context.Background(), spansCopy)
-		for _, id := range spanIDs {
-			fe.requestArrivedSpanLogs(id)
-			if fe.logs.flushResolvedLogsForSpan(id) {
-				fe.updateSpanTreesForLogs(id)
-				fe.updateLogPagerForLogs(id)
-			}
-			if sr, ok := fe.spanTrees[id]; ok {
-				// An update can carry attributes the span didn't start with.
-				fe.trackTestOwnerTree(id, sr)
-				sr.Update()
-			}
-		}
-		fe.testsDirty = true
-		for view := range fe.spanLists {
-			view.UpdateAll()
-		}
-		if fe.commandView != nil {
-			fe.commandView.Update()
-		}
-		fe.updateAgentRoster()
-		fe.notifyAgentSteps()
-		// Don't recalculate here — set dirty flag so Render coalesces
-		// multiple ExportSpans batches into one recalculate per frame.
-		fe.viewDirty = true
-		fe.Update()
+		fe.exportSpansLocked(context.Background(), spansCopy)
 	})
 	return nil
+}
+
+// exportSpansLocked ingests spans and brings the view's state up to date
+// with them. ctx is passed on to the DB (e.g. dagui.FoldFill).
+func (fe *frontendPretty) exportSpansLocked(ctx context.Context, spans []sdktrace.ReadOnlySpan) {
+	fe.db.ExportSpans(ctx, spans)
+	for _, s := range spans {
+		id := dagui.SpanID{SpanID: s.SpanContext().SpanID()}
+		fe.requestArrivedSpanLogs(id)
+		if fe.logs.flushResolvedLogsForSpan(id) {
+			fe.updateSpanTreesForLogs(id)
+			fe.updateLogPagerForLogs(id)
+		}
+		if sr, ok := fe.spanTrees[id]; ok {
+			// An update can carry attributes the span didn't start with.
+			fe.trackTestOwnerTree(id, sr)
+			sr.Update()
+		}
+	}
+	fe.testsDirty = true
+	for view := range fe.spanLists {
+		view.UpdateAll()
+	}
+	if fe.commandView != nil {
+		fe.commandView.Update()
+	}
+	fe.updateAgentRoster()
+	fe.notifyAgentSteps()
+	// Don't recalculate here — set dirty flag so Render coalesces
+	// multiple ExportSpans batches into one recalculate per frame.
+	fe.viewDirty = true
+	fe.Update()
 }
 
 func (fe *frontendPretty) updateSpanTreesForLogs(spanID dagui.SpanID) {
@@ -5123,6 +5132,9 @@ func (fe *frontendPretty) recalculateViewLocked() {
 	if !fe.reportOnly && fe.ZoomedSpan.IsValid() && fe.ZoomedSpan != fe.primarySpan() {
 		fe.requestSubtree(fe.ZoomedSpan)
 	}
+	// A DB that folds holds no folded span for a row to show: read back
+	// those beneath what's shown expanded.
+	fe.readFoldedRowsLocked()
 
 	// The rows' time breakdowns may draw on spans a trace loaded in parts
 	// left out, such as what a row waited on: fetch them, so the row's time
@@ -7656,6 +7668,7 @@ func (fe *frontendPretty) confirmSearch(query string) {
 	}
 	fe.searchQuery = query
 	fe.searchIdx = -1
+	fe.searchFoldedMore = fe.readFoldedMatchesLocked(query)
 	fe.startLogSearch(query)
 	// Push query to all vterms (triggers midterm Search), read results,
 	// navigate to first match, then update highlights + dirty trees.

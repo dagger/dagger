@@ -467,13 +467,21 @@ func (fe *frontendPretty) consoleSettle() string {
 // keeps waiting harmlessly in the background (fetches are bound to the run
 // context and unwind on interrupt).
 func (fe *frontendPretty) waitFetches(deadline time.Time) {
-	if fe.fetchWaiter == nil {
+	if fe.fetchWaiter == nil && fe.fold == nil {
 		return
 	}
 	waited := make(chan struct{})
 	go func() {
 		defer close(waited)
-		fe.fetchWaiter()
+		if fe.fetchWaiter != nil {
+			fe.fetchWaiter()
+		}
+		if fe.fold != nil {
+			// the folded spans an expand or zoom reads back
+			ctx, cancel := context.WithDeadline(context.Background(), deadline)
+			defer cancel()
+			fe.fold.wait(ctx)
+		}
 	}()
 	select {
 	case <-waited:
