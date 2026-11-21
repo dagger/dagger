@@ -38,6 +38,13 @@ engine:
   ### StatefulSet specific configuration
   #
   statefulSet:
+    # Number of Engines to run
+    # DO NOT RUN MORE THAN 1 REPLICA WITH HOSTPATH VOLUMES: Engines on the same
+    # node share them, and only one Engine can hold the lock of a data volume.
+    # To run more, enable persistentVolumeClaim below, which gives every Engine
+    # its own data volume, and disable hostPath.dataVolume and hostPath.runVolume.
+    replicas: 1
+
     # PVC retention policy (applies to all PVCs)
     # Only available in Kubernetes 1.23+
     persistentVolumeClaimRetentionPolicy:

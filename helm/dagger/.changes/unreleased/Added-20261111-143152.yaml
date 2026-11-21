@@ -1,0 +1,6 @@
+kind: Added
+body: Allow setting the number of engine replicas with `engine.statefulSet.replicas`
+time: 2026-11-11T14:31:52Z
+custom:
+  Author: officialasishkumar
+  PR: "15153"
