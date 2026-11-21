@@ -47,7 +47,7 @@ type foldState uint32
 const (
 	foldCatMask foldState = 0x7 // spanStateCategory
 
-	foldReceived foldState = 1 << (3 + iota)
+	foldReceived foldState = 1 << (2 + iota) // iota is 1: bit 3
 	foldRetained
 	// foldFull marks a retained span the DB has received in full since it
 	// was retained: a read-back answer must not overwrite it.
@@ -94,10 +94,12 @@ const (
 	// targets Fold.noops lists.
 	foldContainedWaits
 	foldNoopWaits
-	// foldEscapes marks a span an edge leaves the subtree of; foldRead a
-	// span whose own waits a row that doesn't hold it reads.
+	// foldEscapes marks a span an edge crosses the subtree boundary of;
+	// foldRead a span whose own waits a row that doesn't hold it reads;
+	// foldWaitTarget the target of a contained wait.
 	foldEscapes
 	foldRead
+	foldWaitTarget
 )
 
 func (s foldState) cat() spanStateCategory { return spanStateCategory(s & foldCatMask) }
@@ -716,7 +718,13 @@ func (f *Fold) ingest(info foldInfo, fill bool) bool {
 		f.end[i] = info.end.UnixNano()
 	}
 	if first && info.parent.IsValid() {
-		f.link(i, f.intern(info.parent))
+		p := f.intern(info.parent)
+		f.link(i, p)
+		if f.state[i]&foldEscapes != 0 {
+			// an edge whose ends' ancestries didn't meet crossed i, the
+			// top of its ancestry then: it may cross i's ancestors too
+			f.markEscape(p, noSpan)
+		}
 	}
 	if f.rootEnded && info.cat == stateRunning {
 		// the DB cancels a span that runs past its root's end
@@ -779,6 +787,11 @@ func (f *Fold) shouldRetain(i uint32) bool {
 func (f *Fold) neededForWaits(i uint32) bool {
 	st := f.state[i]
 	if st&(foldWaitLinks|foldFunctionPlumbing) != 0 {
+		return true
+	}
+	if p := f.parent[i]; st&foldContainedWaits != 0 && p != 0 && f.name[p-1] == f.name[i] && f.name[i] != 0 {
+		// its twin parent's row reads its waits as its own, so its
+		// contained ones, merging them with its others
 		return true
 	}
 	if st&foldExecOp == 0 {

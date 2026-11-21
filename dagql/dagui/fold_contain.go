@@ -3,31 +3,37 @@ package dagui
 // Contained waits.
 //
 // A row's waiting (resolvedWaits) counts a blocker inside the row's own
-// subtree as the row's own work. So when no edge -- a wait or cause link --
-// leaves a span C's subtree, every wait chain starting at C's waits stays in
-// it, every blocker it resolves to is inside C, and C's waits tell C's row,
-// and any row holding C, nothing. They're CONTAINED: neither C nor their
-// targets need be retained for them, and C folds as plain work (foldedWork),
-// as its summary is. What else reads C's own waits:
+// subtree as the row's own work. A wait of a span C on a span T beneath it
+// whose chain can't leave T -- no edge, wait or cause link, crosses T's
+// subtree boundary -- resolves, wherever it's read from a row holding T, to
+// blockers inside that row: it tells the row nothing but the stretch it
+// covers, which merges with the row's other waits (mergeWaitWindows). Such a
+// wait is CONTAINED: T need not be retained for it, and the DB reads it as a
+// window on work inside the row (waitWindow.inside) instead of on T. What
+// reads C's waits:
 //
+//   - C's row, the rows holding C, and C's same-name parent, whose row
+//     merges C's waits with its own: all hold T;
 //   - a span outside C waiting on C reads them through its wait chain, for
-//     its own row, which doesn't hold C's blockers: C is READ, and so is
-//     what C's waits reach, and C's twins (its same-name children, whose
-//     waits are C's);
-//   - C's same-name parent, whose row merges C's waits with its own (the
-//     longest contributor names a merged stretch): C's waits are contained
-//     only while its twin parent's are too;
+//     its own row, which doesn't hold T: C is READ, and so is what C's
+//     waits reach, and C's twins (its same-name children, whose waits are
+//     C's);
 //   - a call C is the deferred evaluation of reads C's waits as its own:
 //     C has a cause link then, and a span with one is read too.
 //
-// So a wait of C on a span beneath it is contained while no edge escapes
-// C's subtree, C isn't read, and the same holds for C's twin parents. An
-// edge arriving later that breaks this breaks C's contained waits
-// (breakWaits): C and their targets are retained, and read back, from then
-// on.
+// So a wait of C on a span T beneath it is contained while C and its twin
+// parents aren't read, T is SEALED -- no edge crosses its boundary, nor that
+// of its parent, whose waits the chain reads too when T is a call's
+// execution (rowWaitsState.chainWaits) -- and T isn't a lazy evaluation,
+// which resolves to the call it evaluates. An edge arriving later that
+// breaks this breaks the wait (breakWaits, breakWaitsOn): C and T are
+// retained, and read back, from then on.
+//
+// A folded span whose waits are all contained or on its own execution
+// (noopWait) is plain work, as its summary is: nothing it waits on is
+// outside it.
 
-// noteWait notes span i's wait on target, and reports whether it's
-// contained.
+// noteWait notes span i's wait on target.
 func (f *Fold) noteWait(i, target uint32) {
 	if i == target {
 		return
@@ -74,14 +80,19 @@ func (f *Fold) breakNoops(s uint32) {
 	f.state[s] = f.state[s]&^foldNoopWaits | foldWaitLinks
 	f.Broken++
 	f.BrokenTargets += len(f.noops[s])
-	have := noSpan
-	if s == f.ingesting {
-		have = s
-	}
-	f.promote(s, have)
+	f.promote(s, f.have(s))
 	for _, t := range f.noops[s] {
 		f.promote(t, noSpan)
 	}
+}
+
+// have is the span promote may take the arriving snapshot of: s itself if
+// it's the one being ingested.
+func (f *Fold) have(s uint32) uint32 {
+	if s == f.ingesting {
+		return s
+	}
+	return noSpan
 }
 
 // foldWait is a wait link of an arriving span: its target, and whether
@@ -92,7 +103,7 @@ type foldWait struct {
 }
 
 // classifyWaits records span i's waits, and sorts them into those no row
-// reads -- its waits on its own execution (noopWait), contained ones -- and
+// reads -- its waits on its own execution (noopWait) --, contained ones, and
 // the others, which it appends to linked for the DB to retain with i.
 func (f *Fold) classifyWaits(i uint32, waits []foldWait, linked []SpanID) []SpanID {
 	// the waits a span carries come whole with each snapshot of it
@@ -110,18 +121,22 @@ func (f *Fold) classifyWaits(i uint32, waits []foldWait, linked []SpanID) []Span
 		}
 		f.noteWait(i, targets[k])
 	}
-	contained := f.waitsContained(i)
-	any := false
+	unread := f.unread(i)
+	any, open := false, false
 	for k, w := range waits {
 		if noop[k] {
 			continue
 		}
-		if contained && f.isAncestor(i, targets[k]) && targets[k] != i {
+		if t := targets[k]; unread && f.containable(i, t) {
+			f.state[t] |= foldWaitTarget
 			any = true
 			continue
 		}
-		f.state[i] |= foldWaitLinks
+		open = true
 		linked = append(linked, w.target)
+	}
+	if open {
+		f.state[i] |= foldWaitLinks
 	}
 	if any {
 		f.state[i] |= foldContainedWaits
@@ -156,12 +171,11 @@ func (f *Fold) noopWait(i, t uint32, exec bool) bool {
 	return f.isAncestor(i, t)
 }
 
-// waitsContained reports whether span i's waits on spans beneath it are
-// contained: no edge leaves its subtree, it isn't read, and the same holds
-// for its twin parents.
-func (f *Fold) waitsContained(i uint32) bool {
+// unread reports whether no row that doesn't hold span i reads its waits:
+// it isn't read, nor are its twin parents.
+func (f *Fold) unread(i uint32) bool {
 	for depth := 0; depth < 4096; depth++ {
-		if f.state[i]&(foldEscapes|foldRead) != 0 {
+		if f.state[i]&foldRead != 0 {
 			return false
 		}
 		p := f.parent[i]
@@ -173,14 +187,37 @@ func (f *Fold) waitsContained(i uint32) bool {
 	return false
 }
 
+// containable reports whether a wait of span c on t, if no row that
+// doesn't hold c reads it, is contained: t is beneath c, sealed, and no
+// lazy evaluation.
+func (f *Fold) containable(c, t uint32) bool {
+	if t == c || f.state[t]&foldReceived == 0 || !f.isAncestor(c, t) {
+		return false
+	}
+	if f.state[t]&foldEscapes != 0 || isLazyEvaluationName(f.nameTab[f.name[t]]) {
+		return false
+	}
+	if p := f.parent[t]; p != 0 && p-1 != c && f.state[p-1]&foldEscapes != 0 {
+		return false
+	}
+	return true
+}
+
 // markEscape marks s and its ancestors below lca (noSpan: all of them) as
-// spans an edge leaves the subtree of, breaking their contained waits and
-// their twins'.
+// spans an edge crosses the subtree boundary of, breaking the contained
+// waits on them, and on their children, whose chains read theirs.
 func (f *Fold) markEscape(s, lca uint32) {
 	for depth := 0; s != lca && depth < 4096; depth++ {
 		if f.state[s]&foldEscapes == 0 {
 			f.state[s] |= foldEscapes
-			f.breakWaits(s)
+			if f.state[s]&foldWaitTarget != 0 {
+				f.breakWaitsOn(s, noSpan)
+			}
+			for c := f.firstChild[s]; c != 0; c = f.nextSib[c-1] {
+				if f.state[c-1]&foldWaitTarget != 0 {
+					f.breakWaitsOn(c-1, s)
+				}
+			}
 		}
 		p := f.parent[s]
 		if p == 0 {
@@ -212,7 +249,7 @@ func (f *Fold) markRead(s uint32) {
 }
 
 // breakWaits retains span s if it has contained waits, and their targets,
-// reading back those folded; and so its twins' (see waitsContained).
+// reading back those folded; and so its twins' (see unread).
 func (f *Fold) breakWaits(s uint32) {
 	stack := []uint32{s}
 	for len(stack) > 0 {
@@ -222,11 +259,7 @@ func (f *Fold) breakWaits(s uint32) {
 			f.state[s] = f.state[s]&^foldContainedWaits | foldWaitLinks
 			f.Broken++
 			f.BrokenTargets += len(f.reads[s])
-			have := noSpan
-			if s == f.ingesting {
-				have = s
-			}
-			f.promote(s, have)
+			f.promote(s, f.have(s))
 			for _, t := range f.reads[s] {
 				f.promote(t, noSpan)
 			}
@@ -239,26 +272,74 @@ func (f *Fold) breakWaits(s uint32) {
 	}
 }
 
-// skipsWait reports whether the waiting below rows is to skip carrier's
-// wait on target: a contained wait on a folded span, which the DB doesn't
-// hold even a reference to, and which tells nothing (see above).
-func (f *Fold) skipsWait(carrier, target SpanID) bool {
+// breakWaitsOn breaks the contained waits on t, which is no longer sealed
+// (or whose parent isn't, but for the waits of that parent, except):
+// their carriers, t's ancestors, and t are retained, and read back.
+func (f *Fold) breakWaitsOn(t, except uint32) {
+	f.state[t] &^= foldWaitTarget
+	for a, depth := f.parent[t], 0; a != 0 && depth < 4096; a, depth = f.parent[a-1], depth+1 {
+		c := a - 1
+		if c == except || f.state[c]&foldContainedWaits == 0 || !slicesContains(f.reads[c], t) {
+			continue
+		}
+		f.state[c] |= foldWaitLinks
+		f.Broken++
+		f.BrokenTargets++
+		f.promote(c, f.have(c))
+		f.promote(t, noSpan)
+	}
+	if except != noSpan {
+		// still a target of except's
+		f.state[t] |= foldWaitTarget
+	}
+}
+
+func slicesContains(s []uint32, v uint32) bool {
+	for _, x := range s {
+		if x == v {
+			return true
+		}
+	}
+	return false
+}
+
+// waitStandIn reports how the waiting below rows is to read carrier's wait
+// on target, a span a folding DB holds as a stub, which it doesn't hold
+// even a reference to: skip, a wait on carrier's own execution (exec: a
+// wait for reason call_exec or singleflight), which no row reads; inside, a
+// contained wait, as a window on work inside the row (see above). A folded
+// span beneath carrier that carrier waits on is the target of one or the
+// other: the targets of its other waits are retained with it.
+func (f *Fold) waitStandIn(carrier, target SpanID, exec bool) (skip, inside bool) {
 	if f == nil {
-		return false
+		return false, false
 	}
 	c, ok := f.lookup(carrier)
 	if !ok || f.state[c]&(foldContainedWaits|foldNoopWaits) == 0 {
-		return false
+		return false, false
 	}
 	t, ok := f.lookup(target)
-	if !ok || t == c || f.state[t]&(foldReceived|foldRetained) != foldReceived {
-		return false
+	if !ok || t == c || f.state[t]&(foldReceived|foldRetained) != foldReceived || !f.isAncestor(c, t) {
+		return false, false
 	}
-	if f.state[c]&foldContainedWaits == 0 && f.name[t] != f.name[c] {
-		// only its waits on its own execution go unread
-		return false
+	if f.state[c]&foldNoopWaits != 0 && exec && f.name[t] == f.name[c] {
+		return true, false
 	}
-	return f.isAncestor(c, t)
+	if f.state[c]&foldContainedWaits != 0 {
+		return false, true
+	}
+	return false, false
+}
+
+// holdsWaitTarget reports whether the stubs hold carrier's wait on target
+// in the DB's stead (waitStandIn).
+func (f *Fold) holdsWaitTarget(carrier, target SpanID, reason string) bool {
+	skip, inside := f.waitStandIn(carrier, target, isExecWait(reason))
+	return skip || inside
+}
+
+func isExecWait(reason string) bool {
+	return reason == "call_exec" || reason == "singleflight"
 }
 
 // commonAncestor returns the lowest common ancestor of x and y in the

@@ -98,6 +98,10 @@ type waitWindow struct {
 	// below is set on a wait recorded below the target (rowWaitsState
 	// chainWaits): it is resolved already, to the op working during it.
 	below *waitStretch
+	// inside marks a contained wait on a span a folding DB holds as a stub
+	// (see fold_contain.go): whatever the row reading it, it resolves to
+	// work inside the row.
+	inside bool
 }
 
 // resolvedWait is a wait stretch attributed to the op actually working
@@ -110,6 +114,9 @@ type resolvedWait struct {
 	via        string
 	// unplaced marks a blocker of the trace not loaded (see TimeSegment)
 	unplaced bool
+	// inside marks the resolution of a contained wait (waitWindow.inside):
+	// blockers inside the row
+	inside bool
 }
 
 // breakdownClock is the time a TimeBreakdown is computed at. It records
@@ -364,7 +371,7 @@ func (span *Span) resolvedWaits(clk *breakdownClock, paintedTotal time.Duration,
 	// "waiting on X".
 	genuine := resolved[:0]
 	for _, w := range resolved {
-		if w.blocker != nil && spanInSubtree(w.blocker, span) {
+		if w.inside || w.blocker != nil && spanInSubtree(w.blocker, span) {
 			continue
 		}
 		if w.blocker != nil && spanInSubtree(span, w.blocker) {
@@ -451,6 +458,9 @@ func overlaySegments(base, extra []TimeSegment) []TimeSegment {
 // target itself was working resolve to the target; stretches where it was in
 // turn waiting resolve deeper.
 func resolveWaitChain(win waitWindow, viaLabel string, blockers []*Span, depth int, visited map[*Span]bool, clk *breakdownClock, below *rowWaitsState) []resolvedWait {
+	if win.inside {
+		return []resolvedWait{{start: win.start, end: win.end, inside: true}}
+	}
 	blocker := resolveBlocker(win.target)
 	unplaced := false
 	if blocker.unloaded() {
@@ -677,10 +687,16 @@ func (span *Span) collectOwnWaits(dst *[]waitWindow, row *Span, clk *breakdownCl
 			continue
 		}
 		target := span.db.Spans.Map[link.SpanContext.SpanID]
-		if target == nil && span.db.fold.skipsWait(span.ID, link.SpanContext.SpanID) {
-			// a contained wait on a span a folding DB holds as a stub,
-			// which tells nothing (see Fold.containedWait)
-			continue
+		var inside bool
+		if target == nil {
+			// a span a folding DB holds as a stub: a wait on span's own
+			// execution, or a contained one, on work inside every row
+			// reading it (see fold_contain.go)
+			var skip bool
+			skip, inside = span.db.fold.waitStandIn(span.ID, link.SpanContext.SpanID, isExecWait(link.WaitReason))
+			if skip {
+				continue
+			}
 		}
 
 		// A caller blocked on its own resolver execution (its same-name
@@ -700,6 +716,7 @@ func (span *Span) collectOwnWaits(dst *[]waitWindow, row *Span, clk *breakdownCl
 			end:    end,
 			target: target,
 			reason: link.WaitReason,
+			inside: inside,
 		})
 	}
 }
@@ -1211,6 +1228,7 @@ func mergeWaitWindows(wins []waitWindow) []waitWindow {
 		}
 		cur.target = best.target
 		cur.reason = best.reason
+		cur.inside = best.inside
 		merged = append(merged, cur)
 	}
 	for _, w := range wins[1:] {
