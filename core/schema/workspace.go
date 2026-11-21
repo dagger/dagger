@@ -2060,30 +2060,22 @@ func (s *workspaceSchema) overlayGlobMatches(
 }
 
 // globDirectoryTree runs a glob against an in-engine directory tree (the
-// workspace rootfs, the overlay's delta root, or the mounts tree).
+// workspace rootfs, the overlay's delta root, the mounts tree, or a filtered
+// workspace directory).
+//
+// It calls Directory.Glob directly rather than selecting Directory.glob, as
+// searchDirectoryTree does for search. Selecting it into a slice caches the
+// list and, through NthValue, one session-owned result per matched path. A
+// workspace without a host path gets a new rootfs on every edit, so an agent
+// that edits and globs leaves ~5 KB of dagql cache per path per glob. The
+// calling workspace field is itself cached, so repeating a glob on one
+// workspace still hits a cache.
 func globDirectoryTree(
 	ctx context.Context,
 	tree dagql.ObjectResult[*core.Directory],
 	pattern string,
 ) ([]string, error) {
-	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return nil, err
-	}
-	var matches dagql.Array[dagql.String]
-	if err := srv.Select(ctx, tree, &matches, dagql.Selector{
-		Field: "glob",
-		Args: []dagql.NamedInput{
-			{Name: "pattern", Value: dagql.NewString(pattern)},
-		},
-	}); err != nil {
-		return nil, err
-	}
-	out := make([]string, len(matches))
-	for i, m := range matches {
-		out[i] = string(m)
-	}
-	return out, nil
+	return tree.Self().Glob(ctx, tree, pattern)
 }
 
 // mergeGlobMatches combines two sides of a workspace glob with per-path
@@ -4879,23 +4871,14 @@ func (s *workspaceSchema) descendantRoots(
 	if err != nil {
 		return nil, err
 	}
-	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return nil, err
-	}
 	var dirs []string
 	for _, name := range markers {
-		var matches dagql.Array[dagql.String]
-		if err := srv.Select(ctx, dir, &matches, dagql.Selector{
-			Field: "glob",
-			Args: []dagql.NamedInput{
-				{Name: "pattern", Value: dagql.NewString("**/" + name)},
-			},
-		}); err != nil {
+		matches, err := globDirectoryTree(ctx, dir, "**/"+name)
+		if err != nil {
 			return nil, fmt.Errorf("glob %s: %w", name, err)
 		}
 		for _, match := range matches {
-			descendant := path.Dir(match.String())
+			descendant := path.Dir(match)
 			if descendant == "/" || descendant == "" {
 				descendant = "."
 			}
