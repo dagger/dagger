@@ -818,7 +818,7 @@ func TestExportLogAttrsPhases(t *testing.T) {
 		UnpredictedLinks: 15,
 		LateMoved:        16,
 		Phases:           dagql.ExportPhases{WalkWait: 6 * time.Microsecond, Walk: 7 * time.Microsecond, Copy: 8 * time.Microsecond, Bundle: 12 * time.Microsecond, BundleKnown: time.Microsecond, BundleCheck: 2 * time.Microsecond, BundleSettle: 3 * time.Microsecond, BundleRecipes: 4 * time.Microsecond, BundleValues: 5 * time.Microsecond, BundleKeep: 13 * time.Microsecond, BundlePasses: 2},
-		Chains:           &dagql.SelectedChains{Stats: bkcache.ExportStats{Layers: 3, LayersReused: 1, LayersDiffed: 2, RawBytes: 900, BlobBytes: 300, DiffTime: 9 * time.Millisecond, CompressTime: 6 * time.Millisecond, LockWait: 10 * time.Microsecond, BuildWait: 11 * time.Microsecond, LayersMerged: 1, MergedRawBytes: 400, MergedBlobBytes: 100, MergedDiffTime: 3 * time.Millisecond}},
+		Chains:           &dagql.SelectedChains{Stats: bkcache.ExportStats{Layers: 3, Listings: 2, Contents: 4, LayersReused: 1, LayersDiffed: 2, RawBytes: 900, BlobBytes: 300, DiffTime: 9 * time.Millisecond, CompressTime: 6 * time.Millisecond, LockWait: 10 * time.Microsecond, BuildWait: 11 * time.Microsecond, LayersMerged: 1, MergedRawBytes: 400, MergedBlobBytes: 100, MergedDiffTime: 3 * time.Millisecond}},
 	}
 	// One record carries its engine's content-preferred digest, and one is a
 	// service's that carries none.
@@ -845,6 +845,8 @@ func TestExportLogAttrsPhases(t *testing.T) {
 		"bundle_values", 5 * time.Microsecond,
 		"bundle_keep", 13 * time.Microsecond,
 		"layers", 3,
+		"listings", 2,
+		"contents", 4,
 		"layers_reused", 1,
 		"layers_diffed", 2,
 		"raw_bytes", int64(900),
@@ -886,6 +888,8 @@ func TestExportLogAttrsPhases(t *testing.T) {
 		"bundle_values", time.Duration(0),
 		"bundle_keep", time.Duration(0),
 		"layers", 0,
+		"listings", 0,
+		"contents", 0,
 		"layers_reused", 0,
 		"layers_diffed", 0,
 		"raw_bytes", int64(0),

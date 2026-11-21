@@ -41,9 +41,11 @@ const exportLayerWorkers = 4
 // once: up to exportLayerWorkers per export, and across all exports no more
 // than remotecache.ExportsInFlight serial exports built. Only building a blob
 // takes the gate, so it bounds the engine's compression streams and layer
-// reads.
+// reads. A layer the export computes goes as a listing and its content
+// blobs, so the store keeps each file's contents once.
 var exportRefConfig = config.RefConfig{
 	Compression: compression.New(compression.Zstd),
+	Listings:    true,
 	Builds: config.LayerBuilds{
 		Workers: exportLayerWorkers,
 		Gate:    semaphore.NewWeighted(max(exportLayerWorkers, remotecache.ExportsInFlight)),
@@ -61,6 +63,7 @@ var exportRefConfig = config.RefConfig{
 // The blobs are the same: only how many build at once differs.
 var idleExportRefConfig = config.RefConfig{
 	Compression: exportRefConfig.Compression,
+	Listings:    exportRefConfig.Listings,
 	Builds: config.LayerBuilds{
 		Workers: runtime.NumCPU(),
 		Gate:    semaphore.NewWeighted(int64(runtime.NumCPU())),
@@ -452,6 +455,8 @@ func exportLogAttrs(req protocol.Export, skipped []protocol.SkippedRoot, values 
 		"bundle_values", phases.BundleValues,
 		"bundle_keep", phases.BundleKeep,
 		"layers", stats.Layers,
+		"listings", stats.Listings,
+		"contents", stats.Contents,
 		"layers_reused", stats.LayersReused,
 		"layers_diffed", stats.LayersDiffed,
 		"raw_bytes", stats.RawBytes,
