@@ -91,7 +91,9 @@ var sdkFixtures = []sdkFixture{
 	{lang: "java", source: "src/main/java/io/dagger/modules/viztestjava/ViztestJava.java", breakage: "\nthis is not java\n"},
 	// Not an entrypoint: the dang-sdk module runs on the engine's built-in
 	// Dang runtime, so its errors and logs are the reference. BAD: the
-	// collapsed report renders a native error twice.
+	// collapsed report renders a native error twice, and a wrapped exec error
+	// shows only its origin, without the wrapping message, even expanded:
+	// fail-exec-wrapped renders as fail-exec does.
 	{lang: "dang", source: "main.dang", breakage: "\nthis is not dang\n", noProcess: true},
 }
 
@@ -219,17 +221,22 @@ func sdkExamples() []Example {
 // source to, named for the module and a digest of its source.
 var dangSourceDir = regexp.MustCompile(`(/tmp/dagger-dang/[\w.-]+)-[0-9a-f]{32}/`)
 
+// httpDate matches the date of an HTTP Date header, such as the one in a
+// GraphQL error a TypeScript client logs; its time is scrubbed already.
+var httpDate = regexp.MustCompile(`\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{2} [A-Z][a-z]{2} \d{4} `)
+
 // normalizeSDKOutput replaces every mention of the engine's native platform,
 // and of its architecture as GOARCH, so goldens that render an SDK's build for
 // the default platform are architecture-independent, and the digests in Dang
-// source paths, so they don't change with every edit of a fixture. With
-// expanded, it also elides what the module entrypoint evaluates; see
-// elideEntrypointInternals.
+// source paths, so they don't change with every edit of a fixture, and HTTP
+// dates. With expanded, it also elides what the module entrypoint evaluates;
+// see elideEntrypointInternals.
 func normalizeSDKOutput(out, nativePlatform string, expanded bool) string {
 	if expanded {
 		out = elideEntrypointInternals(out)
 	}
 	out = dangSourceDir.ReplaceAllString(out, "$1-XXXXXXXX/")
+	out = httpDate.ReplaceAllString(out, "XXX, XX XXX XXXX ")
 	if nativePlatform == "" {
 		return out
 	}
@@ -279,8 +286,8 @@ func elideEntrypointInternals(out string) string {
 			switch {
 			case line[col] == '!':
 				inError = true
-			case inError && line[col] == ' ' && len(line) > col+2 && line[col+1] == ' ' && line[col+2] != ' ':
-				// the error's next line
+			case inError && line[col] == ' ':
+				// the error's next line: a child's would start with a guide
 			case line[col] == '┃':
 				inError = false
 			default:
@@ -329,6 +336,7 @@ func TestElideEntrypointInternals(t *testing.T) {
 ├╴✘ call module entrypoint X.Xs ERROR
 │ ! call module entrypoint: first line
 │   second line
+│       at an indented frame
 │ ┆ (the entrypoint's own evaluation, elided)
 │
 ├╴✘ withExec sh -c 'exit 1' X.Xs ERROR
@@ -345,6 +353,7 @@ func TestElideEntrypointInternals(t *testing.T) {
 ├╴✘ call module entrypoint X.Xs ERROR
 │ ! call module entrypoint: first line
 │   second line
+│       at an indented frame
 │ ├╴✔ defaultPlatform: Platform! X.Xs
 │ │ ┃ "linux/ARCH"
 │ │
@@ -370,6 +379,15 @@ func onlyGuides(rs []rune) bool {
 		}
 	}
 	return true
+}
+
+// removeBrokenSDKFixtures removes the copies brokenSDKFixture makes, in case
+// a run was interrupted before its cleanup.
+func removeBrokenSDKFixtures() {
+	copies, _ := filepath.Glob("viztest/sdks/broken-*")
+	for _, dir := range copies {
+		os.RemoveAll(dir)
+	}
 }
 
 // brokenSDKFixture copies an SDK fixture to dst, with breakage appended to
