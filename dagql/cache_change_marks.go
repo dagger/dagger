@@ -68,6 +68,12 @@ type changeMarks struct {
 	// them at its leaving (markLeavingLocked), though a prune or a part's
 	// retirement has emptied its stored parts.
 	lending map[sharedResultID]struct{}
+	// holding are the entries with a class mark made while they held a part
+	// (holds), not handed back yet: one that leaves its classes before then
+	// names its class mates at its leaving (markLeavingLocked), while the
+	// classes still name them, though a prune has emptied its record or its
+	// stored parts since.
+	holding map[sharedResultID]struct{}
 	// left are the classes whose entries a leaving entry has marked, so
 	// collecting a whole class walks it once, not once per entry, and
 	// whether their entries' stamps moved: a later leaving entry that lends
@@ -106,6 +112,12 @@ func (c *Cache) markEntryClassLocked(id sharedResultID, cause StampCause) {
 	c.changes.lends = append(c.changes.lends, lends)
 	holds := cause != StampJoin && (lends || res != nil && res.holdsAnyPartLocked())
 	c.changes.holds = append(c.changes.holds, holds)
+	if holds {
+		if c.changes.holding == nil {
+			c.changes.holding = map[sharedResultID]struct{}{}
+		}
+		c.changes.holding[id] = struct{}{}
+	}
 	if lends {
 		if c.changes.lending == nil {
 			c.changes.lending = map[sharedResultID]struct{}{}
@@ -140,8 +152,11 @@ func (c *Cache) markLeavingLocked(id sharedResultID) {
 	_, lends := c.changes.lending[id]
 	lends = lends || leaving != nil && len(leaving.storedParts) > 0
 	// Its class mates' part answers change only if it held a part for them
-	// (holdsAnyPartLocked), and their class lists are no reader's to keep.
-	holds := lends || leaving != nil && leaving.holdsAnyPartLocked()
+	// (holdsAnyPartLocked), now or at a class mark of this write that a
+	// prune made before emptying it, and their class lists are no reader's
+	// to keep.
+	_, held := c.changes.holding[id]
+	holds := lends || held || leaving != nil && leaving.holdsAnyPartLocked()
 	for eqID := range c.resultOutputEqClasses[id] {
 		root := c.eqClassRootLocked(eqID)
 		if root == 0 {
@@ -274,6 +289,7 @@ func (c *Cache) takeChangesLocked(change *RemoteChange) {
 	marks.entries, marks.classes, marks.causes, marks.lends, marks.holds, marks.holdings = marks.entries[:0], marks.classes[:0], marks.causes[:0], marks.lends[:0], marks.holds[:0], marks.holdings[:0]
 	marks.stamped = 0
 	marks.lending = nil
+	marks.holding = nil
 	marks.left = nil
 	marks.leftNamed = nil
 }
