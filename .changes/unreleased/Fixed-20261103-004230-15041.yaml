@@ -1,0 +1,7 @@
+kind: Fixed
+body: |
+  An exec no longer fails with `unmount rootfs: device or resource busy` when something outside its container is still using its root filesystem after it exits. The engine now detaches the mount, logs a warning, and no longer leaves the mount behind until it restarts.
+time: 2026-11-03T00:42:30Z
+custom:
+  Author: sipsma
+  PR: "15041"
