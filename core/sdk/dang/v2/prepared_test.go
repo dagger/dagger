@@ -55,9 +55,16 @@ func TestPreparedDangSingleflightFreshClientsAndRelease(t *testing.T) {
 		parts := []string{"schema-test", "module", "original"}
 		parts[index] += "-different"
 		require.NotEqual(t, modKey, preparedDangKey(parts...), "module key input %d was ignored", index)
-		parts = []string{"source-a", "schema-a", dir}
-		parts[index] += "-different"
-		require.NotEqual(t, key, preparedDangKey(parts...), "compilation key input %d was ignored", index)
+	}
+	source := stagedDangSource{dir: dir, version: dang.Version{Major: 2, Minor: 0}}
+	compilation := preparedDangCompilationKey(source, "v1.0.0", "schema-a")
+	for name, other := range map[string]string{
+		"staged source":  preparedDangCompilationKey(stagedDangSource{dir: dir + "-different", version: source.version}, "v1.0.0", "schema-a"),
+		"Dang version":   preparedDangCompilationKey(stagedDangSource{dir: dir, version: dang.Version{Major: 2, Minor: 1}}, "v1.0.0", "schema-a"),
+		"engine version": preparedDangCompilationKey(source, "v1.0.1", "schema-a"),
+		"schema":         preparedDangCompilationKey(source, "v1.0.0", "schema-b"),
+	} {
+		require.NotEqual(t, compilation, other, "compilation key input %s was ignored", name)
 	}
 	failure := errors.New("compilation failed")
 	_, err = cachedPreparedDangDir(ctx, modKey, "prepared-retry", func(context.Context) (*dang.PreparedDirectory, error) { return nil, failure })
