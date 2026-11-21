@@ -312,6 +312,14 @@ type MemoryCake {
         focus: "go\\.etcd\\.io/bbolt|internal/fastbolt|\\(\\*snapshotManager\\)\\.(AttachLease|addSnapshotOwner|createOwnerLease|attachOwner\\w*)|engine/snapshots/owner_ancestry\\.go",
       ),
       Demo(
+        pr: "object-lists",
+        title: "dagql: resolve plain object lists from values",
+        # The elements' results (loadNthValue) and what selecting their
+        # fields leaves (resolvePath's per-element goroutines): on main, a
+        # result per element and per element's submatches list and item.
+        focus: "dagql\\.\\(\\*Server\\)\\.(loadNthValue|resolvePath\\.func\\d+)",
+      ),
+      Demo(
         pr: "15220",
         title: "clientdb: intern the span index's span IDs",
         # The span index's own structures. The span ID strings its maps
@@ -481,6 +489,23 @@ type MemoryCake {
     env: [String!]! = [],
   ): Measurement! @cache(policy: FunctionCachePolicy.PerSession) {
     measure(pr: "15232", ref: ref, env: env)
+  }
+
+  """
+  A client selecting fields of every element of a large list of plain-data
+  objects. One session runs SEARCHES Directory.search calls (default 5) over
+  FILES files (default 100) of LINES lines (default 100) that each match
+  once, selecting SELECT of each of the FILES x LINES results (default
+  "filePath lineNumber matchedLines submatches { text start end }");
+  out/searches.txt has the bytes allocated per search and per result. Add
+  id to SELECT for the path SDKs take (they select each element's ID).
+  Scale with env, e.g. ["SEARCHES=2"].
+  """
+  demoObjectLists(
+    ref: String! = "main",
+    env: [String!]! = [],
+  ): Measurement! @cache(policy: FunctionCachePolicy.PerSession) {
+    measure(pr: "object-lists", ref: ref, env: env)
   }
 
   """
