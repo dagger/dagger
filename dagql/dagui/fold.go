@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"strings"
+	"time"
 
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -77,6 +78,12 @@ const (
 	// its nearest retained ancestor (foldAgg.running): one the view would
 	// place, so that it shows its ancestors running.
 	foldRunCounted
+	// foldFunctionPlumbing is Span.FunctionPlumbing; foldExecOp marks an
+	// exec (telemetryattrs.WcprofOpKindAttr). Waiting below a row that
+	// runs a module function reads the execs beneath its plumbing (see
+	// functionProcess), so they're retained.
+	foldFunctionPlumbing
+	foldExecOp
 )
 
 func (s foldState) cat() spanStateCategory { return spanStateCategory(s & foldCatMask) }
@@ -144,6 +151,10 @@ type Fold struct {
 	// idx+1 of the parent, first child and next sibling; 0 for none.
 	parent, firstChild, nextSib []uint32
 	state                       []foldState
+	// start and end are each span's interval (Unix nanoseconds; end 0 while
+	// running): what a retained row's waiting below it reads of the folded
+	// spans beneath it (see foldedWork).
+	start, end []int64
 
 	// agg holds, per retained span, what's folded beneath it.
 	agg map[uint32]*foldAgg
@@ -152,8 +163,10 @@ type Fold struct {
 	load []SpanID
 	// touched collects the retained spans whose aggregates a batch changed.
 	touched map[uint32]struct{}
-	// rootEnded is set once a root completed: running spans are canceled.
+	// rootEnded is set once a root completed, at rootEnd: running spans are
+	// canceled, ending then.
 	rootEnded bool
+	rootEnd   int64
 
 	// Loads counts the spans asked of FoldOptions.Load.
 	Loads int
@@ -273,6 +286,8 @@ func (f *Fold) intern(id SpanID) uint32 {
 	f.firstChild = append(f.firstChild, 0)
 	f.nextSib = append(f.nextSib, 0)
 	f.state = append(f.state, 0)
+	f.start = append(f.start, 0)
+	f.end = append(f.end, 0)
 	f.ids.put(id, i, f.spans)
 	return i
 }
@@ -286,6 +301,7 @@ type foldInfo struct {
 	id, parent SpanID
 	flags      foldState
 	cat        spanStateCategory
+	start, end time.Time
 	// linked holds the targets of its cause, error-origin and wait links.
 	linked []SpanID
 	// origins holds the error origins its status names.
@@ -296,6 +312,8 @@ func otelFoldInfo(s sdktrace.ReadOnlySpan) foldInfo {
 	info := foldInfo{
 		id:     SpanID{s.SpanContext().SpanID()},
 		parent: SpanID{s.Parent().SpanID()},
+		start:  s.StartTime(),
+		end:    s.EndTime(),
 	}
 	var pending, cached, canceled bool
 	for _, attr := range s.Attributes() {
@@ -333,7 +351,7 @@ func otelFoldInfo(s sdktrace.ReadOnlySpan) foldInfo {
 }
 
 func snapshotFoldInfo(s *SpanSnapshot) foldInfo {
-	info := foldInfo{id: s.ID, parent: s.ParentID}
+	info := foldInfo{id: s.ID, parent: s.ParentID, start: s.StartTime, end: s.EndTime}
 	set := func(on bool, flag foldState) {
 		if on {
 			info.flags |= flag
@@ -350,6 +368,10 @@ func snapshotFoldInfo(s *SpanSnapshot) foldInfo {
 	set(s.HasLogs, foldHasLogs)
 	set(s.Agent, foldAgent)
 	set(s.Reveal, foldReveal)
+	set(s.FunctionPlumbing, foldFunctionPlumbing)
+	if kind, _ := s.ExtraAttributes.String(telemetryattrs.WcprofOpKindAttr); kind == "exec" {
+		info.flags |= foldExecOp
+	}
 	set(s.Progress != nil && len(s.Progress.Order) > 0, foldProgress)
 	set(s.LLMRole != "" || s.CheckName != "" || s.GeneratorName != "" ||
 		s.TestCaseName != "" || s.TestSuiteName != "" || s.Service || s.ServiceName != "" ||
@@ -425,6 +447,10 @@ func foldAttrFlag(key string, on bool, str string) foldState {
 		return foldKind
 	case "rpc.service":
 		return foldEncapsulated
+	case telemetryattrs.UIFunctionPlumbingAttr:
+		return boolFlag(on, foldFunctionPlumbing)
+	case telemetryattrs.WcprofOpKindAttr:
+		return boolFlag(str == "exec", foldExecOp)
 	}
 	return 0
 }
@@ -504,12 +530,18 @@ func (f *Fold) ingest(info foldInfo, fill bool) bool {
 	}
 	first := st&foldReceived == 0
 	f.state[i] |= foldReceived | info.flags
+	f.start[i] = info.start.UnixNano()
+	f.end[i] = 0
+	if !info.end.Before(info.start) {
+		f.end[i] = info.end.UnixNano()
+	}
 	if first && info.parent.IsValid() {
 		f.link(i, f.intern(info.parent))
 	}
 	if f.rootEnded && info.cat == stateRunning {
 		// the DB cancels a span that runs past its root's end
 		info.cat = stateCanceled
+		f.end[i] = f.rootEnd
 	}
 	retained := f.state[i]&foldRetained != 0
 	if !retained {
@@ -532,7 +564,7 @@ func (f *Fold) ingest(info foldInfo, fill bool) bool {
 		f.expand(i)
 	}
 	if !info.parent.IsValid() && info.cat != stateRunning && !f.rootEnded {
-		f.endRoot()
+		f.endRoot(f.end[i])
 	}
 	return retained
 }
@@ -543,7 +575,75 @@ func (f *Fold) shouldRetain(i uint32) bool {
 	if p := f.parent[i]; p != 0 && f.state[p-1]&(foldExpanded|foldOpenAll) != 0 {
 		return true
 	}
+	if f.neededForWaits(i) {
+		return true
+	}
 	return f.opts.Retain(FoldSpan{f, i})
+}
+
+// neededForWaits reports whether the waiting below a retained row needs
+// span i in full, whatever the policy: what folds stays exact only as plain
+// work (see foldedWork). That's a span with wait links, which tells waits
+// that may rise; a module function's plumbing, whose process doesn't count
+// as work; and the execs beneath plumbing, among which the process is found
+// (functionProcess).
+func (f *Fold) neededForWaits(i uint32) bool {
+	st := f.state[i]
+	if st&(foldWaitLinks|foldFunctionPlumbing) != 0 {
+		return true
+	}
+	if st&foldExecOp == 0 {
+		return false
+	}
+	for p := f.parent[i]; p != 0; p = f.parent[p-1] {
+		if f.state[p-1]&foldFunctionPlumbing != 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// foldedWork appends what span's folded children tell the waiting below it
+// (the time breakdown of span's row, and UpdateRowWaits): their intervals,
+// as span's painted intervals take its children's (paintedIntervals), and,
+// with grandchildren, the intervals of theirs too, which is a folded child's
+// work as its summary would tell it. A folded span has no wait links, no
+// causes and no effects, no plumbing (see neededForWaits): its summary's
+// painted intervals are its own interval and its children's, and nothing
+// rises from it.
+func (f *Fold) foldedWork(span *Span, clk *breakdownClock, grandchildren bool, dst []Interval) []Interval {
+	if f == nil || len(f.agg) == 0 {
+		return dst
+	}
+	i, ok := f.lookup(span.ID)
+	if !ok || f.agg[i] == nil || f.agg[i].children == 0 {
+		return dst
+	}
+	for c := f.firstChild[i]; c != 0; c = f.nextSib[c-1] {
+		if f.state[c-1]&(foldRetained|foldReceived) != foldReceived {
+			continue
+		}
+		dst = append(dst, f.observed(c-1, clk))
+		if !grandchildren {
+			continue
+		}
+		for g := f.firstChild[c-1]; g != 0; g = f.nextSib[g-1] {
+			if f.state[g-1]&foldReceived != 0 {
+				dst = append(dst, f.observed(g-1, clk))
+			}
+		}
+	}
+	return dst
+}
+
+// observed is stub i's interval as of clk, as observedInterval.
+func (f *Fold) observed(i uint32, clk *breakdownClock) Interval {
+	start := time.Unix(0, f.start[i])
+	if f.end[i] == 0 || f.end[i] < f.start[i] {
+		clk.live = true
+		return Interval{Start: start, End: clk.now}
+	}
+	return Interval{Start: start, End: time.Unix(0, f.end[i])}
 }
 
 // link places i under p. What's folded beneath i, if it arrived before i
@@ -862,10 +962,12 @@ func (f *Fold) expand(i uint32) {
 
 // endRoot cancels the folded spans still running, as the DB cancels its
 // own when a root completes (see integrateSpan).
-func (f *Fold) endRoot() {
+func (f *Fold) endRoot(end int64) {
 	f.rootEnded = true
+	f.rootEnd = end
 	for i, st := range f.state {
 		if st&foldRetained == 0 && st.cat() == stateRunning {
+			f.end[i] = end
 			f.setCategory(uint32(i), stateCanceled)
 		}
 	}
@@ -1038,7 +1140,8 @@ func (f *Fold) Stats() FoldStats {
 		}
 	}
 	stats.StubBytes = cap(f.ids.slots)*4 + cap(f.spans)*8 +
-		(cap(f.parent)+cap(f.firstChild)+cap(f.nextSib)+cap(f.state))*4
+		(cap(f.parent)+cap(f.firstChild)+cap(f.nextSib)+cap(f.state))*4 +
+		(cap(f.start)+cap(f.end))*8
 	return stats
 }
 

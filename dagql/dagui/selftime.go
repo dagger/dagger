@@ -310,6 +310,10 @@ func (span *Span) paintedIntervals(clk *breakdownClock) []Interval {
 			painted = append(painted, ival)
 		}
 	}
+	if span.db != nil {
+		// and the children a folding DB holds as stubs
+		painted = span.db.fold.foldedWork(span, clk, false, painted)
+	}
 	return mergeSpanIntervals(painted)
 }
 

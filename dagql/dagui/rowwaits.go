@@ -396,6 +396,9 @@ func (st *rowWaitsState) compute(span *Span) *waitSummary {
 		}
 		work = append(work, childWork...)
 	}
+	// A folded child is plain work: its interval and its children's, with
+	// nothing rising from it (see Fold.foldedWork).
+	work = span.db.fold.foldedWork(span, clk, true, work)
 	if !sum.resolved {
 		// reads as working, as its own breakdown does
 		return sum
@@ -615,6 +618,7 @@ func functionProcess(parent, host *Span, now time.Time) *Span {
 			body = append(body, c.observedInterval(now))
 		}
 	}
+	body = row.db.fold.foldedWork(row, &breakdownClock{now: now}, false, body)
 	body = mergeSpanIntervals(body)
 	var best, last *Span
 	var bestOverlap time.Duration
