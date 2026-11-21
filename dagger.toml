@@ -189,6 +189,9 @@ check.skip = ["wcprof-report-test"]
 cloudCredentials = "file://~/.config/dagger/credentials.json"
 daggerConfig = "file://~/.config/dagger/config.toml"
 
+[modules.memory-cake]
+source = ".dagger/modules/memory-cake"
+
 [modules.tui-qa]
 source = ".dagger/modules/tui-qa"
 
@@ -239,6 +242,10 @@ clients = ["./.dagger/modules/engine-dev"]
 
 [sdks.dang.scopes.".dagger/modules/engine-lab"]
 clients = ["./.dagger/modules/cli-dev", "./.dagger/modules/engine-dev", "github.com/dagger/go@79a92beb4df0898400ef7f7a632009035290383b", "github.com/dagger/wolfi@fdec349f9aad840f2853bc2e6534f2555788da04"]
+is-module = true
+
+[sdks.dang.scopes.".dagger/modules/memory-cake"]
+clients = ["./.dagger/modules/engine-dev"]
 is-module = true
 
 [sdks.dang.scopes.".dagger/modules/go-cli"]

@@ -1,0 +1,20 @@
+"""
+An object whose state grows with every call, like an agent's tool object.
+"""
+type Grower {
+  """
+  The state: a list of numbers, which decodes to many small values.
+  """
+  items: [Int!]! = []
+
+  """
+  A copy with n more numbers.
+  """
+  grow(n: Int! = 256): Grower! {
+    let k = items.length
+    self.items = items + "".padLeft(n).split("").map { _ => k }
+    self
+  }
+
+  size: Int! { items.length }
+}
