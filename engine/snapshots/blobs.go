@@ -2,10 +2,12 @@ package snapshots
 
 import (
 	"context"
+	"io"
 	"log/slog"
 	"maps"
 	"os"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/containerd/containerd/v2/core/diff"
@@ -214,6 +216,12 @@ func (cm *snapshotManager) ensureExportBlob(
 		}
 
 		compressorFunc, finalize := refCfg.Type.Compress(ctx, refCfg)
+		// The diff's time in the compressor, against its reading and
+		// archiving the layer: on a whole pull request's fill a stopping
+		// engine's export waited 9.8 s on one layer, 3.3 GB raw, with no
+		// record of which.
+		var compressSpent atomic.Int64
+		compressorFunc = timedCompressor(compressorFunc, &compressSpent)
 		mediaType := refCfg.Type.MediaType()
 
 		var lower []mount.Mount
@@ -393,11 +401,13 @@ func (cm *snapshotManager) ensureExportBlob(
 		stats.RawBytes += usage.Size
 		stats.BlobBytes += desc.Size
 		stats.DiffTime += diffTime
+		compressTime := time.Duration(compressSpent.Load())
+		stats.CompressTime += compressTime
 		// When the blob was ready, against when its upload starts: at an
 		// engine's stop, what could have gone up while the export's other
 		// layers still built. One line a layer built, at debug.
 		slog.Debug("export layer built", "blob", desc.Digest, "bytes", desc.Size, "raw_bytes", usage.Size,
-			"diff_start", diffStart, "ready", time.Now(), "diff_time", diffTime)
+			"diff_start", diffStart, "ready", time.Now(), "diff_time", diffTime, "compress_time", compressTime)
 		return ensureExportBlobResult{
 			desc:     desc,
 			hasLayer: true,
@@ -435,4 +445,40 @@ func ensureCompression(ctx context.Context, ref *immutableRef, comp compression.
 		return false, errors.Wrapf(err, "failed to convert")
 	}
 	return true, ref.linkBlob(ctx, *newDesc)
+}
+
+// timedCompressor wraps compress so that the time its writer takes, each
+// write of a layer's archive into it and its close, adds to spent: a diff's
+// time in compressing and writing the blob, apart from its reading and
+// archiving the layer. Two clock reads a write; the blob is compress's.
+func timedCompressor(compress compression.Compressor, spent *atomic.Int64) compression.Compressor {
+	return func(dest io.Writer, mediaType string) (io.WriteCloser, error) {
+		start := time.Now()
+		w, err := compress(dest, mediaType)
+		spent.Add(int64(time.Since(start)))
+		if err != nil {
+			return nil, err
+		}
+		return &timedWriter{w: w, spent: spent}, nil
+	}
+}
+
+// timedWriter is a compressor's writer whose calls add their time to spent.
+type timedWriter struct {
+	w     io.WriteCloser
+	spent *atomic.Int64
+}
+
+func (t *timedWriter) Write(p []byte) (int, error) {
+	start := time.Now()
+	n, err := t.w.Write(p)
+	t.spent.Add(int64(time.Since(start)))
+	return n, err
+}
+
+func (t *timedWriter) Close() error {
+	start := time.Now()
+	err := t.w.Close()
+	t.spent.Add(int64(time.Since(start)))
+	return err
 }
