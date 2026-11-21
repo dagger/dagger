@@ -1,0 +1,17 @@
+Expected stderr:
+
+✔ connect X.Xs
+✔ load workspace: . X.Xs
+✔ parsing command line arguments X.Xs
+
+$ viztestJava: ViztestJava! X.Xs CACHED
+✘ .failExitCode: Void X.Xs ERROR
+┇ call module entrypoint ›
+✘ withExec java -jar /opt/module/module.jar engine-call --output /dagger/result.json (
+  ┆ stdin: "{\"receiverType\":\"ViztestJava\",\"receiverValue\":\"{}\",\"fnName\":\"failExitCode\",\"fnArgs\":\"{}\"}"
+  ┆ experimentalPrivilegedNesting: true
+  ┆ moduleContext: Module._implementationScoped: Module!
+  ) X.Xs ERROR
+! exit code: 3
+
+Setup tracing by running "dagger cloud signup". To hide set DAGGER_NO_NAG=1

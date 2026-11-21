@@ -1,0 +1,16 @@
+Expected stderr:
+
+✔ connect X.Xs
+✔ load workspace: . X.Xs
+✔ parsing command line arguments X.Xs
+
+$ viztestTypescript: ViztestTypescript! X.Xs CACHED
+✘ .failNative: Void X.Xs ERROR
+┇ call module entrypoint ›
+✘ withExec tsx --no-deprecation --tsconfig tsconfig.json entrypoint/__dagger.dispatch.ts engine-call (
+  ┆ stdin: "{\"receiverType\":\"ViztestTypescript\",\"receiverValue\":\"{}\",\"fnName\":\"failNative\",\"fnArgs\":\"{}\"}"
+  ┆ moduleContext: Module._implementationScoped: Module!
+  ) X.Xs ERROR
+! exit code: 2
+
+Setup tracing by running "dagger cloud signup". To hide set DAGGER_NO_NAG=1

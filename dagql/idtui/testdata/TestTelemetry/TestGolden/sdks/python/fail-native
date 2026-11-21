@@ -1,0 +1,29 @@
+Expected stderr:
+
+✔ connect X.Xs
+├╴✔ starting engine X.Xs
+├╴✔ connecting to engine X.Xs
+│ ┃ XX:XX:XX INF connected name=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local client-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx server-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx
+╰╴✔ starting session X.Xs
+
+✔ load workspace: . X.Xs
+╰╴✔ loading type definitions X.Xs
+
+✔ parsing command line arguments X.Xs
+
+$ viztestPython: ViztestPython! X.Xs CACHED
+✘ .failNative: Void X.Xs ERROR
+┃ python function stdout
+┃ python function stderr
+┃ ERROR [dagger.mod]: Unhandled exception while executing function
+┃ Traceback (most recent call last):
+┃   File "/usr/local/lib/python3.14/site-packages/dagger/mod/_module.py", line XXX, in call
+┃     result = func(*args, **kwargs)
+┃   File "/src/sha256:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX/viztest/sdks/python/src/viztest_python/__init__.py", line XXX, in fail_native
+┃     raise ValueError("python function failed natively")
+┃ ValueError: python function failed natively
+┃ ERROR [dagger.mod]: python function failed natively
+╰╴✘ call module entrypoint X.Xs ERROR
+  ┆ (the entrypoint's own evaluation, elided)
+
+Setup tracing by running "dagger cloud signup". To hide set DAGGER_NO_NAG=1

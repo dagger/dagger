@@ -1,0 +1,24 @@
+Expected stderr:
+
+✔ connect X.Xs
+├╴✔ starting engine X.Xs
+├╴✔ connecting to engine X.Xs
+│ ┃ XX:XX:XX INF connected name=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local client-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx server-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx
+╰╴✔ starting session X.Xs
+
+✔ load workspace: . X.Xs
+╰╴✔ loading type definitions X.Xs
+
+✔ parsing command line arguments X.Xs
+
+$ viztestGo: ViztestGo! X.Xs CACHED
+✘ .failNative: Void X.Xs ERROR
+┃ go function stdout
+┃ go function stderr
+┃ go function failed natively
+┃ ::dagger-function-error::"go function failed natively"
+╰╴✘ call module entrypoint X.Xs ERROR
+  ! call module entrypoint: go function failed natively
+  ┆ (the entrypoint's own evaluation, elided)
+
+Setup tracing by running "dagger cloud signup". To hide set DAGGER_NO_NAG=1

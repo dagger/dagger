@@ -1,0 +1,32 @@
+Expected stderr:
+
+✔ connect X.Xs
+├╴✔ starting engine X.Xs
+├╴✔ connecting to engine X.Xs
+│ ┃ XX:XX:XX INF connected name=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local client-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx server-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx
+╰╴✔ starting session X.Xs
+
+✔ load workspace: . X.Xs
+╰╴✔ loading type definitions X.Xs
+
+✔ parsing command line arguments X.Xs
+
+$ viztestTypescript: ViztestTypescript! X.Xs CACHED
+✘ .failNative: Void X.Xs ERROR
+┃ typescript function stdout
+┃ typescript function stderr
+┃ Error: typescript function failed natively
+┃     at ViztestTypescript.failNative (/workspace/viztest/sdks/typescript/src/index.ts:34:11)
+┃     at async invoke (/workspace/viztest/sdks/typescript/entrypoint/__dagger.dispatch.ts:84:28)
+┃     at async connection.LogOutput (/workspace/viztest/sdks/typescript/entrypoint/__dagger.dispatch.ts:209:24)
+┃     at async <anonymous> (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/core.js:99971:7)
+┃     at async withGQLClient (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/core.js:99956:12)
+┃     at async withSession (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/core.js:99969:5)
+┃     at async withTracing (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/core.js:99718:5)
+┃     at async connection (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/core.js:108082:3)
+┃     at async engineCall (/workspace/viztest/sdks/typescript/entrypoint/__dagger.dispatch.ts:202:3)
+┃ {"error":{"message":"typescript function failed natively"}}
+╰╴✘ call module entrypoint X.Xs ERROR
+  ┆ (the entrypoint's own evaluation, elided)
+
+Setup tracing by running "dagger cloud signup". To hide set DAGGER_NO_NAG=1
