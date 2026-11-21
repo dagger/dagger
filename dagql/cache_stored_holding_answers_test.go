@@ -11,9 +11,9 @@ import (
 // Holdings on a stored entry, one with an expiry of its own, answer every
 // reader with the entry's stored record and its expiry beside each holding's
 // own facts: RemoteHoldingInfo, CacheHoldings, EntryInfo, RemoteEntryInfo,
-// EntryClassEntries, EquivalentHolders and HolderClosure. The test logs a
-// digest of every answer, so that two builds of the cache can be shown to
-// answer alike.
+// EntryClassEntries, the holdings of the entry's class, and HolderClosure.
+// The test logs a digest of every answer, so that two builds of the cache
+// can be shown to answer alike.
 func TestStoredEntryHoldingAnswers(t *testing.T) {
 	t.Parallel()
 	ctx, cloud, root, dep := storedBundleTestCloud(t, "root")
@@ -120,7 +120,7 @@ func TestStoredEntryHoldingAnswers(t *testing.T) {
 	answers["class"] = class
 	equivalent := map[string][]HolderKey{}
 	for _, dig := range entryInfo.ClassDigests {
-		equivalent[dig] = cloud.EquivalentHolders(dig)
+		equivalent[dig] = cloud.equivalentHoldersForTest(dig)
 	}
 	answers["equivalent"] = equivalent
 	for _, key := range []HolderKey{sender, depKey, rootKey, other} {

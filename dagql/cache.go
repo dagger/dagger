@@ -2811,11 +2811,6 @@ type Cache struct {
 	// cache_remote_entries.go.
 	entriesByRecipe map[digest.Digest]sharedResultID
 	remoteCaches    map[CacheID]*remoteCacheState
-	// joinedEntries, while an operation on holdings runs, collects the
-	// entries that class unions join to another class, by number
-	// (trackJoinsLocked). It is nil at every other time, so no class ID it
-	// could name outlives the hold. Guarded by egraphMu.
-	joinedEntries map[sharedResultID]struct{}
 	// changes are the holdings and entries changed since the last write
 	// handed them back, on a blob-backed cache only: nil on any other
 	// (cache_change_marks.go). Guarded by egraphMu.
