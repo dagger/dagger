@@ -292,6 +292,7 @@ func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID) (root eqClassID, ab
 	if ra == rb {
 		return ra, false
 	}
+	c.egraphUnions++
 
 	// union by rank
 	if c.egraphRanks[ra] < c.egraphRanks[rb] {

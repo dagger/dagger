@@ -170,7 +170,7 @@ func (transferTestCodec) MapSnapshotParts(v PersistedPayloadVisit) ([]CapturedCo
 func init() {
 	RegisterPersistedObjectFamily(PersistedObjectFamily{Name: "dagql_test.Transfer", Typed: (*transferTestValue)(nil), Visitor: transferTestCodec{}, Transfer: transferTestCodec{}})
 }
-func transferTestCache(t *testing.T) (context.Context, *Cache, *Server) {
+func transferTestCache(t testing.TB) (context.Context, *Cache, *Server) {
 	t.Helper()
 	ctx, c, srv := persistedListTestCache(t, filepath.Join(t.TempDir(), "cache.db"))
 	srv.InstallObject(NewClass(srv, ClassOpts[*transferTestValue]{}))
