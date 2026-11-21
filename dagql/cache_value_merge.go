@@ -1749,36 +1749,93 @@ func (c *Cache) staleHeldPartsLocked(prep *valueMergePrep) []TransferOrdinal {
 }
 
 // entryHasPartsLocked reports whether res's stored record has each of
-// outputs' parts, as checkOutputPart checks them. Requires egraphMu.
+// outputs' parts, as checkOutputPart checks them (recordPartsLocked).
+// Requires egraphMu.
 func (c *Cache) entryHasPartsLocked(res *sharedResult, outputs []TransferredOutput) bool {
 	if res.noValueLocked() {
 		return false
 	}
-	rec, err := c.storedRecordLocked(res)
-	if err != nil {
+	parts, ok := c.recordPartsLocked(res)
+	if !ok {
 		return false
-	}
-	mapped, err := mapTransferredOutputs(rec)
-	if err != nil {
-		return false
-	}
-	parts := make(map[string]CapturedCodecOutput, len(mapped))
-	for _, part := range mapped {
-		if key, err := partAddressKey(part.Address); err == nil {
-			parts[key] = part
-		}
 	}
 	for _, output := range outputs {
 		key, err := partAddressKey(output.Address)
 		if err != nil {
 			return false
 		}
-		part, ok := parts[key]
+		part, ok := parts.at(key, output.Address)
 		if !ok || checkOutputPart(output, part) != nil {
 			return false
 		}
 	}
 	return true
+}
+
+// recordParts are a stored record's parts as its mapping has them, for a
+// check of outputs against them (checkOutputPart), which reads a part's
+// state and a pending part's kind. A compressed record's are its body's
+// facts (storedFactsLocked), as a stored row's outputs are checked
+// (checkValueBundle): the parts it declares absent or pending, with their
+// kinds, and those it proves complete, a state of completed, absent or
+// metadata. Together they are every part the record maps to, so the record
+// isn't decoded. Any other record's are its mapping's.
+type recordParts struct {
+	declared []declaredPart
+	complete *partKeySet
+	mapped   map[string]CapturedCodecOutput
+}
+
+// recordPartsLocked returns res's stored record's parts, or false if the
+// record can't be read. Requires egraphMu.
+func (c *Cache) recordPartsLocked(res *sharedResult) (recordParts, bool) {
+	if res.stored != nil {
+		_, declared, complete, err := res.storedFactsLocked()
+		if err != nil {
+			return recordParts{}, false
+		}
+		return recordParts{declared: declared, complete: complete}, true
+	}
+	rec, err := c.storedRecordLocked(res)
+	if err != nil {
+		return recordParts{}, false
+	}
+	outputs, err := mapTransferredOutputs(rec)
+	if err != nil {
+		return recordParts{}, false
+	}
+	mapped := make(map[string]CapturedCodecOutput, len(outputs))
+	for _, part := range outputs {
+		if key, err := partAddressKey(part.Address); err == nil {
+			mapped[key] = part
+		}
+	}
+	return recordParts{mapped: mapped}, true
+}
+
+// at returns the record's part at the address, whose key is key: a mapped
+// one; a declared one, the last declared at the key, as checkValueBundle
+// reads a stored row's; or one only proven complete, which is completed,
+// or metadata for the metadata part, the one part whose complete state is
+// metadata.
+func (p recordParts) at(key string, address PersistedPartAddress) (CapturedCodecOutput, bool) {
+	if p.mapped != nil {
+		part, ok := p.mapped[key]
+		return part, ok
+	}
+	for i := len(p.declared) - 1; i >= 0; i-- {
+		if p.declared[i].key == key {
+			return p.declared[i].output(), true
+		}
+	}
+	if !p.complete.has(key) {
+		return CapturedCodecOutput{}, false
+	}
+	state := "completed"
+	if address.Part == "metadata" {
+		state = "metadata"
+	}
+	return CapturedCodecOutput{Address: address, State: state}, true
 }
 
 // installsLight reports whether the commit installs a light record.

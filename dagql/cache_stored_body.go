@@ -1020,6 +1020,12 @@ func (s *partKeySet) list() []string {
 	return s.keys
 }
 
+// has reports whether the set holds key, false for a nil set.
+func (s *partKeySet) has(key string) bool {
+	_, found := slices.BinarySearch(s.list(), key)
+	return found
+}
+
 // addresses returns the set's part addresses, in its keys' order.
 func (s *partKeySet) addresses() []PersistedPartAddress {
 	var addresses []PersistedPartAddress
