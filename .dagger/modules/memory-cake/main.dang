@@ -353,6 +353,15 @@ type MemoryCake {
         # attribute and intern tables (heapstat's " && "/" || " clauses).
         focus: "consumeStringValidateUTF8 && client\\.\\(\\*Client\\)\\.exportTraces|callpbv1\\.\\(\\*Call\\)\\.Decode || dagui\\.\\(\\*SpanAttributes\\)|dagui\\.\\(\\*digestTable\\)|dagui\\.\\(\\*DB\\)\\.(intern|shareAttrPairs)|dagui\\.intern",
       ),
+      Demo(
+        pr: "search",
+        title: "core: bound pathological searches",
+        fixture: "search",
+        # What the searches leave in the session: their parsed results and
+        # the dagql results wrapping each element. Their transient cost,
+        # which is what OOMs the engine, is in out/search.txt (demoSearch).
+        focus: "core\\.\\(\\*SearchOpts\\)|core\\.\\(\\*SearchResult\\)|engine/ripgrep\\.|dagql\\.\\(\\*Server\\)\\.loadNthValue",
+      ),
     ]
   }
 
@@ -585,6 +594,27 @@ type MemoryCake {
     env: [String!]! = [],
   ): Measurement! @cache(policy: FunctionCachePolicy.PerSession) {
     measure(pr: "15229", ref: ref, env: env)
+  }
+
+  """
+  Pathological searches (no PR yet): the regexp "." over a workspace OOMs
+  the engine. fixtures/search builds FILES files (default 100) of LINES
+  lines (default 200, ~58 B each, 1.28 MB in all) and searches them with
+  each pattern in PATTERNS (". e") in each mode in MODES ("dir ws host":
+  Directory.search, a rootfs Workspace.search, and a host Workspace.search
+  whose ripgrep runs in the CLI). Its numbers are per search, in
+  `out.file("search.txt")`: bytes allocated, peak live heap and footprint,
+  the searching CLIs' memory, results and response size. On main, "." over
+  the default tree allocates ~3.5 GB and peaks ~+340 MB in the engine, the
+  CLI ~2.2 GB RSS, and the host search fails on gRPC's 16 MiB message limit
+  after the CLI grew ~500 MB; LONG=1000000 (one 1 MB line) allocates 1.1 GB
+  for 2 results. Scale with env, e.g. ["FILES=20", "MODES=dir"].
+  """
+  demoSearch(
+    ref: String! = "main",
+    env: [String!]! = [],
+  ): Measurement! @cache(policy: FunctionCachePolicy.PerSession) {
+    measure(pr: "search", ref: ref, env: env)
   }
 
   """
