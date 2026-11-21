@@ -198,3 +198,36 @@ func TestBusyWaitsHandOnEachRootOnceItsRowsAreFree(t *testing.T) {
 	ready, _ = w.take(stillBusy)
 	require.Empty(t, ready, "a root is handed on once")
 }
+
+// What the engine's look for ready busy roots costs is counted: each look,
+// what woke it, the rows it read and their time, and the roots it handed
+// on, for its log line as a connection ends.
+func TestRemoteCacheAdapterCountsItsLooksForReadyRoots(t *testing.T) {
+	e := newAdapterTestEngine(t)
+	busy := e.busyFile(t, "busy")
+	above, _ := e.publishFile(t, "on-busy", busy)
+	roots := []uint64{entryNumber(t, busy), entryNumber(t, above)}
+	require.NoError(t, e.adapter.Export(e.ctx, protocol.Export{Roots: roots}, nil, func(context.Context, remotecache.Export) error { return nil }))
+
+	took := make(chan []uint64, 1)
+	go func() {
+		if ready, err := e.adapter.TakeReadyRoots(e.ctx); err == nil {
+			took <- ready
+		}
+	}()
+	require.Eventually(t, func() bool { return e.adapter.readyStats.snapshot().looks >= 1 }, 10*time.Second, 5*time.Millisecond, "a look while the row runs")
+	e.bodies.unpause()
+	select {
+	case ready := <-took:
+		require.Equal(t, roots, ready)
+	case <-time.After(10 * time.Second):
+		t.Fatal("the busy roots were never handed on as ready")
+	}
+	stats := e.adapter.readyStats.snapshot()
+	require.GreaterOrEqual(t, stats.looks, int64(2), "a look as the roots began to wait, and one after the evaluation's end")
+	require.GreaterOrEqual(t, stats.endWakes, int64(1))
+	require.GreaterOrEqual(t, stats.rows, int64(2*len(roots)), "each look reads both roots' rows")
+	require.Positive(t, stats.lookTime)
+	require.Equal(t, int64(len(roots)), stats.roots)
+	require.Contains(t, stats.attrs(), "look_time")
+}
