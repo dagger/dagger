@@ -70,7 +70,7 @@ type foldTestPair struct {
 	trace        *spanfootprint.Trace
 }
 
-func newFoldTestPair(t *testing.T, n int) *foldTestPair {
+func newFoldTestPair(t *testing.T, n int, nested bool) *foldTestPair {
 	t.Helper()
 	db, lf := newFoldingDB()
 	folded := NewWithDB(io.Discard, db)
@@ -82,7 +82,13 @@ func newFoldTestPair(t *testing.T, n int) *foldTestPair {
 	tr := spanfootprint.New(n)
 	p := &foldTestPair{folded: folded, full: full, lf: lf, store: store, trace: tr}
 	folded.SetSpanQuery(dagui.TraceID{TraceID: tr.Stub(0, false).SpanContext().TraceID()}, store.query)
-	require.NoError(t, tr.Export(t.Context(), foldTestTee{store, folded.SpanExporter(), full.SpanExporter()}, 512, nil))
+	// with the engine's wait chains, in the agent session's shape or the
+	// nested engines'
+	exp := tr.WaitChains(foldTestTee{store, folded.SpanExporter(), full.SpanExporter()})
+	if nested {
+		exp = spanfootprint.Nested(exp)
+	}
+	require.NoError(t, tr.Export(t.Context(), exp, 512, nil))
 	p.settle(t)
 	return p
 }
@@ -129,7 +135,12 @@ func rowIDs(rows *dagui.Rows) []dagui.SpanID {
 }
 
 func TestLiveFoldMatchesFullLoad(t *testing.T) {
-	p := newFoldTestPair(t, 20000)
+	t.Run("agent", func(t *testing.T) { testLiveFold(t, false) })
+	t.Run("nested", func(t *testing.T) { testLiveFold(t, true) })
+}
+
+func testLiveFold(t *testing.T, nested bool) {
+	p := newFoldTestPair(t, 20000, nested)
 	stats := p.folded.db.Fold().Stats()
 	t.Logf("retained %d of %d spans (%.1f%%), read back %d", stats.Retained, stats.Spans,
 		100*float64(stats.Retained)/float64(stats.Spans), p.folded.db.Fold().Loads)

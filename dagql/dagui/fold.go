@@ -279,16 +279,17 @@ func (s FoldSpan) MayRollUp() bool {
 
 // RetainRendered is the live CLI's fold policy: what it may render. Spans
 // are retained when they're top-level rows (see Fold), agents always, and
-// what may surface at the top of the trace -- surfaced kinds, failed,
-// revealed and progress-carrying spans that may roll up, and spans with
-// cause links -- with their ancestors. A failure beneath a boundary or
+// what may surface -- surfaced kinds wherever they sit (a conversation's
+// tool call shows the checks and tests the nested engine beneath it ran),
+// failed, revealed and progress-carrying spans that may roll up, and spans
+// with cause links -- with their ancestors. A failure beneath a boundary or
 // encapsulation (e.g. a nested engine's expected failure) only counts in its
 // ancestors' roll-ups.
 func RetainRendered(span FoldSpan) bool {
-	if span.Agent() || span.CauseLinks() {
+	if span.Agent() || span.CauseLinks() || span.SurfacedKind() {
 		return true
 	}
-	if !span.SurfacedKind() && !span.Failed() && !span.Reveal() && !span.Progress() {
+	if !span.Failed() && !span.Reveal() && !span.Progress() {
 		return false
 	}
 	return span.MayRollUp()
