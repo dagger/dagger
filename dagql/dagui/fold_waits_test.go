@@ -14,8 +14,8 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/dagger/dagger/dagql/internal/spanfootprint"
 	"github.com/dagger/dagger/engine/telemetryattrs"
+	"github.com/dagger/dagger/internal/spanfootprint"
 )
 
 // footprintWaits gives some of the spanfootprint session's spans wait links

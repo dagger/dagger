@@ -8,7 +8,7 @@ import (
 	"testing"
 	"unsafe"
 
-	"github.com/dagger/dagger/dagql/internal/spanfootprint"
+	"github.com/dagger/dagger/internal/spanfootprint"
 )
 
 type footprint struct {

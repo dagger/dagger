@@ -477,7 +477,7 @@ func TestTraceFailureNavigationLoadsExternalOrigin(t *testing.T) {
 			Links: marshalPurposeLink(t, traceID, checksumID, telemetry.LinkPurposeErrorOrigin)},
 	})
 	require.NoError(t, err)
-	session, err := loadTraceReportSession(t.Context(), store, ids["build"])
+	session, err := loadTraceReportSession(t.Context(), store, ids["build"], toolCallReportOpts())
 	require.NoError(t, err)
 	report, err := renderTraceReportSession(session, ids["build"], toolCallReportOpts())
 	require.NoError(t, err)

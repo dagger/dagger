@@ -244,7 +244,7 @@ func TestLoadTracePreservesOrdinaryWorkInReport(t *testing.T) {
 			require.NoError(t, err)
 			render := func(store *clientdb.DB) string {
 				t.Helper()
-				session, err := loadTraceReportSession(ctx, store, rootID)
+				session, err := loadTraceReportSession(ctx, store, rootID, readTraceReportOpts())
 				require.NoError(t, err)
 				report, err := renderTraceReportSession(session, rootID, readTraceReportOpts())
 				require.NoError(t, err)

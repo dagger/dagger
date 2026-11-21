@@ -10,6 +10,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 
+	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
 )
@@ -242,6 +243,14 @@ func (s FoldSpan) Progress() bool     { return s.has(foldProgress) }
 func (s FoldSpan) CauseLinks() bool   { return s.has(foldCauseLinks) }
 func (s FoldSpan) WaitLinks() bool    { return s.has(foldWaitLinks) }
 
+// Name is the span's name.
+func (s FoldSpan) Name() string {
+	if n := s.f.name[s.i]; n != 0 {
+		return s.f.nameTab[n]
+	}
+	return ""
+}
+
 // SurfacedKind reports whether the span is of a kind dagui surfaces
 // wherever it sits (see Span.IsSurfacedKind), or a rewind marker.
 func (s FoldSpan) SurfacedKind() bool { return s.has(foldKind | foldAgent) }
@@ -364,6 +373,8 @@ type foldInfo struct {
 	cat        spanStateCategory
 	start, end time.Time
 	name       string
+	// callDigest and callPayload are the call the span carries, if any.
+	callDigest, callPayload string
 	// linked holds the targets of its cause, error-origin and wait links.
 	linked []SpanID
 	// origins holds the error origins its status names.
@@ -392,6 +403,10 @@ func otelFoldInfo(s sdktrace.ReadOnlySpan) foldInfo {
 			if attr.Value.AsBool() {
 				info.flags |= foldHasLogs
 			}
+		case telemetry.DagDigestAttr:
+			info.callDigest = attr.Value.AsString()
+		case telemetry.DagCallAttr:
+			info.callPayload = attr.Value.AsString()
 		default:
 			info.flags |= foldAttrFlag(key, attr.Value.AsBool(), attr.Value.AsString())
 		}
@@ -414,7 +429,8 @@ func otelFoldInfo(s sdktrace.ReadOnlySpan) foldInfo {
 }
 
 func snapshotFoldInfo(s *SpanSnapshot) foldInfo {
-	info := foldInfo{id: s.ID, parent: s.ParentID, start: s.StartTime, end: s.EndTime, name: s.Name}
+	info := foldInfo{id: s.ID, parent: s.ParentID, start: s.StartTime, end: s.EndTime, name: s.Name,
+		callDigest: s.CallDigest, callPayload: s.CallPayload}
 	set := func(on bool, flag foldState) {
 		if on {
 			info.flags |= flag
@@ -550,8 +566,11 @@ func (f *Fold) exportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) e
 	fill := isFoldFill(ctx)
 	var keep []sdktrace.ReadOnlySpan
 	for _, s := range spans {
-		if f.ingest(otelFoldInfo(s), fill) {
+		info := otelFoldInfo(s)
+		if f.ingest(info, fill) {
 			keep = append(keep, s)
+		} else {
+			f.keepCall(info)
 		}
 	}
 	if len(keep) > 0 {
@@ -568,14 +587,33 @@ func (f *Fold) importSnapshots(ctx context.Context, snapshots []SpanSnapshot) {
 	fill := isFoldFill(ctx)
 	var keep []SpanSnapshot
 	for i := range snapshots {
-		if f.ingest(snapshotFoldInfo(&snapshots[i]), fill) {
+		info := snapshotFoldInfo(&snapshots[i])
+		if f.ingest(info, fill) {
 			keep = append(keep, snapshots[i])
+		} else {
+			f.keepCall(info)
 		}
 	}
 	if len(keep) > 0 {
 		f.db.importSnapshots(keep)
 	}
 	f.finishBatch()
+}
+
+// keepCall keeps the call a folded span carries: retained spans' rows render
+// their calls' receivers, and resolve digests, through calls whatever span
+// carried them (see Span.Base, DB.Call).
+func (f *Fold) keepCall(info foldInfo) {
+	if info.callDigest == "" || info.callPayload == "" {
+		return
+	}
+	if _, ok := f.db.Calls[info.callDigest]; ok {
+		return
+	}
+	var call callpbv1.Call
+	if err := call.Decode(info.callPayload); err == nil {
+		f.db.addCall(info.callDigest, &call)
+	}
 }
 
 // ingest folds an arriving span into the stub table, reporting whether the
@@ -1197,6 +1235,44 @@ func (f *Fold) foldedRunning(span *Span) bool {
 		return false
 	}
 	return f.agg[i].running > 0
+}
+
+// ChildSpanCount is len(span.ChildSpans.Spans()) as a DB holding every span
+// would have it: its children folded included.
+func (db *DB) ChildSpanCount(span *Span) int {
+	return span.ChildSpans.Len() + db.fold.FoldedChildren(span)
+}
+
+// MarkHasLogs flags a span as having logs before it arrives, for a loader
+// that knows which spans have logs ahead of their spans (as an engine's
+// store does): a policy may retain a span for its logs (FoldSpan.HasLogs).
+func (f *Fold) MarkHasLogs(id SpanID) {
+	f.state[f.intern(id)] |= foldHasLogs
+}
+
+// FoldedPlacements appends the spans whose folded children the view would
+// place beneath span's tree: span, and the spans beneath it the view passes
+// through to their children (passthrough spans, spans not received), for a
+// loader to read back before the view shows span expanded.
+func (lv *RowsView) FoldedPlacements(span *Span, dst []SpanID) []SpanID {
+	if lv == nil || lv.walker == nil || span.db == nil || span.db.fold == nil {
+		return dst
+	}
+	f := span.db.fold
+	stack := []*Span{span}
+	for len(stack) > 0 {
+		s := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if f.FoldedChildren(s) > 0 {
+			dst = append(dst, s.ID)
+		}
+		for _, child := range s.ChildSpans.Spans() {
+			if child.ParentSpan == s && lv.walker.mode(child) == modeThrough {
+				stack = append(stack, child)
+			}
+		}
+	}
+	return dst
 }
 
 // FoldStats is a fold's size.

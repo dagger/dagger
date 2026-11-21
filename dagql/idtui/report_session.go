@@ -74,6 +74,29 @@ func (e reportLogExporter) Shutdown(context.Context) error { return nil }
 
 func (e reportLogExporter) ForceFlush(context.Context) error { return nil }
 
+// FoldedRows returns, for a DB that folds what it doesn't render
+// (dagui.WithFold), the spans whose folded children the final report for
+// opts would show beneath a row it shows expanded: a loader reads them back
+// (dagui.Fold.Expand) until there are none, and the report renders the same
+// tree as over a DB holding every span.
+func (s *ReportSession) FoldedRows(opts ReportRenderOpts) []dagui.SpanID {
+	if s.db.Fold() == nil {
+		return nil
+	}
+	fe := newWithTerminalProfile(io.Discard, s.db, tuist.NewStdTerminal(), termenv.Ascii)
+	fe.reportOnly = true
+	fe.logs = s.logs
+	fe.SetReportRenderOpts(opts)
+	fe.setupFinalRenderLocked()
+	var ids []dagui.SpanID
+	for _, row := range fe.rows.Order {
+		if row.Expanded {
+			ids = fe.rowsView.FoldedPlacements(row.Span, ids)
+		}
+	}
+	return ids
+}
+
 // Render writes the final report for opts to w.
 //
 // The frontend is constructed per render and thrown away: it is the render's

@@ -11,7 +11,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
-	"github.com/dagger/dagger/dagql/internal/spanfootprint"
+	"github.com/dagger/dagger/internal/spanfootprint"
 )
 
 // foldStore stands in for the engine's live store: the latest snapshot of

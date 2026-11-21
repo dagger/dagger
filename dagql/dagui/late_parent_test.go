@@ -11,7 +11,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/dagger/dagger/dagql/internal/spanfootprint"
+	"github.com/dagger/dagger/internal/spanfootprint"
 )
 
 // withoutLinks strips a span's links.

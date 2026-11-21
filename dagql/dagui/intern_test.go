@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/dagger/dagger/dagql/internal/spanfootprint"
+	"github.com/dagger/dagger/internal/spanfootprint"
 )
 
 func TestDigestTable(t *testing.T) {

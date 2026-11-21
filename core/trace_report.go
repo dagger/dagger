@@ -234,7 +234,7 @@ func renderTraceReport(ctx context.Context, root string, opts traceReportOpts) (
 		return traceReportResult{}, err
 	}
 	defer release()
-	session, err := loadTraceReportSession(ctx, read, root)
+	session, err := loadTraceReportSession(ctx, read, root, opts)
 	if err != nil {
 		return traceReportResult{}, err
 	}
@@ -280,17 +280,62 @@ func traceReportClientDB(ctx context.Context) (*clientdb.DB, error) {
 // loaded span's parent pointer resolves to an unreceived placeholder. Logs
 // are fetched for the walk only: ancestors above root frame the tree but
 // render no output of their own in a scoped report.
-func loadTraceReportSession(ctx context.Context, clientDB *clientdb.DB, root string) (*idtui.ReportSession, error) {
+//
+// The scope is folded on the way in (dagui.WithFold): what renders nowhere
+// in the report rendered with opts -- the spans beneath rows it shows
+// collapsed, or hides -- is kept as stubs, which still count in the rows'
+// roll-ups, child counts and time breakdowns (see reportFoldRetain). The
+// rows the report opens that the policy folded the children of after all
+// are read back before it renders, so it renders the tree a DB holding
+// every span would.
+func loadTraceReportSession(ctx context.Context, clientDB *clientdb.DB, root string, opts traceReportOpts) (*idtui.ReportSession, error) {
 	if !clientDB.HasSpan(root) {
 		return nil, fmt.Errorf("no span %q in this trace", root)
+	}
+	rootID, err := trace.SpanIDFromHex(root)
+	if err != nil {
+		return nil, fmt.Errorf("parse root span ID %q: %w", root, err)
 	}
 	read := clientDB.Read()
 	walk := read.SpanLogScope(root)
 	scope := read.AncestorClosure(walk)
 
-	session := idtui.NewReportSession(newTraceToolDB())
-	if err := ingestSpanScope(ctx, read, session.DB(), scope); err != nil {
+	var db *dagui.DB
+	var loadErr error
+	db = dagui.NewDB(dagui.WithFold(dagui.FoldOptions{
+		Retain: reportFoldRetain(dagui.SpanID{SpanID: rootID}),
+		// a folded span the report needs after all is read back from the
+		// store at once
+		Load: func(ids []dagui.SpanID) {
+			if loadErr != nil {
+				return
+			}
+			want := make(map[string]struct{}, len(ids))
+			for _, id := range ids {
+				want[id.String()] = struct{}{}
+			}
+			rows, err := read.SelectSpansLatest(ctx, want)
+			if err == nil {
+				err = ingestSpanRows(dagui.FoldFill(ctx), db, rows)
+			}
+			if err != nil {
+				loadErr = fmt.Errorf("read back folded spans: %w", err)
+			}
+		},
+	}))
+	// which spans have logs, ahead of the spans: the report shows the
+	// logs a collapsed row rolls up
+	for id := range read.SpansWithDisplayLogs(walk) {
+		if spanID, err := trace.SpanIDFromHex(id); err == nil {
+			db.Fold().MarkHasLogs(dagui.SpanID{SpanID: spanID})
+		}
+	}
+	session := idtui.NewReportSession(db)
+	if err := ingestSpanScopeInBatches(ctx, read, db, scope); err != nil {
 		return nil, err
+	}
+	if loadErr != nil {
+		return nil, loadErr
 	}
 
 	// Second pass: error origins. A failed span's origin reference (an
@@ -305,7 +350,34 @@ func loadTraceReportSession(ctx context.Context, clientDB *clientdb.DB, root str
 		}
 	}
 
-	logs, err := read.SelectLogsForSpans(ctx, walk, traceReportMaxLogRowsPerSpan)
+	// Read back what the report opens that the policy folded the children
+	// of: rows it unwraps (ExpandWrappers), failure paths (FocusFailures),
+	// rows a retained span made fail. Until every row it shows expanded has
+	// its children.
+	for {
+		expand := session.FoldedRows(traceReportRenderOpts(db, root, opts))
+		if len(expand) == 0 {
+			break
+		}
+		for _, id := range expand {
+			db.Fold().Expand(id)
+		}
+		if loadErr != nil {
+			return nil, loadErr
+		}
+	}
+
+	// the logs of the spans the report holds: a folded span's render
+	// nowhere (a span whose logs a row rolls up is retained)
+	held := make(map[string]struct{}, len(walk))
+	for id := range walk {
+		if spanID, err := trace.SpanIDFromHex(id); err == nil {
+			if span := db.Spans.Map[dagui.SpanID{SpanID: spanID}]; span != nil && span.Received {
+				held[id] = struct{}{}
+			}
+		}
+	}
+	logs, err := read.SelectLogsForSpans(ctx, held, traceReportMaxLogRowsPerSpan)
 	if err != nil {
 		return nil, fmt.Errorf("select logs: %w", err)
 	}
@@ -388,7 +460,53 @@ func renderTraceReportSession(session *idtui.ReportSession, root string, opt tra
 	if span := db.Spans.Map[primary]; span == nil || !span.Received {
 		return traceReportResult{}, fmt.Errorf("no span %q in this trace", root)
 	}
+	plan := planTraceReport(db, primary, opt)
+	renderOpts, failureNav, omitted := plan.render, plan.failureNav, plan.omitted
 
+	var buf bytes.Buffer
+	if err := session.Render(&buf, renderOpts); err != nil {
+		// A failing trace surfaces as an ExitError; that's expected here -- the
+		// report itself is still what we want.
+		var exitErr idtui.ExitError
+		if !errors.As(err, &exitErr) {
+			return traceReportResult{}, fmt.Errorf("render trace report: %w", err)
+		}
+	}
+	if opt.HideConversation && db.HasConversationForSpan(db.Spans.Map[primary]) {
+		body := strings.TrimRight(buf.String(), "\n")
+		if body != "" {
+			body += "\n\n"
+		}
+		buf.Reset()
+		buf.WriteString(body + subAgentConversationPointer(root) + "\n")
+	}
+	return traceReportResult{
+		body:            buf.String(),
+		failures:        failureNav,
+		omittedMessages: omitted,
+	}, nil
+}
+
+// traceReportPlan is how a report renders: its render options, its
+// FAILURES section, and the messages a summarized conversation leaves out.
+type traceReportPlan struct {
+	render     idtui.ReportRenderOpts
+	failureNav string
+	omitted    int
+}
+
+// traceReportRenderOpts is the render options a report rooted at root (a
+// hex span ID) renders with, for its loader (see loadTraceReportSession).
+func traceReportRenderOpts(db *dagui.DB, root string, opt traceReportOpts) idtui.ReportRenderOpts {
+	spanID, err := trace.SpanIDFromHex(root)
+	if err != nil {
+		return idtui.ReportRenderOpts{}
+	}
+	return planTraceReport(db, dagui.SpanID{SpanID: spanID}, opt).render
+}
+
+// planTraceReport works out how the report rooted at primary renders.
+func planTraceReport(db *dagui.DB, primary dagui.SpanID, opt traceReportOpts) traceReportPlan {
 	renderOpts := idtui.ReportRenderOpts{
 		// Show completed spans; without this the final render bails out
 		// entirely unless something failed or a special section
@@ -444,29 +562,7 @@ func renderTraceReportSession(session *idtui.ReportSession, root string, opt tra
 			omitted = n
 		}
 	}
-
-	var buf bytes.Buffer
-	if err := session.Render(&buf, renderOpts); err != nil {
-		// A failing trace surfaces as an ExitError; that's expected here -- the
-		// report itself is still what we want.
-		var exitErr idtui.ExitError
-		if !errors.As(err, &exitErr) {
-			return traceReportResult{}, fmt.Errorf("render trace report: %w", err)
-		}
-	}
-	if opt.HideConversation && db.HasConversationForSpan(db.Spans.Map[primary]) {
-		body := strings.TrimRight(buf.String(), "\n")
-		if body != "" {
-			body += "\n\n"
-		}
-		buf.Reset()
-		buf.WriteString(body + subAgentConversationPointer(root) + "\n")
-	}
-	return traceReportResult{
-		body:            buf.String(),
-		failures:        failureNav,
-		omittedMessages: omitted,
-	}, nil
+	return traceReportPlan{render: renderOpts, failureNav: failureNav, omitted: omitted}
 }
 
 // Expand only the selected span and paths to failed tests/checks or recorded
@@ -661,7 +757,7 @@ func expandedSpans(db *dagui.DB, root dagui.SpanID) map[dagui.SpanID]bool {
 			continue
 		}
 		expanded[span.ID] = true
-		if isReportWrapperSpan(span) {
+		if isReportWrapperSpan(db, span) {
 			// A pure frame: keep descending toward the actual work.
 			queue = append(queue, span.ChildSpans.Spans()...)
 		}
@@ -681,7 +777,7 @@ func expandedSpans(db *dagui.DB, root dagui.SpanID) map[dagui.SpanID]bool {
 // twin -- which has no logs and exactly one child, the rule the last clause
 // generalizes. A roll-up or tool-call span is never treated as a wrapper: those
 // are precisely the boundaries whose contents must stay collapsed.
-func isReportWrapperSpan(span *dagui.Span) bool {
+func isReportWrapperSpan(db *dagui.DB, span *dagui.Span) bool {
 	if span.Passthrough || span.Internal {
 		return true
 	}
@@ -691,7 +787,104 @@ func isReportWrapperSpan(span *dagui.Span) bool {
 	if span.HasLogs || span.RollUpLogs || span.RollUpSpans || span.LLMTool != "" {
 		return false
 	}
-	return len(span.ChildSpans.Spans()) == 1
+	// its children folded included (see loadTraceReportSession)
+	return db.ChildSpanCount(span) == 1
+}
+
+// reportFoldRetain is the fold policy of a report rooted at root (see
+// loadTraceReportSession): what folds is what the report renders nowhere.
+// Spans beneath a row it shows collapsed or hides fold; everything a report
+// may surface from anywhere is kept -- surfaced kinds, failures, revealed
+// and progress spans, agents and cause links -- as are spans whose logs a
+// row rolls up. Rows the report opens after all are read back before it
+// renders (see ReportSession.FoldedRows), so the rendered tree is the same
+// as a DB holding every span would render; and what folds still counts in
+// the rows' roll-ups, child counts and time breakdowns.
+//
+// It decides from what it knows when a span arrives, so it errs on the
+// side of keeping: a row counts as open when the report may unwrap it
+// (ExpandWrappers), whatever its children turn out to be.
+func reportFoldRetain(root dagui.SpanID) dagui.FoldRetain {
+	return func(span dagui.FoldSpan) bool {
+		if span.SurfacedKind() || span.Failed() || span.Reveal() || span.Progress() ||
+			span.CauseLinks() || span.Agent() {
+			return true
+		}
+		// the chain from span up to root, nearest first
+		var chain []dagui.FoldSpan
+		beneath := false
+		for p, ok := span.Parent(); ok; p, ok = p.Parent() {
+			if p.ID() == root {
+				beneath = true
+				break
+			}
+			chain = append(chain, p)
+		}
+		if !beneath {
+			// root, its ancestors, and what's not placed yet
+			return true
+		}
+		if span.HasLogs() {
+			// logs a collapsed row above rolls up (as far as roll-ups
+			// reach, see prettyLogs)
+			for _, row := range chain {
+				if row.RollUpLogs() {
+					return true
+				}
+				if row.Boundary() || row.Encapsulate() || row.Internal() {
+					break
+				}
+			}
+		}
+		// from root down: a row the report may unwrap (root's children,
+		// and children of rows it may unwrap that may be wrappers) is open
+		// whatever it is
+		unwrapped := true
+		for i := len(chain) - 1; i >= 0; i-- {
+			row := chain[i]
+			if reportHidesRow(row) {
+				return false
+			}
+			if !unwrapped && (row.LLMTool() || row.RollUpLogs() || row.RollUpSpans()) {
+				// a tool call or roll-up row, which ExpandCompleted leaves
+				// collapsed
+				return false
+			}
+			unwrapped = unwrapped && (row.Passthrough() || row.Name() == "POST /query")
+		}
+		return true
+	}
+}
+
+// reportHidesRow reports whether a report hides row with what's beneath
+// it: an internal span that didn't fail, an encapsulated one.
+func reportHidesRow(row dagui.FoldSpan) bool {
+	if row.Failed() || row.Progress() {
+		return false
+	}
+	if row.Internal() {
+		return true
+	}
+	if p, ok := row.Parent(); ok && (row.Encapsulated() || p.Encapsulate()) && !p.Failed() {
+		return true
+	}
+	return false
+}
+
+// ingestSpanScopeInBatches is ingestSpanScope reading the rows a batch at a
+// time, so that a folding DB never holds the whole scope's rows at once.
+func ingestSpanScopeInBatches(ctx context.Context, read *clientdb.DB, db *dagui.DB, scope map[string]struct{}) error {
+	rowIDs := read.LatestSpanRowIDs(scope)
+	for start := 0; start < len(rowIDs); start += traceReportBatchSize {
+		rows, err := read.SelectSpanRows(ctx, rowIDs[start:min(start+traceReportBatchSize, len(rowIDs))])
+		if err != nil {
+			return fmt.Errorf("select spans: %w", err)
+		}
+		if err := ingestSpanRows(ctx, db, rows); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // reportNoiseFilter prunes what a tool-call-scoped report has no use for.

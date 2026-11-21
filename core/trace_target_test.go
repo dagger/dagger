@@ -77,7 +77,7 @@ func TestReadTraceSpanOnlySchema(t *testing.T) {
 // Known check IDs are used directly, without a redundant name search.
 func TestReadTraceRerunSuggestion(t *testing.T) {
 	store, ids := traceInspectStore(t)
-	session, err := loadTraceReportSession(t.Context(), store, ids["build"])
+	session, err := loadTraceReportSession(t.Context(), store, ids["build"], readTraceReportOpts())
 	require.NoError(t, err)
 	db := session.DB()
 	// Select the failed build, independent of ingestion order.
