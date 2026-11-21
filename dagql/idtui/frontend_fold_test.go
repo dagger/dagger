@@ -227,6 +227,21 @@ func testLiveFold(t *testing.T, nested bool) {
 	})
 }
 
+// TestLiveFoldStreamedMatchesFullLoad streams a session into live TUIs, as
+// the CLI receives it -- rendering a frame every few batches, reads landing
+// asynchronously -- and requires the folding one to show the rows the full
+// one does at the end.
+func TestLiveFoldStreamedMatchesFullLoad(t *testing.T) {
+	for _, shape := range []string{"agent", "nested"} {
+		t.Run(shape, func(t *testing.T) {
+			tr := spanfootprint.New(20000)
+			full := streamFootprint(t, tr, shape, "full")
+			folded := streamFootprint(t, tr, shape, "fold")
+			require.Equal(t, rowIDs(full.rows), rowIDs(folded.rows))
+		})
+	}
+}
+
 // TestLiveFoldOtherTraces checks that only the live session's trace folds:
 // another's spans (e.g. a resumed session's archived trace) can't be read
 // back from the session.

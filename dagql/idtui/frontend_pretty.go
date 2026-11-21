@@ -6116,6 +6116,12 @@ func (fe *frontendPretty) promoteConversationLocked() {
 	if fe.promotedConversationHost != nil &&
 		(fe.promotedConversationAgent != scope || fe.promotedConversationHost != host) {
 		fe.db.DemoteConversationNodesFrom(fe.promotedConversationHost, fe.promotedConversation)
+	} else if fe.promotedConversationHost != nil {
+		// Same scope, but the tree may have changed shape: a message filed
+		// at the top while the chain above it hadn't arrived (as a folding
+		// DB's ancestors read back) nests beneath its message once it has.
+		// Withdraw the placements the new tree no longer makes.
+		withdrawStaleConversation(host, fe.promotedConversation, nodes)
 	}
 	fe.db.PromoteConversationNodesTo(host, nodes)
 	fe.promotedConversationAgent = scope
@@ -6124,6 +6130,35 @@ func (fe *frontendPretty) promoteConversationLocked() {
 	host.Passthrough = true
 	if !fe.ZoomedSpan.IsValid() {
 		fe.ZoomedSpan = fe.db.PrimarySpan
+	}
+}
+
+// withdrawStaleConversation removes the placements (a message revealed
+// beneath the host or beneath another message) that promoting old under host
+// made and promoting nodes doesn't.
+func withdrawStaleConversation(host *dagui.Span, old, nodes []*dagui.MessageNode) {
+	if len(old) == 0 || (len(old) == len(nodes) && &old[0] == &nodes[0]) {
+		// the same tree
+		return
+	}
+	type placement struct{ parent, span *dagui.Span }
+	placements := func(nodes []*dagui.MessageNode) map[placement]bool {
+		set := map[placement]bool{}
+		var walk func(parent *dagui.Span, nodes []*dagui.MessageNode)
+		walk = func(parent *dagui.Span, nodes []*dagui.MessageNode) {
+			for _, node := range nodes {
+				set[placement{parent, node.Span}] = true
+				walk(node.Span, node.Children)
+			}
+		}
+		walk(host, nodes)
+		return set
+	}
+	current := placements(nodes)
+	for p := range placements(old) {
+		if !current[p] {
+			p.parent.RemoveRevealedSpan(p.span)
+		}
 	}
 }
 

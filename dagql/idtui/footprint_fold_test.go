@@ -47,8 +47,33 @@ func BenchmarkFrontendFoldFootprint(b *testing.B) {
 	}
 }
 
-func foldFootprint(b *testing.B, shape, mode string, n int) (bytesPerSpan, retained float64) {
+func foldFootprint(b testing.TB, shape, mode string, n int) (bytesPerSpan, retained float64) {
 	tr := spanfootprint.New(n)
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	fe := streamFootprint(b, tr, shape, mode)
+	runtime.GC()
+	runtime.ReadMemStats(&after)
+	footprintFrontend = fe
+	bytesPerSpan = float64(int64(after.HeapAlloc)-int64(before.HeapAlloc)) / float64(n)
+	if f := fe.db.Fold(); f != nil {
+		stats := f.Stats()
+		if stats.Spans != n {
+			b.Fatalf("received %d spans, want %d", stats.Spans, n)
+		}
+		retained = float64(stats.Retained) / float64(stats.Spans)
+	} else if got := len(fe.db.Spans.Order); got != n {
+		b.Fatalf("ingested %d spans, want %d", got, n)
+	}
+	return bytesPerSpan, retained
+}
+
+// streamFootprint streams tr, with the engine's wait chains (in the nested
+// shape, if asked), into a live TUI frontend whose DB is as mode says,
+// rendering a frame every few batches, and lets what it reads back land.
+func streamFootprint(b testing.TB, tr *spanfootprint.Trace, shape, mode string) *frontendPretty {
+	n := tr.N
 	wrap := func(next sdktrace.SpanExporter) sdktrace.SpanExporter {
 		next = tr.WaitChains(next)
 		if shape == "nested" {
@@ -75,9 +100,6 @@ func foldFootprint(b *testing.B, shape, mode string, n int) (bytesPerSpan, retai
 		return []sdktrace.ReadOnlySpan(out), nil
 	}
 
-	var before, after runtime.MemStats
-	runtime.GC()
-	runtime.ReadMemStats(&before)
 	var db *dagui.DB
 	var lf *liveFold
 	switch mode {
@@ -120,20 +142,8 @@ func foldFootprint(b *testing.B, shape, mode string, n int) (bytesPerSpan, retai
 			}
 		}
 	}
-	runtime.GC()
-	runtime.ReadMemStats(&after)
-	footprintFrontend = fe
-	bytesPerSpan = float64(int64(after.HeapAlloc)-int64(before.HeapAlloc)) / float64(n)
-	if f := db.Fold(); f != nil {
-		stats := f.Stats()
-		if stats.Spans != n {
-			b.Fatalf("received %d spans, want %d", stats.Spans, n)
-		}
-		retained = float64(stats.Retained) / float64(stats.Spans)
-	} else if got := len(db.Spans.Order); got != n {
-		b.Fatalf("ingested %d spans, want %d", got, n)
-	}
-	return bytesPerSpan, retained
+	fe.tui.Step()
+	return fe
 }
 
 type captureSpans []sdktrace.ReadOnlySpan
