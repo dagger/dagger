@@ -31,8 +31,8 @@ func (w *slowWriter) Close() error {
 
 // A layer's time in its compressor counts every write of the archive into
 // the compressor's writer and its close, and nothing of what the differ does
-// between them: so a diff's time less it is reading the layer and archiving
-// it. The blob is the compressor's, unchanged.
+// between them: so a diff's time less it is the rest of the diff, reading and
+// archiving the layer among it. The blob is the compressor's, unchanged.
 func TestTimedCompressorCountsItsWritersTime(t *testing.T) {
 	const delay = 20 * time.Millisecond
 	var compress compression.Compressor = func(dest io.Writer, _ string) (io.WriteCloser, error) {
