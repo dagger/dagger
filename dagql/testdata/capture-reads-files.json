@@ -1,0 +1,206 @@
+{
+  "Roots": [
+    2,
+    3,
+    4
+  ],
+  "Values": [
+    {
+      "SenderNumber": 1,
+      "SenderReplacements": 0,
+      "Record": {
+        "resultID": 1,
+        "envelope": {
+          "version": 0,
+          "kind": ""
+        },
+        "call": null
+      },
+      "Dependencies": null,
+      "Expires": false,
+      "Held": "xxh3:14ee5947c29ff726"
+    },
+    {
+      "SenderNumber": 2,
+      "SenderReplacements": 0,
+      "Record": {
+        "resultID": 2,
+        "envelope": {
+          "version": 5,
+          "kind": "object_self",
+          "typeName": "HeldPartTestValue",
+          "objectCodec": "dagql_test.HeldPart",
+          "resultID": 2,
+          "objectJSON": {
+            "snapshotID": "bin",
+            "file": "/pkg.test"
+          }
+        },
+        "call": {
+          "kind": "field",
+          "type": {
+            "namedType": "HeldPartTestValue",
+            "nonNull": true
+          },
+          "field": "reads-fileA"
+        }
+      },
+      "Dependencies": [
+        1
+      ],
+      "Expires": false,
+      "Held": ""
+    },
+    {
+      "SenderNumber": 3,
+      "SenderReplacements": 0,
+      "Record": {
+        "resultID": 3,
+        "envelope": {
+          "version": 5,
+          "kind": "object_self",
+          "typeName": "HeldPartTestValue",
+          "objectCodec": "dagql_test.HeldPart",
+          "resultID": 3,
+          "objectJSON": {
+            "snapshotID": "bin",
+            "file": "/pkg.test"
+          }
+        },
+        "call": {
+          "kind": "field",
+          "type": {
+            "namedType": "HeldPartTestValue",
+            "nonNull": true
+          },
+          "field": "reads-fileB"
+        }
+      },
+      "Dependencies": [
+        1
+      ],
+      "Expires": false,
+      "Held": ""
+    },
+    {
+      "SenderNumber": 4,
+      "SenderReplacements": 0,
+      "Record": {
+        "resultID": 4,
+        "envelope": {
+          "version": 5,
+          "kind": "object_self",
+          "typeName": "HeldPartTestValue",
+          "objectCodec": "dagql_test.HeldPart",
+          "resultID": 4,
+          "objectJSON": {
+            "snapshotID": "bin2",
+            "file": "/pkg.test"
+          }
+        },
+        "call": {
+          "kind": "field",
+          "type": {
+            "namedType": "HeldPartTestValue",
+            "nonNull": true
+          },
+          "field": "reads-fileC"
+        }
+      },
+      "Dependencies": [
+        1
+      ],
+      "Expires": false,
+      "Held": ""
+    }
+  ],
+  "Outputs": [
+    {
+      "Row": 2,
+      "Address": {
+        "part": "snapshot"
+      },
+      "State": "completed",
+      "Value": {
+        "kind": "file",
+        "path": "/pkg.test"
+      },
+      "Chain": [
+        "bin:/pkg.test"
+      ],
+      "Prefix": "",
+      "Owner": null
+    },
+    {
+      "Row": 3,
+      "Address": {
+        "part": "snapshot"
+      },
+      "State": "completed",
+      "Value": {
+        "kind": "file",
+        "path": "/pkg.test"
+      },
+      "Chain": [
+        "bin:/pkg.test"
+      ],
+      "Prefix": "",
+      "Owner": null
+    },
+    {
+      "Row": 4,
+      "Address": {
+        "part": "snapshot"
+      },
+      "State": "completed",
+      "Value": {
+        "kind": "file",
+        "path": "/pkg.test"
+      },
+      "Chain": [
+        "bin2:/pkg.test"
+      ],
+      "Prefix": "",
+      "Owner": null
+    }
+  ],
+  "Chains": [
+    {
+      "Row": 2,
+      "Address": {
+        "part": "snapshot"
+      },
+      "Layers": [
+        "bin:/pkg.test"
+      ]
+    },
+    {
+      "Row": 3,
+      "Address": {
+        "part": "snapshot"
+      },
+      "Layers": [
+        "bin:/pkg.test"
+      ]
+    },
+    {
+      "Row": 4,
+      "Address": {
+        "part": "snapshot"
+      },
+      "Layers": [
+        "bin2:/pkg.test"
+      ]
+    }
+  ],
+  "LeftOut": null,
+  "Full": [
+    2,
+    3,
+    4
+  ],
+  "Held": [
+    1
+  ],
+  "Passes": 1
+}

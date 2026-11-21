@@ -1,0 +1,378 @@
+{
+  "Roots": [
+    11,
+    9
+  ],
+  "Values": [
+    {
+      "SenderNumber": 1,
+      "SenderReplacements": 0,
+      "Record": {
+        "resultID": 1,
+        "envelope": {
+          "version": 0,
+          "kind": ""
+        },
+        "call": null
+      },
+      "Dependencies": null,
+      "Expires": false,
+      "Held": "xxh3:857903709519dd08"
+    },
+    {
+      "SenderNumber": 2,
+      "SenderReplacements": 0,
+      "Record": {
+        "resultID": 2,
+        "envelope": {
+          "version": 0,
+          "kind": ""
+        },
+        "call": null
+      },
+      "Dependencies": [
+        1
+      ],
+      "Expires": false,
+      "Held": "xxh3:1039270f1b37578f"
+    },
+    {
+      "SenderNumber": 3,
+      "SenderReplacements": 0,
+      "Record": {
+        "resultID": 3,
+        "envelope": {
+          "version": 0,
+          "kind": ""
+        },
+        "call": null
+      },
+      "Dependencies": [
+        2
+      ],
+      "Expires": false,
+      "Held": "xxh3:13c0fe05bd9ecac5"
+    },
+    {
+      "SenderNumber": 4,
+      "SenderReplacements": 0,
+      "Record": {
+        "resultID": 4,
+        "envelope": {
+          "version": 0,
+          "kind": ""
+        },
+        "call": null
+      },
+      "Dependencies": [
+        3
+      ],
+      "Expires": false,
+      "Held": "xxh3:31fd11c4774933dc"
+    },
+    {
+      "SenderNumber": 5,
+      "SenderReplacements": 0,
+      "Record": {
+        "resultID": 5,
+        "envelope": {
+          "version": 0,
+          "kind": ""
+        },
+        "call": null
+      },
+      "Dependencies": [
+        4
+      ],
+      "Expires": false,
+      "Held": "xxh3:b09bb37bb2e504c3"
+    },
+    {
+      "SenderNumber": 6,
+      "SenderReplacements": 0,
+      "Record": {
+        "resultID": 6,
+        "envelope": {
+          "version": 0,
+          "kind": ""
+        },
+        "call": null
+      },
+      "Dependencies": [
+        5,
+        7
+      ],
+      "Expires": false,
+      "Held": "xxh3:df35e6f19f371ae1"
+    },
+    {
+      "SenderNumber": 7,
+      "SenderReplacements": 0,
+      "Record": {
+        "resultID": 7,
+        "envelope": {
+          "version": 0,
+          "kind": ""
+        },
+        "call": null
+      },
+      "Dependencies": [
+        8
+      ],
+      "Expires": false,
+      "Held": "xxh3:d1b788991f07c68d"
+    },
+    {
+      "SenderNumber": 8,
+      "SenderReplacements": 0,
+      "Record": {
+        "resultID": 8,
+        "envelope": {
+          "version": 0,
+          "kind": ""
+        },
+        "call": null
+      },
+      "Dependencies": null,
+      "Expires": false,
+      "Held": "xxh3:6f0b753c318e8c7b"
+    },
+    {
+      "SenderNumber": 9,
+      "SenderReplacements": 0,
+      "Record": {
+        "resultID": 9,
+        "envelope": {
+          "version": 0,
+          "kind": ""
+        },
+        "call": null
+      },
+      "Dependencies": [
+        3
+      ],
+      "Expires": false,
+      "Held": "xxh3:b304befbfe046ee0"
+    },
+    {
+      "SenderNumber": 10,
+      "SenderReplacements": 0,
+      "Record": {
+        "resultID": 10,
+        "envelope": {
+          "version": 5,
+          "kind": "object_self",
+          "typeName": "HeldPartTestValue",
+          "objectCodec": "dagql_test.HeldPart",
+          "resultID": 10,
+          "objectJSON": {
+            "snapshotID": "f"
+          }
+        },
+        "call": {
+          "kind": "field",
+          "type": {
+            "namedType": "HeldPartTestValue",
+            "nonNull": true
+          },
+          "field": "reads-fresh"
+        }
+      },
+      "Dependencies": null,
+      "Expires": false,
+      "Held": ""
+    },
+    {
+      "SenderNumber": 11,
+      "SenderReplacements": 0,
+      "Record": {
+        "resultID": 11,
+        "envelope": {
+          "version": 5,
+          "kind": "object_self",
+          "typeName": "HeldPartTestValue",
+          "objectCodec": "dagql_test.HeldPart",
+          "resultID": 11,
+          "objectJSON": {
+            "snapshotID": "s5"
+          }
+        },
+        "call": {
+          "kind": "field",
+          "type": {
+            "namedType": "HeldPartTestValue",
+            "nonNull": true
+          },
+          "field": "reads-top"
+        }
+      },
+      "Dependencies": [
+        6,
+        10
+      ],
+      "Expires": false,
+      "Held": ""
+    }
+  ],
+  "Outputs": [
+    {
+      "Row": 1,
+      "Address": {
+        "part": "snapshot"
+      },
+      "State": "completed",
+      "Value": {
+        "kind": "directory"
+      },
+      "Chain": null,
+      "Prefix": "11 {\"part\":\"snapshot\"} 1",
+      "Owner": null
+    },
+    {
+      "Row": 2,
+      "Address": {
+        "part": "snapshot"
+      },
+      "State": "completed",
+      "Value": {
+        "kind": "directory"
+      },
+      "Chain": null,
+      "Prefix": "11 {\"part\":\"snapshot\"} 2",
+      "Owner": null
+    },
+    {
+      "Row": 3,
+      "Address": {
+        "part": "snapshot"
+      },
+      "State": "completed",
+      "Value": {
+        "kind": "directory"
+      },
+      "Chain": null,
+      "Prefix": "11 {\"part\":\"snapshot\"} 3",
+      "Owner": null
+    },
+    {
+      "Row": 4,
+      "Address": {
+        "part": "snapshot"
+      },
+      "State": "completed",
+      "Value": {
+        "kind": "directory"
+      },
+      "Chain": null,
+      "Prefix": "11 {\"part\":\"snapshot\"} 4",
+      "Owner": null
+    },
+    {
+      "Row": 5,
+      "Address": {
+        "part": "snapshot"
+      },
+      "State": "completed",
+      "Value": {
+        "kind": "directory"
+      },
+      "Chain": null,
+      "Prefix": "11 {\"part\":\"snapshot\"} 5",
+      "Owner": null
+    },
+    {
+      "Row": 6,
+      "Address": {
+        "part": "snapshot"
+      },
+      "State": "completed",
+      "Value": {
+        "kind": "directory"
+      },
+      "Chain": null,
+      "Prefix": "11 {\"part\":\"snapshot\"} 6",
+      "Owner": null
+    },
+    {
+      "Row": 9,
+      "Address": {
+        "part": "snapshot"
+      },
+      "State": "completed",
+      "Value": {
+        "kind": "directory"
+      },
+      "Chain": [
+        "s0",
+        "s2",
+        "t"
+      ],
+      "Prefix": "",
+      "Owner": null
+    },
+    {
+      "Row": 11,
+      "Address": {
+        "part": "snapshot"
+      },
+      "State": "completed",
+      "Value": {
+        "kind": "directory"
+      },
+      "Chain": [
+        "s0",
+        "s1",
+        "s2",
+        "s3",
+        "s4",
+        "s5"
+      ],
+      "Prefix": "",
+      "Owner": null
+    }
+  ],
+  "Chains": [
+    {
+      "Row": 11,
+      "Address": {
+        "part": "snapshot"
+      },
+      "Layers": [
+        "s0",
+        "s1",
+        "s2",
+        "s3",
+        "s4",
+        "s5"
+      ]
+    },
+    {
+      "Row": 9,
+      "Address": {
+        "part": "snapshot"
+      },
+      "Layers": [
+        "s0",
+        "s2",
+        "t"
+      ]
+    }
+  ],
+  "LeftOut": null,
+  "Full": [
+    10,
+    11
+  ],
+  "Held": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9
+  ],
+  "Passes": 1
+}
