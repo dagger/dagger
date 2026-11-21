@@ -190,52 +190,62 @@ func heldPartTestBundles(t *testing.T, name string) (engine *Cache, outOnly, hel
 // same address, and, for an upload, with a descriptor of the same kind. Where
 // the Cloud never had the row, no longer has its value, or has a copy without
 // that part, the held row is stale: nothing commits, and the engine's retry
-// carries the row in full.
+// carries the row in full. The same holds once the Cloud's copy is
+// compressed, when the check reads the facts its body keeps.
 func TestCloudChecksAPartOnAHeldRowAgainstItsOwnCopy(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []string{"matches", "uploads", "never had", "no longer has", "differs", "uploads another kind"} {
-		t.Run(tc, func(t *testing.T) {
-			t.Parallel()
-			engine, outOnly, held, out, root := heldPartTestBundles(t, "part-"+tc)
-			cctx, cloud := storedPartTestCache(t, WithBlobStore())
-			if tc != "never had" {
-				reply, err := cloud.MergeValues(cctx, "engine", outOnly)
-				require.NoError(t, err)
-				require.True(t, reply.Committed)
+		for _, compressed := range []bool{false, true} {
+			name := tc
+			if compressed {
+				name += "-compressed"
 			}
-			switch tc {
-			case "no longer has":
-				entry, _ := cloudEntryOfRecipe(t, cloud, engine, out)
-				require.NotNil(t, entry)
-				cloud.egraphMu.Lock()
-				entry.expiresAtUnix = time.Now().Unix() - 60
-				cloud.egraphMu.Unlock()
-			case "differs":
-				held.Outputs[0].Address = PersistedPartAddress{Part: "other"}
-			case "uploads", "uploads another kind":
-				kind := "directory"
-				if tc == "uploads another kind" {
-					kind = "file"
+			t.Run(name, func(t *testing.T) {
+				t.Parallel()
+				engine, outOnly, held, out, root := heldPartTestBundles(t, "part-"+name)
+				cctx, cloud := storedPartTestCache(t, WithBlobStore())
+				if tc != "never had" {
+					reply, err := cloud.MergeValues(cctx, "engine", outOnly)
+					require.NoError(t, err)
+					require.True(t, reply.Committed)
 				}
-				output := &held.Outputs[0]
-				output.State = "completed"
-				output.Value = &SnapshotValue{Kind: kind, Path: "/"}
-				output.Chain = &OfferedChain{Layers: storedBenchPart(1).Chain.Layers}
-				output.Owner = &PersistedOfferOwner{}
-			}
-			reply, err := cloud.MergeValues(cctx, "engine", held)
-			require.NoError(t, err)
-			rootEntry, _ := cloudEntryOfRecipe(t, cloud, engine, root)
-			if tc == "matches" || tc == "uploads" {
-				require.True(t, reply.Committed)
-				require.Empty(t, reply.Stale)
-				require.NotNil(t, rootEntry)
-				return
-			}
-			require.False(t, reply.Committed)
-			require.Equal(t, []TransferOrdinal{ordinalOfNumber(t, held, uint64(out.cacheSharedResult().id))}, reply.Stale)
-			require.Nil(t, rootEntry, "nothing commits")
-		})
+				if compressed {
+					storedTestCompress(cloud)
+				}
+				switch tc {
+				case "no longer has":
+					entry, _ := cloudEntryOfRecipe(t, cloud, engine, out)
+					require.NotNil(t, entry)
+					cloud.egraphMu.Lock()
+					entry.expiresAtUnix = time.Now().Unix() - 60
+					cloud.egraphMu.Unlock()
+				case "differs":
+					held.Outputs[0].Address = PersistedPartAddress{Part: "other"}
+				case "uploads", "uploads another kind":
+					kind := "directory"
+					if tc == "uploads another kind" {
+						kind = "file"
+					}
+					output := &held.Outputs[0]
+					output.State = "completed"
+					output.Value = &SnapshotValue{Kind: kind, Path: "/"}
+					output.Chain = &OfferedChain{Layers: storedBenchPart(1).Chain.Layers}
+					output.Owner = &PersistedOfferOwner{}
+				}
+				reply, err := cloud.MergeValues(cctx, "engine", held)
+				require.NoError(t, err)
+				rootEntry, _ := cloudEntryOfRecipe(t, cloud, engine, root)
+				if tc == "matches" || tc == "uploads" {
+					require.True(t, reply.Committed)
+					require.Empty(t, reply.Stale)
+					require.NotNil(t, rootEntry)
+					return
+				}
+				require.False(t, reply.Committed)
+				require.Equal(t, []TransferOrdinal{ordinalOfNumber(t, held, uint64(out.cacheSharedResult().id))}, reply.Stale)
+				require.Nil(t, rootEntry, "nothing commits")
+			})
+		}
 	}
 }
 
