@@ -1,0 +1,415 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>io.dagger.modules.viztestjava</groupId>
+    <artifactId>viztest-java</artifactId>
+    <version>1.0-SNAPSHOT</version>
+    <name>viztest-java</name>
+
+    <properties>
+        <maven.compiler.release>17</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <!--
+        Controls whether the Dagger annotation processor runs to (re)generate
+        io.dagger.gen.entrypoint.Entrypoint. A plain `mvn package` leaves it at
+        "none" and just compiles the already-generated source under
+        src/generated/java. `dagger develop` / the engine pass -Ddagger.proc=full
+        to regenerate it from the current module code.
+        -->
+        <dagger.proc>none</dagger.proc>
+        <!--
+        Version of the vendored Dagger Java SDK. Only used by the
+        dagger-prebuilt-sdk profile to resolve the prebuilt SDK jars.
+        -->
+        <dagger.sdk.version>0.21.4</dagger.sdk.version>
+    </properties>
+
+    <!--
+    The Dagger Java SDK is vendored as source under sdk/ by `dagger develop`,
+    and the engine's core API is generated under clients/core. Both directories
+    are generated (see .gitattributes / .gitignore) and rebuilt by Dagger; do
+    not edit them by hand. You can add your own dependencies below.
+    -->
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>io.opentelemetry</groupId>
+                <artifactId>opentelemetry-bom</artifactId>
+                <version>1.61.0</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <!-- Dagger Java SDK runtime dependencies -->
+        <dependency>
+            <groupId>jakarta.json</groupId>
+            <artifactId>jakarta.json-api</artifactId>
+            <version>2.1.3</version>
+        </dependency>
+        <dependency>
+            <groupId>jakarta.json.bind</groupId>
+            <artifactId>jakarta.json.bind-api</artifactId>
+            <version>3.0.1</version>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>2.0.17</version>
+        </dependency>
+        <dependency>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-sdk</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-exporter-otlp</artifactId>
+            <exclusions>
+                <exclusion>
+                    <groupId>io.opentelemetry</groupId>
+                    <artifactId>opentelemetry-exporter-sender-okhttp</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-exporter-sender-jdk</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- Needed only to compile the vendored annotation processor sources -->
+        <dependency>
+            <groupId>com.palantir.javapoet</groupId>
+            <artifactId>javapoet</artifactId>
+            <version>0.14.0</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.github.javaparser</groupId>
+            <artifactId>javaparser-core</artifactId>
+            <version>3.28.0</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.google.auto.service</groupId>
+            <artifactId>auto-service-annotations</artifactId>
+            <version>1.1.1</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- Runtime-only dependencies -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-simple</artifactId>
+            <version>2.0.17</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.eclipse</groupId>
+            <artifactId>yasson</artifactId>
+            <version>3.0.4</version>
+            <scope>runtime</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+            </resource>
+            <!-- Service descriptor that registers the Dagger annotation processor -->
+            <resource>
+                <directory>sdk/src/processor/resources</directory>
+            </resource>
+        </resources>
+
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <artifactId>maven-clean-plugin</artifactId>
+                    <version>3.4.0</version>
+                </plugin>
+                <plugin>
+                    <artifactId>maven-resources-plugin</artifactId>
+                    <version>3.3.1</version>
+                </plugin>
+                <plugin>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <version>3.3.0</version>
+                </plugin>
+                <plugin>
+                    <artifactId>maven-jar-plugin</artifactId>
+                    <version>3.4.2</version>
+                </plugin>
+                <plugin>
+                    <artifactId>maven-install-plugin</artifactId>
+                    <version>3.1.2</version>
+                </plugin>
+                <plugin>
+                    <artifactId>maven-deploy-plugin</artifactId>
+                    <version>3.1.2</version>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+
+        <plugins>
+            <plugin>
+                <!--
+                Register the vendored Dagger Java SDK sources, the core client and
+                the generated entrypoint as compilation roots:
+                  - sdk/src/main/java           the hand-written SDK library
+                  - sdk/src/processor/java      the annotation processor (generates the entrypoint)
+                  - clients/core/src/main/java  the engine's core API, io.dagger.client.modules.core
+                  - src/generated/java          io.dagger.gen.entrypoint.Entrypoint, generated
+                                                from the module code (see maven-compiler-plugin)
+                -->
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>build-helper-maven-plugin</artifactId>
+                <version>3.3.0</version>
+                <executions>
+                    <execution>
+                        <id>add-dagger-sdk-sources</id>
+                        <goals>
+                            <goal>add-source</goal>
+                        </goals>
+                        <configuration>
+                            <sources>
+                                <source>sdk/src/main/java</source>
+                                <source>sdk/src/processor/java</source>
+                                <source>clients/core/src/main/java</source>
+                            </sources>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>add-entrypoint-source</id>
+                        <goals>
+                            <goal>add-source</goal>
+                        </goals>
+                        <configuration>
+                            <sources>
+                                <source>src/generated/java</source>
+                            </sources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <!--
+                The module is built in two compilation passes from a single `mvn package`:
+                  1. default-compile compiles the vendored SDK and annotation processor
+                     plus the core client (everything but the user module and the
+                     generated entrypoint), without annotation processing.
+                  2. compile-module compiles the user module (io.dagger.modules.*) and the
+                     entrypoint (io.dagger.gen.*) together.
+
+                Whether the entrypoint is (re)generated depends on the dagger.proc
+                property, so the very same pom serves two purposes:
+                  - dagger.proc=none (default, a plain `mvn package`): the processor does
+                    not run; the entrypoint already present as vendored source under
+                    src/generated/java is just compiled.
+                  - dagger.proc=full (passed by `dagger develop` / the engine): the
+                    processor runs in pass 2 and (re)generates the entrypoint. `dagger
+                    develop` vendors the result under src/generated/java.
+                This keeps the entrypoint as real, vendored source and avoids depending
+                on pre-built/published Dagger SDK artifacts.
+                -->
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
+                <configuration>
+                    <useIncrementalCompilation>false</useIncrementalCompilation>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>default-compile</id>
+                        <configuration>
+                            <proc>none</proc>
+                            <excludes>
+                                <exclude>io/dagger/modules/**</exclude>
+                                <exclude>io/dagger/gen/**</exclude>
+                            </excludes>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>compile-module</id>
+                        <phase>compile</phase>
+                        <goals>
+                            <goal>compile</goal>
+                        </goals>
+                        <configuration>
+                            <proc>${dagger.proc}</proc>
+                            <includes>
+                                <include>io/dagger/modules/**</include>
+                                <include>io/dagger/gen/**</include>
+                            </includes>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <!--
+                This plugin configuration is required by Dagger to package the module.
+                Please do not remove or modify it.
+                -->
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.5.0</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                        <configuration>
+                            <transformers>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <mainClass>io.dagger.gen.entrypoint.Entrypoint</mainClass>
+                                </transformer>
+                            </transformers>
+                            <outputDirectory>${project.build.outputDirectory}</outputDirectory>
+                            <finalName>${project.artifactId}-${project.version}</finalName>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+    <profiles>
+        <!--
+        Fast path used by `dagger generate` (mod.dang passes -Ddagger.sdk=prebuilt):
+        compile the module against the prebuilt Dagger Java SDK jars installed in
+        the local Maven repository instead of the vendored SDK sources, so only the
+        module's own code is compiled. This profile is internal to code generation.
+        A plain `mvn package` (no property) still compiles the vendored sources and
+        needs no prebuilt artifacts.
+        -->
+        <profile>
+            <id>dagger-prebuilt-sdk</id>
+            <activation>
+                <property>
+                    <name>dagger.sdk</name>
+                    <value>prebuilt</value>
+                </property>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>io.dagger</groupId>
+                    <artifactId>dagger-java-sdk</artifactId>
+                    <version>${dagger.sdk.version}</version>
+                </dependency>
+                <dependency>
+                    <groupId>io.dagger</groupId>
+                    <artifactId>dagger-java-annotation-processor</artifactId>
+                    <version>${dagger.sdk.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+            </dependencies>
+            <build>
+                <plugins>
+                    <plugin>
+                        <!-- Do not add the vendored SDK sources as compile roots. -->
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>build-helper-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>add-dagger-sdk-sources</id>
+                                <phase>none</phase>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <!--
+        Opt-in runtime fast path. When `dagger generate` has committed the compiled
+        Dagger Java SDK jar under sdk/repo (enabled by the SDK's vendorSdkJar
+        setting), this profile activates automatically on its presence: the module
+        builds against that jar instead of recompiling the vendored SDK sources,
+        which stay checked in for IDE navigation. With no committed jar the profile
+        stays inactive and the build compiles the sources as usual.
+        -->
+        <profile>
+            <id>dagger-vendored-sdk-jar</id>
+            <activation>
+                <file>
+                    <exists>sdk/repo/io/dagger/dagger-java-sdk/0.21.4/dagger-java-sdk-0.21.4.jar</exists>
+                </file>
+            </activation>
+            <repositories>
+                <repository>
+                    <id>dagger-vendored-sdk</id>
+                    <url>file://${project.basedir}/sdk/repo</url>
+                    <releases>
+                        <enabled>true</enabled>
+                    </releases>
+                    <snapshots>
+                        <enabled>false</enabled>
+                    </snapshots>
+                </repository>
+            </repositories>
+            <dependencies>
+                <dependency>
+                    <groupId>io.dagger</groupId>
+                    <artifactId>dagger-java-sdk</artifactId>
+                    <version>0.21.4</version>
+                </dependency>
+            </dependencies>
+            <build>
+                <plugins>
+                    <plugin>
+                        <!-- Do not add the vendored SDK sources as compile roots. -->
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>build-helper-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>add-dagger-sdk-sources</id>
+                                <phase>none</phase>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <!-- dagger-java-sdk clients: generated from the project's clients. DO NOT EDIT. -->
+        <profile>
+            <id>dagger-clients</id>
+            <activation>
+                <property>
+                    <name>!dagger.clients.skip</name>
+                </property>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>build-helper-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>add-dagger-client-sources</id>
+                                <goals>
+                                    <goal>add-source</goal>
+                                </goals>
+                                <configuration>
+                                    <sources>
+                                        <source>clients/sdk-dep/src/main/java</source>
+                                    </sources>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <!-- /dagger-java-sdk clients -->
+    </profiles>
+</project>

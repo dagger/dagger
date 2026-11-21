@@ -1,0 +1,14 @@
+**/dagger.gen.go linguist-generated
+/go/cmd/** linguist-generated
+/go/internal/dagger/** linguist-generated
+/dep/cmd/** linguist-generated
+/dep/internal/dagger/** linguist-generated
+/python/sdk/** linguist-generated
+/python/clients/** linguist-generated
+/typescript/clients/** linguist-generated
+/typescript/entrypoint/** linguist-generated
+/php/sdk/** linguist-generated
+/php/composer.lock linguist-generated
+/java/sdk/** linguist-generated
+/java/clients/** linguist-generated
+/java/src/generated/** linguist-generated

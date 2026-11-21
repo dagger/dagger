@@ -1,0 +1,9 @@
+name = "viztest-dang"
+engineVersion = "v1.0.0-beta.29"
+
+[runtime]
+  source = "dang"
+
+[[dependencies]]
+  name = "sdk-dep"
+  source = "../dep"

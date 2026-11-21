@@ -1,0 +1,84 @@
+# Fixture modules for the external SDKs' golden tests (see
+# dagql/idtui/golden_test.go). This is a workspace of its own so that
+# regenerating them never touches the repository's dagger.toml: run
+# `dagger generate` from this directory.
+
+[modules.go-sdk]
+source = "github.com/dagger/go-sdk@aa3e5343ccc8366cfcc843e44f0b5e593d7cbe20"
+
+[modules.python-sdk]
+source = "github.com/dagger/python-sdk@837e04623128dd71b8b526353ae4a02935b6d687"
+
+[modules.typescript-sdk]
+# A fork: generated Dang entrypoints name cache policies in TypeScript's
+# spelling, which fails to load (dagger/typescript-sdk#143).
+source = "github.com/vito/typescript-sdk@23a6ec5cba3e81539bd09def8a9fc3c2bae9efac"
+
+[modules.php-sdk]
+# A fork: php-sdk's sdk-helpers dependency no longer compiles under current
+# Dang (dagger/php-sdk#48).
+source = "github.com/vito/php-sdk@115d8d91eef6b49012ea66112adc0af0ef5fc48c"
+
+[modules.java-sdk]
+source = "github.com/dagger/java-sdk@784d8e7f6578e844aba7b1f926c28f26c4dc82ed"
+
+[modules.dang-sdk]
+source = "github.com/dagger/dang-sdk@14ba9d349167cb32b3a06f4229f534509a30ac62"
+
+[sdks.go]
+module = "go-sdk"
+
+[sdks.python]
+module = "python-sdk"
+
+[sdks.typescript]
+module = "typescript-sdk"
+
+[sdks.php]
+module = "php-sdk"
+
+[sdks.java]
+module = "java-sdk"
+
+[sdks.dang]
+module = "dang-sdk"
+
+[sdks.go.scopes.dep]
+is-module = true
+name = "sdk-dep"
+
+[sdks.go.scopes.dep.settings]
+template = "empty"
+
+[sdks.go.scopes.go]
+is-module = true
+name = "viztest-go"
+clients = ["./dep"]
+
+[sdks.go.scopes.go.settings]
+template = "empty"
+
+[sdks.python.scopes.python]
+is-module = true
+name = "viztest-python"
+clients = ["./dep"]
+
+[sdks.typescript.scopes.typescript]
+is-module = true
+name = "viztest-typescript"
+clients = ["./dep"]
+
+[sdks.php.scopes.php]
+is-module = true
+name = "viztest-php"
+clients = ["./dep"]
+
+[sdks.java.scopes.java]
+is-module = true
+name = "viztest-java"
+clients = ["./dep"]
+
+[sdks.dang.scopes.dang]
+is-module = true
+name = "viztest-dang"
+clients = ["./dep"]

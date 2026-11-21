@@ -1,0 +1,83 @@
+#!/usr/bin/env php
+<?php declare(strict_types=1);
+
+use Dagger\Dagger;
+use Dagger\Module\CallDispatcher;
+use Dagger\Module\DangEntrypointRenderer;
+use Dagger\Module\Description;
+use Dagger\Module\InterfaceClients;
+use Dagger\Module\ValueCodec;
+use GraphQL\Exception\QueryError;
+
+const USAGE = 'usage: dagger-module generate --name <module> --client-version <version> --output <directory>'
+    . ' | call --output <file>';
+
+function fail(string $message, int $code = 1): never
+{
+    fwrite(STDERR, "dagger-module: $message\n");
+    exit($code);
+}
+
+/** @return array<string, string> */
+function options(array $args): array
+{
+    $options = [];
+    foreach (array_chunk($args, 2) as $pair) {
+        if (count($pair) !== 2 || !str_starts_with($pair[0], '--')) {
+            fail(USAGE, 2);
+        }
+        $options[substr($pair[0], 2)] = $pair[1];
+    }
+
+    return $options;
+}
+
+function required(array $options, string $name): string
+{
+    return $options[$name] ?? fail(USAGE, 2);
+}
+
+$autoload = getcwd() . '/vendor/autoload.php';
+if (!is_file($autoload)) {
+    fail("the module's dependencies are not installed: $autoload does not exist");
+}
+require $autoload;
+
+$mode = $argv[1] ?? '';
+$options = options(array_slice($argv, 2));
+
+try {
+    switch ($mode) {
+        case 'generate':
+            $clientVersion = required($options, 'client-version');
+            $description = Description::fromDirectory(getcwd() . '/src');
+            $naming = Dagger::getClientInstance()->naming($clientVersion)->module(required($options, 'name'));
+            DangEntrypointRenderer::write($description, $naming, $clientVersion, required($options, 'output'));
+            InterfaceClients::write($description, getcwd() . '/sdk/generated/ModuleInterfaces', $naming);
+            break;
+        case 'call':
+            $output = required($options, 'output');
+            $request = json_decode((string) stream_get_contents(STDIN), true, flags: JSON_THROW_ON_ERROR);
+            $result = (new CallDispatcher(ValueCodec::forClient(Dagger::getClientInstance())))->call(
+                $request['receiverType'] ?? fail('the request has no receiverType', 2),
+                $request['receiverValue'] ?? null,
+                $request['fnName'] ?? '',
+                $request['fnArgs'] ?? null,
+            );
+            if (!is_dir(dirname($output)) && !mkdir(dirname($output), 0755, true)) {
+                fail('cannot create ' . dirname($output));
+            }
+            file_put_contents($output, $result);
+            break;
+        default:
+            fail(USAGE, 2);
+    }
+} catch (QueryError $e) {
+    $extensions = $e->getErrorDetails()['extensions'] ?? [];
+    fwrite(STDOUT, $extensions['stdout'] ?? '');
+    fwrite(STDERR, $e->getMessage() . "\n" . ($extensions['stderr'] ?? ''));
+    exit($extensions['exitCode'] ?? 1);
+} catch (Throwable $t) {
+    fwrite(STDERR, sprintf("dagger-module: %s: %s\n%s\n", $t::class, $t->getMessage(), $t->getTraceAsString()));
+    exit(1);
+}
