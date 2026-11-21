@@ -91,6 +91,87 @@ func (e nested) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) 
 
 func (e nested) Shutdown(context.Context) error { return nil }
 
+// ContainedWaits passes the trace on to next with the waits real sessions
+// mostly carry, on spans beneath their carrier: a quarter of the spans with
+// children wait (call_exec) on each of them, up to 64, as a glob waits on
+// its matches; half of those name their first child after themselves, their
+// execution twin, as a call's own execution is.
+func (tr *Trace) ContainedWaits(next sdktrace.SpanExporter) sdktrace.SpanExporter {
+	children := make([][]int32, tr.N)
+	for i := 1; i < tr.N; i++ {
+		p := tr.parents[i]
+		children[p] = append(children[p], int32(i))
+	}
+	return &containedWaits{tr: tr, children: children, next: next}
+}
+
+type containedWaits struct {
+	tr       *Trace
+	children [][]int32
+	next     sdktrace.SpanExporter
+}
+
+func (e *containedWaits) carrier(i int) bool {
+	return i > LongLived && len(e.children[i]) > 0 && hash(i, 7)%4 == 0
+}
+
+func (e *containedWaits) twin(i int) bool {
+	return e.carrier(i) && hash(i, 8)%2 == 0
+}
+
+// name is span i's name: its twin parent's, if it's one's first child.
+func (e *containedWaits) name(i int) string {
+	if i > 0 {
+		if p := int(e.tr.parents[i]); e.twin(p) && int(e.children[p][0]) == i {
+			return e.name(p)
+		}
+	}
+	return e.tr.Stub(i, false).Name()
+}
+
+func (e *containedWaits) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
+	out := make([]sdktrace.ReadOnlySpan, len(spans))
+	for k, s := range spans {
+		out[k] = s
+		i := SpanIndex(s.SpanContext().SpanID())
+		done := !s.EndTime().Before(s.StartTime())
+		renamed := i > 0 && e.twin(int(e.tr.parents[i])) && int(e.children[e.tr.parents[i]][0]) == i
+		waits := done && e.carrier(i)
+		if !renamed && !waits {
+			continue
+		}
+		stub := tracetest.SpanStubFromReadOnlySpan(s)
+		if renamed {
+			stub.Name = e.name(i)
+		}
+		if waits {
+			dur := s.EndTime().Sub(s.StartTime())
+			start, end := s.StartTime().Add(dur/10), s.StartTime().Add(dur*6/10)
+			kids := e.children[i]
+			stub.Links = slices.Clip(stub.Links)
+			for _, c := range kids[:min(len(kids), 64)] {
+				if int(c) >= (i/512+2)*512 {
+					// not started yet when the carrier ends (see Export)
+					break
+				}
+				stub.Links = append(stub.Links, sdktrace.Link{
+					SpanContext: trace.NewSpanContext(trace.SpanContextConfig{TraceID: s.SpanContext().TraceID(), SpanID: e.tr.SpanID(int(c))}),
+					Attributes: []attribute.KeyValue{
+						attribute.String(telemetry.LinkPurposeAttr, telemetryattrs.LinkPurposeWait),
+						attribute.String(telemetryattrs.WcprofWaitReasonAttr, "call_exec"),
+						attribute.String(telemetryattrs.WcprofWaitStartUnixNanoAttr, strconv.FormatInt(start.UnixNano(), 10)),
+						attribute.String(telemetryattrs.WcprofWaitEndUnixNanoAttr, strconv.FormatInt(end.UnixNano(), 10)),
+					},
+				})
+			}
+		}
+		out[k] = stub.Snapshot()
+	}
+	return e.next.ExportSpans(ctx, out)
+}
+
+func (e *containedWaits) Shutdown(context.Context) error { return nil }
+
 // SpanIndex is the index of span id in the trace, as SpanID assigns them.
 func SpanIndex(id trace.SpanID) int {
 	return int(binary.BigEndian.Uint64(id[:])) - 1

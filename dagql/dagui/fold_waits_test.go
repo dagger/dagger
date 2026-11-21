@@ -34,14 +34,24 @@ func sameBreakdown(a, b *TimeBreakdown) bool {
 func TestFoldRowWaitsMatchFullLoad(t *testing.T) {
 	const n = 30_000
 	tr := spanfootprint.New(n)
-	for _, nested := range []bool{false, true} {
-		name := "agent"
-		if nested {
-			name = "nested"
-		}
-		t.Run(name, func(t *testing.T) {
+	for _, shape := range []struct {
+		name              string
+		nested, contained bool
+	}{
+		{name: "agent"},
+		{name: "nested", nested: true},
+		// with the waits real sessions mostly carry, on spans beneath
+		// their carrier, which fold
+		{name: "agent-contained", contained: true},
+		{name: "nested-contained", nested: true, contained: true},
+	} {
+		nested := shape.nested
+		t.Run(shape.name, func(t *testing.T) {
 			wrap := func(next sdktrace.SpanExporter) sdktrace.SpanExporter {
 				next = tr.WaitChains(next)
+				if shape.contained {
+					next = tr.ContainedWaits(next)
+				}
 				if nested {
 					next = nestedFootprint{next}
 				}
@@ -76,6 +86,14 @@ func TestFoldRowWaitsMatchFullLoad(t *testing.T) {
 					}
 					want := full.Spans.Map[span.ID]
 					wantRW, gotRW := want.RowWaits, span.RowWaits
+					// a row whose waiting went away holds none, as
+					// one that never had any
+					if wantRW != nil && len(wantRW.Segments) == 0 {
+						wantRW = nil
+					}
+					if gotRW != nil && len(gotRW.Segments) == 0 {
+						gotRW = nil
+					}
 					if (wantRW == nil) != (gotRW == nil) || (wantRW != nil && !sameSegments(wantRW.Segments, gotRW.Segments)) {
 						t.Errorf("span %s (%s): row waits %+v, want %+v", span.ID, span.Name, gotRW, wantRW)
 					}
@@ -106,8 +124,12 @@ func TestFoldRowWaitsMatchFullLoad(t *testing.T) {
 			}
 			check(true)
 			st := folded.Fold().Stats()
-			t.Logf("%d of %d spans retained (%.1f%%), stubs %.1f B/span", st.Retained, st.Spans,
-				100*float64(st.Retained)/float64(st.Spans), float64(st.StubBytes)/float64(st.Spans))
+			t.Logf("%d of %d spans retained (%.1f%%), stubs %.1f B/span; contained waits broken on %d spans (%d targets read back)", st.Retained, st.Spans,
+				100*float64(st.Retained)/float64(st.Spans), float64(st.StubBytes)/float64(st.Spans),
+				folded.Fold().Broken, folded.Fold().BrokenTargets)
+			if shape.contained && folded.Fold().reads == nil {
+				t.Fatal("no contained waits")
+			}
 		})
 	}
 }

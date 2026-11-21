@@ -53,6 +53,26 @@ type foldVariant struct {
 func (f *Fold) Breakdown() FoldBreakdown {
 	var out FoldBreakdown
 	out.FoldedCalls = f.keptCalls
+	targets, links, realWaits := f.retainedLinks()
+	f.breakdownReasons(&out, targets, links, realWaits)
+	return out
+}
+
+// KeptWithoutLinks reports, for a span, whether the fold would retain it
+// if neither wait nor cause links retained anything.
+func (f *Fold) KeptWithoutLinks() func(SpanID) bool {
+	_, links, realWaits := f.retainedLinks()
+	_, _, kept := f.simulate(foldVariant{waitSidecar: true, causeSidecar: true}, links, realWaits)
+	return func(id SpanID) bool {
+		i, ok := f.lookup(id)
+		return ok && kept[i]
+	}
+}
+
+// retainedLinks gathers the links of the retained spans: the purposes each
+// target is linked with, each span's links, and the spans with waits rows
+// read.
+func (f *Fold) retainedLinks() (map[uint32]int, map[uint32][]foldLink, map[uint32]bool) {
 	// the targets of retained spans' links, by purpose
 	targets := map[uint32]int{}
 	links := map[uint32][]foldLink{}
@@ -114,7 +134,10 @@ func (f *Fold) Breakdown() FoldBreakdown {
 			}
 		}
 	}
+	return targets, links, realWaits
+}
 
+func (f *Fold) breakdownReasons(out *FoldBreakdown, targets map[uint32]int, links map[uint32][]foldLink, realWaits map[uint32]bool) {
 	reasons := []string{
 		"root", "child of an expanded span", "agent",
 		"surfaced kind (may roll up)", "surfaced kind (beneath a boundary)",
@@ -178,7 +201,7 @@ func (f *Fold) Breakdown() FoldBreakdown {
 		{name: "surfaced kinds beneath boundaries as stubs", kindsMayRollUp: true},
 		{name: "all three", waitSidecar: true, causeSidecar: true, kindsMayRollUp: true},
 	} {
-		n, why := f.simulate(v, links, realWaits)
+		n, why, _ := f.simulate(v, links, realWaits)
 		out.WhatIf = append(out.WhatIf, FoldCount{v.name, n})
 		if out.WhatIfReasons == nil {
 			out.WhatIfReasons = map[string][]FoldCount{}
@@ -190,7 +213,6 @@ func (f *Fold) Breakdown() FoldBreakdown {
 			return out.WhatIfReasons[v.name][a].Spans > out.WhatIfReasons[v.name][b].Spans
 		})
 	}
-	return out
 }
 
 // LinkBreakdown classifies the wait and cause links of the spans db holds:
@@ -273,6 +295,88 @@ func (db *DB) LinkBreakdown() []FoldCount {
 	return out
 }
 
+// CauseBreakdown classifies the cause links of the spans db holds by what
+// they feed -- failure, cancellation, pending resolution, activity beyond
+// the cause's ancestors' own intervals -- and by where their ends meet,
+// relative to what folded (the spans folded retains): a link whose ends
+// meet beneath a folded span, and that feeds nothing a row shows from
+// outside, is a candidate for folding both ends. A diagnostic.
+func (db *DB) CauseBreakdown(kept func(SpanID) bool) []FoldCount {
+	counts := map[string]int{}
+	var total int
+	for _, effect := range db.Spans.Order {
+		for _, link := range effect.Links {
+			if link.Purpose != telemetry.LinkPurposeCause && link.Purpose != "" {
+				continue
+			}
+			total++
+			cause := db.Spans.Map[link.SpanContext.SpanID]
+			if cause == nil || !cause.Received {
+				counts["cause not in scope"]++
+				continue
+			}
+			var lca *Span
+			for a := effect; a != nil && lca == nil; a = a.ParentSpan {
+				if spanInSubtree(cause, a) {
+					lca = a
+				}
+			}
+			var feeds []string
+			if effect.IsFailed() {
+				feeds = append(feeds, "failure")
+			}
+			if effect.IsCanceled() {
+				feeds = append(feeds, "cancellation")
+			}
+			if effect.Blocked || effect.Partial || cause.Pending {
+				feeds = append(feeds, "pending/blocked")
+			}
+			if effect.installedAt(cause) {
+				feeds = append(feeds, "install site")
+			}
+			// the effect's time is credited to the cause and all its
+			// ancestors (PropagateStatusToParentsAndLinks)
+			for a := cause; a != nil; a = a.ParentSpan {
+				if effect.StartTime.Before(a.StartTime) || effect.EndTime.After(a.EndTime) || effect.IsRunning() {
+					feeds = append(feeds, "activity beyond the cause's ancestors")
+					break
+				}
+			}
+			where := "ends meet at no common ancestor"
+			if lca != nil {
+				where = "ends meet beneath a span retained without links"
+				if !kept(lca.ID) {
+					where = "ends meet beneath a span folded without links"
+				} else if lca == effect || lca == cause {
+					where = "one end is the other's ancestor"
+				}
+			}
+			kind := "plain"
+			switch {
+			case strings.HasPrefix(effect.Name, "resume "):
+				kind = "resume"
+			case effect.isLazyEvaluation():
+				kind = "lazy evaluation"
+			}
+			feed := "feeds only roll-ups and placement"
+			if len(feeds) > 0 {
+				feed = "feeds " + strings.Join(feeds, "+")
+			}
+			counts[kind+"; "+where+"; "+feed]++
+		}
+	}
+	keys := make([]string, 0, len(counts))
+	for k := range counts {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(a, b int) bool { return counts[keys[a]] > counts[keys[b]] })
+	out := []FoldCount{{"cause links", total}}
+	for _, k := range keys {
+		out = append(out, FoldCount{k, counts[k]})
+	}
+	return out
+}
+
 // the purposes of the links Breakdown follows
 const (
 	targetCause = 1 << iota
@@ -311,7 +415,7 @@ type foldLink struct {
 // simulate counts the received spans variant v retains: its seeds, the
 // targets of their links it keeps, and the ancestors of both; and why each
 // is retained.
-func (f *Fold) simulate(v foldVariant, links map[uint32][]foldLink, realWaits map[uint32]bool) (int, map[string]int) {
+func (f *Fold) simulate(v foldVariant, links map[uint32][]foldLink, realWaits map[uint32]bool) (int, map[string]int, []bool) {
 	follows := func(l foldLink) bool {
 		switch {
 		case l.purpose == targetCause && v.causeSidecar,
@@ -396,5 +500,5 @@ func (f *Fold) simulate(v foldVariant, links map[uint32][]foldLink, realWaits ma
 			stack = append(stack, l.target)
 		}
 	}
-	return n, reasons
+	return n, reasons, kept
 }

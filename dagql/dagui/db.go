@@ -1535,7 +1535,9 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 				addToSpanSet(&span.installSites, linked)
 			}
 		case telemetryattrs.LinkPurposeWait:
-			if linkedCtx.TraceID == span.TraceID && linkedCtx.SpanID != span.ID {
+			if linkedCtx.TraceID == span.TraceID && linkedCtx.SpanID != span.ID &&
+				// a contained wait on a folded span tells nothing
+				!db.fold.skipsWait(span.ID, linkedCtx.SpanID) {
 				// Register the operation the span waited on, so that a view
 				// holding only part of the trace knows to fetch it (see
 				// TimeBreakdownSpans), and that until it does, the span's

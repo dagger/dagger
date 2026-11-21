@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 
@@ -70,7 +71,7 @@ type foldTestPair struct {
 	trace        *spanfootprint.Trace
 }
 
-func newFoldTestPair(t *testing.T, n int, nested bool) *foldTestPair {
+func newFoldTestPair(t *testing.T, n int, shape string) *foldTestPair {
 	t.Helper()
 	db, lf := newFoldingDB()
 	folded := NewWithDB(io.Discard, db)
@@ -85,7 +86,10 @@ func newFoldTestPair(t *testing.T, n int, nested bool) *foldTestPair {
 	// with the engine's wait chains, in the agent session's shape or the
 	// nested engines'
 	exp := tr.WaitChains(foldTestTee{store, folded.SpanExporter(), full.SpanExporter()})
-	if nested {
+	if strings.Contains(shape, "contained") {
+		exp = tr.ContainedWaits(exp)
+	}
+	if strings.Contains(shape, "nested") {
 		exp = spanfootprint.Nested(exp)
 	}
 	require.NoError(t, tr.Export(t.Context(), exp, 512, nil))
@@ -135,12 +139,13 @@ func rowIDs(rows *dagui.Rows) []dagui.SpanID {
 }
 
 func TestLiveFoldMatchesFullLoad(t *testing.T) {
-	t.Run("agent", func(t *testing.T) { testLiveFold(t, false) })
-	t.Run("nested", func(t *testing.T) { testLiveFold(t, true) })
+	for _, shape := range []string{"agent", "nested", "agent-contained", "nested-contained"} {
+		t.Run(shape, func(t *testing.T) { testLiveFold(t, shape) })
+	}
 }
 
-func testLiveFold(t *testing.T, nested bool) {
-	p := newFoldTestPair(t, 20000, nested)
+func testLiveFold(t *testing.T, shape string) {
+	p := newFoldTestPair(t, 20000, shape)
 	stats := p.folded.db.Fold().Stats()
 	t.Logf("retained %d of %d spans (%.1f%%), read back %d", stats.Retained, stats.Spans,
 		100*float64(stats.Retained)/float64(stats.Spans), p.folded.db.Fold().Loads)
@@ -232,7 +237,7 @@ func testLiveFold(t *testing.T, nested bool) {
 // asynchronously -- and requires the folding one to show the rows the full
 // one does at the end.
 func TestLiveFoldStreamedMatchesFullLoad(t *testing.T) {
-	for _, shape := range []string{"agent", "nested"} {
+	for _, shape := range []string{"agent", "nested", "agent-contained", "nested-contained"} {
 		t.Run(shape, func(t *testing.T) {
 			tr := spanfootprint.New(20000)
 			full := streamFootprint(t, tr, shape, "full")

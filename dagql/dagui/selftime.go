@@ -677,6 +677,11 @@ func (span *Span) collectOwnWaits(dst *[]waitWindow, row *Span, clk *breakdownCl
 			continue
 		}
 		target := span.db.Spans.Map[link.SpanContext.SpanID]
+		if target == nil && span.db.fold.skipsWait(span.ID, link.SpanContext.SpanID) {
+			// a contained wait on a span a folding DB holds as a stub,
+			// which tells nothing (see Fold.containedWait)
+			continue
+		}
 
 		// A caller blocked on its own resolver execution (its same-name
 		// call_exec twin) is doing its own work, not waiting on another op.

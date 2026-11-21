@@ -37,7 +37,8 @@ import (
 // A retained row's waiting below it reads its folded children's intervals
 // from their stubs (foldedWork), and the spans that waiting needs in full
 // are retained whatever the policy (neededForWaits), so its time breakdown
-// is the one a full DB computes.
+// is the one a full DB computes; a wait that provably tells no row anything
+// retains nothing (contained waits, fold_contain.go).
 
 // foldState packs a stub's state: its roll-up category in the low 3 bits,
 // then flags.
@@ -87,6 +88,15 @@ const (
 	// functionProcess), so they're retained.
 	foldFunctionPlumbing
 	foldExecOp
+	// foldContainedWaits marks a span with contained waits (see
+	// containedWait), whose targets Fold.reads lists; foldWaitsBroken a
+	// span whose waits stopped being contained, all retained since.
+	foldContainedWaits
+	foldWaitsBroken
+	// foldEscapes marks a span an edge leaves the subtree of; foldRead a
+	// span whose own waits a row that doesn't hold it reads.
+	foldEscapes
+	foldRead
 )
 
 func (s foldState) cat() spanStateCategory { return spanStateCategory(s & foldCatMask) }
@@ -125,7 +135,7 @@ func WithFold(opts FoldOptions) DBOption {
 		if opts.Retain == nil {
 			opts.Retain = RetainRendered
 		}
-		db.fold = &Fold{db: db, opts: opts}
+		db.fold = &Fold{db: db, opts: opts, ingesting: noSpan}
 	}
 }
 
@@ -185,6 +195,15 @@ type Fold struct {
 	Loads int
 	// keptCalls counts the calls kept for folded spans.
 	keptCalls int
+
+	// reads lists, for each span with waits on spans beneath it, those
+	// targets: its contained waits' while it has any (see containedWait).
+	reads map[uint32][]uint32
+	// ingesting is the span ingest is at.
+	ingesting uint32
+	// Broken counts the spans whose contained waits a later edge broke,
+	// and BrokenTargets the targets that were read back for it.
+	Broken, BrokenTargets int
 }
 
 // foldAgg is what's folded beneath a retained span.
@@ -386,8 +405,10 @@ type foldInfo struct {
 	name       string
 	// callDigest and callPayload are the call the span carries, if any.
 	callDigest, callPayload string
-	// linked holds the targets of its cause, error-origin and wait links.
-	linked []SpanID
+	// linked holds the targets of its cause and error-origin links, which
+	// are retained with it; causes those of its cause links, and waits
+	// those of its wait links.
+	linked, causes, waits []SpanID
 	// origins holds the error origins its status names.
 	failed bool
 }
@@ -505,8 +526,12 @@ func (info *foldInfo) addLink(purpose string, target SpanID) {
 	switch purpose {
 	case telemetry.LinkPurposeCause, "":
 		info.flags |= foldCauseLinks
+		info.causes = append(info.causes, target)
 	case telemetryattrs.LinkPurposeWait:
-		info.flags |= foldWaitLinks
+		// retained, with its target, unless the wait is contained (see
+		// Fold.containedWait): ingest decides
+		info.waits = append(info.waits, target)
+		return
 	case telemetry.LinkPurposeErrorOrigin:
 	default:
 		return
@@ -690,6 +715,14 @@ func (f *Fold) ingest(info foldInfo, fill bool) bool {
 		info.cat = stateCanceled
 		f.end[i] = f.rootEnd
 	}
+	if len(info.causes) > 0 || len(info.waits) > 0 {
+		f.ingesting = i
+		for _, cause := range info.causes {
+			f.noteCause(i, f.intern(cause))
+		}
+		info.linked = f.classifyWaits(i, info.waits, info.linked)
+		f.ingesting = noSpan
+	}
 	retained := f.state[i]&foldRetained != 0
 	if !retained {
 		f.setCategory(i, info.cat)
@@ -730,8 +763,9 @@ func (f *Fold) shouldRetain(i uint32) bool {
 
 // neededForWaits reports whether the waiting below a retained row needs
 // span i in full, whatever the policy: what folds stays exact only as plain
-// work (see foldedWork). That's a span with wait links, which tells waits
-// that may rise; a module function's plumbing, whose process doesn't count
+// work (see foldedWork). That's a span with wait links that aren't
+// contained (see fold_contain.go), which tells waits that may rise; a
+// module function's plumbing, whose process doesn't count
 // as work; and the execs beneath plumbing, among which the process is found
 // (functionProcess).
 func (f *Fold) neededForWaits(i uint32) bool {

@@ -5,6 +5,7 @@ import (
 	"io"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -76,7 +77,10 @@ func streamFootprint(b testing.TB, tr *spanfootprint.Trace, shape, mode string) 
 	n := tr.N
 	wrap := func(next sdktrace.SpanExporter) sdktrace.SpanExporter {
 		next = tr.WaitChains(next)
-		if shape == "nested" {
+		if strings.Contains(shape, "contained") {
+			next = tr.ContainedWaits(next)
+		}
+		if strings.Contains(shape, "nested") {
 			next = spanfootprint.Nested(next)
 		}
 		return next
