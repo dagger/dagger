@@ -7,8 +7,10 @@ import (
 	"os"
 	"strings"
 
+	"dagger.io/dagger"
 	"dagger.io/dagger/core"
 
+	dagcore "github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql/dagui"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/dagger/testctx"
@@ -258,6 +260,156 @@ func (ModuleSuite) TestModuleEntrypointStdoutLogs(ctx context.Context, t *testct
 		fnSpan:         {stdout: {1}, stderr: {2}},
 		entrypointSpan: {helper: {1}},
 	}, got)
+}
+
+// markedProcessEntrypoint declares callDigest and sets it on its module
+// process only, as generated entrypoints do. Before that process it runs a
+// build step with API access, as an SDK's build does with the default nesting.
+const markedProcessEntrypoint = `type Entrypoint implements ModuleEntrypoint {
+  pub types(workspace: Workspace!): [TypeDef!]! {
+    [
+      typeDef
+        .withObject("Probe")
+        .withConstructor(function("", typeDef.withObject("Probe")))
+        .withFunction(function("Modules", typeDef.withKind(TypeDefKind.STRING_KIND)))
+        .withFunction(function("Stdio", typeDef.withKind(TypeDefKind.STRING_KIND))),
+    ]
+  }
+
+  pub call(
+    workspace: Workspace!,
+    receiverType: String!,
+    receiverValue: JSON,
+    fnName: String!,
+    fnArgs: JSON!,
+    callDigest: String,
+  ): JSON! {
+    if (fnName == "") {
+      ("{}" :: JSON!)
+    } else if (fnName == "Modules") {
+      let build = base.withExec(["sh", "/probe.sh", "module"]).stdout
+      let process = base
+        .withEnvVariable("%[2]s", callDigest ?? "")
+        .withExec(["sh", "/probe.sh", "module"])
+        .stdout
+      (JSON.encode("build: " + build + "process: " + process) :: JSON!)
+    } else {
+      (base
+        .withExec(["sh", "/probe.sh", "build"])
+        .withEnvVariable("%[2]s", callDigest ?? "")
+        .withExec(["sh", "/probe.sh", "stdio"])
+        .file("/result.json")
+        .contents :: JSON!)
+    }
+  }
+
+  let base: Container! {
+    container
+      .from("%[1]s")
+      .withFile("/usr/local/bin/dagger", currentModule.source.file("bin/dagger"))
+      .withFile("/probe.sh", currentModule.source.file("probe.sh"))
+      .withFile("/nonce", currentModule.source.file("nonce"))
+  }
+}
+`
+
+const markedProcessScript = `case "$1" in
+module)
+  echo '{currentModule{name}}' | dagger query 2>&1 | tr '\n' ' '
+  echo
+  ;;
+build)
+  echo "build-$(cat /nonce)"
+  ;;
+stdio)
+  echo "stdout-$(cat /nonce)"
+  echo "stderr-$(cat /nonce)" >&2
+  printf '"done"' > /result.json
+  ;;
+esac
+`
+
+func markedProcessFixture(t *testctx.T, c *dagger.Client, nonce string) *core.Container {
+	t.Helper()
+	return goGitBase(t, c).
+		WithNewFile("m/dagger-module.toml", sourcesModuleManifest).
+		WithNewFile("m/entrypoint/main.dang", fmt.Sprintf(markedProcessEntrypoint, alpineImage, dagcore.ModuleCallDigestEnv)).
+		WithNewFile("m/probe.sh", markedProcessScript).
+		WithNewFile("m/nonce", nonce).
+		WithFile("m/bin/dagger", daggerCliFile(t, c))
+}
+
+// An entrypoint that declares callDigest marks its module process with it,
+// so only that exec serves the module: a build step with API access, which an
+// SDK's build gets with the default nesting, doesn't.
+func (ModuleSuite) TestModuleEntrypointMarkedProcessServesModule(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	out, err := markedProcessFixture(t, c, rand.Text()).With(daggerCallAt("./m", "modules")).Stdout(ctx)
+	require.NoError(t, err)
+	build, process, ok := strings.Cut(out, "process: ")
+	require.True(t, ok, out)
+	require.Contains(t, build, "no current module", out)
+	require.Contains(t, process, `"name": "m"`, out)
+}
+
+// The build steps of an entrypoint that marks its module process keep their
+// own span and logs; only the module process's output shows on the function
+// call (trace 150bc33a: a failed Java build's output was on the function).
+func (ModuleSuite) TestModuleEntrypointBuildLogsStayOnBuild(ctx context.Context, t *testctx.T) {
+	if _, nested := os.LookupEnv("DAGGER_SESSION_PORT"); nested {
+		t.Skip("needs its own CLI session to forward telemetry to the sink")
+	}
+	sink := newAgentTraceSink(t)
+	c := connect(ctx, t, sink.clientOpts()...)
+	nonce := rand.Text()
+	stdout, stderr, build := "stdout-"+nonce, "stderr-"+nonce, "build-"+nonce
+
+	run := markedProcessFixture(t, c, nonce).
+		WithExec([]string{"dagger", "--progress=logs", "call", "-m", "./m", "stdio"}, core.ContainerWithExecOpts{UseEntrypoint: true})
+	out, err := run.Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "done", strings.TrimSpace(out))
+	require.NoError(t, c.Close())
+
+	const fnSpan = "MProbe.stdio"
+	// output -> name of the span it was logged on, and of that span's
+	// nearest function call ancestor. The sink gets each record twice (see
+	// TestModuleEntrypointStdoutLogs).
+	type owner struct{ span, fn string }
+	got := map[string]map[owner]bool{}
+	_, exports := sink.capture()
+	sink.read(func(db *dagui.DB) {
+		for _, req := range exports {
+			for _, rl := range req.ResourceLogs {
+				for _, sl := range rl.ScopeLogs {
+					for _, lr := range sl.LogRecords {
+						var id trace.SpanID
+						copy(id[:], lr.SpanId)
+						span := db.Spans.Map[dagui.SpanID{SpanID: id}]
+						body := strings.TrimSpace(lr.GetBody().GetStringValue())
+						if span == nil || !strings.HasSuffix(body, nonce) {
+							continue
+						}
+						o := owner{span: span.Name, fn: span.Name}
+						if o.fn != fnSpan {
+							o.fn = nearestAncestor(span, fnSpan).Name
+						}
+						if got[body] == nil {
+							got[body] = map[owner]bool{}
+						}
+						got[body][o] = true
+					}
+				}
+			}
+		}
+	})
+	require.Equal(t, map[owner]bool{{span: fnSpan, fn: fnSpan}: true}, got[stdout], got)
+	require.Equal(t, map[owner]bool{{span: fnSpan, fn: fnSpan}: true}, got[stderr], got)
+	require.Len(t, got[build], 1, got)
+	for o := range got[build] {
+		require.Contains(t, o.span, "withExec", "the build's output is on its own exec")
+		require.Equal(t, fnSpan, o.fn, "under the function call")
+	}
 }
 
 func (ModuleSuite) TestModuleFunctionProcessHasNoModule(ctx context.Context, t *testctx.T) {

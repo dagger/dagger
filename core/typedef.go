@@ -2592,6 +2592,12 @@ type FunctionCall struct {
 	// that the call starts, as a module entrypoint does. That process serves
 	// the module, like the process of a container runtime.
 	moduleProcess bool
+
+	// processCallDigest is the callDigest a module entrypoint was given for
+	// this call, carried engine-side only like processSpan. The entrypoint
+	// sets it on its module process's exec as ModuleCallDigestEnv, which is
+	// how the engine tells that exec apart (see IsModuleProcessExec).
+	processCallDigest string
 }
 
 // CacheTTLSeconds returns the explicit TTL of the call's function, and 0 when
@@ -2639,24 +2645,97 @@ func (fnCall *FunctionCall) SetModuleProcess() {
 	fnCall.moduleProcess = true
 }
 
-// ModuleProcessModule returns the module of the call that the current client
-// runs, if that call runs its function in a process it starts. A process that
-// the call starts serves this module; a process that this process starts gets
-// no call, so it does not.
-func ModuleProcessModule(ctx context.Context) (dagql.ObjectResult[*Module], error) {
-	var none dagql.ObjectResult[*Module]
+// ModuleCallDigestEnv is part of the module entrypoint contract. An
+// entrypoint whose call declares the nullable callDigest argument must set
+// this environment variable to the callDigest it received on the exec that
+// runs the function, its module process, and on no other exec. The variable
+// keys that exec on the call, and the engine treats that exec as the module
+// process: only it serves the module and reports its telemetry and logs to
+// the function call. The entrypoint's other execs, such as
+// the ones building the module, keep their own span and logs. Without a
+// callDigest, every exec the call starts is taken for the module process, as
+// before the contract named the variable (see IsModuleProcessExec).
+//
+// It lives here rather than with the rest of the entrypoint plumbing
+// (core/sdk/entrypoint, core/sdk/dang/v2) because the exec code that reads it
+// is in this package, which those import.
+const ModuleCallDigestEnv = "DAGGER_MODULE_CALL_DIGEST"
+
+// SetProcessCallDigest records the callDigest a module entrypoint is given
+// for the call, which marks the exec of its module process (see
+// IsModuleProcessExec). An entrypoint that declares no callDigest is given
+// none.
+func (fnCall *FunctionCall) SetProcessCallDigest(digest string) {
+	fnCall.processCallDigest = digest
+}
+
+// MarksModuleProcess reports whether the call's module process is the one
+// exec that ModuleCallDigestEnv marks, rather than every exec the call
+// starts.
+func (fnCall *FunctionCall) MarksModuleProcess() bool {
+	return fnCall != nil && fnCall.moduleProcess && fnCall.processCallDigest != ""
+}
+
+// IsModuleProcessExec reports whether an exec with the environment env,
+// started for fnCall, runs fnCall's module process: the process that serves
+// the module and runs the function. Only that exec gets the module and
+// reports to the function call's span; the others, such as the ones building
+// the module, keep their own span and logs.
+//
+// The module process is the exec whose ModuleCallDigestEnv is the callDigest
+// the engine gave the call. A call given no callDigest, by an entrypoint that
+// declares none, can't tell the module process apart, so every exec it
+// starts is taken for it, as before the marker existed.
+func IsModuleProcessExec(fnCall *FunctionCall, env []string) bool {
+	if fnCall == nil || !fnCall.moduleProcess {
+		return false
+	}
+	if fnCall.processCallDigest == "" {
+		return true
+	}
+	// The last setting of a variable wins, as the process sees it.
+	for i := len(env) - 1; i >= 0; i-- {
+		name, value, _ := strings.Cut(env[i], "=")
+		if name == ModuleCallDigestEnv {
+			return value == fnCall.processCallDigest
+		}
+	}
+	return false
+}
+
+// CurrentModuleProcessCall returns the call that the current client runs, if
+// that call runs its function in a process it starts, and nil otherwise. A
+// process that the call starts serves the call's module; a process that this
+// process starts gets no call, so it does not.
+func CurrentModuleProcessCall(ctx context.Context) (*FunctionCall, error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
-		return none, err
+		return nil, err
 	}
 	fnCall, err := query.CurrentFunctionCall(ctx)
 	switch {
 	case errors.Is(err, ErrNoCurrentFunctionCall), errors.Is(err, ErrNoCurrentModule):
-		return none, nil
+		return nil, nil
 	case err != nil:
-		return none, err
+		return nil, err
 	case fnCall == nil || !fnCall.moduleProcess:
-		return none, nil
+		return nil, nil
+	}
+	return fnCall, nil
+}
+
+// ModuleProcessModule returns the module of the call that the current client
+// runs, if that call runs its function in a process it starts (see
+// CurrentModuleProcessCall).
+func ModuleProcessModule(ctx context.Context) (dagql.ObjectResult[*Module], error) {
+	var none dagql.ObjectResult[*Module]
+	fnCall, err := CurrentModuleProcessCall(ctx)
+	if err != nil || fnCall == nil {
+		return none, err
+	}
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return none, err
 	}
 	return query.CurrentModule(ctx)
 }

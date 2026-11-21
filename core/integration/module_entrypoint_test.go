@@ -13,6 +13,7 @@ import (
 	"dagger.io/dagger/core"
 
 	"dagger.io/dagger"
+	dagcore "github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
@@ -438,7 +439,7 @@ var nonceEntrypointSource = fmt.Sprintf(`type Entrypoint implements ModuleEntryp
     } else {
       let result = container
         .from(%s)
-        .withEnvVariable("DAGGER_MODULE_CALL_DIGEST", callDigest ?? "")
+        .withEnvVariable(%s, callDigest ?? "")
         .withExec(["sh", "-c", %s], stdin: fnName)
         .file("/result.json")
         .contents
@@ -449,7 +450,7 @@ var nonceEntrypointSource = fmt.Sprintf(`type Entrypoint implements ModuleEntryp
     }
   }
 }
-`, strconv.Quote(alpineImage), strconv.Quote(`printf '"%s"' "$(cat /proc/sys/kernel/random/uuid)" > /result.json`))
+`, strconv.Quote(alpineImage), strconv.Quote(dagcore.ModuleCallDigestEnv), strconv.Quote(`printf '"%s"' "$(cat /proc/sys/kernel/random/uuid)" > /result.json`))
 
 func nonceModule(c *dagger.Client, runID string) *core.Directory {
 	return core.NewQuery(c).Directory().
@@ -583,7 +584,7 @@ var sharedContainerEntrypointSource = fmt.Sprintf(`type Entrypoint implements Mo
       let runs = container
         .from(%[1]s)
         .withMountedCache("/runs", cacheVolume("runs-" + runID))
-        .withEnvVariable("DAGGER_MODULE_CALL_DIGEST", callDigest ?? "")
+        .withEnvVariable(%[3]s, callDigest ?? "")
         .withExec(["sh", "-c", %[2]s], stdin: fnName)
         .stdout
       if (fnName == "Runs") {
@@ -599,7 +600,7 @@ var sharedContainerEntrypointSource = fmt.Sprintf(`type Entrypoint implements Mo
 }
 `, strconv.Quote(alpineImage), strconv.Quote(`fn=$(cat)
 [ "$fn" = Runs ] || echo "$fn" >> /runs/log
-printf '"%s"' "$(grep -cx Long /runs/log)"`))
+printf '"%s"' "$(grep -cx Long /runs/log)"`), strconv.Quote(dagcore.ModuleCallDigestEnv))
 
 // Without an explicit TTL, the exec of a call answers again whenever dagql
 // evaluates the call again. The recipe digest it is keyed on already changes

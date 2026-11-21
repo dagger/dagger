@@ -2350,10 +2350,13 @@ func (state *ContainerExecState) evaluateOutputs(ctx context.Context, container 
 			// already names the function call instead.
 			SetExecutionIdentity(ctx, execMD)
 			// A function runtime's exec carries its own call and keeps its
-			// span; an API exec run for a call that set a process span, such
-			// as a module entrypoint's module process, reports to that call.
+			// span; a module entrypoint's module process reports to the call
+			// that set a process span. The entrypoint's other execs, such as
+			// the ones building the module, keep their own span and logs.
 			if state.FunctionCall == nil {
-				if fnCall, err := query.CurrentFunctionCall(ctx); err == nil && fnCall.ProcessSpanContext().IsValid() {
+				if fnCall, err := query.CurrentFunctionCall(ctx); err == nil &&
+					fnCall.ProcessSpanContext().IsValid() &&
+					IsModuleProcessExec(fnCall, container.Config.Env) {
 					execMD.UserFacingSpanCtx = fnCall.ProcessSpanContext()
 				}
 			}
