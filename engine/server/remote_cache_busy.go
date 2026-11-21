@@ -4,9 +4,11 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"log/slog"
 	"maps"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dagger/dagger/dagql"
@@ -232,17 +234,29 @@ func (w *busyWaits) take(busy func([]uint64) []uint64) ([]uint64, bool) {
 // (dagql.Cache.BusyRows). It looks as each root begins to wait, since one a
 // capture race kept out is ready at once, and after each end of what kept a
 // row busy, an evaluation's or an attachment's (dagql.Cache.WatchBusyEnds),
-// which is what frees the others.
-func (a *RemoteCacheAdapter) TakeReadyRoots(ctx context.Context) ([]uint64, error) {
+// which is what frees the others. What its looks cost is counted
+// (readyStats), and logged as it ends with its connection.
+func (a *RemoteCacheAdapter) TakeReadyRoots(ctx context.Context) (_ []uint64, rerr error) {
 	ends, stop := a.cache.WatchBusyEnds()
 	defer stop()
-	busy := func(rows []uint64) []uint64 { return a.cache.BusyRows(ctx, rows) }
+	defer func() {
+		if rerr != nil {
+			slog.Info("remote cache ready looks", a.readyStats.snapshot().attrs()...)
+		}
+	}()
+	busy := func(rows []uint64) []uint64 {
+		start := time.Now()
+		still := a.cache.BusyRows(ctx, rows)
+		a.readyStats.looked(len(rows), time.Since(start))
+		return still
+	}
 	for {
 		if a.stopped.Load() {
 			return nil, ErrRemoteCacheAdapterClosed
 		}
 		ready, waiting := a.waits.take(busy)
 		if len(ready) > 0 {
+			a.readyStats.roots.Add(int64(len(ready)))
 			return ready, nil
 		}
 		var ended <-chan struct{}
@@ -251,9 +265,48 @@ func (a *RemoteCacheAdapter) TakeReadyRoots(ctx context.Context) ([]uint64, erro
 		}
 		select {
 		case <-ended:
+			a.readyStats.endWakes.Add(1)
 		case <-a.waits.addedCh():
+			a.readyStats.addWakes.Add(1)
 		case <-ctx.Done():
 			return nil, context.Cause(ctx)
 		}
+	}
+}
+
+// readyStats are what the engine's look for ready busy roots has cost since
+// it started (TakeReadyRoots): its looks, which read the waiting roots'
+// rows (dagql.Cache.BusyRows), how many rows they read and the time that
+// took, the graph's read lock included; what woke each look after a
+// connection's first, an end of what keeps rows busy or a root beginning to
+// wait; and the roots it handed on.
+type readyStats struct {
+	looks, rows, lookTime, endWakes, addWakes, roots atomic.Int64
+}
+
+// looked counts a look that read rows in took.
+func (s *readyStats) looked(rows int, took time.Duration) {
+	s.looks.Add(1)
+	s.rows.Add(int64(rows))
+	s.lookTime.Add(int64(took))
+}
+
+// readyStatsSnapshot is readyStats read once, lookTime in nanoseconds.
+type readyStatsSnapshot struct {
+	looks, rows, lookTime, endWakes, addWakes, roots int64
+}
+
+func (s *readyStats) snapshot() readyStatsSnapshot {
+	return readyStatsSnapshot{
+		looks: s.looks.Load(), rows: s.rows.Load(), lookTime: s.lookTime.Load(),
+		endWakes: s.endWakes.Load(), addWakes: s.addWakes.Load(), roots: s.roots.Load(),
+	}
+}
+
+// attrs are the snapshot's log attributes.
+func (s readyStatsSnapshot) attrs() []any {
+	return []any{
+		"looks", s.looks, "rows", s.rows, "look_time", time.Duration(s.lookTime),
+		"end_wakes", s.endWakes, "add_wakes", s.addWakes, "roots", s.roots,
 	}
 }
