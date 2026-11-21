@@ -1,6 +1,8 @@
 package dagui
 
 import (
+	"reflect"
+	"slices"
 	"testing"
 	"time"
 
@@ -210,6 +212,77 @@ func TestTimeBreakdownLiveInferredBlockerPath(t *testing.T) {
 	if seg.Target != n || !seg.Indirect || seg.Via != "B" {
 		t.Fatalf("live path must preserve fundamental attribution via B: %+v", seg)
 	}
+}
+
+// The memoized TimeBreakdown must equal a fresh computation at every time,
+// forward and backward, for finished and running rows, across DB changes.
+func TestTimeBreakdownMemoMatchesFresh(t *testing.T) {
+	check := func(t *testing.T, db *DB) {
+		t.Helper()
+		var times []time.Time
+		for sec := 0.0; sec <= 30; sec += 0.5 {
+			times = append(times, at(sec))
+		}
+		backward := slices.Clone(times)
+		slices.Reverse(backward)
+		for _, pass := range [][]time.Time{times, backward, times} {
+			for _, now := range pass {
+				for _, span := range db.Spans.Order {
+					got := span.TimeBreakdown(now)
+					want := span.timeBreakdown(&breakdownClock{now: now}, nil)
+					if !reflect.DeepEqual(got, want) {
+						t.Fatalf("%s at %v: memoized %+v, fresh %+v", span.Name, now.Sub(testEpoch), got, want)
+					}
+				}
+			}
+		}
+	}
+
+	t.Run("finished", func(t *testing.T) {
+		db, _, _, _ := buildLazyChainDB(t)
+		check(t, db)
+	})
+
+	t.Run("running", func(t *testing.T) {
+		db := NewDB()
+		q, n, nExec, c, mN, b, mC, a, aTwin, mB :=
+			testID(1), testID(2), testID(3), testID(4), testID(5), testID(6), testID(7), testID(8), testID(9), testID(10)
+		db.ImportSnapshots([]SpanSnapshot{
+			{ID: q, Name: "query", StartTime: at(0)},
+			{ID: n, ParentID: q, Name: "N", StartTime: at(0.5), EndTime: at(1)},
+			{ID: nExec, ParentID: n, Name: "exec N", StartTime: at(1)},
+			{ID: c, ParentID: q, Name: "C", StartTime: at(1), EndTime: at(1.5)},
+			{ID: mN, ParentID: c, Name: "resume N", StartTime: at(1.5),
+				Links: []SpanLink{causeLink(n)}},
+			{ID: b, ParentID: q, Name: "B", StartTime: at(2), EndTime: at(2.5)},
+			{ID: mC, ParentID: b, Name: "resume C", StartTime: at(2.5),
+				Links: []SpanLink{causeLink(c)}},
+			{ID: a, ParentID: q, Name: "A", StartTime: at(3)},
+			{ID: aTwin, ParentID: a, Name: "A", StartTime: at(3)},
+			{ID: mB, ParentID: aTwin, Name: "resume B", StartTime: at(3),
+				Links: []SpanLink{causeLink(b)}},
+		})
+		check(t, db)
+
+		// With the waiting below rows published, a running row's waiting
+		// goes on until now.
+		db.UpdateRowWaits(at(5), 0)
+		check(t, db)
+
+		// The chain finishes: the memo must not outlive the change.
+		db.ImportSnapshots([]SpanSnapshot{
+			{ID: nExec, ParentID: n, Name: "exec N", StartTime: at(1), EndTime: at(9)},
+			{ID: mN, ParentID: c, Name: "resume N", StartTime: at(1.5), EndTime: at(9),
+				Links: []SpanLink{causeLink(n)}},
+			{ID: mC, ParentID: b, Name: "resume C", StartTime: at(2.5), EndTime: at(9),
+				Links: []SpanLink{causeLink(c)}},
+			{ID: mB, ParentID: aTwin, Name: "resume B", StartTime: at(3), EndTime: at(9),
+				Links: []SpanLink{causeLink(b), waitLink(mC, "lazy", at(3), at(9))}},
+			{ID: aTwin, ParentID: a, Name: "A", StartTime: at(3), EndTime: at(10)},
+			{ID: a, ParentID: q, Name: "A", StartTime: at(3), EndTime: at(10)},
+		})
+		check(t, db)
+	})
 }
 
 func TestTimeBreakdownCycleAndDepthPaths(t *testing.T) {

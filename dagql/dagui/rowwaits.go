@@ -345,11 +345,12 @@ func (st *rowWaitsState) compute(span *Span) *waitSummary {
 		return &waitSummary{}
 	}
 	sum := &waitSummary{loaded: true, resolved: true}
-	sum.painted = span.paintedIntervals(st.now)
+	clk := &breakdownClock{now: st.now}
+	sum.painted = span.paintedIntervals(clk)
 
 	var own []waitStretch
 	if span.mayWait() {
-		hb := span.timeBreakdown(st.now, st)
+		hb := span.timeBreakdown(clk, st)
 		sum.resolved = !hb.unresolved
 		for _, seg := range hb.Segments {
 			if !seg.Waiting {
@@ -512,19 +513,24 @@ func (span *Span) rowWaitBlockers(visit func(*Span)) {
 	}
 }
 
-// rowWaitSegments returns span's published waiting stretches as of now: a
+// rowWaitSegments returns span's published waiting stretches as of clk: a
 // stretch that reached the time they were computed goes on while the span is
 // running.
-func (span *Span) rowWaitSegments(now time.Time) []TimeSegment {
+func (span *Span) rowWaitSegments(clk *breakdownClock) []TimeSegment {
 	rw := span.RowWaits
 	if rw == nil || len(rw.Segments) == 0 {
 		return nil
 	}
-	if !reachesAsOf(rw) || !span.IsRunningOrEffectsRunning() || !now.After(rw.AsOf) {
+	if !reachesAsOf(rw) || !span.IsRunningOrEffectsRunning() {
+		return rw.Segments
+	}
+	// the last stretch goes on until now
+	clk.live = true
+	if !clk.now.After(rw.AsOf) {
 		return rw.Segments
 	}
 	segs := slices.Clone(rw.Segments)
-	segs[len(segs)-1].End = now
+	segs[len(segs)-1].End = clk.now
 	return segs
 }
 
