@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
@@ -111,6 +112,8 @@ type FoldOptions struct {
 	// Foldable reports whether the spans of a trace may fold: those Load
 	// can read back. Nil folds every trace's.
 	Foldable func(trace TraceID) bool
+	// NoFoldedCalls keeps no call for folded spans (measurement only).
+	NoFoldedCalls bool
 }
 
 // WithFold builds a DB that folds the spans opts.Retain doesn't retain (see
@@ -180,6 +183,8 @@ type Fold struct {
 
 	// Loads counts the spans asked of FoldOptions.Load.
 	Loads int
+	// keptCalls counts the calls kept for folded spans.
+	keptCalls int
 }
 
 // foldAgg is what's folded beneath a retained span.
@@ -387,6 +392,25 @@ type foldInfo struct {
 	failed bool
 }
 
+// decodedSpan is a span whose attributes and links were read once, for the
+// fold and then the DB: a span read from a store decodes them on every
+// call.
+type decodedSpan struct {
+	sdktrace.ReadOnlySpan
+	attrs []attribute.KeyValue
+	links []sdktrace.Link
+}
+
+func (s decodedSpan) Attributes() []attribute.KeyValue { return s.attrs }
+func (s decodedSpan) Links() []sdktrace.Link            { return s.links }
+
+func decodeSpan(s sdktrace.ReadOnlySpan) decodedSpan {
+	if d, ok := s.(decodedSpan); ok {
+		return d
+	}
+	return decodedSpan{s, s.Attributes(), s.Links()}
+}
+
 func otelFoldInfo(s sdktrace.ReadOnlySpan) foldInfo {
 	info := foldInfo{
 		id:     SpanID{s.SpanContext().SpanID()},
@@ -573,9 +597,10 @@ func (f *Fold) exportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) e
 	fill := isFoldFill(ctx)
 	var keep []sdktrace.ReadOnlySpan
 	for _, s := range spans {
-		info := otelFoldInfo(s)
+		d := decodeSpan(s)
+		info := otelFoldInfo(d)
 		if f.ingest(info, fill) {
-			keep = append(keep, s)
+			keep = append(keep, d)
 		} else {
 			f.keepCall(info)
 		}
@@ -611,7 +636,7 @@ func (f *Fold) importSnapshots(ctx context.Context, snapshots []SpanSnapshot) {
 // their calls' receivers, and resolve digests, through calls whatever span
 // carried them (see Span.Base, DB.Call).
 func (f *Fold) keepCall(info foldInfo) {
-	if info.callDigest == "" || info.callPayload == "" {
+	if info.callDigest == "" || info.callPayload == "" || f.opts.NoFoldedCalls {
 		return
 	}
 	if _, ok := f.db.Calls[info.callDigest]; ok {
@@ -620,6 +645,7 @@ func (f *Fold) keepCall(info foldInfo) {
 	var call callpbv1.Call
 	if err := call.Decode(info.callPayload); err == nil {
 		f.db.addCall(info.callDigest, &call)
+		f.keptCalls++
 	}
 }
 
@@ -1101,7 +1127,9 @@ func (f *Fold) finishBatch() {
 		span := f.spanOf(i)
 		agg := f.agg[i]
 		if agg != nil {
-			if n := countChildren(span.ChildSpans, FrontendOpts{}) + int(agg.children); n > span.ChildCount {
+			// the expand affordance only asks whether there are any; the
+			// children received count as SpanSnapshot does, when it's taken
+			if n := span.ChildSpans.Len() + int(agg.children); n > span.ChildCount {
 				span.ChildCount = n
 			}
 		}
