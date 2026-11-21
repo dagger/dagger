@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func persistedListTestCache(t *testing.T, path string) (context.Context, *Cache, *Server) {
+func persistedListTestCache(t testing.TB, path string) (context.Context, *Cache, *Server) {
 	t.Helper()
 	ctx := cacheTestContext(t.Context())
 	cache, err := NewCache(ctx, path, nil, nil)
@@ -20,7 +20,7 @@ func persistedListTestCache(t *testing.T, path string) (context.Context, *Cache,
 	return srvToContext(ContextWithCache(ctx, cache), srv), cache, srv
 }
 
-func persistedListTestResult(t *testing.T, ctx context.Context, cache *Cache, srv *Server, field string, value Typed) AnyResult {
+func persistedListTestResult(t testing.TB, ctx context.Context, cache *Cache, srv *Server, field string, value Typed) AnyResult {
 	t.Helper()
 	frame := &ResultCall{Kind: ResultCallKindField, Field: field, Type: NewResultCallType(value.Type())}
 	res, err := cache.GetOrInitCall(ctx, "test-session", srv, &CallRequest{ResultCall: frame, IsPersistable: true}, func(context.Context) (AnyResult, error) {
