@@ -10,6 +10,27 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// equivalentHoldersForTest returns the holdings on the entries of the class
+// of digest, sorted: what a class union joins, as the tests observe it.
+func (c *Cache) equivalentHoldersForTest(dig string) []HolderKey {
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	classID, ok := c.egraphDigestToClass[dig]
+	if !ok {
+		return nil
+	}
+	var keys []HolderKey
+	for id := range c.outputEqClassResults[c.eqClassRootLocked(classID)] {
+		if res := c.resultsByID[id]; res != nil {
+			for _, ref := range res.holderRefsLocked() {
+				keys = append(keys, ref.key)
+			}
+		}
+	}
+	slices.SortFunc(keys, compareHolderKeys)
+	return keys
+}
+
 // holderEntriesForTest returns the entry of every holding, by key, from the
 // engine caches' indexes. Requires egraphMu.
 func (c *Cache) holderEntriesForTest() map[HolderKey]sharedResultID {

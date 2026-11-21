@@ -2880,16 +2880,13 @@ func (c *Cache) commitValueMergeLocked(ctx context.Context, commit *valueMergeCo
 
 // applyMergedIdentitiesLocked gives every row's entry the record's identity
 // and the sender's holding: on an engine its Cloud or image holding, on the
-// Cloud the sending engine's holding, adding to change. On the Cloud, the
-// entries the identity joins to another class are affected too. A held row
-// teaches its entry nothing but, on an engine, the sender's holding. Requires egraphMu for
-// writing.
+// Cloud the sending engine's holding, adding to change. A held row teaches
+// its entry nothing but, on an engine, the sender's holding. Requires
+// egraphMu for writing.
 func (c *Cache) applyMergedIdentitiesLocked(ctx context.Context, commit *valueMergeCommit, change *RemoteChange) {
 	var cloudState *remoteCacheState
-	var joined func(*RemoteChange)
 	if c.blobBacked {
 		cloudState = c.remoteCacheLocked(commit.from)
-		joined = c.trackJoinsLocked()
 	}
 	for _, row := range commit.rows {
 		if commit.prep.held[row.ordinal] {
@@ -2946,9 +2943,6 @@ func (c *Cache) applyMergedIdentitiesLocked(ctx context.Context, commit *valueMe
 		row.res.expiresAtUnix = mergeSharedResultExpiryUnix(row.res.expiresAtUnix, row.value.ExpiresAtUnix)
 		c.markEntryClassLocked(row.res.id, StampMergeExpiry)
 		c.teachCallIdentityLocked(ctx, row.res, merged.id)
-	}
-	if joined != nil {
-		joined(change)
 	}
 }
 
@@ -3057,21 +3051,16 @@ func (c *Cache) installMergedRecordLocked(res *sharedResult, row *mergeRow, orig
 func (c *Cache) mergeSenderHoldingLocked(ctx context.Context, state *remoteCacheState, commit *valueMergeCommit, row *mergeRow, change *RemoteChange) {
 	key := HolderKey{Cache: commit.from, Number: row.value.SenderNumber}
 	entry, h := c.holdingLocked(key)
-	created := false
 	if h == nil {
 		entry, h = c.newHoldingLocked(ctx, state, key, RemoteHolding{Recipe: row.plan.recipe, Field: row.res.description})
 		change.Candidates = append(change.Candidates, key)
-		created = true
 	}
 	deps := make([]uint64, 0, len(row.value.DependencyIDs))
 	for _, dep := range row.value.DependencyIDs {
 		deps = append(deps, commit.prep.index[dep].SenderNumber)
 	}
-	candidates, changed := c.applyHeldValueStateLocked(ctx, state, key, entry, h, HeldValueState{Replacements: row.value.SenderReplacements, Deps: deps}, nil, nil)
+	candidates := c.applyHeldValueStateLocked(ctx, state, key, entry, h, HeldValueState{Replacements: row.value.SenderReplacements, Deps: deps}, nil, nil)
 	change.Candidates = append(change.Candidates, candidates...)
-	if created || changed || row.action != mergeKeep {
-		change.addRecipeOf(entry)
-	}
 }
 
 // mergeHeldSenderHoldingLocked records, on the Cloud, the sending engine's
@@ -3090,9 +3079,8 @@ func (c *Cache) mergeHeldSenderHoldingLocked(ctx context.Context, state *remoteC
 	}
 	entry, h := c.newHoldingLocked(ctx, state, key, RemoteHolding{Recipe: row.plan.recipe, Field: row.res.description})
 	change.Candidates = append(change.Candidates, key)
-	candidates, _ := c.applyHeldValueStateLocked(ctx, state, key, entry, h, HeldValueState{Replacements: row.value.SenderReplacements}, nil, nil)
+	candidates := c.applyHeldValueStateLocked(ctx, state, key, entry, h, HeldValueState{Replacements: row.value.SenderReplacements}, nil, nil)
 	change.Candidates = append(change.Candidates, candidates...)
-	change.addRecipeOf(entry)
 }
 
 // selectMergedOffersLocked decides, before anything changes, which offers

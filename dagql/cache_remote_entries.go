@@ -137,13 +137,7 @@ type RemoteHoldingUpdate struct {
 // RemoteChange is what one operation on the Cloud cache's holdings changed,
 // for the service to act on. Candidates are the holdings it created or
 // released an owner of, for the next CollectRemoteHoldings: no operation
-// collects by itself. Recipes are the recipe digests of the entries whose
-// reconciliation it may change: an entry it created or gave a new holding, one
-// whose holding's parts, count or expiry it changed, and every entry it
-// joined to another class of entries, directly or by congruence
-// (trackJoinsLocked). A recipe digest names the entry's class whenever
-// EquivalentHolders reads it, whatever joins and compactions the classes had
-// in between.
+// collects by itself.
 //
 // On a blob-backed cache, Holdings and Entries are what a reader that keeps
 // its answers asks again (cache_change_marks.go), sorted, holdings by number
@@ -163,35 +157,12 @@ type RemoteHoldingUpdate struct {
 // digests, terms or field of an entry, which only EntryInfo returns.
 type RemoteChange struct {
 	Candidates []HolderKey
-	Recipes    []digest.Digest
 	Holdings   []HolderKey
 	Entries    []uint64
 	// Saved reports that the operation changed what a save of the cache
 	// writes, beyond the holdings, which aren't saved: a call kept on a
 	// stored entry, or the entry's expiry.
 	Saved bool
-	// recipes is the set of Recipes, which a merge's change can list by the
-	// thousand.
-	recipes map[digest.Digest]struct{}
-}
-
-// addRecipeOf adds entry's recipe digest to Recipes, once, in the order the
-// entries were first added.
-func (ch *RemoteChange) addRecipeOf(entry *sharedResult) {
-	if len(entry.recipeKeys) == 0 {
-		return
-	}
-	if ch.recipes == nil {
-		ch.recipes = make(map[digest.Digest]struct{}, len(ch.Recipes)+1)
-		for _, recipe := range ch.Recipes {
-			ch.recipes[recipe] = struct{}{}
-		}
-	}
-	recipe := entry.recipeKeys[0]
-	if _, ok := ch.recipes[recipe]; !ok {
-		ch.recipes[recipe] = struct{}{}
-		ch.Recipes = append(ch.Recipes, recipe)
-	}
 }
 
 // HeldValueState is one observation of the value state of a holding's copy:
@@ -496,13 +467,10 @@ func (c *Cache) attachRemoteHoldingLocked(ctx context.Context, key HolderKey, de
 	defer c.takeChangesLocked(&change)
 	c.initEgraphLocked()
 	state := c.remoteCacheLocked(key.Cache)
-	joined := c.trackJoinsLocked()
 	entry, h := c.holdingLocked(key)
-	affected := false
 	if h == nil {
 		entry, h = c.newHoldingLocked(ctx, state, key, desc)
 		change.Candidates = []HolderKey{key}
-		affected = true
 	}
 	c.teachRemoteIdentityLocked(ctx, entry, desc.Field, desc.Recipe, desc.Request, desc.ContentDigest, desc.Term)
 	change.Saved = c.keepCallLocked(entry, desc, kept)
@@ -515,17 +483,13 @@ func (c *Cache) attachRemoteHoldingLocked(ctx context.Context, key HolderKey, de
 		c.markHoldingLocked(key)
 	}
 	touchSharedResultLastUsed(entry, desc.UsedAtUnixNano)
-	candidates, changed := c.applyHeldValueStateLocked(ctx, state, key, entry, h, HeldValueState{
+	candidates := c.applyHeldValueStateLocked(ctx, state, key, entry, h, HeldValueState{
 		Replacements:  desc.Replacements,
 		Deps:          desc.Deps,
 		ExpiresAtUnix: desc.ExpiresAtUnix,
 		ContentDigest: desc.ContentDigest,
 	}, parts, nil)
 	change.Candidates = append(change.Candidates, candidates...)
-	if affected || changed {
-		change.addRecipeOf(entry)
-	}
-	joined(&change)
 	return change
 }
 
@@ -649,7 +613,6 @@ func (c *Cache) applyMergedTargetsLocked(ctx context.Context, cache CacheID, clo
 	for _, t := range targets {
 		key := HolderKey{Cache: cache, Number: t.value.Number}
 		entry, h := c.holdingLocked(key)
-		created := false
 		if h == nil {
 			entry = c.resultsByID[cloudEntries[t.value.Ordinal]]
 			if entry == nil {
@@ -657,17 +620,13 @@ func (c *Cache) applyMergedTargetsLocked(ctx context.Context, cache CacheID, clo
 			}
 			h = c.addHoldingLocked(ctx, state, key, entry)
 			change.Candidates = append(change.Candidates, key)
-			created = true
 		}
-		candidates, changed := c.applyHeldValueStateLocked(ctx, state, key, entry, h, HeldValueState{
+		candidates := c.applyHeldValueStateLocked(ctx, state, key, entry, h, HeldValueState{
 			Replacements:  t.value.Replacements,
 			Deps:          t.value.Deps,
 			ExpiresAtUnix: t.value.ExpiresAtUnix,
 		}, t.parts, t.offers)
 		change.Candidates = append(change.Candidates, candidates...)
-		if created || changed {
-			change.addRecipeOf(entry)
-		}
 	}
 }
 
@@ -763,53 +722,12 @@ func (c *Cache) updateRemoteHoldingLocked(ctx context.Context, key HolderKey, up
 	if h == nil {
 		return change, false
 	}
-	joined := c.trackJoinsLocked()
-	candidates, changed := c.applyHeldValueStateLocked(ctx, c.remoteCacheLocked(key.Cache), key, entry, h, HeldValueState{
+	change.Candidates = c.applyHeldValueStateLocked(ctx, c.remoteCacheLocked(key.Cache), key, entry, h, HeldValueState{
 		Replacements:  update.Replacements,
 		Deps:          update.Deps,
 		ContentDigest: update.ContentDigest,
 	}, parts, nil)
-	change.Candidates = candidates
-	if changed {
-		change.addRecipeOf(entry)
-	}
-	joined(&change)
 	return change, true
-}
-
-// trackJoinsLocked starts collecting the entries that class unions join to
-// another class of entries, the row's entry or any other, directly or by
-// congruence. A union with a class no entry is in, such as a newly taught
-// digest's, joins no entries: it changes no class's set of equivalent
-// holdings. The returned function adds each joined entry's recipe digest to
-// change and stops. Both run in one hold of egraphMu for writing.
-func (c *Cache) trackJoinsLocked() func(change *RemoteChange) {
-	c.joinedEntries = map[sharedResultID]struct{}{}
-	return func(change *RemoteChange) {
-		joined := make([]sharedResultID, 0, len(c.joinedEntries))
-		for id := range c.joinedEntries {
-			joined = append(joined, id)
-		}
-		c.joinedEntries = nil
-		slices.Sort(joined)
-		for _, id := range joined {
-			if entry := c.resultsByID[id]; entry != nil {
-				change.addRecipeOf(entry)
-			}
-		}
-	}
-}
-
-// noteJoinedEntriesLocked records, while trackJoinsLocked collects, the
-// entries of the class a union of two classes of entries has just formed:
-// every one of them has joined another class. Requires egraphMu for writing.
-func (c *Cache) noteJoinedEntriesLocked(root eqClassID) {
-	if c.joinedEntries == nil {
-		return
-	}
-	for id := range c.outputEqClassResults[root] {
-		c.joinedEntries[id] = struct{}{}
-	}
 }
 
 // applyHeldValueStateLocked applies one observation of h's value state by the
@@ -828,11 +746,9 @@ func (c *Cache) noteJoinedEntriesLocked(root eqClassID) {
 //     are added. Within one value, an entry's dependencies only grow.
 //
 // parts and offered are the observation's complete and offered part address
-// keys. It returns the dropped dependencies' holdings, and whether the
-// holding's count, parts or expiry changed: the value state reconciliation
-// reads. A content digest it teaches changes that only by joining classes,
-// which trackJoinsLocked reports. Requires egraphMu for writing.
-func (c *Cache) applyHeldValueStateLocked(ctx context.Context, state *remoteCacheState, key HolderKey, entry *sharedResult, h *holding, obs HeldValueState, parts, offered []string) ([]HolderKey, bool) {
+// keys. It returns the dropped dependencies' holdings. Requires egraphMu for
+// writing.
+func (c *Cache) applyHeldValueStateLocked(ctx context.Context, state *remoteCacheState, key HolderKey, entry *sharedResult, h *holding, obs HeldValueState, parts, offered []string) []HolderKey {
 	if obs.ContentDigest != "" && string(obs.ContentDigest) != handleString(h.contentDigest) {
 		// The class learns a content digest from every observation, whatever
 		// its count: a union is never undone, and gating it by count would
@@ -841,7 +757,7 @@ func (c *Cache) applyHeldValueStateLocked(ctx context.Context, state *remoteCach
 		c.teachRemoteIdentityLocked(ctx, entry, entry.description, "", "", obs.ContentDigest, nil)
 	}
 	if obs.Replacements < h.replacements {
-		return nil, false
+		return nil
 	}
 	var candidates []HolderKey
 	changed := false
@@ -895,7 +811,7 @@ func (c *Cache) applyHeldValueStateLocked(ctx context.Context, state *remoteCach
 		c.markHoldingLocked(key)
 	}
 	c.addHoldingDepsLocked(state, key, h, obs.Deps)
-	return candidates, changed
+	return candidates
 }
 
 // AddRemoteHold records that session holds the holding.
@@ -1320,13 +1236,7 @@ func (c *Cache) applyHeldValueStateOfLocked(ctx context.Context, key HolderKey, 
 	if h == nil {
 		return change, false
 	}
-	joined := c.trackJoinsLocked()
-	candidates, changed := c.applyHeldValueStateLocked(ctx, c.remoteCacheLocked(key.Cache), key, entry, h, obs, parts, offered)
-	change.Candidates = candidates
-	if changed {
-		change.addRecipeOf(entry)
-	}
-	joined(&change)
+	change.Candidates = c.applyHeldValueStateLocked(ctx, c.remoteCacheLocked(key.Cache), key, entry, h, obs, parts, offered)
 	return change, true
 }
 
@@ -1563,27 +1473,6 @@ func (c *Cache) writeRemoteIdentityLocked(ctx context.Context, entry *sharedResu
 	}
 	index := cmp.Or(request, recipe)
 	c.applyPreparedResultIdentityLocked(ctx, entry, &ResultCall{Kind: ResultCallKindField, Field: field, ExtraDigests: extras}, index, term.Self, term.Inputs, provenance, index)
-}
-
-// EquivalentHolders returns the holdings on the entries of the class of
-// digest, sorted.
-func (c *Cache) EquivalentHolders(dig string) []HolderKey {
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
-	classID, ok := c.egraphDigestToClass[dig]
-	if !ok {
-		return nil
-	}
-	var keys []HolderKey
-	for id := range c.outputEqClassResults[c.eqClassRootLocked(classID)] {
-		if res := c.resultsByID[id]; res != nil {
-			for _, ref := range res.holderRefsLocked() {
-				keys = append(keys, ref.key)
-			}
-		}
-	}
-	slices.SortFunc(keys, compareHolderKeys)
-	return keys
 }
 
 // HolderClosure returns the holding and every holding it depends on,
