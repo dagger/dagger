@@ -212,6 +212,52 @@ func TestRestoreMergesAFilesParts(t *testing.T) {
 	require.Equal(t, 1, files.getsOf("whole"))
 }
 
+// A file's next part is decoded while the part before it merges, so that a
+// part's merge doesn't wait for its decode after the part before has
+// committed; the part's report says how long its merge did wait for it.
+func TestRestoreDecodesTheNextPartWhileAPartMerges(t *testing.T) {
+	t.Parallel()
+	adapter := newFakeAdapter()
+	s, conn := restoreSession(t, adapter)
+	decoded := make(chan uint64, 3)
+	s.cfg.decode = func(data []byte) (dagql.ValueBundle, error) {
+		bundle, err := decodePart(data)
+		if err == nil {
+			decoded <- bundle.Values[0].SenderNumber
+		}
+		return bundle, err
+	}
+	adapter.restore = func(_ context.Context, part dagql.ValueBundle, _ *dagql.KnownRows) (dagql.MergeReply, error) {
+		if part.Values[0].SenderNumber == 11 {
+			for {
+				select {
+				case n := <-decoded:
+					if n == 12 {
+						return merged(part, time.Now()), nil
+					}
+				case <-time.After(5 * time.Second):
+					return dagql.MergeReply{}, errors.New("part 12 wasn't decoded while part 11 merged")
+				}
+			}
+		}
+		return merged(part, time.Now()), nil
+	}
+	files := newFileServer(t)
+	whole := files.add("whole", setFile(t, dagql.ValueBundleVersion, part(11), part(12), part(13)))
+
+	s.dispatch(request(t, 1, protocol.TypeRestore, restoreOf("test-base", nil, &whole)))
+	restored := decode[protocol.Restored](t, conn.next(t))
+	require.Len(t, restored.Files, 1)
+	require.Empty(t, restored.Files[0].Error)
+	require.True(t, restored.Files[0].Complete)
+	report := nextReport(t, adapter)
+	require.Len(t, report.Parts, 3)
+	for i, p := range report.Parts {
+		require.Positive(t, p.Decode, "part %d's decode", i)
+		require.GreaterOrEqual(t, p.DecodeWait, time.Duration(0), "part %d's wait for it", i)
+	}
+}
+
 // The rows a part lands on join the connection's known rows, as a merge's
 // do: the adapter is given the session's.
 func TestRestoreUsesTheConnectionsKnownRows(t *testing.T) {
