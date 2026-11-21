@@ -1,0 +1,9 @@
+kind: Fixed
+body: |
+  `Directory.dockerBuild` no longer panics the engine on a Dockerfile
+  with a read-write bind mount (`RUN --mount=type=bind,...,rw`), which
+  previously crashed the session and wiped the engine cache on restart.
+time: 2026-11-18T12:55:00Z
+custom:
+  Author: santhiprakash
+  PR: 15206
