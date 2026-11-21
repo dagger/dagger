@@ -199,6 +199,97 @@ func TestCloudOfferOfAnImageEntryIsLeftOut(t *testing.T) {
 	}
 }
 
+// A record the image ships without a part has no content of its own on the
+// engine: the Cloud's offer of its part is taken as any entry's is, and a
+// read installs the part from the Cloud's address without running the step.
+func TestCloudOfferInstallsOnAnImageRecordWithoutAPart(t *testing.T) {
+	chain := newChainFixture(t, "image-record")
+	f := newExhaustionFixture(t, chain)
+	f.cache.egraphMu.Lock()
+	f.receiver.cacheSharedResult().noteImageCopyLocked(1)
+	f.cache.egraphMu.Unlock()
+	require.True(t, f.cache.FromImage(f.receiver), "the image ships the record")
+
+	out, err := f.cache.testOfferParts(f.ctx, f.receiver, []PersistedPartOffer{exhaustionOffer(chain, "", true)})
+	require.NoError(t, err)
+	require.Equal(t, OfferAccepted, out[0].Outcome, "the Cloud's offer is taken")
+	require.NoError(t, f.run())
+	require.True(t, f.installed(), "the part installed from the Cloud's offer")
+	require.NotZero(t, f.transport.total(), "its blobs were read from the Cloud's address")
+	require.Zero(t, f.operation.runs.Load(), "the step didn't run")
+	require.True(t, f.cache.FromImage(f.receiver), "the entry is still the image's")
+}
+
+// The Cloud's merge gives a record the image ships without a part the
+// Cloud's part, in its Cloud holding and saved with it, as any entry takes
+// one. The result above it, whose part the image ships, keeps the image's
+// offer alone.
+func TestCloudMergeGivesAnImageRecordWithoutAPartItsPart(t *testing.T) {
+	t.Parallel()
+	// bundle is a root over a dependency, from a cache that holds address's
+	// offer of the root's part, and of the dependency's too when both.
+	bundle := func(t *testing.T, address func(digest.Digest) BlobAddress, both bool) ValueBundle {
+		t.Helper()
+		ctx, c, srv := transferTestCache(t)
+		dep := persistedListTestResult(t, ctx, c, srv, "dep", &transferTestValue{Text: "dep"})
+		root := persistedListTestResult(t, ctx, c, srv, "root", &transferTestValue{Text: "pending"})
+		require.NoError(t, c.AddExplicitDependency(ctx, root, dep, "root reads dep"))
+		offered := []AnyResult{root}
+		if both {
+			offered = append(offered, dep)
+		}
+		for _, r := range offered {
+			out, err := c.testOfferParts(ctx, r, []PersistedPartOffer{imageTestLayerOffer(address)})
+			require.NoError(t, err)
+			require.Equal(t, OfferAccepted, out[0].Outcome)
+		}
+		return cloudTestBundle(t, ctx, c, root)
+	}
+	image := bundle(t, ImageBlobAddress, false)
+	require.Len(t, image.Values, 2, "the root and its closure's record")
+	require.Len(t, image.Outputs, 1, "a part for the root alone")
+	cloud := bundle(t, func(digest.Digest) BlobAddress { return BlobAddress{URL: "https://fixed.invalid/blob"} }, true)
+	require.Len(t, cloud.Outputs, 2, "a part for each")
+
+	ctx, b, _ := transferTestCache(t)
+	_, err := b.MergeValues(ctx, ImageCacheID, image)
+	require.NoError(t, err)
+	entries := b.ImageEntries()
+	require.Len(t, entries, 2)
+	var root, dep *sharedResult
+	b.egraphMu.RLock()
+	for _, n := range entries {
+		row := b.resultsByID[sharedResultID(n)]
+		if len(row.testPartOffers()) > 0 {
+			root = row
+		} else {
+			dep = row
+		}
+	}
+	b.egraphMu.RUnlock()
+	require.NotNil(t, root, "the image ships the root's part")
+	require.NotNil(t, dep, "the image ships the dependency's record without a part")
+
+	_, err = b.MergeValues(ctx, CloudCacheID, cloud)
+	require.NoError(t, err)
+	b.egraphMu.RLock()
+	rootOffers, depOffers := root.testPartOffers(), dep.testPartOffers()
+	_, depCloud := dep.cloudHoldingLocked()
+	saved, savedErr := dep.pendingOffersLocked()
+	b.egraphMu.RUnlock()
+	require.Len(t, rootOffers, 1)
+	for _, offer := range rootOffers {
+		require.True(t, imageOfferLayers(&offer.record), "the root keeps the image's offer")
+	}
+	require.Len(t, depOffers, 1, "the record takes the Cloud's part")
+	for _, offer := range depOffers {
+		require.False(t, imageOfferLayers(&offer.record), "the Cloud's offer")
+	}
+	require.NotNil(t, depCloud, "in its Cloud holding")
+	require.NoError(t, savedErr)
+	require.Len(t, saved, 1, "saved as any Cloud offer is")
+}
+
 // An entry the image ships is found by its content digest and type, and
 // only an entry the image ships is: a result of the same content that a
 // session made answers no lookup.
