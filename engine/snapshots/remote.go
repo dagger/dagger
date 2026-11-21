@@ -12,6 +12,7 @@ import (
 	"github.com/dagger/dagger/engine/snapshots/config"
 	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/dagger/dagger/internal/buildkit/util/compression"
+	digest "github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 	"golang.org/x/sync/errgroup"
@@ -152,7 +153,9 @@ type layerBuild struct {
 	parentSnapshotID string
 	owner            *chainExport
 
-	desc     ocispecs.Descriptor
+	desc ocispecs.Descriptor
+	// contents are the listing's content blobs when desc is a listing.
+	contents []ocispecs.Descriptor
 	hasLayer bool
 	// computed is set when the build computed the layer's blob, as
 	// ExportLayer.Computed is: diffed it, or converted a stored blob.
@@ -256,6 +259,10 @@ func (cm *snapshotManager) exportChains(ctx context.Context, refs []*immutableRe
 func (cm *snapshotManager) assembleExportChain(export *chainExport, builds map[string]*layerBuild, refCfg config.RefConfig) error {
 	chain := export.chain
 	var reuseParentID string
+	// A listing's content blobs go just before it, each once in the chain:
+	// a content a later listing names again is already in every prefix that
+	// listing ends.
+	carried := map[digest.Digest]struct{}{}
 	for i, snapshotID := range export.snapshotIDs {
 		if i == 0 && isScratchSnapshotID(snapshotID) {
 			chain.Prefixes[snapshotID] = 0
@@ -282,6 +289,24 @@ func (cm *snapshotManager) assembleExportChain(export *chainExport, builds map[s
 			}
 			if !present {
 				return errors.Wrapf(cerrdefs.ErrNotFound, "exported content %s disappeared", desc.Digest)
+			}
+			for _, c := range build.contents {
+				if _, ok := carried[c.Digest]; ok {
+					continue
+				}
+				carried[c.Digest] = struct{}{}
+				present, err := cm.pinContent(export.ctx, c)
+				if err != nil {
+					return err
+				}
+				if !present {
+					return errors.Wrapf(cerrdefs.ErrNotFound, "exported content %s disappeared", c.Digest)
+				}
+				chain.Layers = append(chain.Layers, ExportLayer{Descriptor: c, Computed: build.computed && build.owner == export})
+				chain.Stats.Contents++
+			}
+			if IsListing(desc) {
+				chain.Stats.Listings++
 			}
 			if err := cm.registerExportLayer(reuseParentID, snapshotID, desc); err != nil {
 				return err
@@ -345,7 +370,7 @@ func (cm *snapshotManager) buildExportLayer(ctx context.Context, build *layerBui
 		return err
 	}
 	layer := opened.(*immutableRef)
-	desc, hasLayer, computed, err := cm.ensureExportBlob(ctx, build.parentSnapshotID, layer, refCfg.Compression, refCfg.Builds.Gate, &build.stats)
+	result, err := cm.ensureExportBlob(ctx, build.parentSnapshotID, layer, refCfg.Compression, refCfg.Listings, refCfg.Builds.Gate, &build.stats)
 	build.description = layer.GetDescription()
 	build.createdAt = layer.GetCreatedAt()
 	if releaseErr := layer.Release(context.WithoutCancel(ctx)); releaseErr != nil && err == nil {
@@ -354,7 +379,7 @@ func (cm *snapshotManager) buildExportLayer(ctx context.Context, build *layerBui
 	if err != nil {
 		return err
 	}
-	build.desc, build.hasLayer, build.computed = desc, hasLayer, computed
+	build.desc, build.contents, build.hasLayer, build.computed = result.desc, result.contents, result.hasLayer, result.computed
 	return nil
 }
 
