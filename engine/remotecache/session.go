@@ -367,16 +367,16 @@ func (s *session) probe() {
 // readies tells the service of the roots it was answered busy for that can
 // be captured now (protocol.Ready), as the adapter finds them, until the
 // connection ends. A root the service no longer waits for is ignored there.
+// It returns only once the adapter's look has ended with the connection: a
+// Ready the connection's end cut off comes back to the adapter, whose look
+// then ends with it.
 func (s *session) readies() {
 	for {
 		roots, err := s.adapter.TakeReadyRoots(s.ctx)
 		if err != nil {
 			return
 		}
-		if _, err := s.request(s.ctx, protocol.TypeReady, protocol.Ready{Roots: roots}); err != nil {
-			if s.ctx.Err() != nil {
-				return
-			}
+		if _, err := s.request(s.ctx, protocol.TypeReady, protocol.Ready{Roots: roots}); err != nil && s.ctx.Err() == nil {
 			s.cfg.Logger.Warn("remote cache: ready failed", "roots", len(roots), "error", err)
 		}
 	}
