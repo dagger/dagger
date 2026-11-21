@@ -448,8 +448,14 @@ type MergeReply struct {
 // entry stores (created), one an entry with no value takes (stored), one
 // that replaces an expired value in place (replaced), and one a new entry
 // stores while the expired value it supersedes stays in use (retired).
+//
+// Of the kept records, on a blob-backed cache, KeptWithHolding are those
+// whose sender's holding the cache had before the commit, and KeptTaught
+// those of them whose identity taught the entry a class, a term or a digest
+// all the same: what a held row in their place wouldn't have taught it.
 type MergeRowCounts struct {
 	Held, Kept, Created, Stored, Replaced, Retired int
+	KeptWithHolding, KeptTaught                    int
 }
 
 // count counts one decided row.
@@ -459,6 +465,12 @@ func (n *MergeRowCounts) count(row *mergeRow) {
 		n.Held++
 	case row.action == mergeKeep:
 		n.Kept++
+		if row.keptWithHolding {
+			n.KeptWithHolding++
+		}
+		if row.keptTaught {
+			n.KeptTaught++
+		}
 	case row.action == mergeCreate:
 		n.Created++
 	case row.action == mergeStore:
@@ -1542,6 +1554,11 @@ type mergeRow struct {
 	expired bool
 	// keptExpired marks a kept value that had expired.
 	keptExpired bool
+	// keptWithHolding marks, on a blob-backed cache, a kept record whose
+	// sender's holding the cache had before the commit, and keptTaught one
+	// of those whose identity taught its entry a class, a term or a digest
+	// that the holding hadn't (applyMergedIdentitiesLocked).
+	keptWithHolding, keptTaught bool
 	// rec and deps are the record relocated to the final numbers, for an
 	// action that installs it. firstUse is set for a record installed with
 	// its payload unprepared (relocateUnpreparedRowLocked).
@@ -2789,7 +2806,19 @@ func (c *Cache) applyMergedIdentitiesLocked(ctx context.Context, commit *valueMe
 		if row.action.installs() {
 			frame = row.res.loadResultCall()
 		}
+		// A kept record whose sender's holding is here already teaches its
+		// entry only what the holding didn't: counted, for the reply.
+		var mark identityMark
+		if c.blobBacked && row.action == mergeKeep {
+			if _, h := c.holdingLocked(HolderKey{Cache: commit.from, Number: row.value.SenderNumber}); h != nil {
+				row.keptWithHolding = true
+				mark = c.identityMarkLocked(row.res)
+			}
+		}
 		c.applyPreparedResultIdentityLocked(ctx, row.res, frame, row.plan.recipe, row.plan.self, row.plan.inputs, row.plan.provenance, row.plan.recipe)
+		if row.keptWithHolding {
+			row.keptTaught = c.identityMarkLocked(row.res) != mark
+		}
 		if !c.blobBacked {
 			// The sender's entry stores the record: the Cloud's, with the
 			// record's expiry, or the engine image's.
@@ -2820,6 +2849,26 @@ func (c *Cache) applyMergedIdentitiesLocked(ctx context.Context, commit *valueMe
 	if joined != nil {
 		joined(change)
 	}
+}
+
+// identityMark is what teaching an entry its identity can change, read
+// before and after: the cache's unions of classes and terms made, and the
+// entry's terms, digests and its classes' extra digests. Teaching that
+// leaves it equal taught the entry nothing.
+type identityMark struct {
+	unions          uint64
+	nextTerm        egraphTermID
+	terms, postings int
+	extras          int
+}
+
+// identityMarkLocked reads res's identity mark. Requires egraphMu.
+func (c *Cache) identityMarkLocked(res *sharedResult) identityMark {
+	mark := identityMark{unions: c.egraphUnions, nextTerm: c.nextEgraphTermID, terms: len(c.resultTerms[res.id]), postings: len(c.resultIndexedDigests[res.id])}
+	for id := range c.resultOutputEqClasses[res.id] {
+		mark.extras += len(c.eqClassExtraDigests[c.eqClassRootLocked(id)])
+	}
+	return mark
 }
 
 // teachCallIdentityLocked teaches res a call that returned it, as
