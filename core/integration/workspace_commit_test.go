@@ -2023,9 +2023,9 @@ func (*Probe) Committed() error { return nil }
 	checks, err := core.Ref[*core.Workspace](core.NewQuery(c), committed.ID).Artifacts().FilterTypes([]string{"Check"}).WithoutURI("**/stale").Items(ctx)
 	require.NoError(t, err)
 	require.Len(t, checks, 1)
-	name, err := checks[0].URI(ctx)
+	path, err := checks[0].Path(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "dag://?check=probe/committed", name)
+	require.Equal(t, []string{"probe", "committed"}, path)
 }
 
 func (WorkspaceSuite) TestWorkspaceWithCommitIncomingChanges(ctx context.Context, t *testctx.T) {

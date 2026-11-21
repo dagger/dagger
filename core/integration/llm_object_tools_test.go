@@ -2296,20 +2296,21 @@ scope=$(llm | with-workspace --workspace $(current-workspace) | with-tools $rost
 			return out
 		}
 		// The collection's keys come from the bound roster's state...
-		require.Equal(t, "dag://?directory=dir&roster-member=a\n",
-			run(ctx, t, `$scope | filter-uri "dag://roster/members/dir" | items | uri`))
+		require.Equal(t, "roster\nmembers\ndir",
+			strings.TrimSpace(run(ctx, t, `$scope | filter-uri "dag://roster/members/dir" | items | path`)))
 		// ...and so does the value.
 		require.Equal(t, "hello from the roster",
-			run(ctx, t, `$scope | filter-uri "dag://roster/members/dir?roster-member=a" | one | value | file f | contents`))
+			run(ctx, t, `addr=$($scope | filter-uri "dag://roster/members/dir?roster-member=a" | one | uri)
+$scope | filter-uri "$addr" | one | value | file f | contents`))
 		// The workspace's other modules are in scope, constructed fresh.
-		require.Equal(t, "dag://?directory=notes/docs\n",
-			run(ctx, t, `$scope | filter-uri "dag://notes/**" | items | uri`))
+		require.Equal(t, "notes\ndocs",
+			strings.TrimSpace(run(ctx, t, `$scope | filter-uri "dag://notes/**" | items | path`)))
 		require.Equal(t, "README\n",
 			run(ctx, t, `$scope | filter-uri "dag://notes/docs" | one | value | entries`))
 		// The workspace's own roster is shadowed by the bound one: the
 		// collection is listed once, not once per roster.
-		require.Equal(t, "dag://?artifact-roster-members=roster/members\n",
-			run(ctx, t, `$scope | filter-uri "dag://roster/members" | items | uri`))
+		require.Equal(t, "roster\nmembers",
+			strings.TrimSpace(run(ctx, t, `$scope | filter-uri "dag+roster-members://roster/members" | items | path`)))
 	})
 
 	t.Run("the LLM scope's workspace part is the bound workspace's", func(ctx context.Context, t *testctx.T) {
@@ -2331,8 +2332,8 @@ scope=$(llm | with-workspace --workspace $(current-workspace) | with-tools $rost
 			`llm | with-tools $(roster) | artifacts | filter-uri "dag://{notes,roster}/**" | path-definitions | uri`,
 		)).Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, "dag://?artifact-roster-members=roster/members\n")
-		require.NotContains(t, out, "=notes/")
+		require.Contains(t, out, "dag://roster/members?type:RosterMembers=/roster/members&!RosterMembers\n")
+		require.NotContains(t, out, "notes/")
 	})
 
 	t.Run("a freshly constructed binding yields to the workspace", func(ctx context.Context, t *testctx.T) {
@@ -2366,13 +2367,8 @@ scope=$(llm | with-workspace --workspace $(current-workspace) | with-tools $rost
 	})
 }
 
-// TestBoundCollectionRefs covers agent histories addressed through a bound
-// tool's collection, in the shape of vito/agents' staff and committer modules
-// (the workspace-agent-refs fixture mirrors them): a never-started chief
-// Agent is put on a Roster, and its committed history is addressed as
-// dag://roster/members/head?roster-members-member=chief — which only resolves against the
-// BOUND Roster (or a View minted from it), since a fresh one has no members —
-// and handed to GitRef-taking tools of another module by the model.
+// TestBoundCollectionRefs checks that an LLM can pass a GitRef from a bound
+// roster member to another module's tool.
 func (LLMSuite) TestBoundCollectionRefs(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	base := workspaceFixture(t, c, "workspace-agent-refs").
@@ -2409,7 +2405,7 @@ roster=$(roster | with-worker --name chief --worker $chief)
 	toolCall := func(id, name, args string) core.LLMContentBlockInput {
 		return core.LLMContentBlockInput{Kind: core.LLMContentBlockKindToolCall, CallID: id, ToolName: name, Arguments: core.JSON(args)}
 	}
-	const chiefHead = "dag://roster/members/head?roster-members-member=chief"
+	const chiefHead = "dag://roster/members/head?roster-member=chief"
 	conversation := func(prompt string, calls ...core.LLMContentBlockInput) string {
 		script := core.NewQuery(c).LLM().WithPrompt(prompt)
 		for _, call := range calls {
@@ -2429,7 +2425,7 @@ roster=$(roster | with-worker --name chief --worker $chief)
 		const prompt = "look at the chief's work"
 		model := conversation(prompt,
 			toolCall("plain", "show", fmt.Sprintf(`{"from":%q}`, chiefHead)),
-			toolCall("typed", "show", `{"from":"dag+git-ref://roster/members/head?roster-members-member=chief"}`),
+			toolCall("typed", "show", `{"from":"dag+git-ref://roster/members/head?RosterMembers=chief"}`),
 		)
 		transcript := run(ctx, t, chat(model, "$roster", prompt)+" | transcript")
 		// Both spellings reach the chief's HEAD, which only the bound roster
@@ -2458,19 +2454,19 @@ roster=$(roster | with-worker --name chief --worker $chief)
 		model := conversation(prompt,
 			toolCall("find", "FindArtifacts", `{"type":"GitRef"}`),
 			toolCall("items", "FindArtifacts", `{"address":"roster/members/head","view":"items"}`),
-			toolCall("show", "show", `{"from":"dag+git-ref://roster/members/head?roster-members-member=chief"}`),
+			toolCall("show", "show", `{"from":"dag+git-ref://roster/members/head?RosterMembers=chief"}`),
 		)
 		transcript := run(ctx, t, chat(model, "$roster", prompt)+" | transcript")
 		// The path, with a placeholder for the member it needs, is marked as
 		// read from the bound roster...
 		require.Contains(t, transcript,
-			"dag+git-ref://?git-ref=head&roster-members-member=<name> — The agent's committed history: the HEAD of its workspace. [tool Roster, live]")
+			"dag+git-ref://roster/members/head?roster-member=<name> — The agent's committed history: the HEAD of its workspace. [tool Roster, live]")
 		// ...followed by the live members' keys, so the model needs no
 		// second call to learn them...
-		require.Contains(t, transcript, "roster-members-member=<name> — keys: chief")
+		require.Contains(t, transcript, "roster-member=<name> — keys: chief")
 		// ...and the items are its live members, fully keyed.
 		require.Contains(t, transcript,
-			"dag+git-ref://?git-ref=head&roster-members-member=chief — The agent's committed history: the HEAD of its workspace. [tool Roster, live]")
+			"dag+git-ref://roster/members/head?RosterMembers=chief — The agent's committed history: the HEAD of its workspace. [tool Roster, live]")
 		require.Contains(t, transcript, "commit "+chiefSHA)
 		require.Contains(t, transcript, "+from the chief")
 	})
@@ -2542,9 +2538,9 @@ func (LLMSuite) TestFindArtifacts(ctx context.Context, t *testctx.T) {
 		require.Contains(t, out, "Modules that failed to load")
 		// The checks: the loaded module's, and the load failure in place of
 		// the broken module's.
-		require.Contains(t, out, "dag+check://?check=good/verify — A trivial check. Used to prove the module loaded for `dagger check`.")
-		require.Contains(t, out, "dag+check://?check=bad/load — LOAD ERROR: ")
-		require.NotContains(t, out, "dag+service://?service=good/web —")
+		require.Contains(t, out, "dag+check://good/verify?module=good — A trivial check. Used to prove the module loaded for `dagger check`.")
+		require.Contains(t, out, "dag+check://bad/load — LOAD ERROR: ")
+		require.NotContains(t, out, "dag+service://good/web")
 		require.Contains(t, out, "done")
 	})
 }

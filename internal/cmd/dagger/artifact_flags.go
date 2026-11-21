@@ -24,6 +24,7 @@ func artifactDimensionFlagNames(cmd *cobra.Command, dimensions artifact.Dimensio
 	dimensions = artifactSelectorDimensions(dimensions)
 	reserved := artifactReservedFlags(cmd)
 	reserved[artifact.ModuleDimension] = true
+	reserved[artifact.NameDimension] = true
 	names := map[string]artifactFlagNames{}
 
 	type request struct {
@@ -43,8 +44,8 @@ func artifactDimensionFlagNames(cmd *cobra.Command, dimensions artifact.Dimensio
 	// Collection keys have priority over type names.
 	for _, kind := range []string{"collection-key", "collection-presence", "type"} {
 		for _, d := range dims {
-			if d.Kind == "MODULE" {
-				names[d.Identifier] = artifactFlagNames{Key: "module"}
+			if d.Kind == "MODULE" || d.Kind == "NAME" {
+				names[d.Identifier] = artifactFlagNames{Key: d.Identifier}
 				continue
 			}
 			if (kind == "type") != (d.Kind == "TYPE") {
@@ -52,6 +53,11 @@ func artifactDimensionFlagNames(cmd *cobra.Command, dimensions artifact.Dimensio
 			}
 			presence := kind == "collection-presence"
 			candidates := dims.Names(d, presence)
+			if d.CollectionType != "" && d.Identifier == d.CollectionType {
+				for i, candidate := range candidates {
+					candidates[i] = cliName(candidate)
+				}
+			}
 			if kind == "type" {
 				candidates = []string{d.Name, "artifact-" + d.Name}
 			}
@@ -121,6 +127,7 @@ func artifactReservedFlags(cmd *cobra.Command) map[string]bool {
 func artifactModuleFlagNames(cmd *cobra.Command, dimensions artifact.Dimensions, paths []artifactListPath) map[string]string {
 	reserved := artifactReservedFlags(cmd)
 	reserved[artifact.ModuleDimension] = true
+	reserved[artifact.NameDimension] = true
 	for _, names := range artifactDimensionFlagNames(cmd, dimensions) {
 		reserved[names.Key], reserved[names.Presence] = true, true
 	}

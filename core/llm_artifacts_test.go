@@ -334,7 +334,7 @@ func TestMergeScopeArtifacts(t *testing.T) {
 		return paths
 	}
 
-	all, err := mergeScopeArtifacts(bound, shadowed, nil, &Artifacts{Entries: workspace}, nil)
+	all, err := mergeScopeArtifacts(t.Context(), bound, shadowed, nil, &Artifacts{Entries: workspace}, nil)
 	require.NoError(t, err)
 	require.Nil(t, all.Selector.Paths)
 	require.Equal(t, []string{"app/build", "git-tools/head", "roster/members", "roster/members/dir"}, paths(all))
@@ -342,7 +342,7 @@ func TestMergeScopeArtifacts(t *testing.T) {
 
 	// Workspace.artifacts narrows its entries but keeps all loaded dimensions.
 	narrowedWorkspace := &Artifacts{Entries: workspace[3:], AllDimensions: (&Artifacts{Entries: workspace}).DimensionDefinitions()}
-	narrowed, err := mergeScopeArtifacts(bound, shadowed, nil, narrowedWorkspace, []string{"roster:members"})
+	narrowed, err := mergeScopeArtifacts(t.Context(), bound, shadowed, nil, narrowedWorkspace, []string{"roster:members"})
 	require.NoError(t, err)
 	require.Equal(t, []string{"roster/members/**"}, narrowed.Selector.Paths)
 	// The workspace part arrives already narrowed by Workspace.artifacts;
@@ -355,14 +355,14 @@ func TestMergeScopeArtifacts(t *testing.T) {
 	// A roster bound as a fresh construction has the workspace's values: the
 	// workspace's roster wins, workspace main shorthand and all.
 	fresh := map[string]bool{"roster": true}
-	all, err = mergeScopeArtifacts(bound, shadowed, fresh, &Artifacts{Entries: workspace}, nil)
+	all, err = mergeScopeArtifacts(t.Context(), bound, shadowed, fresh, &Artifacts{Entries: workspace}, nil)
 	require.NoError(t, err)
 	require.Equal(t, []string{"app/build", "git-tools/head", "lint", "roster/load", "roster/members"}, paths(all))
 	require.Same(t, workspace[0], all.Entries[4], "the workspace roster wins")
 	// Not where the workspace has no roster, nor one that failed to load:
 	// the binding is all there is.
 	for _, ws := range [][]*Artifact{workspace[3:], workspace[1:2]} {
-		all, err = mergeScopeArtifacts(bound, shadowed, fresh, &Artifacts{Entries: ws}, nil)
+		all, err = mergeScopeArtifacts(t.Context(), bound, shadowed, fresh, &Artifacts{Entries: ws}, nil)
 		require.NoError(t, err)
 		require.Contains(t, paths(all), "roster/members/dir")
 		require.NotContains(t, paths(all), "roster/load")

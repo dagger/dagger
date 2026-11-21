@@ -12,7 +12,7 @@ import (
 // composeProjectionFixture mirrors the docker compose module: up on each
 // service item, keyed by project and service, and up on the services collection helper,
 // keyed by project only.
-func composeProjectionFixture() (*Artifacts, artifactCollectionKeyFunc) {
+func composeProjectionFixture(t *testing.T) (*Artifacts, artifactCollectionKeyFunc) {
 	project := &ArtifactDimension{Identifier: "/docker/compose/projects", Name: "docker-compose-project", QualifiedName: "docker-compose-projects-project"}
 	service := &ArtifactDimension{Identifier: "/docker/compose/projects/services", Name: "docker-compose-service", QualifiedName: "docker-compose-projects-services-service"}
 	projects := &ModTreeNode{Name: "projects"}
@@ -33,7 +33,7 @@ func composeProjectionFixture() (*Artifacts, artifactCollectionKeyFunc) {
 	}}
 	all.AllDimensions = all.DimensionDefinitions()
 	all.AllPaths = all.PathIndex()
-	all.NameEntries()
+	require.NoError(t, all.NameEntries())
 	return all, func(_ context.Context, receiver *Artifact) ([]collectionKey, error) {
 		switch receiver.Node.Name {
 		case "projects":
@@ -46,7 +46,7 @@ func composeProjectionFixture() (*Artifacts, artifactCollectionKeyFunc) {
 }
 
 func TestArtifactProjection(t *testing.T) {
-	all, keys := composeProjectionFixture()
+	all, keys := composeProjectionFixture(t)
 	expanded, err := all.expand(t.Context(), keys)
 	require.NoError(t, err)
 	var projected, full []string
@@ -90,7 +90,7 @@ func TestArtifactProjection(t *testing.T) {
 // A suffix selects every matching path. More specific keys retain exact
 // selection, and a service dimension excludes the collection-level helper.
 func TestArtifactTypeKeySuffixUnion(t *testing.T) {
-	all, keys := composeProjectionFixture()
+	all, keys := composeProjectionFixture(t)
 	addr, err := dagaddress.Parse("dag://?service=up&docker-compose-project=e2e")
 	require.NoError(t, err)
 	selected, err := all.FilterURI(addr)
@@ -130,7 +130,7 @@ func TestArtifactItemProjection(t *testing.T) {
 	})
 	all.AllDimensions = all.DimensionDefinitions()
 	all.AllPaths = all.PathIndex()
-	all.NameEntries()
+	require.NoError(t, all.NameEntries())
 	tests, err := all.FilterPath([]string{"modules", "tests", "check"}).expand(t.Context(), keys)
 	require.NoError(t, err)
 	require.Len(t, tests.Entries, 4)

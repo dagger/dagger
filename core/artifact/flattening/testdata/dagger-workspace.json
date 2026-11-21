@@ -1,0 +1,51 @@
+[
+  {
+    "module": "docs",
+    "path": ["docs", "check"],
+    "type": "Check",
+    "collections": [],
+    "items": [[]]
+  },
+  {
+    "module": "docs",
+    "path": ["docs", "references", "stale"],
+    "type": "Check",
+    "collections": [],
+    "items": [[]]
+  },
+  {
+    "module": "python-client",
+    "path": ["python-client", "python-310", "unit"],
+    "type": "Check",
+    "collections": [],
+    "items": [[]]
+  },
+  {
+    "module": "python-client",
+    "path": ["python-client", "python-310", "slow"],
+    "type": "Check",
+    "collections": [],
+    "items": [[]]
+  },
+  {
+    "module": "golang",
+    "path": ["golang", "modules", "packages", "generate", "stale"],
+    "type": "Check",
+    "collections": [
+      {"fields": ["modules"], "type": "GolangModules", "itemType": "GolangModule", "keyName": "key"},
+      {"fields": ["packages"], "type": "GolangPackages", "itemType": "GolangPackage", "keyName": "key"}
+    ],
+    "items": [[".", "cmd/codegen"], [".", "cmd/codegen/generator/go"]]
+  },
+  {
+    "module": "golang",
+    "path": ["golang", "modules", "packages", "tests", "test"],
+    "type": "Check",
+    "collections": [
+      {"fields": ["modules"], "type": "GolangModules", "itemType": "GolangModule", "keyName": "key"},
+      {"fields": ["packages"], "type": "GolangPackages", "itemType": "GolangPackage", "keyName": "key"},
+      {"fields": ["tests"], "type": "GolangTests", "itemType": "GolangTest", "keyName": "key"}
+    ],
+    "items": [["e2e/helm", "e2e/helm", "TestCustomProbes"], ["e2e/helm", "e2e/helm", "TestInstallK3S"]]
+  }
+]

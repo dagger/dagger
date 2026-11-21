@@ -1096,6 +1096,12 @@ pub struct Artifact {
     pub graphql_client: DynGraphQLClient,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct ArtifactDimensionKeysOpts {
+    /// Return all artifact coordinates, including constant dimensions.
+    #[builder(setter(into, strip_option), default)]
+    pub all: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct ArtifactUriOpts {
     /// Prefix the workspace's Git address and commit: dag://<workspace>@<commit>:<path>. Fails if the artifact has no workspace, or its workspace has no Git address.
     #[builder(setter(into, strip_option), default)]
@@ -1135,6 +1141,54 @@ impl Artifact {
     pub async fn id(&self) -> Result<Id, DaggerError> {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// The artifact coordinates in its source selection's visible dimensions. Without a source selection, return all coordinates.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn dimension_keys(&self) -> Result<Vec<ArtifactDimensionKey>, DaggerError> {
+        let query = self.selection.select("dimensionKeys");
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| ArtifactDimensionKey {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("ArtifactDimensionKey"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
+    }
+    /// The artifact coordinates in its source selection's visible dimensions. Without a source selection, return all coordinates.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn dimension_keys_opts(
+        &self,
+        opts: ArtifactDimensionKeysOpts,
+    ) -> Result<Vec<ArtifactDimensionKey>, DaggerError> {
+        let mut query = self.selection.select("dimensionKeys");
+        if let Some(all) = opts.all {
+            query = query.arg("all", all);
+        }
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| ArtifactDimensionKey {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("ArtifactDimensionKey"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
     }
     /// A module load failure, or an empty string if discovery succeeded.
     pub async fn load_error(&self) -> Result<String, DaggerError> {
@@ -1215,23 +1269,6 @@ impl Artifact {
         let query = self.selection.select("path");
         query.execute(self.graphql_client.clone()).await
     }
-    /// The module name, collection keys, and full path key in the artifact type dimension.
-    pub async fn dimension_keys(&self) -> Result<Vec<ArtifactDimensionKey>, DaggerError> {
-        let query = self.selection.select("dimensionKeys");
-        let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| ArtifactDimensionKey {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("ArtifactDimensionKey"),
-                graphql_client: self.graphql_client.clone(),
-            })
-            .collect())
-    }
     /// The directives carried by this artifact.
     pub async fn directives(&self) -> Result<Vec<String>, DaggerError> {
         let query = self.selection.select("directives");
@@ -1304,7 +1341,7 @@ impl ArtifactDimension {
         let query = self.selection.select("collectionType");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Stable identifier: collection schema path, type:TypeName for an artifact type, or module.
+    /// Collection schema type name, module, name, or a legacy selector identifier.
     pub async fn identifier(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("identifier");
         query.execute(self.graphql_client.clone()).await
@@ -1504,6 +1541,18 @@ pub struct ArtifactsFilterTypesOpts {
     /// Remove the matching artifacts instead.
     #[builder(setter(into, strip_option), default)]
     pub exclude: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ArtifactsFilterDimensionsOpts {
+    /// Remove artifacts with any listed dimension.
+    #[builder(setter(into, strip_option), default)]
+    pub exclude: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ArtifactsDimensionsOpts {
+    /// List all workspace schema dimensions without runtime discovery.
+    #[builder(setter(into, strip_option), default)]
+    pub all: Option<bool>,
 }
 impl IntoID<Id> for Artifacts {
     fn into_id(
@@ -1934,6 +1983,10 @@ impl Artifacts {
         }
     }
     /// Keep artifacts selected through any listed dimension.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn filter_dimensions(&self, dimensions: Vec<impl Into<String>>) -> Artifacts {
         let mut query = self.selection.select("filterDimensions");
         query = query.arg(
@@ -1943,6 +1996,33 @@ impl Artifacts {
                 .map(|i| i.into())
                 .collect::<Vec<String>>(),
         );
+        Artifacts {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Keep artifacts selected through any listed dimension.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn filter_dimensions_opts(
+        &self,
+        dimensions: Vec<impl Into<String>>,
+        opts: ArtifactsFilterDimensionsOpts,
+    ) -> Artifacts {
+        let mut query = self.selection.select("filterDimensions");
+        query = query.arg(
+            "dimensions",
+            dimensions
+                .into_iter()
+                .map(|i| i.into())
+                .collect::<Vec<String>>(),
+        );
+        if let Some(exclude) = opts.exclude {
+            query = query.arg("exclude", exclude);
+        }
         Artifacts {
             proc: self.proc.clone(),
             selection: query,
@@ -1983,9 +2063,28 @@ impl Artifacts {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// List dimension identifiers represented in this selection, sorted with no duplicates.
+    /// List dimensions whose cells differ across selected rows. Missing cells differ from present keys.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn dimensions(&self) -> Result<Vec<String>, DaggerError> {
         let query = self.selection.select("dimensions");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// List dimensions whose cells differ across selected rows. Missing cells differ from present keys.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn dimensions_opts(
+        &self,
+        opts: ArtifactsDimensionsOpts,
+    ) -> Result<Vec<String>, DaggerError> {
+        let mut query = self.selection.select("dimensions");
+        if let Some(all) = opts.all {
+            query = query.arg("all", all);
+        }
         query.execute(self.graphql_client.clone()).await
     }
     /// List keys represented in this selection for the given dimension, sorted with no duplicates.
@@ -1997,7 +2096,7 @@ impl Artifacts {
         query = query.arg("dimension", dimension.into());
         query.execute(self.graphql_client.clone()).await
     }
-    /// List collection items represented in this selection for the given dimension. Preserve parent keys and remove duplicate item addresses. Does not evaluate item values.
+    /// List collection items represented in this selection. Retain the source selection's visible dimensions without evaluating item values.
     pub async fn dimension_items(
         &self,
         dimension: impl Into<String>,
@@ -2035,7 +2134,7 @@ impl Artifacts {
             })
             .collect())
     }
-    /// Require exactly one artifact; fail if there are zero or multiple matches. Several matches are listed, one address per line.
+    /// Require exactly one artifact from the selected items snapshot; fail if there are zero or multiple matches.
     pub fn one(&self) -> Artifact {
         let query = self.selection.select("one");
         Artifact {
@@ -21697,6 +21796,8 @@ pub enum ArtifactDimensionKind {
     Collection,
     #[serde(rename = "MODULE")]
     Module,
+    #[serde(rename = "NAME")]
+    Name,
     #[serde(rename = "TYPE")]
     Type,
 }

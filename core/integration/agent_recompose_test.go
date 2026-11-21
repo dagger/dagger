@@ -1011,10 +1011,17 @@ type Inner {
 	ws := fixture.AsWorkspace()
 	_, llm := composeRecomposeFixture(ctx, t, c, ws, nil, "outer")
 	// The nested entry is recorded on its own, after the entry composing it.
-	entries := recordedExpertise(ctx, t, c, llm)
-	require.Len(t, entries, 2)
-	require.Contains(t, entries[0].Artifact.URI, "outer/agent")
-	require.Contains(t, entries[1].Artifact.URI, "inner/agent")
+	requireEntries := func(llm *core.LLM) {
+		t.Helper()
+		entries := recordedExpertise(ctx, t, c, llm)
+		require.Len(t, entries, 2)
+		for i, module := range []string{"outer", "inner"} {
+			path, err := ws.Artifacts().FilterURI(entries[i].Artifact.URI).One().Path(ctx)
+			require.NoError(t, err)
+			require.Equal(t, []string{module, "agent"}, path)
+		}
+	}
+	requireEntries(llm)
 	expected := []string{"outer prompt", "inner prompt"}
 	require.ElementsMatch(t, expected, recomposeSystemPrompts(ctx, t, c, llm))
 	for range 2 {
@@ -1025,13 +1032,13 @@ type Inner {
 		// recorded and leaves it alone rather than appending it again.
 		require.ElementsMatch(t, expected, recomposeSystemPrompts(ctx, t, c, llm),
 			"nested compose of a recorded entry is not repeated")
-		require.Equal(t, entries, recordedExpertise(ctx, t, c, llm))
+		requireEntries(llm)
 	}
 	llm, err := composeLLM(ctx, c, ws, llm, "inner")
 	require.NoError(t, err)
 	require.ElementsMatch(t, expected, recomposeSystemPrompts(ctx, t, c, llm),
 		"composing the recorded Inner entry refreshes it in place")
-	require.Equal(t, entries, recordedExpertise(ctx, t, c, llm))
+	requireEntries(llm)
 }
 
 func (LLMSuite) TestRecomposePreservesManualContributions(ctx context.Context, t *testctx.T) {
@@ -1413,7 +1420,7 @@ func (LLMSuite) TestRecomposeWorkerIdentity(ctx context.Context, t *testctx.T) {
 	_, defaultLLM := composeRecomposeFixture(ctx, t, c, ws, nil)
 	defaults := recordedExpertise(ctx, t, c, defaultLLM)
 	require.Len(t, defaults, 1)
-	require.Contains(t, defaults[0].Artifact.URI, "staff/agent")
+	require.Equal(t, "dag://?name=agent", defaults[0].Artifact.URI)
 	chiefModel := cannedRecordingModel(ctx, t, c, recomposeRecordingTurn(core.NewQuery(c).LLM(), "hire child", "hire"))
 	chiefEntries, err := uriExpertiseIDs(ctx, c, ws, "staff/agent")
 	require.NoError(t, err)
@@ -1434,7 +1441,7 @@ func (LLMSuite) TestRecomposeWorkerIdentity(ctx context.Context, t *testctx.T) {
 	llm := core.Ref[*core.LLM](core.NewQuery(c), core.ID(worker.mustRun(ctx, t, "snapshot { id }").Get("snapshot.id").String()))
 	entries := recordedExpertise(ctx, t, c, llm)
 	require.Len(t, entries, 1)
-	require.Contains(t, entries[0].Artifact.URI, "staff/worker")
+	require.Equal(t, "dag://?name=worker", entries[0].Artifact.URI)
 	require.Equal(t, []string{"Worker role: helper"}, recomposeSystemPrompts(ctx, t, c, llm))
 	_, _, err = worker.sendAndWait(ctx, t, "inspect worker")
 	require.NoError(t, err)
@@ -1566,7 +1573,7 @@ type Swapper {
 	require.NoError(t, err)
 	entries := recordedExpertise(ctx, t, c, llm)
 	require.Len(t, entries, 1)
-	require.Contains(t, entries[0].Artifact.URI, "swapper/first")
+	require.Equal(t, "dag://?name=first", entries[0].Artifact.URI)
 	// Composing a recorded entry again, by its full URI or twice in one
 	// batch, refreshes it in place instead of failing as a duplicate.
 	again, err := composeURI(ctx, c, ws, llm, entries[0].Artifact.URI)
@@ -1592,8 +1599,8 @@ type Swapper {
 	require.NoError(t, err)
 	entries = recordedExpertise(ctx, t, c, llm)
 	require.Len(t, entries, 2)
-	require.Contains(t, entries[0].Artifact.URI, "swapper/first")
-	require.Contains(t, entries[1].Artifact.URI, "swapper/second")
+	require.Equal(t, "dag://?name=first", entries[0].Artifact.URI)
+	require.Equal(t, "dag://?name=second", entries[1].Artifact.URI)
 
 	// Composing refreshes only the given entry, in place, and runs it as
 	// given: here, as converted from the original workspace. Other recorded
@@ -1738,6 +1745,7 @@ type Member {
 	ws = ws.WithNewFile(recomposeModulePath, strings.NewReplacer(`["one", "two"]`, `["one"]`, "original member", "renamed member").Replace(source))
 	llm, err = refreshLLM(ctx, c, ws, llm)
 	require.NoError(t, err)
+	entries[0].Artifact.URI = "dag://?name=members.transform"
 	require.Equal(t, entries, recordedExpertise(ctx, t, c, llm))
 	require.ElementsMatch(t, []string{"renamed member: one", "updated member: two"}, recomposeSystemPrompts(ctx, t, c, llm))
 }
@@ -1827,7 +1835,7 @@ type Swapper {
 		childSnapshot := core.Ref[*core.LLM](core.NewQuery(c), core.ID(child.mustRun(ctx, t, "snapshot { id }").Get("snapshot.id").String()))
 		entries := recordedExpertise(ctx, t, c, childSnapshot)
 		require.Len(t, entries, 1)
-		require.Contains(t, entries[0].Artifact.URI, "swapper/ready")
+		require.Equal(t, "dag://?name=ready", entries[0].Artifact.URI)
 		require.Contains(t, recomposeSystemPrompts(ctx, t, c, childSnapshot), "ready: nested-child")
 		require.Equal(t, "family", child.mustRun(ctx, t, "parent { name }").Get("parent.name").String())
 	})
@@ -1956,7 +1964,7 @@ type Swapper {
 	require.Equal(t, []string{"optional: no agent"}, recomposeSystemPrompts(ctx, t, c, llm))
 	entries := recordedExpertise(ctx, t, c, llm)
 	require.Len(t, entries, 1)
-	require.Contains(t, entries[0].Artifact.URI, "swapper/optional")
+	require.Equal(t, "dag://?name=optional", entries[0].Artifact.URI)
 	llm, err = reloadConversation(ctx, c, llm)
 	require.NoError(t, err)
 	require.Equal(t, []string{"optional: no agent"}, recomposeSystemPrompts(ctx, t, c, llm))
@@ -2115,7 +2123,9 @@ type Probe {
 	_, llm := composeRecomposeFixture(ctx, t, c, ws, nil)
 	entries := recordedExpertise(ctx, t, c, llm)
 	require.Len(t, entries, 1)
-	require.Contains(t, entries[0].Artifact.URI, "alias", "the entry is addressed by the alias")
+	module, err := ws.Artifacts().FilterURI(entries[0].Artifact.URI).One().ModuleName(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "alias", module)
 	require.Equal(t, []string{"probe prompt"}, recomposeSystemPrompts(ctx, t, c, llm))
 	model := cannedRecordingModel(ctx, t, c, recomposeRecordingTurn(llm, "advance", "advance"))
 	llm = llm.WithModel(model).WithPrompt("advance").Loop()

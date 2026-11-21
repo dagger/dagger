@@ -1,0 +1,137 @@
+[
+  {
+    "module": "docker",
+    "type": "Check",
+    "localPath": [
+      "compose",
+      "check"
+    ],
+    "collections": [],
+    "items": [
+      []
+    ]
+  },
+  {
+    "module": "docker",
+    "type": "Service",
+    "localPath": [],
+    "collections": [
+      {
+        "fields": [
+          "compose",
+          "projects"
+        ],
+        "type": "DockerComposeProjects",
+        "itemType": "DockerComposeProject",
+        "keyName": "name"
+      },
+      {
+        "fields": [
+          "services"
+        ],
+        "type": "DockerComposeServices",
+        "itemType": "DockerComposeService",
+        "keyName": "name"
+      }
+    ],
+    "items": [
+      [
+        "e2e",
+        "web"
+      ],
+      [
+        "e2e",
+        "worker"
+      ]
+    ]
+  },
+  {
+    "module": "docker",
+    "type": "Check",
+    "localPath": [
+      "healthCheck",
+      "run"
+    ],
+    "collections": [
+      {
+        "fields": [
+          "compose",
+          "projects"
+        ],
+        "type": "DockerComposeProjects",
+        "itemType": "DockerComposeProject",
+        "keyName": "name"
+      },
+      {
+        "fields": [
+          "services"
+        ],
+        "type": "DockerComposeServices",
+        "itemType": "DockerComposeService",
+        "keyName": "name"
+      }
+    ],
+    "items": [
+      [
+        "e2e",
+        "web"
+      ],
+      [
+        "e2e",
+        "worker"
+      ]
+    ]
+  },
+  {
+    "module": "docker",
+    "type": "Service",
+    "localPath": [
+      "services",
+      "all",
+      "up"
+    ],
+    "collections": [
+      {
+        "fields": [
+          "compose",
+          "projects"
+        ],
+        "type": "DockerComposeProjects",
+        "itemType": "DockerComposeProject",
+        "keyName": "name"
+      }
+    ],
+    "items": [
+      [
+        "e2e"
+      ]
+    ]
+  },
+  {
+    "module": "docker",
+    "type": "Check",
+    "localPath": [
+      "check"
+    ],
+    "collections": [
+      {
+        "fields": [
+          "compose",
+          "projects"
+        ],
+        "type": "DockerComposeProjects",
+        "itemType": "DockerComposeProject",
+        "keyName": "name"
+      },
+      {
+        "fields": [
+          "volumes"
+        ],
+        "type": "DockerComposeVolumes",
+        "itemType": "DockerComposeVolume",
+        "keyName": "name"
+      }
+    ],
+    "items": []
+  }
+]

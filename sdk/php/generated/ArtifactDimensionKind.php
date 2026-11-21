@@ -13,4 +13,5 @@ enum ArtifactDimensionKind: string
     case COLLECTION = 'COLLECTION';
     case MODULE = 'MODULE';
     case TYPE = 'TYPE';
+    case NAME = 'NAME';
 }

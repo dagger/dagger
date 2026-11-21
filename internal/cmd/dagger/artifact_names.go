@@ -54,7 +54,7 @@ func (index artifactNameIndex) candidates(dimension string, filters []dagaddress
 			continue
 		}
 		if slices.ContainsFunc(filters, func(filter dagaddress.Pair) bool {
-			return !slices.Contains(path.dimensions, filter.Dimension)
+			return slices.Contains(path.dimensions, filter.Dimension) == filter.Absent
 		}) {
 			continue
 		}
@@ -69,7 +69,9 @@ func (index artifactNameIndex) candidatePaths(dimension string, filters []dagadd
 	keys := index.candidates(dimension, filters)
 	var paths artifact.Paths
 	for _, path := range index[dimension] {
-		if !slices.Contains(keys, path.key) {
+		if !slices.Contains(keys, path.key) || slices.ContainsFunc(filters, func(filter dagaddress.Pair) bool {
+			return slices.Contains(path.dimensions, filter.Dimension) == filter.Absent
+		}) {
 			continue
 		}
 		candidate := artifact.Path{Type: dimension, Key: path.key, Module: path.module}

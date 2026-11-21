@@ -23,14 +23,13 @@ func TestCollectionCommandDimensionUsesItemTypeName(t *testing.T) {
 	}
 
 	dimension, err := collectionCommandDimension(
-		&functionCommandPath{Module: "prettier", Fields: []string{"projects"}},
 		collectionType,
 		collection,
 	)
 	require.NoError(t, err)
-	require.Equal(t, "/prettier/projects", dimension.Identifier)
+	require.Equal(t, "PrettierProjects", dimension.Identifier)
 	require.Equal(t, "prettier-project", dimension.Name)
-	require.Equal(t, "prettier-projects-project", dimension.QualifiedName)
+	require.Equal(t, "PrettierProjects", dimension.QualifiedName)
 	require.Equal(t, "prettier-project", artifactDimensionFlagNames(
 		&cobra.Command{Use: "write"},
 		artifact.Dimensions{dimension},
