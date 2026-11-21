@@ -950,6 +950,52 @@ func requireBusySkip(t *testing.T, root uint64, skip protocol.SkippedRoot) {
 }
 
 // logAttrs maps a log line's alternating keys and values.
+// The export line counts the held rows nothing in its bundle stands on: no
+// root, no output on it, no output's owner or service naming it, and no row
+// sent in full depending on it. A held row only a held row depends on is
+// one of them: the held row above it stands for its closure.
+func TestExportLogCountsHeldRowsNothingStandsOn(t *testing.T) {
+	held := func(ordinal dagql.TransferOrdinal, deps ...uint64) dagql.TransferredValue {
+		return dagql.TransferredValue{Ordinal: ordinal, SenderNumber: uint64(ordinal), Held: digest.FromString(fmt.Sprint(ordinal)), DependencyIDs: deps}
+	}
+	values := &dagql.ExportedValues{
+		Bundle: dagql.ValueBundle{
+			Roots: []dagql.TransferredRoot{{Ordinal: 1}, {Ordinal: 8}},
+			Values: []dagql.TransferredValue{
+				// Sent in full, on two held rows.
+				{Ordinal: 1, SenderNumber: 1, DependencyIDs: []uint64{2, 3}},
+				held(2),
+				// An output is on it, and it keeps its link to the row below.
+				held(3, 4),
+				// Only the held row above depends on it.
+				held(4),
+				// An output's owner names it.
+				held(5),
+				// An output's value binds it as a service.
+				held(6),
+				// Nothing names it.
+				held(7),
+				// A root.
+				held(8),
+			},
+			Outputs: []dagql.TransferredOutput{{
+				Ordinal: 3,
+				Address: dagql.PersistedPartAddress{Part: "snapshot"},
+				State:   "completed",
+				Value:   &dagql.SnapshotValue{Kind: "directory", Services: []dagql.TransferredServiceBinding{{ServiceResultID: 6}}},
+				Owner:   &dagql.PersistedOfferOwner{DependencyIDs: []uint64{5}},
+			}},
+		},
+		Rows: dagql.ExportedRows{Held: []uint64{2, 3, 4, 5, 6, 7, 8}},
+	}
+	attrs := logAttrs(exportLogAttrs(protocol.Export{Roots: []uint64{1, 8}}, nil, values, time.Second, exportCapture{}, busyReport{}))
+	require.Equal(t, 7, attrs["held"])
+	require.Equal(t, 2, attrs["held_unneeded"], "rows 4 and 7")
+
+	attrs = logAttrs(exportLogAttrs(protocol.Export{Roots: []uint64{1}}, nil, nil, time.Second, exportCapture{}, busyReport{}))
+	require.Equal(t, 0, attrs["held_unneeded"], "no bundle, none")
+}
+
 func logAttrs(attrs []any) map[string]any {
 	m := map[string]any{}
 	for i := 0; i+1 < len(attrs); i += 2 {
