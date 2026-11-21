@@ -71,6 +71,12 @@ func TestContentExportLateCopies(t *testing.T) {
 		require.Equal(t, 2, got.Passes, "the export runs once more")
 		require.Equal(t, 1, got.lateMoved)
 		require.Equal(t, 1, countOf(late, uint64(target.id)), "read late once; the second pass reads it in its copy")
+		// The export's phases keep the first pass's time: its bundle's
+		// steps, summed over both passes, fit in its bundle's time, summed
+		// the same way.
+		p := got.phases
+		require.LessOrEqual(t, p.BundleKnown+p.BundleCheck+p.BundleSettle+p.BundleRecipes+p.BundleValues, p.Bundle, "the bundle's steps fit in its time over both passes")
+		require.Positive(t, p.Walk)
 		got.Passes = 1
 		assertCaptureReadsGolden(t, got, "prefixes")
 	})
