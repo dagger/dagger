@@ -89,7 +89,9 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 
 	step := c.readLockGraphAs(ctx, "dagql.persist.snapshot")
 	heldFrom := time.Now()
-	snapshot.nextResultID = c.nextSharedResultID
+	// Every entry it saves was installed under egraphMu, so its number is
+	// below this, whatever a merge reserves meanwhile (takeResultIDs).
+	snapshot.nextResultID = sharedResultID(c.nextSharedResultID.Load())
 	selectedResultIDs, persistedRootIDs := c.snapshotPersistedRootClosureLocked()
 
 	addEqClassID := func(eqClassIDs map[eqClassID]struct{}, eqID eqClassID) {

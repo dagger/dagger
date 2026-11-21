@@ -832,11 +832,7 @@ func (c *Cache) openIdentity(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("parse next_result_id metadata %q: %w", val, err)
 		}
-		c.egraphMu.Lock()
-		if c.nextSharedResultID < sharedResultID(next) {
-			c.nextSharedResultID = sharedResultID(next)
-		}
-		c.egraphMu.Unlock()
+		c.raiseNextResultID(sharedResultID(next))
 	}
 	c.identity = CacheIdentity{ID: id, Generation: generation}
 	c.openedExisting = found
@@ -2938,7 +2934,13 @@ type Cache struct {
 	// indexes for results
 	//
 
-	nextSharedResultID sharedResultID
+	// nextSharedResultID is the next entry number to give out
+	// (takeResultIDs): numbers are unique for the cache's life, and never 0.
+	// It moves on atomically, so that a merge's preparation reserves its
+	// records' numbers without the graph lock (prepareValueMerge): a writer
+	// waits for every reader in progress, and every new reader waits behind
+	// it. Every other use holds egraphMu for what it does beside it.
+	nextSharedResultID atomic.Uint64
 
 	// result id -> result
 	resultsByID map[sharedResultID]*sharedResult
@@ -3129,6 +3131,33 @@ type callConcurrencyKeys struct {
 type OnReleaseFunc = func(context.Context) error
 
 type sharedResultID uint64
+
+// takeResultIDs reserves n consecutive entry numbers and returns the first:
+// numbers start at 1, and none is given out twice (nextSharedResultID). The
+// numbers of a reservation no entry takes stay unused, as gaps.
+func (c *Cache) takeResultIDs(n uint64) sharedResultID {
+	for {
+		next := c.nextSharedResultID.Load()
+		first := next
+		if first == 0 {
+			first = 1
+		}
+		if c.nextSharedResultID.CompareAndSwap(next, first+n) {
+			return sharedResultID(first)
+		}
+	}
+}
+
+// raiseNextResultID moves the next entry number on to at least next, never
+// back: past the numbers a persisted cache gave out.
+func (c *Cache) raiseNextResultID(next sharedResultID) {
+	for {
+		current := c.nextSharedResultID.Load()
+		if current >= uint64(next) || c.nextSharedResultID.CompareAndSwap(current, uint64(next)) {
+			return
+		}
+	}
+}
 
 // lazyEvalAttempt is one execution of a shared result's lazy callback. The
 // shared result publishes the current attempt under lazyMu while its callback
