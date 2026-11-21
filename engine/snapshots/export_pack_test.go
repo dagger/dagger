@@ -12,7 +12,7 @@ import (
 // DownloadChainContent is m's download of desc's blob from provider, as a
 // chain's fetch runs it once it has found the blob missing.
 func DownloadChainContent(ctx context.Context, m SnapshotManager, desc ocispecs.Descriptor, provider content.Provider) error {
-	_, err := m.(*snapshotManager).downloadChainContent(ctx, desc, provider)
+	_, err := m.(*snapshotManager).downloadChainContent(ctx, desc, provider, nil)
 	return err
 }
 
