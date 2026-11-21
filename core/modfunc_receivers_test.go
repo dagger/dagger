@@ -102,10 +102,10 @@ func TestConvertedReceiversShareConversions(t *testing.T) {
 	receivers := newConvertedReceivers(maxConvertedReceiversWeight)
 	release := make(chan struct{})
 	var conversions atomic.Int32
-	convert := func(context.Context) ([]byte, error) {
+	convert := func(ctx context.Context) ([]byte, error) {
 		conversions.Add(1)
 		<-release
-		return []byte(`{}`), nil
+		return []byte(`{}`), ctx.Err()
 	}
 	var group errgroup.Group
 	for range 8 {
