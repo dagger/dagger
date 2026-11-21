@@ -15,10 +15,10 @@ Use the command for your operating system. Each command installs Dagger v{dagger
 {`curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=${daggerVersion} BIN_DIR=/usr/local/bin sh`}
 </CodeBlock>
 
-If you cannot write to `/usr/local/bin`, run the script with `sudo -E`:
+If you cannot write to `/usr/local/bin`, run the script with `sudo`:
 
 <CodeBlock language="shell">
-{`curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=${daggerVersion} BIN_DIR=/usr/local/bin sudo -E sh`}
+{`curl -fsSL https://dl.dagger.io/dagger/install.sh | sudo env DAGGER_VERSION=${daggerVersion} BIN_DIR=/usr/local/bin sh`}
 </CodeBlock>
 
 </TabItem>
@@ -30,10 +30,10 @@ If you cannot write to `/usr/local/bin`, run the script with `sudo -E`:
 
 Verify that `$HOME/.local/bin` is in your `PATH`.
 
-To install Dagger for all users, run the script with `sudo -E`:
+To install Dagger for all users, run the script with `sudo`:
 
 <CodeBlock language="shell">
-{`curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=${daggerVersion} BIN_DIR=/usr/local/bin sudo -E sh`}
+{`curl -fsSL https://dl.dagger.io/dagger/install.sh | sudo env DAGGER_VERSION=${daggerVersion} BIN_DIR=/usr/local/bin sh`}
 </CodeBlock>
 
 </TabItem>
