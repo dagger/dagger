@@ -464,7 +464,7 @@ func TestInitEngineTelemetryAvoidsSDKBatchProcessors(t *testing.T) {
 	}
 	telemetry.LogProcessors = nil
 
-	_, _, closeTelemetry, _ := initEngineTelemetryWithExporters(withoutFrontendTelemetry(t.Context()),
+	_, _, closeTelemetry, _ := initEngineTelemetryWithExporters(withoutFrontendTelemetry(t.Context()), //nolint:dogsled // Only the processors it installs are checked.
 		func(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter, bool) {
 			return tracetest.NewInMemoryExporter(), new(countingLogExporter), new(countingMetricExporter), true
 		}, func(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter) {
