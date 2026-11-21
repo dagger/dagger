@@ -708,6 +708,11 @@ type ExportedValues struct {
 	// Rows are the rows the bundle carries, for KnownRows once the recipient
 	// says whether it merged them.
 	Rows ExportedRows
+	// LeftOutHeld counts the known rows the bundle leaves out, nothing in it
+	// standing on them (keepNeededRows), and KeptEveryRow is why it left out
+	// none though it could have: a bug, empty but for one.
+	LeftOutHeld  int
+	KeptEveryRow string
 }
 
 // LeftOutRoot is a selected root a capture left out because its closure
@@ -800,6 +805,9 @@ type ExportPhases struct {
 	BundleRecipes time.Duration
 	BundleValues  time.Duration
 	BundlePasses  int
+	// BundleKeep is leaving out of the built bundle the known rows nothing
+	// in it stands on (keepNeededRows), after its outputs and chains.
+	BundleKeep time.Duration
 }
 
 // settle decides which selected roots the capture sends: those whose
@@ -1334,9 +1342,17 @@ func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection
 	if err := context.Cause(ctx); err != nil {
 		return err
 	}
-	sources := make([]ImportedValue, len(capture.order))
-	rows := ExportedRows{Full: make(map[uint64]RowRevision, len(capture.order))}
-	for i, row := range capture.order {
+	// Of the known rows, the bundle carries only those something in it
+	// stands on, and the held rows on the way down to them.
+	keepStart := time.Now()
+	order, leftOutHeld, keptAll := capture.order, 0, ""
+	if !c.testKeepEveryKnownRow {
+		order, leftOutHeld, keptAll = keepNeededRows(&bundle, chains, capture.order)
+	}
+	phases.BundleKeep = time.Since(keepStart)
+	sources := make([]ImportedValue, len(order))
+	rows := ExportedRows{Full: make(map[uint64]RowRevision, len(order))}
+	for i, row := range order {
 		sources[i] = ImportedValue{Ordinal: row.ordinal, ResultID: uint64(row.shared.id)}
 		if row.held {
 			rows.Held = append(rows.Held, uint64(row.shared.id))
@@ -1345,5 +1361,331 @@ func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection
 		rows.Full[uint64(row.shared.id)] = RowRevision{Replacements: row.replacements, Transfer: row.transferRev, Dependencies: row.dependencyRev}
 	}
 	profExportedParts(ctx, bundle, sources)
-	return consume(ctx, &ExportedValues{Bundle: bundle, Chains: chains, ChainTime: chainTime, Phases: phases, Sources: sources, LeftOut: leftOut, Rows: rows})
+	return consume(ctx, &ExportedValues{Bundle: bundle, Chains: chains, ChainTime: chainTime, Phases: phases, Sources: sources, LeftOut: leftOut, Rows: rows, LeftOutHeld: leftOutHeld, KeptEveryRow: keptAll})
+}
+
+// keepNeededRows leaves out of bundle the known rows nothing in it stands
+// on, and returns the captured rows it keeps, in order, renumbered to their
+// new ordinals, how many held rows it left out, and, when it sends the
+// bundle as it is for a reason, the reason.
+//
+// A row is needed when it is a root, a row the bundle carries in full, a
+// row an output sits on, or one named by an output's owner or services, or
+// by a full row's dependencies or its offers' owners and services. A held
+// row keeps its links only to the children something is needed at or
+// below: those on the way down to a part or a new row. The bundle then
+// carries what its roots reach through what it keeps, as a closure of its
+// roots, and a held row with nothing needed below it goes with no links,
+// standing for its closure, as a held row does in an export that selects no
+// parts. A held row's links name no dependencies of the recipient's entry:
+// the recipient keeps its own, and checks each held row the bundle carries
+// against its own copy. The rows a held row stands for this way aren't
+// checked there, so a copy of one that has expired on the recipient stays
+// so until a bundle carries the row as needed or in full.
+//
+// Ordinals are dense, so the rows kept are renumbered, with every ordinal
+// the bundle and chains name: dependencies, roots, outputs, their owners,
+// services and prefixes, and offers. A row left out carries no output, so
+// no chain names one.
+//
+// It sends the bundle as it is, with a reason, when the bundle's values
+// aren't its captured rows, one each at its ordinal (keptAllRows,
+// keptAllOrdinals), or when a needed row isn't reached through the kept
+// links (keptAllUnreached). None happens in a capture: settle renumbers the
+// kept roots' rows densely in its order, the bundle's values are built from
+// it, one each, and a bundle the merge would accept reaches every row it
+// carries from its roots, every needed row through links that keep it. A
+// reason on an export is a bug.
+func keepNeededRows(bundle *ValueBundle, chains *SelectedChains, order []*capturedTransferRow) ([]*capturedTransferRow, int, string) {
+	n := len(bundle.Values)
+	if n == 0 {
+		return order, 0, ""
+	}
+	if len(order) != n {
+		return order, 0, keptAllRows
+	}
+	for i, v := range bundle.Values {
+		if uint64(v.Ordinal) != uint64(i+1) || order[i].ordinal != v.Ordinal {
+			return order, 0, keptAllOrdinals
+		}
+	}
+	needed, outputDeps := neededBundleRows(*bundle)
+	links := heldRowLinks(*bundle, needed)
+	kept := reachedBundleRows(*bundle, links, outputDeps)
+	for i := range needed {
+		if needed[i] && !kept[i] {
+			return order, 0, keptAllUnreached
+		}
+	}
+	rows, leftOut := renumberKeptRows(bundle, chains, order, kept, links)
+	return rows, leftOut, ""
+}
+
+// Why keepNeededRows sent a bundle as it was (ExportedValues.KeptEveryRow).
+const (
+	// keptAllRows: the bundle's values and its captured rows differ in
+	// number.
+	keptAllRows = "rows"
+	// keptAllOrdinals: a value isn't at its ordinal, or isn't its captured
+	// row's.
+	keptAllOrdinals = "ordinals"
+	// keptAllUnreached: a needed row isn't reached through the kept links.
+	keptAllUnreached = "unreached"
+)
+
+// bundleRowIndex is the index in a bundle of n values of the row of
+// ordinal o, or -1 for none.
+func bundleRowIndex(n int, o uint64) int {
+	if o == 0 || o > uint64(n) {
+		return -1
+	}
+	return int(o - 1)
+}
+
+// neededBundleRows marks, by index, the rows of bundle something in it
+// stands on (keepNeededRows), and returns, by index, the rows each row's
+// outputs' owners name, which the bundle's check walks with its
+// dependencies.
+func neededBundleRows(bundle ValueBundle) ([]bool, map[int][]uint64) {
+	n := len(bundle.Values)
+	needed := make([]bool, n)
+	need := func(ordinals ...uint64) {
+		for _, o := range ordinals {
+			if i := bundleRowIndex(n, o); i >= 0 {
+				needed[i] = true
+			}
+		}
+	}
+	for _, root := range bundle.Roots {
+		need(uint64(root.Ordinal))
+	}
+	for _, v := range bundle.Values {
+		if v.Held != "" {
+			continue
+		}
+		need(uint64(v.Ordinal))
+		need(v.DependencyIDs...)
+		for _, offer := range v.Record.Envelope.PendingOffers {
+			need(offer.Owner.DependencyIDs...)
+			need(serviceOrdinals(offer.Value.Services)...)
+		}
+	}
+	outputDeps := map[int][]uint64{}
+	for _, out := range bundle.Outputs {
+		need(uint64(out.Ordinal))
+		if out.Prefix != nil {
+			need(uint64(out.Prefix.Ordinal))
+		}
+		if out.Owner != nil {
+			need(out.Owner.DependencyIDs...)
+			if i := bundleRowIndex(n, uint64(out.Ordinal)); i >= 0 {
+				outputDeps[i] = append(outputDeps[i], out.Owner.DependencyIDs...)
+			}
+		}
+		if out.Value != nil {
+			need(serviceOrdinals(out.Value.Services)...)
+		}
+	}
+	return needed, outputDeps
+}
+
+// serviceOrdinals are the rows service bindings name.
+func serviceOrdinals(services []TransferredServiceBinding) []uint64 {
+	out := make([]uint64, 0, len(services))
+	for _, service := range services {
+		out = append(out, service.ServiceResultID)
+	}
+	return out
+}
+
+// heldRowLinks returns, by index, the links each row of bundle keeps: a row
+// in full all of its dependencies, a held row those of its children that
+// are needed or have something needed below them.
+func heldRowLinks(bundle ValueBundle, needed []bool) [][]uint64 {
+	n := len(bundle.Values)
+	// below is 1 while a row's walk is under way, 2 when nothing is needed
+	// below it, and 3 when something is.
+	below := make([]uint8, n)
+	var neededBelow func(int) bool
+	neededBelow = func(i int) bool {
+		if below[i] != 0 {
+			return below[i] == 3
+		}
+		below[i] = 1
+		found := false
+		for _, dep := range bundle.Values[i].DependencyIDs {
+			if j := bundleRowIndex(n, dep); j >= 0 && (needed[j] || neededBelow(j)) {
+				found = true
+			}
+		}
+		below[i] = 2
+		if found {
+			below[i] = 3
+		}
+		return found
+	}
+	links := make([][]uint64, n)
+	for i, v := range bundle.Values {
+		if v.Held == "" {
+			links[i] = v.DependencyIDs
+			continue
+		}
+		for _, dep := range v.DependencyIDs {
+			if j := bundleRowIndex(n, dep); j >= 0 && (needed[j] || neededBelow(j)) {
+				links[i] = append(links[i], dep)
+			}
+		}
+	}
+	return links
+}
+
+// reachedBundleRows marks, by index, the rows of bundle its roots reach
+// through links, their offers' owners and their outputs' owners, as the
+// bundle's check walks it (checkValueBundle).
+func reachedBundleRows(bundle ValueBundle, links [][]uint64, outputDeps map[int][]uint64) []bool {
+	n := len(bundle.Values)
+	kept := make([]bool, n)
+	var next []int
+	for _, root := range bundle.Roots {
+		if i := bundleRowIndex(n, uint64(root.Ordinal)); i >= 0 {
+			next = append(next, i)
+		}
+	}
+	for len(next) > 0 {
+		i := next[len(next)-1]
+		next = next[:len(next)-1]
+		if kept[i] {
+			continue
+		}
+		kept[i] = true
+		deps := slices.Clone(links[i])
+		for _, offer := range bundle.Values[i].Record.Envelope.PendingOffers {
+			deps = append(deps, offer.Owner.DependencyIDs...)
+		}
+		deps = append(deps, outputDeps[i]...)
+		for _, dep := range deps {
+			if j := bundleRowIndex(n, dep); j >= 0 && !kept[j] {
+				next = append(next, j)
+			}
+		}
+	}
+	return kept
+}
+
+// renumberKeptRows leaves out of bundle the rows not kept, gives each kept
+// row its links, and renumbers the kept rows, and every ordinal the bundle
+// and chains name, densely in their order. It returns the captured rows
+// kept, renumbered, and how many held rows it left out; with none left
+// out, it changes nothing.
+func renumberKeptRows(bundle *ValueBundle, chains *SelectedChains, order []*capturedTransferRow, kept []bool, links [][]uint64) ([]*capturedTransferRow, int) {
+	n := len(bundle.Values)
+	renumber := make([]uint64, n)
+	keptRows := make([]*capturedTransferRow, 0, n)
+	values := make([]TransferredValue, 0, n)
+	leftOut := 0
+	for i, v := range bundle.Values {
+		if !kept[i] {
+			if v.Held != "" {
+				leftOut++
+			}
+			continue
+		}
+		renumber[i] = uint64(len(values) + 1)
+		v.DependencyIDs = links[i]
+		values = append(values, v)
+		keptRows = append(keptRows, order[i])
+	}
+	if leftOut == 0 {
+		return order, 0
+	}
+	to := func(o uint64) uint64 {
+		if i := bundleRowIndex(n, o); i >= 0 {
+			return renumber[i]
+		}
+		return o
+	}
+	for i := range values {
+		renumberValue(&values[i], to)
+	}
+	for _, row := range keptRows {
+		row.ordinal = TransferOrdinal(to(uint64(row.ordinal)))
+	}
+	bundle.Values = values
+	for i := range bundle.Roots {
+		bundle.Roots[i].Ordinal = TransferOrdinal(to(uint64(bundle.Roots[i].Ordinal)))
+	}
+	for i := range bundle.Outputs {
+		renumberOutput(&bundle.Outputs[i], to)
+	}
+	for i := range bundle.Calls {
+		bundle.Calls[i].Value = TransferOrdinal(to(uint64(bundle.Calls[i].Value)))
+	}
+	if chains != nil {
+		for i := range chains.Entries {
+			chains.Entries[i].Ordinal = TransferOrdinal(to(uint64(chains.Entries[i].Ordinal)))
+		}
+	}
+	return keptRows, leftOut
+}
+
+// renumberValue renumbers a value's ordinal, dependencies, and its offers'
+// owners and services by to, copying what it changes.
+func renumberValue(v *TransferredValue, to func(uint64) uint64) {
+	v.Ordinal = TransferOrdinal(to(uint64(v.Ordinal)))
+	v.DependencyIDs = mapOrdinals(v.DependencyIDs, to)
+	if len(v.Record.Envelope.PendingOffers) == 0 {
+		return
+	}
+	offers := slices.Clone(v.Record.Envelope.PendingOffers)
+	for j := range offers {
+		offers[j].Owner.DependencyIDs = mapOrdinals(offers[j].Owner.DependencyIDs, to)
+		offers[j].Value.Services = mapServices(offers[j].Value.Services, to)
+	}
+	v.Record.Envelope.PendingOffers = offers
+}
+
+// renumberOutput renumbers an output's row, its prefix's, its owner's
+// dependencies and its services by to, copying what it changes.
+func renumberOutput(out *TransferredOutput, to func(uint64) uint64) {
+	out.Ordinal = TransferOrdinal(to(uint64(out.Ordinal)))
+	if out.Prefix != nil {
+		prefix := *out.Prefix
+		prefix.Ordinal = TransferOrdinal(to(uint64(prefix.Ordinal)))
+		out.Prefix = &prefix
+	}
+	if out.Owner != nil {
+		owner := *out.Owner
+		owner.DependencyIDs = mapOrdinals(owner.DependencyIDs, to)
+		out.Owner = &owner
+	}
+	if out.Value != nil {
+		value := *out.Value
+		value.Services = mapServices(value.Services, to)
+		out.Value = &value
+	}
+}
+
+// mapOrdinals returns ordinals renumbered by to, in a new slice.
+func mapOrdinals(ordinals []uint64, to func(uint64) uint64) []uint64 {
+	if ordinals == nil {
+		return nil
+	}
+	out := make([]uint64, len(ordinals))
+	for i, o := range ordinals {
+		out[i] = to(o)
+	}
+	return out
+}
+
+// mapServices returns service bindings whose rows are renumbered by to, in a
+// new slice.
+func mapServices(services []TransferredServiceBinding, to func(uint64) uint64) []TransferredServiceBinding {
+	if services == nil {
+		return nil
+	}
+	out := slices.Clone(services)
+	for i := range out {
+		out[i].ServiceResultID = to(out[i].ServiceResultID)
+	}
+	return out
 }
