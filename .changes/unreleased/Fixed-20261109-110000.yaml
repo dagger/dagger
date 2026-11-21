@@ -1,0 +1,9 @@
+kind: Fixed
+body: |
+  `Workspace.search` without ripgrep installed now returns an error asking to
+  install it when a glob uses brace alternation or negation, instead of
+  silently returning no results.
+time: 2026-11-09T11:00:00Z
+custom:
+  Author: pcbeingused333
+  PR: 15112
