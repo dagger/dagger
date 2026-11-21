@@ -14,6 +14,8 @@ import (
 
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
+	"github.com/vektah/gqlparser/v2/ast"
+	"github.com/vektah/gqlparser/v2/parser"
 )
 
 func (CLISuite) TestModuleFunctions(ctx context.Context, t *testctx.T) {
@@ -105,6 +107,60 @@ func (CLISuite) TestModuleFunctions(ctx context.Context, t *testctx.T) {
 			Stderr(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "No functions found.")
+	})
+}
+
+func (CLISuite) TestAPISchema(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := moduleFixture(t, c, "go/functions-introspection")
+
+	parseSchema := func(t *testctx.T, out string) *ast.SchemaDocument {
+		doc, err := parser.ParseSchema(&ast.Source{Name: "schema.graphqls", Input: out})
+		require.NoError(t, err)
+		return doc
+	}
+
+	t.Run("core", func(ctx context.Context, t *testctx.T) {
+		out, err := ctr.With(daggerExec("-m", "core", "api", "schema")).Stdout(ctx)
+		require.NoError(t, err)
+		doc := parseSchema(t, out)
+
+		query := doc.Definitions.ForName("Query")
+		require.NotNil(t, query)
+		require.NotNil(t, query.Fields.ForName("container"))
+		require.NotNil(t, doc.Definitions.ForName("Container"))
+		// The module in the working directory is not loaded.
+		require.Nil(t, query.Fields.ForName("fnA"))
+	})
+
+	t.Run("module", func(ctx context.Context, t *testctx.T) {
+		out, err := ctr.With(daggerExec("-m", ".", "api", "schema")).Stdout(ctx)
+		require.NoError(t, err)
+		doc := parseSchema(t, out)
+
+		// The schema is the one `dagger api query -m .` runs against: the core
+		// API, with the module's main object functions on Query.
+		query := doc.Definitions.ForName("Query")
+		require.NotNil(t, query)
+		require.NotNil(t, query.Fields.ForName("container"))
+
+		fnA := query.Fields.ForName("fnA")
+		require.NotNil(t, fnA)
+		require.Equal(t, "doc for FnA", strings.TrimSpace(fnA.Description))
+		require.Equal(t, "Container", fnA.Type.Name())
+
+		fnC := query.Fields.ForName("fnC")
+		require.NotNil(t, fnC)
+		obj := doc.Definitions.ForName(fnC.Type.Name())
+		require.NotNil(t, obj)
+		require.NotNil(t, obj.Fields.ForName("fieldA"))
+		require.NotNil(t, obj.Fields.ForName("fnD"))
+	})
+
+	t.Run("rejects arguments", func(ctx context.Context, t *testctx.T) {
+		_, err := ctr.With(daggerExec("-m", "core", "api", "schema", "container")).Stdout(ctx)
+		requireErrOut(t, err, `unknown command "container" for "dagger api schema"`)
 	})
 }
 
