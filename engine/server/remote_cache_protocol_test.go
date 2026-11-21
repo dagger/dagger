@@ -811,7 +811,7 @@ func TestExportLogAttrsPhases(t *testing.T) {
 		Rows:      dagql.ExportedRows{Held: []uint64{4, 5}},
 		ChainTime: time.Second,
 		Phases:    dagql.ExportPhases{WalkWait: 6 * time.Microsecond, Walk: 7 * time.Microsecond, Copy: 8 * time.Microsecond, Bundle: 12 * time.Microsecond, BundleKnown: time.Microsecond, BundleCheck: 2 * time.Microsecond, BundleSettle: 3 * time.Microsecond, BundleRecipes: 4 * time.Microsecond, BundleValues: 5 * time.Microsecond, BundlePasses: 2},
-		Chains:    &dagql.SelectedChains{Stats: bkcache.ExportStats{Layers: 3, LayersReused: 1, LayersDiffed: 2, RawBytes: 900, BlobBytes: 300, DiffTime: 9 * time.Millisecond, LockWait: 10 * time.Microsecond, BuildWait: 11 * time.Microsecond, LayersMerged: 1, MergedRawBytes: 400, MergedBlobBytes: 100, MergedDiffTime: 3 * time.Millisecond}},
+		Chains:    &dagql.SelectedChains{Stats: bkcache.ExportStats{Layers: 3, LayersReused: 1, LayersDiffed: 2, RawBytes: 900, BlobBytes: 300, DiffTime: 9 * time.Millisecond, CompressTime: 6 * time.Millisecond, LockWait: 10 * time.Microsecond, BuildWait: 11 * time.Microsecond, LayersMerged: 1, MergedRawBytes: 400, MergedBlobBytes: 100, MergedDiffTime: 3 * time.Millisecond}},
 	}
 	// One record carries its engine's content-preferred digest, and one is a
 	// service's that carries none.
@@ -839,6 +839,7 @@ func TestExportLogAttrsPhases(t *testing.T) {
 		"raw_bytes", int64(900),
 		"blob_bytes", int64(300),
 		"diff_time", 9 * time.Millisecond,
+		"compress_time", 6 * time.Millisecond,
 		"lock_wait", 10 * time.Microsecond,
 		"build_wait", 11 * time.Microsecond,
 		"layers_merged", 1,
@@ -875,6 +876,7 @@ func TestExportLogAttrsPhases(t *testing.T) {
 		"raw_bytes", int64(0),
 		"blob_bytes", int64(0),
 		"diff_time", time.Duration(0),
+		"compress_time", time.Duration(0),
 		"lock_wait", time.Duration(0),
 		"build_wait", time.Duration(0),
 		"layers_merged", 0,
