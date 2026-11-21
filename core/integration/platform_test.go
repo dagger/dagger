@@ -134,7 +134,7 @@ func (PlatformSuite) TestFromSinglePlatformTagWithoutExplicitPlatform(ctx contex
 
 		nestedClient, err := dagger.Connect(ctx,
 			dagger.WithRunnerHost(endpoint),
-			dagger.WithLogOutput(testutil.NewTWriter(t)),
+			dagger.WithLogOutput(testutil.ClientLogOutput(t)),
 		)
 		require.NoError(t, err)
 
@@ -220,7 +220,7 @@ func (PlatformSuite) TestFromMultiPlatformTagWithFreshPullEngines(ctx context.Co
 
 		nestedClient, err := dagger.Connect(ctx,
 			dagger.WithRunnerHost(endpoint),
-			dagger.WithLogOutput(testutil.NewTWriter(t)),
+			dagger.WithLogOutput(testutil.ClientLogOutput(t)),
 		)
 		require.NoError(t, err)
 

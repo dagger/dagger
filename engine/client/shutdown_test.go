@@ -77,15 +77,18 @@ func TestShutdownErrorSaysWhenTheEngineDidNotAnswer(t *testing.T) {
 }
 
 func TestShutdownErrorDescribesTheLastAttempt(t *testing.T) {
-	t.Setenv(shutdownTimeoutEnvName, "100ms")
+	t.Setenv(shutdownTimeoutEnvName, "1m")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	// The first connection's engine sends the request away with a GOAWAY, so
-	// the transport retries on a new connection, which never comes.
+	// the transport retries on a new connection, which never comes. Give up once
+	// it's trying, rather than at a deadline a busy machine could reach first.
 	var dials atomic.Int32
-	client := shutdownTestClient(func(ctx context.Context) (net.Conn, error) {
+	client := shutdownTestClient(func(context.Context) (net.Conn, error) {
 		if dials.Add(1) > 1 {
-			<-ctx.Done()
-			return nil, ctx.Err()
+			cancel()
+			return nil, context.Canceled
 		}
 		clientConn, engineConn := net.Pipe()
 		t.Cleanup(func() {
@@ -120,9 +123,12 @@ func TestShutdownErrorDescribesTheLastAttempt(t *testing.T) {
 		return clientConn, nil
 	})
 
-	err := client.shutdownServer(context.Background())
-	require.ErrorContains(t, err, "connection attempt 2: no connection to the engine after")
-	require.ErrorIs(t, err, context.DeadlineExceeded)
+	// The number of attempts depends on timing: the transport can be handed the
+	// connection it just lost, find it unusable and try again.
+	err := client.shutdownServer(ctx)
+	require.Error(t, err)
+	require.Regexp(t, `connection attempt [0-9]+: no connection to the engine after`, err.Error())
+	require.ErrorIs(t, err, context.Canceled)
 }
 
 // A shared parent deadline must take precedence over the per-client timeout.

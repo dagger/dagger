@@ -93,13 +93,18 @@ func (r *Starter) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
-func (r *Starter) Start(ctx context.Context, s *Service) error {
-	assertNotNil("s", s)
+// Start brings svc up through a tunnel, as a client other than its caller,
+// and keeps it up until the caller has bound it too, which the caller marks
+// by creating /bound in cache.
+func (r *Starter) Start(ctx context.Context, svc *Service, cache *CacheVolume) error {
+	assertNotNil("svc", svc)
+	assertNotNil("cache", cache)
 	if r.start != nil {
 		return nil
 	}
 	q := r.query.Select("start")
-	q = q.Arg("s", s)
+	q = q.Arg("svc", svc)
+	q = q.Arg("cache", cache)
 
 	return q.Execute(ctx)
 }

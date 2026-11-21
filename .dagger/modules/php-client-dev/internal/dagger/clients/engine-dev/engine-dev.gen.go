@@ -94,11 +94,11 @@ type EngineDevGoEnvOpts struct {
 	//
 	// The source to work in; the engine's source by default
 	//
-	Source *Directory // engine-dev (../../test.go:879:2)
+	Source *Directory // engine-dev (../../test.go:882:2)
 	//
 	// Enable cgo
 	//
-	Cgo bool // engine-dev (../../test.go:882:2)
+	Cgo bool // engine-dev (../../test.go:885:2)
 }
 
 // GoEnv is a Go environment for working on dagger/dagger: wolfi with the Go
@@ -106,7 +106,7 @@ type EngineDevGoEnvOpts struct {
 // Go caches, and source as its working directory. It is for running Go code
 // and the go command; dagger/dagger's own binaries and test binaries are
 // built with dagger/go's per-package build, not here.
-func (r *EngineDev) GoEnv(opts ...EngineDevGoEnvOpts) *Container { // engine-dev (../../test.go:876:1)
+func (r *EngineDev) GoEnv(opts ...EngineDevGoEnvOpts) *Container { // engine-dev (../../test.go:879:1)
 	q := r.query.Select("goEnv")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `source` optional argument
