@@ -1,10 +1,8 @@
 package core
 
 import (
-	"bufio"
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +12,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/ripgrep"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	telemetry "github.com/dagger/otel-go"
@@ -150,6 +149,22 @@ type SearchOpts struct {
 	SkipHidden  bool `default:"false"`
 	FilesOnly   bool `default:"false"`
 	Limit       *int
+
+	// Budget, when set, replaces the budgets the search runs within
+	// (ripgrep.DefaultLimits), for callers inside the engine. It is not an
+	// argument.
+	Budget *ripgrep.Limits `name:"-"`
+	// KeepPath, when set, selects the results to keep by path, as they are
+	// read (see ripgrep.Options.Keep). It is not an argument.
+	KeepPath func(path string) bool `name:"-"`
+}
+
+// limits are the budgets the search runs within.
+func (opts SearchOpts) limits() ripgrep.Limits {
+	if opts.Budget != nil {
+		return *opts.Budget
+	}
+	return ripgrep.DefaultLimits()
 }
 
 func (opts SearchOpts) Args() []dagql.Argument {
@@ -199,26 +214,11 @@ func (opts SearchOpts) RipgrepArgs() []string {
 	return args
 }
 
-type rgJSON struct {
-	Type string `json:"type"`
-	Data struct {
-		Path           rgContent `json:"path"`
-		Lines          rgContent `json:"lines"`
-		LineNumber     int       `json:"line_number"`
-		AbsoluteOffset int       `json:"absolute_offset"`
-		Submatches     []struct {
-			Match rgContent `json:"match"`
-			Start int       `json:"start"`
-			End   int       `json:"end"`
-		} `json:"submatches"`
-	} `json:"data"`
-}
-
-type rgContent struct {
-	Text  string `json:"text,omitempty"`
-	Bytes []byte `json:"bytes,omitempty"`
-}
-
+// RunRipgrep runs rg, built from RipgrepArgs, and collects its results within
+// the search's limit and budgets (see engine/ripgrep). Once either trips, rg
+// is killed rather than drained: whatever it would still print is unwanted.
+// With verbose, the results are also written to the span's stdio (see
+// EmitSearchResults).
 func (opts *SearchOpts) RunRipgrep(ctx context.Context, rg *exec.Cmd, verbose bool) ([]*SearchResult, error) {
 	var errBuf bytes.Buffer
 	rg.Stderr = &errBuf
@@ -233,109 +233,121 @@ func (opts *SearchOpts) RunRipgrep(ctx context.Context, rg *exec.Cmd, verbose bo
 	if err := rg.Start(); err != nil {
 		return nil, err
 	}
-	var errs error
-	results, err := opts.parseRgOutput(ctx, out, verbose)
-	if err != nil {
-		// NOTE: probably overkill, but trying to avoid ever seeing a useless error
-		// like "broken pipe" instead of "exit status 128"
-		errs = errors.Join(errs, err)
-	}
-	if err := rg.Wait(); err != nil {
+	results, limitReached, parseErr := opts.parseRgOutput(ctx, out)
+	if limitReached || parseErr != nil {
+		// Stop rg now instead of letting it run on until it next writes to
+		// the closed pipe: it may be walking a large tree.
+		_ = rg.Process.Kill()
+		out.Close()
+		_ = rg.Wait()
+		if parseErr != nil {
+			if !ripgrep.IsBudgetError(parseErr) && errBuf.Len() > 0 {
+				// Avoid a useless error like "broken pipe" or "unexpected EOF"
+				// when rg said what went wrong.
+				parseErr = errors.Join(parseErr, fmt.Errorf("ripgrep error: %s", errBuf.String()))
+			}
+			return nil, parseErr
+		}
+	} else if err := rg.Wait(); err != nil {
 		if rg.ProcessState != nil && rg.ProcessState.ExitCode() == 1 {
 			return []*SearchResult{}, nil
 		}
 		if errBuf.Len() > 0 {
 			if engine.RipgrepNoFilesSearched(errBuf.String()) {
-				if errs == nil {
-					return []*SearchResult{}, nil
-				}
+				return []*SearchResult{}, nil
 			}
-			errs = errors.Join(errs, fmt.Errorf("ripgrep error: %s", errBuf.String()))
-		} else {
-			errs = errors.Join(errs, err)
+			return results, fmt.Errorf("ripgrep error: %s", errBuf.String())
 		}
+		return results, err
 	}
-	return results, errs
-}
-
-func (opts *SearchOpts) parseRgOutput(ctx context.Context, rgOut io.ReadCloser, verbose bool) ([]*SearchResult, error) {
-	defer rgOut.Close()
-
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
-	defer stdio.Close()
-
-	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
-
-	results := []*SearchResult{}
-
-	// Only requested files; parse returned paths
-	if opts.FilesOnly {
-		scan := bufio.NewScanner(rgOut)
-		for scan.Scan() {
-			line := scan.Text()
-			if line == "" {
-				continue
-			}
-			if verbose {
-				fmt.Fprintln(stdio.Stdout, line)
-			}
-			results = append(results, &SearchResult{FilePath: line})
-		}
-		if err := scan.Err(); err != nil {
-			return results, err
-		}
-		return results, nil
-	}
-
-	dec := json.NewDecoder(rgOut)
-	for {
-		var match rgJSON
-		if err := dec.Decode(&match); err != nil {
-			if err == io.EOF {
-				break
-			}
-			return results, err
-		}
-		if match.Type != "match" {
-			continue
-		}
-		data := match.Data
-		if len(match.Data.Path.Bytes) > 0 {
-			slog.Warn("skipping non-utf8 content", "content", base64.StdEncoding.EncodeToString(data.Path.Bytes))
-			continue
-		}
-		if len(data.Lines.Bytes) > 0 {
-			slog.Warn("skipping non-utf8 path", "content", base64.StdEncoding.EncodeToString(data.Lines.Bytes))
-			continue
-		}
-
-		result := &SearchResult{
-			FilePath:       data.Path.Text,
-			LineNumber:     data.LineNumber,
-			AbsoluteOffset: data.AbsoluteOffset,
-			MatchedLines:   data.Lines.Text,
-		}
-
-		for _, match := range data.Submatches {
-			result.Submatches = append(result.Submatches, &SearchSubmatch{
-				Text:  match.Match.Text,
-				Start: match.Start,
-				End:   match.End,
-			})
-		}
-
-		ensureLn := result.MatchedLines
-		if !strings.HasSuffix(ensureLn, "\n") {
-			ensureLn += "\n"
-		}
-		if verbose {
-			fmt.Fprintf(stdio.Stdout, "%s:%d:%s", result.FilePath, result.LineNumber, ensureLn)
-		}
-
-		results = append(results, result)
-		if opts.Limit != nil && len(results) >= *opts.Limit {
-			break
-		}
+	if verbose {
+		EmitSearchResults(ctx, results, opts.FilesOnly)
 	}
 	return results, nil
+}
+
+// parseRgOutput collects rg's results. It reports whether it stopped early on
+// reaching the search's limit.
+func (opts *SearchOpts) parseRgOutput(ctx context.Context, rgOut io.Reader) ([]*SearchResult, bool, error) {
+	logger := slog.SpanLogger(ctx, InstrumentationLibrary)
+	parseOpts := ripgrep.Options{
+		Limits: opts.limits(),
+		Limit:  opts.Limit,
+		Keep:   opts.KeepPath,
+		OnSkip: func(reason string) {
+			logger.Warn("skipping match", "reason", reason)
+		},
+	}
+
+	results := []*SearchResult{}
+	if opts.FilesOnly {
+		limitReached, err := ripgrep.ParseFiles(rgOut, parseOpts, func(path string) error {
+			results = append(results, &SearchResult{FilePath: path})
+			return nil
+		})
+		return results, limitReached, err
+	}
+	limitReached, err := ripgrep.ParseJSON(rgOut, parseOpts, func(r ripgrep.Result) error {
+		results = append(results, NewSearchResult(r))
+		return nil
+	})
+	return results, limitReached, err
+}
+
+// NewSearchResult converts a parsed ripgrep result.
+func NewSearchResult(r ripgrep.Result) *SearchResult {
+	result := &SearchResult{
+		FilePath:       r.Path,
+		LineNumber:     r.LineNumber,
+		AbsoluteOffset: r.AbsoluteOffset,
+		MatchedLines:   r.Lines,
+	}
+	if len(r.Submatches) > 0 {
+		result.Submatches = make([]*SearchSubmatch, len(r.Submatches))
+		for i, sm := range r.Submatches {
+			result.Submatches[i] = &SearchSubmatch{Text: sm.Text, Start: sm.Start, End: sm.End}
+		}
+	}
+	return result
+}
+
+// What EmitSearchResults writes at most: a search's results are kept within
+// their budgets already, but every log line is copied into the session's
+// telemetry and streamed to its clients, which cost far more than the line
+// (an LLM reading a tool call's logs sees only its last few lines anyway).
+const (
+	searchLogMaxLines = 1000
+	searchLogMaxBytes = 256 << 10
+)
+
+// EmitSearchResults writes search results to the span's stdio, so they show
+// up in progress output: the first searchLogMaxLines of them, up to
+// searchLogMaxBytes, then a line counting the rest.
+func EmitSearchResults(ctx context.Context, results []*SearchResult, filesOnly bool) {
+	if len(results) == 0 {
+		return
+	}
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+	defer stdio.Close()
+	shown, written := 0, 0
+	for _, result := range results {
+		var line string
+		if filesOnly {
+			line = result.FilePath + "\n"
+		} else {
+			line = fmt.Sprintf("%s:%d:%s", result.FilePath, result.LineNumber, result.MatchedLines)
+			if !strings.HasSuffix(line, "\n") {
+				line += "\n"
+			}
+		}
+		if shown >= searchLogMaxLines || written+len(line) > searchLogMaxBytes {
+			break
+		}
+		io.WriteString(stdio.Stdout, line)
+		shown++
+		written += len(line)
+	}
+	if rest := len(results) - shown; rest > 0 {
+		fmt.Fprintf(stdio.Stdout, "... %d more results not shown\n", rest)
+	}
 }

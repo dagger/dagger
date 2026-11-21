@@ -1,7 +1,6 @@
 package client
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -32,6 +31,7 @@ import (
 
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/pathutil"
+	"github.com/dagger/dagger/engine/ripgrep"
 	"github.com/dagger/dagger/internal/replacefile"
 	"github.com/dagger/dagger/util/fsxutil"
 	"github.com/dagger/dagger/util/grpcutil"
@@ -195,11 +195,23 @@ func (s FilesyncSource) DiffCopy(stream filesync.FileSync_DiffCopyServer) error 
 		if err != nil {
 			return fmt.Errorf("search: %w", err)
 		}
-		data, err := json.Marshal(results)
-		if err != nil {
+		// Without HTML escaping, which would make each <, > and & six bytes.
+		var data bytes.Buffer
+		enc := json.NewEncoder(&data)
+		enc.SetEscapeHTML(false)
+		if err := enc.Encode(results); err != nil {
 			return fmt.Errorf("marshal search results: %w", err)
 		}
-		return stream.SendMsg(&filesync.BytesMessage{Data: data})
+		if data.Len() > maxSearchResultsMessage {
+			// The budgets estimate the results' size; escaping can still
+			// make them too large to send.
+			unit := "lines"
+			if opts.SearchOpts.FilesOnly {
+				unit = "files"
+			}
+			return fmt.Errorf("search: %w", &ripgrep.BudgetError{Unit: unit, MaxBytes: ripgrep.DefaultMaxBytes, Limited: opts.SearchOpts.Limit != nil})
+		}
+		return stream.SendMsg(&filesync.BytesMessage{Data: data.Bytes()})
 
 	case opts.GlobPattern != "":
 		// Walk the directory and match files against the glob pattern
@@ -569,27 +581,6 @@ func searchHostPath(ctx context.Context, root string, opts *engine.LocalSearchOp
 	return searchWithGrep(ctx, root, opts)
 }
 
-// ripgrep JSON output types
-type rgJSON struct {
-	Type string `json:"type"`
-	Data struct {
-		Path           rgContent `json:"path"`
-		Lines          rgContent `json:"lines"`
-		LineNumber     int       `json:"line_number"`
-		AbsoluteOffset int       `json:"absolute_offset"`
-		Submatches     []struct {
-			Match rgContent `json:"match"`
-			Start int       `json:"start"`
-			End   int       `json:"end"`
-		} `json:"submatches"`
-	} `json:"data"`
-}
-
-type rgContent struct {
-	Text  string `json:"text,omitempty"`
-	Bytes []byte `json:"bytes,omitempty"`
-}
-
 // ripgrepArgs converts search options into ripgrep CLI arguments.
 func ripgrepArgs(opts *engine.LocalSearchOpts) []string {
 	var args []string
@@ -629,65 +620,53 @@ func ripgrepArgs(opts *engine.LocalSearchOpts) []string {
 	return args
 }
 
-// parseRipgrepFiles reads --files-with-matches output, one path per line. It
-// reports whether it stopped early on reaching limit.
-func parseRipgrepFiles(r io.Reader, limit *int) (results []engine.LocalSearchResult, limitReached bool, err error) {
-	scan := bufio.NewScanner(r)
-	for scan.Scan() {
-		line := scan.Text()
-		if line == "" {
-			continue
-		}
-		results = append(results, engine.LocalSearchResult{FilePath: filepath.ToSlash(line)})
-		if limit != nil && len(results) >= *limit {
-			return results, true, nil
-		}
-	}
-	return results, false, scan.Err()
+// parseRipgrepFiles reads --files-with-matches output, one path per line,
+// within the search's limit and budgets. It reports whether it stopped early
+// on reaching the limit.
+func parseRipgrepFiles(r io.Reader, opts ripgrep.Options) (results []engine.LocalSearchResult, limitReached bool, err error) {
+	limitReached, err = ripgrep.ParseFiles(r, opts, func(path string) error {
+		results = append(results, engine.LocalSearchResult{FilePath: filepath.ToSlash(path)})
+		return nil
+	})
+	return results, limitReached, err
 }
 
-// parseRipgrepJSON reads --json output and collects match events. It reports
-// whether it stopped early on reaching limit.
-func parseRipgrepJSON(r io.Reader, limit *int) (results []engine.LocalSearchResult, limitReached bool, err error) {
-	dec := json.NewDecoder(r)
-	for {
-		var match rgJSON
-		if err := dec.Decode(&match); err != nil {
-			if err == io.EOF {
-				return results, false, nil
-			}
-			return results, false, err
-		}
-		if match.Type != "match" {
-			continue
-		}
-		data := match.Data
-		// Skip non-utf8 content
-		if len(data.Path.Bytes) > 0 || len(data.Lines.Bytes) > 0 {
-			continue
-		}
-
+// parseRipgrepJSON reads --json output and collects its matches within the
+// search's limit and budgets. It reports whether it stopped early on reaching
+// the limit.
+func parseRipgrepJSON(r io.Reader, opts ripgrep.Options) (results []engine.LocalSearchResult, limitReached bool, err error) {
+	limitReached, err = ripgrep.ParseJSON(r, opts, func(m ripgrep.Result) error {
 		result := engine.LocalSearchResult{
 			// Search results are slash-separated, like search paths and glob
 			// results; ripgrep prints host paths, with backslashes on Windows.
-			FilePath:       filepath.ToSlash(data.Path.Text),
-			LineNumber:     data.LineNumber,
-			AbsoluteOffset: data.AbsoluteOffset,
-			MatchedLines:   data.Lines.Text,
+			FilePath:       filepath.ToSlash(m.Path),
+			LineNumber:     m.LineNumber,
+			AbsoluteOffset: m.AbsoluteOffset,
+			MatchedLines:   m.Lines,
 		}
-		for _, sm := range data.Submatches {
+		for _, sm := range m.Submatches {
 			result.Submatches = append(result.Submatches, engine.LocalSearchSubmatch{
-				Text:  sm.Match.Text,
+				Text:  sm.Text,
 				Start: sm.Start,
 				End:   sm.End,
 			})
 		}
 		results = append(results, result)
-		if limit != nil && len(results) >= *limit {
-			return results, true, nil
-		}
-	}
+		return nil
+	})
+	return results, limitReached, err
 }
+
+// searchParseOptions are the limit and budgets a host search runs within:
+// ripgrep's defaults, which keep its results well under the gRPC message
+// size limit they are sent back to the engine in.
+func searchParseOptions(opts *engine.LocalSearchOpts) ripgrep.Options {
+	return ripgrep.Options{Limits: ripgrep.DefaultLimits(), Limit: opts.Limit}
+}
+
+// maxSearchResultsMessage is the most search results sent back in one
+// message: under the 16 MiB a gRPC receiver accepts by default.
+const maxSearchResultsMessage = 15 << 20
 
 func searchWithRipgrep(ctx context.Context, root string, rgPath string, opts *engine.LocalSearchOpts) (results []engine.LocalSearchResult, rerr error) {
 	args := ripgrepArgs(opts)
@@ -716,37 +695,39 @@ func searchWithRipgrep(ctx context.Context, root string, rgPath string, opts *en
 		return nil, err
 	}
 
-	// Tee stdout to the span for observability
-	stdoutReader := io.TeeReader(out, stdio.Stdout)
-
+	// ripgrep's stdout is not copied to the span: the engine logs the
+	// results it gets back, and the raw JSON is ~40 times larger than the
+	// text it matched when every byte is a submatch.
 	var parseErr error
 	var limitReached bool
 	if opts.FilesOnly {
-		results, limitReached, parseErr = parseRipgrepFiles(stdoutReader, opts.Limit)
+		results, limitReached, parseErr = parseRipgrepFiles(out, searchParseOptions(opts))
 	} else {
-		results, limitReached, parseErr = parseRipgrepJSON(stdoutReader, opts.Limit)
+		results, limitReached, parseErr = parseRipgrepJSON(out, searchParseOptions(opts))
 	}
 
-	if limitReached {
-		// We stopped reading before EOF. Close the pipe so ripgrep exits on
-		// EPIPE instead of blocking forever once the pipe buffer fills, which
-		// would turn the Wait below into a deadlock.
+	if limitReached || parseErr != nil {
+		// We stopped reading before EOF: stop ripgrep, rather than leave it
+		// to run on until its next write fails, or block forever once the
+		// pipe buffer fills, which would turn the Wait below into a deadlock.
+		_ = cmd.Process.Kill()
 		out.Close()
+		_ = cmd.Wait()
+		if parseErr != nil {
+			if !ripgrep.IsBudgetError(parseErr) && errBuf.Len() > 0 {
+				parseErr = errors.Join(parseErr, fmt.Errorf("ripgrep error: %s", errBuf.String()))
+			}
+			return nil, parseErr
+		}
+		// The results we collected are complete.
+		return results, nil
 	}
 
 	waitErr := cmd.Wait()
-	if limitReached {
-		// The exit status only reflects the pipe we closed on it; the
-		// results we collected are complete.
-		return results, nil
-	}
 	if waitErr != nil {
 		if cmd.ProcessState != nil && cmd.ProcessState.ExitCode() == 1 {
 			// Exit code 1 means no matches
 			return []engine.LocalSearchResult{}, nil
-		}
-		if parseErr != nil {
-			return nil, errors.Join(parseErr, waitErr)
 		}
 		if errBuf.Len() > 0 {
 			// "No files were searched" just means the filters (e.g. --glob)
@@ -762,9 +743,6 @@ func searchWithRipgrep(ctx context.Context, root string, rgPath string, opts *en
 			return nil, fmt.Errorf("ripgrep error: %s", errBuf.String())
 		}
 		return nil, waitErr
-	}
-	if parseErr != nil {
-		return nil, parseErr
 	}
 
 	if results == nil {
@@ -821,13 +799,28 @@ func searchWithGrep(ctx context.Context, root string, opts *engine.LocalSearchOp
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
 	defer stdio.Close()
 
-	var outBuf bytes.Buffer
-	var errBuf bytes.Buffer
-	cmd.Stdout = io.MultiWriter(&outBuf, stdio.Stdout)
-	cmd.Stderr = io.MultiWriter(&errBuf, stdio.Stderr)
-
-	err := cmd.Run()
+	cmd.Stderr = stdio.Stderr
+	out, err := cmd.StdoutPipe()
 	if err != nil {
+		return nil, err
+	}
+	defer out.Close()
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+
+	results, limitReached, parseErr := parseGrepOutput(out, opts.FilesOnly, searchParseOptions(opts))
+	if limitReached || parseErr != nil {
+		// Stop grep rather than leave it blocked on a pipe no one reads.
+		_ = cmd.Process.Kill()
+		out.Close()
+		_ = cmd.Wait()
+		if parseErr != nil {
+			return nil, parseErr
+		}
+		return results, nil
+	}
+	if err := cmd.Wait(); err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
 			// No matches
@@ -836,54 +829,58 @@ func searchWithGrep(ctx context.Context, root string, opts *engine.LocalSearchOp
 		return nil, fmt.Errorf("grep error: %w", err)
 	}
 
-	output := outBuf.String()
-
-	if opts.FilesOnly {
-		scan := bufio.NewScanner(strings.NewReader(output))
-		for scan.Scan() {
-			line := scan.Text()
-			if line == "" {
-				continue
-			}
-			// Strip leading "./" if present
-			line = strings.TrimPrefix(filepath.ToSlash(line), "./")
-			results = append(results, engine.LocalSearchResult{FilePath: line})
-			if opts.Limit != nil && len(results) >= *opts.Limit {
-				break
-			}
-		}
-	} else {
-		// Parse grep -rnH output: file:line:content
-		scan := bufio.NewScanner(strings.NewReader(output))
-		for scan.Scan() {
-			line := scan.Text()
-			if line == "" {
-				continue
-			}
-			parts := strings.SplitN(line, ":", 3)
-			if len(parts) < 3 {
-				continue
-			}
-			filePath := strings.TrimPrefix(filepath.ToSlash(parts[0]), "./")
-			lineNum := 0
-			fmt.Sscanf(parts[1], "%d", &lineNum)
-			matchedLine := parts[2]
-
-			results = append(results, engine.LocalSearchResult{
-				FilePath:     filePath,
-				LineNumber:   lineNum,
-				MatchedLines: matchedLine + "\n",
-			})
-			if opts.Limit != nil && len(results) >= *opts.Limit {
-				break
-			}
-		}
-	}
-
 	if results == nil {
 		results = []engine.LocalSearchResult{}
 	}
 	return results, nil
+}
+
+// parseGrepOutput reads `grep -rnH` output (file:line:content), or `grep -l`
+// output (one file per line) with filesOnly, within the search's limit and
+// budgets, cutting long lines as ripgrep's results are. It reports whether it
+// stopped early on reaching the limit.
+func parseGrepOutput(r io.Reader, filesOnly bool, opts ripgrep.Options) (results []engine.LocalSearchResult, limitReached bool, err error) {
+	unit := "lines"
+	if filesOnly {
+		unit = "files"
+	}
+	budget := ripgrep.NewBudget(opts.Limits, opts.Limit, unit)
+	maxLine := opts.Limits.MaxLineBytes
+	if maxLine > 0 {
+		maxLine += 4096 // room for the file name and line number
+	}
+	errStop := errors.New("limit reached")
+	err = ripgrep.ScanLines(r, maxLine, func(line string, dropped int) error {
+		if line == "" {
+			return nil
+		}
+		var result engine.LocalSearchResult
+		if filesOnly {
+			// Strip leading "./" if present
+			result.FilePath = strings.TrimPrefix(filepath.ToSlash(line), "./")
+		} else {
+			parts := strings.SplitN(line, ":", 3)
+			if len(parts) < 3 {
+				return nil
+			}
+			result.FilePath = strings.TrimPrefix(filepath.ToSlash(parts[0]), "./")
+			fmt.Sscanf(parts[1], "%d", &result.LineNumber)
+			result.MatchedLines = ripgrep.TruncateReadLine(parts[2], opts.Limits.MaxLineBytes, dropped) + "\n"
+		}
+		full, err := budget.Add(len(result.FilePath) + len(result.MatchedLines) + 64)
+		if err != nil {
+			return err
+		}
+		results = append(results, result)
+		if full {
+			return errStop
+		}
+		return nil
+	})
+	if errors.Is(err, errStop) {
+		return results, true, nil
+	}
+	return results, false, err
 }
 
 // globHostPath walks the directory at root and returns paths matching the
