@@ -499,7 +499,9 @@ type MemoryCake {
   one edit followed by a "**" and a "d1/*" glob; every edit is a new rootfs,
   so every glob is new work. On main, the internal select caches one result
   per matched path per glob (~5 KB each): ~2.5 GiB live at the defaults
-  (5.0 GiB at ROUNDS=200), and part of it outlives the session. Scale with
+  (5.0 GiB at ROUNDS=200), ~590 MiB of it still there after the session.
+  With the fix, which globs the tree directly, 67 MiB live (37 MiB focus:
+  the paths Workspace.glob's own results keep) and 23 MiB after. Scale with
   env, e.g. ["ROUNDS=50"].
   """
   demoWorkspaceGlob(
