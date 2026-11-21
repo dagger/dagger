@@ -114,3 +114,87 @@ func TestBusyRowsCountEveryRowARootReaches(t *testing.T) {
 	}, nil)
 	require.Equal(t, busyReport{rows: 2, named: []string{"6:bookkeeping:0s:2", "5:running:0s:1"}}, report)
 }
+
+// A root an export leaves out busy is handed on as ready once what kept it
+// out can be captured, and not before: for the busy file, its own
+// evaluation; for the file above it, the row below it. The next export
+// carries both.
+func TestRemoteCacheAdapterHandsOnABusyRootOnceItIsReady(t *testing.T) {
+	e := newAdapterTestEngine(t)
+	busy := e.busyFile(t, "busy")
+	above, _ := e.publishFile(t, "on-busy", busy)
+	roots := []uint64{entryNumber(t, busy), entryNumber(t, above)}
+	var skipped []protocol.SkippedRoot
+	require.NoError(t, e.adapter.Export(e.ctx, protocol.Export{Roots: roots}, nil, func(_ context.Context, ex remotecache.Export) error {
+		skipped = ex.Skipped
+		return nil
+	}))
+	require.Len(t, skipped, 2)
+	for _, root := range skipped {
+		require.Equal(t, protocol.SkipBusy, root.Reason)
+	}
+
+	took := make(chan []uint64, 1)
+	go func() {
+		if ready, err := e.adapter.TakeReadyRoots(e.ctx); err == nil {
+			took <- ready
+		}
+	}()
+	select {
+	case ready := <-took:
+		t.Fatalf("roots handed on as ready while their row runs: %v", ready)
+	case <-time.After(100 * time.Millisecond):
+	}
+	e.bodies.unpause()
+	select {
+	case ready := <-took:
+		require.Equal(t, roots, ready)
+	case <-time.After(10 * time.Second):
+		t.Fatal("the busy roots were never handed on as ready")
+	}
+
+	var again remotecache.Export
+	require.NoError(t, e.adapter.Export(e.ctx, protocol.Export{Roots: roots}, nil, func(_ context.Context, ex remotecache.Export) error {
+		again = ex
+		return nil
+	}))
+	require.Empty(t, again.Skipped, "the next export carries both")
+}
+
+// A root kept out with nothing in flight on its rows, as a capture race
+// leaves one, is ready as soon as it begins to wait; one whose row is busy
+// waits until the row isn't. Each is handed on once.
+func TestBusyWaitsHandOnEachRootOnceItsRowsAreFree(t *testing.T) {
+	var w busyWaits
+	w.wait(3, dagql.LeftOutRoot{Row: 5, Kind: dagql.BusyOther})
+	w.wait(4, dagql.LeftOutRoot{Row: 4, Kind: dagql.BusyRunning, Busy: []dagql.BusyRow{{Row: 6, Kind: dagql.BusyRunning}, {Row: 7, Kind: dagql.BusyOther}}})
+	select {
+	case <-w.addedCh():
+	default:
+		t.Fatal("a root that begins to wait is looked at")
+	}
+	busy := map[uint64]bool{6: true}
+	stillBusy := func(rows []uint64) []uint64 {
+		var out []uint64
+		for _, row := range rows {
+			if busy[row] {
+				out = append(out, row)
+			}
+		}
+		return out
+	}
+
+	ready, waiting := w.take(stillBusy)
+	require.Equal(t, []uint64{3}, ready, "nothing is in flight on the raced row")
+	require.True(t, waiting)
+	ready, waiting = w.take(stillBusy)
+	require.Empty(t, ready)
+	require.True(t, waiting)
+
+	busy[6] = false
+	ready, waiting = w.take(stillBusy)
+	require.Equal(t, []uint64{4}, ready)
+	require.False(t, waiting)
+	ready, _ = w.take(stillBusy)
+	require.Empty(t, ready, "a root is handed on once")
+}
