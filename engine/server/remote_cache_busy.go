@@ -230,10 +230,11 @@ func (w *busyWaits) take(busy func([]uint64) []uint64) ([]uint64, bool) {
 // TakeReadyRoots waits until some of the roots exports left out busy can be
 // captured, and returns their numbers: those whose rows are no longer busy
 // (dagql.Cache.BusyRows). It looks as each root begins to wait, since one a
-// capture race kept out is ready at once, and after each evaluation's end,
+// capture race kept out is ready at once, and after each end of what kept a
+// row busy, an evaluation's or an attachment's (dagql.Cache.WatchBusyEnds),
 // which is what frees the others.
 func (a *RemoteCacheAdapter) TakeReadyRoots(ctx context.Context) ([]uint64, error) {
-	ends, stop := a.cache.WatchEvaluationEnds()
+	ends, stop := a.cache.WatchBusyEnds()
 	defer stop()
 	busy := func(rows []uint64) []uint64 { return a.cache.BusyRows(ctx, rows) }
 	for {
