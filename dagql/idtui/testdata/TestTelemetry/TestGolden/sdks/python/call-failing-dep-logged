@@ -1,0 +1,54 @@
+Expected stderr:
+
+✔ connect X.Xs
+├╴✔ starting engine X.Xs
+├╴✔ connecting to engine X.Xs
+│ ┃ XX:XX:XX INF connected name=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local client-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx server-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx
+╰╴✔ starting session X.Xs
+
+✔ load workspace: . X.Xs
+╰╴✔ loading type definitions X.Xs
+
+✔ parsing command line arguments X.Xs
+
+$ viztestPython: ViztestPython! X.Xs CACHED
+✘ .callFailingDepLogged: String! X.Xs ERROR
+┃ python function stdout
+┃ ERROR [dagger.mod]: API error while executing function
+┃ Traceback (most recent call last):
+┃   File "/src/sha256:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX/viztest/sdks/python/src/viztest_python/__init__.py", line XXX, in call_failing_dep_logged
+┃     return await sdk_dep().fail_exec()
+┃            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+┃   File "/usr/local/lib/python3.14/site-packages/dagger_clients/sdk_dep/__init__.py", line XXX, in fail_exec
+┃     return await _ctx.execute(str)
+┃            ^^^^^^^^^^^^^^^^^^^^^^^
+┃   File "/usr/local/lib/python3.14/site-packages/dagger/client/_core.py", line XXX, in execute
+┃     result = await session.execute(self.build())
+┃              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+┃   File "/usr/local/lib/python3.14/site-packages/dagger/client/_session.py", line XXX, in execute
+┃     return await (await self._ready()).execute(query)
+┃            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+┃   File "/usr/local/lib/python3.14/site-packages/dagger/client/_session.py", line XXX, in execute
+┃     return _read_response(response, query)
+┃   File "/usr/local/lib/python3.14/site-packages/dagger/client/_session.py", line XXX, in _read_response
+┃     raise err
+┃ dagger.QueryError: call module entrypoint: exit code: 1 [traceparent:00000000000000000000000000000000-0000000000000000]
+┃ ERROR [dagger.mod]: call module entrypoint: exit code: 1 [traceparent:00000000000000000000000000000000-0000000000000000]
+├╴✘ call module entrypoint X.Xs ERROR
+│ ┆ (the entrypoint's own evaluation, elided)
+│
+├╴$ sdkDep: SDKDep! X.Xs CACHED
+╰╴✘ .failExec: String! X.Xs ERROR
+  ┃ exit code: 1 [traceparent:00000000000000000000000000000000-0000000000000000]
+  ┃ ::dagger-function-error::"exit code: 1 [traceparent:00000000000000000000000000000000-0000000000000000]"
+  ├╴✘ call module entrypoint X.Xs ERROR
+  │ ┆ (the entrypoint's own evaluation, elided)
+  │
+  ├╴$ Container.from(address: "alpine"): Container! X.Xs CACHED
+  ├╴✘ withExec sh -c 'echo dep exec stdout; sleep 0.1; echo dep exec stderr >&2; exit 1' X.Xs ERROR
+  │ ┃ dep exec stdout
+  │ ┃ dep exec stderr
+  │ ! exit code: 1
+  ╰╴✘ .stdout: String! X.Xs ERROR
+
+Setup tracing by running "dagger cloud signup". To hide set DAGGER_NO_NAG=1

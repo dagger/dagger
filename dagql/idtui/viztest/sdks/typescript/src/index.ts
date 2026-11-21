@@ -64,4 +64,11 @@ export class ViztestTypescript {
   async callFailingDep(): Promise<string> {
     return sdkDep().failExec()
   }
+
+  /** Logs a line, then calls a function of a dependency whose command fails. */
+  @func({ cache: "session" })
+  async callFailingDepLogged(): Promise<string> {
+    console.log("typescript function stdout")
+    return sdkDep().failExec()
+  }
 }

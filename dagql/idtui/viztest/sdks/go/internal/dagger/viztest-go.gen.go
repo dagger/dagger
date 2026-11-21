@@ -25,13 +25,14 @@ type ViztestGo struct { // viztest-go (../../:0:0)
 	// field again.
 	refetchID bool
 
-	callFailingDep  *string
-	failExec        *string
-	failExecWrapped *string
-	failExitCode    *Void
-	failNative      *Void
-	id              *ID
-	logSuccess      *string
+	callFailingDep       *string
+	callFailingDepLogged *string
+	failExec             *string
+	failExecWrapped      *string
+	failExitCode         *Void
+	failNative           *Void
+	id                   *ID
+	logSuccess           *string
 }
 
 func (r *ViztestGo) WithGraphQLQuery(q *querybuilder.Selection) *ViztestGo {
@@ -49,6 +50,20 @@ func (r *ViztestGo) CallFailingDep(ctx context.Context) (string, error) {
 		return *r.callFailingDep, nil
 	}
 	q := r.query.Select("callFailingDep")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// CallFailingDepLogged logs a line, then calls a function of a dependency
+// whose command fails.
+func (r *ViztestGo) CallFailingDepLogged(ctx context.Context) (string, error) {
+	if r.callFailingDepLogged != nil {
+		return *r.callFailingDepLogged, nil
+	}
+	q := r.query.Select("callFailingDepLogged")
 
 	var response string
 

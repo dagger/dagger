@@ -77,6 +77,15 @@ class ViztestPhp
         return SdkDep::sdkDep()->failExec();
     }
 
+    #[DaggerFunction]
+    #[Doc('Logs a line, then calls a function of a dependency whose command fails')]
+    public function callFailingDepLogged(): string
+    {
+        fwrite(STDOUT, "php function stdout\n");
+        fflush(STDOUT);
+        return SdkDep::sdkDep()->failExec();
+    }
+
     private function failingExec(): Container
     {
         return core()

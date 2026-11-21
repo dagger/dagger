@@ -112,6 +112,11 @@ public class Entrypoint {
                     core().function("callFailingDep",
                         core().typeDef().withKind(TypeDefKind.STRING_KIND))
                         .withDescription("Calls a function of a dependency whose command fails.")
+                        .withCachePolicy(FunctionCachePolicy.PER_SESSION))
+                .withFunction(
+                    core().function("callFailingDepLogged",
+                        core().typeDef().withKind(TypeDefKind.STRING_KIND))
+                        .withDescription("Logs a line, then calls a function of a dependency whose command fails.")
                         .withCachePolicy(FunctionCachePolicy.PER_SESSION)));
     return module.id();
   }
@@ -141,6 +146,9 @@ public class Entrypoint {
         return JsonConverter.toJSON(res);
       } else if (fnName.equals("callFailingDep")) {
         String res = obj.callFailingDep();
+        return JsonConverter.toJSON(res);
+      } else if (fnName.equals("callFailingDepLogged")) {
+        String res = obj.callFailingDepLogged();
         return JsonConverter.toJSON(res);
       }
     }

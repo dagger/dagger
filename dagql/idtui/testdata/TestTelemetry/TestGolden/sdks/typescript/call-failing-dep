@@ -29,7 +29,7 @@ $ viztestTypescript: ViztestTypescript! X.Xs CACHED
 ┃       at async computeQuery (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/core.js:99815:10)
 ┃       at async SDKDep.failExec (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/sdk-dep/sdk-dep.gen.ts:61:39)
 ┃       at async invoke (/workspace/viztest/sdks/typescript/entrypoint/__dagger.dispatch.ts:60:28)
-┃       at async connection.LogOutput (/workspace/viztest/sdks/typescript/entrypoint/__dagger.dispatch.ts:209:24)
+┃       at async connection.LogOutput (/workspace/viztest/sdks/typescript/entrypoint/__dagger.dispatch.ts:215:24)
 ┃       at async <anonymous> (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/core.js:99971:7)
 ┃       at async withGQLClient (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/core.js:99956:12) {
 ┃     response: {

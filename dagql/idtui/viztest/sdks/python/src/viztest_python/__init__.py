@@ -73,3 +73,9 @@ class ViztestPython:
     async def call_failing_dep(self) -> str:
         """Calls a function of a dependency whose command fails."""
         return await sdk_dep().fail_exec()
+
+    @function(cache="session")
+    async def call_failing_dep_logged(self) -> str:
+        """Logs a line, then calls a function of a dependency whose command fails."""
+        print("python function stdout", flush=True)
+        return await sdk_dep().fail_exec()

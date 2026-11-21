@@ -19,7 +19,7 @@ $ viztestJava: ViztestJava! X.Xs CACHED
 ┃         at io.dagger.client.QueryBuilder.executeQuery(QueryBuilder.java:227)
 ┃         at io.dagger.client.modules.core.Container.stdout(Container.java:683)
 ┃         at io.dagger.modules.viztestjava.ViztestJava.failExec(ViztestJava.java:44)
-┃         at io.dagger.gen.entrypoint.Entrypoint.invoke(Entrypoint.java:137)
+┃         at io.dagger.gen.entrypoint.Entrypoint.invoke(Entrypoint.java:142)
 ┃         at io.dagger.client.ModuleDispatcher.dispatch(ModuleDispatcher.java:97)
 ┃         at io.dagger.client.ModuleDispatcher.engineCall(ModuleDispatcher.java:67)
 ┃         at io.dagger.gen.entrypoint.Entrypoint.main(Entrypoint.java:40)

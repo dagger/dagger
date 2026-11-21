@@ -17,7 +17,7 @@ $ viztestJava: ViztestJava! X.Xs CACHED
 ┃ java function stderr
 ┃ java.lang.Exception: java function failed natively
 ┃         at io.dagger.modules.viztestjava.ViztestJava.failNative(ViztestJava.java:31)
-┃         at io.dagger.gen.entrypoint.Entrypoint.invoke(Entrypoint.java:131)
+┃         at io.dagger.gen.entrypoint.Entrypoint.invoke(Entrypoint.java:136)
 ┃         at io.dagger.client.ModuleDispatcher.dispatch(ModuleDispatcher.java:97)
 ┃         at io.dagger.client.ModuleDispatcher.engineCall(ModuleDispatcher.java:67)
 ┃         at io.dagger.gen.entrypoint.Entrypoint.main(Entrypoint.java:40)
