@@ -62,6 +62,67 @@ func (p *partContentProvider) OpenPack(ctx context.Context, blob digest.Digest) 
 	}
 }
 
+// OpenPackRange opens size bytes of the pack that holds blob, from off, with
+// one ranged request to blob's address, which is the pack's, renewed as
+// OpenPack's is.
+func (p *partContentProvider) OpenPackRange(ctx context.Context, blob digest.Digest, off, size int64) (io.ReadCloser, error) {
+	layer, ok := p.layer(blob)
+	if !ok {
+		return nil, partContentError(ctx, ocispecs.Descriptor{Digest: blob}, "provider", fmt.Errorf("unknown supplied blob %s", blob))
+	}
+	desc := layer.Descriptor
+	address, renewed, err := p.address(ctx, blob, "")
+	if err != nil {
+		return nil, partContentError(ctx, desc, "provider", err)
+	}
+	for {
+		stream, resp, err := p.get(ctx, address, off, off+size-1) //nolint:bodyclose // The body is handed to the stream wrapper, which closes it in stream.close and its context AfterFunc.
+		if err != nil {
+			return nil, partContentError(ctx, desc, "provider", err)
+		}
+		if _, retry := renewalRetryStatuses[resp.StatusCode]; retry {
+			stream.close()
+			err := fmt.Errorf("pack address returned HTTP %d", resp.StatusCode)
+			if renewed {
+				return nil, partContentError(ctx, desc, "provider", err)
+			}
+			next, _, renewErr := p.address(ctx, blob, address)
+			if renewErr != nil {
+				return nil, partContentError(ctx, desc, "provider", errors.Join(err, renewErr))
+			}
+			address, renewed = next, true
+			continue
+		}
+		if err := acceptPackRange(resp, off); err != nil {
+			stream.close()
+			return nil, partContentError(ctx, desc, "provider", err)
+		}
+		p.stats.usedStreams(1)
+		return packBody{stream}, nil
+	}
+}
+
+// acceptPackRange checks a response to a request for a pack's range from
+// off: a partial response from off, or the whole object when off is 0.
+func acceptPackRange(resp *http.Response, off int64) error {
+	switch resp.StatusCode {
+	case http.StatusOK:
+		if off == 0 {
+			return nil
+		}
+		return fmt.Errorf("pack HTTP status %d for a range from %d", resp.StatusCode, off)
+	case http.StatusPartialContent:
+		var start, end, total int64
+		value := resp.Header.Get("Content-Range")
+		if _, err := fmt.Sscanf(value, "bytes %d-%d/%d", &start, &end, &total); err != nil || start != off {
+			return fmt.Errorf("content range %q does not start at %d", value, off)
+		}
+		return nil
+	default:
+		return fmt.Errorf("pack HTTP status %d", resp.StatusCode)
+	}
+}
+
 // acceptPack checks a response to a request for a whole pack: the object, or
 // a partial response that is all of it.
 func acceptPack(resp *http.Response) error {
@@ -106,6 +167,18 @@ func (p *countingProvider) OpenPack(ctx context.Context, blob digest.Digest) (io
 		return nil, fmt.Errorf("blob %s is not in a pack", blob)
 	}
 	body, err := packs.OpenPack(ctx, blob)
+	if err != nil {
+		return nil, err
+	}
+	return &countingBody{ReadCloser: body, read: &p.read, readNS: &p.readNS}, nil
+}
+
+func (p *countingProvider) OpenPackRange(ctx context.Context, blob digest.Digest, off, size int64) (io.ReadCloser, error) {
+	ranges, ok := p.InfoReaderProvider.(snapshots.PackRangeProvider)
+	if !ok {
+		return nil, snapshots.ErrNoPackRanges
+	}
+	body, err := ranges.OpenPackRange(ctx, blob, off, size)
 	if err != nil {
 		return nil, err
 	}

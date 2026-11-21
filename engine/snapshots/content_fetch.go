@@ -115,7 +115,7 @@ func (cm *snapshotManager) joinFetch(ctx context.Context, desc ocispecs.Descript
 }
 
 func (cm *snapshotManager) runFetch(ctx context.Context, f *contentFetch, provider content.Provider) {
-	read, err := cm.downloadChainContent(ctx, f.desc, provider)
+	read, err := cm.downloadChainContent(ctx, f.desc, provider, f.owner)
 	if f.ended != nil {
 		f.ended()
 	}
@@ -244,9 +244,14 @@ func (cm *snapshotManager) aheadSlots() *semaphore.Weighted {
 // store, under ctx's lease. It reports whether it read the provider: a blob
 // another writer stored meanwhile needs no read. A blob stored in a pack
 // comes from a read of the whole pack.
-func (cm *snapshotManager) downloadChainContent(ctx context.Context, desc ocispecs.Descriptor, provider content.Provider) (_ bool, rerr error) {
+func (cm *snapshotManager) downloadChainContent(ctx context.Context, desc ocispecs.Descriptor, provider content.Provider, owner *ExportChain) (_ bool, rerr error) {
 	if packs, ok := provider.(PackProvider); ok {
 		if id, ok := packs.PackOf(desc.Digest); ok {
+			if ranges, ok := provider.(PackRangeProvider); ok && owner != nil && owner.packs != nil {
+				if done, err := cm.downloadPackedRange(ctx, desc, ranges, id, owner); done || err != nil {
+					return true, err
+				}
+			}
 			return true, cm.downloadPackedContent(ctx, desc, packs, id)
 		}
 	}

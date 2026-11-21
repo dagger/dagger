@@ -182,6 +182,8 @@ func (tr *contentTestTransport) RoundTrip(req *http.Request) (*http.Response, er
 		} else if _, err := fmt.Sscanf(spec, "bytes=%d-%d", &start, &end); err != nil {
 			return nil, err
 		}
+		// A range past the object's end is cut at its end, as HTTP's are.
+		end = min(end, int64(len(data))-1)
 		resp.StatusCode = http.StatusPartialContent
 		resp.Header.Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, len(data)))
 		data = data[start : end+1]

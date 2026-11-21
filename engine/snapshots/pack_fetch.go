@@ -2,6 +2,7 @@ package snapshots
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/rand"
 	"errors"
@@ -47,6 +48,304 @@ type PackProvider interface {
 	PackOf(blob digest.Digest) (digest.Digest, bool)
 	// OpenPack opens the whole pack that holds blob.
 	OpenPack(ctx context.Context, blob digest.Digest) (io.ReadCloser, error)
+}
+
+// PackRangeProvider is a PackProvider that also reads part of a pack, so a
+// chain that needs a small share of a pack reads only its own members
+// (chainPacks).
+type PackRangeProvider interface {
+	PackProvider
+	// OpenPackRange opens size bytes of the pack that holds blob, from off.
+	// A range past the pack's end is cut at its end.
+	OpenPackRange(ctx context.Context, blob digest.Digest, off, size int64) (io.ReadCloser, error)
+}
+
+// ErrNoPackRanges is a PackRangeProvider's answer when what it serves reads
+// no ranges: the pack is then read whole.
+var ErrNoPackRanges = errors.New("the provider reads no pack ranges")
+
+const (
+	// packHeaderRange is the first range of a pack read for its header:
+	// room for about 800 members' lines. A longer header is read again,
+	// up to the format's limit.
+	packHeaderRange = 64 << 10
+	// packSpanGap merges a chain's members of a pack read by ranges: two
+	// closer than this are read in one range, the bytes between them read
+	// and dropped.
+	packSpanGap = 1 << 20
+)
+
+// chainPacks is how one chain import reads the packs that hold its blobs: a
+// pack the chain needs at least half the bytes of is read whole, as any
+// import reads a pack (downloadPackedContent), and from any other only the
+// chain's members, in ranges (packPlan). The packs the service fills are an
+// upload's missing blobs, up to 16 MiB, so one chain's members can be a
+// small share of a pack; on the remote cache's bench, reading whole every
+// pack the dev engine's chain touched read 936 MB for its 620 MB.
+type chainPacks struct {
+	mu    sync.Mutex
+	plans map[digest.Digest]*packPlan
+}
+
+func (c *chainPacks) plan(id digest.Digest) *packPlan {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.plans == nil {
+		c.plans = map[digest.Digest]*packPlan{}
+	}
+	p := c.plans[id]
+	if p == nil {
+		p = &packPlan{done: make(chan struct{})}
+		c.plans[id] = p
+	}
+	return p
+}
+
+// packPlan is how one chain reads one pack, decided once from the pack's
+// header: whole, or by its spans. A pack the header's range held whole is
+// stored from it. Set before done is closed.
+type packPlan struct {
+	once   sync.Once
+	done   chan struct{}
+	err    error
+	whole  bool
+	stored bool
+	spans  map[digest.Digest]*packSpan
+}
+
+// packSpan is a range of a pack holding some of a chain's members, read
+// once; done is closed once err is set.
+type packSpan struct {
+	off, end int64
+	members  []spanMember
+	once     sync.Once
+	done     chan struct{}
+	err      error
+}
+
+type spanMember struct {
+	pack.Member
+	off int64
+}
+
+// downloadPackedRange puts desc's blob, a member of the pack id, in the
+// content store, linked to ctx's lease, by reading only owner's members of
+// the pack, when owner needs less than half of it, unless the store has it. It reports false, and
+// reads nothing but the pack's header, when the pack is read whole instead.
+// The header and the spans are read detached from ctx, under their own
+// deadline: other imports of the chain may wait on them.
+func (cm *snapshotManager) downloadPackedRange(ctx context.Context, desc ocispecs.Descriptor, provider PackRangeProvider, id digest.Digest, owner *ExportChain) (bool, error) {
+	// A read of the pack another import made may have stored it already.
+	if ok, err := cm.pinContent(ctx, desc); err != nil || ok {
+		return true, err
+	}
+	plan := owner.packs.plan(id)
+	plan.once.Do(func() {
+		go func() {
+			defer close(plan.done)
+			dctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), packReadLimit)
+			defer cancel()
+			plan.err = cm.planPack(dctx, plan, provider, id, desc.Digest, owner)
+		}()
+	})
+	select {
+	case <-plan.done:
+	case <-ctx.Done():
+		return true, context.Cause(ctx)
+	}
+	if plan.err != nil {
+		var contentErr *packContentError
+		if errors.As(plan.err, &contentErr) {
+			return true, chainError(ctx, true, desc, contentErr.stage, contentErr.err)
+		}
+		return true, plan.err
+	}
+	if plan.stored {
+		if ok, err := cm.pinContent(ctx, desc); err != nil || ok {
+			return true, err
+		}
+		return true, chainError(ctx, true, desc, "provider", fmt.Errorf("pack %s does not hold blob %s", id, desc.Digest))
+	}
+	span := plan.spans[desc.Digest]
+	if plan.whole || span == nil {
+		return false, nil
+	}
+	span.once.Do(func() {
+		go func() {
+			defer close(span.done)
+			dctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), packReadLimit)
+			defer cancel()
+			span.err = cm.readPackSpan(dctx, span, provider, id, desc.Digest)
+		}()
+	})
+	select {
+	case <-span.done:
+	case <-ctx.Done():
+		return true, context.Cause(ctx)
+	}
+	if ok, err := cm.pinContent(ctx, desc); err != nil || ok {
+		return true, err
+	}
+	err := span.err
+	if err == nil {
+		err = &packContentError{stage: "provider", err: fmt.Errorf("pack %s's blob %s is gone after its range was read", id, desc.Digest)}
+	}
+	var contentErr *packContentError
+	if errors.As(err, &contentErr) {
+		return true, chainError(ctx, true, desc, contentErr.stage, contentErr.err)
+	}
+	return true, err
+}
+
+// planPack reads the pack's header by range and decides how owner reads
+// it: whole when owner's members are at least half its bytes, else by
+// spans of them, merged across gaps under packSpanGap. A pack the header's
+// range held whole is stored from it, as a whole read stores it.
+func (cm *snapshotManager) planPack(ctx context.Context, plan *packPlan, provider PackRangeProvider, id, blob digest.Digest, owner *ExportChain) error {
+	list, headerSize, data, err := readPackHeader(ctx, provider, id, blob)
+	if errors.Is(err, ErrNoPackRanges) {
+		plan.whole = true
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	size, err := pack.Size(list)
+	if err != nil {
+		return err
+	}
+	if int64(len(data)) >= size {
+		if err := cm.storePackMembers(ctx, id, list, bytes.NewReader(data[headerSize:size])); err != nil {
+			return err
+		}
+		plan.stored = true
+		return nil
+	}
+	need := map[digest.Digest]bool{}
+	for _, layer := range owner.Layers {
+		if at, ok := provider.PackOf(layer.Descriptor.Digest); ok && at == id {
+			need[layer.Descriptor.Digest] = true
+		}
+	}
+	var members []spanMember
+	var needed int64
+	off := headerSize
+	for _, m := range list {
+		if need[m.Digest] {
+			members = append(members, spanMember{Member: m, off: off})
+			needed += m.Size
+		}
+		off += m.Size
+	}
+	if 2*needed >= size {
+		plan.whole = true
+		return nil
+	}
+	plan.spans = map[digest.Digest]*packSpan{}
+	var span *packSpan
+	for _, m := range members {
+		if span == nil || m.off-span.end >= packSpanGap {
+			span = &packSpan{off: m.off, done: make(chan struct{})}
+		}
+		span.members = append(span.members, m)
+		span.end = m.off + m.Size
+		plan.spans[m.Digest] = span
+	}
+	return nil
+}
+
+// readPackHeader reads a pack's header by range, checked against its ID,
+// and returns its members, its size in bytes, and the bytes the range read,
+// which hold the whole pack when it is no larger than the range.
+func readPackHeader(ctx context.Context, provider PackRangeProvider, id, blob digest.Digest) ([]pack.Member, int64, []byte, error) {
+	for _, n := range []int64{packHeaderRange, pack.MaxHeaderBytes} {
+		body, err := provider.OpenPackRange(ctx, blob, 0, n)
+		if errors.Is(err, ErrNoPackRanges) {
+			return nil, 0, nil, err
+		}
+		if err != nil {
+			return nil, 0, nil, &packContentError{stage: "provider", err: err}
+		}
+		data, err := io.ReadAll(io.LimitReader(body, n))
+		_ = body.Close()
+		if err != nil {
+			return nil, 0, nil, &packContentError{stage: "provider", err: err}
+		}
+		list, err := pack.ReadHeader(bufio.NewReaderSize(bytes.NewReader(data), pack.MaxHeaderBytes), id)
+		if errors.Is(err, io.ErrUnexpectedEOF) && int64(len(data)) == n && n < pack.MaxHeaderBytes {
+			continue
+		}
+		if err != nil {
+			return nil, 0, nil, &packContentError{stage: "provider", err: err}
+		}
+		// The bytes read are this header, as ReadHeader checked.
+		header, err := pack.Header(list)
+		if err != nil {
+			return nil, 0, nil, &packContentError{stage: "provider", err: err}
+		}
+		return list, int64(len(header)), data, nil
+	}
+	return nil, 0, nil, &packContentError{stage: "provider", err: fmt.Errorf("pack %s header is over %d bytes", id, pack.MaxHeaderBytes)}
+}
+
+// storePackMembers writes every member of the pack id, read in order from
+// r, into the content store, each checked against its digest, under a lease
+// of its own that keeps them for packLeaseTTL, as a whole read does.
+func (cm *snapshotManager) storePackMembers(ctx context.Context, id digest.Digest, list []pack.Member, r io.Reader) error {
+	l, err := cm.LeaseManager.Create(ctx, leases.WithRandomID(), leases.WithExpiration(packLeaseTTL), leases.WithLabels(map[string]string{snapshotTransferLeaseLabel: "true"}))
+	if err != nil {
+		return err
+	}
+	ctx = leases.WithLease(ctx, l.ID)
+	for _, m := range list {
+		if _, err := cm.writePackMember(ctx, r, m); err != nil {
+			return err
+		}
+	}
+	slog.FromContext(ctx).Info("remote cache pack fetched with its header", "pack", id.String(), "members", len(list))
+	return nil
+}
+
+// readPackSpan reads a span of the pack id by range and writes its members
+// into the content store, each checked against its digest, under a lease of
+// its own that keeps them for packLeaseTTL, as a whole read's does.
+func (cm *snapshotManager) readPackSpan(ctx context.Context, span *packSpan, provider PackRangeProvider, id, blob digest.Digest) (rerr error) {
+	start := time.Now()
+	read := &countingReader{}
+	stored := 0
+	defer func() {
+		args := []any{"pack", id.String(), "members", len(span.members), "stored", stored, "bytes", read.n, "duration", time.Since(start)}
+		level := slog.LevelInfo
+		if rerr != nil {
+			level = slog.LevelWarn
+			args = append(args, "error", rerr.Error())
+		}
+		slog.FromContext(ctx).Log(ctx, level, "remote cache pack range fetched", args...)
+	}()
+	l, err := cm.LeaseManager.Create(ctx, leases.WithRandomID(), leases.WithExpiration(packLeaseTTL), leases.WithLabels(map[string]string{snapshotTransferLeaseLabel: "true"}))
+	if err != nil {
+		return err
+	}
+	ctx = leases.WithLease(ctx, l.ID)
+	body, err := provider.OpenPackRange(ctx, blob, span.off, span.end-span.off)
+	if err != nil {
+		return &packContentError{stage: "provider", err: err}
+	}
+	defer body.Close()
+	read.r = body
+	r := bufio.NewReaderSize(read, 64<<10)
+	at := span.off
+	for _, m := range span.members {
+		if _, err := io.CopyN(io.Discard, r, m.off-at); err != nil {
+			return packReadError(err)
+		}
+		if _, err := cm.writePackMember(ctx, r, m.Member); err != nil {
+			return err
+		}
+		stored++
+		at = m.off + m.Size
+	}
+	return nil
 }
 
 // packFetches reads packs one at a time per pack: an import that needs a
