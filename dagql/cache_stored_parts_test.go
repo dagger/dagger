@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func storedPartTestCache(t *testing.T, opts ...CacheOption) (context.Context, *Cache) {
+func storedPartTestCache(t testing.TB, opts ...CacheOption) (context.Context, *Cache) {
 	t.Helper()
 	ctx := cacheTestContext(t.Context())
 	c, err := NewCache(ctx, "", nil, nil, opts...)
