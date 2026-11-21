@@ -30,7 +30,11 @@ type transferTestValue struct {
 	PartDeps []uint64 `json:"partDeps,omitempty"`
 	// Fields is an optional body, shaped like a module's type definitions,
 	// that gives the value a realistic payload size.
-	Fields  []transferTestField `json:"fields,omitempty"`
+	Fields []transferTestField `json:"fields,omitempty"`
+	// Parts, when set, are the parts the codec maps the value's payload to
+	// and describes, in place of its one pending snapshot part: a record
+	// with parts in each state a part can be in.
+	Parts   []transferTestPart `json:"parts,omitempty"`
 	rev     atomic.Uint64
 	release OnReleaseFunc
 	links   []PersistedSnapshotRefLink
@@ -47,6 +51,29 @@ type transferTestField struct {
 	Description string            `json:"description"`
 	Type        string            `json:"type"`
 	Args        []transferTestArg `json:"args,omitempty"`
+}
+
+// transferTestPart is one part a transferTestValue's payload maps to: its
+// name, its state (pending, completed, absent or metadata) and the kind of
+// its value.
+type transferTestPart struct {
+	Part  string `json:"part"`
+	State string `json:"state"`
+	Kind  string `json:"kind,omitempty"`
+}
+
+// transferTestParts are the parts v's payload maps to, when its value has
+// Parts, at v's path; false otherwise.
+func transferTestParts(v PersistedPayloadVisit) ([]CapturedCodecOutput, bool) {
+	var p transferTestValue
+	if err := json.Unmarshal(v.Payload, &p); err != nil || len(p.Parts) == 0 {
+		return nil, false
+	}
+	outputs := make([]CapturedCodecOutput, 0, len(p.Parts))
+	for _, part := range p.Parts {
+		outputs = append(outputs, CapturedCodecOutput{Address: PersistedPartAddress{OutputPath: v.Path, Part: PartKey(part.Part)}, State: part.State, ValueKind: part.Kind})
+	}
+	return outputs, true
 }
 
 type transferTestArg struct {
@@ -134,6 +161,9 @@ func (transferTestCodec) ValidateForeign(v PersistedPayloadVisit) error {
 func (transferTestCodec) MapSnapshotParts(v PersistedPayloadVisit) ([]CapturedCodecOutput, error) {
 	if steps := transferTestCodecSteps.Load(); steps != nil {
 		(*steps)("map", v)
+	}
+	if outputs, ok := transferTestParts(v); ok {
+		return outputs, nil
 	}
 	return []CapturedCodecOutput{{Address: PersistedPartAddress{OutputPath: v.Path, Part: "snapshot"}, State: "pending", Value: &SnapshotValue{Kind: "directory"}}}, nil
 }
