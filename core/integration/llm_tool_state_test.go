@@ -23,6 +23,11 @@ import (
 // modules/<name> with the given constructor settings (TOML lines), that
 // depends on a fresh runlog module (see runLogDang).
 func toolStateWorkspace(c *dagger.Client, name, source string, settings ...string) *core.Workspace {
+	return toolStateSource(c, name, source, settings...).AsWorkspace()
+}
+
+// toolStateSource returns the files of toolStateWorkspace.
+func toolStateSource(c *dagger.Client, name, source string, settings ...string) *core.Directory {
 	config := fmt.Sprintf("[modules.%s]\nsource = \"modules/%s\"\n", name, name)
 	if len(settings) > 0 {
 		config += fmt.Sprintf("\n[modules.%s.settings]\n%s\n", name, strings.Join(settings, "\n"))
@@ -53,8 +58,7 @@ type Runlog {
     "runs: [" + out.trimSpace + "]"
   }
 }
-`, "tool-state-runs-"+rand.Text(), alpineImage)).
-		AsWorkspace()
+`, "tool-state-runs-"+rand.Text(), alpineImage))
 }
 
 // runLogDang gives a module type a log of the producers that ran on the
@@ -106,22 +110,30 @@ const stampDang = `
 // it. Loading a recipe there can't hit anything the producing engine cached,
 // so whatever the recipe still contains runs again: the place to restore a
 // conversation to find out what restoring it costs.
-func coldEngine(ctx context.Context, t *testctx.T, env ...string) *dagger.Client {
+// cfg configures the new client, except for its runner host.
+func coldEngine(ctx context.Context, t *testctx.T, cfg engineconn.Config) *dagger.Client {
 	t.Helper()
 	host := connect(ctx, t)
 	_, _, endpoint := startArchiveEngine(ctx, t, host, devEngineContainer(host))
-	c, _ := connectWithTrace(ctx, t, engineconn.Config{RunnerHost: endpoint, ExtraEnv: env})
+	cfg.RunnerHost = endpoint
+	c, _ := connectWithTrace(ctx, t, cfg)
 	return c
 }
 
 // restoreOnColdEngine captures result's committed recipe, ends the producing
-// session, and loads the recipe on a fresh engine.
-func restoreOnColdEngine(ctx context.Context, t *testctx.T, c *dagger.Client, sink *agentTraceSink, result *core.LLM, env ...string) *core.LLM {
+// session, and loads the recipe on a fresh engine. configs holds at most one
+// configuration for the client of that engine (see coldEngine).
+func restoreOnColdEngine(ctx context.Context, t *testctx.T, c *dagger.Client, sink *agentTraceSink, result *core.LLM, configs ...engineconn.Config) *core.LLM {
 	t.Helper()
+	require.LessOrEqual(t, len(configs), 1)
+	var cfg engineconn.Config
+	if len(configs) == 1 {
+		cfg = configs[0]
+	}
 	recipe, err := sink.captureLLMRecipe(ctx, t, c, result)
 	require.NoError(t, err)
 	require.NoError(t, c.Close())
-	return core.Ref[*core.LLM](core.NewQuery(coldEngine(ctx, t, env...)), recipe)
+	return core.Ref[*core.LLM](core.NewQuery(coldEngine(ctx, t, cfg)), recipe)
 }
 
 // TestToolStateRestoreSkipsProducer covers a @cache(Never) method returning
@@ -364,8 +376,10 @@ type Kinds {
 // lists of them, big integers, JSON holding floats and big numbers, a secret,
 // and a nullable field set to null — read back from a state restored on
 // another engine. (The secret is the caller's, from an env:// constructor
-// setting: a module may not read the caller's environment itself. Float
-// fields are left out: the Dang SDK cannot decode them in object state.)
+// setting in the dagger.toml of the session workspace: a module may not read
+// the caller's environment itself, and the settings of a workspace value may
+// not use the caller's providers. Float fields are left out: the Dang SDK
+// cannot decode them in object state.)
 //
 // It also covers what must NOT move the state: a tool returning its receiver
 // unchanged, after those values have round-tripped through the module and
@@ -373,9 +387,14 @@ type Kinds {
 // form). stamp is cached on its receiver, so it prints the same stamp again
 // exactly when the bound state did not change.
 func (LLMSuite) TestToolStateFieldKinds(ctx context.Context, t *testctx.T) {
-	env := []string{toolStateTokenEnv + "=s3cr3t"}
-	c, sink := connectWithTrace(ctx, t, engineconn.Config{ExtraEnv: env})
-	ws := toolStateWorkspace(c, "kinds", kindsDang, fmt.Sprintf("seed = %q", "env://"+toolStateTokenEnv))
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+	_, err := toolStateSource(connect(ctx, t), "kinds", kindsDang, fmt.Sprintf("seed = %q", "env://"+toolStateTokenEnv)).
+		Export(ctx, workdir)
+	require.NoError(t, err)
+	session := engineconn.Config{Workdir: workdir, ExtraEnv: []string{toolStateTokenEnv + "=s3cr3t"}}
+	c, sink := connectWithTrace(ctx, t, session)
+	ws := core.NewQuery(c).CurrentWorkspace()
 	script := recomposeRecordingTurn(core.NewQuery(c).LLM(), "mutate", "stamp", "mutate", "stamp", "noop", "stamp", "describe")
 	script = recomposeRecordingTurn(script, "restored", "stamp", "noop", "stamp", "describe")
 	model := cannedRecordingModel(ctx, t, c, script)
@@ -400,7 +419,7 @@ func (LLMSuite) TestToolStateFieldKinds(ctx context.Context, t *testctx.T) {
 	require.NotEqual(t, produced[0], produced[1], "a state change moves the state")
 	require.Equal(t, produced[1], produced[2], "an unchanged return must not move the state")
 
-	restored := restoreOnColdEngine(ctx, t, c, sink, result, env...).WithPrompt("restored").Loop()
+	restored := restoreOnColdEngine(ctx, t, c, sink, result, session).WithPrompt("restored").Loop()
 	transcript, err = restored.Transcript(ctx)
 	require.NoError(t, err)
 	all := describeLine.FindAllString(transcript, -1)

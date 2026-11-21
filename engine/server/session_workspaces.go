@@ -1407,6 +1407,55 @@ func (srv *Server) EnsureWorkspaceModules(ctx context.Context, include []string,
 	}, mode)
 }
 
+// SessionWorkspaceModule returns the module that the current client's workspace
+// installs as name, as the session loaded it from that workspace, and loads it
+// first if it is still pending. It reports false when the workspace installs
+// no module with that name, or when the module cannot load.
+func (srv *Server) SessionWorkspaceModule(ctx context.Context, name string) (dagql.ObjectResult[*core.Module], bool, error) {
+	var none dagql.ObjectResult[*core.Module]
+	client, err := srv.workspaceRuntimeFromContext(ctx)
+	if err != nil {
+		return none, false, err
+	}
+	want := canonicalWorkspaceModuleName(name)
+	if _, err := srv.ensureModulesLoadedMode(ctx, client, func(mods []pendingModule) []pendingModule {
+		for _, mod := range mods {
+			if pendingModuleCliName(mod) == want {
+				return []pendingModule{mod}
+			}
+		}
+		return nil
+	}, core.ModuleLoadBestEffort); err != nil {
+		return none, false, err
+	}
+
+	client.modulesMu.Lock()
+	var installed string
+	for served := range client.servedWorkspaceModuleNames {
+		if canonicalWorkspaceModuleName(served) == want {
+			installed = served
+			break
+		}
+	}
+	client.modulesMu.Unlock()
+	if installed == "" {
+		return none, false, nil
+	}
+
+	client.stateMu.Lock()
+	servedMods := client.servedMods
+	client.stateMu.Unlock()
+	for _, mod := range servedMods.Mods() {
+		if !core.SameCLIName(mod.Name(), installed) {
+			continue
+		}
+		if res := mod.ModuleResult(); res.Self() != nil {
+			return res, true, nil
+		}
+	}
+	return none, false, nil
+}
+
 // canonicalWorkspaceModuleName kebab-normalizes a name or pattern segment for
 // comparison, matching the include matchers (ModTreePath.Glob/CliCase) and CLI
 // command names: "myMod", "my-mod", "MyMod" are the same module. Glob

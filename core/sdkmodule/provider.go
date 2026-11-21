@@ -48,12 +48,15 @@ func (provider *Provider) Module() dagql.ObjectResult[*core.Module] {
 
 // Load resolves ref as a normal module and validates the SDK-module interface.
 // parentSrc supplies the workspace filesystem context for local provider refs.
+// untrustedSettings marks settings that do not come from the configuration
+// that the session loaded for its client (see core.Module.UntrustedSettings).
 func Load(
 	ctx context.Context,
 	root *core.Query,
 	ref string,
 	parentSrc *core.ModuleSource,
 	settings map[string]any,
+	untrustedSettings bool,
 ) (*Provider, error) {
 	if strings.TrimSpace(ref) == "" {
 		return nil, fmt.Errorf("SDK module reference is required")
@@ -90,6 +93,12 @@ func Load(
 		selector.Args = append(selector.Args, dagql.NamedInput{
 			Name:  "legacyWorkspaceConfigJson",
 			Value: dagql.String(raw),
+		})
+	}
+	if untrustedSettings {
+		selector.Args = append(selector.Args, dagql.NamedInput{
+			Name:  "untrustedSettings",
+			Value: dagql.Boolean(true),
 		})
 	}
 

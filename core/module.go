@@ -106,6 +106,13 @@ type Module struct {
 	// for args not found in those settings. Off by default.
 	DefaultsFromDotEnv bool
 
+	// UntrustedSettings marks a module that is loaded from a staged edit or a
+	// workspace value, and that is not the module that the session loaded
+	// from its workspace with the same settings and source. Object settings
+	// resolve with the resources of the client that started the session, so
+	// such a module gets none of them, and no .env defaults.
+	UntrustedSettings bool
+
 	// Salts the module content cache key with internal asModule options that
 	// can materially change the resulting module instance for the same source.
 	AsModuleVariantDigest string
@@ -1123,6 +1130,7 @@ type persistedModulePayload struct {
 	LegacyArgCustomizations       []*modules.ModuleConfigArgument `json:"legacyArgCustomizations,omitempty"`
 	WorkspaceConfig               map[string]any                  `json:"workspaceConfig,omitempty"`
 	DefaultsFromDotEnv            bool                            `json:"defaultsFromDotEnv,omitempty"`
+	UntrustedSettings             bool                            `json:"untrustedSettings,omitempty"`
 	DisableDefaultFunctionCaching bool                            `json:"disableDefaultFunctionCaching,omitempty"`
 	AsModuleVariantDigest         string                          `json:"asModuleVariantDigest,omitempty"`
 }
@@ -1226,6 +1234,7 @@ func (mod *Module) EncodePersistedObject(ctx context.Context, enc *dagql.Persist
 	persisted.LegacyArgCustomizations = mod.LegacyArgCustomizations
 	persisted.WorkspaceConfig = mod.WorkspaceConfig
 	persisted.DefaultsFromDotEnv = mod.DefaultsFromDotEnv
+	persisted.UntrustedSettings = mod.UntrustedSettings
 	persisted.DisableDefaultFunctionCaching = mod.DisableDefaultFunctionCaching
 	persisted.AsModuleVariantDigest = mod.AsModuleVariantDigest
 
@@ -1333,6 +1342,7 @@ func (*Module) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDeco
 		LegacyArgCustomizations:       persisted.LegacyArgCustomizations,
 		WorkspaceConfig:               persisted.WorkspaceConfig,
 		DefaultsFromDotEnv:            persisted.DefaultsFromDotEnv,
+		UntrustedSettings:             persisted.UntrustedSettings,
 		DisableDefaultFunctionCaching: persisted.DisableDefaultFunctionCaching,
 		AsModuleVariantDigest:         persisted.AsModuleVariantDigest,
 	}
