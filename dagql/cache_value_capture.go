@@ -1229,8 +1229,9 @@ func (capture *HeldCapturedClosure) holdKnownRows(selection ValueSelection, carr
 }
 
 // checkRecords checks each copied record as the bundle will carry it: its
-// references, its normalization and its payload. One that fails refuses the
-// roots that reach its row.
+// references, its normalization and its payload, the normalized payloads'
+// references walked once (normalizeCheckedTransferRecord). One that fails
+// refuses the roots that reach its row.
 func (capture *HeldCapturedClosure) checkRecords() {
 	for _, row := range capture.order {
 		if _, blocked := capture.blocked[row.shared.id]; blocked || row.held {
@@ -1245,10 +1246,7 @@ func (capture *HeldCapturedClosure) checkRecords() {
 			capture.block(row.shared.id, "", fmt.Errorf("row %d: %w", row.shared.id, err))
 			continue
 		}
-		normalized, err := normalizeTransferRecord(row.record)
-		if err == nil {
-			err = validateTransferRecord(normalized, row.deps)
-		}
+		normalized, err := normalizeCheckedTransferRecord(row.record, row.deps)
 		if err != nil {
 			capture.block(row.shared.id, BusyOther, fmt.Errorf("row %d: %w", row.shared.id, err))
 			continue
