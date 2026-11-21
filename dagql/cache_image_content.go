@@ -239,11 +239,12 @@ func fromImageLocked(res *sharedResult) bool {
 }
 
 // ImageEntries returns the numbers of the entries the engine image ships,
-// sorted: every entry the image's merge gave an image holding. Such an entry
-// takes no Cloud part, offered or merged, whether or not the image ships
-// that part (offerPart, applyMergedOffersLocked), and is never exported
-// (FromImage). Only the image's merge at start makes image holdings, so the
-// set changes no more once the cache serves.
+// sorted: every entry the image's merge gave an image holding. None is ever
+// exported (FromImage). One whose parts the image supplies takes no Cloud
+// part, offered or merged (imageSuppliesLocked); a record the image ships
+// without a part takes the Cloud's as any entry does. Only the image's merge
+// at start makes image holdings, so the set changes no more once the cache
+// serves.
 func (c *Cache) ImageEntries() []uint64 {
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
