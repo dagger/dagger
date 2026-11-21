@@ -2073,6 +2073,27 @@ func getField(
 	optIn bool,
 	fieldName string,
 ) (res AnyResult, found bool, rerr error) {
+	val, found, err := getFieldValue(obj, optIn, fieldName)
+	if err != nil || !found || val == nil {
+		return nil, found, err
+	}
+	if res, ok := val.(AnyResult); ok {
+		return res, true, nil
+	}
+	retVal, err := NewResultForCurrentCall(ctx, val)
+	if err != nil {
+		return nil, false, fmt.Errorf("get field %q: %w", fieldName, err)
+	}
+	return retVal, true, nil
+}
+
+// getFieldValue is getField without making a result of the value: the
+// field's AnyResult, or its Typed value, or nil for a zero nullable field.
+func getFieldValue(
+	obj any,
+	optIn bool,
+	fieldName string,
+) (val Typed, found bool, rerr error) {
 	defer func() {
 		if err := recover(); err != nil {
 			rerr = fmt.Errorf("get field %q: %s", fieldName, err)
@@ -2097,7 +2118,7 @@ func getField(
 		fieldT := objT.Field(i)
 		if fieldT.Anonymous {
 			fieldI := objV.Field(i).Interface()
-			t, found, err := getField(ctx, fieldI, optIn, fieldName)
+			t, found, err := getFieldValue(fieldI, optIn, fieldName)
 			if err != nil {
 				return nil, false, fmt.Errorf("embedded struct %q: %w", fieldT.Name, err)
 			}
@@ -2131,13 +2152,7 @@ func getField(
 			if !t.Type().NonNull && objV.Field(i).IsZero() {
 				return nil, true, nil
 			}
-
-			retVal, err := NewResultForCurrentCall(ctx, t)
-			if err != nil {
-				return nil, false, fmt.Errorf("get field %q: %w", name, err)
-			}
-
-			return retVal, true, nil
+			return t, true, nil
 		}
 	}
 	return nil, false, nil
