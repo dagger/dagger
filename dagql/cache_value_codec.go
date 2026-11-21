@@ -206,14 +206,76 @@ func normalizeTransferCall(frame *ResultCall) (*ResultCall, error) {
 // the entries the record's child and call references name, sorted and once
 // each, which its last walk finds.
 func normalizeTransferRecordRefs(rec PersistedRecord) (PersistedRecord, []uint64, error) {
-	var err error
-	rec.Envelope, err = clonePersistedEnvelope(rec.Envelope)
+	var refs []uint64
+	rec, err := normalizeTransferRecordSeen(rec, func(ref *PersistedRef) {
+		if ref.ResultID != 0 && (ref.Kind == PersistedRefChild || ref.Kind == PersistedRefCall) {
+			refs = append(refs, ref.ResultID)
+		}
+	})
 	if err != nil {
 		return PersistedRecord{}, nil, err
 	}
+	slices.Sort(refs)
+	return rec, slices.Compact(refs), nil
+}
+
+// normalizeCheckedTransferRecord is normalizeTransferRecord, then
+// validateTransferRecord of the normalized record against deps, with each
+// of its payloads walked for its references once: the walk that normalizes
+// the record's references gives the child and call references validation
+// checks against deps, in their order, and each payload's codec is told so
+// (ReferencesVisitedApart). That walk visits every payload with its
+// family's visitor, as validation's own walks would. A record it refuses
+// for a reference is refused with validateTransferRecord's error. A record
+// with offers is validated by validateTransferRecord, which leaves its
+// offers out.
+func normalizeCheckedTransferRecord(rec PersistedRecord, deps []uint64) (PersistedRecord, error) {
+	if len(rec.Envelope.PendingOffers) != 0 {
+		normalized, err := normalizeTransferRecord(rec)
+		if err != nil {
+			return PersistedRecord{}, err
+		}
+		return normalized, validateTransferRecord(normalized, deps)
+	}
+	var checked []PersistedRef
+	normalized, err := normalizeTransferRecordSeen(rec, func(ref *PersistedRef) {
+		if ref.Kind == PersistedRefChild || ref.Kind == PersistedRefCall {
+			checked = append(checked, *ref)
+		}
+	})
+	if err != nil {
+		return PersistedRecord{}, err
+	}
+	direct, err := validateMemoTransferRecordContent(normalized, deps, payloadMemos{})
+	if err != nil {
+		return PersistedRecord{}, err
+	}
+	check := directTransferReferences(direct)
+	for i := range checked {
+		if err := check(&checked[i]); err != nil {
+			// A refusal says what validation's own walk says, which names
+			// the payload or call the reference is in.
+			if walked := validateTransferRecord(normalized, deps); walked != nil {
+				err = walked
+			}
+			return PersistedRecord{}, err
+		}
+	}
+	return normalized, nil
+}
+
+// normalizeTransferRecordSeen is normalizeTransferRecord, showing seen each
+// reference with no recipe that its last walk finds, as the normalized
+// record holds it.
+func normalizeTransferRecordSeen(rec PersistedRecord, seen func(*PersistedRef)) (PersistedRecord, error) {
+	var err error
+	rec.Envelope, err = clonePersistedEnvelope(rec.Envelope)
+	if err != nil {
+		return PersistedRecord{}, err
+	}
 	rec.Call = rec.Call.clone()
 	if err := walkTransferCalls(rec.Call, func(frame *ResultCall) error { frame.ExtraDigests = transferExtras(frame.ExtraDigests); return nil }, func(ref *ResultCallRef) error { ref.shared = nil; return nil }); err != nil {
-		return PersistedRecord{}, nil, err
+		return PersistedRecord{}, err
 	}
 	if err := walkTransferPayloads(&rec.Envelope, rec.Call, rec.SnapshotLinks, func(family PersistedObjectFamily, v PersistedPayloadVisit) (json.RawMessage, error) {
 		if family.Transfer == nil {
@@ -225,26 +287,22 @@ func normalizeTransferRecordRefs(rec PersistedRecord) (PersistedRecord, []uint64
 		normalized, err := family.Transfer.NormalizeForeign(v)
 		return normalized.JSON, err
 	}); err != nil {
-		return PersistedRecord{}, nil, err
+		return PersistedRecord{}, err
 	}
 	rec.SnapshotLinks = nil
-	var refs []uint64
 	rec, err = VisitEncodedReferences(rec, func(ref *PersistedRef) error {
 		if ref.RecipeID != nil {
 			copied, err := ref.RecipeID.FilterTransferDigests()
 			ref.RecipeID = copied
 			return err
 		}
-		if ref.ResultID != 0 && (ref.Kind == PersistedRefChild || ref.Kind == PersistedRefCall) {
-			refs = append(refs, ref.ResultID)
-		}
+		seen(ref)
 		return nil
 	})
 	if err != nil {
-		return PersistedRecord{}, nil, err
+		return PersistedRecord{}, err
 	}
-	slices.Sort(refs)
-	return rec, slices.Compact(refs), nil
+	return rec, nil
 }
 
 // validateTransferRecord checks a transferred record against its direct
