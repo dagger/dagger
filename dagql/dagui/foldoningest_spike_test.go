@@ -54,6 +54,9 @@ const (
 	foldHasLogs       foldState = 1 << 10
 	foldKind          foldState = 1 << 11 // a surfaced kind (see isIndexedKind)
 	foldReveal        foldState = 1 << 12
+	// foldExpanded marks a row whose children are retained, those to come
+	// included: a root, or a row the user expanded.
+	foldExpanded foldState = 1 << 13
 )
 
 func (s foldState) cat() spanStateCategory { return spanStateCategory(s & foldCatMask) }
@@ -166,6 +169,20 @@ func (fi *foldIndex) ingest(s sdktrace.ReadOnlySpan) {
 	case fi.shouldRetain(i):
 		fi.promote(i, s)
 	}
+	if first && fi.parent[i] == 0 {
+		// A root's children are the top-level rows, whether they arrived
+		// before it or come later.
+		fi.expand(i)
+	}
+}
+
+// expand retains i's children, those folded so far (read back) and those
+// still to come (shouldRetain), as expanding a row does.
+func (fi *foldIndex) expand(i uint32) {
+	fi.state[i] |= foldExpanded
+	for c := fi.firstChild[i]; c != 0; c = fi.nextSib[c-1] {
+		fi.promote(c-1, nil)
+	}
 }
 
 // link places i under p. Spans that arrived beneath i before i did only
@@ -230,8 +247,8 @@ func (fi *foldIndex) subtreeCounts(i uint32) RollUpState {
 
 func (fi *foldIndex) shouldRetain(i uint32) bool {
 	p := fi.parent[i]
-	if p == 0 || fi.parent[p-1] == 0 && fi.state[p-1]&foldReceived != 0 {
-		// the root, or one of its children
+	if p == 0 || fi.state[p-1]&foldExpanded != 0 {
+		// a root, or a child of an expanded row
 		return true
 	}
 	if fi.policy == foldRetainTop {
@@ -341,10 +358,11 @@ func foldFlags(s sdktrace.ReadOnlySpan) foldState {
 			if attr.Value.AsBool() {
 				st |= foldReveal
 			}
-		case telemetry.LLMRoleAttr, telemetryattrs.AgentAttr, telemetry.CheckNameAttr,
-			telemetry.GeneratorNameAttr, string(semconv.TestCaseNameKey),
-			string(semconv.TestSuiteNameKey), telemetryattrs.ServiceAttr,
-			telemetryattrs.ServiceNameAttr:
+		case telemetry.LLMRoleAttr, telemetry.LLMToolAttr, telemetryattrs.AgentAttr,
+			telemetry.CheckNameAttr, telemetry.GeneratorNameAttr,
+			string(semconv.TestCaseNameKey), string(semconv.TestSuiteNameKey),
+			telemetryattrs.ServiceAttr, telemetryattrs.ServiceNameAttr,
+			telemetryattrs.AgentRewindFromDigestAttr, telemetryattrs.AgentRewindToDigestAttr:
 			st |= foldKind
 		}
 	}
@@ -506,6 +524,14 @@ func compareFold(t *testing.T, fi *foldIndex, full *DB) (todayWrong int) {
 			t.Errorf("retained span %s has a folded parent", span.ID)
 		}
 	}
+	for i, st := range fi.state {
+		if st&foldReceived == 0 || fi.parent[i] == 0 || fi.state[fi.parent[i]-1]&foldExpanded == 0 {
+			continue
+		}
+		if st&foldRetained == 0 {
+			t.Errorf("span %s is folded beneath an expanded row", fi.spans[i])
+		}
+	}
 	if checked == 0 {
 		t.Fatal("no retained spans checked")
 	}
@@ -566,11 +592,66 @@ func TestFoldOnIngestLateParents(t *testing.T) {
 	}
 	wrong := compareFold(t, fi, full)
 	// Not asserted: today's incremental counts miss the spans beneath a span
-	// that joined its parent late (updateRollUpAncestors only propagates
-	// the span's own category). Logged as evidence.
-	t.Logf("today's DB: %d of %d retained spans' roll-up counts are wrong when children arrive first",
+	// that joined its parent in a later batch than they arrived in
+	// (updateRollUpAncestors only propagates the late span's own category).
+	// A single batch links everything before propagating, so it is right.
+	// Logged as evidence.
+	t.Logf("today's DB, 512-span batches: %d of %d retained spans' roll-up counts are wrong when children arrive first",
 		wrong, fi.retained())
+	oneBatch := NewDB()
+	if err := oneBatch.ExportSpans(t.Context(), spans); err != nil {
+		t.Fatal(err)
+	}
+	var oneWrong int
+	for _, span := range oneBatch.Spans.Order {
+		if rollUpOf(span) != truthCounts(span) {
+			oneWrong++
+		}
+	}
+	t.Logf("today's DB, one batch: %d of %d spans' roll-up counts are wrong", oneWrong, n)
 	t.Logf("%d spans retained, %d loaded back, %d stub visits", fi.retained(), fi.loads, fi.walked)
+}
+
+// TestFoldOnIngestExpand expands a running agent loop partway through a live
+// session: its children folded so far are read back, and those that arrive
+// later are retained as they come.
+func TestFoldOnIngestExpand(t *testing.T) {
+	const n = 30_000
+	tr := spanfootprint.New(n)
+	full := NewDB()
+	if err := tr.Export(t.Context(), noLinks{full}, 512, nil); err != nil {
+		t.Fatal(err)
+	}
+	load := footprintLoad(tr)
+	fi := newFoldIndex(foldRetainTop, func(id SpanID, done bool) sdktrace.ReadOnlySpan {
+		return stripLinks(load(id, done))
+	})
+	loop := SpanID{tr.SpanID(1)}
+	var batches, before int
+	if err := tr.Export(t.Context(), noLinks{fi}, 512, func() {
+		batches++
+		if batches == n/512/2 {
+			i, ok := fi.ids.get(loop, fi.spans)
+			if !ok {
+				t.Fatal("agent loop not received")
+			}
+			before = fi.loads
+			fi.expand(i)
+			// the read lands with the next export
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if fi.loads == before {
+		t.Fatal("expanding mid-session read nothing back")
+	}
+	compareFold(t, fi, full)
+	i, _ := fi.ids.get(loop, fi.spans)
+	var kids int
+	for c := fi.firstChild[i]; c != 0; c = fi.nextSib[c-1] {
+		kids++
+	}
+	t.Logf("expanded loop: %d children retained, %d read back at expand", kids, fi.loads-before)
 }
 
 var foldFootprintIndex *foldIndex
