@@ -190,7 +190,8 @@ type DB struct {
 	//
 	// Nothing drains it unless the DB serves a remote frontend through
 	// UpdatedSnapshots, so it ends up holding every span: a slice keeps that
-	// to a pointer apiece.
+	// to a pointer apiece, and a DB serving no remote frontend opts out of it
+	// (WithoutUpdateTracking).
 	updatedSpans []*Span
 
 	// seenSpans keeps track of which spans have been observed via
@@ -230,6 +231,10 @@ type DB struct {
 	pendingResumeOutputs map[resumeOutputKey]*SpanSet
 	pendingLogsByOutput  map[resumeOutputKey][]sdklog.Record
 	resolvedLogsBySpan   map[SpanID][]sdklog.Record
+
+	// pendingHasLogs holds the spans that logs arrived for before they did
+	// (see noteHasLogs).
+	pendingHasLogs map[SpanID]struct{}
 
 	// mutations counts span adds and updates. Derived-view memos (e.g. the
 	// per-span test views and surfaced checks) key on it so a cached result is
@@ -315,6 +320,28 @@ type DB struct {
 	// rowWaits is what UpdateRowWaits keeps between updates; nil until the
 	// first.
 	rowWaits *rowWaitsState
+
+	// untracked marks a DB that serves no remote frontend (see
+	// WithoutUpdateTracking): it keeps neither updatedSpans nor seenSpans.
+	untracked bool
+}
+
+// DBOption configures a DB built by NewDB.
+type DBOption func(*DB)
+
+// WithoutUpdateTracking builds a DB that never serves a remote frontend, such
+// as the local CLI's: it doesn't remember which spans changed since the last
+// UpdatedSnapshots (updatedSpans), nor which spans a frontend has seen
+// (seenSpans). Nothing would drain them, so they'd end up holding every span
+// of the trace. UpdatedSnapshots then reports no updates, and SpanSnapshots
+// and RemainingSnapshots treat every span as unsent.
+//
+// A DB serving remote frontends (e.g. dagger.io's per-viewer DB) must keep
+// the default.
+func WithoutUpdateTracking() DBOption {
+	return func(db *DB) {
+		db.untracked = true
+	}
 }
 
 // MutationCount reports how many span adds/updates the DB has seen, for
@@ -328,8 +355,8 @@ type resumeOutputKey struct {
 	Output  string
 }
 
-func NewDB() *DB {
-	return &DB{
+func NewDB(opts ...DBOption) *DB {
+	db := &DB{
 		PrimaryLogs: make(map[SpanID][]sdklog.Record),
 
 		Spans:     newSpanIndex(),
@@ -351,9 +378,16 @@ func NewDB() *DB {
 
 		LLMTokenMetrics: &LLMTokenMetrics{},
 	}
+	for _, opt := range opts {
+		opt(db)
+	}
+	return db
 }
 
 func (db *DB) seen(spanID SpanID) {
+	if db.untracked {
+		return
+	}
 	db.seenSpans[spanID] = struct{}{}
 }
 
@@ -522,6 +556,10 @@ func (db *DB) ImportSnapshots(snapshots []SpanSnapshot) {
 	spans := make([]*Span, len(snapshots))
 	for i, snapshot := range snapshots {
 		span := db.findOrAllocSpan(snapshot.ID)
+		if !span.Received && span.HasLogs {
+			// logs arrived before the span did (see noteHasLogs)
+			snapshot.HasLogs = true
+		}
 		span.Received = true
 		snapshot.Version += span.Version // don't reset the version
 		snapshot.Name = db.internName(snapshot.Name)
@@ -613,7 +651,7 @@ func (db *DB) update(span *Span) {
 		return
 	}
 	span.Version++
-	if !span.updateQueued {
+	if !span.updateQueued && !db.untracked {
 		span.updateQueued = true
 		db.updatedSpans = append(db.updatedSpans, span)
 	}
@@ -849,7 +887,7 @@ func (db *DB) ingestLogs(logs []sdklog.Record, collectRenderable bool) []sdklog.
 			db.PrimaryLogs[spanID] = append(db.PrimaryLogs[spanID], log)
 		}
 		// flag that the span has received logs
-		db.initSpan(spanID).HasLogs = true
+		db.noteHasLogs(spanID)
 		db.ingestToolArgs(log, spanID, body)
 	}
 	return renderable
@@ -882,8 +920,50 @@ func (db *DB) ingestLogPresence(record sdklog.Record) {
 		return
 	}
 	if spanID.IsValid() {
-		db.initSpan(spanID).HasLogs = true
+		db.noteHasLogs(spanID)
 	}
+}
+
+// noteHasLogs flags a span as having logs. A span that hasn't arrived yet is
+// remembered by ID rather than given a placeholder Span (which costs ~1 KiB,
+// for a span that may never arrive: one the frontend doesn't keep), and
+// flagged when it arrives (see takeHasLogs). One that has arrived is updated,
+// so remote frontends learn it has logs.
+func (db *DB) noteHasLogs(spanID SpanID) {
+	if span, ok := db.Spans.Map[spanID]; ok {
+		if !span.HasLogs {
+			span.HasLogs = true
+			db.update(span)
+		}
+		return
+	}
+	if db.pendingHasLogs == nil {
+		db.pendingHasLogs = map[SpanID]struct{}{}
+	}
+	db.pendingHasLogs[spanID] = struct{}{}
+}
+
+// SpanHasLogs reports whether logs arrived for a span, whether or not it has.
+func (db *DB) SpanHasLogs(spanID SpanID) bool {
+	if span, ok := db.Spans.Map[spanID]; ok {
+		return span.HasLogs
+	}
+	_, ok := db.pendingHasLogs[spanID]
+	return ok
+}
+
+// takeHasLogs reports whether logs arrived for a span before it did,
+// forgetting it.
+func (db *DB) takeHasLogs(spanID SpanID) bool {
+	if _, ok := db.pendingHasLogs[spanID]; !ok {
+		return false
+	}
+	delete(db.pendingHasLogs, spanID)
+	if len(db.pendingHasLogs) == 0 {
+		// Go maps never shrink
+		db.pendingHasLogs = nil
+	}
+	return true
 }
 
 func (db *DB) Shutdown(ctx context.Context) error {
@@ -1071,7 +1151,8 @@ func (db *DB) newSpan(spanID SpanID) *Span {
 	// TODO: this fools things into thinking they're a root span...?
 	return &Span{
 		SpanSnapshot: SpanSnapshot{
-			ID: spanID,
+			ID:      spanID,
+			HasLogs: db.takeHasLogs(spanID),
 		},
 		// The relation sets (ChildSpans and so on) stay nil until the
 		// first span is added: most of them stay empty.
@@ -1366,14 +1447,15 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 	}
 
 	// associate the span to its parent
+	var joined, lateLinked bool
 	if span.ParentID.IsValid() {
 		span.ParentSpan = db.initSpan(span.ParentID)
 		if addToSpanSet(&span.ParentSpan.ChildSpans, span) {
 			// if we're a new child, take a new snapshot for ChildCount
 			db.update(span.ParentSpan)
-			// and pass on to the new ancestors the time of the evaluations
-			// that credited the span or spans beneath it before it had any
-			span.recreditAncestors()
+			// and, once its links are known too, pass on to the new
+			// ancestors what arrived beneath it before it did (see below)
+			joined = true
 		}
 		// progress may have been ingested before the parent linkage was
 		// known (records can arrive ahead of their span, and spans ahead
@@ -1398,7 +1480,11 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 			linked := db.initSpan(linkedCtx.SpanID)
 			addToSpanSet(&linked.ChildSpans, span)
 			addToSpanSet(&linked.effectsViaLinks, span)
-			addToSpanSet(&span.causesViaLinks, linked)
+			if addToSpanSet(&span.causesViaLinks, linked) && !span.ParentID.IsValid() {
+				// a span without a parent reaches its ancestors through
+				// its causes alone
+				lateLinked = true
+			}
 			if installSite {
 				addToSpanSet(&span.installSites, linked)
 			}
@@ -1435,6 +1521,18 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 			linked := db.initSpan(originID)
 			span.AddErrorOrigin(linked)
 		}
+	}
+
+	if joined || lateLinked {
+		// The roll-up counts, running and revealed spans of what arrived
+		// beneath the span before it did, counted as they stood...
+		span.recreditLateParent()
+	}
+	if joined {
+		// ...then the time of the evaluations that credited the span or
+		// spans beneath it before it had any ancestors, which propagates
+		// them again
+		span.recreditAncestors()
 	}
 
 	// keep track of intervals seen for a digest, one span per start time

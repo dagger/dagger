@@ -3,6 +3,7 @@ package dagui
 import (
 	"fmt"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -942,34 +943,7 @@ func (span *Span) updateRollUpAncestors() {
 	// Update the cached category
 	span.lastRollUpCategory = newCategory
 
-	// Use a map to track which ancestors we've already updated to avoid redundant work
-	updated := make(map[SpanID]bool)
-
-	// Use a queue to iteratively process ancestors instead of recursion
-	var queue []*Span
-
-	// Add immediate parents to queue
-	if span.ParentSpan != nil {
-		queue = append(queue, span.ParentSpan)
-	}
-
-	// Add causal parents to queue
-	span.attributedCauses(func(causal *Span, _ bool) bool {
-		queue = append(queue, causal)
-		return true
-	})
-
-	// Process ancestors iteratively
-	for len(queue) > 0 {
-		current := queue[0]
-		queue = queue[1:]
-
-		// Skip if already updated
-		if updated[current.ID] {
-			continue
-		}
-		updated[current.ID] = true
-
+	span.rollUpAncestors(nil, func(current *Span) {
 		// Lazily initialize rollUpState for all spans
 		if current.rollUpState == nil {
 			current.rollUpState = &RollUpState{}
@@ -980,6 +954,47 @@ func (span *Span) updateRollUpAncestors() {
 			current.rollUpState.decrementCategory(oldCategory)
 		}
 		current.rollUpState.incrementCategory(newCategory)
+	})
+}
+
+// rollUpAncestors visits, once each, the spans whose roll-up counts include
+// span's: its parent and causal parents, theirs, and so on up. The walk
+// doesn't go past stop (which is visited) when it's set: rollUpAncestors
+// then reports whether it reached stop.
+func (span *Span) rollUpAncestors(stop *Span, visit func(*Span)) (reachedStop bool) {
+	// Use a map to track which ancestors we've already visited to avoid
+	// redundant work
+	updated := make(map[*Span]bool)
+
+	// Use a queue to iteratively process ancestors instead of recursion
+	var queue []*Span
+
+	// Add immediate parents to queue
+	if span.ParentSpan != nil {
+		queue = append(queue, span.ParentSpan)
+	}
+
+	// Add causal parents to queue
+	span.attributedCausesUntil(stop, func(causal *Span, _ bool) bool {
+		queue = append(queue, causal)
+		return true
+	})
+
+	// Process ancestors iteratively
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+
+		// Skip if already updated
+		if updated[current] {
+			continue
+		}
+		updated[current] = true
+		visit(current)
+		if current == stop {
+			reachedStop = true
+			continue
+		}
 
 		// Add this ancestor's parents to queue
 		if current.ParentSpan != nil {
@@ -987,10 +1002,119 @@ func (span *Span) updateRollUpAncestors() {
 		}
 
 		// Add this ancestor's causal parents to queue
-		current.attributedCauses(func(causal *Span, _ bool) bool {
+		current.attributedCausesUntil(stop, func(causal *Span, _ bool) bool {
 			queue = append(queue, causal)
 			return true
 		})
+	}
+	return reachedStop
+}
+
+// recreditLateParent credits the spans that became span's ancestors when it
+// joined its parent with what arrived beneath span before it did: the
+// roll-up counts, running spans and revealed spans that reached span while it
+// had no parent, and stopped there. It's how a subtree delivered in an
+// earlier batch than its root's parent link -- an import read children
+// first, or a span read back into a DB holding its descendants -- ends up
+// counted as if it had arrived in order. The spans beneath it are updated as
+// usual, so a remote frontend learns of the new aggregates.
+//
+// Only called when span arrives and links to its parent (or, for a span
+// without one, to its causes), after its links are established.
+func (span *Span) recreditLateParent() {
+	if span.ChildSpans.Len() == 0 {
+		return
+	}
+	db := span.db
+
+	// Running spans reach every direct ancestor (see
+	// PropagateStatusToParentsAndLinks): span holds those beneath it.
+	if span.RunningSpans.Len() > 0 {
+		for parent := range span.Parents {
+			changed := false
+			for _, running := range span.RunningSpans.Spans() {
+				if running.IsRunningOrEffectsRunning() {
+					changed = addToSpanSet(&parent.RunningSpans, running) || changed
+				}
+			}
+			if changed {
+				db.update(parent)
+			}
+		}
+	}
+
+	// Revealed spans reach ancestors up to the first that stops them,
+	// inclusive.
+	if span.RevealedSpans.Len() > 0 && !span.Boundary && !span.Encapsulate && !span.Reveal {
+		for parent := range span.Parents {
+			changed := false
+			for _, revealed := range span.RevealedSpans.Spans() {
+				changed = parent.AddRevealedSpan(revealed) || changed
+			}
+			if changed {
+				db.update(parent)
+			}
+			if parent.Boundary || parent.Encapsulate || parent.Reveal {
+				break
+			}
+		}
+	}
+
+	// Roll-up counts: span's ancestors, causal ones included, credited with
+	// every span counted on span that reached it only through span. Before
+	// span arrived, nothing led up from it.
+	if span.rollUpState == nil || *span.rollUpState == (RollUpState{}) {
+		// nothing beneath span counted yet, e.g. its subtree arrived in
+		// the same batch: it propagates through the new links
+		return
+	}
+	var gained []*Span
+	span.rollUpAncestors(nil, func(s *Span) {
+		if s != span {
+			gained = append(gained, s)
+		}
+	})
+	if len(gained) == 0 {
+		return
+	}
+	credited := map[*Span]bool{}
+	seen := map[*Span]bool{span: true}
+	queue := slices.Clone(span.ChildSpans.Spans())
+	for len(queue) > 0 {
+		beneath := queue[0]
+		queue = queue[1:]
+		if seen[beneath] {
+			continue
+		}
+		seen[beneath] = true
+		queue = append(queue, beneath.ChildSpans.Spans()...)
+		cat := beneath.lastRollUpCategory
+		if cat == stateUnknown {
+			// not counted anywhere yet: it will be, through the new parent
+			continue
+		}
+		reached := map[*Span]bool{}
+		if !beneath.rollUpAncestors(span, func(s *Span) { reached[s] = true }) {
+			// joined beneath span some other way (e.g. a link that isn't
+			// causal for roll-ups)
+			continue
+		}
+		for _, ancestor := range gained {
+			if reached[ancestor] {
+				// counted already, through another way up
+				continue
+			}
+			if ancestor.rollUpState == nil {
+				ancestor.rollUpState = &RollUpState{}
+			}
+			ancestor.rollUpState.incrementCategory(cat)
+			credited[ancestor] = true
+		}
+	}
+	for _, ancestor := range gained {
+		if credited[ancestor] {
+			db.update(ancestor)
+		}
 	}
 }
 
@@ -1225,6 +1349,12 @@ func (span *Span) CausalSpans(f func(*Span) bool) {
 // site a lazy evaluation's result was only installed at (see installSites),
 // nor to anything reached through one.
 func (span *Span) attributedCauses(f func(cause *Span, timed bool) bool) {
+	span.attributedCausesUntil(nil, f)
+}
+
+// attributedCausesUntil is attributedCauses, not passing through stop (which
+// is visited) to its own causes.
+func (span *Span) attributedCausesUntil(stop *Span, f func(cause *Span, timed bool) bool) {
 	if span.causesViaLinks.Len() == 0 {
 		// Most spans have no causes; skip allocating the recursive visitor.
 		return
@@ -1235,6 +1365,9 @@ func (span *Span) attributedCauses(f func(cause *Span, timed bool) bool) {
 			causeTimed := timed && !s.installedAt(cause)
 			if !cause.isLazyEvaluation() && !f(cause, causeTimed) {
 				return false
+			}
+			if cause == stop {
+				continue
 			}
 			if !visit(cause, causeTimed) {
 				return false

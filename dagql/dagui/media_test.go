@@ -33,7 +33,7 @@ func TestMediaRecord(t *testing.T) {
 		media, ok := ParseMediaRecord(logs[1])
 		require.True(t, ok)
 		require.Equal(t, MediaRecord{Kind: "image", MIMEType: "image/png", Data: "aW1hZ2U="}, media)
-		require.True(t, db.Spans.Map[SpanID{SpanID: rec.SpanID()}].HasLogs)
+		require.True(t, db.SpanHasLogs(SpanID{SpanID: rec.SpanID()}))
 	})
 	for name, attr := range map[string]otellog.KeyValue{
 		"wrong kind type":    otellog.Int(telemetryattrs.LogMediaKindAttr, 1),

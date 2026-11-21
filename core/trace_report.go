@@ -288,7 +288,7 @@ func loadTraceReportSession(ctx context.Context, clientDB *clientdb.DB, root str
 	walk := read.SpanLogScope(root)
 	scope := read.AncestorClosure(walk)
 
-	session := idtui.NewReportSession(dagui.NewDB())
+	session := idtui.NewReportSession(newTraceToolDB())
 	if err := ingestSpanScope(ctx, read, session.DB(), scope); err != nil {
 		return nil, err
 	}
@@ -321,6 +321,12 @@ func loadTraceReportSession(ctx context.Context, clientDB *clientdb.DB, root str
 		}
 	}
 	return session, nil
+}
+
+// newTraceToolDB builds the throwaway DB a trace tool loads a scope into:
+// it serves no remote frontend.
+func newTraceToolDB() *dagui.DB {
+	return dagui.NewDB(dagui.WithoutUpdateTracking())
 }
 
 // ingestSpanScope feeds the newest snapshot of every span in scope into db,

@@ -45,7 +45,7 @@ func NewLogs(output io.Writer) Frontend {
 	}
 	out := NewOutput(output, termenv.WithProfile(profile))
 
-	db := dagui.NewDB()
+	db := newLocalDB()
 
 	fe := &frontendLogs{
 		profile: profile,

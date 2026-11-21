@@ -1261,11 +1261,16 @@ func (fe *frontendPretty) SetClient(client *dagger.Client) {
 }
 
 func NewPretty(w io.Writer) Frontend {
-	return NewWithDB(w, dagui.NewDB())
+	return NewWithDB(w, newLocalDB())
+}
+
+// newLocalDB builds the DB of a frontend that serves no remote frontend.
+func newLocalDB() *dagui.DB {
+	return dagui.NewDB(dagui.WithoutUpdateTracking())
 }
 
 func NewReporter(w io.Writer) Frontend {
-	fe := NewWithDB(w, dagui.NewDB())
+	fe := NewWithDB(w, newLocalDB())
 	fe.reportOnly = true
 	return fe
 }

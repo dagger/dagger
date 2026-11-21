@@ -390,7 +390,7 @@ func (sc *spanSearchScan) load(ctx context.Context, spans []*searchSpan, withRoo
 		}
 		scopes[sp.store][sp.id] = struct{}{}
 	}
-	db := dagui.NewDB()
+	db := newTraceToolDB()
 	primary := sc.stores[0]
 	for i, read := range sc.stores {
 		if len(scopes[i]) > 0 {

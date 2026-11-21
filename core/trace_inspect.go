@@ -449,7 +449,7 @@ func inspectSpan(ctx context.Context, spanID string) (string, error) {
 func inspectSpanIn(ctx context.Context, read *clientdb.DB, spanID string) (string, error) {
 	scope := read.ChildSpanIDs(spanID)
 	scope[spanID] = struct{}{}
-	db := dagui.NewDB()
+	db := newTraceToolDB()
 	if err := ingestSpanScope(ctx, read, db, read.AncestorClosure(scope)); err != nil {
 		return "", err
 	}
@@ -493,7 +493,7 @@ func spanTimings(ctx context.Context, root string, minDuration time.Duration, li
 
 // spanTimingsIn is spanTimings against an already-open store.
 func spanTimingsIn(ctx context.Context, read *clientdb.DB, root string, minDuration time.Duration, limit int, now time.Time) (string, error) {
-	db := dagui.NewDB()
+	db := newTraceToolDB()
 	if err := ingestSpanScope(ctx, read, db, read.AncestorClosure(read.SpanLogScope(root))); err != nil {
 		return "", err
 	}

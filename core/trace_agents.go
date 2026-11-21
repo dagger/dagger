@@ -102,7 +102,7 @@ func loadAgentRoster(ctx context.Context, client *clientdb.DB, extra ...string) 
 			release()
 		}
 	}()
-	db := dagui.NewDB()
+	db := newTraceToolDB()
 	for _, store := range stores {
 		ids := store.AgentSpanIDs()
 		for _, id := range extra {

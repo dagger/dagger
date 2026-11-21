@@ -57,12 +57,9 @@ func (db *DB) ingestToolArgs(record sdklog.Record, spanID SpanID, body string) {
 		return
 	}
 	span := db.Spans.Map[spanID]
-	if span == nil {
-		return
-	}
-	if span.Received && !keepsToolArgs(span) {
+	if span != nil && span.Received && !keepsToolArgs(span) {
 		// Not a tool call, or one whose attributes have its arguments. A
-		// span not received yet is a placeholder whose tool isn't known:
+		// span not received yet (or a placeholder) whose tool isn't known:
 		// keep its arguments in case it is one, until it turns out not to
 		// be (see pruneToolArgs).
 		return
@@ -91,6 +88,10 @@ func (db *DB) ingestToolArgs(record sdklog.Record, spanID SpanID, body string) {
 		// drop it and let the attributes speak.
 		args.chunks, args.size = nil, 0
 		args.overflowed = true
+	}
+	if span == nil {
+		// it's kept for the span when it arrives (see pruneToolArgs)
+		return
 	}
 	if span.Received {
 		// Records can arrive after their call ended: kept only while

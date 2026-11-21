@@ -47,6 +47,29 @@ func TestSpanNamesInterned(t *testing.T) {
 	}
 }
 
+// A DB serving no remote frontend keeps no record of updates for one, while
+// the default DB keeps it.
+func TestWithoutUpdateTracking(t *testing.T) {
+	snaps := []SpanSnapshot{
+		{ID: spanID(1), Name: "root", StartTime: time.Unix(1, 0), EndTime: time.Unix(3, 0)},
+		{ID: spanID(2), ParentID: spanID(1), Name: "child", StartTime: time.Unix(2, 0), EndTime: time.Unix(3, 0)},
+	}
+	local := NewDB(WithoutUpdateTracking())
+	local.ImportSnapshots(snaps)
+	local.SpanSnapshots(spanID(1))
+	if len(local.updatedSpans) != 0 || len(local.seenSpans) != 0 {
+		t.Fatalf("untracked DB kept %d updated and %d seen spans", len(local.updatedSpans), len(local.seenSpans))
+	}
+	if local.Spans.Map[spanID(2)].Version == 0 {
+		t.Fatal("versions should still advance")
+	}
+	remote := NewDB()
+	remote.ImportSnapshots(snaps)
+	if got := len(remote.UpdatedSnapshots(nil)); got != 2 {
+		t.Fatalf("default DB forwarded %d spans, want 2", got)
+	}
+}
+
 // db.Intervals keeps one span per call digest and start time: re-exports of
 // a span replace it, while another run of the same call adds to it.
 func TestIntervalsOneSpanPerStartTime(t *testing.T) {

@@ -123,7 +123,7 @@ type logLine struct {
 }
 
 func NewPlain(w io.Writer) Frontend {
-	db := dagui.NewDB()
+	db := newLocalDB()
 	return &frontendPlain{
 		db:       db,
 		data:     make(map[dagui.SpanID]*spanData),
