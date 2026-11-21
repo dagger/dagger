@@ -497,9 +497,14 @@ type MemoryCake {
   FILES files (default 100) of LINES lines (default 100) that each match
   once, selecting SELECT of each of the FILES x LINES results (default
   "filePath lineNumber matchedLines submatches { text start end }");
-  out/searches.txt has the bytes allocated per search and per result. Add
-  id to SELECT for the path SDKs take (they select each element's ID).
-  Scale with env, e.g. ["SEARCHES=2"].
+  out/searches.txt has the bytes allocated per search and per result. On
+  main every result gets three cached, session-owned results (its own, its
+  submatches list's, its submatch's) and nine field calls: 1070 MiB live,
+  ~320 KB allocated per result. Read from the list's values, 25 MiB live and
+  ~22 KB per result. Add id to SELECT for the path SDKs take (they select
+  each element's ID, so the elements keep their results): 1096 MiB on main,
+  677 MiB with the submatches read from values. Scale with env, e.g.
+  ["SEARCHES=2"].
   """
   demoObjectLists(
     ref: String! = "main",

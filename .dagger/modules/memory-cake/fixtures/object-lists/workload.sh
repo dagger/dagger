@@ -16,7 +16,9 @@ set -eu
 FILES=${FILES:-100}
 LINES=${LINES:-100}
 SEARCHES=${SEARCHES:-5}
-SELECT=${SELECT:-filePath lineNumber matchedLines submatches { text start end }}
+if [ -z "${SELECT:-}" ]; then
+  SELECT='filePath lineNumber matchedLines submatches { text start end }'
+fi
 ENGINE=http://dagger-engine:6060
 
 script="set -eu
