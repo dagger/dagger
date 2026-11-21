@@ -136,8 +136,9 @@ type captureReadsExport struct {
 	bundle  ValueBundle
 	copied  map[uint64]bool
 	// copiedRows, unpredicted and lateMoved are the export's own counts
-	// (ExportedValues).
+	// (ExportedValues), and phases its phases.
 	copiedRows, unpredicted, lateMoved int
+	phases                             ExportPhases
 }
 
 // captureReadsValue is a bundle's value by entry. An expiry is a time the
@@ -272,6 +273,7 @@ func captureReadsRun(t *testing.T, ctx context.Context, c *Cache, known *KnownRo
 		got.Held = slices.Sorted(slices.Values(values.Rows.Held))
 		got.Passes = values.Phases.BundlePasses
 		got.copiedRows, got.unpredicted, got.lateMoved = values.CopiedRows, values.UnpredictedLinks, values.LateMoved
+		got.phases = values.Phases
 		return nil
 	}))
 	return got
