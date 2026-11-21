@@ -45,7 +45,7 @@ func (f *exhaustionFixture) attachImage(t *testing.T, row AnyResult, offer Persi
 	row.cacheSharedResult().noteImageCopyLocked(1)
 	owner, err := f.cache.newOfferOwnerLocked(f.ctx, offer.Owner)
 	if err == nil {
-		err = f.cache.attachPartOfferLocked(row.cacheSharedResult(), offer.Address, &partOffer{record: offer, owner: owner})
+		err = f.cache.attachPartOfferLocked(row.cacheSharedResult(), imageCacheID, offer.Address, &partOffer{record: offer, owner: owner})
 	}
 	f.cache.egraphMu.Unlock()
 	require.NoError(t, err)

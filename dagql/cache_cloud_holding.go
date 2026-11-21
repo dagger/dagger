@@ -36,12 +36,40 @@ func (res *sharedResult) imageHoldingLocked() (HolderKey, *holding) {
 	return HolderKey{}, nil
 }
 
+// imageSuppliesLocked reports whether the engine image supplies res's parts:
+// its image holding carries the image's offer of one. The image ships parts
+// for the results it was built from, and the records of their closures
+// without any. Such a record has no content of its own on the engine, and
+// takes its parts as any other entry does. Requires egraphMu.
+func (res *sharedResult) imageSuppliesLocked() bool {
+	_, h := res.imageHoldingLocked()
+	if h == nil {
+		return false
+	}
+	for _, part := range h.parts {
+		if part.offer != nil {
+			return true
+		}
+	}
+	return false
+}
+
 // offerHoldingLocked returns the holding whose offers supply res's parts: its
-// image holding, whose content is on the engine's own disk, or else its Cloud
-// holding. Requires egraphMu.
+// image holding when the image supplies them (imageSuppliesLocked), whose
+// content is on the engine's own disk, or else its Cloud holding. Requires
+// egraphMu.
 func (res *sharedResult) offerHoldingLocked() (HolderKey, *holding) {
-	if key, h := res.imageHoldingLocked(); h != nil {
-		return key, h
+	if res.imageSuppliesLocked() {
+		return res.imageHoldingLocked()
+	}
+	return res.cloudHoldingLocked()
+}
+
+// senderHoldingLocked returns res's holding of the cache from, the image or
+// the Cloud, which an offer from that cache goes into. Requires egraphMu.
+func (res *sharedResult) senderHoldingLocked(from CacheID) (HolderKey, *holding) {
+	if from == imageCacheID {
+		return res.imageHoldingLocked()
 	}
 	return res.cloudHoldingLocked()
 }
