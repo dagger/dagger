@@ -833,9 +833,10 @@ func runcProcessHandle(ctx context.Context, killer procKiller) (*procHandle, con
 	runcCtx = bklog.WithLogger(runcCtx, bklog.G(ctx))
 
 	go func() {
-		// Wait for pid
+		// Wait for pid, even if ctx is already done: a runtime that starts after
+		// that still has to be killed.
 		select {
-		case <-ctx.Done():
+		case <-p.ended:
 			return // nothing to kill
 		case <-p.ready:
 		}
@@ -907,12 +908,11 @@ func (p *procHandle) WaitForReady(ctx context.Context) error {
 }
 
 // WaitForStart will record the runc pid reported by go-runc via the channel.
-// We wait for up to 10s for the runc pid to be reported.  If the started
-// callback is non-nil it will be called after receiving the pid.
+// If the started callback is non-nil it will be called after receiving the pid.
+// There is no deadline: starting can legitimately be slow, and canceling ctx
+// would fail the exec. ctx ends when the runtime call returns, so this doesn't
+// outlive a runtime that never started.
 func (p *procHandle) WaitForStart(ctx context.Context, startedCh <-chan int, started func()) error {
-	ctx, cancel := context.WithCancelCause(ctx)
-	ctx, _ = context.WithTimeoutCause(ctx, 10*time.Second, context.DeadlineExceeded)
-	defer cancel(context.Canceled)
 	select {
 	case <-ctx.Done():
 		return errors.New("go-runc started message never received")

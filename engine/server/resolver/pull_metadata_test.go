@@ -291,6 +291,11 @@ type testPullRegistry struct {
 	// through its body; layerResets counts the resets sent.
 	resetNextLayerGET atomic.Bool
 	layerResets       atomic.Int32
+	// resetNextConfigGET does the same to the next GET of the image config;
+	// configGETs and configResets count those GETs and resets.
+	resetNextConfigGET atomic.Bool
+	configGETs         atomic.Int32
+	configResets       atomic.Int32
 }
 
 func (registry *testPullRegistry) manifestRequests() int32 {
@@ -327,6 +332,15 @@ func (registry *testPullRegistry) handler(image *testPullImage) http.Handler {
 				http.NotFound(w, r)
 			}
 		case r.URL.Path == "/v2/test/image/blobs/"+image.config.Digest.String():
+			if r.Method == http.MethodGet {
+				registry.configGETs.Add(1)
+				if registry.resetNextConfigGET.CompareAndSwap(true, false) {
+					if resetTestRegistryResponse(w, image.config, image.configBytes) {
+						registry.configResets.Add(1)
+					}
+					return
+				}
+			}
 			serveTestRegistryDescriptor(w, r, image.config, image.configBytes)
 		case r.URL.Path == "/v2/test/image/blobs/"+image.layer.Digest.String():
 			if r.Method == http.MethodGet {
@@ -436,6 +450,31 @@ func TestPullRetriesLayerAfterConnectionReset(t *testing.T) {
 	require.Equal(t, s.image.layerBytes, actual)
 }
 
+// A registry that resets the connection partway through the image's config,
+// as mcr.microsoft.com sometimes does after the root resolved, does not fail
+// resolving the image: the config is fetched again, whichever way the
+// resolve reads it.
+func TestResolveRetriesConfigAfterConnectionReset(t *testing.T) {
+	for _, mode := range []ResolveMode{ResolveModeDefault, ResolveModeForcePull} {
+		t.Run(fmt.Sprintf("mode=%d", mode), func(t *testing.T) {
+			platform := ocispecs.Platform{OS: "linux", Architecture: "amd64"}
+			image := newTestPullImage(t, true, platform)
+			registry, rslvr := newTestPullResolver(t, image)
+			registry.resetNextConfigGET.Store(true)
+
+			_, resolvedDigest, configBytes, err := rslvr.ResolveImageConfig(t.Context(), registry.host+"/test/image:latest", ResolveImageConfigOpts{
+				Platform:    &platform,
+				ResolveMode: mode,
+			})
+			require.NoError(t, err)
+			require.Equal(t, image.root.Digest, resolvedDigest)
+			require.JSONEq(t, string(image.configBytes), string(configBytes))
+			require.Equal(t, int32(1), registry.configResets.Load(), "the first config GET was reset partway through")
+			require.Equal(t, int32(2), registry.configGETs.Load(), "the config was fetched again")
+		})
+	}
+}
+
 // A registry whose TLS handshake times out on the manifest request, as
 // mcr.microsoft.com's sometimes does, does not fail resolving the image: the
 // request is sent again.
@@ -443,6 +482,35 @@ func TestResolveRetriesManifestAfterTLSHandshakeTimeout(t *testing.T) {
 	ctx := t.Context()
 	platform := ocispecs.Platform{OS: "linux", Architecture: "amd64"}
 	image := newTestPullImage(t, false, platform)
+	registry, listener, rslvr := newStallingTLSResolver(t, image)
+
+	_, dgst, configBytes, err := rslvr.ResolveImageConfig(ctx, registry.host+"/test/image:latest", ResolveImageConfigOpts{Platform: &platform})
+	require.NoError(t, err)
+	require.True(t, listener.stalled.Load(), "the first TLS handshake stalled")
+	require.Equal(t, int32(1), registry.manifestHEADs.Load(), "only the retried manifest request got through")
+	require.Equal(t, image.root.Digest, dgst)
+	require.JSONEq(t, string(image.configBytes), string(configBytes))
+}
+
+// Resolving only an image's digest, as a lock update does, retries the
+// manifest request after a TLS handshake timeout too.
+func TestResolveImageDigestRetriesAfterTLSHandshakeTimeout(t *testing.T) {
+	platform := ocispecs.Platform{OS: "linux", Architecture: "amd64"}
+	image := newTestPullImage(t, false, platform)
+	registry, listener, rslvr := newStallingTLSResolver(t, image)
+
+	_, dgst, err := rslvr.ResolveImageDigest(t.Context(), registry.host+"/test/image:latest", ResolveImageDigestOpts{})
+	require.NoError(t, err)
+	require.True(t, listener.stalled.Load(), "the first TLS handshake stalled")
+	require.Equal(t, int32(1), registry.manifestHEADs.Load(), "only the retried manifest request got through")
+	require.Equal(t, image.root.Digest, dgst)
+}
+
+// newStallingTLSResolver serves image over TLS from a registry whose first
+// TLS handshake stalls past the client's handshake timeout, as
+// mcr.microsoft.com's sometimes does, and returns a resolver for it.
+func newStallingTLSResolver(t *testing.T, image *testPullImage) (*testPullRegistry, *stallFirstHandshakeListener, *Resolver) {
+	t.Helper()
 	registry := &testPullRegistry{}
 	server := httptest.NewUnstartedServer(registry.handler(image))
 	listener := &stallFirstHandshakeListener{Listener: server.Listener}
@@ -469,13 +537,7 @@ func TestResolveRetriesManifestAfterTLSHandshakeTimeout(t *testing.T) {
 		LeaseManager: newTestLeaseManager(),
 	})
 	t.Cleanup(func() { require.NoError(t, rslvr.Close()) })
-
-	_, dgst, configBytes, err := rslvr.ResolveImageConfig(ctx, registry.host+"/test/image:latest", ResolveImageConfigOpts{Platform: &platform})
-	require.NoError(t, err)
-	require.True(t, listener.stalled.Load(), "the first TLS handshake stalled")
-	require.Equal(t, int32(1), registry.manifestHEADs.Load(), "only the retried manifest request got through")
-	require.Equal(t, image.root.Digest, dgst)
-	require.JSONEq(t, string(image.configBytes), string(configBytes))
+	return registry, listener, rslvr
 }
 
 // A missing image is not a network error, so resolving it fails at once.

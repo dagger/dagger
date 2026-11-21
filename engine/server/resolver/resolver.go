@@ -246,11 +246,17 @@ func (r *Resolver) ResolveImageConfig(
 		}
 
 		provider := contentutil.FromFetcher(fetcher)
-		configDesc, err := images.Config(ctx, provider, rootDesc, platformMatcher)
-		if err != nil {
-			return nil, err
-		}
-		configBytes, err := content.ReadBlob(ctx, provider, configDesc)
+		var configBytes []byte
+		// Reading the platform manifest and the config are blob fetches too, so
+		// they're retried after a network error as well.
+		err = retryResolve(ctx, ref, func(ctx context.Context) error {
+			configDesc, err := images.Config(ctx, provider, rootDesc, platformMatcher)
+			if err != nil {
+				return err
+			}
+			configBytes, err = content.ReadBlob(ctx, provider, configDesc)
+			return err
+		})
 		if err != nil {
 			return nil, err
 		}
@@ -302,7 +308,14 @@ func (r *Resolver) ResolveImageDigest(
 	if err != nil {
 		return "", "", fmt.Errorf("create registry resolve network recorder: %w", err)
 	}
-	resolvedRef, rootDesc, err := r.remoteResolver(opts.Network, opts.RegistryTransport, network).Resolve(ctx, ref)
+	resolver := r.remoteResolver(opts.Network, opts.RegistryTransport, network)
+	var resolvedRef string
+	var rootDesc ocispecs.Descriptor
+	err = retryResolve(ctx, ref, func(ctx context.Context) error {
+		var err error
+		resolvedRef, rootDesc, err = resolver.Resolve(ctx, ref)
+		return err
+	})
 	if err != nil {
 		return "", "", err
 	}
