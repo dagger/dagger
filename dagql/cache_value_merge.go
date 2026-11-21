@@ -305,7 +305,10 @@ func (c *Cache) CommitValueMerge(ctx context.Context, p *PreparedValueMerge) (Me
 		if c.testMergeCommitLocked != nil {
 			c.testMergeCommitLocked()
 		}
-		if target, wait := c.mergeAttachmentWaitLocked(prep); wait != nil {
+		// Each row's current entry is looked up once in a hold, for every
+		// step of the commit that reads it: nothing else writes meanwhile.
+		targets := c.mergeTargetsLocked(prep)
+		if target, wait := c.mergeAttachmentWaitLocked(prep, targets); wait != nil {
 			c.egraphMu.Unlock()
 			if c.testMergeWaitsOnAttachment != nil {
 				c.testMergeWaitsOnAttachment(target)
@@ -317,7 +320,7 @@ func (c *Cache) CommitValueMerge(ctx context.Context, p *PreparedValueMerge) (Me
 			}
 			continue
 		}
-		commit, err := c.planValueMergeLocked(ctx, from, prep)
+		commit, err := c.planValueMergeLocked(ctx, from, prep, targets)
 		var stale *mergeStaleError
 		if errors.As(err, &stale) {
 			c.egraphMu.Unlock()
@@ -1456,12 +1459,39 @@ func (c *Cache) warmMergeTargetParts(ctx context.Context, prep *valueMergePrep) 
 	_ = release()
 }
 
+// mergeTargets are each row's current entry, its recipe's, by ordinal, as
+// one hold of egraphMu finds them (mergeTargetsLocked): the commit's steps in
+// that hold read them there, not from the recipe index once each.
+type mergeTargets []*sharedResult
+
+// mergeTargetsLocked returns each of prep's rows' current entry, by
+// ordinal. Requires egraphMu, and holds only while it is held.
+func (c *Cache) mergeTargetsLocked(prep *valueMergePrep) mergeTargets {
+	targets := make(mergeTargets, len(prep.bundle.Values)+1)
+	for _, id := range prep.order {
+		if id < uint64(len(targets)) {
+			targets[id] = c.currentEntryForRecipeLocked(prep.plans[id].recipe)
+		}
+	}
+	return targets
+}
+
+// of returns the current entry of the row of ordinal id: from the hold's
+// targets when it has them, and from the recipe index otherwise, as an
+// engine's early decision reads it (earlyMergeRows). Requires egraphMu.
+func (targets mergeTargets) of(c *Cache, prep *valueMergePrep, id uint64) *sharedResult {
+	if id < uint64(len(targets)) {
+		return targets[id]
+	}
+	return c.currentEntryForRecipeLocked(prep.plans[id].recipe)
+}
+
 // mergeAttachmentWaitLocked returns the attachment to wait on when a record's
 // target is still attaching: merge changes nothing until every target is
 // settled. Requires egraphMu.
-func (c *Cache) mergeAttachmentWaitLocked(prep *valueMergePrep) (*sharedResult, <-chan struct{}) {
+func (c *Cache) mergeAttachmentWaitLocked(prep *valueMergePrep, targets mergeTargets) (*sharedResult, <-chan struct{}) {
 	for _, id := range prep.order {
-		res := c.currentEntryForRecipeLocked(prep.plans[id].recipe)
+		res := targets.of(c, prep, id)
 		if res == nil || res.attachmentState() != resultAttachmentOpen {
 			continue
 		}
@@ -1553,6 +1583,9 @@ type valueMergeCommit struct {
 	hold    bool
 	roots   []MergedRoot
 	now     int64
+	// targets are the rows' current entries as the commit's hold found
+	// them, nil for a decision made apart from a commit (earlyMergeRows).
+	targets mergeTargets
 }
 
 // mergeAttachedOffer is an offer a merge attached: the entry, its part key
@@ -1564,22 +1597,23 @@ type mergeAttachedOffer struct {
 }
 
 // planValueMergeLocked decides every record and runs every check that can
-// fail, without changing the cache. Requires egraphMu for writing.
-func (c *Cache) planValueMergeLocked(ctx context.Context, from CacheID, prep *valueMergePrep) (*valueMergeCommit, error) {
+// fail, without changing the cache, by the rows' current entries as the
+// hold finds them (targets). Requires egraphMu for writing.
+func (c *Cache) planValueMergeLocked(ctx context.Context, from CacheID, prep *valueMergePrep, targets mergeTargets) (*valueMergeCommit, error) {
 	if err := context.Cause(ctx); err != nil {
 		return nil, err
 	}
 	// Every expiry is judged by the clock read under the lock that decides.
 	now := time.Now().Unix()
-	commit := &valueMergeCommit{prep: prep, from: from, byOrdinal: map[uint64]*mergeRow{}, now: now}
+	commit := &valueMergeCommit{prep: prep, from: from, byOrdinal: map[uint64]*mergeRow{}, now: now, targets: targets}
 
 	// A held row holds when merge would keep its recipe's current entry's
 	// value for a record with the row's expiry, as the cache stands before
 	// the merge.
-	if stale := c.staleHeldRowsLocked(prep, now); len(stale) > 0 {
+	if stale := c.staleHeldRowsLocked(prep, targets, now); len(stale) > 0 {
 		return nil, &mergeStaleError{ordinals: stale}
 	}
-	if stale := c.staleHeldPartsLocked(prep); len(stale) > 0 {
+	if stale := c.staleHeldPartsLocked(prep, targets); len(stale) > 0 {
 		return nil, &mergeStaleError{ordinals: stale}
 	}
 
@@ -1642,7 +1676,7 @@ func (c *Cache) decideMergeRowsLocked(commit *valueMergeCommit) {
 	}
 	for _, row := range commit.rows {
 		if b := best[row.plan.recipe.String()]; b == row {
-			c.decideMergeRowLocked(row, now, sharedResultID(prep.firstID+row.ordinal-1))
+			c.decideMergeRowLocked(row, commit.targets.of(c, prep, row.ordinal), now, sharedResultID(prep.firstID+row.ordinal-1))
 		}
 	}
 	for _, row := range commit.rows {
@@ -1695,14 +1729,14 @@ func (prep *valueMergePrep) liveClosure(now int64) (map[uint64]bool, []MergedRoo
 // Cloud, an engine's held row holds whether or not the Cloud holds that
 // engine's holding of the row yet: the commit teaches a missing one
 // (applyMergedIdentitiesLocked). Requires egraphMu.
-func (c *Cache) staleHeldRowsLocked(prep *valueMergePrep, now int64) []TransferOrdinal {
+func (c *Cache) staleHeldRowsLocked(prep *valueMergePrep, targets mergeTargets, now int64) []TransferOrdinal {
 	var stale []TransferOrdinal
 	for _, id := range prep.order {
 		if !prep.held[id] {
 			continue
 		}
 		row := prep.index[id]
-		if c.heldRowStaleLocked(c.currentEntryForRecipeLocked(prep.plans[id].recipe), row.ExpiresAtUnix, now) {
+		if c.heldRowStaleLocked(targets.of(c, prep, id), row.ExpiresAtUnix, now) {
 			stale = append(stale, TransferOrdinal(id))
 		}
 	}
@@ -1736,10 +1770,10 @@ func heldRowOutputs(bundle ValueBundle) map[uint64][]TransferredOutput {
 // checkOutputPart checks a part against a record the bundle carries. A held
 // row whose recipe has no current entry is stale already
 // (staleHeldRowsLocked). Requires egraphMu.
-func (c *Cache) staleHeldPartsLocked(prep *valueMergePrep) []TransferOrdinal {
+func (c *Cache) staleHeldPartsLocked(prep *valueMergePrep, targets mergeTargets) []TransferOrdinal {
 	var stale []TransferOrdinal
 	for id, outputs := range prep.heldParts {
-		cur := c.currentEntryForRecipeLocked(prep.plans[id].recipe)
+		cur := targets.of(c, prep, id)
 		if cur == nil || !c.entryHasPartsLocked(cur, outputs) {
 			stale = append(stale, TransferOrdinal(id))
 		}
@@ -1849,10 +1883,9 @@ func (commit *valueMergeCommit) installsLight() bool {
 }
 
 // decideMergeRowLocked decides a record whose recipe no earlier record of the
-// bundle has, by the recipe's current entry; fresh is the number a new entry
-// takes. Requires egraphMu.
-func (c *Cache) decideMergeRowLocked(row *mergeRow, now int64, fresh sharedResultID) {
-	cur := c.currentEntryForRecipeLocked(row.plan.recipe)
+// bundle has, by the recipe's current entry, cur; fresh is the number a new
+// entry takes. Requires egraphMu.
+func (c *Cache) decideMergeRowLocked(row *mergeRow, cur *sharedResult, now int64, fresh sharedResultID) {
 	row.target = cur
 	switch {
 	case cur == nil:
