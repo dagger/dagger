@@ -65,8 +65,11 @@ type ExportStats struct {
 	// CompressTime is the part of DiffTime spent in the compressor: every
 	// write of a layer's archive into the compressor's writer and its close,
 	// compressing and writing the blob, waits for the compressor's own
-	// frames included. DiffTime less CompressTime is reading the mounts and
-	// archiving them. It adds as DiffTime does.
+	// frames included. DiffTime less CompressTime is the rest of the diff:
+	// reading the mounts and archiving them, hashing the archive (its
+	// uncompressed digest is taken beside the compressor), and flushing,
+	// committing and finalizing the blob once the compressor has closed. It
+	// adds as DiffTime does.
 	CompressTime time.Duration
 	// LockWait is the wait for the per-snapshot export lock, held by another
 	// export of the same layer.
