@@ -394,9 +394,6 @@ func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID) (root eqClassID, ab
 	// An actual union: the winner's membership and reverse indexes are in
 	// place. Pending queue keys are recanonicalized in the same union.
 	c.recordShareUnionLocked(ra, rb)
-	if joinsEntries {
-		c.noteJoinedEntriesLocked(ra)
-	}
 	return ra, absorbedInputTerms
 }
 

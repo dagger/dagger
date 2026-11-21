@@ -173,15 +173,12 @@ func remoteWritesScript(t *testing.T, ctx context.Context, ops remoteWriteOps) [
 	return out
 }
 
-// unorderedChange is change with its Candidates and Recipes sorted: a
-// change lists them in no order of its own, such as a session's holdings,
-// which it releases in its map's order.
+// unorderedChange is change with its Candidates sorted: a change lists them
+// in no order of its own, such as a session's holdings, which it releases
+// in its map's order.
 func unorderedChange(change RemoteChange) RemoteChange {
-	change.recipes = nil
 	change.Candidates = slices.Clone(change.Candidates)
 	slices.SortFunc(change.Candidates, compareHolderKeys)
-	change.Recipes = slices.Clone(change.Recipes)
-	slices.Sort(change.Recipes)
 	return change
 }
 

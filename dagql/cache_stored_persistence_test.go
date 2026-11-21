@@ -267,7 +267,7 @@ func TestCheckpointRunsBesideReaders(t *testing.T) {
 				default:
 				}
 				cloud.EquivalentEntries(recipeA.String())
-				cloud.EquivalentHolders(recipeB.String())
+				cloud.equivalentHoldersForTest(recipeB.String())
 				_, _ = cloud.EntryInfo(rootA)
 				_, _ = cloud.StoredBundle(ctx, []uint64{rootA}, time.Now().Unix(), nil)
 				_, _ = cloud.BlobCacheUsage()
