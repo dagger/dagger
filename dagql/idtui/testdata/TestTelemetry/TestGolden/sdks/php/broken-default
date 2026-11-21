@@ -1,0 +1,16 @@
+Expected stderr:
+
+✔ connect X.Xs
+✔ load workspace: . X.Xs
+✔ parsing command line arguments X.Xs
+
+✘ viztestPhp: ViztestPhp! X.Xs ERROR
+✘ call module entrypoint X.Xs ERROR
+! call module entrypoint: dagger-module: ParseError: syntax error, unexpected identifier "is"
+  #0 /src/viztest/sdks/broken-php/vendor/composer/ClassLoader.php(427): {closure:Composer\Autoload\ClassLoader::initializeIncludeClosure():575}('/src/viztest/sd...')
+  #1 [internal function]: Composer\Autoload\ClassLoader->loadClass('DaggerModule\\Vi...')
+  #2 /src/viztest/sdks/broken-php/sdk/src/Module/CallDispatcher.php(38): class_exists('DaggerModule\\Vi...')
+  #3 /src/viztest/sdks/broken-php/sdk/bin/dagger-module(61): Dagger\Module\CallDispatcher->call('ViztestPhp', 'null', '', '{}')
+  #4 {main}
+
+Setup tracing by running "dagger cloud signup". To hide set DAGGER_NO_NAG=1

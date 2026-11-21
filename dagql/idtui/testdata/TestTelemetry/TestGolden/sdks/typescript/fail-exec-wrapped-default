@@ -1,0 +1,14 @@
+Expected stderr:
+
+✔ connect X.Xs
+✔ load workspace: . X.Xs
+✔ parsing command line arguments X.Xs
+
+$ viztestTypescript: ViztestTypescript! X.Xs CACHED
+✘ .failExecWrapped: String! X.Xs ERROR
+✘ withExec sh -c 'echo exec stdout; sleep 0.1; echo exec stderr >&2; exit 1' X.Xs ERROR
+exec stdout
+exec stderr
+! exit code: 1
+
+Setup tracing by running "dagger cloud signup". To hide set DAGGER_NO_NAG=1

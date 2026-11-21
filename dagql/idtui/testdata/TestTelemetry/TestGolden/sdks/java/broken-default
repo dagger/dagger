@@ -1,0 +1,14 @@
+Expected stderr:
+
+✔ connect X.Xs
+✔ load workspace: . X.Xs
+✔ parsing command line arguments X.Xs
+
+✘ viztestJava: ViztestJava! X.Xs ERROR
+┇ call module entrypoint ›
+✘ withExec sh -c 'set -e\ntouch /tmp/stale\nif [ -f sdk/repo/io/dagger/dagger-java-sdk/0.21.4/dagger-java-sdk-0.21.4.jar ]; then\n  exec mvn package -DskipTests --threads 1C --no-transfer-progress\nfi\nmkdir -p /tmp/committed\nmv src/generated/java /tmp/committed/java\nmvn package -DskipTests -Ddagger.proc=full --threads 1C --no-transfer-progress\ndiff -r /tmp/committed/java target/generated-sources/annotations >/dev/null || echo src/generated/java >> /tmp/stale\ncmp -s src/generated/dang/entrypoint/main.dang target/classes/dagger/entrypoint/main.dang || echo src/generated/dang/entrypoint/main.dang >> /tmp/stale' (
+  ┆ moduleContext: Module._implementationScoped: Module!
+  ) X.Xs ERROR
+! exit code: 1
+
+Setup tracing by running "dagger cloud signup". To hide set DAGGER_NO_NAG=1

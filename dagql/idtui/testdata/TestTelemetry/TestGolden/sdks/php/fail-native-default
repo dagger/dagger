@@ -1,0 +1,18 @@
+Expected stderr:
+
+✔ connect X.Xs
+✔ load workspace: . X.Xs
+✔ parsing command line arguments X.Xs
+
+$ viztestPhp: ViztestPhp! X.Xs CACHED
+✘ .failNative: Void! X.Xs ERROR
+✘ call module entrypoint X.Xs ERROR
+! call module entrypoint: php function stderr
+  dagger-module: RuntimeException: php function failed natively
+  #0 [internal function]: DaggerModule\ViztestPhp->failNative()
+  #1 /src/viztest/sdks/php/sdk/src/Module/CallDispatcher.php(84): ReflectionMethod->invokeArgs(Object(DaggerModule\ViztestPhp), Array)
+  #2 /src/viztest/sdks/php/sdk/src/Module/CallDispatcher.php(46): Dagger\Module\CallDispatcher->invoke(Object(ReflectionClass), '{}', 'failNative', Array)
+  #3 /src/viztest/sdks/php/sdk/bin/dagger-module(61): Dagger\Module\CallDispatcher->call('ViztestPhp', '{}', 'failNative', '{}')
+  #4 {main}
+
+Setup tracing by running "dagger cloud signup". To hide set DAGGER_NO_NAG=1

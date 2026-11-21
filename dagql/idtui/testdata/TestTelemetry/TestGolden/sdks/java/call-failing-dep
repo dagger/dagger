@@ -1,0 +1,44 @@
+Expected stderr:
+
+✔ connect X.Xs
+├╴✔ starting engine X.Xs
+├╴✔ connecting to engine X.Xs
+│ ┃ XX:XX:XX INF connected name=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local client-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx server-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx
+╰╴✔ starting session X.Xs
+
+✔ load workspace: . X.Xs
+╰╴✔ loading type definitions X.Xs
+
+✔ parsing command line arguments X.Xs
+
+$ viztestJava: ViztestJava! X.Xs CACHED
+✘ .callFailingDep: String! X.Xs ERROR
+┃ io.dagger.client.exception.DaggerQueryException: call module entrypoint: exit code: 1 [traceparent:00000000000000000000000000000000-0000000000000000]
+┃         at io.dagger.client.QueryBuilder.handleErrors(QueryBuilder.java:168)
+┃         at io.dagger.client.QueryBuilder.executeQuery(QueryBuilder.java:204)
+┃         at io.dagger.client.QueryBuilder.executeQuery(QueryBuilder.java:227)
+┃         at io.dagger.client.modules.sdkdep.SdkDep.failExec(SdkDep.java:62)
+┃         at io.dagger.modules.viztestjava.ViztestJava.callFailingDep(ViztestJava.java:60)
+┃         at io.dagger.gen.entrypoint.Entrypoint.invoke(Entrypoint.java:143)
+┃         at io.dagger.client.ModuleDispatcher.dispatch(ModuleDispatcher.java:97)
+┃         at io.dagger.client.ModuleDispatcher.engineCall(ModuleDispatcher.java:67)
+┃         at io.dagger.gen.entrypoint.Entrypoint.main(Entrypoint.java:40)
+┃ ::dagger-function-error::"call module entrypoint: exit code: 1 [traceparent:00000000000000000000000000000000-0000000000000000]"
+├╴✘ call module entrypoint X.Xs ERROR
+│ ┆ (the entrypoint's own evaluation, elided)
+│
+├╴$ sdkDep: SDKDep! X.Xs CACHED
+╰╴✘ .failExec: String! X.Xs ERROR
+  ┃ exit code: 1 [traceparent:00000000000000000000000000000000-0000000000000000]
+  ┃ ::dagger-function-error::"exit code: 1 [traceparent:00000000000000000000000000000000-0000000000000000]"
+  ├╴✘ call module entrypoint X.Xs ERROR
+  │ ┆ (the entrypoint's own evaluation, elided)
+  │
+  ├╴$ Container.from(address: "alpine"): Container! X.Xs CACHED
+  ├╴✘ withExec sh -c 'echo dep exec stdout; sleep 0.1; echo dep exec stderr >&2; exit 1' X.Xs ERROR
+  │ ┃ dep exec stdout
+  │ ┃ dep exec stderr
+  │ ! exit code: 1
+  ╰╴✘ .stdout: String! X.Xs ERROR
+
+Setup tracing by running "dagger cloud signup". To hide set DAGGER_NO_NAG=1

@@ -1,0 +1,15 @@
+Expected stderr:
+
+✔ connect X.Xs
+✔ load workspace: . X.Xs
+✔ parsing command line arguments X.Xs
+
+$ viztestDang: ViztestDang! X.Xs CACHED
+✘ .callFailingDep: String! X.Xs ERROR
+┇ .failExec ›
+✘ withExec sh -c 'echo dep exec stdout; sleep 0.1; echo dep exec stderr >&2; exit 1' X.Xs ERROR
+dep exec stdout
+dep exec stderr
+! exit code: 1
+
+Setup tracing by running "dagger cloud signup". To hide set DAGGER_NO_NAG=1
