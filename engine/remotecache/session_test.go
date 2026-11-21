@@ -157,8 +157,11 @@ type fakeAdapter struct {
 	work         func() CacheWork
 	// image is what ImageEntries returns.
 	image []uint64
-	// ready are the batches TakeReadyRoots returns, in order.
-	ready chan []uint64
+	// ready are the batches TakeReadyRoots returns, in order; readyEnded
+	// closes once a TakeReadyRoots ends with the connection.
+	ready      chan []uint64
+	readyEnded chan struct{}
+	readyOnce  sync.Once
 }
 
 type settledCall struct {
@@ -175,6 +178,8 @@ func newFakeAdapter() *fakeAdapter {
 		mergeIDs: make(chan uint64, 64),
 		settled:  make(chan settledCall, 8),
 		ready:    make(chan []uint64, 8),
+
+		readyEnded: make(chan struct{}),
 
 		restored:       make(chan RestoreReport, 64),
 		restoreSeen:    make(chan dagql.ValueBundle, 64),
@@ -258,6 +263,7 @@ func (a *fakeAdapter) TakeReadyRoots(ctx context.Context) ([]uint64, error) {
 	case roots := <-a.ready:
 		return roots, nil
 	case <-ctx.Done():
+		a.readyOnce.Do(func() { close(a.readyEnded) })
 		return nil, context.Cause(ctx)
 	}
 }
