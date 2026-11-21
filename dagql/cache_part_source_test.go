@@ -18,6 +18,15 @@ func (transferTestCodec) DescribeParts(v PersistedPayloadVisit) ([]PartProbe, er
 	if err := json.Unmarshal(v.Payload, &p); err != nil {
 		return nil, err
 	}
+	// A value with parts describes each as core's codecs do: complete when
+	// completed, absent or metadata.
+	if outputs, ok := transferTestParts(v); ok {
+		probes := make([]PartProbe, 0, len(outputs))
+		for _, out := range outputs {
+			probes = append(probes, PartProbe{Descriptor: PartDescriptor{Address: out.Address, Absent: out.State == "absent"}, LocalComplete: out.State == "completed" || out.State == "absent" || out.State == "metadata"})
+		}
+		return probes, nil
+	}
 	snapshot := ""
 	for _, link := range v.SnapshotLinks {
 		if link.Role == "snapshot" {
