@@ -1712,7 +1712,14 @@ func (s *workspaceSchema) search(
 		if err != nil {
 			return nil, err
 		}
-		results, err = rootfs.Self().Search(ctx, rootfs, sourceArgs.SearchOpts, false, sourceArgs.Paths, sourceArgs.Globs)
+		opts := sourceArgs.SearchOpts
+		if len(ws.MountPoints()) > 0 {
+			// What the mounts shadow is dropped from the merge below: drop it
+			// as it's read, so it counts against neither the limit nor the
+			// budget.
+			opts.KeepPath = func(p string) bool { return !ws.MountedPath(path.Clean(p)) }
+		}
+		results, err = rootfs.Self().Search(ctx, rootfs, opts, false, sourceArgs.Paths, sourceArgs.Globs)
 		if err != nil {
 			return nil, fmt.Errorf("search: %w", err)
 		}
@@ -1737,7 +1744,7 @@ func (s *workspaceSchema) search(
 	// points, mirroring resolveReadRootfs's shadowing, and explicit search
 	// paths under mounts — withheld from the source side above — are honored
 	// here via searchDirectoryTree's post-filter.
-	if mounts, ok := ws.MountsDir(); ok {
+	if mounts, ok := ws.MountsDir(); ok && searchReachesMounts(ws, args.Paths) {
 		mountResults, err := searchDirectoryTree(ctx, mounts, args)
 		if err != nil {
 			return nil, fmt.Errorf("search: mounts: %w", err)
@@ -1755,6 +1762,21 @@ func (s *workspaceSchema) search(
 
 	core.EmitSearchResults(ctx, results, args.FilesOnly)
 	return dagql.Array[*core.SearchResult](results), nil
+}
+
+// searchReachesMounts reports whether a search of the given paths (none: the
+// whole workspace) covers any mounted content.
+func searchReachesMounts(ws *core.Workspace, paths []string) bool {
+	if len(paths) == 0 {
+		return true
+	}
+	for _, p := range paths {
+		scope := cleanSearchScope(p)
+		if ws.MountedPath(scope) || ws.HasMountsUnder(scope) {
+			return true
+		}
+	}
+	return false
 }
 
 // searchSourcePaths filters explicit search paths down to the operands the
@@ -1900,8 +1922,11 @@ func (s *workspaceSchema) overlaySearchResults(
 // count against the limit and the search's budgets, so a large tree outside
 // the requested paths neither crowds them out nor fails the search.
 //
-// The limit applies to this side as to the other: each keeps at most limit
-// results, so their merge still has limit results when there are that many.
+// The limit applies to this side as it does to the source side. This side's
+// results win the merge (none of them is dropped by it), so capping them at
+// limit still leaves the merge as many results as the limit allows when this
+// side has that many. Which ones, like a limited ripgrep search's, depends on
+// the order ripgrep finds them in.
 func searchDirectoryTree(
 	ctx context.Context,
 	tree dagql.ObjectResult[*core.Directory],
