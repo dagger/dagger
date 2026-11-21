@@ -205,10 +205,16 @@ func splitLayerTar(ctx context.Context, cs content.Store, r io.Reader, listing i
 			isContent := hdr.Typeflag == tar.TypeReg && hdr.Size >= ListingInlineMax
 			if isContent && hdr.Size > splitHeldLarge {
 				e.done = make(chan struct{})
+				select {
+				case workers <- struct{}{}:
+				case <-ctx.Done():
+					return context.Cause(ctx)
+				}
 				writeContent(e, func(w io.Writer) error {
 					_, err := io.CopyN(w, tr, hdr.Size)
 					return err
 				})
+				<-workers
 				if e.err != nil {
 					return e.err
 				}
