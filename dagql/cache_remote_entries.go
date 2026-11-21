@@ -153,13 +153,14 @@ type RemoteHoldingUpdate struct {
 //     included;
 //   - Entries: every entry of which any of these may differ: whether it
 //     exists; its own facts, Stored, StoredExpiresAtUnix and Recipes; the
-//     keys of its holdings; the entries of its classes (EntryClassEntries);
-//     and any AvailablePart answer at one clock. A holding's description
-//     doesn't change with its entry: a holding whose description changes is
-//     in Holdings, whatever entries are named.
+//     keys of its holdings; and any AvailablePart answer at one clock. A
+//     holding's description doesn't change with its entry: a holding whose
+//     description changes is in Holdings, whatever entries are named.
 //
-// Neither covers the digests, class digests, terms or field of an entry,
-// which only EntryInfo returns.
+// Neither covers the entries of an entry's classes (EntryClassEntries),
+// which a member joining or leaving changes for every class mate and which
+// no reader keeps from one change to the next, nor the digests, class
+// digests, terms or field of an entry, which only EntryInfo returns.
 type RemoteChange struct {
 	Candidates []HolderKey
 	Recipes    []digest.Digest
