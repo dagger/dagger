@@ -807,11 +807,14 @@ func TestExportLogAttrs(t *testing.T) {
 func TestExportLogAttrsPhases(t *testing.T) {
 	local := exportCapture{hold: time.Millisecond}
 	values := &dagql.ExportedValues{
-		Bundle:    dagql.ValueBundle{Values: make([]dagql.TransferredValue, 3)},
-		Rows:      dagql.ExportedRows{Held: []uint64{4, 5}},
-		ChainTime: time.Second,
-		Phases:    dagql.ExportPhases{WalkWait: 6 * time.Microsecond, Walk: 7 * time.Microsecond, Copy: 8 * time.Microsecond, Bundle: 12 * time.Microsecond, BundleKnown: time.Microsecond, BundleCheck: 2 * time.Microsecond, BundleSettle: 3 * time.Microsecond, BundleRecipes: 4 * time.Microsecond, BundleValues: 5 * time.Microsecond, BundleKeep: 13 * time.Microsecond, BundlePasses: 2},
-		Chains:    &dagql.SelectedChains{Stats: bkcache.ExportStats{Layers: 3, LayersReused: 1, LayersDiffed: 2, RawBytes: 900, BlobBytes: 300, DiffTime: 9 * time.Millisecond, CompressTime: 6 * time.Millisecond, LockWait: 10 * time.Microsecond, BuildWait: 11 * time.Microsecond, LayersMerged: 1, MergedRawBytes: 400, MergedBlobBytes: 100, MergedDiffTime: 3 * time.Millisecond}},
+		Bundle:           dagql.ValueBundle{Values: make([]dagql.TransferredValue, 3)},
+		Rows:             dagql.ExportedRows{Held: []uint64{4, 5}},
+		ChainTime:        time.Second,
+		CopiedRows:       14,
+		UnpredictedLinks: 15,
+		LateMoved:        16,
+		Phases:           dagql.ExportPhases{WalkWait: 6 * time.Microsecond, Walk: 7 * time.Microsecond, Copy: 8 * time.Microsecond, Bundle: 12 * time.Microsecond, BundleKnown: time.Microsecond, BundleCheck: 2 * time.Microsecond, BundleSettle: 3 * time.Microsecond, BundleRecipes: 4 * time.Microsecond, BundleValues: 5 * time.Microsecond, BundleKeep: 13 * time.Microsecond, BundlePasses: 2},
+		Chains:           &dagql.SelectedChains{Stats: bkcache.ExportStats{Layers: 3, LayersReused: 1, LayersDiffed: 2, RawBytes: 900, BlobBytes: 300, DiffTime: 9 * time.Millisecond, CompressTime: 6 * time.Millisecond, LockWait: 10 * time.Microsecond, BuildWait: 11 * time.Microsecond, LayersMerged: 1, MergedRawBytes: 400, MergedBlobBytes: 100, MergedDiffTime: 3 * time.Millisecond}},
 	}
 	// One record carries its engine's content-preferred digest, and one is a
 	// service's that carries none.
@@ -826,6 +829,9 @@ func TestExportLogAttrsPhases(t *testing.T) {
 		"walk_wait", 6 * time.Microsecond,
 		"walk", 7 * time.Microsecond,
 		"copy", 8 * time.Microsecond,
+		"copied", 14,
+		"links_unpredicted", 15,
+		"late_moved", 16,
 		"bundle", 12 * time.Microsecond,
 		"bundle_passes", 2,
 		"bundle_known", time.Microsecond,
@@ -864,6 +870,9 @@ func TestExportLogAttrsPhases(t *testing.T) {
 		"walk_wait", time.Duration(0),
 		"walk", time.Duration(0),
 		"copy", time.Duration(0),
+		"copied", 0,
+		"links_unpredicted", 0,
+		"late_moved", 0,
 		"bundle", time.Duration(0),
 		"bundle_passes", 0,
 		"bundle_known", time.Duration(0),

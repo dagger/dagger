@@ -2624,7 +2624,11 @@ func (c *Cache) runlockGraphAs(step Step) {
 }
 
 type Cache struct {
-	testTransferCopied       func(uint64)
+	testTransferCopied func(uint64)
+	// testCopyLate, when set, runs once an export has copied a held row's
+	// record after its chains opened, before checking it (copyLate). True
+	// leaves the row unread, as though it held no snapshot a chain walked.
+	testCopyLate             func(*sharedResult) bool
 	testTransferPlanPrepared func(int) error
 	testBeforeTransferCommit func()
 
