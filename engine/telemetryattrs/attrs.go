@@ -1336,8 +1336,9 @@ type EngineFirstUseRoute struct {
 // every part merged, whether the engine had merged it whole already, and
 // what stopped it. PeakBefore and PeakAfter are the engine's peak resident
 // memory in bytes before its first part and after its last, 0 when unknown.
-// Decode, Prepare and Commit are the wall time its parts took to decode, to
-// prepare their merges and to commit them, in all, in nanoseconds. Ended is
+// Decode, Precheck, Prepare and Commit are the wall time its parts took to
+// decode, to check for their merges ahead of them, to prepare the rest of
+// their merges and to commit them, in all, in nanoseconds. Ended is
 // when the file's restore ended, on the engine's clock, in Unix nanoseconds,
 // and Window what the engine did from the file's arrival to then, for a file
 // it downloaded and ended.
@@ -1356,6 +1357,7 @@ type EngineRestore struct {
 	PeakBefore   int64                `json:"peakBefore,omitempty"`
 	PeakAfter    int64                `json:"peakAfter,omitempty"`
 	Decode       int64                `json:"decode,omitempty"`
+	Precheck     int64                `json:"precheck,omitempty"`
 	Prepare      int64                `json:"prepare,omitempty"`
 	Commit       int64                `json:"commit,omitempty"`
 	Ended        int64                `json:"ended,omitempty"`
@@ -1404,13 +1406,14 @@ type EngineRestoreWindow struct {
 // committed (Unix nanoseconds), and the lookups that missed before it
 // committed and that it would have served, with the longest and shortest
 // time from such a miss to the commit; then how long its commit waited for
-// the cache's lock and held it; then its own decode, the preparation of its
-// merge and the merge's commit, and how long the merge waited behind the
+// the cache's lock and held it; then its own decode, its check for its merge
+// ahead of it, the rest of its merge's preparation and the merge's commit,
+// and how long the merge waited behind the
 // merges that answer lookups before it began; then how long its merge's
 // preparation waited for the cache's lock, in all and by the kind of writer
 // that let each wait in, as EngineLookupLockWaits names them; then how long
-// its merge waited for its decode, which runs while the part before it
-// merges. Durations are in nanoseconds.
+// its merge waited for its decode and check, which run while the part before
+// it merges. Durations are in nanoseconds.
 type EngineRestorePart struct {
 	Records          int              `json:"records"`
 	Committed        int64            `json:"committed"`
@@ -1420,6 +1423,7 @@ type EngineRestorePart struct {
 	LockWait         int64            `json:"lockWait,omitempty"`
 	CommitHold       int64            `json:"commitHold,omitempty"`
 	Decode           int64            `json:"decode,omitempty"`
+	Precheck         int64            `json:"precheck,omitempty"`
 	Prepare          int64            `json:"prepare,omitempty"`
 	Commit           int64            `json:"commit,omitempty"`
 	PriorityWait     int64            `json:"priorityWait,omitempty"`

@@ -30,8 +30,9 @@ import (
 // used before them, and the whole set. Each file is downloaded as soon as its
 // restore arrives, checked against its digest, and its parts are merged one
 // at a time through the path a merge takes (Adapter.RestorePart). Each part
-// is decoded while the part before it merges, one part ahead (decodeAhead),
-// so that a merge waits for no decode after the first. Heads merge on a lane
+// is decoded and checked for its merge (Adapter.CheckRestorePart) while the
+// part before it merges, one part ahead (decodeAhead), so that a merge waits
+// for neither after the first. Heads merge on a lane
 // of their own, in arrival order, so a head never waits for a whole, even
 // another check's that started first; each whole merges on a lane of its own,
 // so a whole never waits for another check's either. Nothing in a restore
@@ -129,9 +130,10 @@ type RestoreReport struct {
 	Error        string
 	PeakBefore   int64
 	PeakAfter    int64
-	// Decode, Prepare and Commit are the wall time its parts took to decode,
-	// to prepare their merges and to commit them, in all.
-	Decode, Prepare, Commit time.Duration
+	// Decode, Precheck, Prepare and Commit are the wall time its parts took
+	// to decode, to check for their merges ahead of them, to prepare the rest
+	// of their merges and to commit them, in all.
+	Decode, Precheck, Prepare, Commit time.Duration
 	// Ended is when the file's restore ended; zero for one answered at once.
 	// Window is what the engine did from the file's arrival to its end, for
 	// a file that was downloaded and ended; nil for one answered at once or
@@ -151,14 +153,15 @@ type RestoreReport struct {
 //
 // LockWait is how long its commit waited for the cache's lock, and
 // CommitHold how long the commit held it (dagql.MergeReply). Decode,
-// Prepare and Commit are the part's own decode, the preparation of its
-// merge and the merge's commit, and PriorityWait how long its merge waited
+// Precheck, Prepare and Commit are the part's own decode, its check for its
+// merge (Adapter.CheckRestorePart), the rest of its merge's preparation and the
+// merge's commit, and PriorityWait how long its merge waited
 // behind the merges that answer lookups before it began (Adapter.RestorePart).
 // PrepareLockWait is how long the preparation waited for the cache's lock,
 // and PrepareLockWaits that time by the kind of writer that let each wait in
-// (dagql.MergeReply). DecodeWait is how long its merge waited for its decode,
-// which runs while the part before it merges (decodeAhead): Decode is the
-// decode's own time, most of which a merge doesn't wait for.
+// (dagql.MergeReply). DecodeWait is how long its merge waited for its decode
+// and check, which run while the part before it merges (decodeAhead): Decode
+// and Precheck are their own time, most of which a merge doesn't wait for.
 type RestoredPartReport struct {
 	Records          int
 	Committed        time.Time
@@ -168,6 +171,7 @@ type RestoredPartReport struct {
 	LockWait         time.Duration
 	CommitHold       time.Duration
 	Decode           time.Duration
+	Precheck         time.Duration
 	Prepare          time.Duration
 	Commit           time.Duration
 	PriorityWait     time.Duration
@@ -195,9 +199,9 @@ type restoreFile struct {
 	// windowStart is the engine's counters as the file arrived, read beside
 	// its download (RestoreReport.Window); set before fetched closes.
 	windowStart restoreReading
-	// decoded delivers its parts decoded, in order, from its decoder
-	// (decodeAhead), once it is opened; stopDecode, closed when the file
-	// ends, stops the decoder.
+	// decoded delivers its parts decoded and checked, in order, from its
+	// decoder (decodeAhead), once it is opened; stopDecode, closed when the
+	// file ends, stops the decoder.
 	decoded    chan decodedPart
 	stopDecode chan struct{}
 	// landed ends the cache's mark of a whole landing (Adapter.Landing),
@@ -469,51 +473,66 @@ func (r *restorer) open(f *restoreFile) error {
 	f.report.PeakBefore = r.s.cfg.peakRSS()
 	if len(parts) > 0 {
 		f.decoded, f.stopDecode = make(chan decodedPart), make(chan struct{})
-		decode, stop := r.s.cfg.decode, f.stopDecode
+		decode, check, table, stop := r.s.cfg.decode, r.s.adapter.CheckRestorePart, f.file.Table, f.stopDecode
+		ready := func(data []byte) decodedPart {
+			began := time.Now()
+			bundle, err := decode(data)
+			next := decodedPart{bundle: bundle, took: time.Since(began), err: err}
+			if err != nil {
+				return next
+			}
+			fillAddresses(&next.bundle, table)
+			began = time.Now()
+			next.checked, next.err = check(next.bundle)
+			next.check = time.Since(began)
+			return next
+		}
 		r.s.go_(func() {
 			ctx, unlabel := wcprof.WithCPUKind(r.s.ctx, wcprof.CPUKindMerge)
 			defer unlabel()
-			decodeAhead(ctx, decode, parts, f.decoded, stop)
+			decodeAhead(ctx, ready, parts, f.decoded, stop)
 		})
 	}
 	return nil
 }
 
-// decodedPart is a part as its decoder delivers it: decoded, with the time
-// its decode took, or the error that stopped it.
+// decodedPart is a part as its decoder delivers it: decoded, its download
+// addresses filled in from the file's table, and checked for its merge,
+// with the time its decode and its check took; or the error that stopped
+// it.
 type decodedPart struct {
-	bundle dagql.ValueBundle
-	took   time.Duration
-	err    error
+	bundle  dagql.ValueBundle
+	checked *dagql.CheckedValues
+	took    time.Duration
+	check   time.Duration
+	err     error
 }
 
-// decodeAhead decodes a file's parts in order with decode and delivers each
-// on out, which its merge receives from: the next part decodes while the
+// decodeAhead readies a file's parts in order with ready and delivers each
+// on out, which its merge receives from: the next part is readied while the
 // part before it merges, and none further until that one is taken, so at
-// most one decoded part waits beside the one merging. Each part's bytes are
-// dropped once it is decoded. It stops after the first part that fails to
-// decode, once stop closes, or once ctx ends.
-func decodeAhead(ctx context.Context, decode func([]byte) (dagql.ValueBundle, error), parts [][]byte, out chan<- decodedPart, stop <-chan struct{}) {
+// most one readied part waits beside the one merging. Each part's bytes are
+// dropped once it is readied. It stops after the first part that fails,
+// once stop closes, or once ctx ends.
+func decodeAhead(ctx context.Context, ready func([]byte) decodedPart, parts [][]byte, out chan<- decodedPart, stop <-chan struct{}) {
 	for i := range parts {
-		began := time.Now()
-		bundle, err := decode(parts[i])
+		next := ready(parts[i])
 		parts[i] = nil
 		select {
-		case out <- decodedPart{bundle: bundle, took: time.Since(began), err: err}:
+		case out <- next:
 		case <-stop:
 			return
 		case <-ctx.Done():
 			return
 		}
-		if err != nil {
+		if next.err != nil {
 			return
 		}
 	}
 }
 
-// mergePart takes the file's next part from its decoder, fills in its
-// download addresses from the file's table, merges it, and counts the misses
-// it would have served.
+// mergePart takes the file's next part from its decoder, decoded and
+// checked, merges it, and counts the misses it would have served.
 func (r *restorer) mergePart(ctx context.Context, f *restoreFile) error {
 	began := time.Now()
 	var next decodedPart
@@ -525,16 +544,12 @@ func (r *restorer) mergePart(ctx context.Context, f *restoreFile) error {
 	decodeWait := time.Since(began)
 	bundle, decoded, err := next.bundle, next.took, next.err
 	f.report.Decode += decoded
+	f.report.Precheck += next.check
 	if err != nil {
 		return fmt.Errorf("part %d: %w", f.next, err)
 	}
-	fillAddresses(&bundle, f.file.Table)
 	records := len(bundle.Values)
-	checked, err := r.s.adapter.CheckRestorePart(bundle)
-	if err != nil {
-		return fmt.Errorf("part %d: %w", f.next, err)
-	}
-	reply, priorityWait, err := r.s.adapter.RestorePart(ctx, bundle, checked, f.unretained[f.next], r.s.known, f.source())
+	reply, priorityWait, err := r.s.adapter.RestorePart(ctx, bundle, next.checked, f.unretained[f.next], r.s.known, f.source())
 	f.report.Prepare += reply.Prepare
 	f.report.Commit += reply.Commit
 	if reply.Release != nil {
@@ -558,6 +573,7 @@ func (r *restorer) mergePart(ctx context.Context, f *restoreFile) error {
 		LockWait:         reply.LockWait,
 		CommitHold:       reply.CommitHold,
 		Decode:           decoded,
+		Precheck:         next.check,
 		Prepare:          reply.Prepare,
 		Commit:           reply.Commit,
 		PriorityWait:     priorityWait,
