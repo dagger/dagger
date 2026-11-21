@@ -515,9 +515,11 @@ func (res *sharedResult) holdsPartLocked(key string) bool {
 }
 
 // holdsAnyPartLocked reports whether res holds any part for its class
-// (holdsPartLocked). Requires egraphMu.
+// (holdsPartLocked), or an upload of one is in progress for it
+// (MarkPartUploading): whether a change to it can change what a reader keeps
+// of its class mates' part answers. Requires egraphMu.
 func (res *sharedResult) holdsAnyPartLocked() bool {
-	return len(res.storedParts) > 0 || res.marksAbsentLocked(func(string) bool { return true })
+	return len(res.storedParts) > 0 || len(res.uploading) > 0 || res.marksAbsentLocked(func(string) bool { return true })
 }
 
 // marksAbsentLocked reports whether res's stored record marks absent a part
