@@ -1000,6 +1000,7 @@ func TestExportEndedLogged(t *testing.T) {
 			require.Equal(t, "INFO", line["level"])
 			require.Equal(t, "uploaded", line["outcome"])
 			require.Equal(t, exportID, line["export"])
+			require.Equal(t, json.Number("7"), line["request"], "the service's request, which its record of the export carries from its start")
 			require.Equal(t, json.Number("2"), line["roots"])
 			require.Equal(t, json.Number("2"), line["blobs"])
 			require.Equal(t, json.Number("0"), line["failed"])

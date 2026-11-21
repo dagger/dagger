@@ -453,7 +453,7 @@ func (s *session) handleExport(env protocol.Envelope) {
 	if profOp != nil {
 		wcprof.RecordWaitAt(profCtx, slotsName, wcprof.WaitReasonLock, arrived, slotted)
 	}
-	ended := exportEnded{roots: len(req.Roots), slotWait: slotted.Sub(arrived)}
+	ended := exportEnded{request: env.ID, roots: len(req.Roots), slotWait: slotted.Sub(arrived)}
 	replied := false
 	captureCtx, unlabel := wcprof.WithCPUKind(profCtx, wcprof.CPUKindExportCapture)
 	defer unlabel()
@@ -536,9 +536,14 @@ func (s *session) handleExport(env protocol.Envelope) {
 // exportEnded is what one export took, from its request to the release of
 // its chains.
 type exportEnded struct {
-	// export is the ID of the bundle sent, if one was.
-	export string
-	roots  int
+	// request is the ID of the service's request for the export, which the
+	// service puts on its record of the export from its start: it matches
+	// the record to this line when the record's end row, the only row with
+	// the export's own ID, was lost on its way to the span store. export is
+	// the ID of the bundle sent, if one was.
+	request uint64
+	export  string
+	roots   int
 	// slotWait is the wait for an export slot, uploadWait the wait from
 	// sending the bundle to the service's upload, upload the upload, and
 	// held the time from the slot to the chains' release.
@@ -555,6 +560,7 @@ type exportEnded struct {
 func (s *session) logExportEnded(ended exportEnded, err error, level slog.Level, outcome string) {
 	args := []any{
 		"export", ended.export,
+		"request", ended.request,
 		"roots", ended.roots,
 		"slot_wait", ended.slotWait,
 		"upload_wait", ended.uploadWait,
