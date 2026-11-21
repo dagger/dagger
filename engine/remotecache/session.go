@@ -1019,15 +1019,13 @@ func (s *session) requestAs(ctx context.Context, id uint64, typ protocol.Type, b
 	}
 }
 
-// reply answers a request. A reply over the message limit is not sent: the
+// reply answers a request, its body encoded with its envelope in one pass,
+// as the service encodes what it sends: an export's bundle is most of an
+// engine's bytes out. A reply over the message limit is not sent: the
 // request is answered with an error reply "too large" instead, which the
 // connection survives, and the reply is reported as errTooLarge.
 func (s *session) reply(to protocol.Envelope, typ protocol.Type, body any) error {
-	env, err := protocol.NewEnvelope(s.lastID.Add(1), to.ID, typ, body)
-	if err != nil {
-		return s.replyError(to, err)
-	}
-	data, err := json.Marshal(env)
+	data, err := protocol.EncodeEnvelope(s.lastID.Add(1), to.ID, typ, body)
 	if err != nil {
 		return s.replyError(to, err)
 	}
