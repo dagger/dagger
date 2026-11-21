@@ -27,9 +27,11 @@ const (
 	// outlives it.
 	packLeaseTTL = 10 * time.Minute
 	// packReads is how many packs the engine reads at once, and packMaxBytes
-	// the largest pack it reads.
+	// the largest pack it reads: as large as the service packs, 16 MiB, so
+	// that a chain's content blobs and listings, most far smaller than a
+	// layer's tar, travel in as few objects as today's layers.
 	packReads    = 4
-	packMaxBytes = 8 << 20
+	packMaxBytes = 16 << 20
 	// packFetchMisses bounds the reads one import makes for a member a read
 	// stored that is gone again before the import links it.
 	packFetchMisses = 3
