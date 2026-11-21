@@ -34,49 +34,55 @@ func BenchmarkTraceReportFold(b *testing.B) {
 	for _, shape := range []string{"agent", "nested"} {
 		for _, n := range sizes {
 			store, tr := footprintStore(b, n, shape == "nested")
-			root := tr.SpanID(0).String()
-			for _, mode := range []string{"full", "fold"} {
-				b.Run(shape+"/"+mode+"/"+strconv.Itoa(n), func(b *testing.B) {
-					ctx := b.Context()
-					opts := readTraceReportOpts()
-					var bytesPerSpan, retained float64
-					var loadTime, renderTime time.Duration
-					for b.Loop() {
-						var before, after runtime.MemStats
-						runtime.GC()
-						runtime.ReadMemStats(&before)
-						start := time.Now()
-						var session *idtui.ReportSession
-						if mode == "full" {
-							session, err = loadTraceReportSessionFull(ctx, store, root)
-						} else {
-							session, err = loadTraceReportSession(ctx, store, root, opts)
+			// the session's root, and an agent loop (an eighth of it)
+			for _, scope := range []string{"root", "loop"} {
+				root := tr.SpanID(0).String()
+				if scope == "loop" {
+					root = tr.SpanID(1).String()
+				}
+				for _, mode := range []string{"full", "fold"} {
+					b.Run(shape+"/"+scope+"/"+mode+"/"+strconv.Itoa(n), func(b *testing.B) {
+						ctx := b.Context()
+						opts := readTraceReportOpts()
+						var bytesPerSpan, retained float64
+						var loadTime, renderTime time.Duration
+						for b.Loop() {
+							var before, after runtime.MemStats
+							runtime.GC()
+							runtime.ReadMemStats(&before)
+							start := time.Now()
+							var session *idtui.ReportSession
+							if mode == "full" {
+								session, err = loadTraceReportSessionFull(ctx, store, root)
+							} else {
+								session, err = loadTraceReportSession(ctx, store, root, opts)
+							}
+							if err != nil {
+								b.Fatal(err)
+							}
+							loadTime = time.Since(start)
+							runtime.GC()
+							runtime.ReadMemStats(&after)
+							bytesPerSpan = float64(int64(after.HeapAlloc)-int64(before.HeapAlloc)) / float64(n)
+							start = time.Now()
+							if _, err := renderTraceReportSession(session, root, opts); err != nil {
+								b.Fatal(err)
+							}
+							renderTime = time.Since(start)
+							if f := session.DB().Fold(); f != nil {
+								stats := f.Stats()
+								retained = float64(stats.Retained) / float64(stats.Spans)
+							} else {
+								retained = 1
+							}
+							reportFoldSession = session
 						}
-						if err != nil {
-							b.Fatal(err)
-						}
-						loadTime = time.Since(start)
-						runtime.GC()
-						runtime.ReadMemStats(&after)
-						bytesPerSpan = float64(int64(after.HeapAlloc)-int64(before.HeapAlloc)) / float64(n)
-						start = time.Now()
-						if _, err := renderTraceReportSession(session, root, opts); err != nil {
-							b.Fatal(err)
-						}
-						renderTime = time.Since(start)
-						if f := session.DB().Fold(); f != nil {
-							stats := f.Stats()
-							retained = float64(stats.Retained) / float64(stats.Spans)
-						} else {
-							retained = 1
-						}
-						reportFoldSession = session
-					}
-					b.ReportMetric(bytesPerSpan, "B/span")
-					b.ReportMetric(100*retained, "%retained")
-					b.ReportMetric(float64(loadTime.Milliseconds()), "load-ms")
-					b.ReportMetric(float64(renderTime.Milliseconds()), "render-ms")
-				})
+						b.ReportMetric(bytesPerSpan, "B/span")
+						b.ReportMetric(100*retained, "%retained")
+						b.ReportMetric(float64(loadTime.Milliseconds()), "load-ms")
+						b.ReportMetric(float64(renderTime.Milliseconds()), "render-ms")
+					})
+				}
 			}
 		}
 	}
