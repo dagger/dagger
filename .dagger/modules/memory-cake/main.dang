@@ -598,17 +598,21 @@ type MemoryCake {
 
   """
   Pathological searches (no PR yet): the regexp "." over a workspace OOMs
-  the engine. fixtures/search builds FILES files (default 100) of LINES
-  lines (default 200, ~58 B each, 1.28 MB in all) and searches them with
-  each pattern in PATTERNS (". e") in each mode in MODES ("dir ws host":
-  Directory.search, a rootfs Workspace.search, and a host Workspace.search
-  whose ripgrep runs in the CLI). Its numbers are per search, in
-  `out.file("search.txt")`: bytes allocated, peak live heap and footprint,
-  the searching CLIs' memory, results and response size. On main, "." over
-  the default tree allocates ~3.5 GB and peaks ~+340 MB in the engine, the
-  CLI ~2.2 GB RSS, and the host search fails on gRPC's 16 MiB message limit
-  after the CLI grew ~500 MB; LONG=1000000 (one 1 MB line) allocates 1.1 GB
-  for 2 results. Scale with env, e.g. ["FILES=20", "MODES=dir"].
+  the engine. fixtures/search builds FILES files (default 200) of LINES
+  lines (default 200, ~64 B each: 40000 lines, 2.5 MB) and searches them
+  with each pattern in PATTERNS (". e") in each mode in MODES ("dir ws
+  host": Directory.search, a rootfs Workspace.search, and a host
+  Workspace.search whose ripgrep runs in the `dagger run` CLI). Its numbers
+  are per search, in `out.file("search.txt")`: bytes allocated (the
+  poller's own ~3 MB per poll included), peak live heap and footprint, the
+  searching CLIs' memory, results and response size. On main, Directory
+  .search "." allocates 7.1 GB and peaks at +906 MB in the engine, its CLI
+  reaches 3.7 GB RSS, and the session keeps ~+450 MB after each search; the
+  host search runs for 2 minutes, grows its CLI by 2.5 GB, then fails on
+  gRPC's 16 MiB message limit. With the search budgets every one fails
+  fast, under 1 s and +11 MB. LONG=1000000 (one 1 MB line, with FILES=0):
+  1.1 GB allocated and +263 MB on main for 2 results, +3 MB with the
+  budgets. Scale with env, e.g. ["FILES=20", "MODES=dir"].
   """
   demoSearch(
     ref: String! = "main",
