@@ -302,8 +302,8 @@ const maxLoggedSkippedRoots = 8
 // exportLogAttrs are an export's log attributes: its roots, its skipped roots
 // counted by reason and, when there are at most maxLoggedSkippedRoots of
 // them, named with their reasons, its busy rows (busyReport), then what the
-// bundle holds, with the rows it sent held and those of them nothing in it
-// stands on (countHeldUnneeded), and how long the capture and the chains
+// bundle holds, with the rows it sent held, those of them nothing in it
+// stands on (countHeldUnneeded) and the known rows it left out, and how long the capture and the chains
 // took, and then the capture's phases and the chains' layers. With no
 // bundle, those of the capture and the chains are 0.
 // carriedContentPreferred counts an export's records whose frame carries
@@ -383,7 +383,8 @@ func countHeldUnneeded(bundle dagql.ValueBundle) int {
 }
 
 func exportLogAttrs(req protocol.Export, skipped []protocol.SkippedRoot, values *dagql.ExportedValues, capture time.Duration, local exportCapture, busy busyReport) []any {
-	var records, held, heldUnneeded, outputs int
+	var records, held, heldUnneeded, heldLeftOut, outputs int
+	var keptEveryRow string
 	var chains time.Duration
 	var phases dagql.ExportPhases
 	var stats snapshots.ExportStats
@@ -391,6 +392,8 @@ func exportLogAttrs(req protocol.Export, skipped []protocol.SkippedRoot, values 
 	if values != nil {
 		records, held, outputs, chains = len(values.Bundle.Values), len(values.Rows.Held), len(values.Bundle.Outputs), values.ChainTime
 		heldUnneeded = countHeldUnneeded(values.Bundle)
+		heldLeftOut = values.LeftOutHeld
+		keptEveryRow = values.KeptEveryRow
 		carried = countCarriedContentPreferred(values.Bundle.Values)
 		phases = values.Phases
 		if values.Chains != nil {
@@ -416,10 +419,16 @@ func exportLogAttrs(req protocol.Export, skipped []protocol.SkippedRoot, values 
 		attrs = append(attrs, "skipped_roots", named)
 	}
 	attrs = append(attrs, busy.attrs()...)
+	// Why the export left out none of the known rows nothing stands on,
+	// though it could have: only ever a bug (dagql's keepNeededRows).
+	if keptEveryRow != "" {
+		attrs = append(attrs, "held_kept_every_row", keptEveryRow)
+	}
 	return append(attrs,
 		"records", records,
 		"held", held,
 		"held_unneeded", heldUnneeded,
+		"held_left_out", heldLeftOut,
 		"outputs", outputs,
 		"capture", capture,
 		"chains", chains,
@@ -434,6 +443,7 @@ func exportLogAttrs(req protocol.Export, skipped []protocol.SkippedRoot, values 
 		"bundle_settle", phases.BundleSettle,
 		"bundle_recipes", phases.BundleRecipes,
 		"bundle_values", phases.BundleValues,
+		"bundle_keep", phases.BundleKeep,
 		"layers", stats.Layers,
 		"layers_reused", stats.LayersReused,
 		"layers_diffed", stats.LayersDiffed,
