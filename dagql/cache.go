@@ -2690,6 +2690,11 @@ type Cache struct {
 	// testNoPrerelocation, when set, keeps a merge from relocating its
 	// records before its commit takes egraphMu.
 	testNoPrerelocation bool
+	// testKeepEveryKnownRow, when set, has a content export carry every
+	// known row of its closure, as it did before it left out the ones
+	// nothing in its bundle stands on (keepNeededRows), so a test can merge
+	// both and compare them.
+	testKeepEveryKnownRow bool
 	// testKeepRecordCopies, when set, keeps a prepared merge holding the
 	// copies of its bundle's records that only its preparation reads
 	// (dropRecordCopies).
