@@ -8,7 +8,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
+
+	"github.com/dagger/dagger/dagql/call"
 )
 
 // shareTestClass builds n members of one output class: an encoded imported
@@ -217,6 +220,126 @@ func TestSnapshotSharingSelectionMatchesWholeCohortSelection(t *testing.T) {
 	require.Positive(t, routes[CacheHitRouteRecipe], "a member posted under another's recipe")
 	require.Positive(t, routes[CacheHitRouteDigest], "a member reached by a content digest")
 	require.Positive(t, unrelated, "a member no route reaches")
+}
+
+// The per-row equivalence reaches a member structurally as the candidate
+// collector does: through the receiver's term, and through the term's output
+// class only when the term holds no servable result. A servable term result
+// keeps the collector from the output class even when its own requirements
+// don't fit the receiver's. The generated cohorts reach members by recipe and
+// by content digest; these reach them by the receiver's term.
+func TestSessionlessPartEquivalenceStructuralRoutes(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name                          string
+		receiverExpired, donorExpired bool
+		donorNeedsResource            bool
+		// The routes by which the receiver reaches the donor, whose input
+		// is taught equivalent to the receiver's, and the class mate, which
+		// shares only the donor's content digest; "" is neither.
+		donor, classMate CacheHitRoute
+	}{
+		{name: "through the term", donor: CacheHitRouteStructural},
+		{name: "through the output class", receiverExpired: true, donorExpired: true, classMate: CacheHitRouteStructural},
+		{name: "a servable receiver keeps it from the output class", donorExpired: true},
+		{name: "a servable donor whose requirements don't fit keeps it from the output class", receiverExpired: true, donorNeedsResource: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx, c, srv := transferTestCache(t)
+			srv.InstallObject(NewClass(srv, ClassOpts[*shareTestValue]{}))
+			srcA, srcB := digest.FromString("structural-src-a"), digest.FromString("structural-src-b")
+			receiver := shareTestStructuralResult(t, ctx, c, srv, srcA, newShareTestValue("receiver", map[string]sharePartState{"fs": {}}))
+			donor := shareTestStructuralResult(t, ctx, c, srv, srcB, newShareTestValue("donor", map[string]sharePartState{"fs": {Snapshot: "donor-fs"}}))
+			classMate := persistedListTestResult(t, ctx, c, srv, "class-mate", newShareTestValue("class-mate", map[string]sharePartState{"fs": {Snapshot: "mate-fs"}}))
+			// Teaching the inputs equivalent makes the two operations one
+			// term and merges their output classes; the class mate joins
+			// that class through the donor's content digest.
+			shareTestTeachEquivalent(t, ctx, c, srv, "structural-teacher", srcA, srcB)
+			shareTestUnite(t, ctx, c, "structural-donor-content", donor, classMate)
+			if tc.donorNeedsResource {
+				resource := persistedListTestResult(t, ctx, c, srv, "resource", String("socket"))
+				c.egraphMu.Lock()
+				resource.cacheSharedResult().sessionResourceHandle = "socket"
+				_, err := c.recomputeRequiredSessionResourcesLocked(resource.cacheSharedResult())
+				c.egraphMu.Unlock()
+				require.NoError(t, err)
+				transferTestDependency(c, ctx, donor, resource)
+			}
+			c.egraphMu.Lock()
+			var requirementErr error
+			for _, row := range []AnyResult{receiver, donor, classMate} {
+				if _, err := c.recomputeRequiredSessionResourcesLocked(row.cacheSharedResult()); err != nil {
+					requirementErr = err
+				}
+			}
+			expired := time.Now().Add(-time.Minute).Unix()
+			if tc.receiverExpired {
+				receiver.cacheSharedResult().expiresAtUnix = expired
+			}
+			if tc.donorExpired {
+				donor.cacheSharedResult().expiresAtUnix = expired
+			}
+			c.egraphMu.Unlock()
+			require.NoError(t, requirementErr)
+
+			lookup, err := c.partLookupFor(receiver.cacheSharedResult())
+			require.NoError(t, err)
+			rows := map[string]*sharedResult{"donor": donor.cacheSharedResult(), "class mate": classMate.cacheSharedResult()}
+			got, collected := map[string]CacheHitRoute{}, map[string]CacheHitRoute{}
+			c.egraphMu.Lock()
+			equivalent := c.sessionlessPartEquivalenceLocked(receiver.cacheSharedResult(), lookup)
+			want := referenceSessionlessPartEquivalentsLocked(c, receiver.cacheSharedResult(), lookup)
+			for name, row := range rows {
+				got[name], _ = equivalent(row)
+				collected[name] = want[row]
+			}
+			c.egraphMu.Unlock()
+			expected := map[string]CacheHitRoute{"donor": tc.donor, "class mate": tc.classMate}
+			require.Equal(t, expected, collected, "the candidate collector")
+			require.Equal(t, expected, got, "the per-row equivalence")
+		})
+	}
+}
+
+// shareTestStructuralResult is a result of one operation over an input
+// witnessed by src: results over inputs taught equivalent share the
+// operation's term, each under a recipe of its own.
+func shareTestStructuralResult(t *testing.T, ctx context.Context, c *Cache, srv *Server, src digest.Digest, value Typed) AnyResult {
+	t.Helper()
+	frame := &ResultCall{
+		Kind:  ResultCallKindField,
+		Field: "structural-op",
+		Type:  NewResultCallType(value.Type()),
+		Args: []*ResultCallArg{{
+			Name: "src",
+			Value: &ResultCallLiteral{
+				Kind:                 ResultCallLiteralKindDigestedString,
+				DigestedStringValue:  "witnessed",
+				DigestedStringDigest: src,
+			},
+		}},
+	}
+	res, err := c.GetOrInitCall(ctx, "test-session", srv, &CallRequest{ResultCall: frame, IsPersistable: true}, func(context.Context) (AnyResult, error) {
+		return NewResultForCall(value, frame)
+	})
+	require.NoError(t, err)
+	return res
+}
+
+// shareTestTeachEquivalent teaches digs equivalent by publishing a result
+// that carries them all as content digests, which puts them in one class.
+func shareTestTeachEquivalent(t *testing.T, ctx context.Context, c *Cache, srv *Server, field string, digs ...digest.Digest) {
+	t.Helper()
+	extras := make([]call.ExtraDigest, 0, len(digs))
+	for _, dig := range digs {
+		extras = append(extras, call.ExtraDigest{Label: call.ExtraDigestLabelContent, Digest: dig})
+	}
+	frame := &ResultCall{Kind: ResultCallKindField, Field: field, Type: NewResultCallType(String("").Type()), ExtraDigests: extras}
+	_, err := c.GetOrInitCall(ctx, "test-session", srv, &CallRequest{ResultCall: frame, IsPersistable: true}, func(context.Context) (AnyResult, error) {
+		return NewResultForCall(String(field), frame)
+	})
+	require.NoError(t, err)
 }
 
 // referenceSelectShareSlots is the selection as it was when each eligible
