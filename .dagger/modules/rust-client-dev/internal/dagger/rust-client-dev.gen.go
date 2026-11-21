@@ -83,20 +83,6 @@ func (r *RustClientDev) BaseContainer() *Container {
 	return new(Container).WithGraphQLQuery(q)
 }
 
-// Run cargo check on the Rust SDK
-func (r *RustClientDev) CargoCheck() *Check {
-	q := r.query.Select("cargoCheck")
-
-	return new(Check).WithGraphQLQuery(q)
-}
-
-// Run cargo fmt on the Rust SDK
-func (r *RustClientDev) CargoFmt() *Check {
-	q := r.query.Select("cargoFmt")
-
-	return new(Check).WithGraphQLQuery(q)
-}
-
 func (r *RustClientDev) Changes() *Changeset {
 	q := r.query.Select("changes")
 
@@ -235,7 +221,8 @@ func (r *RustClientDev) Source() *Directory {
 	return new(Directory).WithGraphQLQuery(q)
 }
 
-// Test the Rust SDK
+// Check the Rust SDK's formatting, then test it. cargo test compiles every
+// target cargo check would.
 func (r *RustClientDev) Test() *Check {
 	q := r.query.Select("test")
 

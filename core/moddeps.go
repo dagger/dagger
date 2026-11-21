@@ -11,6 +11,8 @@ import (
 	"sync"
 	"sync/atomic"
 
+	lru "github.com/hashicorp/golang-lru/v2"
+
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
@@ -59,6 +61,10 @@ type SchemaBuilder struct {
 	// clientOwned marks a builder that may keep the server it builds. It is
 	// never copied: every derived builder starts unowned.
 	clientOwned bool
+	// shared marks the builder a session memo keeps for every client of the
+	// session (SchemaBuilderMemo.sharedBuilder): its root is the memo's
+	// neutral root, and it builds its server itself. It is never copied.
+	shared bool
 
 	lazilyLoadedServer *dagql.Server
 	loadSchemaErr      error
@@ -142,40 +148,115 @@ func (b *SchemaBuilder) Append(mods ...Mod) *SchemaBuilder {
 // provenance, ObjectTypeAndServerForID, and persisted-envelope decoding too.
 //
 // The engine keeps one memo per client and drops it with the client's other
-// heavy state, so its entries live exactly as long as the client that loaded
-// them. It is unbounded by design: entries are only created for module sets
-// the client actually loads through, that count grows with distinct module
-// results (e.g. one per reload in a dev loop) rather than with load volume,
-// and an entry costs roughly one forked core schema plus its modules' types.
+// heavy state. It also keeps one memo per session for the schemas of builders
+// that are not client-owned, such as a Module's Deps (see
+// SchemaBuilder.Schema). The session's memo is shared by its clients,
+// including the nested client of every function call, and dropped when the
+// session ends.
 //
-// The engine also keeps one memo per session for the schemas of builders that
-// are not client-owned, such as a Module's Deps (see SchemaBuilder.Schema).
-// It is shared by the session's clients, including the nested client of every
-// function call, and dropped when the session ends; its entries grow with the
-// distinct module sets the session uses.
+// A session can live for hours (an interactive agent's does), and its module
+// sets keep changing: every reload of a module is a new Module result, and so
+// a new module set. So every table of a memo is a bounded LRU: an entry costs
+// up to a forked core schema plus its modules' types (hundreds of KiB), and
+// one unused for a while is rebuilt on its next use for a few ms (a core fork
+// and module installs). A server, builder or entry evicted while a caller
+// holds it stays valid for that caller: eviction only stops sharing it, and
+// the garbage collector frees it once nothing holds it. Schema servers are
+// already built to be dropped (module resolvers and classes hold their server
+// weakly), and the bounds sit well above the working set of the workloads the
+// memo was made for (see maxMemoizedSchemaBuilders). A rebuild after an
+// eviction counts as RepeatedOnSameRoot in SchemaBuilds.
 //
 // A built server is an immutable type registry; the dagql result cache is
 // engine-wide and never held by a server, so sharing one shares no results.
+// A session's memo also shares one server per module set across all of its
+// clients, built on a neutral root (see sharedBuilder): each client's own
+// builders, and the entries of its client memo, serve that server.
 type SchemaBuilderMemo struct {
 	mu       sync.Mutex
-	builders map[string]*SchemaBuilder
+	builders *lru.Cache[string, *SchemaBuilder]
 
 	// canonicalArgTypes reuses immutable argument metadata across the schemas
 	// of nested clients. It never shares their query roots or installed fields.
-	canonicalArgTypes map[string]*canonicalArgType
-	modTypes          map[modTypeMemoKey]*modTypeMemoEntry
-	gitClients        map[declaredGitClientsKey]*declaredGitClientsEntry
-	// moduleServers holds the client's standalone server for each module
-	// whose artifacts it discovers, evaluates or checks
-	// (dagqlServerForModule).
-	moduleServers map[string]*moduleServerEntry
+	canonicalArgTypes *lru.Cache[string, *canonicalArgType]
+	modTypes          *lru.Cache[modTypeMemoKey, *modTypeMemoEntry]
+	gitClients        *lru.Cache[declaredGitClientsKey, *declaredGitClientsEntry]
+	// moduleServers holds the standalone server for each module whose
+	// artifacts a client discovers, evaluates or checks
+	// (dagqlServerForModule): in a session memo, shared by its clients; in
+	// a client memo, a module's that is not shared.
+	moduleServers *lru.Cache[string, *moduleServerEntry]
 	// builtModuleSets holds what this session built a schema server for, by
-	// module set, and builtServers how many it holds (countSchemaBuild).
+	// module set, and builtServers how many it holds (countSchemaBuild). It
+	// keeps keys only, a few hundred bytes each, and stops recording at
+	// maxTrackedModuleSets.
 	builtModuleSets map[string]*sessionBuilds
 	builtServers    int
 	// workspaceModules holds the modules installed in a value workspace, by
 	// its recipe digest (see MCP.loadBase).
-	workspaceModules map[string]*InstalledWorkspaceModules
+	workspaceModules *lru.Cache[string, *InstalledWorkspaceModules]
+	// neutralRoots holds the root the memo's shared builders build on, one
+	// per engine Server facade (see sharedBuilder).
+	neutralRoots map[Server]*Query
+}
+
+const (
+	// maxMemoizedSchemaBuilders bounds a memo's builders, each with the
+	// schema server it built, and maxMemoizedModuleServers its standalone
+	// module servers. A memo serves a few distinct module sets at a time: the
+	// handles a client loads (an agent's conversation references the modules
+	// it was composed with), the dependency schemas of the modules a session
+	// loads (those that depend on core alone share one), one server per
+	// module a listing visits.
+	maxMemoizedSchemaBuilders = 256
+	maxMemoizedModuleServers  = 256
+	// maxMemoizedTypes bounds the module types and argument types resolved
+	// for module schemas: a few per function of each module installed. Each
+	// is small, but keeps its Module result alive.
+	maxMemoizedTypes = 8192
+	// maxMemoizedGitClients bounds the git clients read per module tree: a
+	// short list each.
+	maxMemoizedGitClients = 1024
+	// maxMemoizedWorkspaces bounds the modules loaded per value workspace:
+	// each keeps every Module result the workspace installs, and an agent's
+	// workspace is a new value at every edit. Every agent of a session asks
+	// for its own workspace's modules at each step, so the bound sits well
+	// above the agents a session runs at once (a staff of dozens): fewer
+	// would reload, and rebuild the failing modules of, every agent in turn.
+	maxMemoizedWorkspaces = 256
+)
+
+func NewSchemaBuilderMemo() *SchemaBuilderMemo {
+	return &SchemaBuilderMemo{
+		builders:          newMemoTable[string, *SchemaBuilder](maxMemoizedSchemaBuilders),
+		canonicalArgTypes: newMemoTable[string, *canonicalArgType](maxMemoizedTypes),
+		modTypes:          newMemoTable[modTypeMemoKey, *modTypeMemoEntry](maxMemoizedTypes),
+		gitClients:        newMemoTable[declaredGitClientsKey, *declaredGitClientsEntry](maxMemoizedGitClients),
+		moduleServers:     newMemoTable[string, *moduleServerEntry](maxMemoizedModuleServers),
+		workspaceModules:  newMemoTable[string, *InstalledWorkspaceModules](maxMemoizedWorkspaces),
+	}
+}
+
+func newMemoTable[K comparable, V any](size int) *lru.Cache[K, V] {
+	table, err := lru.New[K, V](size)
+	if err != nil {
+		panic(err) // only for a size that is not positive
+	}
+	return table
+}
+
+// memoEntry returns table's entry for key, adding an empty one if there is
+// none, for the caller to fill under the entry's own lock. An entry evicted
+// while a caller fills it is still filled for that caller.
+func memoEntry[K comparable, E any](m *SchemaBuilderMemo, table *lru.Cache[K, *E], key K) *E {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if entry, ok := table.Get(key); ok {
+		return entry
+	}
+	entry := new(E)
+	table.Add(key, entry)
+	return entry
 }
 
 // WorkspaceModules returns the modules installed in the workspace key names,
@@ -186,10 +267,7 @@ func (m *SchemaBuilderMemo) WorkspaceModules(key string, load func() (*Installed
 	if m == nil {
 		return load()
 	}
-	m.mu.Lock()
-	cached, ok := m.workspaceModules[key]
-	m.mu.Unlock()
-	if ok {
+	if cached, ok := m.workspaceModules.Get(key); ok {
 		return cached, nil
 	}
 	// Loading builds schemas through this memo, so it runs unlocked.
@@ -197,17 +275,8 @@ func (m *SchemaBuilderMemo) WorkspaceModules(key string, load func() (*Installed
 	if err != nil {
 		return nil, err
 	}
-	m.mu.Lock()
-	if m.workspaceModules == nil {
-		m.workspaceModules = map[string]*InstalledWorkspaceModules{}
-	}
-	m.workspaceModules[key] = loaded
-	m.mu.Unlock()
+	m.workspaceModules.Add(key, loaded)
 	return loaded, nil
-}
-
-func NewSchemaBuilderMemo() *SchemaBuilderMemo {
-	return &SchemaBuilderMemo{builders: map[string]*SchemaBuilder{}}
 }
 
 // Get returns the client-owned builder memoized for exactly b's root and
@@ -227,26 +296,145 @@ func (m *SchemaBuilderMemo) Get(b *SchemaBuilder) *SchemaBuilder {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if cached := m.builders[key]; cached != nil && !cached.loadSchemaFailed.Load() {
+	if cached, ok := m.builders.Get(key); ok && !cached.loadSchemaFailed.Load() {
 		return cached
 	}
 	owned := b.ClientOwned()
-	m.builders[key] = owned
+	m.builders.Add(key, owned)
 	return owned
 }
 
 // memoKey identifies b's root and entries: user modules by attached result,
-// anything else (core) by instance. Entry order and install options are part
-// of the key, since both shape the built schema.
+// core by its schema base and view (SchemaASTCacheKey), anything else by
+// instance. Entry order and install options are part of the key, since both
+// shape the built schema.
+//
+// Core is keyed by content because every module load wraps it in a CoreMod
+// of its own (CoreMod.WithView): keyed by instance, each reload of a module
+// built another server for its unchanged dependency schema. A CoreMod is its
+// base and view and nothing else, so two with the same key build the same
+// schema.
 func (b *SchemaBuilder) memoKey() (string, bool) {
-	entries, ok := schemaEntriesKey(b.entries, false)
+	entries, ok := schemaEntriesKey(b.entries, true)
 	if !ok {
 		return "", false
 	}
 	return fmt.Sprintf("r%p;%s", b.root, entries), true
 }
 
-func schemaEntriesKey(entries []modDepEntry, metadataOnly bool) (string, bool) {
+// sharedBuilder returns the builder this memo shares among all of its
+// clients for b's module set, whatever b's root, or nil when b's schema may
+// depend on the client that builds it. A session memo hands it out, so one
+// server serves the set to every client of the session: each function call's
+// nested client, each agent tool call, each handle load.
+//
+// Why a server built for one client can serve another: a built server holds
+// its root only as the receiver of Query fields, and a client's root is
+// core.NewRoot of the engine's one Server facade, whose methods all find the
+// client from the context. A root's own state is the client's cache volumes
+// and approved host histories, read through CurrentQuery(ctx), which is
+// always the calling client's root, never a server's; and ConstructorArgs,
+// which no client root has: `with` sets them on a clone that queries chain
+// from. So the shared builder builds on a neutral root of the same facade,
+// as the core schema's views (CoreSchemaBase.viewState) already do. That
+// root is marked shared, so reading a client's state from it fails
+// (ErrSharedRootClientState) instead of reading none.
+//
+// What a client may still put in a schema is what its context gives the
+// install: only expanding a module's .env user defaults, against the host of
+// the building client, does that. A set with such defaults, or with a
+// module the memo can't vouch for, is never shared (clientIndependentSchema).
+func (m *SchemaBuilderMemo) sharedBuilder(b *SchemaBuilder) *SchemaBuilder {
+	key, facade, ok := m.sharedKey(b)
+	if !ok {
+		return nil
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if cached, ok := m.builders.Get(key); ok && !cached.loadSchemaFailed.Load() {
+		return cached
+	}
+	shared := &SchemaBuilder{
+		root:        m.neutralRootLocked(facade),
+		entries:     slices.Clone(b.entries),
+		clientOwned: true,
+		shared:      true,
+	}
+	m.builders.Add(key, shared)
+	return shared
+}
+
+// sharedKey identifies b's module set for every client of the memo, by the
+// engine Server facade of b's root and the set, or reports false when the
+// set's schema may depend on its client (see sharedBuilder).
+func (m *SchemaBuilderMemo) sharedKey(b *SchemaBuilder) (string, Server, bool) {
+	if m == nil || b == nil || b.root == nil || !clientIndependentSchema(b.entries) {
+		return "", nil, false
+	}
+	facade := b.root.Server
+	if facade == nil || reflect.ValueOf(facade).Kind() != reflect.Pointer {
+		return "", nil, false
+	}
+	entries, ok := schemaEntriesKey(b.entries, true)
+	if !ok {
+		return "", nil, false
+	}
+	return fmt.Sprintf("s%p;%s", facade, entries), facade, true
+}
+
+// neutralRoot returns the root the memo's shared servers build on for the
+// given engine Server facade.
+func (m *SchemaBuilderMemo) neutralRoot(facade Server) *Query {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.neutralRootLocked(facade)
+}
+
+func (m *SchemaBuilderMemo) neutralRootLocked(facade Server) *Query {
+	root, ok := m.neutralRoots[facade]
+	if !ok {
+		if m.neutralRoots == nil {
+			m.neutralRoots = map[Server]*Query{}
+		}
+		root = newSharedRoot(facade)
+		m.neutralRoots[facade] = root
+	}
+	return root
+}
+
+// clientIndependentSchema reports whether installing entries builds the same
+// schema for every client: they are user modules, whose installs depend only
+// on their results, and core modules identified by content, and no user
+// module has .env user defaults, which installing expands against the
+// building client's host (ModuleFunction.mergeUserDefaultsTypeDefs).
+func clientIndependentSchema(entries []modDepEntry) bool {
+	for _, entry := range entries {
+		switch mod := entry.mod.(type) {
+		case *userMod:
+			self := mod.res.Self()
+			if self == nil {
+				return false
+			}
+			if source := self.GetSource(); source != nil && source.UserDefaults != nil && len(source.UserDefaults.Environ) > 0 {
+				return false
+			}
+		case coreSchemaForker:
+			// Core metadata varies by view, which its key covers.
+			if stable, ok := mod.(interface{ SchemaASTCacheKey() string }); !ok || stable.SchemaASTCacheKey() == "" {
+				return false
+			}
+		default:
+			// Other module implementations may install context-dependent metadata.
+			return false
+		}
+	}
+	return true
+}
+
+// schemaEntriesKey identifies entries: user modules by attached result, and
+// other modules by instance, or, with byContent, by their SchemaASTCacheKey
+// when they have one.
+func schemaEntriesKey(entries []modDepEntry, byContent bool) (string, bool) {
 	var key strings.Builder
 	for _, e := range entries {
 		switch mod := e.mod.(type) {
@@ -257,7 +445,7 @@ func schemaEntriesKey(entries []modDepEntry, metadataOnly bool) (string, bool) {
 			}
 			fmt.Fprintf(&key, "m%d", id.EngineResultID())
 		default:
-			if metadataOnly {
+			if byContent {
 				if stable, ok := mod.(interface{ SchemaASTCacheKey() string }); ok {
 					if identity := stable.SchemaASTCacheKey(); identity != "" {
 						fmt.Fprintf(&key, "c%d:%s", len(identity), identity)
@@ -408,8 +596,10 @@ func (b *SchemaBuilder) Schema(ctx context.Context) (*dagql.Server, error) {
 	}
 	owner := b
 	if !b.clientOwned {
-		owner = currentSessionSchemaBuilderMemo(ctx).Get(b)
-		if !owner.clientOwned {
+		session := currentSessionSchemaBuilderMemo(ctx)
+		if shared := session.sharedBuilder(b); shared != nil {
+			owner = shared
+		} else if owner = session.Get(b); !owner.clientOwned {
 			// No session can hold this module set's server: build it for
 			// this call alone rather than keep it on b.
 			owner = b.Clone()
@@ -497,6 +687,22 @@ func (b *SchemaBuilder) lazilyLoadSchema(ctx context.Context) (loadedSchema *dag
 	}
 	if b.loadSchemaErr != nil {
 		return nil, b.loadSchemaErr
+	}
+	if !b.shared {
+		// A client's own builder (its served modules, a handle load's module
+		// set) serves the server its session shares for the set, and keeps
+		// it: the session memo evicting it only stops sharing it. A failure
+		// is the shared builder's, possibly another client's build that
+		// this one waited on; the memo replaces a failed shared builder, so
+		// keep none of it here and ask the memo again next time.
+		if shared := currentSessionSchemaBuilderMemo(ctx).sharedBuilder(b); shared != nil {
+			srv, err := shared.lazilyLoadSchema(ctx)
+			if err != nil {
+				return nil, err
+			}
+			b.lazilyLoadedServer = srv
+			return srv, nil
+		}
 	}
 	defer func() {
 		if rerr != nil && ctx.Err() != nil {

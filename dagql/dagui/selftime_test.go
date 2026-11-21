@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"go.opentelemetry.io/otel/codes"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 )
@@ -14,7 +15,7 @@ import (
 // The time-breakdown tests model the span shapes the engine actually emits
 // (verified against real traces): call spans with same-name call_exec twins
 // nested under them, lazy "resume" marker spans parented under the row whose
-// evaluation triggered them and cause-linked back to the op they resume, and
+// evaluation triggered them and linked back to the op they resume, and
 // deferred exec children recorded under the original call span long after it
 // returned.
 
@@ -34,6 +35,16 @@ func waitLink(target SpanID, reason string, from, to time.Time) SpanLink {
 	}
 }
 
+// evalLink is a lazy evaluation's link to the call it evaluates, which the
+// engine emits with no purpose.
+func evalLink(target SpanID) SpanLink {
+	return SpanLink{
+		SpanContext: SpanContext{SpanID: target},
+	}
+}
+
+// causeLink is a cause link. On a lazy evaluation, the engine emits one for
+// each site its result was installed at: a call that returned or received it.
 func causeLink(target SpanID) SpanLink {
 	return SpanLink{
 		SpanContext: SpanContext{SpanID: target},
@@ -83,13 +94,13 @@ func visitedBreakdownSpans(span *Span) map[SpanID]bool {
 //
 //	q (query root) [0,16]
 //	├── w2 "Container.withExec" [1,1.5]      (go build; forced later)
-//	│   ├── r2 "resume withExec" [3,13]      (cause→w2; the forced eval marker)
+//	│   ├── r2 "resume withExec" [3,13]      (evaluates w2; the forced eval marker)
 //	│   └── e2 exec [3,13]                   (the real go build, argv attr)
 //	├── w1 "Container.withExec" [2,2.5]      (waitdemo; forced later)
 //	│   └── (r1 is not w1's child; it hangs under the trigger, like real traces)
 //	└── s "Container.stdout" [3,16]          (the forcing op)
 //	    └── x "Container.stdout" twin [3,16] (call_exec; wait lazy→r1 [3,16])
-//	        └── r1 "resume withExec" [3,16]  (cause→w1; wait lazy→r2 [3,13])
+//	        └── r1 "resume withExec" [3,16]  (evaluates w1; wait lazy→r2 [3,13])
 func buildLazyChainDB(t *testing.T) (*DB, SpanID, SpanID, SpanID) {
 	t.Helper()
 	db := NewDB()
@@ -113,14 +124,14 @@ func buildLazyChainDB(t *testing.T) (*DB, SpanID, SpanID, SpanID) {
 		{ID: q, Name: "query", StartTime: at(0), EndTime: at(16)},
 		{ID: w2, ParentID: q, Name: "Container.withExec", StartTime: at(1), EndTime: at(1.5)},
 		{ID: r2, ParentID: w2, Name: "resume withExec", StartTime: at(3), EndTime: at(13),
-			Links: []SpanLink{causeLink(w2)}},
+			Links: []SpanLink{evalLink(w2)}},
 		e2snap,
 		{ID: w1, ParentID: q, Name: "Container.withExec", StartTime: at(2), EndTime: at(2.5)},
 		{ID: s, ParentID: q, Name: "Container.stdout", StartTime: at(3), EndTime: at(16)},
 		{ID: x, ParentID: s, Name: "Container.stdout", StartTime: at(3), EndTime: at(16),
 			Links: []SpanLink{waitLink(r1, "lazy", at(3), at(16))}},
 		{ID: r1, ParentID: x, Name: "resume withExec", StartTime: at(3), EndTime: at(16),
-			Links: []SpanLink{causeLink(w1), waitLink(r2, "lazy", at(3), at(13))}},
+			Links: []SpanLink{evalLink(w1), waitLink(r2, "lazy", at(3), at(13))}},
 	})
 	return db, s, w1, w2
 }
@@ -183,14 +194,14 @@ func TestTimeBreakdownLiveInferredBlockerPath(t *testing.T) {
 		{ID: nExec, ParentID: n, Name: "exec N", StartTime: at(1)},
 		{ID: c, ParentID: q, Name: "C", StartTime: at(1), EndTime: at(1.5)},
 		{ID: mN, ParentID: c, Name: "resume N", StartTime: at(1.5),
-			Links: []SpanLink{causeLink(n)}},
+			Links: []SpanLink{evalLink(n)}},
 		{ID: b, ParentID: q, Name: "B", StartTime: at(2), EndTime: at(2.5)},
 		{ID: mC, ParentID: b, Name: "resume C", StartTime: at(2.5),
-			Links: []SpanLink{causeLink(c)}},
+			Links: []SpanLink{evalLink(c)}},
 		{ID: a, ParentID: q, Name: "A", StartTime: at(3)},
 		{ID: aTwin, ParentID: a, Name: "A", StartTime: at(3)},
 		{ID: mB, ParentID: aTwin, Name: "resume B", StartTime: at(3),
-			Links: []SpanLink{causeLink(b)}},
+			Links: []SpanLink{evalLink(b)}},
 	})
 
 	seg, ok := db.Spans.Map[a].TimeBreakdown(now).BlockedNow(now)
@@ -218,7 +229,7 @@ func TestTimeBreakdownMemoMatchesFresh(t *testing.T) {
 			for _, now := range pass {
 				for _, span := range db.Spans.Order {
 					got := span.TimeBreakdown(now)
-					want := span.timeBreakdown(&breakdownClock{now: now})
+					want := span.timeBreakdown(&breakdownClock{now: now}, nil)
 					if !reflect.DeepEqual(got, want) {
 						t.Fatalf("%s at %v: memoized %+v, fresh %+v", span.Name, now.Sub(testEpoch), got, want)
 					}
@@ -251,6 +262,11 @@ func TestTimeBreakdownMemoMatchesFresh(t *testing.T) {
 			{ID: mB, ParentID: aTwin, Name: "resume B", StartTime: at(3),
 				Links: []SpanLink{causeLink(b)}},
 		})
+		check(t, db)
+
+		// With the waiting below rows published, a running row's waiting
+		// goes on until now.
+		db.UpdateRowWaits(at(5), 0)
 		check(t, db)
 
 		// The chain finishes: the memo must not outlive the change.
@@ -345,9 +361,9 @@ func TestTimeBreakdownResolvedMarkersDeduplicate(t *testing.T) {
 			Links: []SpanLink{waitLink(r1, "test", at(0), at(10))}},
 		{ID: b, ParentID: q, Name: "B", StartTime: at(0), EndTime: at(10)},
 		{ID: r1, ParentID: q, Name: "resume B 1", StartTime: at(0), EndTime: at(10),
-			Links: []SpanLink{causeLink(b), waitLink(r2, "test", at(0), at(10))}},
+			Links: []SpanLink{evalLink(b), waitLink(r2, "test", at(0), at(10))}},
 		{ID: r2, ParentID: q, Name: "resume B 2", StartTime: at(0), EndTime: at(10),
-			Links: []SpanLink{causeLink(b)}},
+			Links: []SpanLink{evalLink(b)}},
 	})
 
 	segs := waitingSegments(db.Spans.Map[a].TimeBreakdown(at(20)))
@@ -543,11 +559,11 @@ func TestTimeBreakdownSpansIncludesBlockerChains(t *testing.T) {
 			{ID: q, Name: "query", StartTime: at(0)},
 			{ID: a, ParentID: q, Name: "A", StartTime: at(1)},
 			{ID: aTwin, ParentID: a, Name: "A", StartTime: at(1)},
-			{ID: mB, ParentID: aTwin, Name: "resume B", StartTime: at(1), Links: []SpanLink{causeLink(b)}},
+			{ID: mB, ParentID: aTwin, Name: "resume B", StartTime: at(1), Links: []SpanLink{evalLink(b)}},
 			{ID: b, ParentID: q, Name: "B", StartTime: at(0), EndTime: at(0.2)},
-			{ID: mC, ParentID: b, Name: "resume C", StartTime: at(1), Links: []SpanLink{causeLink(c)}},
+			{ID: mC, ParentID: b, Name: "resume C", StartTime: at(1), Links: []SpanLink{evalLink(c)}},
 			{ID: c, ParentID: q, Name: "C", StartTime: at(0), EndTime: at(0.2)},
-			{ID: mN, ParentID: c, Name: "resume N", StartTime: at(1), Links: []SpanLink{causeLink(n)}},
+			{ID: mN, ParentID: c, Name: "resume N", StartTime: at(1), Links: []SpanLink{evalLink(n)}},
 			{ID: n, ParentID: q, Name: "N", StartTime: at(0), EndTime: at(0.2)},
 		})
 
@@ -681,7 +697,7 @@ func TestTimeBreakdownSubtreeRule(t *testing.T) {
 			Links: []SpanLink{waitLink(rh, "lazy", at(1), at(4))}},
 		{ID: inner, ParentID: tw, Name: "load sdk runtime", StartTime: at(0.5), EndTime: at(4)},
 		{ID: rh, ParentID: inner, Name: "resume withoutMount", StartTime: at(1), EndTime: at(4),
-			Links: []SpanLink{causeLink(inner)}},
+			Links: []SpanLink{evalLink(inner)}},
 	})
 
 	// The wait resolves to work rendered inside the row's own subtree: that
@@ -724,7 +740,7 @@ func TestWaitingNowLiveBlocked(t *testing.T) {
 		{ID: s, ParentID: q, Name: "Container.stdout", StartTime: at(3)},
 		{ID: x, ParentID: s, Name: "Container.stdout", StartTime: at(3)},
 		{ID: r1, ParentID: x, Name: "resume withExec", StartTime: at(3),
-			Links: []SpanLink{causeLink(w1)}},
+			Links: []SpanLink{evalLink(w1)}},
 	})
 
 	span := db.Spans.Map[s]
@@ -797,9 +813,9 @@ func TestWaitingNowForcedRowBlockedDeeper(t *testing.T) {
 		{ID: a, ParentID: q, Name: "Container.withExec", StartTime: at(1), EndTime: at(1.5)},
 		{ID: b, ParentID: q, Name: "Container.withExec", StartTime: at(2), EndTime: at(2.5)},
 		{ID: rb, ParentID: q, Name: "resume withExec", StartTime: at(3),
-			Links: []SpanLink{causeLink(b)}},
+			Links: []SpanLink{evalLink(b)}},
 		{ID: ra, ParentID: rb, Name: "resume withExec", StartTime: at(3),
-			Links: []SpanLink{causeLink(a)}},
+			Links: []SpanLink{evalLink(a)}},
 	})
 
 	span := db.Spans.Map[b]
@@ -843,9 +859,9 @@ func TestTimeBreakdownInferredPastWait(t *testing.T) {
 		{ID: a, ParentID: q, Name: "Container.withExec", StartTime: at(0.5), EndTime: at(0.9)},
 		{ID: b, ParentID: q, Name: "Container.withExec", StartTime: at(0.9), EndTime: at(1)},
 		{ID: rb, ParentID: q, Name: "resume withExec", StartTime: at(1),
-			Links: []SpanLink{causeLink(b)}},
+			Links: []SpanLink{evalLink(b)}},
 		{ID: ra, ParentID: b, Name: "resume withExec", StartTime: at(1), EndTime: at(5.5),
-			Links: []SpanLink{causeLink(a)}},
+			Links: []SpanLink{evalLink(a)}},
 		{ID: eb, ParentID: b, Name: "exec sh", StartTime: at(5.5)},
 	})
 
@@ -901,7 +917,7 @@ func TestBlockerLabelFromCallArgs(t *testing.T) {
 		{ID: s, ParentID: q, Name: "Container.stdout", StartTime: at(3)},
 		{ID: x, ParentID: s, Name: "Container.stdout", StartTime: at(3)},
 		{ID: r, ParentID: x, Name: "resume withExec", StartTime: at(3),
-			Links: []SpanLink{causeLink(w)}},
+			Links: []SpanLink{evalLink(w)}},
 	})
 
 	span := db.Spans.Map[s]
@@ -954,11 +970,11 @@ func TestLiveChainResolvesToWorkingOp(t *testing.T) {
 		{ID: cExec, ParentID: cRow, Name: "exec sh", StartTime: at(1)},
 		{ID: bRow, ParentID: q, Name: "Container.withExec", StartTime: at(1), EndTime: at(1.5)},
 		{ID: mC, ParentID: bRow, Name: "resume withExec", StartTime: at(2),
-			Links: []SpanLink{causeLink(cRow)}},
+			Links: []SpanLink{evalLink(cRow)}},
 		{ID: aRow, ParentID: q, Name: "Container.stdout", StartTime: at(3)},
 		{ID: aTwin, ParentID: aRow, Name: "Container.stdout", StartTime: at(3)},
 		{ID: mB, ParentID: aTwin, Name: "resume withExec", StartTime: at(3),
-			Links: []SpanLink{causeLink(bRow)}},
+			Links: []SpanLink{evalLink(bRow)}},
 	})
 
 	a := db.Spans.Map[aRow]
@@ -1005,7 +1021,7 @@ func TestBlockerNeverResolvesToAncestor(t *testing.T) {
 			Links: []SpanLink{waitLink(r, "lazy", at(1), at(5))}},
 		// the marker's cause chain dead-ends at the session root
 		{ID: r, ParentID: x, Name: "resume failEffect", StartTime: at(1),
-			Links: []SpanLink{causeLink(q)}},
+			Links: []SpanLink{evalLink(q)}},
 	})
 	span := db.Spans.Map[f]
 	hb := span.TimeBreakdown(at(5))
@@ -1036,7 +1052,7 @@ func TestWaitingNowFailedRow(t *testing.T) {
 		{ID: x, ParentID: s, Name: "Container.stdout", StartTime: at(3),
 			Links: []SpanLink{waitLink(r, "lazy", at(3), at(10))}},
 		{ID: r, ParentID: x, Name: "resume withExec", StartTime: at(3),
-			Links: []SpanLink{causeLink(w1)}},
+			Links: []SpanLink{evalLink(w1)}},
 	})
 	span := db.Spans.Map[s]
 	if _, ok := span.WaitingNow(at(10)); !ok {
@@ -1047,5 +1063,329 @@ func TestWaitingNowFailedRow(t *testing.T) {
 	db.ImportSnapshots([]SpanSnapshot{snap})
 	if _, ok := span.WaitingNow(at(10)); ok {
 		t.Fatal("failed row must not report blocked-now")
+	}
+}
+
+// buildInstallSitesDB records a lazy withExec whose result was installed at
+// two sites besides the call itself: a client request that started before the
+// call, and a module call the result was handed to. A later exitCode forces
+// it. The evaluation links the call with no purpose and the sites as causes,
+// as the engine does.
+//
+//	q (query root) [0,20]
+//	├── req "POST /query" (passthrough) [0.5,20]  (install site)
+//	├── w "Container.withExec" [2,2.5]            (the lazy call)
+//	│   └── e exec [5,15]                         (its deferred exec)
+//	├── h "Mod.withContainer" [3,3.5]             (install site)
+//	└── f "Container.exitCode" [4,16]             (the forcing op)
+//	    └── fx twin [4,16]                        (wait lazy→r [4,16])
+//	        └── r "resume withExec" [4,16]        (evaluates w; causes req, h)
+func buildInstallSitesDB(t *testing.T, outcome string) (db *DB, w, h, f SpanID) {
+	t.Helper()
+	db = NewDB()
+	q := testID(1)
+	req := testID(2)
+	w = testID(3)
+	e := testID(4)
+	h = testID(5)
+	f = testID(6)
+	fx := testID(7)
+	r := testID(8)
+
+	end := at(16)
+	execEnd := at(15)
+	var status sdktrace.Status
+	switch outcome {
+	case "running":
+		end, execEnd = time.Time{}, time.Time{}
+	case "failed":
+		status = sdktrace.Status{Code: codes.Error, Description: "exit code 1"}
+	}
+	eSnap := SpanSnapshot{ID: e, ParentID: w, Name: "exec bash", StartTime: at(5), EndTime: execEnd}
+	eSnap.ProcessAttribute("wcprof.exec.argv", `["bash","-c","install"]`)
+	db.ImportSnapshots([]SpanSnapshot{
+		{ID: q, Name: "query", StartTime: at(0), EndTime: end},
+		{ID: req, ParentID: q, Name: "POST /query", Passthrough: true, StartTime: at(0.5), EndTime: end},
+		{ID: w, ParentID: q, Name: "Container.withExec", StartTime: at(2), EndTime: at(2.5)},
+		eSnap,
+		{ID: h, ParentID: q, Name: "Mod.withContainer", StartTime: at(3), EndTime: at(3.5)},
+		{ID: f, ParentID: q, Name: "Container.exitCode", StartTime: at(4), EndTime: end},
+		{ID: fx, ParentID: f, Name: "Container.exitCode", StartTime: at(4), EndTime: end,
+			Links: []SpanLink{waitLink(r, "lazy", at(4), at(16))}},
+		{ID: r, ParentID: fx, Name: "resume withExec", StartTime: at(4), EndTime: end, Status: status,
+			Links: []SpanLink{evalLink(w), causeLink(req), causeLink(h)}},
+	})
+	return db, w, h, f
+}
+
+func TestTimeBreakdownLazyEvaluationInstallSites(t *testing.T) {
+	db, w, h, f := buildInstallSitesDB(t, "ok")
+
+	// The forcing op waited on the call, not on the install site that
+	// started first.
+	hb := db.Spans.Map[f].TimeBreakdown(at(20))
+	segs := waitingSegments(hb)
+	if !hb.Material || len(segs) != 1 {
+		t.Fatalf("forcing op should wait once: %+v", hb)
+	}
+	if segs[0].Target != w || segs[0].Label != "bash -c install" {
+		t.Fatalf("forcing op should wait on the evaluated call: %+v", segs[0])
+	}
+	if segs[0].Duration() != 12*time.Second {
+		t.Fatalf("forcing op should wait 12s, got %v", segs[0].Duration())
+	}
+	assertBlockers(t, segs[0], w)
+
+	// The evaluation is the call's own work.
+	hbw := db.Spans.Map[w].TimeBreakdown(at(20))
+	if hbw.Material || hbw.Waiting != 0 {
+		t.Fatalf("the evaluated call should not wait: %+v", hbw)
+	}
+	if want := 12*time.Second + 500*time.Millisecond; hbw.Self != want {
+		t.Fatalf("the evaluated call's own work should be %v, got %v", want, hbw.Self)
+	}
+
+	// The module call only received the result: it gets no time from the
+	// evaluation, neither as activity nor as waiting.
+	site := db.Spans.Map[h]
+	if got := site.Activity.Duration(at(20)); got != 500*time.Millisecond {
+		t.Fatalf("install site activity should be its own 500ms, got %v", got)
+	}
+	hbh := site.TimeBreakdown(at(20))
+	if hbh.Material || hbh.Waiting != 0 || hbh.Self != 500*time.Millisecond {
+		t.Fatalf("install site should show only its own work: %+v", hbh)
+	}
+	if visitedBreakdownSpans(site)[testID(8)] {
+		t.Fatal("install site's breakdown should not depend on the evaluation")
+	}
+}
+
+func TestLazyEvaluationRunningAtInstallSites(t *testing.T) {
+	db, w, h, f := buildInstallSitesDB(t, "running")
+	if !db.Spans.Map[w].IsRunningOrEffectsRunning() {
+		t.Fatal("the evaluated call should be running while its evaluation runs")
+	}
+	if db.Spans.Map[h].IsRunningOrEffectsRunning() {
+		t.Fatal("an install site should not be running while the evaluation runs")
+	}
+	blocker, ok := db.Spans.Map[f].WaitingNow(at(10))
+	if !ok || blocker == nil || blocker.ID != w {
+		t.Fatalf("forcing op should be blocked on the evaluated call, got %v %v", blocker, ok)
+	}
+}
+
+func TestLazyEvaluationFailureReachesInstallSites(t *testing.T) {
+	db, w, h, _ := buildInstallSitesDB(t, "failed")
+	// Install links exist for failure attribution: every call holding the
+	// result shows the failure.
+	if !db.Spans.Map[w].IsFailedOrCausedFailure() {
+		t.Fatal("the evaluated call should show the evaluation's failure")
+	}
+	if !db.Spans.Map[h].IsFailedOrCausedFailure() {
+		t.Fatal("an install site should show the evaluation's failure")
+	}
+}
+
+// The engine often evaluates an internal call made inside the user's call,
+// e.g. the Container.from resolving an image inside the user's
+// Container.from, and links the user's call as an install site. A row
+// waiting on that evaluation names the user's call, which the evaluation
+// takes out of pending and credits with its time.
+//
+//	q (query root) [0,20]
+//	├── pub "Container.from" (pending) [1,1.5]
+//	│   └── twin "Container.from" (passthrough) [1,1.5]
+//	│       └── inner "Container.from" (internal, pending) [1.1,1.4]
+//	└── f "Container.withExec" [2,12]
+//	    └── fx twin [2,12]                       (wait lazy→r [2,12])
+//	        └── r "resume from" [2,12]           (evaluates inner; cause pub)
+func TestTimeBreakdownLazyEvaluationOfInternalCall(t *testing.T) {
+	db := NewDB()
+	q := testID(1)
+	pub := testID(2)
+	twin := testID(3)
+	inner := testID(4)
+	f := testID(5)
+	fx := testID(6)
+	r := testID(7)
+	db.ImportSnapshots([]SpanSnapshot{
+		{ID: q, Name: "query", StartTime: at(0), EndTime: at(20)},
+		{ID: pub, ParentID: q, Name: "Container.from", Pending: true, StartTime: at(1), EndTime: at(1.5)},
+		{ID: twin, ParentID: pub, Name: "Container.from", Passthrough: true, StartTime: at(1), EndTime: at(1.5)},
+		{ID: inner, ParentID: twin, Name: "Container.from", Internal: true, Pending: true, StartTime: at(1.1), EndTime: at(1.4)},
+		{ID: f, ParentID: q, Name: "Container.withExec", StartTime: at(2), EndTime: at(12)},
+		{ID: fx, ParentID: f, Name: "Container.withExec", StartTime: at(2), EndTime: at(12),
+			Links: []SpanLink{waitLink(r, "lazy", at(2), at(12))}},
+		{ID: r, ParentID: fx, Name: "resume from", StartTime: at(2), EndTime: at(12),
+			Links: []SpanLink{evalLink(inner), causeLink(pub)}},
+	})
+
+	if db.Spans.Map[pub].IsPending() {
+		t.Fatal("the user's call should no longer be pending once evaluated")
+	}
+	if got := db.Spans.Map[pub].Activity.Duration(at(20)); got != 10*time.Second+500*time.Millisecond {
+		t.Fatalf("the user's call should be credited the evaluation, got %v", got)
+	}
+	hb := db.Spans.Map[f].TimeBreakdown(at(20))
+	segs := waitingSegments(hb)
+	if len(segs) != 1 || segs[0].Target != pub || segs[0].Label != "Container.from" {
+		t.Fatalf("the waiting row should name the user's call: %+v", segs)
+	}
+	assertBlockers(t, segs[0], pub)
+}
+
+// A call's deferred evaluation credits the call with its time. Cloud resends
+// a call's span when it changes (more children, logs), as a raw snapshot that
+// carries no activity; the credit must survive it, whichever arrived first.
+func TestResentCallKeepsDeferredTime(t *testing.T) {
+	q := testID(1)
+	w := testID(2)
+	f := testID(3)
+	r := testID(4)
+	root := SpanSnapshot{ID: q, Name: "query", StartTime: at(0), EndTime: at(20)}
+	call := SpanSnapshot{ID: w, ParentID: q, Name: "Container.withExec", StartTime: at(1), EndTime: at(1.5)}
+	forcing := SpanSnapshot{ID: f, ParentID: q, Name: "Container.stdout", StartTime: at(3), EndTime: at(13)}
+	resume := SpanSnapshot{ID: r, ParentID: f, Name: "resume withExec", StartTime: at(3), EndTime: at(13),
+		Links: []SpanLink{evalLink(w)}}
+	resent := call
+	resent.ChildCount = 3
+	resent.HasLogs = true
+	want := 10*time.Second + 500*time.Millisecond
+
+	for name, batches := range map[string][][]SpanSnapshot{
+		"call first":   {{root, call, forcing}, {resume}, {resent}},
+		"resume first": {{root, forcing, resume}, {call}, {resent}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			db := NewDB()
+			for _, batch := range batches {
+				db.ImportSnapshots(batch)
+			}
+			span := db.Spans.Map[w]
+			if got := span.Activity.Duration(at(20)); got != want {
+				t.Fatalf("resent call should keep its deferred time: got %v, want %v", got, want)
+			}
+			if hb := span.TimeBreakdown(at(20)); hb.Self != want || hb.Material {
+				t.Fatalf("resent call's own work should be %v: %+v", want, hb)
+			}
+		})
+	}
+
+	// A snapshot from a DB that derived the activity itself is authoritative.
+	db := NewDB()
+	db.ImportSnapshots([]SpanSnapshot{root, call, forcing, resume})
+	final := db.Spans.Map[w].Snapshot()
+	final.Activity = Activity{CompletedIntervals: []Interval{{Start: at(1), End: at(2)}}}
+	db.ImportSnapshots([]SpanSnapshot{final})
+	if got := db.Spans.Map[w].Activity.Duration(at(20)); got != time.Second {
+		t.Fatalf("a snapshot carrying activity should replace it: got %v", got)
+	}
+}
+
+// A view that loads a trace in parts may not hold what a row waited on: the
+// row's own resolver run (a module function's runtime span), or another
+// operation. Until it does, the row reads as working the whole time, and its
+// breakdown names the span to load. Once that arrives, the breakdown is the
+// one a whole trace gives.
+func TestTimeBreakdownWaitOnUnloadedSpan(t *testing.T) {
+	q := testID(1)
+	a := testID(2)
+	n := testID(3)
+	partial := []SpanSnapshot{
+		{ID: q, Name: "query", StartTime: at(0), EndTime: at(20)},
+		{ID: a, ParentID: q, Name: "Mod.publish", StartTime: at(0), EndTime: at(10),
+			Links: []SpanLink{waitLink(n, "call_exec", at(0), at(10))}},
+	}
+	for _, tc := range []struct {
+		name    string
+		parent  SpanID
+		waiting time.Duration
+	}{
+		{"nested work", a, 0},
+		{"another operation", q, 10 * time.Second},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := NewDB()
+			db.ImportSnapshots(partial)
+			row := db.Spans.Map[a]
+			hb := row.TimeBreakdown(at(20))
+			if hb.Material || hb.Waiting != 0 || hb.Self != 10*time.Second {
+				t.Fatalf("a wait on an unloaded span should leave the row whole: %+v", hb)
+			}
+			if !visitedBreakdownSpans(row)[n] {
+				t.Fatal("the breakdown should name the unloaded span to load")
+			}
+
+			db.ImportSnapshots([]SpanSnapshot{
+				{ID: n, ParentID: tc.parent, Name: "Mod.publish runtime", StartTime: at(0), EndTime: at(10)},
+			})
+			hb = row.TimeBreakdown(at(20))
+			if hb.Waiting != tc.waiting {
+				t.Fatalf("once loaded, the row should wait %v: %+v", tc.waiting, hb)
+			}
+		})
+	}
+}
+
+// A deferred evaluation a row forced resolves to the call it evaluates; until
+// that call is loaded, the row reads as working, as for any unloaded blocker.
+func TestTimeBreakdownEvaluationOfUnloadedCall(t *testing.T) {
+	q := testID(1)
+	a := testID(2)
+	r := testID(3)
+	w := testID(4)
+	db := NewDB()
+	db.ImportSnapshots([]SpanSnapshot{
+		{ID: q, Name: "query", StartTime: at(0), EndTime: at(20)},
+		{ID: a, ParentID: q, Name: "Container.stdout", StartTime: at(0), EndTime: at(10)},
+		{ID: r, ParentID: a, Name: "resume withExec", StartTime: at(0), EndTime: at(10),
+			Links: []SpanLink{evalLink(w)}},
+	})
+	row := db.Spans.Map[a]
+	if hb := row.TimeBreakdown(at(20)); hb.Material || hb.Self != 10*time.Second {
+		t.Fatalf("an evaluation of an unloaded call should leave the row whole: %+v", hb)
+	}
+	if !visitedBreakdownSpans(row)[w] {
+		t.Fatal("the breakdown should name the unloaded call to load")
+	}
+
+	db.ImportSnapshots([]SpanSnapshot{
+		{ID: w, ParentID: q, Name: "Container.withExec", StartTime: at(0), EndTime: at(0.5)},
+	})
+	segs := waitingSegments(row.TimeBreakdown(at(20)))
+	if len(segs) != 1 || segs[0].Target != w || segs[0].Duration() != 10*time.Second {
+		t.Fatalf("once loaded, the row should wait on the call: %+v", segs)
+	}
+}
+
+// A wait on an operation of another trace is a wait outside this one, which
+// no load of this trace resolves.
+func TestTimeBreakdownWaitOutsideTrace(t *testing.T) {
+	q := testID(1)
+	a := testID(2)
+	other := testID(3)
+	db := NewDB()
+	link := waitLink(other, "test", at(0), at(10))
+	link.SpanContext.TraceID = TraceID{TraceID: [16]byte{1}}
+	db.ImportSnapshots([]SpanSnapshot{
+		{ID: q, Name: "query", StartTime: at(0), EndTime: at(20)},
+		{ID: a, ParentID: q, Name: "A", StartTime: at(0), EndTime: at(10), Links: []SpanLink{link}},
+	})
+	if _, ok := db.Spans.Map[other]; ok {
+		t.Fatal("a span of another trace should not be registered")
+	}
+	segs := waitingSegments(db.Spans.Map[a].TimeBreakdown(at(20)))
+	if len(segs) != 1 || segs[0].Label != "an operation outside this trace" || segs[0].Duration() != 10*time.Second {
+		t.Fatalf("the row should wait outside this trace: %+v", segs)
+	}
+}
+
+// A blocker named by its command fits on one line, though its arguments may
+// hold a whole script.
+func TestBlockerLabelOneLine(t *testing.T) {
+	exec := &Span{SpanSnapshot: SpanSnapshot{ID: testID(1), Name: "exec"}}
+	exec.ProcessAttribute("wcprof.exec.argv", `["bash","-c","\nset -eux\n  apt-get update\n"]`)
+	if got, want := blockerLabel(exec), "bash -c set -eux apt-get update"; got != want {
+		t.Fatalf("label: got %q, want %q", got, want)
 	}
 }

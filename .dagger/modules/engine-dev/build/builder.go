@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"path"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 
@@ -93,8 +92,8 @@ func (build *Builder) withRerun(ctr *dagger.Container) *dagger.Container {
 }
 
 // RerunOutputs are the outputs of the build steps that have built to
-// different bytes before, by what they are: QEMU's emulators, crun, and the
-// Go SDK's files.
+// different bytes before, by what they are: QEMU's emulators and the Go SDK's
+// files.
 func (build *Builder) RerunOutputs(ctx context.Context) (map[string]*dagger.Directory, error) {
 	qemu, _ := build.qemuBins()
 	goFiles, err := build.goSDKFiles(ctx)
@@ -103,7 +102,6 @@ func (build *Builder) RerunOutputs(ctx context.Context) (map[string]*dagger.Dire
 	}
 	return map[string]*dagger.Directory{
 		"QEMU's emulators":   qemu,
-		"crun":               core.NewDirectory().WithFile("crun", build.runtimeBin()),
 		"the Go SDK's files": goFiles,
 	}, nil
 }
@@ -157,6 +155,8 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 		"ripgrep",
 		// for dbs
 		"sqlite",
+		// the container runtime (distconsts.RuntimePath)
+		"crun",
 	}
 	if build.gpuSupport {
 		pkgs = append(pkgs,
@@ -194,7 +194,6 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 		{path: "/usr/bin/sshfs", file: build.sshfsBin()},
 		{path: "/usr/bin/dial-stdio", file: build.dialstdioBinary()},
 		{path: "/opt/cni/bin/dnsname", file: build.dnsnameBinary()},
-		{path: consts.RuntimePath, file: build.runtimeBin()},
 		{path: consts.DaggerInitPath, file: build.daggerInit()},
 		{path: consts.DaggerInitSessionPath, file: build.binary("./cmd/init-session", false)},
 		{path: consts.TiniPath, file: build.Init(), fileOpts: []dagger.ContainerWithFileOpts{{Permissions: 0o755}}},
@@ -411,49 +410,6 @@ func goBinary(source *dagger.Directory, pkg string, platform ocispecs.Platform, 
 		Platforms().
 		Get(platform.OS + "/" + platform.Architecture).
 		Binary(ws)
-}
-
-func (build *Builder) runtimeBin() *dagger.File {
-	// crun is C: cross-compile it with xx, as runc is, statically linked,
-	// from the checksummed release tarball, which carries its libocispec
-	// submodule.
-	src := core.HTTP(
-		"https://github.com/containers/crun/releases/download/"+consts.CrunVersion+"/crun-"+consts.CrunVersion+".tar.gz",
-		dagger.HTTPOpts{Checksum: consts.CrunChecksum},
-	)
-	jsonc := core.HTTP(
-		"https://github.com/json-c/json-c/archive/refs/tags/json-c-"+consts.JSONCVersion+".tar.gz",
-		dagger.HTTPOpts{Checksum: consts.JSONCChecksum},
-	)
-	return build.withRerun(core.NewContainer().From(consts.AlpineImage)).
-		WithEnvVariable("BUILDPLATFORM", "linux/"+runtime.GOARCH).
-		WithEnvVariable("TARGETPLATFORM", string(build.platform)).
-		WithExec([]string{"apk", "add", "--no-cache",
-			"clang", "lld", "llvm", "make", "autoconf", "automake", "libtool", "pkgconf", "python3", "cmake",
-		}).
-		WithDirectory("/", core.NewContainer().From(consts.XxImage).Rootfs()).
-		WithExec([]string{"xx-apk", "add", "--no-cache",
-			"musl-dev", "gcc", "linux-headers",
-			"libcap-dev", "libcap-static", "libseccomp-dev", "libseccomp-static", "argp-standalone",
-		}).
-		WithFile("/crun.tar.gz", src).
-		WithFile("/json-c.tar.gz", jsonc).
-		WithExec([]string{"sh", "-ec", `
-sysroot=$(xx-info sysroot)
-mkdir -p /json-c/build /src
-tar xzf /json-c.tar.gz --strip-components=1 -C /json-c
-cd /json-c/build
-cmake .. $(xx-clang --print-cmake-defines) -DBUILD_SHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR=lib -DCMAKE_BUILD_TYPE=Release
-make -j"$(nproc)"
-make install DESTDIR="$sysroot"
-tar xzf /crun.tar.gz --strip-components=1 -C /src
-cd /src
-./configure --host="$(xx-clang --print-target-triple)" CC=xx-clang --disable-systemd --disable-criu LIBS=-largp
-make -j"$(nproc)" LDFLAGS=-all-static
-llvm-strip crun
-xx-verify --static crun
-`}).
-		File("/src/crun")
 }
 
 // gitRemoteEntireBin is the git remote helper for entire:// remotes, taken

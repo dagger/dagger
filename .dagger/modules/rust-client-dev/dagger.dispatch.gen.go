@@ -41,8 +41,6 @@ type functionSpec struct {
 var functions = []functionSpec{
 	{Name: "rustClientDev", Receiver: "RustClientDev", FnName: "", Args: map[string]argumentSpec{"workspace": {Required: false, Default: "", Encoding: "string"}, "sourcePath": {Required: false, Default: "\"sdk/rust\"", Encoding: "string"}, "clientDockerConfig": {Required: false, Default: "", Encoding: "string"}}},
 	{Name: "apiclient", Receiver: "RustClientDev", FnName: "APIClient", Args: map[string]argumentSpec{}},
-	{Name: "cargoCheck", Receiver: "RustClientDev", FnName: "CargoCheck", Args: map[string]argumentSpec{}},
-	{Name: "cargoFmt", Receiver: "RustClientDev", FnName: "CargoFmt", Args: map[string]argumentSpec{}},
 	{Name: "changes", Receiver: "RustClientDev", FnName: "Changes", Args: map[string]argumentSpec{}},
 	{Name: "devContainer", Receiver: "RustClientDev", FnName: "DevContainer", Args: map[string]argumentSpec{"runInstall": {Required: false, Default: "\"false\"", Encoding: "json"}}},
 	{Name: "release", Receiver: "RustClientDev", FnName: "Release", Args: map[string]argumentSpec{"sourceTag": {Required: true, Default: "", Encoding: "string"}, "cargoRegistryToken": {Required: false, Default: "", Encoding: "string"}, "cargoRegistryIndex": {Required: false, Default: "", Encoding: "string"}}},

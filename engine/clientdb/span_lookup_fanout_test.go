@@ -32,16 +32,42 @@ func TestSpanLookupRepeatedIDsAndLateEdges(t *testing.T) {
 		}
 		lookup.addLocked(row, event.targets)
 	}
-	require.Equal(t, []string{"one", "two", "late"}, lookup.children["root"])
-	require.Equal(t, []string{"one"}, lookup.children["other"])
+	require.Equal(t, []string{"one", "two", "late"}, lookup.childrenLocked("root"))
+	require.Equal(t, []string{"one"}, lookup.childrenLocked("other"))
 	require.ElementsMatch(t, []string{"one", "two"}, lookup.causalChildrenOf("cause"))
 	require.Equal(t, []string{"one"}, lookup.causalChildrenOf("later"))
 	require.ElementsMatch(t, []string{"cause", "later"}, lookup.causalParentsOf("one"))
-	require.Equal(t, "root", lookup.parent["one"])
-	require.Equal(t, int64(1), lookup.firstRow[spanLookupKey{traceID: "a", spanID: "one"}])
-	require.Equal(t, int64(4), lookup.firstRow[spanLookupKey{traceID: "b", spanID: "one"}])
-	require.Equal(t, int64(5), lookup.lastRow["one"])
-	require.Equal(t, int64(8), lookup.lastRow["late"])
+	require.Equal(t, "root", lookup.parentName("one"))
+	first := func(trace, span string) int64 {
+		row, _ := lookup.first(trace, span)
+		return row
+	}
+	require.Equal(t, int64(1), first("a", "one"))
+	require.Equal(t, int64(4), first("b", "one"))
+	require.Equal(t, int64(5), lookup.lastRowOf("one"))
+	require.Equal(t, int64(8), lookup.lastRowOf("late"))
+}
+
+// parentName is spanID's parent's ID, "" for none.
+func (l *spanLookup) parentName(spanID string) string {
+	n, ok := l.lookupLocked(spanID)
+	if !ok {
+		return ""
+	}
+	parent, ok := l.parentLocked(n)
+	if !ok {
+		return ""
+	}
+	return l.ids.name(parent)
+}
+
+// lastRowOf is spanID's newest row, 0 for none.
+func (l *spanLookup) lastRowOf(spanID string) int64 {
+	n, ok := l.lookupLocked(spanID)
+	if !ok {
+		return 0
+	}
+	return l.lastRow[n]
 }
 
 var fanoutLookupSink *spanLookup
@@ -72,7 +98,7 @@ func BenchmarkSpanLookupFanout(b *testing.B) {
 				}
 				b.StopTimer()
 				if kind == "parent" {
-					require.Len(b, fanoutLookupSink.children["root"], count)
+					require.Len(b, fanoutLookupSink.childrenLocked("root"), count)
 				} else {
 					require.Len(b, fanoutLookupSink.causalChildrenOf("root"), count)
 				}

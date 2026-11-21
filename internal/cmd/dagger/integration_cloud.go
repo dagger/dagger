@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"os"
 	"strings"
 	"text/tabwriter"
 
@@ -13,23 +12,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var githubOpen bool
+var (
+	integrationOpen      bool
+	integrationNamespace string
+)
 
-// githubOAuthRedirect returns the Cloud frontend URL GitHub sends the user
-// back to after consent. It follows the same environment rule as
-// gitHubAppInstallURL: the local frontend when DAGGER_CLOUD_URL points
-// somewhere other than production, and dagger.cloud otherwise.
-func githubOAuthRedirect() string {
-	if url := os.Getenv("DAGGER_CLOUD_URL"); url != "" && !strings.Contains(url, "://api.dagger.cloud") {
-		return "http://localhost:3000/github/callback"
-	}
-	return "https://dagger.cloud/github/callback"
-}
-
-// cloudIntegrationCmd is the `dagger cloud integration` group. The original
-// top-level `dagger integration` was singleton-shaped (one provider per type,
-// list its accounts). This is the mutable form: each configured integration
-// is a discrete entry; list enumerates them, create adds one, rm removes one.
 var cloudIntegrationCmd = &cobra.Command{
 	Use:   "integration",
 	Short: "Manage Dagger Cloud integration providers",
@@ -40,9 +27,14 @@ var cloudIntegrationCmd = &cobra.Command{
 }
 
 var cloudIntegrationCreateCmd = &cobra.Command{
-	Use:     "create <provider>",
-	Short:   "Create a new integration of the given provider type",
-	Example: "dagger cloud integration create github",
+	Use:   "create <provider>",
+	Short: "Start connecting a forge to Dagger Cloud",
+	Long: `Return the browser step to connect GitHub, GitLab.com, or Entire to Dagger Cloud.
+With --json, the action_required status includes the next action and its URL.
+For GitLab.com, pass --namespace to grant access to a specific account or group.
+After setup, use integration list <provider> to verify the installation or grant.
+Use cloud checks on separately to enable checks for a repository.`,
+	Example: `dagger cloud integration create gitlab --org my-org --namespace team/group --json`,
 	Args:    cobra.ExactArgs(1),
 	RunE:    cloudCLI.IntegrationSetup,
 }
@@ -59,14 +51,16 @@ var cloudIntegrationRmCmd = &cobra.Command{
 
 var cloudIntegrationListCmd = &cobra.Command{
 	Use:   "list [type]",
-	Short: "List configured integrations (optionally filtered by provider type)",
+	Short: "List integrations for a provider (defaults to GitHub)",
+	Long:  "List GitHub installations visible to the signed-in account, GitLab grants saved for the selected Cloud organization, or Entire installations available to that organization.",
 	Args:  cobra.MaximumNArgs(1),
 	RunE:  cloudCLI.IntegrationList,
 }
 
 func init() {
 	cloudIntegrationCmd.PersistentFlags().BoolVar(&cloudJSON, "json", false, "Print JSON output")
-	cloudIntegrationCreateCmd.Flags().BoolVar(&githubOpen, "open", false, "Open the setup URL in a browser")
+	cloudIntegrationCreateCmd.Flags().BoolVar(&integrationOpen, "open", false, "Open the setup URL in a browser")
+	cloudIntegrationCreateCmd.Flags().StringVar(&integrationNamespace, "namespace", "", "GitLab.com account or group path to grant to the Cloud organization")
 	cloudIntegrationCmd.AddCommand(cloudIntegrationCreateCmd, cloudIntegrationListCmd, cloudIntegrationRmCmd)
 	cloudCmd.AddCommand(cloudIntegrationCmd)
 }
@@ -78,7 +72,7 @@ type integrationAccountEntry struct {
 	Type         string `json:"type"`
 	Org          string `json:"org,omitempty"`
 	ConfiguredAt string `json:"configuredAt,omitempty"`
-	Autocheck    bool   `json:"autocheck"`
+	Autocheck    *bool  `json:"autocheck,omitempty"` // Legacy GitHub capability field.
 	ConfigURL    string `json:"configUrl,omitempty"`
 }
 
@@ -87,35 +81,148 @@ type githubSetupHandoff struct {
 	RedirectURI string
 }
 
+type integrationSetupStep struct {
+	Status      string `json:"status"`
+	Provider    string `json:"provider"`
+	Org         string `json:"org"`
+	Action      string `json:"action,omitempty"`
+	URL         string `json:"url,omitempty"`
+	Namespace   string `json:"namespace,omitempty"`
+	ID          string `json:"id,omitempty"`
+	RedirectURI string `json:"redirectURI,omitempty"`
+	GitHubLogin string `json:"githubLogin,omitempty"`
+}
+
 func (cli *CloudCLI) IntegrationSetup(cmd *cobra.Command, args []string) error {
-	switch strings.ToLower(args[0]) {
-	case "github":
-		return cli.integrationSetupGitHub(cmd)
+	provider := strings.ToLower(args[0])
+	switch provider {
+	case "github", "gitlab", "entire":
 	default:
 		return unsupportedIntegrationProvider(args[0])
 	}
+
+	if integrationNamespace != "" && provider != "gitlab" {
+		return fmt.Errorf("--namespace is only supported for GitLab.com")
+	}
+	ctx := cmd.Context()
+	client, auth, err := cli.cloudClient(ctx)
+	if err != nil {
+		return err
+	}
+	org, err := cli.resolveCloudOrg(ctx, client, auth)
+	if err != nil {
+		return err
+	}
+
+	step := integrationSetupStep{Status: "action_required", Provider: provider, Org: org.Name}
+	var instruction string
+	switch provider {
+	case "github":
+		connected, login := cli.githubConnected(ctx, client)
+		step.GitHubLogin = login
+		if connected {
+			step.Action = "install_app"
+			step.URL, err = cloudIntegrationURL(org.Name, provider)
+			instruction = "Install the Dagger for GitHub app from your Cloud organization's GitHub integration page."
+		} else {
+			setup, setupErr := cli.githubConnectHandoff(ctx, client)
+			if setupErr != nil {
+				return setupErr
+			}
+			step.Action = "authorize_account"
+			step.URL, step.RedirectURI = setup.URL, setup.RedirectURI
+			instruction = "Authorize your GitHub account, then run this command again to install the app."
+		}
+	case "gitlab":
+		instruction, err = gitLabIntegrationSetup(ctx, client, org, &step)
+	case "entire":
+		step.Action = "install_plugin"
+		step.URL, err = entireInstallPage(ctx, client, org.ID, org.Name)
+		instruction = "Install the Dagger plugin on your Entire project."
+	}
+	if err != nil {
+		return err
+	}
+	if step.Status == "action_required" && step.URL == "" {
+		return fmt.Errorf("%s did not return an integration setup URL", provider)
+	}
+	if integrationOpen && step.URL != "" {
+		if err := browser.OpenURL(step.URL); err != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "Failed to open browser: %s\n", err)
+		}
+	}
+	if cloudJSON {
+		return writeCloudJSON(cmd, step)
+	}
+	fmt.Fprintln(cmd.OutOrStdout(), instruction)
+	if step.URL != "" {
+		fmt.Fprintln(cmd.OutOrStdout(), step.URL)
+	}
+	return nil
 }
 
-// IntegrationList lists configured integrations. With no arg, all are listed;
-// with one arg, results are filtered by provider type (e.g., "github").
-func (cli *CloudCLI) IntegrationList(cmd *cobra.Command, args []string) error {
-	client, _, err := cli.cloudClient(cmd.Context())
-	if err != nil {
-		return err
+// Grant access only to the explicitly selected GitLab.com namespace.
+func gitLabIntegrationSetup(ctx context.Context, client *cloudapi.Client, org *cloudapi.OrgResponse, step *integrationSetupStep) (string, error) {
+	step.Namespace = integrationNamespace
+	if step.Namespace != "" {
+		sources, err := client.GitLabSources(ctx, org.ID)
+		if err != nil {
+			return "", err
+		}
+		for _, source := range sources {
+			if source.InstanceURL != "https://gitlab.com" || source.NamespacePath != step.Namespace {
+				continue
+			}
+			if source.Access == nil {
+				if err := client.UseGitLabAccount(ctx, org.ID, source.ID); err != nil {
+					return "", err
+				}
+			}
+			step.Status, step.ID = "connected", source.ID
+			return fmt.Sprintf("GitLab.com namespace %s is connected to %s.", step.Namespace, org.Name), nil
+		}
 	}
-	sources, err := client.Sources(cmd.Context())
-	if err != nil {
-		return err
-	}
-	entries := integrationAccountEntriesFromSources(sources)
 
+	var err error
+	step.Action = "authorize_account"
+	step.URL, err = cloudIntegrationURL(org.Name, "gitlab")
+	return "Connect a GitLab.com account, then rerun with --namespace <path> to grant access.", err
+}
+
+func (cli *CloudCLI) IntegrationList(cmd *cobra.Command, args []string) error {
 	filter := ""
 	if len(args) == 1 {
 		filter = canonicalProviderName(args[0])
 		if filter == "" {
 			return unsupportedIntegrationProvider(args[0])
 		}
-		entries = filterIntegrationAccountEntries(entries, filter)
+	}
+	ctx := cmd.Context()
+	client, auth, err := cli.cloudClient(ctx)
+	if err != nil {
+		return err
+	}
+
+	var entries []integrationAccountEntry
+	switch filter {
+	case "GitLab", "Entire":
+		org, err := cli.resolveCloudOrg(ctx, client, auth)
+		if err != nil {
+			return err
+		}
+		entries, err = orgIntegrationAccounts(ctx, client, org, filter)
+		if err != nil {
+			return err
+		}
+	default:
+		sources, err := client.Sources(ctx)
+		if err != nil {
+			return err
+		}
+		entries = integrationAccountEntriesFromSources(sources)
+		if filter != "" {
+			entries = filterIntegrationAccountEntries(entries, filter)
+		}
 	}
 
 	if cloudJSON {
@@ -125,36 +232,35 @@ func (cli *CloudCLI) IntegrationList(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func (cli *CloudCLI) integrationSetupGitHub(cmd *cobra.Command) error {
-	client, _, err := cli.cloudClient(cmd.Context())
-	if err != nil {
-		return err
-	}
-	// If GitHub is already usable there's nothing to set up: skip the OAuth URL
-	// rather than sending the user through the flow again.
-	if connected, login := cli.githubConnected(cmd.Context(), client); connected {
-		if cloudJSON {
-			return writeCloudJSON(cmd, map[string]string{"status": "connected", "githubLogin": login})
+// Organization grants and installations available to the selected organization
+// are separate from the signed-in user's GitHub installation inventory.
+func orgIntegrationAccounts(ctx context.Context, client *cloudapi.Client, org *cloudapi.OrgResponse, provider string) ([]integrationAccountEntry, error) {
+	entries := []integrationAccountEntry{}
+	if provider == "GitLab" {
+		sources, err := client.GitLabOrganizationSources(ctx, org.ID)
+		if err != nil {
+			return nil, err
 		}
-		if login != "" {
-			fmt.Fprintf(cmd.OutOrStdout(), "GitHub is already connected as %s.\n", login)
-		} else {
-			fmt.Fprintln(cmd.OutOrStdout(), "GitHub is already connected.")
+		for _, source := range sources {
+			entries = append(entries, integrationAccountEntry{
+				ID: source.ID, Provider: provider, Account: source.NamespacePath, Type: "Namespace",
+				Org: org.Name, ConfigURL: strings.TrimRight(source.InstanceURL, "/") + "/" + source.NamespacePath,
+			})
 		}
-		return nil
+		return entries, nil
 	}
-	setup, err := cli.githubConnectHandoff(cmd.Context(), client)
+
+	installations, err := client.EntireInstallations(ctx, org.ID)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	openGitHubSetupURL(cmd, setup.URL)
-	if cloudJSON {
-		return writeCloudJSON(cmd, map[string]string{"url": setup.URL, "redirectURI": setup.RedirectURI})
+	for _, installation := range installations {
+		entries = append(entries, integrationAccountEntry{
+			ID: installation.ID, Provider: provider, Account: installation.Name, Type: "Installation",
+			ConfigURL: installation.ManageURL,
+		})
 	}
-	out := cmd.OutOrStdout()
-	fmt.Fprintln(out, "Open this URL to set up the GitHub integration:")
-	fmt.Fprintln(out, setup.URL)
-	return nil
+	return entries, nil
 }
 
 // githubConnected reports whether the user already has a usable GitHub identity,
@@ -182,7 +288,11 @@ func (cli *CloudCLI) githubConnected(ctx context.Context, client *cloudapi.Clien
 }
 
 func (cli *CloudCLI) githubConnectHandoff(ctx context.Context, client *cloudapi.Client) (*githubSetupHandoff, error) {
-	redirectURI := githubOAuthRedirect()
+	frontend, err := cloudFrontendURL()
+	if err != nil {
+		return nil, err
+	}
+	redirectURI := frontend.JoinPath("github", "callback").String()
 	oauthURL, err := client.GitHubOAuthURL(ctx, redirectURI)
 	if err != nil {
 		return nil, err
@@ -191,14 +301,6 @@ func (cli *CloudCLI) githubConnectHandoff(ctx context.Context, client *cloudapi.
 		URL:         oauthURL,
 		RedirectURI: redirectURI,
 	}, nil
-}
-
-func openGitHubSetupURL(cmd *cobra.Command, setupURL string) {
-	if githubOpen {
-		if err := browser.OpenURL(setupURL); err != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "Failed to open browser: %s\n", err)
-		}
-	}
 }
 
 func printIntegrationAccounts(cmd *cobra.Command, provider string, entries []integrationAccountEntry) {
@@ -212,15 +314,19 @@ func printIntegrationAccounts(cmd *cobra.Command, provider string, entries []int
 		return
 	}
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "ID\tPROVIDER\tACCOUNT\tTYPE\tDAGGER ORG\tAUTOCHECK\tCONFIG URL")
+	fmt.Fprintln(w, "ID\tPROVIDER\tACCOUNT\tTYPE\tDAGGER ORG\tSUPPORTS CHECKS\tCONFIG URL")
 	for _, entry := range entries {
+		checkSupport := "-"
+		if entry.Autocheck != nil {
+			checkSupport = onOff(*entry.Autocheck)
+		}
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			entry.ID,
 			entry.Provider,
 			entry.Account,
 			entry.Type,
 			entry.Org,
-			onOff(entry.Autocheck),
+			checkSupport,
 			entry.ConfigURL,
 		)
 	}
@@ -231,6 +337,7 @@ func integrationAccountEntriesFromSources(sources []cloudapi.Source) []integrati
 	entries := make([]integrationAccountEntry, 0, len(sources))
 	for _, source := range sources {
 		provider := sourceIntegrationProvider(source)
+		checkSupport := integrationProviderSupportsAutocheck(provider)
 		entries = append(entries, integrationAccountEntry{
 			ID:           source.ID,
 			Provider:     provider,
@@ -238,7 +345,7 @@ func integrationAccountEntriesFromSources(sources []cloudapi.Source) []integrati
 			Type:         source.Type,
 			Org:          stringValue(source.OrgName),
 			ConfiguredAt: source.ConfiguredAt,
-			Autocheck:    integrationProviderSupportsAutocheck(provider),
+			Autocheck:    &checkSupport,
 			ConfigURL:    source.ConfigURL,
 		})
 	}
@@ -264,6 +371,8 @@ func canonicalProviderName(input string) string {
 		return "GitHub"
 	case "gitlab":
 		return "GitLab"
+	case "entire":
+		return "Entire"
 	case "bitbucket":
 		return "Bitbucket"
 	}
@@ -271,7 +380,7 @@ func canonicalProviderName(input string) string {
 }
 
 func unsupportedIntegrationProvider(provider string) error {
-	return fmt.Errorf("unsupported integration %q; supported integrations: github", provider)
+	return fmt.Errorf("unsupported integration %q; supported integrations: github, gitlab, entire", provider)
 }
 
 func sourceIntegrationProvider(source cloudapi.Source) string {

@@ -1,0 +1,7 @@
+kind: Changed
+body: |
+  The engine's stop budget now ends before the Pod's terminationGracePeriodSeconds: the chart passes `--graceful-stop-timeout` as the grace period minus `engine.gracefulStopMarginSeconds` (30s), unless the budget is already set or `engine.image.ref` is set. An engine killed before it marks its cache as cleanly shut down discards the whole local cache on its next start.
+time: 2026-11-19T05:56:30.000000Z
+custom:
+  Author: paikend
+  PR: "15231"

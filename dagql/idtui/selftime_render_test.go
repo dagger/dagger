@@ -30,6 +30,14 @@ func causeLink(target dagui.SpanID) dagui.SpanLink {
 	}
 }
 
+// evalLink is a lazy evaluation's link to the call it evaluates, which the
+// engine emits with no purpose.
+func evalLink(target dagui.SpanID) dagui.SpanLink {
+	return dagui.SpanLink{
+		SpanContext: dagui.SpanContext{TraceID: prettyTestTraceID(), SpanID: target},
+	}
+}
+
 func renderedLines(db *dagui.DB) string {
 	fe := NewWithDB(io.Discard, db)
 	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
@@ -40,8 +48,9 @@ func renderedLines(db *dagui.DB) string {
 }
 
 // TestRenderSelfTimeCompleted: the forcing op's row reports ~0 own work
-// instead of the 13s it spent blocked, with no waiting decoration once done;
-// the row that hosted the real work reports its true execution time.
+// instead of the 13s it spent blocked, and once done says how long it waited
+// and on what; the row that hosted the real work reports its true execution
+// time.
 func TestRenderSelfTimeCompleted(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	db := dagui.NewDB()
@@ -69,7 +78,7 @@ func TestRenderSelfTimeCompleted(t *testing.T) {
 			Links: []dagui.SpanLink{waitLink(resume, at(3), at(16))}},
 		{ID: resume, TraceID: prettyTestTraceID(), ParentID: twin, Name: "resume withExec",
 			StartTime: at(3), EndTime: at(16), Final: true,
-			Links: []dagui.SpanLink{causeLink(forced)}},
+			Links: []dagui.SpanLink{evalLink(forced)}},
 	})
 	db.SetPrimarySpan(root)
 
@@ -86,7 +95,10 @@ func TestRenderSelfTimeCompleted(t *testing.T) {
 			t.Errorf("forcing op should report ~0 own work:\n%s", line)
 		}
 		if strings.Contains(line, "waiting on") {
-			t.Errorf("completed rows must carry no waiting decoration:\n%s", line)
+			t.Errorf("completed rows are not waiting any more:\n%s", line)
+		}
+		if !strings.Contains(line, "0.0s ⋯ waited 13.0s on the-forced-op") {
+			t.Errorf("completed rows should say how long they waited, and on what:\n%s", line)
 		}
 	}
 	// The forced op hosted the deferred eval: sync 0.5s + resumed 13s.
@@ -123,7 +135,7 @@ func TestRenderLiveWaitingSuffix(t *testing.T) {
 			StartTime: at(8)},
 		{ID: resume, TraceID: prettyTestTraceID(), ParentID: twin, Name: "resume withExec",
 			StartTime: at(8),
-			Links:     []dagui.SpanLink{causeLink(forced)}},
+			Links:     []dagui.SpanLink{evalLink(forced)}},
 	})
 	db.SetPrimarySpan(root)
 
@@ -147,5 +159,124 @@ func TestRenderLiveWaitingSuffix(t *testing.T) {
 	}
 	if strings.Contains(forcingLine, "8s") || strings.Contains(forcingLine, "8.") {
 		t.Errorf("blocked row must not tick up wall-clock while blocked:\n%s", forcingLine)
+	}
+}
+
+// A frontend over a trace loaded in parts asks its support provider for what
+// its rows waited on that it hasn't loaded, once, and the row then reads as
+// the waiting it was.
+func TestRequestBreakdownSpans(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	db := dagui.NewDB()
+	root := prettyTestSpanID(1)
+	row := prettyTestSpanID(2)
+	other := prettyTestSpanID(3)
+	base := time.Now().Add(-time.Hour)
+	at := func(sec float64) time.Time {
+		return base.Add(time.Duration(sec * float64(time.Second)))
+	}
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: root, TraceID: prettyTestTraceID(), Name: "root", StartTime: at(0), EndTime: at(20)},
+		{ID: row, TraceID: prettyTestTraceID(), ParentID: root, Name: "the-waiting-op",
+			StartTime: at(1), EndTime: at(11),
+			Links: []dagui.SpanLink{waitLink(other, at(1), at(11))}},
+	})
+	db.SetPrimarySpan(root)
+
+	fe := NewWithDB(io.Discard, db)
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+	fe.FrontendOpts.ExpandCompleted = true
+	fe.FrontendOpts.GCThreshold = time.Hour
+	var requested [][]dagui.SpanID
+	fe.supportProvider = func(ids []dagui.SpanID) { requested = append(requested, ids) }
+
+	fe.recalculateViewLocked()
+	if len(requested) != 1 || len(requested[0]) != 1 || requested[0][0] != other {
+		t.Fatalf("the row's unloaded blocker should be requested once: %v", requested)
+	}
+	if got := strings.Join(fe.tui.RenderLines(), "\n"); !strings.Contains(got, "the-waiting-op 10.0s") {
+		t.Errorf("until its blocker loads, the row reads as working the whole time:\n%s", got)
+	}
+	fe.recalculateViewLocked()
+	if len(requested) != 1 {
+		t.Fatalf("a span is requested once: %v", requested)
+	}
+
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: other, TraceID: prettyTestTraceID(), ParentID: root, Name: "the-other-op",
+			StartTime: at(1), EndTime: at(11)},
+	})
+	fe.recalculateViewLocked()
+	if got := strings.Join(fe.tui.RenderLines(), "\n"); !strings.Contains(got, "the-waiting-op 0.0s ⋯ waited 10.0s on the-other-op") {
+		t.Errorf("once its blocker loads, the row reads as waiting:\n%s", got)
+	}
+}
+
+// Report mode renders once, so 'dagger trace' asks it through the public
+// method, round by round, for the spans its rows' breakdowns need.
+func TestRequestBreakdownSpansInReport(t *testing.T) {
+	tf, ok := NewReporter(io.Discard).(TraceFrontend)
+	if !ok {
+		t.Fatal("the reporter should be a trace frontend")
+	}
+	if tf.RequestBreakdownSpans() {
+		t.Error("an empty view should request nothing")
+	}
+}
+
+// TestRenderWaitsBelowInFinalReport: a module function row whose step waited
+// on another module's step reads as waiting in the final report, as the step
+// itself does, rather than as solid work.
+func TestRenderWaitsBelowInFinalReport(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	db := dagui.NewDB()
+	root := prettyTestSpanID(1)
+	other := prettyTestSpanID(2)
+	fn := prettyTestSpanID(3)
+	from := prettyTestSpanID(4)
+	exitCode := prettyTestSpanID(5)
+
+	base := time.Now().Add(-time.Hour)
+	at := func(sec float64) time.Time {
+		return base.Add(time.Duration(sec * float64(time.Second)))
+	}
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: root, TraceID: prettyTestTraceID(), Name: "root",
+			StartTime: at(0), EndTime: at(80), Final: true},
+		{ID: other, TraceID: prettyTestTraceID(), ParentID: root, Name: "apt-get install",
+			StartTime: at(10), EndTime: at(60), Final: true},
+		{ID: fn, TraceID: prettyTestTraceID(), ParentID: root, Name: "Project.build",
+			StartTime: at(5), EndTime: at(70), Final: true},
+		{ID: from, TraceID: prettyTestTraceID(), ParentID: fn, Name: "Container.from",
+			StartTime: at(5), EndTime: at(10), Final: true},
+		{ID: exitCode, TraceID: prettyTestTraceID(), ParentID: fn, Name: "Container.exitCode",
+			StartTime: at(10), EndTime: at(65), Final: true,
+			Links: []dagui.SpanLink{waitLink(other, at(10), at(60))}},
+	})
+	db.SetPrimarySpan(root)
+
+	fnLine := func(out string) string {
+		for _, line := range strings.Split(out, "\n") {
+			if strings.Contains(line, "Project.build") {
+				return line
+			}
+		}
+		t.Fatalf("no row for the function call:\n%s", out)
+		return ""
+	}
+	if line := fnLine(renderedLines(db)); !strings.Contains(line, "1m5s") {
+		t.Fatalf("until the waiting below rows is computed, the row reads as its wall-clock time:\n%s", line)
+	}
+
+	fe := NewWithDB(io.Discard, db)
+	fe.Verbosity = dagui.ShowCompletedVerbosity
+	fe.ExpandCompleted = true
+	fe.GCThreshold = time.Hour
+	var buf strings.Builder
+	if err := fe.FinalRender(&buf); err != nil {
+		t.Fatal(err)
+	}
+	if line := fnLine(buf.String()); !strings.Contains(line, "15.0s ⋯ waited 50.0s on apt-get install") {
+		t.Errorf("the function call should say how long it waited below, and on what:\n%s", line)
 	}
 }
