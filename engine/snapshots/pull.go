@@ -184,6 +184,10 @@ func (cm *snapshotManager) importLayer(
 	if chain != nil && chain.fetched != nil {
 		chain.fetched()
 	}
+	contents, err := cm.fetchListingContents(ctx, desc, provider, chainMode, chain, clock)
+	if err != nil {
+		return nil, err
+	}
 	leaseID, _ := leases.FromContext(ctx)
 	if parent != nil {
 		if err := cm.AttachLease(ctx, leaseID, parent.SnapshotID()); err != nil {
@@ -216,7 +220,7 @@ func (cm *snapshotManager) importLayer(
 		return nil, err
 	}
 	mut = nil
-	ref, err = cm.recordImportedLayer(ctx, ref, desc, diffID, opts, blobKey, diffKey)
+	ref, err = cm.recordImportedLayer(ctx, ref, desc, contents, diffID, opts, blobKey, diffKey)
 	if err == nil && chain != nil && chain.owner != nil && chain.owner.Applied != nil {
 		chain.owner.Applied(ctx, desc, ref.SnapshotID())
 	}
@@ -302,6 +306,40 @@ func (cm *snapshotManager) fetchLayerContent(ctx context.Context, desc ocispecs.
 	return err
 }
 
+// fetchListingContents makes sure the content blobs desc's listing names are
+// in the content store, pinned to ctx's lease, and returns them, in the order
+// the listing first names them; nothing for a layer that is no listing. A
+// chain fetches a listing's contents in their turn before it, except one it
+// carried before a layer the engine already had, which is fetched here, or
+// awaited when the chain's blobs arrive by Await.
+func (cm *snapshotManager) fetchListingContents(ctx context.Context, desc ocispecs.Descriptor, provider content.Provider, chainMode bool, chain *chainLayer, clock importClock) ([]ocispecs.Descriptor, error) {
+	if !IsListing(desc) {
+		return nil, nil
+	}
+	contents, err := listingContents(ctx, cm.ContentStore, desc)
+	if err != nil {
+		return nil, chainError(ctx, chainMode, desc, "apply", err)
+	}
+	for _, c := range contents {
+		if provider == nil && chain != nil && chain.owner != nil && chain.owner.Await != nil {
+			present, err := cm.pinContent(ctx, c)
+			if err != nil {
+				return nil, err
+			}
+			if present {
+				continue
+			}
+			if err := chain.owner.Await(ctx, c); err != nil {
+				return nil, err
+			}
+		}
+		if err := cm.fetchLayerContent(ctx, c, provider, chainMode, chain, clock); err != nil {
+			return nil, err
+		}
+	}
+	return contents, nil
+}
+
 // applyLayer applies desc's blob to mut. apart says mut was prepared with no
 // parent for a rebase on commit (cm.applyLayersApart): its directory is then
 // written in place, with the layer's whiteouts as overlay whiteouts, as it is
@@ -333,15 +371,32 @@ func (cm *snapshotManager) applyLayer(ctx context.Context, mut MutableRef, desc 
 	// A chain layer applied apart is decompressed ahead of its apply, which
 	// then reads the layer's tar: the decompression and the file creation
 	// overlap.
+	//
+	// A listing's layer tar is rebuilt from it and its content blobs as it is
+	// applied, and checked against the layer's diff ID as a tar is.
 	applier, applyDesc := cm.Applier, desc
 	var ahead *decompressedAhead
-	if apart && cm.applyFrom != nil && canDecompressAhead(ctx, desc) {
+	var listing *listingTar
+	switch {
+	case IsListing(desc):
+		if cm.applyFrom == nil {
+			_ = unmount()
+			return chainError(ctx, chainMode, desc, "apply", errors.New("the engine has no applier for a listing"))
+		}
+		listing, err = openListingTar(ctx, cm.ContentStore, desc)
+		if err != nil {
+			_ = unmount()
+			return chainError(ctx, chainMode, desc, "apply", err)
+		}
+		applier = cm.applyFrom(aheadProvider{digest: desc.Digest, tar: listing})
+		applyDesc = ocispecs.Descriptor{MediaType: ocispecs.MediaTypeImageLayer, Digest: desc.Digest, Size: desc.Size}
+	case apart && cm.applyFrom != nil && canDecompressAhead(ctx, desc):
 		ahead, err = cm.decompressAhead(ctx, desc)
 		if err != nil {
 			_ = unmount()
 			return chainError(ctx, chainMode, desc, "apply", err)
 		}
-		applier = cm.applyFrom(aheadProvider{digest: desc.Digest, ahead: ahead})
+		applier = cm.applyFrom(aheadProvider{digest: desc.Digest, tar: ahead})
 		applyDesc = ocispecs.Descriptor{MediaType: ocispecs.MediaTypeImageLayer, Digest: desc.Digest, Size: desc.Size}
 	}
 	var applyOpts []diff.ApplyOpt
@@ -349,10 +404,13 @@ func (cm *snapshotManager) applyLayer(ctx context.Context, mut MutableRef, desc 
 	if desc.Size > 0 {
 		unpack = NewProgressTracker(ctx, desc.Digest.String(), desc.Size, "bytes")
 		applyOpts = append(applyOpts, diff.WithProgress(func(_ ocispecs.Descriptor, read int64) {
-			// Decompressed ahead, the applier reads the tar: progress is
-			// the blob's bytes decompressed.
+			// Decompressed ahead or rebuilt from a listing, the applier
+			// reads the tar: progress is the blob's bytes read.
 			if ahead != nil {
 				read = min(ahead.read.Load(), desc.Size)
+			}
+			if listing != nil {
+				read = min(listing.read.Load(), desc.Size)
 			}
 			unpack.Update(read)
 		}))
@@ -360,6 +418,9 @@ func (cm *snapshotManager) applyLayer(ctx context.Context, mut MutableRef, desc 
 	appliedDesc, err := applier.Apply(ctx, applyDesc, mounts, applyOpts...)
 	if ahead != nil {
 		ahead.Close()
+	}
+	if listing != nil {
+		listing.Close()
 	}
 	applied := clock.now()
 	if clock.timing != nil {
@@ -423,10 +484,11 @@ func upperOverlay(mounts []mount.Mount) []mount.Mount {
 }
 
 // recordImportedLayer records ref, just committed from desc's blob, as the
-// layer's import on its parent: its blob metadata, its content and the
-// engine's import indexes. It takes ownership of ref, which it releases on
+// layer's import on its parent: its blob metadata, its content, with the
+// content blobs its listing named when it is one, and the engine's import
+// indexes. It takes ownership of ref, which it releases on
 // failure. Requires the layer's import lock.
-func (cm *snapshotManager) recordImportedLayer(ctx context.Context, ref ImmutableRef, desc ocispecs.Descriptor, diffID digest.Digest, opts ImportImageOpts, blobKey ImportedLayerBlobKey, diffKey ImportedLayerDiffKey) (ImmutableRef, error) {
+func (cm *snapshotManager) recordImportedLayer(ctx context.Context, ref ImmutableRef, desc ocispecs.Descriptor, contents []ocispecs.Descriptor, diffID digest.Digest, opts ImportImageOpts, blobKey ImportedLayerBlobKey, diffKey ImportedLayerDiffKey) (ImmutableRef, error) {
 	imported, ok := ref.(*immutableRef)
 	if !ok {
 		_ = ref.Release(context.WithoutCancel(ctx))
@@ -494,6 +556,12 @@ func (cm *snapshotManager) recordImportedLayer(ctx context.Context, ref Immutabl
 	if err := cm.recordSnapshotContent(ctx, ref.SnapshotID(), desc); err != nil {
 		_ = ref.Release(context.WithoutCancel(ctx))
 		return nil, err
+	}
+	for _, c := range contents {
+		if err := cm.recordSnapshotContent(ctx, ref.SnapshotID(), c); err != nil {
+			_ = ref.Release(context.WithoutCancel(ctx))
+			return nil, err
+		}
 	}
 
 	leaseID, _ := leases.FromContext(ctx)

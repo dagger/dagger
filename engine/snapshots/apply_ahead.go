@@ -148,25 +148,27 @@ func (c *countingSectionReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
-// aheadProvider is the content an applier reads a layer decompressed ahead
-// from: the layer's tar, under its blob's digest, and nothing else.
+// aheadProvider is the content an applier reads a layer's tar from when the
+// tar is made ahead of its apply, decompressed from the layer's blob or
+// rebuilt from its listing: the tar, under the blob's digest, and nothing
+// else.
 type aheadProvider struct {
 	digest digest.Digest
-	ahead  *decompressedAhead
+	tar    io.Reader
 }
 
 func (p aheadProvider) ReaderAt(_ context.Context, desc ocispecs.Descriptor) (content.ReaderAt, error) {
 	if desc.Digest != p.digest {
 		return nil, fmt.Errorf("apply of %s asked for %s: %w", p.digest, desc.Digest, cerrdefs.ErrNotFound)
 	}
-	return aheadReaderAt{p.ahead}, nil
+	return aheadReaderAt{p.tar}, nil
 }
 
-// aheadReaderAt hands an applier the decompressed stream: content.NewReader
+// aheadReaderAt hands an applier the tar made ahead: content.NewReader
 // reads it through Reader, in order.
-type aheadReaderAt struct{ ahead *decompressedAhead }
+type aheadReaderAt struct{ tar io.Reader }
 
-func (r aheadReaderAt) Reader() io.Reader { return r.ahead }
+func (r aheadReaderAt) Reader() io.Reader { return r.tar }
 func (aheadReaderAt) Close() error        { return nil }
 func (aheadReaderAt) Size() int64         { return -1 }
 func (aheadReaderAt) ReadAt([]byte, int64) (int, error) {
