@@ -5,9 +5,6 @@ import (
 	"errors"
 	"reflect"
 	"slices"
-
-	"github.com/dagger/dagger/engine/slog"
-	"github.com/dagger/dagger/engine/wcprof"
 )
 
 type OfferOutcome uint8
@@ -345,7 +342,7 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, item CloudPar
 			row.noteCloudCopyLocked(item.CloudNumber, item.CloudStored, item.CloudExpiresAtUnix)
 			if current == nil || !reflect.DeepEqual(current.record, offer) {
 				// Both primitives validate the owner graph before any mutation.
-				next := &partOffer{record: offer, owner: owner, came: offerCameByOffer}
+				next := &partOffer{record: offer, owner: owner}
 				if current == nil {
 					out.Err = c.attachPartOfferLocked(row, address, next)
 				} else {
@@ -381,37 +378,4 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, item CloudPar
 func sameOfferMeaning(a, b PersistedPartOffer) bool {
 	a.Chain.Addresses, b.Chain.Addresses = nil, nil
 	return reflect.DeepEqual(a, b)
-}
-
-// logOffersOnCompleteParts logs each offer row holds on a part that
-// complete, the row's complete part keys just read from its record, names.
-// Such an offer is obsolete, and nothing should leave it there: an installed
-// part's settlement retires its offer, an offer call and a merge admit none on
-// a complete part, and boot retires those it restores on one. Each line names
-// the row, the part, whether the row's gate settled the part and how the offer
-// came. It sends nothing and decides nothing. Requires that egraphMu is not
-// held.
-func (c *Cache) logOffersOnCompleteParts(ctx context.Context, row *sharedResult, complete []string) {
-	if len(complete) == 0 {
-		return
-	}
-	type found struct {
-		key  string
-		came offerCame
-	}
-	var obsolete []found
-	wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
-	for key, offer := range row.partOffersLocked() {
-		if slices.Contains(complete, key) {
-			obsolete = append(obsolete, found{key: key, came: offer.came})
-		}
-	}
-	c.egraphMu.RUnlock()
-	for _, f := range obsolete {
-		slog.InfoContext(ctx, "remote cache offer on a complete part",
-			"entry", uint64(row.id),
-			"part", f.key,
-			"settled", row.partSettled(f.key),
-			"came", f.came.String())
-	}
 }
