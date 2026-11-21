@@ -528,6 +528,7 @@ func TestRelocatedTransferPayloadsStayValid(t *testing.T) {
 		"dagql_test.DescribedPart": {`{"done":true}`, 0},
 		"dagql_test.ExportChain":   {`{"snapshotID":"relocated","file":"/f"}`, 0},
 		"dagql_test.HeldPart":      {`{"snapshotID":"relocated","file":"/f"}`, 0},
+		"dagql_test.NormChild":     {`{"text":"relocated","child":5}`, 1},
 		"dagql_test.MarkSingle":    {`{"parts":["a"]}`, 0},
 		"dagql_test.MarkBatch":     {`{"parts":["a"]}`, 0},
 	}
