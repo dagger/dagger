@@ -8,6 +8,7 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/dagger/dagger/engine"
@@ -229,6 +230,57 @@ exit 2
 		})
 		require.ErrorContains(t, err, "something actually went wrong")
 	})
+}
+
+// TestSearchWithRipgrepBudget pins the host search's budgets: a search
+// matching without end (here a stub printing matches forever, like "." over a
+// huge tree) fails with a budget error once it matched too much, and one with
+// a limit returns that many results; either way ripgrep is stopped, or the
+// search would never return.
+func TestSearchWithRipgrepBudget(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the stub is a shell script")
+	}
+	dir := t.TempDir()
+	rg := filepath.Join(dir, "rg")
+	require.NoError(t, os.WriteFile(rg, []byte(`#!/bin/sh
+while :; do
+  printf '%s\n' '{"type":"match","data":{"path":{"text":"a.txt"},"lines":{"text":"abc\n"},"line_number":1,"absolute_offset":0,"submatches":[{"match":{"text":"a"},"start":0,"end":1}]}}'
+done
+`), 0o755))
+
+	t.Run("no limit", func(t *testing.T) {
+		_, err := searchWithRipgrep(context.Background(), t.TempDir(), rg, &engine.LocalSearchOpts{Pattern: "."})
+		require.ErrorContains(t, err, "search matched more than 10000 lines")
+	})
+
+	t.Run("limit", func(t *testing.T) {
+		limit := 5
+		results, err := searchWithRipgrep(context.Background(), t.TempDir(), rg, &engine.LocalSearchOpts{Pattern: ".", Limit: &limit})
+		require.NoError(t, err)
+		require.Len(t, results, 5)
+	})
+}
+
+func TestParseGrepOutput(t *testing.T) {
+	long := strings.Repeat("x", 20<<10)
+	out := "./a.txt:1:hello\nb.txt:2:" + long + "\nnot a match line\n"
+	results, limitReached, err := parseGrepOutput(strings.NewReader(out), false, searchParseOptions(&engine.LocalSearchOpts{}))
+	require.NoError(t, err)
+	require.False(t, limitReached)
+	require.Len(t, results, 2)
+	require.Equal(t, engine.LocalSearchResult{FilePath: "a.txt", LineNumber: 1, MatchedLines: "hello\n"}, results[0])
+	require.Equal(t, "b.txt", results[1].FilePath)
+	require.Less(t, len(results[1].MatchedLines), 9<<10)
+	require.Contains(t, results[1].MatchedLines, "[... omitted ")
+
+	limits := searchParseOptions(&engine.LocalSearchOpts{})
+	limits.Limits.MaxResults = 1
+	_, _, err = parseGrepOutput(strings.NewReader(out), false, limits)
+	require.ErrorContains(t, err, "search matched more than 1 lines")
+
+	_, _, err = parseGrepOutput(strings.NewReader("a\nb\n"), true, limits)
+	require.ErrorContains(t, err, "search matched more than 1 files")
 }
 
 // TestSearchHostPathWithGrep covers host search on a host without ripgrep. A

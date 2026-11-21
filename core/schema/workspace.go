@@ -19,8 +19,8 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/engineutil"
+	"github.com/dagger/dagger/engine/ripgrep"
 	"github.com/dagger/dagger/engine/slog"
-	telemetry "github.com/dagger/otel-go"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"golang.org/x/mod/semver"
@@ -1744,8 +1744,16 @@ func (s *workspaceSchema) search(
 		}
 		results = mergeSearchResults(results, mountResults, ws.MountedPath, args.Limit)
 	}
+	// Each side kept within the budget; together they must too.
+	if maxResults := ripgrep.DefaultMaxResults; args.Limit == nil && len(results) > maxResults {
+		unit := "lines"
+		if args.FilesOnly {
+			unit = "files"
+		}
+		return nil, fmt.Errorf("search: %w", &ripgrep.BudgetError{Unit: unit, MaxResults: maxResults})
+	}
 
-	emitSearchResults(ctx, results, args.FilesOnly)
+	core.EmitSearchResults(ctx, results, args.FilesOnly)
 	return dagql.Array[*core.SearchResult](results), nil
 }
 
@@ -1896,6 +1904,13 @@ func searchDirectoryTree(
 ) ([]*core.SearchResult, error) {
 	opts := args.SearchOpts
 	opts.Limit = nil // the limit caps the merged results, not each side
+	if args.Limit != nil {
+		// ...but it still replaces the default result budget, as it would
+		// for one side alone.
+		limits := ripgrep.DefaultLimits()
+		limits.MaxResults = max(limits.MaxResults, *args.Limit)
+		opts.Budget = &limits
+	}
 	results, err := tree.Self().Search(ctx, tree, opts, false, nil, args.Globs)
 	if err != nil {
 		return nil, err
@@ -1959,24 +1974,6 @@ func searchPathInScopes(filePath string, scopes []string) bool {
 		}
 	}
 	return false
-}
-
-// emitSearchResults writes search results to the span's stdio so they show up
-// in progress output (and are visible to an LLM driving the search).
-func emitSearchResults(ctx context.Context, results []*core.SearchResult, filesOnly bool) {
-	stdio := telemetry.SpanStdio(ctx, core.InstrumentationLibrary)
-	defer stdio.Close()
-	for _, result := range results {
-		if filesOnly {
-			fmt.Fprintln(stdio.Stdout, result.FilePath)
-		} else {
-			ensureLn := result.MatchedLines
-			if !strings.HasSuffix(ensureLn, "\n") {
-				ensureLn += "\n"
-			}
-			fmt.Fprintf(stdio.Stdout, "%s:%d:%s", result.FilePath, result.LineNumber, ensureLn)
-		}
-	}
 }
 
 type workspaceGlobArgs struct {

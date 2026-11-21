@@ -333,6 +333,16 @@ func (WorkspaceAPISuite) TestWorkspaceSearch(ctx context.Context, t *testctx.T) 
 		require.Len(t, lines, 5)
 	})
 
+	t.Run("a long line searched for anything is cut", func(ctx context.Context, t *testctx.T) {
+		// One 1 MiB line searched for "." is a single ripgrep message of a
+		// million submatches: the CLI used to collect them all and send ~42
+		// MiB back, past gRPC's 16 MiB message limit.
+		ctr := base.WithNewFile("min.js", strings.Repeat("var a=1;", 128<<10)+"\n")
+		out, err := ctr.With(daggerCall("searcher", "--pattern=.", "--paths=min.js", "file-paths")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "min.js:1", strings.TrimSpace(out))
+	})
+
 	t.Run("reject paths outside workspace", func(ctx context.Context, t *testctx.T) {
 		ctr := base.WithNewFile("/secret.txt", "workspace-boundary-repro\n")
 		_, err := ctr.With(daggerCall(

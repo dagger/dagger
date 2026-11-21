@@ -3039,6 +3039,69 @@ func main() {
 			require.Contains(t, filePaths, "tests/helper_test.js")
 		})
 	})
+
+	// A search matching everything ("." over a whole tree) used to collect
+	// every line, and every byte as a submatch, until the engine ran out of
+	// memory. Now it fails fast unless it sets a limit, and long lines are
+	// cut.
+	t.Run("pathological searches are bounded", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// 200 files of 100 lines: twice the default budget of 10000 lines.
+		tree := sdkcore.NewQuery(c).Container().From(alpineImage).
+			WithExec([]string{"sh", "-c", `mkdir /d && cd /d && awk 'BEGIN {
+  for (f = 0; f < 200; f++)
+    for (l = 0; l < 100; l++)
+      printf "line %d of file %d: the quick brown fox\n", l, f > ("f" f ".txt")
+}'`}).
+			Directory("/d")
+
+		t.Run("without a limit it fails", func(ctx context.Context, t *testctx.T) {
+			// Every byte of "." is a submatch: the results outgrow their byte
+			// budget before they reach 10000 lines.
+			_, err := tree.Search(ctx, ".")
+			requireErrOut(t, err, "search results exceed 8 MiB")
+			requireErrOut(t, err, "set a limit")
+
+			_, err = tree.Search(ctx, "fox")
+			requireErrOut(t, err, "search matched more than 10000 lines")
+
+			_, err = tree.AsWorkspace().Search(ctx, "fox")
+			requireErrOut(t, err, "search matched more than 10000 lines")
+		})
+
+		t.Run("with a limit it truncates", func(ctx context.Context, t *testctx.T) {
+			results, err := tree.Search(ctx, ".", sdkcore.DirectorySearchOpts{Limit: 5})
+			require.NoError(t, err)
+			require.Len(t, results, 5)
+
+			results, err = tree.AsWorkspace().Search(ctx, ".", sdkcore.WorkspaceSearchOpts{Limit: 5})
+			require.NoError(t, err)
+			require.Len(t, results, 5)
+		})
+
+		t.Run("a limit above the budget replaces it", func(ctx context.Context, t *testctx.T) {
+			results, err := tree.Search(ctx, "fox", sdkcore.DirectorySearchOpts{Limit: 12000})
+			require.NoError(t, err)
+			require.Len(t, results, 12000)
+		})
+
+		t.Run("long lines are cut", func(ctx context.Context, t *testctx.T) {
+			minified := strings.Repeat("var a=1;", 128<<10) // one 1 MiB line
+			results, err := sdkcore.NewQuery(c).Directory().
+				WithNewFile("min.js", minified+"\n").
+				Search(ctx, ".")
+			require.NoError(t, err)
+			require.Len(t, results, 1)
+			lines, err := results[0].MatchedLines(ctx)
+			require.NoError(t, err)
+			require.Less(t, len(lines), 9<<10)
+			require.Equal(t, minified[:8<<10]+fmt.Sprintf("[... omitted %d bytes of long line]\n", len(minified)-8<<10), lines)
+			submatches, err := results[0].Submatches(ctx)
+			require.NoError(t, err)
+			require.Len(t, submatches, 64)
+		})
+	})
 }
 
 func (DirectorySuite) TestSymlink(ctx context.Context, t *testctx.T) {
