@@ -62,6 +62,12 @@ type ExportStats struct {
 	// archiving, compressing and writing the content. Layers that build at
 	// once each add their own, so it can exceed the export's wall time.
 	DiffTime time.Duration
+	// CompressTime is the part of DiffTime spent in the compressor: every
+	// write of a layer's archive into the compressor's writer and its close,
+	// compressing and writing the blob, waits for the compressor's own
+	// frames included. DiffTime less CompressTime is reading the mounts and
+	// archiving them. It adds as DiffTime does.
+	CompressTime time.Duration
 	// LockWait is the wait for the per-snapshot export lock, held by another
 	// export of the same layer.
 	LockWait time.Duration
@@ -86,6 +92,7 @@ func (s *ExportStats) Add(o ExportStats) {
 	s.RawBytes += o.RawBytes
 	s.BlobBytes += o.BlobBytes
 	s.DiffTime += o.DiffTime
+	s.CompressTime += o.CompressTime
 	s.LockWait += o.LockWait
 	s.BuildWait += o.BuildWait
 	s.LayersMerged += o.LayersMerged

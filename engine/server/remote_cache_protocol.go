@@ -390,6 +390,7 @@ func exportLogAttrs(req protocol.Export, skipped []protocol.SkippedRoot, values 
 		"raw_bytes", stats.RawBytes,
 		"blob_bytes", stats.BlobBytes,
 		"diff_time", stats.DiffTime,
+		"compress_time", stats.CompressTime,
 		"lock_wait", stats.LockWait,
 		"build_wait", stats.BuildWait,
 		"layers_merged", stats.LayersMerged,
