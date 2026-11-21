@@ -161,11 +161,41 @@ func TruncateLines(lines string, maxBytes int) (string, int) {
 	return body[:cut] + omittedMarker(len(body)-cut) + nl, cut
 }
 
+// TruncateReadLine is TruncateLines for a line (without its newline) that
+// ScanLines already cut, dropping `dropped` bytes after it: the marker counts
+// those too.
+func TruncateReadLine(line string, maxBytes, dropped int) string {
+	if dropped == 0 {
+		s, _ := TruncateLines(line, maxBytes)
+		return s
+	}
+	var cut int
+	if maxBytes > 0 && len(line) > maxBytes {
+		cut = runeCut(line, maxBytes)
+	} else {
+		// The reader's cut may have split the last character.
+		cut = len(line)
+		for i := 1; i < utf8.UTFMax && i <= cut; i++ {
+			if utf8.RuneStart(line[cut-i]) {
+				if !utf8.FullRuneInString(line[cut-i:]) {
+					cut -= i
+				}
+				break
+			}
+		}
+	}
+	return line[:cut] + omittedMarker(len(line)-cut+dropped)
+}
+
 // Options configure a parse.
 type Options struct {
 	Limits Limits
 	// Limit is the caller's own limit on results; nil for none.
 	Limit *int
+	// Keep, when set, selects the results to collect by path: the others are
+	// dropped as they are read, before they count against the limit or the
+	// budgets.
+	Keep func(path string) bool
 	// OnSkip, when set, is told about each match skipped because its path or
 	// lines are not UTF-8.
 	OnSkip func(reason string)
@@ -181,7 +211,7 @@ func ParseFiles(r io.Reader, opts Options, fn func(path string) error) (limitRea
 	scan.Buffer(make([]byte, 0, 64<<10), 1<<20)
 	for scan.Scan() {
 		line := scan.Text()
-		if line == "" {
+		if line == "" || (opts.Keep != nil && !opts.Keep(line)) {
 			continue
 		}
 		full, err := budget.Add(len(line) + resultOverhead)
@@ -248,7 +278,7 @@ func ParseJSON(r io.Reader, opts Options, fn func(Result) error) (limitReached b
 		if _, err := dec.Token(); err != nil { // the closing }
 			return false, err
 		}
-		if msgType != "match" || res == nil {
+		if msgType != "match" || res == nil || (opts.Keep != nil && !opts.Keep(res.Path)) {
 			continue
 		}
 		cost := resultOverhead + len(res.Path) + len(res.Lines)
@@ -424,10 +454,11 @@ func skipValue(dec *json.Decoder) error {
 	}
 }
 
-// ScanLines calls fn with each line of r, without its newline, cut by
-// TruncateLines to maxBytes (0: no cut). Unlike a bufio.Scanner, a line of
-// any length is read, and only its first maxBytes are kept.
-func ScanLines(r io.Reader, maxBytes int, fn func(line string) error) error {
+// ScanLines calls fn with each line of r, without its newline: its first
+// maxBytes (0: all of it), and how many more bytes it had (see
+// TruncateReadLine). Unlike a bufio.Scanner, a line of any length is read,
+// and only its first maxBytes are kept.
+func ScanLines(r io.Reader, maxBytes int, fn func(line string, dropped int) error) error {
 	br := bufio.NewReaderSize(r, 64<<10)
 	var buf []byte
 	dropped := 0
@@ -445,7 +476,7 @@ func ScanLines(r io.Reader, maxBytes int, fn func(line string) error) error {
 		}
 		if err == io.EOF {
 			if len(buf) > 0 || dropped > 0 {
-				return fn(scannedLine(buf, dropped, maxBytes))
+				return fn(string(buf), dropped)
 			}
 			return nil
 		}
@@ -455,7 +486,7 @@ func ScanLines(r io.Reader, maxBytes int, fn func(line string) error) error {
 		if isPrefix {
 			continue
 		}
-		if err := fn(scannedLine(buf, dropped, maxBytes)); err != nil {
+		if err := fn(string(buf), dropped); err != nil {
 			return err
 		}
 		buf = buf[:0]
@@ -463,19 +494,9 @@ func ScanLines(r io.Reader, maxBytes int, fn func(line string) error) error {
 	}
 }
 
-// scannedLine is a line ScanLines read: buf, its first bytes, and dropped
-// more it didn't keep.
-func scannedLine(buf []byte, dropped, maxBytes int) string {
-	if dropped == 0 {
-		return string(buf)
-	}
-	cut := runeCut(buf, maxBytes)
-	return string(buf[:cut]) + omittedMarker(len(buf)-cut+dropped)
-}
-
 // runeCut is the largest length up to maxBytes at which s can be cut
 // without splitting a UTF-8 sequence.
-func runeCut[S string | []byte](s S, maxBytes int) int {
+func runeCut(s string, maxBytes int) int {
 	if len(s) <= maxBytes {
 		return len(s)
 	}

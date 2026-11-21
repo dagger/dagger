@@ -194,15 +194,39 @@ func TestScanLines(t *testing.T) {
 	long := strings.Repeat("x", 200<<10) // longer than the reader's buffer
 	in := "short\n" + long + "\nlast"
 	var lines []string
-	require.NoError(t, ScanLines(strings.NewReader(in), 10, func(l string) error {
-		lines = append(lines, l)
+	require.NoError(t, ScanLines(strings.NewReader(in), 10, func(l string, dropped int) error {
+		lines = append(lines, TruncateReadLine(l, 8, dropped))
 		return nil
 	}))
 	require.Equal(t, []string{
 		"short",
-		"xxxxxxxxxx" + fmt.Sprintf("[... omitted %d bytes of long line]", len(long)-10),
+		"xxxxxxxx" + fmt.Sprintf("[... omitted %d bytes of long line]", len(long)-8),
 		"last",
 	}, lines)
+}
+
+func TestTruncateReadLine(t *testing.T) {
+	// Not cut by the reader: as TruncateLines.
+	require.Equal(t, "abc", TruncateReadLine("abc", 8, 0))
+	require.Equal(t, "ab[... omitted 2 bytes of long line]", TruncateReadLine("abcd", 2, 0))
+	// Cut by the reader through "é" (2 bytes): the half is dropped too.
+	require.Equal(t, "ab[... omitted 11 bytes of long line]", TruncateReadLine("ab\xc3", 8, 10))
+	require.Equal(t, "abé[... omitted 10 bytes of long line]", TruncateReadLine("abé", 8, 10))
+}
+
+func TestParseKeep(t *testing.T) {
+	out := rgOutput("", [3]string{"keep/a", "1", "x\n"}, [3]string{"drop/b", "1", "x\n"}, [3]string{"keep/c", "1", "x\n"})
+	keep := func(p string) bool { return strings.HasPrefix(p, "keep/") }
+	limit := 2
+	// Dropped results count against neither the limit nor the budget.
+	results, limitReached, err := parseAll(t, out, Options{Limits: Limits{MaxResults: 2}, Keep: keep})
+	require.NoError(t, err)
+	require.False(t, limitReached)
+	require.Len(t, results, 2)
+	results, limitReached, err = parseAll(t, out, Options{Limit: &limit, Keep: keep})
+	require.NoError(t, err)
+	require.True(t, limitReached)
+	require.Equal(t, "keep/c", results[1].Path)
 }
 
 // dotLineReader streams the `rg --json` output of searching a single line of

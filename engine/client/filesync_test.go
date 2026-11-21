@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -271,8 +272,7 @@ func TestParseGrepOutput(t *testing.T) {
 	require.Len(t, results, 2)
 	require.Equal(t, engine.LocalSearchResult{FilePath: "a.txt", LineNumber: 1, MatchedLines: "hello\n"}, results[0])
 	require.Equal(t, "b.txt", results[1].FilePath)
-	require.Less(t, len(results[1].MatchedLines), 9<<10)
-	require.Contains(t, results[1].MatchedLines, "[... omitted ")
+	require.Equal(t, long[:8<<10]+fmt.Sprintf("[... omitted %d bytes of long line]\n", len(long)-8<<10), results[1].MatchedLines)
 
 	limits := searchParseOptions(&engine.LocalSearchOpts{})
 	limits.Limits.MaxResults = 1

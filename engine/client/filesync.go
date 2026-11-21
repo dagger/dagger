@@ -195,11 +195,23 @@ func (s FilesyncSource) DiffCopy(stream filesync.FileSync_DiffCopyServer) error 
 		if err != nil {
 			return fmt.Errorf("search: %w", err)
 		}
-		data, err := json.Marshal(results)
-		if err != nil {
+		// Without HTML escaping, which would make each <, > and & six bytes.
+		var data bytes.Buffer
+		enc := json.NewEncoder(&data)
+		enc.SetEscapeHTML(false)
+		if err := enc.Encode(results); err != nil {
 			return fmt.Errorf("marshal search results: %w", err)
 		}
-		return stream.SendMsg(&filesync.BytesMessage{Data: data})
+		if data.Len() > maxSearchResultsMessage {
+			// The budgets estimate the results' size; escaping can still
+			// make them too large to send.
+			unit := "lines"
+			if opts.SearchOpts.FilesOnly {
+				unit = "files"
+			}
+			return fmt.Errorf("search: %w", &ripgrep.BudgetError{Unit: unit, MaxBytes: ripgrep.DefaultMaxBytes, Limited: opts.SearchOpts.Limit != nil})
+		}
+		return stream.SendMsg(&filesync.BytesMessage{Data: data.Bytes()})
 
 	case opts.GlobPattern != "":
 		// Walk the directory and match files against the glob pattern
@@ -652,6 +664,10 @@ func searchParseOptions(opts *engine.LocalSearchOpts) ripgrep.Options {
 	return ripgrep.Options{Limits: ripgrep.DefaultLimits(), Limit: opts.Limit}
 }
 
+// maxSearchResultsMessage is the most search results sent back in one
+// message: under the 16 MiB a gRPC receiver accepts by default.
+const maxSearchResultsMessage = 15 << 20
+
 func searchWithRipgrep(ctx context.Context, root string, rgPath string, opts *engine.LocalSearchOpts) (results []engine.LocalSearchResult, rerr error) {
 	args := ripgrepArgs(opts)
 
@@ -834,7 +850,7 @@ func parseGrepOutput(r io.Reader, filesOnly bool, opts ripgrep.Options) (results
 		maxLine += 4096 // room for the file name and line number
 	}
 	errStop := errors.New("limit reached")
-	err = ripgrep.ScanLines(r, maxLine, func(line string) error {
+	err = ripgrep.ScanLines(r, maxLine, func(line string, dropped int) error {
 		if line == "" {
 			return nil
 		}
@@ -849,7 +865,7 @@ func parseGrepOutput(r io.Reader, filesOnly bool, opts ripgrep.Options) (results
 			}
 			result.FilePath = strings.TrimPrefix(filepath.ToSlash(parts[0]), "./")
 			fmt.Sscanf(parts[1], "%d", &result.LineNumber)
-			result.MatchedLines, _ = ripgrep.TruncateLines(parts[2]+"\n", opts.Limits.MaxLineBytes)
+			result.MatchedLines = ripgrep.TruncateReadLine(parts[2], opts.Limits.MaxLineBytes, dropped) + "\n"
 		}
 		full, err := budget.Add(len(result.FilePath) + len(result.MatchedLines) + 64)
 		if err != nil {

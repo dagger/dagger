@@ -154,6 +154,9 @@ type SearchOpts struct {
 	// (ripgrep.DefaultLimits), for callers inside the engine. It is not an
 	// argument.
 	Budget *ripgrep.Limits `name:"-"`
+	// KeepPath, when set, selects the results to keep by path, as they are
+	// read (see ripgrep.Options.Keep). It is not an argument.
+	KeepPath func(path string) bool `name:"-"`
 }
 
 // limits are the budgets the search runs within.
@@ -270,6 +273,7 @@ func (opts *SearchOpts) parseRgOutput(ctx context.Context, rgOut io.Reader) ([]*
 	parseOpts := ripgrep.Options{
 		Limits: opts.limits(),
 		Limit:  opts.Limit,
+		Keep:   opts.KeepPath,
 		OnSkip: func(reason string) {
 			logger.Warn("skipping match", "reason", reason)
 		},

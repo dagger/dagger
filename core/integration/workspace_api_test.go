@@ -1107,6 +1107,36 @@ func (WorkspaceAPISuite) TestWorkspaceMountsSearchGlobFindUp(ctx context.Context
 		require.Error(t, err, "a path missing from both the source and the mounts must still error")
 	})
 
+	t.Run("value workspace search with a large mount", func(ctx context.Context, t *testctx.T) {
+		// The mounts are searched whole, their results filtered by the
+		// requested paths: the search budget must count only what's kept,
+		// and the limit must apply to them too.
+		c := connect(ctx, t)
+		big := core.NewQuery(c).Container().From(alpineImage).
+			WithExec([]string{"sh", "-c", `mkdir /d && cd /d && awk 'BEGIN {
+  for (f = 0; f < 200; f++)
+    for (l = 0; l < 100; l++)
+      printf "line %d of file %d: needle\n", l, f > ("f" f ".txt")
+}'`}).
+			Directory("/d")
+		ws := valueWorkspace(c).WithMountedDirectory("mnt/big", big)
+
+		_, err := ws.Search(ctx, "needle", core.WorkspaceSearchOpts{Literal: true})
+		requireErrOut(t, err, "search matched more than 10000 lines")
+
+		results, err := ws.Search(ctx, "needle", core.WorkspaceSearchOpts{Literal: true, Limit: 5})
+		require.NoError(t, err)
+		require.Len(t, results, 5)
+
+		results, err = ws.Search(ctx, "needle", core.WorkspaceSearchOpts{Literal: true, Paths: []string{"src"}})
+		require.NoError(t, err)
+		require.Equal(t, []string{"src/hay.txt"}, searchFilePaths(ctx, t, results))
+
+		results, err = ws.Search(ctx, "needle", core.WorkspaceSearchOpts{Literal: true, Paths: []string{"mnt/big/f7.txt"}})
+		require.NoError(t, err)
+		require.Len(t, results, 100)
+	})
+
 	t.Run("value workspace glob", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		matches, err := valueWorkspace(c).Glob(ctx, "**/*.txt")

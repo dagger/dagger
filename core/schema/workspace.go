@@ -1895,36 +1895,25 @@ func (s *workspaceSchema) overlaySearchResults(
 // searchDirectoryTree runs the search against a sparse in-engine tree (the
 // overlay's delta root or the mounts tree). The tree lacks paths that only
 // exist elsewhere in the workspace, so explicit search paths are applied as a
-// post-filter instead of being passed to ripgrep (which errors on missing
-// path operands).
+// filter of ripgrep's results instead of being passed to it (it errors on
+// missing path operands). The filter applies as they are read, before they
+// count against the limit and the search's budgets, so a large tree outside
+// the requested paths neither crowds them out nor fails the search.
+//
+// The limit applies to this side as to the other: each keeps at most limit
+// results, so their merge still has limit results when there are that many.
 func searchDirectoryTree(
 	ctx context.Context,
 	tree dagql.ObjectResult[*core.Directory],
 	args workspaceSearchArgs,
 ) ([]*core.SearchResult, error) {
 	opts := args.SearchOpts
-	opts.Limit = nil // the limit caps the merged results, not each side
-	if args.Limit != nil {
-		// ...but it still replaces the default result budget, as it would
-		// for one side alone.
-		limits := ripgrep.DefaultLimits()
-		limits.MaxResults = max(limits.MaxResults, *args.Limit)
-		opts.Budget = &limits
-	}
-	results, err := tree.Self().Search(ctx, tree, opts, false, nil, args.Globs)
-	if err != nil {
-		return nil, err
-	}
-	if len(args.Paths) == 0 {
-		return results, nil
-	}
-	scoped := results[:0]
-	for _, r := range results {
-		if searchPathInScopes(r.FilePath, args.Paths) {
-			scoped = append(scoped, r)
+	if len(args.Paths) > 0 {
+		opts.KeepPath = func(p string) bool {
+			return searchPathInScopes(p, args.Paths)
 		}
 	}
-	return scoped, nil
+	return tree.Self().Search(ctx, tree, opts, false, nil, args.Globs)
 }
 
 // mergeSearchResults combines two sides of a workspace search with per-file
