@@ -1,0 +1,120 @@
+{
+  "Roots": [
+    4
+  ],
+  "Values": [
+    {
+      "SenderNumber": 1,
+      "SenderReplacements": 0,
+      "Record": {
+        "resultID": 1,
+        "envelope": {
+          "version": 0,
+          "kind": ""
+        },
+        "call": null
+      },
+      "Dependencies": null,
+      "Expires": false,
+      "Held": "xxh3:d8db1c3a234c5b70"
+    },
+    {
+      "SenderNumber": 2,
+      "SenderReplacements": 0,
+      "Record": {
+        "resultID": 2,
+        "envelope": {
+          "version": 0,
+          "kind": ""
+        },
+        "call": null
+      },
+      "Dependencies": null,
+      "Expires": false,
+      "Held": "xxh3:749ecd9ef00e149f"
+    },
+    {
+      "SenderNumber": 3,
+      "SenderReplacements": 0,
+      "Record": {
+        "resultID": 3,
+        "envelope": {
+          "version": 0,
+          "kind": ""
+        },
+        "call": null
+      },
+      "Dependencies": [
+        1,
+        2
+      ],
+      "Expires": false,
+      "Held": "xxh3:b35025d942cda057"
+    },
+    {
+      "SenderNumber": 4,
+      "SenderReplacements": 0,
+      "Record": {
+        "resultID": 4,
+        "envelope": {
+          "version": 5,
+          "kind": "scalar_json",
+          "typeName": "String",
+          "resultID": 4,
+          "scalarJSON": "root"
+        },
+        "call": {
+          "kind": "field",
+          "type": {
+            "namedType": "String",
+            "nonNull": true
+          },
+          "field": "reads-list-root"
+        }
+      },
+      "Dependencies": [
+        3
+      ],
+      "Expires": false,
+      "Held": ""
+    }
+  ],
+  "Outputs": [
+    {
+      "Row": 2,
+      "Address": {
+        "part": "snapshot"
+      },
+      "State": "completed",
+      "Value": {
+        "kind": "directory"
+      },
+      "Chain": [
+        "i1"
+      ],
+      "Prefix": "",
+      "Owner": null
+    }
+  ],
+  "Chains": [
+    {
+      "Row": 2,
+      "Address": {
+        "part": "snapshot"
+      },
+      "Layers": [
+        "i1"
+      ]
+    }
+  ],
+  "LeftOut": null,
+  "Full": [
+    4
+  ],
+  "Held": [
+    1,
+    2,
+    3
+  ],
+  "Passes": 1
+}
