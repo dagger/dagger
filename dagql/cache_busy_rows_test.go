@@ -30,7 +30,7 @@ func TestBusyRowsEndWithTheirEvaluation(t *testing.T) {
 		row := uint64(res.cacheSharedResult().id)
 		require.Empty(t, c.BusyRows(ctx, []uint64{row, row + 1000}), "unstarted work and a row the cache lacks aren't busy")
 
-		ends, stop := c.WatchEvaluationEnds()
+		ends, stop := c.WatchBusyEnds()
 		defer stop()
 		done := make(chan error, 1)
 		go func() { done <- c.Evaluate(ctx, res) }()
@@ -71,7 +71,7 @@ func TestBusyRowsEndWithTheirAttachment(t *testing.T) {
 	srv := newDagqlServerForTest(t, &persistCodecRoot{})
 	srv.InstallObject(NewClass(srv, ClassOpts[*captureTestValue]{}))
 	frame := persistCodecFrame("attaching", obj)
-	ends, stop := c.WatchEvaluationEnds()
+	ends, stop := c.WatchBusyEnds()
 	defer stop()
 	done := make(chan error, 1)
 	go func() {

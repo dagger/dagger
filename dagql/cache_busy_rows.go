@@ -7,22 +7,23 @@ import (
 	"github.com/dagger/dagger/engine/wcprof"
 )
 
-// evaluationEnds are the watches of the cache's lazy evaluations' ends
-// (WatchEvaluationEnds). Each watch has a channel of one slot, so ends that
-// come before the watcher takes one wake it once.
-type evaluationEnds struct {
+// busyEnds are the watches of the ends of what keeps the cache's rows busy
+// (WatchBusyEnds). Each watch has a channel of one slot, so ends that come
+// before the watcher takes one wake it once.
+type busyEnds struct {
 	mu      sync.Mutex
 	watches map[chan struct{}]struct{}
 }
 
-// WatchEvaluationEnds returns a channel that receives after each of the
-// cache's lazy evaluation attempts ends, once for ends that come before it
-// is taken, and a func that ends the watch. An attempt has ended when it no
-// longer keeps its row busy (BusyRows), as a waiter on it is woken: a capture
-// the attempt kept a row out of may take the row when the channel receives.
-func (c *Cache) WatchEvaluationEnds() (<-chan struct{}, func()) {
+// WatchBusyEnds returns a channel that receives after each end of what
+// keeps a row busy (BusyRows), once for ends that come before it is taken,
+// and a func that ends the watch: each of the cache's lazy evaluation
+// attempts, as a waiter on it is woken, and each row's attachment of its
+// dependencies. A capture such a thing kept a row out of may take the row
+// when the channel receives.
+func (c *Cache) WatchBusyEnds() (<-chan struct{}, func()) {
 	ch := make(chan struct{}, 1)
-	e := &c.evaluationEnds
+	e := &c.busyEnds
 	e.mu.Lock()
 	if e.watches == nil {
 		e.watches = map[chan struct{}]struct{}{}
@@ -39,9 +40,9 @@ func (c *Cache) WatchEvaluationEnds() (<-chan struct{}, func()) {
 	}
 }
 
-// evaluationEnded wakes the watches of evaluations' ends. It never blocks.
-func (c *Cache) evaluationEnded() {
-	e := &c.evaluationEnds
+// busyEnded wakes the watches of busy rows' ends. It never blocks.
+func (c *Cache) busyEnded() {
+	e := &c.busyEnds
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	for ch := range e.watches {
