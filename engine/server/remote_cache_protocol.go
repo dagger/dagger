@@ -304,8 +304,9 @@ const maxLoggedSkippedRoots = 8
 // them, named with their reasons, its busy rows (busyReport), then what the
 // bundle holds, with the rows it sent held, those of them nothing in it
 // stands on (countHeldUnneeded) and the known rows it left out, and how long the capture and the chains
-// took, and then the capture's phases and the chains' layers. With no
-// bundle, those of the capture and the chains are 0.
+// took, and then the capture's phases, with the records it copied among
+// them, and the chains' layers. With no bundle, those of the capture and the
+// chains are 0.
 // carriedContentPreferred counts an export's records whose frame carries
 // the content-preferred digest the engine computed for it: the records, the
 // field's JSON bytes, and the service records with no content digest that
@@ -383,7 +384,7 @@ func countHeldUnneeded(bundle dagql.ValueBundle) int {
 }
 
 func exportLogAttrs(req protocol.Export, skipped []protocol.SkippedRoot, values *dagql.ExportedValues, capture time.Duration, local exportCapture, busy busyReport) []any {
-	var records, held, heldUnneeded, heldLeftOut, outputs int
+	var records, held, heldUnneeded, heldLeftOut, outputs, copied, unpredicted, lateMoved int
 	var keptEveryRow string
 	var chains time.Duration
 	var phases dagql.ExportPhases
@@ -394,6 +395,7 @@ func exportLogAttrs(req protocol.Export, skipped []protocol.SkippedRoot, values 
 		heldUnneeded = countHeldUnneeded(values.Bundle)
 		heldLeftOut = values.LeftOutHeld
 		keptEveryRow = values.KeptEveryRow
+		copied, unpredicted, lateMoved = values.CopiedRows, values.UnpredictedLinks, values.LateMoved
 		carried = countCarriedContentPreferred(values.Bundle.Values)
 		phases = values.Phases
 		if values.Chains != nil {
@@ -436,6 +438,9 @@ func exportLogAttrs(req protocol.Export, skipped []protocol.SkippedRoot, values 
 		"walk_wait", phases.WalkWait,
 		"walk", phases.Walk,
 		"copy", phases.Copy,
+		"copied", copied,
+		"links_unpredicted", unpredicted,
+		"late_moved", lateMoved,
 		"bundle", phases.Bundle,
 		"bundle_passes", phases.BundlePasses,
 		"bundle_known", phases.BundleKnown,
