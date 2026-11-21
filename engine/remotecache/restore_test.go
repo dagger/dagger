@@ -258,6 +258,72 @@ func TestRestoreDecodesTheNextPartWhileAPartMerges(t *testing.T) {
 	}
 }
 
+// A file's next part is checked for its merge (Adapter.CheckRestorePart)
+// while the part before it merges, after its decode, so that a part's merge
+// doesn't wait for the half of its preparation that reads nothing of the
+// cache; the part's report says how long the check took.
+func TestRestoreChecksTheNextPartWhileAPartMerges(t *testing.T) {
+	t.Parallel()
+	adapter := newFakeAdapter()
+	checked := make(chan uint64, 3)
+	adapter.check = func(part dagql.ValueBundle) error {
+		checked <- part.Values[0].SenderNumber
+		return nil
+	}
+	adapter.restore = func(_ context.Context, part dagql.ValueBundle, _ *dagql.KnownRows) (dagql.MergeReply, error) {
+		if part.Values[0].SenderNumber == 11 {
+			for {
+				select {
+				case n := <-checked:
+					if n == 12 {
+						return merged(part, time.Now()), nil
+					}
+				case <-time.After(5 * time.Second):
+					return dagql.MergeReply{}, errors.New("part 12 wasn't checked while part 11 merged")
+				}
+			}
+		}
+		return merged(part, time.Now()), nil
+	}
+	s, conn := restoreSession(t, adapter)
+	files := newFileServer(t)
+	whole := files.add("whole", setFile(t, dagql.ValueBundleVersion, part(11), part(12), part(13)))
+
+	s.dispatch(request(t, 1, protocol.TypeRestore, restoreOf("test-base", nil, &whole)))
+	restored := decode[protocol.Restored](t, conn.next(t))
+	require.Len(t, restored.Files, 1)
+	require.Empty(t, restored.Files[0].Error)
+	require.True(t, restored.Files[0].Complete)
+	report := nextReport(t, adapter)
+	require.Len(t, report.Parts, 3)
+}
+
+// A part the adapter's check refuses stops its file, as a refused merge
+// does, with what merged of it before.
+func TestRestoreStopsAtAPartItsCheckRefuses(t *testing.T) {
+	t.Parallel()
+	adapter := newFakeAdapter()
+	adapter.check = func(part dagql.ValueBundle) error {
+		if part.Values[0].SenderNumber == 12 {
+			return errors.New("refused")
+		}
+		return nil
+	}
+	adapter.restore = func(_ context.Context, part dagql.ValueBundle, _ *dagql.KnownRows) (dagql.MergeReply, error) {
+		return merged(part, time.Now()), nil
+	}
+	s, conn := restoreSession(t, adapter)
+	files := newFileServer(t)
+	whole := files.add("whole", setFile(t, dagql.ValueBundleVersion, part(11), part(12), part(13)))
+
+	s.dispatch(request(t, 1, protocol.TypeRestore, restoreOf("test-base", nil, &whole)))
+	restored := decode[protocol.Restored](t, conn.next(t))
+	require.Len(t, restored.Files, 1)
+	require.False(t, restored.Files[0].Complete)
+	require.Equal(t, "part 1: refused", restored.Files[0].Error)
+	require.Equal(t, 1, restored.Files[0].Parts)
+}
+
 // The rows a part lands on join the connection's known rows, as a merge's
 // do: the adapter is given the session's.
 func TestRestoreUsesTheConnectionsKnownRows(t *testing.T) {
