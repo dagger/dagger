@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func transferCache(t *testing.T, store *testutil.Store, path, session string) (context.Context, *dagql.Cache, *dagql.Server) {
+func transferCache(t testing.TB, store *testutil.Store, path, session string) (context.Context, *dagql.Cache, *dagql.Server) {
 	t.Helper()
 	ctx := engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{ClientID: session, SessionID: session})
 	cache, err := dagql.NewCache(ctx, path, store.Manager, nil)
@@ -31,7 +31,7 @@ func transferCache(t *testing.T, store *testutil.Store, path, session string) (c
 	return dagql.ContextWithServer(ctx, srv), cache, srv
 }
 
-func attachTransferObject[T dagql.Typed](t *testing.T, ctx context.Context, cache *dagql.Cache, srv *dagql.Server, session, field string, value T) dagql.ObjectResult[T] {
+func attachTransferObject[T dagql.Typed](t testing.TB, ctx context.Context, cache *dagql.Cache, srv *dagql.Server, session, field string, value T) dagql.ObjectResult[T] {
 	t.Helper()
 	call := &dagql.ResultCall{Kind: dagql.ResultCallKindField, Field: field, Type: dagql.NewResultCallType(value.Type())}
 	result, err := cache.GetOrInitCall(ctx, session, srv, &dagql.CallRequest{ResultCall: call, IsPersistable: true}, func(context.Context) (dagql.AnyResult, error) {
