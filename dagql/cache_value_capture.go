@@ -978,7 +978,9 @@ func (err *RootsLeftOutError) Unwrap() []error {
 // ExportPhases are where a capture that succeeded spent its time.
 type ExportPhases struct {
 	// WalkWait is the wait for the cache's graph lock, and Walk the walk of
-	// the closure under it, which blocks lookups and installs meanwhile.
+	// the closure under it, which blocks lookups and installs meanwhile,
+	// each summed over the captures. Every phase sums every pass, those an
+	// export ran again included (copyLate).
 	WalkWait time.Duration
 	Walk     time.Duration
 	// Copy is copying the closure's records, and Bundle checking them and
@@ -1158,7 +1160,8 @@ func (c *Cache) captureCopied(ctx context.Context, selection ValueSelection, car
 	copied := time.Now()
 	phases.Copy += copied.Sub(copyStart)
 	profCopy(ctx, copyStart, copied, err)
-	phases.WalkWait, phases.Walk = capture.walkWait, capture.walk
+	phases.WalkWait += capture.walkWait
+	phases.Walk += capture.walk
 	if err != nil {
 		return nil, errors.Join(err, capture.Release(ctx))
 	}
@@ -1421,8 +1424,9 @@ func (c *Cache) exportPass(ctx context.Context, selection ValueSelection, cfg co
 		bundle.Values = append(bundle.Values, value)
 	}
 	bundleOp.End(wcprof.OutcomeOK)
-	phases.BundleValues = time.Since(valuesStart)
-	phases.Bundle = bundleNS + time.Since(passStart)
+	// An export that runs again keeps the time its earlier passes spent.
+	phases.BundleValues += time.Since(valuesStart)
+	phases.Bundle += bundleNS + time.Since(passStart)
 	chainStart := time.Now()
 	chainsCtx, chainsOp := wcprof.BeginOp(ctx, wcprof.OpKindRemoteCache, "remotecache.export.chains", wcprof.OpOpts{})
 	chains, err := OpenSelectedChains(chainsCtx, capture, capture.outputs, cfg)
