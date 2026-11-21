@@ -1244,19 +1244,6 @@ func (f *Fold) foldedRunning(span *Span) bool {
 	return f.agg[i].running > 0
 }
 
-// ChildSpanCount is len(span.ChildSpans.Spans()) as a DB holding every span
-// would have it: its children folded included.
-func (db *DB) ChildSpanCount(span *Span) int {
-	return span.ChildSpans.Len() + db.fold.FoldedChildren(span)
-}
-
-// MarkHasLogs flags a span as having logs before it arrives, for a loader
-// that knows which spans have logs ahead of their spans (as an engine's
-// store does): a policy may retain a span for its logs (FoldSpan.HasLogs).
-func (f *Fold) MarkHasLogs(id SpanID) {
-	f.state[f.intern(id)] |= foldHasLogs
-}
-
 // FoldedPlacements appends the spans whose folded children the view would
 // place beneath span's tree: span, and the spans beneath it the view passes
 // through to their children (passthrough spans, spans not received), for a
