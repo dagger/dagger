@@ -87,10 +87,16 @@ func TestSnapshotSharingSelectionExaminesTheClassOnce(t *testing.T) {
 // The selection decides the same slots as a selection that decides every
 // eligible receiver against every member, over generated cohorts: members
 // local or imported, holding parts or missing them, some expired, some whose
-// requirements don't fit a receiver's, and some no route reaches.
+// requirements don't fit a receiver's, and some no route reaches. And the
+// per-row equivalence test, which a share slot's admission and an install's
+// recheck use too, answers for every receiver and every member as the
+// candidate collector does, with the same route: the collector is what it
+// re-states, and the two may not drift.
 func TestSnapshotSharingSelectionMatchesWholeCohortSelection(t *testing.T) {
 	rng := rand.New(rand.NewPCG(7, 11))
 	var withSlots, withExclusions int
+	routes := map[CacheHitRoute]int{}
+	var unrelated int
 	for i := range 40 {
 		ctx, c, srv := transferTestCache(t)
 		c.snapshotManager = &shareTestManager{}
@@ -166,11 +172,51 @@ func TestSnapshotSharingSelectionMatchesWholeCohortSelection(t *testing.T) {
 		if referenceSelectionExcludes(ctx, c, shareTestItem(rows)) {
 			withExclusions++
 		}
+
+		// Lookup preparation takes E itself, so it runs before the section.
+		lookups := map[sharedResultID]partLookup{}
+		for _, row := range rows {
+			if lookup, err := c.partLookupFor(row.cacheSharedResult()); err == nil {
+				lookups[row.cacheSharedResult().id] = lookup
+			}
+		}
+		var mismatches []string
+		c.egraphMu.Lock()
+		for _, r := range rows {
+			receiver := r.cacheSharedResult()
+			lookup, ok := lookups[receiver.id]
+			if !ok {
+				continue
+			}
+			want := referenceSessionlessPartEquivalentsLocked(c, receiver, lookup)
+			equivalent := c.sessionlessPartEquivalenceLocked(receiver, lookup)
+			for _, m := range rows {
+				member := m.cacheSharedResult()
+				wantRoute, wantOK := want[member]
+				route, ok := equivalent(member)
+				if ok != wantOK || route != wantRoute {
+					mismatches = append(mismatches, fmt.Sprintf("receiver %d, member %d: %q %v, collector %q %v", receiver.id, member.id, route, ok, wantRoute, wantOK))
+				}
+				switch {
+				case member == receiver:
+				case wantOK:
+					routes[wantRoute]++
+				default:
+					unrelated++
+				}
+			}
+		}
+		c.egraphMu.Unlock()
+		require.Empty(t, mismatches, "cohort %d", i)
 	}
 	// The generated cohorts cover both: slots chosen, and a pending receiver
-	// and a ready donor that no slot pairs.
+	// and a ready donor that no slot pairs; and members another reaches by
+	// its recipe, by a digest, and by no route.
 	require.Positive(t, withSlots)
 	require.Positive(t, withExclusions)
+	require.Positive(t, routes[CacheHitRouteRecipe], "a member posted under another's recipe")
+	require.Positive(t, routes[CacheHitRouteDigest], "a member reached by a content digest")
+	require.Positive(t, unrelated, "a member no route reaches")
 }
 
 // referenceSelectShareSlots is the selection as it was when each eligible
