@@ -157,7 +157,13 @@ to dagger.
 
 - [ ] CHANGELOG
 
-  TODO: Starting with v1.0, CHANGELOG updates should resume.
+  TODO: Starting with v1.0, CHANGELOG updates should resume. When they do,
+  merge the release notes into `CHANGELOG.md` and commit it with the release:
+  CI no longer checks that it is up to date.
+
+  ```console
+  dagger generate changie:generate -y
+  ```
 
 - [ ] Confirm that all checks on `$RELEASE_BRANCH` are green, for main you're basically [checking](https://github.com/dagger/dagger/commits/main/) that the merged prep commit is has a green check.
       Do not push tags until this is finished.
@@ -226,6 +232,8 @@ This will also kick off [`.github/workflows/evals.yml`], which is currently brok
 ## 🌌 Daggerverse && Dagger Cloud
 
 - [ ] Ask @marcosnils @matipan @sipsma on the release thread to review and merge the newly opened dagger.io PR (this is created by the publish workflow). This PR updates both the Daggerverse and Dagger Cloud. If anything fails, cc @kpenfound @matipan.
+
+- [ ] Make sure the new engine image is available to Dagger Cloud's engines. This is automated for regular releases, but for prereleases (such as `v1.0.0-beta.N`) it is a manual step: ask the team if you don't know how to run it. Until it is done, `dagger --cloud` with the new CLI cannot start an engine.
 
 - [ ] Validate that the newly published version of the engine is available in Dagger Cloud by running `dagger --cloud core version` with the `$ENGINE_VERSION` binary. This upgrade occurs automatically once the OCI image is published.
 

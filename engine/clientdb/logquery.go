@@ -123,7 +123,7 @@ func (q *LogQueryScope) match(idx *logLookup, m logMeta) bool {
 
 func (q *LogQueryScope) digestIn(idx *logLookup, digest uint32) bool {
 	if int(digest) >= len(q.digestsBy) {
-		q.digestsBy = append(q.digestsBy, make([]scopeMatch, len(idx.digests)-len(q.digestsBy))...)
+		q.digestsBy = append(q.digestsBy, make([]scopeMatch, idx.digests.count()-len(q.digestsBy))...)
 	}
 	switch q.digestsBy[digest] {
 	case matchIn:
@@ -132,7 +132,7 @@ func (q *LogQueryScope) digestIn(idx *logLookup, digest uint32) bool {
 		return false
 	case matchUnresolved:
 	}
-	ok := q.digests[idx.digests[digest]]
+	ok := idx.digests.in(digest, q.digests)
 	q.digestsBy[digest] = matchOut
 	if ok {
 		q.digestsBy[digest] = matchIn
@@ -142,7 +142,7 @@ func (q *LogQueryScope) digestIn(idx *logLookup, digest uint32) bool {
 
 func (q *LogQueryScope) spanIn(idx *logLookup, span uint32) bool {
 	if int(span) >= len(q.spans) {
-		grow := len(idx.spanIDs) - len(q.spans)
+		grow := idx.spanCount() - len(q.spans)
 		q.spans = append(q.spans, make([]scopeMatch, grow)...)
 		q.spanAt = append(q.spanAt, make([]uint64, grow)...)
 	}
@@ -156,7 +156,7 @@ func (q *LogQueryScope) spanIn(idx *logLookup, span uint32) bool {
 			return state == matchUnplacedAt
 		}
 	}
-	return q.resolveSpan(span, idx.spanIDs[span])
+	return q.resolveSpan(span, idx.spanName(span))
 }
 
 // resolveSpan decides a span the scope has not decided yet, or whose place
@@ -202,7 +202,7 @@ func (s *DB) SelectDisplayLogs(ctx context.Context, p SelectLogsRangeParams, tra
 		if traceID != "" && (!traceKnown || m.trace != trace) {
 			return false, nil
 		}
-		return m.flags.display() && scope.match(idx, m), nil
+		return m.flags().display() && scope.match(idx, m), nil
 	})
 }
 
@@ -271,7 +271,7 @@ func (s *DB) ReadDisplayLogs(ctx context.Context, p SelectLogsRangeParams, trace
 	idx := s.logIdx
 	idx.mu.RLock()
 	for _, id := range c.rows[start:] {
-		size := idx.meta[id-1].size
+		size := idx.meta[id-1].size()
 		// Bound retained bodies by bytes as well as rows, as scanLogs does.
 		if int64(len(ids)) == p.Limit || (len(ids) > 0 && size > selectedLogBatchBytes-bytes) {
 			next = id - 1
@@ -323,7 +323,7 @@ func (s *DB) gatherDisplayCandidates(after, through int64, traceID string, q *Lo
 		lists = idx.spanRowsLocked(id, lists)
 	}
 	for d := range q.digests {
-		if digest, ok := idx.digestIndex[d]; ok && digest != 0 {
+		if digest, ok := idx.digests.lookup(d); ok && digest != 0 {
 			lists = append(lists, idx.displayByDigest[digest])
 		}
 	}
@@ -429,7 +429,7 @@ func (l *logLookup) displayRowsLocked(rows []int64, lists [][]int64, traceID str
 	for _, list := range lists {
 		for _, id := range list {
 			m := l.meta[id-1]
-			if m.flags.display() && (traceID == "" || m.trace == trace) {
+			if m.flags().display() && (traceID == "" || m.trace == trace) {
 				rows = append(rows, id)
 			}
 		}
@@ -479,7 +479,7 @@ func (s *LogPresenceSet) Forget(presence []LogPresence) {
 func (s *DB) SelectLogsWithoutDisplay(ctx context.Context, p SelectLogsRangeParams, seen *LogPresenceSet) ([]Log, []LogPresence, int64, error) {
 	var presence []LogPresence
 	rows, next, err := s.scanLogs(ctx, p, func(idx *logLookup, i int64, m logMeta) (bool, error) {
-		if !m.flags.display() {
+		if !m.flags().display() {
 			return true, nil
 		}
 		key := [3]uint32{m.trace, m.span, m.digest}
@@ -489,8 +489,8 @@ func (s *DB) SelectLogsWithoutDisplay(ctx context.Context, p SelectLogsRangePara
 				Row:       i + 1,
 				Timestamp: m.timestamp,
 				TraceID:   idx.traceIDs[m.trace],
-				SpanID:    idx.spanIDs[m.span],
-				Digest:    idx.digests[m.digest],
+				SpanID:    idx.spanName(m.span),
+				Digest:    idx.digestName(m.digest),
 				key:       key,
 			})
 		}

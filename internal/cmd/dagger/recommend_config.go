@@ -31,13 +31,17 @@ func recommendConfigFiles(ctx context.Context, ws *core.Workspace, pattern strin
 	return matches, nil
 }
 
-func hasMochaProperty(contents string) bool {
-	var object map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(contents), &object); err != nil {
-		return false
+// hasJSONKey reports whether a JSON object has a top-level property, even if
+// its value is null.
+func hasJSONKey(name string) func(string) bool {
+	return func(contents string) bool {
+		var object map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(contents), &object); err != nil {
+			return false
+		}
+		_, found := object[name]
+		return found
 	}
-	_, found := object["mocha"]
-	return found
 }
 
 func hasTOMLTable(name string) func(string) bool {

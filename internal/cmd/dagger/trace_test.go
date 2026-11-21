@@ -26,6 +26,7 @@ import (
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
@@ -549,4 +550,93 @@ func TestResolveTraceTarget(t *testing.T) {
 		_, _, err = resolveTraceTarget(fe, spanSelector{test: "TestFoo"}, "abc123")
 		require.EqualError(t, err, `no test named "TestFoo" in trace abc123`)
 	})
+}
+
+// supportSource answers the initial load with a partial root, and an exact
+// selection with the spans it names; it records the selections, and fails
+// exact ones with fail when set.
+type supportSource struct {
+	tracesource.Source
+	mu   sync.Mutex
+	sels []cloud.SpanSelection
+	fail error
+}
+
+func (s *supportSource) FetchSpans(ctx context.Context, _ string, sel cloud.SpanSelection, cb func(context.Context, *coltracepb.ExportTraceServiceRequest) error) error {
+	s.mu.Lock()
+	s.sels = append(s.sels, sel)
+	fail := s.fail
+	s.mu.Unlock()
+	start, end := uint64(time.Unix(100, 0).UnixNano()), uint64(time.Unix(110, 0).UnixNano())
+	if len(sel.Exact) == 0 {
+		return cb(ctx, spanExport(&tracepb.Span{
+			SpanId: []byte{9, 9, 9, 9, 9, 9, 9, 9}, StartTimeUnixNano: start, EndTimeUnixNano: end,
+			Attributes: []*commonpb.KeyValue{boolAttr(telemetryattrs.UIPartialAttr, true)},
+		}))
+	}
+	if fail != nil {
+		return fail
+	}
+	var spans []*tracepb.Span
+	for _, hex := range sel.Exact {
+		id, err := trace.SpanIDFromHex(hex)
+		if err != nil {
+			return err
+		}
+		spans = append(spans, &tracepb.Span{SpanId: id[:], StartTimeUnixNano: start, EndTimeUnixNano: end})
+	}
+	return cb(ctx, spanExport(spans...))
+}
+
+func (s *supportSource) exactSelections(t *testing.T) [][]string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var exact [][]string
+	for _, sel := range s.sels {
+		if len(sel.Exact) > 0 {
+			require.True(t, sel.NoRoot && len(sel.Listen) == 0, "an exact selection selects nothing else")
+			exact = append(exact, sel.Exact)
+		}
+	}
+	return exact
+}
+
+// The frontend asks for the spans its rows' time breakdowns draw on that it
+// holds only references to; the loader fetches each once, exactly, and a
+// failure leaves the view as it was rather than failing the command.
+func TestTraceLoaderFetchSupport(t *testing.T) {
+	warnings := captureRestoreWarnings(t)
+	loader, db, _ := testTraceLoader(t)
+	source := &supportSource{}
+	loader.client = source
+	a := dagui.SpanID{SpanID: [8]byte{1}}
+	b := dagui.SpanID{SpanID: [8]byte{2}}
+	c := dagui.SpanID{SpanID: [8]byte{3}}
+
+	// Asked for before the initial load decides whether anything is left to
+	// fetch: deferred until it does.
+	loader.fetchSupport([]dagui.SpanID{a})
+	require.Empty(t, source.exactSelections(t))
+	require.NoError(t, loader.loadInitial(t.Context()))
+	loader.fetchSupport([]dagui.SpanID{a, b})
+	require.NoError(t, loader.wait())
+	require.ElementsMatch(t, [][]string{{a.String()}, {b.String()}}, source.exactSelections(t), "each span is fetched once")
+	require.True(t, db.Spans.Map[a].Received)
+	require.True(t, db.Spans.Map[b].Received)
+
+	source.fail = errors.New("exact selection unavailable")
+	loader.fetchSupport([]dagui.SpanID{c})
+	require.NoError(t, loader.wait(), "a failed fetch only leaves breakdowns unresolved")
+	require.Contains(t, warnings.String(), "error fetching spans for time breakdowns")
+
+	// A whole trace has nothing left to fetch.
+	whole, _, _ := testTraceLoader(t)
+	whole.client = source
+	whole.mu.Lock()
+	whole.initialLoaded = true
+	whole.mu.Unlock()
+	before := len(source.exactSelections(t))
+	whole.fetchSupport([]dagui.SpanID{{SpanID: [8]byte{4}}})
+	require.NoError(t, whole.wait())
+	require.Len(t, source.exactSelections(t), before)
 }

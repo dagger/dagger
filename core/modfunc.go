@@ -28,10 +28,7 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 )
 
-const (
-	MaxFunctionCacheTTLSeconds = 7 * 24 * 60 * 60 // 1 week
-	MinFunctionCacheTTLSeconds = 1
-)
+const MinFunctionCacheTTLSeconds = 1
 
 // declaredClientsInput puts a module's declared local clients into the cache
 // identity of its function calls. The module serves them at run time, after
@@ -861,16 +858,23 @@ func (fn *ModuleFunction) DynamicInputsForCall(
 	if err != nil || gitClientsDigest == "" {
 		return err
 	}
-	if err := req.SetImplicitInput(ctx, declaredGitClientsInput, dagql.NewString(gitClientsDigest)); err != nil {
-		return err
+	// A result that used credentials the session lent to a declared client
+	// requires them instead, as the call returns (see Call).
+	return req.SetImplicitInput(ctx, declaredGitClientsInput, dagql.NewString(gitClientsDigest))
+}
+
+// declaresGitClients reports whether call, a module function's, is keyed on
+// git clients its module declares (see DynamicInputsForCall).
+func declaresGitClients(call *dagql.ResultCall) bool {
+	if call == nil {
+		return false
 	}
-	// The result may come from credentials this session lent, which another
-	// session may lack.
-	session, err := dagql.PerSessionInput.Resolver(ctx, nil)
-	if err != nil {
-		return err
+	for _, input := range call.ImplicitInputs {
+		if input != nil && input.Name == declaredGitClientsInput {
+			return true
+		}
 	}
-	return req.SetImplicitInput(ctx, dagql.PerSessionInput.Name, session)
+	return false
 }
 
 // declaredGitClientsDigest digests the git clients that the config governing
@@ -1080,6 +1084,9 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		fnCall.ParentName = fn.objDef.OriginalName
 	}
 	fnCall.cacheTTLSeconds = fn.explicitCacheTTLSeconds()
+	if declaresGitClients(curCall) {
+		fnCall.trackBorrowing()
+	}
 	// Carry the receiver object (with its dagql ID) engine-side so the module can
 	// reach it via Query.currentNode. It rides the fnCall by reference into the
 	// nested client session (ServeHTTPToNestedClient) for both in-process and
@@ -1112,6 +1119,11 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 
 	// Delegate the actual function execution to the runtime
 	err = runtime.Call(ctx, &execMD, fnCall, fn.mod)
+	// What the function's work borrowed of the session's resources, which
+	// its key doesn't name, its result requires.
+	if borrowErr := dagql.RequireSessionResourcesOf(ctx, fnCall.borrowedResults()...); borrowErr != nil {
+		return nil, borrowErr
+	}
 	returned, returnedSet, returnStateErr := fnCall.returnResult()
 	if returnStateErr != nil {
 		return nil, returnStateErr

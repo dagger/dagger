@@ -52,7 +52,6 @@ const ReturnTypeAny = core.ReturnTypeAny
 
 type Secret = core.Secret
 type Service = core.Service
-type ServiceEndpointOpts = core.ServiceEndpointOpts
 type Socket = core.Socket
 type Void = core.Void
 type Workspace = core.Workspace

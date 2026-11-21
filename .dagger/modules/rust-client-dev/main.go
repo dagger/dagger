@@ -130,30 +130,19 @@ func (t *RustClientDev) Source() *dagger.Directory {
 	return t.Workspace.Directory(t.SourcePath)
 }
 
-// Run cargo fmt on the Rust SDK
+// Check the Rust SDK's formatting, then test it. cargo test compiles every
+// target cargo check would.
 // +check
-func (t *RustClientDev) CargoFmt(ctx context.Context) error {
+func (t *RustClientDev) Test(ctx context.Context) error {
+	// It takes seconds on the container the tests build on.
 	_, err := t.container(true).
 		WithExec([]string{"cargo", "fmt", "--check"}).
 		Sync(ctx)
+	if err != nil {
+		return err
+	}
 
-	return err
-}
-
-// Run cargo check on the Rust SDK
-// +check
-func (t *RustClientDev) CargoCheck(ctx context.Context) error {
-	_, err := t.container(true).
-		WithExec([]string{"cargo", "check", "--all", "--release"}).
-		Sync(ctx)
-
-	return err
-}
-
-// Test the Rust SDK
-// +check
-func (t *RustClientDev) Test(ctx context.Context) error {
-	_, err := t.DevContainer(true).
+	_, err = t.DevContainer(true).
 		WithExec([]string{"rustc", "--version"}).
 		WithExec([]string{"env", "-u", "DAGGER_SESSION_PORT", "-u", "DAGGER_SESSION_TOKEN", "cargo", "test", "--release", "--all"}).
 		Sync(ctx)

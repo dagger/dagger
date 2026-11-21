@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"iter"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -328,11 +329,10 @@ func (fn *Function) FieldSpec(ctx context.Context, mod Mod) (dagql.FieldSpec, er
 		spec.IsPersistable = false
 
 	case FunctionCachePolicyDefault:
+		// Without a declared TTL, the result doesn't expire: it is kept until
+		// the engine prunes it for space.
 		if fn.CacheTTLSeconds.Valid {
 			spec.TTL = fn.CacheTTLSeconds.Value.Int64()
-		} else {
-			// we still set a max TTL for now as a very primitive form of pruning
-			spec.TTL = MaxFunctionCacheTTLSeconds
 		}
 	}
 
@@ -2539,6 +2539,10 @@ type FunctionCall struct {
 
 	returnState *functionCallReturnState
 
+	// borrowed holds what the call's work borrowed the session's resources
+	// through (BorrowSessionResourcesOf), engine-side only like parentTyped.
+	borrowed *functionCallBorrowed
+
 	// parentTyped is the receiver object the function was called on, carrying its
 	// dagql ID. It is engine-side only (not persisted, not sent to the module),
 	// and backs Query.currentNode so a module can reference the object that
@@ -2704,6 +2708,66 @@ type functionCallReturn struct {
 func newFunctionCall(fnCall FunctionCall) *FunctionCall {
 	fnCall.returnState = &functionCallReturnState{}
 	return &fnCall
+}
+
+// functionCallBorrowed holds what a call's work used that may hold
+// resources the session lent it, for a call whose result must require them.
+type functionCallBorrowed struct {
+	mu      sync.Mutex
+	results []dagql.AnyResult
+}
+
+// trackBorrowing has the call record what its work borrows, so its result
+// can require it. A call of a module that declares git clients does: its
+// code may be lent the session's git credentials, which its key doesn't
+// name.
+func (fnCall *FunctionCall) trackBorrowing() {
+	fnCall.borrowed = &functionCallBorrowed{}
+}
+
+// TracksBorrowing reports whether the call records what its work borrows
+// (see trackBorrowing).
+func (fnCall *FunctionCall) TracksBorrowing() bool {
+	return fnCall != nil && fnCall.borrowed != nil
+}
+
+// BorrowSessionResourcesOf records that the call's work fetched res with
+// resources the session lent it, if the call tracks borrowing. The call's
+// result then requires the session resources res requires
+// (dagql.RequireSessionResourcesOf). A call that doesn't track it, such as
+// an entrypoint member's, isn't a module function's cached result.
+func (fnCall *FunctionCall) BorrowSessionResourcesOf(res dagql.AnyResult) {
+	if !fnCall.TracksBorrowing() {
+		return
+	}
+	fnCall.borrowed.add(res)
+}
+
+// NoteWorkResult records a module function's result that the call's work
+// obtained, executed or from cache, if the call tracks borrowing: that
+// result may have been computed with credentials lent to its own call, and
+// what the work derives from it, a string for one, carries no dependency on
+// it.
+func (fnCall *FunctionCall) NoteWorkResult(res dagql.AnyResult) {
+	if !fnCall.TracksBorrowing() {
+		return
+	}
+	fnCall.borrowed.add(res)
+}
+
+func (b *functionCallBorrowed) add(res dagql.AnyResult) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.results = append(b.results, res)
+}
+
+func (fnCall *FunctionCall) borrowedResults() []dagql.AnyResult {
+	if fnCall == nil || fnCall.borrowed == nil {
+		return nil
+	}
+	fnCall.borrowed.mu.Lock()
+	defer fnCall.borrowed.mu.Unlock()
+	return slices.Clone(fnCall.borrowed.results)
 }
 
 var _ dagql.PersistedObject = (*FunctionCall)(nil)

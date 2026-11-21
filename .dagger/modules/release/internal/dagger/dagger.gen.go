@@ -38,7 +38,6 @@ type Node = core.Node
 type Platform = core.Platform
 type Secret = core.Secret
 type Service = core.Service
-type ServiceEndpointOpts = core.ServiceEndpointOpts
 type ServiceStopOpts = core.ServiceStopOpts
 type Void = core.Void
 type Workspace = core.Workspace

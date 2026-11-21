@@ -15,3 +15,7 @@ engineVersion = "v1.0.0-0"
 [[dependencies]]
   name = "go"
   source = "github.com/dagger/go@79a92beb4df0898400ef7f7a632009035290383b"
+
+[[dependencies]]
+  name = "wolfi"
+  source = "github.com/dagger/wolfi@fdec349f9aad840f2853bc2e6534f2555788da04"

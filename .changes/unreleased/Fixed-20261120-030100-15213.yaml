@@ -1,0 +1,10 @@
+kind: Fixed
+body: |
+  The engine keeps the content-hash trees of hashed snapshots on disk rather
+  than in memory. Every edit to a checkout made a snapshot with a whole tree
+  of its own (about 100 bytes per file), so an engine with agents editing a
+  large checkout grew its memory with edits × files, up to gigabytes.
+time: 2026-11-20T03:01:00Z
+custom:
+  Author: vito
+  PR: 15213

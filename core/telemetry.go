@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path"
 	"strconv"
@@ -28,7 +29,61 @@ func StripErrorOrigins(msg string) string {
 
 var _ dagql.AroundFunc = AroundFunc
 
+// AroundFunc reports a call in telemetry and, for a module's call, notes
+// its result on the function call whose work made it (noteModuleCallResult).
 func AroundFunc(
+	ctx context.Context,
+	req *dagql.CallRequest,
+) (
+	context.Context,
+	func(res dagql.AnyResult, cached bool, rerr *error),
+) {
+	telemetryCtx, done := aroundFuncTelemetry(ctx, req)
+	if req == nil || req.ResultCall == nil || req.Module == nil {
+		return telemetryCtx, done
+	}
+	return telemetryCtx, func(res dagql.AnyResult, cached bool, rerr *error) {
+		done(res, cached, rerr)
+		if res != nil && (rerr == nil || *rerr == nil) {
+			if err := noteModuleCallResult(ctx, res); err != nil {
+				*rerr = err
+			}
+		}
+	}
+}
+
+// noteModuleCallResult notes a module's call result, executed or from
+// cache, on the function call whose work made the call, which requires
+// what the result requires if it tracks borrowing (FunctionCall.NoteWorkResult).
+func noteModuleCallResult(ctx context.Context, res dagql.AnyResult) error {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil //nolint:nilerr // not a client's call: no function call made it
+	}
+	fnCall, err := query.Server.EnclosingFunctionCall(ctx)
+	switch {
+	case errors.Is(err, ErrNoCurrentFunctionCall), errors.Is(err, ErrNoCurrentModule):
+		return nil
+	case err != nil:
+		return fmt.Errorf("note module call result: %w", err)
+	}
+	if !fnCall.TracksBorrowing() {
+		return nil
+	}
+	// Only a result the cache holds carries requirements. A null one can,
+	// so the check reads its row, not its value, which it has none of.
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return fmt.Errorf("note module call result: %w", err)
+	}
+	if _, err := cache.PersistedResultID(res); err != nil {
+		return nil //nolint:nilerr // not cache-backed: nothing to require
+	}
+	fnCall.NoteWorkResult(res)
+	return nil
+}
+
+func aroundFuncTelemetry(
 	ctx context.Context,
 	req *dagql.CallRequest,
 ) (
