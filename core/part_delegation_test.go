@@ -70,7 +70,7 @@ func TestPartDelegationPureRoutes(t *testing.T) {
 	}
 }
 
-func attachDelegationChild(t *testing.T, ctx context.Context, cache *dagql.Cache, srv *dagql.Server, session, field string, parent dagql.ObjectResult[*Container], value *Container) dagql.ObjectResult[*Container] {
+func attachDelegationChild(t testing.TB, ctx context.Context, cache *dagql.Cache, srv *dagql.Server, session, field string, parent dagql.ObjectResult[*Container], value *Container) dagql.ObjectResult[*Container] {
 	t.Helper()
 	id, err := cache.PersistedResultID(parent)
 	require.NoError(t, err)
