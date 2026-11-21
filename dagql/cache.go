@@ -3275,6 +3275,10 @@ type sharedResult struct {
 	// (storedLayers). Only a blob-backed cache (the Cloud) sets them, in
 	// changeStoredPartsLocked. Guarded by egraphMu.
 	storedParts map[string]storedPart
+	// uploading counts, by part address key, the uploads of a part in
+	// progress for the entry, as a blob-backed cache's reader marks them
+	// (MarkPartUploading). Memory only, as the reader's own claims are.
+	uploading map[string]int
 	// storedRecordBytes is the size of the record a blob-backed cache stores
 	// for the entry, as persistence writes it (encodedRecordBytes), or 0.
 	// Written through setStoredRecordBytesLocked. Guarded by egraphMu.
