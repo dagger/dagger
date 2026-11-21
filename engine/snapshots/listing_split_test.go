@@ -29,10 +29,10 @@ func fileBytes(seed string, n int) string {
 
 // splitTestTar is a layer's tar as the engine's differs write one, with
 // every kind of entry a listing has to carry: directories, files on both
-// sides of ListingInlineMax and two with the same bytes, a name too long
-// for a ustar header, PAX records the tar keeps, a time with nanoseconds,
-// a symlink, a hard link to a file whose body left the listing, and a
-// whiteout.
+// sides of ListingInlineMax and two with the same bytes, a file too large to
+// be held while it compresses, a name too long for a ustar header, PAX
+// records the tar keeps, a time with nanoseconds, a symlink, a hard link to
+// a file whose body left the listing, and a whiteout.
 func splitTestTar(t *testing.T) []byte {
 	t.Helper()
 	mtime := time.Unix(1700000000, 0).UTC()
@@ -48,6 +48,7 @@ func splitTestTar(t *testing.T) []byte {
 		long:               fileBytes("long name", 70<<10),
 		"xattr.bin":        fileBytes("xattr", 80<<10),
 		"nanos.bin":        fileBytes("nanos", 90<<10),
+		"large.bin":        fileBytes("large", splitHeldLarge+1),
 	}
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
@@ -79,6 +80,7 @@ func splitTestTar(t *testing.T) []byte {
 	file(long, tar.Header{Format: tar.FormatPAX})
 	file("xattr.bin", tar.Header{Format: tar.FormatPAX, PAXRecords: map[string]string{"SCHILY.xattr.user.note": "kept"}})
 	file("nanos.bin", tar.Header{Format: tar.FormatPAX, ModTime: mtime.Add(123456789)})
+	file("large.bin", tar.Header{Format: tar.FormatPAX})
 	write(&tar.Header{Name: "link", Typeflag: tar.TypeSymlink, Linkname: "dir/small.txt", ModTime: mtime, Format: tar.FormatPAX}, "")
 	write(&tar.Header{Name: "hard.bin", Typeflag: tar.TypeLink, Linkname: "dir/shared-a.bin", ModTime: mtime, Format: tar.FormatPAX}, "")
 	write(&tar.Header{Name: ".wh.gone", Typeflag: tar.TypeChar, ModTime: mtime, Format: tar.FormatPAX}, "")
@@ -113,9 +115,9 @@ func TestListingSplitRebuildsTheTar(t *testing.T) {
 			require.NoError(t, w.Close())
 
 			// shared-a and shared-b are one content; at-max, the long name,
-			// xattr and nanos are one each; under is in the listing.
+			// xattr, nanos and large are one each; under is in the listing.
 			listed := contents()
-			require.Len(t, listed, 5)
+			require.Len(t, listed, 6)
 			for _, c := range listed {
 				require.Equal(t, contentType, c.MediaType)
 				info, err := cs.Info(ctx, c.Digest)
