@@ -242,6 +242,34 @@ func TestRemoteWritesHoldTheCache(t *testing.T) {
 	require.Equal(t, []string{"s1"}, held.Holding.Sessions)
 }
 
+// A hold tells its holder when a reader of the cache waits for it, so a
+// run of writes can let the reader in between two of them, and not before.
+func TestRemoteWritesTellWhenAReaderWaits(t *testing.T) {
+	t.Parallel()
+	ctx, c := storedPartTestCache(t, WithBlobStore())
+	key := HolderKey{"cache-a", 1}
+	_, err := c.AttachRemoteHolding(ctx, key, holdingOf("hold-1"))
+	require.NoError(t, err)
+
+	w := c.HoldRemoteWrites()
+	require.False(t, w.Contended(), "contended with no one waiting")
+	read := make(chan bool)
+	go func() {
+		_, ok := c.RemoteHoldingInfo(key)
+		read <- ok
+	}()
+	// The hold is let go whatever it saw: a test that failed holding it would
+	// keep the reader, and the cache's close, waiting.
+	deadline := time.Now().Add(10 * time.Second)
+	for !w.Contended() && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	saw := w.Contended()
+	require.NoError(t, w.Release(ctx))
+	require.True(t, <-read)
+	require.True(t, saw, "the hold never saw the reader wait")
+}
+
 // A merged reply applied in pieces (MergedReplyApply), the hold let go
 // between them, leaves the cache as the reply applied whole does. At every
 // gap between pieces, a reader sees only holdings the whole reply creates,
@@ -310,7 +338,7 @@ func TestRemoteWritesApplyAMergedReplyInPieces(t *testing.T) {
 	var candidates []HolderKey
 	for applied := 0; ; {
 		w := pieced.HoldRemoteWrites()
-		change, done := w.ApplyMergedReplyPiece(ctx, apply, 1)
+		change, done := w.ApplyMergedReplyPiece(ctx, apply, func() bool { return true })
 		require.NoError(t, w.Release(ctx))
 		candidates = append(candidates, change.Candidates...)
 		if !done {

@@ -35,6 +35,16 @@ func (c *Cache) HoldRemoteWrites() *RemoteWrites {
 	return &RemoteWrites{c: c}
 }
 
+// Contended reports whether anything waits for the cache's lock now, to
+// read the cache or to write it. A holder applying a run of writes asks it
+// between two of them, and lets the hold go and takes it again only when
+// something waits: a reader then waits for the run's write in progress, not
+// for the whole run, and the run waits for the cache's readers again only
+// when it kept one out.
+func (w *RemoteWrites) Contended() bool {
+	return w.c.egraphMu.Waiting()
+}
+
 // Release ends the hold, and then runs what its collections released,
 // returning their error. The hold can't be used after.
 func (w *RemoteWrites) Release(ctx context.Context) error {
@@ -105,23 +115,21 @@ func (w *RemoteWrites) ApplyMergedReply(ctx context.Context, cache CacheID, sent
 }
 
 // ApplyMergedReplyPiece applies the next records of a merged reply
-// prepared to apply in pieces, at most n, in the hold, and the reply's
-// roots' retention with its last records, and returns what it changed and
-// whether the reply is applied whole. A hold let go between pieces lets the
-// cache's readers in (MergedReplyApply).
-func (w *RemoteWrites) ApplyMergedReplyPiece(ctx context.Context, a *MergedReplyApply, n int) (change RemoteChange, done bool) {
+// prepared to apply in pieces, in the hold: one at least, and then one at a
+// time until stop, asked between two records, reports true or the records
+// run out. With its last records it applies the reply's roots' retention.
+// It returns what it changed and whether the reply is applied whole. A hold
+// let go between pieces lets the cache's readers in (MergedReplyApply): a
+// holder that stops when someone waits (Contended) keeps a reader waiting
+// for one record, not the reply.
+func (w *RemoteWrites) ApplyMergedReplyPiece(ctx context.Context, a *MergedReplyApply, stop func() bool) (change RemoteChange, done bool) {
 	defer w.c.takeChangesLocked(&change)
-	if n < 1 {
-		n = 1
-	}
-	end := a.next + n
-	if end > len(a.targets) {
-		end = len(a.targets)
-	}
-	w.c.applyMergedTargetsLocked(ctx, a.cache, a.cloudEntries, a.targets[a.next:end], &change)
-	a.next = end
-	if a.next < len(a.targets) {
-		return change, false
+	for a.next < len(a.targets) {
+		w.c.applyMergedTargetsLocked(ctx, a.cache, a.cloudEntries, a.targets[a.next:a.next+1], &change)
+		a.next++
+		if a.next < len(a.targets) && stop() {
+			return change, false
+		}
 	}
 	w.c.applyMergedRootsLocked(a.cache, a.reply, &change)
 	return change, true
