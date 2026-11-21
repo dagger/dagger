@@ -880,7 +880,7 @@ type MemoryCake {
   # failure gives an error row and {pr, title, error}.
   let cakeEntry(d: Demo!, before: String!, after: String!): [String!]! {
     cakeEntryOk(d, before, after) rescue {
-      e: Error! => [
+      e: Error => [
         "| #" + d.pr + " | error: " + e.message.replace("\n", " ").replace("|", "/").truncate(300) + " | | | | |",
         JSON.encode({{pr: d.pr, title: d.title, error: e.message}}),
       ]
@@ -911,7 +911,7 @@ type MemoryCake {
   # tracePeaksJson's document, or {ref, error} when the run fails.
   let traceJsonOrError(ref: String!): String! {
     (traceRun(ref, [])[1] ?? "null") rescue {
-      e: Error! => JSON.encode({{ref: ref, error: e.message}})
+      e: Error => JSON.encode({{ref: ref, error: e.message}})
     }
   }
 
