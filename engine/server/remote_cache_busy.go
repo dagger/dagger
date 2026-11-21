@@ -35,11 +35,14 @@ type busyRow struct {
 // busyReport is what an export's log line says of busy rows: the rows that
 // kept its roots out, each with what kept it busy, how long exports have
 // found it busy, and how many of the export's roots it kept out, most roots
-// first; and the rows its bundle carries that exports had found busy, each
-// with what last kept it busy and for how long, longest first.
+// first, and, for each of those it names, the capture's own error for it:
+// which check found it busy. Then the rows its bundle carries that exports
+// had found busy, each with what last kept it busy and for how long, longest
+// first.
 type busyReport struct {
 	rows    int
 	named   []string
+	reasons []string
 	cleared int
 	freed   []string
 }
@@ -58,13 +61,14 @@ func (b *busyRows) observe(now time.Time, left []dagql.LeftOutRoot, carried []ui
 		kind  dagql.BusyKind
 		age   time.Duration
 		roots int
+		err   error
 	}
 	byRow := map[uint64]*held{}
 	var rows []*held
 	for _, root := range left {
 		busy := root.Busy
 		if len(busy) == 0 && root.Kind != "" {
-			busy = []dagql.BusyRow{{Row: root.Row, Kind: root.Kind}}
+			busy = []dagql.BusyRow{{Row: root.Row, Kind: root.Kind, Err: root.Err}}
 		}
 		for _, row := range busy {
 			h := byRow[row.Row]
@@ -80,7 +84,7 @@ func (b *busyRows) observe(now time.Time, left []dagql.LeftOutRoot, carried []ui
 				default:
 					seen = busyRow{kind: row.Kind, since: now}
 				}
-				h = &held{row: row.Row, kind: row.Kind, age: now.Sub(seen.since)}
+				h = &held{row: row.Row, kind: row.Kind, age: now.Sub(seen.since), err: row.Err}
 				byRow[row.Row] = h
 				rows = append(rows, h)
 			}
@@ -93,6 +97,9 @@ func (b *busyRows) observe(now time.Time, left []dagql.LeftOutRoot, carried []ui
 	report := busyReport{rows: len(rows)}
 	for _, h := range rows[:min(len(rows), maxLoggedBusyRows)] {
 		report.named = append(report.named, fmt.Sprintf("%d:%s:%s:%d", h.row, h.kind, h.age.Round(time.Millisecond), h.roots))
+		if h.err != nil {
+			report.reasons = append(report.reasons, fmt.Sprintf("%d:%s", h.row, h.err))
+		}
 	}
 	type freed struct {
 		row     uint64
@@ -119,11 +126,15 @@ func (b *busyRows) observe(now time.Time, left []dagql.LeftOutRoot, carried []ui
 }
 
 // attrs are the report's log attributes: the busy rows and those no longer
-// busy, counted, and named while there are any.
+// busy, counted, and named while there are any, with the named busy rows'
+// reasons.
 func (r busyReport) attrs() []any {
 	attrs := []any{"busy_rows", r.rows}
 	if len(r.named) > 0 {
 		attrs = append(attrs, "busy_named", r.named)
+	}
+	if len(r.reasons) > 0 {
+		attrs = append(attrs, "busy_reasons", r.reasons)
 	}
 	attrs = append(attrs, "busy_cleared", r.cleared)
 	if len(r.freed) > 0 {
