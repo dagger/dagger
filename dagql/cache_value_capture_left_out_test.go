@@ -170,7 +170,9 @@ func TestExportNamesARunningRowsKind(t *testing.T) {
 			res.lazyMu.Unlock()
 			require.NoError(t, err)
 			require.Len(t, values.LeftOut, 1)
-			require.Equal(t, LeftOutRoot{Index: 0, Row: rowNumber(rows.shared), Kind: tc.kind, Err: values.LeftOut[0].Err, Busy: []BusyRow{{Row: rowNumber(rows.shared), Kind: tc.kind}}}, values.LeftOut[0])
+			require.Len(t, values.LeftOut[0].Busy, 1)
+			require.ErrorIs(t, values.LeftOut[0].Busy[0].Err, ErrPersistStateNotReady, "the busy row carries the capture's own error for it")
+			require.Equal(t, LeftOutRoot{Index: 0, Row: rowNumber(rows.shared), Kind: tc.kind, Err: values.LeftOut[0].Err, Busy: []BusyRow{{Row: rowNumber(rows.shared), Kind: tc.kind, Err: values.LeftOut[0].Busy[0].Err}}}, values.LeftOut[0])
 			require.Equal(t, map[uint64]bool{rowNumber(rows.ready): true, rowNumber(rows.base): true}, senderNumbers(values.Bundle))
 		})
 	}
@@ -319,8 +321,8 @@ func TestExportNamesEveryBusyRowARootReaches(t *testing.T) {
 	var left *RootsLeftOutError
 	require.True(t, errors.As(err, &left), "the error names the left-out roots: %v", err)
 	require.Len(t, left.Roots, 2)
-	require.Equal(t, []BusyRow{{Row: rowNumber(first), Kind: BusyRunning}, {Row: rowNumber(second), Kind: BusyRunning}}, left.Roots[0].Busy)
-	require.Equal(t, []BusyRow{{Row: rowNumber(second), Kind: BusyRunning}}, left.Roots[1].Busy)
+	require.Equal(t, []BusyRow{{Row: rowNumber(first), Kind: BusyRunning}, {Row: rowNumber(second), Kind: BusyRunning}}, busyRowsWithoutErr(t, left.Roots[0].Busy))
+	require.Equal(t, []BusyRow{{Row: rowNumber(second), Kind: BusyRunning}}, busyRowsWithoutErr(t, left.Roots[1].Busy))
 }
 
 // An output selected on a ready row below a root that's left out is left
@@ -406,7 +408,7 @@ func TestExportWalksBelowAnAttachingRoot(t *testing.T) {
 	if want[1].Row < want[0].Row {
 		want[0], want[1] = want[1], want[0]
 	}
-	require.Equal(t, want, left.Busy)
+	require.Equal(t, want, busyRowsWithoutErr(t, left.Busy))
 	require.Equal(t, map[uint64]bool{rowNumber(other): true}, senderNumbers(values.Bundle))
 	require.Empty(t, values.Bundle.Outputs, "the left-out root's dependency's output is left out with it")
 	for r, count := range owners {
@@ -508,4 +510,17 @@ func TestExportHoldsAKnownRunningRoot(t *testing.T) {
 			require.True(t, held[knownRowsTestNumber(run)], "the running root goes held")
 		})
 	}
+}
+
+// busyRowsWithoutErr checks that each busy row carries the capture's own
+// error for it, a not-ready one, and returns the rows without it, to compare.
+func busyRowsWithoutErr(t *testing.T, rows []BusyRow) []BusyRow {
+	t.Helper()
+	out := make([]BusyRow, len(rows))
+	for i, row := range rows {
+		require.ErrorIs(t, row.Err, ErrPersistStateNotReady, "busy row %d carries the capture's own error for it", row.Row)
+		row.Err = nil
+		out[i] = row
+	}
+	return out
 }
