@@ -725,10 +725,13 @@ type LeftOutRoot struct {
 	Busy []BusyRow
 }
 
-// BusyRow is a row a capture found busy, and what keeps it busy.
+// BusyRow is a row a capture found busy, what keeps it busy, and the
+// capture's own error for it: which check found it busy, such as a change to
+// the row during the capture.
 type BusyRow struct {
 	Row  uint64
 	Kind BusyKind
+	Err  error
 }
 
 // BusyKind is what keeps a row from being captured now.
@@ -890,7 +893,7 @@ func (capture *HeldCapturedClosure) busyBelow(root capturedRoot) []BusyRow {
 		}
 		visited[id] = true
 		if b, ok := capture.blocked[id]; ok && b.row == id && b.kind != "" {
-			busy = append(busy, BusyRow{Row: uint64(id), Kind: b.kind})
+			busy = append(busy, BusyRow{Row: uint64(id), Kind: b.kind, Err: b.err})
 		}
 		children := capture.unheld[id]
 		if row := capture.rows[id]; row != nil {
@@ -901,7 +904,7 @@ func (capture *HeldCapturedClosure) busyBelow(root capturedRoot) []BusyRow {
 		}
 	}
 	if root.err != nil && root.err.kind != "" {
-		busy = append(busy, BusyRow{Row: uint64(root.err.row), Kind: root.err.kind})
+		busy = append(busy, BusyRow{Row: uint64(root.err.row), Kind: root.err.kind, Err: root.err.err})
 	}
 	visit(root.row.id)
 	slices.SortFunc(busy, func(x, y BusyRow) int { return cmp.Compare(x.Row, y.Row) })
