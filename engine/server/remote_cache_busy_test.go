@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -28,7 +29,8 @@ func TestBusyRowsReport(t *testing.T) {
 		{Index: 2, Row: 5, Kind: dagql.BusyRunning, Err: notReady},
 		{Index: 3, Row: 9, Err: errors.New("refused")},
 	}, nil)
-	require.Equal(t, busyReport{rows: 2, named: []string{"5:running:0s:2", "7:bookkeeping:0s:1"}}, report)
+	require.Equal(t, busyReport{rows: 2, named: []string{"5:running:0s:2", "7:bookkeeping:0s:1"},
+		reasons: []string{"5:persist state not ready: test", "7:persist state not ready: test"}}, report)
 
 	report = busy.observe(start.Add(3*time.Second), []dagql.LeftOutRoot{
 		{Index: 0, Row: 7, Kind: dagql.BusyBookkeeping, Err: notReady},
@@ -37,6 +39,7 @@ func TestBusyRowsReport(t *testing.T) {
 	require.Equal(t, busyReport{
 		rows:    2,
 		named:   []string{"7:bookkeeping:3s:1", "11:abandoned:0s:1"},
+		reasons: []string{"7:persist state not ready: test", "11:persist state not ready: test"},
 		cleared: 1,
 		freed:   []string{"5:running:3s"},
 	}, report)
@@ -77,6 +80,26 @@ func TestRemoteCacheAdapterExportReportsBusyRows(t *testing.T) {
 	require.NoError(t, e.adapter.Export(e.ctx, protocol.Export{Roots: []uint64{entryNumber(t, first), entryNumber(t, second)}}, nil, func(context.Context, remotecache.Export) error { return nil }))
 	require.Equal(t, 1, report.rows)
 	require.Equal(t, []string{fmt.Sprintf("%d:%s:0s:2", entryNumber(t, busy), dagql.BusyRunning)}, report.named)
+	require.Len(t, report.reasons, 1, "the busy row's reason, from the capture's own error")
+	require.True(t, strings.HasPrefix(report.reasons[0], fmt.Sprintf("%d:%s", entryNumber(t, busy), dagql.ErrPersistStateNotReady)), report.reasons[0])
+}
+
+// Each busy row an export's line names comes with the capture's own error for
+// it, which says which check found it busy: of two rows of one kind, one that
+// changed during the capture and one whose expiry changed read apart. An
+// export with no busy row says nothing of reasons.
+func TestBusyRowsReportEachRowsReason(t *testing.T) {
+	var busy busyRows
+	changed := fmt.Errorf("%w: row 5 ownership changed", dagql.ErrPersistStateNotReady)
+	expired := fmt.Errorf("%w: root 6 expiry changed", dagql.ErrPersistStateNotReady)
+	report := busy.observe(time.Unix(1000, 0), []dagql.LeftOutRoot{
+		{Index: 0, Row: 5, Kind: dagql.BusyOther, Err: changed, Busy: []dagql.BusyRow{{Row: 5, Kind: dagql.BusyOther, Err: changed}, {Row: 6, Kind: dagql.BusyOther, Err: expired}}},
+		{Index: 1, Row: 6, Kind: dagql.BusyOther, Err: expired},
+	}, nil)
+	require.Equal(t, []string{"6:other:0s:2", "5:other:0s:1"}, report.named)
+	require.Equal(t, []string{"6:persist state not ready: root 6 expiry changed", "5:persist state not ready: row 5 ownership changed"}, report.reasons)
+	require.Contains(t, report.attrs(), "busy_reasons")
+	require.Equal(t, []any{"busy_rows", 0, "busy_cleared", 0}, busy.observe(time.Unix(1001, 0), nil, nil).attrs(), "an export with no busy row says nothing of reasons")
 }
 
 // A root over several busy rows counts against each of them: the report
