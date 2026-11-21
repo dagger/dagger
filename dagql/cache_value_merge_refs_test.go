@@ -42,7 +42,7 @@ func TestMergePreparationRelocatesAsValidateThenVisit(t *testing.T) {
 	// Provisional numbers start past the ordinals, so that relocating
 	// changes every reference.
 	engine.egraphMu.Lock()
-	engine.nextSharedResultID = 10_000
+	engine.nextSharedResultID.Store(10_000)
 	engine.egraphMu.Unlock()
 	prep, err := engine.prepareValueMerge(ctx, cloudCacheID, got.Bundle, false)
 	require.NoError(t, err)

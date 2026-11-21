@@ -188,9 +188,10 @@ var errValueMergeEnded = errors.New("commit value merge: the prepared merge has 
 // PrepareValueMerge prepares a merge of input, from the cache from, as
 // MergeValues does before it decides: it clones and validates the bundle,
 // reserves the records' numbers, derives each record's identity, and decodes
-// and validates every payload the merge will install. It takes egraphMu only
-// to reserve the numbers and, on an engine, to read which records merge would
-// keep. It reads input only while it runs, and keeps it only on an engine
+// and validates every payload the merge will install. It reserves the
+// numbers without egraphMu (takeResultIDs), and takes egraphMu to read the
+// cache and, warming its targets' parts, to capture them. It reads input
+// only while it runs, and keeps it only on an engine
 // whose preparation prepared light records, for the commit to prepare in
 // full again (PreparedValueMerge.input): that engine's caller leaves input
 // unchanged until the prepared merge's terminal action. The Cloud never keeps
@@ -695,13 +696,10 @@ func (c *Cache) prepareValueMerge(ctx context.Context, from CacheID, input Value
 		return prep, nil
 	}
 
-	c.lockGraphForCtx(ctx, workMerge)
-	if c.nextSharedResultID == 0 {
-		c.nextSharedResultID = 1
-	}
-	prep.firstID = uint64(c.nextSharedResultID)
-	c.nextSharedResultID += sharedResultID(len(prep.bundle.Values))
-	c.egraphMu.Unlock()
+	// The records' numbers are the merge's own from here, taken without the
+	// graph lock (takeResultIDs): no entry takes one until the commit, under
+	// egraphMu, and those it doesn't take stay gaps.
+	prep.firstID = uint64(c.takeResultIDs(uint64(len(prep.bundle.Values))))
 
 	relocate := func(ref *PersistedRef) error {
 		if ref.RecipeID != nil || ref.ResultID == 0 {
