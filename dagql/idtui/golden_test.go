@@ -154,7 +154,7 @@ so in most cases you should just let it skip.`)
 
 	// Remove test-owned workspace files if they exist now too, since Cleanup
 	// doesn't always run, e.g. after a ctrl-C.
-	exec.Command("rm", "-rf", ".git", ".dagger").Run()
+	exec.Command("rm", "-rf", ".git", ".dagger", "dagger.lock").Run()
 
 	cmd := exec.Command("sh", "-c", "git init && git remote add origin git@github.com:dagger/dagger")
 	if co, err := cmd.CombinedOutput(); err != nil {
@@ -175,7 +175,9 @@ main = true
 	}
 
 	t.Cleanup(func() {
-		exec.Command("rm", "-rf", ".git", ".dagger", "dagger.toml").Run()
+		// dagger.lock pins the images the fixtures pull, e.g. the SDK
+		// fixtures' alpine.
+		exec.Command("rm", "-rf", ".git", ".dagger", "dagger.toml", "dagger.lock").Run()
 	})
 
 	listDir := t.TempDir()
@@ -214,7 +216,7 @@ main = true
 		require.Contains(t, tests, "2 skipped")
 	}
 
-	for _, ex := range []Example{
+	for _, ex := range append([]Example{
 		// implementations of these functions can be found in viztest/main.go
 		{Function: "hello-world"},
 		{Function: "fail-log", Fail: true},
@@ -430,9 +432,12 @@ main = true
 				require.True(t, depCalled)
 			},
 		},
-	} {
+	}, sdkExamples()...) {
 		testName := ex.Name
 		goldFile := ex.Name
+		if ex.Golden != "" {
+			goldFile = ex.Golden
+		}
 		if testName == "" {
 			testName = ex.Function
 			goldFile = ex.Function
@@ -444,6 +449,9 @@ main = true
 		}
 		t.Run(testName, func(ctx context.Context, t *testctx.T) {
 			goldFile := `TestTelemetry/TestGolden/` + goldFile
+			if ex.Setup != nil {
+				ex.Setup(t)
+			}
 			out, db, logs := ex.Run(ctx, t, s)
 			if ex.OutputTest != nil {
 				ex.OutputTest(t, out)
@@ -529,6 +537,7 @@ func unmarshalAs[T any](t testing.TB, data json.RawMessage) T {
 
 type Example struct {
 	Name     string // a custom name for the example
+	Golden   string // the golden file, when not derived from Name
 	Module   string
 	Function string
 	Args     []string
@@ -556,6 +565,11 @@ type Example struct {
 	OutputTest func(*testctx.T, string)
 	// Using fuzzytest will eschew golden assertions and testdata and allow string assertions instead
 	FuzzyTest func(*testctx.T, string)
+	// Runs before the example, e.g. to write a fixture it needs.
+	Setup func(*testctx.T)
+	// Normalize output that renders an SDK's internals, such as its build for
+	// the default platform; see normalizeSDKOutput.
+	NormalizeSDK bool
 }
 
 func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (string, *dagui.DB, *logRecorder) {
@@ -689,10 +703,15 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 		expected += "Expected stderr:\n\n" + errBuf.String()
 	}
 
-	return normalizeTelemetryNativePlatform(
+	nativePlatform := os.Getenv("_DAGGER_TESTS_ENGINE_PLATFORM")
+	out := normalizeTelemetryNativePlatform(
 		scrub.Stabilize(dropPortNotReadyWarnings(expected)),
-		os.Getenv("_DAGGER_TESTS_ENGINE_PLATFORM"),
-	), db, logs
+		nativePlatform,
+	)
+	if ex.NormalizeSDK {
+		out = normalizeSDKOutput(out, nativePlatform, !ex.NoExpand)
+	}
+	return out, db, logs
 }
 
 func testDB(t *testctx.T) (*dagui.DB, *logRecorder, net.Listener) {

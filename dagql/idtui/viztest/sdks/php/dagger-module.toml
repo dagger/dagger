@@ -1,0 +1,5 @@
+name = "viztest-php"
+
+[entrypoint]
+  kind = "dang"
+  source = "./sdk/entrypoint"

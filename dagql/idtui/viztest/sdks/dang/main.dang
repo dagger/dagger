@@ -1,0 +1,51 @@
+"""
+The external Dang SDK's fixture for the golden tests: every SDK fixture has
+the same functions, so their goldens line up. Dang has no process to exit,
+so there is no failExitCode, and print writes only to stdout.
+"""
+type ViztestDang {
+  """
+  Logs to stdout, and succeeds.
+  """
+  logSuccess: String! @cache(policy: FunctionCachePolicy.PER_SESSION) {
+    print("dang function stdout")
+    "dang function result"
+  }
+
+  """
+  Logs to stdout, then raises an error of its own.
+  """
+  failNative: Void @cache(policy: FunctionCachePolicy.PER_SESSION) {
+    print("dang function stdout")
+    raise "dang function failed natively"
+  }
+
+  """
+  Runs a command that fails, and lets its error propagate.
+  """
+  failExec: String! @cache(policy: FunctionCachePolicy.PER_SESSION) {
+    failingExec.stdout
+  }
+
+  """
+  Runs a command that fails, and wraps its error.
+  """
+  failExecWrapped: String! @cache(policy: FunctionCachePolicy.PER_SESSION) {
+    failingExec.stdout rescue {
+      err: Error! => raise "dang function ran a failing command: " + err.message
+    }
+  }
+
+  """
+  Calls a function of a dependency whose command fails.
+  """
+  callFailingDep: String! @cache(policy: FunctionCachePolicy.PER_SESSION) {
+    sdkDep.failExec
+  }
+
+  let failingExec: Container! {
+    container
+      .from("alpine")
+      .withExec(["sh", "-c", "echo exec stdout; sleep 0.1; echo exec stderr >&2; exit 1"])
+  }
+}

@@ -1,0 +1,5 @@
+name = "viztest-java"
+
+[entrypoint]
+kind = "dang"
+source = "./src/generated/dang/entrypoint"

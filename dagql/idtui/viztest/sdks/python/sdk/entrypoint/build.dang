@@ -1,0 +1,569 @@
+"""
+The container a Python module runs in, built from its committed files.
+The runtime module, the generated static entrypoint and the shared entrypoint
+under entrypoint/ all share this build; the two entrypoints carry a copy with
+the block below inlined, because inside an entrypoint the current module is
+the module it serves.
+"""
+type PythonModuleBuild {
+  """
+  Context the module lives in, mounted whole so relative paths resolve.
+  """
+  pub contextDir: Directory!
+
+  """
+  Module directory, relative to the context.
+  """
+  pub subPath: String!
+
+  pub moduleName: String!
+
+  """
+  How the engine names the module, which says which class is its main object.
+  """
+  pub naming: ModuleNaming
+
+  new(contextDir: Directory! = directory, subPath: String! = ".", moduleName: String! = "", naming: ModuleNaming = null) {
+    self.contextDir = contextDir
+    self.subPath = subPath
+    self.moduleName = moduleName
+    self.naming = naming
+    self
+  }
+
+  let modSourceDirPath: String! = "/src"
+  let venvPath: String! = "/opt/venv"
+  let genDir: String! = "sdk"
+  let clientsDir: String! = "clients"
+  let sdkGenPath: String! = "src/dagger/client/gen.py"
+  let projectCfg: String! = "pyproject.toml"
+  let pipCompileLock: String! = "requirements.lock"
+  let uvLock: String! = "uv.lock"
+  let uvCacheVolume: String! = "modpython-uv"
+  let pipCacheVolume: String! = "modpython-pip"
+
+  let defaultBaseImage: String! = "python:3.14-slim@sha256:9aaa474097d094040649f2162a627c0049b408f52138d980916788d80f04802f"
+  let defaultUvImage: String! = "ghcr.io/astral-sh/uv:0.13.8@sha256:5cc1805e2426484abca4ad46ea783bab281fdb225fd82d8ce6d66a81254bac85"
+  let workspaceReader: String! { source.file("sdk/entrypoint/workspace_reader.py").contents }
+
+  """
+  The module directory.
+  """
+  pub source: Directory! {
+    subdir(contextDir, subPath)
+  }
+
+  """
+  The installed module, without an entrypoint. Not named `container`: a field
+  of that name would shadow the global `container` that `base` starts from.
+  """
+  pub installed: Container! {
+    if (source.exists(projectCfg) == false) {
+      raise "module \"" + moduleName + "\" has no " + projectCfg + "; run `dagger generate` and commit the generated files"
+    } else if (hasPythonFiles(source) == false) {
+      raise "no python files found in module source"
+    } else {
+      let cfg = pyConfig(contextDir, subPath)
+      checkGeneratedFiles(source, moduleName, requiredGeneratedFiles(source, cfg))
+
+      let baseImage = baseImageFor(source, cfg)
+      let uvImage = uvImageFor(cfg)
+      # Unique per module source: the uv cache keys some entries on source paths.
+      let contextDirPath = modSourceDirPath + "/" + source.digest
+      let packageName = packageNameFor(moduleName, cfg)
+
+      let compiled = base(baseImage, uvImage, cfg)
+        .withEnvVariable("UV_COMPILE_BYTECODE", "1")
+        # Bytecode keyed on its source's hash rather than the time uv copied
+        # the source, so the same inputs build the same layer, byte for byte.
+        # Unchecked: the bytecode and its source only change together, in a
+        # new layer, and checking reads and hashes every source on each call.
+        .withEnvVariable("PYC_INVALIDATION_MODE", "UNCHECKED_HASH")
+      let built = dependencies(compiled, source, cfg)
+        .withWorkdir(join(contextDirPath, subPath))
+        .withMountedDirectory(contextDirPath, withoutVenv)
+        # Last, so the layers above are shared between modules.
+        .withEnvVariable("DAGGER_MODULE", moduleName)
+        .withEnvVariable("DAGGER_DEFAULT_PYTHON_PACKAGE", packageName)
+
+      install(built, source, cfg)
+        .withEnvVariable("DAGGER_MAIN_OBJECT", mainObject)
+    }
+  }
+
+  """
+  The class name of the module's main object: of the classes its code
+  decorates with @object_type, the one the engine takes.
+  """
+  let mainObject: String! {
+    if (naming == null) {
+      raise "module \"" + moduleName + "\" is built without the engine's naming of it"
+    } else {
+      let candidates = objectTypes
+      let main = naming.mainObject(candidates: candidates)
+      if (main == null) {
+        raise "module \"" + moduleName + "\": the engine takes none of its object types (" +
+          (if (candidates.length == 0) { "there are none" } else { candidates.join(", ") }) +
+          ") for its main object; name a class decorated with @object_type after the module"
+      } else {
+        main
+      }
+    }
+  }
+
+  """
+  The classes the module's own code decorates with @object_type, read from
+  its source with Python's ast rather than by importing it, so that it reads
+  the same whichever SDK version the module installs. A file this Python
+  can't parse is skipped: the module may never import it.
+  """
+  let objectTypes: [String!]! {
+    container
+      .from(defaultBaseImage)
+      .withMountedDirectory("/module", filesOf(
+        source,
+        include: ["src/**/*.py", "*.py"],
+        exclude: ["**/.venv", "**/__pycache__"],
+      ))
+      .withExec(["python", "-c", objectTypesScript, "/module"])
+      .stdout
+      .split("\n")
+      .filter { line => line != "" }
+  }
+
+  let objectTypesScript: String! = [
+    "import ast, pathlib, sys",
+    "def name(d):",
+    "    d = d.func if isinstance(d, ast.Call) else d",
+    "    return getattr(d, 'attr', getattr(d, 'id', ''))",
+    "found = set()",
+    "for path in pathlib.Path(sys.argv[1]).rglob('*.py'):",
+    "    try:",
+    "        tree = ast.parse(path.read_bytes(), str(path))",
+    "    except (SyntaxError, ValueError):",
+    "        continue",
+    "    for node in ast.walk(tree):",
+    "        if isinstance(node, ast.ClassDef) and any(name(d) == 'object_type' for d in node.decorator_list):",
+    "            found.add(node.name)",
+    "print('\\n'.join(sorted(found)))",
+  ].join("\n")
+
+  """
+  The workspace members of a scope's pyproject.toml, read as the build does.
+  """
+  pub scopeMembers(pyproject: File!): [String!]! {
+    pyConfig(directory.withFile(projectCfg, pyproject), ".").members
+  }
+
+  let base(baseImage: String!, uvImage: String!, cfg: PyConfig!): Container! {
+    let uvBins = container.from(uvImage).rootfs
+
+    let ctr = container
+      .from(baseImage)
+      # Most base images ship the standard library without its bytecode, and a
+      # call's writes do not last, so each call compiled what it imports.
+      # Best effort, for `python` on PATH only: a custom image without it or
+      # with a read-only standard library must still build.
+      .withExec(["python", "-c",
+        "import compileall, py_compile, re, sysconfig\n" +
+        "compileall.compile_dir(sysconfig.get_path('stdlib'), quiet=2, force=True, rx=re.compile('/site-packages/'),\n" +
+        "    invalidation_mode=py_compile.PycInvalidationMode.UNCHECKED_HASH)\n",
+      ], expect: ReturnType.ANY)
+      # Informational only, in case a module finds them useful.
+      .withEnvVariable("DAGGER_BASE_IMAGE", baseImage)
+      .withEnvVariable("PYTHONUNBUFFERED", "1")
+      .withEnvVariable("PIP_DISABLE_PIP_VERSION_CHECK", "1")
+      .withEnvVariable("PIP_ROOT_USER_ACTION", "ignore")
+      .withMountedFile("/usr/local/bin/uv", uvBins.file("uv"))
+      .withMountedFile("/usr/local/bin/uvx", uvBins.file("uvx"))
+      .withMountedCache("/root/.cache/uv", cacheVolume(uvCacheVolume))
+      .withEnvVariable("DAGGER_UV_IMAGE", uvImage)
+      .withEnvVariable("DAGGER_UV_VERSION", imageTag(uvImage))
+      .withEnvVariable("UV_SYSTEM_PYTHON", "1")
+      .withEnvVariable("UV_LINK_MODE", "copy")
+      .withEnvVariable("UV_NATIVE_TLS", "1")
+      .withEnvVariable("UV_PROJECT_ENVIRONMENT", venvPath)
+
+    let withPip = if (cfg.useUv) {
+      ctr
+    } else {
+      ctr.withMountedCache("/root/.cache/pip", cacheVolume(pipCacheVolume))
+    }
+    let withIndex = if (cfg.indexURL == "") {
+      withPip
+    } else {
+      withPip.withEnvVariable("UV_INDEX_URL", cfg.indexURL)
+    }
+    if (cfg.extraIndexURL == "") {
+      withIndex
+    } else {
+      withIndex.withEnvVariable("UV_EXTRA_INDEX_URL", cfg.extraIndexURL)
+    }
+  }
+
+  """
+  The module's dependencies, installed from dependencyInputs alone so that a
+  source edit leaves this layer cached. The SDK files and the generated
+  clients are installed non-editable so uv compiles their bytecode once, not
+  on every call into a throwaway mount.
+  """
+  let dependencies(ctr: Container!, source: Directory!, cfg: PyConfig!): Container! {
+    if (cfg.useUv == false) {
+      # pip installs a project's dependencies only with the project itself.
+      ctr
+    } else {
+      let inputs = dependencyInputs(cfg)
+      # Unique per input, for the same reason as the source's own path.
+      let inputsPath = modSourceDirPath + "/" + inputs.digest
+      let mounted = ctr
+        .withWorkdir(join(inputsPath, subPath))
+        .withMountedDirectory(inputsPath, inputs)
+
+      if (source.exists(uvLock)) {
+        # --locked: fail loudly on a stale lockfile instead of re-resolving.
+        # In a scope, sync installs the members the project depends on, which
+        # --no-install-project leaves in.
+        mounted
+          .withExec(["uv", "sync", "--no-dev", "--locked", "--no-editable", "--no-install-project"])
+          .withoutMount(inputsPath)
+          .withEnvVariable("VIRTUAL_ENV", "$UV_PROJECT_ENVIRONMENT", expand: true)
+          .withEnvVariable("PATH", "$VIRTUAL_ENV/bin:$PATH", expand: true)
+      } else {
+        let deps = if (source.exists(pipCompileLock)) {
+          # The lockfile is complete, so skip resolving.
+          ["--no-deps", "-r", pipCompileLock]
+        } else {
+          ["-r", projectCfg]
+        }
+        mounted
+          .withExec(["uv", "pip", "install", "--no-editable"] + localPackages(cfg) + deps)
+          .withoutMount(inputsPath)
+      }
+    }
+  }
+
+  """
+  The module's own package, editable, on top of its dependencies.
+  """
+  let install(ctr: Container!, source: Directory!, cfg: PyConfig!): Container! {
+    if (cfg.useUv and source.exists(uvLock)) {
+      # uv pip ignores VIRTUAL_ENV while UV_SYSTEM_PYTHON is set.
+      ctr.withExec(["uv", "pip", "install", "--python", venvPath + "/bin/python", "--no-deps", "-e", "."])
+    } else if (cfg.useUv) {
+      ctr.withExec(["uv", "pip", "install", "--no-deps", "-e", "."])
+    } else {
+      # pip reads no uv sources, so every local package goes in by path, in
+      # the same command that resolves the project's dependencies on them.
+      ctr.withExec(["pip", "install"] + localPackages(cfg) + ["-e", "."])
+    }
+  }
+
+  """
+  The files the dependency install reads, as workspaceRead names them; the
+  whole context where the install may read any file.
+  """
+  let dependencyInputs(cfg: PyConfig!): Directory! {
+    if (cfg.inputs.filter { path => path == "." }.length > 0) {
+      withoutVenv
+    } else {
+      filesOf(
+        contextDir,
+        include: cfg.inputs,
+        # In the SDK's member but no part of its package, and `dagger
+        # generate` rewrites it whenever a function's signature changes.
+        exclude: [join(subPath, genDir + "/entrypoint").trimPrefix("./")],
+      )
+    }
+  }
+
+  """
+  The files of a directory that the patterns select, copied one by one: a
+  file read from a directory keeps the digest of its content, where a
+  directory derived from an entrypoint's module source has none, so what
+  reads them is cached on these files alone and not on every file of the
+  source.
+  """
+  let filesOf(dir: Directory!, include: [String!]!, exclude: [String!]!): Directory! {
+    let files = dir
+      .filter(include: include, exclude: exclude)
+      .glob("**")
+      .filter { path => path.hasSuffix("/") == false }
+    let parents = files.map { path => parentDir(path) }.reduce([] :: [String!]!) { seen, parent =>
+      if (seen.filter { other => other == parent }.length > 0) { seen } else { seen + [parent] }
+    }
+    parents.reduce(directory) { tree, parent =>
+      tree.withFiles(parent, files.filter { path => parentDir(path) == parent }.map { path => dir.file(path) })
+    }
+  }
+
+  """
+  What the module installs from its own tree: the members of a scope's
+  workspace that the project depends on, directly or through another member,
+  the way `uv sync` picks them; or the vendored library of the layout before.
+  A member nothing depends on is not installed: it may not even install here.
+  """
+  let localPackages(cfg: PyConfig!): [String!]! {
+    if (cfg.isScope) {
+      cfg.locals
+    } else {
+      ["./" + genDir]
+    }
+  }
+
+  """
+  The workspace as TOML defines it, read by tomllib in the pinned default
+  image from the module at `sub` in `dir`: `member\t<path>` for each member,
+  then `local\t./<dir>` for each member directory to install, then
+  `input\t<path>` for each file and directory of `dir` that the dependency
+  install reads, or `input\t.` where it may read any file. The members are
+  globs over directories, and each member's dependencies are in its own
+  file, so one pass reads them all. Only the files that can name a member,
+  a path or a setting go in, so the read is cached until one of them
+  changes. A file that does not read is named.
+  """
+  let workspaceRead(dir: Directory!, sub: String!): [String!]! {
+    let lines = container
+      .from(defaultBaseImage)
+      .withMountedDirectory("/scope", filesOf(
+        dir,
+        include: ["**/" + projectCfg, "**/uv.toml", "**/.python-version", "**/" + pipCompileLock],
+        # No member lives in these, and a virtualenv alone holds hundreds of
+        # pyproject.toml files that would reach the read and its cache key.
+        exclude: ["**/.venv", "**/__pycache__", "**/node_modules", "**/.git"],
+      ))
+      .withExec(["python", "-c", workspaceReader, "/scope", sub, genDir])
+      .stdout
+      .split("\n")
+      .filter { line => line != "" }
+    let errors = lines.filter { line => line.hasPrefix("error\t") }
+    if (errors.length > 0) {
+      raise errors.map { line => line.trimPrefix("error\t") }.join("; ")
+    } else {
+      lines
+    }
+  }
+
+  """
+  The generated files a module needs before it builds. A scope needs each of
+  the SDK's members it lists; a user's member is the user's to provide.
+  """
+  let requiredGeneratedFiles(source: Directory!, cfg: PyConfig!): [String!]! {
+    if (cfg.isScope) {
+      cfg.members
+        .filter { member =>
+          (member == genDir or member.hasPrefix(clientsDir + "/")) and member.contains("*") == false
+        }
+        .map { member => member + "/" + projectCfg }
+    } else {
+      # A published dagger-io brings its own files, and the SDK files no longer
+      # read bindings from src/dagger_gen.py, so nothing generated is required.
+      let vendorPath = vendorPathFor(source, cfg)
+      if (vendorPath == "") {
+        [] :: [String!]!
+      } else {
+        [vendorPath + "/" + projectCfg, vendorPath + "/" + sdkGenPath]
+      }
+    }
+  }
+
+  """
+  Fail early when the committed generated files are missing.
+  """
+  let checkGeneratedFiles(source: Directory!, modName: String!, required: [String!]!): Void {
+    required.each { rel =>
+      if (source.exists(rel, expectedType: ExistsType.REGULAR_TYPE) == false) {
+        raise "module \"" + modName + "\": generated file \"" + rel + "\" is missing; run `dagger generate` and commit the generated files"
+      }
+      null
+    }
+    null
+  }
+
+  """
+  Empty when a uv.lock module depends on a published dagger-io instead.
+  """
+  let vendorPathFor(source: Directory!, cfg: PyConfig!): String! {
+    if (cfg.useUv and source.exists(uvLock)) { cfg.vendorPath } else { genDir }
+  }
+
+  let packageNameFor(modName: String!, cfg: PyConfig!): String! {
+    let project = if (cfg.projectName == "") {
+      modName.toLower.replaceMatches("[^a-z0-9]+", "-").trim("-")
+    } else {
+      cfg.projectName
+    }
+    project.replace("-", "_")
+  }
+
+  """
+  Prefers the digest-pinned default image when it matches the requested version.
+  """
+  let baseImageFor(source: Directory!, cfg: PyConfig!): String! {
+    if (cfg.baseImage != "") {
+      cfg.baseImage
+    } else {
+      let version = pythonVersionFor(source, cfg)
+      let wanted = "python:" + version + "-slim"
+      if (version == "" or defaultBaseImage.hasPrefix(wanted)) {
+        defaultBaseImage
+      } else {
+        wanted
+      }
+    }
+  }
+
+  let pythonVersionFor(source: Directory!, cfg: PyConfig!): String! {
+    if (source.exists(".python-version")) {
+      source.file(".python-version").contents.trimSpace
+    } else {
+      # requires-python is a floor, but with `>=` or `==` it names a supported version.
+      let minimum = cfg.requiresPython.trimSpace
+      if (minimum.hasPrefix("==") or minimum.hasPrefix(">=")) {
+        minimum.trimPrefix("==").trimPrefix(">=").trimSpace
+      } else {
+        ""
+      }
+    }
+  }
+
+  let uvImageFor(cfg: PyConfig!): String! {
+    if (cfg.uvVersion == "" or cfg.uvVersion == imageTag(defaultUvImage)) {
+      defaultUvImage
+    } else {
+      # Uv's image tag matches the version exactly.
+      "ghcr.io/astral-sh/uv:" + cfg.uvVersion
+    }
+  }
+
+  let hasPythonFiles(source: Directory!): Boolean! {
+    source.glob("src/**/*.py").length > 0 or source.glob("*.py").length > 0
+  }
+
+  """
+  A virtualenv left in the module by the host must not reach the build.
+  """
+  let withoutVenv: Directory! {
+    if (source.exists(".venv")) {
+      contextDir.withoutDirectory(join(subPath, ".venv"))
+    } else {
+      contextDir
+    }
+  }
+
+  let subdir(dir: Directory!, path: String!): Directory! {
+    if (path == "" or path == ".") { dir } else { dir.directory(path) }
+  }
+
+  let join(base: String!, rel: String!): String! {
+    if (rel == "" or rel == ".") { base } else { base + "/" + rel }
+  }
+
+  let parentDir(path: String!): String! {
+    let parts = path.split("/")
+    if (parts.length == 1) { "." } else { parts.takeFirst(parts.length - 1).join("/") }
+  }
+
+  let imageTag(ref: String!): String! {
+    let named = ref.split("@").takeFirst(1).join("")
+    let parts = named.split(":")
+    if (parts.length < 2) { "" } else { parts.takeLast(1).join("") }
+  }
+
+  """
+  Read with a TOML parser in workspaceRead, because the file is the user's
+  content: quoting, dotted keys and multi-line strings are theirs. A key of
+  another type than the one the templates and `mod config set` write reads
+  as unset.
+  """
+  let pyConfig(dir: Directory!, sub: String!): PyConfig! {
+    let workspace = workspaceRead(dir, sub)
+    PyConfig(
+      projectName: setting(workspace, "projectName"),
+      requiresPython: setting(workspace, "requiresPython"),
+      baseImage: setting(workspace, "baseImage"),
+      useUv: setting(workspace, "useUv") == "true",
+      uvVersion: setting(workspace, "uvVersion"),
+      vendorPath: setting(workspace, "vendorPath"),
+      members: readLines(workspace, "member"),
+      locals: readLines(workspace, "local"),
+      inputs: readLines(workspace, "input"),
+      indexURL: setting(workspace, "indexURL"),
+      extraIndexURL: setting(workspace, "extraIndexURL"),
+    )
+  }
+
+  let readLines(workspace: [String!]!, kind: String!): [String!]! {
+    workspace
+      .filter { line => line.hasPrefix(kind + "\t") }
+      .map { line => line.trimPrefix(kind + "\t") }
+  }
+
+  let setting(workspace: [String!]!, key: String!): String! {
+    readLines(workspace, "setting\t" + key).join("")
+  }
+}
+
+"""
+What this runtime reads from a module's pyproject.toml.
+"""
+type PyConfig {
+  pub projectName: String!
+  pub requiresPython: String!
+  pub baseImage: String!
+  pub useUv: Boolean!
+  pub uvVersion: String!
+  pub vendorPath: String!
+
+  """
+  The `[tool.uv.workspace] members` of a scope; empty in the layout before.
+  """
+  pub members: [String!]!
+
+  """
+  The member directories the project depends on, as localPackages names them.
+  """
+  pub locals: [String!]!
+
+  """
+  The paths in the context that the dependency install reads, or "." where
+  it may read any file (dependencyInputs).
+  """
+  pub inputs: [String!]!
+  pub indexURL: String!
+  pub extraIndexURL: String!
+
+  new(
+    projectName: String! = "",
+    requiresPython: String! = "",
+    baseImage: String! = "",
+    useUv: Boolean! = true,
+    uvVersion: String! = "",
+    vendorPath: String! = "",
+    members: [String!]! = [],
+    locals: [String!]! = [],
+    inputs: [String!]! = [],
+    indexURL: String! = "",
+    extraIndexURL: String! = "",
+  ) {
+    self.projectName = projectName
+    self.requiresPython = requiresPython
+    self.baseImage = baseImage
+    self.useUv = useUv
+    self.uvVersion = uvVersion
+    self.vendorPath = vendorPath
+    self.members = members
+    self.locals = locals
+    self.inputs = inputs
+    self.indexURL = indexURL
+    self.extraIndexURL = extraIndexURL
+    self
+  }
+
+  """
+  Whether the module is a scope of the unified layout, whose SDK files are
+  the workspace member sdk/ rather than a library vendored by path.
+  """
+  pub isScope: Boolean! {
+    members.filter { member => member == "sdk" }.length > 0
+  }
+}

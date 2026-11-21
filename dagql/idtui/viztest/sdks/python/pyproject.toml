@@ -1,0 +1,17 @@
+[project]
+name = "viztest-python"
+version = "0.1.0"
+requires-python = ">=3.14"
+dependencies = ["dagger-io", "dagger-clients-core", "dagger-clients-sdk-dep"]
+
+[build-system]
+requires = ["uv_build>=0.8.4,<0.14.0"]
+build-backend = "uv_build"
+
+[tool.uv.workspace]
+members = ["sdk", "clients/core", "clients/sdk-dep"]
+
+[tool.uv.sources]
+dagger-io = { workspace = true }
+dagger-clients-core = { workspace = true }
+dagger-clients-sdk-dep = { workspace = true }
