@@ -369,6 +369,49 @@ func TestRecordedWaitNamesTheWriterKind(t *testing.T) {
 	}
 }
 
+// A holder of the lock for writing can tell whether anyone waits for it,
+// whichever way the waiter takes it: a plain RLock or Lock as dagql takes
+// the graph lock for most reads, or a recorded one (ReadLockWaited,
+// WriteLockAs). The waiter counts itself only while it waits.
+func TestWaitingCountsEveryWaiter(t *testing.T) {
+	t.Parallel()
+	for name, take := range map[string]func(*RWMutex) (release func()){
+		"a plain read":    func(mu *RWMutex) func() { mu.RLock(); return mu.RUnlock },
+		"a plain write":   func(mu *RWMutex) func() { mu.Lock(); return mu.Unlock },
+		"a recorded read": func(mu *RWMutex) func() { ReadLockWaited(context.Background(), mu, "test.mu"); return mu.RUnlock },
+		"a recorded write": func(mu *RWMutex) func() {
+			WriteLockAs(context.Background(), mu, "test.mu", testHolder)
+			return mu.Unlock
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			var mu RWMutex
+			mu.Lock()
+			if mu.Waiting() {
+				t.Fatal("waiting with no waiter")
+			}
+			taken := make(chan func())
+			go func() { taken <- take(&mu) }()
+			deadline := time.Now().Add(10 * time.Second)
+			for !mu.Waiting() && time.Now().Before(deadline) {
+				runtime.Gosched()
+			}
+			saw := mu.Waiting()
+			mu.Unlock()
+			release := <-taken
+			still := mu.Waiting()
+			release()
+			if !saw {
+				t.Fatal("the holder never saw the waiter")
+			}
+			if still {
+				t.Fatal("still waiting once the waiter holds the lock")
+			}
+		})
+	}
+}
+
 // An acquisition that doesn't wait allocates nothing and records nothing,
 // with no recorder: what every engine that doesn't record pays.
 func TestUncontendedAcquisitionsCostNoAllocation(t *testing.T) {
