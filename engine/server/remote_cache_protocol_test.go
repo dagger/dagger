@@ -996,6 +996,46 @@ func TestExportLogCountsHeldRowsNothingStandsOn(t *testing.T) {
 	require.Equal(t, 0, attrs["held_unneeded"], "no bundle, none")
 }
 
+// BenchmarkCountHeldUnneeded is the count's cost on the shape of a stopping
+// engine's largest exports, 50,000 rows nearly all held, beside the pass the
+// export line already makes over every record (countCarriedContentPreferred),
+// each per row.
+func BenchmarkCountHeldUnneeded(b *testing.B) {
+	const n = 50_000
+	bundle := dagql.ValueBundle{Roots: []dagql.TransferredRoot{{Ordinal: 1}}}
+	for i := 1; i <= n; i++ {
+		value := dagql.TransferredValue{Ordinal: dagql.TransferOrdinal(i), SenderNumber: uint64(i)}
+		switch i {
+		case 1:
+			value.Record.Call = &dagql.ResultCall{Field: "root", Type: &dagql.ResultCallType{NamedType: "Directory"}}
+			value.DependencyIDs = []uint64{2}
+		default:
+			value.Held = digest.FromString(fmt.Sprint(i))
+			if i < n {
+				value.DependencyIDs = []uint64{uint64(i + 1)}
+			}
+		}
+		bundle.Values = append(bundle.Values, value)
+	}
+	for i := 2; i <= n; i += 100 {
+		bundle.Outputs = append(bundle.Outputs, dagql.TransferredOutput{Ordinal: dagql.TransferOrdinal(i), Address: dagql.PersistedPartAddress{Part: "snapshot"}, State: "pending"})
+	}
+	b.Run("held_unneeded", func(b *testing.B) {
+		for range b.N {
+			if countHeldUnneeded(bundle) == 0 {
+				b.Fatal("counted none")
+			}
+		}
+		b.ReportMetric(float64(b.Elapsed())/float64(b.N)/n, "ns/row")
+	})
+	b.Run("content_preferred", func(b *testing.B) {
+		for range b.N {
+			_ = countCarriedContentPreferred(bundle.Values)
+		}
+		b.ReportMetric(float64(b.Elapsed())/float64(b.N)/n, "ns/row")
+	})
+}
+
 func logAttrs(attrs []any) map[string]any {
 	m := map[string]any{}
 	for i := 0; i+1 < len(attrs); i += 2 {
