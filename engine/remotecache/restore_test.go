@@ -655,7 +655,8 @@ func TestRestoreCountsLateMisses(t *testing.T) {
 	report := nextReport(t, adapter)
 	for i := range report.Parts {
 		require.Positive(t, report.Parts[i].Decode)
-		report.Parts[i].Decode = 0
+		require.GreaterOrEqual(t, report.Parts[i].DecodeWait, time.Duration(0))
+		report.Parts[i].Decode, report.Parts[i].DecodeWait = 0, 0
 	}
 	require.Equal(t, RestoredPartReport{Records: 1, Committed: commit, Late: 2, WorstLate: 3 * time.Second, LeastLate: time.Second, LockWait: time.Millisecond, CommitHold: 2 * time.Millisecond, Prepare: 3 * time.Millisecond, Commit: 4 * time.Millisecond}, report.Parts[0])
 	require.Equal(t, RestoredPartReport{Records: 1, Committed: commit, LockWait: time.Millisecond, CommitHold: 2 * time.Millisecond, Prepare: 3 * time.Millisecond, Commit: 4 * time.Millisecond}, report.Parts[1])
