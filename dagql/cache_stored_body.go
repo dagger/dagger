@@ -502,6 +502,43 @@ func (res *sharedResult) storedFactsLocked() ([]uint64, []declaredPart, *partKey
 	return kept.refs, kept.parts, kept.complete, nil
 }
 
+// holdsPartLocked reports whether res holds the part whose address key is
+// key for its class: it stores the part, or its stored record marks it
+// absent. Only a holder answers for a part (AvailablePart), so only a write
+// that changes a holder changes what its class mates answer (changeMarks).
+// Requires egraphMu.
+func (res *sharedResult) holdsPartLocked(key string) bool {
+	if _, ok := res.storedParts[key]; ok {
+		return true
+	}
+	return res.marksAbsentLocked(func(k string) bool { return k == key })
+}
+
+// holdsAnyPartLocked reports whether res holds any part for its class
+// (holdsPartLocked). Requires egraphMu.
+func (res *sharedResult) holdsAnyPartLocked() bool {
+	return len(res.storedParts) > 0 || res.marksAbsentLocked(func(string) bool { return true })
+}
+
+// marksAbsentLocked reports whether res's stored record marks absent a part
+// whose address key match accepts, as AvailablePart reads absent marks: from
+// a record kept as an envelope, its declared parts. Requires egraphMu.
+func (res *sharedResult) marksAbsentLocked(match func(key string) bool) bool {
+	if res.persistedEnvelope == nil {
+		return false
+	}
+	declared, err := res.declaredPartsLocked()
+	if err != nil {
+		return false
+	}
+	for _, part := range declared {
+		if part.state == "absent" && match(part.key) {
+			return true
+		}
+	}
+	return false
+}
+
 // declaredPartsLocked returns the parts res's stored record declares absent
 // or pending: its body's, or mapped from its whole envelope. Requires
 // egraphMu.

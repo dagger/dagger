@@ -126,12 +126,16 @@ func (c *Cache) AvailablePart(number uint64, address PersistedPartAddress, nowUn
 	if res == nil {
 		return PartAvailability{}, fmt.Errorf("available part of %d: %w", number, ErrUnknownEntry)
 	}
+	// Only the part's holders in the class answer for it: the members that
+	// store it, or whose stored record marks it absent (holdsPartLocked).
+	// Whether a member holds it is asked first: most members of a large class
+	// hold nothing, and the checks after it walk a member's holdings.
 	candidates := []*sharedResult{res}
 	var others []sharedResultID
 	for root := range c.outputEqClassRootsLocked(res.id) {
 		for id := range c.outputEqClassResults[root] {
 			other := c.resultsByID[id]
-			if other == nil || other == res || other.noValueLocked() || c.resultExpiredAtLocked(other, nowUnix) {
+			if other == nil || other == res || !other.holdsPartLocked(key) || other.noValueLocked() || c.resultExpiredAtLocked(other, nowUnix) {
 				continue
 			}
 			others = append(others, id)
@@ -141,11 +145,15 @@ func (c *Cache) AvailablePart(number uint64, address PersistedPartAddress, nowUn
 	for _, id := range slices.Compact(others) {
 		candidates = append(candidates, c.resultsByID[id])
 	}
-	// Time alone changes the answer only when a considered value expires: the
-	// entry's own, or another of the class, which then stops answering.
-	// Expired ones never come back but by a write.
+	// Time alone changes the answer only when a holder expires: the entry
+	// itself, or another holder of the class, which then stops answering.
+	// Expired ones never come back but by a write, and a member that holds
+	// nothing never answers, whenever it expires.
 	var validUntil int64
 	for _, candidate := range candidates {
+		if candidate == res && !res.holdsPartLocked(key) {
+			continue
+		}
 		if expires := candidate.expiresAtUnix; expires > nowUnix && (validUntil == 0 || expires < validUntil) {
 			validUntil = expires
 		}
