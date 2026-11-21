@@ -1,0 +1,8 @@
+"""
+Test module whose main object is named after the core Container type.
+"""
+type Container {
+  pub text: String! {
+    "module container"
+  }
+}

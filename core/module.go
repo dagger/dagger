@@ -45,10 +45,10 @@ type Module struct {
 
 	// EntrypointDeps, when the module's manifest lists its dependencies as
 	// its entrypoint's own (ModuleSource.EntrypointOnlyDependencies), is the
-	// schema the entrypoint runs with: the core's and those dependencies.
-	// Deps then holds the core's alone, so the module's own code, its
-	// callers and its generated code don't see them. Nil otherwise, and when
-	// the entrypoint has no dependencies of its own.
+	// schema the entrypoint runs with: the core's and those dependencies,
+	// never the module the entrypoint builds, which could share a name with
+	// one of them. Deps then holds the core's alone, so the module's own
+	// code, its callers and its generated code don't see them. Nil otherwise.
 	EntrypointDeps *SchemaBuilder
 
 	// Runtime is the container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
@@ -1067,38 +1067,9 @@ func (mod *Module) AttachDependencyResults(
 		if !ok {
 			return nil, fmt.Errorf("attach module self dependency: expected attached module result, got %T", self)
 		}
-		attachedSelfID, err := attachedSelf.ID()
-		if err != nil {
-			return nil, fmt.Errorf("attach module self dependency: self ID: %w", err)
-		}
-		// withSelf is deps with its self entry, if it has one, replaced by the
-		// attached self, or the attached self appended.
-		withSelf := func(deps *SchemaBuilder) (*SchemaBuilder, error) {
-			for i, dep := range deps.entries {
-				depInst := dep.mod.ModuleResult()
-				if depInst.Self() == nil {
-					continue
-				}
-				depID, err := depInst.ID()
-				if err != nil {
-					return nil, fmt.Errorf("attach module self dependency %q: dep ID: %w", dep.mod.Name(), err)
-				}
-				if depID == nil || depID.EngineResultID() != attachedSelfID.EngineResultID() {
-					continue
-				}
-				deps.entries[i].mod = NewUserMod(attachedSelf)
-				return deps, nil
-			}
-			return deps.Append(NewUserMod(attachedSelf)), nil
-		}
-		if mod.Deps, err = withSelf(mod.Deps); err != nil {
-			return nil, err
-		}
-		if mod.EntrypointDeps != nil {
-			if mod.EntrypointDeps, err = withSelf(mod.EntrypointDeps); err != nil {
-				return nil, err
-			}
-		}
+		// An entrypoint's own schema (EntrypointDeps) never holds the module:
+		// self-calls are the module's process's, through Deps.
+		mod.Deps = mod.Deps.WithSelf(NewUserMod(attachedSelf))
 	}
 	return owned, nil
 }
@@ -2411,8 +2382,8 @@ func (mod *Module) Patch(ctx context.Context) error {
 }
 
 // SDKDeps is the schema the module's SDK runs it with: its entrypoint's
-// (EntrypointDeps) when the entrypoint has dependencies of its own, and the
-// module's (Deps) otherwise.
+// (EntrypointDeps) when the manifest lists its dependencies as the
+// entrypoint's own, and the module's (Deps) otherwise.
 func (mod *Module) SDKDeps() *SchemaBuilder {
 	if mod.EntrypointDeps != nil {
 		return mod.EntrypointDeps
@@ -2673,10 +2644,15 @@ func (mod *userMod) install(ctx context.Context, dag *dagql.Server, opts ...Inst
 			return fmt.Errorf("failed to get mod type for type def: %w", err)
 		}
 		if ok {
-			if src := self.GetSource(); src != nil && src.SelfCallsEnabled() {
-				slog.ExtraDebug("type is already defined by dependency module", "type", objDef.Name, "module", modType.SourceMod().Name())
-			} else {
-				return fmt.Errorf("type %q is already defined by module %q", objDef.Name, modType.SourceMod().Name())
+			// With self calls, the module is among its own deps, so its own
+			// types are found there; anything else is a clash.
+			sourceMod := modType.SourceMod()
+			isSelf, err := mod.Same(sourceMod)
+			if err != nil {
+				return fmt.Errorf("compare source module of type %q: %w", objDef.Name, err)
+			}
+			if !isSelf {
+				return fmt.Errorf("type %q is already defined by module %q", objDef.Name, sourceMod.Name())
 			}
 		}
 

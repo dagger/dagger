@@ -23,7 +23,7 @@ var schemaASTs, _ = lru.New[string, *dagql.SchemaASTCache](128) // error is impo
 func schemaASTCache(mods []modInstall) *dagql.SchemaASTCache {
 	entries := make([]modDepEntry, len(mods))
 	for i, entry := range mods {
-		entries[i] = modDepEntry(entry)
+		entries[i] = modDepEntry{mod: entry.mod, opts: entry.opts}
 	}
 	if !clientIndependentSchema(entries) {
 		return nil
