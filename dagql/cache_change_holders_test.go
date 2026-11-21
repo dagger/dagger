@@ -205,3 +205,76 @@ func TestChangeReportsAJoinNamesASideWhenTheOtherUploads(t *testing.T) {
 		}
 	}
 }
+
+// An entry whose record marks a part absent, storing no part, answers
+// "absent" for its class mates. A prune that drops its value collects it in
+// the same write, its record gone first: its leaving must still name its
+// class mates, whose answer turns from absent to unavailable, though the
+// entry holds nothing by the time it leaves. Its engine's holding was
+// collected before, so the prune is what takes it.
+func TestChangeReportsAnAbsenceDonorPrunedNamesItsClassMates(t *testing.T) {
+	t.Parallel()
+	ctx, cloud := storedPartTestCache(t, WithBlobStore())
+	w := newChangeWatch(t, cloud, time.Now().Unix())
+
+	bctx, b, bsrv := transferTestCache(t)
+	bsrv.InstallObject(NewClass(bsrv, ClassOpts[*inlineCaptureTestValue]{}))
+	absentRes := persistedListTestResult(t, bctx, b, bsrv, "holder-absent", &inlineCaptureTestValue{})
+	var absent uint64
+	w.step("merge an all-absent value from cache-b", func() RemoteChange {
+		change, numbers := changeTestMerge(t, ctx, cloud, "cache-b", exportTestBundle(t, bctx, b, absentRes))
+		absent = numbers[uint64(absentRes.cacheSharedResult().id)]
+		return change
+	})
+	require.NotZero(t, absent)
+	absentRecipe, absentField := changeTestRecipe(cloud, absent)
+	content := testDigest("holder-absent-content")
+	attach := func(key HolderKey, desc RemoteHolding) func() RemoteChange {
+		return func() RemoteChange {
+			change, err := cloud.AttachRemoteHolding(ctx, key, desc)
+			require.NoError(t, err)
+			return change
+		}
+	}
+	absentKey, mateKey := HolderKey{"cache-c", 1}, HolderKey{"cache-c", 2}
+	w.step("attach cache-c's holding of the absent value", attach(absentKey, RemoteHolding{Recipe: absentRecipe, Request: absentRecipe, Field: absentField, ContentDigest: content}))
+	mate := holdingOf("holder-absent-mate")
+	mate.ContentDigest = content
+	w.step("attach cache-c's holding of a mate, of the same content", attach(mateKey, mate))
+	held, ok := cloud.RemoteHoldingInfo(mateKey)
+	require.True(t, ok)
+	class, ok := cloud.EntryClassEntries(held.Number)
+	require.True(t, ok)
+	require.Contains(t, class.Entries, absent, "the mate is in the absent value's class")
+	w.step("collect cache-c's holding of the absent value", func() RemoteChange {
+		change, found, err := cloud.CollectRemoteHolding(ctx, absentKey)
+		require.NoError(t, err)
+		require.True(t, found)
+		return change
+	})
+	var candidates []HolderKey
+	w.step("release cache-b, which merged it", func() RemoteChange {
+		change := cloud.ReleaseRemoteCache(ctx, "cache-b")
+		candidates = change.Candidates
+		return change
+	})
+	w.step("collect cache-b's holdings", func() RemoteChange {
+		_, change, err := cloud.CollectRemoteHoldings(ctx, candidates, nil)
+		require.NoError(t, err)
+		return change
+	})
+	cloud.egraphMu.RLock()
+	kept := cloud.resultsByID[sharedResultID(absent)]
+	cloud.egraphMu.RUnlock()
+	require.NotNil(t, kept, "its stored record keeps the absent value with no engine's holding")
+	w.step("prune every stored root", func() RemoteChange {
+		report, err := cloud.PruneMetadataEstimate(ctx, 2, 1)
+		require.NoError(t, err)
+		require.Positive(t, report.DroppedValues)
+		return report.Change
+	})
+	cloud.egraphMu.RLock()
+	gone := cloud.resultsByID[sharedResultID(absent)] == nil
+	cloud.egraphMu.RUnlock()
+	require.True(t, gone, "the prune took the absent value whole")
+}
