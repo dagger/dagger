@@ -37,6 +37,12 @@ type Entrypoint implements ModuleEntrypoint {
             .withSourceMap(sourceMap("main.go", 67, 1))
         )
         .withFunction(
+          function("CallFailingDepLogged", typeDef.withKind(TypeDefKind.STRING_KIND))
+            .withDescription("CallFailingDepLogged logs a line, then calls a function of a dependency\nwhose command fails.")
+            .withCachePolicy(FunctionCachePolicy.PER_SESSION)
+            .withSourceMap(sourceMap("main.go", 74, 1))
+        )
+        .withFunction(
           function("FailExec", typeDef.withKind(TypeDefKind.STRING_KIND))
             .withDescription("FailExec runs a command that fails, and returns its error as is.")
             .withCachePolicy(FunctionCachePolicy.PER_SESSION)

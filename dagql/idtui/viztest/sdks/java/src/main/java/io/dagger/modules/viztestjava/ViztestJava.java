@@ -60,6 +60,14 @@ public class ViztestJava {
     return SdkDep.sdkDep().failExec();
   }
 
+  /** Logs a line, then calls a function of a dependency whose command fails. */
+  @Function(cache = "session")
+  public String callFailingDepLogged() throws Exception {
+    System.out.println("java function stdout");
+    System.out.flush();
+    return SdkDep.sdkDep().failExec();
+  }
+
   private static Container failingExec() {
     return core()
         .container()

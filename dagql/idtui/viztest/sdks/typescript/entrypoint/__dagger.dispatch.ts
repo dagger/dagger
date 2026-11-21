@@ -61,6 +61,12 @@ async function invoke(
           return __result
         }
 
+        case "callFailingDepLogged": {
+          const __parent = rebuildViztestTypescript(parentJson)
+          const __result = await __parent.callFailingDepLogged()
+          return __result
+        }
+
         case "failExec": {
           const __parent = rebuildViztestTypescript(parentJson)
           const __result = await __parent.failExec()

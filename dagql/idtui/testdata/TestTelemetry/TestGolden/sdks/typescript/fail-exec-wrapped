@@ -16,14 +16,14 @@ $ viztestTypescript: ViztestTypescript! X.Xs CACHED
 ┃ Error: typescript function ran a failing command: exit code: 1 [traceparent:00000000000000000000000000000000-0000000000000000]
 ┃     at ViztestTypescript.failExecWrapped (/workspace/viztest/sdks/typescript/src/index.ts:58:13)
 ┃     at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
-┃     at async invoke (/workspace/viztest/sdks/typescript/entrypoint/__dagger.dispatch.ts:72:28)
-┃     at async connection.LogOutput (/workspace/viztest/sdks/typescript/entrypoint/__dagger.dispatch.ts:209:24)
+┃     at async invoke (/workspace/viztest/sdks/typescript/entrypoint/__dagger.dispatch.ts:78:28)
+┃     at async connection.LogOutput (/workspace/viztest/sdks/typescript/entrypoint/__dagger.dispatch.ts:215:24)
 ┃     at async <anonymous> (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/core.js:99971:7)
 ┃     at async withGQLClient (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/core.js:99956:12)
 ┃     at async withSession (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/core.js:99969:5)
 ┃     at async withTracing (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/core.js:99718:5)
 ┃     at async connection (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/core.js:108082:3)
-┃     at async engineCall (/workspace/viztest/sdks/typescript/entrypoint/__dagger.dispatch.ts:202:3)
+┃     at async engineCall (/workspace/viztest/sdks/typescript/entrypoint/__dagger.dispatch.ts:208:3)
 ┃ {"error":{"message":"typescript function ran a failing command: exit code: 1 [traceparent:00000000000000000000000000000000-0000000000000000]"}}
 ├╴✘ call module entrypoint X.Xs ERROR
 │ ┆ (the entrypoint's own evaluation, elided)

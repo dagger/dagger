@@ -8,13 +8,13 @@ Expected stderr:
   ┆ moduleName: "viztest-dang"
   ): Module! X.Xs ERROR
 failed to parse file /tmp/dagger-dang/viztest-dang-XXXXXXXX/viztest/sdks/broken-dang/main.dang: Error: syntax error: unexpected 'this is not'
-  --> /tmp/dagger-dang/viztest-dang-XXXXXXXX/viztest/sdks/broken-dang/main.dang:53:1
+  --> /tmp/dagger-dang/viztest-dang-XXXXXXXX/viztest/sdks/broken-dang/main.dang:61:1
      |
-  51 | }
-  52 |
-  53 | this is not dang
+  59 | }
+  60 |
+  61 | this is not dang
        ^^^^^^^^^^^
-  54 |
+  62 |
      |
 ! syntax error: unexpected 'this is not'
 

@@ -76,6 +76,8 @@ var sdkFixtures = []sdkFixture{
 		"fail-exec":         racyReply,
 		"fail-exec-wrapped": racyReply,
 		"call-failing-dep":  racyReply,
+		// same for the dep call after a log line
+		"call-failing-dep-logged": racyReply,
 	}},
 	// BAD: no error marker: the entrypoint raises the dispatcher's whole
 	// stderr, so the error message is the function's own stderr lines and a
@@ -151,6 +153,9 @@ var sdkCases = []sdkCase{
 	// go, cross-SDK for the rest. BAD: expanded, the caller's message is
 	// "call module entrypoint: exit code: 1".
 	{function: "call-failing-dep", fail: true},
+	// The same, after the function logs a line of its own: that line belongs
+	// on the function's row, while the dep's withExec is the origin.
+	{function: "call-failing-dep-logged", fail: true},
 }
 
 // sdkExamples are the golden examples of every SDK fixture: each failing case

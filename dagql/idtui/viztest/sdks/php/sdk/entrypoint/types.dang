@@ -28,6 +28,10 @@ type ModuleTypes {
           function("callFailingDep", typeDef.withKind(TypeDefKind.STRING_KIND))
             .withDescription("Calls a function of a dependency whose command fails")
         )
+        .withFunction(
+          function("callFailingDepLogged", typeDef.withKind(TypeDefKind.STRING_KIND))
+            .withDescription("Logs a line, then calls a function of a dependency whose command fails")
+        )
         .withConstructor(
           function("", typeDef.withObject("ViztestPhp"))
         ),

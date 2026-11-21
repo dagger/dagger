@@ -15,7 +15,7 @@ $ viztestJava: ViztestJava! X.Xs CACHED
 ✘ .failExecWrapped: String! X.Xs ERROR
 ┃ java.lang.Exception: java function ran a failing command: exit code: 1 [traceparent:00000000000000000000000000000000-0000000000000000]
 ┃         at io.dagger.modules.viztestjava.ViztestJava.failExecWrapped(ViztestJava.java:53)
-┃         at io.dagger.gen.entrypoint.Entrypoint.invoke(Entrypoint.java:140)
+┃         at io.dagger.gen.entrypoint.Entrypoint.invoke(Entrypoint.java:145)
 ┃         at io.dagger.client.ModuleDispatcher.dispatch(ModuleDispatcher.java:97)
 ┃         at io.dagger.client.ModuleDispatcher.engineCall(ModuleDispatcher.java:67)
 ┃         at io.dagger.gen.entrypoint.Entrypoint.main(Entrypoint.java:40)

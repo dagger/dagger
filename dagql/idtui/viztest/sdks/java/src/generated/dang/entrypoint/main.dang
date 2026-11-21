@@ -41,6 +41,11 @@ type Entrypoint implements ModuleEntrypoint {
             .withDescription("Calls a function of a dependency whose command fails.")
             .withCachePolicy(FunctionCachePolicy.PER_SESSION)
         )
+        .withFunction(
+          function("callFailingDepLogged", typeDef.withKind(TypeDefKind.STRING_KIND))
+            .withDescription("Logs a line, then calls a function of a dependency whose command fails.")
+            .withCachePolicy(FunctionCachePolicy.PER_SESSION)
+        )
         .withConstructor(function("", typeDef.withObject("ViztestJava"))),
     ]
   }

@@ -10,6 +10,11 @@ type ModuleTypes {
             .withCachePolicy(FunctionCachePolicy.PER_SESSION)
         )
         .withFunction(
+          function("call_failing_dep_logged", typeDef.withKind(TypeDefKind.STRING_KIND))
+            .withDescription("Logs a line, then calls a function of a dependency whose command fails.")
+            .withCachePolicy(FunctionCachePolicy.PER_SESSION)
+        )
+        .withFunction(
           function("fail_exec", typeDef.withKind(TypeDefKind.STRING_KIND))
             .withDescription("Runs a command that fails, and lets its error propagate.")
             .withCachePolicy(FunctionCachePolicy.PER_SESSION)

@@ -43,6 +43,7 @@ type functionSpec struct {
 var functions = []functionSpec{
 	{Name: "viztestGo", Receiver: "ViztestGo", FnName: "", Args: map[string]argumentSpec{}},
 	{Name: "callFailingDep", Receiver: "ViztestGo", FnName: "CallFailingDep", Args: map[string]argumentSpec{}},
+	{Name: "callFailingDepLogged", Receiver: "ViztestGo", FnName: "CallFailingDepLogged", Args: map[string]argumentSpec{}},
 	{Name: "failExec", Receiver: "ViztestGo", FnName: "FailExec", Args: map[string]argumentSpec{}},
 	{Name: "failExecWrapped", Receiver: "ViztestGo", FnName: "FailExecWrapped", Args: map[string]argumentSpec{}},
 	{Name: "failExitCode", Receiver: "ViztestGo", FnName: "FailExitCode", Args: map[string]argumentSpec{}},

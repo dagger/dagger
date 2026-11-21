@@ -68,6 +68,14 @@ func (*ViztestGo) CallFailingDep(ctx context.Context) (string, error) {
 	return sdkdep.New().FailExec(ctx)
 }
 
+// CallFailingDepLogged logs a line, then calls a function of a dependency
+// whose command fails.
+// +cache="session"
+func (*ViztestGo) CallFailingDepLogged(ctx context.Context) (string, error) {
+	fmt.Println("go function stdout")
+	return sdkdep.New().FailExec(ctx)
+}
+
 func failingExec() *core.Container {
 	return core.NewContainer().
 		From("alpine").

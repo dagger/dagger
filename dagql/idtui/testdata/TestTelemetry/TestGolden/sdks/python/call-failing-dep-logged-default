@@ -1,0 +1,17 @@
+Expected stderr:
+
+✔ connect X.Xs
+✔ load workspace: . X.Xs
+✔ parsing command line arguments X.Xs
+
+$ viztestPython: ViztestPython! X.Xs CACHED
+✘ .callFailingDepLogged: String! X.Xs ERROR
+┇ call module entrypoint ›
+✘ withExec python -m dagger.mod call --output /dagger/result.json (
+  ┆ stdin: "{\"receiverType\":\"ViztestPython\",\"receiverValue\":\"{}\",\"fnName\":\"call_failing_dep_logged\",\"fnArgs\":\"{}\"}"
+  ┆ experimentalPrivilegedNesting: true
+  ┆ moduleContext: Module._implementationScoped: Module!
+  ) X.Xs ERROR
+! exit code: 2
+
+Setup tracing by running "dagger cloud signup". To hide set DAGGER_NO_NAG=1
