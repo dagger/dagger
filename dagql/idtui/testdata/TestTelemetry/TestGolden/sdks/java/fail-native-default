@@ -6,7 +6,8 @@ Expected stderr:
 
 $ viztestJava: ViztestJava! X.Xs CACHED
 ✘ .failNative: Void X.Xs ERROR
-✘ call module entrypoint X.Xs ERROR
-! call module entrypoint: java function failed natively
+java function stdout
+java function stderr
+! java function failed natively
 
 Setup tracing by running "dagger cloud signup". To hide set DAGGER_NO_NAG=1

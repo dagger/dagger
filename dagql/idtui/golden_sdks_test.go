@@ -18,9 +18,13 @@ import (
 // engine's built-in runtimes. Every fixture has the same functions, so the
 // goldens of one case line up across SDKs; see viztest/sdks/go/main.go.
 //
-// These goldens record what users see TODAY, warts and all: they are meant to
-// change as error bubbling and log propagation through module entrypoints are
-// fixed.
+// These goldens record the output we WANT, not what users see today: no
+// module entrypoint plumbing on screen, the original failure as the origin of
+// the outermost call, and the logs of the thing that failed. They fail until
+// error bubbling and log propagation through module entrypoints are fixed;
+// the commit that turned them into targets shows today's output as its diff.
+// The fail-exec-wrapped goldens still record today's output: wrapping is not
+// targeted yet.
 type sdkFixture struct {
 	lang string
 	// a source file of the module, and code that, appended to it, breaks the
@@ -29,8 +33,6 @@ type sdkFixture struct {
 	// the SDK runs no process of the function's own: it can't exit with a
 	// code, and logs only to stdout
 	noProcess bool
-	// BAD: the function's own stdout breaks the call, so log-success fails
-	logBreaksCall bool
 	// BAD: the SDK has no function cache policy, so log-success is cached
 	// and its logs are never seen again
 	noCachePolicy bool
@@ -40,10 +42,7 @@ type sdkFixture struct {
 	racy map[string]string
 }
 
-const (
-	racyReply      = "the dispatcher's reply on stdout races its stack trace on stderr"
-	racyQueryError = "the dispatcher writes an API error's stdout and stderr at once"
-)
+const racyReply = "the dispatcher's reply on stdout races its stack trace on stderr"
 
 // What every entrypoint SDK gets wrong today:
 //
@@ -70,23 +69,16 @@ var sdkFixtures = []sdkFixture{
 	// shares: the reply no longer decodes, so log-success fails, and a
 	// function that logs and throws loses its message to "exit code: 2". A
 	// syntax error is the dispatcher's "exit code: 1", without the error.
-	{lang: "typescript", source: "src/index.ts", breakage: "\nthis is not typescript\n", logBreaksCall: true, racy: map[string]string{
-		"log-success":       racyReply,
-		"fail-native":       racyReply,
-		"fail-exec":         racyReply,
+	// Its fail-exec-wrapped golden, still today's output, keeps the race.
+	{lang: "typescript", source: "src/index.ts", breakage: "\nthis is not typescript\n", racy: map[string]string{
 		"fail-exec-wrapped": racyReply,
-		"call-failing-dep":  racyReply,
-		// same for the dep call after a log line
-		"call-failing-dep-logged": racyReply,
 	}},
 	// BAD: no error marker: the entrypoint raises the dispatcher's whole
 	// stderr, so the error message is the function's own stderr lines and a
 	// stack trace, and an exit with a code reads "php function stderr". The
 	// client sends every default argument, so a withExec renders with all of
 	// them.
-	{lang: "php", source: "src/ViztestPhp.php", breakage: "\nthis is not php;\n", noCachePolicy: true, racy: map[string]string{
-		"fail-exec": racyQueryError,
-	}},
+	{lang: "php", source: "src/ViztestPhp.php", breakage: "\nthis is not php;\n", noCachePolicy: true},
 	// Errors use the ::dagger-function-error:: marker. BAD: a build failure
 	// is the trace 150bc33a shape: maven's withExec, "exit code: 1", and none
 	// of the compiler's output.
@@ -182,11 +174,7 @@ func sdkExamples() []Example {
 				NormalizeSDK: true,
 			}
 			if c.function == "log-success" {
-				if fx.logBreaksCall {
-					c.fail, ex.Fail = true, true
-				} else {
-					ex.FuzzyTest = fx.logSuccessOutput
-				}
+				ex.FuzzyTest = fx.logSuccessOutput
 			}
 			examples = append(examples, ex)
 			if c.fail {

@@ -6,12 +6,10 @@ Expected stderr:
 
 $ viztestPython: ViztestPython! X.Xs CACHED
 ✘ .callFailingDep: String! X.Xs ERROR
-┇ call module entrypoint ›
-✘ withExec python -m dagger.mod call --output /dagger/result.json (
-  ┆ stdin: "{\"receiverType\":\"ViztestPython\",\"receiverValue\":\"{}\",\"fnName\":\"call_failing_dep\",\"fnArgs\":\"{}\"}"
-  ┆ experimentalPrivilegedNesting: true
-  ┆ moduleContext: Module._implementationScoped: Module!
-  ) X.Xs ERROR
-! exit code: 2
+┇ .failExec ›
+✘ withExec sh -c 'echo dep exec stdout; sleep 0.1; echo dep exec stderr >&2; exit 1' X.Xs ERROR
+dep exec stdout
+dep exec stderr
+! exit code: 1
 
 Setup tracing by running "dagger cloud signup". To hide set DAGGER_NO_NAG=1

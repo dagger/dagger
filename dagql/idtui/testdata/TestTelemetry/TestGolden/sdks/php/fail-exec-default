@@ -6,7 +6,7 @@ Expected stderr:
 
 $ viztestPhp: ViztestPhp! X.Xs CACHED
 ✘ .failExec: String! X.Xs ERROR
-✘ withExec sh -c 'echo exec stdout; sleep 0.1; echo exec stderr >&2; exit 1' (useEntrypoint: false, stdin: "", redirectStdin: "", redirectStdout: "", redirectStderr: "", disableDaggerInDagger: false, experimentalPrivilegedNesting: false, daggerInDaggerNewSession: false, insecureRootCapabilities: false, expand: false, noInit: false) X.Xs ERROR
+✘ withExec sh -c 'echo exec stdout; sleep 0.1; echo exec stderr >&2; exit 1' X.Xs ERROR
 exec stdout
 exec stderr
 ! exit code: 1

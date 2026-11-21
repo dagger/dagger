@@ -2,13 +2,10 @@ Expected stderr:
 
 ✔ connect X.Xs
 ✘ load workspace: . X.Xs ERROR
-┇ loading type definitions › load extra module: ./viztest/sdks/broken-dang › ModuleSource.asModule ›
-✘ ModuleSource._moduleTypesDefinition(
-  ┆ introspectionJson: __schemaJSONFile(hiddenTypes: ["Host", "Engine", "EngineCache", "EngineCacheEntry", "EngineCacheEntrySet"], hiddenFields: ["Query.currentWorkspace", "Query.engineVolume", "Query.sshfsVolume", "Query.setSessionTitle", "Address.volume"]): File!
-  ┆ moduleName: "viztest-dang"
-  ): Module! X.Xs ERROR
-failed to parse file /tmp/dagger-dang/viztest-dang-XXXXXXXX/viztest/sdks/broken-dang/main.dang: Error: syntax error: unexpected 'this is not'
-  --> /tmp/dagger-dang/viztest-dang-XXXXXXXX/viztest/sdks/broken-dang/main.dang:61:1
+┇ loading type definitions ›
+✘ load extra module: ./viztest/sdks/broken-dang X.Xs ERROR
+Error: syntax error: unexpected 'this is not'
+  --> viztest/sdks/broken-dang/main.dang:61:1
      |
   59 | }
   60 |

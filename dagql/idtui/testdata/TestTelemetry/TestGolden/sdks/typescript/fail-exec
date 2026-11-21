@@ -13,43 +13,6 @@ Expected stderr:
 
 $ viztestTypescript: ViztestTypescript! X.Xs CACHED
 ✘ .failExec: String! X.Xs ERROR
-┃ ExecError: exit code: 1 [traceparent:00000000000000000000000000000000-0000000000000000]
-┃     at compute (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/core.js:99841:15)
-┃     at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
-┃     at async computeQuery (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/core.js:99815:10)
-┃     at async Container.stdout (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/client.gen.ts:8049:39)
-┃     at async invoke (/workspace/viztest/sdks/typescript/entrypoint/__dagger.dispatch.ts:72:28)
-┃     at async connection.LogOutput (/workspace/viztest/sdks/typescript/entrypoint/__dagger.dispatch.ts:215:24)
-┃     at async <anonymous> (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/core.js:99971:7)
-┃     at async withGQLClient (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/core.js:99956:12)
-┃     at async withSession (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/core.js:99969:5)
-┃     at async withTracing (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/core.js:99718:5) {
-┃   cause: undefined,
-┃   code: 'D109',
-┃   cmd: [
-┃     'sh',
-┃     '-c',
-┃     'echo exec stdout; sleep 0.1; echo exec stderr >&2; exit 1'
-┃   ],
-┃   exitCode: 1,
-┃   stdout: 'exec stdout',
-┃   stderr: 'exec stderr',
-┃   extensions: {
-┃     _type: 'EXEC_ERROR',
-┃     cmd: [
-┃       'sh',
-┃       '-c',
-┃       'echo exec stdout; sleep 0.1; echo exec stderr >&2; exit 1'
-┃     ],
-┃     exitCode: 1,
-┃     stderr: 'exec stderr',
-┃     stdout: 'exec stdout'
-┃   }
-┃ }
-┃ {"error":{"message":"exit code: 1 [traceparent:00000000000000000000000000000000-0000000000000000]"}}
-├╴✘ call module entrypoint X.Xs ERROR
-│ ┆ (the entrypoint's own evaluation, elided)
-│
 ├╴$ Container.from(address: "alpine"): Container! X.Xs CACHED
 ├╴✘ withExec sh -c 'echo exec stdout; sleep 0.1; echo exec stderr >&2; exit 1' X.Xs ERROR
 │ ┃ exec stdout

@@ -6,9 +6,6 @@ Expected stderr:
 
 $ viztestDang: ViztestDang! X.Xs CACHED
 ✘ .failNative: Void X.Xs ERROR
-! dang function failed natively
-
-✘ ViztestDang.failNative: Void X.Xs ERROR
 dang function stdout
 ! dang function failed natively
 
