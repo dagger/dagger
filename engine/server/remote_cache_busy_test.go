@@ -215,7 +215,12 @@ func TestRemoteCacheAdapterCountsItsLooksForReadyRoots(t *testing.T) {
 			took <- ready
 		}
 	}()
-	require.Eventually(t, func() bool { return e.adapter.readyStats.snapshot().looks >= 1 }, 10*time.Second, 5*time.Millisecond, "a look while the row runs")
+	// The look as the roots began to wait, and the one their added wake
+	// brings, both while the row runs: after them only an end wakes it.
+	require.Eventually(t, func() bool {
+		s := e.adapter.readyStats.snapshot()
+		return s.looks >= 2 && s.addWakes >= 1
+	}, 10*time.Second, 5*time.Millisecond, "the looks while the row runs")
 	e.bodies.unpause()
 	select {
 	case ready := <-took:
@@ -224,9 +229,9 @@ func TestRemoteCacheAdapterCountsItsLooksForReadyRoots(t *testing.T) {
 		t.Fatal("the busy roots were never handed on as ready")
 	}
 	stats := e.adapter.readyStats.snapshot()
-	require.GreaterOrEqual(t, stats.looks, int64(2), "a look as the roots began to wait, and one after the evaluation's end")
+	require.GreaterOrEqual(t, stats.looks, int64(3), "two looks while the row runs, and one after the evaluation's end")
 	require.GreaterOrEqual(t, stats.endWakes, int64(1))
-	require.GreaterOrEqual(t, stats.rows, int64(2*len(roots)), "each look reads both roots' rows")
+	require.GreaterOrEqual(t, stats.rows, int64(3*len(roots)), "each look reads both roots' rows")
 	require.Positive(t, stats.lookTime)
 	require.Equal(t, int64(len(roots)), stats.roots)
 	require.Contains(t, stats.attrs(), "look_time")
