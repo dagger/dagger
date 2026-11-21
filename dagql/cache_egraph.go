@@ -219,9 +219,7 @@ func (c *Cache) initEgraphLocked() {
 	if c.nextEgraphTermID == 0 {
 		c.nextEgraphTermID = 1
 	}
-	if c.nextSharedResultID == 0 {
-		c.nextSharedResultID = 1
-	}
+	c.nextSharedResultID.CompareAndSwap(0, 1)
 }
 
 func (c *Cache) ensureEqClassForDigestLocked(ctx context.Context, dig string) eqClassID {
@@ -2153,8 +2151,7 @@ func (c *Cache) indexWaitResultInEgraphLocked(
 	// ensure the result has its int ID initialized, then index it by that int it
 	// and by all of its digests in our various maps
 	if res.id == 0 {
-		res.id = c.nextSharedResultID
-		c.nextSharedResultID++
+		res.id = c.takeResultIDs(1)
 	}
 	c.putResultLocked(res)
 	// An entry with a frame keeps it, decoded or held compressed in its

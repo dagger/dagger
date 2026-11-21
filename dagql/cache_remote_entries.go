@@ -534,10 +534,9 @@ func (c *Cache) newHoldingLocked(ctx context.Context, state *remoteCacheState, k
 	entry := c.resultsByID[c.entriesByRecipe[desc.Recipe]]
 	if entry == nil {
 		entry = &sharedResult{
-			id:          c.nextSharedResultID,
+			id:          c.takeResultIDs(1),
 			description: desc.Field,
 		}
-		c.nextSharedResultID++
 		c.putResultLocked(entry)
 		c.indexRecipeLocked(desc.Recipe, entry)
 	}

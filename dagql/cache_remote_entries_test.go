@@ -1573,8 +1573,7 @@ func TestCompactEqClassesFreesEverySlotWhenNoClassIsLive(t *testing.T) {
 	_, cloud := storedPartTestCache(t, WithBlobStore())
 	testDeadEqClasses(t, cloud, 8)
 	cloud.egraphMu.Lock()
-	entry := &sharedResult{id: cloud.nextSharedResultID}
-	cloud.nextSharedResultID++
+	entry := &sharedResult{id: cloud.takeResultIDs(1)}
 	cloud.putResultLocked(entry)
 	before, live := cloud.eqClassSlotsLocked(), testLiveEqClassesLocked(cloud)
 	cloud.egraphMu.Unlock()
