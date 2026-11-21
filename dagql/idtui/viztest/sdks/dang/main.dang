@@ -32,7 +32,7 @@ type ViztestDang {
   """
   failExecWrapped: String! @cache(policy: FunctionCachePolicy.PER_SESSION) {
     failingExec.stdout rescue {
-      err: Error! => raise "dang function ran a failing command: " + err.message
+      err: GraphQLError! => raise "dang function ran a failing command: " + err.message
     }
   }
 

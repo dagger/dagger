@@ -155,6 +155,7 @@ so in most cases you should just let it skip.`)
 	// Remove test-owned workspace files if they exist now too, since Cleanup
 	// doesn't always run, e.g. after a ctrl-C.
 	exec.Command("rm", "-rf", ".git", ".dagger", "dagger.lock").Run()
+	removeBrokenSDKFixtures()
 
 	cmd := exec.Command("sh", "-c", "git init && git remote add origin git@github.com:dagger/dagger")
 	if co, err := cmd.CombinedOutput(); err != nil {
