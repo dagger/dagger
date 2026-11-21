@@ -1408,8 +1408,9 @@ type EngineRestoreWindow struct {
 // merge and the merge's commit, and how long the merge waited behind the
 // merges that answer lookups before it began; then how long its merge's
 // preparation waited for the cache's lock, in all and by the kind of writer
-// that let each wait in, as EngineLookupLockWaits names them. Durations are
-// in nanoseconds.
+// that let each wait in, as EngineLookupLockWaits names them; then how long
+// its merge waited for its decode, which runs while the part before it
+// merges. Durations are in nanoseconds.
 type EngineRestorePart struct {
 	Records          int              `json:"records"`
 	Committed        int64            `json:"committed"`
@@ -1424,4 +1425,5 @@ type EngineRestorePart struct {
 	PriorityWait     int64            `json:"priorityWait,omitempty"`
 	PrepareLockWait  int64            `json:"prepareLockWait,omitempty"`
 	PrepareLockWaits map[string]int64 `json:"prepareLockWaits,omitempty"`
+	DecodeWait       int64            `json:"decodeWait,omitempty"`
 }

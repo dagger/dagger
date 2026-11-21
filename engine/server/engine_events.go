@@ -320,6 +320,7 @@ func (srv *Server) restoreEvents() []telemetryattrs.EngineRestore {
 				PriorityWait:     int64(part.PriorityWait),
 				PrepareLockWait:  int64(part.PrepareLockWait),
 				PrepareLockWaits: nanoseconds(part.PrepareLockWaits),
+				DecodeWait:       int64(part.DecodeWait),
 			})
 		}
 		events[i] = event

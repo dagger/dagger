@@ -476,6 +476,7 @@ func TestEngineStopEventCarriesWhereLandingTimeWent(t *testing.T) {
 			Records: 3, Committed: time.Unix(101, 0),
 			Decode: time.Millisecond, Prepare: 2 * time.Millisecond, Commit: 3 * time.Millisecond, PriorityWait: 4 * time.Millisecond,
 			PrepareLockWait: 5 * time.Millisecond, PrepareLockWaits: map[string]time.Duration{"sharing": 5 * time.Millisecond},
+			DecodeWait: 6 * time.Millisecond,
 		}},
 		Window: &remotecache.RestoreWindow{
 			Wall: time.Second, CPU: 2 * time.Second, GCCPU: 300 * time.Millisecond, GCAssist: 100 * time.Millisecond, GCCycles: 2,
@@ -498,6 +499,7 @@ func TestEngineStopEventCarriesWhereLandingTimeWent(t *testing.T) {
 		Records: 3, Committed: time.Unix(101, 0).UnixNano(),
 		Decode: int64(time.Millisecond), Prepare: int64(2 * time.Millisecond), Commit: int64(3 * time.Millisecond), PriorityWait: int64(4 * time.Millisecond),
 		PrepareLockWait: int64(5 * time.Millisecond), PrepareLockWaits: map[string]int64{"sharing": int64(5 * time.Millisecond)},
+		DecodeWait: int64(6 * time.Millisecond),
 	}}, stop.Restores[1].Parts)
 	runq := int64(7 * time.Millisecond)
 	require.Equal(t, &telemetryattrs.EngineRestoreWindow{
