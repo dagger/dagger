@@ -302,8 +302,9 @@ const maxLoggedSkippedRoots = 8
 // exportLogAttrs are an export's log attributes: its roots, its skipped roots
 // counted by reason and, when there are at most maxLoggedSkippedRoots of
 // them, named with their reasons, its busy rows (busyReport), then what the
-// bundle holds, with the rows it sent held, and how long the capture and the
-// chains took, and then the capture's phases and the chains' layers. With no
+// bundle holds, with the rows it sent held and those of them nothing in it
+// stands on (countHeldUnneeded), and how long the capture and the chains
+// took, and then the capture's phases and the chains' layers. With no
 // bundle, those of the capture and the chains are 0.
 // carriedContentPreferred counts an export's records whose frame carries
 // the content-preferred digest the engine computed for it: the records, the
@@ -334,14 +335,62 @@ func countCarriedContentPreferred(values []dagql.TransferredValue) carriedConten
 	return out
 }
 
+// countHeldUnneeded counts a bundle's held rows that nothing in the bundle
+// stands on: no root, no output on it, named by no output's owner or as a
+// service an output's value binds, and the dependency of no row sent in
+// full. The receiver lands a row sent in full on the rows its dependencies
+// name, and an output on its row; a held row that only held rows depend on
+// carries nothing it reads, since the held row above stands for its
+// closure. One pass over the bundle's roots, outputs and rows, by ordinal.
+func countHeldUnneeded(bundle dagql.ValueBundle) int {
+	stood := make([]bool, len(bundle.Values)+1)
+	stand := func(ordinal uint64) {
+		if ordinal < uint64(len(stood)) {
+			stood[ordinal] = true
+		}
+	}
+	for _, root := range bundle.Roots {
+		stand(uint64(root.Ordinal))
+	}
+	for _, output := range bundle.Outputs {
+		stand(uint64(output.Ordinal))
+		if output.Owner != nil {
+			for _, dep := range output.Owner.DependencyIDs {
+				stand(dep)
+			}
+		}
+		if output.Value != nil {
+			for _, service := range output.Value.Services {
+				stand(service.ServiceResultID)
+			}
+		}
+	}
+	for _, value := range bundle.Values {
+		if value.Held != "" {
+			continue
+		}
+		for _, dep := range value.DependencyIDs {
+			stand(dep)
+		}
+	}
+	unneeded := 0
+	for _, value := range bundle.Values {
+		if value.Held != "" && (uint64(value.Ordinal) >= uint64(len(stood)) || !stood[value.Ordinal]) {
+			unneeded++
+		}
+	}
+	return unneeded
+}
+
 func exportLogAttrs(req protocol.Export, skipped []protocol.SkippedRoot, values *dagql.ExportedValues, capture time.Duration, local exportCapture, busy busyReport) []any {
-	var records, held, outputs int
+	var records, held, heldUnneeded, outputs int
 	var chains time.Duration
 	var phases dagql.ExportPhases
 	var stats snapshots.ExportStats
 	var carried carriedContentPreferred
 	if values != nil {
 		records, held, outputs, chains = len(values.Bundle.Values), len(values.Rows.Held), len(values.Bundle.Outputs), values.ChainTime
+		heldUnneeded = countHeldUnneeded(values.Bundle)
 		carried = countCarriedContentPreferred(values.Bundle.Values)
 		phases = values.Phases
 		if values.Chains != nil {
@@ -370,6 +419,7 @@ func exportLogAttrs(req protocol.Export, skipped []protocol.SkippedRoot, values 
 	return append(attrs,
 		"records", records,
 		"held", held,
+		"held_unneeded", heldUnneeded,
 		"outputs", outputs,
 		"capture", capture,
 		"chains", chains,
