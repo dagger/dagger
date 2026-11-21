@@ -11,21 +11,28 @@ import (
 // reader to ask again of only those (RemoteChange.Holdings and Entries).
 //
 // An entry is marked where anything a reader asks of it changes. What an
-// entry's class mates answer changes too when the entry's value, record,
-// stored parts or expiry change, or its class gains it: their part answers
-// consider it (AvailablePart), and their classes' entries include it. Those
-// marks (markEntryClassLocked) are widened to every entry of the entry's
-// classes when the marks are handed back. Its holdings and recipes are its
-// own (markEntryLocked). Its holdings would reach its class mates only by
-// turning whether it has a value (noValueLocked), which never happens to an
-// entry that stays: an entry with no value is owned by its holdings alone,
-// as a prune drops only values that holdings alone keep and a value depends
-// only on entries with values, so it goes with its last engine holding
+// entry's class mates answer changes too when the entry holds a part for the
+// class, a stored copy or a record that marks it absent (holdsAnyPartLocked),
+// and its value, record, stored parts or expiry change, or it joins the
+// class: their part answers consider the class's holders (AvailablePart).
+// Those marks (markEntryClassLocked) are widened to every entry of the
+// entry's classes when the marks are handed back, when the entry held a part
+// at the mark or holds one then. A member that holds nothing changes no class
+// mate's answer, and a reader keeps no class's list of entries
+// (RemoteChange): on a docs-only edit, widening every new result's mark named
+// a class's thousand entries each time, and the reader asked all their part
+// answers again. A join names each side's entries when the other side holds a
+// part (markJoinLocked). Its holdings and recipes are its own
+// (markEntryLocked). Its holdings would reach its class mates only by turning
+// whether it has a value (noValueLocked), which never happens to an entry
+// that stays: an entry with no value is owned by its holdings alone, as a
+// prune drops only values that holdings alone keep and a value depends only
+// on entries with values, so it goes with its last engine holding
 // (markLeavingLocked); and one gains its first holding only as it is
-// created, which marks its class. Classes only grow
-// until an entry is removed, so widening then reaches every entry whose
-// class the change touched, but for a removed entry's: its class mates are
-// marked as it leaves its classes (markLeavingLocked), while the classes
+// created, which marks its class. Classes only grow until an entry is
+// removed, so widening then reaches every entry whose class the change
+// touched, but for a removed entry's: when it held a part, its class mates
+// are marked as it leaves its classes (markLeavingLocked), while the classes
 // still name them.
 //
 // A holding is marked where any field of its description
@@ -49,6 +56,12 @@ type changeMarks struct {
 	// part at the mark, or the mark is a stored part's own write: whether
 	// the write can change what its class mates borrow (stampEntryLocked).
 	lends []bool
+	// holds says, for each class mark, whether the marked entry held a part
+	// for its class at the mark (holdsAnyPartLocked), or lends: whether the
+	// write can change its class mates' part answers, read before a
+	// replacement or a prune empties it. A join's mark holds nothing: the
+	// join names what it changes itself (markJoinLocked).
+	holds []bool
 	// lending are the entries with a class mark that can lend whose stamps
 	// no write has applied yet: an entry that leaves its classes before they
 	// are applied, its class mates no longer reachable from it, lends to
@@ -58,8 +71,10 @@ type changeMarks struct {
 	// left are the classes whose entries a leaving entry has marked, so
 	// collecting a whole class walks it once, not once per entry, and
 	// whether their entries' stamps moved: a later leaving entry that lends
-	// still moves them.
-	left map[eqClassID]bool
+	// still moves them. leftNamed are those whose entries a leaving holder
+	// has named.
+	left      map[eqClassID]bool
+	leftNamed map[eqClassID]bool
 }
 
 // markEntryLocked marks the entry numbered id: its own facts or holdings
@@ -84,10 +99,13 @@ func (c *Cache) markEntryClassLocked(id sharedResultID, cause StampCause) {
 	// Whether the entry has a stored part is read now, before a replacement
 	// or a prune empties it.
 	lends := cause == StampPartStored || cause == StampPartDropped
-	if res := c.resultsByID[id]; res != nil && len(res.storedParts) > 0 {
+	res := c.resultsByID[id]
+	if res != nil && len(res.storedParts) > 0 {
 		lends = true
 	}
 	c.changes.lends = append(c.changes.lends, lends)
+	holds := cause != StampJoin && (lends || res != nil && res.holdsAnyPartLocked())
+	c.changes.holds = append(c.changes.holds, holds)
 	if lends {
 		if c.changes.lending == nil {
 			c.changes.lending = map[sharedResultID]struct{}{}
@@ -121,10 +139,22 @@ func (c *Cache) markLeavingLocked(id sharedResultID) {
 	// one it stores, or one a mark not yet applied says it stored.
 	_, lends := c.changes.lending[id]
 	lends = lends || leaving != nil && len(leaving.storedParts) > 0
+	// Its class mates' part answers change only if it held a part for them
+	// (holdsAnyPartLocked), and their class lists are no reader's to keep.
+	holds := lends || leaving != nil && leaving.holdsAnyPartLocked()
 	for eqID := range c.resultOutputEqClasses[id] {
 		root := c.eqClassRootLocked(eqID)
 		if root == 0 {
 			continue
+		}
+		if holds && !c.changes.leftNamed[root] {
+			if c.changes.leftNamed == nil {
+				c.changes.leftNamed = map[eqClassID]bool{}
+			}
+			c.changes.leftNamed[root] = true
+			for member := range c.outputEqClassResults[root] {
+				c.changes.entries = append(c.changes.entries, member)
+			}
 		}
 		stamped, seen := c.changes.left[root]
 		if seen && (stamped || !lends) {
@@ -134,15 +164,50 @@ func (c *Cache) markLeavingLocked(id sharedResultID) {
 			c.changes.left = map[eqClassID]bool{}
 		}
 		c.changes.left[root] = lends
+		if !lends {
+			continue
+		}
 		for member := range c.outputEqClassResults[root] {
-			if !seen {
-				c.changes.entries = append(c.changes.entries, member)
-			}
-			if member != id && lends {
+			if member != id {
 				c.stampEntryLocked(c.resultsByID[member], StampLeft|StampViaClass)
 			}
 		}
 	}
+}
+
+// markJoinLocked names, for readers, what a join of two classes' entries, a
+// and b, changes: each side's entries now answer from the other side's
+// holders too (AvailablePart), so a side's entries are named when the other
+// side has a holder. A new entry that holds nothing, joining a class, changes
+// no class mate's answer, and its own marks name it. Requires egraphMu for
+// writing.
+func (c *Cache) markJoinLocked(a, b map[sharedResultID]struct{}) {
+	if c.changes == nil {
+		return
+	}
+	aHolds, bHolds := c.someHoldsLocked(a), c.someHoldsLocked(b)
+	for _, side := range []struct {
+		names map[sharedResultID]struct{}
+		other bool
+	}{{a, bHolds}, {b, aHolds}} {
+		if !side.other {
+			continue
+		}
+		for id := range side.names {
+			c.changes.entries = append(c.changes.entries, id)
+		}
+	}
+}
+
+// someHoldsLocked reports whether any of the entries holds a part for its
+// class (holdsAnyPartLocked). Requires egraphMu.
+func (c *Cache) someHoldsLocked(ids map[sharedResultID]struct{}) bool {
+	for id := range ids {
+		if res := c.resultsByID[id]; res != nil && res.holdsAnyPartLocked() {
+			return true
+		}
+	}
+	return false
 }
 
 // markHoldingLocked marks the holding key. Requires egraphMu for writing.
@@ -154,8 +219,8 @@ func (c *Cache) markHoldingLocked(key HolderKey) {
 }
 
 // takeChangesLocked hands the marks back in change, sorted, and clears them:
-// each marked holding and entry, and every entry of each class-marked
-// entry's classes. A write takes them at its end, under the hold that made
+// each marked holding and entry, and every entry of the classes of each
+// class-marked entry that held a part at its mark or holds one now. A write takes them at its end, under the hold that made
 // them, so each is handed back by the write that made it. Requires egraphMu
 // for writing.
 func (c *Cache) takeChangesLocked(change *RemoteChange) {
@@ -169,8 +234,21 @@ func (c *Cache) takeChangesLocked(change *RemoteChange) {
 	}
 	c.stampClassMarksLocked(marks.stamped)
 	var widened map[eqClassID]struct{}
-	for _, id := range marks.classes {
+	for i, id := range marks.classes {
+		// A join's mark is any one entry of a side, for the stamps of the
+		// bundles that borrow from the class: the join names the entries
+		// whose answers it changes itself (markJoinLocked).
+		if marks.causes[i] == StampJoin {
+			continue
+		}
 		change.Entries = append(change.Entries, uint64(id))
+		// Widened only when the entry held a part at the mark or holds one
+		// now: otherwise the write changed no class mate's answer.
+		if !marks.holds[i] {
+			if res := c.resultsByID[id]; res == nil || !res.holdsAnyPartLocked() {
+				continue
+			}
+		}
 		for eqID := range c.resultOutputEqClasses[id] {
 			root := c.eqClassRootLocked(eqID)
 			if root == 0 {
@@ -193,10 +271,11 @@ func (c *Cache) takeChangesLocked(change *RemoteChange) {
 	change.Holdings = append(change.Holdings, marks.holdings...)
 	slices.SortFunc(change.Holdings, compareChangedHoldings)
 	change.Holdings = slices.CompactFunc(change.Holdings, func(a, b HolderKey) bool { return a == b })
-	marks.entries, marks.classes, marks.causes, marks.lends, marks.holdings = marks.entries[:0], marks.classes[:0], marks.causes[:0], marks.lends[:0], marks.holdings[:0]
+	marks.entries, marks.classes, marks.causes, marks.lends, marks.holds, marks.holdings = marks.entries[:0], marks.classes[:0], marks.causes[:0], marks.lends[:0], marks.holds[:0], marks.holdings[:0]
 	marks.stamped = 0
 	marks.lending = nil
 	marks.left = nil
+	marks.leftNamed = nil
 }
 
 // stampClassMarksLocked applies the stamps of the class marks from the from'th
@@ -271,8 +350,10 @@ func (c *Cache) stampPendingLocked() {
 	c.changes.lending = nil
 	// A later hold of the write walks a leaving entry's classes afresh: their
 	// entries can have changed between the holds, and one walked in an
-	// earlier hold must still be stamped by a later entry's leaving.
+	// earlier hold must still be stamped, and named, by a later entry's
+	// leaving.
 	c.changes.left = nil
+	c.changes.leftNamed = nil
 }
 
 // compareChangedHoldings orders a change's holdings: by number, then cache.
