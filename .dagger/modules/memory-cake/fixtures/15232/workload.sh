@@ -26,6 +26,7 @@ chain() {
   id=$(echo '{ directory { sync } }' | dagger api query --no-load-module | jq -r .directory.sync)
   i=0
   while [ "$i" -lt "$DEPTH" ]; do
+    # shellcheck disable=SC2016 # GraphQL variables, not shell expansions
     q='query($id: ID!) { node(id: $id) { ... on Directory {'
     close=''
     n=0

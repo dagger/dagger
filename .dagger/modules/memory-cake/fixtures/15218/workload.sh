@@ -60,6 +60,7 @@ search() {
     {role: "ASSISTANT", content: [{kind: "TOOL_CALL", callId: "call", toolName: $tool, arguments: $args}]}
   ]' | base64 | tr -d '\n')
   jq -cn --arg m "recording/$recording" --arg p "search $1 $2" '{model: $m, prompt: $p}' >"$tmp/vars.json"
+  # shellcheck disable=SC2016 # GraphQL variables, not shell expansions
   echo 'query($model: String!, $prompt: String!) { llm(model: $model) { withPrompt(prompt: $prompt) { loop { lastReply } } } }' |
     dagger api query --no-load-module --var-json "$(cat "$tmp/vars.json")" >"$tmp/search.out" 2>&1 || true
 }

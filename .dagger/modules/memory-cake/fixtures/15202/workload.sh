@@ -18,6 +18,7 @@ vars=$(jq -n --rawfile cfg probe/dagger.json --rawfile src probe/main.dang '{cfg
 
 k=0
 while [ "$k" -lt "$MODS" ]; do
+  # shellcheck disable=SC2016 # GraphQL variables, not shell expansions
   q='query($cfg: String!, $src: String!) { directory { withNewFile(path: "dagger.json", contents: $cfg) {'
   n=0
   while [ "$n" -lt "$BATCH" ] && [ "$k" -lt "$MODS" ]; do

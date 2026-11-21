@@ -8,7 +8,7 @@
 # pprof on CAKE_HEAP_URL. The baseline is taken here too, before the
 # workload.
 set -u
-cd /fixture
+cd /fixture || exit 1
 HEAP=${CAKE_HEAP_URL:-http://dagger-engine:6060}
 MODE=${CAKE_MODE:-engine}
 

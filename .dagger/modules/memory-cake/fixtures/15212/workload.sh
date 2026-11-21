@@ -33,6 +33,7 @@ vars=$(jq -n --rawfile s gen.sh --arg dirs "$DIRS" '{script: ("DIRS=" + $dirs + 
 
 k=0
 while [ "$k" -lt "$EDITS" ]; do
+  # shellcheck disable=SC2016 # GraphQL variables, not shell expansions
   q='query($script: String!) { container { from(address: "alpine:3.20") { withExec(args: ["sh", "-c", $script]) { directory(path: "/d") { base: digest'
   n=0
   while [ "$n" -lt "$BATCH" ] && [ "$k" -lt "$EDITS" ]; do

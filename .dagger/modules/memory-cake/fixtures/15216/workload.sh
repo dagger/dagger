@@ -28,7 +28,7 @@ open=""
 close=""
 m=0
 while [ "$m" -lt "$MODS" ]; do
-  toml="$toml[modules.mod$m]\\nsource = \\\"modules/mod$m\\\"\\n"
+  toml="${toml}[modules.mod$m]\\nsource = \\\"modules/mod$m\\\"\\n"
   cfg="name = \\\"mod$m\\\"\\nengineVersion = \\\"latest\\\"\\n\\n[runtime]\\nsource = \\\"dang\\\"\\n"
   src="type Mod$m {\\n  pub ok: Void @check { null }\\n  pub alsoOk: Void @check { null }\\n}\\n"
   open="$open withNewFile(path: \"modules/mod$m/dagger-module.toml\", contents: \"$cfg\") { withNewFile(path: \"modules/mod$m/main.dang\", contents: \"$src\") {"
