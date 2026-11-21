@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"net/url"
 	"slices"
 	"strings"
 	"sync"
@@ -197,7 +198,9 @@ type captureContainerBackend struct {
 	runOpts runOpts
 }
 
-func (b *captureContainerBackend) Available(context.Context) (bool, error) {
+func (b *captureContainerBackend) Name() string { return "capture" }
+
+func (b *captureContainerBackend) Available(context.Context, *url.URL) (bool, error) {
 	return true, nil
 }
 

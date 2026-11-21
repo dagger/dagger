@@ -583,17 +583,12 @@ func (c *Client) startEngine(ctx context.Context, params Params) (rerr error) {
 		return fmt.Errorf("parse runner host: %w", err)
 	}
 
-	driver, err := drivers.GetDriver(ctx, remote.Scheme)
+	driver, err := drivers.GetDriver(ctx, remote)
 	if err != nil {
 		return err
 	}
 
-	var cloudToken string
-	if v, ok := os.LookupEnv(drivers.EnvDaggerCloudToken); ok {
-		cloudToken = v
-	} else if _, ok := os.LookupEnv(envDaggerCloudCachetoken); ok {
-		cloudToken = v
-	}
+	cloudToken := os.Getenv(drivers.EnvDaggerCloudToken)
 
 	if c.CloudURLCallback != nil {
 		if url, msg, ok := enginetel.URLForTrace(ctx); ok {

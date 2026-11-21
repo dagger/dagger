@@ -26,30 +26,37 @@ func Helper(u *url.URL) (*connhelper.ConnectionHelper, error) {
 	return &connhelper.ConnectionHelper{
 		ContextDialer: func(ctx context.Context, addr string) (net.Conn, error) {
 			// using background context because context remains active for the duration of the process, after dial has completed
-			return commandconn.New(context.Background(), "kubectl", "--context="+sp.Context, "--namespace="+sp.Namespace,
+			var args []string
+			if sp.Kubeconfig != "" {
+				args = append(args, "--kubeconfig="+sp.Kubeconfig)
+			}
+			args = append(args, "--context="+sp.Context, "--namespace="+sp.Namespace,
 				"exec", "--container="+sp.Container, "-i", sp.Pod, "--", "buildctl", "dial-stdio")
+			return commandconn.New(context.Background(), "kubectl", args...)
 		},
 	}, nil
 }
 
 // Spec
 type Spec struct {
-	Context   string
-	Namespace string
-	Pod       string
-	Container string
+	Kubeconfig string
+	Context    string
+	Namespace  string
+	Pod        string
+	Container  string
 }
 
 // SpecFromURL creates Spec from URL.
-// URL is like kube-pod://<pod>?context=<context>&namespace=<namespace>&container=<container> .
+// URL is like kube-pod://<pod>?kubeconfig=<path>&context=<context>&namespace=<namespace>&container=<container> .
 // Only <pod> part is mandatory.
 func SpecFromURL(u *url.URL) (*Spec, error) {
 	q := u.Query()
 	sp := Spec{
-		Context:   q.Get("context"),
-		Namespace: q.Get("namespace"),
-		Pod:       u.Hostname(),
-		Container: q.Get("container"),
+		Kubeconfig: q.Get("kubeconfig"),
+		Context:    q.Get("context"),
+		Namespace:  q.Get("namespace"),
+		Pod:        u.Hostname(),
+		Container:  q.Get("container"),
 	}
 	if sp.Namespace != "" && !validKubeIdentifier(sp.Namespace) {
 		return nil, errors.Errorf("unsupported namespace name: %q", sp.Namespace)

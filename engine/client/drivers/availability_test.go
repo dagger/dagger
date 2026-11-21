@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,7 +19,7 @@ func TestGetDriverMissingRuntimes(t *testing.T) {
 
 	for _, scheme := range []string{"image", "image+podman", "container+podman"} {
 		t.Run(scheme, func(t *testing.T) {
-			_, err := GetDriver(t.Context(), scheme)
+			_, err := GetDriver(t.Context(), &url.URL{Scheme: scheme, Host: "engine"})
 			require.ErrorContains(t, err, scheme)
 			var unavailable *runtimeUnavailableError
 			require.ErrorAs(t, err, &unavailable)
@@ -45,7 +46,7 @@ func TestGetDriverSelection(t *testing.T) {
 			for _, command := range tc.commands {
 				writeRuntimeCommand(t, dir, command, `test "$*" = version`)
 			}
-			driver, err := GetDriver(t.Context(), "image")
+			driver, err := GetDriver(t.Context(), &url.URL{Scheme: "image"})
 			require.NoError(t, err)
 			require.Same(t, tc.want, driver)
 		})
@@ -66,7 +67,7 @@ func TestGetDriverUnavailableRuntime(t *testing.T) {
 			writeRuntimeCommand(t, dir, "podman", "exit 0")
 
 			// A failed probe must not silently select another backend.
-			driver, err := GetDriver(t.Context(), "image")
+			driver, err := GetDriver(t.Context(), &url.URL{Scheme: "image"})
 			require.Nil(t, driver)
 			var unavailable *runtimeUnavailableError
 			require.ErrorAs(t, err, &unavailable)
