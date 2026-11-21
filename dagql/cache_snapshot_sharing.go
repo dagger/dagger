@@ -773,6 +773,28 @@ func shareReceiverPending(p PartProbe) bool {
 	return !p.LocalComplete && !p.Busy && !p.Descriptor.Absent
 }
 
+// shareSelectionRoles are the members a pass's selection decides between: a
+// slot pairs a receiver's pending part with a member holding that part ready,
+// both of which the unlocked probe read, so only imported receivers with a
+// pending part and members with a ready part are decided. Deciding every
+// member against every other made each pass over a class of 1,190 equal
+// results examine 1.4 million under E.
+func shareSelectionRoles(rows []*sharedResult, observed map[sharedResultID]*shareRowProbe) (receivers, donors []*sharedResult) {
+	for _, row := range rows {
+		probe := observed[row.id]
+		if probe == nil || !probe.usable {
+			continue
+		}
+		if row.imported && slices.ContainsFunc(probe.order, func(key string) bool { return shareReceiverPending(probe.probes[key]) }) {
+			receivers = append(receivers, row)
+		}
+		if slices.ContainsFunc(probe.order, func(key string) bool { return shareDonorReady(probe.probes[key]) }) {
+			donors = append(donors, row)
+		}
+	}
+	return receivers, donors
+}
+
 // selectShareSlots picks one Ready donor for each eligible missing address,
 // in deterministic member and address order. Probing an unready earlier
 // member does not prevent examining a later Ready member.
@@ -782,14 +804,13 @@ func (c *Cache) selectShareSlots(ctx context.Context, item *snapshotShareItem) [
 	observed := c.probeShareMembers(ctx, rows)
 	item.kind = shareClassKindOf(observed)
 
+	receivers, donors := shareSelectionRoles(rows, observed)
+
 	// Lookup preparation resolves a frame's numeric references through E, so
 	// it precedes the E section, as in newSessionlessPartSourceLease. A
 	// restored frame has derived none of its digests yet.
-	lookups := make(map[sharedResultID]partLookup, len(rows))
-	for _, row := range rows {
-		if !row.imported {
-			continue
-		}
+	lookups := make(map[sharedResultID]partLookup, len(receivers))
+	for _, row := range receivers {
 		lookup, err := c.partLookupFor(row)
 		if err != nil {
 			c.traceShareSkip(ctx, row, PersistedPartAddress{}, err)
@@ -806,20 +827,20 @@ func (c *Cache) selectShareSlots(ctx context.Context, item *snapshotShareItem) [
 	eligible := make(map[sharedResultID]bool, len(rows))
 	admits := map[sharePair]bool{}
 	c.lockGraphFor(ctx, workSharing)
-	for _, row := range rows {
+	for _, row := range receivers {
 		lookup, prepared := lookups[row.id]
 		eligible[row.id] = prepared && c.shareReceiverEligibleLocked(row, now)
 		if !eligible[row.id] {
 			continue
 		}
-		// The receiver's admitted equivalents are collected once and
-		// intersected with the held cohort, not collected again per donor.
-		equivalents := c.sessionlessPartEquivalentsLocked(row, lookup)
-		for _, donor := range rows {
+		// Each donor is tested against the receiver's routes: collecting
+		// the receiver's equivalents whole reads the whole class.
+		equivalent := c.sessionlessPartEquivalenceLocked(row, lookup)
+		for _, donor := range donors {
 			if donor == row || partRowExpired(donor, now) {
 				continue
 			}
-			if _, ok := equivalents[donor]; ok {
+			if _, ok := equivalent(donor); ok {
 				admits[sharePair{row.id, donor.id}] = true
 			}
 		}
