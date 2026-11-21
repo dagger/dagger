@@ -1585,26 +1585,27 @@ func (s *Server) resolvePlainList(ctx context.Context, values valueEnumerable, o
 // resolvePlainValue resolves sels on a plain value: a leaf, a list, or an
 // object of objType (nil for a leaf).
 func (s *Server) resolvePlainValue(ctx context.Context, val Typed, objType ObjectType, sels []Selection) (any, error) {
-	if res, ok := val.(AnyResult); ok {
-		if len(sels) > 0 {
-			// a struct field holding a result: resolve its selections on the
-			// result, as the field's call would have
-			return s.resolveResult(ctx, res, sels)
-		}
-		val = res.Unwrap()
+	if len(sels) == 0 {
+		return viewLeaf(val, s.View)
 	}
-	if nullable, ok := val.(Derefable); ok {
-		inner, valid := nullable.Deref()
-		if !valid {
-			return nil, nil
+	for unwrapped := false; !unwrapped; {
+		switch v := val.(type) {
+		case AnyResult:
+			// a struct field holding a result (perhaps nullable): resolve
+			// its selections on the result, as the field's call would have
+			return s.resolveResult(ctx, v, sels)
+		case Derefable:
+			inner, valid := v.Deref()
+			if !valid {
+				return nil, nil
+			}
+			val = inner
+		default:
+			unwrapped = true
 		}
-		val = inner
 	}
 	if val == nil {
 		return nil, nil
-	}
-	if len(sels) == 0 {
-		return viewLeaf(val, s.View)
 	}
 	if list, ok := val.(Enumerable); ok {
 		results := make([]any, list.Len())
@@ -1656,6 +1657,10 @@ func (s *Server) resolvePlainValue(ctx context.Context, val Typed, objType Objec
 
 // resolveResult resolves sels on a result: an object, or a list of them.
 func (s *Server) resolveResult(ctx context.Context, res AnyResult, sels []Selection) (any, error) {
+	if res == nil || res.cacheSharedResult() == nil {
+		// an unset result field
+		return nil, nil
+	}
 	res, ok := res.DerefValue()
 	if !ok || res == nil || res.Unwrap() == nil {
 		return nil, nil

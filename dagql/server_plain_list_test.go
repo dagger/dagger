@@ -10,8 +10,9 @@ import (
 )
 
 type plainHolderTestObject struct {
-	Name string                                     `field:"true"`
-	Held ObjectResult[*reflectedAccessorTestObject] `field:"true"`
+	Name  string                                               `field:"true"`
+	Held  ObjectResult[*reflectedAccessorTestObject]           `field:"true"`
+	Maybe Nullable[ObjectResult[*reflectedAccessorTestObject]] `field:"true"`
 }
 
 func (*plainHolderTestObject) Type() *ast.Type {
@@ -115,13 +116,20 @@ func TestResolvePlainObjectList(t *testing.T) {
 	// a struct field holding a result resolves its selections on the result
 	var held ObjectResult[*reflectedAccessorTestObject]
 	require.NoError(t, srv.Select(ctx, srv.Root(), &held, Selector{Field: "held"}))
-	holders = Array[*plainHolderTestObject]{{Name: "holder", Held: held}}
+	holders = Array[*plainHolderTestObject]{
+		{Name: "holder", Held: held, Maybe: NonNull(held)},
+		{Name: "unset"},
+	}
 	res, err := srv.Resolve(ctx, srv.Root(), Selection{Selector: Selector{Field: "holders"}, Subselections: []Selection{
 		{Selector: Selector{Field: "name"}},
 		{Selector: Selector{Field: "held"}, Subselections: []Selection{{Selector: Selector{Field: "value"}}}},
+		{Selector: Selector{Field: "maybe"}, Subselections: []Selection{{Selector: Selector{Field: "value"}}}},
 	}})
 	require.NoError(t, err)
-	require.Equal(t, []any{map[string]any{"name": String("holder"), "held": map[string]any{"value": Int(42)}}}, res["holders"])
+	require.Equal(t, []any{
+		map[string]any{"name": String("holder"), "held": map[string]any{"value": Int(42)}, "maybe": map[string]any{"value": Int(42)}},
+		map[string]any{"name": String("unset"), "held": nil, "maybe": nil},
+	}, res["holders"])
 
 	// id needs each element's own result: the usual path, same values
 	withID := resolve(append([]Selection{{Selector: Selector{Field: "id"}}}, fields...))
