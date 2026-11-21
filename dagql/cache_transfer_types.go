@@ -264,7 +264,9 @@ type ImportedValue struct {
 //
 // 9: a value a blob-backed cache sends carries its record's complete and
 // declared parts (TransferredValue.Parts).
-const ValueBundleVersion = 9
+// 10: a layer the remote cache carries is a listing, after the content blobs
+// of its larger files (snapshots.MediaTypeListing).
+const ValueBundleVersion = 10
 
 // PersistedTransferCodec operates only on encoded copies, without resolving
 // schemas, operations, result references or storage.
