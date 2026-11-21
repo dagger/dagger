@@ -52,9 +52,11 @@ type RWMutex struct {
 	// named none. Only the writer that holds m reads or writes it: it is
 	// set after the writer takes m, and read and cleared as it releases m.
 	kind LockHolder
-	// waiting counts the acquisitions waiting for m now (waitFor). A writer
-	// records its release (released) only while one waits, so a release
-	// that keeps no one waiting adds a plain load of it and no write.
+	// waiting counts the acquisitions waiting for m now, however they took
+	// it: through waitFor, or Lock or RLock once a try to take m at once
+	// failed (Waiting). A writer records its release (released) only while
+	// one waits, so a release that keeps no one waiting adds a plain load of
+	// it and no write.
 	waiting atomic.Int32
 	// released counts the releases of m by writers that someone waited
 	// for, in its bits above the low 8, and holds in the low 8 the kind of
@@ -127,9 +129,14 @@ type LockWait struct {
 	Holder LockHolder
 }
 
-// Lock locks m for writing, its holder unknown.
+// Lock locks m for writing, its holder unknown. While it has to wait, it
+// counts itself as waiting (Waiting).
 func (m *RWMutex) Lock() {
-	m.RWMutex.Lock()
+	if !m.RWMutex.TryLock() {
+		m.waiting.Add(1)
+		m.RWMutex.Lock()
+		m.waiting.Add(-1)
+	}
 	m.mark(HolderUnknown)
 }
 
@@ -171,7 +178,8 @@ func (m *RWMutex) waitFor(ctx context.Context, ident string, read bool) LockWait
 	before := m.released.Load()
 	start := time.Now()
 	if read {
-		m.RLock()
+		m.RWMutex.RLock()
+		m.markReaders()
 	} else {
 		m.RWMutex.Lock()
 	}
@@ -195,10 +203,23 @@ func (m *RWMutex) waitFor(ctx context.Context, ident string, read bool) LockWait
 	return lw
 }
 
-// RLock locks m for reading.
+// RLock locks m for reading. While it has to wait, it counts itself as
+// waiting (Waiting).
 func (m *RWMutex) RLock() {
-	m.RWMutex.RLock()
+	if !m.RWMutex.TryRLock() {
+		m.waiting.Add(1)
+		m.RWMutex.RLock()
+		m.waiting.Add(-1)
+	}
 	m.markReaders()
+}
+
+// Waiting reports whether any acquisition of m is waiting for it now, for
+// reading or for writing, however it takes m. A holder of m for writing
+// asks it between two of its writes, to let m go only when someone waits
+// (dagql's RemoteWrites).
+func (m *RWMutex) Waiting() bool {
+	return m.waiting.Load() != 0
 }
 
 // TryRLock tries to lock m for reading.
