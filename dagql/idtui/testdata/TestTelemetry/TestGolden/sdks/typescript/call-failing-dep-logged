@@ -14,68 +14,8 @@ Expected stderr:
 $ viztestTypescript: ViztestTypescript! X.Xs CACHED
 ✘ .callFailingDepLogged: String! X.Xs ERROR
 ┃ typescript function stdout
-┃ GraphQLRequestError: call module entrypoint: exit code: 1 [traceparent:00000000000000000000000000000000-0000000000000000]
-┃     at compute (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/core.js:99849:13)
-┃     at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
-┃     at async computeQuery (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/core.js:99815:10)
-┃     ... 4 lines matching cause stack trace ...
-┃     at async withGQLClient (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/core.js:99956:12)
-┃     at async withSession (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/core.js:99969:5)
-┃     at async withTracing (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/core.js:99718:5) {
-┃   cause: ClientError: call module entrypoint: exit code: 1 [traceparent:00000000000000000000000000000000-0000000000000000]: {"response":{"data":null,"errors":[{"message":"call module entrypoint: exit code: 1 [traceparent:00000000000000000000000000000000-0000000000000000]","path":["sdkDep","failExec"]}],"status":200,"headers":{},"body":"{\"errors\":[{\"message\":\"call module entrypoint: exit code: 1 [traceparent:00000000000000000000000000000000-0000000000000000]\",\"path\":[\"sdkDep\",\"failExec\"]}],\"data\":null}"},"request":{"query":"\n      { sdkDep  { failExec  } }\n    "}}
-┃       at runRequest (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/core.js:14694:12)
-┃       at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
-┃       at async GraphQLClient.request (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/core.js:14867:22)
-┃       at async compute (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/core.js:99833:21)
-┃       at async computeQuery (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/core.js:99815:10)
-┃       at async SDKDep.failExec (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/sdk-dep/sdk-dep.gen.ts:61:39)
-┃       at async invoke (/workspace/viztest/sdks/typescript/entrypoint/__dagger.dispatch.ts:66:28)
-┃       at async connection.LogOutput (/workspace/viztest/sdks/typescript/entrypoint/__dagger.dispatch.ts:215:24)
-┃       at async <anonymous> (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/core.js:99971:7)
-┃       at async withGQLClient (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/core.js:99956:12) {
-┃     response: {
-┃       data: null,
-┃       errors: [Array],
-┃       extensions: undefined,
-┃       status: 200,
-┃       headers: [Object],
-┃       body: '{"errors":[{"message":"call module entrypoint: exit code: 1 [traceparent:00000000000000000000000000000000-0000000000000000]","path":["sdkDep","failExec"]}],"data":null}'
-┃     },
-┃     request: {
-┃       query: '\n      { sdkDep  { failExec  } }\n    ',
-┃       variables: undefined
-┃     }
-┃   },
-┃   code: 'D100',
-┃   requestContext: {
-┃     query: '\n      { sdkDep  { failExec  } }\n    ',
-┃     variables: undefined
-┃   },
-┃   response: {
-┃     data: null,
-┃     errors: [ [Object] ],
-┃     extensions: undefined,
-┃     status: 200,
-┃     headers: {
-┃       'content-length': '168',
-┃       'content-type': 'application/graphql-response+json',
-┃       date: 'XXX, XX XXX XXXX XX:XX:XX GMT'
-┃     },
-┃     body: '{"errors":[{"message":"call module entrypoint: exit code: 1 [traceparent:00000000000000000000000000000000-0000000000000000]","path":["sdkDep","failExec"]}],"data":null}'
-┃   },
-┃   extensions: undefined
-┃ }
-┃ {"error":{"message":"call module entrypoint: exit code: 1 [traceparent:00000000000000000000000000000000-0000000000000000]"}}
-├╴✘ call module entrypoint X.Xs ERROR
-│ ┆ (the entrypoint's own evaluation, elided)
-│
 ├╴$ sdkDep: SDKDep! X.Xs CACHED
 ╰╴✘ .failExec: String! X.Xs ERROR
-  ┃ exit code: 1 [traceparent:00000000000000000000000000000000-0000000000000000]
-  ┃ ::dagger-function-error::"exit code: 1 [traceparent:00000000000000000000000000000000-0000000000000000]"
-  ├╴✘ call module entrypoint X.Xs ERROR
-  │ ┆ (the entrypoint's own evaluation, elided)
-  │
   ├╴$ Container.from(address: "alpine"): Container! X.Xs CACHED
   ├╴✘ withExec sh -c 'echo dep exec stdout; sleep 0.1; echo dep exec stderr >&2; exit 1' X.Xs ERROR
   │ ┃ dep exec stdout

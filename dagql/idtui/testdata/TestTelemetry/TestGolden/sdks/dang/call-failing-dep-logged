@@ -16,11 +16,6 @@ $ viztestDang: ViztestDang! X.Xs CACHED
 ┃ dang function stdout
 ├╴$ sdkDep: SDKDep! X.Xs CACHED
 ╰╴✘ .failExec: String! X.Xs ERROR
-  ┃ exit code: 1 [traceparent:00000000000000000000000000000000-0000000000000000]
-  ┃ ::dagger-function-error::"exit code: 1 [traceparent:00000000000000000000000000000000-0000000000000000]"
-  ├╴✘ call module entrypoint X.Xs ERROR
-  │ ┆ (the entrypoint's own evaluation, elided)
-  │
   ├╴$ Container.from(address: "alpine"): Container! X.Xs CACHED
   ├╴✘ withExec sh -c 'echo dep exec stdout; sleep 0.1; echo dep exec stderr >&2; exit 1' X.Xs ERROR
   │ ┃ dep exec stdout

@@ -6,22 +6,7 @@ Expected stderr:
 
 ✘ viztestGo: ViztestGo! X.Xs ERROR
   ✔ uploading /tmp/gobuild-dependencies-XXXXXXXXXX X.Xs ████████████ X.X B
-┇ call module entrypoint › .binary(
-  ┆ ws: Directory.asWorkspace
-  ) › Gobuild.binary(
-  ┆ base: withEnvVariable GOARCH=ARCH
-  ┆ image: "golang:1.27-alpine@sha256:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
-  ┆ from: null
-  ┆ source: GobuildScoped.source
-  ┆ headers: GobuildScoped.headers
-  ┆ mountPath: "/src"
-  ┆ workdir: "viztest/sdks/broken-go"
-  ┆ pkg: "./cmd/viztest-go-dispatch"
-  ┆ output: "viztest-go-dispatch"
-  ┆ flags: []
-  ┆ downloads: null
-  ┆ sharedImports: []
-  ) ›
+┇ build ›
 ✘ withExec sh /gobuild/build.sh dagger/viztest-go (disableDaggerInDagger: true, noInit: true) X.Xs ERROR
 ./main.go:85:9: undefined: undefinedValue
 ! exit code: 2

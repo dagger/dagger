@@ -6,11 +6,10 @@ Expected stderr:
 
 $ viztestTypescript: ViztestTypescript! X.Xs CACHED
 ✘ .callFailingDepLogged: String! X.Xs ERROR
-┇ call module entrypoint ›
-✘ withExec tsx --no-deprecation --tsconfig tsconfig.json entrypoint/__dagger.dispatch.ts engine-call (
-  ┆ stdin: "{\"receiverType\":\"ViztestTypescript\",\"receiverValue\":\"{}\",\"fnName\":\"callFailingDepLogged\",\"fnArgs\":\"{}\"}"
-  ┆ moduleContext: Module._implementationScoped: Module!
-  ) X.Xs ERROR
-! exit code: 2
+┇ .failExec ›
+✘ withExec sh -c 'echo dep exec stdout; sleep 0.1; echo dep exec stderr >&2; exit 1' X.Xs ERROR
+dep exec stdout
+dep exec stderr
+! exit code: 1
 
 Setup tracing by running "dagger cloud signup". To hide set DAGGER_NO_NAG=1

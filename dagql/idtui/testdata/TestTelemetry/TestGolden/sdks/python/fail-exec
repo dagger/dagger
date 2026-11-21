@@ -13,29 +13,6 @@ Expected stderr:
 
 $ viztestPython: ViztestPython! X.Xs CACHED
 ✘ .failExec: String! X.Xs ERROR
-┃ ERROR [dagger.mod]: API error while executing function
-┃ Traceback (most recent call last):
-┃   File "/src/sha256:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX/viztest/sdks/python/src/viztest_python/__init__.py", line XXX, in fail_exec
-┃     return await failing_exec().stdout()
-┃            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-┃   File "/usr/local/lib/python3.14/site-packages/dagger_clients/core/__init__.py", line XXX, in stdout
-┃     return await _ctx.execute(str)
-┃            ^^^^^^^^^^^^^^^^^^^^^^^
-┃   File "/usr/local/lib/python3.14/site-packages/dagger/client/_core.py", line XXX, in execute
-┃     result = await session.execute(self.build())
-┃              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-┃   File "/usr/local/lib/python3.14/site-packages/dagger/client/_session.py", line XXX, in execute
-┃     return await (await self._ready()).execute(query)
-┃            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-┃   File "/usr/local/lib/python3.14/site-packages/dagger/client/_session.py", line XXX, in execute
-┃     return _read_response(response, query)
-┃   File "/usr/local/lib/python3.14/site-packages/dagger/client/_session.py", line XXX, in _read_response
-┃     raise err
-┃ dagger.ExecError: exit code: 1 [traceparent:00000000000000000000000000000000-0000000000000000]
-┃ ERROR [dagger.mod]: exit code: 1 [traceparent:00000000000000000000000000000000-0000000000000000]
-├╴✘ call module entrypoint X.Xs ERROR
-│ ┆ (the entrypoint's own evaluation, elided)
-│
 ├╴$ Container.from(address: "alpine"): Container! X.Xs CACHED
 ├╴✘ withExec sh -c 'echo exec stdout; sleep 0.1; echo exec stderr >&2; exit 1' X.Xs ERROR
 │ ┃ exec stdout

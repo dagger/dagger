@@ -15,18 +15,6 @@ $ viztestTypescript: ViztestTypescript! X.Xs CACHED
 ✘ .failNative: Void X.Xs ERROR
 ┃ typescript function stdout
 ┃ typescript function stderr
-┃ Error: typescript function failed natively
-┃     at ViztestTypescript.failNative (/workspace/viztest/sdks/typescript/src/index.ts:34:11)
-┃     at async invoke (/workspace/viztest/sdks/typescript/entrypoint/__dagger.dispatch.ts:90:28)
-┃     at async connection.LogOutput (/workspace/viztest/sdks/typescript/entrypoint/__dagger.dispatch.ts:215:24)
-┃     at async <anonymous> (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/core.js:99971:7)
-┃     at async withGQLClient (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/core.js:99956:12)
-┃     at async withSession (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/core.js:99969:5)
-┃     at async withTracing (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/core.js:99718:5)
-┃     at async connection (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/core.js:108082:3)
-┃     at async engineCall (/workspace/viztest/sdks/typescript/entrypoint/__dagger.dispatch.ts:208:3)
-┃ {"error":{"message":"typescript function failed natively"}}
-╰╴✘ call module entrypoint X.Xs ERROR
-  ┆ (the entrypoint's own evaluation, elided)
+! typescript function failed natively
 
 Setup tracing by running "dagger cloud signup". To hide set DAGGER_NO_NAG=1

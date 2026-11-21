@@ -6,7 +6,8 @@ Expected stderr:
 
 $ viztestPhp: ViztestPhp! X.Xs CACHED
 ✘ .failExitCode: Void! X.Xs ERROR
-✘ call module entrypoint X.Xs ERROR
-! call module entrypoint: php function stderr
+php function stdout
+php function stderr
+! exit code: 3
 
 Setup tracing by running "dagger cloud signup". To hide set DAGGER_NO_NAG=1
