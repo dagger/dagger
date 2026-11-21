@@ -2222,6 +2222,12 @@ func (s *Server) Select(ctx context.Context, self AnyObjectResult, dest any, sel
 			if i+1 < len(sels) {
 				return fmt.Errorf("cannot sub-select enum of %s", res.Type())
 			}
+			if values, ok := enum.(valueEnumerable); ok && !isObj && !wantsElementResults(destV.Type().Elem()) {
+				// Plain values into plain values: read them straight from the
+				// list, as resolveLeafList does. Going through NthValue would
+				// cache one session-owned result per element that nobody keeps.
+				return assignLeafValues(destV, values)
+			}
 			for nth := 1; nth <= enum.Len(); nth++ {
 				val, err := s.loadNthValue(ctx, res, nth, false)
 				if err != nil {
@@ -2260,6 +2266,36 @@ func (s *Server) Select(ctx context.Context, self AnyObjectResult, dest any, sel
 	}
 
 	return assign(reflect.ValueOf(dest).Elem(), res)
+}
+
+var anyResultType = reflect.TypeOf((*AnyResult)(nil)).Elem()
+
+// wantsElementResults reports whether a Select destination's element type can
+// hold an element's result (a Result, or an interface such as AnyResult or
+// Typed that a result satisfies), as opposed to only its plain value.
+func wantsElementResults(elem reflect.Type) bool {
+	return elem.Kind() == reflect.Interface || elem.Implements(anyResultType)
+}
+
+// assignLeafValues appends the elements of a list of plain values to a slice
+// of plain values, as Select assigns the value of each element's result: a
+// null element is the slice's zero value.
+func assignLeafValues(slice reflect.Value, values valueEnumerable) error {
+	leaves, err := leafValues(values)
+	if err != nil {
+		return err
+	}
+	elemType := slice.Type().Elem()
+	for nth, leaf := range leaves {
+		dst := reflect.New(elemType).Elem()
+		if leaf != nil {
+			if err := assign(dst, leaf); err != nil {
+				return fmt.Errorf("select %dth array element: %w", nth+1, err)
+			}
+		}
+		slice.Set(reflect.Append(slice, dst))
+	}
+	return nil
 }
 
 func (s *Server) isObjectType(typeName string) bool {
