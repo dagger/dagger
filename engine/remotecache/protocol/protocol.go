@@ -74,6 +74,8 @@ const (
 	TypeSettled  Type = "settled"
 	TypeClaims   Type = "claims"
 	TypeClaimed  Type = "claimed"
+	TypeReady    Type = "ready"
+	TypeReadied  Type = "readied"
 	TypeRestore  Type = "restore"
 	TypeRestored Type = "restored"
 	TypeProbe    Type = "probe"
@@ -105,6 +107,8 @@ func ReplyType(request Type) (Type, bool) {
 		return TypeSettled, true
 	case TypeClaims:
 		return TypeClaimed, true
+	case TypeReady:
+		return TypeReadied, true
 	case TypeRestore:
 		return TypeRestored, true
 	case TypeProbe:
@@ -269,6 +273,20 @@ type SessionClaim struct {
 // Claimed is the service's reply to Claims.
 type Claimed struct{}
 
+// Ready tells the service that roots an export left out busy (SkipBusy) can
+// be captured now, by number: what kept each out has ended, as an
+// evaluation of its row or of a row below it. The engine sends a root once
+// for each busy answer, when the last row that kept it out stops being busy,
+// or at once when nothing was in flight on them, as after a capture raced a
+// change that had already ended. The service asks for a root again when it
+// is told it is ready, and not before.
+type Ready struct {
+	Roots []uint64 `json:"roots"`
+}
+
+// Readied is the service's reply to Ready.
+type Readied struct{}
+
 // Settled is the service's reply to Settle, sent once it is done with every
 // listed session and has no export of the engine in flight or still to ask
 // for. The service then asks
@@ -302,8 +320,8 @@ type SkipReason string
 const (
 	// SkipGone: the engine no longer has the entry.
 	SkipGone SkipReason = "gone"
-	// SkipBusy: the entry could not be captured now; ask again later. The
-	// skip's Message says what was busy.
+	// SkipBusy: the entry could not be captured now; the engine sends Ready
+	// for it once it can be. The skip's Message says what was busy.
 	SkipBusy SkipReason = "busy"
 	// SkipRefused: the engine refused to capture the entry, and would again;
 	// the skip's Message says why.

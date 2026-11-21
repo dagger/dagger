@@ -151,6 +151,9 @@ type Adapter interface {
 	// Settled records the service's Settled for a settle of period that
 	// listed sessions.
 	Settled(period uint64, sessions []protocol.SettleSession)
+	// TakeReadyRoots waits until some of the roots exports left out busy can
+	// be captured, and returns their numbers, for Ready.
+	TakeReadyRoots(ctx context.Context) ([]uint64, error)
 }
 
 // SettleState is where the engine stands in settling with the service.

@@ -168,11 +168,13 @@ func (a *RemoteCacheAdapter) Export(ctx context.Context, req protocol.Export, kn
 		selection.Roots = append(selection.Roots, root.result)
 	}
 	// leftOut skips the roots the capture left out, in the request's order.
+	// A busy one waits to be told ready (TakeReadyRoots).
 	leftOut := func(left []dagql.LeftOutRoot) {
 		for _, root := range left {
 			reason := protocol.SkipRefused
 			if errors.Is(root.Err, dagql.ErrPersistStateNotReady) {
 				reason = protocol.SkipBusy
+				a.waits.wait(roots[root.Index].number, root)
 			} else {
 				slog.Warn("remote cache export refused a root", "number", roots[root.Index].number, "row", root.Row, "error", root.Err)
 			}
