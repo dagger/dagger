@@ -20,6 +20,8 @@ import (
 	digest "github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
+	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/semaphore"
 )
 
 // A layer the remote cache carries is a listing and its contents, where an
@@ -143,67 +145,177 @@ func (w *listingWriter) Close() error {
 	return w.err
 }
 
+const (
+	// splitWorkers is how many of a layer's content blobs compress at once: as
+	// many as the zstd writer compresses a large layer's frames at once. A
+	// content blob of at most one frame, 8 MiB, compresses on one core, so
+	// one after another a layer of many such files would take several times
+	// its tar's time.
+	splitWorkers = 4
+	// splitHeld bounds the bytes of a layer's files read ahead of its
+	// listing, while their content blobs compress or earlier ones finish: the
+	// zstd writer's own frames in flight for a large layer, four of 8 MiB. A
+	// file larger than one frame isn't held: it compresses as it is read,
+	// its frames at once.
+	splitHeld      = 32 << 20
+	splitHeldLarge = splitHeld / splitWorkers
+)
+
+// splitEntry is one entry of a layer's tar on its way into the listing: its
+// body when the listing keeps it, or its content blob, done once compressed.
+type splitEntry struct {
+	hdr  *tar.Header
+	body []byte
+	held int64
+	// For a content blob: closed once desc or err is set.
+	done chan struct{}
+	desc ocispecs.Descriptor
+	err  error
+}
+
 // splitLayerTar reads a layer's tar from r and writes its listing to listing
 // and the content blobs of its larger files into cs, compressed by compress
-// as contentType. It returns the content blobs in the order the listing
-// first names them, each once.
+// as contentType, up to splitWorkers at once. The listing is written in the
+// tar's order, each content's entry once its blob is written. It returns the
+// content blobs in the order the listing first names them, each once.
 func splitLayerTar(ctx context.Context, cs content.Store, r io.Reader, listing io.Writer, compress compression.Compressor, contentType, ref string) ([]ocispecs.Descriptor, error) {
-	var contents []ocispecs.Descriptor
-	seen := map[digest.Digest]bool{}
-	tw := tar.NewWriter(listing)
-	tr := tar.NewReader(r)
-	for {
-		hdr, err := tr.Next()
-		if err == io.EOF {
-			break
+	eg, ctx := errgroup.WithContext(ctx)
+	held := semaphore.NewWeighted(splitHeld)
+	workers := make(chan struct{}, splitWorkers)
+	entries := make(chan *splitEntry, 256)
+	writeContent := func(e *splitEntry, body func(io.Writer) error) {
+		e.desc, e.err = writeCompressedBlob(ctx, cs, ref+"-content-"+rand.Text(), contentType, compress, body)
+		if e.err != nil {
+			e.err = errors.Wrapf(e.err, "content of %s", e.hdr.Name)
 		}
-		if err != nil {
-			return nil, errors.Wrap(err, "read layer tar")
-		}
-		if hdr.Typeflag == tar.TypeReg && hdr.Size >= ListingInlineMax {
-			raw := hdr.Size
-			desc, err := writeCompressedBlob(ctx, cs, ref+"-content-"+rand.Text(), contentType, compress, func(w io.Writer) error {
-				_, err := io.CopyN(w, tr, raw)
-				return err
-			})
+		close(e.done)
+	}
+	eg.Go(func() error {
+		defer close(entries)
+		tr := tar.NewReader(r)
+		for {
+			hdr, err := tr.Next()
+			if err == io.EOF {
+				return nil
+			}
 			if err != nil {
-				return nil, errors.Wrapf(err, "content of %s", hdr.Name)
+				return errors.Wrap(err, "read layer tar")
 			}
-			if !seen[desc.Digest] {
-				seen[desc.Digest] = true
-				contents = append(contents, desc)
-			}
-			entry := *hdr
-			entry.Size = 0
-			entry.PAXRecords = clonePAX(hdr.PAXRecords)
-			entry.PAXRecords[paxContentDigest] = desc.Digest.String()
-			entry.PAXRecords[paxContentSize] = strconv.FormatInt(desc.Size, 10)
-			entry.PAXRecords[paxContentRaw] = strconv.FormatInt(raw, 10)
-			entry.PAXRecords[paxContentFormat] = strconv.Itoa(int(hdr.Format))
-			var basic []string
-			for k := range hdr.PAXRecords {
-				if paxBasicKeys[k] {
-					basic = append(basic, k)
+			e := &splitEntry{hdr: hdr}
+			isContent := hdr.Typeflag == tar.TypeReg && hdr.Size >= ListingInlineMax
+			if isContent && hdr.Size > splitHeldLarge {
+				e.done = make(chan struct{})
+				writeContent(e, func(w io.Writer) error {
+					_, err := io.CopyN(w, tr, hdr.Size)
+					return err
+				})
+				if e.err != nil {
+					return e.err
+				}
+			} else {
+				e.held = max(hdr.Size, 1)
+				if err := held.Acquire(ctx, e.held); err != nil {
+					return err
+				}
+				e.body = make([]byte, hdr.Size)
+				if _, err := io.ReadFull(tr, e.body); err != nil {
+					held.Release(e.held)
+					return errors.Wrapf(err, "read %s", hdr.Name)
+				}
+				if isContent {
+					e.done = make(chan struct{})
+					select {
+					case workers <- struct{}{}:
+					case <-ctx.Done():
+						held.Release(e.held)
+						return context.Cause(ctx)
+					}
+					body := e.body
+					e.body = nil
+					eg.Go(func() error {
+						defer func() { <-workers }()
+						writeContent(e, func(w io.Writer) error {
+							_, err := w.Write(body)
+							return err
+						})
+						held.Release(e.held)
+						return e.err
+					})
 				}
 			}
-			if len(basic) > 0 {
-				slices.Sort(basic)
-				entry.PAXRecords[paxContentKeys] = strings.Join(basic, ",")
+			select {
+			case entries <- e:
+			case <-ctx.Done():
+				return context.Cause(ctx)
 			}
-			entry.Format = tar.FormatPAX
-			if err := tw.WriteHeader(&entry); err != nil {
-				return nil, err
+		}
+	})
+	var contents []ocispecs.Descriptor
+	eg.Go(func() error {
+		seen := map[digest.Digest]bool{}
+		tw := tar.NewWriter(listing)
+		for e := range entries {
+			if e.done == nil {
+				err := tw.WriteHeader(e.hdr)
+				if err == nil {
+					_, err = tw.Write(e.body)
+				}
+				held.Release(e.held)
+				if err != nil {
+					return err
+				}
+				continue
 			}
-			continue
+			select {
+			case <-e.done:
+			case <-ctx.Done():
+				return context.Cause(ctx)
+			}
+			if e.err != nil {
+				return e.err
+			}
+			if !seen[e.desc.Digest] {
+				seen[e.desc.Digest] = true
+				contents = append(contents, e.desc)
+			}
+			if err := tw.WriteHeader(contentHeader(e.hdr, e.desc)); err != nil {
+				return err
+			}
 		}
-		if err := tw.WriteHeader(hdr); err != nil {
-			return nil, err
+		if err := context.Cause(ctx); err != nil {
+			return err
 		}
-		if _, err := io.CopyN(tw, tr, hdr.Size); err != nil {
-			return nil, err
+		return tw.Close()
+	})
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+	return contents, nil
+}
+
+// contentHeader is the listing's entry for a file whose body is desc: the
+// file's header, sized zero, with the PAX records that name desc and keep
+// what the rebuilt entry needs to be the tar's.
+func contentHeader(hdr *tar.Header, desc ocispecs.Descriptor) *tar.Header {
+	entry := *hdr
+	entry.Size = 0
+	entry.PAXRecords = clonePAX(hdr.PAXRecords)
+	entry.PAXRecords[paxContentDigest] = desc.Digest.String()
+	entry.PAXRecords[paxContentSize] = strconv.FormatInt(desc.Size, 10)
+	entry.PAXRecords[paxContentRaw] = strconv.FormatInt(hdr.Size, 10)
+	entry.PAXRecords[paxContentFormat] = strconv.Itoa(int(hdr.Format))
+	var basic []string
+	for k := range hdr.PAXRecords {
+		if paxBasicKeys[k] {
+			basic = append(basic, k)
 		}
 	}
-	return contents, tw.Close()
+	if len(basic) > 0 {
+		slices.Sort(basic)
+		entry.PAXRecords[paxContentKeys] = strings.Join(basic, ",")
+	}
+	entry.Format = tar.FormatPAX
+	return &entry
 }
 
 func clonePAX(in map[string]string) map[string]string {
