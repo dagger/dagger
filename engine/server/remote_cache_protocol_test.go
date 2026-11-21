@@ -810,7 +810,7 @@ func TestExportLogAttrsPhases(t *testing.T) {
 		Bundle:    dagql.ValueBundle{Values: make([]dagql.TransferredValue, 3)},
 		Rows:      dagql.ExportedRows{Held: []uint64{4, 5}},
 		ChainTime: time.Second,
-		Phases:    dagql.ExportPhases{WalkWait: 6 * time.Microsecond, Walk: 7 * time.Microsecond, Copy: 8 * time.Microsecond, Bundle: 12 * time.Microsecond, BundleKnown: time.Microsecond, BundleCheck: 2 * time.Microsecond, BundleSettle: 3 * time.Microsecond, BundleRecipes: 4 * time.Microsecond, BundleValues: 5 * time.Microsecond, BundlePasses: 2},
+		Phases:    dagql.ExportPhases{WalkWait: 6 * time.Microsecond, Walk: 7 * time.Microsecond, Copy: 8 * time.Microsecond, Bundle: 12 * time.Microsecond, BundleKnown: time.Microsecond, BundleCheck: 2 * time.Microsecond, BundleSettle: 3 * time.Microsecond, BundleRecipes: 4 * time.Microsecond, BundleValues: 5 * time.Microsecond, BundleKeep: 13 * time.Microsecond, BundlePasses: 2},
 		Chains:    &dagql.SelectedChains{Stats: bkcache.ExportStats{Layers: 3, LayersReused: 1, LayersDiffed: 2, RawBytes: 900, BlobBytes: 300, DiffTime: 9 * time.Millisecond, CompressTime: 6 * time.Millisecond, LockWait: 10 * time.Microsecond, BuildWait: 11 * time.Microsecond, LayersMerged: 1, MergedRawBytes: 400, MergedBlobBytes: 100, MergedDiffTime: 3 * time.Millisecond}},
 	}
 	// One record carries its engine's content-preferred digest, and one is a
@@ -833,6 +833,7 @@ func TestExportLogAttrsPhases(t *testing.T) {
 		"bundle_settle", 3 * time.Microsecond,
 		"bundle_recipes", 4 * time.Microsecond,
 		"bundle_values", 5 * time.Microsecond,
+		"bundle_keep", 13 * time.Microsecond,
 		"layers", 3,
 		"layers_reused", 1,
 		"layers_diffed", 2,
@@ -870,6 +871,7 @@ func TestExportLogAttrsPhases(t *testing.T) {
 		"bundle_settle", time.Duration(0),
 		"bundle_recipes", time.Duration(0),
 		"bundle_values", time.Duration(0),
+		"bundle_keep", time.Duration(0),
 		"layers", 0,
 		"layers_reused", 0,
 		"layers_diffed", 0,
@@ -986,11 +988,18 @@ func TestExportLogCountsHeldRowsNothingStandsOn(t *testing.T) {
 				Owner:   &dagql.PersistedOfferOwner{DependencyIDs: []uint64{5}},
 			}},
 		},
-		Rows: dagql.ExportedRows{Held: []uint64{2, 3, 4, 5, 6, 7, 8}},
+		Rows:        dagql.ExportedRows{Held: []uint64{2, 3, 4, 5, 6, 7, 8}},
+		LeftOutHeld: 5,
 	}
 	attrs := logAttrs(exportLogAttrs(protocol.Export{Roots: []uint64{1, 8}}, nil, values, time.Second, exportCapture{}, busyReport{}))
 	require.Equal(t, 7, attrs["held"])
 	require.Equal(t, 2, attrs["held_unneeded"], "rows 4 and 7")
+	require.Equal(t, 5, attrs["held_left_out"], "the known rows the export left out")
+	require.NotContains(t, attrs, "held_kept_every_row", "a reason only when there is one")
+
+	values.KeptEveryRow = "unreached"
+	attrs = logAttrs(exportLogAttrs(protocol.Export{Roots: []uint64{1, 8}}, nil, values, time.Second, exportCapture{}, busyReport{}))
+	require.Equal(t, "unreached", attrs["held_kept_every_row"], "why the export left out none it could have")
 
 	attrs = logAttrs(exportLogAttrs(protocol.Export{Roots: []uint64{1}}, nil, nil, time.Second, exportCapture{}, busyReport{}))
 	require.Equal(t, 0, attrs["held_unneeded"], "no bundle, none")
