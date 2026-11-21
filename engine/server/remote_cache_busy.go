@@ -254,6 +254,9 @@ func (a *RemoteCacheAdapter) TakeReadyRoots(ctx context.Context) (_ []uint64, re
 		if a.stopped.Load() {
 			return nil, ErrRemoteCacheAdapterClosed
 		}
+		if err := context.Cause(ctx); err != nil {
+			return nil, err
+		}
 		ready, waiting := a.waits.take(busy)
 		if len(ready) > 0 {
 			a.readyStats.roots.Add(int64(len(ready)))
