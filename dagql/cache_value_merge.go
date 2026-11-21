@@ -100,6 +100,9 @@ func (c *Cache) MergeServiceValues(ctx context.Context, input ValueBundle, sourc
 // attaches them, which for a file is the order its records were first used,
 // and never push out the offers of other merges (partOfferRestored).
 //
+// It is CheckRestoreValues then RestoreCheckedValues, and its reply's Prepare
+// is both parts of the preparation.
+//
 // The commit also holds every entry the part lands on, until the reply's
 // Release: a set file's later parts name its earlier parts' records as held
 // rows, and a part's roots in unretained, the closure of a root that a later
@@ -108,9 +111,72 @@ func (c *Cache) MergeServiceValues(ctx context.Context, input ValueBundle, sourc
 // the log of a record whose payload fails at its first use, and its
 // records' route is a set file's (Source).
 func (c *Cache) RestoreValues(ctx context.Context, bundle ValueBundle, unretained []TransferOrdinal, source string) (MergeReply, error) {
+	checked, err := c.CheckRestoreValues(bundle)
+	if err != nil {
+		return MergeReply{}, err
+	}
+	reply, err := c.RestoreCheckedValues(ctx, checked, unretained, source)
+	reply.Prepare += checked.Took()
+	return reply, err
+}
+
+// CheckedValues is a part of a set file checked for its restore ahead of it
+// (CheckRestoreValues): everything RestoreValues does before it reads the
+// cache's state, which nothing the cache does meanwhile changes. A restore
+// checks a file's next part while the part before it merges, and merges it
+// with RestoreCheckedValues, once.
+type CheckedValues struct {
+	cache *Cache
+	// input is the bundle as sent, for a commit that prepares in full again
+	// (PreparedValueMerge.input).
+	input ValueBundle
+	prep  *valueMergePrep
+	took  time.Duration
+	used  atomic.Bool
+}
+
+// Took returns how long the check took.
+func (v *CheckedValues) Took() time.Duration {
+	return v.took
+}
+
+// CheckRestoreValues checks a part of a set file of the Cloud's records for
+// an engine's restore, as RestoreValues begins: its addresses, and the start
+// of its merge's preparation, everything before that reads the cache's
+// state (checkValueMerge). Its caller leaves bundle unchanged until the part
+// is merged.
+func (c *Cache) CheckRestoreValues(bundle ValueBundle) (*CheckedValues, error) {
+	began := time.Now()
+	if c.blobBacked {
+		return nil, fmt.Errorf("merge values: the Cloud merges from engine caches")
+	}
+	if err := checkSenderAddresses(cloudCacheID, bundle); err != nil {
+		return nil, err
+	}
+	prep, err := c.checkValueMerge(cloudCacheID, bundle)
+	if err != nil {
+		return nil, err
+	}
+	return &CheckedValues{cache: c, input: bundle, prep: prep, took: time.Since(began)}, nil
+}
+
+// RestoreCheckedValues merges a checked part (CheckRestoreValues) as
+// RestoreValues merges a part: it prepares the rest of its merge as the
+// cache stands and commits it, with the same reply, errors, locks and hold.
+// The reply's Prepare is the rest of the preparation, without the check.
+func (c *Cache) RestoreCheckedValues(ctx context.Context, checked *CheckedValues, unretained []TransferOrdinal, source string) (MergeReply, error) {
+	switch {
+	case checked == nil:
+		return MergeReply{}, errors.New("restore values: no checked part")
+	case checked.cache != c:
+		return MergeReply{}, errors.New("restore values: the part was checked for another cache")
+	case !checked.used.CompareAndSwap(false, true):
+		return MergeReply{}, errors.New("restore values: the checked part was merged already")
+	}
 	ctx = withCacheWork(ctx, workRestore)
 	began := time.Now()
-	p, err := c.PrepareValueMerge(ctx, cloudCacheID, bundle)
+	p, err := c.prepareCheckedMerge(ctx, cloudCacheID, checked.input, checked.prep)
+	checked.prep = nil
 	if err != nil {
 		return MergeReply{}, err
 	}
@@ -214,11 +280,23 @@ func (c *Cache) PrepareValueMerge(ctx context.Context, from CacheID, input Value
 			return nil, err
 		}
 	}
+	prep, err := c.checkValueMerge(from, input)
+	if err != nil {
+		return nil, err
+	}
+	return c.prepareCheckedMerge(ctx, from, input, prep)
+}
+
+// prepareCheckedMerge is PrepareValueMerge's rest for a bundle
+// checkValueMerge checked: the rest of the preparation as the cache stands
+// (prepareCheckedValueMerge), the warming of its targets' parts, and the
+// renumbering of its records.
+func (c *Cache) prepareCheckedMerge(ctx context.Context, from CacheID, input ValueBundle, prep *valueMergePrep) (*PreparedValueMerge, error) {
 	op, err := c.beginCacheOperation()
 	if err != nil {
 		return nil, err
 	}
-	prep, err := c.prepareValueMerge(ctx, from, input, true)
+	prep, err = c.prepareCheckedValueMerge(ctx, prep, true)
 	if err != nil {
 		op.finish(false)
 		return nil, err
@@ -649,6 +727,21 @@ var errMergeNeedsFullPrep = errors.New("merge values: a light record is installe
 // It returns ctx's cause when ctx is cancelled: it checks before each payload
 // and once more at the end.
 func (c *Cache) prepareValueMerge(ctx context.Context, from CacheID, input ValueBundle, skipKept bool) (*valueMergePrep, error) {
+	prep, err := c.checkValueMerge(from, input)
+	if err != nil {
+		return nil, err
+	}
+	return c.prepareCheckedValueMerge(ctx, prep, skipKept)
+}
+
+// checkValueMerge is the start of a merge's preparation (prepareValueMerge),
+// everything before it reads the cache's state: it clones the bundle,
+// resolves its chains' prefixes, validates it, embeds its parts as offers on
+// an engine, and derives its calls' identities. It reads only what the cache
+// is, an engine's or the Cloud's, so nothing the cache does meanwhile changes
+// what it returns, and the rest of the preparation (prepareCheckedValueMerge)
+// can follow it at any later time.
+func (c *Cache) checkValueMerge(from CacheID, input ValueBundle) (*valueMergePrep, error) {
 	bundle, err := cloneValueBundle(input)
 	if err != nil {
 		return nil, err
@@ -700,12 +793,20 @@ func (c *Cache) prepareValueMerge(ctx context.Context, from CacheID, input Value
 		prep.index[uint64(row.Ordinal)] = row
 		prep.rows[row.SenderNumber] = uint64(row.Ordinal)
 	}
-	ctx = withGraphLockWaits(ctx, prep.lockWaits)
 	prep.senders = transferSenders(prep.bundle)
 	prep.markUnprepared(c)
 	if prep.calls, err = c.prepareMergedCalls(prep.bundle.Calls); err != nil {
 		return nil, err
 	}
+	return prep, nil
+}
+
+// prepareCheckedValueMerge is the rest of a merge's preparation
+// (prepareValueMerge) for a bundle checkValueMerge checked: it resolves the
+// held rows and derives each record's identity as the cache stands, decides
+// which records are light with skipKept, and prepares the others' payloads.
+func (c *Cache) prepareCheckedValueMerge(ctx context.Context, prep *valueMergePrep, skipKept bool) (*valueMergePrep, error) {
+	ctx = withGraphLockWaits(ctx, prep.lockWaits)
 	heldFrames := c.resolveHeldRows(ctx, prep)
 	if len(prep.stale) > 0 {
 		return prep, nil
