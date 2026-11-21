@@ -2853,6 +2853,9 @@ type Cache struct {
 	// owedParts are the entries whose span reported only their settled
 	// parts, each owing a report of its complete parts; see owedPartReports.
 	owedParts owedPartReports
+	// evaluationEnds are the watches of lazy evaluations' ends; see
+	// WatchEvaluationEnds.
+	evaluationEnds evaluationEnds
 	// testOwedPartsRead, when set, runs after a pass of owed reports has read
 	// an entry's parts, before the pass ends.
 	testOwedPartsRead func(*sharedResult)
@@ -6216,8 +6219,10 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 				c.notifySnapshotShareCompletion(callbackCtx, shared)
 			}
 			// An evaluation's end frees the record it held, and can complete
-			// parts: owed reports may now be made.
+			// parts: owed reports may now be made, and a capture it kept the
+			// row out of may take it.
 			c.wakeOwedPartReports()
+			c.evaluationEnded()
 		}()
 
 		// Native profiling is full detail and emits the leader wait

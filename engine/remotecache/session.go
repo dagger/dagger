@@ -100,6 +100,7 @@ func (s *session) serve() (bool, error) {
 	s.go_(s.renewals)
 	s.go_(s.lookups)
 	s.go_(s.settles)
+	s.go_(s.readies)
 	s.go_(s.restorer.run)
 	<-s.ctx.Done()
 	return true, context.Cause(s.ctx)
@@ -359,6 +360,24 @@ func (s *session) probe() {
 		if s.conn.Arrived().Before(sent) {
 			s.cancel(fmt.Errorf("probe: nothing arrived for %s", s.cfg.probeTimeout))
 			return
+		}
+	}
+}
+
+// readies tells the service of the roots it was answered busy for that can
+// be captured now (protocol.Ready), as the adapter finds them, until the
+// connection ends. A root the service no longer waits for is ignored there.
+func (s *session) readies() {
+	for {
+		roots, err := s.adapter.TakeReadyRoots(s.ctx)
+		if err != nil {
+			return
+		}
+		if _, err := s.request(s.ctx, protocol.TypeReady, protocol.Ready{Roots: roots}); err != nil {
+			if s.ctx.Err() != nil {
+				return
+			}
+			s.cfg.Logger.Warn("remote cache: ready failed", "roots", len(roots), "error", err)
 		}
 	}
 }

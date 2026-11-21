@@ -2,7 +2,9 @@ package server
 
 import (
 	"cmp"
+	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"sync"
 	"time"
@@ -141,4 +143,116 @@ func (r busyReport) attrs() []any {
 		attrs = append(attrs, "busy_cleared_named", r.freed)
 	}
 	return attrs
+}
+
+// busyWaits are the roots exports left out busy, by number, each with the
+// rows that kept it out, until none of those rows is busy any more: the
+// engine then tells the service the root is ready (protocol.Ready), and the
+// service asks for it again.
+type busyWaits struct {
+	mu    sync.Mutex
+	roots map[uint64][]uint64
+	// added receives as a root begins to wait, once for roots added before
+	// it is taken: one a capture race kept out, with nothing in flight, is
+	// ready at once.
+	added chan struct{}
+}
+
+// wait makes root, left out busy by an export that asked for it as number,
+// wait for the rows that kept it out: those its capture names, or its own.
+func (w *busyWaits) wait(number uint64, root dagql.LeftOutRoot) {
+	rows := make([]uint64, 0, max(len(root.Busy), 1))
+	for _, row := range root.Busy {
+		rows = append(rows, row.Row)
+	}
+	if len(rows) == 0 {
+		rows = append(rows, root.Row)
+	}
+	w.mu.Lock()
+	if w.roots == nil {
+		w.roots = map[uint64][]uint64{}
+	}
+	w.roots[number] = rows
+	added := w.addedLocked()
+	w.mu.Unlock()
+	select {
+	case added <- struct{}{}:
+	default:
+	}
+}
+
+func (w *busyWaits) addedCh() <-chan struct{} {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.addedLocked()
+}
+
+func (w *busyWaits) addedLocked() chan struct{} {
+	if w.added == nil {
+		w.added = make(chan struct{}, 1)
+	}
+	return w.added
+}
+
+// take returns the waiting roots none of whose rows busy reports busy,
+// sorted, and stops their waits, and reports whether any root still waits.
+// busy is called without w's lock.
+func (w *busyWaits) take(busy func([]uint64) []uint64) ([]uint64, bool) {
+	w.mu.Lock()
+	waiting := maps.Clone(w.roots)
+	w.mu.Unlock()
+	if len(waiting) == 0 {
+		return nil, false
+	}
+	var rows []uint64
+	for _, r := range waiting {
+		rows = append(rows, r...)
+	}
+	still := map[uint64]bool{}
+	for _, row := range busy(rows) {
+		still[row] = true
+	}
+	var ready []uint64
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	for number, r := range waiting {
+		// A root left out again meanwhile waits for its new rows.
+		if !slices.Equal(w.roots[number], r) || slices.ContainsFunc(r, func(row uint64) bool { return still[row] }) {
+			continue
+		}
+		ready = append(ready, number)
+		delete(w.roots, number)
+	}
+	slices.Sort(ready)
+	return ready, len(w.roots) > 0
+}
+
+// TakeReadyRoots waits until some of the roots exports left out busy can be
+// captured, and returns their numbers: those whose rows are no longer busy
+// (dagql.Cache.BusyRows). It looks as each root begins to wait, since one a
+// capture race kept out is ready at once, and after each evaluation's end,
+// which is what frees the others.
+func (a *RemoteCacheAdapter) TakeReadyRoots(ctx context.Context) ([]uint64, error) {
+	ends, stop := a.cache.WatchEvaluationEnds()
+	defer stop()
+	busy := func(rows []uint64) []uint64 { return a.cache.BusyRows(ctx, rows) }
+	for {
+		if a.stopped.Load() {
+			return nil, ErrRemoteCacheAdapterClosed
+		}
+		ready, waiting := a.waits.take(busy)
+		if len(ready) > 0 {
+			return ready, nil
+		}
+		var ended <-chan struct{}
+		if waiting {
+			ended = ends
+		}
+		select {
+		case <-ended:
+		case <-a.waits.addedCh():
+		case <-ctx.Done():
+			return nil, context.Cause(ctx)
+		}
+	}
 }
