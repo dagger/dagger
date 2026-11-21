@@ -8,6 +8,10 @@ import (
 type RefConfig struct {
 	Compression            compression.Config
 	PreferNonDistributable bool
+	// Listings exports each layer the export computes as a listing and its
+	// content blobs, as the remote cache carries layers, in place of a tar.
+	// A layer that already has a blob keeps it.
+	Listings bool
 	// Builds bounds how an export builds the blobs its layers lack. The zero
 	// value builds them one at a time.
 	Builds LayerBuilds

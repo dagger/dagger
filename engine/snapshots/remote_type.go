@@ -48,8 +48,13 @@ type ExportChain struct {
 
 // ExportStats sum what exporting chains took, over their layers.
 type ExportStats struct {
-	// Layers counts the layers emitted.
-	Layers int
+	// Layers counts the layers emitted, and Listings those of them that are
+	// listings, which the export of listings (config.RefConfig.Listings)
+	// emits for the layers it computes. Contents counts the content blobs
+	// emitted before the listings, each once a chain.
+	Layers   int
+	Listings int
+	Contents int
 	// LayersReused counts the layers whose blob already existed, and
 	// LayersDiffed those whose blob was computed.
 	LayersReused int
@@ -90,6 +95,8 @@ type ExportStats struct {
 // Add adds o to s.
 func (s *ExportStats) Add(o ExportStats) {
 	s.Layers += o.Layers
+	s.Listings += o.Listings
+	s.Contents += o.Contents
 	s.LayersReused += o.LayersReused
 	s.LayersDiffed += o.LayersDiffed
 	s.RawBytes += o.RawBytes
