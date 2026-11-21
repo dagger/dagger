@@ -55,9 +55,12 @@ func awaitSpanNamed(t *testctx.T, sink *agentTraceSink, name string, fn func(ct 
 // TestArrayMemberSubSelection covers a sub-selection against a member of an
 // array result.
 //
-// Reading a list of objects is the most ordinary thing a client does —
-// `{ envVariables { name value } }` — and dagql resolves it by taking the
-// nth value of the array and selecting against it. The nth value is a real
+// Reading a list of objects is the most ordinary thing a client does, and
+// when the selection names the members themselves — `{ envVariables { id
+// name value } }`, as SDKs do — dagql resolves it by taking the nth value of
+// the array and selecting against it. (Selecting only struct fields of plain
+// members, without id, reads them from the array's values instead, with no
+// member frames or sub-selection spans at all.) The nth value is a real
 // frame in the resulting ID (Call.Nth), but nothing ever selects it, so it has
 // no span of its own. Its payload must instead arrive in the transitive closure
 // published through call-payload logs.
@@ -85,7 +88,7 @@ func (CallIDRebuildSuite) TestArrayMemberSubSelection(ctx context.Context, t *te
 		Query: `query($marker: String!) {
 			container {
 				withEnvVariable(name: "ROSTER_MARKER", value: $marker) {
-					envVariables { name value }
+					envVariables { id name value }
 				}
 			}
 		}`,
