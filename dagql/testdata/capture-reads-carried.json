@@ -1,0 +1,164 @@
+{
+  "Roots": [
+    3
+  ],
+  "Values": [
+    {
+      "SenderNumber": 1,
+      "SenderReplacements": 0,
+      "Record": {
+        "resultID": 1,
+        "envelope": {
+          "version": 5,
+          "kind": "object_self",
+          "typeName": "HeldPartTestValue",
+          "objectCodec": "dagql_test.HeldPart",
+          "resultID": 1,
+          "objectJSON": {
+            "snapshotID": "o"
+          }
+        },
+        "call": {
+          "kind": "field",
+          "type": {
+            "namedType": "HeldPartTestValue",
+            "nonNull": true
+          },
+          "field": "reads-recipe"
+        }
+      },
+      "Dependencies": [
+        2
+      ],
+      "Expires": true,
+      "Held": ""
+    },
+    {
+      "SenderNumber": 2,
+      "SenderReplacements": 0,
+      "Record": {
+        "resultID": 2,
+        "envelope": {
+          "version": 0,
+          "kind": ""
+        },
+        "call": null
+      },
+      "Dependencies": null,
+      "Expires": false,
+      "Held": "xxh3:fb2412486bb17cea"
+    },
+    {
+      "SenderNumber": 3,
+      "SenderReplacements": 0,
+      "Record": {
+        "resultID": 3,
+        "envelope": {
+          "version": 5,
+          "kind": "object_self",
+          "typeName": "HeldPartTestValue",
+          "objectCodec": "dagql_test.HeldPart",
+          "resultID": 3,
+          "objectJSON": {
+            "snapshotID": "r"
+          }
+        },
+        "call": {
+          "kind": "field",
+          "type": {
+            "namedType": "HeldPartTestValue",
+            "nonNull": true
+          },
+          "field": "reads-recipe-root"
+        }
+      },
+      "Dependencies": [
+        1,
+        4
+      ],
+      "Expires": false,
+      "Held": ""
+    },
+    {
+      "SenderNumber": 4,
+      "SenderReplacements": 0,
+      "Record": {
+        "resultID": 4,
+        "envelope": {
+          "version": 5,
+          "kind": "object_self",
+          "typeName": "HeldPartTestValue",
+          "objectCodec": "dagql_test.HeldPart",
+          "resultID": 4,
+          "objectJSON": {
+            "snapshotID": "n"
+          }
+        },
+        "call": {
+          "kind": "field",
+          "type": {
+            "namedType": "HeldPartTestValue",
+            "nonNull": true
+          },
+          "field": "reads-recipe"
+        }
+      },
+      "Dependencies": null,
+      "Expires": false,
+      "Held": ""
+    }
+  ],
+  "Outputs": [
+    {
+      "Row": 1,
+      "Address": {
+        "part": "snapshot"
+      },
+      "State": "completed",
+      "Value": {
+        "kind": "directory"
+      },
+      "Chain": null,
+      "Prefix": "3 {\"part\":\"snapshot\"} 1",
+      "Owner": null
+    },
+    {
+      "Row": 3,
+      "Address": {
+        "part": "snapshot"
+      },
+      "State": "completed",
+      "Value": {
+        "kind": "directory"
+      },
+      "Chain": [
+        "o",
+        "r"
+      ],
+      "Prefix": "",
+      "Owner": null
+    }
+  ],
+  "Chains": [
+    {
+      "Row": 3,
+      "Address": {
+        "part": "snapshot"
+      },
+      "Layers": [
+        "o",
+        "r"
+      ]
+    }
+  ],
+  "LeftOut": null,
+  "Full": [
+    1,
+    3,
+    4
+  ],
+  "Held": [
+    2
+  ],
+  "Passes": 2
+}
