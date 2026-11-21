@@ -58,7 +58,7 @@ $ viztestTypescript: ViztestTypescript! X.Xs CACHED
 ┃     headers: {
 ┃       'content-length': '168',
 ┃       'content-type': 'application/graphql-response+json',
-┃       date: 'Sat, 21 Nov 2026 XX:XX:XX GMT'
+┃       date: 'XXX, XX XXX XXXX XX:XX:XX GMT'
 ┃     },
 ┃     body: '{"errors":[{"message":"call module entrypoint: exit code: 1 [traceparent:00000000000000000000000000000000-0000000000000000]","path":["sdkDep","failExec"]}],"data":null}'
 ┃   },
