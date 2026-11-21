@@ -3,19 +3,13 @@ package core
 import (
 	"context"
 	"database/sql"
-	"encoding/binary"
 	"fmt"
 	"log/slog"
-	"slices"
-	"strconv"
 	"testing"
-	"time"
 
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
-	"go.opentelemetry.io/otel/attribute"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
@@ -71,9 +65,9 @@ func footprintStore(tb testing.TB, n int, nested bool) (*clientdb.DB, *spanfootp
 	require.NoError(tb, err)
 	tb.Cleanup(func() { store.Close() })
 	exp := &rowExporter{tb: tb, store: store}
-	var next sdktrace.SpanExporter = waitChains{tr, exp}
+	next := tr.WaitChains(exp)
 	if nested {
-		next = nestTrees{next}
+		next = spanfootprint.Nested(next)
 	}
 	require.NoError(tb, tr.Export(context.Background(), next, 512, nil))
 	stdout, err := clientdb.MarshalProtoList([]*otlpcommonv1.KeyValue{{
@@ -115,71 +109,6 @@ func (e *rowExporter) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnly
 }
 
 func (e *rowExporter) Shutdown(context.Context) error { return nil }
-
-// waitChains gives 6% of the spans a wait link on an earlier span, as the
-// engine's always-on wait edges do.
-type waitChains struct {
-	tr   *spanfootprint.Trace
-	next sdktrace.SpanExporter
-}
-
-func (e waitChains) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
-	out := make([]sdktrace.ReadOnlySpan, len(spans))
-	for i, s := range spans {
-		out[i] = s
-		id := s.SpanContext().SpanID()
-		n := int(binary.BigEndian.Uint64(id[:])) - 1
-		h := uint64(n)*0x9e3779b97f4a7c15 ^ 0xabcdef
-		h ^= h >> 29
-		dur := s.EndTime().Sub(s.StartTime())
-		if n <= spanfootprint.LongLived || h%100 >= 6 || s.EndTime().Before(s.StartTime()) || dur < 10*time.Millisecond {
-			continue
-		}
-		start, end := s.StartTime().Add(dur/10), s.StartTime().Add(dur*6/10)
-		stub := tracetest.SpanStubFromReadOnlySpan(s)
-		stub.Links = append(slices.Clip(stub.Links), sdktrace.Link{
-			SpanContext: trace.NewSpanContext(trace.SpanContextConfig{TraceID: s.SpanContext().TraceID(), SpanID: e.tr.SpanID(int(h>>8) % n)}),
-			Attributes: []attribute.KeyValue{
-				attribute.String(telemetry.LinkPurposeAttr, telemetryattrs.LinkPurposeWait),
-				attribute.String(telemetryattrs.WcprofWaitReasonAttr, "singleflight"),
-				attribute.String(telemetryattrs.WcprofWaitStartUnixNanoAttr, strconv.FormatInt(start.UnixNano(), 10)),
-				attribute.String(telemetryattrs.WcprofWaitEndUnixNanoAttr, strconv.FormatInt(end.UnixNano(), 10)),
-			},
-		})
-		out[i] = stub.Snapshot()
-	}
-	return e.next.ExportSpans(ctx, out)
-}
-
-func (e waitChains) Shutdown(context.Context) error { return nil }
-
-// nestTrees makes every span beneath an agent loop a tool call (a boundary,
-// rendered collapsed), as tool calls running nested engines are: the call
-// trees beneath them are the nested engines' work.
-type nestTrees struct{ next sdktrace.SpanExporter }
-
-func (e nestTrees) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
-	out := make([]sdktrace.ReadOnlySpan, len(spans))
-	for i, s := range spans {
-		out[i] = s
-		p := s.Parent().SpanID()
-		if !p.IsValid() {
-			continue
-		}
-		if pi := binary.BigEndian.Uint64(p[:]) - 1; pi == 0 || pi >= spanfootprint.LongLived {
-			continue
-		}
-		stub := tracetest.SpanStubFromReadOnlySpan(s)
-		stub.Attributes = append(slices.Clip(stub.Attributes),
-			attribute.Bool(telemetry.UIBoundaryAttr, true),
-			attribute.String(telemetry.LLMToolAttr, "run_tests"),
-			attribute.String(telemetry.LLMRoleAttr, "assistant"))
-		out[i] = stub.Snapshot()
-	}
-	return e.next.ExportSpans(ctx, out)
-}
-
-func (e nestTrees) Shutdown(context.Context) error { return nil }
 
 // loadTraceReportSessionFull is loadTraceReportSession as it was before it
 // folded: every span of the scope loaded in full. The reference a folded

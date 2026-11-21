@@ -808,6 +808,9 @@ func reportFoldRetain(root dagui.SpanID) dagui.FoldRetain {
 	return func(span dagui.FoldSpan) bool {
 		if span.SurfacedKind() || span.Failed() || span.Reveal() || span.Progress() ||
 			span.CauseLinks() || span.Agent() {
+			// what a report may surface from anywhere: e.g. the checks
+			// and tests a conversation's tool call ran, in the nested
+			// engine beneath it
 			return true
 		}
 		// the chain from span up to root, nearest first

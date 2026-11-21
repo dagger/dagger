@@ -2,64 +2,13 @@ package dagui
 
 import (
 	"context"
-	"encoding/binary"
-	"slices"
-	"strconv"
 	"testing"
 	"time"
 
-	telemetry "github.com/dagger/otel-go"
-	"go.opentelemetry.io/otel/attribute"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	"go.opentelemetry.io/otel/sdk/trace/tracetest"
-	"go.opentelemetry.io/otel/trace"
 
-	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/internal/spanfootprint"
 )
-
-// footprintWaits gives some of the spanfootprint session's spans wait links
-// on an earlier span, recorded when they end, as the engine records them:
-// realistic wait chains for the waiting below rows.
-type footprintWaits struct {
-	tr   *spanfootprint.Trace
-	next sdktrace.SpanExporter
-}
-
-func (e footprintWaits) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
-	out := make([]sdktrace.ReadOnlySpan, len(spans))
-	for i, s := range spans {
-		out[i] = s
-		id := s.SpanContext().SpanID()
-		n := int(binary.BigEndian.Uint64(id[:])) - 1
-		h := uint64(n)*0x9e3779b97f4a7c15 ^ 0xabcdef
-		h ^= h >> 29
-		if n <= spanfootprint.LongLived || h%100 >= 6 || s.EndTime().Before(s.StartTime()) {
-			continue
-		}
-		dur := s.EndTime().Sub(s.StartTime())
-		if dur < 10*time.Millisecond {
-			continue
-		}
-		target := e.tr.SpanID(int(h>>8) % n)
-		start := s.StartTime().Add(dur / 10)
-		end := s.StartTime().Add(dur * 6 / 10)
-		stub := tracetest.SpanStubFromReadOnlySpan(s)
-		stub.Links = append(slices.Clip(stub.Links), sdktrace.Link{
-			SpanContext: trace.NewSpanContext(trace.SpanContextConfig{TraceID: s.SpanContext().TraceID(), SpanID: target}),
-			Attributes: []attribute.KeyValue{
-				attribute.String(telemetry.LinkPurposeAttr, telemetryattrs.LinkPurposeWait),
-				attribute.String(telemetryattrs.WcprofWaitReasonAttr, "singleflight"),
-				attribute.String(telemetryattrs.WcprofWaitStartUnixNanoAttr, strconv.FormatInt(start.UnixNano(), 10)),
-				attribute.String(telemetryattrs.WcprofWaitEndUnixNanoAttr, strconv.FormatInt(end.UnixNano(), 10)),
-			},
-		})
-		out[i] = stub.Snapshot()
-	}
-	return e.next.ExportSpans(ctx, out)
-}
-
-func (e footprintWaits) Shutdown(context.Context) error { return nil }
 
 // teeExporter exports to both.
 type teeExporter struct{ a, b sdktrace.SpanExporter }
@@ -92,7 +41,7 @@ func TestFoldRowWaitsMatchFullLoad(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			wrap := func(next sdktrace.SpanExporter) sdktrace.SpanExporter {
-				next = footprintWaits{tr, next}
+				next = tr.WaitChains(next)
 				if nested {
 					next = nestedFootprint{next}
 				}
