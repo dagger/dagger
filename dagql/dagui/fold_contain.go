@@ -57,36 +57,103 @@ func (f *Fold) noteCause(i, cause uint32) {
 	lca := f.commonAncestor(i, cause)
 	f.markEscape(i, lca)
 	f.markEscape(cause, lca)
-	// the row of a call i is an evaluation of reads i's waits as its own
+	// the row of a call i is an evaluation of reads i's waits as its own,
+	// and its twins'
 	f.markRead(i)
+	f.state[i] |= foldCauseLinks
+	for c := f.firstChild[i]; c != 0; c = f.nextSib[c-1] {
+		if f.name[c-1] == f.name[i] && f.state[c-1]&foldNoopWaits != 0 {
+			f.breakNoops(c - 1)
+		}
+	}
 }
 
-// classifyWaits records span i's waits, and sorts them into contained ones
-// and the others, which it appends to linked for the DB to retain with i.
-func (f *Fold) classifyWaits(i uint32, waits, linked []SpanID) []SpanID {
+// breakNoops retains span s, whose waits on its own execution a row now
+// reads, and their targets, reading back those folded.
+func (f *Fold) breakNoops(s uint32) {
+	f.state[s] = f.state[s]&^foldNoopWaits | foldWaitLinks
+	f.Broken++
+	f.BrokenTargets += len(f.noops[s])
+	have := noSpan
+	if s == f.ingesting {
+		have = s
+	}
+	f.promote(s, have)
+	for _, t := range f.noops[s] {
+		f.promote(t, noSpan)
+	}
+}
+
+// foldWait is a wait link of an arriving span: its target, and whether
+// it's a call's wait on an execution (reason call_exec or singleflight).
+type foldWait struct {
+	target SpanID
+	exec   bool
+}
+
+// classifyWaits records span i's waits, and sorts them into those no row
+// reads -- its waits on its own execution (noopWait), contained ones -- and
+// the others, which it appends to linked for the DB to retain with i.
+func (f *Fold) classifyWaits(i uint32, waits []foldWait, linked []SpanID) []SpanID {
 	// the waits a span carries come whole with each snapshot of it
 	delete(f.reads, i)
+	delete(f.noops, i)
 	targets := make([]uint32, len(waits))
-	for k, target := range waits {
-		targets[k] = f.intern(target)
+	noop := make([]bool, len(waits))
+	var noops []uint32
+	for k, w := range waits {
+		targets[k] = f.intern(w.target)
+		if f.noopWait(i, targets[k], w.exec) {
+			noop[k] = true
+			noops = append(noops, targets[k])
+			continue
+		}
 		f.noteWait(i, targets[k])
 	}
 	contained := f.waitsContained(i)
 	any := false
-	for k, target := range waits {
+	for k, w := range waits {
+		if noop[k] {
+			continue
+		}
 		if contained && f.isAncestor(i, targets[k]) && targets[k] != i {
 			any = true
 			continue
 		}
 		f.state[i] |= foldWaitLinks
-		linked = append(linked, target)
+		linked = append(linked, w.target)
 	}
 	if any {
 		f.state[i] |= foldContainedWaits
 	} else {
 		f.state[i] &^= foldContainedWaits
 	}
+	if len(noops) > 0 {
+		if f.noops == nil {
+			f.noops = map[uint32][]uint32{}
+		}
+		f.noops[i] = noops
+		f.state[i] |= foldNoopWaits
+	} else {
+		f.state[i] &^= foldNoopWaits
+	}
 	return linked
+}
+
+// noopWait reports whether span i's wait on t is one no row reads: a call's
+// wait on its own execution, its same-name descendant, which every row
+// reading i's waits skips (collectOwnWaits) -- i's own, its twin parent's,
+// a wait chain's through i -- unless i or its twin parent is the deferred
+// evaluation of a call of another name, whose row reads it (a span with
+// cause links).
+func (f *Fold) noopWait(i, t uint32, exec bool) bool {
+	if !exec || t == i || f.name[i] == 0 || f.name[t] != f.name[i] || f.state[i]&foldCauseLinks != 0 {
+		return false
+	}
+	if p := f.parent[i]; p != 0 && f.name[p-1] == f.name[i] && f.state[p-1]&foldCauseLinks != 0 {
+		return false
+	}
+	return f.isAncestor(i, t)
 }
 
 // waitsContained reports whether span i's waits on spans beneath it are
@@ -94,7 +161,7 @@ func (f *Fold) classifyWaits(i uint32, waits, linked []SpanID) []SpanID {
 // for its twin parents.
 func (f *Fold) waitsContained(i uint32) bool {
 	for depth := 0; depth < 4096; depth++ {
-		if f.state[i]&(foldWaitsBroken|foldEscapes|foldRead) != 0 {
+		if f.state[i]&(foldEscapes|foldRead) != 0 {
 			return false
 		}
 		p := f.parent[i]
@@ -152,7 +219,7 @@ func (f *Fold) breakWaits(s uint32) {
 		s := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
 		if f.state[s]&foldContainedWaits != 0 {
-			f.state[s] = f.state[s]&^foldContainedWaits | foldWaitLinks | foldWaitsBroken
+			f.state[s] = f.state[s]&^foldContainedWaits | foldWaitLinks
 			f.Broken++
 			f.BrokenTargets += len(f.reads[s])
 			have := noSpan
@@ -180,11 +247,15 @@ func (f *Fold) skipsWait(carrier, target SpanID) bool {
 		return false
 	}
 	c, ok := f.lookup(carrier)
-	if !ok || f.state[c]&foldContainedWaits == 0 {
+	if !ok || f.state[c]&(foldContainedWaits|foldNoopWaits) == 0 {
 		return false
 	}
 	t, ok := f.lookup(target)
 	if !ok || t == c || f.state[t]&(foldReceived|foldRetained) != foldReceived {
+		return false
+	}
+	if f.state[c]&foldContainedWaits == 0 && f.name[t] != f.name[c] {
+		// only its waits on its own execution go unread
 		return false
 	}
 	return f.isAncestor(c, t)

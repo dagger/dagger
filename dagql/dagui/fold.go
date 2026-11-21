@@ -89,10 +89,11 @@ const (
 	foldFunctionPlumbing
 	foldExecOp
 	// foldContainedWaits marks a span with contained waits (see
-	// containedWait), whose targets Fold.reads lists; foldWaitsBroken a
-	// span whose waits stopped being contained, all retained since.
+	// fold_contain.go), whose targets Fold.reads lists; foldNoopWaits a
+	// span with waits on its own execution, which no row reads, whose
+	// targets Fold.noops lists.
 	foldContainedWaits
-	foldWaitsBroken
+	foldNoopWaits
 	// foldEscapes marks a span an edge leaves the subtree of; foldRead a
 	// span whose own waits a row that doesn't hold it reads.
 	foldEscapes
@@ -199,6 +200,9 @@ type Fold struct {
 	// reads lists, for each span with waits on spans beneath it, those
 	// targets: its contained waits' while it has any (see containedWait).
 	reads map[uint32][]uint32
+	// noops lists the targets of each span's waits on its own execution
+	// (see noopWait).
+	noops map[uint32][]uint32
 	// ingesting is the span ingest is at.
 	ingesting uint32
 	// Broken counts the spans whose contained waits a later edge broke,
@@ -408,7 +412,8 @@ type foldInfo struct {
 	// linked holds the targets of its cause and error-origin links, which
 	// are retained with it; causes those of its cause links, and waits
 	// those of its wait links.
-	linked, causes, waits []SpanID
+	linked, causes []SpanID
+	waits          []foldWait
 	// origins holds the error origins its status names.
 	failed bool
 }
@@ -466,13 +471,16 @@ func otelFoldInfo(s sdktrace.ReadOnlySpan) foldInfo {
 	info.failed = s.Status().Code == codes.Error
 	info.cat = foldCategory(s.EndTime().Before(s.StartTime()), pending, cached, canceled, info.failed)
 	for _, link := range s.Links() {
-		purpose := ""
+		var purpose, reason string
 		for _, kv := range link.Attributes {
-			if string(kv.Key) == telemetry.LinkPurposeAttr {
+			switch string(kv.Key) {
+			case telemetry.LinkPurposeAttr:
 				purpose = kv.Value.AsString()
+			case telemetryattrs.WcprofWaitReasonAttr:
+				reason = kv.Value.AsString()
 			}
 		}
-		info.addLink(purpose, SpanID{link.SpanContext.SpanID()})
+		info.addLink(purpose, reason, SpanID{link.SpanContext.SpanID()})
 	}
 	if info.failed {
 		info.addOrigins(s.Status().Description)
@@ -511,7 +519,7 @@ func snapshotFoldInfo(s *SpanSnapshot) foldInfo {
 	info.cat = foldCategory(s.EndTime.Before(s.StartTime), s.Pending || (s.Final && s.Pending_),
 		s.Cached || (s.Final && s.Cached_), s.Canceled || (s.Final && s.Canceled_), info.failed)
 	for _, link := range s.Links {
-		info.addLink(link.Purpose, link.SpanContext.SpanID)
+		info.addLink(link.Purpose, link.WaitReason, link.SpanContext.SpanID)
 	}
 	if info.failed {
 		info.addOrigins(s.Status.Description)
@@ -519,7 +527,7 @@ func snapshotFoldInfo(s *SpanSnapshot) foldInfo {
 	return info
 }
 
-func (info *foldInfo) addLink(purpose string, target SpanID) {
+func (info *foldInfo) addLink(purpose, reason string, target SpanID) {
 	if !target.IsValid() || target == info.id {
 		return
 	}
@@ -528,9 +536,9 @@ func (info *foldInfo) addLink(purpose string, target SpanID) {
 		info.flags |= foldCauseLinks
 		info.causes = append(info.causes, target)
 	case telemetryattrs.LinkPurposeWait:
-		// retained, with its target, unless the wait is contained (see
-		// Fold.containedWait): ingest decides
-		info.waits = append(info.waits, target)
+		// retained, with its target, unless no row reads the wait (see
+		// fold_contain.go): ingest decides
+		info.waits = append(info.waits, foldWait{target, reason == "call_exec" || reason == "singleflight"})
 		return
 	case telemetry.LinkPurposeErrorOrigin:
 	default:
