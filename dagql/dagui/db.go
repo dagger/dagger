@@ -324,6 +324,10 @@ type DB struct {
 	// untracked marks a DB that serves no remote frontend (see
 	// WithoutUpdateTracking): it keeps neither updatedSpans nor seenSpans.
 	untracked bool
+
+	// fold is the stub table of a DB that folds the spans it doesn't
+	// render (WithFold); nil for a DB that keeps every span.
+	fold *Fold
 }
 
 // DBOption configures a DB built by NewDB.
@@ -551,6 +555,20 @@ func (db *DB) appendSurfacedAncestors(snapshots []SpanSnapshot, included map[Spa
 }
 
 func (db *DB) ImportSnapshots(snapshots []SpanSnapshot) {
+	db.ImportSnapshotsContext(context.Background(), snapshots)
+}
+
+// ImportSnapshotsContext is ImportSnapshots, with a context that may mark
+// the snapshots as the answer to a fold's read (FoldFill).
+func (db *DB) ImportSnapshotsContext(ctx context.Context, snapshots []SpanSnapshot) {
+	if db.fold != nil {
+		db.fold.importSnapshots(ctx, snapshots)
+		return
+	}
+	db.importSnapshots(snapshots)
+}
+
+func (db *DB) importSnapshots(snapshots []SpanSnapshot) {
 	settle := db.deferSpanOrder()
 	defer settle()
 	spans := make([]*Span, len(snapshots))
@@ -706,6 +724,14 @@ func (db *DB) RemainingSnapshots() []SpanSnapshot {
 var _ sdktrace.SpanExporter = (*DB)(nil)
 
 func (db *DB) ExportSpans(ctx context.Context, otelSpans []sdktrace.ReadOnlySpan) error {
+	if db.fold != nil {
+		return db.fold.exportSpans(ctx, otelSpans)
+	}
+	db.exportSpans(otelSpans)
+	return nil
+}
+
+func (db *DB) exportSpans(otelSpans []sdktrace.ReadOnlySpan) {
 	settle := db.deferSpanOrder()
 	defer settle()
 	spans := make([]*Span, len(otelSpans))
@@ -713,7 +739,6 @@ func (db *DB) ExportSpans(ctx context.Context, otelSpans []sdktrace.ReadOnlySpan
 		spans[i] = db.recordOTelSpan(otelSpan)
 	}
 	propagateStatus(spans)
-	return nil
 }
 
 func (db *DB) LogExporter() sdklog.Exporter {
@@ -930,6 +955,9 @@ func (db *DB) ingestLogPresence(record sdklog.Record) {
 // flagged when it arrives (see takeHasLogs). One that has arrived is updated,
 // so remote frontends learn it has logs.
 func (db *DB) noteHasLogs(spanID SpanID) {
+	if db.fold != nil && db.fold.noteHasLogs(spanID) {
+		return
+	}
 	if span, ok := db.Spans.Map[spanID]; ok {
 		if !span.HasLogs {
 			span.HasLogs = true
@@ -947,6 +975,11 @@ func (db *DB) noteHasLogs(spanID SpanID) {
 func (db *DB) SpanHasLogs(spanID SpanID) bool {
 	if span, ok := db.Spans.Map[spanID]; ok {
 		return span.HasLogs
+	}
+	if db.fold != nil {
+		if i, ok := db.fold.lookup(spanID); ok {
+			return db.fold.state[i]&foldHasLogs != 0
+		}
 	}
 	_, ok := db.pendingHasLogs[spanID]
 	return ok
@@ -1023,6 +1056,10 @@ func (db DBMetricExporter) exportDataPoints(metric metricdata.Metrics, dataPoint
 			var spanID SpanID
 			var err error
 			if spanID.SpanID, err = trace.SpanIDFromHex(spanIDHex.AsString()); err != nil {
+				continue
+			}
+			if db.fold != nil && db.fold.IsFolded(spanID) {
+				// shown nowhere: kept for retained spans only
 				continue
 			}
 			if db.MetricsBySpan == nil {

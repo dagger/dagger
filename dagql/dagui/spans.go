@@ -1022,10 +1022,10 @@ func (span *Span) rollUpAncestors(stop *Span, visit func(*Span)) (reachedStop bo
 // Only called when span arrives and links to its parent (or, for a span
 // without one, to its causes), after its links are established.
 func (span *Span) recreditLateParent() {
-	if span.ChildSpans.Len() == 0 {
+	db := span.db
+	if span.ChildSpans.Len() == 0 && db.fold.ownCounts(span).isZero() {
 		return
 	}
-	db := span.db
 
 	// Running spans reach every direct ancestor (see
 	// PropagateStatusToParentsAndLinks): span holds those beneath it.
@@ -1078,6 +1078,15 @@ func (span *Span) recreditLateParent() {
 		return
 	}
 	credited := map[*Span]bool{}
+	// A folding DB counts the folded spans a retained span owns on the
+	// spans it reaches, like one more span beneath it (see foldAgg): they
+	// reach the new ancestors too.
+	if own := db.fold.ownCounts(span); !own.isZero() {
+		for _, ancestor := range gained {
+			db.fold.creditLate(ancestor, own)
+			credited[ancestor] = true
+		}
+	}
 	seen := map[*Span]bool{span: true}
 	queue := slices.Clone(span.ChildSpans.Spans())
 	for len(queue) > 0 {
@@ -1089,7 +1098,8 @@ func (span *Span) recreditLateParent() {
 		seen[beneath] = true
 		queue = append(queue, beneath.ChildSpans.Spans()...)
 		cat := beneath.lastRollUpCategory
-		if cat == stateUnknown {
+		own := db.fold.ownCounts(beneath)
+		if cat == stateUnknown && own.isZero() {
 			// not counted anywhere yet: it will be, through the new parent
 			continue
 		}
@@ -1104,10 +1114,15 @@ func (span *Span) recreditLateParent() {
 				// counted already, through another way up
 				continue
 			}
-			if ancestor.rollUpState == nil {
-				ancestor.rollUpState = &RollUpState{}
+			if cat != stateUnknown {
+				if ancestor.rollUpState == nil {
+					ancestor.rollUpState = &RollUpState{}
+				}
+				ancestor.rollUpState.incrementCategory(cat)
 			}
-			ancestor.rollUpState.incrementCategory(cat)
+			if !own.isZero() {
+				db.fold.creditLate(ancestor, own)
+			}
 			credited[ancestor] = true
 		}
 	}
