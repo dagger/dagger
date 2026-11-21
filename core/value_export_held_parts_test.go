@@ -22,6 +22,10 @@ import (
 type heldPartsExport struct {
 	Outputs []heldPartsOutput
 	Held    int
+	Copied  int
+	// unpredicted is the export's count of copied records naming a snapshot
+	// their row's owner links don't.
+	unpredicted int
 }
 
 type heldPartsOutput struct {
@@ -63,6 +67,7 @@ func heldPartsRun(t *testing.T, ctx context.Context, cache *dagql.Cache, selecti
 			got.Outputs = append(got.Outputs, o)
 		}
 		got.Held = len(ex.Rows.Held)
+		got.Copied, got.unpredicted = ex.CopiedRows, ex.UnpredictedLinks
 		return nil
 	}))
 	return got
@@ -112,4 +117,6 @@ func TestValueExportHeldRowsKeepTheirParts(t *testing.T) {
 	held := heldPartsRun(t, ctx, cache, dagql.ValueSelection{Roots: []dagql.AnyResult{workdir}, Outputs: outputs, Known: known})
 	require.Positive(t, held.Held, "the steps below go held")
 	require.Equal(t, full.Outputs, held.Outputs, "the same parts, prefixes and owners, on the same rows")
+	require.Zero(t, held.unpredicted, "every record copied names only snapshots its owner links hold")
+	require.Zero(t, full.unpredicted)
 }
