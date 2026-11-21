@@ -28,14 +28,16 @@ import (
 // A restore merges the files the service published of a check's set
 // (protocol.Restore): the head, the check's own results and what its runs
 // used before them, and the whole set. Each file is downloaded as soon as its
-// restore arrives, checked against its digest, and its parts are decoded and
-// merged one at a time through the path a merge takes (Adapter.RestorePart),
-// each dropped before the next is decoded. Heads merge on a lane of their
-// own, in arrival order, so a head never waits for a whole, even another
-// check's that started first; each whole merges on a lane of its own, so a
-// whole never waits for another check's either. Nothing in a restore fails it,
-// nor anything else: a file that can't be fetched, read or merged leaves the
-// engine with what merged of it, and the reply says where it stopped.
+// restore arrives, checked against its digest, and its parts are merged one
+// at a time through the path a merge takes (Adapter.RestorePart). Each part
+// is decoded while the part before it merges, one part ahead (decodeAhead),
+// so that a merge waits for no decode after the first. Heads merge on a lane
+// of their own, in arrival order, so a head never waits for a whole, even
+// another check's that started first; each whole merges on a lane of its own,
+// so a whole never waits for another check's either. Nothing in a restore
+// fails it, nor anything else: a file that can't be fetched, read or merged
+// leaves the engine with what merged of it, and the reply says where it
+// stopped.
 
 const (
 	// restoreIdleTimeout bounds the time a file's download goes without a
@@ -154,7 +156,9 @@ type RestoreReport struct {
 // behind the merges that answer lookups before it began (Adapter.RestorePart).
 // PrepareLockWait is how long the preparation waited for the cache's lock,
 // and PrepareLockWaits that time by the kind of writer that let each wait in
-// (dagql.MergeReply).
+// (dagql.MergeReply). DecodeWait is how long its merge waited for its decode,
+// which runs while the part before it merges (decodeAhead): Decode is the
+// decode's own time, most of which a merge doesn't wait for.
 type RestoredPartReport struct {
 	Records          int
 	Committed        time.Time
@@ -191,6 +195,11 @@ type restoreFile struct {
 	// windowStart is the engine's counters as the file arrived, read beside
 	// its download (RestoreReport.Window); set before fetched closes.
 	windowStart restoreReading
+	// decoded delivers its parts decoded, in order, from its decoder
+	// (decodeAhead), once it is opened; stopDecode, closed when the file
+	// ends, stops the decoder.
+	decoded    chan decodedPart
+	stopDecode chan struct{}
 	// landed ends the cache's mark of a whole landing (Adapter.Landing),
 	// from its arrival to its end; nil for a head.
 	landed func()
@@ -458,16 +467,63 @@ func (r *restorer) open(f *restoreFile) error {
 		f.unretained = append(f.unretained, part.Unretained)
 	}
 	f.report.PeakBefore = r.s.cfg.peakRSS()
+	if len(parts) > 0 {
+		f.decoded, f.stopDecode = make(chan decodedPart), make(chan struct{})
+		decode, stop := r.s.cfg.decode, f.stopDecode
+		r.s.go_(func() {
+			ctx, unlabel := wcprof.WithCPUKind(r.s.ctx, wcprof.CPUKindMerge)
+			defer unlabel()
+			decodeAhead(ctx, decode, parts, f.decoded, stop)
+		})
+	}
 	return nil
 }
 
-// mergePart decodes the file's next part, fills in its download addresses
-// from the file's table, merges it, and counts the misses it would have
-// served.
+// decodedPart is a part as its decoder delivers it: decoded, with the time
+// its decode took, or the error that stopped it.
+type decodedPart struct {
+	bundle dagql.ValueBundle
+	took   time.Duration
+	err    error
+}
+
+// decodeAhead decodes a file's parts in order with decode and delivers each
+// on out, which its merge receives from: the next part decodes while the
+// part before it merges, and none further until that one is taken, so at
+// most one decoded part waits beside the one merging. Each part's bytes are
+// dropped once it is decoded. It stops after the first part that fails to
+// decode, once stop closes, or once ctx ends.
+func decodeAhead(ctx context.Context, decode func([]byte) (dagql.ValueBundle, error), parts [][]byte, out chan<- decodedPart, stop <-chan struct{}) {
+	for i := range parts {
+		began := time.Now()
+		bundle, err := decode(parts[i])
+		parts[i] = nil
+		select {
+		case out <- decodedPart{bundle: bundle, took: time.Since(began), err: err}:
+		case <-stop:
+			return
+		case <-ctx.Done():
+			return
+		}
+		if err != nil {
+			return
+		}
+	}
+}
+
+// mergePart takes the file's next part from its decoder, fills in its
+// download addresses from the file's table, merges it, and counts the misses
+// it would have served.
 func (r *restorer) mergePart(ctx context.Context, f *restoreFile) error {
 	began := time.Now()
-	bundle, err := r.s.cfg.decode(f.parts[f.next])
-	decoded := time.Since(began)
+	var next decodedPart
+	select {
+	case next = <-f.decoded:
+	case <-ctx.Done():
+		return errRestoreConnectionEnded
+	}
+	decodeWait := time.Since(began)
+	bundle, decoded, err := next.bundle, next.took, next.err
 	f.report.Decode += decoded
 	if err != nil {
 		return fmt.Errorf("part %d: %w", f.next, err)
@@ -485,7 +541,6 @@ func (r *restorer) mergePart(ctx context.Context, f *restoreFile) error {
 	}
 	f.noteEntries(bundle, reply)
 	committed := time.Unix(0, reply.EngineTimeUnixNano)
-	f.parts[f.next] = nil
 	f.next++
 	f.result.Parts++
 	f.result.Records += records
@@ -504,6 +559,7 @@ func (r *restorer) mergePart(ctx context.Context, f *restoreFile) error {
 		PriorityWait:     priorityWait,
 		PrepareLockWait:  reply.PrepareLockWait,
 		PrepareLockWaits: reply.PrepareLockWaits,
+		DecodeWait:       decodeWait,
 	}
 	r.lateMisses(reply, &part)
 	f.report.Parts = append(f.report.Parts, part)
@@ -571,6 +627,7 @@ func (r *restorer) lateMisses(reply dagql.MergeReply, part *RestoredPartReport) 
 // answers its restore once its last file is done.
 func (r *restorer) finish(f *restoreFile, err error) {
 	ended := time.Now()
+	f.endDecode()
 	if f.landed != nil {
 		f.landed()
 	}
@@ -641,6 +698,7 @@ func (r *restorer) abandon() {
 	r.abandoned = true
 	r.mu.Unlock()
 	for _, f := range left {
+		f.endDecode()
 		if f.landed != nil {
 			f.landed()
 		}
@@ -657,6 +715,16 @@ func (r *restorer) abandon() {
 		f.report.Ended = time.Now()
 		r.s.adapter.Restored(f.report)
 		r.logFile(f, "warn")
+	}
+}
+
+// endDecode stops the file's decoder, if it has one, once the file ends.
+// Only the file's lane, or the restorer's end once the lanes have ended,
+// calls it.
+func (f *restoreFile) endDecode() {
+	if f.stopDecode != nil {
+		close(f.stopDecode)
+		f.stopDecode = nil
 	}
 }
 
