@@ -31,33 +31,7 @@ type offerOwner struct {
 type partOffer struct {
 	record PersistedPartOffer
 	owner  *offerOwner
-	// came is how the offer reached the engine. It is kept in memory only,
-	// for the log of an offer found on a complete part
-	// (logOffersOnCompleteParts).
-	came offerCame
 }
-
-// offerCame is how an offer reached the engine: an offer call (OfferParts),
-// a merge's commit, or the restore of the engine's own saved records.
-type offerCame uint8
-
-const (
-	offerCameByOffer offerCame = iota
-	offerCameByMerge
-	offerCameByRestore
-)
-
-func (came offerCame) String() string {
-	switch came {
-	case offerCameByMerge:
-		return "merge"
-	case offerCameByRestore:
-		return "restore"
-	default:
-		return "offer"
-	}
-}
-
 type resultOwnershipChild struct {
 	result   *sharedResult
 	resultID sharedResultID
@@ -444,7 +418,7 @@ func (c *Cache) restoreOfferOwnersLocked(ctx context.Context) error {
 				return err
 			}
 			record.Owner = owner.record
-			if err := c.attachPartOfferLocked(res, record.Address, &partOffer{record: record, owner: owner, came: offerCameByRestore}); err != nil {
+			if err := c.attachPartOfferLocked(res, record.Address, &partOffer{record: record, owner: owner}); err != nil {
 				return err
 			}
 		}
