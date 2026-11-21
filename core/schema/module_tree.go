@@ -47,6 +47,9 @@ func callerTreeModuleSource(
 	if err != nil {
 		return inst, err
 	}
+	if err := core.CheckModuleServes(ctx, dag, src, target); err != nil {
+		return inst, err
+	}
 	switch src.Kind {
 	case core.ModuleSourceKindGit:
 		var git treeGit

@@ -133,3 +133,64 @@ clients = ["github.com/acme/own/client"]
 		})
 	}
 }
+
+func TestDeclaredLocalClients(t *testing.T) {
+	ctx := t.Context()
+	reader := func(files map[string]string) TreeFileReader {
+		return func(rel string) ([]byte, bool, error) {
+			data, ok := files[rel]
+			return []byte(data), ok, nil
+		}
+	}
+	const config = `[modules.go]
+source = "go"
+
+[sdks.go]
+module = "go"
+
+[sdks.go.scopes.".dagger/modules/caller"]
+is-module = true
+clients = ["./.dagger/modules/mid", "github.com/acme/private/hello@main"]
+
+[sdks.go.scopes.".dagger/modules/mid"]
+is-module = true
+clients = ["./.dagger/modules/leaf"]
+`
+
+	t.Run("config at the root of the tree", func(t *testing.T) {
+		got, configDir, err := DeclaredLocalClients(ctx, ".dagger/modules/caller", reader(map[string]string{"dagger.toml": config}))
+		require.NoError(t, err)
+		require.Equal(t, []string{".dagger/modules/mid"}, got)
+		require.Equal(t, ".", configDir)
+	})
+
+	t.Run("config below the tree's root", func(t *testing.T) {
+		got, configDir, err := DeclaredLocalClients(ctx, "ws/.dagger/modules/mid", reader(map[string]string{"ws/dagger.toml": config}))
+		require.NoError(t, err)
+		require.Equal(t, []string{"ws/.dagger/modules/leaf"}, got)
+		require.Equal(t, "ws", configDir)
+	})
+
+	t.Run("the nearest config governs", func(t *testing.T) {
+		got, configDir, err := DeclaredLocalClients(ctx, "ws/.dagger/modules/mid", reader(map[string]string{
+			"dagger.toml":    "[sdks.go.scopes.\"ws/.dagger/modules/mid\"]\nis-module = true\nclients = [\"./other\"]\n",
+			"ws/dagger.toml": config,
+		}))
+		require.NoError(t, err)
+		require.Equal(t, []string{"ws/.dagger/modules/leaf"}, got)
+		require.Equal(t, "ws", configDir)
+	})
+
+	t.Run("no config declares nothing", func(t *testing.T) {
+		got, configDir, err := DeclaredLocalClients(ctx, "modules/caller", reader(nil))
+		require.NoError(t, err)
+		require.Empty(t, got)
+		require.Equal(t, ".", configDir)
+	})
+
+	t.Run("a config that does not parse declares nothing", func(t *testing.T) {
+		got, _, err := DeclaredLocalClients(ctx, "modules/caller", reader(map[string]string{"dagger.toml": "[modules"}))
+		require.NoError(t, err)
+		require.Empty(t, got)
+	})
+}
