@@ -803,7 +803,6 @@ func (c *Cache) selectShareSlots(ctx context.Context, item *snapshotShareItem) [
 	// requirements already fit inside the receiver's. Selecting a donor the
 	// structural admission would refuse would spend this address's one
 	// attempt on a slot that cannot be admitted.
-	type sharePair struct{ receiver, donor sharedResultID }
 	eligible := make(map[sharedResultID]bool, len(rows))
 	admits := map[sharePair]bool{}
 	c.lockGraphFor(ctx, workSharing)
@@ -826,6 +825,16 @@ func (c *Cache) selectShareSlots(ctx context.Context, item *snapshotShareItem) [
 		}
 	}
 	c.egraphMu.Unlock()
+	return shareSlotsFor(rows, observed, eligible, admits)
+}
+
+// sharePair is a receiver and a donor a pass's selection decided.
+type sharePair struct{ receiver, donor sharedResultID }
+
+// shareSlotsFor picks, for each eligible receiver's pending part, in member
+// and address order, the first member admitted for it that holds the part
+// ready, as eligible and admits decided.
+func shareSlotsFor(rows []*sharedResult, observed map[sharedResultID]*shareRowProbe, eligible map[sharedResultID]bool, admits map[sharePair]bool) []*shareSlot {
 	var slots []*shareSlot
 	taken := map[sharedResultID]map[string]bool{}
 	for _, row := range rows {
