@@ -829,26 +829,116 @@ func (c *Cache) newSessionlessPartSourceLeaseLocked(ctx context.Context, receive
 }
 
 func (c *Cache) sessionlessPartEquivalentLocked(receiver, donor *sharedResult, lookup partLookup) (CacheHitRoute, bool) {
-	route, ok := c.sessionlessPartEquivalentsLocked(receiver, lookup)[donor]
-	return route, ok
+	return c.sessionlessPartEquivalenceLocked(receiver, lookup)(donor)
 }
 
-// sessionlessPartEquivalentsLocked collects, once, every ordinary equivalent
-// of receiver whose own resource requirements fit inside the receiver's, with
-// the route that found it. It validates the receiver's frame against the
-// prepared lookup and excludes expired candidates, as the single-donor form
-// does. E is held.
-func (c *Cache) sessionlessPartEquivalentsLocked(receiver *sharedResult, lookup partLookup) map[*sharedResult]CacheHitRoute {
+// sessionlessStructuralRouteLocked is the structural route of a prepared
+// lookup, as appendTermSetResultsLocked reads it: the servable results of the
+// lookup's call over its inputs' classes, or, when none of those is servable,
+// the digests of the terms' output classes, whose posted results it reaches.
+// E is held.
+func (c *Cache) sessionlessStructuralRouteLocked(lookup partLookup, now int64) (map[sharedResultID]struct{}, []digest.Digest) {
+	if lookup.frame == nil {
+		return nil, nil
+	}
+	ids := make([]eqClassID, len(lookup.inputs))
+	for i, d := range lookup.inputs {
+		ids[i] = c.findEqClassLocked(c.egraphDigestToClass[d.String()])
+		if ids[i] == 0 {
+			return nil, nil
+		}
+	}
+	terms := c.egraphTermsByTermDigest[calcEgraphTermDigest(lookup.self, ids)]
+	if terms == nil {
+		return nil, nil
+	}
+	results := map[sharedResultID]struct{}{}
+	for termID := range terms.Items() {
+		for resID := range c.termResults[termID] {
+			if c.servableCandidateLocked(resID, now, nil) != nil {
+				results[resID] = struct{}{}
+			}
+		}
+	}
+	if len(results) > 0 {
+		return results, nil
+	}
+	var digests []digest.Digest
+	seen := map[eqClassID]struct{}{}
+	for termID := range terms.Items() {
+		term := c.egraphTerms[termID]
+		if term == nil {
+			continue
+		}
+		outputEqID := c.eqClassRootLocked(term.outputEqID)
+		if _, ok := seen[outputEqID]; outputEqID == 0 || ok {
+			continue
+		}
+		seen[outputEqID] = struct{}{}
+		for dig := range c.eqClassToDigests[outputEqID] {
+			digests = append(digests, digest.Digest(dig))
+		}
+	}
+	return nil, digests
+}
+
+// sessionlessPartEquivalenceLocked prepares the test of whether a row is an
+// ordinary equivalent of receiver whose own resource requirements fit inside
+// the receiver's, and by which route: whether the candidate collector
+// (collectPartCandidatesWithAdmissionLocked) collects the row for the
+// receiver, and with which first route, decided for that one row. A test
+// reads the row's own postings, not every result the receiver's digests post:
+// a receiver in a class of many equal results posts the whole class under its
+// content digest. It validates the receiver's frame against the prepared
+// lookup and excludes expired rows, as the collector does. E is held while it
+// is prepared and while its test runs.
+func (c *Cache) sessionlessPartEquivalenceLocked(receiver *sharedResult, lookup partLookup) func(*sharedResult) (CacheHitRoute, bool) {
 	if receiver.loadResultCall() != lookup.frame {
-		return nil
+		return func(*sharedResult) (CacheHitRoute, bool) { return "", false }
 	}
-	candidates := c.collectPartCandidatesWithAdmissionLocked(receiver, lookup, func(row *sharedResult) bool { return c.ownPartRequirementsFitLocked(receiver, row) })
-	out := make(map[*sharedResult]CacheHitRoute, len(candidates))
-	// The collector already keeps one entry per row, with its first route.
-	for _, candidate := range candidates {
-		out[candidate.row] = candidate.route
+	now := time.Now().Unix()
+	posted := func(dig digest.Digest, row *sharedResult) bool {
+		if dig == "" {
+			return false
+		}
+		results := c.egraphResultsByDigest[dig.String()]
+		return results != nil && results.Contains(row.id)
 	}
-	return out
+	structural, structuralDigests := c.sessionlessStructuralRouteLocked(lookup, now)
+	return func(row *sharedResult) (CacheHitRoute, bool) {
+		if row == nil || c.resultsByID[row.id] != row {
+			return "", false
+		}
+		if row != receiver && row.expiresAtUnix != 0 && row.expiresAtUnix <= now {
+			return "", false
+		}
+		if !c.ownPartRequirementsFitLocked(receiver, row) {
+			return "", false
+		}
+		if row == receiver {
+			return CacheHitRouteRecipe, true
+		}
+		if c.servableCandidateLocked(row.id, now, nil) != row {
+			return "", false
+		}
+		if posted(lookup.recipe, row) {
+			return CacheHitRouteRecipe, true
+		}
+		for _, extra := range lookup.extras {
+			if posted(extra.Digest, row) {
+				return CacheHitRouteDigest, true
+			}
+		}
+		if _, ok := structural[row.id]; ok {
+			return CacheHitRouteStructural, true
+		}
+		for _, dig := range structuralDigests {
+			if posted(dig, row) {
+				return CacheHitRouteStructural, true
+			}
+		}
+		return "", false
+	}
 }
 
 func (c *Cache) partSourceReferenceAllowedLocked(receiver *sharedResult, source *PartSourceLease, dep *sharedResult) bool {
