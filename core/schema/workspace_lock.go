@@ -166,11 +166,8 @@ func (s *workspaceSchema) readWorkspaceLockForOverlay(
 	}
 	lock, err := workspace.ParseLock(data)
 	if err != nil {
-		if versionErr := workspace.FutureLockfileVersionError(err); versionErr != nil {
-			return nil, versionErr
-		}
-		if conflictErr := workspace.LockfileMergeConflictError(err); conflictErr != nil {
-			return nil, conflictErr
+		if invalidErr := workspace.InvalidLockfileError(lockPath, err); invalidErr != nil {
+			return nil, invalidErr
 		}
 		slog.WarnContext(ctx, "invalid workspace lockfile; resetting it", "path", lockPath, "error", err)
 		return workspace.NewLock(), nil

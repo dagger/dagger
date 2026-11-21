@@ -72,9 +72,21 @@ func (err *UnsupportedVersionError) Error() string {
 // IsNewer reports whether the unsupported version is newer than the supported
 // version. Non-integer versions are not considered newer.
 func (err *UnsupportedVersionError) IsNewer() bool {
+	version, supported, ok := err.versions()
+	return ok && version > supported
+}
+
+// IsOlder reports whether the unsupported version is older than the supported
+// version. Non-integer versions are not considered older.
+func (err *UnsupportedVersionError) IsOlder() bool {
+	version, supported, ok := err.versions()
+	return ok && version < supported
+}
+
+func (err *UnsupportedVersionError) versions() (int, int, bool) {
 	version, versionErr := strconv.Atoi(err.Version)
 	supported, supportedErr := strconv.Atoi(err.Supported)
-	return versionErr == nil && supportedErr == nil && version > supported
+	return version, supported, versionErr == nil && supportedErr == nil
 }
 
 // New returns an empty lockfile.
@@ -233,19 +245,20 @@ func (l *Lockfile) Entries() []Entry {
 }
 
 func parseVersionHeader(line []byte) (string, error) {
+	missingHeader := fmt.Errorf(`missing version header: expected [["%s","%s"]] before any entries`, versionKey, versionValueV2)
 	var header []json.RawMessage
 	if err := decodeJSON(line, &header); err != nil {
-		return "", fmt.Errorf("invalid version header: %w", err)
+		return "", missingHeader
 	}
 	if len(header) != 1 {
-		return "", fmt.Errorf("missing version header")
+		return "", missingHeader
 	}
 	var versionPair []string
 	if err := decodeJSON(header[0], &versionPair); err != nil {
-		return "", fmt.Errorf("missing version header")
+		return "", missingHeader
 	}
 	if len(versionPair) != 2 || versionPair[0] != versionKey {
-		return "", fmt.Errorf("missing version header")
+		return "", missingHeader
 	}
 	version := versionPair[1]
 	if version != versionValueV2 {
@@ -260,11 +273,11 @@ func parseVersionHeader(line []byte) (string, error) {
 func parseEntry(line []byte, version string) (lockEntry, error) {
 	var tuple []json.RawMessage
 	if err := decodeJSON(line, &tuple); err != nil {
-		return lockEntry{}, fmt.Errorf("invalid tuple JSON: %w", err)
+		return lockEntry{}, fmt.Errorf("invalid tuple JSON: expected [namespace, operation, inputs, value]: %w", err)
 	}
 	if len(tuple) != 4 {
 		return lockEntry{}, fmt.Errorf(
-			"invalid tuple length %d: expected 4 for lockfile version %s",
+			"invalid tuple length %d: expected 4 for lockfile version %s: [namespace, operation, inputs, value]",
 			len(tuple),
 			version,
 		)

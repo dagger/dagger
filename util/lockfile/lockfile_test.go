@@ -21,6 +21,7 @@ func TestParseRejectsV1(t *testing.T) {
 	var versionErr *UnsupportedVersionError
 	require.ErrorAs(t, err, &versionErr)
 	require.False(t, versionErr.IsNewer())
+	require.True(t, versionErr.IsOlder())
 }
 
 func TestParseRejectsFutureVersion(t *testing.T) {
@@ -32,6 +33,7 @@ func TestParseRejectsFutureVersion(t *testing.T) {
 	require.Equal(t, "3", versionErr.Version)
 	require.Equal(t, "2", versionErr.Supported)
 	require.True(t, versionErr.IsNewer())
+	require.False(t, versionErr.IsOlder())
 }
 
 func TestParseRejectsMergeConflict(t *testing.T) {
@@ -148,9 +150,12 @@ func TestParseMalformedAndEmpty(t *testing.T) {
 	})
 
 	t.Run("missing header", func(t *testing.T) {
-		_, err := Parse([]byte(`["","container.from",["alpine:latest"],"abc","float"]`))
-		require.Error(t, err)
-		require.ErrorContains(t, err, "missing version header")
+		_, err := Parse([]byte(strings.Join([]string{
+			HeaderComment,
+			`["","oci-sha",["alpine:latest"],"sha256:abc"]`,
+			`[["version","2"]]`,
+		}, "\n")))
+		require.EqualError(t, err, `lockfile line 4: missing version header: expected [["version","2"]] before any entries`)
 	})
 
 	t.Run("unsupported version", func(t *testing.T) {

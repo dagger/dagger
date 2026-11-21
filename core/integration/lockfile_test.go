@@ -220,35 +220,67 @@ func hostGitInit(t *testctx.T, dir string) {
 	require.NoError(t, err, out)
 }
 
-func (LockfileSuite) TestDefaultReplacesInvalidLockfile(ctx context.Context, t *testctx.T) {
-	tests := map[string]string{
-		"v1": strings.Join([]string{
-			`[["version","1"]]`,
-			`["","container.from",["alpine:latest"],"not-a-digest","pin"]`,
-		}, "\n"),
-		"malformed v2": strings.Join([]string{
-			`[["version","2"]]`,
-			`["","oci-sha"]`,
-		}, "\n"),
+func (LockfileSuite) TestDefaultReplacesV1Lockfile(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	hostGitInit(t, workdir)
+	writeEmptyWorkspaceConfig(t, workdir)
+	queryPath := writeContainerFromQuery(t, workdir)
+	lockPath := filepath.Join(workdir, workspace.LockFileName)
+	lockContents := strings.Join([]string{
+		`[["version","1"]]`,
+		`["","container.from",["alpine:latest"],"not-a-digest","pin"]`,
+	}, "\n")
+	require.NoError(t, os.WriteFile(lockPath, []byte(lockContents), 0o600))
+
+	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
+	require.NoError(t, err, string(out))
+	require.Contains(t, string(out), "Warning: resetting invalid workspace lockfile.")
+
+	lockBytes, err := os.ReadFile(lockPath)
+	require.NoError(t, err)
+	require.NotEqual(t, lockContents, string(lockBytes))
+	assertOCISHALockEntry(t, lockBytes)
+}
+
+// A malformed lockfile fails the command with the file and line at fault,
+// rather than being replaced and losing every other pin it holds.
+func (LockfileSuite) TestDefaultRejectsMalformedLockfile(ctx context.Context, t *testctx.T) {
+	tests := map[string]struct {
+		contents string
+		wantErr  string
+	}{
+		"header not first": {
+			contents: strings.Join([]string{
+				`["","oci-sha",["docker.io/library/busybox:latest"],"sha256:0000000000000000000000000000000000000000000000000000000000000000"]`,
+				`[["version","2"]]`,
+			}, "\n"),
+			wantErr: `lockfile line 1: missing version header: expected [["version","2"]] before any entries`,
+		},
+		"short entry": {
+			contents: strings.Join([]string{
+				lockfile.HeaderComment,
+				`[["version","2"]]`,
+				`["","oci-sha"]`,
+			}, "\n"),
+			wantErr: "lockfile line 5: invalid tuple length 2: expected 4",
+		},
 	}
 
-	for name, lockContents := range tests {
+	for name, tc := range tests {
 		t.Run(name, func(ctx context.Context, t *testctx.T) {
 			workdir := t.TempDir()
 			hostGitInit(t, workdir)
 			writeEmptyWorkspaceConfig(t, workdir)
 			queryPath := writeContainerFromQuery(t, workdir)
 			lockPath := filepath.Join(workdir, workspace.LockFileName)
-			require.NoError(t, os.WriteFile(lockPath, []byte(lockContents), 0o600))
+			require.NoError(t, os.WriteFile(lockPath, []byte(tc.contents), 0o600))
 
-			out, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
-			require.NoError(t, err, string(out))
-			require.Contains(t, string(out), "Warning: resetting invalid workspace lockfile.")
+			_, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
+			require.ErrorContains(t, err, "invalid workspace lockfile "+lockPath+": "+tc.wantErr)
 
-			lockBytes, err := os.ReadFile(lockPath)
-			require.NoError(t, err)
-			require.NotEqual(t, lockContents, string(lockBytes))
-			assertOCISHALockEntry(t, lockBytes)
+			lockBytes, readErr := os.ReadFile(lockPath)
+			require.NoError(t, readErr)
+			require.Equal(t, tc.contents, string(lockBytes))
 		})
 	}
 }
