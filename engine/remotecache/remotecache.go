@@ -114,16 +114,21 @@ type Adapter interface {
 	// addresses; ReplyRenewal answers it.
 	TakeRenewalRequest(ctx context.Context) (*dagql.RenewalRequest, error)
 	ReplyRenewal(dagql.RenewalReply) dagql.RenewalReplyDisposition
-	// RestorePart merges one part of a set file (protocol.Restore) into the
-	// cache, through the path Merge takes, with the roots in unretained given
-	// no retention edge, and returns what its commit left. The commit holds
-	// every entry it lands on until the reply's Release
-	// (dagql.Cache.RestoreValues). known are as for Merge: the rows the part
-	// lands on join them. source names the set file, for the log of a record
-	// whose payload fails at its first use. It also returns how long the
-	// part's merge waited behind the merges that answer lookups before it
-	// began.
-	RestorePart(ctx context.Context, part dagql.ValueBundle, unretained []dagql.TransferOrdinal, known *dagql.KnownRows, source string) (dagql.MergeReply, time.Duration, error)
+	// CheckRestorePart checks a part of a set file for its merge, by
+	// everything its merge does before it reads the cache's state
+	// (dagql.Cache.CheckRestoreValues), so that a restore can check a file's
+	// next part while the part before it merges.
+	CheckRestorePart(part dagql.ValueBundle) (*dagql.CheckedValues, error)
+	// RestorePart merges one part of a set file (protocol.Restore), as
+	// CheckRestorePart checked it, into the cache, through the path Merge
+	// takes, with the roots in unretained given no retention edge, and
+	// returns what its commit left. The commit holds every entry it lands on
+	// until the reply's Release (dagql.Cache.RestoreCheckedValues). known are
+	// as for Merge: the rows the part lands on join them. source names the
+	// set file, for the log of a record whose payload fails at its first use.
+	// It also returns how long the part's merge waited behind the merges that
+	// answer lookups before it began.
+	RestorePart(ctx context.Context, part dagql.ValueBundle, checked *dagql.CheckedValues, unretained []dagql.TransferOrdinal, known *dagql.KnownRows, source string) (dagql.MergeReply, time.Duration, error)
 	// Landing marks a whole set landing on the cache, from its arrival to
 	// its end, until the returned func is called (dagql.Cache.Landing).
 	Landing() func()

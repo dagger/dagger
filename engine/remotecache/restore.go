@@ -530,7 +530,11 @@ func (r *restorer) mergePart(ctx context.Context, f *restoreFile) error {
 	}
 	fillAddresses(&bundle, f.file.Table)
 	records := len(bundle.Values)
-	reply, priorityWait, err := r.s.adapter.RestorePart(ctx, bundle, f.unretained[f.next], r.s.known, f.source())
+	checked, err := r.s.adapter.CheckRestorePart(bundle)
+	if err != nil {
+		return fmt.Errorf("part %d: %w", f.next, err)
+	}
+	reply, priorityWait, err := r.s.adapter.RestorePart(ctx, bundle, checked, f.unretained[f.next], r.s.known, f.source())
 	f.report.Prepare += reply.Prepare
 	f.report.Commit += reply.Commit
 	if reply.Release != nil {
