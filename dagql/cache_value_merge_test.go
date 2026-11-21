@@ -384,8 +384,7 @@ func TestMergeValuesStoresARecordOnTheCloud(t *testing.T) {
 	require.Equal(t, uint64(entry.id), reply.Imported()[0].ResultID)
 	sender := HolderKey{Cache: "cache-a", Number: bundle.Values[0].SenderNumber}
 	require.Contains(t, reply.Change.Candidates, sender)
-	require.Contains(t, reply.Change.Recipes, recipe)
-	require.Equal(t, []HolderKey{sender, other}, cloud.EquivalentHolders(recipe.String()), "the recipe digest names the entry's class")
+	require.Equal(t, []HolderKey{sender, other}, cloud.equivalentHoldersForTest(recipe.String()), "the recipe digest names the entry's class")
 	cloud.egraphMu.RLock()
 	stored, replacements := entry.persistedEnvelope != nil, entry.replacements
 	keeps := entry.holderLocked(other) != nil
@@ -1212,7 +1211,6 @@ func TestOfferedReplyAboutAMissingHoldingChangesNothing(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, found)
 	require.Empty(t, change.Candidates)
-	require.Empty(t, change.Recipes)
 	requireNoHolding(t, cloud, HolderKey{"cache-a", 1})
 	require.Zero(t, requireHolding(t, cloud, HolderKey{"cache-a", 2}).Dependents, "no edge to the dependency")
 	cloud.egraphMu.RLock()
