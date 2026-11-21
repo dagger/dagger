@@ -3073,12 +3073,10 @@ func (c *Cache) applyMergedOffersLocked(ctx context.Context, commit *valueMergeC
 	)
 	seen := map[*sharedResult]bool{}
 	for _, row := range commit.rows {
-		if commit.from == cloudCacheID {
-			if _, image := row.res.imageHoldingLocked(); image != nil {
-				// The image ships the entry: its Cloud offers are left out,
-				// whether or not the image ships those parts (ImageEntries).
-				continue
-			}
+		if commit.from == cloudCacheID && row.res.imageSuppliesLocked() {
+			// The image supplies the entry's parts: its Cloud offers are
+			// left out. A record the image ships without a part takes them.
+			continue
 		}
 		if !seen[row.res] && len(commit.newOffers[row.res]) > 0 {
 			seen[row.res] = true
@@ -3111,7 +3109,7 @@ func (c *Cache) applyMergedOffersLocked(ctx context.Context, commit *valueMergeC
 			}
 			offer.Owner = owner.record
 			attached := &partOffer{record: offer, owner: owner}
-			if err := c.attachPartOfferLocked(res, offer.Address, attached); err != nil {
+			if err := c.attachPartOfferLocked(res, commit.from, offer.Address, attached); err != nil {
 				more, releaseErr := c.releaseOfferOwnerLocked(ctx, owner)
 				queue = append(queue, more...)
 				errs = errors.Join(errs, err, releaseErr)

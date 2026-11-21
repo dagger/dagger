@@ -323,12 +323,11 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, item CloudPar
 	// accepted is the offer this call attached, for prefetching.
 	var accepted *partOffer
 	if out.Outcome == OfferAccepted {
-		if _, image := row.imageHoldingLocked(); image != nil {
-			// The engine image ships the row: the row takes no Cloud part
-			// and no Cloud holding, whether or not the image ships this
-			// part. The image ships parts for its results, from the
-			// engine's own disk, and its closures' records without any;
-			// the service knows these rows from the hello (ImageEntries).
+		if row.imageSuppliesLocked() {
+			// The engine image supplies the row's parts from the engine's
+			// own disk: the row takes no Cloud part and no Cloud holding.
+			// A record the image ships without a part has no content of
+			// its own, and takes the Cloud's part as any row does.
 			out.Outcome = OfferUnavailable
 		}
 	}
@@ -344,7 +343,7 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, item CloudPar
 				// Both primitives validate the owner graph before any mutation.
 				next := &partOffer{record: offer, owner: owner}
 				if current == nil {
-					out.Err = c.attachPartOfferLocked(row, address, next)
+					out.Err = c.attachPartOfferLocked(row, cloudCacheID, address, next)
 				} else {
 					queue, out.Err = c.replacePartOfferLocked(ctx, row, address, next)
 				}

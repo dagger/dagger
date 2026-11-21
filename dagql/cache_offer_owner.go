@@ -184,17 +184,17 @@ func (c *Cache) validateOfferAttachmentLocked(res *sharedResult, address Persist
 }
 
 // Slot publication transfers the preparation hold. The offer goes into the
-// holding of the cache it came from, res's image or Cloud holding
-// (offerHoldingLocked), which the caller has noted. Callers release a refused
+// holding of the cache it came from, from: res's image or Cloud holding
+// (senderHoldingLocked), which the caller has noted. Callers release a refused
 // preparation and run any collection callbacks after leaving egraphMu.
-func (c *Cache) attachPartOfferLocked(res *sharedResult, address PersistedPartAddress, offer *partOffer) error {
+func (c *Cache) attachPartOfferLocked(res *sharedResult, from CacheID, address PersistedPartAddress, offer *partOffer) error {
 	key, err := c.validateOfferAttachmentLocked(res, address, offer)
 	if err != nil {
 		return err
 	}
-	_, cloud := res.offerHoldingLocked()
+	_, cloud := res.senderHoldingLocked(from)
 	if cloud == nil {
-		return fmt.Errorf("offer attachment: result %d has no Cloud or image holding", res.id)
+		return fmt.Errorf("offer attachment: result %d has no holding of %q", res.id, from)
 	}
 	if cloud.partLocked(key).offer != nil {
 		return fmt.Errorf("offer attachment: occupied address %s", key)
@@ -215,7 +215,7 @@ func (c *Cache) replacePartOfferLocked(ctx context.Context, res *sharedResult, a
 	}
 	old := res.partOfferLocked(key)
 	if old == nil {
-		return nil, c.attachPartOfferLocked(res, address, offer)
+		return nil, c.attachPartOfferLocked(res, cloudCacheID, address, offer)
 	}
 	if offer.owner != old.owner && offer.owner.slots != 0 {
 		return nil, fmt.Errorf("offer replacement: owner already attached")
@@ -353,10 +353,11 @@ func clonePlatform(platform *ocispecs.Platform) *ocispecs.Platform {
 	return &cloned
 }
 func (res *sharedResult) pendingOffersLocked() ([]PersistedPartOffer, error) {
-	if _, image := res.imageHoldingLocked(); image != nil {
+	if res.imageSuppliesLocked() {
 		// The image's offers aren't saved: the merge of the image's bundle at
 		// the next start attaches them again, and an image that no longer
-		// ships the entry leaves it to run its recipe.
+		// ships the entry leaves it to run its recipe. A record the image
+		// ships without a part holds the Cloud's offers, saved as any are.
 		return nil, nil
 	}
 	return res.attachedOffersLocked()
@@ -412,13 +413,21 @@ func (c *Cache) restoreOfferOwnersLocked(ctx context.Context) error {
 		if env == nil {
 			continue
 		}
+		// The offers go into the holding res has noted: a merge's private
+		// cache notes its sender's, the image's or the Cloud's, and a cache
+		// restored from its saved state has only Cloud holdings, since the
+		// image's aren't saved.
+		from := cloudCacheID
+		if _, image := res.imageHoldingLocked(); image != nil {
+			from = imageCacheID
+		}
 		for _, record := range env.PendingOffers {
 			owner, err := c.newOfferOwnerLocked(ctx, record.Owner)
 			if err != nil {
 				return err
 			}
 			record.Owner = owner.record
-			if err := c.attachPartOfferLocked(res, record.Address, &partOffer{record: record, owner: owner}); err != nil {
+			if err := c.attachPartOfferLocked(res, from, record.Address, &partOffer{record: record, owner: owner}); err != nil {
 				return err
 			}
 		}
