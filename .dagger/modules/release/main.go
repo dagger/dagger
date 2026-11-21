@@ -201,7 +201,7 @@ func (r *Release) Publish( //nolint:gocyclo
 		Name: "🚗 CLI",
 		Tag:  tag,
 	}
-	cliDevOpts := clidev.CliDevOpts{
+	cliDevOpts := clidev.CLIDevOpts{
 		// Dependencies don't inherit the workspace; forward it explicitly.
 		Ws: r.Workspace,
 	}
@@ -217,9 +217,9 @@ func (r *Release) Publish( //nolint:gocyclo
 	case !dryRun:
 		_, err := cliDev.
 			Publish(tag, commit, githubOrgName, clidev.CLIDevPublishOpts{
-				GithubToken:        githubToken,
-				GithubHost:         githubHost,
-				GithubCaCert:       githubCaCert,
+				GitHubToken:        githubToken,
+				GitHubHost:         githubHost,
+				GitHubCaCert:       githubCaCert,
 				AwsAccessKeyID:     awsAccessKeyID,
 				AwsSecretAccessKey: awsSecretAccessKey,
 				AwsRegion:          awsRegion,
@@ -300,7 +300,7 @@ func (r *Release) Publish( //nolint:gocyclo
 			release: func(ctx context.Context) error {
 				return goclientdev.New(r.Workspace).Release(ctx, tag, goclientdev.GoClientDevReleaseOpts{
 					SourceRepo:  sdkSourceRepo,
-					GithubToken: githubToken,
+					GitHubToken: githubToken,
 					DestRemote:  goSdkDestRemote,
 				})
 			},
@@ -394,7 +394,7 @@ func (r *Release) Publish( //nolint:gocyclo
 			release: func(ctx context.Context) error {
 				return phpclientdev.New(r.Workspace).Release(ctx, tag, phpclientdev.PhpClientDevReleaseOpts{
 					SourceRepo:  sdkSourceRepo,
-					GithubToken: githubToken,
+					GitHubToken: githubToken,
 					Dest:        phpSdkDestRemote,
 				})
 			},

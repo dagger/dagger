@@ -18,7 +18,6 @@ import (
 type Container = core.Container
 type ID = core.ID
 type Node = core.Node
-type Void = core.Void
 
 // Client borrows a shared connection. Its API contains only the bound module.
 type Client struct{ *Query }

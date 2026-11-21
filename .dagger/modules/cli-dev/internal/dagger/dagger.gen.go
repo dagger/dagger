@@ -15,7 +15,6 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
-type Check = core.Check
 type Container = core.Container
 type ContainerWithExecOpts = core.ContainerWithExecOpts
 type Directory = core.Directory
@@ -25,7 +24,6 @@ type ID = core.ID
 type Node = core.Node
 type Platform = core.Platform
 type Secret = core.Secret
-type Void = core.Void
 type WithContainerFunc = core.WithContainerFunc
 type Workspace = core.Workspace
 

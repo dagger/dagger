@@ -126,11 +126,11 @@ func (r *CLIDev) UnmarshalJSON(bs []byte) error {
 
 // CLIDevPublishOpts contains options for CLIDev.Publish
 type CLIDevPublishOpts struct {
-	GithubToken *Secret // cli-dev (../../publish.go:25:2)
+	GitHubToken *Secret // cli-dev (../../publish.go:25:2)
 
-	GithubHost string // cli-dev (../../publish.go:26:2)
+	GitHubHost string // cli-dev (../../publish.go:26:2)
 
-	GithubCaCert *File // cli-dev (../../publish.go:27:2)
+	GitHubCaCert *File // cli-dev (../../publish.go:27:2)
 
 	AwsAccessKeyID *Secret // cli-dev (../../publish.go:29:2)
 
@@ -152,16 +152,16 @@ func (r *CLIDev) Publish(tag string, commit string, githubOrgName string, opts .
 	q := r.query.Select("publish")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `githubToken` optional argument
-		if !querybuilder.IsZeroValue(opts[i].GithubToken) {
-			q = q.Arg("githubToken", opts[i].GithubToken)
+		if !querybuilder.IsZeroValue(opts[i].GitHubToken) {
+			q = q.Arg("githubToken", opts[i].GitHubToken)
 		}
 		// `githubHost` optional argument
-		if !querybuilder.IsZeroValue(opts[i].GithubHost) {
-			q = q.Arg("githubHost", opts[i].GithubHost)
+		if !querybuilder.IsZeroValue(opts[i].GitHubHost) {
+			q = q.Arg("githubHost", opts[i].GitHubHost)
 		}
 		// `githubCaCert` optional argument
-		if !querybuilder.IsZeroValue(opts[i].GithubCaCert) {
-			q = q.Arg("githubCaCert", opts[i].GithubCaCert)
+		if !querybuilder.IsZeroValue(opts[i].GitHubCaCert) {
+			q = q.Arg("githubCaCert", opts[i].GitHubCaCert)
 		}
 		// `awsAccessKeyId` optional argument
 		if !querybuilder.IsZeroValue(opts[i].AwsAccessKeyID) {
@@ -263,8 +263,8 @@ func (r *CLIDev) AsNode() Node {
 	return new(NodeClient).WithGraphQLQuery(r.query)
 }
 
-// CliDevOpts contains options for Query.CliDev
-type CliDevOpts struct {
+// CLIDevOpts contains options for Query.CLIDev
+type CLIDevOpts struct {
 	RunnerHost string // cli-dev (../../main.go:20:2)
 
 	Source *Directory // cli-dev (../../main.go:42:2)
@@ -296,15 +296,15 @@ type CliDevOpts struct {
 	// Resolved VCS commit to stamp, forwarded by a parent toolchain. Takes
 	// precedence over ws.
 	//
-	VcsCommit string // cli-dev (../../main.go:71:2)
+	VCSCommit string // cli-dev (../../main.go:71:2)
 	//
 	// Resolved VCS dirty state to stamp, paired with vcsCommit.
 	//
-	VcsDirty bool // cli-dev (../../main.go:75:2)
+	VCSDirty bool // cli-dev (../../main.go:75:2)
 }
 
 // Develop the Dagger CLI
-func (r *Query) CliDev(opts ...CliDevOpts) *CLIDev { // cli-dev (../../main.go:16:1)
+func (r *Query) CLIDev(opts ...CLIDevOpts) *CLIDev { // cli-dev (../../main.go:16:1)
 	q := r.query.Select("cliDev")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `runnerHost` optional argument
@@ -328,12 +328,12 @@ func (r *Query) CliDev(opts ...CliDevOpts) *CLIDev { // cli-dev (../../main.go:1
 			q = q.Arg("ws", opts[i].Ws)
 		}
 		// `vcsCommit` optional argument
-		if !querybuilder.IsZeroValue(opts[i].VcsCommit) {
-			q = q.Arg("vcsCommit", opts[i].VcsCommit)
+		if !querybuilder.IsZeroValue(opts[i].VCSCommit) {
+			q = q.Arg("vcsCommit", opts[i].VCSCommit)
 		}
 		// `vcsDirty` optional argument
-		if !querybuilder.IsZeroValue(opts[i].VcsDirty) {
-			q = q.Arg("vcsDirty", opts[i].VcsDirty)
+		if !querybuilder.IsZeroValue(opts[i].VCSDirty) {
+			q = q.Arg("vcsDirty", opts[i].VCSDirty)
 		}
 	}
 
@@ -343,10 +343,10 @@ func (r *Query) CliDev(opts ...CliDevOpts) *CLIDev { // cli-dev (../../main.go:1
 	}
 }
 
-// New calls CliDev on the default connection.
-// Use Connect(connection).CliDev to call it on an explicit connection.
+// New calls CLIDev on the default connection.
+// Use Connect(connection).CLIDev to call it on an explicit connection.
 //
 // Develop the Dagger CLI
-func New(opts ...CliDevOpts) *CLIDev {
-	return Connect().CliDev(opts...)
+func New(opts ...CLIDevOpts) *CLIDev {
+	return Connect().CLIDev(opts...)
 }

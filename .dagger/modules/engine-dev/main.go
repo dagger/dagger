@@ -252,7 +252,7 @@ func (dev *EngineDev) engine(ctx context.Context, builder *build.Builder, platfo
 		WithFile(engineEntrypointPath, entrypoint).
 		WithEntrypoint([]string{filepath.Base(engineEntrypointPath)})
 
-	cli := clidev.New(clidev.CliDevOpts{Version: version, Ws: dev.Ws}).Binary(clidev.CLIDevBinaryOpts{
+	cli := clidev.New(clidev.CLIDevOpts{Version: version, Ws: dev.Ws}).Binary(clidev.CLIDevBinaryOpts{
 		Platform: platform,
 	})
 	ctr = ctr.
@@ -751,7 +751,7 @@ func (dev *EngineDev) InstallClient(
 		// key of everything run in this container.
 		WithServiceBinding("dagger-engine", service).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://dagger-engine:1234").
-		WithMountedFile(cliPath, clidev.New(clidev.CliDevOpts{Source: dev.cliDevSource(), Ws: dev.Ws}).Binary()).
+		WithMountedFile(cliPath, clidev.New(clidev.CLIDevOpts{Source: dev.cliDevSource(), Ws: dev.Ws}).Binary()).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliPath).
 		WithSymlink(cliPath, "/usr/local/bin/dagger")
 	if cfg := dev.ClientDockerConfig; cfg != nil {

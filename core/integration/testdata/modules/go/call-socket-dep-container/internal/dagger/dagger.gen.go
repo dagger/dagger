@@ -19,7 +19,6 @@ import (
 type ID = core.ID
 type Node = core.Node
 type Socket = core.Socket
-type Void = core.Void
 type dep0Client = dep0.Client
 
 // Client borrows a shared connection. Its API contains only the bound module.

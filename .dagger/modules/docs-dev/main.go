@@ -247,7 +247,7 @@ func (d DocsDev) References(
 	// 1. Generate the GraphQL schema
 	withGqlSchema := src.WithFile(
 		"docs/docs-graphql/schema.graphqls",
-		enginedev.New(ws).GraphqlSchema(enginedev.EngineDevGraphqlSchemaOpts{
+		enginedev.New(ws).GraphQLSchema(enginedev.EngineDevGraphQLSchemaOpts{
 			Version: version,
 		}),
 	)

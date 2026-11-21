@@ -233,7 +233,7 @@ func (t PhpClientDev) Release(
 		gitreleaser.GitReleaserReleaseOpts{
 			DestTag:     t.VersionFromTag(sourceTag),
 			SourcePath:  "sdk/php/",
-			GithubToken: githubToken,
+			GitHubToken: githubToken,
 		},
 	)
 }
