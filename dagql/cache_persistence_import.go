@@ -503,13 +503,8 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 		// Only move the result-ID counter forward: numeric result IDs must be
 		// engine-lifetime unique, so importing must never re-expose an ID the
 		// running engine already allocated.
-		if c.nextSharedResultID <= maxResultID {
-			c.nextSharedResultID = maxResultID + 1
-		}
+		c.raiseNextResultID(maxResultID + 1)
 		c.nextEgraphTermID = maxTermID + 1
-		if c.nextSharedResultID == 0 {
-			c.nextSharedResultID = 1
-		}
 		if c.nextEgraphTermID == 0 {
 			c.nextEgraphTermID = 1
 		}

@@ -45,8 +45,7 @@ func TestKeptCallTermsFollowTheirInputsClasses(t *testing.T) {
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
 	c.initEgraphLocked()
-	entry := &sharedResult{id: c.nextSharedResultID}
-	c.nextSharedResultID++
+	entry := &sharedResult{id: c.takeResultIDs(1)}
 	c.putResultLocked(entry)
 	self := digest.FromString("self")
 	keep := func(recipe string, inputs ...string) {
