@@ -12,15 +12,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// changeTestEntry is everything a reader can keep of one entry of a
-// blob-backed cache: its own facts, its holdings' keys, its classes' entries,
-// and its part answers, by part address key.
+// changeTestEntry is everything a reader keeps of one entry of a blob-backed
+// cache from one change to the next: its own facts, its holdings' keys, and
+// its part answers, by part address key. Not its classes' entries, which a
+// reader reads when it needs them (RemoteChange).
 type changeTestEntry struct {
 	Stored              bool
 	StoredExpiresAtUnix int64
 	Recipes             []digest.Digest
 	Holders             []HolderKey
-	Class               []uint64
 	Parts               map[string]PartAvailability
 }
 
@@ -85,13 +85,10 @@ func changeTestRead(t *testing.T, c *Cache, now int64, addresses map[string]Pers
 	for _, number := range numbers {
 		info, ok := c.EntryInfo(number)
 		require.True(t, ok, "entry %d", number)
-		class, ok := c.EntryClassEntries(number)
-		require.True(t, ok, "entry %d", number)
 		entry := changeTestEntry{
 			Stored:              info.Stored,
 			StoredExpiresAtUnix: info.StoredExpiresAtUnix,
 			Recipes:             info.Recipes,
-			Class:               class.Entries,
 			Parts:               map[string]PartAvailability{},
 		}
 		for _, h := range info.Holdings {
@@ -278,8 +275,8 @@ func changeTestMerge(t *testing.T, ctx context.Context, cloud *Cache, from Cache
 }
 
 // Every write to a blob-backed cache names, in its change, every holding
-// whose description differs after it and every entry whose facts, holdings,
-// class or part answers differ, read at one clock; and leaves no mark for a
+// whose description differs after it and every entry whose facts, holdings
+// or part answers differ, read at one clock; and leaves no mark for a
 // later write to hand back. Each kind of write the service makes runs here,
 // in an order that gives each something to change: merges that create,
 // store and replace records, rows that attach, update and join, holds,
