@@ -156,13 +156,16 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			}
 
 			// The decline mark goes back onto the entry, not into the
-			// envelope a record of it is captured from.
+			// envelope a record of it is captured from. The session binding
+			// goes onto the entry and stays in the envelope, which a record
+			// sent from the restored entry carries.
 			persistDeclined := env.PersistDeclined
 			env.PersistDeclined = false
 			res := &sharedResult{
 				id:                    resultID,
 				imported:              env.Imported,
 				persistDeclined:       persistDeclined,
+				boundSession:          env.BoundSession,
 				isObject:              env.Kind == persistedResultKindObject,
 				sessionResourceHandle: env.SessionResourceHandle,
 				expiresAtUnix:         row.ExpiresAtUnix,

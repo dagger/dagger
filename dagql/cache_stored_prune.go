@@ -113,6 +113,7 @@ func (c *Cache) dropValueLocked(ctx context.Context, res *sharedResult) ([]*shar
 	res.imported = false
 	res.expiresAtUnix = 0
 	res.sessionResourceHandle = ""
+	res.boundSession = ""
 	if _, err := c.recomputeRequiredSessionResourcesLocked(res); err != nil {
 		rerr = errors.Join(rerr, err)
 	}

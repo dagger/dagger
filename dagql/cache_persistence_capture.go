@@ -230,6 +230,7 @@ func (c *Cache) capturePartRecord(ctx context.Context, shared *sharedResult, imp
 	}
 	encoding.Envelope.Imported, encoding.Envelope.PendingOffers = imported, offers
 	encoding.Envelope.PersistDeclined = false
+	encoding.Envelope.BoundSession = shared.boundSession
 	envelope, err := clonePersistedEnvelope(encoding.Envelope)
 	if err != nil {
 		return PersistedRecord{}, err
