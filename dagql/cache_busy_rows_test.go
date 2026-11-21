@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 	"testing/synctest"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -53,18 +54,56 @@ func TestBusyRowsEndWithTheirEvaluation(t *testing.T) {
 	})
 }
 
-// A row whose dependencies are still being attached is busy until the
-// attachment ends, as a capture finds it.
-func TestBusyRowsWhileAttaching(t *testing.T) {
+// A row whose dependencies are being attached as its call completes is busy
+// until the attachment ends, as a capture finds it, and a watch of busy rows'
+// ends hears of that end, though no evaluation ends: a waiter for the row
+// learns at once that it can be captured.
+func TestBusyRowsEndWithTheirAttachment(t *testing.T) {
 	t.Parallel()
-	ctx, c, srv := transferTestCache(t)
-	res := persistedListTestResult(t, ctx, c, srv, "attaching", String("attaching")).cacheSharedResult()
-	c.egraphMu.Lock()
-	res.attachDepsMu.Lock()
-	res.attachDepsWaitCh = make(chan struct{})
-	res.attachDepsMu.Unlock()
-	c.egraphMu.Unlock()
-	require.Equal(t, []uint64{uint64(res.id)}, c.BusyRows(ctx, []uint64{uint64(res.id)}))
-	close(res.attachDepsWaitCh)
-	require.Empty(t, c.BusyRows(ctx, []uint64{uint64(res.id)}))
+	ctx, c := newPartsTestCache(t, nil)
+	defer c.CloseDiscardingPersistence()
+	entered, allow := make(chan struct{}), make(chan struct{})
+	obj := &captureTestValue{text: "stable", attach: func(context.Context) error {
+		close(entered)
+		<-allow
+		return nil
+	}}
+	srv := newDagqlServerForTest(t, &persistCodecRoot{})
+	srv.InstallObject(NewClass(srv, ClassOpts[*captureTestValue]{}))
+	frame := persistCodecFrame("attaching", obj)
+	ends, stop := c.WatchEvaluationEnds()
+	defer stop()
+	done := make(chan error, 1)
+	go func() {
+		_, err := c.GetOrInitCall(ctx, "publisher", srv, &CallRequest{ResultCall: frame}, func(context.Context) (AnyResult, error) {
+			return NewObjectResultForCall(obj, srv, frame)
+		})
+		done <- err
+	}()
+	<-entered
+	var row uint64
+	c.egraphMu.RLock()
+	for _, r := range c.resultsByID {
+		if r.loadPayloadState().self == obj {
+			row = uint64(r.id)
+			break
+		}
+	}
+	c.egraphMu.RUnlock()
+	require.NotZero(t, row)
+	require.Equal(t, []uint64{row}, c.BusyRows(ctx, []uint64{row}))
+	select {
+	case <-ends:
+		t.Fatal("the watch heard of an end while the attachment runs")
+	default:
+	}
+
+	close(allow)
+	require.NoError(t, <-done)
+	select {
+	case <-ends:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the attachment's end woke no watch")
+	}
+	require.Empty(t, c.BusyRows(ctx, []uint64{row}), "the row is no longer busy once the watch hears of its end")
 }
