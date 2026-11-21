@@ -68,9 +68,11 @@ type RemoteCacheAdapter struct {
 	// mergeValues is the cache's MergeServiceValues. A test replaces it to
 	// return a committed reply with a release error.
 	mergeValues func(context.Context, dagql.ValueBundle, dagql.MergeSource) (dagql.MergeReply, error)
-	// restoreValues merges a restore's part from the Cloud, as mergeValues
-	// does a merge's bundle. A test replaces it.
-	restoreValues func(context.Context, dagql.ValueBundle, []dagql.TransferOrdinal, string) (dagql.MergeReply, error)
+	// checkRestore checks a restore's part ahead of its merge, and
+	// restoreValues merges the checked part from the Cloud, as mergeValues
+	// does a merge's bundle. A test replaces them.
+	checkRestore  func(dagql.ValueBundle) (*dagql.CheckedValues, error)
+	restoreValues func(context.Context, *dagql.CheckedValues, []dagql.TransferOrdinal, string) (dagql.MergeReply, error)
 	// restores are what the restores did with each file, for the engine's
 	// stop event.
 	restoresMu sync.Mutex
@@ -175,7 +177,8 @@ func newRemoteCacheAdapter(cache *dagql.Cache, bridge *dagql.RemoteCacheBridge) 
 		cancel:        func(error) {},
 		runDone:       make(chan struct{}),
 		mergeValues:   cache.MergeServiceValues,
-		restoreValues: cache.RestoreValues,
+		checkRestore:  cache.CheckRestoreValues,
+		restoreValues: cache.RestoreCheckedValues,
 		stopReserve:   remoteCacheStopReserve,
 	}
 }

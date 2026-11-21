@@ -642,21 +642,32 @@ func knowMerged(known *dagql.KnownRows, reply dagql.MergeReply) {
 	known.Merged(rows)
 }
 
-// RestorePart merges one part of a set file through the path a merge takes
-// (merge), behind the merges that answer lookups, and its rows join known
-// as a merge's do. Its commit holds what it lands on until the reply's
-// Release (dagql.Cache.RestoreValues). A part that commits is answered even
+// CheckRestorePart checks a part of a set file for its merge ahead of it
+// (dagql.Cache.CheckRestoreValues): it reads nothing of the cache's state,
+// and waits for nothing.
+func (a *RemoteCacheAdapter) CheckRestorePart(part dagql.ValueBundle) (*dagql.CheckedValues, error) {
+	if a.stopped.Load() {
+		return nil, ErrRemoteCacheAdapterClosed
+	}
+	return a.checkRestore(part)
+}
+
+// RestorePart merges one part of a set file, as CheckRestorePart checked it,
+// through the path a merge takes (merge), behind the merges that answer
+// lookups, and its rows join known as a merge's do. Its commit holds what it
+// lands on until the reply's Release (dagql.Cache.RestoreCheckedValues). A
+// part that commits is answered even
 // when a release after the commit failed, as a merge is; one refused for
 // stale held rows, such as a later part naming an earlier part's record the
 // engine no longer has, is an error, and holds nothing. source names the set
 // file, for the log of a record whose payload fails at its first use.
-func (a *RemoteCacheAdapter) RestorePart(ctx context.Context, part dagql.ValueBundle, unretained []dagql.TransferOrdinal, known *dagql.KnownRows, source string) (dagql.MergeReply, time.Duration, error) {
+func (a *RemoteCacheAdapter) RestorePart(ctx context.Context, part dagql.ValueBundle, checked *dagql.CheckedValues, unretained []dagql.TransferOrdinal, known *dagql.KnownRows, source string) (dagql.MergeReply, time.Duration, error) {
 	if a.stopped.Load() {
 		return dagql.MergeReply{}, 0, ErrRemoteCacheAdapterClosed
 	}
 	start := time.Now()
 	reply, priorityWait, err := a.merge(ctx, "remotecache.restore", "", false, func(ctx context.Context) (dagql.MergeReply, error) {
-		return a.restoreValues(ctx, part, unretained, source)
+		return a.restoreValues(ctx, checked, unretained, source)
 	})
 	slog.Info("remote cache restore merge",
 		"records", len(part.Values),

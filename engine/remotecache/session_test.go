@@ -143,6 +143,9 @@ type fakeAdapter struct {
 	// answers LateMisses, and restored receives each file's report.
 	restore     func(context.Context, dagql.ValueBundle, *dagql.KnownRows) (dagql.MergeReply, error)
 	late        func(time.Time, map[uint64]struct{}) []dagql.RemoteMiss
+	// check, if set, answers CheckRestorePart's error for each part it
+	// checks.
+	check func(dagql.ValueBundle) error
 	restored    chan RestoreReport
 	restoreSeen chan dagql.ValueBundle
 	// unretainedSeen receives each part's unretained roots, and sourceSeen
@@ -188,7 +191,14 @@ func newFakeAdapter() *fakeAdapter {
 	}
 }
 
-func (a *fakeAdapter) RestorePart(ctx context.Context, part dagql.ValueBundle, unretained []dagql.TransferOrdinal, known *dagql.KnownRows, source string) (dagql.MergeReply, time.Duration, error) {
+func (a *fakeAdapter) CheckRestorePart(part dagql.ValueBundle) (*dagql.CheckedValues, error) {
+	if a.check != nil {
+		return nil, a.check(part)
+	}
+	return nil, nil
+}
+
+func (a *fakeAdapter) RestorePart(ctx context.Context, part dagql.ValueBundle, _ *dagql.CheckedValues, unretained []dagql.TransferOrdinal, known *dagql.KnownRows, source string) (dagql.MergeReply, time.Duration, error) {
 	a.unretainedSeen <- unretained
 	select {
 	case a.sourceSeen <- source:
