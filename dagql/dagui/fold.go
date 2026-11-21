@@ -155,6 +155,11 @@ type Fold struct {
 	// running): what a retained row's waiting below it reads of the folded
 	// spans beneath it (see foldedWork).
 	start, end []int64
+	// name is each span's name, interned in nameTab (0 for none), so that a
+	// name search finds folded spans (MatchNames).
+	name     []uint32
+	nameTab  []string
+	nameIdxs map[string]uint32
 
 	// agg holds, per retained span, what's folded beneath it.
 	agg map[uint32]*foldAgg
@@ -288,8 +293,64 @@ func (f *Fold) intern(id SpanID) uint32 {
 	f.state = append(f.state, 0)
 	f.start = append(f.start, 0)
 	f.end = append(f.end, 0)
+	f.name = append(f.name, 0)
 	f.ids.put(id, i, f.spans)
 	return i
+}
+
+// setName records stub i's name.
+func (f *Fold) setName(i uint32, name string) {
+	if name == "" {
+		f.name[i] = 0
+		return
+	}
+	n, ok := f.nameIdxs[name]
+	if !ok {
+		if f.nameIdxs == nil {
+			f.nameIdxs = map[string]uint32{}
+			f.nameTab = []string{""}
+		}
+		n = uint32(len(f.nameTab))
+		name = strings.Clone(name)
+		f.nameTab = append(f.nameTab, name)
+		f.nameIdxs[name] = n
+	}
+	f.name[i] = n
+}
+
+// MatchNames returns the folded spans whose name match accepts, up to
+// limit (0 for all), and how many there are. Each distinct name is matched
+// once.
+func (f *Fold) MatchNames(match func(name string) bool, limit int) (ids []SpanID, total int) {
+	if f == nil || len(f.nameTab) == 0 {
+		return nil, 0
+	}
+	matches := make([]bool, len(f.nameTab))
+	for n, name := range f.nameTab {
+		matches[n] = n != 0 && match(name)
+	}
+	for i, st := range f.state {
+		if st&(foldReceived|foldRetained) != foldReceived || !matches[f.name[i]] {
+			continue
+		}
+		total++
+		if limit == 0 || len(ids) < limit {
+			ids = append(ids, f.spans[i])
+		}
+	}
+	return ids, total
+}
+
+// noteName records a folded span's name, updated by a log record (see
+// ingestSpanName), reporting false when the DB is to do it, as it retains
+// the span.
+func (f *Fold) noteName(id SpanID, name string) bool {
+	i := f.intern(id)
+	if f.state[i]&foldRetained != 0 {
+		return false
+	}
+	f.setName(i, name)
+	return true
 }
 
 func (f *Fold) lookup(id SpanID) (uint32, bool) {
@@ -302,6 +363,7 @@ type foldInfo struct {
 	flags      foldState
 	cat        spanStateCategory
 	start, end time.Time
+	name       string
 	// linked holds the targets of its cause, error-origin and wait links.
 	linked []SpanID
 	// origins holds the error origins its status names.
@@ -314,6 +376,7 @@ func otelFoldInfo(s sdktrace.ReadOnlySpan) foldInfo {
 		parent: SpanID{s.Parent().SpanID()},
 		start:  s.StartTime(),
 		end:    s.EndTime(),
+		name:   s.Name(),
 	}
 	var pending, cached, canceled bool
 	for _, attr := range s.Attributes() {
@@ -351,7 +414,7 @@ func otelFoldInfo(s sdktrace.ReadOnlySpan) foldInfo {
 }
 
 func snapshotFoldInfo(s *SpanSnapshot) foldInfo {
-	info := foldInfo{id: s.ID, parent: s.ParentID, start: s.StartTime, end: s.EndTime}
+	info := foldInfo{id: s.ID, parent: s.ParentID, start: s.StartTime, end: s.EndTime, name: s.Name}
 	set := func(on bool, flag foldState) {
 		if on {
 			info.flags |= flag
@@ -530,6 +593,19 @@ func (f *Fold) ingest(info foldInfo, fill bool) bool {
 	}
 	first := st&foldReceived == 0
 	f.state[i] |= foldReceived | info.flags
+	if first || !info.end.Before(info.start) {
+		// a running span's name may have changed since it started (see
+		// ingestSpanName): its repeated start snapshots don't say
+		f.setName(i, info.name)
+	}
+	if name, ok := f.db.namesFromLog[info.id]; ok && st&foldRetained == 0 {
+		if info.end.Before(info.start) {
+			f.setName(i, name)
+		} else {
+			// its final name is its own, as the DB takes it
+			delete(f.db.namesFromLog, info.id)
+		}
+	}
 	f.start[i] = info.start.UnixNano()
 	f.end[i] = 0
 	if !info.end.Before(info.start) {
@@ -1051,6 +1127,9 @@ func (f *Fold) Retain(ids ...SpanID) {
 
 // IsFolded reports whether span id was received and folded.
 func (f *Fold) IsFolded(id SpanID) bool {
+	if f == nil {
+		return false
+	}
 	i, ok := f.lookup(id)
 	return ok && f.state[i]&(foldReceived|foldRetained) == foldReceived
 }
@@ -1141,7 +1220,10 @@ func (f *Fold) Stats() FoldStats {
 	}
 	stats.StubBytes = cap(f.ids.slots)*4 + cap(f.spans)*8 +
 		(cap(f.parent)+cap(f.firstChild)+cap(f.nextSib)+cap(f.state))*4 +
-		(cap(f.start)+cap(f.end))*8
+		(cap(f.start)+cap(f.end))*8 + cap(f.name)*4
+	for _, name := range f.nameTab {
+		stats.StubBytes += len(name) + 16 + 32 // the string, its header, its map entry
+	}
 	return stats
 }
 

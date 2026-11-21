@@ -219,6 +219,45 @@ func (e noLinksExporter) ExportSpans(ctx context.Context, spans []sdktrace.ReadO
 
 func (e noLinksExporter) Shutdown(context.Context) error { return nil }
 
+// A name search finds folded spans by name, and retaining a hit reads it
+// back with its ancestors.
+func TestFoldMatchNames(t *testing.T) {
+	const n = 30_000
+	tr := spanfootprint.New(n)
+	full := NewDB()
+	folded, store := newFoldedDB(nil)
+	if err := tr.Export(t.Context(), noLinksExporter{teeExporter{full, store}}, 512, nil); err != nil {
+		t.Fatal(err)
+	}
+	match := func(name string) bool { return name == "exec go test ./pkg42" }
+	var want int
+	for _, span := range full.Spans.Order {
+		if match(span.Name) {
+			want++
+		}
+	}
+	var retained int
+	for _, span := range folded.Spans.Order {
+		if span.Received && match(span.Name) {
+			retained++
+		}
+	}
+	ids, total := folded.Fold().MatchNames(match, 3)
+	if total+retained != want || total == 0 || len(ids) != 3 {
+		t.Fatalf("found %d folded (%d returned) and %d retained, want %d in all", total, len(ids), retained, want)
+	}
+	folded.Fold().Retain(ids...)
+	for _, id := range ids {
+		span := folded.Spans.Map[id]
+		if span == nil || !span.Received || span.Name != "exec go test ./pkg42" {
+			t.Fatalf("hit %s not read back", id)
+		}
+		if span.FirstMissingAncestor() != nil {
+			t.Fatalf("hit %s read back without its ancestors", id)
+		}
+	}
+}
+
 // Expanding a row partway through a session reads back its folded children,
 // and retains those to come.
 func TestFoldExpand(t *testing.T) {

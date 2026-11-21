@@ -826,6 +826,15 @@ func (db *DB) ingestSpanName(record sdklog.Record) bool {
 	if !spanID.IsValid() {
 		return true
 	}
+	if db.fold != nil && db.fold.noteName(spanID, name) {
+		// folded, or not received yet: the override applies if it arrives
+		// and is retained (forgotten once it ends, see Fold.ingest)
+		if db.namesFromLog == nil {
+			db.namesFromLog = map[SpanID]string{}
+		}
+		db.namesFromLog[spanID] = name
+		return true
+	}
 	span := db.initSpan(spanID)
 	if db.namesFromLog == nil {
 		db.namesFromLog = map[SpanID]string{}

@@ -56,6 +56,10 @@ func (db *DB) ingestToolArgs(record sdklog.Record, spanID SpanID, body string) {
 	if !isJSONRecord(record) {
 		return
 	}
+	if db.fold.IsFolded(spanID) {
+		// rendered nowhere (a tool call is retained)
+		return
+	}
 	span := db.Spans.Map[spanID]
 	if span != nil && span.Received && !keepsToolArgs(span) {
 		// Not a tool call, or one whose attributes have its arguments. A
