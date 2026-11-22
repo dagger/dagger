@@ -42,7 +42,8 @@
             "namedType": "HeldPartTestValue",
             "nonNull": true
           },
-          "field": "reads-fileA"
+          "field": "reads-fileA",
+          "followsFromInputs": true
         }
       },
       "Dependencies": [
@@ -73,7 +74,8 @@
             "namedType": "HeldPartTestValue",
             "nonNull": true
           },
-          "field": "reads-fileB"
+          "field": "reads-fileB",
+          "followsFromInputs": true
         }
       },
       "Dependencies": [
@@ -104,7 +106,8 @@
             "namedType": "HeldPartTestValue",
             "nonNull": true
           },
-          "field": "reads-fileC"
+          "field": "reads-fileC",
+          "followsFromInputs": true
         }
       },
       "Dependencies": [

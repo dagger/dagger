@@ -44,7 +44,8 @@
               "namedType": "ExportChainTestValue",
               "nonNull": true
             },
-            "field": "row0"
+            "field": "row0",
+            "followsFromInputs": true
           }
         }
       },
@@ -69,7 +70,8 @@
               "namedType": "ExportChainTestValue",
               "nonNull": true
             },
-            "field": "row1"
+            "field": "row1",
+            "followsFromInputs": true
           }
         },
         "dependencyIDs": [
@@ -97,7 +99,8 @@
               "namedType": "ExportChainTestValue",
               "nonNull": true
             },
-            "field": "row2"
+            "field": "row2",
+            "followsFromInputs": true
           }
         },
         "dependencyIDs": [
@@ -125,7 +128,8 @@
               "namedType": "ExportChainTestValue",
               "nonNull": true
             },
-            "field": "row3"
+            "field": "row3",
+            "followsFromInputs": true
           }
         },
         "dependencyIDs": [
@@ -153,7 +157,8 @@
               "namedType": "ExportChainTestValue",
               "nonNull": true
             },
-            "field": "side"
+            "field": "side",
+            "followsFromInputs": true
           }
         },
         "dependencyIDs": [
@@ -181,7 +186,8 @@
               "namedType": "ExportChainTestValue",
               "nonNull": true
             },
-            "field": "row4"
+            "field": "row4",
+            "followsFromInputs": true
           }
         },
         "dependencyIDs": [
@@ -209,7 +215,8 @@
               "namedType": "ExportChainTestValue",
               "nonNull": true
             },
-            "field": "row5"
+            "field": "row5",
+            "followsFromInputs": true
           }
         },
         "dependencyIDs": [
@@ -237,7 +244,8 @@
               "namedType": "ExportChainTestValue",
               "nonNull": true
             },
-            "field": "row6"
+            "field": "row6",
+            "followsFromInputs": true
           }
         },
         "dependencyIDs": [
@@ -265,7 +273,8 @@
               "namedType": "ExportChainTestValue",
               "nonNull": true
             },
-            "field": "row7"
+            "field": "row7",
+            "followsFromInputs": true
           }
         },
         "dependencyIDs": [
@@ -294,7 +303,8 @@
               "namedType": "ExportChainTestValue",
               "nonNull": true
             },
-            "field": "mountA"
+            "field": "mountA",
+            "followsFromInputs": true
           }
         },
         "dependencyIDs": [
@@ -323,7 +333,8 @@
               "namedType": "ExportChainTestValue",
               "nonNull": true
             },
-            "field": "mountB"
+            "field": "mountB",
+            "followsFromInputs": true
           }
         }
       },
@@ -349,7 +360,8 @@
               "namedType": "ExportChainTestValue",
               "nonNull": true
             },
-            "field": "mountC"
+            "field": "mountC",
+            "followsFromInputs": true
           }
         }
       },
@@ -375,7 +387,8 @@
               "namedType": "ExportChainTestValue",
               "nonNull": true
             },
-            "field": "cli"
+            "field": "cli",
+            "followsFromInputs": true
           }
         }
       }

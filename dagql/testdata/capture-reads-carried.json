@@ -24,7 +24,8 @@
             "namedType": "HeldPartTestValue",
             "nonNull": true
           },
-          "field": "reads-recipe"
+          "field": "reads-recipe",
+          "followsFromInputs": true
         }
       },
       "Dependencies": [
@@ -69,7 +70,8 @@
             "namedType": "HeldPartTestValue",
             "nonNull": true
           },
-          "field": "reads-recipe-root"
+          "field": "reads-recipe-root",
+          "followsFromInputs": true
         }
       },
       "Dependencies": [
@@ -100,7 +102,8 @@
             "namedType": "HeldPartTestValue",
             "nonNull": true
           },
-          "field": "reads-recipe"
+          "field": "reads-recipe",
+          "followsFromInputs": true
         }
       },
       "Dependencies": null,

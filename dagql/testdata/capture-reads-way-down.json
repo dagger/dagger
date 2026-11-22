@@ -69,7 +69,8 @@
             "namedType": "String",
             "nonNull": true
           },
-          "field": "reads-list-root"
+          "field": "reads-list-root",
+          "followsFromInputs": true
         }
       },
       "Dependencies": [
