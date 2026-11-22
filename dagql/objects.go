@@ -1140,8 +1140,9 @@ type FieldSpec struct {
 	// declare it: two runs of it over the same inputs give the same content
 	// digest, the one core computes, which leaves file times out. Another
 	// cache's run of such a call is then the same result as this cache's own
-	// wherever their inputs are, as an equal content digest would show
-	// (keepOwnRunsLocked). A call that runs a process or a module's code
+	// wherever their inputs are, and the next run gives the content a stored
+	// run has: a stored value over it goes out without its content
+	// (entryCanDifferLocked). A call that runs a process or a module's code
 	// doesn't follow from its inputs. It may read from outside the engine only
 	// content addressed by a hash its key holds, such as a commit, blob ids or
 	// an image digest. The call frame carries it (ResultCall.FollowsFromInputs).

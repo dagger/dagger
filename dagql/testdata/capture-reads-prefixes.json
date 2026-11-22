@@ -175,7 +175,8 @@
             "namedType": "HeldPartTestValue",
             "nonNull": true
           },
-          "field": "reads-fresh"
+          "field": "reads-fresh",
+          "followsFromInputs": true
         }
       },
       "Dependencies": null,
@@ -203,7 +204,8 @@
             "namedType": "HeldPartTestValue",
             "nonNull": true
           },
-          "field": "reads-top"
+          "field": "reads-top",
+          "followsFromInputs": true
         }
       },
       "Dependencies": [
