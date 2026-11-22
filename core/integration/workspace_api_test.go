@@ -1122,7 +1122,7 @@ func (WorkspaceAPISuite) TestWorkspaceMountsSearchGlobFindUp(ctx context.Context
 		ws := valueWorkspace(c).WithMountedDirectory("mnt/big", big)
 
 		_, err := ws.Search(ctx, "needle", core.WorkspaceSearchOpts{Literal: true})
-		requireErrOut(t, err, "search matched more than 10000 lines")
+		requireErrOut(t, err, "search matched more than 2000 lines")
 
 		results, err := ws.Search(ctx, "needle", core.WorkspaceSearchOpts{Literal: true, Limit: 5})
 		require.NoError(t, err)

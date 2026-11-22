@@ -38,14 +38,14 @@ func TestRunRipgrepBudget(t *testing.T) {
 	t.Run("lines", func(t *testing.T) {
 		opts := &SearchOpts{Pattern: "."}
 		_, err := opts.RunRipgrep(ctx, exec.Command(stubRg(t, false)), false)
-		require.ErrorContains(t, err, "search matched more than 10000 lines")
+		require.ErrorContains(t, err, "search matched more than 2000 lines")
 		require.True(t, ripgrep.IsBudgetError(err))
 	})
 
 	t.Run("files", func(t *testing.T) {
 		opts := &SearchOpts{Pattern: ".", FilesOnly: true}
 		_, err := opts.RunRipgrep(ctx, exec.Command(stubRg(t, true)), false)
-		require.ErrorContains(t, err, "search matched more than 10000 files")
+		require.ErrorContains(t, err, "search matched more than 2000 files")
 	})
 
 	t.Run("limit", func(t *testing.T) {

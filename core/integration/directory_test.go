@@ -3047,7 +3047,7 @@ func main() {
 	t.Run("pathological searches are bounded", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		// 200 files of 100 lines: twice the default budget of 10000 lines.
+		// 200 files of 100 lines: ten times the default budget of 2000 lines.
 		tree := sdkcore.NewQuery(c).Container().From(alpineImage).
 			WithExec([]string{"sh", "-c", `mkdir /d && cd /d && awk 'BEGIN {
   for (f = 0; f < 200; f++)
@@ -3057,17 +3057,23 @@ func main() {
 			Directory("/d")
 
 		t.Run("without a limit it fails", func(ctx context.Context, t *testctx.T) {
-			// Every byte of "." is a submatch: the results outgrow their byte
-			// budget before they reach 10000 lines.
 			_, err := tree.Search(ctx, ".")
-			requireErrOut(t, err, "search results exceed 8 MiB")
+			requireErrOut(t, err, "search matched more than 2000 lines")
 			requireErrOut(t, err, "set a limit")
 
 			_, err = tree.Search(ctx, "fox")
-			requireErrOut(t, err, "search matched more than 10000 lines")
+			requireErrOut(t, err, "search matched more than 2000 lines")
 
 			_, err = tree.AsWorkspace().Search(ctx, "fox")
-			requireErrOut(t, err, "search matched more than 10000 lines")
+			requireErrOut(t, err, "search matched more than 2000 lines")
+		})
+
+		t.Run("past the byte budget it fails, limit or not", func(ctx context.Context, t *testctx.T) {
+			// Every byte of "." is a submatch: the results outgrow their byte
+			// budget long before they reach this limit.
+			_, err := tree.Search(ctx, ".", sdkcore.DirectorySearchOpts{Limit: 20000})
+			requireErrOut(t, err, "search results exceed 8 MiB")
+			requireErrOut(t, err, "set a lower limit")
 		})
 
 		t.Run("with a limit it truncates", func(ctx context.Context, t *testctx.T) {
@@ -3081,9 +3087,9 @@ func main() {
 		})
 
 		t.Run("a limit above the budget replaces it", func(ctx context.Context, t *testctx.T) {
-			results, err := tree.Search(ctx, "fox", sdkcore.DirectorySearchOpts{Limit: 12000})
+			results, err := tree.Search(ctx, "fox", sdkcore.DirectorySearchOpts{Limit: 3000})
 			require.NoError(t, err)
-			require.Len(t, results, 12000)
+			require.Len(t, results, 3000)
 		})
 
 		t.Run("long lines are cut", func(ctx context.Context, t *testctx.T) {

@@ -39,10 +39,10 @@ type Limits struct {
 }
 
 // Default budgets: far above what a useful search returns (no reader, human
-// or model, reads ten thousand lines), and far below what makes an engine
+// or model, reads two thousand lines), and far below what makes an engine
 // run out of memory.
 const (
-	DefaultMaxResults    = 10000
+	DefaultMaxResults    = 2000
 	DefaultMaxBytes      = 8 << 20
 	DefaultMaxLineBytes  = 8 << 10
 	DefaultMaxSubmatches = 64

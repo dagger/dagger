@@ -252,7 +252,7 @@ done
 
 	t.Run("no limit", func(t *testing.T) {
 		_, err := searchWithRipgrep(context.Background(), t.TempDir(), rg, &engine.LocalSearchOpts{Pattern: "."})
-		require.ErrorContains(t, err, "search matched more than 10000 lines")
+		require.ErrorContains(t, err, "search matched more than 2000 lines")
 	})
 
 	t.Run("limit", func(t *testing.T) {
