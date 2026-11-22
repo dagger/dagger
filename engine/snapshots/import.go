@@ -16,8 +16,9 @@ import (
 // giving an ordinary caller time to attach its own snapshot lease.
 //
 // The blobs of the layers after the one importing are downloaded ahead, up to
-// chainAheadWindow of them, from the first layer the engine doesn't already
-// have imported, unless the chain's blobs arrive by chain.Await. Layers apply
+// chainAheadWindow downloads of them, from the first layer the engine doesn't
+// already have imported, unless the chain's blobs arrive by chain.Await: the
+// layers whose blobs one pack holds are one download, its read. Layers apply
 // strictly in order, unless the snapshotter can rebase (cm.applyLayersApart):
 // the layers from that first one then apply at once, up to chainAheadWindow
 // of them, and are committed onto their parents in order.
@@ -40,7 +41,7 @@ func (cm *snapshotManager) ImportChain(ctx context.Context, chain *ExportChain) 
 		return nil, err
 	}
 	var current ImmutableRef
-	ahead := &chainAhead{cm: cm, chain: chain, held: map[int]*contentFetch{}}
+	ahead := newChainAhead(cm, chain)
 	defer func() {
 		if rerr != nil {
 			ahead.drop(ctx)
@@ -453,25 +454,68 @@ type chainAhead struct {
 	cm    *snapshotManager
 	chain *ExportChain
 	held  map[int]*contentFetch
+	// reads names, by layer held, the read of the blob store that brings its
+	// blob: its pack's, or its own (aheadRead). holding counts, by read, the
+	// layers held whose blob it brings, so that the reads held are its
+	// keys; slots is the engine slot of each read the chain started ahead,
+	// which the other layers it brings share.
+	reads   map[int]digest.Digest
+	holding map[digest.Digest]int
+	slots   map[digest.Digest]*aheadSlot
 	// next is the first layer fill hasn't considered yet.
 	next int
 }
 
-// fill starts the downloads of the layers after layer i, in layer order, up
-// to chainAheadWindow past it. It stops at the first that finds no free slot;
-// a later fill tries that layer again.
+func newChainAhead(cm *snapshotManager, chain *ExportChain) *chainAhead {
+	return &chainAhead{
+		cm:      cm,
+		chain:   chain,
+		held:    map[int]*contentFetch{},
+		reads:   map[int]digest.Digest{},
+		holding: map[digest.Digest]int{},
+		slots:   map[digest.Digest]*aheadSlot{},
+	}
+}
+
+// aheadRead names the read of the blob store that brings desc's blob: its
+// pack's, when the chain's provider stores it in one, or its own.
+func (a *chainAhead) aheadRead(desc ocispecs.Descriptor) digest.Digest {
+	if packs, ok := a.chain.Provider.(PackProvider); ok {
+		if id, ok := packs.PackOf(desc.Digest); ok {
+			return id
+		}
+	}
+	return desc.Digest
+}
+
+// fill starts the downloads of the layers after layer i, in layer order,
+// while the chain holds fewer than chainAheadWindow reads ahead: a layer
+// whose blob comes with a read the chain holds already joins it. It stops at
+// the first that would start another read past the window, or finds no free
+// slot; a later fill, once the layers before it are imported, tries that
+// layer again.
 func (a *chainAhead) fill(ctx context.Context, i int) {
 	if a.chain.Provider == nil {
 		return
 	}
 	a.next = max(a.next, i+1)
-	for ; a.next < len(a.chain.Layers) && a.next <= i+chainAheadWindow; a.next++ {
-		f, started, full := a.cm.fetchAhead(ctx, a.chain.Layers[a.next].Descriptor, a.chain.Provider, a.chain)
+	for ; a.next < len(a.chain.Layers); a.next++ {
+		desc := a.chain.Layers[a.next].Descriptor
+		read := a.aheadRead(desc)
+		if a.holding[read] == 0 && len(a.holding) >= chainAheadWindow {
+			return
+		}
+		f, slot, started, full := a.cm.fetchAhead(ctx, desc, a.chain.Provider, a.chain, a.slots[read])
 		if full {
 			return
 		}
+		if slot != nil {
+			a.slots[read] = slot
+		}
 		if f != nil {
 			a.held[a.next] = f
+			a.reads[a.next] = read
+			a.holding[read]++
 		}
 		if started && a.chain.Timing != nil {
 			a.chain.Timing.Ahead++
@@ -481,16 +525,23 @@ func (a *chainAhead) fill(ctx context.Context, i int) {
 
 // take hands layer i's download, if any, to its import.
 func (a *chainAhead) take(i int) *contentFetch {
-	f := a.held[i]
+	f, ok := a.held[i]
+	if !ok {
+		return nil
+	}
 	delete(a.held, i)
+	read := a.reads[i]
+	delete(a.reads, i)
+	if a.holding[read]--; a.holding[read] == 0 {
+		delete(a.holding, read)
+	}
 	return f
 }
 
 // drop lets go of every download still held, waiting for those it abandons
 // to stop and release their leases.
 func (a *chainAhead) drop(ctx context.Context) {
-	for i, f := range a.held {
-		delete(a.held, i)
-		a.cm.dropFetch(ctx, f)
+	for i := range a.held {
+		a.cm.dropFetch(ctx, a.take(i))
 	}
 }
