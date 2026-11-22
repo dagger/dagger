@@ -58,14 +58,14 @@ func TestFirstUsesCountByRoute(t *testing.T) {
 	if reply.Release != nil {
 		require.NoError(t, reply.Release(ctx))
 	}
-	_, err = engine.MergeServiceValues(ctx, placed, MergeSource{Route: MergeRoutePlacement, Merge: 7})
+	_, err = engine.MergeServiceValues(ctx, placed, MergeSource{Route: MergeRouteDeferred, Merge: 7})
 	require.NoError(t, err)
-	_, err = engine.MergeServiceValues(ctx, unused, MergeSource{Route: MergeRoutePlacement, Merge: 8})
+	_, err = engine.MergeServiceValues(ctx, unused, MergeSource{Route: MergeRouteDeferred, Merge: 8})
 	require.NoError(t, err)
 	_, err = engine.MergeServiceValues(ctx, looked, MergeSource{Route: MergeRouteLookup, Merge: 9})
 	require.NoError(t, err)
 	// The same record sent again is held already: carried, not merged.
-	_, err = engine.MergeServiceValues(ctx, placed, MergeSource{Route: MergeRoutePlacement, Merge: 10})
+	_, err = engine.MergeServiceValues(ctx, placed, MergeSource{Route: MergeRouteDeferred, Merge: 10})
 	require.NoError(t, err)
 	require.Empty(t, engine.FirstUse().Paths, "merging prepares nothing")
 
@@ -82,12 +82,12 @@ func TestFirstUsesCountByRoute(t *testing.T) {
 	require.Empty(t, fromLookup.HitMergedFile)
 	require.True(t, fromLookup.HitFirstUse)
 
-	fromPlacement := routeTestHit(t, ctx, engine, srv, "route-placed")
-	require.Equal(t, MergeRoutePlacement, fromPlacement.HitMergedRoute)
-	require.Equal(t, uint64(7), fromPlacement.HitMerge, "the merge that installed it, not the one that carried it again")
-	require.True(t, fromPlacement.HitFirstUse)
+	fromDeferred := routeTestHit(t, ctx, engine, srv, "route-placed")
+	require.Equal(t, MergeRouteDeferred, fromDeferred.HitMergedRoute)
+	require.Equal(t, uint64(7), fromDeferred.HitMerge, "the merge that installed it, not the one that carried it again")
+	require.True(t, fromDeferred.HitFirstUse)
 	again := routeTestHit(t, ctx, engine, srv, "route-placed")
-	require.Equal(t, MergeRoutePlacement, again.HitMergedRoute)
+	require.Equal(t, MergeRouteDeferred, again.HitMergedRoute)
 	require.False(t, again.HitFirstUse, "the record was prepared by its first hit")
 
 	stats := engine.FirstUse()

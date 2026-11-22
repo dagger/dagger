@@ -564,9 +564,9 @@ func (a *RemoteCacheAdapter) Merge(ctx context.Context, id uint64, req protocol.
 		return protocol.Merged{}, ErrRemoteCacheAdapterClosed
 	}
 	start := time.Now()
-	// A merge that answers a lookup is the lookup's route; any other the
-	// service sent on its own.
-	source := dagql.MergeSource{Route: dagql.MergeRoutePlacement, Merge: id}
+	// A merge that answers a lookup is the lookup's route; any other carries
+	// roots the engine's lookups deferred.
+	source := dagql.MergeSource{Route: dagql.MergeRouteDeferred, Merge: id}
 	if req.Lookup != 0 {
 		source.Route = dagql.MergeRouteLookup
 	}
