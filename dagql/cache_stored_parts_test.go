@@ -35,6 +35,21 @@ func storedPartTestStored(c *Cache, res AnyResult) map[string]PersistedPartOffer
 	return storedPartTestOffers(c.resultsByID[res.cacheSharedResult().id].storedParts)
 }
 
+// storedPartTestOffer returns the offer of the part at address that the
+// entry numbered number stores itself, copied as its readers copy it.
+func storedPartTestOffer(t *testing.T, c *Cache, number uint64, address PersistedPartAddress) PersistedPartOffer {
+	t.Helper()
+	key, err := partAddressKey(address)
+	require.NoError(t, err)
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	res := c.resultsByID[sharedResultID(number)]
+	require.NotNil(t, res, "entry %d", number)
+	part, ok := res.storedParts[key]
+	require.True(t, ok, "entry %d stores no %s part", number, key)
+	return part.offer()
+}
+
 // storedPartTestOffers returns the offers of an entry's stored parts, by
 // part address key, or nil if it has none.
 func storedPartTestOffers(parts map[string]storedPart) map[string]PersistedPartOffer {

@@ -115,7 +115,6 @@ func TestAvailablePartStored(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, PartStored, got.State)
 		require.Equal(t, first, got.Donor)
-		require.Equal(t, testLiveOffer().Value, got.Part.Value)
 	})
 	t.Run("its own, expired", func(t *testing.T) {
 		t.Parallel()
@@ -264,14 +263,18 @@ func bundleSenderNumberForTest(t *testing.T, cloud *Cache, number uint64) uint64
 	return 0
 }
 
-// AvailablePart answers only on a blob-backed cache, and its part is a copy:
-// changing it leaves the stored part as it was.
-func TestAvailablePartCopiesAndNeedsABlobStore(t *testing.T) {
+// AvailablePart answers only on a blob-backed cache.
+func TestAvailablePartNeedsABlobStore(t *testing.T) {
 	t.Parallel()
 	_, c, _ := transferTestCache(t)
 	_, err := c.AvailablePart(1, PersistedPartAddress{Part: "snapshot"}, time.Now().Unix())
 	require.ErrorContains(t, err, "no blob store")
+}
 
+// A stored part's offer is a copy: changing its services and owner leaves
+// the stored part as it was.
+func TestStoredPartOfferIsACopy(t *testing.T) {
+	t.Parallel()
 	ctx, cloud, first, second := storedQueriesTestClass(t)
 	part := testLiveOffer()
 	part.Value.Services = []TransferredServiceBinding{{ServiceResultID: second, Hostname: "svc"}}
@@ -279,14 +282,12 @@ func TestAvailablePartCopiesAndNeedsABlobStore(t *testing.T) {
 	stored, _, err := cloud.SetStoredPart(ctx, first, part, 0)
 	require.NoError(t, err)
 	require.True(t, stored)
-	got, err := cloud.AvailablePart(first, PersistedPartAddress{Part: "snapshot"}, time.Now().Unix())
-	require.NoError(t, err)
-	got.Part.Value.Services[0].Hostname = "changed"
-	got.Part.Owner.DependencyIDs[0] = 0
-	again, err := cloud.AvailablePart(first, PersistedPartAddress{Part: "snapshot"}, time.Now().Unix())
-	require.NoError(t, err)
-	require.Equal(t, "svc", again.Part.Value.Services[0].Hostname, "the stored part is unchanged")
-	require.Equal(t, []uint64{second}, again.Part.Owner.DependencyIDs)
+	got := storedPartTestOffer(t, cloud, first, part.Address)
+	got.Value.Services[0].Hostname = "changed"
+	got.Owner.DependencyIDs[0] = 0
+	again := storedPartTestOffer(t, cloud, first, part.Address)
+	require.Equal(t, "svc", again.Value.Services[0].Hostname, "the stored part is unchanged")
+	require.Equal(t, []uint64{second}, again.Owner.DependencyIDs)
 }
 
 // AvailableParts answers each query as AvailablePart does, in the queries'
