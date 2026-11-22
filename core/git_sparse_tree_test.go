@@ -37,9 +37,10 @@ func (s *sparseManifestTestServer) Server(context.Context) (*dagql.Server, error
 }
 
 // TestGitSparseTreeManifestOfAMergedRecord reads the manifest of a sparse tree
-// this engine holds only as another engine's record, as loading a workspace
-// does: from a context with no dagql server. Failing here leaves the workspace
-// reading its full checkout, whatever the sparse tree holds.
+// this engine holds only as another engine's record, as a question about it
+// that misses does when loading a workspace asks it: from a context with no
+// dagql server. Failing here leaves the workspace reading its full checkout,
+// whatever the sparse tree holds.
 func TestGitSparseTreeManifestOfAMergedRecord(t *testing.T) {
 	aStore, bStore := testutil.NewStore(t), testutil.NewStore(t)
 	actx, a, asrv := transferCache(t, aStore, filepath.Join(t.TempDir(), "a.db"), "a")
@@ -66,12 +67,12 @@ func TestGitSparseTreeManifestOfAMergedRecord(t *testing.T) {
 		ctx := ContextWithQuery(dagql.ContextWithServer(bctx, nil), &Query{
 			Server: &sparseManifestTestServer{queryServer: query.Server, srv: bsrv},
 		})
-		sparse := &GitSparseTree{Root: loaded.(dagql.ObjectResult[*Directory])}
+		root := loaded.(dagql.ObjectResult[*Directory])
 
-		covered, err := sparse.coversPath(ctx, "dagger.toml")
+		covered, err := GitSparseTreeCovers(ctx, root, "dagger.toml")
 		require.NoError(t, err)
 		require.True(t, covered)
-		covered, err = sparse.coversPath(ctx, "gone.txt")
+		covered, err = GitSparseTreeCovers(ctx, root, "gone.txt")
 		require.NoError(t, err)
 		require.False(t, covered)
 		return nil
@@ -139,10 +140,10 @@ func TestGitWorkspaceKeepsItsSparseTreeInAMergedRecord(t *testing.T) {
 	}, func(ctx context.Context, _ *testutil.Store, _ *dagql.Cache, _ *dagql.Server, ws *Workspace) {
 		sparse, ok := ws.GitSparseTree()
 		require.True(t, ok, "a merged Git workspace must keep its sparse tree")
-		covered, err := sparse.coversPath(ctx, "dagger.toml")
+		covered, err := GitSparseTreeCovers(ctx, sparse.Root, "dagger.toml")
 		require.NoError(t, err)
 		require.True(t, covered)
-		covered, err = sparse.coversPath(ctx, "gone.txt")
+		covered, err = GitSparseTreeCovers(ctx, sparse.Root, "gone.txt")
 		require.NoError(t, err)
 		require.False(t, covered)
 	})
@@ -163,6 +164,7 @@ func TestGitWorkspaceReadsFullTreeWithoutSparseContent(t *testing.T) {
 	}, func(ctx context.Context, bStore *testutil.Store, cache *dagql.Cache, srv *dagql.Server, ws *Workspace) {
 		sparse, ok := ws.GitSparseTree()
 		require.True(t, ok, "a merged Git workspace must keep its sparse tree")
+		installGitSparseTreeQuestions(srv)
 
 		fullRef, _ := bStore.Build(t, nil, "dagger.toml", "from the full tree")
 		full := attachTransferObject(t, ctx, cache, srv, "b", "fullTree", partTestDirectory(fullRef, "/"))
@@ -185,6 +187,26 @@ func TestGitWorkspaceReadsFullTreeWithoutSparseContent(t *testing.T) {
 			require.ErrorIs(t, err, errPartInjectedProvider)
 		}
 	})
+}
+
+// installGitSparseTreeQuestions installs the sparse tree's questions as
+// core/schema declares them (gitSchema.sparseTreeFields), which this package
+// can't import.
+func installGitSparseTreeQuestions(srv *dagql.Server) {
+	type readArgs struct {
+		Path string
+		CopyFilter
+	}
+	dagql.Fields[*Directory]{
+		dagql.NodeFunc("__gitSparseCovers", func(ctx context.Context, parent dagql.ObjectResult[*Directory], args struct{ Path string }) (dagql.Boolean, error) {
+			covered, err := GitSparseTreeCovers(ctx, parent, args.Path)
+			return dagql.NewBoolean(covered), err
+		}).IsPersistable(),
+		dagql.NodeFunc("__gitSparseReadSource", func(ctx context.Context, parent dagql.ObjectResult[*Directory], args readArgs) (dagql.String, error) {
+			source, err := GitSparseTreeReadSource(ctx, parent, args.Path, args.CopyFilter)
+			return dagql.NewString(source.String()), err
+		}).IsPersistable(),
+	}.Install(srv)
 }
 
 // TestGitSparseReadSource checks where each read of a Git workspace's tree
