@@ -554,3 +554,101 @@ func TestImportChainFromPackRangeWithWrongID(t *testing.T) {
 	require.Error(t, err)
 	require.Zero(t, provider.opens.Load())
 }
+
+// multiPackProvider serves a chain's blobs only through its packs: reading
+// a member alone fails.
+type multiPackProvider struct {
+	content.InfoReaderProvider
+	packOf map[digest.Digest]digest.Digest
+	packs  map[digest.Digest][]byte
+	// opened, when set, runs as each OpenPack starts; its error fails the
+	// read.
+	opened func(context.Context) error
+}
+
+// newMultiPackProvider packs each group of the given layers' blobs, read
+// from inner, in order, as a pack of its own.
+func newMultiPackProvider(t *testing.T, inner content.InfoReaderProvider, groups ...[]ocispecs.Descriptor) *multiPackProvider {
+	t.Helper()
+	p := &multiPackProvider{InfoReaderProvider: inner, packOf: map[digest.Digest]digest.Digest{}, packs: map[digest.Digest][]byte{}}
+	for _, group := range groups {
+		members := make([]pack.Member, 0, len(group))
+		var body []byte
+		for _, desc := range group {
+			data, err := content.ReadBlob(context.Background(), inner, desc)
+			require.NoError(t, err)
+			members = append(members, pack.Member{Digest: desc.Digest, Size: int64(len(data))})
+			body = append(body, data...)
+		}
+		header, err := pack.Header(members)
+		require.NoError(t, err)
+		id, err := pack.ID(members)
+		require.NoError(t, err)
+		p.packs[id] = append(header, body...)
+		for _, m := range members {
+			p.packOf[m.Digest] = id
+		}
+	}
+	return p
+}
+
+func (p *multiPackProvider) ReaderAt(ctx context.Context, desc ocispecs.Descriptor) (content.ReaderAt, error) {
+	if _, ok := p.packOf[desc.Digest]; ok {
+		return nil, errors.New("a packed blob read alone")
+	}
+	return p.InfoReaderProvider.ReaderAt(ctx, desc)
+}
+
+func (p *multiPackProvider) PackOf(blob digest.Digest) (digest.Digest, bool) {
+	id, ok := p.packOf[blob]
+	return id, ok
+}
+
+func (p *multiPackProvider) OpenPack(ctx context.Context, blob digest.Digest) (io.ReadCloser, error) {
+	if p.opened != nil {
+		if err := p.opened(ctx); err != nil {
+			return nil, err
+		}
+	}
+	return io.NopCloser(bytes.NewReader(p.packs[p.packOf[blob]])), nil
+}
+
+// A chain downloads ahead by reads of the blob store, not by layers: the
+// layers whose blobs one pack holds are one download, its read. Three packs
+// of 20 layers each, more layers than an import holds downloads ahead, are
+// read at once, which a provider that answers no read until all three are
+// in flight checks.
+func TestImportChainReadsItsPacksAtOnce(t *testing.T) {
+	t.Parallel()
+	const packs, perPack = 3, 20
+	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+	chain := layeredChain(t, producer, "packed", packs*perPack)
+	groups := make([][]ocispecs.Descriptor, packs)
+	for i, layer := range chain.Layers {
+		groups[i/perPack] = append(groups[i/perPack], layer.Descriptor)
+	}
+	provider := newMultiPackProvider(t, chain.Provider, groups...)
+	gauge := &getGauge{}
+	all := make(chan struct{})
+	var arrived atomic.Int64
+	provider.opened = func(ctx context.Context) error {
+		gauge.enter()
+		defer gauge.inflight.Add(-1)
+		if arrived.Add(1) == packs {
+			close(all)
+		}
+		select {
+		case <-all:
+			return nil
+		case <-time.After(10 * time.Second):
+			return errors.New("the chain's pack reads were not all in flight at once")
+		case <-ctx.Done():
+			return context.Cause(ctx)
+		}
+	}
+	ref := importChain(t, consumer, supplied(chain, provider))
+	require.EqualValues(t, packs, gauge.most.Load(), "every pack's read in flight at once")
+	require.EqualValues(t, packs, arrived.Load(), "each pack read once")
+	testutil.CheckFile(t, ref, "packed-00.txt", "packed 0")
+	testutil.CheckFile(t, ref, "packed-59.txt", "packed 59")
+}
