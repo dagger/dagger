@@ -284,7 +284,7 @@ func TestLiveFoldSearchCap(t *testing.T) {
 		var hint string
 		p.folded.dispatch(func() {
 			p.folded.refreshSearchMatches()
-			hint = p.folded.searchCountHint("next")
+			hint = p.folded.searchCountHint()
 			p.folded.clearSearch()
 		})
 		return hint

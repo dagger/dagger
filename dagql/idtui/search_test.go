@@ -93,7 +93,7 @@ func TestSearchFindsUnloadedLogs(t *testing.T) {
 	sess := newTraceSession(t, src, nil)
 	sess.fe.dispatch(func() { sess.fe.confirmSearch("needle") })
 	sess.Render()
-	require.Contains(t, sess.fe.searchCountHint("next"), "loaded logs only")
+	require.Contains(t, sess.fe.searchCountHint(), "loaded logs only")
 	require.False(t, sess.Network().fetchedLog(loud))
 
 	sess.fe.SetLogSearch(dagui.TraceID{}, func(_ context.Context, pattern string) (LogSearchHits, error) {
@@ -109,7 +109,7 @@ func TestSearchFindsUnloadedLogs(t *testing.T) {
 		sess.Render()
 		return len(sess.fe.searchMatches) > 0
 	}, 5*time.Second, 10*time.Millisecond)
-	hint := sess.fe.searchCountHint("next")
+	hint := sess.fe.searchCountHint()
 	require.NotContains(t, hint, "loaded logs only")
 	require.Contains(t, hint, "more not searched")
 	require.Contains(t, hint, "1 in spans not loaded")

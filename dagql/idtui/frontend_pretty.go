@@ -4027,7 +4027,7 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding { //nolint:goc
 		key.NewBinding(key.WithKeys("/"),
 			key.WithHelp("/", "search")),
 		key.NewBinding(key.WithKeys("n"),
-			key.WithHelp("n", fe.searchCountHint("next")),
+			key.WithHelp("n", fe.searchCountHint()),
 			KeyEnabled(fe.searchQuery != "")),
 		key.NewBinding(key.WithKeys("N"),
 			key.WithHelp("N", "prev"),
@@ -4087,7 +4087,8 @@ func (fe *frontendPretty) escHelp() string {
 	return "unzoom"
 }
 
-func (fe *frontendPretty) searchCountHint(base string) string {
+// searchCountHint is the "n" key's help: "next", with the match count.
+func (fe *frontendPretty) searchCountHint() string {
 	// Logs not loaded may be left out of what was searched.
 	scope := fe.searchScope()
 	// Past the read-back cap the count is a lower bound: more spans match.
@@ -4096,9 +4097,9 @@ func (fe *frontendPretty) searchCountHint(base string) string {
 		more = "+"
 	}
 	if len(fe.searchMatches) == 0 {
-		return base + " (0" + more + scope + ")"
+		return "next (0" + more + scope + ")"
 	}
-	return fmt.Sprintf("%s (%d/%d%s%s)", base, fe.searchIdx+1, len(fe.searchMatches), more, scope)
+	return fmt.Sprintf("next (%d/%d%s%s)", fe.searchIdx+1, len(fe.searchMatches), more, scope)
 }
 
 func KeyEnabled(enabled bool) key.BindingOpt {
