@@ -95,6 +95,46 @@ func TestChangeReportsAJoinOfANonHolderNamesItAlone(t *testing.T) {
 	require.NotContains(t, change.Entries, h.m, "M's part answers don't change")
 }
 
+// A holding's arrival on an entry another cache holds, and its removal while
+// that cache still holds it, change the holding and none of the entry's own
+// facts or part answers: whether the entry stores a record turns on whether
+// any engine holds it, which neither turns, and a part answer reads the
+// class's stored parts, absence marks and uploads, not its holders. No reader
+// keeps an entry's holders (RemoteChange), so each write names the holding
+// alone. Here cache-d's holding joins R, which cache-c holds, with R's
+// snapshot complete: a copy the Cloud could ask for, and its answer for R's
+// snapshot stays the stored copy's. On a whole pull request's fill every
+// holding that joined an entry named it, and every other engine holding the
+// entry read it again at its next pass: 13.0 million reads by entry, a fifth
+// of a percent of those in passes that read nothing else finding the entry's
+// facts changed.
+func TestChangeReportsAHoldingsArrivalAndRemovalNameItAlone(t *testing.T) {
+	t.Parallel()
+	h := newHolderTestClass(t)
+	before, err := h.cloud.AvailablePart(h.r, h.snapshot, h.now)
+	require.NoError(t, err)
+	require.Equal(t, PartStored, before.State)
+
+	rRecipe, rField := changeTestRecipe(h.cloud, h.r)
+	key := HolderKey{"cache-d", 40}
+	change := h.attach(t, key, RemoteHolding{Recipe: rRecipe, Request: rRecipe, Field: rField, TypeName: "Directory", ContentDigest: testDigest("holder-content"), Parts: []PersistedPartAddress{h.snapshot}, Executed: true})
+	require.Equal(t, h.r, h.number(t, key), "cache-d's holding is on R")
+	require.Contains(t, change.Holdings, key)
+	require.NotContains(t, change.Entries, h.r, "R's facts and part answers don't change as cache-d joins it")
+	require.NotContains(t, change.Entries, h.m, "nor does M's")
+	after, err := h.cloud.AvailablePart(h.r, h.snapshot, h.now)
+	require.NoError(t, err)
+	require.Equal(t, before, after, "R's answer for its snapshot")
+
+	collected, change, err := h.cloud.CollectRemoteHoldings(h.ctx, []HolderKey{key}, nil)
+	require.NoError(t, err)
+	require.Equal(t, []HolderKey{key}, collected, "cache-d's holding, which nothing owns, is collected")
+	require.Contains(t, change.Holdings, key)
+	require.NotContains(t, change.Entries, h.r, "R, which cache-c still holds, doesn't change as cache-d leaves it")
+	facts := h.cloud.EntriesFacts([]uint64{h.r})
+	require.Len(t, facts, 1, "R stays")
+}
+
 // A change to a member that holds no part, here a kept call that lowers M's
 // expiry, changes no class mate's part answer: its write names M, not R.
 func TestChangeReportsANonHoldersChangeNamesItAlone(t *testing.T) {
