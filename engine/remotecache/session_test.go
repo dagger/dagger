@@ -139,6 +139,11 @@ type fakeAdapter struct {
 	settleCh chan struct{}
 	settled  chan settledCall
 
+	// plannedMu guards planned, the fetches a restore planned
+	// (PlanPartFetch), in order.
+	plannedMu sync.Mutex
+	planned   []plannedFetchCall
+
 	// restore merges a restore's part, after restoreSeen receives it; late
 	// answers LateMisses, and restored receives each file's report.
 	restore     func(context.Context, dagql.ValueBundle, *dagql.KnownRows) (dagql.MergeReply, error)
@@ -207,6 +212,18 @@ func (a *fakeAdapter) RestorePart(ctx context.Context, part dagql.ValueBundle, _
 	a.restoreSeen <- part
 	reply, err := a.restore(ctx, part, known)
 	return reply, a.priorityWait, err
+}
+
+// plannedFetchCall is one PlanPartFetch call a fakeAdapter saw.
+type plannedFetchCall struct {
+	number uint64
+	part   dagql.PartKey
+}
+
+func (a *fakeAdapter) PlanPartFetch(_ context.Context, number uint64, part dagql.PartKey) {
+	a.plannedMu.Lock()
+	defer a.plannedMu.Unlock()
+	a.planned = append(a.planned, plannedFetchCall{number: number, part: part})
 }
 
 func (a *fakeAdapter) Landing() func() {

@@ -212,6 +212,38 @@ func TestRestoreMergesAFilesParts(t *testing.T) {
 	require.Equal(t, 1, files.getsOf("whole"))
 }
 
+// A committed part's fetches ahead, which its header names by record
+// ordinal, are planned on the entries its records landed on, to be fetched at
+// once. A fetch of a record the part doesn't carry plans nothing.
+func TestRestorePlansAPartsFetchesOnItsEntries(t *testing.T) {
+	t.Parallel()
+	adapter := newFakeAdapter()
+	adapter.restore = func(_ context.Context, part dagql.ValueBundle, _ *dagql.KnownRows) (dagql.MergeReply, error) {
+		return merged(part, time.Unix(1790000000, 0)), nil
+	}
+	s, conn := restoreSession(t, adapter)
+	const fs, meta = dagql.PartKey("fs"), dagql.PartKey("meta")
+	file := setFile(t, dagql.ValueBundleVersion, part(11), part(12))
+	header, raw, err := protocol.ReadSetFile(file)
+	require.NoError(t, err)
+	header.Parts[0].Fetch = []protocol.SetFileFetch{{Ordinal: 1, Part: fs}, {Ordinal: 9, Part: fs}}
+	header.Parts[1].Fetch = []protocol.SetFileFetch{{Ordinal: 1, Part: meta}}
+	var buf bytes.Buffer
+	require.NoError(t, protocol.WriteSetFile(&buf, header, raw))
+	files := newFileServer(t)
+	whole := files.add("whole", buf.Bytes())
+
+	s.dispatch(request(t, 7, protocol.TypeRestore, restoreOf("test-base", nil, &whole)))
+	require.Equal(t, []uint64{11, 12}, seen(t, adapter, 2))
+	require.Equal(t, protocol.TypeRestored, conn.next(t).Type)
+	adapter.plannedMu.Lock()
+	defer adapter.plannedMu.Unlock()
+	require.Equal(t, []plannedFetchCall{
+		{number: 11, part: fs},
+		{number: 12, part: meta},
+	}, adapter.planned)
+}
+
 // A file's next part is decoded while the part before it merges, so that a
 // part's merge doesn't wait for its decode after the part before has
 // committed; the part's report says how long its merge did wait for it.
