@@ -150,6 +150,11 @@ type ExecutionMetadata struct {
 	// handed over in process, and must never perturb a cache key.
 	CallerRecipe digest.Digest `json:"-"`
 
+	// ReadScope is what the part reads made under the exec's call count as
+	// (dagql.CurrentReadScope), captured and handed over like CallerRecipe:
+	// the process's requests count as reads made under that call.
+	ReadScope dagql.ReadScope `json:"-"`
+
 	// HostAliasFQDNs maps a HostAliases key (a bound service's advertised
 	// hostname) to the fully qualified name the running service actually
 	// registered in DNS under. A service with a custom hostname is namespaced

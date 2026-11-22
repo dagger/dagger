@@ -2578,6 +2578,12 @@ type FunctionCall struct {
 	// boundary, which a Go context value doesn't cross.
 	callerRecipe digest.Digest
 
+	// readScope is what the part reads made under this function call count
+	// as (dagql.CurrentReadScope), carried engine-side only like
+	// callerRecipe, for the same reason: the module's requests to answer it
+	// count as reads made under it.
+	readScope dagql.ReadScope
+
 	// engineWork marks a call made as the engine's own work (WithEngineWork),
 	// such as an SDK building a module's runtime. It is carried engine-side
 	// only like processSpan: the calls its module makes are the engine's own
@@ -2770,6 +2776,15 @@ func (fnCall *FunctionCall) CallerRecipe() digest.Digest {
 		return ""
 	}
 	return fnCall.callerRecipe
+}
+
+// ReadScope returns what the part reads made under this function call count
+// as, which the requests its module makes carry (dagql.ContextWithReadScope).
+func (fnCall *FunctionCall) ReadScope() dagql.ReadScope {
+	if fnCall == nil {
+		return dagql.ReadScope{}
+	}
+	return fnCall.readScope
 }
 
 // EngineWork reports whether the call was made as the engine's own work
