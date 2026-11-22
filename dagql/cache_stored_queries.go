@@ -83,7 +83,7 @@ const (
 	// bytes, so it is never stored.
 	PartAbsent
 	// PartUploading: neither stored nor absent, and an upload of the part is
-	// in progress for the entry or an entry of its class (MarkPartUploading).
+	// in progress for the entry or an entry of its class (StartPartUploads).
 	PartUploading
 )
 
@@ -115,10 +115,10 @@ type PartAvailability struct {
 //     Absence is a property of the value's structure, not of its freshness;
 //   - uploading: an upload of the part is in progress for the entry or an
 //     entry of its class, whether or not that entry stores a value or has
-//     expired (MarkPartUploading), as its reader's claim counts it. The
+//     expired (StartPartUploads), as its reader's claim counts it. The
 //     lowest-numbered such entry is the donor. An upload's start and end
 //     move no ValidUntilUnix: its reader names the class at each
-//     (ClassChange, EndPartUploads);
+//     (StartPartUploads, EndPartUploads);
 //   - otherwise unavailable.
 //
 // Among the class's other entries, the lowest number answers first. Only a
@@ -216,6 +216,28 @@ func (c *Cache) availablePartLocked(number uint64, key string, nowUnix int64) (P
 	if res == nil {
 		return PartAvailability{}, fmt.Errorf("available part of %d: %w", number, ErrUnknownEntry)
 	}
+	av, held := c.heldPartLocked(res, key, nowUnix)
+	if held {
+		return av, nil
+	}
+	// An upload in progress answers after stored and absent: a reader needs
+	// neither, whatever uploads. The count is read a part at a time, so a
+	// reader counting an upload never waits for a batch of answers.
+	c.uploadsMu.Lock()
+	donor, uploading := c.classUploadLocked(res, key)
+	c.uploadsMu.Unlock()
+	if uploading {
+		av.State, av.Donor = PartUploading, uint64(donor)
+	}
+	return av, nil
+}
+
+// heldPartLocked is the answer for the part key of res from its class's
+// holders alone, a stored copy or a record that marks it absent, and whether
+// one answered: when none does, the answer is unavailable, with the moment
+// time alone may change it, and an upload in progress is the caller's to
+// count (classUploadLocked). Requires egraphMu.
+func (c *Cache) heldPartLocked(res *sharedResult, key string, nowUnix int64) (PartAvailability, bool) {
 	// Only the part's holders in the class answer for it: the members that
 	// store it, or whose stored record marks it absent (holdsPartLocked).
 	// Whether a member holds it is asked first: most members of a large class
@@ -253,7 +275,7 @@ func (c *Cache) availablePartLocked(number uint64, key string, nowUnix int64) (P
 			continue
 		}
 		if _, ok := candidate.storedParts[key]; ok {
-			return PartAvailability{State: PartStored, Donor: uint64(candidate.id), ValidUntilUnix: validUntil}, nil
+			return PartAvailability{State: PartStored, Donor: uint64(candidate.id), ValidUntilUnix: validUntil}, true
 		}
 	}
 	for _, candidate := range candidates {
@@ -266,28 +288,19 @@ func (c *Cache) availablePartLocked(number uint64, key string, nowUnix int64) (P
 		}
 		for _, part := range declared {
 			if part.key == key && part.state == "absent" {
-				return PartAvailability{State: PartAbsent, Donor: uint64(candidate.id), ValidUntilUnix: validUntil}, nil
+				return PartAvailability{State: PartAbsent, Donor: uint64(candidate.id), ValidUntilUnix: validUntil}, true
 			}
 		}
 	}
-	// An upload in progress answers after stored and absent: a reader needs
-	// neither, whatever uploads. The count is read a part at a time, so a
-	// reader counting an upload never waits for a batch of answers.
-	c.uploadsMu.Lock()
-	donor, uploading := c.classUploadLocked(res, key)
-	c.uploadsMu.Unlock()
-	if uploading {
-		return PartAvailability{State: PartUploading, Donor: uint64(donor), ValidUntilUnix: validUntil}, nil
-	}
-	return PartAvailability{ValidUntilUnix: validUntil}, nil
+	return PartAvailability{ValidUntilUnix: validUntil}, false
 }
 
 // classUploadLocked is the lowest-numbered entry of res's class, res
 // included, with an upload of the part whose address key is key in progress
-// (MarkPartUploading), whether or not it stores a value or has expired: an
+// (StartPartUploads), whether or not it stores a value or has expired: an
 // upload counts for its class as its reader's claim does. A caller that
 // decides by the answer, as a start that counts an upload only where none is
-// in progress, decides under the same take of uploadsMu. Requires egraphMu
+// in progress (StartPartUploads), decides under the same take of uploadsMu. Requires egraphMu
 // and uploadsMu.
 func (c *Cache) classUploadLocked(res *sharedResult, key string) (sharedResultID, bool) {
 	if len(c.uploads) == 0 {
