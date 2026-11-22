@@ -2683,6 +2683,12 @@ type Cache struct {
 	// testReadPieceYielded runs between two of its holds, with none held.
 	readPieceSize        int
 	testReadPieceYielded func()
+	// testBatchAnswered runs after each answer of a batch read
+	// (AvailableParts, RemoteHoldingInfos, EntriesHeld, EntriesFacts), with
+	// egraphMu held for reading, i the answer's index; testBatchGaveWay runs
+	// as a batch read lets egraphMu go between two answers, with none held.
+	testBatchAnswered func(i int)
+	testBatchGaveWay  func()
 
 	// testRecordPayloadPreparing runs as a merge starts preparing the
 	// record of an ordinal with its payload; an error refuses that record.

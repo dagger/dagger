@@ -3,6 +3,7 @@ package dagql
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -344,6 +345,86 @@ func TestRemoteHoldingInfosAnswerAsRemoteHoldingInfo(t *testing.T) {
 		require.Equal(t, want, held[i], "key %v", key)
 	}
 	require.Equal(t, []bool{true, false, true}, ok)
+}
+
+// A batch read lets a writer that comes during it in before its end: the
+// lock prefers writers, so a writer that waited for a batch's whole hold
+// held up every reader that came after it, and on the thirteenth whole
+// run's fill one batch of part answers held the Cloud cache for over 7 s.
+// The writer waits for the answer in progress at most; each answer stands
+// whole in one hold. Here a writer comes after a batch's first answer, and
+// gets in as the batch lets the lock go.
+func TestABatchReadLetsAWaitingWriterIn(t *testing.T) {
+	t.Parallel()
+	ctx, cloud, first, _ := storedQueriesTestClass(t)
+	key := HolderKey{"cache-c", 1}
+	_, err := cloud.AttachRemoteHolding(ctx, key, RemoteHolding{Recipe: testDigest("batch-holding"), Request: testDigest("batch-holding"), Field: "batch-holding", TypeName: "Directory", ContentDigest: testDigest("batch-holding")})
+	require.NoError(t, err)
+	const n = 64
+	now := time.Now().Unix()
+	reads := []struct {
+		name string
+		read func()
+	}{
+		{"AvailableParts", func() {
+			queries := make([]PartQuery, n)
+			for i := range queries {
+				queries[i] = PartQuery{Number: first, Address: PersistedPartAddress{Part: "snapshot"}}
+			}
+			cloud.AvailableParts(queries, now)
+		}},
+		{"RemoteHoldingInfos", func() {
+			keys := make([]HolderKey, n)
+			for i := range keys {
+				keys[i] = key
+			}
+			cloud.RemoteHoldingInfos(keys)
+		}},
+		{"EntriesHeld", func() {
+			numbers := make([]uint64, n)
+			for i := range numbers {
+				numbers[i] = first
+			}
+			cloud.EntriesHeld(numbers, 4)
+		}},
+		{"EntriesFacts", func() {
+			numbers := make([]uint64, n)
+			for i := range numbers {
+				numbers[i] = first
+			}
+			cloud.EntriesFacts(numbers)
+		}},
+	}
+	for _, r := range reads {
+		t.Run(r.name, func(t *testing.T) {
+			var answered, in atomic.Int64
+			in.Store(-1)
+			done := make(chan struct{})
+			cloud.testBatchAnswered = func(i int) {
+				answered.Store(int64(i + 1))
+				if i != 0 {
+					return
+				}
+				go func() {
+					defer close(done)
+					cloud.egraphMu.Lock()
+					in.Store(answered.Load())
+					cloud.egraphMu.Unlock()
+				}()
+				require.Eventually(t, cloud.egraphMu.Waiting, 10*time.Second, time.Millisecond, "the writer waits")
+			}
+			// While the batch has let the lock go, the writer, waiting or
+			// about to, takes it: a writer that had yet to queue as the
+			// batch looked would take it at the next answer's end.
+			cloud.testBatchGaveWay = func() {
+				require.Eventually(t, func() bool { return in.Load() >= 0 }, 10*time.Second, time.Millisecond, "the writer gets in")
+			}
+			defer func() { cloud.testBatchAnswered, cloud.testBatchGaveWay = nil, nil }()
+			r.read()
+			<-done
+			require.Less(t, in.Load(), int64(n), "the writer got in before the batch's end")
+		})
+	}
 }
 
 // A reader that asks only what the cache has of a part pays nothing for the
