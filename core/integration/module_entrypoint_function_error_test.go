@@ -314,6 +314,26 @@ func (ModuleSuite) TestModuleEntrypointFunctionErrorValues(ctx context.Context, 
 	})
 }
 
+// A go-sdk module's dispatcher reports its function's error in the file the
+// engine gives it, so its caller gets a failed exec's error as an ExecError,
+// exit code and output included, as from the exec itself. The module is the
+// golden tests' shared dependency, already generated with that go-sdk.
+func (ModuleSuite) TestModuleEntrypointFunctionErrorGoSDK(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	mod := core.NewQuery(c).Host().Directory("../../dagql/idtui/viztest/sdks/dep")
+	require.NoError(t, mod.AsModuleSource().AsModule().Serve(ctx))
+	_, err := testutil.QueryWithClient[struct{ SdkDep struct{} }](c, t, "{sdkDep{failExec}}", nil)
+	var execErr *core.ExecError
+	require.ErrorAs(t, err, &execErr)
+	require.Equal(t, 1, execErr.ExitCode)
+	require.Equal(t, "dep exec stdout", execErr.Stdout)
+	require.Equal(t, "dep exec stderr", execErr.Stderr)
+	require.Contains(t, execErr.Cmd, "echo dep exec stdout; sleep 0.1; echo dep exec stderr >&2; exit 1")
+	require.NotContains(t, err.Error(), "call module entrypoint")
+	require.NotContains(t, err.Error(), "::dagger-function-error")
+	require.NotContains(t, execErr.Extensions(), dagcore.ModuleProcessExtension)
+}
+
 // The error of a module process names where it comes from: the function
 // call, for an error of the function's own or a process that died, and the
 // failed call an API error names.
