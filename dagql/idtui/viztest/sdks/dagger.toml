@@ -27,7 +27,13 @@ source = "github.com/vito/typescript-sdk@23a6ec5cba3e81539bd09def8a9fc3c2bae9efa
 source = "github.com/vito/php-sdk@115d8d91eef6b49012ea66112adc0af0ef5fc48c"
 
 [modules.java-sdk]
-source = "github.com/dagger/java-sdk@784d8e7f6578e844aba7b1f926c28f26c4dc82ed"
+# java-sdk#47: the dispatcher reports a function's error in the file
+# (DAGGER_FUNCTION_ERROR_PATH) the engine gives a call's process, with a short
+# stack trace of the module's own frames, and nothing for an API error whose
+# origin the engine shows. The entrypoint declares prebuild, and Maven builds
+# the jar quietly in an exec of its own, so a build failure shows the
+# compiler's errors.
+source = "github.com/dagger/java-sdk@344e6cf29bb1730b3d687bec31fbcdcd236005d6"
 
 [modules.dang-sdk]
 source = "github.com/dagger/dang-sdk@14ba9d349167cb32b3a06f4229f534509a30ac62"

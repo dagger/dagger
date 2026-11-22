@@ -7,10 +7,23 @@ files are stale.
 """
 type JavaModuleBuild {
   """
+  The platform the jar is built on: the engine's when unset. The jar runs on
+  any, but its build is cached per platform.
+  """
+  pub platform: Platform
+
+  """
   Maven build output, never an input: a class file an IDE left there is newer
   than its source, so the compiler skips the source and packages the stale class.
   """
   let buildOutputExclude: [String!]! = ["**/target/**"]
+
+  """
+  The jar of the SDK that vendorSdkJar commits into the module. It has no
+  annotation processor, so a module that has it is packaged with its committed
+  entrypoint and compared with nothing.
+  """
+  let vendoredSdkJar: String! = "sdk/repo/io/dagger/dagger-java-sdk/0.21.4/dagger-java-sdk-0.21.4.jar"
 
   """
   The module's shaded jar, packaged with the entrypoint the annotation processor
@@ -19,7 +32,7 @@ type JavaModuleBuild {
   from the committed one.
   """
   pub jar: File! {
-    let module = withoutSVE(container.from("maven:3.9.9-eclipse-temurin-21-alpine@sha256:4cbb8bf76c46b97e028998f2486ed014759a8e932480431039bdb93dffe6813e"))
+    let module = withoutSVE(container(platform: platform ?? defaultPlatform).from("maven:3.9.9-eclipse-temurin-21-alpine@sha256:4cbb8bf76c46b97e028998f2486ed014759a8e932480431039bdb93dffe6813e"))
       .withoutEntrypoint
       .withMountedCache("/root/.m2", cacheVolume("sdk-java-maven-m2"), sharing: CacheSharingMode.LOCKED)
       .withDirectory("/src", currentModule.contextDirectory, exclude: buildOutputExclude)
@@ -28,19 +41,38 @@ type JavaModuleBuild {
       module.withExec(["sh", "-c", editedScript]).stdout,
       "these generated files changed since dagger generate wrote them",
     )
-    let built = module
+    let named = module
       .withEnvVariable("_DAGGER_JAVA_SDK_MODULE_NAME", "viztest-java")
       .withEnvVariable("_DAGGER_JAVA_SDK_CLIENT_VERSION", "v1.0.0-beta.28")
-      .withExec(["sh", "-c", buildScript])
-    refuseStale(
-      built.file("/tmp/stale").contents,
-      "the module's code no longer generates these committed files",
-    )
+    let vendored = currentModule.contextDirectory.directory(currentModule.sourceSubpath).exists(vendoredSdkJar)
+    let built = if (vendored) {
+      named.withExec(["mvn", "package"] + mavenFlags)
+    } else {
+      # The processor writes the entrypoint again, under target/, and the
+      # committed one is compared with it.
+      let packaged = named
+        .withoutDirectory("src/generated/java")
+        .withExec(["mvn", "package", "-Ddagger.proc=full"] + mavenFlags)
+      refuseStale(
+        packaged
+          .withDirectory("/tmp/committed/java", module.directory("src/generated/java"))
+          .withExec(["sh", "-c", staleScript])
+          .stdout,
+        "the module's code no longer generates these committed files",
+      )
+      packaged
+    }
     # The shade plugin leaves the unshaded artifact beside the shaded one.
     built
       .withExec(["sh", "-c", "set -e; jar=$(ls -1 target/*.jar 2>/dev/null | grep -v '/original-' | head -n1); test -n \"$jar\" || { echo \"no packaged jar found in $(pwd)/target\" >&2; exit 1; }; cp \"$jar\" /tmp/module.jar"])
       .file("/tmp/module.jar")
   }
+
+  """
+  Maven's flags for the package: quiet, so a failed build logs its errors, such
+  as the compiler's, and little else.
+  """
+  let mavenFlags: [String!]! = ["-DskipTests", "--quiet", "--threads", "1C", "--no-transfer-progress"]
 
   """
   Print each file of src/generated/sha256sums whose contents changed or that is
@@ -54,23 +86,13 @@ type JavaModuleBuild {
   }
 
   """
-  Package the module with its entrypoint generated again, and list in
-  /tmp/stale each committed entrypoint file that differs from the fresh one.
-  The jar vendored by vendorSdkJar has no annotation processor, so that module
-  is packaged with its committed entrypoint and compared with nothing.
+  Print each committed entrypoint file that differs from the one the processor
+  generated again.
   """
-  let buildScript: String! {
+  let staleScript: String! {
     [
-      "set -e",
-      "touch /tmp/stale",
-      "if [ -f sdk/repo/io/dagger/dagger-java-sdk/0.21.4/dagger-java-sdk-0.21.4.jar ]; then",
-      "  exec mvn package -DskipTests --threads 1C --no-transfer-progress",
-      "fi",
-      "mkdir -p /tmp/committed",
-      "mv src/generated/java /tmp/committed/java",
-      "mvn package -DskipTests -Ddagger.proc=full --threads 1C --no-transfer-progress",
-      "diff -r /tmp/committed/java target/generated-sources/annotations >/dev/null || echo src/generated/java >> /tmp/stale",
-      "cmp -s src/generated/dang/entrypoint/main.dang target/classes/dagger/entrypoint/main.dang || echo src/generated/dang/entrypoint/main.dang >> /tmp/stale",
+      "diff -r /tmp/committed/java target/generated-sources/annotations >/dev/null || echo src/generated/java",
+      "cmp -s src/generated/dang/entrypoint/main.dang target/classes/dagger/entrypoint/main.dang || echo src/generated/dang/entrypoint/main.dang",
     ].join("\n")
   }
 

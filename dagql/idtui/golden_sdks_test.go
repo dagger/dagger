@@ -56,8 +56,8 @@ const racyReply = "the dispatcher's reply on stdout races its stack trace on std
 //   - BAD: an exec error's message is a bare "exit code: N".
 //
 // An SDK whose module process reports its error in the engine's function
-// error file (DAGGER_FUNCTION_ERROR_PATH) gets the first right: see go and
-// python.
+// error file (DAGGER_FUNCTION_ERROR_PATH) gets the first right: see go,
+// python and java.
 var sdkFixtures = []sdkFixture{
 	// Errors use the engine's function error file (DAGGER_FUNCTION_ERROR_PATH,
 	// dagger/go-sdk#113). A build failure renders the compiler's error,
@@ -85,9 +85,13 @@ var sdkFixtures = []sdkFixture{
 	// client sends every default argument, so a withExec renders with all of
 	// them.
 	{lang: "php", source: "src/ViztestPhp.php", breakage: "\nthis is not php;\n", noCachePolicy: true},
-	// Errors use the ::dagger-function-error:: marker. BAD: a build failure
-	// is the trace 150bc33a shape: maven's withExec, "exit code: 1", and none
-	// of the compiler's output.
+	// Errors use the engine's function error file (DAGGER_FUNCTION_ERROR_PATH,
+	// dagger/java-sdk#47). An API error whose origin renders logs nothing;
+	// one without an origin and an exception of the function's own log a
+	// short stack trace, through the module's own frames only. A wrapped
+	// exec error keeps its cause chain, each part so shortened. A build
+	// failure renders under "build viztest-java" as Maven's quiet errors on
+	// its "mvn package" exec, the compiler's among them.
 	{lang: "java", source: "src/main/java/io/dagger/modules/viztestjava/ViztestJava.java", breakage: "\nthis is not java\n"},
 	// Not an entrypoint: the dang-sdk module runs on the engine's built-in
 	// Dang runtime, so its errors and logs are the reference. BAD: a wrapped

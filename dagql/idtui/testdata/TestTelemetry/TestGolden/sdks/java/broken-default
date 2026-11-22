@@ -6,8 +6,19 @@ Expected stderr:
 
 ✘ viztestJava: ViztestJava! X.Xs ERROR
 ┇ build viztest-java ›
-✘ build viztest-java [label TBD] X.Xs ERROR
-[ERROR] /src/viztest/sdks/broken-java/src/main/java/io/dagger/modules/viztestjava/ViztestJava.java:[89,1] class, interface, enum, or record expected
+✘ withExec mvn package -Ddagger.proc=full -DskipTests --quiet --threads 1C --no-transfer-progress X.Xs ERROR
+[ERROR] COMPILATION ERROR :
+[ERROR] /src/viztest/sdks/broken-java/src/main/java/io/dagger/modules/viztestjava/ViztestJava.java:[97,1] class, interface, enum, or record expected
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-compiler-plugin:3.13.0:compile (compile-module) on project viztest-java: Compilation failure
+[ERROR] /src/viztest/sdks/broken-java/src/main/java/io/dagger/modules/viztestjava/ViztestJava.java:[97,1] class, interface, enum, or record expected
+[ERROR]
+[ERROR] -> [Help 1]
+[ERROR]
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR]
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoFailureException
 ! exit code: 1
 
 Setup tracing by running "dagger cloud signup". To hide set DAGGER_NO_NAG=1

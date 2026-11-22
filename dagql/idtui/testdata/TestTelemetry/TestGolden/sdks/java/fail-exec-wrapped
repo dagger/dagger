@@ -13,23 +13,10 @@ Expected stderr:
 
 $ viztestJava: ViztestJava! X.Xs CACHED
 ✘ .failExecWrapped: String! X.Xs ERROR
-┃ java.lang.Exception: java function ran a failing command: exit code: 1 [traceparent:00000000000000000000000000000000-0000000000000000]
+┃ java.lang.Exception: java function ran a failing command: exit code: 1
 ┃         at io.dagger.modules.viztestjava.ViztestJava.failExecWrapped(ViztestJava.java:53)
-┃         at io.dagger.gen.entrypoint.Entrypoint.invoke(Entrypoint.java:145)
-┃         at io.dagger.client.ModuleDispatcher.dispatch(ModuleDispatcher.java:97)
-┃         at io.dagger.client.ModuleDispatcher.engineCall(ModuleDispatcher.java:67)
-┃         at io.dagger.gen.entrypoint.Entrypoint.main(Entrypoint.java:40)
-┃ Caused by: io.dagger.client.exception.DaggerExecException: exit code: 1 [traceparent:00000000000000000000000000000000-0000000000000000]
-┃         at io.dagger.client.QueryBuilder.handleErrors(QueryBuilder.java:165)
-┃         at io.dagger.client.QueryBuilder.executeQuery(QueryBuilder.java:204)
-┃         at io.dagger.client.QueryBuilder.executeQuery(QueryBuilder.java:227)
-┃         at io.dagger.client.modules.core.Container.stdout(Container.java:683)
+┃ Caused by: io.dagger.client.exception.DaggerExecException: exit code: 1
 ┃         at io.dagger.modules.viztestjava.ViztestJava.failExecWrapped(ViztestJava.java:51)
-┃         ... 4 more
-┃ ::dagger-function-error::"java function ran a failing command: exit code: 1 [traceparent:00000000000000000000000000000000-0000000000000000]"
-├╴✘ call module entrypoint X.Xs ERROR
-│ ┆ (the entrypoint's own evaluation, elided)
-│
 ├╴$ Container.from(address: "alpine"): Container! X.Xs CACHED
 ├╴✘ withExec sh -c 'echo exec stdout; sleep 0.1; echo exec stderr >&2; exit 1' X.Xs ERROR
 │ ┃ exec stdout
