@@ -1996,6 +1996,18 @@ func (srv *Server) clientRecordFromIDs(sessID, clientID string) (*clientRecord, 
 // not created yet, or removed.
 var errSessionNotFound = errors.New("not found")
 
+// telemetryRecordErr is the error a telemetry request at path gets when its
+// client record can't be found. A span query comes from a client the
+// session streamed to, so a session not found has ended: 410 Gone, as it
+// can't answer again.
+func telemetryRecordErr(path string, err error) error {
+	err = fmt.Errorf("get client record: %w", err)
+	if path == enginetel.LiveSpanQueryPath && errors.Is(err, errSessionNotFound) {
+		return httpErr(err, http.StatusGone)
+	}
+	return err
+}
+
 // clientRuntimeForRecord resolves retained execution state after the caller has
 // deliberately selected the runtime path. It does not acquire ownership; entry
 // points that execute work must validate a ClientScope first.
@@ -2755,13 +2767,7 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 		// Telemetry subscriptions require only the stable client record.
 		record, err := srv.clientRecordFromIDs(clientMetadata.SessionID, clientMetadata.ClientID)
 		if err != nil {
-			err = fmt.Errorf("get client record: %w", err)
-			if path == enginetel.LiveSpanQueryPath && errors.Is(err, errSessionNotFound) {
-				// a span query comes from a client its session streamed
-				// to, so the session ended: it can't answer again
-				return httpErr(err, http.StatusGone)
-			}
-			return err
+			return telemetryRecordErr(path, err)
 		}
 		mux = http.NewServeMux()
 		mux.HandleFunc("GET /v1/traces", httpHandlerFunc(srv.telemetryPubSub.TracesSubscribeHandler, record))
