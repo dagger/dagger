@@ -2270,6 +2270,9 @@ func (c *Cache) relocateMergeRowsLocked(commit *valueMergeCommit) error {
 			continue
 		}
 		if prep.unprepared[row.ordinal] {
+			if c.testRelocatedUnderLock != nil {
+				c.testRelocatedUnderLock(row.ordinal)
+			}
 			if err := relocateUnpreparedRowLocked(prep, row, source, number, relocate); err != nil {
 				return err
 			}
@@ -3363,6 +3366,9 @@ func (c *Cache) bindMergedFrameLocked(res *sharedResult, published bool) error {
 // egraphMu.
 func (c *Cache) mergeReplyLocked(commit *valueMergeCommit) MergeReply {
 	reply := MergeReply{Generation: c.identity.Generation, EngineTimeUnixNano: time.Now().UnixNano()}
+	if !c.blobBacked && c.testMergeReplyPartsDecoding != nil {
+		c.testMergeReplyPartsDecoding()
+	}
 	for _, row := range commit.rows {
 		reply.Rows.count(row)
 		res := row.res
