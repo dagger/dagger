@@ -482,6 +482,7 @@ func TestCacheEvidenceRemoteFactsChangeNoDecision(t *testing.T) {
 		c.egraphMu.RLock()
 		imported := res.cacheSharedResult().imported
 		c.egraphMu.RUnlock()
-		assert.Assert(t, imported, "armed=%v: the merged entry is served either way", armed)
+		assert.Assert(t, !imported, "armed=%v: the call's made value is kept either way", armed)
+		assert.Equal(t, "computed", res.Unwrap().(*transferTestValue).Text, "armed=%v", armed)
 	}
 }
