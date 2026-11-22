@@ -74,3 +74,36 @@ func TestErrorCauseBreadcrumbFollowsVisibility(t *testing.T) {
 	require.NotContains(t, out, "binary")
 	require.NotContains(t, out, "gobuild")
 }
+
+// TestErrorCauseBreadcrumbKeepsModuleLoad covers a module whose runtime
+// fails to build while the workspace loads: the breadcrumb names the module's
+// load, beneath the workspace's, which doesn't stand for it, and leaves out
+// the load's plumbing, whose encapsulation still stands for the build's calls.
+func TestErrorCauseBreadcrumbKeepsModuleLoad(t *testing.T) {
+	start := time.Unix(100, 0)
+	end := start.Add(time.Second)
+	id := prettyTestSpanID
+	failed := sdktrace.Status{Code: codes.Error, Description: "exit code: 2"}
+	db := dagui.NewDB()
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: id(1), TraceID: prettyTestTraceID(), Name: "dagger call", StartTime: start, EndTime: end},
+		{ID: id(2), TraceID: prettyTestTraceID(), ParentID: id(1), Name: "load workspace: .", StartTime: start, EndTime: end, Status: failed},
+		{ID: id(3), TraceID: prettyTestTraceID(), ParentID: id(2), Name: dagui.WorkspaceLoadSpanName, Encapsulate: true, StartTime: start, EndTime: end, Status: failed},
+		{ID: id(4), TraceID: prettyTestTraceID(), ParentID: id(3), Name: "load module: ./broken", StartTime: start, EndTime: end, Status: failed},
+		{ID: id(5), TraceID: prettyTestTraceID(), ParentID: id(4), Name: "ModuleSource.asModule", StartTime: start, EndTime: end, Status: failed},
+		{ID: id(6), TraceID: prettyTestTraceID(), ParentID: id(5), Name: "module SDK: load runtime", Encapsulate: true, StartTime: start, EndTime: end, Status: failed},
+		{ID: id(7), TraceID: prettyTestTraceID(), ParentID: id(6), Name: "binary", StartTime: start, EndTime: end, Status: failed},
+		{ID: id(8), TraceID: prettyTestTraceID(), ParentID: id(7), Name: "withExec", StartTime: start, EndTime: end, Status: failed},
+	})
+	db.Spans.Map[id(2)].AddErrorOrigin(db.Spans.Map[id(8)])
+	db.SetPrimarySpan(id(1))
+	fe := newWithTerminal(io.Discard, db, tuist.NewHeadlessTerminal(120, 30))
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+	var output bytes.Buffer
+	require.NoError(t, fe.FinalRender(&output))
+	out := ansi.Strip(output.String())
+	require.Contains(t, out, VertBoldDash3+" "+dagui.WorkspaceLoadSpanName+" › load module: ./broken › \n")
+	require.NotContains(t, out, "ModuleSource.asModule")
+	require.NotContains(t, out, "module SDK: load runtime")
+	require.NotContains(t, out, "binary")
+}

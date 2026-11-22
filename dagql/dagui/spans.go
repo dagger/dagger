@@ -19,6 +19,10 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 )
 
+// WorkspaceLoadSpanName names the CLI's span over loading the workspace's
+// modules' type definitions, which encapsulates every module's load.
+const WorkspaceLoadSpanName = "loading type definitions"
+
 // spanStateCategory represents the primary state of a span for rollup counting
 type spanStateCategory uint8
 

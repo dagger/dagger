@@ -264,7 +264,7 @@ type loadTypeDefsOpts struct {
 
 // loadTypeDefs loads the objects defined by the given module in an easier to use data structure.
 func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client, opts ...loadTypeDefsOpts) (rerr error) {
-	ctx, loadSpan := Tracer().Start(ctx, "loading type definitions", telemetry.Encapsulate())
+	ctx, loadSpan := Tracer().Start(ctx, dagui.WorkspaceLoadSpanName, telemetry.Encapsulate())
 	defer telemetry.EndWithCause(loadSpan, &rerr)
 
 	var o loadTypeDefsOpts

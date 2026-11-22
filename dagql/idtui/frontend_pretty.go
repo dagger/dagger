@@ -9232,6 +9232,11 @@ func (fe *frontendPretty) renderErrorCause(ctx tuist.Context, out TermOutput, r 
 // ancestor that encapsulates its work stands for everything beneath it, as a
 // module's build stands for the calls that build it. An internal ancestor's
 // encapsulation doesn't count, as it isn't shown.
+//
+// A module load is told by its own row: the workspace's load of every
+// module (dagui.WorkspaceLoadSpanName) doesn't stand for the loads beneath
+// it, and the plumbing of a load is left out, though it still stands for
+// the work it encapsulates (see isModuleLoadPlumbing).
 func errorCauseBreadcrumb(origin *dagui.TraceTree, row *dagui.Span) []*dagui.TraceTree {
 	var parents []*dagui.TraceTree
 	for p := origin.Parent; p != nil; p = p.Parent {
@@ -9249,12 +9254,26 @@ func errorCauseBreadcrumb(origin *dagui.TraceTree, row *dagui.Span) []*dagui.Tra
 		if p.Span.IsInternal() {
 			continue
 		}
-		if p.Span.Encapsulate {
+		if p.Span.Encapsulate && p.Span.Name != dagui.WorkspaceLoadSpanName {
 			parents = parents[:0]
+		}
+		if isModuleLoadPlumbing(p.Span) {
+			continue
 		}
 		parents = append(parents, p)
 	}
 	return parents
+}
+
+// isModuleLoadPlumbing reports whether span is a step of the engine's that
+// loads a module, which the module's "load module" row stands for: a
+// function call's plumbing, a ModuleSource call, the load of its SDK's
+// runtime or of its dependencies.
+func isModuleLoadPlumbing(span *dagui.Span) bool {
+	return span.FunctionPlumbing ||
+		strings.HasPrefix(span.Name, "ModuleSource.") ||
+		span.Name == "module SDK: load runtime" ||
+		span.Name == "load dep modules"
 }
 
 func (fe *frontendPretty) hasShownRootError() bool {
