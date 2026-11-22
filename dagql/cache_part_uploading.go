@@ -11,20 +11,19 @@ import (
 // the part, which the cache stores nothing of but counts until the reader
 // ends it (EndPartUploads).
 //
-// The Cloud's passes keep whether a part is needed by AvailablePart and by
-// whether an upload of it is in progress for any entry of the class, which
-// depends on which entries the class has. An entry with an upload in
-// progress counts as holding a part for its class (holdsAnyPartLocked): a
-// join brings the upload to the other side's entries, and the entry's
-// leaving takes it from its class mates, so those name them. AvailablePart
-// doesn't answer uploads: the reader keeps its claims and answers them.
+// AvailablePart answers an upload in progress for any entry of the class
+// (PartUploading), which depends on which entries the class has. An entry
+// with an upload in progress counts as holding a part for its class
+// (holdsAnyPartLocked): a join brings the upload to the other side's
+// entries, and the entry's leaving takes it from its class mates, so those
+// name them.
 //
-// A start changes no answer the graph gives, so it takes no hold of
-// egraphMu, and names nothing: the reader names the entry's class mates
-// itself, after the start, with ClassChange. A join or a leaving that lands
-// between the two sees the count, or is in the class ClassChange reads. The
-// counts live in memory only, as the reader's claims do, under uploadsMu: the
-// reader may start an upload under a lock of its own.
+// A start takes no hold of egraphMu, and names nothing: the reader names the
+// entry's class mates itself, after the start, with ClassChange, and an
+// answer read in between already says uploading. A join or a leaving that
+// lands between the two sees the count, or is in the class ClassChange
+// reads. The counts live in memory only, as the reader's claims do, under
+// uploadsMu: the reader may start an upload under a lock of its own.
 func (c *Cache) MarkPartUploading(number uint64, address PersistedPartAddress) error {
 	if !c.blobBacked {
 		return errors.New("mark part uploading: the cache has no blob store")

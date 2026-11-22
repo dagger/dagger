@@ -2821,10 +2821,11 @@ type Cache struct {
 	// uploads counts, on a blob-backed cache, the uploads of parts its
 	// reader marks in progress, by entry and part address key
 	// (MarkPartUploading, EndPartUploads). Memory only, as the reader's own
-	// claims are. Guarded by uploadsMu, not egraphMu: a count changes no
-	// answer the graph gives. uploadsMu is a leaf: taken alone, under
-	// egraphMu in either mode, or under a lock of the reader's own, and
-	// nothing is taken while it is held.
+	// claims are. Guarded by uploadsMu, not egraphMu: AvailablePart reads a
+	// count under its hold of egraphMu for reading, and the reader names
+	// what a count changed itself (ClassChange, EndPartUploads). uploadsMu
+	// is a leaf: taken alone, under egraphMu in either mode, or under a lock
+	// of the reader's own, and nothing is taken while it is held.
 	uploadsMu sync.Mutex
 	uploads   map[sharedResultID]map[string]int
 	// writes counts, on a blob-backed cache, the changes to what stored
