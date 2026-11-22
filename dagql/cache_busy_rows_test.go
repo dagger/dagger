@@ -109,3 +109,50 @@ func TestBusyRowsEndWithTheirAttachment(t *testing.T) {
 	}
 	require.Empty(t, c.BusyRows(ctx, []uint64{row}), "the row is no longer busy once the watch hears of its end")
 }
+
+// A watch of busy rows' ends hears only of the rows it wants: an end of
+// another row, which a watch wanting every row hears of in the same end,
+// wakes it not. An end of its row does.
+func TestBusyEndsWakeOnlyTheWatchesThatWantTheRow(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, c := newPartsTestCache(t, nil)
+		defer c.CloseDiscardingPersistence()
+		value := func(text string) (AnyResult, uint64) {
+			obj := &captureTestValue{text: text}
+			obj.lazy = func(context.Context) error {
+				obj.lazy = nil
+				return nil
+			}
+			res := attachCaptureTestValue(t, ctx, c, obj)
+			return res, uint64(res.cacheSharedResult().id)
+		}
+		wanted, wantedRow := value("wanted")
+		other, _ := value("other")
+
+		mine, stopMine := c.WatchBusyEnds(func(r uint64) bool { return r == wantedRow })
+		defer stopMine()
+		every, stopEvery := c.WatchBusyEnds(func(uint64) bool { return true })
+		defer stopEvery()
+
+		require.NoError(t, c.Evaluate(ctx, other))
+		synctest.Wait()
+		select {
+		case <-every:
+		default:
+			t.Fatal("the other row's end was not heard")
+		}
+		select {
+		case <-mine:
+			t.Fatal("a watch heard of an end of a row it doesn't want")
+		default:
+		}
+
+		require.NoError(t, c.Evaluate(ctx, wanted))
+		synctest.Wait()
+		select {
+		case <-mine:
+		default:
+			t.Fatal("the watch didn't hear of its row's end")
+		}
+	})
+}
