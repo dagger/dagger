@@ -195,8 +195,9 @@ type HoldingRun struct {
 // HoldingRuns returns, on the Cloud, what the stored record of each
 // holding's entry says of its run (HoldingRun), in the order of keys, under
 // one hold of the lock for reading. A write that changes a record's run or
-// its ran mark names the entry (RemoteChange.Entries); one that moves a
-// run's own holding on, or collects it, names only that holding.
+// its ran mark names the entry (RemoteChange.Entries), and so does one that
+// collects a run's own holding; one that moves that holding on to a later
+// value names only the holding.
 func (c *Cache) HoldingRuns(keys []HolderKey) []HoldingRun {
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
