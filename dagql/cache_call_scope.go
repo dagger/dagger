@@ -111,7 +111,7 @@ func callScopesFrom(ctx context.Context) *CallScopes {
 }
 
 // recordCallResultExpiry records when a recorded call's result expires.
-func (c *Cache) recordCallResultExpiry(scopes *CallScopes, req *CallRequest, res AnyResult) {
+func (c *Cache) recordCallResultExpiry(ctx context.Context, scopes *CallScopes, req *CallRequest, res AnyResult) {
 	if scopes == nil || req == nil || req.DoNotCache || res == nil {
 		return
 	}
@@ -119,7 +119,7 @@ func (c *Cache) recordCallResultExpiry(scopes *CallScopes, req *CallRequest, res
 	if shared == nil {
 		return
 	}
-	c.egraphMu.RLock()
+	c.readLockGraphGathered(ctx)
 	expiresAt := shared.expiresAtUnix
 	c.egraphMu.RUnlock()
 	scopes.recordExpiry(expiresAt)

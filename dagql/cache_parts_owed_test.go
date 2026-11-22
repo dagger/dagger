@@ -128,7 +128,7 @@ func TestOwedPartsOwedAgainDuringAPassStillOwe(t *testing.T) {
 	value.fail = nil
 	c.testOwedPartsRead = func(read *sharedResult) {
 		c.testOwedPartsRead = nil
-		c.owePartsReport(read, nil)
+		c.owePartsReport(context.Background(), read, nil)
 	}
 	require.Equal(t, 1, c.reportOwedParts(ctx), "owed again during the pass: still owes")
 	require.Len(t, <-reports, 1, "the pass reported what it read")
@@ -162,7 +162,7 @@ func TestOwedPartsReportOnlyWhatSpansLeftOut(t *testing.T) {
 	value := &describedPartValue{done: true}
 	ctx, c, row, reports := ownedPartsCache(t, value, nil)
 	t.Cleanup(func() { require.NoError(t, c.CloseDiscardingPersistence()) })
-	c.owePartsReport(row, []string{snapshotPartKey(t)})
+	c.owePartsReport(context.Background(), row, []string{snapshotPartKey(t)})
 	require.Equal(t, 0, c.reportOwedParts(ctx), "readable: nothing owed after the pass")
 	requireNoReport(t, reports)
 }
@@ -232,12 +232,12 @@ func TestOwingMadeDuringASpansReadStands(t *testing.T) {
 	ctx, c, row, reports := ownedPartsCache(t, value, nil)
 	t.Cleanup(func() { require.NoError(t, c.CloseDiscardingPersistence()) })
 	began := c.owedPartsSeq()
-	c.owePartsReport(row, nil)
+	c.owePartsReport(context.Background(), row, nil)
 	c.settleOwedPartsReport(row, began)
 	require.Equal(t, 0, c.reportOwedParts(ctx), "the owing stood, and this pass reported it")
 	require.Len(t, <-reports, 1)
 
-	c.owePartsReport(row, nil)
+	c.owePartsReport(context.Background(), row, nil)
 	c.settleOwedPartsReport(row, c.owedPartsSeq())
 	require.Equal(t, 0, c.reportOwedParts(ctx))
 	requireNoReport(t, reports)
@@ -250,9 +250,9 @@ func TestOwedAgainAfterSettlingIsReportedOnce(t *testing.T) {
 	value := &describedPartValue{done: true}
 	ctx, c, row, reports := ownedPartsCache(t, value, nil)
 	t.Cleanup(func() { require.NoError(t, c.CloseDiscardingPersistence()) })
-	c.owePartsReport(row, nil)
+	c.owePartsReport(context.Background(), row, nil)
 	c.settleOwedPartsReport(row, c.owedPartsSeq())
-	c.owePartsReport(row, nil)
+	c.owePartsReport(context.Background(), row, nil)
 	require.Equal(t, 0, c.reportOwedParts(ctx))
 	require.Len(t, <-reports, 1, "one part, reported once")
 	requireNoReport(t, reports)

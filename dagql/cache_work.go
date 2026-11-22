@@ -385,3 +385,46 @@ func (l *hitLoad) waits() map[string]time.Duration {
 	add("attach", time.Duration(l.attach.Load()))
 	return out
 }
+
+// hitLoadWait is a kind of wait a hit's load gathers apart from the graph
+// lock's (hitLoad).
+type hitLoadWait uint8
+
+const (
+	// hitLoadDecode is a wait for another caller's decode of an entry the
+	// hit loads.
+	hitLoadDecode hitLoadWait = iota
+	// hitLoadAttach is a wait for an entry's dependency attachment.
+	hitLoadAttach
+)
+
+// awaitHitLoad waits for ready to close, or for ctx to end, and adds the wait
+// to the hit load ctx gathers into (hitLoad), as kind. A channel already
+// closed is no wait, and a wait nothing gathers isn't timed.
+func awaitHitLoad(ctx context.Context, ready <-chan struct{}, kind hitLoadWait) error {
+	select {
+	case <-ready:
+		return nil
+	default:
+	}
+	load := hitLoadOf(ctx)
+	var began time.Time
+	if load != nil {
+		began = time.Now()
+	}
+	select {
+	case <-ready:
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	}
+	if load != nil {
+		waited := int64(time.Since(began))
+		switch kind {
+		case hitLoadDecode:
+			load.decode.Add(waited)
+		case hitLoadAttach:
+			load.attach.Add(waited)
+		}
+	}
+	return nil
+}
