@@ -163,8 +163,7 @@ func evalDangSource(
 		// executor injects the same user-facing span context as the
 		// container's traceparent (engineutil executor_spec.go); an in-engine
 		// runtime has to ask for it explicitly.
-		stdioCtx := trace.ContextWithSpanContext(ctx, dagql.UserFacingSpanContext(ctx))
-		stdio := telemetry.SpanStdio(stdioCtx, core.InstrumentationLibrary)
+		stdio := userFacingStdio(ctx)
 		defer stdio.Close()
 		ctx = ioctx.StdoutToContext(ctx, stdio.Stdout)
 		ctx = ioctx.StderrToContext(ctx, stdio.Stderr)
@@ -206,7 +205,7 @@ func evalDangSource(
 			env, err = runSource(ctx, modSrcDir)
 			if err != nil {
 				if isDangSourceError(err) {
-					return reportModuleDangSourceError(ctx, stdio.Stderr, forTypeDefs, err)
+					return reportDangSourceError(stdio.Stderr, err)
 				}
 				return fmt.Errorf("run dir: %w", err)
 			}
@@ -223,6 +222,12 @@ func evalDangSource(
 
 		return withEnv(ctx, env)
 	})
+}
+
+// userFacingStdio is the stdout and stderr of ctx's user-facing span (see
+// evalDangSource).
+func userFacingStdio(ctx context.Context) telemetry.SpanStreams {
+	return telemetry.SpanStdio(trace.ContextWithSpanContext(ctx, dagql.UserFacingSpanContext(ctx)), core.InstrumentationLibrary)
 }
 
 // dangSourceDir returns the directory to read a module's source in srcDir
@@ -385,22 +390,6 @@ func isDangSourceError(err error) bool {
 func reportDangSourceError(stderr io.Writer, err error) error {
 	fmt.Fprint(stderr, strings.TrimRight(dangSourceReport(err), "\n")+"\n")
 	return &dangSourceError{err: err}
-}
-
-// reportModuleDangSourceError reports err, the failure of a module's Dang
-// source, as reportDangSourceError does. When the source runs to read the
-// module's types (forTypeDefs) for a load of the module, the report goes to
-// the load's span instead of stderr, and the load is the failure's origin:
-// the calls between them, such as ModuleSource._moduleTypesDefinition, are
-// the engine's plumbing (see core.ModuleLoadSpanContext).
-func reportModuleDangSourceError(ctx context.Context, stderr io.Writer, forTypeDefs bool, err error) error {
-	span, ok := core.ModuleLoadSpanContext(ctx)
-	if !forTypeDefs || !ok {
-		return reportDangSourceError(stderr, err)
-	}
-	stdio := telemetry.SpanStdio(trace.ContextWithSpanContext(ctx, span), core.InstrumentationLibrary)
-	defer stdio.Close()
-	return telemetry.TrackOrigin(reportDangSourceError(stdio.Stderr, err), span)
 }
 
 // dangSourceReport is Dang's rendered report for err, without the context

@@ -10,32 +10,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// TestModuleLoadSpanIsTheLoadedModules covers the span of a module load: the
-// module the load is for claims it, and a module it loads, such as a
-// dependency, has none.
-func TestModuleLoadSpanIsTheLoadedModules(t *testing.T) {
-	t.Parallel()
-
-	load := trace.NewSpanContext(trace.SpanContextConfig{
-		TraceID: trace.TraceID{1, 2, 3},
-		SpanID:  trace.SpanID{4, 5, 6},
-	})
-	ctx := ContextWithModuleLoadSpan(trace.ContextWithSpanContext(t.Context(), load))
-	_, ok := ModuleLoadSpanContext(ctx)
-	require.False(t, ok, "no module claimed the load yet")
-
-	mod := ClaimModuleLoadSpan(ctx)
-	span, ok := ModuleLoadSpanContext(mod)
-	require.True(t, ok)
-	require.Equal(t, load, span)
-
-	_, ok = ModuleLoadSpanContext(ClaimModuleLoadSpan(mod))
-	require.False(t, ok, "a dependency of the module has no load")
-
-	_, ok = ModuleLoadSpanContext(ClaimModuleLoadSpan(t.Context()))
-	require.False(t, ok, "a module no client asked for has no load")
-}
-
 func TestDescribeLoadFailure(t *testing.T) {
 	t.Parallel()
 

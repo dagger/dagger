@@ -12,6 +12,7 @@ import (
 	dangshared "github.com/dagger/dagger/core/sdk/dang/shared"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/engineutil"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/vito/dang/v2/pkg/dang"
 )
 
@@ -76,17 +77,40 @@ func (Impl) ModuleTypes(
 		}
 	}(runner)
 
-	_, err = evalDangSource(ctx, query, src, schemaJSONFile, nestedClientMetadata, true /* inert attachables */, nil, scopedMod, true /* for typedefs */, runner, func(ctx context.Context, env dang.ValueScope) ([]byte, error) {
-		inst, err = initDangModule(ctx, dag, env)
-		if err != nil {
-			return nil, err
-		}
-		return nil, nil
+	err = checkDangModule(ctx, src.Self().ModuleName, func(ctx context.Context) error {
+		_, err := evalDangSource(ctx, query, src, schemaJSONFile, nestedClientMetadata, true /* inert attachables */, nil, scopedMod, true /* for typedefs */, runner, func(ctx context.Context, env dang.ValueScope) ([]byte, error) {
+			mod, err := initDangModule(ctx, dag, env)
+			if err != nil {
+				return nil, err
+			}
+			inst = mod
+			return nil, nil
+		})
+		return err
 	})
 	if err != nil {
 		return inst, err
 	}
 	return inst, nil
+}
+
+// checkDangModule runs check, the pass that reads the types of the module
+// named moduleName from its Dang source, under a span of its own, "check
+// <module>". The pass's output, a report of the source's errors among it,
+// is that span's (see evalDangSource), and the span is the origin of an
+// error with none: a source that doesn't parse or type-check fails there,
+// not on the engine's calls around it, such as
+// ModuleSource._moduleTypesDefinition, whose title is the introspection
+// schema the types are read with. The origin is set as the error is raised,
+// so it holds for every load that shares the pass, and a dependency's error
+// stays its own.
+//
+// The span is internal: shown only when it fails, as the engine's other
+// steps of a load are.
+func checkDangModule(ctx context.Context, moduleName string, check func(context.Context) error) (rerr error) {
+	ctx, span := core.Tracer(ctx).Start(ctx, "check "+moduleName, telemetry.Internal())
+	defer telemetry.EndWithCause(span, &rerr)
+	return check(ctx)
 }
 
 func (Impl) Runtime(

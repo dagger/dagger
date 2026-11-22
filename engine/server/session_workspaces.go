@@ -2194,10 +2194,7 @@ func (srv *Server) resolveModule(
 		}
 	}
 
-	// The module's load is ctx's span (resolveModuleLoadBatch), for it alone
-	// to claim: not a module its source loads, such as its SDK, nor its
-	// toolchains and blueprint.
-	return srv.resolveModuleSourceAsModule(core.ContextWithModuleLoadSpan(ctx), dag, gitWS, src, mod)
+	return srv.resolveModuleSourceAsModule(ctx, dag, gitWS, src, mod)
 }
 
 // pendingRelatedModule adapts a related module of a primary module into the

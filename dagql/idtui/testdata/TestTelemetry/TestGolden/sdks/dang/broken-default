@@ -3,7 +3,7 @@ Expected stderr:
 ✔ connect X.Xs
 ✘ load workspace: . X.Xs ERROR
 ┇ loading type definitions ›
-✘ load module: ./viztest/sdks/broken-dang X.Xs ERROR
+✘ check viztest-dang X.Xs ERROR
 Error: syntax error: unexpected 'this is not'
   --> viztest/sdks/broken-dang/main.dang:70:1
      |
