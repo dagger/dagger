@@ -1287,7 +1287,8 @@ func (srv *Server) resolveModuleLoadBatch(
 
 	// Each load starts its own span rather than the job's: the span fails
 	// with the load, while the job succeeds, so that every load runs and its
-	// error is collected.
+	// error is collected. The span encapsulates the load: its steps show
+	// only when the load fails.
 	jobs := parallel.New().
 		WithTracing(false)
 	for i, load := range loads {
@@ -1298,7 +1299,7 @@ func (srv *Server) resolveModuleLoadBatch(
 			continue
 		}
 		jobs = jobs.WithJob(moduleLoadJobName(load), func(ctx context.Context) error {
-			ctx, span := core.Tracer(ctx).Start(ctx, moduleLoadJobName(load))
+			ctx, span := core.Tracer(ctx).Start(ctx, moduleLoadJobName(load), telemetry.Encapsulate())
 			resolved, err := srv.resolveModuleLoad(ctx, client.dag, gitWS, load)
 			telemetry.EndWithCause(span, &err)
 			if err != nil {

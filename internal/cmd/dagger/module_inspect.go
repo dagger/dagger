@@ -38,7 +38,7 @@ func initializeCore(ctx context.Context, dag *dagger.Client) (rdef *moduleDef, r
 // The CLI consumes workspace main methods and module constructors
 // directly from the engine schema's Query root.
 func initializeWorkspace(ctx context.Context, dag *dagger.Client, opts ...loadTypeDefsOpts) (rdef *moduleDef, rerr error) {
-	ctx, span := Tracer().Start(ctx, "load workspace: .")
+	ctx, span := Tracer().Start(ctx, "load workspace: .", telemetry.Encapsulate())
 	defer telemetry.EndWithCause(span, &rerr)
 
 	def := &moduleDef{}
@@ -75,7 +75,7 @@ func initializeModule(
 	modSrc *core.ModuleSource,
 	opts ...initModuleOpts,
 ) (rdef *moduleDef, rerr error) {
-	ctx, span := Tracer().Start(ctx, "load module: "+modRef)
+	ctx, span := Tracer().Start(ctx, "load module: "+modRef, telemetry.Encapsulate())
 	defer telemetry.EndWithCause(span, &rerr)
 
 	findCtx, findSpan := Tracer().Start(ctx, "finding module configuration", telemetry.Encapsulate())
@@ -264,7 +264,11 @@ type loadTypeDefsOpts struct {
 
 // loadTypeDefs loads the objects defined by the given module in an easier to use data structure.
 func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client, opts ...loadTypeDefsOpts) (rerr error) {
-	ctx, loadSpan := Tracer().Start(ctx, dagui.WorkspaceLoadSpanName, telemetry.Encapsulate())
+	// Internal: the callers' own spans, such as "load workspace: .", are the
+	// rows that stand for loading type definitions. It still encapsulates
+	// what's beneath it for a caller with none, such as initializeCore, so
+	// that its queries' calls don't show.
+	ctx, loadSpan := Tracer().Start(ctx, "loading type definitions", telemetry.Internal(), telemetry.Encapsulate())
 	defer telemetry.EndWithCause(loadSpan, &rerr)
 
 	var o loadTypeDefsOpts
