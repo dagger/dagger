@@ -3,57 +3,38 @@ package dagql
 import (
 	"context"
 	"encoding/json"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 )
 
-// A reader marks an upload's start and end while the Cloud's passes read the
-// graph: neither must wait for those readers, nor hold up the readers behind
-// it. Each returns while the graph is held for reading.
-func TestAnUploadsStartAndEndTakeNoWriteHoldOfTheGraph(t *testing.T) {
-	t.Parallel()
-	h := newHolderTestClass(t)
-	for _, uploading := range []bool{true, false} {
-		h.cloud.egraphMu.RLock()
-		done := make(chan error, 1)
-		go func() {
-			if uploading {
-				done <- h.cloud.MarkPartUploading(h.m, h.snapshot)
-				return
-			}
-			_, err := h.cloud.EndPartUploads([]PartUpload{{Number: h.m, Address: h.snapshot}})
-			done <- err
-		}()
-		select {
-		case err := <-done:
-			h.cloud.egraphMu.RUnlock()
-			require.NoError(t, err)
-		case <-time.After(10 * time.Second):
-			h.cloud.egraphMu.RUnlock()
-			<-done
-			t.Fatalf("a mark (uploading %v) waited for a reader of the graph", uploading)
-		}
-		require.Equal(t, uploading, h.cloud.PartUploading(h.m, h.snapshot))
-	}
+// startUpload starts an upload of the part at address for the entry numbered
+// number (StartPartUploads), which must start, and returns the start's change.
+func startUpload(t *testing.T, c *Cache, number uint64, address PersistedPartAddress) RemoteChange {
+	t.Helper()
+	starts, change := c.StartPartUploads([]PartQuery{{Number: number, Address: address}}, time.Now().Unix())
+	require.Len(t, starts, 1)
+	require.NoError(t, starts[0].Err)
+	require.True(t, starts[0].Started, "the upload of %d's part starts: %+v", number, starts[0])
+	return change
 }
 
-// An upload of a part in progress for one entry changes, for a reader that
-// keeps whether a part is needed by such uploads too, every class mate's
-// answer: the reader names the class after its start (ClassChange), and its
-// end names it (EndPartUploads).
+// An upload of a part in progress for one entry changes every class mate's
+// answer (PartUploading): its start names the class, and so does its end.
 func TestAnUploadsStartAndEndNameItsClassMates(t *testing.T) {
 	t.Parallel()
 	h := newHolderTestClass(t)
-	require.NoError(t, h.cloud.MarkPartUploading(h.m, h.snapshot))
-	require.True(t, h.cloud.PartUploading(h.m, h.snapshot))
-	started := h.cloud.ClassChange([]uint64{h.m})
+	mount := PersistedPartAddress{Part: "mount:/start"}
+	started := startUpload(t, h.cloud, h.m, mount)
+	require.True(t, h.cloud.PartUploading(h.m, mount))
 	require.Contains(t, started.Entries, h.m)
 	require.Contains(t, started.Entries, h.r)
-	ended, err := h.cloud.EndPartUploads([]PartUpload{{Number: h.m, Address: h.snapshot}})
+	ended, err := h.cloud.EndPartUploads([]PartUpload{{Number: h.m, Address: mount}})
 	require.NoError(t, err)
-	require.False(t, h.cloud.PartUploading(h.m, h.snapshot))
+	require.False(t, h.cloud.PartUploading(h.m, mount))
 	require.Contains(t, ended.Entries, h.m)
 	require.Contains(t, ended.Entries, h.r)
 }
@@ -119,7 +100,7 @@ func TestChangeReportsAJoinNamesASideWhenTheOtherUploads(t *testing.T) {
 	for _, uploading := range []bool{true, false} {
 		u := newUploadJoinTest(t)
 		if uploading {
-			require.NoError(t, u.cloud.MarkPartUploading(u.number(t, u.bk), uploadJoinPart))
+			startUpload(t, u.cloud, u.number(t, u.bk), uploadJoinPart)
 		}
 		change := u.join(t)
 		if uploading {
@@ -130,33 +111,149 @@ func TestChangeReportsAJoinNamesASideWhenTheOtherUploads(t *testing.T) {
 	}
 }
 
-// A reader marks an upload, then names the entry's class. A join that lands
-// between the two is named twice over: the join sees the mark and names the
-// other side, and the naming reads the joined class.
-func TestAJoinBetweenAnUploadsMarkAndItsNamingIsNamed(t *testing.T) {
+// A start names its entry's class as it counts the upload, in the same hold:
+// a join after it names the other side, the join seeing the count.
+func TestAJoinAfterAnUploadsStartIsNamed(t *testing.T) {
 	t.Parallel()
 	u := newUploadJoinTest(t)
 	b := u.number(t, u.bk)
-	require.NoError(t, u.cloud.MarkPartUploading(b, uploadJoinPart))
-	joined := u.join(t)
-	require.Contains(t, joined.Entries, u.number(t, u.a2), "the join saw b's upload")
-	named := u.cloud.ClassChange([]uint64{b})
-	for _, key := range []HolderKey{u.a1, u.a2, u.bk} {
-		require.Contains(t, named.Entries, u.number(t, key), "the naming reads the joined class")
-	}
-}
-
-// A join after an upload's naming names the other side: the naming read the
-// class before the join, and the join sees the mark.
-func TestAJoinAfterAnUploadsNamingIsNamed(t *testing.T) {
-	t.Parallel()
-	u := newUploadJoinTest(t)
-	b := u.number(t, u.bk)
-	require.NoError(t, u.cloud.MarkPartUploading(b, uploadJoinPart))
-	named := u.cloud.ClassChange([]uint64{b})
+	named := startUpload(t, u.cloud, b, uploadJoinPart)
 	require.Equal(t, []uint64{b}, named.Entries, "b's class is b alone before the join")
 	joined := u.join(t)
 	require.Contains(t, joined.Entries, u.number(t, u.a2))
+}
+
+// One upload serves a part's class: a start for an entry whose class has an
+// upload of the part in progress, the entry itself included, is refused,
+// naming the entry that uploads it, and counts nothing. A class joined since
+// is the class: an upload on one side refuses a start on the other.
+func TestAStartIsRefusedWhileItsClassUploadsThePart(t *testing.T) {
+	t.Parallel()
+	u := newUploadJoinTest(t)
+	a1, a2, b := u.number(t, u.a1), u.number(t, u.a2), u.number(t, u.bk)
+	now := time.Now().Unix()
+	startUpload(t, u.cloud, a2, uploadJoinPart)
+	starts, change := u.cloud.StartPartUploads([]PartQuery{{Number: a1, Address: uploadJoinPart}, {Number: a2, Address: uploadJoinPart}, {Number: b, Address: uploadJoinPart}}, now)
+	require.Len(t, starts, 3)
+	for i, n := range []uint64{a1, a2} {
+		require.NoError(t, starts[i].Err)
+		require.False(t, starts[i].Started, "%d's class uploads the part", n)
+		require.Equal(t, a2, starts[i].UploadedBy)
+		require.Equal(t, PartUploading, starts[i].State)
+		require.Equal(t, a2, starts[i].Donor)
+	}
+	require.True(t, starts[2].Started, "b is in a class of its own")
+	require.Zero(t, starts[2].UploadedBy)
+	require.Equal(t, []uint64{b}, change.Entries, "only what started is named")
+	require.False(t, u.cloud.PartUploading(a1, uploadJoinPart), "a refused start counts nothing")
+	require.Equal(t, map[uint64]int{a2: 1, b: 1}, u.cloud.UploadCounts())
+
+	_, err := u.cloud.EndPartUploads([]PartUpload{{Number: b, Address: uploadJoinPart}})
+	require.NoError(t, err)
+	u.join(t)
+	starts, _ = u.cloud.StartPartUploads([]PartQuery{{Number: b, Address: uploadJoinPart}}, now)
+	require.False(t, starts[0].Started, "the join brought a2's upload to b's class")
+	require.Equal(t, a2, starts[0].UploadedBy)
+}
+
+// A start batch lets a writer that comes during it in between two parts,
+// as a batch read does (giveWayLocked): the writer waits for the part in
+// progress, not the batch. Each part's answer, check and count stand whole
+// in one hold, so what lands while the batch has let the lock go, a start of
+// another reader's included, is seen by the batch's later parts. Here a
+// writer comes after the batch's first part, b's; while the batch has let
+// go, another reader starts a2's part, and the batch's a1, a2's class mate,
+// is refused for it.
+func TestAStartBatchGivesWayBetweenParts(t *testing.T) {
+	t.Parallel()
+	u := newUploadJoinTest(t)
+	a1, a2, b := u.number(t, u.a1), u.number(t, u.a2), u.number(t, u.bk)
+	var answered, in atomic.Int64
+	in.Store(-1)
+	done := make(chan struct{})
+	u.cloud.testBatchAnswered = func(i int) {
+		answered.Store(int64(i + 1))
+		if i != 0 {
+			return
+		}
+		go func() {
+			defer close(done)
+			u.cloud.egraphMu.Lock()
+			in.Store(answered.Load())
+			u.cloud.egraphMu.Unlock()
+		}()
+		require.Eventually(t, u.cloud.egraphMu.Waiting, 10*time.Second, time.Millisecond, "the writer waits")
+	}
+	// While the batch has let the lock go, the writer, waiting or about to,
+	// takes it, and then another reader starts a2's part.
+	u.cloud.testBatchGaveWay = func() {
+		require.Eventually(t, func() bool { return in.Load() >= 0 }, 10*time.Second, time.Millisecond, "the writer gets in")
+		u.cloud.testBatchAnswered, u.cloud.testBatchGaveWay = nil, nil
+		startUpload(t, u.cloud, a2, uploadJoinPart)
+	}
+	starts, _ := u.cloud.StartPartUploads([]PartQuery{{Number: b, Address: uploadJoinPart}, {Number: a1, Address: uploadJoinPart}}, time.Now().Unix())
+	require.EqualValues(t, 1, in.Load(), "the writer got in after b's part, before a1's")
+	<-done
+	require.Len(t, starts, 2)
+	require.True(t, starts[0].Started, "b's upload starts")
+	require.False(t, starts[1].Started, "a1's is refused: a2's started while the batch let go")
+	require.Equal(t, a2, starts[1].UploadedBy)
+}
+
+// Starts of class mates' parts refuse each other whatever their holds: of
+// many started at once, from readers each holding the graph for reading, one
+// starts.
+func TestStartsOfClassMatesRefuseEachOther(t *testing.T) {
+	t.Parallel()
+	u := newUploadJoinTest(t)
+	a1, a2 := u.number(t, u.a1), u.number(t, u.a2)
+	now := time.Now().Unix()
+	var wg sync.WaitGroup
+	results := make(chan PartStart, 64)
+	for i := range 64 {
+		n := a1
+		if i%2 == 1 {
+			n = a2
+		}
+		wg.Go(func() {
+			starts, _ := u.cloud.StartPartUploads([]PartQuery{{Number: n, Address: uploadJoinPart}}, now)
+			results <- starts[0]
+		})
+	}
+	wg.Wait()
+	close(results)
+	started := 0
+	for r := range results {
+		require.NoError(t, r.Err)
+		if r.Started {
+			started++
+		}
+	}
+	require.Equal(t, 1, started, "one upload serves the class")
+	counts := u.cloud.UploadCounts()
+	require.Equal(t, 1, counts[a1]+counts[a2])
+}
+
+// A part stored in its class isn't started: the start answers it stored, as
+// AvailableParts does, and counts nothing. One the cache doesn't know isn't
+// started either, and the rest of the batch is.
+func TestAStartAnswersAsAvailablePartsAndStartsOnlyWhatIsNeeded(t *testing.T) {
+	t.Parallel()
+	h := newHolderTestClass(t)
+	mount := PersistedPartAddress{Part: "mount:/start"}
+	queries := []PartQuery{{Number: h.m, Address: h.snapshot}, {Number: 1 << 40, Address: mount}, {Number: h.m, Address: mount}}
+	answers := h.cloud.AvailableParts(queries, h.now)
+	starts, change := h.cloud.StartPartUploads(queries, h.now)
+	require.Len(t, starts, 3)
+	require.Equal(t, answers[0].PartAvailability, starts[0].PartAvailability, "stored, by R")
+	require.Equal(t, PartStored, starts[0].State)
+	require.False(t, starts[0].Started)
+	require.Error(t, starts[1].Err, "an entry the cache doesn't have")
+	require.False(t, starts[1].Started)
+	require.Equal(t, answers[2].PartAvailability, starts[2].PartAvailability, "unavailable, as answered before the start")
+	require.True(t, starts[2].Started)
+	require.Contains(t, change.Entries, h.r, "the start names M's class")
+	require.Equal(t, map[uint64]int{h.m: 1}, h.cloud.UploadCounts())
 }
 
 // An entry with an upload in progress, and nothing else that holds a part,
@@ -169,7 +266,7 @@ func TestALeavingOfAnUploadingEntryNamesItsClassMates(t *testing.T) {
 		u := newUploadJoinTest(t)
 		a1, a2 := u.number(t, u.a1), u.number(t, u.a2)
 		if uploading {
-			require.NoError(t, u.cloud.MarkPartUploading(a1, uploadJoinPart))
+			startUpload(t, u.cloud, a1, uploadJoinPart)
 		}
 		change, found, err := u.cloud.CollectRemoteHolding(u.ctx, u.a1)
 		require.NoError(t, err)
@@ -193,7 +290,7 @@ func TestAJoinAfterAnUploadsEndNamesNothingOfIt(t *testing.T) {
 	t.Parallel()
 	u := newUploadJoinTest(t)
 	b := u.number(t, u.bk)
-	require.NoError(t, u.cloud.MarkPartUploading(b, uploadJoinPart))
+	startUpload(t, u.cloud, b, uploadJoinPart)
 	ended, err := u.cloud.EndPartUploads([]PartUpload{{Number: b, Address: uploadJoinPart}})
 	require.NoError(t, err)
 	require.False(t, u.cloud.PartUploading(b, uploadJoinPart))
@@ -213,7 +310,7 @@ func TestALeavingAroundAnUploadsEndNamesItsClassMates(t *testing.T) {
 	for _, before := range []bool{true, false} {
 		u := newUploadJoinTest(t)
 		a1, a2 := u.number(t, u.a1), u.number(t, u.a2)
-		require.NoError(t, u.cloud.MarkPartUploading(a1, uploadJoinPart))
+		startUpload(t, u.cloud, a1, uploadJoinPart)
 		end := func() RemoteChange {
 			change, err := u.cloud.EndPartUploads([]PartUpload{{Number: a1, Address: uploadJoinPart}})
 			require.NoError(t, err)
@@ -247,7 +344,7 @@ func TestEndPartUploadsEndsNoUploadNeverStarted(t *testing.T) {
 	b := u.number(t, u.bk)
 	_, err := u.cloud.EndPartUploads([]PartUpload{{Number: b, Address: uploadJoinPart}})
 	require.NoError(t, err)
-	require.NoError(t, u.cloud.MarkPartUploading(b, uploadJoinPart))
+	startUpload(t, u.cloud, b, uploadJoinPart)
 	require.True(t, u.cloud.PartUploading(b, uploadJoinPart), "the end before the start didn't cancel it")
 }
 
@@ -285,17 +382,17 @@ func TestAvailablePartAnswersAnUploadInProgressInItsClass(t *testing.T) {
 	uploading := func(donor uint64) PartAvailability { return PartAvailability{State: PartUploading, Donor: donor} }
 	require.Equal(t, map[uint64]PartAvailability{a1: none, a2: none, b: none}, answers(), "nothing holds the part")
 
-	require.NoError(t, u.cloud.MarkPartUploading(a2, uploadJoinPart))
+	startUpload(t, u.cloud, a2, uploadJoinPart)
 	require.Equal(t, map[uint64]PartAvailability{a1: uploading(a2), a2: uploading(a2), b: none}, answers(), "a2's upload answers for its class, itself included, and not for b's")
 
-	require.NoError(t, u.cloud.MarkPartUploading(a1, uploadJoinPart))
-	low := min(a1, a2)
-	require.Equal(t, map[uint64]PartAvailability{a1: uploading(low), a2: uploading(low), b: none}, answers(), "the lowest-numbered entry with an upload answers")
+	startUpload(t, u.cloud, b, uploadJoinPart)
+	require.Equal(t, map[uint64]PartAvailability{a1: uploading(a2), a2: uploading(a2), b: uploading(b)}, answers(), "b's upload answers for its own class")
 
 	u.join(t)
-	require.Equal(t, map[uint64]PartAvailability{a1: uploading(low), a2: uploading(low), b: uploading(low)}, answers(), "the join brings the uploads to b")
+	low := min(a2, b)
+	require.Equal(t, map[uint64]PartAvailability{a1: uploading(low), a2: uploading(low), b: uploading(low)}, answers(), "the join brings each side's upload to the other, and the lowest-numbered entry with one answers")
 
-	_, err := u.cloud.EndPartUploads([]PartUpload{{Number: a1, Address: uploadJoinPart}, {Number: a2, Address: uploadJoinPart}})
+	_, err := u.cloud.EndPartUploads([]PartUpload{{Number: a2, Address: uploadJoinPart}, {Number: b, Address: uploadJoinPart}})
 	require.NoError(t, err)
 	require.Equal(t, map[uint64]PartAvailability{a1: none, a2: none, b: none}, answers(), "the uploads' end takes them from every answer")
 }
@@ -308,7 +405,7 @@ func TestALeavingTakesAnUploadFromItsClassMatesAnswers(t *testing.T) {
 	u := newUploadJoinTest(t)
 	a1, a2 := u.number(t, u.a1), u.number(t, u.a2)
 	now := time.Now().Unix()
-	require.NoError(t, u.cloud.MarkPartUploading(a1, uploadJoinPart))
+	startUpload(t, u.cloud, a1, uploadJoinPart)
 	av, err := u.cloud.AvailablePart(a2, uploadJoinPart, now)
 	require.NoError(t, err)
 	require.Equal(t, PartAvailability{State: PartUploading, Donor: a1}, av)
@@ -329,8 +426,13 @@ func TestAStoredOrAbsentPartAnswersBeforeAnUpload(t *testing.T) {
 	t.Run("stored", func(t *testing.T) {
 		t.Parallel()
 		h := newHolderTestClass(t)
-		require.NoError(t, h.cloud.MarkPartUploading(h.m, h.snapshot))
-		av, err := h.cloud.AvailablePart(h.m, h.snapshot, h.now)
+		mount := storedPruneTestPart("mount:/stored", map[string]int64{"holder-r-stored": 10})
+		startUpload(t, h.cloud, h.m, mount.Address)
+		stored, _, err := h.cloud.SetStoredPart(h.ctx, h.r, mount, 0)
+		require.NoError(t, err)
+		require.True(t, stored)
+		require.True(t, h.cloud.PartUploading(h.m, mount.Address), "M's upload is still counted")
+		av, err := h.cloud.AvailablePart(h.m, mount.Address, h.now)
 		require.NoError(t, err)
 		require.Equal(t, PartStored, av.State)
 		require.Equal(t, h.r, av.Donor, "R stores it")
@@ -368,7 +470,7 @@ func TestAStoredOrAbsentPartAnswersBeforeAnUpload(t *testing.T) {
 		require.NoError(t, err)
 		held, ok := cloud.RemoteHoldingInfo(HolderKey{"cache-c", 2})
 		require.True(t, ok)
-		require.NoError(t, cloud.MarkPartUploading(held.Number, address))
+		startUpload(t, cloud, held.Number, address)
 		av, err := cloud.AvailablePart(held.Number, address, time.Now().Unix())
 		require.NoError(t, err)
 		require.Equal(t, PartAbsent, av.State)
