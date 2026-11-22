@@ -9110,42 +9110,6 @@ func (fe *frontendPretty) renderRootCauseSection(ctx tuist.Context, r *renderer,
 }
 
 func (fe *frontendPretty) renderErrorCause(ctx tuist.Context, out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, rootCause *dagui.Span, statusHost statusIconHost) {
-	// The origin's home tree, for the breadcrumb of trees above it; the view
-	// may not have built it, e.g. beneath a collapsed row.
-	rootCauseTree := fe.rowsView.HomeTree(rootCause)
-	if rootCauseTree == nil {
-		// error origin has no tree, likely due to internal/hidden spans
-		// create a synthetic tree by walking span parents
-		var syntheticParents []*dagui.Span
-		for current := rootCause; current != nil && current.ParentID.IsValid(); {
-			parent := fe.db.Spans.Map[current.ParentID]
-			if parent == nil {
-				break
-			}
-			syntheticParents = append(syntheticParents, parent)
-			current = parent
-			// Stop if we reach the current row's span or a boundary
-			if parent.ID == row.Span.ID {
-				break
-			}
-		}
-
-		// Create synthetic tree structure
-		rootCauseTree = &dagui.TraceTree{
-			Span: rootCause,
-		}
-
-		// Build parent chain
-		current := rootCauseTree
-		for i := len(syntheticParents) - 1; i >= 0; i-- {
-			parent := &dagui.TraceTree{
-				Span: syntheticParents[i],
-			}
-			current.Parent = parent
-			current = parent
-		}
-	}
-
 	rootCauseRow := &dagui.TraceRow{
 		Span:     rootCause,
 		Chained:  false,
@@ -9153,14 +9117,26 @@ func (fe *frontendPretty) renderErrorCause(ctx tuist.Context, out TermOutput, r 
 		Depth:    row.Depth,
 	}
 
+	// The breadcrumb follows the origin's home tree, which the view may not
+	// have built yet, e.g. beneath a collapsed row; with no tree, likely due
+	// to internal or hidden spans, it follows the origin's parent spans.
 	var parents []*dagui.TraceRow
-	for _, p := range errorCauseBreadcrumb(rootCauseTree, row.Span) {
+	crumb := func(span *dagui.Span, chained bool) {
 		parents = append(parents, &dagui.TraceRow{
-			Span:     p.Span,
-			Chained:  p.Chained,
+			Span:     span,
+			Chained:  chained,
 			Depth:    row.Depth,
 			Expanded: true,
 		})
+	}
+	if rootCauseTree := fe.rowsView.HomeTree(rootCause); rootCauseTree != nil {
+		for _, p := range rootCauseTree.ErrorCauseBreadcrumb(row.Span.ID) {
+			crumb(p.Span, p.Chained)
+		}
+	} else {
+		for _, p := range rootCause.ErrorCauseBreadcrumb(row.Span.ID) {
+			crumb(p, false)
+		}
 	}
 
 	indent := strings.Repeat("  ", row.Depth)
@@ -9222,44 +9198,6 @@ func (fe *frontendPretty) renderErrorCause(ctx tuist.Context, out TermOutput, r 
 		fe.claims.claimLog(rootCauseRow.Span)
 	}
 	fe.renderStepError(out, r, rootCauseRow, indentBuf.String())
-}
-
-// errorCauseBreadcrumb returns the trees of the error origin's ancestors that
-// its breadcrumb names, below row, nearest the origin first. The breadcrumb
-// abbreviates the path on its own terms, at every verbosity, rather than
-// mirroring what the tree shows (which reveals a failed span's encapsulated
-// children). It leaves out internal ancestors. Every shown ancestor that
-// encapsulates its work is a landmark, named for the work beneath it, as a
-// module's load and its build are; the steps between landmarks, and between
-// the innermost one and the origin, fold away. The ancestors above the
-// outermost landmark are named as they are. An internal ancestor's
-// encapsulation doesn't count, as it isn't shown.
-func errorCauseBreadcrumb(origin *dagui.TraceTree, row *dagui.Span) []*dagui.TraceTree {
-	var parents []*dagui.TraceTree
-	for p := origin.Parent; p != nil; p = p.Parent {
-		if p.Span.ID == row.ID {
-			break
-		}
-		if !p.Span.Received {
-			// An ancestor we never fetched: the error origin is point-fetched by
-			// ID, but its parents aren't, so a synthetic-tree walk can reach an
-			// unreceived placeholder (no name, call, or message). renderStepTitle
-			// would render it blank, leaving a stray "› " breadcrumb segment with
-			// nothing before it. Skip it -- we have no data to show.
-			continue
-		}
-		if p.Span.IsInternal() {
-			continue
-		}
-		if p.Span.Encapsulate {
-			// A landmark: the steps beneath it, up to the next landmark, fold.
-			parents = slices.DeleteFunc(parents, func(t *dagui.TraceTree) bool {
-				return !t.Span.Encapsulate
-			})
-		}
-		parents = append(parents, p)
-	}
-	return parents
 }
 
 func (fe *frontendPretty) hasShownRootError() bool {

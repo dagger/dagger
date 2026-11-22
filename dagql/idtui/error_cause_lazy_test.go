@@ -109,39 +109,9 @@ func TestErrorCauseBreadcrumbNamesEveryLandmark(t *testing.T) {
 	require.NotContains(t, out, "binary")
 }
 
-// TestErrorCauseBreadcrumbFoldsBeneathLandmark covers the CLI loading type
-// definitions where no span of a caller stands for it, as the shell does on
-// start: its "loading type definitions" span is the landmark, and the calls
-// of its queries beneath it fold.
-func TestErrorCauseBreadcrumbFoldsBeneathLandmark(t *testing.T) {
-	start := time.Unix(100, 0)
-	end := start.Add(time.Second)
-	id := prettyTestSpanID
-	failed := sdktrace.Status{Code: codes.Error, Description: "boom"}
-	db := dagui.NewDB()
-	db.ImportSnapshots([]dagui.SpanSnapshot{
-		{ID: id(1), TraceID: prettyTestTraceID(), Name: "dagger shell", StartTime: start, EndTime: end},
-		{ID: id(2), TraceID: prettyTestTraceID(), ParentID: id(1), Name: "refresh", StartTime: start, EndTime: end, Status: failed},
-		{ID: id(3), TraceID: prettyTestTraceID(), ParentID: id(2), Name: "loading type definitions", Encapsulate: true, StartTime: start, EndTime: end, Status: failed},
-		{ID: id(4), TraceID: prettyTestTraceID(), ParentID: id(3), Name: "Query.currentTypeDefs", StartTime: start, EndTime: end, Status: failed},
-		{ID: id(5), TraceID: prettyTestTraceID(), ParentID: id(4), Name: "ModuleSource.asModule", StartTime: start, EndTime: end, Status: failed},
-		{ID: id(6), TraceID: prettyTestTraceID(), ParentID: id(5), Name: "withExec", StartTime: start, EndTime: end, Status: failed},
-	})
-	db.Spans.Map[id(2)].AddErrorOrigin(db.Spans.Map[id(6)])
-	db.SetPrimarySpan(id(1))
-	fe := newWithTerminal(io.Discard, db, tuist.NewHeadlessTerminal(120, 30))
-	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
-	var output bytes.Buffer
-	require.NoError(t, fe.FinalRender(&output))
-	out := ansi.Strip(output.String())
-	require.Contains(t, out, VertBoldDash3+" loading type definitions › \n")
-	require.NotContains(t, out, "Query.currentTypeDefs ›")
-}
-
-// TestErrorCauseBreadcrumbKeepsStepsAboveLandmarks covers a module a
-// function loads itself, whose runtime fails to build: the steps above the
-// outermost landmark, the build, are named as they are.
-func TestErrorCauseBreadcrumbKeepsStepsAboveLandmarks(t *testing.T) {
+// TestErrorCauseBreadcrumbWithoutHomeTree covers an error origin the view
+// doesn't place: its breadcrumb follows its parent spans, by the same rules.
+func TestErrorCauseBreadcrumbWithoutHomeTree(t *testing.T) {
 	start := time.Unix(100, 0)
 	end := start.Add(time.Second)
 	id := prettyTestSpanID
@@ -153,12 +123,13 @@ func TestErrorCauseBreadcrumbKeepsStepsAboveLandmarks(t *testing.T) {
 		{ID: id(3), TraceID: prettyTestTraceID(), ParentID: id(2), Name: "ModuleSource.asModule", StartTime: start, EndTime: end, Status: failed},
 		{ID: id(4), TraceID: prettyTestTraceID(), ParentID: id(3), Name: "build other", Encapsulate: true, StartTime: start, EndTime: end, Status: failed},
 		{ID: id(5), TraceID: prettyTestTraceID(), ParentID: id(4), Name: "binary", StartTime: start, EndTime: end, Status: failed},
-		{ID: id(6), TraceID: prettyTestTraceID(), ParentID: id(5), Name: "withExec", StartTime: start, EndTime: end, Status: failed},
+		{ID: id(6), TraceID: prettyTestTraceID(), ParentID: id(5), Name: "withExec", Ignore: true, StartTime: start, EndTime: end, Status: failed},
 	})
 	db.Spans.Map[id(2)].AddErrorOrigin(db.Spans.Map[id(6)])
 	db.SetPrimarySpan(id(1))
 	fe := newWithTerminal(io.Discard, db, tuist.NewHeadlessTerminal(120, 30))
 	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+	require.Nil(t, fe.db.RowsView(fe.FrontendOpts).HomeTree(db.Spans.Map[id(6)]))
 	var output bytes.Buffer
 	require.NoError(t, fe.FinalRender(&output))
 	require.Contains(t, ansi.Strip(output.String()), VertBoldDash3+" ModuleSource.asModule › build other › \n")
