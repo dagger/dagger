@@ -193,22 +193,14 @@ func TestGitWorkspaceReadsFullTreeWithoutSparseContent(t *testing.T) {
 	})
 }
 
-// installGitSparseTreeQuestions installs the sparse tree's questions as
-// core/schema declares them (gitSchema.sparseTreeFields), which this package
+// installGitSparseTreeQuestions installs the sparse tree's question as
+// core/schema declares it (gitSchema.sparseTreeFields), which this package
 // can't import.
 func installGitSparseTreeQuestions(srv *dagql.Server) {
-	type readArgs struct {
-		Path string
-		CopyFilter
-	}
 	dagql.Fields[*Directory]{
 		dagql.NodeFunc("__gitSparseCovers", func(ctx context.Context, parent dagql.ObjectResult[*Directory], args struct{ Path string }) (dagql.Boolean, error) {
 			covered, err := GitSparseTreeCovers(ctx, parent, args.Path)
 			return dagql.NewBoolean(covered), err
-		}).IsPersistable(),
-		dagql.NodeFunc("__gitSparseReadSource", func(ctx context.Context, parent dagql.ObjectResult[*Directory], args readArgs) (dagql.String, error) {
-			source, err := GitSparseTreeReadSource(ctx, parent, args.Path, args.CopyFilter)
-			return dagql.NewString(source.String()), err
 		}).IsPersistable(),
 	}.Install(srv)
 }
