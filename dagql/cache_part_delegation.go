@@ -226,7 +226,7 @@ func (c *Cache) demandDelegatedParent(ctx context.Context, pending *PartSourceLe
 	// active path is retained, but no child permit or task generation is reused.
 	// In particular, do not race this wait against a faster child installation.
 	// The child reads the parent's part it delegates to, once it asks for it.
-	c.partReads.record(proof.parent.id, []PartKey{proof.source.Part})
+	c.recordPartRead(ctx, proof.parent.id, []PartKey{proof.source.Part})
 	return c.demandPart(ctx, parent, proof.source)
 }
 
