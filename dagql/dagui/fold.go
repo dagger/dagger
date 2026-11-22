@@ -63,7 +63,8 @@ const (
 	foldLLMTool
 	foldHasLogs
 	// foldKind marks a kind dagui surfaces wherever it sits: LLM messages
-	// and tool calls, checks, generators, tests, services, rewind markers.
+	// and tool calls, checks, generators, tests, services, rewind markers,
+	// and generate's skipped and regenerated modules (see isIndexedKind).
 	foldKind
 	foldAgent
 	foldReveal
@@ -530,7 +531,8 @@ func snapshotFoldInfo(s *SpanSnapshot) foldInfo {
 	set(s.Progress != nil && len(s.Progress.Order) > 0, foldProgress)
 	set(s.LLMRole != "" || s.CheckName != "" || s.GeneratorName != "" ||
 		s.TestCaseName != "" || s.TestSuiteName != "" || s.Service || s.ServiceName != "" ||
-		s.AgentRewindFrom != "" || s.AgentRewindTo != "", foldKind)
+		s.AgentRewindFrom != "" || s.AgentRewindTo != "" ||
+		s.GenerateSkipped || s.GenerateRegenerated, foldKind)
 	info.failed = s.Status.Code == codes.Error || (s.Final && s.Failed_)
 	info.cat = foldCategory(s.EndTime.Before(s.StartTime), s.Pending || (s.Final && s.Pending_),
 		s.Cached || (s.Final && s.Cached_), s.Canceled || (s.Final && s.Canceled_), info.failed)
@@ -599,7 +601,8 @@ func foldAttrFlag(key string, on bool, str string) foldState {
 		return boolFlag(on, foldAgent)
 	case telemetry.LLMToolAttr:
 		return foldKind | foldLLMTool
-	case telemetryattrs.ServiceAttr:
+	case telemetryattrs.ServiceAttr,
+		telemetryattrs.GenerateSkippedAttr, telemetryattrs.GenerateRegeneratedAttr:
 		return boolFlag(on, foldKind)
 	case telemetry.LLMRoleAttr, telemetry.CheckNameAttr, telemetry.GeneratorNameAttr,
 		string(semconv.TestCaseNameKey), string(semconv.TestSuiteNameKey),
