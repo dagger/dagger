@@ -209,6 +209,10 @@ func (ev *CacheDecision) ResultState(ctx context.Context, res AnyResult) (CacheR
 	if shared == nil || shared.id == 0 {
 		return CacheResultState{}, false
 	}
+	if ev.hitLoad != nil {
+		// A hit's wait for the read is its own work's too (HitLoad).
+		ctx = withGraphLockWaits(ctx, &ev.hitLoad.graph)
+	}
 	return ev.cache.resultState(ctx, shared, ev.pendingEdge)
 }
 

@@ -2003,7 +2003,7 @@ func (c *Cache) upsertPersistedEdgeLocked(ctx context.Context, res *sharedResult
 // left the cache.
 func (c *Cache) resultState(ctx context.Context, res *sharedResult, pendingEdge *pendingRetention) (CacheResultState, bool) {
 	parts, sizes := c.spanPartKeysAndSizes(ctx, res)
-	wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
+	c.readLockGraphGathered(ctx)
 	defer c.egraphMu.RUnlock()
 	if c.resultsByID[res.id] != res {
 		return CacheResultState{}, false
@@ -7163,6 +7163,9 @@ func (c *Cache) getOrInitCallInner(
 		}
 		c.captureSessionLazySpanContext(ctx, sessionID, hitRes)
 		c.captureSessionResultInstallSpan(ctx, sessionID, hitRes)
+		if ev != nil {
+			ev.HitServedAtUnixNano = time.Now().UnixNano()
+		}
 		return hitRes, nil
 	}
 	if lookup := c.noteRemoteMiss(req, callDigest, caller, requestSelf, requestInputs); ev != nil {

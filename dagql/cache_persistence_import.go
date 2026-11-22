@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/persistdb"
@@ -544,7 +545,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			continue
 		}
 		decodeCtx := ContextWithCall(ctx, call)
-		decodeCtx = context.WithValue(decodeCtx, copiedDecodeRolesKey{}, &copiedDecodeRoles{ResultID: uint64(res.id), Links: cloneSnapshotRefLinks(state.snapshotOwnerLinks), Imported: state.imported, ArmRecipe: c.decodeArmsRecipe(res, state.imported), Host: c.partHostFor(res)})
+		decodeCtx = context.WithValue(decodeCtx, copiedDecodeRolesKey{}, &copiedDecodeRoles{ResultID: uint64(res.id), Links: cloneSnapshotRefLinks(state.snapshotOwnerLinks), Imported: state.imported, ArmRecipe: c.decodeArmsRecipe(ctx, res, state.imported), Host: c.partHostFor(res)})
 		if decoded, err := DefaultPersistedSelfCodec.DecodeResult(decodeCtx, nil, uint64(resultID), call, *state.persistedEnvelope); err == nil && decoded != nil {
 			res.payloadMu.Lock()
 			if res.hasValue || res.persistedEnvelope == nil || res.payloadRevision != state.payloadRevision {
@@ -902,11 +903,11 @@ func collectDecodedDependencyResults(decoded AnyResult, deps *[]AnyResult) {
 // evaluates as a value restored from local persistence does. An address that
 // arrives later moves the row to part acquisition at its next demand
 // (usesPartAcquisition), for the parts it hasn't computed.
-func (c *Cache) decodeArmsRecipe(res *sharedResult, imported bool) bool {
+func (c *Cache) decodeArmsRecipe(ctx context.Context, res *sharedResult, imported bool) bool {
 	if !imported {
 		return false
 	}
-	c.egraphMu.RLock()
+	c.readLockGraphGathered(ctx)
 	defer c.egraphMu.RUnlock()
 	return !res.hasPartOffersLocked()
 }
@@ -931,10 +932,14 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 	attachDepsWaitCh := res.attachDepsWaitCh
 	res.attachDepsMu.Unlock()
 	if attachDepsWaitCh != nil {
+		waited := time.Now()
 		select {
 		case <-attachDepsWaitCh:
 		case <-ctx.Done():
 			return nil, context.Cause(ctx)
+		}
+		if load := hitLoadOf(ctx); load != nil {
+			load.attach.Add(int64(time.Since(waited)))
 		}
 		wcprof.Lock(ctx, &res.attachDepsMu, resultDepsLockIdent)
 		attachDepsErr := res.attachDepsErr
@@ -982,10 +987,14 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 				c.testPersistDecodeJoined(uint64(res.id))
 			}
 
+			waited := time.Now()
 			select {
 			case <-waitCh:
 			case <-ctx.Done():
 				return nil, context.Cause(ctx)
+			}
+			if load := hitLoadOf(ctx); load != nil {
+				load.decode.Add(int64(time.Since(waited)))
 			}
 
 			wcprof.Lock(ctx, &res.persistDecodeMu, resultDecodeLockIdent)
@@ -1090,7 +1099,7 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 			if state.snapshotLinkIntent != nil {
 				roles = state.snapshotLinkIntent.Links
 			}
-			decodeCtx = context.WithValue(decodeCtx, copiedDecodeRolesKey{}, &copiedDecodeRoles{ResultID: uint64(res.id), Links: cloneSnapshotRefLinks(roles), Imported: state.imported, ArmRecipe: c.decodeArmsRecipe(res, state.imported), Host: c.partHostFor(res)})
+			decodeCtx = context.WithValue(decodeCtx, copiedDecodeRolesKey{}, &copiedDecodeRoles{ResultID: uint64(res.id), Links: cloneSnapshotRefLinks(roles), Imported: state.imported, ArmRecipe: c.decodeArmsRecipe(ctx, res, state.imported), Host: c.partHostFor(res)})
 			decoded, err := DefaultPersistedSelfCodec.DecodeResult(decodeCtx, dag, uint64(res.id), call, *state.persistedEnvelope)
 			if err != nil {
 				c.tracePersistedPayloadDecodeFailed(ctx, res, state.persistedEnvelope, err)
@@ -1147,6 +1156,9 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 				res.payloadRevision++
 				res.onRelease = joinOnRelease(res.onRelease, decoded.cacheSharedResult().onRelease)
 				c.tracePersistedPayloadDecoded(ctx, res, state.persistedEnvelope)
+				if load := hitLoadOf(ctx); load != nil {
+					load.decoded.Add(1)
+				}
 			}
 			installedRevision := res.payloadRevision
 			res.payloadMu.Unlock()

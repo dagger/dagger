@@ -139,15 +139,21 @@ func (c *Cache) lockGraphForCtx(ctx context.Context, otherwise cacheWork) {
 }
 
 // lookupReadLockGraph takes the graph lock for reading for a call's lookup,
-// and counts a wait for it (LookupLockWaits).
+// and counts a wait for it (LookupLockWaits), adding it to the waits ctx
+// gathers too (withGraphLockWaits).
 func (c *Cache) lookupReadLockGraph(ctx context.Context) {
-	c.countLookupWait(wcprof.ReadLockWaited(ctx, &c.egraphMu, egraphLockIdent))
+	lw := wcprof.ReadLockWaited(ctx, &c.egraphMu, egraphLockIdent)
+	c.countLookupWait(lw)
+	gatherGraphLockWait(ctx, lw)
 }
 
 // lookupLockGraph takes the graph lock for writing for a call's lookup, and
-// counts a wait for it (LookupLockWaits).
+// counts a wait for it (LookupLockWaits), adding it to the waits ctx gathers
+// too (withGraphLockWaits).
 func (c *Cache) lookupLockGraph(ctx context.Context) {
-	c.countLookupWait(wcprof.WriteLockAs(ctx, &c.egraphMu, egraphLockIdent, graphHolders[workLookup]))
+	lw := wcprof.WriteLockAs(ctx, &c.egraphMu, egraphLockIdent, graphHolders[workLookup])
+	c.countLookupWait(lw)
+	gatherGraphLockWait(ctx, lw)
 }
 
 // countLookupWait counts a lookup's wait for the graph lock, if it waited,
@@ -341,6 +347,20 @@ type hitLoad struct {
 	graph          graphLockWaits
 	decode, attach atomic.Int64
 	decoded        atomic.Int64
+}
+
+type hitLoadKey struct{}
+
+// withHitLoad returns ctx gathering the hit's own work under it into l, its
+// graph-lock waits included.
+func withHitLoad(ctx context.Context, l *hitLoad) context.Context {
+	return context.WithValue(withGraphLockWaits(ctx, &l.graph), hitLoadKey{}, l)
+}
+
+// hitLoadOf is the hit load ctx gathers into, or nil.
+func hitLoadOf(ctx context.Context) *hitLoad {
+	l, _ := ctx.Value(hitLoadKey{}).(*hitLoad)
+	return l
 }
 
 // waits is what the hit's own work waited for, by kind: "graph.<writer>" for
