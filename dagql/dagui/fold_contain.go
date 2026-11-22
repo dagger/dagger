@@ -207,6 +207,10 @@ func (f *Fold) resolvePending(t uint32) {
 			// a later snapshot of the carrier replaced it
 			continue
 		}
+		if f.state[i]&foldRetained != 0 {
+			// the waiting below its row, unresolved, may resolve now
+			f.touch(i)
+		}
 		if f.noopWait(i, t, w.exec) {
 			if f.noops == nil {
 				f.noops = map[uint32][]uint32{}
@@ -375,39 +379,57 @@ func slicesContains(s []uint32, v uint32) bool {
 	return false
 }
 
+// waitStandIn is how the waiting below rows reads a wait on a span a
+// folding DB holds as a stub, which it doesn't hold even a reference to.
+type waitStandIn int
+
+const (
+	// standInNone: the DB holds the target, or nothing does.
+	standInNone waitStandIn = iota
+	// standInSkip: a wait on the carrier's own execution, which no row
+	// reads.
+	standInSkip
+	// standInInside: a contained wait, a window on work inside the row
+	// (see above).
+	standInInside
+	// standInUnloaded: a wait on a span not received yet (resolvePending),
+	// unresolved, as on a span the DB holds only a reference to.
+	standInUnloaded
+)
+
 // waitStandIn reports how the waiting below rows is to read carrier's wait
-// on target, a span a folding DB holds as a stub, which it doesn't hold
-// even a reference to: skip, a wait on carrier's own execution (exec: a
-// wait for reason call_exec or singleflight), which no row reads; inside, a
-// contained wait, as a window on work inside the row (see above). A folded
-// span beneath carrier that carrier waits on is the target of one or the
-// other: the targets of its other waits are retained with it.
-func (f *Fold) waitStandIn(carrier, target SpanID, exec bool) (skip, inside bool) {
+// on target (exec: a wait for reason call_exec or singleflight). A folded
+// span beneath carrier that carrier waits on is the target of a wait on its
+// own execution or a contained one: the targets of its other waits are
+// retained with it.
+func (f *Fold) waitStandIn(carrier, target SpanID, exec bool) waitStandIn {
 	if f == nil {
-		return false, false
-	}
-	c, ok := f.lookup(carrier)
-	if !ok || f.state[c]&(foldContainedWaits|foldNoopWaits) == 0 {
-		return false, false
+		return standInNone
 	}
 	t, ok := f.lookup(target)
-	if !ok || t == c || f.state[t]&(foldReceived|foldRetained) != foldReceived || !f.isAncestor(c, t) {
-		return false, false
+	if !ok || f.state[t]&foldRetained != 0 {
+		return standInNone
+	}
+	if f.state[t]&foldReceived == 0 {
+		return standInUnloaded
+	}
+	c, ok := f.lookup(carrier)
+	if !ok || t == c || f.state[c]&(foldContainedWaits|foldNoopWaits) == 0 || !f.isAncestor(c, t) {
+		return standInNone
 	}
 	if f.state[c]&foldNoopWaits != 0 && exec && f.name[t] == f.name[c] {
-		return true, false
+		return standInSkip
 	}
 	if f.state[c]&foldContainedWaits != 0 {
-		return false, true
+		return standInInside
 	}
-	return false, false
+	return standInNone
 }
 
 // holdsWaitTarget reports whether the stubs hold carrier's wait on target
 // in the DB's stead (waitStandIn).
 func (f *Fold) holdsWaitTarget(carrier, target SpanID, reason string) bool {
-	skip, inside := f.waitStandIn(carrier, target, isExecWait(reason))
-	return skip || inside
+	return f.waitStandIn(carrier, target, isExecWait(reason)) != standInNone
 }
 
 func isExecWait(reason string) bool {

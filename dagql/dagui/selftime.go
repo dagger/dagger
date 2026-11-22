@@ -100,8 +100,16 @@ type waitWindow struct {
 	below *waitStretch
 	// inside marks a contained wait on a span a folding DB holds as a stub
 	// (see fold_contain.go): whatever the row reading it, it resolves to
-	// work inside the row.
-	inside bool
+	// work inside the row. unloaded marks one on a span it holds only as a
+	// stub, not received yet: as a target the DB holds only a reference
+	// to, unloaded.
+	inside, unloaded bool
+}
+
+// targetUnloaded reports whether the window's target is a span of the trace
+// not loaded.
+func (w waitWindow) targetUnloaded() bool {
+	return w.unloaded || w.target.unloaded()
 }
 
 // resolvedWait is a wait stretch attributed to the op actually working
@@ -346,7 +354,7 @@ func (span *Span) resolvedWaits(clk *breakdownClock, paintedTotal time.Duration,
 	// whole time. TimeBreakdownSpans names what to load. Each wait counts,
 	// before merging keeps only the longest of those that adjoin.
 	for _, w := range raw {
-		if w.target.unloaded() || !blockerAncestry(resolveBlocker(w.target), span, nil) {
+		if w.targetUnloaded() || !blockerAncestry(resolveBlocker(w.target), span, nil) {
 			return nil, false
 		}
 	}
@@ -463,7 +471,7 @@ func resolveWaitChain(win waitWindow, viaLabel string, blockers []*Span, depth i
 	}
 	blocker := resolveBlocker(win.target)
 	unplaced := false
-	if blocker.unloaded() {
+	if blocker.unloaded() || win.unloaded {
 		// further down the chain than the row's own blockers, which
 		// TimeBreakdown resolves first, it is as good as outside the trace
 		blocker = nil
@@ -687,19 +695,19 @@ func (span *Span) collectOwnWaits(dst *[]waitWindow, row *Span, clk *breakdownCl
 			continue
 		}
 		target := span.db.Spans.Map[link.SpanContext.SpanID]
-		var inside bool
-		if target == nil || !target.Received {
-			// a span a folding DB holds as a stub (and as a reference,
-			// if it hadn't arrived when span did): a wait on span's own
-			// execution, or a contained one, on work inside every row
-			// reading it (see fold_contain.go)
-			var skip bool
-			skip, inside = span.db.fold.waitStandIn(span.ID, link.SpanContext.SpanID, isExecWait(link.WaitReason))
-			if skip {
+		var inside, unloaded bool
+		if target == nil {
+			// a span a folding DB holds as a stub: a wait on span's own
+			// execution, a contained one, on work inside every row
+			// reading it, or one on a span still to come (see
+			// fold_contain.go)
+			switch span.db.fold.waitStandIn(span.ID, link.SpanContext.SpanID, isExecWait(link.WaitReason)) {
+			case standInSkip:
 				continue
-			}
-			if inside {
-				target = nil
+			case standInInside:
+				inside = true
+			case standInUnloaded:
+				unloaded = true
 			}
 		}
 
@@ -719,8 +727,9 @@ func (span *Span) collectOwnWaits(dst *[]waitWindow, row *Span, clk *breakdownCl
 			start:  link.WaitStart,
 			end:    end,
 			target: target,
-			reason: link.WaitReason,
-			inside: inside,
+			reason:   link.WaitReason,
+			inside:   inside,
+			unloaded: unloaded,
 		})
 	}
 }
@@ -1233,6 +1242,7 @@ func mergeWaitWindows(wins []waitWindow) []waitWindow {
 		cur.target = best.target
 		cur.reason = best.reason
 		cur.inside = best.inside
+		cur.unloaded = best.unloaded
 		merged = append(merged, cur)
 	}
 	for _, w := range wins[1:] {
