@@ -3,6 +3,7 @@ package schema
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -108,6 +109,15 @@ func followsResults(t *testing.T, e *followsTestEngine) map[string]string {
 	base := e.dir(scratch, "withNewFile", followsArg("path", dagql.NewString("a.txt")), followsArg("contents", dagql.NewString("A")))
 	base = e.dir(base, "withNewDirectory", followsArg("path", dagql.NewString("d")))
 	base = e.dir(base, "withNewFile", followsArg("path", dagql.NewString("d/b.txt")), followsArg("contents", dagql.NewString("B")))
+	// Enough paths that a field walking a map of them would write them in
+	// another order on the second engine with no real chance of a match.
+	var many []dagql.NamedInput
+	for i := range 64 {
+		many = append(many, followsArg("path", dagql.NewString(fmt.Sprintf("m/%d/f%02d.txt", i%8, i))))
+	}
+	for i, path := range many {
+		base = e.dir(base, "withNewFile", path, followsArg("contents", dagql.NewString(fmt.Sprint(i))))
+	}
 	out["Directory.withNewFile, withNewDirectory"] = e.digest(base)
 	a := e.file(base, "file", followsArg("path", dagql.NewString("a.txt")))
 	out["Directory.file"] = e.digest(a)
