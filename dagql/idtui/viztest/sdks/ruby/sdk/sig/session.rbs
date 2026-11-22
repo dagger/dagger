@@ -1,0 +1,28 @@
+module Dagger
+  class Session
+    class Load < Struct[untyped]
+      attr_accessor target: Client::Target
+      attr_accessor lock: Thread::Mutex
+      attr_accessor done: bool
+
+      def self.new: (Client::Target target, Thread::Mutex lock, bool done) -> Load
+    end
+
+    @connection: Connection?
+    @provisioned: Provision?
+    @lock: Thread::Mutex
+    @loads: Hash[String, Load]
+
+    def initialize: (?Connection? connection) -> void
+    def execute: (String document) -> untyped
+    def connection: () -> Connection
+    def load: (Client::Target target) -> void
+    def close: () -> void
+
+    private
+
+    def release: () -> [Connection?, Provision?]
+    def provision: () -> Connection
+    def serve: (Client::Target target) -> untyped
+  end
+end

@@ -1,0 +1,46 @@
+module Dagger
+  class Error < StandardError
+  end
+
+  class ConnectionError < Error
+    def initialize: (?String? message) -> void
+  end
+
+  class TransportError < Error
+  end
+
+  class InvalidQueryError < Error
+  end
+
+  class ClientLoadError < Error
+    attr_reader target: untyped
+
+    def initialize: (String message, ?target: untyped) -> void
+  end
+
+  class StaleClientError < Error
+  end
+
+  class QueryError < Error
+    type error_value = Hash[String, untyped]
+
+    attr_reader errors: Array[error_value]
+    attr_reader query: String
+
+    def self.from_response: (untyped errors, String query) -> QueryError?
+    def initialize: (Array[error_value] errors, String query) -> void
+    def path: () -> Array[String | Integer]?
+    def extensions: () -> Hash[String, untyped]
+    def locations: () -> Array[Hash[String, Integer]]
+    def debug_query: () -> String
+  end
+
+  class ExecError < QueryError
+    TYPE: String
+
+    def command: () -> Array[String]
+    def exit_code: () -> Integer
+    def stdout: () -> String
+    def stderr: () -> String
+  end
+end

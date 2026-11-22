@@ -1,0 +1,63 @@
+module Dagger
+  class QueryBuilder
+    class Field < Data
+      attr_reader name: String
+      attr_reader args: Hash[Symbol, untyped]
+      attr_reader inline_type: String?
+
+      def self.new: (name: String, args: Hash[Symbol, untyped], inline_type: String?) -> Field
+      def with: (?name: String, ?args: Hash[Symbol, untyped], ?inline_type: String?) -> Field
+    end
+
+    NONE: Array[Field]
+    NAME: Regexp
+    INDENT: String
+
+    attr_reader selections: Array[Field]
+    attr_reader targets: Array[Client::Target]
+
+    @session: Session?
+    @reevaluated: bool
+
+    def self.literal: (untyped value) -> String
+    def self.enum_literal: (Enum value) -> String
+    def self.string_literal: (String value) -> String
+    def self.float_literal: (Float value) -> String
+
+    def initialize: (?session: Session?, ?selections: Array[Field], ?targets: Array[Client::Target], ?reevaluated: bool) -> void
+    def with_target: (Client::Target target) -> QueryBuilder
+    def session: () -> Session
+    def reevaluated?: () -> bool
+    def reevaluate: () -> QueryBuilder
+    def reevaluate_when: (*bool? conditions) -> QueryBuilder
+    def select: (String | Symbol name, **untyped args) -> QueryBuilder
+    def node: (String id, String type_name) -> QueryBuilder
+    def root: () -> QueryBuilder
+    def loaded_id: () -> String?
+    def document: (?Array[Field] fields) -> String
+    def execute: (?allow_nil: bool) -> untyped
+    def execute_object_list: [T < Type] (singleton(Type) & _TypeClass[T] type) -> Array[T]
+    def execute_node: [T < Type] (singleton(Type) & _TypeClass[T] type) -> T
+    def execute_optional: [T < Type] (singleton(Type) & _TypeClass[T] type) -> T?
+    def ==: (untyped other) -> bool
+    alias eql? ==
+    def hash: () -> Integer
+
+    interface _TypeClass[T]
+      def new: (QueryBuilder query) -> T
+      def graphql_name: () -> String
+    end
+
+    private
+
+    def with_selections: (Array[Field] fields, ?reevaluated: bool) -> QueryBuilder
+    def run: (String document) -> untyped
+    def snapshot: (untyped value) -> untyped
+    def resolve_ids: () -> Array[Field]
+    def object_arg?: (untyped value) -> bool
+    def resolve_id: (untyped value) -> untyped
+    def input_with_ids: (Input input) -> Input
+    def render: (Array[Field] fields, Integer depth) -> String
+    def dig: (untyped data, Array[Field] fields) -> untyped
+  end
+end

@@ -35,6 +35,9 @@ type sdkFixture struct {
 	// BAD: the SDK has no function cache policy, so log-success is cached
 	// and its logs are never seen again
 	noCachePolicy bool
+	// BAD: the function's logs land on the exec of its process, not on the
+	// function's row, which shows only its result
+	logsOnExec bool
 }
 
 // What every entrypoint SDK got wrong before its module process reported its
@@ -92,6 +95,13 @@ var sdkFixtures = []sdkFixture{
 	// failure renders under "build viztest-java" as Maven's quiet errors on
 	// its "mvn package" exec, the compiler's among them.
 	{lang: "java", source: "src/main/java/io/dagger/modules/viztestjava/ViztestJava.java", breakage: "\nthis is not java\n"},
+	// Today's output, before the Ruby SDK reports errors in the file: its
+	// entrypoint declares callDigest but marks no exec with it, so no exec is
+	// the module process, and every failure renders on the dispatcher's
+	// withExec, with its full stack trace. "this is not ruby" alone is valid
+	// Ruby, a chain of method calls that fails only when the file runs, so
+	// the breakage ends in a parenthesis that doesn't parse.
+	{lang: "ruby", source: "lib/viztest_ruby.rb", breakage: "\nthis is not ruby)\n", logsOnExec: true},
 	// Not an entrypoint: the dang-sdk module runs on the engine's built-in
 	// Dang runtime, so its errors and logs are the reference. A module that
 	// doesn't parse fails on the row of Dang's typecheck of it, "typecheck
@@ -119,6 +129,10 @@ func (fx sdkFixture) logSuccessOutput(t *testctx.T, out string) {
 	}
 	require.True(t, strings.HasPrefix(row, "X.Xs\n"), "the function's row: %s", row)
 	require.Contains(t, row, result)
+	if fx.logsOnExec {
+		require.NotContains(t, row, fx.lang+" function stdout")
+		return
+	}
 	require.Contains(t, row, fx.lang+" function stdout")
 	if !fx.noProcess {
 		require.Contains(t, row, fx.lang+" function stderr")

@@ -1,0 +1,47 @@
+PATH
+  remote: clients/core
+  specs:
+    dagger-clients-core (0.0.0)
+      dagger-sdk
+
+PATH
+  remote: clients/roots
+  specs:
+    dagger-clients-roots (0.0.0)
+      dagger-clients-core
+      dagger-sdk
+
+PATH
+  remote: clients/sdk_dep
+  specs:
+    dagger-clients-sdk_dep (0.0.0)
+      dagger-clients-core
+      dagger-sdk
+
+PATH
+  remote: sdk
+  specs:
+    dagger-sdk (0.0.0)
+
+GEM
+  remote: https://rubygems.org/
+  specs:
+
+PLATFORMS
+  ruby
+  x86_64-linux
+
+DEPENDENCIES
+  dagger-clients-core!
+  dagger-clients-roots!
+  dagger-clients-sdk_dep!
+  dagger-sdk!
+
+CHECKSUMS
+  dagger-clients-core (0.0.0)
+  dagger-clients-roots (0.0.0)
+  dagger-clients-sdk_dep (0.0.0)
+  dagger-sdk (0.0.0)
+
+BUNDLED WITH
+  4.0.20

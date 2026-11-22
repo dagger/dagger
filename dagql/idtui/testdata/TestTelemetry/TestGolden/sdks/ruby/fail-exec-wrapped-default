@@ -1,0 +1,36 @@
+Expected stderr:
+
+✔ connect X.Xs
+✔ load workspace: . X.Xs
+✔ parsing command line arguments X.Xs
+
+$ viztestRuby: ViztestRuby! X.Xs CACHED
+✘ .failExecWrapped: String! X.Xs ERROR
+✘ withExec ruby -rbundler/setup sdk/exe/dagger-mod call --output /dagger/result.json (stdin: "{\"receiverType\":\"ViztestRuby\",\"receiverValue\":\"{}\",\"fnName\":\"fail_exec_wrapped\",\"fnArgs\":\"{}\",\"callDigest\":\"xxh3:XXXXXXXXXXXXXXXX\",\"moduleSource\":\"EhIIkxkSDQoJRGlyZWN0b3J5GAE=\"}") X.Xs ERROR
+dagger-mod: Dagger::Mod::FunctionError: /src/lib/viztest_ruby.rb:40:in 'ViztestRuby#fail_exec_wrapped': ruby function ran a failing command: exit code: 1 [traceparent:00000000000000000000000000000000-0000000000000000] (RuntimeError)
+        from /src/sdk/lib/dagger/mod/dispatch.rb:56:in 'Kernel#public_send'
+        from /src/sdk/lib/dagger/mod/dispatch.rb:56:in 'block in Dagger::Mod::Dispatch#invoke'
+        from /src/sdk/lib/dagger/mod/dispatch.rb:74:in 'Dagger::Mod::Dispatch#user_code'
+        from /src/sdk/lib/dagger/mod/dispatch.rb:56:in 'Dagger::Mod::Dispatch#invoke'
+        from /src/sdk/lib/dagger/mod/dispatch.rb:21:in 'Dagger::Mod::Dispatch#call'
+        from /src/sdk/lib/dagger/mod/cli.rb:56:in 'Dagger::Mod::CLI.call'
+        from /src/sdk/lib/dagger/mod/cli.rb:20:in 'Dagger::Mod::CLI.run'
+        from sdk/exe/dagger-mod:10:in '<main>'
+/src/sdk/lib/dagger/connection.rb:87:in 'Dagger::Connection#read': exit code: 1 [traceparent:00000000000000000000000000000000-0000000000000000] (Dagger::ExecError)
+        from /src/sdk/lib/dagger/connection.rb:40:in 'Dagger::Connection#execute'
+        from /src/sdk/lib/dagger/session.rb:13:in 'Dagger::Session#execute'
+        from /src/sdk/lib/dagger/query.rb:133:in 'Dagger::QueryBuilder#run'
+        from /src/sdk/lib/dagger/query.rb:97:in 'Dagger::QueryBuilder#execute'
+        from /src/clients/core/lib/dagger/clients/core/container.rb:450:in 'Dagger::Clients::Core::Container#stdout'
+        from /src/lib/viztest_ruby.rb:38:in 'ViztestRuby#fail_exec_wrapped'
+        from /src/sdk/lib/dagger/mod/dispatch.rb:56:in 'Kernel#public_send'
+        from /src/sdk/lib/dagger/mod/dispatch.rb:56:in 'block in Dagger::Mod::Dispatch#invoke'
+        from /src/sdk/lib/dagger/mod/dispatch.rb:74:in 'Dagger::Mod::Dispatch#user_code'
+        from /src/sdk/lib/dagger/mod/dispatch.rb:56:in 'Dagger::Mod::Dispatch#invoke'
+        from /src/sdk/lib/dagger/mod/dispatch.rb:21:in 'Dagger::Mod::Dispatch#call'
+        from /src/sdk/lib/dagger/mod/cli.rb:56:in 'Dagger::Mod::CLI.call'
+        from /src/sdk/lib/dagger/mod/cli.rb:20:in 'Dagger::Mod::CLI.run'
+        from sdk/exe/dagger-mod:10:in '<main>'
+! exit code: 2
+
+Setup tracing by running "dagger cloud signup". To hide set DAGGER_NO_NAG=1

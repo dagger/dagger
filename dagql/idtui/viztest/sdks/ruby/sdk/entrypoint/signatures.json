@@ -1,0 +1,67 @@
+{
+  "lib/viztest_ruby.rb": [
+    {
+      "class": "ViztestRuby",
+      "nesting": [
+        "ViztestRuby"
+      ],
+      "methods": {
+        "log_success": {
+          "line": 12,
+          "params": [],
+          "returns": "String"
+        },
+        "fail_native": {
+          "line": 19,
+          "params": [],
+          "returns": "void"
+        },
+        "fail_exit_code": {
+          "line": 26,
+          "params": [],
+          "returns": "void"
+        },
+        "fail_exec": {
+          "line": 33,
+          "params": [],
+          "returns": "String"
+        },
+        "fail_exec_wrapped": {
+          "line": 37,
+          "params": [],
+          "returns": "String"
+        },
+        "fail_api": {
+          "line": 45,
+          "params": [],
+          "returns": "String"
+        },
+        "call_failing_dep": {
+          "line": 52,
+          "params": [],
+          "returns": "String"
+        },
+        "call_failing_dep_logged": {
+          "line": 56,
+          "params": [],
+          "returns": "String"
+        },
+        "failing_exec": {
+          "line": 64,
+          "params": [],
+          "returns": "Dagger::Clients::Core::Container"
+        },
+        "log_stdout": {
+          "line": 70,
+          "params": [],
+          "returns": "void"
+        },
+        "log_both": {
+          "line": 78,
+          "params": [],
+          "returns": "void"
+        }
+      }
+    }
+  ]
+}

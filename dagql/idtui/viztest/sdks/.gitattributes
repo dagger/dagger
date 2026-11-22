@@ -12,3 +12,7 @@
 /java/sdk/** linguist-generated
 /java/clients/** linguist-generated
 /java/src/generated/** linguist-generated
+/ruby/sdk/** linguist-generated
+/ruby/clients/** linguist-generated
+/ruby/dagger.gemfile linguist-generated
+/ruby/Gemfile.lock linguist-generated

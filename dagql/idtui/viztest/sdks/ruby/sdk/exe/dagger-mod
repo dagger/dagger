@@ -1,0 +1,22 @@
+#!/usr/bin/env ruby
+require_relative "../lib/dagger/mod/cli"
+
+Dagger.mark_module_runtime!
+# A call whose request or signatures no longer match the module's code most
+# likely follows an edit made without generation.
+calling = ARGV.first == "call"
+stale = [Dagger::Mod::InvalidInputError, Dagger::Mod::RegistrationError]
+begin
+  Dagger::Mod::CLI.run(ARGV)
+rescue Dagger::Mod::Error, Dagger::QueryError => e
+  warn "dagger-mod: #{e.class}: #{e.message}"
+  warn e.stderr if e.is_a?(Dagger::ExecError) && !e.stderr.to_s.empty?
+  warn "dagger-mod: #{Dagger::Mod::REGENERATE_HINT}" if calling && stale.any? { e.is_a?(it) }
+  exit 2
+rescue LoadError, NameError => e
+  raise unless calling
+
+  warn e.full_message(highlight: false)
+  warn "dagger-mod: #{Dagger::Mod::REGENERATE_HINT}"
+  exit 1
+end

@@ -49,6 +49,9 @@ source = "github.com/dagger/java-sdk@f25650f95356764c9bf7e3b1bdeec013685e112b"
 [modules.dang-sdk]
 source = "github.com/dagger/dang-sdk@14ba9d349167cb32b3a06f4229f534509a30ac62"
 
+[modules.ruby-sdk]
+source = "github.com/dagger/ruby-sdk@754e000660b07b7aa76e61481c6b8d899f451c66"
+
 [sdks.go]
 module = "go-sdk"
 
@@ -66,6 +69,9 @@ module = "java-sdk"
 
 [sdks.dang]
 module = "dang-sdk"
+
+[sdks.ruby]
+module = "ruby-sdk"
 
 [sdks.go.scopes.dep]
 is-module = true
@@ -106,3 +112,11 @@ clients = ["./dep"]
 is-module = true
 name = "viztest-dang"
 clients = ["./dep"]
+
+[sdks.ruby.scopes.ruby]
+is-module = true
+name = "viztest-ruby"
+clients = ["./dep"]
+
+[sdks.ruby.scopes.ruby.settings]
+template = "empty"

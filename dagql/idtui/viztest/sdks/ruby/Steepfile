@@ -1,0 +1,14 @@
+D = Steep::Diagnostic
+
+# lib/ and its #: annotations, against the signatures of the SDK, the clients
+# and the module's fields and enums, which dagger generate writes.
+target :module do
+  signature "sig", "sdk/sig", "sdk/entrypoint", "clients"
+  check "lib", inline: true
+  library "json", "net-http", "uri", "socket", "timeout", "fileutils", "digest", "open3"
+  # Parameters of another kind than their annotation's, and a constant that
+  # names nothing, fail as dagger generate refuses them on a function.
+  configure_code_diagnostics(
+    D::Ruby.default.merge(D::Ruby::DifferentMethodParameterKind => :error, D::Ruby::UnknownConstant => :error)
+  )
+end
