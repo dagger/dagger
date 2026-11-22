@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -630,6 +631,40 @@ func TestStoredSizesPriceOutputsAsTheWireCarriesThem(t *testing.T) {
 	priced := sizes[0].OutputBytes - addresses
 	require.GreaterOrEqual(t, priced, carried, "never less than the wire carries")
 	require.LessOrEqual(t, priced, carried+2*storedOutputReferenceSlack, "more only by renewal keys and the digits of references")
+}
+
+// A root's price counts each packed layer's pack once, with the layer, as the
+// wire lists them (ShareChainLayers): parts that store shared layers in a
+// pack add only their references to them, however many parts name them.
+func TestStoredSizesPriceEachPackOnce(t *testing.T) {
+	t.Parallel()
+	const baseLayers = 20
+	pack := testDigest("pack-once-pack")
+	price := func(packed bool) int64 {
+		ctx, cloud, r, p := storedBundleTestCloud(t, "root")
+		var base []snapshots.ExportLayer
+		packs := map[digest.Digest]digest.Digest{}
+		for i := range baseLayers {
+			layer := storedLayersTestLayer(fmt.Sprint("pack-once-base-", i), "the base")
+			base = append(base, layer)
+			if packed {
+				packs[layer.Descriptor.Digest] = pack
+			}
+		}
+		for _, number := range []uint64{r, p} {
+			for i := range 5 {
+				stored, _, err := cloud.SetStoredPart(ctx, number, storedLayersTestPart(fmt.Sprint("part-", i), slices.Clone(base), maps.Clone(packs)), 0)
+				require.NoError(t, err)
+				require.True(t, stored)
+			}
+		}
+		sizes, err := cloud.StoredSizes(ctx, []uint64{r}, time.Now().Unix(), nil)
+		require.NoError(t, err)
+		return sizes[0].OutputBytes
+	}
+	more := price(true) - price(false)
+	entry := int64(len(`,"pack":""`) + len(pack.String()))
+	require.LessOrEqual(t, more, baseLayers*entry, "each layer's pack once, not once a part: %d bytes more for packs", more)
 }
 
 // A root's lower half is what a merge over the message limit sends ahead of
