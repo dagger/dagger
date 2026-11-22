@@ -3316,8 +3316,8 @@ type sharedResult struct {
 	// neither is sent to an engine: run is nil on an engine, which keeps no
 	// runs, and on a Cloud entry with no stored record. Nothing decides by
 	// them in this cache. Guarded by egraphMu.
-	run    *RunName
 	runRan runRanBy
+	run    *RunName
 	// storedParts are the parts whose layer chains are in this cache's own
 	// blob store, by part address key, their layers the cache's
 	// (storedLayers). Only a blob-backed cache (the Cloud) sets them, in
