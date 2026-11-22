@@ -8608,6 +8608,7 @@ func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput
 		fe.renderProgressRollup(ctx, out, r, row, prefix, statusHost)
 	}
 	fe.renderFoldGone(out, r, row, prefix)
+	fe.renderOwnRootCauseLogs(out, row)
 	if fe.rollsUpSubChecks(row) {
 		// A check deferring to its inline CHECKS rollup: the failure is explained
 		// by the failed sub-checks rendered in the rollup above, so don't also dump
@@ -8633,6 +8634,41 @@ func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput
 		fe.renderStepError(out, r, row, prefix)
 	}
 	fe.renderDebug(out, row.Span, prefix+Block25+" ", false)
+}
+
+// renderOwnRootCauseLogs renders, below a collapsed row of the final report,
+// the logs of the row's own span when that span is a root cause the report
+// appends below the tree (showRootCauseLast), such as a function call that
+// failed with an error of its own. The row's error follows them, as an
+// origin's does in its block, and the root-cause section then has nothing
+// left to add: without this, the row printed a bare error and the section
+// repeated the span, title and error, to show its logs.
+func (fe *frontendPretty) renderOwnRootCauseLogs(out TermOutput, row *dagui.TraceRow) {
+	span := row.Span
+	// A top-level row only, whose logs print unindented, as a top-level
+	// origin block's do.
+	if !fe.finalRender || row.Expanded || row.Depth != 0 || !span.IsFailed() || fe.claims.hasLog(span.ID) {
+		return
+	}
+	if span.RollUpLogs || fe.shellTranscript() {
+		// The row printed its logs already (see renderRowContentRest).
+		return
+	}
+	logs := fe.logs.Logs[span.ID]
+	if logs == nil || logs.UsedHeight() == 0 {
+		return
+	}
+	if !fe.renderPolicy().showRootCauseLast {
+		return
+	}
+	zoomSpan := fe.db.Spans.Map[fe.ZoomedSpan]
+	if zoomSpan == nil || !slices.Contains(fe.checkRootCauses(zoomSpan), span) {
+		return
+	}
+	logs.SetPrefix("")
+	logs.SetHeight(logs.UsedHeight())
+	fmt.Fprint(out, logs.View())
+	fe.claims.claimLog(span)
 }
 
 // renderableErrorOrigins filters a failed span's tracked origins down to the
