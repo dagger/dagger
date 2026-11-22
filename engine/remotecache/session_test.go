@@ -1767,9 +1767,9 @@ func TestLookup(t *testing.T) {
 	misses := lookupMisses(6)
 	adapter.misses <- misses
 	sent := answerLookup(t, s, conn, protocol.LookedUp{Misses: []protocol.LookedUpMiss{
-		{Status: protocol.LookupMerging, Merge: 40, Parts: protocol.LookupPartsComplete},
-		{Status: protocol.LookupInFlight, Merge: 38, Parts: protocol.LookupPartsPartial},
-		{Status: protocol.LookupMerging, Merge: 41, Parts: protocol.LookupPartsNone},
+		{Status: protocol.LookupDeferred},
+		{Status: protocol.LookupDeferred},
+		{Status: protocol.LookupDeferred},
 		{Status: protocol.LookupDeferred},
 		{Status: protocol.LookupNotStored},
 		{Status: protocol.LookupUnknown},

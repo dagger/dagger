@@ -589,19 +589,15 @@ type LookupMiss struct {
 	Caller digest.Digest   `json:"caller,omitempty"`
 }
 
-// LookedUp answers Lookup, one item per miss, in order. The service sends it
-// before any merge it names.
+// LookedUp answers Lookup, one item per miss, in order, as soon as the
+// service has resolved the misses: what it found goes after, as merges.
 type LookedUp struct {
 	Misses []LookedUpMiss `json:"misses"`
 }
 
-// LookedUpMiss is what the service does for one miss. Merge is the ID of the
-// Merge request that carries the call's value, with LookupInFlight and
-// LookupMerging, and Parts says how much of the value's bytes it carries.
+// LookedUpMiss is what the service found for one miss.
 type LookedUpMiss struct {
 	Status LookupStatus `json:"status"`
-	Merge  uint64       `json:"merge,omitempty"`
-	Parts  LookupParts  `json:"parts,omitempty"`
 }
 
 // LookupStatus is what the service does for a missed call.
@@ -612,23 +608,9 @@ const (
 	LookupUnknown LookupStatus = "unknown"
 	// LookupNotStored: the Cloud has no stored, unexpired value of the call.
 	LookupNotStored LookupStatus = "notStored"
-	// LookupInFlight: a merge already sent to the engine carries the value.
-	LookupInFlight LookupStatus = "inFlight"
-	// LookupMerging: a merge sent now, after the answer, carries the value.
-	LookupMerging LookupStatus = "merging"
-	// LookupDeferred: the value goes at the front of the service's queue,
-	// with no merge named.
+	// LookupDeferred: the Cloud stores a value of the call, which the
+	// service sends in a merge of its own, or one already on its way.
 	LookupDeferred LookupStatus = "deferred"
-)
-
-// LookupParts is how many of the value's parts a named merge carries bytes
-// for.
-type LookupParts string
-
-const (
-	LookupPartsComplete LookupParts = "complete"
-	LookupPartsPartial  LookupParts = "partial"
-	LookupPartsNone     LookupParts = "none"
 )
 
 // Restore asks the engine to fetch published files of its claims' sets and
