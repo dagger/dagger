@@ -1136,12 +1136,14 @@ type FieldSpec struct {
 	DeduplicateTelemetry bool
 
 	// FollowsFromInputs marks a field whose result is a function of its
-	// inputs' values and its arguments alone: run again over the same inputs,
-	// it gives the same bytes. Another cache's run of such a call is the same
-	// result as this cache's own wherever their inputs are
-	// (keepOwnRunsLocked). A call that runs a process, reads from outside
-	// the engine or runs a module's code doesn't follow from its inputs.
-	// The call frame carries it (ResultCall.FollowsFromInputs).
+	// inputs' values and its arguments alone. The bar a field must meet to
+	// declare it: two runs of it over the same inputs give the same content
+	// digest, the one core computes, which leaves file times out. Another
+	// cache's run of such a call is then the same result as this cache's own
+	// wherever their inputs are, as an equal content digest would show
+	// (keepOwnRunsLocked). A call that runs a process, reads from outside the
+	// engine or runs a module's code doesn't follow from its inputs. The call
+	// frame carries it (ResultCall.FollowsFromInputs).
 	FollowsFromInputs bool
 
 	// Trivial marks fields that only unwrap data from their receiver rather
