@@ -9,7 +9,7 @@ source = "github.com/dagger/go-sdk@aa3e5343ccc8366cfcc843e44f0b5e593d7cbe20"
 [modules.python-sdk]
 # python-sdk#93: the dispatcher reports a function's error in the file
 # (DAGGER_FUNCTION_ERROR_PATH) the engine gives a call's process.
-source = "github.com/dagger/python-sdk@775e8d0f90518bea96b1ec097e3f7b36f538b380"
+source = "github.com/dagger/python-sdk@a0121427c0660e99553b3f89f9e36fb849fa332a"
 
 [modules.typescript-sdk]
 # A fork: generated Dang entrypoints name cache policies in TypeScript's
