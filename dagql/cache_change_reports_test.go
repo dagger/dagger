@@ -24,9 +24,9 @@ type changeTestEntry struct {
 }
 
 // changeTestAnswers is every answer a reader can keep of a blob-backed
-// cache, at one clock: each holding's description, and each entry's.
+// cache, at one clock: each holding's facts, and each entry's.
 type changeTestAnswers struct {
-	holdings map[HolderKey]RemoteHoldingInfo
+	holdings map[HolderKey]HoldingFacts
 	entries  map[uint64]changeTestEntry
 }
 
@@ -75,11 +75,11 @@ func changeTestRead(t *testing.T, c *Cache, now int64, addresses map[string]Pers
 		numbers = append(numbers, uint64(id))
 	}
 	c.egraphMu.RUnlock()
-	answers := changeTestAnswers{holdings: map[HolderKey]RemoteHoldingInfo{}, entries: map[uint64]changeTestEntry{}}
+	answers := changeTestAnswers{holdings: map[HolderKey]HoldingFacts{}, entries: map[uint64]changeTestEntry{}}
 	for _, key := range keys {
 		held, ok := c.RemoteHoldingInfo(key)
 		require.True(t, ok, "holding %v", key)
-		answers.holdings[key] = held.Holding
+		answers.holdings[key] = held.Holding.HoldingFacts
 	}
 	for _, number := range numbers {
 		info, ok := c.EntryInfo(number)
@@ -109,11 +109,9 @@ type changeWatch struct {
 	now   int64
 	last  changeTestAnswers
 	// overHoldings and overEntries count the holdings and entries a change
-	// named whose answers didn't differ, and readOnly the holdings named
-	// whose descriptions differed only in what a reader may not need: the
-	// sessions holding them and their dependents.
-	overHoldings, overEntries, readOnly int
-	named                               int
+	// named whose answers didn't differ.
+	overHoldings, overEntries int
+	named                     int
 }
 
 func newChangeWatch(t *testing.T, c *Cache, now int64) *changeWatch {
@@ -168,11 +166,6 @@ func (w *changeWatch) step(name string, write func() RemoteChange) {
 			w.t.Errorf("%s: holding %v changed but wasn't named:\nbefore %+v (%v)\nafter  %+v (%v)", name, key, b, inBefore, a, inAfter)
 		case !differs && holdings[key]:
 			w.overHoldings++
-		case differs && inBefore && inAfter:
-			b.Sessions, a.Sessions, b.Dependents, a.Dependents = nil, nil, 0, 0
-			if reflect.DeepEqual(b, a) {
-				w.readOnly++
-			}
 		}
 	}
 	for _, number := range changeTestUnion(before.entries, after.entries) {
@@ -505,7 +498,7 @@ func TestChangeReportsNameEveryChangedAnswer(t *testing.T) {
 	left := len(cloud.resultsByID)
 	cloud.egraphMu.RUnlock()
 	require.Zero(t, left, "every entry went with its last holding")
-	t.Logf("named %d; named with no answer differing: %d holdings, %d entries; holdings differing only in sessions or dependents: %d", w.named, w.overHoldings, w.overEntries, w.readOnly)
+	t.Logf("named %d; named with no answer differing: %d holdings, %d entries", w.named, w.overHoldings, w.overEntries)
 }
 
 // An engine's own cache marks nothing: its writes' changes name no holding

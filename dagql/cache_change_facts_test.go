@@ -7,16 +7,12 @@ import (
 )
 
 // factsTestKept is what a reader keeps of a holding's description from one
-// change to the next: all of it but its sessions, offered parts, content
-// digest and count of dependents, which a reader reads fresh when it needs
-// them.
-func factsTestKept(t *testing.T, cloud *Cache, key HolderKey) RemoteHoldingInfo {
+// change to the next: its facts (HoldingFacts).
+func factsTestKept(t *testing.T, cloud *Cache, key HolderKey) HoldingFacts {
 	t.Helper()
 	held, ok := cloud.RemoteHoldingInfo(key)
 	require.True(t, ok, "holding %v", key)
-	h := held.Holding
-	h.Sessions, h.OfferedParts, h.ContentDigest, h.Dependents = nil, nil, "", 0
-	return h
+	return held.Holding.HoldingFacts
 }
 
 // A write that changes only what no reader keeps of a holding names no
