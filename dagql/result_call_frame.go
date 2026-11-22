@@ -221,6 +221,14 @@ type ResultCall struct {
 	// profileSkip in core/telemetry.go.
 	ProfileSkip bool `json:"profileSkip,omitempty"`
 
+	// FollowsFromInputs is the field's declaration that its result is a
+	// function of its inputs and arguments alone (FieldSpec.FollowsFromInputs),
+	// set when the frame is built. Like ProfileSkip it is a pure function of
+	// the recipe, travels with the frame through clone, fork and records,
+	// and enters no digest. A record carries it, so another cache, or the
+	// Cloud, reads it without the schema.
+	FollowsFromInputs bool `json:"followsFromInputs,omitempty"`
+
 	// ContentPreferred is the content-preferred digest an engine computed
 	// for this frame, with the recipe digest of the frame it computed it for.
 	// A clone writes it (cloneWith): from the frame's own memo once it has
@@ -308,6 +316,8 @@ func (frame *ResultCall) cloneWith(memo resultCallCloneMemo) *ResultCall {
 		EffectIDs:    slices.Clone(frame.EffectIDs),
 		ExtraDigests: slices.Clone(frame.ExtraDigests),
 		ProfileSkip:  frame.ProfileSkip,
+		// A pure function of the recipe, as ProfileSkip is.
+		FollowsFromInputs: frame.FollowsFromInputs,
 		// Immutable once set, so the clone shares it.
 		ContentPreferred: frame.carriedContentPreferred(),
 	}
@@ -353,6 +363,8 @@ func (frame *ResultCall) fork() *ResultCall {
 		// receiver is the list (not a reflection type), so recomputing here would
 		// wrongly profile a reflection-list walk — inheritance is the correct rule.
 		ProfileSkip: frame.ProfileSkip,
+		// An element of a list that follows from its inputs does too.
+		FollowsFromInputs: frame.FollowsFromInputs,
 	}
 }
 

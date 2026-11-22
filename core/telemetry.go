@@ -769,7 +769,18 @@ func callEndAttrs(ctx context.Context, span trace.Span, req *dagql.CallRequest, 
 		attrs = dagql.AppendContentPreferredDigestAttr(ctx, attrs, req.ResultCall, res)
 	}
 	attrs = appendPendingAttrs(attrs, res)
-	return appendCacheEvidenceAttrs(ctx, attrs, req.CacheEvidence, res)
+	attrs = appendCacheEvidenceAttrs(ctx, attrs, req.CacheEvidence, res)
+	return appendFollowsFromInputsAttr(attrs, req)
+}
+
+// appendFollowsFromInputsAttr stamps the declaration that the call's result
+// follows from its inputs (dagql.FieldSpec.FollowsFromInputs) on a call row
+// that reached a cache decision, as its other cache facts are stamped.
+func appendFollowsFromInputsAttr(attrs []attribute.KeyValue, req *dagql.CallRequest) []attribute.KeyValue {
+	if req.CacheEvidence == nil || req.CacheEvidence.Outcome == "" || req.ResultCall == nil || !req.ResultCall.FollowsFromInputs {
+		return attrs
+	}
+	return append(attrs, attribute.String(telemetryattrs.CacheFollowsFromInputsAttr, "true"))
 }
 
 // appendStatusAttrs appends the attributes that record the status of a call
