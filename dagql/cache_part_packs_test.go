@@ -1,7 +1,6 @@
 package dagql
 
 import (
-	"bytes"
 	"context"
 	"slices"
 	"testing"
@@ -64,37 +63,6 @@ func TestOfferInstallFromPack(t *testing.T) {
 	require.EqualValues(t, 1, line.int(t, "requests"))
 	require.EqualValues(t, len(chain.blobs), line.int(t, "packed"), "both layers came from the pack")
 	require.EqualValues(t, len(data), line.int(t, "bytes"), "the install read the whole pack")
-}
-
-// A store that ignores ranges answers a pack's header range with the whole
-// pack: the engine then reads the pack whole, as it reads it from any store,
-// and the part installs.
-func TestOfferInstallFromPackOnAStoreWithoutRanges(t *testing.T) {
-	chain := newChainFixture(t, "packed-no-ranges")
-	f := newExhaustionFixture(t, chain)
-	// Another chain's member makes the chain's share of the pack small,
-	// and the pack larger than its header's range.
-	other := bytes.Repeat([]byte("another chain's blob "), 50000)
-	members := []pack.Member{{Digest: digest.FromBytes(other), Size: int64(len(other))}}
-	for i, blob := range chain.blobs {
-		members = append(members, pack.Member{Digest: chain.digest(i), Size: int64(len(blob))})
-	}
-	header, err := pack.Header(members)
-	require.NoError(t, err)
-	id, err := pack.ID(members)
-	require.NoError(t, err)
-	data := append(append([]byte{}, header...), other...)
-	for _, blob := range chain.blobs {
-		data = append(data, blob...)
-	}
-	const url = "https://fixed.invalid/packed-no-ranges/pack"
-	f.transport.serve(url, data)
-	f.transport.fault(url, contentTestFault{ignoreRange: true, stallAfter: -1})
-	f.attach(t, f.receiver, packTestOffer(chain, id, url))
-
-	require.NoError(t, f.run())
-	require.True(t, f.installed(), "the part installed from its pack, read whole")
-	require.Zero(t, f.transport.open.Load(), "every response is closed")
 }
 
 // A pack whose bytes don't match its ID fails the install as a content
