@@ -465,9 +465,9 @@ func TestRecordCacheEvidenceMappingRemoteLookup(t *testing.T) {
 	}
 }
 
-// Adoption is a fact of the publication, so the executed call and the calls
-// that joined it stamp it, with the merge's origin when the adopted entry is
-// remote.
+// Adoption, and keeping a made value over a merged record, are facts of the
+// publication, so the executed call and the calls that joined it stamp them,
+// with the merge's origin when the entry was remote.
 func TestRecordCacheEvidenceMappingAdopted(t *testing.T) {
 	t.Parallel()
 	selfDig := digest.FromString("evidence-adopted-self")
@@ -506,6 +506,28 @@ func TestRecordCacheEvidenceMappingAdopted(t *testing.T) {
 		{
 			name: "hit",
 			ev:   dagql.CacheDecision{Outcome: dagql.CacheOutcomeHit, Adopted: true, AdoptedRemote: true},
+			want: map[string]string{telemetryattrs.CacheOutcomeAttr: "hit"},
+		},
+		{
+			name: "executed, kept over a merged record",
+			ev:   dagql.CacheDecision{Outcome: dagql.CacheOutcomeExecuted, KeptOverRemote: true, KeptOverRemoteMergedAtUnixNano: 1760000000123456789},
+			want: map[string]string{
+				telemetryattrs.CacheOutcomeAttr:                "executed",
+				telemetryattrs.CacheKeptOverRemoteAttr:         "true",
+				telemetryattrs.CacheKeptOverRemoteMergedAtAttr: "1760000000123456789",
+			},
+		},
+		{
+			name: "joined, kept over a merged record after a restart",
+			ev:   dagql.CacheDecision{Outcome: dagql.CacheOutcomeJoined, KeptOverRemote: true},
+			want: map[string]string{
+				telemetryattrs.CacheOutcomeAttr:        "joined",
+				telemetryattrs.CacheKeptOverRemoteAttr: "true",
+			},
+		},
+		{
+			name: "hit, kept",
+			ev:   dagql.CacheDecision{Outcome: dagql.CacheOutcomeHit, KeptOverRemote: true},
 			want: map[string]string{telemetryattrs.CacheOutcomeAttr: "hit"},
 		},
 	} {
