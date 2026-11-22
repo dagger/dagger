@@ -739,7 +739,27 @@ func TestImportChainReadsAPacksSpansOneAtATime(t *testing.T) {
 		ref, err = consumer.Manager.ImportChain(context.Background(), supplied(chain, provider))
 		done <- err
 	}()
-	t.Cleanup(func() { released.Do(func() { close(release) }) })
+	var importErr error
+	finished := false
+	wait := func() error {
+		if !finished {
+			select {
+			case importErr = <-done:
+				finished = true
+			case <-time.After(30 * time.Second):
+				return errors.New("the import never finished")
+			}
+		}
+		return importErr
+	}
+	// An import still held when the test fails ends, and lets go of what
+	// it imported, before the stores go.
+	t.Cleanup(func() {
+		released.Do(func() { close(release) })
+		if wait() == nil && ref != nil {
+			_ = ref.Release(context.Background())
+		}
+	})
 	require.Eventually(t, func() bool { n, _ := reading(); return n == packs }, 30*time.Second, 10*time.Millisecond,
 		"a span of every pack in flight at once")
 	time.Sleep(200 * time.Millisecond)
@@ -747,13 +767,7 @@ func TestImportChainReadsAPacksSpansOneAtATime(t *testing.T) {
 	require.Equal(t, packs, n, "and no more")
 	require.Equal(t, 1, most1, "one span of a pack at a time")
 	released.Do(func() { close(release) })
-	select {
-	case err := <-done:
-		require.NoError(t, err)
-	case <-time.After(30 * time.Second):
-		t.Fatal("the import never finished")
-	}
-	t.Cleanup(func() { require.NoError(t, ref.Release(context.Background())) })
+	require.NoError(t, wait())
 	testutil.CheckFile(t, ref, "spans-00.txt", "spans 0")
 	testutil.CheckFile(t, ref, "spans-35.txt", "spans 35")
 }
