@@ -3,6 +3,7 @@ package pack
 import (
 	"bufio"
 	"bytes"
+	"fmt"
 	"io"
 	"math"
 	"strings"
@@ -44,6 +45,24 @@ func TestPackRoundTrip(t *testing.T) {
 	rest, err := io.ReadAll(r)
 	require.NoError(t, err)
 	require.Equal(t, "onetwo two", string(rest))
+}
+
+// A Sizer sizes a pack as Size does, a member at a time: for every prefix
+// of a list whose count passes 9, 99 and 999 and whose sizes run from 0 to
+// many digits.
+func TestSizerSizesAsSize(t *testing.T) {
+	var members []Member
+	for i := range 1001 {
+		members = append(members, Member{Digest: digest.FromString(fmt.Sprint(i)), Size: int64(i * i * 37 % 100003)})
+	}
+	var s Sizer
+	for i, m := range members {
+		s = s.With(m)
+		want, err := Size(members[:i+1])
+		require.NoError(t, err)
+		require.Equal(t, i+1, s.Members())
+		require.Equal(t, want, s.Size(), "%d members", i+1)
+	}
 }
 
 func TestPackHeaderRefuses(t *testing.T) {
