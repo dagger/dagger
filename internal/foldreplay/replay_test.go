@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
@@ -21,7 +22,12 @@ import (
 var (
 	replayPath  = flag.String("foldreplay.replay", os.Getenv("DAGGER_FOLD_REPLAY"), "capture to replay (BenchmarkFoldReplay)")
 	replayRoot  = flag.String("foldreplay.root", os.Getenv("DAGGER_FOLD_REPLAY_ROOT"), "span ID whose subtree to replay (default: the whole trace)")
-	replayModes = flag.String("foldreplay.modes", os.Getenv("DAGGER_FOLD_REPLAY_MODES"), "comma-separated DBs to measure: full, fold (default both)")
+	replayModes = flag.String("foldreplay.modes", os.Getenv("DAGGER_FOLD_REPLAY_MODES"), "comma-separated DBs to measure: full, fold, fold-nocalls (default full,fold)")
+
+	replayRowWaits    = flag.Int("foldreplay.rowwaits", 0, "compute row waits (UpdateRowWaits): every N exports during the replay and at the end; -1 only at the end; 0 never")
+	replayRowWaitsBdg = flag.Duration("foldreplay.rowwaits.budget", 20*time.Millisecond, "budget of each UpdateRowWaits during the replay (the live CLI's slice)")
+	replayHeapProfile = flag.String("foldreplay.heapprofile", "", "directory to write a heap profile per mode to, heap-<mode>.pprof")
+	replayBreakdown   = flag.Bool("foldreplay.breakdown", false, "log Fold.Breakdown for folding modes")
 
 	capturePath  = flag.String("foldreplay.capture", os.Getenv("DAGGER_FOLD_CAPTURE"), "capture to record (TestFoldCapture), a .otlp path")
 	captureTrace = flag.String("foldreplay.trace", os.Getenv("DAGGER_FOLD_CAPTURE_TRACE"), "Dagger Cloud trace ID to record")
@@ -38,9 +44,13 @@ var (
 //
 // -foldreplay.root <span ID> replays only that span's subtree, and
 // -foldreplay.modes fold leaves out the full load, which a trace of
-// millions of spans may not fit in memory for. Each flag has an
+// millions of spans may not fit in memory for. Each of these flags has an
 // environment variable too (DAGGER_FOLD_REPLAY, _ROOT, _MODES).
-// TestFoldCapture records a capture.
+//
+// -foldreplay.rowwaits N computes the waiting below rows as the live CLI
+// does, -foldreplay.heapprofile <dir> writes a heap profile per mode (slice
+// it with `go tool pprof -top`), and -foldreplay.breakdown logs what a fold
+// retains and why (Fold.Breakdown). TestFoldCapture records a capture.
 func BenchmarkFoldReplay(b *testing.B) {
 	if *replayPath == "" {
 		b.Skip("no capture to replay: -foldreplay.replay or DAGGER_FOLD_REPLAY")
@@ -54,16 +64,34 @@ func BenchmarkFoldReplay(b *testing.B) {
 	}
 	for _, mode := range modes {
 		b.Run(mode, func(b *testing.B) {
+			opts := Options{
+				Fold:           strings.HasPrefix(mode, "fold"),
+				NoFoldedCalls:  mode == "fold-nocalls",
+				RowWaits:       *replayRowWaits,
+				RowWaitsBudget: *replayRowWaitsBdg,
+				Breakdown:      *replayBreakdown,
+			}
+			if *replayHeapProfile != "" {
+				opts.HeapProfile = filepath.Join(*replayHeapProfile, "heap-"+mode+".pprof")
+			}
 			var res Result
 			for b.Loop() {
-				res, err = Measure(b.Context(), tr, mode == "fold")
+				res, err = Measure(b.Context(), tr, opts)
 				require.NoError(b, err)
 			}
 			b.ReportMetric(float64(res.Spans), "spans")
 			b.ReportMetric(res.BytesPerSpan, "B/span")
-			if mode == "fold" {
+			b.ReportMetric(float64(res.Bytes)/1e9, "GB")
+			if opts.RowWaits != 0 {
+				b.ReportMetric(float64(res.RowWaitsBytes)/1e9, "GB-rowwaits-settle")
+			}
+			if opts.Fold {
 				b.ReportMetric(100*res.Retained, "%retained")
 				b.ReportMetric(float64(res.Loads), "loads")
+				b.ReportMetric(float64(res.Stats.StubBytes)/1e9, "GB-stubs")
+			}
+			if res.Breakdown != nil {
+				b.Logf("%s breakdown:\n%s", mode, FormatBreakdown(*res.Breakdown))
 			}
 		})
 	}
@@ -154,10 +182,14 @@ func TestReplay(t *testing.T) {
 			require.NoError(t, err)
 			defer tr.Close()
 			require.Equal(t, n, tr.Len())
-			full, err := Measure(t.Context(), tr, false)
+			full, err := Measure(t.Context(), tr, Options{RowWaits: 4})
 			require.NoError(t, err)
-			folded, err := Measure(t.Context(), tr, true)
+			folded, err := Measure(t.Context(), tr, Options{Fold: true, RowWaits: 4, Breakdown: true,
+				HeapProfile: filepath.Join(t.TempDir(), "heap.pprof")})
 			require.NoError(t, err)
+			require.NotNil(t, folded.Breakdown)
+			require.Equal(t, n, folded.Breakdown.Spans)
+			require.NotEmpty(t, FormatBreakdown(*folded.Breakdown))
 			require.Equal(t, n, full.Spans)
 			require.Greater(t, folded.Retained, 0.0)
 			require.Less(t, folded.Retained, 1.0)

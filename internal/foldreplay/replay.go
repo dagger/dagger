@@ -8,7 +8,10 @@ import (
 	"io"
 	"os"
 	"runtime"
+	"runtime/pprof"
 	"slices"
+	"strings"
+	"time"
 
 	telemetry "github.com/dagger/otel-go"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -176,10 +179,10 @@ type event struct {
 // Replay streams the trace into exp as a live session does: each span's
 // start snapshot at its start, then its last at its end (the trace's end
 // for a span that never ended), in time order, batch events per export.
-// between, if set, runs after each export, e.g. to measure. read returns,
-// for a FoldOptions.Load, the snapshots of ids as a store holds them at the
-// replay's current point.
-func (t *Trace) Replay(ctx context.Context, exp sdktrace.SpanExporter, batch int, between func()) (read func(ids []dagui.SpanID) []sdktrace.ReadOnlySpan, run func() error) {
+// between, if set, runs after each export, e.g. to measure, with the time
+// the replay is at. read returns, for a FoldOptions.Load, the snapshots of
+// ids as a store holds them at the replay's current point.
+func (t *Trace) Replay(ctx context.Context, exp sdktrace.SpanExporter, batch int, between func(now time.Time)) (read func(ids []dagui.SpanID) []sdktrace.ReadOnlySpan, run func() error) {
 	events := make([]event, 0, 2*len(t.spans))
 	index := make(map[[8]byte]int32, len(t.spans))
 	for i, s := range t.spans {
@@ -223,6 +226,7 @@ func (t *Trace) Replay(ctx context.Context, exp sdktrace.SpanExporter, batch int
 	}
 	run = func() error {
 		spans := make([]sdktrace.ReadOnlySpan, 0, batch)
+		var at uint64
 		flush := func() error {
 			if len(spans) == 0 {
 				return nil
@@ -232,11 +236,12 @@ func (t *Trace) Replay(ctx context.Context, exp sdktrace.SpanExporter, batch int
 			}
 			spans = spans[:0]
 			if between != nil {
-				between()
+				between(time.Unix(0, int64(at)))
 			}
 			return nil
 		}
 		for _, ev := range events {
+			at = ev.at
 			if ev.end {
 				ended[ev.i] = true
 			}
@@ -259,32 +264,70 @@ func (t *Trace) Replay(ctx context.Context, exp sdktrace.SpanExporter, batch int
 // Result is a replay's measurement.
 type Result struct {
 	Spans int
-	// BytesPerSpan is the heap the DB holds at the end, per span.
+	// BytesPerSpan is the heap the DB holds at the end, per span, its row
+	// waits included when computed.
 	BytesPerSpan float64
+	// Bytes is that heap in all; RowWaitsBytes the part the final
+	// UpdateRowWaits added (all of the row waits' cache unless computed
+	// during the replay too).
+	Bytes, RowWaitsBytes int64
 	// Retained is the share of spans a folding DB holds in full.
 	Retained float64
 	// Loads counts the spans a folding DB read back.
 	Loads int
+	// Stats and Breakdown are a folding DB's (Breakdown with
+	// Options.Breakdown).
+	Stats     dagui.FoldStats
+	Breakdown *dagui.FoldBreakdown
 }
 
-// Measure replays t into a DB, folding with the live CLI's policy
-// (dagui.RetainRendered, reading folded spans back from the trace) or not,
-// and measures the heap it holds once the replay ends.
-func Measure(ctx context.Context, t *Trace, fold bool) (Result, error) {
+// Options configure a Measure.
+type Options struct {
+	// Fold folds with the live CLI's policy (dagui.RetainRendered),
+	// reading folded spans back from the trace.
+	Fold bool
+	// NoFoldedCalls keeps no call for folded spans
+	// (FoldOptions.NoFoldedCalls), to measure what keeping them costs.
+	NoFoldedCalls bool
+	// RowWaits computes the waiting below rows (DB.UpdateRowWaits), as the
+	// live CLI does: above zero, every RowWaits exports during the replay
+	// with RowWaitsBudget, then settled at the end; below zero, only at
+	// the end.
+	RowWaits       int
+	RowWaitsBudget time.Duration
+	// HeapProfile, if set, is where to write a heap profile at the end.
+	HeapProfile string
+	// Breakdown computes Fold.Breakdown at the end, after measuring.
+	Breakdown bool
+}
+
+// Measure replays t into a DB, folding or not (see Options), and measures
+// the heap it holds once the replay ends.
+func Measure(ctx context.Context, t *Trace, opts Options) (Result, error) {
 	var db *dagui.DB
 	var read func([]dagui.SpanID) []sdktrace.ReadOnlySpan
 	exp := sdktrace.SpanExporter(dbExporter{&db})
-	read, run := t.Replay(ctx, exp, 512, nil)
-	var before, after runtime.MemStats
+	var exports int
+	var between func(time.Time)
+	if opts.RowWaits > 0 {
+		between = func(now time.Time) {
+			if exports++; exports%opts.RowWaits == 0 {
+				db.UpdateRowWaits(now, opts.RowWaitsBudget)
+			}
+		}
+	}
+	read, run := t.Replay(ctx, exp, 512, between)
+	var before, replayed, after runtime.MemStats
 	runtime.GC()
 	runtime.ReadMemStats(&before)
-	if fold {
+	if opts.Fold {
 		db = dagui.NewDB(dagui.WithFold(dagui.FoldOptions{
 			Load: func(ids []dagui.SpanID) {
 				if err := db.ExportSpans(dagui.FoldFill(ctx), read(ids)); err != nil {
 					panic(err)
 				}
 			},
+			NoFoldedCalls: opts.NoFoldedCalls,
 		}))
 	} else {
 		db = dagui.NewDB()
@@ -293,18 +336,71 @@ func Measure(ctx context.Context, t *Trace, fold bool) (Result, error) {
 		return Result{}, err
 	}
 	runtime.GC()
-	runtime.ReadMemStats(&after)
-	res := Result{
-		Spans:        t.Len(),
-		BytesPerSpan: float64(int64(after.HeapAlloc)-int64(before.HeapAlloc)) / float64(t.Len()),
+	runtime.ReadMemStats(&replayed)
+	after = replayed
+	if opts.RowWaits != 0 {
+		// settle, as of the trace's end
+		db.UpdateRowWaits(time.Unix(0, int64(t.end)), 0)
+		runtime.GC()
+		runtime.ReadMemStats(&after)
 	}
+	if opts.HeapProfile != "" {
+		if err := writeHeapProfile(opts.HeapProfile); err != nil {
+			return Result{}, err
+		}
+	}
+	res := Result{
+		Spans:         t.Len(),
+		Bytes:         int64(after.HeapAlloc) - int64(before.HeapAlloc),
+		RowWaitsBytes: int64(after.HeapAlloc) - int64(replayed.HeapAlloc),
+	}
+	res.BytesPerSpan = float64(res.Bytes) / float64(t.Len())
 	if f := db.Fold(); f != nil {
-		stats := f.Stats()
-		res.Retained = float64(stats.Retained) / float64(stats.Spans)
+		res.Stats = f.Stats()
+		res.Retained = float64(res.Stats.Retained) / float64(res.Stats.Spans)
 		res.Loads = f.Loads
+		if opts.Breakdown {
+			bd := f.Breakdown()
+			res.Breakdown = &bd
+		}
 	}
 	runtime.KeepAlive(db)
 	return res, nil
+}
+
+func writeHeapProfile(path string) error {
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	// the profile is as of the last GC, which Measure just ran
+	if err := pprof.WriteHeapProfile(f); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
+}
+
+// FormatBreakdown renders a Fold.Breakdown: the retained spans by reason,
+// and what each variant of the policy would retain, and why.
+func FormatBreakdown(bd dagui.FoldBreakdown) string {
+	var sb strings.Builder
+	pct := func(n int) float64 { return 100 * float64(n) / float64(max(bd.Spans, 1)) }
+	fmt.Fprintf(&sb, "retained %d of %d spans (%.1f%%), %d calls kept for folded spans\n", bd.Retained, bd.Spans, pct(bd.Retained), bd.FoldedCalls)
+	sb.WriteString("reasons (first that applies):\n")
+	for _, r := range bd.Reasons {
+		if r.Spans > 0 {
+			fmt.Fprintf(&sb, "  %9d  %5.1f%%  %s\n", r.Spans, pct(r.Spans), r.Name)
+		}
+	}
+	sb.WriteString("what-ifs:\n")
+	for _, w := range bd.WhatIf {
+		fmt.Fprintf(&sb, "  %9d  %5.1f%%  %s\n", w.Spans, pct(w.Spans), w.Name)
+		for _, r := range bd.WhatIfReasons[w.Name] {
+			fmt.Fprintf(&sb, "      %9d  %5.1f%%  %s\n", r.Spans, pct(r.Spans), r.Name)
+		}
+	}
+	return sb.String()
 }
 
 type dbExporter struct{ db **dagui.DB }
