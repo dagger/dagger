@@ -3,7 +3,9 @@ package core
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -334,4 +336,96 @@ func TestFetchPooled(t *testing.T) {
 			require.Equal(t, tc.fetched, fetched)
 		})
 	}
+}
+
+// gitSparseTestPartialMirror is a blobless mirror of a one-commit source
+// holding the commit's trees and only the contents of held, as a sparse tree
+// leaves the engine's mirror. It returns the mirror, the commit and each
+// path's object ID.
+func gitSparseTestPartialMirror(t *testing.T, held ...string) (mirror, sha string, oids map[string]string) {
+	t.Helper()
+	source := t.TempDir()
+	gitMirrorTestRun(t, source, "init", "--quiet", "--initial-branch=main")
+	for _, p := range []string{"held.txt", "missing.txt", "dir/also-missing.txt"} {
+		require.NoError(t, os.MkdirAll(filepath.Join(source, filepath.Dir(p)), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(source, p), []byte("contents of "+p+"\n"), 0o644))
+	}
+	gitMirrorTestRun(t, source, "add", "-A")
+	gitMirrorTestRun(t, source, "-c", "user.name=Dagger", "-c", "user.email=dagger@localhost", "commit", "--quiet", "-m", "base")
+	gitMirrorTestRun(t, source, "config", "uploadpack.allowFilter", "true")
+	gitMirrorTestRun(t, source, "config", "uploadpack.allowAnySHA1InWant", "true")
+	sha = gitMirrorTestRun(t, source, "rev-parse", "HEAD")
+	oids = map[string]string{}
+	for _, p := range []string{"held.txt", "missing.txt", "dir/also-missing.txt"} {
+		oids[p] = gitMirrorTestRun(t, source, "rev-parse", "HEAD:"+p)
+	}
+
+	mirror = t.TempDir()
+	gitMirrorTestRun(t, mirror, "init", "--bare", "--quiet")
+	gitMirrorTestRun(t, mirror, "remote", "add", "origin", "file://"+source)
+	gitMirrorTestRun(t, mirror, "config", "extensions.partialClone", "origin")
+	gitMirrorTestRun(t, mirror, "config", "remote.origin.promisor", "true")
+	gitMirrorTestRun(t, mirror, "config", "remote.origin.partialCloneFilter", "blob:none")
+	gitMirrorTestRun(t, mirror, "fetch", "--quiet", "--filter=blob:none", "--depth=1", "origin", sha)
+	for _, p := range held {
+		gitMirrorTestRun(t, mirror, "-c", "fetch.negotiationAlgorithm=noop", "fetch", "--quiet", "--no-tags", "--no-write-fetch-head", "--filter=blob:none", "origin", oids[p])
+	}
+	return mirror, sha, oids
+}
+
+// TestGitTreeFilesAsksOnlyAboutTheObjectsItFetches asserts that reading a
+// commit's tree in a blobless mirror lists the tree and asks the mirror about
+// the contents a fetch would take, and no more: not every object of the
+// commit, which on an empty mirror is all of them. What it would fetch is
+// exactly the contents the mirror lacks.
+func TestGitTreeFilesAsksOnlyAboutTheObjectsItFetches(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	mirror, sha, oids := gitSparseTestPartialMirror(t, "held.txt")
+
+	type run struct {
+		args  []string
+		stdin string
+	}
+	var runs []run
+	git := gitutil.NewGitCLI(gitutil.WithGitDir(mirror), gitutil.WithEnv("GIT_NO_LAZY_FETCH=1"),
+		gitutil.WithExec(func(_ context.Context, cmd *exec.Cmd) error {
+			r := run{args: slices.Clone(cmd.Args)}
+			if cmd.Stdin != nil {
+				in, err := io.ReadAll(cmd.Stdin)
+				if err != nil {
+					return err
+				}
+				r.stdin = string(in)
+				cmd.Stdin = strings.NewReader(r.stdin)
+			}
+			runs = append(runs, r)
+			return cmd.Run()
+		}))
+	commands := func() []string {
+		var out []string
+		for _, r := range runs {
+			out = append(out, strings.Join(r.args[1:], " "))
+		}
+		return out
+	}
+
+	files, err := loadGitTreeFiles(ctx, &RemoteGitRepository{URL: &gitutil.GitURL{Scheme: "file", Path: mirror}}, git, sha)
+	require.NoError(t, err)
+	require.True(t, files.Has("dir/also-missing.txt"))
+	for _, c := range commands() {
+		require.NotContains(t, c, "rev-list", "reading the tree must not walk the commit's objects")
+	}
+
+	// Contents the mirror holds need nothing fetched, and only they are asked about.
+	runs = nil
+	require.NoError(t, files.Fetch(ctx, []string{"held.txt", "no/such/path"}))
+	require.Len(t, runs, 1, "commands run: %v", commands())
+	require.Contains(t, strings.Join(runs[0].args, " "), "cat-file --batch-check")
+	require.Equal(t, oids["held.txt"]+"\n", runs[0].stdin)
+
+	// What a fetch of all three would take is the two the mirror lacks.
+	lacking, err := gitMissingObjects(ctx, git, []string{oids["held.txt"], oids["missing.txt"], oids["dir/also-missing.txt"]})
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{oids["missing.txt"], oids["dir/also-missing.txt"]}, lacking)
 }
