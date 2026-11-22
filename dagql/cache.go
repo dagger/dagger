@@ -3344,6 +3344,12 @@ type sharedResult struct {
 	// persistedEnvelope then has only the envelope's small fields. Guarded
 	// by egraphMu, and set under payloadMu too.
 	stored *storedBody
+	// partFacts are, on a blob-backed cache, the parts of the entry's stored
+	// record with its frame, whole or compressed, made with the record or
+	// the frame and replaced with either (cache_stored_body.go); nil without
+	// a stored record. Guarded by egraphMu, and set under payloadMu too, for
+	// a save that reads them with the record (loadPayloadState).
+	partFacts *partFacts
 	// changedAt is, on a blob-backed cache, the write count (Cache.writes)
 	// of the last write that changed what a stored bundle carries of the
 	// entry (stampEntryLocked), and stampCause what that write was
@@ -3670,6 +3676,7 @@ type sharedResultPayloadState struct {
 	objClass              objectClassRef
 	persistedEnvelope     *PersistedResultEnvelope
 	stored                *storedBody
+	partFacts             *partFacts
 	snapshotOwnerLinks    []PersistedSnapshotRefLink
 	createdAtUnixNano     int64
 	lastUsedAtUnixNano    int64
@@ -3757,6 +3764,7 @@ func (res *sharedResult) loadPayloadState() sharedResultPayloadState {
 		objClass:              res.objClass,
 		persistedEnvelope:     res.persistedEnvelope,
 		stored:                res.stored,
+		partFacts:             res.partFacts,
 		snapshotOwnerLinks:    cloneSnapshotRefLinks(res.snapshotOwnerLinks),
 		createdAtUnixNano:     res.createdAtUnixNano,
 		lastUsedAtUnixNano:    res.lastUsedAtUnixNano,

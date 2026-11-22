@@ -282,14 +282,7 @@ func (c *Cache) heldPartLocked(res *sharedResult, key string, nowUnix int64) (Pa
 		}
 	}
 	for _, candidate := range candidates {
-		if candidate.persistedEnvelope == nil {
-			continue
-		}
-		declared, err := candidate.declaredPartsLocked()
-		if err != nil {
-			continue
-		}
-		for _, part := range declared {
+		for _, part := range candidate.declaredPartsLocked() {
 			if part.key == key && part.state == "absent" {
 				return PartAvailability{State: PartAbsent, Donor: uint64(candidate.id), ValidUntilUnix: validUntil}, true
 			}

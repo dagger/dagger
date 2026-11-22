@@ -56,9 +56,7 @@ func newHolderTestClass(t *testing.T) *holderTestClass {
 	defer cloud.egraphMu.RUnlock()
 	mRes := cloud.resultsByID[sharedResultID(h.m)]
 	require.Empty(t, mRes.storedParts)
-	declared, err := mRes.declaredPartsLocked()
-	require.NoError(t, err)
-	for _, part := range declared {
+	for _, part := range mRes.declaredPartsLocked() {
 		require.NotEqual(t, "absent", part.state, "M marks %s absent", part.key)
 	}
 	return h

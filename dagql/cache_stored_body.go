@@ -22,12 +22,20 @@ import (
 
 // A blob-backed cache, the Cloud, never decodes a stored value: it indexes,
 // chooses, sends and saves records. So it holds each stored record's envelope
-// in transfer form as compressed JSON (storedBody), beside the facts its
-// readers need without it: the entries its references name, which a bundle
-// checks, and the parts it declares absent or pending, which part answers and
-// borrowing read. Its persistedEnvelope keeps only the envelope's small
-// fields (lightStoredEnvelope), which tell a stored value by its presence and
-// its kind.
+// in transfer form as compressed JSON (storedBody), beside the entries its
+// references name, which a bundle checks. Its persistedEnvelope keeps only
+// the envelope's small fields (lightStoredEnvelope), which tell a stored
+// value by its presence and its kind.
+//
+// Every entry with a stored record keeps the record's parts too
+// (sharedResult.partFacts): those it declares absent or pending, which part
+// answers, change marks and borrowing read, and those it proves complete,
+// which a bundle carries and a merge's check of a held row reads. They are
+// worked out where the record or its frame is made, outside every lock, by
+// code that reads the record there anyway: a merge's preparation, a taught
+// content digest's, a restore. They are the record's whatever form it is
+// held in, whole or compressed, and are replaced with it or its frame. No
+// reader decodes a record for its parts.
 //
 // The body holds the record's call frame too, compressed, once the body
 // worker has made it, and the entry then holds no decoded frame
@@ -44,11 +52,11 @@ import (
 // (encodePersistedResultRow), and a restore takes it back without decoding
 // it.
 //
-// A merge installs a record whole, as on an engine. The cache's body worker
-// compresses it after the merge, outside every lock (storedBodyWorker), so a
-// merge's commit costs what it did. Until then the entry holds its whole
-// envelope, and its readers take either (storedRecordLocked,
-// declaredPartsLocked).
+// A merge installs a record whole, as on an engine, with its parts. The
+// cache's body worker compresses it after the merge, outside every lock
+// (storedBodyWorker), so a merge's commit costs what it did. Until then the
+// entry holds its whole envelope, and its readers take either
+// (storedRecordLocked).
 
 // storedBodyLevel is the zstd level stored envelopes are compressed at: the
 // default level, at which bodies of the service's saved stores measured 0.9
@@ -95,22 +103,60 @@ type storedBody struct {
 	frameBytes int64
 	recipe     digest.Digest
 	// call is, while the body holds no frame, the decoded frame the body was
-	// made with. refs and parts are of the record and its frame: the entries
-	// the record's child and call references name, sorted, and the parts it
-	// declares absent or pending. An entry's decoded call can be replaced
-	// after (storedFactsLocked); a frame the body holds is replaced only with
-	// the body.
-	call  *ResultCall
-	refs  []uint64
-	parts []declaredPart
-	// complete are the parts the record proves complete
-	// (memoRecordCompletePartKeys), which a bundle carries beside the
-	// declared ones (TransferredValue.Parts): the copy of their set every
-	// body of that set shares (sharedPartKeys), nil for none.
-	complete *partKeySet
+	// made with, and refs are the entries the record's child and call
+	// references name, sorted, of the record and that frame. A frame that
+	// replaces the entry's replaces its body too (teachContentDigest).
+	call *ResultCall
+	refs []uint64
 	// size is the entry's value's encoded size in a bundle, once StoredSizes
 	// has measured it, with what else it read.
 	size atomic.Pointer[storedValueSize]
+}
+
+// partFacts are a stored record's parts, as its readers read them without
+// decoding it (cache_stored_body.go): those it declares absent or pending,
+// and those it proves complete (memoRecordCompletePartKeys), the copy of
+// their set every record of that set shares (sharedPartKeys), nil for none.
+// They are replaced, never changed in place.
+type partFacts struct {
+	declared []declaredPart
+	complete *partKeySet
+}
+
+// declaredParts returns the parts the record declares absent or pending,
+// none for nil facts.
+func (f *partFacts) declaredParts() []declaredPart {
+	if f == nil {
+		return nil
+	}
+	return f.declared
+}
+
+// completeParts returns the parts the record proves complete, nil for nil
+// facts.
+func (f *partFacts) completeParts() *partKeySet {
+	if f == nil {
+		return nil
+	}
+	return f.complete
+}
+
+// recordPartFacts are the parts of rec, a stored record held whole, as its
+// outputs map them and its parts describe them, each payload decoded once. A
+// record that can't be mapped, or with an output at an address that has no
+// key, declares none, as its answers read it when they decoded it.
+func recordPartFacts(rec PersistedRecord) *partFacts {
+	memos := payloadMemos{}
+	parts := &partFacts{complete: sharedPartKeys(memoRecordCompletePartKeys(rec, memos))}
+	if outputs, err := mapMemoTransferredOutputs(rec, memos); err == nil {
+		parts.declared, _ = declaredPartsOf(outputs)
+	}
+	return parts
+}
+
+// storedTransferPartFacts are the parts of a record normalized for transfer.
+func storedTransferPartFacts(kept *storedTransferRecord) *partFacts {
+	return &partFacts{declared: kept.parts, complete: kept.complete}
 }
 
 // declaredPart is one part a stored record declares absent or pending: its
@@ -141,18 +187,19 @@ func newStoredBody(res *sharedResult, env *PersistedResultEnvelope, call *Result
 	if err != nil {
 		return nil, err
 	}
-	return compressStoredBody(raw, call, kept.refs, kept.parts, kept.complete)
+	return compressStoredBody(raw, call, kept.refs)
 }
 
-// compressStoredBody is a body of the envelope JSON raw and its facts.
-func compressStoredBody(raw []byte, call *ResultCall, refs []uint64, parts []declaredPart, complete *partKeySet) (*storedBody, error) {
+// compressStoredBody is a body of the envelope JSON raw, made with call,
+// whose references name refs.
+func compressStoredBody(raw []byte, call *ResultCall, refs []uint64) (*storedBody, error) {
 	enc, _, err := storedBodyCodec()
 	if err != nil {
 		return nil, err
 	}
 	// EncodeAll's own buffer has the input's capacity: the body keeps a copy
 	// of what it used.
-	return &storedBody{envelope: bytes.Clone(enc.EncodeAll(raw, nil)), envelopeBytes: int64(len(raw)), call: call, refs: refs, parts: parts, complete: complete}, nil
+	return &storedBody{envelope: bytes.Clone(enc.EncodeAll(raw, nil)), envelopeBytes: int64(len(raw)), call: call, refs: refs}, nil
 }
 
 // withFrame returns a body of b's record with call, the entry's decoded
@@ -196,8 +243,6 @@ func (b *storedBody) withFrameEncoded(c *Cache, call *ResultCall, enc *zstd.Enco
 		frameBytes:    int64(len(raw)),
 		recipe:        recipe,
 		refs:          b.refs,
-		parts:         b.parts,
-		complete:      b.complete,
 	}, nil
 }
 
@@ -245,20 +290,24 @@ func transferFormIsTheFrame(call *ResultCall) bool {
 }
 
 // reframe returns a body of b's record with frame, the decoded frame that
-// replaces the one b holds, its facts worked out again, and the frame held in
-// it if it can be (withFrame). Deriving reads the cache, so the caller holds
-// no lock.
-func (b *storedBody) reframe(c *Cache, id sharedResultID, frame *ResultCall) (*storedBody, error) {
+// replaces the entry's, its references worked out again, and the frame held
+// in it if it can be (withFrame), with the record's parts for frame.
+// Deriving reads the cache, so the caller holds no lock.
+func (b *storedBody) reframe(c *Cache, id sharedResultID, frame *ResultCall) (*storedBody, *partFacts, error) {
 	rec, err := b.record(uint64(id))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	kept, err := normalizeStoredTransfer(&sharedResult{id: id}, &rec.Envelope, frame)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	next := &storedBody{envelope: b.envelope, envelopeBytes: b.envelopeBytes, call: frame, refs: kept.refs, parts: kept.parts, complete: kept.complete}
-	return next.withFrame(c, frame)
+	next := &storedBody{envelope: b.envelope, envelopeBytes: b.envelopeBytes, call: frame, refs: kept.refs}
+	next, err = next.withFrame(c, frame)
+	if err != nil {
+		return nil, nil, err
+	}
+	return next, storedTransferPartFacts(kept), nil
 }
 
 // holdsFrame reports whether there is a body and it holds the frame.
@@ -414,7 +463,8 @@ func lightStoredEnvelope(env *PersistedResultEnvelope) *PersistedResultEnvelope 
 
 // setStoredBodyLocked makes body res's stored record: res keeps the light
 // envelope of env, and no kept transfer record. A body that holds the frame
-// is the entry's frame: res keeps no decoded one. Requires egraphMu for
+// is the entry's frame: res keeps no decoded one. The record's parts are
+// res's already, the record being the same (partFacts). Requires egraphMu for
 // writing, or an entry no reader can reach yet.
 func (c *Cache) setStoredBodyLocked(res *sharedResult, env *PersistedResultEnvelope, body *storedBody) {
 	// A size measured for the same record and call is the body's: a value is
@@ -479,29 +529,6 @@ func (s sharedResultPayloadState) wholeEnvelope(number uint64) (*PersistedResult
 	return &rec.Envelope, nil
 }
 
-// storedFactsLocked returns the facts of res's compressed record: the
-// entries its references name and the parts it declares. They are its
-// body's, unless its decoded call was replaced since the body was made, as
-// teaching it a digest does: then they are worked out again from the body
-// and the call. A body that holds the frame is replaced with it, so its
-// facts are the frame's. Requires egraphMu.
-func (res *sharedResult) storedFactsLocked() ([]uint64, []declaredPart, *partKeySet, error) {
-	body := res.stored
-	call := res.loadResultCall()
-	if body.frame != nil || body.call == call {
-		return body.refs, body.parts, body.complete, nil
-	}
-	rec, err := body.record(uint64(res.id))
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	kept, err := normalizeStoredTransfer(&sharedResult{id: res.id}, &rec.Envelope, call)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	return kept.refs, kept.parts, kept.complete, nil
-}
-
 // holdsPartLocked reports whether res holds the part whose address key is
 // key for its class: it stores the part, or its stored record marks it
 // absent. Only a holder answers for a part (AvailablePart), so only a write
@@ -524,16 +551,9 @@ func (c *Cache) holdsAnyPartLocked(res *sharedResult) bool {
 
 // marksAbsentLocked reports whether res's stored record marks absent a part
 // whose address key match accepts, as AvailablePart reads absent marks: from
-// a record kept as an envelope, its declared parts. Requires egraphMu.
+// the record's parts (partFacts). Requires egraphMu.
 func (res *sharedResult) marksAbsentLocked(match func(key string) bool) bool {
-	if res.persistedEnvelope == nil {
-		return false
-	}
-	declared, err := res.declaredPartsLocked()
-	if err != nil {
-		return false
-	}
-	for _, part := range declared {
+	for _, part := range res.declaredPartsLocked() {
 		if part.state == "absent" && match(part.key) {
 			return true
 		}
@@ -542,21 +562,10 @@ func (res *sharedResult) marksAbsentLocked(match func(key string) bool) bool {
 }
 
 // declaredPartsLocked returns the parts res's stored record declares absent
-// or pending: its body's, or mapped from its whole envelope. Requires
-// egraphMu.
-func (res *sharedResult) declaredPartsLocked() ([]declaredPart, error) {
-	if res.stored != nil {
-		_, parts, _, err := res.storedFactsLocked()
-		return parts, err
-	}
-	if res.persistedEnvelope == nil {
-		return nil, nil
-	}
-	outputs, err := mapTransferredOutputs(PersistedRecord{ResultID: uint64(res.id), Envelope: *res.persistedEnvelope, Call: res.loadResultCall()})
-	if err != nil {
-		return nil, err
-	}
-	return declaredPartsOf(outputs)
+// or pending, as res keeps them (partFacts): none without a stored record.
+// Requires egraphMu.
+func (res *sharedResult) declaredPartsLocked() []declaredPart {
+	return res.partFacts.declaredParts()
 }
 
 // The saved row of a blob-backed cache's stored record: its self payload is
@@ -580,7 +589,8 @@ func isStoredRow(payload []byte) bool {
 
 // storedRowHeader is a saved stored record's header: its light envelope, with
 // the parts the cache stores and its decline mark, as an engine's saved
-// envelope carries them, and the body's facts.
+// envelope carries them, the entries the body's references name, and the
+// record's parts (partFacts).
 type storedRowHeader struct {
 	Envelope      PersistedResultEnvelope `json:"envelope"`
 	EnvelopeBytes int64                   `json:"envelopeBytes"`
@@ -598,14 +608,14 @@ type storedRowPart struct {
 
 // encodeStoredRow returns the saved self payload of a stored record: header
 // is its envelope as a save writes it, whose value the body holds.
-func encodeStoredRow(header *PersistedResultEnvelope, body *storedBody) ([]byte, error) {
+func encodeStoredRow(header *PersistedResultEnvelope, body *storedBody, parts *partFacts) ([]byte, error) {
 	h := storedRowHeader{Envelope: *lightStoredEnvelope(header), EnvelopeBytes: body.envelopeBytes, Refs: body.refs}
 	h.Envelope.StoredParts = header.StoredParts
 	h.Envelope.Run, h.Envelope.RunRan = header.Run, header.RunRan
-	for _, part := range body.parts {
+	for _, part := range parts.declaredParts() {
 		h.Parts = append(h.Parts, storedRowPart{Address: part.address, State: part.state, Kind: part.kind})
 	}
-	h.Complete = body.complete.addresses()
+	h.Complete = parts.completeParts().addresses()
 	raw, err := json.Marshal(h)
 	if err != nil {
 		return nil, err
@@ -617,21 +627,21 @@ func encodeStoredRow(header *PersistedResultEnvelope, body *storedBody) ([]byte,
 
 // decodeStoredRow reads a saved stored record's self payload, as
 // encodeStoredRow writes it, with the call its row saved: its envelope as the
-// save wrote it, without its value, and its body.
-func decodeStoredRow(payload []byte, call *ResultCall) (*PersistedResultEnvelope, *storedBody, error) {
+// save wrote it, without its value, its body, and its parts.
+func decodeStoredRow(payload []byte, call *ResultCall) (*PersistedResultEnvelope, *storedBody, *partFacts, error) {
 	if !isStoredRow(payload) {
-		return nil, nil, errors.New("stored row: no mark")
+		return nil, nil, nil, errors.New("stored row: no mark")
 	}
 	payload = payload[1:]
 	n, read := binary.Uvarint(payload)
 	if read <= 0 || n > uint64(len(payload)-read) {
-		return nil, nil, errors.New("stored row: bad header length")
+		return nil, nil, nil, errors.New("stored row: bad header length")
 	}
 	var h storedRowHeader
 	dec := json.NewDecoder(bytes.NewReader(payload[read : read+int(n)]))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&h); err != nil {
-		return nil, nil, fmt.Errorf("stored row header: %w", err)
+		return nil, nil, nil, fmt.Errorf("stored row header: %w", err)
 	}
 	body := &storedBody{
 		envelope:      slices.Clone(payload[read+int(n):]),
@@ -639,23 +649,24 @@ func decodeStoredRow(payload []byte, call *ResultCall) (*PersistedResultEnvelope
 		call:          call,
 		refs:          h.Refs,
 	}
+	parts := &partFacts{}
 	for _, part := range h.Parts {
 		key, err := partAddressKey(part.Address)
 		if err != nil {
-			return nil, nil, fmt.Errorf("stored row part: %w", err)
+			return nil, nil, nil, fmt.Errorf("stored row part: %w", err)
 		}
-		body.parts = append(body.parts, declaredPart{key: key, address: part.Address, state: part.State, kind: part.Kind})
+		parts.declared = append(parts.declared, declaredPart{key: key, address: part.Address, state: part.State, kind: part.Kind})
 	}
 	complete := make([]string, 0, len(h.Complete))
 	for _, address := range h.Complete {
 		key, err := partAddressKey(address)
 		if err != nil {
-			return nil, nil, fmt.Errorf("stored row complete part: %w", err)
+			return nil, nil, nil, fmt.Errorf("stored row complete part: %w", err)
 		}
 		complete = append(complete, key)
 	}
-	body.complete = sharedPartKeys(complete)
-	return &h.Envelope, body, nil
+	parts.complete = sharedPartKeys(complete)
+	return &h.Envelope, body, parts, nil
 }
 
 // holdRestoredFramesCompressed has each restored stored record's body hold
