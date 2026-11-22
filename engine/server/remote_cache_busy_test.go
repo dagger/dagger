@@ -236,3 +236,40 @@ func TestRemoteCacheAdapterCountsItsLooksForReadyRoots(t *testing.T) {
 	require.Equal(t, int64(len(roots)), stats.roots)
 	require.Contains(t, stats.attrs(), "look_time")
 }
+
+// The look for ready roots wakes only for the ends of the rows a waiting
+// root waits on: another row's evaluation ending, as rows end all the time
+// on a busy engine, takes no look. On the ninth whole run's fill the busiest
+// engine looked 126,133 times in 700 s, nearly every time for an end that
+// could free no waiting root.
+func TestRemoteCacheAdapterLooksOnlyWhenARowARootWaitsOnEnds(t *testing.T) {
+	e := newAdapterTestEngine(t)
+	busy := e.busyFile(t, "busy")
+	roots := []uint64{entryNumber(t, busy)}
+	require.NoError(t, e.adapter.Export(e.ctx, protocol.Export{Roots: roots}, nil, func(context.Context, remotecache.Export) error { return nil }))
+
+	took := make(chan []uint64, 1)
+	go func() {
+		if ready, err := e.adapter.TakeReadyRoots(e.ctx); err == nil {
+			took <- ready
+		}
+	}()
+	require.Eventually(t, func() bool {
+		s := e.adapter.readyStats.snapshot()
+		return s.looks >= 2 && s.addWakes >= 1
+	}, 10*time.Second, 5*time.Millisecond, "the looks while the row runs")
+	before := e.adapter.readyStats.snapshot().looks
+
+	other := e.file(t, "other")
+	require.NoError(t, e.cache.Evaluate(e.ctx, other))
+	time.Sleep(200 * time.Millisecond)
+	require.Equal(t, before, e.adapter.readyStats.snapshot().looks, "another row's ends take no look")
+
+	e.bodies.unpause()
+	select {
+	case ready := <-took:
+		require.Equal(t, roots, ready)
+	case <-time.After(10 * time.Second):
+		t.Fatal("the busy root was never handed on as ready")
+	}
+}
