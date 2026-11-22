@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
@@ -183,9 +184,10 @@ func (files *GitTreeFiles) Read(ctx context.Context, p string) ([]byte, error) {
 }
 
 // writeSparseTree writes paths under dest as a checkout of the commit writes
-// them, with Git applying the tree's attributes, along with every directory of
-// the tree and its symlinks. So a path's parents and any symlink resolve as they
-// do in a full checkout, and the only difference is which files are there.
+// them, with Git applying the tree's attributes, along with the tree's
+// symlinks. With the directories writeSparseDirs adds, a path's parents and any
+// symlink resolve as they do in a full checkout, and the only difference is
+// which files are there.
 //
 // It returns the manifest describing every path of the commit.
 func (files *GitTreeFiles) writeSparseTree(ctx context.Context, snapshotRoot string, paths []string) ([]byte, error) {
@@ -219,11 +221,6 @@ func (files *GitTreeFiles) writeSparseTree(ctx context.Context, snapshotRoot str
 	}
 	if err := os.Chmod(dest, rootInfo.Mode().Perm()); err != nil {
 		return nil, err
-	}
-	for p := range files.entries {
-		if err := os.MkdirAll(filepath.Join(dest, filepath.Dir(p)), 0o755); err != nil {
-			return nil, err
-		}
 	}
 
 	var index bytes.Buffer
@@ -267,6 +264,38 @@ func (files *GitTreeFiles) writeSparseTree(ctx context.Context, snapshotRoot str
 	return manifest.Bytes(), nil
 }
 
+// gitSparseDirs returns every directory of a tree with these paths (slash
+// separated, relative to its root), each once and every directory after its
+// parent, so making them in order needs no directory made twice and none made
+// with its parents.
+func gitSparseDirs(paths []string) []string {
+	dirs := map[string]struct{}{}
+	for _, p := range paths {
+		for d := path.Dir(p); d != "." && d != "/"; d = path.Dir(d) {
+			if _, seen := dirs[d]; seen {
+				break
+			}
+			dirs[d] = struct{}{}
+		}
+	}
+	// A directory sorts after its parent, which is a prefix of it.
+	return slices.Sorted(maps.Keys(dirs))
+}
+
+// writeSparseDirs makes every directory of the commit's tree in a sparse tree
+// writeSparseTree wrote: checkout-index has made those of the files it wrote,
+// and this makes the rest. It reads nothing of the mirror, only the commit's
+// listing.
+func (files *GitTreeFiles) writeSparseDirs(snapshotRoot string) error {
+	dest := filepath.Join(snapshotRoot, gitSparseTreeDir)
+	for _, d := range gitSparseDirs(slices.Collect(maps.Keys(files.entries))) {
+		if err := os.Mkdir(filepath.Join(dest, filepath.FromSlash(d)), 0o755); err != nil && !errors.Is(err, os.ErrExist) {
+			return err
+		}
+	}
+	return nil
+}
+
 // SparseTree writes the files plan picks from this commit's tree into a new
 // snapshot, fetching only them. It holds the blobless mirror for all of it,
 // since reading the mirror is all it does, and for few files.
@@ -301,6 +330,12 @@ func (ref *RemoteGitRef) SparseTree(
 		}
 	}()
 	err = MountRef(ctx, checkoutRef, func(root string, _ *mount.Mount) error {
+		// What reads the mirror runs while it's held: the commit's listing, the
+		// plan and the files written out of it. The rest of the snapshot, its
+		// directories and its lists of the commit's paths, needs only the
+		// listing, so it's written after the mirror is released.
+		var written *GitTreeFiles
+		var manifest []byte
 		err := repo.mount(ctx, 1, false, []GitRefBackend{ref}, func(ctx context.Context, git *gitutil.GitCLI) error {
 			files, err := loadGitTreeFiles(ctx, repo, git, ref.SHA)
 			if err != nil {
@@ -313,17 +348,26 @@ func (ref *RemoteGitRef) SparseTree(
 			if err != nil {
 				return err
 			}
-			manifest, err := files.writeSparseTree(ctx, root, paths)
+			manifest, err = files.writeSparseTree(ctx, root, paths)
 			if err != nil {
 				return err
 			}
-			if err := os.WriteFile(filepath.Join(root, gitSparseObjectsFile), files.objectList(), 0o600); err != nil {
-				return err
-			}
-			return os.WriteFile(filepath.Join(root, gitSparseManifestFile), manifest, 0o600)
+			written = files
+			return nil
 		})
 		if err != nil {
 			return err
+		}
+		if written != nil {
+			if err := written.writeSparseDirs(root); err != nil {
+				return err
+			}
+			if err := os.WriteFile(filepath.Join(root, gitSparseObjectsFile), written.objectList(), 0o600); err != nil {
+				return err
+			}
+			if err := os.WriteFile(filepath.Join(root, gitSparseManifestFile), manifest, 0o600); err != nil {
+				return err
+			}
 		}
 		return normalizeGitCheckoutTimes(ctx, root, "")
 	})
