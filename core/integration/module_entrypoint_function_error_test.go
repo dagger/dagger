@@ -260,17 +260,18 @@ func (ModuleSuite) TestModuleEntrypointFunctionErrorValues(ctx context.Context, 
 		WithNewFile("probe.sh", fmt.Sprintf(functionErrorScript, engineutil.FunctionErrorPathEnv, alpineImage, engineutil.MaxFunctionErrorBytes+1)).
 		WithNewFile("nonce", rand.Text())
 	require.NoError(t, mod.AsModuleSource().AsModule().Serve(ctx))
-	callErr := func(t *testctx.T, fn string) (error, map[string]any) {
+	// The call's error's values (its GraphQL extensions), and the error.
+	callErr := func(t *testctx.T, fn string) (map[string]any, error) {
 		t.Helper()
 		_, err := testutil.QueryWithClient[struct{ Probe struct{} }](c, t, "{probe{"+fn+"}}", nil)
 		require.Error(t, err)
 		var extended interface{ Extensions() map[string]any }
 		require.ErrorAs(t, err, &extended)
-		return err, extended.Extensions()
+		return extended.Extensions(), err
 	}
 
 	t.Run("an exec's error is an ExecError", func(ctx context.Context, t *testctx.T) {
-		err, _ := callErr(t, "execError")
+		_, err := callErr(t, "execError")
 		var execErr *core.ExecError
 		require.ErrorAs(t, err, &execErr)
 		require.Equal(t, 7, execErr.ExitCode)
@@ -281,7 +282,7 @@ func (ModuleSuite) TestModuleEntrypointFunctionErrorValues(ctx context.Context, 
 	})
 
 	t.Run("the values the process reported", func(ctx context.Context, t *testctx.T) {
-		err, ext := callErr(t, "data")
+		ext, err := callErr(t, "data")
 		require.Contains(t, err.Error(), "custom failure")
 		require.EqualValues(t, 42, ext["answer"])
 		require.Equal(t, map[string]any{"a": []any{float64(1), float64(2)}}, ext["nested"])
@@ -290,24 +291,24 @@ func (ModuleSuite) TestModuleEntrypointFunctionErrorValues(ctx context.Context, 
 	})
 
 	t.Run("an Error the process reported by ID", func(ctx context.Context, t *testctx.T) {
-		err, ext := callErr(t, "byId")
+		ext, err := callErr(t, "byId")
 		require.Contains(t, err.Error(), "by id")
 		require.EqualValues(t, 42, ext["answer"])
 	})
 
 	t.Run("a text the process reported is the message", func(ctx context.Context, t *testctx.T) {
-		err, ext := callErr(t, "native")
+		ext, err := callErr(t, "native")
 		require.Contains(t, err.Error(), "the function failed")
 		require.NotContains(t, ext, "_type", "no values but its origin: %v", ext)
 	})
 
 	t.Run("a JSON text that is neither form is the message", func(ctx context.Context, t *testctx.T) {
-		err, _ := callErr(t, "jsonText")
+		_, err := callErr(t, "jsonText")
 		require.Contains(t, err.Error(), `{"id": "not_found", "message": "no such droplet"}`)
 	})
 
 	t.Run("a process that reported none", func(ctx context.Context, t *testctx.T) {
-		err, _ := callErr(t, "huge")
+		_, err := callErr(t, "huge")
 		var execErr *core.ExecError
 		require.ErrorAs(t, err, &execErr)
 		require.Equal(t, 5, execErr.ExitCode)
