@@ -201,6 +201,80 @@ func TestCallRecordIsKeptOnce(t *testing.T) {
 	require.Equal(t, 1, calls)
 }
 
+// perClientTestFrame is the call "outer" as client makes it: keyed to the
+// client, as a call with cachePerClient is, and with no extra digest.
+func perClientTestFrame(client string) *ResultCall {
+	frame := callRecordTestFrame("outer")
+	frame.ImplicitInputs = []*ResultCallArg{{Name: PerClientInput.Name, Value: &ResultCallLiteral{Kind: ResultCallLiteralKindString, StringValue: client}}}
+	return frame
+}
+
+// keptCallCount is how many calls the Cloud keeps on its entry number.
+func keptCallCount(cloud *Cache, number uint64) int {
+	entry := storedBundleTestEntry(cloud, number)
+	cloud.egraphMu.RLock()
+	defer cloud.egraphMu.RUnlock()
+	return len(entry.calls)
+}
+
+// A call keyed to the client that made it names its client in its recipe and
+// in its term, so no other client can match it: the Cloud doesn't keep it,
+// and no bundle sends it. The entry still takes the call's expiry, as a
+// local cache's entry takes the earliest of its calls'.
+func TestCallRecordKeyedToItsClientIsNotKept(t *testing.T) {
+	t.Parallel()
+	ctx, cloud := storedPartTestCache(t, WithBlobStore())
+	test := newCallRecordTestOf(t, ctx, cloud, perClientTestFrame("a"))
+	expires := time.Now().Add(time.Hour).Unix()
+	test.attach(t, ctx, test.span(t, true, expires))
+	require.Zero(t, keptCallCount(cloud, test.number))
+	built, err := cloud.StoredBundle(ctx, []uint64{test.number}, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	require.Empty(t, built.Bundle.Calls)
+	require.Zero(t, built.UnsendableCalls)
+	require.Empty(t, built.Partial)
+	var got int64
+	for _, value := range built.Bundle.Values {
+		if value.SenderNumber == test.number {
+			got = value.ExpiresAtUnix
+		}
+	}
+	require.Equal(t, expires, got)
+}
+
+// A store saved while the Cloud still kept calls keyed to their client is
+// restored without them.
+func TestCallRecordKeyedToItsClientIsDroppedOnRestore(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "cloud.db")
+	ctx, cloud := storedPersistenceTestCloud(t, path)
+	test := newCallRecordTestOf(t, ctx, cloud, perClientTestFrame("a"))
+	stored, _, err := cloud.SetStoredPart(ctx, test.number, storedBenchPart(1), 0)
+	require.NoError(t, err)
+	require.True(t, stored)
+	require.NoError(t, cloud.Close(ctx))
+
+	// The row such a Cloud saved.
+	request, err := test.frame.deriveRecipeDigest(test.producer)
+	require.NoError(t, err)
+	pb, err := test.frame.callPB(test.producer)
+	require.NoError(t, err)
+	encoded, err := pb.Encode()
+	require.NoError(t, err)
+	db, _, err := prepareCacheDBs(ctx, path, true)
+	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, `INSERT INTO result_calls (result_id, request_digest, call) VALUES (?, ?, ?)`, test.number, request.String(), encoded)
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	ctx, cloud = storedPersistenceTestCloud(t, path)
+	defer func() { require.NoError(t, cloud.Close(ctx)) }()
+	require.Zero(t, keptCallCount(cloud, test.number))
+	built, err := cloud.StoredBundle(ctx, []uint64{test.number}, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	require.Empty(t, built.Bundle.Calls)
+}
+
 // A span whose encoded call isn't the call it reports attaches its holding,
 // with the call left out.
 func TestCallRecordLeavesOutAMismatchedCall(t *testing.T) {
