@@ -2,7 +2,6 @@ package schema
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -111,14 +110,13 @@ func sparseTreeTestEndSession(t *testing.T, e *transferTestEngine, name string) 
 }
 
 // A later session that loads a Git workspace at a commit the engine already
-// has asks its sparse tree the same questions as the first: does looking a
-// path up in it answer as the full checkout does, where does a filtered read
-// come from, and which files does it select. On a warm engine with no remote
-// cache, the later session gets the first session's answers and reads nothing
-// of the tree: the engine reports no read of it for that session, as it would
-// to the remote cache, and so neither evaluates nor mounts it. A fresh engine
-// served the same answers from another engine's records likewise never
-// unpacks the tree to learn what it holds.
+// has asks its sparse tree the same questions as the first, for detection and
+// the config readers: does looking a path up in it answer as the full checkout
+// does. On a warm engine with no remote cache, the later session gets the
+// first session's answers and reads nothing of the tree: the engine reports no
+// read of it for that session, as it would to the remote cache, and so neither
+// evaluates nor mounts it. A fresh engine served the same answers from another
+// engine's records likewise never unpacks the tree to learn what it holds.
 func TestGitSparseTreeQuestionsReadNothingOfTheTreeInALaterSession(t *testing.T) {
 	t.Parallel()
 	var mu sync.Mutex
@@ -156,18 +154,6 @@ func TestGitSparseTreeQuestionsReadNothingOfTheTreeInALaterSession(t *testing.T)
 		require.NoError(t, err)
 		require.True(t, exists, "a file only the full tree has is looked up there")
 
-		source, err := sparse.ReadSource(ctx, "mod", core.CopyFilter{Include: []string{"dagger.json", "main.go"}})
-		require.NoError(t, err)
-		require.Equal(t, core.GitSparseReadPlanned, source, "a read of what the sparse tree holds")
-		source, err = sparse.ReadSource(ctx, "", core.CopyFilter{Include: []string{"outside/z.txt"}})
-		require.NoError(t, err)
-		require.Equal(t, core.GitSparseReadOwn, source, "a read of a file the sparse tree doesn't hold")
-		files, err := sparse.ReadFiles(ctx, "", core.CopyFilter{Include: []string{"outside/z.txt"}})
-		require.NoError(t, err)
-		require.Equal(t, &core.GitSparseReadFiles{
-			Files: []string{"100644 5555555555555555555555555555555555555555 outside/z.txt"},
-			Dirs:  []string{"outside"},
-		}, files)
 		return root
 	}
 
@@ -202,73 +188,6 @@ func TestGitSparseTreeQuestionsReadNothingOfTheTreeInALaterSession(t *testing.T)
 	require.NotContains(t, secondReads, rootID, "the later session reads nothing of the sparse tree to learn what it holds")
 }
 
-// A read's list of files is as long as what it selects, and a broad read of a
-// large repository's sparse tree selects more than the 1 MiB File.contents
-// persists. Such an answer isn't kept past the sessions that use it, as a
-// large File.contents isn't, so no record holds that many bytes: a later
-// session reads the tree's lists again and gets the same answer, as every
-// session did before the questions were calls. A short answer is kept.
-func TestGitSparseReadFilesOverItsBoundIsAnsweredAgainInALaterSession(t *testing.T) {
-	t.Parallel()
-	e := newTransferTestEngine(t, transferTestSalt(t))
-	entries := []sparseTreeTestEntry{
-		{'f', "100644", strings.Repeat("1", 40), "dagger.toml", "[modules]\n"},
-		{'a', "100644", strings.Repeat("2", 40), "outside/z.txt", "only in the full tree"},
-	}
-	// 16,000 files of about 70 bytes each in the answer: over 1 MiB.
-	for i := range 16000 {
-		entries = append(entries, sparseTreeTestEntry{'a', "100644", fmt.Sprintf("%040x", i), fmt.Sprintf("big/file%05d.txt", i), ""})
-	}
-	sparseTreeTestFixture(t, e, entries)
-	holder := e.session(t, "holder")
-	sparseTreeTestTrees(t, e, holder)
-
-	readFiles := func(ctx context.Context, dir, include string) dagql.AnyResult {
-		t.Helper()
-		root, _ := sparseTreeTestTrees(t, e, ctx)
-		var res dagql.AnyResult
-		require.NoError(t, e.dag.Select(ctx, root, &res, dagql.Selector{Field: "__gitSparseReadFiles", Args: []dagql.NamedInput{
-			{Name: "path", Value: dagql.NewString(dir)},
-			{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(include))},
-		}}))
-		return res
-	}
-	answer := func(res dagql.AnyResult) []string {
-		t.Helper()
-		raw, ok := res.Unwrap().(core.JSON)
-		require.True(t, ok, "the answer is JSON, got %T", res.Unwrap())
-		var files struct{ Files [][]byte }
-		require.NoError(t, json.Unmarshal(raw, &files))
-		paths := make([]string, len(files.Files))
-		for i, f := range files.Files {
-			paths[i] = string(f)
-		}
-		return paths
-	}
-
-	first := e.session(t, "first")
-	small := readFiles(first, "", "outside/z.txt")
-	require.False(t, small.HitCache())
-	large := readFiles(first, "big", "*.txt")
-	require.False(t, large.HitCache())
-	require.Greater(t, len(large.Unwrap().(core.JSON)), fileContentsPersistLimit, "the fixture's answer is over the bound")
-	want := answer(large)
-	require.Len(t, want, 16000)
-	sparseTreeTestEndSession(t, e, "first")
-
-	second := e.session(t, "second")
-	require.True(t, readFiles(second, "", "outside/z.txt").HitCache(), "a short answer is kept after its session ends")
-	again := readFiles(second, "big", "*.txt")
-	require.False(t, again.HitCache(), "an answer over the bound isn't kept after its session ends")
-	require.Equal(t, want, answer(again), "and is answered again, the same")
-
-	// Through the workspace's own question, too: answered, not failed.
-	root, _ := sparseTreeTestTrees(t, e, second)
-	files, err := (&core.GitSparseTree{Root: root}).ReadFiles(second, "big", core.CopyFilter{Include: []string{"*.txt"}})
-	require.NoError(t, err)
-	require.Equal(t, want, files.Files)
-}
-
 // A commit's path can be any bytes, not only UTF-8. A read that selects a file
 // the sparse tree doesn't hold is written from the files ReadFiles lists, so
 // the list must name each file with its own bytes: a path that came back
@@ -288,26 +207,16 @@ func TestGitSparseReadFilesKeepsAPathsBytes(t *testing.T) {
 	require.Equal(t, []string{"100644 " + oid + " outside/caf\xe9.txt"}, files.Files)
 }
 
-// sparseTreeTestReadArgs are the arguments core.GitSparseTree passes a read's
-// question, so that a selection here is the call it makes.
-func sparseTreeTestReadArgs(dir string, include ...string) []dagql.NamedInput {
-	return []dagql.NamedInput{
-		{Name: "path", Value: dagql.NewString(dir)},
-		{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(include...))},
-		{Name: "exclude", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray())},
-		{Name: "gitignore", Value: dagql.NewBoolean(false)},
-	}
-}
-
-// An engine served another engine's records gets that engine's answers about
-// a Git workspace's sparse tree and never evaluates the tree or reads any of
-// its content, as a fresh engine on a same-commit rerun is served them.
+// An engine served another engine's records gets that engine's answers to
+// detection's lookups in a Git workspace's sparse tree and never evaluates the
+// tree or reads any of its content, as a fresh engine on a same-commit rerun is
+// served them.
 //
 // An answer can then send a read to the sparse tree on an engine that can't
 // get the tree's files, where reading the list from them would have failed and
-// sent the read to the full tree. Such a read reads the full tree: a lookup the
-// cache has no answer for, and a read whose file list it has no answer for,
-// give the full tree's answer and never fail.
+// sent the read to the full tree. Such a read reads the full tree, and never
+// fails: a lookup's own read the cache has no answer for, and a read of the
+// workspace's files, whose route comes from the list itself.
 func TestGitSparseTreeOnAnEngineServedAnothersAnswers(t *testing.T) {
 	t.Parallel()
 	salt := transferTestSalt(t)
@@ -324,11 +233,9 @@ func TestGitSparseTreeOnAnEngineServedAnothersAnswers(t *testing.T) {
 	rootA, _ := sparseTreeTestTrees(t, a, a1)
 	require.NoError(t, a.cache.Evaluate(a1, rootA))
 
-	// What A's session asked and read, as detection and a read of the
-	// workspace's files ask: the lookups of dagger.toml and big.bin and
-	// dagger.toml's existence, and a read of outside/z.txt, its route and its
-	// files. It never read dagger.toml's contents, and it asked the route of
-	// a read of outside/y.txt but not its files.
+	// What A's session asked, as detection asks: the lookups of dagger.toml
+	// and big.bin, and dagger.toml's existence. It never read dagger.toml's
+	// contents.
 	sel := func(field string, args ...dagql.NamedInput) dagql.AnyResult {
 		t.Helper()
 		var res dagql.AnyResult
@@ -340,10 +247,6 @@ func TestGitSparseTreeOnAnEngineServedAnothersAnswers(t *testing.T) {
 		sel("__gitSparseCovers", path("dagger.toml")),
 		sel("__gitSparseCovers", path("mod/big.bin")),
 		sel("exists", path("dagger.toml")),
-		sel("__gitSparseReadSource", sparseTreeTestReadArgs("", "outside/z.txt")...),
-		sel("__gitSparseReadFiles", sparseTreeTestReadArgs("", "outside/z.txt")...),
-		sel("__gitSparseReadSource", sparseTreeTestReadArgs("", "outside/y.txt")...),
-		sel("__gitSparseReadSource", sparseTreeTestReadArgs("mod", "dagger.json")...),
 	}
 
 	b := newTransferTestEngine(t, salt)
@@ -375,12 +278,6 @@ func TestGitSparseTreeOnAnEngineServedAnothersAnswers(t *testing.T) {
 		_, exists, err = fs.Exists(b1, "mod/big.bin")
 		require.NoError(t, err)
 		require.True(t, exists, "a file only the full tree has is looked up there")
-		source, err := sparse.ReadSource(b1, "", core.CopyFilter{Include: []string{"outside/z.txt"}})
-		require.NoError(t, err)
-		require.Equal(t, core.GitSparseReadOwn, source)
-		files, err := sparse.ReadFiles(b1, "", core.CopyFilter{Include: []string{"outside/z.txt"}})
-		require.NoError(t, err)
-		require.Equal(t, []string{"100644 " + strings.Repeat("5", 40) + " outside/z.txt"}, files.Files)
 		require.Zero(t, provider.Reads.Load(), "no chain of the sparse tree's is read")
 		require.True(t, dagql.HasPendingLazyComputation(root), "the sparse tree is never evaluated")
 
@@ -391,8 +288,8 @@ func TestGitSparseTreeOnAnEngineServedAnothersAnswers(t *testing.T) {
 		data, err := fs.ReadFile(b1, "dagger.toml")
 		require.NoError(t, err)
 		require.Equal(t, "[modules.mod]\nsource = \"mod\"\n", string(data))
-		// And a read whose route the cache answers but whose files it
-		// doesn't reads the full tree.
+		// And a read of the workspace's files, whose route needs the list:
+		// one a tree of its own would serve, and one this tree would.
 		got, err := gitSparseReadRoot(b1, b.dag, sparse, dagql.Result[*core.GitRef]{}, full, "", core.CopyFilter{Include: []string{"outside/y.txt"}}, false)
 		require.NoError(t, err)
 		gotID, ok := dagql.CacheResultNumber(got)
@@ -400,10 +297,6 @@ func TestGitSparseTreeOnAnEngineServedAnothersAnswers(t *testing.T) {
 		fullID, ok := dagql.CacheResultNumber(full)
 		require.True(t, ok)
 		require.Equal(t, fullID, gotID, "the read comes from the full tree")
-		// And a read of a directory whose route the cache answers "planned".
-		source, err = sparse.ReadSource(b1, "mod", core.CopyFilter{Include: []string{"dagger.json"}})
-		require.NoError(t, err)
-		require.Equal(t, core.GitSparseReadPlanned, source)
 		got, err = gitSparseReadRoot(b1, b.dag, sparse, dagql.Result[*core.GitRef]{}, full, "mod", core.CopyFilter{Include: []string{"dagger.json"}}, false)
 		require.NoError(t, err)
 		gotID, ok = dagql.CacheResultNumber(got)
