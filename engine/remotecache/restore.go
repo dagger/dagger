@@ -244,6 +244,8 @@ type restoreFile struct {
 	entries    protocol.EntryNumbers
 	complete   [][]dagql.PersistedPartAddress
 	placed     map[uint64]struct{}
+	// fetch are each part's parts to fetch ahead once it commits.
+	fetch [][]protocol.SetFileFetch
 	// kept is how many bytes of its answer the process keeps, for a later
 	// connection's restore of it (restoredFiles).
 	kept int
@@ -485,6 +487,7 @@ func (r *restorer) open(f *restoreFile) error {
 	f.parts = parts
 	for _, part := range header.Parts {
 		f.unretained = append(f.unretained, part.Unretained)
+		f.fetch = append(f.fetch, part.Fetch)
 	}
 	f.report.PeakBefore = r.s.cfg.peakRSS()
 	if len(parts) > 0 {
@@ -630,6 +633,7 @@ func (r *restorer) mergePart(ctx context.Context, f *restoreFile) error {
 		return fmt.Errorf("part %d: %w", f.next, err)
 	}
 	f.noteEntries(bundle, reply)
+	r.planFetches(ctx, f.fetch[f.next], reply)
 	committed := time.Unix(0, reply.EngineTimeUnixNano)
 	f.next++
 	f.result.Parts++
@@ -655,6 +659,23 @@ func (r *restorer) mergePart(ctx context.Context, f *restoreFile) error {
 	r.lateMisses(reply, &part)
 	f.report.Parts = append(f.report.Parts, part)
 	return nil
+}
+
+// planFetches plans, for a committed part, the fetches ahead its header
+// names, on the entries its records landed on.
+func (r *restorer) planFetches(ctx context.Context, fetches []protocol.SetFileFetch, reply dagql.MergeReply) {
+	if len(fetches) == 0 {
+		return
+	}
+	numbers := make(map[dagql.TransferOrdinal]uint64, len(reply.Values))
+	for _, value := range reply.Values {
+		numbers[value.Ordinal] = value.Number
+	}
+	for _, fetch := range fetches {
+		if number, ok := numbers[fetch.Ordinal]; ok {
+			r.s.adapter.PlanPartFetch(ctx, number, fetch.Part)
+		}
+	}
 }
 
 // noteEntries records, for a committed part, the entry each record it

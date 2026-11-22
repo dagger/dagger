@@ -52,6 +52,18 @@ type SetFilePart struct {
 	Bytes      int64                   `json:"bytes"`
 	Records    int                     `json:"records"`
 	Unretained []dagql.TransferOrdinal `json:"unretained,omitempty"`
+	// Fetch are parts of the part's records that the set's runs read
+	// (dagql.PartRead with a session), for the engine to fetch ahead once it
+	// has merged the part (dagql.Cache.PlanPartFetch).
+	Fetch []SetFileFetch `json:"fetch,omitempty"`
+}
+
+// SetFileFetch is one part to fetch ahead, at once: the record of the part's
+// bundle with Ordinal, and its part Part, as a read names it (at any of the
+// record's output paths), or the whole record when Part is empty.
+type SetFileFetch struct {
+	Ordinal dagql.TransferOrdinal `json:"ordinal"`
+	Part    dagql.PartKey         `json:"part,omitempty"`
 }
 
 // EncodeSetFilePart encodes a bundle as a set file's part with enc, and
