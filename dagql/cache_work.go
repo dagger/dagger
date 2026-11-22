@@ -329,3 +329,39 @@ func gatherGraphLockWait(ctx context.Context, lw wcprof.LockWait) {
 		w.add(lw)
 	}
 }
+
+// hitLoad gathers, for a hit's span (CacheDecision), what the hit's own work
+// after its lookup waited for and what its load decoded: its waits for the
+// graph lock, by the kind of writer that let each in; its waits for another
+// caller's decode of an entry it loads, and for an entry's dependency
+// attachment; and the entries its load decoded, its own value and the
+// results its payload references that weren't decoded yet. Only a wait and a
+// decode touch it.
+type hitLoad struct {
+	graph          graphLockWaits
+	decode, attach atomic.Int64
+	decoded        atomic.Int64
+}
+
+// waits is what the hit's own work waited for, by kind: "graph.<writer>" for
+// the graph lock, with the writer named as LookupLockWaits names it,
+// "decode" for another caller's decode and "attach" for a dependency
+// attachment. Nil when it waited for nothing.
+func (l *hitLoad) waits() map[string]time.Duration {
+	var out map[string]time.Duration
+	add := func(kind string, d time.Duration) {
+		if d <= 0 {
+			return
+		}
+		if out == nil {
+			out = map[string]time.Duration{}
+		}
+		out[kind] += d
+	}
+	for writer, d := range l.graph.byHolder() {
+		add("graph."+writer, d)
+	}
+	add("decode", time.Duration(l.decode.Load()))
+	add("attach", time.Duration(l.attach.Load()))
+	return out
+}

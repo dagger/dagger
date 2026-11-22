@@ -2,6 +2,7 @@ package dagql
 
 import (
 	"context"
+	"time"
 
 	"github.com/opencontainers/go-digest"
 
@@ -71,6 +72,21 @@ type CacheDecision struct {
 	// LookupAtUnixNano is the time the lookup chose its candidates, under
 	// egraphMu; 0 when no lookup ran.
 	LookupAtUnixNano int64
+
+	// HitLoadedAtUnixNano is when the hit's value was loaded: its payload,
+	// and those of the results it references, decoded where they weren't yet
+	// (ensurePersistedHitValueLoaded). HitServedAtUnixNano is when the cache
+	// handed the hit back, its retention edge and the session's record of it
+	// done. With LookupAtUnixNano and the span's start and end they split a
+	// hit's own time into its lookup, its load, its serving and the span's
+	// end. 0 when not reached. Meaningful only for hits.
+	HitLoadedAtUnixNano int64
+	HitServedAtUnixNano int64
+
+	// hitLoad gathers what the hit's own work after its lookup waited for,
+	// and what its load decoded (HitLoad), from the lookup's choice of the
+	// hit on; nil for a call that didn't hit.
+	hitLoad *hitLoad
 
 	// MissIncompatibleCandidates records that the lookup's post-expiry
 	// candidate set was non-empty but no candidate satisfied this session's
@@ -194,6 +210,28 @@ func (ev *CacheDecision) ResultState(ctx context.Context, res AnyResult) (CacheR
 		return CacheResultState{}, false
 	}
 	return ev.cache.resultState(ctx, shared, ev.pendingEdge)
+}
+
+// HitLoad is what a hit's own work after its lookup did, as its span reports
+// it: how many entries its load decoded, its own value if it wasn't decoded
+// yet and the results its payload references that weren't either, and what
+// its work waited for, to the span's end, by kind: "graph.<writer>" for the
+// cache's graph lock, by the kind of writer whose release let each wait in,
+// named as LookupLockWaits names them; "decode" for another caller's decode
+// of an entry the hit loads; and "attach" for an entry's dependency
+// attachment. Waits is nil when it waited for nothing.
+type HitLoad struct {
+	Decoded int64
+	Waits   map[string]time.Duration
+}
+
+// HitLoad is what the hit's own work after its lookup did so far; zero for
+// a call that didn't hit.
+func (ev *CacheDecision) HitLoad() HitLoad {
+	if ev == nil || ev.hitLoad == nil {
+		return HitLoad{}
+	}
+	return HitLoad{Decoded: ev.hitLoad.decoded.Load(), Waits: ev.hitLoad.waits()}
 }
 
 // NewCacheDecision returns an empty carrier with its index sentinel set.
