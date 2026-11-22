@@ -12,42 +12,55 @@ import (
 // before the watcher takes one wake it once.
 type busyEnds struct {
 	mu      sync.Mutex
-	watches map[chan struct{}]struct{}
+	watches map[*busyWatch]struct{}
+}
+
+// busyWatch is one watch of busy rows' ends: its channel, and which rows'
+// ends it wants.
+type busyWatch struct {
+	ch    chan struct{}
+	wants func(row uint64) bool
 }
 
 // WatchBusyEnds returns a channel that receives after each end of what
-// keeps a row busy (BusyRows), once for ends that come before it is taken,
-// and a func that ends the watch: each of the cache's lazy evaluation
-// attempts, as a waiter on it is woken, and each row's attachment of its
-// dependencies. A capture such a thing kept a row out of may take the row
-// when the channel receives.
-func (c *Cache) WatchBusyEnds() (<-chan struct{}, func()) {
-	ch := make(chan struct{}, 1)
+// keeps a row busy (BusyRows), for the rows wants says the watcher waits
+// on, once for ends that come before it is taken, and a func that ends the
+// watch: each of the cache's lazy evaluation attempts, as a waiter on it is
+// woken, and each row's attachment of its dependencies. A capture such a
+// thing kept a row out of may take the row when the channel receives. wants
+// is called at every end, of any row, and must be cheap and never call into
+// the cache.
+func (c *Cache) WatchBusyEnds(wants func(row uint64) bool) (<-chan struct{}, func()) {
+	w := &busyWatch{ch: make(chan struct{}, 1), wants: wants}
 	e := &c.busyEnds
 	e.mu.Lock()
 	if e.watches == nil {
-		e.watches = map[chan struct{}]struct{}{}
+		e.watches = map[*busyWatch]struct{}{}
 	}
-	e.watches[ch] = struct{}{}
+	e.watches[w] = struct{}{}
 	e.mu.Unlock()
 	var once sync.Once
-	return ch, func() {
+	return w.ch, func() {
 		once.Do(func() {
 			e.mu.Lock()
-			delete(e.watches, ch)
+			delete(e.watches, w)
 			e.mu.Unlock()
 		})
 	}
 }
 
-// busyEnded wakes the watches of busy rows' ends. It never blocks.
-func (c *Cache) busyEnded() {
+// busyEnded wakes the watches that want row's end of what kept it busy. It
+// never blocks.
+func (c *Cache) busyEnded(row sharedResultID) {
 	e := &c.busyEnds
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	for ch := range e.watches {
+	for w := range e.watches {
+		if !w.wants(uint64(row)) {
+			continue
+		}
 		select {
-		case ch <- struct{}{}:
+		case w.ch <- struct{}{}:
 		default:
 		}
 	}
