@@ -342,6 +342,95 @@ func (WorkspaceSuite) TestGitWorkspaceSparseReadsMatchFullReads(ctx context.Cont
 	}
 }
 
+// TestGitWorkspaceSparseReadsAcrossCommits asserts that a read of a Git
+// workspace's files a commit didn't change is the same call at that commit as
+// at the one before, for a workspace named by its full commit SHA, as CI names
+// one; and that a read of a file the commit changed reads the new commit's
+// file. Two sessions of one engine read the workspace, at base and then at
+// moved, and the engine reports each read's cache outcome to Cloud.
+func (WorkspaceSuite) TestGitWorkspaceSparseReadsAcrossCommits(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	_, partial := sparseWorkspaceRepo(ctx, t, c, "type Probe { pub name: String! { \"probe\" } }\n")
+	commit := func(tag string) string {
+		sha, err := core.NewQuery(c).Git(partial).Ref(tag).Commit(ctx)
+		require.NoError(t, err)
+		return sha
+	}
+	base, moved := commit("base"), commit("moved")
+
+	cloud := newTelemetrySplitCloud(t, c)
+	engine, err := devEngineContainerAsService(telemetrySplitEngineWithoutCloud(c, devEngineContainer(c))).Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _, _ = engine.Stop(ctx) })
+	client := telemetrySplitClient(ctx, t, c, daggerCliFile(t, c), engine, cloud)
+
+	// Neither read is one the sparse tree covers, so each makes a sparse tree
+	// of its own. moved changes outside/also.txt and nothing in outside/nested.
+	const query = `{currentWorkspace{
+  unchanged: directory(path: "/outside/nested", include: ["notes.crlf"]){digest}
+  changed: directory(path: "/outside", include: ["also.txt"]){file(path: "also.txt"){contents}}
+}}`
+	type reads struct {
+		CurrentWorkspace struct {
+			Unchanged struct {
+				Digest string
+			}
+			Changed struct {
+				File struct {
+					Contents string
+				}
+			}
+		}
+	}
+	read := func(sha string) reads {
+		out, err := client.
+			WithNewFile("/query.graphql", query).
+			WithEnvVariable("CACHEBUSTER", rand.Text()).
+			WithExec([]string{"/bin/dagger", "query", "--doc", "/query.graphql", "-W", partial + "@" + sha}, core.ContainerWithExecOpts{DisableDaggerInDagger: true}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		var res reads
+		require.NoError(t, json.Unmarshal([]byte(out), &res))
+		return res
+	}
+	atBase, atMoved := read(base), read(moved)
+	require.Equal(t, atBase.CurrentWorkspace.Unchanged.Digest, atMoved.CurrentWorkspace.Unchanged.Digest)
+	require.Equal(t, "also\n", atBase.CurrentWorkspace.Changed.File.Contents)
+	require.Equal(t, "moved\n", atMoved.CurrentWorkspace.Changed.File.Contents, "a read of a file the commit changed must read the new commit's file")
+
+	type span struct {
+		Session string            `json:"session"`
+		Name    string            `json:"name"`
+		Attrs   map[string]string `json:"attrs"`
+	}
+	spans := readTelemetrySplitLines[span](ctx, t, cloud, "v1/traces.json.spans")
+	// Both sessions run under the test's trace. The engine names each span's
+	// session, and parsing each session's workspace ref names its commit.
+	commitOf := map[string]string{}
+	for _, s := range spans {
+		for _, sha := range []string{base, moved} {
+			if s.Session != "" && strings.Contains(s.Name, "@"+sha) {
+				commitOf[s.Session] = sha
+			}
+		}
+	}
+	outcomes := map[string][]string{}
+	for _, s := range spans {
+		if s.Name != "GitRepository.__sparseFiles" || s.Attrs["dagger.io/cache.outcome"] == "" {
+			continue
+		}
+		sha := commitOf[s.Session]
+		outcomes[sha] = append(outcomes[sha], s.Attrs["dagger.io/cache.outcome"])
+	}
+	t.Logf("sparse read outcomes: base %v, moved %v, other %v", outcomes[base], outcomes[moved], outcomes[""])
+	require.NotEmpty(t, outcomes[base], "the first session's reads must be found by their session")
+	require.NotEmpty(t, outcomes[moved], "the second session's reads must be found by their session")
+	require.NotContains(t, outcomes[base], "hit", "the first session's reads have nothing to reuse")
+	require.Contains(t, outcomes[moved], "hit", "a read of files the commit didn't change must be the same call as at the commit before")
+	require.Contains(t, outcomes[moved], "executed", "a read of a file the commit changed must be made again")
+}
+
 // TestGitWorkspaceFullReadsReachOutsideASparseRead asserts that a read of a
 // directory without a filter, a view into the whole tree, reaches what's outside
 // it, even after a filtered read of the same directory that the whole tree
