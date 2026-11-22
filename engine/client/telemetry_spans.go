@@ -20,6 +20,10 @@ import (
 // (enginetel.LiveFeatureSpanQuery).
 var ErrLiveSpanQueryUnsupported = errors.New("engine does not serve live span queries")
 
+// ErrLiveSessionGone reports a span query the engine can't answer again:
+// the session whose store it reads ended.
+var ErrLiveSessionGone = errors.New("live session gone")
+
 // QuerySpans reads the newest snapshots of the spans q selects from this
 // client's own store: one-shot, as of the request. consume receives each
 // batch, its spans stamped with their child counts and whether they have
@@ -45,6 +49,9 @@ func (c *Client) QuerySpans(ctx context.Context, q clientdb.SpanQuery, consume f
 	}
 	defer resp.Body.Close()
 	if err := expectLiveLogResponse(resp, enginetel.LiveContentType); err != nil {
+		if resp.StatusCode == http.StatusGone {
+			return 0, fmt.Errorf("%w: %w", ErrLiveSessionGone, err)
+		}
 		return 0, err
 	}
 	return consumeSpanQuery(resp.Body, consume)

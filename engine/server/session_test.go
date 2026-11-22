@@ -2847,6 +2847,11 @@ func TestClientRecordFromIDsStateGating(t *testing.T) {
 	_, err = srv.clientRecordFromIDs("s", "c")
 	var retryable flightcontrol.RetryableError
 	require.ErrorAs(t, err, &retryable)
+	// a span query reads that as the session gone (410)
+	require.ErrorIs(t, err, errSessionNotFound)
+	_, err = srv.clientRecordFromIDs("other", "c")
+	require.ErrorIs(t, err, errSessionNotFound)
+	require.ErrorContains(t, err, `session "other" not found`)
 
 	// initialized: returns the client.
 	sess.state.Store(sessionStateInitialized)
