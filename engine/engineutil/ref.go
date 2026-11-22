@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"os"
 
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	snapshotutil "github.com/dagger/dagger/engine/snapshots/util"
@@ -80,12 +79,12 @@ func ReadSnapshotSmallFile(ctx context.Context, mntable bkcache.MountableRef, fi
 	if err != nil {
 		return nil, fmt.Errorf("failed to stat %q: %w", filePath, err)
 	}
-	if !os.FileMode(stat.Mode).IsRegular() || stat.Size_ > int64(limit) {
+	if !stat.Mode().IsRegular() || stat.Size() > int64(limit) {
 		return nil, nil
 	}
 	contents, err := snapshotutil.ReadFile(ctx, mntable, snapshotutil.ReadRequest{
 		Filename: filePath,
-		Range:    &snapshotutil.FileRange{Length: int(stat.Size_)},
+		Range:    &snapshotutil.FileRange{Length: int(stat.Size())},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to read %q: %w", filePath, err)

@@ -4,6 +4,7 @@ package engineutil
 
 import (
 	"errors"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -43,6 +44,9 @@ func TestReadSnapshotSmallFile(t *testing.T) {
 	require.NoError(t, os.Symlink("small", filepath.Join(dir, "link")))
 	require.NoError(t, os.Symlink("loop", filepath.Join(dir, "loop")))
 	require.NoError(t, os.Symlink("small/x", filepath.Join(dir, "through-file")))
+	sock, err := net.Listen("unix", filepath.Join(dir, "sock"))
+	require.NoError(t, err)
+	t.Cleanup(func() { sock.Close() })
 
 	for _, tc := range []struct {
 		name, path string
@@ -57,6 +61,7 @@ func TestReadSnapshotSmallFile(t *testing.T) {
 		{"a symlink to a regular file", "link", nil},
 		{"a symlink loop", "loop", nil},
 		{"a symlink through a regular file", "through-file", nil},
+		{"a socket", "sock", nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := ReadSnapshotSmallFile(t.Context(), dirMount(dir), tc.path, 10)

@@ -139,23 +139,24 @@ func StatFile(ctx context.Context, mount snapshots.MountableRef, path string) (*
 	return st, err
 }
 
-// LstatFile is StatFile of the file at path itself: a symlink there isn't
-// followed, and its stat is the link's own. Only the directories above it
-// are resolved, within the mount.
-func LstatFile(ctx context.Context, mount snapshots.MountableRef, path string) (*fstypes.Stat, error) {
-	var st *fstypes.Stat
+// LstatFile is os.Lstat of the file at path in the mount: a symlink there
+// isn't followed, and its info is the link's own. Only the directories above
+// it are resolved, within the mount. Its mode is the file's as the OS tells
+// it, every type bit included.
+func LstatFile(ctx context.Context, mount snapshots.MountableRef, path string) (os.FileInfo, error) {
+	var fi os.FileInfo
 	err := withMount(mount, func(root string) error {
 		dir, err := fs.RootPath(root, filepath.Dir(path))
 		if err != nil {
 			return errors.WithStack(err)
 		}
-		if st, err = fsutil.Stat(filepath.Join(dir, filepath.Base(path))); err != nil {
+		if fi, err = os.Lstat(filepath.Join(dir, filepath.Base(path))); err != nil {
 			replaceErrorPath(err, path)
 			return errors.WithStack(err)
 		}
 		return nil
 	})
-	return st, err
+	return fi, err
 }
 
 // replaceErrorPath will override the path in an os.PathError in the error chain.
