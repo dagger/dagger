@@ -4,7 +4,10 @@
 # `dagger generate` from this directory.
 
 [modules.go-sdk]
-source = "github.com/dagger/go-sdk@aa3e5343ccc8366cfcc843e44f0b5e593d7cbe20"
+# go-sdk#113: the dispatcher reports a function's error in the file
+# (DAGGER_FUNCTION_ERROR_PATH) the engine gives a call's process. It also
+# builds the shared dep, a go-sdk module.
+source = "github.com/dagger/go-sdk@5ed109c2c1e51086a777ada185d8c5b0d1215d02"
 
 [modules.python-sdk]
 # python-sdk#93: the dispatcher reports a function's error in the file

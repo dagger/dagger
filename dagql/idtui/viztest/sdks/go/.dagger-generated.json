@@ -1,10 +1,10 @@
 {
   "version": 1,
   "files": {
-    "cmd/viztest-go-dispatch/main.go": "1da1c340bed0f96d97890c12241811c6124a6e71e72c61694429081572aad2f8",
+    "cmd/viztest-go-dispatch/main.go": "4405686b55cf1c96d30c512da967a86be2fb8ce6820cadd4c311e5a7a748672d",
     "dagger.gen.go": "52c491bfd122d25f5dd055ee32e9c75863b6a9b872d7c92652278c36c928aee5",
     "internal/dagger/dagger.gen.go": "e7fac67cdf762c672a870179d16931b1cb0fd2e49d60d72dc5c464d9250dff60",
-    "internal/dagger/entrypoint/main.dang": "1e90595d8954f297bc1cfcff047866f1b198fc3c2f52e4f9be0d655bd10f2942",
+    "internal/dagger/entrypoint/main.dang": "930105c5f810b3a0f29adaf086442f41555841bea2e82c28844ca9f04e0d4de2",
     "internal/dagger/viztest-go.gen.go": "fb7dff67c7fcafd4733660bec28f65472f62e474e156d651141c66b6e1dd55ed"
   }
 }

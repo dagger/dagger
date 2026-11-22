@@ -56,17 +56,18 @@ const racyReply = "the dispatcher's reply on stdout races its stack trace on std
 //   - BAD: an exec error's message is a bare "exit code: N".
 //
 // An SDK whose module process reports its error in the engine's function
-// error file (DAGGER_FUNCTION_ERROR_PATH) gets the first right: see python.
+// error file (DAGGER_FUNCTION_ERROR_PATH) gets the first right: see go and
+// python.
 var sdkFixtures = []sdkFixture{
-	// Errors use the ::dagger-function-error:: marker. A build failure renders
-	// the compiler's error, through dagger/go's own build.
+	// Errors use the engine's function error file (DAGGER_FUNCTION_ERROR_PATH,
+	// dagger/go-sdk#113). A build failure renders the compiler's error,
+	// through dagger/go's own build. BAD: a wrapped exec error's message is
+	// nowhere, even expanded, as for dang: the dispatcher no longer echoes the
+	// error on the function's row, and the error's origin is the inner exec.
 	{lang: "go", source: "main.go", breakage: "\nvar _ = undefinedValue\n"},
 	// Errors use the engine's function error file (DAGGER_FUNCTION_ERROR_PATH,
-	// a fork of dagger/python-sdk#93). The function's logs keep the
-	// traceback Python prints for an unhandled error, which is not targeted
-	// yet. Its call-failing-dep goldens keep the go-sdk dependency's rows as
-	// they render today: the go-sdk's ::dagger-function-error:: echo and
-	// failed "call module entrypoint" row are the Go SDK's to fix.
+	// dagger/python-sdk#93). The function's logs keep the traceback Python
+	// prints for an unhandled error, which is not targeted yet.
 	{lang: "python", source: "src/viztest_python/__init__.py", breakage: "\nthis is not python\n"},
 	// BAD: the dispatcher replies on stdout, which the function's console.log
 	// shares: the reply no longer decodes, so log-success fails, and a

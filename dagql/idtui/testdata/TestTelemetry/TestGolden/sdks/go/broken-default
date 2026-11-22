@@ -8,7 +8,7 @@ Expected stderr:
   ✔ uploading /tmp/gobuild-dependencies-XXXXXXXXXX X.Xs ████████████ X.X B
 ┇ build ›
 ✘ withExec sh /gobuild/build.sh dagger/viztest-go (disableDaggerInDagger: true, noInit: true) X.Xs ERROR
-./main.go:85:9: undefined: undefinedValue
+./main.go:93:9: undefined: undefinedValue
 ! exit code: 2
 
 Setup tracing by running "dagger cloud signup". To hide set DAGGER_NO_NAG=1

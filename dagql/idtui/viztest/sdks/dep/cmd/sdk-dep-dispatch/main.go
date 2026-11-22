@@ -3,16 +3,19 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
 	telemetry "github.com/dagger/otel-go"
+	"github.com/vektah/gqlparser/v2/gqlerror"
 	"go.opentelemetry.io/otel/sdk/resource"
 	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 
@@ -75,16 +78,20 @@ func main() {
 	default:
 		err = fmt.Errorf("unknown mode %q", os.Args[1])
 	}
-
-	// fatalf exits without running deferred calls, so spans are flushed first.
+	// os.Exit and fatalf skip deferred calls, so spans are flushed first.
 	telemetry.Close()
+	if err != nil && os.Args[1] == "engine-call" && writeFunctionError(err) {
+		os.Exit(2)
+	}
+
 	if err != nil {
 		fatalf("%v", err)
 	}
 }
 
-// fatalf reports the error last on stderr, as one marker line: a failed exec
-// gives the entrypoint only its last 100 KiB of stderr. JSON can encode a
+// fatalf reports the error last on stderr, as one marker line, for an engine
+// that names no file for it (writeFunctionError): a failed exec gives the
+// entrypoint only its last 100 KiB of stderr. JSON can encode a
 // byte in six, so 16 KiB of text keeps the line within that.
 func fatalf(format string, args ...any) {
 	message := fmt.Sprintf(format, args...)
@@ -96,6 +103,123 @@ func fatalf(format string, args ...any) {
 	fmt.Fprintf(os.Stderr, "%s\n%s%s\n", message, "::dagger-function-error::", encoded)
 
 	os.Exit(2)
+}
+
+// functionErrorPathEnv names the file the engine gives a call's process to
+// write its function's error to. An engine that doesn't set it reads the
+// marker line fatalf prints instead.
+const functionErrorPathEnv = "DAGGER_FUNCTION_ERROR_PATH"
+
+// functionErrorFileLimit is the largest function error file the engine reads.
+const functionErrorFileLimit = 1 << 20
+
+// errorOrigin matches an origin an error's message names, the span the
+// engine reads it comes from.
+var errorOrigin = regexp.MustCompile(`\s*\[traceparent:[0-9a-f]{32}-[0-9a-f]{16}\]`)
+
+// writeFunctionError gives the engine err, the function's error, in the file
+// it names in functionErrorPathEnv, and reports whether it did; an engine
+// that names none reads the marker line fatalf prints. The file holds
+// {"message": ..., "values": {...}}: the error's message in full, with any
+// origin it names, so the engine finds the call that failed, and the
+// extensions of the GraphQL error it wraps, as they are, such as a failed
+// exec's exit code and output. The engine fails the call with that error,
+// values and all, and shows it, so nothing is printed. Only a report over
+// what the engine reads is shortened.
+func writeFunctionError(err error) bool {
+	path := os.Getenv(functionErrorPathEnv)
+	if path == "" {
+		return false
+	}
+	// A list of GraphQL errors ends each with a newline.
+	message := strings.TrimSpace(err.Error())
+	if message == "" {
+		message = fmt.Sprintf("%T", err)
+	}
+	values := map[string]any{}
+	if gqlErr := findSingleGQLError(err); gqlErr != nil {
+		for name, value := range gqlErr.Extensions {
+			values[name] = value
+		}
+	}
+	report := functionErrorReport(message, values)
+	if len(report) > functionErrorFileLimit {
+		// Long strings keep their end, where output usually says what
+		// failed, and the message its start and the origins it names; then
+		// the values go.
+		const limit = 64 << 10
+		if len(message) > limit {
+			message = strings.ToValidUTF8(message[:limit], "") + "..." + strings.Join(errorOrigin.FindAllString(message[limit:], -1), "")
+		}
+		for name, value := range values {
+			values[name] = shortenedValue(value, limit)
+		}
+		report = functionErrorReport(message, values)
+		if len(report) > functionErrorFileLimit {
+			report = functionErrorReport(message, map[string]any{})
+		}
+	}
+	return os.WriteFile(path, report, 0o644) == nil
+}
+
+func functionErrorReport(message string, values map[string]any) []byte {
+	type report struct {
+		Message string         `json:"message"`
+		Values  map[string]any `json:"values"`
+	}
+	var b bytes.Buffer
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(false)
+	if enc.Encode(report{message, values}) != nil {
+		b.Reset()
+		_ = enc.Encode(report{message, map[string]any{}})
+	}
+	return b.Bytes()
+}
+
+// shortenedValue is v with each string longer than limit, at any depth,
+// cut to its last limit bytes after "...".
+func shortenedValue(v any, limit int) any {
+	switch x := v.(type) {
+	case string:
+		if len(x) > limit {
+			return "..." + strings.ToValidUTF8(x[len(x)-limit:], "")
+		}
+	case []any:
+		shortened := make([]any, len(x))
+		for i, item := range x {
+			shortened[i] = shortenedValue(item, limit)
+		}
+		return shortened
+	case map[string]any:
+		shortened := make(map[string]any, len(x))
+		for key, item := range x {
+			shortened[key] = shortenedValue(item, limit)
+		}
+		return shortened
+	}
+	return v
+}
+
+// findSingleGQLError returns the GraphQL error that err wraps, or nil when it
+// wraps none or several. dagger.io/dagger wraps a response's errors as a
+// list, which holds one for a failed call.
+func findSingleGQLError(err error) *gqlerror.Error {
+	switch x := err.(type) {
+	case *gqlerror.Error:
+		return x
+	case gqlerror.List:
+		if len(x) == 1 {
+			return x[0]
+		}
+		return nil
+	case interface{ Unwrap() []error }:
+		return nil
+	case interface{ Unwrap() error }:
+		return findSingleGQLError(x.Unwrap())
+	default:
+		return nil
+	}
 }
 
 func engineCall(ctx context.Context, input io.Reader, output io.Writer) error {
