@@ -254,8 +254,8 @@ func cacheFact(attr string) string {
 // profLookupFacts links the facts of a call's cache decision from its op, as
 // its span's cache attributes say them: whether a hit was remote, why a miss
 // found nothing it could use (its lost candidates, remote or not, and its new
-// inputs), and whether its publication adopted a merged entry. A fact about a
-// result names it.
+// inputs), and whether its publication adopted a merged entry or kept its
+// made value over one. A fact about a result names it.
 func profLookupFacts(ctx context.Context, op *wcprof.Op, ev *CacheDecision, res AnyResult) {
 	if op == nil || ev == nil {
 		return
@@ -294,6 +294,9 @@ func profLookupFacts(ctx context.Context, op *wcprof.Op, ev *CacheDecision, res 
 		if ev.AdoptedRemote {
 			fact(telemetryattrs.CacheAdoptedRemoteAttr, profResultID(res))
 		}
+	}
+	if (ev.Outcome == CacheOutcomeExecuted || ev.Outcome == CacheOutcomeJoined) && ev.KeptOverRemote {
+		fact(telemetryattrs.CacheKeptOverRemoteAttr, profResultID(res))
 	}
 }
 
