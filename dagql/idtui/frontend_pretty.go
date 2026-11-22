@@ -9226,7 +9226,9 @@ func (fe *frontendPretty) renderErrorCause(ctx tuist.Context, out TermOutput, r 
 
 // errorCauseBreadcrumb returns the trees of the error origin's ancestors that
 // its breadcrumb names, below row, nearest the origin first. The breadcrumb
-// follows what the tree shows: it leaves out internal ancestors, and a shown
+// abbreviates the path on its own terms, at every verbosity, rather than
+// mirroring what the tree shows (which reveals a failed span's encapsulated
+// children). It leaves out internal ancestors, and the outermost shown
 // ancestor that encapsulates its work stands for everything beneath it, as a
 // module's build stands for the calls that build it. An internal ancestor's
 // encapsulation doesn't count, as it isn't shown.
