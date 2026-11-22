@@ -1375,9 +1375,9 @@ func TestMergeValuesRelocatesOfferOwnersToTheTargets(t *testing.T) {
 }
 
 // A publication racing a merge of the same recipe ends with one entry: the
-// merge commits while the publication computes, and the publication adopts
-// the merged entry.
-func TestMergeValuesThenAPublicationAdopts(t *testing.T) {
+// merge commits while the publication computes, and the publication, whose
+// value is made, keeps it in the merged entry, which nothing else uses.
+func TestMergeValuesThenAPublicationKeepsOneEntry(t *testing.T) {
 	t.Parallel()
 	bundle, _ := mergeTestSource(t, "root", "sent")
 	bctx, b, bsrv := transferTestCache(t)
@@ -1401,7 +1401,8 @@ func TestMergeValuesThenAPublicationAdopts(t *testing.T) {
 	close(finish)
 	out := <-published
 	require.NoError(t, out.err)
-	require.Equal(t, reply.Imported()[0].ResultID, uint64(out.res.cacheSharedResult().id), "the publication adopts the merged entry")
+	require.Equal(t, reply.Imported()[0].ResultID, uint64(out.res.cacheSharedResult().id), "the publication lands on the merged entry")
+	require.Equal(t, "local", out.res.Unwrap().(*transferTestValue).Text, "with the value it made")
 	b.egraphMu.RLock()
 	recipe := reply.Values[0].recipeForTest(b)
 	entries := 0
@@ -1412,6 +1413,86 @@ func TestMergeValuesThenAPublicationAdopts(t *testing.T) {
 	}
 	b.egraphMu.RUnlock()
 	require.Equal(t, 1, entries, "one entry of the recipe")
+}
+
+// A publication whose value is made, racing a merge of the same recipe whose
+// entry another merged entry depends on, keeps its value as the recipe's
+// current entry and retires the merged one. The merged entry keeps serving
+// what depends on it, whose demand for its content takes the publication's
+// value as a ready source of the same recipe, and a later lookup of the
+// recipe hits the publication's value.
+func TestMergeValuesThenAPublicationRetiresAnEntryInUse(t *testing.T) {
+	t.Parallel()
+	actx, a, asrv := transferTestCache(t)
+	sentChild := persistedListTestResult(t, actx, a, asrv, "child", &transferTestValue{Text: "sent"})
+	sentRoot := persistedListTestResult(t, actx, a, asrv, "root", &transferTestValue{Text: "root"})
+	transferTestDependency(a, actx, sentRoot, sentChild)
+	bundle := exportTestBundle(t, actx, a, sentRoot)
+
+	bctx, b, bsrv := transferTestCache(t)
+	value := &transferTestValue{Text: "ready"}
+	frame := func() *ResultCall {
+		return &ResultCall{Kind: ResultCallKindField, Field: "child", Type: NewResultCallType(value.Type())}
+	}
+	started, finish := make(chan struct{}), make(chan struct{})
+	published := make(chan currentEntryTestOutcome, 1)
+	go func() {
+		res, err := b.GetOrInitCall(bctx, "test-session", bsrv, &CallRequest{ResultCall: frame(), IsPersistable: true}, func(context.Context) (AnyResult, error) {
+			close(started)
+			<-finish
+			return NewResultForCall(value, frame())
+		})
+		published <- currentEntryTestOutcome{res, err}
+	}()
+	<-started
+	reply, err := b.MergeValues(bctx, cloudCacheID, bundle)
+	require.NoError(t, err)
+	var mergedChild, mergedRoot *sharedResult
+	b.egraphMu.RLock()
+	for _, value := range reply.Values {
+		res := b.resultsByID[sharedResultID(value.Number)]
+		switch res.loadResultCall().Field {
+		case "child":
+			mergedChild = res
+		case "root":
+			mergedRoot = res
+		}
+	}
+	b.egraphMu.RUnlock()
+	require.NotNil(t, mergedChild)
+	require.NotNil(t, mergedRoot)
+	close(finish)
+	out := <-published
+	require.NoError(t, out.err)
+	kept := out.res.cacheSharedResult()
+	require.NotEqual(t, mergedChild.id, kept.id, "the merged entry is in use: the publication's value is a new entry")
+	require.Equal(t, "ready", out.res.Unwrap().(*transferTestValue).Text)
+
+	recipe, err := frame().deriveRecipeDigest(b)
+	require.NoError(t, err)
+	b.egraphMu.RLock()
+	current := b.entriesByRecipe[recipe]
+	registered := b.resultsByID[mergedChild.id] == mergedChild
+	_, stillDepends := mergedRoot.deps[mergedChild.id]
+	b.egraphMu.RUnlock()
+	require.Equal(t, kept.id, current, "the publication's value is the recipe's current entry")
+	require.True(t, registered, "the retired entry stays")
+	require.True(t, stillDepends, "and keeps serving what depends on it")
+
+	source, err := b.AcquireEquivalentPartSource(bctx, Result[Typed]{shared: mergedChild}, PersistedPartAddress{Part: "snapshot"})
+	require.NoError(t, err)
+	require.NotNil(t, source)
+	require.Equal(t, PartReady, source.Readiness())
+	require.Equal(t, kept.id, source.source.id, "its content comes from the publication's value")
+	require.NoError(t, source.Release(bctx))
+
+	octx := currentEntryTestSession(bctx, b, "other-session")
+	hit, err := b.GetOrInitCall(octx, "other-session", bsrv, &CallRequest{ResultCall: frame(), IsPersistable: true}, func(context.Context) (AnyResult, error) {
+		return nil, errors.New("a later lookup of the recipe runs nothing")
+	})
+	require.NoError(t, err)
+	require.True(t, hit.HitCache())
+	require.Equal(t, kept.id, hit.cacheSharedResult().id)
 }
 
 // Two bundles share an expired dependency P. The Cloud stores P's fs after
