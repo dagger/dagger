@@ -405,9 +405,9 @@ type UploadFailure struct {
 // the service merged (Upload.Merged).
 type Merge struct {
 	Bundle dagql.ValueBundle `json:"bundle"`
-	// Lookup is the ID of the engine's Lookup this merge answers, or 0 for
-	// a merge of the service's own placement. The engine commits a merge
-	// that answers a lookup ahead of the others.
+	// Lookup is the ID of the engine's Lookup this merge answers, or 0 for a
+	// merge that answers none, such as one of roots lookups deferred. The
+	// engine commits a merge that answers a lookup ahead of the others.
 	Lookup uint64 `json:"lookup"`
 }
 
@@ -579,15 +579,13 @@ type Lookup struct {
 // extra digests, which the engine's own lookup tries after the recipe, and
 // its term, which that lookup tries last: the call's self digest over its
 // input digests, matched by the inputs' classes. Field names the call, for
-// logs. Caller is the recipe digest of the cached call the missed call was
-// made under (dagger.io/cache.caller), or empty at its session's top.
+// logs.
 type LookupMiss struct {
 	Recipe digest.Digest   `json:"recipe"`
 	Extra  []digest.Digest `json:"extra,omitempty"`
 	Field  string          `json:"field,omitempty"`
 	Self   digest.Digest   `json:"self,omitempty"`
 	Inputs []digest.Digest `json:"inputs,omitempty"`
-	Caller digest.Digest   `json:"caller,omitempty"`
 }
 
 // LookedUp answers Lookup, one item per miss, in order, as soon as the
