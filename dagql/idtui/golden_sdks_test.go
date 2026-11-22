@@ -39,11 +39,13 @@ type sdkFixture struct {
 
 // What every entrypoint SDK got wrong before its module process reported its
 // error in the engine's function error file (DAGGER_FUNCTION_ERROR_PATH), as
-// go, python, typescript, php and java now do: the dispatcher exec's stdout
-// and stderr, the function's own logs with stack traces and protocol lines
-// (::dagger-function-error::, a reply's JSON) among them, rendered on the
-// function's row, which a collapsed report doesn't expand, and the exec an
-// error's origin names rendered with "exit code: N" and no logs.
+// go, python, typescript, php, java and ruby now do: the dispatcher exec's
+// stdout and stderr, the function's own logs with stack traces and protocol
+// lines (::dagger-function-error::, a reply's JSON) among them, rendered on
+// the function's row, which a collapsed report doesn't expand, and the exec
+// an error's origin names rendered with "exit code: N" and no logs. (Ruby's
+// rendered on its dispatcher's own withExec instead: its entrypoint marked
+// no exec as the module process.)
 //
 // What they all still get wrong:
 //
@@ -92,14 +94,16 @@ var sdkFixtures = []sdkFixture{
 	// failure renders under "build viztest-java" as Maven's quiet errors on
 	// its "mvn package" exec, the compiler's among them.
 	{lang: "java", source: "src/main/java/io/dagger/modules/viztestjava/ViztestJava.java", breakage: "\nthis is not java\n"},
-	// TARGET: errors use the engine's function error file
-	// (DAGGER_FUNCTION_ERROR_PATH). An API error whose origin renders logs
-	// nothing; one without an origin and an error of the function's own log
-	// a short trace in Ruby's own form, through the module's own frames only,
-	// causes included. A module that doesn't parse fails on the constructor's
-	// row with Ruby's SyntaxError. "this is not ruby" alone is valid Ruby, a
-	// chain of method calls that fails only when the file runs, so the
-	// breakage ends in a parenthesis that doesn't parse.
+	// Errors use the engine's function error file (DAGGER_FUNCTION_ERROR_PATH,
+	// dagger/ruby-sdk#11). An API error whose origin renders logs nothing;
+	// one without an origin and an error of the function's own log a short
+	// trace in Ruby's own form, through the module's own frames only. A
+	// wrapped exec error keeps its cause, so shortened too. A module that
+	// doesn't parse fails on the constructor's row with Ruby's SyntaxError,
+	// its first line the error: Ruby loads the module at run time, so the
+	// build (prebuild, the gems' install) passes. "this is not ruby" alone is
+	// valid Ruby, a chain of method calls that fails only when the file runs,
+	// so the breakage ends in a parenthesis that doesn't parse.
 	{lang: "ruby", source: "lib/viztest_ruby.rb", breakage: "\nthis is not ruby)\n"},
 	// Not an entrypoint: the dang-sdk module runs on the engine's built-in
 	// Dang runtime, so its errors and logs are the reference. A module that

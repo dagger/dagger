@@ -158,6 +158,13 @@ module Dagger
             ModuleTypes().all
           }
 
+          # The module with its gems installed, which every call runs: the engine
+          # builds it ahead of a call, as the module's build, so a failed install
+          # shows as the build's, with Bundler's output.
+          pub prebuild: File! {
+            runtime.file("Gemfile.lock")
+          }
+
           pub call(
             receiverType: String!,
             receiverValue: JSON,
@@ -170,15 +177,47 @@ module Dagger
               receiverValue: receiverValue,
               fnName: fnName,
               fnArgs: fnArgs,
-              callDigest: callDigest,
               moduleSource: currentModule.source.id,
             }})
-            let result = runtime
+            # A failed install stays out of the rescue below, so it fails the call
+            # with its own error. An engine that builds prebuild first fails the
+            # call before it gets here.
+            let installed = runtime.sync
+            let result = installed
               .withEnvVariable("DAGGER_CLIENT_VERSION", clientVersion)
+              # The exec is cached on its own recipe, which holds neither the
+              # call's arguments nor its cache policy; the engine's digest of the
+              # call does (dagger/dagger#14491). It also marks this exec, and no
+              # other, as the module process, the one that runs the function.
+              .withEnvVariable("DAGGER_MODULE_CALL_DIGEST", callDigest ?? "")
               .withExec(%<command>s, stdin: request)
               .file("/dagger/result.json")
-              .contents
+              .contents rescue {
+                err: GraphQLError => raiseFunctionError(err)
+              }
             (result :: JSON!)
+          }
+
+          # An engine that gives the module process a file for the function's
+          # error (DAGGER_FUNCTION_ERROR_PATH) puts the error the process wrote
+          # there in its exec's error, and fails the call with it, values and all:
+          # the exec's error is raised as it is. Otherwise, as with an older engine
+          # or a file the process couldn't write, the exec error carries the end
+          # of the process's stderr, where its last marker line holds the
+          # function's error; without one, the exec failed before the function
+          # returned, as when it exited by itself, and its own error is raised.
+          let raiseFunctionError(err: GraphQLError!): String! {
+            let reported = ((JSON.decode(err.extensions) :: {{functionError: {{message: String, id: String}}}}).functionError != null) rescue false
+            if (reported) {
+              raise err
+            }
+            let marker = "::dagger-function-error::"
+            let stderr = ((JSON.decode(err.extensions) :: {{stderr: String}}).stderr ?? "") rescue ""
+            let lines = stderr.split("\\n").filter { line => line.hasPrefix(marker) }
+            if (lines.isEmpty) {
+              raise err
+            }
+            raise ((JSON.decode(lines.takeLast(1).join("").trimPrefix(marker)) :: String!) rescue err.message)
           }
 
         %<runtime>s}

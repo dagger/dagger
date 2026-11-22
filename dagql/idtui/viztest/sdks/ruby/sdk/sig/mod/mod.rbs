@@ -36,9 +36,6 @@ module Dagger
     class InvalidResultError < Error
     end
 
-    class FunctionError < Error
-    end
-
     UNSET: ::Object
 
     module Naming
@@ -388,17 +385,64 @@ module Dagger
       def construct: (described_class klass, Hash[String, untyped] args) -> untyped
       def invoke: (described_class klass, Hash[String, untyped] state, String name, Hash[String, untyped] args) -> untyped
       def arguments: (Array[ArgDecl] decls, Hash[String, untyped] args, String where) -> Hash[Symbol, untyped]
-      def user_code: [T] () { () -> T } -> T
+    end
+
+    class ErrorReport
+      MARKER: String
+      PATH_ENV: String
+      FILE_LIMIT: Integer
+      SHORTENED_LENGTH: Integer
+      MARKER_LIMIT: Integer
+      ORIGIN: Regexp
+      RAW: Array[Encoding]
+      TRACE_HEAD: Integer
+      TRACE_TAIL: Integer
+      TRACE_MAX: Integer
+
+      @framework: Array[String]
+      @cwd: String
+      @path: String?
+      @stderr: IO
+
+      def self.for_module: (?module_root: String, ?sdk_root: String, ?env: untyped) -> ErrorReport
+      def self.real: (String path) -> String?
+      def self.file_report: (Exception error) -> String
+      def self.message_of: (Exception error) -> String
+      def self.values: (Exception error) -> Hash[String, untyped]
+      def self.chain: (Exception error) -> Array[Exception]
+      def self.shorten_message: (String message, Integer length) -> String
+      def self.shortened: (untyped value) -> untyped
+      def self.utf8: (untyped value) -> untyped
+      def self.encode: (String message, Hash[String, untyped] values) -> String
+
+      def initialize: (framework: Array[String], cwd: String, path: String?, ?stderr: IO) -> void
+      def report: (Exception error, ?hint: String?) -> void
+      def short_trace: (Exception error) -> String
+      def shows_trace?: (Exception error) -> bool
+
+      private
+
+      def write_file: (Exception error) -> bool
+      def full_trace: (Exception error) -> String
+      def write_marker: (Exception error) -> void
+      def sdk_error?: (Exception error) -> bool
+      def describe: (Exception error) -> String
+      def from_lines: (Exception error, Array[String] frames) -> String
+      def detailed_message: (Exception error, raised_here: bool) -> String
+      def module_frames: (Exception error) -> Array[String]
+      def module_file?: (String? path) -> bool
+      def without_origins: (String text) -> String
     end
 
     module CLI
       USAGE: String
+      STALE: Array[singleton(Error)]
 
-      def self?.run: (Array[String] argv, ?input: IO) -> void
+      def self?.run: (Array[String] argv, ?input: IO) -> untyped
       def self?.parse: (Array[String] args) -> Hash[Symbol, String]
       def self?.entrypoint: (Hash[Symbol, String] options) -> void
       def self?.objects: (Hash[Symbol, String] options) -> void
-      def self?.call: (Hash[Symbol, String] options, IO input) -> void
+      def self?.call: (Array[String] argv, ?input: IO, ?report: ErrorReport) -> Integer
       def self?.parse_request: (String text) -> Hash[String, untyped]
       def self?.load_module: (Hash[Symbol, String] options) -> String
     end

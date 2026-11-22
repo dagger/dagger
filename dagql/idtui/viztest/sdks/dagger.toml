@@ -50,7 +50,13 @@ source = "github.com/dagger/java-sdk@f25650f95356764c9bf7e3b1bdeec013685e112b"
 source = "github.com/dagger/dang-sdk@14ba9d349167cb32b3a06f4229f534509a30ac62"
 
 [modules.ruby-sdk]
-source = "github.com/dagger/ruby-sdk@754e000660b07b7aa76e61481c6b8d899f451c66"
+# ruby-sdk#11: the entrypoint marks the dispatcher's exec, and no other, as
+# the module process (DAGGER_MODULE_CALL_DIGEST) and declares prebuild, the
+# module's gems install; the dispatcher reports a function's error in the file
+# (DAGGER_FUNCTION_ERROR_PATH) the engine gives a call's process, with a short
+# trace of the module's own frames in Ruby's own form, and nothing for an API
+# error whose origin the engine shows.
+source = "github.com/dagger/ruby-sdk@6ba32f19377fdc188eb759f2ecdae80da46beebf"
 
 [sdks.go]
 module = "go-sdk"

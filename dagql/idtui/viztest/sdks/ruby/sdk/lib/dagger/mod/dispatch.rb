@@ -4,7 +4,8 @@ module Dagger
   module Mod
     # Runs the call a generated entrypoint forwards: the receiver is rebuilt
     # from its state without initialize, and an empty function name is the
-    # constructor.
+    # constructor. What the module's code raises propagates as it is, for the
+    # call to report (ErrorReport).
     class Dispatch
       def initialize(registry)
         @registry = registry
@@ -38,9 +39,9 @@ module Dagger
         decl = @registry.constructor(klass)
         object =
           if decl
-            user_code { klass.create(**arguments(decl.args, args, where)) }
+            klass.create(**arguments(decl.args, args, where))
           else
-            user_code { klass.new(**arguments(@registry.field_args(klass), args, where)) }
+            klass.new(**arguments(@registry.field_args(klass), args, where))
           end
         @convert.output(object, klass, where)
       end
@@ -53,7 +54,7 @@ module Dagger
         where = "#{type_name}.#{decl.method_name}"
         receiver = @convert.restore(klass, state, "#{type_name} state")
         kwargs = arguments(decl.args, args, where)
-        value = user_code { receiver.public_send(decl.method_name, **kwargs) }
+        value = receiver.public_send(decl.method_name, **kwargs)
         @convert.output(value, decl.returns, "#{where} result")
       end
 
@@ -68,14 +69,6 @@ module Dagger
           kwargs[arg.ruby_name] = @convert.input(value, arg.type, "#{where}(#{arg.ruby_name})")
         end
         kwargs
-      end
-
-      def user_code
-        yield
-      rescue Mod::Error, ::Dagger::QueryError
-        raise
-      rescue StandardError => e
-        raise FunctionError, e.full_message(highlight: false).strip
       end
     end
   end
