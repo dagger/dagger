@@ -205,20 +205,38 @@ def write_function_error(path: str, exc: BaseException) -> None:
     message names the call that failed, so that call stays the error's
     origin; any other error comes from the function call.
     """
-    reported = exc
+    # The traceback, which names the exception's type, is already in the
+    # function's logs.
+    message = function_error_message(exc, logged=True)
     if isinstance(exc, FunctionError) and exc.__cause__ is not None:
-        reported = exc.__cause__
-    report = {
-        # The traceback, which names the exception's type, is already in
-        # the function's logs.
-        "message": function_error_message(exc, logged=True),
-        "values": {
-            key: _json_value(value)
-            for key, value in function_error_values(reported).items()
-        },
-    }
-    encoded = json.dumps(report, ensure_ascii=False)
+        # The values of the error the FunctionError wraps, and the extra
+        # values it adds.
+        values = {**function_error_values(exc.__cause__), **_extra_values(exc)}
+    else:
+        values = function_error_values(exc)
+    values = {key: _json_value(value) for key, value in values.items()}
+    encoded = _function_error_report(message, values)
+    if len(encoded.encode()) > _FUNCTION_ERROR_LIMIT:
+        # The engine reads none of a report over its limit: keep the
+        # message, and the values that fit.
+        message = _limit(message)
+        values = {
+            key: _limit(value) if isinstance(value, str) else value
+            for key, value in values.items()
+            if key != EXCEPTION_STACKTRACE
+        }
+        encoded = _function_error_report(message, values)
+        if len(encoded.encode()) > _FUNCTION_ERROR_LIMIT:
+            encoded = _function_error_report(message, {})
     pathlib.Path(path).write_text(encoded, encoding="utf-8")
+
+
+_FUNCTION_ERROR_LIMIT: Final = 1 << 20
+"""The largest error file the engine reads, in bytes."""
+
+
+def _function_error_report(message: str, values: dict[str, Any]) -> str:
+    return json.dumps({"message": message, "values": values}, ensure_ascii=False)
 
 
 def function_error_values(exc: BaseException) -> dict[str, Any]:
@@ -227,27 +245,34 @@ def function_error_values(exc: BaseException) -> dict[str, Any]:
     The same as `record_exception` gives its `dagger.Error`: the exception's
     type, message and stack trace, a ModuleError's `extra` values, and an API
     error's extensions, such as an ExecError's exit code and output, whole.
-    The API error may be one the exception wraps, as one that adds to its
-    message does.
+    The API error may be one the exception was raised from (`raise ... from`),
+    as one that adds to its message is, whose values the exception's own
+    come before; an exception raised while handling one is its own error.
     """
-    attrs: dict[str, Any] = _exception_attributes(exc)
-    if isinstance(exc, ModuleError) and exc.extra:
-        extra = {f"extra.{key}": val for key, val in exc.extra.items()}
-        attrs = {**extra, **attrs}
-    if (api_error := _wrapped_query_error(exc)) is not None:
-        attrs.update(api_error.error.extensions)
+    attrs: dict[str, Any] = {**_extra_values(exc), **_exception_attributes(exc)}
+    if isinstance(exc, QueryError):
+        attrs.update(exc.error.extensions)
+    elif (api_error := _raised_from_query_error(exc)) is not None:
+        attrs = {**api_error.error.extensions, **attrs}
     return attrs
 
 
-def _wrapped_query_error(exc: BaseException) -> QueryError | None:
-    """The API error exc is or wraps, if any."""
+def _extra_values(exc: BaseException) -> dict[str, Any]:
+    """A ModuleError's `extra` values, as the error's values."""
+    if isinstance(exc, ModuleError) and exc.extra:
+        return {f"extra.{key}": val for key, val in exc.extra.items()}
+    return {}
+
+
+def _raised_from_query_error(exc: BaseException) -> QueryError | None:
+    """The API error exc was raised from, directly or not, if any."""
     seen: set[int] = set()
-    cur: BaseException | None = exc
+    cur = exc.__cause__
     while cur is not None and id(cur) not in seen:
         if isinstance(cur, QueryError):
             return cur
         seen.add(id(cur))
-        cur = cur.__cause__ or (None if cur.__suppress_context__ else cur.__context__)
+        cur = cur.__cause__
     return None
 
 
