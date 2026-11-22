@@ -1,4 +1,5 @@
 import functools
+import importlib.metadata
 import json
 import linecache
 import logging
@@ -9,7 +10,7 @@ import site
 import sys
 import sysconfig
 import traceback
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from types import FrameType
 from typing import Any, Final
 
@@ -205,6 +206,20 @@ def has_error_origin(exc: QueryError) -> bool:
     return any(_ERROR_ORIGIN.search(error.message) for error in exc.errors)
 
 
+def errors_to_show(exc: BaseException) -> BaseException | None:
+    """What of a function's error its logs show, if anything.
+
+    Not an API error that `has_error_origin`: the engine shows it where it
+    comes from. Each error of a group is judged, as a task group raises them.
+    """
+    if isinstance(exc, QueryError):
+        return None if has_error_origin(exc) else exc
+    if isinstance(exc, BaseExceptionGroup):
+        _, rest = exc.split(lambda e: isinstance(e, QueryError) and has_error_origin(e))
+        return rest
+    return exc
+
+
 def print_user_traceback(exc: BaseException) -> None:
     """Show an exception as Python shows an uncaught one, in the user's code.
 
@@ -221,10 +236,11 @@ def format_user_traceback(exc: BaseException) -> str:
 
     The frames of the module's own source files are kept. Those of the SDK,
     of the code dagger generates (the module's clients), of the standard
-    library and of the installed packages are left out, in each exception it
-    chains too, and so are the error origins, as `ErrorOriginFilter` leaves
-    them out of logs. An exception without a frame of the user's is shown
-    without a traceback, as its type and message.
+    library and of the packages not installed from a local directory (from
+    an index, say) are left out, in each exception it chains too, and so are
+    the error origins, as `ErrorOriginFilter` leaves them out of logs. An
+    exception without a frame of the user's is shown without a traceback, as
+    its type and message.
     """
     te = traceback.TracebackException.from_exception(exc, compact=True)
     _keep_user_frames(te, exc, set())
@@ -275,19 +291,56 @@ def _is_user_frame(frame: FrameType) -> bool:
         return False
     if linecache.getline(filename, 1).startswith(_GENERATED_HEADER):
         return False
-    return not os.path.realpath(filename).startswith(_library_paths())
+    path = os.path.realpath(filename)
+    if path.startswith(_installed_paths()):
+        # The runtime installs the members of the module's workspace, its
+        # own libraries among them, from their directories, not editable.
+        return module.partition(".")[0] in _local_packages()
+    return not path.startswith(_dirs("stdlib", "platstdlib"))
+
+
+def _installed_paths() -> tuple[str, ...]:
+    """The directories of the installed packages."""
+    return _dirs("purelib", "platlib") + _site_dirs()
 
 
 @functools.cache
-def _library_paths() -> tuple[str, ...]:
-    """The directories of the standard library and the installed packages."""
-    paths = {
-        sysconfig.get_path(name)
-        for name in ("stdlib", "platstdlib", "purelib", "platlib")
-    }
-    paths.update(site.getsitepackages())
-    paths.add(site.getusersitepackages())
+def _dirs(*names: str) -> tuple[str, ...]:
+    return _as_dirs(sysconfig.get_path(name) for name in names)
+
+
+@functools.cache
+def _site_dirs() -> tuple[str, ...]:
+    return _as_dirs([*site.getsitepackages(), site.getusersitepackages()])
+
+
+def _as_dirs(paths: Iterable[str]) -> tuple[str, ...]:
     return tuple(os.path.realpath(path) + os.sep for path in paths if path)
+
+
+@functools.cache
+def _local_packages() -> frozenset[str]:
+    """The top-level packages installed from a local directory."""
+    return frozenset(
+        top
+        for top, dists in importlib.metadata.packages_distributions().items()
+        if any(_installed_from_directory(dist) for dist in dists)
+    )
+
+
+@functools.cache
+def _installed_from_directory(name: str) -> bool:
+    """Whether a distribution was installed from a local directory (PEP 610)."""
+    try:
+        text = importlib.metadata.distribution(name).read_text("direct_url.json")
+        info = json.loads(text or "{}")
+    except (importlib.metadata.PackageNotFoundError, ValueError):
+        return False
+    return (
+        isinstance(info, dict)
+        and str(info.get("url", "")).startswith("file:")
+        and "dir_info" in info
+    )
 
 
 def _limit(message: str) -> str:

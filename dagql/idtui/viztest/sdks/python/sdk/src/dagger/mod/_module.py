@@ -38,6 +38,7 @@ from dagger.mod._exceptions import (
     ModuleError,
     ObjectNotFoundError,
     RegistrationError,
+    errors_to_show,
     has_error_origin,
     log_exception_only,
     print_user_traceback,
@@ -413,33 +414,44 @@ class Module:
         except QueryError as e:
             # Exclude the underlying TransportQueryError to reduce noise
             e.__cause__ = None
-            if not self.short_tracebacks:
-                tb = e.__traceback__
-                # Exclude the line in "try" above
-                if tb:
-                    tb = tb.tb_next
-                logger.exception(
-                    "API error while executing function",
-                    exc_info=(type(e), e, tb),
-                )
-            elif not has_error_origin(e):
-                # The engine shows no call this error comes from, such as an
-                # ID that fails to load: show where the function got it.
-                print_user_traceback(e)
+            self._show_api_error(e)
             # Preserve API error so it's properly propagated.
             raise e from None
         except Exception as e:
             # Escape hatch if too noisy.
             if self.log_exceptions:
-                if self.short_tracebacks:
-                    print_user_traceback(e)
-                else:
-                    # Logging the exception will show the full stack trace on
-                    # stderr.
-                    logger.exception("Unhandled exception while executing function")
+                self._show_exception(e)
             raise FunctionError(str(e)) from e
 
         return result
+
+    def _show_api_error(self, e: QueryError) -> None:
+        """Show an API error a function raised in the function's logs."""
+        if self.short_tracebacks:
+            # The engine shows where an API error comes from, the call that
+            # failed with its logs, unless it names no origin, such as an ID
+            # that fails to load: then show where the function got it.
+            if not has_error_origin(e):
+                print_user_traceback(e)
+            return
+        tb = e.__traceback__
+        # Exclude the line in "try" in `call`
+        if tb:
+            tb = tb.tb_next
+        logger.exception(
+            "API error while executing function",
+            exc_info=(type(e), e, tb),
+        )
+
+    def _show_exception(self, e: Exception) -> None:
+        """Show an exception a function raised in the function's logs."""
+        if self.short_tracebacks:
+            # A task group raises API errors in a group.
+            if (shown := errors_to_show(e)) is not None:
+                print_user_traceback(shown)
+            return
+        # Logging the exception will show the full stack trace on stderr.
+        logger.exception("Unhandled exception while executing function")
 
     async def structure(self, obj: Any, cl: type[T]) -> T:
         """Convert a primitive value to the expected type."""

@@ -14,7 +14,7 @@ source = "github.com/dagger/go-sdk@5ed109c2c1e51086a777ada185d8c5b0d1215d02"
 # (DAGGER_FUNCTION_ERROR_PATH) the engine gives a call's process, and then
 # shows a function's errors with a short traceback, the user's frames only,
 # and nothing for an API error whose origin the engine shows.
-source = "github.com/dagger/python-sdk@a67b7a27027be02fcd62c47e5c1340a84adaa3da"
+source = "github.com/dagger/python-sdk@d8e50920464a78b26f7a62a61ddb6ba0946c1ad5"
 
 [modules.typescript-sdk]
 # A fork: generated Dang entrypoints name cache policies in TypeScript's
