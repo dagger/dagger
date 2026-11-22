@@ -53,7 +53,7 @@ Round these out with the rest of the platform: settings and environments for tea
 
 ### Collections
 
-When a module discovers many units of a project at run time, such as packages, test files, or config directories, return them as a **collection**: a set of objects with unique keys. Users can then run a check or generator on one item with a flag such as `--go-package=sdk/go`, instead of on the whole project. A collection can also define batch functions, which run once over the selected items, such as a single `go test` command for the selected tests of a package. See Collections in the [Dang](./dang.mdx#collections), [Go](./go.mdx#collections), [TypeScript](./typescript.mdx#collections), and [Python](./python.mdx#collections) guides.
+When a module discovers many units of a project at run time, such as packages, test files, or config directories, return them as a **collection**: a set of objects with unique keys. Users can then run a check or generator on one item with a flag such as `--go-package=sdk/go`, instead of on the whole project. A collection can also define batch functions, which run once over the selected items, such as a single `go test` command for the selected tests of a package. See Collections in the [Dang](./dang.mdx#collections), [Go](./go.mdx#collections), [TypeScript](./typescript.mdx#collections), [Python](./python.mdx#collections), and [Ruby](./ruby.mdx#collections) guides.
 
 ## Quality
 
@@ -70,3 +70,4 @@ Pick a language to build in. Each guide covers its syntax, project layout, devel
 - **[Java](./java.mdx).** Annotations on plain classes. The SDK is vendored into the module and every generated file is committed, so `mvn package` builds it without Dagger.
 - **[PHP](./php.mdx).** Attributes on plain classes and a generated client. Checks and services work; generators don't exist yet.
 - **[Elixir](./elixir.mdx).** `defn` and typespecs, with a generated client under `dagger_sdk/`. Checks and services work; generators don't exist yet.
+- **[Ruby](./ruby.mdx).** Plain classes annotated with RBS signatures, a generated client, and Steep type checking. Experimental.
