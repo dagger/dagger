@@ -6,10 +6,20 @@ import (
 	"slices"
 )
 
+// PartStartQuery is a part StartPartUploads answers, and starts an upload of
+// unless AnswerOnly: a reader weighing parts it won't upload among those it
+// will reads their answers in the same batch, in its order.
+type PartStartQuery struct {
+	PartQuery
+	AnswerOnly bool
+}
+
 // PartStart is StartPartUploads' answer for one part: the part's answer as
 // the start read it (AvailableParts), and whether the start counted an upload
-// of it. UploadedBy is, for a part the start refused because its class has
-// an upload of it in progress, the lowest-numbered entry with that upload.
+// of it. UploadedBy is, for a part not stored in its class, the
+// lowest-numbered entry of the class with an upload of it in progress, which
+// refused it, whatever else answers: a part marked absent answers absent, as
+// AvailableParts answers it, with an upload of it counted all the same.
 type PartStart struct {
 	PartAnswer
 	Started    bool
@@ -17,7 +27,8 @@ type PartStart struct {
 }
 
 // StartPartUploads starts, on a blob-backed cache, an upload of each part of
-// starts for its entry, where the part is neither stored in the entry's class
+// starts for its entry, but those only to answer (AnswerOnly), where the part
+// is neither stored in the entry's class
 // nor being uploaded for an entry of it, the entry itself included: its
 // reader's claim on the part, which the cache counts until the reader ends it
 // (EndPartUploads). One upload serves a class, so a second for any of its
@@ -25,23 +36,25 @@ type PartStart struct {
 // (PartStart.UploadedBy). A part the cache can't answer, as one of an entry
 // it doesn't have, isn't started.
 //
-// Each part is answered as AvailableParts answers it at nowUnix, and its
-// start decided from that answer and its class's uploads under one take of
-// uploadsMu, in one hold of egraphMu for reading (startPartLocked): two
-// starts of class mates' parts, from any holds, refuse each other, and a
-// join or a leaving, which writes, can't land between a part's answer and
-// its start. A start names its entry's classes for readers in that hold
-// (classChangeLocked), so a reader that keeps answers asks them again, as
-// the end does. Between two parts, the batch gives way to a writer that
-// waits (giveWayLocked), as AvailableParts does: the writer waits for the
-// part in progress, not the batch, and a later part's answer counts what
-// landed while the batch let go, other readers' starts included.
+// Each part is answered as AvailableParts answers it at nowUnix, in the
+// order of starts, so a part's answer counts the batch's starts of the parts
+// before it and none after; and its start decided from that answer and its
+// class's uploads under one take of uploadsMu, in one hold of egraphMu for
+// reading (startPartLocked): two starts of class mates' parts, from any
+// holds, refuse each other, and a join or a leaving, which writes, can't
+// land between a part's answer and its start. A start names its entry's
+// classes for readers in that hold (classChangeLocked), so a reader that
+// keeps answers asks them again, as the end does. Between two parts, the
+// batch gives way to a writer that waits (giveWayLocked), as AvailableParts
+// does: the writer waits for the part in progress, not the batch, and a
+// later part's answer counts what landed while the batch let go, other
+// readers' starts included.
 //
 // An entry with an upload in progress counts as holding a part for its class
 // (holdsAnyPartLocked): a join brings the upload to the other side's
 // entries, and the entry's leaving takes it from its class mates, so those
 // name them. The counts live in memory only, as the reader's claims do.
-func (c *Cache) StartPartUploads(starts []PartQuery, nowUnix int64) ([]PartStart, RemoteChange) {
+func (c *Cache) StartPartUploads(starts []PartStartQuery, nowUnix int64) ([]PartStart, RemoteChange) {
 	out := make([]PartStart, len(starts))
 	if len(starts) == 0 {
 		return out, RemoteChange{}
@@ -81,12 +94,12 @@ func (c *Cache) StartPartUploads(starts []PartQuery, nowUnix int64) ([]PartStart
 }
 
 // startPartLocked answers q's part, of key, into out as StartPartUploads
-// does, and counts an upload of it where its class has it neither stored nor
-// uploading: its answer, check and count are one step, read in the caller's
-// one hold of egraphMu and decided under one take of uploadsMu. It returns
-// the entries a start names (classChangeLocked), none when it starts
-// nothing. Requires egraphMu.
-func (c *Cache) startPartLocked(q PartQuery, key string, nowUnix int64, out *PartStart) []uint64 {
+// does, and, unless q is only to answer, counts an upload of it where its
+// class has it neither stored nor uploading: its answer, check and count are
+// one step, read in the caller's one hold of egraphMu and decided under one
+// take of uploadsMu. It returns the entries a start names
+// (classChangeLocked), none when it starts nothing. Requires egraphMu.
+func (c *Cache) startPartLocked(q PartStartQuery, key string, nowUnix int64, out *PartStart) []uint64 {
 	res := c.resultsByID[sharedResultID(q.Number)]
 	if res == nil {
 		out.Err = fmt.Errorf("start part upload of %d: %w", q.Number, ErrUnknownEntry)
@@ -103,7 +116,7 @@ func (c *Cache) startPartLocked(q PartQuery, key string, nowUnix int64, out *Par
 		if !held {
 			out.State, out.Donor = PartUploading, uint64(donor)
 		}
-	} else {
+	} else if !q.AnswerOnly {
 		c.countUploadLocked(res.id, key)
 		out.Started = true
 	}
