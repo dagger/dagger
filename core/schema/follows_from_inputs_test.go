@@ -234,10 +234,13 @@ func TestDeclaredFieldsFollowFromTheirInputs(t *testing.T) {
 	require.Len(t, second, len(first))
 }
 
-// The fields that place a value without running a process or reading what
-// their call doesn't hold say so in every call core makes of them. Mounting a
-// cache volume follows from its inputs, but a process run over that mount
-// reads the volume's contents, which no call holds, so it doesn't.
+// The fields that place a value without running a process, and read from
+// outside the engine only content a hash in their key addresses, say so in
+// every call core makes of them. Mounting a cache volume follows from its
+// inputs, but a process run over that mount reads the volume's contents,
+// which no call holds, so it doesn't. Inheriting a system variable only names
+// it; the process that reads the engine's value doesn't follow either. A git
+// tree's .git holds tags no hash in its key addresses.
 func TestFieldsThatFollowFromInputsDeclareIt(t *testing.T) {
 	e := newFollowsTestEngine(t, transferTestSalt(t), "follows-declared")
 	for _, tc := range []struct {
@@ -247,6 +250,10 @@ func TestFieldsThatFollowFromInputsDeclareIt(t *testing.T) {
 		{"Container", "from", true},
 		{"Directory", "withPlatform", true},
 		{"Container", "withMountedCache", true},
+		{"Container", "__withSystemEnvVariable", true},
+		{"GitRepository", "__sparseFiles", true},
+		{"GitRef", "__sparseWorkspaceTree", true},
+		{"GitRef", "tree", false},
 		{"Container", "withExec", false},
 	} {
 		typ, ok := e.srv.ObjectType(tc.typ)
@@ -261,8 +268,9 @@ func TestFieldsThatFollowFromInputsDeclareIt(t *testing.T) {
 	var volume dagql.ObjectResult[*core.CacheVolume]
 	require.NoError(t, e.srv.Select(e.ctx, root, &volume, dagql.Selector{Field: "cacheVolume", Args: []dagql.NamedInput{followsArg("key", dagql.NewString("declared"))}}))
 	for name, res := range map[string]dagql.AnyObjectResult{
-		"Directory.withPlatform":     e.dir(base, "withPlatform", followsArg("platform", core.Platform{OS: "linux", Architecture: "arm64"})),
-		"Container.withMountedCache": e.ctr(e.ctr(root, "container"), "withMountedCache", followsArg("path", dagql.NewString("/cache")), followsArg("cache", followsID(t, volume))),
+		"Directory.withPlatform":            e.dir(base, "withPlatform", followsArg("platform", core.Platform{OS: "linux", Architecture: "arm64"})),
+		"Container.withMountedCache":        e.ctr(e.ctr(root, "container"), "withMountedCache", followsArg("path", dagql.NewString("/cache")), followsArg("cache", followsID(t, volume))),
+		"Container.__withSystemEnvVariable": e.ctr(e.ctr(root, "container"), "__withSystemEnvVariable", followsArg("name", dagql.NewString("GODEBUG"))),
 	} {
 		frame, err := res.ResultCall()
 		require.NoError(t, err, name)

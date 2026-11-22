@@ -129,6 +129,14 @@ func workspaceQuery(ctx context.Context, t *testctx.T, c *dagger.Client, ref, qu
 
 func workspaceReadDigest(ctx context.Context, t *testctx.T, c *dagger.Client, ref, dirPath string, opts core.WorkspaceDirectoryOpts) (string, error) {
 	t.Helper()
+	return workspaceReadDigestFrom(ctx, t, core.NewQuery(c).Container().From(alpineImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)), ref, dirPath, opts)
+}
+
+// workspaceReadDigestFrom is workspaceReadDigest from client, a container
+// whose dagger CLI reaches the engine to read on.
+func workspaceReadDigestFrom(ctx context.Context, t *testctx.T, client *core.Container, ref, dirPath string, opts core.WorkspaceDirectoryOpts) (string, error) {
+	t.Helper()
 	args := []string{fmt.Sprintf("path: %q", dirPath)}
 	quoted := func(patterns []string) string {
 		bs, err := json.Marshal(patterns)
@@ -144,7 +152,9 @@ func workspaceReadDigest(ctx context.Context, t *testctx.T, c *dagger.Client, re
 	if opts.Gitignore {
 		args = append(args, "gitignore: true")
 	}
-	out, err := workspaceQuery(ctx, t, c, ref, fmt.Sprintf(`{currentWorkspace{directory(%s){digest}}}`, strings.Join(args, ", ")))
+	out, err := client.WithWorkdir("/empty").
+		With(workspaceSelectionDaggerQuery(fmt.Sprintf(`{currentWorkspace{directory(%s){digest}}}`, strings.Join(args, ", ")), "-W", ref)).
+		Stdout(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -157,6 +167,42 @@ func workspaceReadDigest(ctx context.Context, t *testctx.T, c *dagger.Client, re
 	}
 	require.NoError(t, json.Unmarshal([]byte(out), &res))
 	return res.CurrentWorkspace.Directory.Digest, nil
+}
+
+// TestGitWorkspaceSparseReadsAreTheSameOnTwoEngines reads a Git workspace's
+// files on two fresh engines from a server that has lost a file outside its
+// modules, so that each read goes through what loading a workspace fetches:
+// the sparse tree of the module (__sparseWorkspaceTree, keyed by its commit)
+// and the files read outside it (__sparseFiles, keyed by their blob ids).
+// What each copies out is the same on both engines: the reads fetch only
+// content a hash in their key addresses, so another engine's run of either
+// call is the same result (dagql.FieldSpec.FollowsFromInputs).
+func (WorkspaceSuite) TestGitWorkspaceSparseReadsAreTheSameOnTwoEngines(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	_, partial := sparseWorkspaceRepo(ctx, t, c, "type Probe { pub name: String! { \"probe\" } }\n")
+	reads := []struct {
+		name string
+		path string
+		opts core.WorkspaceDirectoryOpts
+	}{
+		{"module files", "/", core.WorkspaceDirectoryOpts{Include: []string{".dagger/modules/probe/**"}}},
+		{"attributes from outside the read", "/.dagger/modules/probe", core.WorkspaceDirectoryOpts{Include: []string{"notes.crlf"}}},
+		{"a file outside the modules", "/outside", core.WorkspaceDirectoryOpts{Include: []string{"also.txt"}}},
+	}
+	var first []string
+	for engine := range 2 {
+		client := engineClientContainer(ctx, t, c, devEngineContainerAsService(devEngineContainer(c)))
+		for i, read := range reads {
+			digest, err := workspaceReadDigestFrom(ctx, t, client, partial+"@moved", read.path, read.opts)
+			require.NoError(t, err, read.name)
+			require.NotEmpty(t, digest, read.name)
+			if engine == 0 {
+				first = append(first, digest)
+				continue
+			}
+			require.Equal(t, first[i], digest, read.name)
+		}
+	}
 }
 
 // TestGitWorkspaceLoadsWithoutItsWholeTree asserts that a Git workspace's
