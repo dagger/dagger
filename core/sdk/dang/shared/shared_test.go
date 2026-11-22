@@ -1,10 +1,14 @@
 package dangshared
 
 import (
+	"bufio"
 	"context"
+	"fmt"
+	"net"
 	"net/http"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/Khan/genqlient/graphql"
 	"github.com/dagger/dagger/core"
@@ -23,6 +27,7 @@ type nestedTransportTestServer struct {
 	registered     atomic.Bool
 	registeredWith atomic.Value // string parent client ID
 	servedWith     atomic.Value // string caller client ID
+	servedOn       atomic.Value // string host the request was sent to
 	traceparents   chan string
 	closed         atomic.Int32
 	served         atomic.Int32
@@ -39,7 +44,7 @@ func (srv *nestedTransportTestServer) RegisterNestedClientTransport(
 }
 
 func (srv *nestedTransportTestServer) ServeHTTPToNestedClient(
-	_ http.ResponseWriter,
+	w http.ResponseWriter,
 	req *http.Request,
 	_ *engine.NestedClientTransport,
 	_ *engine.ClientMetadata,
@@ -50,9 +55,12 @@ func (srv *nestedTransportTestServer) ServeHTTPToNestedClient(
 ) {
 	srv.served.Add(1)
 	srv.servedWith.Store(callerClientID)
+	srv.servedOn.Store(req.Host)
 	if srv.traceparents != nil {
 		srv.traceparents <- req.Header.Get("traceparent")
 	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"data":{}}`))
 }
 
 // scopedContext returns a context holding a request scope for the given client
@@ -157,7 +165,7 @@ func TestWithNestedClientServerKeepsRequestSpan(t *testing.T) {
 		dagql.ObjectResult[*core.Module]{},
 		func(ctx context.Context, client graphql.Client) ([]byte, error) {
 			request := func(ctx context.Context) {
-				// The test server writes no response; only the request matters.
+				// Only the request matters, not its response.
 				_ = client.MakeRequest(ctx, &graphql.Request{Query: "{ version }"}, &graphql.Response{})
 			}
 			request(ctx)
@@ -198,4 +206,54 @@ func TestWithNestedClientServerRequiresHeldScope(t *testing.T) {
 	)
 	require.Error(t, err)
 	require.False(t, srv.registered.Load(), "no transport may be registered without a held scope")
+}
+
+// TestWithNestedClientServerAnswersLongUnusedConnection locks in that the
+// server answers the first request on a connection however long the
+// connection waited for it. The client's pool keeps connections it dialed and
+// has not sent a request on yet (TestServeNestedClientDoesNotWaitOnUnusedConnection
+// builds one), and a connection the server closes unasked fails the request
+// the pool hands it at that moment with EOF, which net/http does not retry for
+// a POST. The test holds such a connection itself, so the request goes out at
+// a fixed time rather than whenever the pool would hand the connection out.
+func TestWithNestedClientServerAnswersLongUnusedConnection(t *testing.T) {
+	t.Parallel()
+
+	srv := &nestedTransportTestServer{}
+	query := &core.Query{Server: srv}
+	metadata := &engine.ClientMetadata{
+		SessionID: "session",
+		ClientID:  "child",
+	}
+
+	_, err := WithNestedClientServer(
+		scopedContext(t, "executable-client"),
+		query,
+		metadata,
+		false,
+		nil,
+		dagql.ObjectResult[*core.Module]{},
+		func(ctx context.Context, gqlClient graphql.Client) ([]byte, error) {
+			require.NoError(t, gqlClient.MakeRequest(ctx, &graphql.Request{Query: "{}"}, &graphql.Response{Data: &struct{}{}}))
+			host := srv.servedOn.Load().(string)
+
+			conn, err := net.Dial("tcp", host)
+			require.NoError(t, err)
+			defer conn.Close()
+			// Past the 10s header timeout the server used to set, which
+			// net/http counts from when the connection is accepted.
+			time.Sleep(11 * time.Second)
+
+			body := `{"query":"{}"}`
+			_, err = fmt.Fprintf(conn, "POST /query HTTP/1.1\r\nHost: %s\r\nContent-Type: application/json\r\nContent-Length: %d\r\n\r\n%s", host, len(body), body)
+			require.NoError(t, err)
+			resp, err := http.ReadResponse(bufio.NewReader(conn), nil)
+			require.NoError(t, err, "the server closed a connection before its first request")
+			defer resp.Body.Close()
+			require.Equal(t, http.StatusOK, resp.StatusCode)
+			return nil, nil
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t, int32(2), srv.served.Load(), "both requests reached the session")
 }
