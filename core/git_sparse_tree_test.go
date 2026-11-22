@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -428,4 +429,35 @@ func TestGitTreeFilesAsksOnlyAboutTheObjectsItFetches(t *testing.T) {
 	lacking, err := gitMissingObjects(ctx, git, []string{oids["held.txt"], oids["missing.txt"], oids["dir/also-missing.txt"]})
 	require.NoError(t, err)
 	require.ElementsMatch(t, []string{oids["missing.txt"], oids["dir/also-missing.txt"]}, lacking)
+}
+
+// TestGitSparseDirs asserts the plan of a sparse tree's directories: every
+// directory of the tree, each once, each after its parent.
+func TestGitSparseDirs(t *testing.T) {
+	t.Parallel()
+	paths := []string{
+		"top.txt",
+		"a/one.txt",
+		"a/two.txt",
+		"a/b/c/deep.txt",
+		"a/b/c/deeper.txt",
+		"a.b/file.txt",
+		"a-b/file.txt",
+		"x/y/z/link",
+		".github/workflows/ci.yml",
+	}
+	dirs := gitSparseDirs(paths)
+	require.ElementsMatch(t, []string{".github", ".github/workflows", "a", "a/b", "a/b/c", "a.b", "a-b", "x", "x/y", "x/y/z"}, dirs)
+	seen := map[string]int{}
+	for i, d := range dirs {
+		_, dup := seen[d]
+		require.False(t, dup, "directory %q planned twice", d)
+		seen[d] = i
+	}
+	for _, d := range dirs {
+		if parent := path.Dir(d); parent != "." {
+			require.Less(t, seen[parent], seen[d], "%q planned before its parent %q", d, parent)
+		}
+	}
+	require.Empty(t, gitSparseDirs([]string{"only.txt"}))
 }
