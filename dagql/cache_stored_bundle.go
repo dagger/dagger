@@ -591,11 +591,9 @@ func storedClosureChildrenLocked(res *sharedResult) []sharedResultID {
 func (c *Cache) storedBundleValueLocked(build *storedBundleBuild, res *sharedResult) error {
 	if body := res.stored; body != nil {
 		// A body goes as it is held, compressed, and the bundle's encoding
-		// writes it out (TransferredValue.MarshalJSON).
-		refs, parts, complete, err := res.storedFactsLocked()
-		if err != nil {
-			return fmt.Errorf("stored bundle: entry %d: %w", res.id, err)
-		}
+		// writes it out (TransferredValue.MarshalJSON), with the entry's
+		// parts of it.
+		refs, parts, complete := body.refs, res.partFacts.declaredParts(), res.partFacts.completeParts()
 		if build.stored == nil {
 			build.stored = map[uint64][]declaredPart{}
 		}
@@ -812,11 +810,7 @@ func (c *Cache) storedBundleOutputsLocked(build *storedBundleBuild, res *sharedR
 			return err
 		}
 	}
-	declared, err := res.declaredPartsLocked()
-	if err != nil {
-		return fmt.Errorf("stored bundle: entry %d: %w", res.id, err)
-	}
-	for _, part := range declared {
+	for _, part := range res.declaredPartsLocked() {
 		key := part.key
 		if part.state != "pending" {
 			continue

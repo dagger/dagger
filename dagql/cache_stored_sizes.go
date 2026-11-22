@@ -129,10 +129,11 @@ func (c *Cache) storedSizes(ctx context.Context, roots []uint64, nowUnix int64, 
 // storedSizeMiss is a value StoredSizes measures after releasing egraphMu:
 // its entry, and the value state the walk read under the lock.
 type storedSizeMiss struct {
-	res  *sharedResult
-	env  *PersistedResultEnvelope
-	body *storedBody
-	call *ResultCall
+	res   *sharedResult
+	env   *PersistedResultEnvelope
+	body  *storedBody
+	parts *partFacts
+	call  *ResultCall
 	// The value state its size depends on.
 	deps               []uint64
 	dependencyRevision uint64
@@ -391,7 +392,7 @@ func storedValueMeasuredLocked(res *sharedResult) (int64, bool) {
 // storedSizeMissLocked reads the value state of res that its size depends on.
 // Requires egraphMu.
 func storedSizeMissLocked(res *sharedResult) storedSizeMiss {
-	miss := storedSizeMiss{res: res, env: res.persistedEnvelope, body: res.stored, call: res.loadResultCall(), dependencyRevision: res.dependencyOwnershipRevision, replacements: res.replacements, expiresAtUnix: res.expiresAtUnix}
+	miss := storedSizeMiss{res: res, env: res.persistedEnvelope, body: res.stored, parts: res.partFacts, call: res.loadResultCall(), dependencyRevision: res.dependencyOwnershipRevision, replacements: res.replacements, expiresAtUnix: res.expiresAtUnix}
 	for dep := range res.deps {
 		miss.deps = append(miss.deps, uint64(dep))
 	}
@@ -431,22 +432,8 @@ func (c *Cache) measureStoredValue(miss storedSizeMiss) (storedSizeMeasure, erro
 			}
 		}
 		value.Record = PersistedRecord{ResultID: uint64(miss.res.id), Call: call}
-		// Its parts are the body's, as the bundle carries them, unless the
-		// entry's call has replaced the one the body was made with: then
-		// they are worked out again, as storedFactsLocked does.
-		declared, complete := miss.body.parts, miss.body.complete
-		if miss.body.frame == nil && miss.body.call != miss.call {
-			rec, err := miss.body.record(uint64(miss.res.id))
-			if err != nil {
-				return storedSizeMeasure{}, err
-			}
-			facts, err := normalizeStoredTransfer(&sharedResult{id: miss.res.id}, &rec.Envelope, miss.call)
-			if err != nil {
-				return storedSizeMeasure{}, err
-			}
-			declared, complete = facts.parts, facts.complete
-		}
-		value.Parts = transferredRecordParts(declared, complete)
+		// Its parts are the entry's, as the bundle carries them.
+		value.Parts = transferredRecordParts(miss.parts.declaredParts(), miss.parts.completeParts())
 		empty, err := encodedSize(value)
 		if err != nil {
 			return storedSizeMeasure{}, err
