@@ -37,7 +37,7 @@ type storedPart struct {
 type storedLayer struct {
 	layer snapshots.ExportLayer
 	pack  digest.Digest
-	// wire is the layer's entry in a merge's list of layers
+	// wire is the layer's entry, with its pack, in a merge's list of layers
 	// (ShareChainLayers), with its separator.
 	wire int64
 }
@@ -90,7 +90,8 @@ func (t *storedLayers) part(offer PersistedPartOffer) storedPart {
 	}
 	layers := make([]*storedLayer, len(offer.Chain.Layers))
 	for i, layer := range offer.Chain.Layers {
-		layers[i] = t.layer(storedLayer{layer: layer, pack: offer.Chain.Packs[layer.Descriptor.Digest], wire: storedLayerWire(layer)})
+		pack := offer.Chain.Packs[layer.Descriptor.Digest]
+		layers[i] = t.layer(storedLayer{layer: layer, pack: pack, wire: storedLayerWire(layer, pack)})
 	}
 	offer.Chain.Layers, offer.Chain.Packs = nil, nil
 	return storedPart{held: offer, layers: layers, wire: storedPartWire(offer, layers)}
@@ -104,22 +105,14 @@ const storedWireReference = 999_999
 
 // storedPartWire is the encoded size of the output that offer, held without
 // its layers, becomes in a merge's message (ShareChainLayers), with its
-// separator: its chain with its packs and a renewal key but neither its
-// layers nor their addresses, which the bundle lists once for every output,
+// separator: its chain with a renewal key but neither its layers, their
+// packs nor their addresses, which the bundle lists once for every output,
 // and a reference for each layer. Its references count storedWireReference's
 // digits, so the size is never less than a message carries for the output.
 // A part that doesn't encode counts nothing: no merge can carry it either.
 func storedPartWire(offer PersistedPartOffer, layers []*storedLayer) int64 {
 	chain := offer.Chain
-	chain.Layers, chain.Addresses = nil, nil
-	for _, layer := range layers {
-		if layer.pack != "" {
-			if chain.Packs == nil {
-				chain.Packs = map[digest.Digest]digest.Digest{}
-			}
-			chain.Packs[layer.layer.Descriptor.Digest] = layer.pack
-		}
-	}
+	chain.Layers, chain.Addresses, chain.Packs = nil, nil, nil
 	key, _ := partAddressKey(offer.Address)
 	chain.RenewalKey = fmt.Sprintf("%d/%s", uint64(1<<64-1), key)
 	refs := make([]int, len(layers))
@@ -143,10 +136,10 @@ func storedPartWire(offer PersistedPartOffer, layers []*storedLayer) int64 {
 	return int64(len(data)) + 1
 }
 
-// storedLayerWire is the layer's entry in a merge's list of layers, with its
-// separator, or 0 if it doesn't encode.
-func storedLayerWire(layer snapshots.ExportLayer) int64 {
-	data, err := json.Marshal(layer)
+// storedLayerWire is the layer's entry in a merge's list of layers, with the
+// pack its chain stores it in and its separator, or 0 if it doesn't encode.
+func storedLayerWire(layer snapshots.ExportLayer, pack digest.Digest) int64 {
+	data, err := json.Marshal(BundleLayer{Layer: layer, Pack: pack})
 	if err != nil {
 		return 0
 	}

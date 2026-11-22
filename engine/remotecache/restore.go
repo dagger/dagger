@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptrace"
 	"net/url"
@@ -981,10 +982,11 @@ func fetchError(ctx context.Context, err error) error {
 
 // fillAddresses gives a part's outputs the download addresses of their
 // layers from the file's table, where the part names them by place
-// (dagql.ShareChainLayers): a layer its chain stores in a pack gets the
-// pack's address on that chain, since another chain may store the same
-// layer alone, and any other layer its blob's address in the bundle's. An
-// address the table lacks is left out, for a read to renew.
+// (dagql.ShareChainLayers): a layer its chain stores in a pack, as its chain
+// or its listed layer says, gets the pack's address on that chain, since
+// another chain may store the same layer alone, and any other layer its
+// blob's address in the bundle's. An address the table lacks is left out,
+// for a read to renew.
 func fillAddresses(bundle *dagql.ValueBundle, table protocol.AddressTable) {
 	for i := range bundle.Outputs {
 		out := &bundle.Outputs[i]
@@ -992,16 +994,25 @@ func fillAddresses(bundle *dagql.ValueBundle, table protocol.AddressTable) {
 			continue
 		}
 		blobs := make([]digest.Digest, 0, len(out.Chain.Layers)+len(out.Layers))
+		packs := maps.Clone(out.Chain.Packs)
 		for _, layer := range out.Chain.Layers {
 			blobs = append(blobs, layer.Descriptor.Digest)
 		}
 		for _, place := range out.Layers {
 			if place >= 0 && place < len(bundle.Layers) {
-				blobs = append(blobs, bundle.Layers[place].Descriptor.Digest)
+				listed := bundle.Layers[place]
+				blob := listed.Layer.Descriptor.Digest
+				blobs = append(blobs, blob)
+				if listed.Pack != "" {
+					if packs == nil {
+						packs = map[digest.Digest]digest.Digest{}
+					}
+					packs[blob] = listed.Pack
+				}
 			}
 		}
 		for _, blob := range blobs {
-			if pack, ok := out.Chain.Packs[blob]; ok {
+			if pack, ok := packs[blob]; ok {
 				if address, ok := table.Packs[pack]; ok {
 					if out.Chain.Addresses == nil {
 						out.Chain.Addresses = map[digest.Digest]dagql.BlobAddress{}

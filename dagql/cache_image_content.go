@@ -425,7 +425,11 @@ func writeImageBundle(ctx context.Context, values *ExportedValues, w ImageBundle
 		return addresses
 	}
 	if len(bundle.Layers) > 0 {
-		bundle.Addresses = address(bundle.Addresses, bundle.Layers)
+		layers := make([]snapshots.ExportLayer, len(bundle.Layers))
+		for i, listed := range bundle.Layers {
+			layers[i] = listed.Layer
+		}
+		bundle.Addresses = address(bundle.Addresses, layers)
 	}
 	for i := range bundle.Outputs {
 		if chain := bundle.Outputs[i].Chain; chain != nil && len(chain.Layers) > 0 {
