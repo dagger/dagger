@@ -2684,7 +2684,8 @@ type Cache struct {
 	readPieceSize        int
 	testReadPieceYielded func()
 	// testBatchAnswered runs after each answer of a batch read
-	// (AvailableParts, RemoteHoldingInfos, EntriesHeld, EntriesFacts), with
+	// (AvailableParts, RemoteHoldingInfos, EntriesHeld, EntriesFacts) or
+	// each part of a start batch (StartPartUploads), with
 	// egraphMu held for reading, i the answer's index; testBatchGaveWay runs
 	// as a batch read lets egraphMu go between two answers, with none held.
 	testBatchAnswered func(i int)
@@ -2826,7 +2827,7 @@ type Cache struct {
 	changes *changeMarks
 	// uploads counts, on a blob-backed cache, the uploads of parts its
 	// reader marks in progress, by entry and part address key
-	// (MarkPartUploading, EndPartUploads). Memory only, as the reader's own
+	// (StartPartUploads, EndPartUploads). Memory only, as the reader's own
 	// claims are. Guarded by uploadsMu, not egraphMu: AvailablePart reads a
 	// count under its hold of egraphMu for reading, and the reader names
 	// what a count changed itself (ClassChange, EndPartUploads). uploadsMu
