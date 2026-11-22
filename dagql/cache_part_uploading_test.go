@@ -15,7 +15,7 @@ import (
 // number (StartPartUploads), which must start, and returns the start's change.
 func startUpload(t *testing.T, c *Cache, number uint64, address PersistedPartAddress) RemoteChange {
 	t.Helper()
-	starts, change := c.StartPartUploads([]PartQuery{{Number: number, Address: address}}, time.Now().Unix())
+	starts, change := c.StartPartUploads([]PartStartQuery{{PartQuery: PartQuery{Number: number, Address: address}}}, time.Now().Unix())
 	require.Len(t, starts, 1)
 	require.NoError(t, starts[0].Err)
 	require.True(t, starts[0].Started, "the upload of %d's part starts: %+v", number, starts[0])
@@ -111,6 +111,35 @@ func TestChangeReportsAJoinNamesASideWhenTheOtherUploads(t *testing.T) {
 	}
 }
 
+// startQueries are queries to start, none only to answer.
+func startQueries(queries ...PartQuery) []PartStartQuery {
+	out := make([]PartStartQuery, len(queries))
+	for i, q := range queries {
+		out[i].PartQuery = q
+	}
+	return out
+}
+
+// A batch answers its parts in order: a part only to answer counts the starts
+// before it in the batch and none after, and starts nothing. Here a1's part
+// is answered before a2's start and after it, in one batch, and a part to
+// answer whose class uploads it says so, the entry that uploads it named.
+func TestAStartsBatchAnswersInOrderAndStartsNothingOnlyToAnswer(t *testing.T) {
+	t.Parallel()
+	u := newUploadJoinTest(t)
+	a1, a2 := u.number(t, u.a1), u.number(t, u.a2)
+	answer := PartStartQuery{PartQuery: PartQuery{Number: a1, Address: uploadJoinPart}, AnswerOnly: true}
+	starts, _ := u.cloud.StartPartUploads([]PartStartQuery{answer, {PartQuery: PartQuery{Number: a2, Address: uploadJoinPart}}, answer}, time.Now().Unix())
+	require.Len(t, starts, 3)
+	require.False(t, starts[0].Started, "a part only to answer starts nothing")
+	require.Zero(t, starts[0].UploadedBy, "before a2's start nothing uploads it")
+	require.True(t, starts[1].Started)
+	require.False(t, starts[2].Started)
+	require.Equal(t, a2, starts[2].UploadedBy, "after a2's start, its upload answers")
+	require.Equal(t, PartUploading, starts[2].State)
+	require.Equal(t, map[uint64]int{a2: 1}, u.cloud.UploadCounts())
+}
+
 // A start names its entry's class as it counts the upload, in the same hold:
 // a join after it names the other side, the join seeing the count.
 func TestAJoinAfterAnUploadsStartIsNamed(t *testing.T) {
@@ -133,7 +162,7 @@ func TestAStartIsRefusedWhileItsClassUploadsThePart(t *testing.T) {
 	a1, a2, b := u.number(t, u.a1), u.number(t, u.a2), u.number(t, u.bk)
 	now := time.Now().Unix()
 	startUpload(t, u.cloud, a2, uploadJoinPart)
-	starts, change := u.cloud.StartPartUploads([]PartQuery{{Number: a1, Address: uploadJoinPart}, {Number: a2, Address: uploadJoinPart}, {Number: b, Address: uploadJoinPart}}, now)
+	starts, change := u.cloud.StartPartUploads(startQueries(PartQuery{Number: a1, Address: uploadJoinPart}, PartQuery{Number: a2, Address: uploadJoinPart}, PartQuery{Number: b, Address: uploadJoinPart}), now)
 	require.Len(t, starts, 3)
 	for i, n := range []uint64{a1, a2} {
 		require.NoError(t, starts[i].Err)
@@ -151,7 +180,7 @@ func TestAStartIsRefusedWhileItsClassUploadsThePart(t *testing.T) {
 	_, err := u.cloud.EndPartUploads([]PartUpload{{Number: b, Address: uploadJoinPart}})
 	require.NoError(t, err)
 	u.join(t)
-	starts, _ = u.cloud.StartPartUploads([]PartQuery{{Number: b, Address: uploadJoinPart}}, now)
+	starts, _ = u.cloud.StartPartUploads(startQueries(PartQuery{Number: b, Address: uploadJoinPart}), now)
 	require.False(t, starts[0].Started, "the join brought a2's upload to b's class")
 	require.Equal(t, a2, starts[0].UploadedBy)
 }
@@ -191,7 +220,7 @@ func TestAStartBatchGivesWayBetweenParts(t *testing.T) {
 		u.cloud.testBatchAnswered, u.cloud.testBatchGaveWay = nil, nil
 		startUpload(t, u.cloud, a2, uploadJoinPart)
 	}
-	starts, _ := u.cloud.StartPartUploads([]PartQuery{{Number: b, Address: uploadJoinPart}, {Number: a1, Address: uploadJoinPart}}, time.Now().Unix())
+	starts, _ := u.cloud.StartPartUploads(startQueries(PartQuery{Number: b, Address: uploadJoinPart}, PartQuery{Number: a1, Address: uploadJoinPart}), time.Now().Unix())
 	require.EqualValues(t, 1, in.Load(), "the writer got in after b's part, before a1's")
 	<-done
 	require.Len(t, starts, 2)
@@ -216,7 +245,7 @@ func TestStartsOfClassMatesRefuseEachOther(t *testing.T) {
 			n = a2
 		}
 		wg.Go(func() {
-			starts, _ := u.cloud.StartPartUploads([]PartQuery{{Number: n, Address: uploadJoinPart}}, now)
+			starts, _ := u.cloud.StartPartUploads(startQueries(PartQuery{Number: n, Address: uploadJoinPart}), now)
 			results <- starts[0]
 		})
 	}
@@ -243,7 +272,7 @@ func TestAStartAnswersAsAvailablePartsAndStartsOnlyWhatIsNeeded(t *testing.T) {
 	mount := PersistedPartAddress{Part: "mount:/start"}
 	queries := []PartQuery{{Number: h.m, Address: h.snapshot}, {Number: 1 << 40, Address: mount}, {Number: h.m, Address: mount}}
 	answers := h.cloud.AvailableParts(queries, h.now)
-	starts, change := h.cloud.StartPartUploads(queries, h.now)
+	starts, change := h.cloud.StartPartUploads(startQueries(queries...), h.now)
 	require.Len(t, starts, 3)
 	require.Equal(t, answers[0].PartAvailability, starts[0].PartAvailability, "stored, by R")
 	require.Equal(t, PartStored, starts[0].State)
@@ -475,5 +504,8 @@ func TestAStoredOrAbsentPartAnswersBeforeAnUpload(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, PartAbsent, av.State)
 		require.Equal(t, absent, av.Donor, "the absent value's record marks it")
+		starts, _ := cloud.StartPartUploads([]PartStartQuery{{PartQuery: PartQuery{Number: held.Number, Address: address}, AnswerOnly: true}}, time.Now().Unix())
+		require.Equal(t, PartAbsent, starts[0].State, "a start answers as AvailableParts does")
+		require.Equal(t, held.Number, starts[0].UploadedBy, "and names the upload in progress all the same")
 	})
 }
