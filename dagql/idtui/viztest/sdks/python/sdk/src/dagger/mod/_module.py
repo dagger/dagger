@@ -99,6 +99,11 @@ class Module:
         # from exceptions raised in functions by default. Not documented
         # intentionally for now.
         self.log_exceptions = True
+        # Whether an API error that escapes a function is logged with its
+        # traceback. A call that reports its error in the file the engine
+        # gives it turns this off: the engine shows the error's origin, the
+        # call that failed with its logs, so the traceback only adds noise.
+        self.log_api_errors = True
 
     @property
     def main_cls(self) -> type[ObjectType]:
@@ -409,10 +414,11 @@ class Module:
                 tb = tb.tb_next
             # Exclude the underlying TransportQueryError to reduce noise
             e.__cause__ = None
-            logger.exception(
-                "API error while executing function",
-                exc_info=(type(e), e, tb),
-            )
+            if self.log_api_errors:
+                logger.exception(
+                    "API error while executing function",
+                    exc_info=(type(e), e, tb),
+                )
             # Preserve API error so it's properly propagated.
             raise e from None
         except Exception as e:

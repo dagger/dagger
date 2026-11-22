@@ -136,17 +136,22 @@ def _call(args: argparse.Namespace) -> None:
     request = json.load(sys.stdin)
     telemetry.initialize()
     try:
-        result = anyio.run(_dispatch, request)
+        result = anyio.run(_dispatch, request, bool(_error_file(args)))
     finally:
         telemetry.shutdown()
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result))
 
 
-async def _dispatch(request: dict[str, Any]) -> Any:
+async def _dispatch(request: dict[str, Any], error_file: bool) -> Any:
     from dagger.mod.cli import load_module
 
-    return await load_module().dispatch(request)
+    mod = load_module()
+    if error_file:
+        # The engine fails the call with the API error the file reports, and
+        # shows where it comes from: the call that failed, with its logs.
+        mod.log_api_errors = False
+    return await mod.dispatch(request)
 
 
 def _exit(code: int) -> None:
