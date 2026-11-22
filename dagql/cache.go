@@ -3303,6 +3303,11 @@ type sharedResult struct {
 	// engine with no download address for any part, has been logged as run
 	// again (logRecordRunForWantOfOffers).
 	recipeRunLogged atomic.Bool
+	// run is, on the Cloud, the run its stored record comes from, and runRan
+	// how the Cloud learned that run ran its step (cache_run.go). Neither is
+	// sent to an engine, and nothing decides by them. Guarded by egraphMu.
+	run    *RunName
+	runRan runRanBy
 	// storedParts are the parts whose layer chains are in this cache's own
 	// blob store, by part address key, their layers the cache's
 	// (storedLayers). Only a blob-backed cache (the Cloud) sets them, in
