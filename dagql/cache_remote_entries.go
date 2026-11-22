@@ -1164,15 +1164,57 @@ func (c *Cache) removeHoldingLocked(ctx context.Context, state *remoteCacheState
 // classes' compaction, which only CollectRemoteHoldings runs
 // (compactEqClassesAfterCollectionLocked). The candidates are change's.
 func (c *Cache) CollectRemoteHolding(ctx context.Context, key HolderKey) (RemoteChange, bool, error) {
+	change, found, err := c.CollectGoneHoldings(ctx, []HolderKey{key})
+	return change, found[0], err
+}
+
+// CollectGoneHoldings is CollectRemoteHolding for each of keys, in their
+// order, in one write: a reply that names several holdings gone removes them
+// waiting for the cache's lock once. found says, for each key, whether the
+// cache had its holding. The candidates are the holdings the removed ones
+// depended on, sorted, each once, and none the call removed itself.
+func (c *Cache) CollectGoneHoldings(ctx context.Context, keys []HolderKey) (RemoteChange, []bool, error) {
 	var change RemoteChange
+	found := make([]bool, len(keys))
+	removed := map[HolderKey]bool{}
+	var (
+		candidates []HolderKey
+		entries    []*sharedResult
+		rerr       error
+	)
 	c.egraphMu.Lock()
+	entriesBefore := len(c.resultsByID)
+	for i, key := range keys {
+		var deps []HolderKey
+		var err error
+		deps, entries, found[i], err = c.removeGoneHoldingLocked(ctx, key, entries)
+		if found[i] {
+			removed[key] = true
+		}
+		candidates = append(candidates, deps...)
+		rerr = errors.Join(rerr, err)
+	}
+	releases, collectErr := c.collectUnownedResultsLocked(ctx, entries)
+	if len(c.resultsByID) < entriesBefore {
+		c.eqClassRemoved = true
+	}
+	c.takeChangesLocked(&change)
+	c.egraphMu.Unlock()
+	candidates = slices.DeleteFunc(candidates, func(key HolderKey) bool { return removed[key] })
+	slices.SortFunc(candidates, compareHolderKeys)
+	change.Candidates = slices.Compact(candidates)
+	return change, found, errors.Join(rerr, collectErr, runOnReleaseFuncs(ctx, releases))
+}
+
+// removeGoneHoldingLocked removes the holding key outright, for a gone
+// answer (CollectRemoteHolding), and reports whether the cache had it. It
+// returns the holdings it depended on, and appends to entries those its
+// removal leaves to collect. Requires egraphMu for writing.
+func (c *Cache) removeGoneHoldingLocked(ctx context.Context, key HolderKey, entries []*sharedResult) ([]HolderKey, []*sharedResult, bool, error) {
 	entry, h := c.holdingLocked(key)
 	if h == nil {
-		c.takeChangesLocked(&change)
-		c.egraphMu.Unlock()
-		return change, false, nil
+		return nil, entries, false, nil
 	}
-	entriesBefore := len(c.resultsByID)
 	state := c.remoteCaches[key.Cache]
 	if h.dependents > 0 {
 		for number, id := range state.entries {
@@ -1194,19 +1236,11 @@ func (c *Cache) CollectRemoteHolding(ctx context.Context, key HolderKey) (Remote
 			delete(state.sessions, session)
 		}
 	}
-	candidates, entries, err := c.removeHoldingLocked(ctx, state, key, entry, h, nil)
+	deps, entries, err := c.removeHoldingLocked(ctx, state, key, entry, h, entries)
 	if state.holdings == 0 {
 		delete(c.remoteCaches, key.Cache)
 	}
-	releases, collectErr := c.collectUnownedResultsLocked(ctx, entries)
-	if len(c.resultsByID) < entriesBefore {
-		c.eqClassRemoved = true
-	}
-	c.takeChangesLocked(&change)
-	c.egraphMu.Unlock()
-	slices.SortFunc(candidates, compareHolderKeys)
-	change.Candidates = candidates
-	return change, true, errors.Join(err, collectErr, runOnReleaseFuncs(ctx, releases))
+	return deps, entries, true, err
 }
 
 // ApplyHeldValueState applies one observation of an existing holding's value
