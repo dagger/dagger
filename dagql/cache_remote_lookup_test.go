@@ -129,6 +129,67 @@ func TestRemoteLookupOnlyReportedCalls(t *testing.T) {
 	require.Len(t, queuedMisses(t, bridge), 1, "whether this engine's span records doesn't matter: another engine's may have")
 }
 
+// A call keyed to its session, one of its clients or itself names that key
+// in its recipe and its term, so no other engine can have it: its miss asks
+// the service nothing. One with an extra digest is asked, since another
+// engine's value can have that digest, and so is a call keyed by an input
+// that names no session, and a call made on a keyed call's result, whose own
+// inputs name no key.
+func TestRemoteLookupSkipsSessionBoundCalls(t *testing.T) {
+	t.Parallel()
+	ctx, c, srv, sessionID, bridge := lookupTestCache(t)
+	bridge.StartRemoteLookups()
+	scoped := "cacheTestSessionScoped:" + t.Name()
+	SessionScopedInput(scoped)
+	keyed := func(field, input, value string, extras ...call.ExtraDigest) *ResultCall {
+		frame := cacheTestIntCall(field, extras...)
+		frame.ImplicitInputs = []*ResultCallArg{{
+			Name:  input,
+			Value: &ResultCallLiteral{Kind: ResultCallLiteralKindString, StringValue: value},
+		}}
+		return frame
+	}
+	miss := func(frame *ResultCall) string {
+		t.Helper()
+		req := &CallRequest{ResultCall: frame.clone(), CacheReported: true, CacheEvidence: NewCacheDecision()}
+		_, err := c.GetOrInitCall(ctx, sessionID, srv, req, func(context.Context) (AnyResult, error) {
+			return cacheTestIntResult(frame, 1), nil
+		})
+		require.NoError(t, err)
+		return req.CacheEvidence.MissRemoteLookup
+	}
+
+	perClient := keyed("perClient", PerClientInput.Name, "client")
+	for _, frame := range []*ResultCall{
+		perClient,
+		keyed("perSession", PerSessionInput.Name, "session"),
+		keyed("perCall", PerCallInput.Name, "call"),
+		keyed("sessionScoped", scoped, "session"),
+	} {
+		require.Empty(t, miss(frame), "%s's miss asks nothing", frame.Field)
+	}
+	require.Empty(t, queuedMisses(t, bridge), "no other engine can have a call keyed to its session, a client or itself")
+
+	content := call.ExtraDigest{Digest: digest.FromString("content"), Label: call.ExtraDigestLabelContent}
+	onKeyed := cacheTestIntCall("onPerClient")
+	onKeyed.Receiver = &ResultCallRef{Call: perClient}
+	var want []string
+	for _, frame := range []*ResultCall{
+		keyed("perClientByContent", PerClientInput.Name, "client", content),
+		keyed("sessionScopedUnset", scoped, ""),
+		keyed("perSchema", "cachePerSchema", "schema"),
+		onKeyed,
+	} {
+		require.Equal(t, RemoteLookupQueued, miss(frame), frame.Field)
+		want = append(want, frame.Field)
+	}
+	var queued []string
+	for _, m := range queuedMisses(t, bridge) {
+		queued = append(queued, m.Field)
+	}
+	require.Equal(t, want, queued)
+}
+
 // A miss names at most remoteLookupMaxExtras extra digests.
 func TestRemoteLookupBoundsExtras(t *testing.T) {
 	ctx, c, srv, sessionID, bridge := lookupTestCache(t)
