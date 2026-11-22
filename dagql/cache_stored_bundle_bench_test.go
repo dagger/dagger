@@ -471,6 +471,7 @@ func BenchmarkAvailablePart(b *testing.B) {
 	address := storedBenchPart(0).Address
 	now := time.Now().Unix()
 	b.ReportAllocs()
+	b.ResetTimer()
 	for i := range b.N {
 		av, err := cloud.AvailablePart(batch[i%len(batch)], address, now)
 		if err != nil || av.State != PartStored {
