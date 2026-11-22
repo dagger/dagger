@@ -1796,7 +1796,7 @@ func (c *Cache) RemoteHoldingInfo(key HolderKey) (RemoteHeldEntry, bool) {
 // holding the cache doesn't have.
 func (c *Cache) RemoteHoldingInfos(keys []HolderKey) (held []RemoteHeldEntry, ok []bool) {
 	held, ok = make([]RemoteHeldEntry, len(keys)), make([]bool, len(keys))
-	hold := c.holdBatch()
+	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
 	for i, key := range keys {
 		held[i], ok[i] = c.remoteHoldingInfoLocked(key)
@@ -1804,7 +1804,7 @@ func (c *Cache) RemoteHoldingInfos(keys []HolderKey) (held []RemoteHeldEntry, ok
 			c.testBatchAnswered(i)
 		}
 		if i+1 < len(keys) {
-			c.giveWayLocked(&hold)
+			c.giveWayLocked()
 		}
 	}
 	return held, ok
@@ -1954,12 +1954,12 @@ type EntryHeld struct {
 // it describes no holding, digest or term, so its cost grows with the
 // entries, and with their holders only when it lists their keys.
 func (c *Cache) EntriesHeld(numbers []uint64, limit int) []EntryHeld {
-	hold := c.holdBatch()
+	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
 	out := make([]EntryHeld, 0, len(numbers))
 	for i, number := range numbers {
 		if i > 0 {
-			c.giveWayLocked(&hold)
+			c.giveWayLocked()
 		}
 		entry := c.resultsByID[sharedResultID(number)]
 		if entry == nil {
@@ -2002,12 +2002,12 @@ type EntryFacts struct {
 // descriptions reads only what an entry named by a change (RemoteChange's
 // Entries) can have changed of them.
 func (c *Cache) EntriesFacts(numbers []uint64) []EntryFacts {
-	hold := c.holdBatch()
+	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
 	out := make([]EntryFacts, 0, len(numbers))
 	for i, number := range numbers {
 		if i > 0 {
-			c.giveWayLocked(&hold)
+			c.giveWayLocked()
 		}
 		entry := c.resultsByID[sharedResultID(number)]
 		if entry == nil {
