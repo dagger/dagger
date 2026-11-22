@@ -153,9 +153,12 @@ type RemoteHoldingUpdate struct {
 // On a blob-backed cache, Holdings and Entries are what a reader that keeps
 // its answers asks again (cache_change_marks.go), sorted, holdings by number
 // and then cache:
-//   - Holdings: every holding whose description (RemoteHoldingInfo's
-//     Holding) may differ after the operation, those it created or removed
-//     included;
+//   - Holdings: every holding whose facts (HoldingFacts, what a reader may
+//     keep of its description) may differ after the operation, those it
+//     created or removed included. The rest of a description, its content
+//     digest, the sessions holding it, its count of dependents and its
+//     offered parts, a reader reads fresh: a change to them alone names no
+//     holding;
 //   - Entries: every entry of which any of these may differ: whether it
 //     exists; its own facts, Stored, StoredExpiresAtUnix and Recipes; and
 //     any AvailablePart answer at one clock. A holding's description doesn't
@@ -863,8 +866,9 @@ func (c *Cache) applyHeldValueStateLocked(ctx context.Context, state *remoteCach
 			state.graphVersion++
 			depKey := HolderKey{Cache: key.Cache, Number: number}
 			if _, dep := c.holdingLocked(depKey); dep != nil {
+				// Its count of dependents is no reader's to keep
+				// (HoldingFacts): it is a candidate, not marked.
 				dep.dependents--
-				c.markHoldingLocked(depKey)
 				candidates = append(candidates, depKey)
 			}
 			return false
@@ -881,18 +885,17 @@ func (c *Cache) applyHeldValueStateLocked(ctx context.Context, state *remoteCach
 		h.expiresAtUnix = expires
 		changed = true
 	}
-	described := changed
+	// Its content digest and offered parts are read fresh (HoldingFacts): a
+	// change to them alone names no holding. An offer never changes a
+	// complete part, which is further along.
 	if obs.ContentDigest != "" && string(obs.ContentDigest) != handleString(h.contentDigest) {
 		h.contentDigest = internString(string(obs.ContentDigest))
-		described = true
 	}
-	if advanceHeldParts(h, offered, heldPartOffered) {
-		changed = true
-	}
+	advanceHeldParts(h, offered, heldPartOffered)
 	if advanceHeldParts(h, parts, heldPartComplete) {
 		changed = true
 	}
-	if described || changed {
+	if changed {
 		c.markHoldingLocked(key)
 	}
 	c.addHoldingDepsLocked(state, key, h, obs.Deps)
@@ -919,10 +922,9 @@ func (c *Cache) addRemoteHoldLocked(key HolderKey, session string) (change Remot
 	if h == nil {
 		return change, fmt.Errorf("add remote hold: %w: %s/%d", ErrUnknownHolding, key.Cache, key.Number)
 	}
-	var added bool
-	if h.sessions, added = withSession(h.sessions, session); added {
-		c.markHoldingLocked(key)
-	}
+	// The sessions holding it are read fresh (HoldingFacts): the hold
+	// names no holding.
+	h.sessions, _ = withSession(h.sessions, session)
 	state := c.remoteCacheLocked(key.Cache)
 	held := state.sessions[session]
 	if held == nil {
@@ -959,10 +961,9 @@ func (c *Cache) releaseRemoteSessionLocked(cache CacheID, session string, candid
 	for number := range state.sessions[session] {
 		key := HolderKey{Cache: cache, Number: number}
 		if _, h := c.holdingLocked(key); h != nil {
-			var had bool
-			if h.sessions, had = withoutSession(h.sessions, session); had {
-				c.markHoldingLocked(key)
-			}
+			// The sessions holding it are read fresh (HoldingFacts): the
+			// session's end makes it a candidate and names no holding.
+			h.sessions, _ = withoutSession(h.sessions, session)
 			candidates = append(candidates, key)
 		}
 	}
@@ -1032,7 +1033,9 @@ func (c *Cache) releaseRemoteCacheLocked(cache CacheID) (change RemoteChange) {
 	for number, id := range state.entries {
 		key := HolderKey{Cache: cache, Number: number}
 		h := c.resultsByID[id].holderLocked(key)
-		if len(h.sessions) > 0 || h.retention.retained {
+		// Its retention is a fact a reader keeps (HoldingFacts); the
+		// sessions holding it are read fresh.
+		if h.retention.retained {
 			c.markHoldingLocked(key)
 		}
 		h.sessions = nil
@@ -1229,8 +1232,8 @@ func (c *Cache) removeHoldingLocked(ctx context.Context, state *remoteCacheState
 	for _, number := range h.deps {
 		depKey := HolderKey{Cache: key.Cache, Number: number}
 		if _, dep := c.holdingLocked(depKey); dep != nil {
+			// Its count of dependents is read fresh (HoldingFacts).
 			dep.dependents--
-			c.markHoldingLocked(depKey)
 			deps = append(deps, depKey)
 		}
 	}
@@ -1378,9 +1381,11 @@ func (c *Cache) addHoldingDepsLocked(state *remoteCacheState, key HolderKey, h *
 		if _, dep := c.holdingLocked(HolderKey{Cache: key.Cache, Number: number}); dep != nil {
 			known = append(known, number)
 			state.graphVersion++
+			// The dependency's count of dependents is read fresh
+			// (HoldingFacts): only the holding whose dependencies grew is
+			// named.
 			dep.dependents++
 			c.markHoldingLocked(key)
-			c.markHoldingLocked(HolderKey{Cache: key.Cache, Number: number})
 			continue
 		}
 		unknown = append(unknown, number)

@@ -37,8 +37,10 @@ import (
 // are marked as it leaves its classes (markLeavingLocked), while the classes
 // still name them.
 //
-// A holding is marked where any field of its description
-// (RemoteHoldingInfo) changes, and where it is created or removed.
+// A holding is marked where any of its facts (HoldingFacts) changes, and
+// where it is created or removed: not where only what a reader reads fresh
+// of its description changes, its content digest, sessions, count of
+// dependents or offered parts.
 //
 // Marks are appended, an entry or holding as often as it changes, and sorted
 // and deduplicated once, when handed back: a write's marks cost an append
