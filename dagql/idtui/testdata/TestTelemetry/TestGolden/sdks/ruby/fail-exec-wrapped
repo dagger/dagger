@@ -11,7 +11,13 @@ Expected stderr:
 
 $ viztestRuby: ViztestRuby! X.Xs CACHED
 ✘ .failExecWrapped: String! X.Xs ERROR
-╰╴✘ call module entrypoint X.Xs ERROR
-  ┆ (the entrypoint's own evaluation, elided)
+┃ /src/lib/viztest_ruby.rb:40:in 'ViztestRuby#fail_exec_wrapped': ruby function ran a failing command: exit code: 1 (RuntimeError)
+┃ /src/lib/viztest_ruby.rb:38:in 'ViztestRuby#fail_exec_wrapped': exit code: 1 (Dagger::ExecError)
+├╴$ Container.from(address: "alpine"): Container! X.Xs CACHED
+├╴✘ withExec sh -c 'echo exec stdout; sleep 0.1; echo exec stderr >&2; exit 1' X.Xs ERROR
+│ ┃ exec stdout
+│ ┃ exec stderr
+│ ! exit code: 1
+╰╴✘ .stdout: String! X.Xs ERROR
 
 Setup tracing by running "dagger cloud signup". To hide set DAGGER_NO_NAG=1

@@ -6,18 +6,9 @@ Expected stderr:
 
 $ viztestRuby: ViztestRuby! X.Xs CACHED
 ✘ .failNative: Void X.Xs ERROR
-✘ withExec ruby -rbundler/setup sdk/exe/dagger-mod call --output /dagger/result.json (stdin: "{\"receiverType\":\"ViztestRuby\",\"receiverValue\":\"{}\",\"fnName\":\"fail_native\",\"fnArgs\":\"{}\",\"callDigest\":\"xxh3:XXXXXXXXXXXXXXXX\",\"moduleSource\":\"EhIIkxkSDQoJRGlyZWN0b3J5GAE=\"}") X.Xs ERROR
 ruby function stdout
 ruby function stderr
-dagger-mod: Dagger::Mod::FunctionError: /src/lib/viztest_ruby.rb:21:in 'ViztestRuby#fail_native': ruby function failed natively (RuntimeError)
-        from /src/sdk/lib/dagger/mod/dispatch.rb:56:in 'Kernel#public_send'
-        from /src/sdk/lib/dagger/mod/dispatch.rb:56:in 'block in Dagger::Mod::Dispatch#invoke'
-        from /src/sdk/lib/dagger/mod/dispatch.rb:74:in 'Dagger::Mod::Dispatch#user_code'
-        from /src/sdk/lib/dagger/mod/dispatch.rb:56:in 'Dagger::Mod::Dispatch#invoke'
-        from /src/sdk/lib/dagger/mod/dispatch.rb:21:in 'Dagger::Mod::Dispatch#call'
-        from /src/sdk/lib/dagger/mod/cli.rb:56:in 'Dagger::Mod::CLI.call'
-        from /src/sdk/lib/dagger/mod/cli.rb:20:in 'Dagger::Mod::CLI.run'
-        from sdk/exe/dagger-mod:10:in '<main>'
-! exit code: 2
+/src/lib/viztest_ruby.rb:21:in 'ViztestRuby#fail_native': ruby function failed natively (RuntimeError)
+! ruby function failed natively
 
 Setup tracing by running "dagger cloud signup". To hide set DAGGER_NO_NAG=1

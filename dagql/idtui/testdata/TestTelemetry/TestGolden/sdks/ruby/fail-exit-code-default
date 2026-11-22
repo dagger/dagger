@@ -6,7 +6,6 @@ Expected stderr:
 
 $ viztestRuby: ViztestRuby! X.Xs CACHED
 ✘ .failExitCode: Void X.Xs ERROR
-✘ withExec ruby -rbundler/setup sdk/exe/dagger-mod call --output /dagger/result.json (stdin: "{\"receiverType\":\"ViztestRuby\",\"receiverValue\":\"{}\",\"fnName\":\"fail_exit_code\",\"fnArgs\":\"{}\",\"callDigest\":\"xxh3:XXXXXXXXXXXXXXXX\",\"moduleSource\":\"EhIIkxkSDQoJRGlyZWN0b3J5GAE=\"}") X.Xs ERROR
 ruby function stdout
 ruby function stderr
 ! exit code: 3
