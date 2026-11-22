@@ -5,7 +5,21 @@ Expected stderr:
 ✔ parsing command line arguments X.Xs
 
 ✘ viztestPython: ViztestPython! X.Xs ERROR
+ERROR [dagger.mod]: Error while importing Python module 'viztest_python' with Dagger functions
 Traceback (most recent call last):
+  File "/usr/local/lib/python3.14/site-packages/dagger/mod/cli.py", line XXX, in load_module
+    cls = ep.load()
+  File "/usr/local/lib/python3.14/importlib/metadata/__init__.py", line XXX, in load
+    module = import_module(match.group('module'))
+  File "/usr/local/lib/python3.14/importlib/__init__.py", line XXX, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line XXX, in _gcd_import
+  File "<frozen importlib._bootstrap>", line XXX, in _find_and_load
+  File "<frozen importlib._bootstrap>", line XXX, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line XXX, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line XXX, in exec_module
+  File "<frozen importlib._bootstrap>", line XXX, in _call_with_frames_removed
   File "/src/sha256:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX/viztest/sdks/broken-python/src/viztest_python/__init__.py", line XXX, in <module>
     this is not python
     ^^^^

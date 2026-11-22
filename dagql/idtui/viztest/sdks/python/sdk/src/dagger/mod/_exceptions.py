@@ -1,8 +1,11 @@
 import json
 import logging
+import pathlib
+import re
+import sys
 import traceback
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Final
 
 import cattrs
 from opentelemetry.semconv.attributes.exception_attributes import (
@@ -123,6 +126,99 @@ def log_exception_only(
     if note and hasattr(exc, "add_note"):
         exc.add_note(note)
     logger.error(msg, *args, exc_info=(type(exc), exc, None))
+
+
+FUNCTION_ERROR_MARKER: Final = "::dagger-function-error::"
+"""Starts the line on which a call reports the function's error.
+
+The generated entrypoint raises the text after it as the function's error.
+"""
+
+# A failed exec gives the entrypoint only the last 100 KiB of its stderr. JSON
+# escapes a character in at most six bytes, so 16 Ki characters fit.
+_REPORTED_ERROR_LIMIT: Final = 16 << 10
+
+# The engine finds where an error comes from by these, at the message's end.
+_ERROR_ORIGIN: Final = re.compile(r"\s*\[traceparent:[0-9a-f]{32}-[0-9a-f]{16}\]")
+
+
+def function_error_message(exc: BaseException, *, logged: bool = False) -> str:
+    """The error a failed call reports: the function's own, not its wrapper.
+
+    An API error's message is kept whole, with the origin it names. Each
+    error of a group is reported, as a task group raises them. An exception
+    the function raised is named with its type, unless `logged` says its
+    traceback, which names it, is already in the function's logs.
+    """
+    if isinstance(exc, FunctionError) and exc.__cause__ is not None:
+        if logged and not isinstance(exc.__cause__, BaseExceptionGroup):
+            return str(exc) or type(exc.__cause__).__name__
+        exc = exc.__cause__
+    if isinstance(exc, BaseExceptionGroup):
+        return "; ".join(function_error_message(e) for e in exc.exceptions)
+    if isinstance(exc, ModuleError | QueryError):
+        return str(exc) or type(exc).__name__
+    return f"{type(exc).__name__}: {exc}" if str(exc) else type(exc).__name__
+
+
+FUNCTION_ERROR_PATH_ENV: Final = "DAGGER_FUNCTION_ERROR_PATH"
+"""The file the engine gives a call's process to write the function's error to.
+
+An engine that sets it fails the call with the error written there; one that
+doesn't reads the FUNCTION_ERROR_MARKER line instead.
+"""
+
+
+class ErrorOriginFilter(logging.Filter):
+    """Leave the error origins out of what a call's process logs.
+
+    An API error's message ends with the origin the engine finds it by, such
+    as `[traceparent:...]`: plumbing for the engine, which reads it from the
+    error the process reports, and noise in the function's logs, a traceback
+    included.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.exc_info and not record.exc_text:
+            record.exc_text = logging.Formatter().formatException(record.exc_info)
+        if record.exc_text:
+            record.exc_text = _ERROR_ORIGIN.sub("", record.exc_text)
+        message = record.getMessage()
+        if _ERROR_ORIGIN.search(message):
+            record.msg, record.args = _ERROR_ORIGIN.sub("", message), None
+        return True
+
+
+def _limit(message: str) -> str:
+    if len(message) > _REPORTED_ERROR_LIMIT:
+        origins = "".join(_ERROR_ORIGIN.findall(message[_REPORTED_ERROR_LIMIT:]))
+        message = message[:_REPORTED_ERROR_LIMIT] + "..." + origins
+    return message
+
+
+def write_function_error(path: str, message: str) -> None:
+    """Give the engine a failed call's error in the file it names.
+
+    The engine fails the call with this message as the function's own error.
+    An API error's message names the call that failed, so that call stays the
+    error's origin; any other error comes from the function call.
+    """
+    pathlib.Path(path).write_text(_limit(message), encoding="utf-8")
+
+
+def report_function_error(message: str) -> None:
+    """Report a failed call's error as the last line of stderr.
+
+    The process that runs a call has no current function call to return its
+    error to, so its exec fails, and the generated entrypoint raises the
+    message from this line instead of the exec's exit code. An API error's
+    message names the call that failed, so that call becomes the error's
+    origin, not the process. An engine that gives the process a file for the
+    error (FUNCTION_ERROR_PATH_ENV) gets it there instead.
+    """
+    encoded = json.dumps(_limit(message), ensure_ascii=False)
+    sys.stderr.write(f"\n{FUNCTION_ERROR_MARKER}{encoded}\n")
+    sys.stderr.flush()
 
 
 async def record_exception(exc: Exception):

@@ -53,17 +53,20 @@ const racyReply = "the dispatcher's reply on stdout races its stack trace on std
 //     renders with "exit code: N" and no logs.
 //   - BAD: a caught and wrapped exec error loses the wrapping message in the
 //     collapsed report: the origin is the inner withExec.
-//   - BAD: an entrypoint's error reads "call module entrypoint: ...", and
-//     across a module boundary a dependency's failed exec arrives as
-//     "call module entrypoint: exit code: 1".
 //   - BAD: an exec error's message is a bare "exit code: N".
+//
+// An SDK whose module process reports its error in the engine's function
+// error file (DAGGER_FUNCTION_ERROR_PATH) gets the first right: see python.
 var sdkFixtures = []sdkFixture{
 	// Errors use the ::dagger-function-error:: marker. A build failure renders
 	// the compiler's error, through dagger/go's own build.
 	{lang: "go", source: "main.go", breakage: "\nvar _ = undefinedValue\n"},
-	// BAD: no error marker yet (dagger/python-sdk#93): every failure, a
-	// syntax error included, is the dispatcher's "exit code: 2", without its
-	// message or logs.
+	// Errors use the engine's function error file (DAGGER_FUNCTION_ERROR_PATH,
+	// a fork of dagger/python-sdk#93). The function's logs keep the
+	// traceback Python prints for an unhandled error, which is not targeted
+	// yet. Its call-failing-dep goldens keep the go-sdk dependency's rows as
+	// they render today: the go-sdk's ::dagger-function-error:: echo and
+	// failed "call module entrypoint" row are the Go SDK's to fix.
 	{lang: "python", source: "src/viztest_python/__init__.py", breakage: "\nthis is not python\n"},
 	// BAD: the dispatcher replies on stdout, which the function's console.log
 	// shares: the reply no longer decodes, so log-success fails, and a
@@ -84,10 +87,9 @@ var sdkFixtures = []sdkFixture{
 	// of the compiler's output.
 	{lang: "java", source: "src/main/java/io/dagger/modules/viztestjava/ViztestJava.java", breakage: "\nthis is not java\n"},
 	// Not an entrypoint: the dang-sdk module runs on the engine's built-in
-	// Dang runtime, so its errors and logs are the reference. BAD: the
-	// collapsed report renders a native error twice, and a wrapped exec error
-	// shows only its origin, without the wrapping message, even expanded:
-	// fail-exec-wrapped renders as fail-exec does.
+	// Dang runtime, so its errors and logs are the reference. BAD: a wrapped
+	// exec error shows only its origin, without the wrapping message, even
+	// expanded: fail-exec-wrapped renders as fail-exec does.
 	{lang: "dang", source: "main.dang", breakage: "\nthis is not dang\n", noProcess: true},
 }
 
@@ -124,17 +126,16 @@ var sdkCases = []sdkCase{
 	// Logs to stdout and stderr, and succeeds: where do a function's own logs
 	// land? On its row, with its result rendered among them.
 	{function: "log-success"},
-	// Logs to stdout and stderr, then fails with an error of its own. BAD:
-	// collapsed, the error's origin is "call module entrypoint", and the logs
-	// on the function's row are not shown.
+	// Logs to stdout and stderr, then fails with an error of its own: the
+	// function's row is the origin, with its logs.
 	{function: "fail-native", fail: true},
 	// Logs to stdout and stderr, then exits its process with code 3 instead
-	// of returning an error. BAD: the origin is the dispatcher exec, with
-	// "exit code: 3" and none of the logs.
+	// of returning an error: the function's row is the origin, with its logs
+	// and "exit code: 3".
 	{function: "fail-exit-code", fail: true},
 	// Runs a withExec that logs to stdout and stderr and exits 1, and lets the
 	// error propagate unhandled. Collapsed, the inner withExec is the origin,
-	// with its logs: the best case, except where the SDK loses it (python).
+	// with its logs.
 	{function: "fail-exec", fail: true},
 	// The same exec, its error caught and wrapped in a message of the
 	// function's own, the common real-world pattern. BAD: collapsed, the
@@ -142,8 +143,7 @@ var sdkCases = []sdkCase{
 	{function: "fail-exec-wrapped", fail: true},
 	// Calls viztest/sdks/dep (a go-sdk module) whose withExec fails: how the
 	// error, its origin and its logs survive a module boundary. Same-SDK for
-	// go, cross-SDK for the rest. BAD: expanded, the caller's message is
-	// "call module entrypoint: exit code: 1".
+	// go, cross-SDK for the rest.
 	{function: "call-failing-dep", fail: true},
 	// The same, after the function logs a line of its own: that line belongs
 	// on the function's row, while the dep's withExec is the origin.

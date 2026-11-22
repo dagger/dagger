@@ -7,7 +7,9 @@
 source = "github.com/dagger/go-sdk@aa3e5343ccc8366cfcc843e44f0b5e593d7cbe20"
 
 [modules.python-sdk]
-source = "github.com/dagger/python-sdk@837e04623128dd71b8b526353ae4a02935b6d687"
+# A fork: python-sdk#93, rebased on main, plus the function error file
+# (DAGGER_FUNCTION_ERROR_PATH) the engine gives a call's process.
+source = "github.com/vito/python-sdk@7a84117d2703cb4a7c9d711a16ed72bacc6a526a"
 
 [modules.typescript-sdk]
 # A fork: generated Dang entrypoints name cache policies in TypeScript's

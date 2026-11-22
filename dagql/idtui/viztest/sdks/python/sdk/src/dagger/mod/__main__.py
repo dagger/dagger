@@ -15,7 +15,14 @@ import anyio
 from dagger import telemetry
 from dagger._exceptions import QueryError
 from dagger.client._session import mark_module_runtime
-from dagger.mod._exceptions import ModuleError
+from dagger.mod._exceptions import (
+    FUNCTION_ERROR_PATH_ENV,
+    ErrorOriginFilter,
+    ModuleError,
+    function_error_message,
+    report_function_error,
+    write_function_error,
+)
 
 logger = logging.getLogger(__package__)
 
@@ -62,15 +69,42 @@ def main(argv: list[str] | None = None) -> int:
     call.set_defaults(run=_call)
 
     args = parser.parse_args(argv)
+    if _error_file(args):
+        # The engine reads an error's origin from the file.
+        logger.addFilter(ErrorOriginFilter())
     try:
         args.run(args)
     except (ModuleError, QueryError) as e:
-        logger.error(str(e))  # noqa: TRY400 - the message is the whole story
+        # The engine shows an error it is given in a file; logging it
+        # would show it twice.
+        if not _error_file(args):
+            logger.error(str(e))  # noqa: TRY400 - the message is the whole story
+        _report(args, e)
         return 2
-    except Exception:
+    except Exception as e:
         logger.exception("Unhandled exception")
+        _report(args, e)
         return 1
     return 0
+
+
+def _error_file(args: argparse.Namespace) -> str:
+    """The file the engine gives a call's process for its error, if any."""
+    if args.run is not _call:
+        return ""
+    return os.environ.get(FUNCTION_ERROR_PATH_ENV, "")
+
+
+def _report(args: argparse.Namespace, exc: Exception) -> None:
+    """Give the engine a failed call's error, after everything it logged."""
+    if args.run is not _call:
+        return
+    if path := _error_file(args):
+        # The function's traceback, which names the exception's type, is
+        # already in its logs.
+        write_function_error(path, function_error_message(exc, logged=True))
+    else:
+        report_function_error(function_error_message(exc))
 
 
 def _entrypoint(args: argparse.Namespace) -> None:

@@ -27,13 +27,27 @@ type Entrypoint implements ModuleEntrypoint {
       fnName: fnName,
       fnArgs: fnArgs,
     }})
-    let result = runtime
+    let installed = runtime
       .withEnvVariable("DAGGER_MODULE_CALL_DIGEST", callDigest ?? "")
       .withEnvVariable("DAGGER_CLIENT_VERSION", clientVersion)
+      .sync
+    let result = installed
       .withExec(["python", "-m", "dagger.mod", "call", "--output", "/dagger/result.json"], stdin: request, experimentalPrivilegedNesting: true)
       .file("/dagger/result.json")
-      .contents
+      .contents rescue {
+        err: GraphQLError => raiseFunctionError(err)
+      }
     (result :: JSON!)
+  }
+
+  let raiseFunctionError(err: GraphQLError!): String! {
+    let marker = "::dagger-function-error::"
+    let stderr = ((JSON.decode(err.extensions) :: {{stderr: String}}).stderr ?? "") rescue ""
+    let lines = stderr.split("\n").filter { line => line.hasPrefix(marker) }
+    if (lines.isEmpty) {
+      raise err
+    }
+    raise ((JSON.decode(lines.takeLast(1).join("").trimPrefix(marker)) :: String!) rescue err.message)
   }
 
   let runtime: Container! {
