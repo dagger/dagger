@@ -102,8 +102,8 @@ func (files *GitTreeFiles) writeSubmodulesManifest(snapshotRoot string) error {
 		return err
 	}
 	var manifest bytes.Buffer
-	for p, entry := range files.entries {
-		if entry.mode == gitModeGitlink {
+	for _, p := range slices.Sorted(maps.Keys(files.entries)) {
+		if files.entries[p].mode == gitModeGitlink {
 			manifest.WriteByte(gitSparseEntryGitlink)
 			manifest.WriteString(p)
 			manifest.WriteByte(0)
@@ -122,10 +122,12 @@ func (files *GitTreeFiles) hasSubmodules() bool {
 }
 
 // objectList returns "mode oid path\0" for every path of the tree that isn't
-// a directory.
+// a directory, in path order, as the manifest is written: two runs of one
+// commit write the same list.
 func (files *GitTreeFiles) objectList() []byte {
 	var list bytes.Buffer
-	for p, entry := range files.entries {
+	for _, p := range slices.Sorted(maps.Keys(files.entries)) {
+		entry := files.entries[p]
 		list.WriteString(entry.mode + " " + entry.oid + " " + p)
 		list.WriteByte(0)
 	}
