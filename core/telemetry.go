@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -537,6 +538,27 @@ func appendCacheEvidenceAttrs(ctx context.Context, attrs []attribute.KeyValue, e
 // unless 0, how many entries its load decoded, and what its work waited for,
 // by kind.
 func appendHitLoadAttrs(attrs []attribute.KeyValue, loadedAt, servedAt int64, load dagql.HitLoad) []attribute.KeyValue {
+	if loadedAt != 0 {
+		attrs = append(attrs, attribute.String(telemetryattrs.CacheHitLoadedAtAttr, strconv.FormatInt(loadedAt, 10)))
+	}
+	if servedAt != 0 {
+		attrs = append(attrs, attribute.String(telemetryattrs.CacheHitServedAtAttr, strconv.FormatInt(servedAt, 10)))
+	}
+	if load.Decoded > 0 {
+		attrs = append(attrs, attribute.String(telemetryattrs.CacheHitDecodedAttr, strconv.FormatInt(load.Decoded, 10)))
+	}
+	if len(load.Waits) > 0 {
+		kinds := make([]string, 0, len(load.Waits))
+		for kind := range load.Waits {
+			kinds = append(kinds, kind)
+		}
+		slices.Sort(kinds)
+		waits := make([]string, len(kinds))
+		for i, kind := range kinds {
+			waits[i] = kind + "=" + strconv.FormatInt(int64(load.Waits[kind]), 10)
+		}
+		attrs = append(attrs, attribute.StringSlice(telemetryattrs.CacheHitWaitsAttr, waits))
+	}
 	return attrs
 }
 
