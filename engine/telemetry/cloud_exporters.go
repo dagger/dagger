@@ -29,10 +29,14 @@ import (
 // share an HTTP client that sets the current bearer token on each request,
 // refreshed through tokenRefreshFn when it is non-nil.
 //
-// Each exporter stamps the X-Dagger-Export sequence of its own writer, and
-// uploads use the private Cloud export transport. Every request is bounded by
-// CloudExportTimeout: the OTLP exporters apply their own default timeout only
-// to a client they build themselves.
+// Each exporter stamps each upload with an X-Dagger-Export writer and
+// sequence: the span and log exporters number their uploads per trace, under
+// a writer of their own for each trace, splitting an export that spans
+// several traces into one upload per trace (traceExportSequencer); the metric
+// exporter numbers its uploads under one writer. Uploads use the private Cloud
+// export transport. Every request is bounded by CloudExportTimeout: the OTLP
+// exporters apply their own default timeout only to a client they build
+// themselves.
 func NewCloudExporters(ctx context.Context, cloudAuth *auth.Cloud, tokenRefreshFn func(context.Context) (*oauth2.Token, error), cloudURL string) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter, error) {
 	return newCloudExporters(ctx, cloudAuth, tokenRefreshFn, cloudURL, CloudExportTimeout)
 }
@@ -56,15 +60,15 @@ func NewCloudSpanExporter(ctx context.Context, cloudAuth *auth.Cloud, tokenRefre
 type cloudExportConfig struct {
 	endpoint   *url.URL
 	headers    map[string]string
-	httpClient func(*exportSequencer) *http.Client
+	httpClient func() *http.Client
 }
 
 func (cloud cloudExportConfig) spanExporter(ctx context.Context) (sdktrace.SpanExporter, error) {
-	sequencer := newExportSequencer()
+	sequencer := newTraceExportSequencer()
 	exp, err := otlptracehttp.New(ctx,
 		otlptracehttp.WithEndpointURL(cloud.endpoint.JoinPath("v1", "traces").String()),
 		otlptracehttp.WithHeaders(cloud.headers),
-		otlptracehttp.WithHTTPClient(cloud.httpClient(sequencer)))
+		otlptracehttp.WithHTTPClient(cloud.httpClient()))
 	if err != nil {
 		return nil, fmt.Errorf("configure cloud tracing: %w", err)
 	}
@@ -91,8 +95,8 @@ func newCloudExportConfig(cloudAuth *auth.Cloud, tokenRefreshFn func(context.Con
 	} else {
 		tokenSource = &sharedTokenSource{token: cloudAuth.Token, refresh: tokenRefreshFn}
 	}
-	httpClient := func(sequencer *exportSequencer) *http.Client {
-		client := sequencer.httpClient()
+	httpClient := func() *http.Client {
+		client := newExportSequenceHTTPClient()
 		client.Timeout = requestTimeout
 		if tokenSource != nil {
 			client.Transport = cloudTokenTransport{source: tokenSource, base: client.Transport}
@@ -109,7 +113,8 @@ func newCloudExporters(ctx context.Context, cloudAuth *auth.Cloud, tokenRefreshF
 	}
 	cloudEndpoint, headers, httpClient := cloud.endpoint, cloud.headers, cloud.httpClient
 
-	logSequencer := newExportSequencer()
+	logSequencer := newTraceExportSequencer()
+	// Metrics belong to no trace: one writer numbers them all.
 	metricSequencer := newExportSequencer()
 
 	spanExporter, err := cloud.spanExporter(ctx)
@@ -119,14 +124,14 @@ func newCloudExporters(ctx context.Context, cloudAuth *auth.Cloud, tokenRefreshF
 	logExporter, err := otlploghttp.New(ctx,
 		otlploghttp.WithEndpointURL(cloudEndpoint.JoinPath("v1", "logs").String()),
 		otlploghttp.WithHeaders(headers),
-		otlploghttp.WithHTTPClient(httpClient(logSequencer)))
+		otlploghttp.WithHTTPClient(httpClient()))
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("configure cloud logging: %w", err)
 	}
 	metricExporter, err := otlpmetrichttp.New(ctx,
 		otlpmetrichttp.WithEndpointURL(cloudEndpoint.JoinPath("v1", "metrics").String()),
 		otlpmetrichttp.WithHeaders(headers),
-		otlpmetrichttp.WithHTTPClient(httpClient(metricSequencer)))
+		otlpmetrichttp.WithHTTPClient(httpClient()))
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("configure cloud metrics: %w", err)
 	}

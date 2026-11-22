@@ -8,11 +8,15 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/attribute"
 	otellog "go.opentelemetry.io/otel/log"
@@ -879,6 +883,100 @@ func TestCloudExportErrorClassification(t *testing.T) {
 	}
 	require.False(t, cloudRejectedPermanently(errors.New("dial tcp: connection refused")))
 	require.False(t, cloudRejectedPermanently(context.DeadlineExceeded))
+}
+
+// The Cloud exporters upload an export of several traces as one request per
+// trace and join their errors: the export is a partial success, which the
+// forwarder does not resend, only when every request's error is one.
+func TestCloudPartialSuccessOfPerTraceUploads(t *testing.T) {
+	t.Parallel()
+	partial := errors.New("OTLP partial success: 1 log records rejected")
+	transient := errors.New(`logs export: Post "http://cloud/v1/logs": dial tcp: connection refused`)
+	require.True(t, isCloudPartialSuccess(partial))
+	require.True(t, isCloudPartialSuccess(errors.Join(partial, partial)))
+	require.True(t, isCloudPartialSuccess(fmt.Errorf("export: %w", errors.Join(partial, partial))))
+	require.False(t, isCloudPartialSuccess(errors.Join(partial, transient)), "the failed trace's upload must be resent")
+	require.False(t, isCloudPartialSuccess(errors.Join(transient)))
+	require.False(t, isCloudPartialSuccess(transient))
+
+	rejected := errors.New("failed to send logs to http://cloud/v1/logs: 400 Bad Request (body: malformed)")
+	require.True(t, cloudRejectedPermanently(errors.Join(transient, rejected)))
+	require.False(t, cloudRejectedPermanently(errors.Join(transient, transient)))
+}
+
+// A session forwards the logs of every trace its clients emit under -- a
+// nested session's run under a fresh trace -- through one exporter. Cloud
+// reads each writer's sequences of a trace as a contiguous prefix, so every
+// request carries one trace's records, and for each trace, its writer's
+// sequences run 1..N.
+func TestSessionCloudLogSequencesPerTrace(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	receiver := newCloudReceiver(t, false)
+	sess, root := newCloudTestSession(t, &Server{}, &engine.ClientMetadata{
+		CloudAuth:               basicCloudAuth("dag_test_token"),
+		CloudURL:                receiver.URL,
+		CloudTelemetryPublisher: engine.CloudTelemetryPublisherEngine,
+	})
+	require.NotNil(t, sess.cloudForwarder)
+
+	clientCtx := engine.ContextWithClientMetadata(t.Context(), root.clientMetadata)
+	clientCtx = telemetry.WithLoggerProvider(clientCtx, sess.loggerProvider)
+	tracer := sess.tracerProvider.Tracer("test")
+	const traces, perTrace = 3, 4
+	var spans []trace.Span
+	wantTraces := map[string]bool{}
+	for i := range traces {
+		spanCtx, span := tracer.Start(clientCtx, fmt.Sprintf("root-%d", i), trace.WithNewRoot())
+		wantTraces[span.SpanContext().TraceID().String()] = true
+		spans = append(spans, span)
+		for j := range perTrace {
+			rec := otellog.Record{}
+			rec.SetTimestamp(time.Now())
+			rec.SetBody(otellog.StringValue(fmt.Sprintf("log-%d-%d", i, j)))
+			telemetry.Logger(spanCtx, "test").Emit(spanCtx, rec)
+		}
+	}
+	for _, span := range spans {
+		span.End()
+	}
+	sess.flushSessionCloudTelemetry(ctx)
+	publishRestToCloud(ctx, t, sess)
+
+	receiver.mu.Lock()
+	exports := slices.Clone(receiver.logExports)
+	receiver.mu.Unlock()
+	seqs := map[string][]uint64{}
+	writers := map[string]string{}
+	records := map[string]int{}
+	for _, export := range exports {
+		require.NotEmpty(t, export.traceIDs)
+		traceID := export.traceIDs[0]
+		for _, id := range export.traceIDs {
+			require.Equal(t, traceID, id, "a request carries one trace's records")
+		}
+		writer, seq, ok := strings.Cut(export.header, "/")
+		require.True(t, ok, "header %q", export.header)
+		_, err := uuid.Parse(writer)
+		require.NoError(t, err)
+		n, err := strconv.ParseUint(seq, 10, 64)
+		require.NoError(t, err)
+		if w, ok := writers[traceID]; ok {
+			require.Equal(t, w, writer, "one writer per trace")
+		}
+		writers[traceID] = writer
+		seqs[traceID] = append(seqs[traceID], n)
+		records[traceID] += len(export.traceIDs)
+	}
+	for traceID := range wantTraces {
+		require.Equal(t, perTrace, records[traceID], "trace %s", traceID)
+		got := seqs[traceID]
+		slices.Sort(got)
+		for i, n := range got {
+			require.EqualValues(t, i+1, n, "trace %s sequences %v are contiguous from 1", traceID, got)
+		}
+	}
 }
 
 // A request Cloud refuses for good ends forwarding for the session at once,

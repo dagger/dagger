@@ -634,8 +634,23 @@ func (f *cloudForwarder) release() {
 
 // isCloudPartialSuccess reports an OTLP partial success: Cloud took the
 // request but rejected some of its items, which sending it again would only
-// repeat.
+// repeat. The Cloud exporters upload an export spanning several traces as one
+// request per trace and join their errors: that is a partial success only if
+// every one of them is, since resending it is what delivers the others.
 func isCloudPartialSuccess(err error) bool {
+	var joined interface{ Unwrap() []error }
+	if errors.As(err, &joined) {
+		errs := joined.Unwrap()
+		if len(errs) == 0 {
+			return false
+		}
+		for _, err := range errs {
+			if !isCloudPartialSuccess(err) {
+				return false
+			}
+		}
+		return true
+	}
 	return strings.Contains(err.Error(), "OTLP partial success")
 }
 

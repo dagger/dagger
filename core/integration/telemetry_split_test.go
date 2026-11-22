@@ -146,8 +146,9 @@ func (got telemetrySplitReceived) cliWriters() map[string]bool {
 	return writers
 }
 
-// cliLogWriters are cliWriters for log records. Every exporter set has one
-// writer per signal, so log records are only ever compared with log writers.
+// cliLogWriters are cliWriters for log records. Every exporter set has its own
+// writers per signal (one per trace), so log records are only ever compared
+// with log writers.
 func (got telemetrySplitReceived) cliLogWriters() map[string]bool {
 	writers := map[string]bool{}
 	for _, rec := range got.records {
