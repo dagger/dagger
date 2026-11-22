@@ -219,6 +219,8 @@ type settings struct {
 	peakRSS    func() int64
 	maxMessage int
 	jitter     func() float64
+	// aheadBytes is restoreAheadBytes but in tests.
+	aheadBytes int
 	// probeInterval and probeTimeout are protocol.ProbeInterval and
 	// protocol.ProbeTimeout but in tests.
 	probeInterval time.Duration
@@ -239,6 +241,7 @@ func newSettings(cfg Config) *settings {
 		peakRSS:       PeakResident,
 		maxMessage:    protocol.MaxMessageBytes,
 		jitter:        rand.Float64,
+		aheadBytes:    restoreAheadBytes,
 		probeInterval: protocol.ProbeInterval,
 		probeTimeout:  protocol.ProbeTimeout,
 	}

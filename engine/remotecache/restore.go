@@ -46,6 +46,17 @@ const (
 	// byte, as a part's content read's is bounded (dagql's
 	// partContentIdleTimeout). It is not a bound on the whole download.
 	restoreIdleTimeout = 30 * time.Second
+
+	// restoreAheadBytes bounds how far a file's parts are decoded and
+	// checked ahead of its merge: the encoded bytes of the parts decoded or
+	// checked and not yet taken by the merge, with the next part's, stay
+	// within it, and a part larger than it goes once none waits. A checked
+	// part holds about 40 times its encoded bytes (engine-dev's largest
+	// whole part: 3.1 MB encoded, 117 MB checked), so the parts waiting
+	// beside a merge hold about 120 MB at most, as two large parts did when
+	// each stage held one. Room for a few large parts keeps a run of small
+	// parts from leaving the merge waiting for the large part after it.
+	restoreAheadBytes = 3 << 20
 )
 
 // errRestoreConnectionEnded stops a restore whose connection ended.
