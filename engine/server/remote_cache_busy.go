@@ -154,6 +154,9 @@ func (r busyReport) attrs() []any {
 type busyWaits struct {
 	mu    sync.Mutex
 	roots map[uint64][]uint64
+	// rows counts, for each row, the waiting roots that wait on it: the
+	// rows whose ends the look wakes for (wants).
+	rows map[uint64]int
 	// added receives as a root begins to wait, once for roots added before
 	// it is taken: one a capture race kept out, with nothing in flight, is
 	// ready at once.
@@ -172,15 +175,37 @@ func (w *busyWaits) wait(number uint64, root dagql.LeftOutRoot) {
 	}
 	w.mu.Lock()
 	if w.roots == nil {
-		w.roots = map[uint64][]uint64{}
+		w.roots, w.rows = map[uint64][]uint64{}, map[uint64]int{}
 	}
+	w.stopLocked(number)
 	w.roots[number] = rows
+	for _, row := range rows {
+		w.rows[row]++
+	}
 	added := w.addedLocked()
 	w.mu.Unlock()
 	select {
 	case added <- struct{}{}:
 	default:
 	}
+}
+
+// stopLocked stops root number's wait, if it waits. Requires w.mu.
+func (w *busyWaits) stopLocked(number uint64) {
+	for _, row := range w.roots[number] {
+		if w.rows[row]--; w.rows[row] <= 0 {
+			delete(w.rows, row)
+		}
+	}
+	delete(w.roots, number)
+}
+
+// wants reports whether a waiting root waits on row: whether its end may
+// free one (dagql.Cache.WatchBusyEnds).
+func (w *busyWaits) wants(row uint64) bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.rows[row] > 0
 }
 
 func (w *busyWaits) addedCh() <-chan struct{} {
@@ -223,7 +248,7 @@ func (w *busyWaits) take(busy func([]uint64) []uint64) ([]uint64, bool) {
 			continue
 		}
 		ready = append(ready, number)
-		delete(w.roots, number)
+		w.stopLocked(number)
 	}
 	slices.Sort(ready)
 	return ready, len(w.roots) > 0
@@ -234,10 +259,11 @@ func (w *busyWaits) take(busy func([]uint64) []uint64) ([]uint64, bool) {
 // (dagql.Cache.BusyRows). It looks as each root begins to wait, since one a
 // capture race kept out is ready at once, and after each end of what kept a
 // row busy, an evaluation's or an attachment's (dagql.Cache.WatchBusyEnds),
-// which is what frees the others. What its looks cost is counted
-// (readyStats), and logged as it ends with its connection.
+// which is what frees the others: an end of a row a waiting root waits on,
+// and no other. What its looks cost is counted (readyStats), and logged as
+// it ends with its connection.
 func (a *RemoteCacheAdapter) TakeReadyRoots(ctx context.Context) (_ []uint64, rerr error) {
-	ends, stop := a.cache.WatchBusyEnds()
+	ends, stop := a.cache.WatchBusyEnds(a.waits.wants)
 	defer stop()
 	defer func() {
 		if rerr != nil {

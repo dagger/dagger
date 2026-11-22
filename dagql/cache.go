@@ -6222,7 +6222,7 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 			// parts: owed reports may now be made, and a capture it kept the
 			// row out of may take it.
 			c.wakeOwedPartReports()
-			c.busyEnded()
+			c.busyEnded(shared.id)
 		}()
 
 		// Native profiling is full detail and emits the leader wait
@@ -7755,7 +7755,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		oc.res.attachDepsMu.Unlock()
 		// The attachment kept the row busy for a capture (BusyRows).
 		if ended {
-			c.busyEnded()
+			c.busyEnded(oc.res.id)
 		}
 	}
 
