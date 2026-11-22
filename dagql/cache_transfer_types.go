@@ -108,6 +108,10 @@ type TransferredValue struct {
 	// Record.Envelope: the bundle's encoding writes it out, and a merge of
 	// the bundle in the same process decodes it (cloneValueBundle).
 	storedEnvelope []byte
+	// served is, on the Cloud, the run its stored record named when the
+	// bundle was built (StoredBundle), for the merged reply's holding of
+	// it (holding.served); nil when it named none. It is never sent.
+	served *servedRun
 	// storedCall is, beside a stored envelope, the record's call frame as
 	// the cache holds it in the same body, compressed, in place of
 	// Record.Call, and storedCallBytes its JSON's length: the bundle's
