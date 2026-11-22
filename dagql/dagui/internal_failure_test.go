@@ -56,7 +56,7 @@ func TestInternalFailureGivesPlaceToItsCause(t *testing.T) {
 			StartTime: start, EndTime: end, Status: failed},
 		{ID: depsID, TraceID: traceID, ParentID: extraID, Name: "load dep modules",
 			StartTime: start, EndTime: end, Status: failed, Internal: true},
-		{ID: runtimeID, TraceID: traceID, ParentID: depsID, Name: "module SDK: load runtime",
+		{ID: runtimeID, TraceID: traceID, ParentID: depsID, Name: "build broken",
 			StartTime: start, EndTime: end, Status: failed, Encapsulate: true},
 		{ID: sdkCallID, TraceID: traceID, ParentID: runtimeID, Name: "GoSdk.moduleRuntime",
 			StartTime: start, EndTime: end, Status: failed, Internal: true},
@@ -145,7 +145,7 @@ func TestFailedPlumbingAloneShows(t *testing.T) {
 	db := NewDB()
 	db.ImportSnapshots([]SpanSnapshot{
 		{ID: primaryID, TraceID: traceID, Name: "load module", StartTime: start, EndTime: end, Status: failed},
-		{ID: runtimeID, TraceID: traceID, ParentID: primaryID, Name: "module SDK: load runtime",
+		{ID: runtimeID, TraceID: traceID, ParentID: primaryID, Name: "build gobuild",
 			StartTime: start, EndTime: end, Status: failed, Encapsulate: true},
 		{ID: callID, TraceID: traceID, ParentID: runtimeID, Name: "Gobuild.binary",
 			StartTime: start, EndTime: end, Status: failed, Internal: true},
@@ -187,7 +187,7 @@ func TestRetriedPlumbingDoesNotWaitOnEachOther(t *testing.T) {
 
 	db := NewDB()
 	db.ImportSnapshots([]SpanSnapshot{
-		{ID: testID(1), TraceID: traceID, Name: "module SDK: load runtime",
+		{ID: testID(1), TraceID: traceID, Name: "build helper",
 			StartTime: start, EndTime: end, Status: failed, Encapsulate: true},
 		{ID: testID(2), TraceID: traceID, ParentID: testID(1), Name: "GoSdk.moduleRuntime",
 			StartTime: start, EndTime: end, Status: failed, Internal: true},
