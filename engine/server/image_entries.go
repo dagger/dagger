@@ -105,8 +105,8 @@ func (srv *Server) mergeImageBundle(ctx context.Context, dir string) error {
 // size.
 func checkImageBlobs(root *os.Root, bundle dagql.ValueBundle) (int, int64, error) {
 	sizes := map[digest.Digest]int64{}
-	for _, layer := range bundle.Layers {
-		sizes[layer.Descriptor.Digest] = layer.Descriptor.Size
+	for _, listed := range bundle.Layers {
+		sizes[listed.Layer.Descriptor.Digest] = listed.Layer.Descriptor.Size
 	}
 	for _, output := range bundle.Outputs {
 		if output.Chain == nil {
