@@ -153,7 +153,15 @@ func runTestCopy(t *testing.T, ctx context.Context, cloud *Cache, served uint64)
 // root lands on B's holding key, at replacement count replacements.
 func runTestApplyServed(t *testing.T, ctx context.Context, cloud *Cache, sent ValueBundle, key HolderKey, replacements uint64) {
 	t.Helper()
-	_, err := cloud.ApplyMergedReply(ctx, "cache-b", sent, MergeReply{Values: []MergedValue{{Ordinal: sent.Roots[0].Ordinal, Number: key.Number, Replacements: replacements}}})
+	runTestApplyReply(t, ctx, cloud, sent, key, replacements, true)
+}
+
+// runTestApplyReply applies B's merged reply to the bundle sent, its root
+// on B's holding key at replacement count replacements, stored from the
+// bundle or a value B kept.
+func runTestApplyReply(t *testing.T, ctx context.Context, cloud *Cache, sent ValueBundle, key HolderKey, replacements uint64, stored bool) {
+	t.Helper()
+	_, err := cloud.ApplyMergedReply(ctx, "cache-b", sent, MergeReply{Values: []MergedValue{{Ordinal: sent.Roots[0].Ordinal, Number: key.Number, Replacements: replacements, Stored: stored}}})
 	require.NoError(t, err)
 }
 
@@ -486,13 +494,13 @@ func runTestReplaceInPlace(t *testing.T, ctx context.Context, cloud *Cache, numb
 	require.Equal(t, cRun, runTestRan(t, cloud, number).Run)
 }
 
-// A record replaced in place after its bundle was built, before the
-// engine's reply is applied, isn't the record the engine was served: the
-// copy's run isn't known, and it names none, not the replacing run.
-func TestAServedRecordReplacedBeforeTheReplyNamesNoRun(t *testing.T) {
+// The run an engine was served is the one the sent record named when the
+// bundle was built: replaced in place before the engine's reply is applied,
+// the copy still names the run it was sent, not the replacing run.
+func TestAServedRecordReplacedBeforeTheReplyNamesTheRunSent(t *testing.T) {
 	t.Parallel()
 	ctx, cloud := storedPartTestCache(t, WithBlobStore())
-	number, _ := runTestExport(t, ctx, cloud, "cache-a", "class-source")
+	number, run := runTestExport(t, ctx, cloud, "cache-a", "class-source")
 	held, key := runTestCopy(t, ctx, cloud, number)
 	sent, err := cloud.StoredBundle(ctx, []uint64{number}, time.Now().Unix(), nil)
 	require.NoError(t, err)
@@ -500,8 +508,66 @@ func TestAServedRecordReplacedBeforeTheReplyNamesNoRun(t *testing.T) {
 	runTestApplyServed(t, ctx, cloud, sent.Bundle, key, 0)
 	reply, err := cloud.MergeValues(ctx, "cache-b", held)
 	require.NoError(t, err)
-	_, ok := cloud.EntryRun(reply.Values[0].Number)
-	require.False(t, ok, "neither A's run nor C's")
+	require.Equal(t, run, runTestRan(t, cloud, reply.Values[0].Number).Run, "A's run, not C's")
+}
+
+// So too when the record sent was dropped by a prune and its entry filled
+// again by another run's record, which leaves its replacement count.
+func TestAServedRecordDroppedAndRefilledNamesTheRunSent(t *testing.T) {
+	t.Parallel()
+	ctx, cloud := storedPartTestCache(t, WithBlobStore())
+	number, run := runTestExport(t, ctx, cloud, "cache-a", "class-source")
+	held, key := runTestCopy(t, ctx, cloud, number)
+	sent, err := cloud.StoredBundle(ctx, []uint64{number}, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	cloud.egraphMu.Lock()
+	res := cloud.resultsByID[sharedResultID(number)]
+	before := res.replacements
+	_, err = cloud.dropValueLocked(ctx, res)
+	cloud.egraphMu.Unlock()
+	require.NoError(t, err)
+	cNumber, cRun := runTestExport(t, ctx, cloud, "cache-c", "class-source")
+	require.Equal(t, number, cNumber, "C's record fills A's entry")
+	cloud.egraphMu.RLock()
+	require.Equal(t, before, cloud.resultsByID[sharedResultID(number)].replacements, "at the same count")
+	cloud.egraphMu.RUnlock()
+	require.NotEqual(t, run, cRun)
+	runTestApplyServed(t, ctx, cloud, sent.Bundle, key, 0)
+	reply, err := cloud.MergeValues(ctx, "cache-b", held)
+	require.NoError(t, err)
+	require.Equal(t, run, runTestRan(t, cloud, reply.Values[0].Number).Run, "A's run, not C's")
+}
+
+// A serve whose run isn't known, as when the bundle doesn't carry it, stands
+// as unknown: the copy names no run, not the run of the record its holding's
+// entry holds.
+func TestAServeOfAnUnknownRunNamesNoRun(t *testing.T) {
+	t.Parallel()
+	ctx, cloud := storedPartTestCache(t, WithBlobStore())
+	number, _ := runTestExport(t, ctx, cloud, "cache-a", "class-source")
+	held, key := runTestCopy(t, ctx, cloud, number)
+	// The entry B's holding is on stores D's own record of B's recipe.
+	own := held
+	own.Values = slices.Clone(held.Values)
+	own.Values[0].Record.Envelope.Imported = false
+	dReply, err := cloud.MergeValues(ctx, "cache-d", own)
+	require.NoError(t, err)
+	at, ok := cloud.HolderEntry(key)
+	require.True(t, ok)
+	require.Equal(t, dReply.Values[0].Number, at)
+	require.Equal(t, CacheID("cache-d"), runTestRan(t, cloud, at).Run.Cache, "D's record names D's run")
+	sent, err := cloud.StoredBundle(ctx, []uint64{number}, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	sent.Bundle.Values[0].served = nil
+	runTestApplyServed(t, ctx, cloud, sent.Bundle, key, 0)
+	// D's record expires, so B's copy is installed in its place.
+	cloud.egraphMu.Lock()
+	cloud.resultsByID[sharedResultID(at)].expiresAtUnix = time.Now().Unix() - 10
+	cloud.egraphMu.Unlock()
+	reply, err := cloud.MergeValues(ctx, "cache-b", held)
+	require.NoError(t, err)
+	_, ok = cloud.EntryRun(reply.Values[0].Number)
+	require.False(t, ok, "neither D's run nor A's")
 }
 
 // A reply of an older value than the holding's, applied late, doesn't
@@ -524,4 +590,24 @@ func TestALateReplyOfAnOlderValueKeepsTheServedRun(t *testing.T) {
 	reply, err := cloud.MergeValues(ctx, "cache-b", held)
 	require.NoError(t, err)
 	require.Equal(t, dRun, runTestRan(t, cloud, reply.Values[0].Number).Run, "B's copy at count 1 is D's run")
+}
+
+// A reply in which the engine kept a value it had, rather than storing the
+// record sent, leaves the run that value was served: B's copy of X, sent A's
+// record of the same entry, stays X's run.
+func TestAKeptReplyLeavesTheServedRun(t *testing.T) {
+	t.Parallel()
+	ctx, cloud := storedPartTestCache(t, WithBlobStore())
+	xNumber, xRun := runTestExport(t, ctx, cloud, "cache-x", "class-source")
+	held, key := runTestCopy(t, ctx, cloud, xNumber)
+	x, err := cloud.StoredBundle(ctx, []uint64{xNumber}, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	runTestApplyReply(t, ctx, cloud, x.Bundle, key, 0, true)
+	aNumber, _ := runTestExport(t, ctx, cloud, "cache-a", "other-source")
+	a, err := cloud.StoredBundle(ctx, []uint64{aNumber}, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	runTestApplyReply(t, ctx, cloud, a.Bundle, key, 0, false)
+	reply, err := cloud.MergeValues(ctx, "cache-b", held)
+	require.NoError(t, err)
+	require.Equal(t, xRun, runTestRan(t, cloud, reply.Values[0].Number).Run, "B kept X's copy: X's run, not A's")
 }

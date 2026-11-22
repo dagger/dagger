@@ -333,6 +333,10 @@ type servedRun struct {
 	run          RunName
 	ran          runRanBy
 	replacements uint64
+	// known is false for a serve whose record named no run, or whose run
+	// the reply's bundle doesn't carry: the copy's run isn't known, and no
+	// other run is taken for it (mergeRunLocked).
+	known bool
 }
 
 // hasUnexpiredHoldingLocked reports whether another cache holds a copy of res
@@ -602,10 +606,10 @@ func (c *Cache) ApplyMergedReply(ctx context.Context, cache CacheID, sent ValueB
 type mergedTarget struct {
 	value         MergedValue
 	parts, offers []string
-	// sentReplacements is the replacement count the Cloud entry had when
-	// its record was put in the bundle sent: the served record, if the
-	// entry still has it when the reply applies.
-	sentReplacements uint64
+	// served is the run the sent record named when the bundle was built
+	// (TransferredValue.served), nil when it named none or the bundle
+	// doesn't carry it.
+	served *servedRun
 }
 
 // prepareMergedReply checks a merged reply against the bundle sent, and
@@ -616,10 +620,10 @@ func prepareMergedReply(cache CacheID, sent ValueBundle, reply MergeReply) (map[
 		return nil, nil, fmt.Errorf("apply merged reply: %q is not an engine cache", cache)
 	}
 	cloudEntries := make(map[TransferOrdinal]sharedResultID, len(sent.Values))
-	sentReplacements := make(map[TransferOrdinal]uint64, len(sent.Values))
+	served := make(map[TransferOrdinal]*servedRun, len(sent.Values))
 	for _, value := range sent.Values {
 		cloudEntries[value.Ordinal] = sharedResultID(value.SenderNumber)
-		sentReplacements[value.Ordinal] = value.SenderReplacements
+		served[value.Ordinal] = value.served
 	}
 	targets := make([]mergedTarget, 0, len(reply.Values))
 	for _, value := range reply.Values {
@@ -637,7 +641,7 @@ func prepareMergedReply(cache CacheID, sent ValueBundle, reply MergeReply) (map[
 		if err != nil {
 			return nil, nil, fmt.Errorf("apply merged reply: ordinal %d: %w", value.Ordinal, err)
 		}
-		targets = append(targets, mergedTarget{value: value, parts: parts, offers: offers, sentReplacements: sentReplacements[value.Ordinal]})
+		targets = append(targets, mergedTarget{value: value, parts: parts, offers: offers, served: served[value.Ordinal]})
 	}
 	return cloudEntries, targets, nil
 }
@@ -679,15 +683,19 @@ func (c *Cache) applyMergedTargetsLocked(ctx context.Context, cache CacheID, clo
 		// The engine's copy is the run of the record the Cloud served it,
 		// which may be another entry's than the one its holding is on: a
 		// class mate's, when the engine's call joined it by content. The
-		// run is the served record's: the entry's, if it hasn't been
-		// replaced since the bundle was built, else not known. A reply of
-		// an older value than the holding's describes nothing it holds, as
+		// run is the one the sent record named when the bundle was built,
+		// whatever the entry holds now; one the bundle doesn't carry is not
+		// known, and stands as that. A value the engine kept rather than
+		// stored from the bundle (MergedValue.Stored) is what it was
+		// before, and so is its served run. A reply of an older value than
+		// the holding's describes nothing it holds, as
 		// applyHeldValueStateLocked ignores its state.
-		if c.blobBacked && t.value.Replacements >= before {
-			h.served = nil
-			if served := c.resultsByID[cloudEntries[t.value.Ordinal]]; served != nil && served.run != nil && served.replacements == t.sentReplacements {
-				h.served = &servedRun{run: *served.run, ran: served.runRan, replacements: t.value.Replacements}
+		if c.blobBacked && t.value.Stored && t.value.Replacements >= before {
+			served := servedRun{replacements: t.value.Replacements}
+			if t.served != nil && t.served.known {
+				served.run, served.ran, served.known = t.served.run, t.served.ran, true
 			}
+			h.served = &served
 		}
 	}
 }
