@@ -37,9 +37,17 @@ type transferTestEngine struct {
 	dag   *dagql.Server
 	srv   *transferTestServer
 	base  context.Context
+	store *testutil.Store
 }
 
 func newTransferTestEngine(t *testing.T, salt []byte) *transferTestEngine {
+	t.Helper()
+	return newTransferTestEngineWith(t, salt)
+}
+
+// newTransferTestEngineWith is newTransferTestEngine with its cache made with
+// opts.
+func newTransferTestEngineWith(t *testing.T, salt []byte, opts ...dagql.CacheOption) *transferTestEngine {
 	t.Helper()
 	store := testutil.NewStore(t)
 	main := &engine.ClientMetadata{ClientID: "main-client", SessionID: "main-session"}
@@ -53,7 +61,7 @@ func newTransferTestEngine(t *testing.T, salt []byte) *transferTestEngine {
 		salt:    salt,
 	}
 	ctx := engine.ContextWithClientMetadata(t.Context(), main)
-	cache, err := dagql.NewCache(ctx, "", store.Manager, nil)
+	cache, err := dagql.NewCache(ctx, "", store.Manager, nil, opts...)
 	require.NoError(t, err)
 	ctx = dagql.ContextWithCache(ctx, cache)
 	root := core.NewRoot(srv)
@@ -64,7 +72,7 @@ func newTransferTestEngine(t *testing.T, salt []byte) *transferTestEngine {
 	dag, err := base.Fork(ctx, root, "")
 	require.NoError(t, err)
 	srv.dag = dag
-	return &transferTestEngine{cache: cache, dag: dag, srv: srv, base: ctx}
+	return &transferTestEngine{cache: cache, dag: dag, srv: srv, base: ctx, store: store}
 }
 
 // session returns a new client and session of the engine, whose secrets
