@@ -215,8 +215,11 @@ def errors_to_show(exc: BaseException) -> BaseException | None:
     if isinstance(exc, QueryError):
         return None if has_error_origin(exc) else exc
     if isinstance(exc, BaseExceptionGroup):
-        _, rest = exc.split(lambda e: isinstance(e, QueryError) and has_error_origin(e))
-        return rest
+        shown_elsewhere, rest = exc.split(
+            lambda e: isinstance(e, QueryError) and has_error_origin(e)
+        )
+        # The group itself, of the user's own type, when it loses nothing.
+        return exc if shown_elsewhere is None else rest
     return exc
 
 
@@ -295,7 +298,7 @@ def _is_user_frame(frame: FrameType) -> bool:
     if path.startswith(_installed_paths()):
         # The runtime installs the members of the module's workspace, its
         # own libraries among them, from their directories, not editable.
-        return module.partition(".")[0] in _local_packages()
+        return path in _local_files()
     return not path.startswith(_dirs("stdlib", "platstdlib"))
 
 
@@ -319,22 +322,24 @@ def _as_dirs(paths: Iterable[str]) -> tuple[str, ...]:
 
 
 @functools.cache
-def _local_packages() -> frozenset[str]:
-    """The top-level packages installed from a local directory."""
+def _local_files() -> frozenset[str]:
+    """The files of the distributions installed from a local directory.
+
+    Files, not packages: the distributions of a namespace package share it.
+    """
     return frozenset(
-        top
-        for top, dists in importlib.metadata.packages_distributions().items()
-        if any(_installed_from_directory(dist) for dist in dists)
+        os.path.realpath(str(dist.locate_file(file)))
+        for dist in importlib.metadata.distributions()
+        if _installed_from_directory(dist)
+        for file in dist.files or ()
     )
 
 
-@functools.cache
-def _installed_from_directory(name: str) -> bool:
+def _installed_from_directory(dist: importlib.metadata.Distribution) -> bool:
     """Whether a distribution was installed from a local directory (PEP 610)."""
     try:
-        text = importlib.metadata.distribution(name).read_text("direct_url.json")
-        info = json.loads(text or "{}")
-    except (importlib.metadata.PackageNotFoundError, ValueError):
+        info = json.loads(dist.read_text("direct_url.json") or "{}")
+    except ValueError:
         return False
     return (
         isinstance(info, dict)
