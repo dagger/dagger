@@ -76,6 +76,30 @@ func (frame *ResultCall) SessionBound() bool {
 	return frame != nil && sessionBoundInputs(frame.ImplicitInputs)
 }
 
+// onlyItsSessionMatches reports whether no other session, on this engine or
+// another, can ever match the call: it is keyed to its session, one of its
+// clients or itself (SessionBound), which names that key in its recipe and
+// in its term, and it has no extra digest, such as a content digest, by
+// which another session's call can find its result. An engine asks the
+// remote cache service about no miss of such a call (noteRemoteMiss), and
+// the Cloud keeps no such call on the entry it returned (decodeKeptCall).
+//
+// Only the call's own key counts. A call that isn't keyed to its client,
+// made on a receiver that is, can still be matched by its term on another
+// engine whose own receiver has the same content
+// (TestCallRecordHitsOverAnEquivalentReceiver): it isn't one of these.
+func (frame *ResultCall) onlyItsSessionMatches() bool {
+	if !frame.SessionBound() {
+		return false
+	}
+	for _, extra := range frame.ExtraDigests {
+		if extra.Digest != "" {
+			return false
+		}
+	}
+	return true
+}
+
 // sessionScopedInputs names the implicit inputs, besides the per-call,
 // per-session and per-client ones, that key a call to its session whenever
 // they have a value (see SessionScopedInput).

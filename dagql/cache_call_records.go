@@ -21,7 +21,9 @@ import (
 // entries, as the span encodes it, on that entry, and StoredBundle sends the
 // calls with the entry. The receiving engine derives each call's identity
 // itself and teaches it onto the entry (teachCallIdentityLocked), as its own
-// cache would have when the call completed.
+// cache would have when the call completed. A call no other session can ever
+// match (ResultCall.onlyItsSessionMatches), such as one keyed to the client
+// that made it, isn't kept: no receiving engine could use it.
 
 // keptCall is a call the Cloud keeps on the entry it returned: its encoding
 // and the identity derived from it.
@@ -31,8 +33,9 @@ type keptCall struct {
 }
 
 // newKeptCall derives the call a span reports returning an entry of another
-// recipe, or returns nil when it reports none. An error is the call's alone:
-// the span's holding attaches without it.
+// recipe, or returns nil when it reports none or one the Cloud doesn't keep
+// (decodeKeptCall). An error is the call's alone: the span's holding
+// attaches without it.
 func newKeptCall(desc RemoteHolding) (*keptCall, error) {
 	if desc.Call == "" || desc.Request == "" || desc.Request == desc.Recipe {
 		return nil, nil
@@ -41,7 +44,9 @@ func newKeptCall(desc RemoteHolding) (*keptCall, error) {
 }
 
 // decodeKeptCall derives an encoded call's identity, which must have the
-// request digest the call is known by.
+// request digest the call is known by. It returns nil for a call no other
+// session can ever match (ResultCall.onlyItsSessionMatches): the Cloud
+// keeps none, from a span or from a saved store.
 func decodeKeptCall(encoded string, request digest.Digest) (*keptCall, error) {
 	var pb callpbv1.Call
 	if err := pb.Decode(encoded); err != nil {
@@ -53,6 +58,9 @@ func decodeKeptCall(encoded string, request digest.Digest) (*keptCall, error) {
 	}
 	if id.recipe != request {
 		return nil, fmt.Errorf("call %s: encodes call %s", request, id.recipe)
+	}
+	if id.onlyItsSession {
+		return nil, nil
 	}
 	return &keptCall{encoded: encoded, id: id}, nil
 }
