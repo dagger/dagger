@@ -85,15 +85,17 @@ const (
 )
 
 // PartAvailability is AvailablePart's answer. Donor is the number of the
-// entry whose stored part or record it is, and Part the stored part, for
-// PartStored. ValidUntilUnix is the soonest moment, after the clock it was
-// read at, that one of the entries the answer considered expires (0: none
-// does): before it, only a write can change the answer, and the write's
-// change names the entry (RemoteChange.Entries).
+// entry whose stored part or record it is. ValidUntilUnix is the soonest
+// moment, after the clock it was read at, that one of the entries the answer
+// considered expires (0: none does): before it, only a write can change the
+// answer, and the write's change names the entry (RemoteChange.Entries).
+//
+// It carries no part: its readers read what the cache has, from whom and
+// until when, and a stored part's contents reach a reader in a stored bundle
+// (StoredBundle).
 type PartAvailability struct {
 	State          PartAvailabilityState
 	Donor          uint64
-	Part           PersistedPartOffer
 	ValidUntilUnix int64
 }
 
@@ -110,8 +112,8 @@ type PartAvailability struct {
 //     Absence is a property of the value's structure, not of its freshness;
 //   - otherwise unavailable.
 //
-// Among the class's other entries, the lowest number answers first. Part is
-// a copy of the stored part. Only a blob-backed cache answers.
+// Among the class's other entries, the lowest number answers first. Only a
+// blob-backed cache answers.
 func (c *Cache) AvailablePart(number uint64, address PersistedPartAddress, nowUnix int64) (PartAvailability, error) {
 	if !c.blobBacked {
 		return PartAvailability{}, fmt.Errorf("available part: the cache has no blob store")
@@ -214,8 +216,8 @@ func (c *Cache) availablePartLocked(number uint64, key string, nowUnix int64) (P
 		if candidate == res && c.resultExpiredAtLocked(res, nowUnix) {
 			continue
 		}
-		if part, ok := candidate.storedParts[key]; ok {
-			return PartAvailability{State: PartStored, Donor: uint64(candidate.id), Part: part.offer(), ValidUntilUnix: validUntil}, nil
+		if _, ok := candidate.storedParts[key]; ok {
+			return PartAvailability{State: PartStored, Donor: uint64(candidate.id), ValidUntilUnix: validUntil}, nil
 		}
 	}
 	for _, candidate := range candidates {
