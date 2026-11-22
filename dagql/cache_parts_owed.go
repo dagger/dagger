@@ -65,11 +65,11 @@ type owedPartReport struct {
 // owePartsReport notes that a span reported only reported, the settled
 // parts of row. It does nothing on a cache without the share report, whose
 // spans no remote cache reads.
-func (c *Cache) owePartsReport(row *sharedResult, reported []string) {
+func (c *Cache) owePartsReport(ctx context.Context, row *sharedResult, reported []string) {
 	if c == nil || row == nil || c.shareReport == nil {
 		return
 	}
-	c.egraphMu.RLock()
+	c.readLockGraphGathered(ctx)
 	replacements := row.replacements
 	c.egraphMu.RUnlock()
 	o := &c.owedParts

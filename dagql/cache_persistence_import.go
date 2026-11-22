@@ -7,7 +7,6 @@ import (
 	"runtime"
 	"slices"
 	"sync"
-	"time"
 
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/persistdb"
@@ -932,14 +931,8 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 	attachDepsWaitCh := res.attachDepsWaitCh
 	res.attachDepsMu.Unlock()
 	if attachDepsWaitCh != nil {
-		waited := time.Now()
-		select {
-		case <-attachDepsWaitCh:
-		case <-ctx.Done():
-			return nil, context.Cause(ctx)
-		}
-		if load := hitLoadOf(ctx); load != nil {
-			load.attach.Add(int64(time.Since(waited)))
+		if err := awaitHitLoad(ctx, attachDepsWaitCh, hitLoadAttach); err != nil {
+			return nil, err
 		}
 		wcprof.Lock(ctx, &res.attachDepsMu, resultDepsLockIdent)
 		attachDepsErr := res.attachDepsErr
@@ -987,14 +980,8 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 				c.testPersistDecodeJoined(uint64(res.id))
 			}
 
-			waited := time.Now()
-			select {
-			case <-waitCh:
-			case <-ctx.Done():
-				return nil, context.Cause(ctx)
-			}
-			if load := hitLoadOf(ctx); load != nil {
-				load.decode.Add(int64(time.Since(waited)))
+			if err := awaitHitLoad(ctx, waitCh, hitLoadDecode); err != nil {
+				return nil, err
 			}
 
 			wcprof.Lock(ctx, &res.persistDecodeMu, resultDecodeLockIdent)

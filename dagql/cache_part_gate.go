@@ -116,7 +116,7 @@ func (c *Cache) spanPartKeysAndSizes(ctx context.Context, row *sharedResult) ([]
 	seq := c.owedPartsSeq()
 	keys, sizes, err := c.completeParts(ctx, row, c.completePartSizeReader())
 	if err != nil {
-		c.owePartsReport(row, keys)
+		c.owePartsReport(ctx, row, keys)
 	} else {
 		c.settleOwedPartsReport(row, seq)
 	}
