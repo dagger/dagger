@@ -243,6 +243,7 @@ func TestLiveFoldStreamedMatchesFullLoad(t *testing.T) {
 			full := streamFootprint(t, tr, shape, "full")
 			folded := streamFootprint(t, tr, shape, "fold")
 			require.Equal(t, rowIDs(full.rows), rowIDs(folded.rows))
+			t.Logf("read back %d spans in %d round trips", folded.fold.ReadSpans, folded.fold.Reads)
 		})
 	}
 }

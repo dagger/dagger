@@ -5,7 +5,6 @@ import (
 	"io"
 	"maps"
 	"os"
-	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -62,6 +61,15 @@ type liveFold struct {
 	mu       sync.Mutex
 	inflight int
 	idle     chan struct{}
+	// reading marks a read under way; queued holds the spans asked for
+	// meanwhile, by queuedReads loads, which the next round trip reads
+	// together: one at a time, so a burst of promotions is few round
+	// trips, not one per batch at once.
+	reading     bool
+	queued      []dagui.SpanID
+	queuedReads int
+	// Reads counts the round trips, ReadSpans the spans asked in them.
+	Reads, ReadSpans int
 }
 
 func (lf *liveFold) begin() {
@@ -127,30 +135,55 @@ func (lf *liveFold) foldable(trace dagui.TraceID) bool {
 }
 
 // load reads back the folded spans the DB retained, asynchronously. It runs
-// on the frontend's event loop, as every DB call does.
+// on the frontend's event loop, as every DB call does. While a read is
+// under way, the spans asked for wait to be read with the next.
 func (lf *liveFold) load(ids []dagui.SpanID) {
 	query := lf.query
 	if query == nil {
 		return
 	}
-	ids = slices.Clone(ids)
 	lf.begin()
-	go func() {
+	lf.mu.Lock()
+	defer lf.mu.Unlock()
+	lf.queued = append(lf.queued, ids...)
+	lf.queuedReads++
+	if !lf.reading {
+		lf.reading = true
+		go lf.read(query)
+	}
+}
+
+// read reads the queued spans back, until none are.
+func (lf *liveFold) read(query SpanQueryFunc) {
+	for {
+		lf.mu.Lock()
+		ids, reads := lf.queued, lf.queuedReads
+		lf.queued, lf.queuedReads = nil, 0
+		if reads == 0 {
+			lf.reading = false
+			lf.mu.Unlock()
+			return
+		}
+		lf.Reads++
+		lf.ReadSpans += len(ids)
+		lf.mu.Unlock()
 		ctx, cancel := context.WithTimeout(context.Background(), foldQueryTimeout)
 		spans, err := query(ctx, ids)
 		cancel()
 		if err != nil {
 			slog.Warn("error reading folded spans", "spans", len(ids), "err", err)
 		}
-		// done once dispatched: what's dispatched after runs after it (and
-		// the console applies it with its next step)
-		defer lf.end()
 		if len(spans) > 0 {
 			lf.fe.dispatch(func() {
 				lf.fe.exportSpansLocked(dagui.FoldFill(context.Background()), spans)
 			})
 		}
-	}()
+		// done once dispatched: what's dispatched after runs after it (and
+		// the console applies it with its next step)
+		for range reads {
+			lf.end()
+		}
+	}
 }
 
 // wait blocks until the reads in flight are dispatched for ingestion, or
