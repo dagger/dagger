@@ -10,17 +10,18 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// TestInternalFailureGivesPlaceToItsCause covers a module whose runtime
-// fails to compile. The SDK builds the runtime, within its encapsulating
-// span, through internal calls the view hides, but a failed span is shown
-// even when it's internal, so every internal call between the module's load
-// and the failed compile was shown, and with it everything beneath it. The
-// internal calls that only pass the compile's failure on give their place to
-// it, and the module entrypoint's plumbing, which fails because the function
-// did, drops out beside it. A failed internal span outside the SDK's encapsulation, such as the
-// engine's own load of a dependency, still shows, even within the CLI's
-// encapsulation of module loading as a whole, as does one with no failure
-// beneath it, and all of it at -vvv.
+// TestInternalFailureGivesPlaceToItsCause covers a module whose dependency's
+// runtime fails to compile. The SDK builds the runtime, within its
+// encapsulating span, through internal calls the view hides, but a failed
+// span is shown even when it's internal, so every internal call between the
+// module's load and the failed compile was shown, and with it everything
+// beneath it. The internal calls that only pass the compile's failure on give
+// their place to it, and the module entrypoint's plumbing, which fails
+// because the function did, drops out beside it. So does the engine's own
+// load of the dependency, within the module load's encapsulation: the
+// dependency's build, which names it, takes its place beneath the load. A
+// failed internal span with no failure beneath it still shows, and all of it
+// at -vvv.
 func TestInternalFailureGivesPlaceToItsCause(t *testing.T) {
 	traceID := TraceID{TraceID: trace.TraceID{1}}
 	primaryID := testID(1)
@@ -47,13 +48,13 @@ func TestInternalFailureGivesPlaceToItsCause(t *testing.T) {
 
 	db := NewDB()
 	db.ImportSnapshots([]SpanSnapshot{
-		// The CLI encapsulates module loading as a whole.
-		{ID: primaryID, TraceID: traceID, Name: "loading type definitions", StartTime: start, EndTime: end, Status: failed,
+		// The CLI encapsulates the workspace's load...
+		{ID: primaryID, TraceID: traceID, Name: "load workspace: .", StartTime: start, EndTime: end, Status: failed,
 			Encapsulate: true},
-		// A step of its own, and the engine's own internal step within it,
-		// outside the SDK's encapsulation.
+		// ...and the engine each module's load, with its own internal step
+		// within it, outside the SDK's encapsulation.
 		{ID: extraID, TraceID: traceID, ParentID: primaryID, Name: "load module: ./broken-dep",
-			StartTime: start, EndTime: end, Status: failed},
+			StartTime: start, EndTime: end, Status: failed, Encapsulate: true},
 		{ID: depsID, TraceID: traceID, ParentID: extraID, Name: "load dep modules",
 			StartTime: start, EndTime: end, Status: failed, Internal: true},
 		{ID: runtimeID, TraceID: traceID, ParentID: depsID, Name: "build broken",
@@ -108,15 +109,18 @@ func TestInternalFailureGivesPlaceToItsCause(t *testing.T) {
 			t.Errorf("internal span %q is shown", tree.Span.Name)
 		}
 	}
-	if home(view, depsID) == nil {
-		t.Error("a failed internal span outside the encapsulation is not shown")
+	if tree := home(view, depsID); tree != nil {
+		t.Error("the engine's internal load of the dependency is shown")
+	}
+	if build := home(view, runtimeID); build == nil || build.Parent == nil || build.Parent.Span.ID != extraID {
+		t.Error("the dependency's build is not shown in its load's place, beneath the module's load")
 	}
 	if home(view, getModDefID) == nil {
 		t.Error("a failed internal span with no failure beneath it is not shown")
 	}
 
 	internal := db.RowsView(FrontendOpts{ZoomedSpan: primaryID, Verbosity: ShowInternalVerbosity})
-	for _, id := range []SpanID{sdkCallID, binaryID, siblingID, compileID, plumbingID, dispatchID} {
+	for _, id := range []SpanID{depsID, sdkCallID, binaryID, siblingID, compileID, plumbingID, dispatchID} {
 		if home(internal, id) == nil {
 			t.Errorf("span %s is not shown at -vvv", id)
 		}
