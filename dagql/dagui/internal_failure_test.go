@@ -127,6 +127,35 @@ func TestInternalFailureGivesPlaceToItsCause(t *testing.T) {
 	}
 }
 
+// TestInternalFailureBeneathAStepShows covers a failed internal span beneath
+// a step the view shows that doesn't encapsulate its work, within a failed
+// encapsulating span: the step's own internal span tells where its failure
+// happened, so it keeps its row, even with a failure beneath it.
+func TestInternalFailureBeneathAStepShows(t *testing.T) {
+	traceID := TraceID{TraceID: trace.TraceID{1}}
+	start := time.Now().Add(-time.Minute)
+	end := start.Add(time.Second)
+	failed := sdktrace.Status{Code: codes.Error, Description: "boom"}
+
+	db := NewDB()
+	db.ImportSnapshots([]SpanSnapshot{
+		{ID: testID(1), TraceID: traceID, Name: "load workspace: .", StartTime: start, EndTime: end, Status: failed,
+			Encapsulate: true},
+		{ID: testID(2), TraceID: traceID, ParentID: testID(1), Name: "a step",
+			StartTime: start, EndTime: end, Status: failed},
+		{ID: testID(3), TraceID: traceID, ParentID: testID(2), Name: "its internal step",
+			StartTime: start, EndTime: end, Status: failed, Internal: true},
+		{ID: testID(4), TraceID: traceID, ParentID: testID(3), Name: "withExec",
+			StartTime: start, EndTime: end, Status: failed},
+	})
+	db.SetPrimarySpan(testID(1))
+
+	view := db.RowsView(FrontendOpts{ZoomedSpan: testID(1), Verbosity: ShowCompletedVerbosity})
+	if view.HomeTree(db.Spans.Map[testID(3)]) == nil {
+		t.Error("a failed internal span beneath a shown step is not shown")
+	}
+}
+
 // TestFailedPlumbingAloneShows covers a module entrypoint whose plumbing fails
 // on its own, before the function runs: with no failure of the function
 // beside it, the plumbing's failure is the one to tell, and it shows.
