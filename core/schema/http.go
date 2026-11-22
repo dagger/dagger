@@ -39,7 +39,7 @@ func (s *httpSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("url").Doc(`HTTP url to get the content from.`),
 			),
-		dagql.NodeFunc("__httpFile", s.httpFile).
+		dagql.NodeFunc("__httpFile", s.httpFile).FollowsFromInputs().
 			View(AllVersion).
 			IsPersistable().
 			Doc(`(Internal-only) Returns the HTTP file identified by its resolved body.`),
