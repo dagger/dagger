@@ -307,13 +307,31 @@ class Module:
         except ValueError as e:
             msg = "Unable to decode the call request"
             raise InvalidInputError(msg, extra={"request": request}) from e
-        await self.load_names()
-        return await self.get_result(
-            request["receiverType"],
-            parent_state or {},
-            request["fnName"],
-            inputs,
-        )
+        try:
+            await self.load_names()
+            return await self.get_result(
+                request["receiverType"],
+                parent_state or {},
+                request["fnName"],
+                inputs,
+            )
+        except QueryError as e:
+            # The engine shows where an API error comes from, the call that
+            # failed with its logs, unless it names no origin, such as an ID
+            # that fails to load: then show where the function got it,
+            # whether in its own code or loading its arguments or result.
+            if self.short_tracebacks and not has_error_origin(e):
+                print_user_traceback(e)
+            raise
+
+    def _raises_api_error(self, e: Exception) -> bool:
+        """Whether an API error goes on as it is rather than wrapped.
+
+        A call that reports its error in the engine's file fails with the
+        API error itself, which names where it comes from, as `dispatch`
+        shows it, rather than as an invalid input or result.
+        """
+        return self.short_tracebacks and isinstance(e, QueryError)
 
     async def get_result(
         self,
@@ -333,6 +351,9 @@ class Module:
             try:
                 return await self.unstructure(result, fn.return_type)
             except Exception as e:
+                if self._raises_api_error(e):
+                    # Such as the ID of a returned object that fails to load.
+                    raise
                 log_exception_only(e, "Invalid result from function")
                 msg = transform_error(
                     e,
@@ -428,11 +449,7 @@ class Module:
     def _show_api_error(self, e: QueryError) -> None:
         """Show an API error a function raised in the function's logs."""
         if self.short_tracebacks:
-            # The engine shows where an API error comes from, the call that
-            # failed with its logs, unless it names no origin, such as an ID
-            # that fails to load: then show where the function got it.
-            if not has_error_origin(e):
-                print_user_traceback(e)
+            # `dispatch` shows it, as any API error the call fails with.
             return
         tb = e.__traceback__
         # Exclude the line in "try" in `call`
@@ -481,6 +498,8 @@ class Module:
         try:
             return await self.structure(state, obj_type.cls)
         except Exception as e:
+            if self._raises_api_error(e):
+                raise
             log_exception_only(e, "Failed to instantiate parent object")
             msg = transform_error(
                 e,
@@ -525,6 +544,8 @@ class Module:
             try:
                 kwargs[python_name] = await self.structure(value, type_)
             except Exception as e:
+                if self._raises_api_error(e):
+                    raise
                 log_exception_only(
                     e,
                     "Failed to convert from primitive input value for argument '%s'",
