@@ -1290,7 +1290,10 @@ func gitSparseReadRoot(
 	case core.GitSparseReadOwn:
 		files, err := sparse.ReadFiles(ctx, resolvedPath, filter)
 		if err != nil {
-			return full, err
+			// The route came from the cache, as an engine served another's
+			// records gets it, and the list this needs couldn't be read.
+			slog.Warn("reading the sparse tree's objects failed; reading the full tree", "error", err)
+			return full, cache.Evaluate(ctx, full)
 		}
 		if files == nil {
 			// A sparse tree written before they listed their objects.

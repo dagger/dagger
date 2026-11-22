@@ -2,7 +2,6 @@ package schema
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"maps"
 	"path"
@@ -262,18 +261,14 @@ func (s *gitSchema) gitSparseReadSource(ctx context.Context, parent dagql.Object
 // uses it, as such a read is: a later session reads the tree's lists again
 // rather than the cache holding that many bytes in a record.
 func (s *gitSchema) gitSparseReadFiles(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args gitSparseReadArgs) (core.JSON, error) {
-	files, err := core.GitSparseTreeReadFiles(ctx, parent, args.Path, args.CopyFilter)
-	if err != nil {
-		return nil, err
-	}
-	answer, err := json.Marshal(files)
+	answer, err := core.GitSparseTreeReadFiles(ctx, parent, args.Path, args.CopyFilter)
 	if err != nil {
 		return nil, err
 	}
 	if len(answer) > fileContentsPersistLimit {
 		dagql.DeclinePersistence(ctx)
 	}
-	return core.JSON(answer), nil
+	return answer, nil
 }
 
 type sparseFilesArgs struct {
