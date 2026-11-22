@@ -79,8 +79,6 @@ func (s *session) lookup(ctx context.Context, misses []dagql.RemoteMiss, dropped
 		"misses", len(misses),
 		"dropped", dropped,
 		"rtt", answered.Sub(sent),
-		"merging", counts[protocol.LookupMerging],
-		"in_flight", counts[protocol.LookupInFlight],
 		"deferred", counts[protocol.LookupDeferred],
 		"not_stored", counts[protocol.LookupNotStored],
 		"unknown", counts[protocol.LookupUnknown])
