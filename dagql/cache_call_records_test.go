@@ -421,6 +421,39 @@ func TestCallRecordHitsOverAnEquivalentReceiver(t *testing.T) {
 	}
 }
 
+// A bundle for a recipient whose check didn't make a kept call sends neither
+// the call nor the inputs it would add, and doesn't count it unsendable: an
+// engine that ran the check itself would hold neither. For one whose check
+// made it, it goes with its input as before, and hits. StoredSizes prices
+// each as it is built.
+func TestCallRecordOfAnotherCheckIsNotSent(t *testing.T) {
+	t.Parallel()
+	test := newReceiverCallTest(t)
+	request, err := test.frame.deriveRecipeDigest(test.producer)
+	require.NoError(t, err)
+	for name, made := range map[string]bool{"made by another check": false, "made by its check": true} {
+		t.Run(name, func(t *testing.T) {
+			held := &HeldBy{Calls: func(r digest.Digest) bool { return made && r == request }}
+			built, err := test.cloud.StoredBundle(test.ctx, []uint64{test.number}, time.Now().Unix(), held)
+			require.NoError(t, err)
+			sizes, err := test.cloud.StoredSizes(test.ctx, []uint64{test.number}, time.Now().Unix(), held)
+			require.NoError(t, err)
+			require.Equal(t, len(built.Bundle.Values), sizes[0].Records, "priced as built")
+			require.Zero(t, built.UnsendableCalls)
+			require.Empty(t, built.Partial)
+			if !made {
+				require.Empty(t, built.Bundle.Calls)
+				require.Empty(t, built.CallInputs, "the call's receiver isn't carried")
+				require.Len(t, built.Bundle.Values, 1)
+				return
+			}
+			require.Len(t, built.Bundle.Calls, 1)
+			require.Equal(t, []uint64{test.receiverNumber}, built.CallInputs)
+			require.True(t, test.freshReceiverHits(t, built.Bundle))
+		})
+	}
+}
+
 // A call whose input the Cloud doesn't store, and the recipient doesn't hold,
 // is not sent: the recipient couldn't place it. It is counted.
 func TestCallRecordWithAnUnplaceableInputIsNotSent(t *testing.T) {
