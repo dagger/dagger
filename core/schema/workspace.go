@@ -1303,7 +1303,15 @@ func gitSparseReadRoot(
 			// A sparse tree written before they listed their objects.
 			return full, cache.Evaluate(ctx, full)
 		}
-		root, err = core.LoadGitSparseFiles(ctx, srv, ref, files)
+		gitRef := ref.Self()
+		if gitRef == nil {
+			return full, fmt.Errorf("sparse files: workspace has no git ref")
+		}
+		repo, err := gitRepositoryWithoutHead(ctx, srv, gitRef.Repo)
+		if err != nil {
+			return full, fmt.Errorf("sparse files: %w", err)
+		}
+		root, err = core.LoadGitSparseFiles(ctx, srv, repo, files)
 		if err != nil {
 			return full, err
 		}
