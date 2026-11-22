@@ -18,6 +18,7 @@ import (
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/core"
+	dagcore "github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -416,6 +417,7 @@ source = "./entrypoint"
       let result = container
         .from("`+alpineImage+`")
         .withFile("/call.sh", currentModule.source.file("call.sh"))
+        .withEnvVariable("`+dagcore.ModuleCallDigestEnv+`", callDigest ?? "")
         .withExec(["sh", "/call.sh"], stdin: JSON.encode({{fnName: fnName, callDigest: callDigest}}))
         .file("/result.json")
         .contents
