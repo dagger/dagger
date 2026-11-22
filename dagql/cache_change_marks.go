@@ -22,8 +22,10 @@ import (
 // (RemoteChange): on a docs-only edit, widening every new result's mark named
 // a class's thousand entries each time, and the reader asked all their part
 // answers again. A join names each side's entries when the other side holds a
-// part (markJoinLocked). Its holdings and recipes are its own
-// (markEntryLocked). Its holdings would reach its class mates only by turning
+// part (markJoinLocked). Its recipes are its own (markEntryLocked). Its
+// holdings are no reader's to keep (RemoteChange): a holding's arrival or
+// removal marks the holding, not the entry. They would reach the entry's own
+// facts and part answers, and its class mates', only by turning
 // whether it has a value (noValueLocked), which never happens to an entry
 // that stays: an entry with no value is owned by its holdings alone, as a
 // prune drops only values that holdings alone keep and a value depends only
@@ -83,8 +85,8 @@ type changeMarks struct {
 	leftNamed map[eqClassID]bool
 }
 
-// markEntryLocked marks the entry numbered id: its own facts or holdings
-// changed. Requires egraphMu for writing.
+// markEntryLocked marks the entry numbered id: its own facts changed.
+// Requires egraphMu for writing.
 func (c *Cache) markEntryLocked(id sharedResultID) {
 	if c.changes == nil || id == 0 {
 		return
