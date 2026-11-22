@@ -89,6 +89,9 @@ type liveFold struct {
 	// gone is set once the store answered ErrSpanStoreGone: nothing is
 	// read back from then on, and the view says what that leaves out.
 	gone atomic.Bool
+	// settled is set once SettleFold returns in report mode: nothing is
+	// read back after.
+	settled bool
 
 	// fills holds the read-back spans still to ingest, foldIngestStep at a
 	// time, one step per frame, so that a big answer doesn't stall the
@@ -228,8 +231,9 @@ func (lf *liveFold) load(ids []dagui.SpanID) {
 	}
 	lf.mu.Lock()
 	defer lf.mu.Unlock()
-	if lf.gone.Load() {
-		// nothing can read them back (set under mu)
+	if lf.gone.Load() || lf.settled {
+		// nothing can read them back (set under mu), or nothing is to
+		// (SettleFold)
 		return
 	}
 	if lf.inflight == 0 {
@@ -383,6 +387,17 @@ func (fe *frontendPretty) SettleFold(ctx context.Context) {
 	lf := fe.fold
 	if lf == nil {
 		return
+	}
+	if fe.reportOnly {
+		// once settled, report mode reads nothing more back: its final
+		// render runs off any event loop, where a read landing would race
+		// it (a TUI applies reads on its own loop, and keeps reading for
+		// what's browsed after)
+		defer func() {
+			lf.mu.Lock()
+			lf.settled = true
+			lf.mu.Unlock()
+		}()
 	}
 	for range foldSettleRounds {
 		lf.wait(ctx)
