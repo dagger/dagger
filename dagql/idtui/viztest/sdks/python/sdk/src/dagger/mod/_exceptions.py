@@ -242,12 +242,13 @@ def _function_error_report(message: str, values: dict[str, Any]) -> str:
 def function_error_values(exc: BaseException) -> dict[str, Any]:
     """The values of the error a failed call reports for `exc`.
 
-    The same as `record_exception` gives its `dagger.Error`: the exception's
-    type, message and stack trace, a ModuleError's `extra` values, and an API
+    Those `record_exception` gives its `dagger.Error`: the exception's type,
+    message and stack trace, a ModuleError's `extra` values, and an API
     error's extensions, such as an ExecError's exit code and output, whole.
-    The API error may be one the exception was raised from (`raise ... from`),
-    as one that adds to its message is, whose values the exception's own
-    come before; an exception raised while handling one is its own error.
+    Unlike `record_exception`, the API error may also be one the exception
+    was raised from (`raise ... from`), as one that adds to its message is,
+    whose values the exception's own come before; an exception raised while
+    handling one is its own error.
     """
     attrs: dict[str, Any] = {**_extra_values(exc), **_exception_attributes(exc)}
     if isinstance(exc, QueryError):

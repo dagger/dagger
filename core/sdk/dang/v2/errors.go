@@ -44,11 +44,12 @@ var errFunctionReturnedError = errors.New("the function returned an error")
 //
 //   - with the error the process reported (core.FunctionErrorExtension),
 //     which the call returns as a runtime's returns an Error, values and all
-//     (core.FunctionErrorReport.Return);
-//   - or, from a process that reported none, or one the call can't return
-//     (an Error ID that doesn't load), as one that died before its
-//     function returned, with its exec's error, values and all, such as its
-//     exit code, but from the function call, not from the exec.
+//     (core.FunctionErrorReport.Return); an Error ID that doesn't load fails
+//     the call as one returnError names does;
+//   - or, from a process that reported none, or one the call can't return,
+//     as one that died before its function returned, with its exec's error,
+//     values and all, such as its exit code, but from the function call, not
+//     from the exec.
 func moduleProcessFunctionError(ctx context.Context, fnCall *core.FunctionCall, err error) (error, bool) {
 	var gqlErr *gqlerror.Error
 	var raised *dang.RaisedError
