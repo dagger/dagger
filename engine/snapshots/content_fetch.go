@@ -14,10 +14,13 @@ import (
 )
 
 const (
-	// chainAheadWindow is how many layers past the one importing a chain
-	// import downloads ahead. A chain with no more missing layers than that
-	// pays about one round of request latency instead of one per layer, and
-	// one long chain can't take every slot.
+	// chainAheadWindow is how many downloads a chain import holds ahead of
+	// the layers importing. A download is one read of the blob store: a
+	// blob's own, or its pack's, which brings every member of the pack, so
+	// the chain's layers whose blobs one pack holds are one download. A
+	// chain with no more downloads to make than that pays about one round
+	// of request latency instead of one per layer, and one long chain can't
+	// take every slot.
 	chainAheadWindow = 16
 	// maxAheadDownloads bounds the downloads started ahead across the
 	// engine, and so the load on the blob store. It matches the part
@@ -25,7 +28,8 @@ const (
 	// maxPartIdleConnsPerHost), so the connections these requests open can
 	// all stay for the next ones. A layer's own download, when it imports,
 	// and a joined download take no slot, so the bound never holds an
-	// import up.
+	// import up; nor does a blob a chain gets with a pack it already holds
+	// a slot for.
 	maxAheadDownloads = 32
 )
 
@@ -210,24 +214,62 @@ func (cm *snapshotManager) fetchChainContent(ctx context.Context, desc ocispecs.
 
 // fetchAhead starts downloading desc's blob for owner before its layer is
 // imported, unless it is in the content store already. Starting a download
-// takes one of the engine's ahead slots; with none free it starts nothing
-// and reports full, and the caller tries again later. The caller drops the returned hold, which may be nil, with
-// leaveFetch once the layer is imported. It reports whether it started a
+// takes one of the engine's ahead slots, unless shared, the slot of the
+// download that brings the blob for owner, still holds one: its pack's
+// read, which the blob's download joins. With no slot free it starts
+// nothing and reports full, and the caller tries again later. The caller
+// drops the returned hold, which may be nil, with leaveFetch once the layer
+// is imported. It returns the slot the download holds, which the blob's
+// pack's other members may share, and reports whether it started a
 // download.
-func (cm *snapshotManager) fetchAhead(ctx context.Context, desc ocispecs.Descriptor, provider content.Provider, owner *ExportChain) (_ *contentFetch, started, full bool) {
+func (cm *snapshotManager) fetchAhead(ctx context.Context, desc ocispecs.Descriptor, provider content.Provider, owner *ExportChain, shared *aheadSlot) (_ *contentFetch, _ *aheadSlot, started, full bool) {
 	if _, err := cm.ContentStore.Info(ctx, desc.Digest); err == nil {
-		return nil, false, false
+		return nil, nil, false, false
 	}
-	slots := cm.aheadSlots()
-	if !slots.TryAcquire(1) {
-		return nil, false, true
+	slot := shared
+	if slot == nil || !slot.hold() {
+		slots := cm.aheadSlots()
+		if !slots.TryAcquire(1) {
+			return nil, nil, false, true
+		}
+		slot = &aheadSlot{holds: 1, free: func() { slots.Release(1) }}
 	}
-	var once sync.Once
-	f, started, err := cm.joinFetch(ctx, desc, provider, owner, func() { once.Do(func() { slots.Release(1) }) })
+	f, started, err := cm.joinFetch(ctx, desc, provider, owner, slot.ended)
 	if err != nil {
-		return nil, false, false
+		return nil, nil, false, false
 	}
-	return f, started, false
+	return f, slot, started, false
+}
+
+// aheadSlot is one of the engine's ahead slots, held by the downloads ahead
+// that one read of the blob store brings: a blob's, or a pack's members'.
+// The slot goes back once the last of them ends.
+type aheadSlot struct {
+	mu    sync.Mutex
+	holds int
+	free  func()
+}
+
+// hold adds a download to the slot, unless the slot has gone back.
+func (s *aheadSlot) hold() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.holds == 0 {
+		return false
+	}
+	s.holds++
+	return true
+}
+
+// ended drops a download from the slot; the last gives the slot back.
+func (s *aheadSlot) ended() {
+	s.mu.Lock()
+	s.holds--
+	last := s.holds == 0
+	s.mu.Unlock()
+	if last {
+		s.free()
+	}
 }
 
 func (cm *snapshotManager) aheadSlots() *semaphore.Weighted {
