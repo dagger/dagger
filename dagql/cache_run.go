@@ -66,10 +66,12 @@ func savedRunLocked(res *sharedResult) *RunName {
 // (its envelope's mark, valueMergePrep.senderImported) and then ran itself,
 // for want of the Cloud's content: its holding ran its value at the row's
 // replacement count (holdingRanLocked). Another imported record is the run
-// of the Cloud entry the engine's holding of it is on, the entry the Cloud
-// sent it from (ApplyMergedReply, or a restore's hand-over), with what the
-// Cloud already knows of it, or, when the Cloud holds no such holding or
-// its entry names no run, the engine's own.
+// of the record the Cloud served the engine for it (holding.served), which
+// can be another entry's than the one the holding is on; else the run of the
+// entry the holding is on, with what the Cloud already knows of it. When
+// neither names a run, as when the Cloud no longer has the holding, the
+// record's run is not known: it names none (the zero RunName), never the
+// engine's own, which never ran.
 // The run ran when its holding had run its value, or else when the record
 // proves a part besides its metadata complete (valueMergePrep.completeParts).
 // Requires egraphMu.
@@ -77,13 +79,22 @@ func (c *Cache) mergeRunLocked(prep *valueMergePrep, row *mergeRow) (RunName, ru
 	key := HolderKey{Cache: prep.from, Number: row.value.SenderNumber}
 	run := RunName{Cache: key.Cache, Number: key.Number, Replacements: row.value.SenderReplacements}
 	if prep.senderImported[row.ordinal] && !c.holdingRanLocked(key, run.Replacements) {
-		if entry, _ := c.holdingLocked(key); entry != nil && entry.run != nil {
+		entry, h := c.holdingLocked(key)
+		switch {
+		case h != nil && h.served != nil && h.served.replacements == run.Replacements:
+			run = h.served.run
+			if h.served.ran != runNotRan {
+				return run, h.served.ran
+			}
+		case entry != nil && entry.run != nil:
 			// A copy of the entry's record is the entry's run, which may
 			// have been learned to run already.
 			run = *entry.run
 			if entry.runRan != runNotRan {
 				return run, entry.runRan
 			}
+		default:
+			return RunName{}, runNotRan
 		}
 	}
 	switch {
