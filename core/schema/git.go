@@ -1276,6 +1276,49 @@ func gitRepositoryNamedInputs(remote *gitutil.GitURL, args gitArgs, serviceID, s
 	return inputs
 }
 
+// gitRepositoryWithoutHead returns the repository a remote repository's
+// objects are read from: __gitRepository with its remote, credentials and
+// services and no head, whatever call made repo. A workspace at a commit pins
+// its repository to that commit (core.workspaceGitPin), and a read of objects
+// by their IDs (__sparseFiles) depends on none of it, so made on this
+// repository it is the same call on every commit. A hit on it still needs the
+// session to hold the repository's credentials.
+func gitRepositoryWithoutHead(ctx context.Context, srv *dagql.Server, repo dagql.ObjectResult[*core.GitRepository]) (inst dagql.ObjectResult[*core.GitRepository], _ error) {
+	remote, ok := repo.Self().Backend.(*core.RemoteGitRepository)
+	if !ok {
+		return inst, fmt.Errorf("%T is not a remote repository", repo.Self().Backend)
+	}
+	var serviceID, sshAuthSocketID, httpAuthTokenID, httpAuthHeaderID *call.ID
+	var err error
+	if len(remote.Services) > 0 {
+		// git takes one service host, its only binding.
+		if serviceID, err = remote.Services[0].Service.RecipeID(ctx); err != nil {
+			return inst, fmt.Errorf("experimental service host: %w", err)
+		}
+	}
+	if remote.SSHAuthSocket.Self() != nil {
+		if sshAuthSocketID, err = remote.SSHAuthSocket.RecipeID(ctx); err != nil {
+			return inst, fmt.Errorf("ssh auth socket: %w", err)
+		}
+	}
+	if remote.AuthToken.Self() != nil {
+		if httpAuthTokenID, err = remote.AuthToken.RecipeID(ctx); err != nil {
+			return inst, fmt.Errorf("http auth token: %w", err)
+		}
+	}
+	if remote.AuthHeader.Self() != nil {
+		if httpAuthHeaderID, err = remote.AuthHeader.RecipeID(ctx); err != nil {
+			return inst, fmt.Errorf("http auth header: %w", err)
+		}
+	}
+	args := gitArgs{SSHKnownHosts: remote.SSHKnownHosts, HTTPAuthUsername: remote.AuthUsername}
+	err = srv.Select(ctx, srv.Root(), &inst, dagql.Selector{
+		Field: "__gitRepository",
+		Args:  gitRepositoryNamedInputs(remote.URL, args, serviceID, sshAuthSocketID, httpAuthTokenID, httpAuthHeaderID),
+	})
+	return inst, err
+}
+
 // gitRepository constructs a remote repository from explicit inputs only. It
 // performs no credential discovery: git resolves those per client and passes
 // the results here, so this call is shared by every client with the same
