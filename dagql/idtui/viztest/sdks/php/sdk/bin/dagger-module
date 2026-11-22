@@ -5,6 +5,7 @@ use Dagger\Dagger;
 use Dagger\Module\CallDispatcher;
 use Dagger\Module\DangEntrypointRenderer;
 use Dagger\Module\Description;
+use Dagger\Module\FunctionError;
 use Dagger\Module\InterfaceClients;
 use Dagger\Module\ValueCodec;
 use GraphQL\Exception\QueryError;
@@ -72,12 +73,21 @@ try {
         default:
             fail(USAGE, 2);
     }
-} catch (QueryError $e) {
-    $extensions = $e->getErrorDetails()['extensions'] ?? [];
-    fwrite(STDOUT, $extensions['stdout'] ?? '');
-    fwrite(STDERR, $e->getMessage() . "\n" . ($extensions['stderr'] ?? ''));
-    exit($extensions['exitCode'] ?? 1);
 } catch (Throwable $t) {
-    fwrite(STDERR, sprintf("dagger-module: %s: %s\n%s\n", $t::class, $t->getMessage(), $t->getTraceAsString()));
-    exit(1);
+    if ($mode === 'call') {
+        // A failed call exits 2, so that its exec isn't cached, and reports
+        // the function's error to the engine; see FunctionError.
+        $path = getenv(FunctionError::PATH_ENV);
+        FunctionError::forModule(dirname(__DIR__), (string) getcwd())
+            ->report($t, $path === false ? null : $path, STDERR);
+        exit(2);
+    }
+    if (!$t instanceof QueryError) {
+        fwrite(STDERR, sprintf("dagger-module: %s: %s\n%s\n", $t::class, $t->getMessage(), $t->getTraceAsString()));
+        exit(1);
+    }
+    $extensions = $t->getErrorDetails()['extensions'] ?? [];
+    fwrite(STDOUT, $extensions['stdout'] ?? '');
+    fwrite(STDERR, $t->getMessage() . "\n" . ($extensions['stderr'] ?? ''));
+    exit($extensions['exitCode'] ?? 1);
 }

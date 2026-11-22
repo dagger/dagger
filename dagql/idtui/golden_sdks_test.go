@@ -51,7 +51,7 @@ type sdkFixture struct {
 //
 // An SDK whose module process reports its error in the engine's function
 // error file (DAGGER_FUNCTION_ERROR_PATH) gets the first right: see go,
-// python, typescript and java.
+// python, typescript, php and java.
 var sdkFixtures = []sdkFixture{
 	// Errors use the engine's function error file (DAGGER_FUNCTION_ERROR_PATH,
 	// dagger/go-sdk#113). A build failure renders the compiler's error,
@@ -74,11 +74,17 @@ var sdkFixtures = []sdkFixture{
 	// shortened. A module that doesn't compile fails on the constructor's row
 	// with esbuild's error: tsx compiles at run time, so there's no build.
 	{lang: "typescript", source: "src/index.ts", breakage: "\nthis is not typescript\n"},
-	// BAD: no error marker: the entrypoint raises the dispatcher's whole
-	// stderr, so the error message is the function's own stderr lines and a
-	// stack trace, and an exit with a code reads "php function stderr". The
-	// client sends every default argument, so a withExec renders with all of
-	// them.
+	// Errors use the engine's function error file (DAGGER_FUNCTION_ERROR_PATH,
+	// dagger/php-sdk#<PR>). An API error whose origin renders logs nothing;
+	// one without an origin and an error of the function's own log a short
+	// stack trace, through the module's own frames only. A wrapped exec
+	// error keeps its previous-error chain, each part so shortened. A module
+	// that doesn't parse fails on the constructor's row with PHP's parse
+	// error: PHP compiles at run time, so the build (prebuild, the Composer
+	// install) passes. BAD, deferred: the client sends every default
+	// argument, so a call it makes renders with all of them; the fail-exec
+	// goldens' Container.from and withExec lines pin that, and lose the
+	// defaults once php-sdk's codegen omits them.
 	{lang: "php", source: "src/ViztestPhp.php", breakage: "\nthis is not php;\n", noCachePolicy: true},
 	// Errors use the engine's function error file (DAGGER_FUNCTION_ERROR_PATH,
 	// dagger/java-sdk#47). An API error whose origin renders logs nothing;

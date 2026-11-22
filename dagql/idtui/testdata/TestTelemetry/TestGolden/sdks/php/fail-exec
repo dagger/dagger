@@ -13,8 +13,8 @@ Expected stderr:
 
 $ viztestPhp: ViztestPhp! X.Xs CACHED
 ✘ .failExec: String! X.Xs ERROR
-├╴$ Container.from(address: "alpine"): Container! X.Xs CACHED
-├╴✘ withExec sh -c 'echo exec stdout; sleep 0.1; echo exec stderr >&2; exit 1' X.Xs ERROR
+├╴✔ Container.from(address: "alpine", version: "", insecureSkipTlsVerify: false, noLock: false): Container! X.Xs
+├╴✘ withExec sh -c 'echo exec stdout; sleep 0.1; echo exec stderr >&2; exit 1' (useEntrypoint: false, stdin: "", redirectStdin: "", redirectStdout: "", redirectStderr: "", disableDaggerInDagger: false, experimentalPrivilegedNesting: false, daggerInDaggerNewSession: false, insecureRootCapabilities: false, expand: false, noInit: false) X.Xs ERROR
 │ ┃ exec stdout
 │ ┃ exec stderr
 │ ! exit code: 1

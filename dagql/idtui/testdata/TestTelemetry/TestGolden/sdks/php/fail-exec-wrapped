@@ -13,15 +13,11 @@ Expected stderr:
 
 $ viztestPhp: ViztestPhp! X.Xs CACHED
 ✘ .failExecWrapped: String! X.Xs ERROR
-┃ dagger-module: RuntimeException: php function ran a failing command: exit code: 1 [traceparent:00000000000000000000000000000000-0000000000000000]
-┃ #0 [internal function]: DaggerModule\ViztestPhp->failExecWrapped()
-┃ #1 /src/viztest/sdks/php/sdk/src/Module/CallDispatcher.php(84): ReflectionMethod->invokeArgs(Object(DaggerModule\ViztestPhp), Array)
-┃ #2 /src/viztest/sdks/php/sdk/src/Module/CallDispatcher.php(46): Dagger\Module\CallDispatcher->invoke(Object(ReflectionClass), '{}', 'failExecWrapped', Array)
-┃ #3 /src/viztest/sdks/php/sdk/bin/dagger-module(61): Dagger\Module\CallDispatcher->call('ViztestPhp', '{}', 'failExecWrapped', '{}')
-┃ #4 {main}
-├╴✘ call module entrypoint X.Xs ERROR
-│ ┆ (the entrypoint's own evaluation, elided)
-│
+┃ GraphQL\Exception\QueryError: exit code: 1
+┃ Stack trace:
+┃ #0 /src/viztest/sdks/php/src/ViztestPhp.php(67): Dagger\Container->stdout()
+┃
+┃ Next RuntimeException: php function ran a failing command: exit code: 1 in /src/viztest/sdks/php/src/ViztestPhp.php:69
 ├╴✔ Container.from(address: "alpine", version: "", insecureSkipTlsVerify: false, noLock: false): Container! X.Xs
 ├╴✘ withExec sh -c 'echo exec stdout; sleep 0.1; echo exec stderr >&2; exit 1' (useEntrypoint: false, stdin: "", redirectStdin: "", redirectStdout: "", redirectStderr: "", disableDaggerInDagger: false, experimentalPrivilegedNesting: false, daggerInDaggerNewSession: false, insecureRootCapabilities: false, expand: false, noInit: false) X.Xs ERROR
 │ ┃ exec stdout
