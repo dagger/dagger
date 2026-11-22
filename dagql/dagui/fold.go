@@ -192,7 +192,7 @@ type Fold struct {
 	// root is the DB's RootSpan, the first root received; rootEnded is set
 	// once it completed, at rootEnd: running spans are canceled, ending
 	// then.
-	root uint32
+	root      uint32
 	rootEnded bool
 	rootEnd   int64
 
@@ -443,7 +443,7 @@ type decodedSpan struct {
 }
 
 func (s decodedSpan) Attributes() []attribute.KeyValue { return s.attrs }
-func (s decodedSpan) Links() []sdktrace.Link            { return s.links }
+func (s decodedSpan) Links() []sdktrace.Link           { return s.links }
 
 func decodeSpan(s sdktrace.ReadOnlySpan) decodedSpan {
 	if d, ok := s.(decodedSpan); ok {
@@ -704,7 +704,7 @@ func (f *Fold) keepCall(info foldInfo) {
 
 // ingest folds an arriving span into the stub table, reporting whether the
 // DB is to ingest it in full.
-func (f *Fold) ingest(info foldInfo, fill bool) bool {
+func (f *Fold) ingest(info foldInfo, fill bool) bool { //nolint:gocyclo // one pass over a span, in order
 	i := f.intern(info.id)
 	st := f.state[i]
 	if fill && st&foldFull != 0 {
@@ -1132,7 +1132,7 @@ func (f *Fold) uncredit(i uint32) {
 		return
 	}
 	if f.state[p-1]&foldRetained != 0 && f.state[i]&foldReceived != 0 {
-		f.aggOf(p - 1).children--
+		f.aggOf(p-1).children--
 	}
 	if old == stateUnknown {
 		return

@@ -415,7 +415,7 @@ type foldLink struct {
 // simulate counts the received spans variant v retains: its seeds, the
 // targets of their links it keeps, and the ancestors of both; and why each
 // is retained.
-func (f *Fold) simulate(v foldVariant, links map[uint32][]foldLink, realWaits map[uint32]bool) (int, map[string]int, []bool) {
+func (f *Fold) simulate(v foldVariant, links map[uint32][]foldLink, realWaits map[uint32]bool) (int, map[string]int, []bool) { //nolint:gocyclo // a policy table
 	follows := func(l foldLink) bool {
 		switch {
 		case l.purpose == targetCause && v.causeSidecar,

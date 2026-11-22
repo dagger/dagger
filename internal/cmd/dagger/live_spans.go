@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"

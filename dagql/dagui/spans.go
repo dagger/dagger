@@ -1064,9 +1064,36 @@ func (span *Span) recreditLateParent() {
 		}
 	}
 
-	// Roll-up counts: span's ancestors, causal ones included, credited with
-	// every span counted on span that reached it only through span. Before
-	// span arrived, nothing led up from it.
+	span.recreditLateRollUps()
+}
+
+// creditLateSubtree credits the spans of gained not in reached with span
+// and what's counted on it, noting them in credited.
+func (span *Span) creditLateSubtree(gained []*Span, reached, credited map[*Span]bool) {
+	cat := span.lastRollUpCategory
+	for _, ancestor := range gained {
+		if reached[ancestor] {
+			continue
+		}
+		if ancestor.rollUpState == nil {
+			ancestor.rollUpState = &RollUpState{}
+		}
+		if cat != stateUnknown {
+			ancestor.rollUpState.incrementCategory(cat)
+		}
+		if span.rollUpState != nil {
+			addRollUp(ancestor.rollUpState, *span.rollUpState, 1)
+		}
+		span.db.fold.creditLateBeneath(ancestor, span)
+		credited[ancestor] = true
+	}
+}
+
+// recreditLateRollUps credits span's ancestors, causal ones included, with
+// every span counted on span that reached it only through span: before span
+// arrived, nothing led up from it.
+func (span *Span) recreditLateRollUps() {
+	db := span.db
 	if span.rollUpState == nil || *span.rollUpState == (RollUpState{}) {
 		// nothing beneath span counted yet, e.g. its subtree arrived in
 		// the same batch: it propagates through the new links
@@ -1133,22 +1160,7 @@ func (span *Span) recreditLateParent() {
 		if !beneath.causalBeneath {
 			// nor has anything beneath it causes: it and what's counted
 			// on it reach the same, in one step
-			for _, ancestor := range gained {
-				if reached[ancestor] {
-					continue
-				}
-				if ancestor.rollUpState == nil {
-					ancestor.rollUpState = &RollUpState{}
-				}
-				if cat != stateUnknown {
-					ancestor.rollUpState.incrementCategory(cat)
-				}
-				if beneath.rollUpState != nil {
-					addRollUp(ancestor.rollUpState, *beneath.rollUpState, 1)
-				}
-				db.fold.creditLateBeneath(ancestor, beneath)
-				credited[ancestor] = true
-			}
+			beneath.creditLateSubtree(gained, reached, credited)
 			continue
 		}
 		queue = append(queue, beneath.ChildSpans.Spans()...)

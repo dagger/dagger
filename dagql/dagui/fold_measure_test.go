@@ -3,8 +3,6 @@ package dagui
 import (
 	"testing"
 
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-
 	"github.com/dagger/dagger/internal/spanfootprint"
 )
 
@@ -14,7 +12,7 @@ func TestFoldBreakdown(t *testing.T) {
 	for _, nested := range []bool{false, true} {
 		tr := spanfootprint.New(30_000)
 		folded, store := newFoldedDB(nil)
-		var exp sdktrace.SpanExporter = tr.WaitChains(store)
+		exp := tr.WaitChains(store)
 		if nested {
 			exp = spanfootprint.Nested(exp)
 		}

@@ -724,9 +724,9 @@ func (span *Span) collectOwnWaits(dst *[]waitWindow, row *Span, clk *breakdownCl
 		}
 
 		*dst = append(*dst, waitWindow{
-			start:  link.WaitStart,
-			end:    end,
-			target: target,
+			start:    link.WaitStart,
+			end:      end,
+			target:   target,
 			reason:   link.WaitReason,
 			inside:   inside,
 			unloaded: unloaded,
