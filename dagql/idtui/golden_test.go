@@ -633,37 +633,19 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 	// output every time. So, we run everything twice. The first run will cache
 	// the things that should be cacheable, and the second run will be the final
 	// result. Each test is responsible for busting its own caches.
-	func() {
-		ctx, span := otel.Tracer("dagger.io/golden").Start(ctx, "warmup")
-		defer span.End()
-		warmup := exec.Command(daggerBin, daggerArgs...)
-		warmup.Env = append(
-			slices.Clone(testEnv),
-			fmt.Sprintf("HOME=%s", s.Home), // ignore any local Dagger Cloud auth
-		)
-		warmup.Env = append(warmup.Env, telemetry.PropagationEnv(ctx)...)
-		warmup.Env = append(warmup.Env, ex.Env...)
-
-		// still try use docker credentials even though we overrode HOME, lest we get rate limited
-		if realHome != "" {
-			warmup.Env = append(warmup.Env, fmt.Sprintf("DOCKER_CONFIG=%s/.docker", realHome))
+	//
+	// A warm-up that adds to the workspace's lockfile, such as the first to
+	// pull an image, changes the workspace the final run uploads, so that run
+	// would miss what the warm-up cached: warm up again until the lockfile
+	// holds still.
+	for range maxWarmups {
+		before := readWorkspaceLock()
+		warmupOnce(ctx, t, ex, daggerArgs, testEnv, s.Home, realHome)
+		if readWorkspaceLock() == before {
+			break
 		}
-
-		warmupBuf := new(bytes.Buffer)
-		defer func() {
-			if t.Failed() {
-				t.Logf("warmup failed! output:\n%s", warmupBuf.String())
-			}
-		}()
-		warmup.Stderr = warmupBuf
-		warmup.Stdout = warmupBuf
-		err := warmup.Run()
-		if ex.Fail {
-			require.Error(t, err)
-		} else {
-			require.NoError(t, err)
-		}
-	}()
+		t.Log("warm-up changed dagger.lock; warming up again")
+	}
 
 	cmd := exec.Command(daggerBin, daggerArgs...)
 	cmd.Env = append(
@@ -713,6 +695,50 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 		out = normalizeSDKOutput(out, nativePlatform, !ex.NoExpand)
 	}
 	return out, db, logs
+}
+
+// maxWarmups bounds the warm-ups of an example whose lockfile keeps changing.
+const maxWarmups = 3
+
+// readWorkspaceLock returns the contents of the golden workspace's lockfile,
+// or "" when there is none.
+func readWorkspaceLock() string {
+	data, _ := os.ReadFile("dagger.lock")
+	return string(data)
+}
+
+// warmupOnce runs an example's command once, to cache what it caches, without
+// recording its output.
+func warmupOnce(ctx context.Context, t *testctx.T, ex Example, daggerArgs, testEnv []string, home, realHome string) {
+	ctx, span := otel.Tracer("dagger.io/golden").Start(ctx, "warmup")
+	defer span.End()
+	warmup := exec.Command(daggerBin, daggerArgs...)
+	warmup.Env = append(
+		slices.Clone(testEnv),
+		fmt.Sprintf("HOME=%s", home), // ignore any local Dagger Cloud auth
+	)
+	warmup.Env = append(warmup.Env, telemetry.PropagationEnv(ctx)...)
+	warmup.Env = append(warmup.Env, ex.Env...)
+
+	// still try use docker credentials even though we overrode HOME, lest we get rate limited
+	if realHome != "" {
+		warmup.Env = append(warmup.Env, fmt.Sprintf("DOCKER_CONFIG=%s/.docker", realHome))
+	}
+
+	warmupBuf := new(bytes.Buffer)
+	defer func() {
+		if t.Failed() {
+			t.Logf("warmup failed! output:\n%s", warmupBuf.String())
+		}
+	}()
+	warmup.Stderr = warmupBuf
+	warmup.Stdout = warmupBuf
+	err := warmup.Run()
+	if ex.Fail {
+		require.Error(t, err)
+	} else {
+		require.NoError(t, err)
+	}
 }
 
 func testDB(t *testctx.T) (*dagui.DB, *logRecorder, net.Listener) {
