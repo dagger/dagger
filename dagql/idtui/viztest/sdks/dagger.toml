@@ -33,7 +33,7 @@ source = "github.com/vito/php-sdk@115d8d91eef6b49012ea66112adc0af0ef5fc48c"
 # origin the engine shows. The entrypoint declares prebuild, and Maven builds
 # the jar quietly in an exec of its own, so a build failure shows the
 # compiler's errors.
-source = "github.com/dagger/java-sdk@344e6cf29bb1730b3d687bec31fbcdcd236005d6"
+source = "github.com/dagger/java-sdk@f25650f95356764c9bf7e3b1bdeec013685e112b"
 
 [modules.dang-sdk]
 source = "github.com/dagger/dang-sdk@14ba9d349167cb32b3a06f4229f534509a30ac62"

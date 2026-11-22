@@ -146,7 +146,7 @@ e0ceced90da343933d043c678877d7ccb1bf3de1fd4c6164536a187c272f42ad  sdk/src/main/j
 f3b1adc97018391d65e7bef150c15ff7da4a846dd4686c86d09f4d5063294702  sdk/src/main/java/io/dagger/client/IDAble.java
 f574749e48b26761ecf93f2ba99ff1b3a65c2c3468bf2d9a31aad57e3e233b72  sdk/src/main/java/io/dagger/client/IDAbleSerializer.java
 246f67d6761aebde6a7e712b8ba79829245e3233b411600ef01e320501e815a1  sdk/src/main/java/io/dagger/client/InputValue.java
-60bc9129b8c46e8415806b8bc5734f03bcbc9f31ab0530161bf6c7af662a3414  sdk/src/main/java/io/dagger/client/ModuleDispatcher.java
+44b36e9d7f36547eabbe924f5778e6dff7197c1d5552d82c614bdb83dee0e68a  sdk/src/main/java/io/dagger/client/ModuleDispatcher.java
 42b1b95a908b3cc2d7475111d783aafe9f93d463fc3a68abdef0eba3b258ebf0  sdk/src/main/java/io/dagger/client/ModuleLoader.java
 ebb1f6e893b42ab77c9933664fb4456f7817b580b1bc7cce96a103afc1b4b71a  sdk/src/main/java/io/dagger/client/ModuleTarget.java
 cd1bcb33c18d0ef65d75816f38943a7d94695cc75041070f1e61c77e0b7d82ed  sdk/src/main/java/io/dagger/client/PrivateVisibilityStrategy.java

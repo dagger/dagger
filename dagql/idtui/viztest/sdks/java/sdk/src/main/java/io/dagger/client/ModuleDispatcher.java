@@ -220,8 +220,13 @@ public final class ModuleDispatcher {
     err.flush();
   }
 
+  /**
+   * The error's message, or its type when it has none: the engine takes a report with an empty
+   * message for plain text.
+   */
   private static String messageOf(Throwable cause) {
-    return cause.getMessage() == null ? cause.toString() : cause.getMessage();
+    String message = cause.getMessage();
+    return message == null || message.isBlank() ? cause.getClass().getName() : message;
   }
 
   /**
