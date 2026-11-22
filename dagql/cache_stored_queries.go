@@ -82,6 +82,9 @@ const (
 	// PartAbsent: a stored record maps the part as absent, a part with no
 	// bytes, so it is never stored.
 	PartAbsent
+	// PartUploading: neither stored nor absent, and an upload of the part is
+	// in progress for the entry or an entry of its class (MarkPartUploading).
+	PartUploading
 )
 
 // PartAvailability is AvailablePart's answer. Donor is the number of the
