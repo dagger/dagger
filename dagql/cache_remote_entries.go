@@ -1737,6 +1737,9 @@ func (c *Cache) RemoteHoldingInfos(keys []HolderKey) (held []RemoteHeldEntry, ok
 		if c.testBatchAnswered != nil {
 			c.testBatchAnswered(i)
 		}
+		if i+1 < len(keys) {
+			c.giveWayLocked()
+		}
 	}
 	return held, ok
 }
@@ -1888,7 +1891,10 @@ func (c *Cache) EntriesHeld(numbers []uint64, limit int) []EntryHeld {
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
 	out := make([]EntryHeld, 0, len(numbers))
-	for _, number := range numbers {
+	for i, number := range numbers {
+		if i > 0 {
+			c.giveWayLocked()
+		}
 		entry := c.resultsByID[sharedResultID(number)]
 		if entry == nil {
 			continue
@@ -1933,7 +1939,10 @@ func (c *Cache) EntriesFacts(numbers []uint64) []EntryFacts {
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
 	out := make([]EntryFacts, 0, len(numbers))
-	for _, number := range numbers {
+	for i, number := range numbers {
+		if i > 0 {
+			c.giveWayLocked()
+		}
 		entry := c.resultsByID[sharedResultID(number)]
 		if entry == nil {
 			continue
