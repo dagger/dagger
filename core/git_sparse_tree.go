@@ -671,8 +671,47 @@ func (m *gitSparseManifest) readSource(dir string, filter CopyFilter) (GitSparse
 // that apply to them, and the directories it holds. Two commits that give a
 // read the same list give it the same files.
 type GitSparseReadFiles struct {
-	Files []string `json:"files"`
-	Dirs  []string `json:"dirs"`
+	Files []string
+	Dirs  []string
+}
+
+// gitSparseReadFilesAnswer is __gitSparseReadFiles' answer: a read's files
+// and directories as bytes, which JSON carries as base64. A path in a commit
+// can be any bytes, and a JSON string turns those that aren't UTF-8 into
+// U+FFFD, which would name a file the commit doesn't have.
+type gitSparseReadFilesAnswer struct {
+	Files [][]byte `json:"files"`
+	Dirs  [][]byte `json:"dirs"`
+}
+
+func encodeGitSparseReadFiles(files *GitSparseReadFiles) (JSON, error) {
+	if files == nil {
+		return JSON("null"), nil
+	}
+	answer := gitSparseReadFilesAnswer{Files: make([][]byte, len(files.Files)), Dirs: make([][]byte, len(files.Dirs))}
+	for i, f := range files.Files {
+		answer.Files[i] = []byte(f)
+	}
+	for i, d := range files.Dirs {
+		answer.Dirs[i] = []byte(d)
+	}
+	data, err := json.Marshal(answer)
+	return JSON(data), err
+}
+
+func decodeGitSparseReadFiles(data JSON) (*GitSparseReadFiles, error) {
+	var answer *gitSparseReadFilesAnswer
+	if err := json.Unmarshal(data, &answer); err != nil || answer == nil {
+		return nil, err
+	}
+	files := &GitSparseReadFiles{Files: make([]string, len(answer.Files)), Dirs: make([]string, len(answer.Dirs))}
+	for i, f := range answer.Files {
+		files.Files[i] = string(f)
+	}
+	for i, d := range answer.Dirs {
+		files.Dirs[i] = string(d)
+	}
+	return files, nil
 }
 
 // ReadFiles returns the list identifying a read that ReadSource sends to a
@@ -683,21 +722,29 @@ func (t *GitSparseTree) ReadFiles(ctx context.Context, dir string, filter CopyFi
 	if err := t.selectSparseTree(ctx, &answer, "__gitSparseReadFiles", gitSparseReadArgs(dir, filter)...); err != nil {
 		return nil, err
 	}
-	var files *GitSparseReadFiles
-	if err := json.Unmarshal(answer, &files); err != nil {
+	files, err := decodeGitSparseReadFiles(answer)
+	if err != nil {
 		return nil, fmt.Errorf("sparse read files: %w", err)
 	}
 	return files, nil
 }
 
 // GitSparseTreeReadFiles is ReadFiles' answer for the sparse tree root, read
-// from its manifest and its objects: what __gitSparseReadFiles computes.
-func GitSparseTreeReadFiles(ctx context.Context, root dagql.ObjectResult[*Directory], dir string, filter CopyFilter) (*GitSparseReadFiles, error) {
+// from its manifest and its objects, encoded: what __gitSparseReadFiles
+// computes.
+func GitSparseTreeReadFiles(ctx context.Context, root dagql.ObjectResult[*Directory], dir string, filter CopyFilter) (JSON, error) {
 	m, err := loadGitSparseManifestWithObjects(ctx, root)
-	if err != nil || m.objects == nil {
+	if err != nil {
 		return nil, err
 	}
-	return m.readFiles(dir, filter)
+	if m.objects == nil {
+		return encodeGitSparseReadFiles(nil)
+	}
+	files, err := m.readFiles(dir, filter)
+	if err != nil {
+		return nil, err
+	}
+	return encodeGitSparseReadFiles(files)
 }
 
 func (m *gitSparseManifest) readFiles(dir string, filter CopyFilter) (*GitSparseReadFiles, error) {
@@ -854,29 +901,64 @@ var (
 	_ ExistsFS = (*GitSparseTreeFS)(nil)
 )
 
-// dirFor picks the directory to look p up in.
-func (fs *GitSparseTreeFS) dirFor(ctx context.Context, p string) dagql.ObjectResult[*Directory] {
+// dirFor picks the directory to look p up in, and says whether it's the
+// sparse tree.
+func (fs *GitSparseTreeFS) dirFor(ctx context.Context, p string) (dagql.ObjectResult[*Directory], bool) {
 	covered, err := fs.Sparse.coversPath(ctx, p)
 	if err != nil {
 		slog.Warn("reading the sparse tree's paths failed; reading the full tree", "error", err)
-		return fs.Full
+		return fs.Full, false
 	}
 	if covered {
-		return fs.Sparse.Root
+		return fs.Sparse.Root, true
 	}
-	return fs.Full
+	return fs.Full, false
+}
+
+// readGitSparseTreeFS reads p with read from the directory dirFor picks. An
+// answer from the cache can pick the sparse tree on an engine that can't get
+// the tree's files, as one served another engine's records can, where
+// reading the list from the files would have failed and picked the full
+// tree. So a read of the sparse tree that fails for any reason but p's
+// absence reads the full tree, which answers the same.
+func readGitSparseTreeFS[T any](ctx context.Context, fs *GitSparseTreeFS, p string, read func(dagql.ObjectResult[*Directory]) (T, error)) (T, error) {
+	dir, sparse := fs.dirFor(ctx, p)
+	out, err := read(dir)
+	if err == nil || !sparse || errors.Is(err, os.ErrNotExist) {
+		return out, err
+	}
+	slog.Warn("reading the sparse tree failed; reading the full tree", "path", p, "error", err)
+	return read(fs.Full)
 }
 
 func (fs *GitSparseTreeFS) Stat(ctx context.Context, p string) (string, *Stat, error) {
-	return CallDirStat(ctx, fs.dirFor(ctx, p), p)
+	type stat struct {
+		dir  string
+		stat *Stat
+	}
+	got, err := readGitSparseTreeFS(ctx, fs, p, func(dir dagql.ObjectResult[*Directory]) (stat, error) {
+		parent, st, err := CallDirStat(ctx, dir, p)
+		return stat{parent, st}, err
+	})
+	return got.dir, got.stat, err
 }
 
 func (fs *GitSparseTreeFS) Exists(ctx context.Context, p string) (string, bool, error) {
-	return CallDirExists(ctx, fs.dirFor(ctx, p), p)
+	type exists struct {
+		dir    string
+		exists bool
+	}
+	got, err := readGitSparseTreeFS(ctx, fs, p, func(dir dagql.ObjectResult[*Directory]) (exists, error) {
+		parent, ok, err := CallDirExists(ctx, dir, p)
+		return exists{parent, ok}, err
+	})
+	return got.dir, got.exists, err
 }
 
 func (fs *GitSparseTreeFS) ReadFile(ctx context.Context, p string) ([]byte, error) {
-	return DirectoryReadFile(ctx, fs.dirFor(ctx, p), p)
+	return readGitSparseTreeFS(ctx, fs, p, func(dir dagql.ObjectResult[*Directory]) ([]byte, error) {
+		return DirectoryReadFile(ctx, dir, p)
+	})
 }
 
 // gitBlobPools holds, per repository result, the objects readers are waiting

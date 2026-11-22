@@ -173,8 +173,12 @@ func TestGitWorkspaceReadsFullTreeWithoutSparseContent(t *testing.T) {
 		// Twice: a failure must keep sending reads to the full tree, not only
 		// the first one.
 		for range 2 {
-			require.Same(t, full.Self(), fs.dirFor(ctx, "dagger.toml").Self())
-			require.Same(t, full.Self(), fs.dirFor(ctx, "gone.txt").Self())
+			dir, onSparse := fs.dirFor(ctx, "dagger.toml")
+			require.False(t, onSparse)
+			require.Same(t, full.Self(), dir.Self())
+			dir, onSparse = fs.dirFor(ctx, "gone.txt")
+			require.False(t, onSparse)
+			require.Same(t, full.Self(), dir.Self())
 			require.NoError(t, MountRef(ctx, fullRef, func(root string, _ *mount.Mount) error {
 				got, err := os.ReadFile(filepath.Join(root, "dagger.toml"))
 				require.NoError(t, err)
