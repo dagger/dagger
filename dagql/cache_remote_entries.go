@@ -1836,6 +1836,19 @@ func (c *Cache) RemoteHoldingInfo(key HolderKey) (RemoteHeldEntry, bool) {
 	return c.remoteHoldingInfoLocked(key)
 }
 
+// RemoteHoldingInfos is RemoteHoldingInfo for each of keys, in their order,
+// read under one hold, as AvailableParts is AvailablePart: ok is false for a
+// holding the cache doesn't have.
+func (c *Cache) RemoteHoldingInfos(keys []HolderKey) (held []RemoteHeldEntry, ok []bool) {
+	held, ok = make([]RemoteHeldEntry, len(keys)), make([]bool, len(keys))
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	for i, key := range keys {
+		held[i], ok[i] = c.remoteHoldingInfoLocked(key)
+	}
+	return held, ok
+}
+
 // remoteHoldingInfoLocked is RemoteHoldingInfo's answer. Requires egraphMu.
 func (c *Cache) remoteHoldingInfoLocked(key HolderKey) (RemoteHeldEntry, bool) {
 	entry, h := c.holdingLocked(key)
