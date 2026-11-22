@@ -309,8 +309,14 @@ func endOTelLazyOp(span trace.Span, attrs []attribute.KeyValue, isResume bool, s
 			}
 		}
 	}
+	// An attempt that opened a part this engine saved before ran none of the
+	// value's step: the span names the part, as an install names its offer's,
+	// so that a reader of cache rows doesn't count it as a computation.
 	if storedPart != "" && *errPtr == nil {
 		attrs = append(attrs, attribute.Bool(telemetry.CachedAttr, true))
+		if key, err := partAddressKey(PersistedPartAddress{Part: storedPart}); err == nil {
+			attrs = append(attrs, attribute.String(telemetryattrs.CacheStoredPartAttr, key))
+		}
 	}
 	if isResume && partial {
 		attrs = append(attrs, attribute.Bool(telemetryattrs.DagPartialAttr, true))
