@@ -304,6 +304,40 @@ func TestTheCloudLearnsThatARecordsRunRan(t *testing.T) {
 	})
 }
 
+// From a holding's side, the Cloud says whose run its entry's stored record
+// is: the holding's own, at its replacement count, or another's; whether that
+// run ran; and whether the run's own holding is still held at the run's
+// count. A holding that moves on to a later value no longer holds the run.
+func TestHoldingRunsSayWhoseRunAHoldingsRecordIs(t *testing.T) {
+	t.Parallel()
+	ctx, cloud := storedPartTestCache(t, WithBlobStore())
+	_, number, run := runTestExport(t, ctx, cloud, "cache-a", "holding-runs")
+	a := HolderKey{Cache: run.Cache, Number: run.Number}
+	recipe, ok := cloud.EntryRecipe(number)
+	require.True(t, ok)
+	b := HolderKey{Cache: "cache-b", Number: 7}
+	_, err := cloud.AttachRemoteHolding(ctx, b, RemoteHolding{Recipe: recipe})
+	require.NoError(t, err)
+	unknown := HolderKey{Cache: "cache-c", Number: 9}
+
+	require.Equal(t, []HoldingRun{
+		{Stored: true, Run: run, Own: true, RunHeld: true},
+		{Stored: true, Run: run, RunHeld: true},
+		{},
+	}, cloud.HoldingRuns([]HolderKey{a, b, unknown}))
+
+	runTestEvaluated(t, ctx, cloud, a, run.Replacements, true)
+	require.Equal(t, []HoldingRun{{Stored: true, Run: run, Ran: true, RunHeld: true}}, cloud.HoldingRuns([]HolderKey{b}))
+
+	_, found, err := cloud.UpdateRemoteHolding(ctx, a, RemoteHoldingUpdate{Replacements: run.Replacements + 1})
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, []HoldingRun{
+		{Stored: true, Run: run, Ran: true},
+		{Stored: true, Run: run, Ran: true},
+	}, cloud.HoldingRuns([]HolderKey{a, b}), "A's engine moved on to a later value")
+}
+
 // What a stored record says of its run is saved with it, whole or
 // compressed, and comes back over a restart; a prune of the record takes it
 // with the value.
