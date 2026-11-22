@@ -3,6 +3,7 @@ package core
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
@@ -394,31 +396,119 @@ func (ref *RemoteGitRef) SparseTree(
 // checkout would give. Whether a read can come from it is decided from the
 // commit's whole list of paths, so a file it doesn't hold can never go missing:
 // a read selecting one, or a path it can't answer for, goes to the full tree.
+//
+// Each question about that list is a call on Root (core/schema's
+// __gitSparseCovers, __gitSparseReadSource and __gitSparseReadFiles), so a
+// cache hit answers it from the call's record, without the tree's files; a
+// miss reads the list from the tree's snapshot (GitSparseTreeCovers and the
+// others).
 type GitSparseTree struct {
 	Root dagql.ObjectResult[*Directory]
-
-	manifestOnce sync.Once
-	manifest     *gitSparseManifest
-	manifestErr  error
 }
 
 type gitSparseManifest struct {
 	tree       *layercopy.PathTree
 	entries    map[string]byte
 	submodules bool
-	// objects holds each path's mode and object ID; nil for a tree written
-	// before sparse trees listed them.
+	// objects holds each path's mode and object ID, for readFiles; nil for a
+	// tree written before sparse trees listed them.
 	objects map[string]gitTreeEntry
 }
 
-func (t *GitSparseTree) loadManifest(ctx context.Context) (*gitSparseManifest, error) {
-	t.manifestOnce.Do(func() {
-		t.manifest, t.manifestErr = readGitSparseManifest(ctx, t.Root)
-	})
-	return t.manifest, t.manifestErr
+// selectSparseTree asks one of the tree's questions.
+func (t *GitSparseTree) selectSparseTree(ctx context.Context, dest any, field string, args ...dagql.NamedInput) error {
+	dag, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return err
+	}
+	return dag.Select(ctx, t.Root, dest, dagql.Selector{Field: field, Args: args})
 }
 
-func readGitSparseManifest(ctx context.Context, root dagql.ObjectResult[*Directory]) (*gitSparseManifest, error) {
+func gitSparseReadArgs(dir string, filter CopyFilter) []dagql.NamedInput {
+	return []dagql.NamedInput{
+		{Name: "path", Value: dagql.NewString(dir)},
+		{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(filter.Include...))},
+		{Name: "exclude", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(filter.Exclude...))},
+		{Name: "gitignore", Value: dagql.NewBoolean(filter.Gitignore)},
+	}
+}
+
+// gitSparseListKind is one of the two lists a sparse tree's snapshot holds.
+type gitSparseListKind string
+
+const (
+	gitSparseListManifest gitSparseListKind = gitSparseManifestFile
+	gitSparseListObjects  gitSparseListKind = gitSparseObjectsFile
+)
+
+// loadGitSparseList reads one of a sparse tree's lists, parsed, once per
+// session: a session's questions that miss share it. The list is a function of
+// the tree alone, so sharing it changes no answer.
+func loadGitSparseList[T any](ctx context.Context, root dagql.ObjectResult[*Directory], kind gitSparseListKind, parse func([]byte) T) (T, error) {
+	read := func(ctx context.Context) (T, error) {
+		var zero T
+		data, err := readGitSparseList(ctx, root, kind)
+		if err != nil {
+			return zero, err
+		}
+		return parse(data), nil
+	}
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return read(ctx)
+	}
+	metadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil || metadata.SessionID == "" {
+		return read(ctx)
+	}
+	recipe, err := root.RecipeDigest(ctx)
+	if err != nil {
+		return read(ctx)
+	}
+	res, err := cache.GetOrInitArbitrary(ctx, metadata.SessionID, "git sparse tree "+string(kind)+" "+recipe.String(), func(ctx context.Context) (any, error) {
+		return read(ctx)
+	})
+	if err != nil {
+		var zero T
+		return zero, err
+	}
+	list, ok := res.Value().(T)
+	if !ok {
+		var zero T
+		return zero, fmt.Errorf("sparse tree %s: unexpected %T", kind, res.Value())
+	}
+	return list, nil
+}
+
+func loadGitSparseManifest(ctx context.Context, root dagql.ObjectResult[*Directory]) (*gitSparseManifest, error) {
+	return loadGitSparseList(ctx, root, gitSparseListManifest, parseGitSparseManifest)
+}
+
+// loadGitSparseManifestWithObjects is the manifest with each path's object,
+// whose objects are nil for a tree written before sparse trees listed them.
+func loadGitSparseManifestWithObjects(ctx context.Context, root dagql.ObjectResult[*Directory]) (*gitSparseManifest, error) {
+	m, err := loadGitSparseManifest(ctx, root)
+	if err != nil {
+		return nil, err
+	}
+	objects, err := loadGitSparseList(ctx, root, gitSparseListObjects, func(data []byte) map[string]gitTreeEntry {
+		if data == nil {
+			return nil
+		}
+		return parseGitSparseObjects(data)
+	})
+	if err != nil {
+		return nil, err
+	}
+	withObjects := *m
+	withObjects.objects = objects
+	return &withObjects, nil
+}
+
+// readGitSparseList reads one of the lists beside a sparse tree's files in its
+// snapshot. It's nil for an objects list a tree written before sparse trees
+// listed them doesn't have.
+func readGitSparseList(ctx context.Context, root dagql.ObjectResult[*Directory], kind gitSparseListKind) ([]byte, error) {
 	// A tree held only as another engine's record decodes its snapshot from the
 	// server in the context, and loading a workspace has none attached.
 	dag, err := CurrentDagqlServer(ctx)
@@ -431,27 +521,17 @@ func readGitSparseManifest(ctx context.Context, root dagql.ObjectResult[*Directo
 		return nil, fmt.Errorf("sparse tree snapshot: %w", err)
 	}
 	var data []byte
-	if err := MountRef(ctx, snapshot, func(dir string, _ *mount.Mount) (err error) {
-		data, err = os.ReadFile(filepath.Join(dir, gitSparseManifestFile))
-		return err
-	}, mountRefAsReadOnly); err != nil {
-		return nil, fmt.Errorf("read sparse tree manifest: %w", err)
-	}
-	m := parseGitSparseManifest(data)
 	if err := MountRef(ctx, snapshot, func(dir string, _ *mount.Mount) error {
-		objects, err := os.ReadFile(filepath.Join(dir, gitSparseObjectsFile))
-		if errors.Is(err, os.ErrNotExist) {
+		read, err := os.ReadFile(filepath.Join(dir, string(kind)))
+		if kind == gitSparseListObjects && errors.Is(err, os.ErrNotExist) {
 			return nil
 		}
-		if err != nil {
-			return err
-		}
-		m.objects = parseGitSparseObjects(objects)
-		return nil
+		data = read
+		return err
 	}, mountRefAsReadOnly); err != nil {
-		return nil, fmt.Errorf("read sparse tree objects: %w", err)
+		return nil, fmt.Errorf("read sparse tree %s: %w", kind, err)
 	}
-	return m, nil
+	return data, nil
 }
 
 func parseGitSparseObjects(data []byte) map[string]gitTreeEntry {
@@ -500,6 +580,27 @@ const (
 	GitSparseReadOwn
 )
 
+// gitSparseReadSourceNames names each GitSparseReadSource in
+// __gitSparseReadSource's answer.
+var gitSparseReadSourceNames = map[GitSparseReadSource]string{
+	GitSparseReadFull:    "full",
+	GitSparseReadPlanned: "planned",
+	GitSparseReadOwn:     "own",
+}
+
+func (source GitSparseReadSource) String() string {
+	return gitSparseReadSourceNames[source]
+}
+
+func parseGitSparseReadSource(name string) (GitSparseReadSource, error) {
+	for source, sourceName := range gitSparseReadSourceNames {
+		if sourceName == name {
+			return source, nil
+		}
+	}
+	return GitSparseReadFull, fmt.Errorf("sparse read source: unknown %q", name)
+}
+
 // ReadSource picks where a copy of the directory dir with this filter gets
 // exactly what it gets from the full tree. A sparse tree serves it when dir is
 // a real directory of the tree, reached through no symlink, and the filter
@@ -508,7 +609,17 @@ const (
 // read's own. A dir the commit doesn't have, which fails the same way in both,
 // is read from this one as well.
 func (t *GitSparseTree) ReadSource(ctx context.Context, dir string, filter CopyFilter) (GitSparseReadSource, error) {
-	m, err := t.loadManifest(ctx)
+	var source dagql.String
+	if err := t.selectSparseTree(ctx, &source, "__gitSparseReadSource", gitSparseReadArgs(dir, filter)...); err != nil {
+		return GitSparseReadFull, err
+	}
+	return parseGitSparseReadSource(source.String())
+}
+
+// GitSparseTreeReadSource is ReadSource's answer for the sparse tree root, read
+// from its manifest: what __gitSparseReadSource computes.
+func GitSparseTreeReadSource(ctx context.Context, root dagql.ObjectResult[*Directory], dir string, filter CopyFilter) (GitSparseReadSource, error) {
+	m, err := loadGitSparseManifest(ctx, root)
 	if err != nil {
 		return GitSparseReadFull, err
 	}
@@ -560,15 +671,29 @@ func (m *gitSparseManifest) readSource(dir string, filter CopyFilter) (GitSparse
 // that apply to them, and the directories it holds. Two commits that give a
 // read the same list give it the same files.
 type GitSparseReadFiles struct {
-	Files []string
-	Dirs  []string
+	Files []string `json:"files"`
+	Dirs  []string `json:"dirs"`
 }
 
 // ReadFiles returns the list identifying a read that ReadSource sends to a
 // tree of its own. It's nil for a tree written before sparse trees listed
 // their objects.
 func (t *GitSparseTree) ReadFiles(ctx context.Context, dir string, filter CopyFilter) (*GitSparseReadFiles, error) {
-	m, err := t.loadManifest(ctx)
+	var answer JSON
+	if err := t.selectSparseTree(ctx, &answer, "__gitSparseReadFiles", gitSparseReadArgs(dir, filter)...); err != nil {
+		return nil, err
+	}
+	var files *GitSparseReadFiles
+	if err := json.Unmarshal(answer, &files); err != nil {
+		return nil, fmt.Errorf("sparse read files: %w", err)
+	}
+	return files, nil
+}
+
+// GitSparseTreeReadFiles is ReadFiles' answer for the sparse tree root, read
+// from its manifest and its objects: what __gitSparseReadFiles computes.
+func GitSparseTreeReadFiles(ctx context.Context, root dagql.ObjectResult[*Directory], dir string, filter CopyFilter) (*GitSparseReadFiles, error) {
+	m, err := loadGitSparseManifestWithObjects(ctx, root)
 	if err != nil || m.objects == nil {
 		return nil, err
 	}
@@ -679,7 +804,17 @@ func (m *gitSparseManifest) gitignoresHeld(dir string) (held, ok bool) {
 // full tree does. A symlink on the way, or at p, could lead to a file the
 // sparse tree doesn't have.
 func (t *GitSparseTree) coversPath(ctx context.Context, p string) (bool, error) {
-	m, err := t.loadManifest(ctx)
+	var covered dagql.Boolean
+	if err := t.selectSparseTree(ctx, &covered, "__gitSparseCovers", dagql.NamedInput{Name: "path", Value: dagql.NewString(p)}); err != nil {
+		return false, err
+	}
+	return covered.Bool(), nil
+}
+
+// GitSparseTreeCovers is coversPath's answer for the sparse tree root, read
+// from its manifest: what __gitSparseCovers computes.
+func GitSparseTreeCovers(ctx context.Context, root dagql.ObjectResult[*Directory], p string) (bool, error) {
+	m, err := loadGitSparseManifest(ctx, root)
 	if err != nil {
 		return false, err
 	}
