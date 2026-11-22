@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"github.com/vito/tuist"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
 	"github.com/dagger/dagger/dagql/dagui"
@@ -299,6 +300,57 @@ func TestLiveFoldSearchCap(t *testing.T) {
 	hint = search(counts[name])
 	require.NotContains(t, hint, "+")
 	require.NotContains(t, hint, "more match")
+}
+
+// TestLiveFoldIngestSteps checks that the live TUI ingests a big read-back
+// answer a step per frame, at most foldIngestStep spans each, so it can't
+// stall the event loop, and that all of it lands.
+func TestLiveFoldIngestSteps(t *testing.T) {
+	defer func(n int) { foldIngestStep = n }(foldIngestStep)
+	foldIngestStep = 64
+	const n = 5000
+	tr := spanfootprint.New(n)
+	db, lf := newFoldingDB()
+	fe := newWithTerminal(io.Discard, db, tuist.NewHeadlessTerminal(120, 40))
+	lf.attach(fe)
+	store := &foldTestStore{latest: map[dagui.SpanID]sdktrace.ReadOnlySpan{}}
+	fe.SetSpanQuery(dagui.TraceID{TraceID: tr.Stub(0, false).SpanContext().TraceID()}, store.query)
+	fe.SetPrimary(dagui.SpanID{SpanID: tr.SpanID(0)})
+	require.NoError(t, tr.Export(t.Context(), foldTestTee{store, fe.SpanExporter()}, 512, nil))
+	received := func() int {
+		var count int
+		for _, span := range db.Spans.Order {
+			if span.Received {
+				count++
+			}
+		}
+		return count
+	}
+	// a frame lays the rows out; then everything is asked for at once
+	fe.tui.Step()
+	root := dagui.SpanID{SpanID: tr.SpanID(0)}
+	fe.dispatch(func() { db.Fold().ExpandAll(root) })
+	var steps, maxStep int
+	for range 4096 {
+		// every read asked so far is dispatched: this Step drains it, and
+		// only this goroutine asks for more
+		lf.wait(t.Context())
+		before, loads := received(), db.Fold().Loads
+		fe.tui.Step()
+		delta := received() - before
+		maxStep = max(maxStep, delta)
+		if delta > 0 {
+			steps++
+		}
+		if db.Fold().Loads == loads && len(lf.fills) == 0 && !lf.fillQueued {
+			break
+		}
+	}
+	stats := db.Fold().Stats()
+	require.Equal(t, stats.Spans, stats.Retained, "everything retained")
+	require.Equal(t, n, received(), "everything read back lands")
+	require.LessOrEqual(t, maxStep, foldIngestStep, "a frame ingests at most a step")
+	require.Greater(t, steps, n/2/foldIngestStep, "the answer lands over many frames")
 }
 
 // TestLiveFoldReadRetries checks that a read of folded spans that fails is

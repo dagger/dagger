@@ -4115,6 +4115,9 @@ func isEscapeKey(keyStr string) bool {
 
 // Render implements tuist.Component. It produces the full TUI output as lines.
 func (fe *frontendPretty) Render(ctx tuist.Context) {
+	if fe.fold != nil {
+		fe.fold.frameRendering()
+	}
 	if !fe.finalRender && (fe.backgrounded || fe.quitting) {
 		return
 	}

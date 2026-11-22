@@ -75,6 +75,74 @@ type liveFold struct {
 	queuedReads int
 	// Reads counts the round trips, ReadSpans the spans asked in them.
 	Reads, ReadSpans int
+
+	// fills holds the read-back spans still to ingest, foldIngestStep at a
+	// time, one step per frame, so that a big answer doesn't stall the
+	// event loop. fillAwaitsFrame marks a step waiting for the next frame
+	// (see frameRendering), fillQueued one dispatched. They're the event
+	// loop's.
+	fills           []sdktrace.ReadOnlySpan
+	fillAwaitsFrame bool
+	fillQueued      bool
+}
+
+// foldIngestStep bounds the read-back spans the event loop ingests between
+// two frames: ingesting a span retained costs far more than folding one,
+// and a read-back answer can hold thousands.
+var foldIngestStep = 256
+
+// fill ingests read-back spans: on the event loop, a step at a time (see
+// fills); without one (report mode), all at once.
+func (lf *liveFold) fill(spans []sdktrace.ReadOnlySpan) {
+	if lf.fe.reportOnly {
+		lf.fe.exportSpansLocked(dagui.FoldFill(context.Background()), spans)
+		return
+	}
+	lf.fills = append(lf.fills, spans...)
+	if !lf.fillAwaitsFrame && !lf.fillQueued {
+		lf.fillStep()
+	}
+}
+
+// fillStep ingests the next foldIngestStep read-back spans; the rest wait
+// for the next frame.
+func (lf *liveFold) fillStep() {
+	n := min(len(lf.fills), foldIngestStep)
+	step := lf.fills[:n:n]
+	lf.fills = lf.fills[n:]
+	if len(lf.fills) == 0 {
+		lf.fills = nil
+	}
+	lf.fillAwaitsFrame = len(lf.fills) > 0
+	if n > 0 {
+		lf.fe.exportSpansLocked(dagui.FoldFill(context.Background()), step)
+	}
+}
+
+// frameRendering runs as a frame renders: a fill step waiting for it is
+// dispatched to run once it's drawn, after the input that came meanwhile.
+func (lf *liveFold) frameRendering() {
+	if !lf.fillAwaitsFrame {
+		return
+	}
+	lf.fillAwaitsFrame = false
+	lf.fillQueued = true
+	lf.fe.tui.Dispatch(func() {
+		lf.fillQueued = false
+		lf.fillStep()
+	})
+}
+
+// drainFills ingests every read-back span still waiting, at once: for
+// what needs the DB complete (SettleFold).
+func (lf *liveFold) drainFills() {
+	if len(lf.fills) == 0 {
+		return
+	}
+	spans := lf.fills
+	lf.fills = nil
+	lf.fillAwaitsFrame = false
+	lf.fe.exportSpansLocked(dagui.FoldFill(context.Background()), spans)
 }
 
 func (lf *liveFold) begin() {
@@ -178,9 +246,7 @@ func (lf *liveFold) read(query SpanQueryFunc) {
 		spans, err := query(ctx, ids)
 		cancel()
 		if len(spans) > 0 {
-			lf.fe.dispatch(func() {
-				lf.fe.exportSpansLocked(dagui.FoldFill(context.Background()), spans)
-			})
+			lf.fe.dispatch(func() { lf.fill(spans) })
 		}
 		if err != nil {
 			// what it did answer is taken; the DB keeps only the first
@@ -279,6 +345,8 @@ func (fe *frontendPretty) SettleFold(ctx context.Context) {
 			if !fe.folding() {
 				return
 			}
+			// what was read back lands first: the rows are laid out over it
+			lf.drainFills()
 			f := fe.db.Fold()
 			for _, id := range fe.finalFoldedRowsLocked() {
 				if f.Expand(id) {

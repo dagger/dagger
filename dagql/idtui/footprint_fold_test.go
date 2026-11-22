@@ -134,14 +134,13 @@ func streamFootprint(b testing.TB, tr *spanfootprint.Trace, shape, mode string) 
 	allEnded.Store(1)
 	fe.tui.Step()
 	if lf != nil {
-		// let the reads land
-		for range 64 {
+		// let the reads land, a step per frame: once every read asked is
+		// dispatched, a Step that asks no more drains them all
+		for range 4096 {
 			lf.wait(context.Background())
+			loads := db.Fold().Loads
 			fe.tui.Step()
-			lf.mu.Lock()
-			idle := lf.inflight == 0
-			lf.mu.Unlock()
-			if idle {
+			if db.Fold().Loads == loads && len(lf.fills) == 0 && !lf.fillQueued {
 				break
 			}
 		}
