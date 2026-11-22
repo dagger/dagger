@@ -201,6 +201,27 @@ func TestTheCloudLearnsThatARecordsRunRan(t *testing.T) {
 		require.True(t, change.Saved)
 		require.Equal(t, 1, cloud.StoredRuns().RanByCall)
 	})
+	t.Run("an executed call from before the last drop", func(t *testing.T) {
+		t.Parallel()
+		ctx, cloud := storedPartTestCache(t, WithBlobStore())
+		_, number, run := runTestExport(t, ctx, cloud, "cache-a", "before-drop")
+		recipe, ok := cloud.EntryRecipe(number)
+		require.True(t, ok)
+		key := HolderKey{Cache: run.Cache, Number: run.Number}
+		_, err := cloud.AttachRemoteHolding(ctx, key, RemoteHolding{
+			Recipe:         recipe,
+			Parts:          []PersistedPartAddress{testLiveOffer().Address},
+			Replacements:   run.Replacements,
+			Executed:       true,
+			BeforeLastDrop: true,
+		})
+		require.NoError(t, err)
+		require.True(t, runTestRan(t, cloud, number).Ran, "the run ran, whenever its row came")
+		cloud.egraphMu.RLock()
+		defer cloud.egraphMu.RUnlock()
+		_, h := cloud.holdingLocked(key)
+		require.False(t, h.executed, "a computation from before the drop doesn't bring a dropped value back")
+	})
 	t.Run("an executed call of a lazy result", func(t *testing.T) {
 		t.Parallel()
 		ctx, cloud := storedPartTestCache(t, WithBlobStore())
