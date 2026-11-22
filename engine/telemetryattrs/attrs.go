@@ -706,10 +706,11 @@ const (
 	CacheHitMergedAtAttr = "dagger.io/cache.hit.merged_at_unix_ns"
 	// CacheHitMergedRouteAttr (with CacheHitMergedAtAttr) is the route that
 	// merge brought the served value by: "set_file" (a part of a set file
-	// the engine restored), "placement" (a merge the service sent on its
-	// own), "lookup" (a merge answering one of the engine's lookups), or
-	// "unnamed". CacheHitMergeAttr is the service's number for a placement's
-	// or a lookup's merge, as in its remotecache.merge spans, in decimal;
+	// the engine restored), "deferred" (a merge of roots the engine's
+	// lookups deferred to its queue), "lookup" (a merge answering one of the
+	// engine's lookups), or "unnamed". CacheHitMergeAttr is the service's
+	// number for a deferred or a lookup merge, as in its remotecache.merge
+	// spans, in decimal;
 	// CacheHitMergedFileAttr names a set file's. CacheHitFirstUseAttr
 	// ("true", absent otherwise) records that the record's payload was still
 	// left for its first use when the lookup chose it: this hit's decode
@@ -1333,9 +1334,9 @@ type EngineFirstUse struct {
 
 // EngineFirstUseRoute counts what one route brought the engine and what of
 // it the engine's calls first used, over the engine's life. The route is
-// "set_file" (the parts of the set files the engine restored), "placement"
-// (the merges the service sent on its own while the engine ran), "lookup"
-// (the merges answering the engine's lookups) or "unnamed". Merges are the
+// "set_file" (the parts of the set files the engine restored), "deferred"
+// (the merges of roots the engine's lookups deferred to its queue),
+// "lookup" (the merges answering the engine's lookups) or "unnamed". Merges are the
 // merges committed, a set file's parts each one; Sent the records they
 // carried, held rows aside; Merged the records they installed, which leaves
 // out those the engine already held a value for; FirstUses the first uses
