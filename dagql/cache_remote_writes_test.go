@@ -201,6 +201,64 @@ func TestRemoteWritesApplyAsTheCacheDoes(t *testing.T) {
 	require.Equal(t, remoteWritesReads(each), remoteWritesReads(held))
 }
 
+// preparedWrites applies a hold's attaches and updates as a holder that
+// prepares each before its hold does (PrepareRemoteHolding,
+// PrepareRemoteHoldingUpdate): what was prepared is left out of the
+// description it then writes, so the write can only take it from the
+// preparation.
+type preparedWrites struct {
+	*RemoteWrites
+}
+
+func (w preparedWrites) AttachRemoteHolding(ctx context.Context, key HolderKey, desc RemoteHolding) (RemoteChange, error) {
+	prepared := PrepareRemoteHolding(key, desc)
+	desc.Call, desc.Parts = "", nil
+	return w.AttachPreparedRemoteHolding(ctx, key, desc, prepared)
+}
+
+func (w preparedWrites) UpdateRemoteHolding(ctx context.Context, key HolderKey, update RemoteHoldingUpdate) (RemoteChange, bool, error) {
+	prepared := PrepareRemoteHoldingUpdate(key, update)
+	update.Parts = nil
+	return w.UpdatePreparedRemoteHolding(ctx, key, update, prepared)
+}
+
+// A holding prepared before the hold attaches, and an update prepared before
+// it applies, exactly as the Cache's own operations do, refusals included:
+// the hold reads what was prepared from the preparation.
+func TestPreparedRemoteWritesApplyAsTheCacheDoes(t *testing.T) {
+	t.Parallel()
+	ctx, each := storedPartTestCache(t, WithBlobStore())
+	_, held := storedPartTestCache(t, WithBlobStore())
+
+	want := remoteWritesScript(t, ctx, each)
+	w := held.HoldRemoteWrites()
+	got := remoteWritesScript(t, ctx, preparedWrites{w})
+	require.NoError(t, w.Release(ctx))
+	require.Equal(t, want, got)
+	require.Equal(t, remoteWritesReads(each), remoteWritesReads(held))
+}
+
+// A call a span reports returning another recipe's entry is kept from its
+// preparation: decoded before the hold, not in it.
+func TestPreparedRemoteHoldingKeepsItsCall(t *testing.T) {
+	t.Parallel()
+	ctx, cloud := storedPartTestCache(t, WithBlobStore())
+	test := newCallRecordTest(t, ctx, cloud)
+	key := HolderKey{Cache: "cache-a", Number: uint64(test.inner.cacheSharedResult().id)}
+	desc := test.span(t, true, 0)
+	prepared := PrepareRemoteHolding(key, desc)
+	desc.Call = ""
+	w := cloud.HoldRemoteWrites()
+	_, err := w.AttachPreparedRemoteHolding(ctx, key, desc, prepared)
+	require.NoError(t, err)
+	require.NoError(t, w.Release(ctx))
+	entry := storedBundleTestEntry(cloud, test.number)
+	cloud.egraphMu.RLock()
+	calls := len(entry.calls)
+	cloud.egraphMu.RUnlock()
+	require.Equal(t, 1, calls)
+}
+
 // remoteWritesReads is what the script's holdings read through the Cache.
 func remoteWritesReads(c *Cache) []string {
 	var out []string
