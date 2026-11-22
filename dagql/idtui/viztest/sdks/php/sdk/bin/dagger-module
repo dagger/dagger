@@ -38,18 +38,6 @@ function required(array $options, string $name): string
     return $options[$name] ?? fail(USAGE, 2);
 }
 
-function functionError(): FunctionError
-{
-    return FunctionError::forModule(dirname(__DIR__), (string) getcwd());
-}
-
-function functionErrorPath(): ?string
-{
-    $path = getenv(FunctionError::PATH_ENV);
-
-    return $path === false ? null : $path;
-}
-
 $autoload = getcwd() . '/vendor/autoload.php';
 if (!is_file($autoload)) {
     fail("the module's dependencies are not installed: $autoload does not exist");
@@ -59,10 +47,14 @@ require $autoload;
 $mode = $argv[1] ?? '';
 $options = options(array_slice($argv, 2));
 
+// Made before the function runs, which may change the working directory.
+$functionError = FunctionError::forModule(dirname(__DIR__), (string) getcwd());
+$functionErrorPath = getenv(FunctionError::PATH_ENV);
+$functionErrorPath = $functionErrorPath === false ? null : $functionErrorPath;
 if ($mode === 'call') {
     // A fatal error, such as exhausted memory or a class that can't be
     // declared, ends the script with no Throwable to catch below.
-    register_shutdown_function(static fn() => functionError()->reportFatal(error_get_last(), functionErrorPath(), STDERR));
+    $functionError->reportFatalErrors($functionErrorPath, STDERR);
 }
 
 try {
@@ -95,7 +87,7 @@ try {
     if ($mode === 'call') {
         // A failed call exits 2, so that its exec isn't cached, and reports
         // the function's error to the engine; see FunctionError.
-        functionError()->report($t, functionErrorPath(), STDERR, STDOUT);
+        $functionError->report($t, $functionErrorPath, STDERR, STDOUT);
         exit(2);
     }
     if (!$t instanceof QueryError) {

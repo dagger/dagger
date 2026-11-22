@@ -54,6 +54,9 @@ final readonly class FunctionError
     /** The errors that end a PHP script without a Throwable to catch. */
     public const FATAL_ERRORS = E_ERROR | E_PARSE | E_CORE_ERROR | E_COMPILE_ERROR | E_USER_ERROR;
 
+    /** The memory reportFatalErrors keeps for the report of exhausted memory. */
+    private const FATAL_RESERVE = 256 * 1024;
+
     private const JSON_FLAGS = JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
         | JSON_INVALID_UTF8_SUBSTITUTE;
 
@@ -134,6 +137,22 @@ final readonly class FunctionError
             return;
         }
         self::writeMarker($stderr, self::messageOf($fatal));
+    }
+
+    /**
+     * Report the fatal error that ends this script, if one does, from a
+     * shutdown function (see reportFatal). The memory it reserves is freed
+     * first, so that a script that exhausted its memory can still report it.
+     *
+     * @param resource $stderr
+     */
+    public function reportFatalErrors(?string $path, $stderr): void
+    {
+        $reserved = str_repeat("\0", self::FATAL_RESERVE);
+        register_shutdown_function(function () use (&$reserved, $path, $stderr): void {
+            $reserved = null;
+            $this->reportFatal(error_get_last(), $path, $stderr);
+        });
     }
 
     /** @param resource $stderr */
