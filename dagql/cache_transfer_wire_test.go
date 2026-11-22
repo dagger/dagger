@@ -140,8 +140,12 @@ func TestValueBundleWireListsPacksOnce(t *testing.T) {
 	packed.Outputs = append(packed.Outputs,
 		TransferredOutput{Ordinal: 1, Address: PersistedPartAddress{Part: "alone"}, State: "completed", Chain: &OfferedChain{Layers: base[:1]}},
 		TransferredOutput{Ordinal: 2, Address: PersistedPartAddress{Part: "other"}, State: "completed", Chain: &OfferedChain{Layers: base[:1], Packs: map[digest.Digest]digest.Digest{base[0].Descriptor.Digest: other}}})
+	// A chain may list one layer twice, as an image holding two equal layers
+	// does: both are its one listed layer in its pack.
+	packed.Outputs = append(packed.Outputs, TransferredOutput{Ordinal: 3, Address: PersistedPartAddress{Part: "twice"}, State: "completed", Chain: &OfferedChain{Layers: []snapshots.ExportLayer{base[1], base[1]}, Packs: map[digest.Digest]digest.Digest{base[1].Descriptor.Digest: pack}}})
 	shared, err := ShareChainLayers(packed)
 	require.NoError(t, err)
+	require.Len(t, shared.Layers, len(base)+2, "each packed layer once, and the first layer alone and in another pack")
 	for _, out := range shared.Outputs {
 		require.Empty(t, out.Chain.Packs, "output %d names its layers' packs by place", out.Ordinal)
 	}
