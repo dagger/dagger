@@ -36,13 +36,7 @@ type sdkFixture struct {
 	// BAD: the SDK has no function cache policy, so log-success is cached
 	// and its logs are never seen again
 	noCachePolicy bool
-	// functions whose expanded golden is flaky, and why: their dispatcher
-	// writes to stdout and stderr at once, and the function's row shows the
-	// two streams in whichever order they arrive
-	racy map[string]string
 }
-
-const racyReply = "the dispatcher's reply on stdout races its stack trace on stderr"
 
 // What every entrypoint SDK gets wrong today:
 //
@@ -57,7 +51,7 @@ const racyReply = "the dispatcher's reply on stdout races its stack trace on std
 //
 // An SDK whose module process reports its error in the engine's function
 // error file (DAGGER_FUNCTION_ERROR_PATH) gets the first right: see go,
-// python and java.
+// python, typescript and java.
 var sdkFixtures = []sdkFixture{
 	// Errors use the engine's function error file (DAGGER_FUNCTION_ERROR_PATH,
 	// dagger/go-sdk#113). A build failure renders the compiler's error,
@@ -71,14 +65,15 @@ var sdkFixtures = []sdkFixture{
 	// importing its code log a short traceback, through the user's frames
 	// only. A wrapped exec error keeps its chain, each part so shortened.
 	{lang: "python", source: "src/viztest_python/__init__.py", breakage: "\nthis is not python\n"},
-	// BAD: the dispatcher replies on stdout, which the function's console.log
-	// shares: the reply no longer decodes, so log-success fails, and a
-	// function that logs and throws loses its message to "exit code: 2". A
-	// syntax error is the dispatcher's "exit code: 1", without the error.
-	// Its fail-exec-wrapped golden, still today's output, keeps the race.
-	{lang: "typescript", source: "src/index.ts", breakage: "\nthis is not typescript\n", racy: map[string]string{
-		"fail-exec-wrapped": racyReply,
-	}},
+	// Errors use the engine's function error file (DAGGER_FUNCTION_ERROR_PATH,
+	// dagger/typescript-sdk#144), and the result a file of its own, so the
+	// function's console.log no longer corrupts it. An API error whose origin
+	// renders logs nothing; one without an origin and an error of the
+	// function's own log a short stack trace, through the module's own frames
+	// only. A wrapped exec error keeps its cause chain, each part so
+	// shortened. A module that doesn't compile fails on the constructor's row
+	// with esbuild's error: tsx compiles at run time, so there's no build.
+	{lang: "typescript", source: "src/index.ts", breakage: "\nthis is not typescript\n"},
 	// BAD: no error marker: the entrypoint raises the dispatcher's whole
 	// stderr, so the error message is the function's own stderr lines and a
 	// stack trace, and an exit with a code reads "php function stderr". The
@@ -181,7 +176,6 @@ func sdkExamples() []Example {
 				Module:       module,
 				Function:     c.function,
 				Fail:         c.fail,
-				Flaky:        fx.racy[c.function],
 				NormalizeSDK: true,
 			}
 			if c.function == "log-success" {

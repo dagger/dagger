@@ -5,7 +5,8 @@ import { Context, connection, getRegisteredClass } from "@dagger.io/dagger"
 import "../clients/loader.gen.js"
 import { __loadObject as __loadCoreObject } from "../clients/loader.gen.js"
 import * as telemetry from "@dagger.io/dagger/telemetry"
-import { ViztestTypescript } from "../src/index"
+import { mkdirSync, writeFileSync } from "node:fs"
+import type { ViztestTypescript } from "../src/index"
 
 // An interface value crosses the boundary as the engine ID of the object
 // implementing it, so the only values that can be returned are ones carrying
@@ -26,7 +27,7 @@ async function __interfaceID(value: any, ifaceName: string): Promise<string | nu
 }
 
 function rebuildViztestTypescript(state: any): ViztestTypescript {
-  const __obj = Object.assign(Object.create(ViztestTypescript.prototype), state ?? {})
+  const __obj = Object.assign(Object.create(__module0.ViztestTypescript.prototype), state ?? {})
   if (state) {
   }
   return __obj
@@ -40,6 +41,18 @@ async function serializeViztestTypescript(__obj: ViztestTypescript): Promise<any
 
 
 
+// The module's own code, which loadModule loads before the call. The
+// dispatcher imports it only for its types, and loads it with import() rather
+// than an import declaration so that it is already running when it does: an
+// import declaration is loaded before any of the dispatcher runs, so a module
+// that doesn't compile, or throws as it loads, would end the process before
+// the error could be reported as the call's own.
+let __module0: typeof import("../src/index")
+
+async function loadModule(): Promise<void> {
+  __module0 = await import("../src/index")
+}
+
 async function invoke(
   parentName: string,
   fnName: string,
@@ -51,7 +64,7 @@ async function invoke(
       switch (fnName) {
 
         case "": {
-          const __result = new ViztestTypescript()
+          const __result = new __module0.ViztestTypescript()
           return await serializeViztestTypescript(__result)
         }
 
@@ -118,26 +131,39 @@ type CallRequest = {
   fnArgs: string
 }
 
-// The reply the Dang entrypoint decodes from stdout, one shape or the other.
-// `result` is the function's JSON result as a *string*, for the same reason
-// receiverValue and fnArgs arrive as strings: the entrypoint materializes it into
-// a JSON scalar, which decodes from a string, and hands it to the engine
-// verbatim. `error` is what the function threw, carried as data so the
-// entrypoint can raise it as the function's own error — the exec's own error is
-// just its exit code, with the message buried in the exec log. The process
-// still exits with functionFailedExitCode after an error reply, so the exec
-// fails and is not cached: a failed call must run again the next time.
-type CallReply = { result: string } | { error: { message: string } }
-
-// The exit code of a call whose function threw, after it replied with the
-// error. The entrypoint tells the function's failure from the dispatcher's own
-// by the reply rather than by the code: a failed exec with an error reply on
-// stdout raises that error, and one without raises the exec's own.
+// The exit code of a call whose function threw, once the error is reported. A
+// failed call fails its exec, so that the exec is not cached: a failed call must
+// run again the next time it is called.
 const functionFailedExitCode = 2
 
-// A failed exec keeps only the last 100 KiB of its stdout, which is where the
-// entrypoint reads the reply from, so an error reply has to fit in it whole.
-const maxErrorReplyBytes = 96 << 10
+// functionErrorPathEnv names the file an engine gives the module process to
+// report a failed call's error in (dagger/dagger#15249). An engine that sets it
+// fails the call with the error written there, values and all, and shows where
+// it came from; one that doesn't reads the marker line reportError prints
+// instead.
+const functionErrorPathEnv = "DAGGER_FUNCTION_ERROR_PATH"
+
+// The largest function error file the engine reads.
+const functionErrorFileLimit = 1 << 20
+
+// functionErrorMarker starts the stderr line on which the dispatcher reports a
+// failed call's error, as a JSON string, to an engine that names no function
+// error file. The entrypoint raises the last one it finds in the failed exec's
+// stderr.
+const functionErrorMarker = "::dagger-function-error::"
+
+// A failed exec keeps only the last 100 KiB of its stderr, which is where the
+// entrypoint reads the marker line from, so that line has to fit in it whole.
+const maxErrorMarkerBytes = 96 << 10
+
+// The generated files a stack frame can be in, which a short stack trace leaves
+// out: this dispatcher, the script the process runs, and the module's clients.
+const dispatcherFile = absolutePath(process.argv[1] ?? "")
+const clientsDir = absolutePath("clients") + "/"
+
+function absolutePath(path: string): string {
+  return path.startsWith("/") ? path : process.cwd() + "/" + path.replace(/^\.\//, "")
+}
 
 // setEncoding rather than collecting Buffers: it decodes across chunk
 // boundaries just as correctly, and `Buffer` is the one Node global Deno does
@@ -173,33 +199,273 @@ function decodeRequest(raw: string): {
   }
 }
 
-// Only the message crosses the boundary. The builtin runtime's error channel
-// carried a typed error's extensions as values; the entrypoint can raise nothing
-// richer than a message, so they stop here. The stack stays in the exec log. A
-// message too long for its reply to fit is cut, keeping the
-// `[traceparent:...]` markers it cut, which name where an API error came from.
-function errorMessage(e: unknown): string {
-  const message = thrownMessage(e)
+// The call's result goes to the file the entrypoint reads once the exec has
+// succeeded, as JSON, which the entrypoint hands the engine verbatim. Not to
+// stdout: that is the function's own, which console.log writes to.
+function writeResult(path: string, json: string): void {
+  mkdirSync(path.slice(0, path.lastIndexOf("/")) || "/", { recursive: true })
+  writeFileSync(path, json)
+}
+
+// reportError reports e, the error the call failed with, and makes the process
+// fail once it ends.
+//
+// An engine that names a function error file gets e there, and shows it: the
+// call's own error, or the API call it came from, with the logs of what failed.
+// So all that goes to the call's logs is a short stack trace of the module's own
+// frames, and nothing for an API error whose origin the engine shows. An older
+// engine, or a file that can't be written, gets the marker line instead, after
+// the whole error.
+function reportError(e: unknown): void {
+  process.exitCode = functionFailedExitCode
+  if (writeFunctionError(e)) {
+    printError(e)
+    return
+  }
+  console.error(e)
+  console.error(functionErrorMarker + JSON.stringify(fittedMessage(thrownMessage(e))))
+}
+
+// writeFunctionError writes e to the function error file the engine names, and
+// reports whether it did. The file holds {"message": ..., "values": {...}}: the
+// error's message in full, with the origins it names, so the engine finds the
+// call that failed, and the extensions of the API error it is or wraps, as they
+// are, such as a failed exec's exit code and output. Only a report over what
+// the engine reads is shortened.
+function writeFunctionError(e: unknown): boolean {
+  const path = process.env[functionErrorPathEnv]
+  if (!path) {
+    return false
+  }
+  let message = reportedMessage(e).trim()
+  if (message === "") {
+    message = e instanceof Error ? e.name : String(e)
+  }
+  let values = errorValues(e)
+  let report = functionErrorReport(message, values)
+  if (byteLength(report) > functionErrorFileLimit) {
+    // Long strings keep their end, where output usually says what failed, and
+    // the message its start and the origins it names; then the values go.
+    const limit = 64 << 10
+    if (message.length > limit) {
+      message = message.slice(0, limit) + "..." + errorOrigins(message.slice(limit)).join("")
+    }
+    values = shortenedValue(values, limit) as Record<string, unknown>
+    report = functionErrorReport(message, values)
+    if (byteLength(report) > functionErrorFileLimit) {
+      report = functionErrorReport(message, {})
+    }
+  }
+  try {
+    writeFileSync(path, report)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function functionErrorReport(message: string, values: Record<string, unknown>): string {
+  try {
+    return JSON.stringify({ message, values })
+  } catch {
+    return JSON.stringify({ message, values: {} })
+  }
+}
+
+function byteLength(s: string): number {
+  return new TextEncoder().encode(s).length
+}
+
+// shortenedValue is v with each string longer than limit, at any depth, cut to
+// its last limit characters after "...".
+function shortenedValue(v: unknown, limit: number): unknown {
+  if (typeof v === "string") {
+    return v.length > limit ? "..." + v.slice(v.length - limit) : v
+  }
+  if (Array.isArray(v)) {
+    return v.map((item) => shortenedValue(item, limit))
+  }
+  if (v !== null && typeof v === "object") {
+    return Object.fromEntries(Object.entries(v).map(([k, item]) => [k, shortenedValue(item, limit)]))
+  }
+  return v
+}
+
+// errorValues are e's own extensions, as the builtin runtime's formatError
+// returns them, or else the extensions of the API error e wraps through its
+// causes, as the engine sent them, as go-sdk takes those of the GraphQL error
+// an error wraps: so a function that wraps a failed exec still fails with an
+// ExecError's values. None when there is no such error, or when it was a
+// response of several errors.
+function errorValues(e: unknown): Record<string, unknown> {
+  const own = e instanceof Error && !isAPIError(e) ? (e as any).extensions : undefined
+  if (own !== null && typeof own === "object" && !Array.isArray(own)) {
+    return { ...own }
+  }
+  const seen = new Set<unknown>()
+  for (let err: unknown = e; err instanceof Error && !seen.has(err); err = (err as any).cause) {
+    seen.add(err)
+    if (!isAPIError(err)) {
+      continue
+    }
+    const errors = (err as any).response?.errors
+    if (Array.isArray(errors) && errors.length !== 1) {
+      return {}
+    }
+    const extensions = (err as any).extensions
+    return extensions !== null && typeof extensions === "object" ? { ...extensions } : {}
+  }
+  return {}
+}
+
+// isAPIError reports whether e is an error the engine returned for an API call:
+// a GraphQLRequestError, or an ExecError for a failed exec.
+function isAPIError(e: unknown): e is Error {
+  const code = (e as any)?.code
+  return e instanceof Error && (code === "D100" || code === "D109")
+}
+
+// errorOrigins are the origins message names: the spans the errors in it come
+// from, which the engine shows in place of the message.
+function errorOrigins(message: string): string[] {
+  return message.match(/\s*\[traceparent:[0-9a-f]{32}-[0-9a-f]{16}\]/g) ?? []
+}
+
+function withoutOrigins(message: string): string {
+  return message.replace(/\s*\[traceparent:[0-9a-f]{32}-[0-9a-f]{16}\]/g, "")
+}
+
+// printError puts e on the call's logs for an engine that reads it from the
+// function error file: nothing for an API error with an origin, whose origin the
+// engine shows, with its logs; a short stack trace for anything else, causes and
+// all, of the module's own frames only. The causes stop at an API error: what
+// caused that is the GraphQL client's error, the whole response and request.
+// An AggregateError, such as Bun's for a module that doesn't build, lists the
+// errors it holds.
+function printError(e: unknown): void {
+  if (isAPIError(e) && errorOrigins(e.message).length > 0) {
+    return
+  }
+  const lines: string[] = []
+  const seen = new Set<unknown>()
+  for (let err: unknown = e; err !== undefined && err !== null && !seen.has(err); err = err instanceof Error && !isAPIError(err) ? (err as any).cause : undefined) {
+    seen.add(err)
+    lines.push((seen.size > 1 ? "Caused by: " : "") + errorHeading(err))
+    if (err instanceof Error && !isCompileError(err)) {
+      lines.push(...userFrames(err))
+    }
+    const errors = (err as any).errors
+    if (err instanceof Error && Array.isArray(errors)) {
+      lines.push(...errors.map((inner: unknown) => "  " + errorHeading(inner).replace(/\n/g, "\n  ")))
+    }
+  }
+  console.error(lines.join("\n"))
+}
+
+// errorHeading is how a short stack trace names e: its name and message, without
+// the origins it names. The module's code failing to compile is the compiler's
+// errors, as it prints them.
+function errorHeading(e: unknown): string {
+  if (isCompileError(e)) {
+    const [summary, detail] = compileErrorParts(e)
+    return detail || summary
+  }
+  if (!(e instanceof Error)) {
+    // Such as Bun's BuildMessage, which names where it is apart.
+    const position = (e as any)?.position
+    if (typeof position?.file === "string" && typeof position?.line === "number") {
+      return `${position.file}:${position.line}:${position.column ?? 0}: ${thrownMessage(e)}`
+    }
+    return thrownMessage(e)
+  }
+  const message = withoutOrigins(e.message)
+  return message === "" ? e.name : `${e.name}: ${message}`
+}
+
+// userFrames are the frames of e's stack trace in the module's own code, not in
+// the runtime, a dependency or generated code.
+function userFrames(e: Error): string[] {
+  const stack = typeof e.stack === "string" ? e.stack : ""
+  return stack
+    .split("\n")
+    .filter((line) => /^\s+at /.test(line) && isUserFrame(line))
+    .map((line) => "    " + line.trim())
+}
+
+function isUserFrame(line: string): boolean {
+  const frame = line.trim().replace(/^at (async )?/, "")
+  let file = (frame.match(/\(([^()]*)\)$/)?.[1] ?? frame).replace(/:\d+(:\d+)?$/, "")
+  if (file.startsWith("file://")) {
+    try {
+      file = decodeURIComponent(new URL(file).pathname)
+    } catch {
+      return false
+    }
+  }
+  return (
+    // node:internal/..., native and <anonymous> frames are the runtime's
+    file.startsWith("/") &&
+    file !== dispatcherFile &&
+    !file.startsWith(clientsDir) &&
+    !file.includes("/node_modules/") &&
+    !/\.gen\.[cm]?[jt]s$/.test(file)
+  )
+}
+
+// isCompileError reports whether e is the module's code failing to compile:
+// tsx's TransformError, from esbuild, whose message is a summary ("Transform
+// failed with 1 error:") followed by the compiler's errors, one a line, each
+// naming where it is.
+function isCompileError(e: unknown): e is Error {
+  return e instanceof Error && e.name === "TransformError"
+}
+
+// compileErrorParts splits a compile error's message into its summary, the
+// call's error, and the compiler's errors, which go to its logs.
+function compileErrorParts(e: Error): [string, string] {
+  const [summary, ...detail] = e.message.split("\n")
+  return [summary.replace(/:$/, ""), detail.join("\n").trim()]
+}
+
+// reportedMessage is the message of the error a call fails with, in the function
+// error file: what it threw, or the summary of a compile error, whose details
+// printError shows on its logs. The marker line has the whole message: there,
+// the logs are the whole error, which an older engine doesn't show.
+function reportedMessage(e: unknown): string {
+  if (isCompileError(e)) {
+    return compileErrorParts(e)[0]
+  }
+  return thrownMessage(e)
+}
+
+// fittedMessage is message, cut to fit the marker line it is reported on,
+// keeping the `[traceparent:...]` markers it cut, which name where an API error
+// came from.
+function fittedMessage(message: string): string {
   let fitted = message
-  let size = errorReplyBytes(fitted)
+  let size = markerBytes(fitted)
   let keep = message.length
-  while (size > maxErrorReplyBytes && keep > 0) {
-    keep = Math.max(0, Math.floor((keep * maxErrorReplyBytes) / size) - 1)
-    const origins = message.slice(keep).match(/\s*\[traceparent:[0-9a-f]{32}-[0-9a-f]{16}\]/g) ?? []
-    fitted = message.slice(0, keep) + "..." + origins.join("")
-    size = errorReplyBytes(fitted)
+  while (size > maxErrorMarkerBytes && keep > 0) {
+    keep = Math.max(0, Math.floor((keep * maxErrorMarkerBytes) / size) - 1)
+    fitted = message.slice(0, keep) + "..." + errorOrigins(message.slice(keep)).join("")
+    size = markerBytes(fitted)
   }
   return fitted
 }
 
-function errorReplyBytes(message: string): number {
-  const reply: CallReply = { error: { message } }
-  return new TextEncoder().encode(JSON.stringify(reply)).length
+function markerBytes(message: string): number {
+  return byteLength(functionErrorMarker + JSON.stringify(message))
 }
 
+// thrownMessage is the message of what a function threw: an Error's, or that
+// of anything else carrying one, such as Bun's ResolveMessage for an import
+// that doesn't resolve, or else the value itself.
 function thrownMessage(e: unknown): string {
   if (e instanceof Error) {
     return e.message
+  }
+  if (typeof (e as any)?.message === "string") {
+    return (e as any).message
   }
   try {
     return JSON.stringify(e) ?? String(e)
@@ -208,29 +474,32 @@ function thrownMessage(e: unknown): string {
   }
 }
 
-async function engineCall(): Promise<void> {
+async function engineCall(resultPath: string): Promise<void> {
   const { receiverType, fnName, parentJson, args } = decodeRequest(await readStdin())
+
+  try {
+    await loadModule()
+  } catch (e: unknown) {
+    reportError(e)
+    return
+  }
 
   await connection(
     async () => {
       // No serve here: a module is only ever reached through a `dag.<module>()`
       // call, and each generated client serves its own module before its first
       // query.
-      let reply: CallReply
+      let json: string
       try {
         const result = await invoke(receiverType, fnName, parentJson, args)
-        reply = {
-          result: result === undefined || result === null ? "null" : JSON.stringify(result),
-        }
+        json = result === undefined || result === null ? "null" : JSON.stringify(result)
       } catch (e: unknown) {
-        console.error(e)
-        reply = { error: { message: errorMessage(e) } }
-        process.exitCode = functionFailedExitCode
+        reportError(e)
+        return
       }
-      process.stdout.write(JSON.stringify(reply))
+      writeResult(resultPath, json)
     },
-    // stdout is the result channel now, so the session's logs go to stderr. The
-    // engine reads one and streams the other; crossing them corrupts the result.
+    // The session's logs go to stderr, the exec log, beside the function's own.
     { LogOutput: process.stderr },
   )
 }
@@ -239,14 +508,16 @@ async function engineCall(): Promise<void> {
 // generated against a different protocol — fails here with something readable
 // instead of hanging on a stdin that never arrives.
 async function main(): Promise<void> {
-  const mode = process.argv[2]
-  if (mode !== "engine-call") {
-    throw new Error(`unknown mode ${JSON.stringify(mode ?? "")}; want "engine-call"`)
+  const [mode, resultPath] = process.argv.slice(2)
+  if (mode !== "engine-call" || !resultPath) {
+    throw new Error(`unknown mode ${JSON.stringify(process.argv.slice(2).join(" "))}; want "engine-call <result file>"`)
   }
-  return engineCall()
+  return engineCall(resultPath)
 }
 
+// Whatever fails outside the call — an unreadable request, a session that never
+// came up — is reported as the call's error all the same.
 main().catch((e) => {
-  console.error(e)
-  process.exit(1)
+  reportError(e)
+  process.exit()
 })

@@ -8,6 +8,8 @@ $ viztestTypescript: ViztestTypescript! X.Xs CACHED
 ✘ .failNative: Void X.Xs ERROR
 typescript function stdout
 typescript function stderr
+Error: typescript function failed natively
+    at ViztestTypescript.failNative (/workspace/viztest/sdks/typescript/src/index.ts:34:11)
 ! typescript function failed natively
 
 Setup tracing by running "dagger cloud signup". To hide set DAGGER_NO_NAG=1

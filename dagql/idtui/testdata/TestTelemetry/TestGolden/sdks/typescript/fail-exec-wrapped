@@ -13,21 +13,10 @@ Expected stderr:
 
 $ viztestTypescript: ViztestTypescript! X.Xs CACHED
 ✘ .failExecWrapped: String! X.Xs ERROR
-┃ Error: typescript function ran a failing command: exit code: 1 [traceparent:00000000000000000000000000000000-0000000000000000]
-┃     at ViztestTypescript.failExecWrapped (/workspace/viztest/sdks/typescript/src/index.ts:58:13)
-┃     at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
-┃     at async invoke (/workspace/viztest/sdks/typescript/entrypoint/__dagger.dispatch.ts:78:28)
-┃     at async connection.LogOutput (/workspace/viztest/sdks/typescript/entrypoint/__dagger.dispatch.ts:215:24)
-┃     at async <anonymous> (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/core.js:99971:7)
-┃     at async withGQLClient (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/core.js:99956:12)
-┃     at async withSession (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/core.js:99969:5)
-┃     at async withTracing (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/core.js:99718:5)
-┃     at async connection (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/core.js:108082:3)
-┃     at async engineCall (/workspace/viztest/sdks/typescript/entrypoint/__dagger.dispatch.ts:208:3)
-┃ {"error":{"message":"typescript function ran a failing command: exit code: 1 [traceparent:00000000000000000000000000000000-0000000000000000]"}}
-├╴✘ call module entrypoint X.Xs ERROR
-│ ┆ (the entrypoint's own evaluation, elided)
-│
+┃ Error: typescript function ran a failing command: exit code: 1
+┃     at ViztestTypescript.failExecWrapped (/workspace/viztest/sdks/typescript/src/index.ts:57:15)
+┃ Caused by: ExecError: exit code: 1
+┃     at async ViztestTypescript.failExecWrapped (/workspace/viztest/sdks/typescript/src/index.ts:54:14)
 ├╴$ Container.from(address: "alpine"): Container! X.Xs CACHED
 ├╴✘ withExec sh -c 'echo exec stdout; sleep 0.1; echo exec stderr >&2; exit 1' X.Xs ERROR
 │ ┃ exec stdout

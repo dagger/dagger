@@ -17,9 +17,15 @@ source = "github.com/dagger/go-sdk@5ed109c2c1e51086a777ada185d8c5b0d1215d02"
 source = "github.com/dagger/python-sdk@1927020b371bf86afaa8463d67978228210d43d1"
 
 [modules.typescript-sdk]
-# A fork: generated Dang entrypoints name cache policies in TypeScript's
-# spelling, which fails to load (dagger/typescript-sdk#143).
-source = "github.com/vito/typescript-sdk@23a6ec5cba3e81539bd09def8a9fc3c2bae9efac"
+# typescript-sdk#144, on top of dagger/typescript-sdk#143 (generated Dang
+# entrypoints name cache policies in GraphQL's spelling): the dispatcher
+# returns its result in a file rather than on stdout, which the function's
+# logs share, reports a function's error in the file
+# (DAGGER_FUNCTION_ERROR_PATH) the engine gives a call's process, and shows a
+# short stack trace of the module's own frames, and nothing for an API error
+# whose origin the engine shows. It loads the module's code itself, so a
+# module that doesn't compile fails with esbuild's error.
+source = "github.com/dagger/typescript-sdk@28249a50a694bd4a084348bbaf8fc3e85046662a"
 
 [modules.php-sdk]
 # A fork: php-sdk's sdk-helpers dependency no longer compiles under current

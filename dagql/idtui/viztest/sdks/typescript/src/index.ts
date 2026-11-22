@@ -1,6 +1,6 @@
 // The external TypeScript SDK's fixture for the golden tests: every SDK
 // fixture has the same functions, so their goldens line up.
-import { dag, Container, object, func } from "@dagger.io/dagger"
+import { dag, Container, ExecError, object, func } from "@dagger.io/dagger"
 import { sdkDep } from "@dagger.io/sdk-dep"
 
 function failingExec(): Container {
@@ -53,9 +53,10 @@ export class ViztestTypescript {
     try {
       return await failingExec().stdout()
     } catch (e) {
-      // The module's "@dagger.io/dagger" doesn't export ExecError to test
-      // for, so any error is wrapped.
-      throw new Error(`typescript function ran a failing command: ${(e as Error).message}`)
+      if (e instanceof ExecError) {
+        throw new Error(`typescript function ran a failing command: ${e.message}`, { cause: e })
+      }
+      throw e
     }
   }
 
