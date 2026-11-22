@@ -109,11 +109,86 @@ func TestAnImportedRecordIsTheRunOfTheEntryItCameFrom(t *testing.T) {
 	require.Equal(t, 1, reply.Rows.Replaced)
 	require.Equal(t, EntryRun{Run: RunName{Cache: "cache-b", Number: bNumber, Replacements: held.Values[0].SenderReplacements}, Ran: true}, runTestRan(t, cloud, reply.Values[0].Number), "B evaluated its copy: B's run, which ran")
 
-	// A second Cloud, which holds no holding of B's, names B's entry.
+	// A second Cloud, which holds no holding of B's, as after a restart,
+	// doesn't know whose run B's copy is: it names none, not B's own entry,
+	// which never ran.
 	ctx2, other := storedPartTestCache(t, WithBlobStore())
 	unheld, err := other.MergeValues(ctx2, "cache-b", held)
 	require.NoError(t, err)
-	require.Equal(t, RunName{Cache: "cache-b", Number: held.Values[0].SenderNumber, Replacements: held.Values[0].SenderReplacements}, runTestRan(t, other, unheld.Values[0].Number).Run)
+	_, ok = other.EntryRun(unheld.Values[0].Number)
+	require.False(t, ok, "a copy whose run isn't known names no run")
+}
+
+// runTestServed has the Cloud serve engine cache B the record numbered
+// served, as B's own value of another recipe, a class mate: B's holding is
+// on the entry of its own call's recipe, and the Cloud's merged reply lands
+// the served record on B's number. It returns B's export of that value,
+// marked imported.
+func runTestServed(t *testing.T, ctx context.Context, cloud *Cache, served uint64) ValueBundle {
+	t.Helper()
+	bundle, recipe := mergeTestSource(t, "class-mate", "b's copy")
+	bundle.Values[0].Record.Envelope.Imported = true
+	key := HolderKey{Cache: "cache-b", Number: bundle.Values[0].SenderNumber}
+	_, err := cloud.AttachRemoteHolding(ctx, key, RemoteHolding{Recipe: recipe})
+	require.NoError(t, err)
+	at, ok := cloud.HolderEntry(key)
+	require.True(t, ok)
+	require.NotEqual(t, served, at, "B's holding is on its own recipe's entry")
+	sent, err := cloud.StoredBundle(ctx, []uint64{served}, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	_, err = cloud.ApplyMergedReply(ctx, "cache-b", sent.Bundle, MergeReply{Values: []MergedValue{{Ordinal: sent.Bundle.Roots[0].Ordinal, Number: key.Number}}})
+	require.NoError(t, err)
+	return bundle
+}
+
+// A record an engine was served from a class mate, which it exports without
+// running it, is the run of the record it was served, with what the Cloud
+// knows of whether that run ran: not the engine's own, which never ran.
+func TestAServedRecordNamesTheRunItWasServedFrom(t *testing.T) {
+	t.Parallel()
+	ctx, cloud := storedPartTestCache(t, WithBlobStore())
+	number, run := runTestExport(t, ctx, cloud, "class-source", "a's value")
+	runTestEvaluated(t, ctx, cloud, HolderKey{Cache: run.Cache, Number: run.Number}, run.Replacements, true)
+	held := runTestServed(t, ctx, cloud, number)
+	reply, err := cloud.MergeValues(ctx, "cache-b", held)
+	require.NoError(t, err)
+	require.Len(t, reply.Values, 1)
+	require.NotEqual(t, number, reply.Values[0].Number, "B's copy is its own recipe's record")
+	require.Equal(t, EntryRun{Run: run, Ran: true}, runTestRan(t, cloud, reply.Values[0].Number), "B's copy is A's run, which ran")
+}
+
+// The served record's run is kept by name: replaced by a later run's before
+// the engine exports its copy, the copy still names the run it was served.
+func TestAServedRecordNamesItsRunAfterTheServingRecordIsReplaced(t *testing.T) {
+	t.Parallel()
+	ctx, cloud := storedPartTestCache(t, WithBlobStore())
+	number, run := runTestExport(t, ctx, cloud, "class-source", "a's value")
+	held := runTestServed(t, ctx, cloud, number)
+	// A's record expires, and C's run of it is installed in its place.
+	cloud.egraphMu.Lock()
+	cloud.resultsByID[sharedResultID(number)].expiresAtUnix = time.Now().Unix() - 10
+	cloud.egraphMu.Unlock()
+	cNumber, cRun := runTestExport(t, ctx, cloud, "cache-c", "class-source")
+	_ = cNumber
+	require.NotEqual(t, run, cRun)
+	reply, err := cloud.MergeValues(ctx, "cache-b", held)
+	require.NoError(t, err)
+	require.Equal(t, run, runTestRan(t, cloud, reply.Values[0].Number).Run, "B's copy is still A's run")
+}
+
+// A copy the Cloud's holding of the engine says nothing of, its entry naming
+// no run and nothing served, names no run.
+func TestACopyWithNoServedRunNamesNoRun(t *testing.T) {
+	t.Parallel()
+	ctx, cloud := storedPartTestCache(t, WithBlobStore())
+	bundle, recipe := mergeTestSource(t, "never-served", "b's copy")
+	bundle.Values[0].Record.Envelope.Imported = true
+	_, err := cloud.AttachRemoteHolding(ctx, HolderKey{Cache: "cache-b", Number: bundle.Values[0].SenderNumber}, RemoteHolding{Recipe: recipe})
+	require.NoError(t, err)
+	reply, err := cloud.MergeValues(ctx, "cache-b", bundle)
+	require.NoError(t, err)
+	_, ok := cloud.EntryRun(reply.Values[0].Number)
+	require.False(t, ok, "no run is known for it")
 }
 
 // A copy of a record the Cloud sent, installed in place of the record it was
