@@ -153,13 +153,6 @@ func (cm *snapshotManager) downloadPackedRange(ctx context.Context, desc ocispec
 	case <-ctx.Done():
 		return true, context.Cause(ctx)
 	}
-	// A pack stored from its header's range may have stored this blob
-	// before failing on another chain's member.
-	if plan.stored || plan.err != nil {
-		if ok, err := cm.pinContent(ctx, desc); err != nil || ok {
-			return true, err
-		}
-	}
 	if plan.err != nil {
 		var contentErr *packContentError
 		if errors.As(plan.err, &contentErr) {
@@ -168,6 +161,9 @@ func (cm *snapshotManager) downloadPackedRange(ctx context.Context, desc ocispec
 		return true, plan.err
 	}
 	if plan.stored {
+		if ok, err := cm.pinContent(ctx, desc); err != nil || ok {
+			return true, err
+		}
 		return true, chainError(ctx, true, desc, "provider", fmt.Errorf("pack %s does not hold blob %s", id, desc.Digest))
 	}
 	span := plan.spans[desc.Digest]
