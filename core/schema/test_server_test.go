@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"os"
+	"sync"
 
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/dagger/dagger/auth"
@@ -166,7 +167,7 @@ func (s *currentTypeDefsTestServer) MCPSessions(context.Context) (*core.MCPSessi
 
 func (s *currentTypeDefsTestServer) OCIStore() content.Store { return nil }
 
-func (s *currentTypeDefsTestServer) DNS() *oci.DNSConfig { return nil }
+func (s *currentTypeDefsTestServer) DNS() *oci.DNSConfig { return &oci.DNSConfig{} }
 
 func (s *currentTypeDefsTestServer) LeaseManager() *bkcache.LeaseManager { return nil }
 
@@ -182,7 +183,11 @@ func (s *currentTypeDefsTestServer) EngineLocalCachePolicy() *dagql.CachePrunePo
 
 func (s *currentTypeDefsTestServer) SnapshotManager() bkcache.SnapshotManager { return nil }
 
-func (s *currentTypeDefsTestServer) Locker() *locker.Locker { return nil }
+// testServerLocker is the engine's one locker, as a server has: a remote Git
+// mirror's lock is taken on it.
+var testServerLocker = locker.New()
+
+func (s *currentTypeDefsTestServer) Locker() *locker.Locker { return testServerLocker }
 
 func (s *currentTypeDefsTestServer) SecretSalt() []byte { return nil }
 
@@ -214,7 +219,17 @@ func (s *currentTypeDefsTestServer) CloudEngineClient(context.Context, string, s
 	return nil, false, nil
 }
 
-func (s *currentTypeDefsTestServer) CleanMountNS() *os.File { return nil }
+// testServerMountNS is the test process's own mount namespace, which git's
+// commands join as an engine's join its clean one.
+var testServerMountNS = sync.OnceValue(func() *os.File {
+	f, err := os.Open("/proc/self/ns/mnt")
+	if err != nil {
+		return nil
+	}
+	return f
+})
+
+func (s *currentTypeDefsTestServer) CleanMountNS() *os.File { return testServerMountNS() }
 
 func (s *currentTypeDefsTestServer) CurrentWorkspaceLock(context.Context, bool) (*workspace.Lock, bool, error) {
 	return s.workspaceLock, s.workspaceLockOK, s.workspaceLockErr

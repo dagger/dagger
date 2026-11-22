@@ -1137,15 +1137,23 @@ type FieldSpec struct {
 
 	// FollowsFromInputs marks a field whose result is a function of its
 	// inputs' values and its arguments alone. The bar a field must meet to
-	// declare it: two runs of it over the same inputs give the same content
-	// digest, the one core computes, which leaves file times out. Another
+	// declare it: two runs of it over the same inputs give the same result,
+	// every byte of what an engine stores and sends of it, file times left
+	// out. For a directory that is its whole snapshot, not only the path the
+	// directory names, which is all core's content digest covers: a sparse
+	// tree keeps its lists beside its files. Nothing it writes may come from
+	// the order of a map's walk or of goroutines finishing, from a clock or a
+	// random id, or from the engine's own state. Another
 	// cache's run of such a call is then the same result as this cache's own
 	// wherever their inputs are, and the next run gives the content a stored
 	// run has: a stored value over it goes out without its content
 	// (entryCanDifferLocked). A call that runs a process or a module's code
 	// doesn't follow from its inputs. It may read from outside the engine only
 	// content addressed by a hash its key holds, such as a commit, blob ids or
-	// an image digest. The call frame carries it (ResultCall.FollowsFromInputs).
+	// an image digest, or select a call that does and return that call's own
+	// result, as Container.from by tag does. A field found not to meet the bar
+	// is undeclared, not worked around. The call frame carries it
+	// (ResultCall.FollowsFromInputs).
 	FollowsFromInputs bool
 
 	// Trivial marks fields that only unwrap data from their receiver rather
