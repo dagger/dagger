@@ -197,6 +197,7 @@ func newFoldingDB() (*dagui.DB, *liveFold) {
 		Retain:   lf.retain,
 		Load:     lf.load,
 		Foldable: lf.foldable,
+		Asked:    lf.asked,
 	}))
 	return db, lf
 }
@@ -341,6 +342,24 @@ func (fe *frontendPretty) readFoldedRowsLocked() {
 	for _, id := range fe.foldedRowsLocked(nil) {
 		f.Expand(id)
 	}
+	// and the spans the layout looked up by digest (a row's base)
+	f.RetainAsked()
+}
+
+// asked runs Fold.RetainAsked once the frame that asked is drawn: rendering
+// asks about the spans behind the calls it renders (see dagui's
+// fold_args.go), and mustn't change the DB itself. Report mode, which draws
+// no frames as it goes, leaves them to SettleFold.
+func (lf *liveFold) asked() {
+	fe := lf.fe
+	if fe == nil || fe.reportOnly || fe.tui == nil {
+		return
+	}
+	fe.tui.Dispatch(func() {
+		if fe.db.Fold().RetainAsked() {
+			fe.Update()
+		}
+	})
 }
 
 // foldedRowsLocked appends the spans whose folded children the view would
@@ -385,6 +404,11 @@ func (fe *frontendPretty) SettleFold(ctx context.Context) {
 					asked = true
 				}
 			}
+			// the spans the final render looked up by digest: the calls
+			// it renders
+			if f.RetainAsked() {
+				asked = true
+			}
 		})
 		select {
 		case <-done:
@@ -409,6 +433,9 @@ func (fe *frontendPretty) finalFoldedRowsLocked() []dagui.SpanID {
 	final.pinnedZoom = fe.pinnedZoom
 	final.reportScopedSubtree = fe.reportScopedSubtree
 	final.setupFinalRenderLocked()
+	// rendering it asks about the spans behind the calls it renders, for
+	// SettleFold to read back
+	final.tui.RenderLines()
 	ids := final.foldedRowsLocked(nil)
 	// what the live view shows expanded, too: it renders until the end
 	return fe.foldedRowsLocked(ids)

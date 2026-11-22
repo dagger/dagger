@@ -41,7 +41,8 @@ import (
 type Trace struct {
 	N int
 	// IDArgs makes a fifth of the dagql calls take an ID argument, an
-	// earlier call's digest, as real calls take directories and files.
+	// earlier call's digest, as real calls take directories and files, and
+	// a quarter return an earlier call's result, which then shows as theirs.
 	IDArgs  bool
 	traceID trace.TraceID
 	epoch   time.Time
@@ -270,9 +271,15 @@ func (tr *Trace) Stub(i int, done bool) sdktrace.ReadOnlySpan {
 		if kind < 70 {
 			attrs = append(attrs, flag(telemetry.UIInternalAttr))
 		}
+		output := digest("output", i)
+		if tr.IDArgs && h>>52%4 == 0 && i > LongLived {
+			// it returns an earlier call's result, e.g. a function returning
+			// a directory it was given: that call's ID shows as this call
+			output = digest("call", i-1-int(h>>54)%min(i-LongLived, 10_000))
+		}
 		if done {
 			attrs = append(attrs,
-				str(telemetry.DagOutputAttr, digest("output", i)),
+				str(telemetry.DagOutputAttr, output),
 				str(telemetryattrs.CacheContractAttr, "v1"),
 				str(telemetryattrs.CacheOutcomeAttr, "hit"),
 				str(telemetryattrs.CacheResultIDAttr, strconv.Itoa(i)),

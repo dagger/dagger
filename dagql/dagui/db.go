@@ -1932,6 +1932,8 @@ func (db *DB) HighLevelSpan(call *callpbv1.Call) *Span {
 }
 
 func (db *DB) MostInterestingSpan(dig string) *Span {
+	// a folding DB retains the spans rendering looks up (fold_args.go)
+	db.fold.ask(dig, digestCall)
 	var earliest *Span
 	var earliestCached bool
 	// a copy: sorting it must not reorder db.Intervals
@@ -2006,7 +2008,9 @@ func (db *DB) call(dig string, seen map[string]bool) *callpbv1.Call {
 		return decoded
 	}
 
-	// Otherwise, try to find the call through creator spans.
+	// Otherwise, try to find the call through creator spans: a folding DB
+	// retains those it's asked for (fold_args.go).
+	db.fold.ask(dig, digestOutput)
 	if creators, ok := db.CreatorSpans[dig]; ok {
 		if seen == nil {
 			seen = map[string]bool{}
@@ -2119,6 +2123,8 @@ func (db *DB) MustCall(dig string) *callpbv1.Call {
 }
 
 func (db *DB) Simplify(call *callpbv1.Call, force bool) *callpbv1.Call {
+	// a folding DB retains the spans rendering looks up (fold_args.go)
+	db.fold.ask(call.Digest, digestOutput)
 	creators, ok := db.CreatorSpans[call.Digest]
 	if !ok {
 		return call

@@ -251,7 +251,10 @@ func (span *Span) Base() *callpbv1.Call {
 							NamedType: baseName,
 						},
 					}
-					span.cacheCalls(func(calls *spanCalls) { calls.base = base })
+					if span.db.fold == nil {
+						// a folding DB may read the receiver's creator back later
+						span.cacheCalls(func(calls *spanCalls) { calls.base = base })
+					}
 					return base
 				}
 			}
@@ -259,7 +262,9 @@ func (span *Span) Base() *callpbv1.Call {
 		parentCall = span.db.MustCall(call.ReceiverDigest)
 		if parentCall != nil {
 			base := span.db.Simplify(parentCall, span.Internal)
-			if base != nil {
+			if base != nil && span.db.fold == nil {
+				// a folding DB may read the receiver's creators back later
+				// (fold_args.go), so it doesn't cache what they say
 				span.cacheCalls(func(calls *spanCalls) { calls.base = base })
 			}
 			return base

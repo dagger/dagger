@@ -87,6 +87,9 @@ func newFoldTestPair(t *testing.T, n int, shape string, wrapQuery ...func(SpanQu
 	full.reportOnly = true
 	store := &foldTestStore{latest: map[dagui.SpanID]sdktrace.ReadOnlySpan{}}
 	tr := spanfootprint.New(n)
+	// calls taking earlier calls' IDs, which rows render through the spans
+	// behind them, at any depth
+	tr.IDArgs = strings.Contains(shape, "idargs")
 	p := &foldTestPair{folded: folded, full: full, lf: lf, store: store, trace: tr}
 	query := SpanQueryFunc(store.query)
 	for _, wrap := range wrapQuery {
@@ -149,7 +152,7 @@ func rowIDs(rows *dagui.Rows) []dagui.SpanID {
 }
 
 func TestLiveFoldMatchesFullLoad(t *testing.T) {
-	for _, shape := range []string{"agent", "nested", "agent-contained", "nested-contained"} {
+	for _, shape := range []string{"agent", "nested", "agent-contained", "nested-contained", "agent-idargs", "nested-idargs"} {
 		t.Run(shape, func(t *testing.T) { testLiveFold(t, shape) })
 	}
 }

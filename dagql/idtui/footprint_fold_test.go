@@ -18,7 +18,9 @@ import (
 
 // BenchmarkFrontendFoldFootprint is BenchmarkFrontendSpanFootprint over
 // the agent-session trace with the engine's wait chains, and in the
-// nested-engine shape, for the live CLI's DB as it was (dagui.NewDB()),
+// nested-engine shape, each with and without calls taking ID arguments
+// (spanfootprint Trace.IDArgs), which rows render through the spans behind
+// them, for the live CLI's DB as it was (dagui.NewDB()),
 // untracked (dagui.WithoutUpdateTracking) and folding (newFoldingDB, reading
 // folded spans back from a store standing in for the engine's, outside the
 // heap measured). It reports the frontend's retained heap per span and, when
@@ -30,7 +32,7 @@ func BenchmarkFrontendFoldFootprint(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	for _, shape := range []string{"agent", "nested"} {
+	for _, shape := range []string{"agent", "nested", "agent-idargs", "nested-idargs"} {
 		for _, mode := range []string{"full", "untracked", "fold"} {
 			for _, n := range sizes {
 				b.Run(shape+"/"+mode+"/"+strconv.Itoa(n), func(b *testing.B) {
@@ -50,6 +52,7 @@ func BenchmarkFrontendFoldFootprint(b *testing.B) {
 
 func foldFootprint(b testing.TB, shape, mode string, n int) (bytesPerSpan, retained float64) {
 	tr := spanfootprint.New(n)
+	tr.IDArgs = strings.Contains(shape, "idargs")
 	var before, after runtime.MemStats
 	runtime.GC()
 	runtime.ReadMemStats(&before)

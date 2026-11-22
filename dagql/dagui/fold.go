@@ -128,6 +128,10 @@ type FoldOptions struct {
 	Foldable func(trace TraceID) bool
 	// NoFoldedCalls keeps no call for folded spans (measurement only).
 	NoFoldedCalls bool
+	// Asked is called when rendering first asks about folded spans by digest
+	// since Fold.RetainAsked last ran (see fold_args.go): the frontend is to
+	// run it once its frame is drawn. Nil leaves it to the frontend.
+	Asked func()
 }
 
 // WithFold builds a DB that folds the spans opts.Retain doesn't retain (see
@@ -213,11 +217,14 @@ type Fold struct {
 	// carrier's snapshots with waits, which replace its earlier waits.
 	pending map[uint32][]pendingWait
 	waitGen map[uint32]uint32
-	// byDigest indexes folded spans by the call they carry and the output
-	// they produced; wanted holds the IDs retained calls take as arguments,
-	// whose spans are retained (see fold_args.go).
-	byDigest map[string][]uint32
-	wanted   map[string]struct{}
+	// byCall and byOutput index folded spans by the call they carry and the
+	// output they produced, chained through callNext and outputNext; wanted
+	// holds the digests rendering asked about, whose spans are retained, and
+	// asked those not acted on yet (see fold_args.go).
+	byCall, byOutput     digestIndex
+	callNext, outputNext []uint32
+	wanted               map[uint64]digestKind
+	asked                []askedDigest
 	// pendingProgress holds the progress of spans not received yet.
 	pendingProgress map[uint32][]foldProgressItem
 	// ingesting is the span ingest is at.
@@ -355,6 +362,8 @@ func (f *Fold) intern(id SpanID) uint32 {
 	f.start = append(f.start, 0)
 	f.end = append(f.end, 0)
 	f.name = append(f.name, 0)
+	f.callNext = append(f.callNext, 0)
+	f.outputNext = append(f.outputNext, 0)
 	f.ids.put(id, i, f.spans)
 	return i
 }
@@ -792,8 +801,7 @@ func (f *Fold) ingest(info foldInfo, fill bool) bool { //nolint:gocyclo // one p
 		for _, target := range info.linked {
 			f.promote(f.intern(target), noSpan)
 		}
-		f.wantArgs(info.callDigest, info.callPayload)
-	} else if first {
+	} else {
 		f.indexDigests(i, info)
 	}
 	if first {
@@ -1534,7 +1542,8 @@ func (f *Fold) Stats() FoldStats {
 	}
 	stats.StubBytes = cap(f.ids.slots)*4 + cap(f.spans)*8 +
 		(cap(f.parent)+cap(f.firstChild)+cap(f.nextSib)+cap(f.state))*4 +
-		(cap(f.start)+cap(f.end))*8 + cap(f.name)*4
+		(cap(f.start)+cap(f.end))*8 + (cap(f.name)+cap(f.callNext)+cap(f.outputNext))*4 +
+		(cap(f.byCall.keys)+cap(f.byOutput.keys))*12
 	for _, name := range f.nameTab {
 		stats.StubBytes += len(name) + 16 + 32 // the string, its header, its map entry
 	}
