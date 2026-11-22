@@ -235,10 +235,14 @@ func (l *remoteLookups) close() {
 // (ResultCall.SessionBound) names that key in its recipe and in its term,
 // so no other session can have it by either, and no other engine. Only an
 // extra digest, such as the content digest of a call loaded from its ID,
-// can find another engine's value of it: without one, nothing is asked.
+// can find another engine's value of it: without one, nothing is asked
+// (ResultCall.onlyItsSessionMatches).
 func (c *Cache) noteRemoteMiss(req *CallRequest, recipe, self digest.Digest, inputs []digest.Digest) string {
 	b := c.partContentSource.attachedBridge()
 	if b == nil || !b.lookups.on.Load() || recipe == "" || req.ListItem || !req.CacheReported {
+		return ""
+	}
+	if req.ResultCall.onlyItsSessionMatches() {
 		return ""
 	}
 	miss := RemoteMiss{Recipe: recipe, Field: req.ResultCall.Field, Self: self, Inputs: inputs, At: time.Now()}
@@ -249,9 +253,6 @@ func (c *Cache) noteRemoteMiss(req *CallRequest, recipe, self digest.Digest, inp
 		if extra.Digest != "" {
 			miss.Extra = append(miss.Extra, extra.Digest)
 		}
-	}
-	if len(miss.Extra) == 0 && req.ResultCall.SessionBound() {
-		return ""
 	}
 	return b.noteRemoteMiss(miss)
 }
