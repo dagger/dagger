@@ -173,20 +173,7 @@ func TestHoldingFactsAnswersAsRemoteHoldingInfo(t *testing.T) {
 			continue
 		}
 		h := held.Holding
-		require.Equal(t, HoldingFacts{
-			Number:                 held.Number,
-			Stored:                 held.Stored,
-			StoredExpiresAtUnix:    held.StoredExpiresAtUnix,
-			TypeName:               h.TypeName,
-			ExpiresAtUnix:          h.ExpiresAtUnix,
-			Retained:               h.Retained,
-			RetentionExpiresAtUnix: h.RetentionExpiresAtUnix,
-			Replacements:           h.Replacements,
-			Executed:               h.Executed,
-			Deps:                   h.Deps,
-			UnknownDeps:            h.UnknownDeps,
-			Parts:                  h.Parts,
-		}, facts, "%v", key)
+		require.Equal(t, h.HoldingFacts, facts, "%v", key)
 		require.NotEmpty(t, h.OfferedParts, "%v has offered parts, which HoldingFacts leaves out", key)
 	}
 }
@@ -234,8 +221,9 @@ func BenchmarkHoldingsOnOneEntry(b *testing.B) {
 	}
 }
 
-// On a stored entry with an expiry, HoldingFacts answers the entry's stored
-// record and its expiry as RemoteHoldingInfo does.
+// On a stored entry with an expiry, HoldingFacts answers as RemoteHoldingInfo's
+// facts do, and the entry's stored record and its expiry are the entry's
+// facts (RemoteHeldEntry), which HoldingFacts leaves out.
 func TestHoldingFactsOnAStoredEntry(t *testing.T) {
 	t.Parallel()
 	ctx, cloud, root, _ := storedBundleTestCloud(t, "root")
@@ -253,11 +241,8 @@ func TestHoldingFactsOnAStoredEntry(t *testing.T) {
 		require.True(t, ok)
 		facts, ok := cloud.HoldingFacts(k)
 		require.True(t, ok)
-		h := held.Holding
-		require.Equal(t, HoldingFacts{
-			Number: held.Number, Stored: true, StoredExpiresAtUnix: info.StoredExpiresAtUnix,
-			TypeName: h.TypeName, ExpiresAtUnix: h.ExpiresAtUnix, Retained: h.Retained, RetentionExpiresAtUnix: h.RetentionExpiresAtUnix,
-			Replacements: h.Replacements, Executed: h.Executed, Deps: h.Deps, UnknownDeps: h.UnknownDeps, Parts: h.Parts,
-		}, facts, "%v", k)
+		require.Equal(t, held.Holding.HoldingFacts, facts, "%v", k)
+		require.True(t, held.Stored, "%v", k)
+		require.Equal(t, info.StoredExpiresAtUnix, held.StoredExpiresAtUnix, "%v", k)
 	}
 }
