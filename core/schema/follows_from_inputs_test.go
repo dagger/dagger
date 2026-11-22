@@ -3,11 +3,13 @@ package schema
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/util/gitutil"
 	"github.com/stretchr/testify/require"
 )
 
@@ -240,7 +242,8 @@ func TestDeclaredFieldsFollowFromTheirInputs(t *testing.T) {
 // inputs, but a process run over that mount reads the volume's contents,
 // which no call holds, so it doesn't. Inheriting a system variable only names
 // it; the process that reads the engine's value doesn't follow either. A git
-// tree's .git holds tags no hash in its key addresses.
+// tree's call says so unless it keeps .git
+// (TestGitTreeFollowsFromItsInputsWithoutGitDir).
 func TestFieldsThatFollowFromInputsDeclareIt(t *testing.T) {
 	e := newFollowsTestEngine(t, transferTestSalt(t), "follows-declared")
 	for _, tc := range []struct {
@@ -253,7 +256,7 @@ func TestFieldsThatFollowFromInputsDeclareIt(t *testing.T) {
 		{"Container", "__withSystemEnvVariable", true},
 		{"GitRepository", "__sparseFiles", true},
 		{"GitRef", "__sparseWorkspaceTree", true},
-		{"GitRef", "tree", false},
+		{"Query", "__httpFile", true},
 		{"Container", "withExec", false},
 	} {
 		typ, ok := e.srv.ObjectType(tc.typ)
@@ -275,5 +278,48 @@ func TestFieldsThatFollowFromInputsDeclareIt(t *testing.T) {
 		frame, err := res.ResultCall()
 		require.NoError(t, err, name)
 		require.True(t, frame.FollowsFromInputs, name)
+	}
+}
+
+// A git tree without .git is its commit's files, which its key's SHA
+// addresses, so its call says it follows from its inputs. One that keeps
+// .git doesn't (gitTreeFollowsFromInputs): its pack's bytes differ from run
+// to run, and its tags, if it fetches them, are those the repository has
+// then.
+func TestGitTreeFollowsFromItsInputsWithoutGitDir(t *testing.T) {
+	e := newFollowsTestEngine(t, transferTestSalt(t), "follows-tree")
+	for _, typ := range []string{"GitRef", "GitCommit"} {
+		class, ok := e.srv.ObjectType(typ)
+		require.True(t, ok, typ)
+		spec, ok := class.FieldSpec("tree", "")
+		require.True(t, ok, typ)
+		require.True(t, spec.FollowsFromInputs, typ+".tree")
+	}
+
+	ctx, srv, cache, _ := resolverOutputFixture(t)
+	srv.InstallObject(dagql.NewClass[*core.GitRef](srv))
+	s := &gitSchema{}
+	dagql.Fields[*core.GitRepository]{dagql.NodeFunc("ref", s.ref).View(AllVersion).IsPersistable()}.Install(srv)
+	dagql.Fields[*core.GitRef]{dagql.NodeFuncWithDynamicInputs("tree", s.tree, s.treeCacheKey).FollowsFromInputs().View(AllVersion).IsPersistable()}.Install(srv)
+	u, err := gitutil.ParseURL("https://unreachable.invalid/repository.git")
+	require.NoError(t, err)
+	repo := resolverAttach(t, ctx, srv, cache, "repository", &core.GitRepository{Backend: &core.RemoteGitRepository{URL: u}, URL: dagql.NonNull(dagql.String(u.Remote()))})
+	var ref dagql.ObjectResult[*core.GitRef]
+	require.NoError(t, srv.Select(ctx, repo, &ref, dagql.Selector{Field: "ref", Args: []dagql.NamedInput{{Name: "name", Value: dagql.String(strings.Repeat("a", 40))}}}))
+	for _, tc := range []struct {
+		name    string
+		args    []dagql.NamedInput
+		follows bool
+	}{
+		{"without .git", []dagql.NamedInput{{Name: "discardGitDir", Value: dagql.Boolean(true)}}, true},
+		{"without .git, tags asked", []dagql.NamedInput{{Name: "discardGitDir", Value: dagql.Boolean(true)}, {Name: "includeTags", Value: dagql.Boolean(true)}}, true},
+		{"with .git", nil, false},
+		{"with .git and tags", []dagql.NamedInput{{Name: "includeTags", Value: dagql.Boolean(true)}}, false},
+	} {
+		var tree dagql.ObjectResult[*core.Directory]
+		require.NoError(t, srv.Select(ctx, ref, &tree, dagql.Selector{Field: "tree", Args: tc.args}), tc.name)
+		frame, err := tree.ResultCall()
+		require.NoError(t, err, tc.name)
+		require.Equal(t, tc.follows, frame.FollowsFromInputs, tc.name)
 	}
 }
