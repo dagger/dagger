@@ -133,6 +133,11 @@ func (lf *liveFold) frameRendering() {
 	})
 }
 
+// filling reports whether read-back spans wait for a frame to land.
+func (lf *liveFold) filling() bool {
+	return lf != nil && (len(lf.fills) > 0 || lf.fillQueued)
+}
+
 // drainFills ingests every read-back span still waiting, at once: for
 // what needs the DB complete (SettleFold).
 func (lf *liveFold) drainFills() {
@@ -383,11 +388,11 @@ func (fe *frontendPretty) finalFoldedRowsLocked() []dagui.SpanID {
 }
 
 // readFoldedMatchesLocked reads back the folded spans whose name matches a
-// search's query, so they take part in it once they arrive, and reports
-// whether more match than it reads (foldSearchLimit).
-func (fe *frontendPretty) readFoldedMatchesLocked(query string) bool {
+// search's query, so they take part in it once they arrive, and returns how
+// many more match than it reads (foldSearchLimit).
+func (fe *frontendPretty) readFoldedMatchesLocked(query string) int {
 	if !fe.folding() {
-		return false
+		return 0
 	}
 	query = strings.ToLower(query)
 	f := fe.db.Fold()
@@ -395,7 +400,7 @@ func (fe *frontendPretty) readFoldedMatchesLocked(query string) bool {
 		return strings.Contains(strings.ToLower(name), query)
 	}, foldSearchLimit)
 	f.Retain(ids...)
-	return total > len(ids)
+	return total - len(ids)
 }
 
 // readFoldedTargetLocked reads back a folded span a source's log search

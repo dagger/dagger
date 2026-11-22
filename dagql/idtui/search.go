@@ -54,7 +54,8 @@ func (fe *frontendPretty) searchLoadedOnly() bool {
 
 // searchScope describes what a search may have left out, for the match
 // count: logs not loaded from a source with no search (Cloud), a source's
-// search stopping early, and matches in spans the view cannot place.
+// search stopping early, matches in spans the view cannot place, and folded
+// spans whose name matches past the read-back cap (foldSearchLimit).
 func (fe *frontendPretty) searchScope() string {
 	var scope []string
 	if fe.searchLoadedOnly() {
@@ -63,8 +64,8 @@ func (fe *frontendPretty) searchScope() string {
 	if fe.searchPartial {
 		scope = append(scope, "more not searched")
 	}
-	if fe.searchFoldedCapped {
-		scope = append(scope, fmt.Sprintf("%d spans read, more match", foldSearchLimit))
+	if fe.searchFoldedMore > 0 {
+		scope = append(scope, fmt.Sprintf("%d spans read, %d more match", foldSearchLimit, fe.searchFoldedMore))
 	}
 	if fe.searchUnplaced > 0 {
 		scope = append(scope, fmt.Sprintf("%d in spans not loaded", fe.searchUnplaced))
@@ -506,7 +507,7 @@ func (fe *frontendPretty) clearSearch() {
 	fe.searchRemote = nil
 	fe.searchPartial = false
 	fe.searchUnplaced = 0
-	fe.searchFoldedCapped = false
+	fe.searchFoldedMore = 0
 	for _, logs := range []map[dagui.SpanID]*Vterm{fe.logs.Logs, fe.logs.ToolArgs} {
 		for _, vt := range logs {
 			vt.SetSearchHighlight("", -1)

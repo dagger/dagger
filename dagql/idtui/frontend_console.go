@@ -447,7 +447,9 @@ func (fe *frontendPretty) consoleSettle() string {
 		time.Sleep(40 * time.Millisecond)
 		next := fe.tui.Step()
 		joined := strings.Join(next, "\n")
-		if joined == frame {
+		// read-back spans land a step per frame, beneath collapsed rows too:
+		// the frame isn't settled while some wait
+		if joined == frame && !fe.fold.filling() {
 			stable++
 			if stable >= 2 {
 				break

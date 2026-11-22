@@ -481,10 +481,10 @@ type frontendPretty struct {
 	searchGen      uint64
 	searchPartial  bool
 	searchUnplaced int
-	// searchFoldedCapped is set when more folded spans' names match than
-	// the search reads back (foldSearchLimit): its match count is a lower
-	// bound.
-	searchFoldedCapped bool
+	// searchFoldedMore counts the folded spans whose name matches past
+	// what the search reads back (foldSearchLimit): while there are any,
+	// its match count is a lower bound.
+	searchFoldedMore int
 	// searchNames memoizes the spans whose name matches the search, until
 	// the query or the DB's spans change (see searchNameMatches).
 	searchNames struct {
@@ -4093,7 +4093,7 @@ func (fe *frontendPretty) searchCountHint() string {
 	scope := fe.searchScope()
 	// Past the read-back cap the count is a lower bound: more spans match.
 	var more string
-	if fe.searchFoldedCapped {
+	if fe.searchFoldedMore > 0 {
 		more = "+"
 	}
 	if len(fe.searchMatches) == 0 {
@@ -7713,7 +7713,7 @@ func (fe *frontendPretty) confirmSearch(query string) {
 	}
 	fe.searchQuery = query
 	fe.searchIdx = -1
-	fe.searchFoldedCapped = fe.readFoldedMatchesLocked(query)
+	fe.searchFoldedMore = fe.readFoldedMatchesLocked(query)
 	fe.startLogSearch(query)
 	// Push query to all vterms (triggers midterm Search), read results,
 	// navigate to first match, then update highlights + dirty trees.

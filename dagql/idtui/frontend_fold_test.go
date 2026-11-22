@@ -293,8 +293,8 @@ func TestLiveFoldSearchCap(t *testing.T) {
 	// past the cap: a lower bound, and why
 	limit := counts[name] - 2
 	hint := search(limit)
-	require.Regexp(t, `\(\d+(/\d+)?\+, \d+ spans read, more match\)$`, hint)
-	require.Contains(t, hint, strconv.Itoa(limit)+" spans read")
+	require.Regexp(t, `\(\d+(/\d+)?\+, \d+ spans read, \d+ more match\)$`, hint)
+	require.Contains(t, hint, strconv.Itoa(limit)+" spans read, ")
 
 	// the rest, now under the cap: exact
 	hint = search(counts[name])
