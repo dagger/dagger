@@ -35,13 +35,19 @@ type Entrypoint implements ModuleEntrypoint {
         .withFunction(
           function("callFailingDep", typeDef.withKind(TypeDefKind.STRING_KIND))
             .withDescription("Calls a function of a dependency whose command fails.")
-            .withSourceMap(sourceMap("src/index.ts", 64, 9))
+            .withSourceMap(sourceMap("src/index.ts", 71, 9))
             .withCachePolicy(FunctionCachePolicy.PER_SESSION),
         )
         .withFunction(
           function("callFailingDepLogged", typeDef.withKind(TypeDefKind.STRING_KIND))
             .withDescription("Logs a line, then calls a function of a dependency whose command fails.")
-            .withSourceMap(sourceMap("src/index.ts", 70, 9))
+            .withSourceMap(sourceMap("src/index.ts", 77, 9))
+            .withCachePolicy(FunctionCachePolicy.PER_SESSION),
+        )
+        .withFunction(
+          function("failApi", typeDef.withKind(TypeDefKind.STRING_KIND))
+            .withDescription("Logs a line, then reads a file that doesn't exist, and lets the error propagate.")
+            .withSourceMap(sourceMap("src/index.ts", 64, 9))
             .withCachePolicy(FunctionCachePolicy.PER_SESSION),
         )
         .withFunction(

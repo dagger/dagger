@@ -141,6 +141,10 @@ var sdkCases = []sdkCase{
 	// function's own, the common real-world pattern. BAD: collapsed, the
 	// wrapping message is nowhere.
 	{function: "fail-exec-wrapped", fail: true},
+	// Logs a line, then calls a plain core API that fails (reading a file
+	// that doesn't exist), the error unhandled: not every failure is an
+	// exec's. The failed API call is the origin, with its own message.
+	{function: "fail-api", fail: true},
 	// Calls viztest/sdks/dep (a go-sdk module) whose withExec fails: how the
 	// error, its origin and its logs survive a module boundary. Same-SDK for
 	// go, cross-SDK for the rest.

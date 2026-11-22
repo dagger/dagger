@@ -54,6 +54,14 @@ public class ViztestJava {
     }
   }
 
+  /** Logs a line, then reads a file that doesn't exist, and lets the error propagate. */
+  @Function(cache = "session")
+  public String failApi() throws Exception {
+    System.out.println("java function stdout");
+    System.out.flush();
+    return core().directory().file("doesnt-exist.txt").contents();
+  }
+
   /** Calls a function of a dependency whose command fails. */
   @Function(cache = "session")
   public String callFailingDep() throws Exception {

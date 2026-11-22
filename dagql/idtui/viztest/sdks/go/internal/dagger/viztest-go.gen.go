@@ -27,6 +27,7 @@ type ViztestGo struct { // viztest-go (../../:0:0)
 
 	callFailingDep       *string
 	callFailingDepLogged *string
+	failApi              *string
 	failExec             *string
 	failExecWrapped      *string
 	failExitCode         *Void
@@ -64,6 +65,20 @@ func (r *ViztestGo) CallFailingDepLogged(ctx context.Context) (string, error) {
 		return *r.callFailingDepLogged, nil
 	}
 	q := r.query.Select("callFailingDepLogged")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// FailApi logs a line, then reads a file that doesn't exist, and returns the
+// API's error as is.
+func (r *ViztestGo) FailAPI(ctx context.Context) (string, error) {
+	if r.failApi != nil {
+		return *r.failApi, nil
+	}
+	q := r.query.Select("failApi")
 
 	var response string
 

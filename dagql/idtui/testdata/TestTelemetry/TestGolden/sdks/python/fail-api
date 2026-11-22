@@ -1,0 +1,39 @@
+Expected stderr:
+
+✔ connect X.Xs
+├╴✔ starting engine X.Xs
+├╴✔ connecting to engine X.Xs
+│ ┃ XX:XX:XX INF connected name=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local client-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx server-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx
+╰╴✔ starting session X.Xs
+
+✔ load workspace: . X.Xs
+╰╴✔ loading type definitions X.Xs
+
+✔ parsing command line arguments X.Xs
+
+$ viztestPython: ViztestPython! X.Xs CACHED
+✘ .failApi: String! X.Xs ERROR
+┃ python function stdout
+┃ ERROR [dagger.mod]: API error while executing function
+┃ Traceback (most recent call last):
+┃   File "/src/sha256:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX/viztest/sdks/python/src/viztest_python/__init__.py", line XXX, in fail_api
+┃     return await core().directory().file("doesnt-exist.txt").contents()
+┃            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+┃   File "/usr/local/lib/python3.14/site-packages/dagger_clients/core/__init__.py", line XXX, in contents
+┃     return await _ctx.execute(str)
+┃            ^^^^^^^^^^^^^^^^^^^^^^^
+┃   File "/usr/local/lib/python3.14/site-packages/dagger/client/_core.py", line XXX, in execute
+┃     result = await session.execute(self.build())
+┃              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+┃   File "/usr/local/lib/python3.14/site-packages/dagger/client/_session.py", line XXX, in execute
+┃     return await (await self._ready()).execute(query)
+┃            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+┃   File "/usr/local/lib/python3.14/site-packages/dagger/client/_session.py", line XXX, in execute
+┃     return _read_response(response, query)
+┃   File "/usr/local/lib/python3.14/site-packages/dagger/client/_session.py", line XXX, in _read_response
+┃     raise err
+┃ dagger.QueryError: stat doesnt-exist.txt: no such file or directory
+╰╴✘ Directory.file(path: "doesnt-exist.txt"): File! X.Xs ERROR
+  ! stat doesnt-exist.txt: no such file or directory
+
+Setup tracing by running "dagger cloud signup". To hide set DAGGER_NO_NAG=1

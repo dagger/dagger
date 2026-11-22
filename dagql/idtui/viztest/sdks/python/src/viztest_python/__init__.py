@@ -70,6 +70,12 @@ class ViztestPython:
             raise RuntimeError(f"python function ran a failing command: {e}") from e
 
     @function(cache="session")
+    async def fail_api(self) -> str:
+        """Logs a line, then reads a file that doesn't exist, and lets the error propagate."""
+        print("python function stdout", flush=True)
+        return await core().directory().file("doesnt-exist.txt").contents()
+
+    @function(cache="session")
     async def call_failing_dep(self) -> str:
         """Calls a function of a dependency whose command fails."""
         return await sdk_dep().fail_exec()

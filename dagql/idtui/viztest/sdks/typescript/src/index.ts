@@ -59,6 +59,13 @@ export class ViztestTypescript {
     }
   }
 
+  /** Logs a line, then reads a file that doesn't exist, and lets the error propagate. */
+  @func({ cache: "session" })
+  async failApi(): Promise<string> {
+    console.log("typescript function stdout")
+    return dag.directory().file("doesnt-exist.txt").contents()
+  }
+
   /** Calls a function of a dependency whose command fails. */
   @func({ cache: "session" })
   async callFailingDep(): Promise<string> {

@@ -71,6 +71,15 @@ class ViztestPhp
     }
 
     #[DaggerFunction]
+    #[Doc('Logs a line, then reads a file that doesn\'t exist, and lets the error propagate')]
+    public function failApi(): string
+    {
+        fwrite(STDOUT, "php function stdout\n");
+        fflush(STDOUT);
+        return core()->directory()->file('doesnt-exist.txt')->contents();
+    }
+
+    #[DaggerFunction]
     #[Doc('Calls a function of a dependency whose command fails')]
     public function callFailingDep(): string
     {

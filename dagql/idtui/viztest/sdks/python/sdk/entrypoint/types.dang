@@ -15,6 +15,11 @@ type ModuleTypes {
             .withCachePolicy(FunctionCachePolicy.PER_SESSION)
         )
         .withFunction(
+          function("fail_api", typeDef.withKind(TypeDefKind.STRING_KIND))
+            .withDescription("Logs a line, then reads a file that doesn't exist, and lets the error propagate.")
+            .withCachePolicy(FunctionCachePolicy.PER_SESSION)
+        )
+        .withFunction(
           function("fail_exec", typeDef.withKind(TypeDefKind.STRING_KIND))
             .withDescription("Runs a command that fails, and lets its error propagate.")
             .withCachePolicy(FunctionCachePolicy.PER_SESSION)

@@ -109,6 +109,11 @@ public class Entrypoint {
                         .withDescription("Runs a command that fails, and wraps its error.")
                         .withCachePolicy(FunctionCachePolicy.PER_SESSION))
                 .withFunction(
+                    core().function("failApi",
+                        core().typeDef().withKind(TypeDefKind.STRING_KIND))
+                        .withDescription("Logs a line, then reads a file that doesn't exist, and lets the error propagate.")
+                        .withCachePolicy(FunctionCachePolicy.PER_SESSION))
+                .withFunction(
                     core().function("callFailingDep",
                         core().typeDef().withKind(TypeDefKind.STRING_KIND))
                         .withDescription("Calls a function of a dependency whose command fails.")
@@ -143,6 +148,9 @@ public class Entrypoint {
         return JsonConverter.toJSON(res);
       } else if (fnName.equals("failExecWrapped")) {
         String res = obj.failExecWrapped();
+        return JsonConverter.toJSON(res);
+      } else if (fnName.equals("failApi")) {
+        String res = obj.failApi();
         return JsonConverter.toJSON(res);
       } else if (fnName.equals("callFailingDep")) {
         String res = obj.callFailingDep();

@@ -37,6 +37,11 @@ type Entrypoint implements ModuleEntrypoint {
             .withCachePolicy(FunctionCachePolicy.PER_SESSION)
         )
         .withFunction(
+          function("failApi", typeDef.withKind(TypeDefKind.STRING_KIND))
+            .withDescription("Logs a line, then reads a file that doesn't exist, and lets the error propagate.")
+            .withCachePolicy(FunctionCachePolicy.PER_SESSION)
+        )
+        .withFunction(
           function("callFailingDep", typeDef.withKind(TypeDefKind.STRING_KIND))
             .withDescription("Calls a function of a dependency whose command fails.")
             .withCachePolicy(FunctionCachePolicy.PER_SESSION)

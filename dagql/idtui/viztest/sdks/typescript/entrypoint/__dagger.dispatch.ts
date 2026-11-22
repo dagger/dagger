@@ -67,6 +67,12 @@ async function invoke(
           return __result
         }
 
+        case "failApi": {
+          const __parent = rebuildViztestTypescript(parentJson)
+          const __result = await __parent.failApi()
+          return __result
+        }
+
         case "failExec": {
           const __parent = rebuildViztestTypescript(parentJson)
           const __result = await __parent.failExec()

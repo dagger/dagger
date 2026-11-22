@@ -37,6 +37,15 @@ type ViztestDang {
   }
 
   """
+  Logs a line, then reads a file that doesn't exist, and lets the error
+  propagate.
+  """
+  failApi: String! @cache(policy: FunctionCachePolicy.PER_SESSION) {
+    print("dang function stdout")
+    directory.file("doesnt-exist.txt").contents
+  }
+
+  """
   Calls a function of a dependency whose command fails.
   """
   callFailingDep: String! @cache(policy: FunctionCachePolicy.PER_SESSION) {

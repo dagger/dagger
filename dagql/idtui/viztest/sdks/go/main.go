@@ -62,6 +62,14 @@ func (*ViztestGo) FailExecWrapped(ctx context.Context) (string, error) {
 	return out, nil
 }
 
+// FailApi logs a line, then reads a file that doesn't exist, and returns the
+// API's error as is.
+// +cache="session"
+func (*ViztestGo) FailApi(ctx context.Context) (string, error) {
+	fmt.Println("go function stdout")
+	return core.NewDirectory().File("doesnt-exist.txt").Contents(ctx)
+}
+
 // CallFailingDep calls a function of a dependency whose command fails.
 // +cache="session"
 func (*ViztestGo) CallFailingDep(ctx context.Context) (string, error) {

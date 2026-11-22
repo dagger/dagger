@@ -88,6 +88,13 @@ func DaggerDispatch(ctx context.Context, parentJSON []byte, parentName string, f
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return (*ViztestGo).CallFailingDepLogged(&parent, ctx)
+		case "FailApi":
+			var parent ViztestGo
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*ViztestGo).FailApi(&parent, ctx)
 		case "FailExec":
 			var parent ViztestGo
 			err = json.Unmarshal(parentJSON, &parent)

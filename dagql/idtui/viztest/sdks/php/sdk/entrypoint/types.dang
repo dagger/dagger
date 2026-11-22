@@ -25,6 +25,10 @@ type ModuleTypes {
             .withDescription("Runs a command that fails, and wraps its error")
         )
         .withFunction(
+          function("failApi", typeDef.withKind(TypeDefKind.STRING_KIND))
+            .withDescription("Logs a line, then reads a file that doesn't exist, and lets the error propagate")
+        )
+        .withFunction(
           function("callFailingDep", typeDef.withKind(TypeDefKind.STRING_KIND))
             .withDescription("Calls a function of a dependency whose command fails")
         )
