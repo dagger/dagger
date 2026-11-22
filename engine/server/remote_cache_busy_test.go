@@ -2,8 +2,10 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
@@ -269,4 +271,55 @@ func TestBusyWaitsWantTheRowsTheirRootsWaitOn(t *testing.T) {
 	for row, want := range map[uint64]bool{6: false, 7: false, 8: true} {
 		require.Equal(t, want, w.wants(row), "row %d, after root 4 is left out again on row 8", row)
 	}
+}
+
+// As it hands busy roots on as ready, the engine logs a line of the notice's
+// way: how many roots and which, what woke the look that found them ready
+// and how long before, and how long they had waited. With the exec's end
+// from the traces and the service's line for the Ready, a fill reads where
+// the time from an exec's end to its export goes.
+func TestRemoteCacheAdapterLogsTheRootsItHandsOnAsReady(t *testing.T) {
+	logs := &lockedLog{}
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+
+	e := newAdapterTestEngine(t)
+	busy := e.busyFile(t, "busy")
+	roots := []uint64{entryNumber(t, busy)}
+	require.NoError(t, e.adapter.Export(e.ctx, protocol.Export{Roots: roots}, nil, func(context.Context, remotecache.Export) error { return nil }))
+	took := make(chan []uint64, 1)
+	go func() {
+		if ready, err := e.adapter.TakeReadyRoots(e.ctx); err == nil {
+			took <- ready
+		}
+	}()
+	require.Eventually(t, func() bool {
+		s := e.adapter.readyStats.snapshot()
+		return s.looks >= 2 && s.addWakes >= 1
+	}, 10*time.Second, 5*time.Millisecond, "the looks while the row runs")
+	e.bodies.unpause()
+	select {
+	case <-took:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the busy root was never handed on as ready")
+	}
+
+	var line map[string]any
+	dec := json.NewDecoder(strings.NewReader(logs.String()))
+	dec.UseNumber()
+	for dec.More() {
+		var l map[string]any
+		require.NoError(t, dec.Decode(&l))
+		if l["msg"] == "remote cache ready" {
+			require.Nil(t, line, "one line for one hand-on")
+			line = l
+		}
+	}
+	require.NotNil(t, line, "the hand-on is logged")
+	require.Equal(t, json.Number("1"), line["roots"])
+	require.Equal(t, []any{json.Number(fmt.Sprint(roots[0]))}, line["numbers"])
+	require.Equal(t, "end", line["woken_by"], "the row's end woke the look that found it ready")
+	require.Contains(t, line, "since_wake")
+	require.Contains(t, line, "waited")
 }
