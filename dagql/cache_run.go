@@ -194,9 +194,29 @@ type HoldingRun struct {
 
 // HoldingRuns returns, on the Cloud, what the stored record of each
 // holding's entry says of its run (HoldingRun), in the order of keys, under
-// one hold of the lock for reading. Not built yet: it says nothing.
+// one hold of the lock for reading. A write that changes a record's run or
+// its ran mark names the entry (RemoteChange.Entries); one that moves a
+// run's own holding on, or collects it, names only that holding.
 func (c *Cache) HoldingRuns(keys []HolderKey) []HoldingRun {
-	return make([]HoldingRun, len(keys))
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	out := make([]HoldingRun, len(keys))
+	for i, key := range keys {
+		entry, h := c.holdingLocked(key)
+		if h == nil || entry == nil || entry.run == nil || entry.noValueLocked() {
+			continue
+		}
+		run := *entry.run
+		_, held := c.holdingLocked(HolderKey{Cache: run.Cache, Number: run.Number})
+		out[i] = HoldingRun{
+			Stored:  true,
+			Run:     run,
+			Ran:     c.ownRunRanLocked(entry),
+			Own:     key.Cache == run.Cache && key.Number == run.Number && h.replacements == run.Replacements,
+			RunHeld: held != nil && held.replacements == run.Replacements,
+		}
+	}
+	return out
 }
 
 // RunCounts counts the Cloud's stored records by what they say of their
