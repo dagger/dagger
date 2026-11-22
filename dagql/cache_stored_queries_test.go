@@ -446,6 +446,64 @@ func TestABatchReadLetsAWaitingWriterIn(t *testing.T) {
 	}
 }
 
+// A batch read gives way to a writer that waits after every answer, however
+// long its own take waited. A read that held the lock as long as its take
+// waited kept a writer pending for as long as that, and a pending writer
+// keeps every new reader out: on the eighteenth whole run's fill and on the
+// trial fill of its fix, a writer was pending 92 to 96% of the time, against
+// 40% on the seventeenth, lookups blocked six times as often, and 16 to 23
+// of 35 engines gave up their stops, against 4. Here a writer holds the lock
+// for 100 ms as the read begins, so the read's take waits that long, and
+// then asks for the lock again after each answer, of 2 ms each: it gets in
+// after the read's first answer.
+func TestABatchReadGivesWayAtOnceThoughItsTakeWaited(t *testing.T) {
+	t.Parallel()
+	ctx, cloud, first, _ := storedQueriesTestClass(t)
+	key := HolderKey{"cache-c", 1}
+	_, err := cloud.AttachRemoteHolding(ctx, key, RemoteHolding{Recipe: testDigest("batch-holding"), Request: testDigest("batch-holding"), Field: "batch-holding", TypeName: "Directory", ContentDigest: testDigest("batch-holding")})
+	require.NoError(t, err)
+	// The setup's merges queue the stored-body worker, which writes once
+	// it has compressed their bodies: stopped first, it can't come as
+	// another writer.
+	cloud.closeStoredBodies()
+	const n = 64
+	now := time.Now().Unix()
+	for _, r := range batchReadsTestCases(cloud, first, key, n, now) {
+		t.Run(r.name, func(t *testing.T) {
+			var answered, in atomic.Int64
+			in.Store(-1)
+			cloud.testBatchAnswered = func(i int) {
+				answered.Store(int64(i + 1))
+				time.Sleep(2 * time.Millisecond)
+				if i == 0 {
+					require.Eventually(t, cloud.egraphMu.Waiting, 10*time.Second, time.Millisecond, "the writer waits")
+				}
+			}
+			defer func() { cloud.testBatchAnswered = nil }()
+			// The writer holds the lock as the read begins, lets it go
+			// once the read waits for it, after 100 ms, and asks again once
+			// the read has answered.
+			cloud.egraphMu.Lock()
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				require.Eventually(t, cloud.egraphMu.Waiting, 10*time.Second, time.Millisecond, "the read waits")
+				time.Sleep(100 * time.Millisecond)
+				cloud.egraphMu.Unlock()
+				for answered.Load() == 0 {
+					time.Sleep(time.Millisecond)
+				}
+				cloud.egraphMu.Lock()
+				in.Store(answered.Load())
+				cloud.egraphMu.Unlock()
+			}()
+			r.read()
+			<-done
+			require.Equal(t, int64(1), in.Load(), "the writer got in after the read's first answer")
+		})
+	}
+}
+
 // A batch read holds the lock, once it has taken it, at least as long as
 // that take waited, and gives way to a waiting writer only then, as the
 // service's runs of merged replies do: a read that gave way after every
