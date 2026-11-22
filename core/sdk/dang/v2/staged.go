@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -112,6 +113,11 @@ func stagedDangName(moduleName string) string {
 const maxStagedDangSources = 256
 
 var stagedDangSources = newStagedDangDirs(filepath.Join(os.TempDir(), "dagger-dang"), maxStagedDangSources)
+
+// stagedDangSourcePath matches the directory a source is staged in, up to the
+// source's subpath of its module's context directory, as a path in Dang's
+// errors names it.
+var stagedDangSourcePath = regexp.MustCompile(regexp.QuoteMeta(stagedDangSources.root+string(filepath.Separator)) + `[\w-]+-[0-9a-f]{32}` + regexp.QuoteMeta(string(filepath.Separator)))
 
 // stagedDangDirs keeps the directories sources are staged in, engine-wide:
 // identical sources share one. The directories nobody is using beyond max are

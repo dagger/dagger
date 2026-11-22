@@ -206,7 +206,7 @@ func evalDangSource(
 			env, err = runSource(ctx, modSrcDir)
 			if err != nil {
 				if isDangSourceError(err) {
-					return reportDangSourceError(stdio.Stderr, err)
+					return reportModuleDangSourceError(ctx, stdio.Stderr, forTypeDefs, err)
 				}
 				return fmt.Errorf("run dir: %w", err)
 			}
@@ -379,11 +379,43 @@ func isDangSourceError(err error) bool {
 		errors.As(err, &raised)
 }
 
-// reportDangSourceError writes Dang's rendered report for err to stderr and
-// returns the short dangSourceError to surface as the span error.
+// reportDangSourceError writes Dang's rendered report for err to stderr (see
+// dangSourceReport) and returns the short dangSourceError to surface as the
+// span error.
 func reportDangSourceError(stderr io.Writer, err error) error {
-	fmt.Fprint(stderr, strings.TrimRight(err.Error(), "\n")+"\n")
+	fmt.Fprint(stderr, strings.TrimRight(dangSourceReport(err), "\n")+"\n")
 	return &dangSourceError{err: err}
+}
+
+// reportModuleDangSourceError reports err, the failure of a module's Dang
+// source, as reportDangSourceError does. When the source runs to read the
+// module's types (forTypeDefs) for a load of the module, the report goes to
+// the load's span instead of stderr, and the load is the failure's origin:
+// the calls between them, such as ModuleSource._moduleTypesDefinition, are
+// the engine's plumbing (see core.ModuleLoadSpanContext).
+func reportModuleDangSourceError(ctx context.Context, stderr io.Writer, forTypeDefs bool, err error) error {
+	span, ok := core.ModuleLoadSpanContext(ctx)
+	if !forTypeDefs || !ok {
+		return reportDangSourceError(stderr, err)
+	}
+	stdio := telemetry.SpanStdio(trace.ContextWithSpanContext(ctx, span), core.InstrumentationLibrary)
+	defer stdio.Close()
+	return telemetry.TrackOrigin(reportDangSourceError(stdio.Stderr, err), span)
+}
+
+// dangSourceReport is Dang's rendered report for err, without the context
+// Dang wraps around a report that names its file already ("failed to parse
+// file <path>: "), and with the paths of staged sources relative to the
+// module's context directory, as the user knows them, not the engine's copy.
+func dangSourceReport(err error) string {
+	for {
+		inner := errors.Unwrap(err)
+		if inner == nil || !strings.HasSuffix(err.Error(), ": "+inner.Error()) {
+			break
+		}
+		err = inner
+	}
+	return stagedDangSourcePath.ReplaceAllString(err.Error(), "")
 }
 
 // Dang validates object directives but does not retain them on its runtime

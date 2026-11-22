@@ -98,28 +98,57 @@ func TestDangSourceMessage(t *testing.T) {
 	raisedValue := dang.NewObject(nil)
 	raisedValue.Bind("message", dang.StringValue{Val: "raised failure"}, dang.PublicVisibility)
 
+	wrapped := inferReport(inner)
 	for _, tc := range []struct {
 		name string
 		err  error
 		want string
+
+		// the error whose rendering is the report, if not err
+		report error
 	}{
-		{"source", sourceErr, message},
-		{"infer", &dang.InferError{Inner: sourceErr}, message},
-		{"multiple", &dang.InferenceErrors{Errors: []error{sourceErr, errors.New("second failure")}}, message},
-		{"wrapped aggregate", fmt.Errorf("load module: %w", inferReport(inner)), message},
-		{"joined", errors.Join(sourceErr, errors.New("second failure")), message},
-		{"raised", &dang.RaisedError{Value: raisedValue}, "raised failure"},
-		{"plain context", inferReport(fmt.Errorf("invalid argument: %w", inner)), "invalid argument: " + message},
-		{"multiline and ANSI", inferReport(errors.New("\033[31mfirst line\033[0m\n\tsecond line\r\n")), "first line second line"},
+		{"source", sourceErr, message, nil},
+		{"infer", &dang.InferError{Inner: sourceErr}, message, nil},
+		{"multiple", &dang.InferenceErrors{Errors: []error{sourceErr, errors.New("second failure")}}, message, nil},
+		{"wrapped aggregate", fmt.Errorf("load module: %w", wrapped), message, wrapped},
+		{"joined", errors.Join(sourceErr, errors.New("second failure")), message, nil},
+		{"raised", &dang.RaisedError{Value: raisedValue}, "raised failure", nil},
+		{"plain context", inferReport(fmt.Errorf("invalid argument: %w", inner)), "invalid argument: " + message, nil},
+		{"multiline and ANSI", inferReport(errors.New("\033[31mfirst line\033[0m\n\tsecond line\r\n")), "first line second line", nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var stderr bytes.Buffer
 			err := reportDangSourceError(&stderr, tc.err)
 			require.EqualError(t, err, tc.want)
 			require.Same(t, tc.err, errors.Unwrap(err))
-			require.Equal(t, strings.TrimRight(tc.err.Error(), "\n")+"\n", stderr.String())
+			report := tc.report
+			if report == nil {
+				report = tc.err
+			}
+			require.Equal(t, strings.TrimRight(report.Error(), "\n")+"\n", stderr.String())
 		})
 	}
+}
+
+// TestDangSourceReportNamesTheUsersFile covers a parse error of a staged
+// source: its report names the file by its path in the module's context
+// directory, not the engine's staged copy, and without the "failed to parse
+// file" Dang wraps around a report that names the file already.
+func TestDangSourceReportNamesTheUsersFile(t *testing.T) {
+	t.Parallel()
+
+	staged := filepath.Join(stagedDangSources.root, "my-mod-0123456789abcdef0123456789abcdef", "sub", "dir", "main.dang")
+	report := dang.NewSourceError(errors.New("syntax error: unexpected 'this is not'"),
+		&dang.SourceLocation{Filename: staged, Line: 2, Column: 1, Length: 4},
+		"type Foo {}\nthis is not dang\n")
+	err := fmt.Errorf("failed to parse file %s: %w", staged, report)
+
+	var stderr bytes.Buffer
+	reported := reportDangSourceError(&stderr, err)
+	require.EqualError(t, reported, "syntax error: unexpected 'this is not'")
+	require.NotContains(t, stderr.String(), "failed to parse file")
+	require.NotContains(t, stderr.String(), stagedDangSources.root)
+	require.Contains(t, stderr.String(), "--> "+filepath.Join("sub", "dir", "main.dang")+":2:1")
 }
 
 func TestDangSourceMessageFromModule(t *testing.T) {

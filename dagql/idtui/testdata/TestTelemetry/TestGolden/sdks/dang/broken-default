@@ -5,13 +5,13 @@ Expected stderr:
 ┇ loading type definitions ›
 ✘ load module: ./viztest/sdks/broken-dang X.Xs ERROR
 Error: syntax error: unexpected 'this is not'
-  --> viztest/sdks/broken-dang/main.dang:61:1
+  --> viztest/sdks/broken-dang/main.dang:70:1
      |
-  59 | }
-  60 |
-  61 | this is not dang
+  68 | }
+  69 |
+  70 | this is not dang
        ^^^^^^^^^^^
-  62 |
+  71 |
      |
 ! syntax error: unexpected 'this is not'
 
