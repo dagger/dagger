@@ -2695,6 +2695,9 @@ type Cache struct {
 	// as a batch read lets egraphMu go between two answers, with none held.
 	testBatchAnswered func(i int)
 	testBatchGaveWay  func()
+	// batchClock is the clock a batch read's holds of egraphMu are timed by
+	// (batchHold), time.Now when nil.
+	batchClock func() time.Time
 
 	// testRecordPayloadPreparing runs as a merge starts preparing the
 	// record of an ordinal with its payload; an error refuses that record.
