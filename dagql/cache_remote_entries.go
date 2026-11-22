@@ -317,6 +317,22 @@ type holding struct {
 	// it: it tells whether the run a stored record names ran
 	// (noteHoldingRanLocked).
 	ran bool
+	// served is, on the Cloud, the run of the record the Cloud last served
+	// the holding's cache for this entry (ApplyMergedReply), at the
+	// replacement count the serve describes: a copy the engine exports
+	// without running it is that run (mergeRunLocked). A later serve
+	// replaces it, and a higher count drops it, so a holding keeps at most
+	// one; it goes with the holding.
+	served *servedRun
+}
+
+// servedRun is the run of a record the Cloud served an engine cache, at
+// the engine entry's replacement count, with what the Cloud knew then of
+// whether it ran.
+type servedRun struct {
+	run          RunName
+	ran          runRanBy
+	replacements uint64
 }
 
 // hasUnexpiredHoldingLocked reports whether another cache holds a copy of res
@@ -653,6 +669,15 @@ func (c *Cache) applyMergedTargetsLocked(ctx context.Context, cache CacheID, clo
 			ExpiresAtUnix: t.value.ExpiresAtUnix,
 		}, t.parts, t.offers)
 		change.Candidates = append(change.Candidates, candidates...)
+		// The engine's copy is the run of the record the Cloud served it,
+		// which may be another entry's than the one its holding is on: a
+		// class mate's, when the engine's call joined it by content.
+		if c.blobBacked {
+			h.served = nil
+			if served := c.resultsByID[cloudEntries[t.value.Ordinal]]; served != nil && served.run != nil {
+				h.served = &servedRun{run: *served.run, ran: served.runRan, replacements: t.value.Replacements}
+			}
+		}
 	}
 }
 
@@ -796,6 +821,7 @@ func (c *Cache) applyHeldValueStateLocked(ctx context.Context, state *remoteCach
 		changed = true
 		h.replacements = obs.Replacements
 		h.ran = false
+		h.served = nil
 		h.parts = nil
 		h.expiresAtUnix = 0
 		h.contentDigest = unique.Handle[string]{}
