@@ -169,7 +169,9 @@ func (opts SearchOpts) limits() ripgrep.Limits {
 
 func (opts SearchOpts) Args() []dagql.Argument {
 	return []dagql.Argument{
-		dagql.Arg("pattern").Doc(`The text to match.`),
+		dagql.Arg("pattern").Doc(`The text to match.`,
+			fmt.Sprintf(`A pattern matching too much fails the search: more than %d results without a limit, or results over about %d MiB with or without one (see limit).`,
+				ripgrep.DefaultMaxResults, ripgrep.DefaultMaxBytes>>20)),
 		dagql.Arg("literal").Doc(`Interpret the pattern as a literal string instead of a regular expression.`),
 		dagql.Arg("multiline").Doc(`Enable searching across multiple lines.`),
 		dagql.Arg("dotall").Doc(`Allow the . pattern to match newlines in multiline mode.`),
@@ -177,7 +179,9 @@ func (opts SearchOpts) Args() []dagql.Argument {
 		dagql.Arg("skipIgnored").Doc(`Honor .gitignore, .ignore, and .rgignore files.`),
 		dagql.Arg("skipHidden").Doc(`Skip hidden files (files starting with .).`),
 		dagql.Arg("filesOnly").Doc(`Only return matching files, not lines and content`),
-		dagql.Arg("limit").Doc(`Limit the number of results to return`),
+		dagql.Arg("limit").Doc(`Limit the number of results to return.`,
+			fmt.Sprintf(`Without a limit, a search matching more than %d results fails; a limit replaces that cap, truncating the results instead. Either way, a search whose results (paths, matched lines and submatches) exceed about %d MiB fails.`,
+				ripgrep.DefaultMaxResults, ripgrep.DefaultMaxBytes>>20)),
 	}
 }
 

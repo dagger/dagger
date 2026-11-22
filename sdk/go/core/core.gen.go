@@ -7043,7 +7043,9 @@ type DirectorySearchOpts struct {
 	SkipHidden bool
 	// Only return matching files, not lines and content
 	FilesOnly bool
-	// Limit the number of results to return
+	// Limit the number of results to return.
+	//
+	// Without a limit, a search matching more than 2000 results fails; a limit replaces that cap, truncating the results instead. Either way, a search whose results (paths, matched lines and submatches) exceed about 8 MiB fails.
 	Limit int
 }
 
@@ -9750,7 +9752,9 @@ type FileSearchOpts struct {
 	SkipHidden bool
 	// Only return matching files, not lines and content
 	FilesOnly bool
-	// Limit the number of results to return
+	// Limit the number of results to return.
+	//
+	// Without a limit, a search matching more than 2000 results fails; a limit replaces that cap, truncating the results instead. Either way, a search whose results (paths, matched lines and submatches) exceed about 8 MiB fails.
 	Limit int
 
 	Paths []string
@@ -22522,7 +22526,9 @@ type WorkspaceSearchOpts struct {
 	SkipHidden bool
 	// Only return matching files, not lines and content
 	FilesOnly bool
-	// Limit the number of results to return
+	// Limit the number of results to return.
+	//
+	// Without a limit, a search matching more than 2000 results fails; a limit replaces that cap, truncating the results instead. Either way, a search whose results (paths, matched lines and submatches) exceed about 8 MiB fails.
 	Limit int
 }
 
