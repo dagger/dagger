@@ -546,12 +546,15 @@ func (x *layerExtraction) rootPath(p string) (string, error) {
 		return resolved, nil
 	}
 	// A directory known to exist resolves as its parent did, with its name
-	// joined: dirs holds only directories, not symlinks, made or found
-	// since the last symlink, link or removal, which forget it (changed),
-	// so fs.RootPath would walk to the same path. A name that climbs, or
-	// a directory not known, is resolved by fs.RootPath.
+	// joined, when its parent's answer is remembered: dirs holds only
+	// directories, not symlinks, made or found since the last symlink,
+	// link or removal, which forget it and every answer (changed), so
+	// fs.RootPath would walk to the same path. In a tar's order a
+	// directory's parent comes before it, so its answer is remembered. A
+	// name that climbs, a parent not remembered, or a directory not known
+	// is resolved by fs.RootPath, once, as a whole.
 	if parent, name := filepath.Split(p); name != "" && name != "." && name != ".." {
-		if presolved, err := x.rootPath(parent); err == nil {
+		if presolved, ok := x.resolved[strings.TrimSuffix(parent, "/")]; ok {
 			if candidate := filepath.Join(presolved, name); x.knownDir(candidate) {
 				x.resolved[p] = candidate
 				return candidate, nil
