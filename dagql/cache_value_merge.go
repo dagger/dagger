@@ -3344,7 +3344,7 @@ func (c *Cache) finishMergedReplacement(ctx context.Context, r mergeReplacement)
 	r.res.attachDepsMu.Unlock()
 	// The attachment kept the row busy for a capture (BusyRows).
 	if ended {
-		c.busyEnded()
+		c.busyEnded(r.res.id)
 	}
 	return err
 }
