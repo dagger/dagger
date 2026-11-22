@@ -10,9 +10,8 @@ import (
 )
 
 // A reader marks an upload's start and end while the Cloud's passes read the
-// graph call by call: neither changes an answer the graph gives, and neither
-// must wait for those readers, nor hold up the readers behind it. Each
-// returns while the graph is held for reading.
+// graph: neither must wait for those readers, nor hold up the readers behind
+// it. Each returns while the graph is held for reading.
 func TestAnUploadsStartAndEndTakeNoWriteHoldOfTheGraph(t *testing.T) {
 	t.Parallel()
 	h := newHolderTestClass(t)
