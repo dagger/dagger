@@ -18,13 +18,12 @@ import (
 // engine's built-in runtimes. Every fixture has the same functions, so the
 // goldens of one case line up across SDKs; see viztest/sdks/go/main.go.
 //
-// These goldens record the output we WANT, not what users see today: no
-// module entrypoint plumbing on screen, the original failure as the origin of
-// the outermost call, and the logs of the thing that failed. They fail until
-// error bubbling and log propagation through module entrypoints are fixed;
-// the commit that turned them into targets shows today's output as its diff.
-// The fail-exec-wrapped goldens still record today's output: wrapping is not
-// targeted yet.
+// These goldens were hand-edited to the output we WANT: no module entrypoint
+// plumbing on screen, the original failure as the origin of the outermost
+// call, and the logs of the thing that failed. The commit that turned them
+// into targets shows the output before as its diff; each SDK's pass since
+// made its goldens pass. The fail-exec-wrapped goldens record today's
+// output: wrapping is not targeted yet.
 type sdkFixture struct {
 	lang string
 	// a source file of the module, and code that, appended to it, breaks the
@@ -38,20 +37,19 @@ type sdkFixture struct {
 	noCachePolicy bool
 }
 
-// What every entrypoint SDK gets wrong today:
+// What every entrypoint SDK got wrong before its module process reported its
+// error in the engine's function error file (DAGGER_FUNCTION_ERROR_PATH), as
+// go, python, typescript, php and java now do: the dispatcher exec's stdout
+// and stderr, the function's own logs with stack traces and protocol lines
+// (::dagger-function-error::, a reply's JSON) among them, rendered on the
+// function's row, which a collapsed report doesn't expand, and the exec an
+// error's origin names rendered with "exit code: N" and no logs.
 //
-//   - BAD: the dispatcher exec's stdout and stderr, the function's own logs
-//     with stack traces and protocol lines (::dagger-function-error::, a
-//     reply's JSON) among them, render on the function's row, which a
-//     collapsed report doesn't expand. The exec an error's origin names
-//     renders with "exit code: N" and no logs.
+// What they all still get wrong:
+//
 //   - BAD: a caught and wrapped exec error loses the wrapping message in the
 //     collapsed report: the origin is the inner withExec.
 //   - BAD: an exec error's message is a bare "exit code: N".
-//
-// An SDK whose module process reports its error in the engine's function
-// error file (DAGGER_FUNCTION_ERROR_PATH) gets the first right: see go,
-// python, typescript, php and java.
 var sdkFixtures = []sdkFixture{
 	// Errors use the engine's function error file (DAGGER_FUNCTION_ERROR_PATH,
 	// dagger/go-sdk#113). A build failure renders the compiler's error,
