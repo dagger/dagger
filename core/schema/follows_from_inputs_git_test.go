@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -20,6 +21,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/unix"
 )
 
 // gitFollowsOrigin serves a repository of many files over Git's smart HTTP,
@@ -174,10 +176,31 @@ func gitFollowsResults(t *testing.T, e *followsTestEngine, url, sha string, file
 	return out
 }
 
+// gitMountNamespaces reports whether this process may make mount
+// namespaces, as an engine's git commands do (unshareAndRun). The probe's
+// thread is locked and ends with its goroutine, namespace and all.
+func gitMountNamespaces() error {
+	errCh := make(chan error, 1)
+	go func() {
+		runtime.LockOSThread()
+		if err := unix.Unshare(unix.CLONE_FS); err != nil {
+			errCh <- err
+			return
+		}
+		errCh <- unix.Unshare(unix.CLONE_NEWNS)
+	}()
+	return <-errCh
+}
+
 // The git reads that follow from their inputs give the same snapshot, every
 // byte of it, on two engines a second apart: what each stores beside the
 // files it serves too, which the directory's content digest doesn't cover.
+// An engine's git commands make mount namespaces, so it runs privileged, in
+// test-split's testEbpf.
 func TestDeclaredGitReadsFollowFromTheirInputs(t *testing.T) {
+	if err := gitMountNamespaces(); err != nil {
+		t.Skipf("an engine's git commands make mount namespaces, which takes CAP_SYS_ADMIN; testEbpf runs this privileged: %v", err)
+	}
 	url, sha, files := gitFollowsOrigin(t)
 	salt := transferTestSalt(t)
 	first := gitFollowsResults(t, newFollowsTestEngine(t, salt, "follows-git-a"), url, sha, files)

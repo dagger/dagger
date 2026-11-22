@@ -385,12 +385,13 @@ type TestSplit {
 
   """
   Test eBPF network accounting of engine subprocesses and executor workloads,
-  the exec_sched eBPF program's measurement of an exec, and the trees of
-  chains imported onto overlayfs, whose whiteouts and opaque directories need
-  privileges, in a privileged test container
+  the exec_sched eBPF program's measurement of an exec, the trees of chains
+  imported onto overlayfs, whose whiteouts and opaque directories need
+  privileges, and the declared git reads, whose git commands make mount
+  namespaces, in a privileged test container
   """
   pub testEbpf: Void @check {
-    testSpecific(["^TestCommandAccounting$", "^TestWorkloadAccounting$", "^TestExecSched$", "^TestImportChainOverlayTree$"], pkg: "./engine/ebpf/nettracer ./engine/ebpf/execsched ./engine/snapshots", ebpf: true, imageEntries: false)
+    testSpecific(["^TestCommandAccounting$", "^TestWorkloadAccounting$", "^TestExecSched$", "^TestImportChainOverlayTree$", "^TestDeclaredGitReadsFollowFromTheirInputs$"], pkg: "./engine/ebpf/nettracer ./engine/ebpf/execsched ./engine/snapshots ./core/schema", ebpf: true, imageEntries: false)
   }
 
   """
