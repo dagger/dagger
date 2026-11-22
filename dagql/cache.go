@@ -2326,7 +2326,7 @@ func (c *Cache) syncResultSnapshotLeasesLocked(ctx context.Context, res *sharedR
 	// A snapshot a dependency already holds is borrowed, as a part copied
 	// from a dependency is: the dependency is kept while res keeps its
 	// value, so its hold keeps the snapshot.
-	held := c.snapshotsHeldByDependencies(res)
+	held := c.snapshotsHeldByDependencies(ctx, res)
 	for i := range links {
 		if _, ok := held[links[i].RefKey]; ok {
 			links[i].Borrowed = true
@@ -2416,8 +2416,8 @@ func (c *Cache) syncResultSnapshotLeasesLocked(ctx context.Context, res *sharedR
 
 // snapshotsHeldByDependencies returns the snapshots the results res depends
 // on hold, owned or borrowed.
-func (c *Cache) snapshotsHeldByDependencies(res *sharedResult) map[string]struct{} {
-	c.egraphMu.RLock()
+func (c *Cache) snapshotsHeldByDependencies(ctx context.Context, res *sharedResult) map[string]struct{} {
+	c.readLockGraphGathered(ctx)
 	deps := make([]*sharedResult, 0, len(res.deps))
 	for id := range res.deps {
 		if dep := c.resultsByID[id]; dep != nil {
@@ -6916,11 +6916,20 @@ func (c *Cache) GetOrInitCall(
 		return nil, fmt.Errorf("get or init call: %w", err)
 	}
 	res, callErr := c.getOrInitCall(ctx, sessionID, resolver, req, fn)
+	var hit *CacheDecision
+	if ev := req.CacheEvidence; callErr == nil && ev != nil && ev.Outcome == CacheOutcomeHit && ev.hitLoad != nil {
+		// The hit's own work goes on to its return (CacheDecision.HitLoad).
+		hit = ev
+		ctx = withHitLoad(ctx, ev.hitLoad)
+	}
 	if callErr == nil {
-		c.recordCallResultExpiry(scopes, req, res)
+		c.recordCallResultExpiry(ctx, scopes, req, res)
 	}
 	if op.finish(callErr == nil && res != nil) {
 		return nil, fmt.Errorf("get or init call: %w: %q", ErrCacheSessionReleased, sessionID)
+	}
+	if hit != nil {
+		hit.HitServedAtUnixNano = time.Now().UnixNano()
 	}
 	return res, callErr
 }
@@ -7163,9 +7172,6 @@ func (c *Cache) getOrInitCallInner(
 		}
 		c.captureSessionLazySpanContext(ctx, sessionID, hitRes)
 		c.captureSessionResultInstallSpan(ctx, sessionID, hitRes)
-		if ev != nil {
-			ev.HitServedAtUnixNano = time.Now().UnixNano()
-		}
 		return hitRes, nil
 	}
 	if lookup := c.noteRemoteMiss(req, callDigest, caller, requestSelf, requestInputs); ev != nil {
