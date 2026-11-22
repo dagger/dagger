@@ -472,13 +472,37 @@ func (c *Cache) unindexRecipesLocked(res *sharedResult) {
 // dependencies and complete parts. A holding it creates is a candidate for
 // collection: it has no owner until a hold, retention or a dependent names it.
 func (c *Cache) AttachRemoteHolding(ctx context.Context, key HolderKey, desc RemoteHolding) (RemoteChange, error) {
-	parts, kept, err := prepareRemoteHolding(key, desc)
-	if err != nil {
-		return RemoteChange{}, err
+	return c.AttachPreparedRemoteHolding(ctx, key, desc, PrepareRemoteHolding(key, desc))
+}
+
+// AttachPreparedRemoteHolding is AttachRemoteHolding, with key and desc
+// prepared before (PrepareRemoteHolding).
+func (c *Cache) AttachPreparedRemoteHolding(ctx context.Context, key HolderKey, desc RemoteHolding, prepared PreparedRemoteHolding) (RemoteChange, error) {
+	if prepared.err != nil {
+		return RemoteChange{}, prepared.err
 	}
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
-	return c.attachRemoteHoldingLocked(ctx, key, desc, parts, kept), nil
+	return c.attachRemoteHoldingLocked(ctx, key, desc, prepared.parts, prepared.kept), nil
+}
+
+// PreparedRemoteHolding is what attaching a holding reads of its key and
+// description without the cache (PrepareRemoteHolding): its parts' keys and
+// the call it keeps, or why it can't attach. A holder that prepares it before
+// it takes the cache's lock, as PrepareMergedReply prepares a merged reply,
+// spends none of that in its hold.
+type PreparedRemoteHolding struct {
+	parts []string
+	kept  *keptCall
+	err   error
+}
+
+// PrepareRemoteHolding prepares the holding of key that desc describes, for
+// AttachPreparedRemoteHolding of the same key and description. It reads
+// nothing of the cache, and of desc only its recipe, request, call and parts.
+func PrepareRemoteHolding(key HolderKey, desc RemoteHolding) PreparedRemoteHolding {
+	parts, kept, err := prepareRemoteHolding(key, desc)
+	return PreparedRemoteHolding{parts: parts, kept: kept, err: err}
 }
 
 // prepareRemoteHolding checks a holding's key and recipe, and derives what
@@ -776,14 +800,36 @@ func (a *MergedReplyApply) Records() int {
 // lazy span or share event never creates one. A higher count can drop
 // dependencies, whose holdings it returns as candidates.
 func (c *Cache) UpdateRemoteHolding(ctx context.Context, key HolderKey, update RemoteHoldingUpdate) (RemoteChange, bool, error) {
-	parts, err := prepareRemoteHoldingUpdate(key, update)
-	if err != nil {
-		return RemoteChange{}, false, err
+	return c.UpdatePreparedRemoteHolding(ctx, key, update, PrepareRemoteHoldingUpdate(key, update))
+}
+
+// UpdatePreparedRemoteHolding is UpdateRemoteHolding, with key and update
+// prepared before (PrepareRemoteHoldingUpdate).
+func (c *Cache) UpdatePreparedRemoteHolding(ctx context.Context, key HolderKey, update RemoteHoldingUpdate, prepared PreparedRemoteHoldingUpdate) (RemoteChange, bool, error) {
+	if prepared.err != nil {
+		return RemoteChange{}, false, prepared.err
 	}
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
-	change, found := c.updateRemoteHoldingLocked(ctx, key, update, parts)
+	change, found := c.updateRemoteHoldingLocked(ctx, key, update, prepared.parts)
 	return change, found, nil
+}
+
+// PreparedRemoteHoldingUpdate is what updating a holding reads of the
+// update without the cache (PrepareRemoteHoldingUpdate): its parts' keys, or
+// why it can't apply. A holder that prepares it before it takes the cache's
+// lock spends none of that in its hold.
+type PreparedRemoteHoldingUpdate struct {
+	parts []string
+	err   error
+}
+
+// PrepareRemoteHoldingUpdate prepares update of key's holding, for
+// UpdatePreparedRemoteHolding of the same key and update. It reads nothing of
+// the cache, and of update only its parts.
+func PrepareRemoteHoldingUpdate(key HolderKey, update RemoteHoldingUpdate) PreparedRemoteHoldingUpdate {
+	parts, err := prepareRemoteHoldingUpdate(key, update)
+	return PreparedRemoteHoldingUpdate{parts: parts, err: err}
 }
 
 // prepareRemoteHoldingUpdate derives update's parts' keys.

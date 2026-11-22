@@ -56,20 +56,31 @@ func (w *RemoteWrites) Release(ctx context.Context) error {
 
 // AttachRemoteHolding is Cache.AttachRemoteHolding, in the hold.
 func (w *RemoteWrites) AttachRemoteHolding(ctx context.Context, key HolderKey, desc RemoteHolding) (RemoteChange, error) {
-	parts, kept, err := prepareRemoteHolding(key, desc)
-	if err != nil {
-		return RemoteChange{}, err
+	return w.AttachPreparedRemoteHolding(ctx, key, desc, PrepareRemoteHolding(key, desc))
+}
+
+// AttachPreparedRemoteHolding is Cache.AttachPreparedRemoteHolding, in the
+// hold: a holder that prepared key and desc before it took the hold spends
+// none of that in it.
+func (w *RemoteWrites) AttachPreparedRemoteHolding(ctx context.Context, key HolderKey, desc RemoteHolding, prepared PreparedRemoteHolding) (RemoteChange, error) {
+	if prepared.err != nil {
+		return RemoteChange{}, prepared.err
 	}
-	return w.c.attachRemoteHoldingLocked(ctx, key, desc, parts, kept), nil
+	return w.c.attachRemoteHoldingLocked(ctx, key, desc, prepared.parts, prepared.kept), nil
 }
 
 // UpdateRemoteHolding is Cache.UpdateRemoteHolding, in the hold.
 func (w *RemoteWrites) UpdateRemoteHolding(ctx context.Context, key HolderKey, update RemoteHoldingUpdate) (RemoteChange, bool, error) {
-	parts, err := prepareRemoteHoldingUpdate(key, update)
-	if err != nil {
-		return RemoteChange{}, false, err
+	return w.UpdatePreparedRemoteHolding(ctx, key, update, PrepareRemoteHoldingUpdate(key, update))
+}
+
+// UpdatePreparedRemoteHolding is Cache.UpdatePreparedRemoteHolding, in the
+// hold.
+func (w *RemoteWrites) UpdatePreparedRemoteHolding(ctx context.Context, key HolderKey, update RemoteHoldingUpdate, prepared PreparedRemoteHoldingUpdate) (RemoteChange, bool, error) {
+	if prepared.err != nil {
+		return RemoteChange{}, false, prepared.err
 	}
-	change, found := w.c.updateRemoteHoldingLocked(ctx, key, update, parts)
+	change, found := w.c.updateRemoteHoldingLocked(ctx, key, update, prepared.parts)
 	return change, found, nil
 }
 
