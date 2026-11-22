@@ -169,7 +169,7 @@ func (f *Fold) breakdownReasons(out *FoldBreakdown, targets map[uint32]int, link
 			r = 3
 		case st&foldKind != 0:
 			r = 4
-		case (s.Failed() || s.Reveal() || s.Progress()) && s.MayRollUp():
+		case s.Progress() || ((s.Failed() || s.Reveal()) && s.MayRollUp()):
 			r = 5
 		case st&foldCauseLinks != 0:
 			r = 6
@@ -446,7 +446,7 @@ func (f *Fold) simulate(v foldVariant, links map[uint32][]foldLink, realWaits ma
 			return "agent"
 		case st&foldKind != 0 && (!v.kindsMayRollUp || s.MayRollUp()):
 			return "surfaced kind"
-		case (s.Failed() || s.Reveal() || s.Progress()) && s.MayRollUp():
+		case s.Progress() || ((s.Failed() || s.Reveal()) && s.MayRollUp()):
 			return "failed/revealed/progress"
 		case st&foldCauseLinks != 0 && !v.causeSidecar:
 			return carrierKind(i)
