@@ -26,15 +26,24 @@ func TestHitSaysWhatItsLoadDecodedAndWaitedFor(t *testing.T) {
 	require.NoError(t, err)
 	root := firstUseTestEntry(t, set.bundle, reply, set.bad)
 
-	const hold = 30 * time.Millisecond
+	// A writer that holds the graph lock as work until another acquisition
+	// waits for it, and a little longer, then lets it go.
+	const hold = 10 * time.Millisecond
 	holdGraph := func(work cacheWork) (held, released chan struct{}) {
 		held, released = make(chan struct{}), make(chan struct{})
 		go func() {
+			defer close(released)
 			engine.lockGraphFor(context.Background(), work)
 			close(held)
+			for deadline := time.Now().Add(time.Minute); !engine.egraphMu.Waiting(); time.Sleep(time.Millisecond) {
+				if time.Now().After(deadline) {
+					engine.egraphMu.Unlock()
+					t.Error("nothing waited for the graph lock")
+					return
+				}
+			}
 			time.Sleep(hold)
 			engine.egraphMu.Unlock()
-			close(released)
 		}()
 		return held, released
 	}
@@ -82,4 +91,19 @@ func TestHitSaysWhatItsLoadDecodedAndWaitedFor(t *testing.T) {
 	require.Empty(t, again.HitLoad().Waits)
 	require.GreaterOrEqual(t, again.HitServedAtUnixNano, again.HitLoadedAtUnixNano)
 	require.GreaterOrEqual(t, again.HitLoadedAtUnixNano, again.LookupAtUnixNano)
+
+	// A value published here, whose dependency attachment ended with its
+	// publication, is no wait either when it hits again.
+	_, _, hit := firstUseTestCall(t, ctx, engine, srv, "fu-local")
+	require.False(t, hit, "the first call runs")
+	frame := &ResultCall{Kind: ResultCallKindField, Field: "fu-local", Type: NewResultCallType((&transferTestValue{}).Type())}
+	req := &CallRequest{ResultCall: frame, IsPersistable: true, CacheEvidence: NewCacheDecision()}
+	_, err = engine.GetOrInitCall(ctx, "test-session", srv, req, func(context.Context) (AnyResult, error) {
+		t.Fatal("the call hits")
+		return nil, nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, CacheOutcomeHit, req.CacheEvidence.Outcome)
+	require.Empty(t, req.CacheEvidence.HitLoad().Waits, "an attachment already ended is no wait")
+	require.NotZero(t, req.CacheEvidence.HitServedAtUnixNano)
 }
