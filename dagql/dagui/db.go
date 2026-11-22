@@ -1049,7 +1049,15 @@ func (db DBMetricExporter) Export(ctx context.Context, resourceMetrics *metricda
 }
 
 func (db DBMetricExporter) exportDataPoints(metric metricdata.Metrics, dataPoints []metricdata.DataPoint[int64]) {
+	llmTokens := db.LLMTokenMetrics != nil && slices.Contains(LLMTokenMetricNames, metric.Name)
 	for _, point := range dataPoints {
+		// Aggregate LLM token metrics across all spans/models for the status
+		// line's cost/context display: every point of a call or span, whether
+		// or not the DB keeps the span (a folded span's tokens still count).
+		if llmTokens && db.hasMetricsTarget(point) {
+			db.LLMTokenMetrics.Aggregate(metric.Name, point)
+		}
+
 		var metricsByName map[string][]metricdata.DataPoint[int64]
 		if callDigest, ok := point.Attributes.Value(telemetry.DagDigestAttr); ok {
 			if db.MetricsByCall == nil {
@@ -1096,13 +1104,21 @@ func (db DBMetricExporter) exportDataPoints(metric metricdata.Metrics, dataPoint
 		} else {
 			metricsByName[metric.Name] = []metricdata.DataPoint[int64]{point}
 		}
-
-		// Aggregate LLM token metrics across all spans/models for the status
-		// line's cost/context display.
-		if db.LLMTokenMetrics != nil && slices.Contains(LLMTokenMetricNames, metric.Name) {
-			db.LLMTokenMetrics.Aggregate(metric.Name, point)
-		}
 	}
+}
+
+// hasMetricsTarget reports whether a point is recorded on a call or a valid
+// span: the points exportDataPoints files.
+func (db DBMetricExporter) hasMetricsTarget(point metricdata.DataPoint[int64]) bool {
+	if _, ok := point.Attributes.Value(telemetry.DagDigestAttr); ok {
+		return true
+	}
+	spanIDHex, ok := point.Attributes.Value(telemetry.MetricsSpanIDAttr)
+	if !ok {
+		return false
+	}
+	_, err := trace.SpanIDFromHex(spanIDHex.AsString())
+	return err == nil
 }
 
 // SetPrimarySpan allows the primary span to be explicitly set to a particular
