@@ -229,16 +229,25 @@ var dangSourceDir = regexp.MustCompile(`(/tmp/dagger-dang/[\w.-]+)-[0-9a-f]{32}/
 // GraphQL error a TypeScript client logs; its time is scrubbed already.
 var httpDate = regexp.MustCompile(`\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{2} [A-Z][a-z]{2} \d{4} `)
 
+// waitedSuffix matches the "⋯ waited X.Xs on …" a row's duration gets once
+// it spent a second or more blocked on other work (see renderSpanDuration),
+// up to the row's status, if any.
+var waitedSuffix = regexp.MustCompile(`(?m)(X\.Xs) ⋯ waited X\.Xs(?: on .*?)?((?: (?:ERROR|CACHED|OK|RUNNING))?)$`)
+
 // normalizeSDKOutput replaces every mention of the engine's native platform,
 // and of its architecture as GOARCH, so goldens that render an SDK's build for
 // the default platform are architecture-independent, and the digests in Dang
 // source paths, so they don't change with every edit of a fixture, and HTTP
-// dates. With expanded, it also elides what the module entrypoint evaluates;
-// see elideEntrypointInternals.
+// dates. It drops the "⋯ waited" suffix of a duration: the fixtures' work
+// takes well under a second, so whether a row waited a second or more on
+// another, such as on a dep's exec, depends only on how busy the engine is.
+// With expanded, it also elides what the module entrypoint evaluates; see
+// elideEntrypointInternals.
 func normalizeSDKOutput(out, nativePlatform string, expanded bool) string {
 	if expanded {
 		out = elideEntrypointInternals(out)
 	}
+	out = waitedSuffix.ReplaceAllString(out, "$1$2")
 	out = dangSourceDir.ReplaceAllString(out, "$1-XXXXXXXX/")
 	out = httpDate.ReplaceAllString(out, "XXX, XX XXX XXXX ")
 	if nativePlatform == "" {
@@ -331,6 +340,18 @@ func entrypointCallColumn(line string) (int, bool) {
 		return 0, false
 	}
 	return len(prefix) - 2, true
+}
+
+func TestNormalizeSDKOutputDropsWaited(t *testing.T) {
+	require.Equal(t, `╰╴✘ .stdout: String! X.Xs ERROR
+├╴✔ .stdout: String! X.Xs
+$ sdkDep: SDKDep! X.Xs CACHED
+┃ log line ⋯ waited X.Xs on nothing
+`, normalizeSDKOutput(`╰╴✘ .stdout: String! X.Xs ⋯ waited X.Xs on sh -c 'echo dep exec stdout; sleep 0.1; exit 1' ERROR
+├╴✔ .stdout: String! X.Xs ⋯ waited X.Xs on sh -c 'echo hi'
+$ sdkDep: SDKDep! X.Xs ⋯ waited X.Xs CACHED
+┃ log line ⋯ waited X.Xs on nothing
+`, "", false))
 }
 
 func TestElideEntrypointInternals(t *testing.T) {
