@@ -1141,9 +1141,10 @@ type FieldSpec struct {
 	// digest, the one core computes, which leaves file times out. Another
 	// cache's run of such a call is then the same result as this cache's own
 	// wherever their inputs are, as an equal content digest would show
-	// (keepOwnRunsLocked). A call that runs a process, reads from outside the
-	// engine or runs a module's code doesn't follow from its inputs. The call
-	// frame carries it (ResultCall.FollowsFromInputs).
+	// (keepOwnRunsLocked). A call that runs a process or a module's code
+	// doesn't follow from its inputs. It may read from outside the engine only
+	// content addressed by a hash its key holds, such as a commit, blob ids or
+	// an image digest. The call frame carries it (ResultCall.FollowsFromInputs).
 	FollowsFromInputs bool
 
 	// Trivial marks fields that only unwrap data from their receiver rather
