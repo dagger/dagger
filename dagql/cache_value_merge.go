@@ -423,7 +423,7 @@ func (c *Cache) CommitValueMerge(ctx context.Context, p *PreparedValueMerge) (Me
 			return MergeReply{}, err
 		}
 		commit.restore, commit.hold = restore, hold
-		reply, finish := c.commitValueMergeLocked(ctx, commit)
+		reply, parts, finish := c.commitValueMergeLocked(ctx, commit)
 		reply.Committed, reply.CommitHold, reply.Warm = true, time.Since(locked), warmed
 		reply.LockWait = locked.Sub(asked)
 		reply.PrepareLockWait, reply.PrepareLockWaits = prep.lockWaits.total(), prep.lockWaits.byHolder()
@@ -439,6 +439,7 @@ func (c *Cache) CommitValueMerge(ctx context.Context, p *PreparedValueMerge) (Me
 			}
 		}
 		c.egraphMu.Unlock()
+		c.finishMergeReply(&reply, parts)
 		c.queueStoredBodies(stored)
 		if origin != nil {
 			sent := 0
@@ -2758,7 +2759,7 @@ func (c *Cache) mergeEntryLocked(commit *valueMergeCommit, number sharedResultID
 // engine entry that meets one is taken back as a failed replacement is, and a
 // Cloud entry goes back to no value, keeping its holdings. It returns the
 // work that runs after the lock is released. Requires egraphMu for writing.
-func (c *Cache) commitValueMergeLocked(ctx context.Context, commit *valueMergeCommit) (MergeReply, func(context.Context) error) { //nolint:gocyclo // one commit, step by step, under one hold of the graph lock
+func (c *Cache) commitValueMergeLocked(ctx context.Context, commit *valueMergeCommit) (MergeReply, []mergeReplyParts, func(context.Context) error) { //nolint:gocyclo // one commit, step by step, under one hold of the graph lock
 	c.initEgraphLocked()
 	if c.offerOwners == nil {
 		c.offerOwners = map[offerOwnerID]*offerOwner{}
@@ -2917,7 +2918,7 @@ func (c *Cache) commitValueMergeLocked(ctx context.Context, commit *valueMergeCo
 	releases = append(releases, more...)
 	errs = errors.Join(errs, collectErr)
 
-	reply := c.mergeReplyLocked(commit)
+	reply, parts := c.mergeReplyLocked(commit)
 	c.takeChangesLocked(&change)
 	reply.Change = change
 	if commit.hold {
@@ -2943,7 +2944,7 @@ func (c *Cache) commitValueMergeLocked(ctx context.Context, commit *valueMergeCo
 		}
 		return err
 	}
-	return reply, finish
+	return reply, parts, finish
 }
 
 // applyMergedIdentitiesLocked gives every row's entry the record's identity
@@ -3427,13 +3428,12 @@ func (c *Cache) bindMergedFrameLocked(res *sharedResult, published bool) error {
 	return err
 }
 
-// mergeReplyLocked reads every target as the commit left it. Requires
-// egraphMu.
-func (c *Cache) mergeReplyLocked(commit *valueMergeCommit) MergeReply {
+// mergeReplyLocked reads every target as the commit left it, with each
+// value's part keys beside the reply, for finishMergeReply to finish it once
+// egraphMu is let go. Requires egraphMu.
+func (c *Cache) mergeReplyLocked(commit *valueMergeCommit) (MergeReply, []mergeReplyParts) {
 	reply := MergeReply{Generation: c.identity.Generation, EngineTimeUnixNano: time.Now().UnixNano()}
-	if !c.blobBacked && c.testMergeReplyPartsDecoding != nil {
-		c.testMergeReplyPartsDecoding()
-	}
+	var parts []mergeReplyParts
 	for _, row := range commit.rows {
 		reply.Rows.count(row)
 		res := row.res
@@ -3447,22 +3447,15 @@ func (c *Cache) mergeReplyLocked(commit *valueMergeCommit) MergeReply {
 		for dep := range res.deps {
 			value.Deps = append(value.Deps, uint64(dep))
 		}
-		slices.Sort(value.Deps)
 		// A blob-backed cache, the Cloud's, holds no local completion or
 		// offer of a part (SetStoredPart keeps its parts), and its merge's
 		// caller, the remote cache service, reads none from the reply.
 		if !c.blobBacked {
-			complete := map[string]bool{}
-			for _, key := range c.mergedCompletePartKeysLocked(commit, res) {
-				complete[key] = true
-				value.Parts = appendPartAddress(value.Parts, key)
-			}
+			read := mergeReplyParts{complete: c.mergedCompletePartKeysLocked(commit, res)}
 			for key := range res.partOffersLocked() {
-				if !complete[key] {
-					value.OfferedParts = appendPartAddress(value.OfferedParts, key)
-				}
+				read.offered = append(read.offered, key)
 			}
-			slices.SortFunc(value.OfferedParts, comparePartAddresses)
+			parts = append(parts, read)
 		}
 		reply.Values = append(reply.Values, value)
 	}
@@ -3476,7 +3469,44 @@ func (c *Cache) mergeReplyLocked(commit *valueMergeCommit) MergeReply {
 		}
 		reply.Roots = append(reply.Roots, root)
 	}
-	return reply
+	return reply, parts
+}
+
+// mergeReplyParts are a reply value's part keys as its commit read them under
+// egraphMu: the parts its entry has complete, and the parts it is offered.
+type mergeReplyParts struct {
+	complete, offered []string
+}
+
+// finishMergeReply finishes a reply its commit read under egraphMu
+// (mergeReplyLocked), with no lock held: it sorts each value's dependencies,
+// and gives it its parts from parts, read beside it: the complete ones, then
+// the offered ones that aren't complete, sorted by key.
+func (c *Cache) finishMergeReply(reply *MergeReply, parts []mergeReplyParts) {
+	for i := range reply.Values {
+		slices.Sort(reply.Values[i].Deps)
+	}
+	if parts == nil {
+		return
+	}
+	if c.testMergeReplyPartsDecoding != nil {
+		c.testMergeReplyPartsDecoding()
+	}
+	for i, read := range parts {
+		value := &reply.Values[i]
+		complete := make(map[string]bool, len(read.complete))
+		for _, key := range read.complete {
+			complete[key] = true
+			value.Parts = appendPartAddress(value.Parts, key)
+		}
+		offered := slices.DeleteFunc(read.offered, func(key string) bool { return complete[key] })
+		// A part's key is its address's encoding (partAddressKey), so keys
+		// sort as their addresses do (comparePartAddresses).
+		slices.Sort(offered)
+		for _, key := range offered {
+			value.OfferedParts = appendPartAddress(value.OfferedParts, key)
+		}
+	}
 }
 
 func appendPartAddress(addresses []PersistedPartAddress, key string) []PersistedPartAddress {
