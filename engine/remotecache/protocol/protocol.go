@@ -568,8 +568,9 @@ const (
 )
 
 // Lookup asks the service for the Cloud's values of calls the engine's cache
-// missed. The service answers at once with what it will do for each, and
-// sends what it found as ordinary merges that name the lookup.
+// missed. The service answers with what it found for each, and sends what
+// it found as ordinary merges: one of its own, which names the lookup, a
+// placement merge, or one already on its way.
 type Lookup struct {
 	Misses []LookupMiss `json:"misses"`
 }
@@ -590,7 +591,8 @@ type LookupMiss struct {
 }
 
 // LookedUp answers Lookup, one item per miss, in order, as soon as the
-// service has resolved the misses: what it found goes after, as merges.
+// service has resolved the misses. The merges that carry what it found go
+// on their own, before or after the answer.
 type LookedUp struct {
 	Misses []LookedUpMiss `json:"misses"`
 }
@@ -608,8 +610,10 @@ const (
 	LookupUnknown LookupStatus = "unknown"
 	// LookupNotStored: the Cloud has no stored, unexpired value of the call.
 	LookupNotStored LookupStatus = "notStored"
-	// LookupDeferred: the Cloud stores a value of the call, which the
-	// service sends in a merge of its own, or one already on its way.
+	// LookupDeferred: the service sends nothing named for the miss now: the
+	// Cloud may store a value of the call, which a merge carries if the
+	// engine still lacks it, or the service had no room to look (a full
+	// connection answers every miss deferred).
 	LookupDeferred LookupStatus = "deferred"
 )
 
