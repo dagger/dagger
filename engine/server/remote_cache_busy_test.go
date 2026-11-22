@@ -186,18 +186,18 @@ func TestBusyWaitsHandOnEachRootOnceItsRowsAreFree(t *testing.T) {
 		return out
 	}
 
-	ready, waiting := w.take(stillBusy)
+	ready, _, waiting := w.take(stillBusy)
 	require.Equal(t, []uint64{3}, ready, "nothing is in flight on the raced row")
 	require.True(t, waiting)
-	ready, waiting = w.take(stillBusy)
+	ready, _, waiting = w.take(stillBusy)
 	require.Empty(t, ready)
 	require.True(t, waiting)
 
 	busy[6] = false
-	ready, waiting = w.take(stillBusy)
+	ready, _, waiting = w.take(stillBusy)
 	require.Equal(t, []uint64{4}, ready)
 	require.False(t, waiting)
-	ready, _ = w.take(stillBusy)
+	ready, _, _ = w.take(stillBusy)
 	require.Empty(t, ready, "a root is handed on once")
 }
 
@@ -262,7 +262,7 @@ func TestBusyWaitsWantTheRowsTheirRootsWaitOn(t *testing.T) {
 		}
 		return out
 	}
-	ready, _ := w.take(stillBusy)
+	ready, _, _ := w.take(stillBusy)
 	require.Equal(t, []uint64{3}, ready)
 	require.False(t, w.wants(5), "the root handed on waits no more")
 	require.True(t, w.wants(6), "the other root still waits on the shared row")
