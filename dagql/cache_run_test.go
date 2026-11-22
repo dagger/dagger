@@ -116,6 +116,42 @@ func TestAnImportedRecordIsTheRunOfTheEntryItCameFrom(t *testing.T) {
 	require.Equal(t, RunName{Cache: "cache-b", Number: held.Values[0].SenderNumber, Replacements: held.Values[0].SenderReplacements}, runTestRan(t, other, unheld.Values[0].Number).Run)
 }
 
+// A copy of a record the Cloud sent, installed in place of the record it was
+// sent from, keeps what the Cloud knew of that record's run: the run ran,
+// though its holding has since moved on to a later value.
+func TestAnImportedCopyKeepsWhatTheCloudKnewOfItsRun(t *testing.T) {
+	t.Parallel()
+	ctx, cloud := storedPartTestCache(t, WithBlobStore())
+	_, number, run := runTestExport(t, ctx, cloud, "cache-a", "kept-ran")
+	aKey := HolderKey{Cache: run.Cache, Number: run.Number}
+	runTestEvaluated(t, ctx, cloud, aKey, run.Replacements, true)
+	_, found, err := cloud.UpdateRemoteHolding(ctx, aKey, RemoteHoldingUpdate{Replacements: run.Replacements + 1})
+	require.NoError(t, err)
+	require.True(t, found)
+
+	sent, err := cloud.StoredBundle(ctx, []uint64{number}, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	bctx, b, bsrv := transferTestCache(t)
+	breply, err := b.MergeValues(bctx, cloudCacheID, sent.Bundle)
+	require.NoError(t, err)
+	bNumber := breply.Imported()[0].ResultID
+	imported, err := b.LoadResultByResultID(bctx, "test-session", bsrv, bNumber)
+	require.NoError(t, err)
+	recipe, ok := cloud.EntryRecipe(number)
+	require.True(t, ok)
+	_, err = cloud.AttachRemoteHolding(ctx, HolderKey{Cache: "cache-b", Number: bNumber}, RemoteHolding{Recipe: recipe})
+	require.NoError(t, err)
+	held := exportTestBundle(t, bctx, b, imported)
+	cloud.egraphMu.Lock()
+	cloud.resultsByID[sharedResultID(number)].expiresAtUnix = time.Now().Unix() - 10
+	cloud.egraphMu.Unlock()
+	reply, err := cloud.MergeValues(ctx, "cache-b", held)
+	require.NoError(t, err)
+	require.Equal(t, 1, reply.Rows.Replaced, "B's copy replaces A's expired record")
+	require.Equal(t, EntryRun{Run: run, Ran: true}, runTestRan(t, cloud, reply.Values[0].Number), "B's copy is A's run, which ran")
+	require.Equal(t, 1, cloud.StoredRuns().RanByEvaluation, "learned as A's run was")
+}
+
 // A stored record's run ran once the run's own holding reports a part
 // complete, from an executed call or an evaluation, at the run's replacement
 // count, whether before the merge or after, or the record proves such a part
@@ -133,7 +169,19 @@ func TestTheCloudLearnsThatARecordsRunRan(t *testing.T) {
 		change := runTestEvaluated(t, ctx, cloud, key, run.Replacements, true)
 		require.True(t, runTestRan(t, cloud, number).Ran)
 		require.Contains(t, change.Entries, number, "the write names the entry, for readers that keep their answers")
+		require.True(t, change.Saved, "a save writes what the record learned")
 		require.Equal(t, 1, cloud.StoredRuns().RanByEvaluation)
+	})
+	t.Run("an evaluation of the run after a later value's report", func(t *testing.T) {
+		t.Parallel()
+		ctx, cloud := storedPartTestCache(t, WithBlobStore())
+		_, number, run := runTestExport(t, ctx, cloud, "cache-a", "late")
+		key := HolderKey{Cache: run.Cache, Number: run.Number}
+		_, found, err := cloud.UpdateRemoteHolding(ctx, key, RemoteHoldingUpdate{Replacements: run.Replacements + 1})
+		require.NoError(t, err)
+		require.True(t, found)
+		runTestEvaluated(t, ctx, cloud, key, run.Replacements, true)
+		require.True(t, runTestRan(t, cloud, number).Ran, "the delayed report is of the stored run")
 	})
 	t.Run("an executed call after the merge", func(t *testing.T) {
 		t.Parallel()
@@ -150,6 +198,7 @@ func TestTheCloudLearnsThatARecordsRunRan(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, runTestRan(t, cloud, number).Ran)
 		require.Contains(t, change.Entries, number)
+		require.True(t, change.Saved)
 		require.Equal(t, 1, cloud.StoredRuns().RanByCall)
 	})
 	t.Run("an executed call of a lazy result", func(t *testing.T) {
@@ -181,8 +230,9 @@ func TestTheCloudLearnsThatARecordsRunRan(t *testing.T) {
 		t.Parallel()
 		ctx, cloud := storedPartTestCache(t, WithBlobStore())
 		_, number, run := runTestExport(t, ctx, cloud, "cache-a", "installed")
-		runTestEvaluated(t, ctx, cloud, HolderKey{Cache: run.Cache, Number: run.Number}, run.Replacements, false)
+		change := runTestEvaluated(t, ctx, cloud, HolderKey{Cache: run.Cache, Number: run.Number}, run.Replacements, false)
 		require.False(t, runTestRan(t, cloud, number).Ran, "the run's engine installed the part: it never evaluated the step")
+		require.False(t, change.Saved, "nothing a save writes changed")
 		counts := cloud.StoredRuns()
 		require.Equal(t, 1, counts.NotRan)
 		recipe, ok := cloud.EntryRecipe(number)
