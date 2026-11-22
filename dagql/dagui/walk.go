@@ -253,9 +253,10 @@ func (w *spanWalker) ownMode(span *Span) spanMode {
 // beneath it that the view shows. That step tells the failure, so the span
 // gives it its place instead of burying it under machinery the view
 // otherwise hides: the calls an SDK makes between a module's load and its
-// failed compile, say. Any other failed internal span stays: the engine's
-// own internal steps, such as loading a module's dependencies, tell where a
-// failure happened.
+// failed compile, say, or the engine's own steps between a module's load
+// and its dependency's failed build, which the build's span names. Any
+// other failed internal span stays: outside a failed encapsulation, the
+// engine's own internal steps tell where a failure happened.
 func (w *spanWalker) passesOnFailure(span *Span) bool {
 	verbosity := w.opts.Verbosity
 	if v, ok := w.opts.SpanVerbosity[span.ID]; ok {

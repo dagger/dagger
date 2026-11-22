@@ -310,7 +310,7 @@ func optionalModCmdWrapper(
 			}
 			switch {
 			case configExists:
-				serveCtx, span := Tracer().Start(ctx, "load module: "+modRef)
+				serveCtx, span := Tracer().Start(ctx, "load module: "+modRef, telemetry.Encapsulate())
 				mod := modSrc.AsModule()
 				serveErr := mod.Serve(serveCtx, core.ModuleServeOpts{IncludeDependencies: true})
 				telemetry.EndWithCause(span, &serveErr)

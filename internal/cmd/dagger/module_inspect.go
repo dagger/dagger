@@ -17,12 +17,23 @@ import (
 	telemetry "github.com/dagger/otel-go"
 	"github.com/spf13/pflag"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 var errModuleNotFound = errors.New("module not found")
 
+// startLoadingTypeDefs starts the span of a load of type definitions whose
+// caller has no span of its own to stand for it: it encapsulates the load's
+// queries' calls, as "load workspace: ." does.
+func startLoadingTypeDefs(ctx context.Context) (context.Context, trace.Span) {
+	return Tracer().Start(ctx, "loading type definitions", telemetry.Encapsulate())
+}
+
 // initializeCore loads the core type definitions only
 func initializeCore(ctx context.Context, dag *dagger.Client) (rdef *moduleDef, rerr error) {
+	ctx, span := startLoadingTypeDefs(ctx)
+	defer telemetry.EndWithCause(span, &rerr)
+
 	def := &moduleDef{}
 
 	if err := def.loadTypeDefs(ctx, dag); err != nil {
@@ -263,14 +274,11 @@ type loadTypeDefsOpts struct {
 }
 
 // loadTypeDefs loads the objects defined by the given module in an easier to use data structure.
+//
+// It starts no span of its own: its caller's, such as "load workspace: .",
+// stands for it, and encapsulates its queries' calls (see
+// startLoadingTypeDefs for a caller with no span of its own).
 func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client, opts ...loadTypeDefsOpts) (rerr error) {
-	// Internal: the callers' own spans, such as "load workspace: .", are the
-	// rows that stand for loading type definitions. It still encapsulates
-	// what's beneath it for a caller with none, such as initializeCore, so
-	// that its queries' calls don't show.
-	ctx, loadSpan := Tracer().Start(ctx, "loading type definitions", telemetry.Internal(), telemetry.Encapsulate())
-	defer telemetry.EndWithCause(loadSpan, &rerr)
-
 	var o loadTypeDefsOpts
 	if len(opts) > 0 {
 		o = opts[0]
