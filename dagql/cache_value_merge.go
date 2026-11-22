@@ -657,11 +657,11 @@ type valueMergePrep struct {
 	// numbers, never to or from zero, so the keys read at provisional numbers
 	// are the ones at the final numbers.
 	completeParts map[uint64][]string
-	// partFacts are, by ordinal, each record's parts as the Cloud keeps them
-	// with it (partFacts), for a record prepared with its payload: those it
-	// declares absent or pending, as its outputs map them, and its complete
-	// ones, each read from addresses and states, which relocation leaves as
-	// sent.
+	// partFacts are, on a blob-backed cache, each record's parts as the
+	// Cloud keeps them with it (partFacts), by ordinal, for a record
+	// prepared with its payload: those it declares absent or pending, as
+	// its outputs map them, and its complete ones, each read from addresses
+	// and states, which relocation leaves as sent. An engine keeps none.
 	partFacts map[uint64]*partFacts
 	// light are the records prepared from their call and offers only: the
 	// cache held a value for their recipe that merge keeps.
@@ -789,6 +789,7 @@ func (c *Cache) checkValueMerge(from CacheID, input ValueBundle) (*valueMergePre
 	}
 	c.embedMergedParts(&bundle)
 	var recordBytes map[uint64]int64
+	var facts map[uint64]*partFacts
 	if c.blobBacked {
 		// Dropping the parts drops their owners' edges, so the roots'
 		// closure is checked again without them.
@@ -796,8 +797,9 @@ func (c *Cache) checkValueMerge(from CacheID, input ValueBundle) (*valueMergePre
 			return nil, err
 		}
 		recordBytes = map[uint64]int64{}
+		facts = map[uint64]*partFacts{}
 	}
-	prep := &valueMergePrep{lockWaits: &graphLockWaits{}, payloadPreparing: c.testRecordPayloadPreparing, from: from, bundle: bundle, order: order, index: map[uint64]*TransferredValue{}, plans: map[uint64]transferIdentityPlan{}, records: map[uint64]PersistedRecord{}, refs: map[uint64][]uint64{}, recordBytes: recordBytes, completeParts: map[uint64][]string{}, partFacts: map[uint64]*partFacts{}, held: map[uint64]bool{}, heldParts: heldParts}
+	prep := &valueMergePrep{lockWaits: &graphLockWaits{}, payloadPreparing: c.testRecordPayloadPreparing, from: from, bundle: bundle, order: order, index: map[uint64]*TransferredValue{}, plans: map[uint64]transferIdentityPlan{}, records: map[uint64]PersistedRecord{}, refs: map[uint64][]uint64{}, recordBytes: recordBytes, completeParts: map[uint64][]string{}, partFacts: facts, held: map[uint64]bool{}, heldParts: heldParts}
 	prep.rows = make(map[uint64]uint64, len(prep.bundle.Values))
 	for i := range prep.bundle.Values {
 		row := &prep.bundle.Values[i]
@@ -1122,7 +1124,9 @@ func (prep *valueMergePrep) prepareRecordPayloads(ctx context.Context, relocateR
 		}
 		prep.refs[id] = p.refs
 		prep.completeParts[id] = p.completeParts
-		prep.partFacts[id] = &partFacts{declared: p.declared, complete: sharedPartKeys(p.completeParts)}
+		if prep.partFacts != nil {
+			prep.partFacts[id] = &partFacts{declared: p.declared, complete: sharedPartKeys(p.completeParts)}
+		}
 		if prep.recordBytes != nil {
 			prep.recordBytes[id] = p.recordBytes
 		}
@@ -1317,7 +1321,10 @@ func (prep *valueMergePrep) prepareRecordPayload(id uint64, relocateRecord, relo
 	// key declares none, as its answers read it when they decoded it: a
 	// bundle of it fails as it normalizes it.
 	completeParts := memoRecordCompletePartKeys(row.Record, memos)
-	declared, _ := declaredPartsOf(outputs)
+	var declared []declaredPart
+	if prep.partFacts != nil {
+		declared, _ = declaredPartsOf(outputs)
+	}
 	var refs []uint64
 	numbers := map[uint64]sharedResultID{}
 	moved := false
