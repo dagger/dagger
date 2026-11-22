@@ -761,6 +761,7 @@ func mergedReply(reply dagql.MergeReply) protocol.Merged {
 			Deps:          nonNilNumbers(value.Deps),
 			Complete:      nonNilAddresses(value.Parts),
 			Offered:       nonNilAddresses(value.OfferedParts),
+			Stored:        value.Stored,
 		})
 	}
 	for _, root := range reply.Roots {

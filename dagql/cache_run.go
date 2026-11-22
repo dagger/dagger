@@ -82,6 +82,11 @@ func (c *Cache) mergeRunLocked(prep *valueMergePrep, row *mergeRow) (RunName, ru
 		entry, h := c.holdingLocked(key)
 		switch {
 		case h != nil && h.served != nil && h.served.replacements == run.Replacements:
+			// What the Cloud served it, or that its run isn't known: the
+			// entry the holding is on says nothing of the copy then.
+			if !h.served.known {
+				return RunName{}, runNotRan
+			}
 			run = h.served.run
 			if h.served.ran != runNotRan {
 				return run, h.served.ran
