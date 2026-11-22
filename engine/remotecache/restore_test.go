@@ -298,6 +298,48 @@ func TestRestoreChecksTheNextPartWhileAPartMerges(t *testing.T) {
 	require.Len(t, report.Parts, 3)
 }
 
+// A file's part is decoded while the part before it is checked, so that a
+// part's check and the next part's decode don't add up ahead of a merge.
+func TestRestoreDecodesAPartWhileThePartBeforeIsChecked(t *testing.T) {
+	t.Parallel()
+	adapter := newFakeAdapter()
+	s, conn := restoreSession(t, adapter)
+	decoded := make(chan uint64, 3)
+	s.cfg.decode = func(data []byte) (dagql.ValueBundle, error) {
+		bundle, err := decodePart(data)
+		if err == nil {
+			decoded <- bundle.Values[0].SenderNumber
+		}
+		return bundle, err
+	}
+	adapter.check = func(part dagql.ValueBundle) error {
+		if part.Values[0].SenderNumber != 12 {
+			return nil
+		}
+		for {
+			select {
+			case n := <-decoded:
+				if n == 13 {
+					return nil
+				}
+			case <-time.After(5 * time.Second):
+				return errors.New("part 13 wasn't decoded while part 12 was checked")
+			}
+		}
+	}
+	adapter.restore = func(_ context.Context, part dagql.ValueBundle, _ *dagql.KnownRows) (dagql.MergeReply, error) {
+		return merged(part, time.Now()), nil
+	}
+	files := newFileServer(t)
+	whole := files.add("whole", setFile(t, dagql.ValueBundleVersion, part(11), part(12), part(13)))
+
+	s.dispatch(request(t, 1, protocol.TypeRestore, restoreOf("test-base", nil, &whole)))
+	restored := decode[protocol.Restored](t, conn.next(t))
+	require.Len(t, restored.Files, 1)
+	require.Empty(t, restored.Files[0].Error)
+	require.True(t, restored.Files[0].Complete)
+}
+
 // A part the adapter's check refuses stops its file, as a refused merge
 // does, with what merged of it before.
 func TestRestoreStopsAtAPartItsCheckRefuses(t *testing.T) {
