@@ -6,7 +6,7 @@ Expected stderr:
 
 ✘ viztestGo: ViztestGo! X.Xs ERROR
   ✔ uploading /tmp/gobuild-dependencies-XXXXXXXXXX X.Xs ████████████ X.X B
-┇ build ›
+┇ build viztest-go ›
 ✘ withExec sh /gobuild/build.sh dagger/viztest-go (disableDaggerInDagger: true, noInit: true) X.Xs ERROR
 ./main.go:93:9: undefined: undefinedValue
 ! exit code: 2

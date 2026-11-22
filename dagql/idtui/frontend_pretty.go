@@ -9154,25 +9154,13 @@ func (fe *frontendPretty) renderErrorCause(ctx tuist.Context, out TermOutput, r 
 	}
 
 	var parents []*dagui.TraceRow
-	for p := rootCauseTree.Parent; p != nil; p = p.Parent {
-		if p.Span.ID == row.Span.ID {
-			break
-		}
-		if !p.Span.Received {
-			// An ancestor we never fetched: the error origin is point-fetched by
-			// ID, but its parents aren't, so a synthetic-tree walk can reach an
-			// unreceived placeholder (no name, call, or message). renderStepTitle
-			// would render it blank, leaving a stray "› " breadcrumb segment with
-			// nothing before it. Skip it -- we have no data to show.
-			continue
-		}
-		parentRow := &dagui.TraceRow{
+	for _, p := range errorCauseBreadcrumb(rootCauseTree, row.Span) {
+		parents = append(parents, &dagui.TraceRow{
 			Span:     p.Span,
 			Chained:  p.Chained,
 			Depth:    row.Depth,
 			Expanded: true,
-		}
-		parents = append(parents, parentRow)
+		})
 	}
 
 	indent := strings.Repeat("  ", row.Depth)
@@ -9234,6 +9222,37 @@ func (fe *frontendPretty) renderErrorCause(ctx tuist.Context, out TermOutput, r 
 		fe.claims.claimLog(rootCauseRow.Span)
 	}
 	fe.renderStepError(out, r, rootCauseRow, indentBuf.String())
+}
+
+// errorCauseBreadcrumb returns the trees of the error origin's ancestors that
+// its breadcrumb names, below row, nearest the origin first. The breadcrumb
+// follows what the tree shows: it leaves out internal ancestors, and a shown
+// ancestor that encapsulates its work stands for everything beneath it, as a
+// module's build stands for the calls that build it. An internal ancestor's
+// encapsulation doesn't count, as it isn't shown.
+func errorCauseBreadcrumb(origin *dagui.TraceTree, row *dagui.Span) []*dagui.TraceTree {
+	var parents []*dagui.TraceTree
+	for p := origin.Parent; p != nil; p = p.Parent {
+		if p.Span.ID == row.ID {
+			break
+		}
+		if !p.Span.Received {
+			// An ancestor we never fetched: the error origin is point-fetched by
+			// ID, but its parents aren't, so a synthetic-tree walk can reach an
+			// unreceived placeholder (no name, call, or message). renderStepTitle
+			// would render it blank, leaving a stray "› " breadcrumb segment with
+			// nothing before it. Skip it -- we have no data to show.
+			continue
+		}
+		if p.Span.IsInternal() {
+			continue
+		}
+		if p.Span.Encapsulate {
+			parents = parents[:0]
+		}
+		parents = append(parents, p)
+	}
+	return parents
 }
 
 func (fe *frontendPretty) hasShownRootError() bool {

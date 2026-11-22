@@ -5,7 +5,7 @@ Expected stderr:
 ✔ parsing command line arguments X.Xs
 
 ✘ viztestJava: ViztestJava! X.Xs ERROR
-┇ build ›
+┇ build viztest-java ›
 ✘ build viztest-java [label TBD] X.Xs ERROR
 [ERROR] /src/viztest/sdks/broken-java/src/main/java/io/dagger/modules/viztestjava/ViztestJava.java:[89,1] class, interface, enum, or record expected
 ! exit code: 1

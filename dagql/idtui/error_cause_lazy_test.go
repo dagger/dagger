@@ -42,3 +42,35 @@ func TestErrorCauseBreadcrumbBeneathCollapsedRow(t *testing.T) {
 	require.NoError(t, fe.FinalRender(&output))
 	require.Contains(t, ansi.Strip(output.String()), "roll-up › sub-thing 1 › \n")
 }
+
+// TestErrorCauseBreadcrumbFollowsVisibility covers a module build failure:
+// the breadcrumb leaves out the internal entrypoint plumbing, and the shown
+// build span, which encapsulates its work, stands for the calls beneath it.
+// The internal plumbing encapsulates its work too, which doesn't count.
+func TestErrorCauseBreadcrumbFollowsVisibility(t *testing.T) {
+	start := time.Unix(100, 0)
+	end := start.Add(time.Second)
+	id := prettyTestSpanID
+	failed := sdktrace.Status{Code: codes.Error, Description: "exit code: 2"}
+	db := dagui.NewDB()
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: id(1), TraceID: prettyTestTraceID(), Name: "dagger call", StartTime: start, EndTime: end},
+		{ID: id(2), TraceID: prettyTestTraceID(), ParentID: id(1), Name: "viztestGo", StartTime: start, EndTime: end, Status: failed},
+		{ID: id(3), TraceID: prettyTestTraceID(), ParentID: id(2), Name: "call module entrypoint", Internal: true, Encapsulate: true, StartTime: start, EndTime: end, Status: failed},
+		{ID: id(4), TraceID: prettyTestTraceID(), ParentID: id(3), Name: "build viztest-go", Encapsulate: true, StartTime: start, EndTime: end, Status: failed},
+		{ID: id(5), TraceID: prettyTestTraceID(), ParentID: id(4), Name: "binary", StartTime: start, EndTime: end, Status: failed},
+		{ID: id(6), TraceID: prettyTestTraceID(), ParentID: id(5), Name: "gobuild", StartTime: start, EndTime: end, Status: failed},
+		{ID: id(7), TraceID: prettyTestTraceID(), ParentID: id(6), Name: "withExec", StartTime: start, EndTime: end, Status: failed},
+	})
+	db.Spans.Map[id(2)].AddErrorOrigin(db.Spans.Map[id(7)])
+	db.SetPrimarySpan(id(1))
+	fe := newWithTerminal(io.Discard, db, tuist.NewHeadlessTerminal(120, 30))
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+	var output bytes.Buffer
+	require.NoError(t, fe.FinalRender(&output))
+	out := ansi.Strip(output.String())
+	require.Contains(t, out, VertBoldDash3+" build viztest-go › \n")
+	require.NotContains(t, out, "call module entrypoint")
+	require.NotContains(t, out, "binary")
+	require.NotContains(t, out, "gobuild")
+}
