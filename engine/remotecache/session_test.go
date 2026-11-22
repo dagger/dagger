@@ -143,11 +143,11 @@ type fakeAdapter struct {
 	// answers LateMisses, and restored receives each file's report.
 	restore     func(context.Context, dagql.ValueBundle, *dagql.KnownRows) (dagql.MergeReply, error)
 	late        func(time.Time, map[uint64]struct{}) []dagql.RemoteMiss
-	// check, if set, answers CheckRestorePart's error for each part it
-	// checks.
-	check       func(dagql.ValueBundle) error
 	restored    chan RestoreReport
 	restoreSeen chan dagql.ValueBundle
+	// check, if set, answers CheckRestorePart's error for each part it
+	// checks.
+	check func(dagql.ValueBundle) error
 	// unretainedSeen receives each part's unretained roots, and sourceSeen
 	// the first part's file name.
 	unretainedSeen chan []dagql.TransferOrdinal
