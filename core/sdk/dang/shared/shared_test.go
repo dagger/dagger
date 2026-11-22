@@ -11,6 +11,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type embeddedCoreServer interface {
@@ -22,6 +23,7 @@ type nestedTransportTestServer struct {
 	registered     atomic.Bool
 	registeredWith atomic.Value // string parent client ID
 	servedWith     atomic.Value // string caller client ID
+	traceparents   chan string
 	closed         atomic.Int32
 	served         atomic.Int32
 }
@@ -38,7 +40,7 @@ func (srv *nestedTransportTestServer) RegisterNestedClientTransport(
 
 func (srv *nestedTransportTestServer) ServeHTTPToNestedClient(
 	_ http.ResponseWriter,
-	_ *http.Request,
+	req *http.Request,
 	_ *engine.NestedClientTransport,
 	_ *engine.ClientMetadata,
 	callerClientID string,
@@ -48,6 +50,9 @@ func (srv *nestedTransportTestServer) ServeHTTPToNestedClient(
 ) {
 	srv.served.Add(1)
 	srv.servedWith.Store(callerClientID)
+	if srv.traceparents != nil {
+		srv.traceparents <- req.Header.Get("traceparent")
+	}
 }
 
 // scopedContext returns a context holding a request scope for the given client
@@ -119,6 +124,54 @@ func TestWithNestedClientServerRegistersUnderHeldScope(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Equal(t, "workspace-owner", srv.registeredWith.Load(), "parent must come from the held scope")
+}
+
+// TestWithNestedClientServerKeepsRequestSpan locks in that a request made
+// under a span of its own, such as an entrypoint's module build, is served
+// under that span, and any other under the invocation's.
+func TestWithNestedClientServerKeepsRequestSpan(t *testing.T) {
+	t.Parallel()
+
+	spanCtx := func(ctx context.Context, spanID byte) (context.Context, string) {
+		sc := trace.NewSpanContext(trace.SpanContextConfig{
+			TraceID:    trace.TraceID{1},
+			SpanID:     trace.SpanID{spanID},
+			TraceFlags: trace.FlagsSampled,
+		})
+		return trace.ContextWithSpanContext(ctx, sc), "00-" + sc.TraceID().String() + "-" + sc.SpanID().String() + "-01"
+	}
+	srv := &nestedTransportTestServer{traceparents: make(chan string, 3)}
+	query := &core.Query{Server: srv}
+	metadata := &engine.ClientMetadata{
+		SessionID: "session",
+		ClientID:  "child",
+	}
+	ctx, invocation := spanCtx(scopedContext(t, "caller"), 1)
+	var own string
+	_, err := WithNestedClientServer(
+		ctx,
+		query,
+		metadata,
+		false,
+		nil,
+		dagql.ObjectResult[*core.Module]{},
+		func(ctx context.Context, client graphql.Client) ([]byte, error) {
+			request := func(ctx context.Context) {
+				// The test server writes no response; only the request matters.
+				_ = client.MakeRequest(ctx, &graphql.Request{Query: "{ version }"}, &graphql.Response{})
+			}
+			request(ctx)
+			request(trace.ContextWithSpanContext(ctx, trace.SpanContext{}))
+			var ownCtx context.Context
+			ownCtx, own = spanCtx(ctx, 2)
+			request(ownCtx)
+			return nil, nil
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t, invocation, <-srv.traceparents, "a request under the invocation's span")
+	require.Equal(t, invocation, <-srv.traceparents, "a request under no span")
+	require.Equal(t, own, <-srv.traceparents, "a request under a span of its own")
 }
 
 // TestWithNestedClientServerRequiresHeldScope locks in that a nested client

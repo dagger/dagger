@@ -27,6 +27,7 @@ import (
 	telemetry "github.com/dagger/otel-go"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // WithNestedClientServer serves the Dagger API for a nested client on a local
@@ -63,7 +64,12 @@ func WithNestedClientServer(
 	httpSrv := &http.Server{
 		ReadHeaderTimeout: 10 * time.Second,
 		Handler: http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
-			telemetry.Propagator.Inject(ctx, propagation.HeaderCarrier(req.Header))
+			// A request made under a span of its own, such as an entrypoint's
+			// module build, keeps it (see spanTransport); any other is the
+			// invocation's.
+			if req.Header.Get(traceparentHeader) == "" {
+				telemetry.Propagator.Inject(ctx, propagation.HeaderCarrier(req.Header))
+			}
 			query.ServeHTTPToNestedClient(resp, req, transport, nestedClientMetadata, parentClientID, inertAttachables, moduleContext, fnCall)
 		}),
 	}
@@ -112,7 +118,10 @@ func serveNestedClient(
 		close(srvErrCh)
 	}()
 
-	gqlClient := graphql.NewClient(fmt.Sprintf("http://%s/query", l.Addr()), &http.Client{Transport: httpTransport})
+	gqlClient := graphql.NewClient(fmt.Sprintf("http://%s/query", l.Addr()), &http.Client{Transport: spanTransport{
+		RoundTripper: httpTransport,
+		serving:      trace.SpanContextFromContext(ctx),
+	}})
 
 	out, err := fn(ctx, gqlClient)
 	if err != nil {
@@ -124,6 +133,29 @@ func serveNestedClient(
 	}
 
 	return out, nil
+}
+
+const traceparentHeader = "traceparent"
+
+// spanTransport sends a request made under a span other than the one the
+// nested client serves under with that span's traceparent, so the API calls
+// it makes are that span's children: an entrypoint's module build is one
+// span over the calls that build the module. A request under the same span
+// sends none, and the server gives it the invocation's.
+type spanTransport struct {
+	http.RoundTripper
+	// serving is the span the nested client serves under.
+	serving trace.SpanContext
+}
+
+func (t spanTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	span := trace.SpanContextFromContext(req.Context())
+	if !span.IsValid() || span.Equal(t.serving) {
+		return t.RoundTripper.RoundTrip(req)
+	}
+	req = req.Clone(req.Context())
+	telemetry.Propagator.Inject(req.Context(), propagation.HeaderCarrier(req.Header))
+	return t.RoundTripper.RoundTrip(req)
 }
 
 func checkServerError(srvErrCh <-chan error) error {
