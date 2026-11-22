@@ -14,6 +14,8 @@ import (
 
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -409,4 +411,60 @@ func TestGitSparseTreeOnAnEngineServedAnothersAnswers(t *testing.T) {
 		require.Equal(t, fullID, gotID, "the planned read comes from the full tree")
 		return nil
 	}))
+}
+
+// A read of a Git workspace's files that runs asks its sparse tree where it
+// comes from and which files it selects, and copies out of that tree, or a
+// tree of its own, next. It works both out from the tree's list, held once a
+// session, with no call per read: the Go SDK's generator makes about 3,700
+// distinct reads in one check on a whole pull request's fill, and as calls
+// those were 3,865 entries, records and lookups on its engine, about 3 ms each,
+// on every fill and edit. A lookup of a path, which detection asks under no
+// cached call, stays a call.
+func TestGitSparseReadsAreNotCalls(t *testing.T) {
+	t.Parallel()
+	e := newTransferTestEngine(t, transferTestSalt(t))
+	sparseTreeTestFixture(t, e, []sparseTreeTestEntry{
+		{'f', "100644", strings.Repeat("1", 40), "dagger.toml", "[modules.mod]\nsource = \"mod\"\n"},
+		{'f', "100644", strings.Repeat("2", 40), "mod/dagger.json", `{"name": "mod"}`},
+		{'f', "100644", strings.Repeat("3", 40), "mod/main.go", "package main\n"},
+		{'a', "100644", strings.Repeat("4", 40), "mod/big.bin", "only in the full tree"},
+		{'a', "100644", strings.Repeat("5", 40), "outside/z.txt", "only in the full tree"},
+	})
+	ctx := e.session(t, "reader")
+	root, full := sparseTreeTestTrees(t, e, ctx)
+
+	recorder := tracetest.NewSpanRecorder()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	defer provider.Shutdown(context.WithoutCancel(ctx))
+	ctx, span := provider.Tracer("sparse-reads").Start(ctx, "reads")
+	sparse := &core.GitSparseTree{Root: root}
+	for i := range 20 {
+		source, err := sparse.ReadSource(ctx, "mod", core.CopyFilter{Include: []string{"dagger.json", fmt.Sprintf("main%d.go", i)}})
+		require.NoError(t, err)
+		require.Equal(t, core.GitSparseReadPlanned, source, "a read of what the sparse tree holds")
+		source, err = sparse.ReadSource(ctx, "", core.CopyFilter{Include: []string{"outside/z.txt", fmt.Sprintf("outside/%d.txt", i)}})
+		require.NoError(t, err)
+		require.Equal(t, core.GitSparseReadOwn, source, "a read of a file the sparse tree doesn't hold")
+		files, err := sparse.ReadFiles(ctx, "", core.CopyFilter{Include: []string{"outside/z.txt", fmt.Sprintf("outside/%d.txt", i)}})
+		require.NoError(t, err)
+		require.Equal(t, &core.GitSparseReadFiles{
+			Files: []string{"100644 " + strings.Repeat("5", 40) + " outside/z.txt"},
+			Dirs:  []string{"outside"},
+		}, files)
+	}
+	// A lookup is a call, which the recorder sees.
+	_, exists, err := (&core.GitSparseTreeFS{Sparse: sparse, Full: full}).Exists(ctx, "dagger.toml")
+	require.NoError(t, err)
+	require.True(t, exists)
+	span.End()
+
+	calls := map[string]int{}
+	for _, ended := range recorder.Ended() {
+		calls[ended.Name()]++
+	}
+	require.Positive(t, calls["Directory.__gitSparseCovers"], "the recorder sees the engine's calls: %v", calls)
+	for name := range calls {
+		require.False(t, strings.HasPrefix(name, "Directory.__gitSparseRead"), "a read made a call, %s: %v", name, calls)
+	}
 }
