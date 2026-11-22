@@ -122,8 +122,6 @@ func TestMessagesRoundTrip(t *testing.T) {
 			Misses: []LookupMiss{{Recipe: digest.FromString("recipe"), Extra: []digest.Digest{digest.FromString("extra")}, Field: "withExec"}, {Recipe: digest.FromString("other")}},
 		}, func() any { return &Lookup{} }},
 		{TypeLookedUp, LookedUp{Misses: []LookedUpMiss{
-			{Status: LookupMerging, Merge: 40, Parts: LookupPartsComplete},
-			{Status: LookupInFlight, Merge: 38, Parts: LookupPartsPartial},
 			{Status: LookupUnknown},
 			{Status: LookupNotStored},
 			{Status: LookupDeferred},
@@ -296,25 +294,16 @@ func TestLookupShape(t *testing.T) {
 	require.NoError(t, err)
 	require.JSONEq(t, `{"misses": [{"recipe": "xxh3:1", "extra": ["xxh3:2"], "field": "withExec"}]}`, string(raw))
 
-	raw, err = json.Marshal(LookedUp{Misses: []LookedUpMiss{{Status: LookupMerging, Merge: 40, Parts: LookupPartsNone}, {Status: LookupUnknown}}})
+	raw, err = json.Marshal(LookedUp{Misses: []LookedUpMiss{{Status: LookupDeferred}, {Status: LookupUnknown}}})
 	require.NoError(t, err)
-	require.JSONEq(t, `{"misses": [{"status": "merging", "merge": 40, "parts": "none"}, {"status": "unknown"}]}`, string(raw))
+	require.JSONEq(t, `{"misses": [{"status": "deferred"}, {"status": "unknown"}]}`, string(raw))
 
 	for status, want := range map[LookupStatus]string{
 		LookupUnknown:   "unknown",
 		LookupNotStored: "notStored",
-		LookupInFlight:  "inFlight",
-		LookupMerging:   "merging",
 		LookupDeferred:  "deferred",
 	} {
 		require.Equal(t, want, string(status))
-	}
-	for parts, want := range map[LookupParts]string{
-		LookupPartsComplete: "complete",
-		LookupPartsPartial:  "partial",
-		LookupPartsNone:     "none",
-	} {
-		require.Equal(t, want, string(parts))
 	}
 
 	raw, err = json.Marshal(Merge{})

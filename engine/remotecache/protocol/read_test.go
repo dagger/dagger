@@ -41,7 +41,7 @@ func TestReadEnvelope(t *testing.T) {
 	require.Equal(t, &merge, body)
 
 	for name, raw := range map[string][]byte{
-		"no body for the type": readTestMessage(t, 10, 4, TypeLookedUp, LookedUp{Misses: []LookedUpMiss{{Status: LookupMerging, Merge: 9}}}),
+		"no body for the type": readTestMessage(t, 10, 4, TypeLookedUp, LookedUp{Misses: []LookedUpMiss{{Status: LookupDeferred}}}),
 		"a reply":              readTestMessage(t, 11, 2, TypeMerge, merge),
 		"body before type":     []byte(`{"body": {"bundle": {"version": 3}}, "id": 12, "type": "merge"}`),
 		"other key case":       []byte(`{"ID": 13, "Type": "merge", "Body": {"bundle": {"version": 3}}}`),
