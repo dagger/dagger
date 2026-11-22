@@ -46,8 +46,9 @@ const foldQueryTimeout = 30 * time.Second
 // asked again; each further failure doubles it, up to 10s.
 var foldReadBackoff = 250 * time.Millisecond
 
-// foldSearchLimit bounds the folded spans a name search reads back.
-const foldSearchLimit = 1000
+// foldSearchLimit bounds the folded spans a name search reads back: past
+// it, the match count says it's a lower bound.
+var foldSearchLimit = 1000
 
 // foldSettleRounds bounds SettleFold's rounds: each reads back the
 // children of the rows the last showed expanded.
@@ -314,11 +315,11 @@ func (fe *frontendPretty) finalFoldedRowsLocked() []dagui.SpanID {
 }
 
 // readFoldedMatchesLocked reads back the folded spans whose name matches a
-// search's query, so they take part in it once they arrive, and returns how
-// many more match than it reads (foldSearchLimit).
-func (fe *frontendPretty) readFoldedMatchesLocked(query string) int {
+// search's query, so they take part in it once they arrive, and reports
+// whether more match than it reads (foldSearchLimit).
+func (fe *frontendPretty) readFoldedMatchesLocked(query string) bool {
 	if !fe.folding() {
-		return 0
+		return false
 	}
 	query = strings.ToLower(query)
 	f := fe.db.Fold()
@@ -326,7 +327,7 @@ func (fe *frontendPretty) readFoldedMatchesLocked(query string) int {
 		return strings.Contains(strings.ToLower(name), query)
 	}, foldSearchLimit)
 	f.Retain(ids...)
-	return total - len(ids)
+	return total > len(ids)
 }
 
 // readFoldedTargetLocked reads back a folded span a source's log search

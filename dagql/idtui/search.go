@@ -63,8 +63,11 @@ func (fe *frontendPretty) searchScope() string {
 	if fe.searchPartial {
 		scope = append(scope, "more not searched")
 	}
-	if n := fe.searchUnplaced + fe.searchFoldedMore; n > 0 {
-		scope = append(scope, fmt.Sprintf("%d in spans not loaded", n))
+	if fe.searchFoldedCapped {
+		scope = append(scope, fmt.Sprintf("%d spans read, more match", foldSearchLimit))
+	}
+	if fe.searchUnplaced > 0 {
+		scope = append(scope, fmt.Sprintf("%d in spans not loaded", fe.searchUnplaced))
 	}
 	if len(scope) == 0 {
 		return ""
@@ -503,7 +506,7 @@ func (fe *frontendPretty) clearSearch() {
 	fe.searchRemote = nil
 	fe.searchPartial = false
 	fe.searchUnplaced = 0
-	fe.searchFoldedMore = 0
+	fe.searchFoldedCapped = false
 	for _, logs := range []map[dagui.SpanID]*Vterm{fe.logs.Logs, fe.logs.ToolArgs} {
 		for _, vt := range logs {
 			vt.SetSearchHighlight("", -1)

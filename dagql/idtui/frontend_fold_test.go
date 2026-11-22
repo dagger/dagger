@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -253,6 +254,51 @@ func TestLiveFoldStreamedMatchesFullLoad(t *testing.T) {
 			t.Logf("read back %d spans in %d round trips", folded.fold.ReadSpans, folded.fold.Reads)
 		})
 	}
+}
+
+// TestLiveFoldSearchCap checks that a name search matching more folded spans
+// than it reads back says its count is a lower bound, and that one under the
+// cap doesn't.
+func TestLiveFoldSearchCap(t *testing.T) {
+	defer func(n int) { foldSearchLimit = n }(foldSearchLimit)
+	p := newFoldTestPair(t, 5000, "agent")
+	p.recalc(t)
+	// the name the most folded spans carry
+	ids, _ := p.folded.db.Fold().MatchNames(func(string) bool { return true }, 0)
+	counts := map[string]int{}
+	var name string
+	for _, id := range ids {
+		n := p.full.db.Spans.Map[id].Name
+		counts[n]++
+		if counts[n] > counts[name] {
+			name = n
+		}
+	}
+	require.Greater(t, counts[name], 4, "a name many folded spans carry")
+	search := func(limit int) string {
+		foldSearchLimit = limit
+		p.folded.dispatch(func() { p.folded.confirmSearch(name) })
+		p.settle(t)
+		p.recalc(t)
+		var hint string
+		p.folded.dispatch(func() {
+			p.folded.refreshSearchMatches()
+			hint = p.folded.searchCountHint("next")
+			p.folded.clearSearch()
+		})
+		return hint
+	}
+
+	// past the cap: a lower bound, and why
+	limit := counts[name] - 2
+	hint := search(limit)
+	require.Regexp(t, `\(\d+(/\d+)?\+, \d+ spans read, more match\)$`, hint)
+	require.Contains(t, hint, strconv.Itoa(limit)+" spans read")
+
+	// the rest, now under the cap: exact
+	hint = search(counts[name])
+	require.NotContains(t, hint, "+")
+	require.NotContains(t, hint, "more match")
 }
 
 // TestLiveFoldReadRetries checks that a read of folded spans that fails is
