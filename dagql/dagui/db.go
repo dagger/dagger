@@ -1127,6 +1127,11 @@ func (db DBMetricExporter) hasMetricsTarget(point metricdata.DataPoint[int64]) b
 // to the span it created.
 func (db *DB) SetPrimarySpan(span SpanID) {
 	db.PrimarySpan = span
+	if db.fold != nil && span.IsValid() {
+		// its children are the top-level rows, as a root's are, though it
+		// may have a parent: the exec a nested CLI runs in
+		db.fold.Expand(span)
+	}
 }
 
 // surfaceRoot resolves the root a surfacing walk (SurfacedChecks and family)
