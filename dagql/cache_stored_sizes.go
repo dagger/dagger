@@ -162,7 +162,8 @@ func (c *Cache) storedSizesRLock() func() {
 // ordinary closure. It walks as StoredBundle
 // builds (storedBundleVisitLocked, storedBundleCallsLocked): the closure,
 // dependencies first, then, entry by entry in that order, the calls kept on
-// each, adding the closure of each input a chosen call needs.
+// each that the recipient's check made (HeldBy.Calls), adding the closure of
+// each input a chosen call needs.
 //
 // The price is never less than what a bundle of the roots up to this one
 // adds for it. Which of a term's calls a bundle chooses depends on what the
@@ -207,6 +208,9 @@ func (c *Cache) storedRootWalkLocked(res *sharedResult, nowUnix int64, held *Hel
 			continue
 		}
 		for _, group := range c.keptCallTermsLocked(entry) {
+			if group = held.sendableLocked(group); len(group) == 0 {
+				continue
+			}
 			_, add := c.placeableCallLocked(group, func(input *sharedResult) bool {
 				return ordinary[input.id] || mine[input.id] || held.heldLocked(input, nowUnix)
 			})

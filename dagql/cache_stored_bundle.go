@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strings"
 	"sync/atomic"
+
+	"github.com/opencontainers/go-digest"
 )
 
 // StoredBundleResult is StoredBundle's answer.
@@ -43,7 +45,8 @@ type StoredBundleResult struct {
 	// CallInputs are the numbers of the entries the bundle carries as
 	// roots only because a call it sends has them as inputs, and
 	// UnsendableCalls counts the terms of its entries' kept calls it sends
-	// no call for: none had inputs it could place.
+	// no call for: none it may send (HeldBy.Calls) had inputs it could
+	// place.
 	CallInputs      []uint64
 	UnsendableCalls int
 	// RootOwners has, for each of Bundle.Roots, the index among the roots it
@@ -89,6 +92,35 @@ type HeldBy struct {
 	// holding's closure whole (Whole). It is called under the cache's lock,
 	// as Also is.
 	ByFile func(number uint64) bool
+	// Calls, if set, names by request digest the kept calls a bundle for
+	// the recipient may send: the calls of the check it will run, which its
+	// cache would hold had it run the check itself, and no call of another
+	// check's run on an entry both carry. A kept call it doesn't name is left
+	// out before its term's call is chosen: it isn't counted unsendable,
+	// marks nothing partial, and adds none of its inputs. Without it, every
+	// kept call may go. It is called under the cache's lock, as Also is.
+	Calls func(request digest.Digest) bool
+}
+
+// sendableLocked returns those of group, the kept calls of one term, that a
+// bundle for the recipient may send (Calls). Requires egraphMu.
+func (h *HeldBy) sendableLocked(group []*keptCall) []*keptCall {
+	if h == nil || h.Calls == nil {
+		return group
+	}
+	for i, kept := range group {
+		if h.Calls(kept.id.recipe) {
+			continue
+		}
+		sendable := slices.Clone(group[:i])
+		for _, kept := range group[i+1:] {
+			if h.Calls(kept.id.recipe) {
+				sendable = append(sendable, kept)
+			}
+		}
+		return sendable
+	}
+	return group
 }
 
 // heldLocked reports whether the recipient holds res at nowUnix. A nil
