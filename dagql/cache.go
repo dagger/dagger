@@ -8290,6 +8290,10 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 			// decide what the engine holds: the record is taken as an expired
 			// entry is, below, replaced in place or retired.
 			if cur.imported && made {
+				// The record expires at this decision, so it is an expired
+				// entry in every respect: replaced in place when nothing uses
+				// it, otherwise retired, serving its users only and no lookup.
+				cur.expiresAtUnix = now.Unix()
 				oc.keptOverRemote = true
 				oc.keptOverRemoteMergedAt = cur.merged.mergedAt()
 			} else {

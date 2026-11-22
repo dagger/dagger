@@ -31,8 +31,9 @@ import (
 //   - any other expired entry is retired: it leaves the index and keeps
 //     serving its existing users only, and the new value registers as the
 //     recipe's current entry;
-//   - a live entry whose value is a Cloud merge's record is taken as an
-//     expired one when the new value's content is made (freshValueMade):
+//   - a live entry whose value is a Cloud merge's record expires and is
+//     taken as an expired one when the new value's content is made
+//     (freshValueMade):
 //     the engine keeps what it made, as a merge keeps an engine's value over
 //     a record of its recipe, so the order the two land in doesn't decide
 //     what the engine holds. A retired record's users that demand its
