@@ -100,9 +100,7 @@ def _report(args: argparse.Namespace, exc: Exception) -> None:
     if args.run is not _call:
         return
     if path := _error_file(args):
-        # The function's traceback, which names the exception's type, is
-        # already in its logs.
-        write_function_error(path, function_error_message(exc, logged=True))
+        write_function_error(path, exc)
     else:
         report_function_error(function_error_message(exc))
 
