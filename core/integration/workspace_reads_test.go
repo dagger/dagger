@@ -18,9 +18,10 @@ import (
 // commit, while each client of a host workspace makes its own.
 //
 // Each module function call is a client of its own. Here the main client and
-// two calls of one module function read the same directory and file of the
-// session's workspace: from a Git workspace pinned to a commit, and then from
-// a host checkout of the same commit on the same engine.
+// two calls of each of three module functions read the session's workspace
+// the same ways: a directory, a file, a glob and its Git HEAD. They read a
+// Git workspace pinned to a commit, and then a host checkout of the same
+// commit on the same engine.
 func (WorkspaceSuite) TestWorkspaceReadsSharedAcrossClients(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -30,13 +31,27 @@ func (WorkspaceSuite) TestWorkspaceReadsSharedAcrossClients(ctx context.Context,
 		With(gitUserConfig).
 		WithWorkdir("/work").
 		WithNewFile("dagger.toml", "[modules.probe]\nsource = \".dagger/modules/probe\"\n").
-		WithNewFile(".dagger/modules/probe/dagger.json", `{"name":"probe","sdk":{"source":"dang"}}`).
+		WithNewFile(".dagger/modules/probe/dagger.json", `{"name":"probe","engineVersion":"latest","sdk":{"source":"dang"}}`).
 		// The workspace is optional, so the engine passes the session's in a
 		// query that leaves it out.
 		WithNewFile(".dagger/modules/probe/main.dang", `type Probe {
   pub read(ws: Workspace, dir: String!, n: Int!): String! {
     if (ws != null) {
       ws.directory(dir, include: ["notes.txt"]).file("notes.txt").contents + ws.file(dir + "/other.txt").contents
+    } else {
+      raise "no workspace"
+    }
+  }
+  pub look(ws: Workspace, pattern: String!, n: Int!): [String!]! {
+    if (ws != null) {
+      ws.glob(pattern)
+    } else {
+      raise "no workspace"
+    }
+  }
+  pub head(ws: Workspace, n: Int!): String! {
+    if (ws != null) {
+      ws.git.head.commitSha
     } else {
       raise "no workspace"
     }
@@ -61,12 +76,15 @@ func (WorkspaceSuite) TestWorkspaceReadsSharedAcrossClients(ctx context.Context,
 	t.Cleanup(func() { _, _ = engine.Stop(ctx) })
 	client := telemetrySplitClient(ctx, t, c, daggerCliFile(t, c), engine, cloud)
 
-	// The same reads from the main client and from two calls of read, which
-	// differ only in n, so that each is a call and a client of its own.
+	// The same reads from the main client and from two calls of each
+	// function, which differ only in n, so that each is a call and a client
+	// of its own.
 	mainReads := func(dir string) string {
 		return `currentWorkspace {
     directory(path: "` + dir + `", include: ["notes.txt"]) { file(path: "notes.txt") { contents } }
     file(path: "` + dir + `/other.txt") { contents }
+    glob(pattern: "` + strings.TrimPrefix(dir, "/") + `/*.txt")
+    git { head { commitSha } }
   }
 `
 	}
@@ -74,6 +92,10 @@ func (WorkspaceSuite) TestWorkspaceReadsSharedAcrossClients(ctx context.Context,
 		return `probe {
     a: read(dir: "` + dir + `", n: 1)
     b: read(dir: "` + dir + `", n: 2)
+    ga: look(pattern: "` + strings.TrimPrefix(dir, "/") + `/*.txt", n: 1)
+    gb: look(pattern: "` + strings.TrimPrefix(dir, "/") + `/*.txt", n: 2)
+    ha: head(n: 1)
+    hb: head(n: 2)
   }
 `
 	}
@@ -108,40 +130,50 @@ func (WorkspaceSuite) TestWorkspaceReadsSharedAcrossClients(ctx context.Context,
 		outcome   string
 		perClient bool
 	}
-	// A span may be exported when it starts and again when it ends; the last
+	// Each session's reads, by span name, and which of the workspaces and
+	// queries each session is: the directory read's path says which workspace,
+	// and a function call's span says it is a query with function calls. A
+	// span may be exported when it starts and again when it ends; the last
 	// export with an outcome is the call's. A session reports a call it has
 	// reported already only once, so the clients sharing a read may show
 	// fewer spans than clients.
-	reads := map[string]map[string]map[string]read{} // read -> session -> span
+	readNames := []string{"Workspace.directory", "Workspace.file", "Workspace.glob", "Workspace.git", "WorkspaceGit.head"}
+	reads := map[string]map[string]map[string]read{} // session -> read -> span
+	workspaceOf := map[string]string{}
 	withFunctions := map[string]bool{}
 	for _, s := range readTelemetrySplitLines[span](ctx, t, cloud, "v1/traces.json.spans") {
-		if strings.HasPrefix(s.Name, "Probe.read") {
+		if strings.HasPrefix(s.Name, "Probe.") {
 			withFunctions[s.Session] = true
-		}
-		if s.Name != "Workspace.directory" && s.Name != "Workspace.file" {
-			continue
 		}
 		outcome := s.Attrs["dagger.io/cache.outcome"]
 		payload := s.Attrs["dagger.io/dag.call"]
-		if outcome == "" || payload == "" {
+		if !slices.Contains(readNames, s.Name) || outcome == "" || payload == "" {
 			continue
 		}
 		var frame callpbv1.Call
 		require.NoError(t, frame.Decode(payload))
 		var path string
 		for _, arg := range frame.GetArgs() {
-			if arg.GetName() == "path" {
+			if arg.GetName() == "path" || arg.GetName() == "pattern" {
 				path = arg.GetValue().GetString_()
 			}
 		}
-		key := s.Name + "(" + path + ")"
-		if reads[key] == nil {
-			reads[key] = map[string]map[string]read{}
+		// Module loading reads the workspace too, at other paths.
+		switch {
+		case s.Name == "Workspace.directory" && path == "/git-data", s.Name == "Workspace.directory" && path == "/host-data":
+			workspaceOf[s.Session] = path
+		case s.Name == "Workspace.directory" || s.Name == "Workspace.file" || s.Name == "Workspace.glob":
+			if !strings.Contains(path, "-data") {
+				continue
+			}
 		}
-		if reads[key][s.Session] == nil {
-			reads[key][s.Session] = map[string]read{}
+		if reads[s.Session] == nil {
+			reads[s.Session] = map[string]map[string]read{}
 		}
-		reads[key][s.Session][s.SpanID] = read{
+		if reads[s.Session][s.Name] == nil {
+			reads[s.Session][s.Name] = map[string]read{}
+		}
+		reads[s.Session][s.Name][s.SpanID] = read{
 			outcome: outcome,
 			perClient: slices.ContainsFunc(frame.GetImplicitInputs(), func(input *callpbv1.Argument) bool {
 				return input.GetName() == "cachePerClient"
@@ -162,29 +194,44 @@ func (WorkspaceSuite) TestWorkspaceReadsSharedAcrossClients(ctx context.Context,
 		return executed, others, perClient
 	}
 
-	for _, key := range []string{"Workspace.directory(/git-data)", "Workspace.file(/git-data/other.txt)"} {
-		require.Len(t, reads[key], 2, "%s: both sessions must report the read", key)
-		for session, spans := range reads[key] {
-			executed, others, perClient := outcomes(spans)
-			t.Logf("%s, session with function calls %t: %d executed, then %v", key, withFunctions[session], executed, others)
-			require.Zero(t, perClient, "%s: a read of a workspace its commit decides must not be keyed by its client", key)
-			if !withFunctions[session] {
-				require.Equal(t, 1, executed, "%s: the first session makes the read", key)
-				continue
+	var gitSessions, hostSessions int
+	for session, byName := range reads {
+		switch workspaceOf[session] {
+		case "/git-data":
+			gitSessions++
+			for _, name := range readNames {
+				executed, others, perClient := outcomes(byName[name])
+				t.Logf("Git workspace, session with function calls %t: %s: %d executed, then %v", withFunctions[session], name, executed, others)
+				require.Zero(t, perClient, "%s: a read of a workspace its commit decides must not be keyed by its client", name)
+				switch {
+				case !withFunctions[session]:
+					require.Equal(t, 1, executed, "%s: the first session makes the read", name)
+				case name == "WorkspaceGit.head":
+					// Workspace.git's result is kept past the session, and
+					// its clients share its children. head isn't kept
+					// itself, but its result is the workspace's own ref,
+					// which the kept result holds: the second session
+					// makes it at most once.
+					require.LessOrEqual(t, executed, 1, "%s: the clients of a session must share a read of a workspace its commit decides", name)
+				default:
+					require.Zero(t, executed, "%s: clients and sessions must share a read of a workspace its commit decides", name)
+					require.NotEmpty(t, others, name)
+					require.Subset(t, []string{"hit", "joined"}, others, name)
+				}
 			}
-			require.Zero(t, executed, "%s: clients and sessions must share a read of a workspace its commit decides", key)
-			require.NotEmpty(t, others, key)
-			require.Subset(t, []string{"hit", "joined"}, others, key)
+		case "/host-data":
+			hostSessions++
+			for _, name := range readNames {
+				executed, others, perClient := outcomes(byName[name])
+				t.Logf("host checkout: %s: %d executed, then %v", name, executed, others)
+				require.Equal(t, 3, executed, "%s: each client must make its own read of a host workspace, whose files can change between clients", name)
+				require.Empty(t, others, name)
+				if name != "WorkspaceGit.head" {
+					require.Equal(t, 3, perClient, "%s: a read of a host workspace must stay keyed by its client", name)
+				}
+			}
 		}
 	}
-	for _, key := range []string{"Workspace.directory(/host-data)", "Workspace.file(/host-data/other.txt)"} {
-		require.Len(t, reads[key], 1, key)
-		for _, spans := range reads[key] {
-			executed, others, perClient := outcomes(spans)
-			t.Logf("%s: %d executed, then %v", key, executed, others)
-			require.Equal(t, 3, executed, "%s: each client must make its own read of a host workspace, whose files can change between clients", key)
-			require.Empty(t, others, key)
-			require.Equal(t, 3, perClient, "%s: a read of a host workspace must stay keyed by its client", key)
-		}
-	}
+	require.Equal(t, 2, gitSessions, "both Git sessions must report their reads")
+	require.Equal(t, 1, hostSessions, "the host session must report its reads")
 }
