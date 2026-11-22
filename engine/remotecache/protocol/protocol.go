@@ -452,6 +452,10 @@ type MergedValue struct {
 	Deps          []uint64                     `json:"deps"`
 	Complete      []dagql.PersistedPartAddress `json:"complete"`
 	Offered       []dagql.PersistedPartAddress `json:"offered"`
+	// Stored reports that the engine stored the value's record from the
+	// bundle (dagql.MergedValue.Stored), not that it kept a value it had:
+	// only then is the engine's copy the record the service sent it.
+	Stored bool `json:"stored,omitempty"`
 }
 
 // RetainedRoot is a merged root the engine retains, until ExpiresAtUnix

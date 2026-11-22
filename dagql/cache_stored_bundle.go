@@ -654,6 +654,10 @@ func (build *storedBundleBuild) addStoredValue(res *sharedResult, rec PersistedR
 		}
 	}
 	value := TransferredValue{Ordinal: build.ordinals[res.id], SenderNumber: uint64(res.id), SenderReplacements: res.replacements, Record: rec, ExpiresAtUnix: res.expiresAtUnix, Parts: parts, storedEnvelope: storedEnvelope}
+	// Only the Cloud's records name a run (sharedResult.run).
+	if res.run != nil {
+		value.served = &servedRun{run: *res.run, ran: res.runRan, known: true}
+	}
 	for dep := range res.deps {
 		value.DependencyIDs = append(value.DependencyIDs, uint64(build.ordinals[dep]))
 	}
