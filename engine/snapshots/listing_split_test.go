@@ -36,7 +36,7 @@ func fileBytes(seed string, n int) string {
 func splitTestTar(t *testing.T) []byte {
 	t.Helper()
 	mtime := time.Unix(1700000000, 0).UTC()
-	shared := fileBytes("shared", 100<<10)
+	shared := fileBytes("shared", ListingInlineMax+36<<10)
 	long := strings.Repeat("deep/", 30) + "big.bin"
 	files := map[string]string{
 		"dir/small.txt":    "small bytes",
@@ -45,9 +45,9 @@ func splitTestTar(t *testing.T) []byte {
 		"dir/at-max.bin":   fileBytes("at max", ListingInlineMax),
 		"dir/under.bin":    fileBytes("under max", ListingInlineMax-1),
 		"dir/empty":        "",
-		long:               fileBytes("long name", 70<<10),
-		"xattr.bin":        fileBytes("xattr", 80<<10),
-		"nanos.bin":        fileBytes("nanos", 90<<10),
+		long:               fileBytes("long name", ListingInlineMax+6<<10),
+		"xattr.bin":        fileBytes("xattr", ListingInlineMax+16<<10),
+		"nanos.bin":        fileBytes("nanos", ListingInlineMax+26<<10),
 		"large.bin":        fileBytes("large", splitHeldLarge+1),
 	}
 	var buf bytes.Buffer

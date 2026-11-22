@@ -72,7 +72,7 @@ func listingsTree(t *testing.T, store *testutil.Store, shared, own string) (a, a
 // prefix. An export of tars carries the same layers as tars.
 func TestExportChainListingsCarryEachContentOnce(t *testing.T) {
 	t.Parallel()
-	shared, own := listingBody("shared", 100<<10), listingBody("own", 90<<10)
+	shared, own := listingBody("shared", bkcache.ListingInlineMax+36<<10), listingBody("own", bkcache.ListingInlineMax+26<<10)
 	for _, comp := range []compression.Type{compression.Uncompressed, compression.Zstd} {
 		t.Run(comp.String(), func(t *testing.T) {
 			t.Parallel()
@@ -111,13 +111,32 @@ func TestExportChainListingsCarryEachContentOnce(t *testing.T) {
 	}
 }
 
+// A file under 256 KiB stays in its layer's listing, and only a larger one
+// gets a content blob of its own: a content blob costs an engine a content
+// commit and a lease entry, under its metadata store's one writer, and on the
+// nineteenth fill files under 256 KiB were four fifths of chains' content
+// blobs for a tenth of what storing each file once saved.
+func TestExportChainListingKeepsFilesUnder256KiB(t *testing.T) {
+	t.Parallel()
+	producer := testutil.NewStore(t)
+	ref, _ := producer.BuildWith(t, nil, func(root string) {
+		writeExportFile(t, root, "data/mid.bin", listingBody("mid", 200<<10))
+		writeExportFile(t, root, "data/large.bin", listingBody("large", 300<<10))
+	})
+	chain := exportChains(t, []bkcache.ImmutableRef{ref}, listingsConfig(compression.New(compression.Zstd)))[0]
+	require.Equal(t, []string{"content", "listing"}, chainKinds(chain), "only the file of 256 KiB or more has a content blob")
+	imported := importChain(t, testutil.NewStore(t), supplied(chain, chain.Provider))
+	testutil.CheckFile(t, imported, "data/mid.bin", listingBody("mid", 200<<10))
+	testutil.CheckFile(t, imported, "data/large.bin", listingBody("large", 300<<10))
+}
+
 // Correctness never rests on two engines compressing a file to the same
 // bytes: one file's bytes, compressed two ways, are two content blobs and
 // two listings, and both chains install, into one store or each into its
 // own. All that is lost is that the store keeps the bytes twice.
 func TestImportChainListingsOfOneFileCompressedTwoWays(t *testing.T) {
 	t.Parallel()
-	body := listingBody("one file", 200<<10)
+	body := listingBody("one file", bkcache.ListingInlineMax+136<<10)
 	build := func(level *int) *bkcache.ExportChain {
 		producer := testutil.NewStore(t)
 		ref, _ := producer.BuildWith(t, nil, func(root string) {
@@ -152,7 +171,7 @@ func TestImportChainListingsOfOneFileCompressedTwoWays(t *testing.T) {
 // whether the chain's blobs come from a provider or arrive by Await.
 func TestImportChainOverlayListings(t *testing.T) {
 	t.Parallel()
-	shared, own := listingBody("shared", 100<<10), listingBody("own", 90<<10)
+	shared, own := listingBody("shared", bkcache.ListingInlineMax+36<<10), listingBody("own", bkcache.ListingInlineMax+26<<10)
 	producer := testutil.NewStore(t)
 	_, ab := listingsTree(t, producer, shared, own)
 	chain := exportChains(t, []bkcache.ImmutableRef{ab}, listingsConfig(compression.New(compression.Zstd)))[0]
