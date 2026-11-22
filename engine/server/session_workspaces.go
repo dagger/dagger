@@ -1285,8 +1285,11 @@ func (srv *Server) resolveModuleLoadBatch(
 		gitWS, gitWSErr = sessionGitWorkspace(ctx, client.dag)
 	}
 
+	// Each load starts its own span rather than the job's: the span fails
+	// with the load, while the job succeeds, so that every load runs and its
+	// error is collected.
 	jobs := parallel.New().
-		WithContextualTracer(true)
+		WithTracing(false)
 	for i, load := range loads {
 		i := i
 		load := load
@@ -1295,7 +1298,9 @@ func (srv *Server) resolveModuleLoadBatch(
 			continue
 		}
 		jobs = jobs.WithJob(moduleLoadJobName(load), func(ctx context.Context) error {
-			resolved, err := srv.resolveModuleLoad(ctx, client.dag, gitWS, load)
+			ctx, span := core.Tracer(ctx).Start(ctx, moduleLoadJobName(load))
+			resolved, err := srv.resolveModuleLoad(core.ContextWithModuleLoadSpan(ctx), client.dag, gitWS, load)
+			telemetry.EndWithCause(span, &err)
 			if err != nil {
 				resolveErrs[i] = err
 				return nil //nolint:nilerr // errors collected for deterministic ordering

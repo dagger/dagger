@@ -1,11 +1,33 @@
 package core
 
 import (
+	"context"
 	"errors"
 	"strings"
 
 	telemetry "github.com/dagger/otel-go"
+	"go.opentelemetry.io/otel/trace"
 )
+
+type moduleLoadSpanKey struct{}
+
+// ContextWithModuleLoadSpan marks ctx's current span as the load of a module
+// a client asked for: the row a user sees for it, the place to report a
+// failure of the module's own source (see ModuleLoadSpanContext).
+func ContextWithModuleLoadSpan(ctx context.Context) context.Context {
+	return context.WithValue(ctx, moduleLoadSpanKey{}, trace.SpanContextFromContext(ctx))
+}
+
+// ModuleLoadSpanContext returns the span of the module load ctx is part of,
+// if any (see ContextWithModuleLoadSpan). An SDK that reads a module's types
+// from its source in the engine, as Dang does, reports the source's errors
+// there, as the origin of the load's failure: the calls between the load and
+// the SDK are the engine's plumbing. The value doesn't cross a nested
+// client, so a function a module calls while loading has none of its own.
+func ModuleLoadSpanContext(ctx context.Context) (trace.SpanContext, bool) {
+	span, ok := ctx.Value(moduleLoadSpanKey{}).(trace.SpanContext)
+	return span, ok && span.IsValid()
+}
 
 type ModuleLoadFailure struct {
 	// Name is the module's workspace name (what the skipped-module span is

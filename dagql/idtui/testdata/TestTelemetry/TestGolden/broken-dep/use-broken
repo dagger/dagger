@@ -8,7 +8,7 @@ Expected stderr:
 
 ✘ load workspace: . X.Xs ERROR
 ╰╴✘ loading type definitions X.Xs ERROR
-  ╰╴✔ load module: ./viztest/broken-dep X.Xs
+  ╰╴✘ load module: ./viztest/broken-dep X.Xs ERROR
     ╰╴✘ ModuleSource.asModule: Module! X.Xs ERROR
       ╰╴✘ load dep modules X.Xs ERROR
         ╰╴✘ ModuleSource.asModule: Module! X.Xs ERROR

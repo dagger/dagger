@@ -8,7 +8,7 @@ Expected stderr:
 
 ✘ load workspace: . X.Xs ERROR
 ╰╴✘ loading type definitions X.Xs ERROR
-  ╰╴✔ load module: ./viztest/broken-dep-sdk X.Xs
+  ╰╴✘ load module: ./viztest/broken-dep-sdk X.Xs ERROR
     ╰╴✘ moduleSource(refString: "./viztest/broken-dep-sdk"): ModuleSource! X.Xs ERROR
       ├╴✘ moduleSource(refString: "/app/dagql/idtui/viztest/broken-dep-sdk/invalid", disableFindUp: true): ModuleSource! X.Xs ERROR
       │ ╰╴✘ load SDK: unknown X.Xs ERROR

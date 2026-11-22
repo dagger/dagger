@@ -8,7 +8,7 @@ Expected stderr:
 
 ✘ load workspace: . X.Xs ERROR
 ╰╴✘ loading type definitions X.Xs ERROR
-  ╰╴✔ load module: ./viztest/broken-dep/broken X.Xs
+  ╰╴✘ load module: ./viztest/broken-dep/broken X.Xs ERROR
     ╰╴✘ ModuleSource.asModule: Module! X.Xs ERROR
       ╰╴✘ module SDK: load runtime X.Xs ERROR
         ╰╴✘ withExec sh /gobuild/build.sh dagger/broken (disableDaggerInDagger: true, noInit: true) X.Xs ERROR
