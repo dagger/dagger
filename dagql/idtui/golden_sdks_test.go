@@ -66,10 +66,10 @@ var sdkFixtures = []sdkFixture{
 	// error on the function's row, and the error's origin is the inner exec.
 	{lang: "go", source: "main.go", breakage: "\nvar _ = undefinedValue\n"},
 	// Errors use the engine's function error file (DAGGER_FUNCTION_ERROR_PATH,
-	// dagger/python-sdk#93). An API error the file reports logs nothing: its
-	// origin renders instead. The function's logs keep the traceback Python
-	// prints for an exception of the function's own, which is not targeted
-	// yet.
+	// dagger/python-sdk#93). An API error whose origin renders logs nothing;
+	// one without an origin, an exception of the function's own and an error
+	// importing its code log a short traceback, through the user's frames
+	// only. A wrapped exec error keeps its chain, each part so shortened.
 	{lang: "python", source: "src/viztest_python/__init__.py", breakage: "\nthis is not python\n"},
 	// BAD: the dispatcher replies on stdout, which the function's console.log
 	// shares: the reply no longer decodes, so log-success fails, and a
