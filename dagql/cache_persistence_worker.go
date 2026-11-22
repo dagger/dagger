@@ -184,6 +184,7 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 			sessionResourceHandle: res.sessionResourceHandle,
 			persistedEnvelope:     payload.persistedEnvelope,
 			stored:                payload.stored,
+			partFacts:             payload.partFacts,
 			snapshotOwnerLinks:    payload.snapshotOwnerLinks,
 			row: persistdb.MirrorResult{
 				ID:                        int64(resultID),
@@ -384,7 +385,7 @@ func (c *Cache) encodePersistedResultRow(ctx context.Context, resultSnapshot *pe
 				return fmt.Errorf("persist result %d stored record: %w", resultSnapshot.resultID, err)
 			}
 		}
-		payload, err = encodeStoredRow(&encoding.Envelope, body)
+		payload, err = encodeStoredRow(&encoding.Envelope, body, resultSnapshot.partFacts)
 	} else {
 		payload, err = json.Marshal(encoding.Envelope)
 	}
@@ -545,6 +546,7 @@ func (c *Cache) applyPersistStateSnapshot(ctx context.Context, snapshot persistS
 		result.frame = nil
 		result.self = nil
 		result.stored = nil
+		result.partFacts = nil
 	}
 	for _, row := range snapshot.terms {
 		if err := q.InsertMirrorTerm(ctx, row); err != nil {

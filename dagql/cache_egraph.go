@@ -1543,10 +1543,28 @@ func (c *Cache) teachContentDigest(ctx context.Context, shared *sharedResult, co
 			}
 			requestInputs = append(requestInputs, dig)
 		}
-		var body *storedBody
-		if base.body != nil {
-			if body, err = base.body.reframe(c, shared.id, frame); err != nil {
-				return false, fmt.Errorf("teach content digest: %w", err)
+		// A blob-backed cache's stored record takes the new frame with its
+		// parts worked out for it, here, outside the lock: a body is
+		// reframed, whether or not it holds the frame, so that its
+		// references are the frame's too; a record still whole is mapped
+		// with the frame. The record read here is checked under the lock.
+		var (
+			env   *PersistedResultEnvelope
+			was   *storedBody
+			body  *storedBody
+			parts *partFacts
+		)
+		if c.blobBacked {
+			c.egraphMu.RLock()
+			env, was = shared.persistedEnvelope, shared.stored
+			c.egraphMu.RUnlock()
+			switch {
+			case was != nil:
+				if body, parts, err = was.reframe(c, shared.id, frame); err != nil {
+					return false, fmt.Errorf("teach content digest: %w", err)
+				}
+			case env != nil:
+				parts = recordPartFacts(PersistedRecord{ResultID: uint64(shared.id), Envelope: *env, Call: frame})
 			}
 		}
 		// A blob-backed cache's record is measured with its frame's JSON
@@ -1577,7 +1595,7 @@ func (c *Cache) teachContentDigest(ctx context.Context, shared *sharedResult, co
 			c.egraphMu.Unlock()
 			return false, fmt.Errorf("teach content digest: result %d has no call frame", shared.id)
 		}
-		if cur != base {
+		if cur != base || c.blobBacked && (shared.persistedEnvelope != env || shared.stored != was) {
 			// Nothing was mutated in this interval.
 			c.discardShareNotificationsLocked(notify, notifyOwner)
 			c.egraphMu.Unlock()
@@ -1593,8 +1611,13 @@ func (c *Cache) teachContentDigest(ctx context.Context, shared *sharedResult, co
 		}
 		shared.storeResultCall(frame)
 		if body != nil {
-			// The new frame goes into a new body, as the old one was held.
+			// The new frame goes into a new body, held in it if it can be.
 			c.setStoredBodyLocked(shared, shared.persistedEnvelope, body)
+		}
+		if parts != nil {
+			shared.payloadMu.Lock()
+			shared.partFacts = parts
+			shared.payloadMu.Unlock()
 		}
 		if shared.storedRecordBytes != 0 {
 			c.setStoredRecordBytesLocked(shared, shared.storedRecordBytes+grown)

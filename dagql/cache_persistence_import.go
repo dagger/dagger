@@ -217,6 +217,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 					// encoded.
 					c.setStoredRecordBytesLocked(res, int64(row.callFrameBytes)+body.envelopeBytes)
 					c.setStoredBodyLocked(res, env, body)
+					res.partFacts = row.parts
 				}
 			} else if env.Kind == persistedResultKindNull {
 				// An attached absent value keeps its row identity, recorded
@@ -723,8 +724,10 @@ type importedResultRow struct {
 	frame          *ResultCall
 	frameErr       error
 	// body is, on a blob-backed cache, the row's stored record as it was
-	// held, whose envelope env is without its value (decodeStoredRow).
-	body *storedBody
+	// held, whose envelope env is without its value, and parts the record's
+	// parts (decodeStoredRow).
+	body  *storedBody
+	parts *partFacts
 }
 
 // decode decodes the row's call frame and self payload, and drops their raw
@@ -740,7 +743,7 @@ func (row *importedResultRow) decode(blobBacked bool) {
 	switch {
 	case len(row.SelfPayload) == 0:
 	case blobBacked && isStoredRow(row.SelfPayload):
-		row.env, row.body, row.envErr = decodeStoredRow(row.SelfPayload, row.frame)
+		row.env, row.body, row.parts, row.envErr = decodeStoredRow(row.SelfPayload, row.frame)
 	default:
 		row.env = new(PersistedResultEnvelope)
 		row.envErr = json.Unmarshal(row.SelfPayload, row.env)

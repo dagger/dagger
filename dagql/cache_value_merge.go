@@ -657,6 +657,12 @@ type valueMergePrep struct {
 	// numbers, never to or from zero, so the keys read at provisional numbers
 	// are the ones at the final numbers.
 	completeParts map[uint64][]string
+	// partFacts are, by ordinal, each record's parts as the Cloud keeps them
+	// with it (partFacts), for a record prepared with its payload: those it
+	// declares absent or pending, as its outputs map them, and its complete
+	// ones, each read from addresses and states, which relocation leaves as
+	// sent.
+	partFacts map[uint64]*partFacts
 	// light are the records prepared from their call and offers only: the
 	// cache held a value for their recipe that merge keeps.
 	light map[uint64]bool
@@ -791,7 +797,7 @@ func (c *Cache) checkValueMerge(from CacheID, input ValueBundle) (*valueMergePre
 		}
 		recordBytes = map[uint64]int64{}
 	}
-	prep := &valueMergePrep{lockWaits: &graphLockWaits{}, payloadPreparing: c.testRecordPayloadPreparing, from: from, bundle: bundle, order: order, index: map[uint64]*TransferredValue{}, plans: map[uint64]transferIdentityPlan{}, records: map[uint64]PersistedRecord{}, refs: map[uint64][]uint64{}, recordBytes: recordBytes, completeParts: map[uint64][]string{}, held: map[uint64]bool{}, heldParts: heldParts}
+	prep := &valueMergePrep{lockWaits: &graphLockWaits{}, payloadPreparing: c.testRecordPayloadPreparing, from: from, bundle: bundle, order: order, index: map[uint64]*TransferredValue{}, plans: map[uint64]transferIdentityPlan{}, records: map[uint64]PersistedRecord{}, refs: map[uint64][]uint64{}, recordBytes: recordBytes, completeParts: map[uint64][]string{}, partFacts: map[uint64]*partFacts{}, held: map[uint64]bool{}, heldParts: heldParts}
 	prep.rows = make(map[uint64]uint64, len(prep.bundle.Values))
 	for i := range prep.bundle.Values {
 		row := &prep.bundle.Values[i]
@@ -1116,6 +1122,7 @@ func (prep *valueMergePrep) prepareRecordPayloads(ctx context.Context, relocateR
 		}
 		prep.refs[id] = p.refs
 		prep.completeParts[id] = p.completeParts
+		prep.partFacts[id] = &partFacts{declared: p.declared, complete: sharedPartKeys(p.completeParts)}
 		if prep.recordBytes != nil {
 			prep.recordBytes[id] = p.recordBytes
 		}
@@ -1132,6 +1139,7 @@ type preparedRecordPayload struct {
 	record        PersistedRecord
 	refs          []uint64
 	completeParts []string
+	declared      []declaredPart
 	recordBytes   int64
 	numbers       map[uint64]sharedResultID
 	offers        []PersistedPartOffer
@@ -1299,12 +1307,17 @@ func (prep *valueMergePrep) prepareRecordPayload(id uint64, relocateRecord, relo
 	if err != nil {
 		return preparedRecordPayload{}, fmt.Errorf("row %d: %w", id, err)
 	}
-	if _, err := mapMemoTransferredOutputs(row.Record, memos); err != nil {
+	outputs, err := mapMemoTransferredOutputs(row.Record, memos)
+	if err != nil {
 		return preparedRecordPayload{}, err
 	}
-	// The complete parts are read from the parts' addresses and states,
-	// which relocation leaves as sent, so they're described as sent.
+	// The complete parts and the declared ones are read from the parts'
+	// addresses and states, which relocation leaves as sent, so they're
+	// described as sent. A record with an output at an address that has no
+	// key declares none, as its answers read it when they decoded it: a
+	// bundle of it fails as it normalizes it.
 	completeParts := memoRecordCompletePartKeys(row.Record, memos)
+	declared, _ := declaredPartsOf(outputs)
 	var refs []uint64
 	numbers := map[uint64]sharedResultID{}
 	moved := false
@@ -1354,7 +1367,7 @@ func (prep *valueMergePrep) prepareRecordPayload(id uint64, relocateRecord, relo
 	}
 	slices.Sort(refs)
 	rec.Envelope.Imported = true
-	out := preparedRecordPayload{record: rec, refs: slices.Compact(refs), completeParts: completeParts}
+	out := preparedRecordPayload{record: rec, refs: slices.Compact(refs), completeParts: completeParts, declared: declared}
 	if moved {
 		// Relocated to its final numbers, call and all: the record's call
 		// and offers at provisional numbers are the merge's too.
@@ -1660,6 +1673,9 @@ type mergeRow struct {
 	// the row installs keeps them (mergeRunLocked).
 	run    RunName
 	runRan runRanBy
+	// parts are, on the Cloud, the parts of the record the row installs
+	// (partFacts), from its preparation.
+	parts  *partFacts
 	plan   transferIdentityPlan
 	action mergeAction
 	// target is the recipe's entry before the merge, if any.
@@ -1942,12 +1958,12 @@ func (c *Cache) entryHasPartsLocked(res *sharedResult, outputs []TransferredOutp
 
 // recordParts are a stored record's parts as its mapping has them, for a
 // check of outputs against them (checkOutputPart), which reads a part's
-// state and a pending part's kind. A compressed record's are its body's
-// facts (storedFactsLocked), as a stored row's outputs are checked
-// (checkValueBundle): the parts it declares absent or pending, with their
-// kinds, and those it proves complete, a state of completed, absent or
-// metadata. Together they are every part the record maps to, so the record
-// isn't decoded. Any other record's are its mapping's.
+// state and a pending part's kind. A Cloud record's are the parts its entry
+// keeps of it (partFacts), whole or compressed, as a stored row's outputs
+// are checked (checkValueBundle): the parts it declares absent or pending,
+// with their kinds, and those it proves complete, a state of completed,
+// absent or metadata. Together they are every part the record maps to, so
+// the record isn't decoded. An engine's record's are its mapping's.
 type recordParts struct {
 	declared []declaredPart
 	complete *partKeySet
@@ -1957,12 +1973,8 @@ type recordParts struct {
 // recordPartsLocked returns res's stored record's parts, or false if the
 // record can't be read. Requires egraphMu.
 func (c *Cache) recordPartsLocked(res *sharedResult) (recordParts, bool) {
-	if res.stored != nil {
-		_, declared, complete, err := res.storedFactsLocked()
-		if err != nil {
-			return recordParts{}, false
-		}
-		return recordParts{declared: declared, complete: complete}, true
+	if c.blobBacked {
+		return recordParts{declared: res.partFacts.declaredParts(), complete: res.partFacts.completeParts()}, true
 	}
 	rec, err := c.storedRecordLocked(res)
 	if err != nil {
@@ -2809,6 +2821,7 @@ func (c *Cache) commitValueMergeLocked(ctx context.Context, commit *valueMergeCo
 	for _, row := range commit.rows {
 		if c.blobBacked && row.action.installs() {
 			row.run, row.runRan = c.mergeRunLocked(commit.prep, row)
+			row.parts = commit.prep.partFacts[row.ordinal]
 		}
 		switch row.action {
 		case mergeKeep:
@@ -3129,8 +3142,10 @@ func (c *Cache) installMergedRecordLocked(res *sharedResult, row *mergeRow, orig
 	res.self = nil
 	res.persistedEnvelope = &rec.Envelope
 	res.firstUse = row.firstUse
-	// The body worker compresses it after the merge (queueStoredBodies).
+	// The body worker compresses it after the merge (queueStoredBodies). Its
+	// parts are its preparation's, on the Cloud.
 	res.stored = nil
+	res.partFacts = row.parts
 	res.payloadRevision++
 	c.setResultPayloadBytesLocked(res, persistedEnvelopePayloadBytes(&rec.Envelope))
 	if res.createdAtUnixNano == 0 {

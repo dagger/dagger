@@ -486,12 +486,8 @@ func validateStoredOwnership(res *sharedResult) error {
 	}
 	env.PendingOffers = nil
 	if res.stored != nil {
-		// A record held compressed names what its body's facts say.
-		refs, _, _, err := res.storedFactsLocked()
-		if err != nil {
-			return fmt.Errorf("result %d: %w", res.id, err)
-		}
-		for _, ref := range refs {
+		// A record held compressed names what its body says.
+		for _, ref := range res.stored.refs {
 			if _, ok := res.deps[sharedResultID(ref)]; !ok {
 				return fmt.Errorf("result %d: reference to %d is not a direct dependency", res.id, ref)
 			}
