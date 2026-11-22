@@ -196,19 +196,17 @@ func (c *Cache) AvailableParts(queries []PartQuery, nowUnix int64) []PartAnswer 
 // writer that comes during the batch then waits for the answer in progress,
 // not the batch, and so do the readers queued behind it. With nobody
 // waiting, the batch keeps its one hold; under steady writers it takes one
-// hold an answer. It reports whether it let go: the cache may have changed
-// since the batch's last answer, and a caller holding pointers across
-// answers reads them again.
-func (c *Cache) giveWayLocked() bool {
+// hold an answer. The cache can change between two answers, so a batch
+// carries no pointer across one.
+func (c *Cache) giveWayLocked() {
 	if !c.egraphMu.Waiting() {
-		return false
+		return
 	}
 	c.egraphMu.RUnlock()
 	if c.testBatchGaveWay != nil {
 		c.testBatchGaveWay()
 	}
 	c.egraphMu.RLock()
-	return true
 }
 
 // availablePartLocked is AvailablePart's answer for the part key of the
