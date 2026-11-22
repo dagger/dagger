@@ -1734,6 +1734,9 @@ func (c *Cache) RemoteHoldingInfos(keys []HolderKey) (held []RemoteHeldEntry, ok
 	defer c.egraphMu.RUnlock()
 	for i, key := range keys {
 		held[i], ok[i] = c.remoteHoldingInfoLocked(key)
+		if c.testBatchAnswered != nil {
+			c.testBatchAnswered(i)
+		}
 	}
 	return held, ok
 }
@@ -1903,6 +1906,9 @@ func (c *Cache) EntriesHeld(numbers []uint64, limit int) []EntryHeld {
 			}
 		}
 		out = append(out, held)
+		if c.testBatchAnswered != nil {
+			c.testBatchAnswered(len(out) - 1)
+		}
 	}
 	return out
 }
@@ -1935,6 +1941,9 @@ func (c *Cache) EntriesFacts(numbers []uint64) []EntryFacts {
 		var facts EntryFacts
 		facts.Number, facts.Stored, facts.StoredExpiresAtUnix, facts.Recipes = entryFactsLocked(entry)
 		out = append(out, facts)
+		if c.testBatchAnswered != nil {
+			c.testBatchAnswered(len(out) - 1)
+		}
 	}
 	return out
 }
