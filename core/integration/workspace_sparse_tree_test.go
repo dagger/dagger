@@ -353,7 +353,7 @@ func (WorkspaceSuite) TestGitWorkspaceSparseReadsAcrossCommits(ctx context.Conte
 
 	_, partial := sparseWorkspaceRepo(ctx, t, c, "type Probe { pub name: String! { \"probe\" } }\n")
 	commit := func(tag string) string {
-		sha, err := core.NewQuery(c).Git(partial).Ref(tag).Commit(ctx)
+		sha, err := core.NewQuery(c).Git(partial).Ref(tag).CommitSHA(ctx)
 		require.NoError(t, err)
 		return sha
 	}
