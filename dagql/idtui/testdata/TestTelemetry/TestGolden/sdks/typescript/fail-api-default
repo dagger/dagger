@@ -6,63 +6,7 @@ Expected stderr:
 
 $ viztestTypescript: ViztestTypescript! X.Xs CACHED
 ✘ .failApi: String! X.Xs ERROR
-typescript function stdout
-GraphQLRequestError: stat doesnt-exist.txt: no such file or directory [traceparent:00000000000000000000000000000000-0000000000000000]
-    at compute (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/core.js:99849:13)
-    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
-    at async computeQuery (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/core.js:99815:10)
-    ... 4 lines matching cause stack trace ...
-    at async withGQLClient (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/core.js:99956:12)
-    at async withSession (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/core.js:99969:5)
-    at async withTracing (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/core.js:99718:5) {
-  cause: ClientError: stat doesnt-exist.txt: no such file or directory [traceparent:00000000000000000000000000000000-0000000000000000]: {"response":{"data":null,"errors":[{"message":"stat doesnt-exist.txt: no such file or directory [traceparent:00000000000000000000000000000000-0000000000000000]","path":["directory","file"]}],"status":200,"headers":{},"body":"{\"errors\":[{\"message\":\"stat doesnt-exist.txt: no such file or directory [traceparent:00000000000000000000000000000000-0000000000000000]\",\"path\":[\"directory\",\"file\"]}],\"data\":null}"},"request":{"query":"\n      { directory  { file (path: \"doesnt-exist.txt\") { contents  } } }\n    "}}
-      at runRequest (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/core.js:14694:12)
-      at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
-      at async GraphQLClient.request (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/core.js:14867:22)
-      at async compute (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/core.js:99833:21)
-      at async computeQuery (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/core.js:99815:10)
-      at async File.contents (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/client.gen.ts:11706:39)
-      at async invoke (/workspace/viztest/sdks/typescript/entrypoint/__dagger.dispatch.ts:72:28)
-      at async connection.LogOutput (/workspace/viztest/sdks/typescript/entrypoint/__dagger.dispatch.ts:221:24)
-      at async <anonymous> (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/core.js:99971:7)
-      at async withGQLClient (/workspace/viztest/sdks/typescript/node_modules/@dagger.io/dagger/core.js:99956:12) {
-    response: {
-      data: null,
-      errors: [Array],
-      extensions: undefined,
-      status: 200,
-      headers: [Object],
-      body: '{"errors":[{"message":"stat doesnt-exist.txt: no such file or directory [traceparent:00000000000000000000000000000000-0000000000000000]","path":["directory","file"]}],"data":null}'
-    },
-    request: {
-      query: '\n' +
-        '      { directory  { file (path: "doesnt-exist.txt") { contents  } } }\n' +
-        '    ',
-      variables: undefined
-    }
-  },
-  code: 'D100',
-  requestContext: {
-    query: '\n' +
-      '      { directory  { file (path: "doesnt-exist.txt") { contents  } } }\n' +
-      '    ',
-    variables: undefined
-  },
-  response: {
-    data: null,
-    errors: [ [Object] ],
-    extensions: undefined,
-    status: 200,
-    headers: {
-      'content-length': '179',
-      'content-type': 'application/graphql-response+json',
-      date: 'XXX, XX XXX XXXX XX:XX:XX GMT'
-    },
-    body: '{"errors":[{"message":"stat doesnt-exist.txt: no such file or directory [traceparent:00000000000000000000000000000000-0000000000000000]","path":["directory","file"]}],"data":null}'
-  },
-  extensions: undefined
-}
-{"error":{"message":"stat doesnt-exist.txt: no such file or directory [traceparent:00000000000000000000000000000000-0000000000000000]"}}
-! exit code: 2
+✘ Directory.file(path: "doesnt-exist.txt"): File! X.Xs ERROR
+! stat doesnt-exist.txt: no such file or directory
 
 Setup tracing by running "dagger cloud signup". To hide set DAGGER_NO_NAG=1

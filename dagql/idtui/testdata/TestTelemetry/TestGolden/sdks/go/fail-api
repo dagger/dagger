@@ -14,11 +14,6 @@ Expected stderr:
 $ viztestGo: ViztestGo! X.Xs CACHED
 ✘ .failApi: String! X.Xs ERROR
 ┃ go function stdout
-┃ stat doesnt-exist.txt: no such file or directory [traceparent:00000000000000000000000000000000-0000000000000000]
-┃ ::dagger-function-error::"stat doesnt-exist.txt: no such file or directory [traceparent:00000000000000000000000000000000-0000000000000000]"
-├╴✘ call module entrypoint X.Xs ERROR
-│ ┆ (the entrypoint's own evaluation, elided)
-│
 ╰╴✘ Directory.file(path: "doesnt-exist.txt"): File! X.Xs ERROR
   ! stat doesnt-exist.txt: no such file or directory
 
