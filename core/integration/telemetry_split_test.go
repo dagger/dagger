@@ -133,9 +133,9 @@ func readTelemetrySplit(ctx context.Context, t *testctx.T, cloud telemetrySplitC
 }
 
 // cliWriters are the writers of the client's own spans that the client
-// published itself, one per client process. A client whose engine stores its
-// own telemetry has the engine publish it instead (Ingested), so they are
-// empty then.
+// published itself, one per client process and trace. A client whose engine
+// stores its own telemetry has the engine publish it instead (Ingested), so
+// they are empty then.
 func (got telemetrySplitReceived) cliWriters() map[string]bool {
 	writers := map[string]bool{}
 	for _, span := range got.spans {

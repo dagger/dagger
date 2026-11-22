@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -25,7 +26,9 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
+	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/agentcontrol"
@@ -976,6 +979,105 @@ func TestSessionCloudLogSequencesPerTrace(t *testing.T) {
 		for i, n := range got {
 			require.EqualValues(t, i+1, n, "trace %s sequences %v are contiguous from 1", traceID, got)
 		}
+	}
+}
+
+// When Cloud refuses one trace's request of a batch spanning several, the
+// forwarder resends only the records of the traces it refused: Cloud takes
+// every record once.
+func TestCloudForwarderResendsOnlyUndeliveredTraces(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	var (
+		mu       sync.Mutex
+		bodies   = map[string]int{}
+		refusing = true
+		refusals int
+		failOn   string // the hex trace ID whose first request Cloud refuses
+	)
+	cloud := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodHead || r.URL.Path != "/v1/logs" {
+			return
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		var msg collogspb.ExportLogsServiceRequest
+		if err := proto.Unmarshal(body, &msg); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		var got []string
+		refuse := false
+		for _, rl := range msg.GetResourceLogs() {
+			for _, sl := range rl.GetScopeLogs() {
+				for _, rec := range sl.GetLogRecords() {
+					got = append(got, rec.GetBody().GetStringValue())
+					if refusing && fmt.Sprintf("%x", rec.GetTraceId()) == failOn {
+						refuse = true
+					}
+				}
+			}
+		}
+		if refuse {
+			refusing = false
+			refusals++
+			// Not retried by the exporter: the forwarder resends the batch.
+			http.Error(w, "oops", http.StatusInternalServerError)
+			return
+		}
+		for _, b := range got {
+			bodies[b]++
+		}
+	}))
+	t.Cleanup(cloud.Close)
+	tuning := fastCloudForwardTuning()
+	sess, root := newCloudTestSession(t, &Server{cloudForwardTuning: &tuning}, &engine.ClientMetadata{
+		CloudAuth:               basicCloudAuth("dag_test_token"),
+		CloudURL:                cloud.URL,
+		CloudTelemetryPublisher: engine.CloudTelemetryPublisherEngine,
+	})
+	require.NotNil(t, sess.cloudForwarder)
+
+	clientCtx := engine.ContextWithClientMetadata(t.Context(), root.clientMetadata)
+	clientCtx = telemetry.WithLoggerProvider(clientCtx, sess.loggerProvider)
+	tracer := sess.tracerProvider.Tracer("test")
+	var want []string
+	var spans []trace.Span
+	for i := range 3 {
+		spanCtx, span := tracer.Start(clientCtx, fmt.Sprintf("root-%d", i), trace.WithNewRoot())
+		if i == 1 {
+			mu.Lock()
+			failOn = span.SpanContext().TraceID().String()
+			mu.Unlock()
+		}
+		spans = append(spans, span)
+		for j := range 3 {
+			body := fmt.Sprintf("log-%d-%d", i, j)
+			want = append(want, body)
+			rec := otellog.Record{}
+			rec.SetTimestamp(time.Now())
+			rec.SetBody(otellog.StringValue(body))
+			telemetry.Logger(spanCtx, "test").Emit(spanCtx, rec)
+		}
+	}
+	for _, span := range spans {
+		span.End()
+	}
+	sess.flushSessionCloudTelemetry(ctx)
+	require.NoError(t, sess.shutdownTelemetry(ctx))
+	require.NoError(t, sess.cloudForwarder.waitReleased(ctx))
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.Equal(t, 1, refusals, "Cloud refused one request")
+	for _, body := range want {
+		require.Equal(t, 1, bodies[body], "Cloud took %q once: %v", body, bodies)
 	}
 }
 

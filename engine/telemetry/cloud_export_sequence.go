@@ -202,32 +202,80 @@ func groupByTrace[T any](items []T, traceOf func(*T) trace.TraceID) []traceGroup
 	return groups
 }
 
+// maxConcurrentTraceUploads bounds the per-trace uploads of one export in
+// flight at once, so an export of many traces costs about as many round trips
+// as it has traces divided by this, not one per trace.
+const maxConcurrentTraceUploads = 4
+
+// TraceExportError is the error of a Cloud export whose records spanned
+// several traces, uploaded as one request per trace, when some of those
+// requests failed. Delivered names the traces whose upload succeeded: a caller
+// that resends the export can leave their records out, which Cloud already
+// has. Errors are the failed uploads' errors; errors.Is and errors.As see
+// each of them.
+type TraceExportError struct {
+	Delivered []trace.TraceID
+	Errors    []error
+}
+
+func (e *TraceExportError) Error() string { return errors.Join(e.Errors...).Error() }
+
+func (e *TraceExportError) Unwrap() []error { return e.Errors }
+
 // exportPerTrace uploads items as one export call per trace, each with the
-// next sequence of that trace's writer on its context. An upload that fails
-// does not stop the others; their errors are joined. Once ctx has ended, the
-// remaining uploads are not attempted and consume no sequence numbers, which
-// Cloud would otherwise wait on as gaps.
+// next sequence of that trace's writer on its context, up to
+// maxConcurrentTraceUploads at once. An upload that fails does not stop the
+// others: an export of several traces that fails returns a TraceExportError
+// naming the traces delivered. Once ctx has ended, the remaining uploads are
+// not attempted and consume no sequence numbers, which Cloud would otherwise
+// wait on as gaps.
 func exportPerTrace[T any](ctx context.Context, s *traceExportSequencer, items []T, traceOf func(*T) trace.TraceID, export func(context.Context, []T) error) error {
 	groups := groupByTrace(items, traceOf)
-	if len(groups) == 0 {
+	switch len(groups) {
+	case 0:
 		// Nothing to upload, so no request and no sequence number.
 		return export(ctx, items)
+	case 1:
+		return export(withExportSequence(ctx, s.next(groups[0].traceID)), groups[0].items)
 	}
-	var errs []error
+	var (
+		wg        sync.WaitGroup
+		mu        sync.Mutex
+		errs      []error
+		delivered []trace.TraceID
+	)
+	slots := make(chan struct{}, maxConcurrentTraceUploads)
 	for _, group := range groups {
+		select {
+		case slots <- struct{}{}:
+		case <-ctx.Done():
+		}
 		if err := context.Cause(ctx); err != nil {
+			mu.Lock()
 			errs = append(errs, err)
+			mu.Unlock()
 			break
 		}
-		if err := export(withExportSequence(ctx, s.next(group.traceID)), group.items); err != nil {
-			errs = append(errs, err)
-		}
+		// Numbered here, in the order the traces appear, before the upload
+		// starts: its retries resend this header.
+		uploadCtx := withExportSequence(ctx, s.next(group.traceID))
+		wg.Go(func() {
+			defer func() { <-slots }()
+			err := export(uploadCtx, group.items)
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				errs = append(errs, err)
+			} else {
+				delivered = append(delivered, group.traceID)
+			}
+		})
 	}
-	if len(errs) == 1 {
-		// As the exporter returned it, for an export of one trace.
-		return errs[0]
+	wg.Wait()
+	if len(errs) == 0 {
+		return nil
 	}
-	return errors.Join(errs...)
+	return &TraceExportError{Delivered: delivered, Errors: errs}
 }
 
 type exportSequenceTransport struct {

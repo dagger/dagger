@@ -7,10 +7,13 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/dagger/dagger/internal/cloud/auth"
 	"github.com/google/uuid"
@@ -181,7 +184,8 @@ func TestSequencedLogExporterSplitsMixedTraces(t *testing.T) {
 		writers[id] = call.metadata.writerID
 		got = append(got, upload{id, call.metadata.sequence, strings.Join(call.bodies, ",")})
 	}
-	require.Equal(t, []upload{
+	// One export's uploads run concurrently, in no particular order.
+	require.ElementsMatch(t, []upload{
 		{traceA, 1, "a1,a2"},
 		{traceB, 1, "b1,b2"},
 		{trace.TraceID{}, 1, "none1"},
@@ -217,14 +221,17 @@ func TestSequencedSpanExporterSplitsMixedTraces(t *testing.T) {
 	}))
 	require.NoError(t, exp.ExportSpans(t.Context(), []sdktrace.ReadOnlySpan{tracedTestSpan(traceB, 4)}))
 	require.Len(t, calls, 3)
-	require.Equal(t, []string{"1", "3"}, calls[0].bodies)
-	require.Equal(t, uint64(1), calls[0].metadata.sequence)
-	require.Equal(t, []string{"2"}, calls[1].bodies)
-	require.Equal(t, uint64(1), calls[1].metadata.sequence)
-	require.Equal(t, []string{"4"}, calls[2].bodies)
-	require.Equal(t, uint64(2), calls[2].metadata.sequence)
-	require.Equal(t, calls[1].metadata.writerID, calls[2].metadata.writerID)
-	require.NotEqual(t, calls[0].metadata.writerID, calls[1].metadata.writerID)
+	byBodies := map[string]exportSequenceMetadata{}
+	for _, call := range calls {
+		require.True(t, call.stamped)
+		byBodies[strings.Join(call.bodies, ",")] = call.metadata
+	}
+	a, b1, b2 := byBodies["1,3"], byBodies["2"], byBodies["4"]
+	require.Equal(t, uint64(1), a.sequence)
+	require.Equal(t, uint64(1), b1.sequence)
+	require.Equal(t, uint64(2), b2.sequence)
+	require.Equal(t, b1.writerID, b2.writerID)
+	require.NotEqual(t, a.writerID, b1.writerID)
 }
 
 type spanExporterFunc func(context.Context, []sdktrace.ReadOnlySpan) error
@@ -235,7 +242,8 @@ func (f spanExporterFunc) ExportSpans(ctx context.Context, spans []sdktrace.Read
 func (spanExporterFunc) Shutdown(context.Context) error { return nil }
 
 // One trace's failed upload does not keep the others from being attempted;
-// the export returns the failures joined.
+// the export's TraceExportError names the traces delivered and carries the
+// failures.
 func TestSequencedLogExporterPartialFailure(t *testing.T) {
 	errB := errors.New("trace B refused")
 	probe := &recordingLogExporter{fail: func(id trace.TraceID) error {
@@ -249,26 +257,63 @@ func TestSequencedLogExporterPartialFailure(t *testing.T) {
 		tracedTestRecord(traceA, "a"), tracedTestRecord(traceB, "b"), tracedTestRecord(traceC, "c"),
 	})
 	require.ErrorIs(t, err, errB)
-	require.Len(t, probe.calls, 3, "every trace's upload is attempted")
-	require.Equal(t, []string{"c"}, probe.calls[2].bodies)
+	var traceErr *TraceExportError
+	require.ErrorAs(t, err, &traceErr)
+	require.ElementsMatch(t, []trace.TraceID{traceA, traceC}, traceErr.Delivered)
+	require.Equal(t, []error{errB}, traceErr.Errors)
+	require.Equal(t, errB.Error(), err.Error())
+	var bodies []string
+	for _, call := range probe.calls {
+		bodies = append(bodies, call.bodies...)
+	}
+	require.ElementsMatch(t, []string{"a", "b", "c"}, bodies, "every trace's upload is attempted")
+
+	// An export of one trace returns the exporter's error as it is.
+	err = exp.Export(t.Context(), []sdklog.Record{tracedTestRecord(traceB, "b")})
+	require.Same(t, errB, err)
 }
 
-// Once the export's context has ended, no more uploads are attempted, and
-// none consumes a sequence number Cloud would wait on.
+// An export whose context has ended attempts no upload, and none consumes a
+// sequence number Cloud would wait on.
 func TestSequencedLogExporterStopsWhenCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
-	probe := &recordingLogExporter{fail: func(trace.TraceID) error {
-		cancel()
-		return context.Canceled
-	}}
+	cancel()
+	probe := &recordingLogExporter{}
 	exp := &sequencedLogExporter{sequencer: newTraceExportSequencer(), exporter: probe}
 	err := exp.Export(ctx, []sdklog.Record{tracedTestRecord(traceA, "a"), tracedTestRecord(traceB, "b")})
 	require.ErrorIs(t, err, context.Canceled)
-	require.Len(t, probe.calls, 1)
+	var traceErr *TraceExportError
+	require.ErrorAs(t, err, &traceErr)
+	require.Empty(t, traceErr.Delivered)
+	require.Empty(t, probe.calls)
 
-	probe.fail = nil
 	require.NoError(t, exp.Export(t.Context(), []sdklog.Record{tracedTestRecord(traceB, "b")}))
-	require.Equal(t, uint64(1), probe.calls[1].metadata.sequence, "the abandoned upload used no number")
+	require.Equal(t, uint64(1), probe.calls[0].metadata.sequence, "the abandoned upload used no number")
+}
+
+// One export's per-trace uploads run concurrently, a bounded number at once.
+func TestSequencedLogExporterBoundsConcurrentUploads(t *testing.T) {
+	var inFlight, peak atomic.Int32
+	slow := logExporterFunc(func(context.Context, []sdklog.Record) error {
+		n := inFlight.Add(1)
+		for {
+			p := peak.Load()
+			if n <= p || peak.CompareAndSwap(p, n) {
+				break
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+		inFlight.Add(-1)
+		return nil
+	})
+	exp := &sequencedLogExporter{sequencer: newTraceExportSequencer(), exporter: slow}
+	var records []sdklog.Record
+	for i := range 3 * maxConcurrentTraceUploads {
+		records = append(records, tracedTestRecord(trace.TraceID{1, byte(i)}, fmt.Sprint(i)))
+	}
+	require.NoError(t, exp.Export(t.Context(), records))
+	require.Greater(t, peak.Load(), int32(1), "uploads overlap")
+	require.LessOrEqual(t, peak.Load(), int32(maxConcurrentTraceUploads))
 }
 
 // An empty export makes no upload and uses no number.
@@ -323,16 +368,26 @@ func TestSequencedLogExporterRetriesResendHeader(t *testing.T) {
 	require.NoError(t, exp.Export(t.Context(), []sdklog.Record{tracedTestRecord(traceA, "a2")}))
 
 	require.Len(t, headers, 9)
-	for i := 0; i < len(headers); i += 3 {
-		require.Equal(t, headers[i], headers[i+1], "a retry resends the header")
-		require.Equal(t, headers[i], headers[i+2], "a retry resends the header")
+	counts := map[string]int{}
+	for _, h := range headers {
+		counts[h]++
 	}
-	writerA1, seqA1 := parseExportHeader(t, headers[0])
-	writerB1, seqB1 := parseExportHeader(t, headers[3])
-	writerA2, seqA2 := parseExportHeader(t, headers[6])
-	require.NotEqual(t, writerA1, writerB1)
-	require.Equal(t, writerA1, writerA2)
-	require.Equal(t, []uint64{1, 1, 2}, []uint64{seqA1, seqB1, seqA2})
+	require.Len(t, counts, 3, "three uploads")
+	seqs := map[string][]uint64{}
+	for h, n := range counts {
+		require.Equal(t, 3, n, "each attempt of %s resends its header", h)
+		writer, seq := parseExportHeader(t, h)
+		seqs[writer] = append(seqs[writer], seq)
+	}
+	require.Len(t, seqs, 2, "a writer per trace")
+	for writer, got := range seqs {
+		slices.Sort(got)
+		if len(got) == 2 {
+			require.Equal(t, []uint64{1, 2}, got, "trace A's writer %s", writer)
+		} else {
+			require.Equal(t, []uint64{1}, got, "trace B's writer %s", writer)
+		}
+	}
 }
 
 type logExporterFunc func(context.Context, []sdklog.Record) error
