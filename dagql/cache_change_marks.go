@@ -110,7 +110,7 @@ func (c *Cache) markEntryClassLocked(id sharedResultID, cause StampCause) {
 		lends = true
 	}
 	c.changes.lends = append(c.changes.lends, lends)
-	holds := cause != StampJoin && (lends || res != nil && res.holdsAnyPartLocked())
+	holds := cause != StampJoin && (lends || res != nil && c.holdsAnyPartLocked(res))
 	c.changes.holds = append(c.changes.holds, holds)
 	if holds {
 		if c.changes.holding == nil {
@@ -156,7 +156,7 @@ func (c *Cache) markLeavingLocked(id sharedResultID) {
 	// prune made before emptying it, and their class lists are no reader's
 	// to keep.
 	_, held := c.changes.holding[id]
-	holds := lends || held || leaving != nil && leaving.holdsAnyPartLocked()
+	holds := lends || held || leaving != nil && c.holdsAnyPartLocked(leaving)
 	for eqID := range c.resultOutputEqClasses[id] {
 		root := c.eqClassRootLocked(eqID)
 		if root == 0 {
@@ -218,7 +218,7 @@ func (c *Cache) markJoinLocked(a, b map[sharedResultID]struct{}) {
 // class (holdsAnyPartLocked). Requires egraphMu.
 func (c *Cache) someHoldsLocked(ids map[sharedResultID]struct{}) bool {
 	for id := range ids {
-		if res := c.resultsByID[id]; res != nil && res.holdsAnyPartLocked() {
+		if res := c.resultsByID[id]; res != nil && c.holdsAnyPartLocked(res) {
 			return true
 		}
 	}
@@ -260,7 +260,7 @@ func (c *Cache) takeChangesLocked(change *RemoteChange) {
 		// Widened only when the entry held a part at the mark or holds one
 		// now: otherwise the write changed no class mate's answer.
 		if !marks.holds[i] {
-			if res := c.resultsByID[id]; res == nil || !res.holdsAnyPartLocked() {
+			if res := c.resultsByID[id]; res == nil || !c.holdsAnyPartLocked(res) {
 				continue
 			}
 		}

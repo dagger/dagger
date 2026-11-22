@@ -2820,6 +2820,15 @@ type Cache struct {
 	// handed them back, on a blob-backed cache only: nil on any other
 	// (cache_change_marks.go). Guarded by egraphMu.
 	changes *changeMarks
+	// uploads counts, on a blob-backed cache, the uploads of parts its
+	// reader marks in progress, by entry and part address key
+	// (MarkPartUploading, EndPartUploads). Memory only, as the reader's own
+	// claims are. Guarded by uploadsMu, not egraphMu: a count changes no
+	// answer the graph gives. uploadsMu is a leaf: taken alone, under
+	// egraphMu in either mode, or under a lock of the reader's own, and
+	// nothing is taken while it is held.
+	uploadsMu sync.Mutex
+	uploads   map[sharedResultID]map[string]int
 	// writes counts, on a blob-backed cache, the changes to what stored
 	// bundles carry (stampEntryLocked): each entry keeps the count of the
 	// last one (sharedResult.changedAt), and a stored bundle the count it was
@@ -3293,10 +3302,6 @@ type sharedResult struct {
 	// (storedLayers). Only a blob-backed cache (the Cloud) sets them, in
 	// changeStoredPartsLocked. Guarded by egraphMu.
 	storedParts map[string]storedPart
-	// uploading counts, by part address key, the uploads of a part in
-	// progress for the entry, as a blob-backed cache's reader marks them
-	// (MarkPartUploading). Memory only, as the reader's own claims are.
-	uploading map[string]int
 	// storedRecordBytes is the size of the record a blob-backed cache stores
 	// for the entry, as persistence writes it (encodedRecordBytes), or 0.
 	// Written through setStoredRecordBytesLocked. Guarded by egraphMu.
