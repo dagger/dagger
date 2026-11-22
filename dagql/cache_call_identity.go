@@ -22,6 +22,9 @@ type callIdentity struct {
 	// reproduces them from the literal.
 	witnesses []bool
 	extras    []call.ExtraDigest
+	// onlyItsSession reports that no other session can ever match the call
+	// (ResultCall.onlyItsSessionMatches).
+	onlyItsSession bool
 }
 
 // callIdentityFromPB derives a call's identity from the call as its span
@@ -53,7 +56,7 @@ func callIdentityFromPB(pb *callpbv1.Call) (callIdentity, error) {
 	if err != nil {
 		return callIdentity{}, fmt.Errorf("call identity %q: %w", pb.Field, err)
 	}
-	id := callIdentity{field: pb.Field, recipe: recipe, self: self, extras: frame.ExtraDigests}
+	id := callIdentity{field: pb.Field, recipe: recipe, self: self, extras: frame.ExtraDigests, onlyItsSession: frame.onlyItsSessionMatches()}
 	for _, ref := range refs {
 		var dig digest.Digest
 		witness := ref.Digest != ""

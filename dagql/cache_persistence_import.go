@@ -247,6 +247,11 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			if err != nil {
 				return fmt.Errorf("import result_call %d: %w", row.ResultID, err)
 			}
+			if kept == nil {
+				// A call the Cloud doesn't keep, saved before it stopped
+				// keeping them: a save writes the calls kept in memory.
+				continue
+			}
 			if res.calls == nil {
 				res.calls = make(map[digest.Digest]*keptCall)
 			}
