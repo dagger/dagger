@@ -342,19 +342,21 @@ const (
 	// MergeRouteSetFile is a part of a set file a restore merged
 	// (RestoreValues).
 	MergeRouteSetFile
-	// MergeRoutePlacement is a merge the service sent on its own while
-	// the engine ran, answering no lookup of the engine's.
-	MergeRoutePlacement
+	// MergeRouteDeferred is a merge that answered no single lookup of the
+	// engine's: roots the engine's lookups deferred to its queue, which the
+	// service sends as the engine's merge slots free, a split's lower half
+	// of one, or one sent again.
+	MergeRouteDeferred
 	// MergeRouteLookup is a merge that answered a lookup of the engine's.
 	MergeRouteLookup
 	numMergeRoutes
 )
 
 var mergeRouteNames = [numMergeRoutes]string{
-	MergeRouteUnnamed:   "unnamed",
-	MergeRouteSetFile:   "set_file",
-	MergeRoutePlacement: "placement",
-	MergeRouteLookup:    "lookup",
+	MergeRouteUnnamed:  "unnamed",
+	MergeRouteSetFile:  "set_file",
+	MergeRouteDeferred: "deferred",
+	MergeRouteLookup:   "lookup",
 }
 
 func (r MergeRoute) String() string { return mergeRouteNames[r] }
@@ -364,7 +366,7 @@ func (r MergeRoute) String() string { return mergeRouteNames[r] }
 // in.
 type MergeSource struct {
 	Route MergeRoute
-	// Merge is the service's number for a placement's or a lookup's merge.
+	// Merge is the service's number for a deferred or a lookup merge.
 	Merge uint64
 	// File names the set file of a set file's part.
 	File string
