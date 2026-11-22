@@ -84,6 +84,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				return args
 			})()...),
 		dagql.NodeFunc("digest", s.digest).FollowsFromInputs().
+			IsPersistable().
 			Doc(
 				`Return the directory's digest.
 				The format of the digest is not guaranteed to be stable between releases of Dagger.

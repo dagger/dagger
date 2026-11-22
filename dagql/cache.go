@@ -243,6 +243,11 @@ type persistedEdge struct {
 // 26: a module object's content digest holds its type. Older stores took
 // objects of two types with equal fields as one result, and a load of one
 // could be served the other, so they are wiped on import.
+//
+// A store also holds answers the engine's content checksum computed
+// (engine/contenthash), such as Directory.digest's, whose format a release
+// may change. A change to the checksum's output raises this version, so an
+// old store is wiped rather than serving an old digest beside new ones.
 const cachePersistenceSchemaVersion = "26"
 
 // blobBackedStoreFormat names the format a blob-backed cache saves its stored
