@@ -53,7 +53,7 @@ func (l *Loader) SDKForModule(
 	}
 	recordInterface(ctx, interfaceLegacyRuntime, sdk.Source)
 
-	ctx, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("load SDK: %s", sdk.Source))
+	ctx, span := core.Tracer(ctx).Start(ctx, sdkLoadSpanName(sdk, parentSrc))
 	defer telemetry.EndWithCause(span, &rerr)
 
 	builtinSDK, builtinErr := l.namedSDK(ctx, query, sdk)
@@ -83,6 +83,17 @@ func (l *Loader) SDKForModule(
 	fmt.Fprintln(stdio.Stderr, "- any local module path, e.g. ./my-sdk")
 
 	return nil, fmt.Errorf("invalid SDK: %q", sdk.Source)
+}
+
+// sdkLoadSpanName names the load of the SDK sdk for the module parentSrc,
+// "load SDK for <module>: <sdk>", so that among a module's dependencies, the
+// one whose SDK fails to load is named, as a module SDK's build of it is
+// ("build <module>"). Without a module, it is "load SDK: <sdk>".
+func sdkLoadSpanName(sdk *core.SDKConfig, parentSrc *core.ModuleSource) string {
+	if parentSrc != nil && parentSrc.ModuleName != "" {
+		return fmt.Sprintf("load SDK for %s: %s", parentSrc.ModuleName, sdk.Source)
+	}
+	return fmt.Sprintf("load SDK: %s", sdk.Source)
 }
 
 // Load an SDK module from an external source (not builtin to the engine).

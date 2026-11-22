@@ -3,7 +3,7 @@ Expected stderr:
 ✔ connect X.Xs
 ✘ load workspace: . X.Xs ERROR
 ┇ load module: ./viztest/broken-dep-sdk ›
-✘ load SDK: unknown X.Xs ERROR
+✘ load SDK for invalid: unknown X.Xs ERROR
 Could not load SDK "unknown".
 
 Errors:
