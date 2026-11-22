@@ -422,6 +422,9 @@ type foldInfo struct {
 	// those of its wait links.
 	linked, causes []SpanID
 	waits          []foldWait
+	// foreignWaits marks a wait on a span of another trace, which the DB
+	// reads as one on an operation outside the trace.
+	foreignWaits bool
 	// origins holds the error origins its status names.
 	failed bool
 }
@@ -488,7 +491,7 @@ func otelFoldInfo(s sdktrace.ReadOnlySpan) foldInfo {
 				reason = kv.Value.AsString()
 			}
 		}
-		info.addLink(purpose, reason, SpanID{link.SpanContext.SpanID()})
+		info.addLink(purpose, reason, TraceID{link.SpanContext.TraceID()}, SpanID{link.SpanContext.SpanID()})
 	}
 	if info.failed {
 		info.addOrigins(s.Status().Description)
@@ -527,7 +530,7 @@ func snapshotFoldInfo(s *SpanSnapshot) foldInfo {
 	info.cat = foldCategory(s.EndTime.Before(s.StartTime), s.Pending || (s.Final && s.Pending_),
 		s.Cached || (s.Final && s.Cached_), s.Canceled || (s.Final && s.Canceled_), info.failed)
 	for _, link := range s.Links {
-		info.addLink(link.Purpose, link.WaitReason, link.SpanContext.SpanID)
+		info.addLink(link.Purpose, link.WaitReason, link.SpanContext.TraceID, link.SpanContext.SpanID)
 	}
 	if info.failed {
 		info.addOrigins(s.Status.Description)
@@ -535,7 +538,12 @@ func snapshotFoldInfo(s *SpanSnapshot) foldInfo {
 	return info
 }
 
-func (info *foldInfo) addLink(purpose, reason string, target SpanID) {
+func (info *foldInfo) addLink(purpose, reason string, trace TraceID, target SpanID) {
+	if purpose == telemetryattrs.LinkPurposeWait && target != info.id && (!target.IsValid() || trace != info.trace) {
+		// on no span of the trace: an operation outside it
+		info.foreignWaits = true
+		return
+	}
 	if !target.IsValid() || target == info.id {
 		return
 	}
@@ -740,10 +748,14 @@ func (f *Fold) ingest(info foldInfo, fill bool) bool {
 		info.cat = stateCanceled
 		f.end[i] = f.rootEnd
 	}
-	if len(info.causes) > 0 || len(info.waits) > 0 {
+	if len(info.causes) > 0 || len(info.waits) > 0 || info.foreignWaits {
 		f.ingesting = i
 		for _, cause := range info.causes {
 			f.noteCause(i, f.intern(cause))
+		}
+		if info.foreignWaits {
+			f.markEscape(i, noSpan)
+			f.state[i] |= foldWaitLinks
 		}
 		info.linked = f.classifyWaits(i, info.waits, info.linked)
 		f.ingesting = noSpan
