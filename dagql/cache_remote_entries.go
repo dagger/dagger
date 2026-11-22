@@ -114,6 +114,9 @@ type RemoteHolding struct {
 	// counts executed evidence: once the cache has dropped a value, only a
 	// computation after the drop may bring it back (holding.executed).
 	Executed bool
+	// BeforeLastDrop reports that the call's row reached the Cloud before
+	// its latest drop of values.
+	BeforeLastDrop bool
 	// UsedAtUnixNano is when the span was recorded where the service read
 	// it, a use of the entry (0: unknown). The entry's last use never moves
 	// back.
