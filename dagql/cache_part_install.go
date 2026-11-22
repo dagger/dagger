@@ -747,7 +747,7 @@ func (c *Cache) InstallReadyPart(ctx context.Context, receiver AnyResult, source
 	if outcome == PartInstalled && source.delegation != nil {
 		// A delegated child's part installed from its parent's reads the
 		// parent's part.
-		c.partReads.record(source.delegation.parent.id, []PartKey{source.delegation.source.Part})
+		c.recordPartRead(ctx, source.delegation.parent.id, []PartKey{source.delegation.source.Part})
 	}
 	if outcome == PartInstalled {
 		if PartTaskFromContext(ctx) == receipt.task {

@@ -1885,6 +1885,8 @@ func (c *Cache) cleanupReleasedSession(plan *cacheSessionReleasePlan) error {
 	delete(c.sessionLazySpansProvisional, plan.sessionID)
 	delete(c.sessionResultInstallSpans, plan.sessionID)
 	delete(c.sessionLazyAnchors, plan.sessionID)
+	// The session's reads that count are reported or never will be.
+	c.partReads.forgetSession(plan.sessionID)
 	delete(c.sessionResourcesBySession, plan.sessionID)
 	delete(c.sessionVolatileVarsBySession, plan.sessionID)
 	delete(c.sessionHandlesBySession, plan.sessionID)
@@ -5678,7 +5680,9 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) (rerr error) {
 
 	// Work read the entry once it asked for it, though the entry may still
 	// be running.
-	c.partReads.record(shared.id, nil)
+	c.recordPartRead(ctx, shared.id, nil)
+	// The entry's evaluation is its own call's work, which reads for it.
+	ctx = outsideCountedReads(ctx)
 	watch := partReselectWatch{loop: "evaluateOne"}
 	for {
 		watch.again(ctx, shared, PersistedPartAddress{})
@@ -5717,7 +5721,9 @@ func (c *Cache) EvaluateParts(ctx context.Context, res AnyResult, parts ...PartK
 
 	// Work read the parts once it asked for them, though they may still be
 	// being made.
-	c.partReads.record(shared.id, parts)
+	c.recordPartRead(ctx, shared.id, parts)
+	// The entry's evaluation is its own call's work, which reads for it.
+	ctx = outsideCountedReads(ctx)
 	watch := partReselectWatch{loop: "EvaluateParts"}
 	for {
 		watch.again(ctx, shared, PersistedPartAddress{})
@@ -7031,6 +7037,44 @@ func (c *Cache) getOrInitCallTakingOver(
 	}
 }
 
+// partReadScope is what a part read made under a context counts as
+// (recordPartRead). A read counts when no call above it, up to the session's
+// top, is a cached call that isn't session-bound: every session that gets
+// there makes it again, since uncached and session-bound calls run in every
+// session, while any other cached call runs only when its lookup misses.
+type partReadScope struct {
+	counts bool
+}
+
+type partReadScopeCtx struct{}
+
+// readScope is the scope of a part read made under ctx. A context no call has
+// scoped is at the session's top when no cached call encloses it, and
+// otherwise counts as the cached call it names (CallerRecipe).
+func readScope(ctx context.Context) partReadScope {
+	if scope, ok := ctx.Value(partReadScopeCtx{}).(partReadScope); ok {
+		return scope
+	}
+	return partReadScope{counts: CallerRecipe(ctx) == ""}
+}
+
+// withReadScope is ctx with its part reads scoped as scope.
+func withReadScope(ctx context.Context, scope partReadScope) context.Context {
+	return context.WithValue(ctx, partReadScopeCtx{}, scope)
+}
+
+// outsideCountedReads is ctx for the evaluation of a result a read reads: the
+// result's own call's work, which reads for that call, whether or not the read
+// counted.
+func outsideCountedReads(ctx context.Context) context.Context {
+	scope := readScope(ctx)
+	if !scope.counts {
+		return ctx
+	}
+	scope.counts = false
+	return withReadScope(ctx, scope)
+}
+
 //nolint:gocyclo // Core cache lookup/insert flow is intentionally centralized here.
 func (c *Cache) getOrInitCallInner(
 	ctx context.Context,
@@ -7065,6 +7109,8 @@ func (c *Cache) getOrInitCallInner(
 			ev.Outcome = CacheOutcomeUncached
 		}
 
+		// An uncached call runs whenever the call above it does: its reads
+		// count as that call's do.
 		val, err := fn(ctx)
 		if err != nil {
 			return nil, err
@@ -7124,6 +7170,16 @@ func (c *Cache) getOrInitCallInner(
 	if err != nil {
 		return nil, fmt.Errorf("derive request digest: %w", err)
 	}
+	// A session-bound call is made again by every session: its reads count as
+	// the call above it's do. Any other cached call runs only when its lookup
+	// misses: no read under it counts. The scope is set either way, before the
+	// call names itself as the caller of the calls under it (CallerRecipe),
+	// which the scope of a context no call has scoped would read.
+	scope := readScope(ctx)
+	if !req.ResultCall.SessionBound() {
+		scope.counts = false
+	}
+	ctx = withReadScope(ctx, scope)
 	// The call names the cached call it was made under, and is the caller of
 	// the cached calls its resolver makes, if its span is reported: one that
 	// isn't, as Generator.sync's isn't, or isn't cached installs nothing, so
