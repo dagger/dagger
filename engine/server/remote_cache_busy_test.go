@@ -237,39 +237,36 @@ func TestRemoteCacheAdapterCountsItsLooksForReadyRoots(t *testing.T) {
 	require.Contains(t, stats.attrs(), "look_time")
 }
 
-// The look for ready roots wakes only for the ends of the rows a waiting
-// root waits on: another row's evaluation ending, as rows end all the time
-// on a busy engine, takes no look. On the ninth whole run's fill the busiest
-// engine looked 126,133 times in 700 s, nearly every time for an end that
-// could free no waiting root.
-func TestRemoteCacheAdapterLooksOnlyWhenARowARootWaitsOnEnds(t *testing.T) {
-	e := newAdapterTestEngine(t)
-	busy := e.busyFile(t, "busy")
-	roots := []uint64{entryNumber(t, busy)}
-	require.NoError(t, e.adapter.Export(e.ctx, protocol.Export{Roots: roots}, nil, func(context.Context, remotecache.Export) error { return nil }))
+// The busy waits want exactly the rows their waiting roots wait on: the
+// look wakes for an end of one of them and no other. A row two roots wait
+// on stays wanted until neither waits; a root left out again waits on its
+// new rows only.
+func TestBusyWaitsWantTheRowsTheirRootsWaitOn(t *testing.T) {
+	var w busyWaits
+	require.False(t, w.wants(5), "no root waits")
+	w.wait(3, dagql.LeftOutRoot{Row: 3, Kind: dagql.BusyRunning, Busy: []dagql.BusyRow{{Row: 5}, {Row: 6}}})
+	w.wait(4, dagql.LeftOutRoot{Row: 4, Kind: dagql.BusyRunning, Busy: []dagql.BusyRow{{Row: 6}, {Row: 7}}})
+	for row, want := range map[uint64]bool{3: false, 4: false, 5: true, 6: true, 7: true, 8: false} {
+		require.Equal(t, want, w.wants(row), "row %d", row)
+	}
 
-	took := make(chan []uint64, 1)
-	go func() {
-		if ready, err := e.adapter.TakeReadyRoots(e.ctx); err == nil {
-			took <- ready
+	busy := map[uint64]bool{7: true}
+	stillBusy := func(rows []uint64) []uint64 {
+		var out []uint64
+		for _, row := range rows {
+			if busy[row] {
+				out = append(out, row)
+			}
 		}
-	}()
-	require.Eventually(t, func() bool {
-		s := e.adapter.readyStats.snapshot()
-		return s.looks >= 2 && s.addWakes >= 1
-	}, 10*time.Second, 5*time.Millisecond, "the looks while the row runs")
-	before := e.adapter.readyStats.snapshot().looks
+		return out
+	}
+	ready, _ := w.take(stillBusy)
+	require.Equal(t, []uint64{3}, ready)
+	require.False(t, w.wants(5), "the root handed on waits no more")
+	require.True(t, w.wants(6), "the other root still waits on the shared row")
 
-	other := e.file(t, "other")
-	require.NoError(t, e.cache.Evaluate(e.ctx, other))
-	time.Sleep(200 * time.Millisecond)
-	require.Equal(t, before, e.adapter.readyStats.snapshot().looks, "another row's ends take no look")
-
-	e.bodies.unpause()
-	select {
-	case ready := <-took:
-		require.Equal(t, roots, ready)
-	case <-time.After(10 * time.Second):
-		t.Fatal("the busy root was never handed on as ready")
+	w.wait(4, dagql.LeftOutRoot{Row: 4, Kind: dagql.BusyRunning, Busy: []dagql.BusyRow{{Row: 8}}})
+	for row, want := range map[uint64]bool{6: false, 7: false, 8: true} {
+		require.Equal(t, want, w.wants(row), "row %d, after root 4 is left out again on row 8", row)
 	}
 }
