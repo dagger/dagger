@@ -158,9 +158,29 @@ func (transferTestCodec) ValidateForeign(v PersistedPayloadVisit) error {
 	_, err := transferTestVisit(v, func(*PersistedRef) error { return nil })
 	return err
 }
+
+// transferTestMapped counts the payloads the codec has mapped to their parts,
+// by each payload's text: a test whose values have a text of their own counts
+// how often the cache decodes its records, beside other tests in parallel.
+var transferTestMapped sync.Map // text → *atomic.Int64
+
+// transferTestMappedCount is how many payloads of the text the codec has
+// mapped to their parts.
+func transferTestMappedCount(text string) int64 {
+	n, _ := transferTestMapped.LoadOrStore(text, new(atomic.Int64))
+	return n.(*atomic.Int64).Load()
+}
+
 func (transferTestCodec) MapSnapshotParts(v PersistedPayloadVisit) ([]CapturedCodecOutput, error) {
 	if steps := transferTestCodecSteps.Load(); steps != nil {
 		(*steps)("map", v)
+	}
+	var mapped struct {
+		Text string `json:"text"`
+	}
+	if json.Unmarshal(v.Payload, &mapped) == nil {
+		n, _ := transferTestMapped.LoadOrStore(mapped.Text, new(atomic.Int64))
+		n.(*atomic.Int64).Add(1)
 	}
 	if outputs, ok := transferTestParts(v); ok {
 		return outputs, nil
