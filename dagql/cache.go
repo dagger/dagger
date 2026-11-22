@@ -2707,6 +2707,9 @@ type Cache struct {
 	// its commit, with the numbers each relocation used, by ordinal and
 	// provisional number, which it may change.
 	testPrerelocated func(map[uint64]map[uint64]sharedResultID)
+	// testMergeReplyPartsDecoding runs as a merge's reply decodes its
+	// values' part addresses from their keys.
+	testMergeReplyPartsDecoding func()
 
 	// testPartInstalled runs as a part install's last act, after it has
 	// released every lock.
