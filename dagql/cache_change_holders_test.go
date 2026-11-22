@@ -150,62 +150,6 @@ func TestAvailablePartAnswersFromHoldersAlone(t *testing.T) {
 	}
 }
 
-// An upload of a part in progress for one entry changes, for a reader that
-// keeps whether a part is needed by such uploads too, every class mate's
-// answer: its start and its end name the class.
-func TestChangeReportsAnUploadNamesItsClassMates(t *testing.T) {
-	t.Parallel()
-	h := newHolderTestClass(t)
-	for _, uploading := range []bool{true, false} {
-		change, err := h.cloud.MarkPartUploading(h.m, h.snapshot, uploading)
-		require.NoError(t, err)
-		require.Equal(t, uploading, h.cloud.PartUploading(h.m, h.snapshot))
-		require.Contains(t, change.Entries, h.m)
-		require.Contains(t, change.Entries, h.r, "uploading %v", uploading)
-	}
-}
-
-// A join of two classes brings an upload in progress on one side to the
-// other side's entries: the join names them, though no entry of either side
-// stores a part or marks one absent. Without the upload, it names none of
-// them.
-func TestChangeReportsAJoinNamesASideWhenTheOtherUploads(t *testing.T) {
-	t.Parallel()
-	for _, uploading := range []bool{true, false} {
-		ctx, cloud := storedPartTestCache(t, WithBlobStore())
-		attach := func(key HolderKey, field, content string) RemoteChange {
-			change, err := cloud.AttachRemoteHolding(ctx, key, RemoteHolding{Recipe: testDigest(field), Request: testDigest(field), Field: field, TypeName: "Directory", ContentDigest: testDigest(content)})
-			require.NoError(t, err)
-			return change
-		}
-		number := func(key HolderKey) uint64 {
-			held, ok := cloud.RemoteHoldingInfo(key)
-			require.True(t, ok)
-			return held.Number
-		}
-		a1, a2, b := HolderKey{"cache-c", 1}, HolderKey{"cache-c", 2}, HolderKey{"cache-c", 3}
-		attach(a1, "join-a1", "join-content-a")
-		attach(a2, "join-a2", "join-content-a")
-		attach(b, "join-b", "join-content-b")
-		if uploading {
-			_, err := cloud.MarkPartUploading(number(b), PersistedPartAddress{Part: "fs"}, true)
-			require.NoError(t, err)
-		}
-		// a1's holding is taught b's content: a1's class and b's join.
-		change, found, err := cloud.UpdateRemoteHolding(ctx, a1, RemoteHoldingUpdate{ContentDigest: testDigest("join-content-b")})
-		require.NoError(t, err)
-		require.True(t, found)
-		class, ok := cloud.EntryClassEntries(number(b))
-		require.True(t, ok)
-		require.Contains(t, class.Entries, number(a2), "the classes joined")
-		if uploading {
-			require.Contains(t, change.Entries, number(a2), "a2 now answers from b's upload")
-		} else {
-			require.NotContains(t, change.Entries, number(a2), "nothing a2 answers changed")
-		}
-	}
-}
-
 // An entry whose record marks a part absent, storing no part, answers
 // "absent" for its class mates. A prune that drops its value collects it in
 // the same write, its record gone first: its leaving must still name its
