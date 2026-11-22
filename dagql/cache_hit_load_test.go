@@ -107,3 +107,15 @@ func TestHitSaysWhatItsLoadDecodedAndWaitedFor(t *testing.T) {
 	require.Empty(t, req.CacheEvidence.HitLoad().Waits, "an attachment already ended is no wait")
 	require.NotZero(t, req.CacheEvidence.HitServedAtUnixNano)
 }
+
+// A call with no request fails with why: reading what a hit's span gathers
+// doesn't read the request a failed call may not have.
+func TestGetOrInitCallWithNoRequestFails(t *testing.T) {
+	t.Parallel()
+	ctx, engine, srv := transferTestCache(t)
+	_, err := engine.GetOrInitCall(ctx, "test-session", srv, nil, func(context.Context) (AnyResult, error) {
+		t.Fatal("nothing runs")
+		return nil, nil
+	})
+	require.ErrorContains(t, err, "call request is nil")
+}
