@@ -15,9 +15,10 @@ import (
 
 const (
 	// chainAheadWindow is how many downloads a chain import holds ahead of
-	// the layers importing. A download is one read of the blob store: a
-	// blob's own, or its pack's, which brings every member of the pack, so
-	// the chain's layers whose blobs one pack holds are one download. A
+	// the layers importing. A download is one read of the blob store in
+	// flight: a blob's own, or its pack's, which brings the chain's members
+	// of the pack, whole or one span after another (packPlan), so the
+	// chain's layers whose blobs one pack holds are one download. A
 	// chain with no more downloads to make than that pays about one round
 	// of request latency instead of one per layer, and one long chain can't
 	// take every slot.
