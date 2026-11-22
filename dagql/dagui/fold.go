@@ -213,6 +213,11 @@ type Fold struct {
 	// carrier's snapshots with waits, which replace its earlier waits.
 	pending map[uint32][]pendingWait
 	waitGen map[uint32]uint32
+	// byDigest indexes folded spans by the call they carry and the output
+	// they produced; wanted holds the IDs retained calls take as arguments,
+	// whose spans are retained (see fold_args.go).
+	byDigest map[string][]uint32
+	wanted   map[string]struct{}
 	// pendingProgress holds the progress of spans not received yet.
 	pendingProgress map[uint32][]foldProgressItem
 	// ingesting is the span ingest is at.
@@ -421,8 +426,9 @@ type foldInfo struct {
 	cat        spanStateCategory
 	start, end time.Time
 	name       string
-	// callDigest and callPayload are the call the span carries, if any.
-	callDigest, callPayload string
+	// callDigest and callPayload are the call the span carries, if any,
+	// and output the digest of what it produced.
+	callDigest, callPayload, output string
 	// linked holds the targets of its cause and error-origin links, which
 	// are retained with it; causes those of its cause links, and waits
 	// those of its wait links.
@@ -481,6 +487,8 @@ func otelFoldInfo(s sdktrace.ReadOnlySpan) foldInfo {
 			info.callDigest = attr.Value.AsString()
 		case telemetry.DagCallAttr:
 			info.callPayload = attr.Value.AsString()
+		case telemetry.DagOutputAttr:
+			info.output = attr.Value.AsString()
 		default:
 			info.flags |= foldAttrFlag(key, attr.Value.AsBool(), attr.Value.AsString())
 		}
@@ -507,7 +515,7 @@ func otelFoldInfo(s sdktrace.ReadOnlySpan) foldInfo {
 
 func snapshotFoldInfo(s *SpanSnapshot) foldInfo {
 	info := foldInfo{id: s.ID, parent: s.ParentID, trace: s.TraceID, start: s.StartTime, end: s.EndTime, name: s.Name,
-		callDigest: s.CallDigest, callPayload: s.CallPayload}
+		callDigest: s.CallDigest, callPayload: s.CallPayload, output: s.Output}
 	set := func(on bool, flag foldState) {
 		if on {
 			info.flags |= flag
@@ -772,7 +780,7 @@ func (f *Fold) ingest(info foldInfo, fill bool) bool { //nolint:gocyclo // one p
 	if !retained {
 		f.setCategory(i, info.cat)
 		// a root is the primary row, until another is set
-		if !info.parent.IsValid() || f.shouldRetain(i) || (f.opts.Foldable != nil && !f.opts.Foldable(info.trace)) {
+		if !info.parent.IsValid() || f.shouldRetain(i) || f.isWanted(info) || (f.opts.Foldable != nil && !f.opts.Foldable(info.trace)) {
 			f.promote(i, i)
 			retained = true
 		}
@@ -784,6 +792,9 @@ func (f *Fold) ingest(info foldInfo, fill bool) bool { //nolint:gocyclo // one p
 		for _, target := range info.linked {
 			f.promote(f.intern(target), noSpan)
 		}
+		f.wantArgs(info.callDigest, info.callPayload)
+	} else if first {
+		f.indexDigests(i, info)
 	}
 	if first {
 		f.arrivedProgress(i, retained)
