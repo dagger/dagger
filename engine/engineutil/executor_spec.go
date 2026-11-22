@@ -769,10 +769,21 @@ func (c *Client) setupRootfs(ctx context.Context, state *execState) error {
 		}
 	}
 
+	functionErrorFile, err := setupFunctionErrorFile(state)
+	if err != nil {
+		return err
+	}
+	stubbed := state.mounts
+	if functionErrorFile {
+		// The function error file's mount is the engine's own, so its stub
+		// must not be left in the process's filesystem.
+		stubbed = append(slices.Clone(stubbed), executor.Mount{Dest: FunctionErrorMountPath})
+	}
+
 	state.cleanups.Add("cleanup rootfs stubs", cleanups.Infallible(executor.MountStubsCleaner(
 		ctx,
 		state.rootfsPath,
-		state.mounts,
+		stubbed,
 		state.procInfo.Meta.RemoveMountStubsRecursive,
 	)))
 
@@ -846,6 +857,34 @@ func (c *Client) setupRootfs(ctx context.Context, state *execState) error {
 	}
 
 	return nil
+}
+
+// setupFunctionErrorFile gives a module entrypoint's module process the file
+// it writes its function's error to (FunctionErrorPathEnv): a directory of the
+// exec's meta mount, bound into the container, so the engine reads the file
+// from the exec's meta snapshot as it reads its stdout and exit code. Anyone
+// may write there, as the process may run as any user.
+func setupFunctionErrorFile(state *execState) (bool, error) {
+	if state.execMD == nil || !state.execMD.FunctionErrorFile || state.metaMountDirPath == "" {
+		return false, nil
+	}
+	dir := filepath.Join(state.metaMountDirPath, MetaMountFunctionErrorDir)
+	if err := os.MkdirAll(dir, 0o777); err != nil {
+		return false, fmt.Errorf("create function error dir: %w", err)
+	}
+	// MkdirAll is subject to the umask.
+	if err := os.Chmod(dir, 0o777); err != nil {
+		return false, fmt.Errorf("chmod function error dir: %w", err)
+	}
+	state.nonRootMounts = append(state.nonRootMounts, mount.Mount{
+		Type:    "bind",
+		Source:  dir,
+		Target:  FunctionErrorMountPath,
+		Options: []string{"rbind"},
+	})
+	state.spec.Process.Env = append(state.spec.Process.Env,
+		FunctionErrorPathEnv+"="+path.Join(FunctionErrorMountPath, FunctionErrorFileName))
+	return true, nil
 }
 
 // consumeRecursiveReadOnlyOption handles the OCI rro option for mounts Dagger

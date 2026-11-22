@@ -135,6 +135,12 @@ type ExecutionMetadata struct {
 	// JSON cannot drop it before use.
 	UserFacingSpanCtx trace.SpanContext `json:"-"`
 
+	// FunctionErrorFile gives the exec, a module entrypoint's module process,
+	// a file to write its function's error to (FunctionErrorPathEnv), which
+	// lands in the exec's meta mount. Set by core at run time; json:"-" for
+	// the same reason as ProfArgs above: the file never enters a cache key.
+	FunctionErrorFile bool `json:"-"`
+
 	// HostAliasFQDNs maps a HostAliases key (a bound service's advertised
 	// hostname) to the fully qualified name the running service actually
 	// registered in DNS under. A service with a custom hostname is namespaced

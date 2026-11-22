@@ -3,10 +3,13 @@ package dangv2
 import (
 	"context"
 	"errors"
+	"maps"
+	"strings"
 
 	"github.com/dagger/dagger/core"
 	dangshared "github.com/dagger/dagger/core/sdk/dang/shared"
 	"github.com/dagger/dagger/dagql"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"github.com/vito/dang/v2/pkg/dang"
 )
@@ -23,6 +26,50 @@ func convertError(err error) *core.Error {
 		}
 	}
 	return dangshared.ConvertError(err)
+}
+
+// moduleProcessFunctionError returns the error of the function that fnCall's
+// module process ran, if err, the failure of the entrypoint's call, is that
+// process's failure: the GraphQL error of its exec (core.ExecError's
+// ModuleProcess), raised as it was or never rescued. The call fails with it
+// as the function's own, as a runtime's call does:
+//
+//   - with the error the process reported (core.FunctionErrorExtension),
+//     which keeps the origin it names, such as an API error the function
+//     returned, and otherwise comes from the function call;
+//   - or, from a process that reported none, as one that died before its
+//     function returned, with its exec's error, values and all, such as its
+//     exit code, but from the function call, not from the exec.
+func moduleProcessFunctionError(fnCall *core.FunctionCall, err error) (error, bool) {
+	var gqlErr *gqlerror.Error
+	var raised *dang.RaisedError
+	if errors.As(err, &raised) {
+		// Dang code that raised another error has its own say.
+		if err = raised.Origin(); err == nil {
+			return nil, false
+		}
+	}
+	if !errors.As(err, &gqlErr) {
+		return nil, false
+	}
+	if process, _ := gqlErr.Extensions[core.ModuleProcessExtension].(bool); !process {
+		return nil, false
+	}
+	fromCall := func(msg string) string {
+		if span := fnCall.ProcessSpanContext(); span.IsValid() && len(telemetry.ParseErrorOrigins(msg)) == 0 {
+			return telemetry.TrackOrigin(errors.New(msg), span).Error()
+		}
+		return msg
+	}
+	if msg, _ := gqlErr.Extensions[core.FunctionErrorExtension].(string); msg != "" {
+		return errors.New(fromCall(msg)), true
+	}
+	extensions := maps.Clone(gqlErr.Extensions)
+	delete(extensions, core.ModuleProcessExtension)
+	return &gqlerror.Error{
+		Message:    fromCall(strings.TrimSpace(telemetry.ErrorOriginRegex.ReplaceAllString(gqlErr.Message, ""))),
+		Extensions: extensions,
+	}, true
 }
 
 // returnRaisedError makes a raise of a Dagger Error, the failure err of

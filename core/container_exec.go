@@ -2310,7 +2310,8 @@ func (state *ContainerExecState) evaluateOutputs(ctx context.Context, container 
 			if !serviceBindingExited {
 				var existingExecErr *ExecError
 				if !errors.As(rerr, &existingExecErr) {
-					execErr, ok, err := execErrorFromMetaRef(ctx, engineClient, causeCtx, rerr, metaSpec, metaRef)
+					execErr, ok, err := execErrorFromMetaRef(ctx, engineClient, causeCtx, rerr, metaSpec, metaRef,
+						execMD != nil && execMD.FunctionErrorFile)
 					if err != nil {
 						rerr = errors.Join(err, rerr)
 						return
@@ -2355,9 +2356,15 @@ func (state *ContainerExecState) evaluateOutputs(ctx context.Context, container 
 			// the ones building the module, keep their own span and logs.
 			if state.FunctionCall == nil {
 				if fnCall, err := query.CurrentFunctionCall(ctx); err == nil &&
-					fnCall.ProcessSpanContext().IsValid() &&
 					IsModuleProcessExec(fnCall, container.Config.Env) {
-					execMD.UserFacingSpanCtx = fnCall.ProcessSpanContext()
+					if fnCall.ProcessSpanContext().IsValid() {
+						execMD.UserFacingSpanCtx = fnCall.ProcessSpanContext()
+					}
+					// A marked module process can report its function's
+					// error in a file (see engineutil.FunctionErrorPathEnv);
+					// one that can't be told apart from the other execs
+					// gets none, or every exec would.
+					execMD.FunctionErrorFile = fnCall.MarksModuleProcess()
 				}
 			}
 		}

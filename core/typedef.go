@@ -2650,8 +2650,9 @@ func (fnCall *FunctionCall) SetModuleProcess() {
 // this environment variable to the callDigest it received on the exec that
 // runs the function, its module process, and on no other exec. The variable
 // keys that exec on the call, and the engine treats that exec as the module
-// process: only it serves the module and reports its telemetry and logs to
-// the function call. The entrypoint's other execs, such as
+// process: only it serves the module, reports its telemetry and logs to the
+// function call, and gets the function error file
+// (engineutil.FunctionErrorPathEnv). The entrypoint's other execs, such as
 // the ones building the module, keep their own span and logs. Without a
 // callDigest, every exec the call starts is taken for the module process, as
 // before the contract named the variable (see IsModuleProcessExec).
@@ -2678,9 +2679,10 @@ func (fnCall *FunctionCall) MarksModuleProcess() bool {
 
 // IsModuleProcessExec reports whether an exec with the environment env,
 // started for fnCall, runs fnCall's module process: the process that serves
-// the module and runs the function. Only that exec gets the module and
-// reports to the function call's span; the others, such as the ones building
-// the module, keep their own span and logs.
+// the module and runs the function. Only that exec gets the module, reports
+// to the function call's span, and can report the function's error (see
+// engineutil.FunctionErrorPathEnv); the others, such as the ones building the
+// module, keep their own span and logs.
 //
 // The module process is the exec whose ModuleCallDigestEnv is the callDigest
 // the engine gave the call. A call given no callDigest, by an entrypoint that

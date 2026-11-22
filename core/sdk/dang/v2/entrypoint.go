@@ -158,7 +158,17 @@ func (r *entrypointRuntime) Call(
 
 	ctx, span := core.Tracer(ctx).Start(ctx, "call module entrypoint", telemetry.Internal(), telemetry.Encapsulate(),
 		trace.WithAttributes(attribute.Bool(telemetryattrs.UIFunctionPlumbingAttr, true)))
-	defer telemetry.EndWithCause(span, &rerr)
+	// A function that failed with an error of its own fails its call, not
+	// the plumbing that ran it, which did its job: the error is the
+	// function's, on the function call's span.
+	var functionFailed bool
+	defer func() {
+		if functionFailed {
+			span.End()
+			return
+		}
+		telemetry.EndWithCause(span, &rerr)
+	}()
 	fnCall.SetPlumbingSpanContext(span.SpanContext())
 
 	dag, err := core.CurrentDagqlServer(ctx)
@@ -262,7 +272,11 @@ func (r *entrypointRuntime) Call(
 			}
 			result, err := callEntrypointMethod(ctx, env, entrypointName, "call", moduleContext, callArgs)
 			if err != nil {
-				return nil, fmt.Errorf("call module entrypoint: %w", returnRaisedError(ctx, fnCall, err))
+				if fnErr, ok := moduleProcessFunctionError(fnCall, err); ok {
+					functionFailed = true
+					return nil, fnErr
+				}
+				return nil, returnRaisedError(ctx, fnCall, err)
 			}
 			resultJSON, err = entrypointJSONResult(result)
 			return nil, err

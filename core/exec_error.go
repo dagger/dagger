@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path"
 	"strconv"
 	"strings"
 
@@ -26,7 +27,27 @@ type ExecError struct {
 	ExitCode int
 	Stdout   string
 	Stderr   string
+
+	// ModuleProcess marks the exec of a module entrypoint's module process
+	// that has a function error file (engineutil.FunctionErrorPathEnv). Its
+	// failure is the function call's: the call fails with FunctionError,
+	// or, when the process wrote none, as when it died before its function
+	// returned, with this error, values and all.
+	ModuleProcess bool
+	// FunctionError is the error the module process wrote to its function
+	// error file, if any.
+	FunctionError string
 }
+
+const (
+	// ModuleProcessExtension is the extension that marks the ExecError of a
+	// module process (ExecError.ModuleProcess).
+	ModuleProcessExtension = "moduleProcess"
+	// FunctionErrorExtension is the extension of a module process's
+	// ExecError that holds its FunctionError, which the entrypoint's call
+	// fails with.
+	FunctionErrorExtension = "functionError"
+)
 
 func (e *ExecError) Error() string {
 	return e.Err.Error()
@@ -37,13 +58,20 @@ func (e *ExecError) Unwrap() error {
 }
 
 func (e *ExecError) Extensions() map[string]any {
-	return map[string]any{
+	ext := map[string]any{
 		"_type":    "EXEC_ERROR",
 		"cmd":      e.Cmd,
 		"exitCode": e.ExitCode,
 		"stdout":   e.Stdout,
 		"stderr":   e.Stderr,
 	}
+	if e.ModuleProcess {
+		ext[ModuleProcessExtension] = true
+	}
+	if e.FunctionError != "" {
+		ext[FunctionErrorExtension] = e.FunctionError
+	}
+	return ext
 }
 
 func execErrorFromMetaRef(
@@ -53,6 +81,7 @@ func execErrorFromMetaRef(
 	cause error,
 	meta *bkexecutor.Meta,
 	metaRef bkcache.ImmutableRef,
+	functionErrorFile bool,
 ) (*ExecError, bool, error) {
 	if metaRef == nil {
 		return nil, false, nil
@@ -77,6 +106,20 @@ func execErrorFromMetaRef(
 	}
 	if meta != nil {
 		execErr.Cmd = meta.Args
+	}
+	if functionErrorFile {
+		mountable, err := metaRef.Mount(ctx, true)
+		if err != nil {
+			return nil, false, err
+		}
+		fnErr, err := engineutil.ReadSnapshotFileHead(ctx, mountable,
+			path.Join(engineutil.MetaMountFunctionErrorDir, engineutil.FunctionErrorFileName),
+			engineutil.MaxFunctionErrorBytes)
+		if err != nil {
+			return nil, false, err
+		}
+		execErr.ModuleProcess = true
+		execErr.FunctionError = strings.TrimSpace(string(fnErr))
 	}
 	return execErr, true, nil
 }

@@ -3,6 +3,7 @@ package engineutil
 import (
 	"context"
 	"fmt"
+	"os"
 
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	snapshotutil "github.com/dagger/dagger/engine/snapshots/util"
@@ -31,7 +32,55 @@ const (
 	MetaMountStdoutPath         = "stdout"
 	MetaMountStderrPath         = "stderr"
 	MetaMountCombinedOutputPath = "combinedOutput"
+
+	// FunctionErrorPathEnv is part of the module entrypoint contract: the
+	// engine sets it, on a module entrypoint's module process only (see
+	// core.ModuleCallDigestEnv), to a writable file path. A module process
+	// whose function fails writes the function's error message there, as
+	// plain text, and exits non-zero; the call then fails with that message
+	// as its own error. The engine reads the first MaxFunctionErrorBytes of a
+	// regular file there, and nothing else. A process that finds the
+	// variable unset runs on an engine without the contract.
+	FunctionErrorPathEnv = "DAGGER_FUNCTION_ERROR_PATH"
+	// FunctionErrorMountPath is the directory the module process's
+	// FunctionErrorPathEnv file is in, bound to MetaMountFunctionErrorDir of
+	// the exec's meta mount, so the file lands beside the exec's output and
+	// stays out of its filesystem.
+	FunctionErrorMountPath = "/.dagger_function_error"
+	// FunctionErrorFileName is the FunctionErrorPathEnv file's name in
+	// FunctionErrorMountPath.
+	FunctionErrorFileName = "error"
+	// MetaMountFunctionErrorDir is the directory of the meta mount that
+	// FunctionErrorMountPath binds.
+	MetaMountFunctionErrorDir = "functionError"
+	// MaxFunctionErrorBytes is how much of a module process's function error
+	// the engine reads.
+	MaxFunctionErrorBytes = 64 << 10
 )
+
+// ReadSnapshotFileHead reads up to the first limit bytes of the regular file
+// at filePath, and nothing when there's none there: a path that a process
+// can make anything, such as a named pipe that would block the read, is read
+// only when it is a plain file.
+func ReadSnapshotFileHead(ctx context.Context, mntable bkcache.MountableRef, filePath string, limit int) ([]byte, error) {
+	ctx = withOutgoingContext(ctx)
+	stat, err := snapshotutil.StatFile(ctx, mntable, filePath)
+	if err != nil || !os.FileMode(stat.Mode).IsRegular() {
+		return nil, nil
+	}
+	length := int(stat.Size_)
+	if length > limit {
+		length = limit
+	}
+	contents, err := snapshotutil.ReadFile(ctx, mntable, snapshotutil.ReadRequest{
+		Filename: filePath,
+		Range:    &snapshotutil.FileRange{Length: length},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to read %q: %w", filePath, err)
+	}
+	return contents, nil
+}
 
 func ReadSnapshotPath(ctx context.Context, c *Client, mntable bkcache.MountableRef, filePath string, limit int) ([]byte, error) {
 	ctx = withOutgoingContext(ctx)
