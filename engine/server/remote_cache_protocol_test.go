@@ -192,7 +192,7 @@ func TestRemoteCacheAdapterMergeNamesItsRoute(t *testing.T) {
 	_, err = adapter.Merge(t.Context(), 22, protocol.Merge{Lookup: 5}, nil)
 	require.Error(t, err)
 	require.Equal(t, []dagql.MergeSource{
-		{Route: dagql.MergeRoutePlacement, Merge: 21},
+		{Route: dagql.MergeRouteDeferred, Merge: 21},
 		{Route: dagql.MergeRouteLookup, Merge: 22},
 	}, got)
 }

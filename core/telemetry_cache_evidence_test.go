@@ -274,7 +274,7 @@ func TestRecordCacheEvidenceMappingRemoteHit(t *testing.T) {
 		HitRoute:              dagql.CacheHitRouteRecipe,
 		HitRemote:             true,
 		HitMergedAtUnixNano:   1760000000123456789,
-		HitMergedRoute:        dagql.MergeRoutePlacement,
+		HitMergedRoute:        dagql.MergeRouteDeferred,
 		HitMerge:              42,
 		HitFirstUse:           true,
 		LookupAtUnixNano:      1760000000987654321,
