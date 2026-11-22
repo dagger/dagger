@@ -516,7 +516,7 @@ func (res *sharedResult) holdsPartLocked(key string) bool {
 
 // holdsAnyPartLocked reports whether res holds any part for its class
 // (holdsPartLocked), or an upload of one is in progress for it
-// (MarkPartUploading): whether a change to it can change what a reader keeps
+// (StartPartUploads): whether a change to it can change what a reader keeps
 // of its class mates' part answers. Requires egraphMu; takes uploadsMu.
 func (c *Cache) holdsAnyPartLocked(res *sharedResult) bool {
 	return len(res.storedParts) > 0 || c.uploadingAny(res.id) || res.marksAbsentLocked(func(string) bool { return true })
