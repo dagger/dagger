@@ -461,6 +461,7 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 				dagql.Arg("cwd").Doc("Current working directory inside the workspace root. Defaults to the workspace root."),
 			),
 	}.Install(srv)
+	s.sparseTreeFields().Install(srv)
 
 	srv.InstallObject(dagql.NewClass[*core.GitRemoteHandle](srv).View(AfterVersion("v1.0.0-0")))
 	dagql.Fields[*core.GitRemoteHandle]{
