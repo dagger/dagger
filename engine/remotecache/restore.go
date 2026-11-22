@@ -51,11 +51,11 @@ const (
 	// checked ahead of its merge: the encoded bytes of the parts decoded or
 	// checked and not yet taken by the merge, with the next part's, stay
 	// within it, and a part larger than it goes once none waits. A checked
-	// part holds about 40 times its encoded bytes (engine-dev's largest
-	// whole part: 3.1 MB encoded, 117 MB checked), so the parts waiting
-	// beside a merge hold about 120 MB at most, as two large parts did when
-	// each stage held one. Room for a few large parts keeps a run of small
-	// parts from leaving the merge waiting for the large part after it.
+	// part holds 25 to 50 times its encoded bytes, so the parts waiting
+	// beside a merge hold at most about 150 MB, or one larger part alone
+	// (engine-dev's largest whole part: 3.1 MB encoded, 117 MB checked).
+	// Room for a few large parts keeps a run of small parts from leaving the
+	// merge waiting for the large part after it.
 	restoreAheadBytes = 3 << 20
 )
 
