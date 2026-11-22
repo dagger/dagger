@@ -16,7 +16,12 @@ from dagger._exceptions import QueryError
 from dagger.client._connection import connect
 from dagger.client._descriptor import registering_types
 from dagger.client._session import mark_module_runtime
-from dagger.mod._exceptions import ModuleError, ModuleLoadError, record_exception
+from dagger.mod._exceptions import (
+    ModuleError,
+    ModuleLoadError,
+    print_user_traceback,
+    record_exception,
+)
 from dagger.mod._module import MAIN_OBJECT, Module
 
 logger = logging.getLogger(__package__)
@@ -60,16 +65,24 @@ async def main(mod: Module | None = None, register: bool = False) -> int | None:
             return 1
 
 
-def load_module() -> Module:
-    """Load the dagger.Module instance via the main object entry point."""
+def load_module(*, short_tracebacks: bool = False) -> Module:
+    """Load the dagger.Module instance via the main object entry point.
+
+    With `short_tracebacks`, an error importing the user's code is shown
+    with a traceback through that code only, as `Module.short_tracebacks`
+    shows a function's.
+    """
     ep = get_entry_point()
     try:
         cls = ep.load()
     except Exception as e:
-        logger.exception(
-            "Error while importing Python module '%s' with Dagger functions",
-            ep.module,
-        )
+        if short_tracebacks:
+            print_user_traceback(e)
+        else:
+            logger.exception(
+                "Error while importing Python module '%s' with Dagger functions",
+                ep.module,
+            )
         raise ModuleLoadError(str(e)) from e
     _resume_gc()
     try:

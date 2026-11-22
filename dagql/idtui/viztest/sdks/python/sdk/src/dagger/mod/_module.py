@@ -38,7 +38,9 @@ from dagger.mod._exceptions import (
     ModuleError,
     ObjectNotFoundError,
     RegistrationError,
+    has_error_origin,
     log_exception_only,
+    print_user_traceback,
     transform_error,
 )
 from dagger.mod._naming import ModuleNames, module_names
@@ -99,11 +101,12 @@ class Module:
         # from exceptions raised in functions by default. Not documented
         # intentionally for now.
         self.log_exceptions = True
-        # Whether an API error that escapes a function is logged with its
-        # traceback. A call that reports its error in the file the engine
-        # gives it turns this off: the engine shows the error's origin, the
-        # call that failed with its logs, so the traceback only adds noise.
-        self.log_api_errors = True
+        # Whether a function's errors are shown with a short traceback, through
+        # the user's code only. A call that reports its error in the file the
+        # engine gives it turns this on, the file keeping the whole traceback.
+        # An API error is then not shown at all when the engine shows its
+        # origin, the call that failed with its logs.
+        self.short_tracebacks = False
 
     @property
     def main_cls(self) -> type[ObjectType]:
@@ -408,24 +411,32 @@ class Module:
             # Escape hatch to fully control logging from user code.
             raise
         except QueryError as e:
-            tb = e.__traceback__
-            # Exclude the line in "try" above
-            if tb:
-                tb = tb.tb_next
             # Exclude the underlying TransportQueryError to reduce noise
             e.__cause__ = None
-            if self.log_api_errors:
+            if not self.short_tracebacks:
+                tb = e.__traceback__
+                # Exclude the line in "try" above
+                if tb:
+                    tb = tb.tb_next
                 logger.exception(
                     "API error while executing function",
                     exc_info=(type(e), e, tb),
                 )
+            elif not has_error_origin(e):
+                # The engine shows no call this error comes from, such as an
+                # ID that fails to load: show where the function got it.
+                print_user_traceback(e)
             # Preserve API error so it's properly propagated.
             raise e from None
         except Exception as e:
             # Escape hatch if too noisy.
             if self.log_exceptions:
-                # Logging the exception will show the full stack trace on stderr.
-                logger.exception("Unhandled exception while executing function")
+                if self.short_tracebacks:
+                    print_user_traceback(e)
+                else:
+                    # Logging the exception will show the full stack trace on
+                    # stderr.
+                    logger.exception("Unhandled exception while executing function")
             raise FunctionError(str(e)) from e
 
         return result

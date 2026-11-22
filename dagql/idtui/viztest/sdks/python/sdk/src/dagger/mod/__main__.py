@@ -146,11 +146,11 @@ def _call(args: argparse.Namespace) -> None:
 async def _dispatch(request: dict[str, Any], error_file: bool) -> Any:
     from dagger.mod.cli import load_module
 
-    mod = load_module()
-    if error_file:
-        # The engine fails the call with the API error the file reports, and
-        # shows where it comes from: the call that failed, with its logs.
-        mod.log_api_errors = False
+    # The file keeps the error's whole traceback: the logs show the user's
+    # code, and nothing of an API error the engine shows the origin of, the
+    # call that failed with its logs.
+    mod = load_module(short_tracebacks=error_file)
+    mod.short_tracebacks = error_file
     return await mod.dispatch(request)
 
 
