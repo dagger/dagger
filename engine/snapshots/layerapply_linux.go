@@ -30,6 +30,13 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// layerLstat and layerRootPath are the extraction's lookups of what a path
+// is and what it resolves to; tests count them.
+var (
+	layerLstat    = os.Lstat
+	layerRootPath = fs.RootPath
+)
+
 // layerApplyWorkers bounds the files of one layer written at once.
 const layerApplyWorkers = 8
 
@@ -477,7 +484,7 @@ func applyLayerTar(ctx context.Context, t layerTarget, r io.Reader) (rerr error)
 		if err := x.settle(path); err != nil {
 			return err
 		}
-		if fi, err := os.Lstat(path); err == nil {
+		if fi, err := layerLstat(path); err == nil {
 			if !fi.IsDir() || hdr.Typeflag != tar.TypeDir {
 				if err := x.removing(); err != nil {
 					return err
@@ -523,7 +530,7 @@ func (x *layerExtraction) rootPath(p string) (string, error) {
 	if resolved, ok := x.resolved[p]; ok {
 		return resolved, nil
 	}
-	resolved, err := fs.RootPath(x.root, p)
+	resolved, err := layerRootPath(x.root, p)
 	if err != nil {
 		return "", err
 	}
@@ -581,7 +588,7 @@ func (x *layerExtraction) convertWhiteout(hdr *tar.Header, path string) (bool, e
 	// files.
 	dir := filepath.Dir(path)
 	if base == whiteoutOpaqueDir {
-		_, err := os.Lstat(dir)
+		_, err := layerLstat(dir)
 		if err != nil {
 			return false, err
 		}
@@ -626,7 +633,7 @@ func (x *layerExtraction) mkparent(path string) error {
 }
 
 func (x *layerExtraction) makeParent(path string) error {
-	if dir, err := os.Lstat(path); err == nil {
+	if dir, err := layerLstat(path); err == nil {
 		if dir.IsDir() {
 			return nil
 		}
@@ -652,7 +659,7 @@ func (x *layerExtraction) makeParent(path string) error {
 
 	if err := mkdir(path, 0755); err != nil {
 		// Check that still doesn't exist
-		dir, err1 := os.Lstat(path)
+		dir, err1 := layerLstat(path)
 		if err1 == nil && dir.IsDir() {
 			return nil
 		}
@@ -660,12 +667,12 @@ func (x *layerExtraction) makeParent(path string) error {
 	}
 
 	for _, p := range x.parents {
-		ppath, err := fs.RootPath(p, path[len(x.root):])
+		ppath, err := layerRootPath(p, path[len(x.root):])
 		if err != nil {
 			return err
 		}
 
-		dir, err := os.Lstat(ppath)
+		dir, err := layerLstat(ppath)
 		if err == nil {
 			if !dir.IsDir() {
 				// Replaced, do not copy attributes
@@ -697,7 +704,7 @@ func (x *layerExtraction) create(path string, hdr *tar.Header, reader io.Reader)
 	case tar.TypeDir:
 		// Create directory unless it exists as a directory already.
 		// In that case we just want to merge the two
-		if fi, err := os.Lstat(path); err != nil || !fi.IsDir() {
+		if fi, err := layerLstat(path); err != nil || !fi.IsDir() {
 			if err := mkdir(path, hdrInfo.Mode()); err != nil {
 				return err
 			}
@@ -1058,7 +1065,7 @@ func handleTarTypeBlockCharFifo(hdr *tar.Header, path string) error {
 }
 
 func lchmod(path string, mode os.FileMode) error {
-	fi, err := os.Lstat(path)
+	fi, err := layerLstat(path)
 	if err != nil {
 		return err
 	}
