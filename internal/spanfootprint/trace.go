@@ -39,10 +39,37 @@ import (
 // under a few wide agent-loop parents; some carry causal links, some fail
 // with error-origin links.
 type Trace struct {
-	N       int
+	N int
+	// IDArgs makes a fifth of the dagql calls take an ID argument, an
+	// earlier call's digest, as real calls take directories and files.
+	IDArgs  bool
 	traceID trace.TraceID
 	epoch   time.Time
 	parents []int32
+}
+
+// ProgressItem is a transfer a span reports progress for (see Progress).
+type ProgressItem struct {
+	Name  string
+	Total int64
+}
+
+// Progress returns the transfers span i reports progress for, if any: one
+// span in fifty, the root and agent loops aside, pulls or uploads a few
+// layers.
+func (tr *Trace) Progress(i int) []ProgressItem {
+	h := hash(i, 2)
+	if i < LongLived || h%50 != 0 {
+		return nil
+	}
+	items := make([]ProgressItem, 1+int(h>>8)%4)
+	for k := range items {
+		items[k] = ProgressItem{
+			Name:  fmt.Sprintf("sha256:%016x", hash(i, 3+k)),
+			Total: int64(1+int(h>>(16+4*k))%64) << 20,
+		}
+	}
+	return items
 }
 
 // LongLived spans (the root and the agent loops) run for the whole session.
@@ -211,17 +238,26 @@ func (tr *Trace) Stub(i int, done bool) sdktrace.ReadOnlySpan {
 		call := calls[h>>8%uint64(len(calls))]
 		dig := digest("call", i)
 		stub.Name = call.typ + "." + call.field
+		args := []*callpbv1.Argument{{
+			Name: "path",
+			Value: &callpbv1.Literal{Value: &callpbv1.Literal_String_{
+				String_: fmt.Sprintf("/src/path/%d", i),
+			}},
+		}}
+		if tr.IDArgs && h>>40%5 == 0 && i > LongLived {
+			// an earlier call's result, from up to 10k spans back
+			j := i - 1 - int(h>>44)%min(i-LongLived, 10_000)
+			args = append(args, &callpbv1.Argument{
+				Name:  "source",
+				Value: &callpbv1.Literal{Value: &callpbv1.Literal_CallDigest{CallDigest: digest("call", j)}},
+			})
+		}
 		payload, err := (&callpbv1.Call{
 			ReceiverDigest: digest("call", int(tr.parents[i])),
 			Type:           &callpbv1.Type{NamedType: call.typ},
 			Field:          call.field,
-			Args: []*callpbv1.Argument{{
-				Name: "path",
-				Value: &callpbv1.Literal{Value: &callpbv1.Literal_String_{
-					String_: fmt.Sprintf("/src/path/%d", i),
-				}},
-			}},
-			Digest: dig,
+			Args:           args,
+			Digest:         dig,
 		}).Encode()
 		if err != nil {
 			panic(err)
