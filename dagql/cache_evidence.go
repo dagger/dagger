@@ -135,7 +135,8 @@ type CacheDecision struct {
 
 	// MissRemoteLookup is what the miss did about asking the remote cache
 	// service for the call's value (RemoteLookupQueued, RemoteLookupAsked or
-	// RemoteLookupDropped), or "" when no connection serves lookups.
+	// RemoteLookupDropped), or "" when it asked nothing: no connection serves
+	// lookups, or no other engine can have the call (Cache.noteRemoteMiss).
 	// Meaningful only for misses (Outcome executed).
 	MissRemoteLookup string
 
