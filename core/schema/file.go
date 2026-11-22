@@ -31,14 +31,14 @@ func (s *fileSchema) Install(srv *dagql.Server) {
 	srv.InstallScalar(dagql.Bytes(nil), AfterVersion("v1.0.0-beta.10"))
 
 	dagql.Fields[*core.Query]{
-		dagql.NodeFunc("file", s.file).
+		dagql.NodeFunc("file", s.file).FollowsFromInputs().
 			Doc(`Creates a file with the specified contents.`).
 			Args(
 				dagql.Arg("name").Doc(`Name of the new file. Example: "foo.txt"`),
 				dagql.Arg("contents").Doc(`Contents of the new file. Example: "Hello world!"`),
 				dagql.Arg("permissions").Doc(`Permissions of the new file. Example: 0600`),
 			),
-		dagql.NodeFunc("blob", s.blob).
+		dagql.NodeFunc("blob", s.blob).FollowsFromInputs().
 			View(AfterVersion("v1.0.0-beta.10")).
 			Doc(`Creates a file from arbitrary binary contents.`).
 			Args(
@@ -59,20 +59,20 @@ func (s *fileSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("keyByContent").View(AfterVersion("v1.0.0-beta.26")).Doc(`Also key the file by its content, so that what consumes it is cached across any two recipes that produce the same file. This hashes the file unless it already has a content key.`),
 			),
-		dagql.NodeFunc("contents", s.contents).
+		dagql.NodeFunc("contents", s.contents).FollowsFromInputs().
 			IsPersistable().
 			Doc(`Retrieves the contents of the file.`).
 			Args(
 				dagql.Arg("offsetLines").Doc(`Start reading after this line`),
 				dagql.Arg("limitLines").Doc(`Maximum number of lines to read`),
 			),
-		dagql.NodeFunc("size", s.size).
+		dagql.NodeFunc("size", s.size).FollowsFromInputs().
 			Doc(`Retrieves the size of the file, in bytes.`),
-		dagql.NodeFunc("name", s.name).
+		dagql.NodeFunc("name", s.name).FollowsFromInputs().
 			Doc(`Retrieves the name of the file.`),
-		dagql.NodeFunc("stat", s.stat).
+		dagql.NodeFunc("stat", s.stat).FollowsFromInputs().
 			Doc(`Return file status`),
-		dagql.NodeFunc("digest", s.digest).
+		dagql.NodeFunc("digest", s.digest).FollowsFromInputs().
 			Doc(
 				`Return the file's digest.
 				The format of the digest is not guaranteed to be stable between releases of Dagger.
@@ -81,7 +81,7 @@ func (s *fileSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("excludeMetadata").Doc(`If true, exclude metadata from the digest.`),
 			),
-		dagql.NodeFunc("withName", s.withName).
+		dagql.NodeFunc("withName", s.withName).FollowsFromInputs().
 			IsPersistable().
 			Doc(`Retrieves this file with its name set to the given name.`).
 			Args(
@@ -125,7 +125,7 @@ func (s *fileSchema) Install(srv *dagql.Server) {
 			WithInput(dagql.PerClientInput).
 			View(BeforeVersion("v0.12.0")).
 			Extend(),
-		dagql.NodeFunc("withTimestamps", s.withTimestamps).
+		dagql.NodeFunc("withTimestamps", s.withTimestamps).FollowsFromInputs().
 			IsPersistable().
 			Doc(`Retrieves this file with its created/modified timestamps set to the given time.`).
 			Args(

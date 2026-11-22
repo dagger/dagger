@@ -114,8 +114,8 @@ func scratchTestCache(t *testing.T, store *testutil.Store, path, session string)
 	require.NoError(t, err)
 	server.dag = srv
 	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*core.Directory]{}))
-	// Use the actual resolver and actual scalar identity input.
-	dagql.Fields[*core.Query]{dagql.NodeFunc("directory", (&directorySchema{}).directory).WithInput(core.EngineDefaultPlatformImplicitInput)}.Install(srv)
+	// Use the actual resolver, scalar identity input and declaration.
+	dagql.Fields[*core.Query]{dagql.NodeFunc("directory", (&directorySchema{}).directory).FollowsFromInputs().WithInput(core.EngineDefaultPlatformImplicitInput)}.Install(srv)
 	return dagql.ContextWithServer(ctx, srv), cache, srv
 }
 

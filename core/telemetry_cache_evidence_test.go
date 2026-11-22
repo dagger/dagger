@@ -950,3 +950,36 @@ func TestRecordCacheEvidenceMappingHitLoad(t *testing.T) {
 		assert.Assert(t, !stamped, "a call that didn't hit says nothing of %s", key)
 	}
 }
+
+// A call of a field whose result follows from its inputs says so on its row,
+// which is how the remote cache service learns it; another call's row, and a
+// row with no cache decision, carry no such attribute.
+func TestRecordCacheEvidenceMappingFollowsFromInputs(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		follows bool
+		outcome dagql.CacheOutcome
+		want    bool
+	}{
+		{"declared", true, dagql.CacheOutcomeExecuted, true},
+		{"declared, a hit", true, dagql.CacheOutcomeHit, true},
+		{"not declared", false, dagql.CacheOutcomeExecuted, false},
+		{"no cache decision", true, "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			sr, span := evidenceTestRecordingSpan(t)
+			frame := evidenceTestFrame("follows")
+			frame.FollowsFromInputs = tc.follows
+			req := &dagql.CallRequest{ResultCall: frame, CacheEvidence: &dagql.CacheDecision{Outcome: tc.outcome, MissUnknownInputIndex: -1}}
+			span.SetAttributes(appendFollowsFromInputsAttr(nil, req)...)
+			got := evidenceTestCacheAttrs(t, evidenceTestEndedAttrs(t, sr, span))
+			_, present := got[telemetryattrs.CacheFollowsFromInputsAttr]
+			assert.Equal(t, present, tc.want)
+			if tc.want {
+				assert.Equal(t, got[telemetryattrs.CacheFollowsFromInputsAttr], "true")
+			}
+		})
+	}
+}
