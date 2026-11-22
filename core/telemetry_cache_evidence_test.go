@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	telemetry "github.com/dagger/otel-go"
 	"github.com/opencontainers/go-digest"
@@ -70,7 +71,7 @@ func evidenceTestCacheAttrs(t *testing.T, kvs []attribute.KeyValue) map[string]s
 		}
 		switch k {
 		case telemetryattrs.CacheStructuralInputsAttr, telemetryattrs.CacheDepsAttr, telemetryattrs.CachePartsAttr,
-			telemetryattrs.CacheMissFreshInputsAttr:
+			telemetryattrs.CacheMissFreshInputsAttr, telemetryattrs.CacheHitWaitsAttr:
 			// The contract's native string slices (checked separately via
 			// evidenceTestStructuralInputs and evidenceTestStringSlice).
 			assert.Equal(t, attribute.STRINGSLICE, kv.Value.Type(), "contract attribute %s must be STRINGSLICE-typed", k)
@@ -875,4 +876,55 @@ func TestAroundFuncHiddenCallReportsCacheEvidence(t *testing.T) {
 	assert.Assert(t, !optedOut.CacheReported)
 	assert.Assert(t, optedOut.CacheEvidence == nil)
 	assert.Equal(t, 1, len(sr.Ended()), "a call of a suppressed request has no span")
+}
+
+// A hit's span says what its own time after its lookup is made of: when its
+// value was loaded and when the cache handed it back, as decimal-string
+// nanoseconds, how many entries its load decoded, and what its work waited
+// for, as a native string slice of "<kind>=<nanoseconds>" sorted by kind.
+// None of them is stamped when there is nothing to say, nor on a call that
+// didn't hit.
+func TestRecordCacheEvidenceMappingHitLoad(t *testing.T) {
+	t.Parallel()
+	const loadedAt, servedAt = int64(1760000000123456789), int64(1760000000223456789)
+	sr, span := evidenceTestRecordingSpan(t)
+	span.SetAttributes(appendCacheEvidenceAttrs(context.Background(), nil, &dagql.CacheDecision{
+		Outcome:               dagql.CacheOutcomeHit,
+		HitRoute:              dagql.CacheHitRouteRecipe,
+		HitLoadedAtUnixNano:   loadedAt,
+		HitServedAtUnixNano:   servedAt,
+		MissUnknownInputIndex: -1,
+	}, nil)...)
+	got := evidenceTestCacheAttrs(t, evidenceTestEndedAttrs(t, sr, span))
+	assert.Equal(t, strconv.FormatInt(loadedAt, 10), got[telemetryattrs.CacheHitLoadedAtAttr])
+	assert.Equal(t, strconv.FormatInt(servedAt, 10), got[telemetryattrs.CacheHitServedAtAttr])
+	_, decoded := got[telemetryattrs.CacheHitDecodedAttr]
+	assert.Assert(t, !decoded, "a load that decoded nothing says nothing")
+
+	sr, span = evidenceTestRecordingSpan(t)
+	span.SetAttributes(appendHitLoadAttrs(nil, loadedAt, 0, dagql.HitLoad{
+		Decoded: 3,
+		Waits:   map[string]time.Duration{"graph.part": 1500 * time.Millisecond, "decode": 20 * time.Millisecond, "graph.hold": 7},
+	})...)
+	kvs := evidenceTestEndedAttrs(t, sr, span)
+	got = evidenceTestCacheAttrs(t, kvs)
+	assert.Equal(t, "3", got[telemetryattrs.CacheHitDecodedAttr])
+	_, served := got[telemetryattrs.CacheHitServedAtAttr]
+	assert.Assert(t, !served, "a hit not handed back says nothing of when")
+	waits, ok := evidenceTestStringSlice(kvs, telemetryattrs.CacheHitWaitsAttr)
+	assert.Assert(t, ok)
+	assert.DeepEqual(t, []string{"decode=20000000", "graph.hold=7", "graph.part=1500000000"}, waits)
+
+	sr, span = evidenceTestRecordingSpan(t)
+	span.SetAttributes(appendCacheEvidenceAttrs(context.Background(), nil, &dagql.CacheDecision{
+		Outcome:               dagql.CacheOutcomeExecuted,
+		HitLoadedAtUnixNano:   loadedAt,
+		HitServedAtUnixNano:   servedAt,
+		MissUnknownInputIndex: -1,
+	}, nil)...)
+	got = evidenceTestCacheAttrs(t, evidenceTestEndedAttrs(t, sr, span))
+	for _, key := range []string{telemetryattrs.CacheHitLoadedAtAttr, telemetryattrs.CacheHitServedAtAttr, telemetryattrs.CacheHitDecodedAttr} {
+		_, stamped := got[key]
+		assert.Assert(t, !stamped, "a call that didn't hit says nothing of %s", key)
+	}
 }

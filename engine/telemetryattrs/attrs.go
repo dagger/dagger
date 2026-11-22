@@ -719,6 +719,28 @@ const (
 	CacheHitMergedFileAttr  = "dagger.io/cache.hit.merged_file"
 	CacheHitFirstUseAttr    = "dagger.io/cache.hit.first_use"
 
+	// What a hit's own time after its lookup is made of (hits only, each
+	// absent when there is nothing to say). CacheHitLoadedAtAttr is when the
+	// hit's value was loaded: its payload, and those of the results it
+	// references, decoded where they weren't yet. CacheHitServedAtAttr is
+	// when the cache handed the hit back, its retention edge and the
+	// session's record of it done. Both are decimal-string absolute Unix
+	// nanoseconds, comparable with CacheLookupAtAttr: with the span's start
+	// and end they split its time into the lookup, the load, the serving and
+	// the span's end. CacheHitDecodedAttr is how many entries the load
+	// decoded, in decimal. CacheHitWaitsAttr is what the hit's own work after
+	// its lookup waited for, to the span's end, as "<kind>=<nanoseconds>"
+	// strings sorted by kind: "graph.<writer>" for the cache's graph lock,
+	// by the kind of writer whose release let each wait in (lookup,
+	// publication, restore, merge, sharing, export, offer, part, teach,
+	// dependency, evaluation, upkeep, hold, other, or readers when no writer
+	// did), "decode" for another caller's decode of an entry the hit loads,
+	// and "attach" for an entry's dependency attachment.
+	CacheHitLoadedAtAttr = "dagger.io/cache.hit.loaded_at_unix_ns"
+	CacheHitServedAtAttr = "dagger.io/cache.hit.served_at_unix_ns"
+	CacheHitDecodedAttr  = "dagger.io/cache.hit.decoded"
+	CacheHitWaitsAttr    = "dagger.io/cache.hit.waits"
+
 	// CacheLookupAtAttr is the time the call's cache lookup chose its
 	// candidates, in decimal-string absolute Unix nanoseconds, for hit,
 	// executed and joined calls (an uncached call does no lookup). It is read
