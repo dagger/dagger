@@ -1774,28 +1774,18 @@ type RemoteEntryInfo struct {
 	Holdings []RemoteHoldingInfo
 }
 
-// RemoteHoldingInfo describes one holding.
+// RemoteHoldingInfo describes one holding: its key, what a reader may keep of
+// it from one change to the next (HoldingFacts), and what a reader reads
+// fresh: its content digest, the sessions holding it, the count of its
+// cache's holdings that depend on it, and its offered parts, the ones its
+// cache has an offer of and not the bytes.
 type RemoteHoldingInfo struct {
-	Key                    HolderKey
-	TypeName               string
-	ContentDigest          digest.Digest
-	ExpiresAtUnix          int64
-	Retained               bool
-	RetentionExpiresAtUnix int64
-	Sessions               []string
-	Deps                   []uint64
-	UnknownDeps            []uint64
-	Dependents             int
-	// Parts are the copy's complete parts, and OfferedParts the ones its
-	// cache has an offer of and not the bytes.
-	Parts        []PersistedPartAddress
-	OfferedParts []PersistedPartAddress
-	// Replacements is the counterpart's replacement count the value state
-	// describes.
-	Replacements uint64
-	// Executed reports that the holding's cache computed the entry since
-	// the cache last dropped the entry's value (RemoteHolding.Executed).
-	Executed bool
+	Key HolderKey
+	HoldingFacts
+	ContentDigest digest.Digest
+	Sessions      []string
+	Dependents    int
+	OfferedParts  []PersistedPartAddress
 }
 
 // RemoteEntryInfo returns what the cache holds for the entry of one holding,
@@ -2123,16 +2113,18 @@ func (c *Cache) remoteEntryInfoLocked(entry *sharedResult) RemoteEntryInfo {
 
 func holdingInfo(key HolderKey, h *holding) RemoteHoldingInfo {
 	info := RemoteHoldingInfo{
-		Key:           key,
-		TypeName:      handleString(h.typeName),
+		Key: key,
+		HoldingFacts: HoldingFacts{
+			TypeName:      handleString(h.typeName),
+			ExpiresAtUnix: h.expiresAtUnix,
+			Retained:      h.retention.retained,
+			Replacements:  h.replacements,
+			Executed:      h.executed,
+			Deps:          slices.Clone(h.deps),
+			UnknownDeps:   slices.Clone(h.unknownDeps),
+		},
 		ContentDigest: digest.Digest(handleString(h.contentDigest)),
-		ExpiresAtUnix: h.expiresAtUnix,
-		Retained:      h.retention.retained,
 		Dependents:    int(h.dependents),
-		Replacements:  h.replacements,
-		Executed:      h.executed,
-		Deps:          slices.Clone(h.deps),
-		UnknownDeps:   slices.Clone(h.unknownDeps),
 	}
 	if h.retention.retained {
 		info.RetentionExpiresAtUnix = h.retention.expiresAtUnix
@@ -2164,16 +2156,15 @@ func heldPartAddresses(parts []heldPart, offered bool) (complete, offers []Persi
 	return complete, offers
 }
 
-// HoldingFacts is what a selection pass reads of one holding and its entry:
-// RemoteHoldingInfo's fields of the same names, and its entry's own facts,
-// without its sessions, offered parts, content digest, dependents or
-// recipes. Deps and UnknownDeps are the holding's own slices, which a write
-// replaces and never changes: they stay as read, and the caller must not
-// change them.
+// HoldingFacts are what a reader may keep of a holding from one change to
+// the next, the rest of its description (RemoteHoldingInfo) being read
+// fresh: its type, its copy's expiry, its retention and that retention's
+// expiry, the replacement count the value state describes, whether its
+// cache computed the entry since the cache last dropped the entry's value
+// (RemoteHolding.Executed), its dependencies, those its cache has no holding
+// of yet (UnknownDeps), and its copy's complete parts. Its entry's own facts
+// are the entry's (EntryFacts).
 type HoldingFacts struct {
-	Number                 uint64
-	Stored                 bool
-	StoredExpiresAtUnix    int64
 	TypeName               string
 	ExpiresAtUnix          int64
 	Retained               bool
@@ -2182,22 +2173,22 @@ type HoldingFacts struct {
 	Executed               bool
 	Deps                   []uint64
 	UnknownDeps            []uint64
-	// Parts are the copy's complete parts, as RemoteHoldingInfo.Parts.
-	Parts []PersistedPartAddress
+	Parts                  []PersistedPartAddress
 }
 
-// HoldingFacts returns the facts of the holding key and its entry, read under
-// one hold, without copying its dependencies. It reports false when the
+// HoldingFacts returns the facts of the holding key, read under one hold,
+// without copying its dependencies: Deps and UnknownDeps are the holding's
+// own slices, which a write replaces and never changes, so they stay as
+// read, and the caller must not change them. It reports false when the
 // cache has no such holding.
 func (c *Cache) HoldingFacts(key HolderKey) (HoldingFacts, bool) {
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
-	entry, h := c.holdingLocked(key)
+	_, h := c.holdingLocked(key)
 	if h == nil {
 		return HoldingFacts{}, false
 	}
 	facts := HoldingFacts{
-		Number:        uint64(entry.id),
 		TypeName:      handleString(h.typeName),
 		ExpiresAtUnix: h.expiresAtUnix,
 		Retained:      h.retention.retained,
@@ -2205,9 +2196,6 @@ func (c *Cache) HoldingFacts(key HolderKey) (HoldingFacts, bool) {
 		Executed:      h.executed,
 		Deps:          h.deps,
 		UnknownDeps:   h.unknownDeps,
-	}
-	if !entry.noValueLocked() {
-		facts.Stored, facts.StoredExpiresAtUnix = true, entry.expiresAtUnix
 	}
 	if h.retention.retained {
 		facts.RetentionExpiresAtUnix = h.retention.expiresAtUnix
