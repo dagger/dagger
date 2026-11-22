@@ -94,7 +94,7 @@ var sdkFixtures = []sdkFixture{
 	{lang: "java", source: "src/main/java/io/dagger/modules/viztestjava/ViztestJava.java", breakage: "\nthis is not java\n"},
 	// Not an entrypoint: the dang-sdk module runs on the engine's built-in
 	// Dang runtime, so its errors and logs are the reference. A module that
-	// doesn't parse fails on the row of Dang's check of its types, "check
+	// doesn't parse fails on the row of Dang's typecheck of it, "typecheck
 	// viztest-dang", with Dang's report, which names the file by its path in
 	// the module's context, not the engine's copy. BAD: a wrapped exec error
 	// shows only its origin, without the wrapping message, even expanded:

@@ -16,14 +16,14 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// TestCheckDangModuleOwnsItsSourceErrors covers a dependency whose Dang
+// TestTypecheckDangModuleOwnsItsSourceErrors covers a dependency whose Dang
 // source doesn't type-check, loaded for its dependent: a module's
 // dependencies load before its own types are read, so the dependent's load
-// fails with the dependency's check's error, and its own check never runs.
-// The dependency's report is its check's logs, and its error originates
-// there, for the dependent's load and for any other load the failed pass is
-// shared with, whose spans only pass it on.
-func TestCheckDangModuleOwnsItsSourceErrors(t *testing.T) {
+// fails with the dependency's typecheck's error, and its own typecheck never
+// runs. The dependency's report is its typecheck's logs, and its error
+// originates there, for the dependent's load and for any other load the
+// failed pass is shared with, whose spans only pass it on.
+func TestTypecheckDangModuleOwnsItsSourceErrors(t *testing.T) {
 	t.Parallel()
 
 	spans := tracetest.NewSpanRecorder()
@@ -43,7 +43,7 @@ func TestCheckDangModuleOwnsItsSourceErrors(t *testing.T) {
 	var dep trace.SpanContext
 	err := load(ctx, "load module: ./dependent", func(ctx context.Context) error {
 		return load(ctx, "load dep modules", func(ctx context.Context) error {
-			return checkDangModule(ctx, "dep", func(ctx context.Context) error {
+			return typecheckDangModule(ctx, "dep", func(ctx context.Context) error {
 				dep = trace.SpanContextFromContext(ctx)
 				stdio := userFacingStdio(ctx)
 				defer stdio.Close()
@@ -58,13 +58,13 @@ func TestCheckDangModuleOwnsItsSourceErrors(t *testing.T) {
 
 	origins := telemetry.ParseErrorOrigins(err.Error())
 	require.Len(t, origins, 1)
-	require.Equal(t, dep.SpanID(), origins[0].SpanID(), "the error originates on the dependency's check")
+	require.Equal(t, dep.SpanID(), origins[0].SpanID(), "the error originates on the dependency's typecheck")
 
 	var reported bool
 	for _, rec := range logs.all() {
 		if strings.Contains(rec.body, "unknown type Bogus") {
 			reported = true
-			require.Equal(t, dep.SpanID(), rec.span, "the report is the dependency's check's")
+			require.Equal(t, dep.SpanID(), rec.span, "the report is the dependency's typecheck's")
 		}
 	}
 	require.True(t, reported, "the report is logged")
@@ -73,12 +73,12 @@ func TestCheckDangModuleOwnsItsSourceErrors(t *testing.T) {
 	for _, span := range spans.Ended() {
 		ended[span.Name()] = span
 	}
-	require.Equal(t, codes.Error, ended["check dep"].Status().Code)
-	require.Empty(t, ended["check dep"].Links(), "the dependency's check is the origin")
+	require.Equal(t, codes.Error, ended["typecheck dep"].Status().Code)
+	require.Empty(t, ended["typecheck dep"].Links(), "the dependency's typecheck is the origin")
 	for _, name := range []string{"load dep modules", "load module: ./dependent", "load module: ./other"} {
 		require.Equal(t, codes.Error, ended[name].Status().Code, name)
 		links := ended[name].Links()
-		require.Len(t, links, 1, "%s points at the dependency's check", name)
+		require.Len(t, links, 1, "%s points at the dependency's typecheck", name)
 		require.Equal(t, dep.SpanID(), links[0].SpanContext.SpanID(), name)
 	}
 }

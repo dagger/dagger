@@ -77,7 +77,7 @@ func (Impl) ModuleTypes(
 		}
 	}(runner)
 
-	err = checkDangModule(ctx, src.Self().ModuleName, func(ctx context.Context) error {
+	err = typecheckDangModule(ctx, src.Self().ModuleName, func(ctx context.Context) error {
 		_, err := evalDangSource(ctx, query, src, schemaJSONFile, nestedClientMetadata, true /* inert attachables */, nil, scopedMod, true /* for typedefs */, runner, func(ctx context.Context, env dang.ValueScope) ([]byte, error) {
 			mod, err := initDangModule(ctx, dag, env)
 			if err != nil {
@@ -94,12 +94,12 @@ func (Impl) ModuleTypes(
 	return inst, nil
 }
 
-// checkDangModule runs check, the pass that reads the types of the module
-// named moduleName from its Dang source, under a span of its own, "check
-// <module>". The pass's output, a report of the source's errors among it,
-// is that span's (see evalDangSource), and the span is the origin of an
-// error with none: a source that doesn't parse or type-check fails there,
-// not on the engine's calls around it, such as
+// typecheckDangModule runs typecheck, the pass that reads the types of the
+// module named moduleName from its Dang source, under a span of its own,
+// "typecheck <module>". The pass's output, a report of the source's errors
+// among it, is that span's (see evalDangSource), and the span is the origin
+// of an error with none: a source that doesn't parse or type-check fails
+// there, not on the engine's calls around it, such as
 // ModuleSource._moduleTypesDefinition, whose title is the introspection
 // schema the types are read with. The origin is set as the error is raised,
 // so it holds for every load that shares the pass, and a dependency's error
@@ -107,10 +107,10 @@ func (Impl) ModuleTypes(
 //
 // The span is internal: shown only when it fails, as the engine's other
 // steps of a load are.
-func checkDangModule(ctx context.Context, moduleName string, check func(context.Context) error) (rerr error) {
-	ctx, span := core.Tracer(ctx).Start(ctx, "check "+moduleName, telemetry.Internal())
+func typecheckDangModule(ctx context.Context, moduleName string, typecheck func(context.Context) error) (rerr error) {
+	ctx, span := core.Tracer(ctx).Start(ctx, "typecheck "+moduleName, telemetry.Internal())
 	defer telemetry.EndWithCause(span, &rerr)
-	return check(ctx)
+	return typecheck(ctx)
 }
 
 func (Impl) Runtime(
