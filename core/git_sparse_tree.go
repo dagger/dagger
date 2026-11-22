@@ -56,7 +56,6 @@ type GitTreeFiles struct {
 	repo    *RemoteGitRepository
 	git     *gitutil.GitCLI
 	entries map[string]gitTreeEntry
-	missing map[string]struct{}
 }
 
 type gitTreeEntry struct {
@@ -73,7 +72,6 @@ func loadGitTreeFiles(ctx context.Context, repo *RemoteGitRepository, git *gitut
 		repo:    repo,
 		git:     git,
 		entries: map[string]gitTreeEntry{},
-		missing: map[string]struct{}{},
 	}
 	var paths []string
 	for line := range bytes.SplitSeq(listing, []byte{0}) {
@@ -90,17 +88,6 @@ func loadGitTreeFiles(ctx context.Context, repo *RemoteGitRepository, git *gitut
 		paths = append(paths, p)
 	}
 	files.Tree = layercopy.NewPathTree(paths)
-
-	// --missing=print reports what the mirror lacks without fetching it.
-	objects, err := git.Run(ctx, "rev-list", "--objects", "--missing=print", sha)
-	if err != nil {
-		return nil, fmt.Errorf("list missing objects: %w", err)
-	}
-	for line := range bytes.SplitSeq(objects, []byte{'\n'}) {
-		if oid, ok := bytes.CutPrefix(line, []byte{'?'}); ok {
-			files.missing[string(oid)] = struct{}{}
-		}
-	}
 	return files, nil
 }
 
@@ -163,32 +150,25 @@ func (files *GitTreeFiles) Named(names ...string) []string {
 
 // Fetch gets the contents of paths in one request, as Git itself asks a
 // promisor remote for a batch of objects. A path the tree doesn't have, or
-// whose contents the mirror holds, needs nothing.
+// whose contents the mirror holds, needs nothing. It asks the mirror only
+// about these paths' objects, not the commit's whole tree: on an empty mirror
+// that is every object of the commit.
 func (files *GitTreeFiles) Fetch(ctx context.Context, paths []string) error {
-	var oids bytes.Buffer
-	seen := map[string]struct{}{}
+	var oids []string
 	for _, p := range paths {
-		entry, ok := files.entries[p]
-		if !ok || entry.mode == gitModeGitlink {
-			continue
+		if entry, ok := files.entries[p]; ok && entry.mode != gitModeGitlink {
+			oids = append(oids, entry.oid)
 		}
-		if _, missing := files.missing[entry.oid]; !missing {
-			continue
-		}
-		if _, dup := seen[entry.oid]; dup {
-			continue
-		}
-		seen[entry.oid] = struct{}{}
-		oids.WriteString(entry.oid + "\n")
 	}
-	if len(seen) == 0 {
-		return nil
-	}
-	if err := files.repo.fetchBlobs(ctx, files.git, &oids); err != nil {
+	lacking, err := gitMissingObjects(ctx, files.git, oids)
+	if err != nil {
 		return fmt.Errorf("fetch file contents: %w", err)
 	}
-	for oid := range seen {
-		delete(files.missing, oid)
+	if len(lacking) == 0 {
+		return nil
+	}
+	if err := files.repo.fetchBlobs(ctx, files.git, strings.NewReader(strings.Join(lacking, "\n")+"\n")); err != nil {
+		return fmt.Errorf("fetch file contents: %w", err)
 	}
 	return nil
 }
