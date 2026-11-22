@@ -3077,6 +3077,9 @@ type Cache struct {
 	partPrefetchMu     sync.Mutex
 	partPrefetchConfig *partPrefetchConfig
 	partPrefetchRoom   func(need int64) bool
+	// partPlan holds the planned part fetches its worker hasn't found offers
+	// for yet (PlanPartFetch).
+	partPlan partFetchPlan
 	// partInstalls counts the installs of offered parts running, which
 	// the prefetcher's ahead worker waits for before taking an offer.
 	partInstalls atomic.Int64
