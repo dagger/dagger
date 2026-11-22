@@ -3114,7 +3114,8 @@ func (c *Cache) installMergedRecordLocked(res *sharedResult, row *mergeRow, orig
 	// On the Cloud, the stored record names the row's run, which goes with
 	// it, and whether that run ran its step as far as the Cloud knows yet.
 	res.run, res.runRan = nil, runNotRan
-	if c.blobBacked {
+	// A record whose run isn't known names none (mergeRunLocked).
+	if c.blobBacked && row.run != (RunName{}) {
 		run := row.run
 		res.run, res.runRan = &run, row.runRan
 	}
