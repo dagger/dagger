@@ -39,7 +39,8 @@ const (
 	// whose function fails writes the function's error there and exits
 	// non-zero; the call then fails with that error as its own. The file holds
 	// {"message": "...", "values": {...}}, {"id": "<Error ID>"}, or plain
-	// text, the whole of which is the message (see core.FunctionErrorReport).
+	// text, the whole of which is the message; an object with any other field
+	// is plain text too (see core.FunctionErrorReport).
 	// The engine reads a regular file there of at most MaxFunctionErrorBytes,
 	// and nothing else; without one, the call fails with the process's exec
 	// error. A process that finds the variable unset runs on an engine

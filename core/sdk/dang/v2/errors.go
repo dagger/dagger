@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
+	"log/slog"
 	"maps"
 	"strings"
 
@@ -45,7 +45,8 @@ var errFunctionReturnedError = errors.New("the function returned an error")
 //   - with the error the process reported (core.FunctionErrorExtension),
 //     which the call returns as a runtime's returns an Error, values and all
 //     (core.FunctionErrorReport.Return);
-//   - or, from a process that reported none, as one that died before its
+//   - or, from a process that reported none, or one the call can't return
+//     (an Error ID that doesn't load), as one that died before its
 //     function returned, with its exec's error, values and all, such as its
 //     exit code, but from the function call, not from the exec.
 func moduleProcessFunctionError(ctx context.Context, fnCall *core.FunctionCall, err error) (error, bool) {
@@ -78,13 +79,15 @@ func moduleProcessFunctionError(ctx context.Context, fnCall *core.FunctionCall, 
 		if err == nil {
 			err = report.Return(ctx, fnCall)
 		}
-		if err != nil {
-			return fmt.Errorf("return the function's reported error: %w", err), true
+		if err == nil {
+			return errFunctionReturnedError, true
 		}
-		return errFunctionReturnedError, true
+		// A report the call can't fail with leaves it the exec's error.
+		slog.WarnContext(ctx, "failed to return a module process's reported error", "error", err)
 	}
 	extensions := maps.Clone(gqlErr.Extensions)
 	delete(extensions, core.ModuleProcessExtension)
+	delete(extensions, core.FunctionErrorExtension)
 	return &gqlerror.Error{
 		Message:    fromCall(strings.TrimSpace(telemetry.ErrorOriginRegex.ReplaceAllString(gqlErr.Message, ""))),
 		Extensions: extensions,

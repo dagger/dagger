@@ -68,16 +68,44 @@ type FunctionErrorReport struct {
 
 // ParseFunctionErrorReport reads the content of a function error file, and
 // returns nil for an empty one.
+//
+// Only an object that is exactly one of the structured forms is read as one:
+// any other field, an "id" alongside a message or one that is no Error ID,
+// and the content is plain text, so a message that happens to be JSON, such
+// as an HTTP API's error body, still reaches the caller whole.
 func ParseFunctionErrorReport(content []byte) *FunctionErrorReport {
 	text := strings.TrimSpace(string(content))
 	if text == "" {
 		return nil
 	}
-	var report FunctionErrorReport
-	if err := json.Unmarshal([]byte(text), &report); err == nil && (report.ID != "" || report.Message != "") {
-		return &report
+	if report, ok := parseStructuredFunctionError(text); ok {
+		return report
 	}
 	return &FunctionErrorReport{Message: text}
+}
+
+func parseStructuredFunctionError(text string) (*FunctionErrorReport, bool) {
+	dec := json.NewDecoder(strings.NewReader(text))
+	dec.DisallowUnknownFields()
+	var report FunctionErrorReport
+	if err := dec.Decode(&report); err != nil || dec.More() {
+		return nil, false
+	}
+	switch {
+	case report.ID != "":
+		if report.Message != "" || report.Values != nil {
+			return nil, false
+		}
+		var id dagql.ID[*Error]
+		if err := id.Decode(report.ID); err != nil {
+			return nil, false
+		}
+		return &report, true
+	case report.Message != "":
+		return &report, true
+	default:
+		return nil, false
+	}
 }
 
 // Return makes the reported error the one fnCall returns, as a module process

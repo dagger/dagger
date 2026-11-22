@@ -5,10 +5,20 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/vektah/gqlparser/v2/ast"
+
+	"github.com/dagger/dagger/dagql/call"
 )
 
 func TestParseFunctionErrorReport(t *testing.T) {
 	t.Parallel()
+	errID, err := call.New().
+		Append(&ast.Type{NamedType: "Error", NonNull: true}, "error",
+			call.WithArgs(call.NewArgument("message", call.NewLiteralString("it failed"), false))).
+		Encode()
+	require.NoError(t, err)
+	dirID, err := call.New().Append(&ast.Type{NamedType: "Directory", NonNull: true}, "directory").Encode()
+	require.NoError(t, err)
 	for _, tc := range []struct {
 		name    string
 		content string
@@ -20,10 +30,18 @@ func TestParseFunctionErrorReport(t *testing.T) {
 			Message: "it failed",
 			Values:  map[string]json.RawMessage{"exitCode": json.RawMessage(`3`), "extra.why": json.RawMessage(`{"a": [1]}`)},
 		}},
-		{"id", `{"id": "abc"}`, &FunctionErrorReport{ID: "abc"}},
+		{"id", `{"id": "` + errID + `"}`, &FunctionErrorReport{ID: errID}},
 		{"a JSON string is text", `"it failed"`, &FunctionErrorReport{Message: `"it failed"`}},
 		{"an object without a message is text", `{"values": {}}`, &FunctionErrorReport{Message: `{"values": {}}`}},
 		{"a malformed object is text", `{"message": 3}`, &FunctionErrorReport{Message: `{"message": 3}`}},
+		{"an object with other fields is text", `{"message": "not found", "code": 404}`,
+			&FunctionErrorReport{Message: `{"message": "not found", "code": 404}`}},
+		{"an id beside a message is text", `{"id": "not_found", "message": "no such droplet"}`,
+			&FunctionErrorReport{Message: `{"id": "not_found", "message": "no such droplet"}`}},
+		{"an id that is no ID is text", `{"id": "not_found"}`, &FunctionErrorReport{Message: `{"id": "not_found"}`}},
+		{"an id of another type is text", `{"id": "` + dirID + `"}`, &FunctionErrorReport{Message: `{"id": "` + dirID + `"}`}},
+		{"trailing content is text", `{"message": "a"} {"message": "b"}`,
+			&FunctionErrorReport{Message: `{"message": "a"} {"message": "b"}`}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

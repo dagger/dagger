@@ -37,6 +37,7 @@ const functionErrorEntrypoint = `type Entrypoint implements ModuleEntrypoint {
         .withFunction(function("Data", str))
         .withFunction(function("ById", str))
         .withFunction(function("Huge", str))
+        .withFunction(function("JsonText", str))
         .withFunction(function("Root", str)),
     ]
   }
@@ -86,8 +87,9 @@ const functionErrorEntrypoint = `type Entrypoint implements ModuleEntrypoint {
 // functionErrorScript is the module process: Native fails with an error of
 // its own, Exit dies without one, Inner fails with an API error, whose
 // message names the failed exec, and Stale succeeds after writing an error.
-// ExecError, Data and ById report their errors in the structured forms, and
-// Huge in a file over the limit.
+// ExecError, Data and ById report their errors in the structured forms,
+// JsonText a text that is a JSON object but neither form, and Huge in a file
+// over the limit.
 const functionErrorScript = `query() {
   wget -q -O- \
     --header "Content-Type: application/json" \
@@ -124,8 +126,8 @@ Fifo)
   ;;
 ExecError)
   out=$(query '{container{from(address:\"%[2]s\"){withExec(args:[\"sh\",\"-c\",\"echo inner-out; echo inner-err >&2; exit 7\"]){stdout}}}}')
-  # The API error, its extensions as the error's values.
-  printf '%%s' "$out" | sed 's/^{"errors":\[\(.*\)\],"data":null}$/\1/; s/"extensions":/"values":/' > "$%[1]s"
+  # The API error's message, and its extensions as the error's values.
+  printf '%%s' "$out" | sed 's/^{"errors":\[\(.*\)\],"data":null}$/\1/; s/"path":\[[^]]*\],//; s/"locations":\[[^]]*\],//; s/"extensions":/"values":/' > "$%[1]s"
   exit 1
   ;;
 Data)
@@ -135,6 +137,10 @@ Data)
 ById)
   out=$(query '{error(message:\"by id\"){withValue(name:\"answer\",value:\"42\"){id}}}')
   printf '{"id": "%%s"}' "$(printf '%%s' "$out" | sed 's/.*"id":"\([^"]*\)".*/\1/')" > "$%[1]s"
+  exit 1
+  ;;
+JsonText)
+  printf '{"id": "not_found", "message": "no such droplet"}' > "$%[1]s"
   exit 1
   ;;
 Huge)
@@ -293,6 +299,11 @@ func (ModuleSuite) TestModuleEntrypointFunctionErrorValues(ctx context.Context, 
 		err, ext := callErr(t, "native")
 		require.Contains(t, err.Error(), "the function failed")
 		require.NotContains(t, ext, "_type", "no values but its origin: %v", ext)
+	})
+
+	t.Run("a JSON text that is neither form is the message", func(ctx context.Context, t *testctx.T) {
+		err, _ := callErr(t, "jsonText")
+		require.Contains(t, err.Error(), `{"id": "not_found", "message": "no such droplet"}`)
 	})
 
 	t.Run("a process that reported none", func(ctx context.Context, t *testctx.T) {
