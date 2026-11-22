@@ -462,3 +462,19 @@ func BenchmarkStoredBundleValidation(b *testing.B) {
 		b.Errorf("validating the bundle costs %.2f times encoding it (%.1f ms against %.1f ms, the full validation %.1f ms); the target is at most 1.5", ratio, perBuild(validating), perBuild(encoding), perBuild(full))
 	}
 }
+
+// BenchmarkAvailablePart answers for the batch's roots' stored parts, each of
+// storedBenchLayers layers as an engine's export describes them, as
+// selection's readers ask: for the state alone.
+func BenchmarkAvailablePart(b *testing.B) {
+	_, cloud, batch := storedBenchCloud(b)
+	address := storedBenchPart(0).Address
+	now := time.Now().Unix()
+	b.ReportAllocs()
+	for i := range b.N {
+		av, err := cloud.AvailablePart(batch[i%len(batch)], address, now)
+		if err != nil || av.State != PartStored {
+			b.Fatalf("root %d: %v, %v", batch[i%len(batch)], av.State, err)
+		}
+	}
+}
