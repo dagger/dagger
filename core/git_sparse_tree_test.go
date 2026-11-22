@@ -1,8 +1,10 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -478,4 +480,37 @@ func TestGitSparseDirs(t *testing.T) {
 		}
 	}
 	require.Empty(t, gitSparseDirs([]string{"only.txt"}))
+}
+
+// A sparse tree's lists beside its files are written in path order, so two
+// runs of one commit write the same bytes: __sparseWorkspaceTree declares
+// that its content follows from its inputs. A tree of many paths ranged in
+// map order would write them in another order nearly every time.
+func TestGitSparseTreeListsAreInPathOrder(t *testing.T) {
+	t.Parallel()
+	files := &GitTreeFiles{entries: map[string]gitTreeEntry{}}
+	var objects, gitlinks bytes.Buffer
+	var paths []string
+	for i := range 64 {
+		paths = append(paths, fmt.Sprintf("d%02d/f", i))
+	}
+	for _, p := range paths {
+		mode := "100644"
+		if strings.HasSuffix(p[:3], "7") {
+			mode = gitModeGitlink
+			gitlinks.WriteByte(gitSparseEntryGitlink)
+			gitlinks.WriteString(p)
+			gitlinks.WriteByte(0)
+		}
+		files.entries[p] = gitTreeEntry{mode: mode, oid: "oid-" + p}
+		objects.WriteString(mode + " oid-" + p + " " + p)
+		objects.WriteByte(0)
+	}
+	require.Equal(t, objects.String(), string(files.objectList()))
+
+	root := t.TempDir()
+	require.NoError(t, files.writeSubmodulesManifest(root))
+	manifest, err := os.ReadFile(filepath.Join(root, gitSparseManifestFile))
+	require.NoError(t, err)
+	require.Equal(t, gitlinks.String(), string(manifest))
 }
