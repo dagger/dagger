@@ -16,7 +16,7 @@ import (
 	telemetry "github.com/dagger/otel-go"
 )
 
-// Fold-on-ingest (see hack/designs/fold-on-ingest.md).
+// Fold-on-ingest.
 //
 // A DB built WithFold keeps in full (a *Span) only the spans it may render:
 // the RETAINED spans, which a FoldRetain policy picks as they arrive, and
@@ -138,7 +138,7 @@ func WithFold(opts FoldOptions) DBOption {
 		if opts.Retain == nil {
 			opts.Retain = RetainRendered
 		}
-		db.fold = &Fold{db: db, opts: opts, ingesting: noSpan}
+		db.fold = &Fold{db: db, opts: opts, ingesting: noSpan, root: noSpan}
 	}
 }
 
@@ -189,8 +189,10 @@ type Fold struct {
 	load []SpanID
 	// touched collects the retained spans whose aggregates a batch changed.
 	touched map[uint32]struct{}
-	// rootEnded is set once a root completed, at rootEnd: running spans are
-	// canceled, ending then.
+	// root is the DB's RootSpan, the first root received; rootEnded is set
+	// once it completed, at rootEnd: running spans are canceled, ending
+	// then.
+	root uint32
 	rootEnded bool
 	rootEnd   int64
 
@@ -210,6 +212,8 @@ type Fold struct {
 	// carrier's snapshots with waits, which replace its earlier waits.
 	pending map[uint32][]pendingWait
 	waitGen map[uint32]uint32
+	// pendingProgress holds the progress of spans not received yet.
+	pendingProgress map[uint32][]foldProgressItem
 	// ingesting is the span ingest is at.
 	ingesting uint32
 	// Broken counts the spans whose contained waits a later edge broke,
@@ -763,7 +767,8 @@ func (f *Fold) ingest(info foldInfo, fill bool) bool {
 	retained := f.state[i]&foldRetained != 0
 	if !retained {
 		f.setCategory(i, info.cat)
-		if f.shouldRetain(i) || (f.opts.Foldable != nil && !f.opts.Foldable(info.trace)) {
+		// a root is the primary row, until another is set
+		if !info.parent.IsValid() || f.shouldRetain(i) || (f.opts.Foldable != nil && !f.opts.Foldable(info.trace)) {
 			f.promote(i, i)
 			retained = true
 		}
@@ -776,11 +781,18 @@ func (f *Fold) ingest(info foldInfo, fill bool) bool {
 			f.promote(f.intern(target), noSpan)
 		}
 	}
+	if first {
+		f.arrivedProgress(i, retained)
+	}
 	if first && !info.parent.IsValid() {
 		// a root's children are the top-level rows
 		f.expand(i)
 	}
-	if !info.parent.IsValid() && info.cat != stateRunning && !f.rootEnded {
+	if !info.parent.IsValid() && f.root == noSpan {
+		// the DB's RootSpan: the first root it receives
+		f.root = i
+	}
+	if i == f.root && info.cat != stateRunning && !f.rootEnded {
 		f.endRoot(f.end[i])
 	}
 	return retained
@@ -1014,6 +1026,23 @@ func (f *Fold) creditLate(span *Span, d foldCounts) {
 	addRollUp(span.rollUpState, d.RollUpState, 1)
 	i := f.intern(span.ID)
 	f.aggOf(i).beneath += d.n
+	f.touch(i)
+}
+
+// creditLateBeneath counts on span, which the DB found newly reachable from
+// them, the folded spans counted on from, beneath it, with no cause links
+// between them (see recreditLateParent): their roll-up counts are in
+// from's.
+func (f *Fold) creditLateBeneath(span, from *Span) {
+	if f == nil || len(f.agg) == 0 {
+		return
+	}
+	j, ok := f.lookup(from.ID)
+	if !ok || f.agg[j] == nil || f.agg[j].beneath == 0 {
+		return
+	}
+	i := f.intern(span.ID)
+	f.aggOf(i).beneath += f.agg[j].beneath
 	f.touch(i)
 }
 
@@ -1295,19 +1324,50 @@ func (f *Fold) noteHasLogs(id SpanID) bool {
 }
 
 // noteProgress reports whether the DB is to keep progress for span id: it
-// retains spans carrying progress that may roll up.
-func (f *Fold) noteProgress(id SpanID) bool {
+// retains spans carrying progress that may roll up. The progress of a span
+// not received yet waits for it, to be kept if it's retained on arrival.
+func (f *Fold) noteProgress(id SpanID, p foldProgressItem) bool {
 	i := f.intern(id)
 	if f.state[i]&foldRetained != 0 {
 		return true
 	}
 	f.state[i] |= foldProgress
-	if f.state[i]&foldReceived == 0 || !f.shouldRetain(i) {
+	if f.state[i]&foldReceived == 0 {
+		if f.pendingProgress == nil {
+			f.pendingProgress = map[uint32][]foldProgressItem{}
+		}
+		f.pendingProgress[i] = append(f.pendingProgress[i], p)
+		return false
+	}
+	if !f.shouldRetain(i) {
 		return false
 	}
 	f.promote(i, noSpan)
 	f.finishBatch()
 	return true
+}
+
+// foldProgressItem is a progress state of a span not received yet.
+type foldProgressItem struct {
+	item           string
+	current, total int64
+	unit           string
+}
+
+// arrivedProgress keeps the progress that arrived ahead of span i, now that
+// it did, if it's retained.
+func (f *Fold) arrivedProgress(i uint32, retained bool) {
+	items, ok := f.pendingProgress[i]
+	if !ok {
+		return
+	}
+	delete(f.pendingProgress, i)
+	if !retained {
+		return
+	}
+	for _, p := range items {
+		f.db.IngestProgress(f.spans[i], p.item, p.current, p.total, p.unit)
+	}
 }
 
 // FoldedBeneath reports whether folded spans sit beneath span, at any depth.

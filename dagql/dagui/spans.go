@@ -107,6 +107,10 @@ type Span struct {
 
 	causesViaLinks  *SpanSet
 	effectsViaLinks *SpanSet
+	// causalBeneath marks a span that, or something beneath which, has
+	// cause links either way: what's counted on it may reach its ancestors
+	// some other way than through it (see recreditLateParent).
+	causalBeneath bool
 
 	// installSites holds the causes of a lazy evaluation that are sites its
 	// result was installed at (the calls that returned or received it), not
@@ -1077,6 +1081,19 @@ func (span *Span) recreditLateParent() {
 	if len(gained) == 0 {
 		return
 	}
+	if !span.causalBeneath {
+		// without cause links beneath it, what's counted on span reached
+		// it only from beneath, and reaches its ancestors only through it
+		for _, ancestor := range gained {
+			if ancestor.rollUpState == nil {
+				ancestor.rollUpState = &RollUpState{}
+			}
+			addRollUp(ancestor.rollUpState, *span.rollUpState, 1)
+			db.fold.creditLateBeneath(ancestor, span)
+			db.update(ancestor)
+		}
+		return
+	}
 	credited := map[*Span]bool{}
 	// A folding DB counts the folded spans a retained span owns on the
 	// spans it reaches, like one more span beneath it (see foldAgg): they
@@ -1088,6 +1105,11 @@ func (span *Span) recreditLateParent() {
 		}
 	}
 	seen := map[*Span]bool{span: true}
+	// other holds, for each span walked, the spans its counts reach some
+	// other way than through span: those of a span without causes are its
+	// parent's, so only spans with causes (and effects, whose parent is
+	// elsewhere) walk up for them
+	other := map[*Span]map[*Span]bool{span: nil}
 	queue := slices.Clone(span.ChildSpans.Spans())
 	for len(queue) > 0 {
 		beneath := queue[0]
@@ -1096,17 +1118,43 @@ func (span *Span) recreditLateParent() {
 			continue
 		}
 		seen[beneath] = true
-		queue = append(queue, beneath.ChildSpans.Spans()...)
 		cat := beneath.lastRollUpCategory
+		reached, ok := other[beneath.ParentSpan]
+		if !ok || beneath.ParentSpan == nil || beneath.causesViaLinks.Len() > 0 {
+			reached = map[*Span]bool{}
+			if !beneath.rollUpAncestors(span, func(s *Span) { reached[s] = true }) {
+				// joined beneath span some other way (e.g. a link that
+				// isn't causal for roll-ups)
+				queue = append(queue, beneath.ChildSpans.Spans()...)
+				continue
+			}
+		}
+		other[beneath] = reached
+		if !beneath.causalBeneath {
+			// nor has anything beneath it causes: it and what's counted
+			// on it reach the same, in one step
+			for _, ancestor := range gained {
+				if reached[ancestor] {
+					continue
+				}
+				if ancestor.rollUpState == nil {
+					ancestor.rollUpState = &RollUpState{}
+				}
+				if cat != stateUnknown {
+					ancestor.rollUpState.incrementCategory(cat)
+				}
+				if beneath.rollUpState != nil {
+					addRollUp(ancestor.rollUpState, *beneath.rollUpState, 1)
+				}
+				db.fold.creditLateBeneath(ancestor, beneath)
+				credited[ancestor] = true
+			}
+			continue
+		}
+		queue = append(queue, beneath.ChildSpans.Spans()...)
 		own := db.fold.ownCounts(beneath)
 		if cat == stateUnknown && own.isZero() {
 			// not counted anywhere yet: it will be, through the new parent
-			continue
-		}
-		reached := map[*Span]bool{}
-		if !beneath.rollUpAncestors(span, func(s *Span) { reached[s] = true }) {
-			// joined beneath span some other way (e.g. a link that isn't
-			// causal for roll-ups)
 			continue
 		}
 		for _, ancestor := range gained {

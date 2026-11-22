@@ -1531,6 +1531,8 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 				// its causes alone
 				lateLinked = true
 			}
+			markCausalBeneath(span)
+			markCausalBeneath(linked)
 			if installSite {
 				addToSpanSet(&span.installSites, linked)
 			}
@@ -1571,6 +1573,9 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 		}
 	}
 
+	if span.causalBeneath && span.ParentSpan != nil {
+		markCausalBeneath(span.ParentSpan)
+	}
 	if joined || lateLinked {
 		// The roll-up counts, running and revealed spans of what arrived
 		// beneath the span before it did, counted as they stood...
@@ -1691,10 +1696,20 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 	db.noteRunning(span)
 }
 
+// markCausalBeneath marks span and its ancestors as holding cause links
+// (Span.causalBeneath).
+func markCausalBeneath(span *Span) {
+	for s, depth := span, 0; s != nil && !s.causalBeneath && depth < 10_000; s, depth = s.ParentSpan, depth+1 {
+		s.causalBeneath = true
+	}
+}
+
 func (db *DB) linkResumedOutput(span *Span, creator *Span) {
 	changed := addToSpanSet(&creator.ChildSpans, span)
 	addToSpanSet(&creator.effectsViaLinks, span)
 	addToSpanSet(&span.causesViaLinks, creator)
+	markCausalBeneath(span)
+	markCausalBeneath(creator)
 	if changed {
 		db.update(creator)
 	}
