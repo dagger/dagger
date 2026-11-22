@@ -110,12 +110,14 @@ type RemoteHolding struct {
 	// Replacements is the entry's replacement count in its cache, read with
 	// the value state above; it orders that state (HeldValueState).
 	Replacements uint64
-	// Executed reports that the call computed the entry, as the service
-	// counts executed evidence: once the cache has dropped a value, only a
-	// computation after the drop may bring it back (holding.executed).
+	// Executed reports that the call computed the entry: it executed or
+	// joined the call, as the service counts executed evidence.
 	Executed bool
 	// BeforeLastDrop reports that the call's row reached the Cloud before
-	// its latest drop of values.
+	// its latest drop of values. Once the cache has dropped a value, only a
+	// computation after the drop may bring it back (holding.executed), so
+	// such a row's computation doesn't, though it still says the run ran
+	// (holding.ran).
 	BeforeLastDrop bool
 	// UsedAtUnixNano is when the span was recorded where the service read
 	// it, a use of the entry (0: unknown). The entry's last use never moves
@@ -301,7 +303,8 @@ type holding struct {
 	// cache's copy always has a value.
 	unstored bool
 	// executed marks a holding whose cache computed the entry: a call span
-	// with executed evidence named it. A prune that drops the entry's value
+	// with executed evidence, which reached the Cloud after its latest drop
+	// (RemoteHolding.BeforeLastDrop), named it. A prune that drops the entry's value
 	// clears it on every holding of the entry, so the service takes a
 	// dropped value back only from a cache that computed it after the drop;
 	// copies from placement, and entries a cache only hit, are never
@@ -494,7 +497,7 @@ func (c *Cache) attachRemoteHoldingLocked(ctx context.Context, key HolderKey, de
 		h.typeName = internString(desc.TypeName)
 		c.markHoldingLocked(key)
 	}
-	if desc.Executed && !h.executed {
+	if desc.Executed && !desc.BeforeLastDrop && !h.executed {
 		h.executed = true
 		c.markHoldingLocked(key)
 	}
