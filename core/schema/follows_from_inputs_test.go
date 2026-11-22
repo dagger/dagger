@@ -124,6 +124,7 @@ func followsResults(t *testing.T, e *followsTestEngine) map[string]string {
 	changes := e.changeset(base, "changes", followsArg("from", followsID(t, smaller)))
 	out["Directory.changes, withChanges"] = e.digest(e.dir(smaller, "withChanges", followsArg("changes", followsID(t, changes))))
 	out["Changeset.filter, Directory.withChanges"] = e.digest(e.dir(smaller, "withChanges", followsArg("changes", followsID(t, e.changeset(changes, "filter", followsArg("include", dagql.ArrayInput[dagql.String]{dagql.NewString("*.txt")}))))))
+	out["Directory.withPlatform"] = e.digest(e.dir(base, "withPlatform", followsArg("platform", core.Platform{OS: "linux", Architecture: "arm64"})))
 	out["Directory.withPatch"] = e.digest(e.dir(base, "withPatch", followsArg("patch", dagql.NewString("--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-A\n\\ No newline at end of file\n+C\n\\ No newline at end of file\n"))))
 	out["Directory.entries"] = e.value(base, "entries")
 	out["Directory.glob"] = e.value(base, "glob", followsArg("pattern", dagql.NewString("**")))
@@ -142,7 +143,9 @@ func followsResults(t *testing.T, e *followsTestEngine) map[string]string {
 	out["File.withTimestamps"] = e.digest(e.file(a, "withTimestamps", followsArg("timestamp", dagql.Int(1))))
 
 	str := dagql.NewString
-	strs := func(v ...string) dagql.ArrayInput[dagql.String] { return dagql.ArrayInput[dagql.String](dagql.NewStringArray(v...)) }
+	strs := func(v ...string) dagql.ArrayInput[dagql.String] {
+		return dagql.ArrayInput[dagql.String](dagql.NewStringArray(v...))
+	}
 	c := e.ctr(root, "container")
 	out["Query.container"] = e.ctrState(c)
 	c = e.ctr(c, "withNewFile", followsArg("path", str("/n.txt")), followsArg("contents", str("N")))
@@ -166,6 +169,9 @@ func followsResults(t *testing.T, e *followsTestEngine) map[string]string {
 	out["Container.withMountedFile"] = e.ctrState(mountedFile) + " /mf.txt=" + e.digest(e.file(mountedFile, "file", followsArg("path", str("/mf.txt"))))
 	mountedFiles := e.ctr(c, "withMountedFiles", followsArg("path", str("/mfs")), followsArg("sources", dagql.ArrayInput[dagql.ID[*core.File]]{followsID(t, a)}))
 	out["Container.withMountedFiles"] = e.ctrState(mountedFiles)
+	var volume dagql.ObjectResult[*core.CacheVolume]
+	require.NoError(t, e.srv.Select(e.ctx, root, &volume, dagql.Selector{Field: "cacheVolume", Args: []dagql.NamedInput{followsArg("key", str("follows"))}}))
+	out["Container.withMountedCache"] = e.ctrState(e.ctr(c, "withMountedCache", followsArg("path", str("/cache")), followsArg("cache", followsID(t, volume))))
 	out["Container.withMountedTemp"] = e.ctrState(e.ctr(c, "withMountedTemp", followsArg("path", str("/t"))))
 	out["Container.withoutMount"] = e.ctrState(e.ctr(mounted, "withoutMount", followsArg("path", str("/m"))))
 	secret := e.secret(root)
@@ -226,4 +232,40 @@ func TestDeclaredFieldsFollowFromTheirInputs(t *testing.T) {
 		require.Equal(t, value, second[name], name)
 	}
 	require.Len(t, second, len(first))
+}
+
+// The fields that place a value without running a process or reading what
+// their call doesn't hold say so in every call core makes of them. Mounting a
+// cache volume follows from its inputs, but a process run over that mount
+// reads the volume's contents, which no call holds, so it doesn't.
+func TestFieldsThatFollowFromInputsDeclareIt(t *testing.T) {
+	e := newFollowsTestEngine(t, transferTestSalt(t), "follows-declared")
+	for _, tc := range []struct {
+		typ, field string
+		follows    bool
+	}{
+		{"Container", "from", true},
+		{"Directory", "withPlatform", true},
+		{"Container", "withMountedCache", true},
+		{"Container", "withExec", false},
+	} {
+		typ, ok := e.srv.ObjectType(tc.typ)
+		require.True(t, ok, tc.typ)
+		spec, ok := typ.FieldSpec(tc.field, "")
+		require.True(t, ok, tc.typ+"."+tc.field)
+		require.Equal(t, tc.follows, spec.FollowsFromInputs, tc.typ+"."+tc.field)
+	}
+
+	root := e.srv.Root()
+	base := e.dir(e.dir(root, "directory"), "withNewFile", followsArg("path", dagql.NewString("a.txt")), followsArg("contents", dagql.NewString("A")))
+	var volume dagql.ObjectResult[*core.CacheVolume]
+	require.NoError(t, e.srv.Select(e.ctx, root, &volume, dagql.Selector{Field: "cacheVolume", Args: []dagql.NamedInput{followsArg("key", dagql.NewString("declared"))}}))
+	for name, res := range map[string]dagql.AnyObjectResult{
+		"Directory.withPlatform":     e.dir(base, "withPlatform", followsArg("platform", core.Platform{OS: "linux", Architecture: "arm64"})),
+		"Container.withMountedCache": e.ctr(e.ctr(root, "container"), "withMountedCache", followsArg("path", dagql.NewString("/cache")), followsArg("cache", followsID(t, volume))),
+	} {
+		frame, err := res.ResultCall()
+		require.NoError(t, err, name)
+		require.True(t, frame.FollowsFromInputs, name)
+	}
 }
