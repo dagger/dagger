@@ -3184,6 +3184,8 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *cl
 	if caller := client.fnCall.CallerRecipe(); caller != "" {
 		ctx = dagql.ContextWithCallerRecipe(ctx, caller)
 	}
+	// Its part reads count as reads made under that call.
+	ctx = dagql.ContextWithReadScope(ctx, client.fnCall.ReadScope())
 
 	// A module client's typedef constructors name the module's declarations
 	// by the module's rules, even when the client declared a core view of
