@@ -109,7 +109,7 @@ func (h RemoteHolding) Declares() (follows, known bool) {
 // entry's own answer, with its record's frame, is entryCanDifferLocked's.
 func (h RemoteHolding) CanDiffer() bool {
 	follows, known := h.Declares()
-	return !(known && follows)
+	return !known || !follows
 }
 
 // Declares is the holding's word on the declaration (declares).
@@ -120,7 +120,7 @@ func (h RemoteHoldingInfo) Declares() (follows, known bool) {
 // CanDiffer is RemoteHolding.CanDiffer, of the holding's facts.
 func (h RemoteHoldingInfo) CanDiffer() bool {
 	follows, known := h.Declares()
-	return !(known && follows)
+	return !known || !follows
 }
 
 // Declares is the holding's word on the declaration (declares).
@@ -131,5 +131,5 @@ func (h HoldingFacts) Declares() (follows, known bool) {
 // CanDiffer is RemoteHolding.CanDiffer, of the holding's facts.
 func (h HoldingFacts) CanDiffer() bool {
 	follows, known := h.Declares()
-	return !(known && follows)
+	return !known || !follows
 }
