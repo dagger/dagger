@@ -117,17 +117,18 @@ func TestBusyEndsWakeOnlyTheWatchesThatWantTheRow(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx, c := newPartsTestCache(t, nil)
 		defer c.CloseDiscardingPersistence()
-		value := func(text string) (AnyResult, uint64) {
-			obj := &captureTestValue{text: text}
+		value := func(name string) (AnyResult, uint64) {
+			obj := &captureTestValue{text: name}
 			obj.lazy = func(context.Context) error {
 				obj.lazy = nil
 				return nil
 			}
-			res := attachCaptureTestValue(t, ctx, c, obj)
+			res := attachNamedCaptureTestValue(t, ctx, c, name, obj)
 			return res, uint64(res.cacheSharedResult().id)
 		}
 		wanted, wantedRow := value("wanted")
-		other, _ := value("other")
+		other, otherRow := value("other")
+		require.NotEqual(t, wantedRow, otherRow, "two rows")
 
 		mine, stopMine := c.WatchBusyEnds(func(r uint64) bool { return r == wantedRow })
 		defer stopMine()
@@ -155,4 +156,24 @@ func TestBusyEndsWakeOnlyTheWatchesThatWantTheRow(t *testing.T) {
 			t.Fatal("the watch didn't hear of its row's end")
 		}
 	})
+}
+
+// attachNamedCaptureTestValue is attachCaptureTestValue under a call of its
+// own name, so that values attached under different names are different
+// rows.
+func attachNamedCaptureTestValue(t *testing.T, ctx context.Context, c *Cache, name string, value Typed) AnyResult {
+	t.Helper()
+	srv := newDagqlServerForTest(t, &persistCodecRoot{})
+	srv.InstallObject(NewClass(srv, ClassOpts[*captureTestValue]{}))
+	frame := persistCodecFrame(name, value)
+	res, err := c.GetOrInitCall(ctx, cacheTestSessionID(t, ctx), srv, &CallRequest{ResultCall: frame}, func(context.Context) (AnyResult, error) {
+		class, _ := srv.ObjectType(value.Type().Name())
+		res, err := NewResultForCall(value, frame)
+		if err != nil {
+			return nil, err
+		}
+		return class.New(res)
+	})
+	require.NoError(t, err)
+	return res
 }
