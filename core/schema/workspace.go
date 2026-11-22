@@ -190,7 +190,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 		dagql.Func("initialized", s.legacyInitialized).
 			View(BeforeVersion("v1.0.0-0")).
 			Doc("Whether .dagger/config.toml exists."),
-		dagql.NodeFuncWithDynamicInputs("directory", s.directory, workspaceReadCacheKey[workspaceDirectoryArgs]).
+		dagql.NodeFuncWithDynamicInputs("directory", s.directory, workspaceFilesReadCacheKey[workspaceDirectoryArgs]).
 			Doc(`Returns a Directory from the workspace.`,
 				`Relative paths resolve from the workspace cwd. Absolute paths resolve from the workspace root.`).
 			Args(
@@ -199,13 +199,13 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("include").Doc(`Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
 				dagql.Arg("gitignore").Doc(`Apply .gitignore filter rules inside the directory.`),
 			),
-		dagql.NodeFuncWithDynamicInputs("file", s.file, workspaceReadCacheKey[workspaceFileArgs]).
+		dagql.NodeFuncWithDynamicInputs("file", s.file, workspaceFilesReadCacheKey[workspaceFileArgs]).
 			Doc(`Returns a File from the workspace.`,
 				`Relative paths resolve from the workspace cwd. Absolute paths resolve from the workspace root.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the file to retrieve. Relative paths (e.g., "go.mod") resolve from the workspace cwd; absolute paths (e.g., "/go.mod") resolve from the workspace root.`),
 			),
-		dagql.NodeFuncWithDynamicInputs("glob", s.glob, workspaceReadCacheKey[workspaceGlobArgs]).
+		dagql.NodeFuncWithDynamicInputs("glob", s.glob, workspaceFilesReadCacheKey[workspaceGlobArgs]).
 			View(AfterVersion("v1.0.0-0")).
 			Doc(`Returns a list of files and directories that match the given pattern.`,
 				`Patterns match paths relative to the workspace root.`).
@@ -227,7 +227,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				args = append(args, (core.SearchOpts{}).Args()...)
 				return args
 			})()...),
-		dagql.NodeFuncWithDynamicInputs("findUp", s.findUp, workspaceReadCacheKey[workspaceFindUpArgs]).
+		dagql.NodeFuncWithDynamicInputs("findUp", s.findUp, workspaceFilesReadCacheKey[workspaceFindUpArgs]).
 			Doc(`Search for a file or directory by walking up from the start path within the workspace.`,
 				`Returns the absolute workspace path if found, or null if not found.`,
 				`Relative start paths resolve from the workspace cwd.`,
@@ -236,7 +236,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("name").Doc(`The name of the file or directory to search for.`),
 				dagql.Arg("from").Doc(`Path to start the search from. Relative paths resolve from the workspace cwd; absolute paths resolve from the workspace root.`),
 			),
-		dagql.NodeFuncWithDynamicInputs("findRoots", s.findRoots, workspaceReadCacheKey[workspaceFindRootsArgs]).
+		dagql.NodeFuncWithDynamicInputs("findRoots", s.findRoots, workspaceFilesReadCacheKey[workspaceFindRootsArgs]).
 			View(AfterVersion("v1.0.0-0")).
 			Doc(`Find project roots marked by any of the given filenames, starting from a path relative to the workspace cwd.`,
 				`Returns cwd-relative directory paths for every marked directory at or below start, plus the nearest marked ancestor when start itself is not marked.`,
@@ -246,7 +246,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("markers").Doc(`File basenames that mark a project root (e.g. ["go.mod"] or ["deno.json", "deno.jsonc"]).`),
 				dagql.Arg("exclude").Doc(`Glob patterns pruning the walk below start (e.g. ["**/node_modules/**"]).`),
 			),
-		dagql.NodeFuncWithDynamicInputs("git", s.git, workspaceReadCacheKey[struct{}]).
+		dagql.NodeFuncWithDynamicInputs("git", s.git, workspaceFilesReadCacheKey[struct{}]).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Git state for this workspace. Errors if the workspace is not in a git repository."),
 		dagql.NodeFunc("withNewFile", s.withNewFile).
@@ -1571,6 +1571,28 @@ func workspaceReadCacheKey[A any](ctx context.Context, parent dagql.ObjectResult
 		return req.SetImplicitInput(ctx, dagql.PerClientInput.Name, client)
 	}
 	req.IsPersistable = true
+	return nil
+}
+
+// workspaceFilesReadCacheKey keys a read like workspaceReadCacheKey, for a read
+// whose result is a function of the files it reads (all but search, whose
+// results come in the order ripgrep's parallel walk finds them).
+//
+// A Git workspace with no edits and no mounts reads only its commit's files,
+// through its sparse tree, sparse files of its own or a tree that discards
+// .git (see core.CloneWorkspaceGitTree), so such a read also follows from its
+// inputs. Edits, mounts and a directory root can hold a tree that keeps .git,
+// whose bytes can differ between runs.
+func workspaceFilesReadCacheKey[A any](ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args A, req *dagql.CallRequest) error {
+	if err := workspaceReadCacheKey(ctx, parent, args, req); err != nil {
+		return err
+	}
+	ws := parent.Self()
+	if _, ok := ws.Source().(*core.WorkspaceSourceGitRef); ok {
+		if _, mounted := ws.MountsDir(); !mounted {
+			req.ResultCall.FollowsFromInputs = true
+		}
+	}
 	return nil
 }
 
