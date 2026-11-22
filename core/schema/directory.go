@@ -264,7 +264,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 					`(e.g., for Dockerfile RUN --mount=type=ssh instructions).`,
 					`Typically obtained via host.unixSocket() pointing to the SSH_AUTH_SOCK.`),
 			),
-		dagql.NodeFuncWithDynamicInputs("withPlatform", s.withPlatform, withPlatformDynamicInputs[*core.Directory]).
+		dagql.NodeFuncWithDynamicInputs("withPlatform", s.withPlatform, withPlatformDynamicInputs[*core.Directory]).FollowsFromInputs().
 			View(AfterVersion("v1.0.0-beta.26")).
 			Doc(withPlatformDoc("directory")...).
 			Args(

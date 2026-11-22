@@ -91,7 +91,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("labels").Doc("Labels to apply to the sub-pipeline."),
 			),
 
-		dagql.NodeFunc("from", s.from).
+		dagql.NodeFunc("from", s.from).FollowsFromInputs().
 			IsPersistable().
 			WithInput(fromSessionScopeInput).
 			Doc(`Download a container image, and apply it to the container state. All previous state will be lost.`).
@@ -477,7 +477,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`It can't be combined with size.`).View(AfterVersion("v1.0.0-beta.29")),
 			),
 
-		dagql.NodeFuncWithDynamicInputs("withMountedCache", s.withMountedCache, s.withMountedCacheDynamicInputs).
+		dagql.NodeFuncWithDynamicInputs("withMountedCache", s.withMountedCache, s.withMountedCacheDynamicInputs).FollowsFromInputs().
 			Doc(`Retrieves this container plus a cache volume mounted at the given path.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the cache directory (e.g., "/root/.npm").`),
