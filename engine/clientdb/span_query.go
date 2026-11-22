@@ -5,6 +5,10 @@ import (
 	"fmt"
 )
 
+// MaxSpanQuerySpans bounds the spans a SpanQuery served over the wire may
+// name: a client asking for more splits them.
+const MaxSpanQuerySpans = 10_000
+
 // SpanQuery selects spans of a live store for a frontend that holds only
 // part of the trace (see QuerySpans).
 type SpanQuery struct {

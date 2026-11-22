@@ -42,6 +42,10 @@ type FoldFrontend interface {
 // foldQueryTimeout bounds a read of folded spans.
 const foldQueryTimeout = 30 * time.Second
 
+// foldReadBackoff is the first wait before a failed read of folded spans is
+// asked again; each further failure doubles it, up to 10s.
+var foldReadBackoff = 250 * time.Millisecond
+
 // foldSearchLimit bounds the folded spans a name search reads back.
 const foldSearchLimit = 1000
 
@@ -153,8 +157,10 @@ func (lf *liveFold) load(ids []dagui.SpanID) {
 	}
 }
 
-// read reads the queued spans back, until none are.
+// read reads the queued spans back, until none are. A read that fails is
+// asked again, with what was queued since, after a backoff.
 func (lf *liveFold) read(query SpanQueryFunc) {
+	var failures int
 	for {
 		lf.mu.Lock()
 		ids, reads := lf.queued, lf.queuedReads
@@ -170,14 +176,24 @@ func (lf *liveFold) read(query SpanQueryFunc) {
 		ctx, cancel := context.WithTimeout(context.Background(), foldQueryTimeout)
 		spans, err := query(ctx, ids)
 		cancel()
-		if err != nil {
-			slog.Warn("error reading folded spans", "spans", len(ids), "err", err)
-		}
 		if len(spans) > 0 {
 			lf.fe.dispatch(func() {
 				lf.fe.exportSpansLocked(dagui.FoldFill(context.Background()), spans)
 			})
 		}
+		if err != nil {
+			// what it did answer is taken; the DB keeps only the first
+			// answer for each span
+			slog.Warn("error reading folded spans", "spans", len(ids), "err", err)
+			lf.mu.Lock()
+			lf.queued = append(ids, lf.queued...)
+			lf.queuedReads += reads
+			lf.mu.Unlock()
+			failures++
+			time.Sleep(min(time.Duration(1<<min(failures-1, 6))*foldReadBackoff, 10*time.Second))
+			continue
+		}
+		failures = 0
 		// done once dispatched: what's dispatched after runs after it (and
 		// the console applies it with its next step)
 		for range reads {

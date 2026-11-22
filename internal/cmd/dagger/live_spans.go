@@ -35,16 +35,22 @@ func startLiveFold(fe idtui.Frontend, sess liveSpanQuerier, traceID dagui.TraceI
 		return nil
 	}
 	ff.SetSpanQuery(traceID, func(ctx context.Context, ids []dagui.SpanID) ([]sdktrace.ReadOnlySpan, error) {
-		q := clientdb.SpanQuery{Spans: make([]string, len(ids))}
-		for i, id := range ids {
-			q.Spans[i] = id.String()
-		}
 		var spans []sdktrace.ReadOnlySpan
-		_, err := sess.QuerySpans(ctx, q, func(req *coltracepb.ExportTraceServiceRequest) error {
-			spans = append(spans, telemetry.SpansFromPB(req.GetResourceSpans())...)
-			return nil
-		})
-		return spans, err
+		for len(ids) > 0 {
+			chunk := ids[:min(len(ids), clientdb.MaxSpanQuerySpans)]
+			ids = ids[len(chunk):]
+			q := clientdb.SpanQuery{Spans: make([]string, len(chunk))}
+			for i, id := range chunk {
+				q.Spans[i] = id.String()
+			}
+			if _, err := sess.QuerySpans(ctx, q, func(req *coltracepb.ExportTraceServiceRequest) error {
+				spans = append(spans, telemetry.SpansFromPB(req.GetResourceSpans())...)
+				return nil
+			}); err != nil {
+				return spans, err
+			}
+		}
+		return spans, nil
 	})
 	return ff
 }

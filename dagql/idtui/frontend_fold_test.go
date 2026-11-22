@@ -3,11 +3,14 @@ package idtui
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -71,7 +74,7 @@ type foldTestPair struct {
 	trace        *spanfootprint.Trace
 }
 
-func newFoldTestPair(t *testing.T, n int, shape string) *foldTestPair {
+func newFoldTestPair(t *testing.T, n int, shape string, wrapQuery ...func(SpanQueryFunc) SpanQueryFunc) *foldTestPair {
 	t.Helper()
 	db, lf := newFoldingDB()
 	folded := NewWithDB(io.Discard, db)
@@ -82,7 +85,11 @@ func newFoldTestPair(t *testing.T, n int, shape string) *foldTestPair {
 	store := &foldTestStore{latest: map[dagui.SpanID]sdktrace.ReadOnlySpan{}}
 	tr := spanfootprint.New(n)
 	p := &foldTestPair{folded: folded, full: full, lf: lf, store: store, trace: tr}
-	folded.SetSpanQuery(dagui.TraceID{TraceID: tr.Stub(0, false).SpanContext().TraceID()}, store.query)
+	query := SpanQueryFunc(store.query)
+	for _, wrap := range wrapQuery {
+		query = wrap(query)
+	}
+	folded.SetSpanQuery(dagui.TraceID{TraceID: tr.Stub(0, false).SpanContext().TraceID()}, query)
 	// with the engine's wait chains, in the agent session's shape or the
 	// nested engines'
 	exp := tr.WaitChains(foldTestTee{store, folded.SpanExporter(), full.SpanExporter()})
@@ -246,6 +253,33 @@ func TestLiveFoldStreamedMatchesFullLoad(t *testing.T) {
 			t.Logf("read back %d spans in %d round trips", folded.fold.ReadSpans, folded.fold.Reads)
 		})
 	}
+}
+
+// TestLiveFoldReadRetries checks that a read of folded spans that fails is
+// asked again: the rows over them come out as a full load's.
+func TestLiveFoldReadRetries(t *testing.T) {
+	defer func(d time.Duration) { foldReadBackoff = d }(foldReadBackoff)
+	foldReadBackoff = time.Millisecond
+	var failed atomic.Int32
+	flaky := func(next SpanQueryFunc) SpanQueryFunc {
+		return func(ctx context.Context, ids []dagui.SpanID) ([]sdktrace.ReadOnlySpan, error) {
+			if failed.Add(1) <= 3 {
+				return nil, errors.New("engine unavailable")
+			}
+			return next(ctx, ids)
+		}
+	}
+	p := newFoldTestPair(t, 5000, "agent", flaky)
+	for range 2 {
+		for _, row := range slices.Clone(p.full.rows.Order) {
+			if row.HasChildren && !row.Expanded {
+				p.do(func(fe *frontendPretty) { fe.setExpanded(row.Span.ID, true) })
+			}
+		}
+		p.recalc(t)
+	}
+	require.Greater(t, failed.Load(), int32(3), "reads failed and were asked again")
+	require.Equal(t, rowIDs(p.full.rows), rowIDs(p.folded.rows))
 }
 
 // TestLiveFoldOtherTraces checks that only the live session's trace folds:

@@ -17,9 +17,6 @@ import (
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
-// maxSpanQuerySpans bounds the spans a span query may name.
-const maxSpanQuerySpans = 10_000
-
 // maxSpanQueryBody bounds a span query's JSON body.
 const maxSpanQueryBody = 4 << 20
 
@@ -46,7 +43,7 @@ func (ps *PubSub) SpansQueryHandler(w http.ResponseWriter, r *http.Request, reco
 	if len(q.Spans) == 0 {
 		return rejectLogRequest(w, errors.New("span query names no spans"), http.StatusBadRequest)
 	}
-	if len(q.Spans) > maxSpanQuerySpans {
+	if len(q.Spans) > clientdb.MaxSpanQuerySpans {
 		return rejectLogRequest(w, errors.New("span query names too many spans"), http.StatusBadRequest)
 	}
 	db, err := record.TelemetryDB(r.Context())
