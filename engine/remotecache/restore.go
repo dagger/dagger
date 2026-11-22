@@ -488,7 +488,7 @@ func (r *restorer) open(f *restoreFile) error {
 	f.report.PeakBefore = r.s.cfg.peakRSS()
 	if len(parts) > 0 {
 		f.decoded, f.taken, f.stopDecode = make(chan decodedPart, len(parts)), make(chan struct{}, len(parts)), make(chan struct{})
-		decode, check, table, budget, taken, stop := r.s.cfg.decode, r.s.adapter.CheckRestorePart, f.file.Table, r.s.cfg.aheadBytes, f.taken, f.stopDecode
+		decode, check, table, budget, taken, checked, stop := r.s.cfg.decode, r.s.adapter.CheckRestorePart, f.file.Table, r.s.cfg.aheadBytes, f.taken, f.decoded, f.stopDecode
 		decodeNext := func(data []byte) decodedPart {
 			began := time.Now()
 			bundle, err := decode(data)
@@ -512,7 +512,7 @@ func (r *restorer) open(f *restoreFile) error {
 		r.s.go_(func() {
 			ctx, unlabel := wcprof.WithCPUKind(r.s.ctx, wcprof.CPUKindMerge)
 			defer unlabel()
-			checkAhead(ctx, checkNext, len(parts), decoded, f.decoded, stop)
+			checkAhead(ctx, checkNext, len(parts), decoded, checked, stop)
 		})
 	}
 	return nil
