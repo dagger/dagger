@@ -360,7 +360,7 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("cwd").Doc("The workspace directory, from the repository's root."),
 			),
-		dagql.NodeFuncWithDynamicInputs("tree", s.tree, s.treeCacheKey).
+		dagql.NodeFuncWithDynamicInputs("tree", s.tree, s.treeCacheKey).FollowsFromInputs().
 			IsPersistable().
 			View(AllVersion).
 			Doc(`The filesystem tree at this ref.`).
@@ -518,7 +518,7 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("includePreRelease").Doc(`Include pre-release tags when choosing the latest tag.`),
 			),
-		dagql.NodeFuncWithDynamicInputs("tree", s.commitTree, s.commitTreeCacheKey).
+		dagql.NodeFuncWithDynamicInputs("tree", s.commitTree, s.commitTreeCacheKey).FollowsFromInputs().
 			IsPersistable().
 			Doc(`The filesystem tree at this commit.`).
 			Args(
@@ -2688,7 +2688,25 @@ func (s *gitSchema) commitTreeCacheKey(ctx context.Context, parent dagql.ObjectR
 	return nil
 }
 
+// canonicalGitTreeArgs drops a tree call's arguments that shape nothing in
+// it (treeCacheKey), and keeps the field's declaration that the tree follows
+// from its inputs only where gitTreeFollowsFromInputs says it does.
+// gitTreeFollowsFromInputs reports whether a tree call follows from its
+// inputs (dagql.FieldSpec.FollowsFromInputs), as the field declares. A tree's
+// files are its commit's, which its key's SHA addresses. One that keeps .git
+// doesn't: its pack's bytes differ from run to run, though git reads the same
+// objects from them, and its tags, with includeTags, are those the
+// repository has when it's fetched, which no hash in its key addresses.
+// Whether a tree with .git and no tags follows, as git reads it, is still to
+// be decided; this is the strict form.
+func gitTreeFollowsFromInputs(keepsGitDir bool) bool {
+	return !keepsGitDir
+}
+
 func canonicalGitTreeArgs(req *dagql.CallRequest, repoDiscardsGitDir, discardGitDir bool, depth int, includeTags bool) {
+	if req.ResultCall != nil && !gitTreeFollowsFromInputs(!repoDiscardsGitDir && !discardGitDir) {
+		req.ResultCall.FollowsFromInputs = false
+	}
 	if repoDiscardsGitDir || discardGitDir {
 		if repoDiscardsGitDir || !discardGitDir {
 			req.DeleteArg("discardGitDir")
