@@ -30,7 +30,7 @@ var _ SchemaResolvers = &directorySchema{}
 
 func (s *directorySchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
-		dagql.NodeFunc("directory", s.directory).
+		dagql.NodeFunc("directory", s.directory).FollowsFromInputs().
 			WithInput(core.EngineDefaultPlatformImplicitInput).
 			Doc(`Creates an empty directory.`),
 	}.Install(srv)
@@ -52,16 +52,16 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				dagql.Arg("description").Doc("Description of the sub-pipeline."),
 				dagql.Arg("labels").Doc("Labels to apply to the sub-pipeline."),
 			),
-		dagql.NodeFunc("name", s.name).
+		dagql.NodeFunc("name", s.name).FollowsFromInputs().
 			View(AllVersion). // name returns different results in different versions
 			Doc(`Returns the name of the directory.`),
-		dagql.NodeFunc("entries", s.entries).
+		dagql.NodeFunc("entries", s.entries).FollowsFromInputs().
 			View(AllVersion). // entries returns different results in different versions
 			Doc(`Returns a list of files and directories at the given path.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the directory to look at (e.g., "/src").`),
 			),
-		dagql.NodeFunc("glob", s.glob).
+		dagql.NodeFunc("glob", s.glob).FollowsFromInputs().
 			IsPersistable().
 			View(AllVersion). // glob returns different results in different versions
 			Doc(`Returns a list of files and directories that matche the given pattern.`).
@@ -83,18 +83,18 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				args = append(args, (core.SearchOpts{}).Args()...)
 				return args
 			})()...),
-		dagql.NodeFunc("digest", s.digest).
+		dagql.NodeFunc("digest", s.digest).FollowsFromInputs().
 			Doc(
 				`Return the directory's digest.
 				The format of the digest is not guaranteed to be stable between releases of Dagger.
 				It is guaranteed to be stable between invocations of the same Dagger engine.`,
 			),
-		dagql.NodeFunc("file", s.file).
+		dagql.NodeFunc("file", s.file).FollowsFromInputs().
 			Doc(`Retrieve a file at the given path.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the file to retrieve (e.g., "README.md").`),
 			),
-		dagql.NodeFunc("withFile", s.withFile).
+		dagql.NodeFunc("withFile", s.withFile).FollowsFromInputs().
 			IsPersistable().
 			Doc(`Retrieves this directory plus the contents of the given file copied to the given path.`).
 			Args(
@@ -105,7 +105,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 					`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
 			),
-		dagql.NodeFunc("withFiles", s.withFiles).
+		dagql.NodeFunc("withFiles", s.withFiles).FollowsFromInputs().
 			IsPersistable().
 			Doc(`Retrieves this directory plus the contents of the given files copied to the given path.`).
 			Args(
@@ -113,7 +113,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				dagql.Arg("sources").Doc(`Identifiers of the files to copy.`),
 				dagql.Arg("permissions").Doc(`Permission given to the copied files (e.g., 0600).`),
 			),
-		dagql.NodeFunc("withNewFile", s.withNewFile).
+		dagql.NodeFunc("withNewFile", s.withNewFile).FollowsFromInputs().
 			IsPersistable().
 			Doc(`Return a snapshot with a new file added`).
 			Args(
@@ -121,13 +121,13 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				dagql.Arg("contents").Doc(`Contents of the new file. Example: "Hello world!"`),
 				dagql.Arg("permissions").Doc(`Permissions of the new file. Example: 0600`),
 			),
-		dagql.NodeFunc("withoutFile", s.withoutFile).
+		dagql.NodeFunc("withoutFile", s.withoutFile).FollowsFromInputs().
 			IsPersistable().
 			Doc(`Return a snapshot with a file removed`).
 			Args(
 				dagql.Arg("path").Doc(`Path of the file to remove (e.g., "/file.txt").`),
 			),
-		dagql.NodeFunc("withoutFiles", s.withoutFiles).
+		dagql.NodeFunc("withoutFiles", s.withoutFiles).FollowsFromInputs().
 			IsPersistable().
 			Doc(`Return a snapshot with files removed`).
 			Args(
@@ -141,19 +141,19 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				dagql.Arg("expectedType").Doc(`If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").`),
 				dagql.Arg("doNotFollowSymlinks").Doc(`If specified, do not follow symlinks.`),
 			),
-		dagql.NodeFunc("stat", s.stat).
+		dagql.NodeFunc("stat", s.stat).FollowsFromInputs().
 			Doc(`Return file status`).
 			Args(
 				dagql.Arg("path").Doc(`Path to stat (e.g., "/file.txt").`),
 				dagql.Arg("doNotFollowSymlinks").Doc(`If specified, do not follow symlinks.`),
 			),
-		dagql.NodeFunc("directory", maintainContentHashing(s.subdirectory)).
+		dagql.NodeFunc("directory", maintainContentHashing(s.subdirectory)).FollowsFromInputs().
 			Doc(`Retrieves a directory at the given path.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the directory to retrieve. Example: "/src"`),
 				dagql.Arg("resolveBrokenSymlinks").Doc(`Repair symlinks that directory selection would break. Copy targets from this directory into the result. Preserve working relative links and links that already have no target.`).View(AfterVersion("v1.0.0-beta.26")),
 			),
-		dagql.NodeFunc("withDirectory", s.withDirectory).
+		dagql.NodeFunc("withDirectory", s.withDirectory).FollowsFromInputs().
 			IsPersistable().
 			View(AllVersion).
 			Doc(`Return a snapshot with a directory added`).
@@ -185,27 +185,27 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 					`If the group is omitted, it defaults to the same as the user.`),
 				dagql.Arg("permissions").Doc(`Permission given to the copied directory and contents (e.g., 0755).`),
 			),
-		dagql.NodeFunc("filter", maintainContentHashing(s.filter)).
+		dagql.NodeFunc("filter", maintainContentHashing(s.filter)).FollowsFromInputs().
 			Doc(`Return a snapshot with some paths included or excluded`).
 			Args(
 				dagql.Arg("exclude").Doc(`If set, paths matching one of these glob patterns is excluded from the new snapshot. Example: ["node_modules/", ".git*", ".env"]`),
 				dagql.Arg("include").Doc(`If set, only paths matching one of these glob patterns is included in the new snapshot. Example: (e.g., ["app/", "package.*"]).`),
 				dagql.Arg("gitignore").Doc(`If set, apply .gitignore rules when filtering the directory.`),
 			),
-		dagql.NodeFunc("withNewDirectory", s.withNewDirectory).
+		dagql.NodeFunc("withNewDirectory", s.withNewDirectory).FollowsFromInputs().
 			IsPersistable().
 			Doc(`Retrieves this directory plus a new directory created at the given path.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the directory created (e.g., "/logs").`),
 				dagql.Arg("permissions").Doc(`Permission granted to the created directory (e.g., 0777).`),
 			),
-		dagql.NodeFunc("withoutDirectory", s.withoutDirectory).
+		dagql.NodeFunc("withoutDirectory", s.withoutDirectory).FollowsFromInputs().
 			IsPersistable().
 			Doc(`Return a snapshot with a subdirectory removed`).
 			Args(
 				dagql.Arg("path").Doc(`Path of the subdirectory to remove. Example: ".github/workflows"`),
 			),
-		dagql.NodeFunc("diff", s.diff).
+		dagql.NodeFunc("diff", s.diff).FollowsFromInputs().
 			IsPersistable().
 			Doc(`Return the difference between this directory and an another directory. The difference is encoded as a directory.`).
 			Args(
@@ -217,7 +217,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				dagql.Arg("name").Doc(`The name of the file or directory to search for`),
 				dagql.Arg("start").Doc(`The path to start the search from`),
 			),
-		dagql.NodeFunc("changes", s.changes).
+		dagql.NodeFunc("changes", s.changes).FollowsFromInputs().
 			Doc(
 				`Return the difference between this directory and another directory, typically an older snapshot.`,
 				`The difference is encoded as a changeset, which also tracks removed files, and can be applied to other directories.`,
@@ -225,7 +225,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("from").Doc(`The base directory snapshot to compare against`),
 			),
-		dagql.NodeFunc("withChanges", s.withChanges).
+		dagql.NodeFunc("withChanges", s.withChanges).FollowsFromInputs().
 			IsPersistable().
 			Doc(`Return a directory with changes from another directory applied to it.`).
 			Args(
@@ -270,14 +270,14 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("platform").Doc(`The platform the directory's contents are for (e.g., "linux/arm64").`),
 			),
-		dagql.NodeFunc("withTimestamps", s.withTimestamps).
+		dagql.NodeFunc("withTimestamps", s.withTimestamps).FollowsFromInputs().
 			IsPersistable().
 			Doc(`Retrieves this directory with all file/dir timestamps set to the given time.`).
 			Args(
 				dagql.Arg("timestamp").Doc(`Timestamp to set dir/files in.`,
 					`Formatted in seconds following Unix epoch (e.g., 1672531199).`),
 			),
-		dagql.NodeFunc("withPatch", s.withPatch).
+		dagql.NodeFunc("withPatch", s.withPatch).FollowsFromInputs().
 			IsPersistable().
 			Experimental("This API is highly experimental and may be removed or replaced entirely.").
 			Doc(`Retrieves this directory with the given Git-compatible patch applied.`).
@@ -326,7 +326,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			guarantees when using this option. It should only be used when
 			absolutely necessary and only with trusted commands.`),
 			),
-		dagql.NodeFunc("withSymlink", s.withSymlink).
+		dagql.NodeFunc("withSymlink", s.withSymlink).FollowsFromInputs().
 			IsPersistable().
 			Doc(`Return a snapshot with a symlink`).
 			Args(
@@ -356,7 +356,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Changeset]{
 		Syncer[*core.Changeset]().
 			Doc(`Force evaluation in the engine.`),
-		dagql.NodeFunc("filter", s.changesetFilter).
+		dagql.NodeFunc("filter", s.changesetFilter).FollowsFromInputs().
 			View(AfterVersion("v1.0.0-0")).
 			IsPersistable().
 			Doc("Select changes matching the supplied glob patterns, preserving their original baseline.",

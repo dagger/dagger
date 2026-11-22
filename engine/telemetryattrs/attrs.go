@@ -905,6 +905,14 @@ const (
 	// simply not claimed here.
 	CacheOutputContentDigestAttr = "dagger.io/cache.output.content_digest"
 
+	// CacheFollowsFromInputsAttr ("true", absent otherwise) is the call's
+	// field's declaration that its result is a function of its inputs and
+	// arguments alone (dagql.FieldSpec.FollowsFromInputs): another engine's
+	// run of the call is the same result wherever their inputs are. It rides
+	// every call row with a cache decision, so the remote cache service reads
+	// it from the row, as it learns each record, without the schema.
+	CacheFollowsFromInputsAttr = "dagger.io/cache.follows_from_inputs"
+
 	// CacheResultIDAttr is the decimal-string engine-local result number of
 	// the call's cache-backed result, stamped for any stamped outcome that
 	// returned one. Together with the cache identity resource attribute

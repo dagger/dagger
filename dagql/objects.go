@@ -721,15 +721,16 @@ func (r ObjectResult[T]) preselect(ctx context.Context, srv *Server, sel Selecto
 	}
 	req := &CallRequest{
 		ResultCall: &ResultCall{
-			Kind:           ResultCallKindField,
-			Type:           NewResultCallType(astType),
-			Field:          sel.Field,
-			View:           view,
-			Nth:            int64(sel.Nth),
-			Receiver:       receiverRef,
-			Module:         module,
-			Args:           frameArgs,
-			ImplicitInputs: implicitInputs,
+			Kind:              ResultCallKindField,
+			Type:              NewResultCallType(astType),
+			Field:             sel.Field,
+			FollowsFromInputs: field.Spec.FollowsFromInputs,
+			View:              view,
+			Nth:               int64(sel.Nth),
+			Receiver:          receiverRef,
+			Module:            module,
+			Args:              frameArgs,
+			ImplicitInputs:    implicitInputs,
 		},
 		TTL:                  field.Spec.TTL,
 		DoNotCache:           field.Spec.DoNotCache != "",
@@ -1133,6 +1134,15 @@ type FieldSpec struct {
 	// DeduplicateTelemetry keeps session span deduplication for uncached
 	// fields that only read immutable values.
 	DeduplicateTelemetry bool
+
+	// FollowsFromInputs marks a field whose result is a function of its
+	// inputs' values and its arguments alone: run again over the same inputs,
+	// it gives the same bytes. Another cache's run of such a call is the same
+	// result as this cache's own wherever their inputs are
+	// (keepOwnRunsLocked). A call that runs a process, reads from outside
+	// the engine or runs a module's code doesn't follow from its inputs.
+	// The call frame carries it (ResultCall.FollowsFromInputs).
+	FollowsFromInputs bool
 
 	// Trivial marks fields that only unwrap data from their receiver rather
 	// than performing meaningful work. Their telemetry spans are internal, and
@@ -1768,6 +1778,16 @@ func (field Field[T]) Reevaluate() Field[T] {
 		panic("cannot call on extended field")
 	}
 	field.Spec.Reevaluate = true
+	return field
+}
+
+// FollowsFromInputs marks the field's result as a function of its inputs
+// and arguments alone. See FieldSpec.FollowsFromInputs.
+func (field Field[T]) FollowsFromInputs() Field[T] {
+	if field.Spec.extend {
+		panic("cannot call on extended field")
+	}
+	field.Spec.FollowsFromInputs = true
 	return field
 }
 
