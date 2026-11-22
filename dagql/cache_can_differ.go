@@ -113,17 +113,6 @@ func (h RemoteHolding) CanDiffer() bool {
 }
 
 // Declares is the holding's word on the declaration (declares).
-func (h RemoteHoldingInfo) Declares() (follows, known bool) {
-	return declares(h.FollowsFromInputs, h.CallRow)
-}
-
-// CanDiffer is RemoteHolding.CanDiffer, of the holding's facts.
-func (h RemoteHoldingInfo) CanDiffer() bool {
-	follows, known := h.Declares()
-	return !known || !follows
-}
-
-// Declares is the holding's word on the declaration (declares).
 func (h HoldingFacts) Declares() (follows, known bool) {
 	return declares(h.FollowsFromInputs, h.CallRow)
 }
