@@ -157,15 +157,20 @@ type RemoteHoldingUpdate struct {
 //     Holding) may differ after the operation, those it created or removed
 //     included;
 //   - Entries: every entry of which any of these may differ: whether it
-//     exists; its own facts, Stored, StoredExpiresAtUnix and Recipes; the
-//     keys of its holdings; and any AvailablePart answer at one clock. A
-//     holding's description doesn't change with its entry: a holding whose
-//     description changes is in Holdings, whatever entries are named.
+//     exists; its own facts, Stored, StoredExpiresAtUnix and Recipes; and
+//     any AvailablePart answer at one clock. A holding's description doesn't
+//     change with its entry: a holding whose description changes is in
+//     Holdings, whatever entries are named.
 //
 // Neither covers the entries of an entry's classes (EntryClassEntries),
-// which a member joining or leaving changes for every class mate and which
-// no reader keeps from one change to the next, nor the digests, class
-// digests, terms or field of an entry, which only EntryInfo returns.
+// which a member joining or leaving changes for every class mate, nor the
+// keys of an entry's holdings (EntriesHeld, EntryInfo), which a holding
+// arriving or leaving changes: no reader keeps either from one change to the
+// next, and a holding's arrival or removal is in Holdings. An entry's facts
+// and part answers read its holders only for whether any engine holds it
+// (noValueLocked), which turns only as the entry is created or leaves, each
+// of which names it. Nor do they cover the digests, class digests, terms or
+// field of an entry, which only EntryInfo returns.
 type RemoteChange struct {
 	Candidates []HolderKey
 	Holdings   []HolderKey
@@ -561,8 +566,11 @@ func (c *Cache) addHoldingLocked(ctx context.Context, state *remoteCacheState, k
 	h := &holding{}
 	state.graphVersion++
 	entry.putHolderLocked(key, h)
+	// The holding is marked, not its entry: no reader keeps an entry's
+	// holders (RemoteChange), and its own facts and part answers don't read
+	// them, but for whether any engine holds it, which a holding's arrival
+	// turns only as it creates the entry, whose creation marks it.
 	c.markHoldingLocked(key)
-	c.markEntryLocked(entry.id)
 	state.entries[key.Number] = entry.id
 	// Each holding is one ownership unit of its entry.
 	c.incrementIncomingOwnershipLocked(ctx, entry)
@@ -1209,8 +1217,12 @@ func (c *Cache) removeHoldingLocked(ctx context.Context, state *remoteCacheState
 	// every holding of it.
 	entry.deleteHolderLocked(key)
 	state.graphVersion++
+	// The holding is marked, not its entry, as at its arrival
+	// (addHoldingLocked). An entry its last holding leaves either stays,
+	// stored, whose record answers whether it stores one, or goes with it,
+	// an entry with no value being owned by its holdings alone, and its
+	// leaving marks it (markLeavingLocked).
 	c.markHoldingLocked(key)
-	c.markEntryLocked(entry.id)
 	delete(state.entries, key.Number)
 	state.holdings--
 	var deps []HolderKey
