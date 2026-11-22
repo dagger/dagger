@@ -45,10 +45,11 @@ type PartStart struct {
 // land between a part's answer and its start. A start names its entry's
 // classes for readers in that hold (classChangeLocked), so a reader that
 // keeps answers asks them again, as the end does. Between two parts, the
-// batch gives way to a writer that waits (giveWayLocked), as AvailableParts
-// does: the writer waits for the part in progress, not the batch, and a
-// later part's answer counts what landed while the batch let go, other
-// readers' starts included.
+// batch gives way to a writer that waits once it has held the lock as long
+// as it waited for it (giveWayLocked), as AvailableParts does: the writer
+// waits for a piece of the batch, not the batch, and a later part's answer
+// counts what landed while the batch let go, other readers' starts
+// included.
 //
 // An entry with an upload in progress counts as holding a part for its class
 // (holdsAnyPartLocked): a join brings the upload to the other side's
@@ -74,7 +75,7 @@ func (c *Cache) StartPartUploads(starts []PartStartQuery, nowUnix int64) ([]Part
 		}
 		keys[i] = key
 	}
-	c.egraphMu.RLock()
+	hold := c.holdBatch()
 	defer c.egraphMu.RUnlock()
 	var change RemoteChange
 	for i, q := range starts {
@@ -85,7 +86,7 @@ func (c *Cache) StartPartUploads(starts []PartStartQuery, nowUnix int64) ([]Part
 			c.testBatchAnswered(i)
 		}
 		if i+1 < len(starts) {
-			c.giveWayLocked()
+			c.giveWayLocked(&hold)
 		}
 	}
 	slices.Sort(change.Entries)

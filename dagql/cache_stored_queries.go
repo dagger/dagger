@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"time"
 
 	"github.com/opencontainers/go-digest"
 )
@@ -154,9 +155,10 @@ type PartAnswer struct {
 // cache's lock once, not once a part, as EntriesFacts does for entries'
 // facts: a writer waiting for the lock stops every new reader, so a reader
 // that took it once a part waited for every writer queued between two of its
-// parts. A writer that comes during the read waits for the answer in
-// progress, not the read: the read gives way between two answers when
-// someone waits (giveWayLocked), and each answer stands whole in one hold.
+// parts. A writer that comes during the read waits for a piece of it, not
+// the read: the read gives way between two answers when someone waits and
+// it has held the lock as long as it waited for it (giveWayLocked), and
+// each answer stands whole in one hold.
 func (c *Cache) AvailableParts(queries []PartQuery, nowUnix int64) []PartAnswer {
 	out := make([]PartAnswer, len(queries))
 	if !c.blobBacked {
@@ -174,7 +176,7 @@ func (c *Cache) AvailableParts(queries []PartQuery, nowUnix int64) []PartAnswer 
 		}
 		keys[i] = key
 	}
-	c.egraphMu.RLock()
+	hold := c.holdBatch()
 	defer c.egraphMu.RUnlock()
 	for i, q := range queries {
 		if out[i].Err == nil {
@@ -184,29 +186,59 @@ func (c *Cache) AvailableParts(queries []PartQuery, nowUnix int64) []PartAnswer 
 			c.testBatchAnswered(i)
 		}
 		if i+1 < len(queries) {
-			c.giveWayLocked()
+			c.giveWayLocked(&hold)
 		}
 	}
 	return out
 }
 
-// giveWayLocked lets egraphMu, held once for reading by a batch read, go and
-// takes it again when another acquisition waits for it, between two of the
-// batch's answers, as RemoteWrites lets its hold go between two writes: a
-// writer that comes during the batch then waits for the answer in progress,
-// not the batch, and so do the readers queued behind it. With nobody
-// waiting, the batch keeps its one hold; under steady writers it takes one
-// hold an answer. The cache can change between two answers, so a batch
-// carries no pointer across one.
-func (c *Cache) giveWayLocked() {
-	if !c.egraphMu.Waiting() {
+// batchHold is a batch read's hold of egraphMu for reading (holdBatch):
+// when its latest take got the lock, and how long that take waited for it.
+type batchHold struct {
+	taken  time.Time
+	waited time.Duration
+}
+
+// holdBatch takes egraphMu for reading for a batch read, and times the take
+// (batchHold). The read lets it go at its end.
+func (c *Cache) holdBatch() batchHold {
+	asked := c.batchNow()
+	c.egraphMu.RLock()
+	taken := c.batchNow()
+	return batchHold{taken: taken, waited: taken.Sub(asked)}
+}
+
+// batchNow is the time on the clock a batch read's holds are timed by.
+func (c *Cache) batchNow() time.Time {
+	if c.batchClock != nil {
+		return c.batchClock()
+	}
+	return time.Now()
+}
+
+// giveWayLocked lets egraphMu, held for reading by a batch read (h), go and
+// takes it again, between two of the batch's answers, when another
+// acquisition waits for it and the hold has lasted at least as long as its
+// latest take waited: as a step's run of merged replies gives way between
+// two replies, so that readers and writers share the lock by one rule. A
+// read that gave way after every answer, while writers came steadily, got
+// one answer for each writer's whole hold: on the sixteenth whole run's
+// fill passes waited 965 s in about 340 s traced to take the lock back, in
+// the longest pass a median 16 ms behind each answer of 0.08 ms. Holding as
+// long as it waited, a read that is always waited on holds the lock at
+// least as much as it waits for it, and a writer that comes during it waits
+// for at most the read's latest wait and the answer in progress. With
+// nobody waiting, the batch keeps its one hold. The cache can change between
+// two answers, so a batch carries no pointer across one.
+func (c *Cache) giveWayLocked(h *batchHold) {
+	if !c.egraphMu.Waiting() || c.batchNow().Sub(h.taken) < h.waited {
 		return
 	}
 	c.egraphMu.RUnlock()
 	if c.testBatchGaveWay != nil {
 		c.testBatchGaveWay()
 	}
-	c.egraphMu.RLock()
+	*h = c.holdBatch()
 }
 
 // availablePartLocked is AvailablePart's answer for the part key of the
