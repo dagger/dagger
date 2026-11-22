@@ -290,7 +290,7 @@ func TestRecordCacheEvidenceMappingRemoteHit(t *testing.T) {
 		telemetryattrs.CacheHitRouteAttr:       "recipe",
 		telemetryattrs.CacheHitRemoteAttr:      "true",
 		telemetryattrs.CacheHitMergedAtAttr:    "1760000000123456789",
-		telemetryattrs.CacheHitMergedRouteAttr: "placement",
+		telemetryattrs.CacheHitMergedRouteAttr: "deferred",
 		telemetryattrs.CacheHitMergeAttr:       "42",
 		telemetryattrs.CacheHitFirstUseAttr:    "true",
 		telemetryattrs.CacheLookupAtAttr:       "1760000000987654321",

@@ -93,7 +93,7 @@ func TestFirstUsesCountByRoute(t *testing.T) {
 	stats := engine.FirstUse()
 	routes := stats.Routes
 	require.Len(t, routes, 3, "%+v", routes)
-	file, placement, lookup := routes["set_file"], routes["placement"], routes["lookup"]
+	file, deferred, lookup := routes["set_file"], routes["deferred"], routes["lookup"]
 	require.Equal(t, int64(1), file.Merges)
 	require.Equal(t, int64(1), file.Sent)
 	require.Equal(t, int64(1), file.Merged)
@@ -101,17 +101,17 @@ func TestFirstUsesCountByRoute(t *testing.T) {
 	require.Equal(t, int64(1), file.Used)
 	require.Positive(t, file.Total)
 
-	require.Equal(t, int64(3), placement.Merges)
-	require.Equal(t, int64(3), placement.Sent)
-	require.Equal(t, int64(2), placement.Merged, "the record sent again was held already")
-	require.Equal(t, int64(1), placement.FirstUses)
-	require.Equal(t, int64(1), placement.Used, "one of the three merges brought anything used")
+	require.Equal(t, int64(3), deferred.Merges)
+	require.Equal(t, int64(3), deferred.Sent)
+	require.Equal(t, int64(2), deferred.Merged, "the record sent again was held already")
+	require.Equal(t, int64(1), deferred.FirstUses)
+	require.Equal(t, int64(1), deferred.Used, "one of the three merges brought anything used")
 
 	require.Equal(t, int64(1), lookup.Merges)
 	require.Equal(t, int64(1), lookup.Merged)
 	require.Equal(t, int64(1), lookup.FirstUses)
 	require.Equal(t, int64(1), lookup.Used)
 
-	require.Equal(t, stats.Prepared+stats.Refused, file.FirstUses+placement.FirstUses+lookup.FirstUses, "every first use came by a route")
-	require.Equal(t, stats.Total, file.Total+placement.Total+lookup.Total)
+	require.Equal(t, stats.Prepared+stats.Refused, file.FirstUses+deferred.FirstUses+lookup.FirstUses, "every first use came by a route")
+	require.Equal(t, stats.Total, file.Total+deferred.Total+lookup.Total)
 }
