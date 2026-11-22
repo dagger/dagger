@@ -132,6 +132,10 @@ type RemoteHoldingUpdate struct {
 	Deps          []uint64
 	Parts         []PersistedPartAddress
 	Replacements  uint64
+	// Evaluated reports that the update is an evaluation of the value by
+	// the holding's cache: a lazy span that didn't install its parts from a
+	// Cloud offer.
+	Evaluated bool
 }
 
 // RemoteChange is what one operation on the Cloud cache's holdings changed,
