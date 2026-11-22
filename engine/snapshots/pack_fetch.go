@@ -95,7 +95,7 @@ func (c *chainPacks) plan(id digest.Digest) *packPlan {
 	}
 	p := c.plans[id]
 	if p == nil {
-		p = &packPlan{done: make(chan struct{})}
+		p = &packPlan{done: make(chan struct{}), reading: make(chan struct{}, 1)}
 		c.plans[id] = p
 	}
 	return p
@@ -104,13 +104,18 @@ func (c *chainPacks) plan(id digest.Digest) *packPlan {
 // packPlan is how one chain reads one pack, decided once from the pack's
 // header: whole, or by its spans. A pack the header's range held whole is
 // stored from it. Set before done is closed.
+//
+// The chain reads the pack's spans one after another, through reading: a
+// pack is one read of the blob store in flight however it is read, as a
+// chain's downloads ahead count it (chainAheadWindow).
 type packPlan struct {
-	once   sync.Once
-	done   chan struct{}
-	err    error
-	whole  bool
-	stored bool
-	spans  map[digest.Digest]*packSpan
+	once    sync.Once
+	done    chan struct{}
+	err     error
+	whole   bool
+	stored  bool
+	spans   map[digest.Digest]*packSpan
+	reading chan struct{}
 }
 
 // packSpan is a range of a pack holding some of a chain's members, read
@@ -175,6 +180,15 @@ func (cm *snapshotManager) downloadPackedRange(ctx context.Context, desc ocispec
 			defer close(span.done)
 			dctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), packReadLimit)
 			defer cancel()
+			// The wait for the pack's other spans counts in the span's
+			// deadline, as a pack read's wait for its slot does.
+			select {
+			case plan.reading <- struct{}{}:
+				defer func() { <-plan.reading }()
+			case <-dctx.Done():
+				span.err = &packContentError{stage: "provider", err: context.Cause(dctx)}
+				return
+			}
 			span.err = cm.readPackSpan(dctx, span, provider, id, desc.Digest)
 		}()
 	})
