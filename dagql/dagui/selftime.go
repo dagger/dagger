@@ -688,14 +688,18 @@ func (span *Span) collectOwnWaits(dst *[]waitWindow, row *Span, clk *breakdownCl
 		}
 		target := span.db.Spans.Map[link.SpanContext.SpanID]
 		var inside bool
-		if target == nil {
-			// a span a folding DB holds as a stub: a wait on span's own
+		if target == nil || !target.Received {
+			// a span a folding DB holds as a stub (and as a reference,
+			// if it hadn't arrived when span did): a wait on span's own
 			// execution, or a contained one, on work inside every row
 			// reading it (see fold_contain.go)
 			var skip bool
 			skip, inside = span.db.fold.waitStandIn(span.ID, link.SpanContext.SpanID, isExecWait(link.WaitReason))
 			if skip {
 				continue
+			}
+			if inside {
+				target = nil
 			}
 		}
 

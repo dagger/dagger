@@ -124,9 +124,12 @@ func TestFoldRowWaitsMatchFullLoad(t *testing.T) {
 			}
 			check(true)
 			st := folded.Fold().Stats()
-			t.Logf("%d of %d spans retained (%.1f%%), stubs %.1f B/span; contained waits broken on %d spans (%d targets read back)", st.Retained, st.Spans,
+			t.Logf("%d of %d spans retained (%.1f%%), stubs %.1f B/span; contained waits broken on %d spans (%d targets read back); %d waits on spans still to come", st.Retained, st.Spans,
 				100*float64(st.Retained)/float64(st.Spans), float64(st.StubBytes)/float64(st.Spans),
-				folded.Fold().Broken, folded.Fold().BrokenTargets)
+				folded.Fold().Broken, folded.Fold().BrokenTargets, folded.Fold().Pended)
+			if shape.contained && folded.Fold().Pended == 0 {
+				t.Fatal("no waits on spans still to come")
+			}
 			if shape.contained && folded.Fold().reads == nil {
 				t.Fatal("no contained waits")
 			}

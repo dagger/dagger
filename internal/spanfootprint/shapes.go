@@ -95,7 +95,8 @@ func (e nested) Shutdown(context.Context) error { return nil }
 // mostly carry, on spans beneath their carrier: a quarter of the spans with
 // children wait (call_exec) on each of them, up to 64, as a glob waits on
 // its matches; half of those name their first child after themselves, their
-// execution twin, as a call's own execution is.
+// execution twin, as a call's own execution is; a third of them end ahead
+// of the children they waited on that started meanwhile.
 func (tr *Trace) ContainedWaits(next sdktrace.SpanExporter) sdktrace.SpanExporter {
 	children := make([][]int32, tr.N)
 	for i := 1; i < tr.N; i++ {
@@ -131,10 +132,15 @@ func (e *containedWaits) name(i int) string {
 
 func (e *containedWaits) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
 	out := make([]sdktrace.ReadOnlySpan, len(spans))
+	early := make([]bool, len(spans))
 	for k, s := range spans {
 		out[k] = s
 		i := SpanIndex(s.SpanContext().SpanID())
 		done := !s.EndTime().Before(s.StartTime())
+		// a third arrive ahead of the children they waited on that started
+		// in the batch they end in, as the spans of another process
+		// exporting later (a nested engine's) do
+		early[k] = done && e.carrier(i) && hash(i, 9)%3 == 0
 		renamed := i > 0 && e.twin(int(e.tr.parents[i])) && int(e.children[e.tr.parents[i]][0]) == i
 		waits := done && e.carrier(i)
 		if !renamed && !waits {
@@ -167,7 +173,18 @@ func (e *containedWaits) ExportSpans(ctx context.Context, spans []sdktrace.ReadO
 		}
 		out[k] = stub.Snapshot()
 	}
-	return e.next.ExportSpans(ctx, out)
+	ordered := make([]sdktrace.ReadOnlySpan, 0, len(out))
+	for k, s := range out {
+		if early[k] {
+			ordered = append(ordered, s)
+		}
+	}
+	for k, s := range out {
+		if !early[k] {
+			ordered = append(ordered, s)
+		}
+	}
+	return e.next.ExportSpans(ctx, ordered)
 }
 
 func (e *containedWaits) Shutdown(context.Context) error { return nil }

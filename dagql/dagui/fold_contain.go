@@ -31,7 +31,9 @@ package dagui
 //
 // A folded span whose waits are all contained or on its own execution
 // (noopWait) is plain work, as its summary is: nothing it waits on is
-// outside it.
+// outside it. One under a twin parent is retained, as the parent's row
+// reads its waits (neededForWaits). A wait on a span not received yet is
+// sorted once that span arrives (resolvePending).
 
 // noteWait notes span i's wait on target.
 func (f *Fold) noteWait(i, target uint32) {
@@ -109,22 +111,43 @@ func (f *Fold) classifyWaits(i uint32, waits []foldWait, linked []SpanID) []Span
 	// the waits a span carries come whole with each snapshot of it
 	delete(f.reads, i)
 	delete(f.noops, i)
-	targets := make([]uint32, len(waits))
-	noop := make([]bool, len(waits))
-	var noops []uint32
-	for k, w := range waits {
-		targets[k] = f.intern(w.target)
-		if f.noopWait(i, targets[k], w.exec) {
-			noop[k] = true
-			noops = append(noops, targets[k])
-			continue
-		}
-		f.noteWait(i, targets[k])
+	if f.waitGen == nil {
+		f.waitGen = map[uint32]uint32{}
 	}
-	unread := f.unread(i)
+	f.waitGen[i]++
+	targets := make([]uint32, len(waits))
+	skip := make([]bool, len(waits))
+	var noops []uint32
 	any, open := false, false
 	for k, w := range waits {
-		if noop[k] {
+		t := f.intern(w.target)
+		targets[k] = t
+		if t != i && f.state[t]&foldReceived == 0 {
+			// a wait on a span still to come, whose place isn't known
+			// yet: sorted once it arrives (see resolvePending)
+			skip[k] = true
+			f.markEscape(i, noSpan)
+			if f.pending == nil {
+				f.pending = map[uint32][]pendingWait{}
+			}
+			f.pending[t] = append(f.pending[t], pendingWait{carrier: i, exec: w.exec, gen: f.waitGen[i]})
+			f.Pended++
+			if p := f.parent[i]; p != 0 && f.name[p-1] == f.name[i] && f.name[i] != 0 {
+				// its twin parent's row reads its waits as its own
+				open = true
+			}
+			continue
+		}
+		if f.noopWait(i, t, w.exec) {
+			skip[k] = true
+			noops = append(noops, t)
+			continue
+		}
+		f.noteWait(i, t)
+	}
+	unread := f.unread(i)
+	for k, w := range waits {
+		if skip[k] {
 			continue
 		}
 		if t := targets[k]; unread && f.containable(i, t) {
@@ -153,6 +176,55 @@ func (f *Fold) classifyWaits(i uint32, waits []foldWait, linked []SpanID) []Span
 		f.state[i] &^= foldNoopWaits
 	}
 	return linked
+}
+
+// pendingWait is a wait on a span not received yet.
+type pendingWait struct {
+	carrier uint32
+	exec    bool
+	// gen is the carrier's waitGen when it carried it.
+	gen uint32
+}
+
+// resolvePending sorts the waits on t, which just arrived, as classifyWaits
+// would have if it had been there: on t's own execution, contained, or a
+// wait the carrier is retained for, with t.
+//
+// Until t arrived the waits were unresolved for every row reading them, as
+// the full load's are on a span it holds only a reference to: one the DB
+// holds as well, for a retained carrier. The chains of the carrier's
+// readers read them so too, which classifyWaits keeps exact by unsealing
+// the carrier (markEscape), as it may be waiting outside itself.
+func (f *Fold) resolvePending(t uint32) {
+	waits, ok := f.pending[t]
+	if !ok {
+		return
+	}
+	delete(f.pending, t)
+	for _, w := range waits {
+		i := w.carrier
+		if w.gen != f.waitGen[i] {
+			// a later snapshot of the carrier replaced it
+			continue
+		}
+		if f.noopWait(i, t, w.exec) {
+			if f.noops == nil {
+				f.noops = map[uint32][]uint32{}
+			}
+			f.noops[i] = append(f.noops[i], t)
+			f.state[i] |= foldNoopWaits
+			continue
+		}
+		f.noteWait(i, t)
+		if f.unread(i) && f.containable(i, t) {
+			f.state[t] |= foldWaitTarget
+			f.state[i] |= foldContainedWaits
+			continue
+		}
+		f.state[i] |= foldWaitLinks
+		f.promote(i, noSpan)
+		f.promote(t, t)
+	}
 }
 
 // noopWait reports whether span i's wait on t is one no row reads: a call's

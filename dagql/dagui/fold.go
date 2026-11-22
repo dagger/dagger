@@ -205,11 +205,17 @@ type Fold struct {
 	// noops lists the targets of each span's waits on its own execution
 	// (see noopWait).
 	noops map[uint32][]uint32
+	// pending lists, for each span not received yet, the waits on it,
+	// sorted once it arrives (see resolvePending); waitGen counts each
+	// carrier's snapshots with waits, which replace its earlier waits.
+	pending map[uint32][]pendingWait
+	waitGen map[uint32]uint32
 	// ingesting is the span ingest is at.
 	ingesting uint32
 	// Broken counts the spans whose contained waits a later edge broke,
-	// and BrokenTargets the targets that were read back for it.
-	Broken, BrokenTargets int
+	// and BrokenTargets the targets that were read back for it. Pended
+	// counts the waits on spans not received yet.
+	Broken, BrokenTargets, Pended int
 }
 
 // foldAgg is what's folded beneath a retained span.
@@ -725,6 +731,9 @@ func (f *Fold) ingest(info foldInfo, fill bool) bool {
 			// top of its ancestry then: it may cross i's ancestors too
 			f.markEscape(p, noSpan)
 		}
+	}
+	if first {
+		f.resolvePending(i)
 	}
 	if f.rootEnded && info.cat == stateRunning {
 		// the DB cancels a span that runs past its root's end
