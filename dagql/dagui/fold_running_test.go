@@ -77,6 +77,70 @@ func TestFoldProgressAheadOfSpan(t *testing.T) {
 	}
 }
 
+// Progress on a span that would fold is kept wherever the span sits, beneath
+// a boundary or an encapsulation too: a full load rolls it up on every
+// collapsed ancestor, and shows it on the span's own row once expanded.
+func TestFoldProgressBeneathBoundary(t *testing.T) {
+	boundary := attribute.Bool(telemetry.UIBoundaryAttr, true)
+	encapsulate := attribute.Bool(telemetry.UIEncapsulateAttr, true)
+	// 1 root
+	// ├── 2 row, a boundary (e.g. a nested engine)
+	// │   └── 3
+	// │       └── 4 pulls, with progress
+	// ├── 5 row, encapsulating
+	// │   └── 6
+	// │       └── 7 pulls, with progress, ahead of its span
+	// └── 8 row
+	//     └── 9
+	//         └── 10 pulls, with progress
+	spans := []sdktrace.ReadOnlySpan{
+		lateTestSpan(1, 0, true),
+		lateTestSpan(2, 1, true, boundary),
+		lateTestSpan(3, 2, true),
+		lateTestSpan(4, 3, true),
+		lateTestSpan(5, 1, true, encapsulate),
+		lateTestSpan(6, 5, true),
+		lateTestSpan(8, 1, true),
+		lateTestSpan(9, 8, true),
+		lateTestSpan(10, 9, true),
+	}
+	later := []sdktrace.ReadOnlySpan{lateTestSpan(7, 6, true)}
+	full := NewDB()
+	folded, store := newFoldedDB(nil)
+	for _, db := range []*struct {
+		db  *DB
+		exp sdktrace.SpanExporter
+	}{{full, full}, {folded, store}} {
+		if err := db.exp.ExportSpans(t.Context(), spans); err != nil {
+			t.Fatal(err)
+		}
+		db.db.IngestProgress(testID(4), "layer", 5, 10, "bytes")
+		db.db.IngestProgress(testID(7), "layer", 1, 4, "bytes")
+		db.db.IngestProgress(testID(10), "layer", 2, 3, "bytes")
+		if err := db.exp.ExportSpans(t.Context(), later); err != nil {
+			t.Fatal(err)
+		}
+		db.db.IngestProgress(testID(4), "layer", 6, 10, "bytes")
+	}
+	for _, id := range []byte{4, 7, 10} {
+		want, got := full.Spans.Map[testID(id)], folded.Spans.Map[testID(id)]
+		if want == nil || !want.HasProgress() {
+			t.Fatalf("span %d should carry progress in the full DB", id)
+		}
+		if got == nil || !got.Received || !got.HasProgress() {
+			t.Fatalf("the folding DB dropped span %d's progress", id)
+		}
+		if w, g := want.Progress.Order, got.Progress.Order; len(w) != len(g) || *w[0] != *g[0] {
+			t.Errorf("span %d progress %+v, want %+v", id, *g[0], *w[0])
+		}
+		for a := want.ParentSpan; a != nil; a = a.ParentSpan {
+			if fa := folded.Spans.Map[a.ID]; fa == nil || !fa.ProgressSpans.Has(testID(id)) {
+				t.Errorf("ancestor %s doesn't roll up span %d's progress", a.ID, id)
+			}
+		}
+	}
+}
+
 // A row that ended while something beneath it still runs shows running when
 // the view would place what runs, and not when it hides it, whether what
 // runs is folded or not.

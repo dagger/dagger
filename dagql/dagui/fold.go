@@ -321,15 +321,16 @@ func (s FoldSpan) MayRollUp() bool {
 // are retained when they're top-level rows (see Fold), agents always, and
 // what may surface -- surfaced kinds wherever they sit (a conversation's
 // tool call shows the checks and tests the nested engine beneath it ran),
-// failed, revealed and progress-carrying spans that may roll up, and spans
-// with cause links -- with their ancestors. A failure beneath a boundary or
-// encapsulation (e.g. a nested engine's expected failure) only counts in its
-// ancestors' roll-ups.
+// progress-carrying spans wherever they sit (every collapsed ancestor rolls
+// their transfers up, boundaries or not; see IngestProgress), failed and
+// revealed spans that may roll up, and spans with cause links -- with their
+// ancestors. A failure beneath a boundary or encapsulation (e.g. a nested
+// engine's expected failure) only counts in its ancestors' roll-ups.
 func RetainRendered(span FoldSpan) bool {
-	if span.Agent() || span.CauseLinks() || span.SurfacedKind() {
+	if span.Agent() || span.CauseLinks() || span.SurfacedKind() || span.Progress() {
 		return true
 	}
-	if !span.Failed() && !span.Reveal() && !span.Progress() {
+	if !span.Failed() && !span.Reveal() {
 		return false
 	}
 	return span.MayRollUp()
@@ -1324,8 +1325,8 @@ func (f *Fold) noteHasLogs(id SpanID) bool {
 }
 
 // noteProgress reports whether the DB is to keep progress for span id: it
-// retains spans carrying progress that may roll up. The progress of a span
-// not received yet waits for it, to be kept if it's retained on arrival.
+// retains spans carrying progress (see RetainRendered). The progress of a
+// span not received yet waits for it, to be kept if it's retained on arrival.
 func (f *Fold) noteProgress(id SpanID, p foldProgressItem) bool {
 	i := f.intern(id)
 	if f.state[i]&foldRetained != 0 {

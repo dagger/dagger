@@ -124,7 +124,7 @@ func (db *DB) ingestProgress(record sdklog.Record) bool {
 // by a server.
 func (db *DB) IngestProgress(spanID SpanID, item string, current, total int64, unit string) {
 	if db.fold != nil && !db.fold.noteProgress(spanID, foldProgressItem{item, current, total, unit}) {
-		// a folded span's progress shows nowhere
+		// the fold policy left the span folded: its progress shows nowhere
 		return
 	}
 	span := db.initSpan(spanID)
