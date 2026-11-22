@@ -126,6 +126,11 @@ type ContainerExecState struct {
 	// (ExecutionMetadata.CallerRecipe). It isn't persisted: an exec loaded
 	// from the cache names none, as before.
 	callerRecipe digest.Digest
+
+	// readScope is what the part reads made under the exec's call count as
+	// (dagql.CurrentReadScope), captured and carried like callerRecipe
+	// (ExecutionMetadata.ReadScope).
+	readScope dagql.ReadScope
 }
 
 type ContainerExecLazy struct {
@@ -1429,6 +1434,7 @@ func (container *Container) WithExec(
 		EngineWork:     functionCall.EngineWork() || IsEngineWork(ctx),
 		originalExecMD: copyExecInputMetadata(execMD),
 		callerRecipe:   dagql.CallerRecipe(ctx),
+		readScope:      dagql.CurrentReadScope(ctx),
 	}
 	container.Lazy = &ContainerExecLazy{State: state}
 	container.ImageRef = ""
@@ -2358,6 +2364,7 @@ func (state *ContainerExecState) evaluateOutputs(ctx context.Context, container 
 			// Same in-process pattern: the calls a process in the exec makes
 			// through its nested client name the exec's call as their caller.
 			execMD.CallerRecipe = state.callerRecipe
+			execMD.ReadScope = state.readScope
 			// Same in-process pattern; a module runtime's parent metadata
 			// already names the function call instead.
 			SetExecutionIdentity(ctx, execMD)
