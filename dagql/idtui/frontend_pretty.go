@@ -9234,21 +9234,29 @@ func (fe *frontendPretty) renderErrorCause(ctx tuist.Context, out TermOutput, r 
 // encapsulation doesn't count, as it isn't shown.
 //
 // A module load is told by its own row: the CLI's load of type definitions
-// (dagui.WorkspaceLoadSpanName) doesn't stand for the loads beneath it, and
-// beneath a module's "load module" row, the load's plumbing is left out,
-// though it still stands for the work it encapsulates (see
-// isModuleLoadPlumbing). Elsewhere, such as a load a function makes, the
-// plumbing is all that names the load, and stays.
+// (dagui.WorkspaceLoadSpanName) doesn't stand for a "load module" row
+// beneath it, and beneath that row the load's plumbing is left out, though
+// it still stands for the work it encapsulates (see isModuleLoadPlumbing).
+// Elsewhere, such as a load a function makes, the plumbing is all that
+// names the load, and stays, and the CLI's load folds as any other.
 func errorCauseBreadcrumb(origin *dagui.TraceTree, row *dagui.Span) []*dagui.TraceTree {
-	var underLoad bool
+	isLoad := func(p *dagui.TraceTree) bool {
+		return p.Span.Received && !p.Span.IsInternal() && strings.HasPrefix(p.Span.Name, moduleLoadSpanPrefix)
+	}
+	// underLoad: the origin is beneath a load's row; seenLoad: the walk up
+	// has passed it.
+	var underLoad, seenLoad bool
 	for p := origin.Parent; p != nil && p.Span.ID != row.ID; p = p.Parent {
-		if p.Span.Received && !p.Span.IsInternal() && strings.HasPrefix(p.Span.Name, moduleLoadSpanPrefix) {
+		if isLoad(p) {
 			underLoad = true
 			break
 		}
 	}
 	var parents []*dagui.TraceTree
 	for p := origin.Parent; p != nil; p = p.Parent {
+		if isLoad(p) {
+			seenLoad = true
+		}
 		if p.Span.ID == row.ID {
 			break
 		}
@@ -9263,10 +9271,10 @@ func errorCauseBreadcrumb(origin *dagui.TraceTree, row *dagui.Span) []*dagui.Tra
 		if p.Span.IsInternal() {
 			continue
 		}
-		if p.Span.Encapsulate && p.Span.Name != dagui.WorkspaceLoadSpanName {
+		if p.Span.Encapsulate && (!seenLoad || p.Span.Name != dagui.WorkspaceLoadSpanName) {
 			parents = parents[:0]
 		}
-		if underLoad && isModuleLoadPlumbing(p.Span) {
+		if underLoad && !seenLoad && isModuleLoadPlumbing(p.Span) {
 			continue
 		}
 		parents = append(parents, p)

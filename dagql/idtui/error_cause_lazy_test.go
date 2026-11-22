@@ -108,6 +108,35 @@ func TestErrorCauseBreadcrumbKeepsModuleLoad(t *testing.T) {
 	require.NotContains(t, out, "binary")
 }
 
+// TestErrorCauseBreadcrumbFoldsTypeDefsWithoutLoad covers the CLI loading a
+// module's type definitions after serving it, under a load of its own: with
+// no engine "load module" row beneath the CLI's load of type definitions,
+// that load stands for what it encapsulates, as before.
+func TestErrorCauseBreadcrumbFoldsTypeDefsWithoutLoad(t *testing.T) {
+	start := time.Unix(100, 0)
+	end := start.Add(time.Second)
+	id := prettyTestSpanID
+	failed := sdktrace.Status{Code: codes.Error, Description: "boom"}
+	db := dagui.NewDB()
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: id(1), TraceID: prettyTestTraceID(), Name: "dagger shell", StartTime: start, EndTime: end},
+		{ID: id(2), TraceID: prettyTestTraceID(), ParentID: id(1), Name: "initializing module", StartTime: start, EndTime: end, Status: failed},
+		{ID: id(3), TraceID: prettyTestTraceID(), ParentID: id(2), Name: dagui.WorkspaceLoadSpanName, Encapsulate: true, StartTime: start, EndTime: end, Status: failed},
+		{ID: id(4), TraceID: prettyTestTraceID(), ParentID: id(3), Name: "Query.currentTypeDefs", StartTime: start, EndTime: end, Status: failed},
+		{ID: id(5), TraceID: prettyTestTraceID(), ParentID: id(4), Name: "ModuleSource.asModule", StartTime: start, EndTime: end, Status: failed},
+		{ID: id(6), TraceID: prettyTestTraceID(), ParentID: id(5), Name: "withExec", StartTime: start, EndTime: end, Status: failed},
+	})
+	db.Spans.Map[id(2)].AddErrorOrigin(db.Spans.Map[id(6)])
+	db.SetPrimarySpan(id(1))
+	fe := newWithTerminal(io.Discard, db, tuist.NewHeadlessTerminal(120, 30))
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+	var output bytes.Buffer
+	require.NoError(t, fe.FinalRender(&output))
+	out := ansi.Strip(output.String())
+	require.Contains(t, out, VertBoldDash3+" "+dagui.WorkspaceLoadSpanName+" › \n")
+	require.NotContains(t, out, "Query.currentTypeDefs ›")
+}
+
 // TestErrorCauseBreadcrumbKeepsLoadPlumbingWithoutLoad covers a module a
 // function loads itself, whose runtime fails to build: with no "load module"
 // row to stand for it, the load's plumbing is what names it.
