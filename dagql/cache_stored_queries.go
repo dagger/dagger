@@ -113,6 +113,12 @@ type PartAvailability struct {
 //     unexpired entry of its class, maps the part as absent through the
 //     transfer codec, read from the stored envelope, never a decoded value.
 //     Absence is a property of the value's structure, not of its freshness;
+//   - uploading: an upload of the part is in progress for the entry or an
+//     entry of its class, whether or not that entry stores a value or has
+//     expired (MarkPartUploading), as its reader's claim counts it. The
+//     lowest-numbered such entry is the donor. An upload's start and end
+//     move no ValidUntilUnix: its reader names the class at each
+//     (ClassChange, EndPartUploads);
 //   - otherwise unavailable.
 //
 // Among the class's other entries, the lowest number answers first. Only a
@@ -237,7 +243,45 @@ func (c *Cache) availablePartLocked(number uint64, key string, nowUnix int64) (P
 			}
 		}
 	}
+	// An upload in progress answers after stored and absent: a reader needs
+	// neither, whatever uploads. The count is read a part at a time, so a
+	// reader counting an upload never waits for a batch of answers.
+	c.uploadsMu.Lock()
+	donor, uploading := c.classUploadLocked(res, key)
+	c.uploadsMu.Unlock()
+	if uploading {
+		return PartAvailability{State: PartUploading, Donor: uint64(donor), ValidUntilUnix: validUntil}, nil
+	}
 	return PartAvailability{ValidUntilUnix: validUntil}, nil
+}
+
+// classUploadLocked is the lowest-numbered entry of res's class, res
+// included, with an upload of the part whose address key is key in progress
+// (MarkPartUploading), whether or not it stores a value or has expired: an
+// upload counts for its class as its reader's claim does. A caller that
+// decides by the answer, as a start that counts an upload only where none is
+// in progress, decides under the same take of uploadsMu. Requires egraphMu
+// and uploadsMu.
+func (c *Cache) classUploadLocked(res *sharedResult, key string) (sharedResultID, bool) {
+	if len(c.uploads) == 0 {
+		return 0, false
+	}
+	var donor sharedResultID
+	found := false
+	consider := func(id sharedResultID) {
+		if c.uploads[id][key] > 0 && (!found || id < donor) {
+			donor, found = id, true
+		}
+	}
+	consider(res.id)
+	for root := range c.outputEqClassRootsLocked(res.id) {
+		for id := range c.outputEqClassResults[root] {
+			if c.resultsByID[id] != nil {
+				consider(id)
+			}
+		}
+	}
+	return donor, found
 }
 
 // StoredState is what a blob-backed cache stores: its stored roots, and each
