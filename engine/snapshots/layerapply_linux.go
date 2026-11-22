@@ -395,6 +395,14 @@ type layerExtraction struct {
 	unpacked map[string]struct{} // paths written by this layer
 	queued   map[string]struct{} // paths handed to workers since they last finished
 
+	// fresh says the layer applies into an empty directory with nothing
+	// below it, and has removed nothing and converted no whiteout since:
+	// then a path exists only if the layer made it, which made holds,
+	// entries and the parents made for them alike. The first removal ends
+	// it (removing).
+	fresh bool
+	made  map[string]struct{}
+
 	writers *layerFileWriters
 }
 
@@ -408,8 +416,10 @@ func applyLayerTar(ctx context.Context, t layerTarget, r io.Reader) (rerr error)
 		dirs:     map[string]struct{}{},
 		unpacked: map[string]struct{}{},
 		queued:   map[string]struct{}{},
+		made:     map[string]struct{}{},
 		writers:  startLayerFileWriters(ctx),
 	}
+	x.fresh = len(t.parents) == 0 && emptyDir(x.root)
 	defer func() {
 		if err := x.writers.stop(); rerr == nil {
 			rerr = err
@@ -484,13 +494,17 @@ func applyLayerTar(ctx context.Context, t layerTarget, r io.Reader) (rerr error)
 		if err := x.settle(path); err != nil {
 			return err
 		}
-		if fi, err := layerLstat(path); err == nil {
-			if !fi.IsDir() || hdr.Typeflag != tar.TypeDir {
-				if err := x.removing(); err != nil {
-					return err
-				}
-				if err := os.RemoveAll(path); err != nil {
-					return err
+		// Applying fresh, nothing the layer didn't make is there to
+		// replace.
+		if x.mayExist(path) {
+			if fi, err := layerLstat(path); err == nil {
+				if !fi.IsDir() || hdr.Typeflag != tar.TypeDir {
+					if err := x.removing(); err != nil {
+						return err
+					}
+					if err := os.RemoveAll(path); err != nil {
+						return err
+					}
 				}
 			}
 		}
@@ -498,6 +512,7 @@ func applyLayerTar(ctx context.Context, t layerTarget, r io.Reader) (rerr error)
 		if err := x.create(path, hdr, tr); err != nil {
 			return err
 		}
+		x.made[path] = struct{}{}
 
 		// Directory mtimes must be handled at the end to avoid further
 		// file creation in them to modify the directory mtime
@@ -529,6 +544,19 @@ func (x *layerExtraction) rootPath(p string) (string, error) {
 	p = strings.TrimSuffix(p, "/")
 	if resolved, ok := x.resolved[p]; ok {
 		return resolved, nil
+	}
+	// A directory known to exist resolves as its parent did, with its name
+	// joined: dirs holds only directories, not symlinks, made or found
+	// since the last symlink, link or removal, which forget it (changed),
+	// so fs.RootPath would walk to the same path. A name that climbs, or
+	// a directory not known, is resolved by fs.RootPath.
+	if parent, name := filepath.Split(p); name != "" && name != "." && name != ".." {
+		if presolved, err := x.rootPath(parent); err == nil {
+			if candidate := filepath.Join(presolved, name); x.knownDir(candidate) {
+				x.resolved[p] = candidate
+				return candidate, nil
+			}
+		}
 	}
 	resolved, err := layerRootPath(x.root, p)
 	if err != nil {
@@ -566,10 +594,39 @@ func (x *layerExtraction) finish() error {
 }
 
 // removing is called before anything is removed: it waits for the workers,
-// and forgets every remembered lookup.
+// and forgets every remembered lookup. From then on, a path may exist that
+// the layer didn't make: whiteouts make device nodes and opaque markers.
 func (x *layerExtraction) removing() error {
 	x.changed()
+	x.fresh = false
 	return x.finish()
+}
+
+// mayExist reports whether something may be at path: anything may, unless
+// the layer applies fresh, when only what it made may.
+func (x *layerExtraction) mayExist(path string) bool {
+	if !x.fresh {
+		return true
+	}
+	_, ok := x.made[path]
+	return ok
+}
+
+// knownDir reports whether path is a directory known to exist.
+func (x *layerExtraction) knownDir(path string) bool {
+	_, ok := x.dirs[path]
+	return ok
+}
+
+// emptyDir reports whether dir is a directory with nothing in it.
+func emptyDir(dir string) bool {
+	f, err := os.Open(dir)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	names, err := f.Readdirnames(1)
+	return len(names) == 0 && err == io.EOF
 }
 
 func (x *layerExtraction) convertWhiteout(hdr *tar.Header, path string) (bool, error) {
@@ -633,17 +690,20 @@ func (x *layerExtraction) mkparent(path string) error {
 }
 
 func (x *layerExtraction) makeParent(path string) error {
-	if dir, err := layerLstat(path); err == nil {
-		if dir.IsDir() {
-			return nil
+	// Applying fresh, a directory the layer didn't make isn't there.
+	if x.mayExist(path) {
+		if dir, err := layerLstat(path); err == nil {
+			if dir.IsDir() {
+				return nil
+			}
+			return &os.PathError{
+				Op:   "mkparent",
+				Path: path,
+				Err:  syscall.ENOTDIR,
+			}
+		} else if !os.IsNotExist(err) {
+			return err
 		}
-		return &os.PathError{
-			Op:   "mkparent",
-			Path: path,
-			Err:  syscall.ENOTDIR,
-		}
-	} else if !os.IsNotExist(err) {
-		return err
 	}
 
 	i := len(path)
@@ -665,6 +725,7 @@ func (x *layerExtraction) makeParent(path string) error {
 		}
 		return err
 	}
+	x.made[path] = struct{}{}
 
 	for _, p := range x.parents {
 		ppath, err := layerRootPath(p, path[len(x.root):])
@@ -704,7 +765,12 @@ func (x *layerExtraction) create(path string, hdr *tar.Header, reader io.Reader)
 	case tar.TypeDir:
 		// Create directory unless it exists as a directory already.
 		// In that case we just want to merge the two
-		if fi, err := layerLstat(path); err != nil || !fi.IsDir() {
+		if !x.mayExist(path) {
+			// Nothing is there. Its mode is set with its metadata below.
+			if err := os.Mkdir(path, hdrInfo.Mode()); err != nil {
+				return err
+			}
+		} else if fi, err := layerLstat(path); err != nil || !fi.IsDir() {
 			if err := mkdir(path, hdrInfo.Mode()); err != nil {
 				return err
 			}
@@ -948,6 +1014,13 @@ func setTarMetadata(ctx context.Context, path string, hdr *tar.Header) error {
 	}
 
 	// call lchmod after lchown since lchown can modify the file mode
+	if hdr.Typeflag == tar.TypeDir {
+		// create made or found a directory at path, which nothing has
+		// replaced since, so it is no symlink to look for; its times are
+		// set with every directory's once the layer is applied, after
+		// what goes in it.
+		return os.Chmod(path, hdrInfo.Mode())
+	}
 	if err := lchmod(path, hdrInfo.Mode()); err != nil {
 		return err
 	}
