@@ -564,29 +564,42 @@ type multiPackProvider struct {
 	// opened, when set, runs as each OpenPack starts; its error fails the
 	// read.
 	opened func(context.Context) error
+	// ranged serves ranges of the packs; ranged, when set, runs as each
+	// OpenPackRange starts, and its error fails the read. Without it every
+	// OpenPackRange is answered with ErrNoPackRanges and packs are read
+	// whole.
+	ranged func(ctx context.Context, pack digest.Digest, off, size int64) error
 }
 
 // newMultiPackProvider packs each group of the given layers' blobs, read
-// from inner, in order, as a pack of its own.
-func newMultiPackProvider(t *testing.T, inner content.InfoReaderProvider, groups ...[]ocispecs.Descriptor) *multiPackProvider {
+// from inner, in order, as a pack of its own. With apart above zero, each
+// layer's blob is followed in its pack by another chain's blob of apart
+// bytes.
+func newMultiPackProvider(t *testing.T, inner content.InfoReaderProvider, apart int, groups ...[]ocispecs.Descriptor) *multiPackProvider {
 	t.Helper()
 	p := &multiPackProvider{InfoReaderProvider: inner, packOf: map[digest.Digest]digest.Digest{}, packs: map[digest.Digest][]byte{}}
-	for _, group := range groups {
-		members := make([]pack.Member, 0, len(group))
+	for g, group := range groups {
+		members := make([]pack.Member, 0, 2*len(group))
 		var body []byte
-		for _, desc := range group {
+		add := func(data []byte) {
+			members = append(members, pack.Member{Digest: digest.FromBytes(data), Size: int64(len(data))})
+			body = append(body, data...)
+		}
+		for i, desc := range group {
 			data, err := content.ReadBlob(context.Background(), inner, desc)
 			require.NoError(t, err)
-			members = append(members, pack.Member{Digest: desc.Digest, Size: int64(len(data))})
-			body = append(body, data...)
+			add(data)
+			if apart > 0 {
+				add(otherChainBlob(fmt.Sprintf("other %d %d ", g, i), apart))
+			}
 		}
 		header, err := pack.Header(members)
 		require.NoError(t, err)
 		id, err := pack.ID(members)
 		require.NoError(t, err)
 		p.packs[id] = append(header, body...)
-		for _, m := range members {
-			p.packOf[m.Digest] = id
+		for _, desc := range group {
+			p.packOf[desc.Digest] = id
 		}
 	}
 	return p
@@ -613,6 +626,19 @@ func (p *multiPackProvider) OpenPack(ctx context.Context, blob digest.Digest) (i
 	return io.NopCloser(bytes.NewReader(p.packs[p.packOf[blob]])), nil
 }
 
+func (p *multiPackProvider) OpenPackRange(ctx context.Context, blob digest.Digest, off, size int64) (io.ReadCloser, error) {
+	if p.ranged == nil {
+		return nil, bkcache.ErrNoPackRanges
+	}
+	id := p.packOf[blob]
+	if err := p.ranged(ctx, id, off, size); err != nil {
+		return nil, err
+	}
+	data := p.packs[id]
+	end := min(off+size, int64(len(data)))
+	return io.NopCloser(bytes.NewReader(data[off:end])), nil
+}
+
 // A chain downloads ahead by reads of the blob store, not by layers: the
 // layers whose blobs one pack holds are one download, its read. Three packs
 // of 20 layers each, more layers than an import holds downloads ahead, are
@@ -627,7 +653,7 @@ func TestImportChainReadsItsPacksAtOnce(t *testing.T) {
 	for i, layer := range chain.Layers {
 		groups[i/perPack] = append(groups[i/perPack], layer.Descriptor)
 	}
-	provider := newMultiPackProvider(t, chain.Provider, groups...)
+	provider := newMultiPackProvider(t, chain.Provider, 0, groups...)
 	gauge := &getGauge{}
 	all := make(chan struct{})
 	var arrived atomic.Int64
@@ -651,4 +677,83 @@ func TestImportChainReadsItsPacksAtOnce(t *testing.T) {
 	require.EqualValues(t, packs, arrived.Load(), "each pack read once")
 	testutil.CheckFile(t, ref, "packed-00.txt", "packed 0")
 	testutil.CheckFile(t, ref, "packed-59.txt", "packed 59")
+}
+
+// A chain reads a pack it needs little of by its own members' spans, one
+// span after another: however the pack is read, it is one read of the blob
+// store in flight, as the chain's downloads ahead count it. Three packs
+// whose 12 layers each lie 1 MiB apart, among another chain's blobs, are
+// read at once, one span of each at a time, which a provider that holds
+// every span until the test lets go checks.
+func TestImportChainReadsAPacksSpansOneAtATime(t *testing.T) {
+	t.Parallel()
+	const packs, perPack = 3, 12
+	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+	chain := layeredChain(t, producer, "spans", packs*perPack)
+	groups := make([][]ocispecs.Descriptor, packs)
+	for i, layer := range chain.Layers {
+		groups[i/perPack] = append(groups[i/perPack], layer.Descriptor)
+	}
+	provider := newMultiPackProvider(t, chain.Provider, 1<<20, groups...)
+	release := make(chan struct{})
+	var released sync.Once
+	var mu sync.Mutex
+	inflight, most := map[digest.Digest]int{}, map[digest.Digest]int{}
+	all := 0
+	provider.ranged = func(ctx context.Context, id digest.Digest, off, _ int64) error {
+		if off == 0 {
+			// The pack's header.
+			return nil
+		}
+		mu.Lock()
+		inflight[id]++
+		all++
+		most[id] = max(most[id], inflight[id])
+		mu.Unlock()
+		defer func() {
+			mu.Lock()
+			inflight[id]--
+			all--
+			mu.Unlock()
+		}()
+		select {
+		case <-release:
+			return nil
+		case <-ctx.Done():
+			return context.Cause(ctx)
+		}
+	}
+	reading := func() (int, int) {
+		mu.Lock()
+		defer mu.Unlock()
+		most1 := 0
+		for _, n := range most {
+			most1 = max(most1, n)
+		}
+		return all, most1
+	}
+	done := make(chan error, 1)
+	var ref bkcache.ImmutableRef
+	go func() {
+		var err error
+		ref, err = consumer.Manager.ImportChain(context.Background(), supplied(chain, provider))
+		done <- err
+	}()
+	t.Cleanup(func() { released.Do(func() { close(release) }) })
+	require.Eventually(t, func() bool { n, _ := reading(); return n == packs }, 30*time.Second, 10*time.Millisecond,
+		"a span of every pack in flight at once")
+	time.Sleep(200 * time.Millisecond)
+	n, most1 := reading()
+	require.Equal(t, packs, n, "and no more")
+	require.Equal(t, 1, most1, "one span of a pack at a time")
+	released.Do(func() { close(release) })
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(30 * time.Second):
+		t.Fatal("the import never finished")
+	}
+	t.Cleanup(func() { require.NoError(t, ref.Release(context.Background())) })
+	testutil.CheckFile(t, ref, "spans-00.txt", "spans 0")
+	testutil.CheckFile(t, ref, "spans-35.txt", "spans 35")
 }
