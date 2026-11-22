@@ -46,6 +46,8 @@ type foldVariant struct {
 	// noopWaitsFolded: waits no row reads (noopSelfWait) retain neither
 	// end.
 	noopWaitsFolded bool
+	// extraSeeds are spans retained besides the rules', with why.
+	extraSeeds map[uint32]string
 }
 
 // Breakdown reports what the fold retains and why, and what variants of its
@@ -211,6 +213,20 @@ func (f *Fold) breakdownReasons(out *FoldBreakdown, targets map[uint32]int, link
 		}
 		sort.Slice(out.WhatIfReasons[v.name], func(a, b int) bool {
 			return out.WhatIfReasons[v.name][a].Spans > out.WhatIfReasons[v.name][b].Spans
+		})
+	}
+	for _, intervals := range []bool{true, false} {
+		name := "cause links contained where their ends meet folded"
+		if !intervals {
+			name += ", activity they extend aside"
+		}
+		n, why, _ := f.simulateContainedCausesAs(links, realWaits, targets, intervals)
+		out.WhatIf = append(out.WhatIf, FoldCount{name, n})
+		for reason, count := range why {
+			out.WhatIfReasons[name] = append(out.WhatIfReasons[name], FoldCount{reason, count})
+		}
+		sort.Slice(out.WhatIfReasons[name], func(a, b int) bool {
+			return out.WhatIfReasons[name][a].Spans > out.WhatIfReasons[name][b].Spans
 		})
 	}
 }
@@ -467,6 +483,9 @@ func (f *Fold) simulate(v foldVariant, links map[uint32][]foldLink, realWaits ma
 			continue
 		}
 		if r := seed(uint32(i)); r != "" {
+			why[i] = r
+			stack = append(stack, uint32(i))
+		} else if r, ok := v.extraSeeds[uint32(i)]; ok {
 			why[i] = r
 			stack = append(stack, uint32(i))
 		}

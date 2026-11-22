@@ -28,6 +28,7 @@ var (
 	replayRowWaitsBdg = flag.Duration("foldreplay.rowwaits.budget", 20*time.Millisecond, "budget of each UpdateRowWaits during the replay (the live CLI's slice)")
 	replayHeapProfile = flag.String("foldreplay.heapprofile", "", "directory to write a heap profile per mode to, heap-<mode>.pprof")
 	replayBreakdown   = flag.Bool("foldreplay.breakdown", false, "log Fold.Breakdown for folding modes")
+	replayAnatomy     = flag.Bool("foldreplay.anatomy", false, "log Fold.CauseAnatomy and Fold.WaitAnatomy for folding modes")
 
 	capturePath  = flag.String("foldreplay.capture", os.Getenv("DAGGER_FOLD_CAPTURE"), "capture to record (TestFoldCapture), a .otlp path")
 	captureTrace = flag.String("foldreplay.trace", os.Getenv("DAGGER_FOLD_CAPTURE_TRACE"), "Dagger Cloud trace ID to record")
@@ -73,6 +74,7 @@ func BenchmarkFoldReplay(b *testing.B) {
 				RowWaits:       *replayRowWaits,
 				RowWaitsBudget: *replayRowWaitsBdg,
 				Breakdown:      *replayBreakdown,
+				Anatomy:        *replayAnatomy,
 			}
 			if *replayHeapProfile != "" {
 				opts.HeapProfile = filepath.Join(*replayHeapProfile, "heap-"+mode+".pprof")
@@ -95,6 +97,10 @@ func BenchmarkFoldReplay(b *testing.B) {
 			}
 			if res.Breakdown != nil {
 				b.Logf("%s breakdown:\n%s", mode, FormatBreakdown(*res.Breakdown))
+			}
+			if res.CauseAnatomy != nil || res.WaitAnatomy != nil {
+				b.Logf("%s cause anatomy:\n%s\n%s wait anatomy:\n%s\n%s link rule what-ifs (retained spans):\n%s", mode, FormatCounts(res.CauseAnatomy),
+					mode, FormatCounts(res.WaitAnatomy), mode, FormatCounts(res.LinkWhatIfs))
 			}
 		})
 	}
@@ -187,7 +193,7 @@ func TestReplay(t *testing.T) {
 			require.Equal(t, n, tr.Len())
 			full, err := Measure(t.Context(), tr, Options{RowWaits: 4})
 			require.NoError(t, err)
-			folded, err := Measure(t.Context(), tr, Options{Fold: true, RowWaits: 4, Breakdown: true,
+			folded, err := Measure(t.Context(), tr, Options{Fold: true, RowWaits: 4, Breakdown: true, Anatomy: true,
 				HeapProfile: filepath.Join(t.TempDir(), "heap.pprof")})
 			require.NoError(t, err)
 			require.NotNil(t, folded.Breakdown)

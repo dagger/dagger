@@ -279,6 +279,9 @@ type Result struct {
 	// Options.Breakdown).
 	Stats     dagui.FoldStats
 	Breakdown *dagui.FoldBreakdown
+	// CauseAnatomy and WaitAnatomy are a folding DB's, with
+	// Options.Anatomy.
+	CauseAnatomy, WaitAnatomy, LinkWhatIfs []dagui.FoldCount
 }
 
 // Options configure a Measure.
@@ -300,8 +303,9 @@ type Options struct {
 	RowWaitsBudget time.Duration
 	// HeapProfile, if set, is where to write a heap profile at the end.
 	HeapProfile string
-	// Breakdown computes Fold.Breakdown at the end, after measuring.
-	Breakdown bool
+	// Breakdown computes Fold.Breakdown at the end, after measuring;
+	// Anatomy, Fold.CauseAnatomy and Fold.WaitAnatomy.
+	Breakdown, Anatomy bool
 }
 
 // Measure replays t into a DB, folding or not (see Options), and measures
@@ -366,6 +370,11 @@ func Measure(ctx context.Context, t *Trace, opts Options) (Result, error) {
 			bd := f.Breakdown()
 			res.Breakdown = &bd
 		}
+		if opts.Anatomy {
+			res.CauseAnatomy = f.CauseAnatomy()
+			res.WaitAnatomy = f.WaitAnatomy()
+			res.LinkWhatIfs = f.LinkRuleWhatIfs()
+		}
 	}
 	runtime.KeepAlive(db)
 	return res, nil
@@ -382,6 +391,15 @@ func writeHeapProfile(path string) error {
 		return err
 	}
 	return f.Close()
+}
+
+// FormatCounts renders named counts, one per line.
+func FormatCounts(counts []dagui.FoldCount) string {
+	var sb strings.Builder
+	for _, c := range counts {
+		fmt.Fprintf(&sb, "  %9d  %s\n", c.Spans, c.Name)
+	}
+	return sb.String()
 }
 
 // FormatBreakdown renders a Fold.Breakdown: the retained spans by reason,
