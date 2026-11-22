@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	bkcache "github.com/dagger/dagger/engine/snapshots"
@@ -169,4 +170,20 @@ func TestImportChainOverlayDirectoryAfterAWhiteoutOfIt(t *testing.T) {
 	tree := testutil.OverlayTree(t, ref)
 	require.Equal(t, "dir 755", tree["q"])
 	require.Equal(t, "file 644 f", tree["q/f"])
+}
+
+// A path deep in directories the layer hasn't made resolves once, however
+// deep: a file 1,000 directories down is one resolution. Not parallel: it
+// counts the engine applier's lookups.
+func TestImportChainOverlayDeepPathResolvesOnce(t *testing.T) {
+	name := strings.Repeat("a/", 1000) + "f"
+	producer, consumer := testutil.NewStore(t), testutil.NewOverlayStore(t)
+	consumer.UseEngineApplier(t)
+	chain := tarChain(t, producer, []tarEntry{{name: name, mode: 0o644, body: "f"}})
+	lstats, resolutions, restore := bkcache.CountLayerLookups()
+	ref := importChain(t, consumer, chain)
+	restore()
+	t.Logf("%d Lstats, %d resolutions", lstats.Load(), resolutions.Load())
+	require.LessOrEqual(t, resolutions.Load(), int64(2), "one resolution of the file's directory")
+	require.Equal(t, "file 644 f", testutil.OverlayTree(t, ref)[name])
 }
