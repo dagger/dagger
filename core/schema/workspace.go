@@ -1290,8 +1290,8 @@ func gitSparseReadRoot(
 	case core.GitSparseReadOwn:
 		files, err := sparse.ReadFiles(ctx, resolvedPath, filter)
 		if err != nil {
-			// The route came from the cache, as an engine served another's
-			// records gets it, and the list this needs couldn't be read.
+			// The sparse tree's objects list couldn't be read: the full tree
+			// serves the same read.
 			slog.Warn("reading the sparse tree's objects failed; reading the full tree", "error", err)
 			return full, cache.Evaluate(ctx, full)
 		}
@@ -1324,8 +1324,10 @@ func gitSparseReadRoot(
 			if errors.Is(err, os.ErrNotExist) {
 				return full, err
 			}
-			// As for the files above: the route came from the cache, and the
-			// sparse tree's files couldn't be had.
+			// The tree to copy from, this one or a tree of the read's own,
+			// couldn't be had, as a tree held as another engine's record whose
+			// content can't be fetched or made again can't: the full tree
+			// serves the same read.
 			slog.Warn("reading the sparse tree failed; reading the full tree", "path", resolvedPath, "error", err)
 			return full, cache.Evaluate(ctx, full)
 		}
