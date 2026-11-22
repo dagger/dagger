@@ -272,7 +272,7 @@ func (r *entrypointRuntime) Call(
 			}
 			result, err := callEntrypointMethod(ctx, env, entrypointName, "call", moduleContext, callArgs)
 			if err != nil {
-				if fnErr, ok := moduleProcessFunctionError(fnCall, err); ok {
+				if fnErr, ok := moduleProcessFunctionError(ctx, fnCall, err); ok {
 					functionFailed = true
 					return nil, fnErr
 				}

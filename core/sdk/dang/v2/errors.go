@@ -2,7 +2,9 @@ package dangv2
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"maps"
 	"strings"
 
@@ -28,6 +30,12 @@ func convertError(err error) *core.Error {
 	return dangshared.ConvertError(err)
 }
 
+// errFunctionReturnedError fails an entrypoint's call whose function returned
+// an error: the call fails with that error (see FunctionCall.ReturnError).
+// It names no origin, so the returned error's comes from the function call
+// unless it names one (see core.FunctionErrorReport).
+var errFunctionReturnedError = errors.New("the function returned an error")
+
 // moduleProcessFunctionError returns the error of the function that fnCall's
 // module process ran, if err, the failure of the entrypoint's call, is that
 // process's failure: the GraphQL error of its exec (core.ExecError's
@@ -35,12 +43,12 @@ func convertError(err error) *core.Error {
 // as the function's own, as a runtime's call does:
 //
 //   - with the error the process reported (core.FunctionErrorExtension),
-//     which keeps the origin it names, such as an API error the function
-//     returned, and otherwise comes from the function call;
+//     which the call returns as a runtime's returns an Error, values and all
+//     (core.FunctionErrorReport.Return);
 //   - or, from a process that reported none, as one that died before its
 //     function returned, with its exec's error, values and all, such as its
 //     exit code, but from the function call, not from the exec.
-func moduleProcessFunctionError(fnCall *core.FunctionCall, err error) (error, bool) {
+func moduleProcessFunctionError(ctx context.Context, fnCall *core.FunctionCall, err error) (error, bool) {
 	var gqlErr *gqlerror.Error
 	var raised *dang.RaisedError
 	if errors.As(err, &raised) {
@@ -61,8 +69,19 @@ func moduleProcessFunctionError(fnCall *core.FunctionCall, err error) (error, bo
 		}
 		return msg
 	}
-	if msg, _ := gqlErr.Extensions[core.FunctionErrorExtension].(string); msg != "" {
-		return errors.New(fromCall(msg)), true
+	if reported, ok := gqlErr.Extensions[core.FunctionErrorExtension]; ok {
+		var report core.FunctionErrorReport
+		encoded, err := json.Marshal(reported)
+		if err == nil {
+			err = json.Unmarshal(encoded, &report)
+		}
+		if err == nil {
+			err = report.Return(ctx, fnCall)
+		}
+		if err != nil {
+			return fmt.Errorf("return the function's reported error: %w", err), true
+		}
+		return errFunctionReturnedError, true
 	}
 	extensions := maps.Clone(gqlErr.Extensions)
 	delete(extensions, core.ModuleProcessExtension)

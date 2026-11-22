@@ -1130,6 +1130,13 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	}
 	if err != nil {
 		if returnedSet && returned.HasError {
+			if returned.Error != nil {
+				dagErr, originErr := functionCallErrorWithOrigin(ctx, returned.Error.Clone(), err)
+				if originErr != nil {
+					return nil, originErr
+				}
+				return nil, dagErr
+			}
 			dagErr, loadErr := functionCallReturnedError(ctx, returned.ErrorID, err)
 			if loadErr != nil {
 				return nil, loadErr
@@ -1144,6 +1151,13 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 			return nil, fmt.Errorf("constructor completed without returning a value")
 		}
 		return nil, fmt.Errorf("function %q completed without returning a value", fnCall.Name)
+	}
+	if returned.HasError && returned.Error != nil {
+		dagErr, err := functionCallErrorWithOrigin(ctx, returned.Error.Clone(), nil)
+		if err != nil {
+			return nil, err
+		}
+		return nil, dagErr
 	}
 	if returned.HasError {
 		dagErr, err := functionCallReturnedError(ctx, returned.ErrorID, nil)

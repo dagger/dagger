@@ -2781,8 +2781,11 @@ type functionCallReturnState struct {
 }
 
 type functionCallReturn struct {
-	Value    any
-	ErrorID  dagql.ID[*Error]
+	Value   any
+	ErrorID dagql.ID[*Error]
+	// Error is an error returned by value rather than by ID, as a module
+	// entrypoint's process reports one (FunctionErrorReport).
+	Error    *Error
 	HasError bool
 }
 

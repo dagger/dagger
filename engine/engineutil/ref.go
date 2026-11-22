@@ -36,11 +36,14 @@ const (
 	// FunctionErrorPathEnv is part of the module entrypoint contract: the
 	// engine sets it, on a module entrypoint's module process only (see
 	// core.ModuleCallDigestEnv), to a writable file path. A module process
-	// whose function fails writes the function's error message there, as
-	// plain text, and exits non-zero; the call then fails with that message
-	// as its own error. The engine reads the first MaxFunctionErrorBytes of a
-	// regular file there, and nothing else. A process that finds the
-	// variable unset runs on an engine without the contract.
+	// whose function fails writes the function's error there and exits
+	// non-zero; the call then fails with that error as its own. The file holds
+	// {"message": "...", "values": {...}}, {"id": "<Error ID>"}, or plain
+	// text, the whole of which is the message (see core.FunctionErrorReport).
+	// The engine reads a regular file there of at most MaxFunctionErrorBytes,
+	// and nothing else; without one, the call fails with the process's exec
+	// error. A process that finds the variable unset runs on an engine
+	// without the contract.
 	FunctionErrorPathEnv = "DAGGER_FUNCTION_ERROR_PATH"
 	// FunctionErrorMountPath is the directory the module process's
 	// FunctionErrorPathEnv file is in, bound to MetaMountFunctionErrorDir of
@@ -53,28 +56,24 @@ const (
 	// MetaMountFunctionErrorDir is the directory of the meta mount that
 	// FunctionErrorMountPath binds.
 	MetaMountFunctionErrorDir = "functionError"
-	// MaxFunctionErrorBytes is how much of a module process's function error
-	// the engine reads.
-	MaxFunctionErrorBytes = 64 << 10
+	// MaxFunctionErrorBytes is the largest function error file the engine
+	// reads.
+	MaxFunctionErrorBytes = 1 << 20
 )
 
-// ReadSnapshotFileHead reads up to the first limit bytes of the regular file
-// at filePath, and nothing when there's none there: a path that a process
-// can make anything, such as a named pipe that would block the read, is read
-// only when it is a plain file.
-func ReadSnapshotFileHead(ctx context.Context, mntable bkcache.MountableRef, filePath string, limit int) ([]byte, error) {
+// ReadSnapshotSmallFile reads the regular file at filePath, and nothing when
+// there's none there or it is over limit bytes: a path that a process can
+// make anything, such as a named pipe that would block the read, is read only
+// when it is a plain file.
+func ReadSnapshotSmallFile(ctx context.Context, mntable bkcache.MountableRef, filePath string, limit int) ([]byte, error) {
 	ctx = withOutgoingContext(ctx)
 	stat, err := snapshotutil.StatFile(ctx, mntable, filePath)
-	if err != nil || !os.FileMode(stat.Mode).IsRegular() {
+	if err != nil || !os.FileMode(stat.Mode).IsRegular() || stat.Size_ > int64(limit) {
 		return nil, nil
-	}
-	length := int(stat.Size_)
-	if length > limit {
-		length = limit
 	}
 	contents, err := snapshotutil.ReadFile(ctx, mntable, snapshotutil.ReadRequest{
 		Filename: filePath,
-		Range:    &snapshotutil.FileRange{Length: length},
+		Range:    &snapshotutil.FileRange{Length: int(stat.Size_)},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to read %q: %w", filePath, err)
