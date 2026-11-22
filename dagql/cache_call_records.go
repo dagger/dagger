@@ -120,7 +120,9 @@ func (c *Cache) keepCallLocked(entry *sharedResult, desc RemoteHolding, kept *ke
 // entry's call needs them. An input another call added doesn't place a
 // call, nor does a later root's closure: the calls chosen are those
 // StoredSizes prices, root by root. A term with neither is counted, and
-// sends nothing. Requires egraphMu.
+// sends nothing. Only the calls the recipient's check made are candidates
+// (HeldBy.Calls): a term with none sends nothing and isn't counted.
+// Requires egraphMu.
 func (c *Cache) storedBundleCallsLocked(build *storedBundleBuild, start int) error {
 	// Entries the bundle adds for a call's inputs are visited too.
 	for i := start; i < len(build.order); i++ {
@@ -129,6 +131,9 @@ func (c *Cache) storedBundleCallsLocked(build *storedBundleBuild, start int) err
 			continue
 		}
 		for _, group := range c.keptCallTermsLocked(res) {
+			if group = build.heldBy.sendableLocked(group); len(group) == 0 {
+				continue
+			}
 			chosen, add := c.placeableCallLocked(group, func(entry *sharedResult) bool {
 				return build.ordinary[entry.id] || build.holdsLocked(entry)
 			})
