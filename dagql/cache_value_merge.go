@@ -1662,7 +1662,7 @@ type mergeRow struct {
 	keptWithHolding, keptTaught bool
 	// rec and deps are the record relocated to the final numbers, for an
 	// action that installs it. firstUse is set for a record installed with
-	// its payload unprepared (relocateUnpreparedRowLocked).
+	// its payload unprepared (relocateUnpreparedRow).
 	rec      PersistedRecord
 	deps     []sharedResultID
 	firstUse *mergedFirstUse
@@ -2035,6 +2035,11 @@ type prerelocatedRecord struct {
 	rec     PersistedRecord
 	numbers map[uint64]sharedResultID
 	from    map[uint64]uint64
+	// firstUse and deps are, for a record left unprepared
+	// (relocateUnpreparedRow), what its row takes with it: what preparing
+	// the record at its first use takes, and its direct dependencies.
+	firstUse *mergedFirstUse
+	deps     []sharedResultID
 }
 
 // holds reports whether final, the commit's numbering, gives every number the
@@ -2054,16 +2059,19 @@ func (p *prerelocatedRecord) holds(final func(uint64) (sharedResultID, error)) b
 // writing, each record the commit would relocate as the cache stands now:
 // under the read lock it decides every row as the commit does
 // (decideMergeRowsLocked), and with no lock held it renumbers each moved
-// record's references, the records in parallel. The commit uses a relocated
-// record only when every number it gave still holds
+// record's references, and relocates each record left unprepared
+// (relocateUnpreparedRow), the records in parallel. The commit uses a
+// relocated record only when every number it gave still holds
 // (relocateMergeRowsLocked); any other is relocated under the lock, as
 // before. Decoding and encoding a record's payload is most of a commit's
 // hold of the lock on an engine taking a stream of merges, whose records
-// mostly reference entries earlier merges made. A merge that prepares no
-// record with its payload (preparesPayloads) relocates nothing here, and
-// doesn't decide its rows before its commit.
+// mostly reference entries earlier merges made; a restore's set, whose
+// records are all left unprepared, has every record it installs relocated.
+// A merge that prepares no record with its payload and leaves none
+// unprepared relocates nothing here, and doesn't decide its rows before its
+// commit.
 func (c *Cache) prerelocateMergeRows(ctx context.Context, prep *valueMergePrep) {
-	if c.testNoPrerelocation || len(prep.stale) > 0 || !prep.preparesPayloads() {
+	if c.testNoPrerelocation || len(prep.stale) > 0 || !prep.preparesPayloads() && len(prep.unprepared) == 0 {
 		return
 	}
 	commit := &valueMergeCommit{prep: prep, byOrdinal: map[uint64]*mergeRow{}, now: time.Now().Unix()}
@@ -2092,8 +2100,13 @@ func (c *Cache) prerelocateMergeRows(ctx context.Context, prep *valueMergePrep) 
 		return n, nil
 	}
 	var moved, again []uint64
+	var unprepared []*mergeRow
 	for _, row := range commit.rows {
 		if !row.action.installs() {
+			continue
+		}
+		if prep.unprepared[row.ordinal] {
+			unprepared = append(unprepared, row)
 			continue
 		}
 		if pre := prep.prerelocated[row.ordinal]; pre != nil {
@@ -2143,12 +2156,52 @@ func (c *Cache) prerelocateMergeRows(ctx context.Context, prep *valueMergePrep) 
 		}
 		return nil
 	})
+	// A record left unprepared is relocated as the commit would relocate it,
+	// with each number it is given, its own among them, noted for the commit
+	// to check.
+	relocatedUnprepared := make([]*prerelocatedRecord, len(unprepared))
+	_ = forEachIndexParallel(len(unprepared), func(i int) error {
+		row := unprepared[i]
+		numbers := map[uint64]sharedResultID{prep.firstID + row.ordinal - 1: row.res.id}
+		number := func(ordinal uint64) (sharedResultID, error) {
+			n, ok := final(prep.firstID + ordinal - 1)
+			if !ok {
+				return 0, errMergeRowOutsideClosure
+			}
+			numbers[prep.firstID+ordinal-1] = n
+			return n, nil
+		}
+		relocate := func(ref *PersistedRef) error {
+			if ref.RecipeID != nil || ref.ResultID == 0 {
+				return nil
+			}
+			n, ok := final(ref.ResultID)
+			if !ok {
+				return errMergeRowOutsideClosure
+			}
+			numbers[ref.ResultID] = n
+			ref.ResultID = uint64(n)
+			return nil
+		}
+		relocated := &mergeRow{ordinal: row.ordinal, value: row.value, res: row.res}
+		// A record that doesn't relocate here is left to the commit, which
+		// relocates it under the lock and answers its error.
+		if err := relocateUnpreparedRow(prep, relocated, prep.records[row.ordinal], number, relocate); err == nil {
+			relocatedUnprepared[i] = &prerelocatedRecord{rec: relocated.rec, numbers: numbers, firstUse: relocated.firstUse, deps: relocated.deps}
+		}
+		return nil
+	})
 	if prep.prerelocated == nil {
-		prep.prerelocated = make(map[uint64]*prerelocatedRecord, len(moved))
+		prep.prerelocated = make(map[uint64]*prerelocatedRecord, len(moved)+len(unprepared))
 	}
 	for i, ordinal := range moved {
 		if relocated[i] != nil {
 			prep.prerelocated[ordinal] = relocated[i]
+		}
+	}
+	for i, row := range unprepared {
+		if relocatedUnprepared[i] != nil {
+			prep.prerelocated[row.ordinal] = relocatedUnprepared[i]
 		}
 	}
 	for i, ordinal := range again {
@@ -2171,15 +2224,18 @@ func (c *Cache) notePrerelocated(prep *valueMergePrep) {
 	}
 }
 
-// relocateUnpreparedRowLocked relocates an installed record that a merge
-// leaves unprepared (valueMergePrep.unprepared): its identity, call and
-// offers go to the final numbers, as relocateMergeRowsLocked relocates any
-// record, and its payload stays as the Cloud sent it. The row keeps what
-// preparing it at its first use takes (mergedFirstUse): the entry of each
-// Cloud number its payload can name, one of its direct dependencies, which
-// are the row's dependencies too, and its complete parts as the bundle
-// carried them. Requires egraphMu.
-func relocateUnpreparedRowLocked(prep *valueMergePrep, row *mergeRow, source PersistedRecord, number func(uint64) (sharedResultID, error), relocate PersistedRefVisitor) error {
+// relocateUnpreparedRow relocates an installed record that a merge leaves
+// unprepared (valueMergePrep.unprepared): its identity, call and offers go
+// to the final numbers, which number and relocate give, as
+// relocateMergeRowsLocked relocates any record, and its payload stays as the
+// Cloud sent it. The row keeps what preparing it at its first use takes
+// (mergedFirstUse): the entry of each Cloud number its payload can name, one
+// of its direct dependencies, which are the row's dependencies too, and its
+// complete parts as the bundle carried them, and the merge's origin as the
+// preparation has it, which the commit gives a record relocated before it.
+// It reads only the preparation, the record and the numbers, so it runs
+// before the commit's lock (prerelocateMergeRows) as under it.
+func relocateUnpreparedRow(prep *valueMergePrep, row *mergeRow, source PersistedRecord, number func(uint64) (sharedResultID, error), relocate PersistedRefVisitor) error {
 	rec := source
 	rec.ResultID = uint64(row.res.id)
 	rec.Envelope.ResultID = rec.ResultID
@@ -2270,10 +2326,19 @@ func (c *Cache) relocateMergeRowsLocked(commit *valueMergeCommit) error {
 			continue
 		}
 		if prep.unprepared[row.ordinal] {
+			pre := prep.prerelocated[row.ordinal]
+			delete(prep.prerelocated, row.ordinal)
+			if pre != nil && pre.holds(final) {
+				// Relocated before the lock with the numbers the commit
+				// decides: what relocating it here would give.
+				row.rec, row.recordBytes, row.offers, row.firstUse, row.deps = pre.rec, prep.recordBytes[row.ordinal], pre.rec.Envelope.PendingOffers, pre.firstUse, pre.deps
+				row.firstUse.origin = prep.origin
+				continue
+			}
 			if c.testRelocatedUnderLock != nil {
 				c.testRelocatedUnderLock(row.ordinal)
 			}
-			if err := relocateUnpreparedRowLocked(prep, row, source, number, relocate); err != nil {
+			if err := relocateUnpreparedRow(prep, row, source, number, relocate); err != nil {
 				return err
 			}
 			continue

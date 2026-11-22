@@ -312,10 +312,10 @@ func TestMergedRecordReplacingAnEntryInPlaceIsPreparedAtItsFirstUse(t *testing.T
 }
 
 // A set from the Cloud, whose records all carry their parts, prepares none
-// of them with its payload, so its merge decides its rows once, in its
-// commit: deciding them before, to relocate prepared payloads early, would
-// serve no record.
-func TestMergedSetDecidesItsRowsOnlyInItsCommit(t *testing.T) {
+// of them with its payload, so its merge doesn't decide its rows as it
+// prepares its records; it decides them before its commit, to relocate the
+// records it installs before the commit takes the graph lock.
+func TestMergedSetDecidesItsRowsBeforeItsCommitOnly(t *testing.T) {
 	t.Parallel()
 	bundle := firstUseTestCloud(t).bundle
 	ctx, c, _ := transferTestCache(t)
@@ -324,7 +324,7 @@ func TestMergedSetDecidesItsRowsOnlyInItsCommit(t *testing.T) {
 	p, err := c.PrepareValueMerge(ctx, cloudCacheID, bundle)
 	require.NoError(t, err)
 	require.Nil(t, p.prep.early, "the rows aren't decided as the records are prepared")
-	require.False(t, prerelocated, "nor again before the commit")
+	require.True(t, prerelocated, "but before the commit, to relocate them")
 	reply, err := c.CommitValueMerge(ctx, p)
 	require.NoError(t, err)
 	require.True(t, reply.Committed)
