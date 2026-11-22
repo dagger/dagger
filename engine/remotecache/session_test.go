@@ -145,7 +145,7 @@ type fakeAdapter struct {
 	late        func(time.Time, map[uint64]struct{}) []dagql.RemoteMiss
 	// check, if set, answers CheckRestorePart's error for each part it
 	// checks.
-	check func(dagql.ValueBundle) error
+	check       func(dagql.ValueBundle) error
 	restored    chan RestoreReport
 	restoreSeen chan dagql.ValueBundle
 	// unretainedSeen receives each part's unretained roots, and sourceSeen
