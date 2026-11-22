@@ -330,6 +330,7 @@ main = true
 		{Name: "broken-dep-use-broken-plain", Module: "./viztest/broken-dep", Function: "use-broken", Fail: true, NoExpand: true, Quiet: true, Plain: true, FuzzyTest: brokenGoModulePlainOutput},
 		// test that a module with an unloadable dependency surfaces the error
 		{Module: "./viztest/broken-dep-sdk", Function: "use-invalid", Fail: true},
+		{Name: "broken-dep-sdk-use-invalid-default", Module: "./viztest/broken-dep-sdk", Function: "use-invalid", Fail: true, NoExpand: true, Quiet: true},
 
 		// test that module function call errors are properly stamped with their origin
 		{Function: "call-failing-dep", Fail: true},

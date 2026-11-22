@@ -75,11 +75,12 @@ func TestErrorCauseBreadcrumbFollowsVisibility(t *testing.T) {
 	require.NotContains(t, out, "gobuild")
 }
 
-// TestErrorCauseBreadcrumbKeepsModuleLoad covers a module whose runtime
-// fails to build while the workspace loads: the breadcrumb names the module's
-// load, beneath the workspace's, which doesn't stand for it, and leaves out
-// the load's plumbing, whose encapsulation still stands for the build's calls.
-func TestErrorCauseBreadcrumbKeepsModuleLoad(t *testing.T) {
+// TestErrorCauseBreadcrumbNamesEveryLandmark covers a module whose runtime
+// fails to build while the workspace loads: every shown ancestor that
+// encapsulates its work, the module's load and its build, is named, and the
+// steps between them, and between the build and the origin, fold away.
+// Internal ancestors are left out, their encapsulation with them.
+func TestErrorCauseBreadcrumbNamesEveryLandmark(t *testing.T) {
 	start := time.Unix(100, 0)
 	end := start.Add(time.Second)
 	id := prettyTestSpanID
@@ -87,11 +88,11 @@ func TestErrorCauseBreadcrumbKeepsModuleLoad(t *testing.T) {
 	db := dagui.NewDB()
 	db.ImportSnapshots([]dagui.SpanSnapshot{
 		{ID: id(1), TraceID: prettyTestTraceID(), Name: "dagger call", StartTime: start, EndTime: end},
-		{ID: id(2), TraceID: prettyTestTraceID(), ParentID: id(1), Name: "load workspace: .", StartTime: start, EndTime: end, Status: failed},
-		{ID: id(3), TraceID: prettyTestTraceID(), ParentID: id(2), Name: dagui.WorkspaceLoadSpanName, Encapsulate: true, StartTime: start, EndTime: end, Status: failed},
-		{ID: id(4), TraceID: prettyTestTraceID(), ParentID: id(3), Name: "load module: ./broken", StartTime: start, EndTime: end, Status: failed},
+		{ID: id(2), TraceID: prettyTestTraceID(), ParentID: id(1), Name: "load workspace: .", Encapsulate: true, StartTime: start, EndTime: end, Status: failed},
+		{ID: id(3), TraceID: prettyTestTraceID(), ParentID: id(2), Name: "loading type definitions", Internal: true, Encapsulate: true, StartTime: start, EndTime: end, Status: failed},
+		{ID: id(4), TraceID: prettyTestTraceID(), ParentID: id(3), Name: "load module: ./broken", Encapsulate: true, StartTime: start, EndTime: end, Status: failed},
 		{ID: id(5), TraceID: prettyTestTraceID(), ParentID: id(4), Name: "ModuleSource.asModule", StartTime: start, EndTime: end, Status: failed},
-		{ID: id(6), TraceID: prettyTestTraceID(), ParentID: id(5), Name: "module SDK: load runtime", Encapsulate: true, StartTime: start, EndTime: end, Status: failed},
+		{ID: id(6), TraceID: prettyTestTraceID(), ParentID: id(5), Name: "build broken", Encapsulate: true, StartTime: start, EndTime: end, Status: failed},
 		{ID: id(7), TraceID: prettyTestTraceID(), ParentID: id(6), Name: "binary", StartTime: start, EndTime: end, Status: failed},
 		{ID: id(8), TraceID: prettyTestTraceID(), ParentID: id(7), Name: "withExec", StartTime: start, EndTime: end, Status: failed},
 	})
@@ -102,45 +103,16 @@ func TestErrorCauseBreadcrumbKeepsModuleLoad(t *testing.T) {
 	var output bytes.Buffer
 	require.NoError(t, fe.FinalRender(&output))
 	out := ansi.Strip(output.String())
-	require.Contains(t, out, VertBoldDash3+" "+dagui.WorkspaceLoadSpanName+" › load module: ./broken › \n")
+	require.Contains(t, out, VertBoldDash3+" load module: ./broken › build broken › \n")
+	require.NotContains(t, out, "loading type definitions")
 	require.NotContains(t, out, "ModuleSource.asModule")
-	require.NotContains(t, out, "module SDK: load runtime")
 	require.NotContains(t, out, "binary")
 }
 
-// TestErrorCauseBreadcrumbFoldsTypeDefsWithoutLoad covers the CLI loading a
-// module's type definitions after serving it, under a load of its own: with
-// no engine "load module" row beneath the CLI's load of type definitions,
-// that load stands for what it encapsulates, as before.
-func TestErrorCauseBreadcrumbFoldsTypeDefsWithoutLoad(t *testing.T) {
-	start := time.Unix(100, 0)
-	end := start.Add(time.Second)
-	id := prettyTestSpanID
-	failed := sdktrace.Status{Code: codes.Error, Description: "boom"}
-	db := dagui.NewDB()
-	db.ImportSnapshots([]dagui.SpanSnapshot{
-		{ID: id(1), TraceID: prettyTestTraceID(), Name: "dagger shell", StartTime: start, EndTime: end},
-		{ID: id(2), TraceID: prettyTestTraceID(), ParentID: id(1), Name: "initializing module", StartTime: start, EndTime: end, Status: failed},
-		{ID: id(3), TraceID: prettyTestTraceID(), ParentID: id(2), Name: dagui.WorkspaceLoadSpanName, Encapsulate: true, StartTime: start, EndTime: end, Status: failed},
-		{ID: id(4), TraceID: prettyTestTraceID(), ParentID: id(3), Name: "Query.currentTypeDefs", StartTime: start, EndTime: end, Status: failed},
-		{ID: id(5), TraceID: prettyTestTraceID(), ParentID: id(4), Name: "ModuleSource.asModule", StartTime: start, EndTime: end, Status: failed},
-		{ID: id(6), TraceID: prettyTestTraceID(), ParentID: id(5), Name: "withExec", StartTime: start, EndTime: end, Status: failed},
-	})
-	db.Spans.Map[id(2)].AddErrorOrigin(db.Spans.Map[id(6)])
-	db.SetPrimarySpan(id(1))
-	fe := newWithTerminal(io.Discard, db, tuist.NewHeadlessTerminal(120, 30))
-	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
-	var output bytes.Buffer
-	require.NoError(t, fe.FinalRender(&output))
-	out := ansi.Strip(output.String())
-	require.Contains(t, out, VertBoldDash3+" "+dagui.WorkspaceLoadSpanName+" › \n")
-	require.NotContains(t, out, "Query.currentTypeDefs ›")
-}
-
-// TestErrorCauseBreadcrumbKeepsLoadPlumbingWithoutLoad covers a module a
-// function loads itself, whose runtime fails to build: with no "load module"
-// row to stand for it, the load's plumbing is what names it.
-func TestErrorCauseBreadcrumbKeepsLoadPlumbingWithoutLoad(t *testing.T) {
+// TestErrorCauseBreadcrumbKeepsStepsAboveLandmarks covers a module a
+// function loads itself, whose runtime fails to build: the steps above the
+// outermost landmark, the build, are named as they are.
+func TestErrorCauseBreadcrumbKeepsStepsAboveLandmarks(t *testing.T) {
 	start := time.Unix(100, 0)
 	end := start.Add(time.Second)
 	id := prettyTestSpanID
@@ -150,7 +122,7 @@ func TestErrorCauseBreadcrumbKeepsLoadPlumbingWithoutLoad(t *testing.T) {
 		{ID: id(1), TraceID: prettyTestTraceID(), Name: "dagger call", StartTime: start, EndTime: end},
 		{ID: id(2), TraceID: prettyTestTraceID(), ParentID: id(1), Name: "loadOther", StartTime: start, EndTime: end, Status: failed},
 		{ID: id(3), TraceID: prettyTestTraceID(), ParentID: id(2), Name: "ModuleSource.asModule", StartTime: start, EndTime: end, Status: failed},
-		{ID: id(4), TraceID: prettyTestTraceID(), ParentID: id(3), Name: "module SDK: load runtime", Encapsulate: true, StartTime: start, EndTime: end, Status: failed},
+		{ID: id(4), TraceID: prettyTestTraceID(), ParentID: id(3), Name: "build other", Encapsulate: true, StartTime: start, EndTime: end, Status: failed},
 		{ID: id(5), TraceID: prettyTestTraceID(), ParentID: id(4), Name: "binary", StartTime: start, EndTime: end, Status: failed},
 		{ID: id(6), TraceID: prettyTestTraceID(), ParentID: id(5), Name: "withExec", StartTime: start, EndTime: end, Status: failed},
 	})
@@ -160,5 +132,5 @@ func TestErrorCauseBreadcrumbKeepsLoadPlumbingWithoutLoad(t *testing.T) {
 	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
 	var output bytes.Buffer
 	require.NoError(t, fe.FinalRender(&output))
-	require.Contains(t, ansi.Strip(output.String()), VertBoldDash3+" ModuleSource.asModule › module SDK: load runtime › \n")
+	require.Contains(t, ansi.Strip(output.String()), VertBoldDash3+" ModuleSource.asModule › build other › \n")
 }

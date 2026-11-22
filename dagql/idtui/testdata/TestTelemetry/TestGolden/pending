@@ -7,8 +7,6 @@ Expected stderr:
 ╰╴✔ starting session X.Xs
 
 ✔ load workspace: . X.Xs
-╰╴✔ loading type definitions X.Xs
-
 ✔ parsing command line arguments X.Xs
 
 $ viztest: Viztest! X.Xs CACHED

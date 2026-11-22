@@ -9228,35 +9228,15 @@ func (fe *frontendPretty) renderErrorCause(ctx tuist.Context, out TermOutput, r 
 // its breadcrumb names, below row, nearest the origin first. The breadcrumb
 // abbreviates the path on its own terms, at every verbosity, rather than
 // mirroring what the tree shows (which reveals a failed span's encapsulated
-// children). It leaves out internal ancestors, and the outermost shown
-// ancestor that encapsulates its work stands for everything beneath it, as a
-// module's build stands for the calls that build it. An internal ancestor's
+// children). It leaves out internal ancestors. Every shown ancestor that
+// encapsulates its work is a landmark, named for the work beneath it, as a
+// module's load and its build are; the steps between landmarks, and between
+// the innermost one and the origin, fold away. The ancestors above the
+// outermost landmark are named as they are. An internal ancestor's
 // encapsulation doesn't count, as it isn't shown.
-//
-// A module load is told by its own row: the CLI's load of type definitions
-// (dagui.WorkspaceLoadSpanName) doesn't stand for a "load module" row
-// beneath it, and beneath that row the load's plumbing is left out, though
-// it still stands for the work it encapsulates (see isModuleLoadPlumbing).
-// Elsewhere, such as a load a function makes, the plumbing is all that
-// names the load, and stays, and the CLI's load folds as any other.
 func errorCauseBreadcrumb(origin *dagui.TraceTree, row *dagui.Span) []*dagui.TraceTree {
-	isLoad := func(p *dagui.TraceTree) bool {
-		return p.Span.Received && !p.Span.IsInternal() && strings.HasPrefix(p.Span.Name, moduleLoadSpanPrefix)
-	}
-	// underLoad: the origin is beneath a load's row; seenLoad: the walk up
-	// has passed it.
-	var underLoad, seenLoad bool
-	for p := origin.Parent; p != nil && p.Span.ID != row.ID; p = p.Parent {
-		if isLoad(p) {
-			underLoad = true
-			break
-		}
-	}
 	var parents []*dagui.TraceTree
 	for p := origin.Parent; p != nil; p = p.Parent {
-		if isLoad(p) {
-			seenLoad = true
-		}
 		if p.Span.ID == row.ID {
 			break
 		}
@@ -9271,29 +9251,15 @@ func errorCauseBreadcrumb(origin *dagui.TraceTree, row *dagui.Span) []*dagui.Tra
 		if p.Span.IsInternal() {
 			continue
 		}
-		if p.Span.Encapsulate && (!seenLoad || p.Span.Name != dagui.WorkspaceLoadSpanName) {
-			parents = parents[:0]
-		}
-		if underLoad && !seenLoad && isModuleLoadPlumbing(p.Span) {
-			continue
+		if p.Span.Encapsulate {
+			// A landmark: the steps beneath it, up to the next landmark, fold.
+			parents = slices.DeleteFunc(parents, func(t *dagui.TraceTree) bool {
+				return !t.Span.Encapsulate
+			})
 		}
 		parents = append(parents, p)
 	}
 	return parents
-}
-
-// moduleLoadSpanPrefix begins the name of the engine's span over a load of
-// a module a client asked for.
-const moduleLoadSpanPrefix = "load module: "
-
-// isModuleLoadPlumbing reports whether span is a shown step of the engine's
-// that loads a module, which the module's "load module" row stands for: a
-// ModuleSource call or the load of its SDK's runtime. The rest of a load's
-// plumbing, such as a function call's (FunctionPlumbing) or the load of its
-// dependencies, is internal, and left out already.
-func isModuleLoadPlumbing(span *dagui.Span) bool {
-	return strings.HasPrefix(span.Name, "ModuleSource.") ||
-		span.Name == "module SDK: load runtime"
 }
 
 func (fe *frontendPretty) hasShownRootError() bool {
