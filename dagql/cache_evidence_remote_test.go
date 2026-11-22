@@ -282,6 +282,57 @@ func TestCacheEvidenceKeptOverRemote(t *testing.T) {
 		"merged at %d, looked up at %d", ev.KeptOverRemoteMergedAtUnixNano, ev.LookupAtUnixNano)
 }
 
+// evidenceRemoteTestReported is a transferTestValue that reports its
+// laziness, as core's values do. It carries a lazy evaluation either way, and
+// reports computation pending or not, as a value whose operation hasn't or
+// has already run does.
+type evidenceRemoteTestReported struct {
+	*transferTestValue
+	pending bool
+}
+
+func (evidenceRemoteTestReported) LazyEvalFunc() LazyEvalFunc {
+	return func(context.Context) error { return nil }
+}
+func (v evidenceRemoteTestReported) HasPendingLazyComputation() bool { return v.pending }
+func (evidenceRemoteTestReported) LazyGroupStoredPart(LazyGroupKey) PartKey {
+	return ""
+}
+
+// A value that reports its laziness is judged by its report when a merge
+// lands between its call's lookup and its publication: one whose operation
+// already ran is kept over the merged record, though it still carries a lazy
+// evaluation, and one with computation pending adopts the record.
+func TestCacheEvidenceKeptOverRemoteByReport(t *testing.T) {
+	t.Parallel()
+	for _, pending := range []bool{false, true} {
+		bundle, _ := mergeTestSource(t, "root", "sent")
+		ctx, c, srv := transferTestCache(t)
+		var (
+			once     sync.Once
+			mergeErr error
+		)
+		c.testBeforePublicationIndex = func(*ongoingCall) {
+			once.Do(func() { _, mergeErr = c.MergeValues(ctx, cloudCacheID, bundle) })
+		}
+		frame := evidenceRemoteTestRootFrame()
+		req := &CallRequest{ResultCall: frame, IsPersistable: true, CacheEvidence: NewCacheDecision()}
+		res, err := c.GetOrInitCall(ctx, "test-session", srv, req, func(context.Context) (AnyResult, error) {
+			return NewResultForCall(evidenceRemoteTestReported{&transferTestValue{Text: "computed"}, pending}, frame)
+		})
+		assert.NilError(t, err)
+		assert.NilError(t, mergeErr)
+		ev := req.CacheEvidence
+		assert.Equal(t, !pending, ev.KeptOverRemote, "pending %v", pending)
+		assert.Equal(t, pending, ev.Adopted && ev.AdoptedRemote, "pending %v", pending)
+		if pending {
+			assert.Equal(t, "sent", res.Unwrap().(*transferTestValue).Text)
+		} else {
+			assert.Equal(t, "computed", res.Unwrap().(evidenceRemoteTestReported).Text)
+		}
+	}
+}
+
 // A publication that adopts another session's live entry says so, and the
 // entry isn't remote.
 func TestCacheEvidenceAdoptedLocal(t *testing.T) {
