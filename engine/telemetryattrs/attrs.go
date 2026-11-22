@@ -971,6 +971,15 @@ const (
 	// belong to that value. Absent while the count is 0.
 	CacheReplacementsAttr = "dagger.io/cache.replacements"
 
+	// CacheStoredPartAttr is, on a lazy-evaluation span whose attempt opened
+	// a part this engine saved before (as a value restored from the engine's
+	// own state is opened on its first use), that part's address, as in
+	// CachePartsAttr. Such an attempt ran none of the value's step: a reader
+	// that takes an evaluation for the engine computing the value leaves it
+	// out, as it leaves out an offer's install (CacheOfferPartAttr). Absent on
+	// any other span, and on an attempt that failed.
+	CacheStoredPartAttr = "dagger.io/cache.stored.part"
+
 	// A part installed from a Cloud offer, stamped on the lazy-evaluation
 	// span of the task that installed it, which names the receiving entry
 	// (CacheResultIDAttr). That task installs one part, and the demanding
