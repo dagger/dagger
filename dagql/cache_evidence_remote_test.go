@@ -2,8 +2,8 @@ package dagql
 
 // Cache-evidence facts about remote candidates and new inputs: which inputs of
 // a missed call were new to the cache, which lost candidates were values a
-// Cloud merge installed, publication adopting a merged entry, and the merge
-// origin a lazy-evaluation span reports.
+// Cloud merge installed, publication adopting a merged entry or keeping its
+// made value over one, and the merge origin a lazy-evaluation span reports.
 
 import (
 	"context"
@@ -169,9 +169,19 @@ func TestCacheEvidenceIncompatibleRemote(t *testing.T) {
 	}
 }
 
+// evidenceRemoteTestPending is a transferTestValue whose content is still to
+// be made when its call returns, as a lazy core value's is: it has a lazy
+// evaluation pending.
+type evidenceRemoteTestPending struct{ *transferTestValue }
+
+func (evidenceRemoteTestPending) LazyEvalFunc() LazyEvalFunc {
+	return func(context.Context) error { return nil }
+}
+
 // A merge that lands between a call's lookup and its publication is adopted
-// by the publication, and the call's span says so, with the merge's commit
-// time after the lookup.
+// by the publication when the call's value has made nothing yet: the merged
+// entry's content can be fetched, and the call's would have to be made. The
+// call's span says so, with the merge's commit time after the lookup.
 func TestCacheEvidenceAdoptedRemote(t *testing.T) {
 	t.Parallel()
 	bundle, _ := mergeTestSource(t, "root", "sent")
@@ -187,7 +197,7 @@ func TestCacheEvidenceAdoptedRemote(t *testing.T) {
 	frame := evidenceRemoteTestRootFrame()
 	req := &CallRequest{ResultCall: frame, IsPersistable: true, CacheEvidence: NewCacheDecision()}
 	res, err := c.GetOrInitCall(ctx, "test-session", srv, req, func(context.Context) (AnyResult, error) {
-		return NewResultForCall(&transferTestValue{Text: "computed"}, frame)
+		return NewResultForCall(evidenceRemoteTestPending{&transferTestValue{Text: "computed"}}, frame)
 	})
 	assert.NilError(t, err)
 	assert.NilError(t, mergeErr)
@@ -199,6 +209,77 @@ func TestCacheEvidenceAdoptedRemote(t *testing.T) {
 	assert.Assert(t, ev.AdoptedRemote)
 	assert.Assert(t, ev.AdoptedMergedAtUnixNano > ev.LookupAtUnixNano,
 		"merged at %d, looked up at %d", ev.AdoptedMergedAtUnixNano, ev.LookupAtUnixNano)
+	assert.Assert(t, !ev.KeptOverRemote)
+}
+
+// A merge that lands between a call's lookup and its publication doesn't take
+// the place of a value the call has made: the publication keeps the call's
+// value, in the merged entry, which nothing else uses. The call returns its
+// own value, the entry's content is read from it rather than fetched with the
+// offer the merged record came with, and the call's span says the
+// publication kept its value over a merged record, with the merge's commit
+// time after the lookup.
+func TestCacheEvidenceKeptOverRemote(t *testing.T) {
+	t.Parallel()
+	bundle, _ := mergeTestSource(t, "root", "sent")
+	ctx, c, srv := transferTestCache(t)
+	leaf := persistedListTestResult(t, ctx, c, srv, "leaf", String("owned"))
+	var (
+		once     sync.Once
+		reply    MergeReply
+		mergeErr error
+	)
+	c.testBeforePublicationIndex = func(*ongoingCall) {
+		once.Do(func() {
+			reply, mergeErr = c.MergeValues(ctx, cloudCacheID, bundle)
+			if mergeErr != nil {
+				return
+			}
+			// The record comes with an offer of its content, as one the
+			// Cloud stores does.
+			c.egraphMu.Lock()
+			merged := c.resultsByID[sharedResultID(reply.Imported()[0].ResultID)]
+			record := PersistedPartOffer{Address: PersistedPartAddress{Part: "snapshot"}, Value: SnapshotValue{Kind: "directory"}, Owner: PersistedOfferOwner{DependencyIDs: []uint64{uint64(leaf.cacheSharedResult().id)}}}
+			owner, err := c.newOfferOwnerLocked(ctx, record.Owner)
+			if err == nil {
+				err = c.testAttachPartOfferLocked(merged, record.Address, &partOffer{record: record, owner: owner})
+			}
+			c.egraphMu.Unlock()
+			mergeErr = err
+		})
+	}
+	frame := evidenceRemoteTestRootFrame()
+	req := &CallRequest{ResultCall: frame, IsPersistable: true, CacheEvidence: NewCacheDecision()}
+	res, err := c.GetOrInitCall(ctx, "test-session", srv, req, func(context.Context) (AnyResult, error) {
+		return NewResultForCall(&transferTestValue{Text: "ready"}, frame)
+	})
+	assert.NilError(t, err)
+	assert.NilError(t, mergeErr)
+	assert.Equal(t, "ready", res.Unwrap().(*transferTestValue).Text, "the call returns the value it made")
+	assert.Equal(t, reply.Imported()[0].ResultID, uint64(res.cacheSharedResult().id), "in the merged entry, which nothing used")
+
+	c.egraphMu.RLock()
+	offers := 0
+	for range res.cacheSharedResult().partOffersLocked() {
+		offers++
+	}
+	imported := res.cacheSharedResult().imported
+	c.egraphMu.RUnlock()
+	assert.Equal(t, 0, offers, "the merged record's offer went with its value")
+	assert.Assert(t, !imported)
+	source, err := c.AcquireEquivalentPartSource(ctx, res, PersistedPartAddress{Part: "snapshot"})
+	assert.NilError(t, err)
+	assert.Assert(t, source != nil)
+	assert.Equal(t, PartReady, source.Readiness(), "the content is the engine's own")
+	assert.Assert(t, source.source == res.cacheSharedResult())
+	assert.NilError(t, source.Release(ctx))
+
+	ev := req.CacheEvidence
+	assert.Equal(t, CacheOutcomeExecuted, ev.Outcome)
+	assert.Assert(t, !ev.Adopted)
+	assert.Assert(t, ev.KeptOverRemote)
+	assert.Assert(t, ev.KeptOverRemoteMergedAtUnixNano > ev.LookupAtUnixNano,
+		"merged at %d, looked up at %d", ev.KeptOverRemoteMergedAtUnixNano, ev.LookupAtUnixNano)
 }
 
 // A publication that adopts another session's live entry says so, and the
