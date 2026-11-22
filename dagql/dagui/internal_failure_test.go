@@ -52,7 +52,7 @@ func TestInternalFailureGivesPlaceToItsCause(t *testing.T) {
 			Encapsulate: true},
 		// A step of its own, and the engine's own internal step within it,
 		// outside the SDK's encapsulation.
-		{ID: extraID, TraceID: traceID, ParentID: primaryID, Name: "load extra module: ./broken-dep",
+		{ID: extraID, TraceID: traceID, ParentID: primaryID, Name: "load module: ./broken-dep",
 			StartTime: start, EndTime: end, Status: failed},
 		{ID: depsID, TraceID: traceID, ParentID: extraID, Name: "load dep modules",
 			StartTime: start, EndTime: end, Status: failed, Internal: true},

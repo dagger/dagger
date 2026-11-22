@@ -1875,12 +1875,11 @@ func moduleProgressName(mod pendingModule) string {
 	return "<unknown>"
 }
 
+// moduleLoadJobName names a module load's span the same for both kinds: an
+// extra module, one a client asks for with -m, is usually the main module, so
+// "extra" would only leak the engine's own vocabulary.
 func moduleLoadJobName(load moduleLoadRequest) string {
-	prefix := "load module: "
-	if load.mod.Kind == moduleLoadKindExtra {
-		prefix = "load extra module: "
-	}
-	return prefix + moduleProgressName(load.mod)
+	return "load module: " + moduleProgressName(load.mod)
 }
 
 // reportSkippedModule surfaces a best-effort load failure as its own span,
