@@ -202,35 +202,21 @@ func gitWorkspaceModuleConfig(ctx context.Context, files *core.GitTreeFiles, dir
 	return nil, nil
 }
 
-// sparseTreeFields are the questions a sparse workspace tree's list of paths
-// answers (core.GitSparseTree), each a call on the tree, so that a hit answers
-// it from the call's record without the tree's files. Each is a function of the
-// tree alone, whose recipe holds its commit and workspace directory. On a
-// directory that isn't a sparse workspace tree, which has no list beside it,
-// each fails.
+// sparseTreeFields are the questions about a sparse workspace tree that
+// sessions ask under no cached call: whether looking a path up in it answers
+// as the full checkout does, which workspace detection and the config readers
+// ask in every session (core.GitSparseTree). Each is a call on the tree, so a
+// hit answers it from the call's record without the tree's files. It's a
+// function of the tree alone, whose recipe holds its commit and workspace
+// directory. On a directory that isn't a sparse workspace tree, which has no
+// list beside it, it fails.
 func (s *gitSchema) sparseTreeFields() dagql.Fields[*core.Directory] {
-	readArgs := []dagql.Argument{
-		dagql.Arg("path").Doc("The directory read, from the repository's root."),
-		dagql.Arg("include").Doc("The read's include patterns."),
-		dagql.Arg("exclude").Doc("The read's exclude patterns."),
-		dagql.Arg("gitignore").Doc("Whether the read applies .gitignore files."),
-	}
 	return dagql.Fields[*core.Directory]{
 		dagql.NodeFunc("__gitSparseCovers", s.gitSparseCovers).
 			View(AfterVersion("v1.0.0-beta.26")).
 			IsPersistable().
 			Doc(`(Internal-only) Whether looking the path up in this sparse workspace tree answers as the full checkout does.`).
 			Args(dagql.Arg("path").Doc("The path, from the repository's root.")),
-		dagql.NodeFunc("__gitSparseReadSource", s.gitSparseReadSource).
-			View(AfterVersion("v1.0.0-beta.26")).
-			IsPersistable().
-			Doc(`(Internal-only) Where a filtered read of this sparse workspace tree's commit gets what the full checkout gives: "full", "planned" (this tree) or "own" (a tree of the read's own files).`).
-			Args(readArgs...),
-		dagql.NodeFunc("__gitSparseReadFiles", s.gitSparseReadFiles).
-			View(AfterVersion("v1.0.0-beta.26")).
-			IsPersistable().
-			Doc(`(Internal-only) The files ("mode oid path") and directories of a read this sparse workspace tree's commit serves from a tree of its own, or null for a tree that lists no objects.`).
-			Args(readArgs...),
 	}
 }
 
@@ -241,34 +227,6 @@ type gitSparseCoversArgs struct {
 func (s *gitSchema) gitSparseCovers(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args gitSparseCoversArgs) (dagql.Boolean, error) {
 	covered, err := core.GitSparseTreeCovers(ctx, parent, args.Path)
 	return dagql.NewBoolean(covered), err
-}
-
-type gitSparseReadArgs struct {
-	Path string
-	core.CopyFilter
-}
-
-func (s *gitSchema) gitSparseReadSource(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args gitSparseReadArgs) (dagql.String, error) {
-	source, err := core.GitSparseTreeReadSource(ctx, parent, args.Path, args.CopyFilter)
-	if err != nil {
-		return "", err
-	}
-	return dagql.NewString(source.String()), nil
-}
-
-// gitSparseReadFiles answers with a list as long as the read selects. One
-// longer than a persisted File.contents may be is kept only while a session
-// uses it, as such a read is: a later session reads the tree's lists again
-// rather than the cache holding that many bytes in a record.
-func (s *gitSchema) gitSparseReadFiles(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args gitSparseReadArgs) (core.JSON, error) {
-	answer, err := core.GitSparseTreeReadFiles(ctx, parent, args.Path, args.CopyFilter)
-	if err != nil {
-		return nil, err
-	}
-	if len(answer) > fileContentsPersistLimit {
-		dagql.DeclinePersistence(ctx)
-	}
-	return answer, nil
 }
 
 type sparseFilesArgs struct {

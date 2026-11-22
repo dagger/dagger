@@ -3,7 +3,6 @@ package core
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -397,11 +396,14 @@ func (ref *RemoteGitRef) SparseTree(
 // commit's whole list of paths, so a file it doesn't hold can never go missing:
 // a read selecting one, or a path it can't answer for, goes to the full tree.
 //
-// Each question about that list is a call on Root (core/schema's
-// __gitSparseCovers, __gitSparseReadSource and __gitSparseReadFiles), so a
-// cache hit answers it from the call's record, without the tree's files; a
-// miss reads the list from the tree's snapshot (GitSparseTreeCovers and the
-// others).
+// Whether a lookup of a path answers as the full tree does is a call on Root
+// (core/schema's __gitSparseCovers), since workspace detection and the config
+// readers ask it in every session, under no cached call: a hit answers it from
+// the call's record, without the tree's files, and a miss reads the list from
+// the tree's snapshot (GitSparseTreeCovers). A read's route and files are
+// worked out from the list itself (ReadSource, ReadFiles): they're asked only
+// by a workspace read that runs, which copies out of this tree or a tree of
+// its own anyway.
 type GitSparseTree struct {
 	Root dagql.ObjectResult[*Directory]
 }
@@ -413,24 +415,6 @@ type gitSparseManifest struct {
 	// objects holds each path's mode and object ID, for readFiles; nil for a
 	// tree written before sparse trees listed them.
 	objects map[string]gitTreeEntry
-}
-
-// selectSparseTree asks one of the tree's questions.
-func (t *GitSparseTree) selectSparseTree(ctx context.Context, dest any, field string, args ...dagql.NamedInput) error {
-	dag, err := CurrentDagqlServer(ctx)
-	if err != nil {
-		return err
-	}
-	return dag.Select(ctx, t.Root, dest, dagql.Selector{Field: field, Args: args})
-}
-
-func gitSparseReadArgs(dir string, filter CopyFilter) []dagql.NamedInput {
-	return []dagql.NamedInput{
-		{Name: "path", Value: dagql.NewString(dir)},
-		{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(filter.Include...))},
-		{Name: "exclude", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(filter.Exclude...))},
-		{Name: "gitignore", Value: dagql.NewBoolean(filter.Gitignore)},
-	}
 }
 
 // gitSparseListKind is one of the two lists a sparse tree's snapshot holds.
@@ -580,27 +564,6 @@ const (
 	GitSparseReadOwn
 )
 
-// gitSparseReadSourceNames names each GitSparseReadSource in
-// __gitSparseReadSource's answer.
-var gitSparseReadSourceNames = map[GitSparseReadSource]string{
-	GitSparseReadFull:    "full",
-	GitSparseReadPlanned: "planned",
-	GitSparseReadOwn:     "own",
-}
-
-func (source GitSparseReadSource) String() string {
-	return gitSparseReadSourceNames[source]
-}
-
-func parseGitSparseReadSource(name string) (GitSparseReadSource, error) {
-	for source, sourceName := range gitSparseReadSourceNames {
-		if sourceName == name {
-			return source, nil
-		}
-	}
-	return GitSparseReadFull, fmt.Errorf("sparse read source: unknown %q", name)
-}
-
 // ReadSource picks where a copy of the directory dir with this filter gets
 // exactly what it gets from the full tree. A sparse tree serves it when dir is
 // a real directory of the tree, reached through no symlink, and the filter
@@ -608,18 +571,14 @@ func parseGitSparseReadSource(name string) (GitSparseReadSource, error) {
 // file and every .gitignore a gitignore filter reads, and otherwise one of the
 // read's own. A dir the commit doesn't have, which fails the same way in both,
 // is read from this one as well.
+//
+// It reads the tree's list, once a session. So a read that runs on an engine
+// holding the tree only as another engine's record unpacks the tree here,
+// even where its route and files would be enough: a known limit, which only a
+// read routed to a tree of its own pays for no reason, since one this tree
+// serves copies out of it next.
 func (t *GitSparseTree) ReadSource(ctx context.Context, dir string, filter CopyFilter) (GitSparseReadSource, error) {
-	var source dagql.String
-	if err := t.selectSparseTree(ctx, &source, "__gitSparseReadSource", gitSparseReadArgs(dir, filter)...); err != nil {
-		return GitSparseReadFull, err
-	}
-	return parseGitSparseReadSource(source.String())
-}
-
-// GitSparseTreeReadSource is ReadSource's answer for the sparse tree root, read
-// from its manifest: what __gitSparseReadSource computes.
-func GitSparseTreeReadSource(ctx context.Context, root dagql.ObjectResult[*Directory], dir string, filter CopyFilter) (GitSparseReadSource, error) {
-	m, err := loadGitSparseManifest(ctx, root)
+	m, err := loadGitSparseManifest(ctx, t.Root)
 	if err != nil {
 		return GitSparseReadFull, err
 	}
@@ -675,76 +634,15 @@ type GitSparseReadFiles struct {
 	Dirs  []string
 }
 
-// gitSparseReadFilesAnswer is __gitSparseReadFiles' answer: a read's files
-// and directories as bytes, which JSON carries as base64. A path in a commit
-// can be any bytes, and a JSON string turns those that aren't UTF-8 into
-// U+FFFD, which would name a file the commit doesn't have.
-type gitSparseReadFilesAnswer struct {
-	Files [][]byte `json:"files"`
-	Dirs  [][]byte `json:"dirs"`
-}
-
-func encodeGitSparseReadFiles(files *GitSparseReadFiles) (JSON, error) {
-	if files == nil {
-		return JSON("null"), nil
-	}
-	answer := gitSparseReadFilesAnswer{Files: make([][]byte, len(files.Files)), Dirs: make([][]byte, len(files.Dirs))}
-	for i, f := range files.Files {
-		answer.Files[i] = []byte(f)
-	}
-	for i, d := range files.Dirs {
-		answer.Dirs[i] = []byte(d)
-	}
-	data, err := json.Marshal(answer)
-	return JSON(data), err
-}
-
-func decodeGitSparseReadFiles(data JSON) (*GitSparseReadFiles, error) {
-	var answer *gitSparseReadFilesAnswer
-	if err := json.Unmarshal(data, &answer); err != nil || answer == nil {
-		return nil, err
-	}
-	files := &GitSparseReadFiles{Files: make([]string, len(answer.Files)), Dirs: make([]string, len(answer.Dirs))}
-	for i, f := range answer.Files {
-		files.Files[i] = string(f)
-	}
-	for i, d := range answer.Dirs {
-		files.Dirs[i] = string(d)
-	}
-	return files, nil
-}
-
 // ReadFiles returns the list identifying a read that ReadSource sends to a
 // tree of its own. It's nil for a tree written before sparse trees listed
 // their objects.
 func (t *GitSparseTree) ReadFiles(ctx context.Context, dir string, filter CopyFilter) (*GitSparseReadFiles, error) {
-	var answer JSON
-	if err := t.selectSparseTree(ctx, &answer, "__gitSparseReadFiles", gitSparseReadArgs(dir, filter)...); err != nil {
+	m, err := loadGitSparseManifestWithObjects(ctx, t.Root)
+	if err != nil || m.objects == nil {
 		return nil, err
 	}
-	files, err := decodeGitSparseReadFiles(answer)
-	if err != nil {
-		return nil, fmt.Errorf("sparse read files: %w", err)
-	}
-	return files, nil
-}
-
-// GitSparseTreeReadFiles is ReadFiles' answer for the sparse tree root, read
-// from its manifest and its objects, encoded: what __gitSparseReadFiles
-// computes.
-func GitSparseTreeReadFiles(ctx context.Context, root dagql.ObjectResult[*Directory], dir string, filter CopyFilter) (JSON, error) {
-	m, err := loadGitSparseManifestWithObjects(ctx, root)
-	if err != nil {
-		return nil, err
-	}
-	if m.objects == nil {
-		return encodeGitSparseReadFiles(nil)
-	}
-	files, err := m.readFiles(dir, filter)
-	if err != nil {
-		return nil, err
-	}
-	return encodeGitSparseReadFiles(files)
+	return m.readFiles(dir, filter)
 }
 
 func (m *gitSparseManifest) readFiles(dir string, filter CopyFilter) (*GitSparseReadFiles, error) {
@@ -851,8 +749,15 @@ func (m *gitSparseManifest) gitignoresHeld(dir string) (held, ok bool) {
 // full tree does. A symlink on the way, or at p, could lead to a file the
 // sparse tree doesn't have.
 func (t *GitSparseTree) coversPath(ctx context.Context, p string) (bool, error) {
+	dag, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return false, err
+	}
 	var covered dagql.Boolean
-	if err := t.selectSparseTree(ctx, &covered, "__gitSparseCovers", dagql.NamedInput{Name: "path", Value: dagql.NewString(p)}); err != nil {
+	if err := dag.Select(ctx, t.Root, &covered, dagql.Selector{
+		Field: "__gitSparseCovers",
+		Args:  []dagql.NamedInput{{Name: "path", Value: dagql.NewString(p)}},
+	}); err != nil {
 		return false, err
 	}
 	return covered.Bool(), nil
