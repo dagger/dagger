@@ -13,14 +13,13 @@ import (
 )
 
 // changeTestEntry is everything a reader keeps of one entry of a blob-backed
-// cache from one change to the next: its own facts, its holdings' keys, and
-// its part answers, by part address key. Not its classes' entries, which a
-// reader reads when it needs them (RemoteChange).
+// cache from one change to the next: its own facts and its part answers, by
+// part address key. Not its classes' entries, nor its holdings' keys, which
+// a reader reads when it needs them (RemoteChange).
 type changeTestEntry struct {
 	Stored              bool
 	StoredExpiresAtUnix int64
 	Recipes             []digest.Digest
-	Holders             []HolderKey
 	Parts               map[string]PartAvailability
 }
 
@@ -90,9 +89,6 @@ func changeTestRead(t *testing.T, c *Cache, now int64, addresses map[string]Pers
 			StoredExpiresAtUnix: info.StoredExpiresAtUnix,
 			Recipes:             info.Recipes,
 			Parts:               map[string]PartAvailability{},
-		}
-		for _, h := range info.Holdings {
-			entry.Holders = append(entry.Holders, h.Key)
 		}
 		for key, address := range addresses {
 			av, err := c.AvailablePart(number, address, now)
