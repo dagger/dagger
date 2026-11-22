@@ -30,8 +30,11 @@ type Entrypoint implements ModuleEntrypoint {
       fnArgs: fnArgs,
     }})
     # A failed install stays out of the rescue below, so it fails the call
-    # with its own error.
-    let installed = runtime.sync
+    # with its own error. An engine that builds prebuild first fails the
+    # call before it gets here.
+    let installed = runtime.sync rescue {
+      err: GraphQLError => raiseWithStderr(err)
+    }
     let result = installed
       .withEnvVariable("DAGGER_CLIENT_VERSION", "v1.0.0-beta.27")
       # The exec is cached on its own recipe, which holds neither the call's
@@ -54,7 +57,7 @@ type Entrypoint implements ModuleEntrypoint {
   # the dispatcher's stderr, where its last marker line holds the
   # function's error; without one, the exec failed before the function
   # returned, as when it exited by itself, and its own error is raised
-  # again.
+  # again, or, on an engine that marks no module process, its stderr.
   let raiseFunctionError(err: GraphQLError!): String! {
     let reported = ((JSON.decode(err.extensions) :: {{functionError: {{message: String, id: String}}}}).functionError != null) rescue false
     if (reported) {
@@ -64,9 +67,23 @@ type Entrypoint implements ModuleEntrypoint {
     let stderr = ((JSON.decode(err.extensions) :: {{stderr: String}}).stderr ?? "") rescue ""
     let lines = stderr.split("\n").filter { line => line.hasPrefix(marker) }
     if (lines.isEmpty) {
-      raise err
+      raiseWithStderr(err)
     }
     raise ((JSON.decode(lines.takeLast(1).join("").trimPrefix(marker)) :: String!) rescue err.message)
+  }
+
+  # Raise a failed exec's error. An engine that marks the module process
+  # (the moduleProcess extension) shows an exec's logs with its error, so
+  # the error is raised as it is; an older engine shows only the exit
+  # code, so the end of the exec's stderr, which the engine caps at
+  # 100 KiB, is raised instead.
+  let raiseWithStderr(err: GraphQLError!): Container! {
+    let marked = ((JSON.decode(err.extensions) :: {{moduleProcess: Boolean}}).moduleProcess ?? false) rescue false
+    let stderr = ((JSON.decode(err.extensions) :: {{stderr: String}}).stderr ?? "") rescue ""
+    if (marked or stderr == "") {
+      raise err
+    }
+    raise stderr
   }
 
   let runtime: Container! {

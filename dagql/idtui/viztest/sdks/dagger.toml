@@ -28,13 +28,13 @@ source = "github.com/dagger/python-sdk@1927020b371bf86afaa8463d67978228210d43d1"
 source = "github.com/dagger/typescript-sdk@28249a50a694bd4a084348bbaf8fc3e85046662a"
 
 [modules.php-sdk]
-# php-sdk#<PR>, on top of dagger/php-sdk#48 (sdk-helpers v1.0.11: v1.0.9 no
+# php-sdk#49, on top of dagger/php-sdk#48 (sdk-helpers v1.0.11: v1.0.9 no
 # longer compiles under current Dang): the dispatcher reports a function's
 # error in the file (DAGGER_FUNCTION_ERROR_PATH) the engine gives a call's
 # process, with a short stack trace of the module's own frames, and nothing
 # for an API error whose origin the engine shows. The entrypoint declares
 # prebuild, the module's Composer install.
-source = "github.com/dagger/php-sdk@1fe08a1443bced4e9742df3e35d3d592838d621c"
+source = "github.com/dagger/php-sdk@2d2657f81ef2cccf160b59a1e827acf577a83507"
 
 [modules.java-sdk]
 # java-sdk#47: the dispatcher reports a function's error in the file

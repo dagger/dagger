@@ -73,7 +73,7 @@ var sdkFixtures = []sdkFixture{
 	// with esbuild's error: tsx compiles at run time, so there's no build.
 	{lang: "typescript", source: "src/index.ts", breakage: "\nthis is not typescript\n"},
 	// Errors use the engine's function error file (DAGGER_FUNCTION_ERROR_PATH,
-	// dagger/php-sdk#<PR>). An API error whose origin renders logs nothing;
+	// dagger/php-sdk#49). An API error whose origin renders logs nothing;
 	// one without an origin and an error of the function's own log a short
 	// stack trace, through the module's own frames only. A wrapped exec
 	// error keeps its previous-error chain, each part so shortened. A module

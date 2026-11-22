@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Dagger\Module;
 
 use CompileError;
+use ErrorException;
 use GraphQL\Exception\QueryError;
 use JsonException;
 use ParseError;
@@ -50,6 +51,9 @@ final readonly class FunctionError
     /** An origin an error's message names: the span of the call the engine reports it from. */
     public const ORIGIN = '/\s*\[traceparent:[0-9a-f]{32}-[0-9a-f]{16}\]/';
 
+    /** The errors that end a PHP script without a Throwable to catch. */
+    public const FATAL_ERRORS = E_ERROR | E_PARSE | E_CORE_ERROR | E_COMPILE_ERROR | E_USER_ERROR;
+
     private const JSON_FLAGS = JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
         | JSON_INVALID_UTF8_SUBSTITUTE;
 
@@ -83,11 +87,15 @@ final readonly class FunctionError
 
     /**
      * Report $error: in the file at $path when there is one and it can be
-     * written, else with the marker. Diagnostics go to $stderr.
+     * written, else with the marker. Diagnostics go to $stderr. Without the
+     * file, the output of a failed exec the error is or wraps goes to $stdout
+     * and $stderr first, as an engine that reads no file shows no exec's
+     * logs with its error.
      *
      * @param resource $stderr
+     * @param ?resource $stdout
      */
-    public function report(Throwable $error, ?string $path, $stderr): void
+    public function report(Throwable $error, ?string $path, $stderr, $stdout = null): void
     {
         if ($path !== null && $path !== '' && self::writeFile($path, $error)) {
             if (!self::hasOrigin($error)) {
@@ -96,8 +104,42 @@ final readonly class FunctionError
             return;
         }
 
+        $values = self::values($error);
+        if ($stdout !== null && is_string($values['stdout'] ?? null)) {
+            fwrite($stdout, $values['stdout']);
+        }
         fwrite($stderr, sprintf("dagger-module: %s\n", $error));
-        fwrite($stderr, self::MARKER . json_encode(self::truncate(self::messageOf($error)), self::JSON_FLAGS) . "\n");
+        if (is_string($values['stderr'] ?? null) && $values['stderr'] !== '') {
+            fwrite($stderr, rtrim($values['stderr'], "\n") . "\n");
+        }
+        self::writeMarker($stderr, self::messageOf($error));
+    }
+
+    /**
+     * Report a fatal error, which ends the script without a Throwable to
+     * catch, as error_get_last() returns it, from a shutdown function. PHP
+     * has shown it already, so it is only reported, in the file at $path or
+     * else with the marker. Anything other than a fatal error is ignored.
+     *
+     * @param ?array{type: int, message: string, file: string, line: int} $error
+     * @param resource $stderr
+     */
+    public function reportFatal(?array $error, ?string $path, $stderr): void
+    {
+        if ($error === null || ($error['type'] & self::FATAL_ERRORS) === 0) {
+            return;
+        }
+        $fatal = new ErrorException($error['message'], 0, $error['type'], $error['file'], $error['line']);
+        if ($path !== null && $path !== '' && self::writeFile($path, $fatal)) {
+            return;
+        }
+        self::writeMarker($stderr, self::messageOf($fatal));
+    }
+
+    /** @param resource $stderr */
+    private static function writeMarker($stderr, string $message): void
+    {
+        fwrite($stderr, self::MARKER . json_encode(self::truncate($message), self::JSON_FLAGS) . "\n");
     }
 
     /**
