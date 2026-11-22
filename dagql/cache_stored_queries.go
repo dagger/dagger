@@ -178,6 +178,9 @@ func (c *Cache) AvailableParts(queries []PartQuery, nowUnix int64) []PartAnswer 
 		if out[i].Err == nil {
 			out[i].PartAvailability, out[i].Err = c.availablePartLocked(q.Number, keys[i], nowUnix)
 		}
+		if c.testBatchAnswered != nil {
+			c.testBatchAnswered(i)
+		}
 	}
 	return out
 }
