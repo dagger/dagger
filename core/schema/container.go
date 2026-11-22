@@ -43,7 +43,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 	dagql.Fields[core.Command]{}.Install(srv)
 
 	dagql.Fields[*core.Query]{
-		dagql.FuncWithDynamicInputs("container", s.container, s.containerDynamicInputs).
+		dagql.FuncWithDynamicInputs("container", s.container, s.containerDynamicInputs).FollowsFromInputs().
 			Doc(`Creates a scratch container, with no image or metadata.`,
 				`To pull an image, follow up with the "from" function.`).
 			Args(
@@ -140,14 +140,14 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				),
 			),
 
-		dagql.NodeFunc("rootfs", s.rootfs).
+		dagql.NodeFunc("rootfs", s.rootfs).FollowsFromInputs().
 			Doc(`Return a snapshot of the container's root filesystem. The snapshot can be modified then written back using withRootfs. Use that method for filesystem modifications.`),
-		dagql.NodeFunc("withRootfs", s.withRootfs).
+		dagql.NodeFunc("withRootfs", s.withRootfs).FollowsFromInputs().
 			Doc(`Change the container's root filesystem. The previous root filesystem will be lost.`).
 			Args(
 				dagql.Arg("directory").Doc("The new root filesystem."),
 			),
-		dagql.NodeFunc("directory", s.directory).
+		dagql.NodeFunc("directory", s.directory).FollowsFromInputs().
 			Doc(`Retrieve a directory from the container's root filesystem`,
 				`Mounts are included.`).
 			Args(
@@ -157,7 +157,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("resolveBrokenSymlinks").Doc(`Repair symlinks that directory selection would break. Resolve targets across the root filesystem and directory or file mounts. Preserve working relative links and links that already have no target. Cache, volume, tmpfs, secret, and socket mounts cause an error if selection, a resolved link, or mount target resolution needs their contents.`).View(AfterVersion("v1.0.0-beta.26")),
 			),
 
-		dagql.NodeFunc("file", s.file).
+		dagql.NodeFunc("file", s.file).FollowsFromInputs().
 			Doc(`Retrieves a file at the given path.`, `Mounts are included.`).
 			Args(
 				dagql.Arg("path").Doc(`The path of the file to retrieve (e.g., "./README.md").`),
@@ -168,20 +168,20 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("user", s.user).
 			Doc("Retrieves the user to be set for all commands."),
 
-		dagql.NodeFunc("withUser", s.withUser).
+		dagql.NodeFunc("withUser", s.withUser).FollowsFromInputs().
 			Doc(`Retrieves this container with a different command user.`).
 			Args(
 				dagql.Arg("name").Doc(`The user to set (e.g., "root").`),
 			),
 
-		dagql.NodeFunc("withoutUser", s.withoutUser).
+		dagql.NodeFunc("withoutUser", s.withoutUser).FollowsFromInputs().
 			Doc(`Retrieves this container with an unset command user.`,
 				`Should default to root.`),
 
 		dagql.NodeFunc("workdir", s.workdir).
 			Doc("Retrieves the working directory for all commands."),
 
-		dagql.NodeFunc("withWorkdir", s.withWorkdir).
+		dagql.NodeFunc("withWorkdir", s.withWorkdir).FollowsFromInputs().
 			Doc(`Change the container's working directory. Like WORKDIR in Dockerfile.`).
 			Args(
 				dagql.Arg("path").Doc(`The path to set as the working directory (e.g., "/app").`),
@@ -189,7 +189,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
 
-		dagql.NodeFunc("withoutWorkdir", s.withoutWorkdir).
+		dagql.NodeFunc("withoutWorkdir", s.withoutWorkdir).FollowsFromInputs().
 			Doc(`Unset the container's working directory.`,
 				`Should default to "/".`),
 
@@ -202,7 +202,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("name").Doc(`The name of the environment variable to retrieve (e.g., "PATH").`),
 			),
 
-		dagql.NodeFunc("withEnvVariable", s.withEnvVariable).
+		dagql.NodeFunc("withEnvVariable", s.withEnvVariable).FollowsFromInputs().
 			Doc(`Set a new environment variable in the container.`).
 			Args(
 				dagql.Arg("name").Doc(`Name of the environment variable (e.g., "HOST").`),
@@ -272,7 +272,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("stopSignal").Doc(`Docker image config stop signal.`),
 			),
 
-		dagql.NodeFunc("withSecretVariable", s.withSecretVariable).
+		dagql.NodeFunc("withSecretVariable", s.withSecretVariable).FollowsFromInputs().
 			Doc(`Set a new environment variable, using a secret value`).
 			Args(
 				dagql.Arg("name").Doc(`Name of the secret variable (e.g., "API_SECRET").`),
@@ -289,13 +289,13 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("value").Doc(`Value of the volatile variable.`),
 			),
 
-		dagql.NodeFunc("withoutEnvVariable", s.withoutEnvVariable).
+		dagql.NodeFunc("withoutEnvVariable", s.withoutEnvVariable).FollowsFromInputs().
 			Doc(`Retrieves this container minus the given environment variable.`).
 			Args(
 				dagql.Arg("name").Doc(`The name of the environment variable (e.g., "HOST").`),
 			),
 
-		dagql.NodeFunc("withoutSecretVariable", s.withoutSecretVariable).
+		dagql.NodeFunc("withoutSecretVariable", s.withoutSecretVariable).FollowsFromInputs().
 			Doc(`Retrieves this container minus the given environment variable containing the secret.`).
 			Args(
 				dagql.Arg("name").Doc(`The name of the environment variable (e.g., "HOST").`),
@@ -308,7 +308,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("name").Doc(`The name of the volatile environment variable (e.g., "CI_RUN_ID").`),
 			),
 
-		dagql.NodeFunc("withLabel", s.withLabel).
+		dagql.NodeFunc("withLabel", s.withLabel).FollowsFromInputs().
 			Doc(`Retrieves this container plus the given label.`).
 			Args(
 				dagql.Arg("name").Doc(`The name of the label (e.g., "org.opencontainers.artifact.created").`),
@@ -324,7 +324,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("labels", s.labels).
 			Doc(`Retrieves the list of labels passed to container.`),
 
-		dagql.NodeFunc("withoutLabel", s.withoutLabel).
+		dagql.NodeFunc("withoutLabel", s.withoutLabel).FollowsFromInputs().
 			Doc(`Retrieves this container minus the given environment label.`).
 			Args(
 				dagql.Arg("name").Doc(`The name of the label to remove (e.g., "org.opencontainers.artifact.created").`),
@@ -388,14 +388,14 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("entrypoint", s.entrypoint).
 			Doc(`Return the container's OCI entrypoint.`),
 
-		dagql.NodeFunc("withEntrypoint", s.withEntrypoint).
+		dagql.NodeFunc("withEntrypoint", s.withEntrypoint).FollowsFromInputs().
 			Doc(`Set an OCI-style entrypoint. It will be included in the container's OCI configuration. Note, withExec ignores the entrypoint by default.`).
 			Args(
 				dagql.Arg("args").Doc(`Arguments of the entrypoint. Example: ["go", "run"].`),
 				dagql.Arg("keepDefaultArgs").Doc(`Don't reset the default arguments when setting the entrypoint. By default it is reset, since entrypoint and default args are often tightly coupled.`),
 			),
 
-		dagql.NodeFunc("withoutEntrypoint", s.withoutEntrypoint).
+		dagql.NodeFunc("withoutEntrypoint", s.withoutEntrypoint).FollowsFromInputs().
 			Doc(`Reset the container's OCI entrypoint.`).
 			Args(
 				dagql.Arg("keepDefaultArgs").Doc(`Don't remove the default arguments when unsetting the entrypoint.`),
@@ -404,19 +404,19 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("defaultArgs", s.defaultArgs).
 			Doc(`Return the container's default arguments.`),
 
-		dagql.NodeFunc("withDefaultArgs", s.withDefaultArgs).
+		dagql.NodeFunc("withDefaultArgs", s.withDefaultArgs).FollowsFromInputs().
 			Doc(`Configures default arguments for future commands. Like CMD in Dockerfile.`).
 			Args(
 				dagql.Arg("args").Doc(`Arguments to prepend to future executions (e.g., ["-v", "--no-cache"]).`),
 			),
 
-		dagql.NodeFunc("withoutDefaultArgs", s.withoutDefaultArgs).
+		dagql.NodeFunc("withoutDefaultArgs", s.withoutDefaultArgs).FollowsFromInputs().
 			Doc(`Remove the container's default arguments.`),
 
 		dagql.NodeFunc("mounts", s.mounts).
 			Doc(`Retrieves the list of paths where a directory is mounted.`),
 
-		dagql.NodeFunc("withMountedDirectory", s.withMountedDirectory).
+		dagql.NodeFunc("withMountedDirectory", s.withMountedDirectory).FollowsFromInputs().
 			Doc(`Retrieves this container plus a directory mounted at the given path.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the mounted directory (e.g., "/mnt/directory").`),
@@ -431,7 +431,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
 
-		dagql.NodeFunc("withMountedFile", s.withMountedFile).
+		dagql.NodeFunc("withMountedFile", s.withMountedFile).FollowsFromInputs().
 			Doc(`Retrieves this container plus a file mounted at the given path.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the mounted file (e.g., "/tmp/file.txt").`),
@@ -446,7 +446,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					View(AfterVersion("v1.0.0-beta.17")),
 			),
 
-		dagql.NodeFunc("withMountedFiles", s.withMountedFiles).
+		dagql.NodeFunc("withMountedFiles", s.withMountedFiles).FollowsFromInputs().
 			Doc(`Retrieves this container plus the given files mounted read-only in a directory at the given path.`,
 				`Each file appears under the base name of its path. The directory holds nothing else, and nothing can be written to it.`).
 			Args(
@@ -465,7 +465,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("readOnly").Doc(`Mount the path read-only.`),
 			),
 
-		dagql.NodeFunc("withMountedTemp", s.withMountedTemp).
+		dagql.NodeFunc("withMountedTemp", s.withMountedTemp).FollowsFromInputs().
 			Doc(`Retrieves this container plus a temporary directory mounted at the given path. Any writes will be ephemeral to a single withExec call; they will not be persisted to subsequent withExecs.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the temporary directory (e.g., "/tmp/temp_dir").`),
@@ -506,7 +506,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
 
-		dagql.NodeFunc("withMountedSecret", s.withMountedSecret).
+		dagql.NodeFunc("withMountedSecret", s.withMountedSecret).FollowsFromInputs().
 			Doc(`Retrieves this container plus a secret mounted into a file at the given path.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the secret file (e.g., "/tmp/secret.txt").`),
@@ -542,7 +542,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
 
-		dagql.NodeFunc("withoutMount", s.withoutMount).
+		dagql.NodeFunc("withoutMount", s.withoutMount).FollowsFromInputs().
 			Doc(`Retrieves this container after unmounting everything at the given path.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the cache directory (e.g., "/root/.npm").`),
@@ -550,7 +550,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
 
-		dagql.NodeFunc("withFile", s.withFile).
+		dagql.NodeFunc("withFile", s.withFile).FollowsFromInputs().
 			IsPersistable().
 			Doc(`Return a container snapshot with a file added`).
 			Args(
@@ -565,7 +565,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`environment variables defined in the container (e.g. "/$VAR/foo.txt").`),
 			),
 
-		dagql.NodeFunc("withoutFile", s.withoutFile).
+		dagql.NodeFunc("withoutFile", s.withoutFile).FollowsFromInputs().
 			IsPersistable().
 			Doc(`Retrieves this container with the file at the given path removed.`).
 			Args(
@@ -574,7 +574,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`environment variables defined in the container (e.g. "/$VAR/foo.txt").`),
 			),
 
-		dagql.NodeFunc("withoutFiles", s.withoutFiles).
+		dagql.NodeFunc("withoutFiles", s.withoutFiles).FollowsFromInputs().
 			IsPersistable().
 			Doc(`Return a new container spanshot with specified files removed`).
 			Args(
@@ -583,7 +583,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`environment variables defined in the container (e.g. "/$VAR/foo.txt").`),
 			),
 
-		dagql.NodeFunc("withFiles", s.withFiles).
+		dagql.NodeFunc("withFiles", s.withFiles).FollowsFromInputs().
 			IsPersistable().
 			Doc(`Retrieves this container plus the contents of the given files copied to the given path.`).
 			Args(
@@ -598,7 +598,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`environment variables defined in the container (e.g. "/$VAR/foo.txt").`),
 			),
 
-		dagql.NodeFunc("withNewFile", s.withNewFile).
+		dagql.NodeFunc("withNewFile", s.withNewFile).FollowsFromInputs().
 			IsPersistable().
 			View(AllVersion).
 			Doc(`Return a new container snapshot, with a file added to its filesystem with text content`).
@@ -615,7 +615,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 						`environment variables defined in the container (e.g. "/$VAR/foo.txt").`),
 			),
-		dagql.NodeFunc("withNewFile", s.withNewFileLegacy).
+		dagql.NodeFunc("withNewFile", s.withNewFileLegacy).FollowsFromInputs().
 			View(BeforeVersion("v0.12.0")).
 			Doc(`Retrieves this container plus a new file written at the given path.`).
 			Args(
@@ -627,7 +627,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`If the group is omitted, it defaults to the same as the user.`),
 			),
 
-		dagql.NodeFunc("withDirectory", s.withDirectory).
+		dagql.NodeFunc("withDirectory", s.withDirectory).FollowsFromInputs().
 			IsPersistable().
 			View(AllVersion).
 			Doc(`Return a new container snapshot, with a directory added to its filesystem`).
@@ -647,7 +647,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("permissions").View(AfterVersion("v0.21.0")),
 			),
 
-		dagql.NodeFunc("withoutDirectory", s.withoutDirectory).
+		dagql.NodeFunc("withoutDirectory", s.withoutDirectory).FollowsFromInputs().
 			IsPersistable().
 			Doc(`Return a new container snapshot, with a directory removed from its filesystem`).
 			Args(
@@ -761,7 +761,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			Doc(`The exit code of the last executed command`,
 				`Returns an error if no command was executed`),
 
-		dagql.NodeFunc("withSymlink", s.withSymlink).
+		dagql.NodeFunc("withSymlink", s.withSymlink).FollowsFromInputs().
 			IsPersistable().
 			Doc(`Return a snapshot with a symlink`).
 			Args(
@@ -772,14 +772,14 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 						`environment variables defined in the container (e.g. "/$VAR/foo.txt").`),
 			),
 
-		dagql.NodeFunc("withAnnotation", s.withAnnotation).
+		dagql.NodeFunc("withAnnotation", s.withAnnotation).FollowsFromInputs().
 			Doc(`Retrieves this container plus the given OCI annotation.`).
 			Args(
 				dagql.Arg("name").Doc(`The name of the annotation.`),
 				dagql.Arg("value").Doc(`The value of the annotation.`),
 			),
 
-		dagql.NodeFunc("withoutAnnotation", s.withoutAnnotation).
+		dagql.NodeFunc("withoutAnnotation", s.withoutAnnotation).FollowsFromInputs().
 			Doc(`Retrieves this container minus the given OCI annotation.`).
 			Args(
 				dagql.Arg("name").Doc(`The name of the annotation.`),
@@ -996,7 +996,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("mediaTypes").Doc(`Media types to use for image layers. Defaults to OCI.`),
 			),
 
-		dagql.NodeFunc("withExposedPort", s.withExposedPort).
+		dagql.NodeFunc("withExposedPort", s.withExposedPort).FollowsFromInputs().
 			Doc(`Expose a network port. Like EXPOSE in Dockerfile (but with healthcheck support)`,
 				`Exposed ports serve two purposes:`,
 				`- For health checks and introspection, when running services`,
@@ -1008,7 +1008,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("experimentalSkipHealthcheck").Doc(`Skip the health check when run as a service.`),
 			),
 
-		dagql.NodeFunc("withoutExposedPort", s.withoutExposedPort).
+		dagql.NodeFunc("withoutExposedPort", s.withoutExposedPort).FollowsFromInputs().
 			Doc(`Unexpose a previously exposed port.`).
 			Args(
 				dagql.Arg("port").Doc(`Port number to unexpose`),
@@ -1019,7 +1019,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			Doc(`Retrieves the list of exposed ports.`,
 				`This includes ports already exposed by the image, even if not explicitly added with dagger.`),
 
-		dagql.NodeFunc("withServiceBinding", s.withServiceBinding).
+		dagql.NodeFunc("withServiceBinding", s.withServiceBinding).FollowsFromInputs().
 			Doc(`Establish a runtime dependency from a container to a network service.`,
 				`The service will be started automatically when needed and detached
 				when it is no longer needed, executing the default command if none is
