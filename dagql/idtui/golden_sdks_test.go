@@ -231,8 +231,9 @@ var httpDate = regexp.MustCompile(`\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{2} [A-Z][
 
 // waitedSuffix matches the "⋯ waited X.Xs on …" a row's duration gets once
 // it spent a second or more blocked on other work (see renderSpanDuration),
-// up to the row's status, if any.
-var waitedSuffix = regexp.MustCompile(`(?m)(X\.Xs) ⋯ waited X\.Xs(?: on .*?)?((?: (?:ERROR|CACHED|OK|RUNNING))?)$`)
+// up to the row's status, if any. The scrubber may have put a CACHED before
+// it, on a row it takes for cached.
+var waitedSuffix = regexp.MustCompile(`(?m)(X\.Xs(?: CACHED)?) ⋯ waited X\.Xs(?: on .*?)?((?: (?:ERROR|CACHED|OK|RUNNING))?)$`)
 
 // normalizeSDKOutput replaces every mention of the engine's native platform,
 // and of its architecture as GOARCH, so goldens that render an SDK's build for
@@ -346,10 +347,12 @@ func TestNormalizeSDKOutputDropsWaited(t *testing.T) {
 	require.Equal(t, `╰╴✘ .stdout: String! X.Xs ERROR
 ├╴✔ .stdout: String! X.Xs
 $ sdkDep: SDKDep! X.Xs CACHED
+├╴$ Container.from(address: "alpine"): Container! X.Xs CACHED
 ┃ log line ⋯ waited X.Xs on nothing
 `, normalizeSDKOutput(`╰╴✘ .stdout: String! X.Xs ⋯ waited X.Xs on sh -c 'echo dep exec stdout; sleep 0.1; exit 1' ERROR
 ├╴✔ .stdout: String! X.Xs ⋯ waited X.Xs on sh -c 'echo hi'
 $ sdkDep: SDKDep! X.Xs ⋯ waited X.Xs CACHED
+├╴$ Container.from(address: "alpine"): Container! X.Xs CACHED ⋯ waited X.Xs on resolve image
 ┃ log line ⋯ waited X.Xs on nothing
 `, "", false))
 }

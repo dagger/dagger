@@ -638,11 +638,14 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 	// pull an image, changes the workspace the final run uploads, so that run
 	// would miss what the warm-up cached: warm up again until the lockfile
 	// holds still.
-	for range maxWarmups {
+	for warmups := 1; ; warmups++ {
 		before := readWorkspaceLock()
 		warmupOnce(ctx, t, ex, daggerArgs, testEnv, s.Home, realHome)
 		if readWorkspaceLock() == before {
 			break
+		}
+		if warmups == maxWarmups {
+			t.Fatalf("dagger.lock still changed after %d warm-ups", maxWarmups)
 		}
 		t.Log("warm-up changed dagger.lock; warming up again")
 	}
