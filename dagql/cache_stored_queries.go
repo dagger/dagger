@@ -122,6 +122,58 @@ func (c *Cache) AvailablePart(number uint64, address PersistedPartAddress, nowUn
 	}
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
+	return c.availablePartLocked(number, key, nowUnix)
+}
+
+// PartQuery is a part of an entry a reader asks about (AvailableParts).
+type PartQuery struct {
+	Number  uint64
+	Address PersistedPartAddress
+}
+
+// PartAnswer is AvailablePart's answer for one PartQuery, or the error it
+// answered with.
+type PartAnswer struct {
+	PartAvailability
+	Err error
+}
+
+// AvailableParts is AvailablePart for each of queries at nowUnix, in their
+// order, read under one hold. A reader asking about many parts waits for the
+// cache's lock once, not once a part, as EntriesFacts does for entries'
+// facts: a writer waiting for the lock stops every new reader, so a reader
+// that took it once a part waited for every writer queued between two of its
+// parts. A writer then waits for the whole read.
+func (c *Cache) AvailableParts(queries []PartQuery, nowUnix int64) []PartAnswer {
+	out := make([]PartAnswer, len(queries))
+	if !c.blobBacked {
+		for i := range out {
+			out[i].Err = fmt.Errorf("available part: the cache has no blob store")
+		}
+		return out
+	}
+	keys := make([]string, len(queries))
+	for i, q := range queries {
+		key, err := partAddressKey(q.Address)
+		if err != nil {
+			out[i].Err = fmt.Errorf("available part: %w", err)
+			continue
+		}
+		keys[i] = key
+	}
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	for i, q := range queries {
+		if out[i].Err == nil {
+			out[i].PartAvailability, out[i].Err = c.availablePartLocked(q.Number, keys[i], nowUnix)
+		}
+	}
+	return out
+}
+
+// availablePartLocked is AvailablePart's answer for the part key of the
+// entry numbered number. Requires egraphMu.
+func (c *Cache) availablePartLocked(number uint64, key string, nowUnix int64) (PartAvailability, error) {
 	res := c.resultsByID[sharedResultID(number)]
 	if res == nil {
 		return PartAvailability{}, fmt.Errorf("available part of %d: %w", number, ErrUnknownEntry)

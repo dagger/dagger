@@ -286,3 +286,59 @@ func TestAvailablePartCopiesAndNeedsABlobStore(t *testing.T) {
 	require.Equal(t, "svc", again.Part.Value.Services[0].Hostname, "the stored part is unchanged")
 	require.Equal(t, []uint64{second}, again.Part.Owner.DependencyIDs)
 }
+
+// AvailableParts answers each query as AvailablePart does, in the queries'
+// order, an error for the query that has one among answers for the others:
+// a stored part of a class member, one not stored, an unknown entry, and an
+// address with no part.
+func TestAvailablePartsAnswerAsAvailablePart(t *testing.T) {
+	t.Parallel()
+	ctx, cloud, first, second := storedQueriesTestClass(t)
+	stored, _, err := cloud.SetStoredPart(ctx, second, testLiveOffer(), 0)
+	require.NoError(t, err)
+	require.True(t, stored)
+	now := time.Now().Unix()
+	queries := []PartQuery{
+		{Number: first, Address: PersistedPartAddress{Part: "snapshot"}},
+		{Number: second, Address: PersistedPartAddress{Part: "snapshot"}},
+		{Number: first, Address: PersistedPartAddress{Part: "fs"}},
+		{Number: 12345, Address: PersistedPartAddress{Part: "snapshot"}},
+		{Number: first, Address: PersistedPartAddress{}},
+	}
+	got := cloud.AvailableParts(queries, now)
+	require.Len(t, got, len(queries))
+	for i, q := range queries {
+		want, wantErr := cloud.AvailablePart(q.Number, q.Address, now)
+		if wantErr != nil {
+			require.Error(t, got[i].Err, "query %d", i)
+			require.Equal(t, wantErr.Error(), got[i].Err.Error(), "query %d", i)
+			continue
+		}
+		require.NoError(t, got[i].Err, "query %d", i)
+		require.Equal(t, want, got[i].PartAvailability, "query %d", i)
+	}
+	require.Equal(t, PartStored, got[0].State, "the class member's stored part")
+	require.ErrorIs(t, got[3].Err, ErrUnknownEntry)
+}
+
+// RemoteHoldingInfos answers each key as RemoteHoldingInfo does, in the
+// keys' order, with ok false for a holding the cache doesn't have.
+func TestRemoteHoldingInfosAnswerAsRemoteHoldingInfo(t *testing.T) {
+	t.Parallel()
+	ctx, cloud := storedPartTestCache(t, WithBlobStore())
+	a, b, missing := HolderKey{"cache-c", 1}, HolderKey{"cache-c", 2}, HolderKey{"cache-c", 3}
+	for key, field := range map[HolderKey]string{a: "infos-a", b: "infos-b"} {
+		_, err := cloud.AttachRemoteHolding(ctx, key, RemoteHolding{Recipe: testDigest(field), Request: testDigest(field), Field: field, TypeName: "Directory", ContentDigest: testDigest(field)})
+		require.NoError(t, err)
+	}
+	keys := []HolderKey{b, missing, a}
+	held, ok := cloud.RemoteHoldingInfos(keys)
+	require.Len(t, held, len(keys))
+	require.Len(t, ok, len(keys))
+	for i, key := range keys {
+		want, wantOK := cloud.RemoteHoldingInfo(key)
+		require.Equal(t, wantOK, ok[i], "key %v", key)
+		require.Equal(t, want, held[i], "key %v", key)
+	}
+	require.Equal(t, []bool{true, false, true}, ok)
+}
