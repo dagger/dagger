@@ -241,10 +241,20 @@ type ValueBundle struct {
 	// their own, which a cache that runs them indexes on the entry they
 	// returned. Only the Cloud sends them, from the call spans it read.
 	Calls []TransferredCall `json:"calls,omitempty"`
-	// Layers and Addresses are the layers its outputs name by place, and
-	// their blobs' download addresses, each listed once (ShareChainLayers).
-	Layers    []snapshots.ExportLayer       `json:"layers,omitempty"`
+	// Layers and Addresses are the layers its outputs name by place, each
+	// with the pack their chains store it in, and their blobs' download
+	// addresses, each listed once (ShareChainLayers).
+	Layers    []BundleLayer                 `json:"layers,omitempty"`
 	Addresses map[digest.Digest]BlobAddress `json:"addresses,omitempty"`
+}
+
+// BundleLayer is a layer a bundle's outputs name by place (ShareChainLayers),
+// and the pack the chains that name it there store it in, if any
+// (OfferedChain.Packs), as a blob-backed cache holds a stored layer: a layer
+// one chain stores alone and another in a pack is two of the bundle's layers.
+type BundleLayer struct {
+	Layer snapshots.ExportLayer `json:"layer"`
+	Pack  digest.Digest         `json:"pack,omitempty"`
 }
 
 // TransferredCall is a call that returned an existing entry: the call as its
@@ -270,7 +280,9 @@ type ImportedValue struct {
 // declared parts (TransferredValue.Parts).
 // 10: a layer the remote cache carries is a listing, after the content blobs
 // of its larger files (snapshots.MediaTypeListing).
-const ValueBundleVersion = 10
+// 11: a bundle's listed layers carry their packs, and an output whose chain
+// names its layers by place carries none (BundleLayer).
+const ValueBundleVersion = 11
 
 // PersistedTransferCodec operates only on encoded copies, without resolving
 // schemas, operations, result references or storage.
