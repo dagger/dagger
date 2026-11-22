@@ -28,7 +28,6 @@ func TestServeNestedClientDoesNotWaitOnUnusedConnection(t *testing.T) {
 	var served atomic.Int32
 	var accepted atomic.Int32
 	httpSrv := &http.Server{
-		ReadHeaderTimeout: 10 * time.Second,
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if served.Add(1) == 1 {
 				aOnce.Do(func() { close(aInHandler) })
@@ -92,7 +91,6 @@ func TestServeNestedClientDrainsInFlightRequest(t *testing.T) {
 	inHandler := make(chan struct{})
 	release := make(chan struct{})
 	httpSrv := &http.Server{
-		ReadHeaderTimeout: 10 * time.Second,
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			close(inHandler)
 			<-release
