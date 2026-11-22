@@ -1494,6 +1494,10 @@ func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr 
 				// The process's calls are made under the exec's call.
 				req = req.WithContext(dagql.ContextWithCallerRecipe(req.Context(), state.execMD.CallerRecipe))
 			}
+			if state.execMD != nil {
+				// Its part reads count as reads made under that call.
+				req = req.WithContext(dagql.ContextWithReadScope(req.Context(), state.execMD.ReadScope))
+			}
 			c.SessionHandler.ServeHTTPToNestedClient(resp, req, transport, metadata, transports.parentClientID, false, state.nestedClientModule, state.nestedClientFunctionCall)
 		}),
 		Protocols: protocols,
