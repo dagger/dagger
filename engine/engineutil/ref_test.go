@@ -40,6 +40,9 @@ func TestReadSnapshotSmallFile(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "big"), []byte(strings.Repeat("x", 11)), 0o600))
 	require.NoError(t, os.Mkdir(filepath.Join(dir, "dir"), 0o700))
 	require.NoError(t, syscall.Mkfifo(filepath.Join(dir, "fifo"), 0o600))
+	require.NoError(t, os.Symlink("small", filepath.Join(dir, "link")))
+	require.NoError(t, os.Symlink("loop", filepath.Join(dir, "loop")))
+	require.NoError(t, os.Symlink("small/x", filepath.Join(dir, "through-file")))
 
 	for _, tc := range []struct {
 		name, path string
@@ -51,6 +54,9 @@ func TestReadSnapshotSmallFile(t *testing.T) {
 		{"over the limit", "big", nil},
 		{"a directory", "dir", nil},
 		{"a named pipe", "fifo", nil},
+		{"a symlink to a regular file", "link", nil},
+		{"a symlink loop", "loop", nil},
+		{"a symlink through a regular file", "through-file", nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := ReadSnapshotSmallFile(t.Context(), dirMount(dir), tc.path, 10)
@@ -60,7 +66,8 @@ func TestReadSnapshotSmallFile(t *testing.T) {
 	}
 
 	t.Run("a stat that fails otherwise", func(t *testing.T) {
-		// A path beneath a regular file: ENOTDIR, not ENOENT.
+		// A path beneath a regular file: ENOTDIR, not ENOENT. The directories
+		// above the file are the engine's, not the process's.
 		_, err := ReadSnapshotSmallFile(t.Context(), dirMount(dir), "small/file", 10)
 		require.ErrorIs(t, err, syscall.ENOTDIR)
 	})

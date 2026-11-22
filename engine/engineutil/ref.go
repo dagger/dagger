@@ -67,12 +67,13 @@ const (
 // ReadSnapshotSmallFile reads the regular file at filePath, and nothing when
 // there's none there, it isn't a regular file or it is over limit bytes: a
 // path that a process can make anything, such as a named pipe that would
-// block the read, is read only when it is a plain file. Those are what a
+// block the read, is read only when it is a plain file, and a symlink there,
+// which could loop or lead anywhere, isn't followed. Those are what a
 // process can leave there; a failure to look, such as an I/O error, is the
 // engine's, and is returned.
 func ReadSnapshotSmallFile(ctx context.Context, mntable bkcache.MountableRef, filePath string, limit int) ([]byte, error) {
 	ctx = withOutgoingContext(ctx)
-	stat, err := snapshotutil.StatFile(ctx, mntable, filePath)
+	stat, err := snapshotutil.LstatFile(ctx, mntable, filePath)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
 	}
