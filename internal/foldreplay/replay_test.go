@@ -58,6 +58,9 @@ func BenchmarkFoldReplay(b *testing.B) {
 	tr, err := Open(*replayPath, *replayRoot)
 	require.NoError(b, err)
 	defer tr.Close()
+	if *replayHeapProfile != "" {
+		require.NoError(b, os.MkdirAll(*replayHeapProfile, 0o755))
+	}
 	modes := strings.Split(*replayModes, ",")
 	if modes[0] == "" {
 		modes = []string{"full", "fold"}

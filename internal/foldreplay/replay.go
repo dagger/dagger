@@ -292,7 +292,10 @@ type Options struct {
 	// RowWaits computes the waiting below rows (DB.UpdateRowWaits), as the
 	// live CLI does: above zero, every RowWaits exports during the replay
 	// with RowWaitsBudget, then settled at the end; below zero, only at
-	// the end.
+	// the end. The live CLI spends about half its wall time on it, in
+	// slices, while a replay streams faster than real time, so one slice
+	// per RowWaits exports stands in for that: a round may stay unfinished
+	// over several exports, as it does live under a heavy stream.
 	RowWaits       int
 	RowWaitsBudget time.Duration
 	// HeapProfile, if set, is where to write a heap profile at the end.
