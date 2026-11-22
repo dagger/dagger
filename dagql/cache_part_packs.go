@@ -64,8 +64,7 @@ func (p *partContentProvider) OpenPack(ctx context.Context, blob digest.Digest) 
 
 // OpenPackRange opens size bytes of the pack that holds blob, from off, with
 // one ranged request to blob's address, which is the pack's, renewed as
-// OpenPack's is. A store that answers with the whole object reads no
-// ranges: snapshots.ErrNoPackRanges.
+// OpenPack's is.
 func (p *partContentProvider) OpenPackRange(ctx context.Context, blob digest.Digest, off, size int64) (io.ReadCloser, error) {
 	layer, ok := p.layer(blob)
 	if !ok {
@@ -94,12 +93,6 @@ func (p *partContentProvider) OpenPackRange(ctx context.Context, blob digest.Dig
 			address, renewed = next, true
 			continue
 		}
-		if resp.StatusCode == http.StatusOK {
-			// A store that ignores ranges sends the whole pack: it is
-			// read whole instead (snapshots.ErrNoPackRanges).
-			stream.close()
-			return nil, snapshots.ErrNoPackRanges
-		}
 		if err := acceptPackRange(resp, off); err != nil {
 			stream.close()
 			return nil, partContentError(ctx, desc, "provider", err)
@@ -110,7 +103,8 @@ func (p *partContentProvider) OpenPackRange(ctx context.Context, blob digest.Dig
 }
 
 // acceptPackRange checks a response to a request for a pack's range from
-// off: a partial response from off.
+// off: a partial response from off. Any other answer is the provider's error,
+// and the part is computed.
 func acceptPackRange(resp *http.Response, off int64) error {
 	switch resp.StatusCode {
 	case http.StatusPartialContent:
