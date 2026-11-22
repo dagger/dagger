@@ -3,6 +3,7 @@ package idtui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"maps"
 	"os"
@@ -433,6 +434,18 @@ func (fe *frontendPretty) readFoldedMatchesLocked(query string) (more, lost int)
 	ids, total := f.MatchNames(match, foldSearchLimit)
 	f.Retain(ids...)
 	return total - len(ids), 0
+}
+
+// renderFoldGone says, beneath an expanded row over folded spans the view
+// may show, that they can't be read back, rather than show the row as if it
+// had nothing beneath it.
+func (fe *frontendPretty) renderFoldGone(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) {
+	if !row.Expanded || !fe.foldGone() || fe.rowsView.UnloadedPlacements(row.Span) == 0 {
+		return
+	}
+	fmt.Fprint(out, prefix)
+	r.fancyIndent(out, row, false, false)
+	fmt.Fprintln(out, "  "+out.String("folded spans not available: "+foldGoneReason).Faint().String())
 }
 
 // foldGone reports whether folded spans can't be read back anymore.

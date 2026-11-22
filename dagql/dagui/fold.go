@@ -1424,8 +1424,12 @@ func (f *Fold) foldedRunning(span *Span) bool {
 }
 
 // Unloaded returns how many of span's children were received but aren't
-// held in full: folded, or retained and not read back yet.
-func (f *Fold) Unloaded(span *Span) int {
+// held in full -- folded, or retained and not read back yet -- that the
+// view may show, as far as their stubs tell: internal ones only when
+// showInternal, encapsulated ones (or ones an encapsulating span that didn't
+// fail hides) never, and passthrough ones by the same count of their own
+// children.
+func (f *Fold) Unloaded(span *Span, showInternal bool) int {
 	if f == nil || span == nil {
 		return 0
 	}
@@ -1433,16 +1437,29 @@ func (f *Fold) Unloaded(span *Span) int {
 	if !ok {
 		return 0
 	}
+	return f.unloaded(i, showInternal)
+}
+
+func (f *Fold) unloaded(i uint32, showInternal bool) int {
+	if f.state[i]&foldEncapsulate != 0 && f.state[i].cat() != stateFailed {
+		return 0
+	}
 	var n int
 	for c := f.firstChild[i]; c != 0; c = f.nextSib[c-1] {
-		if f.state[c-1]&(foldReceived|foldFull) == foldReceived {
+		st := f.state[c-1]
+		switch {
+		case st&(foldReceived|foldFull) != foldReceived:
+		case st&foldEncapsulated != 0, st&foldInternal != 0 && !showInternal:
+		case st&foldUIPassthrough != 0:
+			n += f.unloaded(c-1, showInternal)
+		default:
 			n++
 		}
 	}
 	return n
 }
 
-// UnloadedPlacements returns how many spans the view would place beneath
+// UnloadedPlacements returns how many spans the view may place beneath
 // span's tree that the DB doesn't hold in full (see Fold.Unloaded): those
 // beneath span and beneath the spans the view passes through to their
 // children, as FoldedPlacements walks them.
@@ -1451,12 +1468,17 @@ func (lv *RowsView) UnloadedPlacements(span *Span) int {
 		return 0
 	}
 	f := span.db.fold
+	verbosity := lv.walker.opts.Verbosity
+	if v, ok := lv.walker.opts.SpanVerbosity[span.ID]; ok {
+		verbosity = v
+	}
+	showInternal := lv.walker.opts.Debug || verbosity >= ShowInternalVerbosity
 	var n int
 	stack := []*Span{span}
 	for len(stack) > 0 {
 		s := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
-		n += f.Unloaded(s)
+		n += f.Unloaded(s, showInternal)
 		for _, child := range s.ChildSpans.Spans() {
 			if child.ParentSpan == s && lv.walker.mode(child) == modeThrough {
 				stack = append(stack, child)

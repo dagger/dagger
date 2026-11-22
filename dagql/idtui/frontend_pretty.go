@@ -8612,13 +8612,7 @@ func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput
 	if len(span.ProgressSpans.Spans()) > 0 && (!row.Expanded || !row.HasChildren) {
 		fe.renderProgressRollup(ctx, out, r, row, prefix, statusHost)
 	}
-	if row.Expanded && fe.foldGone() && fe.rowsView.UnloadedPlacements(span) > 0 {
-		// what's folded beneath it can't be read back: say so, rather
-		// than show it as if it had nothing beneath it
-		fmt.Fprint(out, prefix)
-		r.fancyIndent(out, row, false, false)
-		fmt.Fprintln(out, "  "+out.String("folded spans not available: "+foldGoneReason).Faint().String())
-	}
+	fe.renderFoldGone(out, r, row, prefix)
 	if fe.rollsUpSubChecks(row) {
 		// A check deferring to its inline CHECKS rollup: the failure is explained
 		// by the failed sub-checks rendered in the rollup above, so don't also dump
