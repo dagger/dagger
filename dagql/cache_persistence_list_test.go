@@ -22,7 +22,10 @@ func persistedListTestCache(t testing.TB, path string) (context.Context, *Cache,
 
 func persistedListTestResult(t testing.TB, ctx context.Context, cache *Cache, srv *Server, field string, value Typed) AnyResult {
 	t.Helper()
-	frame := &ResultCall{Kind: ResultCallKindField, Field: field, Type: NewResultCallType(value.Type())}
+	// The value is a constant of its field: the call follows from its
+	// inputs (FieldSpec.FollowsFromInputs), and the Cloud sends a stored
+	// value over it whether its content is stored or not.
+	frame := &ResultCall{Kind: ResultCallKindField, Field: field, Type: NewResultCallType(value.Type()), FollowsFromInputs: true}
 	res, err := cache.GetOrInitCall(ctx, "test-session", srv, &CallRequest{ResultCall: frame, IsPersistable: true}, func(context.Context) (AnyResult, error) {
 		return NewResultForCall(value, frame)
 	})

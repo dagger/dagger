@@ -39,7 +39,8 @@
             "namedType": "HeldPartTestValue",
             "nonNull": true
           },
-          "field": "reads-busy-b"
+          "field": "reads-busy-b",
+          "followsFromInputs": true
         }
       },
       "Dependencies": [
