@@ -476,9 +476,8 @@ func TestAStoredOrAbsentPartAnswersBeforeAnUpload(t *testing.T) {
 		absent := numbers[uint64(absentRes.cacheSharedResult().id)]
 		require.NotZero(t, absent)
 		cloud.egraphMu.RLock()
-		declared, err := cloud.resultsByID[sharedResultID(absent)].declaredPartsLocked()
+		declared := cloud.resultsByID[sharedResultID(absent)].declaredPartsLocked()
 		cloud.egraphMu.RUnlock()
-		require.NoError(t, err)
 		var key string
 		for _, part := range declared {
 			if part.state == "absent" {
@@ -491,7 +490,7 @@ func TestAStoredOrAbsentPartAnswersBeforeAnUpload(t *testing.T) {
 		require.NoError(t, json.Unmarshal([]byte(key), &address))
 		recipe, field := changeTestRecipe(cloud, absent)
 		content := testDigest("uploading-absent-content")
-		_, err = cloud.AttachRemoteHolding(ctx, HolderKey{"cache-c", 1}, RemoteHolding{Recipe: recipe, Request: recipe, Field: field, ContentDigest: content})
+		_, err := cloud.AttachRemoteHolding(ctx, HolderKey{"cache-c", 1}, RemoteHolding{Recipe: recipe, Request: recipe, Field: field, ContentDigest: content})
 		require.NoError(t, err)
 		mate := holdingOf("uploading-absent-mate")
 		mate.ContentDigest = content

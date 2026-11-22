@@ -149,6 +149,7 @@ func (c *Cache) dropValueLocked(ctx context.Context, res *sharedResult) ([]*shar
 	res.hasValue = false
 	res.persistedEnvelope = nil
 	res.stored = nil
+	res.partFacts = nil
 	res.createdAtUnixNano = 0
 	res.payloadRevision++
 	res.payloadMu.Unlock()

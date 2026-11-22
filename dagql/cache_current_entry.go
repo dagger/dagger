@@ -173,6 +173,7 @@ func (c *Cache) replaceResultValueInPlaceLocked(ctx context.Context, cur, fresh 
 	// with; any other value leaves none (mergedFirstUse).
 	cur.firstUse = fresh.firstUse
 	cur.stored = fresh.stored
+	cur.partFacts = fresh.partFacts
 	cur.payloadRevision++
 	c.setResultPayloadBytesLocked(cur, fresh.payloadBytes)
 	// fresh was never registered, so its own lease cleanup does nothing.
