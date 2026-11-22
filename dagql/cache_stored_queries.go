@@ -154,7 +154,9 @@ type PartAnswer struct {
 // cache's lock once, not once a part, as EntriesFacts does for entries'
 // facts: a writer waiting for the lock stops every new reader, so a reader
 // that took it once a part waited for every writer queued between two of its
-// parts. A writer then waits for the whole read.
+// parts. A writer that comes during the read waits for the answer in
+// progress, not the read: the read gives way between two answers when
+// someone waits (giveWayLocked), and each answer stands whole in one hold.
 func (c *Cache) AvailableParts(queries []PartQuery, nowUnix int64) []PartAnswer {
 	out := make([]PartAnswer, len(queries))
 	if !c.blobBacked {
@@ -181,8 +183,32 @@ func (c *Cache) AvailableParts(queries []PartQuery, nowUnix int64) []PartAnswer 
 		if c.testBatchAnswered != nil {
 			c.testBatchAnswered(i)
 		}
+		if i+1 < len(queries) {
+			c.giveWayLocked()
+		}
 	}
 	return out
+}
+
+// giveWayLocked lets egraphMu, held once for reading by a batch read, go and
+// takes it again when another acquisition waits for it, between two of the
+// batch's answers, as RemoteWrites lets its hold go between two writes: a
+// writer that comes during the batch then waits for the answer in progress,
+// not the batch, and so do the readers queued behind it. With nobody
+// waiting, the batch keeps its one hold; under steady writers it takes one
+// hold an answer. It reports whether it let go: the cache may have changed
+// since the batch's last answer, and a caller holding pointers across
+// answers reads them again.
+func (c *Cache) giveWayLocked() bool {
+	if !c.egraphMu.Waiting() {
+		return false
+	}
+	c.egraphMu.RUnlock()
+	if c.testBatchGaveWay != nil {
+		c.testBatchGaveWay()
+	}
+	c.egraphMu.RLock()
+	return true
 }
 
 // availablePartLocked is AvailablePart's answer for the part key of the
