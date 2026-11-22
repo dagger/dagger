@@ -611,6 +611,10 @@ func (r MergeReply) Imported() []ImportedValue {
 // in a private cache under provisional numbers. A record that becomes a new
 // entry keeps its provisional number, firstID + ordinal - 1.
 type valueMergePrep struct {
+	// senderImported are, on the Cloud, the rows whose record its sender
+	// imported, by ordinal: the sender's envelope's mark, read before the
+	// prepared record imported (mergeRunLocked).
+	senderImported map[uint64]bool
 	// payloadPreparing is the cache's testRecordPayloadPreparing.
 	payloadPreparing func(uint64) error
 	// lockWaits gathers the preparation's waits for egraphMu, by the kind of
@@ -792,6 +796,12 @@ func (c *Cache) checkValueMerge(from CacheID, input ValueBundle) (*valueMergePre
 	for i := range prep.bundle.Values {
 		row := &prep.bundle.Values[i]
 		prep.index[uint64(row.Ordinal)] = row
+		if c.blobBacked && row.Record.Envelope.Imported {
+			if prep.senderImported == nil {
+				prep.senderImported = map[uint64]bool{}
+			}
+			prep.senderImported[uint64(row.Ordinal)] = true
+		}
 		prep.rows[row.SenderNumber] = uint64(row.Ordinal)
 	}
 	prep.senders = transferSenders(prep.bundle)
@@ -1645,8 +1655,13 @@ func (a mergeAction) installs() bool {
 type mergeRow struct {
 	ordinal uint64
 	value   *TransferredValue
-	plan    transferIdentityPlan
-	action  mergeAction
+	// run is, on the Cloud, the run the row's record comes from, and runRan
+	// whether, and how, the Cloud knows that run ran its step, as the record
+	// the row installs keeps them (mergeRunLocked).
+	run    RunName
+	runRan runRanBy
+	plan   transferIdentityPlan
+	action mergeAction
 	// target is the recipe's entry before the merge, if any.
 	target *sharedResult
 	// res is the entry that holds the record's value after the merge: the
@@ -2792,6 +2807,9 @@ func (c *Cache) commitValueMergeLocked(ctx context.Context, commit *valueMergeCo
 
 	// The values.
 	for _, row := range commit.rows {
+		if c.blobBacked && row.action.installs() {
+			row.run, row.runRan = c.mergeRunLocked(commit.prep, row)
+		}
 		switch row.action {
 		case mergeKeep:
 			continue
@@ -3073,6 +3091,13 @@ type mergeReplacement struct {
 // replacement. Requires egraphMu for writing.
 func (c *Cache) installMergedRecordLocked(res *sharedResult, row *mergeRow, origin *mergeOrigin) {
 	rec := row.rec
+	// On the Cloud, the stored record names the row's run, which goes with
+	// it, and whether that run ran its step as far as the Cloud knows yet.
+	res.run, res.runRan = nil, runNotRan
+	if c.blobBacked {
+		run := row.run
+		res.run, res.runRan = &run, row.runRan
+	}
 	// The record's own parts and offers decide its value's sources now.
 	res.unavailableParts = nil
 	res.merged = origin

@@ -134,7 +134,9 @@ type RemoteHoldingUpdate struct {
 	Replacements  uint64
 	// Evaluated reports that the update is an evaluation of the value by
 	// the holding's cache: a lazy span that didn't install its parts from a
-	// Cloud offer.
+	// Cloud offer. Its complete parts then say the cache ran the value
+	// (holding.ran). A part shared from another entry, or installed from an
+	// offer, says nothing of it.
 	Evaluated bool
 }
 
@@ -302,6 +304,13 @@ type holding struct {
 	// copies from placement, and entries a cache only hit, are never
 	// flagged.
 	executed bool
+	// ran marks a holding whose cache ran its value at its replacement
+	// count: a call span with executed or joined evidence, or a lazy span
+	// that didn't install it from a Cloud offer, reported a part besides its
+	// metadata complete at that count. A higher count clears it. Unlike executed, a prune leaves it, and nothing decides by
+	// it: it tells whether the run a stored record names ran
+	// (noteHoldingRanLocked).
+	ran bool
 }
 
 // hasUnexpiredHoldingLocked reports whether another cache holds a copy of res
@@ -494,6 +503,14 @@ func (c *Cache) attachRemoteHoldingLocked(ctx context.Context, key HolderKey, de
 		ContentDigest: desc.ContentDigest,
 	}, parts, nil)
 	change.Candidates = append(change.Candidates, candidates...)
+	// An executed or joined call that reported a part besides its metadata
+	// complete ran the value at its count: the holding's, once the state
+	// above is applied, or an older one, which it no longer describes. A
+	// call that returned a lazy result reports its parts pending: its step
+	// runs later, if at all, and its evaluation's row says so.
+	if desc.Executed && desc.Replacements == h.replacements && ranPartsReported(parts) {
+		c.noteHoldingRanLocked(key, entry, h, runRanByCall)
+	}
 	return change
 }
 
@@ -731,6 +748,11 @@ func (c *Cache) updateRemoteHoldingLocked(ctx context.Context, key HolderKey, up
 		Deps:          update.Deps,
 		ContentDigest: update.ContentDigest,
 	}, parts, nil)
+	// An evaluation that reported a part complete ran the value at its
+	// count.
+	if update.Evaluated && update.Replacements == h.replacements && ranPartsReported(parts) {
+		c.noteHoldingRanLocked(key, entry, h, runRanByEvaluation)
+	}
 	return change, true
 }
 
@@ -768,6 +790,7 @@ func (c *Cache) applyHeldValueStateLocked(ctx context.Context, state *remoteCach
 	if obs.Replacements > h.replacements {
 		changed = true
 		h.replacements = obs.Replacements
+		h.ran = false
 		h.parts = nil
 		h.expiresAtUnix = 0
 		h.contentDigest = unique.Handle[string]{}

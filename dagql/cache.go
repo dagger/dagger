@@ -252,7 +252,12 @@ const cachePersistenceSchemaVersion = "26"
 //
 // 2: a stored record's saved row carries the parts its record proves
 // complete (storedRowHeader.Complete).
-const blobBackedStoreFormat = "compressed-records-2"
+//
+// 3: a stored record's saved row names the run that made it (RunName) and
+// whether, and how, the Cloud learned that run ran its step. Older Cloud
+// stores name none, so every record would read as no run's; they are wiped
+// on import.
+const blobBackedStoreFormat = "compressed-records-3"
 
 // persistenceSchemaVersion is the schema version the cache saves under, and
 // restores only from.
@@ -3303,9 +3308,14 @@ type sharedResult struct {
 	// engine with no download address for any part, has been logged as run
 	// again (logRecordRunForWantOfOffers).
 	recipeRunLogged atomic.Bool
-	// run is, on the Cloud, the run its stored record comes from, and runRan
-	// how the Cloud learned that run ran its step (cache_run.go). Neither is
-	// sent to an engine, and nothing decides by them. Guarded by egraphMu.
+	// run is, on the Cloud, the run its stored record comes from: the engine
+	// entry that ran it, set when a merge installs the record
+	// (mergeRunLocked). runRan is how the Cloud learned that run ran its step,
+	// or runNotRan for a record that is a recipe as far as it knows
+	// (noteHoldingRanLocked, ownRunRanLocked). Both go with the value, and
+	// neither is sent to an engine: run is nil on an engine, which keeps no
+	// runs, and on a Cloud entry with no stored record. Nothing decides by
+	// them in this cache. Guarded by egraphMu.
 	run    *RunName
 	runRan runRanBy
 	// storedParts are the parts whose layer chains are in this cache's own
