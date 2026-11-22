@@ -2,6 +2,7 @@ package dagql
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"slices"
 	"testing"
@@ -93,7 +94,71 @@ func relocateTestLand(t *testing.T, c *Cache, reply MergeReply, under int) reloc
 			root.Ordinal, names[root.Number], root.Expired, root.Retained, root.RetentionExpiresAtUnix != 0))
 	}
 	slices.Sort(landed)
-	return relocateTestLanding{state: mergeTestStateByRecipe(t, c), reply: landed, rows: reply.Rows, under: under}
+	return relocateTestLanding{state: relocateTestState(t, c), reply: landed, rows: reply.Rows, under: under}
+}
+
+// relocateTestState is a cache's entries as a restore of sets leaves them,
+// each named by its recipes in place of its number, as itself and wherever
+// a number names an entry: its dependencies; its record's call and offers,
+// relocated; and what preparing its payload at its first use takes. The
+// payload, which names rows by the Cloud's numbers until then, is as the
+// Cloud sent it.
+func relocateTestState(t *testing.T, c *Cache) []string {
+	t.Helper()
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	names := mergeTestEntryNames(c)
+	named := func(id uint64) string { return names[id] }
+	var out []string
+	for id, res := range c.resultsByID {
+		var deps []string
+		for dep := range res.deps {
+			deps = append(deps, named(uint64(dep)))
+		}
+		slices.Sort(deps)
+		var refs []string
+		collect := func(ref *PersistedRef) error {
+			if ref.RecipeID == nil && ref.ResultID != 0 {
+				refs = append(refs, named(ref.ResultID))
+			}
+			return nil
+		}
+		record := "none"
+		res.payloadMu.RLock()
+		envelope, use := res.persistedEnvelope, res.firstUse
+		res.payloadMu.RUnlock()
+		if call := res.loadResultCall(); call != nil {
+			require.NoError(t, visitResultCallReferences(call.clone(), collect))
+		}
+		if envelope != nil {
+			offers, err := clonePartOffers(envelope.PendingOffers)
+			require.NoError(t, err)
+			for i := range offers {
+				require.NoError(t, visitPersistedPartOffer(&offers[i], nil, collect))
+			}
+			env := *envelope
+			env.ResultID, env.PendingOffers = 0, nil
+			raw, err := json.Marshal(env)
+			require.NoError(t, err)
+			record = string(raw)
+		}
+		first := "none"
+		if use != nil {
+			numbers := map[uint64]string{}
+			for sender, n := range use.numbers {
+				numbers[sender] = named(uint64(n))
+			}
+			var useDeps []string
+			for _, n := range use.deps {
+				useDeps = append(useDeps, named(n))
+			}
+			slices.Sort(useDeps)
+			first = fmt.Sprintf("numbers=%v deps=%v complete=%v", numbers, useDeps, use.complete.list())
+		}
+		out = append(out, fmt.Sprintf("%s deps=%v refs=%v record=%s first-use=%s", named(uint64(id)), deps, refs, record, first))
+	}
+	slices.Sort(out)
+	return out
 }
 
 // relocateTestRestore restores bundle on c and holds what it landed until
