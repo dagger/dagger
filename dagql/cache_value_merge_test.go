@@ -704,6 +704,45 @@ func TestCollectRemoteHoldingForAGoneAnswer(t *testing.T) {
 	require.False(t, found, "an answer about a holding already gone changes nothing")
 }
 
+// Gone answers for many holdings remove each outright, in one write, as one
+// answer does (CollectRemoteHolding): a reply that names several roots gone
+// waits for the cache's lock once. Each is found or not, in the answers'
+// order. The candidates are the holdings the removed ones depended on, each
+// once, but none the call removed itself, in either order of a holding and
+// its dependency.
+func TestCollectGoneHoldingsForManyGoneAnswers(t *testing.T) {
+	t.Parallel()
+	key := func(n uint64) HolderKey { return HolderKey{Cache: "cache-a", Number: n} }
+	for _, order := range [][]uint64{{1, 9, 4, 6, 7}, {7, 6, 4, 9, 1}} {
+		cloud := newCloudCache(t)
+		a := newCloudApplier(t, cloud)
+		a.call(callRow{key: key(2), holding: holdingOf("dep")})
+		a.call(callRow{key: key(1), session: "s", holding: holdingOf("gone", 2)})
+		a.call(callRow{key: key(3), session: "s", holding: holdingOf("parent", 1)})
+		a.call(callRow{key: key(4), session: "s", holding: holdingOf("gone too", 2)})
+		a.call(callRow{key: key(7), session: "s", holding: holdingOf("gone below")})
+		a.call(callRow{key: key(6), session: "s", holding: holdingOf("gone above", 7)})
+		require.Empty(t, a.collect())
+
+		var keys []HolderKey
+		for _, n := range order {
+			keys = append(keys, key(n))
+		}
+		change, found, err := cloud.CollectGoneHoldings(t.Context(), keys)
+		require.NoError(t, err)
+		for i, n := range order {
+			require.Equal(t, n != 9, found[i], "order %v: %d found", order, n)
+			requireNoHolding(t, cloud, key(n))
+		}
+		require.Equal(t, []HolderKey{key(2)}, change.Candidates, "order %v: the dependency they shared, once, and not the one collected with them", order)
+		require.Equal(t, []uint64{1}, requireHolding(t, cloud, key(3)).UnknownDeps, "order %v: the dependent's edge is an unknown number now", order)
+
+		collected, _, err := cloud.CollectRemoteHoldings(t.Context(), change.Candidates, nil)
+		require.NoError(t, err)
+		require.Equal(t, []HolderKey{key(2)}, collected, "order %v: the dependency only they owned", order)
+	}
+}
+
 // An export merged on the Cloud creates the sender's holdings, with their
 // dependencies at the records' replacement counts, even for records no span
 // named. A row's holding that named one of them as an unknown number attaches
