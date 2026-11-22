@@ -1337,7 +1337,17 @@ func (c *Cache) lookupCacheForRequest(
 		return nil, false, err
 	}
 
+	// From here on the hit's own work gathers what it waits for and what
+	// its load decodes, for its span (CacheDecision.HitLoad).
+	ev := req.CacheEvidence
+	if ev != nil {
+		ev.hitLoad = &hitLoad{}
+		ctx = withHitLoad(ctx, ev.hitLoad)
+	}
 	loadedHit, err := c.ensurePersistedHitValueLoaded(ctx, resolver, retRes)
+	if ev != nil && err == nil {
+		ev.HitLoadedAtUnixNano = time.Now().UnixNano()
+	}
 	if err != nil {
 		if errors.Is(err, errAttachRefusedByProducerRelease) {
 			// The hit's attachment failed only because the producing
@@ -1347,7 +1357,7 @@ func (c *Cache) lookupCacheForRequest(
 			// producer's release as this caller's failure. The recorded
 			// session edge stays until session release, exactly as the
 			// requirement re-validation's miss conversion below keeps it.
-			if ev := req.CacheEvidence; ev != nil {
+			if ev != nil {
 				ev.MissProducerReleased = true
 			}
 			return nil, false, nil
@@ -1372,7 +1382,7 @@ func (c *Cache) lookupCacheForRequest(
 		// singleflight instead. The recorded session edge stays until
 		// session release; over-retaining one result is cheaper than a
 		// dedicated decrement-and-collect path here.
-		if ev := req.CacheEvidence; ev != nil {
+		if ev != nil {
 			ev.MissRequirementsGrew = true
 		}
 		return nil, false, nil
