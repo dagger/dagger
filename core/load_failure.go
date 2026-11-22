@@ -11,22 +11,47 @@ import (
 
 type moduleLoadSpanKey struct{}
 
-// ContextWithModuleLoadSpan marks ctx's current span as the load of a module
-// a client asked for: the row a user sees for it, the place to report a
-// failure of the module's own source (see ModuleLoadSpanContext).
-func ContextWithModuleLoadSpan(ctx context.Context) context.Context {
-	return context.WithValue(ctx, moduleLoadSpanKey{}, trace.SpanContextFromContext(ctx))
+// moduleLoadSpan is the span of a module load a client asked for, and
+// whether the module it loads claimed it (see ClaimModuleLoadSpan).
+type moduleLoadSpan struct {
+	span    trace.SpanContext
+	claimed bool
 }
 
-// ModuleLoadSpanContext returns the span of the module load ctx is part of,
-// if any (see ContextWithModuleLoadSpan). An SDK that reads a module's types
-// from its source in the engine, as Dang does, reports the source's errors
-// there, as the origin of the load's failure: the calls between the load and
-// the SDK are the engine's plumbing. The value doesn't cross a nested
-// client, so a function a module calls while loading has none of its own.
+// ContextWithModuleLoadSpan marks ctx's current span as the load of a module
+// a client asked for, the row a user sees for it, for the module the load is
+// for to claim (see ClaimModuleLoadSpan).
+func ContextWithModuleLoadSpan(ctx context.Context) context.Context {
+	return context.WithValue(ctx, moduleLoadSpanKey{}, moduleLoadSpan{span: trace.SpanContextFromContext(ctx)})
+}
+
+// ClaimModuleLoadSpan is for the load of a module as a Module
+// (ModuleSource.asModule). The first beneath ContextWithModuleLoadSpan is the
+// module the load is for, which claims the load's span; any module that one
+// loads in turn, such as a dependency, has none, so that its failure isn't
+// told as its dependent's.
+func ClaimModuleLoadSpan(ctx context.Context) context.Context {
+	mark, ok := ctx.Value(moduleLoadSpanKey{}).(moduleLoadSpan)
+	if !ok || !mark.span.IsValid() {
+		return ctx
+	}
+	if mark.claimed {
+		return context.WithValue(ctx, moduleLoadSpanKey{}, moduleLoadSpan{})
+	}
+	mark.claimed = true
+	return context.WithValue(ctx, moduleLoadSpanKey{}, mark)
+}
+
+// ModuleLoadSpanContext returns the span of the load of the module ctx loads,
+// if a client asked for it (see ClaimModuleLoadSpan). An SDK that reads a
+// module's types from its source in the engine, as Dang does, reports the
+// source's errors there, as the origin of the load's failure: the calls
+// between the load and the SDK are the engine's plumbing. The value doesn't
+// cross a nested client, so a function a module calls while loading has
+// none.
 func ModuleLoadSpanContext(ctx context.Context) (trace.SpanContext, bool) {
-	span, ok := ctx.Value(moduleLoadSpanKey{}).(trace.SpanContext)
-	return span, ok && span.IsValid()
+	mark, ok := ctx.Value(moduleLoadSpanKey{}).(moduleLoadSpan)
+	return mark.span, ok && mark.claimed && mark.span.IsValid()
 }
 
 type ModuleLoadFailure struct {

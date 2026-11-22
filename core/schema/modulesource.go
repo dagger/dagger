@@ -4662,6 +4662,10 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		DefaultPathContextSource dagql.Optional[core.ModuleSourceID] `internal:"true"`
 	},
 ) (inst dagql.ObjectResult[*core.Module], err error) {
+	// This module claims the load a client asked for, if it's the one the
+	// load is for; the modules it loads have none.
+	ctx = core.ClaimModuleLoadSpan(ctx)
+
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag server: %w", err)

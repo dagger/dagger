@@ -1299,7 +1299,7 @@ func (srv *Server) resolveModuleLoadBatch(
 		}
 		jobs = jobs.WithJob(moduleLoadJobName(load), func(ctx context.Context) error {
 			ctx, span := core.Tracer(ctx).Start(ctx, moduleLoadJobName(load))
-			resolved, err := srv.resolveModuleLoad(core.ContextWithModuleLoadSpan(ctx), client.dag, gitWS, load)
+			resolved, err := srv.resolveModuleLoad(ctx, client.dag, gitWS, load)
 			telemetry.EndWithCause(span, &err)
 			if err != nil {
 				resolveErrs[i] = err
@@ -2194,7 +2194,10 @@ func (srv *Server) resolveModule(
 		}
 	}
 
-	return srv.resolveModuleSourceAsModule(ctx, dag, gitWS, src, mod)
+	// The module's load is ctx's span (resolveModuleLoadBatch), for it alone
+	// to claim: not a module its source loads, such as its SDK, nor its
+	// toolchains and blueprint.
+	return srv.resolveModuleSourceAsModule(core.ContextWithModuleLoadSpan(ctx), dag, gitWS, src, mod)
 }
 
 // pendingRelatedModule adapts a related module of a primary module into the
