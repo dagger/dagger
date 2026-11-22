@@ -191,14 +191,12 @@ func execErrorFromMetaRef(
 		if err != nil {
 			return nil, false, err
 		}
-		// A file over the limit is no report: the call fails with the exec's
-		// own error, as when the process wrote none.
-		content, err := engineutil.ReadSnapshotSmallFile(ctx, mountable,
+		// A file over the limit, or one that can't be read, is no report: the
+		// call fails with the exec's own error, as when the process wrote
+		// none.
+		content := engineutil.ReadSnapshotSmallFile(ctx, mountable,
 			path.Join(engineutil.MetaMountFunctionErrorDir, engineutil.FunctionErrorFileName),
 			engineutil.MaxFunctionErrorBytes)
-		if err != nil {
-			return nil, false, err
-		}
 		execErr.ModuleProcess = true
 		execErr.FunctionError = ParseFunctionErrorReport(content)
 	}
