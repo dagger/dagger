@@ -2,7 +2,9 @@ package engineutil
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 
 	bkcache "github.com/dagger/dagger/engine/snapshots"
@@ -63,34 +65,31 @@ const (
 )
 
 // ReadSnapshotSmallFile reads the regular file at filePath, and nothing when
-// there's none there or it is over limit bytes: a path that a process can
-// make anything, such as a named pipe that would block the read, is read only
-// when it is a plain file.
-//
-// A file that can't be statted or read is none either, logged rather than
-// returned: what such a file explains, such as a module process's failed
-// exec, is the error to fail with, not a failure to look for the
-// explanation.
-func ReadSnapshotSmallFile(ctx context.Context, mntable bkcache.MountableRef, filePath string, limit int) []byte {
+// there's none there, it isn't a regular file or it is over limit bytes: a
+// path that a process can make anything, such as a named pipe that would
+// block the read, is read only when it is a plain file. Those are what a
+// process can leave there; a failure to look, such as an I/O error, is the
+// engine's, and is returned.
+func ReadSnapshotSmallFile(ctx context.Context, mntable bkcache.MountableRef, filePath string, limit int) ([]byte, error) {
 	ctx = withOutgoingContext(ctx)
 	stat, err := snapshotutil.StatFile(ctx, mntable, filePath)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
 	if err != nil {
-		// Most often there's no file at all.
-		bklog.G(ctx).WithError(err).Debugf("ReadSnapshotSmallFile: no file %q", filePath)
-		return nil
+		return nil, fmt.Errorf("failed to stat %q: %w", filePath, err)
 	}
 	if !os.FileMode(stat.Mode).IsRegular() || stat.Size_ > int64(limit) {
-		return nil
+		return nil, nil
 	}
 	contents, err := snapshotutil.ReadFile(ctx, mntable, snapshotutil.ReadRequest{
 		Filename: filePath,
 		Range:    &snapshotutil.FileRange{Length: int(stat.Size_)},
 	})
 	if err != nil {
-		bklog.G(ctx).WithError(err).Warnf("ReadSnapshotSmallFile: failed to read %q", filePath)
-		return nil
+		return nil, fmt.Errorf("failed to read %q: %w", filePath, err)
 	}
-	return contents
+	return contents, nil
 }
 
 func ReadSnapshotPath(ctx context.Context, c *Client, mntable bkcache.MountableRef, filePath string, limit int) ([]byte, error) {
