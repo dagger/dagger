@@ -6917,12 +6917,12 @@ func (c *Cache) GetOrInitCall(
 	}
 	res, callErr := c.getOrInitCall(ctx, sessionID, resolver, req, fn)
 	var hit *CacheDecision
-	if ev := req.CacheEvidence; callErr == nil && ev != nil && ev.Outcome == CacheOutcomeHit && ev.hitLoad != nil {
-		// The hit's own work goes on to its return (CacheDecision.HitLoad).
-		hit = ev
-		ctx = withHitLoad(ctx, ev.hitLoad)
-	}
 	if callErr == nil {
+		if ev := req.CacheEvidence; ev != nil && ev.Outcome == CacheOutcomeHit && ev.hitLoad != nil {
+			// The hit's own work goes on to its return (CacheDecision.HitLoad).
+			hit = ev
+			ctx = withHitLoad(ctx, ev.hitLoad)
+		}
 		c.recordCallResultExpiry(ctx, scopes, req, res)
 	}
 	if op.finish(callErr == nil && res != nil) {
