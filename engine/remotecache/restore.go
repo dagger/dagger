@@ -30,9 +30,10 @@ import (
 // used before them, and the whole set. Each file is downloaded as soon as its
 // restore arrives, checked against its digest, and its parts are merged one
 // at a time through the path a merge takes (Adapter.RestorePart). Each part
-// is decoded and checked for its merge (Adapter.CheckRestorePart) while the
-// part before it merges, one part ahead (decodeAhead), so that a merge waits
-// for neither after the first. Heads merge on a lane
+// is checked for its merge (Adapter.CheckRestorePart) while the part before
+// it merges, and decoded while the part before that is checked (decodeAhead,
+// checkAhead), so that a merge waits for neither after the first. Heads merge
+// on a lane
 // of their own, in arrival order, so a head never waits for a whole, even
 // another check's that started first; each whole merges on a lane of its own,
 // so a whole never waits for another check's either. Nothing in a restore
@@ -160,8 +161,9 @@ type RestoreReport struct {
 // PrepareLockWait is how long the preparation waited for the cache's lock,
 // and PrepareLockWaits that time by the kind of writer that let each wait in
 // (dagql.MergeReply). DecodeWait is how long its merge waited for its decode
-// and check, which run while the part before it merges (decodeAhead): Decode
-// and Precheck are their own time, most of which a merge doesn't wait for.
+// and check, which run while the parts before it merge (decodeAhead,
+// checkAhead): Decode and Precheck are their own time, most of which a merge
+// doesn't wait for.
 type RestoredPartReport struct {
 	Records          int
 	Committed        time.Time
@@ -200,8 +202,8 @@ type restoreFile struct {
 	// its download (RestoreReport.Window); set before fetched closes.
 	windowStart restoreReading
 	// decoded delivers its parts decoded and checked, in order, from its
-	// decoder (decodeAhead), once it is opened; stopDecode, closed when the
-	// file ends, stops the decoder.
+	// checker (checkAhead), once it is opened; stopDecode, closed when the
+	// file ends, stops its decoder and its checker.
 	decoded    chan decodedPart
 	stopDecode chan struct{}
 	// landed ends the cache's mark of a whole landing (Adapter.Landing),
@@ -474,32 +476,39 @@ func (r *restorer) open(f *restoreFile) error {
 	if len(parts) > 0 {
 		f.decoded, f.stopDecode = make(chan decodedPart), make(chan struct{})
 		decode, check, table, stop := r.s.cfg.decode, r.s.adapter.CheckRestorePart, f.file.Table, f.stopDecode
-		ready := func(data []byte) decodedPart {
+		decodeNext := func(data []byte) decodedPart {
 			began := time.Now()
 			bundle, err := decode(data)
 			next := decodedPart{bundle: bundle, took: time.Since(began), err: err}
-			if err != nil {
-				return next
+			if err == nil {
+				fillAddresses(&next.bundle, table)
 			}
-			fillAddresses(&next.bundle, table)
-			began = time.Now()
-			next.checked, next.err = check(next.bundle)
-			next.check = time.Since(began)
 			return next
 		}
+		checkNext := func(next *decodedPart) {
+			began := time.Now()
+			next.checked, next.err = check(next.bundle)
+			next.check = time.Since(began)
+		}
+		decoded := make(chan decodedPart)
 		r.s.go_(func() {
 			ctx, unlabel := wcprof.WithCPUKind(r.s.ctx, wcprof.CPUKindMerge)
 			defer unlabel()
-			decodeAhead(ctx, ready, parts, f.decoded, stop)
+			decodeAhead(ctx, decodeNext, parts, decoded, stop)
+		})
+		r.s.go_(func() {
+			ctx, unlabel := wcprof.WithCPUKind(r.s.ctx, wcprof.CPUKindMerge)
+			defer unlabel()
+			checkAhead(ctx, checkNext, len(parts), decoded, f.decoded, stop)
 		})
 	}
 	return nil
 }
 
-// decodedPart is a part as its decoder delivers it: decoded, its download
-// addresses filled in from the file's table, and checked for its merge,
-// with the time its decode and its check took; or the error that stopped
-// it.
+// decodedPart is a part as its decoder and its checker deliver it: decoded,
+// its download addresses filled in from the file's table, and checked for
+// its merge, with the time its decode and its check took; or the error that
+// stopped it.
 type decodedPart struct {
 	bundle  dagql.ValueBundle
 	checked *dagql.CheckedValues
@@ -508,15 +517,13 @@ type decodedPart struct {
 	err     error
 }
 
-// decodeAhead readies a file's parts in order with ready and delivers each
-// on out, which its merge receives from: the next part is readied while the
-// part before it merges, and none further until that one is taken, so at
-// most one readied part waits beside the one merging. Each part's bytes are
-// dropped once it is readied. It stops after the first part that fails,
-// once stop closes, or once ctx ends.
-func decodeAhead(ctx context.Context, ready func([]byte) decodedPart, parts [][]byte, out chan<- decodedPart, stop <-chan struct{}) {
+// decodeAhead decodes a file's parts in order with decode and delivers each
+// on out, which checkAhead receives from, and none further until that one
+// is taken. Each part's bytes are dropped once it is decoded. It stops after
+// the first part that fails to decode, once stop closes, or once ctx ends.
+func decodeAhead(ctx context.Context, decode func([]byte) decodedPart, parts [][]byte, out chan<- decodedPart, stop <-chan struct{}) {
 	for i := range parts {
-		next := ready(parts[i])
+		next := decode(parts[i])
 		parts[i] = nil
 		select {
 		case out <- next:
@@ -531,7 +538,40 @@ func decodeAhead(ctx context.Context, ready func([]byte) decodedPart, parts [][]
 	}
 }
 
-// mergePart takes the file's next part from its decoder, decoded and
+// checkAhead checks the n parts decodeAhead delivers on in, in order, with
+// check, and delivers each on out, which its merge receives from: the next
+// part is checked while the part before it merges, and decoded while that
+// one is checked, and none further until it is taken, so at most two parts
+// wait beside the one merging, one decoded and one checked. A part whose
+// decode failed passes on as it came. It stops after the first part that
+// fails, once stop closes, or once ctx ends.
+func checkAhead(ctx context.Context, check func(*decodedPart), n int, in <-chan decodedPart, out chan<- decodedPart, stop <-chan struct{}) {
+	for range n {
+		var next decodedPart
+		select {
+		case next = <-in:
+		case <-stop:
+			return
+		case <-ctx.Done():
+			return
+		}
+		if next.err == nil {
+			check(&next)
+		}
+		select {
+		case out <- next:
+		case <-stop:
+			return
+		case <-ctx.Done():
+			return
+		}
+		if next.err != nil {
+			return
+		}
+	}
+}
+
+// mergePart takes the file's next part from its checker, decoded and
 // checked, merges it, and counts the misses it would have served.
 func (r *restorer) mergePart(ctx context.Context, f *restoreFile) error {
 	began := time.Now()
@@ -738,7 +778,8 @@ func (r *restorer) abandon() {
 	}
 }
 
-// endDecode stops the file's decoder, if it has one, once the file ends.
+// endDecode stops the file's decoder and checker, if it has them, once the
+// file ends.
 // Only the file's lane, or the restorer's end once the lanes have ended,
 // calls it.
 func (f *restoreFile) endDecode() {
