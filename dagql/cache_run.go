@@ -173,6 +173,32 @@ func (c *Cache) EntryRun(number uint64) (EntryRun, bool) {
 	return EntryRun{Run: *res.run, Ran: c.ownRunRanLocked(res)}, true
 }
 
+// HoldingRun is what the Cloud's stored record of a holding's entry says of
+// its run, from the holding's side (HoldingRuns).
+type HoldingRun struct {
+	// Stored reports that the holding's entry stores a record that names a
+	// run. The rest is zero when it doesn't, or the cache has no such
+	// holding.
+	Stored bool
+	// Run is the run the record names, and Ran whether it ran its step
+	// (ownRunRanLocked).
+	Run RunName
+	Ran bool
+	// Own reports that the run is the holding's own: the same engine cache
+	// and entry, at the holding's replacement count.
+	Own bool
+	// RunHeld reports that the run's own holding is still held at the run's
+	// replacement count: it hasn't gone, or moved on to a later value.
+	RunHeld bool
+}
+
+// HoldingRuns returns, on the Cloud, what the stored record of each
+// holding's entry says of its run (HoldingRun), in the order of keys, under
+// one hold of the lock for reading. Not built yet: it says nothing.
+func (c *Cache) HoldingRuns(keys []HolderKey) []HoldingRun {
+	return make([]HoldingRun, len(keys))
+}
+
 // RunCounts counts the Cloud's stored records by what they say of their
 // runs (StoredRuns), for a run's reader to check the runs by.
 type RunCounts struct {
