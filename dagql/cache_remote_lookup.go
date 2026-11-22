@@ -230,6 +230,12 @@ func (l *remoteLookups) close() {
 // reports, so it can't know any other. It returns what it did
 // (RemoteLookup*), or "". self and inputs are the term the lookup tried. It
 // runs after the lookup, with no lock held.
+//
+// A call keyed to its session, one of its clients or itself
+// (ResultCall.SessionBound) names that key in its recipe and in its term,
+// so no other session can have it by either, and no other engine. Only an
+// extra digest, such as the content digest of a call loaded from its ID,
+// can find another engine's value of it: without one, nothing is asked.
 func (c *Cache) noteRemoteMiss(req *CallRequest, recipe, self digest.Digest, inputs []digest.Digest) string {
 	b := c.partContentSource.attachedBridge()
 	if b == nil || !b.lookups.on.Load() || recipe == "" || req.ListItem || !req.CacheReported {
@@ -243,6 +249,9 @@ func (c *Cache) noteRemoteMiss(req *CallRequest, recipe, self digest.Digest, inp
 		if extra.Digest != "" {
 			miss.Extra = append(miss.Extra, extra.Digest)
 		}
+	}
+	if len(miss.Extra) == 0 && req.ResultCall.SessionBound() {
+		return ""
 	}
 	return b.noteRemoteMiss(miss)
 }

@@ -815,7 +815,9 @@ const (
 	// about asking the remote cache service for the call's value: "queued"
 	// when it queued a lookup, "asked" when the call's recipe was already
 	// asked for on the engine's connection, "dropped" when the lookup queue
-	// was full. Absent when no connection serves lookups.
+	// was full. Absent when the miss asked nothing: no connection serves
+	// lookups, or the call is keyed to its session, client or call and has
+	// no extra digest, so no other engine can have it.
 	CacheMissRemoteLookupAttr = "dagger.io/cache.miss.remote_lookup"
 
 	// CacheAdoptedAttr ("true", executed and joined calls, absent otherwise)
