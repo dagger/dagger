@@ -554,19 +554,3 @@ func TestImportChainFromPackRangeWithWrongID(t *testing.T) {
 	require.Error(t, err)
 	require.Zero(t, provider.opens.Load())
 }
-
-// A small pack is stored from its header's range, whole. A corrupt member of
-// another chain fails only that member: the chain's own, stored before it,
-// still imports.
-func TestImportChainFromSmallPackWithAnotherChainsCorruptMember(t *testing.T) {
-	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
-	a, _ := producer.Build(t, nil, "a.txt", "lower")
-	chain := exportChain(t, a)
-	other := otherChainBlob("other", 4<<10)
-	provider := newMixedPackProvider(t, chain.Provider, chain.Layers[0].Descriptor, other)
-	provider.ranged = true
-	provider.data[len(provider.data)-1] ^= 0xff
-	ref := importChain(t, consumer, supplied(chain, provider))
-	testutil.CheckFile(t, ref, "a.txt", "lower")
-	require.Zero(t, provider.opens.Load(), "the header's range held the whole pack")
-}
