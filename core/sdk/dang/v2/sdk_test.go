@@ -17,9 +17,12 @@ import (
 )
 
 // TestCheckDangModuleOwnsItsSourceErrors covers a dependency whose Dang
-// source doesn't type-check, read while its dependent's types are: the
-// dependency's report is its own check's logs, and its error originates
-// there, not on its dependent's check, which only passes it on.
+// source doesn't type-check, loaded for its dependent: a module's
+// dependencies load before its own types are read, so the dependent's load
+// fails with the dependency's check's error, and its own check never runs.
+// The dependency's report is its check's logs, and its error originates
+// there, for the dependent's load and for any other load the failed pass is
+// shared with, whose spans only pass it on.
 func TestCheckDangModuleOwnsItsSourceErrors(t *testing.T) {
 	t.Parallel()
 
@@ -27,19 +30,31 @@ func TestCheckDangModuleOwnsItsSourceErrors(t *testing.T) {
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spans))
 	logs := &recordedLogs{}
 	lp := sdklog.NewLoggerProvider(sdklog.WithProcessor(sdklog.NewSimpleProcessor(logs)))
-	ctx, load := tp.Tracer("test").Start(telemetry.WithLoggerProvider(t.Context(), lp), "load module")
+	ctx := telemetry.WithLoggerProvider(t.Context(), lp)
+	tracer := tp.Tracer("test")
+	// load is a span of the engine's around the pass, as a module's load
+	// and its dependencies' loads are.
+	load := func(ctx context.Context, name string, fn func(context.Context) error) (rerr error) {
+		ctx, span := tracer.Start(ctx, name)
+		defer telemetry.EndWithCause(span, &rerr)
+		return fn(ctx)
+	}
 
 	var dep trace.SpanContext
-	err := checkDangModule(ctx, "dependent", func(ctx context.Context) error {
-		return checkDangModule(ctx, "dep", func(ctx context.Context) error {
-			dep = trace.SpanContextFromContext(ctx)
-			stdio := userFacingStdio(ctx)
-			defer stdio.Close()
-			return reportDangSourceError(stdio.Stderr, inferReport(errors.New("unknown type Bogus")))
+	err := load(ctx, "load module: ./dependent", func(ctx context.Context) error {
+		return load(ctx, "load dep modules", func(ctx context.Context) error {
+			return checkDangModule(ctx, "dep", func(ctx context.Context) error {
+				dep = trace.SpanContextFromContext(ctx)
+				stdio := userFacingStdio(ctx)
+				defer stdio.Close()
+				return reportDangSourceError(stdio.Stderr, inferReport(errors.New("unknown type Bogus")))
+			})
 		})
 	})
-	load.End()
 	require.Error(t, err)
+	// Another load that joins the failed pass gets its error as it is.
+	shared := err
+	require.Error(t, load(ctx, "load module: ./other", func(context.Context) error { return shared }))
 
 	origins := telemetry.ParseErrorOrigins(err.Error())
 	require.Len(t, origins, 1)
@@ -59,10 +74,13 @@ func TestCheckDangModuleOwnsItsSourceErrors(t *testing.T) {
 		ended[span.Name()] = span
 	}
 	require.Equal(t, codes.Error, ended["check dep"].Status().Code)
-	require.Equal(t, codes.Error, ended["check dependent"].Status().Code)
-	links := ended["check dependent"].Links()
-	require.Len(t, links, 1, "the dependent's check points at the dependency's")
-	require.Equal(t, dep.SpanID(), links[0].SpanContext.SpanID())
+	require.Empty(t, ended["check dep"].Links(), "the dependency's check is the origin")
+	for _, name := range []string{"load dep modules", "load module: ./dependent", "load module: ./other"} {
+		require.Equal(t, codes.Error, ended[name].Status().Code, name)
+		links := ended[name].Links()
+		require.Len(t, links, 1, "%s points at the dependency's check", name)
+		require.Equal(t, dep.SpanID(), links[0].SpanContext.SpanID(), name)
+	}
 }
 
 // recordedLogs is a log exporter that keeps what it exports.
