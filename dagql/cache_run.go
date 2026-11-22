@@ -67,8 +67,9 @@ func savedRunLocked(res *sharedResult) *RunName {
 // for want of the Cloud's content: its holding ran its value at the row's
 // replacement count (holdingRanLocked). Another imported record is the run
 // of the Cloud entry the engine's holding of it is on, the entry the Cloud
-// sent it from (ApplyMergedReply, or a restore's hand-over), or, when the
-// Cloud holds no such holding or its entry names no run, the engine's own.
+// sent it from (ApplyMergedReply, or a restore's hand-over), with what the
+// Cloud already knows of it, or, when the Cloud holds no such holding or
+// its entry names no run, the engine's own.
 // The run ran when its holding had run its value, or else when the record
 // proves a part besides its metadata complete (valueMergePrep.completeParts).
 // Requires egraphMu.
@@ -77,7 +78,12 @@ func (c *Cache) mergeRunLocked(prep *valueMergePrep, row *mergeRow) (RunName, ru
 	run := RunName{Cache: key.Cache, Number: key.Number, Replacements: row.value.SenderReplacements}
 	if prep.senderImported[row.ordinal] && !c.holdingRanLocked(key, run.Replacements) {
 		if entry, _ := c.holdingLocked(key); entry != nil && entry.run != nil {
+			// A copy of the entry's record is the entry's run, which may
+			// have been learned to run already.
 			run = *entry.run
+			if entry.runRan != runNotRan {
+				return run, entry.runRan
+			}
 		}
 	}
 	switch {
@@ -99,21 +105,26 @@ func (c *Cache) holdingRanLocked(key HolderKey, replacements uint64) bool {
 }
 
 // noteHoldingRanLocked notes that h, the holding key of its cache's entry,
-// ran its value at its replacement count, by how (holding.ran), and marks
-// the stored record of entry, which the holding sits on, as having run when
-// it names that holding's run and didn't yet (sharedResult.runRan). The entry
-// is then marked changed, for readers that keep their answers. Requires
-// egraphMu for writing.
-func (c *Cache) noteHoldingRanLocked(key HolderKey, entry *sharedResult, h *holding, by runRanBy) {
-	h.ran = true
-	if !c.blobBacked || entry == nil || entry.run == nil || entry.runRan != runNotRan {
-		return
+// ran its value at replacement count replacements: the holding's own count,
+// or an older one a delayed report describes (holding.ran keeps only the
+// first). It marks the stored record of entry, which the holding sits on, as
+// having run when it names that run and didn't yet (sharedResult.runRan),
+// marks the entry changed, for readers that keep their answers, and reports
+// whether it did: a save then writes something new. Requires egraphMu for
+// writing.
+func (c *Cache) noteHoldingRanLocked(key HolderKey, entry *sharedResult, h *holding, replacements uint64, by runRanBy) bool {
+	if replacements == h.replacements {
+		h.ran = true
 	}
-	if run := *entry.run; key.Cache != run.Cache || key.Number != run.Number || h.replacements != run.Replacements {
-		return
+	if !c.blobBacked || entry == nil || entry.run == nil || entry.runRan != runNotRan {
+		return false
+	}
+	if run := *entry.run; key.Cache != run.Cache || key.Number != run.Number || replacements != run.Replacements {
+		return false
 	}
 	entry.runRan = by
 	c.markEntryLocked(entry.id)
+	return true
 }
 
 // ranPartsReported reports whether parts, an observation's complete part

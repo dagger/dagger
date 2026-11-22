@@ -167,7 +167,7 @@ type RemoteChange struct {
 	Entries    []uint64
 	// Saved reports that the operation changed what a save of the cache
 	// writes, beyond the holdings, which aren't saved: a call kept on a
-	// stored entry, or the entry's expiry.
+	// stored entry, the entry's expiry, or that its stored record's run ran.
 	Saved bool
 }
 
@@ -504,12 +504,11 @@ func (c *Cache) attachRemoteHoldingLocked(ctx context.Context, key HolderKey, de
 	}, parts, nil)
 	change.Candidates = append(change.Candidates, candidates...)
 	// An executed or joined call that reported a part besides its metadata
-	// complete ran the value at its count: the holding's, once the state
-	// above is applied, or an older one, which it no longer describes. A
-	// call that returned a lazy result reports its parts pending: its step
-	// runs later, if at all, and its evaluation's row says so.
-	if desc.Executed && desc.Replacements == h.replacements && ranPartsReported(parts) {
-		c.noteHoldingRanLocked(key, entry, h, runRanByCall)
+	// complete ran the value at its count. A call that returned a lazy
+	// result reports its parts pending: its step runs later, if at all, and
+	// its evaluation's row says so.
+	if desc.Executed && ranPartsReported(parts) && c.noteHoldingRanLocked(key, entry, h, desc.Replacements, runRanByCall) {
+		change.Saved = true
 	}
 	return change
 }
@@ -750,8 +749,8 @@ func (c *Cache) updateRemoteHoldingLocked(ctx context.Context, key HolderKey, up
 	}, parts, nil)
 	// An evaluation that reported a part complete ran the value at its
 	// count.
-	if update.Evaluated && update.Replacements == h.replacements && ranPartsReported(parts) {
-		c.noteHoldingRanLocked(key, entry, h, runRanByEvaluation)
+	if update.Evaluated && ranPartsReported(parts) && c.noteHoldingRanLocked(key, entry, h, update.Replacements, runRanByEvaluation) {
+		change.Saved = true
 	}
 	return change, true
 }
