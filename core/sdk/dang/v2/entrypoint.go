@@ -193,7 +193,9 @@ func (r *entrypointRuntime) Call(
 	}
 	nestedClientMetadata.SDKEntrypoint = true
 
-	contract := entrypointContract{dangVersion: r.modSource.Self().DangVersion}
+	// The call builds its prebuild file first, if the entrypoint declares
+	// one (see buildEntrypointPrebuild).
+	contract := entrypointContract{dangVersion: r.modSource.Self().DangVersion, member: EntrypointPrebuildMember}
 	var resultJSON []byte
 	_, err = evalDangSource(
 		ctx,
@@ -268,6 +270,11 @@ func (r *entrypointRuntime) Call(
 				}
 				if declared {
 					fnCall.SetProcessCallDigest(callDigest.String())
+				}
+			}
+			if contract.declaresMember {
+				if err := buildEntrypointPrebuild(ctx, env, entrypointName, moduleContext); err != nil {
+					return nil, err
 				}
 			}
 			result, err := callEntrypointMethod(ctx, env, entrypointName, "call", moduleContext, callArgs)
@@ -443,6 +450,36 @@ func evalEntrypointMember(
 		return false, err
 	}
 	return declared, nil
+}
+
+// buildEntrypointPrebuild builds the file of the entrypoint's prebuild member,
+// when it declares one, for a call of the module, before the call runs: under
+// a span of its own, which stands for the build's work wherever it shows,
+// such as in the breadcrumb of a build error. The call builds on the same
+// file, so its own build then finds it built; a build that fails fails the
+// call from here, with the build's error.
+//
+// It runs in the call's evaluation, after the call's callDigest is set, so
+// the build's execs are keyed as the call's own build execs, and taken for
+// the module process only as those are (see core.IsModuleProcessExec).
+func buildEntrypointPrebuild(
+	ctx context.Context,
+	env dang.ValueScope,
+	entrypointName string,
+	moduleContext dagql.ObjectResult[*core.Module],
+) (rerr error) {
+	ctx, span := core.Tracer(ctx).Start(ctx, "build "+moduleContext.Self().Name(), telemetry.Encapsulate())
+	defer telemetry.EndWithCause(span, &rerr)
+	value, err := callEntrypointMethod(ctx, env, entrypointName, EntrypointPrebuildMember, moduleContext, nil)
+	if err != nil {
+		return err
+	}
+	file, ok := value.(dang.GraphQLValue)
+	if !ok || file.TypeName != (&core.File{}).Type().Name() {
+		return fmt.Errorf("module entrypoint %s returned %T instead of a File", EntrypointPrebuildMember, value)
+	}
+	var synced string
+	return file.QueryChain.Select("sync").Client(file.Client).Bind(&synced).Execute(ctx)
 }
 
 // markMemberProcess makes the execs that fnCall, the evaluation of an
