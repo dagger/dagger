@@ -2,6 +2,7 @@ package dagql
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -249,4 +250,129 @@ func TestEndPartUploadsEndsNoUploadNeverStarted(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, u.cloud.MarkPartUploading(b, uploadJoinPart))
 	require.True(t, u.cloud.PartUploading(b, uploadJoinPart), "the end before the start didn't cancel it")
+}
+
+// A part's answer says when an upload of it is in progress for the entry or
+// any entry of its class, so a reader that asks whether the part is needed
+// reads no class of its own: the lowest-numbered entry with the upload
+// answers, the entry itself included, for that part alone, and a join brings
+// the upload to the other side as the uploads' end takes it from all. A batch
+// answers as one read does.
+func TestAvailablePartAnswersAnUploadInProgressInItsClass(t *testing.T) {
+	t.Parallel()
+	u := newUploadJoinTest(t)
+	a1, a2, b := u.number(t, u.a1), u.number(t, u.a2), u.number(t, u.bk)
+	now := time.Now().Unix()
+	other := PersistedPartAddress{Part: "other"}
+	answers := func() map[uint64]PartAvailability {
+		got := map[uint64]PartAvailability{}
+		var queries []PartQuery
+		for _, n := range []uint64{a1, a2, b} {
+			av, err := u.cloud.AvailablePart(n, uploadJoinPart, now)
+			require.NoError(t, err)
+			got[n] = av
+			queries = append(queries, PartQuery{Number: n, Address: uploadJoinPart})
+			av, err = u.cloud.AvailablePart(n, other, now)
+			require.NoError(t, err)
+			require.Equal(t, PartAvailability{}, av, "an upload of fs answers for fs alone")
+		}
+		for i, a := range u.cloud.AvailableParts(queries, now) {
+			require.NoError(t, a.Err)
+			require.Equal(t, got[queries[i].Number], a.PartAvailability, "a batch answers as one read does")
+		}
+		return got
+	}
+	none := PartAvailability{}
+	uploading := func(donor uint64) PartAvailability { return PartAvailability{State: PartUploading, Donor: donor} }
+	require.Equal(t, map[uint64]PartAvailability{a1: none, a2: none, b: none}, answers(), "nothing holds the part")
+
+	require.NoError(t, u.cloud.MarkPartUploading(a2, uploadJoinPart))
+	require.Equal(t, map[uint64]PartAvailability{a1: uploading(a2), a2: uploading(a2), b: none}, answers(), "a2's upload answers for its class, itself included, and not for b's")
+
+	require.NoError(t, u.cloud.MarkPartUploading(a1, uploadJoinPart))
+	low := min(a1, a2)
+	require.Equal(t, map[uint64]PartAvailability{a1: uploading(low), a2: uploading(low), b: none}, answers(), "the lowest-numbered entry with an upload answers")
+
+	u.join(t)
+	require.Equal(t, map[uint64]PartAvailability{a1: uploading(low), a2: uploading(low), b: uploading(low)}, answers(), "the join brings the uploads to b")
+
+	_, err := u.cloud.EndPartUploads([]PartUpload{{Number: a1, Address: uploadJoinPart}, {Number: a2, Address: uploadJoinPart}})
+	require.NoError(t, err)
+	require.Equal(t, map[uint64]PartAvailability{a1: none, a2: none, b: none}, answers(), "the uploads' end takes them from every answer")
+}
+
+// An entry with an upload in progress leaving its class takes the upload
+// from its class mates' answers, though its count stays until its reader
+// ends it: only the class's entries answer.
+func TestALeavingTakesAnUploadFromItsClassMatesAnswers(t *testing.T) {
+	t.Parallel()
+	u := newUploadJoinTest(t)
+	a1, a2 := u.number(t, u.a1), u.number(t, u.a2)
+	now := time.Now().Unix()
+	require.NoError(t, u.cloud.MarkPartUploading(a1, uploadJoinPart))
+	av, err := u.cloud.AvailablePart(a2, uploadJoinPart, now)
+	require.NoError(t, err)
+	require.Equal(t, PartAvailability{State: PartUploading, Donor: a1}, av)
+	_, found, err := u.cloud.CollectRemoteHolding(u.ctx, u.a1)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.True(t, u.cloud.PartUploading(a1, uploadJoinPart), "the count stays until its reader ends it")
+	av, err = u.cloud.AvailablePart(a2, uploadJoinPart, now)
+	require.NoError(t, err)
+	require.Equal(t, PartAvailability{}, av, "a1 left a2's class")
+}
+
+// A part stored, or marked absent by a stored record, in the class answers
+// before an upload of it in progress: a reader needs neither, whatever is
+// uploading, and names the part as it is.
+func TestAStoredOrAbsentPartAnswersBeforeAnUpload(t *testing.T) {
+	t.Parallel()
+	t.Run("stored", func(t *testing.T) {
+		t.Parallel()
+		h := newHolderTestClass(t)
+		require.NoError(t, h.cloud.MarkPartUploading(h.m, h.snapshot))
+		av, err := h.cloud.AvailablePart(h.m, h.snapshot, h.now)
+		require.NoError(t, err)
+		require.Equal(t, PartStored, av.State)
+		require.Equal(t, h.r, av.Donor, "R stores it")
+	})
+	t.Run("absent", func(t *testing.T) {
+		t.Parallel()
+		ctx, cloud := storedPartTestCache(t, WithBlobStore())
+		bctx, b, bsrv := transferTestCache(t)
+		bsrv.InstallObject(NewClass(bsrv, ClassOpts[*inlineCaptureTestValue]{}))
+		absentRes := persistedListTestResult(t, bctx, b, bsrv, "uploading-absent", &inlineCaptureTestValue{})
+		_, numbers := changeTestMerge(t, ctx, cloud, "cache-b", exportTestBundle(t, bctx, b, absentRes))
+		absent := numbers[uint64(absentRes.cacheSharedResult().id)]
+		require.NotZero(t, absent)
+		cloud.egraphMu.RLock()
+		declared, err := cloud.resultsByID[sharedResultID(absent)].declaredPartsLocked()
+		cloud.egraphMu.RUnlock()
+		require.NoError(t, err)
+		var key string
+		for _, part := range declared {
+			if part.state == "absent" {
+				key = part.key
+				break
+			}
+		}
+		require.NotEmpty(t, key, "the value marks a part absent")
+		var address PersistedPartAddress
+		require.NoError(t, json.Unmarshal([]byte(key), &address))
+		recipe, field := changeTestRecipe(cloud, absent)
+		content := testDigest("uploading-absent-content")
+		_, err = cloud.AttachRemoteHolding(ctx, HolderKey{"cache-c", 1}, RemoteHolding{Recipe: recipe, Request: recipe, Field: field, ContentDigest: content})
+		require.NoError(t, err)
+		mate := holdingOf("uploading-absent-mate")
+		mate.ContentDigest = content
+		_, err = cloud.AttachRemoteHolding(ctx, HolderKey{"cache-c", 2}, mate)
+		require.NoError(t, err)
+		held, ok := cloud.RemoteHoldingInfo(HolderKey{"cache-c", 2})
+		require.True(t, ok)
+		require.NoError(t, cloud.MarkPartUploading(held.Number, address))
+		av, err := cloud.AvailablePart(held.Number, address, time.Now().Unix())
+		require.NoError(t, err)
+		require.Equal(t, PartAbsent, av.State)
+		require.Equal(t, absent, av.Donor, "the absent value's record marks it")
+	})
 }
