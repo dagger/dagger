@@ -341,6 +341,7 @@ func TestGitSparseTreeOnAnEngineServedAnothersAnswers(t *testing.T) {
 		sel("__gitSparseReadSource", sparseTreeTestReadArgs("", "outside/z.txt")...),
 		sel("__gitSparseReadFiles", sparseTreeTestReadArgs("", "outside/z.txt")...),
 		sel("__gitSparseReadSource", sparseTreeTestReadArgs("", "outside/y.txt")...),
+		sel("__gitSparseReadSource", sparseTreeTestReadArgs("mod", "dagger.json")...),
 	}
 
 	b := newTransferTestEngine(t, salt)
@@ -397,6 +398,15 @@ func TestGitSparseTreeOnAnEngineServedAnothersAnswers(t *testing.T) {
 		fullID, ok := dagql.CacheResultNumber(full)
 		require.True(t, ok)
 		require.Equal(t, fullID, gotID, "the read comes from the full tree")
+		// And a read of a directory whose route the cache answers "planned".
+		source, err = sparse.ReadSource(b1, "mod", core.CopyFilter{Include: []string{"dagger.json"}})
+		require.NoError(t, err)
+		require.Equal(t, core.GitSparseReadPlanned, source)
+		got, err = gitSparseReadRoot(b1, b.dag, sparse, dagql.Result[*core.GitRef]{}, full, "mod", core.CopyFilter{Include: []string{"dagger.json"}}, false)
+		require.NoError(t, err)
+		gotID, ok = dagql.CacheResultNumber(got)
+		require.True(t, ok)
+		require.Equal(t, fullID, gotID, "the planned read comes from the full tree")
 		return nil
 	}))
 }

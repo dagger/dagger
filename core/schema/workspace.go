@@ -1321,7 +1321,13 @@ func gitSparseReadRoot(
 			return full, err
 		}
 		if err := cache.Evaluate(ctx, sub); err != nil {
-			return full, err
+			if errors.Is(err, os.ErrNotExist) {
+				return full, err
+			}
+			// As for the files above: the route came from the cache, and the
+			// sparse tree's files couldn't be had.
+			slog.Warn("reading the sparse tree failed; reading the full tree", "path", resolvedPath, "error", err)
+			return full, cache.Evaluate(ctx, full)
 		}
 	}
 	return root, nil
