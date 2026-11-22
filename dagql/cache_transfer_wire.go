@@ -41,7 +41,7 @@ func ShareChainLayers(bundle ValueBundle) (ValueBundle, error) {
 		for _, layer := range out.Chain.Layers {
 			blob := layer.Descriptor.Digest
 			own[blob] = true
-			listed := BundleLayer{Layer: layer, Pack: packs[blob]}
+			listed := BundleLayer{Layer: layer, Pack: out.Chain.Packs[blob]}
 			delete(packs, blob)
 			data, err := json.Marshal(listed)
 			if err != nil {
