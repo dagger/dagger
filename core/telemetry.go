@@ -526,11 +526,17 @@ func appendCacheEvidenceAttrs(ctx context.Context, attrs []attribute.KeyValue, e
 	if state, ok := ev.ResultState(context.WithoutCancel(ctx), res); ok {
 		attrs = append(attrs, cacheStateAttrs(state)...)
 	}
-	if ev.Outcome == dagql.CacheOutcomeHit {
-		// After the state's read, so that its wait is among the hit's.
-		attrs = appendHitLoadAttrs(attrs, ev.HitLoadedAtUnixNano, ev.HitServedAtUnixNano, ev.HitLoad())
+	// After the state's read, so that its wait is among the hit's.
+	return appendHitAttrs(attrs, ev)
+}
+
+// appendHitAttrs appends a hit's load attributes (appendHitLoadAttrs), and
+// nothing for a call that didn't hit.
+func appendHitAttrs(attrs []attribute.KeyValue, ev *dagql.CacheDecision) []attribute.KeyValue {
+	if ev.Outcome != dagql.CacheOutcomeHit {
+		return attrs
 	}
-	return attrs
+	return appendHitLoadAttrs(attrs, ev.HitLoadedAtUnixNano, ev.HitServedAtUnixNano, ev.HitLoad())
 }
 
 // appendHitLoadAttrs appends what a hit's own time after its lookup is made
