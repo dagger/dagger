@@ -594,7 +594,7 @@ func appendRemoteMissAttrs(attrs []attribute.KeyValue, ev *dagql.CacheDecision) 
 }
 
 // appendAdoptionAttrs appends the facts of a publication that adopted its
-// recipe's live entry.
+// recipe's live entry, or kept its made value over a Cloud merge's record.
 func appendAdoptionAttrs(attrs []attribute.KeyValue, ev *dagql.CacheDecision) []attribute.KeyValue {
 	if (ev.Outcome == dagql.CacheOutcomeExecuted || ev.Outcome == dagql.CacheOutcomeJoined) && ev.Adopted {
 		// A publication fact, shared by the call that executed and the calls
@@ -605,6 +605,12 @@ func appendAdoptionAttrs(attrs []attribute.KeyValue, ev *dagql.CacheDecision) []
 			if ev.AdoptedMergedAtUnixNano != 0 {
 				attrs = append(attrs, attribute.String(telemetryattrs.CacheAdoptedMergedAtAttr, strconv.FormatInt(ev.AdoptedMergedAtUnixNano, 10)))
 			}
+		}
+	}
+	if (ev.Outcome == dagql.CacheOutcomeExecuted || ev.Outcome == dagql.CacheOutcomeJoined) && ev.KeptOverRemote {
+		attrs = append(attrs, attribute.String(telemetryattrs.CacheKeptOverRemoteAttr, "true"))
+		if ev.KeptOverRemoteMergedAtUnixNano != 0 {
+			attrs = append(attrs, attribute.String(telemetryattrs.CacheKeptOverRemoteMergedAtAttr, strconv.FormatInt(ev.KeptOverRemoteMergedAtUnixNano, 10)))
 		}
 	}
 	return attrs
