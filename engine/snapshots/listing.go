@@ -44,11 +44,15 @@ const (
 	MediaTypeContentZstd = MediaTypeContent + "+zstd"
 
 	// ListingInlineMax is the smallest file whose bytes go in a content blob
-	// of their own. On a fill of today's main's workload, 273,642 of the
-	// 407,409 distinct files the store took in were under 4 KB and held 0.4%
-	// of their bytes: a blob each would cost a content commit and a lease
-	// entry per file, and save almost nothing.
-	ListingInlineMax = 64 << 10
+	// of their own. A content blob costs an engine a content commit and a
+	// lease entry under its metadata store's one writer, an entry in every
+	// chain that carries it, and that entry in every message and stored part
+	// that names the chain, while what storing a file's bytes once saves sits
+	// in few large files. On the nineteenth whole fill, files of 64 KiB to
+	// 256 KiB were four fifths of chains' content blobs and a tenth of that
+	// saving; on an earlier fill's file lists, 63% of the references to
+	// content and 6.5% of the saving.
+	ListingInlineMax = 256 << 10
 
 	// The PAX records of an entry whose body is a content blob: the blob's
 	// digest and size, and the file's size. Its tar entry's format and the
