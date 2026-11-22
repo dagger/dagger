@@ -30,7 +30,15 @@ import (
 //     goes up by one (D9);
 //   - any other expired entry is retired: it leaves the index and keeps
 //     serving its existing users only, and the new value registers as the
-//     recipe's current entry.
+//     recipe's current entry;
+//   - a live entry whose value is a Cloud merge's record is taken as an
+//     expired one when the new value's content is made (freshValueMade):
+//     the engine keeps what it made, as a merge keeps an engine's value over
+//     a record of its recipe, so the order the two land in doesn't decide
+//     what the engine holds. A retired record's users that demand its
+//     content find the new value as a source of the same recipe. A new
+//     value with computation pending adopts the record, whose content can
+//     be fetched.
 //
 // An entry known only through holdings, on a cache built from other caches'
 // telemetry, has no value to adopt or expire: the new value is stored into it
@@ -103,7 +111,8 @@ type replacedValue struct {
 }
 
 // replaceResultValueInPlaceLocked installs fresh's value into cur, an expired
-// entry that nothing uses (D9), or one with no value. cur keeps its identity:
+// entry that nothing uses (D9), one with no value, or a Cloud merge's record
+// that nothing uses and a made value takes the place of. cur keeps its identity:
 // its number, its recipe index key, its retention edge, its e-graph identity
 // and other caches' holdings. It takes the new value, its call frame,
 // requirements and accounting, and whether the value came from a record: a
