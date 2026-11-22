@@ -69,7 +69,14 @@ const (
 func ReadSnapshotSmallFile(ctx context.Context, mntable bkcache.MountableRef, filePath string, limit int) ([]byte, error) {
 	ctx = withOutgoingContext(ctx)
 	stat, err := snapshotutil.StatFile(ctx, mntable, filePath)
-	if err != nil || !os.FileMode(stat.Mode).IsRegular() || stat.Size_ > int64(limit) {
+	if err != nil {
+		// Most often there's no file: nothing to read. Any other failure to
+		// stat it reads as nothing too, rather than an error: what the file
+		// would explain, such as a module process's failed exec, is the error
+		// to fail with, not a failure to look for the explanation.
+		return nil, nil //nolint:nilerr // a file that can't be statted is none
+	}
+	if !os.FileMode(stat.Mode).IsRegular() || stat.Size_ > int64(limit) {
 		return nil, nil
 	}
 	contents, err := snapshotutil.ReadFile(ctx, mntable, snapshotutil.ReadRequest{
