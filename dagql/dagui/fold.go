@@ -374,9 +374,9 @@ func (f *Fold) setName(i uint32, name string) {
 	f.name[i] = n
 }
 
-// MatchNames returns the folded spans whose name match accepts, up to
-// limit (0 for all), and how many there are. Each distinct name is matched
-// once.
+// MatchNames returns the spans received but not held in full -- folded, or
+// retained and not read back yet -- whose name match accepts, up to limit
+// (0 for all), and how many there are. Each distinct name is matched once.
 func (f *Fold) MatchNames(match func(name string) bool, limit int) (ids []SpanID, total int) {
 	if f == nil || len(f.nameTab) == 0 {
 		return nil, 0
@@ -386,7 +386,7 @@ func (f *Fold) MatchNames(match func(name string) bool, limit int) (ids []SpanID
 		matches[n] = n != 0 && match(name)
 	}
 	for i, st := range f.state {
-		if st&(foldReceived|foldRetained) != foldReceived || !matches[f.name[i]] {
+		if st&(foldReceived|foldFull) != foldReceived || !matches[f.name[i]] {
 			continue
 		}
 		total++
@@ -1410,6 +1410,49 @@ func (f *Fold) foldedRunning(span *Span) bool {
 		return false
 	}
 	return f.agg[i].running > 0
+}
+
+// Unloaded returns how many of span's children were received but aren't
+// held in full: folded, or retained and not read back yet.
+func (f *Fold) Unloaded(span *Span) int {
+	if f == nil || span == nil {
+		return 0
+	}
+	i, ok := f.lookup(span.ID)
+	if !ok {
+		return 0
+	}
+	var n int
+	for c := f.firstChild[i]; c != 0; c = f.nextSib[c-1] {
+		if f.state[c-1]&(foldReceived|foldFull) == foldReceived {
+			n++
+		}
+	}
+	return n
+}
+
+// UnloadedPlacements returns how many spans the view would place beneath
+// span's tree that the DB doesn't hold in full (see Fold.Unloaded): those
+// beneath span and beneath the spans the view passes through to their
+// children, as FoldedPlacements walks them.
+func (lv *RowsView) UnloadedPlacements(span *Span) int {
+	if lv == nil || lv.walker == nil || span.db == nil || span.db.fold == nil {
+		return 0
+	}
+	f := span.db.fold
+	var n int
+	stack := []*Span{span}
+	for len(stack) > 0 {
+		s := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		n += f.Unloaded(s)
+		for _, child := range s.ChildSpans.Spans() {
+			if child.ParentSpan == s && lv.walker.mode(child) == modeThrough {
+				stack = append(stack, child)
+			}
+		}
+	}
+	return n
 }
 
 // FoldedPlacements appends the spans whose folded children the view would

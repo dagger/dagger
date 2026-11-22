@@ -2,11 +2,13 @@ package idtui
 
 import (
 	"context"
+	"errors"
 	"io"
 	"maps"
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/muesli/termenv"
@@ -22,8 +24,16 @@ import (
 const NoFoldEnv = "DAGGER_NO_FOLD"
 
 // SpanQueryFunc reads the newest snapshots of spans from the store of the
-// live session that streams them.
+// live session that streams them. An error wrapping ErrSpanStoreGone says
+// the store can't answer again, e.g. the session ended.
 type SpanQueryFunc func(ctx context.Context, ids []dagui.SpanID) ([]sdktrace.ReadOnlySpan, error)
+
+// ErrSpanStoreGone reports a span store gone for good: what's folded can't
+// be read back anymore.
+var ErrSpanStoreGone = errors.New("span store gone")
+
+// foldGoneReason says why folded spans can't be read back, once they can't.
+const foldGoneReason = "session ended"
 
 // FoldFrontend is a frontend whose DB folds the spans it doesn't render
 // (dagui.WithFold), reading them back from the live session on demand.
@@ -75,6 +85,9 @@ type liveFold struct {
 	queuedReads int
 	// Reads counts the round trips, ReadSpans the spans asked in them.
 	Reads, ReadSpans int
+	// gone is set once the store answered ErrSpanStoreGone: nothing is
+	// read back from then on, and the view says what that leaves out.
+	gone atomic.Bool
 
 	// fills holds the read-back spans still to ingest, foldIngestStep at a
 	// time, one step per frame, so that a big answer doesn't stall the
@@ -150,15 +163,6 @@ func (lf *liveFold) drainFills() {
 	lf.fe.exportSpansLocked(dagui.FoldFill(context.Background()), spans)
 }
 
-func (lf *liveFold) begin() {
-	lf.mu.Lock()
-	defer lf.mu.Unlock()
-	if lf.inflight == 0 {
-		lf.idle = make(chan struct{})
-	}
-	lf.inflight++
-}
-
 func (lf *liveFold) end() {
 	lf.mu.Lock()
 	defer lf.mu.Unlock()
@@ -220,9 +224,16 @@ func (lf *liveFold) load(ids []dagui.SpanID) {
 	if query == nil {
 		return
 	}
-	lf.begin()
 	lf.mu.Lock()
 	defer lf.mu.Unlock()
+	if lf.gone.Load() {
+		// nothing can read them back (set under mu)
+		return
+	}
+	if lf.inflight == 0 {
+		lf.idle = make(chan struct{})
+	}
+	lf.inflight++
 	lf.queued = append(lf.queued, ids...)
 	lf.queuedReads++
 	if !lf.reading {
@@ -252,6 +263,21 @@ func (lf *liveFold) read(query SpanQueryFunc) {
 		cancel()
 		if len(spans) > 0 {
 			lf.fe.dispatch(func() { lf.fill(spans) })
+		}
+		if errors.Is(err, ErrSpanStoreGone) {
+			// nothing can be read back anymore: stop, and let the view say
+			slog.Debug("folded spans can't be read back", "spans", len(ids), "err", err)
+			lf.mu.Lock()
+			lf.gone.Store(true)
+			reads += lf.queuedReads
+			lf.queued, lf.queuedReads = nil, 0
+			lf.reading = false
+			lf.mu.Unlock()
+			lf.fe.dispatch(lf.fe.foldGoneLocked)
+			for range reads {
+				lf.end()
+			}
+			return
 		}
 		if err != nil {
 			// what it did answer is taken; the DB keeps only the first
@@ -340,7 +366,7 @@ func (fe *frontendPretty) SettleFold(ctx context.Context) {
 	}
 	for range foldSettleRounds {
 		lf.wait(ctx)
-		if ctx.Err() != nil {
+		if ctx.Err() != nil || lf.gone.Load() {
 			return
 		}
 		var asked bool
@@ -389,18 +415,44 @@ func (fe *frontendPretty) finalFoldedRowsLocked() []dagui.SpanID {
 
 // readFoldedMatchesLocked reads back the folded spans whose name matches a
 // search's query, so they take part in it once they arrive, and returns how
-// many more match than it reads (foldSearchLimit).
-func (fe *frontendPretty) readFoldedMatchesLocked(query string) int {
+// many more match than it reads (foldSearchLimit) and, once nothing can be
+// read back, how many match that it can't read.
+func (fe *frontendPretty) readFoldedMatchesLocked(query string) (more, lost int) {
 	if !fe.folding() {
-		return 0
+		return 0, 0
 	}
 	query = strings.ToLower(query)
-	f := fe.db.Fold()
-	ids, total := f.MatchNames(func(name string) bool {
+	match := func(name string) bool {
 		return strings.Contains(strings.ToLower(name), query)
-	}, foldSearchLimit)
+	}
+	f := fe.db.Fold()
+	if fe.foldGone() {
+		_, lost = f.MatchNames(match, 1)
+		return 0, lost
+	}
+	ids, total := f.MatchNames(match, foldSearchLimit)
 	f.Retain(ids...)
-	return total - len(ids)
+	return total - len(ids), 0
+}
+
+// foldGone reports whether folded spans can't be read back anymore.
+func (fe *frontendPretty) foldGone() bool {
+	return fe.fold != nil && fe.fold.gone.Load()
+}
+
+// foldGoneLocked brings the view up to date once folded spans can't be
+// read back: rows expanded over them, and a search that matched them, say
+// so.
+func (fe *frontendPretty) foldGoneLocked() {
+	if fe.searchQuery != "" {
+		fe.searchFoldedMore, fe.searchFoldedLost = fe.readFoldedMatchesLocked(fe.searchQuery)
+		fe.refreshKeymap()
+	}
+	for _, sr := range fe.spanTrees {
+		sr.Update()
+	}
+	fe.viewDirty = true
+	fe.Update()
 }
 
 // readFoldedTargetLocked reads back a folded span a source's log search

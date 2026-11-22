@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"slices"
 	"strconv"
@@ -351,6 +352,89 @@ func TestLiveFoldIngestSteps(t *testing.T) {
 	require.Equal(t, n, received(), "everything read back lands")
 	require.LessOrEqual(t, maxStep, foldIngestStep, "a frame ingests at most a step")
 	require.Greater(t, steps, n/2/foldIngestStep, "the answer lands over many frames")
+}
+
+// TestLiveFoldSessionGone checks that once the session can't answer, the
+// live TUI stops asking and says what that leaves out: an expanded row over
+// folded spans, and a search matching folded spans.
+func TestLiveFoldSessionGone(t *testing.T) {
+	const n = 5000
+	tr := spanfootprint.New(n)
+	db, lf := newFoldingDB()
+	fe := newWithTerminal(io.Discard, db, tuist.NewHeadlessTerminal(200, 400))
+	lf.attach(fe)
+	store := &foldTestStore{latest: map[dagui.SpanID]sdktrace.ReadOnlySpan{}}
+	var gone atomic.Bool
+	var asked atomic.Int32
+	fe.SetSpanQuery(dagui.TraceID{TraceID: tr.Stub(0, false).SpanContext().TraceID()},
+		func(ctx context.Context, ids []dagui.SpanID) ([]sdktrace.ReadOnlySpan, error) {
+			if gone.Load() {
+				asked.Add(1)
+				return nil, fmt.Errorf("query spans: %w", ErrSpanStoreGone)
+			}
+			return store.query(ctx, ids)
+		})
+	fe.SetPrimary(dagui.SpanID{SpanID: tr.SpanID(0)})
+	require.NoError(t, tr.Export(t.Context(), foldTestTee{store, fe.SpanExporter()}, 512, nil))
+	settle := func() string {
+		var frame string
+		for range 4096 {
+			lf.wait(t.Context())
+			loads := db.Fold().Loads
+			frame = strings.Join(fe.tui.Step(), "\n")
+			if db.Fold().Loads == loads && !lf.filling() {
+				break
+			}
+		}
+		return frame
+	}
+	settle()
+
+	// the session ends; then a row with folded children is expanded
+	gone.Store(true)
+	var row *dagui.TraceRow
+	for _, r := range fe.rows.Order {
+		if !r.Expanded && db.Fold().FoldedChildren(r.Span) > 0 {
+			row = r
+			break
+		}
+	}
+	require.NotNil(t, row, "a collapsed row over folded spans")
+	require.NotContains(t, settle(), "not available")
+	expand := func(id dagui.SpanID) {
+		fe.dispatch(func() {
+			fe.setExpanded(id, true)
+			fe.recalculateViewLocked()
+		})
+	}
+	expand(row.Span.ID)
+	frame := settle()
+	require.True(t, lf.gone.Load(), "the store answered gone")
+	require.Contains(t, frame, "folded spans not available: session ended")
+	require.Equal(t, int32(1), asked.Load(), "asked once")
+
+	// nothing is asked again: another expand reads nothing back
+	for _, r := range fe.rows.Order {
+		if !r.Expanded && db.Fold().FoldedChildren(r.Span) > 0 {
+			expand(r.Span.ID)
+			break
+		}
+	}
+	settle()
+	require.Equal(t, int32(1), asked.Load(), "no read after the store went away")
+
+	// a search over folded names says they can't be loaded
+	ids, _ := db.Fold().MatchNames(func(string) bool { return true }, 1)
+	require.NotEmpty(t, ids)
+	name := store.latest[ids[0]].Name()
+	fe.dispatch(func() { fe.confirmSearch(name) })
+	settle()
+	hint := fe.searchCountHint()
+	require.Regexp(t, `\+, \d+ matching spans not loaded: session ended\)$`, hint)
+	// one matching nothing folded says what it couldn't search
+	fe.dispatch(func() { fe.confirmSearch("no span is named this") })
+	settle()
+	require.Equal(t, "next (0, folded spans' logs not searched: session ended)", fe.searchCountHint())
 }
 
 // TestLiveFoldReadRetries checks that a read of folded spans that fails is

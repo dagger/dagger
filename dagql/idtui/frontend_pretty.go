@@ -485,6 +485,9 @@ type frontendPretty struct {
 	// what the search reads back (foldSearchLimit): while there are any,
 	// its match count is a lower bound.
 	searchFoldedMore int
+	// searchFoldedLost counts the folded spans whose name matches that
+	// can't be read back anymore (liveFold.gone).
+	searchFoldedLost int
 	// searchNames memoizes the spans whose name matches the search, until
 	// the query or the DB's spans change (see searchNameMatches).
 	searchNames struct {
@@ -4093,7 +4096,7 @@ func (fe *frontendPretty) searchCountHint() string {
 	scope := fe.searchScope()
 	// Past the read-back cap the count is a lower bound: more spans match.
 	var more string
-	if fe.searchFoldedMore > 0 {
+	if fe.searchFoldedMore > 0 || fe.searchFoldedLost > 0 {
 		more = "+"
 	}
 	if len(fe.searchMatches) == 0 {
@@ -7713,7 +7716,7 @@ func (fe *frontendPretty) confirmSearch(query string) {
 	}
 	fe.searchQuery = query
 	fe.searchIdx = -1
-	fe.searchFoldedMore = fe.readFoldedMatchesLocked(query)
+	fe.searchFoldedMore, fe.searchFoldedLost = fe.readFoldedMatchesLocked(query)
 	fe.startLogSearch(query)
 	// Push query to all vterms (triggers midterm Search), read results,
 	// navigate to first match, then update highlights + dirty trees.
@@ -8608,6 +8611,13 @@ func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput
 	}
 	if len(span.ProgressSpans.Spans()) > 0 && (!row.Expanded || !row.HasChildren) {
 		fe.renderProgressRollup(ctx, out, r, row, prefix, statusHost)
+	}
+	if row.Expanded && fe.foldGone() && fe.rowsView.UnloadedPlacements(span) > 0 {
+		// what's folded beneath it can't be read back: say so, rather
+		// than show it as if it had nothing beneath it
+		fmt.Fprint(out, prefix)
+		r.fancyIndent(out, row, false, false)
+		fmt.Fprintln(out, "  "+out.String("folded spans not available: "+foldGoneReason).Faint().String())
 	}
 	if fe.rollsUpSubChecks(row) {
 		// A check deferring to its inline CHECKS rollup: the failure is explained

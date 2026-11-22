@@ -2,6 +2,8 @@ package daggercmd
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"time"
 
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -9,6 +11,7 @@ import (
 
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
+	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/clientdb"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	telemetry "github.com/dagger/otel-go"
@@ -47,6 +50,9 @@ func startLiveFold(fe idtui.Frontend, sess liveSpanQuerier, traceID dagui.TraceI
 				spans = append(spans, telemetry.SpansFromPB(req.GetResourceSpans())...)
 				return nil
 			}); err != nil {
+				if errors.Is(err, client.ErrLiveSessionGone) {
+					err = fmt.Errorf("%w: %w", idtui.ErrSpanStoreGone, err)
+				}
 				return spans, err
 			}
 		}
