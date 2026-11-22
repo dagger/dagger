@@ -1207,6 +1207,14 @@ type EngineRead struct {
 	// Part is the part read, as the part of an address in
 	// dagger.io/cache.parts names it; empty for the whole entry.
 	Part string `json:"part,omitempty"`
+	// Session and At say where the part was read when every session that
+	// gets there makes the read again: when no call above it, up to the
+	// session's top, is a cached call that isn't session-bound. They are the
+	// session, and when, in Unix nanoseconds on the engine's clock. Such a
+	// read is reported once per part and session, beside the engine-wide
+	// report of the entry, which leaves both empty.
+	Session string `json:"session,omitempty"`
+	At      int64  `json:"at,omitempty"`
 }
 
 // EngineStopEvent is the body of an engine.stop event.
