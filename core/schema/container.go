@@ -221,7 +221,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 		// currently only want to use it for allowing the Go SDK to inherit custom GOPROXY
 		// settings from the engine container. It may be made public in the future with more
 		// refined design.
-		dagql.NodeFunc("__withSystemEnvVariable", s.withSystemEnvVariable).
+		dagql.NodeFunc("__withSystemEnvVariable", s.withSystemEnvVariable).FollowsFromInputs().
 			Doc(`(Internal-only) Inherit this environment variable from the engine container if set there with a special prefix.`).
 			Args(
 				dagql.Arg("default").Doc(`Value to use when neither this container nor the engine container sets the variable.`),
