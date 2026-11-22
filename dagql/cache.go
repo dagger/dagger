@@ -4092,6 +4092,12 @@ type ongoingCall struct {
 	adopted         bool
 	adoptedRemote   bool
 	adoptedMergedAt int64
+	// keptOverRemote records that publication found the recipe's current
+	// entry holding a Cloud merge's record and kept the new value, whose
+	// content was made, in its place, and keptOverRemoteMergedAt when that
+	// merge committed (cache evidence). Set and read as adopted is.
+	keptOverRemote         bool
+	keptOverRemoteMergedAt int64
 
 	waitCh                      chan struct{}
 	cancel                      context.CancelCauseFunc
@@ -5426,6 +5432,20 @@ type lazyEvalStackNode struct {
 	// (result, group) is still refused.
 	group  LazyGroupKey
 	parent *lazyEvalStackNode
+}
+
+// freshValueMade reports whether a value fresh from its resolver has its
+// content made: a value that reports its laziness has no computation pending
+// (HasLazyEvaluationReporting), and one that doesn't has no lazy evaluation.
+// A value with no content to make, such as a scalar, is made.
+func freshValueMade(val AnyResult) bool {
+	if val == nil {
+		return true
+	}
+	if reporting, ok := UnwrapAs[HasLazyEvaluationReporting](val); ok {
+		return !reporting.HasPendingLazyComputation()
+	}
+	return lazyEvalFuncOfResult(val) == nil
 }
 
 func lazyEvalFuncOfResult(val AnyResult) LazyEvalFunc {
@@ -7753,6 +7773,8 @@ func (c *Cache) wait(
 		ev.Adopted = oc.adopted
 		ev.AdoptedRemote = oc.adoptedRemote
 		ev.AdoptedMergedAtUnixNano = oc.adoptedMergedAt
+		ev.KeptOverRemote = oc.keptOverRemote
+		ev.KeptOverRemoteMergedAtUnixNano = oc.keptOverRemoteMergedAt
 	}
 
 	retRes := Result[Typed]{
@@ -8155,6 +8177,10 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		}
 	}
 
+	// Whether the new value's content is made is read before the lock: the
+	// value is still this publication's alone, so it can't change meanwhile,
+	// and reading it may take the value's own locks.
+	made := !resWasCacheBacked && freshValueMade(oc.val)
 	if c.testBeforePublicationIndex != nil {
 		c.testBeforePublicationIndex(oc)
 	}
@@ -8165,9 +8191,10 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 	// one still attaching, replaces an expired one that nothing uses in place,
 	// or retires an expired one that something uses (D9). An entry with a
 	// part that a demand found no source for (servableLocked) is taken as an
-	// expired one: the new value is what makes that part. An entry known only
-	// through holdings has no value to adopt: the new value is stored into
-	// it, as merge stores a record.
+	// expired one: the new value is what makes that part. So is a Cloud
+	// merge's record when the new value's content is made: the engine keeps
+	// what it made. An entry known only through holdings has no value to
+	// adopt: the new value is stored into it, as merge stores a record.
 	var (
 		adoptedCurrent  bool
 		replacedInPlace bool
@@ -8255,35 +8282,47 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 				unindexed = true
 				break
 			}
-			// Indexing reads the adopted entry's frame's recipe digest under
-			// egraphMu. A frame stored by another path, such as the copy of
-			// the request frame a null row gets, may not have it yet:
-			// deriving it resolves inputs under egraphMu, so it is derived
-			// with the lock released, and the decision is made again.
-			if frame := cur.loadResultCall(); frame != nil {
-				if _, derived, _ := frame.derivedRecipeDigest(); !derived {
-					c.egraphMu.Unlock()
-					_, _ = frame.deriveRecipeDigest(c) // a failure is kept on the frame, and indexing returns it
-					c.lockGraphFor(ctx, workPublication)
-					continue
+			// A Cloud merge's record is adopted only while the new value has
+			// made nothing yet: the record's content can be fetched, and the
+			// new value's would have to be made. A new value whose content is
+			// made stays, as a merge keeps an engine's value over a record of
+			// its recipe (mergeKeep), so which of the two lands first doesn't
+			// decide what the engine holds: the record is taken as an expired
+			// entry is, below, replaced in place or retired.
+			if cur.imported && made {
+				oc.keptOverRemote = true
+				oc.keptOverRemoteMergedAt = cur.merged.mergedAt()
+			} else {
+				// Indexing reads the adopted entry's frame's recipe digest under
+				// egraphMu. A frame stored by another path, such as the copy of
+				// the request frame a null row gets, may not have it yet:
+				// deriving it resolves inputs under egraphMu, so it is derived
+				// with the lock released, and the decision is made again.
+				if frame := cur.loadResultCall(); frame != nil {
+					if _, derived, _ := frame.derivedRecipeDigest(); !derived {
+						c.egraphMu.Unlock()
+						_, _ = frame.deriveRecipeDigest(c) // a failure is kept on the frame, and indexing returns it
+						c.lockGraphFor(ctx, workPublication)
+						continue
+					}
 				}
+				// The adopted entry's handoff hold is taken in this critical
+				// section, as the cache-backed adoption above does.
+				discardedValue = oc.res.onRelease
+				resultCallDeps = nil
+				oc.res = cur
+				c.incrementIncomingOwnershipLocked(ctx, oc.res)
+				oc.handoffHoldActive = true
+				if c.testAfterHandoffHoldAcquired != nil {
+					c.testAfterHandoffHoldAcquired(oc)
+				}
+				resWasCacheBacked = true
+				adoptedCurrent = true
+				oc.adopted = true
+				oc.adoptedRemote = cur.imported
+				oc.adoptedMergedAt = cur.merged.mergedAt()
+				break
 			}
-			// The adopted entry's handoff hold is taken in this critical
-			// section, as the cache-backed adoption above does.
-			discardedValue = oc.res.onRelease
-			resultCallDeps = nil
-			oc.res = cur
-			c.incrementIncomingOwnershipLocked(ctx, oc.res)
-			oc.handoffHoldActive = true
-			if c.testAfterHandoffHoldAcquired != nil {
-				c.testAfterHandoffHoldAcquired(oc)
-			}
-			resWasCacheBacked = true
-			adoptedCurrent = true
-			oc.adopted = true
-			oc.adoptedRemote = cur.imported
-			oc.adoptedMergedAt = cur.merged.mergedAt()
-			break
 		}
 		// A declined value doesn't take over the entry's retention edge, as
 		// a replacement in place would: it registers beside the entry, as a
