@@ -67,9 +67,7 @@ func (f *Fold) wantArgs(dig, payload string) {
 	for len(stack) > 0 {
 		lit := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
-		for _, item := range lit.GetList().GetValues() {
-			stack = append(stack, item)
-		}
+		stack = append(stack, lit.GetList().GetValues()...)
 		for _, item := range lit.GetObject().GetValues() {
 			stack = append(stack, item.GetValue())
 		}

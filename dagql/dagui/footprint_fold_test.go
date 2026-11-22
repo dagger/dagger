@@ -43,16 +43,13 @@ func BenchmarkFoldFootprint(b *testing.B) {
 	}
 }
 
-// BenchmarkFoldFootprintVariants is BenchmarkFoldFootprint's fold mode over
-// variants of the trace and policy:
-//
-//   - progress: one span in fifty reports transfers (spanfootprint
-//     Trace.Progress), as pulls and uploads do;
-//   - progress-mayrollup: the same, with progress spans retained only when
-//     they may roll up, as RetainRendered did before it retained them
-//     beneath boundaries too;
-//   - idargs: a fifth of the calls take an earlier call's ID as an
-//     argument (spanfootprint Trace.IDArgs).
+// BenchmarkFoldFootprintVariants is BenchmarkFoldFootprint over variants of
+// the trace and policy: in "progress", one span in fifty reports transfers
+// (spanfootprint Trace.Progress), as pulls and uploads do;
+// "progress-mayrollup" is the same with progress spans retained only when
+// they may roll up, as RetainRendered did before it retained them beneath
+// boundaries too; in "idargs", a fifth of the calls take an earlier call's
+// ID as an argument (spanfootprint Trace.IDArgs):
 //
 //	go test ./dagql/dagui -run '^$' -bench FoldFootprintVariants -benchtime 1x -footprint.sizes 1000000
 func BenchmarkFoldFootprintVariants(b *testing.B) {
