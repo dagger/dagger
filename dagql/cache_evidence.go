@@ -148,6 +148,15 @@ type CacheDecision struct {
 	AdoptedRemote           bool
 	AdoptedMergedAtUnixNano int64
 
+	// KeptOverRemote records that the publication this call executed or
+	// joined found its recipe's current entry holding a Cloud merge's record
+	// and kept the call's value, whose content was made, in its place: in the
+	// entry, or as a new current entry beside the retired one.
+	// KeptOverRemoteMergedAtUnixNano is when that merge committed (0 when
+	// unknown).
+	KeptOverRemote                 bool
+	KeptOverRemoteMergedAtUnixNano int64
+
 	// SelfDigest is the engine-derived structural self digest of the call.
 	// Empty for CacheOutcomeUncached, whose path skips identity derivation.
 	SelfDigest digest.Digest

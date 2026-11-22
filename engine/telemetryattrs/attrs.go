@@ -835,6 +835,18 @@ const (
 	CacheAdoptedRemoteAttr   = "dagger.io/cache.adopted.remote"
 	CacheAdoptedMergedAtAttr = "dagger.io/cache.adopted.merged_at_unix_ns"
 
+	// CacheKeptOverRemoteAttr ("true", executed and joined calls, absent
+	// otherwise) records that the publication of the call's value found its
+	// recipe's current entry holding a Cloud merge's record, and kept the
+	// call's value, whose content was made, in its place: the call ran, its
+	// value stands, and CacheResultIDAttr names the entry holding it (the
+	// merged entry, its value replaced, or a new current entry beside it).
+	// CacheKeptOverRemoteMergedAtAttr is when that merge committed, in
+	// decimal-string absolute Unix nanoseconds (in memory only), on the clock
+	// of CacheLookupAtAttr.
+	CacheKeptOverRemoteAttr         = "dagger.io/cache.kept_over_remote"
+	CacheKeptOverRemoteMergedAtAttr = "dagger.io/cache.kept_over_remote.merged_at_unix_ns"
+
 	// CacheValueRemoteAttr ("true", on a lazy-evaluation span, absent
 	// otherwise) records that the value of the entry the attempt evaluated
 	// came from a Cloud merge, as the attempt left it. With CacheOfferPartAttr
