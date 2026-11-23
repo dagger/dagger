@@ -62,6 +62,15 @@ func TestParseAddress(t *testing.T) {
 			compact: "golang/modules/packages/tests/test golang-package=cmd/init",
 		},
 		{
+			name: "name column beside a collection named for the scheme's type",
+			in:   "dag+go-test://?module=go&name=modules.tests&go-module=./api&go-test=TestHealth",
+			want: &Address{Types: []string{"go-test"}, Kind: "go-test", Path: "go/modules/tests", Module: "go", Dimensions: []AddressDimension{
+				{Name: "go-module", Keys: []string{"./api"}},
+				{Name: "go-test", Keys: []string{"TestHealth"}},
+			}},
+			compact: "go/modules/tests go-module=./api go-test=TestHealth",
+		},
+		{
 			name:    "name column alone",
 			in:      "dag://?name=python310.unit",
 			want:    &Address{Path: "python310/unit"},

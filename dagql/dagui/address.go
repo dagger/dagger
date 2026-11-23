@@ -357,11 +357,18 @@ func parseAddressQuery(query string) ([]addressPair, bool) {
 // whose key is the artifact path: the qualified "type:<Type>" or
 // "artifact-<type>" forms first, then the plain check and generator types
 // and the scheme's own types. It returns -1 when there is none.
+//
+// A collection can share a type's plain name (go-test), so an address with a
+// name column, which names its artifact that way instead, matches the
+// scheme's own types only in their qualified forms.
 func addressTypeKey(pairs []addressPair, types []string) int {
 	for i, pair := range pairs {
 		if pair.hasKey && (strings.HasPrefix(pair.dimension, "type:") || strings.HasPrefix(pair.dimension, "artifact-")) {
 			return i
 		}
+	}
+	if slices.ContainsFunc(pairs, func(pair addressPair) bool { return pair.dimension == "name" }) {
+		types = nil
 	}
 	for i, pair := range pairs {
 		if !pair.hasKey {
