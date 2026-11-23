@@ -1391,6 +1391,59 @@ func (c *Cache) lookupCacheForRequest(
 	requestInputs []digest.Digest,
 	requestInputRefs []ResultCallStructuralInputRef,
 ) (AnyResult, bool, error) {
+	// A result the session bound to itself is published under the call
+	// holding the binding (boundSessionInputName), and is the session's own
+	// outcome of the call: a session that has bound one looks the call up
+	// that way first, before another session's unbound result of it.
+	if req != nil && req.ResultCall != nil {
+		if handle := sessionBoundHandle(sessionID); c.sessionHoldsHandle(sessionID, handle) {
+			bound := req.withBoundSession(handle)
+			// The same invocation looks again: its evidence is the one it
+			// records.
+			bound.CacheEvidence = req.CacheEvidence
+			boundDigest, err := bound.deriveRecipeDigest(c)
+			if err != nil {
+				return nil, false, fmt.Errorf("derive bound request digest: %w", err)
+			}
+			boundSelf, boundInputRefs, err := bound.selfDigestAndInputRefs(c)
+			if err != nil {
+				return nil, false, fmt.Errorf("derive bound request term digests: %w", err)
+			}
+			boundInputs := make([]digest.Digest, 0, len(boundInputRefs))
+			for _, ref := range boundInputRefs {
+				dig, err := ref.inputDigest(c)
+				if err != nil {
+					return nil, false, fmt.Errorf("derive bound request term input digest: %w", err)
+				}
+				boundInputs = append(boundInputs, dig)
+			}
+			res, hit, err := c.lookupCacheForRequestDigests(ctx, sessionID, resolver, bound, boundDigest, boundSelf, boundInputs, boundInputRefs)
+			if err != nil || hit {
+				return res, hit, err
+			}
+		}
+	}
+	return c.lookupCacheForRequestDigests(ctx, sessionID, resolver, req, requestDigest, requestSelf, requestInputs, requestInputRefs)
+}
+
+// sessionHoldsHandle reports whether sessionID holds handle.
+func (c *Cache) sessionHoldsHandle(sessionID string, handle SessionResourceHandle) bool {
+	c.sessionMu.Lock()
+	defer c.sessionMu.Unlock()
+	handles := c.sessionHandlesBySession[sessionID]
+	return handles != nil && handles.Contains(handle)
+}
+
+func (c *Cache) lookupCacheForRequestDigests(
+	ctx context.Context,
+	sessionID string,
+	resolver TypeResolver,
+	req *CallRequest,
+	requestDigest digest.Digest,
+	requestSelf digest.Digest,
+	requestInputs []digest.Digest,
+	requestInputRefs []ResultCallStructuralInputRef,
+) (AnyResult, bool, error) {
 	if sessionID == "" {
 		return nil, false, errors.New("lookup cache for request: empty session ID")
 	}

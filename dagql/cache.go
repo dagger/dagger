@@ -1035,7 +1035,7 @@ func (c *Cache) boundSessionHandle(sessionID string) (SessionResourceHandle, err
 	if sessionID == "" {
 		return "", errors.New("empty session ID")
 	}
-	handle := SessionResourceHandle("dagql.session:" + sessionID)
+	handle := sessionBoundHandle(sessionID)
 	c.sessionMu.Lock()
 	defer c.sessionMu.Unlock()
 	if c.sessionLifecycle(sessionID).lifecycle.Load()&cacheSessionReleasedBit != 0 {
@@ -1043,6 +1043,12 @@ func (c *Cache) boundSessionHandle(sessionID string) (SessionResourceHandle, err
 	}
 	c.addSessionHandleLocked(sessionID, handle)
 	return handle, nil
+}
+
+// sessionBoundHandle is the handle only sessionID holds, which a result
+// bound to the session requires (boundSessionHandle).
+func sessionBoundHandle(sessionID string) SessionResourceHandle {
+	return SessionResourceHandle("dagql.session:" + sessionID)
 }
 
 // addSessionHandleLocked records that sessionID holds handle. Requires
@@ -8064,9 +8070,18 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 				return fmt.Errorf("bind result to session: %w", err)
 			}
 			oc.res.boundSession = handle
+			// The result's identity holds its session, so its class is its
+			// session's own (boundSessionInputName).
+			if frame := oc.res.loadResultCall(); frame != nil {
+				oc.res.storeResultCall(frame.withBoundSession(handle))
+				c.traceResultCallFrameUpdated(ctx, oc.res, "init_completed_result_bound_session", frame, oc.res.loadResultCall())
+			}
 		}
 	}
 	requestForIndex := req
+	if oc.res.boundSession != "" && !resWasCacheBacked {
+		requestForIndex = req.withBoundSession(oc.res.boundSession)
+	}
 	if oc.res.createdAtUnixNano == 0 {
 		oc.res.createdAtUnixNano = now.UnixNano()
 	}

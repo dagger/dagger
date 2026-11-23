@@ -2,8 +2,10 @@ package dagql
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"gotest.tools/v3/assert"
@@ -324,4 +326,64 @@ func TestCacheBoundResultsHeldResultIsServedOnlyToItsSession(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A bound result's identity, which holds its session, never leaves the
+// engine: a transfer sends neither the bound result nor what is made on it,
+// and no record it sends names a session binding. A field of the bound result
+// that returns an ordinary value sends that value by its own call. A bound
+// result kept past its session as the dependency of a kept entry
+// (TestCacheBoundResultStaysBoundAcrossRestart) is served to no later
+// session, nor is anything keyed by its class.
+func TestCacheBoundResultsIdentityNeverLeavesTheEngine(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "cache.db")
+	ctx, c, srv := persistedListTestCache(t, path)
+	sa := currentEntryTestSession(ctx, c, "session-a")
+	frame := &ResultCall{Kind: ResultCallKindField, Field: "bound-identity", Type: NewResultCallType((&transferTestValue{}).Type())}
+	bound, err := c.GetOrInitCall(sa, "session-a", srv, &CallRequest{ResultCall: frame.clone(), IsPersistable: true}, func(ctx context.Context) (AnyResult, error) {
+		BindToSession(ctx)
+		return NewResultForCall(&transferTestValue{Text: "bound"}, frame.clone())
+	})
+	assert.NilError(t, err)
+	plain := persistedListTestResult(t, ctx, c, srv, "ordinary-held", &transferTestValue{Text: "ordinary"})
+	on := func(field string, fn func() (AnyResult, error)) AnyResult {
+		t.Helper()
+		res, err := c.GetOrInitCall(sa, "session-a", srv, &CallRequest{ResultCall: &ResultCall{
+			Kind:     ResultCallKindField,
+			Type:     NewResultCallType((&transferTestValue{}).Type()),
+			Field:    field,
+			Receiver: &ResultCallRef{ResultID: uint64(bound.cacheSharedResult().id)},
+		}, IsPersistable: true}, func(context.Context) (AnyResult, error) { return fn() })
+		assert.NilError(t, err)
+		return res
+	}
+	held := on("held", func() (AnyResult, error) { return plain, nil })
+	derivedFrame := &ResultCall{Kind: ResultCallKindField, Field: "derived", Type: NewResultCallType((&transferTestValue{}).Type()), Receiver: &ResultCallRef{ResultID: uint64(bound.cacheSharedResult().id)}}
+	derived := on("derived", func() (AnyResult, error) {
+		return NewResultForCall(&transferTestValue{Text: "derived"}, derivedFrame)
+	})
+
+	var bundle []byte
+	var leftOut []LeftOutRoot
+	assert.NilError(t, c.WithExportedValues(ctx, ValueSelection{Roots: []AnyResult{bound, held, derived}}, config.RefConfig{}, func(_ context.Context, values *ExportedValues) error {
+		leftOut = values.LeftOut
+		bundle, err = json.Marshal(values.Bundle)
+		return err
+	}))
+	assert.Equal(t, 2, len(leftOut), "the bound result and what is made on it are left out")
+	assert.Assert(t, !strings.Contains(string(bundle), boundSessionInputName), "no record sent names a session binding")
+	assert.Assert(t, !strings.Contains(string(bundle), string(sessionBoundHandle("session-a"))), "no record sent names the session")
+
+	assert.NilError(t, c.ReleaseSession(sa, "session-a"))
+	assert.NilError(t, c.WaitSessionRelease(sa, "session-a"))
+	assert.NilError(t, c.Close(ctx))
+	ctx, c, srv = persistedListTestCache(t, path)
+	later := currentEntryTestSession(ctx, c, "session-later")
+	res, err := c.GetOrInitCall(later, "session-later", srv, &CallRequest{ResultCall: frame.clone(), IsPersistable: true}, func(context.Context) (AnyResult, error) {
+		return NewResultForCall(&transferTestValue{Text: "later"}, frame.clone())
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, !res.HitCache(), "a later session is not served a kept bound result")
+	assert.Equal(t, "later", res.Unwrap().(*transferTestValue).Text)
+	assert.NilError(t, c.ReleaseSession(later, "session-later"))
 }
