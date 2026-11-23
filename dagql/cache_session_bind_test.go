@@ -453,3 +453,47 @@ func TestCacheRestoredBoundResultMatchesNoLaterSession(t *testing.T) {
 	assert.Equal(t, String("later"), later.Unwrap())
 	assert.NilError(t, c.ReleaseSession(same, "session-1"))
 }
+
+// A result a resolver works out from a bound result it is handed, without
+// holding it, depends on that session as much as one that holds it: the
+// resolver's call is bound, so another session works out its own. The
+// session that made it still hits its own later.
+func TestCacheResultWorkedOutFromABoundResultIsItsSessions(t *testing.T) {
+	t.Parallel()
+	baseCtx := t.Context()
+	c, err := NewCache(baseCtx, "", nil, nil)
+	assert.NilError(t, err)
+	listingCall := cacheTestIntCall("bound-listing")
+	countCall := cacheTestIntCall("count-from-listing")
+	count := func(ctx context.Context, session string, listed int) AnyResult {
+		t.Helper()
+		res, err := c.GetOrInitCall(ctx, session, noopTypeResolver{}, &CallRequest{ResultCall: countCall.clone()}, func(ctx context.Context) (AnyResult, error) {
+			listing, err := c.GetOrInitCall(ctx, session, noopTypeResolver{}, &CallRequest{ResultCall: listingCall.clone()}, func(ctx context.Context) (AnyResult, error) {
+				BindToSession(ctx)
+				return cacheTestIntResult(listingCall.clone(), listed), nil
+			})
+			if err != nil {
+				return nil, err
+			}
+			return cacheTestIntResult(countCall.clone(), cacheTestUnwrapInt(t, listing)*10), nil
+		})
+		assert.NilError(t, err)
+		return res
+	}
+
+	aCtx := currentEntryTestSession(baseCtx, c, "session-a")
+	assert.Equal(t, 10, cacheTestUnwrapInt(t, count(aCtx, "session-a", 1)))
+	bCtx := currentEntryTestSession(baseCtx, c, "session-b")
+	assert.Equal(t, 20, cacheTestUnwrapInt(t, count(bCtx, "session-b", 2)), "B works out its own from its own listing")
+
+	again := count(aCtx, "session-a", 3)
+	assert.Assert(t, again.HitCache(), "A hits its own result")
+	assert.Equal(t, 10, cacheTestUnwrapInt(t, again))
+
+	for _, s := range []struct {
+		ctx context.Context
+		id  string
+	}{{aCtx, "session-a"}, {bCtx, "session-b"}} {
+		assert.NilError(t, c.ReleaseSession(s.ctx, s.id))
+	}
+}
