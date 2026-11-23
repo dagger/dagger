@@ -40,9 +40,11 @@ const exportLayerWorkers = 4
 // has a blob, such as a pulled image's, keeps it. It is also how many build at
 // once: up to exportLayerWorkers per export, and across all exports no more
 // than remotecache.ExportsInFlight serial exports built. Only building a blob
-// takes the gate, so it bounds the engine's compression streams and layer
-// reads. A layer the export computes goes as a listing and its content
-// blobs, so the store keeps each file's contents once.
+// takes the gate, so it bounds the layers the engine mounts and reads at once,
+// and the files their listings hold; how many frames compress at once is the
+// engine's own budget of them, whatever builds. A layer the export computes
+// goes as a listing and its content blobs, so the store keeps each file's
+// contents once.
 var exportRefConfig = config.RefConfig{
 	Compression: compression.New(compression.Zstd),
 	Listings:    true,
@@ -56,8 +58,9 @@ var exportRefConfig = config.RefConfig{
 // while no session runs work, as an engine's last exports as its last
 // session tears down or after it ends: no check runs then, only the
 // session's own cleanup, and the engine stops 20 s after that
-// session, so its layers build on all its cores, one each at once, through a
-// gate of their own. On a ten-check stack a stopping engine's last export
+// session, so it reads as many of its layers at once as it has cores, through
+// a gate of their own, their frames compressing under the same budget as
+// every other layer's. On a ten-check stack a stopping engine's last export
 // built 113 layers, 23.2 s of diffs, 4 at once in 8.5 s; on the simulator a
 // stopping engine used 3 to 4 of its 16 cores while its last export built.
 // The blobs are the same: only how many build at once differs.
