@@ -488,6 +488,9 @@ type listingTar struct {
 	done chan struct{}
 	// read counts the listing's blob bytes read so far.
 	read atomic.Int64
+	// files and fileBytes count the regular files the rebuilt tar has held
+	// so far, and their bytes (writeExpandedListing).
+	files, fileBytes atomic.Int64
 }
 
 // errListingTarClosed stops a rebuild nothing reads any more.
@@ -518,7 +521,7 @@ func openListingTar(ctx context.Context, cs content.Provider, listing ocispecs.D
 		if ds != nil {
 			defer ds.Close()
 		}
-		pw.CloseWithError(writeExpandedListing(ctx, pw, r, cs, listingContentType(listing)))
+		pw.CloseWithError(writeExpandedListing(ctx, pw, r, cs, listingContentType(listing), l))
 	}()
 	return l, nil
 }
@@ -542,8 +545,9 @@ func listingContentType(listing ocispecs.Descriptor) string {
 // writeExpandedListing writes the layer's tar a decompressed listing stands
 // for: each entry whose body is a content blob gets its size back and its
 // body from the blob, which must be in cs, and loses the PAX records that
-// named it. Every other entry is the listing's.
-func writeExpandedListing(ctx context.Context, w io.Writer, listing io.Reader, cs content.Provider, contentType string) error {
+// named it. Every other entry is the listing's. It counts each regular file
+// it writes, and its bytes, in l.
+func writeExpandedListing(ctx context.Context, w io.Writer, listing io.Reader, cs content.Provider, contentType string, l *listingTar) error {
 	tr := tar.NewReader(listing)
 	tw := tar.NewWriter(w)
 	for {
@@ -565,12 +569,18 @@ func writeExpandedListing(ctx context.Context, w io.Writer, listing io.Reader, c
 			if _, err := io.CopyN(tw, tr, hdr.Size); err != nil {
 				return err
 			}
+			if hdr.Typeflag == tar.TypeReg {
+				l.files.Add(1)
+				l.fileBytes.Add(hdr.Size)
+			}
 			continue
 		}
 		raw, err := strconv.ParseInt(hdr.PAXRecords[paxContentRaw], 10, 64)
 		if err != nil {
 			return errors.Wrapf(err, "entry %s has an invalid size", hdr.Name)
 		}
+		l.files.Add(1)
+		l.fileBytes.Add(raw)
 		format, err := strconv.Atoi(hdr.PAXRecords[paxContentFormat])
 		if err != nil {
 			return errors.Wrapf(err, "entry %s has an invalid format", hdr.Name)
