@@ -600,6 +600,20 @@ func (container *Container) evaluateAllLazyGroups(ctx context.Context, op LazyCo
 	return nil
 }
 
+// RunParts are the parts an exec over the container mounts, from its settled
+// metadata: its rootfs and every directory or file mount. Its own exec
+// metadata is not among them.
+func (container *Container) RunParts() []dagql.PartKey {
+	parts := []dagql.PartKey{ContainerPartFS}
+	for i := range container.Mounts {
+		mnt := &container.Mounts[i]
+		if mnt.DirectorySource != nil || mnt.FileSource != nil {
+			parts = append(parts, ContainerPartMount(mnt.Target))
+		}
+	}
+	return parts
+}
+
 // containerSnapshotParts enumerates the snapshot parts of a container
 // from its settled metadata: the rootfs, the exec metadata, and every
 // directory- or file-backed mount, keyed by target. Cache, volume, and

@@ -1480,14 +1480,7 @@ func (state *ContainerExecState) evaluateOutputs(ctx context.Context, container 
 		// container's metadata (args/env expansion, working directory,
 		// secrets, sockets, services) is already settled by the
 		// resolution phase before this body starts.
-		runParts := []dagql.PartKey{ContainerPartFS}
-		for i := range container.Mounts {
-			mnt := &container.Mounts[i]
-			if mnt.DirectorySource != nil || mnt.FileSource != nil {
-				runParts = append(runParts, ContainerPartMount(mnt.Target))
-			}
-		}
-		if err := dagCache.EvaluateParts(ctx, state.Parent, runParts...); err != nil {
+		if err := dagCache.EvaluateParts(ctx, state.Parent, container.RunParts()...); err != nil {
 			return err
 		}
 
