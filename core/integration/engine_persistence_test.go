@@ -18,6 +18,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync/atomic"
@@ -687,6 +688,37 @@ COPY src /app/src
 		require.Equal(t, saved[0], first.Value.OpenSnapshotID)
 		checkSnapshotClosed(t, rows[snapshotResultID(t, lastIDs[1])], saved[1])
 		logSnapshotRow(t, "list last engine first child read", first)
+	})
+
+	// A module function's run is a process of the engine that ran it: what it
+	// returns names that engine's results by handle. Its exec answers only the
+	// evaluation that made it, so a call dagql evaluates again after a restart,
+	// here after a failed attempt, runs the function again rather than being
+	// served the old process's output.
+	t.Run("a module function's run doesn't answer it after a restart", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		stateKey := "entrypoint-run-" + rand.Text()
+		runID := rand.Text()
+		failedAfter := regexp.MustCompile(`failed after \W*([0-9a-f-]{36})`)
+		nonce := func(client *dagger.Client) string {
+			t.Helper()
+			require.NoError(t, nonceModule(client, runID).AsModuleSource().AsModule().Serve(ctx))
+			_, err := testutil.QueryWithClient[struct{ Nonces struct{ Failing string } }](client, t, `{nonces{failing}}`, nil)
+			require.Error(t, err)
+			match := failedAfter.FindStringSubmatch(err.Error())
+			require.NotNil(t, match, err.Error())
+			return match[1]
+		}
+
+		upA, tunnelA, a := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upA, tunnelA, a) })
+		before := nonce(a)
+		stopEngine(ctx, t, upA, tunnelA, a)
+		upA, tunnelA, a = nil, nil, nil
+
+		upB, tunnelB, b := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upB, tunnelB, b) })
+		require.NotEqual(t, before, nonce(b), "the run before the restart doesn't answer the call after it: the function runs again")
 	})
 
 	t.Run("module core metadata returns survive restart", func(ctx context.Context, t *testctx.T) {
