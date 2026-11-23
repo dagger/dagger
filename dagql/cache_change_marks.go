@@ -241,6 +241,16 @@ func (c *Cache) markHoldingLocked(change *RemoteChange, key HolderKey) {
 	if c.changes == nil {
 		return
 	}
+	// A write marks its holdings over and over, its own for each
+	// dependency it adds among them: a mark of the holding just marked
+	// adds nothing, and a write's first mark makes room for a few.
+	n := len(change.Holdings)
+	if n > 0 && change.Holdings[n-1] == key {
+		return
+	}
+	if change.Holdings == nil {
+		change.Holdings = make([]HolderKey, 0, 4)
+	}
 	change.Holdings = append(change.Holdings, key)
 }
 
