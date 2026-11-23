@@ -2708,6 +2708,10 @@ type Cache struct {
 	// testNoPrerelocation, when set, keeps a merge from relocating its
 	// records before its commit takes egraphMu.
 	testNoPrerelocation bool
+	// testNoUnchangedRows, when set, has a merge teach every kept record of
+	// the Cloud's again, as one whose entry never merged it would be
+	// (unchangedCloudRowLocked): a test compares the two.
+	testNoUnchangedRows bool
 	// testKeepEveryKnownRow, when set, has a content export carry every
 	// known row of its closure, as it did before it left out the ones
 	// nothing in its bundle stands on (keepNeededRows), so a test can merge

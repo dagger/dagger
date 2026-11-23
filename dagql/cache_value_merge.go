@@ -533,7 +533,8 @@ type MergeReply struct {
 // those of them whose identity taught the entry a class, a term or a digest
 // all the same: what a held row in their place wouldn't have taught it. On
 // an engine, Unchanged are the kept records of the Cloud's whose entry
-// merged them already, unchanged since: the commit didn't teach them again.
+// merged them already, unchanged since: the commit didn't teach them again
+// (unchangedCloudRowLocked).
 type MergeRowCounts struct {
 	Held, Kept, Created, Stored, Replaced, Retired int
 	KeptWithHolding, KeptTaught                    int
@@ -1707,7 +1708,8 @@ type mergeRow struct {
 	keptWithHolding, keptTaught bool
 	// unchanged marks, on an engine, a kept record of the Cloud's that its
 	// entry merged already at the same change stamp, unchanged here since:
-	// its identity and the Cloud's copy aren't taught again.
+	// its identity and the Cloud's copy aren't taught again
+	// (unchangedCloudRowLocked).
 	unchanged bool
 	// rec and deps are the record relocated to the final numbers, for an
 	// action that installs it. firstUse is set for a record installed with
@@ -3028,6 +3030,15 @@ func (c *Cache) applyMergedIdentitiesLocked(ctx context.Context, commit *valueMe
 			}
 			continue
 		}
+		if c.unchangedCloudRowLocked(commit, row) {
+			// The record and its expiry are those the entry merged, and
+			// nothing changed the entry since: its identity and the Cloud's
+			// copy are what the record would teach it. Its calls are taught
+			// below all the same: two sets' files carry the calls of their
+			// own checks' runs, so the same record can come with others.
+			row.unchanged = true
+			continue
+		}
 		frame := row.plan.row.loadResultCall()
 		if row.action.installs() {
 			frame = row.res.loadResultCall()
@@ -3049,6 +3060,7 @@ func (c *Cache) applyMergedIdentitiesLocked(ctx context.Context, commit *valueMe
 			// The sender's entry stores the record: the Cloud's, with the
 			// record's expiry, or the engine image's.
 			row.res.noteSenderCopyLocked(commit.from, row.value.SenderNumber, true, row.value.ExpiresAtUnix)
+			c.noteCloudMergeLocked(commit, row)
 			continue
 		}
 		c.mergeSenderHoldingLocked(ctx, cloudState, commit, row, change)
@@ -3072,6 +3084,42 @@ func (c *Cache) applyMergedIdentitiesLocked(ctx context.Context, commit *valueMe
 		c.markEntryClassLocked(row.res.id, StampMergeExpiry)
 		c.teachCallIdentityLocked(ctx, row.res, merged.id)
 	}
+}
+
+// unchangedCloudRowLocked reports whether row, a record of the Cloud's an
+// engine keeps on an entry it has, would teach the entry nothing again: the
+// entry's Cloud holding is the row's Cloud entry, storing a record at the
+// row's expiry, and the engine last merged it at the start count and change
+// stamp the row carries (cloudMergeNote), with the entry's own transfer
+// revision unchanged since, so that neither side changed what the record
+// teaches; and neither the row nor the value it lands on has expired. A
+// pruned entry isn't kept, a replaced or re-run one has moved its revision,
+// and a Cloud change has moved the stamp: each takes the commit's whole path.
+// Requires egraphMu.
+func (c *Cache) unchangedCloudRowLocked(commit *valueMergeCommit, row *mergeRow) bool {
+	if c.blobBacked || c.testNoUnchangedRows || commit.from != cloudCacheID || row.action != mergeKeep || row.expired || row.keptExpired {
+		return false
+	}
+	key, h := row.res.cloudHoldingLocked()
+	if h == nil || h.cloudMerge == nil || key.Number != row.value.SenderNumber || h.unstored || h.expiresAtUnix != row.value.ExpiresAtUnix {
+		return false
+	}
+	note := h.cloudMerge
+	return note.generation == commit.prep.bundle.SenderGeneration && note.stamp == row.value.SenderStamp && note.revision == row.res.transferRevision
+}
+
+// noteCloudMergeLocked records, on an engine, what row merged of its Cloud
+// entry onto the entry's Cloud holding (cloudMergeNote), once its identity
+// and the Cloud's copy are taught. Requires egraphMu for writing.
+func (c *Cache) noteCloudMergeLocked(commit *valueMergeCommit, row *mergeRow) {
+	if commit.from != cloudCacheID {
+		return
+	}
+	key, h := row.res.cloudHoldingLocked()
+	if h == nil || key.Number != row.value.SenderNumber {
+		return
+	}
+	h.cloudMerge = &cloudMergeNote{generation: commit.prep.bundle.SenderGeneration, stamp: row.value.SenderStamp, revision: row.res.transferRevision}
 }
 
 // identityMark is what teaching an entry its identity can change, read
