@@ -456,6 +456,7 @@ func (c *Cache) repairClassTermsLocked(ctx context.Context, root eqClassID) (mer
 	processedTermDigests := make(map[string]struct{}, len(termIDs))
 
 	for _, termID := range termIDs {
+		c.egraphRepairWalks++
 		term := c.egraphTerms[termID]
 		if term == nil {
 			delete(termSet, termID)
