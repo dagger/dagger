@@ -35,6 +35,20 @@ func FastModuleSourceKindCheck(
 	}
 }
 
+// ModuleRefDecidedByContent reports whether what a module ref names is
+// decided without its caller: a Git ref that names its repository outright,
+// or any ref when requireGit says it must be one, but not a vanity ref, which
+// resolves through the caller's workspace lock or the network
+// (ResolveDaggerGetRedirect). A ref that could be a local directory is the
+// caller's to decide. Which commit a branch or tag names is decided later,
+// by calls a resolver's call scopes see.
+func ModuleRefDecidedByContent(refString, refPin string, requireGit bool) bool {
+	if daggerGetEligible(refString) {
+		return false
+	}
+	return requireGit || FastModuleSourceKindCheck(refString, refPin) == ModuleSourceKindGit
+}
+
 // GitRefString builds a module ref string from a clone ref, an optional source
 // root subpath and an optional version.
 func GitRefString(cloneRef, sourceRootSubpath, version string) string {
