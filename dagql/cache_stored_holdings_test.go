@@ -60,7 +60,7 @@ func TestExecutedHoldings(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, storedHoldingsTestInfo(t, cloud, sender).Executed, "a later hit keeps the mark")
 
-	_, removed, dropped, err := cloud.removePrunedEdge(ctx, sharedResultID(r))
+	_, removed, dropped, err := cloud.removePrunedEdge(ctx, &RemoteChange{}, sharedResultID(r))
 	require.NoError(t, err)
 	require.True(t, removed)
 	require.Equal(t, 2, dropped)

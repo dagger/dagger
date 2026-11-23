@@ -498,7 +498,7 @@ func TestStoredSizesKeepNothingOfADroppedValue(t *testing.T) {
 		dropped = true
 		cloud.egraphMu.Lock()
 		defer cloud.egraphMu.Unlock()
-		_, err := cloud.dropValueLocked(ctx, entry)
+		_, err := cloud.dropValueLocked(ctx, &RemoteChange{}, entry)
 		require.NoError(t, err)
 	}
 	_, err := cloud.StoredSizes(ctx, []uint64{r}, time.Now().Unix(), nil)
