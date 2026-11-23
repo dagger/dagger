@@ -5685,12 +5685,58 @@ type OperationCompletedElsewhere interface{ OperationCompletedElsewhere() bool }
 // result merged from another engine's record of an operation that completed
 // there has nothing left to complete either: its sync returns at once, and
 // its content comes when something reads it, downloaded or computed as any
-// read of the result gets it. Any other result evaluates as Evaluate does.
+// read of the result gets it. A result that keeps its receiver's parts but
+// its own (PersistedPartDelegator), as a Container's withEnvVariable does,
+// has its own parts for its operation: its sync completes them and syncs the
+// receiver, by the same Sync, and the parts it keeps of the receiver come as
+// the receiver's would. Any other result evaluates as Evaluate does.
 func (c *Cache) Sync(ctx context.Context, res AnyResult) error {
 	if CompletedElsewhere(res) {
 		return nil
 	}
-	return c.Evaluate(ctx, res)
+	receiver, own, ok := c.delegatedSync(ctx, res)
+	if !ok {
+		return c.Evaluate(ctx, res)
+	}
+	if len(own) > 0 {
+		if err := c.EvaluateParts(ctx, res, own...); err != nil {
+			return err
+		}
+	}
+	return c.Sync(ctx, receiver)
+}
+
+// delegatedSync is, for a result whose family says it keeps its receiver's
+// parts but own (PersistedPartDelegator), the receiver and those own parts.
+// It reports false for any other result, and for one whose receiver it can't
+// load, which then evaluates whole.
+func (c *Cache) delegatedSync(ctx context.Context, res AnyResult) (AnyResult, []PartKey, bool) {
+	shared := res.cacheSharedResult()
+	self, call := shared.loadSelf(), shared.loadResultCall()
+	if self == nil || call == nil {
+		return nil, nil, false
+	}
+	family, ok := PersistedObjectFamilyFor(self)
+	if !ok {
+		return nil, nil, false
+	}
+	delegator, ok := family.Transfer.(PersistedPartDelegator)
+	if !ok {
+		return nil, nil, false
+	}
+	id, own, ok := delegator.DelegatedParts(call)
+	if !ok {
+		return nil, nil, false
+	}
+	server := CurrentDagqlServer(ctx)
+	if server == nil {
+		return nil, nil, false
+	}
+	receiver, err := c.loadResultByResultID(ctx, "", server, id)
+	if err != nil || receiver == nil {
+		return nil, nil, false
+	}
+	return receiver, own, true
 }
 
 // CompletedElsewhere reports whether res was merged from another engine's
