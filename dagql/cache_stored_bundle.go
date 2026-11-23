@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 
 	"github.com/opencontainers/go-digest"
@@ -116,22 +117,30 @@ type HeldBy struct {
 	// compared.
 	Terms []RemoteTerm
 
-	// namedBuilds counts the indexes of Terms built for h (heldTerms).
+	// named indexes Terms by self digest, built once for every walk of
+	// the recipient's bundles, prices and closures (heldTerms), and
+	// namedBuilds counts the indexes built.
+	namedOnce   sync.Once
+	named       map[digest.Digest][]RemoteTerm
 	namedBuilds atomic.Int32
 }
 
 // heldTerms returns h's terms by self digest, which a term's key begins
-// with (keptCallTermKeyLocked); nil when h names none.
+// with (keptCallTermKeyLocked); nil when h names none. It is built once for
+// h: a walk takes it for each root, and a set's file names thousands of
+// terms over thousands of roots.
 func heldTerms(h *HeldBy) map[digest.Digest][]RemoteTerm {
 	if h == nil || h.Calls == nil || len(h.Terms) == 0 {
 		return nil
 	}
-	h.namedBuilds.Add(1)
-	terms := make(map[digest.Digest][]RemoteTerm, len(h.Terms))
-	for _, term := range h.Terms {
-		terms[term.Self] = append(terms[term.Self], term)
-	}
-	return terms
+	h.namedOnce.Do(func() {
+		h.namedBuilds.Add(1)
+		h.named = make(map[digest.Digest][]RemoteTerm, len(h.Terms))
+		for _, term := range h.Terms {
+			h.named[term.Self] = append(h.named[term.Self], term)
+		}
+	})
+	return h.named
 }
 
 // namedTermLocked reports whether kept's term is one of terms. Both keys
