@@ -484,7 +484,8 @@ source = "`+repoURL+`#main:entry"
 // sources again, not take the earlier session's files.
 func (ModuleSuite) TestModuleEntrypointSourcesReadKeepsTheSourceToItsSession(ctx context.Context, t *testctx.T) {
 	first := connect(ctx, t)
-	counter, err := core.NewQuery(first).Container().From(alpineImage).
+	// busybox's httpd runs CGI scripts; alpine's busybox has no httpd.
+	counter, err := core.NewQuery(first).Container().From(busyboxImage).
 		WithNewFile("/www/cgi-bin/n", "#!/bin/sh\nn=$(cat /tmp/n 2>/dev/null || echo 0)\nn=$((n+1))\necho $n > /tmp/n\nprintf 'Content-Type: text/plain\\r\\n\\r\\n%s' \"$n\"\n",
 			core.ContainerWithNewFileOpts{Permissions: 0o755}).
 		WithExposedPort(8080).
