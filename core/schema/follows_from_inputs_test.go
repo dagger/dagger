@@ -10,6 +10,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/stretchr/testify/require"
 )
@@ -256,7 +257,7 @@ func TestDeclaredFieldsFollowFromTheirInputs(t *testing.T) {
 // inputs, but a process run over that mount reads the volume's contents,
 // which no call holds, so it doesn't. Inheriting a system variable only names
 // it; the process that reads the engine's value doesn't follow either. A git
-// tree's call says so unless it keeps .git with its tags
+// tree's call says so unless it keeps .git with tags in it
 // (TestGitTreeFollowsFromItsInputsUnlessItKeepsTags).
 func TestFieldsThatFollowFromInputsDeclareIt(t *testing.T) {
 	e := newFollowsTestEngine(t, transferTestSalt(t), "follows-declared")
@@ -297,9 +298,13 @@ func TestFieldsThatFollowFromInputsDeclareIt(t *testing.T) {
 
 // A git tree's call says it follows from its inputs, as the engine's own
 // cache counts two trees of one commit as the same, .git included: git reads
-// the same objects from either's pack. One that keeps .git with its tags
+// the same objects from either's pack. One that keeps .git with tags in it
 // doesn't (gitTreeFollowsFromInputs): its tags are those the repository has
-// when it's fetched, which no hash in its key addresses.
+// when it's fetched, which no hash in its key addresses. A tree with its full
+// history has them whether it asks or not, since its checkout copies every
+// tag that points into that history. GitRef.tree takes such a tree from
+// __fullCheckout, which doesn't declare it follows; GitCommit.tree makes its
+// own.
 func TestGitTreeFollowsFromItsInputsUnlessItKeepsTags(t *testing.T) {
 	e := newFollowsTestEngine(t, transferTestSalt(t), "follows-tree")
 	for _, typ := range []string{"GitRef", "GitCommit"} {
@@ -309,31 +314,69 @@ func TestGitTreeFollowsFromItsInputsUnlessItKeepsTags(t *testing.T) {
 		require.True(t, ok, typ)
 		require.True(t, spec.FollowsFromInputs, typ+".tree")
 	}
+	refClass, ok := e.srv.ObjectType("GitRef")
+	require.True(t, ok)
+	full, ok := refClass.FieldSpec("__fullCheckout", "")
+	require.True(t, ok, "GitRef.__fullCheckout")
+	require.False(t, full.FollowsFromInputs, "GitRef.__fullCheckout")
 
 	ctx, srv, cache, _ := resolverOutputFixture(t)
 	srv.InstallObject(dagql.NewClass[*core.GitRef](srv))
+	srv.InstallObject(dagql.NewClass[*core.GitCommit](srv))
 	s := &gitSchema{}
+	// GitRef.__fullCheckout declared as the schema declares it (above),
+	// without the checkout it would fetch.
+	fullCheckout := dagql.NodeFunc("__fullCheckout", func(ctx context.Context, parent dagql.ObjectResult[*core.GitRef], _ struct{}) (inst dagql.ObjectResult[*core.Directory], err error) {
+		srv, err := core.CurrentDagqlServer(ctx)
+		if err != nil {
+			return inst, err
+		}
+		query, err := core.CurrentQuery(ctx)
+		if err != nil {
+			return inst, err
+		}
+		return dagql.NewObjectResultForCurrentCall(ctx, srv, &core.Directory{
+			Platform: query.Platform(),
+			Dir:      new(core.LazyAccessor[string, *core.Directory]),
+			Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
+			Lazy:     &core.DirectoryGitTreeLazy{LazyState: core.NewLazyState(), Ref: parent, KeepGitDir: true},
+		})
+	}).IsPersistable()
 	dagql.Fields[*core.GitRepository]{dagql.NodeFunc("ref", s.ref).View(AllVersion).IsPersistable()}.Install(srv)
-	dagql.Fields[*core.GitRef]{dagql.NodeFuncWithDynamicInputs("tree", s.tree, s.treeCacheKey).FollowsFromInputs().View(AllVersion).IsPersistable()}.Install(srv)
+	dagql.Fields[*core.GitRef]{
+		dagql.NodeFuncWithDynamicInputs("tree", s.tree, s.treeCacheKey).FollowsFromInputs().View(AllVersion).IsPersistable(),
+		dagql.NodeFunc("targetCommit", s.targetCommit).View(AllVersion),
+		fullCheckout,
+	}.Install(srv)
+	dagql.Fields[*core.GitCommit]{dagql.NodeFuncWithDynamicInputs("tree", s.commitTree, s.commitTreeCacheKey).FollowsFromInputs().View(AllVersion).IsPersistable()}.Install(srv)
 	u, err := gitutil.ParseURL("https://unreachable.invalid/repository.git")
 	require.NoError(t, err)
 	repo := resolverAttach(t, ctx, srv, cache, "repository", &core.GitRepository{Backend: &core.RemoteGitRepository{URL: u}, URL: dagql.NonNull(dagql.String(u.Remote()))})
 	var ref dagql.ObjectResult[*core.GitRef]
 	require.NoError(t, srv.Select(ctx, repo, &ref, dagql.Selector{Field: "ref", Args: []dagql.NamedInput{{Name: "name", Value: dagql.String(strings.Repeat("a", 40))}}}))
-	for _, tc := range []struct {
-		name    string
-		args    []dagql.NamedInput
-		follows bool
-	}{
-		{"without .git", []dagql.NamedInput{{Name: "discardGitDir", Value: dagql.Boolean(true)}}, true},
-		{"without .git, tags asked", []dagql.NamedInput{{Name: "discardGitDir", Value: dagql.Boolean(true)}, {Name: "includeTags", Value: dagql.Boolean(true)}}, true},
-		{"with .git", nil, true},
-		{"with .git and tags", []dagql.NamedInput{{Name: "includeTags", Value: dagql.Boolean(true)}}, false},
-	} {
-		var tree dagql.ObjectResult[*core.Directory]
-		require.NoError(t, srv.Select(ctx, ref, &tree, dagql.Selector{Field: "tree", Args: tc.args}), tc.name)
-		frame, err := tree.ResultCall()
-		require.NoError(t, err, tc.name)
-		require.Equal(t, tc.follows, frame.FollowsFromInputs, tc.name)
+	var commit dagql.ObjectResult[*core.GitCommit]
+	require.NoError(t, srv.Select(ctx, ref, &commit, dagql.Selector{Field: "targetCommit"}))
+	for _, parent := range []dagql.AnyObjectResult{ref, commit} {
+		typ := parent.Type().Name()
+		for _, tc := range []struct {
+			name    string
+			args    []dagql.NamedInput
+			follows bool
+		}{
+			{"without .git", []dagql.NamedInput{{Name: "discardGitDir", Value: dagql.Boolean(true)}}, true},
+			{"without .git, tags asked", []dagql.NamedInput{{Name: "discardGitDir", Value: dagql.Boolean(true)}, {Name: "includeTags", Value: dagql.Boolean(true)}}, true},
+			{"without .git, full history", []dagql.NamedInput{{Name: "discardGitDir", Value: dagql.Boolean(true)}, {Name: "depth", Value: dagql.Int(0)}}, true},
+			{"with .git", nil, true},
+			{"with .git, two commits deep", []dagql.NamedInput{{Name: "depth", Value: dagql.Int(2)}}, true},
+			{"with .git and tags", []dagql.NamedInput{{Name: "includeTags", Value: dagql.Boolean(true)}}, false},
+			{"with .git, full history", []dagql.NamedInput{{Name: "depth", Value: dagql.Int(0)}}, false},
+		} {
+			name := typ + ".tree " + tc.name
+			var tree dagql.ObjectResult[*core.Directory]
+			require.NoError(t, srv.Select(ctx, parent, &tree, dagql.Selector{Field: "tree", Args: tc.args}), name)
+			frame, err := tree.ResultCall()
+			require.NoError(t, err, name)
+			require.Equal(t, tc.follows, frame.FollowsFromInputs, name)
+		}
 	}
 }
