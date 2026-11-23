@@ -71,12 +71,7 @@ func (c *Cache) currentEntryForRecipeLocked(recipe digest.Digest) *sharedResult 
 // through a dependent, so it holds a unit too. Requires egraphMu; nests
 // sessionMu.
 func (c *Cache) resultInUseLocked(res *sharedResult) bool {
-	idle := int64(0)
-	for _, ref := range res.holderRefsLocked() {
-		if !senderCache(ref.key.Cache) {
-			idle++
-		}
-	}
+	idle := int64(res.engineHoldersLocked())
 	if _, retained := c.persistedEdgesByResult[res.id]; retained {
 		idle++
 	}
