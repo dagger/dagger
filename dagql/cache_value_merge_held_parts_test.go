@@ -37,7 +37,15 @@ func heldPartsByDecodingLocked(c *Cache, res *sharedResult, outputs []Transferre
 			return false
 		}
 		part, ok := parts[key]
-		if !ok || checkOutputPart(output, part) != nil {
+		if !ok {
+			return false
+		}
+		// A copy that has the part completed holds a row's pending part, as
+		// long as the row puts nothing on it to store.
+		if output.State == "pending" && part.State == "completed" && output.Chain == nil && output.Value == nil && output.Owner == nil {
+			continue
+		}
+		if checkOutputPart(output, part) != nil {
 			return false
 		}
 	}
@@ -80,7 +88,9 @@ func TestCloudChecksAHeldRowsPartsFromItsCopysFacts(t *testing.T) {
 		{"a pending part, absent", []TransferredOutput{at("snapshot", "absent")}, false},
 		{"a complete part's upload", []TransferredOutput{upload("fs", "directory")}, false},
 		{"a complete part, completed", []TransferredOutput{at("fs", "completed")}, true},
-		{"a complete part, pending", []TransferredOutput{at("fs", "pending")}, false},
+		// The row's recipe is the copy's, and a part the copy has completed
+		// holds whatever the row says is still to come of it.
+		{"a complete part, pending", []TransferredOutput{at("fs", "pending")}, true},
 		{"a complete part, as metadata", []TransferredOutput{at("fs", "metadata")}, false},
 		{"an absent part, absent", []TransferredOutput{at("mount:/a", "absent")}, true},
 		{"an absent part, pending", []TransferredOutput{at("mount:/a", "pending")}, false},
@@ -90,7 +100,7 @@ func TestCloudChecksAHeldRowsPartsFromItsCopysFacts(t *testing.T) {
 		{"the consumed metadata part, pending", []TransferredOutput{at("metadata", "pending")}, false},
 		{"a part the copy lacks", []TransferredOutput{at("other", "pending")}, false},
 		{"several, each there", []TransferredOutput{upload("snapshot", "directory"), at("mount:/a", "absent"), at("metadata", "metadata")}, true},
-		{"several, one not", []TransferredOutput{upload("snapshot", "directory"), at("fs", "pending")}, false},
+		{"several, one not", []TransferredOutput{upload("snapshot", "directory"), at("mount:/a", "pending")}, false},
 	}
 	for _, compressed := range []bool{false, true} {
 		name := "whole"
