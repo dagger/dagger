@@ -86,6 +86,9 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 		}
 		c.egraphParents = make([]eqClassID, maxEqClassID+1)
 		c.egraphRanks = make([]uint8, maxEqClassID+1)
+		// The imported terms and entries count their uses as they come.
+		c.egraphUses = make([]uint32, maxEqClassID+1)
+		c.liveEqClasses = 0
 		for _, row := range eqClassRows {
 			eqID := eqClassID(row.ID)
 			c.egraphParents[eqID] = eqID
@@ -369,6 +372,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 
 			term := newEgraphTerm(termID, selfDigest, inputEqIDs, outputEqID)
 			c.egraphTerms[termID] = term
+			c.useTermLocked(term)
 			c.termInputProvenance[termID] = inputProvenance
 			digestTerms := c.egraphTermsByTermDigest[term.termDigest]
 			if digestTerms == nil {
