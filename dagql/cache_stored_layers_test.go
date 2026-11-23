@@ -3,6 +3,7 @@ package dagql
 import (
 	"fmt"
 	"maps"
+	"math"
 	"runtime"
 	"slices"
 	"testing"
@@ -182,6 +183,56 @@ func TestStoredPartOffersAreAsStored(t *testing.T) {
 	for _, name := range []string{"one", "four", "empty"} {
 		require.Equal(t, want[name], read(name), name)
 	}
+}
+
+// A layer is found among the many the table holds for its blob as fast as
+// among one. Engines describe one blob many ways: each build of the same
+// content stamps its own creation time, and an export notes whether it
+// computed the blob. On a service that several pull requests had filled, an
+// upload's parts were compared against every such variant of each layer's
+// blob, one by one under the table's one lock: storing an upload's parts took
+// up to 11 s at a stopping engine's last export. The timing is each arm's
+// fastest of several rounds, so a busy machine slows both alike.
+func TestStoredLayersFindALayerAmongManyOfItsBlobAsAmongOne(t *testing.T) {
+	t.Parallel()
+	const variants, lookups, rounds = 2000, 200, 5
+	variant := func(i int) snapshots.ExportLayer {
+		layer := storedLayersTestLayer("many-variants", "the same blob, built again")
+		created := time.Unix(1_760_000_000+int64(i), 0).UTC()
+		layer.CreatedAt = &created
+		layer.Descriptor.Annotations["buildkit/createdat"] = created.Format(time.RFC3339Nano)
+		return layer
+	}
+	part := func(table *storedLayers, layer snapshots.ExportLayer) storedPart {
+		return table.part(storedLayersTestPart("snapshot", []snapshots.ExportLayer{layer}, nil))
+	}
+	one, many := &storedLayers{}, &storedLayers{}
+	held := []storedPart{part(one, variant(0))}
+	for i := range variants {
+		held = append(held, part(many, variant(i)))
+	}
+	// Each variant is held apart, and a lookup finds the one it equals.
+	require.NotSame(t, held[1].layers[0], held[2].layers[0])
+	require.Same(t, held[len(held)-1].layers[0], part(many, variant(variants-1)).layers[0])
+	require.Same(t, held[1].layers[0], part(many, variant(0)).layers[0])
+
+	fastest := func(table *storedLayers, layer snapshots.ExportLayer) time.Duration {
+		best := time.Duration(math.MaxInt64)
+		for range rounds {
+			start := time.Now()
+			for range lookups {
+				part(table, cloneExportLayer(layer))
+			}
+			best = min(best, time.Since(start))
+		}
+		return best
+	}
+	// The last variant held: a lookup that compares one by one compares it
+	// last.
+	amongOne := fastest(one, variant(0))
+	amongMany := fastest(many, variant(variants-1))
+	runtime.KeepAlive(held)
+	require.Less(t, amongMany, 10*amongOne, "%d lookups among %d variants of a blob took %s, against %s among one", lookups, variants, amongMany, amongOne)
 }
 
 // The cache holds a layer only while a stored part names it: once the
