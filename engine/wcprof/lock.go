@@ -84,7 +84,7 @@ type LockHolder uint8
 // LockHolders bounds the LockHolder values, LockHolderReaders included, so
 // that a counter by kind is a small fixed array: every LockHolder is below
 // it.
-const LockHolders = 16
+const LockHolders = 32
 
 // LockHolderReaders is the holder of a waited acquisition that no writer
 // let in: it waited only for readers to leave.
