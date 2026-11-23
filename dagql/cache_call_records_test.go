@@ -1001,7 +1001,7 @@ func TestCallRecordWithAnUnplaceableInputIsNotSent(t *testing.T) {
 	// class stores no record any more.
 	cloud.egraphMu.Lock()
 	receiver := cloud.resultsByID[sharedResultID(test.receiverNumber)]
-	_, err := cloud.dropValueLocked(test.ctx, &RemoteChange{}, receiver)
+	_, err := cloud.dropValueLocked(test.ctx, receiver)
 	cloud.egraphMu.Unlock()
 	require.NoError(t, err)
 	built, err := cloud.StoredBundle(test.ctx, []uint64{test.number}, time.Now().Unix(), nil)
