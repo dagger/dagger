@@ -175,6 +175,16 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool, stored, declared map[u
 		if _, ok := rows.get(uint64(transferred.Value)); !ok {
 			return nil, fmt.Errorf("call %d: value %d is no row", i, transferred.Value)
 		}
+		// Each input's row is one the bundle carries, or a held row for the
+		// recipient's own entry.
+		for j, input := range transferred.Inputs {
+			if input == 0 {
+				continue
+			}
+			if _, ok := rows.get(uint64(input)); !ok {
+				return nil, fmt.Errorf("call %d: input %d's row %d is no row", i, j, input)
+			}
+		}
 	}
 	named := map[uint64]bool{}
 	for _, output := range bundle.Outputs {

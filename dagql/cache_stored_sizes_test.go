@@ -102,7 +102,8 @@ func TestStoredSizesPriceHeldEntriesAsHeldRows(t *testing.T) {
 
 // A root whose kept call needs an input the bundle adds is priced with that
 // input, as StoredBundle carries it; a recipient that holds the input is sent
-// no copy of it, and the root isn't priced with it.
+// a held row of it, which names it to the recipient's own entry with no copy
+// of its record, and the root is priced with that row.
 func TestStoredSizesPriceCallInputs(t *testing.T) {
 	t.Parallel()
 	test := newReceiverCallTest(t)
@@ -119,7 +120,8 @@ func TestStoredSizesPriceCallInputs(t *testing.T) {
 			require.Equal(t, []uint64{test.receiverNumber}, built.CallInputs, name)
 			require.Equal(t, []int{0, 0}, built.RootOwners, "the input travels with the root whose call needs it")
 		} else {
-			require.Empty(t, built.CallInputs, name)
+			require.Equal(t, []uint64{test.receiverNumber}, built.CallInputs, name)
+			require.NotEmpty(t, built.Bundle.Values[built.Bundle.Calls[0].Inputs[0]-1].Held, "the input goes as a held row")
 		}
 		var want StoredSize
 		for _, value := range built.Bundle.Values {

@@ -50,6 +50,9 @@ func TestAStoredBundlesCheckFindsEachFault(t *testing.T) {
 		{"a call on no row", func(b *ValueBundle, _ map[uint64][]declaredPart) {
 			b.Calls = []TransferredCall{{Call: "call", Value: 5}}
 		}, "call 0: value 5 is no row"},
+		{"a call's input on no row", func(b *ValueBundle, _ map[uint64][]declaredPart) {
+			b.Calls = []TransferredCall{{Call: "call", Value: 1, Inputs: []TransferOrdinal{5}}}
+		}, "call 0: input 0's row 5 is no row"},
 		{"an output's service on no row", func(b *ValueBundle, _ map[uint64][]declaredPart) {
 			value := *b.Outputs[0].Value
 			value.Services = []TransferredServiceBinding{{ServiceResultID: 9}}

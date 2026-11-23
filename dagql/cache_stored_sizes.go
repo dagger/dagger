@@ -219,13 +219,19 @@ func (c *Cache) storedRootWalkLocked(res *sharedResult, nowUnix int64, held *Hel
 			if group = held.sendableLocked(group); len(group) == 0 {
 				continue
 			}
-			_, add := c.placeableCallLocked(group, func(input *sharedResult) bool {
+			// The entries placing the chosen call's inputs, as
+			// storedBundleCallsLocked adds them as call roots: one the
+			// recipient holds as a held row, one the Cloud stores in full.
+			_, places := c.placeableCallLocked(group, nowUnix, func(input *sharedResult) bool {
 				return ordinary[input.id] || mine[input.id] || held.heldLocked(input, nowUnix)
 			})
-			for _, input := range add {
-				walk.visit(input)
+			for _, place := range places {
+				if place == nil || ordinary[place.id] || mine[place.id] {
+					continue
+				}
+				walk.visit(place)
 				if list != nil {
-					list.callInput(input)
+					list.callInput(place)
 				}
 			}
 		}
