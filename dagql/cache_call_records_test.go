@@ -394,6 +394,79 @@ func (test *receiverCallTest) freshReceiverHits(t *testing.T, bundle ValueBundle
 	return !ran
 }
 
+// A bundle for a recipient whose check made a term sends a call of that term
+// it can place, though the check's own call can't be. Check A made outer on
+// its receiver, which the Cloud stores. Check B made outer on its own
+// receiver, equal in content: the Cloud knows B's receiver's recipe, in the
+// same class as A's by their content, but stores no record of it, as it
+// stores one record of a class. So B's own call can't be placed, and the two
+// calls are one term. B's bundle sends A's call with A's receiver, and a
+// fresh engine whose client makes a receiver of its own, under a recipe no
+// run made before, hits outer by its term and runs nothing.
+func TestACallOfATermItsCheckMadeIsSentThoughItsOwnCantBePlaced(t *testing.T) {
+	t.Parallel()
+	test := newReceiverCallTest(t)
+	cloudCtx := context.Background()
+	inner, err := test.inner.cacheSharedResult().loadResultCall().deriveRecipeDigest(test.producer)
+	require.NoError(t, err)
+	receiverB, err := receiverTestFrame("b").deriveRecipeDigest(test.producer)
+	require.NoError(t, err)
+	callB := receiverTestCall("b")
+	requestB, err := callB.deriveRecipeDigest(test.producer)
+	require.NoError(t, err)
+	selfB, _, err := callB.selfDigestAndInputRefs(test.producer)
+	require.NoError(t, err)
+	pb, err := callB.callPB(test.producer)
+	require.NoError(t, err)
+	encodedB, err := pb.Encode()
+	require.NoError(t, err)
+	// B's receiver, reported by its engine with its content, never stored.
+	_, err = test.cloud.AttachRemoteHolding(cloudCtx, HolderKey{Cache: "cache-b", Number: 1},
+		RemoteHolding{Recipe: receiverB, Field: "receiver", ContentDigest: digest.FromString("receiver content")})
+	require.NoError(t, err)
+	// B's call, which returned inner.
+	_, err = test.cloud.AttachRemoteHolding(cloudCtx, HolderKey{Cache: "cache-b", Number: 2},
+		RemoteHolding{Recipe: inner, Request: requestB, Field: "outer", Call: encodedB, Term: &RemoteTerm{Self: selfB}})
+	require.NoError(t, err)
+	entry := storedBundleTestEntry(test.cloud, test.number)
+	test.cloud.egraphMu.RLock()
+	kept := len(entry.calls)
+	keys := map[string]int{}
+	for _, call := range entry.calls {
+		keys[test.cloud.keptCallTermKeyLocked(call)]++
+	}
+	test.cloud.egraphMu.RUnlock()
+	require.Equal(t, 2, kept, "the Cloud keeps both checks' calls on inner")
+	require.Len(t, keys, 1, "as one term")
+
+	held := &HeldBy{Calls: func(r digest.Digest) bool { return r == requestB }}
+	built, err := test.cloud.StoredBundle(test.ctx, []uint64{test.number}, time.Now().Unix(), held)
+	require.NoError(t, err)
+	sizes, err := test.cloud.StoredSizes(test.ctx, []uint64{test.number}, time.Now().Unix(), held)
+	require.NoError(t, err)
+	require.Equal(t, len(built.Bundle.Values), sizes[0].Records, "priced as built")
+	require.Len(t, built.Bundle.Calls, 1, "one call of B's term")
+	require.Equal(t, []uint64{test.receiverNumber}, built.CallInputs, "with A's receiver, which the Cloud stores")
+	require.Zero(t, built.UnsendableCalls)
+
+	ctx, fresh, srv := transferTestCache(t)
+	_, err = fresh.GetOrInitCall(ctx, "test-session", srv, &CallRequest{ResultCall: receiverTestFrame("c"), IsPersistable: true},
+		func(context.Context) (AnyResult, error) {
+			return NewResultForCall(&transferTestValue{Text: "receiver"}, receiverTestFrame("c"))
+		})
+	require.NoError(t, err)
+	_, err = fresh.MergeValues(ctx, CloudCacheID, built.Bundle)
+	require.NoError(t, err)
+	ran := false
+	_, err = fresh.GetOrInitCall(ctx, "test-session", srv, &CallRequest{ResultCall: receiverTestCall("c"), IsPersistable: true},
+		func(context.Context) (AnyResult, error) {
+			ran = true
+			return NewResultForCall(&transferTestValue{Text: "ran again"}, receiverTestCall("c"))
+		})
+	require.NoError(t, err)
+	require.False(t, ran, "a fresh engine's client hits outer on its own receiver by its term")
+}
+
 // A call on a receiver whose recipe is per client hits on a fresh engine with
 // a receiver of its own, by its term: the bundle carries the call and the
 // producer's receiver, whose content joins the fresh engine's.
