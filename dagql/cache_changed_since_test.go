@@ -44,7 +44,8 @@ func changedSinceTestRecords(t *testing.T, bundle ValueBundle) map[uint64]string
 	}
 	for _, value := range bundle.Values {
 		number := value.SenderNumber
-		value.Ordinal = 0
+		// The stamp is what the record's bytes are checked against.
+		value.Ordinal, value.SenderStamp = 0, 0
 		deps := make([]uint64, len(value.DependencyIDs))
 		for i, dep := range value.DependencyIDs {
 			deps[i] = numbers[TransferOrdinal(dep)]
@@ -72,7 +73,9 @@ func changedSinceTestRecords(t *testing.T, bundle ValueBundle) map[uint64]string
 // ChangedSince reports at before's position every record whose bytes the
 // new build differs in, or that it no longer carries, but the records before
 // carried partially (StoredBundleResult.Partial), which a reader never takes
-// as current. It returns the records that differ.
+// as current; and that each record carried in both builds whose bytes differ
+// carries a later change stamp, which an engine compares to know a record it
+// merged (TransferredValue.SenderStamp). It returns the records that differ.
 func changedSinceTestRebuild(t *testing.T, cloud *Cache, before StoredBundleResult, roots ...uint64) []uint64 {
 	t.Helper()
 	after := changedSinceTestBuild(t, cloud, roots...)
@@ -89,6 +92,23 @@ func changedSinceTestRebuild(t *testing.T, cloud *Cache, before StoredBundleResu
 			continue
 		}
 		require.True(t, changedSinceTestOne(t, cloud, number, before.Position), "entry %d's record differs in a build now, and is reported changed", number)
+	}
+	stamps := func(bundle ValueBundle) map[uint64]uint64 {
+		out := map[uint64]uint64{}
+		for _, value := range bundle.Values {
+			if value.Held == "" {
+				out[value.SenderNumber] = value.SenderStamp
+			}
+		}
+		return out
+	}
+	was2, now2 := stamps(before.Bundle), stamps(after.Bundle)
+	for _, number := range differ {
+		stamp, ok := now2[number]
+		if !ok || slices.Contains(before.Partial, number) {
+			continue
+		}
+		require.Greater(t, stamp, was2[number], "entry %d's record differs in a build now, and carries a later stamp", number)
 	}
 	return differ
 }

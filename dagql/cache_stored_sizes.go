@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"math"
 	"slices"
 	"time"
 
@@ -420,7 +421,9 @@ func (c *Cache) measureStoredValue(miss storedSizeMiss) (storedSizeMeasure, erro
 	if c.testStoredSizeMeasure != nil {
 		c.testStoredSizeMeasure()
 	}
-	value := TransferredValue{Ordinal: TransferOrdinal(miss.res.id), SenderNumber: uint64(miss.res.id), SenderReplacements: miss.replacements, DependencyIDs: miss.deps, ExpiresAtUnix: miss.expiresAtUnix}
+	// The value's change stamp is measured at its widest: it moves with every
+	// change to the entry, and a measure is kept across them.
+	value := TransferredValue{Ordinal: TransferOrdinal(miss.res.id), SenderNumber: uint64(miss.res.id), SenderReplacements: miss.replacements, SenderStamp: math.MaxUint64, DependencyIDs: miss.deps, ExpiresAtUnix: miss.expiresAtUnix}
 	var kept *storedTransferRecord
 	var bytes int64
 	if miss.body != nil {

@@ -76,6 +76,14 @@ type TransferredValue struct {
 	// cache, read with the record: it orders the value state the record
 	// describes.
 	SenderReplacements uint64 `json:"senderReplacements,omitempty"`
+	// SenderStamp is, on a value a blob-backed cache sends in full, its
+	// entry's change stamp (sharedResult.changedAt): the write count of the
+	// last change to what a stored bundle carries of the entry, in the cache
+	// process the bundle's SenderGeneration names. An engine that merged the
+	// value keeps it, so that a later value of the same entry at the same
+	// stamp, a record it holds already, isn't taught again
+	// (unchangedCloudRowLocked).
+	SenderStamp uint64 `json:"senderStamp,omitempty"`
 	// Record is the record as its sender holds it: it names itself, by
 	// ResultID, and every row it references by the sender's entry numbers,
 	// which the receiver maps through the bundle's SenderNumbers. Everything
@@ -157,6 +165,7 @@ func (v TransferredValue) storedJSON() (storedValueJSON, error) {
 		Ordinal:            v.Ordinal,
 		SenderNumber:       v.SenderNumber,
 		SenderReplacements: v.SenderReplacements,
+		SenderStamp:        v.SenderStamp,
 		Record:             storedRecordJSON{ResultID: v.Record.ResultID, Envelope: raw, Call: call, SnapshotLinks: v.Record.SnapshotLinks},
 		DependencyIDs:      v.DependencyIDs,
 		ExpiresAtUnix:      v.ExpiresAtUnix,
@@ -188,6 +197,7 @@ type storedValueJSON struct {
 	Ordinal            TransferOrdinal  `json:"ordinal"`
 	SenderNumber       uint64           `json:"senderNumber"`
 	SenderReplacements uint64           `json:"senderReplacements,omitempty"`
+	SenderStamp        uint64           `json:"senderStamp,omitempty"`
 	Record             storedRecordJSON `json:"record"`
 	DependencyIDs      []uint64         `json:"dependencyIDs,omitempty"`
 	ExpiresAtUnix      int64            `json:"expiresAtUnix,omitempty"`
@@ -246,6 +256,11 @@ type ValueBundle struct {
 	// addresses, each listed once (ShareChainLayers).
 	Layers    []BundleLayer                 `json:"layers,omitempty"`
 	Addresses map[digest.Digest]BlobAddress `json:"addresses,omitempty"`
+	// SenderGeneration is, on a bundle a blob-backed cache builds, the
+	// cache's start count (CacheIdentity.Generation): its values' change
+	// stamps count writes from that start, so two bundles' stamps compare
+	// only within one generation.
+	SenderGeneration uint64 `json:"senderGeneration,omitempty"`
 }
 
 // BundleLayer is a layer a bundle's outputs name by place (ShareChainLayers),
@@ -282,7 +297,10 @@ type ImportedValue struct {
 // of its larger files (snapshots.MediaTypeListing).
 // 11: a bundle's listed layers carry their packs, and an output whose chain
 // names its layers by place carries none (BundleLayer).
-const ValueBundleVersion = 11
+// 12: a value a blob-backed cache sends in full carries its entry's change
+// stamp, and the bundle the cache's start count (TransferredValue.SenderStamp,
+// ValueBundle.SenderGeneration).
+const ValueBundleVersion = 12
 
 // PersistedTransferCodec operates only on encoded copies, without resolving
 // schemas, operations, result references or storage.
