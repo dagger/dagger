@@ -145,6 +145,31 @@ func TestRemoteCacheAdapterDoesNotKnowARowAMergeKeepsTheEnginesValueOn(t *testin
 	require.Contains(t, exp.Rows.Full, number, "an export sends it in full")
 }
 
+// knowMerged makes known the rows a merge stored the service's records on, and
+// counts the rows it kept that aren't known at their revisions: those an
+// export carries in full, by whether the engine's value is its own or a
+// record the service sent before. A kept row known at its revision stays
+// known and counts in neither.
+func TestKnowMergedCountsTheKeptRowsAnExportCarriesInFull(t *testing.T) {
+	t.Parallel()
+	known := dagql.NewKnownRows()
+	before := dagql.RowRevision{Transfer: 1}
+	moved := dagql.RowRevision{Transfer: 1, Dependencies: 1}
+	known.Merged(dagql.ExportedRows{Full: map[uint64]dagql.RowRevision{2: before, 3: before}})
+	own, sent := knowMerged(known, dagql.MergeReply{Values: []dagql.MergedValue{
+		{Number: 1, Revision: before, Stored: true},
+		{Number: 2, Revision: before},
+		{Number: 3, Revision: moved},
+		{Number: 4, Revision: before, Own: true},
+	}})
+	require.Equal(t, 1, own, "the engine's own value")
+	require.Equal(t, 1, sent, "the record sent before, at revisions that moved since")
+	require.True(t, known.Knows(1, before), "the stored record is known")
+	require.True(t, known.Knows(2, before), "the kept row stays known")
+	require.False(t, known.Knows(3, moved))
+	require.False(t, known.Knows(4, before))
+}
+
 // The merge line carries the reply's generation and the engine's clock at the
 // commit, so a merge orders against the lookups the engine's spans time on
 // the same clock. Not parallel: it swaps the default logger.
