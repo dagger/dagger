@@ -188,15 +188,14 @@ type DB struct {
 	// or status were modified via a child or linked span, in the order they
 	// were first updated. Span.updateQueued marks membership.
 	//
-	// Nothing drains it unless the DB serves a remote frontend through
-	// UpdatedSnapshots, so it ends up holding every span: a slice keeps that
-	// to a pointer apiece, and a DB serving no remote frontend opts out of it
-	// (WithoutUpdateTracking).
+	// Only a DB serving a remote frontend (WithUpdateTracking) keeps it, since
+	// only UpdatedSnapshots drains it; anywhere else it would end up holding
+	// every span.
 	updatedSpans []*Span
 
 	// seenSpans keeps track of which spans have been observed via
 	// UpdatedSnapshots so that we can know whether we need to send them when we
-	// finally see them
+	// finally see them. Nil unless tracked.
 	seenSpans map[SpanID]struct{}
 
 	// namesFromLog holds span names updated by span.name log records. A
@@ -321,9 +320,9 @@ type DB struct {
 	// first.
 	rowWaits *rowWaitsState
 
-	// untracked marks a DB that serves no remote frontend (see
-	// WithoutUpdateTracking): it keeps neither updatedSpans nor seenSpans.
-	untracked bool
+	// tracked marks a DB that serves a remote frontend (see
+	// WithUpdateTracking): only it keeps updatedSpans and seenSpans.
+	tracked bool
 
 	// fold is the stub table of a DB that folds the spans it doesn't
 	// render (WithFold); nil for a DB that keeps every span.
@@ -333,18 +332,27 @@ type DB struct {
 // DBOption configures a DB built by NewDB.
 type DBOption func(*DB)
 
-// WithoutUpdateTracking builds a DB that never serves a remote frontend, such
-// as the local CLI's: it doesn't remember which spans changed since the last
-// UpdatedSnapshots (updatedSpans), nor which spans a frontend has seen
-// (seenSpans). Nothing would drain them, so they'd end up holding every span
-// of the trace. UpdatedSnapshots then reports no updates, and SpanSnapshots
-// and RemainingSnapshots treat every span as unsent.
+// WithUpdateTracking builds a DB that serves a remote frontend through
+// UpdatedSnapshots and RemainingSnapshots, such as dagger.io's per-viewer
+// DBs: it remembers which spans changed since the last UpdatedSnapshots
+// (updatedSpans) and which spans the frontend has seen (seenSpans).
 //
-// A DB serving remote frontends (e.g. dagger.io's per-viewer DB) must keep
-// the default.
-func WithoutUpdateTracking() DBOption {
+// By default a DB serves only local frontends and keeps neither, as nothing
+// would drain them and they'd end up holding every span of the trace;
+// UpdatedSnapshots and RemainingSnapshots panic on such a DB, and
+// SpanSnapshots treats every span as unsent. A folding DB (WithFold) can't
+// serve a remote frontend, so the two don't combine.
+func WithUpdateTracking() DBOption {
 	return func(db *DB) {
-		db.untracked = true
+		db.tracked = true
+	}
+}
+
+// mustTrack panics unless the DB was built WithUpdateTracking: without it,
+// what a remote frontend is sent would be silently wrong.
+func (db *DB) mustTrack(method string) {
+	if !db.tracked {
+		panic("dagui: " + method + " needs a DB built WithUpdateTracking")
 	}
 }
 
@@ -372,8 +380,6 @@ func NewDB(opts ...DBOption) *DB {
 
 		CreatorSpans: make(map[string]*SpanSet),
 
-		seenSpans: make(map[SpanID]struct{}),
-
 		unsentAncestors: make(map[SpanID]struct{}),
 
 		pendingResumeOutputs: make(map[resumeOutputKey]*SpanSet),
@@ -385,11 +391,17 @@ func NewDB(opts ...DBOption) *DB {
 	for _, opt := range opts {
 		opt(db)
 	}
+	if db.tracked {
+		if db.fold != nil {
+			panic("dagui: a folding DB can't serve a remote frontend (WithFold with WithUpdateTracking)")
+		}
+		db.seenSpans = make(map[SpanID]struct{})
+	}
 	return db
 }
 
 func (db *DB) seen(spanID SpanID) {
-	if db.untracked {
+	if !db.tracked {
 		return
 	}
 	db.seenSpans[spanID] = struct{}{}
@@ -426,7 +438,11 @@ func (db *DB) hasSeen(spanID SpanID) bool {
 	return seen
 }
 
+// UpdatedSnapshots returns the spans a remote frontend subscribed to filter
+// (nil: everything) needs since the last call, and marks them seen. It
+// panics unless the DB was built WithUpdateTracking.
 func (db *DB) UpdatedSnapshots(filter map[SpanID]bool) []SpanSnapshot {
+	db.mustTrack("UpdatedSnapshots")
 	// updatedSpans is kept in insertion order, since every span update lands
 	// in it; sort it by start time only here, when it's read
 	updated := slices.Clone(db.updatedSpans)
@@ -669,7 +685,7 @@ func (db *DB) update(span *Span) {
 		return
 	}
 	span.Version++
-	if !span.updateQueued && !db.untracked {
+	if !span.updateQueued && db.tracked {
 		span.updateQueued = true
 		db.updatedSpans = append(db.updatedSpans, span)
 	}
@@ -715,7 +731,10 @@ func (db *DB) SpanSnapshots(id SpanID) []SpanSnapshot {
 	return snaps
 }
 
+// RemainingSnapshots returns the received spans UpdatedSnapshots hasn't sent.
+// It panics unless the DB was built WithUpdateTracking.
 func (db *DB) RemainingSnapshots() []SpanSnapshot {
+	db.mustTrack("RemainingSnapshots")
 	return snapshotSpans(db.Spans.Order, func(span *Span) bool {
 		return span.Received && !db.hasSeen(span.ID)
 	})

@@ -47,27 +47,56 @@ func TestSpanNamesInterned(t *testing.T) {
 	}
 }
 
-// A DB serving no remote frontend keeps no record of updates for one, while
-// the default DB keeps it.
-func TestWithoutUpdateTracking(t *testing.T) {
+// By default a DB serves only local frontends and keeps no record of updates
+// for a remote one, refusing to serve one; WithUpdateTracking keeps it.
+func TestUpdateTracking(t *testing.T) {
 	snaps := []SpanSnapshot{
 		{ID: spanID(1), Name: "root", StartTime: time.Unix(1, 0), EndTime: time.Unix(3, 0)},
 		{ID: spanID(2), ParentID: spanID(1), Name: "child", StartTime: time.Unix(2, 0), EndTime: time.Unix(3, 0)},
 	}
-	local := NewDB(WithoutUpdateTracking())
+	local := NewDB()
 	local.ImportSnapshots(snaps)
-	local.SpanSnapshots(spanID(1))
+	if got := len(local.SpanSnapshots(spanID(1))); got != 2 {
+		t.Fatalf("SpanSnapshots on a default DB = %d spans, want 2", got)
+	}
 	if len(local.updatedSpans) != 0 || len(local.seenSpans) != 0 {
-		t.Fatalf("untracked DB kept %d updated and %d seen spans", len(local.updatedSpans), len(local.seenSpans))
+		t.Fatalf("default DB kept %d updated and %d seen spans", len(local.updatedSpans), len(local.seenSpans))
 	}
 	if local.Spans.Map[spanID(2)].Version == 0 {
 		t.Fatal("versions should still advance")
 	}
-	remote := NewDB()
+	for name, serve := range map[string]func(){
+		"UpdatedSnapshots":   func() { local.UpdatedSnapshots(nil) },
+		"RemainingSnapshots": func() { local.RemainingSnapshots() },
+	} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("%s on a default DB should panic", name)
+				}
+			}()
+			serve()
+		}()
+	}
+
+	remote := NewDB(WithUpdateTracking())
 	remote.ImportSnapshots(snaps)
 	if got := len(remote.UpdatedSnapshots(nil)); got != 2 {
-		t.Fatalf("default DB forwarded %d spans, want 2", got)
+		t.Fatalf("tracked DB forwarded %d spans, want 2", got)
 	}
+	if got := len(remote.RemainingSnapshots()); got != 0 {
+		t.Fatalf("tracked DB has %d remaining spans after forwarding all, want 0", got)
+	}
+}
+
+// A folding DB can't serve a remote frontend.
+func TestUpdateTrackingRefusesFold(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("WithFold with WithUpdateTracking should panic")
+		}
+	}()
+	NewDB(WithUpdateTracking(), WithFold(FoldOptions{}))
 }
 
 // db.Intervals keeps one span per call digest and start time: re-exports of
@@ -131,7 +160,7 @@ func TestUpdatedSnapshotsForwardsSurfacedConversation(t *testing.T) {
 		toolCallID
 		laterID
 	)
-	db := NewDB()
+	db := NewDB(WithUpdateTracking())
 	db.ImportSnapshots([]SpanSnapshot{
 		agentTestSpan(rootID, "root", SpanID{}),
 		agentTestSpan(queryID, "POST /query", spanID(rootID)),
@@ -174,7 +203,7 @@ func TestUpdatedSnapshotsForwardsBuriedCheck(t *testing.T) {
 	)
 	check := agentTestSpan(checkID, "lint", spanID(syncID))
 	check.CheckName = "lint"
-	db := NewDB()
+	db := NewDB(WithUpdateTracking())
 	db.ImportSnapshots([]SpanSnapshot{
 		agentTestSpan(rootID, "root", SpanID{}),
 		agentTestSpan(queryID, "POST /query", spanID(rootID)),
@@ -210,7 +239,7 @@ func TestUpdatedSnapshotsForwardsBuriedService(t *testing.T) {
 	instance.Service = true
 	instance.ServiceName = "redis"
 	instance.Passthrough = true
-	db := NewDB()
+	db := NewDB(WithUpdateTracking())
 	db.ImportSnapshots([]SpanSnapshot{
 		agentTestSpan(rootID, "root", SpanID{}),
 		agentTestSpan(queryID, "POST /query", spanID(rootID)),
@@ -240,7 +269,7 @@ func TestUpdatedSnapshotsForwardsServiceDisplay(t *testing.T) {
 	)
 	display := agentTestSpan(displayID, "web:8080", spanID(upID))
 	display.ServiceName = "web"
-	db := NewDB()
+	db := NewDB(WithUpdateTracking())
 	db.ImportSnapshots([]SpanSnapshot{
 		agentTestSpan(rootID, "root", SpanID{}),
 		agentTestSpan(queryID, "POST /query", spanID(rootID)),
@@ -273,7 +302,7 @@ func TestUpdatedSnapshotsSkipsInternalService(t *testing.T) {
 	display := agentTestSpan(displayID, "internal display", spanID(plumbingID))
 	display.ServiceName = "internal"
 	display.Internal = true
-	db := NewDB()
+	db := NewDB(WithUpdateTracking())
 	db.ImportSnapshots([]SpanSnapshot{
 		agentTestSpan(rootID, "root", SpanID{}),
 		agentTestSpan(queryID, "POST /query", spanID(rootID)),
@@ -303,7 +332,7 @@ func TestUpdatedSnapshotsForwardsLateAncestors(t *testing.T) {
 	)
 	check := agentTestSpan(checkID, "lint", spanID(syncID))
 	check.CheckName = "lint"
-	db := NewDB()
+	db := NewDB(WithUpdateTracking())
 	db.ImportSnapshots([]SpanSnapshot{check})
 
 	names := forwardedNames(t, db, db.UpdatedSnapshots(rootSubscription(spanID(rootID))))

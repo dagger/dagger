@@ -83,7 +83,7 @@ func newFoldTestPair(t *testing.T, n int, shape string, wrapQuery ...func(SpanQu
 	folded := NewWithDB(io.Discard, db)
 	folded.reportOnly = true
 	lf.attach(folded)
-	full := NewWithDB(io.Discard, newLocalDB())
+	full := NewWithDB(io.Discard, dagui.NewDB())
 	full.reportOnly = true
 	store := &foldTestStore{latest: map[dagui.SpanID]sdktrace.ReadOnlySpan{}}
 	tr := spanfootprint.New(n)

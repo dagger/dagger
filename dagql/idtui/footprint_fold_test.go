@@ -20,8 +20,9 @@ import (
 // the agent-session trace with the engine's wait chains, and in the
 // nested-engine shape, each with and without calls taking ID arguments
 // (spanfootprint Trace.IDArgs), which rows render through the spans behind
-// them, for the live CLI's DB as it was (dagui.NewDB()),
-// untracked (dagui.WithoutUpdateTracking) and folding (newFoldingDB, reading
+// them, for a DB keeping every span (dagui.NewDB(), the default), the same
+// tracking updates for a remote frontend (dagui.WithUpdateTracking) and
+// folding (newFoldingDB, reading
 // folded spans back from a store standing in for the engine's, outside the
 // heap measured). It reports the frontend's retained heap per span and, when
 // folding, the share of spans it retains:
@@ -33,7 +34,7 @@ func BenchmarkFrontendFoldFootprint(b *testing.B) {
 		b.Fatal(err)
 	}
 	for _, shape := range []string{"agent", "nested", "agent-idargs", "nested-idargs"} {
-		for _, mode := range []string{"full", "untracked", "fold"} {
+		for _, mode := range []string{"tracked", "full", "fold"} {
 			for _, n := range sizes {
 				b.Run(shape+"/"+mode+"/"+strconv.Itoa(n), func(b *testing.B) {
 					var bytesPerSpan, retained float64
@@ -110,10 +111,10 @@ func streamFootprint(b testing.TB, tr *spanfootprint.Trace, shape, mode string) 
 	var db *dagui.DB
 	var lf *liveFold
 	switch mode {
+	case "tracked":
+		db = dagui.NewDB(dagui.WithUpdateTracking())
 	case "full":
 		db = dagui.NewDB()
-	case "untracked":
-		db = newLocalDB()
 	case "fold":
 		db, lf = newFoldingDB()
 	}

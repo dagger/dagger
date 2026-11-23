@@ -13,8 +13,9 @@ import (
 
 // BenchmarkFoldFootprint is BenchmarkSpanFootprint over the agent-session
 // trace with the engine's wait chains, and in the nested-engine shape, for a
-// DB as the live CLI built it (NewDB), untracked (WithoutUpdateTracking),
-// and folding with the live CLI's policy (WithFold, reading folded spans
+// DB keeping every span (NewDB, the default), the same tracking updates for a
+// remote frontend (WithUpdateTracking, as dagger.io's per-viewer DBs do), and
+// folding with the live CLI's policy (WithFold, reading folded spans
 // back from a store standing in for the engine's, outside the heap
 // measured). It reports the DB's retained heap per span and, folding, the
 // share of the spans it retains:
@@ -26,7 +27,7 @@ func BenchmarkFoldFootprint(b *testing.B) {
 		b.Fatal(err)
 	}
 	for _, shape := range []string{"agent", "nested"} {
-		for _, mode := range []string{"full", "untracked", "fold"} {
+		for _, mode := range []string{"tracked", "full", "fold"} {
 			for _, n := range sizes {
 				b.Run(shape+"/"+mode+"/"+strconv.Itoa(n), func(b *testing.B) {
 					var bytesPerSpan, retained float64
@@ -106,7 +107,7 @@ func retainProgressMayRollUp(span FoldSpan) bool {
 // footprintCase is one measurement of measureFoldFootprint.
 type footprintCase struct {
 	nested bool
-	// mode is full, untracked or fold
+	// mode is tracked, full (the default DB) or fold
 	mode string
 	n    int
 	// progress reports the trace's transfers (Trace.Progress) as its
@@ -135,10 +136,10 @@ func measureFoldFootprint(tb testing.TB, c footprintCase) (bytesPerSpan, retaine
 	runtime.ReadMemStats(&before)
 	var db *DB
 	switch c.mode {
+	case "tracked":
+		db = NewDB(WithUpdateTracking())
 	case "full":
 		db = NewDB()
-	case "untracked":
-		db = NewDB(WithoutUpdateTracking())
 	case "fold":
 		db = NewDB(WithFold(FoldOptions{
 			Retain: c.retain,

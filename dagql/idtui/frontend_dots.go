@@ -55,7 +55,7 @@ func NewDots(output io.Writer) Frontend {
 	}
 	out := NewOutput(output, termenv.WithProfile(profile))
 
-	db := newLocalDB()
+	db := dagui.NewDB()
 	reporter := NewWithDB(output, db)
 	reporter.reportOnly = true
 

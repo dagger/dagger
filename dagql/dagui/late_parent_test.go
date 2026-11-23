@@ -152,7 +152,7 @@ func TestLateParentRunningAndRevealed(t *testing.T) {
 	running := lateTestSpan(4, 3, true)
 	revealed := lateTestSpan(5, 3, false, attribute.Bool(telemetry.UIRevealAttr, true))
 
-	db := NewDB()
+	db := NewDB(WithUpdateTracking())
 	for _, batch := range [][]sdktrace.ReadOnlySpan{
 		{running, revealed},
 		{work},

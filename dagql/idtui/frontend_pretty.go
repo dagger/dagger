@@ -1276,11 +1276,6 @@ func NewPretty(w io.Writer) Frontend {
 	return newFolding(w, false)
 }
 
-// newLocalDB builds the DB of a frontend that serves no remote frontend.
-func newLocalDB() *dagui.DB {
-	return dagui.NewDB(dagui.WithoutUpdateTracking())
-}
-
 func NewReporter(w io.Writer) Frontend {
 	return newFolding(w, true)
 }

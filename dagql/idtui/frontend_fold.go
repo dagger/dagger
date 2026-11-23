@@ -181,7 +181,7 @@ func (lf *liveFold) end() {
 // SetSpanQuery), unless NoFoldEnv is set.
 func newFolding(w io.Writer, reportOnly bool) *frontendPretty {
 	if os.Getenv(NoFoldEnv) != "" {
-		fe := NewWithDB(w, newLocalDB())
+		fe := NewWithDB(w, dagui.NewDB())
 		fe.reportOnly = reportOnly
 		return fe
 	}

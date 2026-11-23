@@ -135,11 +135,10 @@ type FoldOptions struct {
 }
 
 // WithFold builds a DB that folds the spans opts.Retain doesn't retain (see
-// Fold). Implies WithoutUpdateTracking: a folding DB serves no remote
-// frontend.
+// Fold). A folding DB can't serve a remote frontend: it doesn't combine with
+// WithUpdateTracking.
 func WithFold(opts FoldOptions) DBOption {
 	return func(db *DB) {
-		db.untracked = true
 		if opts.Retain == nil {
 			opts.Retain = RetainRendered
 		}
