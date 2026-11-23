@@ -1396,7 +1396,7 @@ func (c *Cache) lookupCacheForRequest(
 	// outcome of the call: a session that has bound one looks the call up
 	// that way first, before another session's unbound result of it.
 	if req != nil && req.ResultCall != nil {
-		if handle := c.sessionBoundHandle(sessionID); c.sessionHoldsHandle(ctx, sessionID, handle) {
+		if handle := c.sessionBoundHandle(sessionID); c.sessionHasBound(sessionID) {
 			bound := req.withBoundSession(handle)
 			// The same invocation looks again: its evidence is the one it
 			// records.
@@ -1427,9 +1427,11 @@ func (c *Cache) lookupCacheForRequest(
 	return c.lookupCacheForRequestDigests(ctx, sessionID, resolver, req, requestDigest, requestSelf, requestInputs, requestInputRefs)
 }
 
-// sessionHoldsHandle reports whether sessionID holds handle.
-func (c *Cache) sessionHoldsHandle(ctx context.Context, sessionID string, handle SessionResourceHandle) bool {
-	wcprof.Lock(ctx, &c.sessionMu, sessionsLockIdent)
+// sessionHasBound reports whether sessionID has bound a result to itself,
+// so that it holds its binding's handle (boundSessionHandle).
+func (c *Cache) sessionHasBound(sessionID string) bool {
+	handle := c.sessionBoundHandle(sessionID)
+	c.sessionMu.Lock()
 	defer c.sessionMu.Unlock()
 	handles := c.sessionHandlesBySession[sessionID]
 	return handles != nil && handles.Contains(handle)
