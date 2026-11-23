@@ -2752,6 +2752,9 @@ type Cache struct {
 	// testCallTermsBuilt runs each time an entry's kept calls are grouped
 	// by term (keptCallTermsLocked).
 	testCallTermsBuilt func()
+	// testCallTermKeyed runs each time a kept call's term key is taken
+	// (keptCallTermKeyLocked). Tests only.
+	testCallTermKeyed func()
 	// testRepairWholeClass, when set, has a union keep the class of higher
 	// rank and its repair walk every term of the class that survives, as
 	// before a union kept the class more terms take as an input and its

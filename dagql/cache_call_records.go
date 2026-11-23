@@ -261,6 +261,9 @@ func (c *Cache) storedBundleCallsLocked(build *storedBundleBuild, start int) err
 // classes, an input the Cloud has no class for standing for itself.
 // Requires egraphMu.
 func (c *Cache) keptCallTermKeyLocked(kept *keptCall) string {
+	if c.testCallTermKeyed != nil {
+		c.testCallTermKeyed()
+	}
 	key := kept.id.self.String()
 	for _, input := range kept.id.inputs {
 		if root := c.eqClassRootLocked(c.egraphDigestToClass[input.String()]); root != 0 {
