@@ -685,15 +685,17 @@ func TestACallOfAKeptTermIsNotKeptAgain(t *testing.T) {
 }
 
 // A kept call the Cloud can't place, its receiver stored under no recipe of
-// its own, gives way to a call of its term whose receiver the Cloud stores:
-// the one call the entry keeps of the term is then one a bundle can send,
-// with the receiver it names.
+// its own and in no class, so that no stored entry stands for it, gives way
+// to a call of its term whose receiver the Cloud stores: the one call the
+// entry keeps of the term is then one a bundle can send, with the receiver
+// it names.
 func TestAnUnplaceableKeptCallGivesWayToAPlaceableOneOfItsTerm(t *testing.T) {
 	t.Parallel()
 	test := newReceiverCallTest(t)
 	cloud := test.cloud
 	cloud.egraphMu.Lock()
 	cloud.unindexRecipesLocked(cloud.resultsByID[sharedResultID(test.receiverNumber)])
+	cloud.removeResultOutputEqClassesLocked(sharedResultID(test.receiverNumber))
 	cloud.egraphMu.Unlock()
 	built, err := cloud.StoredBundle(test.ctx, []uint64{test.number}, time.Now().Unix(), nil)
 	require.NoError(t, err)
