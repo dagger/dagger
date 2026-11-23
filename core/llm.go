@@ -610,9 +610,6 @@ func (in LLMContentBlockInput) Resolve(ctx context.Context) (*LLMContentBlock, e
 			return nil, err
 		}
 		block.Data, block.MIMEType = media.Data, media.MIMEType
-	} else {
-		// A file is shrunk as it is read; inline data is shrunk here.
-		block.shrinkImage()
 	}
 	for i, child := range in.Content {
 		resolved, err := child.Value.Resolve(ctx)
@@ -675,7 +672,6 @@ func LLMContentFromBytes(data []byte, mimeType string) (*LLMContentBlock, error)
 		return nil, fmt.Errorf("unsupported media MIME type %q; expected image, audio, or PDF", mimeType)
 	}
 	block := &LLMContentBlock{Kind: kind, MIMEType: mimeType, Data: dagql.NewBytes(data)}
-	block.shrinkImage()
 	if err := block.Validate(); err != nil {
 		return nil, err
 	}
@@ -725,11 +721,6 @@ func (*LLMContent) DecodePersistedObject(ctx context.Context, dec *dagql.Persist
 	var content LLMContent
 	if err := json.Unmarshal(payload, &content); err != nil {
 		return nil, fmt.Errorf("decode persisted LLM content payload: %w", err)
-	}
-	// Content persisted before images were shrunk on creation is shrunk as
-	// it is loaded; images within the cap only have their header read.
-	for _, block := range content.Blocks {
-		block.shrinkImage()
 	}
 	if err := ValidateLLMContent(content.Blocks); err != nil {
 		return nil, fmt.Errorf("decode persisted LLM content payload: %w", err)

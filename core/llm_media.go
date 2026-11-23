@@ -2,25 +2,24 @@ package core
 
 import (
 	"bytes"
+	"context"
 	"image"
 	_ "image/gif" // decode GIF images to shrink them
 	"image/jpeg"
 	"image/png"
+	"slices"
+	"strconv"
+	"strings"
 
+	"github.com/dagger/dagger/core/modelcatalog"
 	"golang.org/x/image/draw"
 	_ "golang.org/x/image/webp" // decode WebP images to shrink them
 )
 
-// MaxLLMImageEdge bounds the long edge of an image sent to a model.
-//
-// Providers shrink larger images to their own maximum before the model sees
-// them (Anthropic: 1568px for the standard tier, 2576px for the
-// high-resolution tier), so nothing the model would have seen is lost.
-// Anthropic also rejects a whole request that carries more than 20 images if
-// any of them has a side over 3000px, and history is resent every turn, so
-// one oversized image would break every turn once a conversation grows past
-// 20 images.
-const MaxLLMImageEdge = 2576
+// DefaultLLMImageEdge bounds the long edge of an image sent to a model whose
+// limit LLMImageMaxEdge does not know: the largest any Claude model uses, and
+// under Anthropic's 3000px limit for requests with more than 20 images.
+const DefaultLLMImageEdge = 2576
 
 const (
 	// maxLLMImageDecodePixels bounds the images we are willing to decode to
@@ -50,29 +49,37 @@ const (
 // largest images, so concurrent requests cannot multiply that.
 var llmImageShrinks = make(chan struct{}, 1)
 
-// ShrinkLLMImage scales an image down so its long edge is at most
-// MaxLLMImageEdge, preserving its aspect ratio, and returns it with its MIME
-// type. JPEG stays JPEG, keeping its Exif segment. Every other format (GIF:
-// its first frame) becomes PNG, unless that PNG would be large and outgrow
-// its source: then an opaque image becomes JPEG, and a transparent one is
-// sampled rather than blended (keeping a palette), so it adds no colors.
+// ShrinkLLMImage scales an image down so its long edge is at most maxEdge,
+// preserving its aspect ratio, and returns it with its MIME type. JPEG stays
+// JPEG, keeping its Exif segment. Every other format (GIF: its first frame)
+// becomes PNG, unless that PNG would be large and outgrow its source: then an
+// opaque image becomes JPEG, and a transparent one is sampled rather than
+// blended (keeping a palette), so it adds no colors.
 //
 // Images within the cap, and images that cannot be decoded as the type their
 // MIME type declares, are returned unchanged, byte for byte; only the header
 // is read to tell.
 //
-// Shrink an image once, when its content block is created: the stored bytes
-// are then what every later request resends, keeping prompt caches stable.
-func ShrinkLLMImage(data []byte, mimeType string) ([]byte, string) {
-	if len(data) == 0 || len(data) > MaxLLMMediaBytes {
-		return data, mimeType
+// Shrink an image once, when it joins a conversation (see LLM.FitImages):
+// the stored bytes are then what every later request resends, keeping prompt
+// caches stable.
+func ShrinkLLMImage(data []byte, mimeType string, maxEdge int) ([]byte, string) {
+	data, mimeType, _ = shrinkLLMImage(data, mimeType, maxEdge)
+	return data, mimeType
+}
+
+// shrinkLLMImage is ShrinkLLMImage, also reporting whether it changed the
+// image.
+func shrinkLLMImage(data []byte, mimeType string, maxEdge int) ([]byte, string, bool) {
+	if len(data) == 0 || len(data) > MaxLLMMediaBytes || maxEdge <= 0 {
+		return data, mimeType, false
 	}
 	cfg, format, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil || "image/"+format != mimeType {
-		return data, mimeType
+		return data, mimeType, false
 	}
-	if cfg.Width <= MaxLLMImageEdge && cfg.Height <= MaxLLMImageEdge {
-		return data, mimeType
+	if cfg.Width <= maxEdge && cfg.Height <= maxEdge {
+		return data, mimeType, false
 	}
 	cost := int64(cfg.Width) * int64(cfg.Height)
 	if format == "jpeg" && jpegProgressive(data) {
@@ -80,7 +87,7 @@ func ShrinkLLMImage(data []byte, mimeType string) ([]byte, string) {
 		cost *= 4
 	}
 	if cost > maxLLMImageDecodePixels {
-		return data, mimeType
+		return data, mimeType, false
 	}
 
 	llmImageShrinks <- struct{}{}
@@ -88,7 +95,7 @@ func ShrinkLLMImage(data []byte, mimeType string) ([]byte, string) {
 
 	src, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
-		return data, mimeType
+		return data, mimeType, false
 	}
 	if b := src.Bounds(); b != image.Rect(0, 0, cfg.Width, cfg.Height) {
 		// A GIF's first frame can cover only part of its logical screen.
@@ -96,7 +103,7 @@ func ShrinkLLMImage(data []byte, mimeType string) ([]byte, string) {
 		draw.Draw(canvas, b, src, b.Min, draw.Src)
 		src = canvas
 	}
-	width, height := shrunkLLMImageSize(cfg.Width, cfg.Height)
+	width, height := shrunkLLMImageSize(cfg.Width, cfg.Height, maxEdge)
 	dst := image.NewRGBA(image.Rect(0, 0, width, height))
 	scaler := draw.Interpolator(draw.CatmullRom) // keeps text in screenshots legible
 	if 32*int64(width)*int64(cfg.Height) > maxLLMImageKernelBytes {
@@ -106,9 +113,9 @@ func ShrinkLLMImage(data []byte, mimeType string) ([]byte, string) {
 
 	shrunk, shrunkMIMEType, err := encodeShrunkLLMImage(data, format, src, dst)
 	if err != nil || len(shrunk) > MaxLLMMediaBytes {
-		return data, mimeType
+		return data, mimeType, false
 	}
-	return shrunk, shrunkMIMEType
+	return shrunk, shrunkMIMEType, true
 }
 
 // encodeShrunkLLMImage encodes dst, src scaled down, avoiding an encoding
@@ -238,22 +245,201 @@ func jpegSegment(data []byte, match func(marker byte, payload []byte) bool) []by
 	return nil
 }
 
-// shrunkLLMImageSize scales width and height so the long edge is
-// MaxLLMImageEdge.
-func shrunkLLMImageSize(width, height int) (int, int) {
+// shrunkLLMImageSize scales width and height so the long edge is maxEdge.
+func shrunkLLMImageSize(width, height, maxEdge int) (int, int) {
 	scale := func(short, long int) int {
-		return max(1, int((int64(short)*MaxLLMImageEdge+int64(long)/2)/int64(long)))
+		return max(1, int((int64(short)*int64(maxEdge)+int64(long)/2)/int64(long)))
 	}
 	if width >= height {
-		return MaxLLMImageEdge, scale(height, width)
+		return maxEdge, scale(height, width)
 	}
-	return scale(width, height), MaxLLMImageEdge
+	return scale(width, height), maxEdge
 }
 
-// shrinkImage applies ShrinkLLMImage to an IMAGE block in place.
-func (b *LLMContentBlock) shrinkImage() {
-	if b == nil || b.Kind != LLMContentImage {
-		return
+// LLMImageMaxEdge returns the longest image edge a model makes use of, as its
+// provider documents it; a larger image is downscaled server-side anyway, so
+// shrinking it to this loses nothing the model would see. The model is
+// matched by family, so a Claude or GPT model served through OpenRouter or a
+// proxy gets its family's limit.
+//
+//   - Claude: 2576px for Claude 4.7 and later, 1568px before. Both are under
+//     Anthropic's 3000px limit for requests with more than 20 images.
+//   - GPT: Dagger sends images with detail "auto" (or none, which defaults
+//     to it). That means "original" on GPT-5.5 and later, up to 6000px, and
+//     "high" before, up to 2048px, as for tile-based models (GPT-4o, GPT-4.1,
+//     GPT-5.1) and the o-series.
+//   - Gemini, and models we know nothing of: DefaultLLMImageEdge. Gemini
+//     documents no pixel limit (it tiles at 768px).
+func LLMImageMaxEdge(provider LLMProvider, model string) int {
+	id := strings.ToLower(modelcatalog.NormalizeModelID(model))
+	if i := strings.Index(id, "claude"); i >= 0 || provider == Anthropic {
+		if i >= 0 {
+			major, minor, ok := llmModelVersion(id[i+len("claude"):])
+			if ok && (major > 4 || major == 4 && minor >= 7) {
+				return 2576
+			}
+		}
+		return 1568
 	}
-	b.Data, b.MIMEType = ShrinkLLMImage(b.Data, b.MIMEType)
+	switch {
+	case strings.HasPrefix(id, "gpt-"):
+		major, minor, ok := llmModelVersion(id[len("gpt-"):])
+		if ok && (major > 5 || major == 5 && minor >= 5) {
+			return 6000
+		}
+		return 2048
+	case strings.HasPrefix(id, "chatgpt-"), strings.HasPrefix(id, "codex-"),
+		len(id) > 1 && id[0] == 'o' && id[1] >= '1' && id[1] <= '9':
+		return 2048
+	}
+	return DefaultLLMImageEdge
+}
+
+// llmModelVersion reads the first version in a model ID's remainder, such as
+// "-opus-4-7" (4.7), "-3-5-sonnet" (3.5), "-sonnet-4" (4.0) or "5.5-pro"
+// (5.5). A minor version must directly follow the major one; date stamps
+// and other long numbers are not versions.
+func llmModelVersion(rest string) (major, minor int, ok bool) {
+	fields := strings.FieldsFunc(rest, func(r rune) bool {
+		return r == '-' || r == '.' || r == '_' || r == ':'
+	})
+	for i, field := range fields {
+		n, isVersion := llmModelVersionNumber(field)
+		if !isVersion {
+			// "4o" is GPT-4o: a major version with a suffix.
+			if len(field) > 1 && field[0] >= '0' && field[0] <= '9' {
+				if n, isVersion = llmModelVersionNumber(strings.TrimRight(field, "abcdefghijklmnopqrstuvwxyz")); isVersion {
+					return n, 0, true
+				}
+			}
+			continue
+		}
+		if i+1 < len(fields) {
+			if m, isMinor := llmModelVersionNumber(fields[i+1]); isMinor {
+				return n, m, true
+			}
+		}
+		return n, 0, true
+	}
+	return 0, 0, false
+}
+
+// llmModelVersionNumber parses a one- or two-digit version number.
+func llmModelVersionNumber(field string) (int, bool) {
+	if len(field) == 0 || len(field) > 2 {
+		return 0, false
+	}
+	n, err := strconv.Atoi(field)
+	return n, err == nil && n >= 0
+}
+
+// FitLLMImages returns blocks with every image, including those in tool
+// results, shrunk to maxEdge (see ShrinkLLMImage). Blocks are never
+// modified: a block that changes is copied, and if none does, blocks itself
+// is returned.
+func FitLLMImages(blocks []*LLMContentBlock, maxEdge int) []*LLMContentBlock {
+	fitted, _ := fitLLMImages(blocks, maxEdge)
+	return fitted
+}
+
+func fitLLMImages(blocks []*LLMContentBlock, maxEdge int) ([]*LLMContentBlock, bool) {
+	var fitted []*LLMContentBlock
+	for i, block := range blocks {
+		fit, changed := fitLLMImageBlock(block, maxEdge)
+		if changed && fitted == nil {
+			fitted = slices.Clone(blocks)
+		}
+		if fitted != nil {
+			fitted[i] = fit
+		}
+	}
+	if fitted == nil {
+		return blocks, false
+	}
+	return fitted, true
+}
+
+func fitLLMImageBlock(block *LLMContentBlock, maxEdge int) (*LLMContentBlock, bool) {
+	if block == nil {
+		return nil, false
+	}
+	switch block.Kind {
+	case LLMContentImage:
+		data, mimeType, changed := shrinkLLMImage(block.Data, block.MIMEType, maxEdge)
+		if !changed {
+			return block, false
+		}
+		cp := *block
+		cp.Data, cp.MIMEType = data, mimeType
+		return &cp, true
+	case LLMContentToolResult:
+		content, changed := fitLLMImages(block.Content, maxEdge)
+		if !changed {
+			return block, false
+		}
+		cp := *block
+		cp.Content = content
+		return &cp, true
+	default:
+		return block, false
+	}
+}
+
+func hasLLMImage(blocks []*LLMContentBlock) bool {
+	return slices.ContainsFunc(blocks, func(block *LLMContentBlock) bool {
+		return block != nil && (block.Kind == LLMContentImage || hasLLMImage(block.Content))
+	})
+}
+
+// ImageMaxEdge returns LLMImageMaxEdge for the conversation's current model,
+// routed as a request would be. If the route cannot be resolved, the model
+// and provider the conversation names are used as they are.
+func (llm *LLM) ImageMaxEdge(ctx context.Context) int {
+	if endpoint, err := llm.Route(ctx); err == nil {
+		return LLMImageMaxEdge(endpoint.Provider, endpoint.Model)
+	}
+	return LLMImageMaxEdge(LLMProvider(llm.provider), llm.model)
+}
+
+// FitImages fits the images in blocks joining this conversation to its
+// current model (see FitLLMImages). The model is only routed when there is
+// an image.
+func (llm *LLM) FitImages(ctx context.Context, blocks []*LLMContentBlock) []*LLMContentBlock {
+	if !hasLLMImage(blocks) {
+		return blocks
+	}
+	return FitLLMImages(blocks, llm.ImageMaxEdge(ctx))
+}
+
+// WithImagesFitted fits the images already in the history to the current
+// model, after it changed: only shrinking, as an image smaller than the new
+// limit was already all the earlier model used. A model switch already
+// invalidates the provider's prompt cache, so changing the bytes now costs
+// nothing more.
+func (llm *LLM) WithImagesFitted(ctx context.Context) *LLM {
+	var fitted *LLM
+	var maxEdge int
+	for i, msg := range llm.Messages {
+		if !hasLLMImage(msg.Content) {
+			continue
+		}
+		if maxEdge == 0 {
+			maxEdge = llm.ImageMaxEdge(ctx)
+		}
+		content, changed := fitLLMImages(msg.Content, maxEdge)
+		if !changed {
+			continue
+		}
+		if fitted == nil {
+			fitted = llm.Clone()
+		}
+		// Messages are shared with other clones: replace, never modify.
+		cp := *msg
+		cp.Content = content
+		fitted.Messages[i] = &cp
+	}
+	if fitted == nil {
+		return llm
+	}
+	return fitted
 }

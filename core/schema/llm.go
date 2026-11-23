@@ -459,7 +459,9 @@ func (s *llmSchema) withModel(ctx context.Context, llm *core.LLM, args struct {
 	Model    string
 	Provider dagql.Optional[dagql.String]
 }) (*core.LLM, error) {
-	return llm.WithModel(args.Model, args.Provider.Value.String()), nil
+	// Images in history were fitted to the previous model; fit them to this
+	// one, which may use less of them (or have a tighter request limit).
+	return llm.WithModel(args.Model, args.Provider.Value.String()).WithImagesFitted(ctx), nil
 }
 
 func (s *llmSchema) withSmallModel(ctx context.Context, parent dagql.ObjectResult[*core.LLM], _ struct{}) (res dagql.ObjectResult[*core.LLM], _ error) {
@@ -571,7 +573,7 @@ func (s *llmSchema) withContent(ctx context.Context, llm *core.LLM, args struct 
 	if args.Origin.Valid {
 		origin = args.Origin.Value.Value.ToLLMMessageOrigin()
 	}
-	return llm.WithContent(blocks, origin), nil
+	return llm.WithContent(llm.FitImages(ctx, blocks), origin), nil
 }
 
 func (s *llmSchema) withContentFile(ctx context.Context, llm *core.LLM, args struct {
@@ -582,7 +584,7 @@ func (s *llmSchema) withContentFile(ctx context.Context, llm *core.LLM, args str
 	if err != nil {
 		return nil, err
 	}
-	return llm.WithContent([]*core.LLMContentBlock{block}, nil), nil
+	return llm.WithContent(llm.FitImages(ctx, []*core.LLMContentBlock{block}), nil), nil
 }
 
 // withLLMCallerOwner records the calling module (see core.CompositionOwner)
@@ -647,6 +649,7 @@ func (s *llmSchema) withToolResult(ctx context.Context, llm *core.LLM, args stru
 	if err != nil {
 		return nil, err
 	}
+	blocks = llm.FitImages(ctx, blocks)
 	result := &core.LLMContentBlock{Kind: core.LLMContentToolResult, CallID: args.CallID, Text: args.Content, Content: blocks, Errored: args.Errored}
 	if err := result.Validate(); err != nil {
 		return nil, err
