@@ -139,7 +139,9 @@ func TestStoredSizesPriceCallInputs(t *testing.T) {
 
 // Pricing chooses the calls a bundle chooses, in the order the bundle adds
 // them. The Cloud stores inner, with two calls of one term kept on it, on
-// cache-a's receiver A and cache-b's equivalent receiver B; C, stored after
+// cache-a's receiver A and cache-b's equivalent receiver B: B's call was kept
+// while the Cloud knew no class of B, as its own term, and B's export then
+// joined A's class, which makes the two calls one term; C, stored after
 // inner, with a call kept on it that needs one of the receivers; and R, over
 // inner and C. R's bundle takes inner's calls first, finds neither receiver
 // carried, and adds the receiver of the call that sorts first; then C's call
@@ -183,8 +185,6 @@ func TestStoredSizesChooseCallsInTheBundlesOrder(t *testing.T) {
 			}
 			_, err := cloud.MergeValues(test.ctx, "cache-b", exportTestBundle(t, bctx, b, r))
 			require.NoError(t, err)
-			_, err = cloud.MergeValues(test.ctx, "cache-b", exportTestBundle(t, bctx, b, receiverB))
-			require.NoError(t, err)
 			for _, kept := range []*callRecordTest{
 				{ctx: bctx, producer: b, frame: receiverTestCall("b"), inner: inner, cloud: cloud},
 				{ctx: bctx, producer: b, frame: callC, inner: c, cloud: cloud},
@@ -192,6 +192,8 @@ func TestStoredSizesChooseCallsInTheBundlesOrder(t *testing.T) {
 				_, err := cloud.AttachRemoteHolding(test.ctx, HolderKey{Cache: "cache-b", Number: uint64(kept.inner.cacheSharedResult().id)}, kept.span(t, true, 0))
 				require.NoError(t, err)
 			}
+			_, err = cloud.MergeValues(test.ctx, "cache-b", exportTestBundle(t, bctx, b, receiverB))
+			require.NoError(t, err)
 			numbers := map[string]uint64{}
 			cloud.egraphMu.RLock()
 			for id, res := range cloud.resultsByID {
@@ -226,7 +228,10 @@ func TestStoredSizesChooseCallsInTheBundlesOrder(t *testing.T) {
 // stores P, with calls of one term kept on it on equivalent receivers X and
 // Y, X's sorting first; and Q, over Y, with calls of another term kept on it
 // on Z and X, Z's sorting first, Z large. X, Y and Z are each another
-// engine's, so each is its own entry. Priced alone, P adds X. A bundle of P
+// engine's, so each is its own entry. B's call on P and the call on Z were
+// kept while the Cloud knew no class of B or Z, each its own term, and their
+// receivers' exports then joined the class of the others', which makes each
+// pair one term. Priced alone, P adds X. A bundle of P
 // and Q places P's call on Y, which Q carries, adds no X, and so adds Z for
 // Q's call.
 func TestStoredSizesNeverPriceLessThanTheBundle(t *testing.T) {
@@ -278,9 +283,9 @@ func TestStoredSizesNeverPriceLessThanTheBundle(t *testing.T) {
 	// its receiver B.
 	inner := persistedListTestResult(t, b.ctx, b.c, b.srv, "inner", &transferTestValue{Text: "inner"})
 	receivers := map[string]AnyResult{"a": test.receiver, "b": receiver(b, "b", "receiver")}
-	merge(b, "cache-b", receivers["b"])
 	call(b, receiverTestCall("b"), returns(inner))
 	keep(b, "cache-b", receiverTestCall("b"), inner)
+	merge(b, "cache-b", receivers["b"])
 	alone, err := cloud.StoredBundle(a.ctx, []uint64{test.number}, time.Now().Unix(), nil)
 	require.NoError(t, err)
 	require.Len(t, alone.CallInputs, 1)
@@ -304,7 +309,7 @@ func TestStoredSizesNeverPriceLessThanTheBundle(t *testing.T) {
 			z = client
 		}
 	}
-	merge(c, "cache-c", receiver(c, z, strings.Repeat("z", 64<<10)))
+	zReceiver := receiver(c, z, strings.Repeat("z", 64<<10))
 
 	// Q, over Y, on Y's engine, with its calls g on Z and on X.
 	q := persistedListTestResult(t, ye.ctx, ye.c, ye.srv, "q", &transferTestValue{Text: "q"})
@@ -314,6 +319,7 @@ func TestStoredSizesNeverPriceLessThanTheBundle(t *testing.T) {
 	merge(ye, CacheID("cache-"+y), q)
 	keep(ye, "cache-q1", callOn("g", z), q)
 	keep(ye, "cache-q2", callOn("g", x), q)
+	merge(c, "cache-c", zReceiver)
 	var qNumber uint64
 	cloud.egraphMu.RLock()
 	for id, res := range cloud.resultsByID {
