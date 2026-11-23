@@ -569,9 +569,9 @@ echo "{ engine { localCache { prune(maxUsedSpace: \"$half\", targetSpace: \"$hal
 }
 
 // The build steps that have built to different bytes before build to the
-// same bytes when they run twice: QEMU's emulators, crun and the Go SDK's
-// files. Two engines that each build the image then hold the same
-// image, and the cache can serve what one built on it to the other.
+// same bytes when they run twice: QEMU's emulators, crun and the Go and
+// Python SDKs' files. Two engines that each build the image then hold the
+// same image, and the cache can serve what one built on it to the other.
 // ReleaseDryRun checks it.
 func (dev *EngineDev) ReproducibleBuild(ctx context.Context) error {
 	builder, err := dev.builder(ctx, "")
