@@ -159,11 +159,14 @@ func TestZstdFramesCompressingAtOnceStayWithinTheBudget(t *testing.T) {
 	require.LessOrEqual(t, p.mostBuffer, len(sizes)+budget, "frame buffers out at once")
 }
 
-// A layer that starts while other layers hold every place in the budget
-// takes the next place given back, not one after theirs: a stopping engine's
-// last export compresses beside the exports already compressing, not behind
-// all their frames.
-func TestZstdLayerStartedLaterGetsTheNextFreeFrame(t *testing.T) {
+// Frames take places in the order they ask for them, a layer's later frames
+// among other layers': a layer whose frames hold every place, and whose next
+// frame already waits for one, gets the next place given back, then a layer
+// that starts after it gets the one after, before any frame the first asks
+// for later. A stopping engine's last export so compresses beside the
+// exports already compressing, waiting only for what they asked before it,
+// and a layer's next frame keeps its turn while its earlier ones compress.
+func TestZstdFramesTakePlacesInTheOrderTheyAsk(t *testing.T) {
 	const budget = 2
 	p := newBudgetProbe(t, budget)
 	big, small := layerBytes(33<<20), layerBytes(3<<20)
@@ -171,11 +174,15 @@ func TestZstdLayerStartedLaterGetsTheNextFreeFrame(t *testing.T) {
 	var bigErr, smallErr error
 	var wg sync.WaitGroup
 	wg.Go(func() { bigBlob, bigErr = compressLayerErr(big) })
-	// The large layer's frames take every place first.
-	waitFor(t, func() bool { return len(p.startedSoFar()) >= budget })
+	// The large layer's frames take every place, and its next frame asks
+	// for one, unless nothing makes it wait.
+	waitFor(t, func() bool {
+		n := len(p.startedSoFar())
+		return n > budget || n == budget && waitingForAFrame() >= 1
+	})
 	wg.Go(func() { smallBlob, smallErr = compressLayerErr(small) })
-	// Then the small layer waits for one, unless nothing makes it wait.
-	waitFor(t, func() bool { return waitingForAFrame() || startedOf(p.startedSoFar(), len(small)) >= 0 })
+	// Then the small layer asks too, unless nothing makes it wait.
+	waitFor(t, func() bool { return waitingForAFrame() >= 2 || startedOf(p.startedSoFar(), len(small)) >= 0 })
 	done := make(chan struct{})
 	go func() {
 		wg.Wait()
@@ -187,7 +194,7 @@ func TestZstdLayerStartedLaterGetsTheNextFreeFrame(t *testing.T) {
 	require.Equal(t, zstdLayerGolden[len(big)], digestOf(bigBlob))
 	require.Equal(t, zstdLayerGolden[len(small)], digestOf(smallBlob))
 	started := p.startedSoFar()
-	require.Equal(t, budget, startedOf(started, len(small)), "frames by size in the order they started: %v", started)
+	require.Equal(t, budget+1, startedOf(started, len(small)), "frames by size in the order they started: %v", started)
 }
 
 // startedOf is where the first frame of size starts in started, or -1.
@@ -200,11 +207,11 @@ func startedOf(started []int, size int) int {
 	return -1
 }
 
-// waitingForAFrame reports whether a goroutine waits for a place in a budget.
-func waitingForAFrame() bool {
+// waitingForAFrame is how many goroutines wait for a place in a budget.
+func waitingForAFrame() int {
 	var b strings.Builder
 	_ = pprof.Lookup("goroutine").WriteTo(&b, 2)
-	return strings.Contains(b.String(), "semaphore.(*Weighted).Acquire")
+	return strings.Count(b.String(), "semaphore.(*Weighted).Acquire")
 }
 
 func waitFor(t *testing.T, cond func() bool) {
