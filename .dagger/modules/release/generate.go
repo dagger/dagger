@@ -165,7 +165,11 @@ func (r *Release) RustSdkTargetVersion(ctx context.Context) (*dagger.Changeset, 
 		WithMountedCache("/root/.cargo", core.NewCacheVolume("rust-cargo-"+image)).
 		WithMountedDirectory("/src", before).
 		WithWorkdir("/src/sdk/rust").
-		WithExec([]string{"cargo", "install", "cargo-edit@0.13.0", "--locked"}).
+		// cargo-edit goes in the container's own filesystem, and the step that
+		// uses it runs without the cache volume: a cache volume's contents can
+		// be absent on any run, so no step may need what another left there.
+		WithExec([]string{"cargo", "install", "cargo-edit@0.13.0", "--locked", "--root", "/usr/local"}).
+		WithoutMount("/root/.cargo").
 		WithExec([]string{"cargo", "set-version", "-p", "dagger-sdk", version})
 
 	return before.
