@@ -2534,7 +2534,7 @@ func (c *Cache) maybeResetEgraphLocked() {
 	c.broadlyIndexedResults = nil
 	c.restoredDigestGroups = nil
 	c.resultsByID = nil
-	c.resultPayloadBytes = 0
+	c.resultPayloadBytes.Store(0)
 	c.entriesByRecipe = nil
 	c.remoteCaches = nil
 	c.remoteHoldings.Store(0)

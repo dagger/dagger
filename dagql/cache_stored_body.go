@@ -499,7 +499,7 @@ func (c *Cache) setStoredBodyLocked(res *sharedResult, env *PersistedResultEnvel
 	if res.id != 0 && c.resultsByID[res.id] == res {
 		c.setResultPayloadBytesLocked(res, int64(len(body.envelope)))
 	} else {
-		res.payloadBytes = int64(len(body.envelope))
+		res.payloadBytes.Store(int64(len(body.envelope)))
 	}
 }
 
