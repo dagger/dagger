@@ -1734,6 +1734,53 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 		require.Equal(t, tokensA, tokensB, "a cached object whose inline object fields hold directories should survive engine restart")
 	})
 
+	// A check run from a Git workspace keeps its planning, which holds the
+	// module; after a restart the check runs on that module, decoded from the
+	// persistent cache. Its runtime must still see the core API of the engine
+	// version it declares, not the client's: File.asJSON is asJson from
+	// engine.IdentifierCasingVersion on, so a Dang module declaring an
+	// earlier version only type-checks against its own view.
+	t.Run("module reloaded after restart keeps its core API view", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		stateKey := "persist-module-view-state-" + rand.Text()
+		repo := core.NewQuery(c).Directory().
+			WithNewFile("nonce.txt", rand.Text()).
+			WithNewFile("dagger.toml", `[modules.viewprobe]
+source = ".dagger/modules/viewprobe"
+main = true
+`).
+			WithNewFile(".dagger/modules/viewprobe/dagger.json", `{"name":"viewprobe","engineVersion":"v1.0.0-beta.22","sdk":{"source":"dang"}}`).
+			// Never cached, so the check runs again after the restart, from
+			// the planning the first engine saved.
+			WithNewFile(".dagger/modules/viewprobe/main.dang", `type Viewprobe {
+  @cache(policy: FunctionCachePolicy.Never)
+  pub verify: Void @check {
+    directory.withNewFile("value.json", "{\"value\": \"ok\"}").file("value.json").asJSON.field(path: ["value"]).asString
+    null
+  }
+}
+`)
+		remoteRef := workspaceSelectionRemoteRef(ctx, t, c, repo)
+
+		cliCtr := func(engineClient *dagger.Client) *core.Container {
+			return core.NewQuery(engineClient).Container().From(alpineImage).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, engineClient)).
+				WithWorkdir("/empty")
+		}
+
+		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
+		workspaceIdentityExec(ctx, t, cliCtr(engineClientA), true, "check", "-W", remoteRef)
+		stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA)
+		upstreamSvcA = nil
+		engineSvcA = nil
+		engineClientA = nil
+
+		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
+		workspaceIdentityExec(ctx, t, cliCtr(engineClientB), true, "check", "-W", remoteRef)
+	})
+
 	t.Run("function cache control survives restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		stateKey := "persist-function-cache-state-" + rand.Text()

@@ -33,15 +33,25 @@ func ContextWithPersistedDecodeDefaults(ctx context.Context, root *Query, factor
 }
 
 // persistedDecodeDefaultDeps stands at the persisted Module decoder's
-// DefaultDeps call. Outside a marked preparation context it keeps the
-// ordinary Query.DefaultDeps behavior, so Server.DefaultDeps and general
-// client authority are unchanged. Inside one it requires the registered root
-// and factory, checks that the decoding server really has that engine root,
-// and returns a fresh builder for that server's view: the same immutable
-// core view the decoding fork uses. Nested Module decodes make their own.
-func persistedDecodeDefaultDeps(ctx context.Context, dec *dagql.PersistDecodeContext, query *Query) (*SchemaBuilder, error) {
+// DefaultDeps call. view is the core API view of the decoded module (see
+// Module.coreView): its core module is pinned to it, as a fresh load pins it
+// to the module's declared engine version, since the persisted payload does
+// not record it. An empty view keeps the default's.
+//
+// Outside a marked preparation context it keeps the ordinary
+// Query.DefaultDeps behavior, so Server.DefaultDeps and general client
+// authority are unchanged. Inside one it requires the registered root and
+// factory, checks that the decoding server really has that engine root, and
+// returns a fresh builder for view, or else for that server's view: the same
+// immutable core view the decoding fork uses. Nested Module decodes make
+// their own.
+func persistedDecodeDefaultDeps(ctx context.Context, dec *dagql.PersistDecodeContext, query *Query, view call.View) (*SchemaBuilder, error) {
 	if !engine.IsSnapshotSharePreparation(ctx) {
-		return query.DefaultDeps(ctx)
+		deps, err := query.DefaultDeps(ctx)
+		if err != nil || view == "" {
+			return deps, err
+		}
+		return deps.WithCoreView(view), nil
 	}
 	defaults, _ := ctx.Value(persistedDecodeDefaultsKey{}).(*persistedDecodeDefaults)
 	if defaults == nil {
@@ -50,7 +60,10 @@ func persistedDecodeDefaultDeps(ctx context.Context, dec *dagql.PersistDecodeCon
 	if query != defaults.root {
 		return nil, fmt.Errorf("%w: persisted module decode server does not carry the registered engine root", engine.ErrSnapshotShareEvaluation)
 	}
-	deps := defaults.factory(dec.Server().View)
+	if view == "" {
+		view = dec.Server().View
+	}
+	deps := defaults.factory(view)
 	if deps == nil {
 		return nil, fmt.Errorf("%w: registered default dependency factory returned nothing", engine.ErrSnapshotShareEvaluation)
 	}
