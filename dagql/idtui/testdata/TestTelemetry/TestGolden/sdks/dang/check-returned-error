@@ -1,7 +1,7 @@
 Expected stderr:
 
 CHECKS  ✘ 1 failed
-✘ dag://?check=check-returned-error X.Xs ERROR
+✘ check-returned-error X.Xs ERROR
   ! dang check returned an error
 
 RUN LOCALLY

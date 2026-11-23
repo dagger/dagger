@@ -1,12 +1,12 @@
 Expected stderr:
 
 CHECKS  ✘ 1 failed  ✔ 1 passed
-✘ dag://?check=check-fail-exec X.Xs ERROR
+✘ check-fail-exec X.Xs ERROR
   ✘ withExec sh -c 'echo exec stdout; sleep 0.1; echo exec stderr >&2; exit 1' X.Xs ERROR
   ┃ exec stdout
   ┃ exec stderr
   ! exit code: 1
-✔ dag://?check=check-pass X.Xs OK
+✔ check-pass X.Xs OK
 
 RUN LOCALLY
   dagger check "dag://?check=check-fail-exec"

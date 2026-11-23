@@ -1,7 +1,7 @@
 Expected stderr:
 
 CHECKS  ✘ 1 failed
-✘ dag://?check=check-fail-exec X.Xs ERROR
+✘ check-fail-exec X.Xs ERROR
   ✘ withExec sh -c 'echo exec stdout; sleep 0.1; echo exec stderr >&2; exit 1' X.Xs ERROR
   ┃ exec stdout
   ┃ exec stderr

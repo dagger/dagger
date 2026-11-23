@@ -1885,6 +1885,50 @@ func TestChecksHeaderCountsCollectionItems(t *testing.T) {
 	}
 }
 
+// TestChecksReportLabelsAddresses covers how the CHECKS section names
+// checks: a collection's items by the keys that tell them apart, and other
+// addresses compactly, without the dimensions every check beside them shares.
+func TestChecksReportLabelsAddresses(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	rootID := prettyTestSpanID(10)
+	start := time.Unix(100, 0)
+	check := func(id byte, name string) dagui.SpanSnapshot {
+		return dagui.SpanSnapshot{
+			ID: prettyTestSpanID(id), TraceID: prettyTestTraceID(), Name: name, ParentID: rootID,
+			StartTime: start, EndTime: start.Add(time.Second), Final: true,
+			CheckName: name, CheckPassed: true,
+		}
+	}
+	spans := append([]dagui.SpanSnapshot{
+		{ID: rootID, TraceID: prettyTestTraceID(), Name: "dagger check", StartTime: start, EndTime: start.Add(3 * time.Second), Final: true},
+		check(11, "dag://?check=lint&module=golang&golang-module=."),
+		check(12, "dag+check://?module=golang&name=modules.test&golang-module=./sdk"),
+	}, collectionCheckSpans(rootID)...)
+	db := dagui.NewDB()
+	db.ImportSnapshots(spans)
+	db.SetPrimarySpan(rootID)
+	fe := NewWithDB(io.Discard, db)
+	fe.recalculateViewLocked()
+
+	r := newRenderer(fe.db, 0, fe.FrontendOpts, true)
+	report := strings.Join(fe.checksReport(tuist.Context{Width: 120}, r, false), "\n")
+	for _, want := range []string{
+		"✔ lint golang-module=. ",
+		"✔ modules/test golang-module=./sdk ",
+		"✘ " + collectionGroup + " ",
+		"✘ left Bar ",
+		"✘ right Baz ",
+		"✔ left Foo ",
+	} {
+		if !strings.Contains(report, want) {
+			t.Errorf("missing %q in:\n%s", want, report)
+		}
+	}
+	if strings.Contains(report, "dag://") || strings.Contains(report, "module=golang") {
+		t.Errorf("addresses must render compactly:\n%s", report)
+	}
+}
+
 // TestRerunSectionNamesFailedCollectionItems covers a collection grouped under
 // one check: running the group would rerun every item, so each failed item
 // gets its own local command, while the native CI re-run keeps the group.

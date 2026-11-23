@@ -1,7 +1,7 @@
 Expected stderr:
 
 CHECKS  ✘ 1 failed
-✘ dag://?check=check-fail-native X.Xs ERROR
+✘ check-fail-native X.Xs ERROR
   ┃ python function stdout
   ┃ python function stderr
   ┃ Traceback (most recent call last):

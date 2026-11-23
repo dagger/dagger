@@ -4810,7 +4810,9 @@ func (fe *frontendPretty) renderRerunSection(zoomed *dagui.Span) []string {
 			return
 		}
 		ciName := n.Name
-		if group := collectionGroupOf(n.Span); group != nil {
+		// The span's ancestors, not the surfaced tree, which a zoom into
+		// one item scopes to that item.
+		if group := n.Span.CheckCollection(); group != nil {
 			ciName = group.CheckName
 		}
 		if !seenCI[ciName] {
@@ -4914,18 +4916,6 @@ func (fe *frontendPretty) renderRerunSection(zoomed *dagui.Span) []string {
 	}
 
 	return lines
-}
-
-// collectionGroupOf returns the collection group check span is, or sits
-// beneath, or nil. It walks the span's ancestors rather than the surfaced
-// tree, which a zoom into one item scopes to that item.
-func collectionGroupOf(span *dagui.Span) *dagui.Span {
-	for ; span != nil; span = span.ParentSpan {
-		if span.CheckCollectionGroup {
-			return span
-		}
-	}
-	return nil
 }
 
 // outermostSurfacedCheck returns the top-level surfaced check whose subtree

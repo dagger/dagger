@@ -52,8 +52,9 @@ func (fe *frontendPretty) renderChecksSection(ctx tuist.Context, r *renderer) []
 
 	buf := new(strings.Builder)
 	out := NewOutput(buf, termenv.WithProfile(fe.profile))
+	hide := constantCheckDimensions(roots)
 	for _, root := range roots {
-		fe.renderCheckNode(ctx, out, r, root, 0)
+		fe.renderCheckNode(ctx, out, r, root, hide, 0)
 	}
 	return strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
 }
@@ -63,10 +64,11 @@ func (fe *frontendPretty) renderChecksSection(ctx tuist.Context, r *renderer) []
 // test rollup), and -- when it has sub-checks -- a nested CHECKS header followed
 // by the children one level under it. It writes to out and is shared by the
 // final report (renderChecksSection) and the live inline rollup
-// (renderInlineChecks), so both surface sub-checks identically.
-func (fe *frontendPretty) renderCheckNode(ctx tuist.Context, out TermOutput, r *renderer, node *dagui.CheckNode, depth int) {
+// (renderInlineChecks), so both surface sub-checks identically. hide names
+// the address dimensions its siblings all share (see artifactLabel).
+func (fe *frontendPretty) renderCheckNode(ctx tuist.Context, out TermOutput, r *renderer, node *dagui.CheckNode, hide []string, depth int) {
 	indent := strings.Repeat("  ", depth)
-	fmt.Fprintln(out, fe.checkStatusLine(out, r, node, indent))
+	fmt.Fprintln(out, fe.checkStatusLine(out, r, node, hide, indent))
 
 	// A failed leaf check renders its failure inline; a failed parent check
 	// defers to the failed children that explain it. A passing leaf check that
@@ -115,24 +117,56 @@ func (fe *frontendPretty) renderCheckNode(ctx tuist.Context, out TermOutput, r *
 	if len(node.Children) > 0 {
 		subIndent := strings.Repeat("  ", depth+1)
 		fmt.Fprintf(out, "%s%s\n", subIndent, checksHeaderLine(out, fe.agentStyle(), node.Children))
+		childHide := constantCheckDimensions(node.Children)
 		for _, child := range node.Children {
-			fe.renderCheckNode(ctx, out, r, child, depth+2)
+			fe.renderCheckNode(ctx, out, r, child, childHide, depth+2)
 		}
 	}
 }
 
 // checkStatusLine renders a check's one-line status: its icon (red ✘ / yellow
-// ◐ / green ✔), name, and faint duration, at the given indent.
-func (fe *frontendPretty) checkStatusLine(out TermOutput, r *renderer, node *dagui.CheckNode, indent string) string {
+// ◐ / green ✔), label (see artifactLabel), and faint duration, at the given
+// indent.
+func (fe *frontendPretty) checkStatusLine(out TermOutput, r *renderer, node *dagui.CheckNode, hide []string, indent string) string {
 	icon, color, status := surfacedSpanStatus(node.Span)
 	dur := dagui.FormatDuration(node.Span.Activity.Duration(r.now))
 	return fmt.Sprintf("%s%s %s %s %s",
 		indent,
 		out.String(icon).Foreground(color).String(),
-		node.Name,
+		fe.artifactLabel(node.Span, node.Name, hide),
 		out.String(dur).Faint().String(),
 		out.String(status).Foreground(color).String(),
 	)
+}
+
+// artifactLabel names a surfaced check or generator on its status line: an
+// item of a collection check by its row of the collection's table, the keys
+// that tell it apart from the other items (see dagui.CollectionTable); a DAG
+// address compactly, as its path and then its dimensions as name=key, less
+// the dimensions in hide, which every artifact listed beside it shares; and
+// any other name as it is.
+func (fe *frontendPretty) artifactLabel(span *dagui.Span, name string, hide []string) string {
+	if span != nil && span.CheckName == name {
+		if row, ok := fe.db.CollectionItemRow(span); ok && len(row) > 0 {
+			return strings.Join(row, " ")
+		}
+	}
+	if addr, ok := dagui.ParseAddress(name); ok {
+		if label := addr.CompactWithout(hide); label != "" {
+			return label
+		}
+	}
+	return name
+}
+
+// constantCheckDimensions returns the address dimensions the checks listed
+// together all share (see dagui.ConstantDimensions).
+func constantCheckDimensions(nodes []*dagui.CheckNode) []string {
+	names := make([]string, len(nodes))
+	for i, node := range nodes {
+		names[i] = node.Name
+	}
+	return dagui.ConstantDimensions(names)
 }
 
 // surfacedSpanStatus is the icon, color and status label for a surfaced check
@@ -500,14 +534,15 @@ func (fe *frontendPretty) checksRollupLines(ctx tuist.Context, r *renderer, chil
 
 	bodyBuf := new(strings.Builder)
 	bodyOut := NewOutput(bodyBuf, termenv.WithProfile(fe.profile))
+	hide := constantCheckDimensions(children)
 	detail := fe.withForkedClaims(func() {
 		for _, child := range children {
-			fe.renderCheckNode(ctx, bodyOut, r, child, 1)
+			fe.renderCheckNode(ctx, bodyOut, r, child, hide, 1)
 		}
 	})
 	statuses := make([]string, 0, len(children))
 	for _, child := range children {
-		statuses = append(statuses, fe.checkStatusLine(out, r, child, "  "))
+		statuses = append(statuses, fe.checkStatusLine(out, r, child, hide, "  "))
 	}
 	lines, full := condenseRollup(out, header, bodyBuf.String(), statuses, height)
 	if full {

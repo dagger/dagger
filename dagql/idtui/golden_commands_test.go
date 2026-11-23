@@ -90,9 +90,11 @@ func sdkCommandExamples() []Example {
 		// A generator that writes a file, applied. The warm-up applies it
 		// too, so it's undone before the run the golden records.
 		//
-		// BAD: the report says nothing of what it changed, and names the
-		// generator dag://?name=generateFile, not the
-		// dag://?generator=generate-file a staleness check suggests running.
+		// BAD: the report says nothing of what it changed, and labels the
+		// generator generateFile, its address's name column
+		// (dag://?name=generateFile), not the generate-file its staleness
+		// check is named for and suggests running
+		// (dag://?generator=generate-file).
 		Example{
 			Name:         "sdks-dang-generate-file",
 			Golden:       "sdks/dang/generate-file",
@@ -120,8 +122,8 @@ func sdkCommandExamples() []Example {
 		},
 		// A generator with nothing to change.
 		//
-		// BAD: as for generate-file, the generator is named
-		// dag://?name=generateNothing.
+		// BAD: as for generate-file, the generator is labeled
+		// generateNothing.
 		Example{
 			Name:         "sdks-dang-generate-nothing",
 			Golden:       "sdks/dang/generate-nothing",

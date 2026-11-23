@@ -1,4 +1,4 @@
 Expected stderr:
 
 GENERATORS  ✔ 1 passed
-✔ dag://?name=generateFile X.Xs OK
+✔ generateFile X.Xs OK
