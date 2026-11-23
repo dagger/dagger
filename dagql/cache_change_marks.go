@@ -461,7 +461,6 @@ const (
 	StampCallExpiry
 	StampLeft
 	StampKeptCallNewTerm
-	StampKeptCallOldTerm
 	StampKeptCallUnsendable
 	StampFrame
 
@@ -475,8 +474,8 @@ var stampCauseNames = [...]string{
 	StampCallReturned: "call returned", StampReplaced: "replaced", StampJoin: "class joined", StampEdgeExpiry: "edge expiry",
 	StampPartStored: "part stored", StampPartDropped: "part dropped", StampPruned: "pruned", StampMergeExpiry: "merge expiry",
 	StampMergeInstall: "merge install", StampMergeFailed: "merge failed", StampCallExpiry: "call expiry", StampLeft: "left class",
-	StampKeptCallNewTerm: "kept call, new term", StampKeptCallOldTerm: "kept call, old term",
-	StampKeptCallUnsendable: "kept call, unsendable", StampFrame: "frame rewritten",
+	StampKeptCallNewTerm: "kept call, new term", StampKeptCallUnsendable: "kept call, unsendable",
+	StampFrame: "frame rewritten",
 }
 
 func (s StampCause) String() string {
