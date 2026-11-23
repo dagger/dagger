@@ -54,7 +54,7 @@ func TestKeptCallTermsFollowTheirInputsClasses(t *testing.T) {
 			id.inputs = append(id.inputs, digest.FromString(in))
 			id.witnesses = append(id.witnesses, false)
 		}
-		c.keepCallLocked(&RemoteChange{}, entry, RemoteHolding{Recipe: digest.FromString("entry"), Request: id.recipe}, &keptCall{id: id})
+		c.keepCallLocked(entry, RemoteHolding{Recipe: digest.FromString("entry"), Request: id.recipe}, &keptCall{id: id})
 	}
 	class := func(in string) eqClassID { return c.ensureEqClassForDigestLocked(ctx, digest.FromString(in).String()) }
 	groups := func(step string, want int) {

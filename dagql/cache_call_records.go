@@ -79,7 +79,7 @@ func decodeKeptCall(encoded string, request digest.Digest) (*keptCall, error) {
 // or read late, and neither its call nor its expiry is kept. It reports
 // whether it changed a stored entry, which a save writes. Requires egraphMu
 // for writing.
-func (c *Cache) keepCallLocked(change *RemoteChange, entry *sharedResult, desc RemoteHolding, kept *keptCall) bool {
+func (c *Cache) keepCallLocked(entry *sharedResult, desc RemoteHolding, kept *keptCall) bool {
 	if desc.Request == "" || desc.Request == desc.Recipe {
 		return false
 	}
@@ -90,11 +90,11 @@ func (c *Cache) keepCallLocked(change *RemoteChange, entry *sharedResult, desc R
 	if expires := mergeSharedResultExpiryUnix(entry.expiresAtUnix, desc.ExpiresAtUnix); expires != entry.expiresAtUnix {
 		entry.expiresAtUnix = expires
 		c.markEntryClassLocked(entry.id, StampCallExpiry)
-		c.noteSharedWriteLocked(change, SharedExpiry)
+		c.noteSharedWriteLocked(SharedExpiry)
 		changed = true
 	}
 	if kept != nil {
-		if _, ok := entry.calls[kept.id.recipe]; !ok && c.keepTermCallLocked(change, entry, kept) {
+		if _, ok := entry.calls[kept.id.recipe]; !ok && c.keepTermCallLocked(entry, kept) {
 			changed = true
 		}
 	}
@@ -122,7 +122,7 @@ func (c *Cache) keepCallLocked(change *RemoteChange, entry *sharedResult, desc R
 // that tells a term the bundle can send from one it can't, for diagnostics.
 // It reports whether it changed the entry's calls. Requires egraphMu for
 // writing.
-func (c *Cache) keepTermCallLocked(change *RemoteChange, entry *sharedResult, kept *keptCall) bool {
+func (c *Cache) keepTermCallLocked(entry *sharedResult, kept *keptCall) bool {
 	joined := false
 	if entry.callTermIndex == nil {
 		terms, calls := c.joinedTermCallsLocked(entry)
@@ -131,7 +131,7 @@ func (c *Cache) keepTermCallLocked(change *RemoteChange, entry *sharedResult, ke
 		}
 		if len(calls) > 0 {
 			c.stampEntryLocked(entry, StampKeptCallsJoined)
-			c.noteSharedWriteLocked(change, SharedKeptCall)
+			c.noteSharedWriteLocked(SharedKeptCall)
 			joined = true
 		}
 		entry.callTermIndex = terms
@@ -158,7 +158,7 @@ func (c *Cache) keepTermCallLocked(change *RemoteChange, entry *sharedResult, ke
 	entry.callTermIndex[key] = kept
 	c.stampEntryLocked(entry, cause)
 	c.indexKeptCallLocked(entry, kept)
-	c.noteSharedWriteLocked(change, SharedKeptCall)
+	c.noteSharedWriteLocked(SharedKeptCall)
 	c.verifyCallTermIndexLocked(entry)
 	return true
 }
