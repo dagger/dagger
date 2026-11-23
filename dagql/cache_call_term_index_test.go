@@ -349,7 +349,12 @@ func callTermIndexSequence(t *testing.T, seed int64, saw func(string)) {
 						outputs[root] = struct{}{}
 					}
 				}
-				s.c.resultOutputEqClasses[s.entry.id] = outputs
+				// Through the cache, which counts each class's uses as it
+				// changes, and compacts from those counts.
+				s.c.removeResultOutputEqClassesLocked(s.entry.id)
+				for root := range outputs {
+					s.c.addResultOutputEqClassLocked(s.entry.id, root)
+				}
 				compacted, _, _ := s.c.compactEqClassesLocked(true)
 				return compacted
 			}
