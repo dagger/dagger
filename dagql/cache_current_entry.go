@@ -180,7 +180,7 @@ func (c *Cache) replaceResultValueInPlaceLocked(ctx context.Context, cur, fresh 
 	cur.stored = fresh.stored
 	cur.partFacts = fresh.partFacts
 	cur.payloadRevision++
-	c.setResultPayloadBytesLocked(cur, fresh.payloadBytes)
+	c.setResultPayloadBytesLocked(cur, fresh.payloadBytes.Load())
 	// fresh was never registered, so its own lease cleanup does nothing.
 	cur.onRelease = joinOnRelease(c.resultSnapshotLeaseCleanup(cur), fresh.onRelease)
 	cur.createdAtUnixNano = fresh.createdAtUnixNano

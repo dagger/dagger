@@ -113,7 +113,7 @@ func TestMergeValuesReplacesAnExpiredEntryNothingUses(t *testing.T) {
 	require.Equal(t, uint64(1), replacements)
 	require.Same(t, row, current)
 	b.egraphMu.RLock()
-	payloadBytes := row.payloadBytes
+	payloadBytes := row.payloadBytes.Load()
 	b.egraphMu.RUnlock()
 	require.Equal(t, persistedEnvelopePayloadBytes(envelope), payloadBytes, "the row counts the record's envelope")
 	total, sum := cacheTestPayloadTotalConsistent(b)
