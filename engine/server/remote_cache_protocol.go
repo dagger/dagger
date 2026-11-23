@@ -637,15 +637,20 @@ func (a *RemoteCacheAdapter) merge(ctx context.Context, name, ident string, look
 	return reply, priorityWait, err
 }
 
-// knowMerged adds the rows a committed merge landed on to known: the
-// service holds the records it sent.
+// knowMerged adds the rows a committed merge stored the service's records on
+// to known: the service holds the records it sent. A row the merge kept the
+// engine's own value on isn't added: the service holds another record of its
+// recipe, maybe another run of the step, and not the engine's, so an export
+// carries the row in full.
 func knowMerged(known *dagql.KnownRows, reply dagql.MergeReply) {
 	if known == nil {
 		return
 	}
 	rows := dagql.ExportedRows{Full: make(map[uint64]dagql.RowRevision, len(reply.Values))}
 	for _, value := range reply.Values {
-		rows.Full[value.Number] = value.Revision
+		if value.Stored {
+			rows.Full[value.Number] = value.Revision
+		}
 	}
 	known.Merged(rows)
 }
