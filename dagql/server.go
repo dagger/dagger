@@ -1596,7 +1596,7 @@ func (s *Server) LoadType(ctx context.Context, id *call.ID) (ret AnyResult, rerr
 	// handed it by a nested call is (Cache.bindCallerHandedBound).
 	defer func() {
 		if rerr == nil {
-			cache.bindCallerHandedBound(ctx, sessionID, ret, "a load by ID")
+			cache.bindCallerHandedBound(ctx, sessionID, ret, false, "a load by ID")
 		}
 	}()
 	if id.IsHandle() {
