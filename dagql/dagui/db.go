@@ -273,6 +273,11 @@ type DB struct {
 
 	surfacedServices surfacedTreeMemo[ServiceNode]
 
+	// collectionTables memoizes DB.CollectionTable per collection group
+	// span for the mutation count collectionTablesAt.
+	collectionTables   map[SpanID]*CollectionTable
+	collectionTablesAt uint64
+
 	serviceDisplays     []*Span
 	serviceDisplaysAt   uint64
 	serviceDisplaysRoot SpanID
