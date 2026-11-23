@@ -395,8 +395,10 @@ type statePartValue struct {
 	block      chan struct{}
 	// fail, when set, is what encoding the value returns.
 	fail error
-	host atomic.Pointer[PartHost]
-	rev  atomic.Uint64
+	// encoding, when set, runs each time the value is encoded.
+	encoding atomic.Pointer[func()]
+	host     atomic.Pointer[PartHost]
+	rev      atomic.Uint64
 }
 
 type persistedStatePartValue struct {
@@ -411,6 +413,9 @@ func (*statePartValue) Type() *ast.Type {
 }
 
 func (v *statePartValue) EncodePersistedObject(context.Context, *PersistEncodeContext) (PersistedObjectEncoding, error) {
+	if encoding := v.encoding.Load(); encoding != nil {
+		(*encoding)()
+	}
 	if v.fail != nil {
 		return PersistedObjectEncoding{}, v.fail
 	}

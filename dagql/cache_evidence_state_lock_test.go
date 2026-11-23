@@ -86,3 +86,48 @@ func TestSpanEndReadsPartsBesideAReader(t *testing.T) {
 	assert.DeepEqual(t, []string{snapshotKey}, lazy.parts)
 	assert.DeepEqual(t, []int64{300}, lazy.partSizes)
 }
+
+// A span's read holds its entry only through the ownership something else
+// has of it. When the last other owner, here the call's session, lets go
+// while the read captures the entry's record, the entry stays registered
+// until the capture ends, and the read's release then collects it, as any
+// release that leaves an entry unowned does. The span, ending once the
+// entry has left the cache, reports no state for it.
+func TestSpanEndReadCollectsAnEntryItsCallerLetGo(t *testing.T) {
+	t.Parallel()
+	mgr := &partSizeTestManager{fakeSnapshotManager: &fakeSnapshotManager{}, usage: map[string]int64{"top": 300}}
+	ctx, c, srv, _ := partSizeTestCache(t, mgr, true)
+	value := &statePartValue{snapshotID: "top"}
+	value.done.Store(true)
+	frame := statePartFrame("span-state-let-go")
+	req := cacheTestArmedRequest(frame)
+	res, err := c.GetOrInitCall(ctx, "span-state-let-go", srv, req, func(context.Context) (AnyResult, error) {
+		return NewResultForCall(value, frame)
+	})
+	assert.NilError(t, err)
+	row := res.cacheSharedResult()
+	registered := func() bool {
+		c.egraphMu.RLock()
+		defer c.egraphMu.RUnlock()
+		return c.resultsByID[row.id] == row
+	}
+
+	encoding, release := make(chan struct{}), make(chan struct{})
+	hook := func() {
+		close(encoding)
+		<-release
+	}
+	value.encoding.Store(&hook)
+	read := make(chan bool, 1)
+	go func() {
+		_, ok := req.CacheEvidence.ResultState(ctx, res)
+		read <- ok
+	}()
+	<-encoding
+	value.encoding.Store(nil)
+	assert.NilError(t, c.ReleaseSession(ctx, "span-state-let-go"))
+	assert.Assert(t, registered(), "the read's own ownership keeps the entry while it captures")
+	close(release)
+	assert.Assert(t, !<-read, "the entry left the cache before the span's state was read")
+	assert.Assert(t, !registered(), "the read's release collected the entry nothing else owned")
+}
