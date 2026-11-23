@@ -898,11 +898,7 @@ func walkArtifactNodes(ctx context.Context, node *ModTreeNode, visit func(*ModTr
 	visit(node)
 	if visiting[obj.Name] {
 		if node.CollectionDimension != nil && Supports(ctx, ArtifactTypeColumnsVersion) {
-			for ancestor := node; ancestor != nil; ancestor = ancestor.Parent {
-				if ancestor.CollectionDimension != nil && ancestor.CollectionDimension.CollectionType == obj.Name {
-					return fmt.Errorf("collection type %s repeats on one artifact route", obj.Name)
-				}
-			}
+			return validateArtifactCollectionRoute(node, obj.Name)
 		}
 		return nil
 	}
@@ -971,14 +967,22 @@ func artifactCollectionDimension(ctx context.Context, node *ModTreeNode, typ str
 		KeyDescription: get.Args[0].Self().Description,
 	}
 	if Supports(ctx, ArtifactTypeColumnsVersion) {
-		for ancestor := node; ancestor != nil; ancestor = ancestor.Parent {
-			if ancestor.CollectionDimension != nil && ancestor.CollectionDimension.CollectionType == collection.Type {
-				return nil, fmt.Errorf("collection type %s repeats on one artifact route", collection.Type)
-			}
+		if err := validateArtifactCollectionRoute(node, collection.Type); err != nil {
+			return nil, err
 		}
 		return (*ArtifactDimension)(collection.CanonicalDimension()), nil
 	}
 	return (*ArtifactDimension)(collection.Dimension(node.Module.Self().Name(), (*flattening.Dimension)(parent.CollectionDimension), nil)), nil
+}
+
+// validateArtifactCollectionRoute rejects repeated item lookups for one collection type.
+func validateArtifactCollectionRoute(node *ModTreeNode, typ string) error {
+	for ancestor := node; ancestor != nil; ancestor = ancestor.Parent {
+		if ancestor.CollectionDimension != nil && ancestor.CollectionDimension.CollectionType == typ {
+			return fmt.Errorf("collection type %s repeats on one artifact route", typ)
+		}
+	}
+	return nil
 }
 
 // Projection changes workspace metadata, not the module function's contract.
