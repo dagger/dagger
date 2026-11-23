@@ -128,7 +128,7 @@ func (c *Cache) holdingRanLocked(key HolderKey, replacements uint64) bool {
 // marks the entry changed, for readers that keep their answers, and reports
 // whether it did: a save then writes something new. Requires egraphMu for
 // writing.
-func (c *Cache) noteHoldingRanLocked(change *RemoteChange, key HolderKey, entry *sharedResult, h *holding, replacements uint64, by runRanBy) bool {
+func (c *Cache) noteHoldingRanLocked(key HolderKey, entry *sharedResult, h *holding, replacements uint64, by runRanBy) bool {
 	if replacements == h.replacements {
 		h.ran = true
 	}
@@ -140,7 +140,7 @@ func (c *Cache) noteHoldingRanLocked(change *RemoteChange, key HolderKey, entry 
 	}
 	entry.runRan = by
 	c.markEntryLocked(entry.id)
-	c.noteSharedWriteLocked(change, SharedRunRan)
+	c.noteSharedWriteLocked(SharedRunRan)
 	return true
 }
 

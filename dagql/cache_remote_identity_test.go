@@ -43,7 +43,7 @@ func TestKnownRemoteIdentityCostIsIndependentOfItsUses(t *testing.T) {
 		require.NotNil(t, entry)
 		teach := func() {
 			cloud.egraphMu.Lock()
-			cloud.teachRemoteIdentityLocked(ctx, &RemoteChange{}, entry, base.Field, base.Recipe, base.Request, base.ContentDigest, base.Term)
+			cloud.teachRemoteIdentityLocked(ctx, entry, base.Field, base.Recipe, base.Request, base.ContentDigest, base.Term)
 			cloud.egraphMu.Unlock()
 		}
 		teach()

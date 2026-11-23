@@ -333,7 +333,7 @@ func TestStoredBundleRecordGoesWithThePrunedValue(t *testing.T) {
 			require.True(t, storedBundleTestKept(cloud, r))
 			require.True(t, storedBundleTestKept(cloud, p))
 
-			_, removed, dropped, err := cloud.removePrunedEdge(ctx, &RemoteChange{}, sharedResultID(r))
+			_, removed, dropped, err := cloud.removePrunedEdge(ctx, sharedResultID(r))
 			require.NoError(t, err)
 			require.True(t, removed)
 			require.Equal(t, 2, dropped)

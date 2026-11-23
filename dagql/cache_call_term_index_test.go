@@ -52,7 +52,7 @@ func largeKeptCallEntry(tb testing.TB, c *Cache, n int, stored bool) (*sharedRes
 
 // keepOn keeps kept on entry, as a span reporting it does.
 func keepOn(c *Cache, entry *sharedResult, kept *keptCall) {
-	c.keepCallLocked(&RemoteChange{}, entry, RemoteHolding{Recipe: digest.FromString("entry"), Request: kept.id.recipe}, kept)
+	c.keepCallLocked(entry, RemoteHolding{Recipe: digest.FromString("entry"), Request: kept.id.recipe}, kept)
 }
 
 // Keeping a call on an entry that keeps 10,000 calls takes the new call's
@@ -298,7 +298,7 @@ func callTermIndexSequence(t *testing.T, seed int64, saw func(string)) {
 			steps = append(steps, fmt.Sprint("keep ", id.recipe.Encoded()[:6], " ", id.inputs))
 			do = func(s *side) any {
 				kept := &keptCall{id: id}
-				return s.c.keepCallLocked(&RemoteChange{}, s.entry, RemoteHolding{Recipe: digest.FromString("entry"), Request: id.recipe}, kept)
+				return s.c.keepCallLocked(s.entry, RemoteHolding{Recipe: digest.FromString("entry"), Request: id.recipe}, kept)
 			}
 		case n < 60:
 			in := pool[rng.Intn(len(pool))]
