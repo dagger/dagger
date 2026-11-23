@@ -35,21 +35,26 @@ const (
 	// SharedRunRan: an entry's stored record's run noted as having run
 	// (noteHoldingRanLocked).
 	SharedRunRan
-	// SharedEntryRemoved: an entry removed once nothing owned it, or the
-	// classes compacted after a collection removed entries.
+	// SharedEntryRemoved: an entry removed once nothing owned it.
 	SharedEntryRemoved
 	// SharedEngineCacheGone: an engine cache's state removed with its last
 	// holding.
 	SharedEngineCacheGone
+	// SharedClassesChecked: a collection's check of the classes' compaction,
+	// at most once per eqClassCheckInterval
+	// (compactEqClassesAfterCollectionLocked). It compresses the
+	// union-find's paths and keeps its own bookkeeping whether or not it
+	// frees any class.
+	SharedClassesChecked
 )
 
 // SharedWriteKinds is how many kinds SharedWrites has: each is a bit below
 // 1 << SharedWriteKinds.
-const SharedWriteKinds = 9
+const SharedWriteKinds = 10
 
 var sharedWriteNames = [SharedWriteKinds]string{
 	"new_entry", "new_engine_cache", "identity", "taught_content", "kept_call",
-	"expiry", "run_ran", "entry_removed", "engine_cache_gone",
+	"expiry", "run_ran", "entry_removed", "engine_cache_gone", "classes_checked",
 }
 
 // Each calls f with the index and name of each kind w holds, in the order
