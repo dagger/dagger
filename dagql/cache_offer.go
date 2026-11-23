@@ -409,8 +409,11 @@ func sameExportLayer(a, b snapshots.ExportLayer) bool {
 	return sameDescriptor(a.Descriptor, b.Descriptor) && a.Description == b.Description && a.Computed == b.Computed &&
 		// Two times are DeepEqual when equal by ==, which also compares
 		// their locations' pointers; only a time in a location of its own
-		// needs DeepEqual's look into the location.
-		equalPointers(a.CreatedAt, b.CreatedAt, func(x, y time.Time) bool { return x == y || reflect.DeepEqual(x, y) })
+		// needs DeepEqual's look into the location. Equal would answer
+		// differently: it ignores the location.
+		equalPointers(a.CreatedAt, b.CreatedAt, func(x, y time.Time) bool {
+			return x == y || reflect.DeepEqual(x, y) //nolint:staticcheck // QF1009: DeepEqual's rule for times, not Equal's.
+		})
 }
 
 func sameDescriptor(a, b ocispecs.Descriptor) bool {
