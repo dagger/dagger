@@ -462,6 +462,7 @@ const (
 	StampLeft
 	StampKeptCallNewTerm
 	StampKeptCallUnsendable
+	StampKeptCallsJoined
 	StampFrame
 
 	// StampViaClass marks a stamp of a write to another entry of the
@@ -475,7 +476,7 @@ var stampCauseNames = [...]string{
 	StampPartStored: "part stored", StampPartDropped: "part dropped", StampPruned: "pruned", StampMergeExpiry: "merge expiry",
 	StampMergeInstall: "merge install", StampMergeFailed: "merge failed", StampCallExpiry: "call expiry", StampLeft: "left class",
 	StampKeptCallNewTerm: "kept call, new term", StampKeptCallUnsendable: "kept call, unsendable",
-	StampFrame: "frame rewritten",
+	StampKeptCallsJoined: "kept calls joined", StampFrame: "frame rewritten",
 }
 
 func (s StampCause) String() string {
