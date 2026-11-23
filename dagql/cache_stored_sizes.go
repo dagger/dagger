@@ -182,7 +182,7 @@ func (c *Cache) walkStoredRoot(root sharedResultID, nowUnix int64, held *HeldBy,
 	hold.report = c.testStoredSizesHold
 	defer hold.done()
 	if held != nil {
-		hold.lockEngine(c.remoteCaches[held.Cache])
+		hold.lockEngine(held.Cache)
 	}
 	res := c.resultsByID[root]
 	if res == nil || res.noValueLocked() {
@@ -684,7 +684,7 @@ func (c *Cache) listStoredRoot(root sharedResultID, nowUnix int64, held *HeldBy,
 	hold := c.readInPieces()
 	defer hold.done()
 	if held != nil {
-		hold.lockEngine(c.remoteCaches[held.Cache])
+		hold.lockEngine(held.Cache)
 	}
 	res := c.resultsByID[root]
 	if res == nil || res.noValueLocked() {
