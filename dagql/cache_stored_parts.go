@@ -106,7 +106,7 @@ func (c *Cache) SetStoredParts(ctx context.Context, parts []StoredPartWrite) (_ 
 	if err := context.Cause(ctx); err != nil {
 		return nil, change, err
 	}
-	c.egraphMu.Lock()
+	c.lockGraphFor(ctx, workRemote)
 	defer c.egraphMu.Unlock()
 	defer c.takeChangesLocked(&change)
 	// Admission is against the value the entry holds now, so the clock is
@@ -258,7 +258,7 @@ func (c *Cache) DropStoredPack(pack digest.Digest) ([]StoredPart, RemoteChange, 
 // dropStoredParts removes every stored part that drop selects, on every
 // entry, and returns them, sorted, and what it changed.
 func (c *Cache) dropStoredParts(drop func(storedPart) bool) (dropped []StoredPart, change RemoteChange) {
-	c.egraphMu.Lock()
+	c.lockGraphFor(context.Background(), workRemote)
 	defer c.egraphMu.Unlock()
 	defer c.takeChangesLocked(&change)
 	for id, res := range c.resultsByID {

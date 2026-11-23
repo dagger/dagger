@@ -545,7 +545,7 @@ func (c *Cache) AttachPreparedRemoteHolding(ctx context.Context, key HolderKey, 
 	if prepared.err != nil {
 		return RemoteChange{}, prepared.err
 	}
-	c.egraphMu.Lock()
+	c.lockGraphFor(ctx, workRemote)
 	defer c.egraphMu.Unlock()
 	return c.attachRemoteHoldingLocked(ctx, key, desc, prepared.parts, prepared.kept), nil
 }
@@ -705,7 +705,7 @@ func (c *Cache) ApplyMergedReply(ctx context.Context, cache CacheID, sent ValueB
 	if err != nil {
 		return RemoteChange{}, err
 	}
-	c.egraphMu.Lock()
+	c.lockGraphFor(ctx, workRemote)
 	defer c.egraphMu.Unlock()
 	return c.applyMergedReplyLocked(ctx, cache, cloudEntries, targets, reply), nil
 }
@@ -883,7 +883,7 @@ func (c *Cache) UpdatePreparedRemoteHolding(ctx context.Context, key HolderKey, 
 	if prepared.err != nil {
 		return RemoteChange{}, false, prepared.err
 	}
-	c.egraphMu.Lock()
+	c.lockGraphFor(ctx, workRemote)
 	defer c.egraphMu.Unlock()
 	change, found := c.updateRemoteHoldingLocked(ctx, key, update, prepared.parts)
 	return change, found, nil
@@ -1027,7 +1027,7 @@ func (c *Cache) AddRemoteHold(ctx context.Context, key HolderKey, session string
 	if session == "" {
 		return RemoteChange{}, errEmptyRemoteHoldSession
 	}
-	c.egraphMu.Lock()
+	c.lockGraphFor(ctx, workRemote)
 	defer c.egraphMu.Unlock()
 	return c.addRemoteHoldLocked(key, session)
 }
@@ -1058,7 +1058,7 @@ func (c *Cache) addRemoteHoldLocked(key HolderKey, session string) (change Remot
 // ReleaseRemoteSession releases every hold of one session of an engine cache.
 // The holdings it held are candidates for collection.
 func (c *Cache) ReleaseRemoteSession(ctx context.Context, cache CacheID, session string) RemoteChange {
-	c.egraphMu.Lock()
+	c.lockGraphFor(ctx, workRemote)
 	defer c.egraphMu.Unlock()
 	return c.releaseRemoteSessionChangeLocked(cache, session)
 }
@@ -1095,7 +1095,7 @@ func (c *Cache) releaseRemoteSessionLocked(cache CacheID, session string, candid
 // edge: the latest observation, by generation and then engine time, sets it.
 // A holding left without retention is a candidate for collection.
 func (c *Cache) ObserveRemoteRetention(ctx context.Context, key HolderKey, obs RetentionObservation) (RemoteChange, error) {
-	c.egraphMu.Lock()
+	c.lockGraphFor(ctx, workRemote)
 	defer c.egraphMu.Unlock()
 	return c.observeRemoteRetentionLocked(key, obs)
 }
@@ -1124,7 +1124,7 @@ func (c *Cache) observeRemoteRetentionLocked(key HolderKey, obs RetentionObserva
 // the same keys, for the cache's next process. The holdings the sessions held
 // are candidates for collection.
 func (c *Cache) EndRemoteProcess(ctx context.Context, cache CacheID, sessions []string) (change RemoteChange) {
-	c.egraphMu.Lock()
+	c.lockGraphFor(ctx, workRemote)
 	defer c.egraphMu.Unlock()
 	defer c.takeChangesLocked(&change)
 	for _, session := range sessions {
@@ -1137,7 +1137,7 @@ func (c *Cache) EndRemoteProcess(ctx context.Context, cache CacheID, sessions []
 // engine cache, and returns them all as candidates: collection removes them,
 // through their dependencies on each other.
 func (c *Cache) ReleaseRemoteCache(ctx context.Context, cache CacheID) RemoteChange {
-	c.egraphMu.Lock()
+	c.lockGraphFor(ctx, workRemote)
 	defer c.egraphMu.Unlock()
 	return c.releaseRemoteCacheLocked(cache)
 }
@@ -1182,7 +1182,7 @@ func (c *Cache) releaseRemoteCacheLocked(cache CacheID) (change RemoteChange) {
 // Cloud calls it, and never with snapshot sharing enabled, whose pending queue
 // keeps class IDs. Engines compact through prune.
 func (c *Cache) CollectRemoteHoldings(ctx context.Context, candidates []HolderKey, owned func(HolderKey) bool) ([]HolderKey, RemoteChange, error) {
-	c.egraphMu.Lock()
+	c.lockGraphFor(ctx, workRemote)
 	collected, change, releases, err := c.collectRemoteHoldingsLocked(ctx, candidates, owned)
 	c.egraphMu.Unlock()
 	slices.SortFunc(collected, compareHolderKeys)
@@ -1404,7 +1404,7 @@ func (c *Cache) CollectGoneHoldings(ctx context.Context, keys []HolderKey) (Remo
 		entries    []*sharedResult
 		rerr       error
 	)
-	c.egraphMu.Lock()
+	c.lockGraphFor(ctx, workRemote)
 	entriesBefore := len(c.resultsByID)
 	for i, key := range keys {
 		var deps []HolderKey
@@ -1479,7 +1479,7 @@ func (c *Cache) ApplyHeldValueState(ctx context.Context, key HolderKey, obs Held
 	if err != nil {
 		return change, false, fmt.Errorf("apply held value state %s/%d: %w", key.Cache, key.Number, err)
 	}
-	c.egraphMu.Lock()
+	c.lockGraphFor(ctx, workRemote)
 	defer c.egraphMu.Unlock()
 	change, found := c.applyHeldValueStateOfLocked(ctx, key, obs, parts, offered)
 	return change, found, nil
