@@ -477,8 +477,6 @@ func (c *Cache) BlobCacheUsage() (BlobCacheUsage, error) {
 		Terms:         len(c.egraphTerms),
 		ClassSlots:    c.eqClassSlotsLocked(),
 	}
-	for _, state := range c.remoteCaches {
-		usage.Holdings += state.holdings
-	}
+	usage.Holdings = int(c.remoteHoldings.Load())
 	return usage, nil
 }
