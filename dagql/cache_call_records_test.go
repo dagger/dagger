@@ -756,6 +756,24 @@ func TestCallRecordPrefersAnInputTheRecipientHolds(t *testing.T) {
 	heldB := built.Bundle.Calls[0].Inputs
 	require.Len(t, heldB, 1, "the call names the row that places its receiver")
 	require.NotEmpty(t, built.Bundle.Values[heldB[0]-1].Held, "a held row: the recipient's own B, no copy of its record")
+	for _, root := range built.Bundle.Roots {
+		require.NotEqual(t, heldB[0], root.Ordinal, "a held row a call alone names is no root")
+	}
+	require.Empty(t, built.CallInputs)
+
+	// A recipient that no longer holds B, as when a set file is restored
+	// after B expired, merges the bundle all the same: the call goes
+	// untaught, and inner lands.
+	fctx, fresh, fsrv := transferTestCache(t)
+	_, err = fresh.MergeValues(fctx, CloudCacheID, built.Bundle)
+	require.NoError(t, err, "a held row the call alone names is never stale")
+	landed, err := fresh.GetOrInitCall(fctx, "test-session", fsrv, &CallRequest{ResultCall: callRecordTestFrame("inner"), IsPersistable: true},
+		func(context.Context) (AnyResult, error) {
+			t.Fatal("inner did not land")
+			return nil, nil
+		})
+	require.NoError(t, err)
+	require.True(t, landed.HitCache())
 	encodedB, err := func() (string, error) {
 		pb, err := callB.callPB(b)
 		if err != nil {
@@ -765,6 +783,71 @@ func TestCallRecordPrefersAnInputTheRecipientHolds(t *testing.T) {
 	}()
 	require.NoError(t, err)
 	require.Equal(t, encodedB, built.Bundle.Calls[0].Call)
+}
+
+// A call's input the bundle carries below another call's input still travels
+// as a root of its own, so that it lands if the other expires first. inner
+// was returned by f on X and by g on Y, and X depends on Y: whichever call
+// the bundle places first carries Y, and both X and Y are roots. StoredClosure
+// lists the same call inputs as the bundle.
+func TestACallInputBelowAnotherCallsInputIsARootOfItsOwn(t *testing.T) {
+	t.Parallel()
+	cloudCtx, cloud := storedPartTestCache(t, WithBlobStore())
+	ctx, producer, srv := transferTestCache(t)
+	receiver := func(field, content string) *ResultCall {
+		frame := callRecordTestFrame(field)
+		frame.ExtraDigests = []call.ExtraDigest{{Digest: digest.FromString(content), Label: call.ExtraDigestLabelContent}}
+		return frame
+	}
+	on := func(field string, recv *ResultCall) *ResultCall {
+		frame := callRecordTestFrame(field)
+		frame.Receiver = &ResultCallRef{Call: recv}
+		return frame
+	}
+	made := func(frame *ResultCall, text string) AnyResult {
+		res, err := producer.GetOrInitCall(ctx, "test-session", srv, &CallRequest{ResultCall: frame, IsPersistable: true},
+			func(context.Context) (AnyResult, error) {
+				return NewResultForCall(&transferTestValue{Text: text}, frame)
+			})
+		require.NoError(t, err)
+		return res
+	}
+	inner := persistedListTestResult(t, ctx, producer, srv, "inner", &transferTestValue{Text: "inner"})
+	x := made(receiver("x", "x content"), "x")
+	y := made(receiver("y", "y content"), "y")
+	require.NoError(t, producer.AddExplicitDependency(ctx, x, y, "x reads y"))
+	f, g := on("f", receiver("x", "x content")), on("g", receiver("y", "y content"))
+	for _, frame := range []*ResultCall{f, g} {
+		_, err := producer.GetOrInitCall(ctx, "test-session", srv, &CallRequest{ResultCall: frame, IsPersistable: true},
+			func(context.Context) (AnyResult, error) { return inner, nil })
+		require.NoError(t, err)
+	}
+	numbers := storedPersistenceTestMerge(t, cloudCtx, cloud, exportTestBundle(t, ctx, producer, inner, x, y))
+	require.Len(t, numbers, 3)
+	byField := map[string]uint64{}
+	for _, number := range numbers {
+		byField[storedTestFrame(t, cloud, storedBundleTestEntry(cloud, number)).Field] = number
+	}
+	for _, frame := range []*ResultCall{f, g} {
+		test := &callRecordTest{ctx: ctx, producer: producer, frame: frame, inner: inner, cloud: cloud}
+		test.attach(t, cloudCtx, test.span(t, true, 0))
+	}
+
+	built, err := cloud.StoredBundle(ctx, []uint64{byField["inner"]}, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	require.Len(t, built.Bundle.Calls, 2)
+	require.ElementsMatch(t, []uint64{byField["x"], byField["y"]}, built.CallInputs, "X and Y are each a root")
+	roots := map[TransferOrdinal]bool{}
+	for _, root := range built.Bundle.Roots {
+		roots[root.Ordinal] = true
+	}
+	require.True(t, roots[bundleRowOf(t, built.Bundle, byField["y"])], "Y is a root, though X's closure carries it")
+	closure, err := cloud.StoredClosure(ctx, []uint64{byField["inner"]}, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	require.Equal(t, built.CallInputs, closure.CallInputs, "StoredClosure lists the bundle's call inputs")
+	sizes, err := cloud.StoredSizes(ctx, []uint64{byField["inner"]}, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	require.Equal(t, len(built.Bundle.Values), sizes[0].Records, "priced as built")
 }
 
 // Keeping a call on a stored entry, or giving it a call's expiry, is a change

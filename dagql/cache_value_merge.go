@@ -689,6 +689,10 @@ type valueMergePrep struct {
 	// preparation stops once they are known.
 	held  map[uint64]bool
 	stale []TransferOrdinal
+	// callOnly are the held rows outside the roots' closure, which a call
+	// alone names as the row placing an input (TransferredCall.Inputs): no
+	// row of the merge, never stale, each read when its call is taught.
+	callOnly map[uint64]bool
 	// heldParts are, on the Cloud, the outputs an engine's bundle puts on
 	// its held rows, by ordinal, which the commit checks against the
 	// Cloud's own copies of the rows (staleHeldPartsLocked).
@@ -827,6 +831,20 @@ func (c *Cache) checkValueMerge(from CacheID, input ValueBundle) (*valueMergePre
 	prep.markUnprepared(c)
 	if prep.calls, err = c.prepareMergedCalls(prep.bundle.Calls); err != nil {
 		return nil, err
+	}
+	// The rows outside the order, the roots' closure, are the held rows a
+	// call alone names (checkValueBundle).
+	if len(order) < len(prep.bundle.Values) {
+		inOrder := make(map[uint64]bool, len(order))
+		for _, id := range order {
+			inOrder[id] = true
+		}
+		prep.callOnly = map[uint64]bool{}
+		for _, row := range prep.bundle.Values {
+			if id := uint64(row.Ordinal); !inOrder[id] {
+				prep.callOnly[id] = true
+			}
+		}
 	}
 	return prep, nil
 }
@@ -1283,7 +1301,7 @@ func (c *Cache) resolveHeldRows(ctx context.Context, prep *valueMergePrep) map[u
 	c.readLockGraphGathered(ctx)
 	now := time.Now().Unix()
 	for _, row := range prep.bundle.Values {
-		if row.Held == "" {
+		if row.Held == "" || prep.callOnly[uint64(row.Ordinal)] {
 			continue
 		}
 		id := uint64(row.Ordinal)
@@ -3117,18 +3135,19 @@ func (c *Cache) applyMergedIdentitiesLocked(ctx context.Context, commit *valueMe
 
 // mergedCallPlacesLocked returns, by input of merged, the entry its row
 // lands on, nil for a witness: a held row's, the recipient's current entry
-// of the row's recipe; a carried row's, the entry the commit gives it. It
-// reports false when an input's row landed nowhere or has expired. Requires
-// egraphMu.
+// of the row's recipe, if it still holds it; a carried row's, the entry the
+// commit gives it. It reports false when an input's row landed nowhere: the
+// call alone goes untaught. Requires egraphMu.
 func (c *Cache) mergedCallPlacesLocked(commit *valueMergeCommit, merged mergedCall) ([]*sharedResult, bool) {
 	places := make([]*sharedResult, len(merged.inputs))
 	for i, ordinal := range merged.inputs {
 		if ordinal == 0 {
 			continue
 		}
-		if commit.prep.held[ordinal] {
-			place := commit.targets.of(c, commit.prep, ordinal)
-			if place == nil || c.resultExpiredAtLocked(place, commit.now) {
+		if commit.prep.held[ordinal] || commit.prep.callOnly[ordinal] {
+			row := commit.prep.index[ordinal]
+			place := c.currentEntryForRecipeLocked(row.Held)
+			if c.heldRowStaleLocked(place, row.ExpiresAtUnix, commit.now) || c.resultExpiredAtLocked(place, commit.now) {
 				return nil, false
 			}
 			places[i] = place
