@@ -891,8 +891,22 @@ func (sdk persistedModuleSourceLazyRuntimeTarget) TargetRuntime(ctx context.Cont
 }
 
 func (src *ModuleSource) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
+	payload, err := src.persistedPayload(func(res dagql.AnyResult, label string) (uint64, error) {
+		return encodePersistedObjectRef(enc, res, label)
+	})
+	if err != nil {
+		return dagql.PersistedObjectEncoding{}, err
+	}
+	return encodePersistedObjectPayload(payload)
+}
+
+// persistedPayload is everything the source persists: its plain fields, and
+// each result it holds as ref names it. Its persisted encoding names a result
+// by its stored result ID, its content identity by its content
+// (ContentIdentity), so the two hold the same fields.
+func (src *ModuleSource) persistedPayload(ref func(res dagql.AnyResult, label string) (uint64, error)) (persistedModuleSourcePayload, error) {
 	if src == nil {
-		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted module source: nil module source")
+		return persistedModuleSourcePayload{}, fmt.Errorf("encode persisted module source: nil module source")
 	}
 	payload := persistedModuleSourcePayload{
 		ConfigExists:                        src.ConfigExists,
@@ -928,7 +942,7 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, enc *dagql.P
 	}
 	if src.SDK != nil {
 		if src.SDKImpl == nil {
-			return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted module source: sdk config is set but sdk impl is not initialized")
+			return persistedModuleSourcePayload{}, fmt.Errorf("encode persisted module source: sdk config is set but sdk impl is not initialized")
 		}
 		_, hasRuntime := src.SDKImpl.AsRuntime()
 		_, hasModuleTypes := src.SDKImpl.AsModuleTypes()
@@ -953,16 +967,16 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, enc *dagql.P
 		}
 	}
 	if src.ContextDirectory.Self() != nil {
-		contextDirID, err := encodePersistedObjectRef(enc, src.ContextDirectory, "module source context directory")
+		contextDirID, err := ref(src.ContextDirectory, "module source context directory")
 		if err != nil {
-			return dagql.PersistedObjectEncoding{}, err
+			return persistedModuleSourcePayload{}, err
 		}
 		payload.ContextDirectoryResultID = contextDirID
 	}
 	if src.Workspace.Self() != nil {
-		workspaceID, err := encodePersistedObjectRef(enc, src.Workspace, "module source workspace")
+		workspaceID, err := ref(src.Workspace, "module source workspace")
 		if err != nil {
-			return dagql.PersistedObjectEncoding{}, err
+			return persistedModuleSourcePayload{}, err
 		}
 		payload.WorkspaceResultID = workspaceID
 	}
@@ -971,16 +985,16 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, enc *dagql.P
 		if dep.Self() == nil {
 			continue
 		}
-		depID, err := encodePersistedObjectRef(enc, dep, "module source dependency")
+		depID, err := ref(dep, "module source dependency")
 		if err != nil {
-			return dagql.PersistedObjectEncoding{}, err
+			return persistedModuleSourcePayload{}, err
 		}
 		payload.DependencyResultIDs = append(payload.DependencyResultIDs, depID)
 	}
 	if src.Blueprint.Self() != nil {
-		blueprintID, err := encodePersistedObjectRef(enc, src.Blueprint, "module source blueprint")
+		blueprintID, err := ref(src.Blueprint, "module source blueprint")
 		if err != nil {
-			return dagql.PersistedObjectEncoding{}, err
+			return persistedModuleSourcePayload{}, err
 		}
 		payload.BlueprintResultID = blueprintID
 	}
@@ -989,9 +1003,9 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, enc *dagql.P
 		if toolchain.Self() == nil {
 			continue
 		}
-		toolchainID, err := encodePersistedObjectRef(enc, toolchain, "module source toolchain")
+		toolchainID, err := ref(toolchain, "module source toolchain")
 		if err != nil {
-			return dagql.PersistedObjectEncoding{}, err
+			return persistedModuleSourcePayload{}, err
 		}
 		payload.ToolchainResultIDs = append(payload.ToolchainResultIDs, toolchainID)
 	}
@@ -1010,9 +1024,9 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, enc *dagql.P
 			Ref:              src.Git.Ref,
 		}
 		if src.Git.UnfilteredContextDir.Self() != nil {
-			unfilteredID, err := encodePersistedObjectRef(enc, src.Git.UnfilteredContextDir, "module source git unfiltered context dir")
+			unfilteredID, err := ref(src.Git.UnfilteredContextDir, "module source git unfiltered context dir")
 			if err != nil {
-				return dagql.PersistedObjectEncoding{}, err
+				return persistedModuleSourcePayload{}, err
 			}
 			payload.GitUnfilteredContextDirResultID = unfilteredID
 		}
@@ -1024,21 +1038,61 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, enc *dagql.P
 			OriginHostPath:            src.DirSrc.OriginHostPath,
 		}
 		if src.DirSrc.OriginalContextDir.Self() != nil {
-			originalContextDirID, err := encodePersistedObjectRef(enc, src.DirSrc.OriginalContextDir, "module source dir original context dir")
+			originalContextDirID, err := ref(src.DirSrc.OriginalContextDir, "module source dir original context dir")
 			if err != nil {
-				return dagql.PersistedObjectEncoding{}, err
+				return persistedModuleSourcePayload{}, err
 			}
 			payload.DirSrc.OriginalContextDirResultID = originalContextDirID
 		}
 		if src.DirSrc.OriginGit.Self() != nil {
-			originGitID, err := encodePersistedObjectRef(enc, src.DirSrc.OriginGit, "module source dir origin git")
+			originGitID, err := ref(src.DirSrc.OriginGit, "module source dir origin git")
 			if err != nil {
-				return dagql.PersistedObjectEncoding{}, err
+				return persistedModuleSourcePayload{}, err
 			}
 			payload.DirSrc.OriginGitResultID = originGitID
 		}
 	}
-	return encodePersistedObjectPayload(payload)
+	return payload, nil
+}
+
+// ContentIdentity is the source's identity by content: everything it
+// persists, its plain fields as its persisted encoding holds them and each
+// result it holds by its content (ContentPreferredDigest). Two sources with
+// the same identity are interchangeable, so loading a module is keyed by it
+// (ModuleSource.asModule). It needs no file's bytes: a result is named by its
+// content digest when it has one, and by its recipe otherwise, so a source
+// holding a result made for one client alone has an identity no other
+// client's source shares. A source loaded from a local path has none: its
+// files are the caller's.
+//
+// It isn't SourceImplementationDigest, which says whether two sources' code
+// is the same: it leaves out the name withName sets, the kind, the ref and
+// workspace the source was loaded from, and it reads the context's bytes.
+func (src *ModuleSource) ContentIdentity(ctx context.Context) (digest.Digest, bool, error) {
+	if src == nil || src.Kind == ModuleSourceKindLocal {
+		return "", false, nil
+	}
+	var refs []string
+	payload, err := src.persistedPayload(func(res dagql.AnyResult, label string) (uint64, error) {
+		frame, err := res.ResultCall()
+		if err != nil {
+			return 0, fmt.Errorf("%s call: %w", label, err)
+		}
+		dgst, err := frame.ContentPreferredDigest(ctx)
+		if err != nil {
+			return 0, fmt.Errorf("%s content: %w", label, err)
+		}
+		refs = append(refs, label+"="+dgst.String())
+		return uint64(len(refs)), nil
+	})
+	if err != nil {
+		return "", false, err
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return "", false, fmt.Errorf("module source content identity: %w", err)
+	}
+	return hashutil.HashStrings(append([]string{"ModuleSource.contentIdentity", string(body)}, refs...)...), true, nil
 }
 
 func (*ModuleSource) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
