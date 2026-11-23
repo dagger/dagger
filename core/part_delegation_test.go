@@ -20,6 +20,34 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// A Container's own parts and the receiver it keeps the rest of, by its
+// call alone, are what its routes delegate once a record is captured: the
+// same metadata calls, on an exact receiver, keep every part but metadata.
+func TestPartDelegatedPartsByTheCallAlone(t *testing.T) {
+	t.Parallel()
+	codec := foreignFamilyCodec("Container")
+	fields := []string{"withWorkdir", "withEnvVariable", "withoutDefaultArgs", "__withSystemEnvVariable", "withEntrypoint", "withMountedCache", "withoutMount", "withUnixSocket", "withoutUnixSocket", "withoutEnvVariable"}
+	for _, field := range fields {
+		frame := &dagql.ResultCall{Kind: dagql.ResultCallKindField, Field: field, Type: dagql.NewResultCallType((&Container{}).Type()), Receiver: &dagql.ResultCallRef{ResultID: 42}}
+		receiver, own, ok := codec.DelegatedParts(frame)
+		require.True(t, ok, field)
+		require.EqualValues(t, 42, receiver, field)
+		require.Equal(t, []dagql.PartKey{ContainerPartMetadata}, own, field)
+	}
+	for name, frame := range map[string]*dagql.ResultCall{
+		"another field":       {Kind: dagql.ResultCallKindField, Field: "withExec", Type: dagql.NewResultCallType((&Container{}).Type()), Receiver: &dagql.ResultCallRef{ResultID: 42}},
+		"a module's field":    {Kind: dagql.ResultCallKindField, Field: "withEnvVariable", Type: dagql.NewResultCallType((&Container{}).Type()), Receiver: &dagql.ResultCallRef{ResultID: 42}, Module: &dagql.ResultCallModule{Name: "user-defined"}},
+		"an nth item":         {Kind: dagql.ResultCallKindField, Field: "withEnvVariable", Type: dagql.NewResultCallType((&Container{}).Type()), Receiver: &dagql.ResultCallRef{ResultID: 42}, Nth: 1},
+		"no receiver":         {Kind: dagql.ResultCallKindField, Field: "withEnvVariable", Type: dagql.NewResultCallType((&Container{}).Type())},
+		"an inexact receiver": {Kind: dagql.ResultCallKindField, Field: "withEnvVariable", Type: dagql.NewResultCallType((&Container{}).Type()), Receiver: &dagql.ResultCallRef{Call: &dagql.ResultCall{Field: "container"}}},
+	} {
+		_, _, ok := codec.DelegatedParts(frame)
+		require.False(t, ok, name)
+	}
+	_, _, ok := foreignFamilyCodec("Directory").DelegatedParts(&dagql.ResultCall{Kind: dagql.ResultCallKindField, Field: "withEnvVariable", Receiver: &dagql.ResultCallRef{ResultID: 42}})
+	require.False(t, ok, "only a Container's parts")
+}
+
 func TestPartDelegationPureRoutes(t *testing.T) {
 	fields := []string{"withWorkdir", "withEnvVariable", "withoutDefaultArgs", "__withSystemEnvVariable", "withEntrypoint", "withMountedCache", "withoutMount", "withUnixSocket", "withoutUnixSocket", "withoutEnvVariable"}
 	for _, field := range fields {
