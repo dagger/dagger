@@ -111,10 +111,14 @@ func (c *Cache) completePartKeysAndSizes(ctx context.Context, row *sharedResult)
 // settled subset leaves the entry owing a report of the parts it left out
 // (owePartsReport), so the remote cache isn't left believing that subset is
 // all the engine holds; one that read the record reports them all, and
-// settles what the entry owed.
+// settles what the entry owed. The span's caller owns the entry, so a read
+// of its record holds it through that ownership (holdOwnedRowForCapture),
+// not with the graph lock: it runs on the call's own path.
 func (c *Cache) spanPartKeysAndSizes(ctx context.Context, row *sharedResult) ([]string, []int64) {
 	seq := c.owedPartsSeq()
-	keys, sizes, err := c.completeParts(ctx, row, c.completePartSizeReader())
+	keys, sizes, err := c.completePartsHeld(ctx, row, c.completePartSizeReader(), func(capture captureFunc) (*capturedRowRevision, error) {
+		return c.holdOwnedRowForCapture(ctx, row, capture)
+	})
 	if err != nil {
 		c.owePartsReport(ctx, row, keys)
 	} else {
