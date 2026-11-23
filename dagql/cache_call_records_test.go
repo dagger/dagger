@@ -566,6 +566,41 @@ func TestACallWhoseInputTheCloudKnowsOnlyByItsClassIsSent(t *testing.T) {
 	require.False(t, ran, "a fresh engine's client hits outer on its own receiver by its term")
 }
 
+// Keeping a call and sending it judge its inputs by one rule
+// (callPlacementLocked). A call whose input the Cloud knows only by its class
+// is one a bundle can send, placed by a stored entry of the class, so keeping
+// it stamps its entry with a new term a bundle can send, not with one it
+// can't. Check A made its receiver, which the Cloud stores; check B made
+// outer on its own receiver, equal in content, which the Cloud knows only by
+// its recipe in A's class.
+func TestAKeptCallPlacedThroughItsInputsClassIsStampedSendable(t *testing.T) {
+	t.Parallel()
+	test := newReceiverCallTestKeeping(t, false)
+	cloudCtx := context.Background()
+	inner, err := test.inner.cacheSharedResult().loadResultCall().deriveRecipeDigest(test.producer)
+	require.NoError(t, err)
+	receiverB, err := receiverTestFrame("b").deriveRecipeDigest(test.producer)
+	require.NoError(t, err)
+	callB := receiverTestCall("b")
+	requestB, err := callB.deriveRecipeDigest(test.producer)
+	require.NoError(t, err)
+	selfB, _, err := callB.selfDigestAndInputRefs(test.producer)
+	require.NoError(t, err)
+	pb, err := callB.callPB(test.producer)
+	require.NoError(t, err)
+	encodedB, err := pb.Encode()
+	require.NoError(t, err)
+	_, err = test.cloud.AttachRemoteHolding(cloudCtx, HolderKey{Cache: "cache-b", Number: 1},
+		RemoteHolding{Recipe: receiverB, Field: "receiver", ContentDigest: digest.FromString("receiver content")})
+	require.NoError(t, err)
+	_, err = test.cloud.AttachRemoteHolding(cloudCtx, HolderKey{Cache: "cache-b", Number: 2},
+		RemoteHolding{Recipe: inner, Request: requestB, Field: "outer", Call: encodedB, Term: &RemoteTerm{Self: selfB}})
+	require.NoError(t, err)
+	require.Equal(t, []digest.Digest{requestB}, keptCallRequests(test.cloud, test.number))
+	require.Equal(t, map[string]int{StampKeptCallNewTerm.String(): 1}, test.cloud.StampCauses([]uint64{test.number}),
+		"B's call is placed by A's receiver, a stored entry of its class")
+}
+
 // attachCallOnB has cache-b report outer on its own receiver B, equal in
 // content to A's, returning inner, with the expiry its span reports. With
 // stored, the Cloud stores B's receiver from cache-b's export; without, it
