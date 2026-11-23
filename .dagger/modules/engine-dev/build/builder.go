@@ -92,8 +92,8 @@ func (build *Builder) withRerun(ctr *dagger.Container) *dagger.Container {
 }
 
 // RerunOutputs are the outputs of the build steps that have built to
-// different bytes before, by what they are: QEMU's emulators and the Go SDK's
-// files.
+// different bytes before, by what they are: QEMU's emulators, the Go SDK's
+// files and the Python SDK's.
 func (build *Builder) RerunOutputs(ctx context.Context) (map[string]*dagger.Directory, error) {
 	qemu, _ := build.qemuBins()
 	goFiles, err := build.goSDKFiles(ctx)
@@ -101,8 +101,9 @@ func (build *Builder) RerunOutputs(ctx context.Context) (map[string]*dagger.Dire
 		return nil, err
 	}
 	return map[string]*dagger.Directory{
-		"QEMU's emulators":   qemu,
-		"the Go SDK's files": goFiles,
+		"QEMU's emulators":       qemu,
+		"the Go SDK's files":     goFiles,
+		"the Python SDK's files": build.pythonSDKFiles(),
 	}, nil
 }
 
