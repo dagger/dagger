@@ -92,35 +92,35 @@ type HeldBy struct {
 	// holding's closure whole (Whole). It is called under the cache's lock,
 	// as Also is.
 	ByFile func(number uint64) bool
-	// Calls, if set, names by request digest the kept calls a bundle for
-	// the recipient may send: the calls of the check it will run, which its
-	// cache would hold had it run the check itself, and no call of another
-	// check's run on an entry both carry. A kept call it doesn't name is left
-	// out before its term's call is chosen: it isn't counted unsendable,
-	// marks nothing partial, and adds none of its inputs. Without it, every
-	// kept call may go. It is called under the cache's lock, as Also is.
+	// Calls, if set, names by request digest the calls of the check the
+	// recipient will run, and so the terms a bundle for it may send: a term
+	// one of whose kept calls Calls names is one its cache would hold had
+	// it run the check itself, and no other term of another check's run on
+	// an entry both carry. The bundle sends such a term as whichever of its
+	// calls the recipient can place, the check's own or another run's: the
+	// calls of one term are one call to the cache, and a check's own call
+	// names its inputs by its own recipes, keyed to its client, which the
+	// Cloud may store no record of when another client's equivalent input
+	// is the one it stores. A term none of whose calls it names is left out
+	// before its call is chosen: it isn't counted unsendable, marks nothing
+	// partial, and adds none of its inputs. Without it, every term may go.
+	// It is called under the cache's lock, as Also is.
 	Calls func(request digest.Digest) bool
 }
 
-// sendableLocked returns those of group, the kept calls of one term, that a
-// bundle for the recipient may send (Calls). Requires egraphMu.
+// sendableLocked returns group, the kept calls of one term, when a bundle
+// for the recipient may send that term (Calls names one of its calls), or
+// nil. Requires egraphMu.
 func (h *HeldBy) sendableLocked(group []*keptCall) []*keptCall {
 	if h == nil || h.Calls == nil {
 		return group
 	}
-	for i, kept := range group {
+	for _, kept := range group {
 		if h.Calls(kept.id.recipe) {
-			continue
+			return group
 		}
-		sendable := slices.Clone(group[:i])
-		for _, kept := range group[i+1:] {
-			if h.Calls(kept.id.recipe) {
-				sendable = append(sendable, kept)
-			}
-		}
-		return sendable
 	}
-	return group
+	return nil
 }
 
 // heldLocked reports whether the recipient holds res at nowUnix. A nil
