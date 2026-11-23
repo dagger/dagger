@@ -85,7 +85,7 @@ func (build *Builder) pythonSDKFiles() *dagger.Directory {
 	})
 
 	// bundle the codegen script and its dependencies into a single executable
-	codegen := buildBase.
+	codegen := build.withRerun(buildBase).
 		WithWorkdir("/src").
 		WithDirectory(
 			"/usr/local/bin",
@@ -112,6 +112,11 @@ func (build *Builder) pythonSDKFiles() *dagger.Directory {
 			"-o", "/codegen",
 			"-r", "/requirements.txt",
 		}).
+		// shiv adds its bootstrap module's files in the order their
+		// directory lists them, which differs from one build to the next, so
+		// the same files made different bytes. Its members go in name order,
+		// each with the contents and date shiv gave it, after the launcher line.
+		WithExec([]string{"python3", "-c", sortZipMembers, "/codegen"}).
 		File("/codegen")
 
 	return pySrc.
@@ -121,6 +126,23 @@ func (build *Builder) pythonSDKFiles() *dagger.Directory {
 		}).
 		WithFile("dist/codegen", codegen)
 }
+
+// sortZipMembers is a Python program that rewrites the zip application at
+// its first argument with its members in name order, keeping what comes
+// before the archive (the launcher line), each member's contents and date,
+// and the file's mode.
+const sortZipMembers = `import os, sys, zipfile
+path = sys.argv[1]
+with open(path, "rb") as f:
+    data = f.read()
+with zipfile.ZipFile(path) as src, open(path + ".sorted", "wb") as out:
+    out.write(data[:data.index(b"PK\x03\x04")])
+    with zipfile.ZipFile(out, "w") as dst:
+        for info in sorted(src.infolist(), key=lambda i: i.filename):
+            dst.writestr(info, src.read(info))
+os.chmod(path + ".sorted", os.stat(path).st_mode)
+os.replace(path + ".sorted", path)
+`
 
 const TypescriptSDKTSXVersion = "4.15.6"
 
