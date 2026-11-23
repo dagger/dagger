@@ -3875,10 +3875,14 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, mod *core.Mo
 		// runtimes). This also covers a runtime selected before a cached
 		// definition: the definition hit skipped the exec that used to
 		// evaluate the runtime, and an eager client still wants it filled.
-		var runtimeRes dagql.ID[*core.Container]
-		if err = dag.Select(ctx, mod.Runtime.Value, &runtimeRes, dagql.Selector{
-			Field: "sync",
-		}); err != nil {
+		// The runtime's content is evaluated, not synced: a sync completes
+		// the runtime's operation, which for a runtime another engine ran
+		// needs none of its content.
+		cache, err := dagql.EngineCache(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if err := cache.Evaluate(ctx, mod.Runtime.Value); err != nil {
 			return nil, err
 		}
 	}
