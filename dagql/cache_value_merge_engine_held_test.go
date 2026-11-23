@@ -190,11 +190,20 @@ func heldPartTestBundles(t *testing.T, name string) (engine *Cache, outOnly, hel
 // same address, and, for an upload, with a descriptor of the same kind. Where
 // the Cloud never had the row, no longer has its value, or has a copy without
 // that part, the held row is stale: nothing commits, and the engine's retry
-// carries the row in full. The same holds once the Cloud's copy is
+// carries the row in full. The reply says why each stale row is stale, for
+// the Cloud's log. The same holds once the Cloud's copy is
 // compressed, when the check reads the facts its body keeps.
 func TestCloudChecksAPartOnAHeldRowAgainstItsOwnCopy(t *testing.T) {
 	t.Parallel()
-	for _, tc := range []string{"matches", "uploads", "never had", "no longer has", "differs", "uploads another kind"} {
+	// Why each stale case is stale, as the Cloud's reply says it.
+	why := map[string]string{
+		"never had":            "no entry",
+		"no longer has":        "expired",
+		"differs":              "missing",
+		"uploads another kind": "part ",
+		"absent":               "output state differs from recorded part: absent against pending",
+	}
+	for _, tc := range []string{"matches", "uploads", "never had", "no longer has", "differs", "uploads another kind", "absent"} {
 		for _, compressed := range []bool{false, true} {
 			name := tc
 			if compressed {
@@ -221,6 +230,8 @@ func TestCloudChecksAPartOnAHeldRowAgainstItsOwnCopy(t *testing.T) {
 					cloud.egraphMu.Unlock()
 				case "differs":
 					held.Outputs[0].Address = PersistedPartAddress{Part: "other"}
+				case "absent":
+					held.Outputs[0].State = "absent"
 				case "uploads", "uploads another kind":
 					kind := "directory"
 					if tc == "uploads another kind" {
@@ -243,6 +254,8 @@ func TestCloudChecksAPartOnAHeldRowAgainstItsOwnCopy(t *testing.T) {
 				}
 				require.False(t, reply.Committed)
 				require.Equal(t, []TransferOrdinal{ordinalOfNumber(t, held, uint64(out.cacheSharedResult().id))}, reply.Stale)
+				require.Len(t, reply.StaleWhy, 1, "a reason for each stale row")
+				require.Contains(t, reply.StaleWhy[0], why[tc])
 				require.Nil(t, rootEntry, "nothing commits")
 			})
 		}
