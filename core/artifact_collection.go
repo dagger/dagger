@@ -897,7 +897,7 @@ func walkArtifactNodes(ctx context.Context, node *ModTreeNode, visit func(*ModTr
 	obj = node.ObjectType()
 	visit(node)
 	if visiting[obj.Name] {
-		if Supports(ctx, ArtifactTypeColumnsVersion) {
+		if node.CollectionDimension != nil && Supports(ctx, ArtifactTypeColumnsVersion) {
 			for ancestor := node; ancestor != nil; ancestor = ancestor.Parent {
 				if ancestor.CollectionDimension != nil && ancestor.CollectionDimension.CollectionType == obj.Name {
 					return fmt.Errorf("collection type %s repeats on one artifact route", obj.Name)

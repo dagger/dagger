@@ -187,7 +187,7 @@ A second field that returns `GoModules` uses the same `go-module` column. Field 
 
 An item can itself be a collection. For `Rows.get -> Row.get -> Cell`, the columns are `Rows` (named `row`) and `Row` (named `cell`). No field is needed between those boundaries. The input lists both boundaries in parent-to-child order.
 
-A route that repeats the same collection type is rejected: one scalar cell cannot hold two different keys for that type. Do not create a second column or silently replace a key.
+A route that selects two item keys for the same collection type is rejected: one cell cannot hold both keys. Do not create a second column or silently replace a key. An ordinary parent reference stops traversal at the repeated object type; it does not select another item.
 
 Build the complete column set from the schema before selecting rows. Empty collections still contribute columns. Fields such as `get`, `list`, and `subset` do not create columns.
 

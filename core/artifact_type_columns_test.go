@@ -147,6 +147,27 @@ func TestArtifactRecursiveCollectionRoute(t *testing.T) {
 	}
 }
 
+func TestArtifactCollectionParentReference(t *testing.T) {
+	collection, srv := collectionTestObject(t, TypeDefKindString, []any{"one"})
+	collection.TypeDef.SourceModuleName = "app"
+	obj := newTypeDefDetachedResult(t, srv, "parent-collection-object", collection.TypeDef)
+	typ := newTypeDefDetachedResult(t, srv, "parent-collection-type", (&TypeDef{}).WithObjectTypeDef(obj))
+	members, err := collection.TypeDef.CollectionMembers()
+	require.NoError(t, err)
+	item := members.Get.ReturnType.Self().AsObject.Value.Self()
+	item.SourceModuleName = "app"
+	item.Fields = dagql.ObjectResultArray[*FieldTypeDef]{
+		newTypeDefDetachedResult(t, srv, "parent-field", &FieldTypeDef{Name: "parent", OriginalName: "Parent", TypeDef: typ}),
+	}
+	ctx := dagql.ContextWithCall(t.Context(), &dagql.ResultCall{View: call.View(ArtifactTypeColumnsVersion)})
+	var visited []string
+	err = walkArtifactNodes(ctx, &ModTreeNode{Name: "app", Type: typ, DagqlServer: srv}, func(node *ModTreeNode) {
+		visited = append(visited, node.ObjectType().Name)
+	}, map[string]bool{})
+	require.NoError(t, err)
+	require.Equal(t, []string{"Items", "Item", "Items"}, visited)
+}
+
 func TestArtifactScopeKeepsCompiledDimensions(t *testing.T) {
 	ctx := dagql.ContextWithCall(t.Context(), &dagql.ResultCall{View: call.View(ArtifactTypeColumnsVersion)})
 	item := func(module, field, collection string) *Artifact {

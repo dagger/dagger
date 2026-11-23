@@ -132,5 +132,6 @@ See [legacy artifact selectors](LEGACY.md).
 
 Directly nested distinct collection types have separate columns. For example,
 `Rows.get -> Row.get -> Cell` has a `Rows` column named `row` and a `Row`
-column named `cell`. Repeating the same type on one ancestry is rejected,
-because one scalar cell cannot hold two keys for that type.
+column named `cell`. Selecting two item keys for the same collection type on
+one ancestry is rejected: one cell cannot hold both keys. Ordinary parent
+references stop traversal at the repeated object type.
