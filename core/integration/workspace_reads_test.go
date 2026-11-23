@@ -235,3 +235,179 @@ func (WorkspaceSuite) TestWorkspaceReadsSharedAcrossClients(ctx context.Context,
 	require.Equal(t, 2, gitSessions, "both Git sessions must report their reads")
 	require.Equal(t, 1, hostSessions, "the host session must report its reads")
 }
+
+// TestWorkspaceReadsThroughWorkdirSharedAcrossSessions asserts that a
+// workspace made from a Git workspace by withWorkdir shares its reads across
+// sessions as the Git workspace does, its files being decided by the commit
+// and its working directory, while one made from a host workspace keeps each
+// client's reads its own. Module loading reads a module's files through such
+// a workspace.
+func (WorkspaceSuite) TestWorkspaceReadsThroughWorkdirSharedAcrossSessions(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	nonce := rand.Text()
+	checkout := core.NewQuery(c).Container().From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		With(gitUserConfig).
+		WithWorkdir("/work").
+		WithNewFile("dagger.toml", "").
+		WithNewFile("git-data/notes.txt", nonce).
+		WithNewFile("git-data/other.txt", "other").
+		WithNewFile("host-data/notes.txt", nonce).
+		WithNewFile("host-data/other.txt", "other").
+		WithExec([]string{"git", "init", "-q"}).
+		WithExec([]string{"git", "add", "-A"}).
+		WithExec([]string{"git", "commit", "-qm", "init"}).
+		Directory("/work")
+	repo := workspaceSelectionRemoteRepo(ctx, t, c, makeGitDir(c, checkout, "main"))
+	sha, err := core.NewQuery(c).Git(repo).Ref("main").CommitSHA(ctx)
+	require.NoError(t, err)
+
+	cloud := newTelemetrySplitCloud(t, c)
+	engine, err := devEngineContainerAsService(telemetrySplitEngineWithoutCloud(c, devEngineContainer(c))).Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _, _ = engine.Stop(ctx) })
+	client := telemetrySplitClient(ctx, t, c, daggerCliFile(t, c), engine, cloud)
+
+	reads := func(dir string) string {
+		return `{
+  currentWorkspace {
+    withWorkdir(path: "` + dir + `") {
+      directory(path: ".", include: ["notes.txt"]) { file(path: "notes.txt") { contents } }
+      file(path: "other.txt") { contents }
+      glob(pattern: "*.txt")
+    }
+  }
+}
+`
+	}
+	query := func(ctr *core.Container, doc string, args ...string) {
+		out, err := ctr.
+			WithNewFile("/query.graphql", doc).
+			WithEnvVariable("CACHEBUSTER", rand.Text()).
+			WithExec(append([]string{"/bin/dagger", "query", "--doc", "/query.graphql"}, args...), core.ContainerWithExecOpts{DisableDaggerInDagger: true}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, nonce, "the read must see the workspace's files: %s", out)
+	}
+	// Two sessions read the Git workspace through withWorkdir, one after the
+	// other, and then one session reads the host checkout the same way.
+	gitWorkspace := []string{"-W", repo + "@" + sha}
+	query(client, reads("git-data"), gitWorkspace...)
+	query(client, reads("git-data"), gitWorkspace...)
+	query(client.WithMountedDirectory("/work", checkout).WithWorkdir("/work"), reads("host-data"))
+
+	type span struct {
+		Session string            `json:"session"`
+		SpanID  string            `json:"spanID"`
+		Name    string            `json:"name"`
+		Attrs   map[string]string `json:"attrs"`
+	}
+	type read struct {
+		outcome   string
+		perClient bool
+	}
+	readNames := []string{"Workspace.directory", "Workspace.file", "Workspace.glob"}
+	sessionReads := map[string]map[string]map[string]read{} // session -> read -> span
+	workspaceOf := map[string]string{}
+	for _, s := range readTelemetrySplitLines[span](ctx, t, cloud, "v1/traces.json.spans") {
+		payload := s.Attrs["dagger.io/dag.call"]
+		if payload == "" {
+			continue
+		}
+		var frame callpbv1.Call
+		require.NoError(t, frame.Decode(payload))
+		arg := func(name string) string {
+			for _, a := range frame.GetArgs() {
+				if a.GetName() == name {
+					return a.GetValue().GetString_()
+				}
+			}
+			return ""
+		}
+		if s.Name == "Workspace.withWorkdir" {
+			workspaceOf[s.Session] = arg("path")
+			continue
+		}
+		outcome := s.Attrs["dagger.io/cache.outcome"]
+		if !slices.Contains(readNames, s.Name) || outcome == "" {
+			continue
+		}
+		switch s.Name {
+		case "Workspace.directory":
+			if arg("path") != "." {
+				continue
+			}
+		case "Workspace.file":
+			if arg("path") != "other.txt" {
+				continue
+			}
+		case "Workspace.glob":
+			if arg("pattern") != "*.txt" {
+				continue
+			}
+		}
+		if sessionReads[s.Session] == nil {
+			sessionReads[s.Session] = map[string]map[string]read{}
+		}
+		if sessionReads[s.Session][s.Name] == nil {
+			sessionReads[s.Session][s.Name] = map[string]read{}
+		}
+		sessionReads[s.Session][s.Name][s.SpanID] = read{
+			outcome: outcome,
+			perClient: slices.ContainsFunc(frame.GetImplicitInputs(), func(input *callpbv1.Argument) bool {
+				return input.GetName() == "cachePerClient"
+			}),
+		}
+	}
+	executedIn := func(byName map[string]map[string]read) (executed map[string]int, others map[string][]string, perClient int) {
+		executed, others = map[string]int{}, map[string][]string{}
+		for name, spans := range byName {
+			for _, r := range spans {
+				if r.outcome == "executed" {
+					executed[name]++
+				} else {
+					others[name] = append(others[name], r.outcome)
+				}
+				if r.perClient {
+					perClient++
+				}
+			}
+		}
+		return executed, others, perClient
+	}
+
+	var gitMade, gitServed, hostSessions int
+	for session, byName := range sessionReads {
+		executed, others, perClient := executedIn(byName)
+		t.Logf("workspace at %q: executed %v, then %v", workspaceOf[session], executed, others)
+		switch workspaceOf[session] {
+		case "git-data":
+			require.Zero(t, perClient, "a read of a workspace its commit decides must not be keyed by its client")
+			for _, name := range readNames {
+				require.Contains(t, byName, name, "every read must report its outcome")
+			}
+			if executed["Workspace.directory"] > 0 {
+				gitMade++
+				for _, name := range readNames {
+					require.Equal(t, 1, executed[name], "%s: the first session makes the read", name)
+				}
+				continue
+			}
+			gitServed++
+			for _, name := range readNames {
+				require.Zero(t, executed[name], "%s: a later session must share the read through a workspace made by withWorkdir", name)
+				require.Subset(t, []string{"hit", "joined"}, others[name], name)
+			}
+		case "host-data":
+			hostSessions++
+			for _, name := range readNames {
+				require.Equal(t, 1, executed[name], "%s: the host session makes its own read", name)
+			}
+			require.Equal(t, len(readNames), perClient, "a read of a host workspace must stay keyed by its client")
+		}
+	}
+	require.Equal(t, 1, gitMade, "the first Git session makes the reads, and only that one")
+	require.Equal(t, 1, gitServed, "the second Git session must report its reads, served")
+	require.Equal(t, 1, hostSessions, "the host session must report its reads")
+}
