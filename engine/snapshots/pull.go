@@ -425,6 +425,10 @@ func (cm *snapshotManager) applyLayer(ctx context.Context, mut MutableRef, desc 
 	applied := clock.now()
 	if clock.timing != nil {
 		clock.timing.Apply += applied.Sub(applyStart)
+		if listing != nil {
+			clock.timing.Files += listing.files.Load()
+			clock.timing.FileBytes += listing.fileBytes.Load()
+		}
 	}
 	if clock.prof {
 		recordImportPhase(ctx, "snapshot.import.apply", desc, "", applyStart, applied, err)
