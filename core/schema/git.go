@@ -350,6 +350,8 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 			Doc(`The commit this ref resolves to.`),
 		casedField(commitSHAField),
 		legacyField(commitSHAField, "commitSHA"),
+		// Not declared to follow from its inputs: a full checkout holds every
+		// tag that points into its history (gitTreeFollowsFromInputs).
 		dagql.NodeFunc("__fullCheckout", s.fullCheckout).
 			IsPersistable().
 			Doc(`(Internal-only) Materialize full history and Git metadata regardless of keepGitDir.`),
@@ -2696,14 +2698,19 @@ func (s *gitSchema) commitTreeCacheKey(ctx context.Context, parent dagql.ObjectR
 // files are its commit's, which its key's SHA addresses, and the engine's own
 // cache counts two trees of one commit as the same, .git included: git reads
 // the same objects from either's pack, though the pack's bytes can differ. One
-// that keeps .git with its tags doesn't follow: its tags are those the
-// repository has when it's fetched, which no hash in its key addresses.
-func gitTreeFollowsFromInputs(keepsGitDir, includeTags bool) bool {
-	return !keepsGitDir || !includeTags
+// that keeps .git with tags in it doesn't follow: its tags are those the
+// repository has when it's fetched, which no hash in its key addresses. A tree
+// with its full history (depth 0) has them whether it asks or not, since its
+// checkout copies every tag that points into that history (packGitCheckout).
+// A shallower tree that doesn't ask can still get a tag at its commit, when
+// its checkout falls back to a fetch (fetchGitCheckout); the engine's own
+// cache counts it as the same, and so does this.
+func gitTreeFollowsFromInputs(keepsGitDir bool, depth int, includeTags bool) bool {
+	return !keepsGitDir || (depth > 0 && !includeTags)
 }
 
 func canonicalGitTreeArgs(req *dagql.CallRequest, repoDiscardsGitDir, discardGitDir bool, depth int, includeTags bool) {
-	if req.ResultCall != nil && !gitTreeFollowsFromInputs(!repoDiscardsGitDir && !discardGitDir, includeTags) {
+	if req.ResultCall != nil && !gitTreeFollowsFromInputs(!repoDiscardsGitDir && !discardGitDir, depth, includeTags) {
 		req.ResultCall.FollowsFromInputs = false
 	}
 	if repoDiscardsGitDir || discardGitDir {
