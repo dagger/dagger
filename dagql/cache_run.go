@@ -140,6 +140,7 @@ func (c *Cache) noteHoldingRanLocked(key HolderKey, entry *sharedResult, h *hold
 	}
 	entry.runRan = by
 	c.markEntryLocked(entry.id)
+	c.noteSharedWriteLocked(SharedRunRan)
 	return true
 }
 
