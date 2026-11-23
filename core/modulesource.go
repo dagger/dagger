@@ -1479,6 +1479,26 @@ func runningInsideModule(ctx context.Context) (bool, error) {
 	return current.ClientID != parent.ClientID, nil
 }
 
+// CallerReadsItsHost reports whether the calling client reads its own host:
+// one that owns a host session, not module code (runningInsideModule) and
+// not a host-inert in-engine client, such as a DangEval snippet loading the
+// workspace's modules, which has no host session either. Only such a client's
+// .env gives a module source user defaults (outerEnvFile), and only it can
+// name a path on its machine.
+func CallerReadsItsHost(ctx context.Context) (bool, error) {
+	inModule, err := runningInsideModule(ctx)
+	if err != nil {
+		return false, err
+	}
+	if inModule {
+		return false, nil
+	}
+	if current, err := engine.ClientMetadataFromContext(ctx); err == nil && current.InertAttachables {
+		return false, nil
+	}
+	return true, nil
+}
+
 func (src *ModuleSource) outerEnvFile(ctx context.Context) (*EnvFile, string, error) {
 	// The outer env file is the caller's own .env, found by walking their host.
 	// Module code has no host session, so this lookup can only block until the
@@ -1496,17 +1516,11 @@ func (src *ModuleSource) outerEnvFile(ctx context.Context) (*EnvFile, string, er
 	// it with an IsModuleDependencyResolution escape hatch. There is nothing to
 	// escape to here: findUp from a nested client only ever timed out, so there
 	// is no working behavior to preserve.
-	inModule, err := runningInsideModule(ctx)
+	readsHost, err := CallerReadsItsHost(ctx)
 	if err != nil {
 		return nil, "", err
 	}
-	if inModule {
-		return &EnvFile{}, "", nil
-	}
-	// A host-inert in-engine client (e.g. a DangEval snippet loading the
-	// workspace's modules) has no host session either: there is no outer
-	// .env to find, so it gets an empty one, as module code does.
-	if current, err := engine.ClientMetadataFromContext(ctx); err == nil && current.InertAttachables {
+	if !readsHost {
 		return &EnvFile{}, "", nil
 	}
 

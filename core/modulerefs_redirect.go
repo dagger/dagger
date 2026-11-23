@@ -51,6 +51,10 @@ func ResolveDaggerGetRedirect(ctx context.Context, refString string) (string, er
 	if !daggerGetEligible(refString) {
 		return refString, nil
 	}
+	// What a vanity ref names comes from the session's workspace lock, or
+	// from the network: a resolver whose result stands for what it read
+	// (dagql.WithCallScopes) stays in its session.
+	dagql.RecordSessionRead(ctx, "the vanity ref "+refString)
 
 	sourceURL, version, err := splitSourceURLVersion(refString)
 	if err != nil {

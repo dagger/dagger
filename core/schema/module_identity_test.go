@@ -319,3 +319,37 @@ func TestWorkspaceModuleSourceReadIsShared(t *testing.T) {
 	require.True(t, read(t, e.session(t, "later")).HitCache(), "the later session's source is the earlier's")
 }
 
+// A caller that reads its own host gives a module source its .env and may
+// name paths on its machine, so its reads stay its own; module code and
+// host-less clients read none of that, and their reads are keyed by what
+// they read and kept past the session.
+func TestModuleSourceReadByAHostReadingCallerIsItsOwn(t *testing.T) {
+	t.Parallel()
+	e := newTransferTestEngine(t, transferTestSalt(t))
+	key := func(ctx context.Context) *dagql.CallRequest {
+		t.Helper()
+		req := &dagql.CallRequest{ResultCall: &dagql.ResultCall{Field: "asModuleSource"}}
+		require.NoError(t, moduleSourceReadCacheKey(ctx, req, true))
+		return req
+	}
+	perClient := func(req *dagql.CallRequest) bool {
+		for _, input := range req.ImplicitInputs {
+			if input != nil && input.Name == dagql.PerClientInput.Name {
+				return true
+			}
+		}
+		return false
+	}
+
+	module := key(e.session(t, "module"))
+	require.False(t, perClient(module), "a module's own read is keyed by what it reads")
+	require.True(t, module.IsPersistable)
+
+	host := e.session(t, "host")
+	md, err := engine.ClientMetadataFromContext(host)
+	require.NoError(t, err)
+	e.srv.parent = md
+	hostRead := key(host)
+	require.True(t, perClient(hostRead), "a caller that reads its own host keeps its read")
+	require.False(t, hostRead.IsPersistable)
+}
