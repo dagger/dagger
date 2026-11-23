@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -128,6 +130,40 @@ func TestExportChainListingKeepsFilesUnder256KiB(t *testing.T) {
 	imported := importChain(t, testutil.NewStore(t), supplied(chain, chain.Provider))
 	testutil.CheckFile(t, imported, "data/mid.bin", listingBody("mid", 200<<10))
 	testutil.CheckFile(t, imported, "data/large.bin", listingBody("large", 300<<10))
+}
+
+// An import says how many regular files the listings it applied held, and
+// their bytes, whether a file's body was in the listing or a content blob:
+// what the apply created, beside the time it took. A directory or a symlink
+// is no file.
+func TestImportChainCountsTheFilesItsListingsHeld(t *testing.T) {
+	t.Parallel()
+	large := listingBody("large", bkcache.ListingInlineMax+10<<10)
+	producer := testutil.NewStore(t)
+	a, _ := producer.BuildWith(t, nil, func(root string) {
+		writeExportFile(t, root, "d/one.txt", "one")
+		writeExportFile(t, root, "d/e/two.txt", "two!")
+		require.NoError(t, os.Symlink("one.txt", filepath.Join(root, "d/link")))
+	})
+	ab, _ := producer.BuildWith(t, a, func(root string) {
+		writeExportFile(t, root, "f/large.bin", large)
+	})
+	chain := exportChains(t, []bkcache.ImmutableRef{ab}, listingsConfig(compression.New(compression.Zstd)))[0]
+	require.Equal(t, []string{"listing", "content", "listing"}, chainKinds(chain))
+	for _, engineApplier := range []bool{false, true} {
+		t.Run(fmt.Sprintf("engine applier %t", engineApplier), func(t *testing.T) {
+			t.Parallel()
+			consumer := testutil.NewOverlayStore(t)
+			if engineApplier {
+				consumer.UseEngineApplier(t)
+			}
+			timing := &bkcache.ImportTiming{}
+			imported := &bkcache.ExportChain{Layers: chain.Layers, Provider: chain.Provider, Timing: timing}
+			importChain(t, consumer, imported)
+			require.EqualValues(t, 3, timing.Files, "one.txt, two.txt and large.bin")
+			require.EqualValues(t, len("one")+len("two!")+len(large), timing.FileBytes)
+		})
+	}
 }
 
 // Correctness never rests on two engines compressing a file to the same
