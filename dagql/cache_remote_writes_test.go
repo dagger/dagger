@@ -467,7 +467,12 @@ func graphHoldsSeen(t *testing.T, c *Cache) func() []string {
 func TestGraphHoldObserverSeesTheCachesOwnWrites(t *testing.T) {
 	t.Parallel()
 	ctx, cloud, _, _ := storedBundleTestCloud(t, "root")
-	seen := graphHoldsSeen(t, cloud)
+	all := graphHoldsSeen(t, cloud)
+	// The body worker's holds, which a commit queues, come when they come:
+	// TestGraphHoldObserverSeesTheBodyWorker sees them.
+	seen := func() []string {
+		return slices.DeleteFunc(all(), func(work string) bool { return work == "body" })
+	}
 
 	bundle, _ := mergeTestSource(t, "observed", "member")
 	prepared, err := cloud.PrepareValueMerge(ctx, "cache-b", bundle)
@@ -494,4 +499,23 @@ func TestGraphHoldObserverSeesTheCachesOwnWrites(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, w.Release(ctx))
 	require.Empty(t, seen(), "a hold its holder times")
+}
+
+// The body worker's holds, which install the stored bodies of the entries an
+// export's commit landed on the Cloud, are seen as body.
+func TestGraphHoldObserverSeesTheBodyWorker(t *testing.T) {
+	t.Parallel()
+	ctx, cloud, _, _ := storedBundleTestCloud(t, "root")
+	all := graphHoldsSeen(t, cloud)
+	var seen []string
+	bundle, _ := mergeTestSource(t, "observed-body", "member")
+	prepared, err := cloud.PrepareValueMerge(ctx, "cache-b", bundle)
+	require.NoError(t, err)
+	_, err = cloud.CommitValueMerge(ctx, prepared)
+	require.NoError(t, err)
+	require.Eventually(t, func() bool {
+		seen = append(seen, all()...)
+		return slices.Contains(seen, "body")
+	}, 10*time.Second, time.Millisecond, "the body worker's hold")
+	require.NotContains(t, seen, "other", "every hold of the commit and the worker names its kind")
 }
