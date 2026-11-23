@@ -154,6 +154,8 @@ func (t *ImportTiming) add(o ImportTiming) {
 	t.Ahead += o.Ahead
 	t.Joined += o.Joined
 	t.Packed += o.Packed
+	t.Files += o.Files
+	t.FileBytes += o.FileBytes
 }
 
 // Release ends provider consumption. Copies of a locally exported chain share
