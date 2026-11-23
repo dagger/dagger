@@ -497,6 +497,9 @@ type MergeReply struct {
 	// A merge with stale rows commits nothing: the reply has only them, and
 	// the generation and clock.
 	Stale []TransferOrdinal
+	// StaleWhy says, for each of Stale in order, which check found it stale,
+	// for the Cloud's log. It isn't sent to the engine.
+	StaleWhy []string
 	// CommitHold is how long the commit held egraphMu, from taking it to
 	// releasing it, and LockWait how long the commit waited to take it.
 	CommitHold time.Duration
