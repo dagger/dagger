@@ -1048,16 +1048,22 @@ func (c *Cache) boundSessionHandle(sessionID string) (SessionResourceHandle, err
 
 // bindCallerHandedBound binds the call whose resolver runs under ctx when it
 // is handed res, a result bound to the session, by a nested call or a load by
-// ID (handedBy names it): a result bound to the session is the session's own
-// outcome, and so is what the resolver makes from it, which is bound before
-// it is published. Only a session that bound a result can be handed one, so
-// the graph is read for no other.
-func (c *Cache) bindCallerHandedBound(ctx context.Context, sessionID string, res AnyResult, handedBy string) {
-	if res == nil || sessionID == "" || !c.sessionHoldsHandle(ctx, sessionID, c.sessionBoundHandle(sessionID)) {
+// ID (handedBy names it), or when the nested call was answered as the
+// session's own (served), whatever it returned: a result bound to the session
+// is the session's own outcome, and so is what the resolver makes from it,
+// which is bound before it is published. Only a session that bound a result
+// can be handed one, so the graph is read for no other.
+func (c *Cache) bindCallerHandedBound(ctx context.Context, sessionID string, res AnyResult, served bool, handedBy string) {
+	if res == nil || sessionID == "" {
 		return
 	}
-	if len(c.boundSessionsOf(ctx, res.cacheSharedResult())) == 0 {
-		return
+	if !served {
+		if !c.sessionHoldsHandle(ctx, sessionID, c.sessionBoundHandle(sessionID)) {
+			return
+		}
+		if len(c.boundSessionsOf(ctx, res.cacheSharedResult())) == 0 {
+			return
+		}
 	}
 	if caller := CurrentCall(ctx); caller != nil {
 		slog.Debug("call bound to its session", "call", caller.Field, "handedBy", handedBy)
@@ -7098,7 +7104,7 @@ func (c *Cache) GetOrInitCall(
 			ctx = withHitLoad(ctx, ev.hitLoad)
 		}
 		c.recordCallResultExpiry(ctx, scopes, req, res)
-		c.bindCallerHandedBound(ctx, sessionID, res, req.ReceiverTypeName+"."+req.Field)
+		c.bindCallerHandedBound(ctx, sessionID, res, req.servedAsSessions, req.ReceiverTypeName+"."+req.Field)
 	}
 	if op.finish(callErr == nil && res != nil) {
 		return nil, fmt.Errorf("get or init call: %w: %q", ErrCacheSessionReleased, sessionID)
@@ -7463,7 +7469,7 @@ func (c *Cache) getOrInitCallInner(
 				ev.Outcome = CacheOutcomeJoined
 			}
 			profOp.SetOutcomeHint(wcprof.OutcomeJoined)
-			return c.wait(ctx, sessionID, resolver, oc, req, true)
+			return c.waitServed(ctx, sessionID, resolver, oc, req, true)
 		}
 	}
 
@@ -7599,7 +7605,17 @@ func (c *Cache) getOrInitCallInner(
 		ev.Outcome = CacheOutcomeExecuted
 	}
 	profOp.SetOutcomeHint(wcprof.OutcomeExecuted)
-	return c.wait(ctx, sessionID, resolver, oc, req, false)
+	return c.waitServed(ctx, sessionID, resolver, oc, req, false)
+}
+
+// waitServed is wait for req, noting when the call's execution bound it to
+// its session (CallRequest.servedAsSessions).
+func (c *Cache) waitServed(ctx context.Context, sessionID string, resolver TypeResolver, oc *ongoingCall, req *CallRequest, joined bool) (AnyResult, error) {
+	res, err := c.wait(ctx, sessionID, resolver, oc, req, joined)
+	if err == nil && oc.persistDecline.isBound() {
+		req.servedAsSessions = true
+	}
+	return res, err
 }
 
 func (c *Cache) lookupCallRequest(

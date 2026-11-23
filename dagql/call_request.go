@@ -58,6 +58,14 @@ type CallRequest struct {
 	// internal CallRequest constructions that never pass through AroundFunc
 	// leave it nil.
 	CacheEvidence *CacheDecision
+
+	// servedAsSessions records that the cache answered the call as its
+	// session's own: its execution bound it (BindToSession), or its hit is
+	// the session's bound entry of it. The resolver that made the call is
+	// then bound too, whatever value the call returned
+	// (Cache.bindCallerHandedBound). Like CacheEvidence it belongs to one
+	// invocation, and Clone omits it.
+	servedAsSessions bool
 }
 
 func (req *CallRequest) Clone() *CallRequest {

@@ -1419,6 +1419,7 @@ func (c *Cache) lookupCacheForRequest(
 			}
 			res, hit, err := c.lookupCacheForRequestDigests(ctx, sessionID, resolver, bound, boundDigest, boundSelf, boundInputs, boundInputRefs)
 			if err != nil || hit {
+				req.servedAsSessions = hit
 				return res, hit, err
 			}
 		}
