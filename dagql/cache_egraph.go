@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"time"
 
@@ -277,10 +278,14 @@ func (c *Cache) findEqClassLocked(id eqClassID) eqClassID {
 }
 
 // mergeEqClassesNoRepairLocked unions the classes of a and b and returns the
-// surviving root. absorbedInputTerms reports whether the union moved input
-// terms from the losing root to the survivor; those terms are still keyed by
-// the losing root until the survivor is repaired.
-func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID) (root eqClassID, absorbedInputTerms bool) {
+// surviving root: the class more terms take as an input, then the one of
+// higher rank, then a's. absorbedInputTerms reports whether the union moved
+// input terms from the losing root to the survivor, and moved, unless nil,
+// takes each live term it moved: those terms still name the losing root
+// until they are repaired. Keeping the class with more terms moves the
+// fewest. A survivor of lower rank takes a rank above the loser's, which
+// keeps a rank above its tree's height, short of the most a rank holds.
+func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID, moved *[]egraphTermID) (root eqClassID, absorbedInputTerms bool) {
 	ra := c.findEqClassLocked(a)
 	rb := c.findEqClassLocked(b)
 	if ra == 0 {
@@ -294,13 +299,18 @@ func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID) (root eqClassID, ab
 	}
 	c.egraphUnions++
 
-	// union by rank
-	if c.egraphRanks[ra] < c.egraphRanks[rb] {
+	if c.testRepairWholeClass {
+		// union by rank alone, as before a union kept the class with more
+		// terms
+		if c.egraphRanks[ra] < c.egraphRanks[rb] {
+			ra, rb = rb, ra
+		}
+	} else if na, nb := len(c.inputEqClassToTerms[ra]), len(c.inputEqClassToTerms[rb]); na < nb || (na == nb && c.egraphRanks[ra] < c.egraphRanks[rb]) {
 		ra, rb = rb, ra
 	}
 	c.egraphParents[rb] = ra
-	if c.egraphRanks[ra] == c.egraphRanks[rb] {
-		c.egraphRanks[ra]++
+	if r := c.egraphRanks[rb]; r >= c.egraphRanks[ra] && r < math.MaxUint8 {
+		c.egraphRanks[ra] = r + 1
 	}
 
 	// merge reverse digest indexes
@@ -340,6 +350,15 @@ func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID) (root eqClassID, ab
 			c.inputEqClassToTerms[ra] = dst
 		}
 		for termID := range src {
+			if moved != nil {
+				// A term gone since it was indexed has nothing to repair:
+				// it leaves the index here, as a repair of the whole class
+				// drops it.
+				if c.egraphTerms[termID] == nil {
+					continue
+				}
+				*moved = append(*moved, termID)
+			}
 			dst[termID] = struct{}{}
 		}
 		delete(c.inputEqClassToTerms, rb)
@@ -397,6 +416,17 @@ func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID) (root eqClassID, ab
 	return ra, absorbedInputTerms
 }
 
+// mergeEqClassesLocked unions the classes of ids and repairs the terms the
+// unions moved until no two terms share a digest across classes: a term
+// whose inputs are now one class with another's is congruent to it, and
+// their outputs are unioned in turn. It returns the root of ids[0]'s class.
+//
+// Only a term that named an absorbed class can change its inputs or its
+// digest, so only such a term can come to share a digest with another: the
+// surviving class's own terms already name roots, which every union's repair
+// keeps true, as every term is made, imported and repaired naming roots.
+// So the repair walks the terms each union moved, and a union into a class
+// that many terms take as an input costs what the absorbed class had.
 func (c *Cache) mergeEqClassesLocked(ctx context.Context, ids ...eqClassID) eqClassID {
 	if len(ids) == 0 {
 		return 0
@@ -404,10 +434,38 @@ func (c *Cache) mergeEqClassesLocked(ctx context.Context, ids ...eqClassID) eqCl
 	if len(ids) == 1 {
 		return c.findEqClassLocked(ids[0])
 	}
+	if c.testRepairWholeClass {
+		return c.mergeEqClassesRepairingWholeClassLocked(ctx, ids...)
+	}
 
+	var moved []egraphTermID
 	root := c.findEqClassLocked(ids[0])
 	for _, id := range ids[1:] {
-		root, _ = c.mergeEqClassesNoRepairLocked(root, id)
+		root, _ = c.mergeEqClassesNoRepairLocked(root, id, &moved)
+	}
+	c.traceEqClassMerged(ctx, ids, root)
+
+	// Repair until closure. A repair's congruent terms union their outputs,
+	// which moves the absorbed class's terms in turn. Each union removes a
+	// root for good, so the loop ends.
+	for len(moved) > 0 {
+		batch := moved
+		moved = nil
+		for _, pair := range c.repairTermsLocked(ctx, batch) {
+			c.mergeEqClassesNoRepairLocked(pair.a, pair.b, &moved)
+		}
+	}
+	return c.findEqClassLocked(ids[0])
+}
+
+// mergeEqClassesRepairingWholeClassLocked is mergeEqClassesLocked as it was
+// before its repair walked only the terms its unions moved: each repair
+// walks every term of the class that survives. Tests set
+// testRepairWholeClass to compare the two.
+func (c *Cache) mergeEqClassesRepairingWholeClassLocked(ctx context.Context, ids ...eqClassID) eqClassID {
+	root := c.findEqClassLocked(ids[0])
+	for _, id := range ids[1:] {
+		root, _ = c.mergeEqClassesNoRepairLocked(root, id, nil)
 	}
 	c.traceEqClassMerged(ctx, ids, root)
 
@@ -428,7 +486,7 @@ func (c *Cache) mergeEqClassesLocked(ctx context.Context, ids ...eqClassID) eqCl
 		}
 		repaired[cur] = struct{}{}
 		for _, pair := range c.repairClassTermsLocked(ctx, cur) {
-			next, absorbedInputTerms := c.mergeEqClassesNoRepairLocked(pair.a, pair.b)
+			next, absorbedInputTerms := c.mergeEqClassesNoRepairLocked(pair.a, pair.b, nil)
 			if next == 0 {
 				continue
 			}
@@ -441,7 +499,26 @@ func (c *Cache) mergeEqClassesLocked(ctx context.Context, ids ...eqClassID) eqCl
 	return c.findEqClassLocked(ids[0])
 }
 
-//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
+// repairTermsLocked repairs the terms a union moved (repairTermLocked), and
+// returns a merge for each term that now shares a digest with another: their
+// outputs are one class. A term walked twice repairs once.
+func (c *Cache) repairTermsLocked(ctx context.Context, termIDs []egraphTermID) []eqMergePair {
+	traceEnabled := c.traceEnabled()
+	processedTermDigests := make(map[string]struct{}, len(termIDs))
+	for _, termID := range termIDs {
+		c.egraphRepairWalks++
+		term := c.egraphTerms[termID]
+		if term == nil {
+			continue
+		}
+		c.repairTermLocked(ctx, term, traceEnabled)
+		processedTermDigests[term.termDigest] = struct{}{}
+	}
+	return c.congruentTermMergesLocked(ctx, processedTermDigests, traceEnabled)
+}
+
+// repairClassTermsLocked repairs every term that takes root as an input,
+// as mergeEqClassesRepairingWholeClassLocked does.
 func (c *Cache) repairClassTermsLocked(ctx context.Context, root eqClassID) (merges []eqMergePair) {
 	termSet := c.inputEqClassToTerms[root]
 	if len(termSet) == 0 {
@@ -462,72 +539,84 @@ func (c *Cache) repairClassTermsLocked(ctx context.Context, root eqClassID) (mer
 			delete(termSet, termID)
 			continue
 		}
-
-		oldInputs := term.inputEqIDs
-		var newInputs []eqClassID
-		inputsChanged := false
-		for i, in := range oldInputs {
-			rootIn := c.findEqClassLocked(in)
-			if rootIn == in {
-				continue
-			}
-			if !inputsChanged {
-				newInputs = append([]eqClassID(nil), oldInputs...)
-				inputsChanged = true
-			}
-			newInputs[i] = rootIn
-		}
-
-		if inputsChanged {
-			for _, in := range oldInputs {
-				if set := c.inputEqClassToTerms[in]; set != nil {
-					delete(set, termID)
-					if len(set) == 0 {
-						delete(c.inputEqClassToTerms, in)
-					}
-				}
-			}
-			for _, in := range newInputs {
-				if in == 0 {
-					continue
-				}
-				set := c.inputEqClassToTerms[in]
-				if set == nil {
-					set = make(map[egraphTermID]struct{})
-					c.inputEqClassToTerms[in] = set
-				}
-				set[termID] = struct{}{}
-			}
-			term.inputEqIDs = newInputs
-
-			oldTermDigest := term.termDigest
-			newTermDigest := calcEgraphTermDigest(term.selfDigest, newInputs)
-			if set := c.egraphTermsByTermDigest[term.termDigest]; set != nil {
-				set.Remove(termID)
-				if set.Empty() {
-					delete(c.egraphTermsByTermDigest, term.termDigest)
-				}
-			}
-			set := c.egraphTermsByTermDigest[newTermDigest]
-			if set == nil {
-				set = newEgraphTermIDSet()
-				c.egraphTermsByTermDigest[newTermDigest] = set
-			}
-			set.Insert(termID)
-			term.termDigest = newTermDigest
-
-			if traceEnabled {
-				oldInputsCopy := append([]eqClassID(nil), oldInputs...)
-				c.traceTermInputsRepaired(ctx, term.id, oldInputsCopy, newInputs)
-				c.traceTermRehomedUnderEqClasses(ctx, term.id, newInputs)
-				c.traceTermDigestRecomputed(ctx, term.id, oldTermDigest, newTermDigest)
-			}
-		}
-
+		c.repairTermLocked(ctx, term, traceEnabled)
 		processedTermDigests[term.termDigest] = struct{}{}
 	}
+	return c.congruentTermMergesLocked(ctx, processedTermDigests, traceEnabled)
+}
 
-	for termDigest := range processedTermDigests {
+// repairTermLocked moves each of a term's inputs that is no longer a root
+// to its root, in the input-term index and the term-digest index, with the
+// term's digest made again from its new inputs.
+func (c *Cache) repairTermLocked(ctx context.Context, term *egraphTerm, traceEnabled bool) {
+	termID := term.id
+	oldInputs := term.inputEqIDs
+	var newInputs []eqClassID
+	inputsChanged := false
+	for i, in := range oldInputs {
+		rootIn := c.findEqClassLocked(in)
+		if rootIn == in {
+			continue
+		}
+		if !inputsChanged {
+			newInputs = append([]eqClassID(nil), oldInputs...)
+			inputsChanged = true
+		}
+		newInputs[i] = rootIn
+	}
+	if !inputsChanged {
+		return
+	}
+
+	for _, in := range oldInputs {
+		if set := c.inputEqClassToTerms[in]; set != nil {
+			delete(set, termID)
+			if len(set) == 0 {
+				delete(c.inputEqClassToTerms, in)
+			}
+		}
+	}
+	for _, in := range newInputs {
+		if in == 0 {
+			continue
+		}
+		set := c.inputEqClassToTerms[in]
+		if set == nil {
+			set = make(map[egraphTermID]struct{})
+			c.inputEqClassToTerms[in] = set
+		}
+		set[termID] = struct{}{}
+	}
+	term.inputEqIDs = newInputs
+
+	oldTermDigest := term.termDigest
+	newTermDigest := calcEgraphTermDigest(term.selfDigest, newInputs)
+	if set := c.egraphTermsByTermDigest[term.termDigest]; set != nil {
+		set.Remove(termID)
+		if set.Empty() {
+			delete(c.egraphTermsByTermDigest, term.termDigest)
+		}
+	}
+	set := c.egraphTermsByTermDigest[newTermDigest]
+	if set == nil {
+		set = newEgraphTermIDSet()
+		c.egraphTermsByTermDigest[newTermDigest] = set
+	}
+	set.Insert(termID)
+	term.termDigest = newTermDigest
+
+	if traceEnabled {
+		oldInputsCopy := append([]eqClassID(nil), oldInputs...)
+		c.traceTermInputsRepaired(ctx, term.id, oldInputsCopy, newInputs)
+		c.traceTermRehomedUnderEqClasses(ctx, term.id, newInputs)
+		c.traceTermDigestRecomputed(ctx, term.id, oldTermDigest, newTermDigest)
+	}
+}
+
+// congruentTermMergesLocked returns, for each digest repaired terms now
+// have, a merge of the first live term's output with every other's.
+func (c *Cache) congruentTermMergesLocked(ctx context.Context, termDigests map[string]struct{}, traceEnabled bool) (merges []eqMergePair) {
+	for termDigest := range termDigests {
 		set := c.egraphTermsByTermDigest[termDigest]
 		if set == nil || set.Size() <= 1 {
 			continue
