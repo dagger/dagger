@@ -105,11 +105,7 @@ func (t *storedLayers) part(offer PersistedPartOffer) storedPart {
 	for i, layer := range offer.Chain.Layers {
 		pack := offer.Chain.Packs[layer.Descriptor.Digest]
 		encoded := storedLayerEncoding(layer, pack)
-		var wire int64
-		if encoded != nil {
-			wire = int64(len(encoded)) + 1
-		}
-		layers[i] = t.layer(storedLayer{layer: layer, pack: pack, wire: wire}, storedLayerKey(layer, encoded))
+		layers[i] = t.layer(storedLayer{layer: layer, pack: pack, wire: storedLayerWire(encoded)}, storedLayerKey(layer, encoded))
 	}
 	offer.Chain.Layers, offer.Chain.Packs = nil, nil
 	return storedPart{held: offer, layers: layers, wire: storedPartWire(offer, layers)}
@@ -154,14 +150,14 @@ func storedPartWire(offer PersistedPartOffer, layers []*storedLayer) int64 {
 	return int64(len(data)) + 1
 }
 
-// storedLayerWire is the layer's entry in a merge's list of layers, with the
-// pack its chain stores it in and its separator, or 0 if it doesn't encode.
-func storedLayerWire(layer snapshots.ExportLayer, pack digest.Digest) int64 {
-	data := storedLayerEncoding(layer, pack)
-	if data == nil {
+// storedLayerWire is a layer's entry in a merge's list of layers, with the
+// pack its chain stores it in and its separator, from its encoding
+// (storedLayerEncoding), or 0 if it doesn't encode.
+func storedLayerWire(encoded []byte) int64 {
+	if encoded == nil {
 		return 0
 	}
-	return int64(len(data)) + 1
+	return int64(len(encoded)) + 1
 }
 
 // storedLayerEncoding is the layer's entry in a merge's list of layers,
