@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"math/rand/v2"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -147,19 +148,27 @@ func cacheOutputEqClassSurvivorErrorLocked(c *Cache, nowUnix int64) error {
 
 // cacheOutputEqClassCandidatesErrorLocked checks that the servable results
 // of every output eq-class root read from outputEqClassResults are the ones
-// the digest postings of its digests name, so the canonical equivalent search
-// finds the same candidates through either index.
+// the digest postings of its digests name, and that both record the same
+// expiry evidence, so a structural lookup's fallback to a term's output class
+// and the canonical equivalent search find the same candidates, and a miss
+// reports the same facts, through either index.
 func cacheOutputEqClassCandidatesErrorLocked(c *Cache, nowUnix int64) error {
 	for root := range c.outputEqClassResults {
 		fromPostings := newSharedResultSet()
+		var postingsExpired expirySeen
 		for dig := range c.eqClassToDigests[root] {
-			c.appendDigestResultsLocked(fromPostings, digest.Digest(dig), nowUnix, nil)
+			c.appendDigestResultsLocked(fromPostings, digest.Digest(dig), nowUnix, &postingsExpired)
 		}
 		fromClass := newSharedResultSet()
-		c.appendOutputEqClassResultsLocked(fromClass, root, nowUnix)
+		var classExpired expirySeen
+		c.appendOutputEqClassResultsLocked(fromClass, root, nowUnix, &classExpired)
 		if !slices.Equal(sharedResultSetIDs(fromPostings), sharedResultSetIDs(fromClass)) {
 			return fmt.Errorf("output eq-class root %d candidates %v differ from its digest postings' %v",
 				root, sharedResultSetIDs(fromClass), sharedResultSetIDs(fromPostings))
+		}
+		if postingsExpired != classExpired {
+			return fmt.Errorf("output eq-class root %d records expiry %+v, its digest postings %+v",
+				root, classExpired, postingsExpired)
 		}
 	}
 	return nil
@@ -391,6 +400,168 @@ func TestCacheCanonicalEquivalentReadsOutputEqClassResults(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A structural lookup whose term has no result of its own is answered from
+// the term's output class, and examines each of the class's results once: no
+// more on an engine restored from a saved state, whose terms come back
+// without their results, than on the engine that made them. On a warm rerun
+// of dagger's own checks, each restored engine's first probe of a workspace's
+// root for a module config was answered so from a class of 2,593 digests and
+// 1,212 results, by a walk of every digest's posting that held the graph lock
+// for up to 2.5 s while the engine's other calls queued behind it.
+func TestCacheRestoredTermLookupExaminesEachClassResultOnce(t *testing.T) {
+	t.Parallel()
+	const width = 32
+	examined := func(t *testing.T, imported bool) int {
+		f := cacheDerivedIndexWideOutputFixture(t, width, imported)
+		defer f.close(t)
+		c := f.cache
+		const lookupSession = "restored-term-lookup"
+		ctx := cacheTestSessionContext(f.ctx, lookupSession)
+		defer func() { assert.NilError(t, c.ReleaseSession(ctx, lookupSession)) }()
+		// A new session's receiver joins the receivers' class by its
+		// content, as a session's workspace joins the class of the
+		// workspaces identified by the same content: the call on it reaches
+		// the output class only through the term of the calls on the others.
+		receiverCall := cacheTestIntCall("derived-index-wide-input-request-new")
+		receiverResponse := cacheTestIntCall("derived-index-wide-input-response-new", call.ExtraDigest{
+			Label:  call.ExtraDigestLabelContent,
+			Digest: digest.FromString("derived-index-wide-input-content"),
+		})
+		receiver, err := c.GetOrInitCall(ctx, lookupSession, noopTypeResolver{}, &CallRequest{ResultCall: receiverCall, IsPersistable: true}, func(context.Context) (AnyResult, error) {
+			return cacheTestIntResult(receiverResponse, width+1), nil
+		})
+		assert.NilError(t, err)
+		structural := &ResultCall{
+			Kind:     ResultCallKindField,
+			Type:     NewResultCallType(Int(0).Type()),
+			Field:    "derived-index-wide-structural",
+			Receiver: &ResultCallRef{ResultID: uint64(receiver.cacheSharedResult().id)},
+		}
+		visits := 0
+		c.egraphMu.Lock()
+		c.testServableVisited = func(sharedResultID) { visits++ }
+		c.egraphMu.Unlock()
+		ran := false
+		evidence := &CacheDecision{}
+		res, err := c.GetOrInitCall(ctx, lookupSession, noopTypeResolver{}, &CallRequest{ResultCall: structural, CacheEvidence: evidence}, func(context.Context) (AnyResult, error) {
+			ran = true
+			return cacheTestIntResult(structural, -1), nil
+		})
+		c.egraphMu.Lock()
+		c.testServableVisited = nil
+		c.egraphMu.Unlock()
+		assert.NilError(t, err)
+		assert.Assert(t, !ran, "the call on the new receiver hits the class's results")
+		assert.Assert(t, res.HitCache())
+		assert.Equal(t, CacheHitRouteStructural, evidence.HitRoute)
+		return visits
+	}
+	live := examined(t, false)
+	restored := examined(t, true)
+	t.Logf("a class of %d results: the lookup examined %d results on the engine that made them, %d restored", width, live, restored)
+	assert.Assert(t, live >= width, "the live lookup examines every result of its term")
+	assert.Equal(t, live, restored, "a restored engine's lookup examines the class's results once each, as the live one's does")
+}
+
+// Reading a class's results from its own set finds the same candidates as
+// reading them through every digest's posting, and records the same expiry
+// evidence, over generated classes: results posted under several digests of
+// their class (content digests shared across results, structural calls
+// taught onto them), classes merged through a shared digest, and among the
+// results expired ones, imported ones and ones whose dependency attachment
+// failed, on a live engine and on one restored from its saved state.
+func TestCacheOutputEqClassResultsMatchDigestPostings(t *testing.T) {
+	t.Parallel()
+	rng := rand.New(rand.NewPCG(5, 23))
+	var multiPosted, expiredSeen, remoteSeen, failedSeen int
+	for i := range 24 {
+		imported := i%2 == 1
+		f := &cacheDerivedIndexFixture{setupSession: fmt.Sprintf("generated-classes-%d", i)}
+		if imported {
+			f.dbPath = filepath.Join(t.TempDir(), "cache.db")
+		}
+		f.cache, f.ctx = newCacheDerivedIndexFixtureCache(t, f.setupSession, f.dbPath)
+		classes := 2 + rng.IntN(4)
+		contents := make([]digest.Digest, classes)
+		for j := range contents {
+			contents[j] = digest.FromString(fmt.Sprintf("generated-%d-content-%d", i, j))
+		}
+		receiver := cacheDerivedIndexPublishPersistedResult(t, f, cacheTestIntCall(fmt.Sprintf("generated-%d-receiver", i)), cacheTestIntCall(fmt.Sprintf("generated-%d-receiver", i)), 0)
+		for k := range 6 + rng.IntN(20) {
+			extras := []call.ExtraDigest{{Label: call.ExtraDigestLabelContent, Digest: contents[rng.IntN(classes)]}}
+			if rng.IntN(4) == 0 {
+				// A second shared content digest merges two classes, and
+				// posts the result under both.
+				extras = append(extras, call.ExtraDigest{Label: call.ExtraDigestLabelContent, Digest: contents[rng.IntN(classes)]})
+			}
+			field := fmt.Sprintf("generated-%d-%d", i, k)
+			res := cacheDerivedIndexPublishPersistedResult(t, f, cacheTestIntCall(field), cacheTestIntCall(field, extras...), k)
+			for s := range rng.IntN(3) {
+				structural := &ResultCall{
+					Kind:     ResultCallKindField,
+					Type:     NewResultCallType(Int(0).Type()),
+					Field:    fmt.Sprintf("generated-%d-%d-structural-%d", i, k, s),
+					Receiver: &ResultCallRef{ResultID: uint64(receiver.cacheSharedResult().id)},
+				}
+				assert.NilError(t, f.cache.TeachCallEquivalentToResult(f.ctx, f.setupSession, structural, res))
+			}
+		}
+		assert.NilError(t, f.cache.ReleaseSession(f.ctx, f.setupSession))
+		if imported {
+			assert.NilError(t, f.cache.Close(t.Context()))
+			f.cache, f.ctx = newCacheDerivedIndexFixtureCache(t, f.setupSession, f.dbPath)
+		}
+		c := f.cache
+		nowUnix := time.Now().Unix()
+		c.egraphMu.Lock()
+		for _, id := range slices.Sorted(maps.Keys(c.resultsByID)) {
+			res := c.resultsByID[id]
+			switch rng.IntN(5) {
+			case 0:
+				res.expiresAtUnix = nowUnix - 1
+				res.imported = rng.IntN(2) == 0
+			case 1:
+				failed := make(chan struct{})
+				close(failed)
+				res.attachDepsMu.Lock()
+				res.attachDepsWaitCh = failed
+				res.attachDepsErr = fmt.Errorf("generated attachment failure")
+				res.attachDepsMu.Unlock()
+			}
+		}
+		for root := range c.outputEqClassResults {
+			var seen expirySeen
+			c.appendOutputEqClassResultsLocked(newSharedResultSet(), root, nowUnix, &seen)
+			if seen.any {
+				expiredSeen++
+			}
+			if seen.remote {
+				remoteSeen++
+			}
+			for id := range c.outputEqClassResults[root] {
+				posted := 0
+				for dig := range c.eqClassToDigests[root] {
+					if posting := c.egraphResultsByDigest[dig]; posting != nil && posting.Contains(id) {
+						posted++
+					}
+				}
+				if posted > 1 {
+					multiPosted++
+				}
+				if c.resultsByID[id].attachmentState() == resultAttachmentFailed {
+					failedSeen++
+				}
+			}
+		}
+		err := cacheOutputEqClassCandidatesErrorLocked(c, nowUnix)
+		c.egraphMu.Unlock()
+		assert.NilError(t, err, "generated case %d (imported=%v)", i, imported)
+		f.close(t)
+	}
+	t.Logf("results posted under several digests %d, classes with expired results %d, with imported expired results %d, failed attachments %d", multiPosted, expiredSeen, remoteSeen, failedSeen)
+	assert.Assert(t, multiPosted > 0 && expiredSeen > 0 && remoteSeen > 0 && failedSeen > 0, "the generated classes cover every case")
 }
 
 func TestCacheOutputEqClassInverseMixedSurvivor(t *testing.T) {
