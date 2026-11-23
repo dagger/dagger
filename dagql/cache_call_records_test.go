@@ -836,7 +836,7 @@ func TestACallInputBelowAnotherCallsInputIsARootOfItsOwn(t *testing.T) {
 	built, err := cloud.StoredBundle(ctx, []uint64{byField["inner"]}, time.Now().Unix(), nil)
 	require.NoError(t, err)
 	require.Len(t, built.Bundle.Calls, 2)
-	require.ElementsMatch(t, []uint64{byField["x"], byField["y"]}, built.CallInputs, "X and Y are each a root")
+	require.Equal(t, []uint64{byField["x"], byField["y"]}, built.CallInputs, "f(X) is placed first, carrying Y below X, and Y is still a root of its own")
 	roots := map[TransferOrdinal]bool{}
 	for _, root := range built.Bundle.Roots {
 		roots[root.Ordinal] = true
