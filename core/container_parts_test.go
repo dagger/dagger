@@ -482,6 +482,77 @@ func TestContainerMetadataOnlyMountMutationParts(t *testing.T) {
 	}
 }
 
+// A sync of a container made by a metadata call makes what the container
+// holds, and nothing it dropped: a mount its call removed or covered with a
+// cache is never made, as an evaluation of the container never makes it, so
+// a sync can't fail on it either. A mount the call keeps is made once.
+func TestContainerSyncMakesNoMountItsCallDropped(t *testing.T) {
+	tests := []struct {
+		field string
+		apply func(*testing.T, context.Context, *dagql.Cache, *dagql.Server, string, dagql.ObjectResult[*Container], *Container) Lazy[*Container]
+		kept  bool
+	}{
+		{
+			field: "withEnvVariable",
+			apply: func(_ *testing.T, _ context.Context, _ *dagql.Cache, _ *dagql.Server, _ string, parent dagql.ObjectResult[*Container], _ *Container) Lazy[*Container] {
+				return &ContainerWithEnvVariableLazy{LazyState: NewLazyState(), Parent: parent, Name: "FOO", Value: "bar"}
+			},
+			kept: true,
+		},
+		{
+			field: "withoutMount",
+			apply: func(t *testing.T, ctx context.Context, _ *dagql.Cache, _ *dagql.Server, _ string, parent dagql.ObjectResult[*Container], child *Container) Lazy[*Container] {
+				_, err := child.WithoutMount(ctx, "/old")
+				require.NoError(t, err)
+				return &ContainerWithoutMountLazy{LazyState: NewLazyState(), Parent: parent, Target: "/old"}
+			},
+		},
+		{
+			field: "withMountedCache",
+			apply: func(t *testing.T, ctx context.Context, cache *dagql.Cache, srv *dagql.Server, sessionID string, parent dagql.ObjectResult[*Container], child *Container) Lazy[*Container] {
+				cacheRes := attachContainerPartsTestObject(t, ctx, cache, srv, sessionID, "sync-dropped-mount-cache", &CacheVolume{snapshot: &cacheVolumeTestMutableRef{}})
+				_, err := child.WithMountedCache(ctx, "/old", cacheRes)
+				require.NoError(t, err)
+				return &ContainerWithMountedCacheLazy{LazyState: NewLazyState(), Parent: parent, Target: "/old", Cache: cacheRes}
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.field, func(t *testing.T) {
+			t.Parallel()
+			ctx, cache, srv, sessionID := newContainerPartsTestCtx(t)
+			// A sync is a call's, made with the server serving it.
+			ctx = dagql.ContextWithServer(ctx, srv)
+			baseOp := &containerPartsTestBaseOp{LazyState: NewLazyState(), workdir: "/", mountTargets: []string{"/old"}}
+			base := &Container{
+				FS:           new(LazyAccessor[*Directory, *Container]),
+				MetaSnapshot: new(LazyAccessor[bkcache.ImmutableRef, *Container]),
+				Mounts:       ContainerMounts{{Target: "/old", Readonly: true, DirectorySource: new(LazyAccessor[*Directory, *Container])}},
+				Lazy:         baseOp,
+			}
+			baseRes := attachContainerPartsTestResult(t, ctx, cache, srv, sessionID, "sync-dropped-mount-base", base)
+			mounts, err := CloneContainerMounts(ctx, base.Mounts)
+			require.NoError(t, err)
+			child := &Container{
+				FS:           new(LazyAccessor[*Directory, *Container]),
+				MetaSnapshot: new(LazyAccessor[bkcache.ImmutableRef, *Container]),
+				Config:       CloneContainerImageConfig(base.Config),
+				Mounts:       mounts,
+			}
+			child.Lazy = test.apply(t, ctx, cache, srv, sessionID, baseRes, child)
+			childRes := attachDelegationChild(t, ctx, cache, srv, sessionID, test.field, baseRes, child)
+
+			require.NoError(t, cache.Sync(ctx, childRes))
+			require.Equal(t, int32(1), baseOp.fsRuns.Load(), "the rootfs it keeps")
+			if test.kept {
+				require.Equal(t, 1, baseOp.mountRunsFor("/old"), "the mount it keeps")
+			} else {
+				require.Equal(t, 0, baseOp.mountRunsFor("/old"), "the mount it dropped")
+			}
+		})
+	}
+}
+
 func TestContainerMetadataMountNamedOwnerReadsParentRootFS(t *testing.T) {
 	tests := []struct {
 		name  string
