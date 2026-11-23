@@ -189,6 +189,10 @@ type RemoteChange struct {
 	// writes, beyond the holdings, which aren't saved: a call kept on a
 	// stored entry, the entry's expiry, or that its stored record's run ran.
 	Saved bool
+	// Shared are the kinds of state engines share that the operation
+	// changed, on a blob-backed cache (SharedWrites): none when it changed
+	// only its engine caches' own.
+	Shared SharedWrites
 }
 
 // HeldValueState is one observation of the value state of a holding's copy:
