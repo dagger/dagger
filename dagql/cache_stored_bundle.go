@@ -743,6 +743,7 @@ type storedValueSize struct {
 	dependencyRevision uint64
 	replacements       uint64
 	expiresAtUnix      int64
+	changedAt          uint64
 	bytes              int64
 }
 
