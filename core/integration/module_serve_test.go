@@ -10,6 +10,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -231,6 +232,83 @@ func (ModuleLoadingSuite) TestServeModulePinnedVersionQuery(ctx context.Context,
 		require.ErrorContains(t, err, `version query "v1" resolved to Git ref`)
 		require.ErrorContains(t, err, fmt.Sprintf("at commit %q, but the requested pin is %q", latest, pinned))
 	})
+}
+
+// A module-source read that takes nothing from its caller is shared by every
+// module of a session that makes it, whatever version each module declares:
+// its key holds the view on the call, and these fields' calls carry none.
+// That is right only while the read is the same for every version. So two
+// modules, one declaring a version before Git version queries
+// (workspace.VersionQueriesVersion) and one after, read one Git module source
+// at a version that a query and a literal ref resolve differently, both
+// orders, each in a session and on a repository of its own. Each must get
+// the same commit whichever reads first.
+//
+// This test can't fail first: no module-source read differs by caller version
+// today. The version checks on the read path (core.Supports) run in fields
+// in every view, whose calls carry no view, so they pass for every caller.
+// It fails if a read starts to differ by version some other way than the
+// view on the call, such as the server's view, while the key stays the same:
+// the second reader then gets the first's commit.
+func (ModuleLoadingSuite) TestModuleSourceReadIsTheSameForEveryCallerVersion(ctx context.Context, t *testctx.T) {
+	readers := []struct{ name, field, engineVersion string }{
+		{"older-reader", "olderReader", "v1.0.0-beta.11"},
+		{"current-reader", "currentReader", "latest"},
+	}
+	// readIn serves both readers in a session of its own and reads, in order,
+	// a repository of its own whose tag v1.2 is one commit and v1.2.1 the
+	// next. It returns the tag each reader's commit carries.
+	readIn := func(ctx context.Context, t *testctx.T, order ...string) map[string]string {
+		c := connect(ctx, t)
+		repo := core.NewQuery(c).Container().From(alpineImage).
+			WithExec([]string{"apk", "add", "git"}).
+			With(gitUserConfig).
+			WithWorkdir("/src").
+			WithExec([]string{"git", "init", "-b", "main"}).
+			WithNewFile("dagger-module.toml", serveModuleHelloManifest).
+			WithNewFile("main.dang", serveModuleHelloSource).
+			WithNewFile("nonce", rand.Text()).
+			WithExec([]string{"git", "add", "."}).
+			WithExec([]string{"git", "commit", "-m", "v1.2"}).
+			WithExec([]string{"git", "tag", "v1.2"}).
+			WithNewFile("nonce", rand.Text()).
+			WithExec([]string{"git", "add", "."}).
+			WithExec([]string{"git", "commit", "-m", "v1.2.1"}).
+			WithExec([]string{"git", "tag", "v1.2.1"})
+		remote := newRemoteWorkspace(ctx, t, c, repo.Directory("/src"))
+		tags := map[string]string{}
+		for _, tag := range []string{"v1.2", "v1.2.1"} {
+			commit, err := core.NewQuery(c).Git(remote.repoURL).Tag(tag).CommitSHA(ctx)
+			require.NoError(t, err)
+			tags[commit] = tag
+		}
+		require.Len(t, tags, 2)
+		for _, r := range readers {
+			mod := core.NewQuery(c).Directory().
+				WithNewFile("dagger.json", fmt.Sprintf(`{"name": %q, "engineVersion": %q, "sdk": "dang"}`, r.name, r.engineVersion)).
+				WithNewFile("main.dang", fmt.Sprintf(`type %s {
+  pub read(ref: String!): String! {
+    moduleSource(refString: ref).commit
+  }
+}
+`, strings.ToUpper(r.field[:1])+r.field[1:])).
+				AsModuleSource().AsModule()
+			require.NoError(t, mod.Serve(ctx))
+		}
+		got := map[string]string{}
+		for _, field := range order {
+			res, err := testutil.QueryWithClient[map[string]map[string]string](c, t,
+				fmt.Sprintf(`{%s{read(ref: %q)}}`, field, remote.repoURL+"@v1.2"), nil)
+			require.NoError(t, err)
+			commit := (*res)[field]["read"]
+			require.Contains(t, tags, commit, "%s read a commit of neither tag", field)
+			got[field] = tags[commit]
+		}
+		return got
+	}
+	olderFirst := readIn(ctx, t, "olderReader", "currentReader")
+	currentFirst := readIn(ctx, t, "currentReader", "olderReader")
+	require.Equal(t, olderFirst, currentFirst, "each module reads the same whichever reads first")
 }
 
 // A module serves its clients' targets at run time, after the engine has looked
