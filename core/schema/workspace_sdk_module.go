@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/slog"
@@ -1150,7 +1151,11 @@ func (s *workspaceSchema) validateGeneratedModuleConfig(
 	generated dagql.ObjectResult[*core.Workspace],
 	scopePath string,
 ) error {
-	root, err := s.filteredWorkspaceRootfs(ctx, generated.Self())
+	var include []string
+	for _, filename := range modules.ConfigFilenames() {
+		include = append(include, filepath.ToSlash(filepath.Join(cleanWorkspaceRelPath(scopePath), filename)))
+	}
+	root, err := s.resolveRootfs(ctx, generated.Self(), ".", core.CopyFilter{Include: include}, generated.Self().ClientLocalBase())
 	if err != nil {
 		return err
 	}
