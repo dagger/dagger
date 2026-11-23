@@ -277,14 +277,31 @@ func (c *Cache) findEqClassLocked(id eqClassID) eqClassID {
 	return root
 }
 
+// unionRootsLocked orders two roots a union joins, the survivor first: the
+// class more terms take as an input, then the one of higher rank, then ra.
+// Keeping the class with more terms moves the fewest. The survivor takes a
+// rank above the loser's when the loser's is as high as its own, which
+// keeps a rank above its tree's height, up to the most a rank holds. With
+// testRepairWholeClass, the survivor is the one of higher rank, then ra.
+func (c *Cache) unionRootsLocked(ra, rb eqClassID) (survivor, loser eqClassID) {
+	if c.testRepairWholeClass {
+		if c.egraphRanks[ra] < c.egraphRanks[rb] {
+			ra, rb = rb, ra
+		}
+	} else if na, nb := len(c.inputEqClassToTerms[ra]), len(c.inputEqClassToTerms[rb]); na < nb || (na == nb && c.egraphRanks[ra] < c.egraphRanks[rb]) {
+		ra, rb = rb, ra
+	}
+	if r := c.egraphRanks[rb]; r >= c.egraphRanks[ra] {
+		c.egraphRanks[ra] = min(r, math.MaxUint8-1) + 1
+	}
+	return ra, rb
+}
+
 // mergeEqClassesNoRepairLocked unions the classes of a and b and returns the
-// surviving root: the class more terms take as an input, then the one of
-// higher rank, then a's. absorbedInputTerms reports whether the union moved
-// input terms from the losing root to the survivor, and moved, unless nil,
-// takes each live term it moved: those terms still name the losing root
-// until they are repaired. Keeping the class with more terms moves the
-// fewest. A survivor of lower rank takes a rank above the loser's, which
-// keeps a rank above its tree's height, up to the most a rank holds.
+// surviving root (unionRootsLocked). absorbedInputTerms reports whether the
+// union moved input terms from the losing root to the survivor, and moved,
+// unless nil, takes each live term it moved: those terms still name the
+// losing root until they are repaired.
 func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID, moved *[]egraphTermID) (root eqClassID, absorbedInputTerms bool) {
 	ra := c.findEqClassLocked(a)
 	rb := c.findEqClassLocked(b)
@@ -299,19 +316,8 @@ func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID, moved *[]egraphTerm
 	}
 	c.egraphUnions++
 
-	if c.testRepairWholeClass {
-		// union by rank alone, as before a union kept the class with more
-		// terms
-		if c.egraphRanks[ra] < c.egraphRanks[rb] {
-			ra, rb = rb, ra
-		}
-	} else if na, nb := len(c.inputEqClassToTerms[ra]), len(c.inputEqClassToTerms[rb]); na < nb || (na == nb && c.egraphRanks[ra] < c.egraphRanks[rb]) {
-		ra, rb = rb, ra
-	}
+	ra, rb = c.unionRootsLocked(ra, rb)
 	c.egraphParents[rb] = ra
-	if r := c.egraphRanks[rb]; r >= c.egraphRanks[ra] {
-		c.egraphRanks[ra] = min(r, math.MaxUint8-1) + 1
-	}
 
 	// merge reverse digest indexes
 	dstDigests := c.eqClassToDigests[ra]
