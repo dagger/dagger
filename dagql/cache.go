@@ -8132,11 +8132,16 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		oc.res.onRelease = joinOnRelease(c.resultSnapshotLeaseCleanup(oc.res), oc.res.onRelease)
 		// Set before the result is indexed, so every hit sees it.
 		oc.res.persistDeclined = oc.persistDecline.isDeclined()
-		if oc.persistDecline.isBound() {
-			handle, err := c.boundSessionHandle(sessionID)
-			if err != nil {
-				return fmt.Errorf("bind result to session: %w", err)
-			}
+	}
+	// A bound call registers its session's binding whether it made its value
+	// or returned one made before; only a value it made holds the binding
+	// itself.
+	if oc.persistDecline.isBound() {
+		handle, err := c.boundSessionHandle(sessionID)
+		if err != nil {
+			return fmt.Errorf("bind result to session: %w", err)
+		}
+		if !resWasCacheBacked {
 			oc.res.boundSession = handle
 		}
 	}
