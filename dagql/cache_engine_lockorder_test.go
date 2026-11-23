@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -91,7 +92,7 @@ func TestEngineCacheLocksAreTakenUnderTheCachesLock(t *testing.T) {
 func TestEntryHolderListLockIsALeaf(t *testing.T) {
 	t.Parallel()
 	funcs := dagqlBodies(t)
-	holders := []string{"lockHoldersLocked", "putHolderLocked", "deleteHolderLocked", "holderRefsLocked"}
+	holders := []string{"lockHoldersLocked", "putHolderLocked", "deleteHolderLocked", "holderRefsLocked", "cacheHolderRefsLocked", "eachHolderLocked", "eachCacheHolderLocked"}
 	for _, name := range holders {
 		require.NotEmpty(t, funcs.bodies[name], "%s is in the package", name)
 		for _, reached := range reachedFrom(funcs.bodies, name, nil) {
@@ -105,6 +106,43 @@ func TestEntryHolderListLockIsALeaf(t *testing.T) {
 			}
 		}
 	}
+}
+
+// The functions a reader passes to the holder list's scans run under its
+// lock (eachHolderLocked, eachCacheHolderLocked): what they call takes
+// nothing either.
+func TestEntryHolderListScansTakeNoLock(t *testing.T) {
+	t.Parallel()
+	funcs := dagqlBodies(t)
+	scans := 0
+	for _, fns := range funcs.bodies {
+		for _, fn := range fns {
+			ast.Inspect(fn.Body, func(n ast.Node) bool {
+				call, ok := n.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				sel, ok := call.Fun.(*ast.SelectorExpr)
+				if !ok || (sel.Sel.Name != "eachHolderLocked" && sel.Sel.Name != "eachCacheHolderLocked") {
+					return true
+				}
+				lit, ok := call.Args[len(call.Args)-1].(*ast.FuncLit)
+				require.True(t, ok, "%s passes a scan a function literal", fn.Name.Name)
+				scans++
+				for _, called := range calledNames(&ast.FuncDecl{Body: lit.Body}) {
+					for _, reached := range reachedFrom(funcs.bodies, called, nil) {
+						for _, body := range funcs.bodies[reached] {
+							src := funcs.source(body)
+							require.False(t, strings.Contains(src, "egraphMu.") || strings.Contains(src, "rlockEngineLocked(") || strings.Contains(src, ".mu.Lock()") || strings.Contains(src, ".mu.RLock()"),
+								"%s's scan of a holder list reaches %s, which takes a lock", fn.Name.Name, reached)
+						}
+					}
+				}
+				return true
+			})
+		}
+	}
+	require.Positive(t, scans, "the package scans holder lists")
 }
 
 // dagqlFuncs are the package's own functions, not its tests', by name:
@@ -150,9 +188,32 @@ func (funcs *dagqlFuncs) source(fn *ast.FuncDecl) string {
 // same name, such as an atomic pointer's Load and a server's.
 var lockAndAtomicMethods = []string{"Lock", "Unlock", "RLock", "RUnlock", "TryLock", "Load", "Store", "Add", "Swap", "CompareAndSwap", "And", "Or"}
 
-// calledNames are the names fn calls: a plain function's, or a method's or
-// another package's function's last name, but for a lock's or an atomic's
-// methods (lockAndAtomicMethods).
+// importedNames are the names the package's own files import packages
+// under: a call through one (slices.Clone) is that package's, never the
+// package's own function of that name.
+var importedNames = sync.OnceValue(func() map[string]bool {
+	names := map[string]bool{}
+	paths, _ := filepath.Glob("*.go")
+	for _, path := range paths {
+		file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
+		if err != nil {
+			continue
+		}
+		for _, imp := range file.Imports {
+			name := strings.Trim(imp.Path.Value, `"`)
+			name = name[strings.LastIndex(name, "/")+1:]
+			if imp.Name != nil {
+				name = imp.Name.Name
+			}
+			names[name] = true
+		}
+	}
+	return names
+})
+
+// calledNames are the names fn calls: a plain function's or a method's,
+// but for a lock's or an atomic's methods (lockAndAtomicMethods) and
+// another package's functions (importedNames).
 func calledNames(fn *ast.FuncDecl) []string {
 	var names []string
 	ast.Inspect(fn.Body, func(n ast.Node) bool {
@@ -164,6 +225,9 @@ func calledNames(fn *ast.FuncDecl) []string {
 		case *ast.Ident:
 			names = append(names, f.Name)
 		case *ast.SelectorExpr:
+			if x, ok := f.X.(*ast.Ident); ok && importedNames()[x.Name] {
+				break
+			}
 			if !slices.Contains(lockAndAtomicMethods, f.Sel.Name) {
 				names = append(names, f.Sel.Name)
 			}
