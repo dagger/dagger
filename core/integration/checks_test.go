@@ -25,6 +25,7 @@ import (
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/dagger/testctx"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
@@ -97,6 +98,54 @@ type TestCase {
 			require.Equal(t, run+1, groups)
 		})
 	}
+}
+
+// TestCheckRunSpanIsPassthrough covers the hidden field a check's body runs
+// through. A failed span shows even when it's internal, so unless frontends
+// show its children in its place, a failed check shows a cryptic
+// View.__check_failing row above its own work. The function itself, called
+// directly, keeps its span.
+func (ChecksSuite) TestCheckRunSpanIsPassthrough(ctx context.Context, t *testctx.T) {
+	c, sink := connectWithTrace(ctx, t)
+	fixture := artifactViewWorkspace(t, c, `type View {
+  failing: Void @check { raise "check body failed" }
+}`).WithEnvVariable("CACHEBUSTER", rand.Text())
+
+	_, err := fixture.With(daggerExecFail("check", "failing", "--generated=false")).Sync(ctx)
+	require.NoError(t, err)
+	_, err = fixture.WithExec([]string{"dagger", "api", "call", "view", "failing"}, core.ContainerWithExecOpts{
+		Expect: core.ReturnTypeAny,
+	}).Sync(ctx)
+	require.NoError(t, err)
+
+	// The engine's call spans, not the module process's "view:View.<field>"
+	// span beneath them, which is passthrough either way.
+	spansOf := func(db *dagui.DB, field string) []*dagui.Span {
+		var spans []*dagui.Span
+		for _, span := range db.Spans.Order {
+			if call := span.Call(); call != nil && call.Field == field && span.Name == "View."+field && !span.IsRunning() {
+				spans = append(spans, span)
+			}
+		}
+		return spans
+	}
+	require.EventuallyWithT(t, func(ct *assert.CollectT) {
+		sink.read(func(db *dagui.DB) {
+			runs := spansOf(db, "__check_failing")
+			if assert.NotEmpty(ct, runs, "the check's run span") {
+				for _, run := range runs {
+					assert.True(ct, run.IsFailed(), "the check's run span fails with the check")
+					assert.True(ct, run.Passthrough, "the check's run span shows its children in its place")
+				}
+			}
+			fns := spansOf(db, "failing")
+			if assert.NotEmpty(ct, fns, "the function's own span") {
+				for _, fn := range fns {
+					assert.False(ct, fn.Passthrough, "the function's own span is not passthrough")
+				}
+			}
+		})
+	}, time.Minute, 100*time.Millisecond)
 }
 
 func checksTestEnv(t *testctx.T, c *dagger.Client) (*core.Container, error) {
