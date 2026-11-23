@@ -2,6 +2,7 @@ package dagql
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"testing"
 
@@ -217,4 +218,110 @@ func TestCacheBoundResultIsNotTransferred(t *testing.T) {
 		assert.Equal(t, BusyKind(""), root.Kind, "a bound value is refused, not busy")
 	}
 	assert.NilError(t, c.ReleaseSession(sa, "session-a"))
+}
+
+// A field of a bound result that returns a result the bound result holds
+// answers for that session only. Another session makes the parent's call
+// again, which binds its own: the parents' calls are the same, so the field's
+// call made on the first one must still not hand the second session the
+// result the first session's parent holds. Each session's own later calls of
+// the field hit its own. The held result is either one the bound call made,
+// or one that existed before it, an ordinary value another session is still
+// served by its own call.
+func TestCacheBoundResultsHeldResultIsServedOnlyToItsSession(t *testing.T) {
+	t.Parallel()
+	for _, made := range []bool{true, false} {
+		name := "held result the bound call made"
+		if !made {
+			name = "held result that existed before"
+		}
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			baseCtx := t.Context()
+			c, err := NewCache(baseCtx, "", nil, nil)
+			assert.NilError(t, err)
+			parentCall := cacheTestIntCall("bound-parent")
+			child := func(ctx context.Context, session string, v int) AnyResult {
+				t.Helper()
+				childCall := cacheTestIntCall(fmt.Sprintf("held-child-%d", v))
+				if made {
+					return cacheTestIntResult(childCall, v)
+				}
+				res, err := c.GetOrInitCall(ctx, session, noopTypeResolver{}, &CallRequest{ResultCall: childCall}, func(context.Context) (AnyResult, error) {
+					return cacheTestIntResult(childCall, v), nil
+				})
+				assert.NilError(t, err)
+				return res
+			}
+			parent := func(ctx context.Context, session string, v int) AnyResult {
+				t.Helper()
+				held := child(ctx, session, v)
+				res, err := c.GetOrInitCall(ctx, session, noopTypeResolver{}, &CallRequest{ResultCall: parentCall.clone()}, func(ctx context.Context) (AnyResult, error) {
+					BindToSession(ctx)
+					return cacheTestDetachedResult(parentCall.clone(), &cacheTestOwnedDepsInt{Int: NewInt(0), ownedResults: []AnyResult{held}}), nil
+				})
+				assert.NilError(t, err)
+				return res
+			}
+			heldBy := func(ctx context.Context, session string, p AnyResult) AnyResult {
+				t.Helper()
+				res, err := c.GetOrInitCall(ctx, session, noopTypeResolver{}, &CallRequest{ResultCall: &ResultCall{
+					Kind:     ResultCallKindField,
+					Type:     NewResultCallType(Int(0).Type()),
+					Field:    "held",
+					Receiver: &ResultCallRef{ResultID: uint64(p.cacheSharedResult().id)},
+				}}, func(context.Context) (AnyResult, error) {
+					return p.Unwrap().(*cacheTestOwnedDepsInt).ownedResults[0], nil
+				})
+				assert.NilError(t, err)
+				return res
+			}
+
+			aCtx := currentEntryTestSession(baseCtx, c, "session-a")
+			a := parent(aCtx, "session-a", 1)
+			assert.Equal(t, 1, cacheTestUnwrapInt(t, heldBy(aCtx, "session-a", a)))
+
+			bCtx := currentEntryTestSession(baseCtx, c, "session-b")
+			b := parent(bCtx, "session-b", 2)
+			assert.Assert(t, b.cacheSharedResult().id != a.cacheSharedResult().id, "B makes its own parent")
+			assert.Equal(t, 2, cacheTestUnwrapInt(t, heldBy(bCtx, "session-b", b)), "B's parent's field must not hand B what A's parent holds")
+
+			// Each session's own later calls hit its own: the parent, and the
+			// field on it.
+			for _, s := range []struct {
+				ctx     context.Context
+				session string
+				want    int
+			}{{aCtx, "session-a", 1}, {bCtx, "session-b", 2}} {
+				p, err := c.GetOrInitCall(s.ctx, s.session, noopTypeResolver{}, &CallRequest{ResultCall: parentCall.clone()}, func(context.Context) (AnyResult, error) {
+					t.Fatalf("%s must hit its own bound parent", s.session)
+					return nil, nil
+				})
+				assert.NilError(t, err)
+				again := heldBy(s.ctx, s.session, p)
+				assert.Assert(t, again.HitCache(), "%s hits its own field", s.session)
+				assert.Equal(t, s.want, cacheTestUnwrapInt(t, again))
+			}
+
+			if !made {
+				// A result that existed before the bound call held it is an
+				// ordinary value: another session's own call of it is served
+				// it.
+				childCall := cacheTestIntCall("held-child-1")
+				res, err := c.GetOrInitCall(bCtx, "session-b", noopTypeResolver{}, &CallRequest{ResultCall: childCall}, func(context.Context) (AnyResult, error) {
+					t.Fatal("A's ordinary value must be served to B's own call of it")
+					return nil, nil
+				})
+				assert.NilError(t, err)
+				assert.Assert(t, res.HitCache())
+			}
+
+			for _, s := range []struct {
+				ctx context.Context
+				id  string
+			}{{aCtx, "session-a"}, {bCtx, "session-b"}} {
+				assert.NilError(t, c.ReleaseSession(s.ctx, s.id))
+			}
+		})
+	}
 }
