@@ -2888,6 +2888,9 @@ func (fs ModuleSourceFS) Exists(ctx context.Context, path string) (string, bool,
 	if fs.src == nil {
 		return "", false, nil
 	}
+	if tree, ok := fs.workspaceGitSparseTreeFS(); ok {
+		return tree.Exists(ctx, fs.workspaceTreePath(path))
+	}
 	if fs.src.Workspace.Self() != nil {
 		dir, basename, err := fs.workspaceEntry(ctx, path)
 		if errors.Is(err, os.ErrNotExist) || status.Code(err) == codes.NotFound {
@@ -2916,6 +2919,39 @@ func (fs ModuleSourceFS) Exists(ctx context.Context, path string) (string, bool,
 	default:
 		return "", false, fmt.Errorf("unsupported module source kind: %s", fs.src.Kind)
 	}
+}
+
+// workspaceGitSparseTreeFS returns where to ask whether a path of the
+// source's workspace exists when the commit's tree alone answers for every
+// path: a Git workspace with a sparse tree, whose source is then the commit
+// itself, not an edited one, and with nothing mounted on it, since a mount
+// answers for the paths at and under it. It's asked as detection asks it, as
+// calls on the sparse tree, which is identified by the commit: an answer,
+// "absent" included, holds for that commit and path in any session and on any
+// engine, and a session served one never evaluates the tree. Any other
+// workspace's paths are read through the workspace, as for a read.
+//
+// A stat isn't asked this way: Directory.stat isn't kept, so asked of the
+// tree it would evaluate the whole tree in every session.
+func (fs ModuleSourceFS) workspaceGitSparseTreeFS() (*GitSparseTreeFS, bool) {
+	ws := fs.src.Workspace.Self()
+	if ws == nil {
+		return nil, false
+	}
+	if _, mounted := ws.MountsDir(); mounted {
+		return nil, false
+	}
+	return ws.GitSparseTreeFS()
+}
+
+// workspaceTreePath is path, relative to the source root, as a path of the
+// workspace's tree, as detection names them.
+func (fs ModuleSourceFS) workspaceTreePath(path string) string {
+	p := strings.TrimPrefix(filepath.ToSlash(filepath.Join("/", fs.src.SourceRootSubpath, path)), "/")
+	if p == "" {
+		return "."
+	}
+	return p
 }
 
 func (fs ModuleSourceFS) workspaceEntry(ctx context.Context, path string) (dagql.ObjectResult[*Directory], string, error) {
