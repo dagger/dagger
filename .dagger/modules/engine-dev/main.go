@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -183,7 +184,7 @@ func (dev *EngineDev) Container(
 	if gpuSupport {
 		builder = builder.WithGPUSupport()
 	}
-	ctr, err := dev.engine(ctx, builder, platform, version)
+	base, err := dev.engineBase(ctx, builder)
 	if err != nil {
 		return nil, err
 	}
@@ -205,7 +206,11 @@ func (dev *EngineDev) Container(
 	// nothing in them waits for the entries.
 	var engineBuilt errgroup.Group
 	engineBuilt.Go(func() error {
-		_, err := ctr.Sync(ctx)
+		ctr, err := dev.withEngine(ctx, base, builder, platform, version)
+		if err != nil {
+			return err
+		}
+		_, err = ctr.Sync(ctx)
 		return err
 	})
 	entries, digests, err := dev.imageEntries(ctx, native, builder.Platform(), sdks, dev.ImageEntries)
@@ -216,16 +221,40 @@ func (dev *EngineDev) Container(
 	if builtErr != nil {
 		return nil, builtErr
 	}
-	ctr = ctr.WithDirectory(distconsts.EngineContainerImageEntriesDir, entries)
+	// The entries go under the binaries a commit changes and over
+	// everything else: first their blobs, which change only when what they
+	// hold does, then the bundle that names them, which differs at every
+	// build.
+	ctr := base.
+		WithDirectory(distconsts.EngineContainerImageEntriesDir, entries.WithoutFile(imageEntriesBundleFile)).
+		WithFile(path.Join(distconsts.EngineContainerImageEntriesDir, imageEntriesBundleFile), entries.File(imageEntriesBundleFile))
+	ctr, err = dev.withEngine(ctx, ctr, builder, platform, version)
+	if err != nil {
+		return nil, err
+	}
 	for _, sdk := range sdks {
 		ctr = ctr.WithEnvVariable(sdk.EnvName, digests[sdk.Name])
 	}
 	return ctr, nil
 }
 
+// imageEntriesBundleFile is the bundle in an image's entries, beside the
+// blobs it names (core/schema's EngineImageBundleFile).
+const imageEntriesBundleFile = "bundle.json"
+
 // engine is the engine container builder builds, without the entries its
 // image ships.
 func (dev *EngineDev) engine(ctx context.Context, builder *build.Builder, platform dagger.Platform, version string) (*dagger.Container, error) {
+	base, err := dev.engineBase(ctx, builder)
+	if err != nil {
+		return nil, err
+	}
+	return dev.withEngine(ctx, base, builder, platform, version)
+}
+
+// engineBase is the engine container builder builds, with its configuration,
+// without the binaries a commit of the source changes (withEngine).
+func (dev *EngineDev) engineBase(ctx context.Context, builder *build.Builder) (*dagger.Container, error) {
 	cfg, err := generateConfig(dev.LogLevel)
 	if err != nil {
 		return nil, err
@@ -239,7 +268,7 @@ func (dev *EngineDev) engine(ctx context.Context, builder *build.Builder, platfo
 		return nil, err
 	}
 
-	ctr, err := builder.Engine(ctx)
+	ctr, err := builder.EngineBase(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -247,22 +276,28 @@ func (dev *EngineDev) engine(ctx context.Context, builder *build.Builder, platfo
 		ctr = ctr.WithEnvVariable("DAGGER_EBPF_PROG_"+strings.ToUpper(prog), "y")
 	}
 
-	ctr = ctr.
+	return ctr.
 		WithFile(engineJSONPath, cfg).
 		WithFile(engineTOMLPath, engineTOML).
 		WithFile(engineEntrypointPath, entrypoint).
-		WithEntrypoint([]string{filepath.Base(engineEntrypointPath)})
+		WithEntrypoint([]string{filepath.Base(engineEntrypointPath)}), nil
+}
 
+// withEngine is ctr with the binaries a commit of the source changes: the
+// engine's (builder's WithEngineBinaries), then the CLI. They are the image's
+// last layers, so that an image of another commit shares every layer below
+// them.
+func (dev *EngineDev) withEngine(ctx context.Context, ctr *dagger.Container, builder *build.Builder, platform dagger.Platform, version string) (*dagger.Container, error) {
+	ctr, err := builder.WithEngineBinaries(ctx, ctr)
+	if err != nil {
+		return nil, err
+	}
 	cli := clidev.New(clidev.CLIDevOpts{Version: version, Ws: dev.Ws}).Binary(clidev.CLIDevBinaryOpts{
 		Platform: platform,
 	})
-	ctr = ctr.
+	return ctr.
 		WithFile(cliPath, cli).
-		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", distconsts.DefaultEngineSockAddr)
-
-	// ctr = ctr.WithEnvVariable("BUILDKIT_SCHEDULER_DEBUG", "1")
-
-	return ctr, nil
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", distconsts.DefaultEngineSockAddr), nil
 }
 
 // goSDK is go-sdk's tree at the commit this workspace's module go-sdk pins
