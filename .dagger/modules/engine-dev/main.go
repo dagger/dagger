@@ -1049,6 +1049,14 @@ func releaseVersionFromTags(tags []string) string {
 	return ""
 }
 
+// imageSourceDateEpoch is the time every file of a published engine image
+// carries (Container.publish's sourceDateEpoch), in seconds: one constant, not
+// the commit's time, so that a layer whose files didn't change is the same
+// bytes in every image, and a host that holds one image pulls only the layers
+// the next one changed. It is 1980-01-02T00:00:00Z: zip can't hold a time
+// before 1980, and in no time zone is this one before it.
+const imageSourceDateEpoch = 315619200
+
 func (dev *EngineDev) pushTargets(
 	ctx context.Context,
 	targetResults []targetResult,
@@ -1071,6 +1079,7 @@ func (dev *EngineDev) pushTargets(
 						PlatformVariants: result.Platforms,
 						// use gzip to avoid incompatibility w/ older docker versions
 						ForcedCompression: dagger.ImageLayerCompressionGzip,
+						SourceDateEpoch:   imageSourceDateEpoch,
 					}); err != nil {
 						return err
 					}
