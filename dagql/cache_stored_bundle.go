@@ -102,9 +102,10 @@ type HeldBy struct {
 	// calls of one term are one call to the cache, and a check's own call
 	// names its inputs by its own recipes, keyed to its client, which the
 	// Cloud may store no record of when another client's equivalent input
-	// is the one it stores. A term none of whose calls it names is left out
-	// before its call is chosen: it isn't counted unsendable, marks nothing
-	// partial, and adds none of its inputs. Without it, every term may go.
+	// is the one it stores. A term none of whose calls it names, and that
+	// Terms doesn't name, is left out before its call is chosen: it isn't
+	// counted unsendable, marks nothing partial, and adds none of its
+	// inputs. Without it, every term may go.
 	// It is called under the cache's lock, as Also is.
 	Calls func(request digest.Digest) bool
 	// Terms, with Calls, names more terms a bundle for the recipient may
@@ -116,10 +117,43 @@ type HeldBy struct {
 	Terms []RemoteTerm
 }
 
-// sendableLocked returns group, the kept calls of one term, when a bundle
-// for the recipient may send that term (Calls names one of its calls), or
-// nil. Requires egraphMu.
-func (h *HeldBy) sendableLocked(group []*keptCall) []*keptCall {
+// heldTerms returns h's terms by self digest, which a term's key begins
+// with (keptCallTermKeyLocked); nil when h names none.
+func heldTerms(h *HeldBy) map[digest.Digest][]RemoteTerm {
+	if h == nil || h.Calls == nil || len(h.Terms) == 0 {
+		return nil
+	}
+	terms := make(map[digest.Digest][]RemoteTerm, len(h.Terms))
+	for _, term := range h.Terms {
+		terms[term.Self] = append(terms[term.Self], term)
+	}
+	return terms
+}
+
+// namedTermLocked reports whether kept's term is one of terms. Both keys
+// are taken now, over the classes the inputs have under this hold: a walk
+// that lets egraphMu go between entries sees classes merged meanwhile,
+// which move a class's root, and a key taken before would name the old
+// one. Requires egraphMu.
+func (c *Cache) namedTermLocked(terms map[digest.Digest][]RemoteTerm, kept *keptCall) bool {
+	candidates := terms[kept.id.self]
+	if len(candidates) == 0 {
+		return false
+	}
+	key := c.keptCallTermKeyLocked(kept)
+	for _, term := range candidates {
+		if c.keptCallTermKeyLocked(&keptCall{id: callIdentity{self: term.Self, inputs: term.Inputs}}) == key {
+			return true
+		}
+	}
+	return false
+}
+
+// sendableCallsLocked returns group, the kept calls of one term, when a
+// bundle for the recipient h may send that term: h names no calls, Calls
+// names one of the group's, or the term is one of h's Terms (terms, by self
+// digest: heldTerms). Otherwise it returns nil. Requires egraphMu.
+func (c *Cache) sendableCallsLocked(h *HeldBy, terms map[digest.Digest][]RemoteTerm, group []*keptCall) []*keptCall {
 	if h == nil || h.Calls == nil {
 		return group
 	}
@@ -127,6 +161,9 @@ func (h *HeldBy) sendableLocked(group []*keptCall) []*keptCall {
 		if h.Calls(kept.id.recipe) {
 			return group
 		}
+	}
+	if len(group) > 0 && c.namedTermLocked(terms, group[0]) {
+		return group
 	}
 	return nil
 }
@@ -365,7 +402,7 @@ func (c *Cache) storedBundleWalkLocked(rootEntries []*sharedResult, nowUnix int6
 	for _, res := range rootEntries {
 		seenRoot[res.id] = true
 	}
-	build := &storedBundleBuild{now: nowUnix, ordinals: map[sharedResultID]TransferOrdinal{}, heldBy: held, notWhole: notWhole, held: map[sharedResultID]bool{},
+	build := &storedBundleBuild{now: nowUnix, ordinals: map[sharedResultID]TransferOrdinal{}, heldBy: held, terms: heldTerms(held), notWhole: notWhole, held: map[sharedResultID]bool{},
 		owners: map[sharedResultID]int{}, ordinary: map[sharedResultID]bool{}, rootSeen: seenRoot}
 	build.bundle.Version = ValueBundleVersion
 	if c.identity.ID != "" {
@@ -496,7 +533,9 @@ type storedBundleBuild struct {
 	// heldBy says which entries the recipient holds, but those of notWhole
 	// (HeldBy.Whole), and held are the closure's entries that become held
 	// rows.
-	heldBy   *HeldBy
+	heldBy *HeldBy
+	// terms are the recipient's named terms by self digest (heldTerms).
+	terms    map[digest.Digest][]RemoteTerm
 	notWhole map[sharedResultID]bool
 	held     map[sharedResultID]bool
 	// rootSeen are the roots' entries, and callRoots the entries added as
