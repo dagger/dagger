@@ -1592,6 +1592,13 @@ func (s *Server) LoadType(ctx context.Context, id *call.ID) (ret AnyResult, rerr
 			rerr = fmt.Errorf("load %s: %w: %q", id.Display(), ErrCacheSessionReleased, sessionID)
 		}
 	}()
+	// A resolver handed a session's bound result by its ID is bound, as one
+	// handed it by a nested call is (Cache.bindCallerHandedBound).
+	defer func() {
+		if rerr == nil {
+			cache.bindCallerHandedBound(ctx, sessionID, ret, "a load by ID")
+		}
+	}()
 	if id.IsHandle() {
 		res, err := cache.loadResultByResultID(ctx, sessionID, s, id.EngineResultID())
 		if err != nil {
