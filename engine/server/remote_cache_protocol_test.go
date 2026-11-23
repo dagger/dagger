@@ -149,7 +149,8 @@ func TestRemoteCacheAdapterDoesNotKnowARowAMergeKeepsTheEnginesValueOn(t *testin
 // counts the rows it kept that aren't known at their revisions: those an
 // export carries in full, by whether the engine's value is its own or a
 // record the service sent before. A kept row known at its revision stays
-// known and counts in neither.
+// known and counts in neither, and so does one kept on an entry the same
+// merge stored another record of its recipe on.
 func TestKnowMergedCountsTheKeptRowsAnExportCarriesInFull(t *testing.T) {
 	t.Parallel()
 	known := dagql.NewKnownRows()
@@ -161,6 +162,8 @@ func TestKnowMergedCountsTheKeptRowsAnExportCarriesInFull(t *testing.T) {
 		{Number: 2, Revision: before},
 		{Number: 3, Revision: moved},
 		{Number: 4, Revision: before, Own: true},
+		{Number: 5, Revision: before},
+		{Number: 5, Revision: before, Stored: true},
 	}})
 	require.Equal(t, 1, own, "the engine's own value")
 	require.Equal(t, 1, sent, "the record sent before, at revisions that moved since")
