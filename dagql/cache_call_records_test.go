@@ -3,6 +3,7 @@ package dagql
 import (
 	"context"
 	"fmt"
+	"maps"
 	"path/filepath"
 	"slices"
 	"testing"
@@ -562,6 +563,114 @@ func TestACallWhoseInputTheCloudKnowsOnlyByItsClassIsSent(t *testing.T) {
 		})
 	require.NoError(t, err)
 	require.False(t, ran, "a fresh engine's client hits outer on its own receiver by its term")
+}
+
+// attachCallOnB has cache-b report outer on its own receiver B, equal in
+// content to A's, returning inner, with the expiry its span reports. With
+// stored, the Cloud stores B's receiver from cache-b's export; without, it
+// only knows B's receiver's recipe, in A's class by their content. It
+// returns B's call's request digest and its encoding.
+func (test *receiverCallTest) attachCallOnB(t *testing.T, stored bool, expiresAtUnix int64) (digest.Digest, string) {
+	t.Helper()
+	cloud := test.cloud
+	bctx, b, bsrv := transferTestCache(t)
+	callB := receiverTestCall("b")
+	requestB, err := callB.deriveRecipeDigest(b)
+	require.NoError(t, err)
+	pb, err := callB.callPB(b)
+	require.NoError(t, err)
+	encodedB, err := pb.Encode()
+	require.NoError(t, err)
+	if stored {
+		inner := persistedListTestResult(t, bctx, b, bsrv, "inner", &transferTestValue{Text: "inner"})
+		receiverB, err := b.GetOrInitCall(bctx, "test-session", bsrv, &CallRequest{ResultCall: receiverTestFrame("b"), IsPersistable: true},
+			func(context.Context) (AnyResult, error) {
+				return NewResultForCall(&transferTestValue{Text: "receiver"}, receiverTestFrame("b"))
+			})
+		require.NoError(t, err)
+		_, err = b.GetOrInitCall(bctx, "test-session", bsrv, &CallRequest{ResultCall: callB, IsPersistable: true},
+			func(context.Context) (AnyResult, error) { return inner, nil })
+		require.NoError(t, err)
+		_, err = cloud.MergeValues(test.ctx, "cache-b", exportTestBundle(t, bctx, b, inner, receiverB))
+		require.NoError(t, err)
+		bTest := &callRecordTest{ctx: bctx, producer: b, frame: callB, inner: inner, cloud: cloud}
+		_, err = cloud.AttachRemoteHolding(test.ctx, HolderKey{Cache: "cache-b", Number: uint64(inner.cacheSharedResult().id)}, bTest.span(t, true, expiresAtUnix))
+		require.NoError(t, err)
+		return requestB, encodedB
+	}
+	inner, err := test.inner.cacheSharedResult().loadResultCall().deriveRecipeDigest(test.producer)
+	require.NoError(t, err)
+	receiverB, err := receiverTestFrame("b").deriveRecipeDigest(b)
+	require.NoError(t, err)
+	selfB, _, err := callB.selfDigestAndInputRefs(b)
+	require.NoError(t, err)
+	_, err = cloud.AttachRemoteHolding(test.ctx, HolderKey{Cache: "cache-b", Number: 1},
+		RemoteHolding{Recipe: receiverB, Field: "receiver", ContentDigest: digest.FromString("receiver content")})
+	require.NoError(t, err)
+	_, err = cloud.AttachRemoteHolding(test.ctx, HolderKey{Cache: "cache-b", Number: 2},
+		RemoteHolding{Recipe: inner, Request: requestB, Field: "outer", Call: encodedB, Term: &RemoteTerm{Self: selfB}, ExpiresAtUnix: expiresAtUnix})
+	require.NoError(t, err)
+	return requestB, encodedB
+}
+
+// keptCallRequests are the request digests of the calls the Cloud keeps on
+// its entry number.
+func keptCallRequests(cloud *Cache, number uint64) []digest.Digest {
+	entry := storedBundleTestEntry(cloud, number)
+	cloud.egraphMu.RLock()
+	defer cloud.egraphMu.RUnlock()
+	return slices.Sorted(maps.Keys(entry.calls))
+}
+
+// A call of a term its entry keeps a call of adds nothing a bundle sends: a
+// bundle sends one call of a term, and the cache matches the term, as a
+// local cache adds no second term of a term it has. A's call, whose receiver
+// the Cloud stores, is kept; B's call of the same term on its own receiver,
+// which the Cloud knows in A's class but stores no record of, is not. The
+// entry still takes B's call's expiry, the earlier, as a local cache's entry
+// takes the earliest of its calls'.
+func TestACallOfAKeptTermIsNotKeptAgain(t *testing.T) {
+	t.Parallel()
+	test := newReceiverCallTest(t)
+	requestA, err := test.frame.deriveRecipeDigest(test.producer)
+	require.NoError(t, err)
+	expires := time.Now().Add(time.Hour).Unix()
+	test.attachCallOnB(t, false, expires)
+	require.Equal(t, []digest.Digest{requestA}, keptCallRequests(test.cloud, test.number), "one call of the term: A's")
+	built, err := test.cloud.StoredBundle(test.ctx, []uint64{test.number}, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	var got int64
+	for _, value := range built.Bundle.Values {
+		if value.SenderNumber == test.number {
+			got = value.ExpiresAtUnix
+		}
+	}
+	require.Equal(t, expires, got, "the entry takes B's call's expiry")
+}
+
+// A kept call the Cloud can't place, its receiver stored under no recipe of
+// its own, gives way to a call of its term whose receiver the Cloud stores:
+// the one call the entry keeps of the term is then one a bundle can send,
+// with the receiver it names.
+func TestAnUnplaceableKeptCallGivesWayToAPlaceableOneOfItsTerm(t *testing.T) {
+	t.Parallel()
+	test := newReceiverCallTest(t)
+	cloud := test.cloud
+	cloud.egraphMu.Lock()
+	cloud.unindexRecipesLocked(cloud.resultsByID[sharedResultID(test.receiverNumber)])
+	cloud.egraphMu.Unlock()
+	built, err := cloud.StoredBundle(test.ctx, []uint64{test.number}, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	require.Empty(t, built.Bundle.Calls, "A's call can't be placed")
+
+	requestB, encodedB := test.attachCallOnB(t, true, 0)
+	require.Equal(t, []digest.Digest{requestB}, keptCallRequests(cloud, test.number), "B's call replaces A's")
+	built, err = cloud.StoredBundle(test.ctx, []uint64{test.number}, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	require.Len(t, built.Bundle.Calls, 1)
+	require.Equal(t, encodedB, built.Bundle.Calls[0].Call)
+	require.Len(t, built.CallInputs, 1, "with B's receiver")
+	require.Zero(t, built.UnsendableCalls)
 }
 
 // A bundle for a recipient that names a term none of whose kept calls is
