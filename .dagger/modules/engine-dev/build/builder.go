@@ -247,13 +247,16 @@ func (build *Builder) WithEngineBinaries(ctx context.Context, ctr *dagger.Contai
 		{path: "/opt/cni/bin/dnsname", file: build.dnsnameBinary()},
 		{path: consts.DaggerInitPath, file: build.daggerInit()},
 	}).WithSymlink("/usr/bin/dial-stdio", "/usr/bin/buildctl")
+	initSession := build.binDir(ctx, eg, []binAndPath{
+		{path: consts.DaggerInitSessionPath, file: build.binary("./cmd/init-session")},
+	})
 	engine := build.engineBinary(build.race)
 	eg.Go(func() error {
 		return build.verifyPlatform(ctx, engine)
 	})
 	ctr = ctr.
 		WithDirectory("/", helpers).
-		WithFile(consts.DaggerInitSessionPath, build.binary("./cmd/init-session")).
+		WithDirectory("/", initSession).
 		WithFile(consts.EngineServerPath, engine)
 	if err := eg.Wait(); err != nil {
 		return nil, err
