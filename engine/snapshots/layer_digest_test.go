@@ -98,11 +98,25 @@ func TestLayerDigesterHoldsABoundedAmount(t *testing.T) {
 }
 
 // A digester closed without its digest, as on a failed write, lets go of
-// what it holds and stops.
+// what it holds and its hash ends; one that never filled a piece never
+// started one.
 func TestLayerDigesterClosesWithoutItsDigest(t *testing.T) {
 	t.Parallel()
 	d := newLayerDigester()
 	writeInChunks(t, d, bytes.Repeat([]byte{1}, 3<<20))
+	require.NotNil(t, d.done, "3 MiB fills pieces, which start the hash")
 	d.Close()
+	select {
+	case <-d.done:
+	default:
+		t.Fatal("the hash goes on after Close")
+	}
+	require.Nil(t, d.piece)
 	d.Close()
+
+	small := newLayerDigester()
+	writeInChunks(t, small, bytes.Repeat([]byte{1}, 300<<10))
+	small.Close()
+	require.Nil(t, small.done, "less than a piece starts no hash")
+	require.Nil(t, small.piece)
 }
