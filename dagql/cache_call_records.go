@@ -17,13 +17,14 @@ import (
 // (indexWaitResultInEgraphLocked). A record carries only its entry's own call,
 // so another engine that gets the entry wouldn't know the call returned it.
 //
-// The Cloud keeps each call its engines' spans report returning one of its
-// entries, as the span encodes it, on that entry, and StoredBundle sends the
-// calls with the entry. The receiving engine derives each call's identity
-// itself and teaches it onto the entry (teachCallIdentityLocked), as its own
-// cache would have when the call completed. A call no other session can ever
-// match (ResultCall.onlyItsSessionMatches), such as one keyed to the client
-// that made it, isn't kept: no receiving engine could use it.
+// The Cloud keeps a call its engines' spans report returning one of its
+// entries, as the span encodes it, on that entry, one call of each term
+// (keepTermCallLocked), and StoredBundle sends the calls with the entry. The
+// receiving engine derives each call's identity itself and teaches it onto
+// the entry (teachCallIdentityLocked), as its own cache would have when the
+// call completed. A call no other session can ever match
+// (ResultCall.onlyItsSessionMatches), such as one keyed to the client that
+// made it, isn't kept: no receiving engine could use it.
 
 // keptCall is a call the Cloud keeps on the entry it returned: its encoding
 // and the identity derived from it.
@@ -65,10 +66,11 @@ func decodeKeptCall(encoded string, request digest.Digest) (*keptCall, error) {
 	return &keptCall{encoded: encoded, id: id}, nil
 }
 
-// keepCallLocked keeps kept, a call that returned entry, on entry, once per
-// request digest, and gives the entry the expiry the span reports: as a
-// local cache does when a call completes returning an existing entry, the
-// entry's expiry is the earliest of its calls'. A request digest names a
+// keepCallLocked keeps kept, a call that returned entry, on entry, unless
+// the entry keeps a call of its term (keepTermCallLocked), and gives the
+// entry the expiry the span reports: as a local cache does when a call
+// completes returning an existing entry, the entry's expiry is the earliest
+// of its calls'. A request digest names a
 // computation, not a completion, so a call already kept can still report a
 // new one. A completion expires after it, so a span whose expiry has passed
 // reports a call that has expired, which no engine may hit: it is read again,
@@ -90,23 +92,74 @@ func (c *Cache) keepCallLocked(change *RemoteChange, entry *sharedResult, desc R
 		changed = true
 	}
 	if kept != nil {
-		if _, ok := entry.calls[kept.id.recipe]; !ok {
-			// A stored bundle of the entry carries its kept calls. The cause
-			// tells a new term the bundle can send from one it has (a term
-			// the entry's calls already derive) and one it can't (an input
-			// with no stored record of its own recipe), for diagnostics.
-			cause := c.keptCallCauseLocked(entry, kept)
-			if entry.calls == nil {
-				entry.calls = make(map[digest.Digest]*keptCall)
-			}
-			entry.calls[kept.id.recipe] = kept
-			c.stampEntryLocked(entry, cause)
-			c.indexKeptCallLocked(entry, kept)
-			c.noteSharedWriteLocked(change, SharedKeptCall)
+		if _, ok := entry.calls[kept.id.recipe]; !ok && c.keepTermCallLocked(change, entry, kept) {
 			changed = true
 		}
 	}
 	return changed && !entry.noValueLocked() && entry.persistedEnvelope != nil
+}
+
+// keepTermCallLocked keeps kept on entry as the one call of its term, and
+// reports whether it did. The calls of one term are one call to the cache,
+// which matches a call by its term, and a bundle sends one call of a term,
+// one the recipient can place (placeableCallLocked): a local cache adds no
+// second term of a term it has (indexWaitResultInEgraphLocked). So a call of
+// a term the entry keeps a call of adds nothing, unless the kept call names
+// an input the Cloud stores no record of, which no bundle can place, and
+// kept names none such: kept then replaces it. A stored bundle of the entry
+// carries its kept calls, so a call kept stamps the entry, with a cause that
+// tells a term the bundle can send from one it can't, for diagnostics.
+// Requires egraphMu for writing.
+func (c *Cache) keepTermCallLocked(change *RemoteChange, entry *sharedResult, kept *keptCall) bool {
+	stored := c.keptCallStoredLocked(kept)
+	key := c.keptCallTermKeyLocked(kept)
+	for _, other := range entry.calls {
+		if c.keptCallTermKeyLocked(other) != key {
+			continue
+		}
+		if !stored || c.keptCallStoredLocked(other) {
+			return false
+		}
+		c.dropKeptCallLocked(entry, other)
+		break
+	}
+	cause := StampKeptCallNewTerm
+	if !stored {
+		cause = StampKeptCallUnsendable
+	}
+	if entry.calls == nil {
+		entry.calls = make(map[digest.Digest]*keptCall)
+	}
+	entry.calls[kept.id.recipe] = kept
+	c.stampEntryLocked(entry, cause)
+	c.indexKeptCallLocked(entry, kept)
+	c.noteSharedWriteLocked(change, SharedKeptCall)
+	return true
+}
+
+// dropKeptCallLocked forgets kept, a call entry keeps, and its index under
+// each of its inputs that no other call entry keeps names. Requires egraphMu
+// for writing.
+func (c *Cache) dropKeptCallLocked(entry *sharedResult, kept *keptCall) {
+	delete(entry.calls, kept.id.recipe)
+	for _, input := range kept.id.inputs {
+		named := false
+		for _, other := range entry.calls {
+			if slices.Contains(other.id.inputs, input) {
+				named = true
+				break
+			}
+		}
+		if named {
+			continue
+		}
+		entries := c.callInputEntries[input.String()]
+		delete(entries, entry.id)
+		if len(entries) == 0 {
+			delete(c.callInputEntries, input.String())
+		}
+	}
+	entry.callTerms.Store(nil)
 }
 
 // storedBundleCallsLocked adds to the build, for each of its entries from
@@ -186,22 +239,20 @@ func (c *Cache) keptCallTermKeyLocked(kept *keptCall) string {
 	return key
 }
 
-// keptCallCauseLocked says what keeping kept on entry, before it is kept,
-// changes in a stored bundle of the entry (StampCause): a call of a term the
-// entry's calls already derive, one with an input no bundle can place (no
-// stored entry of the input's class; a witness needs none), or a new term a
-// bundle can send. Requires egraphMu.
-func (c *Cache) keptCallCauseLocked(entry *sharedResult, kept *keptCall) StampCause {
-	if rank, _ := c.callPlacementLocked(kept, time.Now().Unix(), func(*sharedResult) bool { return false }); rank == placementNone {
-		return StampKeptCallUnsendable
-	}
-	key := c.keptCallTermKeyLocked(kept)
-	for _, other := range entry.calls {
-		if c.keptCallTermKeyLocked(other) == key {
-			return StampKeptCallOldTerm
+// keptCallStoredLocked reports whether the Cloud stores a record of every
+// input kept names by its own recipe, so that a bundle can place the call
+// with what the Cloud stores (placeableCallLocked); a witness needs none.
+// Requires egraphMu.
+func (c *Cache) keptCallStoredLocked(kept *keptCall) bool {
+	for i, input := range kept.id.inputs {
+		if kept.id.witnesses[i] {
+			continue
+		}
+		if in := c.currentEntryForRecipeLocked(input); in == nil || in.noValueLocked() || in.persistedEnvelope == nil {
+			return false
 		}
 	}
-	return StampKeptCallNewTerm
+	return true
 }
 
 // verifyKeptCallTerms, set only by tests, checks every kept grouping of an
