@@ -616,6 +616,32 @@ func TestRestoreMergesHeadsBesideWholes(t *testing.T) {
 	require.Equal(t, uint64(2), conn.next(t).Re)
 }
 
+// Heads merge part by part in turn: every head's first part, which carries
+// what its check's run asks for first, merges before any head's second, and
+// among heads that have merged as many parts the earliest to arrive goes
+// first. Here two claims are offered together, as an engine's first claims
+// are, and headA's three parts don't hold up headB's first.
+func TestRestoreMergesHeadsPartByPartInTurn(t *testing.T) {
+	t.Parallel()
+	adapter := newFakeAdapter()
+	adapter.restore = func(_ context.Context, part dagql.ValueBundle, _ *dagql.KnownRows) (dagql.MergeReply, error) {
+		return merged(part, time.Now()), nil
+	}
+	s, conn := restoreSession(t, adapter)
+	files := newFileServer(t)
+	headA := files.add("headA", setFile(t, dagql.ValueBundleVersion, part(11), part(12), part(13)))
+	gate := files.gate("headA")
+	headB := files.add("headB", setFile(t, dagql.ValueBundleVersion, part(21), part(22)))
+
+	// headA's download ends once both are queued.
+	s.dispatch(request(t, 1, protocol.TypeRestore, restoreOf("a", &headA, nil)))
+	s.dispatch(request(t, 2, protocol.TypeRestore, restoreOf("b", &headB, nil)))
+	close(gate)
+	require.Equal(t, []uint64{11, 21, 12, 22, 13}, seen(t, adapter, 5), "each head's next part in turn, headA first among equals")
+	require.Equal(t, uint64(2), conn.next(t).Re, "headB, done first, is answered first")
+	require.Equal(t, uint64(1), conn.next(t).Re)
+}
+
 // Two wholes whose parts merge in turn, one of each file after the other,
 // each answer with their own records' entries, complete: a whole's reply is
 // built from its own parts' merges alone, on its own lane.
