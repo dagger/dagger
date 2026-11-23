@@ -229,17 +229,23 @@ func (build *Builder) EngineBase(ctx context.Context) (*dagger.Container, error)
 }
 
 // WithEngineBinaries is ctr with the engine's binaries built from the source:
-// its helpers in one layer, then the engine in its own. A commit of the
-// source changes them, and a layer is made again, and unpacked again on a
-// host, whenever a layer below it changes; so they go above every layer a
-// commit leaves alone, the image's entries among them.
+// dial-stdio, dnsname and dagger-init in one layer, then dagger-init-session
+// in its own, then the engine in its own. A commit of the source changes
+// them, and a layer is made again, and unpacked again on a host, whenever a
+// layer below it changes; so they go above every layer a commit leaves
+// alone, the image's entries among them, and up in the order of how often a
+// commit changes them. The first three build from a handful of the source's
+// packages (the engine package's constants, the DNS hosts file, the init
+// process), which few commits change. dagger-init-session is a client of the
+// engine: it builds from the engine's client package and, through it,
+// telemetry, the profiler, the snapshotter and dagql's call IDs, which most
+// commits change, as they change the engine.
 func (build *Builder) WithEngineBinaries(ctx context.Context, ctr *dagger.Container) (*dagger.Container, error) {
 	eg, ctx := errgroup.WithContext(ctx)
 	helpers := build.binDir(ctx, eg, []binAndPath{
 		{path: "/usr/bin/dial-stdio", file: build.dialstdioBinary()},
 		{path: "/opt/cni/bin/dnsname", file: build.dnsnameBinary()},
 		{path: consts.DaggerInitPath, file: build.daggerInit()},
-		{path: consts.DaggerInitSessionPath, file: build.binary("./cmd/init-session")},
 	}).WithSymlink("/usr/bin/dial-stdio", "/usr/bin/buildctl")
 	engine := build.engineBinary(build.race)
 	eg.Go(func() error {
@@ -247,6 +253,7 @@ func (build *Builder) WithEngineBinaries(ctx context.Context, ctr *dagger.Contai
 	})
 	ctr = ctr.
 		WithDirectory("/", helpers).
+		WithFile(consts.DaggerInitSessionPath, build.binary("./cmd/init-session")).
 		WithFile(consts.EngineServerPath, engine)
 	if err := eg.Wait(); err != nil {
 		return nil, err
