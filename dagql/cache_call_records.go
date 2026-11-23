@@ -115,9 +115,9 @@ func (c *Cache) keepCallLocked(change *RemoteChange, entry *sharedResult, desc R
 // the recipient can place (placeableCallLocked). Each of the call's inputs
 // goes with the row of the entry that places it, an entry of the input's
 // class (TransferredCall.Inputs): one the bundle carries in the closure of a
-// root so far; else one the recipient holds, as a held row, or the Cloud
-// stores, which the bundle carries with the root whose entry's call needs
-// it. An input another call added doesn't place a call,
+// root so far; else one the recipient holds, as a held row the call alone
+// names; else one the Cloud stores, which the bundle carries as a root of its
+// own, with the root whose entry's call needs it. An input another call added doesn't place a call,
 // nor does a later root's closure: the calls chosen are those StoredSizes
 // prices, root by root. A term none of whose calls can be placed is counted,
 // and sends nothing. Only the terms the recipient's check made are candidates
@@ -148,18 +148,19 @@ func (c *Cache) storedBundleCallsLocked(build *storedBundleBuild, start int) err
 				if place == nil {
 					continue
 				}
-				if build.ordinals[place.id] == 0 {
-					if err := c.storedBundleVisitLocked(build, place, map[sharedResultID]bool{}); err != nil {
-						return fmt.Errorf("call %s input: %w", chosen.id.recipe, err)
-					}
-					// A merge installs only what its roots need, so an input
-					// entry travels as a root: one the recipient holds as a
-					// held row, which carries no copy of its record.
-					if !build.rootSeen[place.id] {
-						build.rootSeen[place.id] = true
-						build.callRoots = append(build.callRoots, place)
-						build.callInputs = append(build.callInputs, uint64(place.id))
-					}
+				if err := c.storedBundleVisitLocked(build, place, map[sharedResultID]bool{}); err != nil {
+					return fmt.Errorf("call %s input: %w", chosen.id.recipe, err)
+				}
+				// A merge installs only what its roots need, so a stored
+				// input entry the roots' closures don't carry travels as a
+				// root of its own: carried below another call's input, it
+				// would go if that one expired. One the recipient holds
+				// goes as a held row the call alone names, no root: a merge
+				// that doesn't find it then drops the call, not the bundle.
+				if !build.ordinary[place.id] && !build.held[place.id] && !build.rootSeen[place.id] {
+					build.rootSeen[place.id] = true
+					build.callRoots = append(build.callRoots, place)
+					build.callInputs = append(build.callInputs, uint64(place.id))
 				}
 				inputs[j] = build.ordinals[place.id]
 			}
