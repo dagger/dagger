@@ -382,7 +382,8 @@ func TestStoredBundleAfterARestore(t *testing.T) {
 	require.NoError(t, err)
 	// The write count isn't saved: a restored cache counts its writes
 	// afresh, so the positions aren't compared.
-	before.Position = 0
+	// The restored Cloud counts its writes again from its start.
+	before.Position, before.Bundle = 0, bundleWithoutChangeStamps(before.Bundle)
 	want, err := json.Marshal(before)
 	require.NoError(t, err)
 	require.NoError(t, cloud.Close(ctx))
@@ -395,7 +396,7 @@ func TestStoredBundleAfterARestore(t *testing.T) {
 	require.False(t, normalized, "a restore starts with no normalized record")
 	after, err := cloud.StoredBundle(ctx, []uint64{root}, time.Now().Unix(), nil)
 	require.NoError(t, err)
-	after.Position = 0
+	after.Position, after.Bundle = 0, bundleWithoutChangeStamps(after.Bundle)
 	got, err := json.Marshal(after)
 	require.NoError(t, err)
 	require.JSONEq(t, string(want), string(got))
