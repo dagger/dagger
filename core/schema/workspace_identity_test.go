@@ -67,3 +67,25 @@ func TestWorkspaceMadeAnotherWayMeetsEarlierReads(t *testing.T) {
 	require.Equal(t, identity(t, first, moved), identity(t, later, given), "the two workspaces hold the same")
 	require.True(t, read(t, later, given).HitCache(), "the later session's read is the first's, not made again")
 }
+
+// A workspace without a content identity, read from a client's host, keeps
+// its result as it is: its files can change between calls.
+func TestHostWorkspaceResultCarriesNoIdentity(t *testing.T) {
+	t.Parallel()
+	e := newTransferTestEngine(t, transferTestSalt(t))
+	ctx := e.session(t, "host")
+	host := &core.Workspace{ClientID: "host-client"}
+	host.SetHostPath("/src")
+	host.SetSource(core.NewWorkspaceSourceClientLocal("/src"))
+	require.False(t, host.HasContentIdentity())
+	res, err := dagql.NewObjectResultForCall(host, e.dag, &dagql.ResultCall{
+		Kind:        dagql.ResultCallKindSynthetic,
+		SyntheticOp: "host-workspace",
+		Type:        dagql.NewResultCallType(host.Type()),
+	})
+	require.NoError(t, err)
+	got := identifiedWorkspaceResult(ctx, res)
+	frame, err := got.ResultCall()
+	require.NoError(t, err)
+	require.Empty(t, frame.ContentDigest(), "a host workspace is not identified by its content")
+}

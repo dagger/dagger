@@ -40,7 +40,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 	core.PatchConflicts.Install(srv, AfterVersion("v1.0.0-0"))
 	dagql.Fields[*core.Stat]{}.Install(srv)
 
-	dagql.Fields[*core.Directory]{
+	identifyWorkspaceResults(dagql.Fields[*core.Directory]{
 		Syncer[*core.Directory]().
 			Doc(`Force evaluation in the engine.`),
 		dagql.Func("pipeline", s.pipeline).
@@ -347,7 +347,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("err").Doc(`Message of the error to raise. If empty, the error will be ignored.`),
 			),
-	}.Install(srv)
+	}).Install(srv)
 
 	dagql.Fields[*core.SearchResult]{}.Install(srv)
 	dagql.Fields[*core.SearchSubmatch]{}.Install(srv)
