@@ -711,6 +711,55 @@ func TestAnUnplaceableKeptCallGivesWayToAPlaceableOneOfItsTerm(t *testing.T) {
 	require.Zero(t, built.UnsendableCalls)
 }
 
+// A call of a kept term whose receiver the Cloud stores only after the call
+// came is sent once a receiver of its class is stored, though no call of the
+// term could be placed when it came. On a fill a call often comes before its
+// receiver is exported. The Cloud stores A's receiver under no recipe of its
+// own and in no class, and B's call comes while the Cloud knows B's receiver
+// only by its content, in A's class: neither call can be placed, and the
+// entry keeps A's, the term's first. cache-b's export then stores B's
+// receiver, which places A's call by its class. A bundle for a recipient
+// whose check made B's call, naming B's call and its term as a set does,
+// sends A's call with B's receiver standing for A's, and a fresh engine hits
+// it.
+func TestACallOfAKeptTermIsSentOnceAReceiverOfItsClassIsStored(t *testing.T) {
+	t.Parallel()
+	test := newReceiverCallTest(t)
+	cloud := test.cloud
+	cloud.egraphMu.Lock()
+	cloud.unindexRecipesLocked(cloud.resultsByID[sharedResultID(test.receiverNumber)])
+	cloud.removeResultOutputEqClassesLocked(sharedResultID(test.receiverNumber))
+	cloud.egraphMu.Unlock()
+	requestA, err := test.frame.deriveRecipeDigest(test.producer)
+	require.NoError(t, err)
+	requestB, _ := test.attachCallOnB(t, false, 0)
+	require.Equal(t, []digest.Digest{requestA}, keptCallRequests(cloud, test.number), "the term's first call, A's")
+	selfB, _, err := receiverTestCall("b").selfDigestAndInputRefs(test.producer)
+	require.NoError(t, err)
+	recipeB, err := receiverTestFrame("b").deriveRecipeDigest(test.producer)
+	require.NoError(t, err)
+	held := &HeldBy{Calls: func(request digest.Digest) bool { return request == requestB }, Terms: []RemoteTerm{{Self: selfB, Inputs: []digest.Digest{recipeB}}}}
+	built, err := cloud.StoredBundle(test.ctx, []uint64{test.number}, time.Now().Unix(), held)
+	require.NoError(t, err)
+	require.Empty(t, built.Bundle.Calls, "no receiver of the class is stored yet")
+
+	bctx, b, bsrv := transferTestCache(t)
+	receiverB, err := b.GetOrInitCall(bctx, "test-session", bsrv, &CallRequest{ResultCall: receiverTestFrame("b"), IsPersistable: true},
+		func(context.Context) (AnyResult, error) {
+			return NewResultForCall(&transferTestValue{Text: "receiver"}, receiverTestFrame("b"))
+		})
+	require.NoError(t, err)
+	_, err = cloud.MergeValues(test.ctx, "cache-b", exportTestBundle(t, bctx, b, receiverB))
+	require.NoError(t, err)
+
+	built, err = cloud.StoredBundle(test.ctx, []uint64{test.number}, time.Now().Unix(), held)
+	require.NoError(t, err)
+	require.Len(t, built.Bundle.Calls, 1, "A's call, placed by B's receiver")
+	require.Len(t, built.CallInputs, 1, "with B's receiver")
+	require.Zero(t, built.UnsendableCalls)
+	require.True(t, test.freshReceiverHits(t, built.Bundle))
+}
+
 // Two calls kept on an entry as two terms become one term when their inputs'
 // classes are joined: B's call was kept while the Cloud knew no class of B's
 // receiver, and B's receiver then joined A's class by its content. The next
