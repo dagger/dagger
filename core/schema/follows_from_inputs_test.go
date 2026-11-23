@@ -256,8 +256,8 @@ func TestDeclaredFieldsFollowFromTheirInputs(t *testing.T) {
 // inputs, but a process run over that mount reads the volume's contents,
 // which no call holds, so it doesn't. Inheriting a system variable only names
 // it; the process that reads the engine's value doesn't follow either. A git
-// tree's call says so unless it keeps .git
-// (TestGitTreeFollowsFromItsInputsWithoutGitDir).
+// tree's call says so unless it keeps .git with its tags
+// (TestGitTreeFollowsFromItsInputsUnlessItKeepsTags).
 func TestFieldsThatFollowFromInputsDeclareIt(t *testing.T) {
 	e := newFollowsTestEngine(t, transferTestSalt(t), "follows-declared")
 	for _, tc := range []struct {
@@ -295,12 +295,12 @@ func TestFieldsThatFollowFromInputsDeclareIt(t *testing.T) {
 	}
 }
 
-// A git tree without .git is its commit's files, which its key's SHA
-// addresses, so its call says it follows from its inputs. One that keeps
-// .git doesn't (gitTreeFollowsFromInputs): its pack's bytes differ from run
-// to run, and its tags, if it fetches them, are those the repository has
-// then.
-func TestGitTreeFollowsFromItsInputsWithoutGitDir(t *testing.T) {
+// A git tree's call says it follows from its inputs, as the engine's own
+// cache counts two trees of one commit as the same, .git included: git reads
+// the same objects from either's pack. One that keeps .git with its tags
+// doesn't (gitTreeFollowsFromInputs): its tags are those the repository has
+// when it's fetched, which no hash in its key addresses.
+func TestGitTreeFollowsFromItsInputsUnlessItKeepsTags(t *testing.T) {
 	e := newFollowsTestEngine(t, transferTestSalt(t), "follows-tree")
 	for _, typ := range []string{"GitRef", "GitCommit"} {
 		class, ok := e.srv.ObjectType(typ)
@@ -327,7 +327,7 @@ func TestGitTreeFollowsFromItsInputsWithoutGitDir(t *testing.T) {
 	}{
 		{"without .git", []dagql.NamedInput{{Name: "discardGitDir", Value: dagql.Boolean(true)}}, true},
 		{"without .git, tags asked", []dagql.NamedInput{{Name: "discardGitDir", Value: dagql.Boolean(true)}, {Name: "includeTags", Value: dagql.Boolean(true)}}, true},
-		{"with .git", nil, false},
+		{"with .git", nil, true},
 		{"with .git and tags", []dagql.NamedInput{{Name: "includeTags", Value: dagql.Boolean(true)}}, false},
 	} {
 		var tree dagql.ObjectResult[*core.Directory]
