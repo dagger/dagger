@@ -19,7 +19,8 @@ import (
 // retention, a session's end and a release change only the engine's own; a
 // content digest other than the last one taught grows the entry's list
 // every time; a collection that empties an entry and an engine cache
-// removes both.
+// removes both, and checks the classes' compaction, which a collection
+// after it with nothing changed doesn't.
 func TestRemoteChangesNameTheSharedStateTheyChange(t *testing.T) {
 	t.Parallel()
 	ctx, cloud := storedPartTestCache(t, WithBlobStore())
@@ -60,6 +61,10 @@ func TestRemoteChangesNameTheSharedStateTheyChange(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, SharedEntryRemoved, change.Shared&SharedEntryRemoved, "shared-2's entry, owned by B's holding alone, goes: %v", change.Shared)
 	require.Equal(t, SharedEngineCacheGone, change.Shared&SharedEngineCacheGone, "B's state goes with its last holding: %v", change.Shared)
+	require.Equal(t, SharedClassesChecked, change.Shared&SharedClassesChecked, "the first collection checks the classes' compaction: %v", change.Shared)
+	_, change, err = cloud.CollectRemoteHoldings(ctx, []HolderKey{{a, 9}}, nil)
+	require.NoError(t, err)
+	require.Equal(t, none, change.Shared, "a collection of a holding the cache doesn't have, with no class changed since the check")
 	_, err = cloud.AddRemoteHold(ctx, HolderKey{a, 1}, "s2")
 	require.NoError(t, err)
 	_, change, err = cloud.CollectRemoteHoldings(ctx, []HolderKey{{a, 1}}, nil)
