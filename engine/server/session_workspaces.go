@@ -2292,7 +2292,9 @@ func (srv *Server) resolveModuleSourceAsModule(
 		mod.RefPin = src.Self().Pin()
 	}
 	if mod.LegacyCallerModuleDir != "" && mod.Main {
-		if err := srv.mergeLegacyCallerEnvDefaults(ctx, dag, src.Self(), mod.LegacyCallerModuleDir); err != nil {
+		var err error
+		src, err = srv.withLegacyCallerEnvDefaults(ctx, dag, src, mod.LegacyCallerModuleDir)
+		if err != nil {
 			return dagql.ObjectResult[*core.Module]{}, err
 		}
 	}
@@ -2384,33 +2386,39 @@ func asModuleArgsForPendingModule(mod pendingModule) ([]dagql.NamedInput, error)
 	return args, nil
 }
 
-func (srv *Server) mergeLegacyCallerEnvDefaults(
+// withLegacyCallerEnvDefaults returns src with the caller's legacy .env, in
+// callerModuleDir, merged into its user defaults, or src itself when there
+// is none. It is a new source: src may be shared with other clients, whose
+// callers' .env differs, so it is never written in place. The new source is
+// keyed by src and the .env's content, and carries its own content identity,
+// so it is shared only with sources that hold the same defaults.
+func (srv *Server) withLegacyCallerEnvDefaults(
 	ctx context.Context,
 	dag *dagql.Server,
-	src *core.ModuleSource,
+	src dagql.ObjectResult[*core.ModuleSource],
 	callerModuleDir string,
-) error {
+) (dagql.ObjectResult[*core.ModuleSource], error) {
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
-		return fmt.Errorf("get current query for legacy caller env: %w", err)
+		return src, fmt.Errorf("get current query for legacy caller env: %w", err)
 	}
 	bk, err := query.Engine(ctx)
 	if err != nil {
-		return fmt.Errorf("get engine client for legacy caller env: %w", err)
+		return src, fmt.Errorf("get engine client for legacy caller env: %w", err)
 	}
 
 	envPath := filepath.Join(callerModuleDir, ".env")
 	stat, err := bk.StatCallerHostPath(ctx, envPath, true)
 	switch {
 	case errors.Is(err, os.ErrNotExist), status.Code(err) == codes.NotFound:
-		return nil
+		return src, nil
 	case err != nil:
-		return fmt.Errorf("stat legacy caller env %q: %w", envPath, err)
+		return src, fmt.Errorf("stat legacy caller env %q: %w", envPath, err)
 	case stat.IsDir():
-		return nil
+		return src, nil
 	}
 
-	var callerEnv *core.EnvFile
+	var callerEnv dagql.ObjectResult[*core.EnvFile]
 	if err := dag.Select(ctx, dag.Root(), &callerEnv,
 		dagql.Selector{Field: "host"},
 		dagql.Selector{
@@ -2426,9 +2434,69 @@ func (srv *Server) mergeLegacyCallerEnvDefaults(
 			},
 		},
 	); err != nil {
-		return fmt.Errorf("load legacy caller env %q: %w", envPath, err)
+		return src, fmt.Errorf("load legacy caller env %q: %w", envPath, err)
 	}
+	return mergedLegacyCallerEnvSource(ctx, dag, src, callerEnv)
+}
 
-	src.UserDefaults = core.NewEnvFile(true).WithEnvFiles(src.UserDefaults, callerEnv)
-	return nil
+// mergedLegacyCallerEnvSource is src with callerEnv merged into its user
+// defaults, attached as a result of its own (see withLegacyCallerEnvDefaults).
+func mergedLegacyCallerEnvSource(
+	ctx context.Context,
+	dag *dagql.Server,
+	src dagql.ObjectResult[*core.ModuleSource],
+	callerEnv dagql.ObjectResult[*core.EnvFile],
+) (dagql.ObjectResult[*core.ModuleSource], error) {
+	srcDigest, err := src.RecipeDigest(ctx)
+	if err != nil {
+		return src, fmt.Errorf("legacy caller env: module source recipe: %w", err)
+	}
+	envCall, err := callerEnv.ResultCall()
+	if err != nil {
+		return src, fmt.Errorf("legacy caller env: env file call: %w", err)
+	}
+	envDigest, err := envCall.ContentPreferredDigest(ctx)
+	if err != nil {
+		return src, fmt.Errorf("legacy caller env: env file content: %w", err)
+	}
+	merged := src.Self().Clone()
+	merged.UserDefaults = core.NewEnvFile(true).WithEnvFiles(merged.UserDefaults, callerEnv.Self())
+	inst, err := dagql.NewObjectResultForCall(merged, dag, &dagql.ResultCall{
+		Kind:        dagql.ResultCallKindSynthetic,
+		SyntheticOp: "legacy_caller_env",
+		Type:        dagql.NewResultCallType(merged.Type()),
+		Args: []*dagql.ResultCallArg{
+			{Name: "source", Value: &dagql.ResultCallLiteral{Kind: dagql.ResultCallLiteralKindString, StringValue: srcDigest.String()}},
+			{Name: "callerEnv", Value: &dagql.ResultCallLiteral{Kind: dagql.ResultCallLiteralKindString, StringValue: envDigest.String()}},
+		},
+	})
+	if err != nil {
+		return src, fmt.Errorf("legacy caller env: module source result: %w", err)
+	}
+	identity, ok, err := merged.ContentIdentity(ctx)
+	if err != nil {
+		return src, fmt.Errorf("legacy caller env: module source identity: %w", err)
+	}
+	if ok {
+		if inst, err = inst.WithContentDigest(ctx, identity); err != nil {
+			return src, fmt.Errorf("legacy caller env: module source content digest: %w", err)
+		}
+	}
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return src, fmt.Errorf("legacy caller env: client metadata: %w", err)
+	}
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return src, fmt.Errorf("legacy caller env: engine cache: %w", err)
+	}
+	attached, err := cache.AttachResult(ctx, clientMetadata.SessionID, dag, inst)
+	if err != nil {
+		return src, fmt.Errorf("legacy caller env: attach module source: %w", err)
+	}
+	typed, ok := attached.(dagql.ObjectResult[*core.ModuleSource])
+	if !ok {
+		return src, fmt.Errorf("legacy caller env: unexpected attached result %T", attached)
+	}
+	return typed, nil
 }
