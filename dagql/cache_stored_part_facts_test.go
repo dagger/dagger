@@ -260,6 +260,19 @@ func TestALaterMergeOfTheSameRecipeBringsItsRecordsParts(t *testing.T) {
 		defer cloud.egraphMu.RUnlock()
 		return cloud.entryHasPartsLocked(entry, []TransferredOutput{{Address: address, State: state}})
 	}
+	// partState is the state the entry's record has a part in: a held row's
+	// pending part holds against a completed one too, so has doesn't say.
+	partState := func(cloud *Cache, entry *sharedResult, address PersistedPartAddress) string {
+		cloud.egraphMu.RLock()
+		defer cloud.egraphMu.RUnlock()
+		parts, ok := cloud.recordPartsLocked(entry)
+		require.True(t, ok)
+		key, err := partAddressKey(address)
+		require.NoError(t, err)
+		part, ok := parts.at(key, address)
+		require.True(t, ok)
+		return part.State
+	}
 
 	t.Run("kept", func(t *testing.T) {
 		t.Parallel()
@@ -296,7 +309,7 @@ func TestALaterMergeOfTheSameRecipeBringsItsRecordsParts(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, PartUnavailable, av.State, "the new record's mount is pending, not absent")
 		require.False(t, has(cloud, entry, partFactsMount, "absent"), "the old record's absent mount went with it")
-		require.False(t, has(cloud, entry, partFactsSnapshot, "pending"), "the new record proves its snapshot complete")
+		require.Equal(t, "completed", partState(cloud, entry, partFactsSnapshot), "the new record proves its snapshot complete")
 		require.True(t, has(cloud, entry, partFactsSnapshot, "completed"))
 		require.Equal(t, decoded, transferTestMappedCount(text))
 		require.Equal(t, decodedLater, transferTestMappedCount(later), "nothing decodes the new record to answer")
