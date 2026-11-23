@@ -1455,7 +1455,7 @@ func (c *Cache) embedMergedParts(bundle *ValueBundle) {
 // than their slices: an offered layer is never written after it's built
 // (clonePartOffer).
 func cloneValueBundle(in ValueBundle) (ValueBundle, error) {
-	out := ValueBundle{Version: in.Version, Roots: slices.Clone(in.Roots), Calls: slices.Clone(in.Calls), Layers: slices.Clone(in.Layers), Addresses: maps.Clone(in.Addresses)}
+	out := ValueBundle{Version: in.Version, Roots: slices.Clone(in.Roots), Calls: slices.Clone(in.Calls), Layers: slices.Clone(in.Layers), Addresses: maps.Clone(in.Addresses), SenderGeneration: in.SenderGeneration}
 	if in.Values != nil {
 		out.Values = make([]TransferredValue, len(in.Values))
 	}
