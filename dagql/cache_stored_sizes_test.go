@@ -410,7 +410,8 @@ func TestStoredSizesMeasureAgainAfterAPartAddsADependency(t *testing.T) {
 	cloud.egraphMu.RUnlock()
 	fresh, err := cloud.measureStoredValue(miss)
 	require.NoError(t, err)
-	require.Equal(t, fresh.size.bytes, kept, "the kept size is R's with its new dependency")
+	// A size is measured without the change stamp, whose encoding a read adds.
+	require.Equal(t, fresh.size.bytes+senderStampBytes(miss.changedAt), kept, "the kept size is R's with its new dependency")
 }
 
 // StoredSizes normalizes and encodes an unmeasured value with the graph lock
