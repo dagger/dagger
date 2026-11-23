@@ -106,9 +106,12 @@ func (c *Cache) keepCallLocked(change *RemoteChange, entry *sharedResult, desc R
 // which matches a call by its term, and a bundle sends one call of a term,
 // one the recipient can place (placeableCallLocked): a local cache adds no
 // second term of a term it has (indexWaitResultInEgraphLocked). So a call of
-// a term the entry keeps a call of adds nothing, unless the kept call names
-// an input the Cloud stores no record of, which no bundle can place, and
-// kept names none such: kept then replaces it. The entry finds the call of
+// a term the entry keeps a call of adds nothing, unless a bundle can place
+// kept better than the kept call (keptCallPlacementLocked): kept then
+// replaces it. Calls of one term have their inputs in the same classes, so a
+// bundle can place either both or neither through those classes, and kept
+// replaces a call only when its own inputs are stored and the kept call's
+// aren't. The entry finds the call of
 // kept's term in its index (callTermIndex), so that keeping a call on an
 // entry of thousands takes one key, under the cache's write hold. Two calls
 // the entry kept as two terms are one term once their inputs' classes are
@@ -120,7 +123,7 @@ func (c *Cache) keepCallLocked(change *RemoteChange, entry *sharedResult, desc R
 // It reports whether it changed the entry's calls. Requires egraphMu for
 // writing.
 func (c *Cache) keepTermCallLocked(change *RemoteChange, entry *sharedResult, kept *keptCall) bool {
-	stored := c.keptCallStoredLocked(kept)
+	rank := c.keptCallPlacementLocked(kept)
 	joined := false
 	if entry.callTermIndex == nil {
 		terms, calls := c.joinedTermCallsLocked(entry)
@@ -136,14 +139,14 @@ func (c *Cache) keepTermCallLocked(change *RemoteChange, entry *sharedResult, ke
 	}
 	key := c.keptCallTermKeyLocked(kept)
 	if other := entry.callTermIndex[key]; other != nil {
-		if !stored || c.keptCallStoredLocked(other) {
+		if rank >= c.keptCallPlacementLocked(other) {
 			c.verifyCallTermIndexLocked(entry)
 			return joined
 		}
 		c.dropKeptCallLocked(entry, other)
 	}
 	cause := StampKeptCallNewTerm
-	if !stored {
+	if rank == placementNone {
 		cause = StampKeptCallUnsendable
 	}
 	if entry.calls == nil {
@@ -178,8 +181,8 @@ func (c *Cache) verifyCallTermIndexLocked(entry *sharedResult) {
 // joinedTermCallsLocked returns the call entry keeps of each term its calls
 // derive now, by term key, and the calls beyond those: calls kept as two terms
 // whose inputs' classes have since been joined. Of the calls of one term it
-// keeps the first, by request digest, of those the Cloud stores the inputs
-// of, or the first. Requires egraphMu.
+// keeps the first, by request digest, of those a bundle places best
+// (keptCallPlacementLocked). Requires egraphMu.
 func (c *Cache) joinedTermCallsLocked(entry *sharedResult) (map[string]*keptCall, []*keptCall) {
 	terms := make(map[string]*keptCall, len(entry.calls))
 	var joined []*keptCall
@@ -190,7 +193,7 @@ func (c *Cache) joinedTermCallsLocked(entry *sharedResult) (map[string]*keptCall
 		switch {
 		case !ok:
 			terms[key] = call
-		case !c.keptCallStoredLocked(first) && c.keptCallStoredLocked(call):
+		case c.keptCallPlacementLocked(call) < c.keptCallPlacementLocked(first):
 			terms[key] = call
 			joined = append(joined, first)
 		default:
@@ -310,20 +313,14 @@ func (c *Cache) keptCallTermKeyLocked(kept *keptCall) string {
 	return key.String()
 }
 
-// keptCallStoredLocked reports whether the Cloud stores a record of every
-// input kept names by its own recipe, so that a bundle can place the call
-// with what the Cloud stores (placeableCallLocked); a witness needs none.
-// Requires egraphMu.
-func (c *Cache) keptCallStoredLocked(kept *keptCall) bool {
-	for i, input := range kept.id.inputs {
-		if kept.id.witnesses[i] {
-			continue
-		}
-		if in := c.currentEntryForRecipeLocked(input); in == nil || in.noValueLocked() || in.persistedEnvelope == nil {
-			return false
-		}
-	}
-	return true
+// keptCallPlacementLocked is how a bundle can place kept with what the Cloud
+// stores, for a recipient that holds none of its inputs: by the rule a bundle
+// sends a call by (callPlacementLocked), so that keeping and sending judge a
+// call's inputs alike. placementNone means no bundle can place it. Requires
+// egraphMu.
+func (c *Cache) keptCallPlacementLocked(kept *keptCall) callPlacement {
+	rank, _ := c.callPlacementLocked(kept, time.Now().Unix(), func(*sharedResult) bool { return false })
+	return rank
 }
 
 // verifyKeptCallTerms, set only by tests, checks every kept grouping of an
