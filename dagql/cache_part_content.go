@@ -801,6 +801,8 @@ func (t partInstallTiming) fields() []any {
 		"layer_wait", t.LayerWait,
 		"fetch", t.Fetch,
 		"apply", t.Apply,
+		"files", t.Files,
+		"file_bytes", t.FileBytes,
 		"import", t.imported,
 		"streams", t.streams,
 		"range", t.rangeMode,
