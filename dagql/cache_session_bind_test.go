@@ -10,6 +10,7 @@ import (
 
 	"gotest.tools/v3/assert"
 
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/snapshots/config"
 )
 
@@ -242,8 +243,10 @@ func TestCacheBoundResultsHeldResultIsServedOnlyToItsSession(t *testing.T) {
 		{"held result that existed before", false, false, false},
 		{"parent returned by a cached call", true, true, false},
 		{"parent held by a new result", true, false, true},
+		{"held result returned by a call that read the parent", false, false, false},
 	} {
 		made, wrapped, holding := tc.made, tc.wrapped, tc.holding
+		returnsHeld := tc.name == "held result returned by a call that read the parent"
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			baseCtx := t.Context()
@@ -300,6 +303,23 @@ func TestCacheBoundResultsHeldResultIsServedOnlyToItsSession(t *testing.T) {
 			}
 			heldBy := func(ctx context.Context, session string, p AnyResult) AnyResult {
 				t.Helper()
+				if returnsHeld {
+					// A call keyed by nothing of the parent's, whose resolver
+					// reads the bound parent and returns the ordinary value it
+					// holds, which is already cached.
+					readCall := cacheTestIntCall("held-through-parent")
+					res, err := c.GetOrInitCall(ctx, session, noopTypeResolver{}, &CallRequest{ResultCall: readCall.clone()}, func(ctx context.Context) (AnyResult, error) {
+						read, err := c.GetOrInitCall(ctx, session, noopTypeResolver{}, &CallRequest{ResultCall: parentCall.clone()}, func(context.Context) (AnyResult, error) {
+							return nil, fmt.Errorf("the parent was made before")
+						})
+						if err != nil {
+							return nil, err
+						}
+						return read.Unwrap().(*cacheTestOwnedDepsInt).ownedResults[0], nil
+					})
+					assert.NilError(t, err)
+					return res
+				}
 				res, err := c.GetOrInitCall(ctx, session, noopTypeResolver{}, &CallRequest{ResultCall: &ResultCall{
 					Kind:     ResultCallKindField,
 					Type:     NewResultCallType(Int(0).Type()),
@@ -460,22 +480,56 @@ func TestCacheRestoredBoundResultMatchesNoLaterSession(t *testing.T) {
 // session that made it still hits its own later.
 func TestCacheResultWorkedOutFromABoundResultIsItsSessions(t *testing.T) {
 	t.Parallel()
+	for _, byID := range []bool{false, true} {
+		name := "listing called for"
+		if byID {
+			name = "listing loaded by its ID"
+		}
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			testCacheResultWorkedOutFromABoundResult(t, byID)
+		})
+	}
+}
+
+// testCacheResultWorkedOutFromABoundResult is
+// TestCacheResultWorkedOutFromABoundResultIsItsSessions, with the count's
+// resolver calling for the bound listing, or loading the listing its session
+// made before by its ID (byID).
+func testCacheResultWorkedOutFromABoundResult(t *testing.T, byID bool) {
 	baseCtx := t.Context()
 	c, err := NewCache(baseCtx, "", nil, nil)
 	assert.NilError(t, err)
+	srv := cacheTestServer(t)
 	listingCall := cacheTestIntCall("bound-listing")
 	countCall := cacheTestIntCall("count-from-listing")
+	listing := func(ctx context.Context, session string, listed int) AnyResult {
+		t.Helper()
+		res, err := c.GetOrInitCall(ctx, session, noopTypeResolver{}, &CallRequest{ResultCall: listingCall.clone()}, func(ctx context.Context) (AnyResult, error) {
+			BindToSession(ctx)
+			return cacheTestIntResult(listingCall.clone(), listed), nil
+		})
+		assert.NilError(t, err)
+		return res
+	}
 	count := func(ctx context.Context, session string, listed int) AnyResult {
 		t.Helper()
+		var made AnyResult
+		if byID {
+			made = listing(ctx, session, listed)
+		}
 		res, err := c.GetOrInitCall(ctx, session, noopTypeResolver{}, &CallRequest{ResultCall: countCall.clone()}, func(ctx context.Context) (AnyResult, error) {
-			listing, err := c.GetOrInitCall(ctx, session, noopTypeResolver{}, &CallRequest{ResultCall: listingCall.clone()}, func(ctx context.Context) (AnyResult, error) {
-				BindToSession(ctx)
-				return cacheTestIntResult(listingCall.clone(), listed), nil
-			})
-			if err != nil {
-				return nil, err
+			var got AnyResult
+			if byID {
+				loaded, err := srv.LoadType(ctx, call.NewEngineResultID(uint64(made.cacheSharedResult().id), call.NewType(Int(0).Type())))
+				if err != nil {
+					return nil, err
+				}
+				got = loaded
+			} else {
+				got = listing(ctx, session, listed)
 			}
-			return cacheTestIntResult(countCall.clone(), cacheTestUnwrapInt(t, listing)*10), nil
+			return cacheTestIntResult(countCall.clone(), cacheTestUnwrapInt(t, got)*10), nil
 		})
 		assert.NilError(t, err)
 		return res
@@ -486,7 +540,7 @@ func TestCacheResultWorkedOutFromABoundResultIsItsSessions(t *testing.T) {
 	bCtx := currentEntryTestSession(baseCtx, c, "session-b")
 	assert.Equal(t, 20, cacheTestUnwrapInt(t, count(bCtx, "session-b", 2)), "B works out its own from its own listing")
 
-	again := count(aCtx, "session-a", 3)
+	again := count(aCtx, "session-a", 1)
 	assert.Assert(t, again.HitCache(), "A hits its own result")
 	assert.Equal(t, 10, cacheTestUnwrapInt(t, again))
 
