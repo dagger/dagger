@@ -118,6 +118,27 @@ func (b *SchemaBuilder) WithCoreMod(mod Mod) *SchemaBuilder {
 	return cp
 }
 
+// viewableCoreMod is a core module that can serve the core API at another
+// view (schema.CoreMod).
+type viewableCoreMod interface {
+	AtView(call.View) Mod
+}
+
+// WithCoreView returns a copy of b whose core module serves view, as a
+// module's dependencies do: the core API of the engine version it declares.
+func (b *SchemaBuilder) WithCoreView(view call.View) *SchemaBuilder {
+	if b == nil {
+		return nil
+	}
+	cp := b.Clone()
+	for i, entry := range cp.entries {
+		if mod, ok := entry.mod.(viewableCoreMod); ok {
+			cp.entries[i].mod = mod.AtView(view)
+		}
+	}
+	return cp
+}
+
 func (b *SchemaBuilder) Prepend(mods ...Mod) *SchemaBuilder {
 	extra := make([]modDepEntry, len(mods))
 	for i, m := range mods {
