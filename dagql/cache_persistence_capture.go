@@ -89,6 +89,43 @@ func (c *Cache) holdRowForCapture(ctx context.Context, shared *sharedResult, cap
 	return held[0].run(capture)
 }
 
+// holdOwnedRowForCapture is holdRowForCapture for a row its caller owns, as
+// the caller of a span's end owns the entry the span reports: a call's
+// session tracks its result, and a lazy evaluation's session holds the entry
+// it evaluates. It holds the row with one more ownership while the caller's
+// stands (retainOwned), which keeps the row registered and takes no graph
+// lock, and refuses a row nothing owns any more. A dependency attachment in
+// flight is read under the row's own mutex. The row's pending offers aren't
+// read: no description of the row's complete parts reads them.
+func (c *Cache) holdOwnedRowForCapture(ctx context.Context, shared *sharedResult, capture captureFunc) (_ *capturedRowRevision, rerr error) {
+	op, err := c.beginCacheOperation()
+	if err != nil {
+		return nil, err
+	}
+	defer op.finish(false)
+	if err := context.Cause(ctx); err != nil {
+		return nil, err
+	}
+	if shared.id == 0 || !c.retainOwned(ctx, shared) {
+		return nil, fmt.Errorf("capture persisted record: result %d is not owned in this cache", shared.id)
+	}
+	defer func() {
+		rerr = errors.Join(rerr, c.releaseOwned(ctx, shared))
+	}()
+	switch shared.attachmentState() {
+	case resultAttachmentOpen:
+		return nil, fmt.Errorf("%w: result %d dependency attachment", ErrPersistStateNotReady, shared.id)
+	case resultAttachmentFailed:
+		return nil, fmt.Errorf("capture persisted record: result %d dependency attachment failed", shared.id)
+	}
+	// A replacement in place sets imported with the value, under payloadMu;
+	// the capture's revision check refuses a record a replacement changed.
+	shared.payloadMu.RLock()
+	imported := shared.imported
+	shared.payloadMu.RUnlock()
+	return heldCaptureRow{row: shared, imported: imported}.run(capture)
+}
+
 // capturePieceRows is how many rows holdRowsForCapture takes, or lets go, in
 // one hold of egraphMu for writing: a count, not a time, so that a hold is
 // the same on every machine. Taking a row checks it and counts one owner,
