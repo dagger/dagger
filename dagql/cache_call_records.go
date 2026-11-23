@@ -75,7 +75,7 @@ func decodeKeptCall(encoded string, request digest.Digest) (*keptCall, error) {
 // or read late, and neither its call nor its expiry is kept. It reports
 // whether it changed a stored entry, which a save writes. Requires egraphMu
 // for writing.
-func (c *Cache) keepCallLocked(entry *sharedResult, desc RemoteHolding, kept *keptCall) bool {
+func (c *Cache) keepCallLocked(change *RemoteChange, entry *sharedResult, desc RemoteHolding, kept *keptCall) bool {
 	if desc.Request == "" || desc.Request == desc.Recipe {
 		return false
 	}
@@ -86,7 +86,7 @@ func (c *Cache) keepCallLocked(entry *sharedResult, desc RemoteHolding, kept *ke
 	if expires := mergeSharedResultExpiryUnix(entry.expiresAtUnix, desc.ExpiresAtUnix); expires != entry.expiresAtUnix {
 		entry.expiresAtUnix = expires
 		c.markEntryClassLocked(entry.id, StampCallExpiry)
-		c.noteSharedWriteLocked(SharedExpiry)
+		c.noteSharedWriteLocked(change, SharedExpiry)
 		changed = true
 	}
 	if kept != nil {
@@ -102,7 +102,7 @@ func (c *Cache) keepCallLocked(entry *sharedResult, desc RemoteHolding, kept *ke
 			entry.calls[kept.id.recipe] = kept
 			c.stampEntryLocked(entry, cause)
 			c.indexKeptCallLocked(entry, kept)
-			c.noteSharedWriteLocked(SharedKeptCall)
+			c.noteSharedWriteLocked(change, SharedKeptCall)
 			changed = true
 		}
 	}

@@ -190,7 +190,7 @@ func TestRemoteHoldingInfoMatchesEntryInfo(t *testing.T) {
 
 	// A prune drops the stored value: the entry stores no record, and no
 	// holding stays marked executed.
-	_, removed, _, err := cloud.removePrunedEdge(ctx, sharedResultID(number))
+	_, removed, _, err := cloud.removePrunedEdge(ctx, &RemoteChange{}, sharedResultID(number))
 	require.NoError(t, err)
 	require.True(t, removed)
 	got = requireHeldEntryMatches(t, cloud, "pruned", keys)

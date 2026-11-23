@@ -3016,7 +3016,7 @@ func (c *Cache) commitValueMergeLocked(ctx context.Context, commit *valueMergeCo
 func (c *Cache) applyMergedIdentitiesLocked(ctx context.Context, commit *valueMergeCommit, change *RemoteChange) {
 	var cloudState *remoteCacheState
 	if c.blobBacked {
-		cloudState = c.remoteCacheLocked(commit.from)
+		cloudState = c.remoteCacheLocked(change, commit.from)
 	}
 	for _, row := range commit.rows {
 		if commit.prep.held[row.ordinal] {
@@ -3244,14 +3244,14 @@ func (c *Cache) mergeSenderHoldingLocked(ctx context.Context, state *remoteCache
 	key := HolderKey{Cache: commit.from, Number: row.value.SenderNumber}
 	entry, h := c.holdingLocked(key)
 	if h == nil {
-		entry, h = c.newHoldingLocked(ctx, state, key, RemoteHolding{Recipe: row.plan.recipe, Field: row.res.description})
+		entry, h = c.newHoldingLocked(ctx, change, state, key, RemoteHolding{Recipe: row.plan.recipe, Field: row.res.description})
 		change.Candidates = append(change.Candidates, key)
 	}
 	deps := make([]uint64, 0, len(row.value.DependencyIDs))
 	for _, dep := range row.value.DependencyIDs {
 		deps = append(deps, commit.prep.index[dep].SenderNumber)
 	}
-	candidates := c.applyHeldValueStateLocked(ctx, state, key, entry, h, HeldValueState{Replacements: row.value.SenderReplacements, Deps: deps}, nil, nil)
+	candidates := c.applyHeldValueStateLocked(ctx, change, state, key, entry, h, HeldValueState{Replacements: row.value.SenderReplacements, Deps: deps}, nil, nil)
 	change.Candidates = append(change.Candidates, candidates...)
 }
 
@@ -3269,9 +3269,9 @@ func (c *Cache) mergeHeldSenderHoldingLocked(ctx context.Context, state *remoteC
 	if _, h := c.holdingLocked(key); h != nil {
 		return
 	}
-	entry, h := c.newHoldingLocked(ctx, state, key, RemoteHolding{Recipe: row.plan.recipe, Field: row.res.description})
+	entry, h := c.newHoldingLocked(ctx, change, state, key, RemoteHolding{Recipe: row.plan.recipe, Field: row.res.description})
 	change.Candidates = append(change.Candidates, key)
-	candidates := c.applyHeldValueStateLocked(ctx, state, key, entry, h, HeldValueState{Replacements: row.value.SenderReplacements}, nil, nil)
+	candidates := c.applyHeldValueStateLocked(ctx, change, state, key, entry, h, HeldValueState{Replacements: row.value.SenderReplacements}, nil, nil)
 	change.Candidates = append(change.Candidates, candidates...)
 }
 

@@ -470,7 +470,7 @@ func TestAPruneDropsARecordsRun(t *testing.T) {
 	require.Equal(t, EntryRun{Run: run, Ran: true}, runTestRan(t, cloud, number), "before the prune")
 	cloud.egraphMu.Lock()
 	res := cloud.resultsByID[sharedResultID(number)]
-	_, err := cloud.dropValueLocked(ctx, res)
+	_, err := cloud.dropValueLocked(ctx, &RemoteChange{}, res)
 	cloud.egraphMu.Unlock()
 	require.NoError(t, err)
 	_, ok := cloud.EntryRun(number)
@@ -523,7 +523,7 @@ func TestAServedRecordDroppedAndRefilledNamesTheRunSent(t *testing.T) {
 	cloud.egraphMu.Lock()
 	res := cloud.resultsByID[sharedResultID(number)]
 	before := res.replacements
-	_, err = cloud.dropValueLocked(ctx, res)
+	_, err = cloud.dropValueLocked(ctx, &RemoteChange{}, res)
 	cloud.egraphMu.Unlock()
 	require.NoError(t, err)
 	cNumber, cRun := runTestExport(t, ctx, cloud, "cache-c", "class-source")
