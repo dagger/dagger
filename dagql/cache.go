@@ -2747,6 +2747,12 @@ type Cache struct {
 	// testCallTermsBuilt runs each time an entry's kept calls are grouped
 	// by term (keptCallTermsLocked).
 	testCallTermsBuilt func()
+	// testRepairWholeClass, when set, has a union keep the class of higher
+	// rank and its repair walk every term of the class that survives, as
+	// before a union kept the class more terms take as an input and its
+	// repair walked only the terms it moved (mergeEqClassesLocked), so a
+	// test can compare the two.
+	testRepairWholeClass bool
 	// testStoredBodies runs after the body worker installs a batch, with the
 	// number of entries it read.
 	testStoredBodies func(int)
