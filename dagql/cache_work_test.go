@@ -283,9 +283,9 @@ func TestCacheWritersNameTheirKind(t *testing.T) {
 }
 
 // The remote cache's writers of the graph lock name their kind too: a
-// restore's commit and the release of its holds, a hit's decode of a merged
-// record, a lazy task's ownership, and a call's teaching of an equivalent
-// call.
+// restore's commit and the release of its holds, a lazy task's ownership,
+// and a call's teaching of an equivalent call. A hit's decode of a merged
+// record takes the lock only for reading, so it names none.
 func TestRemoteCacheWritersNameTheirKind(t *testing.T) {
 	set := firstUseTestCloud(t)
 	ctx, c, srv, _ := shareTestCache(t)
@@ -314,12 +314,14 @@ func TestRemoteCacheWritersNameTheirKind(t *testing.T) {
 	require.Empty(t, byKind["other"], "takes that named no kind (all: %v)", byKind)
 	for kind, taker := range map[string]string{
 		"restore":    "CommitValueMerge",
-		"lookup":     "updateDecodedPayloadBytes",
 		"hold":       "releaseHeld",
 		"evaluation": "runLazyTask",
 		"teach":      "TeachCallEquivalentToResult",
 	} {
 		require.True(t, slices.ContainsFunc(byKind[kind], func(name string) bool { return strings.HasPrefix(name, taker) }), "%s took the graph lock as %s (all: %v)", taker, kind, byKind)
+	}
+	for kind, names := range byKind {
+		require.False(t, slices.ContainsFunc(names, func(name string) bool { return strings.HasPrefix(name, "updateDecodedPayloadBytes") }), "the hit's decode took the graph lock for writing, as %s", kind)
 	}
 }
 
