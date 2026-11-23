@@ -7079,6 +7079,17 @@ func (c *Cache) GetOrInitCall(
 			ctx = withHitLoad(ctx, ev.hitLoad)
 		}
 		c.recordCallResultExpiry(ctx, scopes, req, res)
+		// A result bound to the session is the session's own outcome, and so
+		// is what the resolver that called for it makes: that call is bound
+		// too, before its result is published. Only a session that bound a
+		// result can be handed one, so the graph is read for no other.
+		if res != nil && c.sessionHoldsHandle(sessionID, c.sessionBoundHandle(sessionID)) &&
+			len(c.boundSessionsOf(res.cacheSharedResult())) > 0 {
+			if caller := CurrentCall(ctx); caller != nil {
+				slog.Debug("call bound to its session", "call", caller.Field, "handedBy", req.ReceiverTypeName+"."+req.Field)
+			}
+			BindToSession(ctx)
+		}
 	}
 	if op.finish(callErr == nil && res != nil) {
 		return nil, fmt.Errorf("get or init call: %w: %q", ErrCacheSessionReleased, sessionID)

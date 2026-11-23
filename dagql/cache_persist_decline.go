@@ -46,7 +46,9 @@ func DeclinePersistence(ctx context.Context) {
 // The result's identity holds its session too (boundSessionInputName), so it
 // is in a class of its session's own: a call made on it, such as a field
 // that returns a result it holds, answers for that session only, though
-// another session makes the bound call again with the same key.
+// another session makes the bound call again with the same key. A call whose
+// resolver is handed a bound result is bound in turn (Cache.GetOrInitCall),
+// so what it makes from that result, or holds of it, is the session's too.
 // Like DeclinePersistence, it must be called with the resolver's own
 // context, and does nothing outside a resolver the cache runs.
 func BindToSession(ctx context.Context) {
