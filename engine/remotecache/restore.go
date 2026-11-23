@@ -35,8 +35,9 @@ import (
 // ahead of it, each stage on a goroutine of its own, as far as a budget of
 // their encoded bytes allows (decodeAhead, checkAhead, restoreAheadBytes), so
 // that a merge waits for neither after the first. Heads merge on a lane of
-// their own, in arrival order, so a head never waits for a whole, even
-// another check's that started first; each whole merges on a lane of its own,
+// their own, part by part in turn, so a head never waits for a whole, even
+// another check's that started first, nor for another head's later parts;
+// each whole merges on a lane of its own,
 // so a whole never waits for another check's either. Nothing in a restore
 // fails it, nor anything else: a file that can't be fetched, read or merged
 // leaves the engine with what merged of it, and the reply says where it
@@ -372,13 +373,17 @@ func (r *restorer) run() {
 	r.abandon()
 }
 
-// headLane merges the heads' parts one at a time, in arrival order, each
-// once it is downloaded, until the connection ends.
+// headLane merges the heads' parts one at a time, each once its file is
+// downloaded, until the connection ends: in turn, the next part of the head
+// that has merged the fewest (nextHead). A head's parts carry what its
+// check's run asks for first in its first part, so heads offered together,
+// as an engine's first claims are, each land their first part before any
+// lands its second.
 func (r *restorer) headLane() {
 	ctx, unlabel := wcprof.WithCPUKind(r.s.ctx, wcprof.CPUKindMerge)
 	defer unlabel()
 	for ctx.Err() == nil {
-		f := r.firstHead()
+		f := r.nextHead()
 		if f == nil {
 			select {
 			case <-r.headQueued:
@@ -391,14 +396,19 @@ func (r *restorer) headLane() {
 	}
 }
 
-// firstHead returns the first head not done.
-func (r *restorer) firstHead() *restoreFile {
+// nextHead returns the head not done that has merged the fewest parts, the
+// earliest to arrive among those. Only the head lane merges a head's parts,
+// so its count of them (next) is the lane's own.
+func (r *restorer) nextHead() *restoreFile {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if len(r.heads) > 0 {
-		return r.heads[0]
+	var head *restoreFile
+	for _, f := range r.heads {
+		if head == nil || f.next < head.next {
+			head = f
+		}
 	}
-	return nil
+	return head
 }
 
 // wholeLanes starts a lane for each whole as it is queued, until the

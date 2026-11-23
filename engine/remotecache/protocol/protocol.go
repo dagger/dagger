@@ -621,10 +621,12 @@ const (
 
 // Restore asks the engine to fetch published files of its claims' sets and
 // merge their parts (SetFile), each through the path a Merge takes. The
-// engine merges heads and wholes on lanes of their own, side by side: each
-// lane one file at a time, in the order the restores arrived, and each
-// file's parts in the file's order. So a head never waits for a whole, even
-// one of another set that started first. A restore can come at any time after Welcome. Nothing in
+// engine merges heads and wholes on lanes of their own, side by side: the
+// heads' lane takes each head's next part in turn, every head's first part
+// before any head's second, the earliest to arrive first among equals; each
+// whole merges on a lane of its own; and each file's parts merge in the
+// file's order. So a head never waits for a whole, even one of another set
+// that started first, nor for another head's later parts. A restore can come at any time after Welcome. Nothing in
 // a restore fails it: a file that can't be fetched, read or merged is
 // reported in Restored, and leaves the engine as it was without it, but for
 // the parts that merged.
