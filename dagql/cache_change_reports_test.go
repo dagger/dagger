@@ -144,6 +144,7 @@ func (w *changeWatch) step(name string, write func() RemoteChange) {
 	pending := w.cache.changesPendingLocked()
 	w.cache.egraphMu.RUnlock()
 	require.False(w.t, pending, "%s: every mark is handed back by the write that made it", name)
+	requireCacheHoldersExact(w.t, w.cache)
 
 	require.True(w.t, slices.IsSortedFunc(change.Holdings, compareChangedHoldings), "%s: holdings sorted by number, then cache", name)
 	require.True(w.t, slices.IsSorted(change.Entries), "%s: entries sorted", name)
