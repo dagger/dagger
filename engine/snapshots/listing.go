@@ -150,17 +150,16 @@ func (w *listingWriter) Close() error {
 }
 
 const (
-	// splitWorkers is how many of a layer's content blobs compress at once: as
-	// many as the zstd writer compresses a large layer's frames at once. A
-	// content blob of at most one frame, 8 MiB, compresses on one core, so
-	// one after another a layer of many such files would take several times
-	// its tar's time.
+	// splitWorkers is how many of a layer's content blobs it writes at once,
+	// each with a content store writer open, its buffer and its digester:
+	// one after another, a layer of many files of at most one frame, 8 MiB,
+	// would take several times its tar's time. How many frames compress at
+	// once is the engine's budget of them (compression's zstdFrames), across
+	// all its layers; this bounds only the blobs a layer has open.
 	splitWorkers = 4
 	// splitHeld bounds the bytes of a layer's files read ahead of its
-	// listing, while their content blobs compress or earlier ones finish: the
-	// zstd writer's own frames in flight for a large layer, four of 8 MiB. A
-	// file larger than one frame isn't held: it compresses as it is read,
-	// its frames at once.
+	// listing, while their content blobs are written or earlier ones finish.
+	// A file larger than one frame isn't held: it compresses as it is read.
 	splitHeld      = 32 << 20
 	splitHeldLarge = splitHeld / splitWorkers
 )
