@@ -173,9 +173,13 @@ func (s *workspaceSchema) moduleSource(
 	parent dagql.ObjectResult[*core.Workspace],
 	args workspaceModuleSourceArgs,
 ) (inst dagql.ObjectResult[*core.ModuleSource], err error) {
+	shared, err := moduleSourceReadShared(ctx, parent.Self().HasContentIdentity())
+	if err != nil {
+		return inst, err
+	}
 	resolverCtx := ctx
 	ctx, scopes := dagql.WithCallScopes(ctx)
-	defer func() { keepReadWithWhatItRead(resolverCtx, scopes, "module source "+args.Path, err) }()
+	defer func() { keepReadWithWhatItRead(resolverCtx, scopes, shared, "module source "+args.Path, err) }()
 	ws := parent.Self()
 	resolvedPath, err := resolveWorkspacePath(args.Path, ws.Cwd)
 	if err != nil {

@@ -402,8 +402,14 @@ type moduleSourceArgs struct {
 // (moduleSourceReadCacheKey). Its ref decides what it reads without its
 // caller when it names a Git repository outright.
 func (s *moduleSourceSchema) moduleSourceCacheKey(ctx context.Context, _ dagql.ObjectResult[*core.Query], args moduleSourceArgs, req *dagql.CallRequest) error {
+	return moduleSourceReadCacheKey(ctx, req, args.decidedByContent())
+}
+
+// decidedByContent reports whether the ref decides what Query.moduleSource
+// reads without its caller: when it names a Git repository outright.
+func (args moduleSourceArgs) decidedByContent() bool {
 	requireGit := args.RequireKind.Valid && args.RequireKind.Value == core.ModuleSourceKindGit
-	return moduleSourceReadCacheKey(ctx, req, core.ModuleRefDecidedByContent(args.RefString, args.RefPin, requireGit))
+	return core.ModuleRefDecidedByContent(args.RefString, args.RefPin, requireGit)
 }
 
 // moduleSourceFieldCacheKey keys a field that reads or reloads a module
@@ -420,12 +426,8 @@ func moduleSourceFieldCacheKey[T dagql.Typed, A any](ctx context.Context, _ dagq
 var moduleSourceEngineBuild = engine.FullVersion
 
 // moduleSourceReadCacheKey keys a read of a module source by its receiver and
-// arguments when it takes nothing from its caller that the key leaves out,
-// and per client otherwise, with the input dagql.PerClientInput gives.
-// decided says whether the receiver and arguments decide what is read
-// without the caller. A caller that reads its own host
-// (core.CallerReadsItsHost) gives the source its .env and may name paths on
-// its machine, so its reads stay its own. A read keyed by its content is kept
+// arguments when it is shared (moduleSourceReadShared), and per client
+// otherwise, with the input dagql.PerClientInput gives. A shared read is kept
 // past its session, as the module loaded from it is. What it still takes per
 // call, session or client as it runs keeps it in its session
 // (keepReadWithWhatItRead).
@@ -435,31 +437,45 @@ var moduleSourceEngineBuild = engine.FullVersion
 // (moduleSourceEngineBuild), and by the cache scope a caller that busts its
 // cache deliberately sets (dagql.CacheScopeInput), as it reads its own again.
 func moduleSourceReadCacheKey(ctx context.Context, req *dagql.CallRequest, decided bool) error {
-	if decided {
-		readsHost, err := core.CallerReadsItsHost(ctx)
-		if err != nil {
-			return err
-		}
-		if !readsHost {
-			if err := req.SetImplicitInput(ctx, "moduleSourceEngineBuild", dagql.NewString(moduleSourceEngineBuild())); err != nil {
-				return err
-			}
-			scope, err := dagql.CacheScopeInput.Resolver(ctx, nil)
-			if err != nil {
-				return err
-			}
-			if err := req.SetImplicitInput(ctx, dagql.CacheScopeInput.Name, scope); err != nil {
-				return err
-			}
-			req.IsPersistable = true
-			return nil
-		}
-	}
-	client, err := dagql.PerClientInput.Resolver(ctx, nil)
+	shared, err := moduleSourceReadShared(ctx, decided)
 	if err != nil {
 		return err
 	}
-	return req.SetImplicitInput(ctx, dagql.PerClientInput.Name, client)
+	if !shared {
+		client, err := dagql.PerClientInput.Resolver(ctx, nil)
+		if err != nil {
+			return err
+		}
+		return req.SetImplicitInput(ctx, dagql.PerClientInput.Name, client)
+	}
+	if err := req.SetImplicitInput(ctx, "moduleSourceEngineBuild", dagql.NewString(moduleSourceEngineBuild())); err != nil {
+		return err
+	}
+	scope, err := dagql.CacheScopeInput.Resolver(ctx, nil)
+	if err != nil {
+		return err
+	}
+	if err := req.SetImplicitInput(ctx, dagql.CacheScopeInput.Name, scope); err != nil {
+		return err
+	}
+	req.IsPersistable = true
+	return nil
+}
+
+// moduleSourceReadShared reports whether a read of a module source is shared
+// by what decides it rather than kept to its client: decided says whether
+// its receiver and arguments decide what it reads without its caller, and a
+// caller that reads its own host (core.CallerReadsItsHost) gives the source
+// its .env and may name paths on its machine, so its reads stay its own.
+func moduleSourceReadShared(ctx context.Context, decided bool) (bool, error) {
+	if !decided {
+		return false, nil
+	}
+	readsHost, err := core.CallerReadsItsHost(ctx)
+	if err != nil {
+		return false, err
+	}
+	return !readsHost, nil
 }
 
 func (s *moduleSourceSchema) moduleSource(
@@ -467,9 +483,13 @@ func (s *moduleSourceSchema) moduleSource(
 	query dagql.ObjectResult[*core.Query],
 	args moduleSourceArgs,
 ) (inst dagql.Result[*core.ModuleSource], err error) {
+	shared, err := moduleSourceReadShared(ctx, args.decidedByContent())
+	if err != nil {
+		return inst, err
+	}
 	resolverCtx := ctx
 	ctx, scopes := dagql.WithCallScopes(ctx)
-	defer func() { keepReadWithWhatItRead(resolverCtx, scopes, "module source "+args.RefString, err) }()
+	defer func() { keepReadWithWhatItRead(resolverCtx, scopes, shared, "module source "+args.RefString, err) }()
 	bk, err := query.Self().Engine(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get engine client: %w", err)
@@ -1099,9 +1119,13 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 	contextDir dagql.ObjectResult[*core.Directory],
 	args directoryAsModuleSourceArgs,
 ) (inst dagql.Result[*core.ModuleSource], err error) {
+	shared, err := moduleSourceReadShared(ctx, true)
+	if err != nil {
+		return inst, err
+	}
 	resolverCtx := ctx
 	ctx, scopes := dagql.WithCallScopes(ctx)
-	defer func() { keepReadWithWhatItRead(resolverCtx, scopes, "module source of a directory", err) }()
+	defer func() { keepReadWithWhatItRead(resolverCtx, scopes, shared, "module source of a directory", err) }()
 	sourceRootSubpath := args.SourceRootPath
 	if sourceRootSubpath == "" {
 		sourceRootSubpath = "."
@@ -4983,12 +5007,19 @@ var eagerRuntimeInput = dagql.ImplicitInput{
 	},
 }
 
-// keepReadWithWhatItRead is keepWithWhatItRead for a read of a module source.
-// A Git read it makes doesn't keep it to its session: Query.git is keyed per
-// client only to borrow (dagql.FieldSpec.PerClientOnlyToBorrow), and the
-// cache serves what is made from what it borrowed only to a session holding
-// it.
-func keepReadWithWhatItRead(resolverCtx context.Context, scopes *dagql.CallScopes, what string, err error) {
+// keepReadWithWhatItRead is keepWithWhatItRead for a read of a module source
+// shared by what decides it (moduleSourceReadShared). A Git read it makes
+// doesn't keep it to its session: Query.git is keyed per client only to
+// borrow (dagql.FieldSpec.PerClientOnlyToBorrow), and the cache serves what is
+// made from what it borrowed only to a session holding it. A read keyed per
+// client stays with its client already, and it does nothing for one: binding
+// it would also keep to its session everything the cache makes from it, such
+// as the module's function calls, which the cache shares between sessions
+// wherever their content is the same.
+func keepReadWithWhatItRead(resolverCtx context.Context, scopes *dagql.CallScopes, shared bool, what string, err error) {
+	if !shared {
+		return
+	}
 	keepWithWhatItRead(resolverCtx, scopes, what, err)
 }
 
