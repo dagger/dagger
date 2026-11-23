@@ -13,7 +13,6 @@ import (
 	dangshared "github.com/dagger/dagger/core/sdk/dang/shared"
 	"github.com/dagger/dagger/core/sdk/entrypoint"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/util/hashutil"
@@ -229,36 +228,30 @@ func (r *entrypointRuntime) Call(
 			)
 			// An exec that the entrypoint starts is cached by its own recipe,
 			// which misses the call's implicit inputs, such as the clients the
-			// workspace declares. An entrypoint keys its exec on the call by
-			// declaring a nullable callDigest argument; one that does not
-			// declare it never receives it. The contract: an entrypoint that
-			// declares it sets core.ModuleCallDigestEnv to it on the exec
-			// that runs the function, and on no other, and the engine treats
-			// that exec as the module process (see core.ModuleCallDigestEnv).
-			// The recipe digest is stable, so the exec answers again when
-			// dagql evaluates a call again, such as after a prune; it already
-			// changes per call for never and per session for per-session
-			// functions. A function with an explicit
-			// TTL gets a new digest on every evaluation instead: its result
-			// can expire before that TTL when a call with a shorter one
-			// returned the same result. So it runs again whenever dagql
-			// evaluates it, also after a pruned result or a failed attempt.
-			// A call that tracks what its work borrows may be lent the
-			// session's credentials in the process, which nothing in the
-			// exec's recipe names: its exec runs again in each session, and
-			// the call's own result requires what it borrowed.
+			// workspace declares. An entrypoint keys its module process's exec
+			// on the call by declaring a nullable callDigest argument; one
+			// that does not declare it never receives it. The contract: an
+			// entrypoint that declares it sets core.ModuleCallDigestEnv to it
+			// on the exec that runs the function, and on no other, and the
+			// engine treats that exec as the module process (see
+			// core.ModuleCallDigestEnv).
+			//
+			// That exec is the function's run, as a container runtime's exec
+			// is, and like it, it answers only the evaluation that made it:
+			// callDigest is the call's recipe digest with a value of this
+			// evaluation's own. What the process was given and what it
+			// returns name results by handle, numbers in this engine
+			// process's cache: served to another evaluation, from another
+			// session, after a restart or from another engine, they name
+			// results that may be gone, or another call's, of any type. What
+			// the cache keeps and shares is the call's result, whose
+			// references persistence and import map to each engine's own.
+			// So dagql's cache policy alone decides when the function runs:
+			// whenever dagql evaluates the call, also after a failed attempt
+			// or a pruned or expired result. A call that tracks what its work
+			// borrows is no exception: its result requires what it borrowed.
 			if execMD != nil && execMD.CallDigest != "" {
-				callDigest := execMD.CallDigest
-				switch {
-				case fnCall.CacheTTLSeconds() > 0:
-					callDigest = hashutil.HashStrings(callDigest.String(), rand.Text())
-				case fnCall.TracksBorrowing():
-					clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-					if err != nil {
-						return nil, err
-					}
-					callDigest = hashutil.HashStrings(callDigest.String(), "session", clientMetadata.SessionID)
-				}
+				callDigest := hashutil.HashStrings(execMD.CallDigest.String(), rand.Text())
 				callArgs = append(callArgs, entrypoint.StringCallArg("callDigest", callDigest.String()))
 				// The digest so marks the module process's exec (see
 				// core.IsModuleProcessExec). An entrypoint that declares no
