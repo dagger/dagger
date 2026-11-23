@@ -2063,14 +2063,18 @@ func (c *Cache) MakeResultUnpruneable(ctx context.Context, res AnyResult) error 
 // lock that deleted it. The one other deletion is a failed in-place
 // replacement's, which collects its entry with the edge (cache_current_entry.go).
 func (c *Cache) removePersistedEdge(ctx context.Context, resultID sharedResultID) (droppedAt time.Time, removed bool, _ error) {
-	droppedAt, removed, _, err := c.removePrunedEdge(ctx, resultID)
+	// Only an engine's cache drops an edge this way, and an engine's cache
+	// marks nothing: a blob-backed cache's prune hands its marks back in its
+	// report.
+	var change RemoteChange
+	droppedAt, removed, _, err := c.removePrunedEdge(ctx, &change, resultID)
 	return droppedAt, removed, err
 }
 
 // removePrunedEdge is removePersistedEdge for a prune. On a blob-backed cache
 // the cascade goes through holdings, and it also reports how many values it
 // dropped (dropPrunedValuesLocked).
-func (c *Cache) removePrunedEdge(ctx context.Context, resultID sharedResultID) (droppedAt time.Time, removed bool, droppedValues int, _ error) {
+func (c *Cache) removePrunedEdge(ctx context.Context, change *RemoteChange, resultID sharedResultID) (droppedAt time.Time, removed bool, droppedValues int, _ error) {
 	if c == nil || resultID == 0 {
 		return time.Time{}, false, 0, nil
 	}
@@ -2097,7 +2101,7 @@ func (c *Cache) removePrunedEdge(ctx context.Context, resultID sharedResultID) (
 		queue, err = c.decrementIncomingOwnershipLocked(ctx, res, queue)
 		rerr = errors.Join(rerr, err)
 		if c.blobBacked {
-			queue, droppedValues, err = c.dropPrunedValuesLocked(ctx, []*sharedResult{res})
+			queue, droppedValues, err = c.dropPrunedValuesLocked(ctx, change, []*sharedResult{res})
 			rerr = errors.Join(rerr, err)
 		}
 	}

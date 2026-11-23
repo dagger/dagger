@@ -460,7 +460,7 @@ func (c *Cache) holdingLocked(key HolderKey) (*sharedResult, *holding) {
 
 // remoteCacheLocked returns the state of one held engine cache, creating it.
 // Requires egraphMu for writing.
-func (c *Cache) remoteCacheLocked(id CacheID) *remoteCacheState {
+func (c *Cache) remoteCacheLocked(change *RemoteChange, id CacheID) *remoteCacheState {
 	if c.remoteCaches == nil {
 		c.remoteCaches = make(map[CacheID]*remoteCacheState)
 	}
@@ -472,7 +472,7 @@ func (c *Cache) remoteCacheLocked(id CacheID) *remoteCacheState {
 			sessions:          make(map[string]map[uint64]struct{}),
 		}
 		c.remoteCaches[id] = state
-		c.noteSharedWriteLocked(SharedNewEngineCache)
+		c.noteSharedWriteLocked(change, SharedNewEngineCache)
 	}
 	return state
 }
@@ -573,28 +573,28 @@ func prepareRemoteHolding(key HolderKey, desc RemoteHolding) ([]string, *keptCal
 func (c *Cache) attachRemoteHoldingLocked(ctx context.Context, key HolderKey, desc RemoteHolding, parts []string, kept *keptCall) (change RemoteChange) {
 	defer c.takeChangesLocked(&change)
 	c.initEgraphLocked()
-	state := c.remoteCacheLocked(key.Cache)
+	state := c.remoteCacheLocked(&change, key.Cache)
 	entry, h := c.holdingLocked(key)
 	if h == nil {
-		entry, h = c.newHoldingLocked(ctx, state, key, desc)
+		entry, h = c.newHoldingLocked(ctx, &change, state, key, desc)
 		change.Candidates = []HolderKey{key}
 	}
-	c.teachRemoteIdentityLocked(ctx, entry, desc.Field, desc.Recipe, desc.Request, desc.ContentDigest, desc.Term)
-	change.Saved = c.keepCallLocked(entry, desc, kept)
+	c.teachRemoteIdentityLocked(ctx, &change, entry, desc.Field, desc.Recipe, desc.Request, desc.ContentDigest, desc.Term)
+	change.Saved = c.keepCallLocked(&change, entry, desc, kept)
 	if desc.TypeName != "" && desc.TypeName != handleString(h.typeName) {
 		h.typeName = internString(desc.TypeName)
-		c.markHoldingLocked(key)
+		c.markHoldingLocked(&change, key)
 	}
 	if desc.Executed && !desc.BeforeLastDrop && !h.executed {
 		h.executed = true
-		c.markHoldingLocked(key)
+		c.markHoldingLocked(&change, key)
 	}
 	if desc.CallRow && (!h.rowed || desc.FollowsFromInputs != h.follows) {
 		h.follows, h.rowed = desc.FollowsFromInputs, true
-		c.markHoldingLocked(key)
+		c.markHoldingLocked(&change, key)
 	}
 	touchSharedResultLastUsed(entry, desc.UsedAtUnixNano)
-	candidates := c.applyHeldValueStateLocked(ctx, state, key, entry, h, HeldValueState{
+	candidates := c.applyHeldValueStateLocked(ctx, &change, state, key, entry, h, HeldValueState{
 		Replacements:  desc.Replacements,
 		Deps:          desc.Deps,
 		ExpiresAtUnix: desc.ExpiresAtUnix,
@@ -605,7 +605,7 @@ func (c *Cache) attachRemoteHoldingLocked(ctx context.Context, key HolderKey, de
 	// complete ran the value at its count. A call that returned a lazy
 	// result reports its parts pending: its step runs later, if at all, and
 	// its evaluation's row says so.
-	if desc.Executed && ranPartsReported(parts) && c.noteHoldingRanLocked(key, entry, h, desc.Replacements, runRanByCall) {
+	if desc.Executed && ranPartsReported(parts) && c.noteHoldingRanLocked(&change, key, entry, h, desc.Replacements, runRanByCall) {
 		change.Saved = true
 	}
 	return change
@@ -613,7 +613,7 @@ func (c *Cache) attachRemoteHoldingLocked(ctx context.Context, key HolderKey, de
 
 // newHoldingLocked attaches a new holding to the entry of desc's recipe and
 // gives it its waiting dependents. Requires egraphMu for writing.
-func (c *Cache) newHoldingLocked(ctx context.Context, state *remoteCacheState, key HolderKey, desc RemoteHolding) (*sharedResult, *holding) {
+func (c *Cache) newHoldingLocked(ctx context.Context, change *RemoteChange, state *remoteCacheState, key HolderKey, desc RemoteHolding) (*sharedResult, *holding) {
 	entry := c.resultsByID[c.entriesByRecipe[desc.Recipe]]
 	if entry == nil {
 		entry = &sharedResult{
@@ -622,15 +622,15 @@ func (c *Cache) newHoldingLocked(ctx context.Context, state *remoteCacheState, k
 		}
 		c.putResultLocked(entry)
 		c.indexRecipeLocked(desc.Recipe, entry)
-		c.noteSharedWriteLocked(SharedNewEntry)
+		c.noteSharedWriteLocked(change, SharedNewEntry)
 	}
-	return entry, c.addHoldingLocked(ctx, state, key, entry)
+	return entry, c.addHoldingLocked(ctx, change, state, key, entry)
 }
 
 // addHoldingLocked attaches a new holding to entry and gives it its waiting
 // dependents: holdings of its cache that named its number before it existed.
 // Requires egraphMu for writing.
-func (c *Cache) addHoldingLocked(ctx context.Context, state *remoteCacheState, key HolderKey, entry *sharedResult) *holding {
+func (c *Cache) addHoldingLocked(ctx context.Context, change *RemoteChange, state *remoteCacheState, key HolderKey, entry *sharedResult) *holding {
 	h := &holding{}
 	state.graphVersion++
 	entry.putHolderLocked(key, h)
@@ -638,7 +638,7 @@ func (c *Cache) addHoldingLocked(ctx context.Context, state *remoteCacheState, k
 	// holders (RemoteChange), and its own facts and part answers don't read
 	// them, but for whether any engine holds it, which a holding's arrival
 	// turns only as it creates the entry, whose creation marks it.
-	c.markHoldingLocked(key)
+	c.markHoldingLocked(change, key)
 	state.entries[key.Number] = heldEntry{entry: entry, h: h}
 	// Each holding is one ownership unit of its entry.
 	c.incrementIncomingOwnershipLocked(ctx, entry)
@@ -647,7 +647,7 @@ func (c *Cache) addHoldingLocked(ctx context.Context, state *remoteCacheState, k
 		if _, parentHolding := state.holdingLocked(parent); parentHolding != nil {
 			parentHolding.unknownDeps, _ = withoutNumber(parentHolding.unknownDeps, key.Number)
 			parentHolding.deps = withNumber(parentHolding.deps, key.Number)
-			c.markHoldingLocked(HolderKey{Cache: key.Cache, Number: parent})
+			c.markHoldingLocked(change, HolderKey{Cache: key.Cache, Number: parent})
 			h.dependents++
 		}
 	}
@@ -737,7 +737,7 @@ func (c *Cache) applyMergedReplyLocked(ctx context.Context, cache CacheID, cloud
 // changed to change. Requires egraphMu for writing.
 func (c *Cache) applyMergedTargetsLocked(ctx context.Context, cache CacheID, cloudEntries map[TransferOrdinal]sharedResultID, targets []mergedTarget, change *RemoteChange) {
 	c.initEgraphLocked()
-	state := c.remoteCacheLocked(cache)
+	state := c.remoteCacheLocked(change, cache)
 	for _, t := range targets {
 		key := HolderKey{Cache: cache, Number: t.value.Number}
 		entry, h := c.holdingLocked(key)
@@ -746,11 +746,11 @@ func (c *Cache) applyMergedTargetsLocked(ctx context.Context, cache CacheID, clo
 			if entry == nil {
 				continue
 			}
-			h = c.addHoldingLocked(ctx, state, key, entry)
+			h = c.addHoldingLocked(ctx, change, state, key, entry)
 			change.Candidates = append(change.Candidates, key)
 		}
 		before := h.replacements
-		candidates := c.applyHeldValueStateLocked(ctx, state, key, entry, h, HeldValueState{
+		candidates := c.applyHeldValueStateLocked(ctx, change, state, key, entry, h, HeldValueState{
 			Replacements:  t.value.Replacements,
 			Deps:          t.value.Deps,
 			ExpiresAtUnix: t.value.ExpiresAtUnix,
@@ -793,7 +793,7 @@ func (c *Cache) applyMergedRootsLocked(cache CacheID, reply MergeReply, change *
 		before := h.retention
 		h.retention.observe(root.Retained, root.RetentionExpiresAtUnix, at)
 		if h.retention.retained != before.retained || h.retention.expiresAtUnix != before.expiresAtUnix {
-			c.markHoldingLocked(key)
+			c.markHoldingLocked(change, key)
 		}
 		if !h.retention.retained {
 			change.Candidates = append(change.Candidates, key)
@@ -890,14 +890,14 @@ func (c *Cache) updateRemoteHoldingLocked(ctx context.Context, key HolderKey, up
 	if h == nil {
 		return change, false
 	}
-	change.Candidates = c.applyHeldValueStateLocked(ctx, c.remoteCacheLocked(key.Cache), key, entry, h, HeldValueState{
+	change.Candidates = c.applyHeldValueStateLocked(ctx, &change, c.remoteCacheLocked(&change, key.Cache), key, entry, h, HeldValueState{
 		Replacements:  update.Replacements,
 		Deps:          update.Deps,
 		ContentDigest: update.ContentDigest,
 	}, parts, nil)
 	// An evaluation that reported a part complete ran the value at its
 	// count.
-	if update.Evaluated && ranPartsReported(parts) && c.noteHoldingRanLocked(key, entry, h, update.Replacements, runRanByEvaluation) {
+	if update.Evaluated && ranPartsReported(parts) && c.noteHoldingRanLocked(&change, key, entry, h, update.Replacements, runRanByEvaluation) {
 		change.Saved = true
 	}
 	return change, true
@@ -921,13 +921,13 @@ func (c *Cache) updateRemoteHoldingLocked(ctx context.Context, key HolderKey, up
 // parts and offered are the observation's complete and offered part address
 // keys. It returns the dropped dependencies' holdings. Requires egraphMu for
 // writing.
-func (c *Cache) applyHeldValueStateLocked(ctx context.Context, state *remoteCacheState, key HolderKey, entry *sharedResult, h *holding, obs HeldValueState, parts, offered []string) []HolderKey {
+func (c *Cache) applyHeldValueStateLocked(ctx context.Context, change *RemoteChange, state *remoteCacheState, key HolderKey, entry *sharedResult, h *holding, obs HeldValueState, parts, offered []string) []HolderKey {
 	if obs.ContentDigest != "" && string(obs.ContentDigest) != handleString(h.contentDigest) {
 		// The class learns a content digest from every observation, whatever
 		// its count: a union is never undone, and gating it by count would
 		// only make the class depend on arrival order. The holding's own
 		// content digest follows the count below.
-		c.teachRemoteIdentityLocked(ctx, entry, entry.description, "", "", obs.ContentDigest, nil)
+		c.teachRemoteIdentityLocked(ctx, change, entry, entry.description, "", "", obs.ContentDigest, nil)
 	}
 	if obs.Replacements < h.replacements {
 		return nil
@@ -983,9 +983,9 @@ func (c *Cache) applyHeldValueStateLocked(ctx context.Context, state *remoteCach
 		changed = true
 	}
 	if changed {
-		c.markHoldingLocked(key)
+		c.markHoldingLocked(change, key)
 	}
-	c.addHoldingDepsLocked(state, key, h, obs.Deps)
+	c.addHoldingDepsLocked(change, state, key, h, obs.Deps)
 	return candidates
 }
 
@@ -1012,7 +1012,7 @@ func (c *Cache) addRemoteHoldLocked(key HolderKey, session string) (change Remot
 	// The sessions holding it are read fresh (HoldingFacts): the hold
 	// names no holding.
 	h.sessions, _ = withSession(h.sessions, session)
-	state := c.remoteCacheLocked(key.Cache)
+	state := c.remoteCacheLocked(&change, key.Cache)
 	held := state.sessions[session]
 	if held == nil {
 		held = make(map[uint64]struct{})
@@ -1078,7 +1078,7 @@ func (c *Cache) observeRemoteRetentionLocked(key HolderKey, obs RetentionObserva
 	before := h.retention
 	h.retention.observe(obs.Retained, obs.ExpiresAtUnix, obsTime{generation: obs.Generation, engineTime: obs.EngineTimeUnixNano})
 	if h.retention.retained != before.retained || h.retention.expiresAtUnix != before.expiresAtUnix {
-		c.markHoldingLocked(key)
+		c.markHoldingLocked(&change, key)
 	}
 	if !h.retention.retained {
 		change.Candidates = []HolderKey{key}
@@ -1122,7 +1122,7 @@ func (c *Cache) releaseRemoteCacheLocked(cache CacheID) (change RemoteChange) {
 		// Its retention is a fact a reader keeps (HoldingFacts); the
 		// sessions holding it are read fresh.
 		if h.retention.retained {
-			c.markHoldingLocked(key)
+			c.markHoldingLocked(&change, key)
 		}
 		h.sessions = nil
 		h.retention = retentionRegister{}
@@ -1175,7 +1175,7 @@ func (c *Cache) collectRemoteHoldingsLocked(ctx context.Context, candidates []Ho
 		if h == nil || h.owned() || owned != nil && owned(key) {
 			continue
 		}
-		deps, more, err := c.removeHoldingLocked(ctx, c.remoteCaches[key.Cache], key, entry, h, entries)
+		deps, more, err := c.removeHoldingLocked(ctx, &change, c.remoteCaches[key.Cache], key, entry, h, entries)
 		queue = append(queue, deps...)
 		entries = more
 		collected = append(collected, key)
@@ -1184,15 +1184,15 @@ func (c *Cache) collectRemoteHoldingsLocked(ctx context.Context, candidates []Ho
 	for id, state := range c.remoteCaches {
 		if state.holdings == 0 {
 			delete(c.remoteCaches, id)
-			c.noteSharedWriteLocked(SharedEngineCacheGone)
+			c.noteSharedWriteLocked(&change, SharedEngineCacheGone)
 		}
 	}
 	releases, err := c.collectUnownedResultsLocked(ctx, entries)
 	removed := len(c.resultsByID) < entriesBefore
 	if removed {
-		c.noteSharedWriteLocked(SharedEntryRemoved)
+		c.noteSharedWriteLocked(&change, SharedEntryRemoved)
 	}
-	c.compactEqClassesAfterCollectionLocked(removed)
+	c.compactEqClassesAfterCollectionLocked(&change, removed)
 	c.takeChangesLocked(&change)
 	return collected, change, releases, errors.Join(rerr, err)
 }
@@ -1226,7 +1226,7 @@ const eqClassCheckInterval = 10 * time.Second
 // exceed that by the classes allocated or made dead since the last check,
 // until the first collection after the interval. Requires egraphMu for
 // writing.
-func (c *Cache) compactEqClassesAfterCollectionLocked(removed bool) {
+func (c *Cache) compactEqClassesAfterCollectionLocked(change *RemoteChange, removed bool) {
 	if removed {
 		c.eqClassRemoved = true
 	}
@@ -1243,7 +1243,7 @@ func (c *Cache) compactEqClassesAfterCollectionLocked(removed bool) {
 	}
 	start := time.Now()
 	c.eqClassChecks++
-	c.noteSharedWriteLocked(SharedClassesChecked)
+	c.noteSharedWriteLocked(change, SharedClassesChecked)
 	compacted, oldSlots, newSlots := c.compactEqClassesLocked(false)
 	c.eqClassCheckedAt = now
 	c.eqClassCheckedSlots = c.eqClassSlotsLocked()
@@ -1307,7 +1307,7 @@ func (c *Cache) CompactEqClasses(ctx context.Context) (oldSlots, newSlots int, r
 // whose keys it returns, and forgetting its unknown numbers. It releases the
 // holding's unit on its entry, appending to entries those left to collect.
 // Requires egraphMu for writing.
-func (c *Cache) removeHoldingLocked(ctx context.Context, state *remoteCacheState, key HolderKey, entry *sharedResult, h *holding, entries []*sharedResult) ([]HolderKey, []*sharedResult, error) {
+func (c *Cache) removeHoldingLocked(ctx context.Context, change *RemoteChange, state *remoteCacheState, key HolderKey, entry *sharedResult, h *holding, entries []*sharedResult) ([]HolderKey, []*sharedResult, error) {
 	// An entry left with no holding keeps none: a stored entry outlives
 	// every holding of it.
 	entry.deleteHolderLocked(key)
@@ -1317,7 +1317,7 @@ func (c *Cache) removeHoldingLocked(ctx context.Context, state *remoteCacheState
 	// stored, whose record answers whether it stores one, or goes with it,
 	// an entry with no value being owned by its holdings alone, and its
 	// leaving marks it (markLeavingLocked).
-	c.markHoldingLocked(key)
+	c.markHoldingLocked(change, key)
 	delete(state.entries, key.Number)
 	state.holdings--
 	var deps []HolderKey
@@ -1371,7 +1371,7 @@ func (c *Cache) CollectGoneHoldings(ctx context.Context, keys []HolderKey) (Remo
 	for i, key := range keys {
 		var deps []HolderKey
 		var err error
-		deps, entries, found[i], err = c.removeGoneHoldingLocked(ctx, key, entries)
+		deps, entries, found[i], err = c.removeGoneHoldingLocked(ctx, &change, key, entries)
 		if found[i] {
 			removed[key] = true
 		}
@@ -1381,7 +1381,7 @@ func (c *Cache) CollectGoneHoldings(ctx context.Context, keys []HolderKey) (Remo
 	releases, collectErr := c.collectUnownedResultsLocked(ctx, entries)
 	if len(c.resultsByID) < entriesBefore {
 		c.eqClassRemoved = true
-		c.noteSharedWriteLocked(SharedEntryRemoved)
+		c.noteSharedWriteLocked(&change, SharedEntryRemoved)
 	}
 	c.takeChangesLocked(&change)
 	c.egraphMu.Unlock()
@@ -1395,7 +1395,7 @@ func (c *Cache) CollectGoneHoldings(ctx context.Context, keys []HolderKey) (Remo
 // answer (CollectRemoteHolding), and reports whether the cache had it. It
 // returns the holdings it depended on, and appends to entries those its
 // removal leaves to collect. Requires egraphMu for writing.
-func (c *Cache) removeGoneHoldingLocked(ctx context.Context, key HolderKey, entries []*sharedResult) ([]HolderKey, []*sharedResult, bool, error) {
+func (c *Cache) removeGoneHoldingLocked(ctx context.Context, change *RemoteChange, key HolderKey, entries []*sharedResult) ([]HolderKey, []*sharedResult, bool, error) {
 	entry, h := c.holdingLocked(key)
 	if h == nil {
 		return nil, entries, false, nil
@@ -1409,7 +1409,7 @@ func (c *Cache) removeGoneHoldingLocked(ctx context.Context, key HolderKey, entr
 				continue
 			}
 			parent.unknownDeps = withNumber(parent.unknownDeps, key.Number)
-			c.markHoldingLocked(parentKey)
+			c.markHoldingLocked(change, parentKey)
 			state.unknownDependents[key.Number] = insertNumber(state.unknownDependents[key.Number], parentKey.Number)
 		}
 	}
@@ -1420,10 +1420,10 @@ func (c *Cache) removeGoneHoldingLocked(ctx context.Context, key HolderKey, entr
 			delete(state.sessions, session)
 		}
 	}
-	deps, entries, err := c.removeHoldingLocked(ctx, state, key, entry, h, entries)
+	deps, entries, err := c.removeHoldingLocked(ctx, change, state, key, entry, h, entries)
 	if state.holdings == 0 {
 		delete(c.remoteCaches, key.Cache)
-		c.noteSharedWriteLocked(SharedEngineCacheGone)
+		c.noteSharedWriteLocked(change, SharedEngineCacheGone)
 	}
 	return deps, entries, true, err
 }
@@ -1455,7 +1455,7 @@ func (c *Cache) applyHeldValueStateOfLocked(ctx context.Context, key HolderKey, 
 	if h == nil {
 		return change, false
 	}
-	change.Candidates = c.applyHeldValueStateLocked(ctx, c.remoteCacheLocked(key.Cache), key, entry, h, obs, parts, offered)
+	change.Candidates = c.applyHeldValueStateLocked(ctx, &change, c.remoteCacheLocked(&change, key.Cache), key, entry, h, obs, parts, offered)
 	return change, true
 }
 
@@ -1463,7 +1463,7 @@ func (c *Cache) applyHeldValueStateOfLocked(ctx context.Context, key HolderKey, 
 // a number the cache holds is owned through that holding's dependents, and
 // any other number waits in the reverse index until its holding is created.
 // Requires egraphMu for writing.
-func (c *Cache) addHoldingDepsLocked(state *remoteCacheState, key HolderKey, h *holding, deps []uint64) {
+func (c *Cache) addHoldingDepsLocked(change *RemoteChange, state *remoteCacheState, key HolderKey, h *holding, deps []uint64) {
 	var known, unknown []uint64
 	seen := make(map[uint64]struct{}, len(deps))
 	for _, number := range deps {
@@ -1478,11 +1478,11 @@ func (c *Cache) addHoldingDepsLocked(state *remoteCacheState, key HolderKey, h *
 			// (HoldingFacts): only the holding whose dependencies grew is
 			// named.
 			dep.dependents++
-			c.markHoldingLocked(key)
+			c.markHoldingLocked(change, key)
 			continue
 		}
 		unknown = append(unknown, number)
-		c.markHoldingLocked(key)
+		c.markHoldingLocked(change, key)
 		state.unknownDependents[number] = insertNumber(state.unknownDependents[number], key.Number)
 	}
 	h.deps = withNumbers(h.deps, known)
@@ -1546,7 +1546,7 @@ func advanceHeldParts(h *holding, keys []string, state heldPartState) bool {
 // that class, as a publication indexes a computed result. Most rows report an
 // identity the cache already holds, as a repeat hit does locally: then
 // nothing would change, and nothing is done. Requires egraphMu for writing.
-func (c *Cache) teachRemoteIdentityLocked(ctx context.Context, entry *sharedResult, field string, recipe, request, content digest.Digest, term *RemoteTerm) {
+func (c *Cache) teachRemoteIdentityLocked(ctx context.Context, change *RemoteChange, entry *sharedResult, field string, recipe, request, content digest.Digest, term *RemoteTerm) {
 	// The entry's own frame takes its content digest, as the engine's did
 	// when it was taught it, whether or not the e-graph learns anything: a
 	// record sent from the Cloud then carries it, and a fresh engine joins
@@ -1555,18 +1555,18 @@ func (c *Cache) teachRemoteIdentityLocked(ctx context.Context, entry *sharedResu
 	if content != "" && entry != nil && entry.id != 0 {
 		if n := len(entry.taught); n == 0 || entry.taught[n-1] != content {
 			entry.taught = append(entry.taught, content)
-			c.noteSharedWriteLocked(SharedTaughtContent)
+			c.noteSharedWriteLocked(change, SharedTaughtContent)
 		}
 		given := entry.taughtGiven
 		c.queueTaughtContentLocked(entry)
 		if entry.taughtGiven != given {
-			c.noteSharedWriteLocked(SharedTaughtContent)
+			c.noteSharedWriteLocked(change, SharedTaughtContent)
 		}
 	}
 	if c.remoteIdentityTeachesNothingLocked(entry, recipe, request, content, term) {
 		return
 	}
-	c.noteSharedWriteLocked(SharedIdentity)
+	c.noteSharedWriteLocked(change, SharedIdentity)
 	c.writeRemoteIdentityLocked(ctx, entry, field, recipe, request, content, term)
 }
 

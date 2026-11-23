@@ -73,12 +73,11 @@ func (w SharedWrites) String() string {
 	return strings.Join(names, "|")
 }
 
-// noteSharedWriteLocked records that the write in progress changed state
-// engines share, of the kinds in w, for the write to hand back with its
-// marks (takeChangesLocked). Only a blob-backed cache records. Requires
-// egraphMu for writing.
-func (c *Cache) noteSharedWriteLocked(w SharedWrites) {
+// noteSharedWriteLocked records in change, the record of the write in
+// progress, that the write changed state engines share, of the kinds in w.
+// Only a blob-backed cache records. Requires egraphMu for writing.
+func (c *Cache) noteSharedWriteLocked(change *RemoteChange, w SharedWrites) {
 	if c.changes != nil {
-		c.changes.shared |= w
+		change.Shared |= w
 	}
 }
