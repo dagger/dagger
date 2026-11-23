@@ -284,7 +284,7 @@ func (c *Cache) findEqClassLocked(id eqClassID) eqClassID {
 // takes each live term it moved: those terms still name the losing root
 // until they are repaired. Keeping the class with more terms moves the
 // fewest. A survivor of lower rank takes a rank above the loser's, which
-// keeps a rank above its tree's height, short of the most a rank holds.
+// keeps a rank above its tree's height, up to the most a rank holds.
 func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID, moved *[]egraphTermID) (root eqClassID, absorbedInputTerms bool) {
 	ra := c.findEqClassLocked(a)
 	rb := c.findEqClassLocked(b)
@@ -309,8 +309,8 @@ func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID, moved *[]egraphTerm
 		ra, rb = rb, ra
 	}
 	c.egraphParents[rb] = ra
-	if r := c.egraphRanks[rb]; r >= c.egraphRanks[ra] && r < math.MaxUint8 {
-		c.egraphRanks[ra] = r + 1
+	if r := c.egraphRanks[rb]; r >= c.egraphRanks[ra] {
+		c.egraphRanks[ra] = min(r, math.MaxUint8-1) + 1
 	}
 
 	// merge reverse digest indexes

@@ -3,6 +3,7 @@ package dagql
 import (
 	"context"
 	"fmt"
+	"math"
 	"math/rand/v2"
 	"slices"
 	"testing"
@@ -347,5 +348,38 @@ func BenchmarkUnionIntoAUsedClass(b *testing.B) {
 				f.cache.egraphMu.RUnlock()
 			})
 		}
+	}
+}
+
+// A union's survivor takes a rank above the loser's when the loser's is as
+// high as its own, up to the most a rank holds: a class more terms take as
+// an input survives a class of higher rank, and takes that rank and one,
+// or the most a rank holds when the loser has it.
+func TestUnionSurvivorTakesARankAboveTheLosers(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct{ survivor, loser, want uint8 }{
+		{0, 0, 1},
+		{3, 1, 3},
+		{0, 7, 8},
+		{0, math.MaxUint8 - 1, math.MaxUint8},
+		{0, math.MaxUint8, math.MaxUint8},
+		{math.MaxUint8, math.MaxUint8, math.MaxUint8},
+	} {
+		t.Run(fmt.Sprint(tc.survivor, "-", tc.loser), func(t *testing.T) {
+			t.Parallel()
+			ctx := t.Context()
+			c := newCloudCache(t)
+			c.egraphMu.Lock()
+			defer c.egraphMu.Unlock()
+			c.initEgraphLocked()
+			used := c.ensureEqClassForDigestLocked(ctx, "used")
+			other := c.ensureEqClassForDigestLocked(ctx, "other")
+			// The used class is a term's input: it has more terms.
+			c.inputEqClassToTerms[used] = map[egraphTermID]struct{}{1: {}}
+			c.egraphRanks[used], c.egraphRanks[other] = tc.survivor, tc.loser
+			root, _ := c.mergeEqClassesNoRepairLocked(other, used, nil)
+			require.Equal(t, used, root, "the class more terms use survives")
+			require.Equal(t, tc.want, c.egraphRanks[root])
+		})
 	}
 }
