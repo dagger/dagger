@@ -387,3 +387,39 @@ func TestCacheBoundResultsIdentityNeverLeavesTheEngine(t *testing.T) {
 	assert.Equal(t, "later", res.Unwrap().(*transferTestValue).Text)
 	assert.NilError(t, c.ReleaseSession(later, "session-later"))
 }
+
+// A bound result kept past its session, as the dependency of a kept entry,
+// names a session of the cache's earlier run. After a restart no session of
+// the later run is served it or matches its identity, even one that has the
+// same session ID and has bound a result of its own, so it holds a binding
+// of that ID's form.
+func TestCacheRestoredBoundResultMatchesNoLaterSession(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "cache.db")
+	ctx, c, srv := persistedListTestCache(t, path)
+	read := func(ctx context.Context, c *Cache, srv *Server, session, field, text string) AnyResult {
+		t.Helper()
+		frame := &ResultCall{Kind: ResultCallKindField, Field: field, Type: NewResultCallType(String("").Type())}
+		res, err := c.GetOrInitCall(ctx, session, srv, &CallRequest{ResultCall: frame, IsPersistable: true}, func(ctx context.Context) (AnyResult, error) {
+			BindToSession(ctx)
+			return NewResultForCall(String(text), frame.clone())
+		})
+		assert.NilError(t, err)
+		return res
+	}
+
+	earlier := currentEntryTestSession(ctx, c, "session-1")
+	bound := read(earlier, c, srv, "session-1", "bound-restored", "earlier")
+	parent := currentEntryTestPublish(t, earlier, c, srv, "session-1", "bound-restored-parent", String("parent"))
+	assert.NilError(t, c.AddExplicitDependency(earlier, parent, bound, "bound-dependency"))
+	assert.NilError(t, c.ReleaseSession(earlier, "session-1"))
+	assert.NilError(t, c.WaitSessionRelease(earlier, "session-1"))
+	assert.NilError(t, c.Close(ctx))
+
+	ctx, c, srv = persistedListTestCache(t, path)
+	same := currentEntryTestSession(ctx, c, "session-1")
+	read(same, c, srv, "session-1", "bound-own", "own")
+	later := read(same, c, srv, "session-1", "bound-restored", "later")
+	assert.Assert(t, !later.HitCache(), "a later run's session with the same ID must not be served the earlier run's bound result")
+	assert.Equal(t, String("later"), later.Unwrap())
+	assert.NilError(t, c.ReleaseSession(same, "session-1"))
+}
