@@ -380,3 +380,23 @@ func TestModuleSourceReadByAnotherEngineBuildIsReadAgain(t *testing.T) {
 	moduleSourceEngineBuild = func() string { return "v0.0.0-another+build" }
 	require.False(t, moduleIdentityTestSource(t, e, e.session(t, "another-build"), "built").HitCache(), "an engine of another build reads the source again")
 }
+
+// A shared module-source read is keyed by its engine's default platform, as
+// a module's function calls are: an entrypoint's sources can read the
+// platform and give the module other files on an engine of another one.
+func TestModuleSourceReadIsKeyedByItsEnginePlatform(t *testing.T) {
+	t.Parallel()
+	e := newTransferTestEngine(t, transferTestSalt(t))
+	ctx := e.session(t, "module")
+	req := &dagql.CallRequest{ResultCall: &dagql.ResultCall{Field: "asModuleSource"}}
+	require.NoError(t, moduleSourceReadCacheKey(ctx, req, true))
+	platform, err := core.CurrentEngineDefaultPlatform(ctx)
+	require.NoError(t, err)
+	var keyed string
+	for _, input := range req.ImplicitInputs {
+		if input != nil && input.Name == core.EngineDefaultPlatformInput && input.Value != nil {
+			keyed = input.Value.StringValue
+		}
+	}
+	require.Equal(t, platform.Format(), keyed, "the read is keyed by its engine's default platform")
+}
