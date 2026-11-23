@@ -229,15 +229,20 @@ func TestCacheBoundResultIsNotTransferred(t *testing.T) {
 // result the first session's parent holds. Each session's own later calls of
 // the field hit its own. The held result is either one the bound call made,
 // or one that existed before it, an ordinary value another session is still
-// served by its own call.
+// served by its own call. Each session may also reach its parent through a
+// cached call that returns it, which must not join the two parents.
 func TestCacheBoundResultsHeldResultIsServedOnlyToItsSession(t *testing.T) {
 	t.Parallel()
-	for _, made := range []bool{true, false} {
-		name := "held result the bound call made"
-		if !made {
-			name = "held result that existed before"
-		}
-		t.Run(name, func(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		made, wrapped bool
+	}{
+		{"held result the bound call made", true, false},
+		{"held result that existed before", false, false},
+		{"parent returned by a cached call", true, true},
+	} {
+		made, wrapped := tc.made, tc.wrapped
+		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			baseCtx := t.Context()
 			c, err := NewCache(baseCtx, "", nil, nil)
@@ -264,6 +269,18 @@ func TestCacheBoundResultsHeldResultIsServedOnlyToItsSession(t *testing.T) {
 				})
 				assert.NilError(t, err)
 				return res
+			}
+			if wrapped {
+				bare := parent
+				wrapperCall := cacheTestIntCall("bound-parent-wrapper")
+				parent = func(ctx context.Context, session string, v int) AnyResult {
+					t.Helper()
+					res, err := c.GetOrInitCall(ctx, session, noopTypeResolver{}, &CallRequest{ResultCall: wrapperCall.clone()}, func(ctx context.Context) (AnyResult, error) {
+						return bare(ctx, session, v), nil
+					})
+					assert.NilError(t, err)
+					return res
+				}
 			}
 			heldBy := func(ctx context.Context, session string, p AnyResult) AnyResult {
 				t.Helper()
@@ -295,11 +312,8 @@ func TestCacheBoundResultsHeldResultIsServedOnlyToItsSession(t *testing.T) {
 				session string
 				want    int
 			}{{aCtx, "session-a", 1}, {bCtx, "session-b", 2}} {
-				p, err := c.GetOrInitCall(s.ctx, s.session, noopTypeResolver{}, &CallRequest{ResultCall: parentCall.clone()}, func(context.Context) (AnyResult, error) {
-					t.Fatalf("%s must hit its own bound parent", s.session)
-					return nil, nil
-				})
-				assert.NilError(t, err)
+				p := parent(s.ctx, s.session, s.want)
+				assert.Assert(t, p.HitCache(), "%s hits its own bound parent", s.session)
 				again := heldBy(s.ctx, s.session, p)
 				assert.Assert(t, again.HitCache(), "%s hits its own field", s.session)
 				assert.Equal(t, s.want, cacheTestUnwrapInt(t, again))
