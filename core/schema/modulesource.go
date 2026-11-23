@@ -413,7 +413,9 @@ func moduleSourceFieldCacheKey[T dagql.Typed, A any](ctx context.Context, _ dagq
 	return moduleSourceReadCacheKey(ctx, req, true)
 }
 
-// moduleSourceEngineBuild names the engine build that reads a module source.
+// moduleSourceEngineBuild names the engine build that reads a module source:
+// its version and the commit it was built from (engine.FullVersion), which
+// decide the version "latest" names and the built-in SDKs its image holds.
 // Tests replace it to stand for another engine.
 var moduleSourceEngineBuild = engine.FullVersion
 
@@ -427,6 +429,11 @@ var moduleSourceEngineBuild = engine.FullVersion
 // past its session, as the module loaded from it is. What it still takes per
 // call, session or client as it runs keeps it in its session
 // (keepReadWithWhatItRead).
+//
+// A shared read is still keyed by what it takes from its engine, the version
+// "latest" names and the built-in SDKs its image holds
+// (moduleSourceEngineBuild), and by the cache scope a caller that busts its
+// cache deliberately sets (dagql.CacheScopeInput), as it reads its own again.
 func moduleSourceReadCacheKey(ctx context.Context, req *dagql.CallRequest, decided bool) error {
 	if decided {
 		readsHost, err := core.CallerReadsItsHost(ctx)
@@ -434,6 +441,16 @@ func moduleSourceReadCacheKey(ctx context.Context, req *dagql.CallRequest, decid
 			return err
 		}
 		if !readsHost {
+			if err := req.SetImplicitInput(ctx, "moduleSourceEngineBuild", dagql.NewString(moduleSourceEngineBuild())); err != nil {
+				return err
+			}
+			scope, err := dagql.CacheScopeInput.Resolver(ctx, nil)
+			if err != nil {
+				return err
+			}
+			if err := req.SetImplicitInput(ctx, dagql.CacheScopeInput.Name, scope); err != nil {
+				return err
+			}
 			req.IsPersistable = true
 			return nil
 		}
