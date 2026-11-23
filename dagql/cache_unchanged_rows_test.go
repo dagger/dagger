@@ -117,3 +117,35 @@ func TestAnUnchangedRecordStillTeachesTheCallsItComesWith(t *testing.T) {
 		require.False(t, ran, "%s hits", frame.Field)
 	}
 }
+
+// An engine's reply to a landing is the same whether or not it teaches an
+// unchanged record again, row by row: the service reads from it what the
+// engine holds, and a record taught nothing again changes none of it.
+func TestAnUnchangedRecordsReplyIsTheSame(t *testing.T) {
+	t.Parallel()
+	ctx, cloud, r, _ := storedBundleTestCloud(t, "replies")
+	skipCtx, skip, _ := transferTestCache(t)
+	allCtx, all, _ := transferTestCache(t)
+	all.testNoUnchangedRows = true
+	land := func(bundle ValueBundle) {
+		t.Helper()
+		a := unchangedRowsTestLand(t, skipCtx, skip, bundle)
+		b := unchangedRowsTestLand(t, allCtx, all, bundle)
+		require.Zero(t, b.Rows.Unchanged)
+		a.Rows.Unchanged = 0
+		require.Equal(t, b.Rows, a.Rows)
+		require.Equal(t, b.Roots, a.Roots)
+		require.Equal(t, b.Values, a.Values, "row by row")
+	}
+	first := unchangedRowsTestBuild(t, ctx, cloud, nil, r)
+	land(first)
+	land(first)
+	stored, _, err := cloud.SetStoredPart(ctx, r, testLiveOffer(), 0)
+	require.NoError(t, err)
+	require.True(t, stored)
+	changed := unchangedRowsTestBuild(t, ctx, cloud, nil, r)
+	land(changed)
+	land(changed)
+	reply := unchangedRowsTestLand(t, skipCtx, skip, changed)
+	require.Equal(t, 2, reply.Rows.Unchanged, "the engine that skips did skip")
+}

@@ -108,8 +108,10 @@ func (res *sharedResult) noteCloudCopyLocked(number uint64, stored bool, expires
 		h = &holding{}
 	} else if key.Number != number {
 		// A later message names another Cloud entry, as after a service
-		// restart: the one holding moves to it, with its offers.
+		// restart: the one holding moves to it, with its offers. What the
+		// engine merged was the other entry's.
 		res.deleteHolderLocked(key)
+		h.cloudMerge = nil
 	}
 	res.putHolderLocked(HolderKey{Cache: cloudCacheID, Number: number}, h)
 	h.unstored = !stored
@@ -172,4 +174,16 @@ func (c *Cache) HasPartOffer(res AnyResult, part PartKey) bool {
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
 	return row.partOfferLocked(key) != nil
+}
+
+// cloudMergeNote is what an engine last merged of its Cloud holding's entry:
+// the Cloud cache's start count and the entry's change stamp the merged
+// value carried (ValueBundle.SenderGeneration, TransferredValue.SenderStamp),
+// and the engine entry's own transfer revision once the merge left it. A
+// later value of the same Cloud entry at the same start count and stamp
+// carries the same record and expiry, and while the engine entry's revision
+// is unchanged, its identity and the Cloud's copy are what the merge taught
+// it then (unchangedCloudRowLocked).
+type cloudMergeNote struct {
+	generation, stamp, revision uint64
 }
