@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"net/url"
 	"os"
 	"path"
@@ -24,6 +25,7 @@ import (
 
 	"github.com/dagger/dagger/core/gitref"
 	"github.com/dagger/dagger/core/modules"
+	"github.com/dagger/dagger/core/sdk/sdkmeta"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
@@ -144,6 +146,11 @@ func (*SDKConfig) TypeDescription() string {
 
 func (sdk SDKConfig) Clone() *SDKConfig {
 	cp := sdk
+	// Copied, not shared: withExperimentalFeatures and
+	// withoutExperimentalFeatures write into a clone's map, and the source
+	// cloned from may be held by other clients.
+	cp.Config = maps.Clone(sdk.Config)
+	cp.Experimental = maps.Clone(sdk.Experimental)
 	return &cp
 }
 
@@ -1065,6 +1072,15 @@ func (src *ModuleSource) persistedPayload(ref func(res dagql.AnyResult, label st
 // client's source shares. A source loaded from a local path has none: its
 // files are the caller's.
 //
+// Besides what it persists, it holds the SDK the source resolved, by the
+// SDK's own module: the source persists only the SDK's config, and a
+// module SDK's ref can name a branch, which resolves to another commit
+// later. A source that holds a module SDK's config without its module, as
+// one restored from a saved cache does, has no identity. It holds too the
+// source's user defaults as a function sees them (expandedUserDefaults):
+// they persist as written, but a value can name a variable of the client's
+// environment, which differs between clients.
+//
 // It isn't SourceImplementationDigest, which says whether two sources' code
 // is the same: it leaves out the name withName sets, the kind, the ref and
 // workspace the source was loaded from, and it reads the context's bytes.
@@ -1088,11 +1104,31 @@ func (src *ModuleSource) ContentIdentity(ctx context.Context) (digest.Digest, bo
 	if err != nil {
 		return "", false, err
 	}
+	if src.SDK != nil && src.SDKImpl != nil {
+		if sdkMod, ok := src.SDKImpl.AsModule(); ok && sdkMod.Self() != nil {
+			frame, err := sdkMod.ResultCall()
+			if err != nil {
+				return "", false, fmt.Errorf("module source sdk module call: %w", err)
+			}
+			dgst, err := frame.ContentPreferredDigest(ctx)
+			if err != nil {
+				return "", false, fmt.Errorf("module source sdk module content: %w", err)
+			}
+			refs = append(refs, "module source sdk module="+dgst.String())
+		} else if name, _, _ := strings.Cut(src.SDK.Source, "@"); !sdkmeta.IsBuiltin(name) {
+			return "", false, nil
+		}
+	}
+	defaults, err := src.expandedUserDefaults(ctx)
+	if err != nil {
+		return "", false, fmt.Errorf("module source user defaults: %w", err)
+	}
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return "", false, fmt.Errorf("module source content identity: %w", err)
 	}
-	return hashutil.HashStrings(append([]string{"ModuleSource.contentIdentity", string(body)}, refs...)...), true, nil
+	parts := append([]string{"ModuleSource.contentIdentity", string(body)}, refs...)
+	return hashutil.HashStrings(append(parts, defaults...)...), true, nil
 }
 
 func (*ModuleSource) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
@@ -1585,6 +1621,43 @@ const moduleSourceHashMix = "moduleSource"
 // implementation. Two module sources with the same digest should share
 // implementation-scoped cache identity for SDK operations and module function
 // calls even if they came from different client-specific sources.
+// errUserDefaultsUnexpanded wraps a failure to expand a source's user
+// defaults, as distinct from failing to find the client to expand them for.
+var errUserDefaultsUnexpanded = errors.New("expand user defaults")
+
+// expandedUserDefaults is the source's user defaults as a function sees
+// them, each "env:NAME=VALUE", sorted by name. Their values are expanded in
+// the main client's context, as UserDefault does when it applies them, so
+// they hold the variables of that client's environment. A dependent module
+// calling this one has none of them set, and calls to this module expand
+// them in the caller's context.
+func (src *ModuleSource) expandedUserDefaults(ctx context.Context) ([]string, error) {
+	if src.UserDefaults == nil || len(src.UserDefaults.Environ) == 0 {
+		return nil, nil
+	}
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get current query: %w", err)
+	}
+	mainClient, err := query.NonModuleParentClientMetadata(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("access main client: %w", err)
+	}
+	vars, err := src.UserDefaults.Variables(engine.ContextWithClientMetadata(ctx, mainClient), false)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", errUserDefaultsUnexpanded, err)
+	}
+	// Sort by variable name for better digest stability
+	sort.Slice(vars, func(i, j int) bool {
+		return vars[i].Name < vars[j].Name
+	})
+	defaults := make([]string, 0, len(vars))
+	for _, v := range vars {
+		defaults = append(defaults, fmt.Sprintf("env:%s=%s", v.Name, v.Value))
+	}
+	return defaults, nil
+}
+
 func (src *ModuleSource) SourceImplementationDigest(ctx context.Context) (digest.Digest, error) {
 	dag, err := CurrentDagqlServer(ctx)
 	if err != nil {
@@ -1609,36 +1682,19 @@ func (src *ModuleSource) SourceImplementationDigest(ctx context.Context) (digest
 	}
 
 	// Include user defaults in digest so changes to env files invalidate cache
-	if src.UserDefaults != nil && len(src.UserDefaults.Environ) > 0 {
-		// Expand system variables from the main client, as UserDefault does
-		// when it applies them. A dependent module calling this one has none
-		// of them set, and calls to this module compute the digest in the
-		// caller's context.
-		query, err := CurrentQuery(ctx)
-		if err != nil {
-			return "", fmt.Errorf("get current query: %w", err)
-		}
-		mainClient, err := query.NonModuleParentClientMetadata(ctx)
-		if err != nil {
-			return "", fmt.Errorf("access main client: %w", err)
-		}
-		vars, err := src.UserDefaults.Variables(engine.ContextWithClientMetadata(ctx, mainClient), false)
-		if err != nil {
-			// If user defaults fail to load, log the error and skip them from digest calculation
-			// FIXME: change the signature to bubble up the error?
-			slog.Error("failed to load user defaults for module source",
-				"module_name", src.ModuleName,
-				"error", err,
-			)
-		} else {
-			// Sort by variable name for better digest stability
-			sort.Slice(vars, func(i, j int) bool {
-				return vars[i].Name < vars[j].Name
-			})
-			for _, v := range vars {
-				inputs = append(inputs, fmt.Sprintf("env:%s=%s", v.Name, v.Value))
-			}
-		}
+	defaults, err := src.expandedUserDefaults(ctx)
+	switch {
+	case errors.Is(err, errUserDefaultsUnexpanded):
+		// If user defaults fail to load, log the error and skip them from digest calculation
+		// FIXME: change the signature to bubble up the error?
+		slog.Error("failed to load user defaults for module source",
+			"module_name", src.ModuleName,
+			"error", err,
+		)
+	case err != nil:
+		return "", err
+	default:
+		inputs = append(inputs, defaults...)
 	}
 
 	if src.SDK != nil {
