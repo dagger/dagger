@@ -1851,15 +1851,20 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM], maxToke
 		if err != nil {
 			return inst, err
 		}
-		if err := srv.Select(ctx, inst, &inst, dagql.Selector{
+		var fitted dagql.ObjectResult[*LLM]
+		if err := srv.Select(ctx, inst, &fitted, dagql.Selector{
 			Field: "__withImagesFitted",
 			Args:  []dagql.NamedInput{{Name: "maxEdge", Value: dagql.NewInt(maxEdge)}},
 		}); err != nil {
 			return inst, err
 		}
-		llm = inst.Self()
-		if _, err := llm.Endpoint(ctx); err != nil {
-			return inst, err
+		// An image can pass the header check and still fail to shrink (e.g.
+		// a truncated file); record nothing then.
+		if !slices.Equal(fitted.Self().Messages, llm.Messages) {
+			inst, llm = fitted, fitted.Self()
+			if _, err := llm.Endpoint(ctx); err != nil {
+				return inst, err
+			}
 		}
 	}
 	llm = llm.Clone()

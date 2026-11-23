@@ -304,6 +304,7 @@ var consoleCheckpointConfig = map[string]bool{
 	"attempt":                    true,
 	"__withExpertise":            true,
 	"__withOwnerAgent":           true,
+	"__withImagesFitted":         true, // only re-encodes image bytes
 	// Legacy recorded checkpoints; no longer emitted or evaluated.
 	"__withCompositionOwner": true,
 }

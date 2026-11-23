@@ -365,6 +365,7 @@ func TestConsoleRecordedCheckpointSelectors(t *testing.T) {
 			map[string]any{"kind": "TEXT", "text": "look"},
 			map[string]any{"kind": "IMAGE", "mimeType": "image/png", "data": []byte("png")},
 		})}},
+		{"__withImagesFitted", []*call.Argument{arg("maxEdge", int64(1568))}},
 		{"withResponse", []*call.Argument{arg("content", []any{map[string]any{"kind": "TEXT", "text": "ok"}})}},
 		{"frobnicate", nil},
 		{"withPromptFile", []*call.Argument{ref("file", file)}},
