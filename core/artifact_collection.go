@@ -1,6 +1,7 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -413,8 +414,8 @@ func (a *Artifacts) Expand(ctx context.Context) (*Artifacts, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Sort references by recipe so discovery order and local handles do not
-	// change the view's cache identity.
+	// Sort references by origin, then recipe, so discovery order, local handles
+	// and the per-call Workspace do not change the view's cache identity.
 	type sourceKey struct {
 		index  int
 		recipe string
@@ -432,7 +433,9 @@ func (a *Artifacts) Expand(ctx context.Context) (*Artifacts, error) {
 		}
 		order[i] = sourceKey{i, encoded, artifactViewOrigin(id)}
 	}
-	slices.SortFunc(order, func(a, b sourceKey) int { return strings.Compare(a.recipe, b.recipe) })
+	slices.SortFunc(order, func(a, b sourceKey) int {
+		return cmp.Or(strings.Compare(a.origin, b.origin), strings.Compare(a.recipe, b.recipe))
+	})
 	view := &ArtifactView{state: artifactViewState{Rules: discovery.view.state.Rules}}
 	if err := view.addPaths(ctx, roots); err != nil {
 		return nil, err
