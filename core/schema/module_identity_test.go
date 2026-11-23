@@ -10,6 +10,8 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/snapshots/config"
+	"github.com/dagger/dagger/internal/buildkit/util/compression"
 )
 
 // moduleIdentityTestSource reads a module source named name from an
@@ -250,4 +252,35 @@ func TestSDKConfigCloneSharesNoMaps(t *testing.T) {
 	cp.Config["goprivate"] = "elsewhere.com"
 	require.True(t, orig.Experimental["SELF_CALLS"], "the original's features are its own")
 	require.Equal(t, "example.com", orig.Config["goprivate"], "the original's config is its own")
+}
+
+// A module loaded from a source with a content identity outlives the session
+// that loaded it, as its definitions do: once that session ends, as a
+// check's does, the next session on the engine loads nothing again, and an
+// engine sent the module, as the Cloud sends it, loads nothing either.
+// Before, a loaded module was kept only while something kept depended on it.
+func TestModuleLoadedOutlivesItsSession(t *testing.T) {
+	t.Parallel()
+	salt := transferTestSalt(t)
+	a := newTransferTestEngine(t, salt)
+
+	first := a.session(t, "first")
+	moduleIdentityTestLoad(t, a, first, moduleIdentityTestSource(t, a, first, "kept"))
+	require.NoError(t, a.cache.ReleaseSession(a.base, "first-session"))
+	require.NoError(t, a.cache.WaitSessionRelease(a.base, "first-session"))
+
+	later := a.session(t, "later")
+	kept := moduleIdentityTestLoad(t, a, later, moduleIdentityTestSource(t, a, later, "kept"))
+	require.True(t, kept.HitCache(), "the module outlives the session that loaded it")
+
+	b := newTransferTestEngine(t, salt)
+	selection := dagql.ValueSelection{Roots: []dagql.AnyResult{kept}}
+	require.NoError(t, a.cache.WithExportedValues(later, selection, config.RefConfig{Compression: compression.New(compression.Uncompressed)}, func(_ context.Context, exported *dagql.ExportedValues) error {
+		b1 := b.session(t, "b1")
+		_, err := b.cache.MergeValues(b1, dagql.CloudCacheID, exported.Bundle)
+		require.NoError(t, err)
+		require.True(t, moduleIdentityTestLoad(t, b, b1, moduleIdentityTestSource(t, b, b1, "kept")).HitCache(),
+			"another engine sent the module loads nothing again")
+		return nil
+	}))
 }
