@@ -483,14 +483,14 @@ func TestChangedSinceABuildBetweenAPrunesDrops(t *testing.T) {
 	_, _, err := cloud.CollectRemoteHoldings(ctx, cloud.ReleaseRemoteCache(ctx, "cache-b").Candidates, nil)
 	require.NoError(t, err)
 
-	_, removed, _, err := cloud.removePrunedEdge(ctx, sharedResultID(a))
+	_, removed, _, err := cloud.removePrunedEdge(ctx, &RemoteChange{}, sharedResultID(a))
 	require.NoError(t, err)
 	require.True(t, removed)
 	require.Nil(t, storedBundleTestEntry(cloud, a), "A is collected")
 	before := changedSinceTestBuild(t, cloud, r)
 	require.Len(t, before.Bundle.Outputs, 1, "R borrows B's part")
 
-	_, removed, _, err = cloud.removePrunedEdge(ctx, sharedResultID(b))
+	_, removed, _, err = cloud.removePrunedEdge(ctx, &RemoteChange{}, sharedResultID(b))
 	require.NoError(t, err)
 	require.True(t, removed)
 	require.Nil(t, storedBundleTestEntry(cloud, b), "B is collected")
