@@ -142,12 +142,14 @@ func (h *HeldBy) heldLocked(res *sharedResult, nowUnix int64) bool {
 // expired at nowUnix: among its holdings of that cache only
 // (cacheHolderRefsLocked), each judged by its own expiry. Requires egraphMu.
 func (h *HeldBy) holdsLocked(res *sharedResult, nowUnix int64) bool {
-	for _, ref := range res.cacheHolderRefsLocked(h.Cache) {
+	holds := false
+	res.eachCacheHolderLocked(h.Cache, func(ref holderRef) bool {
 		if held := ref.h; held.expiresAtUnix == 0 || held.expiresAtUnix > nowUnix {
-			return true
+			holds = true
 		}
-	}
-	return false
+		return !holds
+	})
+	return holds
 }
 
 // StoredBundle builds a bundle from the entries of a blob-backed cache, the

@@ -376,16 +376,15 @@ type servedRun struct {
 // none of their locks: it requires egraphMu for writing, as an entry's
 // removal holds it.
 func (res *sharedResult) hasUnexpiredHoldingLocked(nowUnix int64) bool {
-	for _, ref := range res.holderRefsLocked() {
+	unexpired := false
+	res.eachHolderLocked(func(ref holderRef) bool {
 		h := ref.h
-		if h.unstored {
-			continue
+		if !h.unstored && (h.expiresAtUnix == 0 || nowUnix < h.expiresAtUnix) {
+			unexpired = true
 		}
-		if h.expiresAtUnix == 0 || nowUnix < h.expiresAtUnix {
-			return true
-		}
-	}
-	return false
+		return !unexpired
+	})
+	return unexpired
 }
 
 func (h *holding) owned() bool {
@@ -2175,11 +2174,11 @@ func (c *Cache) EntriesHeld(numbers []uint64, limit int) []EntryHeld {
 		}
 		// The holdings are sorted by key, RemoteEntryInfo.Holdings' order:
 		// the first limit are a prefix.
-		if refs := entry.holderRefsLocked(); limit > 0 && len(refs) > 0 {
-			held.Keys = make([]HolderKey, 0, min(limit, len(refs)))
-			for _, ref := range refs[:min(limit, len(refs))] {
+		if limit > 0 {
+			entry.eachHolderLocked(func(ref holderRef) bool {
 				held.Keys = append(held.Keys, ref.key)
-			}
+				return len(held.Keys) < limit
+			})
 		}
 		out = append(out, held)
 		if c.testBatchAnswered != nil {
