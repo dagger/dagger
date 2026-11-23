@@ -139,8 +139,10 @@ func imageBlobs(t *testing.T, dir string) map[string][]byte {
 // records are the same as without the epoch, the bundle names each clamped
 // blob by the digest of its bytes, and an engine that merges the clamped
 // entries finds the entry. Installing a part from the image's blobs is
-// TestImageOfferInstallsFromTheImage's, and every test engine's, whose image
-// ships its entries clamped.
+// TestImageOfferInstallsFromTheImage's, and, with the entries clamped, that
+// of every integration test that loads a module with a built-in SDK: each
+// test engine's image ships its entries clamped, and installs a part when a
+// call first uses it.
 func TestImageEntriesClampedToTheEpoch(t *testing.T) {
 	t.Parallel()
 	epoch := time.Unix(315619200, 0).UTC()
