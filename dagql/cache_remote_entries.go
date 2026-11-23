@@ -1176,7 +1176,7 @@ func (c *Cache) releaseRemoteCacheLocked(cache CacheID) (change RemoteChange) {
 // unit, so entries left with no holding and no other owner are collected too.
 // It returns the collected holdings' keys, sorted, and what it changed.
 //
-// It then compacts the e-graph's classes, at most once per
+// It then checks whether to compact the e-graph's classes, at most once per
 // eqClassCheckInterval and only when something changed since the last check
 // (compactEqClassesAfterCollectionLocked), which frees the dead ones. Only the
 // Cloud calls it, and never with snapshot sharing enabled, whose pending queue
@@ -1250,19 +1250,20 @@ const eqClassCheckInterval = 10 * time.Second
 
 // compactEqClassesAfterCollectionLocked runs the classes' non-forced
 // compaction, which frees the classes no term or entry uses once they are at
-// least half the slots. The check scans every term, entry and digest, so it
-// runs at most once per eqClassCheckInterval, and only when something changed
-// since the last check: the class slots differ, or a collection removed
-// entries, removed telling whether this one did. A reset changes the slots
-// too.
+// least half the slots. It runs at most once per eqClassCheckInterval, and
+// only when something changed since the last check: the class slots differ,
+// or a collection removed entries, removed telling whether this one did. A
+// reset changes the slots too.
 //
-// The service collects at the end of every read, idle or not, so a pending
-// check runs soon after its interval. A check costs one scan per interval,
-// whatever the scan walks. At each check, the non-forced compaction frees the
-// dead classes once they reach the live ones; between checks, the dead can
-// exceed that by the classes allocated or made dead since the last check,
-// until the first collection after the interval. Requires egraphMu for
-// writing.
+// The check reads the slots and the live classes the cache keeps
+// (cache_eqclass_uses.go), so a check that frees nothing walks nothing and
+// changes no shared state; a compaction walks every term, entry and digest,
+// and reports SharedClassesCompacted. The service collects at the end of
+// every read, idle or not, so a pending check runs soon after its interval.
+// At each check, the non-forced compaction frees the dead classes once they
+// reach the live ones; between checks, the dead can exceed that by the
+// classes allocated or made dead since the last check, until the first
+// collection after the interval. Requires egraphMu for writing.
 func (c *Cache) compactEqClassesAfterCollectionLocked(change *RemoteChange, removed bool) {
 	if removed {
 		c.eqClassRemoved = true
@@ -1280,8 +1281,10 @@ func (c *Cache) compactEqClassesAfterCollectionLocked(change *RemoteChange, remo
 	}
 	start := time.Now()
 	c.eqClassChecks++
-	c.noteSharedWriteLocked(change, SharedClassesChecked)
 	compacted, oldSlots, newSlots := c.compactEqClassesLocked(false)
+	if compacted {
+		c.noteSharedWriteLocked(change, SharedClassesCompacted)
+	}
 	c.eqClassCheckedAt = now
 	c.eqClassCheckedSlots = c.eqClassSlotsLocked()
 	c.eqClassRemoved = false
