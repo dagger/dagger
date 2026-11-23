@@ -1778,7 +1778,7 @@ func (c *Cache) holderClosureInPieces(key HolderKey) ([]HolderKey, bool) {
 	if state == nil {
 		return nil, true
 	}
-	r.lockEngine(state)
+	r.lockEngine(key.Cache)
 	if _, h := state.holdingLocked(key.Number); h == nil {
 		return nil, true
 	}
@@ -1843,7 +1843,7 @@ func (c *Cache) holderClosureLocked(key HolderKey) []HolderKey {
 func (c *Cache) HolderGraph(cache CacheID, roots []uint64) map[uint64][]uint64 {
 	for range holderClosureTries {
 		r := c.readInPieces()
-		r.lockEngine(c.remoteCaches[cache])
+		r.lockEngine(cache)
 		graph, ok := c.holderGraphLocked(cache, roots, r)
 		r.done()
 		if ok {
