@@ -13,4 +13,7 @@ defmodule Dagger.PortForward do
         }
 
   defstruct [:backend, :frontend, :protocol]
+
+  @doc false
+  def __field_names__(), do: %{backend: "backend", frontend: "frontend", protocol: "protocol"}
 end
