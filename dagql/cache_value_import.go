@@ -427,7 +427,7 @@ func validateHeldRow(row TransferredValue) error {
 // only of a pending part, and as an offer the part takes.
 func checkOutputPart(output TransferredOutput, part CapturedCodecOutput) error {
 	if output.State != part.State && (part.State != "pending" || output.State != "completed") {
-		return fmt.Errorf("output state differs from recorded part")
+		return fmt.Errorf("output state differs from recorded part: %s against %s", output.State, part.State)
 	}
 	if output.Chain == nil || output.Value == nil || output.Owner == nil {
 		return nil
