@@ -64,6 +64,15 @@ type RWMutex struct {
 	// that reads it before and after its wait tells from the count whether
 	// a writer let it in, and from the kind which.
 	released atomic.Uint64
+	// holds, when set, sees each hold of m for writing as it ends
+	// (ObserveHolds). heldAt is when the writer that holds m took it, by
+	// holdClock, and waited how long it waited to: set as it takes m while
+	// holds is set, and 0 otherwise, so that a release with no observer
+	// reads one field of its own. Only the writer that holds m reads or
+	// writes them.
+	holds  atomic.Pointer[func(kind LockHolder, waited, held time.Duration)]
+	heldAt int64
+	waited time.Duration
 }
 
 // LockHolder names the kind of work holding an RWMutex for writing, as
@@ -132,12 +141,28 @@ type LockWait struct {
 // Lock locks m for writing, its holder unknown. While it has to wait, it
 // counts itself as waiting (Waiting).
 func (m *RWMutex) Lock() {
+	m.took(m.lock())
+}
+
+// LockSelfTimed locks m for writing, as Lock does, for a holder that times
+// its own hold: m's hold observer (ObserveHolds) doesn't see it.
+func (m *RWMutex) LockSelfTimed() {
+	m.lock()
+}
+
+// lock locks m for writing, its holder unknown, and returns how long it
+// waited.
+func (m *RWMutex) lock() time.Duration {
+	var waited time.Duration
 	if !m.RWMutex.TryLock() {
 		m.waiting.Add(1)
+		start := time.Now()
 		m.RWMutex.Lock()
+		waited = time.Since(start)
 		m.waiting.Add(-1)
 	}
 	m.mark(HolderUnknown)
+	return waited
 }
 
 // TryLock tries to lock m for writing, its holder unknown.
@@ -146,15 +171,56 @@ func (m *RWMutex) TryLock() bool {
 		return false
 	}
 	m.mark(HolderUnknown)
+	m.took(0)
 	return true
 }
 
+// ObserveHolds calls f with each hold of m for writing as it ends, until
+// the returned stop is called: the kind of work its writer named
+// (WriteLockAs), 0 for none, how long the writer waited to take m, and how
+// long it held m. A hold taken before f was set, or ended after stop, isn't
+// seen, nor is one taken with LockSelfTimed. f runs in the releasing
+// goroutine while m is still held, so it must not take m, and should cost
+// little: it delays every waiter. One f at a time: a later call replaces an
+// earlier one.
+func (m *RWMutex) ObserveHolds(f func(kind LockHolder, waited, held time.Duration)) (stop func()) {
+	m.holds.Store(&f)
+	return func() { m.holds.CompareAndSwap(&f, nil) }
+}
+
+// holdClock is the start of the clock holds are timed by (heldAt).
+var holdClock = time.Now()
+
+// took notes, for m's hold observer if it has one, when the writer that
+// now holds m took it and how long it waited to (heldAt).
+func (m *RWMutex) took(waited time.Duration) {
+	if m.holds.Load() == nil {
+		return
+	}
+	m.heldAt = int64(time.Since(holdClock)) + 1
+	m.waited = waited
+}
+
+// endHold tells m's hold observer, if it still has one, of the hold its
+// writer is ending (took).
+func (m *RWMutex) endHold() {
+	held := time.Duration(int64(time.Since(holdClock)) + 1 - m.heldAt)
+	m.heldAt = 0
+	if f := m.holds.Load(); f != nil {
+		(*f)(m.kind, m.waited, held)
+	}
+}
+
 // Unlock unlocks m for writing. While someone waits for m, it records for
-// them that a writer of its kind released m (released). It clears the kind
-// for the next writer.
+// them that a writer of its kind released m (released), and it tells m's
+// hold observer of the hold (ObserveHolds). It clears the kind for the
+// next writer.
 func (m *RWMutex) Unlock() {
 	if m.waiting.Load() != 0 {
 		m.recordRelease()
+	}
+	if m.heldAt != 0 {
+		m.endHold()
 	}
 	m.kind = 0
 	m.release()

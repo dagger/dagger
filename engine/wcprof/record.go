@@ -402,10 +402,12 @@ func WriteLock(ctx context.Context, mu RWLocker, ident string) {
 		w.End()
 		return
 	}
+	var lw LockWait
 	if !m.RWMutex.TryLock() {
-		m.waitFor(ctx, ident, false)
+		lw = m.waitFor(ctx, ident, false)
 	}
 	m.markOp(ctx)
+	m.took(lw.Waited)
 }
 
 // ReadLockWaited acquires m for reading, and returns how long it waited and
@@ -431,6 +433,7 @@ func WriteLockAs(ctx context.Context, m *RWMutex, ident string, kind LockHolder)
 	}
 	m.kind = kind
 	m.markOp(ctx)
+	m.took(lw.Waited)
 	return lw
 }
 
