@@ -1767,6 +1767,9 @@ func (state *recipeLoadState) loadRecipeVertex(id *call.ID) (AnyResult, error) {
 	if hit, ok, err := state.cache.lookupCallRequest(callCtx, state.sessionID, srv, req); err != nil {
 		return nil, fmt.Errorf("load %s: structural cache lookup: %w", idInputDebugString(id), err)
 	} else if ok {
+		// A call its session answered as its own binds the loading
+		// resolver, whatever it returned (Cache.bindCallerHandedBound).
+		state.cache.bindCallerHandedBound(callCtx, state.sessionID, hit, req.servedAsSessions, "a load by ID")
 		return hit, nil
 	}
 	return baseObj.Select(callCtx, srv, sel)
