@@ -517,12 +517,15 @@ func (ModuleSuite) TestModuleEntrypointSourcesReadKeepsTheSourceToItsSession(ctx
   }
 }
 `, url)
-	read := func(ctx context.Context, t *testctx.T, c *dagger.Client) string {
+	// read reads the directory's module source from module code in c's
+	// session. Each session names itself, so its call of counted is its own
+	// whatever its cache policy, and only the read inside it can be shared.
+	read := func(ctx context.Context, t *testctx.T, c *dagger.Client, session string) string {
 		t.Helper()
 		reader := core.NewQuery(c).Directory().
 			WithNewFile("dagger.json", `{"name": "counted-reader", "engineVersion": "v1.0.0-beta.20", "sdk": "dang"}`).
 			WithNewFile("main.dang", `type CountedReader {
-  pub counted(dir: Directory!): String! @cache(policy: FunctionCachePolicy.Never) {
+  pub counted(dir: Directory!, session: String!): String! @cache(policy: FunctionCachePolicy.Never) {
     dir.asModuleSource(sourceRootPath: "m").contextDirectory.file("m/counted.txt").contents
   }
 }
@@ -536,15 +539,15 @@ func (ModuleSuite) TestModuleEntrypointSourcesReadKeepsTheSourceToItsSession(ctx
 		require.NoError(t, err)
 		res, err := testutil.QueryWithClient[struct {
 			CountedReader struct{ Counted string }
-		}](c, t, `query($dir: ID!) {countedReader{counted(dir: $dir)}}`, &testutil.QueryOptions{
-			Variables: map[string]any{"dir": dir},
+		}](c, t, `query($dir: ID!, $session: String!) {countedReader{counted(dir: $dir, session: $session)}}`, &testutil.QueryOptions{
+			Variables: map[string]any{"dir": dir, "session": session},
 		})
 		require.NoError(t, err)
 		return res.CountedReader.Counted
 	}
 
-	earlier := read(ctx, t, first)
-	later := read(ctx, t, connect(ctx, t))
+	earlier := read(ctx, t, first, "earlier")
+	later := read(ctx, t, connect(ctx, t), "later")
 	require.NotEqual(t, earlier, later, "the later session evaluated sources itself")
 }
 
