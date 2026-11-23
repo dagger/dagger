@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/dagger/dagger/dagql/call/callpbv1"
@@ -106,28 +108,37 @@ func (c *Cache) keepCallLocked(change *RemoteChange, entry *sharedResult, desc R
 // second term of a term it has (indexWaitResultInEgraphLocked). So a call of
 // a term the entry keeps a call of adds nothing, unless the kept call names
 // an input the Cloud stores no record of, which no bundle can place, and
-// kept names none such: kept then replaces it. Two calls the entry kept as
-// two terms are one term once their inputs' classes are joined, and the entry
-// keeps them both until a call is next kept on it, which leaves one of each
-// term of its calls (joinedTermCallsLocked). A stored bundle of the entry
+// kept names none such: kept then replaces it. The entry finds the call of
+// kept's term in its index (callTermIndex), so that keeping a call on an
+// entry of thousands takes one key, under the cache's write hold. Two calls
+// the entry kept as two terms are one term once their inputs' classes are
+// joined, which drops the index, and the entry keeps them both until a call
+// is next kept on it, which leaves one of each term of its calls
+// (joinedTermCallsLocked) and indexes them again. A stored bundle of the entry
 // carries its kept calls, so a change to them stamps the entry, with a cause
 // that tells a term the bundle can send from one it can't, for diagnostics.
 // It reports whether it changed the entry's calls. Requires egraphMu for
 // writing.
 func (c *Cache) keepTermCallLocked(change *RemoteChange, entry *sharedResult, kept *keptCall) bool {
 	stored := c.keptCallStoredLocked(kept)
+	joined := false
+	if entry.callTermIndex == nil {
+		terms, calls := c.joinedTermCallsLocked(entry)
+		for _, call := range calls {
+			c.dropKeptCallLocked(entry, call)
+		}
+		if len(calls) > 0 {
+			c.stampEntryLocked(entry, StampKeptCallsJoined)
+			c.noteSharedWriteLocked(change, SharedKeptCall)
+			joined = true
+		}
+		entry.callTermIndex = terms
+	}
 	key := c.keptCallTermKeyLocked(kept)
-	terms, joined := c.joinedTermCallsLocked(entry)
-	for _, call := range joined {
-		c.dropKeptCallLocked(entry, call)
-	}
-	if len(joined) > 0 {
-		c.stampEntryLocked(entry, StampKeptCallsJoined)
-		c.noteSharedWriteLocked(change, SharedKeptCall)
-	}
-	if other := terms[key]; other != nil {
+	if other := entry.callTermIndex[key]; other != nil {
 		if !stored || c.keptCallStoredLocked(other) {
-			return len(joined) > 0
+			c.verifyCallTermIndexLocked(entry)
+			return joined
 		}
 		c.dropKeptCallLocked(entry, other)
 	}
@@ -139,10 +150,29 @@ func (c *Cache) keepTermCallLocked(change *RemoteChange, entry *sharedResult, ke
 		entry.calls = make(map[digest.Digest]*keptCall)
 	}
 	entry.calls[kept.id.recipe] = kept
+	entry.callTermIndex[key] = kept
 	c.stampEntryLocked(entry, cause)
 	c.indexKeptCallLocked(entry, kept)
 	c.noteSharedWriteLocked(change, SharedKeptCall)
+	c.verifyCallTermIndexLocked(entry)
 	return true
+}
+
+// verifyCallTermIndexLocked, with verifyKeptCallTerms, checks entry's index
+// against its calls' terms taken fresh (joinedTermCallsLocked), and panics
+// if they differ. Requires egraphMu.
+func (c *Cache) verifyCallTermIndexLocked(entry *sharedResult) {
+	if !verifyKeptCallTerms || entry.callTermIndex == nil {
+		return
+	}
+	// The keys taken here are the check's, not the keeping's.
+	keyed := c.testCallTermKeyed
+	c.testCallTermKeyed = nil
+	defer func() { c.testCallTermKeyed = keyed }()
+	fresh, joined := c.joinedTermCallsLocked(entry)
+	if len(joined) > 0 || !maps.Equal(fresh, entry.callTermIndex) {
+		panic(fmt.Sprintf("entry %d: call term index %v, taken fresh %v and %d joined", entry.id, entry.callTermIndex, fresh, len(joined)))
+	}
 }
 
 // joinedTermCallsLocked returns the call entry keeps of each term its calls
@@ -170,23 +200,20 @@ func (c *Cache) joinedTermCallsLocked(entry *sharedResult) (map[string]*keptCall
 	return terms, joined
 }
 
-// dropKeptCallLocked forgets kept, a call entry keeps, and its index under
-// each of its inputs that no other call entry keeps names. Requires egraphMu
-// for writing.
+// dropKeptCallLocked forgets kept, a call entry keeps, under its term in
+// the entry's index, and under each of its inputs. Requires egraphMu for
+// writing.
 func (c *Cache) dropKeptCallLocked(entry *sharedResult, kept *keptCall) {
 	delete(entry.calls, kept.id.recipe)
+	if entry.callTermIndex != nil {
+		delete(entry.callTermIndex, c.keptCallTermKeyLocked(kept))
+	}
 	for _, input := range kept.id.inputs {
-		named := false
-		for _, other := range entry.calls {
-			if slices.Contains(other.id.inputs, input) {
-				named = true
-				break
-			}
-		}
-		if named {
+		entries := c.callInputEntries[input.String()]
+		entries[entry.id]--
+		if entries[entry.id] > 0 {
 			continue
 		}
-		entries := c.callInputEntries[input.String()]
 		delete(entries, entry.id)
 		if len(entries) == 0 {
 			delete(c.callInputEntries, input.String())
@@ -258,21 +285,29 @@ func (c *Cache) storedBundleCallsLocked(build *storedBundleBuild, start int) err
 
 // keptCallTermKeyLocked is the term a kept call derives on the Cloud, as
 // keptCallTermsLocked groups calls by: its self digest over its inputs'
-// classes, an input the Cloud has no class for standing for itself.
-// Requires egraphMu.
+// classes, an input the Cloud has no class for standing for itself. Each
+// call kept takes one, so it is built in one allocation. Requires egraphMu.
 func (c *Cache) keptCallTermKeyLocked(kept *keptCall) string {
 	if c.testCallTermKeyed != nil {
 		c.testCallTermKeyed()
 	}
-	key := kept.id.self.String()
+	var key strings.Builder
+	size := len(kept.id.self)
 	for _, input := range kept.id.inputs {
+		size += 1 + len(input)
+	}
+	key.Grow(size)
+	key.WriteString(kept.id.self.String())
+	for _, input := range kept.id.inputs {
+		key.WriteByte('|')
 		if root := c.eqClassRootLocked(c.egraphDigestToClass[input.String()]); root != 0 {
-			key += fmt.Sprintf("|%d", root)
+			var number [20]byte
+			key.Write(strconv.AppendUint(number[:0], uint64(root), 10))
 		} else {
-			key += "|" + input.String()
+			key.WriteString(input.String())
 		}
 	}
-	return key
+	return key.String()
 }
 
 // keptCallStoredLocked reports whether the Cloud stores a record of every
@@ -343,12 +378,12 @@ func (c *Cache) indexKeptCallLocked(entry *sharedResult, kept *keptCall) {
 		entries := c.callInputEntries[input.String()]
 		if entries == nil {
 			if c.callInputEntries == nil {
-				c.callInputEntries = make(map[string]map[sharedResultID]struct{})
+				c.callInputEntries = make(map[string]map[sharedResultID]int)
 			}
-			entries = make(map[sharedResultID]struct{})
+			entries = make(map[sharedResultID]int)
 			c.callInputEntries[input.String()] = entries
 		}
-		entries[entry.id] = struct{}{}
+		entries[entry.id]++
 	}
 	entry.callTerms.Store(nil)
 }
@@ -367,24 +402,26 @@ func (c *Cache) unindexKeptCallsLocked(entry *sharedResult) {
 	}
 }
 
-// forgetCallTermsLocked drops the grouping of each entry with a kept call
-// whose input is dig, whose class has changed. Requires egraphMu for
-// writing.
+// forgetCallTermsLocked drops the grouping and the term index of each entry
+// with a kept call whose input is dig, whose class has changed, and so the
+// key of the call's term. Requires egraphMu for writing.
 func (c *Cache) forgetCallTermsLocked(dig string) {
 	for id := range c.callInputEntries[dig] {
 		if res := c.resultsByID[id]; res != nil {
 			res.callTerms.Store(nil)
+			res.callTermIndex = nil
 		}
 	}
 }
 
-// forgetAllCallTermsLocked drops every entry's grouping. Requires egraphMu
-// for writing.
+// forgetAllCallTermsLocked drops every entry's grouping and term index.
+// Requires egraphMu for writing.
 func (c *Cache) forgetAllCallTermsLocked() {
 	for _, entries := range c.callInputEntries {
 		for id := range entries {
 			if res := c.resultsByID[id]; res != nil {
 				res.callTerms.Store(nil)
+				res.callTermIndex = nil
 			}
 		}
 	}
