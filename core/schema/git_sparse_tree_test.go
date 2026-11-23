@@ -361,3 +361,275 @@ func TestGitSparseReadsAreNotCalls(t *testing.T) {
 		require.False(t, strings.HasPrefix(name, "Directory.__gitSparseRead"), "a read made a call, %s: %v", name, calls)
 	}
 }
+
+// sparseTreeTestWorkspace is the Git workspace over the fixture's trees as a
+// session's current workspace is (Query.currentWorkspace): a recipe of its own
+// in each session, identified by its content, and attached to that session.
+// edit, if set, changes it first.
+func sparseTreeTestWorkspace(t *testing.T, e *transferTestEngine, ctx context.Context, session string, edit func(*core.Workspace) *core.Workspace) dagql.ObjectResult[*core.Workspace] {
+	t.Helper()
+	sparse, full := sparseTreeTestTrees(t, e, ctx)
+	ws := &core.Workspace{}
+	ws.SetRootfs(full)
+	ws.SetSource(&core.WorkspaceSourceGitRef{Sparse: &core.GitSparseTree{Root: sparse}})
+	if edit != nil {
+		ws = edit(ws)
+	}
+	res := objectResult(t, e.dag, "sparse-tree-workspace-"+session, ws)
+	identity, ok, err := ws.ContentIdentity(ctx)
+	require.NoError(t, err)
+	require.True(t, ok, "a Git workspace is identified by its content")
+	res, err = res.WithContentDigest(ctx, identity)
+	require.NoError(t, err)
+	attached, err := e.cache.AttachResult(ctx, session+"-session", e.dag, res)
+	require.NoError(t, err)
+	return attached.(dagql.ObjectResult[*core.Workspace])
+}
+
+// sparseTreeTestModuleFS is the filesystem module loading asks of the module
+// at mod/ in ws, as a module source loaded through the workspace has it.
+func sparseTreeTestModuleFS(ws dagql.ObjectResult[*core.Workspace]) *core.ModuleSourceFS {
+	return core.NewModuleSourceFS(nil, &core.ModuleSource{
+		Kind:              core.ModuleSourceKindGit,
+		SourceRootSubpath: "mod",
+		Workspace:         ws,
+	})
+}
+
+// The probe module loading makes of a path in its workspace: a dependency ref
+// that looks remote is first tried as a local path, which a pinned Git
+// workspace doesn't have, and a module's config is looked for by each of its
+// file names.
+const sparseTreeTestAbsentDep = "github.com/dagger/go@79a92beb4df0898400ef7f7a632009035290383b"
+
+// Module loading asks whether paths exist in a pinned Git workspace: a
+// dependency whose ref looks remote is first tried as a local path, and a
+// module's config is looked for. A later session on the engine gets the first
+// session's answers, for a path the workspace doesn't have as for one it has,
+// from the cache: it runs nothing to get them, and so reads nothing of the
+// workspace's sparse tree, which on a fresh engine would unpack the tree on the
+// session's path. Each session's workspace is its own recipe, as
+// Query.currentWorkspace makes it.
+func TestModuleLoadingAsksAPinnedWorkspaceNothingInALaterSession(t *testing.T) {
+	t.Parallel()
+	e := newTransferTestEngine(t, transferTestSalt(t))
+	sparseTreeTestFixture(t, e, []sparseTreeTestEntry{
+		{'f', "100644", strings.Repeat("1", 40), "dagger.toml", "[modules.mod]\nsource = \"mod\"\n"},
+		{'f', "100644", strings.Repeat("2", 40), "mod/dagger.json", `{"name": "mod"}`},
+		{'f', "100644", strings.Repeat("3", 40), "mod/main.go", "package main\n"},
+		{'a', "100644", strings.Repeat("4", 40), "mod/big.bin", "only in the full tree"},
+	})
+	// A session that holds both trees throughout, as the engine's cache holds
+	// a commit's trees between its sessions.
+	holder := e.session(t, "holder")
+	sparseTreeTestTrees(t, e, holder)
+
+	probe := func(ctx context.Context, session string) {
+		t.Helper()
+		fs := sparseTreeTestModuleFS(sparseTreeTestWorkspace(t, e, ctx, session, nil))
+		_, exists, err := fs.Exists(ctx, sparseTreeTestAbsentDep)
+		require.NoError(t, err)
+		require.False(t, exists, "the workspace has no such path")
+		_, exists, err = fs.Exists(ctx, "dagger.json")
+		require.NoError(t, err)
+		require.True(t, exists, "the module's config")
+		_, exists, err = fs.Exists(ctx, "dagger-module.toml")
+		require.NoError(t, err)
+		require.False(t, exists, "a config file name the module doesn't use")
+	}
+
+	first := e.session(t, "first")
+	probe(first, "first")
+	sparseTreeTestEndSession(t, e, "first")
+
+	second := e.session(t, "second")
+	recorder := tracetest.NewSpanRecorder()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	defer provider.Shutdown(context.WithoutCancel(second))
+	traced, span := provider.Tracer("module-loading").Start(second, "probe")
+	probe(traced, "second")
+	span.End()
+
+	outcomes := map[string][]string{}
+	for _, ended := range recorder.Ended() {
+		for _, attr := range ended.Attributes() {
+			if string(attr.Key) == "dagger.io/cache.outcome" {
+				outcome := strings.Trim(attr.Value.String(), `"`)
+				outcomes[outcome] = append(outcomes[outcome], ended.Name())
+			}
+		}
+	}
+	require.NotEmpty(t, outcomes["hit"], "the recorder sees the later session's calls: %v", outcomes)
+	require.Empty(t, outcomes["executed"], "the later session runs nothing to learn whether paths exist: %v", outcomes)
+}
+
+// An engine served another engine's records loads a module from the same
+// pinned Git workspace, as a fresh engine on a same-commit rerun does: it gets
+// that engine's answers to whether paths exist, for a path the workspace
+// doesn't have as for one it has, and never evaluates the workspace's sparse
+// tree or reads any of its content.
+func TestModuleLoadingOnAnEngineServedAnothersAnswers(t *testing.T) {
+	t.Parallel()
+	salt := transferTestSalt(t)
+	entries := []sparseTreeTestEntry{
+		{'f', "100644", strings.Repeat("1", 40), "dagger.toml", "[modules.mod]\nsource = \"mod\"\n"},
+		{'f', "100644", strings.Repeat("2", 40), "mod/dagger.json", `{"name": "mod"}`},
+		{'a', "100644", strings.Repeat("4", 40), "mod/big.bin", "only in the full tree"},
+	}
+	probe := func(t *testing.T, fs *core.ModuleSourceFS, ctx context.Context) {
+		t.Helper()
+		_, exists, err := fs.Exists(ctx, sparseTreeTestAbsentDep)
+		require.NoError(t, err)
+		require.False(t, exists, "the workspace has no such path")
+		_, exists, err = fs.Exists(ctx, "dagger.json")
+		require.NoError(t, err)
+		require.True(t, exists, "the module's config")
+	}
+
+	a := newTransferTestEngine(t, salt)
+	sparseTreeTestFixture(t, a, entries)
+	a1 := a.session(t, "a1")
+	rootA, _ := sparseTreeTestTrees(t, a, a1)
+	require.NoError(t, a.cache.Evaluate(a1, rootA))
+	recorder := tracetest.NewSpanRecorder()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	defer provider.Shutdown(context.WithoutCancel(a1))
+	traced, span := provider.Tracer("module-loading").Start(a1, "probe")
+	probe(t, sparseTreeTestModuleFS(sparseTreeTestWorkspace(t, a, a1, "a1", nil)), traced)
+	span.End()
+
+	// What A's session kept, as a set carries a check's calls to the next
+	// engine: every result its probe made or hit.
+	var roots []dagql.AnyResult
+	var releases []func(context.Context) error
+	defer func() {
+		for _, release := range releases {
+			require.NoError(t, release(context.WithoutCancel(a1)))
+		}
+	}()
+	seen := map[uint64]bool{}
+	for _, ended := range recorder.Ended() {
+		for _, attr := range ended.Attributes() {
+			if string(attr.Key) != "dagger.io/cache.result.id" {
+				continue
+			}
+			var id uint64
+			_, err := fmt.Sscan(strings.Trim(attr.Value.String(), `"`), &id)
+			require.NoError(t, err)
+			if seen[id] {
+				continue
+			}
+			seen[id] = true
+			res, release, err := a.cache.HoldEntry(a1, id)
+			if err != nil {
+				// An entry with no value of its own, which no set carries.
+				continue
+			}
+			releases = append(releases, release)
+			roots = append(roots, res)
+		}
+	}
+	require.NotEmpty(t, roots, "A's probe made results")
+
+	b := newTransferTestEngine(t, salt)
+	sparseTreeTestFixtureOn(t, b, entries, false)
+	selection := dagql.ValueSelection{
+		Roots:   roots,
+		Outputs: []dagql.SelectedValueOutput{{Result: rootA, Address: dagql.PersistedPartAddress{Part: "snapshot"}}},
+	}
+	require.NoError(t, a.cache.WithExportedValues(a1, selection, config.RefConfig{Compression: compression.New(compression.Uncompressed)}, func(_ context.Context, exported *dagql.ExportedValues) error {
+		require.Len(t, exported.Chains.Entries, 1, "the sparse tree's chain is offered")
+		provider := &testutil.Provider{InfoReaderProvider: exported.Chains.Entries[0].Provider}
+		b.cache.SetPartContentSource(fileContentsTestSource{provider})
+		b1 := b.session(t, "b1")
+		_, err := b.cache.MergeValues(b1, dagql.CloudCacheID, exported.Bundle)
+		require.NoError(t, err)
+
+		probe(t, sparseTreeTestModuleFS(sparseTreeTestWorkspace(t, b, b1, "b1", nil)), b1)
+		root, _ := sparseTreeTestTrees(t, b, b1)
+		require.Zero(t, provider.Reads.Load(), "no chain of the sparse tree's is read")
+		require.True(t, dagql.HasPendingLazyComputation(root), "the sparse tree is never evaluated")
+		return nil
+	}))
+}
+
+// Where the commit's tree alone doesn't answer for a path, module loading asks
+// as it did: a path only the full checkout has is looked up there, as
+// detection looks it up; a path under something mounted on the workspace is
+// the mount's; and a workspace that is a client's host directory is read
+// through the workspace, per client, never asked of a tree.
+func TestModuleLoadingAsksWhatAnswersForAPath(t *testing.T) {
+	t.Parallel()
+	e := newTransferTestEngine(t, transferTestSalt(t))
+	sparseTreeTestFixture(t, e, []sparseTreeTestEntry{
+		{'f', "100644", strings.Repeat("1", 40), "dagger.toml", "[modules.mod]\nsource = \"mod\"\n"},
+		{'f', "100644", strings.Repeat("2", 40), "mod/dagger.json", `{"name": "mod"}`},
+		{'a', "100644", strings.Repeat("4", 40), "mod/big.bin", "only in the full tree"},
+	})
+
+	t.Run("a path only the full tree has", func(t *testing.T) {
+		ctx := e.session(t, "uncovered")
+		fs := sparseTreeTestModuleFS(sparseTreeTestWorkspace(t, e, ctx, "uncovered", nil))
+		_, exists, err := fs.Exists(ctx, "big.bin")
+		require.NoError(t, err)
+		require.True(t, exists, "the full tree has it")
+	})
+
+	t.Run("a commit with a submodule", func(t *testing.T) {
+		// The sparse tree answers for no path of a commit with a submodule,
+		// whose files its list can't name: the full tree answers for all.
+		sub := newTransferTestEngine(t, transferTestSalt(t))
+		sparseTreeTestFixture(t, sub, []sparseTreeTestEntry{
+			{'g', "160000", strings.Repeat("8", 40), "mod/vendor", ""},
+		})
+		ctx := sub.session(t, "submodule")
+		fs := sparseTreeTestModuleFS(sparseTreeTestWorkspace(t, sub, ctx, "submodule", nil))
+		_, exists, err := fs.Exists(ctx, "vendor")
+		require.NoError(t, err)
+		require.True(t, exists, "the full tree has the submodule")
+		_, exists, err = fs.Exists(ctx, sparseTreeTestAbsentDep)
+		require.NoError(t, err)
+		require.False(t, exists, "nor does the full tree have this")
+	})
+
+	t.Run("a path under a mount", func(t *testing.T) {
+		ctx := e.session(t, "mounted")
+		var mounts dagql.ObjectResult[*core.Directory]
+		require.NoError(t, e.dag.Select(ctx, e.dag.Root(), &mounts,
+			dagql.Selector{Field: "directory"},
+			dagql.Selector{Field: "withNewFile", Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString("mod/vendored/dagger.json")},
+				{Name: "contents", Value: dagql.NewString(`{"name": "vendored"}`)},
+			}}))
+		fs := sparseTreeTestModuleFS(sparseTreeTestWorkspace(t, e, ctx, "mounted", func(ws *core.Workspace) *core.Workspace {
+			return ws.WithMounted(mounts, "mod/vendored")
+		}))
+		_, exists, err := fs.Exists(ctx, "vendored/dagger.json")
+		require.NoError(t, err)
+		require.True(t, exists, "the mount has it, though the commit doesn't")
+	})
+
+	t.Run("a client's host directory", func(t *testing.T) {
+		ctx := e.session(t, "host")
+		recorder := tracetest.NewSpanRecorder()
+		provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+		defer provider.Shutdown(context.WithoutCancel(ctx))
+		traced, span := provider.Tracer("module-loading").Start(ctx, "probe")
+		ws := &core.Workspace{}
+		ws.SetHostPath("/work")
+		ws.SetSource(core.NewWorkspaceSourceClientLocal("/work"))
+		res := objectResult(t, e.dag, "host-workspace", ws)
+		attached, err := e.cache.AttachResult(ctx, "host-session", e.dag, res)
+		require.NoError(t, err)
+		// This engine has no client host to read, so the read fails: what
+		// matters is what the probe asked.
+		_, _, _ = sparseTreeTestModuleFS(attached.(dagql.ObjectResult[*core.Workspace])).Exists(traced, sparseTreeTestAbsentDep)
+		span.End()
+		calls := map[string]int{}
+		for _, ended := range recorder.Ended() {
+			calls[ended.Name()]++
+		}
+		require.Positive(t, calls["Workspace.directory"], "the probe reads through the workspace: %v", calls)
+		require.Zero(t, calls["Directory.__gitSparseCovers"], "and asks no tree: %v", calls)
+	})
+}
