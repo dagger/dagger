@@ -37,7 +37,8 @@ type StoredBundleResult struct {
 	// Partial are, sorted, the numbers of the entries whose record the
 	// bundle carries without something a later build could carry once what
 	// it waits on is stored or joined, which no write to the entry itself
-	// marks: a kept call left out for an input with no stored record, or a
+	// marks: a kept call left out for an input with no stored entry of its
+	// class (placeableCallLocked), or a
 	// part of its class left out for a service the closure has no row of.
 	// A reader that keeps the bundle can't tell from ChangedSince alone
 	// whether these changed.

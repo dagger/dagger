@@ -112,17 +112,15 @@ func (c *Cache) keepCallLocked(change *RemoteChange, entry *sharedResult, desc R
 // storedBundleCallsLocked adds to the build, for each of its entries from
 // start, those a root's closure added and the inputs added for their calls,
 // one of the calls kept on it for each term they derive on the Cloud: one
-// the recipient can place. The recipient can place an input of a call when
-// it holds the input's entry, or the bundle carries it in the closure of a
-// root so far: the entry's record names the input's recipe, and the
-// recipient derives its equivalence to its own inputs as it does for any
-// record. So the first choice is a call whose every input the recipient
-// holds or those closures carry; the next is a call whose inputs the Cloud
-// stores, whose entries the bundle then carries too, with the root whose
-// entry's call needs them. An input another call added doesn't place a
-// call, nor does a later root's closure: the calls chosen are those
-// StoredSizes prices, root by root. A term with neither is counted, and
-// sends nothing. Only the terms the recipient's check made are candidates
+// the recipient can place (placeableCallLocked). Each of the call's inputs
+// goes with the row of the entry that places it, an entry of the input's
+// class (TransferredCall.Inputs): one the bundle carries in the closure of a
+// root so far; else one the recipient holds, as a held row, or the Cloud
+// stores, which the bundle carries with the root whose entry's call needs
+// it. An input another call added doesn't place a call,
+// nor does a later root's closure: the calls chosen are those StoredSizes
+// prices, root by root. A term none of whose calls can be placed is counted,
+// and sends nothing. Only the terms the recipient's check made are candidates
 // (HeldBy.Calls), each with all its calls: a term with none of the check's
 // calls sends nothing and isn't counted.
 // Requires egraphMu.
@@ -137,7 +135,7 @@ func (c *Cache) storedBundleCallsLocked(build *storedBundleBuild, start int) err
 			if group = build.heldBy.sendableLocked(group); len(group) == 0 {
 				continue
 			}
-			chosen, add := c.placeableCallLocked(group, func(entry *sharedResult) bool {
+			chosen, places := c.placeableCallLocked(group, build.now, func(entry *sharedResult) bool {
 				return build.ordinary[entry.id] || build.holdsLocked(entry)
 			})
 			if chosen == nil {
@@ -145,19 +143,27 @@ func (c *Cache) storedBundleCallsLocked(build *storedBundleBuild, start int) err
 				build.markPartial(res)
 				continue
 			}
-			for _, input := range add {
-				if err := c.storedBundleVisitLocked(build, input, map[sharedResultID]bool{}); err != nil {
-					return fmt.Errorf("call %s input: %w", chosen.id.recipe, err)
+			inputs := make([]TransferOrdinal, len(places))
+			for j, place := range places {
+				if place == nil {
+					continue
 				}
-				// A merge installs only what its roots need, so an input
-				// entry travels as a root.
-				if !build.rootSeen[input.id] {
-					build.rootSeen[input.id] = true
-					build.callRoots = append(build.callRoots, input)
-					build.callInputs = append(build.callInputs, uint64(input.id))
+				if build.ordinals[place.id] == 0 {
+					if err := c.storedBundleVisitLocked(build, place, map[sharedResultID]bool{}); err != nil {
+						return fmt.Errorf("call %s input: %w", chosen.id.recipe, err)
+					}
+					// A merge installs only what its roots need, so an input
+					// entry travels as a root: one the recipient holds as a
+					// held row, which carries no copy of its record.
+					if !build.rootSeen[place.id] {
+						build.rootSeen[place.id] = true
+						build.callRoots = append(build.callRoots, place)
+						build.callInputs = append(build.callInputs, uint64(place.id))
+					}
 				}
+				inputs[j] = build.ordinals[place.id]
 			}
-			build.bundle.Calls = append(build.bundle.Calls, TransferredCall{Call: chosen.encoded, Value: build.ordinals[res.id]})
+			build.bundle.Calls = append(build.bundle.Calls, TransferredCall{Call: chosen.encoded, Value: build.ordinals[res.id], Inputs: inputs})
 		}
 	}
 	return nil
@@ -182,16 +188,11 @@ func (c *Cache) keptCallTermKeyLocked(kept *keptCall) string {
 // keptCallCauseLocked says what keeping kept on entry, before it is kept,
 // changes in a stored bundle of the entry (StampCause): a call of a term the
 // entry's calls already derive, one with an input no bundle can place (no
-// stored record of its own recipe; a witness needs none), or a new term a
+// stored entry of the input's class; a witness needs none), or a new term a
 // bundle can send. Requires egraphMu.
 func (c *Cache) keptCallCauseLocked(entry *sharedResult, kept *keptCall) StampCause {
-	for i, input := range kept.id.inputs {
-		if kept.id.witnesses[i] {
-			continue
-		}
-		if in := c.currentEntryForRecipeLocked(input); in == nil || in.noValueLocked() || in.persistedEnvelope == nil {
-			return StampKeptCallUnsendable
-		}
+	if rank, _ := c.callPlacementLocked(kept, time.Now().Unix(), func(*sharedResult) bool { return false }); rank == placementNone {
+		return StampKeptCallUnsendable
 	}
 	key := c.keptCallTermKeyLocked(kept)
 	for _, other := range entry.calls {
@@ -301,41 +302,127 @@ func (c *Cache) forgetAllCallTermsLocked() {
 	}
 }
 
-// placeableCallLocked chooses, of calls that derive one term, the first whose
-// every input the recipient holds or the bundle carries (has); else the first
-// whose every input the Cloud stores, with the input entries the bundle must
-// add. A digest-witnessed string's digest needs neither: the recipient's own
-// call reproduces it.
-// It returns nil when there is neither. Requires egraphMu.
-func (c *Cache) placeableCallLocked(group []*keptCall, has func(*sharedResult) bool) (*keptCall, []*sharedResult) {
-	var fallback *keptCall
-	var fallbackAdd []*sharedResult
+// placeableCallLocked chooses, of calls that derive one term, one the
+// recipient can place, and returns it with the entry that places each of its
+// inputs (callPlacementLocked), or nil when none can be placed. It prefers
+// the call whose inputs are all on their own entries, which the recipient
+// holds or the bundle carries (has); then on their own entries, some of
+// which the bundle adds; then on entries of their classes, held or carried;
+// then with some of those added: the first call of the group at the best of
+// these. Requires egraphMu.
+func (c *Cache) placeableCallLocked(group []*keptCall, now int64, has func(*sharedResult) bool) (*keptCall, []*sharedResult) {
+	var best *keptCall
+	var bestPlaces []*sharedResult
+	bestRank := placementNone
 	for _, kept := range group {
-		placed, stored := true, true
-		var add []*sharedResult
-		for i, input := range kept.id.inputs {
-			if kept.id.witnesses[i] {
-				// The recipient's own call reproduces a witness.
-				continue
-			}
-			entry := c.currentEntryForRecipeLocked(input)
-			switch {
-			case entry == nil:
-				placed, stored = false, false
-			case has(entry):
-			case entry.noValueLocked() || entry.persistedEnvelope == nil:
-				placed, stored = false, false
-			default:
-				placed = false
-				add = append(add, entry)
-			}
+		rank, places := c.callPlacementLocked(kept, now, has)
+		if rank < bestRank {
+			best, bestPlaces, bestRank = kept, places, rank
 		}
-		if placed {
-			return kept, nil
-		}
-		if stored && fallback == nil {
-			fallback, fallbackAdd = kept, add
+		if bestRank == placementOwnHeld {
+			break
 		}
 	}
-	return fallback, fallbackAdd
+	return best, bestPlaces
+}
+
+// callPlacement ranks how a recipient can place a call's inputs, the best
+// first (callPlacementLocked).
+type callPlacement int
+
+const (
+	// placementOwnHeld: every input on its own entry, held or carried.
+	placementOwnHeld callPlacement = iota
+	// placementOwnStored: every input on its own entry, some stored only.
+	placementOwnStored
+	// placementClassHeld: some input on another entry of its class, every
+	// input's entry held or carried.
+	placementClassHeld
+	// placementClassStored: some input on another entry of its class, some
+	// input's entry stored only.
+	placementClassStored
+	// placementNone: some input has no entry that can place it.
+	placementNone
+)
+
+// callPlacementLocked returns how the recipient can place kept's inputs and,
+// by input, the entry that places it, nil for a digest-witnessed string's
+// digest, which the recipient's own call reproduces. An input is placed by
+// an entry of its class (inputPlaceLocked). Requires egraphMu.
+func (c *Cache) callPlacementLocked(kept *keptCall, now int64, has func(*sharedResult) bool) (callPlacement, []*sharedResult) {
+	places := make([]*sharedResult, len(kept.id.inputs))
+	byClass, added := false, false
+	for i, input := range kept.id.inputs {
+		if kept.id.witnesses[i] {
+			continue
+		}
+		entry, own, held := c.inputPlaceLocked(input, now, has)
+		if entry == nil {
+			return placementNone, nil
+		}
+		places[i] = entry
+		byClass = byClass || !own
+		added = added || !held
+	}
+	switch {
+	case !byClass && !added:
+		return placementOwnHeld, places
+	case !byClass:
+		return placementOwnStored, places
+	case !added:
+		return placementClassHeld, places
+	default:
+		return placementClassStored, places
+	}
+}
+
+// inputPlaceLocked returns the entry that places input, a call's input, for
+// a recipient: the entry under input's own recipe, when the recipient holds
+// it or the bundle carries it (has) or the Cloud stores it; else another
+// unexpired entry of input's class, the lowest-numbered one held or carried,
+// else the lowest-numbered one stored. The Cloud holds input in that class
+// from an engine's word, a recipe or content digest a span or record
+// reported: members of a class are interchangeable, and the recipient puts
+// input in the entry's class (TransferredCall.Inputs). own reports whether
+// the entry is input's own, and held whether the recipient holds it or the
+// bundle carries it. It returns nil when no entry can place input. Requires
+// egraphMu.
+func (c *Cache) inputPlaceLocked(input digest.Digest, now int64, has func(*sharedResult) bool) (entry *sharedResult, own, held bool) {
+	stored := func(e *sharedResult) bool { return !e.noValueLocked() && e.persistedEnvelope != nil }
+	if e := c.currentEntryForRecipeLocked(input); e != nil {
+		if has(e) {
+			return e, true, true
+		}
+		if stored(e) {
+			return e, true, false
+		}
+	}
+	root := c.eqClassRootLocked(c.egraphDigestToClass[input.String()])
+	if root == 0 {
+		return nil, false, false
+	}
+	var heldBest, storedBest *sharedResult
+	for id := range c.outputEqClassResults[root] {
+		member := c.resultsByID[id]
+		if member == nil || c.resultExpiredAtLocked(member, now) {
+			continue
+		}
+		switch {
+		case has(member):
+			if heldBest == nil || member.id < heldBest.id {
+				heldBest = member
+			}
+		case stored(member):
+			if storedBest == nil || member.id < storedBest.id {
+				storedBest = member
+			}
+		}
+	}
+	if heldBest != nil {
+		return heldBest, false, true
+	}
+	if storedBest != nil {
+		return storedBest, false, false
+	}
+	return nil, false, false
 }
