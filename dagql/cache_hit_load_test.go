@@ -2,6 +2,7 @@ package dagql
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -106,6 +107,49 @@ func TestHitSaysWhatItsLoadDecodedAndWaitedFor(t *testing.T) {
 	require.Equal(t, CacheOutcomeHit, req.CacheEvidence.Outcome)
 	require.Empty(t, req.CacheEvidence.HitLoad().Waits, "an attachment already ended is no wait")
 	require.NotZero(t, req.CacheEvidence.HitServedAtUnixNano)
+}
+
+// A hit's load of a record from the Cloud sizes the payload it decodes
+// holding the graph lock only for reading, so a reader holding the lock
+// meanwhile, such as a save's snapshot or another hit's load, doesn't hold
+// the load up: none of its work waits for readers to leave. The cache's
+// count of payload bytes still follows the decoded value.
+func TestHitLoadSizesItsDecodeBesideAReader(t *testing.T) {
+	t.Parallel()
+	set := firstUseTestCloud(t)
+	ctx, engine, srv := transferTestCache(t)
+	reply, err := engine.MergeValues(ctx, cloudCacheID, set.bundle)
+	require.NoError(t, err)
+	require.True(t, reply.Committed)
+
+	// A reader holds the graph lock while the hit loads: until the load is
+	// done, or for a few seconds if it waits for the reader to leave.
+	engine.egraphMu.RLock()
+	done := make(chan *CacheDecision, 1)
+	go func() {
+		frame := &ResultCall{Kind: ResultCallKindField, Field: "fu-good", Type: NewResultCallType((&transferTestValue{}).Type())}
+		req := &CallRequest{ResultCall: frame, CacheEvidence: NewCacheDecision()}
+		if _, err := engine.GetOrInitCall(ctx, "test-session", srv, req, func(context.Context) (AnyResult, error) {
+			return nil, errors.New("the call ran: it should hit the record")
+		}); err != nil {
+			t.Error(err)
+		}
+		done <- req.CacheEvidence
+	}()
+	var ev *CacheDecision
+	select {
+	case ev = <-done:
+	case <-time.After(3 * time.Second):
+	}
+	engine.egraphMu.RUnlock()
+	if ev == nil {
+		ev = <-done
+	}
+	require.Equal(t, CacheOutcomeHit, ev.Outcome)
+	require.Equal(t, int64(1), ev.HitLoad().Decoded, "the hit decoded its payload")
+	require.Zero(t, ev.HitLoad().Waits["graph.readers"], "the load waited for the reader to leave")
+	total, sum := cacheTestPayloadTotalConsistent(engine)
+	require.Equal(t, sum, total, "the payload byte count follows its entries")
 }
 
 // A call with no request fails with why: reading what a hit's span gathers
