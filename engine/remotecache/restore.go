@@ -372,9 +372,10 @@ func (r *restorer) run() {
 // headLane merges the heads' parts one at a time until the connection ends:
 // in turn, the next part of the downloaded head that has merged the fewest
 // (nextHead). A head's parts carry what its check's run asks for first in
-// its first part, so heads offered together, as an engine's first claims
-// are, each land their first part before any lands its second; and a head
-// still downloading holds up no other.
+// its first part, so heads downloaded by the time the lane turns to them,
+// as an engine's first claims' heads mostly are, each land their first part
+// before any lands its second; and a head still downloading holds up no
+// other.
 func (r *restorer) headLane() {
 	ctx, unlabel := wcprof.WithCPUKind(r.s.ctx, wcprof.CPUKindMerge)
 	defer unlabel()

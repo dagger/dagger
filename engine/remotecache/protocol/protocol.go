@@ -623,8 +623,8 @@ const (
 // merge their parts (SetFile), each through the path a Merge takes. The
 // engine merges heads and wholes on lanes of their own, side by side: the
 // heads' lane takes, among the heads downloaded, each head's next part in
-// turn, so heads that arrive together land every first part before any
-// second, the earliest to arrive first among equals; each whole merges on a
+// turn, so heads downloaded by then land every first part before any second,
+// the earliest to arrive first among equals; each whole merges on a
 // lane of its own; and each file's parts merge in the file's order. So a
 // head never waits for a whole, even one of another set that started first,
 // nor for another head's later parts or its download. A restore can come at any time after Welcome. Nothing in
