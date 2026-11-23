@@ -417,6 +417,7 @@ func TestCloudHeldRowAcceptsWhatItWouldOnceTelemetryNamedTheHolding(t *testing.T
 		require.True(t, reply.Committed)
 		after, _ := cloudEntryOfRecipe(t, cloud, engine, child)
 		require.Same(t, before, after, "the entry keeps the other engine's value")
+		requireCacheHoldersExact(t, cloud)
 		cloud.egraphMu.RLock()
 		defer cloud.egraphMu.RUnlock()
 		_, h := cloud.holdingLocked(HolderKey{Cache: "other-engine", Number: uint64(otherChild.cacheSharedResult().id)})

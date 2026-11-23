@@ -376,13 +376,33 @@ type remoteCacheState struct {
 	// dropped. HolderClosure reads a closure in pieces, and starts again
 	// when it changed between two of them.
 	graphVersion uint64
-	// entries maps each holding's number to the entry it sits on.
-	entries map[uint64]sharedResultID
+	// entries maps each holding's number to the holding and the entry it
+	// sits on: finding a holding is one access, however many caches hold its
+	// entry.
+	entries map[uint64]heldEntry
 	// unknownDependents maps each dependency number no holding of this cache
 	// has yet to the numbers of the holdings that name it, sorted.
 	unknownDependents map[uint64][]uint64
 	// sessions maps each session to the numbers of the holdings it holds.
 	sessions map[string]map[uint64]struct{}
+}
+
+// heldEntry is one holding of an engine cache with the entry it sits on, as
+// the cache's index keeps it (remoteCacheState.entries). It is the same
+// holding as the entry's holders name under the holding's key: a holding is
+// added to both and removed from both together (addHoldingLocked,
+// removeHoldingLocked), and an entry leaves the cache only once no holding
+// owns it.
+type heldEntry struct {
+	entry *sharedResult
+	h     *holding
+}
+
+// holdingLocked returns the holding numbered number of the cache and the
+// entry it sits on, or nils. Requires egraphMu.
+func (state *remoteCacheState) holdingLocked(number uint64) (*sharedResult, *holding) {
+	held := state.entries[number]
+	return held.entry, held.h
 }
 
 // noValueLocked reports an entry known only through holdings: it has no value
@@ -406,21 +426,14 @@ func (res *sharedResult) noValueLocked() bool {
 	return !res.hasValue && res.persistedEnvelope == nil
 }
 
-// holdingLocked requires egraphMu.
+// holdingLocked returns the holding key and the entry it sits on, or nils,
+// from its engine cache's index. Requires egraphMu.
 func (c *Cache) holdingLocked(key HolderKey) (*sharedResult, *holding) {
 	state := c.remoteCaches[key.Cache]
 	if state == nil {
 		return nil, nil
 	}
-	id, ok := state.entries[key.Number]
-	if !ok {
-		return nil, nil
-	}
-	entry := c.resultsByID[id]
-	if entry == nil {
-		return nil, nil
-	}
-	return entry, entry.holderLocked(key)
+	return state.holdingLocked(key.Number)
 }
 
 // remoteCacheLocked returns the state of one held engine cache, creating it.
@@ -432,7 +445,7 @@ func (c *Cache) remoteCacheLocked(id CacheID) *remoteCacheState {
 	state := c.remoteCaches[id]
 	if state == nil {
 		state = &remoteCacheState{
-			entries:           make(map[uint64]sharedResultID),
+			entries:           make(map[uint64]heldEntry),
 			unknownDependents: make(map[uint64][]uint64),
 			sessions:          make(map[string]map[uint64]struct{}),
 		}
@@ -598,12 +611,12 @@ func (c *Cache) addHoldingLocked(ctx context.Context, state *remoteCacheState, k
 	// them, but for whether any engine holds it, which a holding's arrival
 	// turns only as it creates the entry, whose creation marks it.
 	c.markHoldingLocked(key)
-	state.entries[key.Number] = entry.id
+	state.entries[key.Number] = heldEntry{entry: entry, h: h}
 	// Each holding is one ownership unit of its entry.
 	c.incrementIncomingOwnershipLocked(ctx, entry)
 	state.holdings++
 	for _, parent := range state.unknownDependents[key.Number] {
-		if _, parentHolding := c.holdingLocked(HolderKey{Cache: key.Cache, Number: parent}); parentHolding != nil {
+		if _, parentHolding := state.holdingLocked(parent); parentHolding != nil {
 			parentHolding.unknownDeps, _ = withoutNumber(parentHolding.unknownDeps, key.Number)
 			parentHolding.deps = withNumber(parentHolding.deps, key.Number)
 			c.markHoldingLocked(HolderKey{Cache: key.Cache, Number: parent})
@@ -911,7 +924,7 @@ func (c *Cache) applyHeldValueStateLocked(ctx context.Context, state *remoteCach
 			}
 			state.graphVersion++
 			depKey := HolderKey{Cache: key.Cache, Number: number}
-			if _, dep := c.holdingLocked(depKey); dep != nil {
+			if _, dep := state.holdingLocked(number); dep != nil {
 				// Its count of dependents is no reader's to keep
 				// (HoldingFacts): it is a candidate, not marked.
 				dep.dependents--
@@ -1006,7 +1019,7 @@ func (c *Cache) releaseRemoteSessionLocked(cache CacheID, session string, candid
 	}
 	for number := range state.sessions[session] {
 		key := HolderKey{Cache: cache, Number: number}
-		if _, h := c.holdingLocked(key); h != nil {
+		if _, h := state.holdingLocked(number); h != nil {
 			// The sessions holding it are read fresh (HoldingFacts): the
 			// session's end makes it a candidate and names no holding.
 			h.sessions, _ = withoutSession(h.sessions, session)
@@ -1076,9 +1089,8 @@ func (c *Cache) releaseRemoteCacheLocked(cache CacheID) (change RemoteChange) {
 	if state == nil {
 		return change
 	}
-	for number, id := range state.entries {
-		key := HolderKey{Cache: cache, Number: number}
-		h := c.resultsByID[id].holderLocked(key)
+	for number, held := range state.entries {
+		key, h := HolderKey{Cache: cache, Number: number}, held.h
 		// Its retention is a fact a reader keeps (HoldingFacts); the
 		// sessions holding it are read fresh.
 		if h.retention.retained {
@@ -1276,8 +1288,8 @@ func (c *Cache) removeHoldingLocked(ctx context.Context, state *remoteCacheState
 	state.holdings--
 	var deps []HolderKey
 	for _, number := range h.deps {
-		depKey := HolderKey{Cache: key.Cache, Number: number}
-		if _, dep := c.holdingLocked(depKey); dep != nil {
+		if _, dep := state.holdingLocked(number); dep != nil {
+			depKey := HolderKey{Cache: key.Cache, Number: number}
 			// Its count of dependents is read fresh (HoldingFacts).
 			dep.dependents--
 			deps = append(deps, depKey)
@@ -1355,9 +1367,8 @@ func (c *Cache) removeGoneHoldingLocked(ctx context.Context, key HolderKey, entr
 	}
 	state := c.remoteCaches[key.Cache]
 	if h.dependents > 0 {
-		for number, id := range state.entries {
-			parentKey := HolderKey{Cache: key.Cache, Number: number}
-			parent := c.resultsByID[id].holderLocked(parentKey)
+		for number, held := range state.entries {
+			parentKey, parent := HolderKey{Cache: key.Cache, Number: number}, held.h
 			var had bool
 			if parent.deps, had = withoutNumber(parent.deps, key.Number); !had {
 				continue
@@ -1424,7 +1435,7 @@ func (c *Cache) addHoldingDepsLocked(state *remoteCacheState, key HolderKey, h *
 			continue
 		}
 		seen[number] = struct{}{}
-		if _, dep := c.holdingLocked(HolderKey{Cache: key.Cache, Number: number}); dep != nil {
+		if _, dep := state.holdingLocked(number); dep != nil {
 			known = append(known, number)
 			state.graphVersion++
 			// The dependency's count of dependents is read fresh
@@ -1682,7 +1693,10 @@ func (c *Cache) holderClosureInPieces(key HolderKey) ([]HolderKey, bool) {
 	r := c.readInPieces()
 	defer r.done()
 	state := c.remoteCaches[key.Cache]
-	if _, h := c.holdingLocked(key); h == nil || state == nil {
+	if state == nil {
+		return nil, true
+	}
+	if _, h := state.holdingLocked(key.Number); h == nil {
 		return nil, true
 	}
 	version := state.graphVersion
@@ -1692,7 +1706,7 @@ func (c *Cache) holderClosureInPieces(key HolderKey) ([]HolderKey, bool) {
 	for len(queue) > 0 {
 		number := queue[0]
 		queue = queue[1:]
-		if _, h := c.holdingLocked(HolderKey{Cache: key.Cache, Number: number}); h != nil {
+		if _, h := state.holdingLocked(number); h != nil {
 			keys = append(keys, HolderKey{Cache: key.Cache, Number: number})
 			for _, dep := range h.deps {
 				if !seen[dep] {
@@ -1780,7 +1794,7 @@ func (c *Cache) holderGraphLocked(cache CacheID, roots []uint64, r *readPieces) 
 	for len(stack) > 0 {
 		number := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
-		if _, h := c.holdingLocked(HolderKey{Cache: cache, Number: number}); h != nil {
+		if _, h := state.holdingLocked(number); h != nil {
 			graph[number] = slices.Clone(h.deps)
 			for _, dep := range h.deps {
 				if !seen[dep] {

@@ -240,15 +240,6 @@ func (res *sharedResult) holderRefsLocked() []holderRef {
 	return res.holders.refs
 }
 
-// holderLocked returns res's holding of key, or nil. Requires egraphMu.
-func (res *sharedResult) holderLocked(key HolderKey) *holding {
-	refs := res.holderRefsLocked()
-	if i, found := holderIndex(refs, key); found {
-		return refs[i].h
-	}
-	return nil
-}
-
 // cacheHolderRefsLocked returns res's holdings of one engine cache, sorted
 // by number. An engine's Cloud and image holdings are no engine cache's.
 // Requires egraphMu.
