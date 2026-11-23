@@ -3,8 +3,6 @@ package dagql
 import (
 	"cmp"
 	"slices"
-	"sync"
-	"sync/atomic"
 	"unique"
 )
 
@@ -222,20 +220,10 @@ type holderRef struct {
 }
 
 // entryHolders are an entry's holdings sorted by key: an engine cache's
-// holdings on it are one run of them. The list is changed in place under mu:
-// a reader takes mu to read it, and copies what it keeps past mu
-// (holderRefsLocked, cacheHolderRefsLocked) or reads it under mu with a
-// function that takes no lock (eachHolderLocked, eachCacheHolderLocked).
-// engines counts the holdings of engine caches among them, an engine's Cloud
-// and image holdings not, so that whether any engine holds the entry is one
-// load. A writer of one engine cache's holdings changes only its own place
-// in the list, so writers of different engine caches' holdings can take
-// turns on mu alone (sharedResult.holders). mu is a leaf: taken alone, under
-// egraphMu in either mode, and nothing is taken while it is held.
+// holdings on it are one run of them. Changed in place under egraphMu; no
+// reader keeps them.
 type entryHolders struct {
-	mu      sync.Mutex
-	refs    []holderRef
-	engines atomic.Int32
+	refs []holderRef
 }
 
 func holderIndex(refs []holderRef, key HolderKey) (int, bool) {
@@ -244,150 +232,55 @@ func holderIndex(refs []holderRef, key HolderKey) (int, bool) {
 	})
 }
 
-// holderRefsLocked returns a copy of res's holdings, sorted by key, for a
-// reader that takes another lock as it reads them. Requires egraphMu.
+// holderRefsLocked returns res's holdings, sorted by key. Requires egraphMu.
 func (res *sharedResult) holderRefsLocked() []holderRef {
-	holders := res.holders.Load()
-	if holders == nil {
+	if res.holders == nil {
 		return nil
 	}
-	holders.mu.Lock()
-	defer holders.mu.Unlock()
-	return slices.Clone(holders.refs)
+	return res.holders.refs
 }
 
-// eachHolderLocked calls f with each of res's holdings, sorted by key,
-// until it returns false, under the list's lock: f takes no lock and
-// changes no holder list. Requires egraphMu.
-func (res *sharedResult) eachHolderLocked(f func(holderRef) bool) {
-	holders := res.holders.Load()
-	if holders == nil {
-		return
-	}
-	holders.mu.Lock()
-	defer holders.mu.Unlock()
-	for _, ref := range holders.refs {
-		if !f(ref) {
-			return
-		}
-	}
-}
-
-// engineHoldersLocked counts res's holdings of engine caches. Requires
-// egraphMu.
-func (res *sharedResult) engineHoldersLocked() int32 {
-	holders := res.holders.Load()
-	if holders == nil {
-		return 0
-	}
-	return holders.engines.Load()
-}
-
-// cacheRunLocked returns the bounds of one engine cache's run of holdings in
-// refs, sorted by key. An engine's Cloud and image holdings are no engine
-// cache's: their run is empty.
-func cacheRunLocked(refs []holderRef, cache CacheID) (int, int) {
+// cacheHolderRefsLocked returns res's holdings of one engine cache, sorted
+// by number. An engine's Cloud and image holdings are no engine cache's.
+// Requires egraphMu.
+func (res *sharedResult) cacheHolderRefsLocked(cache CacheID) []holderRef {
 	if senderCache(cache) {
-		return 0, 0
+		return nil
 	}
+	refs := res.holderRefsLocked()
 	start, _ := holderIndex(refs, HolderKey{Cache: cache})
 	end := start
 	for end < len(refs) && refs[end].key.Cache == cache {
 		end++
 	}
-	return start, end
+	return refs[start:end]
 }
 
-// cacheHolderRefsLocked returns a copy of res's holdings of one engine
-// cache, sorted by number. Requires egraphMu.
-func (res *sharedResult) cacheHolderRefsLocked(cache CacheID) []holderRef {
-	holders := res.holders.Load()
-	if holders == nil {
-		return nil
-	}
-	holders.mu.Lock()
-	defer holders.mu.Unlock()
-	start, end := cacheRunLocked(holders.refs, cache)
-	return slices.Clone(holders.refs[start:end])
-}
-
-// eachCacheHolderLocked calls f with each of res's holdings of one engine
-// cache, sorted by number, until it returns false, under the list's lock, as
-// eachHolderLocked does. Requires egraphMu.
-func (res *sharedResult) eachCacheHolderLocked(cache CacheID, f func(holderRef) bool) {
-	holders := res.holders.Load()
-	if holders == nil {
-		return
-	}
-	holders.mu.Lock()
-	defer holders.mu.Unlock()
-	start, end := cacheRunLocked(holders.refs, cache)
-	for _, ref := range holders.refs[start:end] {
-		if !f(ref) {
-			return
-		}
-	}
-}
-
-// lockHoldersLocked returns res's holder list locked, creating it when res
-// has none. A list emptied and dropped (deleteHolderLocked) between its load
-// and its lock is no longer res's, and another is taken. Requires egraphMu.
-func (res *sharedResult) lockHoldersLocked() *entryHolders {
-	for {
-		holders := res.holders.Load()
-		if holders == nil {
-			holders = &entryHolders{}
-			if !res.holders.CompareAndSwap(nil, holders) {
-				continue
-			}
-		}
-		holders.mu.Lock()
-		if res.holders.Load() == holders {
-			return holders
-		}
-		holders.mu.Unlock()
-	}
-}
-
-// putHolderLocked sets res's holding of key. Requires egraphMu for writing,
-// or for reading with the lock of key's engine cache.
+// putHolderLocked sets res's holding of key. Requires egraphMu for writing.
 func (res *sharedResult) putHolderLocked(key HolderKey, h *holding) {
-	holders := res.lockHoldersLocked()
-	defer holders.mu.Unlock()
-	i, found := holderIndex(holders.refs, key)
+	if res.holders == nil {
+		res.holders = &entryHolders{}
+	}
+	i, found := holderIndex(res.holders.refs, key)
 	if found {
-		holders.refs[i].h = h
+		res.holders.refs[i].h = h
 		return
 	}
-	holders.refs = slices.Insert(holders.refs, i, holderRef{key: key, h: h})
-	if !senderCache(key.Cache) {
-		holders.engines.Add(1)
-	}
+	res.holders.refs = slices.Insert(res.holders.refs, i, holderRef{key: key, h: h})
 }
 
 // deleteHolderLocked removes res's holding of key; an entry left with none
-// keeps none. Requires egraphMu for writing, or for reading with the lock of
-// key's engine cache.
+// keeps none. Requires egraphMu for writing.
 func (res *sharedResult) deleteHolderLocked(key HolderKey) {
-	holders := res.holders.Load()
-	if holders == nil {
+	if res.holders == nil {
 		return
 	}
-	holders.mu.Lock()
-	defer holders.mu.Unlock()
-	if res.holders.Load() != holders {
-		return
-	}
-	i, found := holderIndex(holders.refs, key)
+	i, found := holderIndex(res.holders.refs, key)
 	if !found {
 		return
 	}
-	if !senderCache(key.Cache) {
-		holders.engines.Add(-1)
-	}
-	holders.refs = slices.Delete(holders.refs, i, i+1)
-	if len(holders.refs) == 0 {
-		holders.refs = nil
-		res.holders.Store(nil)
+	res.holders.refs = slices.Delete(res.holders.refs, i, i+1)
+	if len(res.holders.refs) == 0 {
+		res.holders = nil
 	}
 }

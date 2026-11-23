@@ -200,14 +200,12 @@ func (h *HeldBy) heldLocked(res *sharedResult, nowUnix int64) bool {
 // expired at nowUnix: among its holdings of that cache only
 // (cacheHolderRefsLocked), each judged by its own expiry. Requires egraphMu.
 func (h *HeldBy) holdsLocked(res *sharedResult, nowUnix int64) bool {
-	holds := false
-	res.eachCacheHolderLocked(h.Cache, func(ref holderRef) bool {
+	for _, ref := range res.cacheHolderRefsLocked(h.Cache) {
 		if held := ref.h; held.expiresAtUnix == 0 || held.expiresAtUnix > nowUnix {
-			holds = true
+			return true
 		}
-		return !holds
-	})
-	return holds
+	}
+	return false
 }
 
 // StoredBundle builds a bundle from the entries of a blob-backed cache, the
@@ -306,11 +304,6 @@ func (c *Cache) storedBundle(roots []uint64, nowUnix int64, held *HeldBy, opts s
 	var out StoredBundleResult
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
-	// The recipient's holdings, which the build asks of (HeldBy), are read
-	// under its engine cache's lock for the build's one hold.
-	if held != nil {
-		defer c.rlockEngineLocked(held.Cache).runlock()
-	}
 
 	var rootEntries []*sharedResult
 	seenRoot := map[sharedResultID]bool{}

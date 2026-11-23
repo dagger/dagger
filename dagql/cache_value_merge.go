@@ -3123,6 +3123,10 @@ func (c *Cache) commitValueMergeLocked(ctx context.Context, commit *valueMergeCo
 // its entry nothing but, on an engine, the sender's holding. Requires
 // egraphMu for writing.
 func (c *Cache) applyMergedIdentitiesLocked(ctx context.Context, commit *valueMergeCommit, change *RemoteChange) {
+	var cloudState *remoteCacheState
+	if c.blobBacked {
+		cloudState = c.remoteCacheLocked(change, commit.from)
+	}
 	for _, row := range commit.rows {
 		if commit.prep.held[row.ordinal] {
 			// A held row teaches its entry nothing: it is the entry's own
@@ -3131,7 +3135,7 @@ func (c *Cache) applyMergedIdentitiesLocked(ctx context.Context, commit *valueMe
 			if !c.blobBacked {
 				row.res.noteSenderCopyLocked(commit.from, row.value.SenderNumber, true, row.value.ExpiresAtUnix)
 			} else {
-				c.mergeHeldSenderHoldingLocked(ctx, commit, row, change)
+				c.mergeHeldSenderHoldingLocked(ctx, cloudState, commit, row, change)
 			}
 			continue
 		}
@@ -3168,7 +3172,7 @@ func (c *Cache) applyMergedIdentitiesLocked(ctx context.Context, commit *valueMe
 			c.noteCloudMergeLocked(commit, row)
 			continue
 		}
-		c.mergeSenderHoldingLocked(ctx, commit, row, change)
+		c.mergeSenderHoldingLocked(ctx, cloudState, commit, row, change)
 	}
 	for _, merged := range commit.prep.calls {
 		row := commit.byOrdinal[merged.value]
@@ -3398,14 +3402,13 @@ func (c *Cache) installMergedRecordLocked(res *sharedResult, row *mergeRow, orig
 // record's, named by the sender's numbers, at the record's replacement count.
 // An export reports no parts and no expiry; the sender's rows do. Requires
 // egraphMu for writing.
-func (c *Cache) mergeSenderHoldingLocked(ctx context.Context, commit *valueMergeCommit, row *mergeRow, change *RemoteChange) {
+func (c *Cache) mergeSenderHoldingLocked(ctx context.Context, state *remoteCacheState, commit *valueMergeCommit, row *mergeRow, change *RemoteChange) {
 	key := HolderKey{Cache: commit.from, Number: row.value.SenderNumber}
 	entry, h := c.holdingLocked(key)
 	if h == nil {
-		entry, h = c.newHoldingLocked(ctx, change, key, RemoteHolding{Recipe: row.plan.recipe, Field: row.res.description})
+		entry, h = c.newHoldingLocked(ctx, change, state, key, RemoteHolding{Recipe: row.plan.recipe, Field: row.res.description})
 		change.Candidates = append(change.Candidates, key)
 	}
-	state := c.remoteCaches[key.Cache]
 	deps := make([]uint64, 0, len(row.value.DependencyIDs))
 	for _, dep := range row.value.DependencyIDs {
 		deps = append(deps, commit.prep.index[dep].SenderNumber)
@@ -3423,13 +3426,12 @@ func (c *Cache) mergeSenderHoldingLocked(ctx context.Context, commit *valueMerge
 // for any holding. A holding the Cloud has already is left as it is: a held
 // row with no dependencies has nothing to add to it. Requires egraphMu for
 // writing.
-func (c *Cache) mergeHeldSenderHoldingLocked(ctx context.Context, commit *valueMergeCommit, row *mergeRow, change *RemoteChange) {
+func (c *Cache) mergeHeldSenderHoldingLocked(ctx context.Context, state *remoteCacheState, commit *valueMergeCommit, row *mergeRow, change *RemoteChange) {
 	key := HolderKey{Cache: commit.from, Number: row.value.SenderNumber}
 	if _, h := c.holdingLocked(key); h != nil {
 		return
 	}
-	entry, h := c.newHoldingLocked(ctx, change, key, RemoteHolding{Recipe: row.plan.recipe, Field: row.res.description})
-	state := c.remoteCaches[key.Cache]
+	entry, h := c.newHoldingLocked(ctx, change, state, key, RemoteHolding{Recipe: row.plan.recipe, Field: row.res.description})
 	change.Candidates = append(change.Candidates, key)
 	candidates := c.applyHeldValueStateLocked(ctx, change, state, key, entry, h, HeldValueState{Replacements: row.value.SenderReplacements}, nil, nil)
 	change.Candidates = append(change.Candidates, candidates...)

@@ -24,9 +24,7 @@ func (c *Cache) entryCanDifferLocked(res *sharedResult) bool {
 
 // entryCanDifferWhyLocked is entryCanDifferLocked, with why it can differ:
 // "undeclared", its record or call rows declaring nothing; "unknown", neither
-// saying; or "disagree". It reads each holding under its engine cache's
-// lock, one engine cache at a time, as a walk across engine caches does.
-// Requires egraphMu.
+// saying; or "disagree". Requires egraphMu.
 func (c *Cache) entryCanDifferWhyLocked(res *sharedResult) (bool, string) {
 	declared, known, agree := false, false, true
 	note := func(follows bool) {
@@ -45,10 +43,7 @@ func (c *Cache) entryCanDifferWhyLocked(res *sharedResult) (bool, string) {
 		}
 	}
 	for _, ref := range res.holderRefsLocked() {
-		state := c.rlockEngineLocked(ref.key.Cache)
-		follows, known := declares(ref.h.follows, ref.h.rowed)
-		state.runlock()
-		if known {
+		if follows, known := declares(ref.h.follows, ref.h.rowed); known {
 			note(follows)
 		}
 	}
