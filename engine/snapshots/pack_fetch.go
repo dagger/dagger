@@ -3,6 +3,7 @@ package snapshots
 import (
 	"bufio"
 	"bytes"
+	"container/list"
 	"context"
 	"crypto/rand"
 	"errors"
@@ -73,7 +74,70 @@ const (
 	// closer than this are read in one range, the bytes between them read
 	// and dropped.
 	packSpanGap = 1 << 20
+	// packHeaderMembers bounds the members of the headers an engine keeps
+	// (packHeaders), at about 100 bytes each in memory: about 25 MiB. On the
+	// many-pull-request test's run of 22 Nov, the engine that read the most
+	// packs read 1,298 of them over the run, with a median of 12 members a
+	// pack.
+	packHeaderMembers = 1 << 18
 )
+
+// packHeaders are the headers of the packs an engine has read, by pack ID, so
+// that an import that reads a pack by ranges plans them from a header another
+// import already read rather than read it again. A pack's ID is its header's
+// digest, and only a header checked against its ID is kept, so a kept header
+// is the pack's for as long as anything names the pack: it can't go stale.
+// Whether the pack can still be read is the read's question, as without the
+// header. The least recently used go first once the kept headers' members
+// pass packHeaderMembers.
+type packHeaders struct {
+	mu      sync.Mutex
+	byID    map[digest.Digest]*list.Element
+	order   list.List // of *packHeader, the most recently used first
+	members int
+}
+
+// packHeader is a kept header: its members and its own size in bytes.
+type packHeader struct {
+	id      digest.Digest
+	members []pack.Member
+	size    int64
+}
+
+// get returns the kept header of the pack id, if there is one.
+func (h *packHeaders) get(id digest.Digest) ([]pack.Member, int64, bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	e := h.byID[id]
+	if e == nil {
+		return nil, 0, false
+	}
+	h.order.MoveToFront(e)
+	kept := e.Value.(*packHeader)
+	return kept.members, kept.size, true
+}
+
+// keep keeps the header of the pack id, which lists members and is size
+// bytes, as checked against id.
+func (h *packHeaders) keep(id digest.Digest, members []pack.Member, size int64) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if e := h.byID[id]; e != nil {
+		h.order.MoveToFront(e)
+		return
+	}
+	if h.byID == nil {
+		h.byID = map[digest.Digest]*list.Element{}
+	}
+	h.byID[id] = h.order.PushFront(&packHeader{id: id, members: members, size: size})
+	h.members += len(members)
+	for h.members > packHeaderMembers && h.order.Len() > 1 {
+		oldest := h.order.Back()
+		kept := h.order.Remove(oldest).(*packHeader)
+		delete(h.byID, kept.id)
+		h.members -= len(kept.members)
+	}
+}
 
 // chainPacks is how one chain import reads the packs that hold its blobs: a
 // pack the chain needs at least half the bytes of is read whole, as any
@@ -211,12 +275,13 @@ func (cm *snapshotManager) downloadPackedRange(ctx context.Context, desc ocispec
 	return true, err
 }
 
-// planPack reads the pack's header by range and decides how owner reads
-// it: whole when owner's members are at least half its bytes, else by
-// spans of them, merged across gaps under packSpanGap. A pack the header's
-// range held whole is stored from it, as a whole read stores it.
+// planPack takes the pack's header, kept from an earlier read or read now by
+// range, and decides how owner reads it: whole when owner's members are at
+// least half its bytes, else by spans of them, merged across gaps under
+// packSpanGap. A pack the header's range held whole is stored from it, as a
+// whole read stores it.
 func (cm *snapshotManager) planPack(ctx context.Context, plan *packPlan, provider PackRangeProvider, id, blob digest.Digest, owner *ExportChain) error {
-	list, headerSize, data, err := readPackHeader(ctx, provider, id, blob)
+	list, headerSize, data, err := cm.packHeader(ctx, provider, id, blob)
 	if errors.Is(err, ErrNoPackRanges) {
 		plan.whole = true
 		return nil
@@ -266,6 +331,20 @@ func (cm *snapshotManager) planPack(ctx context.Context, plan *packPlan, provide
 		plan.spans[m.Digest] = span
 	}
 	return nil
+}
+
+// packHeader returns the pack id's header as readPackHeader does: the one the
+// engine keeps from an earlier read, with no bytes read, or one read now by
+// range, which it keeps.
+func (cm *snapshotManager) packHeader(ctx context.Context, provider PackRangeProvider, id, blob digest.Digest) ([]pack.Member, int64, []byte, error) {
+	if members, size, ok := cm.packs.headers.get(id); ok {
+		return members, size, nil, nil
+	}
+	members, size, data, err := readPackHeader(ctx, provider, id, blob)
+	if err == nil {
+		cm.packs.headers.keep(id, members, size)
+	}
+	return members, size, data, err
 }
 
 // readPackHeader reads a pack's header by range, checked against its ID,
@@ -373,6 +452,8 @@ type packFetches struct {
 	mu       sync.Mutex
 	inflight map[digest.Digest]*packFetch
 	slots    chan struct{}
+	// headers are the headers of the packs read, kept for later reads.
+	headers packHeaders
 }
 
 // packFetch is one read of a pack.
@@ -577,6 +658,11 @@ func (cm *snapshotManager) runPackFetch(ctx context.Context, f *packFetch, slots
 		size, err := pack.Size(list)
 		if err != nil || size > packMaxBytes {
 			return &packContentError{stage: "provider", err: fmt.Errorf("pack %s is over %d bytes", f.id, packMaxBytes)}
+		}
+		// The header, checked against the ID, is kept for later reads by
+		// range, as one read by range is.
+		if header, err := pack.Header(list); err == nil {
+			cm.packs.headers.keep(f.id, list, int64(len(header)))
 		}
 		members = len(list)
 		for _, m := range list {
