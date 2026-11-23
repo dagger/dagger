@@ -290,6 +290,10 @@ func (t *RustClientDev) releaseContainer(
 	versionFlag string,
 ) *dagger.Container {
 	return t.container(false).
-		WithExec([]string{"cargo", "install", "cargo-edit@" + cargoEditVersion, "--locked"}).
+		// cargo-edit goes in the container's own filesystem, and the release
+		// runs without the cache volume: a cache volume's contents can be
+		// absent on any run, so no step may need what another left there.
+		WithExec([]string{"cargo", "install", "cargo-edit@" + cargoEditVersion, "--locked", "--root", "/usr/local"}).
+		WithoutMount("/root/.cargo").
 		WithExec([]string{"cargo", "set-version", "-p", rustSdkCrate, versionFlag})
 }
