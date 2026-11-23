@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/stretchr/testify/require"
 )
 
@@ -428,4 +430,68 @@ func TestRemoteWritesApplyAMergedReplyInPieces(t *testing.T) {
 		return slices.Compact(keys)
 	}
 	require.Equal(t, set(wholeChange.Candidates), set(candidates), "the same candidates")
+}
+
+// graphHoldsSeen observes the holds of c's graph lock that c takes itself
+// (ObserveGraphHolds) for the test, and returns the names of the kinds of
+// work it has seen hold the lock so far, in order.
+func graphHoldsSeen(t *testing.T, c *Cache) func() []string {
+	t.Helper()
+	var (
+		mu   sync.Mutex
+		seen []string
+	)
+	stop := c.ObserveGraphHolds(func(work wcprof.LockHolder, _, held time.Duration) {
+		mu.Lock()
+		defer mu.Unlock()
+		if held <= 0 {
+			t.Errorf("a hold of %s held the lock for %v", work, held)
+		}
+		seen = append(seen, work.String())
+	})
+	t.Cleanup(stop)
+	return func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		out := slices.Clone(seen)
+		seen = nil
+		return out
+	}
+}
+
+// The cache's observer of its own holds of the graph lock sees an
+// engine's export commit to the Cloud as a merge, and the Cloud's writes of
+// holdings and stored parts that take the lock themselves as remote, and
+// not the holds of the lock through HoldRemoteWrites, which their holder
+// times.
+func TestGraphHoldObserverSeesTheCachesOwnWrites(t *testing.T) {
+	t.Parallel()
+	ctx, cloud, _, _ := storedBundleTestCloud(t, "root")
+	seen := graphHoldsSeen(t, cloud)
+
+	bundle, _ := mergeTestSource(t, "observed", "member")
+	prepared, err := cloud.PrepareValueMerge(ctx, "cache-b", bundle)
+	require.NoError(t, err)
+	seen()
+	reply, err := cloud.CommitValueMerge(ctx, prepared)
+	require.NoError(t, err)
+	require.Len(t, reply.Roots, 1)
+	require.Contains(t, seen(), "merge", "the commit's hold")
+
+	key := HolderKey{"cache-a", 1}
+	_, err = cloud.AttachRemoteHolding(ctx, key, holdingOf("observed-1"))
+	require.NoError(t, err)
+	_, err = cloud.AddRemoteHold(ctx, key, "s1")
+	require.NoError(t, err)
+	require.Equal(t, []string{"remote", "remote"}, seen())
+
+	_, _, err = cloud.SetStoredPart(ctx, reply.Roots[0].Number, testLiveOffer(), 0)
+	require.NoError(t, err)
+	require.Contains(t, seen(), "remote", "the stored part's hold")
+
+	w := cloud.HoldRemoteWrites()
+	_, err = w.AddRemoteHold(ctx, key, "s2")
+	require.NoError(t, err)
+	require.NoError(t, w.Release(ctx))
+	require.Empty(t, seen(), "a hold its holder times")
 }
