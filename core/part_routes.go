@@ -40,14 +40,33 @@ func containerPartDelegation(v dagql.PersistedPayloadVisit, p persistedContainer
 }
 
 // containerDelegatingCall reports whether call is one of the metadata
-// effects whose Container keeps every part of its receiver unchanged but its
-// metadata (containerPartDelegation).
+// effects whose Container's parts, but its metadata, are each its receiver's
+// part of the same key, unchanged, or absent (containerPartDelegation).
 func containerDelegatingCall(call *dagql.ResultCall) bool {
 	if call == nil {
 		return false
 	}
+	if containerKeepsEveryPart(call) {
+		return true
+	}
 	switch call.Field {
-	case "withWorkdir", "withEnvVariable", "withoutDefaultArgs", "__withSystemEnvVariable", "withEntrypoint", "withMountedCache", "withoutMount", "withUnixSocket", "withoutUnixSocket", "withoutEnvVariable":
+	case "withMountedCache", "withoutMount":
+		return call.Kind == dagql.ResultCallKindField && call.Module == nil && call.Nth == 0
+	}
+	return false
+}
+
+// containerKeepsEveryPart reports whether call is one of the metadata
+// effects whose Container keeps every part of its receiver unchanged but its
+// metadata: those of containerDelegatingCall that leave the mount list as it
+// was. A withoutMount drops a mount, and a withMountedCache covers any mount
+// at its target with a cache, which has no part.
+func containerKeepsEveryPart(call *dagql.ResultCall) bool {
+	if call == nil {
+		return false
+	}
+	switch call.Field {
+	case "withWorkdir", "withEnvVariable", "withoutDefaultArgs", "__withSystemEnvVariable", "withEntrypoint", "withUnixSocket", "withoutUnixSocket", "withoutEnvVariable":
 	default:
 		return false
 	}
@@ -55,11 +74,12 @@ func containerDelegatingCall(call *dagql.ResultCall) bool {
 }
 
 // DelegatedParts is, by a Container's call alone, the receiver whose parts it
-// keeps unchanged but its metadata, its own: the calls
-// containerPartDelegation delegates once a record is captured, made on an
-// exact receiver.
+// keeps, every one of them unchanged but its metadata, its own: the calls
+// containerKeepsEveryPart names, made on an exact receiver. A call that drops
+// or covers a mount is not one: a sync of its receiver would make the mount
+// it no longer holds.
 func (family foreignFamilyCodec) DelegatedParts(call *dagql.ResultCall) (uint64, []dagql.PartKey, bool) {
-	if family != "Container" || !containerDelegatingCall(call) {
+	if family != "Container" || !containerKeepsEveryPart(call) {
 		return 0, nil, false
 	}
 	if call.Type == nil || call.Type.NamedType != "Container" || call.Type.Elem != nil {
