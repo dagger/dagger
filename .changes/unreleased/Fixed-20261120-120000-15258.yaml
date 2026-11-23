@@ -1,9 +1,11 @@
 kind: Fixed
 body: |
-  The engine shrinks images given to an LLM to at most 2576px on the long edge
-  when it stores them. Anthropic rejects every request of a conversation with
-  more than 20 images once any of them is over 3000px, so one pasted Retina
-  screenshot broke every turn after enough tool screenshots.
+  Images joining an LLM conversation are shrunk to the longest edge its model
+  uses (Claude 4.7 and later: 2576px, older Claude: 1568px, GPT-5.5 and later:
+  6000px, older GPT: 2048px, others: 2576px), and refitted when the
+  conversation switches models. Anthropic rejects every request of a
+  conversation with more than 20 images once any of them is over 3000px, so
+  one pasted Retina screenshot broke every turn after enough tool screenshots.
 time: 2026-11-20T12:00:00Z
 custom:
   Author: vito
