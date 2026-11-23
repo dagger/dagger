@@ -680,6 +680,7 @@ func (a *RemoteCacheAdapter) RestorePart(ctx context.Context, part dagql.ValueBu
 		"committed", reply.Committed,
 		"stale", len(reply.Stale),
 		"kept", reply.Rows.Kept,
+		"unchanged", reply.Rows.Unchanged,
 		"created", reply.Rows.Created,
 		"commitHold", reply.CommitHold,
 		"duration", time.Since(start),

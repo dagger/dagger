@@ -531,10 +531,13 @@ type MergeReply struct {
 // Of the kept records, on a blob-backed cache, KeptWithHolding are those
 // whose sender's holding the cache had before the commit, and KeptTaught
 // those of them whose identity taught the entry a class, a term or a digest
-// all the same: what a held row in their place wouldn't have taught it.
+// all the same: what a held row in their place wouldn't have taught it. On
+// an engine, Unchanged are the kept records of the Cloud's whose entry
+// merged them already, unchanged since: the commit didn't teach them again.
 type MergeRowCounts struct {
 	Held, Kept, Created, Stored, Replaced, Retired int
 	KeptWithHolding, KeptTaught                    int
+	Unchanged                                      int
 }
 
 // count counts one decided row.
@@ -549,6 +552,9 @@ func (n *MergeRowCounts) count(row *mergeRow) {
 		}
 		if row.keptTaught {
 			n.KeptTaught++
+		}
+		if row.unchanged {
+			n.Unchanged++
 		}
 	case row.action == mergeCreate:
 		n.Created++
@@ -1699,6 +1705,10 @@ type mergeRow struct {
 	// of those whose identity taught its entry a class, a term or a digest
 	// that the holding hadn't (applyMergedIdentitiesLocked).
 	keptWithHolding, keptTaught bool
+	// unchanged marks, on an engine, a kept record of the Cloud's that its
+	// entry merged already at the same change stamp, unchanged here since:
+	// its identity and the Cloud's copy aren't taught again.
+	unchanged bool
 	// rec and deps are the record relocated to the final numbers, for an
 	// action that installs it. firstUse is set for a record installed with
 	// its payload unprepared (relocateUnpreparedRow).
