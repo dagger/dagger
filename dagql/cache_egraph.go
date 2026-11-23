@@ -663,10 +663,12 @@ func (c *Cache) appendDigestResultsLocked(candidates *set.TreeSet[*sharedResult]
 // eq-class root, read from outputEqClassResults. It finds the same results
 // as appendDigestResultsLocked over every digest of the class: a result is
 // posted only under digests merged into one of its output classes, and every
-// output class of a result holds a digest it is posted under.
-func (c *Cache) appendOutputEqClassResultsLocked(candidates *set.TreeSet[*sharedResult], root eqClassID, nowUnix int64) {
+// output class of a result holds a digest it is posted under. It visits each
+// result once, where the digests' walk visits it once for every digest it is
+// posted under. expired is filled as in appendDigestResultsLocked.
+func (c *Cache) appendOutputEqClassResultsLocked(candidates *set.TreeSet[*sharedResult], root eqClassID, nowUnix int64, expired *expirySeen) {
 	for resID := range c.outputEqClassResults[root] {
-		if res := c.servableCandidateLocked(resID, nowUnix, nil); res != nil {
+		if res := c.servableCandidateLocked(resID, nowUnix, expired); res != nil {
 			candidates.Insert(res)
 		}
 	}
@@ -729,9 +731,7 @@ func (c *Cache) appendTermSetResultsLocked(candidates *set.TreeSet[*sharedResult
 			continue
 		}
 		seenOutputEqClasses[outputEqID] = struct{}{}
-		for dig := range c.eqClassToDigests[outputEqID] {
-			c.appendDigestResultsLocked(candidates, digest.Digest(dig), nowUnix, expired)
-		}
+		c.appendOutputEqClassResultsLocked(candidates, outputEqID, nowUnix, expired)
 	}
 }
 
