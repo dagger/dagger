@@ -15,7 +15,6 @@ import (
 	overlay "github.com/dagger/dagger/engine/snapshots/fsdiff"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/compression"
-	digest "github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 )
@@ -68,14 +67,16 @@ func (sr *immutableRef) tryComputeOverlayBlob(ctx context.Context, lower, upper 
 	bufW := bufio.NewWriterSize(cw, 128*1024)
 	var labels map[string]string
 	if compressorFunc != nil {
-		dgstr := digest.SHA256.Digester()
+		// The layer's diff ID, taken beside its compression (layerDigester).
+		dgstr := newLayerDigester()
+		defer dgstr.Close()
 		compressed, err := compressorFunc(bufW, mediaType)
 		if err != nil {
 			return emptyDesc, false, errors.Wrap(err, "failed to get compressed stream")
 		}
 		// Close ensure compressorFunc does some finalization works.
 		defer compressed.Close()
-		if err := overlay.WriteUpperdir(ctx, io.MultiWriter(compressed, dgstr.Hash()), upperdir, lower); err != nil {
+		if err := overlay.WriteUpperdir(ctx, io.MultiWriter(compressed, dgstr), upperdir, lower); err != nil {
 			return emptyDesc, false, errors.Wrap(err, "failed to write compressed diff")
 		}
 		if err := compressed.Close(); err != nil {

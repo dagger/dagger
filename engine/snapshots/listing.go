@@ -356,14 +356,17 @@ func writeCompressedBlob(ctx context.Context, cs content.Store, ref, mediaType s
 		return ocispecs.Descriptor{}, err
 	}
 	buf := bufio.NewWriterSize(cw, 128<<10)
-	raw := digest.SHA256.Digester()
+	// The contents' uncompressed digest, taken beside their compression
+	// (layerDigester).
+	raw := newLayerDigester()
+	defer raw.Close()
 	var dest io.WriteCloser = nopWriteCloser{buf}
 	if compress != nil {
 		if dest, err = compress(buf, mediaType); err != nil {
 			return ocispecs.Descriptor{}, errors.Wrap(err, "compress")
 		}
 	}
-	if err := write(io.MultiWriter(dest, raw.Hash())); err != nil {
+	if err := write(io.MultiWriter(dest, raw)); err != nil {
 		_ = dest.Close()
 		return ocispecs.Descriptor{}, err
 	}
