@@ -372,7 +372,7 @@ func TestCacheBoundResultsIdentityNeverLeavesTheEngine(t *testing.T) {
 	}))
 	assert.Equal(t, 2, len(leftOut), "the bound result and what is made on it are left out")
 	assert.Assert(t, !strings.Contains(string(bundle), boundSessionInputName), "no record sent names a session binding")
-	assert.Assert(t, !strings.Contains(string(bundle), string(sessionBoundHandle("session-a"))), "no record sent names the session")
+	assert.Assert(t, !strings.Contains(string(bundle), string(c.sessionBoundHandle("session-a"))), "no record sent names the session")
 
 	assert.NilError(t, c.ReleaseSession(sa, "session-a"))
 	assert.NilError(t, c.WaitSessionRelease(sa, "session-a"))
