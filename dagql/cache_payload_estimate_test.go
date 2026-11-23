@@ -32,12 +32,20 @@ func cacheTestPublishString(t *testing.T, ctx context.Context, c *Cache, field s
 	return res
 }
 
+// cacheTestSizedResult is an unregistered result numbered id whose payload
+// is n bytes.
+func cacheTestSizedResult(id sharedResultID, n int64) *sharedResult {
+	res := &sharedResult{id: id}
+	res.payloadBytes.Store(n)
+	return res
+}
+
 func TestCacheMetadataEstimateCountsPayloadBytes(t *testing.T) {
 	t.Parallel()
 
 	c := &Cache{resultsByID: map[sharedResultID]*sharedResult{}}
-	c.putResultLocked(&sharedResult{id: 1, payloadBytes: 1000})
-	c.putResultLocked(&sharedResult{id: 2, payloadBytes: 24})
+	c.putResultLocked(cacheTestSizedResult(1, 1000))
+	c.putResultLocked(cacheTestSizedResult(2, 24))
 
 	estimate := c.cacheMetadataEstimateLocked()
 	assert.Equal(t, int64(1024), estimate.PayloadBytes)
@@ -48,26 +56,26 @@ func TestCacheResultPayloadBytesTrackRegistration(t *testing.T) {
 	t.Parallel()
 
 	c := &Cache{resultsByID: map[sharedResultID]*sharedResult{}}
-	a := &sharedResult{id: 1, payloadBytes: 100}
+	a := cacheTestSizedResult(1, 100)
 	c.putResultLocked(a)
 	c.putResultLocked(a)
-	assert.Equal(t, int64(100), c.resultPayloadBytes)
+	assert.Equal(t, int64(100), c.resultPayloadBytes.Load())
 
 	// Replacing the registered result under its ID swaps its contribution.
-	b := &sharedResult{id: 1, payloadBytes: 7}
+	b := cacheTestSizedResult(1, 7)
 	c.putResultLocked(b)
-	assert.Equal(t, int64(7), c.resultPayloadBytes)
+	assert.Equal(t, int64(7), c.resultPayloadBytes.Load())
 
 	// Neither a stale pointer nor an unregistered result moves the total.
 	c.deleteResultLocked(a)
 	c.setResultPayloadBytesLocked(a, 50)
-	assert.Equal(t, int64(7), c.resultPayloadBytes)
-	assert.Equal(t, int64(50), a.payloadBytes)
+	assert.Equal(t, int64(7), c.resultPayloadBytes.Load())
+	assert.Equal(t, int64(50), a.payloadBytes.Load())
 
 	c.setResultPayloadBytesLocked(b, 30)
-	assert.Equal(t, int64(30), c.resultPayloadBytes)
+	assert.Equal(t, int64(30), c.resultPayloadBytes.Load())
 	c.deleteResultLocked(b)
-	assert.Equal(t, int64(0), c.resultPayloadBytes)
+	assert.Equal(t, int64(0), c.resultPayloadBytes.Load())
 	assert.Equal(t, 0, len(c.resultsByID))
 }
 
@@ -130,16 +138,17 @@ func TestCacheUpdateDecodedPayloadBytesRespectsRevision(t *testing.T) {
 
 	env := &PersistedResultEnvelope{ScalarJSON: json.RawMessage(`"` + strings.Repeat("y", 98) + `"`)}
 	c := &Cache{resultsByID: map[sharedResultID]*sharedResult{}}
-	res := &sharedResult{id: 1, payloadBytes: persistedEnvelopePayloadBytes(env), payloadRevision: 3}
+	res := cacheTestSizedResult(1, persistedEnvelopePayloadBytes(env))
+	res.payloadRevision = 3
 	c.putResultLocked(res)
-	assert.Equal(t, int64(100), c.resultPayloadBytes)
+	assert.Equal(t, int64(100), c.resultPayloadBytes.Load())
 
 	// A later payload change wins over a stale decode measurement.
 	c.updateDecodedPayloadBytes(t.Context(), res, NewString("stale"), 2)
-	assert.Equal(t, int64(100), c.resultPayloadBytes)
+	assert.Equal(t, int64(100), c.resultPayloadBytes.Load())
 
 	c.updateDecodedPayloadBytes(t.Context(), res, NewString(strings.Repeat("y", 98)), 3)
-	assert.Equal(t, int64(98), c.resultPayloadBytes)
+	assert.Equal(t, int64(98), c.resultPayloadBytes.Load())
 }
 
 func TestPersistedEnvelopePayloadBytesCountsItems(t *testing.T) {
@@ -172,9 +181,9 @@ func cacheTestPayloadTotalConsistent(c *Cache) (int64, int64) {
 	defer c.egraphMu.RUnlock()
 	var sum int64
 	for _, res := range c.resultsByID {
-		sum += res.payloadBytes
+		sum += res.payloadBytes.Load()
 	}
-	return c.resultPayloadBytes, sum
+	return c.resultPayloadBytes.Load(), sum
 }
 
 func TestCachePayloadBytesFollowInPlaceReplacement(t *testing.T) {

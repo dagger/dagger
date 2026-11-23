@@ -308,8 +308,8 @@ func TestEnginePassesNameTheirHolder(t *testing.T) {
 
 // TestPartAcquisitionAndDecodeNameTheirHolder: starting to manage a row's
 // part gate, as the first lazy evaluation of a value decoded from another
-// engine's record does, and sizing a decoded payload take the graph lock as
-// the op they run under.
+// engine's record does, takes the graph lock as the op it runs under.
+// Sizing a decoded payload takes it only for reading, so it names no holder.
 func TestPartAcquisitionAndDecodeNameTheirHolder(t *testing.T) {
 	ctx, c, srv := persistedListTestCache(t, "")
 	srv.InstallObject(NewClass(srv, ClassOpts[*inlineCaptureTestValue]{}))
@@ -328,7 +328,12 @@ func TestPartAcquisitionAndDecodeNameTheirHolder(t *testing.T) {
 	defer op.End(wcprof.OutcomeOK)
 	require.True(t, c.usesPartAcquisition(opCtx, res, row), "a decoded value acquires its parts")
 	c.updateDecodedPayloadBytes(opCtx, row, NewString("decoded"), row.loadPayloadState().payloadRevision)
-	requireTakesNamed(t, takers(), op.ID(), "usesPartAcquisition", "updateDecodedPayloadBytes")
+	took := takers()
+	requireTakesNamed(t, took, op.ID(), "usesPartAcquisition")
+	for name := range took {
+		require.False(t, strings.HasPrefix(name, "updateDecodedPayloadBytes"), "sizing a decoded payload took the graph lock for writing")
+	}
+	require.Equal(t, int64(len("decoded")), row.payloadBytes.Load(), "the row is sized by its decoded value")
 }
 
 // TestNamedReadersSpanTheirHold: a reader that takes the graph lock as a

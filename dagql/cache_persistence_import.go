@@ -198,8 +198,8 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				description:           row.Description,
 				recordType:            row.RecordType,
 				persistedEnvelope:     env,
-				payloadBytes:          persistedEnvelopePayloadBytes(env),
 			}
+			res.payloadBytes.Store(persistedEnvelopePayloadBytes(env))
 			res.storeResultCall(frame)
 			c.traceResultCallFrameUpdated(ctx, res, "import_persisted_result", nil, frame)
 			if row.CloudHoldingNumber != 0 {
@@ -861,11 +861,14 @@ func persistedEnvelopeTypeNames(env PersistedResultEnvelope, names []persistedEn
 // cannot re-enter a decode.
 // updateDecodedPayloadBytes replaces an imported row's envelope size with
 // its decoded value's, unless the row's payload changed after revision.
-// Callers hold no cache locks: sizing may take the value's own lock.
+// Callers hold no cache locks: sizing may take the value's own lock. It
+// holds the graph lock only for reading (setResultPayloadBytesLocked): a hit
+// decodes each entry its load reaches, and a write for each would wait for
+// every reader and queue behind every writer on the way.
 func (c *Cache) updateDecodedPayloadBytes(ctx context.Context, res *sharedResult, decoded Typed, revision uint64) {
 	n := cachePayloadBytes(decoded)
-	c.lockGraphForCtx(ctx, workLookup)
-	defer c.egraphMu.Unlock()
+	c.readLockGraphGathered(ctx)
+	defer c.egraphMu.RUnlock()
 	res.payloadMu.RLock()
 	current := res.payloadRevision == revision
 	res.payloadMu.RUnlock()
