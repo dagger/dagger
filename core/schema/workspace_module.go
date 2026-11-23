@@ -155,6 +155,14 @@ type workspaceModuleSourceArgs struct {
 	AllowNotExists bool `internal:"true" default:"false"`
 }
 
+// moduleSourceCacheKey keys Workspace.moduleSource as a read of a module
+// source (moduleSourceReadCacheKey): a workspace with a content identity
+// decides what it reads without the caller, as its other reads are keyed
+// (workspaceReadCacheKey).
+func (s *workspaceSchema) moduleSourceCacheKey(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], _ workspaceModuleSourceArgs, req *dagql.CallRequest) error {
+	return moduleSourceReadCacheKey(ctx, req, parent.Self().HasContentIdentity())
+}
+
 // moduleSource loads a module source from a path within the workspace, applying
 // the standard workspace path rules (absolute from the workspace root, relative
 // from the workspace cwd). Local and Git workspaces retain their backing source
@@ -164,7 +172,10 @@ func (s *workspaceSchema) moduleSource(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
 	args workspaceModuleSourceArgs,
-) (inst dagql.ObjectResult[*core.ModuleSource], _ error) {
+) (inst dagql.ObjectResult[*core.ModuleSource], err error) {
+	resolverCtx := ctx
+	ctx, scopes := dagql.WithCallScopes(ctx)
+	defer func() { keepReadWithWhatItRead(resolverCtx, scopes, "module source "+args.Path, err) }()
 	ws := parent.Self()
 	resolvedPath, err := resolveWorkspacePath(args.Path, ws.Cwd)
 	if err != nil {
