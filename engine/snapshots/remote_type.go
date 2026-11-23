@@ -139,6 +139,11 @@ type ImportTiming struct {
 	// Packed counts the layers whose blob the import got with its pack's:
 	// read, joined, or held from an earlier read.
 	Packed int
+	// Files counts the regular files of the listings the import applied, and
+	// FileBytes their bytes: what applying them created, counted as each
+	// listing's tar is rebuilt. A layer applied from its own tar counts none.
+	Files     int64
+	FileBytes int64
 }
 
 // add adds o to t.
