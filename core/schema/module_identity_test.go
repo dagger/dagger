@@ -284,3 +284,38 @@ func TestModuleLoadedOutlivesItsSession(t *testing.T) {
 		return nil
 	}))
 }
+
+// Two sessions that read a module source from the same directory read it
+// once: the later session's read is the earlier's. Before, every client read
+// every source again, its .env and its dependencies included.
+func TestModuleSourceReadFromEqualContentIsShared(t *testing.T) {
+	t.Parallel()
+	e := newTransferTestEngine(t, transferTestSalt(t))
+	first := e.session(t, "first")
+	moduleIdentityTestSource(t, e, first, "read")
+	later := e.session(t, "later")
+	require.True(t, moduleIdentityTestSource(t, e, later, "read").HitCache(), "the later session's source is the earlier's, not read again")
+}
+
+// A module source read from a workspace with a content identity is read once
+// for every session reading the same workspace, as the workspace's files are.
+func TestWorkspaceModuleSourceReadIsShared(t *testing.T) {
+	t.Parallel()
+	e := newTransferTestEngine(t, transferTestSalt(t))
+	read := func(t *testing.T, ctx context.Context) dagql.ObjectResult[*core.ModuleSource] {
+		t.Helper()
+		var src dagql.ObjectResult[*core.ModuleSource]
+		require.NoError(t, e.dag.Select(ctx, e.dag.Root(), &src,
+			dagql.Selector{Field: "directory"},
+			dagql.Selector{Field: "withNewFile", Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString("mod/dagger.json")},
+				{Name: "contents", Value: dagql.NewString(`{"name":"workspaced"}`)},
+			}},
+			dagql.Selector{Field: "asWorkspace"},
+			dagql.Selector{Field: "moduleSource", Args: []dagql.NamedInput{{Name: "path", Value: dagql.NewString("/mod")}}}))
+		return src
+	}
+	read(t, e.session(t, "first"))
+	require.True(t, read(t, e.session(t, "later")).HitCache(), "the later session's source is the earlier's")
+}
+
