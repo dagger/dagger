@@ -111,6 +111,40 @@ func TestRemoteCacheAdapterKnowsTheRowsAMergeLands(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// A merge that lands on a row whose own value the engine keeps doesn't make
+// the row known: the service holds another record of the recipe, not the
+// engine's, which may be another run of the step. The next export carries
+// the row in full, so the service names the engine's own run of it.
+func TestRemoteCacheAdapterDoesNotKnowARowAMergeKeepsTheEnginesValueOn(t *testing.T) {
+	source := newGCTestCache(t)
+	ctx, res := addGCTestPersistableResult(t, source, "source", "merged", dagql.NewInt(7))
+	var bundle dagql.ValueBundle
+	require.NoError(t, source.WithExportedValues(ctx, dagql.ValueSelection{Roots: []dagql.AnyResult{res}}, config.RefConfig{}, func(_ context.Context, exp *dagql.ExportedValues) error {
+		bundle = exp.Bundle
+		return nil
+	}))
+
+	target := newGCTestCache(t)
+	_, own := addGCTestPersistableResult(t, target, "target", "merged", dagql.NewInt(8))
+	adapter := newTestRemoteCacheAdapter(t, target)
+	known := dagql.NewKnownRows()
+	merged, err := adapter.Merge(t.Context(), 1, protocol.Merge{Bundle: bundle}, known)
+	require.NoError(t, err)
+	require.Len(t, merged.Values, 1)
+	number := merged.Values[0].Number
+	require.Equal(t, entryNumber(t, own), number, "the merge landed on the engine's own value")
+	require.Equal(t, 0, known.Len(), "the row the merge kept the engine's value on isn't known")
+
+	var exp remotecache.Export
+	require.NoError(t, adapter.Export(t.Context(), protocol.Export{Roots: []uint64{number}}, known, func(_ context.Context, e remotecache.Export) error {
+		exp = e
+		return nil
+	}))
+	require.NotNil(t, exp.Bundle)
+	require.Empty(t, exp.Rows.Held)
+	require.Contains(t, exp.Rows.Full, number, "an export sends it in full")
+}
+
 // The merge line carries the reply's generation and the engine's clock at the
 // commit, so a merge orders against the lookups the engine's spans time on
 // the same clock. Not parallel: it swaps the default logger.
