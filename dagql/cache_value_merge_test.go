@@ -2649,7 +2649,8 @@ func TestMergeValuesSharesEachPayloadsDecode(t *testing.T) {
 
 // A merge's reply counts its records by what the commit did with each: the
 // first merge of a bundle creates its record, the same bundle again keeps
-// it, unchanged, and an expired entry nothing uses takes it in place.
+// it, and an expired entry nothing uses takes it in place. The bundle names
+// no Cloud cache, so its records are taught again (unchangedCloudRowLocked).
 func TestMergeValuesCountsItsRowsByAction(t *testing.T) {
 	t.Parallel()
 	bundle, _ := mergeTestSource(t, "root", "value")
@@ -2660,7 +2661,7 @@ func TestMergeValuesCountsItsRowsByAction(t *testing.T) {
 	require.Equal(t, MergeRowCounts{Created: 1}, first.Rows)
 	again, err := b.MergeValues(bctx, cloudCacheID, bundle)
 	require.NoError(t, err)
-	require.Equal(t, MergeRowCounts{Kept: 1, Unchanged: 1}, again.Rows)
+	require.Equal(t, MergeRowCounts{Kept: 1}, again.Rows)
 
 	cctx, c, csrv := transferTestCache(t)
 	local := persistedListTestResult(t, cctx, c, csrv, "root", &transferTestValue{Text: "local"})

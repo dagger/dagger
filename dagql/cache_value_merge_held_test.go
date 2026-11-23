@@ -375,8 +375,8 @@ func TestMergeHeldRowRefusesARecordOfTheSameRecipe(t *testing.T) {
 }
 
 // A merge's reply counts a held row as held, apart from the records it
-// creates; the full bundle afterwards keeps both, unchanged: the engine
-// merged each from the Cloud before, P whole and R in the held bundle.
+// creates; the full bundle afterwards keeps both. The Cloud has no
+// identity, so they are taught again (unchangedCloudRowLocked).
 func TestMergeHeldRowCountsAsHeld(t *testing.T) {
 	t.Parallel()
 	ctx, cloud, r, p := heldTestChainedCloud(t)
@@ -393,5 +393,5 @@ func TestMergeHeldRowCountsAsHeld(t *testing.T) {
 	require.NoError(t, err)
 	again, err := b.MergeValues(bctx, cloudCacheID, full.Bundle)
 	require.NoError(t, err)
-	require.Equal(t, MergeRowCounts{Kept: 2, Unchanged: 2}, again.Rows)
+	require.Equal(t, MergeRowCounts{Kept: 2}, again.Rows)
 }

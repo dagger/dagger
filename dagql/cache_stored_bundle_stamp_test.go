@@ -23,7 +23,7 @@ func TestStoredBundleCarriesTheStampOfEachRecord(t *testing.T) {
 	t.Parallel()
 	ctx, cloud, r, p := storedBundleTestCloud(t, "stamped")
 	bundle := unchangedRowsTestBuild(t, ctx, cloud, nil, r)
-	require.Equal(t, cloud.Identity().Generation, bundle.SenderGeneration)
+	require.Empty(t, bundle.SenderCache, "a cache with no identity names none")
 	stamps := map[uint64]uint64{}
 	for _, value := range bundle.Values {
 		stamps[value.SenderNumber] = value.SenderStamp
@@ -61,6 +61,6 @@ func withoutChangeStamps(values []TransferredValue) []TransferredValue {
 
 func bundleWithoutChangeStamps(bundle ValueBundle) ValueBundle {
 	bundle.Values = withoutChangeStamps(bundle.Values)
-	bundle.SenderGeneration = 0
+	bundle.SenderCache = ""
 	return bundle
 }
