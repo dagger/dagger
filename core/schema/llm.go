@@ -70,7 +70,7 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			dagql.Arg("name").Doc("The name of the MCP server"),
 			dagql.Arg("service").Doc("The MCP service to run and communicate with over stdio"),
 		)
-	dagql.Fields[*core.LLM]{
+	identifyWorkspaceResults(dagql.Fields[*core.LLM]{
 		dagql.Func("__withOwnerAgent", func(_ context.Context, llm *core.LLM, args struct{ Handle string }) (*core.LLM, error) {
 			return llm.WithOwnerAgent(args.Handle), nil
 		}).View(AfterVersion("v1.0.0-0")),
@@ -359,7 +359,7 @@ func (s llmSchema) Install(srv *dagql.Server) {
 		dagql.Func("contextTokens", s.contextTokens).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("estimated number of tokens currently occupying the context window; unlike tokenUsage this is not cumulative over the session"),
-	}.Install(srv)
+	}).Install(srv)
 	dagql.Fields[*core.LLMTokenUsage]{}.Install(srv)
 	// The content-block message model is only visible to v1+ module views;
 	// installing the classes with a view filter also filters their generated
