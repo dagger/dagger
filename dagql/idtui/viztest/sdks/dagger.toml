@@ -35,7 +35,7 @@ source = "github.com/dagger/typescript-sdk@28249a50a694bd4a084348bbaf8fc3e850466
 # for an API error whose origin the engine shows; a fatal error, exhausted
 # memory included, is reported too. The entrypoint declares prebuild, the
 # module's Composer install.
-source = "github.com/dagger/php-sdk@ad9445a92c36e35a3d913c570239f9ed7b7fd257"
+source = "github.com/dagger/php-sdk@5771a9b4bdd48fa329a40cd57436e3854db975cd"
 
 [modules.java-sdk]
 # java-sdk#47: the dispatcher reports a function's error in the file
@@ -44,7 +44,7 @@ source = "github.com/dagger/php-sdk@ad9445a92c36e35a3d913c570239f9ed7b7fd257"
 # origin the engine shows. The entrypoint declares prebuild, and Maven builds
 # the jar quietly in an exec of its own, so a build failure shows the
 # compiler's errors.
-source = "github.com/dagger/java-sdk@f25650f95356764c9bf7e3b1bdeec013685e112b"
+source = "github.com/dagger/java-sdk@96d3510cc640167d8a32a5148220d9f912815057"
 
 [modules.dang-sdk]
 source = "github.com/dagger/dang-sdk@14ba9d349167cb32b3a06f4229f534509a30ac62"
@@ -57,7 +57,7 @@ source = "github.com/dagger/dang-sdk@14ba9d349167cb32b3a06f4229f534509a30ac62"
 # trace of the module's own frames in Ruby's own form, and nothing for an API
 # error whose origin the engine shows. A SyntaxError logs as ruby prints it,
 # syntax_suggest's section included.
-source = "github.com/dagger/ruby-sdk@c363132d67f905b8c30818e2c1fd9e27bbd8413c"
+source = "github.com/dagger/ruby-sdk@49d17cb54f497d0852718dd6c26c5f911b38c3e3"
 
 [sdks.go]
 module = "go-sdk"

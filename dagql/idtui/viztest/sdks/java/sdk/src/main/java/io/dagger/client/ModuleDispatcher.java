@@ -221,8 +221,8 @@ public final class ModuleDispatcher {
   }
 
   /**
-   * The error's message, or its type when it has none: the engine takes a report with an empty
-   * message for plain text.
+   * The error's message, or its type when it has none: the engine reads only a JSON report with a
+   * non-empty message (or an Error ID), and rejects any other as invalid.
    */
   private static String messageOf(Throwable cause) {
     String message = cause.getMessage();

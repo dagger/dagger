@@ -280,8 +280,9 @@ final readonly class FunctionError
     }
 
     /**
-     * The error's message, or its class when it has none: the engine takes
-     * a report with an empty message for plain text.
+     * The error's message, or its class when it has none: the engine reads
+     * only a JSON report with a message, and rejects one with an empty
+     * message as invalid.
      */
     private static function messageOf(Throwable $error): string
     {

@@ -128,10 +128,11 @@ module Dagger
         !(error.is_a?(::Dagger::QueryError) && ORIGIN.match?(self.class.utf8(error.message)))
       end
 
-      # The error's message, or its class when it has none: the engine takes
-      # a report with an empty message for plain text. A SyntaxError's message
-      # is the file's annotated source, which the function's logs show; its
-      # first line names the file and the line.
+      # The error's message, or its class when it has none: the engine reads
+      # only a JSON report with a message, and rejects one with an empty
+      # message as invalid. A SyntaxError's message is the file's annotated
+      # source, which the function's logs show; its first line names the file
+      # and the line.
       def self.message_of(error)
         message = utf8(error.message)
         message = message.lines.first.to_s.chomp if error.is_a?(SyntaxError)
