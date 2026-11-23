@@ -12,6 +12,7 @@ import (
 
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/engine/wcprof"
+	"github.com/opencontainers/go-digest"
 )
 
 // MergeValues merges a bundle of transferred values into the cache, and
@@ -702,10 +703,13 @@ type valueMergePrep struct {
 	calls []mergedCall
 }
 
-// mergedCall is a bundle's call to teach onto the entry of a row.
+// mergedCall is a bundle's call to teach onto the entry of a row: its
+// identity, and by input the row placing it, 0 for a witness
+// (TransferredCall.Inputs).
 type mergedCall struct {
-	value uint64
-	id    callIdentity
+	value  uint64
+	id     callIdentity
+	inputs []uint64
 }
 
 // mergeStaleError is planValueMergeLocked's answer when a held row doesn't
@@ -948,7 +952,23 @@ func (c *Cache) prepareMergedCalls(calls []TransferredCall) ([]mergedCall, error
 		if err != nil {
 			return nil, fmt.Errorf("merge values: call %d: %w", i, err)
 		}
-		merged = append(merged, mergedCall{value: uint64(transferred.Value), id: id})
+		// Every input but a witness names the row that places it: the
+		// call is taught onto its entry over its inputs' classes, and an
+		// input the bundle places nowhere would leave its term unknown.
+		if len(transferred.Inputs) != len(id.inputs) {
+			return nil, fmt.Errorf("merge values: call %d: %d input rows for %d inputs", i, len(transferred.Inputs), len(id.inputs))
+		}
+		inputs := make([]uint64, len(id.inputs))
+		for j, row := range transferred.Inputs {
+			switch {
+			case id.witnesses[j] && row != 0:
+				return nil, fmt.Errorf("merge values: call %d: input %d is a witness, placed by row %d", i, j, row)
+			case !id.witnesses[j] && row == 0:
+				return nil, fmt.Errorf("merge values: call %d: input %d is placed by no row", i, j)
+			}
+			inputs[j] = uint64(row)
+		}
+		merged = append(merged, mergedCall{value: uint64(transferred.Value), id: id, inputs: inputs})
 	}
 	return merged, nil
 }
@@ -3076,10 +3096,62 @@ func (c *Cache) applyMergedIdentitiesLocked(ctx context.Context, commit *valueMe
 		// As a local cache does when a call returns an existing entry, the
 		// entry takes the earliest expiry of its calls, though the entry
 		// was here before.
+		// Each input goes in the class of the entry its row lands on, an
+		// entry of the input's class on the Cloud, before the call's term
+		// is derived over its inputs' classes. An input whose row landed
+		// nowhere, or has expired, places nothing: the call isn't taught.
+		places, ok := c.mergedCallPlacesLocked(commit, merged)
+		if !ok {
+			continue
+		}
 		row.res.expiresAtUnix = mergeSharedResultExpiryUnix(row.res.expiresAtUnix, row.value.ExpiresAtUnix)
 		c.markEntryClassLocked(row.res.id, StampMergeExpiry)
+		for i, place := range places {
+			if place != nil {
+				c.joinDigestToResultClassLocked(ctx, merged.id.inputs[i], place)
+			}
+		}
 		c.teachCallIdentityLocked(ctx, row.res, merged.id)
 	}
+}
+
+// mergedCallPlacesLocked returns, by input of merged, the entry its row
+// lands on, nil for a witness: a held row's, the recipient's current entry
+// of the row's recipe; a carried row's, the entry the commit gives it. It
+// reports false when an input's row landed nowhere or has expired. Requires
+// egraphMu.
+func (c *Cache) mergedCallPlacesLocked(commit *valueMergeCommit, merged mergedCall) ([]*sharedResult, bool) {
+	places := make([]*sharedResult, len(merged.inputs))
+	for i, ordinal := range merged.inputs {
+		if ordinal == 0 {
+			continue
+		}
+		if commit.prep.held[ordinal] {
+			place := commit.targets.of(c, commit.prep, ordinal)
+			if place == nil || c.resultExpiredAtLocked(place, commit.now) {
+				return nil, false
+			}
+			places[i] = place
+			continue
+		}
+		row := commit.byOrdinal[ordinal]
+		if row == nil || row.res == nil || row.expired || row.keptExpired {
+			return nil, false
+		}
+		places[i] = row.res
+	}
+	return places, true
+}
+
+// joinDigestToResultClassLocked puts dig in res's output class: dig is a
+// digest of the class on the sender, which holds it there from an engine's
+// word. Requires egraphMu for writing.
+func (c *Cache) joinDigestToResultClassLocked(ctx context.Context, dig digest.Digest, res *sharedResult) {
+	ids := []eqClassID{c.ensureEqClassForDigestLocked(ctx, dig.String())}
+	for root := range c.outputEqClassesForResultLocked(res.id) {
+		ids = append(ids, root)
+	}
+	c.mergeEqClassesLocked(ctx, ids...)
 }
 
 // unchangedCloudRowLocked reports whether row, a record of the Cloud's an

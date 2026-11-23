@@ -276,13 +276,20 @@ type BundleLayer struct {
 }
 
 // TransferredCall is a call that returned an existing entry: the call as its
-// span encodes it (ResultCall.callPB, the dagger.io/dag.call attribute), and
-// the row of the entry it returned. A merge derives the call's identity from
-// the encoding and teaches it onto that entry, as the entry's cache did when
-// the call completed. It owns nothing.
+// span encodes it (ResultCall.callPB, the dagger.io/dag.call attribute), the
+// row of the entry it returned, and, for each of the call's inputs in the
+// encoding's order, the row of the entry that places it: an entry of the
+// input's class, the one under the input's own recipe or another the Cloud
+// holds in that class from an engine's word, which the bundle carries or the
+// recipient holds; 0 for a digest-witnessed string's digest, which the
+// recipient's own call reproduces. A merge puts each input in its row's
+// class, derives the call's identity from the encoding and teaches it onto
+// the entry it returned, as the entry's cache did when the call completed.
+// It owns nothing.
 type TransferredCall struct {
-	Call  string          `json:"call"`
-	Value TransferOrdinal `json:"value"`
+	Call   string            `json:"call"`
+	Value  TransferOrdinal   `json:"value"`
+	Inputs []TransferOrdinal `json:"inputs,omitempty"`
 }
 type ImportedValue struct {
 	Ordinal  TransferOrdinal
@@ -303,7 +310,9 @@ type ImportedValue struct {
 // 12: a value a blob-backed cache sends in full carries its entry's change
 // stamp, and the bundle the cache's identity (TransferredValue.SenderStamp,
 // ValueBundle.SenderCache).
-const ValueBundleVersion = 12
+// 13: a call names, for each of its inputs, the row that places it, an
+// entry of the input's class (TransferredCall.Inputs).
+const ValueBundleVersion = 13
 
 // PersistedTransferCodec operates only on encoded copies, without resolving
 // schemas, operations, result references or storage.

@@ -142,14 +142,22 @@ func TestWorkspaceMadeAnotherWayMeetsAnotherEnginesKeptRead(t *testing.T) {
 	}
 	require.NoError(t, a.cache.WithExportedValues(a1, selection, config.RefConfig{Compression: compression.New(compression.Uncompressed)}, func(_ context.Context, exported *dagql.ExportedValues) error {
 		bundle := exported.Bundle
-		found := false
+		// The read's call, placed by the row of its receiver, as the Cloud
+		// sends it with the receiver it stores.
+		movedNumber, ok := dagql.CacheResultNumber(moved)
+		require.True(t, ok)
+		var readRow, movedRow dagql.TransferOrdinal
 		for _, v := range bundle.Values {
-			if v.SenderNumber == readNumber {
-				bundle.Calls = append(bundle.Calls, dagql.TransferredCall{Call: call, Value: v.Ordinal})
-				found = true
+			switch v.SenderNumber {
+			case readNumber:
+				readRow = v.Ordinal
+			case movedNumber:
+				movedRow = v.Ordinal
 			}
 		}
-		require.True(t, found, "the read's entry is in the bundle")
+		require.NotZero(t, readRow, "the read's entry is in the bundle")
+		require.NotZero(t, movedRow, "its receiver is in the bundle")
+		bundle.Calls = append(bundle.Calls, dagql.TransferredCall{Call: call, Value: readRow, Inputs: []dagql.TransferOrdinal{movedRow}})
 		require.Len(t, exported.Chains.Entries, 1, "the read's content is offered")
 		b.cache.SetPartContentSource(fileContentsTestSource{&testutil.Provider{InfoReaderProvider: exported.Chains.Entries[0].Provider}})
 		b1 := b.session(t, "b1")
