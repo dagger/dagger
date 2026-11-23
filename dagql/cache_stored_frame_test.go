@@ -351,7 +351,8 @@ func TestCloudSavesAndRestoresCompressedFrames(t *testing.T) {
 	requireFramesHeldCompressed(t, restored)
 	got, err := restored.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), nil)
 	require.NoError(t, err)
-	require.Equal(t, string(mustTransferJSON(t, want.Bundle)), string(mustTransferJSON(t, got.Bundle)), "the restored Cloud sends the records it sent before")
+	// The restored Cloud counts its writes again from its start.
+	require.Equal(t, string(mustTransferJSON(t, bundleWithoutChangeStamps(want.Bundle))), string(mustTransferJSON(t, bundleWithoutChangeStamps(got.Bundle))), "the restored Cloud sends the records it sent before")
 }
 
 // Teaching a content digest to an entry whose body holds its frame replaces
