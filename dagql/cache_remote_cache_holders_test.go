@@ -36,8 +36,8 @@ func (c *Cache) equivalentHoldersForTest(dig string) []HolderKey {
 func (c *Cache) holderEntriesForTest() map[HolderKey]sharedResultID {
 	out := map[HolderKey]sharedResultID{}
 	for cache, state := range c.remoteCaches {
-		for number, id := range state.entries {
-			out[HolderKey{Cache: cache, Number: number}] = id
+		for number, held := range state.entries {
+			out[HolderKey{Cache: cache, Number: number}] = held.entry.id
 		}
 	}
 	return out
@@ -46,7 +46,9 @@ func (c *Cache) holderEntriesForTest() map[HolderKey]sharedResultID {
 // requireCacheHoldersExact checks every entry's holdings by engine cache
 // (cacheHolderRefsLocked) against a recomputation from all its holdings:
 // each engine cache's holding numbers, the Cloud's own holding left out, and
-// that the engine caches' indexes name exactly the holdings on entries.
+// that the engine caches' indexes name exactly the holdings on entries: each
+// the same holding the entry has under its key, on an entry the cache has,
+// and as many as the cache counts.
 func requireCacheHoldersExact(t *testing.T, c *Cache) {
 	t.Helper()
 	c.egraphMu.RLock()
@@ -78,6 +80,17 @@ func requireCacheHoldersExact(t *testing.T, c *Cache) {
 		require.Equal(t, want, got, "entry %d", id)
 	}
 	require.Equal(t, indexed, c.holderEntriesForTest())
+	for cache, state := range c.remoteCaches {
+		require.Len(t, state.entries, state.holdings, "%s's holdings counted", cache)
+		for number, held := range state.entries {
+			key := HolderKey{Cache: cache, Number: number}
+			require.Same(t, c.resultsByID[held.entry.id], held.entry, "%v's entry is the cache's", key)
+			refs := held.entry.holderRefsLocked()
+			i, found := holderIndex(refs, key)
+			require.True(t, found, "%v is on its entry", key)
+			require.Same(t, refs[i].h, held.h, "%v is its entry's holding", key)
+		}
+	}
 }
 
 // The index of holdings by engine cache stays exactly what the holdings say
