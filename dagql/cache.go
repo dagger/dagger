@@ -3021,8 +3021,10 @@ type Cache struct {
 	resultsByID map[sharedResultID]*sharedResult
 	// resultPayloadBytes is the sum of payloadBytes over resultsByID. Change
 	// resultsByID only through putResultLocked and deleteResultLocked so the
-	// two stay in step.
-	resultPayloadBytes int64
+	// two stay in step. It is atomic so that a registered result's size can
+	// change under egraphMu held for reading (setResultPayloadBytesLocked):
+	// registration changes only under egraphMu held for writing.
+	resultPayloadBytes atomic.Int64
 
 	// map of eq class -> all terms that have it as an input, needed during repair to
 	// figure out all the terms that need repair after eq class union
@@ -3558,8 +3560,9 @@ type sharedResult struct {
 	payloadRefused bool
 	// payloadBytes is this result's share of Cache.resultPayloadBytes: the
 	// large in-memory byte payload its value or envelope retains, measured
-	// once before publication. Guarded by egraphMu once registered.
-	payloadBytes int64
+	// once before publication. Once registered it changes only through
+	// setResultPayloadBytesLocked, under egraphMu held for reading or writing.
+	payloadBytes atomic.Int64
 	// completeParts caches the row's complete parts for the revision of its
 	// value they were read from (see completePartKeys).
 	completeParts atomic.Pointer[rowCompleteParts]
@@ -6624,7 +6627,7 @@ func (c *Cache) cacheMetadataEstimateLocked() CacheMetadataEstimate {
 		TermCount:       len(c.egraphTerms),
 		ClassSlotCount:  classSlots,
 		OfferOwnerCount: len(c.offerOwners),
-		PayloadBytes:    c.resultPayloadBytes,
+		PayloadBytes:    c.resultPayloadBytes.Load(),
 	}
 	for _, owner := range c.offerOwners {
 		estimate.OfferOwnerBytes += offerMetadataBytes(owner)
@@ -6643,9 +6646,9 @@ func (c *Cache) putResultLocked(res *sharedResult) {
 		return
 	}
 	if old != nil {
-		c.resultPayloadBytes -= old.payloadBytes
+		c.resultPayloadBytes.Add(-old.payloadBytes.Load())
 	}
-	c.resultPayloadBytes += res.payloadBytes
+	c.resultPayloadBytes.Add(res.payloadBytes.Load())
 	c.resultsByID[res.id] = res
 	c.markEntryClassLocked(res.id, StampValue)
 }
@@ -6658,7 +6661,7 @@ func (c *Cache) deleteResultLocked(res *sharedResult) {
 	c.markLeavingLocked(res.id)
 	c.forgetListItemLocked(res)
 	c.unindexKeptCallsLocked(res)
-	c.resultPayloadBytes -= res.payloadBytes
+	c.resultPayloadBytes.Add(-res.payloadBytes.Load())
 	delete(c.resultsByID, res.id)
 	c.partReads.forget(res.id)
 	// An entry that leaves the cache leaves its pool, with what it held
@@ -6667,12 +6670,14 @@ func (c *Cache) deleteResultLocked(res *sharedResult) {
 }
 
 // setResultPayloadBytesLocked replaces res's payload size, keeping the
-// registered total in step. Requires egraphMu for writing.
+// registered total in step. Requires egraphMu for reading or writing: the
+// sizes are atomic, and no hold of it lets res's registration change, so the
+// total moves by exactly what res's size does while res is registered.
 func (c *Cache) setResultPayloadBytesLocked(res *sharedResult, n int64) {
+	old := res.payloadBytes.Swap(n)
 	if c.resultsByID[res.id] == res {
-		c.resultPayloadBytes += n - res.payloadBytes
+		c.resultPayloadBytes.Add(n - old)
 	}
-	res.payloadBytes = n
 }
 
 func (c *Cache) UsageEntriesAll(ctx context.Context) []CacheUsageEntry {
@@ -8030,7 +8035,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 				oc.res.inlineBorrow = source.inlineBorrow
 			}
 			oc.res.self = oc.val.Unwrap()
-			oc.res.payloadBytes = cachePayloadBytes(oc.res.self)
+			oc.res.payloadBytes.Store(cachePayloadBytes(oc.res.self))
 			if shared := oc.val.cacheSharedResult(); shared != nil {
 				if frame := shared.loadResultCall(); frame != nil {
 					oc.res.storeResultCall(frame.clone())

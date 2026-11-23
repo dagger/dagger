@@ -34,7 +34,7 @@ func TestMergeValuesKeptRecordSkipsItsPayload(t *testing.T) {
 	bctx, b, bsrv := transferTestCache(t)
 	local := persistedListTestResult(t, bctx, b, bsrv, "root", &transferTestValue{Text: "local"})
 	b.egraphMu.RLock()
-	payloadBytes := local.cacheSharedResult().payloadBytes
+	payloadBytes := local.cacheSharedResult().payloadBytes.Load()
 	b.egraphMu.RUnlock()
 	reply, err := b.MergeValues(bctx, cloudCacheID, bundle)
 	require.NoError(t, err)
@@ -42,7 +42,7 @@ func TestMergeValuesKeptRecordSkipsItsPayload(t *testing.T) {
 	require.Equal(t, uint64(local.cacheSharedResult().id), reply.Imported()[0].ResultID)
 	b.egraphMu.RLock()
 	imported := local.cacheSharedResult().imported
-	require.Equal(t, payloadBytes, local.cacheSharedResult().payloadBytes, "the entry counts its own value")
+	require.Equal(t, payloadBytes, local.cacheSharedResult().payloadBytes.Load(), "the entry counts its own value")
 	b.egraphMu.RUnlock()
 	require.False(t, imported, "the entry keeps its own value")
 	total, sum := cacheTestPayloadTotalConsistent(b)
@@ -107,7 +107,7 @@ func TestMergeValuesInstallingAKeptRecordPreparesInFull(t *testing.T) {
 			b.egraphMu.RLock()
 			res := b.resultsByID[sharedResultID(reply.Imported()[0].ResultID)]
 			require.NotNil(t, res)
-			imported, envelope, payloadBytes := res.imported, res.persistedEnvelope, res.payloadBytes
+			imported, envelope, payloadBytes := res.imported, res.persistedEnvelope, res.payloadBytes.Load()
 			b.egraphMu.RUnlock()
 			require.True(t, imported, "the record replaced the expired value")
 			require.JSONEq(t, `{"text":"sent"}`, string(envelope.ObjectJSON))

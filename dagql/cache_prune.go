@@ -800,7 +800,7 @@ func (c *Cache) pruneDirectBytesLocked(res *sharedResult, uniform int64) int64 {
 	if c.blobBacked {
 		return res.storedValueBytes()
 	}
-	return uniform + res.payloadBytes
+	return uniform + res.payloadBytes.Load()
 }
 
 // measuredSizes returns the disk stage's sizes of res's usage identities: its
