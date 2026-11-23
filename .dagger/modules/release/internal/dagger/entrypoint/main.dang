@@ -54,7 +54,7 @@ type Entrypoint implements ModuleEntrypoint {
         .withFunction(
           function("JavaSdkTargetVersion", typeDef.withObject("Changeset"))
             .withDescription("Regenerate Java SDK files that reference the target Dagger Engine version.")
-            .withSourceMap(sourceMap("generate.go", 181, 1))
+            .withSourceMap(sourceMap("generate.go", 185, 1))
             .withGenerator
         )
         .withFunction(
