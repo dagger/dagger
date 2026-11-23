@@ -9,6 +9,7 @@ import (
 	"dagger.io/dagger/core"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -473,6 +474,77 @@ source = "`+repoURL+`#main:entry"
 			requireNoGitMetadata(t, files)
 		})
 	})
+}
+
+// A module source read from a directory is shared by the module code of every
+// session that reads it, unless what its reading took keeps it to its
+// session. Evaluating its entrypoint's sources member is part of that read:
+// here it writes into the module's files what an HTTP counter answers, a read
+// keyed per session. A later session reading the same directory must evaluate
+// sources again, not take the earlier session's files.
+func (ModuleSuite) TestModuleEntrypointSourcesReadKeepsTheSourceToItsSession(ctx context.Context, t *testctx.T) {
+	first := connect(ctx, t)
+	counter, err := core.NewQuery(first).Container().From(alpineImage).
+		WithNewFile("/www/cgi-bin/n", "#!/bin/sh\nn=$(cat /tmp/n 2>/dev/null || echo 0)\nn=$((n+1))\necho $n > /tmp/n\nprintf 'Content-Type: text/plain\\r\\n\\r\\n%s' \"$n\"\n",
+			core.ContainerWithNewFileOpts{Permissions: 0o755}).
+		WithExposedPort(8080).
+		AsService(core.ContainerAsServiceOpts{Args: []string{"httpd", "-f", "-p", "8080", "-h", "/www"}}).
+		Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _, _ = counter.Stop(ctx) })
+	host, err := counter.Hostname(ctx)
+	require.NoError(t, err)
+	getent, err := core.NewQuery(first).Container().From(alpineImage).
+		WithExec([]string{"getent", "hosts", host}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	fields := strings.Fields(getent)
+	require.NotEmpty(t, fields, "getent hosts %s: %q", host, getent)
+	url := "http://" + fields[0] + ":8080/cgi-bin/n"
+
+	entrypoint := fmt.Sprintf(`type Entrypoint implements ModuleEntrypoint {
+  pub sources(workspace: Workspace!): Directory! {
+    directory.withDirectory(workspace.cwd, workspace.directory(".", gitignore: true).withNewFile("counted.txt", http(%q).contents))
+  }
+
+  pub types: [TypeDef!]! {
+    [typeDef.withObject("M").withConstructor(function("", typeDef.withObject("M")))]
+  }
+
+  pub call(receiverType: String!, receiverValue: JSON, fnName: String!, fnArgs: JSON!): JSON! {
+    ("{}" :: JSON!)
+  }
+}
+`, url)
+	read := func(ctx context.Context, t *testctx.T, c *dagger.Client) string {
+		t.Helper()
+		reader := core.NewQuery(c).Directory().
+			WithNewFile("dagger.json", `{"name": "counted-reader", "engineVersion": "v1.0.0-beta.20", "sdk": "dang"}`).
+			WithNewFile("main.dang", `type CountedReader {
+  pub counted(dir: Directory!): String! @cache(policy: FunctionCachePolicy.Never) {
+    dir.asModuleSource(sourceRootPath: "m").contextDirectory.file("m/counted.txt").contents
+  }
+}
+`).
+			AsModuleSource().AsModule()
+		require.NoError(t, reader.Serve(ctx))
+		dir, err := core.NewQuery(c).Directory().
+			WithNewFile("m/dagger-module.toml", sourcesModuleManifest).
+			WithNewFile("m/entrypoint/main.dang", entrypoint).
+			ID(ctx)
+		require.NoError(t, err)
+		res, err := testutil.QueryWithClient[struct {
+			CountedReader struct{ Counted string }
+		}](c, t, `query($dir: DirectoryID!) {countedReader{counted(dir: $dir)}}`, &testutil.QueryOptions{
+			Variables: map[string]any{"dir": dir},
+		})
+		require.NoError(t, err)
+		return res.CountedReader.Counted
+	}
+
+	earlier := read(ctx, t, first)
+	later := read(ctx, t, connect(ctx, t))
+	require.NotEqual(t, earlier, later, "the later session evaluated sources itself")
 }
 
 func (ModuleSuite) TestModuleEntrypointWithoutSourcesGetsWorkspace(ctx context.Context, t *testctx.T) {
