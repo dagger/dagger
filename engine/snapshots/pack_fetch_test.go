@@ -514,6 +514,35 @@ func TestImportChainReadsMostOfAPackWhole(t *testing.T) {
 	require.Equal(t, 1, reads, "only the header by range")
 }
 
+// Two imports that each need another small member of the same pack, through
+// providers of their own as two installs have, read its header once: the
+// second reads only its own member's range, planned from the header the
+// first read, which the pack's ID names.
+func TestImportChainsReadAPacksHeaderOnce(t *testing.T) {
+	t.Parallel()
+	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+	a, _ := producer.Build(t, nil, "a.txt", "first")
+	b, _ := producer.Build(t, nil, "b.txt", "second")
+	chainA, chainB := exportChain(t, a), exportChain(t, b)
+	members := []any{chainA.Layers[0].Descriptor, otherChainBlob("other one", 2<<20), chainB.Layers[0].Descriptor, otherChainBlob("other two", 2<<20)}
+
+	providerA := newMixedPackProvider(t, chainA.Provider, members...)
+	providerA.ranged = true
+	refA := importChain(t, consumer, supplied(chainA, providerA))
+	testutil.CheckFile(t, refA, "a.txt", "first")
+	_, reads := providerA.rangeBytes()
+	require.Equal(t, 2, reads, "the header, then the first chain's member")
+
+	providerB := newMixedPackProvider(t, chainA.Provider, members...)
+	providerB.InfoReaderProvider = chainB.Provider
+	providerB.ranged = true
+	refB := importChain(t, consumer, supplied(chainB, providerB))
+	testutil.CheckFile(t, refB, "b.txt", "second")
+	require.Zero(t, providerB.opens.Load(), "the pack isn't read whole")
+	_, reads = providerB.rangeBytes()
+	require.Equal(t, 1, reads, "only the second chain's member: the engine has the header")
+}
+
 // A provider that reads no ranges has every pack read whole.
 func TestImportChainReadsAPackWholeWithoutRanges(t *testing.T) {
 	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
