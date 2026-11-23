@@ -85,7 +85,7 @@ func TestPoolMeasureIsKeptThroughEveryWrite(t *testing.T) {
 	require.Equal(t, afterPrune.PoolBytes, pool.AfterPrune.EstimatedBytes, "the prune reads the kept measure")
 
 	// The rest goes with its retention edge.
-	_, removed, _, err := cloud.removePrunedEdge(ctx, &RemoteChange{}, sharedResultID(roots[1]))
+	_, removed, _, err := cloud.removePrunedEdge(ctx, sharedResultID(roots[1]))
 	require.NoError(t, err)
 	require.True(t, removed)
 	require.Zero(t, usage().PoolValues)

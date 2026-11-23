@@ -269,7 +269,7 @@ func (c *Cache) PruneMetadataEstimate(ctx context.Context, maximumBytes, targetB
 		if err := ctx.Err(); err != nil {
 			return report, err
 		}
-		droppedAt, removed, droppedValues, err := c.removePrunedEdge(pruneCtx, &report.Change, planEntry.candidate.resultID)
+		droppedAt, removed, droppedValues, err := c.removePrunedEdge(pruneCtx, planEntry.candidate.resultID)
 		report.DroppedValues += droppedValues
 		if removed {
 			report.RemovedPersistedRootCount++
@@ -499,7 +499,7 @@ func (c *Cache) prune(ctx context.Context, policies []CachePrunePolicy) (CachePr
 			if ok {
 				c.tracePruneCandidateSelected(ctx, policyIdx, planEntry.candidate, snapRes, planEntry.reclaimBytes)
 			}
-			droppedAt, removed, droppedValues, err := c.removePrunedEdge(ctx, &report.Change, planEntry.candidate.resultID)
+			droppedAt, removed, droppedValues, err := c.removePrunedEdge(ctx, planEntry.candidate.resultID)
 			report.DroppedValues += droppedValues
 			if removed {
 				report.DroppedEdges = append(report.DroppedEdges, CacheRetentionDrop{ResultID: uint64(planEntry.candidate.resultID), DroppedAt: droppedAt})

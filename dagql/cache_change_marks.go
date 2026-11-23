@@ -6,13 +6,9 @@ import (
 	"strings"
 )
 
-// changeMarks are the entries a blob-backed cache's writes have changed
-// since the last write handed them back (takeChangesLocked), for its reader
-// to ask again of only those (RemoteChange.Entries). The holdings a write
-// changed are its own record's, not the cache's (markHoldingLocked,
-// RemoteChange.Holdings), as are the kinds of shared state it changed
-// (noteSharedWriteLocked): a write of one engine cache's holdings marks
-// nothing else, unless it changes what engines share.
+// changeMarks are the holdings and entries a blob-backed cache's writes have
+// changed since the last write handed them back (takeChangesLocked), for its
+// reader to ask again of only those (RemoteChange.Holdings and Entries).
 //
 // An entry is marked where anything a reader asks of it changes. What an
 // entry's class mates answer changes too when the entry holds a part for the
@@ -49,14 +45,14 @@ import (
 // Marks are appended, an entry or holding as often as it changes, and sorted
 // and deduplicated once, when handed back: a write's marks cost an append
 // each. Only a blob-backed cache marks: an engine's own cache has no reader
-// to tell, and its changes is nil. Guarded by egraphMu; only a writer that
-// holds it exclusively marks an entry or a class.
+// to tell, and its changes is nil. Guarded by egraphMu.
 type changeMarks struct {
 	// entries are marked as they are, and classes widened to their classes'
 	// entries when handed back.
-	entries []sharedResultID
-	classes []sharedResultID
-	causes  []StampCause
+	entries  []sharedResultID
+	classes  []sharedResultID
+	causes   []StampCause
+	holdings []HolderKey
 	// stamped counts the class marks, from the first, whose entries' stamps
 	// a write applied before handing them back (stampPendingLocked).
 	stamped int
@@ -89,6 +85,10 @@ type changeMarks struct {
 	// has named.
 	left      map[eqClassID]bool
 	leftNamed map[eqClassID]bool
+	// shared are the kinds of state engines share the write changed
+	// (noteSharedWriteLocked), handed back with the marks
+	// (RemoteChange.Shared).
+	shared SharedWrites
 }
 
 // markEntryLocked marks the entry numbered id: its own facts changed.
@@ -233,39 +233,26 @@ func (c *Cache) someHoldsLocked(ids map[sharedResultID]struct{}) bool {
 	return false
 }
 
-// markHoldingLocked marks the holding key in change, the record of the
-// write that changed it: a holding's marks are its write's own, never the
-// cache's, so writes of different engines' holdings keep theirs apart.
-// Only a blob-backed cache marks. Requires egraphMu for writing.
-func (c *Cache) markHoldingLocked(change *RemoteChange, key HolderKey) {
+// markHoldingLocked marks the holding key. Requires egraphMu for writing.
+func (c *Cache) markHoldingLocked(key HolderKey) {
 	if c.changes == nil {
 		return
 	}
-	// A write marks its holdings over and over, its own for each
-	// dependency it adds among them: a mark of the holding just marked
-	// adds nothing.
-	n := len(change.Holdings)
-	if n > 0 && change.Holdings[n-1] == key {
-		return
-	}
-	change.Holdings = append(change.Holdings, key)
+	c.changes.holdings = append(c.changes.holdings, key)
 }
 
 // takeChangesLocked hands the marks back in change, sorted, and clears them:
-// each marked entry, and every entry of the classes of each class-marked
-// entry that held a part at its mark or holds one now. A write takes them
-// at its end, under the hold that made them, so each is handed back by the
-// write that made it. The holdings it marked are in change already
-// (markHoldingLocked); they are sorted, each once. Requires egraphMu for
-// writing.
+// each marked holding and entry, and every entry of the classes of each
+// class-marked entry that held a part at its mark or holds one now. A write takes them at its end, under the hold that made
+// them, so each is handed back by the write that made it. With them go the
+// kinds of state engines share the write changed (RemoteChange.Shared).
+// Requires egraphMu for writing.
 func (c *Cache) takeChangesLocked(change *RemoteChange) {
 	if c.changes == nil {
 		return
 	}
-	if len(change.Holdings) > 1 {
-		slices.SortFunc(change.Holdings, compareChangedHoldings)
-		change.Holdings = slices.CompactFunc(change.Holdings, func(a, b HolderKey) bool { return a == b })
-	}
+	change.Shared |= c.changes.shared
+	c.changes.shared = 0
 	if !c.changesPendingLocked() {
 		return
 	}
@@ -310,7 +297,10 @@ func (c *Cache) takeChangesLocked(change *RemoteChange) {
 	}
 	slices.Sort(change.Entries)
 	change.Entries = slices.Compact(change.Entries)
-	marks.entries, marks.classes, marks.causes, marks.lends, marks.holds = marks.entries[:0], marks.classes[:0], marks.causes[:0], marks.lends[:0], marks.holds[:0]
+	change.Holdings = append(change.Holdings, marks.holdings...)
+	slices.SortFunc(change.Holdings, compareChangedHoldings)
+	change.Holdings = slices.CompactFunc(change.Holdings, func(a, b HolderKey) bool { return a == b })
+	marks.entries, marks.classes, marks.causes, marks.lends, marks.holds, marks.holdings = marks.entries[:0], marks.classes[:0], marks.causes[:0], marks.lends[:0], marks.holds[:0], marks.holdings[:0]
 	marks.stamped = 0
 	marks.lending = nil
 	marks.holding = nil
@@ -388,6 +378,9 @@ func (c *Cache) stampPendingLocked() {
 	c.stampClassMarksLocked(c.changes.stamped)
 	c.changes.stamped = len(c.changes.classes)
 	c.changes.lending = nil
+	// The kinds of shared state it changed are its own, and it reports
+	// them to no one: the next write's are the next write's.
+	c.changes.shared = 0
 	// A later hold of the write walks a leaving entry's classes afresh: their
 	// entries can have changed between the holds, and one walked in an
 	// earlier hold must still be stamped, and named, by a later entry's
@@ -414,7 +407,7 @@ func (c *Cache) clearChangesLocked() {
 // changesPendingLocked reports whether any mark waits to be handed back.
 // Requires egraphMu.
 func (c *Cache) changesPendingLocked() bool {
-	return c.changes != nil && len(c.changes.entries)+len(c.changes.classes) > 0
+	return c.changes != nil && len(c.changes.entries)+len(c.changes.classes)+len(c.changes.holdings) > 0
 }
 
 // stampEntryLocked records, on a blob-backed cache, that what a stored

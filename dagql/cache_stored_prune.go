@@ -54,7 +54,7 @@ func (res *sharedResult) hasOwnValueLocked() bool {
 // It returns the entries left with no owner at all, for
 // collectUnownedResultsLocked, and how many values it dropped. Requires
 // egraphMu for writing.
-func (c *Cache) dropPrunedValuesLocked(ctx context.Context, change *RemoteChange, queue []*sharedResult) ([]*sharedResult, int, error) {
+func (c *Cache) dropPrunedValuesLocked(ctx context.Context, queue []*sharedResult) ([]*sharedResult, int, error) {
 	var (
 		collect []*sharedResult
 		dropped int
@@ -67,7 +67,7 @@ func (c *Cache) dropPrunedValuesLocked(ctx context.Context, change *RemoteChange
 			continue
 		}
 		if res.hasOwnValueLocked() {
-			deps, err := c.dropValueLocked(ctx, change, res)
+			deps, err := c.dropValueLocked(ctx, res)
 			queue = append(queue, deps...)
 			rerr = errors.Join(rerr, err)
 			dropped++
@@ -84,7 +84,7 @@ func (c *Cache) dropPrunedValuesLocked(ctx context.Context, change *RemoteChange
 // ownership it releases. It keeps its number, its identity in the e-graph and
 // its holdings, whose executed marks it clears. It returns the released
 // dependencies. Requires egraphMu for writing.
-func (c *Cache) dropValueLocked(ctx context.Context, change *RemoteChange, res *sharedResult) ([]*sharedResult, error) {
+func (c *Cache) dropValueLocked(ctx context.Context, res *sharedResult) ([]*sharedResult, error) {
 	var (
 		deps []*sharedResult
 		rerr error
@@ -105,7 +105,7 @@ func (c *Cache) dropValueLocked(ctx context.Context, change *RemoteChange, res *
 	for _, ref := range res.holderRefsLocked() {
 		if ref.h.executed {
 			ref.h.executed = false
-			c.markHoldingLocked(change, ref.key)
+			c.markHoldingLocked(ref.key)
 		}
 	}
 	res.deps = nil

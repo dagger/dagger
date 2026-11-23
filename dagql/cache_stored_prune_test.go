@@ -102,14 +102,14 @@ func TestPruneKeepsValuesOtherValuesNeed(t *testing.T) {
 	second := reply.Imported()[0].ResultID
 	require.Contains(t, storedPartTestDeps(cloud, second), p, "both roots depend on P")
 
-	_, removed, dropped, err := cloud.removePrunedEdge(ctx, &RemoteChange{}, sharedResultID(r))
+	_, removed, dropped, err := cloud.removePrunedEdge(ctx, sharedResultID(r))
 	require.NoError(t, err)
 	require.True(t, removed)
 	require.Equal(t, 1, dropped, "R's value only")
 	require.False(t, storedPruneTestEntryState(cloud, r).value)
 	require.True(t, storedPruneTestEntryState(cloud, p).value, "the second root needs P")
 
-	_, removed, dropped, err = cloud.removePrunedEdge(ctx, &RemoteChange{}, sharedResultID(second))
+	_, removed, dropped, err = cloud.removePrunedEdge(ctx, sharedResultID(second))
 	require.NoError(t, err)
 	require.True(t, removed)
 	require.Equal(t, 2, dropped, "the second root's value and P's")
@@ -122,7 +122,7 @@ func TestPruneKeepsValuesOtherValuesNeed(t *testing.T) {
 func TestPrunedEntryStoresAgain(t *testing.T) {
 	t.Parallel()
 	ctx, cloud, r, p := storedBundleTestCloud(t, "root")
-	_, removed, dropped, err := cloud.removePrunedEdge(ctx, &RemoteChange{}, sharedResultID(r))
+	_, removed, dropped, err := cloud.removePrunedEdge(ctx, sharedResultID(r))
 	require.NoError(t, err)
 	require.True(t, removed)
 	require.Equal(t, 2, dropped)
@@ -150,7 +150,7 @@ func TestSetStoredPartRefusesAnEntryAPruneEmptied(t *testing.T) {
 	t.Parallel()
 	ctx, cloud, r, p := storedBundleTestCloud(t, "root")
 	q := storedPruneTestRoot(t, ctx, cloud, "other-root")
-	_, removed, _, err := cloud.removePrunedEdge(ctx, &RemoteChange{}, sharedResultID(r))
+	_, removed, _, err := cloud.removePrunedEdge(ctx, sharedResultID(r))
 	require.NoError(t, err)
 	require.True(t, removed)
 	require.True(t, storedPruneTestEntryState(cloud, p).registered)
