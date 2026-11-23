@@ -3875,14 +3875,20 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, mod *core.Mo
 		// runtimes). This also covers a runtime selected before a cached
 		// definition: the definition hit skipped the exec that used to
 		// evaluate the runtime, and an eager client still wants it filled.
-		// The runtime's content is evaluated, not synced: a sync completes
-		// the runtime's operation, which for a runtime another engine ran
-		// needs none of its content.
+		// It gets the parts a function call's exec over the runtime mounts
+		// (Container.RunParts), not a sync: a sync completes the runtime's
+		// operation, which for a runtime another engine ran needs none of
+		// its content. The runtime's own exec metadata isn't among them, as
+		// no exec over it reads it.
+		runtime := mod.Runtime.Value
+		if err := evaluateContainerMetadata(ctx, runtime); err != nil {
+			return nil, err
+		}
 		cache, err := dagql.EngineCache(ctx)
 		if err != nil {
 			return nil, err
 		}
-		if err := cache.Evaluate(ctx, mod.Runtime.Value); err != nil {
+		if err := cache.EvaluateParts(ctx, runtime, runtime.Self().RunParts()...); err != nil {
 			return nil, err
 		}
 	}
