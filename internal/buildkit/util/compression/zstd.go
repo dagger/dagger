@@ -3,12 +3,14 @@ package compression
 import (
 	"context"
 	"io"
+	"runtime"
 	"sync"
 
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/images"
 	"github.com/klauspost/compress/zstd"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
+	"golang.org/x/sync/semaphore"
 )
 
 func (c zstdType) Compress(ctx context.Context, comp Config) (compressorFunc Compressor, finalize Finalizer) {
@@ -59,7 +61,9 @@ func zstdWriter(comp Config) func(io.Writer) (io.WriteCloser, error) {
 		}
 		encoders := zstdEncodersFor(level)
 		enc, _ := encoders.Get().(*zstd.Encoder)
-		if enc == nil {
+		if enc != nil {
+			zstdEncoderOut(1)
+		} else {
 			// Each encoder of the pool keeps its history once used: a
 			// layer's frames rotate through as many as compress at once,
 			// and no more.
@@ -67,6 +71,7 @@ func zstdWriter(comp Config) func(io.Writer) (io.WriteCloser, error) {
 			if enc, err = zstd.NewWriter(nil, zstd.WithEncoderLevel(level), zstd.WithEncoderConcurrency(zstdFramesAtOnce)); err != nil {
 				return nil, err
 			}
+			zstdEncoderOut(1)
 		}
 		return &zstdLayerWriter{enc: enc, encoders: encoders, dest: dest}, nil
 	}
@@ -96,12 +101,16 @@ var zstdBuffers = sync.Pool{New: func() any {
 	return &b
 }}
 
-func getZstdBuffer() []byte { return (*zstdBuffers.Get().(*[]byte))[:0] }
+func getZstdBuffer() []byte {
+	zstdBufferOut(1)
+	return (*zstdBuffers.Get().(*[]byte))[:0]
+}
 
 func putZstdBuffer(b []byte) {
 	if cap(b) < zstdFrameSize {
 		return
 	}
+	zstdBufferOut(-1)
 	b = b[:0]
 	zstdBuffers.Put(&b)
 }
@@ -136,6 +145,20 @@ const zstdFrameSize = zstdSizedLimit
 // zstdFramesAtOnce is how many of a layer's frames compress at once. Their
 // order in the blob is the layer's, however many run.
 const zstdFramesAtOnce = 4
+
+// zstdFrames is how many zstd frames compress at once in the engine, all of
+// its layers' compression together: one a core it sees. A frame is a layer
+// that fits in zstdSizedLimit, or one zstdFrameSize piece of a larger one.
+var zstdFrames = semaphore.NewWeighted(int64(runtime.NumCPU()))
+
+// Hooks for tests: zstdCompressing runs each frame's compression, of size
+// bytes of the layer; zstdEncoderOut and zstdBufferOut are told of each
+// encoder and each frame buffer taken (1) and given back (-1).
+var (
+	zstdCompressing = func(size int, compress func()) { compress() }
+	zstdEncoderOut  = func(delta int) {}
+	zstdBufferOut   = func(delta int) {}
+)
 
 // zstdLayerWriter compresses a layer into one zstd frame that names the
 // layer's size whenever the layer fits in zstdSizedLimit. A stream writer
@@ -213,7 +236,8 @@ func (w *zstdLayerWriter) compressFrame() error {
 	w.frame = getZstdBuffer()
 	done := make(chan []byte, 1)
 	go func() {
-		out := w.enc.EncodeAll(src, getZstdOutput())
+		var out []byte
+		zstdCompressing(len(src), func() { out = w.enc.EncodeAll(src, getZstdOutput()) })
 		putZstdBuffer(src)
 		done <- out
 	}()
@@ -249,6 +273,7 @@ func (w *zstdLayerWriter) close() error {
 	if w.streamed {
 		w.enc.Reset(nil)
 	}
+	zstdEncoderOut(-1)
 	w.encoders.Put(w.enc)
 	w.enc = nil
 	return nil
@@ -261,12 +286,17 @@ func (w *zstdLayerWriter) finish() error {
 		w.enc.ResetContentSize(w.dest, int64(len(w.held)))
 		held := w.held
 		w.held = nil
-		if _, err := w.enc.Write(held); err != nil {
-			return err
+		var writeErr, closeErr error
+		zstdCompressing(len(held), func() {
+			if _, writeErr = w.enc.Write(held); writeErr == nil {
+				closeErr = w.enc.Close()
+			}
+		})
+		if writeErr != nil {
+			return writeErr
 		}
-		err := w.enc.Close()
 		putZstdBuffer(held)
-		return err
+		return closeErr
 	}
 	if len(w.frame) > 0 {
 		if err := w.compressFrame(); err != nil {
