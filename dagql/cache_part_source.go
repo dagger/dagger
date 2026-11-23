@@ -835,9 +835,8 @@ func (c *Cache) sessionlessPartEquivalentLocked(receiver, donor *sharedResult, l
 // sessionlessStructuralRouteLocked is the structural route of a prepared
 // lookup, as appendTermSetResultsLocked reads it: the servable results of the
 // lookup's call over its inputs' classes, or, when none of those is servable,
-// the digests of the terms' output classes, whose posted results it reaches.
-// E is held.
-func (c *Cache) sessionlessStructuralRouteLocked(lookup partLookup, now int64) (map[sharedResultID]struct{}, []digest.Digest) {
+// the terms' output classes, whose results it reaches. E is held.
+func (c *Cache) sessionlessStructuralRouteLocked(lookup partLookup, now int64) (map[sharedResultID]struct{}, []eqClassID) {
 	if lookup.frame == nil {
 		return nil, nil
 	}
@@ -863,7 +862,7 @@ func (c *Cache) sessionlessStructuralRouteLocked(lookup partLookup, now int64) (
 	if len(results) > 0 {
 		return results, nil
 	}
-	var digests []digest.Digest
+	var classes []eqClassID
 	seen := map[eqClassID]struct{}{}
 	for termID := range terms.Items() {
 		term := c.egraphTerms[termID]
@@ -875,11 +874,9 @@ func (c *Cache) sessionlessStructuralRouteLocked(lookup partLookup, now int64) (
 			continue
 		}
 		seen[outputEqID] = struct{}{}
-		for dig := range c.eqClassToDigests[outputEqID] {
-			digests = append(digests, digest.Digest(dig))
-		}
+		classes = append(classes, outputEqID)
 	}
-	return nil, digests
+	return nil, classes
 }
 
 // sessionlessPartEquivalenceLocked prepares the test of whether a row is an
@@ -904,7 +901,7 @@ func (c *Cache) sessionlessPartEquivalenceLocked(receiver *sharedResult, lookup 
 		results := c.egraphResultsByDigest[dig.String()]
 		return results != nil && results.Contains(row.id)
 	}
-	structural, structuralDigests := c.sessionlessStructuralRouteLocked(lookup, now)
+	structural, structuralClasses := c.sessionlessStructuralRouteLocked(lookup, now)
 	return func(row *sharedResult) (CacheHitRoute, bool) {
 		if row == nil || c.resultsByID[row.id] != row {
 			return "", false
@@ -932,8 +929,8 @@ func (c *Cache) sessionlessPartEquivalenceLocked(receiver *sharedResult, lookup 
 		if _, ok := structural[row.id]; ok {
 			return CacheHitRouteStructural, true
 		}
-		for _, dig := range structuralDigests {
-			if posted(dig, row) {
+		for _, root := range structuralClasses {
+			if _, ok := c.outputEqClassResults[root][row.id]; ok {
 				return CacheHitRouteStructural, true
 			}
 		}
