@@ -2836,6 +2836,11 @@ type Cache struct {
 	// cache_remote_entries.go.
 	entriesByRecipe map[digest.Digest]sharedResultID
 	remoteCaches    map[CacheID]*remoteCacheState
+	// remoteHoldings counts the holdings of every engine cache in
+	// remoteCaches, for a reader that wants the total without walking every
+	// engine cache's state (BlobCacheUsage). Changed with the states'
+	// counts, read without egraphMu.
+	remoteHoldings atomic.Int64
 	// changes are the holdings and entries changed since the last write
 	// handed them back, on a blob-backed cache only: nil on any other
 	// (cache_change_marks.go). Guarded by egraphMu.
@@ -3393,10 +3398,12 @@ type sharedResult struct {
 	replacements uint64
 	// holders are what the cache knows about other caches' copies of this
 	// entry, sorted by holding key, so that one engine cache's holdings are
-	// one run of them (cacheHolderRefsLocked); nil when it has none.
-	// recipeKeys are the entriesByRecipe keys that name it. Both guarded by
-	// egraphMu.
-	holders    *entryHolders
+	// one run of them (cacheHolderRefsLocked); nil when it has none. The
+	// list has a lock of its own (entryHolders), and is loaded and replaced
+	// atomically, so that it can be created and dropped beside other
+	// engines' writes. recipeKeys are the entriesByRecipe keys that name it,
+	// guarded by egraphMu.
+	holders    atomic.Pointer[entryHolders]
 	recipeKeys []digest.Digest
 	// calls are, on the Cloud, the calls its engines reported returning this
 	// entry other than its own, by request digest, which StoredBundle sends

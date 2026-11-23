@@ -26,6 +26,21 @@ type readPieces struct {
 	// when the read ends there, as a test's failed check in
 	// testReadPieceYielded ends its goroutine.
 	held bool
+	// engine is the engine cache whose state the read walks, whose lock it
+	// holds for reading with each hold of egraphMu (lockEngine): a writer of
+	// that engine cache's holdings waits for one piece too.
+	engine *remoteCacheState
+}
+
+// lockEngine takes state's lock for reading, for the rest of the read: with
+// each later piece, and let go between them. Nothing for nil. Called once,
+// holding the read's first piece.
+func (r *readPieces) lockEngine(state *remoteCacheState) {
+	if state == nil {
+		return
+	}
+	r.engine = state
+	state.mu.RLock()
 }
 
 // readInPieces takes egraphMu for reading, for a read in pieces: step after
@@ -53,6 +68,9 @@ func (r *readPieces) step() bool {
 		r.c.testReadPieceYielded()
 	}
 	r.c.egraphMu.RLock()
+	if r.engine != nil {
+		r.engine.mu.RLock()
+	}
 	r.held = true
 	r.locked = time.Now()
 	return true
@@ -78,6 +96,9 @@ func (r *readPieces) done() {
 func (r *readPieces) release() {
 	hold := time.Since(r.locked)
 	r.held = false
+	if r.engine != nil {
+		r.engine.mu.RUnlock()
+	}
 	r.c.egraphMu.RUnlock()
 	if r.report != nil {
 		r.report(hold)
