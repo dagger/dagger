@@ -1046,6 +1046,25 @@ func (c *Cache) boundSessionHandle(sessionID string) (SessionResourceHandle, err
 	return handle, nil
 }
 
+// bindCallerHandedBound binds the call whose resolver runs under ctx when it
+// is handed res, a result bound to the session, by a nested call or a load by
+// ID (handedBy names it): a result bound to the session is the session's own
+// outcome, and so is what the resolver makes from it, which is bound before
+// it is published. Only a session that bound a result can be handed one, so
+// the graph is read for no other.
+func (c *Cache) bindCallerHandedBound(ctx context.Context, sessionID string, res AnyResult, handedBy string) {
+	if res == nil || sessionID == "" || !c.sessionHoldsHandle(ctx, sessionID, c.sessionBoundHandle(sessionID)) {
+		return
+	}
+	if len(c.boundSessionsOf(ctx, res.cacheSharedResult())) == 0 {
+		return
+	}
+	if caller := CurrentCall(ctx); caller != nil {
+		slog.Debug("call bound to its session", "call", caller.Field, "handedBy", handedBy)
+	}
+	BindToSession(ctx)
+}
+
 // boundSessionsOf returns the bindings res holds: its own, when its call
 // bound it to its session, and every session binding it requires through
 // what it is made of, in order.
@@ -7079,17 +7098,7 @@ func (c *Cache) GetOrInitCall(
 			ctx = withHitLoad(ctx, ev.hitLoad)
 		}
 		c.recordCallResultExpiry(ctx, scopes, req, res)
-		// A result bound to the session is the session's own outcome, and so
-		// is what the resolver that called for it makes: that call is bound
-		// too, before its result is published. Only a session that bound a
-		// result can be handed one, so the graph is read for no other.
-		if res != nil && c.sessionHoldsHandle(ctx, sessionID, c.sessionBoundHandle(sessionID)) &&
-			len(c.boundSessionsOf(ctx, res.cacheSharedResult())) > 0 {
-			if caller := CurrentCall(ctx); caller != nil {
-				slog.Debug("call bound to its session", "call", caller.Field, "handedBy", req.ReceiverTypeName+"."+req.Field)
-			}
-			BindToSession(ctx)
-		}
+		c.bindCallerHandedBound(ctx, sessionID, res, req.ReceiverTypeName+"."+req.Field)
 	}
 	if op.finish(callErr == nil && res != nil) {
 		return nil, fmt.Errorf("get or init call: %w: %q", ErrCacheSessionReleased, sessionID)
@@ -8123,6 +8132,13 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 	var boundHandles []SessionResourceHandle
 	if c.sessionHoldsHandle(ctx, sessionID, c.sessionBoundHandle(sessionID)) {
 		boundHandles = c.boundSessionsOf(ctx, oc.res)
+		// A bound call that returns a value made before keeps its binding:
+		// it is indexed as its session's, and the value stays as it is.
+		if resWasCacheBacked && oc.persistDecline.isBound() {
+			boundHandles = append(boundHandles, c.sessionBoundHandle(sessionID))
+			slices.Sort(boundHandles)
+			boundHandles = slices.Compact(boundHandles)
+		}
 	}
 	if len(boundHandles) > 0 && !resWasCacheBacked {
 		if frame := oc.res.loadResultCall(); frame != nil {
