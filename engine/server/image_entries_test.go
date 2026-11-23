@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/containerd/containerd/v2/core/content"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/dagql"
@@ -38,12 +37,12 @@ func (d testImageDir) WriteBundle(_ context.Context, bundle dagql.ValueBundle) e
 	return os.WriteFile(filepath.Join(d.dir, schema.EngineImageBundleFile), raw, 0o644)
 }
 
-func (d testImageDir) WriteBlob(_ context.Context, dgst digest.Digest, r content.ReaderAt) error {
+func (d testImageDir) WriteBlob(_ context.Context, dgst digest.Digest, r io.Reader) error {
 	name := filepath.Join(d.dir, dagql.ImageBlobPath(dgst))
 	if err := os.MkdirAll(filepath.Dir(name), 0o755); err != nil {
 		return err
 	}
-	data, err := io.ReadAll(io.NewSectionReader(r, 0, r.Size()))
+	data, err := io.ReadAll(r)
 	if err != nil {
 		return err
 	}
