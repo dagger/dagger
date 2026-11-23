@@ -2,6 +2,7 @@ package dagql
 
 import (
 	"context"
+	"strings"
 	"sync/atomic"
 )
 
@@ -64,27 +65,37 @@ func BindToSession(ctx context.Context) {
 // (Cache.lookupCacheForRequest).
 const boundSessionInputName = "cacheBoundSession"
 
-// withBoundSession returns a copy of frame that holds the binding to the
-// session handle names: frame's identity, as its session's own. The copy
-// drops frame's carried content-preferred digest, which was derived from the
-// identity without the binding.
-func (frame *ResultCall) withBoundSession(handle SessionResourceHandle) *ResultCall {
+// withBoundSessions returns a copy of frame that holds the bindings to the
+// sessions handles name, in order: frame's identity, as those sessions'
+// own. The copy drops frame's carried content-preferred digest, which was
+// derived from the identity without the bindings.
+func (frame *ResultCall) withBoundSessions(handles []SessionResourceHandle) *ResultCall {
 	if frame == nil {
 		return nil
+	}
+	names := make([]string, len(handles))
+	for i, handle := range handles {
+		names[i] = string(handle)
 	}
 	bound := frame.clone()
 	bound.ContentPreferred = nil
 	bound.ImplicitInputs = append(bound.ImplicitInputs, &ResultCallArg{
 		Name:  boundSessionInputName,
-		Value: &ResultCallLiteral{Kind: ResultCallLiteralKindString, StringValue: string(handle)},
+		Value: &ResultCallLiteral{Kind: ResultCallLiteralKindString, StringValue: strings.Join(names, ",")},
 	})
 	return bound
 }
 
-// withBoundSession returns a copy of req whose call holds the binding to the
-// session handle names (ResultCall.withBoundSession).
-func (req *CallRequest) withBoundSession(handle SessionResourceHandle) *CallRequest {
+// withBoundSessions returns a copy of req whose call holds the bindings to
+// the sessions handles name (ResultCall.withBoundSessions).
+func (req *CallRequest) withBoundSessions(handles []SessionResourceHandle) *CallRequest {
 	bound := req.Clone()
-	bound.ResultCall = req.ResultCall.withBoundSession(handle)
+	bound.ResultCall = req.ResultCall.withBoundSessions(handles)
 	return bound
+}
+
+// withBoundSession is withBoundSessions for one session's binding: the call
+// as that session's own.
+func (req *CallRequest) withBoundSession(handle SessionResourceHandle) *CallRequest {
+	return req.withBoundSessions([]SessionResourceHandle{handle})
 }
