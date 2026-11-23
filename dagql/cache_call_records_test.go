@@ -772,6 +772,30 @@ func TestABundleSendsATermItsRecipientNamed(t *testing.T) {
 	}
 }
 
+// Pricing builds the index of a recipient's named terms once, whatever the
+// roots it prices: a set's file prices thousands of roots and names
+// thousands of terms, and an index built for each root made each of its
+// price reads take 6 to 13 s, against 0.2 to 0.3 s for a file that names
+// none. Pricing two roots, building their bundle and listing their closure
+// for one recipient builds its index once.
+func TestPricingBuildsARecipientsNamedTermsOnce(t *testing.T) {
+	t.Parallel()
+	test := newReceiverCallTest(t)
+	selfB, _, err := receiverTestCall("b").selfDigestAndInputRefs(test.producer)
+	require.NoError(t, err)
+	receiverB, err := receiverTestFrame("b").deriveRecipeDigest(test.producer)
+	require.NoError(t, err)
+	held := &HeldBy{Calls: func(digest.Digest) bool { return false }, Terms: []RemoteTerm{{Self: selfB, Inputs: []digest.Digest{receiverB}}}}
+	roots := []uint64{test.number, test.receiverNumber}
+	_, err = test.cloud.StoredSizes(test.ctx, roots, time.Now().Unix(), held)
+	require.NoError(t, err)
+	_, err = test.cloud.StoredBundle(test.ctx, roots, time.Now().Unix(), held)
+	require.NoError(t, err)
+	_, err = test.cloud.StoredClosure(test.ctx, roots, time.Now().Unix(), held)
+	require.NoError(t, err)
+	require.Equal(t, int32(1), held.namedBuilds.Load(), "one index for the recipient")
+}
+
 // A walk that lets egraphMu go between entries prices and lists the call of
 // a term the recipient names as the bundle sends it, though the class of the
 // call's input is merged into another while the walk has let the lock go:

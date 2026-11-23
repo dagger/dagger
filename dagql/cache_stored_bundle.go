@@ -115,6 +115,9 @@ type HeldBy struct {
 	// matches a kept call's over the classes their inputs have when they are
 	// compared.
 	Terms []RemoteTerm
+
+	// namedBuilds counts the indexes of Terms built for h (heldTerms).
+	namedBuilds atomic.Int32
 }
 
 // heldTerms returns h's terms by self digest, which a term's key begins
@@ -123,6 +126,7 @@ func heldTerms(h *HeldBy) map[digest.Digest][]RemoteTerm {
 	if h == nil || h.Calls == nil || len(h.Terms) == 0 {
 		return nil
 	}
+	h.namedBuilds.Add(1)
 	terms := make(map[digest.Digest][]RemoteTerm, len(h.Terms))
 	for _, term := range h.Terms {
 		terms[term.Self] = append(terms[term.Self], term)
