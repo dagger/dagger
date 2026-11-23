@@ -1,3 +1,7 @@
 Volume caching involves caching specific parts of the filesystem and reusing them on subsequent function calls if they are unchanged. This is especially useful when dealing with package managers such as `npm`, `maven`, `pip` and similar. Since these dependencies are usually locked to specific versions in the application's manifest, re-downloading them on every session is inefficient and time-consuming.
 
 The `CacheVolume` type represents a directory whose contents persist across Dagger sessions. By using a cache volume for  dependencies, Dagger can reuse the cached contents across Dagger workflow runs and reduce execution time.
+
+A cache volume is only a cache, and Dagger fills it on a best-effort basis. Its contents can be absent on any run and on any engine. A new engine starts with empty cache volumes, and an engine can remove a cache volume to free space. An engine can also reuse a cached result of a step without running that step, and what the step wrote into a cache volume is not part of that result. A pipeline must give the same result with every cache volume empty and every cached step run again.
+
+Mount a cache volume where a tool keeps data it can recreate, such as a package manager's download cache or a compiler's build cache. Keep anything a later step needs in the container's own filesystem, including installed tools, `node_modules` and build output.
