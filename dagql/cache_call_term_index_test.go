@@ -157,6 +157,65 @@ func BenchmarkKeepCallOnALargeEntry(b *testing.B) {
 				forgetKept(c, entry, first, kept)
 			}
 		})
+		for _, m := range []int{100, 1000} {
+			for _, own := range []bool{true, false} {
+				b.Run(fmt.Sprintf("%d kept, old term over an unstored receiver of a class of %d stored entries, kept call placed by its own %v", n, m, own), func(b *testing.B) {
+					benchmarkKeepOverALargeClass(b, n, m, own)
+				})
+			}
+		}
+	}
+}
+
+// benchmarkKeepOverALargeClass keeps, on an entry keeping n calls, a call of
+// a term the entry keeps a call of, whose input the Cloud stores no entry of
+// and knows only by its class, which has m stored entries: a client-specific
+// receiver equal in content to receivers other sessions made. The term's
+// kept call is placed by its own stored input (own), or by its class too.
+func benchmarkKeepOverALargeClass(b *testing.B, n, m int, own bool) {
+	ctx, c := storedPartTestCache(b, WithBlobStore())
+	c.egraphMu.Lock()
+	defer c.egraphMu.Unlock()
+	entry, mk := largeKeptCallEntry(b, c, n, true)
+	class := digest.FromString("stored input").String()
+	for i := 0; i < m; i++ {
+		d := digest.FromString(fmt.Sprint("member-", i))
+		res := &sharedResult{id: c.takeResultIDs(1), persistedEnvelope: &PersistedResultEnvelope{}}
+		c.putResultLocked(res)
+		c.indexRecipeLocked(d, res)
+		member := c.ensureEqClassForDigestLocked(ctx, d.String())
+		c.addResultOutputEqClassLocked(res.id, member)
+		c.mergeEqClassesLocked(ctx, member, c.ensureEqClassForDigestLocked(ctx, class))
+	}
+	// The term's kept call, of a term none of the n calls is: over the stored
+	// input itself, or over an input of the class the Cloud stores no entry
+	// of.
+	term := digest.FromString("the term")
+	first := mk(0)
+	first.id.self, first.id.recipe = term, digest.FromString("first")
+	if !own {
+		in := digest.FromString("unstored first")
+		c.mergeEqClassesLocked(ctx, c.ensureEqClassForDigestLocked(ctx, in.String()), c.ensureEqClassForDigestLocked(ctx, class))
+		first.id.inputs = []digest.Digest{in}
+	}
+	keepOn(c, entry, first)
+	calls := make([]*keptCall, b.N)
+	for i := range calls {
+		in := digest.FromString(fmt.Sprint("unstored-", i))
+		c.mergeEqClassesLocked(ctx, c.ensureEqClassForDigestLocked(ctx, in.String()), c.ensureEqClassForDigestLocked(ctx, class))
+		calls[i] = mk(0)
+		calls[i].id.self, calls[i].id.recipe = term, digest.FromString(fmt.Sprint("again-", i))
+		calls[i].id.inputs = []digest.Digest{in}
+	}
+	// A class gaining a digest drops the entry's index; one keep builds it.
+	keepOn(c, entry, mk(n+1))
+	b.ResetTimer()
+	for _, kept := range calls {
+		keepOn(c, entry, kept)
+	}
+	b.StopTimer()
+	if entry.calls[first.id.recipe] != first {
+		b.Fatal("the term's kept call was replaced")
 	}
 }
 
