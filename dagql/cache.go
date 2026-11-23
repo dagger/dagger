@@ -2962,10 +2962,11 @@ type Cache struct {
 	egraphDigestToClass map[string]eqClassID
 
 	// callInputEntries are, for each digest that is an input of a call kept
-	// on an entry (sharedResult.calls), those entries: a change to the
-	// digest's class changes the term their calls derive, and so their
-	// kept grouping (forgetCallTermsLocked).
-	callInputEntries map[string]map[sharedResultID]struct{}
+	// on an entry (sharedResult.calls), those entries, each with how many
+	// of its calls name it: a change to the digest's class changes the term
+	// their calls derive, and so their kept grouping and index
+	// (forgetCallTermsLocked).
+	callInputEntries map[string]map[sharedResultID]int
 
 	// the parent of the given eqClassID, slice is index by eqClassID so it's
 	// conceptually a map of eqClassID->parent eqClassID
@@ -3445,6 +3446,13 @@ type sharedResult struct {
 	// calls change or an input's class does (forgetCallTermsLocked). A
 	// reader holding egraphMu for reading may store it; a writer clears it.
 	callTerms atomic.Pointer[[][]*keptCall]
+	// callTermIndex is the call kept of each term the entry's calls derive,
+	// by term key (keptCallTermKeyLocked), so that keeping one more call
+	// takes its own key and one lookup (keepTermCallLocked). While it is
+	// set, the entry keeps one call of each term. It is nil until the entry
+	// keeps a call after a change to an input's class, which changes keys
+	// (forgetCallTermsLocked). Not persisted; guarded by egraphMu.
+	callTermIndex map[string]*keptCall
 	// listItems are, on a list entry, the item read at each position of its
 	// value, and listItemOf and listItemNth name that list and position on
 	// such an item (CallRequest.ListItem). Not persisted; guarded by
