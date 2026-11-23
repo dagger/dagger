@@ -321,6 +321,10 @@ type holding struct {
 	// class. That copy has no value, so it keeps no terms (5.6). An engine
 	// cache's copy always has a value.
 	unstored bool
+	// cloudMerge is, on an engine's Cloud holding, what the engine last
+	// merged of the Cloud entry's record (cloudMergeNote): nil until a merge
+	// notes it, and on every other holding.
+	cloudMerge *cloudMergeNote
 	// executed marks a holding whose cache computed the entry: a call span
 	// with executed evidence, which reached the Cloud after its latest drop
 	// (RemoteHolding.BeforeLastDrop), named it. A prune that drops the entry's value
