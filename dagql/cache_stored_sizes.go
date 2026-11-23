@@ -111,7 +111,7 @@ func (c *Cache) storedSizes(ctx context.Context, roots []uint64, nowUnix int64, 
 			if err != nil {
 				return nil, fmt.Errorf("stored sizes: entry %d: %w", miss.res.id, err)
 			}
-			size.Bytes += m.size.bytes
+			size.Bytes += m.size.bytes + senderStampBytes(miss.changedAt)
 			measured = append(measured, m)
 		}
 		c.publishStoredSizes(measured)
@@ -134,13 +134,16 @@ type storedSizeMiss struct {
 	body  *storedBody
 	parts *partFacts
 	call  *ResultCall
-	// The value state its size depends on, its change stamp among it: a
-	// value sent in full carries the stamp (TransferredValue.SenderStamp).
+	// The value state its size depends on.
 	deps               []uint64
 	dependencyRevision uint64
 	replacements       uint64
 	expiresAtUnix      int64
-	changedAt          uint64
+	// changedAt is the entry's change stamp as the walk read it: a value
+	// sent in full carries it (TransferredValue.SenderStamp), and its
+	// encoding is added to the measure, which leaves it out
+	// (senderStampBytes).
+	changedAt uint64
 }
 
 // storedSizesRLock takes egraphMu for reading and returns its release, which
@@ -374,7 +377,10 @@ func (w *storedSizeWalk) visit(res *sharedResult) {
 }
 
 // storedValueMeasuredLocked returns res's measured size, if its record,
-// dependencies, replacement count and expiry are the ones measured. Requires
+// dependencies, replacement count and expiry are the ones measured, with its
+// change stamp's encoding as the stamp stands: the stamp moves with every
+// change to what a bundle carries of the entry, a call kept on it or a
+// write to its class among them, which leave its measure as it is. Requires
 // egraphMu.
 func storedValueMeasuredLocked(res *sharedResult) (int64, bool) {
 	var size *storedValueSize
@@ -389,10 +395,10 @@ func storedValueMeasuredLocked(res *sharedResult) (int64, bool) {
 		}
 		size = kept.size.Load()
 	}
-	if size == nil || size.dependencyRevision != res.dependencyOwnershipRevision || size.replacements != res.replacements || size.expiresAtUnix != res.expiresAtUnix || size.changedAt != res.changedAt {
+	if size == nil || size.dependencyRevision != res.dependencyOwnershipRevision || size.replacements != res.replacements || size.expiresAtUnix != res.expiresAtUnix {
 		return 0, false
 	}
-	return size.bytes, true
+	return size.bytes + senderStampBytes(res.changedAt), true
 }
 
 // storedSizeMissLocked reads the value state of res that its size depends on.
@@ -422,7 +428,7 @@ func (c *Cache) measureStoredValue(miss storedSizeMiss) (storedSizeMeasure, erro
 	if c.testStoredSizeMeasure != nil {
 		c.testStoredSizeMeasure()
 	}
-	value := TransferredValue{Ordinal: TransferOrdinal(miss.res.id), SenderNumber: uint64(miss.res.id), SenderReplacements: miss.replacements, SenderStamp: miss.changedAt, DependencyIDs: miss.deps, ExpiresAtUnix: miss.expiresAtUnix}
+	value := TransferredValue{Ordinal: TransferOrdinal(miss.res.id), SenderNumber: uint64(miss.res.id), SenderReplacements: miss.replacements, DependencyIDs: miss.deps, ExpiresAtUnix: miss.expiresAtUnix}
 	var kept *storedTransferRecord
 	var bytes int64
 	if miss.body != nil {
@@ -460,7 +466,7 @@ func (c *Cache) measureStoredValue(miss storedSizeMiss) (storedSizeMeasure, erro
 		}
 	}
 	c.storedSizeEncodes.Add(1)
-	return storedSizeMeasure{miss: miss, kept: kept, size: &storedValueSize{call: miss.call, dependencyRevision: miss.dependencyRevision, replacements: miss.replacements, expiresAtUnix: miss.expiresAtUnix, changedAt: miss.changedAt, bytes: bytes}}, nil
+	return storedSizeMeasure{miss: miss, kept: kept, size: &storedValueSize{call: miss.call, dependencyRevision: miss.dependencyRevision, replacements: miss.replacements, expiresAtUnix: miss.expiresAtUnix, bytes: bytes}}, nil
 }
 
 // publishStoredSizes keeps each measure's size on its entry, in one hold of
@@ -477,7 +483,7 @@ func (c *Cache) publishStoredSizes(measured []storedSizeMeasure) {
 	defer c.storedSizesRLock()()
 	for _, m := range measured {
 		res, miss := m.miss.res, m.miss
-		if res.persistedEnvelope != miss.env || res.stored != miss.body || res.loadResultCall() != miss.call || res.dependencyOwnershipRevision != miss.dependencyRevision || res.replacements != miss.replacements || res.expiresAtUnix != miss.expiresAtUnix || res.changedAt != miss.changedAt {
+		if res.persistedEnvelope != miss.env || res.stored != miss.body || res.loadResultCall() != miss.call || res.dependencyOwnershipRevision != miss.dependencyRevision || res.replacements != miss.replacements || res.expiresAtUnix != miss.expiresAtUnix {
 			continue
 		}
 		if miss.body != nil {
@@ -531,6 +537,28 @@ func heldRowSizeLocked(res *sharedResult) int64 {
 		recipe = res.recipeKeys[0]
 	}
 	return heldRowSize(uint64(res.id), res.replacements, res.expiresAtUnix, recipe)
+}
+
+// senderStampEncoding is what a nonzero change stamp adds to a value's
+// json.Marshal encoding beyond its digits.
+var senderStampEncoding = func() int64 {
+	size := func(v TransferredValue) int64 {
+		data, err := json.Marshal(v)
+		if err != nil {
+			panic(err)
+		}
+		return int64(len(data))
+	}
+	return size(TransferredValue{SenderStamp: 1}) - size(TransferredValue{}) - 1
+}()
+
+// senderStampBytes returns what the change stamp adds to the encoding of a
+// value that carries it: nothing for a stamp of zero, which isn't encoded.
+func senderStampBytes(stamp uint64) int64 {
+	if stamp == 0 {
+		return 0
+	}
+	return senderStampEncoding + decimalDigits(stamp)
 }
 
 // heldRowEncoding is what a held row's json.Marshal encoding is made of:
