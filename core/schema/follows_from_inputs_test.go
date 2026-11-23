@@ -234,8 +234,12 @@ func (e *followsTestEngine) service(root dagql.AnyObjectResult) dagql.ObjectResu
 // inputs give the same content digest. Every field core declares is run on
 // two caches, a second or more apart, so any
 // time a step writes would differ between them, and what core's content
-// digest gives is compared.
+// digest gives is compared. Some of them mount snapshots, as a diff does,
+// which takes CAP_SYS_ADMIN, so it runs privileged, in test-split's testEbpf.
 func TestDeclaredFieldsFollowFromTheirInputs(t *testing.T) {
+	if err := gitMountNamespaces(); err != nil {
+		t.Skipf("a diff mounts snapshots, which takes CAP_SYS_ADMIN; testEbpf runs this privileged: %v", err)
+	}
 	salt := transferTestSalt(t)
 	first := followsResults(t, newFollowsTestEngine(t, salt, "follows-a"))
 	time.Sleep(1100 * time.Millisecond)
