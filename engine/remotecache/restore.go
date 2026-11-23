@@ -36,7 +36,8 @@ import (
 // their encoded bytes allows (decodeAhead, checkAhead, restoreAheadBytes), so
 // that a merge waits for neither after the first. Heads merge on a lane of
 // their own, part by part in turn, so a head never waits for a whole, even
-// another check's that started first, nor for another head's later parts;
+// another check's that started first, nor for another head's later parts or
+// its download;
 // each whole merges on a lane of its own,
 // so a whole never waits for another check's either. Nothing in a restore
 // fails it, nor anything else: a file that can't be fetched, read or merged
@@ -273,13 +274,13 @@ type restorer struct {
 	// abandoned is set once the connection's end has abandoned the files
 	// left (abandon): a restore that arrives after is queued no more.
 	abandoned bool
-	// headQueued and wholeQueued hold a signal when a head or a whole was
-	// queued.
-	headQueued, wholeQueued chan struct{}
+	// headFetched holds a signal when a head's download ended, and
+	// wholeQueued when a whole was queued.
+	headFetched, wholeQueued chan struct{}
 }
 
 func newRestorer(s *session) *restorer {
-	return &restorer{s: s, headQueued: make(chan struct{}, 1), wholeQueued: make(chan struct{}, 1)}
+	return &restorer{s: s, headFetched: make(chan struct{}, 1), wholeQueued: make(chan struct{}, 1)}
 }
 
 // handleRestore queues a restore's files, and starts fetching each at once.
@@ -338,13 +339,8 @@ func (r *restorer) handleRestore(env protocol.Envelope) {
 	r.mu.Unlock()
 	for _, f := range queue {
 		r.s.go_(func() { r.fetch(f) })
-		queued := r.wholeQueued
-		if f.head {
-			queued = r.headQueued
-		}
-		select {
-		case queued <- struct{}{}:
-		default:
+		if !f.head {
+			signal(r.wholeQueued)
 		}
 	}
 }
@@ -373,12 +369,12 @@ func (r *restorer) run() {
 	r.abandon()
 }
 
-// headLane merges the heads' parts one at a time, each once its file is
-// downloaded, until the connection ends: in turn, the next part of the head
-// that has merged the fewest (nextHead). A head's parts carry what its
-// check's run asks for first in its first part, so heads offered together,
-// as an engine's first claims are, each land their first part before any
-// lands its second.
+// headLane merges the heads' parts one at a time until the connection ends:
+// in turn, the next part of the downloaded head that has merged the fewest
+// (nextHead). A head's parts carry what its check's run asks for first in
+// its first part, so heads offered together, as an engine's first claims
+// are, each land their first part before any lands its second; and a head
+// still downloading holds up no other.
 func (r *restorer) headLane() {
 	ctx, unlabel := wcprof.WithCPUKind(r.s.ctx, wcprof.CPUKindMerge)
 	defer unlabel()
@@ -386,7 +382,7 @@ func (r *restorer) headLane() {
 		f := r.nextHead()
 		if f == nil {
 			select {
-			case <-r.headQueued:
+			case <-r.headFetched:
 				continue
 			case <-ctx.Done():
 				return
@@ -396,19 +392,33 @@ func (r *restorer) headLane() {
 	}
 }
 
-// nextHead returns the head not done that has merged the fewest parts, the
-// earliest to arrive among those. Only the head lane merges a head's parts,
-// so its count of them (next) is the lane's own.
+// nextHead returns, of the heads not done whose download has ended, the one
+// that has merged the fewest parts, the earliest to arrive among those; nil
+// when no such head is left. Only the head lane merges a head's parts, so
+// its count of them (next) is the lane's own.
 func (r *restorer) nextHead() *restoreFile {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	var head *restoreFile
 	for _, f := range r.heads {
+		select {
+		case <-f.fetched:
+		default:
+			continue
+		}
 		if head == nil || f.next < head.next {
 			head = f
 		}
 	}
 	return head
+}
+
+// signal leaves a signal in ch, whose buffer holds one, unless one waits.
+func signal(ch chan struct{}) {
+	select {
+	case ch <- struct{}{}:
+	default:
+	}
 }
 
 // wholeLanes starts a lane for each whole as it is queued, until the
@@ -920,6 +930,9 @@ func (r *restorer) fetch(f *restoreFile) {
 	f.fetchEnded = time.Now()
 	f.windowStart = <-read
 	close(f.fetched)
+	if f.head {
+		signal(r.headFetched)
+	}
 }
 
 // getSetFile downloads a set file, failing when the store goes idle longer
