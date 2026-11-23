@@ -92,7 +92,7 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 			Doc(`(Internal-only) Construct a remote Git repository from fully explicit inputs.`),
 	}.Install(srv)
 
-	dagql.Fields[*core.GitRepository]{
+	identifyWorkspaceResults(dagql.Fields[*core.GitRepository]{
 		dagql.NodeFunc("__sparseFiles", s.sparseFiles).FollowsFromInputs().
 			View(AfterVersion("v1.0.0-beta.26")).
 			IsPersistable().
@@ -298,7 +298,7 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("header").Doc(`Secret used to populate the Authorization HTTP header`),
 			),
-	}.Install(srv)
+	}).Install(srv)
 
 	// GitRef.push(expectedRemoteSha:) and commitSha are spelled
 	// expectedRemoteSHA and commitSHA in views before
@@ -328,7 +328,7 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 		Doc(`The ID of the commit's Git tree object.`,
 			`Commits with identical trees have identical contents and file modes.`)
 
-	dagql.Fields[*core.GitRef]{
+	identifyWorkspaceResults(dagql.Fields[*core.GitRef]{
 		dagql.Func("__workspaceExportBaseReady", func(ctx context.Context, ref *core.GitRef, _ struct{}) (dagql.Boolean, error) {
 			ready, err := ref.WorkspaceExportBaseReady(ctx)
 			return dagql.Boolean(ready), err
@@ -460,7 +460,7 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("cwd").Doc("Current working directory inside the workspace root. Defaults to the workspace root."),
 			),
-	}.Install(srv)
+	}).Install(srv)
 	s.sparseTreeFields().Install(srv)
 
 	srv.InstallObject(dagql.NewClass[*core.GitRemoteHandle](srv).View(AfterVersion("v1.0.0-0")))

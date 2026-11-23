@@ -148,7 +148,7 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 	withVCSIgnoredPathsField := dagql.Func("withVcsIgnoredPaths", s.generatedCodeWithVCSIgnoredPaths).
 		Doc(`Set the list of paths to ignore in version control.`)
 
-	dagql.Fields[*core.ModuleSource]{
+	identifyWorkspaceResults(dagql.Fields[*core.ModuleSource]{
 		// sync is used by external dependencies like daggerverse
 		Syncer[*core.ModuleSource]().
 			Doc(`Forces evaluation of the module source, including any loading into the engine and associated validation.`),
@@ -351,7 +351,7 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 			Args(
 				dagql.Arg("path").Doc(`The path of the client to remove.`),
 			),
-	}.Install(dag)
+	}).Install(dag)
 
 	dagql.Fields[*core.SDKConfig]{}.Install(dag)
 	dagql.Fields[*modules.ModuleConfigClient]{}.Install(dag)
