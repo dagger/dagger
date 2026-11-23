@@ -543,6 +543,82 @@ func TestImportChainsReadAPacksHeaderOnce(t *testing.T) {
 	require.Equal(t, 1, reads, "only the second chain's member: the engine has the header")
 }
 
+// A header kept from a whole read spares a later import its header request,
+// not its provider's answer: a provider that reads no ranges still has the
+// pack read whole.
+func TestImportChainWithAKeptHeaderReadsAPackWholeWithoutRanges(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+	a, _ := producer.Build(t, nil, "a.txt", "first")
+	b, _ := producer.Build(t, nil, "b.txt", "second")
+	chainA, chainB := exportChain(t, a), exportChain(t, b)
+	members := []any{chainA.Layers[0].Descriptor, otherChainBlob("other one", 2<<20), chainB.Layers[0].Descriptor, otherChainBlob("other two", 2<<20)}
+
+	providerA := newMixedPackProvider(t, chainA.Provider, members...)
+	importChain(t, consumer, supplied(chainA, providerA))
+	require.EqualValues(t, 1, providerA.opens.Load(), "read whole: the provider reads no ranges")
+	dropPackReads(t, consumer)
+	_, err := consumer.Content.Info(ctx, chainB.Layers[0].Descriptor.Digest)
+	require.Error(t, err, "the second chain's member, which that read stored, is gone again")
+
+	providerB := newMixedPackProvider(t, chainA.Provider, members...)
+	providerB.InfoReaderProvider = chainB.Provider
+	ref := importChain(t, consumer, supplied(chainB, providerB))
+	testutil.CheckFile(t, ref, "b.txt", "second")
+	require.EqualValues(t, 1, providerB.opens.Load(), "read whole again")
+}
+
+// A pack its header's read holds whole is read and stored whole by that one
+// request whenever an import needs it: no header of it is kept to plan a read
+// of fewer of its members.
+func TestImportChainReadsASmallPackWholeAfterItsMembersAreGone(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+	a, _ := producer.Build(t, nil, "a.txt", "first")
+	b, _ := producer.Build(t, nil, "b.txt", "second")
+	chainA, chainB := exportChain(t, a), exportChain(t, b)
+	other := otherChainBlob("other", 8<<10)
+	members := []any{chainA.Layers[0].Descriptor, other, chainB.Layers[0].Descriptor}
+
+	providerA := newMixedPackProvider(t, chainA.Provider, members...)
+	providerA.ranged = true
+	importChain(t, consumer, supplied(chainA, providerA))
+	_, reads := providerA.rangeBytes()
+	require.Equal(t, 1, reads, "the header's read holds the whole pack")
+	dropPackReads(t, consumer)
+	_, err := consumer.Content.Info(ctx, digest.FromBytes(other))
+	require.Error(t, err, "the members no import linked are gone again")
+
+	providerB := newMixedPackProvider(t, chainA.Provider, members...)
+	providerB.InfoReaderProvider = chainB.Provider
+	providerB.ranged = true
+	ref := importChain(t, consumer, supplied(chainB, providerB))
+	testutil.CheckFile(t, ref, "b.txt", "second")
+	read, reads := providerB.rangeBytes()
+	require.Equal(t, 1, reads)
+	require.EqualValues(t, len(providerB.data), read, "the whole pack, in one read")
+	_, err = consumer.Content.Info(ctx, digest.FromBytes(other))
+	require.NoError(t, err, "every member is stored again")
+}
+
+// dropPackReads lets go of the leases by which pack reads hold the members
+// they stored, and collects the garbage: the members no import linked are
+// gone again, as they go once those leases expire.
+func dropPackReads(t *testing.T, store *testutil.Store) {
+	t.Helper()
+	ctx := context.Background()
+	all, err := store.Leases.List(ctx)
+	require.NoError(t, err)
+	for _, l := range all {
+		if l.Labels["dagger.io/snapshot-transfer"] == "true" {
+			require.NoError(t, store.Leases.Delete(ctx, l))
+		}
+	}
+	store.GC(t)
+}
+
 // A provider that reads no ranges has every pack read whole.
 func TestImportChainReadsAPackWholeWithoutRanges(t *testing.T) {
 	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
