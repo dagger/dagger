@@ -386,6 +386,21 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool, stored, declared map[u
 			return nil, err
 		}
 	}
+	// A row outside the roots' closure is one a call alone names, as the row
+	// placing an input (TransferredCall.Inputs): a held row, standing for the
+	// recipient's own entry, which no root needs. It is no row of the merge.
+	for i, transferred := range bundle.Calls {
+		for j, input := range transferred.Inputs {
+			id := uint64(input)
+			if id == 0 || seen[id] != 0 {
+				continue
+			}
+			if rows[id].Held == "" {
+				return nil, fmt.Errorf("call %d: input %d's row %d is outside the roots' closure and not held", i, j, id)
+			}
+			seen[id] = 2
+		}
+	}
 	if len(seen) != len(bundle.Values) {
 		return nil, fmt.Errorf("bundle contains rows outside its root closure")
 	}
