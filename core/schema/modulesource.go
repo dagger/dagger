@@ -74,7 +74,7 @@ var loadModuleSourceSDK = func(ctx context.Context, query *core.Query, cfg *core
 }
 
 func (s *moduleSourceSchema) Install(dag *dagql.Server) {
-	dagql.Fields[*core.Query]{
+	identifyModuleSourceResults(dagql.Fields[*core.Query]{
 		dagql.NodeFunc("moduleSource", s.moduleSource).
 			WithInput(dagql.PerClientInput).
 			Doc(`Create a new module source instance from a source ref string`).
@@ -88,9 +88,9 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 				dagql.Arg("allowNotExists").Doc(`If true, do not error out if the provided ref string is a local path and does not exist yet. Useful when initializing new modules in directories that don't exist yet.`),
 				dagql.Arg("requireKind").Doc(`If set, error out if the ref string is not of the provided requireKind.`),
 			),
-	}.Install(dag)
+	}).Install(dag)
 
-	dagql.Fields[*core.Directory]{
+	identifyModuleSourceResults(dagql.Fields[*core.Directory]{
 		dagql.NodeFunc("asModule", s.directoryAsModule).
 			Doc(`Load the directory as a Dagger module source`).
 			Args(
@@ -112,13 +112,16 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 				dagql.Arg("originHostPath").View(AfterVersion("v1.0.0-beta.26")),
 				dagql.Arg("originGit").View(AfterVersion("v1.0.0-beta.26")),
 			),
-	}.Install(dag)
+	}).Install(dag)
 
 	// These ModuleSource and GeneratedCode fields are spelled
 	// withSDK, introspectionSchemaJSON, clientSchemaIntrospectionJSON, htmlURL,
 	// htmlRepoURL, withVCSGeneratedPaths and withVCSIgnoredPaths in views
 	// before engine.IdentifierCasingVersion.
+	// Reloads the calling client's user defaults (its .env), so it is keyed
+	// per client, as withName is.
 	withSDKField := dagql.Func("withSdk", s.moduleSourceWithSDK).
+		WithInput(dagql.PerClientInput).
 		Doc(`Update the module source with a new SDK.`).
 		Args(
 			dagql.Arg("source").Doc(`The SDK source to set.`),
@@ -148,7 +151,7 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 	withVCSIgnoredPathsField := dagql.Func("withVcsIgnoredPaths", s.generatedCodeWithVCSIgnoredPaths).
 		Doc(`Set the list of paths to ignore in version control.`)
 
-	identifyWorkspaceResults(dagql.Fields[*core.ModuleSource]{
+	identifyModuleSourceResults(identifyWorkspaceResults(dagql.Fields[*core.ModuleSource]{
 		// sync is used by external dependencies like daggerverse
 		Syncer[*core.ModuleSource]().
 			Doc(`Forces evaluation of the module source, including any loading into the engine and associated validation.`),
@@ -175,7 +178,10 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 				dagql.Arg("path").Doc(`The path to set as the source subpath. Must be relative to the module source's source root directory.`),
 			),
 
+		// Reloads the calling client's user defaults (its .env) for the new
+		// name, so it is keyed per client.
 		dagql.Func("withName", s.moduleSourceWithName).
+			WithInput(dagql.PerClientInput).
 			Doc(`Update the module source with a new name.`).
 			Args(
 				dagql.Arg("name").Doc(`The name to set.`),
@@ -203,7 +209,10 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 				dagql.Arg("dependencies").Doc(`The dependencies to append.`),
 			),
 
+		// Resolves versions live, through the calling client's module-source
+		// and Git reads, so it is keyed per client.
 		dagql.NodeFunc("withUpdateDependencies", s.moduleSourceWithUpdateDependencies).
+			WithInput(dagql.PerClientInput).
 			Doc(`Update one or more module dependencies.`).
 			Args(
 				dagql.Arg("dependencies").Doc(`The dependencies to update.`),
@@ -229,7 +238,10 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 				dagql.Arg("toolchains").Doc(`The toolchain modules to add.`),
 			),
 
+		// Resolves versions live, through the calling client's module-source
+		// and Git reads, so it is keyed per client.
 		dagql.NodeFunc("withUpdateToolchains", s.moduleSourceWithUpdateToolchains).
+			WithInput(dagql.PerClientInput).
 			Doc(`Update one or more toolchains.`).
 			Deprecated("Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.").
 			Args(
@@ -243,7 +255,10 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 				dagql.Arg("toolchains").Doc(`The toolchains to remove.`),
 			),
 
+		// Resolves versions live, through the calling client's module-source
+		// and Git reads, so it is keyed per client.
 		dagql.NodeFunc("withUpdateBlueprint", s.moduleSourceWithUpdateBlueprint).
+			WithInput(dagql.PerClientInput).
 			Doc(`Update the blueprint module to the latest version.`).
 			Deprecated("Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead."),
 
@@ -291,8 +306,10 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 		dagql.Func("localContextDirectoryPath", s.moduleSourceLocalContextDirectoryPath).
 			Doc(`The full absolute path to the context directory on the caller's host filesystem that this module source is loaded from. Only valid for local module sources.`),
 
+		// Keyed by its receiver, which is keyed by its content when it has
+		// one (identifiedModuleSourceResult), so equal sources share one
+		// loaded module across clients, sessions and engines.
 		dagql.NodeFunc("asModule", s.moduleSourceAsModule).
-			WithInput(dagql.PerClientInput).
 			Doc(`Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation`),
 		dagql.NodeFunc("_implementationScoped", s.moduleSourceImplementationScoped).
 			Doc(`The module source scoped to implementation identity only, i.e. source code and dependency content rather than client-specific provenance.`),
@@ -333,14 +350,20 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 			Doc(`The URL to clone the root of the git repo from`).
 			Deprecated("Use `cloneRef` instead. `cloneRef` supports both URL-style and SCP-like SSH references"),
 
+		// Resolves the generator's module through the calling client's
+		// module-source and Git reads, so it is keyed per client.
 		dagql.Func("withClient", s.moduleSourceWithClient).
+			WithInput(dagql.PerClientInput).
 			Doc(`Update the module source with a new client to generate.`).
 			Args(
 				dagql.Arg("generator").Doc(`The generator to use`),
 				dagql.Arg("outputDir").Doc(`The output directory for the generated client.`),
 			),
 
+		// Resolves the generator's module through the calling client's
+		// module-source and Git reads, so it is keyed per client.
 		dagql.Func("withUpdatedClients", s.moduleSourceWithUpdatedClients).
+			WithInput(dagql.PerClientInput).
 			Doc(`Update one or more clients.`).
 			Args(
 				dagql.Arg("clients").Doc(`The clients to update`),
@@ -351,7 +374,7 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 			Args(
 				dagql.Arg("path").Doc(`The path of the client to remove.`),
 			),
-	}).Install(dag)
+	})).Install(dag)
 
 	dagql.Fields[*core.SDKConfig]{}.Install(dag)
 	dagql.Fields[*modules.ModuleConfigClient]{}.Install(dag)
@@ -4662,6 +4685,15 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		DefaultPathContextSource dagql.Optional[core.ModuleSourceID] `internal:"true"`
 	},
 ) (inst dagql.ObjectResult[*core.Module], err error) {
+	// The loaded module is keyed by its source and these arguments, and
+	// stands for what loading it read. A call it makes that is keyed per
+	// call, session or client, such as resolving a default-path context
+	// named by ref from the caller, reads what another session may see
+	// otherwise: then the module stays in this session, and no longer than
+	// what it read.
+	resolverCtx := ctx
+	ctx, scopes := dagql.WithCallScopes(ctx)
+
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
@@ -4834,7 +4866,20 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	if err != nil {
 		return inst, fmt.Errorf("failed to create instance for module %q: %w", src.Self().ModuleName, err)
 	}
+	keepWithWhatItRead(resolverCtx, scopes, "module "+src.Self().ModuleName)
 	return inst, nil
+}
+
+// keepWithWhatItRead keeps the result of the resolver running under
+// resolverCtx no wider and no longer than the calls scopes recorded: in its
+// session when one of them was keyed per call, session or client, and not
+// past their earliest expiry. what names the result in the debug log.
+func keepWithWhatItRead(resolverCtx context.Context, scopes *dagql.CallScopes, what string) {
+	if bound := scopes.SessionBound(); bound != "" {
+		slog.Debug("result bound to its session", "result", what, "boundBy", bound)
+		dagql.BindToSession(resolverCtx)
+	}
+	dagql.ExpireBy(resolverCtx, scopes.ExpiresAtUnix())
 }
 
 // runtimePrebuilds bounds the engine's runtime prebuilds in flight to one per

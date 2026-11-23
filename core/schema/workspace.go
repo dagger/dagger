@@ -76,7 +76,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
 		)
 
-	identifyWorkspaceResults(dagql.Fields[*core.Workspace]{
+	identifyModuleSourceResults(identifyWorkspaceResults(dagql.Fields[*core.Workspace]{
 		dagql.NodeFunc("resolve", s.resolve).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Resolve an address in this workspace.",
@@ -611,7 +611,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			WithInput(dagql.PerClientInput).
 			Doc("(Internal-only) Validate workspace module loading and configured settings."),
 		migrateField,
-	}).Install(srv)
+	})).Install(srv)
 
 	srv.InstallObject(dagql.NewClass[*core.WorkspaceGit](srv).View(AfterVersion("v1.0.0-0")))
 	srv.InstallObject(dagql.NewClass[*core.WorkspaceCommitPick](srv).View(AfterVersion("v1.0.0-0")))
