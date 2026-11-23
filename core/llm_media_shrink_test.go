@@ -2,6 +2,7 @@ package core
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"image"
 	"image/color"
@@ -137,8 +138,9 @@ func TestShrinkLLMImage(t *testing.T) {
 		require.Equal(t, exif, data[2:2+len(exif)])
 	})
 
-	t.Run("an opaque image the PNG would outgrow becomes JPEG", func(t *testing.T) {
-		// A dithered GIF compresses far better than its smoothed, shrunk PNG.
+	t.Run("an opaque dithered image does not outgrow its source", func(t *testing.T) {
+		// A dithered GIF compresses far better than its smoothed, shrunk PNG,
+		// or even a JPEG of it, but its sampled palette stays as small.
 		img := image.NewPaletted(image.Rect(0, 0, 3000, 2000), color.Palette{
 			color.Black, color.White, color.RGBA{R: 255, A: 255}, color.RGBA{B: 255, A: 255},
 		})
@@ -149,9 +151,25 @@ func TestShrinkLLMImage(t *testing.T) {
 		var buf bytes.Buffer
 		require.NoError(t, gif.Encode(&buf, img, nil))
 		data, mimeType := ShrinkLLMImage(buf.Bytes(), "image/gif", DefaultLLMImageEdge)
+		require.Equal(t, "image/png", mimeType)
+		requireLLMImageSize(t, data, "png", DefaultLLMImageEdge, 1717)
+		require.Less(t, len(data), buf.Len())
+	})
+
+	t.Run("an opaque image the PNG would outgrow becomes JPEG", func(t *testing.T) {
+		// Noise as a lossy WebP would carry it: tiny at the source, huge as PNG.
+		noise := image.NewRGBA(image.Rect(0, 0, 2576, 1717))
+		rng := rand.New(rand.NewPCG(7, 8))
+		for i := range noise.Pix {
+			noise.Pix[i] = uint8(rng.IntN(256))
+			if i%4 == 3 {
+				noise.Pix[i] = 255
+			}
+		}
+		data, mimeType, err := encodeShrunkLLMImage([]byte("a small lossy source"), "webp", noise, noise)
+		require.NoError(t, err)
 		require.Equal(t, "image/jpeg", mimeType)
-		requireLLMImageSize(t, data, "jpeg", DefaultLLMImageEdge, 1717)
-		require.LessOrEqual(t, len(data), MaxLLMMediaBytes)
+		requireLLMImageSize(t, data, "jpeg", 2576, 1717)
 	})
 
 	t.Run("a transparent paletted image the PNG would outgrow stays paletted", func(t *testing.T) {
@@ -212,9 +230,17 @@ func TestShrinkLLMImage(t *testing.T) {
 		require.Zero(t, a, "the rest of the screen is transparent")
 	})
 
-	t.Run("progressive JPEGs are detected", func(t *testing.T) {
-		require.False(t, jpegProgressive(testLLMJPEG(t, 10, 10)))
-		require.True(t, jpegProgressive([]byte("\xff\xd8\xff\xe0\x00\x04ab\xff\xc2\x00\x02\xff\xda\x00\x02")))
+	t.Run("progressive JPEGs are costed by their samples", func(t *testing.T) {
+		_, progressive := jpegProgressiveSamples(testLLMJPEG(t, 10, 10))
+		require.False(t, progressive)
+		// SOF2 of a 4:2:0 image: Y sampled 2x2, Cb and Cr 1x1.
+		sof2 := "\xff\xc2\x00\x11\x08\x0f\xa0\x17\x70\x03\x01\x22\x00\x02\x11\x01\x03\x11\x01"
+		samples, progressive := jpegProgressiveSamples([]byte("\xff\xd8\xff\xe0\x00\x04ab" + sof2 + "\xff\xda\x00\x02"))
+		require.True(t, progressive)
+		require.InDelta(t, 1.5, samples, 1e-9)
+		samples, progressive = jpegProgressiveSamples([]byte("\xff\xd8\xff\xc2\x00\x02\xff\xda\x00\x02"))
+		require.True(t, progressive)
+		require.InDelta(t, 3, samples, 1e-9, "an unreadable frame header assumes 4:4:4")
 	})
 
 	t.Run("images within the cap are byte-identical", func(t *testing.T) {
@@ -263,6 +289,7 @@ func TestLLMImageMaxEdge(t *testing.T) {
 		{Anthropic, "claude-fable-5[1m]", 2576},
 		{OpenRouter, "anthropic/claude-opus-4-7", 2576},
 		{Other, "us.anthropic.claude-opus-4-7-v1:0", 2576},
+		{Other, "claude-opus-4-7@20260101", 2576},
 		// Earlier Claude models use the standard tier.
 		{Anthropic, "claude-opus-4-6", 1568},
 		{Anthropic, "claude-sonnet-4-5-20250929", 1568},
@@ -271,11 +298,14 @@ func TestLLMImageMaxEdge(t *testing.T) {
 		{Anthropic, "claude-3-7-sonnet-latest", 1568},
 		{Anthropic, "claude-opus-4", 1568},
 		{Anthropic, "", 1568},
-		// GPT-5.5 and later see the original image at detail "auto".
+		// GPT-5.5 sees the original image at detail "auto", up to 6000px.
 		{OpenAI, "gpt-5.5", 6000},
 		{OpenAI, "gpt-5.5-pro", 6000},
-		{OpenAICodex, "gpt-6", 6000},
 		{OpenRouter, "openai/gpt-5.5", 6000},
+		// Later models keep it, but reject more than 30,000 patches.
+		{OpenAICodex, "gpt-5.6-sol", 5536},
+		{OpenAI, "gpt-6-astra", 5536},
+		{OpenAI, "gpt-6.2-astra", 5536},
 		// Earlier GPT models, and the o-series, see it at "high".
 		{OpenAI, "gpt-5.4", 2048},
 		{OpenAI, "gpt-5.4-mini", 2048},
@@ -311,7 +341,8 @@ func TestLLMFitImages(t *testing.T) {
 				{Kind: LLMContentText, Text: "look"},
 				{Kind: LLMContentImage, MIMEType: "image/png", Data: large},
 			}
-			fitted := testLLMConversation(model, Anthropic).FitImages(ctx, blocks)
+			fitted, err := testLLMConversation(model, Anthropic).FitImages(ctx, blocks)
+			require.NoError(t, err)
 			require.Equal(t, "look", fitted[0].Text)
 			requireLLMImageSize(t, fitted[1].Data, "png", edge, edge/2)
 			require.Equal(t, dagql.Bytes(large), blocks[1].Data, "the joining blocks are not modified")
@@ -322,7 +353,8 @@ func TestLLMFitImages(t *testing.T) {
 		result := &LLMContentBlock{Kind: LLMContentToolResult, CallID: "call-1", Content: []*LLMContentBlock{
 			{Kind: LLMContentImage, MIMEType: "image/png", Data: large},
 		}}
-		fitted := testLLMConversation("claude-sonnet-4-5", Anthropic).FitImages(ctx, []*LLMContentBlock{result})
+		fitted, err := testLLMConversation("claude-sonnet-4-5", Anthropic).FitImages(ctx, []*LLMContentBlock{result})
+		require.NoError(t, err)
 		requireLLMImageSize(t, fitted[0].Content[0].Data, "png", 1568, 784)
 		require.Equal(t, "call-1", fitted[0].CallID)
 		require.Equal(t, dagql.Bytes(large), result.Content[0].Data)
@@ -330,26 +362,44 @@ func TestLLMFitImages(t *testing.T) {
 
 	t.Run("images within the limit are kept as they are", func(t *testing.T) {
 		blocks := []*LLMContentBlock{{Kind: LLMContentImage, MIMEType: "image/png", Data: large}}
-		fitted := testLLMConversation("gpt-5.5", OpenAI).FitImages(ctx, blocks)
+		fitted, err := testLLMConversation("gpt-5.5", OpenAI).FitImages(ctx, blocks)
+		require.NoError(t, err)
 		require.Same(t, blocks[0], fitted[0])
 	})
 
-	t.Run("a model switch fits the history to the new model", func(t *testing.T) {
-		huge := testLLMPNG(t, 5000, 2500)
-		gpt := testLLMConversation("gpt-5.5", OpenAI)
-		gpt = gpt.WithContent(gpt.FitImages(ctx, []*LLMContentBlock{{Kind: LLMContentImage, MIMEType: "image/png", Data: huge}}), nil)
-		gpt = gpt.WithToolResultBlocks("call-1", "screenshot", gpt.FitImages(ctx, []*LLMContentBlock{{Kind: LLMContentImage, MIMEType: "image/png", Data: huge}}), false)
-		requireLLMImageSize(t, gpt.Messages[0].Content[0].Data, "png", 5000, 2500)
+	t.Run("a canceled fit fails rather than storing the image unfitted", func(t *testing.T) {
+		canceled, cancel := context.WithCancel(ctx)
+		cancel()
+		llmImageShrinks <- struct{}{} // another shrink is running
+		defer func() { <-llmImageShrinks }()
+		_, err := testLLMConversation("claude-opus-4-6", Anthropic).FitImages(canceled, []*LLMContentBlock{{Kind: LLMContentImage, MIMEType: "image/png", Data: large}})
+		require.ErrorIs(t, err, context.Canceled)
+	})
 
-		claude := gpt.WithModel("claude-opus-4-7", string(Anthropic)).WithImagesFitted(ctx)
+	t.Run("a model switch fits the history to the new model", func(t *testing.T) {
+		huge := []*LLMContentBlock{{Kind: LLMContentImage, MIMEType: "image/png", Data: testLLMPNG(t, 5000, 2500)}}
+		gpt := testLLMConversation("gpt-5.5", OpenAI)
+		fitted, err := gpt.FitImages(ctx, huge)
+		require.NoError(t, err)
+		gpt = gpt.WithContent(fitted, nil).WithToolResultBlocks("call-1", "screenshot", fitted, false)
+		requireLLMImageSize(t, gpt.Messages[0].Content[0].Data, "png", 5000, 2500)
+		require.True(t, gpt.HasOversizedImages(2576))
+		require.False(t, gpt.HasOversizedImages(6000))
+
+		claude, err := gpt.WithModel("claude-opus-4-7", string(Anthropic)).WithImagesFitted(ctx)
+		require.NoError(t, err)
 		requireLLMImageSize(t, claude.Messages[0].Content[0].Data, "png", 2576, 1288)
 		requireLLMImageSize(t, claude.Messages[1].Content[0].Content[0].Data, "png", 2576, 1288)
 		require.Equal(t, "screenshot", claude.Messages[1].Content[0].Text)
-		require.Equal(t, dagql.Bytes(huge), gpt.Messages[0].Content[0].Data, "the earlier conversation is not modified")
+		require.Equal(t, huge[0].Data, gpt.Messages[0].Content[0].Data, "the earlier conversation is not modified")
+		require.False(t, claude.HasOversizedImages(2576))
 
 		// Switching back never enlarges, and fitting again changes nothing.
-		back := claude.WithModel("gpt-5.5", string(OpenAI)).WithImagesFitted(ctx)
+		back, err := claude.WithModel("gpt-5.5", string(OpenAI)).WithImagesFitted(ctx)
+		require.NoError(t, err)
 		require.Same(t, claude.Messages[0], back.Messages[0])
-		require.Same(t, claude, claude.WithImagesFitted(ctx))
+		again, err := claude.WithImagesFitted(ctx)
+		require.NoError(t, err)
+		require.Same(t, claude, again)
 	})
 }

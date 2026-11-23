@@ -68,3 +68,29 @@ func TestLLMImagesFitTheirModel(t *testing.T) {
 		dagql.Selector{Field: "withModel", Args: []dagql.NamedInput{{Name: "model", Value: dagql.NewString("claude-opus-4-6")}}},
 	), 1568, 784)
 }
+
+// A step records __withImagesFitted when its route's model can't use the
+// history's images, the route having changed without withModel.
+func TestLLMWithImagesFitted(t *testing.T) {
+	ctx, dag, _ := newLiveLLMMetadataTest(t, false, &engine.LLMConfig{}, &llmAuthSecrets{})
+	var buf bytes.Buffer
+	require.NoError(t, png.Encode(&buf, image.NewGray(image.Rect(0, 0, 3200, 1600))))
+	content, err := (dagql.ArrayInput[dagql.InputObject[core.LLMContentBlockInput]]{}).Decoder().DecodeInput([]any{
+		map[string]any{"kind": "IMAGE", "mimeType": "image/png", "data": dagql.Bytes(buf.Bytes())},
+	})
+	require.NoError(t, err)
+	var llm dagql.ObjectResult[*core.LLM]
+	require.NoError(t, dag.Select(ctx, dag.Root(), &llm,
+		dagql.Selector{Field: "llm", Args: []dagql.NamedInput{{Name: "model", Value: dagql.Opt(dagql.NewString("gpt-5.5"))}}},
+		dagql.Selector{Field: "withContent", Args: []dagql.NamedInput{{Name: "content", Value: content}}},
+	))
+	require.True(t, llm.Self().HasOversizedImages(1568))
+	require.NoError(t, dag.Select(ctx, llm, &llm, dagql.Selector{
+		Field: "__withImagesFitted",
+		Args:  []dagql.NamedInput{{Name: "maxEdge", Value: dagql.NewInt(1568)}},
+	}))
+	require.False(t, llm.Self().HasOversizedImages(1568))
+	cfg, err := png.DecodeConfig(bytes.NewReader(llm.Self().Messages[0].Content[0].Data))
+	require.NoError(t, err)
+	require.Equal(t, [2]int{1568, 784}, [2]int{cfg.Width, cfg.Height})
+}

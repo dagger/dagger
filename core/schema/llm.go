@@ -101,6 +101,14 @@ func (s llmSchema) Install(srv *dagql.Server) {
 				"Composing an entry that is already recorded refreshes its module: the module's contributions are cleared, all of its recorded entries run again, and compatible tool state is kept. Other contributions are untouched.",
 				"Agent arguments receive the agent that owns this conversation. Without one, entries requiring an Agent are skipped.").
 			Args(dagql.Arg("expertise").Doc("The expertise to run. Each reference retains its source workspace.")),
+		// A step records this when the model's route changed without
+		// withModel (e.g. a new configured default) and history images are
+		// over its limit, so the refit happens once (see core.LLM.step).
+		dagql.Func("__withImagesFitted", func(ctx context.Context, llm *core.LLM, args struct {
+			MaxEdge int
+		}) (*core.LLM, error) {
+			return llm.WithImagesFittedTo(ctx, args.MaxEdge)
+		}).View(AfterVersion("v1.0.0-0")),
 		dagql.Func("__withoutComposition", func(_ context.Context, llm *core.LLM, args struct {
 			Owner string
 		}) (*core.LLM, error) {
@@ -461,7 +469,7 @@ func (s *llmSchema) withModel(ctx context.Context, llm *core.LLM, args struct {
 }) (*core.LLM, error) {
 	// Images in history were fitted to the previous model; fit them to this
 	// one, which may use less of them (or have a tighter request limit).
-	return llm.WithModel(args.Model, args.Provider.Value.String()).WithImagesFitted(ctx), nil
+	return llm.WithModel(args.Model, args.Provider.Value.String()).WithImagesFitted(ctx)
 }
 
 func (s *llmSchema) withSmallModel(ctx context.Context, parent dagql.ObjectResult[*core.LLM], _ struct{}) (res dagql.ObjectResult[*core.LLM], _ error) {
@@ -573,7 +581,11 @@ func (s *llmSchema) withContent(ctx context.Context, llm *core.LLM, args struct 
 	if args.Origin.Valid {
 		origin = args.Origin.Value.Value.ToLLMMessageOrigin()
 	}
-	return llm.WithContent(llm.FitImages(ctx, blocks), origin), nil
+	blocks, err = llm.FitImages(ctx, blocks)
+	if err != nil {
+		return nil, err
+	}
+	return llm.WithContent(blocks, origin), nil
 }
 
 func (s *llmSchema) withContentFile(ctx context.Context, llm *core.LLM, args struct {
@@ -584,7 +596,11 @@ func (s *llmSchema) withContentFile(ctx context.Context, llm *core.LLM, args str
 	if err != nil {
 		return nil, err
 	}
-	return llm.WithContent(llm.FitImages(ctx, []*core.LLMContentBlock{block}), nil), nil
+	blocks, err := llm.FitImages(ctx, []*core.LLMContentBlock{block})
+	if err != nil {
+		return nil, err
+	}
+	return llm.WithContent(blocks, nil), nil
 }
 
 // withLLMCallerOwner records the calling module (see core.CompositionOwner)
@@ -649,9 +665,13 @@ func (s *llmSchema) withToolResult(ctx context.Context, llm *core.LLM, args stru
 	if err != nil {
 		return nil, err
 	}
-	blocks = llm.FitImages(ctx, blocks)
 	result := &core.LLMContentBlock{Kind: core.LLMContentToolResult, CallID: args.CallID, Text: args.Content, Content: blocks, Errored: args.Errored}
 	if err := result.Validate(); err != nil {
+		return nil, err
+	}
+	// Validated as the tool returned it, like withContent's blocks.
+	blocks, err = llm.FitImages(ctx, blocks)
+	if err != nil {
 		return nil, err
 	}
 	return llm.WithToolResultBlocks(args.CallID, args.Content, blocks, args.Errored), nil

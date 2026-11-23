@@ -1839,8 +1839,28 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM], maxToke
 	// withResponse materializes from inst, not that clone, so resolving only
 	// on the clone would discard the endpoint and its session credential
 	// source after every turn. Endpoint still checks session and revision.
-	if _, err := llm.Endpoint(ctx); err != nil {
+	endpoint, err := llm.Endpoint(ctx)
+	if err != nil {
 		return inst, err
+	}
+	// Images were fitted to the model when they joined the history or when
+	// withModel switched it, but the route can also change without withModel
+	// (e.g. a new configured default). Record the refit, so it happens once.
+	if maxEdge := LLMImageMaxEdge(endpoint.Provider, endpoint.Model); llm.HasOversizedImages(maxEdge) {
+		srv, err := CurrentDagqlServer(ctx)
+		if err != nil {
+			return inst, err
+		}
+		if err := srv.Select(ctx, inst, &inst, dagql.Selector{
+			Field: "__withImagesFitted",
+			Args:  []dagql.NamedInput{{Name: "maxEdge", Value: dagql.NewInt(maxEdge)}},
+		}); err != nil {
+			return inst, err
+		}
+		llm = inst.Self()
+		if _, err := llm.Endpoint(ctx); err != nil {
+			return inst, err
+		}
 	}
 	llm = llm.Clone()
 
