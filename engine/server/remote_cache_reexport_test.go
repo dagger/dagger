@@ -99,7 +99,8 @@ func cloudRecords(t *testing.T, cloud *dagql.Cache, root uint64) []string {
 	require.Empty(t, got.NoValue)
 	var records []string
 	for _, value := range got.Bundle.Values {
-		value.SenderNumber, value.SenderReplacements = 0, 0
+		// Each Cloud numbers, replaces and stamps its entries itself.
+		value.SenderNumber, value.SenderReplacements, value.SenderStamp = 0, 0, 0
 		data, err := json.Marshal(value)
 		require.NoError(t, err)
 		records = append(records, string(data))
