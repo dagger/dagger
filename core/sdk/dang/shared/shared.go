@@ -77,6 +77,9 @@ func WithNestedClientServer(
 			if req.Header.Get(traceparentHeader) == "" {
 				telemetry.Propagator.Inject(ctx, propagation.HeaderCarrier(req.Header))
 			}
+			// The code makes its calls on behalf of the resolver running under
+			// ctx, so what they read counts toward what its result stands for.
+			req = req.WithContext(dagql.WithCallScopesOf(req.Context(), ctx))
 			query.ServeHTTPToNestedClient(resp, req, transport, nestedClientMetadata, parentClientID, inertAttachables, moduleContext, fnCall)
 		}),
 	}
