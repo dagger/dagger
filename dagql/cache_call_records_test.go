@@ -2,7 +2,9 @@ package dagql
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -560,6 +562,100 @@ func TestACallWhoseInputTheCloudKnowsOnlyByItsClassIsSent(t *testing.T) {
 		})
 	require.NoError(t, err)
 	require.False(t, ran, "a fresh engine's client hits outer on its own receiver by its term")
+}
+
+// A bundle for a recipient that names a term none of whose kept calls is
+// one its check made, as when the Cloud keeps another run's call of a term
+// the check made, sends that term as a call the recipient can place, and a
+// fresh engine with a receiver of its own hits it. A recipient that names
+// neither the term nor any of its calls gets no call of it.
+func TestABundleSendsATermItsRecipientNamed(t *testing.T) {
+	t.Parallel()
+	test := newReceiverCallTest(t)
+	cloudCtx := context.Background()
+	receiverB, err := receiverTestFrame("b").deriveRecipeDigest(test.producer)
+	require.NoError(t, err)
+	selfB, _, err := receiverTestCall("b").selfDigestAndInputRefs(test.producer)
+	require.NoError(t, err)
+	// B's receiver, reported by its engine with its content, never stored:
+	// the Cloud knows its recipe, in the class of A's.
+	_, err = test.cloud.AttachRemoteHolding(cloudCtx, HolderKey{Cache: "cache-b", Number: 1},
+		RemoteHolding{Recipe: receiverB, Field: "receiver", ContentDigest: digest.FromString("receiver content")})
+	require.NoError(t, err)
+	none := func(digest.Digest) bool { return false }
+	for name, terms := range map[string][]RemoteTerm{
+		"named":     {{Self: selfB, Inputs: []digest.Digest{receiverB}}},
+		"not named": nil,
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			held := &HeldBy{Calls: none, Terms: terms}
+			built, err := test.cloud.StoredBundle(test.ctx, []uint64{test.number}, time.Now().Unix(), held)
+			require.NoError(t, err)
+			sizes, err := test.cloud.StoredSizes(test.ctx, []uint64{test.number}, time.Now().Unix(), held)
+			require.NoError(t, err)
+			require.Equal(t, len(built.Bundle.Values), sizes[0].Records, "priced as built")
+			closure, err := test.cloud.StoredClosure(test.ctx, []uint64{test.number}, time.Now().Unix(), held)
+			require.NoError(t, err)
+			require.Equal(t, built.CallInputs, closure.CallInputs, "listed as built")
+			if terms == nil {
+				require.Empty(t, built.Bundle.Calls)
+				require.Empty(t, built.CallInputs)
+				return
+			}
+			require.Len(t, built.Bundle.Calls, 1, "the named term's call")
+			require.Equal(t, []uint64{test.receiverNumber}, built.CallInputs, "with the receiver the Cloud stores")
+			require.True(t, test.freshReceiverHits(t, built.Bundle))
+		})
+	}
+}
+
+// A walk that lets egraphMu go between entries prices and lists the call of
+// a term the recipient names as the bundle sends it, though the class of the
+// call's input is merged into another while the walk has let the lock go:
+// the term's key and the call's are both taken over the classes as they
+// stand.
+func TestANamedTermsCallIsPricedThoughItsInputsClassMergesDuringTheWalk(t *testing.T) {
+	t.Parallel()
+	test := newReceiverCallTest(t)
+	cloud := test.cloud
+	entry := storedBundleTestEntry(cloud, test.number)
+	cloud.egraphMu.RLock()
+	var term RemoteTerm
+	for _, kept := range entry.calls {
+		term = RemoteTerm{Self: kept.id.self, Inputs: slices.Clone(kept.id.inputs)}
+	}
+	cloud.egraphMu.RUnlock()
+	require.Len(t, term.Inputs, 1)
+	held := &HeldBy{Calls: func(digest.Digest) bool { return false }, Terms: []RemoteTerm{term}}
+	built, err := cloud.StoredBundle(test.ctx, []uint64{test.number}, time.Now().Unix(), held)
+	require.NoError(t, err)
+	require.Len(t, built.Bundle.Calls, 1)
+
+	// Each time the walk lets the lock go, the input's class is merged into
+	// another class of a higher rank, which keeps its own root: the input's
+	// class root moves, as it does when a write unions it with a larger class.
+	cloud.readPieceSize = 1
+	merges := 0
+	cloud.testReadPieceYielded = func() {
+		cloud.egraphMu.Lock()
+		defer cloud.egraphMu.Unlock()
+		input := cloud.egraphDigestToClass[term.Inputs[0].String()]
+		before := cloud.eqClassRootLocked(input)
+		other := cloud.ensureEqClassForDigestLocked(test.ctx, fmt.Sprintf("sha256:other-%d", merges))
+		cloud.egraphRanks[other] = cloud.egraphRanks[before] + 1
+		cloud.mergeEqClassesLocked(test.ctx, before, other)
+		if cloud.eqClassRootLocked(input) != before {
+			merges++
+		}
+	}
+	sizes, err := cloud.StoredSizes(test.ctx, []uint64{test.number}, time.Now().Unix(), held)
+	require.NoError(t, err)
+	require.Positive(t, merges, "the input's class root moved while the walk had let the lock go")
+	require.Equal(t, len(built.Bundle.Values), sizes[0].Records, "priced as built")
+	closure, err := cloud.StoredClosure(test.ctx, []uint64{test.number}, time.Now().Unix(), held)
+	require.NoError(t, err)
+	require.Equal(t, built.CallInputs, closure.CallInputs, "the closure lists the call's input")
 }
 
 // A call on a receiver whose recipe is per client hits on a fresh engine with

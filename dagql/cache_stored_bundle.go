@@ -107,6 +107,13 @@ type HeldBy struct {
 	// partial, and adds none of its inputs. Without it, every term may go.
 	// It is called under the cache's lock, as Also is.
 	Calls func(request digest.Digest) bool
+	// Terms, with Calls, names more terms a bundle for the recipient may
+	// send, each by its self digest and its inputs as the engine reported
+	// them: those its check's runs made by a call that returned another
+	// entry, whose own kept call may not be the one the Cloud keeps. A term
+	// matches a kept call's over the classes their inputs have when they are
+	// compared.
+	Terms []RemoteTerm
 }
 
 // sendableLocked returns group, the kept calls of one term, when a bundle
