@@ -123,7 +123,6 @@ func (c *Cache) keepCallLocked(change *RemoteChange, entry *sharedResult, desc R
 // It reports whether it changed the entry's calls. Requires egraphMu for
 // writing.
 func (c *Cache) keepTermCallLocked(change *RemoteChange, entry *sharedResult, kept *keptCall) bool {
-	rank := c.keptCallPlacementLocked(kept)
 	joined := false
 	if entry.callTermIndex == nil {
 		terms, calls := c.joinedTermCallsLocked(entry)
@@ -139,14 +138,17 @@ func (c *Cache) keepTermCallLocked(change *RemoteChange, entry *sharedResult, ke
 	}
 	key := c.keptCallTermKeyLocked(kept)
 	if other := entry.callTermIndex[key]; other != nil {
-		if rank >= c.keptCallPlacementLocked(other) {
+		// No call places better than one whose inputs are its own stored
+		// entries, so kept is ranked, which can scan its inputs' classes,
+		// only when the kept call isn't one.
+		if otherRank := c.keptCallPlacementLocked(other); otherRank == placementOwnStored || c.keptCallPlacementLocked(kept) >= otherRank {
 			c.verifyCallTermIndexLocked(entry)
 			return joined
 		}
 		c.dropKeptCallLocked(entry, other)
 	}
 	cause := StampKeptCallNewTerm
-	if rank == placementNone {
+	if c.keptCallPlacementLocked(kept) == placementNone {
 		cause = StampKeptCallUnsendable
 	}
 	if entry.calls == nil {
