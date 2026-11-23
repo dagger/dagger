@@ -1,9 +1,9 @@
 kind: Fixed
 body: |
   Images joining an LLM conversation are shrunk to the longest edge its model
-  uses (Claude 4.7 and later: 2576px, older Claude: 1568px, GPT-5.5 and later:
-  6000px, older GPT: 2048px, others: 2576px), and refitted when the
-  conversation switches models. Anthropic rejects every request of a
+  uses (Claude 4.7 and later: 2576px, older Claude: 1568px, GPT-5.5: 6000px,
+  GPT-5.6 and later: 5536px, older GPT: 2048px, others: 2576px), and refitted
+  when the conversation switches models. Anthropic rejects every request of a
   conversation with more than 20 images once any of them is over 3000px, so
   one pasted Retina screenshot broke every turn after enough tool screenshots.
 time: 2026-11-20T12:00:00Z
