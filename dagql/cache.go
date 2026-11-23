@@ -2137,6 +2137,45 @@ func (c *Cache) incrementIncomingOwnershipLocked(ctx context.Context, res *share
 	c.traceRefAcquired(ctx, res, count)
 }
 
+// retainOwned takes one more ownership of res while something else owns it,
+// without the graph lock, and reports whether it did. A count of 0 it leaves
+// alone: a release under the write lock may be collecting the entry. An
+// entry is collected only once its count is 0, so while the ownership taken
+// here is held, the entry stays registered.
+func (c *Cache) retainOwned(ctx context.Context, res *sharedResult) bool {
+	for {
+		count := res.incomingOwnershipCount.Load()
+		if count <= 0 {
+			return false
+		}
+		if res.incomingOwnershipCount.CompareAndSwap(count, count+1) {
+			c.traceRefAcquired(ctx, res, count+1)
+			return true
+		}
+	}
+}
+
+// releaseOwned lets go of an ownership retainOwned took. A release that
+// leaves the entry owned takes no lock. One that leaves it unowned, its
+// other owners having let go meanwhile, collects it under the write lock,
+// as any release that leaves an entry unowned does.
+func (c *Cache) releaseOwned(ctx context.Context, res *sharedResult) error {
+	count := res.incomingOwnershipCount.Add(-1)
+	c.traceRefReleased(ctx, res, count)
+	if count > 0 {
+		return nil
+	}
+	if count < 0 {
+		c.traceRefUnderflow(ctx, res, count)
+		return fmt.Errorf("incoming ownership underflow for result %d", res.id)
+	}
+	ctx = context.WithoutCancel(ctx)
+	c.lockGraphForCtx(ctx, workPart)
+	releases, err := c.collectUnownedResultsLocked(ctx, c.enqueueCollectibleResultLocked(nil, res))
+	c.egraphMu.Unlock()
+	return errors.Join(err, runOnReleaseFuncs(ctx, releases))
+}
+
 func (c *Cache) enqueueCollectibleResultLocked(queue []*sharedResult, res *sharedResult) []*sharedResult {
 	if c == nil || res == nil || res.id == 0 {
 		return queue
@@ -3594,8 +3633,11 @@ type sharedResult struct {
 	// incomingOwnershipCount is the authoritative liveness count derived from
 	// session edges, persisted edges, and result dependency edges. It is atomic
 	// because a session claim increments it under the egraphMu read lock;
-	// every decrement, and every check that drives collection, holds the
-	// write lock, so no claim can run concurrently with them.
+	// every decrement that leaves it at 0, and every check that drives
+	// collection, holds the write lock, so no claim can run concurrently with
+	// them. A span's hold of an entry its caller owns (retainOwned) takes
+	// and lets go of one more ownership without the lock: it never raises a
+	// count of 0, and its release takes the write lock when it leaves 0.
 	incomingOwnershipCount atomic.Int64
 
 	attachDepsMu     sync.Mutex
