@@ -78,8 +78,8 @@ type TransferredValue struct {
 	SenderReplacements uint64 `json:"senderReplacements,omitempty"`
 	// SenderStamp is, on a value a blob-backed cache sends in full, its
 	// entry's change stamp (sharedResult.changedAt): the write count of the
-	// last change to what a stored bundle carries of the entry, in the cache
-	// process the bundle's SenderGeneration names. An engine that merged the
+	// last change to what a stored bundle carries of the entry, in the start
+	// of the cache the bundle's SenderCache names. An engine that merged the
 	// value keeps it, so that a later value of the same entry at the same
 	// stamp, a record it holds already, isn't taught again
 	// (unchangedCloudRowLocked).
@@ -256,11 +256,14 @@ type ValueBundle struct {
 	// addresses, each listed once (ShareChainLayers).
 	Layers    []BundleLayer                 `json:"layers,omitempty"`
 	Addresses map[digest.Digest]BlobAddress `json:"addresses,omitempty"`
-	// SenderGeneration is, on a bundle a blob-backed cache builds, the
-	// cache's start count (CacheIdentity.Generation): its values' change
-	// stamps count writes from that start, so two bundles' stamps compare
-	// only within one generation.
-	SenderGeneration uint64 `json:"senderGeneration,omitempty"`
+	// SenderCache is, on a bundle a blob-backed cache with an identity
+	// builds, that identity: the cache's ID and start count
+	// (CacheIdentity.String). Its values' change stamps count writes from
+	// that start of that cache, so two bundles' stamps compare only when it
+	// is the same: a cache started again, or a new cache, counts from the
+	// start. Empty for a cache with no identity, whose stamps compare with
+	// none.
+	SenderCache string `json:"senderCache,omitempty"`
 }
 
 // BundleLayer is a layer a bundle's outputs name by place (ShareChainLayers),
@@ -298,8 +301,8 @@ type ImportedValue struct {
 // 11: a bundle's listed layers carry their packs, and an output whose chain
 // names its layers by place carries none (BundleLayer).
 // 12: a value a blob-backed cache sends in full carries its entry's change
-// stamp, and the bundle the cache's start count (TransferredValue.SenderStamp,
-// ValueBundle.SenderGeneration).
+// stamp, and the bundle the cache's identity (TransferredValue.SenderStamp,
+// ValueBundle.SenderCache).
 const ValueBundleVersion = 12
 
 // PersistedTransferCodec operates only on encoded copies, without resolving

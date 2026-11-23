@@ -353,7 +353,9 @@ func (c *Cache) storedBundleWalkLocked(rootEntries []*sharedResult, nowUnix int6
 	build := &storedBundleBuild{now: nowUnix, ordinals: map[sharedResultID]TransferOrdinal{}, heldBy: held, notWhole: notWhole, held: map[sharedResultID]bool{},
 		owners: map[sharedResultID]int{}, ordinary: map[sharedResultID]bool{}, rootSeen: seenRoot}
 	build.bundle.Version = ValueBundleVersion
-	build.bundle.SenderGeneration = c.identity.Generation
+	if c.identity.ID != "" {
+		build.bundle.SenderCache = c.identity.String()
+	}
 	visiting := map[sharedResultID]bool{}
 	for i, res := range rootEntries {
 		build.current = i
