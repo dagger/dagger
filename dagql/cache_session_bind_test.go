@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"gotest.tools/v3/assert"
 
@@ -684,5 +685,40 @@ func TestCacheLoadByRecipeOfABoundCallBindsTheLoader(t *testing.T) {
 	}
 	for _, session := range []string{"session-a", "session-b"} {
 		assert.NilError(t, c.ReleaseSession(currentEntryTestSession(t.Context(), c, session), session))
+	}
+}
+
+// Whether a session has bound a result is answered without the cache's
+// session lock, which every call of every session would otherwise take two
+// or three times more for it: a session that has bound nothing adds no take
+// of the lock to its calls, and one that has is answered as quickly.
+func TestCacheSessionBindingIsAnsweredWithoutTheSessionLock(t *testing.T) {
+	t.Parallel()
+	c, err := NewCache(t.Context(), "", nil, nil)
+	assert.NilError(t, err)
+	boundCall := cacheTestIntCall("bound-for-lock")
+	bCtx := currentEntryTestSession(t.Context(), c, "session-b")
+	_, err = c.GetOrInitCall(bCtx, "session-b", noopTypeResolver{}, &CallRequest{ResultCall: boundCall.clone()}, func(ctx context.Context) (AnyResult, error) {
+		BindToSession(ctx)
+		return cacheTestIntResult(boundCall.clone(), 1), nil
+	})
+	assert.NilError(t, err)
+
+	c.sessionMu.Lock()
+	answered := make(chan [2]bool, 1)
+	go func() {
+		answered <- [2]bool{c.sessionHasBound("session-a"), c.sessionHasBound("session-b")}
+	}()
+	select {
+	case got := <-answered:
+		c.sessionMu.Unlock()
+		assert.Assert(t, !got[0], "session-a has bound nothing")
+		assert.Assert(t, got[1], "session-b has bound a result")
+	case <-time.After(5 * time.Second):
+		c.sessionMu.Unlock()
+		t.Fatal("whether a session has bound a result is answered only under the session lock")
+	}
+	for _, s := range []string{"session-a", "session-b"} {
+		assert.NilError(t, c.ReleaseSession(currentEntryTestSession(t.Context(), c, s), s))
 	}
 }
