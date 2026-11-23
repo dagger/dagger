@@ -5,6 +5,7 @@ import (
 	"context"
 	"regexp"
 	"runtime"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -433,6 +434,151 @@ func TestUncontendedAcquisitionsCostNoAllocation(t *testing.T) {
 	}
 }
 
+// heldHold is one hold an RWMutex's hold observer saw (ObserveHolds).
+type heldHold struct {
+	kind         LockHolder
+	waited, held time.Duration
+}
+
+// observeHolds sets an observer of mu's holds for the test, and returns
+// the holds it has seen so far.
+func observeHolds(t *testing.T, mu *RWMutex) func() []heldHold {
+	t.Helper()
+	var (
+		seenMu sync.Mutex
+		seen   []heldHold
+	)
+	stop := mu.ObserveHolds(func(kind LockHolder, waited, held time.Duration) {
+		seenMu.Lock()
+		seen = append(seen, heldHold{kind, waited, held})
+		seenMu.Unlock()
+	})
+	t.Cleanup(stop)
+	return func() []heldHold {
+		seenMu.Lock()
+		defer seenMu.Unlock()
+		return slices.Clone(seen)
+	}
+}
+
+// Every way a writer takes an RWMutex ends in a hold its observer sees,
+// with the kind the writer named and how long it held the lock: a plain
+// Lock or TryLock, as dagql takes the graph lock for the remote cache's
+// holdings, names no kind.
+func TestHoldObserverSeesEveryWrite(t *testing.T) {
+	withoutRecorder(t)
+	ctx := context.Background()
+	for name, tc := range map[string]struct {
+		take func(*RWMutex)
+		kind LockHolder
+	}{
+		"Lock":        {take: (*RWMutex).Lock},
+		"TryLock":     {take: func(mu *RWMutex) { mu.TryLock() }},
+		"WriteLock":   {take: func(mu *RWMutex) { WriteLock(ctx, mu, "test.mu") }},
+		"WriteLockAs": {take: func(mu *RWMutex) { WriteLockAs(ctx, mu, "test.mu", testHolder) }, kind: testHolder},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var mu RWMutex
+			seen := observeHolds(t, &mu)
+			tc.take(&mu)
+			time.Sleep(20 * time.Millisecond)
+			mu.Unlock()
+			got := seen()
+			if len(got) != 1 {
+				t.Fatalf("saw %d holds, want 1: %+v", len(got), got)
+			}
+			if got[0].kind != tc.kind || got[0].held < 20*time.Millisecond || got[0].waited != 0 {
+				t.Fatalf("saw %+v: want kind %s, held at least 20ms, no wait", got[0], tc.kind)
+			}
+		})
+	}
+}
+
+// A writer that waited to take the lock is seen with its wait, whichever
+// way it took it.
+func TestHoldObserverSeesTheWritersWait(t *testing.T) {
+	withoutRecorder(t)
+	ctx := context.Background()
+	for name, take := range map[string]func(*RWMutex){
+		"Lock":        (*RWMutex).Lock,
+		"WriteLockAs": func(mu *RWMutex) { WriteLockAs(ctx, mu, "test.mu", testHolder) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			var mu RWMutex
+			mu.RLock()
+			seen := observeHolds(t, &mu)
+			done := make(chan struct{})
+			go func() {
+				take(&mu)
+				mu.Unlock()
+				close(done)
+			}()
+			for !mu.Waiting() {
+				runtime.Gosched()
+			}
+			time.Sleep(20 * time.Millisecond)
+			mu.RUnlock()
+			<-done
+			got := seen()
+			if len(got) != 1 || got[0].waited < 20*time.Millisecond {
+				t.Fatalf("saw %+v: want one hold that waited at least 20ms", got)
+			}
+		})
+	}
+}
+
+// The observer sees no hold taken with LockSelfTimed, whose holder times it
+// itself, none taken before it was set, none ended after its stop, and no
+// reader.
+func TestHoldObserverSkipsWhatIsNotItsToSee(t *testing.T) {
+	withoutRecorder(t)
+	var mu RWMutex
+	mu.Lock()
+	seen := observeHolds(t, &mu)
+	mu.Unlock()
+	mu.LockSelfTimed()
+	mu.Unlock()
+	mu.RLock()
+	mu.RUnlock()
+	if got := seen(); len(got) != 0 {
+		t.Fatalf("saw %+v: want none", got)
+	}
+	var stopped RWMutex
+	var n atomic.Int32
+	stop := stopped.ObserveHolds(func(LockHolder, time.Duration, time.Duration) { n.Add(1) })
+	stopped.Lock()
+	stop()
+	stopped.Unlock()
+	stopped.Lock()
+	stopped.Unlock()
+	if n.Load() != 0 {
+		t.Fatalf("saw %d holds after stop: want none", n.Load())
+	}
+}
+
+// An observed hold that doesn't wait allocates nothing: what the remote
+// cache's service pays on each of its Cloud cache's writes.
+func TestObservedHoldCostsNoAllocation(t *testing.T) {
+	withoutRecorder(t)
+	ctx := context.Background()
+	var mu RWMutex
+	var held time.Duration
+	stop := mu.ObserveHolds(func(_ LockHolder, _, d time.Duration) { held += d })
+	defer stop()
+	allocs := testing.AllocsPerRun(1000, func() {
+		WriteLockAs(ctx, &mu, "test.mu", testHolder)
+		mu.Unlock()
+		mu.Lock()
+		mu.Unlock()
+	})
+	if allocs != 0 {
+		t.Fatalf("%v allocations per observed hold", allocs)
+	}
+	if held <= 0 {
+		t.Fatal("the observer saw no time held")
+	}
+}
+
 // BenchmarkRWMutex measures a write and a read of the lock that don't wait,
 // and writers and readers contending on every core, for a sync.RWMutex and
 // for an RWMutex taken as an engine with no recorder takes the graph lock.
@@ -450,6 +596,18 @@ func BenchmarkRWMutex(b *testing.B) {
 	})
 	b.Run("wcprof/uncontended", func(b *testing.B) {
 		var mu RWMutex
+		for b.Loop() {
+			WriteLockAs(ctx, &mu, "bench.mu", testHolder)
+			mu.Unlock()
+			ReadLockWaited(ctx, &mu, "bench.mu")
+			mu.RUnlock()
+		}
+	})
+	b.Run("wcprof/uncontended/observed", func(b *testing.B) {
+		var mu RWMutex
+		var holds atomic.Int64
+		stop := mu.ObserveHolds(func(_ LockHolder, _, held time.Duration) { holds.Add(int64(held)) })
+		defer stop()
 		for b.Loop() {
 			WriteLockAs(ctx, &mu, "bench.mu", testHolder)
 			mu.Unlock()
