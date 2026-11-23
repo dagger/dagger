@@ -25,7 +25,8 @@
 // (distconsts.GoSDKBuildFlags), or for an -entrypoint-seed with dagger/go's
 // own, as go-sdk's entrypoints build; gobuild's binary and the image its
 // calls run in, which its entrypoint declares (Module._prebuild and
-// Module._runtimeImage); and exports them with their blobs into -out.
+// Module._runtimeImage); and exports them with their blobs into -out, with
+// -source-date-epoch every blob's entries dated at it at the latest.
 //
 // With -check-bundle, it only checks that the bundle at that path, another
 // engine image's, is of the version an engine of this source merges, and
@@ -73,6 +74,7 @@ func main() {
 	out := flag.String("out", "", "where to export the entries")
 	platform := flag.String("platform", "", "the platform of the engine image the entries are for (default: the engine's)")
 	checkBundle := flag.String("check-bundle", "", "only check that the bundle at this path is of the version an engine of this source merges")
+	sourceDateEpoch := flag.Int64("source-date-epoch", -1, "clamp the times of every entry of the exported blobs to this time, in seconds after the Unix epoch; negative clamps nothing")
 	flag.Parse()
 	if *checkBundle != "" {
 		if err := mergeableBundle(*checkBundle); err != nil {
@@ -89,7 +91,7 @@ func main() {
 		flag.Usage()
 		os.Exit(2)
 	}
-	if err := run(context.Background(), sdks, *sdkDigests, seeds, entrypointSeeds, *builtinGoSDK, *entrypointDaggerGo, *goVersion, *platform, *out); err != nil {
+	if err := run(context.Background(), sdks, *sdkDigests, seeds, entrypointSeeds, *builtinGoSDK, *entrypointDaggerGo, *goVersion, *platform, *out, *sourceDateEpoch); err != nil {
 		fmt.Fprintln(os.Stderr, "engine-image-entries:", err)
 		os.Exit(1)
 	}
@@ -139,7 +141,7 @@ type daggerGoSource struct {
 	SourceRootSubpath string `json:"sourceRootSubpath"`
 }
 
-func run(ctx context.Context, sdks []string, sdkDigests string, seeds, entrypointSeeds []string, builtinGoSDK, entrypointDaggerGo, goVersion, platform, out string) error {
+func run(ctx context.Context, sdks []string, sdkDigests string, seeds, entrypointSeeds []string, builtinGoSDK, entrypointDaggerGo, goVersion, platform, out string, sourceDateEpoch int64) error {
 	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
 		return err
@@ -165,8 +167,13 @@ func run(ctx context.Context, sdks []string, sdkDigests string, seeds, entrypoin
 			}
 		}
 	}
-	if err := do(`query($results: [ID!]!, $out: String!) { _engineImageBundle(results: $results) { export(path: $out) } }`,
-		map[string]any{"results": results, "out": out}, nil); err != nil {
+	query := `query($results: [ID!]!, $out: String!) { _engineImageBundle(results: $results) { export(path: $out) } }`
+	vars := map[string]any{"results": results, "out": out}
+	if sourceDateEpoch >= 0 {
+		query = `query($results: [ID!]!, $out: String!, $epoch: Int!) { _engineImageBundle(results: $results, sourceDateEpoch: $epoch) { export(path: $out) } }`
+		vars["epoch"] = sourceDateEpoch
+	}
+	if err := do(query, vars, nil); err != nil {
 		return fmt.Errorf("export the entries: %w", err)
 	}
 	raw, err := json.Marshal(digests)

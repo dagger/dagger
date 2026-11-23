@@ -345,7 +345,7 @@ func TestExportImageBundleFailsOnARowBusyUntilALaterEvaluation(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	err := c.ExportImageBundle(ctx, []SelectedValueOutput{{Result: rows.first, Address: PersistedPartAddress{Part: "snapshot"}}}, config.RefConfig{}, nil)
+	err := c.ExportImageBundle(ctx, []SelectedValueOutput{{Result: rows.first, Address: PersistedPartAddress{Part: "snapshot"}}}, config.RefConfig{}, nil, nil)
 	require.ErrorIs(t, err, ErrPersistStateNotReady)
 	require.NoError(t, ctx.Err(), "the export failed at once, without waiting")
 	require.ErrorContains(t, err, "export image bundle: 1 of 1 results left out")
