@@ -1,9 +1,12 @@
 package dagql
 
 import (
+	"archive/tar"
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"maps"
 	"os"
 	"path"
 	"slices"
@@ -11,9 +14,12 @@ import (
 	"time"
 
 	"github.com/containerd/containerd/v2/core/content"
+	"github.com/containerd/containerd/v2/pkg/labels"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/snapshots/config"
+	"github.com/dagger/dagger/internal/buildkit/util/compression"
+	"github.com/dagger/dagger/internal/buildkit/util/converter/tarconverter"
 	"github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 )
@@ -299,10 +305,11 @@ func (c *Cache) SetImageEntriesCause(cause string) {
 }
 
 // ImageBundleWriter receives an engine image's bundle as ExportImageBundle
-// makes it: the bundle, then each blob its offers name, once each, by digest.
+// makes it: the bundle, then each blob its offers name, once each, by digest,
+// as r reads it.
 type ImageBundleWriter interface {
 	WriteBundle(context.Context, ValueBundle) error
-	WriteBlob(ctx context.Context, d digest.Digest, r content.ReaderAt) error
+	WriteBlob(ctx context.Context, d digest.Digest, r io.Reader) error
 }
 
 // ExportImageBundle exports results for an engine image to ship: each
@@ -315,7 +322,10 @@ type ImageBundleWriter interface {
 // a result's closure reaches a row that's busy now, the export lets go of
 // the capture, waits, and captures again, until every result is captured or
 // ctx ends. A result refused for any other reason, or one whose row stays
-// busy until a later evaluation (BusyBookkeeping), fails the export. It is
+// busy until a later evaluation (BusyBookkeeping), fails the export. With an
+// epoch, every blob it writes has each entry's times clamped to the epoch
+// (clampTimes), and the bundle names the clamped blobs: two builds of the
+// same files then ship the same bytes, whenever each wrote its files. It is
 // built for the image's build, and nothing in the engine's runtime calls it.
 func (c *Cache) ExportImageBundle(ctx context.Context, outputs []SelectedValueOutput, cfg config.RefConfig, epoch *time.Time, w ImageBundleWriter) error {
 	if len(outputs) == 0 {
@@ -341,7 +351,7 @@ func (c *Cache) ExportImageBundle(ctx context.Context, outputs []SelectedValueOu
 	for pause := imageBundleBusyPause; ; pause = min(2*pause, maxImageBundleBusyPause) {
 		passStart := time.Now()
 		err := c.WithExportedValues(ctx, selection, cfg, func(ctx context.Context, values *ExportedValues) error {
-			return writeImageBundle(ctx, values, w)
+			return writeImageBundle(ctx, values, epoch, w)
 		})
 		left := leftOutOnly(err)
 		if left == nil {
@@ -412,9 +422,19 @@ func busyForNow(roots []LeftOutRoot) bool {
 }
 
 // writeImageBundle writes an image's bundle from values, every root
-// captured, and then each blob its outputs' chains name, once each.
-func writeImageBundle(ctx context.Context, values *ExportedValues, w ImageBundleWriter) error {
+// captured, and then each blob its outputs' chains name, once each; with an
+// epoch, each blob with its entries' times clamped to it, under the digest of
+// those bytes, which the bundle names in place of the layer's own.
+func writeImageBundle(ctx context.Context, values *ExportedValues, epoch *time.Time, w ImageBundleWriter) error {
 	bundle := values.Bundle
+	var clamped map[digest.Digest]ocispecs.Descriptor
+	if epoch != nil {
+		var err error
+		if clamped, err = clampedLayers(ctx, values.Chains, *epoch); err != nil {
+			return err
+		}
+		bundle = clampedBundle(bundle, clamped, *epoch)
+	}
 	address := func(addresses map[digest.Digest]BlobAddress, layers []snapshots.ExportLayer) map[digest.Digest]BlobAddress {
 		if addresses == nil {
 			addresses = map[digest.Digest]BlobAddress{}
@@ -443,19 +463,33 @@ func writeImageBundle(ctx context.Context, values *ExportedValues, w ImageBundle
 	for _, entry := range values.Chains.Entries {
 		for _, layer := range entry.Layers {
 			d := layer.Descriptor.Digest
-			if written[d] {
+			name := d
+			if epoch != nil {
+				// Two layers can clamp to the same bytes.
+				name = clamped[d].Digest
+			}
+			if written[name] {
 				continue
 			}
-			written[d] = true
+			written[name] = true
 			if err := d.Validate(); err != nil {
 				return err
 			}
-			r, err := entry.Provider.ReaderAt(ctx, layer.Descriptor)
+			ra, err := entry.Provider.ReaderAt(ctx, layer.Descriptor)
 			if err != nil {
 				return fmt.Errorf("export image bundle: blob %s: %w", d, err)
 			}
-			err = w.WriteBlob(ctx, d, r)
-			if closeErr := r.Close(); err == nil {
+			var r io.Reader = io.NewSectionReader(ra, 0, ra.Size())
+			var clamping io.ReadCloser
+			if epoch != nil {
+				clamping = clampTimes(r, *epoch)
+				r = clamping
+			}
+			err = w.WriteBlob(ctx, name, r)
+			if clamping != nil {
+				clamping.Close()
+			}
+			if closeErr := ra.Close(); err == nil {
 				err = closeErr
 			}
 			if err != nil {
@@ -464,4 +498,92 @@ func writeImageBundle(ctx context.Context, values *ExportedValues, w ImageBundle
 		}
 	}
 	return nil
+}
+
+// clampedLayers is, for each layer the chains name, the layer as its blob
+// reads with its entries' times clamped to epoch (clampTimes): an uncompressed
+// layer, as an image's bundle exports them, whose digest is that of the
+// clamped bytes, which are also its uncompressed digest.
+func clampedLayers(ctx context.Context, chains *SelectedChains, epoch time.Time) (map[digest.Digest]ocispecs.Descriptor, error) {
+	clamped := map[digest.Digest]ocispecs.Descriptor{}
+	for _, entry := range chains.Entries {
+		for _, layer := range entry.Layers {
+			desc := layer.Descriptor
+			if _, ok := clamped[desc.Digest]; ok {
+				continue
+			}
+			if kind, err := compression.FromMediaType(desc.MediaType); err != nil || kind != compression.Uncompressed {
+				return nil, fmt.Errorf("export image bundle: blob %s is %s, and only an uncompressed layer's times can be clamped", desc.Digest, desc.MediaType)
+			}
+			ra, err := entry.Provider.ReaderAt(ctx, desc)
+			if err != nil {
+				return nil, fmt.Errorf("export image bundle: blob %s: %w", desc.Digest, err)
+			}
+			rc := clampTimes(io.NewSectionReader(ra, 0, ra.Size()), epoch)
+			digester := digest.Canonical.Digester()
+			n, err := io.Copy(digester.Hash(), rc)
+			rc.Close()
+			if closeErr := ra.Close(); err == nil {
+				err = closeErr
+			}
+			if err != nil {
+				return nil, fmt.Errorf("export image bundle: clamp blob %s: %w", desc.Digest, err)
+			}
+			out := desc
+			out.Digest, out.Size = digester.Digest(), n
+			out.Annotations = maps.Clone(desc.Annotations)
+			if out.Annotations == nil {
+				out.Annotations = map[string]string{}
+			}
+			out.Annotations[labels.LabelUncompressed] = out.Digest.String()
+			clamped[desc.Digest] = out
+		}
+	}
+	return clamped, nil
+}
+
+// clampedBundle is bundle naming each layer of clamped by its clamped
+// descriptor, and dating each layer's creation no later than epoch.
+func clampedBundle(bundle ValueBundle, clamped map[digest.Digest]ocispecs.Descriptor, epoch time.Time) ValueBundle {
+	clamp := func(layers []snapshots.ExportLayer) []snapshots.ExportLayer {
+		layers = slices.Clone(layers)
+		for i, layer := range layers {
+			if desc, ok := clamped[layer.Descriptor.Digest]; ok {
+				layers[i].Descriptor = desc
+			}
+			if layer.CreatedAt != nil && layer.CreatedAt.After(epoch) {
+				layers[i].CreatedAt = &epoch
+			}
+		}
+		return layers
+	}
+	bundle.Layers = slices.Clone(bundle.Layers)
+	for i := range bundle.Layers {
+		bundle.Layers[i].Layer = clamp([]snapshots.ExportLayer{bundle.Layers[i].Layer})[0]
+	}
+	bundle.Outputs = slices.Clone(bundle.Outputs)
+	for i, output := range bundle.Outputs {
+		if output.Chain == nil {
+			continue
+		}
+		chain := *output.Chain
+		chain.Layers = clamp(chain.Layers)
+		chain.Addresses = nil
+		bundle.Outputs[i].Chain = &chain
+	}
+	bundle.Addresses = nil
+	return bundle
+}
+
+// clampTimes is r, an uncompressed layer's tar, with every entry's
+// modification, access and change times clamped to epoch, as
+// Container.publish(sourceDateEpoch:) clamps an image's layers.
+func clampTimes(r io.Reader, epoch time.Time) io.ReadCloser {
+	return tarconverter.NewReader(r, func(hdr *tar.Header) {
+		for _, t := range []*time.Time{&hdr.ModTime, &hdr.AccessTime, &hdr.ChangeTime} {
+			if t.After(epoch) {
+				*t = epoch
+			}
+		}
+	})
 }

@@ -9,7 +9,6 @@ import (
 	"path"
 	"runtime"
 
-	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -150,7 +149,7 @@ func (d imageBundleDir) WriteBundle(_ context.Context, bundle dagql.ValueBundle)
 	return d.root.WriteFile(EngineImageBundleFile, raw, 0o644)
 }
 
-func (d imageBundleDir) WriteBlob(ctx context.Context, dgst digest.Digest, r content.ReaderAt) error {
+func (d imageBundleDir) WriteBlob(ctx context.Context, dgst digest.Digest, r io.Reader) error {
 	name := dagql.ImageBlobPath(dgst)
 	if err := d.root.MkdirAll(path.Dir(name), 0o755); err != nil {
 		return err
@@ -160,7 +159,7 @@ func (d imageBundleDir) WriteBlob(ctx context.Context, dgst digest.Digest, r con
 		return err
 	}
 	verifier := dgst.Verifier()
-	_, err = io.Copy(io.MultiWriter(f, verifier), io.NewSectionReader(r, 0, r.Size()))
+	_, err = io.Copy(io.MultiWriter(f, verifier), r)
 	if closeErr := f.Close(); err == nil {
 		err = closeErr
 	}
