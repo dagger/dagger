@@ -83,7 +83,7 @@ func TestKeptCallTermsFollowTheirInputsClasses(t *testing.T) {
 	c.mergeEqClassesLocked(ctx, class("a"), class("f"))
 	groups("a class joins the inputs' root", 1)
 	// The entry's output keeps the inputs' class live, under a new number.
-	c.resultOutputEqClasses[entry.id] = map[eqClassID]struct{}{class("a"): {}}
+	c.addResultOutputEqClassLocked(entry.id, class("a"))
 	compacted, _, _ := c.compactEqClassesLocked(true)
 	require.True(t, compacted)
 	groups("classes are renumbered", 1)
