@@ -49,6 +49,11 @@ const (
 	workUpkeep
 	// workHold is the service's holds on entries, and their release.
 	workHold
+	// workRemote is the remote cache service's writes of engines' holdings
+	// and of the store's parts, and its collections of them, that take the
+	// graph lock themselves: those outside a hold the service took
+	// (HoldRemoteWrites).
+	workRemote
 	numCacheWork
 )
 
@@ -67,6 +72,7 @@ var cacheWorkNames = [numCacheWork]string{
 	workEvaluation:  "evaluation",
 	workUpkeep:      "upkeep",
 	workHold:        "hold",
+	workRemote:      "remote",
 }
 
 func (w cacheWork) String() string { return cacheWorkNames[w] }
@@ -94,6 +100,18 @@ func graphHolderWork(h wcprof.LockHolder) (cacheWork, bool) {
 		}
 	}
 	return workOther, true
+}
+
+// ObserveGraphHolds calls f with each hold of the graph lock for writing
+// that the cache takes itself, as it ends, until the returned stop is
+// called: the kind of work it held the lock for, whose name is its
+// cacheWork's ("merge", "remote" and so on, "other" for none), how long it
+// waited to take the lock, and how long it held it. A hold through
+// HoldRemoteWrites is its holder's to time, and isn't seen. f runs in the
+// releasing goroutine while the lock is still held, so it must not touch
+// the cache, and should cost little: every waiter waits for it too.
+func (c *Cache) ObserveGraphHolds(f func(work wcprof.LockHolder, waited, held time.Duration)) (stop func()) {
+	return c.egraphMu.ObserveHolds(f)
 }
 
 type cacheWorkKey struct{}

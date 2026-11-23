@@ -29,9 +29,10 @@ type RemoteWrites struct {
 }
 
 // HoldRemoteWrites takes the cache's lock for writing, until the returned
-// hold's Release.
+// hold's Release. Its holder times the hold itself: the cache's observer of
+// its own holds doesn't see it (ObserveGraphHolds).
 func (c *Cache) HoldRemoteWrites() *RemoteWrites {
-	c.egraphMu.Lock()
+	c.egraphMu.LockSelfTimed()
 	return &RemoteWrites{c: c}
 }
 
