@@ -2034,8 +2034,8 @@ func heldRowOutputs(bundle ValueBundle) map[uint64][]TransferredOutput {
 
 // staleHeldPartsLocked returns, sorted, the held rows whose parts the Cloud's
 // own copy of the row doesn't have: the current entry of the row's recipe,
-// which the row lands on, must have each part at its address, as
-// checkOutputPart checks a part against a record the bundle carries. A held
+// which the row lands on, must have each part at its address, at least as
+// complete as the row says it is (checkHeldPart). A held
 // row whose recipe has no current entry is stale already
 // (staleHeldRowsLocked). Requires egraphMu.
 func (c *Cache) staleHeldPartsLocked(prep *valueMergePrep, targets mergeTargets) ([]TransferOrdinal, []string) {
@@ -2058,7 +2058,7 @@ func (c *Cache) entryHasPartsLocked(res *sharedResult, outputs []TransferredOutp
 }
 
 // entryPartsWhyLocked says why res's stored record doesn't have each of
-// outputs' parts, as checkOutputPart checks them (recordPartsLocked), and ""
+// outputs' parts, as checkHeldPart checks them (recordPartsLocked), and ""
 // when it has them. Requires egraphMu.
 func (c *Cache) entryPartsWhyLocked(res *sharedResult, outputs []TransferredOutput) string {
 	if res.noValueLocked() {
@@ -2077,7 +2077,7 @@ func (c *Cache) entryPartsWhyLocked(res *sharedResult, outputs []TransferredOutp
 		if !ok {
 			return fmt.Sprintf("part %s missing", key)
 		}
-		if err := checkOutputPart(output, part); err != nil {
+		if err := checkHeldPart(output, part); err != nil {
 			return fmt.Sprintf("part %s: %v", key, err)
 		}
 	}
