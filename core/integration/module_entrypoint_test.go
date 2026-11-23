@@ -602,9 +602,11 @@ var sharedContainerEntrypointSource = fmt.Sprintf(`type Entrypoint implements Mo
 [ "$fn" = Runs ] || echo "$fn" >> /runs/log
 printf '"%s"' "$(grep -cx Long /runs/log)"`), strconv.Quote(dagcore.ModuleCallDigestEnv))
 
-// Without an explicit TTL, the exec of a call answers again whenever dagql
-// evaluates the call again. The recipe digest it is keyed on already changes
-// per call for never and per session for per session.
+// A function's run answers only the evaluation that made it, whatever the
+// function's cache policy: what the cache keeps and shares is the call's
+// result. Each policy decides when dagql evaluates the call again: on every
+// call for never, in every session for per session, and for a default
+// function only when no result was kept, such as after a failed attempt.
 func (ModuleSuite) TestModuleEntrypointCallCachePolicies(ctx context.Context, t *testctx.T) {
 	t.Run("never", func(ctx context.Context, t *testctx.T) {
 		c := serveNonceModule(ctx, t, rand.Text())
@@ -630,7 +632,7 @@ func (ModuleSuite) TestModuleEntrypointCallCachePolicies(ctx context.Context, t 
 			require.NotNil(t, match, err.Error())
 			return match[1]
 		}
-		require.Equal(t, nonce(), nonce(), "the exec answers again")
+		require.NotEqual(t, nonce(), nonce(), "a failed attempt's run doesn't answer the next attempt: the function runs again")
 	})
 }
 
