@@ -126,7 +126,22 @@ func (build *Builder) WithGPUSupport() *Builder {
 	return &b
 }
 
+// Engine is the engine's container: EngineBase with the engine's binaries
+// (WithEngineBinaries).
 func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
+	base, err := build.EngineBase(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return build.WithEngineBinaries(ctx, base)
+}
+
+// EngineBase is the engine's container without the binaries built from the
+// source (WithEngineBinaries): Wolfi's packages, then the tools built from
+// pinned releases in one layer. A commit of the source changes none of it, so
+// an image of another commit shares these layers' bytes, and a host that holds
+// one pulls none of them again.
+func (build *Builder) EngineBase(ctx context.Context) (*dagger.Container, error) {
 	eg, ctx := errgroup.WithContext(ctx)
 
 	if build.gpuSupport {
@@ -185,19 +200,9 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 		base = base.WithAnnotation(versionAnnotation, build.version)
 	}
 
-	type binAndPath struct {
-		path     string
-		file     *dagger.File
-		fileOpts []dagger.ContainerWithFileOpts
-	}
 	bins := []binAndPath{
-		{path: consts.EngineServerPath, file: build.engineBinary(build.race)},
 		{path: "/usr/bin/sshfs", file: build.sshfsBin()},
-		{path: "/usr/bin/dial-stdio", file: build.dialstdioBinary()},
-		{path: "/opt/cni/bin/dnsname", file: build.dnsnameBinary()},
-		{path: consts.DaggerInitPath, file: build.daggerInit()},
-		{path: consts.DaggerInitSessionPath, file: build.binary("./cmd/init-session", false)},
-		{path: consts.TiniPath, file: build.Init(), fileOpts: []dagger.ContainerWithFileOpts{{Permissions: 0o755}}},
+		{path: consts.TiniPath, file: build.Init(), permissions: 0o755},
 	}
 	if entire := build.gitRemoteEntireBin(); entire != nil {
 		bins = append(bins, binAndPath{path: consts.GitRemoteEntirePath, file: entire})
@@ -209,25 +214,64 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 	for _, plugin := range build.cniPlugins() {
 		bins = append(bins, binAndPath{path: filepath.Join("/opt/cni/bin", plugin.name), file: plugin.file})
 	}
+	tools := build.binDir(ctx, eg, bins).
+		WithDirectory(distconsts.EngineDefaultStateDir, core.NewDirectory())
 
 	ctr := base.
-		WithExec([]string{"sh", "-c", "mkdir -p /etc && touch /etc/fuse.conf && (grep -qxF user_allow_other /etc/fuse.conf || printf '%s\\n' user_allow_other >> /etc/fuse.conf)"})
-	for _, bin := range bins {
-		ctr = ctr.WithFile(bin.path, bin.file, bin.fileOpts...)
-		eg.Go(func() error {
-			return build.verifyPlatform(ctx, bin.file)
-		})
-	}
-
-	ctr = ctr.
-		WithSymlink("/usr/bin/dial-stdio", "/usr/bin/buildctl").
-		WithDirectory(distconsts.EngineDefaultStateDir, core.NewDirectory())
+		WithExec([]string{"sh", "-c", "mkdir -p /etc && touch /etc/fuse.conf && (grep -qxF user_allow_other /etc/fuse.conf || printf '%s\\n' user_allow_other >> /etc/fuse.conf)"}).
+		WithDirectory("/", tools)
 
 	if err := eg.Wait(); err != nil {
 		return nil, err
 	}
 
 	return ctr, nil
+}
+
+// WithEngineBinaries is ctr with the engine's binaries built from the source:
+// its helpers in one layer, then the engine in its own. A commit of the
+// source changes them, and a layer is made again, and unpacked again on a
+// host, whenever a layer below it changes; so they go above every layer a
+// commit leaves alone, the image's entries among them.
+func (build *Builder) WithEngineBinaries(ctx context.Context, ctr *dagger.Container) (*dagger.Container, error) {
+	eg, ctx := errgroup.WithContext(ctx)
+	helpers := build.binDir(ctx, eg, []binAndPath{
+		{path: "/usr/bin/dial-stdio", file: build.dialstdioBinary()},
+		{path: "/opt/cni/bin/dnsname", file: build.dnsnameBinary()},
+		{path: consts.DaggerInitPath, file: build.daggerInit()},
+		{path: consts.DaggerInitSessionPath, file: build.binary("./cmd/init-session", false)},
+	}).WithSymlink("/usr/bin/dial-stdio", "/usr/bin/buildctl")
+	engine := build.engineBinary(build.race)
+	eg.Go(func() error {
+		return build.verifyPlatform(ctx, engine)
+	})
+	ctr = ctr.
+		WithDirectory("/", helpers).
+		WithFile(consts.EngineServerPath, engine)
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+	return ctr, nil
+}
+
+// binAndPath is a binary and where the engine's image installs it.
+type binAndPath struct {
+	path        string
+	file        *dagger.File
+	permissions int
+}
+
+// binDir is a directory of bins, each at its path, for an image to add in one
+// layer, with a check in eg of each one's platform.
+func (build *Builder) binDir(ctx context.Context, eg *errgroup.Group, bins []binAndPath) *dagger.Directory {
+	dir := core.NewDirectory()
+	for _, bin := range bins {
+		dir = dir.WithFile(bin.path, bin.file, dagger.DirectoryWithFileOpts{Permissions: bin.permissions})
+		eg.Go(func() error {
+			return build.verifyPlatform(ctx, bin.file)
+		})
+	}
+	return dir
 }
 
 func (build *Builder) CodegenBinary() *dagger.File {
