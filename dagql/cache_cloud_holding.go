@@ -15,29 +15,25 @@ import "iter"
 
 // cloudHoldingLocked returns res's Cloud holding and its key, if it has one.
 // Requires egraphMu.
-func (res *sharedResult) cloudHoldingLocked() (key HolderKey, h *holding) {
-	res.eachHolderLocked(func(ref holderRef) bool {
+func (res *sharedResult) cloudHoldingLocked() (HolderKey, *holding) {
+	for _, ref := range res.holderRefsLocked() {
 		if ref.key.Cache == cloudCacheID {
-			key, h = ref.key, ref.h
-			return false
+			return ref.key, ref.h
 		}
-		return true
-	})
-	return key, h
+	}
+	return HolderKey{}, nil
 }
 
 // imageHoldingLocked returns res's image holding and its key, if it has one:
 // the engine image ships res, and the holding carries the image's offers of
 // its parts. Requires egraphMu.
-func (res *sharedResult) imageHoldingLocked() (key HolderKey, h *holding) {
-	res.eachHolderLocked(func(ref holderRef) bool {
+func (res *sharedResult) imageHoldingLocked() (HolderKey, *holding) {
+	for _, ref := range res.holderRefsLocked() {
 		if ref.key.Cache == imageCacheID {
-			key, h = ref.key, ref.h
-			return false
+			return ref.key, ref.h
 		}
-		return true
-	})
-	return key, h
+	}
+	return HolderKey{}, nil
 }
 
 // imageSuppliesLocked reports whether the engine image supplies res's parts:

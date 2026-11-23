@@ -30,7 +30,13 @@ import (
 // ownership unit each. An engine's Cloud and image holdings own nothing. Requires
 // egraphMu.
 func (res *sharedResult) engineHoldingsLocked() int64 {
-	return int64(res.engineHoldersLocked())
+	var n int64
+	for _, ref := range res.holderRefsLocked() {
+		if !senderCache(ref.key.Cache) {
+			n++
+		}
+	}
+	return n
 }
 
 // hasOwnValueLocked reports whether res has a value of its own: decoded, or a
@@ -96,13 +102,12 @@ func (c *Cache) dropValueLocked(ctx context.Context, change *RemoteChange, res *
 	// The cache takes the value back only from a cache that computes it
 	// after the drop.
 	c.markEntryClassLocked(res.id, StampPruned)
-	res.eachHolderLocked(func(ref holderRef) bool {
+	for _, ref := range res.holderRefsLocked() {
 		if ref.h.executed {
 			ref.h.executed = false
 			c.markHoldingLocked(change, ref.key)
 		}
-		return true
-	})
+	}
 	res.deps = nil
 	// The content digests spans taught the entry name the bytes of the
 	// value the drop takes. A record that fills the entry again may be
