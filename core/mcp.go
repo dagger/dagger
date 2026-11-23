@@ -2288,6 +2288,9 @@ func mcpContentBlocks(result *mcp.CallToolResult) ([]*LLMContentBlock, error) {
 		if block == nil {
 			return nil, fmt.Errorf("nil MCP content at index %d", i)
 		}
+		if block.Kind == LLMContentImage {
+			mediaData, block.MIMEType = ShrinkLLMImage(mediaData, block.MIMEType)
+		}
 		if block.Kind == LLMContentImage || block.Kind == LLMContentAudio || block.Kind == LLMContentDocument {
 			if len(mediaData) > MaxLLMMediaBytes-mediaBytes {
 				return nil, fmt.Errorf("MCP tool media exceeds %d bytes", MaxLLMMediaBytes)
