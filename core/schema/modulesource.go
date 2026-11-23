@@ -309,7 +309,7 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 		// Keyed by its receiver, which is keyed by its content when it has
 		// one (identifiedModuleSourceResult), so equal sources share one
 		// loaded module across clients, sessions and engines.
-		dagql.NodeFunc("asModule", s.moduleSourceAsModule).
+		dagql.NodeFuncWithDynamicInputs("asModule", s.moduleSourceAsModule, s.moduleSourceAsModuleCacheKey).
 			WithInput(eagerRuntimeInput).
 			Doc(`Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation`),
 		dagql.NodeFunc("_implementationScoped", s.moduleSourceImplementationScoped).
@@ -4638,53 +4638,56 @@ func resolveDefaultPathContextSource(
 	return defaultPathContextSrc, defaultPathContextSourceVariant, nil
 }
 
+// moduleSourceAsModuleArgs are ModuleSource.asModule's arguments.
+type moduleSourceAsModuleArgs struct {
+	// This internal-only flag allows us to force SDK modules to enable default function
+	// caching even when they are on older modules, which ensures they don't see a regression
+	// right after function caching is enabled. It can be removed after SDKs have been updated
+	// to latest engine versions.
+	ForceDefaultFunctionCaching bool `internal:"true" default:"false"`
+
+	// LegacyDefaultPath marks modules projected from legacy workspace fields.
+	// The caller should also pass DefaultPathContextSourceRef so
+	// +defaultPath inputs resolve from the legacy project/workspace context.
+	LegacyDefaultPath bool `internal:"true" default:"false"`
+
+	// LegacyArgCustomizationsJSON is a JSON-encoded []*modules.ModuleConfigArgument
+	// carrying arg customizations from the workspace dagger.json.
+	// Applied after type defs are populated so constructor arg metadata
+	// (Ignore, DefaultPath, etc.) can be overridden before Install.
+	LegacyArgCustomizationsJSON string `internal:"true" default:""`
+
+	// LegacyNameOverride, when non-empty, overrides the module name.
+	LegacyNameOverride string `internal:"true" default:""`
+
+	// LegacyWorkspaceConfigJSON is a JSON-encoded map[string]any
+	// carrying workspace config defaults from the workspace dagger.json.
+	LegacyWorkspaceConfigJSON string `internal:"true" default:""`
+
+	// LegacyDefaultsFromDotEnv, when true and workspace config is set,
+	// also load .env defaults for args not found in WorkspaceConfig.
+	LegacyDefaultsFromDotEnv bool `internal:"true" default:"false"`
+
+	// DefaultPathContextSourceRef, when set, loads implementation code from
+	// the receiver but resolves +defaultPath inputs from this source ref.
+	DefaultPathContextSourceRef string `internal:"true" default:""`
+
+	// DefaultPathContextSourcePin pins DefaultPathContextSourceRef when set.
+	DefaultPathContextSourcePin string `internal:"true" default:""`
+
+	// DefaultPathContextSource supplies an already-resolved source whose
+	// tree +defaultPath inputs resolve from, taking precedence over
+	// DefaultPathContextSourceRef. Value workspaces pass their own
+	// (possibly overlaid) root tree this way: no ref string names it, and
+	// a frozen workspace's commits may exist nowhere a ref could fetch
+	// from.
+	DefaultPathContextSource dagql.Optional[core.ModuleSourceID] `internal:"true"`
+}
+
 func (s *moduleSourceSchema) moduleSourceAsModule(
 	ctx context.Context,
 	src dagql.ObjectResult[*core.ModuleSource],
-	args struct {
-		// This internal-only flag allows us to force SDK modules to enable default function
-		// caching even when they are on older modules, which ensures they don't see a regression
-		// right after function caching is enabled. It can be removed after SDKs have been updated
-		// to latest engine versions.
-		ForceDefaultFunctionCaching bool `internal:"true" default:"false"`
-
-		// LegacyDefaultPath marks modules projected from legacy workspace fields.
-		// The caller should also pass DefaultPathContextSourceRef so
-		// +defaultPath inputs resolve from the legacy project/workspace context.
-		LegacyDefaultPath bool `internal:"true" default:"false"`
-
-		// LegacyArgCustomizationsJSON is a JSON-encoded []*modules.ModuleConfigArgument
-		// carrying arg customizations from the workspace dagger.json.
-		// Applied after type defs are populated so constructor arg metadata
-		// (Ignore, DefaultPath, etc.) can be overridden before Install.
-		LegacyArgCustomizationsJSON string `internal:"true" default:""`
-
-		// LegacyNameOverride, when non-empty, overrides the module name.
-		LegacyNameOverride string `internal:"true" default:""`
-
-		// LegacyWorkspaceConfigJSON is a JSON-encoded map[string]any
-		// carrying workspace config defaults from the workspace dagger.json.
-		LegacyWorkspaceConfigJSON string `internal:"true" default:""`
-
-		// LegacyDefaultsFromDotEnv, when true and workspace config is set,
-		// also load .env defaults for args not found in WorkspaceConfig.
-		LegacyDefaultsFromDotEnv bool `internal:"true" default:"false"`
-
-		// DefaultPathContextSourceRef, when set, loads implementation code from
-		// the receiver but resolves +defaultPath inputs from this source ref.
-		DefaultPathContextSourceRef string `internal:"true" default:""`
-
-		// DefaultPathContextSourcePin pins DefaultPathContextSourceRef when set.
-		DefaultPathContextSourcePin string `internal:"true" default:""`
-
-		// DefaultPathContextSource supplies an already-resolved source whose
-		// tree +defaultPath inputs resolve from, taking precedence over
-		// DefaultPathContextSourceRef. Value workspaces pass their own
-		// (possibly overlaid) root tree this way: no ref string names it, and
-		// a frozen workspace's commits may exist nowhere a ref could fetch
-		// from.
-		DefaultPathContextSource dagql.Optional[core.ModuleSourceID] `internal:"true"`
-	},
+	args moduleSourceAsModuleArgs,
 ) (inst dagql.ObjectResult[*core.Module], err error) {
 	// The loaded module is keyed by its source and these arguments, and
 	// stands for what loading it read. A call it makes that is keyed per
@@ -4871,6 +4874,22 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		return inst, fmt.Errorf("failed to create instance for module %q: %w", src.Self().ModuleName, err)
 	}
 	return inst, nil
+}
+
+// moduleSourceAsModuleCacheKey keeps a module loaded from a source with a
+// content identity past its session, as the module's definitions are kept: a
+// later session, or an engine the module is sent to, then loads the same
+// source without loading it again. A source without one is its client's
+// alone, and so is the module loaded from it.
+func (s *moduleSourceSchema) moduleSourceAsModuleCacheKey(ctx context.Context, src dagql.ObjectResult[*core.ModuleSource], _ moduleSourceAsModuleArgs, req *dagql.CallRequest) error {
+	frame, err := src.ResultCall()
+	if err != nil {
+		return fmt.Errorf("module source call: %w", err)
+	}
+	if frame.ContentDigest() != "" {
+		req.IsPersistable = true
+	}
+	return nil
 }
 
 // eagerRuntimeInput keys a module's load by whether its client asked for
