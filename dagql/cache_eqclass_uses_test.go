@@ -3,7 +3,11 @@ package dagql
 import (
 	"context"
 	"fmt"
+	"maps"
+	"math/rand/v2"
+	"slices"
 	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -147,3 +151,193 @@ func BenchmarkEqClassCheckThatFreesNothing(b *testing.B) {
 	}
 }
 
+// Compaction decided from the uses the cache keeps leaves the e-graph as
+// compaction decided from a walk of every term and entry did: after every
+// step of random rows of three engines, with sessions ending, engines
+// released, entries collected, the checks' clock moved past their interval
+// and classes compacted by force between them, the two caches hold every
+// digest in a class of the same number, the same free slots, the same terms
+// with the same inputs and outputs, and the same entries' output classes;
+// they have checked as often, and give the same hits for every recipe,
+// content and term. The kept uses equal a walk's in both, and over all the
+// seeds the checks compact as well as decline. The rows' calls share recipes, requests,
+// contents and term selves, so unions are frequent, a union joins classes
+// both used, a term may take one class in two positions, an entry may name
+// two classes a union joins, and a union makes terms congruent.
+func TestKeptClassUsesDecideAsAWalk(t *testing.T) {
+	t.Parallel()
+	var compacted, declined atomic.Int64
+	t.Cleanup(func() {
+		t.Logf("of the collections' checks, %d compacted and %d declined", compacted.Load(), declined.Load())
+		require.Positive(t, compacted.Load(), "a check compacts")
+		require.Positive(t, declined.Load(), "a check declines")
+	})
+	for seed := range uint64(30) {
+		t.Run(fmt.Sprint(seed), func(t *testing.T) {
+			t.Parallel()
+			c, d := checkKeptClassUsesDecideAsAWalk(t, seed)
+			compacted.Add(int64(c))
+			declined.Add(int64(d))
+		})
+	}
+}
+
+// checkKeptClassUsesDecideAsAWalk runs one seed's steps, and returns how
+// many of the collections' checks compacted and declined.
+func checkKeptClassUsesDecideAsAWalk(t *testing.T, seed uint64) (compacted, declined int) {
+	rng := rand.New(rand.NewPCG(seed, seed))
+	type arm struct {
+		ctx     context.Context
+		cloud   *Cache
+		a       *cloudApplier
+		advance func(time.Duration)
+	}
+	newArm := func(walk bool) *arm {
+		// A blob store, as the service's cache has, so that classes compact.
+		ctx, cloud := storedPartTestCache(t, WithBlobStore())
+		cloud.testWalkLiveClasses = walk
+		return &arm{ctx: ctx, cloud: cloud, a: newCloudApplier(t, cloud), advance: testEqClassClock(cloud)}
+	}
+	walked, kept := newArm(true), newArm(false)
+	arms := []*arm{walked, kept}
+
+	const recipes = 30
+	pick := func(prefix string, n int) digest.Digest { return testDigest(fmt.Sprint(prefix, rng.IntN(n))) }
+	calls := make([]RemoteHolding, recipes)
+	for i := range calls {
+		recipe := testDigest(fmt.Sprint("recipe-", i))
+		h := RemoteHolding{Recipe: recipe, Request: recipe, Field: "f", TypeName: "Directory"}
+		if rng.IntN(4) == 0 {
+			h.Request = pick("recipe-", recipes)
+		}
+		if rng.IntN(2) == 0 {
+			h.ContentDigest = pick("content-", 6)
+		}
+		if rng.IntN(6) != 0 {
+			term := &RemoteTerm{Self: pick("self-", 3)}
+			for range rng.IntN(4) {
+				term.Inputs = append(term.Inputs, pick("recipe-", recipes))
+			}
+			if len(term.Inputs) > 0 && rng.IntN(4) == 0 {
+				term.Inputs = append(term.Inputs, term.Inputs[0])
+			}
+			h.Term = term
+		}
+		calls[i] = h
+	}
+	engines := []CacheID{"cache-a", "cache-b", "cache-c"}
+	session := map[CacheID]int{}
+	sessionOf := func(e CacheID) string { return fmt.Sprint(e, "-", session[e]) }
+
+	hits := func(c *Cache) []string {
+		var out []string
+		sorted := func(n []uint64) []uint64 { return slices.Sorted(slices.Values(n)) }
+		for i, h := range calls {
+			out = append(out, fmt.Sprint("recipe ", i, sorted(c.EquivalentEntries(h.Recipe.String()))))
+			if h.ContentDigest != "" {
+				out = append(out, fmt.Sprint("content ", i, sorted(c.EquivalentEntries(h.ContentDigest.String()))))
+			}
+			if h.Term != nil {
+				out = append(out, fmt.Sprint("term ", i, sorted(c.TermEntries(h.Term.Self, h.Term.Inputs))))
+			}
+		}
+		return out
+	}
+	// classes reads each arm's classes by number, without compressing a
+	// path: the walk compresses them, and the kept uses don't.
+	classes := func(c *Cache) []string {
+		c.egraphMu.RLock()
+		defer c.egraphMu.RUnlock()
+		var out []string
+		for _, dig := range slices.Sorted(maps.Keys(c.egraphDigestToClass)) {
+			out = append(out, fmt.Sprint("digest ", dig, " ", c.eqClassRootLocked(c.egraphDigestToClass[dig])))
+		}
+		roots := func(ids []eqClassID) []eqClassID {
+			out := make([]eqClassID, len(ids))
+			for i, id := range ids {
+				out[i] = c.eqClassRootLocked(id)
+			}
+			return out
+		}
+		for _, id := range slices.Sorted(maps.Keys(c.egraphTerms)) {
+			term := c.egraphTerms[id]
+			out = append(out, fmt.Sprint("term ", id, " ", term.selfDigest, " ", roots(term.inputEqIDs), " ", c.eqClassRootLocked(term.outputEqID), " ", term.termDigest))
+		}
+		for _, id := range slices.Sorted(maps.Keys(c.resultOutputEqClasses)) {
+			out = append(out, fmt.Sprint("outputs ", id, " ", slices.Sorted(slices.Values(roots(slices.Collect(maps.Keys(c.resultOutputEqClasses[id])))))))
+		}
+		out = append(out, fmt.Sprint("slots ", c.eqClassSlotsLocked(), " free ", c.freeEqClassIDs, " checks ", c.eqClassChecks))
+		return out
+	}
+	slotsOf := func(c *Cache) int {
+		c.egraphMu.RLock()
+		defer c.egraphMu.RUnlock()
+		return c.eqClassSlotsLocked()
+	}
+	compare := func(step int) {
+		t.Helper()
+		for _, arm := range arms {
+			require.NoError(t, arm.cloud.verifyEqClassUses(), "step %d", step)
+		}
+		require.Equal(t, classes(walked.cloud), classes(kept.cloud), "step %d: the classes differ", step)
+		require.Equal(t, hits(walked.cloud), hits(kept.cloud), "step %d: the hits differ", step)
+	}
+
+	for step := range 400 {
+		switch rng.IntN(30) {
+		case 0, 1:
+			e := engines[rng.IntN(len(engines))]
+			for _, arm := range arms {
+				arm.a.endSession(e, sessionOf(e))
+				arm.a.collect()
+			}
+			session[e]++
+		case 2, 3, 4:
+			// An engine gone: every holding of its cache is a candidate.
+			e := engines[rng.IntN(len(engines))]
+			for _, arm := range arms {
+				arm.a.ended[sessionOf(e)] = true
+				arm.a.candidates = append(arm.a.candidates, arm.cloud.ReleaseRemoteCache(arm.ctx, e).Candidates...)
+				arm.a.collect()
+			}
+			session[e]++
+		case 5:
+			for _, arm := range arms {
+				_, _, err := arm.cloud.CompactEqClasses(arm.ctx)
+				require.NoError(t, err)
+			}
+		case 6, 7, 8, 9:
+			// The checks' interval passes: the next collection checks, if
+			// something changed since the last check.
+			checks, slots := testEqClassChecks(kept.cloud), slotsOf(kept.cloud)
+			for _, arm := range arms {
+				arm.advance(eqClassCheckInterval)
+				arm.a.collect()
+			}
+			switch {
+			case testEqClassChecks(kept.cloud) == checks:
+			case slotsOf(kept.cloud) < slots:
+				compacted++
+			default:
+				declined++
+			}
+		default:
+			e := engines[rng.IntN(len(engines))]
+			c := rng.IntN(len(calls))
+			key := HolderKey{e, uint64(c + 1)}
+			for _, arm := range arms {
+				arm.a.call(callRow{key: key, session: sessionOf(e), holding: calls[c]})
+				if step%9 == 0 {
+					arm.a.collect()
+				}
+			}
+		}
+		compare(step)
+	}
+	kept.cloud.egraphMu.RLock()
+	unions := kept.cloud.egraphUnions
+	kept.cloud.egraphMu.RUnlock()
+	t.Logf("seed %d: %d unions; of the collections' checks, %d compacted and %d declined", seed, unions, compacted, declined)
+	require.Greater(t, unions, uint64(10), "the rows join classes")
+	return compacted, declined
+}
