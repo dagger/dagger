@@ -5,6 +5,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
@@ -136,6 +137,7 @@ func (s checksSchema) run(ctx context.Context, check dagql.ObjectResult[*core.Ch
 	// a later request runs it again (see sync). A run that is never reused
 	// isn't kept either.
 	if !result.Passed {
+		slog.Debug("check run bound to its session", "check", check.Self().Address, "boundBy", "failed")
 		dagql.BindToSession(ctx)
 	} else if dagql.CurrentCall(ctx).SessionBound() {
 		dagql.DeclinePersistence(ctx)
