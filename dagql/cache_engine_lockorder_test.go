@@ -21,8 +21,14 @@ import (
 // a call they follow may reach less than they find. They don't follow calls
 // through function values or interfaces.
 
-// engineLockTakers are the calls that take an engine cache's lock.
-var engineLockTakers = []string{"rlockEngineLocked", "lockEngine"}
+// engineLockTakers are the calls that take an engine cache's lock, and
+// pieceSteps the read in pieces' own methods that let it go and take it
+// again with the next piece (readPieces.step): neither is followed, and a
+// function that takes it only through a step holds none across it.
+var (
+	engineLockTakers = []string{"rlockEngineLocked", "lockEngine"}
+	pieceSteps       = []string{"step"}
+)
 
 // engineLockNesting are the functions that take an engine cache's lock and
 // call, by name, another that takes one, and why that is safe: each lets
@@ -39,10 +45,12 @@ var engineLockNesting = map[string]string{
 func TestEngineCacheLocksDontNest(t *testing.T) {
 	t.Parallel()
 	bodies := dagqlBodies(t).bodies
-	takers := functionsCalling(bodies, engineLockTakers...)
+	takers := slices.DeleteFunc(functionsCalling(bodies, engineLockTakers...), func(name string) bool {
+		return slices.Contains(pieceSteps, name) || slices.Contains(engineLockTakers, name)
+	})
 	var found []string
 	for _, name := range takers {
-		for _, reached := range reachedFrom(bodies, name, engineLockTakers) {
+		for _, reached := range reachedFrom(bodies, name, slices.Concat(engineLockTakers, pieceSteps)) {
 			if reached != name && slices.Contains(takers, reached) {
 				found = append(found, name)
 				break
@@ -66,7 +74,7 @@ func TestEngineCacheLocksAreTakenUnderTheCachesLock(t *testing.T) {
 	t.Parallel()
 	funcs := dagqlBodies(t)
 	for _, name := range functionsCalling(funcs.bodies, engineLockTakers...) {
-		if strings.HasSuffix(name, "Locked") || name == "lockEngine" {
+		if strings.HasSuffix(name, "Locked") || slices.Contains(engineLockTakers, name) {
 			continue
 		}
 		takes := false
@@ -137,8 +145,14 @@ func (funcs *dagqlFuncs) source(fn *ast.FuncDecl) string {
 	return string(funcs.files[start.Filename][start.Offset:end.Offset])
 }
 
+// lockAndAtomicMethods are the methods of sync's locks and sync/atomic's
+// types: a call of one is that operation, never the package's method of the
+// same name, such as an atomic pointer's Load and a server's.
+var lockAndAtomicMethods = []string{"Lock", "Unlock", "RLock", "RUnlock", "TryLock", "Load", "Store", "Add", "Swap", "CompareAndSwap", "And", "Or"}
+
 // calledNames are the names fn calls: a plain function's, or a method's or
-// another package's function's last name.
+// another package's function's last name, but for a lock's or an atomic's
+// methods (lockAndAtomicMethods).
 func calledNames(fn *ast.FuncDecl) []string {
 	var names []string
 	ast.Inspect(fn.Body, func(n ast.Node) bool {
@@ -150,7 +164,9 @@ func calledNames(fn *ast.FuncDecl) []string {
 		case *ast.Ident:
 			names = append(names, f.Name)
 		case *ast.SelectorExpr:
-			names = append(names, f.Sel.Name)
+			if !slices.Contains(lockAndAtomicMethods, f.Sel.Name) {
+				names = append(names, f.Sel.Name)
+			}
 		}
 		return true
 	})
