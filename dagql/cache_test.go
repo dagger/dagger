@@ -3910,6 +3910,9 @@ func TestDirectDigestLookupHitsWithoutTermIndex(t *testing.T) {
 		c.resultOutputEqClasses = make(map[sharedResultID]map[eqClassID]struct{})
 		c.outputEqClassResults = make(map[eqClassID]map[sharedResultID]struct{})
 		c.termInputProvenance = make(map[egraphTermID][]egraphInputProvenanceKind)
+		// The classes' uses went with the terms and the outputs.
+		clear(c.egraphUses)
+		c.liveEqClasses = 0
 		c.egraphMu.Unlock()
 
 		initCalls := 0
@@ -3958,6 +3961,9 @@ func TestDirectDigestLookupHitsWithoutTermIndex(t *testing.T) {
 		c.resultOutputEqClasses = make(map[sharedResultID]map[eqClassID]struct{})
 		c.outputEqClassResults = make(map[eqClassID]map[sharedResultID]struct{})
 		c.termInputProvenance = make(map[egraphTermID][]egraphInputProvenanceKind)
+		// The classes' uses went with the terms and the outputs.
+		clear(c.egraphUses)
+		c.liveEqClasses = 0
 		c.egraphMu.Unlock()
 
 		initCalls := 0
@@ -7293,6 +7299,7 @@ func TestCachePruneDoesNotProtectTermProvenanceOnlyResultFromActiveResult(t *tes
 
 	termID := egraphTermID(1)
 	c.egraphTerms[termID] = newEgraphTerm(termID, digest.FromString("prune-structural-root-term"), []eqClassID{provenanceEq}, rootEq)
+	c.useTermLocked(c.egraphTerms[termID])
 	c.outputEqClassToTerms[rootEq] = map[egraphTermID]struct{}{termID: {}}
 	c.termInputProvenance[termID] = []egraphInputProvenanceKind{egraphInputProvenanceKindResult}
 	c.egraphMu.Unlock()
