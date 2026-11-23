@@ -2973,6 +2973,9 @@ type Cache struct {
 	// egraphUnions counts the unions of two classes, so that a write can
 	// tell whether it taught an entry anything (identityMarkLocked).
 	egraphUnions uint64
+	// egraphRepairWalks counts the terms the repairs after unions have
+	// walked (mergeEqClassesLocked).
+	egraphRepairWalks uint64
 
 	// term ID -> term
 	egraphTerms map[egraphTermID]*egraphTerm
