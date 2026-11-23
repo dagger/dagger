@@ -2693,18 +2693,17 @@ func (s *gitSchema) commitTreeCacheKey(ctx context.Context, parent dagql.ObjectR
 // from its inputs only where gitTreeFollowsFromInputs says it does.
 // gitTreeFollowsFromInputs reports whether a tree call follows from its
 // inputs (dagql.FieldSpec.FollowsFromInputs), as the field declares. A tree's
-// files are its commit's, which its key's SHA addresses. One that keeps .git
-// doesn't: its pack's bytes differ from run to run, though git reads the same
-// objects from them, and its tags, with includeTags, are those the
+// files are its commit's, which its key's SHA addresses, and the engine's own
+// cache counts two trees of one commit as the same, .git included: git reads
+// the same objects from either's pack, though the pack's bytes can differ. One
+// that keeps .git with its tags doesn't follow: its tags are those the
 // repository has when it's fetched, which no hash in its key addresses.
-// Whether a tree with .git and no tags follows, as git reads it, is still to
-// be decided; this is the strict form.
-func gitTreeFollowsFromInputs(keepsGitDir bool) bool {
-	return !keepsGitDir
+func gitTreeFollowsFromInputs(keepsGitDir, includeTags bool) bool {
+	return !keepsGitDir || !includeTags
 }
 
 func canonicalGitTreeArgs(req *dagql.CallRequest, repoDiscardsGitDir, discardGitDir bool, depth int, includeTags bool) {
-	if req.ResultCall != nil && !gitTreeFollowsFromInputs(!repoDiscardsGitDir && !discardGitDir) {
+	if req.ResultCall != nil && !gitTreeFollowsFromInputs(!repoDiscardsGitDir && !discardGitDir, includeTags) {
 		req.ResultCall.FollowsFromInputs = false
 	}
 	if repoDiscardsGitDir || discardGitDir {
