@@ -363,7 +363,7 @@ func (c *Cache) CommitValueMerge(ctx context.Context, p *PreparedValueMerge) (Me
 	}
 	prep.origin = origin
 	if len(prep.stale) > 0 {
-		return c.staleMergeReply(prep.stale), nil
+		return c.staleMergeReply(prep.stale, prep.staleReasons()), nil
 	}
 	// Reading an entry's complete parts captures its record, which needs the
 	// graph lock free. The reply reads them back only while that capture
@@ -403,7 +403,7 @@ func (c *Cache) CommitValueMerge(ctx context.Context, p *PreparedValueMerge) (Me
 		var stale *mergeStaleError
 		if errors.As(err, &stale) {
 			c.egraphMu.Unlock()
-			return c.staleMergeReply(stale.ordinals), nil
+			return c.staleMergeReply(stale.ordinals, stale.why), nil
 		}
 		if errors.Is(err, errMergeNeedsFullPrep) {
 			c.egraphMu.Unlock()
@@ -415,7 +415,7 @@ func (c *Cache) CommitValueMerge(ctx context.Context, p *PreparedValueMerge) (Me
 			prep.unretained = p.unretained
 			prep.origin = origin
 			if len(prep.stale) > 0 {
-				return c.staleMergeReply(prep.stale), nil
+				return c.staleMergeReply(prep.stale, prep.staleReasons()), nil
 			}
 			continue
 		}
@@ -700,6 +700,8 @@ type valueMergePrep struct {
 	// alone names as the row placing an input (TransferredCall.Inputs): no
 	// row of the merge, never stale, each read when its call is taught.
 	callOnly map[uint64]bool
+	// staleWhy says why each of stale is stale (markStale).
+	staleWhy map[TransferOrdinal]string
 	// heldParts are, on the Cloud, the outputs an engine's bundle puts on
 	// its held rows, by ordinal, which the commit checks against the
 	// Cloud's own copies of the rows (staleHeldPartsLocked).
@@ -727,6 +729,8 @@ type mergedCall struct {
 // hold: the merge commits nothing, and answers with the stale rows.
 type mergeStaleError struct {
 	ordinals []TransferOrdinal
+	// why says, for each of ordinals, which check found it stale.
+	why []string
 }
 
 func (e *mergeStaleError) Error() string {
@@ -734,11 +738,11 @@ func (e *mergeStaleError) Error() string {
 }
 
 // staleMergeReply is the reply of a merge refused for stale held rows.
-func (c *Cache) staleMergeReply(stale []TransferOrdinal) MergeReply {
+func (c *Cache) staleMergeReply(stale []TransferOrdinal, why []string) MergeReply {
 	c.egraphMu.RLock()
 	generation := c.identity.Generation
 	c.egraphMu.RUnlock()
-	return MergeReply{Generation: generation, EngineTimeUnixNano: time.Now().UnixNano(), Stale: stale}
+	return MergeReply{Generation: generation, EngineTimeUnixNano: time.Now().UnixNano(), Stale: stale, StaleWhy: why}
 }
 
 // errMergeNeedsFullPrep is planValueMergeLocked's answer when it installs a
@@ -1314,24 +1318,47 @@ func (c *Cache) resolveHeldRows(ctx context.Context, prep *valueMergePrep) map[u
 		id := uint64(row.Ordinal)
 		prep.held[id] = true
 		cur := c.currentEntryForRecipeLocked(row.Held)
+		why := c.heldRowStaleWhyLocked(cur, row.ExpiresAtUnix, now)
 		var frame entryFrame
-		if !c.heldRowStaleLocked(cur, row.ExpiresAtUnix, now) {
-			frame = cur.entryFrameLocked()
+		if why == "" {
+			if frame = cur.entryFrameLocked(); !frame.ok() {
+				why = "no call frame"
+			}
 		}
-		if !frame.ok() {
-			prep.stale = append(prep.stale, row.Ordinal)
+		if why != "" {
+			prep.markStale(row.Ordinal, why)
 			continue
 		}
 		frames[id] = frame
 	}
 	c.egraphMu.RUnlock()
 	for id, frame := range frames {
-		if recipe, err := frame.recipeDigest(c); err != nil || recipe != prep.index[id].Held {
-			prep.stale = append(prep.stale, TransferOrdinal(id))
+		if recipe, err := frame.recipeDigest(c); err != nil {
+			prep.markStale(TransferOrdinal(id), fmt.Sprintf("recipe: %v", err))
+		} else if recipe != prep.index[id].Held {
+			prep.markStale(TransferOrdinal(id), "the entry's recipe is another")
 		}
 	}
 	slices.Sort(prep.stale)
 	return frames
+}
+
+// markStale records the held row ordinal as stale at preparation, and why.
+func (prep *valueMergePrep) markStale(ordinal TransferOrdinal, why string) {
+	prep.stale = append(prep.stale, ordinal)
+	if prep.staleWhy == nil {
+		prep.staleWhy = map[TransferOrdinal]string{}
+	}
+	prep.staleWhy[ordinal] = why
+}
+
+// staleReasons are why each of prep's stale rows is stale, in their order.
+func (prep *valueMergePrep) staleReasons() []string {
+	why := make([]string, len(prep.stale))
+	for i, ordinal := range prep.stale {
+		why[i] = prep.staleWhy[ordinal]
+	}
+	return why
 }
 
 // heldRowStaleLocked reports whether a held row with the expiry doesn't hold
@@ -1339,7 +1366,21 @@ func (c *Cache) resolveHeldRows(ctx context.Context, prep *valueMergePrep) map[u
 // record of the recipe with that expiry (decideMergeRowLocked) only when cur
 // has a value, and the value hasn't expired or the row has. Requires egraphMu.
 func (c *Cache) heldRowStaleLocked(cur *sharedResult, expiresAtUnix, now int64) bool {
-	return cur == nil || cur.noValueLocked() || c.resultExpiredAtLocked(cur, now) && (expiresAtUnix == 0 || expiresAtUnix > now)
+	return c.heldRowStaleWhyLocked(cur, expiresAtUnix, now) != ""
+}
+
+// heldRowStaleWhyLocked says why a held row on cur doesn't hold, as
+// heldRowStaleLocked judges it, and "" when it holds.
+func (c *Cache) heldRowStaleWhyLocked(cur *sharedResult, expiresAtUnix, now int64) string {
+	switch {
+	case cur == nil:
+		return "no entry"
+	case cur.noValueLocked():
+		return "no value"
+	case c.resultExpiredAtLocked(cur, now) && (expiresAtUnix == 0 || expiresAtUnix > now):
+		return "expired"
+	}
+	return ""
 }
 
 // prepareRecordPayload validates the record of ordinal id with its payload,
@@ -1824,11 +1865,11 @@ func (c *Cache) planValueMergeLocked(ctx context.Context, from CacheID, prep *va
 	// A held row holds when merge would keep its recipe's current entry's
 	// value for a record with the row's expiry, as the cache stands before
 	// the merge.
-	if stale := c.staleHeldRowsLocked(prep, targets, now); len(stale) > 0 {
-		return nil, &mergeStaleError{ordinals: stale}
+	if stale, why := c.staleHeldRowsLocked(prep, targets, now); len(stale) > 0 {
+		return nil, &mergeStaleError{ordinals: stale, why: why}
 	}
-	if stale := c.staleHeldPartsLocked(prep, targets); len(stale) > 0 {
-		return nil, &mergeStaleError{ordinals: stale}
+	if stale, why := c.staleHeldPartsLocked(prep, targets); len(stale) > 0 {
+		return nil, &mergeStaleError{ordinals: stale, why: why}
 	}
 
 	c.decideMergeRowsLocked(commit)
@@ -1943,19 +1984,32 @@ func (prep *valueMergePrep) liveClosure(now int64) (map[uint64]bool, []MergedRoo
 // Cloud, an engine's held row holds whether or not the Cloud holds that
 // engine's holding of the row yet: the commit teaches a missing one
 // (applyMergedIdentitiesLocked). Requires egraphMu.
-func (c *Cache) staleHeldRowsLocked(prep *valueMergePrep, targets mergeTargets, now int64) []TransferOrdinal {
-	var stale []TransferOrdinal
+func (c *Cache) staleHeldRowsLocked(prep *valueMergePrep, targets mergeTargets, now int64) ([]TransferOrdinal, []string) {
+	why := map[TransferOrdinal]string{}
 	for _, id := range prep.order {
 		if !prep.held[id] {
 			continue
 		}
 		row := prep.index[id]
-		if c.heldRowStaleLocked(targets.of(c, prep, id), row.ExpiresAtUnix, now) {
-			stale = append(stale, TransferOrdinal(id))
+		if reason := c.heldRowStaleWhyLocked(targets.of(c, prep, id), row.ExpiresAtUnix, now); reason != "" {
+			why[TransferOrdinal(id)] = reason
 		}
 	}
-	slices.Sort(stale)
-	return stale
+	return sortedStale(why)
+}
+
+// sortedStale returns the stale rows of why, sorted, and each one's reason
+// in the same order.
+func sortedStale(why map[TransferOrdinal]string) ([]TransferOrdinal, []string) {
+	if len(why) == 0 {
+		return nil, nil
+	}
+	stale := slices.Sorted(maps.Keys(why))
+	reasons := make([]string, len(stale))
+	for i, ordinal := range stale {
+		reasons[i] = why[ordinal]
+	}
+	return stale, reasons
 }
 
 // heldRowOutputs returns the bundle's outputs on its held rows, by ordinal.
@@ -1984,40 +2038,50 @@ func heldRowOutputs(bundle ValueBundle) map[uint64][]TransferredOutput {
 // checkOutputPart checks a part against a record the bundle carries. A held
 // row whose recipe has no current entry is stale already
 // (staleHeldRowsLocked). Requires egraphMu.
-func (c *Cache) staleHeldPartsLocked(prep *valueMergePrep, targets mergeTargets) []TransferOrdinal {
-	var stale []TransferOrdinal
+func (c *Cache) staleHeldPartsLocked(prep *valueMergePrep, targets mergeTargets) ([]TransferOrdinal, []string) {
+	why := map[TransferOrdinal]string{}
 	for id, outputs := range prep.heldParts {
 		cur := targets.of(c, prep, id)
-		if cur == nil || !c.entryHasPartsLocked(cur, outputs) {
-			stale = append(stale, TransferOrdinal(id))
+		if cur == nil {
+			why[TransferOrdinal(id)] = "no entry"
+		} else if reason := c.entryPartsWhyLocked(cur, outputs); reason != "" {
+			why[TransferOrdinal(id)] = reason
 		}
 	}
-	slices.Sort(stale)
-	return stale
+	return sortedStale(why)
 }
 
 // entryHasPartsLocked reports whether res's stored record has each of
-// outputs' parts, as checkOutputPart checks them (recordPartsLocked).
-// Requires egraphMu.
+// outputs' parts (entryPartsWhyLocked). Requires egraphMu.
 func (c *Cache) entryHasPartsLocked(res *sharedResult, outputs []TransferredOutput) bool {
+	return c.entryPartsWhyLocked(res, outputs) == ""
+}
+
+// entryPartsWhyLocked says why res's stored record doesn't have each of
+// outputs' parts, as checkOutputPart checks them (recordPartsLocked), and ""
+// when it has them. Requires egraphMu.
+func (c *Cache) entryPartsWhyLocked(res *sharedResult, outputs []TransferredOutput) string {
 	if res.noValueLocked() {
-		return false
+		return "no value"
 	}
 	parts, ok := c.recordPartsLocked(res)
 	if !ok {
-		return false
+		return "no record of its parts"
 	}
 	for _, output := range outputs {
 		key, err := partAddressKey(output.Address)
 		if err != nil {
-			return false
+			return fmt.Sprintf("part address: %v", err)
 		}
 		part, ok := parts.at(key, output.Address)
-		if !ok || checkOutputPart(output, part) != nil {
-			return false
+		if !ok {
+			return fmt.Sprintf("part %s missing", key)
+		}
+		if err := checkOutputPart(output, part); err != nil {
+			return fmt.Sprintf("part %s: %v", key, err)
 		}
 	}
-	return true
+	return ""
 }
 
 // recordParts are a stored record's parts as its mapping has them, for a
