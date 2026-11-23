@@ -39,13 +39,14 @@ const (
 	// core.ModuleCallDigestEnv), to a writable file path. A module process
 	// whose function fails writes the function's error there and exits
 	// non-zero; the call then fails with that error as its own. The file holds
-	// {"message": "...", "values": {...}}, {"id": "<Error ID>"}, or plain
-	// text, the whole of which is the message; an object with any other field
-	// is plain text too (see core.FunctionErrorReport).
+	// a JSON object, exactly {"message": "...", "values": {...}} or
+	// {"id": "<Error ID>"} (see core.FunctionErrorReport); anything else is an
+	// invalid report, and the call fails with an error that says so, and the
+	// process's exec error, values and all.
 	// The engine reads a regular file there of at most MaxFunctionErrorBytes,
-	// and nothing else; without one, the call fails with the process's exec
-	// error. A process that finds the variable unset runs on an engine
-	// without the contract.
+	// and nothing else; without one, or with an empty one, the call fails with
+	// the process's exec error. A process that finds the variable unset runs
+	// on an engine without the contract.
 	FunctionErrorPathEnv = "DAGGER_FUNCTION_ERROR_PATH"
 	// FunctionErrorMountPath is the directory the module process's
 	// FunctionErrorPathEnv file is in, bound to MetaMountFunctionErrorDir of

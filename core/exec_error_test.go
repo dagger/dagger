@@ -2,6 +2,8 @@ package core
 
 import (
 	"encoding/json"
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -25,35 +27,79 @@ func TestParseFunctionErrorReport(t *testing.T) {
 		want    *FunctionErrorReport
 	}{
 		{"empty", " \n", nil},
-		{"plain text", "it failed [traceparent:x]\n", &FunctionErrorReport{Message: "it failed [traceparent:x]"}},
 		{"data", `{"message": "it failed", "values": {"exitCode": 3, "extra.why": {"a": [1]}}}`, &FunctionErrorReport{
 			Message: "it failed",
 			Values:  map[string]json.RawMessage{"exitCode": json.RawMessage(`3`), "extra.why": json.RawMessage(`{"a": [1]}`)},
 		}},
+		{"a message alone", `{"message": "it failed [traceparent:x]"}`, &FunctionErrorReport{Message: "it failed [traceparent:x]"}},
 		{"id", `{"id": "` + errID + `"}`, &FunctionErrorReport{ID: errID}},
-		{"a JSON string is text", `"it failed"`, &FunctionErrorReport{Message: `"it failed"`}},
-		{"an object without a message is text", `{"values": {}}`, &FunctionErrorReport{Message: `{"values": {}}`}},
-		{"a malformed object is text", `{"message": 3}`, &FunctionErrorReport{Message: `{"message": 3}`}},
-		{"an object with other fields is text", `{"message": "not found", "code": 404}`,
-			&FunctionErrorReport{Message: `{"message": "not found", "code": 404}`}},
-		{"an id beside a message is text", `{"id": "not_found", "message": "no such droplet"}`,
-			&FunctionErrorReport{Message: `{"id": "not_found", "message": "no such droplet"}`}},
-		{"an id that is no ID is text", `{"id": "not_found"}`, &FunctionErrorReport{Message: `{"id": "not_found"}`}},
-		{"an id of another type is text", `{"id": "` + dirID + `"}`, &FunctionErrorReport{Message: `{"id": "` + dirID + `"}`}},
-		{"trailing content is text", `{"message": "a"} {"message": "b"}`,
-			&FunctionErrorReport{Message: `{"message": "a"} {"message": "b"}`}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			require.Equal(t, tc.want, ParseFunctionErrorReport([]byte(tc.content)))
+			report, err := ParseFunctionErrorReport([]byte(tc.content))
+			require.NoError(t, err)
+			require.Equal(t, tc.want, report)
 		})
 	}
+	for _, tc := range []struct {
+		name    string
+		content string
+		why     string
+	}{
+		{"plain text", "it failed [traceparent:x]\n", `not a JSON object: "it failed [traceparent:x]"`},
+		{"long plain text", strings.Repeat("x", 100), `not a JSON object: "` + strings.Repeat("x", 80) + `"...`},
+		{"a JSON string", `"it failed"`, `not a JSON object: "\"it failed\""`},
+		{"an array", `[{"message": "it failed"}]`, `not a JSON object: "[{\"message\": \"it failed\"}]"`},
+		{"truncated", `{"message": "it fai`, `invalid JSON: unexpected end of the content`},
+		{"malformed", `{"message": "a", "values": {"x": NaN}}`, `invalid JSON at offset 34: invalid character 'N'`},
+		{"a closing bracket after the object", `{"message": "a"}}`, "content after the JSON object"},
+		{"no message or id", `{"values": {}}`, `neither a "message" nor an "id"`},
+		{"an empty message", `{"message": ""}`, `neither a "message" nor an "id"`},
+		{"a message of the wrong type", `{"message": 3}`, `field "message": want a string, got number`},
+		{"values of the wrong type", `{"message": "a", "values": [1]}`, `field "values": want an object, got array`},
+		{"another field", `{"message": "not found", "code": 404}`, `unknown field "code"`},
+		{"an id beside a message", `{"id": "not_found", "message": "no such droplet"}`, `"id" beside "message" or "values"`},
+		{"an id that is no ID", `{"id": "not_found"}`, `"id" is not an Error ID`},
+		{"an id of another type", `{"id": "` + dirID + `"}`, `"id" is not an Error ID`},
+		{"content after the object", `{"message": "a"} {"message": "b"}`, "content after the JSON object"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			report, err := ParseFunctionErrorReport([]byte(tc.content))
+			require.Nil(t, report)
+			require.ErrorContains(t, err, tc.why)
+		})
+	}
+}
+
+// A process that wrote an invalid report fails its call with an error that
+// says so, and its own failure, values and all, from the function call.
+func TestInvalidFunctionErrorReport(t *testing.T) {
+	t.Parallel()
+	execErr := &ExecError{
+		Err:      errors.New("exit code: 6 [traceparent:0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331]"),
+		Cmd:      []string{"sh", "/probe.sh"},
+		ExitCode: 6,
+		Stdout:   "out",
+		Stderr:   "err",
+	}
+	_, invalid := ParseFunctionErrorReport([]byte("it failed"))
+	report := execErr.invalidFunctionErrorReport(invalid)
+	require.Equal(t, `invalid function error report: not a JSON object: "it failed"; the module process failed with: exit code: 6`, report.Message)
+	require.Equal(t, map[string]json.RawMessage{
+		"_type":    json.RawMessage(`"EXEC_ERROR"`),
+		"cmd":      json.RawMessage(`["sh","/probe.sh"]`),
+		"exitCode": json.RawMessage(`6`),
+		"stdout":   json.RawMessage(`"out"`),
+		"stderr":   json.RawMessage(`"err"`),
+	}, report.Values)
 }
 
 func TestFunctionErrorReportReturnsValuesSorted(t *testing.T) {
 	t.Parallel()
 	fnCall := newFunctionCall(FunctionCall{Name: "fn"})
-	report := ParseFunctionErrorReport([]byte(`{"message": "it failed", "values": {"b": "two", "a": 1}}`))
+	report, err := ParseFunctionErrorReport([]byte(`{"message": "it failed", "values": {"b": "two", "a": 1}}`))
+	require.NoError(t, err)
 	require.NoError(t, report.Return(t.Context(), fnCall))
 	returned, set, err := fnCall.returnResult()
 	require.NoError(t, err)

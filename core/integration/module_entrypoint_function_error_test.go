@@ -38,6 +38,7 @@ const functionErrorEntrypoint = `type Entrypoint implements ModuleEntrypoint {
         .withFunction(function("ById", str))
         .withFunction(function("Huge", str))
         .withFunction(function("JsonText", str))
+        .withFunction(function("Invalid", str))
         .withFunction(function("Root", str)),
     ]
   }
@@ -87,9 +88,9 @@ const functionErrorEntrypoint = `type Entrypoint implements ModuleEntrypoint {
 // functionErrorScript is the module process: Native fails with an error of
 // its own, Exit dies without one, Inner fails with an API error, whose
 // message names the failed exec, and Stale succeeds after writing an error.
-// ExecError, Data and ById report their errors in the structured forms,
-// JsonText a text that is a JSON object but neither form, and Huge in a file
-// over the limit.
+// ExecError, Data and ById report their errors in the other forms, Huge in a
+// file over the limit, and JsonText and Invalid write invalid reports: a JSON
+// object that is neither form, and plain text.
 const functionErrorScript = `query() {
   wget -q -O- \
     --header "Content-Type: application/json" \
@@ -104,8 +105,12 @@ env)
   ;;
 Native)
   echo "native log $(cat /nonce)"
-  printf 'the function failed %%s' "$(cat /nonce)" > "$%[1]s"
+  printf '{"message": "the function failed %%s"}' "$(cat /nonce)" > "$%[1]s"
   exit 1
+  ;;
+Invalid)
+  printf 'the function failed %%s' "$(cat /nonce)" > "$%[1]s"
+  exit 6
   ;;
 Exit)
   exit 3
@@ -117,7 +122,7 @@ Inner)
     --header "traceparent: $TRACEPARENT" \
     --post-data '{"query":"{container{from(address:\"%[2]s\"){withExec(args:[\"sh\",\"-c\",\"echo inner $(cat /nonce); exit 7\"]){stdout}}}}"}' \
     "http://127.0.0.1:$DAGGER_SESSION_PORT/query")
-  printf '%%s' "$out" | sed 's/.*"message":"\([^"]*\)".*/\1/' > "$%[1]s"
+  printf '{"message": "%%s"}' "$(printf '%%s' "$out" | sed 's/.*"message":"\([^"]*\)".*/\1/')" > "$%[1]s"
   exit 1
   ;;
 Fifo)
@@ -228,9 +233,17 @@ func (ModuleSuite) TestModuleEntrypointFunctionErrorFile(ctx context.Context, t 
 		require.Equal(t, 5, code)
 	})
 
-	t.Run("a text the process wrote is the message", func(ctx context.Context, t *testctx.T) {
+	t.Run("a message the process wrote names its origin", func(ctx context.Context, t *testctx.T) {
 		errs, _ := callErr(t, "inner")
 		require.Equal(t, []string{"exit code: 7"}, errs)
+	})
+
+	t.Run("an invalid report fails the call, with the process's failure", func(ctx context.Context, t *testctx.T) {
+		errs, code := callErr(t, "invalid")
+		require.Len(t, errs, 1)
+		require.Contains(t, errs[0], `invalid function error report: not a JSON object: "the function failed `+nonce+`"`)
+		require.Contains(t, errs[0], "the module process failed with: exit code: 6")
+		require.Equal(t, 6, code, "the CLI exits with the process's code")
 	})
 
 	t.Run("an API error the process wrote exits with its code", func(ctx context.Context, t *testctx.T) {
@@ -296,15 +309,32 @@ func (ModuleSuite) TestModuleEntrypointFunctionErrorValues(ctx context.Context, 
 		require.EqualValues(t, 42, ext["answer"])
 	})
 
-	t.Run("a text the process reported is the message", func(ctx context.Context, t *testctx.T) {
+	t.Run("a message the process reported alone", func(ctx context.Context, t *testctx.T) {
 		ext, err := callErr(t, "native")
 		require.Contains(t, err.Error(), "the function failed")
 		require.NotContains(t, ext, "_type", "no values but its origin: %v", ext)
 	})
 
-	t.Run("a JSON text that is neither form is the message", func(ctx context.Context, t *testctx.T) {
+	// An invalid report is the SDK's bug: the call says so, and keeps the
+	// process's own failure, an ExecError.
+	t.Run("a JSON object that is neither form is invalid", func(ctx context.Context, t *testctx.T) {
 		_, err := callErr(t, "jsonText")
-		require.Contains(t, err.Error(), `{"id": "not_found", "message": "no such droplet"}`)
+		require.Contains(t, err.Error(), `invalid function error report: "id" beside "message" or "values"`)
+		require.NotContains(t, err.Error(), "no such droplet")
+		var execErr *core.ExecError
+		require.ErrorAs(t, err, &execErr)
+		require.Equal(t, 1, execErr.ExitCode)
+	})
+
+	t.Run("a plain text is invalid", func(ctx context.Context, t *testctx.T) {
+		ext, err := callErr(t, "invalid")
+		require.Contains(t, err.Error(), `invalid function error report: not a JSON object: "the function failed`)
+		require.Contains(t, err.Error(), "the module process failed with: exit code: 6")
+		var execErr *core.ExecError
+		require.ErrorAs(t, err, &execErr)
+		require.Equal(t, 6, execErr.ExitCode)
+		require.NotContains(t, ext, dagcore.FunctionErrorExtension)
+		require.NotContains(t, ext, dagcore.ModuleProcessExtension)
 	})
 
 	t.Run("a process that reported none", func(ctx context.Context, t *testctx.T) {
@@ -346,7 +376,7 @@ func (ModuleSuite) TestModuleEntrypointFunctionErrorOrigin(ctx context.Context, 
 	c := connect(ctx, t, sink.clientOpts()...)
 	nonce := rand.Text()
 	ctr := goGitBase(t, c).With(functionErrorFixture(nonce))
-	for _, fn := range []string{"native", "exit", "inner", "exec-error", "data"} {
+	for _, fn := range []string{"native", "exit", "inner", "exec-error", "data", "invalid"} {
 		_, err := ctr.
 			WithExec([]string{"dagger", "--progress=logs", "call", "-m", "./m", fn}, core.ContainerWithExecOpts{
 				UseEntrypoint: true,
@@ -382,5 +412,6 @@ func (ModuleSuite) TestModuleEntrypointFunctionErrorOrigin(ctx context.Context, 
 		require.True(t, spanHasStringArg(reported[0], "echo inner-out; echo inner-err >&2; exit 7"),
 			"a reported API error's origin is its exec: %s", reported[0].Name)
 		require.Empty(t, origins("MProbe.data"), "the function call is the origin")
+		require.Empty(t, origins("MProbe.invalid"), "the function call is the origin, not the exec")
 	})
 }
