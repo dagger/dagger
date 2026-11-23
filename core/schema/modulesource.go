@@ -310,6 +310,7 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 		// one (identifiedModuleSourceResult), so equal sources share one
 		// loaded module across clients, sessions and engines.
 		dagql.NodeFunc("asModule", s.moduleSourceAsModule).
+			WithInput(eagerRuntimeInput).
 			Doc(`Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation`),
 		dagql.NodeFunc("_implementationScoped", s.moduleSourceImplementationScoped).
 			Doc(`The module source scoped to implementation identity only, i.e. source code and dependency content rather than client-specific provenance.`),
@@ -4693,6 +4694,9 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	// what it read.
 	resolverCtx := ctx
 	ctx, scopes := dagql.WithCallScopes(ctx)
+	// Deferred before the runtime prebuild's join below, so it runs after
+	// it and sees every call the prebuild made.
+	defer func() { keepWithWhatItRead(resolverCtx, scopes, "module "+src.Self().ModuleName, err) }()
 
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -4866,15 +4870,33 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	if err != nil {
 		return inst, fmt.Errorf("failed to create instance for module %q: %w", src.Self().ModuleName, err)
 	}
-	keepWithWhatItRead(resolverCtx, scopes, "module "+src.Self().ModuleName)
 	return inst, nil
+}
+
+// eagerRuntimeInput keys a module's load by whether its client asked for
+// the module's runtime to be built as it loads (EagerRuntime), which
+// runModuleDefInSDK reads from the client: a lazy load hasn't built it, so it
+// isn't one an eager client can take.
+var eagerRuntimeInput = dagql.ImplicitInput{
+	Name: "eagerRuntime",
+	Resolver: func(ctx context.Context, _ map[string]dagql.Input) (dagql.Input, error) {
+		md, err := engine.ClientMetadataFromContext(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get client metadata: %w", err)
+		}
+		return dagql.NewBoolean(md.EagerRuntime), nil
+	},
 }
 
 // keepWithWhatItRead keeps the result of the resolver running under
 // resolverCtx no wider and no longer than the calls scopes recorded: in its
 // session when one of them was keyed per call, session or client, and not
-// past their earliest expiry. what names the result in the debug log.
-func keepWithWhatItRead(resolverCtx context.Context, scopes *dagql.CallScopes, what string) {
+// past their earliest expiry. what names the result in the debug log. It
+// does nothing when the resolver failed (err).
+func keepWithWhatItRead(resolverCtx context.Context, scopes *dagql.CallScopes, what string, err error) {
+	if err != nil {
+		return
+	}
 	if bound := scopes.SessionBound(); bound != "" {
 		slog.Debug("result bound to its session", "result", what, "boundBy", bound)
 		dagql.BindToSession(resolverCtx)
