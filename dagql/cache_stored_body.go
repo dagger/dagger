@@ -717,7 +717,7 @@ func (c *Cache) holdRestoredFramesCompressed() error {
 		}); err != nil {
 			return err
 		}
-		c.egraphMu.Lock()
+		c.lockGraphFor(context.Background(), workBody)
 		for i, r := range batch {
 			if r.body != r.was && r.res.stored == r.was && c.resultsByID[r.res.id] == r.res {
 				c.setStoredBodyLocked(r.res, r.env, r.body)
@@ -865,7 +865,7 @@ func (c *Cache) applyTaughtContent(entries []*sharedResult) {
 		if c.testTaughtContentGiven != nil {
 			c.testTaughtContentGiven()
 		}
-		c.egraphMu.Lock()
+		c.lockGraphFor(context.Background(), workBody)
 		// A frame a replacement installed since has taken none of them, and
 		// its queueing gives it them all. Digests taught meanwhile are
 		// given by their own queueing.
@@ -885,7 +885,7 @@ func (c *Cache) applyTaughtContent(entries []*sharedResult) {
 // left with taught content digests their saved frame hadn't taken (a save
 // before the worker gave them) the rest.
 func (c *Cache) queueRestoredTaughtContent() {
-	c.egraphMu.Lock()
+	c.lockGraphFor(context.Background(), workBody)
 	defer c.egraphMu.Unlock()
 	for _, res := range c.restoredTaught {
 		c.queueTaughtContentLocked(res)
@@ -917,7 +917,7 @@ func (c *Cache) adoptReplacedContent(res *sharedResult) {
 			run = append(run, content)
 		}
 	}
-	c.egraphMu.Lock()
+	c.lockGraphFor(context.Background(), workBody)
 	defer c.egraphMu.Unlock()
 	if res.taughtFrom != from {
 		return
@@ -1028,7 +1028,7 @@ func (c *Cache) storeBodies(entries []*sharedResult) {
 			reads[i].body = body
 		}
 	}
-	c.egraphMu.Lock()
+	c.lockGraphFor(context.Background(), workBody)
 	defer c.egraphMu.Unlock()
 	for _, r := range reads {
 		if r.body != nil && r.res.stored == nil && r.res.persistedEnvelope == r.env && r.res.loadResultCall() == r.call && c.resultsByID[r.res.id] == r.res {

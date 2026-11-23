@@ -54,6 +54,10 @@ const (
 	// graph lock themselves: those outside a hold the service took
 	// (HoldRemoteWrites).
 	workRemote
+	// workBody is the body worker's installing of the stored bodies of
+	// entries a merge or a restore landed, and of the content digests
+	// taught to them.
+	workBody
 	numCacheWork
 )
 
@@ -73,6 +77,7 @@ var cacheWorkNames = [numCacheWork]string{
 	workUpkeep:      "upkeep",
 	workHold:        "hold",
 	workRemote:      "remote",
+	workBody:        "body",
 }
 
 func (w cacheWork) String() string { return cacheWorkNames[w] }
