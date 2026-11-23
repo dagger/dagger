@@ -75,8 +75,7 @@ var loadModuleSourceSDK = func(ctx context.Context, query *core.Query, cfg *core
 
 func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 	identifyModuleSourceResults(dagql.Fields[*core.Query]{
-		dagql.NodeFunc("moduleSource", s.moduleSource).
-			WithInput(dagql.PerClientInput).
+		dagql.NodeFuncWithDynamicInputs("moduleSource", s.moduleSource, s.moduleSourceCacheKey).
 			Doc(`Create a new module source instance from a source ref string`).
 			Args(
 				dagql.Arg("refString").Doc(`The string ref representation of the module source`),
@@ -98,8 +97,7 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 					`An optional subpath of the directory which contains the module's configuration file.`,
 					`If not set, the module source code is loaded from the root of the directory.`),
 			),
-		dagql.NodeFunc("asModuleSource", s.directoryAsModuleSource).
-			WithInput(dagql.PerClientInput).
+		dagql.NodeFuncWithDynamicInputs("asModuleSource", s.directoryAsModuleSource, moduleSourceFieldCacheKey[*core.Directory, directoryAsModuleSourceArgs]).
 			Doc(`Load the directory as a Dagger module source`).
 			Args(
 				dagql.Arg("sourceRootPath").Doc(
@@ -119,9 +117,8 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 	// htmlRepoURL, withVCSGeneratedPaths and withVCSIgnoredPaths in views
 	// before engine.IdentifierCasingVersion.
 	// Reloads the calling client's user defaults (its .env), so it is keyed
-	// per client, as withName is.
-	withSDKField := dagql.Func("withSdk", s.moduleSourceWithSDK).
-		WithInput(dagql.PerClientInput).
+	// as a read of a module source is, as withName is.
+	withSDKField := dagql.FuncWithDynamicInputs("withSdk", s.moduleSourceWithSDK, moduleSourceFieldCacheKey[*core.ModuleSource, struct{ Source string }]).
 		Doc(`Update the module source with a new SDK.`).
 		Args(
 			dagql.Arg("source").Doc(`The SDK source to set.`),
@@ -179,9 +176,8 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 			),
 
 		// Reloads the calling client's user defaults (its .env) for the new
-		// name, so it is keyed per client.
-		dagql.Func("withName", s.moduleSourceWithName).
-			WithInput(dagql.PerClientInput).
+		// name, so it is keyed as a read of a module source is.
+		dagql.FuncWithDynamicInputs("withName", s.moduleSourceWithName, moduleSourceFieldCacheKey[*core.ModuleSource, struct{ Name string }]).
 			Doc(`Update the module source with a new name.`).
 			Args(
 				dagql.Arg("name").Doc(`The name to set.`),
@@ -402,11 +398,57 @@ type moduleSourceArgs struct {
 	PinOverridesVersion bool `internal:"true" default:"false"`
 }
 
+// moduleSourceCacheKey keys Query.moduleSource as a read of a module source
+// (moduleSourceReadCacheKey). Its ref decides what it reads without its
+// caller when it names a Git repository outright.
+func (s *moduleSourceSchema) moduleSourceCacheKey(ctx context.Context, _ dagql.ObjectResult[*core.Query], args moduleSourceArgs, req *dagql.CallRequest) error {
+	requireGit := args.RequireKind.Valid && args.RequireKind.Value == core.ModuleSourceKindGit
+	return moduleSourceReadCacheKey(ctx, req, core.ModuleRefDecidedByContent(args.RefString, args.RefPin, requireGit))
+}
+
+// moduleSourceFieldCacheKey keys a field that reads or reloads a module
+// source from its receiver as a read of a module source
+// (moduleSourceReadCacheKey): its receiver and arguments decide what it reads.
+func moduleSourceFieldCacheKey[T dagql.Typed, A any](ctx context.Context, _ dagql.ObjectResult[T], _ A, req *dagql.CallRequest) error {
+	return moduleSourceReadCacheKey(ctx, req, true)
+}
+
+// moduleSourceReadCacheKey keys a read of a module source by its receiver and
+// arguments when it takes nothing from its caller that the key leaves out,
+// and per client otherwise, with the input dagql.PerClientInput gives.
+// decided says whether the receiver and arguments decide what is read
+// without the caller. A caller that reads its own host
+// (core.CallerReadsItsHost) gives the source its .env and may name paths on
+// its machine, so its reads stay its own. A read keyed by its content is kept
+// past its session, as the module loaded from it is. What it still takes per
+// call, session or client as it runs keeps it in its session
+// (keepReadWithWhatItRead).
+func moduleSourceReadCacheKey(ctx context.Context, req *dagql.CallRequest, decided bool) error {
+	if decided {
+		readsHost, err := core.CallerReadsItsHost(ctx)
+		if err != nil {
+			return err
+		}
+		if !readsHost {
+			req.IsPersistable = true
+			return nil
+		}
+	}
+	client, err := dagql.PerClientInput.Resolver(ctx, nil)
+	if err != nil {
+		return err
+	}
+	return req.SetImplicitInput(ctx, dagql.PerClientInput.Name, client)
+}
+
 func (s *moduleSourceSchema) moduleSource(
 	ctx context.Context,
 	query dagql.ObjectResult[*core.Query],
 	args moduleSourceArgs,
 ) (inst dagql.Result[*core.ModuleSource], err error) {
+	resolverCtx := ctx
+	ctx, scopes := dagql.WithCallScopes(ctx)
+	defer func() { keepReadWithWhatItRead(resolverCtx, scopes, "module source "+args.RefString, err) }()
 	bk, err := query.Self().Engine(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get engine client: %w", err)
@@ -1036,6 +1078,9 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 	contextDir dagql.ObjectResult[*core.Directory],
 	args directoryAsModuleSourceArgs,
 ) (inst dagql.Result[*core.ModuleSource], err error) {
+	resolverCtx := ctx
+	ctx, scopes := dagql.WithCallScopes(ctx)
+	defer func() { keepReadWithWhatItRead(resolverCtx, scopes, "module source of a directory", err) }()
 	sourceRootSubpath := args.SourceRootPath
 	if sourceRootSubpath == "" {
 		sourceRootSubpath = "."
@@ -4915,6 +4960,15 @@ var eagerRuntimeInput = dagql.ImplicitInput{
 		}
 		return dagql.NewBoolean(md.EagerRuntime), nil
 	},
+}
+
+// keepReadWithWhatItRead is keepWithWhatItRead for a read of a module source.
+// A Git read it makes doesn't keep it to its session: Query.git is keyed per
+// client only to borrow (dagql.FieldSpec.PerClientOnlyToBorrow), and the
+// cache serves what is made from what it borrowed only to a session holding
+// it.
+func keepReadWithWhatItRead(resolverCtx context.Context, scopes *dagql.CallScopes, what string, err error) {
+	keepWithWhatItRead(resolverCtx, scopes, what, err)
 }
 
 // keepWithWhatItRead keeps the result of the resolver running under
