@@ -52,6 +52,14 @@ type cacheTestPartsObject struct {
 	resolveCalls atomic.Int32
 
 	snapshotLinks []PersistedSnapshotRefLink
+
+	// completedElsewhere marks a value decoded from another engine's record
+	// of an operation that completed there (OperationCompletedElsewhere).
+	completedElsewhere bool
+}
+
+func (obj *cacheTestPartsObject) OperationCompletedElsewhere() bool {
+	return obj.completedElsewhere
 }
 
 func (*cacheTestPartsObject) Type() *ast.Type {
