@@ -353,6 +353,7 @@ func (c *Cache) storedBundleWalkLocked(rootEntries []*sharedResult, nowUnix int6
 	build := &storedBundleBuild{now: nowUnix, ordinals: map[sharedResultID]TransferOrdinal{}, heldBy: held, notWhole: notWhole, held: map[sharedResultID]bool{},
 		owners: map[sharedResultID]int{}, ordinary: map[sharedResultID]bool{}, rootSeen: seenRoot}
 	build.bundle.Version = ValueBundleVersion
+	build.bundle.SenderGeneration = c.identity.Generation
 	visiting := map[sharedResultID]bool{}
 	for i, res := range rootEntries {
 		build.current = i
@@ -685,7 +686,7 @@ func (build *storedBundleBuild) addStoredValue(res *sharedResult, rec PersistedR
 			return fmt.Errorf("stored bundle: entry %d: reference to %d is not a direct dependency", res.id, ref)
 		}
 	}
-	value := TransferredValue{Ordinal: build.ordinals[res.id], SenderNumber: uint64(res.id), SenderReplacements: res.replacements, Record: rec, ExpiresAtUnix: res.expiresAtUnix, Parts: parts, storedEnvelope: storedEnvelope}
+	value := TransferredValue{Ordinal: build.ordinals[res.id], SenderNumber: uint64(res.id), SenderReplacements: res.replacements, SenderStamp: res.changedAt, Record: rec, ExpiresAtUnix: res.expiresAtUnix, Parts: parts, storedEnvelope: storedEnvelope}
 	// Only the Cloud's records name a run (sharedResult.run).
 	if res.run != nil {
 		value.served = &servedRun{run: *res.run, ran: res.runRan, known: true}
