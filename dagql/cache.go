@@ -1049,11 +1049,11 @@ func (c *Cache) boundSessionHandle(sessionID string) (SessionResourceHandle, err
 // boundSessionsOf returns the bindings res holds: its own, when its call
 // bound it to its session, and every session binding it requires through
 // what it is made of, in order.
-func (c *Cache) boundSessionsOf(res *sharedResult) []SessionResourceHandle {
+func (c *Cache) boundSessionsOf(ctx context.Context, res *sharedResult) []SessionResourceHandle {
 	if res == nil {
 		return nil
 	}
-	c.egraphMu.RLock()
+	c.readLockGraphGathered(ctx)
 	defer c.egraphMu.RUnlock()
 	var handles []SessionResourceHandle
 	if res.boundSession != "" {
@@ -7083,8 +7083,8 @@ func (c *Cache) GetOrInitCall(
 		// is what the resolver that called for it makes: that call is bound
 		// too, before its result is published. Only a session that bound a
 		// result can be handed one, so the graph is read for no other.
-		if res != nil && c.sessionHoldsHandle(sessionID, c.sessionBoundHandle(sessionID)) &&
-			len(c.boundSessionsOf(res.cacheSharedResult())) > 0 {
+		if res != nil && c.sessionHoldsHandle(ctx, sessionID, c.sessionBoundHandle(sessionID)) &&
+			len(c.boundSessionsOf(ctx, res.cacheSharedResult())) > 0 {
 			if caller := CurrentCall(ctx); caller != nil {
 				slog.Debug("call bound to its session", "call", caller.Field, "handedBy", req.ReceiverTypeName+"."+req.Field)
 			}
@@ -8114,22 +8114,25 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 			}
 			oc.res.boundSession = handle
 		}
-		// A result bound to its session, or made of one, holds those
-		// sessions in its identity, so its class is theirs alone
-		// (boundSessionInputName).
-		if handles := c.boundSessionsOf(oc.res); len(handles) > 0 {
-			if frame := oc.res.loadResultCall(); frame != nil {
-				oc.res.storeResultCall(frame.withBoundSessions(handles))
-				c.traceResultCallFrameUpdated(ctx, oc.res, "init_completed_result_bound_session", frame, oc.res.loadResultCall())
-			}
+	}
+	// A result bound to its session, or made of one, holds those sessions in
+	// its identity, so its class is theirs alone (boundSessionInputName), and
+	// the call is indexed with them, an adopted result's too: a call that
+	// returns a session's bound result joins only that session's class. Only
+	// a session that has bound a result can make or be handed one.
+	var boundHandles []SessionResourceHandle
+	if c.sessionHoldsHandle(ctx, sessionID, c.sessionBoundHandle(sessionID)) {
+		boundHandles = c.boundSessionsOf(ctx, oc.res)
+	}
+	if len(boundHandles) > 0 && !resWasCacheBacked {
+		if frame := oc.res.loadResultCall(); frame != nil {
+			oc.res.storeResultCall(frame.withBoundSessions(boundHandles))
+			c.traceResultCallFrameUpdated(ctx, oc.res, "init_completed_result_bound_session", frame, oc.res.loadResultCall())
 		}
 	}
-	// The call is indexed with the bindings of the result it returned, an
-	// adopted one's too: a call that returns a session's bound result joins
-	// only that session's class.
 	requestForIndex := req
-	if handles := c.boundSessionsOf(oc.res); len(handles) > 0 {
-		requestForIndex = req.withBoundSessions(handles)
+	if len(boundHandles) > 0 {
+		requestForIndex = req.withBoundSessions(boundHandles)
 	}
 	if oc.res.createdAtUnixNano == 0 {
 		oc.res.createdAtUnixNano = now.UnixNano()
