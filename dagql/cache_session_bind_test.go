@@ -11,6 +11,7 @@ import (
 	"gotest.tools/v3/assert"
 
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/snapshots/config"
 )
 
@@ -627,5 +628,61 @@ func TestCacheValueWorkedOutThroughABoundCallIsItsSessions(t *testing.T) {
 				assert.NilError(t, c.ReleaseSession(currentEntryTestSession(baseCtx, c, session), session))
 			}
 		})
+	}
+}
+
+// A resolver that loads, by its recipe ID, a call its session answered as its
+// own is bound as a resolver that called for it is: the bound call here
+// returns an ordinary value made before, and what the loading resolver works
+// out from it is its session's, not served to another session.
+func TestCacheLoadByRecipeOfABoundCallBindsTheLoader(t *testing.T) {
+	t.Parallel()
+	c, err := NewCache(t.Context(), "", nil, nil)
+	assert.NilError(t, err)
+	srv := cacheTestServer(t)
+	values := map[string]int{"session-a": 1, "session-b": 2}
+	Fields[cacheTestQuery]{
+		NodeFunc("ordinary", func(ctx context.Context, _ ObjectResult[cacheTestQuery], args struct{ V Int }) (Result[Int], error) {
+			return NewResultForCurrentCall(ctx, args.V)
+		}),
+		NodeFunc("throughBound", func(ctx context.Context, self ObjectResult[cacheTestQuery], _ struct{}) (Result[Int], error) {
+			BindToSession(ctx)
+			md, err := engine.ClientMetadataFromContext(ctx)
+			if err != nil {
+				return Result[Int]{}, err
+			}
+			v, err := self.Select(ctx, srv, Selector{Field: "ordinary", Args: []NamedInput{{Name: "v", Value: NewInt(values[md.SessionID])}}})
+			if err != nil {
+				return Result[Int]{}, err
+			}
+			// The value made before, as the call returns it.
+			return Result[Int]{shared: v.cacheSharedResult()}, nil
+		}),
+		NodeFunc("outer", func(ctx context.Context, _ ObjectResult[cacheTestQuery], _ struct{}) (Result[Int], error) {
+			loaded, err := srv.LoadType(ctx, call.New().Append(Int(0).Type(), "throughBound"))
+			if err != nil {
+				return Result[Int]{}, err
+			}
+			v, _ := UnwrapAs[Int](loaded)
+			return NewResultForCurrentCall(ctx, NewInt(int(v)*10))
+		}),
+	}.Install(srv)
+
+	read := func(ctx context.Context, field string) AnyResult {
+		t.Helper()
+		res, err := srv.Root().Select(ctx, srv, Selector{Field: field})
+		assert.NilError(t, err)
+		return res
+	}
+	for _, session := range []string{"session-a", "session-b"} {
+		ctx := currentEntryTestSession(t.Context(), c, session)
+		assert.Equal(t, values[session], cacheTestUnwrapInt(t, read(ctx, "throughBound")))
+		assert.Equal(t, values[session]*10, cacheTestUnwrapInt(t, read(ctx, "outer")), "%s works out its own", session)
+		again := read(ctx, "outer")
+		assert.Assert(t, again.HitCache(), "%s hits its own", session)
+		assert.Equal(t, values[session]*10, cacheTestUnwrapInt(t, again))
+	}
+	for _, session := range []string{"session-a", "session-b"} {
+		assert.NilError(t, c.ReleaseSession(currentEntryTestSession(t.Context(), c, session), session))
 	}
 }
