@@ -238,7 +238,7 @@ func (ModuleLoadingSuite) TestServeModulePinnedVersionQuery(ctx context.Context,
 // module of a session that makes it, whatever version each module declares:
 // its key holds the view on the call, and these fields' calls carry none.
 // That is right only while the read is the same for every version. So two
-// modules, one declaring a version before Git version queries
+// modules, one declaring a release before Git version queries
 // (workspace.VersionQueriesVersion) and one after, read one Git module source
 // at a version that a query and a literal ref resolve differently, both
 // orders, each in a session and on a repository of its own. Each must get
@@ -252,7 +252,10 @@ func (ModuleLoadingSuite) TestServeModulePinnedVersionQuery(ctx context.Context,
 // the second reader then gets the first's commit.
 func (ModuleLoadingSuite) TestModuleSourceReadIsTheSameForEveryCallerVersion(ctx context.Context, t *testctx.T) {
 	readers := []struct{ name, field, engineVersion string }{
-		{"older-reader", "olderReader", "v1.0.0-beta.11"},
+		// A release: every v1.0.0 prerelease before v1.0.0-beta.22 is served
+		// the v1.0.0-beta.21 API view (engine.ModuleAPIViewVersion), past
+		// Git version queries.
+		{"older-reader", "olderReader", "v0.21.5"},
 		{"current-reader", "currentReader", "latest"},
 	}
 	// readIn serves both readers in a session of its own and reads, in order,
