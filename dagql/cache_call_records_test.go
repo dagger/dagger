@@ -346,6 +346,13 @@ type receiverCallTest struct {
 
 func newReceiverCallTest(t *testing.T) *receiverCallTest {
 	t.Helper()
+	return newReceiverCallTestKeeping(t, true)
+}
+
+// newReceiverCallTestKeeping is newReceiverCallTest, with the Cloud keeping
+// cache-a's call on A only with keepCall.
+func newReceiverCallTestKeeping(t *testing.T, keepCall bool) *receiverCallTest {
+	t.Helper()
 	cloudCtx, cloud := storedPartTestCache(t, WithBlobStore())
 	ctx, producer, srv := transferTestCache(t)
 	test := &receiverCallTest{callRecordTest: &callRecordTest{ctx: ctx, producer: producer, frame: receiverTestCall("a"), cloud: cloud}, srv: srv}
@@ -368,7 +375,9 @@ func newReceiverCallTest(t *testing.T) *receiverCallTest {
 			test.number = number
 		}
 	}
-	test.attach(t, cloudCtx, test.span(t, true, 0))
+	if keepCall {
+		test.attach(t, cloudCtx, test.span(t, true, 0))
+	}
 	return test
 }
 
@@ -448,6 +457,79 @@ func TestACallOfATermItsCheckMadeIsSentThoughItsOwnCantBePlaced(t *testing.T) {
 	require.Len(t, built.Bundle.Calls, 1, "one call of B's term")
 	require.Equal(t, []uint64{test.receiverNumber}, built.CallInputs, "with A's receiver, which the Cloud stores")
 	require.Zero(t, built.UnsendableCalls)
+
+	ctx, fresh, srv := transferTestCache(t)
+	_, err = fresh.GetOrInitCall(ctx, "test-session", srv, &CallRequest{ResultCall: receiverTestFrame("c"), IsPersistable: true},
+		func(context.Context) (AnyResult, error) {
+			return NewResultForCall(&transferTestValue{Text: "receiver"}, receiverTestFrame("c"))
+		})
+	require.NoError(t, err)
+	_, err = fresh.MergeValues(ctx, CloudCacheID, built.Bundle)
+	require.NoError(t, err)
+	ran := false
+	_, err = fresh.GetOrInitCall(ctx, "test-session", srv, &CallRequest{ResultCall: receiverTestCall("c"), IsPersistable: true},
+		func(context.Context) (AnyResult, error) {
+			ran = true
+			return NewResultForCall(&transferTestValue{Text: "ran again"}, receiverTestCall("c"))
+		})
+	require.NoError(t, err)
+	require.False(t, ran, "a fresh engine's client hits outer on its own receiver by its term")
+}
+
+// A call whose input the Cloud knows only by its class is sent, placed by a
+// stored entry of that class. Check A made its receiver, which the Cloud
+// stores, and no call on it. Check B made outer on its own receiver, equal in
+// content: the Cloud knows B's receiver's recipe, in the same class as A's by
+// their content, but stores no record of it, as it stores one record of a
+// class, and keeps B's call alone on inner. B's bundle sends B's call with A's
+// receiver standing for B's, and a fresh engine whose client makes a receiver
+// of its own, under a recipe no run made before, puts B's receiver in A's
+// class, hits outer by its term and runs nothing. A workspace derived in
+// every session, which takes its content's identity, is such a receiver: the
+// Cloud stores one of a class, and every other session's read on it was
+// carried without its call.
+func TestACallWhoseInputTheCloudKnowsOnlyByItsClassIsSent(t *testing.T) {
+	t.Parallel()
+	test := newReceiverCallTestKeeping(t, false)
+	cloudCtx := context.Background()
+	inner, err := test.inner.cacheSharedResult().loadResultCall().deriveRecipeDigest(test.producer)
+	require.NoError(t, err)
+	receiverB, err := receiverTestFrame("b").deriveRecipeDigest(test.producer)
+	require.NoError(t, err)
+	callB := receiverTestCall("b")
+	requestB, err := callB.deriveRecipeDigest(test.producer)
+	require.NoError(t, err)
+	selfB, _, err := callB.selfDigestAndInputRefs(test.producer)
+	require.NoError(t, err)
+	pb, err := callB.callPB(test.producer)
+	require.NoError(t, err)
+	encodedB, err := pb.Encode()
+	require.NoError(t, err)
+	// B's receiver, reported by its engine with its content, never stored.
+	_, err = test.cloud.AttachRemoteHolding(cloudCtx, HolderKey{Cache: "cache-b", Number: 1},
+		RemoteHolding{Recipe: receiverB, Field: "receiver", ContentDigest: digest.FromString("receiver content")})
+	require.NoError(t, err)
+	// B's call, which returned inner.
+	_, err = test.cloud.AttachRemoteHolding(cloudCtx, HolderKey{Cache: "cache-b", Number: 2},
+		RemoteHolding{Recipe: inner, Request: requestB, Field: "outer", Call: encodedB, Term: &RemoteTerm{Self: selfB}})
+	require.NoError(t, err)
+	entry := storedBundleTestEntry(test.cloud, test.number)
+	test.cloud.egraphMu.RLock()
+	kept := len(entry.calls)
+	test.cloud.egraphMu.RUnlock()
+	require.Equal(t, 1, kept, "the Cloud keeps B's call alone on inner")
+
+	held := &HeldBy{Calls: func(r digest.Digest) bool { return r == requestB }}
+	built, err := test.cloud.StoredBundle(test.ctx, []uint64{test.number}, time.Now().Unix(), held)
+	require.NoError(t, err)
+	sizes, err := test.cloud.StoredSizes(test.ctx, []uint64{test.number}, time.Now().Unix(), held)
+	require.NoError(t, err)
+	require.Equal(t, len(built.Bundle.Values), sizes[0].Records, "priced as built")
+	require.Zero(t, built.UnsendableCalls)
+	require.Empty(t, built.Partial, "inner goes with its call")
+	require.Len(t, built.Bundle.Calls, 1)
+	require.Equal(t, encodedB, built.Bundle.Calls[0].Call, "B's own call")
+	require.Equal(t, []uint64{test.receiverNumber}, built.CallInputs, "with A's receiver, standing for B's")
 
 	ctx, fresh, srv := transferTestCache(t)
 	_, err = fresh.GetOrInitCall(ctx, "test-session", srv, &CallRequest{ResultCall: receiverTestFrame("c"), IsPersistable: true},
