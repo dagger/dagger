@@ -1057,6 +1057,42 @@ func TestCallRecordOfATermIsSentWithItsOwnInputToARecipientHoldingAnother(t *tes
 	require.True(t, test.freshReceiverHits(t, built.Bundle))
 }
 
+// A call a bundle places by a row its recipient holds names that row and
+// carries no copy of its record, and the row is no root. A recipient that no
+// longer holds the input, as when a set file is restored after the input
+// expired, merges the bundle all the same: the call goes untaught, and the
+// entry lands. The recipient holds A, the kept call's own receiver.
+func TestACallPlacedByARowItsRecipientNoLongerHoldsGoesUntaught(t *testing.T) {
+	t.Parallel()
+	test := newReceiverCallTest(t)
+	cloud := test.cloud
+	recipeA, err := receiverTestFrame("a").deriveRecipeDigest(nil)
+	require.NoError(t, err)
+	_, err = cloud.AttachRemoteHolding(test.ctx, HolderKey{Cache: "cache-fresh", Number: 1}, RemoteHolding{Recipe: recipeA, Request: recipeA, Field: "receiver"})
+	require.NoError(t, err)
+	built, err := cloud.StoredBundle(test.ctx, []uint64{test.number}, time.Now().Unix(), &HeldBy{Cache: "cache-fresh"})
+	require.NoError(t, err)
+	require.Len(t, built.Bundle.Calls, 1)
+	heldA := built.Bundle.Calls[0].Inputs
+	require.Len(t, heldA, 1, "the call names the row that places its receiver")
+	require.NotEmpty(t, built.Bundle.Values[heldA[0]-1].Held, "a held row: the recipient's own A, no copy of its record")
+	for _, root := range built.Bundle.Roots {
+		require.NotEqual(t, heldA[0], root.Ordinal, "a held row a call alone names is no root")
+	}
+	require.Empty(t, built.CallInputs)
+
+	fctx, fresh, fsrv := transferTestCache(t)
+	_, err = fresh.MergeValues(fctx, CloudCacheID, built.Bundle)
+	require.NoError(t, err, "a held row the call alone names is never stale")
+	landed, err := fresh.GetOrInitCall(fctx, "test-session", fsrv, &CallRequest{ResultCall: callRecordTestFrame("inner"), IsPersistable: true},
+		func(context.Context) (AnyResult, error) {
+			t.Fatal("inner did not land")
+			return nil, nil
+		})
+	require.NoError(t, err)
+	require.True(t, landed.HitCache())
+}
+
 // A call's input the bundle carries below another call's input still travels
 // as a root of its own, so that it lands if the other expires first. inner
 // was returned by f on X and by g on Y, and X depends on Y: whichever call
