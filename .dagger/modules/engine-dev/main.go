@@ -377,6 +377,10 @@ func (dev *EngineDev) entriesTool(ctx context.Context, builder *build.Builder, c
 	exporter := []string{"engine-image-entries",
 		"-go-version", distconsts.GolangVersion,
 		"-platform", platform,
+		// The entries' blobs carry their files dated as the image's
+		// layers are, so that the same files make the same blobs in every
+		// build.
+		"-source-date-epoch", strconv.Itoa(imageSourceDateEpoch),
 	}
 	for _, sdk := range sdks {
 		path := "/builtin-sdks/" + sdk.Name
@@ -571,7 +575,11 @@ func entriesExported(ctx context.Context, ran *dagger.Container, exporter []stri
 // The entries an engine image ships can be made again on the state an
 // earlier making left after a prune cut part of it, as a later release's
 // making does: an engine of this build makes them, prunes its cache to half
-// its size, least recently used first, and makes them again. ReleaseDryRun
+// its size, least recently used first, and makes them again. The two makings
+// ship the same blobs, those of results the prune cut and the engine made
+// again among them: the next image's build, on an engine of its own, then
+// makes the same blobs for every result its commit leaves alone, and a host
+// that holds one image pulls only what the next one changed. ReleaseDryRun
 // checks it.
 func (dev *EngineDev) ImageEntriesAfterPrune(ctx context.Context) error {
 	builder, err := dev.builder(ctx, "")
@@ -599,6 +607,15 @@ half=$((size / 2 / 1048576))MB
 echo "pruning the cache of $size bytes to $half"
 echo "{ engine { localCache { prune(maxUsedSpace: \"$half\", targetSpace: \"$half\") } } }" | dagger query
 "$@" -out /entries -sdk-digests /sdk-digests.json
+ls /entries-before/blobs/sha256 > /blobs-before
+ls /entries/blobs/sha256 > /blobs
+differ=$(comm -3 /blobs-before /blobs)
+if [ -n "$differ" ]; then
+	echo "the two makings ship different blobs: $(wc -l < /blobs-before) before the prune, $(wc -l < /blobs) after, these in one only (first column before, second after):"
+	echo "$differ" | head -40
+	exit 1
+fi
+echo "the two makings ship the same $(wc -l < /blobs) blobs"
 `, "sh"}, exporter...))
 	return entriesExported(ctx, ran, exporter)
 }
@@ -1050,11 +1067,12 @@ func releaseVersionFromTags(tags []string) string {
 }
 
 // imageSourceDateEpoch is the time every file of a published engine image
-// carries (Container.publish's sourceDateEpoch), in seconds: one constant, not
-// the commit's time, so that a layer whose files didn't change is the same
-// bytes in every image, and a host that holds one image pulls only the layers
-// the next one changed. It is 1980-01-02T00:00:00Z: zip can't hold a time
-// before 1980, and in no time zone is this one before it.
+// carries (Container.publish's sourceDateEpoch), and every file of its
+// entries' blobs (engine-image-entries -source-date-epoch), in seconds: one
+// constant, not the commit's time, so that a layer whose files didn't change
+// is the same bytes in every image, and a host that holds one image pulls
+// only the layers the next one changed. It is 1980-01-02T00:00:00Z: zip
+// can't hold a time before 1980, and in no time zone is this one before it.
 const imageSourceDateEpoch = 315619200
 
 func (dev *EngineDev) pushTargets(

@@ -50,7 +50,13 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 
 		dagql.NodeFunc("_engineImageBundle", s.engineImageBundle).
 			View(AfterVersion("v1.0.0-beta.26")).
-			Doc("The entries of results, exported for an engine image to ship: a directory's or file's snapshot, a container's image config and filesystem, and a Git module source's checkout. Returns the bundle an engine built from the image merges at start, and its blobs. Called by the engine image's build."),
+			Doc("The entries of results, exported for an engine image to ship: a directory's or file's snapshot, a container's image config and filesystem, and a Git module source's checkout. Returns the bundle an engine built from the image merges at start, and its blobs. Called by the engine image's build.").
+			Args(
+				dagql.Arg("results").Doc("The results to export."),
+				dagql.Arg("sourceDateEpoch").Doc(
+					`Clamp the times of every entry of the blobs to this time, so that the same files make the same blobs whenever they were written.`,
+					`Formatted in seconds following Unix epoch, as Container.publish's sourceDateEpoch.`),
+			),
 	}.Install(srv)
 
 	dagql.Fields[*core.Host]{
