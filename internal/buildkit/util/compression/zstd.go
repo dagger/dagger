@@ -168,9 +168,9 @@ const zstdFrameSize = zstdSizedLimit
 // A frame takes its place before its encoder and gives it back once
 // compressed, so the encoders out, and the history each keeps, are no more
 // than the cores; one waiting for a place has taken nothing. Places are
-// given in the order they're asked for, so a layer that starts while others
-// compress, such as a stopping engine's last export's, gets the next one
-// given back rather than one after all of theirs.
+// given in the order they're asked for, each frame asking in turn, so a
+// layer that starts while others compress, such as a stopping engine's last
+// export's, waits for what they asked before it, not for all their frames.
 var zstdFrames = semaphore.NewWeighted(int64(runtime.NumCPU()))
 
 // Hooks for tests: zstdCompressing runs each frame's compression, of size
@@ -250,9 +250,8 @@ func (w *zstdLayerWriter) Write(p []byte) (int, error) {
 }
 
 // compressFrame starts compressing the frame filled so far once it has a
-// place in zstdFrames. Until then the layer reads no further: it writes out
-// its own frames as they're done, and with none compressing waits its turn.
-// The next frame's buffer is taken once the layer goes on.
+// place in zstdFrames. Until then the layer reads no further. The next
+// frame's buffer is taken once the layer goes on.
 func (w *zstdLayerWriter) compressFrame() error {
 	if err := w.takePlace(); err != nil {
 		return err
@@ -276,29 +275,18 @@ func (w *zstdLayerWriter) compressFrame() error {
 	return nil
 }
 
-// takePlace takes a place in zstdFrames for the layer's next frame. It takes
-// a free one only while no other layer waits for one; else, while the layer
-// has frames of its own compressing, it writes out its oldest, and with none
-// it waits its turn.
+// takePlace takes a place in zstdFrames for the layer's next frame, in its
+// turn among every frame that asked before it, the layer's own and other
+// layers'. It first writes out the layer's frames already compressed,
+// oldest first. Waiting can't hold up the frames the layer has compressing:
+// each gives its place back once compressed, whoever waits.
 func (w *zstdLayerWriter) takePlace() error {
-	for {
-		for len(w.compressing) > 0 && isDone(w.compressing[0]) {
-			if err := w.writeOldest(); err != nil {
-				return err
-			}
-		}
-		if zstdFrames.TryAcquire(1) {
-			return nil
-		}
-		if len(w.compressing) == 0 {
-			// Waiting holds nothing: a place, once given, is always given
-			// back when its frame is compressed.
-			return zstdFrames.Acquire(context.Background(), 1)
-		}
+	for len(w.compressing) > 0 && isDone(w.compressing[0]) {
 		if err := w.writeOldest(); err != nil {
 			return err
 		}
 	}
+	return zstdFrames.Acquire(context.Background(), 1)
 }
 
 func isDone(f *zstdFrame) bool {
