@@ -88,8 +88,9 @@ const (
 // digest, and only a header checked against its ID is kept, so a kept header
 // is the pack's for as long as anything names the pack: it can't go stale.
 // Whether the pack can still be read is the read's question, as without the
-// header. The least recently used go first once the kept headers' members
-// pass packHeaderMembers.
+// header. A pack its header's read holds whole isn't kept: that one request
+// reads and stores every member (headerReadHolds). The least recently used go
+// first once the kept headers' members pass packHeaderMembers.
 type packHeaders struct {
 	mu      sync.Mutex
 	byID    map[digest.Digest]*list.Element
@@ -264,6 +265,11 @@ func (cm *snapshotManager) downloadPackedRange(ctx context.Context, desc ocispec
 	if ok, err := cm.pinContent(ctx, desc); err != nil || ok {
 		return true, err
 	}
+	// A provider that reads no ranges, which a kept header spared asking,
+	// has the pack read whole.
+	if errors.Is(span.err, ErrNoPackRanges) {
+		return false, nil
+	}
 	err := span.err
 	if err == nil {
 		err = &packContentError{stage: "provider", err: fmt.Errorf("pack %s's blob %s is gone after its range was read", id, desc.Digest)}
@@ -342,9 +348,22 @@ func (cm *snapshotManager) packHeader(ctx context.Context, provider PackRangePro
 	}
 	members, size, data, err := readPackHeader(ctx, provider, id, blob)
 	if err == nil {
-		cm.packs.headers.keep(id, members, size)
+		if total, err := pack.Size(members); err == nil && !headerReadHolds(size, total) {
+			cm.packs.headers.keep(id, members, size)
+		}
 	}
 	return members, size, data, err
+}
+
+// headerReadHolds reports whether readPackHeader's read of a pack of total
+// bytes, whose header is headerSize bytes, holds the whole pack: its first
+// range, or the format's largest header when the header is longer.
+func headerReadHolds(headerSize, total int64) bool {
+	n := int64(packHeaderRange)
+	if headerSize > n {
+		n = pack.MaxHeaderBytes
+	}
+	return total <= n
 }
 
 // readPackHeader reads a pack's header by range, checked against its ID,
@@ -661,7 +680,7 @@ func (cm *snapshotManager) runPackFetch(ctx context.Context, f *packFetch, slots
 		}
 		// The header, checked against the ID, is kept for later reads by
 		// range, as one read by range is.
-		if header, err := pack.Header(list); err == nil {
+		if header, err := pack.Header(list); err == nil && !headerReadHolds(int64(len(header)), size) {
 			cm.packs.headers.keep(f.id, list, int64(len(header)))
 		}
 		members = len(list)
