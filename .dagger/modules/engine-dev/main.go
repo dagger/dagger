@@ -19,6 +19,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"dagger/engine-dev/build"
+	"dagger/engine-dev/consts"
 	"dagger/engine-dev/internal/dagger"
 	clidev "dagger/engine-dev/internal/dagger/clients/cli-dev"
 	"dagger/engine-dev/internal/dagger/clients/wolfi"
@@ -887,29 +888,58 @@ type targetResult struct {
 }
 
 // Every engine image target of a release builds, with its entries, without
-// being pushed; the entries can be made again after a prune; and the build
-// steps that have built to different bytes before build to the same bytes
-// twice.
+// being pushed, with only the engine and the CLI carrying the commit; the
+// entries can be made again after a prune; and the build steps that have
+// built to different bytes before build to the same bytes twice.
 // +check
 func (dev *EngineDev) ReleaseDryRun(ctx context.Context) error {
 	// One check rather than three: each is a few minutes of work, which as
 	// a check of its own would take a CI engine of its own.
 	return parallel.New().
 		WithJob("build the release's engine images", func(ctx context.Context) error {
-			return dev.Publish(
-				ctx,
-				"dagger-engine.dev", // image
-				// FIXME: why not from HEAD like the SDKs?
-				[]string{"main"}, // tag
-				true,             // dryRun
-				nil,              // registryUsername
-				nil,              // registryPassword
-			)
+			// As Publish builds them, without pushing them.
+			// FIXME: why not from HEAD like the SDKs?
+			results, err := dev.WithImageEntries().buildTargets(ctx, []string{"main"})
+			if err != nil {
+				return err
+			}
+			return dev.onlyEngineStamped(ctx, results[0].Platforms[0])
 		}).
 		WithJob("make the image's entries again after a prune", dev.ImageEntriesAfterPrune).
 		WithJob("build reproducibly", dev.ReproducibleBuild).
 		Run(ctx)
 }
+
+// onlyEngineStamped fails unless, of what image, an engine image, holds that
+// was built from the source, only the engine and the CLI carry the commit:
+// any other binary stamped with it, or a cache entry that holds one, differs
+// at every commit, and so does its layer, which every host then pulls again.
+func (dev *EngineDev) onlyEngineStamped(ctx context.Context, image *dagger.Container) error {
+	commit, _ := dev.vcs(ctx)
+	if commit == "" {
+		// Built without a commit, nothing carries one.
+		return nil
+	}
+	_, err := image.WithExec([]string{"sh", "-c", onlyEngineStampedScript, "sh",
+		commit, consts.EngineServerPath, cliPath,
+	}).Sync(ctx)
+	var execErr *dagger.ExecError
+	if errors.As(err, &execErr) {
+		return fmt.Errorf("the image's binaries and the commit %s: %s", commit, strings.TrimSpace(execErr.Stdout))
+	}
+	return err
+}
+
+// onlyEngineStampedScript fails unless the commit $1 is in the engine, $2,
+// and the CLI, $3, and in no other file under /usr or /opt, the image's
+// entries among them (distconsts.EngineContainerImageEntriesDir).
+const onlyEngineStampedScript = `commit=$1 engine=$2 cli=$3
+for f in "$engine" "$cli"; do
+	grep -q "$commit" "$f" || { echo "$f doesn't carry it"; exit 1; }
+done
+others=$(grep -rl "$commit" /usr /opt | grep -vx -e "$engine" -e "$cli")
+[ -z "$others" ] || { echo "carried by more than the engine and the CLI:"; echo "$others"; exit 1; }
+`
 
 // Publish all engine images to a registry
 // +cache="session"
