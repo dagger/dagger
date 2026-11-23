@@ -345,10 +345,13 @@ func TestStoredBundlePartialRecords(t *testing.T) {
 		require.Len(t, whole.Bundle.Calls, 1)
 		require.Empty(t, whole.Partial)
 
+		// The receiver's value goes, as a prune takes it, and with it the
+		// only stored entry of its class.
 		cloud.egraphMu.Lock()
 		receiver := cloud.resultsByID[sharedResultID(test.receiverNumber)]
-		cloud.unindexRecipesLocked(receiver)
+		_, err := cloud.dropValueLocked(test.ctx, &RemoteChange{}, receiver)
 		cloud.egraphMu.Unlock()
+		require.NoError(t, err)
 		partial := changedSinceTestBuild(t, cloud, test.number)
 		require.Empty(t, partial.Bundle.Calls)
 		require.Equal(t, 1, partial.UnsendableCalls)
