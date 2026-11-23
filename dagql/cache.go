@@ -1058,7 +1058,7 @@ func (c *Cache) bindCallerHandedBound(ctx context.Context, sessionID string, res
 		return
 	}
 	if !served {
-		if !c.sessionHoldsHandle(ctx, sessionID, c.sessionBoundHandle(sessionID)) {
+		if !c.sessionHasBound(sessionID) {
 			return
 		}
 		if len(c.boundSessionsOf(ctx, res.cacheSharedResult())) == 0 {
@@ -8151,7 +8151,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 	// returns a session's bound result joins only that session's class. Only
 	// a session that has bound a result can make or be handed one.
 	var boundHandles []SessionResourceHandle
-	if c.sessionHoldsHandle(ctx, sessionID, c.sessionBoundHandle(sessionID)) {
+	if c.sessionHasBound(sessionID) {
 		boundHandles = c.boundSessionsOf(ctx, oc.res)
 		// A bound call that returns a value made before keeps its binding:
 		// it is indexed as its session's, and the value stays as it is.
