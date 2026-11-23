@@ -166,7 +166,8 @@ func TestCloudRestoreKeepsEveryRecord(t *testing.T) {
 	after, err := cloud.StoredBundle(ctx, []uint64{root}, time.Now().Unix(), nil)
 	require.NoError(t, err, "every record of the closure is still stored")
 	require.Equal(t, kinds(before.Bundle), kinds(after.Bundle))
-	require.JSONEq(t, string(mustTransferJSON(t, before.Bundle.Values)), string(mustTransferJSON(t, after.Bundle.Values)))
+	// The restored Cloud counts its writes again from its start.
+	require.JSONEq(t, string(mustTransferJSON(t, withoutChangeStamps(before.Bundle.Values))), string(mustTransferJSON(t, withoutChangeStamps(after.Bundle.Values))))
 
 	bctx, b, _ := transferTestCache(t)
 	reply, err := b.MergeValues(bctx, cloudCacheID, after.Bundle)
