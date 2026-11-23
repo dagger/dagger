@@ -239,7 +239,7 @@ func (build *Builder) WithEngineBinaries(ctx context.Context, ctr *dagger.Contai
 		{path: "/usr/bin/dial-stdio", file: build.dialstdioBinary()},
 		{path: "/opt/cni/bin/dnsname", file: build.dnsnameBinary()},
 		{path: consts.DaggerInitPath, file: build.daggerInit()},
-		{path: consts.DaggerInitSessionPath, file: build.binary("./cmd/init-session", false)},
+		{path: consts.DaggerInitSessionPath, file: build.binary("./cmd/init-session")},
 	}).WithSymlink("/usr/bin/dial-stdio", "/usr/bin/buildctl")
 	engine := build.engineBinary(build.race)
 	eg.Go(func() error {
@@ -275,19 +275,19 @@ func (build *Builder) binDir(ctx context.Context, eg *errgroup.Group, bins []bin
 }
 
 func (build *Builder) CodegenBinary() *dagger.File {
-	return build.binary("./cmd/codegen", false)
+	return build.binary("./cmd/codegen")
 }
 
 // ImageEntriesBinary exports the cache entries the engine image ships
 // (cmd/engine-image-entries).
 func (build *Builder) ImageEntriesBinary() *dagger.File {
-	return build.binary("./cmd/engine-image-entries", false)
+	return build.binary("./cmd/engine-image-entries")
 }
 
 // IntrospectBinary is cmd/introspect, which prints the engine API's schema
 // without running an engine.
 func (build *Builder) IntrospectBinary() *dagger.File {
-	return build.binary("./cmd/introspect", false)
+	return build.binary("./cmd/introspect")
 }
 
 // engineBinary is the engine. It reports its commit (engine.FullVersion), so
@@ -298,11 +298,11 @@ func (build *Builder) engineBinary(race bool) *dagger.File {
 }
 
 func (build *Builder) dnsnameBinary() *dagger.File {
-	return build.binary("./cmd/dnsname", false)
+	return build.binary("./cmd/dnsname")
 }
 
 func (build *Builder) dialstdioBinary() *dagger.File {
-	return build.binary("./cmd/dialstdio", false)
+	return build.binary("./cmd/dialstdio")
 }
 
 // binary is pkg, a main package of the source, built for the builder's
@@ -310,8 +310,8 @@ func (build *Builder) dialstdioBinary() *dagger.File {
 // at every commit, and so does every image layer and cache entry that holds
 // it, though nothing else of it changed. Only the engine reports its commit
 // (engineBinary).
-func (build *Builder) binary(pkg string, race bool) *dagger.File {
-	return build.buildBinary(pkg, race, nil)
+func (build *Builder) binary(pkg string) *dagger.File {
+	return build.buildBinary(pkg, false, nil)
 }
 
 // buildBinary is pkg, a main package of the source, built for the builder's
@@ -552,7 +552,7 @@ func (build *Builder) cniPlugins() []cniPlugin {
 }
 
 func (build *Builder) daggerInit() *dagger.File {
-	return build.binary("./cmd/init", false)
+	return build.binary("./cmd/init")
 }
 
 func (build *Builder) Init() *dagger.File {
