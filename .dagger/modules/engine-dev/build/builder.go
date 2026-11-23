@@ -245,8 +245,11 @@ func (build *Builder) IntrospectBinary() *dagger.File {
 	return build.binary("./cmd/introspect", false)
 }
 
+// engineBinary is the engine. It reports its commit (engine.FullVersion), so
+// it is stamped with it: with the CLI (cli-dev), the only binary of the image
+// that is.
 func (build *Builder) engineBinary(race bool) *dagger.File {
-	return build.binary("./cmd/engine", race)
+	return build.buildBinary("./cmd/engine", race, build.VCSValues())
 }
 
 func (build *Builder) dnsnameBinary() *dagger.File {
@@ -258,8 +261,17 @@ func (build *Builder) dialstdioBinary() *dagger.File {
 }
 
 // binary is pkg, a main package of the source, built for the builder's
-// platform with the source's VCS info stamped in.
+// platform. It carries no VCS info: a binary stamped with the commit differs
+// at every commit, and so does every image layer and cache entry that holds
+// it, though nothing else of it changed. Only the engine reports its commit
+// (engineBinary).
 func (build *Builder) binary(pkg string, race bool) *dagger.File {
+	return build.buildBinary(pkg, race, nil)
+}
+
+// buildBinary is pkg, a main package of the source, built for the builder's
+// platform with vcs, the -X definitions of VCS info (VCSValues), stamped in.
+func (build *Builder) buildBinary(pkg string, race bool, vcs []string) *dagger.File {
 	opts := golang.GoOpts{
 		Version: consts.GolangVersion,
 		BuildFlags: []string{
@@ -270,7 +282,7 @@ func (build *Builder) binary(pkg string, race bool) *dagger.File {
 			// A build flag rather than GOFLAGS, which would be in every
 			// package's exec and keep it from the CLI's and codegen's.
 			"-tags=dfexcludepatterns,dfparents",
-			ldflags([]string{"-s", "-w"}, build.VCSValues()),
+			ldflags([]string{"-s", "-w"}, vcs),
 		},
 	}
 	if race {
