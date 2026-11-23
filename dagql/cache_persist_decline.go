@@ -42,6 +42,10 @@ func DeclinePersistence(ctx context.Context) {
 // session still uses it or anything else still holds it: each computes its
 // own. The cache gates the hit as it gates one on a session resource the
 // session hasn't loaded, so what is built on the result is bound with it.
+// The result's identity holds its session too (boundSessionInputName), so it
+// is in a class of its session's own: a call made on it, such as a field
+// that returns a result it holds, answers for that session only, though
+// another session makes the bound call again with the same key.
 // Like DeclinePersistence, it must be called with the resolver's own
 // context, and does nothing outside a resolver the cache runs.
 func BindToSession(ctx context.Context) {
@@ -49,4 +53,38 @@ func BindToSession(ctx context.Context) {
 		d.declined.Store(true)
 		d.bound.Store(true)
 	}
+}
+
+// boundSessionInputName is the implicit input a result bound to its session
+// carries in its identity, valued with the handle only that session holds
+// (Cache.boundSessionHandle). A bound result is published under its call
+// with this input, so its digests and terms are its session's and so is its
+// class, and every call made on it derives its key from that identity. The
+// session's own later lookups of the call try it with the input too
+// (Cache.lookupCacheForRequest).
+const boundSessionInputName = "cacheBoundSession"
+
+// withBoundSession returns a copy of frame that holds the binding to the
+// session handle names: frame's identity, as its session's own. The copy
+// drops frame's carried content-preferred digest, which was derived from the
+// identity without the binding.
+func (frame *ResultCall) withBoundSession(handle SessionResourceHandle) *ResultCall {
+	if frame == nil {
+		return nil
+	}
+	bound := frame.clone()
+	bound.ContentPreferred = nil
+	bound.ImplicitInputs = append(bound.ImplicitInputs, &ResultCallArg{
+		Name:  boundSessionInputName,
+		Value: &ResultCallLiteral{Kind: ResultCallLiteralKindString, StringValue: string(handle)},
+	})
+	return bound
+}
+
+// withBoundSession returns a copy of req whose call holds the binding to the
+// session handle names (ResultCall.withBoundSession).
+func (req *CallRequest) withBoundSession(handle SessionResourceHandle) *CallRequest {
+	bound := req.Clone()
+	bound.ResultCall = req.ResultCall.withBoundSession(handle)
+	return bound
 }
