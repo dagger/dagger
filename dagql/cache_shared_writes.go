@@ -40,12 +40,11 @@ const (
 	// SharedEngineCacheGone: an engine cache's state removed with its last
 	// holding.
 	SharedEngineCacheGone
-	// SharedClassesChecked: a collection's check of the classes' compaction,
-	// at most once per eqClassCheckInterval
-	// (compactEqClassesAfterCollectionLocked). It compresses the
-	// union-find's paths and keeps its own bookkeeping whether or not it
-	// frees any class.
-	SharedClassesChecked
+	// SharedClassesCompacted: a collection's compaction of the classes,
+	// which frees the slots of the classes no term or entry uses
+	// (compactEqClassesAfterCollectionLocked). A check that frees nothing
+	// changes no shared state.
+	SharedClassesCompacted
 )
 
 // SharedWriteKinds is how many kinds SharedWrites has: each is a bit below
@@ -54,7 +53,7 @@ const SharedWriteKinds = 10
 
 var sharedWriteNames = [SharedWriteKinds]string{
 	"new_entry", "new_engine_cache", "identity", "taught_content", "kept_call",
-	"expiry", "run_ran", "entry_removed", "engine_cache_gone", "classes_checked",
+	"expiry", "run_ran", "entry_removed", "engine_cache_gone", "classes_compacted",
 }
 
 // Each calls f with the index and name of each kind w holds, in the order

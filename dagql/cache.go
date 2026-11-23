@@ -2753,6 +2753,11 @@ type Cache struct {
 	// repair walked only the terms it moved (mergeEqClassesLocked), so a
 	// test can compare the two.
 	testRepairWholeClass bool
+	// testWalkLiveClasses, when set, has compaction find the live classes by
+	// walking every term and every entry's output classes
+	// (walkEqClassUsesLocked), as before the cache kept their uses, so a test
+	// can compare the two.
+	testWalkLiveClasses bool
 	// testStoredBodies runs after the body worker installs a batch, with the
 	// number of entries it read.
 	testStoredBodies func(int)
@@ -2961,6 +2966,12 @@ type Cache struct {
 	// the rank of the given eqClassID, slice is index by eqClassID so it's
 	// conceptually a map of eqClassID->rank
 	egraphRanks []uint8
+
+	// egraphUses counts, at each root, the uses of its class by live terms
+	// and entries, indexed like egraphParents; liveEqClasses counts the
+	// roots with any (cache_eqclass_uses.go).
+	egraphUses    []uint32
+	liveEqClasses int
 
 	// The Cloud's compaction checks (CollectRemoteHoldings): when the last
 	// check ran and the class slots it left, whether a collection has removed

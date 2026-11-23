@@ -446,7 +446,11 @@ Union-find IDs only grow. After lots of merges and pruning, the class ID space
 can get sparse. Compaction rebuilds the live eq-class space to keep it smaller
 and more coherent.
 
-Today this runs after prune when needed.
+Today this runs after prune when needed, and on the Cloud's cache after
+collections. Whether it would free anything is read from the classes' uses,
+which the cache keeps as terms and entries name classes
+(`dagql/cache_eqclass_uses.go`), so a check that frees nothing walks nothing;
+a compaction walks every term and entry.
 
 Compaction remaps `resultOutputEqClasses` and rebuilds
 `outputEqClassResults` from the remapped forward associations before publishing
