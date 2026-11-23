@@ -1035,7 +1035,7 @@ func (c *Cache) boundSessionHandle(sessionID string) (SessionResourceHandle, err
 	if sessionID == "" {
 		return "", errors.New("empty session ID")
 	}
-	handle := sessionBoundHandle(sessionID)
+	handle := c.sessionBoundHandle(sessionID)
 	c.sessionMu.Lock()
 	defer c.sessionMu.Unlock()
 	if c.sessionLifecycle(sessionID).lifecycle.Load()&cacheSessionReleasedBit != 0 {
@@ -1046,9 +1046,13 @@ func (c *Cache) boundSessionHandle(sessionID string) (SessionResourceHandle, err
 }
 
 // sessionBoundHandle is the handle only sessionID holds, which a result
-// bound to the session requires (boundSessionHandle).
-func sessionBoundHandle(sessionID string) SessionResourceHandle {
-	return SessionResourceHandle("dagql.session:" + sessionID)
+// bound to the session requires (boundSessionHandle). It names the cache's
+// run as well as the session (CacheIdentity, whose generation counts the
+// opens of its database): a bound result kept past its session as the
+// dependency of a kept entry, and restored by a later run, names a binding no
+// session of that run holds, whatever its session ID.
+func (c *Cache) sessionBoundHandle(sessionID string) SessionResourceHandle {
+	return SessionResourceHandle("dagql.session:" + c.identity.String() + ":" + sessionID)
 }
 
 // addSessionHandleLocked records that sessionID holds handle. Requires

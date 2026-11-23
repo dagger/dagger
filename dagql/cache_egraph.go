@@ -1396,7 +1396,7 @@ func (c *Cache) lookupCacheForRequest(
 	// outcome of the call: a session that has bound one looks the call up
 	// that way first, before another session's unbound result of it.
 	if req != nil && req.ResultCall != nil {
-		if handle := sessionBoundHandle(sessionID); c.sessionHoldsHandle(sessionID, handle) {
+		if handle := c.sessionBoundHandle(sessionID); c.sessionHoldsHandle(sessionID, handle) {
 			bound := req.withBoundSession(handle)
 			// The same invocation looks again: its evidence is the one it
 			// records.
