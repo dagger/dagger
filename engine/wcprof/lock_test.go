@@ -539,7 +539,7 @@ func TestHoldObserverSkipsWhatIsNotItsToSee(t *testing.T) {
 	mu.LockSelfTimed()
 	mu.Unlock()
 	mu.RLock()
-	mu.RUnlock()
+	mu.RUnlock() //nolint:staticcheck // SA2001: a reader the observer must not see.
 	if got := seen(); len(got) != 0 {
 		t.Fatalf("saw %+v: want none", got)
 	}
@@ -550,7 +550,7 @@ func TestHoldObserverSkipsWhatIsNotItsToSee(t *testing.T) {
 	stop()
 	stopped.Unlock()
 	stopped.Lock()
-	stopped.Unlock()
+	stopped.Unlock() //nolint:staticcheck // SA2001: a hold ended after the stop.
 	if n.Load() != 0 {
 		t.Fatalf("saw %d holds after stop: want none", n.Load())
 	}
@@ -569,7 +569,7 @@ func TestObservedHoldCostsNoAllocation(t *testing.T) {
 		WriteLockAs(ctx, &mu, "test.mu", testHolder)
 		mu.Unlock()
 		mu.Lock()
-		mu.Unlock()
+		mu.Unlock() //nolint:staticcheck // SA2001: the observed hold's own cost.
 	})
 	if allocs != 0 {
 		t.Fatalf("%v allocations per observed hold", allocs)
