@@ -1,9 +1,11 @@
 package dagql
 
 import (
+	"encoding/json"
 	"fmt"
 	"maps"
 	"math"
+	"reflect"
 	"runtime"
 	"slices"
 	"testing"
@@ -235,6 +237,214 @@ func TestStoredLayersFindALayerAmongManyOfItsBlobAsAmongOne(t *testing.T) {
 	require.Less(t, amongMany, 10*amongOne, "%d lookups among %d variants of a blob took %s, against %s among one", lookups, variants, amongMany, amongOne)
 }
 
+// The table holds two layers as one exactly when reflect.DeepEqual calls them
+// equal, as it did when it compared every layer of a blob. Layers equal but
+// built apart are one: their annotations added in another order, their
+// creation time in a zone made again, copies, and two decodes of one
+// encoding. Layers DeepEqual tells apart stay apart, those that encode alike
+// and so share a key among them: a nil against an empty map, slice or byte
+// string.
+func TestStoredLayersHoldEqualLayersAsOneAndOthersApart(t *testing.T) {
+	t.Parallel()
+	created := time.Date(2026, 11, 23, 7, 33, 58, 899_000_000, time.FixedZone("PST", -8*3600))
+	base := func() snapshots.ExportLayer {
+		at := created
+		return snapshots.ExportLayer{
+			Descriptor: ocispecs.Descriptor{
+				MediaType: ocispecs.MediaTypeImageLayerGzip,
+				Digest:    testDigest("equal-or-apart"),
+				Size:      4 << 20,
+				URLs:      []string{"https://mirror.example/a", "https://mirror.example/b"},
+				Data:      []byte("inline"),
+				Platform:  &ocispecs.Platform{OS: "linux", Architecture: "arm64", OSFeatures: []string{"x"}},
+			},
+			Description: "the same blob",
+			CreatedAt:   &at,
+			Computed:    true,
+		}
+	}
+	annotations := map[string]string{}
+	for i := range 64 {
+		annotations[fmt.Sprintf("annotation-%02d", i)] = fmt.Sprintf("value %d", i)
+	}
+	// withAnnotations adds the annotations in the order of keys.
+	withAnnotations := func(layer snapshots.ExportLayer, keys []string) snapshots.ExportLayer {
+		layer.Descriptor.Annotations = map[string]string{}
+		for _, k := range keys {
+			layer.Descriptor.Annotations[k] = annotations[k]
+		}
+		return layer
+	}
+	keys := slices.Sorted(maps.Keys(annotations))
+	reversed := slices.Clone(keys)
+	slices.Reverse(reversed)
+
+	equal := map[string]func() snapshots.ExportLayer{
+		"annotations added in another order": func() snapshots.ExportLayer { return withAnnotations(base(), reversed) },
+		"a creation time in a zone made again": func() snapshots.ExportLayer {
+			layer := withAnnotations(base(), keys)
+			at := created.In(time.FixedZone("PST", -8*3600))
+			layer.CreatedAt = &at
+			return layer
+		},
+		"a copy": func() snapshots.ExportLayer { return cloneExportLayer(withAnnotations(base(), keys)) },
+	}
+	apart := map[string]func() snapshots.ExportLayer{
+		"no annotations": func() snapshots.ExportLayer {
+			layer := withAnnotations(base(), nil)
+			layer.Descriptor.Annotations = nil
+			return layer
+		},
+		"empty annotations": func() snapshots.ExportLayer { return withAnnotations(base(), nil) },
+		"no URLs": func() snapshots.ExportLayer {
+			l := withAnnotations(base(), keys)
+			l.Descriptor.URLs = nil
+			return l
+		},
+		"empty URLs": func() snapshots.ExportLayer {
+			l := withAnnotations(base(), keys)
+			l.Descriptor.URLs = []string{}
+			return l
+		},
+		"no data": func() snapshots.ExportLayer {
+			l := withAnnotations(base(), keys)
+			l.Descriptor.Data = nil
+			return l
+		},
+		"empty data": func() snapshots.ExportLayer {
+			l := withAnnotations(base(), keys)
+			l.Descriptor.Data = []byte{}
+			return l
+		},
+		"no platform": func() snapshots.ExportLayer {
+			l := withAnnotations(base(), keys)
+			l.Descriptor.Platform = nil
+			return l
+		},
+		"an empty platform": func() snapshots.ExportLayer {
+			l := withAnnotations(base(), keys)
+			l.Descriptor.Platform = &ocispecs.Platform{}
+			return l
+		},
+		"no OS features": func() snapshots.ExportLayer {
+			l := withAnnotations(base(), keys)
+			l.Descriptor.Platform = &ocispecs.Platform{OS: "linux", Architecture: "arm64"}
+			return l
+		},
+		"empty OS features": func() snapshots.ExportLayer {
+			l := withAnnotations(base(), keys)
+			l.Descriptor.Platform = &ocispecs.Platform{OS: "linux", Architecture: "arm64", OSFeatures: []string{}}
+			return l
+		},
+		"no creation time": func() snapshots.ExportLayer {
+			l := withAnnotations(base(), keys)
+			l.CreatedAt = nil
+			return l
+		},
+		"the same instant in UTC": func() snapshots.ExportLayer {
+			l := withAnnotations(base(), keys)
+			at := created.UTC()
+			l.CreatedAt = &at
+			return l
+		},
+		"not computed": func() snapshots.ExportLayer {
+			l := withAnnotations(base(), keys)
+			l.Computed = false
+			return l
+		},
+		"another history": func() snapshots.ExportLayer {
+			l := withAnnotations(base(), keys)
+			l.Description = "rebuilt"
+			return l
+		},
+		"another descriptor": func() snapshots.ExportLayer {
+			l := withAnnotations(base(), keys)
+			l.Descriptor.Size++
+			return l
+		},
+	}
+	part := func(table *storedLayers, layer snapshots.ExportLayer, pack digest.Digest) *storedLayer {
+		var packs map[digest.Digest]digest.Digest
+		if pack != "" {
+			packs = map[digest.Digest]digest.Digest{layer.Descriptor.Digest: pack}
+		}
+		return table.part(storedLayersTestPart("snapshot", []snapshots.ExportLayer{layer}, packs)).layers[0]
+	}
+	first := withAnnotations(base(), keys)
+	for name, build := range equal {
+		require.True(t, reflect.DeepEqual(first, build()), name)
+		table := &storedLayers{}
+		held := part(table, cloneExportLayer(first), "")
+		require.Same(t, held, part(table, build(), ""), name)
+	}
+	for name, build := range apart {
+		require.False(t, reflect.DeepEqual(first, build()), name)
+		table := &storedLayers{}
+		held := part(table, cloneExportLayer(first), "")
+		other := part(table, build(), "")
+		require.NotSame(t, held, other, name)
+		require.Equal(t, build(), other.layer, name)
+		require.Same(t, held, part(table, cloneExportLayer(first), ""), name)
+		require.Same(t, other, part(table, build(), ""), name)
+	}
+
+	// Two decodes of one encoding, as two engines' exports of one layer
+	// reach the service, are one layer.
+	encoded, err := json.Marshal(first)
+	require.NoError(t, err)
+	decode := func() snapshots.ExportLayer {
+		var layer snapshots.ExportLayer
+		require.NoError(t, json.Unmarshal(encoded, &layer))
+		return layer
+	}
+	require.True(t, reflect.DeepEqual(decode(), decode()))
+	decoded := &storedLayers{}
+	require.Same(t, part(decoded, decode(), ""), part(decoded, decode(), ""))
+
+	// Twins encode alike, and so share a key, but DeepEqual tells them
+	// apart: each is held apart, and each is found again.
+	twins := map[string][2]func(*snapshots.ExportLayer){
+		"annotations": {
+			func(l *snapshots.ExportLayer) { l.Descriptor.Annotations = nil },
+			func(l *snapshots.ExportLayer) { l.Descriptor.Annotations = map[string]string{} },
+		},
+		"URLs": {
+			func(l *snapshots.ExportLayer) { l.Descriptor.URLs = nil },
+			func(l *snapshots.ExportLayer) { l.Descriptor.URLs = []string{} },
+		},
+		"data": {
+			func(l *snapshots.ExportLayer) { l.Descriptor.Data = nil },
+			func(l *snapshots.ExportLayer) { l.Descriptor.Data = []byte{} },
+		},
+		"OS features": {
+			func(l *snapshots.ExportLayer) { l.Descriptor.Platform.OSFeatures = nil },
+			func(l *snapshots.ExportLayer) { l.Descriptor.Platform.OSFeatures = []string{} },
+		},
+	}
+	for name, twin := range twins {
+		build := func(i int) snapshots.ExportLayer {
+			l := cloneExportLayer(first)
+			twin[i](&l)
+			return l
+		}
+		require.Equal(t, storedLayerEncoding(build(0), ""), storedLayerEncoding(build(1), ""), name)
+		require.False(t, reflect.DeepEqual(build(0), build(1)), name)
+		table := &storedLayers{}
+		nilOne, emptyOne := part(table, build(0), ""), part(table, build(1), "")
+		require.NotSame(t, nilOne, emptyOne, name)
+		require.True(t, reflect.DeepEqual(build(0), nilOne.layer), name)
+		require.True(t, reflect.DeepEqual(build(1), emptyOne.layer), name)
+		require.Same(t, nilOne, part(table, build(0), ""), name)
+		require.Same(t, emptyOne, part(table, build(1), ""), name)
+	}
+	// The same layer in another pack, or in none, is held apart.
+	table := &storedLayers{}
+	inA := part(table, cloneExportLayer(first), testDigest("pack-a"))
+	require.NotSame(t, inA, part(table, cloneExportLayer(first), testDigest("pack-b")))
+	require.NotSame(t, inA, part(table, cloneExportLayer(first), ""))
+	require.Same(t, inA, part(table, cloneExportLayer(first), testDigest("pack-a")))
+}
+
 // The cache holds a layer only while a stored part names it: once the
 // parts that named a layer are gone, the collector frees it, and the table
 // forgets it.
@@ -246,18 +456,18 @@ func TestStoredLayersForgetLayersNoPartNames(t *testing.T) {
 	stored, _, err := c.SetStoredPart(ctx, number, storedLayersTestPart("snapshot", []snapshots.ExportLayer{storedLayersTestLayer("forgotten", "")}, nil), 0)
 	require.NoError(t, err)
 	require.True(t, stored)
-	blobs := func() int {
+	layers := func() int {
 		c.storedLayers.mu.Lock()
 		defer c.storedLayers.mu.Unlock()
-		return len(c.storedLayers.byBlob)
+		return len(c.storedLayers.byKey)
 	}
-	require.Equal(t, 1, blobs())
+	require.Equal(t, 1, layers())
 
 	_, _, err = c.DropStoredParts(testDigest("forgotten"))
 	require.NoError(t, err)
 	require.Eventually(t, func() bool {
 		runtime.GC()
-		return blobs() == 0
+		return layers() == 0
 	}, 10*time.Second, 10*time.Millisecond)
 }
 
