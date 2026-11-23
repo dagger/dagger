@@ -177,13 +177,14 @@ func (c *Cache) HasPartOffer(res AnyResult, part PartKey) bool {
 }
 
 // cloudMergeNote is what an engine last merged of its Cloud holding's entry:
-// the Cloud cache's start count and the entry's change stamp the merged
-// value carried (ValueBundle.SenderGeneration, TransferredValue.SenderStamp),
-// and the engine entry's own transfer revision once the merge left it. A
-// later value of the same Cloud entry at the same start count and stamp
-// carries the same record and expiry, and while the engine entry's revision
-// is unchanged, its identity and the Cloud's copy are what the merge taught
-// it then (unchangedCloudRowLocked).
+// the Cloud cache's identity and the entry's change stamp the merged value
+// carried (ValueBundle.SenderCache, TransferredValue.SenderStamp), and the
+// engine entry's own transfer revision once the merge left it. A later value
+// of the same Cloud entry from the same start of the same cache at the same
+// stamp carries the same record and expiry, and while the engine entry's
+// revision is unchanged, its identity and the Cloud's copy are what the
+// merge taught it then (unchangedCloudRowLocked).
 type cloudMergeNote struct {
-	generation, stamp, revision uint64
+	cache           string
+	stamp, revision uint64
 }

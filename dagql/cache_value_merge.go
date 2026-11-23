@@ -1462,7 +1462,7 @@ func (c *Cache) embedMergedParts(bundle *ValueBundle) {
 // than their slices: an offered layer is never written after it's built
 // (clonePartOffer).
 func cloneValueBundle(in ValueBundle) (ValueBundle, error) {
-	out := ValueBundle{Version: in.Version, Roots: slices.Clone(in.Roots), Calls: slices.Clone(in.Calls), Layers: slices.Clone(in.Layers), Addresses: maps.Clone(in.Addresses), SenderGeneration: in.SenderGeneration}
+	out := ValueBundle{Version: in.Version, Roots: slices.Clone(in.Roots), Calls: slices.Clone(in.Calls), Layers: slices.Clone(in.Layers), Addresses: maps.Clone(in.Addresses), SenderCache: in.SenderCache}
 	if in.Values != nil {
 		out.Values = make([]TransferredValue, len(in.Values))
 	}
@@ -3089,8 +3089,9 @@ func (c *Cache) applyMergedIdentitiesLocked(ctx context.Context, commit *valueMe
 // unchangedCloudRowLocked reports whether row, a record of the Cloud's an
 // engine keeps on an entry it has, would teach the entry nothing again: the
 // entry's Cloud holding is the row's Cloud entry, storing a record at the
-// row's expiry, and the engine last merged it at the start count and change
-// stamp the row carries (cloudMergeNote), with the entry's own transfer
+// row's expiry, and the engine last merged it from the same start of the
+// same Cloud cache at the change stamp the row carries (cloudMergeNote),
+// with the entry's own transfer
 // revision unchanged since, so that neither side changed what the record
 // teaches; and neither the row nor the value it lands on has expired. A
 // pruned entry isn't kept, a replaced or re-run one has moved its revision,
@@ -3105,7 +3106,7 @@ func (c *Cache) unchangedCloudRowLocked(commit *valueMergeCommit, row *mergeRow)
 		return false
 	}
 	note := h.cloudMerge
-	return note.generation == commit.prep.bundle.SenderGeneration && note.stamp == row.value.SenderStamp && note.revision == row.res.transferRevision
+	return commit.prep.bundle.SenderCache != "" && note.cache == commit.prep.bundle.SenderCache && note.stamp == row.value.SenderStamp && note.revision == row.res.transferRevision
 }
 
 // noteCloudMergeLocked records, on an engine, what row merged of its Cloud
@@ -3119,7 +3120,12 @@ func (c *Cache) noteCloudMergeLocked(commit *valueMergeCommit, row *mergeRow) {
 	if h == nil || key.Number != row.value.SenderNumber {
 		return
 	}
-	h.cloudMerge = &cloudMergeNote{generation: commit.prep.bundle.SenderGeneration, stamp: row.value.SenderStamp, revision: row.res.transferRevision}
+	if commit.prep.bundle.SenderCache == "" {
+		// A Cloud cache with no identity: its stamps compare with none.
+		h.cloudMerge = nil
+		return
+	}
+	h.cloudMerge = &cloudMergeNote{cache: commit.prep.bundle.SenderCache, stamp: row.value.SenderStamp, revision: row.res.transferRevision}
 }
 
 // identityMark is what teaching an entry its identity can change, read
