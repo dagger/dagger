@@ -230,18 +230,20 @@ func TestCacheBoundResultIsNotTransferred(t *testing.T) {
 // the field hit its own. The held result is either one the bound call made,
 // or one that existed before it, an ordinary value another session is still
 // served by its own call. Each session may also reach its parent through a
-// cached call that returns it, which must not join the two parents.
+// cached call that returns it, or through a new result that holds it, and
+// neither may join the two sessions' classes.
 func TestCacheBoundResultsHeldResultIsServedOnlyToItsSession(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
-		name          string
-		made, wrapped bool
+		name                   string
+		made, wrapped, holding bool
 	}{
-		{"held result the bound call made", true, false},
-		{"held result that existed before", false, false},
-		{"parent returned by a cached call", true, true},
+		{"held result the bound call made", true, false, false},
+		{"held result that existed before", false, false, false},
+		{"parent returned by a cached call", true, true, false},
+		{"parent held by a new result", true, false, true},
 	} {
-		made, wrapped := tc.made, tc.wrapped
+		made, wrapped, holding := tc.made, tc.wrapped, tc.holding
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			baseCtx := t.Context()
@@ -277,6 +279,20 @@ func TestCacheBoundResultsHeldResultIsServedOnlyToItsSession(t *testing.T) {
 					t.Helper()
 					res, err := c.GetOrInitCall(ctx, session, noopTypeResolver{}, &CallRequest{ResultCall: wrapperCall.clone()}, func(ctx context.Context) (AnyResult, error) {
 						return bare(ctx, session, v), nil
+					})
+					assert.NilError(t, err)
+					return res
+				}
+			}
+			if holding {
+				bare := parent
+				holderCall := cacheTestIntCall("bound-parent-holder")
+				parent = func(ctx context.Context, session string, v int) AnyResult {
+					t.Helper()
+					res, err := c.GetOrInitCall(ctx, session, noopTypeResolver{}, &CallRequest{ResultCall: holderCall.clone()}, func(ctx context.Context) (AnyResult, error) {
+						p := bare(ctx, session, v)
+						held := p.Unwrap().(*cacheTestOwnedDepsInt).ownedResults[0]
+						return cacheTestDetachedResult(holderCall.clone(), &cacheTestOwnedDepsInt{Int: NewInt(0), ownedResults: []AnyResult{held, p}}), nil
 					})
 					assert.NilError(t, err)
 					return res
