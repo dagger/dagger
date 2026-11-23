@@ -353,3 +353,30 @@ func TestModuleSourceReadByAHostReadingCallerIsItsOwn(t *testing.T) {
 	require.True(t, perClient(hostRead), "a caller that reads its own host keeps its read")
 	require.False(t, hostRead.IsPersistable)
 }
+
+// A caller that busts its cache deliberately (dagql.WithPerClientCacheScope),
+// as updating a module's dependencies does to resolve them live, reads a
+// shared module source again rather than taking the read made before it.
+func TestModuleSourceReadUnderAFreshCacheScopeIsReadAgain(t *testing.T) {
+	t.Parallel()
+	e := newTransferTestEngine(t, transferTestSalt(t))
+	ctx := e.session(t, "reader")
+	moduleIdentityTestSource(t, e, ctx, "scoped")
+	require.True(t, moduleIdentityTestSource(t, e, ctx, "scoped").HitCache(), "the same read again is the earlier's")
+	require.False(t, moduleIdentityTestSource(t, e, dagql.WithPerClientCacheScope(ctx), "scoped").HitCache(), "a read under a fresh cache scope is made again")
+}
+
+// A shared module-source read holds what its engine decides as it reads: the
+// version "latest" names, and the built-in SDKs its image holds. An engine of
+// another build reads the source again rather than taking another's read.
+// Not parallel: it replaces the engine's build for the package.
+func TestModuleSourceReadByAnotherEngineBuildIsReadAgain(t *testing.T) {
+	e := newTransferTestEngine(t, transferTestSalt(t))
+	moduleIdentityTestSource(t, e, e.session(t, "first"), "built")
+	require.True(t, moduleIdentityTestSource(t, e, e.session(t, "same-build"), "built").HitCache(), "an engine of the same build takes the read")
+
+	build := moduleSourceEngineBuild
+	t.Cleanup(func() { moduleSourceEngineBuild = build })
+	moduleSourceEngineBuild = func() string { return "v0.0.0-another+build" }
+	require.False(t, moduleIdentityTestSource(t, e, e.session(t, "another-build"), "built").HitCache(), "an engine of another build reads the source again")
+}

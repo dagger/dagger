@@ -413,6 +413,10 @@ func moduleSourceFieldCacheKey[T dagql.Typed, A any](ctx context.Context, _ dagq
 	return moduleSourceReadCacheKey(ctx, req, true)
 }
 
+// moduleSourceEngineBuild names the engine build that reads a module source.
+// Tests replace it to stand for another engine.
+var moduleSourceEngineBuild = engine.FullVersion
+
 // moduleSourceReadCacheKey keys a read of a module source by its receiver and
 // arguments when it takes nothing from its caller that the key leaves out,
 // and per client otherwise, with the input dagql.PerClientInput gives.
