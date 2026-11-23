@@ -8,11 +8,13 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/containerd/containerd/v2/pkg/labels"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/dagql"
@@ -120,12 +122,12 @@ func imageBlobs(t *testing.T, dir string) map[string][]byte {
 	t.Helper()
 	blobs := map[string][]byte{}
 	root := filepath.Join(dir, "blobs")
-	require.NoError(t, filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+	require.NoError(t, filepath.WalkDir(root, func(name string, entry fs.DirEntry, err error) error {
 		if err != nil || entry.IsDir() {
 			return err
 		}
-		data, err := os.ReadFile(path)
-		blobs[strings.TrimPrefix(path, root+"/")] = data
+		data, err := os.ReadFile(name)
+		blobs[strings.TrimPrefix(name, root+"/")] = data
 		return err
 	}))
 	return blobs
@@ -134,8 +136,11 @@ func imageBlobs(t *testing.T, dir string) map[string][]byte {
 // The image's entries exported with an epoch are their files dated at the
 // epoch at the latest, so two engines that wrote the same file at different
 // times ship the same blobs. The times are in no lookup's key: the bundle's
-// records are the same as without the epoch, and an engine that starts from
-// the clamped entries finds the entry and installs it from them.
+// records are the same as without the epoch, the bundle names each clamped
+// blob by the digest of its bytes, and an engine that merges the clamped
+// entries finds the entry. Installing a part from the image's blobs is
+// TestImageOfferInstallsFromTheImage's, and every test engine's, whose image
+// ships its entries clamped.
 func TestImageEntriesClampedToTheEpoch(t *testing.T) {
 	t.Parallel()
 	epoch := time.Unix(315619200, 0).UTC()
@@ -165,12 +170,30 @@ func TestImageEntriesClampedToTheEpoch(t *testing.T) {
 	laterDir, _ := exportImageEntries(t, newAdapterTestEngine(t), imageRefConfig, &epoch, "shipped")
 	require.Equal(t, blobs, imageBlobs(t, laterDir), "the same files make the same blobs")
 
+	for name, blob := range blobs {
+		require.Equal(t, strings.Replace(name, "/", ":", 1), digest.FromBytes(blob).String(), "a blob is named by the digest of its clamped bytes")
+	}
+	var layers int
+	for _, output := range clamped.Outputs {
+		if output.Chain == nil {
+			continue
+		}
+		for _, layer := range output.Chain.Layers {
+			layers++
+			d := layer.Descriptor.Digest
+			blob, ok := blobs[path.Join(d.Algorithm().String(), d.Encoded())]
+			require.True(t, ok, "the bundle names %s, a blob of the image", d)
+			require.EqualValues(t, len(blob), layer.Descriptor.Size)
+			require.Equal(t, d.String(), layer.Descriptor.Annotations[labels.LabelUncompressed], "an uncompressed blob's digest is its uncompressed digest")
+			require.False(t, layer.CreatedAt != nil && layer.CreatedAt.After(epoch), "the layer is dated at the epoch at the latest")
+		}
+	}
+	require.NotZero(t, layers)
+
 	e := newAdapterTestEngine(t)
 	srv := &Server{engineCache: e.cache}
 	srv.mergeImageEntries(e.ctx, dir, nil)
-	file := e.file(t, "shipped")
-	require.True(t, e.cache.FromImage(file), "the clamped entry is found")
-	require.NoError(t, e.cache.Evaluate(e.ctx, file), "and installs from the clamped blobs")
+	require.True(t, e.cache.FromImage(e.file(t, "shipped")), "the clamped entry is found")
 }
 
 // An engine merges its image's entries at start, and the start never depends
