@@ -5,6 +5,11 @@ import (
 	"errors"
 	"reflect"
 	"slices"
+	"time"
+
+	"github.com/dagger/dagger/engine/snapshots"
+	"github.com/opencontainers/go-digest"
+	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 type OfferOutcome uint8
@@ -374,7 +379,91 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, item CloudPar
 	return out
 }
 
+// sameOfferMeaning reports whether two offers of a part mean the same: they
+// are equal in everything but their chain's blob addresses, which renewal
+// replaces. It is reflect.DeepEqual over the two offers less their
+// addresses, written out field by field: a merge compares each kept row's
+// offers with its entry's under the graph lock, and reflecting over them
+// cost a landing about a third of its kept rows' time there. As with
+// DeepEqual, a nil slice or map differs from an empty one.
 func sameOfferMeaning(a, b PersistedPartOffer) bool {
-	a.Chain.Addresses, b.Chain.Addresses = nil, nil
-	return reflect.DeepEqual(a, b)
+	return equalSlices(a.Address.OutputPath, b.Address.OutputPath, func(x, y PersistedRefPathElem) bool { return x == y }) &&
+		a.Address.Part == b.Address.Part &&
+		sameSnapshotValue(a.Value, b.Value) &&
+		equalSlices(a.Chain.Layers, b.Chain.Layers, sameExportLayer) &&
+		a.Chain.RenewalKey == b.Chain.RenewalKey &&
+		equalMaps(a.Chain.Packs, b.Chain.Packs, func(x, y digest.Digest) bool { return x == y }) &&
+		equalSlices(a.Owner.DependencyIDs, b.Owner.DependencyIDs, func(x, y uint64) bool { return x == y })
+}
+
+func sameSnapshotValue(a, b SnapshotValue) bool {
+	return a.Kind == b.Kind && a.Path == b.Path &&
+		equalPointers(a.Platform, b.Platform, samePlatform) &&
+		equalSlices(a.Services, b.Services, func(x, y TransferredServiceBinding) bool {
+			return x.ServiceResultID == y.ServiceResultID && x.Hostname == y.Hostname &&
+				equalSlices(x.Aliases, y.Aliases, func(p, q string) bool { return p == q })
+		})
+}
+
+func sameExportLayer(a, b snapshots.ExportLayer) bool {
+	return sameDescriptor(a.Descriptor, b.Descriptor) && a.Description == b.Description && a.Computed == b.Computed &&
+		// Two times are DeepEqual when equal by ==, which also compares
+		// their locations' pointers; only a time in a location of its own
+		// needs DeepEqual's look into the location.
+		equalPointers(a.CreatedAt, b.CreatedAt, func(x, y time.Time) bool { return x == y || reflect.DeepEqual(x, y) })
+}
+
+func sameDescriptor(a, b ocispecs.Descriptor) bool {
+	return a.MediaType == b.MediaType && a.Digest == b.Digest && a.Size == b.Size && a.ArtifactType == b.ArtifactType &&
+		equalSlices(a.URLs, b.URLs, func(x, y string) bool { return x == y }) &&
+		equalMaps(a.Annotations, b.Annotations, func(x, y string) bool { return x == y }) &&
+		equalSlices(a.Data, b.Data, func(x, y byte) bool { return x == y }) &&
+		equalPointers(a.Platform, b.Platform, samePlatform)
+}
+
+func samePlatform(a, b ocispecs.Platform) bool {
+	return a.Architecture == b.Architecture && a.OS == b.OS && a.OSVersion == b.OSVersion && a.Variant == b.Variant &&
+		equalSlices(a.OSFeatures, b.OSFeatures, func(x, y string) bool { return x == y })
+}
+
+// equalSlices is reflect.DeepEqual's rule for slices, with same comparing
+// elements: both nil or both not, and equal element by element.
+func equalSlices[T any](a, b []T, same func(T, T) bool) bool {
+	if (a == nil) != (b == nil) || len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if !same(a[i], b[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+// equalMaps is reflect.DeepEqual's rule for maps, with same comparing
+// values: both nil or both not, the same keys, and equal values.
+func equalMaps[K comparable, V any](a, b map[K]V, same func(V, V) bool) bool {
+	if (a == nil) != (b == nil) || len(a) != len(b) {
+		return false
+	}
+	for k, x := range a {
+		y, ok := b[k]
+		if !ok || !same(x, y) {
+			return false
+		}
+	}
+	return true
+}
+
+// equalPointers is reflect.DeepEqual's rule for pointers, with same
+// comparing what they point to: the same pointer, or both set to equal
+// values.
+func equalPointers[T any](a, b *T, same func(T, T) bool) bool {
+	if a == b {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return same(*a, *b)
 }
