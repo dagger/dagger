@@ -659,7 +659,7 @@ type MyCi {
 
 ### Cache volumes
 
-Use cache volumes for package manager caches and other persistent data that should survive across runs. `cacheVolume("name")` is keyed by name:
+Use cache volumes for package manager caches and other data a tool can recreate. `cacheVolume("name")` is keyed by name. Its contents can be absent on any run, so a pipeline must be correct with the volume empty:
 
 ```dang
 build: Container! {
@@ -667,7 +667,7 @@ build: Container! {
     .from("node:20")
     .withDirectory("/app", source)
     .withWorkdir("/app")
-    .withMountedCache("/app/node_modules", cacheVolume("node-modules"))
+    .withMountedCache("/root/.npm", cacheVolume("npm-cache"))
     .withExec(["npm", "install"])
     .withExec(["npm", "run", "build"])
 }
