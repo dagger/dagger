@@ -536,7 +536,7 @@ func (ModuleSuite) TestModuleEntrypointSourcesReadKeepsTheSourceToItsSession(ctx
 		require.NoError(t, err)
 		res, err := testutil.QueryWithClient[struct {
 			CountedReader struct{ Counted string }
-		}](c, t, `query($dir: DirectoryID!) {countedReader{counted(dir: $dir)}}`, &testutil.QueryOptions{
+		}](c, t, `query($dir: ID!) {countedReader{counted(dir: $dir)}}`, &testutil.QueryOptions{
 			Variables: map[string]any{"dir": dir},
 		})
 		require.NoError(t, err)
