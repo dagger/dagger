@@ -317,7 +317,7 @@ type ImageBundleWriter interface {
 // ctx ends. A result refused for any other reason, or one whose row stays
 // busy until a later evaluation (BusyBookkeeping), fails the export. It is
 // built for the image's build, and nothing in the engine's runtime calls it.
-func (c *Cache) ExportImageBundle(ctx context.Context, outputs []SelectedValueOutput, cfg config.RefConfig, w ImageBundleWriter) error {
+func (c *Cache) ExportImageBundle(ctx context.Context, outputs []SelectedValueOutput, cfg config.RefConfig, epoch *time.Time, w ImageBundleWriter) error {
 	if len(outputs) == 0 {
 		return errors.New("export image bundle: no results")
 	}

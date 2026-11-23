@@ -1,11 +1,15 @@
 package server
 
 import (
+	"archive/tar"
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -16,6 +20,8 @@ import (
 	"github.com/dagger/dagger/engine/remotecache"
 	"github.com/dagger/dagger/engine/remotecache/protocol"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
+	"github.com/dagger/dagger/engine/snapshots/config"
+	"github.com/dagger/dagger/internal/buildkit/util/compression"
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 )
@@ -55,7 +61,18 @@ func imageEntriesDir(t *testing.T) (string, dagql.ValueBundle) {
 // name as an engine image's entries, and returns their directory and bundle.
 func imageEntriesDirOf(t *testing.T, names ...string) (string, dagql.ValueBundle) {
 	t.Helper()
-	src := newAdapterTestEngine(t)
+	return exportImageEntries(t, newAdapterTestEngine(t), exportRefConfig, nil, names...)
+}
+
+// imageRefConfig is the config the engine image's build exports its entries
+// with (_engineImageBundle): uncompressed blobs.
+var imageRefConfig = config.RefConfig{Compression: compression.New(compression.Uncompressed).SetForce(true)}
+
+// exportImageEntries exports an evaluated file of src for each name as an
+// engine image's entries, with cfg, and with their blobs' times clamped to
+// epoch when it is set, and returns their directory and bundle.
+func exportImageEntries(t *testing.T, src *adapterTestEngine, cfg config.RefConfig, epoch *time.Time, names ...string) (string, dagql.ValueBundle) {
+	t.Helper()
 	var outputs []dagql.SelectedValueOutput
 	for _, name := range names {
 		file := src.file(t, name)
@@ -63,7 +80,7 @@ func imageEntriesDirOf(t *testing.T, names ...string) (string, dagql.ValueBundle
 		outputs = append(outputs, dagql.SelectedValueOutput{Result: file, Address: snapshotPart})
 	}
 	dir := t.TempDir()
-	require.NoError(t, src.cache.ExportImageBundle(src.ctx, outputs, exportRefConfig, testImageDir{dir}))
+	require.NoError(t, src.cache.ExportImageBundle(src.ctx, outputs, cfg, epoch, testImageDir{dir}))
 	raw, err := os.ReadFile(filepath.Join(dir, schema.EngineImageBundleFile))
 	require.NoError(t, err)
 	var bundle dagql.ValueBundle
@@ -97,6 +114,64 @@ func expireImageRoot(t *testing.T, dir string, bundle dagql.ValueBundle, name st
 	}
 	require.True(t, expired, "%s is a root of the bundle", name)
 	require.NoError(t, testImageDir{dir}.WriteBundle(t.Context(), bundle))
+}
+
+// imageBlobs are the blobs of the image's entries in dir, by path.
+func imageBlobs(t *testing.T, dir string) map[string][]byte {
+	t.Helper()
+	blobs := map[string][]byte{}
+	root := filepath.Join(dir, "blobs")
+	require.NoError(t, filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() {
+			return err
+		}
+		data, err := os.ReadFile(path)
+		blobs[strings.TrimPrefix(path, root+"/")] = data
+		return err
+	}))
+	return blobs
+}
+
+// The image's entries exported with an epoch are their files dated at the
+// epoch at the latest, so two engines that wrote the same file at different
+// times ship the same blobs. The times are in no lookup's key: the bundle's
+// records are the same as without the epoch, and an engine that starts from
+// the clamped entries finds the entry and installs it from them.
+func TestImageEntriesClampedToTheEpoch(t *testing.T) {
+	t.Parallel()
+	epoch := time.Unix(315619200, 0).UTC()
+	src := newAdapterTestEngine(t)
+	dir, clamped := exportImageEntries(t, src, imageRefConfig, &epoch, "shipped")
+	_, unclamped := exportImageEntries(t, src, imageRefConfig, nil, "shipped")
+	require.Equal(t, unclamped.Roots, clamped.Roots)
+	require.Equal(t, unclamped.Values, clamped.Values, "every record, and so every lookup's key, is the same")
+
+	blobs := imageBlobs(t, dir)
+	require.NotEmpty(t, blobs)
+	for name, blob := range blobs {
+		tr := tar.NewReader(bytes.NewReader(blob))
+		for {
+			hdr, err := tr.Next()
+			if err == io.EOF {
+				break
+			}
+			require.NoError(t, err)
+			require.False(t, hdr.ModTime.After(epoch), "%s: %s is dated %s, after the epoch", name, hdr.Name, hdr.ModTime)
+		}
+	}
+
+	// The same file, written at least a second later by another engine: a
+	// layer's tar keeps times to the second.
+	time.Sleep(1100 * time.Millisecond)
+	laterDir, _ := exportImageEntries(t, newAdapterTestEngine(t), imageRefConfig, &epoch, "shipped")
+	require.Equal(t, blobs, imageBlobs(t, laterDir), "the same files make the same blobs")
+
+	e := newAdapterTestEngine(t)
+	srv := &Server{engineCache: e.cache}
+	srv.mergeImageEntries(e.ctx, dir, nil)
+	file := e.file(t, "shipped")
+	require.True(t, e.cache.FromImage(file), "the clamped entry is found")
+	require.NoError(t, e.cache.Evaluate(e.ctx, file), "and installs from the clamped blobs")
 }
 
 // An engine merges its image's entries at start, and the start never depends
@@ -241,7 +316,7 @@ func sdkImageEntriesDir(t *testing.T) (string, digest.Digest) {
 	}
 	dir := t.TempDir()
 	outputs := []dagql.SelectedValueOutput{{Result: files, Address: snapshotPart}, {Result: shipped, Address: snapshotPart}}
-	require.NoError(t, src.cache.ExportImageBundle(src.ctx, outputs, exportRefConfig, testImageDir{dir}))
+	require.NoError(t, src.cache.ExportImageBundle(src.ctx, outputs, exportRefConfig, nil, testImageDir{dir}))
 	return dir, content
 }
 
@@ -294,7 +369,7 @@ func TestExportImageBundleWaitsForBusyResults(t *testing.T) {
 			outputs = append(outputs, dagql.SelectedValueOutput{Result: res, Address: snapshotPart})
 		}
 		exported := make(chan error, 1)
-		go func() { exported <- e.cache.ExportImageBundle(ctx, outputs, exportRefConfig, testImageDir{dir}) }()
+		go func() { exported <- e.cache.ExportImageBundle(ctx, outputs, exportRefConfig, nil, testImageDir{dir}) }()
 		return exported
 	}
 	t.Run("busy", func(t *testing.T) {
