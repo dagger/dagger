@@ -109,7 +109,10 @@ func BenchmarkEqClassCheckThatFreesNothing(b *testing.B) {
 			require.NoError(b, err)
 			cloud.egraphMu.RLock()
 			checks, slots := cloud.eqClassChecks, cloud.eqClassSlotsLocked()
-			terms, holdings := len(cloud.egraphTerms), cloud.remoteHoldings.Load()
+			terms, holdings := len(cloud.egraphTerms), 0
+			for _, state := range cloud.remoteCaches {
+				holdings += state.holdings
+			}
 			cloud.egraphMu.RUnlock()
 			b.Logf("%d entries, %d terms, %d holdings, %d class slots", entries, terms, holdings, slots)
 

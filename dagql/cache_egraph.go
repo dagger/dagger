@@ -2537,7 +2537,6 @@ func (c *Cache) maybeResetEgraphLocked() {
 	c.resultPayloadBytes.Store(0)
 	c.entriesByRecipe = nil
 	c.remoteCaches = nil
-	c.remoteHoldings.Store(0)
 	c.freeEqClassIDs = nil
 	c.nextEgraphTermID = 0
 	// nextSharedResultID deliberately survives the reset: numeric result IDs
