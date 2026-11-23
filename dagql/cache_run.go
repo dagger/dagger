@@ -220,18 +220,29 @@ func (c *Cache) HoldingRuns(keys []HolderKey) []HoldingRun {
 	defer c.egraphMu.RUnlock()
 	out := make([]HoldingRun, len(keys))
 	for i, key := range keys {
+		// The holding and the run's own holding are each read under its
+		// engine cache's lock, one after the other.
+		state := c.rlockEngineLocked(key.Cache)
 		entry, h := c.holdingLocked(key)
+		var replacements uint64
+		if h != nil {
+			replacements = h.replacements
+		}
+		state.runlock()
 		if h == nil || entry == nil || entry.run == nil || entry.noValueLocked() {
 			continue
 		}
 		run := *entry.run
+		state = c.rlockEngineLocked(run.Cache)
 		_, held := c.holdingLocked(HolderKey{Cache: run.Cache, Number: run.Number})
+		runHeld := held != nil && held.replacements == run.Replacements
+		state.runlock()
 		out[i] = HoldingRun{
 			Stored:  true,
 			Run:     run,
 			Ran:     c.ownRunRanLocked(entry),
-			Own:     key.Cache == run.Cache && key.Number == run.Number && h.replacements == run.Replacements,
-			RunHeld: held != nil && held.replacements == run.Replacements,
+			Own:     key.Cache == run.Cache && key.Number == run.Number && replacements == run.Replacements,
+			RunHeld: runHeld,
 		}
 	}
 	return out

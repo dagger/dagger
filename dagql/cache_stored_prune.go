@@ -30,13 +30,7 @@ import (
 // ownership unit each. An engine's Cloud and image holdings own nothing. Requires
 // egraphMu.
 func (res *sharedResult) engineHoldingsLocked() int64 {
-	var n int64
-	for _, ref := range res.holderRefsLocked() {
-		if !senderCache(ref.key.Cache) {
-			n++
-		}
-	}
-	return n
+	return int64(res.engineHoldersLocked())
 }
 
 // hasOwnValueLocked reports whether res has a value of its own: decoded, or a

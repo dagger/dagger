@@ -181,6 +181,9 @@ func (c *Cache) walkStoredRoot(root sharedResultID, nowUnix int64, held *HeldBy,
 	hold := c.readInPieces()
 	hold.report = c.testStoredSizesHold
 	defer hold.done()
+	if held != nil {
+		hold.lockEngine(c.remoteCaches[held.Cache])
+	}
 	res := c.resultsByID[root]
 	if res == nil || res.noValueLocked() {
 		return StoredSize{}, nil, 0, nil
@@ -680,6 +683,9 @@ func (c *Cache) StoredClosure(ctx context.Context, roots []uint64, nowUnix int64
 func (c *Cache) listStoredRoot(root sharedResultID, nowUnix int64, held *HeldBy, seen, ordinary map[sharedResultID]bool, list *storedClosureList) ([]*sharedResult, []sharedResultID, int) {
 	hold := c.readInPieces()
 	defer hold.done()
+	if held != nil {
+		hold.lockEngine(c.remoteCaches[held.Cache])
+	}
 	res := c.resultsByID[root]
 	if res == nil || res.noValueLocked() {
 		return nil, nil, 0
@@ -707,6 +713,9 @@ func (c *Cache) StoredLowerHalf(ctx context.Context, root uint64, nowUnix int64,
 		return nil, 0, err
 	}
 	defer c.storedSizesRLock()()
+	if held != nil {
+		defer c.rlockEngineLocked(held.Cache).runlock()
+	}
 	res := c.resultsByID[sharedResultID(root)]
 	if res == nil || res.noValueLocked() {
 		return nil, 0, nil
