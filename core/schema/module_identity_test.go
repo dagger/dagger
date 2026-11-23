@@ -9,6 +9,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 )
 
 // moduleIdentityTestSource reads a module source named name from an
@@ -107,4 +108,146 @@ func TestModuleLoadReadingPerCallStaysInItsSession(t *testing.T) {
 		require.Equal(t, tc.shared, mod.HitCache(), "%s: the later session's module is the first's", tc.name)
 	}
 	require.EqualValues(t, 2, probes.Load(), "the module that read per call was loaded in each session")
+}
+
+// An eager client builds a module's runtime as the module loads, so a lazy
+// client's load, which hasn't, isn't one it can take. Two lazy clients still
+// share theirs.
+func TestModuleLoadedLazilyIsNotAnEagerClients(t *testing.T) {
+	t.Parallel()
+	e := newTransferTestEngine(t, transferTestSalt(t))
+
+	first := e.session(t, "first")
+	moduleIdentityTestLoad(t, e, first, moduleIdentityTestSource(t, e, first, "eager"))
+
+	eager := e.session(t, "eager")
+	md, err := engine.ClientMetadataFromContext(eager)
+	require.NoError(t, err)
+	eagerMD := *md
+	eagerMD.EagerRuntime = true
+	eager = engine.ContextWithClientMetadata(eager, &eagerMD)
+	require.False(t, moduleIdentityTestLoad(t, e, eager, moduleIdentityTestSource(t, e, eager, "eager")).HitCache(),
+		"the eager client loads the module itself")
+
+	later := e.session(t, "later")
+	require.True(t, moduleIdentityTestLoad(t, e, later, moduleIdentityTestSource(t, e, later, "eager")).HitCache(),
+		"a later lazy client takes the first's")
+}
+
+// A call the module's runtime prebuild makes after the load has built the
+// module, as the load stops the prebuild it no longer needs, still keeps
+// the module to its session: the load reads what it made only once the
+// prebuild has stopped.
+func TestModuleLoadKeepsAPrebuildsLateReadInItsSession(t *testing.T) {
+	t.Parallel()
+	ctx, cache, srv, _ := prebuildTestEnv(t, "first")
+	var probes atomic.Int32
+	dagql.Fields[*core.Query]{
+		dagql.Func("perCallProbe", func(context.Context, *core.Query, struct{}) (dagql.String, error) {
+			probes.Add(1)
+			return "read", nil
+		}).WithInput(dagql.PerCallInput),
+	}.Install(srv)
+	sdk := &prebuildTestSDK{prebuild: func(ctx context.Context) error {
+		<-ctx.Done()
+		var read dagql.String
+		if err := srv.Select(context.WithoutCancel(ctx), srv.Root(), &read, dagql.Selector{Field: "perCallProbe"}); err != nil {
+			return err
+		}
+		return ctx.Err()
+	}}
+
+	_, err := selectAsModule(ctx, srv, prebuildTestSource(t, ctx, cache, srv, "first", "late", sdk))
+	require.NoError(t, err)
+	require.EqualValues(t, 1, probes.Load(), "the prebuild read once the load stopped it")
+	later := withClient(ctx, "later", "later")
+	mod, err := selectAsModule(later, srv, prebuildTestSource(t, later, cache, srv, "later", "late", sdk))
+	require.NoError(t, err)
+	require.False(t, mod.HitCache(), "the later session loads the module itself")
+}
+
+// moduleIdentitySDK is a module SDK whose implementation is the module mod.
+type moduleIdentitySDK struct {
+	*prebuildTestSDK
+	mod dagql.ObjectResult[*core.Module]
+}
+
+func (s *moduleIdentitySDK) AsModule() (dagql.ObjectResult[*core.Module], bool) {
+	return s.mod, s.mod.Self() != nil
+}
+
+// A source's identity holds the SDK it resolved: a module SDK named by a
+// branch resolves to another module once the branch moves, and a source
+// loaded with it is another source. A source that holds a module SDK's
+// config without its module, as one restored from a saved cache does, has
+// no identity.
+func TestModuleSourceIdentityHoldsItsResolvedSDK(t *testing.T) {
+	t.Parallel()
+	ctx, cache, srv, _ := prebuildTestEnv(t, "sdk")
+	source := func(sdkMod dagql.ObjectResult[*core.Module]) *core.ModuleSource {
+		return &core.ModuleSource{
+			Kind:               core.ModuleSourceKindDir,
+			ModuleName:         "demo",
+			ModuleOriginalName: "demo",
+			SDK:                &core.SDKConfig{Source: "github.com/acme/sdk@main"},
+			SDKImpl:            &moduleIdentitySDK{prebuildTestSDK: &prebuildTestSDK{}, mod: sdkMod},
+		}
+	}
+	before := attachDefinitionTestResult(t, ctx, cache, srv, "sdk", "sdk-before-the-branch-moved", &core.Module{NameField: "sdk"})
+	after := attachDefinitionTestResult(t, ctx, cache, srv, "sdk", "sdk-after-the-branch-moved", &core.Module{NameField: "sdk"})
+
+	idBefore, ok, err := source(before).ContentIdentity(ctx)
+	require.NoError(t, err)
+	require.True(t, ok)
+	idAfter, ok, err := source(after).ContentIdentity(ctx)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.NotEqual(t, idBefore, idAfter, "sources holding different SDK modules are different sources")
+
+	_, ok, err = source(dagql.ObjectResult[*core.Module]{}).ContentIdentity(ctx)
+	require.NoError(t, err)
+	require.False(t, ok, "a source whose module SDK it doesn't hold has no identity")
+}
+
+// A source's identity holds its user defaults as a function sees them,
+// expanded from the main client's environment: two clients whose .env reads
+// the same, but whose environments differ, hold different defaults.
+func TestModuleSourceIdentityHoldsItsExpandedUserDefaults(t *testing.T) {
+	t.Parallel()
+	e := newTransferTestEngine(t, transferTestSalt(t))
+	src := &core.ModuleSource{
+		Kind:               core.ModuleSourceKindDir,
+		ModuleName:         "demo",
+		ModuleOriginalName: "demo",
+		UserDefaults:       &core.EnvFile{Expand: true, Environ: []string{"greeting=${GREETING}"}},
+	}
+	identityFor := func(name, greeting string) string {
+		t.Helper()
+		md := &engine.ClientMetadata{ClientID: name + "-client", SessionID: name + "-session"}
+		e.srv.attachables[md.ClientID] = newLLMAuthAttachable(t, &llmAuthSecrets{vars: map[string]string{"env://GREETING": greeting}})
+		e.srv.parent = md
+		id, ok, err := src.ContentIdentity(engine.ContextWithClientMetadata(e.base, md))
+		require.NoError(t, err)
+		require.True(t, ok)
+		return id.String()
+	}
+	require.NotEqual(t, identityFor("first", "hello"), identityFor("later", "bonjour"),
+		"defaults expanded from different environments are different defaults")
+}
+
+// Cloning an SDK config copies its maps: the experimental-feature fields
+// write into the clone's, and the source it was cloned from may be held by
+// other clients.
+func TestSDKConfigCloneSharesNoMaps(t *testing.T) {
+	t.Parallel()
+	orig := &core.SDKConfig{
+		Source:       "go",
+		Config:       map[string]any{"goprivate": "example.com"},
+		Experimental: map[string]bool{"SELF_CALLS": true},
+	}
+	cp := orig.Clone()
+	cp.Experimental["SELF_CALLS"] = false
+	cp.Config["goprivate"] = "elsewhere.com"
+	require.True(t, orig.Experimental["SELF_CALLS"], "the original's features are its own")
+	require.Equal(t, "example.com", orig.Config["goprivate"], "the original's config is its own")
 }
