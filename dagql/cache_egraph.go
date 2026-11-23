@@ -1428,13 +1428,17 @@ func (c *Cache) lookupCacheForRequest(
 }
 
 // sessionHasBound reports whether sessionID has bound a result to itself,
-// so that it holds its binding's handle (boundSessionHandle).
+// so that it holds its binding's handle (boundSessionHandle). It is asked two
+// or three times on every call of every session, so it reads the flag on the
+// session's lifecycle record, which every session operation already reaches
+// without the session lock, and a session that has bound nothing takes no
+// lock for it.
 func (c *Cache) sessionHasBound(sessionID string) bool {
-	handle := c.sessionBoundHandle(sessionID)
-	c.sessionMu.Lock()
-	defer c.sessionMu.Unlock()
-	handles := c.sessionHandlesBySession[sessionID]
-	return handles != nil && handles.Contains(handle)
+	if sessionID == "" {
+		return false
+	}
+	state, ok := c.sessionLifecycles.Load(sessionID)
+	return ok && state.(*cacheSessionLifecycle).bound.Load()
 }
 
 func (c *Cache) lookupCacheForRequestDigests(

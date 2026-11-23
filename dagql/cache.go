@@ -305,6 +305,10 @@ const cacheSessionReleasedBit uint64 = 1 << 63
 // by compare-and-swap on this word.
 type cacheSessionLifecycle struct {
 	lifecycle atomic.Uint64
+	// bound is set once the session has bound a result to itself
+	// (boundSessionHandle), so a session's calls ask it without the
+	// session lock (sessionHasBound).
+	bound atomic.Bool
 
 	releaseMu      sync.Mutex
 	releasePlan    *cacheSessionReleasePlan
@@ -1039,10 +1043,12 @@ func (c *Cache) boundSessionHandle(sessionID string) (SessionResourceHandle, err
 	handle := c.sessionBoundHandle(sessionID)
 	c.sessionMu.Lock()
 	defer c.sessionMu.Unlock()
-	if c.sessionLifecycle(sessionID).lifecycle.Load()&cacheSessionReleasedBit != 0 {
+	state := c.sessionLifecycle(sessionID)
+	if state.lifecycle.Load()&cacheSessionReleasedBit != 0 {
 		return "", fmt.Errorf("%w: %q", ErrCacheSessionReleased, sessionID)
 	}
 	c.addSessionHandleLocked(sessionID, handle)
+	state.bound.Store(true)
 	return handle, nil
 }
 
