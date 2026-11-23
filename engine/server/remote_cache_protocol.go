@@ -659,17 +659,22 @@ func knowMerged(known *dagql.KnownRows, reply dagql.MergeReply) (keptOwn, keptSe
 	}
 	rows := dagql.ExportedRows{Full: make(map[uint64]dagql.RowRevision, len(reply.Values))}
 	for _, value := range reply.Values {
-		switch {
-		case value.Stored:
+		if value.Stored {
 			rows.Full[value.Number] = value.Revision
-		case known.Knows(value.Number, value.Revision):
+		}
+	}
+	known.Merged(rows)
+	// A kept row is counted after the stored ones are known: one record of
+	// its recipe the merge stored on the same entry makes it known.
+	for _, value := range reply.Values {
+		switch {
+		case value.Stored, known.Knows(value.Number, value.Revision):
 		case value.Own:
 			keptOwn++
 		default:
 			keptSent++
 		}
 	}
-	known.Merged(rows)
 	return keptOwn, keptSent
 }
 
