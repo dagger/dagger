@@ -38,6 +38,31 @@ func mergeTestExpire(c *Cache, res *sharedResult) {
 	c.egraphMu.Unlock()
 }
 
+// A merge's reply says, for each record, whether the engine's entry holds the
+// engine's own value: a record stored on a new entry is another cache's, and
+// a record kept on an entry whose value the engine made leaves that value its
+// own.
+func TestMergeReplySaysWhetherTheEnginesValueIsItsOwn(t *testing.T) {
+	t.Parallel()
+	bundle, _ := mergeTestSource(t, "root", "sent")
+
+	fctx, fresh, _ := transferTestCache(t)
+	stored, err := fresh.MergeValues(fctx, cloudCacheID, bundle)
+	require.NoError(t, err)
+	require.Len(t, stored.Values, 1)
+	require.True(t, stored.Values[0].Stored)
+	require.False(t, stored.Values[0].Own, "the stored record is the Cloud's")
+
+	octx, own, osrv := transferTestCache(t)
+	made := persistedListTestResult(t, octx, own, osrv, "root", &transferTestValue{Text: "made"})
+	kept, err := own.MergeValues(octx, cloudCacheID, bundle)
+	require.NoError(t, err)
+	require.Len(t, kept.Values, 1)
+	require.Equal(t, uint64(made.cacheSharedResult().id), kept.Values[0].Number)
+	require.False(t, kept.Values[0].Stored)
+	require.True(t, kept.Values[0].Own, "the engine keeps the value it made")
+}
+
 // Merging the same bundle twice creates nothing the second time: every record
 // lands on the entry the first merge left, and the replies name the same
 // numbers.

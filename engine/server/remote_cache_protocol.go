@@ -582,12 +582,20 @@ func (a *RemoteCacheAdapter) Merge(ctx context.Context, id uint64, req protocol.
 			held++
 		}
 	}
+	// A committed merge's rows join known; one refused for stale held rows
+	// committed nothing.
+	var keptOwn, keptSent int
+	if reply.Committed && len(reply.Stale) == 0 {
+		keptOwn, keptSent = knowMerged(known, reply)
+	}
 	slog.Info("remote cache merge",
 		"records", len(req.Bundle.Values),
 		"held", held,
 		"roots", len(req.Bundle.Roots),
 		"committed", reply.Committed,
 		"stale", len(reply.Stale),
+		"kept_unknown_own", keptOwn,
+		"kept_unknown_sent", keptSent,
 		"commitHold", reply.CommitHold,
 		"duration", time.Since(start),
 		"error", err,
@@ -605,7 +613,6 @@ func (a *RemoteCacheAdapter) Merge(ctx context.Context, id uint64, req protocol.
 	if err != nil {
 		slog.Warn("remote cache merge committed, then a release failed", "error", err)
 	}
-	knowMerged(known, reply)
 	return mergedReply(reply), nil
 }
 
@@ -641,18 +648,29 @@ func (a *RemoteCacheAdapter) merge(ctx context.Context, name, ident string, look
 // to known: the service holds the records it sent. A row the merge kept the
 // engine's own value on isn't added: the service holds another record of its
 // recipe, maybe another run of the step, and not the engine's, so an export
-// carries the row in full.
-func knowMerged(known *dagql.KnownRows, reply dagql.MergeReply) {
+// carries the row in full. Neither is a row whose record the service sent
+// before, kept here at revisions that moved since that record was stored, as
+// the engine's own calls and installs move them. It returns the kept rows not
+// known at their revisions, by whether the engine's value is its own or a
+// record the service sent before: the rows an export of them carries in full.
+func knowMerged(known *dagql.KnownRows, reply dagql.MergeReply) (keptOwn, keptSent int) {
 	if known == nil {
-		return
+		return 0, 0
 	}
 	rows := dagql.ExportedRows{Full: make(map[uint64]dagql.RowRevision, len(reply.Values))}
 	for _, value := range reply.Values {
-		if value.Stored {
+		switch {
+		case value.Stored:
 			rows.Full[value.Number] = value.Revision
+		case known.Knows(value.Number, value.Revision):
+		case value.Own:
+			keptOwn++
+		default:
+			keptSent++
 		}
 	}
 	known.Merged(rows)
+	return keptOwn, keptSent
 }
 
 // CheckRestorePart checks a part of a set file for its merge ahead of it
@@ -682,12 +700,18 @@ func (a *RemoteCacheAdapter) RestorePart(ctx context.Context, part dagql.ValueBu
 	reply, priorityWait, err := a.merge(ctx, "remotecache.restore", "", false, func(ctx context.Context) (dagql.MergeReply, error) {
 		return a.restoreValues(ctx, checked, unretained, source)
 	})
+	var keptOwn, keptSent int
+	if reply.Committed && len(reply.Stale) == 0 {
+		keptOwn, keptSent = knowMerged(known, reply)
+	}
 	slog.Info("remote cache restore merge",
 		"records", len(part.Values),
 		"roots", len(part.Roots),
 		"committed", reply.Committed,
 		"stale", len(reply.Stale),
 		"kept", reply.Rows.Kept,
+		"kept_unknown_own", keptOwn,
+		"kept_unknown_sent", keptSent,
 		"unchanged", reply.Rows.Unchanged,
 		"created", reply.Rows.Created,
 		"commitHold", reply.CommitHold,
@@ -703,7 +727,6 @@ func (a *RemoteCacheAdapter) RestorePart(ctx context.Context, part dagql.ValueBu
 	if err != nil {
 		slog.Warn("remote cache restore merge committed, then a release failed", "error", err)
 	}
-	knowMerged(known, reply)
 	return reply, priorityWait, nil
 }
 
