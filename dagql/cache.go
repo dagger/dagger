@@ -13,6 +13,7 @@ import (
 	"os"
 	"reflect"
 	"slices"
+	"strings"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -1045,6 +1046,30 @@ func (c *Cache) boundSessionHandle(sessionID string) (SessionResourceHandle, err
 	return handle, nil
 }
 
+// boundSessionsOf returns the bindings res holds: its own, when its call
+// bound it to its session, and every session binding it requires through
+// what it is made of, in order.
+func (c *Cache) boundSessionsOf(res *sharedResult) []SessionResourceHandle {
+	if res == nil {
+		return nil
+	}
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	var handles []SessionResourceHandle
+	if res.boundSession != "" {
+		handles = append(handles, res.boundSession)
+	}
+	if res.requiredSessionResources != nil {
+		for handle := range res.requiredSessionResources.Items() {
+			if strings.HasPrefix(string(handle), boundSessionHandlePrefix) && handle != res.boundSession {
+				handles = append(handles, handle)
+			}
+		}
+	}
+	slices.Sort(handles)
+	return slices.Compact(handles)
+}
+
 // sessionBoundHandle is the handle only sessionID holds, which a result
 // bound to the session requires (boundSessionHandle). It names the cache's
 // run as well as the session (CacheIdentity, whose generation counts the
@@ -1052,8 +1077,11 @@ func (c *Cache) boundSessionHandle(sessionID string) (SessionResourceHandle, err
 // dependency of a kept entry, and restored by a later run, names a binding no
 // session of that run holds, whatever its session ID.
 func (c *Cache) sessionBoundHandle(sessionID string) SessionResourceHandle {
-	return SessionResourceHandle("dagql.session:" + c.identity.String() + ":" + sessionID)
+	return SessionResourceHandle(boundSessionHandlePrefix + c.identity.String() + ":" + sessionID)
 }
+
+// boundSessionHandlePrefix begins every session's binding handle.
+const boundSessionHandlePrefix = "dagql.session:"
 
 // addSessionHandleLocked records that sessionID holds handle. Requires
 // sessionMu.
@@ -8074,17 +8102,23 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 				return fmt.Errorf("bind result to session: %w", err)
 			}
 			oc.res.boundSession = handle
-			// The result's identity holds its session, so its class is its
-			// session's own (boundSessionInputName).
+		}
+		// A result bound to its session, or made of one, holds those
+		// sessions in its identity, so its class is theirs alone
+		// (boundSessionInputName).
+		if handles := c.boundSessionsOf(oc.res); len(handles) > 0 {
 			if frame := oc.res.loadResultCall(); frame != nil {
-				oc.res.storeResultCall(frame.withBoundSession(handle))
+				oc.res.storeResultCall(frame.withBoundSessions(handles))
 				c.traceResultCallFrameUpdated(ctx, oc.res, "init_completed_result_bound_session", frame, oc.res.loadResultCall())
 			}
 		}
 	}
+	// The call is indexed with the bindings of the result it returned, an
+	// adopted one's too: a call that returns a session's bound result joins
+	// only that session's class.
 	requestForIndex := req
-	if oc.res.boundSession != "" && !resWasCacheBacked {
-		requestForIndex = req.withBoundSession(oc.res.boundSession)
+	if handles := c.boundSessionsOf(oc.res); len(handles) > 0 {
+		requestForIndex = req.withBoundSessions(handles)
 	}
 	if oc.res.createdAtUnixNano == 0 {
 		oc.res.createdAtUnixNano = now.UnixNano()
