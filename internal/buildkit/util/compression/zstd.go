@@ -78,7 +78,10 @@ var zstdEncoders sync.Map
 // a time, so that it keeps one frame's history: a frame of a larger layer
 // takes one from frames, a layer that fits in zstdSizedLimit one from
 // streams. An encoder keeps the history of a frame and of a stream apart,
-// so one that did both would keep both.
+// so one that did both would keep both. A frame's encoder compresses on one
+// core: given more, it would take its frames in turn on as many encoders of
+// its own, each keeping a history. A stream's encoder writes each block out
+// on a goroutine of its own while the next is read, on its one history.
 type zstdEncoderPools struct {
 	level           zstd.EncoderLevel
 	frames, streams sync.Pool
@@ -98,8 +101,12 @@ func zstdEncodersFor(level zstd.EncoderLevel) *zstdEncoderPools {
 func (p *zstdEncoderPools) get(pool *sync.Pool) (*zstd.Encoder, error) {
 	enc, _ := pool.Get().(*zstd.Encoder)
 	if enc == nil {
+		concurrency := 1
+		if pool == &p.streams {
+			concurrency = 2
+		}
 		var err error
-		if enc, err = zstd.NewWriter(nil, zstd.WithEncoderLevel(p.level), zstd.WithEncoderConcurrency(1)); err != nil {
+		if enc, err = zstd.NewWriter(nil, zstd.WithEncoderLevel(p.level), zstd.WithEncoderConcurrency(concurrency)); err != nil {
 			return nil, err
 		}
 	}
