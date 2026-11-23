@@ -571,7 +571,7 @@ func TestRestoreFillsAddressesFromTheTable(t *testing.T) {
 // Heads merge on a lane of their own, and each whole on a lane of its own:
 // two claims' heads, offered together with their wholes, both commit while
 // the first whole is still merging, and so does the second whole, and the
-// head of a claim that arrives meanwhile. Heads keep their arrival order.
+// head of a claim that arrives meanwhile.
 func TestRestoreMergesHeadsBesideWholes(t *testing.T) {
 	t.Parallel()
 	adapter := newFakeAdapter()
@@ -599,9 +599,10 @@ func TestRestoreMergesHeadsBesideWholes(t *testing.T) {
 	s.dispatch(request(t, 2, protocol.TypeRestore, restoreOf("a", nil, &wholeA)))
 	s.dispatch(request(t, 3, protocol.TypeRestore, restoreOf("b", &headB, nil)))
 	s.dispatch(request(t, 4, protocol.TypeRestore, restoreOf("b", nil, &wholeB)))
+	// Which head merges first is whichever downloads first: the order among
+	// heads downloaded is TestRestoreMergesHeadsPartByPartInTurn's.
 	got := seen(t, adapter, 4)
 	require.ElementsMatch(t, []uint64{1, 2, 101, 201}, got, "both heads, and wholeB, merge while wholeA's first part is merging")
-	require.Less(t, slices.Index(got, 1), slices.Index(got, 2), "heads keep their order")
 	answered := []uint64{conn.next(t).Re, conn.next(t).Re, conn.next(t).Re}
 	require.ElementsMatch(t, []uint64{1, 3, 4}, answered)
 
@@ -616,6 +617,25 @@ func TestRestoreMergesHeadsBesideWholes(t *testing.T) {
 	require.Equal(t, uint64(2), conn.next(t).Re)
 }
 
+// downloaded reports whether r holds a head of each digest, its download
+// ended.
+func downloaded(r *restorer, heads ...digest.Digest) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	n := 0
+	for _, f := range r.heads {
+		if !slices.Contains(heads, f.file.Digest) {
+			continue
+		}
+		select {
+		case <-f.fetched:
+			n++
+		default:
+		}
+	}
+	return n == len(heads)
+}
+
 // Heads merge part by part in turn: every head's first part, which carries
 // what its check's run asks for first, merges before any head's second, and
 // among heads that have merged as many parts the earliest to arrive goes
@@ -624,22 +644,56 @@ func TestRestoreMergesHeadsBesideWholes(t *testing.T) {
 func TestRestoreMergesHeadsPartByPartInTurn(t *testing.T) {
 	t.Parallel()
 	adapter := newFakeAdapter()
+	release := make(chan struct{})
+	var released sync.Once
+	adapter.restore = func(_ context.Context, part dagql.ValueBundle, _ *dagql.KnownRows) (dagql.MergeReply, error) {
+		if part.Values[0].SenderNumber == 1 {
+			<-release
+		}
+		return merged(part, time.Now()), nil
+	}
+	s, conn := restoreSession(t, adapter)
+	t.Cleanup(func() { released.Do(func() { close(release) }) })
+	files := newFileServer(t)
+	headZ := files.add("headZ", setFile(t, dagql.ValueBundleVersion, part(1)))
+	headA := files.add("headA", setFile(t, dagql.ValueBundleVersion, part(11), part(12), part(13)))
+	headB := files.add("headB", setFile(t, dagql.ValueBundleVersion, part(21), part(22)))
+
+	// headZ's merge holds the lane until headA and headB have both
+	// downloaded.
+	s.dispatch(request(t, 1, protocol.TypeRestore, restoreOf("z", &headZ, nil)))
+	require.Equal(t, []uint64{1}, seen(t, adapter, 1))
+	s.dispatch(request(t, 2, protocol.TypeRestore, restoreOf("a", &headA, nil)))
+	s.dispatch(request(t, 3, protocol.TypeRestore, restoreOf("b", &headB, nil)))
+	require.Eventually(t, func() bool { return downloaded(s.restorer, headA.Digest, headB.Digest) }, 10*time.Second, time.Millisecond)
+	released.Do(func() { close(release) })
+	require.Equal(t, []uint64{11, 21, 12, 22, 13}, seen(t, adapter, 5), "each head's next part in turn, headA first among equals")
+	require.Equal(t, uint64(1), conn.next(t).Re)
+	require.Equal(t, uint64(3), conn.next(t).Re, "headB, done first, is answered first")
+	require.Equal(t, uint64(2), conn.next(t).Re)
+}
+
+// A head still downloading holds up no other head: the lane merges the
+// heads it has, and a later head's first part goes once it has downloaded.
+func TestRestoreHeadDoesntWaitForAnotherHeadsDownload(t *testing.T) {
+	t.Parallel()
+	adapter := newFakeAdapter()
 	adapter.restore = func(_ context.Context, part dagql.ValueBundle, _ *dagql.KnownRows) (dagql.MergeReply, error) {
 		return merged(part, time.Now()), nil
 	}
 	s, conn := restoreSession(t, adapter)
 	files := newFileServer(t)
 	headA := files.add("headA", setFile(t, dagql.ValueBundleVersion, part(11), part(12), part(13)))
-	gate := files.gate("headA")
 	headB := files.add("headB", setFile(t, dagql.ValueBundleVersion, part(21), part(22)))
+	gate := files.gate("headB")
 
-	// headA's download ends once both are queued.
 	s.dispatch(request(t, 1, protocol.TypeRestore, restoreOf("a", &headA, nil)))
 	s.dispatch(request(t, 2, protocol.TypeRestore, restoreOf("b", &headB, nil)))
-	close(gate)
-	require.Equal(t, []uint64{11, 21, 12, 22, 13}, seen(t, adapter, 5), "each head's next part in turn, headA first among equals")
-	require.Equal(t, uint64(2), conn.next(t).Re, "headB, done first, is answered first")
+	require.Equal(t, []uint64{11, 12, 13}, seen(t, adapter, 3), "headA's parts while headB downloads")
 	require.Equal(t, uint64(1), conn.next(t).Re)
+	close(gate)
+	require.Equal(t, []uint64{21, 22}, seen(t, adapter, 2))
+	require.Equal(t, uint64(2), conn.next(t).Re)
 }
 
 // Two wholes whose parts merge in turn, one of each file after the other,
