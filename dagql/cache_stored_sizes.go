@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
-	"math"
 	"slices"
 	"time"
 
@@ -135,11 +134,13 @@ type storedSizeMiss struct {
 	body  *storedBody
 	parts *partFacts
 	call  *ResultCall
-	// The value state its size depends on.
+	// The value state its size depends on, its change stamp among it: a
+	// value sent in full carries the stamp (TransferredValue.SenderStamp).
 	deps               []uint64
 	dependencyRevision uint64
 	replacements       uint64
 	expiresAtUnix      int64
+	changedAt          uint64
 }
 
 // storedSizesRLock takes egraphMu for reading and returns its release, which
@@ -388,7 +389,7 @@ func storedValueMeasuredLocked(res *sharedResult) (int64, bool) {
 		}
 		size = kept.size.Load()
 	}
-	if size == nil || size.dependencyRevision != res.dependencyOwnershipRevision || size.replacements != res.replacements || size.expiresAtUnix != res.expiresAtUnix {
+	if size == nil || size.dependencyRevision != res.dependencyOwnershipRevision || size.replacements != res.replacements || size.expiresAtUnix != res.expiresAtUnix || size.changedAt != res.changedAt {
 		return 0, false
 	}
 	return size.bytes, true
@@ -397,7 +398,7 @@ func storedValueMeasuredLocked(res *sharedResult) (int64, bool) {
 // storedSizeMissLocked reads the value state of res that its size depends on.
 // Requires egraphMu.
 func storedSizeMissLocked(res *sharedResult) storedSizeMiss {
-	miss := storedSizeMiss{res: res, env: res.persistedEnvelope, body: res.stored, parts: res.partFacts, call: res.loadResultCall(), dependencyRevision: res.dependencyOwnershipRevision, replacements: res.replacements, expiresAtUnix: res.expiresAtUnix}
+	miss := storedSizeMiss{res: res, env: res.persistedEnvelope, body: res.stored, parts: res.partFacts, call: res.loadResultCall(), dependencyRevision: res.dependencyOwnershipRevision, replacements: res.replacements, expiresAtUnix: res.expiresAtUnix, changedAt: res.changedAt}
 	for dep := range res.deps {
 		miss.deps = append(miss.deps, uint64(dep))
 	}
@@ -421,9 +422,7 @@ func (c *Cache) measureStoredValue(miss storedSizeMiss) (storedSizeMeasure, erro
 	if c.testStoredSizeMeasure != nil {
 		c.testStoredSizeMeasure()
 	}
-	// The value's change stamp is measured at its widest: it moves with every
-	// change to the entry, and a measure is kept across them.
-	value := TransferredValue{Ordinal: TransferOrdinal(miss.res.id), SenderNumber: uint64(miss.res.id), SenderReplacements: miss.replacements, SenderStamp: math.MaxUint64, DependencyIDs: miss.deps, ExpiresAtUnix: miss.expiresAtUnix}
+	value := TransferredValue{Ordinal: TransferOrdinal(miss.res.id), SenderNumber: uint64(miss.res.id), SenderReplacements: miss.replacements, SenderStamp: miss.changedAt, DependencyIDs: miss.deps, ExpiresAtUnix: miss.expiresAtUnix}
 	var kept *storedTransferRecord
 	var bytes int64
 	if miss.body != nil {
@@ -461,7 +460,7 @@ func (c *Cache) measureStoredValue(miss storedSizeMiss) (storedSizeMeasure, erro
 		}
 	}
 	c.storedSizeEncodes.Add(1)
-	return storedSizeMeasure{miss: miss, kept: kept, size: &storedValueSize{call: miss.call, dependencyRevision: miss.dependencyRevision, replacements: miss.replacements, expiresAtUnix: miss.expiresAtUnix, bytes: bytes}}, nil
+	return storedSizeMeasure{miss: miss, kept: kept, size: &storedValueSize{call: miss.call, dependencyRevision: miss.dependencyRevision, replacements: miss.replacements, expiresAtUnix: miss.expiresAtUnix, changedAt: miss.changedAt, bytes: bytes}}, nil
 }
 
 // publishStoredSizes keeps each measure's size on its entry, in one hold of
@@ -478,7 +477,7 @@ func (c *Cache) publishStoredSizes(measured []storedSizeMeasure) {
 	defer c.storedSizesRLock()()
 	for _, m := range measured {
 		res, miss := m.miss.res, m.miss
-		if res.persistedEnvelope != miss.env || res.stored != miss.body || res.loadResultCall() != miss.call || res.dependencyOwnershipRevision != miss.dependencyRevision || res.replacements != miss.replacements || res.expiresAtUnix != miss.expiresAtUnix {
+		if res.persistedEnvelope != miss.env || res.stored != miss.body || res.loadResultCall() != miss.call || res.dependencyOwnershipRevision != miss.dependencyRevision || res.replacements != miss.replacements || res.expiresAtUnix != miss.expiresAtUnix || res.changedAt != miss.changedAt {
 			continue
 		}
 		if miss.body != nil {
