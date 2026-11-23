@@ -172,6 +172,9 @@ func (c *Cache) initEgraphLocked() {
 	if c.egraphRanks == nil {
 		c.egraphRanks = []uint8{0}
 	}
+	if c.egraphUses == nil {
+		c.egraphUses = []uint32{0}
+	}
 	if c.eqClassToDigests == nil {
 		c.eqClassToDigests = make(map[eqClassID]map[string]struct{})
 	}
@@ -253,11 +256,13 @@ func (c *Cache) allocEqClassLocked() eqClassID {
 		c.freeEqClassIDs = c.freeEqClassIDs[:n-1]
 		c.egraphParents[id] = id
 		c.egraphRanks[id] = 0
+		c.egraphUses[id] = 0
 		return id
 	}
 	id := eqClassID(len(c.egraphParents))
 	c.egraphParents = append(c.egraphParents, id)
 	c.egraphRanks = append(c.egraphRanks, 0)
+	c.egraphUses = append(c.egraphUses, 0)
 	return id
 }
 
@@ -318,6 +323,7 @@ func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID, moved *[]egraphTerm
 
 	ra, rb = c.unionRootsLocked(ra, rb)
 	c.egraphParents[rb] = ra
+	c.joinEqClassUsesLocked(ra, rb)
 
 	// merge reverse digest indexes
 	dstDigests := c.eqClassToDigests[ra]
@@ -409,6 +415,11 @@ func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID, moved *[]egraphTerm
 		for resID := range srcResults {
 			dstResults[resID] = struct{}{}
 			if outputEqClasses := c.resultOutputEqClasses[resID]; outputEqClasses != nil {
+				// An entry that named both classes names one now, which it
+				// uses once.
+				if _, both := outputEqClasses[ra]; both {
+					c.unuseEqClassLocked(ra)
+				}
 				delete(outputEqClasses, rb)
 				outputEqClasses[ra] = struct{}{}
 			}
@@ -1916,6 +1927,9 @@ func (c *Cache) addResultOutputEqClassLocked(resID sharedResultID, outputEqID eq
 	}
 	_, hadForward := outputEqClasses[outputEqID]
 	outputEqClasses[outputEqID] = struct{}{}
+	if !hadForward {
+		c.useEqClassLocked(outputEqID)
+	}
 
 	results := c.outputEqClassResults[outputEqID]
 	if results == nil {
@@ -1943,6 +1957,7 @@ func (c *Cache) removeResultOutputEqClassesLocked(resID sharedResultID) {
 		if outputEqID == 0 {
 			continue
 		}
+		c.unuseEqClassLocked(outputEqID)
 		results := c.outputEqClassResults[outputEqID]
 		delete(results, resID)
 		if len(results) == 0 {
@@ -2003,7 +2018,7 @@ func (c *Cache) mergeOutputsForTermDigestLocked(ctx context.Context, termDigest 
 			if term == nil {
 				continue
 			}
-			term.outputEqID = root
+			c.setTermOutputLocked(term, root)
 		}
 		return root
 	}
@@ -2013,7 +2028,7 @@ func (c *Cache) mergeOutputsForTermDigestLocked(ctx context.Context, termDigest 
 		if term == nil {
 			continue
 		}
-		term.outputEqID = root
+		c.setTermOutputLocked(term, root)
 	}
 	return root
 }
@@ -2158,6 +2173,7 @@ func (c *Cache) applyPreparedResultIdentityLocked(ctx context.Context, res *shar
 
 		newTerm := newEgraphTerm(termID, requestSelf, inputEqIDs, mergedOutputEqID)
 		c.egraphTerms[termID] = newTerm
+		c.useTermLocked(newTerm)
 		c.traceTermCreated(ctx, "runtime", "", newTerm)
 
 		digestTerms := c.egraphTermsByTermDigest[newTerm.termDigest]
@@ -2367,6 +2383,7 @@ func (c *Cache) indexWaitResultInEgraphLocked(
 			mergedOutputEqID,
 		)
 		c.egraphTerms[termID] = newTerm
+		c.useTermLocked(newTerm)
 		c.traceTermCreated(ctx, "runtime", "", newTerm)
 
 		digestTerms := c.egraphTermsByTermDigest[newTerm.termDigest]
@@ -2475,6 +2492,7 @@ func (c *Cache) removeResultFromEgraphLocked(ctx context.Context, res *sharedRes
 			if set := c.outputEqClassToTerms[outputEqID]; set != nil {
 				delete(set, termID)
 			}
+			c.unuseTermLocked(term)
 			delete(c.egraphTerms, termID)
 			delete(c.termResults, termID)
 			delete(c.termInputProvenance, termID)
@@ -2498,6 +2516,8 @@ func (c *Cache) maybeResetEgraphLocked() {
 	c.callInputEntries = nil
 	c.egraphParents = nil
 	c.egraphRanks = nil
+	c.egraphUses = nil
+	c.liveEqClasses = 0
 	c.eqClassToDigests = nil
 	c.eqClassExtraDigests = nil
 	c.inputEqClassToTerms = nil
@@ -2535,6 +2555,8 @@ func (c *Cache) compactEqClassesLocked(force bool) (changed bool, oldSlots int, 
 
 // compactEqClassesModeLocked is compactEqClassesLocked; with freeAll, it also
 // frees every slot when no class is live, which compactEqClassesLocked leaves.
+// It decides from the live classes the cache keeps (cache_eqclass_uses.go),
+// and walks the terms and entries only to compact.
 //
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (c *Cache) compactEqClassesModeLocked(force, freeAll bool) (changed bool, oldSlots int, newSlots int) {
@@ -2542,33 +2564,13 @@ func (c *Cache) compactEqClassesModeLocked(force, freeAll bool) (changed bool, o
 		return false, 0, 0
 	}
 
-	liveRoots := make(map[eqClassID]struct{})
-	for _, term := range c.egraphTerms {
-		if term == nil {
-			continue
-		}
-		for _, inputEqID := range term.inputEqIDs {
-			root := c.findEqClassLocked(inputEqID)
-			if root != 0 {
-				liveRoots[root] = struct{}{}
-			}
-		}
-		root := c.findEqClassLocked(term.outputEqID)
-		if root != 0 {
-			liveRoots[root] = struct{}{}
-		}
+	var walked map[eqClassID]uint32
+	newSlots = c.liveEqClasses
+	if c.testWalkLiveClasses {
+		walked = c.walkEqClassUsesLocked()
+		newSlots = len(walked)
 	}
-	for _, outputEqIDs := range c.resultOutputEqClasses {
-		for outputEqID := range outputEqIDs {
-			root := c.findEqClassLocked(outputEqID)
-			if root != 0 {
-				liveRoots[root] = struct{}{}
-			}
-		}
-	}
-
 	oldSlots = c.eqClassSlotsLocked()
-	newSlots = len(liveRoots)
 	if (newSlots == 0 && !freeAll) || oldSlots == newSlots || (!force && oldSlots < newSlots*2) {
 		return false, oldSlots, newSlots
 	}
@@ -2579,11 +2581,20 @@ func (c *Cache) compactEqClassesModeLocked(force, freeAll bool) (changed bool, o
 	// terms are flattened onto the root below. The free slots past the
 	// highest live class are trimmed; those below it are taken again by new
 	// classes (allocEqClassLocked).
-	oldRoots := make([]eqClassID, 0, len(liveRoots))
-	for root := range liveRoots {
-		oldRoots = append(oldRoots, root)
+	oldRoots := make([]eqClassID, 0, newSlots)
+	if walked != nil {
+		for root := range walked {
+			oldRoots = append(oldRoots, root)
+		}
+		slices.Sort(oldRoots)
+	} else {
+		// A slot's uses are above 0 only at a root.
+		for id, uses := range c.egraphUses {
+			if uses > 0 {
+				oldRoots = append(oldRoots, eqClassID(id))
+			}
+		}
 	}
-	slices.Sort(oldRoots)
 	var highest eqClassID
 	if len(oldRoots) > 0 {
 		highest = oldRoots[len(oldRoots)-1]
@@ -2592,6 +2603,9 @@ func (c *Cache) compactEqClassesModeLocked(force, freeAll bool) (changed bool, o
 	remap := make(map[eqClassID]eqClassID, len(oldRoots))
 	newParents := make([]eqClassID, highest+1)
 	newRanks := make([]uint8, highest+1)
+	// The uses are counted again from the walk below, over the terms and
+	// entries as compaction leaves them.
+	newUses := make([]uint32, highest+1)
 	for _, oldRoot := range oldRoots {
 		remap[oldRoot] = oldRoot
 		newParents[oldRoot] = oldRoot
@@ -2645,6 +2659,7 @@ func (c *Cache) compactEqClassesModeLocked(force, freeAll bool) (changed bool, o
 				continue
 			}
 			newInputEqIDs = append(newInputEqIDs, newRoot)
+			newUses[newRoot]++
 			set := newInputEqClassToTerms[newRoot]
 			if set == nil {
 				set = make(map[egraphTermID]struct{})
@@ -2660,6 +2675,7 @@ func (c *Cache) compactEqClassesModeLocked(force, freeAll bool) (changed bool, o
 			continue
 		}
 		term.outputEqID = newOutputRoot
+		newUses[newOutputRoot]++
 		outputTerms := newOutputEqClassToTerms[newOutputRoot]
 		if outputTerms == nil {
 			outputTerms = make(map[egraphTermID]struct{})
@@ -2687,6 +2703,9 @@ func (c *Cache) compactEqClassesModeLocked(force, freeAll bool) (changed bool, o
 				newOutputEqIDs[newRoot] = struct{}{}
 			}
 		}
+		for newOutputEqID := range newOutputEqIDs {
+			newUses[newOutputEqID]++
+		}
 		if len(newOutputEqIDs) > 0 {
 			newResultOutputEqClasses[resID] = newOutputEqIDs
 			for newOutputEqID := range newOutputEqIDs {
@@ -2702,6 +2721,8 @@ func (c *Cache) compactEqClassesModeLocked(force, freeAll bool) (changed bool, o
 
 	c.egraphParents = newParents
 	c.egraphRanks = newRanks
+	c.egraphUses = newUses
+	c.liveEqClasses = len(oldRoots)
 	c.eqClassToDigests = newEqClassToDigests
 	c.eqClassExtraDigests = newEqClassExtraDigests
 	c.egraphDigestToClass = newEgraphDigestToClass
