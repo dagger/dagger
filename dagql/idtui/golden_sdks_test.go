@@ -99,11 +99,13 @@ var sdkFixtures = []sdkFixture{
 	// one without an origin and an error of the function's own log a short
 	// trace in Ruby's own form, through the module's own frames only. A
 	// wrapped exec error keeps its cause, so shortened too. A module that
-	// doesn't parse fails on the constructor's row with Ruby's SyntaxError,
-	// its first line the error: Ruby loads the module at run time, so the
-	// build (prebuild, the gems' install) passes. "this is not ruby" alone is
-	// valid Ruby, a chain of method calls that fails only when the file runs,
-	// so the breakage ends in a parenthesis that doesn't parse.
+	// doesn't parse fails on the constructor's row with Ruby's SyntaxError as
+	// ruby prints it, syntax_suggest's section included (its guess here is
+	// wrong, but it is what ruby shows), the message's first line the error:
+	// Ruby loads the module at run time, so the build (prebuild, the gems'
+	// install) passes. "this is not ruby" alone is valid Ruby, a chain of
+	// method calls that fails only when the file runs, so the breakage ends in
+	// a parenthesis that doesn't parse.
 	{lang: "ruby", source: "lib/viztest_ruby.rb", breakage: "\nthis is not ruby)\n"},
 	// Not an entrypoint: the dang-sdk module runs on the engine's built-in
 	// Dang runtime, so its errors and logs are the reference. A module that
