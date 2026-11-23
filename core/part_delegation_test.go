@@ -26,7 +26,7 @@ import (
 func TestPartDelegatedPartsByTheCallAlone(t *testing.T) {
 	t.Parallel()
 	codec := foreignFamilyCodec("Container")
-	fields := []string{"withWorkdir", "withEnvVariable", "withoutDefaultArgs", "__withSystemEnvVariable", "withEntrypoint", "withMountedCache", "withoutMount", "withUnixSocket", "withoutUnixSocket", "withoutEnvVariable"}
+	fields := []string{"withWorkdir", "withEnvVariable", "withoutDefaultArgs", "__withSystemEnvVariable", "withEntrypoint", "withUnixSocket", "withoutUnixSocket", "withoutEnvVariable"}
 	for _, field := range fields {
 		frame := &dagql.ResultCall{Kind: dagql.ResultCallKindField, Field: field, Type: dagql.NewResultCallType((&Container{}).Type()), Receiver: &dagql.ResultCallRef{ResultID: 42}}
 		receiver, own, ok := codec.DelegatedParts(frame)
@@ -36,6 +36,8 @@ func TestPartDelegatedPartsByTheCallAlone(t *testing.T) {
 	}
 	for name, frame := range map[string]*dagql.ResultCall{
 		"another field":       {Kind: dagql.ResultCallKindField, Field: "withExec", Type: dagql.NewResultCallType((&Container{}).Type()), Receiver: &dagql.ResultCallRef{ResultID: 42}},
+		"a dropped mount":     {Kind: dagql.ResultCallKindField, Field: "withoutMount", Type: dagql.NewResultCallType((&Container{}).Type()), Receiver: &dagql.ResultCallRef{ResultID: 42}},
+		"a covered mount":     {Kind: dagql.ResultCallKindField, Field: "withMountedCache", Type: dagql.NewResultCallType((&Container{}).Type()), Receiver: &dagql.ResultCallRef{ResultID: 42}},
 		"a module's field":    {Kind: dagql.ResultCallKindField, Field: "withEnvVariable", Type: dagql.NewResultCallType((&Container{}).Type()), Receiver: &dagql.ResultCallRef{ResultID: 42}, Module: &dagql.ResultCallModule{Name: "user-defined"}},
 		"an nth item":         {Kind: dagql.ResultCallKindField, Field: "withEnvVariable", Type: dagql.NewResultCallType((&Container{}).Type()), Receiver: &dagql.ResultCallRef{ResultID: 42}, Nth: 1},
 		"no receiver":         {Kind: dagql.ResultCallKindField, Field: "withEnvVariable", Type: dagql.NewResultCallType((&Container{}).Type())},
