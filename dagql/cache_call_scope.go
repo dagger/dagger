@@ -35,6 +35,18 @@ func WithCallScopes(ctx context.Context) (context.Context, *CallScopes) {
 	return context.WithValue(ctx, callScopesKey{}, scopes), scopes
 }
 
+// WithCallScopesOf returns ctx recording into the call scopes that the
+// resolver running under from records into, if any: the calls made under ctx
+// on that resolver's behalf, such as by code it runs through a nested client,
+// count as its own direct calls.
+func WithCallScopesOf(ctx, from context.Context) context.Context {
+	scopes := from.Value(callScopesKey{})
+	if scopes == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, callScopesKey{}, scopes)
+}
+
 // SessionBound names the first recorded call that a later session would
 // make again, as Type.field when its receiver type is known, or returns ""
 // when there was none.
