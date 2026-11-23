@@ -432,10 +432,12 @@ var moduleSourceEngineBuild = engine.FullVersion
 // call, session or client as it runs keeps it in its session
 // (keepReadWithWhatItRead).
 //
-// A shared read is still keyed by what it takes from its engine, the version
+// A shared read is still keyed by what it takes from its engine: the version
 // "latest" names and the built-in SDKs its image holds
-// (moduleSourceEngineBuild), and by the cache scope a caller that busts its
-// cache deliberately sets (dagql.CacheScopeInput), as it reads its own again.
+// (moduleSourceEngineBuild), and its default platform, which an entrypoint's
+// sources can read, as a module's function calls are keyed by it. And by the
+// cache scope a caller that busts its cache deliberately sets
+// (dagql.CacheScopeInput), as it reads its own again.
 func moduleSourceReadCacheKey(ctx context.Context, req *dagql.CallRequest, decided bool) error {
 	shared, err := moduleSourceReadShared(ctx, decided)
 	if err != nil {
@@ -449,6 +451,13 @@ func moduleSourceReadCacheKey(ctx context.Context, req *dagql.CallRequest, decid
 		return req.SetImplicitInput(ctx, dagql.PerClientInput.Name, client)
 	}
 	if err := req.SetImplicitInput(ctx, "moduleSourceEngineBuild", dagql.NewString(moduleSourceEngineBuild())); err != nil {
+		return err
+	}
+	platform, err := core.EngineDefaultPlatformImplicitInput.Resolver(ctx, nil)
+	if err != nil {
+		return err
+	}
+	if err := req.SetImplicitInput(ctx, core.EngineDefaultPlatformInput, platform); err != nil {
 		return err
 	}
 	scope, err := dagql.CacheScopeInput.Resolver(ctx, nil)
