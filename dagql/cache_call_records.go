@@ -122,8 +122,9 @@ func (c *Cache) keepCallLocked(change *RemoteChange, entry *sharedResult, desc R
 // entry's call needs them. An input another call added doesn't place a
 // call, nor does a later root's closure: the calls chosen are those
 // StoredSizes prices, root by root. A term with neither is counted, and
-// sends nothing. Only the calls the recipient's check made are candidates
-// (HeldBy.Calls): a term with none sends nothing and isn't counted.
+// sends nothing. Only the terms the recipient's check made are candidates
+// (HeldBy.Calls), each with all its calls: a term with none of the check's
+// calls sends nothing and isn't counted.
 // Requires egraphMu.
 func (c *Cache) storedBundleCallsLocked(build *storedBundleBuild, start int) error {
 	// Entries the bundle adds for a call's inputs are visited too.
