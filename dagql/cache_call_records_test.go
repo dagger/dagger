@@ -674,6 +674,58 @@ func TestAnUnplaceableKeptCallGivesWayToAPlaceableOneOfItsTerm(t *testing.T) {
 	require.Zero(t, built.UnsendableCalls)
 }
 
+// Two calls kept on an entry as two terms become one term when their inputs'
+// classes are joined: B's call was kept while the Cloud knew no class of B's
+// receiver, and B's receiver then joined A's class by its content. The next
+// call kept on the entry leaves one call of the joined term, A's, whose
+// receiver the Cloud stores, as the entry would have kept one had the
+// classes been one when B's call came.
+func TestAKeptCallLeavesOneCallOfATermAUnionJoined(t *testing.T) {
+	t.Parallel()
+	test := newReceiverCallTest(t)
+	cloud := test.cloud
+	requestA, err := test.frame.deriveRecipeDigest(test.producer)
+	require.NoError(t, err)
+	inner, err := test.inner.cacheSharedResult().loadResultCall().deriveRecipeDigest(test.producer)
+	require.NoError(t, err)
+	encode := func(frame *ResultCall) (digest.Digest, digest.Digest, string) {
+		t.Helper()
+		request, err := frame.deriveRecipeDigest(test.producer)
+		require.NoError(t, err)
+		self, _, err := frame.selfDigestAndInputRefs(test.producer)
+		require.NoError(t, err)
+		pb, err := frame.callPB(test.producer)
+		require.NoError(t, err)
+		encoded, err := pb.Encode()
+		require.NoError(t, err)
+		return request, self, encoded
+	}
+	requestB, selfB, encodedB := encode(receiverTestCall("b"))
+	_, err = cloud.AttachRemoteHolding(test.ctx, HolderKey{Cache: "cache-b", Number: 2},
+		RemoteHolding{Recipe: inner, Request: requestB, Field: "outer", Call: encodedB, Term: &RemoteTerm{Self: selfB}})
+	require.NoError(t, err)
+	require.ElementsMatch(t, []digest.Digest{requestA, requestB}, keptCallRequests(cloud, test.number), "B's call, its own term")
+
+	receiverB, err := receiverTestFrame("b").deriveRecipeDigest(test.producer)
+	require.NoError(t, err)
+	_, err = cloud.AttachRemoteHolding(test.ctx, HolderKey{Cache: "cache-b", Number: 1},
+		RemoteHolding{Recipe: receiverB, Field: "receiver", ContentDigest: digest.FromString("receiver content")})
+	require.NoError(t, err)
+	cloud.egraphMu.RLock()
+	groups := len(cloud.keptCallTermsLocked(storedBundleTestEntry(cloud, test.number)))
+	cloud.egraphMu.RUnlock()
+	require.Equal(t, 1, groups, "B's receiver joined A's class: one term")
+
+	// Another call on A's receiver, of another term, returning inner.
+	other := callRecordTestFrame("other")
+	other.Receiver = &ResultCallRef{Call: receiverTestFrame("a")}
+	requestOther, selfOther, encodedOther := encode(other)
+	_, err = cloud.AttachRemoteHolding(test.ctx, HolderKey{Cache: "cache-a", Number: 99},
+		RemoteHolding{Recipe: inner, Request: requestOther, Field: "other", Call: encodedOther, Term: &RemoteTerm{Self: selfOther}})
+	require.NoError(t, err)
+	require.ElementsMatch(t, []digest.Digest{requestA, requestOther}, keptCallRequests(cloud, test.number), "one call of the joined term, A's")
+}
+
 // A bundle for a recipient that names a term none of whose kept calls is
 // one its check made, as when the Cloud keeps another run's call of a term
 // the check made, sends that term as a call the recipient can place, and a
