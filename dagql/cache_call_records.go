@@ -106,22 +106,30 @@ func (c *Cache) keepCallLocked(change *RemoteChange, entry *sharedResult, desc R
 // second term of a term it has (indexWaitResultInEgraphLocked). So a call of
 // a term the entry keeps a call of adds nothing, unless the kept call names
 // an input the Cloud stores no record of, which no bundle can place, and
-// kept names none such: kept then replaces it. A stored bundle of the entry
-// carries its kept calls, so a call kept stamps the entry, with a cause that
-// tells a term the bundle can send from one it can't, for diagnostics.
-// Requires egraphMu for writing.
+// kept names none such: kept then replaces it. Two calls the entry kept as
+// two terms are one term once their inputs' classes are joined, and the entry
+// keeps them both until a call is next kept on it, which leaves one of each
+// term of its calls (joinedTermCallsLocked). A stored bundle of the entry
+// carries its kept calls, so a change to them stamps the entry, with a cause
+// that tells a term the bundle can send from one it can't, for diagnostics.
+// It reports whether it changed the entry's calls. Requires egraphMu for
+// writing.
 func (c *Cache) keepTermCallLocked(change *RemoteChange, entry *sharedResult, kept *keptCall) bool {
 	stored := c.keptCallStoredLocked(kept)
 	key := c.keptCallTermKeyLocked(kept)
-	for _, other := range entry.calls {
-		if c.keptCallTermKeyLocked(other) != key {
-			continue
-		}
+	terms, joined := c.joinedTermCallsLocked(entry)
+	for _, call := range joined {
+		c.dropKeptCallLocked(entry, call)
+	}
+	if len(joined) > 0 {
+		c.stampEntryLocked(entry, StampKeptCallsJoined)
+		c.noteSharedWriteLocked(change, SharedKeptCall)
+	}
+	if other := terms[key]; other != nil {
 		if !stored || c.keptCallStoredLocked(other) {
-			return false
+			return len(joined) > 0
 		}
 		c.dropKeptCallLocked(entry, other)
-		break
 	}
 	cause := StampKeptCallNewTerm
 	if !stored {
@@ -135,6 +143,31 @@ func (c *Cache) keepTermCallLocked(change *RemoteChange, entry *sharedResult, ke
 	c.indexKeptCallLocked(entry, kept)
 	c.noteSharedWriteLocked(change, SharedKeptCall)
 	return true
+}
+
+// joinedTermCallsLocked returns the call entry keeps of each term its calls
+// derive now, by term key, and the calls beyond those: calls kept as two terms
+// whose inputs' classes have since been joined. Of the calls of one term it
+// keeps the first, by request digest, of those the Cloud stores the inputs
+// of, or the first. Requires egraphMu.
+func (c *Cache) joinedTermCallsLocked(entry *sharedResult) (map[string]*keptCall, []*keptCall) {
+	terms := make(map[string]*keptCall, len(entry.calls))
+	var joined []*keptCall
+	for _, recipe := range slices.Sorted(maps.Keys(entry.calls)) {
+		call := entry.calls[recipe]
+		key := c.keptCallTermKeyLocked(call)
+		first, ok := terms[key]
+		switch {
+		case !ok:
+			terms[key] = call
+		case !c.keptCallStoredLocked(first) && c.keptCallStoredLocked(call):
+			terms[key] = call
+			joined = append(joined, first)
+		default:
+			joined = append(joined, call)
+		}
+	}
+	return terms, joined
 }
 
 // dropKeptCallLocked forgets kept, a call entry keeps, and its index under
