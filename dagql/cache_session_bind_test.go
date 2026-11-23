@@ -551,3 +551,81 @@ func testCacheResultWorkedOutFromABoundResult(t *testing.T, byID bool) {
 		assert.NilError(t, c.ReleaseSession(s.ctx, s.id))
 	}
 }
+
+// A call bound to its session that returns an ordinary value, a value its
+// session's bound parent holds, binds the resolver that called for it, as a
+// call returning a bound result does: a value worked out from it is the
+// session's, though the ordinary value stays shareable. Both when the bound
+// call runs for the resolver, and when the resolver hits the session's entry
+// of it.
+func TestCacheValueWorkedOutThroughABoundCallIsItsSessions(t *testing.T) {
+	t.Parallel()
+	for _, innerFirst := range []bool{false, true} {
+		name := "bound call runs for the resolver"
+		if innerFirst {
+			name = "resolver hits the bound call"
+		}
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			baseCtx := t.Context()
+			c, err := NewCache(baseCtx, "", nil, nil)
+			assert.NilError(t, err)
+			parentCall := cacheTestIntCall("bound-parent")
+			throughCall := cacheTestIntCall("held-through-parent")
+			outerCall := cacheTestIntCall("worked-through-parent")
+			parent := func(ctx context.Context, session string, v int) {
+				t.Helper()
+				childCall := cacheTestIntCall(fmt.Sprintf("held-child-%d", v))
+				child, err := c.GetOrInitCall(ctx, session, noopTypeResolver{}, &CallRequest{ResultCall: childCall}, func(context.Context) (AnyResult, error) {
+					return cacheTestIntResult(childCall, v), nil
+				})
+				assert.NilError(t, err)
+				_, err = c.GetOrInitCall(ctx, session, noopTypeResolver{}, &CallRequest{ResultCall: parentCall.clone()}, func(ctx context.Context) (AnyResult, error) {
+					BindToSession(ctx)
+					return cacheTestDetachedResult(parentCall.clone(), &cacheTestOwnedDepsInt{Int: NewInt(0), ownedResults: []AnyResult{child}}), nil
+				})
+				assert.NilError(t, err)
+			}
+			through := func(ctx context.Context, session string) AnyResult {
+				t.Helper()
+				res, err := c.GetOrInitCall(ctx, session, noopTypeResolver{}, &CallRequest{ResultCall: throughCall.clone()}, func(ctx context.Context) (AnyResult, error) {
+					p, err := c.GetOrInitCall(ctx, session, noopTypeResolver{}, &CallRequest{ResultCall: parentCall.clone()}, func(context.Context) (AnyResult, error) {
+						return nil, fmt.Errorf("the parent was made before")
+					})
+					if err != nil {
+						return nil, err
+					}
+					return p.Unwrap().(*cacheTestOwnedDepsInt).ownedResults[0], nil
+				})
+				assert.NilError(t, err)
+				return res
+			}
+			outer := func(ctx context.Context, session string) AnyResult {
+				t.Helper()
+				res, err := c.GetOrInitCall(ctx, session, noopTypeResolver{}, &CallRequest{ResultCall: outerCall.clone()}, func(ctx context.Context) (AnyResult, error) {
+					return cacheTestIntResult(outerCall.clone(), cacheTestUnwrapInt(t, through(ctx, session))*10), nil
+				})
+				assert.NilError(t, err)
+				return res
+			}
+
+			for _, s := range []struct {
+				session string
+				v       int
+			}{{"session-a", 1}, {"session-b", 2}} {
+				ctx := currentEntryTestSession(baseCtx, c, s.session)
+				parent(ctx, s.session, s.v)
+				if innerFirst {
+					assert.Equal(t, s.v, cacheTestUnwrapInt(t, through(ctx, s.session)))
+				}
+				assert.Equal(t, s.v*10, cacheTestUnwrapInt(t, outer(ctx, s.session)), "%s works out its own", s.session)
+				again := outer(ctx, s.session)
+				assert.Assert(t, again.HitCache(), "%s hits its own", s.session)
+				assert.Equal(t, s.v*10, cacheTestUnwrapInt(t, again))
+			}
+			for _, session := range []string{"session-a", "session-b"} {
+				assert.NilError(t, c.ReleaseSession(currentEntryTestSession(baseCtx, c, session), session))
+			}
+		})
+	}
+}
