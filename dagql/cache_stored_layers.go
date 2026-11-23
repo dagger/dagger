@@ -3,6 +3,7 @@ package dagql
 import (
 	"encoding/json"
 	"fmt"
+	"hash/maphash"
 	"reflect"
 	"runtime"
 	"slices"
@@ -70,15 +71,27 @@ func (p storedPart) address() PersistedPartAddress {
 }
 
 // storedLayers holds each distinct layer of a blob-backed cache's stored
-// parts once. It holds a layer weakly, by its blob: the parts that point to
+// parts once. It holds a layer weakly, by its key: the parts that point to
 // it keep it, and once none does the collector frees it and the table
 // forgets it. The table is its own allocation, apart from the cache: the
 // runtime keeps a layer's cleanup, and so the table, alive while the layer
 // lives, and a cache the cleanup reached would keep its own layers alive.
+//
+// A layer's key is a hash of its encoding in a merge's list of layers,
+// with its pack (storedLayerKey). Equal layers have one encoding, so a
+// layer is compared only with the few that share its key. Engines describe
+// one blob many ways, each build of the same content with its own creation
+// time, and a store that several pull requests filled holds thousands of
+// layers of one blob: compared with each of them, one by one under the
+// table's lock, an upload's parts took seconds to store.
 type storedLayers struct {
-	mu     sync.Mutex
-	byBlob map[digest.Digest][]weak.Pointer[storedLayer]
+	mu    sync.Mutex
+	byKey map[uint64][]weak.Pointer[storedLayer]
 }
+
+// storedLayerSeed seeds the keys of every table's layers (storedLayerKey).
+// A key lives only in memory, and two tables never compare keys.
+var storedLayerSeed = maphash.MakeSeed()
 
 // part returns offer as the cache holds it, its layers the table's. The
 // offer is the caller's own copy, which the cache keeps: nothing else may
@@ -91,7 +104,12 @@ func (t *storedLayers) part(offer PersistedPartOffer) storedPart {
 	layers := make([]*storedLayer, len(offer.Chain.Layers))
 	for i, layer := range offer.Chain.Layers {
 		pack := offer.Chain.Packs[layer.Descriptor.Digest]
-		layers[i] = t.layer(storedLayer{layer: layer, pack: pack, wire: storedLayerWire(layer, pack)})
+		encoded := storedLayerEncoding(layer, pack)
+		var wire int64
+		if encoded != nil {
+			wire = int64(len(encoded)) + 1
+		}
+		layers[i] = t.layer(storedLayer{layer: layer, pack: pack, wire: wire}, storedLayerKey(layer, encoded))
 	}
 	offer.Chain.Layers, offer.Chain.Packs = nil, nil
 	return storedPart{held: offer, layers: layers, wire: storedPartWire(offer, layers)}
@@ -139,48 +157,70 @@ func storedPartWire(offer PersistedPartOffer, layers []*storedLayer) int64 {
 // storedLayerWire is the layer's entry in a merge's list of layers, with the
 // pack its chain stores it in and its separator, or 0 if it doesn't encode.
 func storedLayerWire(layer snapshots.ExportLayer, pack digest.Digest) int64 {
-	data, err := json.Marshal(BundleLayer{Layer: layer, Pack: pack})
-	if err != nil {
+	data := storedLayerEncoding(layer, pack)
+	if data == nil {
 		return 0
 	}
 	return int64(len(data)) + 1
 }
 
-// layer returns the table's layer equal to want, adding want if it has none.
-// Layers of one blob can differ, in their history's description or
-// creation time, or in the pack a chain names: each differing one is held
-// apart, so that every part's offer is the one it was stored with.
-func (t *storedLayers) layer(want storedLayer) *storedLayer {
-	blob := want.layer.Descriptor.Digest
+// storedLayerEncoding is the layer's entry in a merge's list of layers,
+// with the pack its chain stores it in, without its separator, or nil if it
+// doesn't encode.
+func storedLayerEncoding(layer snapshots.ExportLayer, pack digest.Digest) []byte {
+	data, err := json.Marshal(BundleLayer{Layer: layer, Pack: pack})
+	if err != nil {
+		return nil
+	}
+	return data
+}
+
+// storedLayerKey is the key the table holds the layer under: a hash of its
+// encoding with its pack, or of its blob if it doesn't encode. Layers that
+// are equal encode alike, or both fail to, so they share a key; layers that
+// differ almost never do, and the table tells those that do apart.
+func storedLayerKey(layer snapshots.ExportLayer, encoded []byte) uint64 {
+	if encoded == nil {
+		return maphash.String(storedLayerSeed, string(layer.Descriptor.Digest))
+	}
+	return maphash.Bytes(storedLayerSeed, encoded)
+}
+
+// layer returns the table's layer equal to want, adding want if it has none,
+// under want's key (storedLayerKey). Layers of one blob can differ, in their
+// history's description or creation time, in whether the export computed
+// the blob, or in the pack a chain names: each differing one is held apart,
+// so that every part's offer is the one it was stored with.
+func (t *storedLayers) layer(want storedLayer, key uint64) *storedLayer {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	for _, weakLayer := range t.byBlob[blob] {
+	for _, weakLayer := range t.byKey[key] {
 		if held := weakLayer.Value(); held != nil && reflect.DeepEqual(*held, want) {
 			return held
 		}
 	}
 	held := &want
-	if t.byBlob == nil {
-		t.byBlob = map[digest.Digest][]weak.Pointer[storedLayer]{}
+	if t.byKey == nil {
+		t.byKey = map[uint64][]weak.Pointer[storedLayer]{}
 	}
-	t.byBlob[blob] = append(t.byBlob[blob], weak.Make(held))
-	runtime.AddCleanup(held, t.forget, blob)
+	t.byKey[key] = append(t.byKey[key], weak.Make(held))
+	runtime.AddCleanup(held, t.forget, key)
 	return held
 }
 
-// forget drops the blob's layers that the collector has freed.
-func (t *storedLayers) forget(blob digest.Digest) {
+// forget drops the key's layers that the collector has freed.
+func (t *storedLayers) forget(key uint64) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	live := t.byBlob[blob][:0]
-	for _, weakLayer := range t.byBlob[blob] {
+	live := t.byKey[key][:0]
+	for _, weakLayer := range t.byKey[key] {
 		if weakLayer.Value() != nil {
 			live = append(live, weakLayer)
 		}
 	}
 	if len(live) == 0 {
-		delete(t.byBlob, blob)
+		delete(t.byKey, key)
 		return
 	}
-	t.byBlob[blob] = live
+	t.byKey[key] = live
 }
