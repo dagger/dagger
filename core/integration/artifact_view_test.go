@@ -167,12 +167,14 @@ func (ArtifactsSuite) TestFilteredViewCollectionOrigins(ctx context.Context, t *
 	base := artifactViewWorkspace(t, c, `type View {
   pub shared: Cases! = Cases(names: ["a", "b", "c"])
   first: Cases! { shared }
-  second: Cases! { Cases(names: ["b", "c", "d"]) }
+  second: Cases! { Cases(names: ["b", "c", "d"], other: shared) }
   alias: Cases! { first }
 }
 type Cases @collection {
   pub names: [String!]! @keys
   pub selection: CollectionDelta @delta
+  other: Cases = null
+  peer: [String!]! { other!.names }
   lookup(name: String!): Case! @get { Case(name: name, parent: self, alias: self) }
   removed: [String!]! { selection!.removedKeys }
   bound: LLM! { llm.withTools(currentNode) }
@@ -191,8 +193,8 @@ type Case {
     keys removed narrow: subset(keys: ["b"]) { keys removed }
    } } } }
   }
-  second: filterUri(uri: "?ViewCases=second.d") {
-   items { value { ... on ViewCase { name alias { keys } parent { keys removed } } } }
+  second: filterUri(uri: "?ViewCases=second.b&ViewCases=second.d") {
+   items { value { ... on ViewCase { name alias { keys } parent { keys removed peer } } } }
   }
  } } }
  second { keys }
@@ -210,7 +212,8 @@ type Case {
    {"value":{"name":"b","alias":{"keys":["a","b"]},"parent":{"keys":["a","b"],"removed":["c"],"narrow":{"keys":["b"],"removed":["a","c"]}}}}
   ]},
   "second":{"items":[
-   {"value":{"name":"d","alias":{"keys":["d"]},"parent":{"keys":["d"],"removed":["b","c"]}}}
+   {"value":{"name":"b","alias":{"keys":["b","d"]},"parent":{"keys":["b","d"],"removed":["c"],"peer":[]}}},
+   {"value":{"name":"d","alias":{"keys":["b","d"]},"parent":{"keys":["b","d"],"removed":["c"],"peer":[]}}}
   ]}
  }}},
  "second":{"keys":["b","c","d"]},

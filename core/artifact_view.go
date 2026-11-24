@@ -43,21 +43,7 @@ type artifactViewRule struct {
 	Dimension  string
 	Type       string
 	Keys       []string
-	Routes     [][]string
 	UniqueType bool
-}
-
-// selects reports whether key has a selected coordinate on a route of the
-// rule's collection type. A nil route gives the key text. A view filters a
-// collection value, which can serve several routes; the artifact filter then
-// selects the exact route. A rule with no routes compares the key text.
-func (rule artifactViewRule) selects(key string) bool {
-	if len(rule.Routes) == 0 {
-		return slices.Contains(rule.Keys, key)
-	}
-	return slices.ContainsFunc(rule.Routes, func(route []string) bool {
-		return slices.Contains(rule.Keys, flattening.RoutedKey(route, key))
-	})
 }
 
 type artifactViewState struct {
@@ -128,6 +114,7 @@ type artifactViewPath struct {
 	Dimension      string
 	Root           string
 	Fields         []artifactViewPathField
+	Route          []string `json:",omitempty"`
 }
 
 type artifactViewPathField struct {
@@ -153,7 +140,7 @@ func (p artifactViewPath) matches(id *call.ID) bool {
 
 func (v *ArtifactView) addPaths(ctx context.Context, roots []*Artifact) error {
 	for _, root := range roots {
-		path := artifactViewPath{Dimension: root.Node.CollectionDimension.Identifier, CollectionType: root.Node.CollectionDimension.CollectionType}
+		path := artifactViewPath{Dimension: root.Node.CollectionDimension.Identifier, CollectionType: root.Node.CollectionDimension.CollectionType, Route: root.Node.CollectionRoute}
 		for node := root.Node.Parent; node != nil; node = node.Parent {
 			if node.RootValue != nil {
 				id, err := node.RootValue.RecipeID(ctx)
@@ -385,8 +372,7 @@ func applyModuleObjectView(ctx context.Context, self dagql.ObjectResult[*ModuleO
 				return nil, err
 			}
 		}
-		var selected []string
-		var selects func(string) bool
+		var selected, route []string
 		bound := false
 		for i, source := range view.sources {
 			sourceID, err := source.ID()
@@ -424,7 +410,7 @@ func applyModuleObjectView(ctx context.Context, self dagql.ObjectResult[*ModuleO
 				// Known unfiltered paths must not use another dimension's rule.
 				for _, rule := range view.state.Rules {
 					if rule.Dimension == path.Dimension || rule.Dimension == path.CollectionType {
-						selects, bound = rule.selects, true
+						selected, route, bound = rule.Keys, path.Route, true
 						break
 					}
 				}
@@ -442,19 +428,25 @@ func applyModuleObjectView(ctx context.Context, self dagql.ObjectResult[*ModuleO
 				if !rule.UniqueType {
 					return nil, fmt.Errorf("cannot map new collection %s to a dimension: its type occurs on multiple paths", copy.TypeDef.Name)
 				}
-				selects, bound = rule.selects, true
+				selected, bound = rule.Keys, true
 				break
 			}
 		}
-		if bound {
-			if selects == nil {
-				selects = func(key string) bool { return slices.Contains(selected, key) }
+		{
+			var srcs []uint64
+			for _, source := range view.sources {
+				sid, _ := source.ID()
+				srcs = append(srcs, sid.EngineResultID())
 			}
+			rec, _ := self.RecipeID(ctx)
+			fmt.Printf("XXXDEBUG apply id=%d base=%d field=%s recvfield=%s bound=%v selected=%v route=%v sources=%v keys=%v origins=%v origin=%s\n", id.EngineResultID(), baseID.EngineResultID(), rec.Field(), rec.Receiver().Field(), bound, selected, route, srcs, view.state.Keys, view.state.Origins, artifactViewOrigin(rec))
+		}
+		if bound {
 			keys, err := copy.collectionKeys(ctx)
 			if err != nil {
 				return nil, err
 			}
-			keys = slices.DeleteFunc(keys, func(key collectionKey) bool { return !selects(key.text) })
+			keys = slices.DeleteFunc(keys, func(key collectionKey) bool { return !slices.Contains(selected, flattening.RoutedKey(route, key.text)) })
 			subset, err := copy.collectionSubset(ctx, keys)
 			if err != nil {
 				return nil, err
@@ -487,6 +479,9 @@ type artifactViewDiscovery struct {
 	mu        sync.Mutex
 	view      ArtifactView
 	originals map[string]artifactCollectionSnapshot
+	// rules holds, for each view source, the dimension of the rule that
+	// selected its keys.
+	rules []string
 }
 
 type artifactCollectionSnapshot struct {
@@ -536,14 +531,18 @@ func (d *artifactViewDiscovery) validate(receiver *Artifact, keys []collectionKe
 	return nil
 }
 
-func (d *artifactViewDiscovery) record(receiver *Artifact, result dagql.AnyObjectResult, dimension *ArtifactDimension, keys []collectionKey) error {
+// record selects the keys of node's collection value by their coordinates on
+// node's route. One value can be on several routes of one rule: it keeps the
+// keys that any of them selects. Different rules for one value intersect.
+func (d *artifactViewDiscovery) record(receiver *Artifact, result dagql.AnyObjectResult, node *ModTreeNode, keys []collectionKey) error {
 	var selected []string
+	var dimension string
 	filtered := false
 	for _, rule := range d.view.state.Rules {
-		if dimensionMatches(dimension, rule.Dimension) {
-			filtered = true
+		if dimensionMatches(node.CollectionDimension, rule.Dimension) {
+			filtered, dimension = true, rule.Dimension
 			for _, key := range keys {
-				if rule.selects(key.text) {
+				if slices.Contains(rule.Keys, node.coordinateKey(key.text)) {
 					selected = append(selected, key.text)
 				}
 			}
@@ -565,6 +564,7 @@ func (d *artifactViewDiscovery) record(receiver *Artifact, result dagql.AnyObjec
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.originals[identity] = original
+	fmt.Printf("XXXDEBUG record path=%s route=%v id=%d selected=%v\n", receiver.Node.PathString(), node.CollectionRoute, id.EngineResultID(), selected)
 	if !filtered {
 		return nil
 	}
@@ -574,12 +574,20 @@ func (d *artifactViewDiscovery) record(receiver *Artifact, result dagql.AnyObjec
 			return err
 		}
 		if sourceID.EngineResultID() == id.EngineResultID() {
-			d.view.state.Keys[i] = slices.DeleteFunc(d.view.state.Keys[i], func(key string) bool { return !slices.Contains(selected, key) })
+			kept := d.view.state.Keys[i]
+			if d.rules[i] == dimension {
+				d.view.state.Keys[i] = slices.DeleteFunc(slices.Clone(original.keys), func(key string) bool {
+					return !slices.Contains(kept, key) && !slices.Contains(selected, key)
+				})
+			} else {
+				d.view.state.Keys[i] = slices.DeleteFunc(kept, func(key string) bool { return !slices.Contains(selected, key) })
+			}
 			return nil
 		}
 	}
 	d.view.sources = append(d.view.sources, result)
 	d.view.state.Keys = append(d.view.state.Keys, selected)
+	d.rules = append(d.rules, dimension)
 	return nil
 }
 
@@ -603,15 +611,9 @@ func (a *Artifacts) viewDiscovery() (*artifactViewDiscovery, error) {
 						sameType++
 					}
 				}
-				var routes [][]string
-				for _, root := range a.CollectionRoots {
-					if dimensionMatches(root.Node.CollectionDimension, filter.Dimension) {
-						routes = append(routes, root.Node.CollectionRoute)
-					}
-				}
 				d.view.state.Rules = append(d.view.state.Rules, artifactViewRule{
 					Dimension: filter.Dimension, Type: dimension.CollectionType,
-					Keys: slices.Compact(keys), Routes: routes, UniqueType: filter.Dimension == dimension.CollectionType || sameType == 1,
+					Keys: slices.Compact(keys), UniqueType: filter.Dimension == dimension.CollectionType || sameType == 1,
 				})
 				break
 			}

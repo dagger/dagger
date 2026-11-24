@@ -38,7 +38,7 @@ func TestCanonicalLocalRoots(t *testing.T) {
 			want: []flattening.Coordinate{{Dimension: "module", Key: "docker"}, {Dimension: "name", Key: "."}},
 		},
 		{
-			name: "full path from exposed module root", module: "docker", localPath: []string{"compose", "allServices", "up"},
+			name: "local path from module root", module: "docker", localPath: []string{"compose", "allServices", "up"},
 			want: []flattening.Coordinate{{Dimension: "module", Key: "docker"}, {Dimension: "name", Key: "compose.allServices.up"}},
 		},
 		{
@@ -46,7 +46,7 @@ func TestCanonicalLocalRoots(t *testing.T) {
 			want: []flattening.Coordinate{{Dimension: "module", Key: "docker"}, project, service, {Dimension: "name", Key: "."}},
 		},
 		{
-			name: "full path from nearest item", module: "docker", collections: []flattening.Coordinate{project, service}, localPath: []string{"healthCheck", "run"},
+			name: "local path from nearest item", module: "docker", collections: []flattening.Coordinate{project, service}, localPath: []string{"healthCheck", "run"},
 			want: []flattening.Coordinate{{Dimension: "module", Key: "docker"}, project, service, {Dimension: "name", Key: "healthCheck.run"}},
 		},
 		{
