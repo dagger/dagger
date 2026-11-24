@@ -69,6 +69,42 @@ defmodule Dagger.CurrentModule do
   end
 
   @doc """
+  The Git ref of the module's source: the resolved commit of a Git source, or the HEAD of the repository that contains a local source. Null for a Directory source, or a local source outside a Git repository.
+
+  Its asRepository pins HEAD to that commit. For a local source, the repository holds the whole checkout, including files the module does not load, so asRepository.uncommitted lists the uncommitted changes of the whole checkout.
+
+  For a Git source loaded from a private remote, asRepository and tree are read without the credentials of the client that loaded the module and may fail to authenticate; commitSha needs none.
+
+  A local repository is read when this field is first selected for a module load, not when the module loads: a file changed in between can differ from the module's contextDirectory.
+
+  A function result cached across sessions is not recomputed when the repository changes: use the PER_SESSION or NEVER cache policy for a function that returns what it reads from this field.
+  """
+  @spec git_ref(t()) :: {:ok, Dagger.GitRef.t() | nil} | {:error, term()}
+  def git_ref(%__MODULE__{} = current_module) do
+    query_builder =
+      current_module.query_builder |> QB.select("gitRef") |> QB.select("id")
+
+    case Client.execute(current_module.client, query_builder) do
+      {:ok, nil} ->
+        {:ok, nil}
+
+      {:ok, id} ->
+        {:ok,
+         %Dagger.GitRef{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("GitRef"),
+           client: current_module.client
+         }}
+
+      error ->
+        error
+    end
+  end
+
+  @doc """
   A unique identifier for this CurrentModule.
   """
   @spec id(t()) :: {:ok, String.t()} | {:error, term()}
