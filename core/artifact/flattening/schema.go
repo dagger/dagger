@@ -23,11 +23,21 @@ type schemaField struct {
 	module      string
 	localPath   []string
 	collections []string
+	routes      [][]string
 }
 
 func NewSchema(fields []Field) (*Schema, error) {
 	schema := &Schema{fields: make(map[string]schemaField)}
 	byID := make(map[string]*Dimension)
+	scopes := make(map[[3]string]map[string]bool)
+	for _, field := range fields {
+		forEachScope(field, func(scope [3]string, collection Collection) {
+			if scopes[scope] == nil {
+				scopes[scope] = make(map[string]bool)
+			}
+			scopes[scope][strings.Join(collection.Fields, ".")] = true
+		})
+	}
 	for _, field := range fields {
 		compiled, dimensions, err := compileField(field)
 		if err != nil {
@@ -40,6 +50,13 @@ func NewSchema(fields []Field) (*Schema, error) {
 			}
 			byID[id] = dimension
 		}
+		forEachScope(field, func(scope [3]string, collection Collection) {
+			var route []string
+			if len(scopes[scope]) > 1 {
+				route = slices.Clone(collection.Fields)
+			}
+			compiled.routes = append(compiled.routes, route)
+		})
 		schema.fields[fieldIdentity(field)] = compiled
 	}
 	for _, dimension := range byID {
@@ -62,6 +79,28 @@ func (s *Schema) Dimensions() Dimensions {
 	return result
 }
 
+// forEachScope visits each collection of field with its scope: the module,
+// the enclosing collection type, and the collection type.
+func forEachScope(field Field, visit func(scope [3]string, collection Collection)) {
+	parent := ""
+	for _, collection := range field.Collections {
+		visit([3]string{field.Module, parent, collection.Type}, collection)
+		parent = collection.Type
+	}
+}
+
+// Routes returns one entry for each collection of field. An entry is the
+// field route that prefixes the collection's keys, or nil when its scope
+// reaches the collection type by one route.
+func (s *Schema) Routes(field Field) [][]string {
+	return s.fields[fieldIdentity(field)].routes
+}
+
+// RoutedKey returns the coordinate for key in a collection with route.
+func RoutedKey(route []string, key string) string {
+	return strings.Join(append(slices.Clone(route), key), ".")
+}
+
 func (s *Schema) Coordinates(field Field, keys ...string) ([]Coordinate, error) {
 	known, exists := s.fields[fieldIdentity(field)]
 	name := strings.Join(field.LocalPath, ".")
@@ -76,7 +115,7 @@ func (s *Schema) Coordinates(field Field, keys ...string) ([]Coordinate, error) 
 	}
 	collections := make([]Coordinate, len(keys))
 	for i, key := range keys {
-		collections[i] = Coordinate{Dimension: known.collections[i], Key: key}
+		collections[i] = Coordinate{Dimension: known.collections[i], Key: RoutedKey(known.routes[i], key)}
 	}
 	return CanonicalCoordinates(known.module, known.localPath, collections), nil
 }

@@ -75,9 +75,9 @@ func (a *Artifacts) NameEntries() error {
 
 func (a *Artifacts) SetSchema(ctx context.Context, entries []*Artifact) error {
 	a.AllPaths = (&Artifacts{Entries: entries}).PathIndex()
-	a.SetCollectionRoots(entries)
 	a.AllDimensions = (&Artifacts{Entries: entries}).DimensionDefinitions()
 	if !Supports(ctx, ArtifactTypeColumnsVersion) {
+		a.SetCollectionRoots(entries)
 		return a.NameEntries()
 	}
 	fields := make([]flattening.Field, len(entries))
@@ -88,6 +88,16 @@ func (a *Artifacts) SetSchema(ctx context.Context, entries []*Artifact) error {
 	if err != nil {
 		return fmt.Errorf("flatten artifact schema: %w", err)
 	}
+	for i, entry := range entries {
+		routes := schema.Routes(fields[i])
+		for node := entry.Node; node != nil; node = node.Parent {
+			if node.CollectionDimension != nil {
+				node.CollectionRoute = routes[len(routes)-1]
+				routes = routes[:len(routes)-1]
+			}
+		}
+	}
+	a.SetCollectionRoots(entries)
 	legacy := slices.DeleteFunc(a.AllDimensions, func(dimension *ArtifactDimension) bool {
 		return !strings.HasPrefix(dimension.Identifier, "type:")
 	})
@@ -427,7 +437,7 @@ func (a *Artifacts) DimensionItems(dimension string) ([]*Artifact, error) {
 			item.DimensionKeys = nil
 			for ancestor := &itemNode; ancestor != nil; ancestor = ancestor.Parent {
 				if ancestor.CollectionDimension != nil && ancestor.CollectionKey != nil {
-					item.DimensionKeys = append(item.DimensionKeys, &ArtifactDimensionKey{Dimension: ancestor.CollectionDimension.Identifier, Key: *ancestor.CollectionKey})
+					item.DimensionKeys = append(item.DimensionKeys, &ArtifactDimensionKey{Dimension: ancestor.CollectionDimension.Identifier, Key: ancestor.coordinateKey(*ancestor.CollectionKey)})
 				}
 			}
 			slices.Reverse(item.DimensionKeys)
@@ -750,7 +760,7 @@ func (a *Artifacts) expand(ctx context.Context, collectionKeys artifactCollectio
 				item.DimensionKeys = []*ArtifactDimensionKey{}
 				for n := node; n != nil; n = n.Parent {
 					if n.CollectionDimension != nil && n.CollectionKey != nil {
-						item.DimensionKeys = append(item.DimensionKeys, &ArtifactDimensionKey{Dimension: n.CollectionDimension.Identifier, Key: *n.CollectionKey})
+						item.DimensionKeys = append(item.DimensionKeys, &ArtifactDimensionKey{Dimension: n.CollectionDimension.Identifier, Key: n.coordinateKey(*n.CollectionKey)})
 					}
 				}
 				slices.Reverse(item.DimensionKeys)
@@ -813,7 +823,7 @@ func expandArtifactNode(ctx context.Context, node *ModTreeNode, template *Artifa
 	var expanded []*ModTreeNode
 	if node.CollectionDimension == nil || node.CollectionKey != nil {
 		if node.CollectionDimension != nil && slices.ContainsFunc(filters, func(filter ArtifactDimensionFilter) bool {
-			return dimensionMatches(node.CollectionDimension, filter.Dimension) && filter.Keys != nil && !slices.Contains(filter.Keys, *node.CollectionKey)
+			return dimensionMatches(node.CollectionDimension, filter.Dimension) && filter.Keys != nil && !slices.Contains(filter.Keys, node.coordinateKey(*node.CollectionKey))
 		}) {
 			return nil, nil
 		}
@@ -852,7 +862,7 @@ func expandArtifactNode(ctx context.Context, node *ModTreeNode, template *Artifa
 			for _, key := range keys {
 				keep := true
 				for _, filter := range filters {
-					if dimensionMatches(node.CollectionDimension, filter.Dimension) && filter.Keys != nil && !slices.Contains(filter.Keys, key.text) {
+					if dimensionMatches(node.CollectionDimension, filter.Dimension) && filter.Keys != nil && !slices.Contains(filter.Keys, node.coordinateKey(key.text)) {
 						keep = false
 					}
 				}

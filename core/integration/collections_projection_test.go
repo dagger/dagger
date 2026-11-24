@@ -112,9 +112,9 @@ func (*Probe) Run() error { panic("check evaluated") }
 	t.Run("nested selectors preserve the route and parent key", func(ctx context.Context, t *testctx.T) {
 		for _, platform := range []string{"linux", "windows"} {
 			out, err := base.With(daggerExec("check", "-la", "-f=cli",
-				"--tools-module=api", "--tools-probe=first", "tools/"+platform+"/modules/cases/run")).Stdout(ctx)
+				"--tools-module="+platform+".modules.api", "--tools-probe=first")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Contains(t, out, "--tools-module=api")
+			require.Contains(t, out, "--tools-module="+platform+".modules.api")
 			require.Contains(t, out, "--tools-probe=first")
 			require.Contains(t, out, "--name=run")
 			selectors, _, _ := strings.Cut(out, "#")
@@ -138,7 +138,7 @@ func (*Probe) Run() error { panic("check evaluated") }
 			require.NoError(t, err)
 			require.JSONEq(t, `{"currentWorkspace":{"artifacts":{"filterUri":{"one":{"dimensionKeys":[
     {"dimension":"module","key":"tools"},
-    {"dimension":"ToolsModules","key":"api"},
+    {"dimension":"ToolsModules","key":"`+platform+`.modules.api"},
     {"dimension":"ToolsCases","key":"first"},
     {"dimension":"name","key":"run"}
    ]}}}}}`, metadata)

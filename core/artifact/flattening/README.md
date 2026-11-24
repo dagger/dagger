@@ -51,6 +51,13 @@ any new conflict. Reject a label that equals another collection's identifier.
 `NewSchema` calls `NameDimensions` on the complete schema before any row filter.
 Reusing a type at another field does not add a column. Field routes do not
 define column identity.
+A scope is a module root or a collection item. When one scope reaches a
+collection type by two or more routes, each key coordinate of that type in that
+scope is the route `fields` joined with `.`, then `.`, then the key. For
+example, `before` and `after` with key `unit` give `before.unit` and
+`after.unit`. `NewSchema` decides this from the complete schema. A type with
+one route in its scope keeps the key unchanged. `Schema.Routes` and `RoutedKey`
+give callers the same result.
 Each `Collection.fields` lists the fields since the previous collection item,
 or since the module root for the first boundary. For a Compose service:
 
@@ -74,7 +81,7 @@ Such a field still contributes dimensions. Use it for an empty collection.
 | Dimension | Coordinate |
 | --- | --- |
 | `module` | Configured module name, when present |
-| Exact collection type name | Collection item key |
+| Exact collection type name | Collection item key, with a route prefix on a route conflict |
 | `name` | Full local path joined with `.`, or `.` for the local root |
 
 The name is the field path from the nearest parent that is a collection item
@@ -107,7 +114,8 @@ a function on a collection, and an empty collection.
 `check` and `references.stale`, Python `python310.unit` and `python310.slow`,
 a Go package generator and its `generate.stale` check, and Go test items.
 `testdata/canonical-columns.json` shows the global label fallback for two
-collection types with the same item type.
+collection types with the same item type, and the route prefix for one
+collection type at two fields.
 The source of the Dagger fields is commit `7976c6f655aecf3d8de37326bfc09e01e666c98a`
 (November 6, 2026). The matching `.txt` files contain exact expected output.
 

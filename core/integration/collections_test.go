@@ -334,15 +334,15 @@ func (CollectionsSuite) TestCLI(ctx context.Context, t *testctx.T) {
 		args []string
 		want string
 	}{
-		{[]string{"list", "-a", "-f", "link", "items/file", "--collections-item=a"}, "dag+file://items/file?collections-item=a\n"},
-		{[]string{"list", "-a", "-f", "link", "items/file?collections-item=a", "--collections-item=c"}, "dag+file://items/file?collections-item=a\ndag+file://items/file?collections-item=c\n"},
-		{[]string{"list", "collections-items", "items", "-a", "-f", "link"}, "dag+collections-item://items?collections-item=a\ndag+collections-item://items?collections-item=b\ndag+collections-item://items?collections-item=c\n"},
+		{[]string{"list", "-a", "-f", "link", "items/file", "--collections-item=items.a"}, "dag+file://?collections-item=items.a\n"},
+		{[]string{"list", "-a", "-f", "link", "items/file?collections-item=items.a", "--collections-item=items.c"}, "dag+file://?collections-item=items.a\ndag+file://?collections-item=items.c\n"},
+		{[]string{"list", "collections-items", "items", "-a", "-f", "link"}, "dag+collections-item://?collections-item=items.a\ndag+collections-item://?collections-item=items.b\ndag+collections-item://?collections-item=items.c\n"},
 	} {
 		out, err := base.With(daggerExec(tc.args...)).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, tc.want, out)
 	}
-	_, err := base.With(daggerExec("list", "-a", "items/file?collections-item=a", "other/file?collections-item=c")).Stdout(ctx)
+	_, err := base.With(daggerExec("list", "-a", "items/file?collections-item=items.a", "other/file?collections-item=other.c")).Stdout(ctx)
 	requireErrOut(t, err, "addresses with different filters require a union of workspace views")
 	_, err = base.With(daggerExec("list", "-a", "--item=a")).Stdout(ctx)
 	requireErrOut(t, err, "unknown flag: --item")
@@ -454,48 +454,48 @@ func (CollectionsSuite) TestListFormats(ctx context.Context, t *testctx.T) {
 		`if item.Name == "item:c" { panic("excluded parent must stay deferred") }`, 1)
 	base := goGitBase(t, c).WithDirectory("/work", collectionSource(c).WithNewFile("collections/main.go", source)).WithWorkdir("/work")
 	t.Run("table hides constant child keys", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerExec("list", "collections-parts", "-a", "items/parts?collections-item=a&collections-item=b&collections-part=x")).Stdout(ctx)
+		out, err := base.With(daggerExec("list", "collections-parts", "-a", "items/parts?collections-item=items.a&collections-item=items.b&collections-part=x")).Stdout(ctx)
 		require.NoError(t, err)
 		lines := strings.Split(strings.TrimSpace(out), "\n")
 		require.Len(t, lines, 3)
 		require.Equal(t, []string{"COLLECTIONS-ITEM", "LINK"}, strings.Fields(lines[0]))
-		require.Equal(t, []string{"a", "dag+collections-part://items/parts?collections-item=a&collections-part=x"}, strings.Fields(lines[1]))
-		require.Equal(t, []string{"b", "dag+collections-part://items/parts?collections-item=b&collections-part=x"}, strings.Fields(lines[2]))
+		require.Equal(t, []string{"items.a", "dag+collections-part://items/parts?collections-item=items.a&collections-part=x"}, strings.Fields(lines[1]))
+		require.Equal(t, []string{"items.b", "dag+collections-part://items/parts?collections-item=items.b&collections-part=x"}, strings.Fields(lines[2]))
 	})
 	t.Run("parent listing honors child filters", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerExec("list", "collections-items", "-a", "items?collections-item=a&collections-item=b&collections-part=x", "-f=link")).Stdout(ctx)
+		out, err := base.With(daggerExec("list", "collections-items", "-a", "items?collections-item=items.a&collections-item=items.b&collections-part=x", "-f=link")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "dag+collections-item://items?collections-item=a\ndag+collections-item://items?collections-item=b\n", out)
+		require.Equal(t, "dag+collections-item://?collections-item=items.a\ndag+collections-item://?collections-item=items.b\n", out)
 	})
 	t.Run("type table does not evaluate leaf values", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerExec("list", "containers", "-a", "items/broken?collections-item=a&collections-item=b")).Stdout(ctx)
+		out, err := base.With(daggerExec("list", "containers", "-a", "items/broken?collections-item=items.a&collections-item=items.b")).Stdout(ctx)
 		require.NoError(t, err)
 		lines := strings.Split(strings.TrimSpace(out), "\n")
 		require.Len(t, lines, 3)
 		require.Equal(t, []string{"COLLECTIONS-ITEM", "LINK"}, strings.Fields(lines[0]))
-		require.Equal(t, []string{"a", "dag+container://items/broken?collections-item=a"}, strings.Fields(lines[1]))
-		require.Equal(t, []string{"b", "dag+container://items/broken?collections-item=b"}, strings.Fields(lines[2]))
+		require.Equal(t, []string{"items.a", "dag+container://?collections-item=items.a"}, strings.Fields(lines[1]))
+		require.Equal(t, []string{"items.b", "dag+container://?collections-item=items.b"}, strings.Fields(lines[2]))
 	})
 	t.Run("collection cli filters remain unambiguous without a path", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerExec("list", "collections-items", "items?collections-item=b", "-f=cli")).Stdout(ctx)
+		out, err := base.With(daggerExec("list", "collections-items", "items?collections-item=items.b", "-f=cli")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, "--collections-item=b")
+		require.Contains(t, out, "--collections-item=items.b")
 		require.Contains(t, out, "--name=.")
 		replayed, err := base.With(daggerExec(append([]string{"list", "collections-items", "-f=link"}, collectionCLIFields(t, out, "dagger list collections-items")...)...)).Stdout(ctx)
 		require.NoError(t, err)
-		direct, err := base.With(daggerExec("list", "collections-items", "items?CollectionsItems=b", "-f=link")).Stdout(ctx)
+		direct, err := base.With(daggerExec("list", "collections-items", "items?CollectionsItems=items.b", "-f=link")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, direct, replayed)
 	})
 
 	t.Run("cli output can select the same container", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerExec("list", "containers", "items/broken?collections-item=b", "-f=cli")).Stdout(ctx)
+		out, err := base.With(daggerExec("list", "containers", "items/broken?collections-item=items.b", "-f=cli")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, "--collections-item=b")
+		require.Contains(t, out, "--collections-item=items.b")
 		require.Contains(t, out, "--name=broken")
 		replayed, err := base.With(daggerExec(append([]string{"list", "containers", "-f=link"}, collectionCLIFields(t, out, "dagger list containers")...)...)).Stdout(ctx)
 		require.NoError(t, err)
-		direct, err := base.With(daggerExec("list", "containers", "items/broken?CollectionsItems=b", "-f=link")).Stdout(ctx)
+		direct, err := base.With(daggerExec("list", "containers", "items/broken?CollectionsItems=items.b", "-f=link")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, direct, replayed)
 	})
@@ -516,9 +516,9 @@ func (item *Item) Verify() error {
 		args []string
 		want string
 	}{
-		{"query", []string{"dag://items/verify?collections-item=a&collections-item=b"}, "dagger check 'dag+check://items/verify?type:Check=/items/verify' --collections --collections-item=a --name=verify\ndagger check 'dag+check://items/verify?type:Check=/items/verify' --collections --collections-item=b --name=verify\n"},
-		{"dimension flag", []string{"items/verify", "--collections-item=a", "--collections-item=b"}, "dagger check 'dag+check://items/verify?type:Check=/items/verify' --collections --collections-item=a --name=verify\ndagger check 'dag+check://items/verify?type:Check=/items/verify' --collections --collections-item=b --name=verify\n"},
-		{"query and flag", []string{"items/verify?collections-item=a", "--collections-item=b"}, "dagger check 'dag+check://items/verify?type:Check=/items/verify' --collections --collections-item=a --name=verify\ndagger check 'dag+check://items/verify?type:Check=/items/verify' --collections --collections-item=b --name=verify\n"},
+		{"query", []string{"dag://items/verify?collections-item=items.a&collections-item=items.b"}, "dagger check 'dag+check://items/verify?type:Check=/items/verify' --collections --collections-item=items.a --name=verify\ndagger check 'dag+check://items/verify?type:Check=/items/verify' --collections --collections-item=items.b --name=verify\n"},
+		{"dimension flag", []string{"items/verify", "--collections-item=items.a", "--collections-item=items.b"}, "dagger check 'dag+check://items/verify?type:Check=/items/verify' --collections --collections-item=items.a --name=verify\ndagger check 'dag+check://items/verify?type:Check=/items/verify' --collections --collections-item=items.b --name=verify\n"},
+		{"query and flag", []string{"items/verify?collections-item=items.a", "--collections-item=items.b"}, "dagger check 'dag+check://items/verify?type:Check=/items/verify' --collections --collections-item=items.a --name=verify\ndagger check 'dag+check://items/verify?type:Check=/items/verify' --collections --collections-item=items.b --name=verify\n"},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			out, err := base.With(daggerExec(append([]string{"check", "-l", "--all", "-f=cli"}, tc.args...)...)).Stdout(ctx)
@@ -533,7 +533,7 @@ func (item *Item) Verify() error {
 		// The CLI learns the workspace's filter flags before it parses them,
 		// in the session that then runs the command.
 		progress, err := base.WithEnvVariable("DAGGER_PROGRESS", "report").
-			With(daggerExec("-v", "check", "-l", "items/verify", "--collections-item=a")).Stderr(ctx)
+			With(daggerExec("-v", "check", "-l", "items/verify", "--collections-item=items.a")).Stderr(ctx)
 		require.NoError(t, err)
 		progress = ansi.Strip(progress)
 		require.Equal(t, 1, strings.Count(progress, "✔ connect "), progress)
@@ -544,7 +544,7 @@ func (item *Item) Verify() error {
 	t.Run("separate filters require a union", func(ctx context.Context, t *testctx.T) {
 		for _, prefix := range [][]string{{"check", "-l"}, {"check"}} {
 			args := append([]string{}, prefix...)
-			args = append(args, "items/verify?collections-item=a", "other/verify?collections-item=b")
+			args = append(args, "items/verify?collections-item=items.a", "other/verify?collections-item=other.b")
 			_, err := base.With(daggerExec(args...)).Stdout(ctx)
 			requireErrOut(t, err, "addresses with different filters require a union of workspace views")
 		}
@@ -582,9 +582,9 @@ func (item *Item) Verify() error {
 	})
 
 	t.Run("shell flags leave unrelated collections deferred", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerExec("shell", "-l", "-a", "-f=cli", "items/broken?collections-item=a")).Stdout(ctx)
+		out, err := base.With(daggerExec("shell", "-l", "-a", "-f=cli", "items/broken?collections-item=items.a")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "dagger shell 'dag+container://items/broken?type:Container=/items/broken' --collections --collections-item=a --name=broken\n", out)
+		require.Equal(t, "dagger shell 'dag+container://items/broken?type:Container=/items/broken' --collections --collections-item=items.a --name=broken\n", out)
 		replay, err := base.With(daggerExec(append([]string{"shell", "-l", "-a", "-f=cli"}, collectionCLIFields(t, out, "dagger shell")...)...)).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, out, replay)
@@ -596,12 +596,12 @@ func (item *Item) Verify() error {
 		combined, err := base.With(daggerExec("check", "-l", "-f=cli", "items/verify")).CombinedOutput(ctx)
 		require.NoError(t, err)
 		require.Equal(t, 1, strings.Count(combined, "# Use --all to expand collections and list each item."))
-		out, err = base.With(daggerExec("check", "-l", "-f=cli", "items/verify?collections-item=a&collections-item=b&collections-item=c")).Stdout(ctx)
+		out, err = base.With(daggerExec("check", "-l", "-f=cli", "items/verify?collections-item=items.a&collections-item=items.b&collections-item=items.c")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "dagger check 'dag+check://items/verify?type:Check=/items/verify' --collections --collections-item=a --name=verify\ndagger check 'dag+check://items/verify?type:Check=/items/verify' --collections --collections-item=b --name=verify\ndagger check 'dag+check://items/verify?type:Check=/items/verify' --collections --collections-item=c --name=verify\n", out)
-		out, err = base.With(daggerExec("check", "-l", "-f=cli", "items/verify?collections-item=a&collections-item=b")).Stdout(ctx)
+		require.Equal(t, "dagger check 'dag+check://items/verify?type:Check=/items/verify' --collections --collections-item=items.a --name=verify\ndagger check 'dag+check://items/verify?type:Check=/items/verify' --collections --collections-item=items.b --name=verify\ndagger check 'dag+check://items/verify?type:Check=/items/verify' --collections --collections-item=items.c --name=verify\n", out)
+		out, err = base.With(daggerExec("check", "-l", "-f=cli", "items/verify?collections-item=items.a&collections-item=items.b")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "dagger check 'dag+check://items/verify?type:Check=/items/verify' --collections --collections-item=a --name=verify\ndagger check 'dag+check://items/verify?type:Check=/items/verify' --collections --collections-item=b --name=verify\n", out)
+		require.Equal(t, "dagger check 'dag+check://items/verify?type:Check=/items/verify' --collections --collections-item=items.a --name=verify\ndagger check 'dag+check://items/verify?type:Check=/items/verify' --collections --collections-item=items.b --name=verify\n", out)
 		// Replay each printed row. Item c fails if grouping loses the filter.
 		for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
 			if strings.HasPrefix(line, "#") {
@@ -645,9 +645,9 @@ func (*Part) Verify() error { return nil }
 			out, err := base.With(daggerExec(tc.command, "-l", tc.path)).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, []string{"LINK", "dag+" + tc.typ + "://" + tc.path}, strings.Fields(out))
-			out, err = base.With(daggerExec(tc.command, "-l", "-a", "-f=cli", tc.path, "--collections-item=a")).Stdout(ctx)
+			out, err = base.With(daggerExec(tc.command, "-l", "-a", "-f=cli", tc.path, "--collections-item=items.a")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "dagger "+tc.command+" 'dag+"+tc.typ+"://"+tc.path+"?type:"+tc.typeName+"=/"+tc.path+"' --collections --collections-item=a --name="+strings.TrimPrefix(tc.path, "items/")+"\n", out)
+			require.Equal(t, "dagger "+tc.command+" 'dag+"+tc.typ+"://"+tc.path+"?type:"+tc.typeName+"=/"+tc.path+"' --collections --collections-item=items.a --name="+strings.TrimPrefix(tc.path, "items/")+"\n", out)
 			replay, err := base.With(daggerExec(append([]string{tc.command, "-l", "-a", "-f=cli"}, collectionCLIFields(t, out, "dagger "+tc.command)...)...)).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, out, replay)
@@ -690,9 +690,9 @@ func (*Part) Verify() error { return nil }
 		out, err := base.With(daggerExec("check", "-l", "--collections-items", "--check=items/verify", "--generated=false", "-f=link")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "dag+check://items/verify\n", out)
-		out, err = base.With(daggerExec("check", "-la", "--collections-item=a", "--check=items/verify", "--generated=false")).Stdout(ctx)
+		out, err = base.With(daggerExec("check", "-la", "--collections-item=items.a", "--check=items/verify", "--generated=false")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, []string{"LINK", "dag+check://items/verify?collections-item=a"}, strings.Fields(out))
+		require.Equal(t, []string{"LINK", "dag+check://?collections-item=items.a&name=verify&!collections-part"}, strings.Fields(out))
 		// No collection flag: every sibling, including the empty one, matches.
 		out, err = base.With(daggerExec("check", "-l", "--check=verify", "-f=link")).Stdout(ctx)
 		require.NoError(t, err)
@@ -704,12 +704,12 @@ func (*Part) Verify() error { return nil }
 		require.Equal(t, "dag+check://items/verify\n", out)
 	})
 	t.Run("name distinguishes checks on the same item", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerExec("check", "-l", "-a", "-f=cli", "items/verify", "--collections-item=a")).Stdout(ctx)
+		out, err := base.With(daggerExec("check", "-l", "-a", "-f=cli", "items/verify", "--collections-item=items.a")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "dagger check 'dag+check://items/verify?type:Check=/items/verify' --collections --collections-item=a --name=verify\n", out)
+		require.Equal(t, "dagger check 'dag+check://items/verify?type:Check=/items/verify&!collections-part' --collections --collections-item=items.a --name=verify\n", out)
 	})
 	t.Run("keep correlated keys separate", func(ctx context.Context, t *testctx.T) {
-		addresses := []string{"items/parts/verify?collections-item=a&collections-part=x", "items/parts/verify?collections-item=b&collections-part="}
+		addresses := []string{"items/parts/verify?collections-item=items.a&collections-part=x", "items/parts/verify?collections-item=items.b&collections-part="}
 		_, err := base.With(daggerExec(append([]string{"check", "-l", "-f=cli"}, addresses...)...)).Stdout(ctx)
 		requireErrOut(t, err, "addresses with different filters require a union of workspace views")
 		// Each selection remains valid on its own. Parsing the printed row in
@@ -812,11 +812,11 @@ func (*Item) Assistant(base *dagger.LLM) *dagger.LLM { panic("agent evaluated") 
 func (*Part) Verify() error { return nil }
 `
 		nested := goGitBase(t, c).WithDirectory("/work", collectionSource(c).WithNewFile("collections/main.go", source)).WithWorkdir("/work")
-		_, err := nested.With(daggerExec("check", "items/parts/verify?collections-item=a&collections-part=missing")).Sync(ctx)
+		_, err := nested.With(daggerExec("check", "items/parts/verify?collections-item=items.a&collections-part=missing")).Sync(ctx)
 		requireErrOut(t, err, `no checks matched pattern "items/parts/verify?`)
 	})
 	t.Run("key filters still resolve keys", func(ctx context.Context, t *testctx.T) {
-		_, err := base.With(daggerExec("check", "-l", "deferred/verify", "--collections-item=a")).Stdout(ctx)
+		_, err := base.With(daggerExec("check", "-l", "deferred/verify", "--collections-item=deferred.a")).Stdout(ctx)
 		requireErrOut(t, err, "collection keys evaluated")
 	})
 	t.Run("settings skip schema paths without reading keys", func(ctx context.Context, t *testctx.T) {
@@ -900,13 +900,13 @@ func (CollectionsSuite) TestArtifacts(ctx context.Context, t *testctx.T) {
 	got, err := testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!) {
   node(id: $ws) { ... on Workspace { artifacts {
     dimensionDefinitions { identifier name kind }
-    exact: filterUri(uri: "dag+file://items/file?CollectionsItems=a") {
+    exact: filterUri(uri: "dag+file://?CollectionsItems=items.a&name=file") {
       one { uri dimensionKeys(all: true) { dimension key } value { ... on File { contents } } }
     }
-    alias: filterUri(uri: "dag+file://items/file?collections-item=a") {
+    alias: filterUri(uri: "dag+file://?collections-item=items.a&name=file") {
       one { uri dimensionKeys(all: true) { dimension key } value { ... on File { contents } } }
     }
-    emptyKey: filterUri(uri: "dag+collections-part://items/parts?CollectionsItems=a&CollectionsParts=") {
+    emptyKey: filterUri(uri: "dag+collections-part://?CollectionsItems=items.a&CollectionsParts=&name=.") {
       one { dimensionKeys(all: true) { dimension key } }
     }
   } } }
@@ -939,8 +939,8 @@ func (CollectionsSuite) TestArtifacts(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	emptyKeys, err := json.Marshal(artifacts.EmptyKey.One.DimensionKeys)
 	require.NoError(t, err)
-	require.JSONEq(t, `[{"Dimension":"module","Key":"collections"},{"Dimension":"CollectionsItems","Key":"a"},{"Dimension":"name","Key":"file"}]`, string(exactKeys))
-	require.JSONEq(t, `[{"Dimension":"module","Key":"collections"},{"Dimension":"CollectionsItems","Key":"a"},{"Dimension":"CollectionsParts","Key":""},{"Dimension":"name","Key":"."}]`, string(emptyKeys))
+	require.JSONEq(t, `[{"Dimension":"module","Key":"collections"},{"Dimension":"CollectionsItems","Key":"items.a"},{"Dimension":"name","Key":"file"}]`, string(exactKeys))
+	require.JSONEq(t, `[{"Dimension":"module","Key":"collections"},{"Dimension":"CollectionsItems","Key":"items.a"},{"Dimension":"CollectionsParts","Key":""},{"Dimension":"name","Key":"."}]`, string(emptyKeys))
 	byID := map[string]string{}
 	for _, dimension := range artifacts.DimensionDefinitions {
 		require.False(t, strings.HasPrefix(dimension.Identifier, "/"), dimension.Identifier)
@@ -972,17 +972,17 @@ func (CollectionsSuite) TestDimensionItems(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	got, err := testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!) {
   node(id: $ws) { ... on Workspace { artifacts {
-    selected: filterUri(uri: "items/parts?collections-item=a&collections-item=b&collections-part=x") {
+    selected: filterUri(uri: "items/parts?collections-item=items.a&collections-item=items.b&collections-part=x") {
       parents: dimensionItems(dimension: "collections-item") { uri(typeAssertion: true) description path dimensionKeys(all: true) { dimension key } }
       children: dimensionItems(dimension: "collections-part") { uri dimensionKeys(all: true) { dimension key } }
       keys: dimensionKeys(dimension: "collections-part")
     }
-    lazy: filterUri(uri: "items/broken?collections-item=b") { dimensionItems(dimension: "collections-item") { uri value { __typename } } }
-    collectionMethod: filterUri(uri: "items/delta-check?collections-item=b") { dimensionItems(dimension: "collections-item") { uri value { __typename } } }
+    lazy: filterUri(uri: "items/broken?collections-item=items.b") { dimensionItems(dimension: "collections-item") { uri value { __typename } } }
+    collectionMethod: filterUri(uri: "items/delta-check?collections-item=items.b") { dimensionItems(dimension: "collections-item") { uri value { __typename } } }
     fields: filterUri(uri: "other") {
       dimensionItems(dimension: "CollectionsItems") { uri }
     }
-    direct: filterUri(uri: "items?collections-item=a") { filterTypes(types: ["CollectionsItem"]) { items { description } } }
+    direct: filterUri(uri: "items?collections-item=items.a") { filterTypes(types: ["CollectionsItem"]) { items { description } } }
     unknown: dimensionItems(dimension: "missing") { uri }
   } } }
 }`, &testutil.QueryOptions{Variables: map[string]any{"ws": ws}})
@@ -1029,7 +1029,7 @@ func (CollectionsSuite) TestDimensionItems(ctx context.Context, t *testctx.T) {
 			for _, coordinate := range tc.row.DimensionKeys {
 				coordinates[coordinate.Dimension] = coordinate.Key
 			}
-			expected := map[string]string{"module": "collections", "CollectionsItems": key, "name": tc.name}
+			expected := map[string]string{"module": "collections", "CollectionsItems": "items." + key, "name": tc.name}
 			if tc.nested {
 				expected["CollectionsParts"] = "x"
 			}

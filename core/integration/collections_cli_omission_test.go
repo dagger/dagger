@@ -63,9 +63,9 @@ func (*Part) Run() error { panic("check evaluated") }
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			ctr := base.WithNewFile("collections/main.go", source+tc.extra)
 			for _, command := range [][]string{{"check", "-l"}, {"list", "checks"}} {
-				out, err := ctr.With(daggerExec(append(command, "-a", "items/run?CollectionsItems=a", "-f=cli")...)).Stdout(ctx)
+				out, err := ctr.With(daggerExec(append(command, "-a", "items/run?CollectionsItems=items.a", "-f=cli")...)).Stdout(ctx)
 				require.NoError(t, err)
-				require.Contains(t, out, "--collections-item=a")
+				require.Contains(t, out, "--collections-item=items.a")
 
 				require.Contains(t, out, "--name=run")
 				replay := append(append([]string{}, command...), "-a", "-f=link")
@@ -77,7 +77,7 @@ func (*Part) Run() error { panic("check evaluated") }
 				links, err := ctr.With(daggerExec(replay...)).Stdout(ctx)
 				require.NoError(t, err)
 				require.NotEmpty(t, strings.TrimSpace(links))
-				direct, err := ctr.With(daggerExec(append(append([]string{}, command...), "-a", "items/run?CollectionsItems=a", "-f=link")...)).Stdout(ctx)
+				direct, err := ctr.With(daggerExec(append(append([]string{}, command...), "-a", "items/run?CollectionsItems=items.a", "-f=link")...)).Stdout(ctx)
 				require.NoError(t, err)
 				require.Equal(t, direct, links)
 				replayed, err := ctr.With(daggerExec(append(append([]string{}, command...), "-a", strings.TrimSpace(links), "-f=link")...)).Stdout(ctx)

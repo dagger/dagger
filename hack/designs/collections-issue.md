@@ -159,7 +159,7 @@ For example, with original keys `["TestA", "TestB", "TestC"]`:
 | Then select `TestC` | `[]` | `["TestA", "TestB"]` |
 | Then module code sets keys to `TestB`, `TestC`, `TestD` | `["TestD"]` | `["TestA"]` |
 
-All collections use the same `CollectionDelta` type. Delta keys use the same string form as artifact keys. Conversion must preserve key identity and allow conversion back using the declared key type. For example, integer keys `[1, 2]` become `["1", "2"]`.
+All collections use the same `CollectionDelta` type. Delta keys use the key text of artifact keys, without a route prefix. Conversion must preserve key identity and allow conversion back using the declared key type. For example, integer keys `[1, 2]` become `["1", "2"]`.
 
 The engine computes the delta without evaluating items. Key order and item contents do not affect key membership. The delta belongs to the collection value. Its dimension name does not affect it.
 
@@ -287,9 +287,24 @@ Collection selection inserts `get(key: ...)` calls. `get` and the keys are not p
 
 Source artifact identity includes its type, complete source path, and collection lookup keys. Projected columns use collection types, not source paths.
 
-Different fields can expose the same collection type with the same key. They share the collection column. Other dimensions must distinguish their artifacts; do not split the collection column or silently merge source artifacts.
+Different fields can expose the same collection type with the same key. They share the collection column. Do not split the collection column or silently merge source artifacts.
 
-For `before: Tests` and `after: Tests`, both collections can contain key `unit`. They share one `test` column. Their checks both have `name=check`: the module, the test key, and the name all match. The rule that distinguishes these artifacts awaits a decision.
+A scope is a module root or a collection item. When a scope reaches one collection type by two or more field routes, each key coordinate of that type in that scope has its route as a prefix. The route is the field path from the scope root to the collection, joined with `.`. The coordinate is the route, then `.`, then the key text. The complete schema decides this before any filter. Keys that exist at run time do not change it. A collection type with one route in its scope keeps the key text. The same type in two different scopes is not a conflict.
+
+```graphql
+type PythonClient { python310: Python!  python311: Python! }
+type Python       { tests: PyTests! }
+type PyTests      { get(key: String!): PyTest! }
+type PyTest       { run: Check! }
+```
+
+```
+PY-TEST                  MODULE         NAME
+python310.tests.TestBar  python-client  run
+python311.tests.TestBar  python-client  run
+```
+
+For `before: Tests` and `after: Tests` with key `unit`, the checks have `test=before.unit` and `test=after.unit`. Both have `name=check`. A filter uses the complete coordinate, such as `--py-test=python310.tests.TestBar`. The engine compares strings. It does not split a coordinate into route and key. The prefix exists only in the coordinate: `get`, `subset`, and `CollectionDelta` use the author's keys.
 
 An artifact can also differ from another by an absent coordinate. A check on a `Row` collection and a check on its `Cell` can share the path `rows/check`. The parent has no cell coordinate. Use an absence test to select it.
 
@@ -396,7 +411,7 @@ Reading metadata from an existing `Artifact` does not evaluate its value. `value
 
 #### Key text
 
-Artifact and delta keys use the same string form. Strings and string scalars use their value. Enums use the GraphQL value name, such as `RED`. Numbers and booleans use their JSON form. Conversion back uses the declared key type and must preserve key identity. Keep the typed key for `get` and `subset`. Do not infer its type from the text.
+Artifact and delta keys use the same key text. An artifact key coordinate can add a route prefix to this text; a delta key cannot. Strings and string scalars use their value. Enums use the GraphQL value name, such as `RED`. Numbers and booleans use their JSON form. Conversion back uses the declared key type and must preserve key identity. Keep the typed key for `get` and `subset`. Do not infer its type from the text.
 
 ### 4. Select items by dimension
 

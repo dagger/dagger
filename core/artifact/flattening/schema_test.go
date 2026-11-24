@@ -159,8 +159,27 @@ func TestSchemaSameTypeAtDifferentFields(t *testing.T) {
 	for _, field := range []flattening.Field{left, right} {
 		got, err := schema.Coordinates(field, "one")
 		require.NoError(t, err)
-		require.Equal(t, []flattening.Coordinate{{Dimension: "Cases", Key: "one"}, {Dimension: "name", Key: "."}}, got)
+		key := field.Collections[0].Fields[0] + ".one"
+		require.Equal(t, []flattening.Coordinate{{Dimension: "Cases", Key: key}, {Dimension: "name", Key: "."}}, got)
 	}
+
+	nested := func(parent, route string) flattening.Field {
+		return flattening.Field{Type: "Check", Collections: []flattening.Collection{
+			{Type: parent, ItemType: "Suite", Fields: []string{"suites"}},
+			{Type: "Cases", ItemType: "Case", Fields: []string{route}},
+		}}
+	}
+	root := flattening.Field{Type: "Check", Collections: []flattening.Collection{{Type: "Cases", ItemType: "Case", Fields: []string{"cases"}}}}
+	inFast, inSlow := nested("FastSuites", "cases"), nested("SlowSuites", "other")
+	schema, err = flattening.NewSchema([]flattening.Field{root, inFast, inSlow})
+	require.NoError(t, err)
+	got, err := schema.Coordinates(root, "one")
+	require.NoError(t, err)
+	require.Equal(t, []flattening.Coordinate{{Dimension: "Cases", Key: "one"}, {Dimension: "name", Key: "."}}, got)
+	got, err = schema.Coordinates(inSlow, "all", "one")
+	require.NoError(t, err)
+	require.Equal(t, []flattening.Coordinate{{Dimension: "SlowSuites", Key: "all"}, {Dimension: "Cases", Key: "one"}, {Dimension: "name", Key: "."}}, got)
+
 	left.Collections[0].Type = "UnknownCases"
 	_, err = schema.Coordinates(left, "one")
 	require.ErrorContains(t, err, "absent from the flattening schema")

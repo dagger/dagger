@@ -64,13 +64,18 @@ func (a *Artifact) LocalPath() []string {
 	return path
 }
 
+// coordinateKey returns the flattened coordinate for key in node's collection.
+func (node *ModTreeNode) coordinateKey(key string) string {
+	return flattening.RoutedKey(node.CollectionRoute, key)
+}
+
 func (a *Artifact) CanonicalCoordinates() []flattening.Coordinate {
 	var collections []flattening.Coordinate
 	for node := a.Node; node != nil; node = node.Parent {
 		if node.CollectionDimension != nil && node.CollectionKey != nil {
 			collections = append(collections, flattening.Coordinate{
 				Dimension: node.CollectionDimension.CollectionType,
-				Key:       *node.CollectionKey,
+				Key:       node.coordinateKey(*node.CollectionKey),
 			})
 		}
 	}

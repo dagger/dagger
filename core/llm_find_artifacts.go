@@ -393,7 +393,7 @@ func expandDimensionKeyTargets(ctx context.Context, targets []dimensionKeyTarget
 	for _, nodes := range found {
 		for _, node := range nodes {
 			if node != nil && node.CollectionKey != nil {
-				keys = append(keys, *node.CollectionKey)
+				keys = append(keys, node.coordinateKey(*node.CollectionKey))
 			}
 		}
 	}

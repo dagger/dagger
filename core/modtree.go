@@ -30,8 +30,11 @@ type ModTreeNode struct {
 	// exposed without a module prefix. Path retains the qualified identity.
 	WorkspaceMain       bool
 	CollectionDimension *ArtifactDimension
-	CollectionKey       *string
-	LegacyBatchKeys     []string
+	// CollectionRoute is the field route that prefixes this collection's
+	// keys in flattened coordinates. CollectionKey remains the author's key.
+	CollectionRoute []string
+	CollectionKey   *string
+	LegacyBatchKeys []string
 }
 
 func (node *ModTreeNode) Path() ModTreePath {
@@ -580,6 +583,7 @@ type persistedModTree struct {
 
 type persistedModTreeNode struct {
 	CollectionDimension    *ArtifactDimension `json:"collectionDimension,omitempty"`
+	CollectionRoute        []string           `json:"collectionRoute,omitempty"`
 	CollectionKey          *string            `json:"collectionKey,omitempty"`
 	LegacyBatchKeys        []string           `json:"legacyBatchKeys,omitempty"`
 	RootValueResultID      uint64             `json:"rootValueResultID,omitempty"`
@@ -630,6 +634,7 @@ func (enc *persistedModTreeEncoder) Add(node *ModTreeNode) (int, error) {
 	enc.ids[node] = id
 	persisted := persistedModTreeNode{
 		CollectionDimension: node.CollectionDimension,
+		CollectionRoute:     node.CollectionRoute,
 		CollectionKey:       node.CollectionKey,
 		LegacyBatchKeys:     slices.Clone(node.LegacyBatchKeys),
 		ID:                  id,
@@ -683,6 +688,7 @@ func decodePersistedModTree(ctx context.Context, dec *dagql.PersistDecodeContext
 
 		node := &ModTreeNode{
 			CollectionDimension: persisted.CollectionDimension,
+			CollectionRoute:     persisted.CollectionRoute,
 			CollectionKey:       persisted.CollectionKey,
 			LegacyBatchKeys:     slices.Clone(persisted.LegacyBatchKeys),
 			Name:                persisted.Name,

@@ -5,7 +5,8 @@ Tests         test
 module        module
 name          name
 
-TYPE   dependencies  packages  test  module  name
-Check  -             -         unit  app     check
-Check  -             lib       -     app     check
-Check  base          -         -     app     check
+TYPE   dependencies  packages  test         module  name
+Check  -             -         before.unit  app     check
+Check  -             -         after.unit   app     check
+Check  -             lib       -            app     check
+Check  base          -         -            app     check

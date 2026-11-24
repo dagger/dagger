@@ -186,12 +186,12 @@ type Case {
 
 	out, err := base.With(daggerQuery(`{
  currentWorkspace { artifacts { filterTypes(types: ["ViewCase"]) {
-  first: filterUri(uri: "first?ViewCases=a&ViewCases=b") {
+  first: filterUri(uri: "?ViewCases=first.a&ViewCases=first.b") {
    items { value { ... on ViewCase { name alias { keys } parent {
     keys removed narrow: subset(keys: ["b"]) { keys removed }
    } } } }
   }
-  second: filterUri(uri: "second?ViewCases=d") {
+  second: filterUri(uri: "?ViewCases=second.d") {
    items { value { ... on ViewCase { name alias { keys } parent { keys removed } } } }
   }
  } } }

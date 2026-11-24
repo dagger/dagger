@@ -16,7 +16,7 @@ func (CollectionsSuite) TestGeneratorCheckNames(ctx context.Context, t *testctx.
 		flags                                        []string
 	}{
 		{"module", "Collections", "dag+check://?name=%s.stale\n", "", "", []string{"--collections"}},
-		{"collection", "Item", "dag+check://items/%s/stale?collections-item=a\n", "dag+check://items/%[1]s/stale?type:Check=/items/%[1]s/stale", "items/**", []string{"--collections", "--collections-item=a"}},
+		{"collection", "Item", "dag+check://?collections-item=items.a&name=%s.stale\n", "dag+check://items/%[1]s/stale?type:Check=/items/%[1]s/stale", "items/**", []string{"--collections", "--collections-item=items.a"}},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			source := collectionGoSource + fmt.Sprintf(`
