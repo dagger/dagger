@@ -298,7 +298,7 @@ type PyTests      { get(key: String!): PyTest! }
 type PyTest       { run: Check! }
 ```
 
-```
+```text
 PY-TEST                  MODULE         NAME
 python310.tests.TestBar  python-client  run
 python311.tests.TestBar  python-client  run
