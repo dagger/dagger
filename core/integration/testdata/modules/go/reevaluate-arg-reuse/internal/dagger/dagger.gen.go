@@ -16,7 +16,6 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
-type Check = core.Check
 type Container = core.Container
 type File = core.File
 type ID = core.ID

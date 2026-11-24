@@ -18,7 +18,6 @@ import (
 const CacheSharingModeLocked = core.CacheSharingModeLocked
 
 type Changeset = core.Changeset
-type Check = core.Check
 type Container = core.Container
 type ContainerAsServiceOpts = core.ContainerAsServiceOpts
 type ContainerAsTarballOpts = core.ContainerAsTarballOpts
@@ -37,7 +36,6 @@ type DirectoryFilterOpts = core.DirectoryFilterOpts
 type DirectoryWithDirectoryOpts = core.DirectoryWithDirectoryOpts
 type DirectoryWithFileOpts = core.DirectoryWithFileOpts
 type DirectoryWithNewFileOpts = core.DirectoryWithNewFileOpts
-type EnvFile = core.EnvFile
 type File = core.File
 type HTTPOpts = core.HTTPOpts
 type ID = core.ID
@@ -53,7 +51,6 @@ const ReturnTypeAny = core.ReturnTypeAny
 type Secret = core.Secret
 type Service = core.Service
 type Socket = core.Socket
-type Void = core.Void
 type Workspace = core.Workspace
 type WorkspaceDirectoryOpts = core.WorkspaceDirectoryOpts
 

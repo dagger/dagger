@@ -15,13 +15,10 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
-type Artifacts = core.Artifacts
-
 const CacheSharingModeLocked = core.CacheSharingModeLocked
 
 type CacheVolume = core.CacheVolume
 type Changeset = core.Changeset
-type Check = core.Check
 type Container = core.Container
 type ContainerAsServiceOpts = core.ContainerAsServiceOpts
 type ContainerOpts = core.ContainerOpts
@@ -39,7 +36,6 @@ type Platform = core.Platform
 type Secret = core.Secret
 type Service = core.Service
 type ServiceStopOpts = core.ServiceStopOpts
-type Void = core.Void
 type Workspace = core.Workspace
 type WorkspaceDirectoryOpts = core.WorkspaceDirectoryOpts
 

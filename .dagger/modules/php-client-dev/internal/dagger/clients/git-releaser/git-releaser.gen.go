@@ -141,7 +141,7 @@ type GitReleaserReleaseOpts struct {
 	//
 	// Github authentication token
 	//
-	GithubToken *Secret // git-releaser (../../main.go:72:2)
+	GitHubToken *Secret // git-releaser (../../main.go:72:2)
 	//
 	// Execute a dry run without actually releasing
 	//
@@ -169,8 +169,8 @@ func (r *GitReleaser) Release(ctx context.Context, sourceRepo *GitRepository, so
 			q = q.Arg("callback", opts[i].Callback)
 		}
 		// `githubToken` optional argument
-		if !querybuilder.IsZeroValue(opts[i].GithubToken) {
-			q = q.Arg("githubToken", opts[i].GithubToken)
+		if !querybuilder.IsZeroValue(opts[i].GitHubToken) {
+			q = q.Arg("githubToken", opts[i].GitHubToken)
 		}
 		// `dryRun` optional argument
 		if !querybuilder.IsZeroValue(opts[i].DryRun) {

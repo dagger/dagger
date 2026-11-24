@@ -2,6 +2,6 @@
   "version": 1,
   "files": {
     "dagger.gen.go": "60b9a88b3f9c0cd1729ca82b772ac9b02cf2e60889b55f31fc3ff24c8a9d2fa1",
-    "go-client-dev.gen.go": "5854eefd329107b59dc2733e5b7718aba35b2ad99ad7d4aebe6fb7bc31e469ea"
+    "go-client-dev.gen.go": "d8900fda574b018c7ef798cca8e551b28095ca2f46b19506bc7221cb6c435e24"
   }
 }

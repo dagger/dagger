@@ -21,7 +21,6 @@ type GitRepository = core.GitRepository
 type ID = core.ID
 type Node = core.Node
 type Secret = core.Secret
-type Void = core.Void
 
 // Client borrows a shared connection. Its API contains only the bound module.
 type Client struct{ *Query }

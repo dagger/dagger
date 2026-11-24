@@ -9,7 +9,7 @@ replace (
 )
 
 require (
-	dagger.io/dagger v1.0.0-beta.26
+	dagger.io/dagger v1.0.0-beta.27
 	github.com/Khan/genqlient v0.8.1
 	github.com/containerd/platforms v1.0.0-rc.2
 	github.com/dagger/dagger v0.0.0-00010101000000-000000000000
@@ -19,6 +19,7 @@ require (
 	github.com/dagger/querybuilder v0.0.0-20260402040506-574a5e81cb59
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/pelletier/go-toml v1.9.5
+	github.com/vektah/gqlparser/v2 v2.5.36
 	go.opentelemetry.io/otel v1.46.0
 	go.opentelemetry.io/otel/sdk v1.43.0
 	go.opentelemetry.io/otel/trace v1.46.0
@@ -42,7 +43,6 @@ require (
 	github.com/sirupsen/logrus v1.9.4 // indirect
 	github.com/sosodev/duration v1.4.0 // indirect
 	github.com/sourcegraph/conc v0.3.0 // indirect
-	github.com/vektah/gqlparser/v2 v2.5.36 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.17.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.19.0 // indirect

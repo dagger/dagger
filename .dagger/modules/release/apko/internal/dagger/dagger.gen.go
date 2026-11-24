@@ -26,7 +26,6 @@ type ID = core.ID
 type Node = core.Node
 type RegistryConfig = dep0.RegistryConfig
 type Secret = core.Secret
-type Void = core.Void
 type dep0Client = dep0.Client
 
 // Client borrows a shared connection. Its API contains only the bound module.

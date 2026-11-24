@@ -16,7 +16,6 @@ import (
 )
 
 type Changeset = core.Changeset
-type Check = core.Check
 type Container = core.Container
 type ContainerAsServiceOpts = core.ContainerAsServiceOpts
 type ContainerWithDirectoryOpts = core.ContainerWithDirectoryOpts
@@ -31,7 +30,6 @@ type Node = core.Node
 type Secret = core.Secret
 type Service = core.Service
 type ServiceEndpointOpts = core.ServiceEndpointOpts
-type Void = core.Void
 type WithContainerFunc = core.WithContainerFunc
 type Workspace = core.Workspace
 

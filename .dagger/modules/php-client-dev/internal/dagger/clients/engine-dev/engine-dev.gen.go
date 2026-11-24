@@ -54,7 +54,7 @@ func (r *EngineDev) ClientDockerConfig() *Secret { // engine-dev (../../main.go:
 type EngineDevContainerOpts struct {
 	Platform Platform // engine-dev (../../main.go:168:2)
 
-	GpuSupport bool // engine-dev (../../main.go:170:2)
+	GPUSupport bool // engine-dev (../../main.go:170:2)
 
 	Version string // engine-dev (../../main.go:172:2)
 }
@@ -68,8 +68,8 @@ func (r *EngineDev) Container(opts ...EngineDevContainerOpts) *Container { // en
 			q = q.Arg("platform", opts[i].Platform)
 		}
 		// `gpuSupport` optional argument
-		if !querybuilder.IsZeroValue(opts[i].GpuSupport) {
-			q = q.Arg("gpuSupport", opts[i].GpuSupport)
+		if !querybuilder.IsZeroValue(opts[i].GPUSupport) {
+			q = q.Arg("gpuSupport", opts[i].GPUSupport)
 		}
 		// `version` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Version) {
@@ -122,13 +122,13 @@ func (r *EngineDev) GoEnv(opts ...EngineDevGoEnvOpts) *Container { // engine-dev
 	return new(Container).WithGraphQLQuery(q)
 }
 
-// EngineDevGraphqlSchemaOpts contains options for EngineDev.GraphqlSchema
-type EngineDevGraphqlSchemaOpts struct {
+// EngineDevGraphQLSchemaOpts contains options for EngineDev.GraphQLSchema
+type EngineDevGraphQLSchemaOpts struct {
 	Version string // engine-dev (../../main.go:800:2)
 }
 
 // Introspect the engine API schema, and return it as a graphql schema
-func (r *EngineDev) GraphqlSchema(opts ...EngineDevGraphqlSchemaOpts) *File { // engine-dev (../../main.go:797:1)
+func (r *EngineDev) GraphQLSchema(opts ...EngineDevGraphQLSchemaOpts) *File { // engine-dev (../../main.go:797:1)
 	q := r.query.Select("graphqlSchema")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `version` optional argument
@@ -274,7 +274,7 @@ type EngineDevLoadToDockerOpts struct {
 	//
 	// Enable experimental GPU support
 	//
-	GpuSupport bool // engine-dev (../../docker.go:32:2)
+	GPUSupport bool // engine-dev (../../docker.go:32:2)
 }
 
 // Load the engine container into a Docker engine
@@ -291,8 +291,8 @@ func (r *EngineDev) LoadToDocker(docker *Socket, opts ...EngineDevLoadToDockerOp
 			q = q.Arg("platform", opts[i].Platform)
 		}
 		// `gpuSupport` optional argument
-		if !querybuilder.IsZeroValue(opts[i].GpuSupport) {
-			q = q.Arg("gpuSupport", opts[i].GpuSupport)
+		if !querybuilder.IsZeroValue(opts[i].GPUSupport) {
+			q = q.Arg("gpuSupport", opts[i].GPUSupport)
 		}
 	}
 	q = q.Arg("docker", docker)
@@ -386,7 +386,7 @@ func (r *EngineDev) ReproducibleBuild(ctx context.Context) error { // engine-dev
 
 // EngineDevServiceOpts contains options for EngineDev.Service
 type EngineDevServiceOpts struct {
-	GpuSupport bool // engine-dev (../../main.go:673:2)
+	GPUSupport bool // engine-dev (../../main.go:673:2)
 
 	SharedCache bool // engine-dev (../../main.go:675:2)
 
@@ -398,8 +398,8 @@ func (r *EngineDev) Service(name string, opts ...EngineDevServiceOpts) *Service 
 	q := r.query.Select("service")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `gpuSupport` optional argument
-		if !querybuilder.IsZeroValue(opts[i].GpuSupport) {
-			q = q.Arg("gpuSupport", opts[i].GpuSupport)
+		if !querybuilder.IsZeroValue(opts[i].GPUSupport) {
+			q = q.Arg("gpuSupport", opts[i].GPUSupport)
 		}
 		// `sharedCache` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SharedCache) {

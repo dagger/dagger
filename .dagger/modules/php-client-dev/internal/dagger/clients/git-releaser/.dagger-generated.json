@@ -2,6 +2,6 @@
   "version": 1,
   "files": {
     "dagger.gen.go": "90a22c92ebab6bfdc8ee7aa573f9b2895a32977bcd61710cef3e336646ac7baa",
-    "git-releaser.gen.go": "0bbe73a2f33a8db707248d33fcb18fed4ef63acc26eef37edf6026a959bedd94"
+    "git-releaser.gen.go": "df7bba9be22d157c1bd223fe76ad174b85d8ad28dd1dabc1dfb48fe38207419b"
   }
 }
