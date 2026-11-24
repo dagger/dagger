@@ -432,15 +432,6 @@ func applyModuleObjectView(ctx context.Context, self dagql.ObjectResult[*ModuleO
 				break
 			}
 		}
-		{
-			var srcs []uint64
-			for _, source := range view.sources {
-				sid, _ := source.ID()
-				srcs = append(srcs, sid.EngineResultID())
-			}
-			rec, _ := self.RecipeID(ctx)
-			fmt.Printf("XXXDEBUG apply id=%d base=%d field=%s recvfield=%s bound=%v selected=%v route=%v sources=%v keys=%v origins=%v origin=%s\n", id.EngineResultID(), baseID.EngineResultID(), rec.Field(), rec.Receiver().Field(), bound, selected, route, srcs, view.state.Keys, view.state.Origins, artifactViewOrigin(rec))
-		}
 		if bound {
 			keys, err := copy.collectionKeys(ctx)
 			if err != nil {
@@ -564,7 +555,6 @@ func (d *artifactViewDiscovery) record(receiver *Artifact, result dagql.AnyObjec
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.originals[identity] = original
-	fmt.Printf("XXXDEBUG record path=%s route=%v id=%d selected=%v\n", receiver.Node.PathString(), node.CollectionRoute, id.EngineResultID(), selected)
 	if !filtered {
 		return nil
 	}
