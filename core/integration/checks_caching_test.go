@@ -2,7 +2,8 @@ package core
 
 // These tests cover how a check's result is cached: like any other function,
 // as its @cache policy says, across sessions and engines. A failure is never
-// kept, so a failing check runs again in the next session. Each check's body
+// cached, like a failed call: a failing check runs again on the next request,
+// in the same session or the next. Each check's body
 // records its runs, so the tests count how often it really ran.
 //
 // See also:
@@ -98,13 +99,13 @@ func (ChecksSuite) TestChecksCachedAcrossSessions(ctx context.Context, t *testct
 	})
 
 	// Asking for the same check twice in one session runs it once, unless it
-	// is never cached.
+	// is never cached or it failed.
 	t.Run("within a session", func(ctx context.Context, t *testctx.T) {
 		for _, tc := range []struct {
 			check string
 			want  string
 		}{
-			{"fail", "1"},
+			{"fail", "2"},
 			{"per-session", "1"},
 			{"never", "2"},
 		} {

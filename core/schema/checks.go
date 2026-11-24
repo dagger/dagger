@@ -50,8 +50,10 @@ func (s checksSchema) cachePolicy(ctx context.Context, check dagql.ObjectResult[
 		return nil
 	}
 	// The check object carries its function's cache policy. Remote checks
-	// and generator stale checks report fresh state on every run.
-	if check.Self().RemoteArtifact.Self() == nil && check.Self().Generator.Self() == nil {
+	// and generator stale checks report fresh state on every run, as does a
+	// rerun of a cached failure.
+	rerun, _ := ctx.Value(checkRerunKey{}).(bool)
+	if !rerun && check.Self().RemoteArtifact.Self() == nil && check.Self().Generator.Self() == nil {
 		return nil
 	}
 	input := dagql.PerCallInput
@@ -98,6 +100,13 @@ func (s checksSchema) sync(ctx context.Context, check dagql.ObjectResult[*core.C
 	if failure = srv.Select(ctx, target, &result, dagql.Selector{Field: "__run"}); failure != nil {
 		return result, failure
 	}
+	if result.HitCache() && !result.Self().Passed {
+		// A failure is never reused, as for a failed call: run the check
+		// again. Requests that joined the failed run while it ran share it.
+		if failure = srv.Select(context.WithValue(ctx, checkRerunKey{}, true), target, &result, dagql.Selector{Field: "__run"}); failure != nil {
+			return result, failure
+		}
+	}
 	result.Self().ReportResult(ctx, result.HitCache())
 	if result.Self().Error.Valid {
 		failure = result.Self().Error.Value.Self()
@@ -117,12 +126,13 @@ func checkFromContent(check dagql.ObjectResult[*core.Check]) bool {
 }
 
 func (s checksSchema) run(ctx context.Context, check dagql.ObjectResult[*core.Check], _ struct{}) (dagql.ObjectResult[*core.Check], error) {
-	result, err := check.Self().Run(ctx)
+	// Only this check is rerun, not the checks its body runs.
+	result, err := check.Self().Run(context.WithValue(ctx, checkRerunKey{}, false))
 	if err != nil {
 		return dagql.ObjectResult[*core.Check]{}, err
 	}
-	// A failed check runs again in the next session. Within this one, its
-	// requests share the run. A run that is never reused isn't kept either.
+	// A failed check is run again by the next request (see sync), so it
+	// isn't kept past its session. A run that is never reused isn't either.
 	if !result.Passed || dagql.CurrentCall(ctx).SessionBound() {
 		dagql.DeclinePersistence(ctx)
 	}
@@ -132,6 +142,11 @@ func (s checksSchema) run(ctx context.Context, check dagql.ObjectResult[*core.Ch
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, result)
 }
+
+// checkRerunKey marks a sync's request to run a check again after its
+// cached run failed, so the run gets a fresh cache key.
+type checkRerunKey struct{}
+
 func (s checksSchema) result(ctx context.Context, check dagql.ObjectResult[*core.Check]) (*core.Check, error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
