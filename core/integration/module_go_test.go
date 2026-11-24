@@ -677,6 +677,16 @@ func (GoSuite) TestContainerDefaultValue(ctx context.Context, t *testctx.T) {
 	require.Contains(t, out2, "3.18")
 }
 
+// A module whose go.mod still has the replaces earlier Go SDKs wrote, pinning
+// OpenTelemetry's log modules to v0.16.0, builds: codegen drops them. Kept,
+// they would make an import cycle with otel v1.47's internal/global.
+func (GoSuite) TestStaleOTelLogReplaces(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	out, err := moduleFixture(t, c, "go/stale-otel-replaces").With(daggerCall("hello")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "hello", strings.TrimSpace(out))
+}
+
 // Go SDK module builds use a GOPROXY that retries proxy.golang.org and then
 // the origin, unless the engine (or the container itself) sets GOPROXY.
 func (GoSuite) TestGoProxyDefault(ctx context.Context, t *testctx.T) {

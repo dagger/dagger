@@ -388,9 +388,9 @@ func (build *Builder) GoSDKImageEntriesSeed(ctx context.Context, goSDK *dagger.D
 // goModuleSeed returns a Go module shaped like the ones module codegen
 // generates, and the dagger.io/dagger version codegen pins in them.
 //
-// The module has the Go SDK's requirements and the replace directives
-// codegen copies with them, the SDK's go.sum, and the third-party imports
-// of generated code (sdk/go/internal/codegendeps). Running codegen's
+// The module has the Go SDK's requirements, the SDK's go.sum, and the
+// third-party imports of generated code (sdk/go/internal/codegendeps).
+// Running codegen's
 // commands in it fills the module cache with what codegen downloads for a
 // generated module that has no dependencies of its own.
 func goModuleSeed(ctx context.Context, source *dagger.Directory) (*dagger.Directory, string, error) {
@@ -409,18 +409,8 @@ func goModuleSeed(ctx context.Context, source *dagger.Directory) (*dagger.Direct
 	if err := seedMod.AddGoStmt(sdkMod.Go.Version); err != nil {
 		return nil, "", err
 	}
-	required := map[string]bool{}
 	for _, req := range sdkMod.Require {
 		seedMod.AddNewRequire(req.Mod.Path, req.Mod.Version, req.Indirect)
-		required[req.Mod.Path] = true
-	}
-	// like codegen, keep replace directives only for required modules
-	for _, rep := range sdkMod.Replace {
-		if required[rep.New.Path] {
-			if err := seedMod.AddReplace(rep.Old.Path, rep.Old.Version, rep.New.Path, rep.New.Version); err != nil {
-				return nil, "", err
-			}
-		}
 	}
 	goMod, err := seedMod.Format()
 	if err != nil {

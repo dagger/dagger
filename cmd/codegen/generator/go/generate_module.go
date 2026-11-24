@@ -12,6 +12,7 @@ import (
 	"path"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	"dagger.io/dagger"
@@ -300,11 +301,157 @@ func (g *GoGenerator) bootstrapMod(mfs *memfs.FS, genSt *generator.GeneratedStat
 	}, needsRegen, nil
 }
 
+// staleSDKReplaces are the modules earlier Go SDKs pinned in every module's
+// go.mod, each replaced by a v0 release of its own (v0.16.0 most recently),
+// back when OpenTelemetry's log modules were unstable.
+var staleSDKReplaces = []string{
+	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc",
+	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp",
+	"go.opentelemetry.io/otel/log",
+	"go.opentelemetry.io/otel/sdk/log",
+}
+
+// dropStaleSDKReplaces removes mod's replace directives that pin one of
+// staleSDKReplaces to a v0 release of itself. Replaces with a local path or
+// another module are the user's and stay.
+//
+// It edits mod's syntax, not mod.Replace: codegen parses go.mod with
+// modfile.ParseLax, which leaves replace directives out of mod.Replace.
+func dropStaleSDKReplaces(mod *modfile.File) {
+	dropped := false
+	walkReplaceLines(mod, func(line *modfile.Line, args []string) {
+		if _, ok := staleSDKReplace(args); !ok {
+			return
+		}
+		line.Token = nil
+		line.Comments.Suffix = nil
+		dropped = true
+	})
+	if !dropped {
+		return
+	}
+	mod.Replace = slices.DeleteFunc(mod.Replace, func(rep *modfile.Replace) bool {
+		return rep.Syntax != nil && rep.Syntax.Token == nil
+	})
+	mod.Cleanup()
+}
+
+// walkReplaceLines calls f with each replace directive of mod's syntax and
+// its arguments (old [version] => new [version]).
+func walkReplaceLines(mod *modfile.File, f func(line *modfile.Line, args []string)) {
+	for _, stmt := range mod.Syntax.Stmt {
+		switch stmt := stmt.(type) {
+		case *modfile.Line:
+			if len(stmt.Token) > 0 && stmt.Token[0] == "replace" {
+				f(stmt, stmt.Token[1:])
+			}
+		case *modfile.LineBlock:
+			if len(stmt.Token) == 1 && stmt.Token[0] == "replace" {
+				for _, line := range stmt.Line {
+					f(line, line.Token)
+				}
+			}
+		}
+	}
+}
+
+// staleGoWorkEdits returns the go work edit flags that undo the stale SDK
+// replaces of the workspace at goWork, which modDir is a module of.
+//
+// Go applies the replaces of every module of a workspace, so another of its
+// modules whose go.mod still pins one of staleSDKReplaces pins it for this
+// one too, until it is generated again. The go.work then replaces the module
+// by the version sdkRequires has, since a go.work's replaces override its
+// modules'. Otherwise a pin the go.work itself has is dropped.
+func staleGoWorkEdits(goWork, modDir string, sdkRequires map[string]string) ([]string, error) {
+	content, err := os.ReadFile(goWork)
+	if err != nil {
+		return nil, fmt.Errorf("read go.work: %w", err)
+	}
+	work, err := modfile.ParseWork(goWork, content, nil)
+	if err != nil {
+		return nil, fmt.Errorf("parse go.work: %w", err)
+	}
+	self, err := filepath.Abs(modDir)
+	if err != nil {
+		return nil, err
+	}
+	pinnedByModules := map[string]bool{}
+	for _, use := range work.Use {
+		dir := use.Path
+		if !filepath.IsAbs(dir) {
+			dir = filepath.Join(filepath.Dir(goWork), dir)
+		}
+		if dir, err = filepath.Abs(dir); err != nil || dir == self {
+			continue
+		}
+		content, err := os.ReadFile(filepath.Join(dir, "go.mod"))
+		if err != nil {
+			continue
+		}
+		mod, err := modfile.ParseLax("go.mod", content, nil)
+		if err != nil {
+			continue
+		}
+		walkReplaceLines(mod, func(_ *modfile.Line, args []string) {
+			if path, ok := staleSDKReplace(args); ok {
+				pinnedByModules[path] = true
+			}
+		})
+	}
+
+	var edits []string
+	overridden := map[string]bool{}
+	for _, path := range staleSDKReplaces {
+		if version := sdkRequires[path]; pinnedByModules[path] && version != "" {
+			edits = append(edits, "-replace", path+"="+path+"@"+version)
+			overridden[path] = true
+		}
+	}
+	for _, rep := range work.Replace {
+		path, ok := staleSDKReplace([]string{rep.Old.Path, "=>", rep.New.Path, rep.New.Version})
+		if !ok || (overridden[path] && rep.Old.Version == "") {
+			continue
+		}
+		old := rep.Old.Path
+		if rep.Old.Version != "" {
+			old += "@" + rep.Old.Version
+		}
+		edits = append(edits, "-dropreplace", old)
+	}
+	return edits, nil
+}
+
+// staleSDKReplace reports whether a replace directive's arguments (old
+// [version] => new [version]) pin one of staleSDKReplaces to a v0 release
+// of itself, and which.
+func staleSDKReplace(args []string) (string, bool) {
+	arrow := slices.Index(args, "=>")
+	if arrow < 1 || arrow > 2 || len(args) != arrow+3 {
+		return "", false
+	}
+	old, oldOK := unquoteModToken(args[0])
+	replacement, newOK := unquoteModToken(args[arrow+1])
+	version, versionOK := unquoteModToken(args[arrow+2])
+	if !oldOK || !newOK || !versionOK || old != replacement ||
+		!slices.Contains(staleSDKReplaces, old) || semver.Major(version) != "v0" {
+		return "", false
+	}
+	return old, true
+}
+
+func unquoteModToken(tok string) (string, bool) {
+	if !strings.HasPrefix(tok, `"`) && !strings.HasPrefix(tok, "`") {
+		return tok, true
+	}
+	s, err := strconv.Unquote(tok)
+	return s, err == nil
+}
+
 func (g *GoGenerator) syncModReplaceAndTidy(mod *modfile.File, genSt *generator.GeneratedState, modPath string) error {
 	modDir := filepath.Join(g.Config.OutputDir, modPath)
 
-	// if there is a go.work, we need to also set overrides there, otherwise
-	// modules will have individually conflicting replace directives
+	// a go.work, if there is one, may hold replaces too
 	goWork, err := goEnv(modDir, "GOWORK")
 	if err != nil {
 		return fmt.Errorf("find go.work: %w", err)
@@ -330,17 +477,23 @@ func (g *GoGenerator) syncModReplaceAndTidy(mod *modfile.File, genSt *generator.
 		mod.AddNewRequire(minReq.Mod.Path, minReq.Mod.Version, minReq.Indirect)
 	}
 
-	// preserve any replace directives in sdk/go's go.mod (e.g. pre-1.0 packages)
-	for _, minReq := range sdkMod.Replace {
-		if _, ok := modRequires[minReq.New.Path]; !ok {
-			// ignore anything that's sdk/go only
-			continue
+	// drop the replace directives earlier SDKs copied from their go.mod, into
+	// the module's go.mod and the go.work: they pin the OpenTelemetry log
+	// modules below what the SDK requires now, and otel's own packages import
+	// otel/log since v1.47, so the pins make an import cycle
+	dropStaleSDKReplaces(mod)
+	if goWork != "" && goWork != "off" {
+		sdkRequires := map[string]string{}
+		for _, req := range sdkMod.Require {
+			sdkRequires[req.Mod.Path] = req.Mod.Version
 		}
-		genSt.PostCommands = append(genSt.PostCommands,
-			exec.Command("go", "mod", "edit", "-replace", minReq.Old.Path+"="+minReq.New.Path+"@"+minReq.New.Version))
-		if goWork != "" {
+		edits, err := staleGoWorkEdits(goWork, modDir, sdkRequires)
+		if err != nil {
+			return err
+		}
+		if len(edits) > 0 {
 			genSt.PostCommands = append(genSt.PostCommands,
-				exec.Command("go", "work", "edit", "-replace", minReq.Old.Path+"="+minReq.New.Path+"@"+minReq.New.Version))
+				exec.Command("go", append([]string{"work", "edit"}, edits...)...))
 		}
 	}
 
