@@ -2405,7 +2405,7 @@ roster=$(roster | with-worker --name chief --worker $chief)
 	toolCall := func(id, name, args string) core.LLMContentBlockInput {
 		return core.LLMContentBlockInput{Kind: core.LLMContentBlockKindToolCall, CallID: id, ToolName: name, Arguments: core.JSON(args)}
 	}
-	const chiefHead = "dag://roster/members/head?roster-member=chief"
+	const chiefHead = "dag://roster/members/head?roster-member=members.chief"
 	conversation := func(prompt string, calls ...core.LLMContentBlockInput) string {
 		script := core.NewQuery(c).LLM().WithPrompt(prompt)
 		for _, call := range calls {
@@ -2425,7 +2425,7 @@ roster=$(roster | with-worker --name chief --worker $chief)
 		const prompt = "look at the chief's work"
 		model := conversation(prompt,
 			toolCall("plain", "show", fmt.Sprintf(`{"from":%q}`, chiefHead)),
-			toolCall("typed", "show", `{"from":"dag+git-ref://roster/members/head?RosterMembers=chief"}`),
+			toolCall("typed", "show", `{"from":"dag+git-ref://roster/members/head?RosterMembers=members.chief"}`),
 		)
 		transcript := run(ctx, t, chat(model, "$roster", prompt)+" | transcript")
 		// Both spellings reach the chief's HEAD, which only the bound roster
@@ -2440,7 +2440,8 @@ roster=$(roster | with-worker --name chief --worker $chief)
 		// module's main object) is bound, and it has the members field.
 		const prompt = "look at the chief's work"
 		model := conversation(prompt,
-			toolCall("show", "show", fmt.Sprintf(`{"from":%q}`, chiefHead)),
+			// The view has only one route to the collection, so its key is bare.
+			toolCall("show", "show", `{"from":"dag://roster/members/head?roster-member=chief"}`),
 		)
 		transcript := run(ctx, t, chat(model, "$($roster | view)", prompt)+" | transcript")
 		require.Contains(t, transcript, "commit "+chiefSHA)
@@ -2454,7 +2455,7 @@ roster=$(roster | with-worker --name chief --worker $chief)
 		model := conversation(prompt,
 			toolCall("find", "FindArtifacts", `{"type":"GitRef"}`),
 			toolCall("items", "FindArtifacts", `{"address":"roster/members/head","view":"items"}`),
-			toolCall("show", "show", `{"from":"dag+git-ref://roster/members/head?RosterMembers=chief"}`),
+			toolCall("show", "show", `{"from":"dag+git-ref://roster/members/head?RosterMembers=members.chief"}`),
 		)
 		transcript := run(ctx, t, chat(model, "$roster", prompt)+" | transcript")
 		// The path, with a placeholder for the member it needs, is marked as
@@ -2463,10 +2464,10 @@ roster=$(roster | with-worker --name chief --worker $chief)
 			"dag+git-ref://roster/members/head?roster-member=<name> — The agent's committed history: the HEAD of its workspace. [tool Roster, live]")
 		// ...followed by the live members' keys, so the model needs no
 		// second call to learn them...
-		require.Contains(t, transcript, "roster-member=<name> — keys: chief")
+		require.Contains(t, transcript, "roster-member=<name> — keys: members.chief, view.members.chief")
 		// ...and the items are its live members, fully keyed.
 		require.Contains(t, transcript,
-			"dag+git-ref://roster/members/head?RosterMembers=chief — The agent's committed history: the HEAD of its workspace. [tool Roster, live]")
+			"dag+git-ref://roster/members/head?RosterMembers=members.chief — The agent's committed history: the HEAD of its workspace. [tool Roster, live]")
 		require.Contains(t, transcript, "commit "+chiefSHA)
 		require.Contains(t, transcript, "+from the chief")
 	})
