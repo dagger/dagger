@@ -2,7 +2,6 @@ package schema
 
 import (
 	"context"
-	"errors"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -51,8 +50,10 @@ func (s checksSchema) cachePolicy(ctx context.Context, check dagql.ObjectResult[
 		return nil
 	}
 	// The check object carries its function's cache policy. Remote checks
-	// and generator stale checks report fresh state on every run.
-	if check.Self().RemoteArtifact.Self() == nil && check.Self().Generator.Self() == nil {
+	// and generator stale checks report fresh state on every run, as does a
+	// rerun of a cached failure.
+	rerun, _ := ctx.Value(checkRerunKey{}).(bool)
+	if !rerun && check.Self().RemoteArtifact.Self() == nil && check.Self().Generator.Self() == nil {
 		return nil
 	}
 	input := dagql.PerCallInput
@@ -96,21 +97,17 @@ func (s checksSchema) sync(ctx context.Context, check dagql.ObjectResult[*core.C
 	if check.Self().Unaddressed.Self() != nil {
 		target = check.Self().Unaddressed
 	}
-	request := &checkRequest{}
-	failure = srv.Select(context.WithValue(ctx, checkRequestKey{}, request), target, &result, dagql.Selector{Field: "__run"})
-	var cached bool
-	var failed *checkFailed
-	if errors.As(failure, &failed) {
-		result, failure = dagql.NewObjectResultForCurrentCall(ctx, srv, failed.check)
-		// A request that joined another's run has none of its exec spans.
-		cached = failed.request != request
-	} else if failure == nil {
-		cached = result.HitCache()
-	}
-	if failure != nil {
+	if failure = srv.Select(ctx, target, &result, dagql.Selector{Field: "__run"}); failure != nil {
 		return result, failure
 	}
-	result.Self().ReportResult(ctx, cached)
+	if result.HitCache() && !result.Self().Passed {
+		// A failure is never reused, as for a failed call: run the check
+		// again. Requests that joined the failed run while it ran share it.
+		if failure = srv.Select(context.WithValue(ctx, checkRerunKey{}, true), target, &result, dagql.Selector{Field: "__run"}); failure != nil {
+			return result, failure
+		}
+	}
+	result.Self().ReportResult(ctx, result.HitCache())
 	if result.Self().Error.Valid {
 		failure = result.Self().Error.Value.Self()
 	}
@@ -129,18 +126,14 @@ func checkFromContent(check dagql.ObjectResult[*core.Check]) bool {
 }
 
 func (s checksSchema) run(ctx context.Context, check dagql.ObjectResult[*core.Check], _ struct{}) (dagql.ObjectResult[*core.Check], error) {
-	result, err := check.Self().Run(ctx)
+	// Only this check is rerun, not the checks its body runs.
+	result, err := check.Self().Run(context.WithValue(ctx, checkRerunKey{}, false))
 	if err != nil {
 		return dagql.ObjectResult[*core.Check]{}, err
 	}
-	if !result.Passed {
-		// Not cached, like a failed call: the requests waiting on this run
-		// share it, and a later request runs the check again.
-		request, _ := ctx.Value(checkRequestKey{}).(*checkRequest)
-		return dagql.ObjectResult[*core.Check]{}, &checkFailed{check: result, request: request}
-	}
-	// A run that is never reused isn't kept.
-	if dagql.CurrentCall(ctx).SessionBound() {
+	// A failed check is run again by the next request (see sync), so it
+	// isn't kept past its session. A run that is never reused isn't either.
+	if !result.Passed || dagql.CurrentCall(ctx).SessionBound() {
 		dagql.DeclinePersistence(ctx)
 	}
 	srv, err := core.CurrentDagqlServer(ctx)
@@ -150,26 +143,9 @@ func (s checksSchema) run(ctx context.Context, check dagql.ObjectResult[*core.Ch
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, result)
 }
 
-// checkRequestKey carries the checkRequest of the sync that requests a run.
-type checkRequestKey struct{}
-
-// checkRequest identifies one sync's request for a check run. It isn't
-// zero-sized, so each request's pointer is distinct.
-type checkRequest struct{ _ byte }
-
-// checkFailed is a failed check run, returned as __run's error.
-type checkFailed struct {
-	check *core.Check
-	// request is the sync whose request ran the check.
-	request *checkRequest
-}
-
-func (e *checkFailed) Error() string {
-	if e.check.Error.Valid {
-		return e.check.Error.Value.Self().Message
-	}
-	return "check failed"
-}
+// checkRerunKey marks a sync's request to run a check again after its
+// cached run failed, so the run gets a fresh cache key.
+type checkRerunKey struct{}
 
 func (s checksSchema) result(ctx context.Context, check dagql.ObjectResult[*core.Check]) (*core.Check, error) {
 	srv, err := core.CurrentDagqlServer(ctx)
