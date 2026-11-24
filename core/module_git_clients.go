@@ -91,16 +91,7 @@ type declaredGitClientsEntry struct {
 // declaredGitClients returns the declarations read for key, reading them at
 // most once while reads succeed. A failed read is retried by the next call.
 func (m *SchemaBuilderMemo) declaredGitClients(key declaredGitClientsKey, read func() ([]string, error)) ([]string, error) {
-	m.mu.Lock()
-	if m.gitClients == nil {
-		m.gitClients = make(map[declaredGitClientsKey]*declaredGitClientsEntry)
-	}
-	entry := m.gitClients[key]
-	if entry == nil {
-		entry = &declaredGitClientsEntry{}
-		m.gitClients[key] = entry
-	}
-	m.mu.Unlock()
+	entry := memoEntry(m, m.gitClients, key)
 	entry.mu.Lock()
 	defer entry.mu.Unlock()
 	if entry.loaded {

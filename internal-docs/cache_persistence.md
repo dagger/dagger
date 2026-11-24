@@ -508,6 +508,38 @@ unopened rows are carried forward on shutdown. Changes to the key or record
 format require a `cachePersistenceSchemaVersion` bump. An incompatible record
 makes `Checksum` fail rather than trigger a filesystem rescan.
 
+While the engine runs, the snapshot manager keeps each hashed snapshot's tree
+(about 100 bytes per file) in a file rather than in memory, under
+`worker/contenthash/`, in a directory each manager makes for itself. A tree is
+written when contenthash saves it and when a checkpoint loads it, read when the
+contenthash package no longer holds it parsed and when a checkpoint is written,
+and deleted with its snapshot's metadata, including when snapshot GC forgets a
+collected snapshot. The files are a cache of the process, not a record: the
+dagql checkpoint stays authoritative across restarts, so its format is
+unchanged, and at startup the engine moves what the previous process left to
+the trash, for the background sweeper, before the checkpoint loads the trees it
+keeps (under disk pressure it removes them first, so the loaded trees have
+room). A tree that can't be written stays in memory instead, as all of them do
+when the manager can't make its directory, until a later save of it can write
+it. One short lock covers where a tree is: a save writes its temporary file
+outside it, then under it either renames the file into place and drops the
+tree from memory, or keeps the tree in memory and deletes the old file; a
+lookup takes the tree from memory or opens its file under it, and reads the
+opened file outside it. So a tree is in one place at a time, and a lookup
+finds it whatever saves run meanwhile. A dropped tree's file is deleted after
+the manager's lock is released (when snapshot GC forgets many at once), and
+one that can't be deleted is retried after the next snapshot GC. A tree file
+that can't be read fails `Checksum` rather than trigger a rescan. Writing a
+checkpoint is the exception: a tree it can't read is left out of the
+checkpoint, and logged, because failing the checkpoint would discard the
+whole persisted cache; the next process rescans that snapshot when it is
+hashed. The checkpoint itself still carries every owned tree in its rows, so
+writing one at shutdown and loading one at startup hold all of them in memory
+at once, as before: the files lower the steady-state memory, not that peak.
+The files are not counted toward any cache entry's size, so
+`MaxUsedSpace`-style limits don't see them; they are bounded by snapshot GC,
+and free-space limits see them as any disk use.
+
 ### Immutable snapshot transfers
 
 Local snapshot export now populates the same parent/blob and parent/diff

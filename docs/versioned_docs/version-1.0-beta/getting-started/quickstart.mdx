@@ -36,6 +36,8 @@ dagger module recommend
 dagger cloud checks on
 ```
 
+Cloud Checks are optional for this guide. Set them up after your Checks pass locally.
+
 If `init` detects a legacy workspace, it stops without changing files. Run `dagger workspace migrate` to review the migration. After migration, Dagger offers the same next steps.
 
 Migration includes installed local modules. Other module candidates are optional and can include fixtures. Non-interactive migration skips these candidates, including with `--auto-apply`. To migrate one explicitly, run `dagger module migrate PATH`.
@@ -99,4 +101,4 @@ You are done when at least one Check runs and all Checks pass.
 
 ## Next steps
 
-- [Set up Cloud Checks](./cloud-checks.mdx) to run the Checks after every push
+- [Set up Cloud Checks](./cloud-checks.mdx) to run the Checks automatically

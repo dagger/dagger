@@ -24,9 +24,11 @@ import (
 // cache mounts, ...) can be enormous — tens of GB across millions of inodes —
 // so deleting it inline at startup both blocks the engine from serving and
 // saturates the disk queue with unlink/journal traffic for as long as the
-// delete takes. Instead the invalid state is renamed aside to a sibling
-// "worker-trash-<unique>" directory (an O(1) rename; always the same
-// filesystem since the trash dir is a sibling), and a background sweeper
+// delete takes. Instead the invalid state is renamed aside to a
+// "worker-trash-<unique>" directory in the engine's root dir (an O(1) rename;
+// the same filesystem, as the worker root is in the root dir, and the other
+// state moved aside, such as the previous process's content-hash trees, is
+// in the worker root or the root dir itself), and a background sweeper
 // removes the tree with a bounded duty cycle so the filesystem journal can
 // drain between bursts. Leftover trash dirs from an interrupted sweep are
 // picked up on the next startup.
@@ -50,13 +52,20 @@ const (
 // for background removal, returning the trash path. A missing dir is a no-op
 // returning "".
 func moveLocalCacheStateToTrash(dir string) (string, error) {
+	return moveToTrash(dir, filepath.Dir(dir))
+}
+
+// moveToTrash renames dir to a trash directory in parent, which must be on
+// dir's filesystem, returning the trash path. A missing dir is a no-op
+// returning "". The sweeper finds trash directories in the engine's root
+// directory only.
+func moveToTrash(dir, parent string) (string, error) {
 	if _, err := os.Lstat(dir); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return "", nil
 		}
 		return "", err
 	}
-	parent := filepath.Dir(dir)
 	for attempt := range 3 {
 		trashDir := filepath.Join(parent, workerTrashPrefix+strconv.FormatInt(time.Now().UnixNano(), 10))
 		err := os.Rename(dir, trashDir)
@@ -80,6 +89,36 @@ func moveLocalCacheStateToTrash(dir string) (string, error) {
 func moveDiskTempMountsToTrash(rootDir string) {
 	if _, err := moveLocalCacheStateToTrash(filepath.Join(rootDir, core.DiskTempMountDir)); err != nil {
 		slog.Warn("failed to move a previous engine's disk temp mounts aside", "err", err)
+	}
+}
+
+// moveContentHashTreesToTrash moves the content-hash trees a previous engine
+// left in dir, under the worker root, aside for the trash sweeper, before the
+// snapshot manager makes a fresh directory of its own there. They are a cache
+// of that process: the dagql checkpoint loads the ones still owned again. An
+// engine that hashed many snapshots leaves many of them, so they are not
+// deleted inline at startup, unless the disk is under the pressure that
+// triggers cache GC (policies): then the trees the checkpoint loads again
+// would need room beside the old ones, and those that don't fit would stay in
+// memory, so the old ones are removed first, as the sweeper itself blocks
+// startup under pressure. A failure to move them leaves them where they are,
+// still unread, until a later start moves them.
+func moveContentHashTreesToTrash(ctx context.Context, rootDir, dir string, policies []dagqlCachePrunePolicy) {
+	trashDir, err := moveToTrash(dir, rootDir)
+	if err != nil {
+		slog.Warn("failed to move a previous engine's content hash trees aside", "dir", dir, "err", err)
+		return
+	}
+	if trashDir == "" || len(policies) == 0 {
+		return
+	}
+	dstat, err := disk.GetDiskStat(rootDir)
+	if err != nil || !localCacheDiskPressureGCNeeded(policies, dstat) {
+		return
+	}
+	slog.Info("disk pressure detected; removing a previous engine's content hash trees before startup continues", "dir", trashDir)
+	if err := removeAllPaced(ctx, trashDir, &trashPacer{}); err != nil {
+		slog.Warn("failed to remove a previous engine's content hash trees; the sweeper retries", "dir", trashDir, "err", err)
 	}
 }
 

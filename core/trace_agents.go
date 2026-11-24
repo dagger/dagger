@@ -82,15 +82,28 @@ func (opts transcriptOpts) validate() (*regexp.Regexp, error) {
 // agentRoster is the throwaway DB a roster or transcript is read from.
 type agentRoster struct {
 	client *clientdb.DB
+	// stores are the client's inspection stores, open until close.
+	stores []*clientdb.DB
+	close  func()
 	db     *dagui.DB
 	agents []idtui.TraceAgent
 }
 
 // loadAgentRoster loads every inspection store's agents, plus extra spans
-// (with their ancestor chains) to place them relative to the agents.
-func loadAgentRoster(ctx context.Context, client *clientdb.DB, extra ...string) (*agentRoster, error) {
+// (with their ancestor chains) to place them relative to the agents. Close
+// the roster when done with it.
+func loadAgentRoster(ctx context.Context, client *clientdb.DB, extra ...string) (_ *agentRoster, rerr error) {
+	stores, release, err := client.InspectionStores(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if rerr != nil {
+			release()
+		}
+	}()
 	db := dagui.NewDB()
-	for _, store := range client.InspectionStores() {
+	for _, store := range stores {
 		ids := store.AgentSpanIDs()
 		for _, id := range extra {
 			if store.HasSpan(id) {
@@ -116,7 +129,7 @@ func loadAgentRoster(ctx context.Context, client *clientdb.DB, extra ...string) 
 		}
 		db.IngestLogs(records)
 	}
-	roster := &agentRoster{client: client, db: db, agents: idtui.TraceAgents(db)}
+	roster := &agentRoster{client: client, stores: stores, close: release, db: db, agents: idtui.TraceAgents(db)}
 	// An agent's own control record names its parent even where the spans
 	// that would (the chief's) were not traced; spans win when they do.
 	for i, node := range db.Agents() {
@@ -221,7 +234,7 @@ func readTraceAgents(ctx context.Context, spanArg string) (string, error) {
 }
 
 func readTraceAgentsIn(ctx context.Context, client *clientdb.DB, spanArg string) (string, error) {
-	spanID, err := optionalSpanArg(client, spanArg)
+	spanID, err := optionalSpanArg(ctx, client, spanArg)
 	if err != nil {
 		return "", err
 	}
@@ -233,6 +246,7 @@ func readTraceAgentsIn(ctx context.Context, client *clientdb.DB, spanArg string)
 	if err != nil {
 		return "", err
 	}
+	defer roster.close()
 	agents := roster.agents
 	header := "Agents in this session and in traces loaded with LoadTrace, as a tree (workers under the agent that spawned them). States in loaded traces are historical observations, not live runtimes."
 	if spanID != "" {
@@ -284,7 +298,7 @@ func lastSpan(agent idtui.TraceAgent) string {
 }
 
 // optionalSpanArg normalizes an optional span argument and checks it exists.
-func optionalSpanArg(client *clientdb.DB, arg string) (string, error) {
+func optionalSpanArg(ctx context.Context, client *clientdb.DB, arg string) (string, error) {
 	if strings.TrimSpace(arg) == "" {
 		return "", nil
 	}
@@ -292,10 +306,13 @@ func optionalSpanArg(client *clientdb.DB, arg string) (string, error) {
 	if !isHexID(span, 16) {
 		return "", fmt.Errorf("invalid span ID %q: want a hex span ID", arg)
 	}
-	for _, store := range client.InspectionStores() {
-		if store.HasSpan(span) {
-			return span, nil
-		}
+	read, release, err := inspectionStoreForSpan(ctx, client, span)
+	if err != nil {
+		return "", err
+	}
+	defer release()
+	if read.HasSpan(span) {
+		return span, nil
 	}
 	return "", fmt.Errorf("no span %q in this trace; use FindSpans to find a span ID", span)
 }
@@ -443,7 +460,7 @@ func (r *agentRoster) loadCalls(ctx context.Context, digests ...string) error {
 			pending[digest] = struct{}{}
 		}
 	}
-	for _, store := range r.client.InspectionStores() {
+	for _, store := range r.stores {
 		if len(pending) == 0 {
 			return nil
 		}
@@ -481,7 +498,7 @@ func (r *agentRoster) loadSubtreeConversation(ctx context.Context, roots []strin
 	if len(roots) == 0 {
 		return false, nil
 	}
-	store := inspectionStoreForSpan(r.client, roots[0])
+	store := storeHolding(r.stores, roots[0])
 	agents := store.AgentSpanIDs()
 	own := map[string]bool{}
 	for _, root := range roots {
@@ -548,7 +565,7 @@ func readTraceTranscriptIn(ctx context.Context, client *clientdb.DB, opts transc
 	}
 	spanID := ""
 	if opts.Agent == "" {
-		if spanID, err = optionalSpanArg(client, opts.Span); err != nil {
+		if spanID, err = optionalSpanArg(ctx, client, opts.Span); err != nil {
 			return "", err
 		}
 	}
@@ -560,6 +577,7 @@ func readTraceTranscriptIn(ctx context.Context, client *clientdb.DB, opts transc
 	if err != nil {
 		return "", err
 	}
+	defer roster.close()
 	target, err := roster.resolveConversation(ctx, opts.Agent, spanID)
 	if err != nil {
 		return "", err
@@ -657,6 +675,7 @@ func summarizeConversation(ctx context.Context, client *clientdb.DB, root string
 	if err != nil {
 		return "", err
 	}
+	defer roster.close()
 	target, err := roster.resolveConversation(ctx, "", root)
 	if err != nil {
 		return "", err

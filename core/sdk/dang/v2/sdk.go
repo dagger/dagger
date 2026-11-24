@@ -66,6 +66,15 @@ func (Impl) ModuleTypes(
 	if declareOnly {
 		runner = runDangDirForModuleTypes
 	}
+	// Run the source from where it is staged, as its calls do, so its
+	// errors name the same files.
+	runner = func(run dangSourceRunner) dangSourceRunner {
+		return func(ctx context.Context, modSrcDir string) (dang.ValueScope, error) {
+			return runStagedDangSource(ctx, src.Self(), modSrcDir, func(ctx context.Context, source stagedDangSource, _ bool) (dang.ValueScope, error) {
+				return run(ctx, source.dir)
+			})
+		}
+	}(runner)
 
 	_, err = evalDangSource(ctx, query, src, schemaJSONFile, nestedClientMetadata, true /* inert attachables */, nil, scopedMod, true /* for typedefs */, runner, func(ctx context.Context, env dang.ValueScope) ([]byte, error) {
 		inst, err = initDangModule(ctx, dag, env)

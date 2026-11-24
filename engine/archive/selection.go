@@ -18,6 +18,10 @@ type SpanSelection struct {
 	Full   bool
 	NoRoot bool
 	Listen []string
+	// Exact selects exactly these spans, without their children or
+	// ancestors: spans a view holds only references to, such as what a
+	// row's time breakdown waited on. It requires NoRoot and no Listen.
+	Exact []string
 	// Conversation narrows the root view's priority spans to agent
 	// conversations (loop and message spans, and each tool call's execution
 	// span, which holds its result), leaving out checks, tests, revealed and
@@ -86,6 +90,9 @@ func (s StreamOptions) SelectionQuery(signal string) (url.Values, error) {
 		for _, id := range s.Spans.Listen {
 			q.Add("listen", id)
 		}
+		for _, id := range s.Spans.Exact {
+			q.Add("exact", id)
+		}
 		if s.Spans.Conversation {
 			q.Set("conversation", "true")
 		}
@@ -150,7 +157,7 @@ func ParseSelection(signal string, q url.Values) (*SpanSelection, *LogSelection,
 	var spans *SpanSelection
 	var logs *LogSelection
 	var err error
-	if q.Has("root") || q.Has("listen") || q.Has("view") || q.Has("full") || q.Has("conversation") {
+	if q.Has("root") || q.Has("listen") || q.Has("exact") || q.Has("view") || q.Has("full") || q.Has("conversation") {
 		if signal != "traces" {
 			return nil, nil, fmt.Errorf("span selection requires traces")
 		}
@@ -201,6 +208,17 @@ func parseSpanSelection(q url.Values) (*SpanSelection, error) {
 			return nil, err
 		}
 	}
+	if len(q["exact"]) > MaxListenSpans {
+		return nil, fmt.Errorf("too many exact spans")
+	}
+	for _, id := range q["exact"] {
+		if err := validSelectionSpanID(id); err != nil {
+			return nil, err
+		}
+	}
+	if len(q["exact"]) != 0 && (root || len(q["listen"]) != 0) {
+		return nil, fmt.Errorf("exact spans cannot be selected with roots or subtrees")
+	}
 	full, err := selectionBool(q, "full", false)
 	if err != nil {
 		return nil, err
@@ -216,7 +234,7 @@ func parseSpanSelection(q url.Values) (*SpanSelection, error) {
 		return nil, fmt.Errorf("conversation view requires the priority roots")
 	}
 	return &SpanSelection{
-		Full: full, NoRoot: !root, Listen: q["listen"],
+		Full: full, NoRoot: !root, Listen: q["listen"], Exact: q["exact"],
 		Conversation: conversation, DagUIView: q.Get("view") == "dagui",
 	}, nil
 }

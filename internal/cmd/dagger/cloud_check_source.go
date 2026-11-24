@@ -238,7 +238,7 @@ func findGitLabCheckSource(cmd *cobra.Command, client *cloudapi.Client, state *w
 	if err := ensureCloudCheckFeatures(cmd, client, cloudCheckGitLab, org.Name); err != nil {
 		return err
 	}
-	settings, err := gitLabIntegrationURL(org.Name)
+	settings, err := cloudIntegrationURL(org.Name, "gitlab")
 	if err != nil {
 		return err
 	}
@@ -295,15 +295,13 @@ func gitLabSourceForRepo(sources []cloudapi.GitLabSource, repository string) (cl
 	return cloudapi.GitLabSource{}, false
 }
 
-// GitLab approval is handled by the existing Cloud UI. The CLI never receives
-// provider credentials. Preview and local APIs use their matching frontend.
-func gitLabIntegrationURL(org string) (string, error) {
+// Browser setup uses the Cloud frontend in the same environment as the API.
+func cloudIntegrationURL(org, provider string) (string, error) {
 	u, err := cloudFrontendURL()
 	if err != nil {
 		return "", err
 	}
-	u.Path += "/" + url.PathEscape(org) + "/integrations/gitlab"
-	return u.String(), nil
+	return u.JoinPath(url.PathEscape(org), "integrations", provider).String(), nil
 }
 
 // cloudFrontendURL keeps browser links in the same environment as the API.
@@ -382,16 +380,6 @@ func (e *entirePluginNotInstalledError) Error() string {
 }
 
 func (e *entirePluginNotInstalledError) Unwrap() error { return errCloudSourceNotConfigured }
-
-// entireInstallRedirect returns the Cloud page that Entire returns the
-// browser to after installing the Dagger plugin. It follows the same
-// environment rule as githubOAuthRedirect.
-func entireInstallRedirect() string {
-	if url := os.Getenv("DAGGER_CLOUD_URL"); url != "" && !strings.Contains(url, "://api.dagger.cloud") {
-		return "http://localhost:3000/setup/entire"
-	}
-	return "https://dagger.cloud/setup/entire"
-}
 
 // ensureCloudCheckFeatures verifies orgName has the features cmd requires,
 // plus Entire support for Entire repositories.
@@ -491,7 +479,7 @@ func installationSettingsURL(state workspaceAutocheckState) string {
 		return state.ConfigURL
 	}
 	if state.Provider == cloudCheckGitLab {
-		settings, _ := gitLabIntegrationURL(state.OrgName)
+		settings, _ := cloudIntegrationURL(state.OrgName, "gitlab")
 		return settings
 	}
 	return "https://github.com/settings/installations/" + state.InstallationID
@@ -579,11 +567,15 @@ func workspaceAutocheckStateString(state workspaceAutocheckState) string {
 }
 
 // entireInstallPage returns the Entire page that installs the Dagger plugin
-// for the error's organization.
-func entireInstallPage(ctx context.Context, client *cloudapi.Client, e *entirePluginNotInstalledError) (string, error) {
-	page, err := client.EntireInstallURL(ctx, e.orgID, entireInstallRedirect())
+// for the selected organization.
+func entireInstallPage(ctx context.Context, client *cloudapi.Client, orgID, orgName string) (string, error) {
+	frontend, err := cloudFrontendURL()
 	if err != nil {
-		return "", fmt.Errorf("get the Entire install page for organization %q: %w", e.orgName, err)
+		return "", err
+	}
+	page, err := client.EntireInstallURL(ctx, orgID, frontend.JoinPath("setup", "entire").String())
+	if err != nil {
+		return "", fmt.Errorf("get the Entire install page for organization %q: %w", orgName, err)
 	}
 	return page, nil
 }

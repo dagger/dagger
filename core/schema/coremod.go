@@ -232,6 +232,11 @@ func (m *CoreMod) WithView(view call.View) *CoreMod {
 	}
 }
 
+// AtView is WithView as a core.Mod, for core.SchemaBuilder.WithCoreView.
+func (m *CoreMod) AtView(view call.View) core.Mod {
+	return m.WithView(view)
+}
+
 func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server, _ ...core.InstallOpts) error {
 	// @reevaluate lets generated clients reuse the IDs of objects that don't
 	// need to be reevaluated. Modules pinned to an engine version before v1.0.0

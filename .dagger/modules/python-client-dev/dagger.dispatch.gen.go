@@ -44,7 +44,6 @@ var functions = []functionSpec{
 	{Name: "clientLibrary", Receiver: "PythonClientDev", FnName: "ClientLibrary", Args: map[string]argumentSpec{}},
 	{Name: "devContainer", Receiver: "PythonClientDev", FnName: "DevContainer", Args: map[string]argumentSpec{}},
 	{Name: "docs", Receiver: "PythonClientDev", FnName: "Docs", Args: map[string]argumentSpec{}},
-	{Name: "format", Receiver: "PythonClientDev", FnName: "Format", Args: map[string]argumentSpec{"paths": {Required: false, Default: "[]", Encoding: "json"}}},
 	{Name: "lint", Receiver: "PythonClientDev", FnName: "Lint", Args: map[string]argumentSpec{"paths": {Required: false, Default: "[]", Encoding: "json"}}},
 	{Name: "lintDocsSnippets", Receiver: "PythonClientDev", FnName: "LintDocsSnippets", Args: map[string]argumentSpec{"workspace": {Required: false, Default: "", Encoding: "string"}}},
 	{Name: "provision", Receiver: "PythonClientDev", FnName: "Provision", Args: map[string]argumentSpec{"cliBin": {Required: false, Default: "", Encoding: "string"}, "runnerHost": {Required: false, Default: "", Encoding: "string"}}},

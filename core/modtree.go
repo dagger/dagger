@@ -96,9 +96,9 @@ func NewModTree(ctx context.Context, mod dagql.ObjectResult[*Module]) (*ModTreeN
 const ServiceNameAttr = telemetryattrs.ServiceNameAttr
 
 // Initialize a standalone dagql server for querying the given module. A
-// client builds one per module and reuses it: the server is an immutable type
-// registry, and what a call depends on, such as its view or workspace, is on
-// the call's context.
+// session builds one per module and its clients reuse it: the server is an
+// immutable type registry, and what a call depends on, such as its view,
+// workspace or client, is on the call's context.
 func dagqlServerForModule(ctx context.Context, mod dagql.ObjectResult[*Module]) (*dagql.Server, error) {
 	main := mod.Self()
 	q, err := CurrentQuery(ctx)
@@ -110,12 +110,12 @@ func dagqlServerForModule(ctx context.Context, mod dagql.ObjectResult[*Module]) 
 	if err != nil {
 		return nil, fmt.Errorf("%q: load core schema: %w", main.Name(), err)
 	}
-	build := func() (*dagql.Server, error) {
+	build := func(root *Query) (*dagql.Server, error) {
 		coreSchema, err := defaultDeps.Schema(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("%q: serve core schema: %w", main.Name(), err)
 		}
-		srv, err := coreSchema.Fork(ctx, q)
+		srv, err := coreSchema.Fork(ctx, root)
 		if err != nil {
 			return nil, fmt.Errorf("%q: fork core schema: %w", main.Name(), err)
 		}
@@ -125,7 +125,21 @@ func dagqlServerForModule(ctx context.Context, mod dagql.ObjectResult[*Module]) 
 		if err := NewUserMod(mod).Install(ctx, srv); err != nil {
 			return nil, fmt.Errorf("%q: serve module: %w", main.Name(), err)
 		}
+		countModuleServer()
 		return srv, nil
+	}
+	set := defaultDeps.Append(NewUserMod(mod))
+	// The session's clients share one server for the module, on the
+	// session's neutral root, as they share a module set's schema
+	// (SchemaBuilderMemo.sharedBuilder): the server holds its root only as
+	// the receiver of Query fields, and a client's own state comes from the
+	// context. A module whose schema may depend on its client, such as one
+	// with .env defaults, keeps a server per client below.
+	if session := currentSessionSchemaBuilderMemo(ctx); session != nil {
+		if key, facade, ok := session.sharedKey(set); ok {
+			root := session.neutralRoot(facade)
+			return session.moduleServer(key, func() (*dagql.Server, error) { return build(root) })
+		}
 	}
 	memo, err := q.SchemaBuilderMemo(ctx)
 	if err != nil {
@@ -133,11 +147,11 @@ func dagqlServerForModule(ctx context.Context, mod dagql.ObjectResult[*Module]) 
 	}
 	// The core schema and the module identify the server, as they would
 	// the schema of a builder for the same module set.
-	key, ok := defaultDeps.Append(NewUserMod(mod)).memoKey()
+	key, ok := set.memoKey()
 	if memo == nil || !ok {
-		return build()
+		return build(q)
 	}
-	return memo.moduleServer(key, build)
+	return memo.moduleServer(key, func() (*dagql.Server, error) { return build(q) })
 }
 
 type moduleServerEntry struct {
@@ -148,16 +162,7 @@ type moduleServerEntry struct {
 // moduleServer returns the module server built for key, building it at most
 // once while builds succeed. A failed build is retried by the next call.
 func (m *SchemaBuilderMemo) moduleServer(key string, build func() (*dagql.Server, error)) (*dagql.Server, error) {
-	m.mu.Lock()
-	if m.moduleServers == nil {
-		m.moduleServers = make(map[string]*moduleServerEntry)
-	}
-	entry := m.moduleServers[key]
-	if entry == nil {
-		entry = &moduleServerEntry{}
-		m.moduleServers[key] = entry
-	}
-	m.mu.Unlock()
+	entry := memoEntry(m, m.moduleServers, key)
 	entry.mu.Lock()
 	defer entry.mu.Unlock()
 	if entry.srv != nil {

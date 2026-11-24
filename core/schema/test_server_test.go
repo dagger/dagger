@@ -64,6 +64,10 @@ func (s *currentTypeDefsTestServer) CurrentFunctionCall(context.Context) (*core.
 	return nil, nil
 }
 
+func (s *currentTypeDefsTestServer) EnclosingFunctionCall(context.Context) (*core.FunctionCall, error) {
+	return nil, nil
+}
+
 func (s *currentTypeDefsTestServer) CurrentWorkspace(context.Context) (*core.Workspace, error) {
 	return nil, nil
 }

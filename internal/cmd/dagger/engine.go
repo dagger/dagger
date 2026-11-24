@@ -752,8 +752,9 @@ func (r indexRange) shift(n int) indexRange {
 
 // collectorTelemetryRanges locates the CLI's exporters to the user's own
 // collector in the pipeline telemetry.Init builds: their range of the
-// telemetry.SpanProcessors Init sets, and of the entries Init appends, in
-// Config order, to telemetry.LogProcessors and telemetry.MetricExporters.
+// telemetry.SpanProcessors Init sets, and of the entries appended, in Config
+// order, to telemetry.LogProcessors (by initEngineTelemetry) and
+// telemetry.MetricExporters (by Init).
 // A range is empty when the collector has no exporter of that kind.
 type collectorTelemetryRanges struct {
 	spans, logs, metrics indexRange
@@ -851,7 +852,11 @@ func engineTelemetryConfigWithExporters(ctx context.Context, configuredCloudExpo
 }
 
 func initEngineTelemetry(ctx context.Context) (_ context.Context, endCommand func(error), closeTelemetry func(error) error, counts *enginetel.SpanQueueCounts) {
-	cfg, local, collector, collectorSpans := engineTelemetryConfig(ctx)
+	return initEngineTelemetryWithExporters(ctx, enginetel.ConfiguredCloudExporters, configuredCollectorExporters)
+}
+
+func initEngineTelemetryWithExporters(ctx context.Context, configuredCloudExporters configuredCloudExportersFunc, configuredCollectorExporters configuredCollectorExportersFunc) (_ context.Context, endCommand func(error), closeTelemetry func(error) error, counts *enginetel.SpanQueueCounts) {
+	cfg, local, collector, collectorSpans := engineTelemetryConfigWithExporters(ctx, configuredCloudExporters, configuredCollectorExporters)
 	// Init replaces telemetry.SpanProcessors but appends to LogProcessors and
 	// MetricExporters, which may hold an earlier Init's entries.
 	if local != nil {
@@ -861,7 +866,24 @@ func initEngineTelemetry(ctx context.Context) (_ context.Context, endCommand fun
 	collector.logs = collector.logs.shift(len(telemetry.LogProcessors))
 	collector.metrics = collector.metrics.shift(len(telemetry.MetricExporters))
 	firstLogProcessor := len(telemetry.LogProcessors)
+	// telemetry.Init would wrap each LiveLogExporter in an SDK BatchProcessor,
+	// whose poll loop allocates over 2 MiB/s for as long as the CLI runs, logs
+	// or not. Install them here instead, in the same order, so the indexes
+	// above still locate them, and shut them down after telemetry.Close.
+	liveLogExporters := cfg.LiveLogExporters
+	cfg.LiveLogExporters = nil
 	ctx = telemetry.Init(ctx, cfg)
+	var liveLogs *sdklog.LoggerProvider
+	if len(liveLogExporters) > 0 {
+		logOpts := []sdklog.LoggerProviderOption{sdklog.WithResource(telemetry.Resource)}
+		for _, exp := range liveLogExporters {
+			processor := enginetel.NewLiveLogProcessor(exp)
+			telemetry.LogProcessors = append(telemetry.LogProcessors, processor)
+			logOpts = append(logOpts, sdklog.WithProcessor(processor))
+		}
+		liveLogs = sdklog.NewLoggerProvider(logOpts...)
+		ctx = telemetry.WithLoggerProvider(ctx, liveLogs)
+	}
 	if local != nil {
 		spans := telemetry.SpanProcessors[local.spans]
 		logs := telemetry.LogProcessors[local.logs]
@@ -877,11 +899,11 @@ func initEngineTelemetry(ctx context.Context) (_ context.Context, endCommand fun
 	cliLocalTelemetry = local
 	cliCollectorTelemetry = collector
 
-	// Install the frontend separately: telemetry.Init wraps LiveLogExporters
-	// in dropping batch processors. Command stdio and forwarded engine logs
+	// Install the frontend separately: the LiveLogExporters above get
+	// dropping batch processors. Command stdio and forwarded engine logs
 	// must instead wait for local queue space. Remote exporters stay batched.
 	var frontendLogs *enginetel.BlockingLogProcessor
-	var diagnostics *sdklog.BatchProcessor
+	var diagnostics *enginetel.DroppingLogProcessor
 	var diagnosticProvider *sdklog.LoggerProvider
 	if !frontendTelemetryDisabled(ctx) {
 		frontendLogs = enginetel.NewBlockingLogProcessor(
@@ -896,11 +918,8 @@ func initEngineTelemetry(ctx context.Context) (_ context.Context, endCommand fun
 		// handler, or cleanup. Keep default slog best-effort and on its own
 		// queue; it must never wait on the command output queue. While a TUI
 		// draws on the terminal, it goes to the frontend instead of stderr.
-		diagnostics = sdklog.NewBatchProcessor(newCLIDiagnosticExporter(os.Stderr, stderrIsTTY, Frontend),
-			sdklog.WithMaxQueueSize(enginetel.LogQueueSize),
-			sdklog.WithExportMaxBatchSize(enginetel.LogExportMaxBatchSize),
-			sdklog.WithExportInterval(telemetry.NearlyImmediate),
-		)
+		diagnostics = enginetel.NewDroppingLogProcessor(newCLIDiagnosticExporter(os.Stderr, stderrIsTTY, Frontend),
+			enginetel.LogQueueSize, enginetel.LogExportMaxBatchSize, telemetry.NearlyImmediate)
 		diagnosticProvider = sdklog.NewLoggerProvider(append(slices.Clone(logOpts), sdklog.WithProcessor(diagnostics))...)
 		ctx = telemetry.WithLoggerProvider(ctx, sdklog.NewLoggerProvider(append(logOpts, sdklog.WithProcessor(frontendLogs))...))
 		// Engine log forwarding uses the same local processor. Append it so
@@ -991,8 +1010,17 @@ func initEngineTelemetry(ctx context.Context) (_ context.Context, endCommand fun
 			drainErr = &idtui.OutputDrainError{Err: err}
 			slog.Error("command output was not fully delivered", "error", drainErr)
 		}
-		// telemetry.Close owns the remote providers created by Init.
+		// telemetry.Close owns the remote providers created by Init. The
+		// live log processors shut down within the same 30s budget it gives
+		// them all, as they did when Init created them.
+		shutdownCtx, cancelShutdown := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		telemetry.Close()
+		if liveLogs != nil {
+			if err := liveLogs.Shutdown(shutdownCtx); err != nil {
+				slog.Error("failed to shut down logger provider", "error", err)
+			}
+		}
+		cancelShutdown()
 		if diagnostics != nil {
 			// Remote processors above remain owned by telemetry.Close. Only
 			// close the local diagnostic processor here, with a short budget.

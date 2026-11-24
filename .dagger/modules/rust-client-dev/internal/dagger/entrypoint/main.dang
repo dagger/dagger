@@ -33,24 +33,12 @@ type Entrypoint implements ModuleEntrypoint {
         .withFunction(
           function("APIClient", typeDef.withObject("Changeset"))
             .withDescription("Regenerate the Rust SDK API client.")
-            .withSourceMap(sourceMap("main.go", 166, 1))
+            .withSourceMap(sourceMap("main.go", 155, 1))
             .withGenerator
         )
         .withFunction(
-          function("CargoCheck", typeDef.withKind(TypeDefKind.VOID_KIND).withOptional(true))
-            .withDescription("Run cargo check on the Rust SDK")
-            .withSourceMap(sourceMap("main.go", 145, 1))
-            .withCheck
-        )
-        .withFunction(
-          function("CargoFmt", typeDef.withKind(TypeDefKind.VOID_KIND).withOptional(true))
-            .withDescription("Run cargo fmt on the Rust SDK")
-            .withSourceMap(sourceMap("main.go", 135, 1))
-            .withCheck
-        )
-        .withFunction(
           function("Changes", typeDef.withObject("Changeset"))
-            .withSourceMap(sourceMap("main.go", 170, 1))
+            .withSourceMap(sourceMap("main.go", 159, 1))
         )
         .withFunction(
           function("DevContainer", typeDef.withObject("Container"))
@@ -61,17 +49,17 @@ type Entrypoint implements ModuleEntrypoint {
         .withFunction(
           function("Release", typeDef.withKind(TypeDefKind.VOID_KIND).withOptional(true))
             .withDescription("Release the Rust SDK")
-            .withSourceMap(sourceMap("main.go", 262, 1))
-            .withArg("sourceTag", typeDef.withKind(TypeDefKind.STRING_KIND), description: "Source git tag to release", sourceMap: sourceMap("main.go", 266, 2))
-            .withArg("cargoRegistryToken", typeDef.withObject("Secret"), sourceMap: sourceMap("main.go", 268, 2))
-            .withArg("cargoRegistryIndex", typeDef.withKind(TypeDefKind.STRING_KIND).withOptional(true), description: "Cargo registry index URL to publish to instead of crates.io.", sourceMap: sourceMap("main.go", 272, 2))
+            .withSourceMap(sourceMap("main.go", 251, 1))
+            .withArg("sourceTag", typeDef.withKind(TypeDefKind.STRING_KIND), description: "Source git tag to release", sourceMap: sourceMap("main.go", 255, 2))
+            .withArg("cargoRegistryToken", typeDef.withObject("Secret"), sourceMap: sourceMap("main.go", 257, 2))
+            .withArg("cargoRegistryIndex", typeDef.withKind(TypeDefKind.STRING_KIND).withOptional(true), description: "Cargo registry index URL to publish to instead of crates.io.", sourceMap: sourceMap("main.go", 261, 2))
         )
         .withFunction(
           function("ReleaseDryRun", typeDef.withKind(TypeDefKind.VOID_KIND).withOptional(true))
             .withDescription("Test the publishing process")
-            .withSourceMap(sourceMap("main.go", 194, 1))
+            .withSourceMap(sourceMap("main.go", 183, 1))
             .withCheck
-            .withArg("sourceTag", typeDef.withKind(TypeDefKind.STRING_KIND), description: "Source git tag to fake-release", defaultValue: ("\"HEAD\"" :: Dagger.JSON!), sourceMap: sourceMap("main.go", 199, 2))
+            .withArg("sourceTag", typeDef.withKind(TypeDefKind.STRING_KIND), description: "Source git tag to fake-release", defaultValue: ("\"HEAD\"" :: Dagger.JSON!), sourceMap: sourceMap("main.go", 188, 2))
         )
         .withFunction(
           function("Source", typeDef.withObject("Directory"))
@@ -80,13 +68,13 @@ type Entrypoint implements ModuleEntrypoint {
         )
         .withFunction(
           function("Test", typeDef.withKind(TypeDefKind.VOID_KIND).withOptional(true))
-            .withDescription("Test the Rust SDK")
-            .withSourceMap(sourceMap("main.go", 155, 1))
+            .withDescription("Check the Rust SDK's formatting, then test it. cargo test compiles every\ntarget cargo check would.")
+            .withSourceMap(sourceMap("main.go", 136, 1))
             .withCheck
         )
         .withFunction(
           function("WithGeneratedClient", typeDef.withObject("RustClientDev"))
-            .withSourceMap(sourceMap("main.go", 174, 1))
+            .withSourceMap(sourceMap("main.go", 163, 1))
         )
         .withField("BaseContainer", typeDef.withObject("Container"), description: "Rust container to develop the Rust SDK, without a Dagger engine", sourceMap: sourceMap("main.go", 36, 2))
         .withConstructor(

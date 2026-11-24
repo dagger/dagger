@@ -83,7 +83,7 @@ func (r *RustClientDev) WithGraphQLQuery(q *querybuilder.Selection) *RustClientD
 }
 
 // Regenerate the Rust SDK API client.
-func (r *RustClientDev) APIClient() *Changeset { // rust-client-dev (../../main.go:166:1)
+func (r *RustClientDev) APIClient() *Changeset { // rust-client-dev (../../main.go:155:1)
 	q := r.query.Select("apiClient")
 
 	return new(Changeset).WithGraphQLQuery(q)
@@ -96,21 +96,7 @@ func (r *RustClientDev) BaseContainer() *Container { // rust-client-dev (../../m
 	return new(Container).WithGraphQLQuery(q)
 }
 
-// Run cargo check on the Rust SDK
-func (r *RustClientDev) CargoCheck() *Check { // rust-client-dev (../../main.go:145:1)
-	q := r.query.Select("cargoCheck")
-
-	return new(Check).WithGraphQLQuery(q)
-}
-
-// Run cargo fmt on the Rust SDK
-func (r *RustClientDev) CargoFmt() *Check { // rust-client-dev (../../main.go:135:1)
-	q := r.query.Select("cargoFmt")
-
-	return new(Check).WithGraphQLQuery(q)
-}
-
-func (r *RustClientDev) Changes() *Changeset { // rust-client-dev (../../main.go:170:1)
+func (r *RustClientDev) Changes() *Changeset { // rust-client-dev (../../main.go:159:1)
 	q := r.query.Select("changes")
 
 	return new(Changeset).WithGraphQLQuery(q)
@@ -200,11 +186,11 @@ type RustClientDevReleaseOpts struct {
 	//
 	// Cargo registry index URL to publish to instead of crates.io.
 	//
-	CargoRegistryIndex string // rust-client-dev (../../main.go:272:2)
+	CargoRegistryIndex string // rust-client-dev (../../main.go:261:2)
 }
 
 // Release the Rust SDK
-func (r *RustClientDev) Release(ctx context.Context, sourceTag string, cargoRegistryToken *Secret, opts ...RustClientDevReleaseOpts) error { // rust-client-dev (../../main.go:262:1)
+func (r *RustClientDev) Release(ctx context.Context, sourceTag string, cargoRegistryToken *Secret, opts ...RustClientDevReleaseOpts) error { // rust-client-dev (../../main.go:251:1)
 	assertNotNil("cargoRegistryToken", cargoRegistryToken)
 	if r.release != nil {
 		return nil
@@ -229,11 +215,11 @@ type RustClientDevReleaseDryRunOpts struct {
 	//
 	//
 	// Default: "HEAD"
-	SourceTag string // rust-client-dev (../../main.go:199:2)
+	SourceTag string // rust-client-dev (../../main.go:188:2)
 }
 
 // Test the publishing process
-func (r *RustClientDev) ReleaseDryRun(opts ...RustClientDevReleaseDryRunOpts) *Check { // rust-client-dev (../../main.go:194:1)
+func (r *RustClientDev) ReleaseDryRun(opts ...RustClientDevReleaseDryRunOpts) *Check { // rust-client-dev (../../main.go:183:1)
 	q := r.query.Select("releaseDryRun")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `sourceTag` optional argument
@@ -252,14 +238,15 @@ func (r *RustClientDev) Source() *Directory { // rust-client-dev (../../main.go:
 	return new(Directory).WithGraphQLQuery(q)
 }
 
-// Test the Rust SDK
-func (r *RustClientDev) Test() *Check { // rust-client-dev (../../main.go:155:1)
+// Check the Rust SDK's formatting, then test it. cargo test compiles every
+// target cargo check would.
+func (r *RustClientDev) Test() *Check { // rust-client-dev (../../main.go:136:1)
 	q := r.query.Select("test")
 
 	return new(Check).WithGraphQLQuery(q)
 }
 
-func (r *RustClientDev) WithGeneratedClient() *RustClientDev { // rust-client-dev (../../main.go:174:1)
+func (r *RustClientDev) WithGeneratedClient() *RustClientDev { // rust-client-dev (../../main.go:163:1)
 	q := r.query.Select("withGeneratedClient")
 
 	return &RustClientDev{

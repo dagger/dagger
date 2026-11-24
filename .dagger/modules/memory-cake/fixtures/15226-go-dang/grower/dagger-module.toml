@@ -1,0 +1,5 @@
+name = "grower"
+
+[entrypoint]
+  kind = "dang"
+  source = "./entrypoint"

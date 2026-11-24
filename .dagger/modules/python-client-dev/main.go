@@ -130,24 +130,6 @@ func (t PythonClientDev) lint(paths []string) *dagger.Container {
 		WithExec(append(uvRun("ruff", "format", "--check", "--diff"), paths...))
 }
 
-// +check
-// Format source files
-func (t PythonClientDev) Format(
-	ctx context.Context,
-	// List of files or directories to check
-	// +default=[]
-	paths []string,
-) error {
-	before := t.BaseContainer.Directory("/src")
-	_, err := t.BaseContainer.
-		WithExec(append(uvRun("ruff", "check", "--fix-only"), paths...)).
-		WithExec(append(uvRun("ruff", "format"), paths...)).
-		Directory("/src").
-		Changes(before).
-		Sync(ctx)
-	return err
-}
-
 // Run the type checker (mypy)
 // FIXME: this is not included as an automated check. Should it?
 func (t PythonClientDev) Typecheck(ctx context.Context) error {

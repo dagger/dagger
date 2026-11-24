@@ -720,3 +720,46 @@ func TestCacheReleasedSessionDoesNotRecreateSpanMaps(t *testing.T) {
 	assert.Assert(t, !lazyRecreated)
 	assert.Assert(t, !installRecreated)
 }
+
+// The span a lazy result's evaluation links as the call it evaluates is the
+// span of a call that obtained the result. A call the server's telemetry
+// didn't span (a repeat it deduplicated, say, that won the race to run)
+// obtains it under the client's request span, which names no call; a later
+// call that has its own span replaces that, and nothing replaces it.
+func TestCacheLazySpanPrefersCallSpan(t *testing.T) {
+	ctx := t.Context()
+	c, err := NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+	const sessionID = "lazy-span-call"
+	call := cacheTestIntCall("lazy-span-call")
+	spanCtx := func(id byte) trace.SpanContext {
+		return trace.NewSpanContext(trace.SpanContextConfig{TraceID: trace.TraceID{8}, SpanID: trace.SpanID{id}})
+	}
+	callSpanCtx := func(id byte) context.Context {
+		spanned := trace.ContextWithSpanContext(ContextWithCall(ctx, call), spanCtx(id))
+		return withOwnCallSpan(spanned, call, trace.SpanFromContext(spanned))
+	}
+	recorded := func() trace.SpanID {
+		res, err := c.GetOrInitCall(ctx, sessionID, noopTypeResolver{}, &CallRequest{ResultCall: call}, func(context.Context) (AnyResult, error) {
+			return cacheTestIntResult(call, 1), nil
+		})
+		assert.NilError(t, err)
+		sc, ok := c.sessionLazySpanContext(sessionID, res.cacheSharedResult().id)
+		assert.Assert(t, ok)
+		return sc.SpanID()
+	}
+
+	request := trace.ContextWithSpanContext(ctx, spanCtx(1))
+	res, err := c.GetOrInitCall(request, sessionID, noopTypeResolver{}, &CallRequest{ResultCall: call}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(call, 1), nil
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, recorded(), spanCtx(1).SpanID())
+
+	c.captureSessionLazySpanContext(callSpanCtx(2), sessionID, res)
+	assert.Equal(t, recorded(), spanCtx(2).SpanID(), "a call's own span replaces the request's")
+
+	c.captureSessionLazySpanContext(callSpanCtx(3), sessionID, res)
+	c.captureSessionLazySpanContext(request, sessionID, res)
+	assert.Equal(t, recorded(), spanCtx(2).SpanID(), "the first call span stays")
+}

@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 
 	cache "github.com/dagger/dagger/engine/snapshots"
+	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/fsutil"
 	fstypes "github.com/dagger/dagger/internal/fsutil/types"
 	iradix "github.com/hashicorp/go-immutable-radix/v2"
@@ -251,7 +252,13 @@ func newCacheContext(md cache.RefMetadata) (*cacheContext, error) {
 func (cc *cacheContext) load() error {
 	dt, err := cc.md.GetContentHash()
 	if err != nil {
-		return nil //nolint:nilerr // TODO: ??? this is how it was upstream?
+		if errors.Is(err, cache.ErrExternalNotFound) {
+			// Not hashed yet.
+			return nil
+		}
+		// A tree that can't be read is not the same as no tree: a rescan
+		// of an imported snapshot gives other digests.
+		return errors.Wrap(err, "load content hash records")
 	}
 
 	var l CacheRecords
@@ -291,6 +298,16 @@ func (cc *cacheContext) save() error {
 	}
 
 	return cc.md.SetContentHash(dt)
+}
+
+// saveInBackground is save for a goroutine of its own, which only the log
+// can tell of its failure. The records stay in the cache context, and a
+// later save of it writes them.
+func (cc *cacheContext) saveInBackground() {
+	if err := cc.save(); err != nil {
+		bklog.G(context.TODO()).WithError(err).WithField("ref", cc.md.ID()).
+			Error("failed to save content hash records")
+	}
 }
 
 func keyPath(p string) string {
@@ -484,7 +501,7 @@ func (cc *cacheContext) includedPaths(ctx context.Context, m *mount, p string, o
 
 	defer func() {
 		if cc.dirty {
-			go cc.save()
+			go cc.saveInBackground()
 			cc.dirty = false
 		}
 	}()
@@ -818,7 +835,7 @@ func (cc *cacheContext) lazyChecksum(ctx context.Context, m *mount, p string, fo
 
 	defer func() {
 		if cc.dirty {
-			go cc.save()
+			go cc.saveInBackground()
 			cc.dirty = false
 		}
 	}()

@@ -5,8 +5,10 @@ import (
 	"sync/atomic"
 
 	ctdmetadata "github.com/containerd/containerd/v2/core/metadata"
+	"github.com/containerd/containerd/v2/pkg/gc"
 
 	"github.com/dagger/dagger/engine/slog"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 )
 
 // snapshotGarbage collects snapshot and content data that nothing references
@@ -22,13 +24,24 @@ import (
 type snapshotGarbage struct {
 	db      *ctdmetadata.DB
 	pending atomic.Bool
+	// forget drops the snapshot manager's in-memory metadata of the
+	// snapshots a collection removed; nil when it keeps none.
+	forget func(context.Context) error
+	// forgetPending is set when forget must run after the next collection
+	// even if it removes no snapshot: at first, since snapshots may have been
+	// removed before the manager was made, and after forget failed.
+	forgetPending atomic.Bool
 }
 
-func newSnapshotGarbage(db *ctdmetadata.DB) *snapshotGarbage {
+func newSnapshotGarbage(db *ctdmetadata.DB, sm bkcache.SnapshotManager) *snapshotGarbage {
 	g := &snapshotGarbage{db: db}
+	if f, ok := sm.(bkcache.CollectedSnapshotForgetter); ok {
+		g.forget = f.ForgetCollectedSnapshots
+	}
 	// containerd counts deletions in memory only, so garbage left by a
 	// previous engine process is invisible to it. Collect once regardless.
 	g.pending.Store(true)
+	g.forgetPending.Store(true)
 	db.RegisterMutationCallback(func(dirty bool) {
 		// This runs on the DB's write path while it holds the lock that
 		// GarbageCollect needs, so only record the signal here.
@@ -39,7 +52,12 @@ func newSnapshotGarbage(db *ctdmetadata.DB) *snapshotGarbage {
 	return g
 }
 
-// Collect runs containerd garbage collection unconditionally.
+// Collect runs containerd garbage collection unconditionally, then drops the
+// in-memory metadata of the snapshots it removed.
+//
+// Forgetting is best-effort: the collection has already reclaimed the data,
+// so a failure to forget is logged rather than failing the collection (and
+// with it the prune or GC pass that ran it), and the next collection retries.
 func (g *snapshotGarbage) Collect(ctx context.Context) error {
 	// Clear before collecting: a deletion that lands during the collection
 	// sets the flag again and is picked up by the next pass.
@@ -50,7 +68,24 @@ func (g *snapshotGarbage) Collect(ctx context.Context) error {
 		return err
 	}
 	slog.Debug("collected snapshot garbage", "stats", stats)
+	// Forgetting walks every snapshot, so it runs only when the collection
+	// removed some.
+	if g.forget != nil && (removedSnapshots(stats) || g.forgetPending.Load()) {
+		g.forgetPending.Store(false)
+		if err := g.forget(ctx); err != nil {
+			g.forgetPending.Store(true)
+			slog.Warn("failed to forget collected snapshots; retrying after the next collection", "err", err)
+		}
+	}
 	return nil
+}
+
+// removedSnapshots reports whether a collection with stats removed any
+// snapshot: containerd times the cleanup of each snapshotter it removed
+// snapshots from, and only those.
+func removedSnapshots(stats gc.Stats) bool {
+	s, ok := stats.(ctdmetadata.GCStats)
+	return !ok || len(s.SnapshotD) > 0
 }
 
 // CollectIfPending runs garbage collection if anything was deleted since the

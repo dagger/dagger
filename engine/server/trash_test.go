@@ -181,3 +181,51 @@ func TestMoveDiskTempMountsToTrash(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, trashDirs)
 }
+
+// The content-hash trees a previous engine left under the worker root go to
+// the trash in the engine's root, where the sweeper finds it, rather than
+// being deleted inline at startup; with none, nothing happens.
+func TestMoveContentHashTreesToTrash(t *testing.T) {
+	t.Parallel()
+	rootDir := t.TempDir()
+	trees := filepath.Join(rootDir, "worker", "contenthash")
+	require.NoError(t, os.MkdirAll(filepath.Join(trees, "trees-1"), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(trees, "trees-1", "SNAPSHOT"), []byte("tree"), 0o600))
+
+	moveContentHashTreesToTrash(context.Background(), rootDir, trees, nil)
+	require.NoDirExists(t, trees)
+	trashDirs, err := findLocalCacheTrashDirs(rootDir)
+	require.NoError(t, err)
+	require.Len(t, trashDirs, 1)
+	require.FileExists(t, filepath.Join(trashDirs[0], "trees-1", "SNAPSHOT"))
+
+	srv := &Server{rootDir: rootDir}
+	srv.sweepLocalCacheTrash(context.Background(), trashDirs)
+	require.NoDirExists(t, trashDirs[0])
+
+	moveContentHashTreesToTrash(context.Background(), rootDir, trees, nil)
+	trashDirs, err = findLocalCacheTrashDirs(rootDir)
+	require.NoError(t, err)
+	require.Empty(t, trashDirs)
+}
+
+// Under disk pressure, the trees are removed before startup goes on: the
+// checkpoint's trees, written again, need the room.
+func TestMoveContentHashTreesToTrashUnderDiskPressure(t *testing.T) {
+	t.Parallel()
+	rootDir := t.TempDir()
+	trees := filepath.Join(rootDir, "worker", "contenthash")
+	require.NoError(t, os.MkdirAll(filepath.Join(trees, "trees-1"), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(trees, "trees-1", "SNAPSHOT"), []byte("tree"), 0o600))
+	dstat, err := disk.GetDiskStat(rootDir)
+	require.NoError(t, err)
+
+	moveContentHashTreesToTrash(context.Background(), rootDir, trees, []dagqlCachePrunePolicy{
+		// More than the filesystem can provide.
+		{MinFreeSpace: dstat.Total + 1},
+	})
+	require.NoDirExists(t, trees)
+	trashDirs, err := findLocalCacheTrashDirs(rootDir)
+	require.NoError(t, err)
+	require.Empty(t, trashDirs)
+}

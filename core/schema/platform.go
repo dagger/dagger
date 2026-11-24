@@ -2,7 +2,6 @@ package schema
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -10,7 +9,7 @@ import (
 )
 
 var engineDefaultPlatformInput = dagql.ImplicitInput{
-	Name: "engineDefaultPlatform",
+	Name: core.EngineDefaultPlatformInput,
 	Resolver: func(ctx context.Context, _ map[string]dagql.Input) (dagql.Input, error) {
 		return currentEngineDefaultPlatform(ctx)
 	},
@@ -64,38 +63,13 @@ type withPlatformArgs struct {
 // (dagql.Cache.PlatformDigest), as its content, before lookup, so that an
 // engine of another platform that made it for the same platform hits.
 func withPlatformDynamicInputs[T dagql.Typed](ctx context.Context, parent dagql.ObjectResult[T], args withPlatformArgs, req *dagql.CallRequest) error {
-	cache, err := dagql.EngineCache(ctx)
-	if err != nil {
-		return err
-	}
-	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return err
-	}
 	frame, err := parent.ResultCall()
 	if err != nil {
 		return err
 	}
-	dig, err := cache.PlatformDigest(frame, args.Platform.Format(), dagql.BuildPlatform{
-		ImplicitInput: engineDefaultPlatformInput.Name,
-		IsPlatformArg: func(receiverType, field string, view call.View, arg string) bool {
-			typ, ok := srv.ObjectType(receiverType)
-			if !ok {
-				return false
-			}
-			spec, ok := typ.FieldSpec(field, view)
-			if !ok {
-				return false
-			}
-			input, ok := spec.Args.Input(arg, view)
-			return ok && input.Type.Type().Name() == (core.Platform{}).TypeName()
-		},
-		IsCommand: func(receiverType, field string) bool {
-			return receiverType == (&core.Container{}).Type().Name() && field == "withExec"
-		},
-	})
+	dig, err := core.DeclaredPlatformDigest(ctx, frame, args.Platform)
 	if err != nil {
-		return fmt.Errorf("identify the result declared for %s: %w", args.Platform.Format(), err)
+		return err
 	}
 	req.ExtraDigests = append(req.ExtraDigests,
 		call.ExtraDigest{Label: call.ExtraDigestLabelContent, Digest: dig},

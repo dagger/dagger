@@ -17,12 +17,14 @@ type EngineDev struct { // engine-dev (../../main.go:111:6)
 	// field again.
 	refetchID bool
 
-	id          *ID
-	networkCidr *string
-	publish     *Void
-	test        *Void
-	testModule  *Void
-	tests       *string
+	id                     *ID
+	imageEntriesAfterPrune *Void
+	networkCidr            *string
+	publish                *Void
+	reproducibleBuild      *Void
+	test                   *Void
+	testModule             *Void
+	tests                  *string
 }
 type WithEngineDevFunc func(r *EngineDev) *EngineDev
 
@@ -81,7 +83,7 @@ func (r *EngineDev) Container(opts ...EngineDevContainerOpts) *Container { // en
 // Build the export driver the Go SDK's code generation loads packages
 // through: a GOPACKAGESDRIVER that serves the export data of what they import
 // from dagger/go's archives, so the go command compiles none of it.
-func (r *EngineDev) ExportDriver() *File { // engine-dev (../../main.go:857:1)
+func (r *EngineDev) ExportDriver() *File { // engine-dev (../../main.go:856:1)
 	q := r.query.Select("exportDriver")
 
 	return new(File).WithGraphQLQuery(q)
@@ -122,11 +124,11 @@ func (r *EngineDev) GoEnv(opts ...EngineDevGoEnvOpts) *Container { // engine-dev
 
 // EngineDevGraphqlSchemaOpts contains options for EngineDev.GraphqlSchema
 type EngineDevGraphqlSchemaOpts struct {
-	Version string // engine-dev (../../main.go:801:2)
+	Version string // engine-dev (../../main.go:800:2)
 }
 
 // Introspect the engine API schema, and return it as a graphql schema
-func (r *EngineDev) GraphqlSchema(opts ...EngineDevGraphqlSchemaOpts) *File { // engine-dev (../../main.go:798:1)
+func (r *EngineDev) GraphqlSchema(opts ...EngineDevGraphqlSchemaOpts) *File { // engine-dev (../../main.go:797:1)
 	q := r.query.Select("graphqlSchema")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `version` optional argument
@@ -196,11 +198,15 @@ func (r *EngineDev) UnmarshalJSON(bs []byte) error {
 // The entries an engine image ships can be made again on the state an
 // earlier making left after a prune cut part of it, as a later release's
 // making does: an engine of this build makes them, prunes its cache to half
-// its size, least recently used first, and makes them again.
-func (r *EngineDev) ImageEntriesAfterPrune() *Check { // engine-dev (../../main.go:540:1)
+// its size, least recently used first, and makes them again. ReleaseDryRun
+// checks it.
+func (r *EngineDev) ImageEntriesAfterPrune(ctx context.Context) error { // engine-dev (../../main.go:540:1)
+	if r.imageEntriesAfterPrune != nil {
+		return nil
+	}
 	q := r.query.Select("imageEntriesAfterPrune")
 
-	return new(Check).WithGraphQLQuery(q)
+	return q.Execute(ctx)
 }
 
 func (r *EngineDev) IncrementSubnet() *EngineDev { // engine-dev (../../main.go:130:1)
@@ -245,14 +251,14 @@ func (r *EngineDev) InstallClient(opts ...EngineDevInstallClientOpts) *Container
 // This file is used by SDKs to generate clients. It is the engine's answer to
 // an introspection query from a client of its own version, computed
 // in-process by the introspect tool, so no engine is built or started.
-func (r *EngineDev) IntrospectionJSON() *File { // engine-dev (../../main.go:783:1)
+func (r *EngineDev) IntrospectionJSON() *File { // engine-dev (../../main.go:782:1)
 	q := r.query.Select("introspectionJson")
 
 	return new(File).WithGraphQLQuery(q)
 }
 
 // Build the `introspect` tool which introspects the engine API
-func (r *EngineDev) IntrospectionTool() *File { // engine-dev (../../main.go:846:1)
+func (r *EngineDev) IntrospectionTool() *File { // engine-dev (../../main.go:845:1)
 	q := r.query.Select("introspectionTool")
 
 	return new(File).WithGraphQLQuery(q)
@@ -316,17 +322,17 @@ type EngineDevPublishOpts struct {
 	//
 	//
 	// Default: "ghcr.io/dagger/engine"
-	Image string // engine-dev (../../main.go:910:2)
+	Image string // engine-dev (../../main.go:921:2)
 
-	DryRun bool // engine-dev (../../main.go:915:2)
+	DryRun bool // engine-dev (../../main.go:926:2)
 
-	RegistryUsername string // engine-dev (../../main.go:918:2)
+	RegistryUsername string // engine-dev (../../main.go:929:2)
 
-	RegistryPassword *Secret // engine-dev (../../main.go:920:2)
+	RegistryPassword *Secret // engine-dev (../../main.go:931:2)
 }
 
 // Publish all engine images to a registry
-func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDevPublishOpts) error { // engine-dev (../../main.go:905:1)
+func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDevPublishOpts) error { // engine-dev (../../main.go:916:1)
 	if r.publish != nil {
 		return nil
 	}
@@ -354,7 +360,11 @@ func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDev
 	return q.Execute(ctx)
 }
 
-func (r *EngineDev) ReleaseDryRun() *Check { // engine-dev (../../main.go:891:1)
+// Every engine image target of a release builds, with its entries, without
+// being pushed; the entries can be made again after a prune; and the build
+// steps that have built to different bytes before build to the same bytes
+// twice.
+func (r *EngineDev) ReleaseDryRun() *Check { // engine-dev (../../main.go:894:1)
 	q := r.query.Select("releaseDryRun")
 
 	return new(Check).WithGraphQLQuery(q)
@@ -364,10 +374,14 @@ func (r *EngineDev) ReleaseDryRun() *Check { // engine-dev (../../main.go:891:1)
 // same bytes when they run twice: QEMU's emulators, crun and the Go SDK's
 // files. Two engines that each build the image then hold the same
 // image, and the cache can serve what one built on it to the other.
-func (r *EngineDev) ReproducibleBuild() *Check { // engine-dev (../../main.go:575:1)
+// ReleaseDryRun checks it.
+func (r *EngineDev) ReproducibleBuild(ctx context.Context) error { // engine-dev (../../main.go:575:1)
+	if r.reproducibleBuild != nil {
+		return nil
+	}
 	q := r.query.Select("reproducibleBuild")
 
-	return new(Check).WithGraphQLQuery(q)
+	return q.Execute(ctx)
 }
 
 // EngineDevServiceOpts contains options for EngineDev.Service

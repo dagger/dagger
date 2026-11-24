@@ -218,7 +218,7 @@ func agentTraceStore(t *testing.T) (*clientdb.DB, *clientdb.DBs) {
 	require.NoError(t, err)
 
 	lone := newConversation(t).prompt("lone prompt").reply("lone reply")
-	_, err = store.ImportTrace(t.Context(), importedTraceID, func(imported *clientdb.DB) error {
+	importedStore, err := store.ImportTrace(t.Context(), importedTraceID, func(imported *clientdb.DB) error {
 		if _, err := imported.AppendSpans(finishSpanRows([]clientdb.Span{
 			{TraceID: importedTraceID, SpanID: agentLoneSpan, Name: "agent: lone", Attributes: marshalSpanAttrs(t, agentAttrs("lone-h", "lone")...)},
 			{TraceID: importedTraceID, SpanID: agentLoneCall, ParentSpanID: validSpanID(agentLoneSpan), Name: "LLM.withResponse",
@@ -230,6 +230,7 @@ func agentTraceStore(t *testing.T) (*clientdb.DB, *clientdb.DBs) {
 		return err
 	})
 	require.NoError(t, err)
+	require.NoError(t, importedStore.Close())
 	return store, dbs
 }
 

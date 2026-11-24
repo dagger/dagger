@@ -97,6 +97,45 @@ func TestSpanAttributes(t *testing.T) {
 	}
 }
 
+// TestSpanAttributesSharePairs checks that spans share a low-cardinality
+// attribute's name and value, and that updating one span's never touches
+// another's.
+func TestSpanAttributesSharePairs(t *testing.T) {
+	db := NewDB()
+	var a, b SpanSnapshot
+	a.ProcessAttribute(telemetryattrs.CacheOutcomeAttr, string([]byte("hit")))
+	b.ProcessAttribute(telemetryattrs.CacheOutcomeAttr, string([]byte("hit")))
+	a.ProcessAttribute("z.str", "x")
+	b.ProcessAttribute("z.str", "x")
+	db.internSnapshotStrings(&a)
+	db.internSnapshotStrings(&b)
+	pair := func(s SpanSnapshot, name string) *spanAttribute {
+		return s.ExtraAttributes[s.ExtraAttributes.find(name)]
+	}
+	if pair(a, telemetryattrs.CacheOutcomeAttr) != pair(b, telemetryattrs.CacheOutcomeAttr) {
+		t.Fatal("equal low-cardinality attributes should share one spanAttribute")
+	}
+	if pair(a, "z.str") == pair(b, "z.str") {
+		t.Fatal("ordinary attributes should not be shared")
+	}
+	a.ProcessAttribute(telemetryattrs.CacheOutcomeAttr, "miss")
+	db.internSnapshotStrings(&a)
+	if got, _ := a.ExtraAttributes.String(telemetryattrs.CacheOutcomeAttr); got != "miss" {
+		t.Fatalf("updated span reads %q", got)
+	}
+	if got, _ := b.ExtraAttributes.String(telemetryattrs.CacheOutcomeAttr); got != "hit" {
+		t.Fatalf("other span reads %q after an update elsewhere", got)
+	}
+	// Another DB shares nothing with this one.
+	other := NewDB()
+	var c SpanSnapshot
+	c.ProcessAttribute(telemetryattrs.CacheOutcomeAttr, "hit")
+	other.internSnapshotStrings(&c)
+	if pair(c, telemetryattrs.CacheOutcomeAttr) == pair(b, telemetryattrs.CacheOutcomeAttr) {
+		t.Fatal("DBs should not share attributes")
+	}
+}
+
 // testSpanAttributesRoundTrip checks that a snapshot's attributes survive
 // both JSON and gob round trips.
 func testSpanAttributesRoundTrip(t *testing.T, snapshot SpanSnapshot, want map[string]json.RawMessage) {

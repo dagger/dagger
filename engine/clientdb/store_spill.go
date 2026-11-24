@@ -329,6 +329,19 @@ func (s *spillFile[Row]) readID(ctx context.Context, id int64) (Row, bool, error
 // a fresh scanner per row re-read and decoded up to sparseIndexStride frames
 // (and allocated a fresh read buffer) for every single row.
 func (s *spillFile[Row]) readIDs(ctx context.Context, ids []int64, fn func(Row)) error {
+	return s.readFrames(ctx, ids, func(frame []byte) error {
+		row, err := s.codec.decode(frame)
+		if err != nil {
+			return fmt.Errorf("decode committed spill frame: %w", err)
+		}
+		fn(row)
+		return nil
+	})
+}
+
+// readFrames is readIDs without the decoding: fn gets each wanted row's
+// encoded frame, in a buffer reused for the next one.
+func (s *spillFile[Row]) readFrames(ctx context.Context, ids []int64, fn func(frame []byte) error) error {
 	if len(ids) == 0 {
 		return nil
 	}
@@ -393,11 +406,9 @@ func (s *spillFile[Row]) readIDs(ctx context.Context, ids []int64, fn func(Row))
 				continue
 			}
 			if rowID == id {
-				row, err := s.codec.decode(buf)
-				if err != nil {
-					return fmt.Errorf("decode committed spill frame: %w", err)
+				if err := fn(buf); err != nil {
+					return err
 				}
-				fn(row)
 			}
 			// rowID > id: the row is absent, and the frame just read may be
 			// the next one wanted; scanned >= the next ID forces a re-seek.

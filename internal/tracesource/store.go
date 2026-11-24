@@ -132,13 +132,24 @@ func (a *Store) options(traceID string, highWater int64) (archive.StreamOptions,
 	return archive.StreamOptions{HighWater: highWater, Unsealed: a.unsealed}, nil
 }
 
-// FetchSpans reads a span selection. Listened subtrees beyond what one store
-// request accepts are read in successive requests; only the first includes
-// the priority roots it asked for.
+// FetchSpans reads a span selection. Listened subtrees or exact spans beyond
+// what one store request accepts are read in successive requests; only the
+// first includes the priority roots it asked for.
 func (a *Store) FetchSpans(ctx context.Context, traceID string, sel cloud.SpanSelection, cb func(context.Context, *coltracepb.ExportTraceServiceRequest) error) error {
 	opts, err := a.options(traceID, a.manifest.HighWater.Spans)
 	if err != nil {
 		return err
+	}
+	for exact := sel.Exact; len(exact) > 0; {
+		chunk := exact[:min(len(exact), archive.MaxListenSpans)]
+		exact = exact[len(chunk):]
+		opts.Spans = &archive.SpanSelection{NoRoot: true, Exact: chunk, DagUIView: sel.DagUIView}
+		if _, err := a.reader.Traces(ctx, traceID, opts, func(_ int64, req *coltracepb.ExportTraceServiceRequest) error { return cb(ctx, req) }); err != nil {
+			return err
+		}
+		if len(exact) == 0 {
+			return nil
+		}
 	}
 	full := !sel.Incremental && !sel.NoRoot && len(sel.Listen) == 0
 	listen, noRoot := sel.Listen, sel.NoRoot

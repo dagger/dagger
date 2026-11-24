@@ -86,7 +86,7 @@ func TestCloudChecksOnGitLab(t *testing.T) {
 	}
 }
 
-func TestGitLabIntegrationURL(t *testing.T) {
+func TestCloudIntegrationURL(t *testing.T) {
 	for _, tc := range []struct{ api, frontend, want string }{
 		{"", "", "https://dagger.cloud/example/integrations/gitlab"},
 		{"https://feature-api.preview.dagger.cloud", "", "https://feature-v3.preview.dagger.cloud/example/integrations/gitlab"},
@@ -96,7 +96,7 @@ func TestGitLabIntegrationURL(t *testing.T) {
 		t.Run(tc.want, func(t *testing.T) {
 			t.Setenv("DAGGER_CLOUD_URL", tc.api)
 			t.Setenv("DAGGER_CLOUD_EXTERNAL_URL", tc.frontend)
-			got, err := gitLabIntegrationURL("example")
+			got, err := cloudIntegrationURL("example", "gitlab")
 			require.NoError(t, err)
 			require.Equal(t, tc.want, got)
 		})

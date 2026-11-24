@@ -535,8 +535,8 @@ func entriesExported(ctx context.Context, ran *dagger.Container, exporter []stri
 // The entries an engine image ships can be made again on the state an
 // earlier making left after a prune cut part of it, as a later release's
 // making does: an engine of this build makes them, prunes its cache to half
-// its size, least recently used first, and makes them again.
-// +check
+// its size, least recently used first, and makes them again. ReleaseDryRun
+// checks it.
 func (dev *EngineDev) ImageEntriesAfterPrune(ctx context.Context) error {
 	builder, err := dev.builder(ctx, "")
 	if err != nil {
@@ -571,7 +571,7 @@ echo "{ engine { localCache { prune(maxUsedSpace: \"$half\", targetSpace: \"$hal
 // same bytes when they run twice: QEMU's emulators, crun and the Go SDK's
 // files. Two engines that each build the image then hold the same
 // image, and the cache can serve what one built on it to the other.
-// +check
+// ReleaseDryRun checks it.
 func (dev *EngineDev) ReproducibleBuild(ctx context.Context) error {
 	builder, err := dev.builder(ctx, "")
 	if err != nil {
@@ -744,14 +744,13 @@ func (dev *EngineDev) InstallClient(
 		}
 	}
 	cliPath := "/.dagger-cli"
-	endpoint, err := service.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: 1234, Scheme: "tcp"})
-	if err != nil {
-		return nil, err
-	}
 	client = client.
+		// Reach the engine by the alias it is bound under. The service's
+		// own hostname is chosen by the engine, and two engines can choose
+		// differently; as an environment variable it would be in the cache
+		// key of everything run in this container.
 		WithServiceBinding("dagger-engine", service).
-		// FIXME: retrieve endpoint dynamically?
-		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://dagger-engine:1234").
 		WithMountedFile(cliPath, clidev.New(clidev.CliDevOpts{Source: dev.cliDevSource(), Ws: dev.Ws}).Binary()).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliPath).
 		WithSymlink(cliPath, "/usr/local/bin/dagger")
@@ -887,17 +886,29 @@ type targetResult struct {
 	Tags      []string
 }
 
+// Every engine image target of a release builds, with its entries, without
+// being pushed; the entries can be made again after a prune; and the build
+// steps that have built to different bytes before build to the same bytes
+// twice.
 // +check
 func (dev *EngineDev) ReleaseDryRun(ctx context.Context) error {
-	return dev.Publish(
-		ctx,
-		"dagger-engine.dev", // image
-		// FIXME: why not from HEAD like the SDKs?
-		[]string{"main"}, // tag
-		true,             // dryRun
-		nil,              // registryUsername
-		nil,              // registryPassword
-	)
+	// One check rather than three: each is a few minutes of work, which as
+	// a check of its own would take a CI engine of its own.
+	return parallel.New().
+		WithJob("build the release's engine images", func(ctx context.Context) error {
+			return dev.Publish(
+				ctx,
+				"dagger-engine.dev", // image
+				// FIXME: why not from HEAD like the SDKs?
+				[]string{"main"}, // tag
+				true,             // dryRun
+				nil,              // registryUsername
+				nil,              // registryPassword
+			)
+		}).
+		WithJob("make the image's entries again after a prune", dev.ImageEntriesAfterPrune).
+		WithJob("build reproducibly", dev.ReproducibleBuild).
+		Run(ctx)
 }
 
 // Publish all engine images to a registry

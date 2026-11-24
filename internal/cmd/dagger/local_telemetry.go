@@ -104,7 +104,7 @@ func newLocalTelemetry(cloudSpans sdktrace.SpanExporter, cloudLogs sdklog.Export
 			// A large queue, so the CLI→Cloud hop does not silently drop
 			// spans on a big burst (a cold engine build is ~15k spans).
 			forwardedSpans: enginetel.NewLargeQueueLiveSpanProcessor(cloudSpans),
-			forwardedLogs:  sdklog.NewBatchProcessor(cloudLogs, sdklog.WithExportInterval(telemetry.NearlyImmediate)),
+			forwardedLogs:  enginetel.NewLiveLogProcessor(cloudLogs),
 		}
 	}
 	lt.spanSink = localSpanSink{lt}

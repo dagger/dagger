@@ -311,7 +311,7 @@ func prepareCloudChecksEntireInstall(cmd *cobra.Command, args []string, notInsta
 	if err != nil {
 		return err
 	}
-	installURL, err := entireInstallPage(cmd.Context(), client, notInstalled)
+	installURL, err := entireInstallPage(cmd.Context(), client, notInstalled.orgID, notInstalled.orgName)
 	if err != nil {
 		return fmt.Errorf("%w\n\n%w", notInstalled, err)
 	}

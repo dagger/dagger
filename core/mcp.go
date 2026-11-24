@@ -535,10 +535,12 @@ func (m *MCP) boundModules() map[string]Mod {
 
 // installedWorkspaceModules loads the modules installed in ws (see
 // LoadWorkspaceModules) with the schema of served. A value workspace's,
-// identified by its content, are loaded once per session, failures
-// included: every step asks for them, and a module that failed to build
-// would otherwise build again each time. A live workspace's change with its
-// host, and its owning client keeps its own record of what failed.
+// identified by its content, are kept by the session, failures included,
+// while it is among the session's most recently used
+// (maxMemoizedWorkspaces): every step asks for them, and a module that
+// failed to build would otherwise build again each time. A live workspace's
+// change with its host, and its owning client keeps its own record of what
+// failed.
 func installedWorkspaceModules(ctx context.Context, served *SchemaBuilder, ws dagql.ObjectResult[*Workspace]) (*InstalledWorkspaceModules, error) {
 	srv, err := served.Schema(ctx)
 	if err != nil {
@@ -2885,7 +2887,11 @@ func (m *MCP) captureLogLines(ctx context.Context, spanID string, excludeService
 		return out, err
 	}
 	defer q.Close()
-	q = inspectionStoreForSpan(q, spanID)
+	q, release, err := inspectionStoreForSpan(ctx, q, spanID)
+	if err != nil {
+		return out, err
+	}
+	defer release()
 
 	// internalSpans skips subtrees hidden as internal, mirroring the TUI's
 	// roll-up behavior. Its subtree is the capture's full log scope, even
@@ -3325,7 +3331,10 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 		Name: "LoadTrace",
 		Description: "Load a historical trace from Dagger Cloud into this session for inspection. Use this when asked to investigate a trace ID, Cloud trace URL, or `dagger cloud traces view <id>`; do not run the interactive CLI.\n" +
 			"Uses the connecting client's Cloud authentication. No recipes are executed or agents restored. Returns root span IDs for ReadTrace and ReadLogs; FindSpans, FindCalls and InspectCall also see loaded traces. Repeated loads reuse the snapshot; failed loads import nothing.",
-		ReadOnly: true,
+		// Not pure: it imports spans into the session that the inspection
+		// tools read, so it must land before the calls written after it in
+		// the same batch (e.g. [LoadTrace, ReadTrace]).
+		ReadOnly: false,
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -3833,11 +3842,15 @@ func (m *MCP) emptyLogsResult(ctx context.Context, spanID string) (string, error
 		return "", fmt.Errorf("check log availability for span %s: %w", spanID, err)
 	}
 	defer store.Close()
-	return emptyLogsResultIn(store, spanID)
+	return emptyLogsResultIn(ctx, store, spanID)
 }
 
-func emptyLogsResultIn(store *clientdb.DB, spanID string) (string, error) {
-	selected := inspectionStoreForSpan(store, spanID)
+func emptyLogsResultIn(ctx context.Context, store *clientdb.DB, spanID string) (string, error) {
+	selected, release, err := inspectionStoreForSpan(ctx, store, spanID)
+	if err != nil {
+		return "", fmt.Errorf("check log availability for span %s: %w", spanID, err)
+	}
+	defer release()
 	if !selected.HasSpan(spanID) {
 		return "", fmt.Errorf("span %q not found in this session's telemetry; use a span ID from a tool result, ListServices, or an error's traceparent", spanID)
 	}
@@ -4002,7 +4015,11 @@ func (m *MCP) inspectCallTool(srv *dagql.Server) LLMToolFunc {
 				return nil, err
 			}
 			defer clientDB.Close()
-			read := inspectionStoreForSpan(clientDB, span)
+			read, release, err := inspectionStoreForSpan(ctx, clientDB, span)
+			if err != nil {
+				return nil, err
+			}
+			defer release()
 			digest, err = spanCallDigest(ctx, read, span)
 			if err != nil {
 				return nil, err

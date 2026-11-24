@@ -145,6 +145,21 @@ func newTestCacheContext(t *testing.T) *cacheContext {
 	return cc
 }
 
+// A tree that can't be read is an error, not a reason to rescan: a rescan of
+// an imported snapshot gives other digests.
+func TestCacheContextLoadFailsOnUnreadableTree(t *testing.T) {
+	_, err := newCacheContext(unreadableRefMetadata{})
+	assert.ErrorContains(t, err, "disk on fire")
+}
+
+type unreadableRefMetadata struct {
+	testRefMetadata
+}
+
+func (unreadableRefMetadata) GetExternal(string) ([]byte, error) {
+	return nil, errors.New("disk on fire")
+}
+
 // testRefMetadata stores nothing; the cache context only reads and writes its
 // serialized tree through it.
 type testRefMetadata struct {
@@ -152,7 +167,7 @@ type testRefMetadata struct {
 }
 
 func (testRefMetadata) GetExternal(string) ([]byte, error) {
-	return nil, errors.New("not found")
+	return nil, cache.ErrExternalNotFound
 }
 
 func (testRefMetadata) SetExternal(string, []byte) error {

@@ -3,6 +3,7 @@ package dagui
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -32,34 +33,71 @@ func (db *DB) GrepCalls(re *regexp.Regexp, max int) []string {
 		digests = append(digests, dig)
 	}
 	sort.Strings(digests)
-	var lines []string
-	var matches, size int
-	var capped bool
+	grep := NewCallGrep(re, max)
 	for _, dig := range digests {
-		frame := db.Call(dig)
-		if frame == nil {
-			continue
+		if frame := db.Call(dig); frame != nil {
+			grep.Add(frame)
 		}
-		line := renderCallLine(frame)
-		match := re.FindStringIndex(line.text)
-		if match == nil {
-			continue
-		}
-		matches++
-		if capped || (max > 0 && len(lines) >= max) {
-			continue
-		}
-		preview := line.preview(match)
-		if size+len(preview)+1 > grepCallsBytes-grepCallsFooterBytes {
-			capped = true
-			continue
-		}
-		lines = append(lines, preview)
-		size += len(preview) + 1
 	}
-	if omitted := matches - len(lines); omitted > 0 {
+	return grep.Lines()
+}
+
+// CallGrep is GrepCalls fed one call at a time, in digest order, for a
+// caller that streams calls rather than holding them all in a DB.
+type CallGrep struct {
+	re      *regexp.Regexp
+	max     int
+	lines   []string
+	matches int
+	size    int
+	capped  bool
+}
+
+// NewCallGrep starts a GrepCalls with re and max.
+func NewCallGrep(re *regexp.Regexp, max int) *CallGrep {
+	return &CallGrep{re: re, max: max}
+}
+
+// Add matches frame, the next call in digest order, keeping its line if
+// there is room for it; it reports whether frame matched.
+func (g *CallGrep) Add(frame *callpbv1.Call) bool {
+	line := renderCallLine(frame)
+	match := g.re.FindStringIndex(line.text)
+	if match == nil {
+		return false
+	}
+	g.matches++
+	if g.Full() {
+		return true
+	}
+	preview := line.preview(match)
+	if g.size+len(preview)+1 > grepCallsBytes-grepCallsFooterBytes {
+		g.capped = true
+		return true
+	}
+	g.lines = append(g.lines, preview)
+	g.size += len(preview) + 1
+	return true
+}
+
+// Full reports whether no further match will be shown, only counted.
+func (g *CallGrep) Full() bool {
+	return g.capped || (g.max > 0 && len(g.lines) >= g.max)
+}
+
+// Count counts n more matches without adding them, for a caller that knows
+// they match and that the grep is Full.
+func (g *CallGrep) Count(n int) {
+	g.matches += n
+}
+
+// Lines is the result: the kept lines, then a line counting the matches
+// left out, if any.
+func (g *CallGrep) Lines() []string {
+	lines := slices.Clone(g.lines)
+	if omitted := g.matches - len(g.lines); omitted > 0 {
 		reason := "raise the cap or tighten the pattern"
-		if capped {
+		if g.capped {
 			reason = "response size limit; tighten the pattern"
 		}
 		lines = append(lines, fmt.Sprintf("… %d more (%s)", omitted, reason))

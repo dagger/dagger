@@ -1,8 +1,8 @@
 // Package difftest drives internal/fastbolt and the real bbolt through the
 // same random sequences of bucket, key, cursor and sequence operations, with
 // commits and rollbacks, and requires both to hold the same data after every
-// transaction. It runs in test-split's testFastbolt check, which supplies the
-// real bbolt as the realbolt module.
+// transaction. It runs in test-split's testFastbolt, part of its testPackages
+// check, which supplies the real bbolt as the realbolt module.
 package difftest
 
 import (

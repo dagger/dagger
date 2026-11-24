@@ -65,8 +65,10 @@ type ownCallSpanValue struct {
 	start time.Time
 }
 
-// withOwnCallSpan records, while wcprof records, the span the server's
-// telemetry started for call, for its native call op (ownCallSpan).
+// withOwnCallSpan records the span the server's telemetry started for call
+// (ownCallSpan): for its native call op, while wcprof records, and so the
+// cache can tell a result obtained under the call's own span from one
+// obtained under whatever span the call runs beneath.
 func withOwnCallSpan(ctx context.Context, call *ResultCall, span trace.Span) context.Context {
 	v := ownCallSpanValue{call: call, sc: span.SpanContext()}
 	if s, ok := span.(interface{ StartTime() time.Time }); ok {

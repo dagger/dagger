@@ -303,6 +303,33 @@ func (s *logStream[Row]) readIDs(ctx context.Context, ids []int64) ([]Row, error
 	return rows, nil
 }
 
+// scanIDs visits the rows with the given IDs, which must be ascending, in
+// that order, skipping IDs the stream does not hold, without materializing
+// them: a spilled row is passed to onFrame as its encoded frame, in a buffer
+// reused for the next one; a row still in the tail is passed to onRow as it
+// is held. Either way nothing outlives the call unless the callback keeps it.
+func (s *logStream[Row]) scanIDs(ctx context.Context, ids []int64, onFrame func([]byte) error, onRow func(Row) error) error {
+	s.mu.Lock()
+	tailBase := s.tailBase
+	s.mu.Unlock()
+	split := sort.Search(len(ids), func(i int) bool { return ids[i] >= tailBase })
+	if err := s.spill.readFrames(ctx, ids[:split], onFrame); err != nil {
+		return err
+	}
+	for _, id := range ids[split:] {
+		row, found, err := s.readID(ctx, id)
+		if err != nil {
+			return err
+		}
+		if found {
+			if err := onRow(row); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func (s *logStream[Row]) requestSpill() {
 	select {
 	case s.spillReq <- struct{}{}:

@@ -241,3 +241,33 @@ func TestResolveBrokenSymlinksPendingPersistence(t *testing.T) {
 		})
 	}
 }
+
+// A directory Directory.withPlatform declares, saved before it is evaluated,
+// keeps its declared platform across a restart, so evaluating it then still
+// gives it the identity its source's contents give the declaration.
+func TestDeclaredPlatformPendingPersistence(t *testing.T) {
+	env := newPersistedFamiliesTestEnv(t, "declared-platform")
+	ctx, cache, srv := env.open(t)
+	source := env.attach(t, ctx, cache, srv, "source", containerPersistenceTestDirectory("source", "/")).(dagql.ObjectResult[*Directory])
+	scratch := env.attach(t, ctx, cache, srv, "scratch", containerPersistenceTestDirectory("scratch", "/")).(dagql.ObjectResult[*Directory])
+	arm64 := Platform{OS: "linux", Architecture: "arm64"}
+	declared := env.attach(t, ctx, cache, srv, "declared", &Directory{
+		Platform: arm64,
+		Dir:      new(LazyAccessor[string, *Directory]),
+		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
+		Lazy:     &DirectoryWithDirectoryLazy{LazyState: NewLazyState(), Parent: scratch, DestDir: "/", Source: source, DeclaredPlatform: &arm64},
+	})
+	rec, err := cache.CapturePersistedRecord(ctx, declared)
+	require.NoError(t, err)
+	ctx, cache, srv = env.restart(t, ctx, cache)
+	loaded, err := cache.LoadResultByResultID(ctx, env.session, srv, rec.ResultID)
+	require.NoError(t, err)
+	restored := loaded.Unwrap().(*Directory)
+	lazy, ok := restored.Lazy.(*DirectoryWithDirectoryLazy)
+	require.True(t, ok, "restored operation %T", restored.Lazy)
+	require.NotNil(t, lazy.DeclaredPlatform)
+	require.Equal(t, arm64, *lazy.DeclaredPlatform)
+	encoded, err := restored.EncodePersistedObject(ctx, dagql.NewPersistEncodeContext(cache, rec.ResultID, rec.Call))
+	require.NoError(t, err)
+	require.JSONEq(t, string(rec.Envelope.ObjectJSON), string(encoded.JSON))
+}

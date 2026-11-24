@@ -11,6 +11,7 @@ import (
 	"github.com/containerd/containerd/v2/core/metadata/boltutil"
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/dagger/dagger/engine/wcprof"
+	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	digest "github.com/opencontainers/go-digest"
 	pkgerrors "github.com/pkg/errors"
 	bolt "go.etcd.io/bbolt"
@@ -111,6 +112,10 @@ func (cm *snapshotManager) LoadPersistentMetadata(rows PersistentMetadataRows) e
 	if cm.snapshotOwnerLeases == nil {
 		cm.snapshotOwnerLeases = make(map[string]map[string]struct{})
 	}
+	if files := cm.metadataStore.hashFiles; files != nil {
+		cm.loadContentHashFiles(files, rows.ContentHashes)
+		return nil
+	}
 	cm.metadataStore.mu.Lock()
 	defer cm.metadataStore.mu.Unlock()
 	cm.metadataStore.pendingContentHashes = make(map[string][]byte, len(rows.ContentHashes))
@@ -128,7 +133,84 @@ func (cm *snapshotManager) LoadPersistentMetadata(rows PersistentMetadataRows) e
 	return nil
 }
 
+// loadContentHashFiles is LoadPersistentMetadata's loading of hash records
+// into files: each record replaces its snapshot's tree, and the trees of
+// snapshots whose metadata has not been opened and that have no record are
+// dropped, as LoadPersistentMetadata replaces the pending records in memory.
+// Requires cm.mu.
+func (cm *snapshotManager) loadContentHashFiles(files *contentHashFiles, rows []SnapshotContentHashRow) {
+	s := cm.metadataStore
+	loaded := make(map[string]struct{}, len(rows))
+	for _, row := range rows {
+		if row.SnapshotID == "" || len(row.Data) == 0 {
+			continue
+		}
+		loaded[row.SnapshotID] = struct{}{}
+		var gone func() bool
+		if md, ok := s.get(row.SnapshotID); ok {
+			gone = md.contentHashDropped
+		}
+		// A tree that can't be written is kept in memory: failing the load
+		// would make dagql discard the whole cache, and dropping the tree
+		// would make an imported snapshot's digests come from a rescan.
+		if err := files.store(row.SnapshotID, row.Data, gone); err != nil {
+			bklog.G(context.TODO()).WithError(err).WithField("snapshot", row.SnapshotID).
+				Error("failed to write content hash records; keeping them in memory")
+		}
+	}
+	for _, id := range files.list() {
+		if _, ok := loaded[id]; ok {
+			continue
+		}
+		if _, ok := s.get(id); ok {
+			continue
+		}
+		files.remove(id, nil)
+	}
+	s.purgeContentHashes()
+}
+
 func (cm *snapshotManager) PersistentMetadataRows() PersistentMetadataRows {
+	rows, hashIDs := cm.persistentMetadataRows()
+	return cm.readContentHashRows(rows, hashIDs)
+}
+
+// readContentHashRows adds the trees of hashIDs, kept in files when
+// persistentMetadataRows listed them, to rows. They are read without the
+// manager's locks: a checkpoint holds every tree, and reading them all takes
+// a while.
+func (cm *snapshotManager) readContentHashRows(rows PersistentMetadataRows, hashIDs []string) PersistentMetadataRows {
+	files := cm.metadataStore.hashFiles
+	if files == nil {
+		return rows
+	}
+	for _, snapshotID := range hashIDs {
+		data, ok, err := files.read(snapshotID, nil)
+		if err != nil {
+			// Left out of the checkpoint, unlike Checksum, which fails on a
+			// tree it can't read: failing the checkpoint would discard the
+			// whole persisted cache. The next process rescans this snapshot
+			// when it is hashed, so an imported snapshot's digests then
+			// come from a rescan.
+			bklog.G(context.TODO()).WithError(err).WithField("snapshot", snapshotID).
+				Error("failed to read content hash records for checkpoint; leaving them out")
+			continue
+		}
+		if !ok || len(data) == 0 {
+			// Gone with its snapshot since.
+			continue
+		}
+		rows.ContentHashes = append(rows.ContentHashes, SnapshotContentHashRow{
+			SnapshotID: snapshotID,
+			Data:       data,
+		})
+	}
+	return rows
+}
+
+// persistentMetadataRows returns the rows, and, when the trees are kept on
+// disk, the snapshots whose trees belong in them, to be read.
+func (cm *snapshotManager) persistentMetadataRows() (PersistentMetadataRows, []string) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
@@ -165,6 +247,8 @@ func (cm *snapshotManager) PersistentMetadataRows() PersistentMetadataRows {
 
 	// Keep hash records only for owned immutable snapshots. Mutable mirrors
 	// and snapshots without owners do not belong in the durable checkpoint.
+	files := cm.metadataStore.hashFiles
+	var hashIDs []string
 	cm.metadataStore.mu.RLock()
 	defer cm.metadataStore.mu.RUnlock()
 	for snapshotID, owners := range cm.snapshotOwnerLeases {
@@ -172,6 +256,12 @@ func (cm *snapshotManager) PersistentMetadataRows() PersistentMetadataRows {
 			continue
 		}
 		if rec, ok := cm.records[snapshotID]; ok && rec.mutable {
+			continue
+		}
+		if files != nil {
+			if files.has(snapshotID) {
+				hashIDs = append(hashIDs, snapshotID)
+			}
 			continue
 		}
 		data := cm.metadataStore.pendingContentHashes[snapshotID]
@@ -187,7 +277,7 @@ func (cm *snapshotManager) PersistentMetadataRows() PersistentMetadataRows {
 		})
 	}
 
-	return rows
+	return rows, hashIDs
 }
 
 func (cm *snapshotManager) AttachLease(ctx context.Context, leaseID, snapshotID string) error {

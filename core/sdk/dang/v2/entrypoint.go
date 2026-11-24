@@ -13,6 +13,7 @@ import (
 	dangshared "github.com/dagger/dagger/core/sdk/dang/shared"
 	"github.com/dagger/dagger/core/sdk/entrypoint"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/util/hashutil"
@@ -226,10 +227,21 @@ func (r *entrypointRuntime) Call(
 			// can expire before that TTL when a call with a shorter one
 			// returned the same result. So it runs again whenever dagql
 			// evaluates it, also after a pruned result or a failed attempt.
+			// A call that tracks what its work borrows may be lent the
+			// session's credentials in the process, which nothing in the
+			// exec's recipe names: its exec runs again in each session, and
+			// the call's own result requires what it borrowed.
 			if execMD != nil && execMD.CallDigest != "" {
 				callDigest := execMD.CallDigest
-				if fnCall.CacheTTLSeconds() > 0 {
+				switch {
+				case fnCall.CacheTTLSeconds() > 0:
 					callDigest = hashutil.HashStrings(callDigest.String(), rand.Text())
+				case fnCall.TracksBorrowing():
+					clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+					if err != nil {
+						return nil, err
+					}
+					callDigest = hashutil.HashStrings(callDigest.String(), "session", clientMetadata.SessionID)
 				}
 				callArgs = append(callArgs, entrypoint.StringCallArg("callDigest", callDigest.String()))
 			}

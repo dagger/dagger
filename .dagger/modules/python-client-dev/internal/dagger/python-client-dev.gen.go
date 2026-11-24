@@ -86,25 +86,6 @@ func (r *PythonClientDev) Docs() *PythonClientDevDocs {
 	}
 }
 
-// PythonClientDevFormatOpts contains options for PythonClientDev.Format
-type PythonClientDevFormatOpts struct {
-	// List of files or directories to check
-	Paths []string
-}
-
-// Format source files
-func (r *PythonClientDev) Format(opts ...PythonClientDevFormatOpts) *Check {
-	q := r.query.Select("format")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `paths` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Paths) {
-			q = q.Arg("paths", opts[i].Paths)
-		}
-	}
-
-	return new(Check).WithGraphQLQuery(q)
-}
-
 // A unique identifier for this PythonClientDev.
 func (r *PythonClientDev) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {

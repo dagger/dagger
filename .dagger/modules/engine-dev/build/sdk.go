@@ -149,9 +149,8 @@ func (build *Builder) typescriptSDKFiles() *dagger.Directory {
 
 	bunBuilderCtr := core.NewContainer(dagger.ContainerOpts{Platform: build.platform}).
 		From(tsdistconsts.DefaultBunImageRef).
-		// NodeJS is required to run tsc.
-		WithExec([]string{"apk", "add", "nodejs"}).
-		// Install tsc binary.
+		// Install tsc binary. Like the other Node scripts here, it runs on the
+		// image's fallback node, which is bun.
 		WithExec([]string{"bun", "install", "-g", "typescript"}).
 		// We cannot mount the directory because bun will struggle with symlinks when compiling
 		// the introspector binary.

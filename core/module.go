@@ -1263,10 +1263,18 @@ func (*Module) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDeco
 	if err != nil {
 		return nil, fmt.Errorf("decode persisted module query: %w", err)
 	}
+	// The payload doesn't record the core API view the module's dependencies
+	// were loaded with, as the core module is no persisted result. Like a
+	// fresh load, take it from the engine version the source declares, so the
+	// module's SDK keeps seeing the API it was written against.
+	var coreView call.View
+	if sourceRes.Self() != nil {
+		coreView = (&Module{Source: dagql.NonNull(sourceRes)}).coreView()
+	}
 	// Under a sharing preparation marker this returns a fresh builder from
 	// the registered core descriptors instead of asking the engine root for
 	// a client's defaults; every other caller keeps Query.DefaultDeps.
-	deps, err := persistedDecodeDefaultDeps(ctx, dec, query)
+	deps, err := persistedDecodeDefaultDeps(ctx, dec, query, coreView)
 	if err != nil {
 		return nil, fmt.Errorf("decode persisted module default deps: %w", err)
 	}
@@ -1280,7 +1288,7 @@ func (*Module) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDeco
 	}
 	var entrypointDeps *SchemaBuilder
 	if persisted.HasEntrypointDeps {
-		entrypointDeps, err = persistedDecodeDefaultDeps(ctx, dec, query)
+		entrypointDeps, err = persistedDecodeDefaultDeps(ctx, dec, query, coreView)
 		if err != nil {
 			return nil, fmt.Errorf("decode persisted module default deps: %w", err)
 		}
@@ -2204,6 +2212,18 @@ type sdkViewKey struct{}
 // (SDKViewFromContext): the view of its engine version, capped at the
 // engine's (engine.ModuleAPIViewVersion), like ModuleSource.NamingView.
 func (mod *Module) contextWithSDKView(ctx context.Context) context.Context {
+	view := mod.coreView()
+	if !semver.IsValid(string(view)) {
+		return ctx
+	}
+	return context.WithValue(ctx, sdkViewKey{}, view)
+}
+
+// coreView is the core API view the module is loaded with: that of the
+// engine version its source declares, or SourceOverrides' when set, capped at
+// the engine's (engine.ModuleAPIViewVersion). A module without either gets
+// the engine's.
+func (mod *Module) coreView() call.View {
 	version := ""
 	switch {
 	case mod.SourceOverrides != nil:
@@ -2211,11 +2231,7 @@ func (mod *Module) contextWithSDKView(ctx context.Context) context.Context {
 	case mod.Source.Valid && mod.Source.Value.Self() != nil:
 		version = mod.Source.Value.Self().EngineVersion
 	}
-	view := engine.ModuleAPIViewVersion(version)
-	if !semver.IsValid(view) {
-		return ctx
-	}
-	return context.WithValue(ctx, sdkViewKey{}, call.View(view))
+	return call.View(engine.ModuleAPIViewVersion(version))
 }
 
 // SDKViewFromContext is the API view of the module whose SDK inputs are being

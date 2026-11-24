@@ -378,6 +378,7 @@ func traceRunSource(ctx context.Context, tf idtui.TraceFrontend, traceID string,
 		})
 		setLogCache(tf, dagui.TraceID{}, loader, source, traceID)
 		tf.SetSpanProvider(loader.listen)
+		tf.SetSupportProvider(loader.fetchSupport)
 
 		// Initial load: the trace's priority spans. For a small enough
 		// trace the server returns the whole thing here; for a large one
@@ -438,6 +439,22 @@ func traceRunSource(ctx context.Context, tf idtui.TraceFrontend, traceID string,
 	// incomplete report.
 	if err := loader.wait(); err != nil {
 		return cleanup, fmt.Errorf("stream trace: %w", err)
+	}
+
+	// Fetch the spans the rows' time breakdowns draw on that the load left
+	// out, such as what a row waited on, and in turn theirs, so a row that
+	// waited reads as waiting rather than as working the whole time. Report
+	// mode renders once, so drain them first. Each round loads what the last
+	// one named: the next hop of a wait chain, or its next ancestor.
+	if tf != nil && !full {
+		for range breakdownFetchRounds {
+			if !tf.RequestBreakdownSpans() {
+				break
+			}
+			if err := loader.wait(); err != nil {
+				return cleanup, fmt.Errorf("stream trace: %w", err)
+			}
+		}
 	}
 
 	// Now that the priority spans (and surfaced failures' subtrees) are
@@ -586,6 +603,13 @@ func resolveOrgID(ctx context.Context, client *cloud.Client, cloudAuth *auth.Clo
 	return "", fmt.Errorf("no org specified; use --org or run 'dagger login' to set a default org")
 }
 
+// breakdownFetchRounds bounds the rounds of fetching spans for the rows' time
+// breakdowns. A span fetched by ID comes without its ancestors, so each hop
+// of a wait chain costs a round for the operation waited on and one for each
+// of its ancestors up to one the view draws: a chain of six lazy steps forced
+// across two modules took 18. dagui resolves a chain at most 8 hops deep.
+const breakdownFetchRounds = 32
+
 // fetchGroup tracks in-flight background fetches. Unlike errgroup.Group /
 // sync.WaitGroup it tolerates Go racing Wait -- the TUI event loop spawns
 // fetches (expand, surfaced failures) while the run goroutine drains them,
@@ -671,6 +695,12 @@ type traceLoader struct {
 	pending       []dagui.SpanID
 	primarySet    bool
 
+	// support holds the spans fetched (or deferred) for the frontend's time
+	// breakdowns, so each is fetched once; pendingSupport the ones asked for
+	// before the initial load decided whether anything is left to fetch.
+	support        map[dagui.SpanID]bool
+	pendingSupport []dagui.SpanID
+
 	// logReq dedups per-span log fetches across the log provider and the
 	// zoom request: the fetch that owns each span's records (see fullTree).
 	logReq    map[string]uint64
@@ -734,6 +764,7 @@ func newTraceLoaderFor(ctx context.Context, client tracesource.Source, traceID s
 		traceID:     traceID,
 		importer:    importer,
 		filter:      map[dagui.SpanID]bool{{}: true}, // subscribe to roots first
+		support:     map[dagui.SpanID]bool{},
 		logReq:      map[string]uint64{},
 		logSem:      make(chan struct{}, 8),
 		logReleased: map[string]uint64{},
@@ -796,8 +827,11 @@ func (l *traceLoader) loadInitial(ctx context.Context) error {
 	l.initialLoaded = true
 	pending := l.pending
 	l.pending = nil
+	pendingSupport := l.pendingSupport
+	l.pendingSupport = nil
 	l.mu.Unlock()
 	l.listenAll(pending)
+	l.fetchSupport(pendingSupport)
 	return nil
 }
 
@@ -814,8 +848,11 @@ func (l *traceLoader) abandonInitial() {
 	l.partial = true
 	pending := l.pending
 	l.pending = nil
+	pendingSupport := l.pendingSupport
+	l.pendingSupport = nil
 	l.mu.Unlock()
 	l.listenAll(pending)
+	l.fetchSupport(pendingSupport)
 }
 
 // loadWholeTree switches a conversation-only view to the whole trace, whose
@@ -909,6 +946,71 @@ func (l *traceLoader) listenAll(ids []dagui.SpanID) {
 		// capture shows running never ended either.
 		if err := l.seal(l.ctx); err != nil {
 			return fmt.Errorf("seal backfilled span(s): %w", err)
+		}
+		return nil
+	})
+}
+
+// fetchSupport fetches spans the frontend holds only references to that its
+// rows' time breakdowns draw on: what a row waited on, which the priority
+// window and a listened level leave out. It's registered as the frontend's
+// support provider, mirroring the web UI's exact support selection. Without
+// them a row that waited reads as working the whole time, which is all a
+// failed fetch costs, so a failure is logged rather than failing the command.
+func (l *traceLoader) fetchSupport(ids []dagui.SpanID) {
+	if l.ctx.Err() != nil || len(ids) == 0 {
+		return
+	}
+	l.mu.Lock()
+	var fetch []string
+	for _, id := range ids {
+		if !id.IsValid() || l.support[id] {
+			continue
+		}
+		if !l.initialLoaded {
+			// As listenAll: whether there is anything left to fetch isn't
+			// known until the initial stream completes.
+			l.pendingSupport = append(l.pendingSupport, id)
+			continue
+		}
+		l.support[id] = true
+		fetch = append(fetch, id.String())
+	}
+	partial := l.partial
+	before := l.spanUpdateTime
+	l.mu.Unlock()
+
+	if !partial || len(fetch) == 0 {
+		return
+	}
+
+	l.fg.Go(func() error {
+		select {
+		case l.sem <- struct{}{}:
+		case <-l.ctx.Done():
+			return nil
+		}
+		defer func() { <-l.sem }()
+		for len(fetch) > 0 {
+			chunk := fetch[:min(len(fetch), archive.MaxListenSpans)]
+			fetch = fetch[len(chunk):]
+			if err := l.client.FetchSpans(l.ctx, l.traceID, cloud.SpanSelection{
+				NoRoot:      true,
+				Exact:       chunk,
+				Incremental: true,
+				Before:      before,
+				DagUIView:   true,
+			}, l.ingest); err != nil {
+				if l.ctx.Err() == nil {
+					slog.Warn("error fetching spans for time breakdowns", "spans", len(chunk), "err", err)
+				}
+				return nil
+			}
+		}
+		// The trace is over (the initial load ended); a fetched span the
+		// capture shows running never ended either.
+		if err := l.seal(l.ctx); err != nil && l.ctx.Err() == nil {
+			slog.Warn("error sealing spans fetched for time breakdowns", "err", err)
 		}
 		return nil
 	})

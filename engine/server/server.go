@@ -805,6 +805,12 @@ func (srv *Server) initLocalCacheStateOnce(ctx context.Context, cfg config.Confi
 	)
 
 	workerGCPolicies := getDagqlGCPolicy(cfg, ociCfg.GCConfig, srv.rootDir)
+	// Content-hash trees, about a hundred bytes per file of every hashed
+	// snapshot, are kept on disk rather than in memory. The manager keeps
+	// this process's in a fresh directory under contentHashDir; the ones the
+	// previous process left go to the trash.
+	contentHashDir := filepath.Join(srv.workerRootDir, "contenthash")
+	moveContentHashTreesToTrash(ctx, srv.rootDir, contentHashDir, workerGCPolicies)
 	srv.workerCache, err = bkcache.NewSnapshotManager(bkcache.SnapshotManagerOpt{
 		Snapshotter:  workerSnapshotter,
 		ContentStore: srv.contentStore,
@@ -813,9 +819,10 @@ func (srv *Server) initLocalCacheStateOnce(ctx context.Context, cfg config.Confi
 		ApplyFrom: func(provider content.Provider) diff.Applier {
 			return winlayers.NewFileSystemApplierWithWindows(provider, bkcache.NewLayerApplier(provider))
 		},
-		Differ:        winlayers.NewWalkingDiffWithWindows(srv.contentStore, walking.NewWalkingDiff(srv.contentStore)),
-		MountPoolRoot: srv.buildkitMountPoolDir,
-		MetadataDB:    srv.containerdMetaDB,
+		Differ:         winlayers.NewWalkingDiffWithWindows(srv.contentStore, walking.NewWalkingDiff(srv.contentStore)),
+		MountPoolRoot:  srv.buildkitMountPoolDir,
+		ContentHashDir: contentHashDir,
+		MetadataDB:     srv.containerdMetaDB,
 		// The image's blobs, which the store holds in place, take no disk
 		// a snapshot's release would free.
 		InPlaceContent: blobs.InPlace,
@@ -826,7 +833,7 @@ func (srv *Server) initLocalCacheStateOnce(ctx context.Context, cfg config.Confi
 	srv.workerGCPolicies = cloneDagqlCachePrunePolicies(workerGCPolicies)
 	srv.workerDefaultGCPolicy = getDefaultDagqlGCPolicy(cfg, ociCfg.GCConfig, srv.rootDir)
 
-	srv.snapshotGarbage = newSnapshotGarbage(srv.containerdMetaDB)
+	srv.snapshotGarbage = newSnapshotGarbage(srv.containerdMetaDB, srv.workerCache)
 	snapshotGC := srv.snapshotGarbage.Collect
 	cacheOpts := []dagql.CacheOption{dagql.WithEngineInstanceID(srv.engineInstanceID), dagql.WithPartPrefetchRoom(srv.partPrefetchRoom)}
 	if srv.engineEvents != nil {

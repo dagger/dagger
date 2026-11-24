@@ -74,11 +74,22 @@ type Store struct {
 
 	// snapshotter names the store's snapshotter: native or overlayfs.
 	snapshotter string
+	// memoryContentHashes makes the manager keep content-hash trees in
+	// memory rather than in files.
+	memoryContentHashes bool
 }
 
 func NewStore(t testing.TB) *Store {
 	t.Helper()
 	return newStore(t, t.TempDir(), "native", native.NewSnapshotter)
+}
+
+// NewStoreWithMemoryContentHashes is NewStore with a manager that keeps the
+// content-hash trees in memory, as one without a ContentHashDir does.
+func NewStoreWithMemoryContentHashes(t testing.TB) *Store {
+	t.Helper()
+	s := &Store{memoryContentHashes: true}
+	return s.init(t, t.TempDir(), "native", native.NewSnapshotter)
 }
 
 // NewStoreWithImageBlobs is NewStore with a content store that holds the
@@ -90,7 +101,12 @@ func NewStoreWithImageBlobs(t testing.TB, dir string) *Store {
 
 func newStore(t testing.TB, root, snapshotter string, newSnapshotter func(root string) (ctdsnapshots.Snapshotter, error), contentOpts ...blobstore.Option) *Store {
 	t.Helper()
-	s := &Store{root: root, snapshotter: snapshotter}
+	return (&Store{}).init(t, root, snapshotter, newSnapshotter, contentOpts...)
+}
+
+func (s *Store) init(t testing.TB, root, snapshotter string, newSnapshotter func(root string) (ctdsnapshots.Snapshotter, error), contentOpts ...blobstore.Option) *Store {
+	t.Helper()
+	s.root, s.snapshotter = root, snapshotter
 	rawContent, err := blobstore.New(filepath.Join(s.root, "content"), contentOpts...)
 	require.NoError(t, err)
 	s.rawContent = rawContent
@@ -116,6 +132,10 @@ func newStore(t testing.TB, root, snapshotter string, newSnapshotter func(root s
 func (s *Store) openManager(t testing.TB) {
 	t.Helper()
 	var err error
+	contentHashDir := filepath.Join(s.root, "contenthash")
+	if s.memoryContentHashes {
+		contentHashDir = ""
+	}
 	// The in-place applier and differ read and write through the same
 	// observed wrapper the manager uses, so BeforeWrite sees a fallback
 	// diff's blob writes as it sees the manager's own.
@@ -143,6 +163,7 @@ func (s *Store) openManager(t testing.TB) {
 		},
 		SharedMountLinger:   s.SharedMountLinger,
 		MaxIdleSharedMounts: s.MaxIdleSharedMounts,
+		ContentHashDir:      contentHashDir,
 	})
 	require.NoError(t, err)
 }
