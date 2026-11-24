@@ -28,8 +28,15 @@ func TestLogPresenceFlagsHasLogs(t *testing.T) {
 	if len(renderable) != 0 {
 		t.Fatalf("presence rendered as text: %d records", len(renderable))
 	}
-	if !db.Spans.Map[span].HasLogs {
+	if !db.SpanHasLogs(span) {
 		t.Fatal("presence did not flag the span as having logs")
+	}
+	if db.Spans.Map[span] != nil {
+		t.Fatal("presence for a span not received yet made a placeholder for it")
+	}
+	db.ImportSnapshots([]SpanSnapshot{{ID: span, StartTime: time.Unix(1, 0), EndTime: time.Unix(2, 0)}})
+	if !db.Spans.Map[span].HasLogs {
+		t.Fatal("presence did not flag the span once it arrived")
 	}
 	if len(db.PrimaryLogs[span]) != 0 {
 		t.Fatal("presence buffered as primary output")
@@ -76,7 +83,7 @@ func TestPrimaryLogsOnDemand(t *testing.T) {
 	if len(db.PrimaryLogs[span]) != 0 {
 		t.Fatal("primary output buffered while read on demand")
 	}
-	if !db.Spans.Map[span].HasLogs {
+	if !db.SpanHasLogs(span) {
 		t.Fatal("display text did not flag its span")
 	}
 }

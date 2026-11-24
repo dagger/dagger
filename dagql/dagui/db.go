@@ -188,14 +188,14 @@ type DB struct {
 	// or status were modified via a child or linked span, in the order they
 	// were first updated. Span.updateQueued marks membership.
 	//
-	// Nothing drains it unless the DB serves a remote frontend through
-	// UpdatedSnapshots, so it ends up holding every span: a slice keeps that
-	// to a pointer apiece.
+	// Only a DB serving a remote frontend (WithUpdateTracking) keeps it, since
+	// only UpdatedSnapshots drains it; anywhere else it would end up holding
+	// every span.
 	updatedSpans []*Span
 
 	// seenSpans keeps track of which spans have been observed via
 	// UpdatedSnapshots so that we can know whether we need to send them when we
-	// finally see them
+	// finally see them. Nil unless tracked.
 	seenSpans map[SpanID]struct{}
 
 	// namesFromLog holds span names updated by span.name log records. A
@@ -230,6 +230,10 @@ type DB struct {
 	pendingResumeOutputs map[resumeOutputKey]*SpanSet
 	pendingLogsByOutput  map[resumeOutputKey][]sdklog.Record
 	resolvedLogsBySpan   map[SpanID][]sdklog.Record
+
+	// pendingHasLogs holds the spans that logs arrived for before they did
+	// (see noteHasLogs).
+	pendingHasLogs map[SpanID]struct{}
 
 	// mutations counts span adds and updates. Derived-view memos (e.g. the
 	// per-span test views and surfaced checks) key on it so a cached result is
@@ -315,6 +319,41 @@ type DB struct {
 	// rowWaits is what UpdateRowWaits keeps between updates; nil until the
 	// first.
 	rowWaits *rowWaitsState
+
+	// tracked marks a DB that serves a remote frontend (see
+	// WithUpdateTracking): only it keeps updatedSpans and seenSpans.
+	tracked bool
+
+	// fold is the stub table of a DB that folds the spans it doesn't
+	// render (WithFold); nil for a DB that keeps every span.
+	fold *Fold
+}
+
+// DBOption configures a DB built by NewDB.
+type DBOption func(*DB)
+
+// WithUpdateTracking builds a DB that serves a remote frontend through
+// UpdatedSnapshots and RemainingSnapshots, such as dagger.io's per-viewer
+// DBs: it remembers which spans changed since the last UpdatedSnapshots
+// (updatedSpans) and which spans the frontend has seen (seenSpans).
+//
+// By default a DB serves only local frontends and keeps neither, as nothing
+// would drain them and they'd end up holding every span of the trace;
+// UpdatedSnapshots and RemainingSnapshots panic on such a DB, and
+// SpanSnapshots treats every span as unsent. A folding DB (WithFold) can't
+// serve a remote frontend, so the two don't combine.
+func WithUpdateTracking() DBOption {
+	return func(db *DB) {
+		db.tracked = true
+	}
+}
+
+// mustTrack panics unless the DB was built WithUpdateTracking: without it,
+// what a remote frontend is sent would be silently wrong.
+func (db *DB) mustTrack(method string) {
+	if !db.tracked {
+		panic("dagui: " + method + " needs a DB built WithUpdateTracking")
+	}
 }
 
 // MutationCount reports how many span adds/updates the DB has seen, for
@@ -328,8 +367,8 @@ type resumeOutputKey struct {
 	Output  string
 }
 
-func NewDB() *DB {
-	return &DB{
+func NewDB(opts ...DBOption) *DB {
+	db := &DB{
 		PrimaryLogs: make(map[SpanID][]sdklog.Record),
 
 		Spans:     newSpanIndex(),
@@ -341,8 +380,6 @@ func NewDB() *DB {
 
 		CreatorSpans: make(map[string]*SpanSet),
 
-		seenSpans: make(map[SpanID]struct{}),
-
 		unsentAncestors: make(map[SpanID]struct{}),
 
 		pendingResumeOutputs: make(map[resumeOutputKey]*SpanSet),
@@ -351,9 +388,22 @@ func NewDB() *DB {
 
 		LLMTokenMetrics: &LLMTokenMetrics{},
 	}
+	for _, opt := range opts {
+		opt(db)
+	}
+	if db.tracked {
+		if db.fold != nil {
+			panic("dagui: a folding DB can't serve a remote frontend (WithFold with WithUpdateTracking)")
+		}
+		db.seenSpans = make(map[SpanID]struct{})
+	}
+	return db
 }
 
 func (db *DB) seen(spanID SpanID) {
+	if !db.tracked {
+		return
+	}
 	db.seenSpans[spanID] = struct{}{}
 }
 
@@ -388,7 +438,11 @@ func (db *DB) hasSeen(spanID SpanID) bool {
 	return seen
 }
 
+// UpdatedSnapshots returns the spans a remote frontend subscribed to filter
+// (nil: everything) needs since the last call, and marks them seen. It
+// panics unless the DB was built WithUpdateTracking.
 func (db *DB) UpdatedSnapshots(filter map[SpanID]bool) []SpanSnapshot {
+	db.mustTrack("UpdatedSnapshots")
 	// updatedSpans is kept in insertion order, since every span update lands
 	// in it; sort it by start time only here, when it's read
 	updated := slices.Clone(db.updatedSpans)
@@ -517,11 +571,29 @@ func (db *DB) appendSurfacedAncestors(snapshots []SpanSnapshot, included map[Spa
 }
 
 func (db *DB) ImportSnapshots(snapshots []SpanSnapshot) {
+	db.ImportSnapshotsContext(context.Background(), snapshots)
+}
+
+// ImportSnapshotsContext is ImportSnapshots, with a context that may mark
+// the snapshots as the answer to a fold's read (FoldFill).
+func (db *DB) ImportSnapshotsContext(ctx context.Context, snapshots []SpanSnapshot) {
+	if db.fold != nil {
+		db.fold.importSnapshots(ctx, snapshots)
+		return
+	}
+	db.importSnapshots(snapshots)
+}
+
+func (db *DB) importSnapshots(snapshots []SpanSnapshot) {
 	settle := db.deferSpanOrder()
 	defer settle()
 	spans := make([]*Span, len(snapshots))
 	for i, snapshot := range snapshots {
 		span := db.findOrAllocSpan(snapshot.ID)
+		if !span.Received && span.HasLogs {
+			// logs arrived before the span did (see noteHasLogs)
+			snapshot.HasLogs = true
+		}
 		span.Received = true
 		snapshot.Version += span.Version // don't reset the version
 		snapshot.Name = db.internName(snapshot.Name)
@@ -613,7 +685,7 @@ func (db *DB) update(span *Span) {
 		return
 	}
 	span.Version++
-	if !span.updateQueued {
+	if !span.updateQueued && db.tracked {
 		span.updateQueued = true
 		db.updatedSpans = append(db.updatedSpans, span)
 	}
@@ -659,7 +731,10 @@ func (db *DB) SpanSnapshots(id SpanID) []SpanSnapshot {
 	return snaps
 }
 
+// RemainingSnapshots returns the received spans UpdatedSnapshots hasn't sent.
+// It panics unless the DB was built WithUpdateTracking.
 func (db *DB) RemainingSnapshots() []SpanSnapshot {
+	db.mustTrack("RemainingSnapshots")
 	return snapshotSpans(db.Spans.Order, func(span *Span) bool {
 		return span.Received && !db.hasSeen(span.ID)
 	})
@@ -668,6 +743,14 @@ func (db *DB) RemainingSnapshots() []SpanSnapshot {
 var _ sdktrace.SpanExporter = (*DB)(nil)
 
 func (db *DB) ExportSpans(ctx context.Context, otelSpans []sdktrace.ReadOnlySpan) error {
+	if db.fold != nil {
+		return db.fold.exportSpans(ctx, otelSpans)
+	}
+	db.exportSpans(otelSpans)
+	return nil
+}
+
+func (db *DB) exportSpans(otelSpans []sdktrace.ReadOnlySpan) {
 	settle := db.deferSpanOrder()
 	defer settle()
 	spans := make([]*Span, len(otelSpans))
@@ -675,7 +758,6 @@ func (db *DB) ExportSpans(ctx context.Context, otelSpans []sdktrace.ReadOnlySpan
 		spans[i] = db.recordOTelSpan(otelSpan)
 	}
 	propagateStatus(spans)
-	return nil
 }
 
 func (db *DB) LogExporter() sdklog.Exporter {
@@ -761,6 +843,15 @@ func (db *DB) ingestSpanName(record sdklog.Record) bool {
 
 	spanID := SpanID{SpanID: record.SpanID()}
 	if !spanID.IsValid() {
+		return true
+	}
+	if db.fold != nil && db.fold.noteName(spanID, name) {
+		// folded, or not received yet: the override applies if it arrives
+		// and is retained (forgotten once it ends, see Fold.ingest)
+		if db.namesFromLog == nil {
+			db.namesFromLog = map[SpanID]string{}
+		}
+		db.namesFromLog[spanID] = name
 		return true
 	}
 	span := db.initSpan(spanID)
@@ -849,7 +940,7 @@ func (db *DB) ingestLogs(logs []sdklog.Record, collectRenderable bool) []sdklog.
 			db.PrimaryLogs[spanID] = append(db.PrimaryLogs[spanID], log)
 		}
 		// flag that the span has received logs
-		db.initSpan(spanID).HasLogs = true
+		db.noteHasLogs(spanID)
 		db.ingestToolArgs(log, spanID, body)
 	}
 	return renderable
@@ -882,8 +973,58 @@ func (db *DB) ingestLogPresence(record sdklog.Record) {
 		return
 	}
 	if spanID.IsValid() {
-		db.initSpan(spanID).HasLogs = true
+		db.noteHasLogs(spanID)
 	}
+}
+
+// noteHasLogs flags a span as having logs. A span that hasn't arrived yet is
+// remembered by ID rather than given a placeholder Span (which costs ~1 KiB,
+// for a span that may never arrive: one the frontend doesn't keep), and
+// flagged when it arrives (see takeHasLogs). One that has arrived is updated,
+// so remote frontends learn it has logs.
+func (db *DB) noteHasLogs(spanID SpanID) {
+	if db.fold != nil && db.fold.noteHasLogs(spanID) {
+		return
+	}
+	if span, ok := db.Spans.Map[spanID]; ok {
+		if !span.HasLogs {
+			span.HasLogs = true
+			db.update(span)
+		}
+		return
+	}
+	if db.pendingHasLogs == nil {
+		db.pendingHasLogs = map[SpanID]struct{}{}
+	}
+	db.pendingHasLogs[spanID] = struct{}{}
+}
+
+// SpanHasLogs reports whether logs arrived for a span, whether or not it has.
+func (db *DB) SpanHasLogs(spanID SpanID) bool {
+	if span, ok := db.Spans.Map[spanID]; ok {
+		return span.HasLogs
+	}
+	if db.fold != nil {
+		if i, ok := db.fold.lookup(spanID); ok {
+			return db.fold.state[i]&foldHasLogs != 0
+		}
+	}
+	_, ok := db.pendingHasLogs[spanID]
+	return ok
+}
+
+// takeHasLogs reports whether logs arrived for a span before it did,
+// forgetting it.
+func (db *DB) takeHasLogs(spanID SpanID) bool {
+	if _, ok := db.pendingHasLogs[spanID]; !ok {
+		return false
+	}
+	delete(db.pendingHasLogs, spanID)
+	if len(db.pendingHasLogs) == 0 {
+		// Go maps never shrink
+		db.pendingHasLogs = nil
+	}
+	return true
 }
 
 func (db *DB) Shutdown(ctx context.Context) error {
@@ -927,7 +1068,15 @@ func (db DBMetricExporter) Export(ctx context.Context, resourceMetrics *metricda
 }
 
 func (db DBMetricExporter) exportDataPoints(metric metricdata.Metrics, dataPoints []metricdata.DataPoint[int64]) {
+	llmTokens := db.LLMTokenMetrics != nil && slices.Contains(LLMTokenMetricNames, metric.Name)
 	for _, point := range dataPoints {
+		// Aggregate LLM token metrics across all spans/models for the status
+		// line's cost/context display: every point of a call or span, whether
+		// or not the DB keeps the span (a folded span's tokens still count).
+		if llmTokens && db.hasMetricsTarget(point) {
+			db.LLMTokenMetrics.Aggregate(metric.Name, point)
+		}
+
 		var metricsByName map[string][]metricdata.DataPoint[int64]
 		if callDigest, ok := point.Attributes.Value(telemetry.DagDigestAttr); ok {
 			if db.MetricsByCall == nil {
@@ -943,6 +1092,10 @@ func (db DBMetricExporter) exportDataPoints(metric metricdata.Metrics, dataPoint
 			var spanID SpanID
 			var err error
 			if spanID.SpanID, err = trace.SpanIDFromHex(spanIDHex.AsString()); err != nil {
+				continue
+			}
+			if db.fold != nil && db.fold.IsFolded(spanID) {
+				// shown nowhere: kept for retained spans only
 				continue
 			}
 			if db.MetricsBySpan == nil {
@@ -970,13 +1123,21 @@ func (db DBMetricExporter) exportDataPoints(metric metricdata.Metrics, dataPoint
 		} else {
 			metricsByName[metric.Name] = []metricdata.DataPoint[int64]{point}
 		}
-
-		// Aggregate LLM token metrics across all spans/models for the status
-		// line's cost/context display.
-		if db.LLMTokenMetrics != nil && slices.Contains(LLMTokenMetricNames, metric.Name) {
-			db.LLMTokenMetrics.Aggregate(metric.Name, point)
-		}
 	}
+}
+
+// hasMetricsTarget reports whether a point is recorded on a call or a valid
+// span: the points exportDataPoints files.
+func (db DBMetricExporter) hasMetricsTarget(point metricdata.DataPoint[int64]) bool {
+	if _, ok := point.Attributes.Value(telemetry.DagDigestAttr); ok {
+		return true
+	}
+	spanIDHex, ok := point.Attributes.Value(telemetry.MetricsSpanIDAttr)
+	if !ok {
+		return false
+	}
+	_, err := trace.SpanIDFromHex(spanIDHex.AsString())
+	return err == nil
 }
 
 // SetPrimarySpan allows the primary span to be explicitly set to a particular
@@ -985,6 +1146,11 @@ func (db DBMetricExporter) exportDataPoints(metric metricdata.Metrics, dataPoint
 // to the span it created.
 func (db *DB) SetPrimarySpan(span SpanID) {
 	db.PrimarySpan = span
+	if db.fold != nil && span.IsValid() {
+		// its children are the top-level rows, as a root's are, though it
+		// may have a parent: the exec a nested CLI runs in
+		db.fold.Expand(span)
+	}
 }
 
 // surfaceRoot resolves the root a surfacing walk (SurfacedChecks and family)
@@ -1071,7 +1237,8 @@ func (db *DB) newSpan(spanID SpanID) *Span {
 	// TODO: this fools things into thinking they're a root span...?
 	return &Span{
 		SpanSnapshot: SpanSnapshot{
-			ID: spanID,
+			ID:      spanID,
+			HasLogs: db.takeHasLogs(spanID),
 		},
 		// The relation sets (ChildSpans and so on) stay nil until the
 		// first span is added: most of them stay empty.
@@ -1366,14 +1533,15 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 	}
 
 	// associate the span to its parent
+	var joined, lateLinked bool
 	if span.ParentID.IsValid() {
 		span.ParentSpan = db.initSpan(span.ParentID)
 		if addToSpanSet(&span.ParentSpan.ChildSpans, span) {
 			// if we're a new child, take a new snapshot for ChildCount
 			db.update(span.ParentSpan)
-			// and pass on to the new ancestors the time of the evaluations
-			// that credited the span or spans beneath it before it had any
-			span.recreditAncestors()
+			// and, once its links are known too, pass on to the new
+			// ancestors what arrived beneath it before it did (see below)
+			joined = true
 		}
 		// progress may have been ingested before the parent linkage was
 		// known (records can arrive ahead of their span, and spans ahead
@@ -1398,12 +1566,20 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 			linked := db.initSpan(linkedCtx.SpanID)
 			addToSpanSet(&linked.ChildSpans, span)
 			addToSpanSet(&linked.effectsViaLinks, span)
-			addToSpanSet(&span.causesViaLinks, linked)
+			if addToSpanSet(&span.causesViaLinks, linked) && !span.ParentID.IsValid() {
+				// a span without a parent reaches its ancestors through
+				// its causes alone
+				lateLinked = true
+			}
+			markCausalBeneath(span)
+			markCausalBeneath(linked)
 			if installSite {
 				addToSpanSet(&span.installSites, linked)
 			}
 		case telemetryattrs.LinkPurposeWait:
-			if linkedCtx.TraceID == span.TraceID && linkedCtx.SpanID != span.ID {
+			if linkedCtx.TraceID == span.TraceID && linkedCtx.SpanID != span.ID &&
+				// nor one on a span a folding DB holds as a stub for it
+				!db.fold.holdsWaitTarget(span.ID, linkedCtx.SpanID, linked.WaitReason) {
 				// Register the operation the span waited on, so that a view
 				// holding only part of the trace knows to fetch it (see
 				// TimeBreakdownSpans), and that until it does, the span's
@@ -1435,6 +1611,21 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 			linked := db.initSpan(originID)
 			span.AddErrorOrigin(linked)
 		}
+	}
+
+	if span.causalBeneath && span.ParentSpan != nil {
+		markCausalBeneath(span.ParentSpan)
+	}
+	if joined || lateLinked {
+		// The roll-up counts, running and revealed spans of what arrived
+		// beneath the span before it did, counted as they stood...
+		span.recreditLateParent()
+	}
+	if joined {
+		// ...then the time of the evaluations that credited the span or
+		// spans beneath it before it had any ancestors, which propagates
+		// them again
+		span.recreditAncestors()
 	}
 
 	// keep track of intervals seen for a digest, one span per start time
@@ -1545,10 +1736,20 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 	db.noteRunning(span)
 }
 
+// markCausalBeneath marks span and its ancestors as holding cause links
+// (Span.causalBeneath).
+func markCausalBeneath(span *Span) {
+	for s, depth := span, 0; s != nil && !s.causalBeneath && depth < 10_000; s, depth = s.ParentSpan, depth+1 {
+		s.causalBeneath = true
+	}
+}
+
 func (db *DB) linkResumedOutput(span *Span, creator *Span) {
 	changed := addToSpanSet(&creator.ChildSpans, span)
 	addToSpanSet(&creator.effectsViaLinks, span)
 	addToSpanSet(&span.causesViaLinks, creator)
+	markCausalBeneath(span)
+	markCausalBeneath(creator)
 	if changed {
 		db.update(creator)
 	}
@@ -1750,6 +1951,8 @@ func (db *DB) HighLevelSpan(call *callpbv1.Call) *Span {
 }
 
 func (db *DB) MostInterestingSpan(dig string) *Span {
+	// a folding DB retains the spans rendering looks up (fold_args.go)
+	db.fold.ask(dig, digestCall)
 	var earliest *Span
 	var earliestCached bool
 	// a copy: sorting it must not reorder db.Intervals
@@ -1824,7 +2027,9 @@ func (db *DB) call(dig string, seen map[string]bool) *callpbv1.Call {
 		return decoded
 	}
 
-	// Otherwise, try to find the call through creator spans.
+	// Otherwise, try to find the call through creator spans: a folding DB
+	// retains those it's asked for (fold_args.go).
+	db.fold.ask(dig, digestOutput)
 	if creators, ok := db.CreatorSpans[dig]; ok {
 		if seen == nil {
 			seen = map[string]bool{}
@@ -1937,6 +2142,8 @@ func (db *DB) MustCall(dig string) *callpbv1.Call {
 }
 
 func (db *DB) Simplify(call *callpbv1.Call, force bool) *callpbv1.Call {
+	// a folding DB retains the spans rendering looks up (fold_args.go)
+	db.fold.ask(call.Digest, digestOutput)
 	creators, ok := db.CreatorSpans[call.Digest]
 	if !ok {
 		return call

@@ -266,6 +266,11 @@ type frontendPretty struct {
 	spanProvider   func(dagui.SpanID)
 	requestedSpans map[dagui.SpanID]bool
 
+	// fold reads back the spans the DB folded (dagui.WithFold) from a live
+	// session, once it serves span queries (SetSpanQuery); nil for a DB
+	// that doesn't fold.
+	fold *liveFold
+
 	// supportProvider fetches spans the view holds only references to that
 	// its rows' time breakdowns draw on (dagui.Span.TimeBreakdownSpans): what
 	// a row waited on, which a trace loaded in parts may leave out. Without
@@ -476,6 +481,13 @@ type frontendPretty struct {
 	searchGen      uint64
 	searchPartial  bool
 	searchUnplaced int
+	// searchFoldedMore counts the folded spans whose name matches past
+	// what the search reads back (foldSearchLimit): while there are any,
+	// its match count is a lower bound.
+	searchFoldedMore int
+	// searchFoldedLost counts the folded spans whose name matches that
+	// can't be read back anymore (liveFold.gone).
+	searchFoldedLost int
 	// searchNames memoizes the spans whose name matches the search, until
 	// the query or the DB's spans change (see searchNameMatches).
 	searchNames struct {
@@ -1261,13 +1273,11 @@ func (fe *frontendPretty) SetClient(client *dagger.Client) {
 }
 
 func NewPretty(w io.Writer) Frontend {
-	return NewWithDB(w, dagui.NewDB())
+	return newFolding(w, false)
 }
 
 func NewReporter(w io.Writer) Frontend {
-	fe := NewWithDB(w, dagui.NewDB())
-	fe.reportOnly = true
-	return fe
+	return newFolding(w, true)
 }
 
 // dispatch runs fn on the TUI event loop goroutine (when the TUI is running)
@@ -3551,39 +3561,42 @@ func (fe prettySpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.R
 	// and Dispatch runs asynchronously on the UI goroutine.
 	spansCopy := make([]sdktrace.ReadOnlySpan, len(spans))
 	copy(spansCopy, spans)
-	spanIDs := make([]dagui.SpanID, len(spans))
-	for i, s := range spans {
-		spanIDs[i] = dagui.SpanID{SpanID: s.SpanContext().SpanID()}
-	}
 	fe.dispatch(func() {
-		fe.db.ExportSpans(context.Background(), spansCopy)
-		for _, id := range spanIDs {
-			fe.requestArrivedSpanLogs(id)
-			if fe.logs.flushResolvedLogsForSpan(id) {
-				fe.updateSpanTreesForLogs(id)
-				fe.updateLogPagerForLogs(id)
-			}
-			if sr, ok := fe.spanTrees[id]; ok {
-				// An update can carry attributes the span didn't start with.
-				fe.trackTestOwnerTree(id, sr)
-				sr.Update()
-			}
-		}
-		fe.testsDirty = true
-		for view := range fe.spanLists {
-			view.UpdateAll()
-		}
-		if fe.commandView != nil {
-			fe.commandView.Update()
-		}
-		fe.updateAgentRoster()
-		fe.notifyAgentSteps()
-		// Don't recalculate here — set dirty flag so Render coalesces
-		// multiple ExportSpans batches into one recalculate per frame.
-		fe.viewDirty = true
-		fe.Update()
+		fe.exportSpansLocked(context.Background(), spansCopy)
 	})
 	return nil
+}
+
+// exportSpansLocked ingests spans and brings the view's state up to date
+// with them. ctx is passed on to the DB (e.g. dagui.FoldFill).
+func (fe *frontendPretty) exportSpansLocked(ctx context.Context, spans []sdktrace.ReadOnlySpan) {
+	fe.db.ExportSpans(ctx, spans)
+	for _, s := range spans {
+		id := dagui.SpanID{SpanID: s.SpanContext().SpanID()}
+		fe.requestArrivedSpanLogs(id)
+		if fe.logs.flushResolvedLogsForSpan(id) {
+			fe.updateSpanTreesForLogs(id)
+			fe.updateLogPagerForLogs(id)
+		}
+		if sr, ok := fe.spanTrees[id]; ok {
+			// An update can carry attributes the span didn't start with.
+			fe.trackTestOwnerTree(id, sr)
+			sr.Update()
+		}
+	}
+	fe.testsDirty = true
+	for view := range fe.spanLists {
+		view.UpdateAll()
+	}
+	if fe.commandView != nil {
+		fe.commandView.Update()
+	}
+	fe.updateAgentRoster()
+	fe.notifyAgentSteps()
+	// Don't recalculate here — set dirty flag so Render coalesces
+	// multiple ExportSpans batches into one recalculate per frame.
+	fe.viewDirty = true
+	fe.Update()
 }
 
 func (fe *frontendPretty) updateSpanTreesForLogs(spanID dagui.SpanID) {
@@ -4012,7 +4025,7 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding { //nolint:goc
 		key.NewBinding(key.WithKeys("/"),
 			key.WithHelp("/", "search")),
 		key.NewBinding(key.WithKeys("n"),
-			key.WithHelp("n", fe.searchCountHint("next")),
+			key.WithHelp("n", fe.searchCountHint()),
 			KeyEnabled(fe.searchQuery != "")),
 		key.NewBinding(key.WithKeys("N"),
 			key.WithHelp("N", "prev"),
@@ -4072,13 +4085,19 @@ func (fe *frontendPretty) escHelp() string {
 	return "unzoom"
 }
 
-func (fe *frontendPretty) searchCountHint(base string) string {
+// searchCountHint is the "n" key's help: "next", with the match count.
+func (fe *frontendPretty) searchCountHint() string {
 	// Logs not loaded may be left out of what was searched.
 	scope := fe.searchScope()
-	if len(fe.searchMatches) == 0 {
-		return base + " (0" + scope + ")"
+	// Past the read-back cap the count is a lower bound: more spans match.
+	var more string
+	if fe.searchFoldedMore > 0 || fe.searchFoldedLost > 0 {
+		more = "+"
 	}
-	return fmt.Sprintf("%s (%d/%d%s)", base, fe.searchIdx+1, len(fe.searchMatches), scope)
+	if len(fe.searchMatches) == 0 {
+		return "next (0" + more + scope + ")"
+	}
+	return fmt.Sprintf("next (%d/%d%s%s)", fe.searchIdx+1, len(fe.searchMatches), more, scope)
 }
 
 func KeyEnabled(enabled bool) key.BindingOpt {
@@ -4095,6 +4114,9 @@ func isEscapeKey(keyStr string) bool {
 
 // Render implements tuist.Component. It produces the full TUI output as lines.
 func (fe *frontendPretty) Render(ctx tuist.Context) {
+	if fe.fold != nil {
+		fe.fold.frameRendering()
+	}
 	if !fe.finalRender && (fe.backgrounded || fe.quitting) {
 		return
 	}
@@ -5118,6 +5140,9 @@ func (fe *frontendPretty) recalculateViewLocked() {
 	if !fe.reportOnly && fe.ZoomedSpan.IsValid() && fe.ZoomedSpan != fe.primarySpan() {
 		fe.requestSubtree(fe.ZoomedSpan)
 	}
+	// A DB that folds holds no folded span for a row to show: read back
+	// those beneath what's shown expanded.
+	fe.readFoldedRowsLocked()
 
 	// The rows' time breakdowns may draw on spans a trace loaded in parts
 	// left out, such as what a row waited on: fetch them, so the row's time
@@ -6099,6 +6124,12 @@ func (fe *frontendPretty) promoteConversationLocked() {
 	if fe.promotedConversationHost != nil &&
 		(fe.promotedConversationAgent != scope || fe.promotedConversationHost != host) {
 		fe.db.DemoteConversationNodesFrom(fe.promotedConversationHost, fe.promotedConversation)
+	} else if fe.promotedConversationHost != nil {
+		// Same scope, but the tree may have changed shape: a message filed
+		// at the top while the chain above it hadn't arrived (as a folding
+		// DB's ancestors read back) nests beneath its message once it has.
+		// Withdraw the placements the new tree no longer makes.
+		withdrawStaleConversation(host, fe.promotedConversation, nodes)
 	}
 	fe.db.PromoteConversationNodesTo(host, nodes)
 	fe.promotedConversationAgent = scope
@@ -6107,6 +6138,35 @@ func (fe *frontendPretty) promoteConversationLocked() {
 	host.Passthrough = true
 	if !fe.ZoomedSpan.IsValid() {
 		fe.ZoomedSpan = fe.db.PrimarySpan
+	}
+}
+
+// withdrawStaleConversation removes the placements (a message revealed
+// beneath the host or beneath another message) that promoting old under host
+// made and promoting nodes doesn't.
+func withdrawStaleConversation(host *dagui.Span, old, nodes []*dagui.MessageNode) {
+	if len(old) == 0 || (len(old) == len(nodes) && &old[0] == &nodes[0]) {
+		// the same tree
+		return
+	}
+	type placement struct{ parent, span *dagui.Span }
+	placements := func(nodes []*dagui.MessageNode) map[placement]bool {
+		set := map[placement]bool{}
+		var walk func(parent *dagui.Span, nodes []*dagui.MessageNode)
+		walk = func(parent *dagui.Span, nodes []*dagui.MessageNode) {
+			for _, node := range nodes {
+				set[placement{parent, node.Span}] = true
+				walk(node.Span, node.Children)
+			}
+		}
+		walk(host, nodes)
+		return set
+	}
+	current := placements(nodes)
+	for p := range placements(old) {
+		if !current[p] {
+			p.parent.RemoveRevealedSpan(p.span)
+		}
 	}
 }
 
@@ -7651,6 +7711,7 @@ func (fe *frontendPretty) confirmSearch(query string) {
 	}
 	fe.searchQuery = query
 	fe.searchIdx = -1
+	fe.searchFoldedMore, fe.searchFoldedLost = fe.readFoldedMatchesLocked(query)
 	fe.startLogSearch(query)
 	// Push query to all vterms (triggers midterm Search), read results,
 	// navigate to first match, then update highlights + dirty trees.
@@ -8546,6 +8607,7 @@ func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput
 	if len(span.ProgressSpans.Spans()) > 0 && (!row.Expanded || !row.HasChildren) {
 		fe.renderProgressRollup(ctx, out, r, row, prefix, statusHost)
 	}
+	fe.renderFoldGone(out, r, row, prefix)
 	if fe.rollsUpSubChecks(row) {
 		// A check deferring to its inline CHECKS rollup: the failure is explained
 		// by the failed sub-checks rendered in the rollup above, so don't also dump

@@ -241,7 +241,7 @@ func (path *runningPath) has(span *Span) bool {
 // is, following the trees emit would build beneath it (see buildChildren and
 // buildRevealed).
 func (w *spanWalker) runningAt(span *Span, revealedCopy bool, path *runningPath) bool {
-	if span.IsRunningOrEffectsRunning() {
+	if span.IsRunningOrEffectsRunning() || w.db.fold.foldedRunning(span) {
 		return true
 	}
 	edges := w.runningEdges()[span]

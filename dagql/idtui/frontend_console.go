@@ -447,7 +447,9 @@ func (fe *frontendPretty) consoleSettle() string {
 		time.Sleep(40 * time.Millisecond)
 		next := fe.tui.Step()
 		joined := strings.Join(next, "\n")
-		if joined == frame {
+		// read-back spans land a step per frame, beneath collapsed rows too:
+		// the frame isn't settled while some wait
+		if joined == frame && !fe.fold.filling() {
 			stable++
 			if stable >= 2 {
 				break
@@ -467,13 +469,21 @@ func (fe *frontendPretty) consoleSettle() string {
 // keeps waiting harmlessly in the background (fetches are bound to the run
 // context and unwind on interrupt).
 func (fe *frontendPretty) waitFetches(deadline time.Time) {
-	if fe.fetchWaiter == nil {
+	if fe.fetchWaiter == nil && fe.fold == nil {
 		return
 	}
 	waited := make(chan struct{})
 	go func() {
 		defer close(waited)
-		fe.fetchWaiter()
+		if fe.fetchWaiter != nil {
+			fe.fetchWaiter()
+		}
+		if fe.fold != nil {
+			// the folded spans an expand or zoom reads back
+			ctx, cancel := context.WithDeadline(context.Background(), deadline)
+			defer cancel()
+			fe.fold.wait(ctx)
+		}
 	}()
 	select {
 	case <-waited:

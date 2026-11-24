@@ -14,7 +14,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/dagger/dagger/dagql/call/callpbv1"
-	"github.com/dagger/dagger/dagql/internal/spanfootprint"
+	"github.com/dagger/dagger/internal/spanfootprint"
 )
 
 // wireSpans is spanfootprint's trace with the attributes the engine stamps

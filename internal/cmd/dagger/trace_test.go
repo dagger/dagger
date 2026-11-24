@@ -320,7 +320,7 @@ func TestTraceLoaderFetchLogs(t *testing.T) {
 	mu.Unlock()
 
 	// The descendant's output was attributed to the target.
-	require.True(t, db.Spans.Map[target].HasLogs, "the rolled-up output must land on the span it was fetched for")
+	require.True(t, db.SpanHasLogs(target), "the rolled-up output must land on the span it was fetched for")
 	var orphan dagui.SpanID
 	copy(orphan.SpanID[:], descendant)
 	require.Nil(t, db.Spans.Map[orphan], "the unloaded descendant must not be conjured by its logs")

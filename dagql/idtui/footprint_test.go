@@ -11,7 +11,7 @@ import (
 	"github.com/vito/tuist"
 
 	"github.com/dagger/dagger/dagql/dagui"
-	"github.com/dagger/dagger/dagql/internal/spanfootprint"
+	"github.com/dagger/dagger/internal/spanfootprint"
 )
 
 var footprintFrontend *frontendPretty

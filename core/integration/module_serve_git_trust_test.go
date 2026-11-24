@@ -328,7 +328,11 @@ func (ModuleLoadingSuite) TestServeModuleDeclaredGitClient(ctx context.Context, 
 		nonce := daggerCallAt("caller", "nonce", "--address="+hello)
 		digest := daggerQuery(`{currentWorkspace{moduleSource(path: "/modules/caller"){digest}}}`)
 
-		ctr := hostCaller(hello).WithNewFile("modules/caller/nonce.go", serveGitTrustNonceSource)
+		// A caller of its own: "another session without credentials misses
+		// the cache", running alongside, calls the same nonce of an
+		// otherwise identical caller, and the cache keeps whichever
+		// result lands last.
+		ctr := hostCaller(hello).WithNewFile("modules/caller/nonce.go", serveGitTrustNonceSource+"\n// a removed declaration\n")
 		first := run(ctr, "1", nonce)
 		require.Regexp(t, `^[0-9]+\s*$`, first)
 		sourceDigest := run(ctr, "2", digest)

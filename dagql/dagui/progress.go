@@ -123,6 +123,10 @@ func (db *DB) ingestProgress(record sdklog.Record) bool {
 // progress sourced outside the OTel log stream, e.g. aggregated from storage
 // by a server.
 func (db *DB) IngestProgress(spanID SpanID, item string, current, total int64, unit string) {
+	if db.fold != nil && !db.fold.noteProgress(spanID, foldProgressItem{item, current, total, unit}) {
+		// the fold policy left the span folded: its progress shows nowhere
+		return
+	}
 	span := db.initSpan(spanID)
 	if span.Progress == nil {
 		span.Progress = &SpanProgress{}

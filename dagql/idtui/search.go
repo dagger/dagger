@@ -54,7 +54,9 @@ func (fe *frontendPretty) searchLoadedOnly() bool {
 
 // searchScope describes what a search may have left out, for the match
 // count: logs not loaded from a source with no search (Cloud), a source's
-// search stopping early, and matches in spans the view cannot place.
+// search stopping early, matches in spans the view cannot place, folded
+// spans whose name matches past the read-back cap (foldSearchLimit), and
+// folded spans once they can't be read back.
 func (fe *frontendPretty) searchScope() string {
 	var scope []string
 	if fe.searchLoadedOnly() {
@@ -63,8 +65,20 @@ func (fe *frontendPretty) searchScope() string {
 	if fe.searchPartial {
 		scope = append(scope, "more not searched")
 	}
+	if fe.searchFoldedMore > 0 {
+		scope = append(scope, fmt.Sprintf("%d spans read, %d more match", foldSearchLimit, fe.searchFoldedMore))
+	}
 	if fe.searchUnplaced > 0 {
 		scope = append(scope, fmt.Sprintf("%d in spans not loaded", fe.searchUnplaced))
+	}
+	if fe.foldGone() {
+		// folded spans can't be read back: their names are matched, but
+		// they can't be placed, nor their logs searched
+		if fe.searchFoldedLost > 0 {
+			scope = append(scope, fmt.Sprintf("%d matching spans not loaded: %s", fe.searchFoldedLost, foldGoneReason))
+		} else {
+			scope = append(scope, "folded spans' logs not searched: "+foldGoneReason)
+		}
 	}
 	if len(scope) == 0 {
 		return ""
@@ -96,6 +110,8 @@ func (fe *frontendPretty) startLogSearch(query string) {
 				fe.searchPartial = fe.searchPartial || hits.Partial
 				for _, t := range hits.Targets {
 					if id := fe.db.LogTarget(t.Trace, t.Span, t.Digest); id.IsValid() {
+						// a match in a folded span places once it's read
+						fe.readFoldedTargetLocked(id)
 						if fe.searchRemote == nil {
 							fe.searchRemote = make(map[dagui.SpanID]bool)
 						}
@@ -501,6 +517,8 @@ func (fe *frontendPretty) clearSearch() {
 	fe.searchRemote = nil
 	fe.searchPartial = false
 	fe.searchUnplaced = 0
+	fe.searchFoldedMore = 0
+	fe.searchFoldedLost = 0
 	for _, logs := range []map[dagui.SpanID]*Vterm{fe.logs.Logs, fe.logs.ToolArgs} {
 		for _, vt := range logs {
 			vt.SetSearchHighlight("", -1)

@@ -212,6 +212,14 @@ func withEngineAction(
 				return nil
 			})
 		}
+		if fold := startLiveFold(Frontend, sess, traceID); fold != nil {
+			// After the command's telemetry is handed over, and before the
+			// final logs are read: they're the logs of what it shows.
+			cleanup.Add("read the final rows' folded spans", func() error {
+				settleLiveFold(ctx, fold)
+				return nil
+			})
+		}
 		cleanup.Add("hand the command's telemetry to the engine", func() error {
 			// Take in what the engine has for the command so far, such as
 			// a session title for its span, before ending it.

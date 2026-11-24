@@ -38,6 +38,14 @@ const (
 	LiveFeatureFlush = "flush"
 	// LiveFlushPath is the endpoint of LiveFeatureFlush.
 	LiveFlushPath = "/v1/telemetry/flush"
+	// LiveFeatureSpanQuery: POST LiveSpanQueryPath reads the newest
+	// snapshots of a set of spans and, optionally, of the spans beneath
+	// them and their ancestors (clientdb.SpanQuery), one-shot, each stamped
+	// with its child count and whether it has display text. A frontend
+	// that folds the spans it doesn't render reads them back with it.
+	LiveFeatureSpanQuery = "span-query"
+	// LiveSpanQueryPath is the endpoint of LiveFeatureSpanQuery.
+	LiveSpanQueryPath = "/v1/traces/query"
 	// LiveDisplayParam selects the log push's display text mode; its only
 	// non-default value is LiveDisplayPresence.
 	LiveDisplayParam    = "display"

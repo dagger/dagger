@@ -2847,6 +2847,15 @@ func TestClientRecordFromIDsStateGating(t *testing.T) {
 	_, err = srv.clientRecordFromIDs("s", "c")
 	var retryable flightcontrol.RetryableError
 	require.ErrorAs(t, err, &retryable)
+	// a span query reads that as the session gone (410)
+	require.ErrorIs(t, err, errSessionNotFound)
+	_, err = srv.clientRecordFromIDs("other", "c")
+	require.ErrorIs(t, err, errSessionNotFound)
+	require.ErrorContains(t, err, `session "other" not found`)
+	var gone httpError
+	require.ErrorAs(t, telemetryRecordErr(enginetel.LiveSpanQueryPath, err), &gone)
+	require.Equal(t, http.StatusGone, gone.code)
+	require.False(t, errors.As(telemetryRecordErr("/v1/traces", err), &gone), "only span queries end")
 
 	// initialized: returns the client.
 	sess.state.Store(sessionStateInitialized)

@@ -1952,7 +1952,7 @@ func (srv *Server) sessionFromID(sessID string) (*daggerSession, error) {
 	sess, ok := srv.daggerSessions[sessID]
 	srv.daggerSessionsMu.RUnlock()
 	if !ok {
-		return nil, flightcontrol.RetryableError{Err: fmt.Errorf("session %q not found", sessID)}
+		return nil, flightcontrol.RetryableError{Err: fmt.Errorf("session %q %w", sessID, errSessionNotFound)}
 	}
 
 	// Purpose-specific lookups remain lock-free with respect to lifecycleMu so
@@ -1961,7 +1961,7 @@ func (srv *Server) sessionFromID(sessID string) (*daggerSession, error) {
 	case sessionStateInitialized:
 		// continue
 	case sessionStateRemoved:
-		return nil, flightcontrol.RetryableError{Err: fmt.Errorf("session %q not found", sessID)}
+		return nil, flightcontrol.RetryableError{Err: fmt.Errorf("session %q %w", sessID, errSessionNotFound)}
 	case sessionStateUninitialized:
 		return nil, fmt.Errorf("session %q not initialized", sessID)
 	default:
@@ -1987,9 +1987,25 @@ func (srv *Server) clientRecordFromIDs(sessID, clientID string) (*clientRecord, 
 		return nil, fmt.Errorf("client record %q not found", clientID)
 	}
 	if sess.state.Load() == sessionStateRemoved {
-		return nil, flightcontrol.RetryableError{Err: fmt.Errorf("session %q not found", sessID)}
+		return nil, flightcontrol.RetryableError{Err: fmt.Errorf("session %q %w", sessID, errSessionNotFound)}
 	}
 	return record, nil
+}
+
+// errSessionNotFound is the error of a session the server doesn't hold:
+// not created yet, or removed.
+var errSessionNotFound = errors.New("not found")
+
+// telemetryRecordErr is the error a telemetry request at path gets when its
+// client record can't be found. A span query comes from a client the
+// session streamed to, so a session not found has ended: 410 Gone, as it
+// can't answer again.
+func telemetryRecordErr(path string, err error) error {
+	err = fmt.Errorf("get client record: %w", err)
+	if path == enginetel.LiveSpanQueryPath && errors.Is(err, errSessionNotFound) {
+		return httpErr(err, http.StatusGone)
+	}
+	return err
 }
 
 // clientRuntimeForRecord resolves retained execution state after the caller has
@@ -2747,11 +2763,11 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 
 	var mux *http.ServeMux
 	switch path := r.URL.Path; {
-	case len(childMetadata) == 0 && (path == "/v1/traces" || path == "/v1/logs" || path == "/v1/metrics" || path == "/v1/logs/query" || path == "/v1/logs/search" || path == enginetel.LiveFlushPath):
+	case len(childMetadata) == 0 && (path == "/v1/traces" || path == "/v1/logs" || path == "/v1/metrics" || path == "/v1/logs/query" || path == "/v1/logs/search" || path == enginetel.LiveFlushPath || path == enginetel.LiveSpanQueryPath):
 		// Telemetry subscriptions require only the stable client record.
 		record, err := srv.clientRecordFromIDs(clientMetadata.SessionID, clientMetadata.ClientID)
 		if err != nil {
-			return fmt.Errorf("get client record: %w", err)
+			return telemetryRecordErr(path, err)
 		}
 		mux = http.NewServeMux()
 		mux.HandleFunc("GET /v1/traces", httpHandlerFunc(srv.telemetryPubSub.TracesSubscribeHandler, record))
@@ -2760,6 +2776,7 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 		mux.HandleFunc("POST /v1/logs/query", httpHandlerFunc(srv.telemetryPubSub.LogsQueryHandler, record))
 		mux.HandleFunc("POST /v1/logs/search", httpHandlerFunc(srv.telemetryPubSub.LogsSearchHandler, record))
 		mux.HandleFunc("POST "+enginetel.LiveFlushPath, httpHandlerFunc(srv.telemetryPubSub.FlushHandler, record))
+		mux.HandleFunc("POST "+enginetel.LiveSpanQueryPath, httpHandlerFunc(srv.telemetryPubSub.SpansQueryHandler, record))
 		// The client's own telemetry (engine.ClientTelemetryIngestHeader).
 		ps := srv.telemetryPubSub
 		mux.HandleFunc("POST /v1/traces", ps.clientIngestHandler(ps.ingestClientTraces, record))
