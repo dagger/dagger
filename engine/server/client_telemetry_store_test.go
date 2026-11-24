@@ -9,7 +9,7 @@ import (
 
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/stretchr/testify/require"
-	"go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/attribute"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -43,7 +43,7 @@ func TestClientRuntimeRetainsTelemetryStoresUntilReclamation(t *testing.T) {
 	// Replaying this history on each export used to thrash the 32-store LRU.
 	history := make([]sdklog.Record, 2000)
 	for i := range history {
-		history[i].SetBody(log.StringValue(fmt.Sprintf("history-%d", i)))
+		history[i].SetBody(attribute.StringValue(fmt.Sprintf("history-%d", i)))
 	}
 	for _, client := range clients {
 		require.NoError(t, ps.Logs(client.clientID).Export(t.Context(), history))
@@ -128,7 +128,7 @@ func TestLateExportToReclaimedClientDoesNotReplayStore(t *testing.T) {
 	logs := make([]sdklog.Record, history)
 	for i := range history {
 		spans[i] = spanRow(i + 1)
-		logs[i].SetBody(log.StringValue(fmt.Sprintf("history-%d", i)))
+		logs[i].SetBody(attribute.StringValue(fmt.Sprintf("history-%d", i)))
 	}
 	require.NoError(t, ps.appendSpans(t.Context(), client.clientID, spans))
 	require.NoError(t, ps.Logs(client.clientID).Export(t.Context(), logs))
@@ -145,7 +145,7 @@ func TestLateExportToReclaimedClientDoesNotReplayStore(t *testing.T) {
 	lateSpanID, err := trace.SpanIDFromHex(late.SpanID)
 	require.NoError(t, err)
 	var lateLog sdklog.Record
-	lateLog.SetBody(log.StringValue("late"))
+	lateLog.SetBody(attribute.StringValue("late"))
 	lateLog.SetSpanID(lateSpanID)
 	require.NoError(t, ps.appendSpans(expired, client.clientID, []clientdb.Span{late}))
 	require.NoError(t, ps.Logs(client.clientID).Export(expired, []sdklog.Record{lateLog}))

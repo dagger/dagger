@@ -8,6 +8,7 @@ import (
 
 	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
 	logapi "go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
@@ -21,7 +22,7 @@ func TestControlProtectedFromOrdinaryOverflow(t *testing.T) {
 	logger := provider.Logger("test")
 	for range LogQueueSize * 2 {
 		var rec logapi.Record
-		rec.SetBody(logapi.StringValue("noise"))
+		rec.SetBody(attribute.StringValue("noise"))
 		logger.Emit(t.Context(), rec)
 	}
 	a := agentcontrol.Agent{Key: agentcontrol.Key{Namespace: agentcontrol.Namespace{Session: "session", Trace: "trace", Incarnation: "incarnation"}, Handle: "worker"}, Revision: 9, State: "IDLE", Digest: "snapshot"}
@@ -94,7 +95,7 @@ func TestControlDrainRetriesPersistence(t *testing.T) {
 	proc := NewControlBatchProcessor(exporter)
 	provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(proc))
 	rec := agentcontrol.Agent{Key: agentcontrol.Key{Namespace: agentcontrol.Namespace{Session: "session", Trace: "trace", Incarnation: "incarnation"}, Handle: "worker"}, Revision: 1, State: "IDLE", Digest: "snapshot"}.Record()
-	rec.SetBody(logapi.StringValue("control"))
+	rec.SetBody(attribute.StringValue("control"))
 	provider.Logger("test").Emit(t.Context(), rec)
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()

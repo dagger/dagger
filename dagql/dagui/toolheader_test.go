@@ -6,8 +6,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
-	otellog "go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
@@ -44,7 +44,7 @@ func (h *toolHeaderDB) call(id byte, server, tool string, headerArgs ...string) 
 func (h *toolHeaderDB) stream(span *Span, chunks ...string) {
 	for _, chunk := range chunks {
 		h.db.IngestLogs([]sdklog.Record{newTestLogRecord(toolHeaderTraceID, span.ID.SpanID, chunk,
-			otellog.String(telemetry.ContentTypeAttr, "application/json"))})
+			attribute.String(telemetry.ContentTypeAttr, "application/json"))})
 	}
 }
 

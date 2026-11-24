@@ -76,7 +76,7 @@ func (ps *PubSub) ingestClientLogs(r *http.Request, record *clientRecord) error 
 	for _, rl := range req.GetResourceLogs() {
 		rl.Resource = withClientIngested(rl.GetResource(), record.clientID)
 	}
-	if err := telemetry.ReexportLogsFromPB(r.Context(), record.daggerSession.postedLogExporter(record.clientID), &req); err != nil {
+	if err := telemetry.ReexportLogsFromPB(r.Context(), record.daggerSession.postedLogExporter(record.clientID), req.GetResourceLogs()); err != nil {
 		return fmt.Errorf("export logs: %w", err)
 	}
 	return nil

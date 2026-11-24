@@ -11,7 +11,7 @@ import (
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
-	logapi "go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/attribute"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 	"google.golang.org/protobuf/proto"
 )
@@ -54,8 +54,8 @@ func TestArchiveIndexRevisionAndReopening(t *testing.T) {
 	appendAgent := func(a agentcontrol.Agent) {
 		var attrs []*commonpb.KeyValue
 		r := a.Record()
-		r.WalkAttributes(func(kv logapi.KeyValue) bool {
-			attrs = append(attrs, &commonpb.KeyValue{Key: kv.Key, Value: telemetry.LogValueToPB(kv.Value)})
+		r.WalkAttributes(func(kv attribute.KeyValue) bool {
+			attrs = append(attrs, &commonpb.KeyValue{Key: string(kv.Key), Value: telemetry.LogValueToPB(kv.Value)})
 			return true
 		})
 		encoded, err := MarshalProtoList(attrs)
@@ -177,7 +177,7 @@ func TestArchiveCallPayloadFromSpan(t *testing.T) {
 	rec, err := DecodeLogRecord(row)
 	require.NoError(t, err)
 	var contentType, digest string
-	rec.WalkAttributes(func(kv logapi.KeyValue) bool {
+	rec.WalkAttributes(func(kv attribute.KeyValue) bool {
 		switch kv.Key {
 		case telemetry.ContentTypeAttr:
 			contentType = kv.Value.AsString()
@@ -188,7 +188,7 @@ func TestArchiveCallPayloadFromSpan(t *testing.T) {
 	})
 	require.Equal(t, telemetryattrs.CallPayloadContentType, contentType)
 	require.Equal(t, "xxh3:span", digest)
-	require.Equal(t, payload, rec.Body().AsBytes(), "the body is the producer's encoded call")
+	require.Equal(t, payload, rec.Body().AsByteSlice(), "the body is the producer's encoded call")
 	decoded, err := CallPayloadBody(row)
 	require.NoError(t, err)
 	require.Equal(t, "withExec", decoded.GetField())

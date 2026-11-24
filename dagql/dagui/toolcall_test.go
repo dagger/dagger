@@ -9,8 +9,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
-	otellog "go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
@@ -154,7 +154,7 @@ func TestToolCallArgsFromStreamedJSON(t *testing.T) {
 	})
 	jsonLog := func(id SpanID, body string) {
 		db.IngestLogs([]sdklog.Record{newTestLogRecord(traceID, id.SpanID, body,
-			otellog.String(telemetry.ContentTypeAttr, "application/json"))})
+			attribute.String(telemetry.ContentTypeAttr, "application/json"))})
 	}
 	tool := db.Spans.Map[toolID]
 
@@ -238,7 +238,7 @@ func TestToolCallArgsReadTwice(t *testing.T) {
 	ingest := func(cs []chunk) {
 		for _, c := range cs {
 			rec := newTestLogRecord(traceID, toolID.SpanID, c.body,
-				otellog.String(telemetry.ContentTypeAttr, "application/json"))
+				attribute.String(telemetry.ContentTypeAttr, "application/json"))
 			rec.SetTimestamp(c.at)
 			db.IngestLogs([]sdklog.Record{rec})
 		}
@@ -262,7 +262,7 @@ func TestToolCallArgsReadTwice(t *testing.T) {
 	delete(db.toolArgsJSON, toolID)
 	for _, c := range chunks {
 		db.IngestLogs([]sdklog.Record{newTestLogRecord(traceID, toolID.SpanID, c.body,
-			otellog.String(telemetry.ContentTypeAttr, "application/json"))})
+			attribute.String(telemetry.ContentTypeAttr, "application/json"))})
 	}
 	assert.Equal(t, wantArgs, db.ToolCallView(tool).Args)
 }
@@ -283,7 +283,7 @@ func TestToolCallArgsFallsBackToAttributes(t *testing.T) {
 	// Arguments too large to keep fall back to the attributes too.
 	db.IngestLogs([]sdklog.Record{newTestLogRecord(traceID, toolID.SpanID,
 		`{"source":"`+strings.Repeat("x", maxToolArgsJSON)+`"}`,
-		otellog.String(telemetry.ContentTypeAttr, "application/json"))})
+		attribute.String(telemetry.ContentTypeAttr, "application/json"))})
 	assert.Equal(t, "notes", db.ToolCallArgs(tool)["at"])
 
 	// No DB: attributes alone.
@@ -309,7 +309,7 @@ func TestToolCallArgsWhileStreaming(t *testing.T) {
 	}
 	jsonLog := func(span *Span, body string) {
 		db.IngestLogs([]sdklog.Record{newTestLogRecord(traceID, span.ID.SpanID, body,
-			otellog.String(telemetry.ContentTypeAttr, "application/json"))})
+			attribute.String(telemetry.ContentTypeAttr, "application/json"))})
 	}
 
 	// A tool name cut short is no name at all: the Timeout presents as

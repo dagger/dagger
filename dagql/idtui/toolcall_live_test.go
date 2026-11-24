@@ -13,7 +13,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/vito/tuist"
 	"go.opentelemetry.io/otel/attribute"
-	otellog "go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
@@ -148,9 +147,9 @@ func (l *liveToolCalls) stream(id byte, args string, n int, each func(frame stri
 	for len(args) > 0 {
 		chunk := args[:min(n, len(args))]
 		args = args[len(chunk):]
-		l.logs(frontendTestLogRecord(trace.SpanID{id}, otellog.StringValue(chunk),
-			otellog.String(telemetry.ContentTypeAttr, "application/json"),
-			otellog.Bool(telemetry.LogsVerboseAttr, true)))
+		l.logs(frontendTestLogRecord(trace.SpanID{id}, attribute.StringValue(chunk),
+			attribute.String(telemetry.ContentTypeAttr, "application/json"),
+			attribute.Bool(telemetry.LogsVerboseAttr, true)))
 		frame := l.frame()
 		if each != nil {
 			each(frame)
@@ -163,16 +162,16 @@ func (l *liveToolCalls) stream(id byte, args string, n int, each func(frame stri
 func (l *liveToolCalls) closeArgs(id byte) {
 	l.t.Helper()
 	l.stream(id, "\n", 1, nil)
-	l.logs(frontendTestLogRecord(trace.SpanID{id}, otellog.StringValue(""),
-		otellog.String(telemetry.ContentTypeAttr, "application/json"),
-		otellog.Bool(telemetry.LogsVerboseAttr, true),
-		otellog.Bool(telemetry.StdioEOFAttr, true)))
+	l.logs(frontendTestLogRecord(trace.SpanID{id}, attribute.StringValue(""),
+		attribute.String(telemetry.ContentTypeAttr, "application/json"),
+		attribute.Bool(telemetry.LogsVerboseAttr, true),
+		attribute.Bool(telemetry.StdioEOFAttr, true)))
 }
 
 func (l *liveToolCalls) markdown(id byte, text string) {
 	l.t.Helper()
-	l.logs(frontendTestLogRecord(trace.SpanID{id}, otellog.StringValue(text),
-		otellog.String(telemetry.ContentTypeAttr, "text/markdown")))
+	l.logs(frontendTestLogRecord(trace.SpanID{id}, attribute.StringValue(text),
+		attribute.String(telemetry.ContentTypeAttr, "text/markdown")))
 }
 
 func (l *liveToolCalls) logs(records ...sdklog.Record) {

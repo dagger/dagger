@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
@@ -56,11 +57,11 @@ func TestOTLPRoundTrip(t *testing.T) {
 
 func TestRejectIncompleteControl(t *testing.T) {
 	for _, mutate := range []func(*sdklog.Record){
-		func(r *sdklog.Record) { r.AddAttributes(log.Int(VersionAttr, 2)) },
-		func(r *sdklog.Record) { r.AddAttributes(log.String(RevisionAttr, "1")) },
-		func(r *sdklog.Record) { r.AddAttributes(log.String(SessionAttr, "")) },
-		func(r *sdklog.Record) { r.AddAttributes(log.String(CaptureErrorAttr, "failed")) },
-		func(r *sdklog.Record) { r.AddAttributes(log.String(KindAttr, "other")) },
+		func(r *sdklog.Record) { r.AddAttributes(attribute.Int(VersionAttr, 2)) },
+		func(r *sdklog.Record) { r.AddAttributes(attribute.String(RevisionAttr, "1")) },
+		func(r *sdklog.Record) { r.AddAttributes(attribute.String(SessionAttr, "")) },
+		func(r *sdklog.Record) { r.AddAttributes(attribute.String(CaptureErrorAttr, "failed")) },
+		func(r *sdklog.Record) { r.AddAttributes(attribute.String(KindAttr, "other")) },
 	} {
 		r := sdkRecord(testAgent("a").Record())
 		mutate(&r)

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	telemetry "github.com/dagger/otel-go"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
 	"google.golang.org/protobuf/proto"
 
@@ -223,13 +224,13 @@ func walkCallPayloads(
 		}
 		rec := log.Record{}
 		rec.SetTimestamp(time.Now())
-		rec.SetBody(log.BytesValue(payload))
+		rec.SetBody(attribute.ByteSliceValue(payload))
 		// Repeat the digest as an attribute so stores that index log attributes
 		// can look a payload up by digest without decoding every body. The body
 		// stays authoritative.
 		rec.AddAttributes(
-			log.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType),
-			log.String(telemetryattrs.CallPayloadDigestAttr, dgst),
+			attribute.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType),
+			attribute.String(telemetryattrs.CallPayloadDigestAttr, dgst),
 		)
 		logger.Emit(ctx, rec)
 	}

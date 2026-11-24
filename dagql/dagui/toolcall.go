@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	otellog "go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/attribute"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 
 	telemetry "github.com/dagger/otel-go"
@@ -268,7 +268,7 @@ func withoutPath(value any, path []string) any {
 
 func isJSONRecord(record sdklog.Record) bool {
 	var isJSON bool
-	record.WalkAttributes(func(kv otellog.KeyValue) bool {
+	record.WalkAttributes(func(kv attribute.KeyValue) bool {
 		if kv.Key == telemetry.ContentTypeAttr {
 			ct, _ := LogValueString(kv.Value)
 			isJSON = ct == "application/json"

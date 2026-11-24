@@ -8,7 +8,7 @@ import (
 
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
-	otellog "go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/attribute"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/trace"
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
@@ -139,8 +139,8 @@ func controlLog(t *testing.T, a agentcontrol.Agent) clientdb.Log {
 	t.Helper()
 	rec := a.Record()
 	var attrs []*otlpcommonv1.KeyValue
-	rec.WalkAttributes(func(kv otellog.KeyValue) bool {
-		attrs = append(attrs, &otlpcommonv1.KeyValue{Key: kv.Key, Value: telemetry.LogValueToPB(kv.Value)})
+	rec.WalkAttributes(func(kv attribute.KeyValue) bool {
+		attrs = append(attrs, &otlpcommonv1.KeyValue{Key: string(kv.Key), Value: telemetry.LogValueToPB(kv.Value)})
 		return true
 	})
 	encoded, err := clientdb.MarshalProtoList(attrs)
@@ -407,7 +407,7 @@ func TestReadTraceReportSummarizesLongConversation(t *testing.T) {
 			snaps = append(snaps, msg)
 			var rec sdklog.Record
 			rec.SetSpanID(msg.ID.SpanID)
-			rec.SetBody(otellog.StringValue(fmt.Sprintf("MESSAGE-%d\n", i)))
+			rec.SetBody(attribute.StringValue(fmt.Sprintf("MESSAGE-%d\n", i)))
 			records = append(records, rec)
 		}
 		db := dagui.NewDB()

@@ -15,6 +15,7 @@ import (
 
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
 	logapi "go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
@@ -40,9 +41,9 @@ func logQuerySpanRow(id, parent string) clientdb.Span {
 	return s
 }
 
-func logQueryRow(t *testing.T, span, body string, attrs ...logapi.KeyValue) clientdb.Log {
+func logQueryRow(t *testing.T, span, body string, attrs ...attribute.KeyValue) clientdb.Log {
 	t.Helper()
-	rec := scopedLogRecord(t, "test", logapi.StringValue(body), attrs...)
+	rec := scopedLogRecord(t, "test", attribute.StringValue(body), attrs...)
 	row, err := logRecordRow(&rec)
 	require.NoError(t, err)
 	row.SpanID.String = span
@@ -170,8 +171,8 @@ func TestLiveLogQueryOneShotAndFollow(t *testing.T) {
 		[]clientdb.Span{logQuerySpanRow(lqRoot, ""), logQuerySpanRow(lqKid, lqRoot), logQuerySpanRow(lqOther, "")},
 		logQueryRow(t, lqRoot, "root 1"),
 		logQueryRow(t, lqOther, "other"),
-		logQueryRow(t, lqKid, "kid 1", logapi.Bool(telemetry.LogsVerboseAttr, true)),
-		logQueryRow(t, lqRoot, "name", logapi.String(telemetryattrs.LogRoleAttr, telemetryattrs.LogRoleSpanName)),
+		logQueryRow(t, lqKid, "kid 1", attribute.Bool(telemetry.LogsVerboseAttr, true)),
+		logQueryRow(t, lqRoot, "name", attribute.String(telemetryattrs.LogRoleAttr, telemetryattrs.LogRoleSpanName)),
 	)
 	ts := f.serve(t, "client")
 	query := archive.LogQuery{Spans: []archive.LogSpan{{SpanID: lqRoot, Descendants: true}}}
@@ -343,7 +344,7 @@ func TestLiveLogQueryLargeSpanSet(t *testing.T) {
 	f.append(t, "client", []clientdb.Span{logQuerySpanRow(lqRoot, ""), logQuerySpanRow(lqOther, "")},
 		logQueryRow(t, lqOther, "unselected"),
 		logQueryRow(t, lqRoot, "selected"),
-		logQueryRow(t, lqOther, "routed", logapi.String(telemetry.DagDigestAttr, "xxh3:svc")),
+		logQueryRow(t, lqOther, "routed", attribute.String(telemetry.DagDigestAttr, "xxh3:svc")),
 	)
 	ts := f.serve(t, "client")
 	spans := make([]archive.LogSpan, 0, archive.MaxLogQuerySpans)
@@ -379,8 +380,8 @@ func TestLivePresencePush(t *testing.T) {
 	f.append(t, "client", nil,
 		logQueryRow(t, lqRoot, "text 1"),
 		logQueryRow(t, lqRoot, "text 2"),
-		logQueryRow(t, lqRoot, "renamed", logapi.String(telemetryattrs.LogRoleAttr, telemetryattrs.LogRoleSpanName)),
-		logQueryRow(t, lqKid, "svc", logapi.String(telemetry.DagDigestAttr, "xxh3:svc")),
+		logQueryRow(t, lqRoot, "renamed", attribute.String(telemetryattrs.LogRoleAttr, telemetryattrs.LogRoleSpanName)),
+		logQueryRow(t, lqKid, "svc", attribute.String(telemetry.DagDigestAttr, "xxh3:svc")),
 	)
 	close(f.shutdown["client"])
 	ts := f.serve(t, "client")
@@ -426,7 +427,7 @@ func TestLiveLogQueryRowIDs(t *testing.T) {
 		logQueryRow(t, lqRoot, "root 1"), // 1
 		logQueryRow(t, lqOther, "other"), // 2
 		logQueryRow(t, lqKid, "kid 1"),   // 3
-		logQueryRow(t, lqRoot, "root 2", logapi.String(telemetry.DagDigestAttr, "xxh3:svc")), // 4
+		logQueryRow(t, lqRoot, "root 2", attribute.String(telemetry.DagDigestAttr, "xxh3:svc")), // 4
 	)
 	ts := f.serve(t, "client")
 	spans := []archive.LogSpan{{SpanID: lqRoot, Descendants: true}}
@@ -580,7 +581,7 @@ func TestArchiveLogQueryAndSearch(t *testing.T) {
 	_, err = db.AppendLogs([]clientdb.Log{
 		logQueryRow(t, lqKid, "kid"),
 		logQueryRow(t, lqOther, "other"),
-		logQueryRow(t, lqOther, "routed", logapi.String(telemetry.DagDigestAttr, "xxh3:svc")),
+		logQueryRow(t, lqOther, "routed", attribute.String(telemetry.DagDigestAttr, "xxh3:svc")),
 	})
 	require.NoError(t, err)
 	cut, err := db.Checkpoint(t.Context())
@@ -626,7 +627,7 @@ func TestFlushHandler(t *testing.T) {
 	))
 	t.Cleanup(func() { _ = sess.loggerProvider.Shutdown(context.Background()) })
 	var rec logapi.Record
-	rec.SetBody(logapi.StringValue("batched"))
+	rec.SetBody(attribute.StringValue("batched"))
 	sess.loggerProvider.Logger("test").Emit(t.Context(), rec)
 
 	mux := http.NewServeMux()

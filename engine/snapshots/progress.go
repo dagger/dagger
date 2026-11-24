@@ -10,6 +10,7 @@ import (
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/distribution/reference"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
 )
 
@@ -45,14 +46,14 @@ func EmitProgress(ctx context.Context, item string, current, total int64, unit s
 	// Explicit empty body: log consumers skip empty-bodied records as text,
 	// and an unset body does not survive the OTLP round-trip (nil AnyValue
 	// triggers conversion errors on the receiving side).
-	rec.SetBody(log.StringValue(""))
+	rec.SetBody(attribute.StringValue(""))
 	rec.AddAttributes(
-		log.String(telemetryattrs.ProgressItemAttr, item),
-		log.Int64(telemetryattrs.ProgressCurrentAttr, current),
-		log.Int64(telemetryattrs.ProgressTotalAttr, total),
+		attribute.String(telemetryattrs.ProgressItemAttr, item),
+		attribute.Int64(telemetryattrs.ProgressCurrentAttr, current),
+		attribute.Int64(telemetryattrs.ProgressTotalAttr, total),
 	)
 	if unit != "" {
-		rec.AddAttributes(log.String(telemetryattrs.ProgressUnitAttr, unit))
+		rec.AddAttributes(attribute.String(telemetryattrs.ProgressUnitAttr, unit))
 	}
 	telemetry.Logger(ctx, "dagger.io/progress").Emit(ctx, rec)
 }

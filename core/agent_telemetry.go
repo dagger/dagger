@@ -7,7 +7,6 @@ import (
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/log"
 	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 	"go.opentelemetry.io/otel/trace"
 
@@ -94,7 +93,7 @@ func emitAgentFailure(ctx context.Context, loopErr error) {
 	ctx, span := Tracer(ctx).Start(ctx, "agent failure", trace.WithAttributes(attrs...))
 	span.SetStatus(codes.Error, loopErr.Error())
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
-		log.String(telemetry.ContentTypeAttr, "text/plain"))
+		attribute.String(telemetry.ContentTypeAttr, "text/plain"))
 	fmt.Fprint(stdio.Stderr, loopErr.Error())
 	stdio.Close()
 	span.End()
@@ -131,7 +130,7 @@ func emitAgentRewind(ctx context.Context, from, to string) {
 	attrs = append(attrs, genAIAgentAttrsFromContext(ctx)...)
 	ctx, span := Tracer(ctx).Start(ctx, "conversation rewound", trace.WithAttributes(attrs...))
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
-		log.String(telemetry.ContentTypeAttr, "text/plain"))
+		attribute.String(telemetry.ContentTypeAttr, "text/plain"))
 	fmt.Fprint(stdio.Stdout, agentRewindMessage)
 	stdio.Close()
 	span.End()

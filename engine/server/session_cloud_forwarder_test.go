@@ -415,11 +415,11 @@ func TestCloudForwarderSplitsOversizedBatches(t *testing.T) {
 	records := make([]otellog.Record, 0, n+1)
 	for i := range n {
 		var rec otellog.Record
-		rec.SetBody(otellog.StringValue(fmt.Sprintf("record-%d %s", i, big)))
+		rec.SetBody(attribute.StringValue(fmt.Sprintf("record-%d %s", i, big)))
 		records = append(records, rec)
 	}
 	var huge otellog.Record
-	huge.SetBody(otellog.StringValue("huge " + string(make([]byte, 16<<10))))
+	huge.SetBody(attribute.StringValue("huge " + string(make([]byte, 16<<10))))
 	records = append(records, huge)
 	writeForwardTestLogs(t, srv, records...)
 
@@ -681,8 +681,8 @@ func TestCloudPublishedRow(t *testing.T) {
 	t.Parallel()
 	srv := forwardTestStore(t)
 	var marked, plain otellog.Record
-	marked.SetBody(otellog.StringValue("marked"))
-	plain.SetBody(otellog.StringValue("plain"))
+	marked.SetBody(attribute.StringValue("marked"))
+	plain.SetBody(attribute.StringValue("plain"))
 	exp := cloudPublishedLogExporter{next: srv.telemetryPubSub.Logs("main")}
 	require.NoError(t, exp.Export(t.Context(), []sdklog.Record{controlTestRecord(t, marked)}))
 	require.NoError(t, srv.telemetryPubSub.Logs("main").Export(t.Context(), []sdklog.Record{controlTestRecord(t, plain)}))

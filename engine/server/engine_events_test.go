@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 
@@ -77,10 +78,10 @@ func (e *engineEventTestExporter) events(t *testing.T) []engineTestEvent {
 	var events []engineTestEvent
 	for _, rec := range e.records {
 		require.Equal(t, telemetryattrs.EngineEventScope, rec.InstrumentationScope().Name)
-		require.Equal(t, log.KindString, rec.Body().Kind(), "the body is a JSON string")
+		require.Equal(t, attribute.STRING, rec.Body().Type(), "the body is a JSON string")
 		attrs := map[string]string{}
-		rec.WalkAttributes(func(kv log.KeyValue) bool {
-			attrs[kv.Key] = kv.Value.AsString()
+		rec.WalkAttributes(func(kv attribute.KeyValue) bool {
+			attrs[string(kv.Key)] = kv.Value.AsString()
 			return true
 		})
 		require.Len(t, attrs, 2, "the kind and the cache: %v", attrs)

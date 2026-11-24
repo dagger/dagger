@@ -13,7 +13,7 @@ import (
 	"github.com/muesli/termenv"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	otellog "go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/dagql/dagui"
@@ -247,7 +247,7 @@ func TestStreamingWriteRendersItsContents(t *testing.T) {
 
 	// It runs, and ends with its result and the attributes the engine
 	// records.
-	l.logs(frontendTestLogRecord(trace.SpanID{liveTimeout}, otellog.StringValue("tmp/stream-test.go +6\n")))
+	l.logs(frontendTestLogRecord(trace.SpanID{liveTimeout}, attribute.StringValue("tmp/stream-test.go +6\n")))
 	var args map[string]any
 	require.NoError(t, json.Unmarshal([]byte(liveWriteArgs), &args))
 	names, values := dagui.ToolHeaderArgs(headerArgs, args)

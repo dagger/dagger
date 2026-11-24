@@ -1885,7 +1885,7 @@ func TestTelemetryRoutesClientsAndAncestorsExactlyOnce(t *testing.T) {
 		span.End()
 		rec := otellog.Record{}
 		rec.SetTimestamp(time.Now())
-		rec.SetBody(otellog.StringValue(name))
+		rec.SetBody(attribute.StringValue(name))
 		telemetry.Logger(ctx, "test").Emit(ctx, rec)
 		workGauge, err := client.meterProvider.Meter("test").Int64Gauge("test.client.work")
 		require.NoError(t, err)
@@ -1973,8 +1973,10 @@ func TestTelemetryRoutesClientsAndAncestorsExactlyOnce(t *testing.T) {
 	// client record, not a payload attribute, selects the route.
 	require.NoError(t, (originSpanExporter{origin: "parent", next: sess.spanExporter}).ExportSpans(
 		t.Context(), []sdktrace.ReadOnlySpan{childSpans[0].ReadOnly()}))
-	incomingLog := sdklog.Record{}
-	incomingLog.AddAttributes(otellog.String(telemetryattrs.TelemetryOriginClientIDAttr, "child"))
+	// A record from a logger provider: a zero sdklog.Record keeps no
+	// attributes, since its attribute count limit is zero.
+	incomingLog := scopedLogRecord(t, "test", attribute.Value{},
+		attribute.String(telemetryattrs.TelemetryOriginClientIDAttr, "child"))
 	require.NoError(t, (originLogExporter{origin: "parent", next: sess.logExporter}).Export(
 		t.Context(), []sdklog.Record{incomingLog}))
 	incomingMetrics := &metricdata.ResourceMetrics{ScopeMetrics: []metricdata.ScopeMetrics{{
@@ -2133,7 +2135,7 @@ type fakeSessionCaller struct {
 func TestLogRecordRowPreservesBytesBody(t *testing.T) {
 	payload := []byte{0, 1, 2, 0xff}
 	var record sdklog.Record
-	record.SetBody(otellog.BytesValue(payload))
+	record.SetBody(attribute.ByteSliceValue(payload))
 
 	row, err := logRecordRow(&record)
 	require.NoError(t, err)
@@ -2155,11 +2157,12 @@ func TestTelemetryExportKeepsBatchWithInvalidUTF8(t *testing.T) {
 	cut := "request body — truncated"[:len("request body ")+1] // mid em dash
 	require.False(t, utf8.ValidString(cut))
 	records := []sdklog.Record{
-		scopedLogRecord(t, "test", otellog.StringValue("the user's prompt")),
-		scopedLogRecord(t, "test", otellog.StringValue(cut)),
+		scopedLogRecord(t, "test", attribute.StringValue("the user's prompt")),
+		scopedLogRecord(t, "test", attribute.StringValue(cut)),
 		scopedLogRecord(t, "test",
-			otellog.MapValue(otellog.String("nested", cut), otellog.Slice("list", otellog.StringValue(cut))),
-			otellog.String(cut, cut)),
+			attribute.MapValue(attribute.String("nested", cut), attribute.Slice("list", attribute.StringValue(cut)),
+				attribute.StringSlice("strings", []string{"fine", cut})),
+			attribute.String(cut, cut)),
 	}
 	require.NoError(t, ps.Logs("client").Export(t.Context(), records))
 
@@ -2182,6 +2185,11 @@ func TestTelemetryExportKeepsBatchWithInvalidUTF8(t *testing.T) {
 			require.Equal(t, "request body \uFFFD", kv.GetValue().GetStringValue())
 		case "list":
 			require.Equal(t, "request body \uFFFD", kv.GetValue().GetArrayValue().GetValues()[0].GetStringValue())
+		case "strings":
+			values := kv.GetValue().GetArrayValue().GetValues()
+			require.Len(t, values, 2)
+			require.Equal(t, "fine", values[0].GetStringValue())
+			require.Equal(t, "request body \uFFFD", values[1].GetStringValue())
 		default:
 			t.Fatalf("unexpected key %q", kv.GetKey())
 		}
@@ -2190,13 +2198,14 @@ func TestTelemetryExportKeepsBatchWithInvalidUTF8(t *testing.T) {
 
 // validUTF8LogValue must hand back valid values as they were.
 func TestValidUTF8LogValueKeepsValidValues(t *testing.T) {
-	for _, v := range []otellog.Value{
-		otellog.StringValue("plain — fine"),
-		otellog.SliceValue(otellog.StringValue("a"), otellog.IntValue(1)),
-		otellog.MapValue(otellog.String("k", "v")),
-		otellog.BytesValue([]byte{0xff}),
+	for _, v := range []attribute.Value{
+		attribute.StringValue("plain — fine"),
+		attribute.SliceValue(attribute.StringValue("a"), attribute.IntValue(1)),
+		attribute.MapValue(attribute.String("k", "v")),
+		attribute.StringSliceValue([]string{"a", "b"}),
+		attribute.ByteSliceValue([]byte{0xff}),
 	} {
-		require.True(t, validUTF8LogValue(v).Equal(v), "%v", v)
+		require.Equal(t, v, validUTF8LogValue(v))
 	}
 }
 
@@ -4151,7 +4160,7 @@ func (capture *callPayloadRecordCapture) Export(_ context.Context, records []sdk
 func (*callPayloadRecordCapture) ForceFlush(context.Context) error { return nil }
 func (*callPayloadRecordCapture) Shutdown(context.Context) error   { return nil }
 
-func scopedLogRecord(t *testing.T, scope string, body otellog.Value, attrs ...otellog.KeyValue) sdklog.Record {
+func scopedLogRecord(t *testing.T, scope string, body attribute.Value, attrs ...attribute.KeyValue) sdklog.Record {
 	t.Helper()
 
 	capture := new(callPayloadRecordCapture)
@@ -4193,12 +4202,12 @@ func TestClassifyCallPayloadRecord(t *testing.T) {
 	digestlessPayload, err := proto.Marshal(digestless)
 	require.NoError(t, err)
 
-	callType := otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType)
+	callType := attribute.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType)
 	for _, test := range []struct {
 		name       string
 		scope      string
-		body       otellog.Value
-		attrs      []otellog.KeyValue
+		body       attribute.Value
+		attrs      []attribute.KeyValue
 		payload    bool
 		wantDigest string
 		wantError  string
@@ -4206,8 +4215,8 @@ func TestClassifyCallPayloadRecord(t *testing.T) {
 		{
 			name:       "call content type and bytes body",
 			scope:      "test.core",
-			body:       otellog.BytesValue(payload),
-			attrs:      []otellog.KeyValue{callType},
+			body:       attribute.ByteSliceValue(payload),
+			attrs:      []attribute.KeyValue{callType},
 			payload:    true,
 			wantDigest: digest,
 		},
@@ -4216,55 +4225,55 @@ func TestClassifyCallPayloadRecord(t *testing.T) {
 			// path never has to decode a body.
 			name:  "digest attribute skips body decode",
 			scope: "test.core",
-			body:  otellog.BytesValue([]byte{0xff}),
-			attrs: []otellog.KeyValue{callType,
-				otellog.String(telemetryattrs.CallPayloadDigestAttr, "xxh3:stamped")},
+			body:  attribute.ByteSliceValue([]byte{0xff}),
+			attrs: []attribute.KeyValue{callType,
+				attribute.String(telemetryattrs.CallPayloadDigestAttr, "xxh3:stamped")},
 			payload:    true,
 			wantDigest: "xxh3:stamped",
 		},
 		{
 			name:  "digest attribute of the wrong kind falls back to the body",
 			scope: "test.core",
-			body:  otellog.BytesValue(payload),
-			attrs: []otellog.KeyValue{callType,
-				otellog.Int(telemetryattrs.CallPayloadDigestAttr, 1)},
+			body:  attribute.ByteSliceValue(payload),
+			attrs: []attribute.KeyValue{callType,
+				attribute.Int(telemetryattrs.CallPayloadDigestAttr, 1)},
 			payload:    true,
 			wantDigest: digest,
 		},
 		{
 			name:  "other content type",
 			scope: "test.core",
-			body:  otellog.BytesValue(payload),
-			attrs: []otellog.KeyValue{otellog.String(telemetry.ContentTypeAttr, "application/json")},
+			body:  attribute.ByteSliceValue(payload),
+			attrs: []attribute.KeyValue{attribute.String(telemetry.ContentTypeAttr, "application/json")},
 		},
 		{
 			name:      "wrong body kind",
 			scope:     "test.core",
-			body:      otellog.StringValue(string(payload)),
-			attrs:     []otellog.KeyValue{callType},
+			body:      attribute.StringValue(string(payload)),
+			attrs:     []attribute.KeyValue{callType},
 			payload:   true,
 			wantError: "body must be bytes",
 		},
 		{
 			name:      "malformed protobuf",
 			scope:     "test.core",
-			body:      otellog.BytesValue([]byte{0xff}),
-			attrs:     []otellog.KeyValue{callType},
+			body:      attribute.ByteSliceValue([]byte{0xff}),
+			attrs:     []attribute.KeyValue{callType},
 			payload:   true,
 			wantError: "decode call payload",
 		},
 		{
 			name:      "missing embedded digest",
 			scope:     "test.core",
-			body:      otellog.BytesValue(digestlessPayload),
-			attrs:     []otellog.KeyValue{callType},
+			body:      attribute.ByteSliceValue(digestlessPayload),
+			attrs:     []attribute.KeyValue{callType},
 			payload:   true,
 			wantError: "missing embedded digest",
 		},
 		{
 			name:    "ordinary log",
 			scope:   "test.log",
-			body:    otellog.StringValue("hello"),
+			body:    attribute.StringValue("hello"),
 			payload: false,
 		},
 	} {
@@ -4296,8 +4305,8 @@ func TestClassifyCallPayloadRecordReadsEmbeddedAddress(t *testing.T) {
 	} {
 		record := scopedLogRecord(t,
 			"test.core",
-			otellog.BytesValue(test.body),
-			otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType),
+			attribute.ByteSliceValue(test.body),
+			attribute.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType),
 		)
 		got, payload, err := classifyCallPayloadRecord(record)
 		require.NoError(t, err)
@@ -4310,18 +4319,18 @@ func TestWithoutLogOriginPreservesCallPayloadRecord(t *testing.T) {
 	payload, _ := serverCallPayload(t, "lookup", "value")
 	record := scopedLogRecord(t,
 		"test.core",
-		otellog.BytesValue(payload),
-		otellog.String(telemetryattrs.TelemetryOriginClientIDAttr, "origin"),
-		otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType),
-		otellog.String("test.keep", "value"),
+		attribute.ByteSliceValue(payload),
+		attribute.String(telemetryattrs.TelemetryOriginClientIDAttr, "origin"),
+		attribute.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType),
+		attribute.String("test.keep", "value"),
 	)
 
 	clean := withoutLogOrigin(record)
-	require.Equal(t, otellog.KindBytes, clean.Body().Kind())
-	require.Equal(t, payload, clean.Body().AsBytes())
-	attrs := map[string]otellog.Value{}
-	clean.WalkAttributes(func(attr otellog.KeyValue) bool {
-		attrs[attr.Key] = attr.Value
+	require.Equal(t, attribute.BYTESLICE, clean.Body().Type())
+	require.Equal(t, payload, clean.Body().AsByteSlice())
+	attrs := map[string]attribute.Value{}
+	clean.WalkAttributes(func(attr attribute.KeyValue) bool {
+		attrs[string(attr.Key)] = attr.Value
 		return true
 	})
 	require.NotContains(t, attrs, telemetryattrs.TelemetryOriginClientIDAttr)
@@ -4343,12 +4352,12 @@ func TestSessionLogExporterNormalizesReplacedAttribute(t *testing.T) {
 
 	require.NoError(t, exporter.Export(t.Context(), []sdklog.Record{scopedLogRecord(t,
 		"test.core",
-		otellog.StringValue("body"),
-		otellog.String(telemetryattrs.TelemetryOriginClientIDAttr, "client"),
-		otellog.String("test.keep", "initial"),
-		otellog.Map("test.keep",
-			otellog.String("k", "first"),
-			otellog.String("k", "last")),
+		attribute.StringValue("body"),
+		attribute.String(telemetryattrs.TelemetryOriginClientIDAttr, "client"),
+		attribute.String("test.keep", "initial"),
+		attribute.Map("test.keep",
+			attribute.String("k", "first"),
+			attribute.String("k", "last")),
 	)}))
 
 	db, err := dbs.Open(t.Context(), "client")
@@ -4374,18 +4383,18 @@ func TestLogRowEncoderSharesScopesAndResources(t *testing.T) {
 	payload, _ := serverCallPayload(t, "lookup", "value")
 	payloadRecord := scopedLogRecord(t,
 		"test.core",
-		otellog.BytesValue(payload),
-		otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType),
-		otellog.String("test.keep", "value"),
+		attribute.ByteSliceValue(payload),
+		attribute.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType),
+		attribute.String("test.keep", "value"),
 	)
-	otherScope := scopedLogRecord(t, "test.other", otellog.StringValue("output"))
+	otherScope := scopedLogRecord(t, "test.other", attribute.StringValue("output"))
 	capture := new(callPayloadRecordCapture)
 	provider := sdklog.NewLoggerProvider(
 		sdklog.WithResource(sdkresource.NewSchemaless(attribute.String("test.resource", "other"))),
 		sdklog.WithProcessor(sdklog.NewSimpleProcessor(capture)),
 	)
 	record := otellog.Record{}
-	record.SetBody(otellog.StringValue("other resource"))
+	record.SetBody(attribute.StringValue("other resource"))
 	provider.Logger("test.core").Emit(t.Context(), record)
 	require.NoError(t, provider.Shutdown(t.Context()))
 	require.Len(t, capture.records, 1)
@@ -4421,10 +4430,10 @@ func TestSessionLogExporterRoutesCallPayloadOnlyToMissingTargets(t *testing.T) {
 	payloadRecord := func(origin string, body []byte) sdklog.Record {
 		return scopedLogRecord(t,
 			"test.core",
-			otellog.BytesValue(body),
-			otellog.String(telemetryattrs.TelemetryOriginClientIDAttr, origin),
-			otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType),
-			otellog.String("test.keep", "value"),
+			attribute.ByteSliceValue(body),
+			attribute.String(telemetryattrs.TelemetryOriginClientIDAttr, origin),
+			attribute.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType),
+			attribute.String("test.keep", "value"),
 		)
 	}
 

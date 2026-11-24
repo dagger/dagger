@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
 
 	"github.com/dagger/dagger/dagql"
@@ -124,10 +125,10 @@ func (e *engineEventEmitter) run(logger log.Logger) {
 		rec.SetTimestamp(queued.at)
 		rec.SetObservedTimestamp(queued.at)
 		rec.SetSeverity(log.SeverityInfo)
-		rec.SetBody(log.StringValue(string(body)))
+		rec.SetBody(attribute.StringValue(string(body)))
 		rec.AddAttributes(
-			log.String(telemetryattrs.EngineEventAttr, queued.kind),
-			log.String(telemetryattrs.EngineCacheAttr, queued.cache),
+			attribute.String(telemetryattrs.EngineEventAttr, queued.kind),
+			attribute.String(telemetryattrs.EngineCacheAttr, queued.cache),
 		)
 		logger.Emit(ctx, rec)
 	}

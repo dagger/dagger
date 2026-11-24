@@ -22,7 +22,6 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
-	otellog "go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
@@ -498,7 +497,7 @@ func assertStalePatchLogged(t *testctx.T, db *dagui.DB, logs []sdklog.Record) {
 		}
 		patches++
 		var contentType string
-		rec.WalkAttributes(func(kv otellog.KeyValue) bool {
+		rec.WalkAttributes(func(kv attribute.KeyValue) bool {
 			if kv.Key == telemetry.ContentTypeAttr {
 				contentType, _ = dagui.LogValueString(kv.Value)
 			}
@@ -861,7 +860,7 @@ func (o *otlpReceiver) LogsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := telemetry.ReexportLogsFromPB(r.Context(), o.logs, &req); err != nil {
+	if err := telemetry.ReexportLogsFromPB(r.Context(), o.logs, req.GetResourceLogs()); err != nil {
 		slog.Error("error exporting spans", "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -871,7 +870,7 @@ func (o *otlpReceiver) LogsHandler(w http.ResponseWriter, r *http.Request) {
 	if len(telemetry.LogProcessors) > 0 {
 		if err := telemetry.ReexportLogsFromPB(r.Context(), telemetry.LogForwarder{
 			Processors: telemetry.LogProcessors,
-		}, &req); err != nil {
+		}, req.GetResourceLogs()); err != nil {
 			slog.Warn("error forwarding logs", "error", err)
 		}
 	}

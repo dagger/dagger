@@ -34,15 +34,15 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vito/tuist"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
-	otellog "go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/protobuf/proto"
 )
 
-func frontendTestLogRecord(spanID trace.SpanID, body otellog.Value, attrs ...otellog.KeyValue) sdklog.Record {
+func frontendTestLogRecord(spanID trace.SpanID, body attribute.Value, attrs ...attribute.KeyValue) sdklog.Record {
 	record := new(sdklog.Record)
 
 	// A zero-value Record carries zero attribute limits, truncating every
@@ -69,32 +69,32 @@ func frontendMixedLogRecords(t *testing.T, spanID trace.SpanID) []sdklog.Record 
 	})
 	require.NoError(t, err)
 
-	before := frontendTestLogRecord(spanID, otellog.StringValue("before\n"))
-	payloadBytes := frontendTestLogRecord(spanID, otellog.BytesValue(payload),
-		otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
+	before := frontendTestLogRecord(spanID, attribute.StringValue("before\n"))
+	payloadBytes := frontendTestLogRecord(spanID, attribute.ByteSliceValue(payload),
+		attribute.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
 	// Malformed: a text body under the payload content type is still reserved.
-	typedText := frontendTestLogRecord(spanID, otellog.StringValue("reserved malformed payload\n"),
-		otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
+	typedText := frontendTestLogRecord(spanID, attribute.StringValue("reserved malformed payload\n"),
+		attribute.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
 	// A bytes body with no content type: not a call payload at all, but still
 	// binary data that must never render as log text.
-	spanName := frontendTestLogRecord(spanID, otellog.StringValue("updated span name"),
-		otellog.String(telemetryattrs.LogRoleAttr, telemetryattrs.LogRoleSpanName))
-	unreservedBytes := frontendTestLogRecord(spanID, otellog.BytesValue([]byte("not text")))
-	malformedRole := frontendTestLogRecord(spanID, otellog.StringValue("malformed role\n"),
-		otellog.Bool(telemetryattrs.LogRoleAttr, true))
-	malformedProgress := frontendTestLogRecord(spanID, otellog.StringValue("malformed progress\n"),
-		otellog.Bool(telemetryattrs.ProgressItemAttr, true))
-	malformedAgentControl := frontendTestLogRecord(spanID, otellog.StringValue("malformed agent control\n"),
-		otellog.String(agentcontrol.VersionAttr, "not an int"))
-	after := frontendTestLogRecord(spanID, otellog.StringValue("after\n"),
-		otellog.Bool(telemetry.ContentTypeAttr, true),
-		otellog.String(telemetry.LogsVerboseAttr, "not bool"),
-		otellog.String(telemetry.StdioEOFAttr, "not bool"),
-		otellog.String(telemetry.LogsGlobalAttr, "not bool"),
-		otellog.String(telemetry.StdioStreamAttr, "not int"),
-		otellog.Bool(telemetry.DagDigestAttr, true))
-	eof := frontendTestLogRecord(spanID, otellog.StringValue(""),
-		otellog.Bool(telemetry.StdioEOFAttr, true))
+	spanName := frontendTestLogRecord(spanID, attribute.StringValue("updated span name"),
+		attribute.String(telemetryattrs.LogRoleAttr, telemetryattrs.LogRoleSpanName))
+	unreservedBytes := frontendTestLogRecord(spanID, attribute.ByteSliceValue([]byte("not text")))
+	malformedRole := frontendTestLogRecord(spanID, attribute.StringValue("malformed role\n"),
+		attribute.Bool(telemetryattrs.LogRoleAttr, true))
+	malformedProgress := frontendTestLogRecord(spanID, attribute.StringValue("malformed progress\n"),
+		attribute.Bool(telemetryattrs.ProgressItemAttr, true))
+	malformedAgentControl := frontendTestLogRecord(spanID, attribute.StringValue("malformed agent control\n"),
+		attribute.String(agentcontrol.VersionAttr, "not an int"))
+	after := frontendTestLogRecord(spanID, attribute.StringValue("after\n"),
+		attribute.Bool(telemetry.ContentTypeAttr, true),
+		attribute.String(telemetry.LogsVerboseAttr, "not bool"),
+		attribute.String(telemetry.StdioEOFAttr, "not bool"),
+		attribute.String(telemetry.LogsGlobalAttr, "not bool"),
+		attribute.String(telemetry.StdioStreamAttr, "not int"),
+		attribute.Bool(telemetry.DagDigestAttr, true))
+	eof := frontendTestLogRecord(spanID, attribute.StringValue(""),
+		attribute.Bool(telemetry.StdioEOFAttr, true))
 	return []sdklog.Record{
 		before,
 		payloadBytes,
@@ -113,7 +113,7 @@ func requireRenderableFrontendLogs(t *testing.T, records []sdklog.Record) {
 	t.Helper()
 	require.Len(t, records, 3)
 	for _, record := range records {
-		require.Equal(t, otellog.KindString, record.Body().Kind())
+		require.Equal(t, attribute.STRING, record.Body().Type())
 	}
 	require.Equal(t, "before\n", records[0].Body().AsString())
 	require.Equal(t, "after\n", records[1].Body().AsString())
@@ -199,8 +199,8 @@ func TestTerminalTitleFollowsPrimaryZoomAndLiveName(t *testing.T) {
 	term.Reset()
 	nameRecord := frontendTestLogRecord(
 		childID.SpanID,
-		otellog.StringValue("renamed live"),
-		otellog.String(telemetryattrs.LogRoleAttr, telemetryattrs.LogRoleSpanName),
+		attribute.StringValue("renamed live"),
+		attribute.String(telemetryattrs.LogRoleAttr, telemetryattrs.LogRoleSpanName),
 	)
 	require.NoError(t, fe.LogExporter().Export(context.Background(), []sdklog.Record{nameRecord}))
 	fe.tui.Step()
@@ -253,8 +253,8 @@ func TestLogRequestsRouteByTraceAndWaitForSpans(t *testing.T) {
 	require.False(t, fe.requestedLogs[liveSpan], "a live span's request was latched")
 
 	// A metadata record ahead of its span makes a placeholder.
-	nameRecord := frontendTestLogRecord(early.SpanID, otellog.StringValue("early"),
-		otellog.String(telemetryattrs.LogRoleAttr, telemetryattrs.LogRoleSpanName))
+	nameRecord := frontendTestLogRecord(early.SpanID, attribute.StringValue("early"),
+		attribute.String(telemetryattrs.LogRoleAttr, telemetryattrs.LogRoleSpanName))
 	require.NoError(t, fe.LogExporter().Export(context.Background(), []sdklog.Record{nameRecord}))
 	fe.tui.Step()
 	require.NotNil(t, db.Spans.Map[early])
@@ -1058,7 +1058,7 @@ func TestLiveTestLogsReachInlineRollup(t *testing.T) {
 	export := func(spanID dagui.SpanID, body string) []string {
 		t.Helper()
 		require.NoError(t, fe.LogExporter().Export(context.Background(), []sdklog.Record{
-			frontendTestLogRecord(spanID.SpanID, otellog.StringValue(body)),
+			frontendTestLogRecord(spanID.SpanID, attribute.StringValue(body)),
 		}))
 		return fe.tui.Step()
 	}
@@ -1110,7 +1110,7 @@ func TestLiveTestDetailChildLogs(t *testing.T) {
 	export := func(spanID dagui.SpanID, body string) []string {
 		t.Helper()
 		require.NoError(t, fe.LogExporter().Export(context.Background(), []sdklog.Record{
-			frontendTestLogRecord(spanID.SpanID, otellog.StringValue(body)),
+			frontendTestLogRecord(spanID.SpanID, attribute.StringValue(body)),
 		}))
 		return fe.tui.Step()
 	}
@@ -1233,7 +1233,7 @@ func TestLiveTestViewsCoalesceBatches(t *testing.T) {
 	logTo := func(spanID dagui.SpanID, body string) {
 		t.Helper()
 		require.NoError(t, fe.LogExporter().Export(context.Background(), []sdklog.Record{
-			frontendTestLogRecord(spanID.SpanID, otellog.StringValue(body)),
+			frontendTestLogRecord(spanID.SpanID, attribute.StringValue(body)),
 		}))
 	}
 	fe.ImportSnapshots([]dagui.SpanSnapshot{failing(5, checkBID, "TestB1")})
@@ -1314,7 +1314,7 @@ func TestSpanTreesPrunedWhenRowsLeaveView(t *testing.T) {
 	}
 	fe.ImportSnapshots([]dagui.SpanSnapshot{failing(11, checkBID, "TestB1")})
 	require.NoError(t, fe.LogExporter().Export(context.Background(), []sdklog.Record{
-		frontendTestLogRecord(liveID.SpanID, otellog.StringValue("zoomed away\n")),
+		frontendTestLogRecord(liveID.SpanID, attribute.StringValue("zoomed away\n")),
 	}))
 	fe.tui.Step()
 	fe.ZoomToSpan(rootID)
@@ -3784,8 +3784,8 @@ func TestFinalRenderPrimaryOutputWithoutReport(t *testing.T) {
 	spanID := dagui.SpanID{SpanID: trace.SpanID{1}}
 	db.PrimarySpan = spanID
 	db.PrimaryLogs[spanID] = []sdklog.Record{
-		frontendTestLogRecord(spanID.SpanID, otellog.StringValue("/work/root\n"),
-			otellog.Int(telemetry.StdioStreamAttr, 2)),
+		frontendTestLogRecord(spanID.SpanID, attribute.StringValue("/work/root\n"),
+			attribute.Int(telemetry.StdioStreamAttr, 2)),
 	}
 
 	fe := NewWithDB(io.Discard, db)
@@ -3800,8 +3800,8 @@ func TestWritePrimaryOutputSeparate(t *testing.T) {
 	db := dagui.NewDB()
 	spanID := dagui.SpanID{SpanID: trace.SpanID{1}}
 	db.PrimaryLogs[spanID] = []sdklog.Record{
-		frontendTestLogRecord(spanID.SpanID, otellog.StringValue("out\n"),
-			otellog.Int(telemetry.StdioStreamAttr, 2)),
+		frontendTestLogRecord(spanID.SpanID, attribute.StringValue("out\n"),
+			attribute.Int(telemetry.StdioStreamAttr, 2)),
 	}
 
 	var buf bytes.Buffer

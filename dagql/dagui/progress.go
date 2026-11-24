@@ -2,7 +2,7 @@ package dagui
 
 import (
 	"github.com/dagger/dagger/engine/telemetryattrs"
-	otellog "go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/attribute"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
 
@@ -83,7 +83,7 @@ func (db *DB) ingestProgress(record sdklog.Record) bool {
 	var item, unit string
 	var current, total int64
 	var reserved, validItem bool
-	record.WalkAttributes(func(kv otellog.KeyValue) bool {
+	record.WalkAttributes(func(kv attribute.KeyValue) bool {
 		switch kv.Key {
 		case telemetryattrs.ProgressItemAttr:
 			reserved = true

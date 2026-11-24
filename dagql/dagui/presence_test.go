@@ -6,13 +6,13 @@ import (
 
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
-	otellog "go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/attribute"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/trace"
 )
 
-func presenceRecord(traceID trace.TraceID, spanID trace.SpanID, attrs ...otellog.KeyValue) sdklog.Record {
-	attrs = append(attrs, otellog.String(telemetryattrs.LogRoleAttr, telemetryattrs.LogRolePresence))
+func presenceRecord(traceID trace.TraceID, spanID trace.SpanID, attrs ...attribute.KeyValue) sdklog.Record {
+	attrs = append(attrs, attribute.String(telemetryattrs.LogRoleAttr, telemetryattrs.LogRolePresence))
 	return newTestLogRecord(traceID, spanID, "", attrs...)
 }
 
@@ -51,7 +51,7 @@ func TestLogPresenceRoutesByDigest(t *testing.T) {
 	// Before the creator arrives, the presence waits for it, as its text
 	// would.
 	db.IngestLogs([]sdklog.Record{presenceRecord(traceID.TraceID, trace.SpanID{9},
-		otellog.String(telemetry.DagDigestAttr, outputDig))})
+		attribute.String(telemetry.DagDigestAttr, outputDig))})
 	db.ImportSnapshots([]SpanSnapshot{{
 		ID:         creator,
 		TraceID:    traceID,

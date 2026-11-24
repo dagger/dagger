@@ -11,7 +11,6 @@ import (
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/engine/slog"
@@ -34,7 +33,7 @@ func (llm *LLM) WarnToolNameCollisions(ctx context.Context) {
 }
 
 func warnToolNameCollisions(ctx context.Context, collisions map[string][]string) {
-	logger := slog.SpanLogger(ctx, InstrumentationLibrary, log.Bool(telemetryattrs.LogHumanOnlyAttr, true))
+	logger := slog.SpanLogger(ctx, InstrumentationLibrary, attribute.Bool(telemetryattrs.LogHumanOnlyAttr, true))
 	for _, name := range slices.Sorted(maps.Keys(collisions)) {
 		contributors := collisions[name]
 		served := make([]string, len(contributors))

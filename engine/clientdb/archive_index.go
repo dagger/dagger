@@ -15,6 +15,7 @@ import (
 	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/trace"
@@ -61,7 +62,7 @@ func DecodeLogRecord(row Log) (sdklog.Record, error) {
 		if a == nil || a.Value == nil {
 			return rec, fmt.Errorf("invalid log attribute")
 		}
-		rec.AddAttributes(log.KeyValue{Key: a.Key, Value: telemetry.LogValueFromPB(a.Value)})
+		rec.AddAttributes(attribute.KeyValue{Key: attribute.Key(a.Key), Value: telemetry.LogValueFromPB(a.Value)})
 	}
 	var body commonpb.AnyValue
 	if err := proto.Unmarshal(row.Body, &body); err != nil {

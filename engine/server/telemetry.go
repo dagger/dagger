@@ -21,7 +21,6 @@ import (
 
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/sdk/instrumentation"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
@@ -132,7 +131,7 @@ type telemetryOriginLogProcessor struct {
 
 func (p telemetryOriginLogProcessor) OnEmit(ctx context.Context, rec *sdklog.Record) error {
 	if origin := telemetryOriginClientID(ctx, p.sessionID); origin != "" {
-		rec.AddAttributes(log.String(telemetryattrs.TelemetryOriginClientIDAttr, origin))
+		rec.AddAttributes(attribute.String(telemetryattrs.TelemetryOriginClientIDAttr, origin))
 	}
 	return nil
 }
@@ -159,8 +158,8 @@ func originClientID(attrs []attribute.KeyValue) string {
 
 func logOriginClientID(rec sdklog.Record) string {
 	var origin string
-	rec.WalkAttributes(func(attr log.KeyValue) bool {
-		if attr.Key == telemetryattrs.TelemetryOriginClientIDAttr && attr.Value.Kind() == log.KindString {
+	rec.WalkAttributes(func(attr attribute.KeyValue) bool {
+		if attr.Key == telemetryattrs.TelemetryOriginClientIDAttr && attr.Value.Type() == attribute.STRING {
 			origin = attr.Value.AsString()
 			return false
 		}
@@ -171,8 +170,8 @@ func logOriginClientID(rec sdklog.Record) string {
 
 func withoutLogOrigin(rec sdklog.Record) sdklog.Record {
 	clean := rec.Clone()
-	attrs := make([]log.KeyValue, 0, rec.AttributesLen())
-	rec.WalkAttributes(func(attr log.KeyValue) bool {
+	attrs := make([]attribute.KeyValue, 0, rec.AttributesLen())
+	rec.WalkAttributes(func(attr attribute.KeyValue) bool {
 		if attr.Key != telemetryattrs.TelemetryOriginClientIDAttr {
 			attrs = append(attrs, attr)
 		}
@@ -192,13 +191,13 @@ func withoutLogOrigin(rec sdklog.Record) sdklog.Record {
 // not decode every body; the body is only decoded for records that lack it.
 func classifyCallPayloadRecord(rec sdklog.Record) (digest string, payload bool, err error) {
 	claimed := false
-	rec.WalkAttributes(func(attr log.KeyValue) bool {
+	rec.WalkAttributes(func(attr attribute.KeyValue) bool {
 		switch attr.Key {
 		case telemetry.ContentTypeAttr:
-			claimed = attr.Value.Kind() == log.KindString &&
+			claimed = attr.Value.Type() == attribute.STRING &&
 				attr.Value.AsString() == telemetryattrs.CallPayloadContentType
 		case telemetryattrs.CallPayloadDigestAttr:
-			if attr.Value.Kind() == log.KindString {
+			if attr.Value.Type() == attribute.STRING {
 				digest = attr.Value.AsString()
 			}
 		}
@@ -207,14 +206,14 @@ func classifyCallPayloadRecord(rec sdklog.Record) (digest string, payload bool, 
 	if !claimed {
 		return "", false, nil
 	}
-	if rec.Body().Kind() != log.KindBytes {
-		return "", true, fmt.Errorf("body must be bytes, got %s", rec.Body().Kind())
+	if rec.Body().Type() != attribute.BYTESLICE {
+		return "", true, fmt.Errorf("body must be bytes, got %s", rec.Body().Type())
 	}
 	if digest != "" {
 		return digest, true, nil
 	}
 	decoded := new(callpbv1.Call)
-	if err := proto.Unmarshal(rec.Body().AsBytes(), decoded); err != nil {
+	if err := proto.Unmarshal(rec.Body().AsByteSlice(), decoded); err != nil {
 		return "", true, fmt.Errorf("decode call payload: %w", err)
 	}
 	if decoded.GetDigest() == "" {
@@ -626,7 +625,7 @@ func (exp originLogExporter) Export(ctx context.Context, records []sdklog.Record
 	stamped := make([]sdklog.Record, len(records))
 	for i := range records {
 		stamped[i] = records[i].Clone()
-		stamped[i].AddAttributes(log.String(telemetryattrs.TelemetryOriginClientIDAttr, exp.origin))
+		stamped[i].AddAttributes(attribute.String(telemetryattrs.TelemetryOriginClientIDAttr, exp.origin))
 	}
 	return exp.next.Export(ctx, stamped)
 }
@@ -730,7 +729,7 @@ func (ps *PubSub) LogsHandler(rw http.ResponseWriter, r *http.Request) {
 	enginetel.NormalizeLogsRequest(&req) // foreign OTLP, as for traces
 	start := time.Now()
 	exporter := record.daggerSession.postedLogExporter(clientID)
-	if err := telemetry.ReexportLogsFromPB(r.Context(), exporter, &req); err != nil {
+	if err := telemetry.ReexportLogsFromPB(r.Context(), exporter, req.GetResourceLogs()); err != nil {
 		slog.Error("error exporting logs", "err", err, "duration", time.Since(start))
 		http.Error(rw, err.Error(), http.StatusInternalServerError)
 		return
@@ -1226,7 +1225,7 @@ func (enc *logRowEncoder) row(rec *sdklog.Record) (clientdb.Log, error) {
 	severity := int64(rec.Severity())
 
 	var body []byte
-	if !rec.Body().Empty() {
+	if rec.Body().Type() != attribute.EMPTY {
 		var err error
 		body, err = proto.Marshal(telemetry.LogValueToPB(validUTF8LogValue(rec.Body())))
 		if err != nil {
@@ -1235,9 +1234,9 @@ func (enc *logRowEncoder) row(rec *sdklog.Record) (clientdb.Log, error) {
 	}
 
 	attrs := make([]*otlpcommonv1.KeyValue, 0, rec.AttributesLen())
-	rec.WalkAttributes(func(kv log.KeyValue) bool {
+	rec.WalkAttributes(func(kv attribute.KeyValue) bool {
 		attrs = append(attrs, &otlpcommonv1.KeyValue{
-			Key:   strings.ToValidUTF8(kv.Key, string(utf8.RuneError)),
+			Key:   strings.ToValidUTF8(string(kv.Key), string(utf8.RuneError)),
 			Value: telemetry.LogValueToPB(validUTF8LogValue(kv.Value)),
 		})
 		return true
@@ -1294,18 +1293,32 @@ func (enc *logRowEncoder) row(rec *sdklog.Record) (clientdb.Log, error) {
 // Producers emit arbitrary bytes as strings: raw process output, or a body cut
 // at a byte limit in the middle of a character (the LLM HTTP span's capture).
 // Values that are already valid are returned unchanged, without copying.
-func validUTF8LogValue(v log.Value) log.Value {
-	switch v.Kind() {
-	case log.KindString:
+func validUTF8LogValue(v attribute.Value) attribute.Value {
+	switch v.Type() {
+	case attribute.STRING:
 		if s := v.AsString(); !utf8.ValidString(s) {
-			return log.StringValue(strings.ToValidUTF8(s, string(utf8.RuneError)))
+			return attribute.StringValue(strings.ToValidUTF8(s, string(utf8.RuneError)))
 		}
-	case log.KindSlice:
+	case attribute.STRINGSLICE:
+		vals := v.AsStringSlice()
+		var fixed []string
+		for i, s := range vals {
+			if fixed == nil && !utf8.ValidString(s) {
+				fixed = slices.Clone(vals)
+			}
+			if fixed != nil {
+				fixed[i] = strings.ToValidUTF8(s, string(utf8.RuneError))
+			}
+		}
+		if fixed != nil {
+			return attribute.StringSliceValue(fixed)
+		}
+	case attribute.SLICE:
 		vals := v.AsSlice()
-		var fixed []log.Value
+		var fixed []attribute.Value
 		for i, elem := range vals {
 			valid := validUTF8LogValue(elem)
-			if fixed == nil && !valid.Equal(elem) {
+			if fixed == nil && valid != elem {
 				fixed = slices.Clone(vals)
 			}
 			if fixed != nil {
@@ -1313,17 +1326,17 @@ func validUTF8LogValue(v log.Value) log.Value {
 			}
 		}
 		if fixed != nil {
-			return log.SliceValue(fixed...)
+			return attribute.SliceValue(fixed...)
 		}
-	case log.KindMap:
+	case attribute.MAP:
 		kvs := v.AsMap()
-		var fixed []log.KeyValue
+		var fixed []attribute.KeyValue
 		for i, kv := range kvs {
-			valid := log.KeyValue{
-				Key:   strings.ToValidUTF8(kv.Key, string(utf8.RuneError)),
+			valid := attribute.KeyValue{
+				Key:   attribute.Key(strings.ToValidUTF8(string(kv.Key), string(utf8.RuneError))),
 				Value: validUTF8LogValue(kv.Value),
 			}
-			if fixed == nil && !valid.Equal(kv) {
+			if fixed == nil && valid != kv {
 				fixed = slices.Clone(kvs)
 			}
 			if fixed != nil {
@@ -1331,7 +1344,7 @@ func validUTF8LogValue(v log.Value) log.Value {
 			}
 		}
 		if fixed != nil {
-			return log.MapValue(fixed...)
+			return attribute.MapValue(fixed...)
 		}
 	}
 	return v

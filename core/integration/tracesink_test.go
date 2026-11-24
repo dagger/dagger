@@ -155,7 +155,7 @@ func (sink *agentTraceSink) logsHandler(w http.ResponseWriter, r *http.Request) 
 			ex.items += len(sl.LogRecords)
 		}
 	}
-	if err := telemetry.ReexportLogsFromPB(r.Context(), sink.logExp, &req); err != nil {
+	if err := telemetry.ReexportLogsFromPB(r.Context(), sink.logExp, req.GetResourceLogs()); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

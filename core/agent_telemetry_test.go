@@ -14,8 +14,8 @@ import (
 
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
-	otellog "go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
@@ -45,7 +45,7 @@ type stateRecorder struct {
 
 func (r *stateRecorder) OnEmit(ctx context.Context, rec *sdklog.Record) error {
 	got := recordedState{body: rec.Body().AsString()}
-	rec.WalkAttributes(func(kv otellog.KeyValue) bool {
+	rec.WalkAttributes(func(kv attribute.KeyValue) bool {
 		switch kv.Key {
 		case telemetryattrs.AgentStateAttr:
 			got.state = kv.Value.AsString()

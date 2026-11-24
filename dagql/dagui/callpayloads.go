@@ -2,7 +2,7 @@ package dagui
 
 import (
 	telemetry "github.com/dagger/otel-go"
-	otellog "go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/attribute"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"google.golang.org/protobuf/proto"
 
@@ -17,9 +17,9 @@ import (
 // non-bytes body) so no downstream renderer treats them as log text.
 func IsCallPayloadRecord(record sdklog.Record) bool {
 	payload := false
-	record.WalkAttributes(func(kv otellog.KeyValue) bool {
+	record.WalkAttributes(func(kv attribute.KeyValue) bool {
 		if kv.Key == telemetry.ContentTypeAttr {
-			payload = kv.Value.Kind() == otellog.KindString &&
+			payload = kv.Value.Type() == attribute.STRING &&
 				kv.Value.AsString() == telemetryattrs.CallPayloadContentType
 			return false
 		}
@@ -37,13 +37,13 @@ func (db *DB) ingestCallPayload(record sdklog.Record) bool {
 		return false
 	}
 
-	if record.Body().Kind() != otellog.KindBytes {
-		slog.Warn("dropping malformed call payload record", "reason", "body must be bytes", "kind", record.Body().Kind())
+	if record.Body().Type() != attribute.BYTESLICE {
+		slog.Warn("dropping malformed call payload record", "reason", "body must be bytes", "kind", record.Body().Type())
 		return true
 	}
 
 	decoded := new(callpbv1.Call)
-	if err := proto.Unmarshal(record.Body().AsBytes(), decoded); err != nil {
+	if err := proto.Unmarshal(record.Body().AsByteSlice(), decoded); err != nil {
 		slog.Warn("dropping malformed call payload record", "reason", "invalid call payload", "err", err)
 		return true
 	}

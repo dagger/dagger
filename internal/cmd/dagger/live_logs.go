@@ -14,7 +14,7 @@ import (
 	"time"
 
 	telemetry "github.com/dagger/otel-go"
-	"go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/attribute"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/trace"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
@@ -986,7 +986,7 @@ func (l *liveLogs) importRead(ctx context.Context, req *collogspb.ExportLogsServ
 		return nil
 	}
 	ctx = idtui.WithLiveLogsFilter(ctx, l.heldRowsFilter(read, claims))
-	return telemetry.ReexportLogsFromPB(ctx, l.export, req)
+	return telemetry.ReexportLogsFromPB(ctx, l.export, req.GetResourceLogs())
 }
 
 // logTargetsOf lists what the frontend renders each record of req for, in
@@ -1100,14 +1100,14 @@ func logOwnerOfRecord(rec sdklog.Record) (logOwner, int64) {
 	key := logOwner{span: rec.SpanID()}
 	var row int64
 	var digest, hasRow bool
-	rec.WalkAttributes(func(kv log.KeyValue) bool {
+	rec.WalkAttributes(func(kv attribute.KeyValue) bool {
 		switch kv.Key {
 		case telemetry.DagDigestAttr:
 			if !digest {
 				key.digest, digest = kv.Value.AsString(), true
 			}
 		case telemetryattrs.LogRowAttr:
-			if !hasRow && kv.Value.Kind() == log.KindInt64 {
+			if !hasRow && kv.Value.Type() == attribute.INT64 {
 				row, hasRow = kv.Value.AsInt64(), true
 			}
 		}
@@ -1335,7 +1335,7 @@ func readPrimaryOutput(ctx context.Context, reader tracesource.LogReader, traceI
 		err = reader.ReadLogs(ctx, traceID, tracesource.LogQuery{
 			Spans: []archive.LogSpan{{SpanID: primary.String()}},
 		}, func(ctx context.Context, req *collogspb.ExportLogsServiceRequest, _ string) error {
-			return telemetry.ReexportLogsFromPB(ctx, &out, req)
+			return telemetry.ReexportLogsFromPB(ctx, &out, req.GetResourceLogs())
 		})
 		if err == nil || attempt >= liveLogsPrimaryAttempts || ctx.Err() != nil {
 			return out.records, err

@@ -197,7 +197,7 @@ func (imp *TraceImporter) ImportLogs(ctx context.Context, req *collogspb.ExportL
 		return nil
 	}
 	NormalizeLogsRequest(req) // see "degrade, never panic"
-	return telemetry.ReexportLogsFromPB(ctx, imp.sinks.Logs, req)
+	return telemetry.ReexportLogsFromPB(ctx, imp.sinks.Logs, req.GetResourceLogs())
 }
 
 // ImportMetrics folds one OTLP metric export request of the foreign trace in.

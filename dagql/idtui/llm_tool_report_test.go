@@ -10,8 +10,8 @@ import (
 
 	"github.com/muesli/termenv"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
-	otellog "go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
@@ -529,8 +529,8 @@ func TestScopedReportHideConversationOmitsSubAgent(t *testing.T) {
 	db.SetPrimarySpan(rootID)
 	session := NewReportSession(db)
 	require.NoError(t, session.LogExporter().Export(context.Background(), []sdklog.Record{
-		frontendTestLogRecord(promptID.SpanID, otellog.StringValue("SUB-AGENT-PROMPT\n")),
-		frontendTestLogRecord(replyID.SpanID, otellog.StringValue("SUB-AGENT-REPLY\n")),
+		frontendTestLogRecord(promptID.SpanID, attribute.StringValue("SUB-AGENT-PROMPT\n")),
+		frontendTestLogRecord(replyID.SpanID, attribute.StringValue("SUB-AGENT-REPLY\n")),
 	}))
 
 	opts := scopedReportOpts(toolID, true)

@@ -12,8 +12,8 @@ import (
 
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
-	otellog "go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
@@ -307,7 +307,7 @@ func TestToolCallReportOmitsSubAgentConversation(t *testing.T) {
 	} {
 		var rec sdklog.Record
 		rec.SetSpanID(id.SpanID)
-		rec.SetBody(otellog.StringValue(body))
+		rec.SetBody(attribute.StringValue(body))
 		records = append(records, rec)
 	}
 	require.NoError(t, session.LogExporter().Export(t.Context(), records))
