@@ -262,6 +262,47 @@ func BenchmarkFanOutTimeBreakdownSpans(b *testing.B) {
 	b.ReportMetric(float64(visited), "visited")
 }
 
+// BenchmarkSpanAttributesGob times gob-encoding and decoding the
+// attributes alone of a batch of 1000 snapshots, in each form.
+func BenchmarkSpanAttributesGob(b *testing.B) {
+	var attrs []SpanAttributes
+	for _, s := range hotspotTrace()[:hotspotImportBatch] {
+		attrs = append(attrs, s.ExtraAttributes)
+	}
+	for _, form := range []struct {
+		name   string
+		binary bool
+	}{
+		{"json", false},
+		{"binary", true},
+	} {
+		EncodeBinaryAttributes(form.binary)
+		encoded := make([][]byte, len(attrs))
+		b.Run(form.name+"/encode", func(b *testing.B) {
+			for b.Loop() {
+				for i, a := range attrs {
+					p, err := a.GobEncode()
+					if err != nil {
+						b.Fatal(err)
+					}
+					encoded[i] = p
+				}
+			}
+		})
+		b.Run(form.name+"/decode", func(b *testing.B) {
+			for b.Loop() {
+				for _, p := range encoded {
+					var a SpanAttributes
+					if err := a.GobDecode(p); err != nil {
+						b.Fatal(err)
+					}
+				}
+			}
+		})
+	}
+	EncodeBinaryAttributes(false)
+}
+
 // BenchmarkSnapshotsGob times encoding and decoding a batch of 1000
 // attribute-heavy snapshots with gob, as the Cloud websocket sends them.
 func BenchmarkSnapshotsGob(b *testing.B) {
@@ -278,20 +319,30 @@ func BenchmarkSnapshotsGob(b *testing.B) {
 		}
 		return buf.Bytes()
 	}
-	b.Run("encode", func(b *testing.B) {
-		var n int
-		for b.Loop() {
-			n = len(encode())
-		}
-		b.ReportMetric(float64(n), "bytes")
-	})
-	b.Run("decode", func(b *testing.B) {
-		payload := encode()
-		for b.Loop() {
-			var decoded []SpanSnapshot
-			if err := gob.NewDecoder(bytes.NewReader(payload)).Decode(&decoded); err != nil {
-				b.Fatal(err)
+	for _, form := range []struct {
+		name   string
+		binary bool
+	}{
+		{"json", false},
+		{"binary", true},
+	} {
+		EncodeBinaryAttributes(form.binary)
+		b.Run(form.name+"/encode", func(b *testing.B) {
+			var n int
+			for b.Loop() {
+				n = len(encode())
 			}
-		}
-	})
+			b.ReportMetric(float64(n), "bytes")
+		})
+		b.Run(form.name+"/decode", func(b *testing.B) {
+			payload := encode()
+			for b.Loop() {
+				var decoded []SpanSnapshot
+				if err := gob.NewDecoder(bytes.NewReader(payload)).Decode(&decoded); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+	EncodeBinaryAttributes(false)
 }

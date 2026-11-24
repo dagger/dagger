@@ -86,6 +86,9 @@ func TestSpanAttributes(t *testing.T) {
 	}
 
 	testSpanAttributesRoundTrip(t, snapshot, want)
+	EncodeBinaryAttributes(true)
+	testSpanAttributesRoundTrip(t, snapshot, want)
+	EncodeBinaryAttributes(false)
 
 	// no attributes: omitted from JSON like an empty map
 	empty, err := json.Marshal(SpanSnapshot{})
@@ -133,6 +136,114 @@ func TestSpanAttributesSharePairs(t *testing.T) {
 	other.internSnapshotStrings(&c)
 	if pair(c, telemetryattrs.CacheOutcomeAttr) == pair(b, telemetryattrs.CacheOutcomeAttr) {
 		t.Fatal("DBs should not share attributes")
+	}
+}
+
+// TestSpanAttributesGobForms checks the two forms SpanAttributes gob-encode
+// as: JSON by default, which every decoder reads, and the binary form
+// EncodeBinaryAttributes opts in to, which only decoders that know it do.
+func TestSpanAttributesGobForms(t *testing.T) {
+	var snapshot SpanSnapshot
+	snapshot.ProcessAttribute("z.str", "goodbye <world>")
+	snapshot.ProcessAttribute("a.bool", true)
+	snapshot.ProcessAttribute("m.nul", "\x00not json")
+	snapshot.ProcessAttribute("m.utf8", "héllo\u2028\n")
+	attrs := snapshot.ExtraAttributes
+
+	same := func(t *testing.T, got SpanAttributes) {
+		t.Helper()
+		if len(got) != len(attrs) {
+			t.Fatalf("decoded %d attributes, want %d", len(got), len(attrs))
+		}
+		for name, payload := range attrs.All() {
+			if p, ok := got.Get(name); !ok || !bytes.Equal(p, payload) {
+				t.Errorf("Get(%q) = %s, %v; want %s", name, p, ok, payload)
+			}
+		}
+		if str, ok := got.String("m.nul"); !ok || str != "\x00not json" {
+			t.Errorf("String(m.nul) = %q, %v", str, ok)
+		}
+	}
+
+	jsonForm, err := attrs.GobEncode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want, _ := attrs.MarshalJSON(); !bytes.Equal(jsonForm, want) {
+		t.Fatalf("default gob form is %q, want the JSON %q", jsonForm, want)
+	}
+
+	EncodeBinaryAttributes(true)
+	defer EncodeBinaryAttributes(false)
+	binForm, err := attrs.GobEncode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if binForm[0] != binaryAttrsVersion {
+		t.Fatalf("binary form starts with %q", binForm[0])
+	}
+	if nilForm, _ := SpanAttributes(nil).GobEncode(); string(nilForm) != "null" {
+		t.Fatalf("nil attributes encode as %q", nilForm)
+	}
+
+	t.Run("decoder reads both forms", func(t *testing.T) {
+		for _, form := range [][]byte{jsonForm, binForm} {
+			var got SpanAttributes
+			if err := got.GobDecode(form); err != nil {
+				t.Fatal(err)
+			}
+			same(t, got)
+		}
+		var got SpanAttributes
+		if err := got.GobDecode([]byte("null")); err != nil || got != nil {
+			t.Fatalf("null decodes to %v, %v", got, err)
+		}
+		empty, _ := SpanAttributes{}.GobEncode()
+		if err := got.GobDecode(empty); err != nil || got == nil || len(got) != 0 {
+			t.Fatalf("empty attributes decode to %#v, %v", got, err)
+		}
+	})
+
+	t.Run("old decoder fails on binary form", func(t *testing.T) {
+		// what a decoder from before the binary form does with it: why
+		// it's opt-in
+		var got SpanAttributes
+		if err := got.UnmarshalJSON(binForm); err == nil {
+			t.Fatal("decoding the binary form as JSON should fail")
+		}
+	})
+
+	t.Run("malformed binary form", func(t *testing.T) {
+		for i := 1; i < len(binForm); i++ {
+			var got SpanAttributes
+			if err := got.GobDecode(binForm[:i]); err == nil {
+				t.Fatalf("decoding %d of %d bytes should fail", i, len(binForm))
+			}
+		}
+		var got SpanAttributes
+		if err := got.GobDecode(append(slices.Clone(binForm), 0)); err == nil {
+			t.Fatal("decoding trailing bytes should fail")
+		}
+		if err := got.GobDecode([]byte{binaryAttrsVersion, 0xff, 0xff, 0xff, 0xff, 0x0f}); err == nil {
+			t.Fatal("decoding a huge count should fail")
+		}
+	})
+}
+
+// TestAppendJSONString checks that attribute strings marshal as
+// encoding/json marshals them.
+func TestAppendJSONString(t *testing.T) {
+	for _, s := range []string{
+		"", "plain", "with space", "quote\"", `back\slash`, "<html>&", "tab\t",
+		"nul\x00", "héllo", "\u2028\u2029", "invalid \xff utf8", "\x7f",
+	} {
+		want, err := json.Marshal(s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := appendJSONString([]byte("x"), s); string(got) != "x"+string(want) {
+			t.Errorf("appendJSONString(%q) = %s, want x%s", s, got, want)
+		}
 	}
 }
 
