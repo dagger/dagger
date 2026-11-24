@@ -13,6 +13,7 @@ import (
 	"dagger.io/dagger/core"
 
 	"dagger.io/dagger"
+	dagcore "github.com/dagger/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -187,7 +188,7 @@ var serveGitTrustEntrypoint = fmt.Sprintf(`type Entrypoint implements ModuleEntr
       (JSON.encode(
         container
           .from(%q)
-          .withEnvVariable("DAGGER_MODULE_CALL_DIGEST", callDigest ?? "")
+          .withEnvVariable(%q, callDigest ?? "")
           .withFile("/serve.sh", currentModule.source.file("serve.sh"))
           .withExec(["sh", "/serve.sh"], experimentalPrivilegedNesting: true)
           .stdout
@@ -195,7 +196,7 @@ var serveGitTrustEntrypoint = fmt.Sprintf(`type Entrypoint implements ModuleEntr
     }
   }
 }
-`, alpineImage)
+`, alpineImage, dagcore.ModuleCallDigestEnv)
 
 // serveGitTrustEntrypointScript is the process: it serves address and prints
 // a new nonce, or what serving answered when it failed.

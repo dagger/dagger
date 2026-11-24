@@ -1,0 +1,25 @@
+Expected stderr:
+
+✔ connect X.Xs
+✔ load workspace: . X.Xs
+✔ parsing command line arguments X.Xs
+
+✘ viztestRuby: ViztestRuby! X.Xs ERROR
+--> /src/lib/viztest_ruby.rb
+
+Unmatched `)', missing `(' ?
+Unmatched keyword, missing `end' ?
+
+>  1  require "dagger"
+>  2  require "dagger/clients/roots"
+> 86  this is not ruby)
+
+/src/lib/viztest_ruby.rb:86: syntax errors found (SyntaxError)
+  84 | end
+  85 |
+> 86 | this is not ruby)
+     |                 ^ unexpected ')', ignoring it
+     |                 ^ unexpected ')', expecting end-of-input
+! /src/lib/viztest_ruby.rb:86: syntax errors found
+
+Setup tracing by running "dagger cloud signup". To hide set DAGGER_NO_NAG=1

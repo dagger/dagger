@@ -1285,8 +1285,12 @@ func (srv *Server) resolveModuleLoadBatch(
 		gitWS, gitWSErr = sessionGitWorkspace(ctx, client.dag)
 	}
 
+	// Each load starts its own span rather than the job's: the span fails
+	// with the load, while the job succeeds, so that every load runs and its
+	// error is collected. The span encapsulates the load: its steps show
+	// only when the load fails.
 	jobs := parallel.New().
-		WithContextualTracer(true)
+		WithTracing(false)
 	for i, load := range loads {
 		i := i
 		load := load
@@ -1295,7 +1299,9 @@ func (srv *Server) resolveModuleLoadBatch(
 			continue
 		}
 		jobs = jobs.WithJob(moduleLoadJobName(load), func(ctx context.Context) error {
+			ctx, span := core.Tracer(ctx).Start(ctx, moduleLoadJobName(load), telemetry.Encapsulate())
 			resolved, err := srv.resolveModuleLoad(ctx, client.dag, gitWS, load)
+			telemetry.EndWithCause(span, &err)
 			if err != nil {
 				resolveErrs[i] = err
 				return nil //nolint:nilerr // errors collected for deterministic ordering
@@ -1875,12 +1881,11 @@ func moduleProgressName(mod pendingModule) string {
 	return "<unknown>"
 }
 
+// moduleLoadJobName names a module load's span the same for both kinds: an
+// extra module, one a client asks for with -m, is usually the main module, so
+// "extra" would only leak the engine's own vocabulary.
 func moduleLoadJobName(load moduleLoadRequest) string {
-	prefix := "load module: "
-	if load.mod.Kind == moduleLoadKindExtra {
-		prefix = "load extra module: "
-	}
-	return prefix + moduleProgressName(load.mod)
+	return "load module: " + moduleProgressName(load.mod)
 }
 
 // reportSkippedModule surfaces a best-effort load failure as its own span,

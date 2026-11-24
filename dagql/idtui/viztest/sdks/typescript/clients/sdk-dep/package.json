@@ -1,0 +1,13 @@
+{
+  "name": "@dagger.io/sdk-dep",
+  "version": "0.0.0",
+  "type": "module",
+  "main": "./sdk-dep.gen.ts",
+  "types": "./sdk-dep.gen.ts",
+  "exports": {
+    ".": "./sdk-dep.gen.ts"
+  },
+  "dependencies": {
+    "@dagger.io/dagger": "file:../dagger"
+  }
+}

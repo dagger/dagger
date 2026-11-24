@@ -21,7 +21,7 @@ func (sdk *codeGeneratorModule) Codegen(
 ) (_ *core.GeneratedCode, rerr error) {
 	// Encapsulated: the SDK's work is its own, and only a step of it that
 	// failed shows (see dagui's spanWalker.passesOnFailure).
-	ctx, span := core.Tracer(ctx).Start(ctx, "module SDK: run codegen", telemetry.Encapsulate())
+	ctx, span := core.Tracer(ctx).Start(ctx, "generate "+source.Self().ModuleName, telemetry.Encapsulate())
 	defer telemetry.EndWithCause(span, &rerr)
 
 	sdkInst, err := sdk.mod.instantiate(ctx)

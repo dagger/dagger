@@ -26,7 +26,7 @@ func (sdk *runtimeModule) Runtime(
 ) (_ core.ModuleRuntime, rerr error) {
 	// Encapsulated: the SDK's work is its own, and only a step of it that
 	// failed shows (see dagui's spanWalker.passesOnFailure).
-	ctx, span := core.Tracer(ctx).Start(ctx, "module SDK: load runtime", telemetry.Encapsulate())
+	ctx, span := core.Tracer(ctx).Start(ctx, "build "+source.Self().ModuleName, telemetry.Encapsulate())
 	defer telemetry.EndWithCause(span, &rerr)
 
 	inst, err := sdk.runtimeContainer(ctx, deps, source)
@@ -70,7 +70,7 @@ func (sdk *runtimeModule) PrebuildRuntime(
 
 	// Not internal: the build's own spans are recorded under this one.
 	// Encapsulated, as the runtime's load is.
-	ctx, span := core.Tracer(ctx).Start(ctx, "module SDK: build runtime", telemetry.Encapsulate())
+	ctx, span := core.Tracer(ctx).Start(ctx, "build "+source.Self().ModuleName, telemetry.Encapsulate())
 	defer telemetry.EndWithCause(span, &rerr)
 
 	inst, err := sdk.runtimeContainer(ctx, nil, source)

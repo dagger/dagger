@@ -1,0 +1,12 @@
+Expected stderr:
+
+✔ connect X.Xs
+✔ load workspace: . X.Xs
+✔ parsing command line arguments X.Xs
+
+$ viztestJava: ViztestJava! X.Xs CACHED
+✘ .failApi: String! X.Xs ERROR
+✘ Directory.file(path: "doesnt-exist.txt"): File! X.Xs ERROR
+! stat doesnt-exist.txt: no such file or directory
+
+Setup tracing by running "dagger cloud signup". To hide set DAGGER_NO_NAG=1

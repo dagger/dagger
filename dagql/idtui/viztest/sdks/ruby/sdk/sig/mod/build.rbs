@@ -1,0 +1,46 @@
+module Dagger
+  module Mod
+    class Build
+      EXCLUDES: Array[String]
+      CONTEXT_EXCLUDES: Array[String]
+      DEPENDENCY_FILES: Array[String]
+      CACHE_VOLUME: String
+      CACHE_PATH: String
+      HEADER: String
+      ALONE: String
+      CONTEXT: String
+
+      attr_reader image: String
+      attr_reader module_name: String
+      attr_reader gemspecs: Array[String]
+      attr_reader outside: Array[String]
+      attr_reader outside_files: Array[String]
+      attr_reader module_path: String
+
+      def initialize: (image: String, module_name: String, gemspecs: Array[String], ?outside: Array[String],
+                       ?outside_files: Array[String], ?module_path: String) -> void
+      def context?: () -> bool
+      def env: (?frozen: bool, ?development: bool, ?subpath: String?) -> Hash[String, String]
+      def installed: (QueryBuilder root, Type source, ?development: bool, ?subpath: String?) -> QueryBuilder
+      def tail: () -> String
+      def to_dang: () -> String
+      def src: (String? subpath) -> String
+      def self.dang_strings: (Array[String] values) -> String
+
+      private
+
+      def ups: () -> Integer
+      def anchored: (String dir) -> String
+      def excludes: (String? subpath) -> Array[String]
+      def dang_parts: () -> Hash[Symbol, String]
+      def call_install: () -> String
+      def dang_list: (Array[String] names) -> String
+      def dang_layer: () -> String
+      def dang_outside: () -> String
+      def user_cache: (bool development) -> String
+      def dang_env: () -> String
+      def base: (QueryBuilder root, Hash[String, String] variables, String? subpath) -> QueryBuilder
+      def dependencies: (QueryBuilder root, Type source, ?subpath: String?) -> QueryBuilder
+    end
+  end
+end

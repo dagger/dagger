@@ -1,0 +1,15 @@
+Expected stderr:
+
+✔ connect X.Xs
+✔ load workspace: . X.Xs
+✔ parsing command line arguments X.Xs
+
+✘ viztestPython: ViztestPython! X.Xs ERROR
+Traceback (most recent call last):
+  File "/src/sha256:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX/viztest/sdks/broken-python/src/viztest_python/__init__.py", line XXX, in <module>
+    this is not python
+    ^^^^
+NameError: name 'this' is not defined. Did you forget to import 'this'?
+! name 'this' is not defined
+
+Setup tracing by running "dagger cloud signup". To hide set DAGGER_NO_NAG=1

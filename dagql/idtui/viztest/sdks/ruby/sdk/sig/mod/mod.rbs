@@ -1,0 +1,450 @@
+module Dagger
+  module Mod
+    module Boolean
+    end
+
+    module Void
+    end
+
+    class Optional < Data
+      attr_reader type: untyped
+
+      def self.[]: (untyped type) -> Optional
+      def self.new: (type: untyped) -> Optional
+    end
+
+    self.@registry: Registry?
+    self.@module_source_id: String?
+
+    def self.registry: () -> Registry
+    def self.module_source_id: () -> String?
+    def self.module_source_id=: (String? id) -> String?
+    def self.module_source: () -> untyped
+    def self.reset_registry!: () -> Registry
+
+    REGENERATE_HINT: String
+
+    class Error < Dagger::Error
+    end
+
+    class RegistrationError < Error
+    end
+
+    class InvalidInputError < Error
+    end
+
+    class InvalidResultError < Error
+    end
+
+    UNSET: ::Object
+
+    module Naming
+      def self?.file_name: (String module_name) -> String
+      def self?.module_file: (String module_name) -> String
+    end
+
+    class FieldDecl < Data
+      attr_reader name: Symbol
+      attr_reader type: untyped
+      attr_reader default: untyped
+      attr_reader ignore: Array[String]?
+      attr_reader private: bool
+      attr_reader doc: String?
+      attr_reader deprecated: String?
+      attr_reader role: Symbol?
+
+      def self.new: (Symbol, untyped, untyped, Array[String]?, bool, String?, String?, Symbol?) -> FieldDecl
+    end
+
+    class ArgDecl < Data
+      attr_reader ruby_name: Symbol
+      attr_reader type: untyped
+      attr_reader api_name: String?
+      attr_reader default: untyped
+      attr_reader optional: bool
+      attr_reader default_address: String?
+      attr_reader ignore: Array[String]?
+      attr_reader doc: String?
+      attr_reader deprecated: String?
+
+      def self.new: (Symbol, untyped, String?, untyped, bool, String?, Array[String]?, String?, String?) -> ArgDecl
+    end
+
+    class FunctionDecl < Data
+      attr_reader method_name: Symbol
+      attr_reader api_name: String?
+      attr_reader doc: String?
+      attr_reader returns: untyped
+      attr_reader args: Array[ArgDecl]
+      attr_reader check: bool
+      attr_reader generator: bool
+      attr_reader start: bool
+      attr_reader agent: bool
+      attr_reader get: bool
+      attr_reader deprecated: String?
+      attr_reader cache: String?
+      attr_reader constructor: bool
+
+      def self.new: (Symbol, String?, String?, untyped, Array[ArgDecl], bool, bool, bool, bool, bool, String?, String?,
+                     bool) -> FunctionDecl
+    end
+
+    class Pending
+      attr_reader kind: :function | :constructor
+      attr_reader options: Hash[Symbol, untyped]
+      attr_reader args: Array[ArgDecl]
+
+      def initialize: (:function | :constructor kind, Hash[Symbol, untyped] options) -> void
+    end
+
+    # The declarations `extend Dagger::Mod::Object` and `extend
+    # Dagger::Mod::Interface` share.
+    module Declaring : ::Module
+      @dagger_functions: Hash[Symbol, FunctionDecl]?
+      @dagger_description: String?
+      @dagger_pending: Pending?
+
+      def dagger_functions: () -> Hash[Symbol, FunctionDecl]
+      def dagger_description: () -> String?
+      def dagger_pending: () -> Pending?
+      def description: (String text) -> String
+      def function: (?String? doc, ?name: String?, ?check: bool, ?generator: bool, ?start: bool, ?agent: bool,
+                     ?get: bool, ?deprecated: String?, ?cache: String?) -> Pending
+      def arg: (Symbol | String ruby_name, ?name: String?, ?default_address: String?, ?ignore: Array[String]?,
+                ?doc: String?, ?deprecated: String?) -> Array[ArgDecl]
+      def method_added: (Symbol method_name) -> void
+
+      private
+
+      def pend: (:function | :constructor kind, Hash[Symbol, untyped] options) -> Pending
+      def pending: (String what) -> Pending
+      def constructor_pending?: () -> bool
+      def take: (Symbol method_name, constructor: bool) -> FunctionDecl
+    end
+
+    # The class methods `extend Dagger::Mod::Object` gives a class. The
+    # readers and initializer that `field` defines are in the module's
+    # generated sdk/entrypoint/module.rbs. A field's type is the `#:` that
+    # ends its line, which Steep reads as an assertion on this untyped result.
+    module Object : ::Module
+      include Declaring
+
+      module State : _State
+        def initialize: (**untyped state) -> void
+      end
+
+      interface _State
+        def class: () -> _FieldOwner
+        def instance_variable_set: (Symbol name, untyped value) -> untyped
+      end
+
+      interface _FieldOwner
+        def dagger_fields: () -> Hash[Symbol, FieldDecl]
+      end
+
+      @dagger_fields: Hash[Symbol, FieldDecl]?
+      @dagger_constructor: FunctionDecl?
+      @dagger_collection: String?
+
+      def self.extended: (untyped base) -> void
+      def dagger_fields: () -> Hash[Symbol, FieldDecl]
+      def dagger_constructor: () -> FunctionDecl?
+      def dagger_collection: () -> String?
+      def collection: () -> String
+      def field: (Symbol | String name, ?default: untyped, ?ignore: Array[String]?, ?private: bool, ?doc: String?,
+                  ?deprecated: String?, ?keys: bool, ?delta: bool) -> untyped
+      def constructor: (?String? doc) -> Pending
+      def singleton_method_added: (Symbol method_name) -> void
+    end
+
+    # The class methods `extend Dagger::Mod::Interface` gives a module, and
+    # the binding module code calls an interface value through.
+    module Interface : ::Module
+      include Declaring
+
+      self.@bindings: Hash[untyped, singleton(::Dagger::Type)]?
+      self.@field_names: Hash[Registry, Hash[String, String]]?
+
+      def self.extended: (untyped base) -> void
+      def self.binding: (untyped interface, Registry registry) -> singleton(::Dagger::Type)
+      def self.field_names: (Registry registry, ::Dagger::QueryBuilder root) -> Hash[String, String]
+
+      class Binding
+        @interface: untyped
+        @registry: Registry
+        @types: Hash[String, String]
+
+        def initialize: (untyped interface, Registry registry) -> void
+        def build: () -> singleton(::Dagger::Type)
+        def call: (untyped instance, FunctionDecl decl, Hash[Symbol, untyped] kwargs) -> untyped
+        def result: (QueryBuilder query, untyped type) -> untyped
+
+        private
+
+        def arguments: (Hash[String, String] names, FunctionDecl decl, Hash[Symbol, untyped] kwargs)
+                     -> Hash[Symbol, untyped]
+        def concrete: (QueryBuilder query) -> QueryBuilder
+        def define: (singleton(::Dagger::Type) klass, FunctionDecl decl) -> void
+        def single: (QueryBuilder query, untyped type) -> untyped
+        def list: (QueryBuilder query, untyped type) -> untyped
+        def leaf?: (untyped type) -> bool
+        def object_class: (untyped type) -> singleton(::Dagger::Type)
+      end
+    end
+
+    class Enum < ::Dagger::Enum
+      MEMBER_NAME: Regexp
+
+      self.@dagger_members: Array[Enum]?
+      self.@dagger_description: String?
+
+      attr_reader doc: String?
+      attr_reader deprecated: String?
+
+      def self.inherited: (untyped subclass) -> void
+      def self.dagger_members: () -> Array[Enum]
+      def self.dagger_description: () -> String?
+      def self.description: (String text) -> String
+      def self.member: (Symbol | String name, ?String | Symbol value, ?doc: String?, ?deprecated: String?) -> Enum
+      def initialize: (String name, String value, ?doc: String?, ?deprecated: String?) -> void
+    end
+
+    type described_class = untyped
+
+    class Registry
+      BUILTINS: Hash[::Module, String]
+      ARGUMENT: Regexp
+      ROOTS: String
+      EXAMPLE: String
+      TIME_TO_LIVE: Regexp
+
+      @fields: Hash[described_class, Hash[Symbol, FieldDecl]]
+      @functions: Hash[described_class, Hash[Symbol, FunctionDecl]]
+      @constructors: Hash[described_class, FunctionDecl?]
+      @locations: Hash[[described_class, Symbol, Symbol], String?]
+
+      attr_reader objects: Array[described_class]
+      attr_reader enums: Array[singleton(Enum)]
+      attr_reader interfaces: Array[described_class]
+
+      def initialize: () -> void
+      def add_object: (described_class klass) -> Array[described_class]
+      def add_enum: (singleton(Enum) klass) -> Array[singleton(Enum)]
+      def add_interface: (described_class mod) -> Array[described_class]
+      def object_named: (String? name) -> described_class?
+      def type_name: (::Module klass) -> String
+      def annotate: (Signatures signatures) -> void
+      def fields: (described_class klass) -> Hash[Symbol, FieldDecl]
+      def field_args: (described_class klass) -> Array[ArgDecl]
+      def functions: (described_class klass) -> Hash[Symbol, FunctionDecl]
+      def constructor: (described_class klass) -> FunctionDecl?
+      def describe: (String? main_object) -> Description::Module
+      def type_ref: (untyped type, String context, ?optional: bool) -> Description::TypeRef
+      def member_at: (described_class klass, Symbol kind, Symbol name) -> String
+
+      private
+
+      def missing_main: (String? name) -> String
+      def typed_field: (described_class klass, FieldDecl field, Signatures signatures) -> FieldDecl
+      def typed_function: (described_class klass, FunctionDecl decl, Signatures signatures) -> FunctionDecl
+      def location: (Method | UnboundMethod method) -> String
+      def check_parameters: (Method | UnboundMethod method, FunctionDecl decl, Signatures::Method signature, String at)
+                          -> void
+      def typed_arg: (described_class klass, FunctionDecl decl, Signatures::Method signature, Signatures::Param param,
+                      String context) -> ArgDecl
+      def default_value: (Hash[String, untyped] default, Array[String] nesting, String context) -> untyped
+      def resolve: (untyped type, Array[String] nesting, described_class klass, String context) -> untyped
+      def check_complete: (described_class klass) -> void
+      def check_client_methods: (described_class klass) -> void
+      def declared_clash: (described_class klass, Symbol method) -> String?
+      def defines?: (::Module mod, Symbol method) -> bool
+      def describe_object: (described_class klass, main: bool) -> Description::ObjectType
+      def describe_interface: (described_class mod) -> Description::ObjectType
+      def check_interface_result: (described_class mod, untyped type) -> void
+      def describe_constructor: (described_class klass) -> Description::Function
+      def describe_function: (described_class klass, FunctionDecl decl) -> Description::Function
+      def check_cache: (String member, String? cache) -> void
+      def function_name: (FunctionDecl decl, String where) -> String
+      def describe_arg: (String where, ArgDecl arg) -> Description::Argument
+      def default_json: (untyped default, Description::TypeRef type, String context) -> String?
+      def plain?: (untyped value) -> bool
+      def describe_enum: (singleton(Enum) klass) -> Description::Enum
+      def list_ref: (Array[untyped] type, String context, bool optional) -> Description::TypeRef
+      def object_ref: (::Module klass) -> Description::TypeRef
+      def class_ref: (::Module klass, String context, bool optional) -> Description::TypeRef
+      def class_kind: (::Module klass) -> String?
+      def api_type_name: (::Module klass) -> String
+    end
+
+    class CollectionRules
+      @registry: Registry
+      @klass: described_class
+      @name: String
+      @fields: Array[FieldDecl]
+      @functions: Array[FunctionDecl]
+
+      def initialize: (Registry registry, described_class klass) -> void
+      def describe: () -> Description::Collection?
+
+      private
+
+      def at: (Symbol kind, Symbol name) -> String
+      def check_unmarked: () -> void
+      def member: (Symbol role) -> FieldDecl?
+      def getter: () -> FunctionDecl
+      def check_keys: (FieldDecl? keys) -> untyped
+      def key_type?: (untyped type) -> bool
+      def check_get: (FunctionDecl get, untyped key) -> void
+      def object?: (untyped type) -> bool
+      def check_delta: (FieldDecl delta) -> void
+    end
+
+    class Signatures
+      type json = Hash[String, untyped]
+
+      FILE: String
+
+      class Method < Data
+        attr_reader location: String
+        attr_reader nesting: Array[String]
+        attr_reader params: Array[Param]
+        attr_reader returns: untyped
+        attr_reader refused: String?
+
+        def self.new: (String, Array[String], Array[Param], untyped, String?) -> Method
+      end
+
+      class Param < Data
+        attr_reader name: Symbol
+        attr_reader type: untyped
+        attr_reader default: json?
+
+        def self.new: (Symbol, untyped, json?) -> Param
+      end
+
+      class Field < Data
+        attr_reader location: String
+        attr_reader nesting: Array[String]
+        attr_reader type: untyped
+        attr_reader refused: String?
+
+        def self.new: (String, Array[String], untyped, String?) -> Field
+      end
+
+      @methods: Hash[[String?, bool, String], Method]
+      @fields: Hash[[String?, String], Field]
+
+      def self.read: () -> Signatures
+      def self.resolve: (untyped type, Array[String] nesting, ::Module owner) -> untyped
+      def self.constant: (String name, Array[String] nesting) -> untyped
+      def initialize: (Hash[String, Array[json]] files) -> void
+      def method_of: (::Module klass, Symbol | String name, ?singleton: bool) -> Method?
+      def field_of: (::Module klass, Symbol | String name) -> Field?
+
+      private
+
+      def add: (String file, json scope) -> void
+    end
+
+    class Convert
+      COLLECTION_BASE: String
+      BASE_VARIABLE: Symbol
+
+      @registry: Registry
+
+      def initialize: (Registry registry) -> void
+      def input: (untyped value, untyped type, String where) -> untyped
+      def output: (untyped value, untyped type, String where) -> untyped
+      def restore: (described_class klass, untyped state, String where) -> untyped
+      def state: (untyped object, described_class klass, String where) -> Hash[String, untyped]
+
+      private
+
+      def input_optional: (untyped value, Optional type, String where) -> untyped
+      def input_named: (untyped value, untyped type, String where) -> untyped
+      def output_named: (untyped value, untyped type, String where) -> untyped
+      def load: (untyped type, String id) -> ::Dagger::Type
+      def binding: (untyped interface) -> singleton(::Dagger::Type)
+      def expect: [T] (untyped value, untyped type, String where) -> untyped
+      def result: (untyped value, untyped type, String where) -> untyped
+      def boolean: (untyped value, String where) -> bool
+      def result_boolean: (untyped value, String where) -> bool
+      def enum: (untyped type, untyped name, String where) -> ::Dagger::Enum
+    end
+
+    class Dispatch
+      @registry: Registry
+      @convert: Convert
+
+      def initialize: (Registry registry) -> void
+      def call: (Hash[String, untyped] request) -> untyped
+
+      private
+
+      def decode: (untyped text, String what) -> untyped
+      def construct: (described_class klass, Hash[String, untyped] args) -> untyped
+      def invoke: (described_class klass, Hash[String, untyped] state, String name, Hash[String, untyped] args) -> untyped
+      def arguments: (Array[ArgDecl] decls, Hash[String, untyped] args, String where) -> Hash[Symbol, untyped]
+    end
+
+    class ErrorReport
+      MARKER: String
+      PATH_ENV: String
+      FILE_LIMIT: Integer
+      SHORTENED_LENGTH: Integer
+      MARKER_LIMIT: Integer
+      ORIGIN: Regexp
+      RAW: Array[Encoding]
+      TRACE_HEAD: Integer
+      TRACE_TAIL: Integer
+      TRACE_MAX: Integer
+
+      @framework: Array[String]
+      @cwd: String
+      @path: String?
+      @stderr: IO
+
+      def self.for_module: (?module_root: String, ?sdk_root: String, ?env: untyped) -> ErrorReport
+      def self.real: (String path) -> String?
+      def self.file_report: (Exception error) -> String
+      def self.message_of: (Exception error) -> String
+      def self.values: (Exception error) -> Hash[String, untyped]
+      def self.chain: (Exception error) -> Array[Exception]
+      def self.shorten_message: (String message, Integer length) -> String
+      def self.shortened: (untyped value) -> untyped
+      def self.utf8: (untyped value) -> untyped
+      def self.encode: (String message, Hash[String, untyped] values) -> String
+
+      def initialize: (framework: Array[String], cwd: String, path: String?, ?stderr: IO) -> void
+      def report: (Exception error, ?hint: String?) -> void
+      def short_trace: (Exception error) -> String
+      def shows_trace?: (Exception error) -> bool
+
+      private
+
+      def write_file: (Exception error) -> bool
+      def full_trace: (Exception error) -> String
+      def write_marker: (Exception error) -> void
+      def sdk_error?: (Exception error) -> bool
+      def describe: (Exception error) -> String
+      def from_lines: (Exception error, Array[String] frames) -> String
+      def detailed_message: (Exception error, raised_here: bool) -> String
+      def module_frames: (Exception error) -> Array[String]
+      def module_file?: (String? path) -> bool
+      def without_origins: (String text) -> String
+    end
+
+    module CLI
+      USAGE: String
+      STALE: Array[singleton(Error)]
+
+      def self?.run: (Array[String] argv, ?input: IO) -> untyped
+      def self?.parse: (Array[String] args) -> Hash[Symbol, String]
+      def self?.entrypoint: (Hash[Symbol, String] options) -> void
+      def self?.objects: (Hash[Symbol, String] options) -> void
+      def self?.call: (Array[String] argv, ?input: IO, ?report: ErrorReport) -> Integer
+      def self?.parse_request: (String text) -> Hash[String, untyped]
+      def self?.load_module: (Hash[Symbol, String] options) -> String
+    end
+  end
+end

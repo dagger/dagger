@@ -1,0 +1,24 @@
+Expected stderr:
+
+✔ connect X.Xs
+├╴✔ starting engine X.Xs
+├╴✔ connecting to engine X.Xs
+│ ┃ XX:XX:XX INF connected name=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local client-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx server-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx
+╰╴✔ starting session X.Xs
+
+✔ load workspace: . X.Xs
+✔ parsing command line arguments X.Xs
+
+$ viztestRuby: ViztestRuby! X.Xs CACHED
+✘ .callFailingDepLogged: String! X.Xs ERROR
+┃ ruby function stdout
+├╴$ sdkDep: SDKDep! X.Xs CACHED
+╰╴✘ .failExec: String! X.Xs ERROR
+  ├╴$ Container.from(address: "alpine"): Container! X.Xs CACHED
+  ├╴✘ withExec sh -c 'echo dep exec stdout; sleep 0.1; echo dep exec stderr >&2; exit 1' X.Xs ERROR
+  │ ┃ dep exec stdout
+  │ ┃ dep exec stderr
+  │ ! exit code: 1
+  ╰╴✘ .stdout: String! X.Xs ERROR
+
+Setup tracing by running "dagger cloud signup". To hide set DAGGER_NO_NAG=1

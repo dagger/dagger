@@ -1130,11 +1130,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	}
 	if err != nil {
 		if returnedSet && returned.HasError {
-			dagErr, loadErr := functionCallReturnedError(ctx, returned.ErrorID, err)
-			if loadErr != nil {
-				return nil, loadErr
-			}
-			return nil, dagErr
+			return nil, functionCallReturnError(ctx, returned, err)
 		}
 		return nil, err
 	}
@@ -1146,11 +1142,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		return nil, fmt.Errorf("function %q completed without returning a value", fnCall.Name)
 	}
 	if returned.HasError {
-		dagErr, err := functionCallReturnedError(ctx, returned.ErrorID, nil)
-		if err != nil {
-			return nil, err
-		}
-		return nil, dagErr
+		return nil, functionCallReturnError(ctx, returned, nil)
 	}
 
 	returnValue, err := fn.returnType.ConvertFromSDKResult(ctx, returned.Value)
@@ -1182,6 +1174,25 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	}
 
 	return returnValue, nil
+}
+
+// functionCallReturnError is the error a function call fails with when its
+// function returned an Error (FunctionCall.ReturnError), as a value or by
+// ID: that Error, with its origin (see functionCallErrorWithOrigin). runErr
+// is the failure of the call's runtime, if it failed too.
+func functionCallReturnError(ctx context.Context, returned functionCallReturn, runErr error) error {
+	if returned.Error != nil {
+		dagErr, err := functionCallErrorWithOrigin(ctx, returned.Error.Clone(), runErr)
+		if err != nil {
+			return err
+		}
+		return dagErr
+	}
+	dagErr, err := functionCallReturnedError(ctx, returned.ErrorID, runErr)
+	if err != nil {
+		return err
+	}
+	return dagErr
 }
 
 // A receiver's SDK form depends on the receiver result and the active result

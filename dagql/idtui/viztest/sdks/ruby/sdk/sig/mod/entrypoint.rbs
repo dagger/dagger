@@ -1,0 +1,34 @@
+module Dagger
+  module Mod
+    module Entrypoint
+      COMMAND: Array[String]
+      MAIN: String
+      SOURCES: String
+      SOURCES_DIRECTORY: String
+      SOURCES_FILE: String
+      ALONE_RUNTIME: String
+      CONTEXT_RUNTIME: String
+
+      def self?.write: (Description::Module description, name: String, output: String, client_version: String) -> void
+      def self?.render_types: (Description::Module description) -> String
+      def self?.render_main: (String name, client_version: String, ?outside: Array[String], ?outside_files: Array[String])
+                                  -> String
+      def self?.sources: (Array[String] outside, Array[String] outside_files) -> String
+      def self?.object: (Description::ObjectType type) -> Array[String]
+      def self?.collection: (Description::Collection members) -> Array[String]
+      def self?.function: (Description::Function definition) -> Array[String]
+      def self?.cache_policy: (String cache) -> String
+      def self?.argument: (Description::Argument arg) -> String
+      def self?.enum: (Description::Enum type) -> Array[String]
+      def self?.type_ref: (Description::TypeRef ref) -> String
+      def self?.render_rbs: (Registry registry) -> String
+      def self?.object_rbs: (::Module klass, Array[FieldDecl] fields) -> String
+      def self?.required?: (FieldDecl field) -> bool
+      def self?.rbs: (untyped type) -> String
+      def self?.option: (String name, String? value) -> String
+      def self?.quote: (String value) -> String
+      def self?.wrap: (String call, Array[String] body) -> Array[String]
+      def self?.indent: (Array[String] lines, Integer width) -> String
+    end
+  end
+end

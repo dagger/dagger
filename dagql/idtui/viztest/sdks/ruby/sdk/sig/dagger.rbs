@@ -1,0 +1,13 @@
+module Dagger
+  self.@default_session: Session?
+  self.@default_session_lock: Thread::Mutex
+  self.@module_runtime: bool
+
+  def self.mark_module_runtime!: () -> bool
+  def self.module_runtime?: () -> bool
+
+  def self.default_session: () -> Session
+  def self.connect: (?port: Integer?, ?token: String?) -> Session
+                  | [T] (?port: Integer?, ?token: String?) { (Session) -> T } -> T
+  def self.close: () -> void
+end

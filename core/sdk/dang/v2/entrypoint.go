@@ -158,7 +158,17 @@ func (r *entrypointRuntime) Call(
 
 	ctx, span := core.Tracer(ctx).Start(ctx, "call module entrypoint", telemetry.Internal(), telemetry.Encapsulate(),
 		trace.WithAttributes(attribute.Bool(telemetryattrs.UIFunctionPlumbingAttr, true)))
-	defer telemetry.EndWithCause(span, &rerr)
+	// A function that failed with an error of its own fails its call, not
+	// the plumbing that ran it, which did its job: the error is the
+	// function's, on the function call's span.
+	var functionFailed bool
+	defer func() {
+		if functionFailed {
+			span.End()
+			return
+		}
+		telemetry.EndWithCause(span, &rerr)
+	}()
 	fnCall.SetPlumbingSpanContext(span.SpanContext())
 
 	dag, err := core.CurrentDagqlServer(ctx)
@@ -183,7 +193,9 @@ func (r *entrypointRuntime) Call(
 	}
 	nestedClientMetadata.SDKEntrypoint = true
 
-	contract := entrypointContract{dangVersion: r.modSource.Self().DangVersion}
+	// The call builds its prebuild file first, if the entrypoint declares
+	// one (see buildEntrypointPrebuild).
+	contract := entrypointContract{dangVersion: r.modSource.Self().DangVersion, member: EntrypointPrebuildMember}
 	var resultJSON []byte
 	_, err = evalDangSource(
 		ctx,
@@ -219,10 +231,14 @@ func (r *entrypointRuntime) Call(
 			// which misses the call's implicit inputs, such as the clients the
 			// workspace declares. An entrypoint keys its exec on the call by
 			// declaring a nullable callDigest argument; one that does not
-			// declare it never receives it. The recipe digest is stable, so
-			// the exec answers again when dagql evaluates a call again, such
-			// as after a prune; it already changes per call for never and per
-			// session for per-session functions. A function with an explicit
+			// declare it never receives it. The contract: an entrypoint that
+			// declares it sets core.ModuleCallDigestEnv to it on the exec
+			// that runs the function, and on no other, and the engine treats
+			// that exec as the module process (see core.ModuleCallDigestEnv).
+			// The recipe digest is stable, so the exec answers again when
+			// dagql evaluates a call again, such as after a prune; it already
+			// changes per call for never and per session for per-session
+			// functions. A function with an explicit
 			// TTL gets a new digest on every evaluation instead: its result
 			// can expire before that TTL when a call with a shorter one
 			// returned the same result. So it runs again whenever dagql
@@ -244,10 +260,30 @@ func (r *entrypointRuntime) Call(
 					callDigest = hashutil.HashStrings(callDigest.String(), "session", clientMetadata.SessionID)
 				}
 				callArgs = append(callArgs, entrypoint.StringCallArg("callDigest", callDigest.String()))
+				// The digest so marks the module process's exec (see
+				// core.IsModuleProcessExec). An entrypoint that declares no
+				// callDigest can't, and every exec it starts is taken for the
+				// process.
+				declared, err := entrypointMemberTakes(ctx, env, entrypointName, "call", "callDigest")
+				if err != nil {
+					return nil, err
+				}
+				if declared {
+					fnCall.SetProcessCallDigest(callDigest.String())
+				}
+			}
+			if contract.declaresMember {
+				if err := buildEntrypointPrebuild(ctx, env, entrypointName, moduleContext); err != nil {
+					return nil, err
+				}
 			}
 			result, err := callEntrypointMethod(ctx, env, entrypointName, "call", moduleContext, callArgs)
 			if err != nil {
-				return nil, fmt.Errorf("call module entrypoint: %w", returnRaisedError(ctx, fnCall, err))
+				if fnErr, ok := moduleProcessFunctionError(ctx, fnCall, err); ok {
+					functionFailed = true
+					return nil, fnErr
+				}
+				return nil, returnRaisedError(ctx, fnCall, err)
 			}
 			resultJSON, err = entrypointJSONResult(result)
 			return nil, err
@@ -354,11 +390,10 @@ func evalEntrypointMember(
 	}
 	nestedClientMetadata.SDKEntrypoint = true
 
-	// The program runs as the module's process, as a call's does: an exec it
-	// starts is keyed on the module it runs for, so the result it returns is
-	// the one the module's calls build.
+	// An exec the member starts is keyed as the module's calls key their
+	// build execs, so the result it returns is the one the module's calls
+	// build (see markMemberProcess).
 	fnCall := &core.FunctionCall{Name: member}
-	fnCall.SetModuleProcess()
 
 	contract := entrypointContract{dangVersion: src.Self().DangVersion, member: member}
 	_, err = evalDangSource(
@@ -379,6 +414,9 @@ func evalEntrypointMember(
 			declared = true
 			entrypointName, err := findModuleEntrypoint(env)
 			if err != nil {
+				return nil, err
+			}
+			if err := markMemberProcess(ctx, env, entrypointName, fnCall); err != nil {
 				return nil, err
 			}
 			// Another platform's is the member's with that platform as its
@@ -414,6 +452,54 @@ func evalEntrypointMember(
 	return declared, nil
 }
 
+// buildEntrypointPrebuild builds the file of the entrypoint's prebuild member,
+// when it declares one, for a call of the module, before the call runs: under
+// a span of its own, which stands for the build's work wherever it shows,
+// such as in the breadcrumb of a build error. The call builds on the same
+// file, so its own build then finds it built; a build that fails fails the
+// call from here, with the build's error.
+//
+// It runs in the call's evaluation, after the call's callDigest is set, so
+// the build's execs are keyed as the call's own build execs, and taken for
+// the module process only as those are (see core.IsModuleProcessExec).
+func buildEntrypointPrebuild(
+	ctx context.Context,
+	env dang.ValueScope,
+	entrypointName string,
+	moduleContext dagql.ObjectResult[*core.Module],
+) (rerr error) {
+	ctx, span := core.Tracer(ctx).Start(ctx, "build "+moduleContext.Self().Name(), telemetry.Encapsulate())
+	defer telemetry.EndWithCause(span, &rerr)
+	value, err := callEntrypointMethod(ctx, env, entrypointName, EntrypointPrebuildMember, moduleContext, nil)
+	if err != nil {
+		return err
+	}
+	file, ok := value.(dang.GraphQLValue)
+	if !ok || file.TypeName != (&core.File{}).Type().Name() {
+		return fmt.Errorf("module entrypoint %s returned %T instead of a File", EntrypointPrebuildMember, value)
+	}
+	var synced string
+	return file.QueryChain.Select("sync").Client(file.Client).Bind(&synced).Execute(ctx)
+}
+
+// markMemberProcess makes the execs that fnCall, the evaluation of an
+// entrypoint member, starts keyed as the entrypoint's calls key their build
+// execs. A call of an entrypoint that declares a callDigest marks its module
+// process, and its other execs don't serve the module (see
+// core.IsModuleProcessExec); a member starts no module process, so neither do
+// its execs. A call of one that declares none takes every exec it starts for
+// the module process, so the member's do too.
+func markMemberProcess(ctx context.Context, env dang.ValueScope, entrypointName string, fnCall *core.FunctionCall) error {
+	marks, err := entrypointMemberTakes(ctx, env, entrypointName, "call", "callDigest")
+	if err != nil {
+		return err
+	}
+	if !marks {
+		fnCall.SetModuleProcess()
+	}
+	return nil
+}
+
 // loadEntrypointObject loads the object of type T that the entrypoint's
 // member returned as value.
 func loadEntrypointObject[T dagql.Typed](ctx context.Context, dag *dagql.Server, member string, value dang.Value) (dagql.ObjectResult[T], error) {
@@ -435,6 +521,11 @@ func loadEntrypointObject[T dagql.Typed](ctx context.Context, dag *dagql.Server,
 	return id.Load(ctx, dag)
 }
 
+// moduleEntrypointInterface is the contract of an entrypoint that declares no
+// sources. call may also declare a nullable callDigest argument, which keys
+// the exec that runs the function on the call; an entrypoint that declares it
+// sets core.ModuleCallDigestEnv to it on that exec and on no other, so the
+// engine treats that exec as the module process.
 const moduleEntrypointInterface = `interface ModuleEntrypoint {
   types(workspace: Workspace!): [TypeDef!]!
   call(
@@ -452,7 +543,8 @@ const moduleEntrypointInterface = `interface ModuleEntrypoint {
 // is what sources returned, so they get no workspace: a workspace read there
 // would escape every cache key. Dang accepts an extra nullable argument, so an
 // entrypoint that also runs on an engine with the other contract can keep a
-// nullable workspace argument.
+// nullable workspace argument, and call can declare callDigest as with the
+// other contract (see moduleEntrypointInterface).
 const sourcesEntrypointInterface = `interface ModuleEntrypoint {
   sources(workspace: Workspace!): Directory!
   types: [TypeDef!]!

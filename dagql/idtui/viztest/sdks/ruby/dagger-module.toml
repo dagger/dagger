@@ -1,0 +1,5 @@
+name = "viztest-ruby"
+
+[entrypoint]
+kind = "dang"
+source = "./sdk/entrypoint"

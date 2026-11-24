@@ -1,0 +1,28 @@
+module Dagger
+  class Connection
+    MAX_ATTEMPTS: Integer
+    MAX_BACKOFF: Float
+    TRANSPORT_ERRORS: Array[singleton(Exception)]
+
+    attr_reader port: Integer
+
+    @token: String
+    @read_timeout: Numeric?
+    @clients: Hash[Thread, Net::HTTP]
+    @lock: Thread::Mutex
+
+    def self.from_env: () -> Connection?
+    def initialize: (port: Integer, token: String, ?read_timeout: Numeric?) -> void
+    def execute: (String document) -> untyped
+    def close: () -> void
+
+    private
+
+    def post: (String document) -> Net::HTTPResponse
+    def client: () -> Net::HTTP
+    def drop_client: () -> void
+    def read: (Net::HTTPResponse response, String document) -> untyped
+    def parse: (Net::HTTPResponse response) -> Hash[String, untyped]
+    def unexpected: (Net::HTTPResponse response) -> String
+  end
+end

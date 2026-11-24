@@ -1,0 +1,81 @@
+[build-system]
+requires = ["uv_build>=0.8.4,<0.14.0"]
+build-backend = "uv_build"
+
+[project]
+name = "dagger-io"
+version = "0.0.0"
+description = "A client package for running Dagger pipelines in Python."
+readme = "README.md"
+authors = [{ name = "Dagger", email = "hello@dagger.io" }]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Framework :: AnyIO",
+    "Framework :: Pytest",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Typing :: Typed",
+]
+requires-python = ">=3.11"
+dependencies = [
+    "anyio>=3.6.2",
+    "cattrs>=25.1.0",
+    "httpx>=0.27.0",
+    "httpcore>=1.0.8",
+    "platformdirs>=2.6.2",
+    "typing_extensions>=4.13.0",
+    "rich>=10.11.0",
+    "opentelemetry-sdk>=1.23.0",
+    "opentelemetry-exporter-otlp-proto-http>=1.23.0",
+    "opentelemetry-instrumentation-logging>=0.54b1",
+]
+
+[project.urls]
+"Homepage" = "https://dagger.io"
+"Documentation" = "https://docs.dagger.io/sdk/python"
+"Repository" = "https://github.com/dagger/dagger/tree/main/sdk/python"
+"Tracker" = "https://github.com/dagger/dagger/issues"
+"Release Notes" = "https://github.com/dagger/dagger/releases?q=tag%3Asdk%2Fpython%2Fv0"
+"Community" = "https://discord.gg/ufnyBtc8uY"
+"Twitter" = "https://twitter.com/dagger_io"
+
+[tool.uv.build-backend]
+module-name = "dagger"
+source-include = ["tests/**", "LICENSE"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests/"]
+addopts = ["--import-mode=importlib"]
+markers = [
+    "slow: mark test as slow (integration)",
+    "provision: mark provisioning tests",
+]
+
+[tool.mypy]
+disallow_untyped_defs = false
+follow_imports = "normal"
+# ignore_missing_imports = true
+install_types = true
+non_interactive = true
+warn_redundant_casts = true
+pretty = true
+show_column_numbers = true
+warn_no_return = false
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+# The temporary global client, generated into a scope, not into this tree.
+module = ["dagger_global"]
+ignore_missing_imports = true
+
+[tool.dagger]
+generated = "runtime"

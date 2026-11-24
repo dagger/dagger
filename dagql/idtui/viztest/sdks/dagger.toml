@@ -1,0 +1,129 @@
+# Fixture modules for the external SDKs' golden tests (see
+# dagql/idtui/golden_test.go). This is a workspace of its own so that
+# regenerating them never touches the repository's dagger.toml: run
+# `dagger generate` from this directory.
+
+[modules.go-sdk]
+# go-sdk#113: the dispatcher reports a function's error in the file
+# (DAGGER_FUNCTION_ERROR_PATH) the engine gives a call's process. It also
+# builds the shared dep, a go-sdk module.
+source = "github.com/dagger/go-sdk@v1.7.0"
+
+[modules.python-sdk]
+# python-sdk#93: the dispatcher reports a function's error in the file
+# (DAGGER_FUNCTION_ERROR_PATH) the engine gives a call's process, and then
+# shows a function's errors with a short traceback, the user's frames only,
+# and nothing for an API error whose origin the engine shows.
+source = "github.com/dagger/python-sdk@v1.9.0"
+
+[modules.typescript-sdk]
+# typescript-sdk#144, on top of dagger/typescript-sdk#143 (generated Dang
+# entrypoints name cache policies in GraphQL's spelling): the dispatcher
+# returns its result in a file rather than on stdout, which the function's
+# logs share, reports a function's error in the file
+# (DAGGER_FUNCTION_ERROR_PATH) the engine gives a call's process, and shows a
+# short stack trace of the module's own frames, and nothing for an API error
+# whose origin the engine shows. It loads the module's code itself, so a
+# module that doesn't compile fails with esbuild's error.
+source = "github.com/dagger/typescript-sdk@v1.2.0"
+
+[modules.php-sdk]
+# php-sdk#49, on top of dagger/php-sdk#48 (sdk-helpers v1.0.11: v1.0.9 no
+# longer compiles under current Dang): the dispatcher reports a function's
+# error in the file (DAGGER_FUNCTION_ERROR_PATH) the engine gives a call's
+# process, with a short stack trace of the module's own frames, and nothing
+# for an API error whose origin the engine shows; a fatal error, exhausted
+# memory included, is reported too. The entrypoint declares prebuild, the
+# module's Composer install.
+source = "github.com/dagger/php-sdk@v1.2.0"
+
+[modules.java-sdk]
+# java-sdk#47: the dispatcher reports a function's error in the file
+# (DAGGER_FUNCTION_ERROR_PATH) the engine gives a call's process, with a short
+# stack trace of the module's own frames, and nothing for an API error whose
+# origin the engine shows. The entrypoint declares prebuild, and Maven builds
+# the jar quietly in an exec of its own, so a build failure shows the
+# compiler's errors.
+source = "github.com/dagger/java-sdk@v1.3.0"
+
+[modules.dang-sdk]
+source = "github.com/dagger/dang-sdk@14ba9d349167cb32b3a06f4229f534509a30ac62"
+
+[modules.ruby-sdk]
+# ruby-sdk#11: the entrypoint marks the dispatcher's exec, and no other, as
+# the module process (DAGGER_MODULE_CALL_DIGEST) and declares prebuild, the
+# module's gems install; the dispatcher reports a function's error in the file
+# (DAGGER_FUNCTION_ERROR_PATH) the engine gives a call's process, with a short
+# trace of the module's own frames in Ruby's own form, and nothing for an API
+# error whose origin the engine shows. A SyntaxError logs as ruby prints it,
+# syntax_suggest's section included.
+source = "github.com/dagger/ruby-sdk@v1.3.0"
+
+[sdks.go]
+module = "go-sdk"
+
+[sdks.python]
+module = "python-sdk"
+
+[sdks.typescript]
+module = "typescript-sdk"
+
+[sdks.php]
+module = "php-sdk"
+
+[sdks.java]
+module = "java-sdk"
+
+[sdks.dang]
+module = "dang-sdk"
+
+[sdks.ruby]
+module = "ruby-sdk"
+
+[sdks.go.scopes.dep]
+is-module = true
+name = "sdk-dep"
+
+[sdks.go.scopes.dep.settings]
+template = "empty"
+
+[sdks.go.scopes.go]
+is-module = true
+name = "viztest-go"
+clients = ["./dep"]
+
+[sdks.go.scopes.go.settings]
+template = "empty"
+
+[sdks.python.scopes.python]
+is-module = true
+name = "viztest-python"
+clients = ["./dep"]
+
+[sdks.typescript.scopes.typescript]
+is-module = true
+name = "viztest-typescript"
+clients = ["./dep"]
+
+[sdks.php.scopes.php]
+is-module = true
+name = "viztest-php"
+clients = ["./dep"]
+
+[sdks.java.scopes.java]
+is-module = true
+name = "viztest-java"
+clients = ["./dep"]
+
+[sdks.dang.scopes.dang]
+is-module = true
+name = "viztest-dang"
+clients = ["./dep"]
+
+[sdks.ruby.scopes.ruby]
+is-module = true
+name = "viztest-ruby"
+clients = ["./dep"]
+
+[sdks.ruby.scopes.ruby.settings]
+template = "empty"

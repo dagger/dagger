@@ -1,0 +1,14 @@
+Expected stderr:
+
+✔ connect X.Xs
+✔ load workspace: . X.Xs
+✔ parsing command line arguments X.Xs
+
+$ viztestRuby: ViztestRuby! X.Xs CACHED
+✘ .failNative: Void X.Xs ERROR
+ruby function stdout
+ruby function stderr
+/src/lib/viztest_ruby.rb:21:in 'ViztestRuby#fail_native': ruby function failed natively (RuntimeError)
+! ruby function failed natively
+
+Setup tracing by running "dagger cloud signup". To hide set DAGGER_NO_NAG=1

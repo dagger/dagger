@@ -1,0 +1,53 @@
+module Dagger
+  module Client
+    GENERATE_HINT: String
+    MISSING_FIELD: Regexp
+
+    self.@registering: Integer
+    self.@registering_lock: Thread::Mutex
+    self.@declared_targets: Array[Target]?
+
+    class Target < Data
+      attr_reader name: String
+      attr_reader ref: String
+      attr_reader pin: String?
+
+      def self.new: (name: String, ref: String, ?pin: String?) -> Target
+      def initialize: (name: String, ref: String, ?pin: String?) -> void
+      def describe: () -> String
+    end
+
+    def self.registering: [T] () { () -> T } -> T
+    def self.registering?: () -> bool
+    def self.root: (Target target, String field, Hash[Symbol, untyped] args, ?session: Session?) -> QueryBuilder
+    def self.select: (Type receiver, Target target, String field, Hash[Symbol, untyped] args) -> QueryBuilder
+    def self.declared_targets: () -> Array[Target]
+    def self.check_core: (String name, String expected, String installed) -> void
+    def self.stale_client_error: (QueryError error, Array[Target] targets) -> StaleClientError?
+  end
+
+  class Provision
+    LABELS: Array[String]
+    STDERR_LINES: Integer
+
+    attr_reader connection: Connection
+
+    @stdin: IO
+    @stdout: IO
+    @stderr: IO
+    @wait: Thread
+    @pid: Integer
+    @stderr_tail: Array[String]
+    @drain: Thread
+
+    def self.cli: () -> String
+    def initialize: (?cli: String) -> void
+    def close: () -> void
+
+    private
+
+    def popen: (String cli) -> [IO, IO, IO, Thread]
+    def connect: () -> Connection
+    def tail: (String line) -> void
+  end
+end

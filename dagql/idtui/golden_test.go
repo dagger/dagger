@@ -154,7 +154,8 @@ so in most cases you should just let it skip.`)
 
 	// Remove test-owned workspace files if they exist now too, since Cleanup
 	// doesn't always run, e.g. after a ctrl-C.
-	exec.Command("rm", "-rf", ".git", ".dagger").Run()
+	exec.Command("rm", "-rf", ".git", ".dagger", "dagger.lock").Run()
+	removeBrokenSDKFixtures()
 
 	cmd := exec.Command("sh", "-c", "git init && git remote add origin git@github.com:dagger/dagger")
 	if co, err := cmd.CombinedOutput(); err != nil {
@@ -175,7 +176,9 @@ main = true
 	}
 
 	t.Cleanup(func() {
-		exec.Command("rm", "-rf", ".git", ".dagger", "dagger.toml").Run()
+		// dagger.lock pins the images the fixtures pull, e.g. the SDK
+		// fixtures' alpine.
+		exec.Command("rm", "-rf", ".git", ".dagger", "dagger.toml", "dagger.lock").Run()
 	})
 
 	listDir := t.TempDir()
@@ -214,7 +217,7 @@ main = true
 		require.Contains(t, tests, "2 skipped")
 	}
 
-	for _, ex := range []Example{
+	for _, ex := range append([]Example{
 		// implementations of these functions can be found in viztest/main.go
 		{Function: "hello-world"},
 		{Function: "fail-log", Fail: true},
@@ -327,6 +330,7 @@ main = true
 		{Name: "broken-dep-use-broken-plain", Module: "./viztest/broken-dep", Function: "use-broken", Fail: true, NoExpand: true, Quiet: true, Plain: true, FuzzyTest: brokenGoModulePlainOutput},
 		// test that a module with an unloadable dependency surfaces the error
 		{Module: "./viztest/broken-dep-sdk", Function: "use-invalid", Fail: true},
+		{Name: "broken-dep-sdk-use-invalid-default", Module: "./viztest/broken-dep-sdk", Function: "use-invalid", Fail: true, NoExpand: true, Quiet: true},
 
 		// test that module function call errors are properly stamped with their origin
 		{Function: "call-failing-dep", Fail: true},
@@ -430,9 +434,12 @@ main = true
 				require.True(t, depCalled)
 			},
 		},
-	} {
+	}, sdkExamples()...) {
 		testName := ex.Name
 		goldFile := ex.Name
+		if ex.Golden != "" {
+			goldFile = ex.Golden
+		}
 		if testName == "" {
 			testName = ex.Function
 			goldFile = ex.Function
@@ -444,6 +451,9 @@ main = true
 		}
 		t.Run(testName, func(ctx context.Context, t *testctx.T) {
 			goldFile := `TestTelemetry/TestGolden/` + goldFile
+			if ex.Setup != nil {
+				ex.Setup(t)
+			}
 			out, db, logs := ex.Run(ctx, t, s)
 			if ex.OutputTest != nil {
 				ex.OutputTest(t, out)
@@ -529,6 +539,7 @@ func unmarshalAs[T any](t testing.TB, data json.RawMessage) T {
 
 type Example struct {
 	Name     string // a custom name for the example
+	Golden   string // the golden file, when not derived from Name
 	Module   string
 	Function string
 	Args     []string
@@ -556,6 +567,11 @@ type Example struct {
 	OutputTest func(*testctx.T, string)
 	// Using fuzzytest will eschew golden assertions and testdata and allow string assertions instead
 	FuzzyTest func(*testctx.T, string)
+	// Runs before the example, e.g. to write a fixture it needs.
+	Setup func(*testctx.T)
+	// Normalize output that renders an SDK's internals, such as its build for
+	// the default platform; see normalizeSDKOutput.
+	NormalizeSDK bool
 }
 
 func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (string, *dagui.DB, *logRecorder) {
@@ -618,37 +634,22 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 	// output every time. So, we run everything twice. The first run will cache
 	// the things that should be cacheable, and the second run will be the final
 	// result. Each test is responsible for busting its own caches.
-	func() {
-		ctx, span := otel.Tracer("dagger.io/golden").Start(ctx, "warmup")
-		defer span.End()
-		warmup := exec.Command(daggerBin, daggerArgs...)
-		warmup.Env = append(
-			slices.Clone(testEnv),
-			fmt.Sprintf("HOME=%s", s.Home), // ignore any local Dagger Cloud auth
-		)
-		warmup.Env = append(warmup.Env, telemetry.PropagationEnv(ctx)...)
-		warmup.Env = append(warmup.Env, ex.Env...)
-
-		// still try use docker credentials even though we overrode HOME, lest we get rate limited
-		if realHome != "" {
-			warmup.Env = append(warmup.Env, fmt.Sprintf("DOCKER_CONFIG=%s/.docker", realHome))
+	//
+	// A warm-up that adds to the workspace's lockfile, such as the first to
+	// pull an image, changes the workspace the final run uploads, so that run
+	// would miss what the warm-up cached: warm up again until the lockfile
+	// holds still.
+	for warmups := 1; ; warmups++ {
+		before := readWorkspaceLock()
+		warmupOnce(ctx, t, ex, daggerArgs, testEnv, s.Home, realHome)
+		if readWorkspaceLock() == before {
+			break
 		}
-
-		warmupBuf := new(bytes.Buffer)
-		defer func() {
-			if t.Failed() {
-				t.Logf("warmup failed! output:\n%s", warmupBuf.String())
-			}
-		}()
-		warmup.Stderr = warmupBuf
-		warmup.Stdout = warmupBuf
-		err := warmup.Run()
-		if ex.Fail {
-			require.Error(t, err)
-		} else {
-			require.NoError(t, err)
+		if warmups == maxWarmups {
+			t.Fatalf("dagger.lock still changed after %d warm-ups", maxWarmups)
 		}
-	}()
+		t.Log("warm-up changed dagger.lock; warming up again")
+	}
 
 	cmd := exec.Command(daggerBin, daggerArgs...)
 	cmd.Env = append(
@@ -689,10 +690,59 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 		expected += "Expected stderr:\n\n" + errBuf.String()
 	}
 
-	return normalizeTelemetryNativePlatform(
+	nativePlatform := os.Getenv("_DAGGER_TESTS_ENGINE_PLATFORM")
+	out := normalizeTelemetryNativePlatform(
 		scrub.Stabilize(dropPortNotReadyWarnings(expected)),
-		os.Getenv("_DAGGER_TESTS_ENGINE_PLATFORM"),
-	), db, logs
+		nativePlatform,
+	)
+	if ex.NormalizeSDK {
+		out = normalizeSDKOutput(out, nativePlatform, !ex.NoExpand)
+	}
+	return out, db, logs
+}
+
+// maxWarmups bounds the warm-ups of an example whose lockfile keeps changing.
+const maxWarmups = 3
+
+// readWorkspaceLock returns the contents of the golden workspace's lockfile,
+// or "" when there is none.
+func readWorkspaceLock() string {
+	data, _ := os.ReadFile("dagger.lock")
+	return string(data)
+}
+
+// warmupOnce runs an example's command once, to cache what it caches, without
+// recording its output.
+func warmupOnce(ctx context.Context, t *testctx.T, ex Example, daggerArgs, testEnv []string, home, realHome string) {
+	ctx, span := otel.Tracer("dagger.io/golden").Start(ctx, "warmup")
+	defer span.End()
+	warmup := exec.Command(daggerBin, daggerArgs...)
+	warmup.Env = append(
+		slices.Clone(testEnv),
+		fmt.Sprintf("HOME=%s", home), // ignore any local Dagger Cloud auth
+	)
+	warmup.Env = append(warmup.Env, telemetry.PropagationEnv(ctx)...)
+	warmup.Env = append(warmup.Env, ex.Env...)
+
+	// still try use docker credentials even though we overrode HOME, lest we get rate limited
+	if realHome != "" {
+		warmup.Env = append(warmup.Env, fmt.Sprintf("DOCKER_CONFIG=%s/.docker", realHome))
+	}
+
+	warmupBuf := new(bytes.Buffer)
+	defer func() {
+		if t.Failed() {
+			t.Logf("warmup failed! output:\n%s", warmupBuf.String())
+		}
+	}()
+	warmup.Stderr = warmupBuf
+	warmup.Stdout = warmupBuf
+	err := warmup.Run()
+	if ex.Fail {
+		require.Error(t, err)
+	} else {
+		require.NoError(t, err)
+	}
 }
 
 func testDB(t *testctx.T) (*dagui.DB, *logRecorder, net.Listener) {

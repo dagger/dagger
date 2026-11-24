@@ -1,0 +1,11 @@
+{
+  "name": "@dagger.io/dagger",
+  "version": "0.0.0",
+  "type": "module",
+  "main": "./index.ts",
+  "types": "./index.ts",
+  "exports": {
+    ".": "./index.ts",
+    "./telemetry": "./telemetry.ts"
+  }
+}

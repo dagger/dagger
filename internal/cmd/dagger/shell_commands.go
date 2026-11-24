@@ -952,7 +952,10 @@ Without arguments, the current working directory is replaced by the initial cont
 				h.modDefs.Store(def.SourceDigest, newDef)
 
 				// Reload type definitions
-				if err := newDef.loadTypeDefs(ctx, h.dag); err != nil {
+				loadCtx, span := startLoadingTypeDefs(ctx)
+				err = newDef.loadTypeDefs(loadCtx, h.dag)
+				telemetry.EndWithCause(span, &err)
+				if err != nil {
 					return fmt.Errorf("failed to reload type definitions: %w", err)
 				}
 

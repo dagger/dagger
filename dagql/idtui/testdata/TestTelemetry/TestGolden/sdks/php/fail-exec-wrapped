@@ -1,0 +1,26 @@
+Expected stderr:
+
+✔ connect X.Xs
+├╴✔ starting engine X.Xs
+├╴✔ connecting to engine X.Xs
+│ ┃ XX:XX:XX INF connected name=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local client-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx server-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx
+╰╴✔ starting session X.Xs
+
+✔ load workspace: . X.Xs
+✔ parsing command line arguments X.Xs
+
+$ viztestPhp: ViztestPhp! X.Xs CACHED
+✘ .failExecWrapped: String! X.Xs ERROR
+┃ GraphQL\Exception\QueryError: exit code: 1
+┃ Stack trace:
+┃ #0 /src/viztest/sdks/php/src/ViztestPhp.php(67): Dagger\Container->stdout()
+┃
+┃ Next RuntimeException: php function ran a failing command: exit code: 1 in /src/viztest/sdks/php/src/ViztestPhp.php:69
+├╴✔ Container.from(address: "alpine", version: "", insecureSkipTlsVerify: false, noLock: false): Container! X.Xs
+├╴✘ withExec sh -c 'echo exec stdout; sleep 0.1; echo exec stderr >&2; exit 1' (useEntrypoint: false, stdin: "", redirectStdin: "", redirectStdout: "", redirectStderr: "", disableDaggerInDagger: false, experimentalPrivilegedNesting: false, daggerInDaggerNewSession: false, insecureRootCapabilities: false, expand: false, noInit: false) X.Xs ERROR
+│ ┃ exec stdout
+│ ┃ exec stderr
+│ ! exit code: 1
+╰╴✘ .stdout: String! X.Xs ERROR
+
+Setup tracing by running "dagger cloud signup". To hide set DAGGER_NO_NAG=1

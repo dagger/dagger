@@ -8608,6 +8608,7 @@ func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput
 		fe.renderProgressRollup(ctx, out, r, row, prefix, statusHost)
 	}
 	fe.renderFoldGone(out, r, row, prefix)
+	fe.renderOwnRootCauseLogs(out, row)
 	if fe.rollsUpSubChecks(row) {
 		// A check deferring to its inline CHECKS rollup: the failure is explained
 		// by the failed sub-checks rendered in the rollup above, so don't also dump
@@ -8633,6 +8634,41 @@ func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput
 		fe.renderStepError(out, r, row, prefix)
 	}
 	fe.renderDebug(out, row.Span, prefix+Block25+" ", false)
+}
+
+// renderOwnRootCauseLogs renders, below a collapsed row of the final report,
+// the logs of the row's own span when that span is a root cause the report
+// appends below the tree (showRootCauseLast), such as a function call that
+// failed with an error of its own. The row's error follows them, as an
+// origin's does in its block, and the root-cause section then has nothing
+// left to add: without this, the row printed a bare error and the section
+// repeated the span, title and error, to show its logs.
+func (fe *frontendPretty) renderOwnRootCauseLogs(out TermOutput, row *dagui.TraceRow) {
+	span := row.Span
+	// A top-level row only, whose logs print unindented, as a top-level
+	// origin block's do.
+	if !fe.finalRender || row.Expanded || row.Depth != 0 || !span.IsFailed() || fe.claims.hasLog(span.ID) {
+		return
+	}
+	if span.RollUpLogs || fe.shellTranscript() {
+		// The row printed its logs already (see renderRowContentRest).
+		return
+	}
+	logs := fe.logs.Logs[span.ID]
+	if logs == nil || logs.UsedHeight() == 0 {
+		return
+	}
+	if !fe.renderPolicy().showRootCauseLast {
+		return
+	}
+	zoomSpan := fe.db.Spans.Map[fe.ZoomedSpan]
+	if zoomSpan == nil || !slices.Contains(fe.checkRootCauses(zoomSpan), span) {
+		return
+	}
+	logs.SetPrefix("")
+	logs.SetHeight(logs.UsedHeight())
+	fmt.Fprint(out, logs.View())
+	fe.claims.claimLog(span)
 }
 
 // renderableErrorOrigins filters a failed span's tracked origins down to the
@@ -9074,42 +9110,6 @@ func (fe *frontendPretty) renderRootCauseSection(ctx tuist.Context, r *renderer,
 }
 
 func (fe *frontendPretty) renderErrorCause(ctx tuist.Context, out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, rootCause *dagui.Span, statusHost statusIconHost) {
-	// The origin's home tree, for the breadcrumb of trees above it; the view
-	// may not have built it, e.g. beneath a collapsed row.
-	rootCauseTree := fe.rowsView.HomeTree(rootCause)
-	if rootCauseTree == nil {
-		// error origin has no tree, likely due to internal/hidden spans
-		// create a synthetic tree by walking span parents
-		var syntheticParents []*dagui.Span
-		for current := rootCause; current != nil && current.ParentID.IsValid(); {
-			parent := fe.db.Spans.Map[current.ParentID]
-			if parent == nil {
-				break
-			}
-			syntheticParents = append(syntheticParents, parent)
-			current = parent
-			// Stop if we reach the current row's span or a boundary
-			if parent.ID == row.Span.ID {
-				break
-			}
-		}
-
-		// Create synthetic tree structure
-		rootCauseTree = &dagui.TraceTree{
-			Span: rootCause,
-		}
-
-		// Build parent chain
-		current := rootCauseTree
-		for i := len(syntheticParents) - 1; i >= 0; i-- {
-			parent := &dagui.TraceTree{
-				Span: syntheticParents[i],
-			}
-			current.Parent = parent
-			current = parent
-		}
-	}
-
 	rootCauseRow := &dagui.TraceRow{
 		Span:     rootCause,
 		Chained:  false,
@@ -9117,26 +9117,26 @@ func (fe *frontendPretty) renderErrorCause(ctx tuist.Context, out TermOutput, r 
 		Depth:    row.Depth,
 	}
 
+	// The breadcrumb follows the origin's home tree, which the view may not
+	// have built yet, e.g. beneath a collapsed row; with no tree, likely due
+	// to internal or hidden spans, it follows the origin's parent spans.
 	var parents []*dagui.TraceRow
-	for p := rootCauseTree.Parent; p != nil; p = p.Parent {
-		if p.Span.ID == row.Span.ID {
-			break
-		}
-		if !p.Span.Received {
-			// An ancestor we never fetched: the error origin is point-fetched by
-			// ID, but its parents aren't, so a synthetic-tree walk can reach an
-			// unreceived placeholder (no name, call, or message). renderStepTitle
-			// would render it blank, leaving a stray "› " breadcrumb segment with
-			// nothing before it. Skip it -- we have no data to show.
-			continue
-		}
-		parentRow := &dagui.TraceRow{
-			Span:     p.Span,
-			Chained:  p.Chained,
+	crumb := func(span *dagui.Span, chained bool) {
+		parents = append(parents, &dagui.TraceRow{
+			Span:     span,
+			Chained:  chained,
 			Depth:    row.Depth,
 			Expanded: true,
+		})
+	}
+	if rootCauseTree := fe.rowsView.HomeTree(rootCause); rootCauseTree != nil {
+		for _, p := range rootCauseTree.ErrorCauseBreadcrumb(row.Span.ID) {
+			crumb(p.Span, p.Chained)
 		}
-		parents = append(parents, parentRow)
+	} else {
+		for _, p := range rootCause.ErrorCauseBreadcrumb(row.Span.ID) {
+			crumb(p, false)
+		}
 	}
 
 	indent := strings.Repeat("  ", row.Depth)

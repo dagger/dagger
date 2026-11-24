@@ -28,7 +28,7 @@ func (sdk *moduleTypes) ModuleTypes(
 ) (inst dagql.ObjectResult[*core.Module], rerr error) {
 	// Encapsulated: the SDK's work is its own, and only a step of it that
 	// failed shows (see dagui's spanWalker.passesOnFailure).
-	ctx, span := core.Tracer(ctx).Start(ctx, "module SDK: load typedefs object", telemetry.Encapsulate())
+	ctx, span := core.Tracer(ctx).Start(ctx, "introspect "+source.Self().ModuleName, telemetry.Encapsulate())
 	defer telemetry.EndWithCause(span, &rerr)
 
 	sdkInst, err := sdk.mod.instantiate(ctx)

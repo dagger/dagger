@@ -1,0 +1,45 @@
+module Dagger
+  class Scalar < String
+  end
+
+  class Enum
+    attr_reader name: String
+    attr_reader value: String
+
+    def self.members: () -> Array[instance]
+    def self.from_name: (String name) -> instance
+    def initialize: (String name, String value) -> void
+    def to_s: () -> String
+    def inspect: () -> String
+  end
+
+  module Input : _Input
+    def graphql_fields: () -> Array[[String, untyped]]
+  end
+
+  interface _Input
+    def to_h: () -> Hash[Symbol, untyped]
+    def class: () -> _InputClass
+  end
+
+  interface _InputClass
+    def graphql_names: () -> Hash[Symbol, String]
+  end
+
+  class Type
+    attr_reader query: QueryBuilder
+
+    @id: String?
+
+    def self.graphql_name: () -> String
+    def initialize: (QueryBuilder query) -> void
+    def id: () -> String
+    def ==: (untyped other) -> bool
+    alias eql? ==
+    def hash: () -> Integer
+
+    private
+
+    def fetch_id: () -> String
+  end
+end

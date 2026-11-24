@@ -1,0 +1,453 @@
+package idtui_test
+
+import (
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"testing"
+
+	"github.com/dagger/testctx"
+	"github.com/stretchr/testify/require"
+)
+
+// sdkFixture is a module of viztest/sdks, written with one of the external,
+// entrypoint-style SDKs (github.com/dagger/<lang>-sdk) rather than the
+// engine's built-in runtimes. Every fixture has the same functions, so the
+// goldens of one case line up across SDKs; see viztest/sdks/go/main.go.
+//
+// These goldens were hand-edited to the output we WANT: no module entrypoint
+// plumbing on screen, the original failure as the origin of the outermost
+// call, and the logs of the thing that failed. The commit that turned them
+// into targets shows the output before as its diff; each SDK's pass since
+// made its goldens pass. The fail-exec-wrapped goldens record today's
+// output: wrapping is not targeted yet.
+type sdkFixture struct {
+	lang string
+	// a source file of the module, and code that, appended to it, breaks the
+	// module's build or load
+	source, breakage string
+	// the SDK runs no process of the function's own: it can't exit with a
+	// code, and logs only to stdout
+	noProcess bool
+	// BAD: the SDK has no function cache policy, so log-success is cached
+	// and its logs are never seen again
+	noCachePolicy bool
+}
+
+// What every entrypoint SDK got wrong before its module process reported its
+// error in the engine's function error file (DAGGER_FUNCTION_ERROR_PATH), as
+// go, python, typescript, php, java and ruby now do: the dispatcher exec's
+// stdout and stderr, the function's own logs with stack traces and protocol
+// lines (::dagger-function-error::, a reply's JSON) among them, rendered on
+// the function's row, which a collapsed report doesn't expand, and the exec
+// an error's origin names rendered with "exit code: N" and no logs. (Ruby's
+// rendered on its dispatcher's own withExec instead: its entrypoint marked
+// no exec as the module process.)
+//
+// What they all still get wrong:
+//
+//   - BAD: a caught and wrapped exec error loses the wrapping message in the
+//     collapsed report: the origin is the inner withExec.
+//   - BAD: an exec error's message is a bare "exit code: N".
+var sdkFixtures = []sdkFixture{
+	// Errors use the engine's function error file (DAGGER_FUNCTION_ERROR_PATH,
+	// dagger/go-sdk#113). A build failure renders the compiler's error,
+	// through dagger/go's own build. BAD: a wrapped exec error's message is
+	// nowhere, even expanded, as for dang: the dispatcher no longer echoes the
+	// error on the function's row, and the error's origin is the inner exec.
+	{lang: "go", source: "main.go", breakage: "\nvar _ = undefinedValue\n"},
+	// Errors use the engine's function error file (DAGGER_FUNCTION_ERROR_PATH,
+	// dagger/python-sdk#93). An API error whose origin renders logs nothing;
+	// one without an origin, an exception of the function's own and an error
+	// importing its code log a short traceback, through the user's frames
+	// only. A wrapped exec error keeps its chain, each part so shortened.
+	{lang: "python", source: "src/viztest_python/__init__.py", breakage: "\nthis is not python\n"},
+	// Errors use the engine's function error file (DAGGER_FUNCTION_ERROR_PATH,
+	// dagger/typescript-sdk#144), and the result a file of its own, so the
+	// function's console.log no longer corrupts it. An API error whose origin
+	// renders logs nothing; one without an origin and an error of the
+	// function's own log a short stack trace, through the module's own frames
+	// only. A wrapped exec error keeps its cause chain, each part so
+	// shortened. A module that doesn't compile fails on the constructor's row
+	// with esbuild's error: tsx compiles at run time, so there's no build.
+	{lang: "typescript", source: "src/index.ts", breakage: "\nthis is not typescript\n"},
+	// Errors use the engine's function error file (DAGGER_FUNCTION_ERROR_PATH,
+	// dagger/php-sdk#49). An API error whose origin renders logs nothing;
+	// one without an origin and an error of the function's own log a short
+	// stack trace, through the module's own frames only. A wrapped exec
+	// error keeps its previous-error chain, each part so shortened. A module
+	// that doesn't parse fails on the constructor's row with PHP's parse
+	// error: PHP compiles at run time, so the build (prebuild, the Composer
+	// install) passes. BAD, deferred: the client sends every default
+	// argument, so a call it makes renders with all of them; the fail-exec
+	// goldens' Container.from and withExec lines pin that, and lose the
+	// defaults once php-sdk's codegen omits them.
+	{lang: "php", source: "src/ViztestPhp.php", breakage: "\nthis is not php;\n", noCachePolicy: true},
+	// Errors use the engine's function error file (DAGGER_FUNCTION_ERROR_PATH,
+	// dagger/java-sdk#47). An API error whose origin renders logs nothing;
+	// one without an origin and an exception of the function's own log a
+	// short stack trace, through the module's own frames only. A wrapped
+	// exec error keeps its cause chain, each part so shortened. A build
+	// failure renders under "build viztest-java" as Maven's quiet errors on
+	// its "mvn package" exec, the compiler's among them.
+	{lang: "java", source: "src/main/java/io/dagger/modules/viztestjava/ViztestJava.java", breakage: "\nthis is not java\n"},
+	// Errors use the engine's function error file (DAGGER_FUNCTION_ERROR_PATH,
+	// dagger/ruby-sdk#11). An API error whose origin renders logs nothing;
+	// one without an origin and an error of the function's own log a short
+	// trace in Ruby's own form, through the module's own frames only. A
+	// wrapped exec error keeps its cause, so shortened too. A module that
+	// doesn't parse fails on the constructor's row with Ruby's SyntaxError as
+	// ruby prints it, syntax_suggest's section included (its guess here is
+	// wrong, but it is what ruby shows), the message's first line the error:
+	// Ruby loads the module at run time, so the build (prebuild, the gems'
+	// install) passes. "this is not ruby" alone is valid Ruby, a chain of
+	// method calls that fails only when the file runs, so the breakage ends in
+	// a parenthesis that doesn't parse.
+	{lang: "ruby", source: "lib/viztest_ruby.rb", breakage: "\nthis is not ruby)\n"},
+	// Not an entrypoint: the dang-sdk module runs on the engine's built-in
+	// Dang runtime, so its errors and logs are the reference. A module that
+	// doesn't parse fails on the row of Dang's typecheck of it, "typecheck
+	// viztest-dang", with Dang's report, which names the file by its path in
+	// the module's context, not the engine's copy. BAD: a wrapped exec error
+	// shows only its origin, without the wrapping message, even expanded:
+	// fail-exec-wrapped renders as fail-exec does.
+	{lang: "dang", source: "main.dang", breakage: "\nthis is not dang\n", noProcess: true},
+}
+
+// logSuccessOutput checks a log-success run. Fuzzy, because the function's
+// result is rendered as a line of its row's logs, and races them there: it
+// arrives before or after the exec's logs, and lacks a newline of its own,
+// so it can run into the next line ("go function resultgo function stdout").
+func (fx sdkFixture) logSuccessOutput(t *testctx.T, out string) {
+	result := fx.lang + " function result"
+	require.Contains(t, out, "Expected stdout:\n\n"+result+"\n")
+	_, row, ok := strings.Cut(out, "logSuccess: String! ")
+	require.True(t, ok, "the report must show the function's row")
+	row, _, _ = strings.Cut(row, "\n\n")
+	if fx.noCachePolicy {
+		require.True(t, strings.HasPrefix(row, "X.Xs CACHED\n"), "the cached function's row: %s", row)
+		require.NotContains(t, row, fx.lang+" function stdout")
+		return
+	}
+	require.True(t, strings.HasPrefix(row, "X.Xs\n"), "the function's row: %s", row)
+	require.Contains(t, row, result)
+	require.Contains(t, row, fx.lang+" function stdout")
+	if !fx.noProcess {
+		require.Contains(t, row, fx.lang+" function stderr")
+	}
+}
+
+// sdkCase is one function every SDK fixture implements.
+type sdkCase struct {
+	function string
+	fail     bool
+}
+
+var sdkCases = []sdkCase{
+	// Logs to stdout and stderr, and succeeds: where do a function's own logs
+	// land? On its row, with its result rendered among them.
+	{function: "log-success"},
+	// Logs to stdout and stderr, then fails with an error of its own: the
+	// function's row is the origin, with its logs.
+	{function: "fail-native", fail: true},
+	// Logs to stdout and stderr, then exits its process with code 3 instead
+	// of returning an error: the function's row is the origin, with its logs
+	// and "exit code: 3".
+	{function: "fail-exit-code", fail: true},
+	// Runs a withExec that logs to stdout and stderr and exits 1, and lets the
+	// error propagate unhandled. Collapsed, the inner withExec is the origin,
+	// with its logs.
+	{function: "fail-exec", fail: true},
+	// The same exec, its error caught and wrapped in a message of the
+	// function's own, the common real-world pattern. BAD: collapsed, the
+	// wrapping message is nowhere.
+	{function: "fail-exec-wrapped", fail: true},
+	// Logs a line, then calls a plain core API that fails (reading a file
+	// that doesn't exist), the error unhandled: not every failure is an
+	// exec's. The failed API call is the origin, with its own message.
+	{function: "fail-api", fail: true},
+	// Calls viztest/sdks/dep (a go-sdk module) whose withExec fails: how the
+	// error, its origin and its logs survive a module boundary. Same-SDK for
+	// go, cross-SDK for the rest.
+	{function: "call-failing-dep", fail: true},
+	// The same, after the function logs a line of its own: that line belongs
+	// on the function's row, while the dep's withExec is the origin.
+	{function: "call-failing-dep-logged", fail: true},
+}
+
+// sdkExamples are the golden examples of every SDK fixture: each failing case
+// as the suite renders it (expanded, -v) and as a user sees it by default
+// (collapsed, quiet), plus a module whose build or load fails before any
+// function runs, like trace 150bc33a, where a go-sdk module's `go build`
+// failed and the user saw only "call module entrypoint: ... exit code: 1",
+// with no logs on the failed exec.
+func sdkExamples() []Example {
+	var examples []Example
+	for _, fx := range sdkFixtures {
+		module := "./viztest/sdks/" + fx.lang
+		for _, c := range sdkCases {
+			if fx.noProcess && c.function == "fail-exit-code" {
+				continue
+			}
+			ex := Example{
+				Name:         "sdks-" + fx.lang + "-" + c.function,
+				Golden:       "sdks/" + fx.lang + "/" + c.function,
+				Module:       module,
+				Function:     c.function,
+				Fail:         c.fail,
+				NormalizeSDK: true,
+			}
+			if c.function == "log-success" {
+				ex.FuzzyTest = fx.logSuccessOutput
+			}
+			examples = append(examples, ex)
+			if c.fail {
+				examples = append(examples, Example{
+					Name:         "sdks-" + fx.lang + "-" + c.function + "-default",
+					Golden:       "sdks/" + fx.lang + "/" + c.function + "-default",
+					Module:       module,
+					Function:     c.function,
+					Fail:         true,
+					NoExpand:     true,
+					Quiet:        true,
+					NormalizeSDK: true,
+				})
+			}
+		}
+
+		// Only as a user sees it by default: expanded, the failed build
+		// renders the SDK's whole build pipeline, thousands of lines of
+		// another module's internals.
+		broken := "./viztest/sdks/broken-" + fx.lang
+		examples = append(examples, Example{
+			Name:         "sdks-" + fx.lang + "-broken-default",
+			Golden:       "sdks/" + fx.lang + "/broken-default",
+			Module:       broken,
+			Function:     "log-success",
+			Fail:         true,
+			NoExpand:     true,
+			Quiet:        true,
+			NormalizeSDK: true,
+			Setup:        brokenSDKFixture(module, broken, fx.source, fx.breakage),
+		})
+	}
+	return examples
+}
+
+// dangSourceDir matches the directory the engine copies a Dang module's
+// source to, named for the module and a digest of its source.
+var dangSourceDir = regexp.MustCompile(`(/tmp/dagger-dang/[\w.-]+)-[0-9a-f]{32}/`)
+
+// httpDate matches the date of an HTTP Date header, such as the one in a
+// GraphQL error a TypeScript client logs; its time is scrubbed already.
+var httpDate = regexp.MustCompile(`\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{2} [A-Z][a-z]{2} \d{4} `)
+
+// waitedSuffix matches the "⋯ waited X.Xs on …" a row's duration gets once
+// it spent a second or more blocked on other work (see renderSpanDuration),
+// up to the row's status, if any. The scrubber may have put a CACHED before
+// it, on a row it takes for cached.
+var waitedSuffix = regexp.MustCompile(`(?m)(X\.Xs(?: CACHED)?) ⋯ waited X\.Xs(?: on .*?)?((?: (?:ERROR|CACHED|OK|RUNNING))?)$`)
+
+// normalizeSDKOutput replaces every mention of the engine's native platform,
+// and of its architecture as GOARCH, so goldens that render an SDK's build for
+// the default platform are architecture-independent, and the digests in Dang
+// source paths, so they don't change with every edit of a fixture, and HTTP
+// dates. It drops the "⋯ waited" suffix of a duration: the fixtures' work
+// takes well under a second, so whether a row waited a second or more on
+// another, such as on a dep's exec, depends only on how busy the engine is.
+// With expanded, it also elides what the module entrypoint evaluates; see
+// elideEntrypointInternals.
+func normalizeSDKOutput(out, nativePlatform string, expanded bool) string {
+	if expanded {
+		out = elideEntrypointInternals(out)
+	}
+	out = waitedSuffix.ReplaceAllString(out, "$1$2")
+	out = dangSourceDir.ReplaceAllString(out, "$1-XXXXXXXX/")
+	out = httpDate.ReplaceAllString(out, "XXX, XX XXX XXXX ")
+	if nativePlatform == "" {
+		return out
+	}
+	replacements := []string{fmt.Sprintf("%q", nativePlatform), `"linux/ARCH"`}
+	if _, arch, ok := strings.Cut(nativePlatform, "/"); ok {
+		arch, _, _ = strings.Cut(arch, "/")
+		replacements = append(replacements, "GOARCH="+arch, "GOARCH=ARCH")
+	}
+	return strings.NewReplacer(replacements...).Replace(out)
+}
+
+// entrypointInternalsElided replaces what elideEntrypointInternals leaves
+// out.
+const entrypointInternalsElided = "┆ (the entrypoint's own evaluation, elided)"
+
+// elideEntrypointInternals leaves out the children of every nested "call
+// module entrypoint" span of an expanded report: the SDK's build and
+// dispatcher exec, evaluated concurrently by its Dang entrypoint, so their
+// order and grouping vary from run to run. The span's own error and logs stay.
+// What a user sees by default is pinned by the collapsed goldens, which these
+// spans never reach.
+func elideEntrypointInternals(out string) string {
+	lines := strings.SplitAfter(out, "\n")
+	var kept []string
+	for i := 0; i < len(lines); i++ {
+		kept = append(kept, lines[i])
+		col, ok := entrypointCallColumn(lines[i])
+		if !ok {
+			continue
+		}
+		var (
+			elided  bool
+			inError bool
+			pending []string // lines of only tree guides, kept if the subtree ends
+			guide   string   // the prefix of the subtree's lines
+		)
+		for i+1 < len(lines) {
+			line := []rune(strings.TrimSuffix(lines[i+1], "\n"))
+			if len(line) > col && !onlyGuides(line[:col]) {
+				break // the next sibling or an ancestor's
+			}
+			i++
+			if len(line) <= col {
+				pending = append(pending, lines[i])
+				continue
+			}
+			switch {
+			case line[col] == '!':
+				inError = true
+			case inError && line[col] == ' ':
+				// the error's next line: a child's would start with a guide
+			case line[col] == '┃':
+				inError = false
+			default:
+				inError = false
+				if !elided {
+					guide = string(line[:col])
+				}
+				elided = true
+				pending = nil
+				continue
+			}
+			kept = append(kept, pending...)
+			pending = nil
+			kept = append(kept, lines[i])
+		}
+		if elided {
+			kept = append(kept, guide+entrypointInternalsElided+"\n")
+		}
+		kept = append(kept, pending...)
+	}
+	return strings.Join(kept, "")
+}
+
+// entrypointCallColumn returns the column of a nested "call module
+// entrypoint" span's children, if the line is one.
+func entrypointCallColumn(line string) (int, bool) {
+	before, _, ok := strings.Cut(line, "call module entrypoint X.")
+	if !ok {
+		return 0, false
+	}
+	prefix := []rune(before)
+	// "├╴✘ " or "╰╴✔ " ends the prefix of a nested span
+	if len(prefix) < 4 || prefix[len(prefix)-1] != ' ' || prefix[len(prefix)-3] != '╴' {
+		return 0, false
+	}
+	if !onlyGuides(prefix[:len(prefix)-4]) {
+		return 0, false
+	}
+	return len(prefix) - 2, true
+}
+
+func TestNormalizeSDKOutputDropsWaited(t *testing.T) {
+	require.Equal(t, `╰╴✘ .stdout: String! X.Xs ERROR
+├╴✔ .stdout: String! X.Xs
+$ sdkDep: SDKDep! X.Xs CACHED
+├╴$ Container.from(address: "alpine"): Container! X.Xs CACHED
+┃ log line ⋯ waited X.Xs on nothing
+`, normalizeSDKOutput(`╰╴✘ .stdout: String! X.Xs ⋯ waited X.Xs on sh -c 'echo dep exec stdout; sleep 0.1; exit 1' ERROR
+├╴✔ .stdout: String! X.Xs ⋯ waited X.Xs on sh -c 'echo hi'
+$ sdkDep: SDKDep! X.Xs ⋯ waited X.Xs CACHED
+├╴$ Container.from(address: "alpine"): Container! X.Xs CACHED ⋯ waited X.Xs on resolve image
+┃ log line ⋯ waited X.Xs on nothing
+`, "", false))
+}
+
+func TestElideEntrypointInternals(t *testing.T) {
+	require.Equal(t, `$ viztestGo: ViztestGo! X.Xs CACHED
+✘ .failExec: String! X.Xs ERROR
+┃ exit code: 1
+├╴✘ call module entrypoint X.Xs ERROR
+│ ! call module entrypoint: first line
+│   second line
+│       at an indented frame
+│ ┆ (the entrypoint's own evaluation, elided)
+│
+├╴✘ withExec sh -c 'exit 1' X.Xs ERROR
+│ ! exit code: 1
+╰╴✘ .callDep: String! X.Xs ERROR
+  ╰╴✘ call module entrypoint X.Xs ERROR
+    ┆ (the entrypoint's own evaluation, elided)
+
+✘ call module entrypoint X.Xs ERROR
+! collapsed, so left alone
+`, elideEntrypointInternals(`$ viztestGo: ViztestGo! X.Xs CACHED
+✘ .failExec: String! X.Xs ERROR
+┃ exit code: 1
+├╴✘ call module entrypoint X.Xs ERROR
+│ ! call module entrypoint: first line
+│   second line
+│       at an indented frame
+│ ├╴✔ defaultPlatform: Platform! X.Xs
+│ │ ┃ "linux/ARCH"
+│ │
+│ ╰╴✘ .contents: String! X.Xs ERROR
+│
+├╴✘ withExec sh -c 'exit 1' X.Xs ERROR
+│ ! exit code: 1
+╰╴✘ .callDep: String! X.Xs ERROR
+  ╰╴✘ call module entrypoint X.Xs ERROR
+    ├╴$ go: Go! X.Xs CACHED
+    ╰╴✘ withExec dispatch X.Xs ERROR
+      ! exit code: 2
+
+✘ call module entrypoint X.Xs ERROR
+! collapsed, so left alone
+`))
+}
+
+func onlyGuides(rs []rune) bool {
+	for _, r := range rs {
+		if r != ' ' && r != '│' {
+			return false
+		}
+	}
+	return true
+}
+
+// removeBrokenSDKFixtures removes the copies brokenSDKFixture makes, in case
+// a run was interrupted before its cleanup.
+func removeBrokenSDKFixtures() {
+	copies, _ := filepath.Glob("viztest/sdks/broken-*")
+	for _, dir := range copies {
+		os.RemoveAll(dir)
+	}
+}
+
+// brokenSDKFixture copies an SDK fixture to dst, with breakage appended to
+// one of its source files. The fixtures' generated code is large, so the
+// broken copies are made by the test rather than committed.
+func brokenSDKFixture(src, dst, source, breakage string) func(*testctx.T) {
+	return func(t *testctx.T) {
+		exec.Command("rm", "-rf", dst).Run()
+		t.Cleanup(func() { exec.Command("rm", "-rf", dst).Run() })
+		if out, err := exec.Command("cp", "-R", src, dst).CombinedOutput(); err != nil {
+			t.Fatalf("copy %s to %s: %v: %s", src, dst, err, out)
+		}
+		f, err := os.OpenFile(filepath.Join(dst, source), os.O_APPEND|os.O_WRONLY, 0)
+		require.NoError(t, err)
+		_, err = f.WriteString(breakage)
+		require.NoError(t, err)
+		require.NoError(t, f.Close())
+	}
+}

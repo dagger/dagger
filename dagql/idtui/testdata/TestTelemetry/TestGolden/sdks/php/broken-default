@@ -1,0 +1,11 @@
+Expected stderr:
+
+✔ connect X.Xs
+✔ load workspace: . X.Xs
+✔ parsing command line arguments X.Xs
+
+✘ viztestPhp: ViztestPhp! X.Xs ERROR
+PHP Parse error:  syntax error, unexpected identifier "is" in /src/viztest/sdks/broken-php/src/ViztestPhp.php on line 120
+! syntax error, unexpected identifier "is"
+
+Setup tracing by running "dagger cloud signup". To hide set DAGGER_NO_NAG=1

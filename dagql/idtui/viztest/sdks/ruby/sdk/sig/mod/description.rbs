@@ -1,0 +1,99 @@
+module Dagger
+  module Mod
+    module Description
+      class TypeRef < Data
+        attr_reader kind: String
+        attr_reader name: String
+        attr_reader optional: bool
+        attr_reader elem: TypeRef?
+
+        def self.new: (kind: String, ?name: String, ?optional: bool, ?elem: TypeRef?) -> TypeRef
+        def initialize: (kind: String, ?name: String, ?optional: bool, ?elem: TypeRef?) -> void
+        def to_h: () -> Hash[Symbol, untyped]
+      end
+
+      class Argument < Data
+        attr_reader name: String
+        attr_reader type: TypeRef
+        attr_reader description: String?
+        attr_reader default_value: String?
+        attr_reader default_address: String?
+        attr_reader ignore: Array[String]?
+        attr_reader deprecated: String?
+
+        def self.new: (String, TypeRef, String?, String?, String?, Array[String]?, String?) -> Argument
+      end
+
+      class Function < Data
+        attr_reader name: String
+        attr_reader returns: TypeRef
+        attr_reader description: String?
+        attr_reader deprecated: String?
+        attr_reader check: bool
+        attr_reader generator: bool
+        attr_reader up: bool
+        attr_reader agent: bool
+        attr_reader cache: String?
+        attr_reader args: Array[Argument]
+
+        def self.new: (String, TypeRef, String?, String?, bool, bool, bool, bool, String?, Array[Argument]) -> Function
+      end
+
+      class Field < Data
+        attr_reader name: String
+        attr_reader type: TypeRef
+        attr_reader description: String?
+        attr_reader deprecated: String?
+
+        def self.new: (String, TypeRef, String?, String?) -> Field
+      end
+
+      class EnumMember < Data
+        attr_reader name: String
+        attr_reader value: String
+        attr_reader description: String?
+        attr_reader deprecated: String?
+
+        def self.new: (String, String, String?, String?) -> EnumMember
+      end
+
+      class Enum < Data
+        attr_reader name: String
+        attr_reader description: String?
+        attr_reader values: Array[EnumMember]
+
+        def self.new: (String, String?, Array[EnumMember]) -> Enum
+      end
+
+      class Collection < Data
+        attr_reader keys: String?
+        attr_reader get: String?
+        attr_reader delta: String?
+
+        def self.new: (keys: String?, get: String?, delta: String?) -> Collection
+      end
+
+      class ObjectType < Data
+        attr_reader name: String
+        attr_reader interface: bool
+        attr_reader description: String?
+        attr_reader fields: Array[Field]
+        attr_reader functions: Array[Function]
+        attr_reader constructor: Function?
+        attr_reader collection: Collection?
+
+        def self.new: (String, bool, String?, Array[Field], Array[Function], Function?, Collection?) -> ObjectType
+      end
+
+      class Module < Data
+        attr_reader main_object: String
+        attr_reader description: String?
+        attr_reader objects: Array[ObjectType]
+        attr_reader enums: Array[Enum]
+
+        def self.new: (main_object: String, description: String?, objects: Array[ObjectType], enums: Array[Enum])
+                    -> Module
+      end
+    end
+  end
+end

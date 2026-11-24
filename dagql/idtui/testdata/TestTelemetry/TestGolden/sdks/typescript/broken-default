@@ -1,0 +1,11 @@
+Expected stderr:
+
+✔ connect X.Xs
+✔ load workspace: . X.Xs
+✔ parsing command line arguments X.Xs
+
+✘ viztestTypescript: ViztestTypescript! X.Xs ERROR
+/workspace/viztest/sdks/broken-typescript/src/index.ts:84:5: ERROR: Expected ";" but found "is"
+! Transform failed with 1 error
+
+Setup tracing by running "dagger cloud signup". To hide set DAGGER_NO_NAG=1

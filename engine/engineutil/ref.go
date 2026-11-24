@@ -2,7 +2,9 @@ package engineutil
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	snapshotutil "github.com/dagger/dagger/engine/snapshots/util"
@@ -31,7 +33,65 @@ const (
 	MetaMountStdoutPath         = "stdout"
 	MetaMountStderrPath         = "stderr"
 	MetaMountCombinedOutputPath = "combinedOutput"
+
+	// FunctionErrorPathEnv is part of the module entrypoint contract: the
+	// engine sets it, on a module entrypoint's module process only (see
+	// core.ModuleCallDigestEnv), to a writable file path. A module process
+	// whose function fails writes the function's error there and exits
+	// non-zero; the call then fails with that error as its own. The file holds
+	// a JSON object, exactly {"message": "...", "values": {...}} or
+	// {"id": "<Error ID>"} (see core.FunctionErrorReport); anything else is an
+	// invalid report, and the call fails with an error that says so, and the
+	// process's exec error, values and all.
+	// The engine reads a regular file there of at most MaxFunctionErrorBytes,
+	// and nothing else; without one, or with an empty one, the call fails with
+	// the process's exec error. A process that finds the variable unset runs
+	// on an engine without the contract.
+	FunctionErrorPathEnv = "DAGGER_FUNCTION_ERROR_PATH"
+	// FunctionErrorMountPath is the directory the module process's
+	// FunctionErrorPathEnv file is in, bound to MetaMountFunctionErrorDir of
+	// the exec's meta mount, so the file lands beside the exec's output and
+	// stays out of its filesystem.
+	FunctionErrorMountPath = "/.dagger_function_error"
+	// FunctionErrorFileName is the FunctionErrorPathEnv file's name in
+	// FunctionErrorMountPath.
+	FunctionErrorFileName = "error"
+	// MetaMountFunctionErrorDir is the directory of the meta mount that
+	// FunctionErrorMountPath binds.
+	MetaMountFunctionErrorDir = "functionError"
+	// MaxFunctionErrorBytes is the largest function error file the engine
+	// reads.
+	MaxFunctionErrorBytes = 1 << 20
 )
+
+// ReadSnapshotSmallFile reads the regular file at filePath, and nothing when
+// there's none there, it isn't a regular file or it is over limit bytes: a
+// path that a process can make anything, such as a named pipe that would
+// block the read, is read only when it is a plain file, and a symlink there,
+// which could loop or lead anywhere, isn't followed. Those are what a
+// process can leave there; a failure to look, such as an I/O error, is the
+// engine's, and is returned.
+func ReadSnapshotSmallFile(ctx context.Context, mntable bkcache.MountableRef, filePath string, limit int) ([]byte, error) {
+	ctx = withOutgoingContext(ctx)
+	stat, err := snapshotutil.LstatFile(ctx, mntable, filePath)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to stat %q: %w", filePath, err)
+	}
+	if !stat.Mode().IsRegular() || stat.Size() > int64(limit) {
+		return nil, nil
+	}
+	contents, err := snapshotutil.ReadFile(ctx, mntable, snapshotutil.ReadRequest{
+		Filename: filePath,
+		Range:    &snapshotutil.FileRange{Length: int(stat.Size())},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to read %q: %w", filePath, err)
+	}
+	return contents, nil
+}
 
 func ReadSnapshotPath(ctx context.Context, c *Client, mntable bkcache.MountableRef, filePath string, limit int) ([]byte, error) {
 	ctx = withOutgoingContext(ctx)

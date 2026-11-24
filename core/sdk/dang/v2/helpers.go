@@ -163,8 +163,7 @@ func evalDangSource(
 		// executor injects the same user-facing span context as the
 		// container's traceparent (engineutil executor_spec.go); an in-engine
 		// runtime has to ask for it explicitly.
-		stdioCtx := trace.ContextWithSpanContext(ctx, dagql.UserFacingSpanContext(ctx))
-		stdio := telemetry.SpanStdio(stdioCtx, core.InstrumentationLibrary)
+		stdio := userFacingStdio(ctx)
 		defer stdio.Close()
 		ctx = ioctx.StdoutToContext(ctx, stdio.Stdout)
 		ctx = ioctx.StderrToContext(ctx, stdio.Stderr)
@@ -223,6 +222,12 @@ func evalDangSource(
 
 		return withEnv(ctx, env)
 	})
+}
+
+// userFacingStdio is the stdout and stderr of ctx's user-facing span (see
+// evalDangSource).
+func userFacingStdio(ctx context.Context) telemetry.SpanStreams {
+	return telemetry.SpanStdio(trace.ContextWithSpanContext(ctx, dagql.UserFacingSpanContext(ctx)), core.InstrumentationLibrary)
 }
 
 // dangSourceDir returns the directory to read a module's source in srcDir
@@ -379,11 +384,27 @@ func isDangSourceError(err error) bool {
 		errors.As(err, &raised)
 }
 
-// reportDangSourceError writes Dang's rendered report for err to stderr and
-// returns the short dangSourceError to surface as the span error.
+// reportDangSourceError writes Dang's rendered report for err to stderr (see
+// dangSourceReport) and returns the short dangSourceError to surface as the
+// span error.
 func reportDangSourceError(stderr io.Writer, err error) error {
-	fmt.Fprint(stderr, strings.TrimRight(err.Error(), "\n")+"\n")
+	fmt.Fprint(stderr, strings.TrimRight(dangSourceReport(err), "\n")+"\n")
 	return &dangSourceError{err: err}
+}
+
+// dangSourceReport is Dang's rendered report for err, without the context
+// Dang wraps around a report that names its file already ("failed to parse
+// file <path>: "), and with the paths of staged sources relative to the
+// module's context directory, as the user knows them, not the engine's copy.
+func dangSourceReport(err error) string {
+	for {
+		inner := errors.Unwrap(err)
+		if inner == nil || !strings.HasSuffix(err.Error(), ": "+inner.Error()) {
+			break
+		}
+		err = inner
+	}
+	return stagedDangSourcePath.ReplaceAllString(err.Error(), "")
 }
 
 // Dang validates object directives but does not retain them on its runtime

@@ -5,6 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"maps"
+	"path"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -26,6 +30,162 @@ type ExecError struct {
 	ExitCode int
 	Stdout   string
 	Stderr   string
+
+	// ModuleProcess marks the exec of a module entrypoint's module process
+	// that has a function error file (engineutil.FunctionErrorPathEnv). Its
+	// failure is the function call's: the call fails with FunctionError,
+	// or, when the process wrote none, as when it died before its function
+	// returned, with this error, values and all.
+	ModuleProcess bool
+	// FunctionError is the error the module process reported in its
+	// function error file, if any; for an invalid report, the error that
+	// says so (see invalidFunctionErrorReport).
+	FunctionError *FunctionErrorReport
+}
+
+const (
+	// ModuleProcessExtension is the extension that marks the ExecError of a
+	// module process (ExecError.ModuleProcess).
+	ModuleProcessExtension = "moduleProcess"
+	// FunctionErrorExtension is the extension of a module process's
+	// ExecError that holds its FunctionError, which the entrypoint's call
+	// fails with.
+	FunctionErrorExtension = "functionError"
+)
+
+// FunctionErrorReport is the error a module process reports in its function
+// error file (engineutil.FunctionErrorPathEnv), a JSON object that is exactly
+// one of:
+//
+//   - {"message": "...", "values": {"name": <any JSON>, ...}}: the error's
+//     message, in full, any origin it names ([traceparent:...]) included,
+//     and its values, such as an API error's extensions; "values" is
+//     optional;
+//   - {"id": "<Error ID>"}: a Dagger Error the process built, as it would
+//     return with FunctionCall.returnError.
+//
+// Anything else is an invalid report, an SDK's bug (see
+// ParseFunctionErrorReport).
+type FunctionErrorReport struct {
+	Message string                     `json:"message,omitempty"`
+	Values  map[string]json.RawMessage `json:"values,omitempty"`
+	ID      string                     `json:"id,omitempty"`
+}
+
+// ParseFunctionErrorReport reads the content of a function error file. It
+// returns nil for an empty one, which reports nothing, and an error that
+// says why for content that is not exactly one of the forms of a
+// FunctionErrorReport: not a JSON object, or not valid JSON, an unknown field
+// or one of the wrong type, an "id" beside a message or values, an "id" that
+// is no Error ID, neither a message nor an id, or content after the object.
+func ParseFunctionErrorReport(content []byte) (*FunctionErrorReport, error) {
+	text := strings.TrimSpace(string(content))
+	if text == "" {
+		return nil, nil
+	}
+	dec := json.NewDecoder(strings.NewReader(text))
+	dec.DisallowUnknownFields()
+	var report FunctionErrorReport
+	if err := dec.Decode(&report); err != nil {
+		var typeErr *json.UnmarshalTypeError
+		if errors.As(err, &typeErr) && typeErr.Field != "" {
+			return nil, fmt.Errorf("field %q: want %s, got %s", typeErr.Field, jsonKind(typeErr.Type.Kind().String()), typeErr.Value)
+		}
+		if field, ok := strings.CutPrefix(err.Error(), "json: unknown field "); ok {
+			return nil, fmt.Errorf("unknown field %s", field)
+		}
+		var syntaxErr *json.SyntaxError
+		if strings.HasPrefix(text, "{") && errors.As(err, &syntaxErr) {
+			return nil, fmt.Errorf("invalid JSON at offset %d: %w", syntaxErr.Offset, syntaxErr)
+		}
+		if strings.HasPrefix(text, "{") && errors.Is(err, io.ErrUnexpectedEOF) {
+			return nil, errors.New("invalid JSON: unexpected end of the content")
+		}
+		return nil, fmt.Errorf("not a JSON object: %s", quoteExcerpt(text))
+	}
+	if dec.InputOffset() != int64(len(text)) {
+		return nil, errors.New("content after the JSON object")
+	}
+	switch {
+	case report.ID != "":
+		if report.Message != "" || report.Values != nil {
+			return nil, errors.New(`"id" beside "message" or "values"`)
+		}
+		var id dagql.ID[*Error]
+		if err := id.Decode(report.ID); err != nil {
+			return nil, fmt.Errorf(`"id" is not an Error ID: %w`, err)
+		}
+		return &report, nil
+	case report.Message != "":
+		return &report, nil
+	default:
+		return nil, errors.New(`neither a "message" nor an "id"`)
+	}
+}
+
+// jsonKind names a Go kind a report's field decodes into as JSON does.
+func jsonKind(kind string) string {
+	switch kind {
+	case "string":
+		return "a string"
+	case "map":
+		return "an object"
+	default:
+		return kind
+	}
+}
+
+// quoteExcerpt quotes the start of an invalid report, for its error.
+func quoteExcerpt(text string) string {
+	const limit = 80
+	if len(text) <= limit {
+		return strconv.Quote(text)
+	}
+	return strconv.Quote(strings.ToValidUTF8(text[:limit], "")) + "..."
+}
+
+// invalidFunctionErrorReport is the report the call of a module process that
+// wrote an invalid one (see ParseFunctionErrorReport) fails with: an error
+// that names the invalid report and why, and the process's own failure, from
+// the function call, with the values of its ExecError, such as its exit code,
+// so the failure isn't lost to the SDK's bug.
+func (e *ExecError) invalidFunctionErrorReport(invalid error) *FunctionErrorReport {
+	values := map[string]json.RawMessage{}
+	for name, value := range e.Extensions() {
+		if name == ModuleProcessExtension || name == FunctionErrorExtension {
+			continue
+		}
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			continue
+		}
+		values[name] = encoded
+	}
+	failure := strings.TrimSpace(telemetry.ErrorOriginRegex.ReplaceAllString(e.Error(), ""))
+	return &FunctionErrorReport{
+		Message: fmt.Sprintf("invalid function error report: %s; the module process failed with: %s", invalid, failure),
+		Values:  values,
+	}
+}
+
+// Return makes the reported error the one fnCall returns, as a module process
+// returns one with FunctionCall.returnError: the Error the report names by
+// ID, or one with its message and its values, sorted by name. The call that
+// fails with it gives it its origin, as it does a returned Error's (see
+// functionCallErrorWithOrigin).
+func (report *FunctionErrorReport) Return(ctx context.Context, fnCall *FunctionCall) error {
+	if report.ID != "" {
+		var id dagql.ID[*Error]
+		if err := id.Decode(report.ID); err != nil {
+			return fmt.Errorf("decode reported function error: %w", err)
+		}
+		return fnCall.ReturnError(ctx, id)
+	}
+	dagErr := NewError(report.Message)
+	for _, name := range slices.Sorted(maps.Keys(report.Values)) {
+		dagErr = dagErr.WithValue(name, JSON(report.Values[name]))
+	}
+	return fnCall.setReturn(functionCallReturn{Error: dagErr, HasError: true})
 }
 
 func (e *ExecError) Error() string {
@@ -37,13 +197,20 @@ func (e *ExecError) Unwrap() error {
 }
 
 func (e *ExecError) Extensions() map[string]any {
-	return map[string]any{
+	ext := map[string]any{
 		"_type":    "EXEC_ERROR",
 		"cmd":      e.Cmd,
 		"exitCode": e.ExitCode,
 		"stdout":   e.Stdout,
 		"stderr":   e.Stderr,
 	}
+	if e.ModuleProcess {
+		ext[ModuleProcessExtension] = true
+	}
+	if e.FunctionError != nil {
+		ext[FunctionErrorExtension] = e.FunctionError
+	}
+	return ext
 }
 
 func execErrorFromMetaRef(
@@ -53,6 +220,7 @@ func execErrorFromMetaRef(
 	cause error,
 	meta *bkexecutor.Meta,
 	metaRef bkcache.ImmutableRef,
+	functionErrorFile bool,
 ) (*ExecError, bool, error) {
 	if metaRef == nil {
 		return nil, false, nil
@@ -78,6 +246,28 @@ func execErrorFromMetaRef(
 	if meta != nil {
 		execErr.Cmd = meta.Args
 	}
+	if functionErrorFile {
+		mountable, err := metaRef.Mount(ctx, true)
+		if err != nil {
+			return nil, false, err
+		}
+		// No usable report, such as no file or one over the limit, is no
+		// report: the call fails with the exec's own error, as when the
+		// process wrote none. A failure to read it is the engine's, and fails
+		// the call, as a failure to mount it does.
+		content, err := engineutil.ReadSnapshotSmallFile(ctx, mountable,
+			path.Join(engineutil.MetaMountFunctionErrorDir, engineutil.FunctionErrorFileName),
+			engineutil.MaxFunctionErrorBytes)
+		if err != nil {
+			return nil, false, err
+		}
+		report, invalid := ParseFunctionErrorReport(content)
+		if invalid != nil {
+			report = execErr.invalidFunctionErrorReport(invalid)
+		}
+		execErr.ModuleProcess = true
+		execErr.FunctionError = report
+	}
 	return execErr, true, nil
 }
 
@@ -96,14 +286,30 @@ func functionCallReturnedError(
 		return nil, fmt.Errorf("load returned function error: %w", err)
 	}
 
-	dagErr := errInst.Self().Clone()
+	return functionCallErrorWithOrigin(ctx, errInst.Self().Clone(), execErr)
+}
 
+// functionCallErrorWithOrigin gives dagErr, the error a function call
+// returned, its origin, the span it comes from: the one its values name (a
+// traceparent value), else the one its message names, else the one execErr,
+// the failure of the call's runtime, names, else the function call itself.
+// The message and the values both name it, unless they name one already.
+func functionCallErrorWithOrigin(
+	ctx context.Context,
+	dagErr *Error,
+	execErr error,
+) (*Error, error) {
 	originCtx := trace.SpanContextFromContext(
 		telemetry.Propagator.Extract(
 			context.Background(),
 			telemetry.AnyMapCarrier(dagErr.Extensions()),
 		),
 	)
+	if !originCtx.IsValid() {
+		if origins := telemetry.ParseErrorOrigins(dagErr.Message); len(origins) > 0 && origins[0].IsValid() {
+			originCtx = origins[0]
+		}
+	}
 	if !originCtx.IsValid() && execErr != nil {
 		if origins := telemetry.ParseErrorOrigins(execErr.Error()); len(origins) > 0 && origins[0].IsValid() {
 			originCtx = origins[0]

@@ -1,0 +1,7 @@
+module Dagger
+  module Telemetry
+    TRACEPARENT: Regexp
+
+    def self.traceparent: () -> String?
+  end
+end

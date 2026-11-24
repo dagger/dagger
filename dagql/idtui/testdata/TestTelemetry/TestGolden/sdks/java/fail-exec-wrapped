@@ -1,0 +1,25 @@
+Expected stderr:
+
+✔ connect X.Xs
+├╴✔ starting engine X.Xs
+├╴✔ connecting to engine X.Xs
+│ ┃ XX:XX:XX INF connected name=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local client-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx server-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx
+╰╴✔ starting session X.Xs
+
+✔ load workspace: . X.Xs
+✔ parsing command line arguments X.Xs
+
+$ viztestJava: ViztestJava! X.Xs CACHED
+✘ .failExecWrapped: String! X.Xs ERROR
+┃ java.lang.Exception: java function ran a failing command: exit code: 1
+┃         at io.dagger.modules.viztestjava.ViztestJava.failExecWrapped(ViztestJava.java:53)
+┃ Caused by: io.dagger.client.exception.DaggerExecException: exit code: 1
+┃         at io.dagger.modules.viztestjava.ViztestJava.failExecWrapped(ViztestJava.java:51)
+├╴$ Container.from(address: "alpine"): Container! X.Xs CACHED
+├╴✘ withExec sh -c 'echo exec stdout; sleep 0.1; echo exec stderr >&2; exit 1' X.Xs ERROR
+│ ┃ exec stdout
+│ ┃ exec stderr
+│ ! exit code: 1
+╰╴✘ .stdout: String! X.Xs ERROR
+
+Setup tracing by running "dagger cloud signup". To hide set DAGGER_NO_NAG=1

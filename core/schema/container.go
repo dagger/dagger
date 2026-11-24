@@ -1842,11 +1842,14 @@ func (s *containerSchema) withError(ctx context.Context, parent dagql.ObjectResu
 	return inst, errors.New(args.Err)
 }
 
-// withExecDynamicInputs gives a process that a module entrypoint starts for a
-// call the module of that call. The module enters the exec's identity, so the
-// module does not depend on which client evaluates the exec, and execs of
-// different modules do not share a result. The process does not get the call:
-// an exec that holds a function call cannot be persisted.
+// withExecDynamicInputs gives the module process that a module entrypoint
+// starts for a call the module of that call (see core.IsModuleProcessExec);
+// the other execs the entrypoint starts, such as the ones building the
+// module, get none, so they are shared across modules. The module enters the
+// exec's identity, so the module does not depend on which client evaluates
+// the exec, and execs of different modules do not share a result. The process
+// does not get the call: an exec that holds a function call cannot be
+// persisted.
 func (s *containerSchema) withExecDynamicInputs(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Container],
@@ -1860,6 +1863,20 @@ func (s *containerSchema) withExecDynamicInputs(
 	nesting, err := execNesting(core.AfterVersion(defaultNestingVersion).Contains(req.View), args)
 	if err != nil || !nesting {
 		return err
+	}
+	fnCall, err := core.CurrentModuleProcessCall(ctx)
+	if err != nil || fnCall == nil {
+		return err
+	}
+	var env []string
+	if fnCall.MarksModuleProcess() {
+		if err := evaluateContainerMetadata(ctx, parent); err != nil {
+			return err
+		}
+		env = parent.Self().Config.Env
+	}
+	if !core.IsModuleProcessExec(fnCall, env) {
+		return nil
 	}
 	mod, err := core.ModuleProcessModule(ctx)
 	if err != nil || mod.Self() == nil {
