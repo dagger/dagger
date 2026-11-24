@@ -4,6 +4,7 @@ package engineutil
 
 import (
 	"context"
+	"os"
 	"sync"
 	"time"
 
@@ -45,6 +46,10 @@ func (gwp *GlobalNamespaceWorkerPool) Start() error {
 }
 
 func (gwp *GlobalNamespaceWorkerPool) Stop() error {
+	panic("implemented only on linux")
+}
+
+func OpenContainerRootFS(containerID string) (*os.File, error) {
 	panic("implemented only on linux")
 }
 

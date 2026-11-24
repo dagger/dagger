@@ -1236,3 +1236,290 @@ func (LLMSuite) TestNestedClientInheritsSessionConfig(ctx context.Context, t *te
 		requireErrOut(t, err, `secret env var not found: "ANT..."`)
 	})
 }
+
+// mcpFixtureServer exercises cwd-relative reads, writes and subprocesses as well
+// as absolute paths, and retains ignored runtime dependencies between calls.
+const mcpFixtureServer = `
+import json, os, subprocess, sys
+
+ROOT = os.environ.get("ROOT", ".")
+
+def reply(id, result=None, error=None):
+    msg = {"jsonrpc": "2.0", "id": id}
+    if error is not None:
+        msg["error"] = error
+    else:
+        msg["result"] = result
+    sys.stdout.write(json.dumps(msg) + "\n")
+    sys.stdout.flush()
+
+def write(path, content):
+    path = os.path.join(ROOT, path)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        f.write(content)
+
+while True:
+    line = sys.stdin.readline()
+    if not line:
+        break
+    line = line.strip()
+    if not line:
+        continue
+    req = json.loads(line)
+    id = req.get("id")
+    method = req.get("method")
+    if id is None:
+        continue  # notification
+    if method == "initialize":
+        reply(id, {
+            "protocolVersion": req["params"]["protocolVersion"],
+            "capabilities": {"tools": {}},
+            "serverInfo": {"name": "fixture", "version": "0.0.0"},
+        })
+    elif method == "ping":
+        reply(id, {})
+    elif method == "tools/list":
+        reply(id, {"tools": [{
+            "name": name,
+            "description": "Install or use dependencies in the working directory.",
+            "inputSchema": {"type": "object", "properties": {}},
+            "annotations": {"readOnlyHint": name == "inspect"},
+        } for name in ["install", "use", "inspect", "fresh", "check-root", "mkdir", "rmdir"]]})
+    elif method == "tools/call":
+        try:
+            if req["params"]["name"] == "install":
+                assert open(os.path.join(ROOT, "src/app.js")).read() == "// placeholder\n"
+                write("package-lock.json", "{}\n")
+                write("node_modules/dep/index.js", "module.exports = 1\n")
+                write("node_modules/dep/package.json", "{}\n")
+                write(".venv/dep", "installed\n")
+                write("src/app.js", "require('dep')\n")
+                write(".git/HEAD", "ref: refs/heads/main\n")
+                write(".git/objects/info/packs", "\n")
+                subprocess.run([sys.executable, "-c", "assert open('src/app.js').read() == \"require('dep')\\n\""], check=True)
+                text = "installed"
+            elif req["params"]["name"] == "mkdir":
+                os.mkdir(os.path.join(ROOT, "scaffold"))
+                text = "created directory"
+            elif req["params"]["name"] == "rmdir":
+                os.rmdir(os.path.join(ROOT, "scaffold"))
+                text = "removed directory"
+            elif req["params"]["name"] == "check-root":
+                assert os.getcwd() == "/"
+                assert open("/sentinel").read() == "untouched\n"
+                text = "root untouched"
+            elif req["params"]["name"] == "fresh":
+                assert open(os.path.join(ROOT, "fresh.txt")).read() == "fresh workspace\n"
+                for path in ["node_modules", ".venv", ".git", "src", "added.txt"]:
+                    assert not os.path.exists(os.path.join(ROOT, path)), path
+                subprocess.run([sys.executable, "-c", "open('fresh-result.txt', 'w').write(open('fresh.txt').read())"], check=True)
+                text = "workspace replaced"
+            else:
+                assert open(os.path.join(ROOT, "node_modules/dep/index.js")).read() == "module.exports = 1\n"
+                assert open(os.path.join(ROOT, ".venv/dep")).read() == "installed\n"
+                assert open(os.path.join(ROOT, ".git/HEAD")).read() == "ref: refs/heads/main\n"
+                assert open(os.path.join(ROOT, "src/app.js")).read() == "// edited\n"
+                assert open(os.path.join(ROOT, "added.txt")).read() == "added\n"
+                assert not os.path.exists(os.path.join(ROOT, "package-lock.json"))
+                assert not os.path.exists(os.path.join(ROOT, "removed.txt"))
+                assert os.path.isdir(os.path.join(ROOT, "was-file"))
+                assert os.path.isfile(os.path.join(ROOT, "was-dir"))
+                subprocess.run([sys.executable, "-c", "assert open('src/app.js').read() == '// edited\\n'; assert open('.venv/dep').read() == 'installed\\n'; assert not __import__('os').path.exists('removed.txt')"], check=True)
+                if req["params"]["name"] == "use":
+                    subprocess.run([sys.executable, "-c", "open('used.txt', 'w').write(open('src/app.js').read() + open('.venv/dep').read())"], check=True)
+                    write("node_modules/dep/package.json", '{"used": true}\n')
+                text = "runtime retained and workspace reconciled"
+            reply(id, {"content": [{"type": "text", "text": text}]})
+        except Exception as e:
+            reply(id, {"isError": True, "content": [{"type": "text", "text": repr(e)}]})
+    else:
+        reply(id, error={"code": -32601, "message": "method not found: %s" % method})
+`
+
+// TestMCPServerSnapshotHonorsGitignore locks in that edits an external MCP
+// server makes to its synced working directory are overlaid onto the agent's
+// workspace the way git status would see them: additions the workspace's
+// .gitignore rules ignore (node_modules/, build output) and the repository's
+// own .git metadata are left out, while everything else lands. Without this,
+// one `npm install` overlays tens of thousands of files onto the workspace.
+func (LLMSuite) TestMCPServerSnapshotHonorsGitignore(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	server := c.Container().From(pythonImage).
+		WithNewFile("/srv/mcp.py", mcpFixtureServer).
+		WithNewFile("/work/image-only.txt", "must not be exported\n").
+		WithExec([]string{"mkdir", "-p", "/work"}).
+		WithWorkdir("/work").
+		AsService(dagger.ContainerAsServiceOpts{Args: []string{"python3", "-u", "/srv/mcp.py"}})
+
+	ws := c.Directory().
+		WithNewFile(".gitignore", "node_modules/\n.venv/\n").
+		WithNewFile("src/app.js", "// placeholder\n").
+		AsWorkspace()
+
+	// The tool result is a placeholder: the real install tool runs during
+	// replay and its live result flows through.
+	model := cannedRecordingModel(ctx, t, c, c.LLM().
+		WithPrompt("install the dependencies").
+		WithResponse([]dagger.LLMContentBlockInput{{
+			Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "install",
+			Arguments: dagger.JSON(`{}`),
+		}}).
+		WithToolResult("call_1", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "done"}}))
+
+	after := c.LLM(dagger.LLMOpts{Model: model}).
+		WithWorkspace(ws).
+		WithMCPServer("fixture", server).
+		WithPrompt("install the dependencies").
+		Loop().
+		Workspace()
+
+	// Tracked-looking writes land...
+	lock, err := after.File("package-lock.json").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "{}\n", lock)
+	app, err := after.File("src/app.js").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "require('dep')\n", app)
+
+	// ...while ignored additions and VCS metadata do not.
+	entries, err := after.Directory(".").Entries(ctx)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{".gitignore", "package-lock.json", "src/"}, entries)
+}
+
+func (LLMSuite) TestMCPServerEmptyDirectoryChanges(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	server := c.Container().From(pythonImage).
+		WithNewFile("/srv/mcp.py", mcpFixtureServer).WithWorkdir("/work").
+		AsService(dagger.ContainerAsServiceOpts{Args: []string{"python3", "-u", "/srv/mcp.py"}})
+	conversation := c.LLM()
+	for _, tool := range []string{"mkdir", "rmdir"} {
+		conversation = conversation.WithPrompt(tool).
+			WithResponse([]dagger.LLMContentBlockInput{{
+				Kind: dagger.LLMContentBlockKindToolCall, CallID: tool, ToolName: tool, Arguments: dagger.JSON(`{}`),
+			}}).WithToolResult(tool, "", false).
+			WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "done"}})
+	}
+	model := cannedRecordingModel(ctx, t, c, conversation)
+	created := c.LLM(dagger.LLMOpts{Model: model}).WithWorkspace(c.Directory().AsWorkspace()).
+		WithMCPServer("fixture", server).WithPrompt("mkdir").Loop()
+	entries, err := created.Workspace().Directory("/").Entries(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"scaffold/"}, entries)
+	removed := created.WithPrompt("rmdir").Loop()
+	entries, err = removed.Workspace().Directory("/").Entries(ctx)
+	require.NoError(t, err)
+	require.Empty(t, entries)
+}
+
+func (LLMSuite) TestMCPServerRootCwdNotSynced(ctx context.Context, t *testctx.T) {
+	for _, cwd := range []string{"/", "/work"} {
+		t.Run(cwd, func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+			server := c.Container().From(pythonImage).
+				WithNewFile("/srv/mcp.py", mcpFixtureServer).
+				WithNewFile("/sentinel", "untouched\n").
+				WithExec([]string{"ln", "-s", "/", "/work"}).WithWorkdir(cwd).
+				AsService(dagger.ContainerAsServiceOpts{Args: []string{"python3", "-u", "/srv/mcp.py"}})
+			model := cannedRecordingModel(ctx, t, c, c.LLM().WithPrompt("check root").
+				WithResponse([]dagger.LLMContentBlockInput{{
+					Kind: dagger.LLMContentBlockKindToolCall, CallID: "root_1", ToolName: "check-root", Arguments: dagger.JSON(`{}`),
+				}}).WithToolResult("root_1", "", false).
+				WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "done"}}))
+			llm := c.LLM(dagger.LLMOpts{Model: model}).
+				WithWorkspace(c.Directory().WithNewFile("sentinel", "workspace\n").AsWorkspace()).
+				WithMCPServer("fixture", server).WithPrompt("check root").Loop()
+			transcript, err := llm.Transcript(ctx)
+			require.NoError(t, err)
+			require.Contains(t, transcript, "root untouched")
+			entries, err := llm.Workspace().Directory("/").Entries(ctx)
+			require.NoError(t, err)
+			require.Equal(t, []string{"sentinel"}, entries)
+		})
+	}
+}
+
+func (LLMSuite) TestMCPServerRetainsRuntime(ctx context.Context, t *testctx.T) {
+	for _, root := range []string{".", "/work"} {
+		for _, tool := range []string{"use", "inspect"} {
+			t.Run(root+"/"+tool, func(ctx context.Context, t *testctx.T) {
+				c := connect(ctx, t)
+				server := c.Container().From(pythonImage).
+					WithNewFile("/srv/mcp.py", mcpFixtureServer).
+					WithEnvVariable("ROOT", root).
+					WithWorkdir("/work").
+					AsService(dagger.ContainerAsServiceOpts{Args: []string{"python3", "-u", "/srv/mcp.py"}})
+				ws := c.Directory().
+					WithNewFile(".gitignore", "node_modules/\n.venv/\n").
+					WithNewFile("src/app.js", "// placeholder\n").
+					WithNewFile("removed.txt", "remove me\n").
+					WithNewFile("was-file", "file\n").
+					WithNewFile("was-dir/child", "child\n").
+					AsWorkspace()
+				model := cannedRecordingModel(ctx, t, c, c.LLM().
+					WithPrompt("install").
+					WithResponse([]dagger.LLMContentBlockInput{{
+						Kind: dagger.LLMContentBlockKindToolCall, CallID: "install_1", ToolName: "install", Arguments: dagger.JSON(`{}`),
+					}}).
+					WithToolResult("install_1", "", false).
+					WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "installed"}}).
+					WithPrompt("use the installed dependencies").
+					WithResponse([]dagger.LLMContentBlockInput{{
+						Kind: dagger.LLMContentBlockKindToolCall, CallID: "use_2", ToolName: tool, Arguments: dagger.JSON(`{}`),
+					}}).
+					WithToolResult("use_2", "", false).
+					WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "done"}}).
+					WithPrompt("replace the workspace").
+					WithResponse([]dagger.LLMContentBlockInput{{
+						Kind: dagger.LLMContentBlockKindToolCall, CallID: "fresh_3", ToolName: "fresh", Arguments: dagger.JSON(`{}`),
+					}}).
+					WithToolResult("fresh_3", "", false).
+					WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "done"}}))
+
+				installed := c.LLM(dagger.LLMOpts{Model: model}).WithWorkspace(ws).
+					WithMCPServer("fixture", server).WithPrompt("install").Loop()
+				lock, err := installed.Workspace().File("package-lock.json").Contents(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "{}\n", lock)
+
+				// Changes made outside this MCP server must reach the next call,
+				// including deletion of a file the server itself exported last turn.
+				before := installed.Workspace().Directory("/")
+				edited := before.WithNewFile("src/app.js", "// edited\n").
+					WithNewFile("added.txt", "added\n").
+					WithoutFile("removed.txt").WithoutFile("package-lock.json").
+					WithoutFile("was-file").WithNewDirectory("was-file").
+					WithoutDirectory("was-dir").WithNewFile("was-dir", "now a file\n")
+				used := installed.WithWorkspace(installed.Workspace().WithChanges(edited.Changes(before))).
+					WithPrompt("use the installed dependencies").Loop()
+				transcript, err := used.Transcript(ctx)
+				require.NoError(t, err)
+				require.Contains(t, transcript, "runtime retained and workspace reconciled")
+				if tool == "use" {
+					contents, err := used.Workspace().File("used.txt").Contents(ctx)
+					require.NoError(t, err)
+					require.Equal(t, "// edited\ninstalled\n", contents)
+				}
+				entries, err := used.Workspace().Directory("/").Entries(ctx)
+				require.NoError(t, err)
+				for _, absent := range []string{"node_modules/", ".venv/", ".git/", "removed.txt", "package-lock.json"} {
+					require.NotContains(t, entries, absent)
+				}
+				// Taking a later snapshot must not mutate the first turn's snapshot.
+				app, err := installed.Workspace().File("src/app.js").Contents(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "require('dep')\n", app)
+
+				// Runtime belongs to this workspace, not merely to the service.
+				fresh := used.WithWorkspace(c.Directory().WithNewFile("fresh.txt", "fresh workspace\n").AsWorkspace()).
+					WithPrompt("replace the workspace").Loop().Workspace()
+				contents, err := fresh.File("fresh-result.txt").Contents(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "fresh workspace\n", contents)
+			})
+		}
+	}
+}

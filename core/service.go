@@ -27,12 +27,11 @@ import (
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	gwpb "github.com/dagger/dagger/internal/buildkit/frontend/gateway/pb"
 	"github.com/dagger/dagger/internal/buildkit/identity"
+	fscopy "github.com/dagger/dagger/internal/fsutil/copy"
 	"github.com/opencontainers/go-digest"
-	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
-	"golang.org/x/sys/unix"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
@@ -1424,29 +1423,24 @@ func (svc *Service) startReverseTunnel(ctx context.Context, running *RunningServ
 	}
 }
 
-// runAndSnapshotChanges mounts the given source directory into the given
-// container at the given target path, runs the given function, and then
-// snapshots any changes made to the directory during the function's execution.
-// It returns an immutable ref to the snapshot of the changes.
-//
-// After the function completes, a mutable copy of the snapshot is remounted
-// into the service to ensure further changes cannot be made to the
-// ImmutableRef. However there is still inherently a window of time where the
-// service may write asynchronously after the immutable ref is created and
-// before the new mutable copy is remounted.
+// runAndSnapshotChanges reconciles workspace edits into the service's existing
+// working directory, runs f, and copies the result into an isolated snapshot.
+// Never mount over or replace the working directory: a running process (and its
+// children) keeps a reference to its cwd inode, not its pathname. The live tree
+// also retains server-local runtime files excluded from the exported workspace.
+// The caller holds running.workspaceMu through snapshot export and updates
+// running.workspaceSource to the exported workspace before unlocking.
 func (svc *Service) runAndSnapshotChanges(
 	ctx context.Context,
 	running *RunningService,
 	target string,
+	workspaceAddress string,
 	source dagql.ObjectResult[*Directory],
 	f func() error,
 ) (res dagql.ObjectResult[*Directory], hasChanges bool, rerr error) {
 	if running == nil {
 		return res, false, fmt.Errorf("running service is nil")
 	}
-	running.workspaceMu.Lock()
-	defer running.workspaceMu.Unlock()
-
 	cache, err := dagql.EngineCache(ctx)
 	if err != nil {
 		return res, false, err
@@ -1469,14 +1463,42 @@ func (svc *Service) runAndSnapshotChanges(
 		return res, false, fmt.Errorf("failed to get path for source directory: %w", err)
 	}
 
-	bk, err := query.Engine(ctx)
+	containerRoot, err := engineutil.OpenContainerRootFS(running.ContainerID)
 	if err != nil {
-		return res, false, fmt.Errorf("failed to get engine client: %w", err)
+		return res, false, fmt.Errorf("open service root: %w", err)
+	}
+	defer containerRoot.Close()
+	containerRootPath := fmt.Sprintf("/proc/self/fd/%d", containerRoot.Fd())
+	liveDir, err := containerdfs.RootPath(containerRootPath, target)
+	if err != nil {
+		return res, false, err
+	}
+	if liveDir == containerRootPath {
+		return res, false, fmt.Errorf("cannot sync MCP workspace over container root")
 	}
 
-	mutableRef, err := query.SnapshotManager().New(ctx, ref,
+	if err := running.pruneWorkspacePaths(ctx, liveDir, workspaceAddress, source); err != nil {
+		return res, false, err
+	}
+	if err := MountRef(ctx, ref, func(root string, _ *mount.Mount) error {
+		return fscopy.Copy(ctx, root, sourceDirPath, liveDir, "/", func(info *fscopy.CopyInfo) {
+			info.CopyDirContents = true
+			info.AlwaysReplaceExistingDestPaths = true
+		})
+	}); err != nil {
+		return res, false, fmt.Errorf("sync service workspace: %w", err)
+	}
+	running.workspaceSource = source
+	running.workspaceAddress = workspaceAddress
+	if err := f(); err != nil {
+		return res, false, err
+	}
+
+	// Snapshot by copying, not committing the live tree. The service never
+	// holds a writable reference to a snapshot we have made immutable.
+	mutableRef, err := query.SnapshotManager().New(ctx, nil,
 		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
-		bkcache.WithDescription("mcp remount"))
+		bkcache.WithDescription("mcp workspace snapshot"))
 	if err != nil {
 		return res, false, fmt.Errorf("failed to create new ref for source directory: %w", err)
 	}
@@ -1486,72 +1508,20 @@ func (svc *Service) runAndSnapshotChanges(
 		}
 	}()
 
-	err = MountRef(ctx, mutableRef, func(root string, _ *mount.Mount) (rerr error) {
-		resolvedDir, err := containerdfs.RootPath(root, sourceDirPath)
-		if err != nil {
-			return err
-		}
-		if err := mountIntoContainer(ctx, running.ContainerID, resolvedDir, target); err != nil {
-			return fmt.Errorf("remount container: %w", err)
-		}
-		return f()
+	err = MountRef(ctx, mutableRef, func(root string, _ *mount.Mount) error {
+		return fscopy.Copy(ctx, liveDir, "/", root, "/", func(info *fscopy.CopyInfo) {
+			info.CopyDirContents = true
+		})
 	})
 	if err != nil {
-		return res, false, err
-	}
-
-	usage, err := bk.Snapshotter.Usage(ctx, mutableRef.SnapshotID())
-	if err != nil {
-		return res, false, fmt.Errorf("failed to check for changes: %w", err)
-	}
-	hasChanges = usage.Inodes > 1 || usage.Size > 0
-	if !hasChanges {
-		slog.Debug("mcp: no changes made to directory")
-		return res, false, nil
+		return res, false, fmt.Errorf("copy service workspace snapshot: %w", err)
 	}
 
 	immutableRef, err := mutableRef.Commit(ctx)
 	if err != nil {
-		return res, false, fmt.Errorf("failed to commit remounted ref for %s: %w", target, err)
+		return res, false, fmt.Errorf("commit service workspace snapshot for %s: %w", target, err)
 	}
 	mutableRef = nil
-
-	// Create a new mutable ref to leave the service with, to prevent further
-	// changes from mutating the now-immutable ref
-	//
-	// NOTE: there's technically a race here, for sure, but we can least prevent
-	// mutation outside of the bounds of this func
-	abandonedRef, err := query.SnapshotManager().New(ctx, immutableRef,
-		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
-		bkcache.WithDescription("mcp remount"))
-	if err != nil {
-		return res, false, fmt.Errorf("failed to create new ref for source directory: %w", err)
-	}
-
-	defer func() {
-		if rerr != nil && abandonedRef != nil {
-			// Only release this on error, otherwise leave it to be released when the
-			// service cleans up.
-			_ = abandonedRef.Release(ctx)
-		}
-	}()
-
-	// Mount the mutable ref of their changes over the target path.
-	err = MountRef(ctx, abandonedRef, func(root string, _ *mount.Mount) (rerr error) {
-		resolvedDir, err := containerdfs.RootPath(root, sourceDirPath)
-		if err != nil {
-			return err
-		}
-		return mountIntoContainer(ctx, running.ContainerID, resolvedDir, target)
-	})
-	if err != nil {
-		return res, false, fmt.Errorf("failed to remount mutable copy: %w", err)
-	}
-
-	if err := running.TrackRef(ctx, abandonedRef); err != nil {
-		return res, false, fmt.Errorf("track mcp remount ref: %w", err)
-	}
-	abandonedRef = nil
 
 	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
@@ -1559,6 +1529,7 @@ func (svc *Service) runAndSnapshotChanges(
 		return res, false, fmt.Errorf("get dagql server: %w", err)
 	}
 
+	sourceDirPath = "/"
 	snapshot := &Directory{
 		Platform: source.Self().Platform,
 		Services: slices.Clone(source.Self().Services),
@@ -1568,45 +1539,105 @@ func (svc *Service) runAndSnapshotChanges(
 	snapshot.Dir.setValue(sourceDirPath)
 	snapshot.Snapshot.setValue(immutableRef)
 
-	inst, err := dagql.NewObjectResultForCurrentCall(ctx, srv, snapshot)
+	// The current call is whatever drove the tool batch (an LLM step), not a
+	// Directory-returning field, so the result needs a Directory-typed call of
+	// its own; mirroring newChangesetFromMerge, a synthetic one keyed on the
+	// snapshot. Minting it for the current call would make everything derived
+	// from it (its changes, the changeset's after) try to reconstruct an LLM.
+	inst, err := dagql.NewObjectResultForCall(snapshot, srv, &dagql.ResultCall{
+		Kind:        dagql.ResultCallKindSynthetic,
+		Type:        dagql.NewResultCallType(snapshot.Type()),
+		SyntheticOp: "mcp_workspace_snapshot",
+		ImplicitInputs: []*dagql.ResultCallArg{
+			{
+				Name: "snapshotID",
+				Value: &dagql.ResultCallLiteral{
+					Kind:        dagql.ResultCallLiteralKindString,
+					StringValue: immutableRef.SnapshotID(),
+				},
+			},
+			{
+				Name: "dir",
+				Value: &dagql.ResultCallLiteral{
+					Kind:        dagql.ResultCallLiteralKindString,
+					StringValue: sourceDirPath,
+				},
+			},
+		},
+	})
 	if err != nil {
 		_ = snapshot.OnRelease(context.WithoutCancel(ctx))
 		return res, false, err
 	}
 
-	return inst, true, nil
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		_ = snapshot.OnRelease(context.WithoutCancel(ctx))
+		return res, false, err
+	}
+	attached, err := cache.AttachResult(ctx, clientMetadata.SessionID, srv, inst)
+	if err != nil {
+		return res, false, fmt.Errorf("attach service workspace snapshot: %w", err)
+	}
+	res, ok := attached.(dagql.ObjectResult[*Directory])
+	if !ok {
+		return res, false, fmt.Errorf("unexpected service snapshot type %T", attached)
+	}
+	return res, true, nil
 }
 
-func mountIntoContainer(ctx context.Context, containerID, sourcePath, targetPath string) error {
-	fdMnt, err := unix.OpenTree(unix.AT_FDCWD, sourcePath, unix.OPEN_TREE_CLONE|unix.OPEN_TREE_CLOEXEC)
-	if err != nil {
-		return fmt.Errorf("open tree %s: %w", sourcePath, err)
-	}
-	defer unix.Close(fdMnt)
-	return engineutil.GetGlobalNamespaceWorkerPool().RunInNamespaces(ctx, containerID, []specs.LinuxNamespace{
-		{Type: specs.MountNamespace},
-	}, func() error {
-		// Create target directory if it doesn't exist
-		if _, err := os.Stat(targetPath); os.IsNotExist(err) {
-			if err := os.MkdirAll(targetPath, 0755); err != nil && !os.IsExist(err) {
-				return fmt.Errorf("mkdir %s: %w", targetPath, err)
+// pruneWorkspacePaths removes stale paths before syncing a workspace into the
+// service's live tree. The caller holds svc.workspaceMu.
+func (svc *RunningService) pruneWorkspacePaths(
+	ctx context.Context,
+	liveDir string,
+	workspaceAddress string,
+	source dagql.ObjectResult[*Directory],
+) error {
+	// The first sync replaces the image's cwd contents, as the old bind mount
+	// did. A different workspace must not inherit another repository's runtime
+	// files either. Remove children, never the cwd inode itself.
+	if svc.workspaceSource.Self() == nil || svc.workspaceAddress != workspaceAddress {
+		root, err := os.OpenRoot(liveDir)
+		if err != nil {
+			return err
+		}
+		defer root.Close()
+		entries, err := os.ReadDir(liveDir)
+		if err != nil {
+			return err
+		}
+		for _, entry := range entries {
+			if err := root.RemoveAll(entry.Name()); err != nil {
+				return fmt.Errorf("reset service workspace: %w", err)
 			}
 		}
+		svc.workspaceSource = dagql.ObjectResult[*Directory]{}
+	}
 
-		// Unmount any existing mount at the target path
-		err = unix.Unmount(targetPath, unix.MNT_DETACH)
-		if err != nil && err != unix.EINVAL && err != unix.ENOENT {
-			slog.Warn("unmount failed during container remount", "path", targetPath, "error", err)
-			// Continue anyway, might not be mounted
-		}
-
-		err = unix.MoveMount(fdMnt, "", unix.AT_FDCWD, targetPath, unix.MOVE_MOUNT_F_EMPTY_PATH)
+	// Delete only paths removed from the last exported workspace. Everything
+	// else local to the server (including ignored dependency trees) survives.
+	if svc.workspaceSource.Self() != nil {
+		changes, err := NewChangeset(ctx, svc.workspaceSource, source)
 		if err != nil {
-			return fmt.Errorf("move mount to %s: %w", targetPath, err)
+			return err
 		}
-
-		return nil
-	})
+		paths, err := changes.ComputePaths(ctx)
+		if err != nil {
+			return err
+		}
+		root, err := os.OpenRoot(liveDir)
+		if err != nil {
+			return err
+		}
+		defer root.Close()
+		for _, path := range paths.AllRemoved {
+			if err := root.RemoveAll(strings.TrimSuffix(path, "/")); err != nil {
+				return fmt.Errorf("remove workspace path %q: %w", path, err)
+			}
+		}
+	}
+	return nil
 }
 
 type ServiceBindings []ServiceBinding

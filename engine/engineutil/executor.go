@@ -494,6 +494,44 @@ func (s *forwardIO) Set(cmd *exec.Cmd) {
 	cmd.Stderr = s.stderr
 }
 
+// pipeStdin returns stdin as something os/exec hands straight to the child,
+// plus a function to call once the runc command has returned.
+//
+// For any reader other than an *os.File, os/exec copies it through a pipe of
+// its own and Wait does not return until that copy reaches EOF. A stream like
+// the MCP transport's io.Pipe is only closed once the service is seen to
+// exit, which is after Wait — so a process exiting while its client sat idle
+// (nothing left to copy) was never reaped, and every call still waiting on it
+// hung forever. Feeding the reader into our own pipe and handing the child
+// the file end lets Wait return as soon as the process exits.
+//
+// The read end must stay open on our side until the child has been started:
+// closing it as soon as the copy finishes races cmd.Start for short readers
+// (a withExec stdin string is copied in microseconds) and fork/exec then
+// fails with EBADF. The returned release closes it after the call, which is
+// also what unblocks a copy stuck on a full pipe when the child exited
+// without draining stdin.
+func pipeStdin(stdin io.ReadCloser) (io.ReadCloser, func()) {
+	noop := func() {}
+	if stdin == nil {
+		return nil, noop
+	}
+	if _, ok := stdin.(*os.File); ok {
+		return stdin, noop
+	}
+	pr, pw, err := os.Pipe()
+	if err != nil {
+		bklog.L.Warnf("stdin pipe: %s; passing reader directly", err)
+		return stdin, noop
+	}
+	go func() {
+		// The child reads EOF once pw is closed.
+		_, _ = io.Copy(pw, stdin)
+		pw.Close()
+	}()
+	return pr, func() { pr.Close() }
+}
+
 func (s *forwardIO) Stdin() io.WriteCloser {
 	return nil
 }
@@ -792,7 +830,9 @@ func (c *Client) callWithIO(ctx context.Context, process *executor.ProcessInfo, 
 	})
 
 	if !process.Meta.Tty {
-		return call(ctx, startedCh, &forwardIO{stdin: process.Stdin, stdout: process.Stdout, stderr: process.Stderr}, killer.pidfile)
+		stdin, releaseStdin := pipeStdin(process.Stdin)
+		defer releaseStdin()
+		return call(ctx, startedCh, &forwardIO{stdin: stdin, stdout: process.Stdout, stderr: process.Stderr}, killer.pidfile)
 	}
 
 	ptm, ptsName, err := console.NewPty()

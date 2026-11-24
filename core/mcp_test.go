@@ -23,6 +23,16 @@ import (
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
+func TestGitMetaPathCount(t *testing.T) {
+	paths := &ChangesetPaths{
+		Added:    []string{".git/", ".git/HEAD", ".git/objects/", "src/a.go", "sub/.git/config"},
+		Modified: []string{".git/index", "README.md"},
+		Removed:  []string{".gitignore"},
+	}
+	require.Equal(t, 4, gitMetaPathCount(paths))
+	require.Equal(t, 0, gitMetaPathCount(&ChangesetPaths{Added: []string{"a"}}))
+}
+
 func TestCallPreservesHeaderArgs(t *testing.T) {
 	sr, ctx := recordingTestRecorder(t)
 	result, failed := newMCP().Call(ctx, []LLMTool{{
