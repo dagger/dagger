@@ -74,6 +74,37 @@ func TestLLMConfigCommandArguments(t *testing.T) {
 	}
 }
 
+func TestLLMConfigCopilotSavedConnectionLabels(t *testing.T) {
+	for _, command := range []string{".setup", ".logout"} {
+		t.Run(command, func(t *testing.T) {
+			original := &llmconfig.Config{LLM: llmconfig.LLMConfig{Providers: map[string]llmconfig.Provider{
+				"github-copilot": {
+					AuthType: "oauth", AuthToken: "private-copilot-token", RefreshToken: "private-github-token",
+					SubscriptionType: "copilot", Enabled: true,
+				},
+			}}}
+			useTempLLMConfig(t, original)
+			commands, _, reloads := newTestLLMConfigCommands(t, func(_ context.Context, form *huh.Form) error {
+				view := form.GetFocusedField().(*huh.Select[string]).Height(100).View()
+				if command == ".setup" {
+					require.Contains(t, view, "GitHub Copilot (subscription)")
+					require.Contains(t, view, idtui.IconSuccess+" GitHub Copilot")
+				} else {
+					require.Contains(t, view, "github-copilot (GitHub Copilot)")
+				}
+				require.NotContains(t, view, "private-copilot-token")
+				require.NotContains(t, view, "private-github-token")
+				return huh.ErrUserAborted
+			})
+			require.NoError(t, runLLMConfigCommand(t, commands, command))
+			require.Zero(t, *reloads)
+			loaded, err := llmconfig.Load()
+			require.NoError(t, err)
+			require.Equal(t, original, loaded)
+		})
+	}
+}
+
 func TestLLMConfigSetupSummaryHidesSecrets(t *testing.T) {
 	secrets := []string{"literal-secret-token", "oauth-access-token", "oauth-refresh-token", "env://PRIVATE_KEY", "https://user:password@proxy.example/private-path?key=private-token"}
 	original := &llmconfig.Config{LLM: llmconfig.LLMConfig{Providers: map[string]llmconfig.Provider{

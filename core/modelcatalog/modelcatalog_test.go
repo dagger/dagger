@@ -3,10 +3,44 @@ package modelcatalog_test
 import (
 	"testing"
 
+	"charm.land/catwalk/pkg/catwalk"
+	"charm.land/catwalk/pkg/embedded"
 	"github.com/dagger/dagger/core/modelcatalog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestCopilotCatalog(t *testing.T) {
+	var found bool
+	for _, provider := range embedded.GetAll() {
+		if provider.ID != catwalk.InferenceProviderCopilot {
+			continue
+		}
+		found = true
+		for _, want := range provider.Models {
+			got, ok := modelcatalog.Lookup("github-copilot", want.ID)
+			require.True(t, ok, want.ID)
+			assert.Equal(t, want.ContextWindow, got.ContextWindow, want.ID)
+			assert.Zero(t, modelcatalog.Cost("github-copilot", want.ID, 1_000_000, 1_000_000, 1_000_000, 1_000_000))
+		}
+		small, ok := modelcatalog.DefaultSmallModel("github-copilot")
+		require.True(t, ok)
+		assert.Equal(t, provider.DefaultSmallModelID, small)
+	}
+	require.True(t, found, "the pinned Catwalk version has a Copilot catalog")
+	// These vendor spellings have metadata in their own catalogs, but not in
+	// Copilot's. Never borrow their windows for an unknown Copilot model.
+	for provider, model := range map[string]string{
+		"anthropic": "claude-sonnet-4-5", "openai": "gpt-5.5-pro", "google": "gemini-2.5-flash",
+	} {
+		_, ok := modelcatalog.Lookup(provider, model)
+		require.True(t, ok, model)
+		got, ok := modelcatalog.Lookup("github-copilot", model)
+		assert.False(t, ok, model)
+		assert.Zero(t, got.ContextWindow)
+	}
+	assert.Zero(t, modelcatalog.Cost("github-copilot", "unknown", 1, 1, 1, 1))
+}
 
 func TestNormalizeModelID(t *testing.T) {
 	for input, want := range map[string]string{

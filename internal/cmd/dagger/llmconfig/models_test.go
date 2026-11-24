@@ -1,6 +1,12 @@
 package llmconfig
 
-import "testing"
+import (
+	"testing"
+
+	"charm.land/catwalk/pkg/catwalk"
+	"charm.land/catwalk/pkg/embedded"
+	"github.com/stretchr/testify/require"
+)
 
 func TestCodexCatalog(t *testing.T) {
 	models := ModelsForProvider("openai-codex")
@@ -31,4 +37,25 @@ func TestCodexCatalog(t *testing.T) {
 	if def := DefaultModelForProvider("openai-codex"); byID[def].ID == "" {
 		t.Errorf("default Codex model %q not in catalog", def)
 	}
+}
+
+func TestCopilotCatalog(t *testing.T) {
+	var copilot catwalk.Provider
+	for _, p := range embedded.GetAll() {
+		if p.ID == catwalk.InferenceProviderCopilot {
+			copilot = p
+			break
+		}
+	}
+	models := ModelsForProvider("github-copilot")
+	require.Len(t, models, len(copilot.Models))
+	for i, m := range models {
+		require.Equal(t, copilot.Models[i].ID, m.ID)
+		require.Equal(t, copilot.Models[i].Name, m.Label)
+		require.Equal(t, copilot.Models[i].ReasoningLevels, m.ReasoningLevels)
+	}
+	if len(copilot.Models) > 0 {
+		require.Equal(t, copilot.DefaultLargeModelID, DefaultModelForProvider("github-copilot"))
+	}
+	require.Contains(t, ProviderEntries(), ProviderEntry{"GitHub Copilot (subscription)", "github-copilot", "github-copilot", true})
 }

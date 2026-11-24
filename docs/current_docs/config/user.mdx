@@ -8,7 +8,7 @@ description: "Personal overrides that stay out of the repository"
 
 Some values shouldn't be committed: private account profiles, local paths, personal development clusters. Those live in your user-level Dagger config file, `config.toml` in the `dagger` directory under the user config directory, or the file named by `$DAGGER_CONFIG`. The user config directory is `$XDG_CONFIG_HOME` when it is set. Otherwise it is `~/.config` on Linux, `~/Library/Application Support` on macOS, and `%LOCALAPPDATA%` on Windows.
 
-The file is shared with other Dagger subsystems (such as `[llm]`). Workspace overrides sit in a `[workspaces.*]` section, keyed by the workspace's Git remote:
+The file is shared with other Dagger subsystems (such as `[llm]` for [LLM providers](./llm.mdx)). Workspace overrides sit in a `[workspaces.*]` section, keyed by the workspace's Git remote:
 
 ```toml
 # Always applied when working in the github.com/acme/api workspace:

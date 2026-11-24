@@ -120,6 +120,8 @@ func InteractiveSetup(ctx context.Context, promptHandler PromptHandler) (bool, e
 		configKey, providerCfg, selectedModel, err = setupClaudeCodeOAuth(ctx, promptHandler)
 	case "openai-codex":
 		configKey, providerCfg, selectedModel, err = setupOpenAICodexOAuth(ctx, promptHandler)
+	case "github-copilot":
+		configKey, providerCfg, selectedModel, err = setupCopilotOAuth(ctx, promptHandler)
 	case "local":
 		configKey, providerCfg, selectedModel, err = setupLocalProvider(ctx, promptHandler)
 	default:

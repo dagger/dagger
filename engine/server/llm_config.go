@@ -161,7 +161,7 @@ func (srv *Server) serveLLMConfig(w http.ResponseWriter, r *http.Request, client
 			switch name {
 			case core.OpenAI:
 				configured = provider.HasCredential() || provider.BaseURL != ""
-			case core.OpenAICodex, core.OpenRouter, core.Anthropic, core.Google:
+			case core.OpenAICodex, core.OpenRouter, core.Anthropic, core.Google, core.GitHubCopilot:
 				configured = provider.HasCredential()
 			case core.Local:
 				configured = provider.BaseURL != ""

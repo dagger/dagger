@@ -2,6 +2,7 @@ package llmconfig
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -32,7 +33,7 @@ const (
 
 // providers are the provider names, shared by the config file's
 // [llm.providers.<name>] keys and the engine's LLMProvider values.
-var providers = []string{"anthropic", "openai", "openai-codex", "openrouter", "google", "local"}
+var providers = []string{"anthropic", "openai", "openai-codex", "openrouter", "google", "github-copilot", "local"}
 
 // IsProvider reports whether name is a provider the engine can route to.
 func IsProvider(name string) bool {
@@ -99,6 +100,11 @@ var envVars = []envVar{
 	{name: "GEMINI_SMALL_MODEL", provider: "google", set: func(p *engine.LLMProviderConfig, v string) { p.SmallModel = v }},
 	{name: "GEMINI_REASONING_EFFORT", provider: "google", set: func(p *engine.LLMProviderConfig, v string) { p.ReasoningEffort = v }},
 
+	{name: copilotTokenEnv, provider: "github-copilot", credential: FieldAuthToken},
+	{name: "COPILOT_MODEL", provider: "github-copilot", set: func(p *engine.LLMProviderConfig, v string) { p.Model = v }},
+	{name: "COPILOT_SMALL_MODEL", provider: "github-copilot", set: func(p *engine.LLMProviderConfig, v string) { p.SmallModel = v }},
+	{name: "COPILOT_REASONING_EFFORT", provider: "github-copilot", set: func(p *engine.LLMProviderConfig, v string) { p.ReasoningEffort = v }},
+
 	{name: "LOCAL_API_KEY", provider: "local", credential: FieldAPIKey},
 	{name: "LOCAL_BASE_URL", provider: "local", set: func(p *engine.LLMProviderConfig, v string) { p.BaseURL = v }},
 	{name: "LOCAL_MODEL", provider: "local", set: func(p *engine.LLMProviderConfig, v string) { p.Model = v }},
@@ -128,6 +134,7 @@ var defaultModelVars = []struct{ provider, name string }{
 	{"openrouter", "OPENROUTER_MODEL"},
 	{"anthropic", "ANTHROPIC_MODEL"},
 	{"google", "GEMINI_MODEL"},
+	{"github-copilot", "COPILOT_MODEL"},
 	{"local", "LOCAL_MODEL"},
 }
 
@@ -256,7 +263,8 @@ func assemble(
 // value is itself a secret URI travels verbatim; any other credential travels
 // as the URI literal returns for it. An expiry without a token in the same
 // layer is dropped: it describes no credential this layer supplies, and must
-// not be served for a token from another one.
+// not be served for a token from another one. Copilot's GitHub token is
+// exchanged by the resolver instead of being sent to the API directly.
 func envLayer(getenv func(string) string, literal func(provider, field, name, value string) string) *engine.LLMConfig {
 	cfg := &engine.LLMConfig{}
 	for _, ev := range envVars {
@@ -268,6 +276,17 @@ func envLayer(getenv func(string) string, literal func(provider, field, name, va
 			continue
 		}
 		p := cfg.Provider(ev.provider)
+		if ev.name == copilotTokenEnv {
+			// This is a GitHub grant, not a Copilot API bearer. Remember a
+			// dotenv source separately so it cannot bypass the exchange.
+			literal(ev.provider, copilotGitHubTokenField, ev.name, v)
+			p.AuthToken = llmConfigURI(ev.provider, FieldAuthToken)
+			p.AuthTokenExpiresAt = llmConfigURI(ev.provider, FieldAuthTokenExpiresAt)
+			// Override the stored login's endpoint along with its token.
+			// The resolver retains the actual exchanged endpoint in memory.
+			p.BaseURL = copilotAPIBaseURL
+			continue
+		}
 		if ev.set != nil {
 			ev.set(p, v)
 			continue
@@ -362,7 +381,8 @@ func IsSecretURI(v string) bool {
 }
 
 // dotEnvSecrets holds the literal credentials the last Assemble read from
-// ./.env, keyed by "<provider>/<field>", for ResolveSecret to serve.
+// ./.env, keyed by "<provider>/<field>", for ResolveSecret to serve. Copilot's
+// GitHub grant is kept under github_token so it can only go to the exchange.
 var (
 	dotEnvSecretsMu sync.Mutex
 	dotEnvSecrets   map[string]string
@@ -371,7 +391,8 @@ var (
 // ResolveSecret serves llmconfig://<provider>/<field> secrets. It is
 // registered as the scheme's resolver by the CLI.
 //
-// A credential Assemble took from ./.env is served as read. Anything else is
+// A credential Assemble took from ./.env is served as read, except for
+// Copilot's GitHub grant, which is exchanged. Anything else is
 // read from the config file at every resolution:
 //
 //   - api_key: the provider's stored API key.
@@ -381,6 +402,9 @@ var (
 //   - auth_token_expires_at: the token's true expiry, RFC 3339 UTC, or empty
 //     when unknown. The engine reads it right after auth_token, so it sees
 //     the expiry of a token that read just rotated.
+//   - github-copilot/credential: the Copilot engine's atomic companion to
+//     auth_token, encoding one refresh's token, true expiry and API origin.
+//     Keeping them in a single secret read also avoids races with other CLIs.
 //
 // A provider that is absent or disabled is a not-found error.
 func ResolveSecret(ctx context.Context, path string) ([]byte, error) {
@@ -391,10 +415,42 @@ func ResolveSecret(ctx context.Context, path string) ([]byte, error) {
 	if !IsProvider(name) {
 		return nil, fmt.Errorf("llmconfig: unknown provider %q", name)
 	}
+	if "llmconfig://"+path == engine.CopilotCredentialURI {
+		// Read all three values from the same refreshed snapshot, rather than
+		// racing another CLI's refresh between individual secret reads.
+		p, err := RefreshOAuthProviderAfterRejection(ctx, name, secretprovider.RejectedSecretValue(ctx))
+		if err != nil {
+			return nil, err
+		}
+		if p == nil || p.AuthToken == "" {
+			return nil, fmt.Errorf("llmconfig: provider %q has no OAuth login: %w", name, secrets.ErrNotFound)
+		}
+		token, err := resolveStored(ctx, p.AuthToken)
+		if err != nil {
+			return nil, err
+		}
+		baseURL := p.BaseURL
+		if baseURL == "" {
+			baseURL = copilotAPIBaseURL
+		}
+		return json.Marshal(engine.CopilotCredential{Token: string(token), ExpiresAt: p.TokenExpiresAtTime(), BaseURL: baseURL})
+	}
 	switch field {
 	case FieldAPIKey, FieldAuthToken, FieldAuthTokenExpiresAt:
 	default:
 		return nil, fmt.Errorf("llmconfig: unknown field %q", field)
+	}
+
+	if name == "github-copilot" && (field == FieldAuthToken || field == FieldAuthTokenExpiresAt) {
+		if p, ok, err := resolveCopilotEnvProvider(ctx); ok {
+			if err != nil {
+				return nil, err
+			}
+			if field == FieldAuthToken {
+				return []byte(p.AuthToken), nil
+			}
+			return []byte(p.TokenExpiresAtRFC3339()), nil
+		}
 	}
 
 	dotEnvSecretsMu.Lock()

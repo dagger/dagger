@@ -17,11 +17,12 @@ import (
 // core.LLMProvider) to a catwalk catalog ID. Providers left out (local, other,
 // ...) serve arbitrary models with no reliable catalog entry.
 var providerCatalogIDs = map[string]catwalk.InferenceProvider{
-	"anthropic":    catwalk.InferenceProviderAnthropic,
-	"openai":       catwalk.InferenceProviderOpenAI,
-	"openai-codex": catwalk.InferenceProviderOpenAI,
-	"openrouter":   catwalk.InferenceProviderOpenRouter,
-	"google":       catwalk.InferenceProviderGemini,
+	"anthropic":      catwalk.InferenceProviderAnthropic,
+	"openai":         catwalk.InferenceProviderOpenAI,
+	"openai-codex":   catwalk.InferenceProviderOpenAI,
+	"openrouter":     catwalk.InferenceProviderOpenRouter,
+	"google":         catwalk.InferenceProviderGemini,
+	"github-copilot": catwalk.InferenceProviderCopilot,
 }
 
 var (
@@ -103,6 +104,10 @@ const costPerMillion = 1_000_000.0
 // assumed disjoint and billed at their respective rates. An uncatalogued model
 // (or unknown provider) costs 0.
 func Cost(provider, model string, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens int64) float64 {
+	// Copilot is a subscription; catalog prices must never become dollar usage.
+	if provider == "github-copilot" {
+		return 0
+	}
 	m, ok := Lookup(provider, model)
 	if !ok {
 		return 0

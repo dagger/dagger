@@ -34,7 +34,10 @@ const maxBodyCapture = 256 * 1024 // 256 KiB
 // transport, which logs bodies and never headers — a bearer token must not
 // reach telemetry.
 func (endpoint *LLMEndpoint) otelHTTPClient(provider string) *http.Client {
-	base := http.DefaultTransport
+	base := endpoint.httpTransport
+	if base == nil {
+		base = http.DefaultTransport
+	}
 	if endpoint.dial != nil {
 		transport := http.DefaultTransport.(*http.Transport).Clone()
 		transport.DialContext = endpoint.dial

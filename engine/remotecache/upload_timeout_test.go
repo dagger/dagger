@@ -1,13 +1,16 @@
 package remotecache
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/opencontainers/go-digest"
@@ -174,18 +177,44 @@ func TestStalledHTTP2UploadFails(t *testing.T) {
 // An upload that keeps progressing is not cut off, however long it takes in
 // all.
 func TestSlowUploadIsNotCutOff(t *testing.T) {
-	var received atomic.Int64
-	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
-		n, _ := io.Copy(io.Discard, r.Body)
-		received.Store(n)
-	}))
-	t.Cleanup(srv.Close)
-	put := httpPut(uploadClient(testUploadResponse), testUploadIdle)
-	const size = 8 << 10
-	start := time.Now()
-	require.NoError(t, putWithin(t, put, srv.URL, &slowBody{remaining: size, pause: testUploadIdle / 2}, size))
-	require.Greater(t, time.Since(start), 2*testUploadIdle, "the upload took longer than the idle timeout in all")
-	require.Equal(t, int64(size), received.Load())
+	synctest.Test(t, func(t *testing.T) {
+		// Real network I/O does not durably block a synctest goroutine.
+		// Keep the real HTTP transport, but carry its request over net.Pipe
+		// so both the body pauses and the idle timer use only fake time.
+		clientConn, storeConn := net.Pipe()
+		defer clientConn.Close()
+		defer storeConn.Close()
+		var received atomic.Int64
+		served := make(chan error, 1)
+		go func() {
+			defer storeConn.Close()
+			r, err := http.ReadRequest(bufio.NewReader(storeConn))
+			if err == nil {
+				var n int64
+				n, err = io.Copy(io.Discard, r.Body)
+				received.Store(n)
+				r.Body.Close()
+			}
+			if err == nil {
+				_, err = io.WriteString(storeConn, "HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+			}
+			served <- err
+		}()
+		client := uploadClient(testUploadResponse)
+		transport := client.Transport.(*http.Transport)
+		transport.Proxy = nil
+		transport.DialContext = func(context.Context, string, string) (net.Conn, error) {
+			return clientConn, nil
+		}
+		defer transport.CloseIdleConnections()
+		put := httpPut(client, testUploadIdle)
+		const size = 8 << 10
+		start := time.Now()
+		require.NoError(t, putWithin(t, put, "http://blob-store.test/put", &slowBody{remaining: size, pause: testUploadIdle / 2}, size))
+		require.Greater(t, time.Since(start), 2*testUploadIdle, "the upload took longer than the idle timeout in all")
+		require.NoError(t, <-served)
+		require.Equal(t, int64(size), received.Load())
+	})
 }
 
 // A stalled upload fails and frees its slot: with a single slot, the next
