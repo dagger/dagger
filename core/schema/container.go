@@ -474,7 +474,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 				dagql.Arg("disk").Doc(`Keep the temporary directory on the engine's disk instead of in memory, `+
 					`for contents too large for memory. Each process gets an empty directory of its own, removed once the process ends. `+
-					`It can't be combined with size.`).View(AfterVersion("v1.0.0-beta.28")),
+					`It can't be combined with size.`).View(AfterVersion("v1.0.0-beta.29")),
 			),
 
 		dagql.NodeFuncWithDynamicInputs("withMountedCache", s.withMountedCache, s.withMountedCacheDynamicInputs).
