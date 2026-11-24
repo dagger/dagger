@@ -1322,15 +1322,13 @@ func (span *Span) CanceledReason() (bool, []string) {
 	return len(reasons) > 0, reasons
 }
 
+// Parents iterates over the span's ancestors, nearest first.
 func (span *Span) Parents(f func(*Span) bool) {
-	if span.ParentSpan != nil {
-		if !f(span.ParentSpan) {
+	// a loop, not a recursion: each ancestor would pass through every
+	// iterator below it
+	for parent := span.ParentSpan; parent != nil; parent = parent.ParentSpan {
+		if !f(parent) {
 			return
-		}
-		for parent := range span.ParentSpan.Parents {
-			if !f(parent) {
-				break
-			}
 		}
 	}
 }

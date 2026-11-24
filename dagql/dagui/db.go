@@ -198,6 +198,15 @@ type DB struct {
 	// finally see them. Nil unless tracked.
 	seenSpans map[SpanID]struct{}
 
+	// filterSent holds the spans UpdatedSnapshots was asked for by ID
+	// (its filter) and sent with their ancestors, while ancestryGen was
+	// filterSentAt. ancestryGen counts the times a span with children got
+	// another parent, changing the ancestry of every span beneath it; a
+	// childless one leaves filterSent on its own.
+	filterSent   map[SpanID]struct{}
+	filterSentAt uint64
+	ancestryGen  uint64
+
 	// namesFromLog holds span names updated by span.name log records. A
 	// span name can change while the span is live. The OTel SDK's start
 	// snapshot cannot carry that later mutation, so a semantic log record
@@ -460,6 +469,8 @@ func (db *DB) UpdatedSnapshots(filter map[SpanID]bool) []SpanSnapshot {
 	slices.SortStableFunc(updated, func(a, b *Span) int {
 		return a.StartTime.Compare(b.StartTime)
 	})
+	// failedBeneath holds whether a passthrough span has a failed child
+	var failedBeneath map[*Span]bool
 	notable := func(span *Span) bool {
 		if !span.Received {
 			// don't send along any stubs; let the client-side create its own stubs
@@ -489,11 +500,18 @@ func (db *DB) UpdatedSnapshots(filter map[SpanID]bool) []SpanSnapshot {
 		if span.Passthrough {
 			// include any passthrough spans to ensure failures are collected.
 			// the POST /query span for example never fails on its own.
-			for _, child := range span.ChildSpans.Spans() {
-				if child.IsFailedOrCausedFailure() {
-					return true
+			//
+			// Every updated span beneath one asks, and it may have thousands
+			// of children: look at them once per call.
+			failed, ok := failedBeneath[span]
+			if !ok {
+				failed = slices.ContainsFunc(span.ChildSpans.Spans(), (*Span).IsFailedOrCausedFailure)
+				if failedBeneath == nil {
+					failedBeneath = map[*Span]bool{}
 				}
+				failedBeneath[span] = failed
 			}
+			return failed
 		}
 		return false
 	}
@@ -516,7 +534,36 @@ func (db *DB) UpdatedSnapshots(filter map[SpanID]bool) []SpanSnapshot {
 		included[snapshot.ID] = true
 	}
 	snapshots = db.appendSurfacedAncestors(snapshots, included)
+	snapshots = db.appendSubscribed(snapshots, included, filter)
+	for _, snapshot := range snapshots {
+		db.seen(snapshot.ID)
+		if span := db.Spans.Map[snapshot.ID]; span != nil && span.Received {
+			delete(db.unsentAncestors, snapshot.ID)
+		}
+	}
+	for _, span := range db.updatedSpans {
+		span.updateQueued = false
+	}
+	db.updatedSpans = nil
+	return snapshots
+}
+
+// appendSubscribed appends the spans subscribed to by ID (filter) the
+// frontend hasn't seen, with their ancestors it hasn't, unless they're
+// already included.
+//
+// They stay seen once sent, so a span sent with its ancestors needs no look
+// again until its ancestry changes (see filterSent): a remote frontend
+// subscribes to thousands of spans, and asks after every batch.
+func (db *DB) appendSubscribed(snapshots []SpanSnapshot, included map[SpanID]bool, filter map[SpanID]bool) []SpanSnapshot {
+	if db.filterSentAt != db.ancestryGen {
+		clear(db.filterSent)
+		db.filterSentAt = db.ancestryGen
+	}
 	for spanID := range filter {
+		if _, sent := db.filterSent[spanID]; sent {
+			continue
+		}
 		span := db.Spans.Map[spanID]
 		if span == nil {
 			continue
@@ -531,18 +578,25 @@ func (db *DB) UpdatedSnapshots(filter map[SpanID]bool) []SpanSnapshot {
 				snapshots = append(snapshots, p.Snapshot())
 			}
 		}
-	}
-	for _, snapshot := range snapshots {
-		db.seen(snapshot.ID)
-		if span := db.Spans.Map[snapshot.ID]; span != nil && span.Received {
-			delete(db.unsentAncestors, snapshot.ID)
+		if db.filterSent == nil {
+			db.filterSent = map[SpanID]struct{}{}
 		}
+		db.filterSent[spanID] = struct{}{}
 	}
-	for _, span := range db.updatedSpans {
-		span.updateQueued = false
-	}
-	db.updatedSpans = nil
 	return snapshots
+}
+
+// noteNewParent notes that span got another parent, for UpdatedSnapshots to
+// send the subscribed spans whose ancestry changed with their new ancestors.
+func (db *DB) noteNewParent(span *Span) {
+	if !db.tracked {
+		return
+	}
+	if span.ChildSpans.Len() > 0 {
+		db.ancestryGen++
+	} else {
+		delete(db.filterSent, span.ID)
+	}
 }
 
 // needsAncestors reports whether UpdatedSnapshots must forward the span along
@@ -1551,7 +1605,11 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 	// associate the span to its parent
 	var joined, lateLinked bool
 	if span.ParentID.IsValid() {
+		prevParent := span.ParentSpan
 		span.ParentSpan = db.initSpan(span.ParentID)
+		if span.ParentSpan != prevParent {
+			db.noteNewParent(span)
+		}
 		if addToSpanSet(&span.ParentSpan.ChildSpans, span) {
 			// if we're a new child, take a new snapshot for ChildCount
 			db.update(span.ParentSpan)
