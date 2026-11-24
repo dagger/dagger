@@ -510,14 +510,6 @@ type Artifact implements Node {
   """A unique identifier for this Artifact."""
   id: ID!
 
-  """
-  The artifact coordinates in its source selection's visible dimensions. Without a source selection, return all coordinates.
-  """
-  dimensionKeys(
-    """Return all artifact coordinates, including constant dimensions."""
-    all: Boolean = false
-  ): [ArtifactDimensionKey!]!
-
   """A module load failure, or an empty string if discovery succeeded."""
   loadError: String!
 
@@ -559,6 +551,14 @@ type Artifact implements Node {
   Ordered, literal fields to follow. Workspace main targets use their shorthand.
   """
   path: [String!]!
+
+  """
+  The artifact coordinates in its source selection's visible dimensions. Without a source selection, return all coordinates.
+  """
+  dimensionKeys(
+    """Return all artifact coordinates, including constant dimensions."""
+    all: Boolean = false
+  ): [ArtifactDimensionKey!]!
 
   """The directives carried by this artifact."""
   directives: [String!]!

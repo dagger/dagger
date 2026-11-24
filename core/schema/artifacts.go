@@ -46,6 +46,12 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 			}
 			return dagql.NonNull(dagql.String(d.CollectionType)), nil
 		}).Doc("The collection type, or null for a static dimension."),
+		dagql.Func("identifier", func(_ context.Context, d *core.ArtifactDimension, _ struct{}) (string, error) {
+			return d.Identifier, nil
+		}).View(BeforeVersion(artifactDimensionViewVersion)).Doc("Stable identifier: collection schema path, type:TypeName for an artifact type, or module."),
+		dagql.Func("identifier", func(_ context.Context, d *core.ArtifactDimension, _ struct{}) (string, error) {
+			return d.Identifier, nil
+		}).View(AfterVersion(artifactDimensionViewVersion)).Doc("Collection schema type name, module, name, or a legacy selector identifier."),
 	}
 	// These custom accessors only read metadata, just like the reflected
 	// dimension fields. Keep their spans as internal trace detail too.
@@ -130,8 +136,6 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 			}
 			return strings.Join(a.Path, "/"), nil
 		}).View(AfterVersion(checkCollectionMetadataVersion)),
-		dagql.Func("dimensionKeys", s.legacyArtifactDimensionKeys).View(BeforeVersion(artifactDimensionViewVersion)).Doc("The module name, collection keys, and full path key in the artifact type dimension."),
-		dagql.Func("dimensionKeys", s.artifactDimensionKeys).View(AfterVersion(artifactDimensionViewVersion)).Doc("The artifact coordinates in its source selection's visible dimensions. Without a source selection, return all coordinates.").Args(dagql.Arg("all").Doc("Return all artifact coordinates, including constant dimensions.")),
 		dagql.Func("loadError", s.loadError).Doc("A module load failure, or an empty string if discovery succeeded."),
 		dagql.Func("arguments", s.arguments).Doc("The arguments accepted by the artifact field."),
 		dagql.Func("description", s.description).Doc("The description of the field that supplies this artifact."),
@@ -143,6 +147,15 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 				dagql.Arg("dimensionKeys").Doc("Include the dimension keys as a query. Without them, the address is a path selector."),
 				dagql.Arg("typeAssertion").Doc("Include the artifact type in the scheme: dag+container://."),
 			),
+		// Keep dimensionKeys between path and directives in released schema views.
+		dagql.Func("moduleName", func(_ context.Context, a *core.Artifact, _ struct{}) (string, error) {
+			return a.ModuleName, nil
+		}),
+		dagql.Func("path", func(_ context.Context, a *core.Artifact, _ struct{}) ([]string, error) {
+			return a.Path, nil
+		}),
+		dagql.Func("dimensionKeys", s.legacyArtifactDimensionKeys).View(BeforeVersion(artifactDimensionViewVersion)).Doc("The module name, collection keys, and full path key in the artifact type dimension."),
+		dagql.Func("dimensionKeys", s.artifactDimensionKeys).View(AfterVersion(artifactDimensionViewVersion)).Doc("The artifact coordinates in its source selection's visible dimensions. Without a source selection, return all coordinates.").Args(dagql.Arg("all").Doc("Return all artifact coordinates, including constant dimensions.")),
 	}.Install(srv)
 	artifactClass.Extend(dagql.FieldSpec{
 		Name: "value", Type: nodeInterfaceType{}, Args: dagql.NewInputSpecs(dagql.InputSpec{Name: "arguments", Type: core.JSON{}, Default: core.JSON("{}"), Description: "Field arguments as a JSON object."}),

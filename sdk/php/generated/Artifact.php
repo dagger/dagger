@@ -23,18 +23,6 @@ class Artifact extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * The artifact coordinates in its source selection's visible dimensions. Without a source selection, return all coordinates.
-     */
-    public function dimensionKeys(?bool $all = false): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('dimensionKeys');
-        if (true === $all) {
-        $leafQueryBuilder->setArgument('all', $all);
-        }
-        return (array)$this->queryLeaf($leafQueryBuilder, 'dimensionKeys');
-    }
-
-    /**
      * A module load failure, or an empty string if discovery succeeded.
      */
     public function loadError(): string
@@ -109,6 +97,18 @@ class Artifact extends Client\AbstractObject implements Client\IdAble, Node
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('path');
         return (array)$this->queryLeaf($leafQueryBuilder, 'path');
+    }
+
+    /**
+     * The artifact coordinates in its source selection's visible dimensions. Without a source selection, return all coordinates.
+     */
+    public function dimensionKeys(?bool $all = false): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('dimensionKeys');
+        if (true === $all) {
+        $leafQueryBuilder->setArgument('all', $all);
+        }
+        return (array)$this->queryLeaf($leafQueryBuilder, 'dimensionKeys');
     }
 
     /**

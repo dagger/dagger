@@ -34,6 +34,14 @@ func TestArtifactDimensionViews(t *testing.T) {
 			dimensions := schema.Types["Artifacts"].Fields.ForName("dimensions")
 			require.Equal(t, "[String!]!", dimensions.Type.String())
 			require.Equal(t, "[ArtifactDimensionKey!]!", schema.Types["Artifact"].Fields.ForName("dimensionKeys").Type.String())
+			if !tc.all {
+				var fields []string
+				for _, field := range schema.Types["Artifact"].Fields {
+					fields = append(fields, field.Name)
+				}
+				require.Contains(t, strings.Join(fields, ","), "moduleName,path,dimensionKeys,directives")
+				require.Equal(t, "Stable identifier: collection schema path, type:TypeName for an artifact type, or module.", schema.Types["ArtifactDimension"].Fields.ForName("identifier").Description)
+			}
 			for _, field := range []struct{ typ, name string }{{"Artifacts", "dimensions"}, {"Artifact", "dimensionKeys"}} {
 				spec := schema.Types[field.typ].Fields.ForName(field.name)
 				require.NotNil(t, spec)
