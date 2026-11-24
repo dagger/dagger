@@ -416,6 +416,9 @@ type clientRuntime struct {
 	// the number of active http requests to any endpoint from this client,
 	// used to determine when to cleanup the client+session
 	activeCount int
+	// disconnects counts the main client's disconnects within its reconnect
+	// grace period, so only the latest one's timer reaps the session.
+	disconnects int
 
 	dag       *dagql.Server
 	dagqlRoot *core.Query
@@ -2468,12 +2471,36 @@ func (srv *Server) releaseClientConnection(ctx context.Context, sess *daggerSess
 		return
 	}
 
-	slog.With(
+	slog := slog.With(
 		"sessionID", sess.sessionID,
 		"clientID", client.clientID,
-	).Info("all client connections closed")
+	)
+	slog.Info("all client connections closed")
 
 	if client.clientID != sess.mainClientCallerID {
+		return
+	}
+
+	sess.scopeMu.Lock()
+	shutdown := !client.shutdownAt.IsZero()
+	sess.scopeMu.Unlock()
+	if grace := reconnectGracePeriod(client.clientMetadata); grace > 0 && !shutdown {
+		// dropped without /shutdown: give the client time to reconnect
+		slog.Info("main client disconnected; waiting for it to reconnect", "gracePeriod", grace)
+		client.stateMu.Lock()
+		client.disconnects++
+		disconnects := client.disconnects
+		client.stateMu.Unlock()
+		time.AfterFunc(grace, func() {
+			client.stateMu.RLock()
+			reconnected := client.disconnects != disconnects
+			client.stateMu.RUnlock()
+			if reconnected {
+				// a later disconnect has its own timer
+				return
+			}
+			srv.reapDaggerSession(context.WithoutCancel(ctx), sess, client)
+		})
 		return
 	}
 
@@ -2535,10 +2562,14 @@ func (srv *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	httpHandlerFunc(srv.serveHTTPToClient, &ClientInitOpts{
+	handler := httpHandlerFunc(srv.serveHTTPToClient, &ClientInitOpts{
 		ClientMetadata: clientMetadata,
 		RootClient:     true,
-	}).ServeHTTP(w, r)
+	})
+	if grace := reconnectGracePeriod(clientMetadata); grace > 0 && srv.serveReconnect(w, r, clientMetadata, grace, handler) {
+		return
+	}
+	handler.ServeHTTP(w, r)
 }
 
 // ServeHTTPToNewSession serves an exec's new session endpoint the same way the

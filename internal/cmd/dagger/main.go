@@ -19,6 +19,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/charmbracelet/x/ansi"
@@ -82,6 +83,7 @@ var (
 	_, cloudEngineEnvSet = os.LookupEnv(cloudEngineEnv)
 	profileFlag          bool
 	profileEBPFFlag      []string
+	reconnectGracePeriod time.Duration
 
 	dotOutputFilePath string
 	dotFocusField     string
@@ -501,6 +503,8 @@ func installMayCallEngineFlags(flags *pflag.FlagSet) {
 	engineFlags.Lookup("profile").Hidden = true
 	engineFlags.StringSliceVar(&profileEBPFFlag, "profile-ebpf", nil, "With --profile, eBPF programs to profile this session with, such as exec_sched")
 	engineFlags.Lookup("profile-ebpf").Hidden = true
+	engineFlags.DurationVar(&reconnectGracePeriod, "reconnect-grace-period", 0, fmt.Sprintf("Reconnect for this long (at most %s), and resume the session, after the connection to the engine drops", engine.MaxReconnectGracePeriod))
+	engineFlags.Lookup("reconnect-grace-period").Hidden = true
 	setFlagSetCapabilities(engineFlags, mayCallEngine)
 	flags.AddFlagSet(engineFlags)
 }

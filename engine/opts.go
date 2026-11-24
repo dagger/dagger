@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 
 	controlapi "github.com/dagger/dagger/internal/buildkit/api/services/control"
@@ -53,7 +54,20 @@ const (
 	// observer re-reading ever-growing state emits volume quadratic in that
 	// state's size, bloating the engine-side telemetry stores.
 	SuppressTelemetryHeader = "X-Dagger-Suppress-Telemetry"
+
+	// ResumableQueryHeader identifies a /query request that the client may
+	// send again after reconnecting, to get the response of the same query.
+	ResumableQueryHeader = "X-Dagger-Resumable-Query"
+	// ResumableQueryReleaseHeader names resumable queries the client is done
+	// with, so the engine forgets them.
+	ResumableQueryReleaseHeader = "X-Dagger-Resumable-Query-Release"
+	// ReconnectHeader marks a request a client sends again after it lost its
+	// connection. The engine refuses it unless it still has the session.
+	ReconnectHeader = "X-Dagger-Reconnect"
 )
+
+// MaxReconnectGracePeriod caps ClientMetadata.ReconnectGracePeriod.
+const MaxReconnectGracePeriod = 10 * time.Minute
 
 // ExtraModule specifies a module to load at connect time in addition to
 // (or instead of) workspace modules.
@@ -312,6 +326,11 @@ type ClientMetadata struct {
 	// ProfileEBPF names the eBPF programs a profiled session asks for (see
 	// engine/ebpf/wcbpf), loaded while it lasts.
 	ProfileEBPF []string `json:"profile_ebpf,omitempty"`
+
+	// ReconnectGracePeriod is how long the engine keeps the session, and the
+	// queries sent with ResumableQueryHeader, after the client's connections
+	// drop without a shutdown.
+	ReconnectGracePeriod time.Duration `json:"reconnect_grace_period,omitempty"`
 }
 
 type suppressTelemetryCtxKey struct{}
