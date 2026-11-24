@@ -3,8 +3,7 @@
   "files": {
     "cmd/viztest-go-dispatch/main.go": "4405686b55cf1c96d30c512da967a86be2fb8ce6820cadd4c311e5a7a748672d",
     "dagger.gen.go": "52c491bfd122d25f5dd055ee32e9c75863b6a9b872d7c92652278c36c928aee5",
-    "internal/dagger/dagger.gen.go": "e7fac67cdf762c672a870179d16931b1cb0fd2e49d60d72dc5c464d9250dff60",
-    "internal/dagger/entrypoint/main.dang": "930105c5f810b3a0f29adaf086442f41555841bea2e82c28844ca9f04e0d4de2",
-    "internal/dagger/viztest-go.gen.go": "fb7dff67c7fcafd4733660bec28f65472f62e474e156d651141c66b6e1dd55ed"
+    "internal/dagger/dagger.gen.go": "fe057ab725bd5f89c4d71a8311bc74fb800c1d1480c6ab4cca34ebc3cd798b91",
+    "internal/dagger/entrypoint/main.dang": "dbb6101a923bc88a3a231b19bc4e3d653cfceb129a512572d4a20c60bbd3e74d"
   }
 }
