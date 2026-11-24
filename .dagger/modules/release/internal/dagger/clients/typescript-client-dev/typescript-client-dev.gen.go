@@ -20,6 +20,10 @@ type TypescriptClientDevOpts struct {
 	WorkspaceDir *Directory // typescript-client-dev (../../:0:0)
 
 	SourcePath string // typescript-client-dev (../../:0:0)
+	//
+	// Where @dagger.io/core lives, relative to the workspace root.
+	//
+	CorePath string // typescript-client-dev (../../:0:0)
 }
 
 func (r *Query) TypescriptClientDev(ws *Workspace, opts ...TypescriptClientDevOpts) *TypescriptClientDev { // typescript-client-dev (../../:0:0)
@@ -46,6 +50,10 @@ func (r *Query) TypescriptClientDev(ws *Workspace, opts ...TypescriptClientDevOp
 		if !querybuilder.IsZeroValue(opts[i].SourcePath) {
 			q = q.Arg("sourcePath", opts[i].SourcePath)
 		}
+		// `corePath` optional argument
+		if !querybuilder.IsZeroValue(opts[i].CorePath) {
+			q = q.Arg("corePath", opts[i].CorePath)
+		}
 	}
 	q = q.Arg("ws", ws)
 
@@ -64,11 +72,13 @@ type TypescriptClientDev struct { // typescript-client-dev (../../:0:0)
 	query *querybuilder.Selection
 
 	bunVersion         *string
+	corePath           *string
 	id                 *ID
 	isSemver           *bool
 	nodeVersionLts     *string
 	nodeVersionPrevLts *string
-	release            *Void
+	promoteCoreLatest  *Void
+	releaseCore        *Void
 	sourcePath         *string
 	testNodejs         *Void
 }
@@ -83,6 +93,19 @@ func (r *TypescriptClientDev) Binary() *File { // typescript-client-dev (../../:
 	q := r.query.Select("binary")
 
 	return new(File).WithGraphQLQuery(q)
+}
+
+// Build the SDK and check it produces a dist/.
+//
+// This is what `release` proved on the way to publishing `@dagger.io/dagger`,
+// kept after that publish went away: the aggregate is generated per scope by
+// dagger/typescript-sdk now, and `@dagger.io/core` is what this repo releases.
+// Nothing else here runs the build — the test checks run `yarn test:node` and
+// `bun test:bun` against the sources, and the lint check only lints them.
+func (r *TypescriptClientDev) BuildTypescript() *Check { // typescript-client-dev (../../:0:0)
+	q := r.query.Select("buildTypescript")
+
+	return new(Check).WithGraphQLQuery(q)
 }
 
 func (r *TypescriptClientDev) BunVersion(ctx context.Context) (string, error) { // typescript-client-dev (../../:0:0)
@@ -108,6 +131,19 @@ func (r *TypescriptClientDev) ClientLibrary() *Changeset { // typescript-client-
 	q := r.query.Select("clientLibrary")
 
 	return new(Changeset).WithGraphQLQuery(q)
+}
+
+// Where @dagger.io/core lives, relative to the workspace root.
+func (r *TypescriptClientDev) CorePath(ctx context.Context) (string, error) { // typescript-client-dev (../../:0:0)
+	if r.corePath != nil {
+		return *r.corePath, nil
+	}
+	q := r.query.Select("corePath")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // Format the SDK source with prettier via eslint --fix
@@ -262,8 +298,46 @@ func (r *TypescriptClientDev) NodejsDevContainer(opts ...TypescriptClientDevNode
 	return new(Container).WithGraphQLQuery(q)
 }
 
-// TypescriptClientDevReleaseOpts contains options for TypescriptClientDev.Release
-type TypescriptClientDevReleaseOpts struct {
+// TypescriptClientDevPromoteCoreLatestOpts contains options for TypescriptClientDev.PromoteCoreLatest
+type TypescriptClientDevPromoteCoreLatestOpts struct {
+	//
+	// NPM registry URL to publish to.
+	//
+	NpmRegistryURL string // typescript-client-dev (../../:0:0)
+}
+
+// Point `latest` at a version of @dagger.io/core already on the registry.
+//
+// Separate from `releaseCore`, and idempotent, because the two fail
+// independently: a publish that lands and a dist-tag move that does not leaves
+// `latest` behind, and npm will not accept the same version twice, so a retry
+// of the publish cannot repair it. Pointing a tag at a version is repeatable as
+// often as it takes.
+//
+// Deciding *whether* to move is the caller's: the release module compares the
+// versions with semver (release/npm_dist_tag.go) rather than this doing it in
+// shell, where a registry error reads as an empty string and a comparator that
+// fails to run reads as "do not move".
+func (r *TypescriptClientDev) PromoteCoreLatest(ctx context.Context, version string, npmToken *Secret, opts ...TypescriptClientDevPromoteCoreLatestOpts) error { // typescript-client-dev (../../:0:0)
+	assertNotNil("npmToken", npmToken)
+	if r.promoteCoreLatest != nil {
+		return nil
+	}
+	q := r.query.Select("promoteCoreLatest")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `npmRegistryUrl` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NpmRegistryURL) {
+			q = q.Arg("npmRegistryUrl", opts[i].NpmRegistryURL)
+		}
+	}
+	q = q.Arg("version", version)
+	q = q.Arg("npmToken", npmToken)
+
+	return q.Execute(ctx)
+}
+
+// TypescriptClientDevReleaseCoreOpts contains options for TypescriptClientDev.ReleaseCore
+type TypescriptClientDevReleaseCoreOpts struct {
 	//
 	// NPM authentication token
 	//
@@ -278,11 +352,21 @@ type TypescriptClientDevReleaseOpts struct {
 	NpmRegistryURL string // typescript-client-dev (../../:0:0)
 }
 
-func (r *TypescriptClientDev) Release(ctx context.Context, sourceTag string, opts ...TypescriptClientDevReleaseOpts) error { // typescript-client-dev (../../:0:0)
-	if r.release != nil {
+// Publish @dagger.io/core.
+//
+// Its version is the **engine** release, not the SDK's, so the tag is taken as
+// it comes rather than having the `sdk/typescript/` prefix stripped off it: core
+// is the generated bindings for one engine, so the two move together and nothing
+// else here does.
+//
+// @dagger.io/session is a published dependency, so `npm install` below fetches it
+// from the registry. That is deliberate — it is the only thing that proves the
+// package boundary holds before the tarball is built.
+func (r *TypescriptClientDev) ReleaseCore(ctx context.Context, sourceTag string, opts ...TypescriptClientDevReleaseCoreOpts) error { // typescript-client-dev (../../:0:0)
+	if r.releaseCore != nil {
 		return nil
 	}
-	q := r.query.Select("release")
+	q := r.query.Select("releaseCore")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `npmToken` optional argument
 		if !querybuilder.IsZeroValue(opts[i].NpmToken) {
@@ -302,8 +386,9 @@ func (r *TypescriptClientDev) Release(ctx context.Context, sourceTag string, opt
 	return q.Execute(ctx)
 }
 
-func (r *TypescriptClientDev) ReleaseDryRun() *Check { // typescript-client-dev (../../:0:0)
-	q := r.query.Select("releaseDryRun")
+// Rehearse a core release with no side effects.
+func (r *TypescriptClientDev) ReleaseCoreDryRun() *Check { // typescript-client-dev (../../:0:0)
+	q := r.query.Select("releaseCoreDryRun")
 
 	return new(Check).WithGraphQLQuery(q)
 }
