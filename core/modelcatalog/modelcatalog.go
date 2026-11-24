@@ -17,11 +17,12 @@ import (
 // core.LLMProvider) to a catwalk catalog ID. Providers left out (local, other,
 // ...) serve arbitrary models with no reliable catalog entry.
 var providerCatalogIDs = map[string]catwalk.InferenceProvider{
-	"anthropic":    catwalk.InferenceProviderAnthropic,
-	"openai":       catwalk.InferenceProviderOpenAI,
-	"openai-codex": catwalk.InferenceProviderOpenAI,
-	"openrouter":   catwalk.InferenceProviderOpenRouter,
-	"google":       catwalk.InferenceProviderGemini,
+	"anthropic":      catwalk.InferenceProviderAnthropic,
+	"openai":         catwalk.InferenceProviderOpenAI,
+	"openai-codex":   catwalk.InferenceProviderOpenAI,
+	"openrouter":     catwalk.InferenceProviderOpenRouter,
+	"google":         catwalk.InferenceProviderGemini,
+	"github-copilot": catwalk.InferenceProviderCopilot,
 }
 
 var (

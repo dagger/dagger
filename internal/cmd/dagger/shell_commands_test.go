@@ -123,6 +123,59 @@ func TestModelPickerNormalizesOtherProvider(t *testing.T) {
 	require.Equal(t, "qwen-old", saved.LLM.Providers["openai"].Model)
 }
 
+func TestCopilotModelPickerAndSavedDefault(t *testing.T) {
+	for _, model := range []string{"claude-custom", "gpt-custom", "gemini-custom"} {
+		t.Run(model, func(t *testing.T) {
+			clearLLMEnv(t)
+			provider := llmconfig.Provider{
+				AuthType: "oauth", AuthToken: "copilot-token", RefreshToken: "github-token",
+				SubscriptionType: "copilot", Model: "gpt-pinned", Enabled: true,
+			}
+			useTempLLMConfig(t, &llmconfig.Config{LLM: llmconfig.LLMConfig{
+				DefaultProvider: "anthropic", DefaultModel: "old-model",
+				Providers: map[string]llmconfig.Provider{"github-copilot": provider},
+			}})
+			cfg, err := assembleLLMConfig()
+			require.NoError(t, err)
+			current := modelSelection{Provider: "github-copilot", Model: model}
+			options := modelOptions(cfg, current)
+			models := map[string]bool{}
+			for _, option := range options {
+				require.Equal(t, "github-copilot", option.Value.Provider)
+				require.Contains(t, option.Key, "(github-copilot)")
+				models[option.Value.Model] = true
+			}
+			require.True(t, models[model])
+			require.True(t, models[provider.Model])
+			for _, catalogModel := range llmconfig.ModelsForProvider("github-copilot") {
+				require.True(t, models[catalogModel.ID], "Copilot catalog model missing from picker: %s", catalogModel.ID)
+			}
+
+			reloads := 0
+			ctx := context.WithValue(t.Context(), llmConfigUpdaterKey{}, llmConfigUpdater(func(_ context.Context, cfg *engine.LLMConfig) error {
+				reloads++
+				require.Equal(t, "github-copilot", cfg.DefaultProvider)
+				require.Equal(t, model, cfg.DefaultModel)
+				require.Equal(t, "llmconfig://github-copilot/auth_token", cfg.Providers["github-copilot"].AuthToken)
+				return nil
+			}))
+			notice, err := (&shellCallHandler{}).saveModelDefault(ctx, current)
+			require.NoError(t, err)
+			require.Equal(t, 1, reloads)
+			require.Contains(t, notice, model+" (github-copilot)")
+			saved, err := llmconfig.Load()
+			require.NoError(t, err)
+			require.Equal(t, "github-copilot", saved.LLM.DefaultProvider)
+			require.Equal(t, model, saved.LLM.DefaultModel)
+			require.Equal(t, provider, saved.LLM.Providers["github-copilot"], "saving a default must preserve the subscription")
+			cfg, err = assembleLLMConfig()
+			require.NoError(t, err)
+			require.Equal(t, "github-copilot", cfg.DefaultProvider)
+			require.Equal(t, model, cfg.DefaultModel)
+		})
+	}
+}
+
 func TestModelPickerCurrentOnlyAndCancellation(t *testing.T) {
 	for _, outcome := range []string{"current only", "cancel error", "cancel state"} {
 		t.Run(outcome, func(t *testing.T) {
@@ -456,17 +509,17 @@ func TestReasoningEffortOptions(t *testing.T) {
 		}
 		return vs
 	}
-	catalogModel := func(match func(llmconfig.ModelInfo) bool) string {
+	catalogModel := func(match func(llmconfig.ModelInfo) bool) modelSelection {
 		t.Helper()
 		for _, provider := range llmconfig.ProviderEntries() {
 			for _, model := range llmconfig.ModelsForProvider(provider.ConfigKey) {
 				if match(model) {
-					return model.ID
+					return modelSelection{Provider: provider.ConfigKey, Model: model.ID}
 				}
 			}
 		}
 		t.Fatal("catwalk catalog has no model matching the test condition")
-		return ""
+		return modelSelection{}
 	}
 
 	// Catalog model marked non-reasoning: only "none", no invented levels.
@@ -477,7 +530,7 @@ func TestReasoningEffortOptions(t *testing.T) {
 
 	// Unknown model: conventional fallback.
 	require.Equal(t, []string{"none", "low", "medium", "high"},
-		values(reasoningEffortOptions("my-local-model")))
+		values(reasoningEffortOptions(modelSelection{Model: "my-local-model"})))
 
 	// Catalog model that can reason but declares no explicit levels
 	// gets the conventional fallback.
@@ -486,4 +539,27 @@ func TestReasoningEffortOptions(t *testing.T) {
 	})
 	require.Equal(t, []string{"none", "low", "medium", "high"},
 		values(reasoningEffortOptions(withoutLevels)))
+
+	t.Run("shared model ID uses the selected provider", func(t *testing.T) {
+		// Copilot and OpenAI disagree about this model's reasoning support.
+		copilot, ok := llmconfig.ModelByID("github-copilot", "gpt-5-mini")
+		require.True(t, ok)
+		require.False(t, copilot.CanReason)
+		openai, ok := llmconfig.ModelByID("openai", copilot.ID)
+		require.True(t, ok)
+		require.True(t, openai.CanReason)
+
+		require.Equal(t, []string{"none"}, values(reasoningEffortOptions(modelSelection{
+			Provider: "github-copilot", Model: copilot.ID,
+		})))
+		options := reasoningEffortOptions(modelSelection{Provider: "openai", Model: openai.ID})
+		require.Equal(t, []string{"none", "low", "medium", "high"}, values(options))
+		require.Equal(t, "medium (default)", options[2].Key)
+
+		// An unknown provider uses the first catalog match, even if it cannot reason.
+		require.Equal(t, []string{"none"}, values(reasoningEffortOptions(modelSelection{Model: copilot.ID})))
+		// A known provider with no matching model must not borrow another catalog.
+		require.Equal(t, []string{"none", "low", "medium", "high"},
+			values(reasoningEffortOptions(modelSelection{Provider: "local", Model: copilot.ID})))
+	})
 }

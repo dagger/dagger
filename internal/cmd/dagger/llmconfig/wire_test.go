@@ -1,9 +1,11 @@
 package llmconfig
 
 import (
+	"context"
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
@@ -561,4 +563,251 @@ func TestResolveSecretDisabledLoginNotRefreshed(t *testing.T) {
 	_, err := ResolveSecret(t.Context(), "anthropic/auth_token")
 	require.True(t, errors.Is(err, secrets.ErrNotFound), "err = %v", err)
 	require.Zero(t, srv.requestCount())
+}
+
+func TestCopilotFileAssembly(t *testing.T) {
+	require.True(t, IsProvider("github-copilot"))
+	file := fileConfig("github-copilot", "claude-sonnet", map[string]Provider{"github-copilot": {
+		AuthType: "oauth", AuthToken: "copilot", RefreshToken: "github", TokenExpiresAt: time.Now().Add(time.Hour).UnixMilli(),
+		BaseURL: "https://business.example", Model: "claude-sonnet", Enabled: true,
+	}})
+	cfg, literals, err := assemble(file, mapEnv(nil), nil)
+	require.NoError(t, err)
+	require.Empty(t, literals)
+	require.Equal(t, "github-copilot", cfg.DefaultProvider)
+	require.Equal(t, &engine.LLMProviderConfig{
+		AuthToken: "llmconfig://github-copilot/auth_token", AuthTokenExpiresAt: "llmconfig://github-copilot/auth_token_expires_at",
+		BaseURL: "https://business.example", Model: "claude-sonnet",
+	}, cfg.Providers["github-copilot"])
+}
+
+func TestCopilotEnvironmentAssembly(t *testing.T) {
+	cfg, literals, err := assemble(nil, mapEnv(map[string]string{
+		"COPILOT_GITHUB_TOKEN": "explicit-github", "COPILOT_MODEL": "claude-sonnet",
+		"COPILOT_SMALL_MODEL": "gpt-small", "COPILOT_REASONING_EFFORT": "high",
+	}), nil)
+	require.NoError(t, err)
+	require.Empty(t, literals)
+	require.Equal(t, "github-copilot", cfg.DefaultProvider)
+	require.Equal(t, "claude-sonnet", cfg.DefaultModel)
+	require.Equal(t, &engine.LLMProviderConfig{
+		AuthToken: "llmconfig://github-copilot/auth_token", AuthTokenExpiresAt: "llmconfig://github-copilot/auth_token_expires_at",
+		BaseURL: copilotAPIBaseURL, Model: "claude-sonnet", SmallModel: "gpt-small", ReasoningEffort: "high",
+	}, cfg.Providers["github-copilot"])
+	// API-key model variables retain their existing priority ahead of Copilot.
+	for _, name := range []string{"OPENAI_MODEL", "ANTHROPIC_MODEL", "GEMINI_MODEL"} {
+		cfg, _, err := assemble(nil, mapEnv(map[string]string{name: "api-model", "COPILOT_MODEL": "copilot-model"}), nil)
+		require.NoError(t, err)
+		require.NotEqual(t, "github-copilot", cfg.DefaultProvider)
+	}
+	cfg, _, err = assemble(nil, mapEnv(map[string]string{"GH_TOKEN": "gh", "GITHUB_TOKEN": "github"}), nil)
+	require.NoError(t, err)
+	require.Nil(t, cfg, "unrelated GitHub tokens must not configure Copilot")
+}
+
+func isolateCopilotEnv(t *testing.T) {
+	t.Helper()
+	for _, ev := range envVars {
+		t.Setenv(ev.name, "")
+	}
+	t.Setenv(disableStreamingVar, "")
+	dotEnvSecretsMu.Lock()
+	orig := dotEnvSecrets
+	dotEnvSecrets = nil
+	dotEnvSecretsMu.Unlock()
+	t.Cleanup(func() { dotEnvSecretsMu.Lock(); dotEnvSecrets = orig; dotEnvSecretsMu.Unlock() })
+	oauthRefreshMu.Lock()
+	origCache := copilotEnvCache
+	copilotEnvCache.sourceFingerprint = ""
+	copilotEnvCache.rejected = nil
+	oauthRefreshMu.Unlock()
+	t.Cleanup(func() { oauthRefreshMu.Lock(); copilotEnvCache = origCache; oauthRefreshMu.Unlock() })
+}
+
+func TestCopilotEnvResolutionAndPrecedence(t *testing.T) {
+	for _, stored := range []bool{false, true} {
+		for _, dotenv := range []bool{false, true} {
+			t.Run(fmt.Sprintf("stored=%t/dotenv=%t", stored, dotenv), func(t *testing.T) {
+				isolateCopilotEnv(t)
+				s := newFakeCopilotServer(t)
+				s.api = "https://env-enterprise.example"
+				var file *Config
+				if stored {
+					p := expiredOAuthProvider("stored-github-must-not-be-used")
+					p.BaseURL = "https://stored-enterprise.example"
+					file = fileConfig("github-copilot", "file-model", map[string]Provider{"github-copilot": p})
+				}
+				useTempConfig(t, file)
+				var original []byte
+				if stored {
+					var err error
+					original, err = os.ReadFile(ConfigFile)
+					require.NoError(t, err)
+				}
+				t.Setenv(copilotTokenEnv, "process-github")
+				cwd := t.TempDir()
+				githubToken := "process-github"
+				if dotenv {
+					githubToken = "dotenv-github"
+					require.NoError(t, os.WriteFile(filepath.Join(cwd, ".env"), []byte("COPILOT_GITHUB_TOKEN=dotenv-github\n"), 0600))
+				}
+				cfg, warnings, err := Assemble(cwd)
+				require.NoError(t, err)
+				require.Empty(t, warnings)
+				require.Empty(t, s.tokens(), "assembly must remain lazy")
+				require.Equal(t, "llmconfig://github-copilot/auth_token", cfg.Providers["github-copilot"].AuthToken)
+				require.NotEqual(t, "https://stored-enterprise.example", cfg.Providers["github-copilot"].BaseURL)
+				// Proactive refresh must also respect the explicit environment credential.
+				require.NoError(t, RefreshOAuthTokensIfNeeded(t.Context()))
+				require.Empty(t, s.tokens())
+				for range 2 {
+					token, err := ResolveSecret(t.Context(), "github-copilot/auth_token")
+					require.NoError(t, err)
+					require.Equal(t, "copilot-1", string(token))
+					expiry, err := ResolveSecret(t.Context(), "github-copilot/auth_token_expires_at")
+					require.NoError(t, err)
+					require.Equal(t, time.Unix(s.expiresAt, 0).UTC().Format(time.RFC3339), string(expiry))
+				}
+				p, err := RefreshOAuthProviderIfNeeded(t.Context(), "github-copilot")
+				require.NoError(t, err)
+				require.Equal(t, "https://env-enterprise.example", p.BaseURL)
+				require.Equal(t, []string{"token " + githubToken}, s.tokens())
+				if stored {
+					current, err := os.ReadFile(ConfigFile)
+					require.NoError(t, err)
+					require.Equal(t, original, current, "environment exchange changed the stored login")
+				} else {
+					require.False(t, ConfigExists(), "environment exchange persisted a login")
+				}
+			})
+		}
+	}
+}
+
+func TestCopilotEnvCacheRejectionAndExpiry(t *testing.T) {
+	isolateCopilotEnv(t)
+	useTempConfig(t, nil)
+	s := newFakeCopilotServer(t)
+	t.Setenv(copilotTokenEnv, "env-github")
+	token, err := ResolveSecret(t.Context(), "github-copilot/auth_token")
+	require.NoError(t, err)
+	require.Equal(t, "copilot-1", string(token))
+	rejectedCtx := secretprovider.ContextWithRejectedSecretValue(t.Context(), copilotFingerprint(string(token)))
+	for range 2 {
+		token, err = ResolveSecret(rejectedCtx, "github-copilot/auth_token")
+		require.NoError(t, err)
+		require.Equal(t, "copilot-2", string(token))
+	}
+	oauthRefreshMu.Lock()
+	copilotEnvCache.provider.TokenExpiresAt = time.Now().Add(-time.Second).UnixMilli()
+	// Even inside the refresh floor, an actually expired token must be replaced.
+	oauthRefreshMu.Unlock()
+	token, err = ResolveSecret(t.Context(), "github-copilot/auth_token")
+	require.NoError(t, err)
+	require.Equal(t, "copilot-3", string(token))
+	require.Equal(t, []string{"token env-github", "token env-github", "token env-github"}, s.tokens())
+	// A changed environment source invalidates the credential and endpoint cache.
+	t.Setenv(copilotTokenEnv, "another-github")
+	s.mu.Lock()
+	s.api = "https://another-env.example"
+	s.mu.Unlock()
+	p, ok, err := resolveCopilotEnvProvider(t.Context())
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, "copilot-4", p.AuthToken)
+	require.Equal(t, "https://another-env.example", p.BaseURL)
+	require.Equal(t, "token another-github", s.tokens()[3])
+}
+
+func TestCopilotEnvNeverReturnsRejectedToken(t *testing.T) {
+	for _, status := range []int{0, http.StatusUnauthorized, http.StatusServiceUnavailable} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			isolateCopilotEnv(t)
+			useTempConfig(t, nil)
+			s := newFakeCopilotServer(t)
+			s.sameToken = true
+			t.Setenv(copilotTokenEnv, "env-github")
+			token, err := ResolveSecret(t.Context(), "github-copilot/auth_token")
+			require.NoError(t, err)
+			require.Equal(t, "rejected-token", string(token))
+			s.mu.Lock()
+			s.status = status
+			s.mu.Unlock()
+			ctx := secretprovider.ContextWithRejectedSecretValue(t.Context(), copilotFingerprint(string(token)))
+			for _, ctx := range []context.Context{ctx, ctx, t.Context()} {
+				token, err = ResolveSecret(ctx, "github-copilot/auth_token")
+				require.Error(t, err)
+				require.Empty(t, token)
+				if status == http.StatusUnauthorized {
+					require.ErrorIs(t, err, ErrOAuthReauthenticationRequired)
+				}
+				require.NotContains(t, err.Error(), "credential-leak-marker")
+			}
+			require.Len(t, s.tokens(), 2, "repeated failures should obey the refresh floor")
+		})
+	}
+}
+
+func TestCopilotEnvConcurrentResolution(t *testing.T) {
+	isolateCopilotEnv(t)
+	useTempConfig(t, nil)
+	s := newFakeCopilotServer(t)
+	t.Setenv(copilotTokenEnv, "env-github")
+	for _, tc := range []struct{ rejected, want string }{{"", "copilot-1"}, {copilotFingerprint("copilot-1"), "copilot-2"}} {
+		ctx := secretprovider.ContextWithRejectedSecretValue(t.Context(), tc.rejected)
+		results := make(chan error, 16)
+		for range 16 {
+			go func() {
+				token, err := ResolveSecret(ctx, "github-copilot/auth_token")
+				if err == nil && string(token) != tc.want {
+					err = fmt.Errorf("token = %q, want %q", token, tc.want)
+				}
+				results <- err
+			}()
+		}
+		for range 16 {
+			require.NoError(t, <-results)
+		}
+	}
+	require.Equal(t, []string{"token env-github", "token env-github"}, s.tokens())
+}
+
+func TestCopilotEnvShortLifetimeRefreshFloor(t *testing.T) {
+	isolateCopilotEnv(t)
+	useTempConfig(t, nil)
+	s := newFakeCopilotServer(t)
+	s.expiresAt = time.Now().Add(time.Minute).Unix()
+	t.Setenv(copilotTokenEnv, "env-github")
+	for range 2 {
+		token, err := ResolveSecret(t.Context(), "github-copilot/auth_token")
+		require.NoError(t, err)
+		require.Equal(t, "copilot-1", string(token))
+	}
+	require.Len(t, s.tokens(), 1, "a freshly issued token inside the margin should respect the floor")
+	oauthRefreshMu.Lock()
+	copilotEnvCache.lastAttempt = time.Now().Add(-time.Minute)
+	oauthRefreshMu.Unlock()
+	token, err := ResolveSecret(t.Context(), "github-copilot/auth_token")
+	require.NoError(t, err)
+	require.Equal(t, "copilot-2", string(token))
+	require.Len(t, s.tokens(), 2, "a token inside the safety margin is due once the floor passes")
+}
+
+func TestCopilotEnvSourceChangeDoesNotForgetRejectedBearer(t *testing.T) {
+	isolateCopilotEnv(t)
+	useTempConfig(t, nil)
+	s := newFakeCopilotServer(t)
+	s.sameToken = true
+	t.Setenv(copilotTokenEnv, "first-github")
+	token, err := ResolveSecret(t.Context(), "github-copilot/auth_token")
+	require.NoError(t, err)
+	ctx := secretprovider.ContextWithRejectedSecretValue(t.Context(), copilotFingerprint(string(token)))
+	token, err = ResolveSecret(ctx, "github-copilot/auth_token")
+	require.Error(t, err)
+	require.Empty(t, token)
+	t.Setenv(copilotTokenEnv, "second-github")
+	token, err = ResolveSecret(t.Context(), "github-copilot/auth_token")
+	require.ErrorContains(t, err, "previously rejected token")
+	require.Empty(t, token)
+	require.Equal(t, []string{"token first-github", "token first-github", "token second-github"}, s.tokens())
 }

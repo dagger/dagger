@@ -367,6 +367,8 @@ func SubscriptionLabel(subType string) string {
 		return "Claude Enterprise"
 	case "chatgpt":
 		return "ChatGPT"
+	case "copilot":
+		return "GitHub Copilot"
 	default:
 		return ""
 	}

@@ -74,7 +74,7 @@ func resolveClientSecret(ctx context.Context, client *engine.ClientMetadata, uri
 // llmProviderPriority is the order in which providers are considered when no
 // default route is configured explicitly: the legacy env-var behaviour that
 // CI setups with a single exported key rely on.
-var llmProviderPriority = []LLMProvider{OpenAI, OpenAICodex, OpenRouter, Anthropic, Google, Local}
+var llmProviderPriority = []LLMProvider{OpenAI, OpenAICodex, OpenRouter, Anthropic, Google, GitHubCopilot, Local}
 
 // NewLLMRouter builds a router from a single client's configuration.
 func NewLLMRouter(cfg *engine.LLMConfig, client *engine.ClientMetadata) (*LLMRouter, error) {
@@ -311,9 +311,9 @@ func (endpoint *LLMEndpoint) credentialProvider() LLMProvider {
 }
 
 // DefaultModel returns the default model, if one is configured: the client's
-// explicit choice, else the first provider in llmProviderPriority with a
-// model set, else the first with a credential, using that provider's
-// built-in default model.
+// explicit choice, else the first provider in llmProviderPriority (except
+// Copilot) with a model set, else the first with a credential, using that
+// provider's default model.
 func (r *LLMRouter) DefaultModel() string {
 	model, _ := r.DefaultRoute()
 	return model
@@ -329,7 +329,15 @@ func (r *LLMRouter) DefaultRoute() (model string, provider LLMProvider) {
 		}
 		return r.defaultModel, r.defaultProvider
 	}
+	if r.defaultProvider == GitHubCopilot {
+		return r.providerDefaultModel(GitHubCopilot), GitHubCopilot
+	}
 	for _, provider := range llmProviderPriority {
+		// Setup saves Copilot's model even when the user declines to make
+		// it the default. That preference must not displace an API key.
+		if provider == GitHubCopilot {
+			continue
+		}
 		cfg := r.provider(provider)
 		if cfg.Model == "" {
 			continue
@@ -340,7 +348,7 @@ func (r *LLMRouter) DefaultRoute() (model string, provider LLMProvider) {
 			return normalizeCodexModel(cfg.Model), provider
 		}
 		if provider == Local || provider == OpenRouter {
-			// Neither has a model naming convention to infer from.
+			// These providers cannot be inferred from model names.
 			return cfg.Model, provider
 		}
 		return cfg.Model, ""
@@ -360,6 +368,8 @@ func (r *LLMRouter) DefaultRoute() (model string, provider LLMProvider) {
 		return modelDefaultMeta, ""
 	case r.provider(Google).APIKey != "":
 		return modelDefaultGoogle, ""
+	case r.provider(GitHubCopilot).AuthToken != "":
+		return r.providerDefaultModel(GitHubCopilot), GitHubCopilot
 	}
 	return "", ""
 }
@@ -390,6 +400,8 @@ func (r *LLMRouter) providerDefaultModel(provider LLMProvider) string {
 			model = modelDefaultCodex
 		case OpenRouter:
 			model = modelDefaultOpenRouter
+		case GitHubCopilot:
+			model = modelDefaultCopilot
 		case Anthropic:
 			model = modelDefaultAnthropic
 		case Google:
@@ -427,6 +439,8 @@ func (r *LLMRouter) routeProvider(provider LLMProvider) (*LLMEndpoint, error) {
 		return r.routeCodexModel(), nil
 	case OpenRouter:
 		return r.routeOpenRouterModel(), nil
+	case GitHubCopilot:
+		return r.routeCopilotModel(), nil
 	case Google:
 		return r.routeGoogleModel(), nil
 	case Local:
@@ -434,8 +448,8 @@ func (r *LLMRouter) routeProvider(provider LLMProvider) (*LLMEndpoint, error) {
 	case Other:
 		return r.routeOtherModel(), nil
 	default:
-		return nil, fmt.Errorf("unknown LLM provider %q (expected one of %q, %q, %q, %q, %q, %q, %q)",
-			provider, Anthropic, Google, Local, OpenAI, OpenAICodex, OpenRouter, Other)
+		return nil, fmt.Errorf("unknown LLM provider %q (expected one of %q, %q, %q, %q, %q, %q, %q, %q)",
+			provider, Anthropic, Google, GitHubCopilot, Local, OpenAI, OpenAICodex, OpenRouter, Other)
 	}
 }
 
@@ -542,6 +556,9 @@ func (r *LLMRouter) Endpoint(ctx context.Context, model, provider string) (*LLME
 	}
 	if route.AuthToken != "" {
 		reload := credentialReloader(route.resolveCredential, route.AuthToken, route.AuthTokenExpiresAt)
+		if endpoint.Provider == GitHubCopilot && route.AuthToken == "llmconfig://github-copilot/auth_token" {
+			reload = copilotCredentialReloader(route.resolveCredential)
+		}
 		// Resolve once now, so a misconfigured credential fails at routing
 		// rather than on the first request, and the SDK client is built with
 		// the current token.
@@ -550,6 +567,9 @@ func (r *LLMRouter) Endpoint(ctx context.Context, model, provider string) (*LLME
 			return nil, fmt.Errorf("resolve %s auth token: %w", endpoint.Provider, err)
 		}
 		endpoint.AuthToken = cred.Token
+		if cred.BaseURL != "" {
+			endpoint.BaseURL = cred.BaseURL
+		}
 		if r.credentialContext != nil {
 			credentialCtx, err := r.credentialContext(ctx)
 			if err != nil {
@@ -575,6 +595,11 @@ func (endpoint *LLMEndpoint) newClient() (LLMClient, error) {
 	case Other:
 		return newOpenAIClient(endpoint, endpoint.azureVersion, endpoint.disableStreaming), nil
 	case OpenRouter:
+		return newOpenAIClient(endpoint, "", false), nil
+	case GitHubCopilot:
+		if endpoint.usesCopilotResponses() {
+			return newOpenAIResponsesClient(endpoint), nil
+		}
 		return newOpenAIClient(endpoint, "", false), nil
 	case OpenAICodex:
 		return newOpenAICodexClient(endpoint), nil

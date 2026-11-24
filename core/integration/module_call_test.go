@@ -408,7 +408,7 @@ func (CallSuite) TestArgTypes(ctx context.Context, t *testctx.T) {
 		t.Run("value from host", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCallAt(".", "from-platform", "--platform", "current")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, platforms.DefaultString(), out)
+			require.Equal(t, platforms.Format(platforms.Normalize(platforms.DefaultSpec())), out)
 		})
 
 		t.Run("invalid input", func(ctx context.Context, t *testctx.T) {
@@ -449,7 +449,7 @@ func (CallSuite) TestArgTypes(ctx context.Context, t *testctx.T) {
 		t.Run("value from host", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCallAt(".", "from-platforms", "--platforms", "linux/amd64,current", "--json")).Stdout(ctx)
 			require.NoError(t, err)
-			require.JSONEq(t, fmt.Sprintf(`["linux/amd64", "%s"]`, platforms.DefaultString()), out)
+			require.JSONEq(t, fmt.Sprintf(`["linux/amd64", "%s"]`, platforms.Format(platforms.Normalize(platforms.DefaultSpec()))), out)
 		})
 
 		t.Run("invalid input", func(ctx context.Context, t *testctx.T) {

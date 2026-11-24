@@ -13,6 +13,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/dagger/dagger/internal/cloud/auth"
@@ -217,39 +218,71 @@ func TestBoundedTokenRefreshGivesUp(t *testing.T) {
 	require.Less(t, time.Since(start), 2*time.Second)
 }
 
-// With an expired OAuth token and a refresh that stalls, every export still
-// returns at its own request timeout instead of waiting on the refresh, and
-// so do the other signals' exporters sharing the token source.
+// With an expired OAuth token and a refresh that stalls, both signals sharing
+// the token source return by their caller's deadline. Keep the real HTTP
+// request timeout and OTLP retry policy, but measure them with fake time so
+// host scheduling cannot extend the measured wait.
 func TestCloudExportDoesNotWaitOnStalledRefresh(t *testing.T) {
 	t.Parallel()
-	srv, _ := cloudExporterTestServer(t)
-	release := make(chan struct{})
-	t.Cleanup(func() { close(release) })
-	spans, logs, _, err := newCloudExporters(t.Context(), &auth.Cloud{
-		Token: &oauth2.Token{AccessToken: "expired", Expiry: time.Now().Add(-time.Hour)},
-		Org:   &auth.Org{ID: "test-org"},
-	}, func(context.Context) (*oauth2.Token, error) {
-		<-release // a refresh that ignores cancellation and never returns in time
-		return nil, context.Canceled
-	}, srv.URL, 50*time.Millisecond)
-	require.NoError(t, err)
+	synctest.Test(t, func(t *testing.T) {
+		release := make(chan struct{})
+		defer close(release)
+		var refreshes atomic.Int32
+		spans, logs, metrics, err := newCloudExporters(t.Context(), &auth.Cloud{
+			Token: &oauth2.Token{AccessToken: "expired", Expiry: time.Now().Add(-time.Hour)},
+			Org:   &auth.Org{ID: "test-org"},
+		}, func(context.Context) (*oauth2.Token, error) {
+			refreshes.Add(1)
+			<-release // ignores cancellation and stays blocked until both exports end
+			return nil, context.Canceled
+		}, "https://cloud.example", 50*time.Millisecond)
+		require.NoError(t, err)
+		defer spans.Shutdown(t.Context())   //nolint:errcheck
+		defer logs.Shutdown(t.Context())    //nolint:errcheck
+		defer metrics.Shutdown(t.Context()) //nolint:errcheck
 
-	for name, export := range map[string]func(context.Context) error{
-		"spans": func(ctx context.Context) error {
-			return spans.ExportSpans(ctx, tracetest.SpanStubs{{Name: "test-span"}}.Snapshots())
-		},
-		"logs": func(ctx context.Context) error {
-			var rec sdklog.Record
-			rec.SetBody(log.StringValue("record"))
-			return logs.Export(ctx, []sdklog.Record{rec})
-		},
-	} {
-		ctx, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)
-		start := time.Now()
-		require.Error(t, export(ctx), name)
-		require.Less(t, time.Since(start), 2*time.Second, "%s export waited on the stalled refresh", name)
-		cancel()
-	}
+		type result struct {
+			name    string
+			err     error
+			elapsed time.Duration
+		}
+		results := make(chan result, 2)
+		const bound = 300 * time.Millisecond
+		for name, export := range map[string]func(context.Context) error{
+			"spans": func(ctx context.Context) error {
+				return spans.ExportSpans(ctx, tracetest.SpanStubs{{Name: "test-span"}}.Snapshots())
+			},
+			"logs": func(ctx context.Context) error {
+				var rec sdklog.Record
+				rec.SetBody(log.StringValue("record"))
+				return logs.Export(ctx, []sdklog.Record{rec})
+			},
+		} {
+			go func() {
+				ctx, cancel := context.WithTimeout(t.Context(), bound)
+				defer cancel()
+				start := time.Now()
+				err := export(ctx)
+				results <- result{name, err, time.Since(start)}
+			}()
+		}
+		// Both exporters are waiting on the same refresh before time moves.
+		// No HTTP connection is needed: the expired token blocks before dial.
+		synctest.Wait()
+		require.Equal(t, int32(1), refreshes.Load())
+		// Fail deterministically even if a regression ignores cancellation.
+		guard := time.After(2 * bound)
+		for range 2 {
+			select {
+			case got := <-results:
+				require.ErrorIs(t, got.err, context.DeadlineExceeded, got.name)
+				require.LessOrEqual(t, got.elapsed, bound, "%s export waited on the stalled refresh", got.name)
+			case <-guard:
+				t.Fatal("exports did not return at their deadlines")
+			}
+		}
+		require.Equal(t, int32(1), refreshes.Load(), "both exports end while their shared refresh is still blocked")
+	})
 }
 
 // Concurrent exports waiting on an expired token share one refresh: during a
