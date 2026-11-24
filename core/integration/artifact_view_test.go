@@ -70,7 +70,7 @@ func (ArtifactsSuite) TestFilteredViewReferences(ctx context.Context, t *testctx
     items { value { ... on ViewCase {
      name parent { keys removed results { id } owner { name parent { keys removed } } }
     } } }
-    withoutUri(uri: "?name=packages.tests&ViewPackages=left&ViewCases=Bar") {
+    withoutUri(uri: "?name=.&ViewPackages=left&ViewCases=Bar") {
      items { value { ... on ViewCase { name parent { keys results { id } } } } }
     }
     intersection: filterDimensionKeys(dimension: "ViewCases", keys: ["Bar"]) {
@@ -186,12 +186,12 @@ type Case {
 
 	out, err := base.With(daggerQuery(`{
  currentWorkspace { artifacts { filterTypes(types: ["ViewCase"]) {
-  first: filterUri(uri: "?name=first&ViewCases=a&ViewCases=b") {
+  first: filterUri(uri: "first?ViewCases=a&ViewCases=b") {
    items { value { ... on ViewCase { name alias { keys } parent {
     keys removed narrow: subset(keys: ["b"]) { keys removed }
    } } } }
   }
-  second: filterUri(uri: "?name=second&ViewCases=d") {
+  second: filterUri(uri: "second?ViewCases=d") {
    items { value { ... on ViewCase { name alias { keys } parent { keys removed } } } }
   }
  } } }
@@ -223,7 +223,7 @@ type Case {
 func (ArtifactsSuite) TestFilteredViewChecks(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	base := artifactViewWorkspace(t, c, nestedArtifactViewSource)
-	selection := "?name=packages.tests.verify&view-package=left&view-package=right&view-case=Foo&view-case=Bar"
+	selection := "?name=verify&view-package=left&view-package=right&view-case=Foo&view-case=Bar"
 	out, err := base.With(daggerExec("check", "-la", "-f=link", selection)).Stdout(ctx)
 	require.NoError(t, err, out)
 	links := strings.Fields(out)
@@ -256,9 +256,9 @@ func (ArtifactsSuite) TestFilteredViewChecks(ctx context.Context, t *testctx.T) 
 		copiedCoordinates = append(copiedCoordinates, coordinates)
 	}
 	require.ElementsMatch(t, []map[string]string{
-		{"module": "view", "ViewPackages": "left", "ViewCases": "Foo", "name": "packages.tests.verify"},
-		{"module": "view", "ViewPackages": "left", "ViewCases": "Bar", "name": "packages.tests.verify"},
-		{"module": "view", "ViewPackages": "right", "ViewCases": "Bar", "name": "packages.tests.verify"},
+		{"module": "view", "ViewPackages": "left", "ViewCases": "Foo", "name": "verify"},
+		{"module": "view", "ViewPackages": "left", "ViewCases": "Bar", "name": "verify"},
+		{"module": "view", "ViewPackages": "right", "ViewCases": "Bar", "name": "verify"},
 	}, copiedCoordinates)
 
 	pathSelection := "packages/tests/verify?view-package=left&view-package=right&view-case=Foo&view-case=Bar"

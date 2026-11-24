@@ -35,7 +35,7 @@ func TestArtifactDirectNestedCollectionTypeColumns(t *testing.T) {
 	require.NoError(t, err)
 	want := []flattening.Coordinate{
 		{Dimension: "module", Key: "grid"}, {Dimension: "Rows", Key: "top"},
-		{Dimension: "Row", Key: "left"}, {Dimension: "name", Key: "rows"},
+		{Dimension: "Row", Key: "left"}, {Dimension: "name", Key: "."},
 	}
 	projected, err := schema.Coordinates(field, rowKey, columnKey)
 	require.NoError(t, err)

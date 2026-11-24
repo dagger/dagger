@@ -6,7 +6,6 @@ import (
 
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
-	"mvdan.cc/sh/v3/shell"
 )
 
 func (CollectionsSuite) TestCLISelectorOmission(ctx context.Context, t *testctx.T) {
@@ -68,15 +67,13 @@ func (*Part) Run() error { panic("check evaluated") }
 				require.NoError(t, err)
 				require.Contains(t, out, "--collections-item=a")
 
-				require.Contains(t, out, "--name=items.run")
+				require.Contains(t, out, "--name=run")
 				replay := append(append([]string{}, command...), "-a", "-f=link")
 				prefix := "dagger check"
 				if command[0] == "list" {
 					prefix = "dagger list checks"
 				}
-				selectors, err := shell.Fields(collectionCLIArguments(t, out, prefix), nil)
-				require.NoError(t, err)
-				replay = append(replay, selectors...)
+				replay = append(replay, collectionCLIFields(t, out, prefix)...)
 				links, err := ctr.With(daggerExec(replay...)).Stdout(ctx)
 				require.NoError(t, err)
 				require.NotEmpty(t, strings.TrimSpace(links))
@@ -91,7 +88,7 @@ func (*Part) Run() error { panic("check evaluated") }
 			// constructor and both check functions must remain deferred.
 			out, err := ctr.With(daggerExec("check", "-l", "deferred/run", "-f=cli")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Contains(t, out, "--name=deferred.run")
+			require.Contains(t, out, "--name=run")
 		})
 	}
 }

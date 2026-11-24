@@ -81,8 +81,8 @@ func (*Cell) Check() error { panic("check must stay deferred") }
 	wantChecks := []map[string]string{}
 	for _, row := range []string{"top", "bottom"} {
 		for _, column := range []string{"left", "right"} {
-			wantCells = append(wantCells, map[string]string{"module": "collections", "CollectionsRows": row, "CollectionsRow": column, "name": "rows"})
-			wantChecks = append(wantChecks, map[string]string{"module": "collections", "CollectionsRows": row, "CollectionsRow": column, "name": "rows.check"})
+			wantCells = append(wantCells, map[string]string{"module": "collections", "CollectionsRows": row, "CollectionsRow": column, "name": "."})
+			wantChecks = append(wantChecks, map[string]string{"module": "collections", "CollectionsRows": row, "CollectionsRow": column, "name": "check"})
 		}
 	}
 	coordinateMaps := func(items []item) []map[string]string {
@@ -159,80 +159,6 @@ func (*Cell) Check() error { panic("check must stay deferred") }
 		replayed = append(replayed, selected[0])
 	}
 	require.ElementsMatch(t, links, replayed)
-}
-
-func (CollectionsSuite) TestSameCollectionTypeKeepsSourceFieldNames(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-	const source = `package main
-
-type Collections struct{}
-func (*Collections) Before() *Tests { return &Tests{Keys: []string{"unit"}} }
-func (*Collections) After() *Tests { return &Tests{Keys: []string{"unit"}} }
-
-// +collection
-type Tests struct {
-  // +keys
-  Keys []string
-}
-func (*Tests) Get(name string) *Test { return &Test{} }
-type Test struct{}
-// +check
-func (*Test) Check() error { panic("check must stay deferred") }
-`
-	base := goGitBase(t, c).
-		WithDirectory("/work", collectionSource(c).WithNewFile("collections/main.go", source)).
-		WithWorkdir("/work")
-	type key struct{ Dimension, Key string }
-	type item struct {
-		URI           string
-		DimensionKeys []key
-	}
-	out, err := base.With(workspaceSelectionDaggerQuery(`{ currentWorkspace { artifacts {
-  filterTypes(types: ["Check"]) {
-    items { uri(typeAssertion: true) dimensionKeys(all: true) { dimension key } }
-  }
-} } }`, "-m", "core")).Stdout(ctx)
-	require.NoError(t, err)
-
-	var selected struct {
-		CurrentWorkspace struct {
-			Artifacts struct{ FilterTypes struct{ Items []item } }
-		}
-	}
-	require.NoError(t, json.Unmarshal([]byte(out), &selected))
-	items := selected.CurrentWorkspace.Artifacts.FilterTypes.Items
-	require.Len(t, items, 2)
-	byName := map[string]item{}
-	for _, row := range items {
-		coordinates := map[string]string{}
-		for _, coordinate := range row.DimensionKeys {
-			coordinates[coordinate.Dimension] = coordinate.Key
-		}
-		require.Equal(t, "unit", coordinates["CollectionsTests"])
-		require.Equal(t, "collections", coordinates["module"])
-		byName[coordinates["name"]] = row
-	}
-	require.Contains(t, byName, "before.check")
-	require.Contains(t, byName, "after.check")
-	require.NotEqual(t, byName["before.check"].URI, byName["after.check"].URI)
-	for name, expected := range byName {
-		out, err := base.With(workspaceSelectionDaggerQuery(fmt.Sprintf(`{ currentWorkspace { artifacts {
-  filterUri(uri: %q) { items { uri(typeAssertion: true) dimensionKeys(all: true) { dimension key } } }
-} } }`, expected.URI), "-m", "core")).Stdout(ctx)
-		require.NoError(t, err)
-		var replay struct {
-			CurrentWorkspace struct {
-				Artifacts struct{ FilterURI struct{ Items []item } }
-			}
-		}
-		require.NoError(t, json.Unmarshal([]byte(out), &replay))
-		require.Len(t, replay.CurrentWorkspace.Artifacts.FilterURI.Items, 1, name)
-		require.ElementsMatch(t, expected.DimensionKeys, replay.CurrentWorkspace.Artifacts.FilterURI.Items[0].DimensionKeys)
-	}
-	out, err = base.With(daggerExec("check", "-la")).Stdout(ctx)
-	require.NoError(t, err)
-	require.Contains(t, out, "before.check")
-	require.Contains(t, out, "after.check")
 }
 
 func (CollectionsSuite) TestCrossModuleCollectionLabelsStayStable(ctx context.Context, t *testctx.T) {

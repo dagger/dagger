@@ -1745,7 +1745,7 @@ type Member {
 	ws = ws.WithNewFile(recomposeModulePath, strings.NewReplacer(`["one", "two"]`, `["one"]`, "original member", "renamed member").Replace(source))
 	llm, err = refreshLLM(ctx, c, ws, llm)
 	require.NoError(t, err)
-	entries[0].Artifact.URI = "dag://?name=members.transform"
+	entries[0].Artifact.URI = "dag://?name=transform"
 	require.Equal(t, entries, recordedExpertise(ctx, t, c, llm))
 	require.ElementsMatch(t, []string{"renamed member: one", "updated member: two"}, recomposeSystemPrompts(ctx, t, c, llm))
 }

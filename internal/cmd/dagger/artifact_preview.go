@@ -28,7 +28,6 @@ type artifactPreviewEntry struct {
 
 type artifactPreviewCapture struct {
 	entries        []artifactPreviewEntry
-	fields         []flattening.Field
 	coordinates    [][][]flattening.Coordinate
 	addressPaths   artifact.Paths
 	addressesIndex *artifact.AddressIndex
@@ -134,7 +133,7 @@ func readArtifactPreview(input io.Reader) (*artifactPreviewCapture, error) {
 		dimensions = append(dimensions, addressPaths[i].Dimensions...)
 		addr := dagaddress.Address{Types: []string{cliName(e.Type)}, Query: []dagaddress.Pair{{Dimension: definitions.DisplayName(&artifact.Dimension{Identifier: "type:" + e.Type, Name: cliName(e.Type), QualifiedName: "artifact-" + cliName(e.Type)}), Key: strings.Join(e.Path, "/"), HasKey: true}}}
 		path := artifactListPath{URI: addr.String(), ModuleName: e.Module, Dimensions: dimensions}
-		for _, coordinate := range flattening.CanonicalCoordinates(e.Module, fields[i].FieldPath(), nil) {
+		for _, coordinate := range flattening.CanonicalCoordinates(e.Module, e.LocalPath, nil) {
 			path.Dimensions = append(path.Dimensions, coordinate.Dimension)
 			if coordinate.Dimension == flattening.NameDimension {
 				path.Name = coordinate.Key
@@ -143,7 +142,7 @@ func readArtifactPreview(input io.Reader) (*artifactPreviewCapture, error) {
 		paths = append(paths, path)
 	}
 	return &artifactPreviewCapture{
-		entries: entries, fields: fields, coordinates: coordinates,
+		entries: entries, coordinates: coordinates,
 		addressPaths: addressPaths, addressesIndex: addressesIndex,
 		definitions: definitions, linkNames: linkNames, paths: paths,
 	}, nil
@@ -294,7 +293,7 @@ func (capture *artifactPreviewCapture) projectEntry(i int, selection *artifactPr
 		for _, key := range flattening.Coordinates(e.Module, e.Path, e.Type, nil) {
 			row.DimensionKeys = append(row.DimensionKeys, struct{ Dimension, Key string }{key.Dimension, key.Key})
 		}
-		setArtifactPreviewCoordinates(&row, flattening.CanonicalCoordinates(e.Module, capture.fields[i].FieldPath(), nil))
+		setArtifactPreviewCoordinates(&row, flattening.CanonicalCoordinates(e.Module, e.LocalPath, nil))
 		itemRows = append(itemRows, row)
 	}
 	return itemRows

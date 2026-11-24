@@ -38,7 +38,7 @@ func TestCanonicalSelectionKeepsSchema(t *testing.T) {
 	if err := run(nil, bytes.NewReader(input), &all); err != nil {
 		t.Fatal(err)
 	}
-	if err := run([]string{"-only", "compose.projects.services.healthCheck.run"}, bytes.NewReader(input), &selected); err != nil {
+	if err := run([]string{"-only", "healthCheck.run"}, bytes.NewReader(input), &selected); err != nil {
 		t.Fatal(err)
 	}
 	parts := strings.SplitN(all.String(), "\n\n", 2)
@@ -52,7 +52,7 @@ func TestCanonicalSelectionKeepsSchema(t *testing.T) {
 		t.Fatalf("selection changed columns or row count:\n%s", selected.String())
 	}
 	for _, row := range selectedLines[1:3] {
-		if !strings.HasSuffix(row, "compose.projects.services.healthCheck.run") {
+		if !strings.HasSuffix(row, "healthCheck.run") {
 			t.Fatalf("selection kept another name: %s", row)
 		}
 	}

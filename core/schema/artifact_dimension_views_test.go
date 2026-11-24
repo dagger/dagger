@@ -157,7 +157,7 @@ func TestArtifactDimensionItemDisplaySourceIsLazy(t *testing.T) {
 		require.NoError(t, srv.Select(ctx, srv.Root(), &visible,
 			dagql.Selector{Field: "selection"}, dagql.Selector{Field: "projectedItem"},
 			dagql.Selector{Field: "dimensionKeys", View: srv.View}))
-		require.Equal(t, []*core.ArtifactDimensionKey{{Dimension: "name", Key: "items"}}, []*core.ArtifactDimensionKey(visible))
+		require.Equal(t, []*core.ArtifactDimensionKey{{Dimension: "name", Key: "."}}, []*core.ArtifactDimensionKey(visible))
 		require.EqualValues(t, 1, discoveries.Load(), "default coordinates must reuse the parent's cached snapshot")
 	}
 }

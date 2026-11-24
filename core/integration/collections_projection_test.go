@@ -99,7 +99,7 @@ func (*Probe) Run() error { panic("check evaluated") }
 			}
 		}
 		for _, platform := range []string{"linux", "windows"} {
-			out, err := ctr.With(daggerExec("check", "-l", "--name="+platform+".modules.cases.run", "-f=link")).Stdout(ctx)
+			out, err := ctr.With(daggerExec("check", "-l", "tools/"+platform+"/modules/cases/run", "-f=link")).Stdout(ctx)
 			require.NoError(t, err)
 			require.NotEmpty(t, strings.TrimSpace(out))
 
@@ -111,16 +111,14 @@ func (*Probe) Run() error { panic("check evaluated") }
 
 	t.Run("nested selectors preserve the route and parent key", func(ctx context.Context, t *testctx.T) {
 		for _, platform := range []string{"linux", "windows"} {
-			name := platform + ".modules.cases.run"
 			out, err := base.With(daggerExec("check", "-la", "-f=cli",
-				"--tools-module=api", "--tools-probe=first", "--name="+name)).Stdout(ctx)
+				"--tools-module=api", "--tools-probe=first", "tools/"+platform+"/modules/cases/run")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Contains(t, out, "--tools-module=api")
 			require.Contains(t, out, "--tools-probe=first")
-			require.Contains(t, out, "--name="+name)
+			require.Contains(t, out, "--name=run")
 			selectors, _, _ := strings.Cut(out, "#")
-			require.True(t, strings.HasPrefix(selectors, "dagger check "), selectors)
-			replay := append([]string{"check", "-la", "-f=link"}, strings.Fields(strings.TrimPrefix(selectors, "dagger check "))...)
+			replay := append([]string{"check", "-la", "-f=link"}, collectionCLIFields(t, selectors, "dagger check")...)
 			links, err := base.With(daggerExec(replay...)).Stdout(ctx)
 			require.NoError(t, err)
 			link := strings.TrimSpace(links)
@@ -142,7 +140,7 @@ func (*Probe) Run() error { panic("check evaluated") }
     {"dimension":"module","key":"tools"},
     {"dimension":"ToolsModules","key":"api"},
     {"dimension":"ToolsCases","key":"first"},
-    {"dimension":"name","key":"`+name+`"}
+    {"dimension":"name","key":"run"}
    ]}}}}}`, metadata)
 		}
 	})

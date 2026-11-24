@@ -75,7 +75,7 @@ func (a *Artifact) CanonicalCoordinates() []flattening.Coordinate {
 		}
 	}
 	slices.Reverse(collections)
-	return flattening.CanonicalCoordinates(a.ModuleName, a.ProjectionField().FieldPath(), collections)
+	return flattening.CanonicalCoordinates(a.ModuleName, a.LocalPath(), collections)
 }
 
 func (a *Artifact) CanonicalDimensionKeys() []*ArtifactDimensionKey {

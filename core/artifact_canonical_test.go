@@ -38,7 +38,7 @@ func TestArtifactCanonicalLocalPath(t *testing.T) {
 
 	module.WorkspaceMain = true
 	entry := &Artifact{ModuleName: "docker", Node: check, Path: check.CommandCLIPath(), TypeName: "Check"}
-	require.Equal(t, "compose.projects.services.healthCheck.run", entry.StaticDimensionKey("name"))
+	require.Equal(t, "healthCheck.run", entry.StaticDimensionKey("name"))
 	bound := &Artifact{Node: &ModTreeNode{Name: "boundAlias"}, Path: []string{"bound-alias"}, TypeName: "Check"}
 	require.Empty(t, bound.LocalPath())
 }

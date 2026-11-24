@@ -59,7 +59,7 @@ func TestArtifactAddressMinimumCollectionURI(t *testing.T) {
 			uri, err := target.URI(ArtifactURIOpts{TypeAssertion: true, DimensionKeys: true, Canonical: true})
 			require.NoError(t, err)
 			require.Equal(t, test.want, uri)
-			require.Equal(t, "modules.tests.check", target.StaticDimensionKey("name"))
+			require.Equal(t, "check", target.StaticDimensionKey("name"))
 		})
 	}
 }
@@ -74,11 +74,11 @@ func TestArtifactAddressCanonicalNameURI(t *testing.T) {
 	catalog.PrepareAddressPlans()
 	require.Equal(t, []dagaddress.Pair{
 		{Dimension: "GoTests", Key: "unit", HasKey: true},
-		{Dimension: "name", Key: "modules.tests.healthCheck.run", HasKey: true},
+		{Dimension: "name", Key: "healthCheck.run", HasKey: true},
 	}, target.addressPlan(true).Selectors)
 	uri, err := target.URI(ArtifactURIOpts{TypeAssertion: true, DimensionKeys: true, Canonical: true})
 	require.NoError(t, err)
-	require.Equal(t, "dag+check://?go-test=unit&name=modules.tests.healthCheck.run", uri)
+	require.Equal(t, "dag+check://?go-test=unit&name=healthCheck.run", uri)
 }
 
 func TestArtifactAddressPlansPersistence(t *testing.T) {

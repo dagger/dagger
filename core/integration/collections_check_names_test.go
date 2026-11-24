@@ -12,11 +12,11 @@ import (
 func (CollectionsSuite) TestGeneratorCheckNames(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	for _, tc := range []struct {
-		name, receiver, linkFormat, fieldPrefix, scope string
-		flags                                          []string
+		name, receiver, linkFormat, exactPath, scope string
+		flags                                        []string
 	}{
 		{"module", "Collections", "dag+check://?name=%s.stale\n", "", "", []string{"--collections"}},
-		{"collection", "Item", "dag+check://?collections-item=a&name=%s.stale\n", "items.", "items/**", []string{"--collections", "--collections-item=a"}},
+		{"collection", "Item", "dag+check://items/%s/stale?collections-item=a\n", "dag+check://items/%[1]s/stale?type:Check=/items/%[1]s/stale", "items/**", []string{"--collections", "--collections-item=a"}},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			source := collectionGoSource + fmt.Sprintf(`
@@ -38,12 +38,15 @@ func (*%s) Clients() *dagger.Changeset { panic("generator evaluated") }
 			require.Len(t, lines, 2)
 			for i, generator := range []string{"clients", "docs"} {
 				printed, _, _ := strings.Cut(lines[i], "#")
-				want := append(append([]string{}, tc.flags...), "--name="+tc.fieldPrefix+generator+".stale")
-				require.Equal(t, want, strings.Fields(collectionCLIArguments(t, strings.TrimSpace(printed)+"\n", "dagger check")))
+				want := append(append([]string{}, tc.flags...), "--name="+generator+".stale")
+				if tc.exactPath != "" {
+					want = append([]string{fmt.Sprintf(tc.exactPath, generator)}, want...)
+				}
+				require.Equal(t, want, collectionCLIFields(t, strings.TrimSpace(printed)+"\n", "dagger check"))
 				for _, command := range [][]string{{"check", "-la", "-f=link"}, {"list", "checks", "-a", "-f=link"}} {
 					links, err := base.With(daggerExec(append(command, want...)...)).Stdout(ctx)
 					require.NoError(t, err)
-					require.Equal(t, fmt.Sprintf(tc.linkFormat, tc.fieldPrefix+generator), links)
+					require.Equal(t, fmt.Sprintf(tc.linkFormat, generator), links)
 				}
 			}
 		})

@@ -3,14 +3,7 @@
     "module": "app",
     "type": "Check",
     "localPath": ["check"],
-    "collections": [{"fields": ["before"], "type": "Tests", "itemType": "Test"}],
-    "items": [["unit"]]
-  },
-  {
-    "module": "app",
-    "type": "Check",
-    "localPath": ["check"],
-    "collections": [{"fields": ["after"], "type": "Tests", "itemType": "Test"}],
+    "collections": [{"fields": ["tests"], "type": "Tests", "itemType": "Test"}],
     "items": [["unit"]]
   },
   {

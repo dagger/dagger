@@ -22,7 +22,7 @@ func TestArtifactDimensionDisplay(t *testing.T) {
 		}
 	}
 	source := item("a")
-	complete := []*ArtifactDimensionKey{{Dimension: "module", Key: "app"}, {Dimension: "Items", Key: "a"}, {Dimension: "name", Key: "items"}}
+	complete := []*ArtifactDimensionKey{{Dimension: "module", Key: "app"}, {Dimension: "Items", Key: "a"}, {Dimension: "name", Key: "."}}
 	visible := []*ArtifactDimensionKey{{Dimension: "Items", Key: "a"}}
 	selection := &Artifacts{Entries: []*Artifact{source, item("b")}}
 	require.Equal(t, []string{"Items"}, selection.Dimensions())

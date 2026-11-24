@@ -137,12 +137,12 @@ func TestArtifactListMixedTypes(t *testing.T) {
 		{
 			URI:           "dag+check://?test=unit",
 			DimensionKeys: []struct{ Dimension, Key string }{{"type:Check", "app/tests/check"}},
-			Coordinates:   []struct{ Dimension, Key string }{{"module", "app"}, {"Tests", "unit"}, {"name", "tests.check"}},
+			Coordinates:   []struct{ Dimension, Key string }{{"module", "app"}, {"Tests", "unit"}, {"name", "check"}},
 		},
 		{
 			URI:           "dag+check://?test=lint",
 			DimensionKeys: []struct{ Dimension, Key string }{{"type:Check", "app/tests/check"}},
-			Coordinates:   []struct{ Dimension, Key string }{{"module", "app"}, {"Tests", "lint"}, {"name", "tests.check"}},
+			Coordinates:   []struct{ Dimension, Key string }{{"module", "app"}, {"Tests", "lint"}, {"name", "check"}},
 		},
 		{
 			URI:           "dag+container://?name=base",

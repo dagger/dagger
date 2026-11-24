@@ -4,7 +4,7 @@ import "strings"
 
 const NameDimension = "name"
 
-func CanonicalCoordinates(module string, fieldPath []string, collections []Coordinate) []Coordinate {
+func CanonicalCoordinates(module string, localPath []string, collections []Coordinate) []Coordinate {
 	coordinates := make([]Coordinate, 0, len(collections)+2)
 	if module != "" {
 		coordinates = append(coordinates, Coordinate{Dimension: ModuleDimension, Key: module})
@@ -14,8 +14,8 @@ func CanonicalCoordinates(module string, fieldPath []string, collections []Coord
 			coordinates = append(coordinates, collection)
 		}
 	}
-	name := strings.Join(fieldPath, ".")
-	if len(fieldPath) == 0 {
+	name := strings.Join(localPath, ".")
+	if len(localPath) == 0 {
 		name = "."
 	}
 	return append(coordinates, Coordinate{Dimension: NameDimension, Key: name})

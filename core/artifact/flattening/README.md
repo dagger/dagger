@@ -75,17 +75,14 @@ Such a field still contributes dimensions. Use it for an empty collection.
 | --- | --- |
 | `module` | Configured module name, when present |
 | Exact collection type name | Collection item key |
-| `name` | Full module-root field path joined with `.`, or `.` for the module root |
+| `name` | Full local path joined with `.`, or `.` for the local root |
 
-`Field.FieldPath` joins all collection field chunks and the local path.
-The service item itself has `name=compose.projects.services`. Its check has
-`name=compose.projects.services.healthCheck.run`. A function on the services
-collection has only the project item boundary. For example,
-`name=compose.projects.services.all.up` has a project key and no service key.
-The output name includes ordinary collection fields, but no module prefix or
-synthetic `get` operations. Thus collections at `before` and `after` with the
-same `Tests` type and key `unit` have distinct names `before.check` and
-`after.check`. Ordinary object fields remain in the name. Thus `python310.unit` and
+The name is the field path from the nearest parent that is a collection item
+or the module root. It is not the path through the whole schema.
+The service item itself has `name=.`. Its check has `name=healthCheck.run`.
+A function on the services collection has only the project item boundary.
+For example, `name=services.all.up` has a project key and no service key.
+Ordinary object fields remain in the name. Thus `python310.unit` and
 `python310.slow` remain distinct. Artifact types do not add dimensions.
 
 A dash marks an absent coordinate. Empty keys, literal dashes, and control
@@ -96,7 +93,7 @@ Different types can have the same coordinates.
 To select an exact name while keeping the complete dimension table:
 
 ```sh
-go run ./core/artifact/flattening/cmd/flatten -only compose.projects.services.healthCheck.run \
+go run ./core/artifact/flattening/cmd/flatten -only healthCheck.run \
   < core/artifact/flattening/testdata/canonical-compose.json
 ```
 
@@ -109,15 +106,14 @@ a function on a collection, and an empty collection.
 `testdata/canonical-dagger.json` covers real `dagger/dagger` fields: docs
 `check` and `references.stale`, Python `python310.unit` and `python310.slow`,
 a Go package generator and its `generate.stale` check, and Go test items.
-`testdata/canonical-columns.json` shows distinct source fields sharing one
-collection type and the global label fallback for two collection types with
-the same item type.
+`testdata/canonical-columns.json` shows the global label fallback for two
+collection types with the same item type.
 The source of the Dagger fields is commit `7976c6f655aecf3d8de37326bfc09e01e666c98a`
 (November 6, 2026). The matching `.txt` files contain exact expected output.
 
 `CanonicalCoordinates` is the pure coordinate helper. It preserves supplied
-collection coordinates and assigns module and name coordinates. Supply its
-full module-root field path. `NewSchema` compiles the structural input chunks,
+collection coordinates and assigns module and name coordinates. Supply the
+local path. `NewSchema` compiles the structural input chunks,
 validates collection metadata, and assigns complete-schema column labels. This package
 has no engine runtime, GraphQL, or CLI framework dependency.
 

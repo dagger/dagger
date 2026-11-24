@@ -16,9 +16,10 @@ func TestArtifactAbsentPlanUsesCatalogAlias(t *testing.T) {
 	child.DimensionKeys = []*ArtifactDimensionKey{{Dimension: "Cell", Key: "left"}}
 	key := "left"
 	module := &ModTreeNode{Name: "grid", Parent: &ModTreeNode{}}
-	collection := &ModTreeNode{Name: "check", Parent: module}
-	child.Node = &ModTreeNode{Name: "get", Parent: collection, CollectionKey: &key,
+	collection := &ModTreeNode{Name: "cells", Parent: module}
+	item := &ModTreeNode{Name: "get", Parent: collection, CollectionKey: &key,
 		CollectionDimension: &ArtifactDimension{Identifier: "Cell", CollectionType: "Cell", ItemType: "Check"}}
+	child.Node = &ModTreeNode{Name: "check", Parent: item}
 
 	originalNames := map[string]string{"module": "module"}
 	parent.DimensionNames = originalNames

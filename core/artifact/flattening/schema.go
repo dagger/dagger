@@ -14,14 +14,6 @@ type Field struct {
 	Collections []Collection `json:"collections"`
 }
 
-func (f Field) FieldPath() []string {
-	var path []string
-	for _, collection := range f.Collections {
-		path = append(path, collection.Fields...)
-	}
-	return append(path, f.LocalPath...)
-}
-
 type Schema struct {
 	dimensions Dimensions
 	fields     map[string]schemaField
@@ -29,7 +21,7 @@ type Schema struct {
 
 type schemaField struct {
 	module      string
-	fieldPath   []string
+	localPath   []string
 	collections []string
 }
 
@@ -72,8 +64,8 @@ func (s *Schema) Dimensions() Dimensions {
 
 func (s *Schema) Coordinates(field Field, keys ...string) ([]Coordinate, error) {
 	known, exists := s.fields[fieldIdentity(field)]
-	name := strings.Join(field.FieldPath(), ".")
-	if name == "" {
+	name := strings.Join(field.LocalPath, ".")
+	if len(field.LocalPath) == 0 {
 		name = "."
 	}
 	if !exists {
@@ -86,7 +78,7 @@ func (s *Schema) Coordinates(field Field, keys ...string) ([]Coordinate, error) 
 	for i, key := range keys {
 		collections[i] = Coordinate{Dimension: known.collections[i], Key: key}
 	}
-	return CanonicalCoordinates(known.module, known.fieldPath, collections), nil
+	return CanonicalCoordinates(known.module, known.localPath, collections), nil
 }
 
 func compileField(field Field) (schemaField, Dimensions, error) {
@@ -99,7 +91,7 @@ func compileField(field Field) (schemaField, Dimensions, error) {
 	if err := validateFieldSegments(field.LocalPath); err != nil {
 		return schemaField{}, nil, err
 	}
-	compiled := schemaField{module: field.Module, fieldPath: field.FieldPath()}
+	compiled := schemaField{module: field.Module, localPath: slices.Clone(field.LocalPath)}
 	var dimensions Dimensions
 	for _, collection := range field.Collections {
 		if collection.Type == "" {

@@ -1230,7 +1230,7 @@ type persistedArtifact struct {
 	View             *persistedArtifactView `json:",omitempty"`
 }
 
-const artifactSnapshotVersion = 3
+const artifactSnapshotVersion = 4
 
 type persistedArtifacts struct {
 	Version         int

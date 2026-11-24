@@ -249,9 +249,6 @@ class LegacyCollectionSpellingTest(unittest.TestCase):
              'collections': [{'fields': ['myTests'], 'type': 'AppTests',
                               'itemType': 'AppTest'}], 'items': [['unit']]},
         ], format_entries(entries, 'flattening'))
-        ordinary_fields = (entries[0]['Collections'][0]['Fields']
-                           + entries[0]['LocalPath'])
-        self.assertEqual('myTests.healthCheck.run', '.'.join(ordinary_fields))
         self.assertEqual(before, captured)
 
     def test_missing_collection_field_metadata_is_rejected(self):
