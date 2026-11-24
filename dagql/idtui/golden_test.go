@@ -238,6 +238,9 @@ main = true
 				require.NotEmpty(t, db.Spans.Order)
 				resource := db.FindResource(semconv.ServiceName("dagger-cli"))
 				require.NotNil(t, resource)
+				// The CLI's resource has the SDK detectors' schema; another
+				// one would conflict with theirs and warn on every command.
+				require.Equal(t, semconv.SchemaURL, resource.SchemaURL())
 				attrs := resource.Attributes()
 				require.Contains(t, attrs, attribute.String("foo", "bar"))
 				require.Contains(t, attrs, attribute.String("fizz", "buzz"))

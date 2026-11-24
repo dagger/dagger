@@ -127,8 +127,8 @@ func InitTelemetry(ctx context.Context, engineInstanceID string) (context.Contex
 	otelResource, err := resource.New(ctx,
 		resource.WithHost(),
 		resource.WithAttributes(
-			semconv.ServiceNameKey.String("dagger-engine"),
-			semconv.ServiceVersionKey.String(engine.Version),
+			semconv.ServiceName("dagger-engine"),
+			semconv.ServiceVersion(engine.Version),
 			attribute.String("dagger.io/engine.name", engineName),
 			semconv.ServiceInstanceID(engineInstanceID),
 		),
