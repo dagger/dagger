@@ -392,4 +392,37 @@ type TestSplit {
   pub testEbpf: Void @check {
     testSpecific(["^TestCommandAccounting$", "^TestWorkloadAccounting$", "^TestExecSched$", "^TestImportChainOverlayTree$"], pkg: "./engine/ebpf/nettracer ./engine/ebpf/execsched ./engine/snapshots", ebpf: true, imageEntries: false)
   }
+
+  """
+  Compare this tree's API at the view of the newest release below
+  internal/version/VERSION with that release's own API: a client of the
+  release must see no difference
+  """
+  pub testReleasedSchema: Void @check {
+    let repo = git("https://github.com/dagger/dagger")
+    let dump = "core/schema/released_schema_test.go"
+    let run = ["go", "test", "./core/schema", "-run", "^TestWriteReleasedViewSDL$", "-count=1"]
+    let branch = engineDev(ws: self.ws).goEnv
+      .withEnvVariable("RELEASED_SCHEMA_OUT", "/tmp")
+      .withEnvVariable("RELEASED_SCHEMA_TAGS", repo.tags(patterns: ["refs/tags/v*"]).join(" "))
+      .withExec(run)
+    let version = branch.file("/tmp/version").contents
+    let released = engineDev(ws: self.ws)
+      .goEnv(source: repo.tag(version).tree.withFile(dump, self.ws.file(dump)))
+      .withEnvVariable("RELEASED_SCHEMA_OUT", "/tmp")
+      .withEnvVariable("RELEASED_SCHEMA_VERSION", version)
+      .withExec(run)
+    branch
+      .withFile("/tmp/released.graphqls", released.file("/tmp/schema.graphqls"))
+      .withEnvVariable("RELEASED_SCHEMA_VERSION", version)
+      .withExec(["sh", "-c", """
+        diff -u /tmp/released.graphqls /tmp/schema.graphqls || {
+          echo "Lines with - are the API the $RELEASED_SCHEMA_VERSION release serves; lines with + are the API this tree serves at the $RELEASED_SCHEMA_VERSION view." >&2
+          echo "Gate the new API with View(AfterVersion(<next release from internal/version/VERSION>))." >&2
+          exit 1
+        }
+      """])
+      .sync
+    null
+  }
 }
