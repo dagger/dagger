@@ -96,7 +96,7 @@ func ParseFunctionErrorReport(content []byte) (*FunctionErrorReport, error) {
 		}
 		var syntaxErr *json.SyntaxError
 		if strings.HasPrefix(text, "{") && errors.As(err, &syntaxErr) {
-			return nil, fmt.Errorf("invalid JSON at offset %d: %s", syntaxErr.Offset, syntaxErr)
+			return nil, fmt.Errorf("invalid JSON at offset %d: %w", syntaxErr.Offset, syntaxErr)
 		}
 		if strings.HasPrefix(text, "{") && errors.Is(err, io.ErrUnexpectedEOF) {
 			return nil, errors.New("invalid JSON: unexpected end of the content")
