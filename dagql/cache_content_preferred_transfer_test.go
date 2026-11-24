@@ -60,9 +60,9 @@ func contentPreferredTestRecipe(t *testing.T, c *Cache, res AnyResult) digest.Di
 // gave it, as a warm engine does from the memo on its own entry: although
 // the fresh engine built the service's file itself first and taught it a
 // content digest the producer never knew, so a walk of the service's frame
-// over its own refs comes out another way. ne6's docs-only edit: the CLI
-// binary's content made the test engine's hostname new, and the test run
-// below it ran again.
+// over its own refs comes out another way. Otherwise a fresh engine that
+// built the CLI binary itself would give a test engine service a new
+// hostname, and every test run over that service would run again.
 func TestFreshEngineGivesAServiceTheContentPreferredDigestItsProducerUsed(t *testing.T) {
 	t.Parallel()
 	actx, a, asrv := transferTestCache(t)
