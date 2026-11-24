@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use clap::{Arg, ArgMatches};
 use dagger_codegen::generate;
+use dagger_codegen::naming::NamesFile;
 use dagger_codegen::rust::RustGenerator;
 use dagger_sdk::core::introspection;
 
@@ -16,6 +17,11 @@ impl GenerateCommand {
         clap::Command::new("generate")
             .arg(Arg::new("introspection-json").required(true))
             .arg(Arg::new("output").long("output"))
+            .arg(Arg::new("names").long("names").help(
+                "names file written by `codegen introspect --names-out`, with \
+                 --names PASCAL:CAPITALIZED,SNAKE:UPPERCASE (without it, names \
+                 are converted locally, like for schemas before v1.0.0)",
+            ))
     }
 
     pub async fn exec(arg_matches: &ArgMatches) -> eyre::Result<()> {
@@ -24,9 +30,13 @@ impl GenerateCommand {
         let schema =
             serde_json::from_str::<introspection::IntrospectionResponse>(&introspection_json)
                 .unwrap();
+        let names = match arg_matches.get_one::<String>("names") {
+            Some(path) => serde_json::from_str::<NamesFile>(&fs::read_to_string(path)?)?,
+            None => NamesFile::new(),
+        };
         let code = generate(
             schema.into_schema().schema.unwrap(),
-            Arc::new(RustGenerator {}),
+            Arc::new(RustGenerator::with_names(names)),
         )?;
 
         if let Some(output) = arg_matches.get_one::<String>("output") {

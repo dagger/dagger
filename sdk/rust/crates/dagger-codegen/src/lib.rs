@@ -2,6 +2,7 @@
 
 mod functions;
 mod generator;
+pub mod naming;
 pub mod rust;
 pub mod utility;
 mod visitor;
@@ -33,13 +34,18 @@ mod tests {
     use dagger_sdk::core::introspection::IntrospectionResponse;
 
     use super::generate;
+    use crate::naming::NamesFile;
     use crate::rust::RustGenerator;
 
     fn generate_from_json(json: &str) -> String {
+        generate_from_json_with_names(json, NamesFile::new())
+    }
+
+    fn generate_from_json_with_names(json: &str, names: NamesFile) -> String {
         let schema = serde_json::from_str::<IntrospectionResponse>(json).unwrap();
         generate(
             schema.into_schema().schema.unwrap(),
-            Arc::new(RustGenerator {}),
+            Arc::new(RustGenerator::with_names(names)),
         )
         .unwrap()
     }
@@ -808,5 +814,357 @@ mod tests {
             code.contains("pub name: Option<&'a str>,"),
             "expected optional string field to borrow with &'a str"
         );
+    }
+
+    /// The names of [`engine_names_schema`] as the engine formats them, in the
+    /// formats Rust codegen uses: a names file.
+    fn engine_names() -> NamesFile {
+        let pascal = [
+            ("ID", "Id"),
+            ("Query", "Query"),
+            ("JSONValue", "JsonValue"),
+            ("jsonValue", "JsonValue"),
+            ("prerequisiteSHAs", "PrerequisiteShas"),
+            ("experimentalWithAllGPUs", "ExperimentalWithAllGpus"),
+            ("insecureSkipTLSVerify", "InsecureSkipTlsVerify"),
+            ("LLMInput", "LlmInput"),
+            ("ImageMediaTypes", "ImageMediaTypes"),
+            ("OCI", "Oci"),
+            ("ref", "Ref"),
+            ("formatIdentifiers", "FormatIdentifiers"),
+        ];
+        let snake = [
+            ("ID", "id"),
+            ("Query", "query"),
+            ("JSONValue", "json_value"),
+            ("jsonValue", "json_value"),
+            ("prerequisiteSHAs", "prerequisite_shas"),
+            ("experimentalWithAllGPUs", "experimental_with_all_gpus"),
+            ("insecureSkipTLSVerify", "insecure_skip_tls_verify"),
+            ("LLMInput", "llm_input"),
+            ("ImageMediaTypes", "image_media_types"),
+            ("OCI", "oci"),
+            ("ref", "ref"),
+            ("formatIdentifiers", "format_identifiers"),
+        ];
+        let map = |names: &[(&str, &str)]| {
+            names
+                .iter()
+                .map(|(name, formatted)| (name.to_string(), formatted.to_string()))
+                .collect()
+        };
+        [
+            ("PASCAL:CAPITALIZED".to_string(), map(&pascal)),
+            ("SNAKE:UPPERCASE".to_string(), map(&snake)),
+        ]
+        .into_iter()
+        .collect()
+    }
+
+    /// Schema whose names the guessing converter splits badly. With
+    /// `format_identifiers`, its Query has `formatIdentifiers`, the gate for
+    /// engine-formatted names.
+    fn engine_names_schema(format_identifiers: bool) -> String {
+        let query_fields = if format_identifiers {
+            r#",
+          {
+            "name": "formatIdentifiers", "description": null, "args": [],
+            "type": {"kind": "NON_NULL", "name": null,
+              "ofType": {"kind": "SCALAR", "name": "String", "ofType": null}},
+            "isDeprecated": false, "deprecationReason": null
+          }"#
+        } else {
+            ""
+        };
+
+        format!(
+            r#"{{
+  "__schema": {{
+    "queryType": {{"name": "Query"}},
+    "mutationType": null,
+    "subscriptionType": null,
+    "types": [
+      {{
+        "kind": "SCALAR", "name": "ID", "description": null,
+        "fields": null, "inputFields": null, "interfaces": null,
+        "enumValues": null, "possibleTypes": null
+      }},
+      {{
+        "kind": "SCALAR", "name": "String", "description": null,
+        "fields": null, "inputFields": null, "interfaces": null,
+        "enumValues": null, "possibleTypes": null
+      }},
+      {{
+        "kind": "SCALAR", "name": "Boolean", "description": null,
+        "fields": null, "inputFields": null, "interfaces": null,
+        "enumValues": null, "possibleTypes": null
+      }},
+      {{
+        "kind": "ENUM", "name": "ImageMediaTypes", "description": null,
+        "fields": null, "inputFields": null, "interfaces": null,
+        "possibleTypes": null,
+        "enumValues": [
+          {{"name": "OCI", "description": null, "isDeprecated": false, "deprecationReason": null}}
+        ]
+      }},
+      {{
+        "kind": "INPUT_OBJECT", "name": "LLMInput", "description": null,
+        "fields": null, "interfaces": null, "enumValues": null, "possibleTypes": null,
+        "inputFields": [
+          {{
+            "name": "prerequisiteSHAs", "description": null,
+            "type": {{"kind": "NON_NULL", "name": null,
+              "ofType": {{"kind": "SCALAR", "name": "String", "ofType": null}}}},
+            "defaultValue": null
+          }},
+          {{
+            "name": "ref", "description": null,
+            "type": {{"kind": "NON_NULL", "name": null,
+              "ofType": {{"kind": "SCALAR", "name": "String", "ofType": null}}}},
+            "defaultValue": null
+          }}
+        ]
+      }},
+      {{
+        "kind": "OBJECT", "name": "JSONValue", "description": null,
+        "fields": [
+          {{
+            "name": "id", "description": null, "args": [],
+            "type": {{"kind": "NON_NULL", "name": null,
+              "ofType": {{"kind": "SCALAR", "name": "ID", "ofType": null}}}},
+            "isDeprecated": false, "deprecationReason": null
+          }},
+          {{
+            "name": "prerequisiteSHAs", "description": null, "args": [],
+            "type": {{"kind": "NON_NULL", "name": null,
+              "ofType": {{"kind": "SCALAR", "name": "String", "ofType": null}}}},
+            "isDeprecated": false, "deprecationReason": null
+          }},
+          {{
+            "name": "experimentalWithAllGPUs", "description": null,
+            "args": [
+              {{
+                "name": "prerequisiteSHAs", "description": null,
+                "type": {{"kind": "NON_NULL", "name": null,
+                  "ofType": {{"kind": "SCALAR", "name": "String", "ofType": null}}}},
+                "defaultValue": null
+              }},
+              {{
+                "name": "insecureSkipTLSVerify", "description": null,
+                "type": {{"kind": "SCALAR", "name": "Boolean", "ofType": null}},
+                "defaultValue": null
+              }}
+            ],
+            "type": {{"kind": "NON_NULL", "name": null,
+              "ofType": {{"kind": "OBJECT", "name": "JSONValue", "ofType": null}}}},
+            "isDeprecated": false, "deprecationReason": null
+          }}
+        ],
+        "inputFields": null, "interfaces": [],
+        "enumValues": null, "possibleTypes": null
+      }},
+      {{
+        "kind": "OBJECT", "name": "Query", "description": null,
+        "fields": [
+          {{
+            "name": "jsonValue", "description": null, "args": [],
+            "type": {{"kind": "NON_NULL", "name": null,
+              "ofType": {{"kind": "OBJECT", "name": "JSONValue", "ofType": null}}}},
+            "isDeprecated": false, "deprecationReason": null
+          }}{query_fields}
+        ],
+        "inputFields": null, "interfaces": [],
+        "enumValues": null, "possibleTypes": null
+      }}
+    ],
+    "directives": []
+  }}
+}}"#
+        )
+    }
+
+    fn lines_with(code: &str, needle: &str) -> String {
+        code.lines()
+            .filter(|l| l.contains(needle))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// Whether `code` contains `needle`, ignoring whitespace: the generated
+    /// code is only formatted by rustfmt later.
+    fn has(code: &str, needle: &str) -> bool {
+        fn squash(s: &str) -> String {
+            s.chars().filter(|c| !c.is_whitespace()).collect()
+        }
+        squash(code).contains(&squash(needle))
+    }
+
+    fn generate_with_engine_names() -> String {
+        generate_from_json_with_names(&engine_names_schema(true), engine_names())
+    }
+
+    #[test]
+    fn engine_names_name_rust_identifiers() {
+        let code = generate_with_engine_names();
+
+        // Types: PascalCase with capitalized acronyms.
+        assert!(has(&code, "pub struct JsonValue {"), "{code}");
+        assert!(has(&code, "pub struct LlmInput {"), "{code}");
+        assert!(has(&code, "pub enum ImageMediaTypes {"), "{code}");
+        assert!(has(&code, "Oci,"), "{}", lines_with(&code, "Oci"));
+        // Methods and arguments: snake_case, as the engine formats them.
+        assert!(
+            has(&code, "pub async fn prerequisite_shas(&self"),
+            "{}",
+            lines_with(&code, "prerequisite")
+        );
+        assert!(
+            has(&code, "pub fn experimental_with_all_gpus(&self"),
+            "{}",
+            lines_with(&code, "experimental")
+        );
+        assert!(
+            has(&code, "prerequisite_shas: impl Into<String>"),
+            "{}",
+            lines_with(&code, "prerequisite")
+        );
+        // Options structs and their fields.
+        assert!(
+            has(&code, "pub struct JsonValueExperimentalWithAllGpusOpts {"),
+            "{}",
+            lines_with(&code, "Opts")
+        );
+        assert!(
+            has(&code, "pub insecure_skip_tls_verify: Option<bool>,"),
+            "{}",
+            lines_with(&code, "insecure")
+        );
+    }
+
+    #[test]
+    fn engine_names_keep_wire_names() {
+        let code = generate_with_engine_names();
+
+        // Selections and arguments use the schema's names.
+        assert!(has(&code, r#"self.selection.select("prerequisiteSHAs")"#));
+        assert!(has(
+            &code,
+            r#"self.selection.select("experimentalWithAllGPUs")"#
+        ));
+        assert!(has(
+            &code,
+            r#"query.arg("prerequisiteSHAs", prerequisite_shas.into())"#
+        ));
+        assert!(has(
+            &code,
+            r#"query.arg("insecureSkipTLSVerify", insecure_skip_tls_verify)"#
+        ));
+        assert!(has(
+            &code,
+            r#"fn graphql_type() -> &'static str { "JSONValue" }"#
+        ));
+        // Enum variants serialize as the schema's values.
+        assert!(
+            has(&code, r#"#[serde(rename = "OCI")] Oci,"#),
+            "{}",
+            lines_with(&code, "OCI")
+        );
+        // Input object fields keep the wire name serde derived before.
+        assert!(
+            has(
+                &code,
+                r#"#[serde(rename = "prerequisite_sh_as")] pub prerequisite_shas: String,"#
+            ),
+            "{}",
+            lines_with(&code, "prerequisite")
+        );
+        // Unchanged names get no rename, and keywords stay escaped.
+        assert!(has(&code, "pub r#ref: String,"));
+        assert!(!has(&code, r#"#[serde(rename = "ref")]"#));
+    }
+
+    #[test]
+    fn engine_names_keep_old_names_as_deprecated_aliases() {
+        let code = generate_with_engine_names();
+
+        assert!(
+            has(
+                &code,
+                r#"#[deprecated(note = "use prerequisite_shas")] pub async fn prerequisite_sh_as(&self"#
+            ),
+            "{}",
+            lines_with(&code, "prerequisite")
+        );
+        assert!(has(&code, "self.prerequisite_shas().await"));
+        assert!(
+            has(
+                &code,
+                r#"#[deprecated(note = "use experimental_with_all_gpus")] pub fn experimental_with_all_gp_us(&self"#
+            ),
+            "{}",
+            lines_with(&code, "experimental")
+        );
+        assert!(has(
+            &code,
+            "self.experimental_with_all_gpus(prerequisite_shas)"
+        ));
+        // Only async methods are awaited.
+        assert!(!has(
+            &code,
+            "self.experimental_with_all_gpus(prerequisite_shas).await"
+        ));
+        assert!(
+            has(
+                &code,
+                r#"#[deprecated(note = "use experimental_with_all_gpus")] pub fn experimental_with_all_gp_us_opts(&self"#
+            ),
+            "{}",
+            lines_with(&code, "experimental")
+        );
+        assert!(has(
+            &code,
+            "self.experimental_with_all_gpus_opts(prerequisite_shas, opts)"
+        ));
+        assert!(
+            has(
+                &code,
+                r#"#[deprecated(note = "use JsonValueExperimentalWithAllGpusOpts")] pub type JsonValueExperimentalWithAllGpUsOpts = JsonValueExperimentalWithAllGpusOpts;"#
+            ),
+            "{}",
+            lines_with(&code, "Opts")
+        );
+        // Names that didn't change get no alias.
+        assert_eq!(code.matches("fn json_value(").count(), 1);
+    }
+
+    /// Code generated with the legacy converter: no engine-formatted names,
+    /// no aliases, no renames.
+    fn assert_guessed_names(code: &str) {
+        assert!(has(code, "pub async fn prerequisite_sh_as(&self"));
+        assert!(has(code, "pub fn experimental_with_all_gp_us(&self"));
+        assert!(has(
+            code,
+            "pub struct JsonValueExperimentalWithAllGpUsOpts {"
+        ));
+        assert!(has(code, "pub prerequisite_sh_as: String,"));
+        assert!(!code.contains("deprecated"));
+        assert!(!code.contains("serde(rename = \"prerequisite"));
+        assert!(!code.contains("prerequisite_shas"));
+        assert!(has(code, "pub struct JsonValue {"));
+    }
+
+    #[test]
+    fn missing_engine_names_keep_guessed_names() {
+        assert_guessed_names(&generate_from_json(&engine_names_schema(true)));
+    }
+
+    #[test]
+    fn engine_names_need_format_identifiers() {
+        // A schema without Query.formatIdentifiers keeps the legacy
+        // converter, even with names.
+        assert_guessed_names(&generate_from_json_with_names(
+            &engine_names_schema(false),
+            engine_names(),
+        ));
     }
 }
