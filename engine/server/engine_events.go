@@ -122,9 +122,20 @@ func (e *engineEventEmitter) Close(ctx context.Context) error {
 		return nil
 	case <-ctx.Done():
 		e.cancelEmit()
+		// The drain now only counts what is left as dropped; wait for it, so
+		// Dropped includes those, but not on a logger that ignores the
+		// cancellation.
+		select {
+		case <-e.done:
+		case <-time.After(engineEventDrainGrace):
+		}
 		return context.Cause(ctx)
 	}
 }
+
+// engineEventDrainGrace bounds how long Close waits for the drain to count
+// the events left once its context ended.
+const engineEventDrainGrace = time.Second
 
 func (e *engineEventEmitter) run(logger log.Logger) {
 	defer close(e.done)

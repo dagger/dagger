@@ -67,7 +67,10 @@ func init() {
 // Cloud: a logger provider of its own, written only by the engine's event
 // emitter.
 type engineEventExport struct {
-	provider     *sdklog.LoggerProvider
+	provider *sdklog.LoggerProvider
+	// processor is the provider's processor, for Shutdown to shut down
+	// when the provider can't (see enginetel.ShutdownLoggerProvider).
+	processor    sdklog.Processor
 	shutdownOnce sync.Once
 	shutdownErr  error
 }
@@ -89,7 +92,7 @@ func (e *engineEventExport) Shutdown(ctx context.Context) error {
 		return nil
 	}
 	e.shutdownOnce.Do(func() {
-		e.shutdownErr = e.provider.Shutdown(ctx)
+		e.shutdownErr = enginetel.ShutdownLoggerProvider(ctx, e.provider, e.processor)
 	})
 	return e.shutdownErr
 }
@@ -178,10 +181,13 @@ func newEngineEventExport(ctx context.Context, otelResource *resource.Resource, 
 		slog.Debug("shut down unused Cloud metric exporter", "error", err)
 	}
 	processor := enginetel.NewBlockingLogProcessor(logs, engineEventExportQueueSize, engineEventExportBatchSize, telemetry.NearlyImmediate)
-	return &engineEventExport{provider: sdklog.NewLoggerProvider(
-		sdklog.WithResource(otelResource),
-		sdklog.WithProcessor(processor),
-	)}
+	return &engineEventExport{
+		provider: sdklog.NewLoggerProvider(
+			sdklog.WithResource(otelResource),
+			sdklog.WithProcessor(processor),
+		),
+		processor: processor,
+	}
 }
 
 // serverEngineEventExport returns the export as the server takes it: nil, not
