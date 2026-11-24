@@ -90,7 +90,6 @@ module.exports = {
       items: [
         "config/includes",
         "config/user",
-        "config/llm",
         "config/module-wiring",
         "config/migrate-dagger-json",
       ],
