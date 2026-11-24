@@ -185,6 +185,7 @@ module.exports = {
             "reference/sdks/java",
             "reference/sdks/php",
             "reference/sdks/elixir",
+            "reference/sdks/ruby",
           ],
         },
         {

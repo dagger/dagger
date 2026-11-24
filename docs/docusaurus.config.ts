@@ -243,6 +243,7 @@ const config: Config = {
         "toml",
         "powershell",
         "java",
+        "ruby",
       ],
       // One theme for both modes: its colours are CSS variables that flip
       // with html[data-theme]. See src/prism/theme.ts.
