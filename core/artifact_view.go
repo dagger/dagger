@@ -508,7 +508,11 @@ func (d *artifactViewDiscovery) validate(receiver *Artifact, keys []collectionKe
 			return err
 		}
 		if id.EngineResultID() == original.source {
-			expected = d.view.state.Keys[i]
+			// A subset can share its base with another route. Keep only the
+			// selected keys that this receiver originally contained.
+			expected = slices.DeleteFunc(slices.Clone(original.keys), func(key string) bool {
+				return !slices.Contains(d.view.state.Keys[i], key)
+			})
 			break
 		}
 	}
@@ -525,7 +529,7 @@ func (d *artifactViewDiscovery) validate(receiver *Artifact, keys []collectionKe
 // record selects the keys of node's collection value by their coordinates on
 // node's route. One value can be on several routes of one rule: it keeps the
 // keys that any of them selects. Different rules for one value intersect.
-func (d *artifactViewDiscovery) record(receiver *Artifact, result dagql.AnyObjectResult, node *ModTreeNode, keys []collectionKey) error {
+func (d *artifactViewDiscovery) record(ctx context.Context, receiver *Artifact, result dagql.AnyObjectResult, node *ModTreeNode, keys []collectionKey) error {
 	var selected []string
 	var dimension string
 	filtered := false
@@ -538,6 +542,19 @@ func (d *artifactViewDiscovery) record(receiver *Artifact, result dagql.AnyObjec
 				}
 			}
 			break
+		}
+	}
+	// Computed aliases have their own result IDs, but carry the original
+	// collection as their base. Scope that base once so reading a shared
+	// stored field does not erase keys selected through one of its aliases.
+	if obj, ok := dagql.UnwrapAs[*ModuleObject](result); ok && obj.CollectionBase != nil {
+		srv, err := CurrentDagqlServer(ctx)
+		if err != nil {
+			return err
+		}
+		result, err = srv.ToSelectable(dagql.WithResultScope(ctx, nil), obj.CollectionBase)
+		if err != nil {
+			return err
 		}
 	}
 	id, err := result.ID()
@@ -566,9 +583,9 @@ func (d *artifactViewDiscovery) record(receiver *Artifact, result dagql.AnyObjec
 		if sourceID.EngineResultID() == id.EngineResultID() {
 			kept := d.view.state.Keys[i]
 			if d.rules[i] == dimension {
-				d.view.state.Keys[i] = slices.DeleteFunc(slices.Clone(original.keys), func(key string) bool {
-					return !slices.Contains(kept, key) && !slices.Contains(selected, key)
-				})
+				union := append(slices.Clone(kept), selected...)
+				slices.Sort(union)
+				d.view.state.Keys[i] = slices.Compact(union)
 			} else {
 				d.view.state.Keys[i] = slices.DeleteFunc(kept, func(key string) bool { return !slices.Contains(selected, key) })
 			}

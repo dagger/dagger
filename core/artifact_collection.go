@@ -851,7 +851,7 @@ func expandArtifactNode(ctx context.Context, node *ModTreeNode, template *Artifa
 				var value dagql.AnyObjectResult
 				value, keys, err = artifactCollection(ctx, receiver)
 				if err == nil {
-					err = discovery.record(receiver, value, node, keys)
+					err = discovery.record(ctx, receiver, value, node, keys)
 				}
 			} else {
 				keys, err = collectionKeys(ctx, receiver)
