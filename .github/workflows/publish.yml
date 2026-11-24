@@ -61,7 +61,7 @@ jobs:
             --pypi-token=env://PYPI_TOKEN \
             --pypi-repo="$PYPI_REPO" \
             --npm-token=env://NPM_TOKEN \
-            --hex-apikey=env://HEX_API_KEY \
+            --hex-api-key=env://HEX_API_KEY \
             --cargo-registry-token=env://CARGO_REGISTRY_TOKEN \
             --aws-access-key-id=env://AWS_ACCESS_KEY_ID \
             --aws-secret-access-key=env://AWS_SECRET_ACCESS_KEY \

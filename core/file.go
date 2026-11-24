@@ -36,7 +36,13 @@ import (
 type File struct {
 	filesystemOutput
 	transferPending *persistedFilePayload
-	Platform        Platform
+	// transferShell is set when the file decoded from another engine's record
+	// without its recipe, and never changes after.
+	transferShell bool
+	// completedElsewhere is set when the file decoded from another engine's
+	// record of an operation that completed there, and never changes after.
+	completedElsewhere bool
+	Platform           Platform
 
 	// Services necessary to provision the file.
 	Services ServiceBindings
@@ -317,6 +323,11 @@ func (file *File) persistedPayloadLocked(ctx context.Context, enc *dagql.Persist
 	}
 	if file.Lazy != nil {
 		payload.Form = persistedFileFormLazy
+		if file.completedElsewhere {
+			// Its operation completed on the engine it came from, though not
+			// here: a record of it says so, as the one it came in did.
+			payload.OperationState = "evaluated"
+		}
 		payload.LazyKind, payload.LazyJSON, err = encodePersistedFileLazy(ctx, enc, file.Lazy)
 		if err != nil {
 			return persistedFilePayload{}, nil, err
@@ -348,6 +359,15 @@ func decodePersistedFileWithSnapshotRole(ctx context.Context, dec *dagql.Persist
 		file.OutputRev++ // private decoded output, before publication
 		file.outputMu.Unlock()
 	}()
+	file.completedElsewhere = persisted.OperationState == "evaluated"
+	// A record from another engine that holds no download address decodes
+	// as local persistence decodes a pending file: its recipe armed.
+	if persisted.Form == transferPending && persisted.LazyKind != "" && dec.ArmRecipe() {
+		if err := foreignFamilyCodec("File").ValidateForeign(dagql.PersistedPayloadVisit{Payload: payload, Call: dec.Call()}); err != nil {
+			return nil, err
+		}
+		persisted.Form = persistedFileFormLazy
+	}
 	if persisted.File != "" && persisted.Form != transferPending {
 		file.SetPath(persisted.File)
 	}
@@ -357,6 +377,7 @@ func decodePersistedFileWithSnapshotRole(ctx context.Context, dec *dagql.Persist
 			return nil, err
 		}
 		file.transferPending = &persisted
+		file.transferShell = true
 		if persisted.ValueKnown {
 			file.SetPath(persisted.File)
 		}
@@ -391,6 +412,15 @@ func decodePersistedFileWithSnapshotRole(ctx context.Context, dec *dagql.Persist
 func (*File) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	return decodePersistedFileWithSnapshotRole(ctx, dec, payload, "snapshot")
 }
+
+// PartTransferShell reports whether the file decoded from another engine's
+// record without its recipe, so that its content comes only through part
+// acquisition.
+func (file *File) PartTransferShell() bool { return file.transferShell }
+
+// OperationCompletedElsewhere reports whether the file decoded from another
+// engine's record of an operation that completed there.
+func (file *File) OperationCompletedElsewhere() bool { return file.completedElsewhere }
 
 type FileBlobLazy struct {
 	LazyState
@@ -1325,6 +1355,14 @@ func (file *File) WithName(ctx context.Context, parent dagql.ObjectResult[*File]
 		dst, err := RootPathWithoutFinalSymlink(root, destPath)
 		if err != nil {
 			return err
+		}
+		// A File sees nothing next to it, so a directory at the new name
+		// mustn't make the rename fail: it is replaced, as a file there is
+		// by the rename itself.
+		if info, err := os.Lstat(dst); err == nil && info.IsDir() {
+			if err := os.RemoveAll(dst); err != nil {
+				return TrimErrPathPrefix(err, root)
+			}
 		}
 		err = os.Rename(src, dst)
 		if err != nil {

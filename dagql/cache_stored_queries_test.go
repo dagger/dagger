@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 
+	"github.com/dagger/dagger/dagql/call"
+	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -36,6 +38,56 @@ func TestEquivalentEntries(t *testing.T) {
 	_, cloud, first, second := storedQueriesTestClass(t)
 	require.Equal(t, []uint64{first, second}, cloud.EquivalentEntries(testDigest("same-content").String()))
 	require.Nil(t, cloud.EquivalentEntries(testDigest("no-such-digest").String()))
+}
+
+// TermEntries finds an entry by its term where its recipe is unknown: the
+// same operation over an input another digest names, once the two are one
+// class, as the structural lookup finds it. An input no class has, or a term
+// no entry has, finds nothing.
+func TestTermEntries(t *testing.T) {
+	t.Parallel()
+	ctx := cacheTestContext(t.Context())
+	c, err := NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	ctx = ContextWithCache(ctx, c)
+	run := func(frame *ResultCall, v int) (uint64, *CacheDecision) {
+		t.Helper()
+		req := &CallRequest{ResultCall: frame, CacheEvidence: NewCacheDecision()}
+		res, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, req, func(context.Context) (AnyResult, error) {
+			return cacheTestIntResult(frame, v), nil
+		})
+		require.NoError(t, err)
+		number, err := c.PersistedResultID(res)
+		require.NoError(t, err)
+		return number, req.CacheEvidence
+	}
+	overInput := func(src digest.Digest) *ResultCall {
+		frame := cacheTestIntCall("term-entries-op")
+		frame.Args = []*ResultCallArg{{
+			Name: "src",
+			Value: &ResultCallLiteral{
+				Kind:                 ResultCallLiteralKindDigestedString,
+				DigestedStringValue:  "witnessed",
+				DigestedStringDigest: src,
+			},
+		}}
+		return frame
+	}
+	digA, digB := digest.FromString("term-entries-input-a"), digest.FromString("term-entries-input-b")
+	number, ev := run(overInput(digA), 1)
+	require.Equal(t, []digest.Digest{digA}, ev.StructuralInputs)
+
+	require.Nil(t, c.TermEntries(ev.SelfDigest, []digest.Digest{digB}), "digB is in no class yet")
+	run(cacheTestIntCall("term-entries-teacher",
+		call.ExtraDigest{Label: call.ExtraDigestLabelContent, Digest: digA},
+		call.ExtraDigest{Label: call.ExtraDigestLabelContent, Digest: digB},
+	), 2)
+
+	require.Nil(t, c.EquivalentEntries(cacheTestCallDigest(overInput(digB)).String()), "the recipe over digB is unknown")
+	require.Equal(t, []uint64{number}, c.TermEntries(ev.SelfDigest, []digest.Digest{digB}))
+	require.Equal(t, []uint64{number}, c.TermEntries(ev.SelfDigest, []digest.Digest{digA}))
+	require.Nil(t, c.TermEntries(digest.FromString("another operation"), []digest.Digest{digB}))
+	require.Nil(t, c.TermEntries(ev.SelfDigest, []digest.Digest{digest.FromString("unknown input")}))
 }
 
 // A stored part is available while the value it belongs to is: the entry's

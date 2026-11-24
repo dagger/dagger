@@ -3,9 +3,12 @@ package main
 import (
 	"context"
 	"dagger/release/internal/dagger"
+	"dagger/release/internal/dagger/clients/gh"
 	"fmt"
 	"net/url"
 	"strings"
+
+	"dagger.io/dagger/core"
 )
 
 // Publish a Github release
@@ -45,7 +48,7 @@ func (r Release) githubRelease(
 
 	if dryRun {
 		// Check that the src commit is in the repo
-		_, err = dag.
+		_, err = core.
 			Git(fmt.Sprintf("https://%s/%s", githubHost, githubRepo)).
 			Commit(src).
 			Tree().
@@ -64,20 +67,19 @@ func (r Release) githubRelease(
 		return nil
 	}
 
-	gh := dag.Gh(dagger.GhOpts{
+	return gh.New(gh.GhOpts{
 		Repo:   githubRepo,
 		Token:  token,
 		Host:   githubHost,
 		CaCert: githubCACert,
-	})
-	return gh.Release().Create(
+	}).Release().Create(
 		ctx,
 		dest,
 		dest,
-		dagger.GhReleaseCreateOpts{
+		gh.GhReleaseCreateOpts{
 			Target:    src,
 			NotesFile: notes,
-			Latest:    dagger.GhLatestFalse,
+			Latest:    gh.GhLatestFalse,
 			// Rerunning a release must not fail on components whose
 			// GitHub release a previous attempt already created.
 			UpdateExisting: true,

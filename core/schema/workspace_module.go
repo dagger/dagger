@@ -3,12 +3,50 @@ package schema
 import (
 	"context"
 	"fmt"
+	"maps"
 	"path/filepath"
+	"slices"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 )
+
+func init() {
+	core.SetWorkspaceModulesLoader(loadInstalledWorkspaceModules)
+}
+
+// loadInstalledWorkspaceModules loads every module installed in ws as
+// Workspace.artifacts does (workspaceTargetModules), best effort; see
+// core.LoadWorkspaceModules.
+func loadInstalledWorkspaceModules(ctx context.Context, ws dagql.ObjectResult[*core.Workspace]) (*core.InstalledWorkspaceModules, error) {
+	ctx, err := withWorkspaceClientContext(ctx, ws.Self())
+	if err != nil {
+		return nil, err
+	}
+	loaded, failures, err := (&workspaceSchema{}).workspaceTargetModules(ctx, ws, nil, core.ModuleLoadBestEffort)
+	if err != nil {
+		return nil, err
+	}
+	removed, err := workspaceRemovedModuleNames(ctx, ws.Self())
+	if err != nil {
+		return nil, err
+	}
+	// A module that no longer loads (its source broken by a pending edit)
+	// is gone from the workspace's API, not left at the copy the session
+	// served before.
+	for _, failure := range failures {
+		if removed == nil {
+			removed = map[string]bool{}
+		}
+		removed[canonicalOverlayModuleName(failure.Name)] = true
+	}
+	return &core.InstalledWorkspaceModules{
+		Loaded:   loaded,
+		Failures: failures,
+		Removed:  slices.Sorted(maps.Keys(removed)),
+	}, nil
+}
 
 func (s *workspaceSchema) workspaceModules(
 	ctx context.Context,

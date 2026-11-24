@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -86,13 +87,16 @@ func (m *MCP) skillSources() []skillSource {
 	return append(sources, workspaceSkillSource{m: m})
 }
 
+// dangSkillName is the engine-embedded skill teaching Dang.
+const dangSkillName = "dang-language"
+
 // engineSkills exposes the engine-embedded skills. Only skills useful for writing
 // Dang against a workspace are surfaced; the compiler-contributor skills in the
 // embed (builtin-dsl, dang-internals, editor-syntaxes, testing) are kept out of
 // the model's view via the allowlist.
 var engineSkills = embeddedSkillSource{
 	fsys:  dangskills.FS,
-	allow: []string{"dang-language"},
+	allow: []string{dangSkillName},
 }
 
 // daggerSkills exposes the Dagger-authored skills embedded in this repo
@@ -554,7 +558,73 @@ func (m *MCP) loadSkillTools(srv *dagql.Server, allTools *LLMToolSet) {
 			Name string
 			File string `default:""`
 		}) (any, error) {
-			return readSkill(ctx, sources, args.Name, args.File)
+			content, err := readSkill(ctx, sources, args.Name, args.File)
+			if err != nil {
+				return nil, err
+			}
+			m.noteSkillRead(args.Name)
+			return content, nil
 		}),
 	})
+}
+
+// noteSkillRead records that this conversation read a skill (any of its
+// files) with ReadSkill, for hasReadSkill to see before the call is on the
+// record: later in the same turn, or with no record at all (dagger mcp).
+func (m *MCP) noteSkillRead(name string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.readSkills == nil {
+		m.readSkills = map[string]bool{}
+	}
+	m.readSkills[name] = true
+}
+
+// hasReadSkill reports whether this conversation has read the named skill
+// with ReadSkill: a ReadSkill call naming it succeeded, on the record of the
+// conversation dispatching this step's calls or earlier on this MCP. It is
+// internal for now, behind tool output such as the Dang tools' nudge toward
+// the dang-language skill.
+func (m *MCP) hasReadSkill(name string) bool {
+	m.mu.Lock()
+	read := m.readSkills[name]
+	conv := m.selfLLM
+	m.mu.Unlock()
+	if read {
+		return true
+	}
+	if conv.Self() == nil {
+		conv = m.scopeBase
+	}
+	return conv.Self() != nil && messagesReadSkill(conv.Self().Messages, name)
+}
+
+// messagesReadSkill reports whether a conversation's messages hold a
+// ReadSkill call naming the skill whose result did not fail.
+func messagesReadSkill(messages []*LLMMessage, name string) bool {
+	failed := map[string]bool{}
+	for _, msg := range messages {
+		for _, block := range msg.Content {
+			if block != nil && block.Kind == LLMContentToolResult {
+				failed[block.CallID] = block.Errored
+			}
+		}
+	}
+	for _, msg := range messages {
+		for _, block := range msg.Content {
+			if block == nil || block.Kind != LLMContentToolCall || block.ToolName != "ReadSkill" {
+				continue
+			}
+			var args struct {
+				Name string `json:"name"`
+			}
+			if json.Unmarshal(block.Arguments, &args) != nil || args.Name != name {
+				continue
+			}
+			if errored, done := failed[block.CallID]; done && !errored {
+				return true
+			}
+		}
+	}
+	return false
 }

@@ -17,12 +17,14 @@ import (
 	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/telemetryattrs"
+	"github.com/dagger/dagger/engine/wcprof"
 )
 
 // A session that publishes to Dagger Cloud does so from its main client's
@@ -32,6 +34,18 @@ import (
 // tails the store's span and log streams, each from its own cursor, and exports
 // every row to Cloud once, in order, as the CLI's forwarding of the same stream
 // did before the engine published itself.
+//
+// The spans the remote cache reads of this engine, the session's own cache
+// spans and its end (cacheSpanRow), take a lane of their own, ahead of the
+// session's bulk telemetry: on a slow link that can fall minutes behind, as
+// when nested engines under test publish through the session, and the remote
+// cache must not learn this engine's cache only as late as that. The nested
+// engines' own cache spans stay in bulk: they would fill the lane as they
+// fill the backlog. The lane fills each export with its own rows, however
+// far apart they are in the store. Every snapshot of a span takes the
+// same one of the two span lanes, so a span's live snapshots never reach
+// Cloud after its end, and each lane exports through its own Cloud exporter,
+// so the bulk lane's exports never hold the cache lane's.
 //
 // The store is the buffer: a lane holds one batch at a time and advances its
 // cursor only past rows Cloud took, so a Cloud outage costs the forwarder one
@@ -110,11 +124,16 @@ type cloudForwarder struct {
 	// closed when the forwarder releases.
 	db    *clientdb.DB
 	spans sdktrace.SpanExporter
-	logs  sdklog.Exporter
+	// cacheSpans exports the cache span lane's spans.
+	cacheSpans sdktrace.SpanExporter
+	logs       sdklog.Exporter
 	// onRelease runs once everything is released.
 	onRelease func()
 
 	lanes []*cloudForwardLane
+	// cacheSpanLane is the lane of the spans the remote cache reads, one of
+	// lanes.
+	cacheSpanLane *cloudForwardLane
 
 	// ctx ends every fetch, wait and export; stop cancels it.
 	ctx    context.Context
@@ -143,12 +162,14 @@ type cloudForwardLane struct {
 
 // cloudForwardBatch is one read of a lane: rows rows up to next, and, when
 // any of them is to be published, their OTLP request of size bytes and send,
-// which exports it.
+// which exports it. limited is how many of what the read's limit counts it
+// took: rows read, or for the cache span lane, rows kept.
 type cloudForwardBatch struct {
-	next int64
-	rows int
-	size int
-	send func(context.Context) error
+	next    int64
+	rows    int
+	limited int
+	size    int
+	send    func(context.Context) error
 }
 
 func (lane *cloudForwardLane) position() (int64, chan struct{}) {
@@ -174,32 +195,48 @@ func (lane *cloudForwardLane) wake() {
 
 // newCloudForwarder starts forwarding db's spans and logs to Cloud through
 // spans and logs, which it owns from now on, as it owns the db reference.
-func newCloudForwarder(sessionID, clientID string, db *clientdb.DB, spans sdktrace.SpanExporter, logs sdklog.Exporter, tuning cloudForwardTuning, onRelease func()) *cloudForwarder {
+func newCloudForwarder(sessionID, clientID string, db *clientdb.DB, spans, cacheSpans sdktrace.SpanExporter, logs sdklog.Exporter, tuning cloudForwardTuning, onRelease func()) *cloudForwarder {
 	f := &cloudForwarder{
-		sessionID: sessionID,
-		clientID:  clientID,
-		tuning:    tuning,
-		db:        db,
-		spans:     spans,
-		logs:      logs,
-		onRelease: onRelease,
-		finished:  make(chan struct{}),
-		done:      make(chan struct{}),
+		sessionID:  sessionID,
+		clientID:   clientID,
+		tuning:     tuning,
+		db:         db,
+		spans:      spans,
+		cacheSpans: cacheSpans,
+		logs:       logs,
+		onRelease:  onRelease,
+		finished:   make(chan struct{}),
+		done:       make(chan struct{}),
 	}
 	f.ctx, f.cancel = context.WithCancelCause(context.Background())
+	spanBatch := func(spans sdktrace.SpanExporter, next int64, req *coltracepb.ExportTraceServiceRequest, rows, limited int, err error) (cloudForwardBatch, error) {
+		batch := cloudForwardBatch{next: next, rows: rows, limited: limited}
+		if err == nil && len(req.GetResourceSpans()) > 0 {
+			batch.size = proto.Size(req)
+			batch.send = func(ctx context.Context) error {
+				return spans.ExportSpans(ctx, telemetry.SpansFromPB(req.GetResourceSpans()))
+			}
+		}
+		return batch, err
+	}
+	ownCacheSpan := ownCacheSpanRow(sessionID)
+	f.cacheSpanLane = &cloudForwardLane{
+		signal: "cache spans",
+		fetch: func(ctx context.Context, since int64, limit int) (cloudForwardBatch, error) {
+			keep := func(row *clientdb.Span) bool { return forwardSpanRow(row) && ownCacheSpan(row) }
+			next, req, rows, kept, err := fetchKeptSpanBatch(ctx, db, since, limit, tuning.batchRows, keep)
+			return spanBatch(cacheSpans, next, req, rows, kept, err)
+		},
+		end: func(hw clientdb.HighWater) int64 { return hw.Spans },
+	}
 	f.lanes = []*cloudForwardLane{
+		f.cacheSpanLane,
 		{
 			signal: "spans",
 			fetch: func(ctx context.Context, since int64, limit int) (cloudForwardBatch, error) {
-				next, req, rows, err := fetchSpanBatch(ctx, db, since, limit, forwardSpanRow)
-				batch := cloudForwardBatch{next: next, rows: rows}
-				if err == nil && len(req.GetResourceSpans()) > 0 {
-					batch.size = proto.Size(req)
-					batch.send = func(ctx context.Context) error {
-						return spans.ExportSpans(ctx, telemetry.SpansFromPB(req.GetResourceSpans()))
-					}
-				}
-				return batch, err
+				keep := func(row *clientdb.Span) bool { return forwardSpanRow(row) && !ownCacheSpan(row) }
+				next, req, rows, err := fetchSpanBatch(ctx, db, since, limit, keep)
+				return spanBatch(spans, next, req, rows, rows, err)
 			},
 			end: func(hw clientdb.HighWater) int64 { return hw.Spans },
 		},
@@ -207,7 +244,7 @@ func newCloudForwarder(sessionID, clientID string, db *clientdb.DB, spans sdktra
 			signal: "logs",
 			fetch: func(ctx context.Context, since int64, limit int) (cloudForwardBatch, error) {
 				next, req, rows, err := fetchLogBatch(ctx, db, since, limit, forwardLogRow)
-				batch := cloudForwardBatch{next: next, rows: rows}
+				batch := cloudForwardBatch{next: next, rows: rows, limited: rows}
 				if err == nil && len(req.GetResourceLogs()) > 0 {
 					batch.size = proto.Size(req)
 					batch.send = func(ctx context.Context) error {
@@ -238,6 +275,104 @@ func forwardSpanRow(row *clientdb.Span) bool { return !cloudPublishedRow(row.Att
 func forwardLogRow(row *clientdb.Log) bool   { return !cloudPublishedRow(row.Attributes) }
 
 var cloudPublishedAttrKey = []byte(telemetryattrs.TelemetryCloudPublishedAttr)
+
+// cacheSpanMarks are the encoded attributes, as a span's stored attributes
+// hold them, that mark a span the remote cache reads.
+var cacheSpanMarks = [][]byte{
+	// Present from a span's start: a dagql call's span, its frame on it
+	// (dagger.io/dag.call) or not (dagger.io/dag.inputs), a lazy
+	// evaluation's span, and a session's end, which starts with its counts.
+	encodedAttrKey(telemetry.DagCallAttr),
+	encodedAttrKey(telemetry.DagInputsAttr),
+	encodedAttr(telemetryattrs.WcprofOpKindAttr, wcprof.OpKindLazy.String()),
+	encodedAttrKey(telemetryattrs.WcprofSessionCompleteAttr),
+	// Present only at a span's end, on spans the marks above already carry;
+	// any other takes the cache lane at its end at least.
+	encodedAttrKey(telemetryattrs.CacheResultIDAttr),
+}
+
+// encodedAttrKey is the encoding of an attribute's key, which begins its
+// encoding in a stored span's attributes.
+func encodedAttrKey(key string) []byte {
+	b, err := proto.Marshal(&otlpcommonv1.KeyValue{Key: key})
+	if err != nil {
+		panic(err)
+	}
+	return b
+}
+
+// encodedAttr is the encoding of a string attribute, as a stored span's
+// attributes hold it.
+func encodedAttr(key, value string) []byte {
+	b, err := proto.Marshal(&otlpcommonv1.KeyValue{Key: key, Value: &otlpcommonv1.AnyValue{
+		Value: &otlpcommonv1.AnyValue_StringValue{StringValue: value},
+	}})
+	if err != nil {
+		panic(err)
+	}
+	return b
+}
+
+// ownCacheSpanRow returns whether a stored span is one the remote cache reads
+// (cacheSpanRow) of session sessionID itself, by the session its resource
+// names: not a nested engine's, whose spans reach the session's store too.
+// Every snapshot of a span carries its resource.
+func ownCacheSpanRow(sessionID string) func(*clientdb.Span) bool {
+	own := encodedAttr(telemetryattrs.EngineSessionAttr, sessionID)
+	return func(row *clientdb.Span) bool {
+		return cacheSpanRow(row) && bytes.Contains(row.Resource, own)
+	}
+}
+
+// fetchKeptSpanBatch is fetchSpanBatch for a lane that keeps few of the rows
+// it reads: it reads chunk rows at a time until it keeps limit, or reaches
+// the store's end, so one request carries up to limit kept rows however far
+// apart they are. kept counts them; next is the last kept row's when limit
+// stopped the read, so the rows after it are read again.
+func fetchKeptSpanBatch(ctx context.Context, db *clientdb.DB, since int64, limit, chunk int, keep func(*clientdb.Span) bool) (next int64, req *coltracepb.ExportTraceServiceRequest, rows, kept int, err error) {
+	next = since
+	var keptRows []clientdb.Span
+read:
+	for len(keptRows) < limit {
+		spans, err := db.Read().SelectSpansSince(ctx, clientdb.SelectSpansSinceParams{
+			ID:    next,
+			Limit: int64(chunk),
+		})
+		if err != nil {
+			return since, nil, 0, 0, fmt.Errorf("select spans: %w", err)
+		}
+		if len(spans) == 0 {
+			break
+		}
+		for i := range spans {
+			rows++
+			next = spans[i].ID
+			if keep(&spans[i]) {
+				keptRows = append(keptRows, spans[i])
+				if len(keptRows) == limit {
+					break read
+				}
+			}
+		}
+	}
+	if rows == 0 {
+		return since, nil, 0, 0, nil
+	}
+	return next, &coltracepb.ExportTraceServiceRequest{
+		ResourceSpans: clientdb.SpansToPB(keptRows),
+	}, rows, len(keptRows), nil
+}
+
+// cacheSpanRow reports whether a stored span is one the remote cache reads,
+// by its encoded attributes (cacheSpanMarks), without decoding them.
+func cacheSpanRow(row *clientdb.Span) bool {
+	for _, mark := range cacheSpanMarks {
+		if bytes.Contains(row.Attributes, mark) {
+			return true
+		}
+	}
+	return false
+}
 
 // cloudPublishedRow reports whether a row's stored attributes carry the
 // published marker. The byte search keeps the common case cheap; a hit is
@@ -287,9 +422,9 @@ func (f *cloudForwarder) run(lane *cloudForwardLane) {
 			f.wait(lane, f.tuning.poll)
 			continue
 		}
-		if batch.send != nil && batch.rows > 1 && batch.size > f.tuning.maxPayloadSize {
+		if batch.send != nil && batch.limited > 1 && batch.size > f.tuning.maxPayloadSize {
 			// Read a strictly smaller prefix from the same cursor.
-			limit = max(1, batch.rows/2)
+			limit = max(1, batch.limited/2)
 			continue
 		}
 		if batch.send != nil {
@@ -321,7 +456,7 @@ func (f *cloudForwarder) run(lane *cloudForwardLane) {
 				// A smaller batch gets past an export that times out for
 				// its size on a slow link; it is restored after the next
 				// success.
-				limit = max(1, batch.rows/2)
+				limit = max(1, batch.limited/2)
 				backoff = nextCloudForwardBackoff(backoff, f.tuning)
 				f.wait(lane, backoff)
 				continue
@@ -420,6 +555,32 @@ func (f *cloudForwarder) stop(cause error) {
 	f.cancel(cause)
 }
 
+// waitCacheSpans blocks until the cache span lane has published the store's
+// final end, the forwarder released, or ctx ends.
+func (f *cloudForwarder) waitCacheSpans(ctx context.Context) error {
+	select {
+	case <-f.finished:
+	case <-f.done:
+		return nil
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	}
+	want := f.cacheSpanLane.end(f.db.HighWater())
+	for {
+		cursor, advanced := f.cacheSpanLane.position()
+		if cursor >= want {
+			return nil
+		}
+		select {
+		case <-advanced:
+		case <-f.done:
+			return nil
+		case <-ctx.Done():
+			return context.Cause(ctx)
+		}
+	}
+}
+
 // wait blocks until the forwarder released, or ctx ends.
 func (f *cloudForwarder) waitReleased(ctx context.Context) error {
 	select {
@@ -451,6 +612,7 @@ func (f *cloudForwarder) release() {
 	if len(unpublished) > 0 {
 		lg.Warn("session telemetry not fully published to Cloud",
 			"cause", context.Cause(f.ctx),
+			"unpublishedCacheSpanRows", unpublished["cache spans"],
 			"unpublishedSpans", unpublished["spans"],
 			"unpublishedLogs", unpublished["logs"])
 	} else {
@@ -459,7 +621,7 @@ func (f *cloudForwarder) release() {
 	f.cancel(errCloudForwardStopped)
 	ctx, cancel := context.WithTimeout(context.Background(), f.tuning.shutdownTimeout)
 	defer cancel()
-	if err := errors.Join(f.spans.Shutdown(ctx), f.logs.Shutdown(ctx)); err != nil {
+	if err := errors.Join(f.spans.Shutdown(ctx), f.cacheSpans.Shutdown(ctx), f.logs.Shutdown(ctx)); err != nil {
 		lg.Warn("shutting down the session's Cloud exporters", "error", err)
 	}
 	if err := f.db.Close(); err != nil {
@@ -521,11 +683,13 @@ func cloudExportStatus(err error) (int, bool) {
 	return status, err == nil
 }
 
-// cloudForwarders tracks the server's active forwarders: their stores are
-// kept from collection, and the engine's stop ends them.
+// cloudForwarders tracks the server's active forwarders, and the sessions'
+// Cloud metric queues: the forwarders' stores are kept from collection, and
+// the engine's stop ends both.
 type cloudForwarders struct {
-	mu     sync.Mutex
-	active map[*cloudForwarder]struct{}
+	mu      sync.Mutex
+	active  map[*cloudForwarder]struct{}
+	metrics map[*cloudMetricQueue]struct{}
 }
 
 func (r *cloudForwarders) add(f *cloudForwarder) {
@@ -543,6 +707,22 @@ func (r *cloudForwarders) remove(f *cloudForwarder) {
 	delete(r.active, f)
 }
 
+// addMetrics tracks q until it is released.
+func (r *cloudForwarders) addMetrics(q *cloudMetricQueue) {
+	r.mu.Lock()
+	if r.metrics == nil {
+		r.metrics = map[*cloudMetricQueue]struct{}{}
+	}
+	r.metrics[q] = struct{}{}
+	r.mu.Unlock()
+	go func() {
+		<-q.released
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		delete(r.metrics, q)
+	}()
+}
+
 // KeepSet returns the client IDs whose stores active forwarders read.
 func (r *cloudForwarders) KeepSet() map[string]bool {
 	r.mu.Lock()
@@ -554,19 +734,34 @@ func (r *cloudForwarders) KeepSet() map[string]bool {
 	return keep
 }
 
-// stopAll gives every forwarder until grace passes to finish on its own,
-// then stops the rest and waits, until ctx ends, for them to release.
+// stopAll gives every forwarder until grace passes to publish its cache spans
+// (waitCacheSpans), and every metric queue until then to finish on its own,
+// then stops the rest and waits, until ctx ends, for them to release. The
+// stop doesn't wait for the rest of a forwarder's telemetry: a backlog the
+// session left can take minutes to publish.
 func (r *cloudForwarders) stopAll(ctx context.Context, grace time.Duration) error {
 	r.mu.Lock()
 	active := make([]*cloudForwarder, 0, len(r.active))
 	for f := range r.active {
 		active = append(active, f)
 	}
+	metrics := make([]*cloudMetricQueue, 0, len(r.metrics))
+	for q := range r.metrics {
+		metrics = append(metrics, q)
+	}
 	r.mu.Unlock()
+	for _, q := range metrics {
+		q.finish()
+	}
 	graceCtx, cancel := context.WithTimeout(ctx, grace)
 	defer cancel()
 	for _, f := range active {
-		if f.waitReleased(graceCtx) != nil {
+		if f.waitCacheSpans(graceCtx) != nil {
+			break
+		}
+	}
+	for _, q := range metrics {
+		if q.waitReleased(graceCtx) != nil {
 			break
 		}
 	}
@@ -574,8 +769,14 @@ func (r *cloudForwarders) stopAll(ctx context.Context, grace time.Duration) erro
 	for _, f := range active {
 		f.stop(errCloudForwardEngineStop)
 	}
+	for _, q := range metrics {
+		q.stop()
+	}
 	for _, f := range active {
 		errs = errors.Join(errs, f.waitReleased(ctx))
+	}
+	for _, q := range metrics {
+		errs = errors.Join(errs, q.waitReleased(ctx))
 	}
 	return errs
 }

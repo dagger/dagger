@@ -318,6 +318,13 @@ main = true
 		{Module: "./viztest/broken-dep/broken", Function: "broken", Fail: true},
 		// test that a module with a broken dependency surfaces the error
 		{Module: "./viztest/broken-dep", Function: "use-broken", Fail: true},
+		// the same, as a user sees them by default
+		{Name: "broken-default", Module: "./viztest/broken-dep/broken", Function: "broken", Fail: true, NoExpand: true, Quiet: true},
+		{Name: "broken-dep-use-broken-default", Module: "./viztest/broken-dep", Function: "use-broken", Fail: true, NoExpand: true, Quiet: true},
+		// and as CI logs show them, in plain progress, whose step numbers and
+		// interleaving depend on timing, so only what matters is asserted
+		{Name: "broken-plain", Module: "./viztest/broken-dep/broken", Function: "broken", Fail: true, NoExpand: true, Quiet: true, Plain: true, FuzzyTest: brokenGoModulePlainOutput},
+		{Name: "broken-dep-use-broken-plain", Module: "./viztest/broken-dep", Function: "use-broken", Fail: true, NoExpand: true, Quiet: true, Plain: true, FuzzyTest: brokenGoModulePlainOutput},
 		// test that a module with an unloadable dependency surfaces the error
 		{Module: "./viztest/broken-dep-sdk", Function: "use-invalid", Fail: true},
 
@@ -534,6 +541,10 @@ type Example struct {
 	RevealNoisySpans bool
 	// by default, tests show the full expanded tree, unless this is set
 	NoExpand bool
+	// run without -v, as a user does by default
+	Quiet bool
+	// run with plain progress, as CI logs show a run, instead of the report
+	Plain bool
 	// if a reason is given for Flaky, ignore failures, but log the failure and the provided explanation.
 	// ineffectual if FuzzyTest is in use.
 	Flaky  string
@@ -574,8 +585,14 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 		}
 	default:
 		daggerArgs = []string{"--progress=report", "-v", "call", "-m", ex.Module, ex.Function}
+		if ex.Quiet {
+			daggerArgs = []string{"--progress=report", "call", "-m", ex.Module, ex.Function}
+		}
 	}
 	daggerArgs = append(daggerArgs, ex.Args...)
+	if ex.Plain {
+		daggerArgs[0] = "--progress=plain"
+	}
 
 	if ex.Verbosity > 0 {
 		daggerArgs = append(daggerArgs, "-"+strings.Repeat("v", ex.Verbosity))
@@ -814,4 +831,18 @@ func (o *otlpReceiver) LogsHandler(w http.ResponseWriter, r *http.Request) {
 
 func (o *otlpReceiver) MetricsHandler(w http.ResponseWriter, r *http.Request) {
 	// TODO
+}
+
+// brokenGoModulePlainOutput checks the plain progress of a Go module that
+// fails to compile: the failed compile, titled with its package, and the
+// compiler's error, with none of the Go SDK's or dagger/go's own steps, such
+// as each package's build, around it.
+func brokenGoModulePlainOutput(t *testctx.T, out string) {
+	require.Contains(t, out, "sh /gobuild/build.sh dagger/broken")
+	require.Contains(t, out, "./main.go:6:6: undefined: ctx")
+	for _, internal := range []string{"GoSdk.moduleRuntime", "GoPackage.binary", "Gobuild.binary", "dispatch engine-call", "dagger-function-error", "/gobuild/gohdr"} {
+		require.NotContains(t, out, internal)
+	}
+	// About 40 lines; it was over 10,000, with each package's build.
+	require.Less(t, strings.Count(out, "\n"), 100, "plain progress runs on:\n%s", out)
 }

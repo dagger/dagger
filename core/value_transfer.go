@@ -39,7 +39,7 @@ func (family foreignFamilyCodec) NormalizeForeign(v dagql.PersistedPayloadVisit)
 			return dagql.ForeignPayload{}, err
 		}
 		if p.Form != transferPending {
-			p.OperationState = transferOperationState(p.Form == persistedFileFormSnapshot, p.LazyKind != "")
+			p.OperationState = foreignOperationState(p.Form == persistedFileFormSnapshot, p.OperationState, p.LazyKind)
 			p.ValueKnown = p.ValueKnown || p.Form == persistedFileFormSnapshot
 			p.Form = transferPending
 		}
@@ -50,7 +50,7 @@ func (family foreignFamilyCodec) NormalizeForeign(v dagql.PersistedPayloadVisit)
 			return dagql.ForeignPayload{}, err
 		}
 		if p.Form != transferPending {
-			p.OperationState = transferOperationState(p.Form == persistedDirectoryFormSnapshot, p.LazyKind != "")
+			p.OperationState = foreignOperationState(p.Form == persistedDirectoryFormSnapshot, p.OperationState, p.LazyKind)
 			p.ValueKnown = p.ValueKnown || p.Form == persistedDirectoryFormSnapshot
 			p.Form = transferPending
 		}
@@ -129,6 +129,14 @@ func (family foreignFamilyCodec) NormalizeForeign(v dagql.PersistedPayloadVisit)
 	}
 	return dagql.ForeignPayload{JSON: raw}, nil
 }
+
+// foreignOperationState is the operation state of a directory or file
+// record from another engine: evaluated when it came with its snapshot, or
+// when the engine that sent it said so, having merged it from the engine
+// that completed it.
+func foreignOperationState(snapshot bool, sent, lazyKind string) string {
+	return transferOperationState(snapshot || sent == "evaluated", lazyKind != "")
+}
 func transferOperationState(completed, hasLazyOperation bool) string {
 	if !hasLazyOperation {
 		return "none"
@@ -161,10 +169,11 @@ func (family foreignFamilyCodec) ValidateForeign(v dagql.PersistedPayloadVisit) 
 	}
 	switch family {
 	case "File":
-		var p persistedFilePayload
-		if err := readForeignPayload(v.Payload, &p); err != nil {
+		decoded, err := family.decodePartPayload(v)
+		if err != nil {
 			return err
 		}
+		p := decoded.file
 		if p.Form != transferPending {
 			return fmt.Errorf("foreign file requires transfer_pending")
 		}
@@ -172,10 +181,11 @@ func (family foreignFamilyCodec) ValidateForeign(v dagql.PersistedPayloadVisit) 
 			return err
 		}
 	case "Directory":
-		var p persistedDirectoryPayload
-		if err := readForeignPayload(v.Payload, &p); err != nil {
+		decoded, err := family.decodePartPayload(v)
+		if err != nil {
 			return err
 		}
+		p := decoded.directory
 		if p.Form != transferPending {
 			return fmt.Errorf("foreign directory requires transfer_pending")
 		}
@@ -183,10 +193,11 @@ func (family foreignFamilyCodec) ValidateForeign(v dagql.PersistedPayloadVisit) 
 			return err
 		}
 	case "Container":
-		var p persistedContainerPayload
-		if err := readForeignPayload(v.Payload, &p); err != nil {
+		decoded, err := family.decodePartPayload(v)
+		if err != nil {
 			return err
 		}
+		p := decoded.container
 		kind := ""
 		if len(p.LazyJSON) > 0 && v.Call != nil {
 			kind = v.Call.Field
@@ -265,6 +276,9 @@ func (family foreignFamilyCodec) ValidateForeign(v dagql.PersistedPayloadVisit) 
 	if !ok {
 		return fmt.Errorf("unknown family %s", family)
 	}
+	if v.ReferencesVisitedApart {
+		return nil
+	}
 	_, err := registered.Visitor.VisitPersistedReferences(v, func(*dagql.PersistedRef) error { return nil })
 	return err
 }
@@ -311,7 +325,15 @@ type partPayload struct {
 
 // decodePartPayload strictly decodes v's payload for its family. A family
 // without snapshot parts decodes nothing.
+//
+// A visit with a memo keeps the decode there and reuses it: the steps that
+// share the memo read the same payload, and none changes the decode.
 func (family foreignFamilyCodec) decodePartPayload(v dagql.PersistedPayloadVisit) (*partPayload, error) {
+	if v.Memo != nil {
+		if payload, ok := v.Memo.Value.(*partPayload); ok {
+			return payload, nil
+		}
+	}
 	payload := &partPayload{}
 	var err error
 	switch family {
@@ -324,6 +346,9 @@ func (family foreignFamilyCodec) decodePartPayload(v dagql.PersistedPayloadVisit
 	}
 	if err != nil {
 		return nil, err
+	}
+	if v.Memo != nil {
+		v.Memo.Value = payload
 	}
 	return payload, nil
 }

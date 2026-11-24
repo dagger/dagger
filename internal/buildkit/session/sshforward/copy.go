@@ -16,6 +16,13 @@ type Stream interface {
 func Copy(ctx context.Context, conn io.ReadWriteCloser, stream Stream, closeStream func() error) error {
 	defer conn.Close()
 	g, ctx := errgroup.WithContext(ctx)
+	closeWrite := func() {
+		if closeWriter, ok := conn.(interface{ CloseWrite() error }); ok {
+			closeWriter.CloseWrite()
+		} else {
+			conn.Close()
+		}
+	}
 
 	g.Go(func() (retErr error) {
 		p := &BytesMessage{}
@@ -24,13 +31,7 @@ func Copy(ctx context.Context, conn io.ReadWriteCloser, stream Stream, closeStre
 				if err == io.EOF {
 					// indicates client performed CloseSend, but they may still be
 					// reading data
-					if closeWriter, ok := conn.(interface {
-						CloseWrite() error
-					}); ok {
-						closeWriter.CloseWrite()
-					} else {
-						conn.Close()
-					}
+					closeWrite()
 					return nil
 				}
 				conn.Close()
@@ -42,9 +43,15 @@ func Copy(ctx context.Context, conn io.ReadWriteCloser, stream Stream, closeStre
 				return context.Cause(ctx)
 			default:
 			}
-			if _, err := conn.Write(p.Data); err != nil {
-				conn.Close()
-				return errors.WithStack(err)
+			if !p.Eof || len(p.Data) > 0 {
+				if _, err := conn.Write(p.Data); err != nil {
+					conn.Close()
+					return errors.WithStack(err)
+				}
+			}
+			if p.Eof {
+				closeWrite()
+				return nil
 			}
 			p.Data = p.Data[:0]
 		}
@@ -58,6 +65,13 @@ func Copy(ctx context.Context, conn io.ReadWriteCloser, stream Stream, closeStre
 			case err == io.EOF:
 				if closeStream != nil {
 					closeStream()
+				} else {
+					// A server cannot CloseSend without returning from its handler.
+					// Signal EOF in-band so the client can finish reading while the
+					// server continues forwarding the client's remaining writes.
+					if err := stream.SendMsg(&BytesMessage{Eof: true}); err != nil {
+						return errors.WithStack(err)
+					}
 				}
 				return nil
 			case err != nil:

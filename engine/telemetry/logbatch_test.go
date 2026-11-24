@@ -812,3 +812,38 @@ func TestCallPayloadBatchProcessorShutdownEndsFlushExport(t *testing.T) {
 		require.ErrorIs(t, <-flushed, context.Canceled, "the flush's export was cancelled")
 	})
 }
+
+// TestProtectedBatcherKeepsQueueCapacity checks that a protected lane's
+// queue keeps its capacity across export passes: once a lane has carried a
+// burst, a burst as large allocates nothing to queue, instead of growing a
+// new queue from nothing by doubling after every pass.
+func TestProtectedBatcherKeepsQueueCapacity(t *testing.T) {
+	exported := 0
+	batcher := &protectedBatcher[int]{
+		export: func(_ context.Context, batch []int) error {
+			exported += len(batch)
+			return nil
+		},
+		batchSize: LogExportMaxBatchSize,
+		kind:      "items",
+		wake:      make(chan struct{}, 1),
+	}
+	const burst = 32 * LogExportMaxBatchSize
+	ctx := t.Context()
+	pass := func() {
+		for i := range burst {
+			if err := batcher.enqueue(i); err != nil {
+				t.Fatal(err)
+			}
+		}
+		retryIn, more, dropped, failed := batcher.exportPass(ctx)
+		if retryIn != 0 || more || dropped != nil || failed != nil {
+			t.Fatalf("export pass: retryIn=%v more=%v dropped=%v failed=%v", retryIn, more, dropped, failed)
+		}
+	}
+	// Two passes leave both of the lane's queues grown to the burst.
+	pass()
+	pass()
+	require.Zero(t, testing.AllocsPerRun(10, pass))
+	require.Equal(t, 13*burst, exported, "every item is exported")
+}

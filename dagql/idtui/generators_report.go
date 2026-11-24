@@ -77,7 +77,7 @@ func (fe *frontendPretty) renderGeneratorNode(ctx tuist.Context, out TermOutput,
 			renderedOrigin = true
 		}
 		if !renderedOrigin {
-			fe.renderSpanFailureDetail(out, r, node.Span, depth+1)
+			fe.renderSpanFailureDetail(ctx, out, r, node.Span, depth+1)
 		}
 	}
 
@@ -93,11 +93,12 @@ func (fe *frontendPretty) renderGeneratorNode(ctx tuist.Context, out TermOutput,
 // renderSpanFailureDetail renders a failed check or generator span's own
 // rolled-up logs and error beneath its status line -- renderCauseDetail minus
 // the title row, since the status line above already names the span.
-func (fe *frontendPretty) renderSpanFailureDetail(out TermOutput, r *renderer, span *dagui.Span, depth int) {
+func (fe *frontendPretty) renderSpanFailureDetail(ctx tuist.Context, out TermOutput, r *renderer, span *dagui.Span, depth int) {
 	indent := strings.Repeat("  ", depth)
 	row := &dagui.TraceRow{Span: span, Expanded: true, Depth: depth}
 	fe.requestLogsOnRender(span.ID)
 	if logs := fe.logs.Logs[span.ID]; logs != nil && !fe.claims.hasLog(span.ID) {
+		defer fe.fitFramedLogs(ctx, logs)()
 		pipe := out.String(VertBoldBar).Foreground(restrainedStatusColor(span)).String()
 		logs.SetPrefix(indent + pipe + " ")
 		logs.SetHeight(logs.UsedHeight())
@@ -161,8 +162,9 @@ func (s *SpanTreeView) renderInlineGenerators(ctx tuist.Context, r *renderer, ro
 	if len(nodes) == 0 {
 		return nil
 	}
-	body := fe.generatorsRollupLines(ctx, r, nodes, s.inlineRollupLimit(ctx))
-	return s.frameInlineRollup(r, row, body)
+	prefix := s.inlineRollupPrefix(r, row)
+	body := fe.generatorsRollupLines(s.inlineRollupContext(ctx, prefix), r, nodes, s.inlineRollupLimit(ctx))
+	return s.frameInlineRollup(prefix, body)
 }
 
 // generatorsRollupLines builds the inline rollup body for a list of

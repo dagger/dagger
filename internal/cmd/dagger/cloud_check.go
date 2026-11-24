@@ -89,7 +89,7 @@ func init() {
 var cloudChecksRequiredFeatures = []cloudFeature{featureCloudChecks, featureCloudModules}
 
 // runCloudCheckSet returns a RunE that turns Cloud checks on or off for the
-// selected remote's repository, on GitHub or Entire. The optional name arg
+// selected remote's repository, on GitHub, GitLab or Entire. The optional name arg
 // selects the repository instead of the workspace remote.
 func runCloudCheckSet(enabled bool) func(cmd *cobra.Command, args []string) error {
 	return func(cmd *cobra.Command, args []string) error {
@@ -311,7 +311,7 @@ func prepareCloudChecksEntireInstall(cmd *cobra.Command, args []string, notInsta
 	if err != nil {
 		return err
 	}
-	installURL, err := entireInstallPage(cmd.Context(), client, notInstalled)
+	installURL, err := entireInstallPage(cmd.Context(), client, notInstalled.orgID, notInstalled.orgName)
 	if err != nil {
 		return fmt.Errorf("%w\n\n%w", notInstalled, err)
 	}

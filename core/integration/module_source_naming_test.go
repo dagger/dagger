@@ -22,10 +22,30 @@ import (
 // argument all named loadThingFromID, which are named alike. Its main type is
 // mainType.
 //
-// namingProbe asks ModuleSource.naming about another module source, which
-// declares cutVersion and has no SDK, from inside this module: at a pre-cut
-// module's view, as the SDK modules that generate code call it.
+// With a cutVersion, the module also asks naming from its own code, which a
+// module declaring a version before v1.0.0-beta.26 can't: namingProbe asks
+// ModuleSource.naming about another module source, which declares cutVersion
+// and has no SDK.
 func namingEquivalenceDang(mainType, cutVersion string) string {
+	probes := ""
+	if cutVersion != "" {
+		probes = `  pub namingProbe: [String!]! {
+    directory.
+      withNewFile("dagger.json", "{\"name\":\"my-mod\",\"engineVersion\":\"` + cutVersion + `\"}").
+      asModuleSource.
+      naming.
+      typeNames(names: ["HttpClient", "MyMod"])
+  }
+
+  pub currentTypeNames: [String!]! {
+    currentModule.naming.typeNames(names: ["HttpClient", "JsonReader", "CpuArch", "` + mainType + `"])
+  }
+
+  pub currentFieldNames: [String!]! {
+    currentModule.naming.fieldNames(names: ["baseURL", "loadThingFromID", "readURL", "e2eTest"])
+  }
+`
+	}
 	return `enum CpuArch {
   ARM64
   HTTP2
@@ -67,23 +87,7 @@ type ` + mainType + ` {
   pub arch(cpuArch: CpuArch!): CpuArch! {
     cpuArch
   }
-
-  pub namingProbe: [String!]! {
-    directory.
-      withNewFile("dagger.json", "{\"name\":\"my-mod\",\"engineVersion\":\"` + cutVersion + `\"}").
-      asModuleSource.
-      naming.
-      typeNames(names: ["HttpClient", "MyMod"])
-  }
-
-  pub currentTypeNames: [String!]! {
-    currentModule.naming.typeNames(names: ["HttpClient", "JsonReader", "CpuArch", "` + mainType + `"])
-  }
-
-  pub currentFieldNames: [String!]! {
-    currentModule.naming.fieldNames(names: ["baseURL", "loadThingFromID", "readURL", "e2eTest"])
-  }
-}
+` + probes + `}
 `
 }
 
@@ -127,10 +131,10 @@ func requireQueryNamingMatches(ctx context.Context, t *testctx.T, ctr *core.Cont
 }
 
 // TestNamingBeforeEntrypoint uses a real source with no SDK or entrypoint,
-// not an in-memory ModuleSource. Naming must work without loading it, from
-// either caller view, and Query.naming must reproduce all its answers.
+// not an in-memory ModuleSource. Naming must work without loading it, and
+// Query.naming must reproduce all its answers.
 func (ModuleNamingSuite) TestNamingBeforeEntrypoint(ctx context.Context, t *testctx.T) {
-	for _, callerVersion := range []string{"v1.0.0-beta.20", namingCut} {
+	for _, callerVersion := range []string{namingCut} {
 		t.Run(callerVersion, func(ctx context.Context, t *testctx.T) {
 			q := core.NewQuery(connect(ctx, t, dagger.WithVersionOverride(callerVersion)))
 			for _, declared := range []string{"v1.0.0-beta.20", namingCut, "", "v1.999.0"} {
@@ -211,7 +215,7 @@ func (ModuleNamingSuite) TestModuleSourceNamingMatchesSchema(ctx context.Context
 	ws := goGitBase(t, c).
 		WithNewFile("dagger.toml", "[modules.api-before]\nsource = \"./api-before\"\n[modules.api-after]\nsource = \"./api-after\"\n").
 		WithNewFile("api-before/dagger-module.toml", module("api-before", "v1.0.0-beta.20")).
-		WithNewFile("api-before/main.dang", namingEquivalenceDang("ApiBefore", namingCut)).
+		WithNewFile("api-before/main.dang", namingEquivalenceDang("ApiBefore", "")).
 		WithNewFile("api-after/dagger-module.toml", module("api-after", namingCut)).
 		WithNewFile("api-after/main.dang", namingEquivalenceDang("ApiAfter", namingCut))
 
@@ -223,7 +227,7 @@ func (ModuleNamingSuite) TestModuleSourceNamingMatchesSchema(ctx context.Context
 	)
 	httpClientFields := []string{"baseURL", "loadThingFromID"}
 	httpClientFunctions := []string{"readURL", "getURL"}
-	mainFunctions := []string{"client", "loadThingFromID", "arch", "namingProbe", "currentTypeNames", "currentFieldNames"}
+	mainFunctions := []string{"client", "loadThingFromID", "arch"}
 	args := []string{"baseURL", "path", "loadThingFromID", "cpuArch"}
 	// Dang only lets enum members be written in GraphQL's convention, which
 	// both rules keep; the unit tests cover the others.
@@ -238,6 +242,10 @@ func (ModuleNamingSuite) TestModuleSourceNamingMatchesSchema(ctx context.Context
 	} {
 		t.Run(tc.module, func(ctx context.Context, t *testctx.T) {
 			types := []string{httpClient, jsonReader, cpuArch, tc.mainType}
+			mainFunctions := mainFunctions
+			if !tc.legacy {
+				mainFunctions = append(mainFunctions, "namingProbe", "currentTypeNames", "currentFieldNames")
+			}
 			functions := append(append([]string{}, httpClientFunctions...), mainFunctions...)
 			selection := fmt.Sprintf(`
   version
@@ -342,19 +350,20 @@ func (ModuleNamingSuite) TestModuleSourceNamingMatchesSchema(ctx context.Context
 			require.ElementsMatch(t, names(memberName, members...), gjsonStrings(registered[cpuArch].Get("enumValues.#.name")))
 
 			// The main object naming picked is the one the module is
-			// constructed as. A module asks naming about another source, at
-			// its own view (pre-cut, for api-before), and gets that source's
-			// names.
-			out, err = ws.With(daggerQueryAt(tc.module, `{ __typename probe: namingProbe }`)).Stdout(ctx)
-			require.NoError(t, err)
-			require.JSONEq(t, `{"__typename": "Query", "probe": ["MyModHTTPClient", "MyMod"]}`, out)
+			// constructed as. A module asks naming about another source and
+			// gets that source's names.
+			if !tc.legacy {
+				out, err = ws.With(daggerQueryAt(tc.module, `{ __typename probe: namingProbe }`)).Stdout(ctx)
+				require.NoError(t, err)
+				require.JSONEq(t, `{"__typename": "Query", "probe": ["MyModHTTPClient", "MyMod"]}`, out)
 
-			// The module's runtime has no ModuleSource: CurrentModule.naming
-			// answers the same as its source's.
-			out, err = ws.With(daggerQueryAt(tc.module, `{ %s %s }`, functionName["currentTypeNames"], functionName["currentFieldNames"])).Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, names(typeName, types...), gjsonStrings(gjson.Get(out, functionName["currentTypeNames"])), out)
-			require.Equal(t, gjsonStrings(naming.Get("currentFields")), gjsonStrings(gjson.Get(out, functionName["currentFieldNames"])), out)
+				// The module's runtime has no ModuleSource: CurrentModule.naming
+				// answers the same as its source's.
+				out, err = ws.With(daggerQueryAt(tc.module, `{ %s %s }`, functionName["currentTypeNames"], functionName["currentFieldNames"])).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, names(typeName, types...), gjsonStrings(gjson.Get(out, functionName["currentTypeNames"])), out)
+				require.Equal(t, gjsonStrings(naming.Get("currentFields")), gjsonStrings(gjson.Get(out, functionName["currentFieldNames"])), out)
+			}
 
 			constructor := namingConstructorName(tc.module)
 			out, err = ws.With(daggerQuery(`{ %s { __typename } }`, constructor)).Stdout(ctx)

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"typescript-sdk/internal/dagger"
@@ -172,17 +173,23 @@ func (t *TypescriptSdk) GenerateClient(
 		return nil, fmt.Errorf("failed to analyze module config: %w", err)
 	}
 
-	moduleSourceID, err := modSource.ID(ctx)
+	moduleName, err := modSource.ModuleOriginalName(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get module source id: %w", err)
+		return nil, fmt.Errorf("failed to get module name: %w", err)
+	}
+
+	moduleDependencies, err := clientModuleDependencies(ctx, modSource)
+	if err != nil {
+		return nil, err
 	}
 
 	result := dag.Directory()
 
 	libGenerator := NewLibGenerator(t.SDKSourceDir, &LibGeneratorOpts{
-		moduleSourceID:    string(moduleSourceID),
-		genClient:         true,
-		coexistWithModule: cfg.sdk != "" && cfg.subPath == ".",
+		moduleName:         moduleName,
+		moduleDependencies: moduleDependencies,
+		genClient:          true,
+		coexistWithModule:  cfg.sdk != "" && cfg.subPath == ".",
 	})
 
 	if cfg.sdkLibOrigin == Remote {
@@ -240,4 +247,45 @@ func (t *TypescriptSdk) GenerateClient(
 	}
 
 	return dag.Directory().WithDirectory(cfg.modPath, result), nil
+}
+
+// clientModuleDependencies returns the module's dependencies as codegen's
+// --module-dependencies reads them: a JSON list of their kind, name, pin and
+// source, which the generated client serves when it connects.
+func clientModuleDependencies(ctx context.Context, modSource *dagger.ModuleSource) (string, error) {
+	type dependency struct {
+		Kind               dagger.ModuleSourceKind `json:"kind"`
+		ModuleOriginalName string                  `json:"moduleOriginalName"`
+		Pin                string                  `json:"pin"`
+		AsString           string                  `json:"asString"`
+	}
+
+	deps, err := modSource.Dependencies(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get module dependencies: %w", err)
+	}
+
+	out := make([]dependency, 0, len(deps))
+	for _, dep := range deps {
+		var d dependency
+		if d.Kind, err = dep.Kind(ctx); err != nil {
+			return "", fmt.Errorf("failed to get dependency kind: %w", err)
+		}
+		if d.ModuleOriginalName, err = dep.ModuleOriginalName(ctx); err != nil {
+			return "", fmt.Errorf("failed to get dependency name: %w", err)
+		}
+		if d.Pin, err = dep.Pin(ctx); err != nil {
+			return "", fmt.Errorf("failed to get dependency pin: %w", err)
+		}
+		if d.AsString, err = dep.AsString(ctx); err != nil {
+			return "", fmt.Errorf("failed to get dependency source: %w", err)
+		}
+		out = append(out, d)
+	}
+
+	b, err := json.Marshal(out)
+	if err != nil {
+		return "", fmt.Errorf("failed to encode module dependencies: %w", err)
+	}
+	return string(b), nil
 }

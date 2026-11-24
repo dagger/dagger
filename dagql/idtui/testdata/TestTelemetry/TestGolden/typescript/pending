@@ -17,8 +17,8 @@ $ typescript: Typescript! X.Xs CACHED
 ├╴$ .from(address: "alpine:latest"): Container! X.Xs CACHED
 ├╴✔ withEnvVariable NOW=XXXX-XX-XXTXX:XX:XX.XXXZ X.Xs
 ├╴✔ withExec sleep 1 X.Xs
-├╴✘ withExec false X.Xs ERROR
+├╴✘ withExec false X.Xs ⋯ waited X.Xs on sleep 1 ERROR
 │ ! exit code: 1
-╰╴○ withExec sleep 1 X.Xs
+╰╴○ withExec sleep 1 X.Xs ⋯ waited X.Xs on sleep 1
 
 Setup tracing by running "dagger cloud signup". To hide set DAGGER_NO_NAG=1

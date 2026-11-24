@@ -298,7 +298,7 @@ func addFlags(app *cli.App) {
 		},
 		cli.StringFlag{
 			Name:  "oci-max-parallelism",
-			Usage: "maximum number of parallel build steps that can be run at the same time (or \"num-cpu\" to automatically set to the number of CPUs). 0 means unlimited parallelism.",
+			Usage: "maximum number of container execs that can run at the same time (or \"num-cpu\" to automatically set to the number of CPUs). 0 means unlimited parallelism. An exec stops counting toward the limit once its command calls the Dagger API, as module function calls do.",
 		},
 		cli.StringFlag{
 			Name:  "oci-worker-gc-keepstorage",
@@ -437,6 +437,7 @@ func main() { //nolint:gocyclo
 			return err
 		}
 		engineStopBudget.setTimeout(stopTimeout)
+		engineStopBudget.setFlushTimeout(stopFlushTimeoutSetting(cfg))
 		applyCacheVolumesFlags(c, &cfg)
 		if cfg.Telemetry.WorkloadExport {
 			workloadExport, err = enginetel.NewWorkloadExport(ctx, engineInstanceID)
@@ -666,15 +667,7 @@ func main() { //nolint:gocyclo
 		// start serving on the listeners for actual clients
 		bklog.G(ctx).Debug("starting main engine api listeners")
 		srv.Register(grpcServer)
-		httpServer = newAPIServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("content-type"), "application/grpc") {
-				// The docs on grpcServer.ServeHTTP warn that some features are missing vs. serving fully "native" gRPC,
-				// but in practice it seems to work fine for us and only be relevant for some advanced features we don't use.
-				grpcServer.ServeHTTP(w, r)
-				return
-			}
-			srv.ServeHTTP(w, r)
-		}))
+		httpServer = newAPIServer(apiHandler(grpcServer, http.HandlerFunc(srv.ServeStatus), srv))
 		errCh := make(chan error, 1)
 		if err := serveAPI(bkcfg.GRPC, httpServer, errCh); err != nil {
 			return err
@@ -694,8 +687,6 @@ func main() { //nolint:gocyclo
 			}
 		}
 
-		cancelNetworking(errors.New("shutdown"))
-
 		bklog.G(context.WithoutCancel(ctx)).Infof("stopping server")
 		if os.Getenv("NOTIFY_SOCKET") != "" {
 			notified, notifyErr := sddaemon.SdNotify(false, sddaemon.SdNotifyStopping)
@@ -705,6 +696,10 @@ func main() { //nolint:gocyclo
 		srvStopCtx, srvStopCancel := engineStopBudget.serverContext(ctx)
 		defer srvStopCancel()
 		shutdownServer(srvStopCtx)
+		// Networking, dnsmasq included, outlives the server's stop: the
+		// engine's own lookups resolve through dnsmasq, and the remote cache
+		// exports the stop lets finish upload to hosts they must resolve.
+		cancelNetworking(errors.New("shutdown"))
 
 		return err
 	}
@@ -1193,4 +1188,23 @@ func setupNetwork(ctx context.Context, netName, netCIDR string) (*networkConfig,
 		CNIConfigPath:  cniConfigPath,
 		FirewallPlugin: firewalld,
 	}, nil
+}
+
+// apiHandler serves the engine's main listener: gRPC requests go to the
+// control API, GET server.StatusPath to the engine's status, which needs no
+// session, and every other request to a client's session.
+func apiHandler(grpcServer, status, sessions http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("content-type"), "application/grpc") {
+			// The docs on grpcServer.ServeHTTP warn that some features are missing vs. serving fully "native" gRPC,
+			// but in practice it seems to work fine for us and only be relevant for some advanced features we don't use.
+			grpcServer.ServeHTTP(w, r)
+			return
+		}
+		if r.URL.Path == server.StatusPath {
+			status.ServeHTTP(w, r)
+			return
+		}
+		sessions.ServeHTTP(w, r)
+	})
 }

@@ -1023,14 +1023,15 @@ func inferLocalWorkspaceRemoteAddress(ctx context.Context, address string) (work
 	}
 
 	inferred := gitref.RefString(info.cloneRef, info.workspacePath, version)
-	remote, ok, err := parseWorkspaceRemoteAddress(ctx, inferred)
-	if err != nil {
-		return workspaceRemoteAddress{}, "", err
-	}
-	if !ok {
+	if !workspaceAddressLooksRemote(info.cloneRef) {
 		return workspaceRemoteAddress{}, "", fmt.Errorf("inferred git origin %q is not a remote workspace address", info.cloneRef)
 	}
-	return remote, inferred, nil
+	// The local git remote already identifies the repository root. Rediscovering
+	// it over HTTP can truncate private GitLab subgroup paths or lose a port.
+	return workspaceRemoteAddress{
+		CloneRef: info.cloneRef, Path: cleanWorkspaceRemoteSubdir(info.workspacePath), Version: version,
+		BaseAddress: gitref.RefString(info.cloneRef, info.workspacePath, ""),
+	}, inferred, nil
 }
 
 // This is intentionally narrower than the workspace-git API: it only projects

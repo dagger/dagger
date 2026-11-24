@@ -96,6 +96,12 @@ type TraceImporter struct {
 	// and the imported one has to get out of the way.
 	KeepRoots bool
 
+	// exportMu serializes the importer's exports to its span sink. An
+	// exporter is never called concurrently (OpenTelemetry's exporter
+	// contract, which a dagui.DB relies on), but callers import from several
+	// fetches at once.
+	exportMu sync.Mutex
+
 	mu sync.Mutex
 	// unfinished holds every span seen with no end time, keyed by span ID, so
 	// a later update that DOES end it drops it back out. It is what Seal
@@ -146,6 +152,8 @@ func (imp *TraceImporter) ImportSpans(ctx context.Context, req *coltracepb.Expor
 	}
 	imp.mu.Unlock()
 
+	imp.exportMu.Lock()
+	defer imp.exportMu.Unlock()
 	return imp.sinks.Spans.ExportSpans(ctx, telemetry.SpansFromPB(req.GetResourceSpans()))
 }
 
@@ -291,7 +299,10 @@ func (imp *TraceImporter) seal(ctx context.Context, fixed uint64) error {
 	if len(groups) == 0 {
 		return nil
 	}
-	if err := imp.sinks.Spans.ExportSpans(ctx, telemetry.SpansFromPB(groups)); err != nil {
+	imp.exportMu.Lock()
+	err := imp.sinks.Spans.ExportSpans(ctx, telemetry.SpansFromPB(groups))
+	imp.exportMu.Unlock()
+	if err != nil {
 		// Keep the unfinished set for a retry; enqueue failure is not sealing.
 		return err
 	}

@@ -36,7 +36,8 @@ func WorkspaceClientContext(ctx context.Context, ws *Workspace) (context.Context
 // caller's ancestry, or on another engine. Its content doesn't depend on that
 // client, so it goes through the caller's nearest non-module client instead,
 // whose loaded modules and credentials are the ones the caller's own workspace
-// would use. Fields that depend on those are keyed per client.
+// would use. Fields that depend on those are keyed per client, or by what
+// they read from it, as Workspace.artifacts is.
 func workspaceClientMetadata(ctx context.Context, query *Query, ws *Workspace) (*engine.ClientMetadata, error) {
 	if contentIdentifiableSource(ws.Source()) {
 		clientMetadata, err := query.NonModuleParentClientMetadata(ctx)
@@ -50,4 +51,20 @@ func workspaceClientMetadata(ctx context.Context, query *Query, ws *Workspace) (
 		return nil, fmt.Errorf("get client metadata: %w", err)
 	}
 	return clientMetadata, nil
+}
+
+// LocalSourceHostClientMetadata returns the metadata of the client whose host
+// holds src's local files, for a call made by the module src belongs to or
+// by a process under it.
+//
+// A source loaded through a live workspace has its files on the host of the
+// client that supplied the workspace. That is not always the nearest
+// non-module client above the module: a client nested in a container can
+// load modules through a workspace it inherited from the client that started
+// it. Any other local source was loaded from the host of that nearest client.
+func LocalSourceHostClientMetadata(ctx context.Context, query *Query, src *ModuleSource) (*engine.ClientMetadata, error) {
+	if ws := src.Workspace.Self(); ws != nil && !ws.IsValueWorkspace() && ws.ClientID != "" {
+		return workspaceClientMetadata(ctx, query, ws)
+	}
+	return query.ModuleParentHostClientMetadata(ctx)
 }

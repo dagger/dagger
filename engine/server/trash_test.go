@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/internal/buildkit/util/disk"
 	"github.com/stretchr/testify/require"
 )
@@ -154,4 +155,77 @@ func TestStartLocalCacheTrashSweeperBlocksUnderDiskPressure(t *testing.T) {
 	// The call does not return until the trash is removed, ensuring startup
 	// has reclaimed space before the engine begins creating files again.
 	require.NoDirExists(t, trashDir)
+}
+
+// A previous engine's disk temp mounts go to the trash, which the sweeper
+// removes; with none, nothing happens.
+func TestMoveDiskTempMountsToTrash(t *testing.T) {
+	t.Parallel()
+	rootDir := t.TempDir()
+	tempMounts := filepath.Join(rootDir, core.DiskTempMountDir)
+	writeTrashFixtureTree(t, filepath.Join(tempMounts, "123"))
+
+	moveDiskTempMountsToTrash(rootDir)
+	require.NoDirExists(t, tempMounts)
+	trashDirs, err := findLocalCacheTrashDirs(rootDir)
+	require.NoError(t, err)
+	require.Len(t, trashDirs, 1)
+	require.FileExists(t, filepath.Join(trashDirs[0], "123", "metadata.db"))
+
+	srv := &Server{rootDir: rootDir}
+	srv.sweepLocalCacheTrash(context.Background(), trashDirs)
+	require.NoDirExists(t, trashDirs[0])
+
+	moveDiskTempMountsToTrash(rootDir)
+	trashDirs, err = findLocalCacheTrashDirs(rootDir)
+	require.NoError(t, err)
+	require.Empty(t, trashDirs)
+}
+
+// The content-hash trees a previous engine left under the worker root go to
+// the trash in the engine's root, where the sweeper finds it, rather than
+// being deleted inline at startup; with none, nothing happens.
+func TestMoveContentHashTreesToTrash(t *testing.T) {
+	t.Parallel()
+	rootDir := t.TempDir()
+	trees := filepath.Join(rootDir, "worker", "contenthash")
+	require.NoError(t, os.MkdirAll(filepath.Join(trees, "trees-1"), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(trees, "trees-1", "SNAPSHOT"), []byte("tree"), 0o600))
+
+	moveContentHashTreesToTrash(context.Background(), rootDir, trees, nil)
+	require.NoDirExists(t, trees)
+	trashDirs, err := findLocalCacheTrashDirs(rootDir)
+	require.NoError(t, err)
+	require.Len(t, trashDirs, 1)
+	require.FileExists(t, filepath.Join(trashDirs[0], "trees-1", "SNAPSHOT"))
+
+	srv := &Server{rootDir: rootDir}
+	srv.sweepLocalCacheTrash(context.Background(), trashDirs)
+	require.NoDirExists(t, trashDirs[0])
+
+	moveContentHashTreesToTrash(context.Background(), rootDir, trees, nil)
+	trashDirs, err = findLocalCacheTrashDirs(rootDir)
+	require.NoError(t, err)
+	require.Empty(t, trashDirs)
+}
+
+// Under disk pressure, the trees are removed before startup goes on: the
+// checkpoint's trees, written again, need the room.
+func TestMoveContentHashTreesToTrashUnderDiskPressure(t *testing.T) {
+	t.Parallel()
+	rootDir := t.TempDir()
+	trees := filepath.Join(rootDir, "worker", "contenthash")
+	require.NoError(t, os.MkdirAll(filepath.Join(trees, "trees-1"), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(trees, "trees-1", "SNAPSHOT"), []byte("tree"), 0o600))
+	dstat, err := disk.GetDiskStat(rootDir)
+	require.NoError(t, err)
+
+	moveContentHashTreesToTrash(context.Background(), rootDir, trees, []dagqlCachePrunePolicy{
+		// More than the filesystem can provide.
+		{MinFreeSpace: dstat.Total + 1},
+	})
+	require.NoDirExists(t, trees)
+	trashDirs, err := findLocalCacheTrashDirs(rootDir)
+	require.NoError(t, err)
+	require.Empty(t, trashDirs)
 }

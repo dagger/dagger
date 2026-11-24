@@ -88,6 +88,17 @@ func TestPathTreeSelectsWhatCopySelects(t *testing.T) {
 		{"/a/b", Filter{Exclude: []string{"c"}}},
 		{"/.dagger/modules/one", Filter{Include: []string{"dagger.json"}}},
 		{"/.dagger/modules", Filter{Include: []string{"*/dagger.json"}}},
+		// Globs after a literal directory, as a Go module's sources select
+		// packages of the repository's root module.
+		{"/", Filter{Include: []string{"go.mod", "a/b/c/*.txt", "a/*.go"}, Exclude: []string{"**/.git", "**/*_test.go"}}},
+		{"/", Filter{Include: []string{".dagger/modules/*/dagger.json", "docs/a b/*.txt"}}},
+		{"/", Filter{Include: []string{"./a/b/*", "a/../go.mod"}}},
+		{"/", Filter{Include: []string{"a/b/c/*.go", "!a/b/c/deep.go", "docs/*"}}},
+		{"/", Filter{Include: []string{"a/*/c/*.txt"}}},
+		{"/", Filter{Include: []string{"links/*/file.txt", "links/inner/*.txt"}}},
+		{"/", Filter{Include: []string{"."}}},
+		{"/", Filter{Include: []string{"/a/*.txt"}}},
+		{"/a", Filter{Include: []string{"b/c/*.go"}}},
 	} {
 		dstRoot := filepath.Join(t.TempDir(), "dst")
 		require.NoError(t, os.Mkdir(dstRoot, 0o755))

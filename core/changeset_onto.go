@@ -56,6 +56,21 @@ func (p *PatchOnto) IsEmpty() bool {
 	return len(p.RemovedFiles) == 0 && len(p.Patch) == 0 && len(p.NewDirectories) == 0 && len(p.RemovedDirectories) == 0
 }
 
+// Merge combines p with other, a rendering of other paths of the same
+// changeset onto the same workspace (so the two touch no path in common),
+// into one PatchOnto applied in the usual order.
+func (p *PatchOnto) Merge(other *PatchOnto) *PatchOnto {
+	merged := &PatchOnto{
+		RemovedFiles:       outermostPaths(slices.Concat(p.RemovedFiles, other.RemovedFiles)),
+		Patch:              slices.Concat(p.Patch, other.Patch),
+		RemovedDirectories: slices.Sorted(slices.Values(slices.Concat(p.RemovedDirectories, other.RemovedDirectories))),
+		NewDirectories:     slices.Concat(p.NewDirectories, other.NewDirectories),
+	}
+	// Parents sort before their children.
+	slices.SortFunc(merged.NewDirectories, func(a, b PatchOntoDirectory) int { return strings.Compare(a.Path, b.Path) })
+	return merged
+}
+
 var (
 	// ErrPatchTooLarge is returned by RenderPatchOnto when the patch exceeds
 	// its size budget.
@@ -253,6 +268,14 @@ func (ch *Changeset) RenderPatchOnto(ctx context.Context, base dagql.ObjectResul
 	if err != nil {
 		return nil, fmt.Errorf("compute changeset paths: %w", err)
 	}
+	return ch.RenderPatchOntoPaths(ctx, base, prefix, paths, maxBytes)
+}
+
+// RenderPatchOntoPaths is RenderPatchOnto for just some of the changeset's
+// paths, as ComputePaths reports them (see ChangesetPaths.Filter): what the
+// changeset does elsewhere is left out of the result, for rendering parts of
+// it against different trees.
+func (ch *Changeset) RenderPatchOntoPaths(ctx context.Context, base dagql.ObjectResult[*Directory], prefix string, paths *ChangesetPaths, maxBytes int64) (*PatchOnto, error) {
 	cache, err := dagql.EngineCache(ctx)
 	if err != nil {
 		return nil, err

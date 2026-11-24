@@ -48,7 +48,7 @@ func (s *querySchema) Install(srv *dagql.Server) {
 			Doc(`(Internal-only) Returns the persistent bare git mirror for a remote URL.`).
 			Args(
 				dagql.Arg("remoteURL").Doc("Normalized remote repository URL."),
-				dagql.Arg("blobless").Doc("A separate partial clone of the remote, holding only the file contents asked for."),
+				dagql.Arg("blobless").View(AfterVersion("v1.0.0-beta.26")).Doc("A separate partial clone of the remote, holding only the file contents asked for."),
 			),
 		dagql.NodeFunc("_clientFilesyncMirror", s.clientFilesyncMirror).
 			View(AfterVersion("v0.21.0")).

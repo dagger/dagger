@@ -1,5 +1,5 @@
 name = "codegen"
-engineVersion = "v0.21.9"
+engineVersion = "v1.0.0-0"
 source = ".dagger"
 
 [runtime]
@@ -7,4 +7,4 @@ source = ".dagger"
 
 [[dependencies]]
   name = "go"
-  source = "../../.dagger/modules/go"
+  source = "github.com/dagger/go@79a92beb4df0898400ef7f7a632009035290383b"

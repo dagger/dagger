@@ -20,10 +20,10 @@ $ viztest: Viztest! X.Xs CACHED
 ├╴✔ withExec echo 'im a buster' '20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X' X.Xs
 │ ┃ im a buster 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X
 ├╴✔ withExec sleep 1 X.Xs
-├╴✔ withExec echo 'im busted by that buster' X.Xs
+├╴✔ withExec echo 'im busted by that buster' X.Xs ⋯ waited X.Xs on sleep 1
 │ ┃ im busted by that buster
-├╴✔ withNewFile /srv/index.html (contents: "<h1>hello, world!</h1>") X.Xs
-├╴✔ .withExposedPort(port: 80): Container! X.Xs
+├╴✔ withNewFile /srv/index.html (contents: "<h1>hello, world!</h1>") X.Xs ⋯ waited X.Xs on sleep 1
+├╴✔ .withExposedPort(port: 80): Container! X.Xs ⋯ waited X.Xs on sleep 1
 ├╴✔ .asService(args: ["httpd", "-v", "-h", "/srv", "-f"]): Service! X.Xs
 │ ┃ [::ffff:10.XX.XX.XX]:XXXXX: response:200
 │ ╰╴✔ 80/tcp X.Xs

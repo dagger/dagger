@@ -48,14 +48,16 @@ func (s *gitSchema) push(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 	} else if args.Remote != "" && args.Remote != "origin" {
 		// A named remote must be registered; origin is the implicit default
 		// below, resolvable even when it was never registered explicitly.
-		// Registered routing is explicit; captured URLs already include host
-		// rewrites and must not be rewritten a second time.
-		opts.SkipDestinationRewrite = true
+		//
+		// Like git, a push URL is the final destination, while a fetch URL
+		// pushed to goes through the caller's pushInsteadOf/insteadOf, as git
+		// would rewrite remote.<name>.url.
 		named := repo.Self().RemoteConfig(args.Remote)
 		switch {
 		case named == nil:
 			return inst, fmt.Errorf("no remote named %q is registered on the source; register it with withRemote or pass an explicit destination with to", args.Remote)
 		case named.PushURL != "":
+			opts.SkipDestinationRewrite = true
 			destinationURL = named.PushURL
 		case named.URL != "":
 			destinationURL = named.URL
@@ -66,7 +68,7 @@ func (s *gitSchema) push(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 		opts.SkipDestinationRewrite = true
 		destinationURL = origin.PushURL
 	} else if origin != nil && origin.URL != "" {
-		opts.SkipDestinationRewrite = true
+		// Rewritten like git would remote.origin.url; see above.
 		destinationURL = origin.URL
 	} else if _, remote := repo.Self().Backend.(*core.RemoteGitRepository); !remote {
 		switch {

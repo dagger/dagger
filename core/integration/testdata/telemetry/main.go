@@ -205,6 +205,7 @@ type spanLine struct {
 	Writer     string            `json:"writer"`
 	Service    string            `json:"service"`
 	Instance   string            `json:"instance"`
+	Ingested   string            `json:"ingested,omitempty"`
 	Session    string            `json:"session,omitempty"`
 	Cache      string            `json:"cache,omitempty"`
 	TraceID    string            `json:"traceID"`
@@ -224,6 +225,7 @@ func spanLines(r *http.Request, req *coltracepb.ExportTraceServiceRequest) []str
 					Writer:     exportWriter(r),
 					Service:    resourceAttr(attrs, "service.name"),
 					Instance:   resourceAttr(attrs, "service.instance.id"),
+					Ingested:   resourceAttr(attrs, clientIngestedAttr),
 					Session:    resourceAttr(attrs, "dagger.io/engine.session"),
 					Cache:      resourceAttr(attrs, "dagger.io/engine.cache"),
 					TraceID:    hex.EncodeToString(span.TraceId),
@@ -277,8 +279,9 @@ func anyValue(v *commonpb.AnyValue) any {
 // metricWriterLine is the writer and service of one resource's metrics in a
 // metrics export.
 type metricWriterLine struct {
-	Writer  string `json:"writer"`
-	Service string `json:"service"`
+	Writer   string `json:"writer"`
+	Service  string `json:"service"`
+	Ingested string `json:"ingested,omitempty"`
 }
 
 func metricWriterLines(r *http.Request, body []byte) []string {
@@ -288,13 +291,19 @@ func metricWriterLines(r *http.Request, body []byte) []string {
 	}
 	var lines []string
 	for _, resourceMetrics := range req.ResourceMetrics {
+		attrs := resourceMetrics.GetResource().GetAttributes()
 		lines = append(lines, jsonLine(metricWriterLine{
-			Writer:  exportWriter(r),
-			Service: resourceAttr(resourceMetrics.GetResource().GetAttributes(), "service.name"),
+			Writer:   exportWriter(r),
+			Service:  resourceAttr(attrs, "service.name"),
+			Ingested: resourceAttr(attrs, clientIngestedAttr),
 		}))
 	}
 	return lines
 }
+
+// clientIngestedAttr marks a client's own telemetry that its engine stored,
+// and so publishes (telemetryattrs.TelemetryClientIngestedAttr).
+const clientIngestedAttr = "dagger.io/telemetry.client_ingested"
 
 // logRecordLine is one exported log record, other than an engine cache
 // event, as the fake cloud received it.
@@ -302,6 +311,7 @@ type logRecordLine struct {
 	Writer   string `json:"writer"`
 	Service  string `json:"service"`
 	Instance string `json:"instance"`
+	Ingested string `json:"ingested,omitempty"`
 	Scope    string `json:"scope"`
 	Body     string `json:"body"`
 }
@@ -316,6 +326,7 @@ func logRecordLines(r *http.Request, body []byte) []string {
 		attrs := resourceLogs.GetResource().GetAttributes()
 		service := resourceAttr(attrs, "service.name")
 		instance := resourceAttr(attrs, "service.instance.id")
+		ingested := resourceAttr(attrs, clientIngestedAttr)
 		for _, scopeLogs := range resourceLogs.ScopeLogs {
 			if scopeLogs.GetScope().GetName() == engineEventScope {
 				continue
@@ -329,6 +340,7 @@ func logRecordLines(r *http.Request, body []byte) []string {
 					Writer:   exportWriter(r),
 					Service:  service,
 					Instance: instance,
+					Ingested: ingested,
 					Scope:    scopeLogs.GetScope().GetName(),
 					Body:     body,
 				}))

@@ -104,39 +104,61 @@ impl Void {
 }
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct BuildArg {
+    #[serde(rename = "name")]
     pub name: String,
+    #[serde(rename = "value")]
     pub value: String,
 }
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct LlmContentBlockInput {
+    #[serde(rename = "arguments")]
     pub arguments: Json,
+    #[serde(rename = "callId")]
     pub call_id: String,
+    #[serde(rename = "content")]
     pub content: Vec<LlmContentBlockInput>,
+    #[serde(rename = "data")]
     pub data: Bytes,
+    #[serde(rename = "errored")]
     pub errored: bool,
+    #[serde(rename = "file")]
     pub file: Id,
+    #[serde(rename = "kind")]
     pub kind: LlmContentBlockKind,
+    #[serde(rename = "mimeType")]
     pub mime_type: String,
+    #[serde(rename = "signature")]
     pub signature: String,
+    #[serde(rename = "text")]
     pub text: String,
+    #[serde(rename = "toolName")]
     pub tool_name: String,
 }
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct LlmMessageOriginInput {
+    #[serde(rename = "agentName")]
     pub agent_name: String,
+    #[serde(rename = "kind")]
     pub kind: LlmMessageOriginKind,
+    #[serde(rename = "ref")]
     pub r#ref: String,
+    #[serde(rename = "replyTo")]
     pub reply_to: String,
 }
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct PipelineLabel {
+    #[serde(rename = "name")]
     pub name: String,
+    #[serde(rename = "value")]
     pub value: String,
 }
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct PortForward {
+    #[serde(rename = "backend")]
     pub backend: isize,
+    #[serde(rename = "frontend")]
     pub frontend: isize,
+    #[serde(rename = "protocol")]
     pub protocol: NetworkProtocol,
 }
 /// An object that can be exported to the host.
@@ -2835,6 +2857,9 @@ pub struct ContainerDirectoryOpts {
     /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
+    /// Repair symlinks that directory selection would break. Resolve targets across the root filesystem and directory or file mounts. Preserve working relative links and links that already have no target. Cache, volume, tmpfs, secret, and socket mounts cause an error if selection, a resolved link, or mount target resolution needs their contents.
+    #[builder(setter(into, strip_option), default)]
+    pub resolve_broken_symlinks: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerFileOpts {
@@ -2929,6 +2954,9 @@ pub struct ContainerWithMountedFilesOpts {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithMountedTempOpts {
+    /// Keep the temporary directory on the engine's disk instead of in memory, for contents too large for memory. Each process gets an empty directory of its own, removed once the process ends. It can't be combined with size.
+    #[builder(setter(into, strip_option), default)]
+    pub disk: Option<bool>,
     /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
@@ -3593,6 +3621,9 @@ impl Container {
         query = query.arg("path", path.into());
         if let Some(expand) = opts.expand {
             query = query.arg("expand", expand);
+        }
+        if let Some(resolve_broken_symlinks) = opts.resolve_broken_symlinks {
+            query = query.arg("resolveBrokenSymlinks", resolve_broken_symlinks);
         }
         Directory {
             proc: self.proc.clone(),
@@ -4357,6 +4388,9 @@ impl Container {
         }
         if let Some(expand) = opts.expand {
             query = query.arg("expand", expand);
+        }
+        if let Some(disk) = opts.disk {
+            query = query.arg("disk", disk);
         }
         Container {
             proc: self.proc.clone(),
@@ -6573,6 +6607,12 @@ pub struct DirectoryStatOpts {
     pub do_not_follow_symlinks: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct DirectoryDirectoryOpts {
+    /// Repair symlinks that directory selection would break. Copy targets from this directory into the result. Preserve working relative links and links that already have no target.
+    #[builder(setter(into, strip_option), default)]
+    pub resolve_broken_symlinks: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryWithDirectoryOpts<'a> {
     /// Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
     #[builder(setter(into, strip_option), default)]
@@ -7137,9 +7177,32 @@ impl Directory {
     /// # Arguments
     ///
     /// * `path` - Location of the directory to retrieve. Example: "/src"
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn directory(&self, path: impl Into<String>) -> Directory {
         let mut query = self.selection.select("directory");
         query = query.arg("path", path.into());
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieves a directory at the given path.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Location of the directory to retrieve. Example: "/src"
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn directory_opts(
+        &self,
+        path: impl Into<String>,
+        opts: DirectoryDirectoryOpts,
+    ) -> Directory {
+        let mut query = self.selection.select("directory");
+        query = query.arg("path", path.into());
+        if let Some(resolve_broken_symlinks) = opts.resolve_broken_symlinks {
+            query = query.arg("resolveBrokenSymlinks", resolve_broken_symlinks);
+        }
         Directory {
             proc: self.proc.clone(),
             selection: query,
@@ -7446,6 +7509,22 @@ impl Directory {
             query = query.arg("ssh", ssh);
         }
         Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieves this directory, declared as made for the given platform.
+    /// Declare a result whose contents are the same whichever platform made them, such as a Go package compiled for a platform by any platform's Go toolchain. An engine of another platform that makes the same directory for the same platform then finds this one, and the other way around.
+    /// The contents are not checked: a declared result that depends on the platform it was made on can be found where it doesn't belong.
+    ///
+    /// # Arguments
+    ///
+    /// * `platform` - The platform the directory's contents are for (e.g., "linux/arm64").
+    pub fn with_platform(&self, platform: Platform) -> Directory {
+        let mut query = self.selection.select("withPlatform");
+        query = query.arg("platform", platform);
+        Directory {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -8905,6 +8984,12 @@ pub struct File {
     pub graphql_client: DynGraphQLClient,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct FileSyncOpts {
+    /// Also key the file by its content, so that what consumes it is cached across any two recipes that produce the same file. This hashes the file unless it already has a content key.
+    #[builder(setter(into, strip_option), default)]
+    pub key_by_content: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct FileContentsOpts {
     /// Maximum number of lines to read
     #[builder(setter(into, strip_option), default)]
@@ -9016,8 +9101,33 @@ impl File {
         query.execute(self.graphql_client.clone()).await
     }
     /// Force evaluation in the engine.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn sync(&self) -> Result<File, DaggerError> {
         let query = self.selection.select("sync");
+        let id: Id = query.execute(self.graphql_client.clone()).await?;
+        Ok(File {
+            proc: self.proc.clone(),
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("File"),
+            graphql_client: self.graphql_client.clone(),
+        })
+    }
+    /// Force evaluation in the engine.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn sync_opts(&self, opts: FileSyncOpts) -> Result<File, DaggerError> {
+        let mut query = self.selection.select("sync");
+        if let Some(key_by_content) = opts.key_by_content {
+            query = query.arg("keyByContent", key_by_content);
+        }
         let id: Id = query.execute(self.graphql_client.clone()).await?;
         Ok(File {
             proc: self.proc.clone(),
@@ -11342,7 +11452,7 @@ impl GitRepository {
     ///
     /// * `name` - Ref's name (can be a commit identifier, a tag name, a branch name, or a fully-qualified ref).
     ///
-    /// Commit identifiers may be abbreviated: an unambiguous hex prefix (4-40 characters) of a commit SHA resolves like git rev-parse, with named refs taking precedence. Abbreviated SHAs resolve against locally available objects, so remote repositories (resolved via ls-remote) can only expand prefixes of already-fetched commits; use the full SHA or a named ref otherwise.
+    /// Commit identifiers may be abbreviated: an unambiguous hex prefix (4-40 characters) of a commit SHA resolves like git rev-parse, with named refs taking precedence, to the full SHA. A remote repository that has not fetched the commit yet fetches the history of the refs it advertises to find it, so only commits reachable from those refs can be abbreviated.
     ///
     /// The name may be followed by git revision suffixes, applied left to right: `~N` follows first parents N times and `^N` selects the Nth parent (`~` and `^` mean 1, `^0` is the commit itself), e.g. `HEAD~3`, `main^2` or `abc1234~2`. The result is a detached ref of the resulting commit; remote repositories fetch the history the walk needs. Other git revision syntax (`^{...}`, `@{...}`, `:path`, ranges) is not supported.
     ///
@@ -11363,7 +11473,7 @@ impl GitRepository {
     ///
     /// * `name` - Ref's name (can be a commit identifier, a tag name, a branch name, or a fully-qualified ref).
     ///
-    /// Commit identifiers may be abbreviated: an unambiguous hex prefix (4-40 characters) of a commit SHA resolves like git rev-parse, with named refs taking precedence. Abbreviated SHAs resolve against locally available objects, so remote repositories (resolved via ls-remote) can only expand prefixes of already-fetched commits; use the full SHA or a named ref otherwise.
+    /// Commit identifiers may be abbreviated: an unambiguous hex prefix (4-40 characters) of a commit SHA resolves like git rev-parse, with named refs taking precedence, to the full SHA. A remote repository that has not fetched the commit yet fetches the history of the refs it advertises to find it, so only commits reachable from those refs can be abbreviated.
     ///
     /// The name may be followed by git revision suffixes, applied left to right: `~N` follows first parents N times and `^N` selects the Nth parent (`~` and `^` mean 1, `^0` is the commit itself), e.g. `HEAD~3`, `main^2` or `abc1234~2`. The result is a detached ref of the resulting commit; remote repositories fetch the history the walk needs. Other git revision syntax (`^{...}`, `@{...}`, `:path`, ranges) is not supported.
     ///
@@ -11453,7 +11563,7 @@ impl GitRepository {
     ///
     /// * `id` - Identifier of the commit (e.g., "b6315d8f2810962c601af73f86831f6866ea798b").
     ///
-    /// May be abbreviated to an unambiguous hex prefix (4-40 characters), which is expanded against locally available objects. Remote repositories (resolved via ls-remote) can only expand prefixes of already-fetched commits; use the full SHA otherwise.
+    /// May be abbreviated to an unambiguous hex prefix (4-40 characters), which is expanded to the full SHA. A remote repository that has not fetched the commit yet fetches the history of the refs it advertises to find it.
     pub fn commit(&self, id: impl Into<String>) -> GitCommit {
         let mut query = self.selection.select("commit");
         query = query.arg("id", id.into());
@@ -19963,7 +20073,7 @@ impl Workspace {
         }
     }
     /// Return this workspace with the given Git-compatible patch file applied, without mutating the source.
-    /// Paths in the patch are relative to the workspace root, whatever its cwd, as `git diff` writes them. Patching a path at or under a mount is an error.
+    /// Paths in the patch are relative to the workspace root, whatever its cwd, as `git diff` writes them. Sections for paths in a mount apply to the mounted content; a section cannot move a file across a mount boundary or delete a mount point.
     ///
     /// # Arguments
     ///
@@ -19985,7 +20095,7 @@ impl Workspace {
         }
     }
     /// Return this workspace with the given Git-compatible patch file applied, without mutating the source.
-    /// Paths in the patch are relative to the workspace root, whatever its cwd, as `git diff` writes them. Patching a path at or under a mount is an error.
+    /// Paths in the patch are relative to the workspace root, whatever its cwd, as `git diff` writes them. Sections for paths in a mount apply to the mounted content; a section cannot move a file across a mount boundary or delete a mount point.
     ///
     /// # Arguments
     ///
@@ -20027,8 +20137,8 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Return this workspace with a directory mounted read-only at the given path, without mutating the source.
-    /// Mounted content is readable through the normal workspace file tools but shadows the source at the mount path and stays out of the pending changeset: it never appears in changes, is never exported, and cannot be modified.
+    /// Return this workspace with a directory mounted at the given path, without mutating the source.
+    /// Mounted content is readable and editable through the normal workspace file tools but shadows the source at the mount path and stays out of the pending changeset: neither it nor edits to it appear in changes or are exported. Use withoutMount to remove the mount.
     ///
     /// # Arguments
     ///
@@ -20054,8 +20164,8 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Return this workspace with a file mounted read-only at the given path, without mutating the source.
-    /// Mounted content is readable through the normal workspace file tools but shadows the source at the mount path and stays out of the pending changeset: it never appears in changes, is never exported, and cannot be modified.
+    /// Return this workspace with a file mounted at the given path, without mutating the source.
+    /// Mounted content is readable and editable through the normal workspace file tools but shadows the source at the mount path and stays out of the pending changeset: neither it nor edits to it appear in changes or are exported. Use withoutMount to remove the mount.
     ///
     /// # Arguments
     ///

@@ -66,6 +66,17 @@ CREATE TABLE IF NOT EXISTS result_deps (
     FOREIGN KEY(dep_result_id) REFERENCES results(id) ON DELETE CASCADE
 ) STRICT, WITHOUT ROWID;
 
+-- result_calls are, on the Cloud, the calls engines reported returning an
+-- entry other than their own, as their spans encode them, by request digest.
+-- A store from before the table has none, as no cache kept any.
+CREATE TABLE IF NOT EXISTS result_calls (
+    result_id INTEGER NOT NULL,
+    request_digest TEXT NOT NULL,
+    call TEXT NOT NULL,
+    PRIMARY KEY(result_id, request_digest),
+    FOREIGN KEY(result_id) REFERENCES results(id) ON DELETE CASCADE
+) STRICT, WITHOUT ROWID;
+
 CREATE TABLE IF NOT EXISTS persisted_edges (
     result_id INTEGER PRIMARY KEY,
     created_at_unix_nano INTEGER NOT NULL,

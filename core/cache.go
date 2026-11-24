@@ -229,7 +229,12 @@ type cacheVolumeStoreReleaser struct {
 	err        error
 }
 
-func (q *Query) cacheVolumes() *cacheVolumeStore {
+// cacheVolumes returns the client's store of open cache volumes. A shared
+// root has none: ErrSharedRootClientState.
+func (q *Query) cacheVolumes() (*cacheVolumeStore, error) {
+	if err := q.clientState("cache volumes"); err != nil {
+		return nil, err
+	}
 	q.cacheVolumeStoreMu.Lock()
 	defer q.cacheVolumeStoreMu.Unlock()
 
@@ -238,7 +243,7 @@ func (q *Query) cacheVolumes() *cacheVolumeStore {
 			entries: make(map[string]*cacheVolumeStoreEntry),
 		}
 	}
-	return q.cacheVolumeStore
+	return q.cacheVolumeStore, nil
 }
 
 func (s *cacheVolumeStore) acquire(
@@ -516,11 +521,15 @@ func (cache *CacheVolume) InitializeSnapshot(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	cacheVolumes, err := query.cacheVolumes()
+	if err != nil {
+		return err
+	}
 	if cache.snapshotID != "" {
 		// acquire opens the snapshot only when no volume of this client has it
 		// open yet.
 		origin := telemetryattrs.CacheVolumeStateOpen
-		ref, releaseSnapshot, err := query.cacheVolumes().acquire(ctx, cache.snapshotID, func(ctx context.Context) (bkcache.MutableRef, error) {
+		ref, releaseSnapshot, err := cacheVolumes.acquire(ctx, cache.snapshotID, func(ctx context.Context) (bkcache.MutableRef, error) {
 			origin = telemetryattrs.CacheVolumeStateReopened
 			ref, err := query.SnapshotManager().GetMutableBySnapshotID(
 				ctx,
@@ -561,7 +570,7 @@ func (cache *CacheVolume) InitializeSnapshot(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to initialize cache volume snapshot: %w", err)
 	}
-	releaseSnapshot, err := query.cacheVolumes().register(ctx, newRef)
+	releaseSnapshot, err := cacheVolumes.register(ctx, newRef)
 	if err != nil {
 		return err
 	}

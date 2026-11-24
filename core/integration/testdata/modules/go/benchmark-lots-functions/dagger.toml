@@ -1,0 +1,3 @@
+[modules.potato-sack]
+source = "."
+main = true

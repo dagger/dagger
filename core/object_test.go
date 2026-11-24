@@ -20,6 +20,12 @@ type moduleObjectTestServer struct {
 	dag         *dagql.Server
 	root        *Query
 	defaultDeps *SchemaBuilder
+	// session, if set, is the session's schema builder memo.
+	session *SchemaBuilderMemo
+}
+
+func (s *moduleObjectTestServer) SessionSchemaBuilderMemo(context.Context) (*SchemaBuilderMemo, error) {
+	return s.session, nil
 }
 
 type moduleObjectHandleTestObj struct {

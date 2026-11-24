@@ -13,9 +13,9 @@ import (
 // writer copies and then writes, holds its own.
 func TestContainerBorrowedPartLinks(t *testing.T) {
 	ctr := NewContainer(Platform{OS: "linux", Architecture: "amd64"})
-	ctr.FS.setValue(partTestDirectory(&partFixtureTestRef{id: "parent-fs"}, "/"))
+	ctr.FS.setValue(partTestDirectory(&partTestRef{id: "parent-fs"}, "/"))
 	mountDir := new(LazyAccessor[*Directory, *Container])
-	mountDir.setValue(partTestDirectory(&partFixtureTestRef{id: "parent-mount"}, "/"))
+	mountDir.setValue(partTestDirectory(&partTestRef{id: "parent-mount"}, "/"))
 	ctr.Mounts = []ContainerMount{{Target: "/mnt", DirectorySource: mountDir}}
 	ctr.markBorrowed(ContainerPartFS)
 	ctr.markBorrowed(ContainerPartMount("/mnt"))
@@ -30,15 +30,15 @@ func TestContainerBorrowedPartLinks(t *testing.T) {
 	require.Equal(t, map[string]bool{"parent-fs": true, "parent-mount": true}, borrowed())
 
 	// Written after the copy: the rootfs and the mount hold new snapshots.
-	ctr.FS.setValue(partTestDirectory(&partFixtureTestRef{id: "written-fs"}, "/"))
+	ctr.FS.setValue(partTestDirectory(&partTestRef{id: "written-fs"}, "/"))
 	require.Equal(t, map[string]bool{"written-fs": false, "parent-mount": true}, borrowed())
-	mountDir.setValue(partTestDirectory(&partFixtureTestRef{id: "written-mount"}, "/"))
+	mountDir.setValue(partTestDirectory(&partTestRef{id: "written-mount"}, "/"))
 	require.Equal(t, map[string]bool{"written-fs": false, "written-mount": false}, borrowed())
 
 	// A part with no snapshot when copied records nothing.
 	empty := NewContainer(ctr.Platform)
 	empty.markBorrowed(ContainerPartFS)
-	empty.FS.setValue(partTestDirectory(&partFixtureTestRef{id: "later-fs"}, "/"))
+	empty.FS.setValue(partTestDirectory(&partTestRef{id: "later-fs"}, "/"))
 	require.False(t, empty.PersistedSnapshotRefLinks()[0].Borrowed)
 }
 
@@ -46,10 +46,10 @@ func TestContainerBorrowedPartLinks(t *testing.T) {
 // and every role the part links under, held or not.
 func TestContainerSnapshotOwnerParts(t *testing.T) {
 	ctr := NewContainer(Platform{OS: "linux", Architecture: "amd64"})
-	ctr.FS.setValue(partTestDirectory(&partFixtureTestRef{id: "fs"}, "/"))
-	ctr.MetaSnapshot.setValue(&partFixtureTestRef{id: "meta"})
+	ctr.FS.setValue(partTestDirectory(&partTestRef{id: "fs"}, "/"))
+	ctr.MetaSnapshot.setValue(&partTestRef{id: "meta"})
 	dir := new(LazyAccessor[*Directory, *Container])
-	dir.setValue(partTestDirectory(&partFixtureTestRef{id: "dir"}, "/"))
+	dir.setValue(partTestDirectory(&partTestRef{id: "dir"}, "/"))
 	file := new(LazyAccessor[*File, *Container])
 	ctr.Mounts = []ContainerMount{
 		{Target: "/dir", DirectorySource: dir},

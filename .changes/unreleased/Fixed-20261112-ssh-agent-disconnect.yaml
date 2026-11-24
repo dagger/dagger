@@ -1,0 +1,8 @@
+kind: Fixed
+body: |
+  Report a closed SSH agent connection immediately instead of waiting for the
+  five-second timeout. Agents that stay connected without answering still time out.
+time: 2026-11-12T18:38:00-08:00
+custom:
+  Author: grouville
+  PR: 15166

@@ -25,9 +25,12 @@ class File extends Client\AbstractObject implements Client\IdAble, Exportable, N
     /**
      * Force evaluation in the engine.
      */
-    public function sync(): File
+    public function sync(?bool $keyByContent = false): File
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
+        if (null !== $keyByContent) {
+        $leafQueryBuilder->setArgument('keyByContent', $keyByContent);
+        }
         $id = $this->queryLeaf($leafQueryBuilder, 'sync');
         return $this->client->loadObjectFromId(\Dagger\File::class, new \Dagger\Id((string)$id), 'File');
     }

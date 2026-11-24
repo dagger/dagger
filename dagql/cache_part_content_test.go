@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -36,6 +38,10 @@ type contentTestFault struct {
 	stallAfter int
 	// closeDelay makes the body's Close take that long before it is closed.
 	closeDelay time.Duration
+	// truncateFirst truncates only the URL's first that many responses.
+	truncateFirst int
+	// hold, when set, delays each response until it is closed.
+	hold <-chan struct{}
 }
 
 // contentTestTransport is an in-process RoundTripper over byte slices. It
@@ -46,7 +52,9 @@ type contentTestTransport struct {
 	faults   map[string]contentTestFault
 	requests map[string]int
 	ranges   []string
-	open     atomic.Int64
+	// urls are the requests' URLs, in the order they came.
+	urls []string
+	open atomic.Int64
 	// bodies and closes count response bodies and every raw Close call.
 	bodies atomic.Int64
 	closes atomic.Int64
@@ -55,6 +63,11 @@ type contentTestTransport struct {
 	// opened, when set and buffered, is signaled once per response body
 	// without ever blocking the transport.
 	opened chan struct{}
+	// rangeHolds delay each response to a request for that Range header
+	// until the channel is closed.
+	rangeHolds map[string]<-chan struct{}
+	// delay, when set, holds every response's headers that long.
+	delay time.Duration
 }
 
 func newContentTestTransport() *contentTestTransport {
@@ -73,10 +86,28 @@ func (tr *contentTestTransport) fault(url string, fault contentTestFault) {
 	tr.faults[url] = fault
 }
 
+// holdRange delays every response to a request for spec, a Range header
+// value, until hold is closed.
+func (tr *contentTestTransport) holdRange(spec string, hold <-chan struct{}) {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	if tr.rangeHolds == nil {
+		tr.rangeHolds = map[string]<-chan struct{}{}
+	}
+	tr.rangeHolds[spec] = hold
+}
+
 func (tr *contentTestTransport) count(url string) int {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	return tr.requests[url]
+}
+
+// first is the index of url's first request among all of them, or -1.
+func (tr *contentTestTransport) first(url string) int {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	return slices.Index(tr.urls, url)
 }
 
 func (tr *contentTestTransport) total() int {
@@ -93,10 +124,33 @@ func (tr *contentTestTransport) RoundTrip(req *http.Request) (*http.Response, er
 	url := req.URL.String()
 	tr.mu.Lock()
 	tr.requests[url]++
+	served := tr.requests[url]
 	tr.ranges = append(tr.ranges, req.Header.Get("Range"))
+	tr.urls = append(tr.urls, url)
 	data, ok := tr.objects[url]
 	fault, faulted := tr.faults[url]
+	rangeHold := tr.rangeHolds[req.Header.Get("Range")]
 	tr.mu.Unlock()
+	if served <= fault.truncateFirst {
+		fault.truncate = true
+	}
+	if tr.delay > 0 {
+		select {
+		case <-time.After(tr.delay):
+		case <-req.Context().Done():
+			return nil, req.Context().Err()
+		}
+	}
+	for _, hold := range []<-chan struct{}{fault.hold, rangeHold} {
+		if hold == nil {
+			continue
+		}
+		select {
+		case <-hold:
+		case <-req.Context().Done():
+			return nil, context.Cause(req.Context())
+		}
+	}
 	if !faulted {
 		fault.stallAfter = -1
 	}
@@ -119,7 +173,13 @@ func (tr *contentTestTransport) RoundTrip(req *http.Request) (*http.Response, er
 	var start, end int64
 	resp.StatusCode = http.StatusOK
 	if spec := req.Header.Get("Range"); spec != "" && !fault.ignoreRange {
-		if _, err := fmt.Sscanf(spec, "bytes=%d-%d", &start, &end); err != nil {
+		// An open range, bytes=N-, runs to the end of the object.
+		if open, ok := strings.CutSuffix(spec, "-"); ok {
+			if _, err := fmt.Sscanf(open, "bytes=%d", &start); err != nil {
+				return nil, err
+			}
+			end = int64(len(data)) - 1
+		} else if _, err := fmt.Sscanf(spec, "bytes=%d-%d", &start, &end); err != nil {
 			return nil, err
 		}
 		resp.StatusCode = http.StatusPartialContent
@@ -760,7 +820,9 @@ func TestRenewalChainControls(t *testing.T) {
 		}})
 		require.NoError(t, got.err)
 		require.Len(t, got.requests, 1)
-		require.Equal(t, fixture.digest(0), got.requests[0].NeededBlob)
+		// The layers download at once: either one's expired address starts
+		// the renewal.
+		require.Contains(t, []digest.Digest{fixture.digest(0), fixture.digest(1)}, got.requests[0].NeededBlob)
 		require.Equal(t, 1, got.transport.count("https://renewed.invalid/lower"))
 		require.Equal(t, 1, got.transport.count("https://renewed.invalid/upper"))
 	})
@@ -903,6 +965,10 @@ type exhaustionFixture struct {
 	operation *renewalFallbackOperation
 	demand    *PartDemandState
 	address   PersistedPartAddress
+	// logs captures the lines logged through ctx.
+	logs *offerLogs
+	// store is the cache's snapshot store.
+	store *testutil.Store
 }
 
 func newExhaustionFixture(t *testing.T, chains ...chainFixture) *exhaustionFixture {
@@ -910,7 +976,9 @@ func newExhaustionFixture(t *testing.T, chains ...chainFixture) *exhaustionFixtu
 	store := testutil.NewStore(t)
 	ctx, c, srv := transferTestCache(t)
 	c.snapshotManager = store.Manager
-	f := &exhaustionFixture{ctx: ctx, cache: c, srv: srv, transport: newContentTestTransport(), operation: new(renewalFallbackOperation), address: PersistedPartAddress{Part: "snapshot"}}
+	f := &exhaustionFixture{cache: c, srv: srv, transport: newContentTestTransport(), operation: new(renewalFallbackOperation), address: PersistedPartAddress{Part: "snapshot"}, logs: &offerLogs{}, store: store}
+	ctx = f.logs.into(ctx)
+	f.ctx = ctx
 	for _, chain := range chains {
 		for i, blob := range chain.blobs {
 			f.transport.serve(fmt.Sprintf("https://fixed.invalid/%s/%d", chain.tag, i), blob)
@@ -975,6 +1043,24 @@ func (f *exhaustionFixture) installed() bool {
 	return len(f.receiver.cacheSharedResult().loadSnapshotOwnerLinks()) == 1
 }
 
+// requireOneLinePerAttempt checks that every install attempt that reached
+// the import logged one line: a failed one for each source its content
+// exhausted, and an installed one for the install.
+func (f *exhaustionFixture) requireOneLinePerAttempt(t *testing.T) {
+	t.Helper()
+	installs := 0
+	if f.installed() {
+		installs = 1
+	}
+	require.Len(t, f.logs.lines(t, "remote cache part installed"), installs)
+	failed := f.logs.lines(t, "remote cache part install failed")
+	require.Len(t, failed, int(f.demand.revision), "one failed line per exhausted source")
+	for _, line := range failed {
+		require.Equal(t, "content", line.fields["outcome"])
+		require.Equal(t, "WARN", line.fields["level"])
+	}
+}
+
 func renewChain(chain chainFixture) func(*RenewalRequest) RenewalReply {
 	return func(request *RenewalRequest) RenewalReply {
 		addresses := map[digest.Digest]BlobAddress{}
@@ -1012,6 +1098,7 @@ func TestRenewalExhaustion(t *testing.T) {
 		require.Zero(t, f.operation.runs.Load())
 		require.Equal(t, 1, f.transport.count("https://fixed.invalid/shared/1"))
 		require.EqualValues(t, 1, f.demand.revision, "only the refused receiver chain was exhausted")
+		f.requireOneLinePerAttempt(t)
 	})
 	t.Run("equivalent donor key does not reset the episode", func(t *testing.T) {
 		f := newExhaustionFixture(t, chain)
@@ -1029,6 +1116,7 @@ func TestRenewalExhaustion(t *testing.T) {
 		require.Len(t, taken(), 1)
 		require.EqualValues(t, 2, f.demand.revision, "both sources were tried and exhausted")
 		require.Zero(t, f.transport.total())
+		f.requireOneLinePerAttempt(t)
 	})
 	t.Run("distinct chain can still renew", func(t *testing.T) {
 		f := newExhaustionFixture(t, chain, other)
@@ -1046,6 +1134,8 @@ func TestRenewalExhaustion(t *testing.T) {
 		require.Len(t, taken(), 2)
 		require.Zero(t, f.operation.runs.Load())
 		require.Equal(t, 1, f.transport.count("https://renewed.invalid/distinct/1"))
+		f.requireOneLinePerAttempt(t)
+		require.Positive(t, f.logs.lines(t, "remote cache part installed")[0].int(t, "renew"))
 	})
 	for name, replace := range map[string]func(PersistedPartOffer) PersistedPartOffer{
 		"rotated key": func(o PersistedPartOffer) PersistedPartOffer {
@@ -1081,12 +1171,14 @@ func TestRenewalExhaustion(t *testing.T) {
 			require.True(t, replaced.Replaced)
 			require.Len(t, taken(), 1, "the replacement's new revision is retried without another episode")
 			require.EqualValues(t, 2, f.demand.revision, "the per-source set admitted the new revision")
+			f.requireOneLinePerAttempt(t)
 		})
 	}
 	t.Run("no bridge", func(t *testing.T) {
 		f := newExhaustionFixture(t, chain)
 		f.attach(t, f.receiver, exhaustionOffer(chain, "receiver-key", false))
 		requireFallback(t, f, f.run(), "no bridge attached")
+		f.requireOneLinePerAttempt(t)
 	})
 	t.Run("no renewal key", func(t *testing.T) {
 		f := newExhaustionFixture(t, chain)
@@ -1094,6 +1186,7 @@ func TestRenewalExhaustion(t *testing.T) {
 		f.attach(t, f.receiver, exhaustionOffer(chain, "", false))
 		requireFallback(t, f, f.run(), "offer has no renewal key")
 		require.Empty(t, taken())
+		f.requireOneLinePerAttempt(t)
 	})
 	t.Run("full mailbox", func(t *testing.T) {
 		f := newExhaustionFixture(t, chain)
@@ -1115,5 +1208,21 @@ func TestRenewalExhaustion(t *testing.T) {
 		live, queued := liveExchanges(bridge)
 		require.Equal(t, renewalMailboxCapacity, live, "no request was enqueued")
 		require.Equal(t, renewalMailboxCapacity, queued)
+		f.requireOneLinePerAttempt(t)
+	})
+	t.Run("retry status renews once", func(t *testing.T) {
+		f := newExhaustionFixture(t, chain)
+		renewalConsumer(t, attachTestBridge(t, f.cache.PartContentSource()), renewChain(chain))
+		f.transport.fault("https://fixed.invalid/shared/1", contentTestFault{status: http.StatusForbidden})
+		f.attach(t, f.receiver, exhaustionOffer(chain, "receiver-key", true))
+		require.NoError(t, f.run())
+		require.True(t, f.installed())
+		require.Equal(t, 1, f.transport.count("https://fixed.invalid/shared/1"))
+		require.Equal(t, 1, f.transport.count("https://renewed.invalid/shared/1"))
+		f.requireOneLinePerAttempt(t)
+		line := f.logs.lines(t, "remote cache part installed")[0]
+		require.EqualValues(t, f.transport.total(), line.int(t, "requests"))
+		require.EqualValues(t, len(chain.chain.Layers)+1, line.int(t, "requests"), "the refused request and its renewed retry")
+		require.Positive(t, line.int(t, "renew"))
 	})
 }

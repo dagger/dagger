@@ -1746,6 +1746,11 @@ func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) ([]da
 		// return, so a result is kept only when the whole check passed.
 		runSpec := *field.Spec
 		runSpec.Name = checkRunFieldName(fun.Name)
+		// Its span is plumbing between the check and the function's own
+		// work: frontends show that work in its place. Without this, a failed
+		// check shows a Type.__check_<function> row, since failed spans show
+		// even when they're internal.
+		runSpec.PassthroughTelemetry = true
 		authoredFunc := field.Func
 		fields = append(fields, dagql.Field[*ModuleObject]{
 			Spec: &runSpec,
@@ -1771,7 +1776,6 @@ func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) ([]da
 		projectionSpec := *field.Spec
 		projectionSpec.Type = fun.ReturnType.Self().ToTyped()
 		projectionSpec.ViewFilter = AfterVersion("v1.0.0-0")
-		projectionSpec.IsPersistable = false
 		// The projection keeps the function's cache inputs: a check that
 		// must run fresh gets a new Check object, and every read of one
 		// object shares its run.
@@ -1780,6 +1784,12 @@ func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) ([]da
 			Spec: &projectionSpec,
 			Func: func(ctx context.Context, receiver dagql.ObjectResult[*ModuleObject], args map[string]dagql.Input, _ call.View) (dagql.AnyResult, error) {
 				workspace, _ := WorkspaceFromContext(ctx)
+				// A check is planned again in a later session unless its
+				// workspace is identified by its content and its function is
+				// cached across sessions.
+				if workspace.Self() == nil || !workspace.Self().HasContentIdentity() || dagql.CurrentCall(ctx).SessionBound() {
+					dagql.DeclinePersistence(ctx)
+				}
 				var inputs []CallInput
 				for name, value := range args {
 					inputs = append(inputs, CallInput{Name: name, Value: value})

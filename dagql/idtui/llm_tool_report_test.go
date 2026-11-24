@@ -2,13 +2,17 @@ package idtui
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/muesli/termenv"
+	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/codes"
+	otellog "go.opentelemetry.io/otel/log"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
 	"github.com/dagger/dagger/dagql/dagui"
@@ -474,6 +478,74 @@ func TestASCIIReporterScopedChecksUnderToolBoundary(t *testing.T) {
 	// work the check did stays out of the tool result.
 	if strings.Contains(got, "Container.withExec") {
 		t.Errorf("scoped report fell back to the raw tree:\n%s", got)
+	}
+}
+
+// TestScopedReportHideConversationOmitsSubAgent covers the render option an
+// LLM tool result sets. Surfacing is relative to the tool call, so a
+// sub-agent conversation the tool ran beneath it (a module function looping a
+// small model over a big page) is "the conversation" of a tool-call-scoped
+// report -- and without HideConversation its whole transcript, prompt
+// included, lands back in the caller's context. The same scoped render
+// without the option (ReadTrace's shape) still shows it.
+func TestScopedReportHideConversationOmitsSubAgent(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	db := dagui.NewDB()
+	rootID := prettyTestSpanID(1)
+	toolID := prettyTestSpanID(2)
+	fnID := prettyTestSpanID(3)
+	promptID := prettyTestSpanID(4)
+	replyID := prettyTestSpanID(5)
+	start := time.Unix(100, 0)
+	end := start.Add(5 * time.Second)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{
+			ID: rootID, TraceID: prettyTestTraceID(), Name: "agent",
+			StartTime: start, EndTime: end, Final: true,
+		},
+		{
+			// Mirrors StartToolCall: boundary + roll-ups + tool name + role.
+			ID: toolID, TraceID: prettyTestTraceID(), Name: "summarize",
+			ParentID: rootID, Boundary: true, RollUpLogs: true, RollUpSpans: true,
+			LLMTool: "summarize", LLMRole: "assistant",
+			StartTime: start.Add(time.Second), EndTime: end, Final: true,
+		},
+		{
+			ID: fnID, TraceID: prettyTestTraceID(), Name: "Summarizer.summarize",
+			ParentID:  toolID,
+			StartTime: start.Add(time.Second), EndTime: end, Final: true,
+		},
+		{
+			ID: promptID, TraceID: prettyTestTraceID(), Name: "LLM prompt",
+			ParentID: fnID, LLMRole: "user",
+			StartTime: start.Add(2 * time.Second), EndTime: start.Add(3 * time.Second), Final: true,
+		},
+		{
+			ID: replyID, TraceID: prettyTestTraceID(), Name: "LLM response",
+			ParentID: fnID, LLMRole: "assistant",
+			StartTime: start.Add(3 * time.Second), EndTime: start.Add(4 * time.Second), Final: true,
+		},
+	})
+	db.SetPrimarySpan(rootID)
+	session := NewReportSession(db)
+	require.NoError(t, session.LogExporter().Export(context.Background(), []sdklog.Record{
+		frontendTestLogRecord(promptID.SpanID, otellog.StringValue("SUB-AGENT-PROMPT\n")),
+		frontendTestLogRecord(replyID.SpanID, otellog.StringValue("SUB-AGENT-REPLY\n")),
+	}))
+
+	opts := scopedReportOpts(toolID, true)
+	withConv := renderReport(t, session, opts)
+	if !strings.Contains(withConv, "CONVERSATION") || !strings.Contains(withConv, "SUB-AGENT-PROMPT") {
+		t.Fatalf("precondition: a scoped report surfaces the nested conversation:\n%s", withConv)
+	}
+
+	opts.HideConversation = true
+	got := renderReport(t, session, opts)
+	t.Logf("rendered report:\n%s", got)
+	for _, leaked := range []string{"CONVERSATION", "SUB-AGENT-PROMPT", "SUB-AGENT-REPLY"} {
+		if strings.Contains(got, leaked) {
+			t.Errorf("HideConversation report leaked %q:\n%s", leaked, got)
+		}
 	}
 }
 

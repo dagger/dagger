@@ -80,6 +80,34 @@ func (node *AgentNode) Live() bool {
 	return span != nil && span.IsRunning()
 }
 
+// AgentState returns the lifecycle state (IDLE, RUNNING, PAUSED, ...) the
+// control records last reported for the agent whose loop span is span, from
+// the incarnation published in span's own trace. A loop span stays open for
+// its agent's whole life, idle turns included, so this — not the span's
+// running-ness — says whether the agent is actually working. False for a span
+// that is not an agent loop span, or whose agent has no control record in
+// that trace.
+func (db *DB) AgentState(span *Span) (string, bool) {
+	if span == nil || !span.Agent || span.AgentID == "" {
+		return "", false
+	}
+	trace := span.TraceID.String()
+	var found *agentcontrol.Agent
+	for _, a := range db.agentControl.Agents() {
+		if a.Handle != span.AgentID || a.Trace != trace {
+			continue
+		}
+		if found == nil || a.Activity.After(found.Activity) ||
+			(a.Activity.Equal(found.Activity) && a.Revision > found.Revision) {
+			found = &a
+		}
+	}
+	if found == nil {
+		return "", false
+	}
+	return found.State, true
+}
+
 // Agents returns every agent published into the trace, ordered by when each
 // first appeared, so a roster keeps a stable order as agents come and go.
 //

@@ -75,6 +75,10 @@ func (sp *fsSyncProvider) TarStream(stream FileSync_TarStreamServer) error {
 	return sp.handle("tarstream", stream)
 }
 
+func (sp *fsSyncProvider) FindUp(context.Context, *FindUpRequest) (*FindUpResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "find-up not supported")
+}
+
 func (sp *fsSyncProvider) handle(method string, stream grpc.ServerStream) (retErr error) {
 	var pr *protocol
 	for _, p := range supportedProtocols {

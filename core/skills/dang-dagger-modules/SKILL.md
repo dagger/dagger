@@ -1,6 +1,6 @@
 ---
 name: dang-dagger-modules
-description: Authoring Dagger modules in Dang — dagger.json setup, the main type & constructor, what becomes module API, self-calls (supported; annotate returns as Dagger.<Type>!), dependencies, enums/interfaces/scalars, directives (@check, @cache, @defaultPath, @agent), Workspace args, and caching pitfalls. Use when writing or reviewing a Dagger module implemented in Dang.
+description: Authoring Dagger modules in Dang — dagger-module.toml setup, the main type & constructor, what becomes module API, self-calls (supported; annotate returns as Dagger.<Type>!), dependencies, enums/interfaces/scalars, directives (@check, @cache, @defaultPath, @agent), Workspace args, and caching pitfalls. Use when writing or reviewing a Dagger module implemented in Dang.
 ---
 
 # Dagger Modules in Dang
@@ -33,29 +33,45 @@ as a **Dagger module SDK**.
 
 ## Module setup
 
-```json
-{
-  "name": "counter",
-  "engineVersion": "v0.21.5",
-  "sdk": { "source": "dang" }
-}
+```toml
+# dagger-module.toml
+name = "counter"
+engineVersion = "v1.0.0"
+
+[runtime]
+  source = "dang"
 ```
 
-- `"sdk": "dang"` (plain string) also works.
+- Create one with `dagger module init dang --name counter` after
+  `dagger module install dagger.io/sdk/dang`; the SDK writes
+  `engineVersion` during generation.
 - A `dang.toml` beside the module (between the source and module directories)
-  declares its versions, and wins over `dagger.json`: `[imports.Dagger] dagger
+  declares its versions, and wins over the module config: `[imports.Dagger] dagger
   = "vX.Y.Z"` is the engine version (API, naming), `dang = "X.Y"` the Dang
   language version.
 - Without `dang = ...`, `engineVersion` picks the Dang language: `< v0.21.5` is
-  Dang 1.0 (where `.{ }` is GraphQL selection); `>= v0.21.5` is Dang 2 (`.{ }`
-  is dot-block application, `.{{ }}` is selection). Don't bump an old module's
-  `engineVersion` without checking its selection syntax, or pin `dang = "1.0"`.
-- Dependencies: `"dependencies": [{"name": "gochild", "source": "gochild"}]` —
-  deps may use any SDK (Go, Python, TypeScript, Dang) side by side.
-- `"disableDefaultFunctionCaching": true` turns off default function caching
-  module-wide (coarse alternative to per-function `@cache`).
-- Legacy `"sdk": {"experimental": {"SELF_CALLS": true}}` is obsolete: self-calls
-  graduated to a runtime-capability check and are always on for Dang.
+  Dang 1.0 (where `.{ }` is GraphQL selection); `v0.21.5` up to
+  `v1.0.0-beta.28` is Dang 2.1 (`.{ }` is dot-block application, `.{{ }}` is
+  selection, and `"${x}"` is literal text: interpolate with backticks,
+  `` `hi ${x}` ``); `>= v1.0.0-beta.28` is Dang 2.5, where a type pattern
+  spells the non-null type its arm binds (`c: Cat! =>`, `e: Error! =>` in
+  `rescue`), `"..."`/`"""..."""` strings interpolate `${...}` and process
+  escapes, and only a language tag may follow an opening `"""`. Write
+  `'...'`/`'''...'''` for verbatim text (shell with `${VAR}` or `\`
+  continuations, regexes), or escape `\${`.
+  Don't bump an old module's `engineVersion` without checking its syntax
+  (`dang migrate -w --from 2.1` rewrites a module that declares no `dang`), or
+  pin `dang = "X.Y"`.
+- Dependencies are `[[dependencies]]` tables (`name = "gochild"`,
+  `source = "./gochild"`), managed with `dagger module client add/rm/update`
+  from the module directory. Deps may use any SDK (Go, Python, TypeScript,
+  Dang) side by side.
+- `disableDefaultFunctionCaching = true` (top level) turns off default
+  function caching module-wide (coarse alternative to per-function `@cache`).
+- Legacy `dagger.json` modules (`"sdk": {"source": "dang"}` or `"sdk": "dang"`)
+  still load. Their `"sdk": {"experimental": {"SELF_CALLS": true}}` is
+  obsolete: self-calls graduated to a runtime-capability check and are always
+  on for Dang.
 
 ## Main type, constructor & API surface
 
@@ -75,7 +91,7 @@ type Greeter {
 
 - Without `new`, the uninitialized public fields form an implicit constructor
   in declaration order (positional construction works).
-- Constructor args become top-level flags: `dagger call --name alice greet`.
+- Constructor args become top-level flags: `dagger api call counter --name alice greet`.
   Arg names need not match field names; the body really executes.
 - Public is the default: bare typed declarations are exposed; `let` is
   private — including `let` *functions*, the idiom for internal helpers. The
@@ -150,6 +166,15 @@ type Test {
   `apply(container: Dagger.Container!): Dagger.Container!`.
 - `scalar Timestamp` is exposed as a String at the boundary; values arrive as
   strings.
+- Bare `JSON` is Dang's builtin JSON-text scalar (`text :: JSON!`), beside
+  its codec (`JSON.encode`, `JSON.decode`); data of any shape decodes into
+  `Decoded`. Dagger's schema scalar is `Dagger.JSON`, as a Dagger API argument
+  of type `JSON` wants; convert between them with a cast
+  (`value :: Dagger.JSON!`).
+- A Dagger object displays as the lazy query it is, in string interpolation,
+  `toString` and `print`: `<Container: container.from(address: …)>`, argument
+  values elided. Nothing is sent to show it. Select `.id` where an ID is
+  wanted.
 
 ## Directives Dagger consumes
 
@@ -173,7 +198,7 @@ type Test {
 ## Workspace args
 
 - A `Workspace!`-typed arg (bare or `Dagger.Workspace!`) is auto-filled by the
-  caller's workspace — no flag needed on `dagger call`; for agents it's filled
+  caller's workspace — no flag needed on `dagger api call`; for agents it's filled
   from the bound workspace and hidden from the model.
 - `let ws: Workspace!` as an uninitialized field is the standard pattern for
   holding it. Read with `ws.file(...)`, `ws.directory(path, exclude: [...])`.
@@ -186,7 +211,8 @@ type Test {
 - The engine memoizes function results by (object id, field, args) within a
   session. Side-effecting or live-reading functions **must** opt out:
   `@cache(policy: FunctionCachePolicy.Never)` (mixes a per-call nonce into the
-  call id). `@cache(ttl: 300)` sets a time-to-live instead.
+  call id). `@cache(ttl: "5m")` sets a time-to-live instead (a duration
+  string, valid only with the `Default` policy).
 - Even with `Never`, identical container execs still hit the exec cache — bust
   with a nonce: `.withEnvVariable("NONCE", Random.string)`.
 
@@ -207,5 +233,14 @@ type Test {
 - Declaring `id` when implementing a dep interface → error; omit it.
 - Using v1 `.{ }` selection in a `>= v0.21.5` module — that's dot-block now;
   select with `.{{ }}`.
+- A bare type pattern (`c: Cat =>`) in a Dang 2.5 module → error; write
+  `c: Cat! =>`.
+- A shell-ish `"${PATH}"` in a Dang 2.5 module interpolates (or fails to
+  resolve `PATH`), and a `\` in a `"""` string is an escape; write verbatim
+  text as `'${PATH}'` or `'''...'''`.
+- Conversely, `"hi ${name}"` in a Dang 2.1 module (`engineVersion` before
+  v1.0.0-beta.28) is literal text, not an interpolation; use backticks.
+- Passing bare `JSON` where a Dagger API wants its `JSON` scalar → type
+  mismatch; cast it, `value :: Dagger.JSON!`.
 - Only *top-level* type declarations become module types; types defined inside
   bodies aren't hoisted into the schema.

@@ -422,11 +422,13 @@ What landed, by step:
    request-build time (the stored history keeps clean text + structured
    origin); `recipeSelectors` re-emits origins so portable recipes keep
    provenance; clients read `LLMMessage.origin` (explicit nullable accessor).
-   The cross-boundary half is `core.CallerAgent`: the ambient loop agent, or
-   the calling client's function-call record — modfunc stamps
+   The cross-boundary half is `core.CallerAgent`: the ambient loop agent, the
+   calling client's function-call record — modfunc stamps
    `FunctionCall.callerAgent` from its own `CallerAgent` resolution, so the
    identity propagates through arbitrarily nested module calls with no
-   forgeable "from" argument anywhere.
+   forgeable "from" argument anywhere — or, for an in-engine nested client
+   that runs no function (a DangEval snippet's), the agent its client scope
+   was created for (`ClientMetadata.CallerAgent`, engine-internal).
 2. **`wait`** (§4.4) — plus `Agent.error`, which the design did not
    name but §7's collect semantics required: a settled wait that reports
    FAILED is useless if nothing exposes WHY, and the loop error was

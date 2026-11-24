@@ -834,8 +834,9 @@ func (ars *AgentRuntimes) Send(ctx context.Context, agent dagql.ObjectResult[*Ag
 	// Provenance is resolved here, at the one central enqueue path, and
 	// nowhere else (hack/designs/agent-messaging.md §4.1): the ambient agent
 	// (a tool the loop dispatched in-process), the calling client's
-	// function-call record (module functions and their nested API calls), or
-	// the user. There is no "from" argument to forge.
+	// function-call record (module functions and their nested API calls),
+	// the agent an in-engine nested client acts for (a DangEval snippet's),
+	// or the user. There is no "from" argument to forge.
 	origin, senderKey := resolveMessageOrigin(ctx)
 	if replyTo != "" {
 		answer := text

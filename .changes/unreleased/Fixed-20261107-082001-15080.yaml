@@ -1,0 +1,8 @@
+kind: Fixed
+body: |
+  The CLI no longer uses a full core while thousands of spans are running, as in
+  a large `go test` run, so it keeps up with the engine's telemetry.
+time: 2026-11-07T08:20:00Z
+custom:
+  Author: sipsma
+  PR: "15080"

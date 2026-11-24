@@ -92,6 +92,39 @@ func TestGracefulStopRecordsItsPhases(t *testing.T) {
 	require.NotZero(t, phase, "this stop has no remove-sessions phase")
 }
 
+func TestGracefulStopRecordsWhetherTheExportsWereCut(t *testing.T) {
+	// the export drain's phase ends ok when the exports finished, and
+	// canceled when the drain cut them at its deadline
+	recordGlobally(t)
+	drainOutcome := func(t *testing.T, cut bool) string {
+		t.Helper()
+		srv := newGracefulStopServer(t, filepath.Join(t.TempDir(), "cache.db"))
+		flushStopDumpAtCleanup(t, srv)
+		release := make(chan struct{})
+		if !cut {
+			close(release)
+		}
+		exported := slowExport(t, srv, release)
+		srv.remoteCacheAdapter.stopReserve = time.Second
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		require.NoError(t, srv.GracefulStop(ctx))
+		<-exported
+		// the phase of this stop: the latest one
+		h, evs := readStopDump(t, srv)
+		var phase *wcprof.DumpEvent
+		for i, ev := range evs {
+			if ev.Type == "op" && h.Strings[ev.ClassID] == "engine.stop.stop remote cache integration" && (phase == nil || ev.StartNS > phase.StartNS) {
+				phase = &evs[i]
+			}
+		}
+		require.NotNil(t, phase, "the stop dump has no export drain phase")
+		return phase.Outcome
+	}
+	require.Equal(t, "ok", drainOutcome(t, false), "the exports finished")
+	require.Equal(t, "canceled", drainOutcome(t, true), "the drain cut the export at its deadline")
+}
+
 func TestGracefulStopDoesNotWaitForItsDump(t *testing.T) {
 	// with a recorder holding enough events that one stop dump write takes
 	// a while, as a test-base engine's does (about 1.6 s for 1.1M events),

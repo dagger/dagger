@@ -76,20 +76,20 @@ func (RuntimeCodegenSuite) TestClientGenerationFollowsCodegen(ctx context.Contex
 
 	t.Run("a build failure is the error, not the missing-files hint", func(ctx context.Context, t *testctx.T) {
 		// With the module loaded from the generated context, the only thing
-		// that can stop client generation is the module itself not building —
-		// and that is what the user has to see.
-		_, err := withClient.
+		// that can stop client generation is the module itself not building,
+		// and that is what the user has to see. Its API comes from its committed
+		// bindings, so it takes bindings that don't fit the source to need a
+		// build here: this source has no Echo, and the bindings do.
+		generated := withClient.
+			With(daggerQuery(`{moduleSource(refString:"."){generatedContextDirectory{export(path:".")}}}`))
+		_, err := generated.
 			WithNewFile("main.go", `package main
 
 type Minimal struct{}
-
-func (m *Minimal) Hello() string {
-	return intentionallyUndefinedSymbol()
-}
 `).
-			With(daggerQuery(`{moduleSource(refString:"."){generatedContextDirectory{export(path:".")}}}`)).
+			With(daggerFunctions("-m", ".")).
 			Sync(ctx)
-		requireErrOut(t, err, "undefined: intentionallyUndefinedSymbol")
+		requireErrOut(t, err, "(*Minimal).Echo undefined")
 		require.NotContains(t, err.Error(), "run `dagger generate`")
 	})
 }

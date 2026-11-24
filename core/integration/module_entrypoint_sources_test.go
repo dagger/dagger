@@ -601,3 +601,131 @@ func (m *Caller) Target(ctx context.Context, fn string, run string) (string, err
 	ctr = ctr.WithNewFile("other/unlisted.txt", "changed\n")
 	require.Equal(t, changed, call(ctr, "5"), "a file outside the target's returned directory keeps the caller's result")
 }
+
+// A module served to another module from the caller's tree loads its default
+// paths from that tree, as it does when called directly: its sources member,
+// or the include list that replaces it, decides what the module builds from,
+// not what its callers' default arguments hold.
+func (ModuleSuite) TestModuleEntrypointSourcesDefaultPathFromCaller(ctx context.Context, t *testctx.T) {
+	for _, tc := range []struct {
+		name     string
+		manifest string
+	}{
+		{name: "sources", manifest: sourcesModuleManifest},
+		{name: "include", manifest: `name = "m"
+include = []
+
+[entrypoint]
+kind = "dang"
+source = "./entrypoint"
+`},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			testEntrypointDefaultPathFromCaller(ctx, t, tc.manifest)
+		})
+	}
+}
+
+func testEntrypointDefaultPathFromCaller(ctx context.Context, t *testctx.T, manifest string) {
+	c := connect(ctx, t)
+	ctr := goGitBase(t, c).
+		WithNewFile("shared/value.txt", "ignored by the default\n").
+		WithNewFile("other/unlisted.txt", "outside the returned sources\n").
+		WithNewFile("m/dagger-module.toml", manifest).
+		WithNewFile("m/entrypoint/main.dang", `type Entrypoint implements ModuleEntrypoint {
+  pub sources(workspace: Workspace!): Directory! {
+    directory.withDirectory(workspace.cwd, workspace.directory(".", gitignore: true))
+  }
+
+  pub types: [TypeDef!]! {
+    [
+      typeDef
+        .withObject("Probe")
+        .withField("dir", typeDef.withObject("Directory"))
+        .withConstructor(
+          function("", typeDef.withObject("Probe"))
+            .withArg("dir", typeDef.withObject("Directory").withOptional(true), defaultPath: "/", ignore: ["shared"])
+        )
+        .withFunction(
+          function("Read", typeDef.withObject("Read"))
+            .withArg("file", typeDef.withObject("File").withOptional(true), defaultPath: "/other/unlisted.txt")
+        ),
+      typeDef
+        .withObject("Read")
+        .withField("file", typeDef.withObject("File")),
+    ]
+  }
+
+  # The constructor's and Read's arguments are the fields of the objects
+  # they return.
+  pub call(receiverType: String!, receiverValue: JSON, fnName: String!, fnArgs: JSON!): JSON! {
+    fnArgs
+  }
+}
+`).
+		WithNewFile("dagger.toml", `[modules.caller]
+source = ".dagger/modules/caller"
+
+[modules.go]
+source = "go"
+
+[sdks.go]
+module = "go"
+
+[sdks.go.scopes.".dagger/modules/caller"]
+is-module = true
+clients = ["./m"]
+`).
+		WithNewFile(".dagger/modules/caller/dagger.json", `{"name":"caller","engineVersion":"latest","sdk":{"source":"go"},"source":"."}`).
+		WithNewFile(".dagger/modules/caller/main.go", `package main
+
+import (
+	"context"
+	"strings"
+)
+
+type Caller struct{}
+
+func (m *Caller) DirFiles(ctx context.Context) (string, error) {
+	if err := dag.ServeModule(ctx, "/m"); err != nil {
+		return "", err
+	}
+	var files []string
+	q := dag.QueryBuilder().Select("m").Select("dir").Select("glob").Arg("pattern", "**").Bind(&files)
+	if err := q.Execute(ctx); err != nil {
+		return "", err
+	}
+	return strings.Join(files, "\n"), nil
+}
+
+func (m *Caller) FileContents(ctx context.Context) (string, error) {
+	if err := dag.ServeModule(ctx, "/m"); err != nil {
+		return "", err
+	}
+	var contents string
+	q := dag.QueryBuilder().Select("m").Select("read").Select("file").Select("contents").Bind(&contents)
+	if err := q.Execute(ctx); err != nil {
+		return "", err
+	}
+	return contents, nil
+}
+`)
+
+	direct, err := ctr.With(daggerCallAt("./m", "dir", "glob", "--pattern", "**")).Stdout(ctx)
+	require.NoError(t, err)
+	directFiles := strings.Fields(direct)
+	require.Contains(t, directFiles, "other/unlisted.txt")
+	require.NotContains(t, directFiles, "shared/value.txt", "the default's ignore applies")
+
+	served, err := ctr.With(daggerCallAt("caller", "dir-files")).Stdout(ctx)
+	require.NoError(t, err)
+	servedFiles := strings.Fields(served)
+	require.Contains(t, servedFiles, "other/unlisted.txt", "the default directory holds files the module's sources leave out")
+	require.Contains(t, servedFiles, "m/dagger-module.toml")
+	require.NotContains(t, servedFiles, "shared/value.txt", "the default's ignore applies")
+	requireNoGitMetadata(t, servedFiles)
+
+	contents, err := ctr.With(daggerCallAt("caller", "file-contents")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "outside the returned sources\n", contents, "the default file can lie outside the module's sources")
+}

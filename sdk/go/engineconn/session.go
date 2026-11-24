@@ -134,6 +134,12 @@ func cliSessionEnv(inherited []string, cfg *Config) []string {
 	if cfg.RunnerHost != "" {
 		env = append(env, "_EXPERIMENTAL_DAGGER_RUNNER_HOST="+cfg.RunnerHost)
 	}
+	if cfg.LogOutput == nil || cfg.LogOutput == io.Discard {
+		// Nobody reads the session's progress, so ask for a silent session: it
+		// neither renders progress nor keeps the spans it would render from,
+		// and still exports them to Cloud and the configured collector.
+		env = append(env, "DAGGER_SILENT=true")
+	}
 	return append(env, cfg.ExtraEnv...)
 }
 

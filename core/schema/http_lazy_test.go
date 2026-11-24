@@ -81,13 +81,7 @@ func TestHTTPResolvedCall(t *testing.T) {
 	before = requests.Load()
 	require.NoError(t, cache.Evaluate(ctx, completed))
 	require.Equal(t, before, requests.Load())
-	report, err := cache.TransferFixtureSnapshot(ctx, "http-first", nil)
-	require.NoError(t, err)
-	for _, row := range report.Rows {
-		if row.ResultID == record.ResultID {
-			require.Empty(t, row.DependencyIDs)
-		}
-	}
+	require.Empty(t, debugResult(t, cache, record.ResultID).ExplicitDeps, "the resolved call holds no dependency")
 	name = "first-use"
 	miss := selectFile("http-miss-first-use")
 	require.False(t, miss.Self().Lazy.IsEvaluated())

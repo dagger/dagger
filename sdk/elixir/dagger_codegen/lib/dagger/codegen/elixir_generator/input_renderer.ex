@@ -32,7 +32,29 @@ defmodule Dagger.Codegen.ElixirGenerator.InputRenderer do
         ",",
         &(&1.name |> Formatter.format_var_name() |> Renderer.render_atom())
       ),
-      "]"
+      "]",
+      ?\n,
+      ?\n,
+      render_field_names(type.input_fields)
+    ]
+  end
+
+  # Maps every struct key to the schema's field name, so the query builder
+  # sends `agentName` rather than `agent_name`.
+  defp render_field_names(input_fields) do
+    [
+      "@doc false",
+      ?\n,
+      "def __field_names__(), do: %{",
+      Enum.map_intersperse(input_fields, ",", fn input_field ->
+        [
+          Formatter.format_var_name(input_field.name),
+          ": ",
+          inspect(input_field.name)
+        ]
+      end),
+      "}",
+      ?\n
     ]
   end
 

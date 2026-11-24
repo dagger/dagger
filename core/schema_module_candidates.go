@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 )
 
 // schemaModuleCandidateWalk is one module visited by
@@ -72,4 +73,50 @@ func (q *Query) installedSchemaModuleCandidates(ctx context.Context, cache *dagq
 		}
 	}
 	return candidates, nil
+}
+
+// ProcessModuleContext returns the module a process runs as, given the module
+// context its exec or service recorded: the current client's own installed
+// module when mod is an implementation-scoped copy of one, else mod itself.
+//
+// An exec records the implementation-scoped module so that its key doesn't
+// depend on where the module was loaded, and the copy is shared by content
+// across clients and sessions. It still carries the first loader's source,
+// such as a local module's path on that client's host, which the process
+// would read when it serves a client module from the module's own tree. The
+// client starting the process has installed its own copy, loaded from its own
+// host, as a schema recovered from a call's history uses.
+func (q *Query) ProcessModuleContext(ctx context.Context, mod dagql.ObjectResult[*Module]) (dagql.ObjectResult[*Module], error) {
+	if mod.Self() == nil {
+		return mod, nil
+	}
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return mod, fmt.Errorf("process module context: %w", err)
+	}
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return mod, fmt.Errorf("process module context: %w", err)
+	}
+	dag, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return mod, fmt.Errorf("process module context: %w", err)
+	}
+	installed, err := q.installedSchemaModuleCandidates(ctx, cache)
+	if err != nil {
+		return mod, fmt.Errorf("process module context: %w", err)
+	}
+	id, err := cache.PersistedResultID(mod)
+	if err != nil {
+		return mod, fmt.Errorf("process module context: %w", err)
+	}
+	res, err := cache.LoadResultByResultIDForSchema(ctx, clientMetadata.SessionID, dag, id, installed)
+	if err != nil {
+		return mod, fmt.Errorf("process module context %q: %w", mod.Self().Name(), err)
+	}
+	own, ok := res.(dagql.ObjectResult[*Module])
+	if !ok {
+		return mod, fmt.Errorf("process module context: result %d is %T, not a module", id, res)
+	}
+	return own, nil
 }

@@ -16,6 +16,8 @@ import (
 )
 
 type source struct {
+	selection    SelectionSource
+	rootHandle   *os.Root
 	root         string
 	realRoot     string
 	layers       []string
@@ -45,6 +47,8 @@ type source struct {
 }
 
 type sourceEntry struct {
+	// file pins the source inode; RealPath names its descriptor in procfs.
+	file     *os.File
 	Rel      string
 	ViewPath string
 	RealPath string

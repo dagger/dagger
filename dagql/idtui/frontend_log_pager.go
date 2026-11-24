@@ -79,9 +79,10 @@ func (p *LogPagerView) Render(ctx tuist.Context) {
 	}
 	height = max(height, 1)
 
-	if p.Logs != nil && p.Logs.UsedHeight() > 0 {
+	if p.Logs != nil {
 		// The header includes scroll percentage, so size the pager before
-		// rendering it. The log area starts after the title and divider.
+		// rendering it, and before reading the log, which lays it out at
+		// its width. The log area starts after the title and divider.
 		p.Logs.SetPrefix("")
 		p.Logs.SetWidth(width)
 		p.Logs.SetHeight(max(height-2, 1))
@@ -279,6 +280,10 @@ func (fe *frontendPretty) spanHasLogs(span *dagui.Span) bool {
 	if fe.logStreamFor(span.ID) != nil {
 		return true
 	}
+	if span.HasLogs && fe.logProviderFor(span.ID) != nil {
+		// Read on demand: openLogPager reads them.
+		return true
+	}
 	if fe.logs == nil {
 		return false
 	}
@@ -330,7 +335,10 @@ func (fe *frontendPretty) openLogPager(span *dagui.Span, title, titleIcon string
 	if title == "" {
 		title = span.Name
 	}
-	fe.showLogPager(span.ID, title, titleIcon, fe.logs.Logs[span.ID])
+	// A span never rendered holds no logs yet: read them into the terminal
+	// the pager shows (it stays pinned while the pager is open).
+	fe.requestLogs(span.ID)
+	fe.showLogPager(span.ID, title, titleIcon, fe.logs.spanLogs(span.ID))
 }
 
 func (fe *frontendPretty) showLogPager(id dagui.SpanID, title, titleIcon string, logs *Vterm) {

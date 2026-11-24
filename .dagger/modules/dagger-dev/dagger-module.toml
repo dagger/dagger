@@ -1,5 +1,5 @@
 name = "dagger-dev"
-engineVersion = "v1.0.0-beta.12"
+engineVersion = "v1.0.0-0"
 
 [runtime]
   source = "dang"
@@ -9,5 +9,9 @@ engineVersion = "v1.0.0-beta.12"
   source = "../engine-dev"
 
 [[dependencies]]
+  name = "go"
+  source = "github.com/dagger/go@79a92beb4df0898400ef7f7a632009035290383b"
+
+[[dependencies]]
   name = "wolfi"
-  source = "dagger.io/linux/wolfi@main"
+  source = "github.com/dagger/wolfi@fdec349f9aad840f2853bc2e6534f2555788da04"

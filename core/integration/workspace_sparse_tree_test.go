@@ -23,6 +23,17 @@ func sparseWorkspaceRepo(ctx context.Context, t *testctx.T, c *dagger.Client, mo
 	t.Helper()
 	nonce := rand.Text()
 	content := core.NewQuery(c).Directory().
+		// Files .gitignore lists, committed anyway: a read with gitignore
+		// drops them, from a sparse tree as from the full one.
+		WithNewFile(".gitignore", "*.skip\n").
+		WithNewFile("outside/kept.skip", "kept\n").
+		WithNewFile(".dagger/modules/probe/sub/kept.skip", "kept\n").
+		// A nested ignore file that takes a file back, and a file whose bytes
+		// the root's attributes change, both outside every module.
+		WithNewFile("outside/nested/.gitignore", "!again.skip\n").
+		WithNewFile("outside/nested/again.skip", "again\n").
+		WithNewFile("outside/nested/dropped.skip", "dropped\n").
+		WithNewFile("outside/nested/notes.crlf", "one\ntwo\n").
 		WithNewFile("dagger.toml", `[modules.probe]
 source = ".dagger/modules/probe"
 
@@ -45,7 +56,18 @@ source = "./settings/base.toml"
 		WithNewFile("outside/also.txt", "also\n").
 		WithNewFile("outside/lost.txt", "lost "+nonce+"\n").
 		WithSymlink("outside", "linkdir")
+	return serveLossyGitRepo(ctx, t, c, content, "outside/lost.txt", `echo changed > .dagger/modules/probe/sub/keep.txt
+echo moved > outside/also.txt`)
+}
 
+// serveLossyGitRepo commits content, tagged base, then runs move and commits
+// what it changes, tagged moved, and serves the repository from two servers,
+// both able to serve partial fetches. The partial server has lost the contents
+// of lost at base, which any fetch of a whole tree needs. Files .gitignore
+// lists are committed too. It returns refs without a version for the complete
+// and partial servers.
+func serveLossyGitRepo(ctx context.Context, t *testctx.T, c *dagger.Client, content *core.Directory, lost, move string) (complete, partial string) {
+	t.Helper()
 	srv := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
@@ -56,10 +78,9 @@ git config --global user.email "root@localhost"
 git config --global user.name "Test User"
 cd /repo
 git init -q -b main
-git add -A && git commit -qm base && git tag base
-lost=$(git rev-parse HEAD:outside/lost.txt)
-echo changed > .dagger/modules/probe/sub/keep.txt
-echo moved > outside/also.txt
+git add -A && git add -f . && git commit -qm base && git tag base
+lost=$(git rev-parse HEAD:` + lost + `)
+` + move + `
 git add -A && git commit -qm moved && git tag moved
 cd /
 mkdir -p /complete /partial
@@ -120,6 +141,9 @@ func workspaceReadDigest(ctx context.Context, t *testctx.T, c *dagger.Client, re
 	if len(opts.Exclude) > 0 {
 		args = append(args, "exclude: "+quoted(opts.Exclude))
 	}
+	if opts.Gitignore {
+		args = append(args, "gitignore: true")
+	}
 	out, err := workspaceQuery(ctx, t, c, ref, fmt.Sprintf(`{currentWorkspace{directory(%s){digest}}}`, strings.Join(args, ", ")))
 	if err != nil {
 		return "", err
@@ -164,6 +188,55 @@ func (WorkspaceSuite) TestGitWorkspaceLoadsWithoutItsWholeTree(ctx context.Conte
 
 			_, err = workspaceReadDigest(ctx, t, c, ref, "/outside", core.WorkspaceDirectoryOpts{Include: []string{"lost.txt"}})
 			require.Error(t, err, "a read of a file the sparse tree doesn't hold must not come back without it")
+			_, err = workspaceReadDigest(ctx, t, c, ref, "/outside", core.WorkspaceDirectoryOpts{Include: []string{"*.txt"}, Gitignore: true})
+			require.Error(t, err, "a read's own sparse tree must not come back without a file it selects")
+
+			out, err = workspaceQuery(ctx, t, c, ref, `{currentWorkspace{directory(path: "/outside", include: ["also.txt", "kept.skip"], gitignore: true){entries}}}`)
+			require.NoError(t, err)
+			require.Contains(t, out, "also.txt")
+			require.NotContains(t, out, "kept.skip")
+		})
+	}
+}
+
+// TestGitWorkspaceEntrypointSourcesWithoutItsWholeTree asserts that a module
+// whose entrypoint's sources member reads files outside its own directory, as
+// the Go SDK's members read a repository's root module, loads and runs from a
+// Git workspace without its whole tree: on a server that has lost a file
+// outside the module, which any fetch of the whole tree needs.
+func (WorkspaceSuite) TestGitWorkspaceEntrypointSourcesWithoutItsWholeTree(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	member := `  pub sources(workspace: Workspace!): Directory! {
+    directory
+      .withDirectory("shared", workspace.directory("/shared", exclude: ["testdata"], gitignore: true))
+      .withDirectory(workspace.cwd, workspace.directory(".", include: ["dagger-module.toml", "entrypoint/**"], gitignore: true))
+  }`
+	content := sourcesModuleFixture(c, member).
+		WithNewFile("dagger.toml", "[modules.m]\nsource = \"m\"\n").
+		WithNewFile(".gitignore", "*.skip\n").
+		WithNewFile("shared/generated.skip", "ignored\n").
+		WithNewFile("other/lost.txt", "lost "+rand.Text()+"\n")
+	_, partial := serveLossyGitRepo(ctx, t, c, content, "other/lost.txt", "echo moved > shared/value.txt")
+
+	for _, tag := range []string{"base", "moved"} {
+		t.Run(tag, func(ctx context.Context, t *testctx.T) {
+			base := core.NewQuery(c).Container().From(alpineImage).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				WithWorkdir("/empty")
+			out, err := base.With(workspaceSelectionDaggerCall("-W", partial+"@"+tag, "m", "shared")).Stdout(ctx)
+			require.NoError(t, err)
+			want := "from the shared sibling"
+			if tag == "moved" {
+				want = "moved"
+			}
+			require.Equal(t, want, strings.TrimSpace(out))
+
+			out, err = base.With(workspaceSelectionDaggerCall("-W", partial+"@"+tag, "m", "context-files")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Contains(t, out, "shared/value.txt")
+			require.NotContains(t, out, "generated.skip")
+			require.NotContains(t, out, "testdata")
 		})
 	}
 }
@@ -191,17 +264,24 @@ func (WorkspaceSuite) TestGitWorkspaceSparseReadsMatchFullReads(ctx context.Cont
 		{"directory with its files excluded", moduleDir, core.WorkspaceDirectoryOpts{Include: []string{"sub"}, Exclude: []string{"sub/**"}}},
 		{"nothing selected", moduleDir, core.WorkspaceDirectoryOpts{Include: []string{"no-such-file"}}},
 		{"nothing selected in a directory the read doesn't hold files of", "/outside", core.WorkspaceDirectoryOpts{Include: []string{"no-such-file"}}},
+		{"gitignore", moduleDir, core.WorkspaceDirectoryOpts{Include: []string{"dagger.json", "sub/**"}, Gitignore: true}},
+		// Each gets a sparse tree of its own, written with only what it
+		// selects, so the lost file stays unfetched.
+		{"a file outside the modules", "/outside", core.WorkspaceDirectoryOpts{Include: []string{"also.txt"}}},
+		{"a file outside the modules, with gitignore", "/outside", core.WorkspaceDirectoryOpts{Include: []string{"also.txt", "kept.skip"}, Gitignore: true}},
+		{"both inside and outside", "/", core.WorkspaceDirectoryOpts{Include: []string{".dagger/modules/probe/**", "outside/also.txt"}}},
+		{"a nested ignore file outside the modules", "/outside", core.WorkspaceDirectoryOpts{Include: []string{"nested/**", "also.txt"}, Gitignore: true}},
+		{"attributes outside the modules", "/outside/nested", core.WorkspaceDirectoryOpts{Include: []string{"notes.crlf"}}},
+		{"both inside and outside, with gitignore", "/", core.WorkspaceDirectoryOpts{Include: []string{".dagger/modules/probe/sub/**", "outside/*.*"}, Exclude: []string{"outside/lost.txt"}, Gitignore: true}},
 	}
-	// Reads of files outside the modules come from the whole tree, so these are
-	// on the complete server.
+	// Reads the full tree serves, so these are on the complete server.
 	outsideModules := []struct {
 		name string
 		path string
 		opts core.WorkspaceDirectoryOpts
 	}{
-		{"a file outside the modules", "/outside", core.WorkspaceDirectoryOpts{Include: []string{"also.txt"}}},
-		{"both inside and outside", "/", core.WorkspaceDirectoryOpts{Include: []string{".dagger/modules/probe/**", "outside/**"}}},
 		{"through a symlink", "/linkdir", core.WorkspaceDirectoryOpts{Include: []string{"also.txt"}}},
+		{"everything in a directory, with gitignore", "/outside", core.WorkspaceDirectoryOpts{Gitignore: true}},
 	}
 
 	fullRead := func(ctx context.Context, tag, dirPath string, opts core.WorkspaceDirectoryOpts) string {
@@ -375,4 +455,73 @@ func (WorkspaceSuite) TestGitWorkspaceModuleReadsOutsideItsFiles(ctx context.Con
 	require.NoError(t, err)
 	require.Contains(t, out, "also")
 	require.Contains(t, out, "lost ")
+}
+
+// TestGitWorkspaceSparseFilesNeedAccess asserts that a Git workspace's sparse
+// files, which every caller of a repository's URL shares in the engine's
+// mirror, are served only to a caller who may read the repository: after a
+// caller with the token has fetched a file, a caller with the wrong token gets
+// an error, not the file.
+func (WorkspaceSuite) TestGitWorkspaceSparseFilesNeedAccess(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	secret := "secret " + rand.Text()
+	srv := core.NewQuery(c).Container().
+		From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		WithNewFile("/repo/data/secret.txt", secret+"\n").
+		WithWorkdir("/repo").
+		WithExec([]string{"sh", "-c", `set -e
+git init -q -b main
+git add -A
+git -c user.email=root@localhost -c user.name=Test commit -qm base
+git clone -q --bare /repo /served/repo.git
+git -C /served/repo.git config uploadpack.allowFilter true
+git -C /served/repo.git config uploadpack.allowAnySHA1InWant true
+git -C /served/repo.git update-server-info
+git rev-parse HEAD:data/secret.txt > /oid
+`})
+	oid, err := srv.File("/oid").Contents(ctx)
+	require.NoError(t, err)
+	token := "token-" + rand.Text()
+	gitSrv, _ := gitSmartHTTPServiceDirAuth(ctx, t, c, "", srv.Directory("/served"), "", core.NewQuery(c).SetSecret("sparse-token-"+rand.Text(), token))
+	gitSrv, err = gitSrv.Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _, _ = gitSrv.Stop(ctx) })
+	host, err := gitSrv.Hostname(ctx)
+	require.NoError(t, err)
+	out, err := core.NewQuery(c).Container().From(alpineImage).
+		WithExec([]string{"getent", "hosts", host}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	fields := strings.Fields(out)
+	require.NotEmpty(t, fields, "unexpected getent output: %q", out)
+	repoURL := "http://" + fields[0] + "/repo.git"
+
+	read := func(token string) (string, error) {
+		id, err := core.NewQuery(c).SetSecret("sparse-read-"+rand.Text(), token).ID(ctx)
+		require.NoError(t, err)
+		var res struct {
+			Git struct {
+				SparseFiles struct {
+					File struct {
+						Contents string
+					}
+				} `json:"__sparseFiles"`
+			}
+		}
+		err = c.Do(ctx, &dagger.Request{Query: fmt.Sprintf(
+			`query{git(url: %q, httpAuthToken: %q){__sparseFiles(files: [%q]){file(path: "data/secret.txt"){contents}}}}`,
+			repoURL, id, "100644 "+strings.TrimSpace(oid)+" data/secret.txt",
+		)}, &dagger.Response{Data: &res})
+		return res.Git.SparseFiles.File.Contents, err
+	}
+
+	got, err := read(token)
+	require.NoError(t, err)
+	require.Equal(t, secret+"\n", got)
+
+	got, err = read(token + "-wrong")
+	require.Error(t, err, "a wrong token must not be served files another caller fetched")
+	require.NotContains(t, got, secret)
 }

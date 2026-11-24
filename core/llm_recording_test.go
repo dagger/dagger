@@ -8,6 +8,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -22,6 +23,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
@@ -332,4 +334,78 @@ func TestToolCallDisplaySpanIdentifiesToolAtStart(t *testing.T) {
 	require.Equal(t, "unknown_tool", v.AsString())
 	_, ok = spanAttr(unknown, telemetry.LLMToolServerAttr)
 	require.False(t, ok)
+	_, ok = spanAttr(unknown, telemetryattrs.LLMToolHeaderArgNamesAttr)
+	require.False(t, ok, "a tool the turn didn't offer has no schema to name its header's arguments")
+}
+
+// A live frontend only gets a tool call's header values when it ends, so the
+// display span names its header's arguments when it starts, for the frontend
+// to fill in from the arguments the span streams. Filled in with
+// dagui.ToolHeaderArgs, they must be the values MCP.CallContent records when
+// the call runs, so the header doesn't change as the span ends.
+func TestToolCallDisplaySpanNamesHeaderArgsAtStart(t *testing.T) {
+	sr, ctx := recordingTestRecorder(t)
+	tools := []LLMTool{
+		{
+			Name: "goCli_go", Server: "goCli",
+			Schema: map[string]any{"required": []string{"args"}},
+			Call:   func(context.Context, any) (any, error) { return "ok", nil },
+		},
+		{
+			Name: "editor_write", Server: "editor",
+			Schema: map[string]any{"required": []string{"filePath", "contents"}},
+			Call:   func(context.Context, any) (any, error) { return "ok", nil },
+		},
+		{
+			Name:   dangEvalToolName,
+			Schema: map[string]any{"required": []string{"source"}},
+			Call:   func(context.Context, any) (any, error) { return "ok", nil },
+		},
+	}
+	for i, tc := range []struct {
+		tool, args string
+		names      []string
+	}{
+		{"goCli_go", `{"args":["vet","./engine/clientdb/",3],"env":["X=1"]}`, []string{"args", "offset", "limit"}},
+		{"editor_write", `{"filePath":"a.go","contents":"package a\n","force":false}`, []string{"filePath", "contents", "offset", "limit", "args"}},
+		{dangEvalToolName, `{"source":"1 + 1","at":"notes","limit":5}`, []string{"source", "offset", "limit", "args", "at", "search"}},
+	} {
+		t.Run(tc.tool, func(t *testing.T) {
+			dp := newDisplayPhases(ctx, "", tools)
+			p := dp.StartToolCall(int64(i), "call", tc.tool)
+			var display sdktrace.ReadOnlySpan
+			for _, s := range sr.Started() {
+				if s.SpanContext().SpanID() == p.span.SpanContext().SpanID() {
+					display = s
+				}
+			}
+			require.NotNil(t, display)
+			v, ok := spanAttr(display, telemetryattrs.LLMToolHeaderArgNamesAttr)
+			require.True(t, ok)
+			require.Equal(t, tc.names, v.AsStringSlice())
+
+			var args map[string]any
+			require.NoError(t, json.Unmarshal([]byte(tc.args), &args))
+			wantNames, wantValues := dagui.ToolHeaderArgs(v.AsStringSlice(), args)
+
+			p.writeToolArgs(tc.args)
+			dp.Close(int64(i))
+			_, failed := newMCP().Call(p.ctx, tools, &LLMToolCall{Name: tc.tool, Arguments: JSON(tc.args)})
+			require.False(t, failed)
+
+			var ended sdktrace.ReadOnlySpan
+			for _, s := range sr.Ended() {
+				if s.SpanContext().SpanID() == p.span.SpanContext().SpanID() {
+					ended = s
+				}
+			}
+			require.NotNil(t, ended)
+			names, ok := spanAttr(ended, telemetry.LLMToolArgNamesAttr)
+			require.True(t, ok)
+			values, ok := spanAttr(ended, telemetry.LLMToolArgValuesAttr)
+			require.True(t, ok)
+			require.Equal(t, wantNames, names.AsStringSlice())
+			require.Equal(t, wantValues, values.AsStringSlice())
+		})
+	}
 }

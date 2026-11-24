@@ -15,7 +15,7 @@ A Dang module has two versions, both on its `ModuleSource`:
 
 - `EngineVersion`, its Dagger version: API view, naming rules, default
   function caching.
-- `DangVersion`, its Dang language version, e.g. `"1.0"` or `"2.1"`.
+- `DangVersion`, its Dang language version, e.g. `"1.0"`, `"2.1"` or `"2.5"`.
 
 Both come from the `dang.toml` governing the module's source, which the engine
 reads itself (the runtime presets the Dagger import, so Dang skips the file's
@@ -24,10 +24,20 @@ reads itself (the runtime presets the Dagger import, so Dang skips the file's
 - `[imports.Dagger] dagger = "vX.Y.Z"` is the engine version. It wins over the
   `engineVersion` of `dagger.json`; the engine warns when the two disagree.
   `dagger = true` keeps the `engineVersion`.
-- `dang = "X.Y"` is the Dang version. Without one, a module whose engine
-  version is before `engine.MinimumDangV2ModuleVersion` (v0.21.5) is Dang 1.0
-  (`.{ }` is selection), the language of the Dang v1 line these modules were
-  written for; a later one gets Dang's own default.
+- `dang = "X.Y"` is the Dang version. Without one, it is pinned by the
+  module's engine version (`DefaultModuleDangVersion`), to the Dang version
+  engines of that version evaluated it as:
+
+  | engine version                                               | Dang |
+  | ------------------------------------------------------------ | ---- |
+  | before `engine.MinimumDangV2ModuleVersion` (v0.21.5)         | 1.0  |
+  | before `Dang25ModuleVersion` (v1.0.0-beta.28)                | 2.1  |
+  | `Dang25ModuleVersion` and later                              | 2.5  |
+
+  Dang 1.0 (`.{ }` is selection) is the language of the Dang v1 line these
+  modules were written for. A manifest v2 entrypoint that declares no `dang`
+  version is Dang 2.1 (`DefaultEntrypointDangVersion`), whatever its engine
+  version.
 
 Which `dang.toml`: the nearest one walking up from the source directory to the
 module directory, never above it (`entrypoint.FindConfigFileInContext`), so the
@@ -59,11 +69,33 @@ modules only declare them (`dang.DeclareDir`).
 
 ## A new Dang language version
 
-Bump `github.com/vito/dang/v2`. Modules that declare no `dang` version and
-have no `dang.toml` follow Dang's current version; ones with a `dang.toml` that
-declares none get Dang's pinned `DefaultVersion`. Modules from before Dang 2
-stay on 1.0. The resolved version keys the module source digest, so cached
-results built under one version never answer for another.
+Bump `github.com/vito/dang/v2`. Dang reads source whose version nothing
+declares as its current version, so the engine pins every module that declares
+none (see the table above): a module keeps the version it was written in when
+Dang moves on. When the new version changes the meaning of existing source,
+add a cut to `DefaultModuleDangVersion` at the first engine version that embeds
+it, so modules written for that engine on default to it. The resolved version
+keys the module source digest, so cached results built under one version never
+answer for another.
+
+A pin covers only what Dang gates on its language version. Changes Dang makes
+to every version reach every module: from vito/dang v2.4.1, bare `JSON` in a
+type is Dang's builtin JSON-text scalar, not Dagger's `JSON` scalar, which is
+`Dagger.JSON` (convert between them with a cast). The module entrypoint
+contract keeps bare `JSON`, as released engines declare it. Values display as
+Dang literals (a Dagger object as its lazy query, not its ID) in `toString`,
+interpolation and `print`. From vito/dang v2.5.0, interfaces declared in Dang
+are structural, so a `case` or `rescue` arm after an arm on such an interface
+may now be unreachable (an error), and a string holding `${` displays with the
+`$` escaped inside a collection. Because a Dagger object of an interface's
+shape satisfies it, a module can `raise` a `Dagger.Error!`: the function then
+fails with that Error, values and all, as with `FunctionCall.returnError`, and
+a rescued GraphQL error raised again as it was keeps its extensions (see
+`v2/errors.go`).
+
+The Dang tools (`DangEval`, `DangCheck`) parse a snippet in the workspace
+scope as `dang.CurrentVersion`, so their language moves with every bump; a
+snippet in a module's scope is that module's version.
 
 A new Dang major that breaks the v2 line's compatibility would need its own
 package again; prefer a language version gate upstream.

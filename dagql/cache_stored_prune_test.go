@@ -76,7 +76,7 @@ func TestPruneDropsValuesOnlyHoldingsKeep(t *testing.T) {
 		cloud.egraphMu.RUnlock()
 		require.True(t, noValue)
 	}
-	got, err := cloud.StoredBundle(ctx, []uint64{r})
+	got, err := cloud.StoredBundle(ctx, []uint64{r}, nil)
 	require.NoError(t, err)
 	require.Equal(t, []uint64{r}, got.NoValue, "a dropped value is not placed")
 
@@ -163,7 +163,7 @@ func TestSetStoredPartRefusesAnEntryAPruneEmptied(t *testing.T) {
 	require.Equal(t, deps, storedPartTestDeps(cloud, q))
 	require.False(t, storedPruneTestEntryState(cloud, q).parts)
 
-	got, err := cloud.StoredBundle(ctx, []uint64{q})
+	got, err := cloud.StoredBundle(ctx, []uint64{q}, nil)
 	require.NoError(t, err)
 	require.Len(t, got.Bundle.Values, 1, "Q's bundle still builds")
 }
@@ -198,7 +198,7 @@ func storedPruneTestPart(part string, layers map[string]int64) PersistedPartOffe
 // the root retained.
 func storedPruneTestPlace(t *testing.T, ctx context.Context, cloud *Cache, roots []uint64) {
 	t.Helper()
-	built, err := cloud.StoredBundle(ctx, roots)
+	built, err := cloud.StoredBundle(ctx, roots, nil)
 	require.NoError(t, err)
 	reply := MergeReply{Generation: 1, EngineTimeUnixNano: time.Now().UnixNano()}
 	for _, value := range built.Bundle.Values {

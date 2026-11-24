@@ -1,0 +1,15 @@
+kind: Fixed
+body: |
+  Clients and modules that declare `v1.0.0-beta.25` or earlier get the API the
+  v1.0.0-beta.25 engine served. This removes from them API that the
+  v1.0.0-beta.26 engine served them, such as `Query.naming`,
+  `ModuleSource.naming`, `CurrentModule.naming`, `Directory.withPlatform`,
+  `Directory.directory(resolveBrokenSymlinks:)` and `File.sync(keyByContent:)`:
+  declare `v1.0.0-beta.26` to use them. They get `Query.identifier`,
+  `Query.formatIdentifiers` and `Query.namingDictionary` again.
+  The built-in Go SDK's pinned `gomod` module (github.com/dagger/go) declares
+  `v1.0.0-beta.15` and calls `Directory.withPlatform`, so Go modules fail to
+  load until that pin declares `v1.0.0-beta.26` or later.
+time: 2026-11-10T15:46:10Z
+custom:
+  Author: eunomie

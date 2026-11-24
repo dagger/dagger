@@ -34,16 +34,7 @@ func memoizedModType(ctx context.Context, mod *userMod, def *TypeDef, checkDirec
 		return nil, false, err
 	}
 	key := modTypeMemoKey{moduleID: id.EngineResultID(), def: def, view: dag.View, checkDirectDeps: checkDirectDeps}
-	memo.mu.Lock()
-	if memo.modTypes == nil {
-		memo.modTypes = make(map[modTypeMemoKey]*modTypeMemoEntry)
-	}
-	entry := memo.modTypes[key]
-	if entry == nil {
-		entry = &modTypeMemoEntry{}
-		memo.modTypes[key] = entry
-	}
-	memo.mu.Unlock()
+	entry := memoEntry(memo, memo.modTypes, key)
 	entry.mu.Lock()
 	defer entry.mu.Unlock()
 	if entry.loaded {
@@ -101,16 +92,7 @@ func canonicalFunctionArgType(ctx context.Context, mod Mod, authored dagql.Objec
 }
 
 func (m *SchemaBuilderMemo) canonicalArgType(key string, resolve func() (*TypeDef, error)) (*TypeDef, error) {
-	m.mu.Lock()
-	if m.canonicalArgTypes == nil {
-		m.canonicalArgTypes = make(map[string]*canonicalArgType)
-	}
-	entry := m.canonicalArgTypes[key]
-	if entry == nil {
-		entry = &canonicalArgType{}
-		m.canonicalArgTypes[key] = entry
-	}
-	m.mu.Unlock()
+	entry := memoEntry(m, m.canonicalArgTypes, key)
 	entry.mu.Lock()
 	defer entry.mu.Unlock()
 	if entry.def != nil {

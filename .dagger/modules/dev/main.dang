@@ -32,6 +32,7 @@ type Dev {
     gpuSupport: Boolean! = false,
   ): File! {
     engineDev(ws: ws)
+      .withImageEntries
       .container(gpuSupport: gpuSupport)
       # gzip, to stay readable by older docker versions
       .asTarball(forcedCompression: ImageLayerCompression.GZIP)
@@ -76,7 +77,7 @@ type Dev {
     cloudToken: Secret,
     cloudUrl: String! = "",
   ): Directory! {
-    let engine = engineDev(ws: ws)
+    let engine = engineDev(ws: ws).withImageEntries
 
     # Bake the dev engine's provisioning URL into the CLI, so a bare `dagger`
     # from ./bin reaches this container instead of provisioning its own.

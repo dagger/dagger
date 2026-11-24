@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 
+	telemetry "github.com/dagger/otel-go"
+
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
@@ -24,8 +26,16 @@ import (
 // MarshalJSON. Other values are kept as their JSON encoding.
 //
 // It marshals to and from the same JSON object (and gob) a map would.
-type SpanAttributes []spanAttribute
+//
+// Most of a span's attributes come from a small vocabulary of name and value
+// pairs (the origin client, cache outcomes, the module called): the slice
+// holds pointers, and such a pair is one shared, immutable spanAttribute
+// (see internAttrPair), so a span pays a pointer for it rather than two
+// string headers.
+type SpanAttributes []*spanAttribute
 
+// spanAttribute is one attribute. It is never modified once in a
+// SpanAttributes: it may be shared.
 type spanAttribute struct {
 	name string
 	// val is the attribute's value: the string itself, or for any other
@@ -37,11 +47,11 @@ type spanAttribute struct {
 // value starting with it is held as JSON too, so the two never mix up.
 const jsonValueMarker = "\x00"
 
-func (attr spanAttribute) isJSON() bool {
+func (attr *spanAttribute) isJSON() bool {
 	return strings.HasPrefix(attr.val, jsonValueMarker)
 }
 
-func (attr spanAttribute) json() json.RawMessage {
+func (attr *spanAttribute) json() json.RawMessage {
 	if attr.isJSON() {
 		return json.RawMessage(attr.val[len(jsonValueMarker):])
 	}
@@ -106,33 +116,33 @@ func (attrs SpanAttributes) sorted() SpanAttributes {
 	return slices.SortedFunc(slices.Values(attrs), compareAttrNames)
 }
 
-func compareAttrNames(a, b spanAttribute) int {
+func compareAttrNames(a, b *spanAttribute) int {
 	return strings.Compare(a.name, b.name)
 }
 
 // SetJSON sets the named attribute to a value given as its JSON encoding.
 func (attrs *SpanAttributes) SetJSON(name string, payload json.RawMessage) {
-	attrs.set(spanAttribute{name: internAttrName(name), val: jsonValueMarker + string(payload)})
+	attrs.set(&spanAttribute{name: internAttrName(name), val: jsonValueMarker + string(payload)})
 }
 
 // setValue sets the named attribute to an OTel attribute value, as returned
 // by attribute.Value.AsInterface.
 func (attrs *SpanAttributes) setValue(name string, val any) error {
-	attr := spanAttribute{name: internAttrName(name)}
 	if str, ok := val.(string); ok && !strings.HasPrefix(str, jsonValueMarker) {
-		attr.val = internAttrValue(name, str)
-	} else {
-		payload, err := json.Marshal(val)
-		if err != nil {
-			return err
-		}
-		attr.val = jsonValueMarker + string(payload)
+		// A DB shares the low-cardinality ones as they arrive (see
+		// DB.shareAttrPairs).
+		attrs.set(&spanAttribute{name: internAttrName(name), val: str})
+		return nil
 	}
-	attrs.set(attr)
+	payload, err := json.Marshal(val)
+	if err != nil {
+		return err
+	}
+	attrs.set(&spanAttribute{name: internAttrName(name), val: jsonValueMarker + string(payload)})
 	return nil
 }
 
-func (attrs *SpanAttributes) set(attr spanAttribute) {
+func (attrs *SpanAttributes) set(attr *spanAttribute) {
 	if i := attrs.find(attr.name); i >= 0 {
 		(*attrs)[i] = attr
 		return
@@ -179,7 +189,7 @@ func (attrs *SpanAttributes) UnmarshalJSON(p []byte) error {
 	}
 	decoded := make(SpanAttributes, 0, len(m))
 	for name, payload := range m {
-		decoded = append(decoded, spanAttribute{
+		decoded = append(decoded, &spanAttribute{
 			name: internAttrName(name),
 			val:  jsonValueMarker + string(payload),
 		})
@@ -236,11 +246,40 @@ var lowCardinalityAttrs = map[string]bool{
 	telemetryattrs.CacheOutcomeAttr:            true,
 	telemetryattrs.CacheHitRouteAttr:           true,
 	telemetryattrs.CacheTypeAttr:               true,
+	// Module calls name their module (ref@version) and function, and the
+	// caller's: as many values as functions called, on every call.
+	telemetry.ModuleRefAttr:                    true,
+	telemetry.ModuleFunctionCallNameAttr:       true,
+	telemetry.ModuleCallerRefAttr:              true,
+	telemetry.ModuleCallerFunctionCallNameAttr: true,
 }
 
-func internAttrValue(name, val string) string {
-	if !lowCardinalityAttrs[name] {
-		return val
+// maxSharedAttrPairs bounds a DB's attrPairs, so a producer minting values
+// of the lowCardinalityAttrs can't grow it without limit; past it, spans
+// keep their own.
+const maxSharedAttrPairs = 1 << 14
+
+// shareAttrPairs swaps the span's low-cardinality string attributes for the
+// DB's shared spanAttribute of the same name and value, adopting the span's
+// own when the DB has none yet. The table is the DB's, so it lives and dies
+// with the session's spans: an engine building DB after DB starts each
+// afresh.
+func (db *DB) shareAttrPairs(attrs SpanAttributes) {
+	for i, attr := range attrs {
+		if !lowCardinalityAttrs[attr.name] || attr.isJSON() {
+			continue
+		}
+		key := [2]string{attr.name, attr.val}
+		if shared, ok := db.attrPairs[key]; ok {
+			attrs[i] = shared
+			continue
+		}
+		if len(db.attrPairs) >= maxSharedAttrPairs {
+			continue
+		}
+		if db.attrPairs == nil {
+			db.attrPairs = map[[2]string]*spanAttribute{}
+		}
+		db.attrPairs[key] = attr
 	}
-	return internAttrString(val)
 }

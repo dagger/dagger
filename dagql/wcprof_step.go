@@ -43,25 +43,34 @@ func RecordStep(ctx context.Context, name string, start, end time.Time) {
 	wcprof.RecordOp(ctx, wcprof.OpKindInternal, name, wcprof.OpOpts{}, wcprof.TimeNS(start), wcprof.TimeNS(end), wcprof.OutcomeOK)
 }
 
-// ServeHTTPWithWriteStep serves r with h, a handler built for r alone, and,
-// when r is profiled, records writing its response as the graphql.write step:
-// from the handler returning the response to its being written. A WebSocket
-// connection (gqlgen's own test for one), which writes many responses, each
-// as it's ready, records none.
+// ServeHTTPWithWriteStep serves r with h, a handler from NewDefaultHandler,
+// which may serve other requests at once, and, when r is profiled, records
+// writing its response as the graphql.write step: from the handler returning
+// the response, which the handler's own interceptor stamps (stampResponse),
+// to its being written. A WebSocket connection (gqlgen's own test for one),
+// which writes many responses, each as it's ready, records none.
 func ServeHTTPWithWriteStep(h *handler.Server, w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	if !wcprof.Enabled(ctx) || r.Header.Get("Upgrade") != "" {
 		h.ServeHTTP(w, r)
 		return
 	}
-	var returned time.Time
-	h.AroundResponses(func(ctx context.Context, next graphql.ResponseHandler) *graphql.Response {
-		res := next(ctx)
-		returned = time.Now()
-		return res
-	})
-	h.ServeHTTP(w, r)
-	RecordStep(ctx, "graphql.write", returned, time.Now())
+	returned := new(time.Time)
+	h.ServeHTTP(w, r.WithContext(context.WithValue(ctx, responseReturnedKey{}, returned)))
+	RecordStep(ctx, "graphql.write", *returned, time.Now())
+}
+
+type responseReturnedKey struct{}
+
+// stampResponse is NewDefaultHandler's response interceptor: for a request
+// that ServeHTTPWithWriteStep serves profiled, it stamps when the handler
+// returned its response.
+func stampResponse(ctx context.Context, next graphql.ResponseHandler) *graphql.Response {
+	res := next(ctx)
+	if returned, ok := ctx.Value(responseReturnedKey{}).(*time.Time); ok {
+		*returned = time.Now()
+	}
+	return res
 }
 
 // End ends the step, failed when err isn't nil.

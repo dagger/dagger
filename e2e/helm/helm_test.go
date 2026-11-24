@@ -22,7 +22,6 @@
 //go:test:include ../../internal
 //go:test:include ../../sdk/go
 //go:test:include ../../.dagger/modules/cli-dev
-//go:test:include ../../.dagger/modules/go
 //go:test:include ../../util
 package helm
 
@@ -87,6 +86,102 @@ engine:
 	if strings.Contains(out, "dagger core version") {
 		t.Fatalf("default probe command still present after override")
 	}
+}
+
+// TestGracefulStopTimeout checks that the chart gives the engine a stop budget
+// that ends before the kubelet kills it at terminationGracePeriodSeconds, and
+// leaves the flag alone where the user sets it or the engine may predate it.
+func TestGracefulStopTimeout(t *testing.T) {
+	dag := connect(t)
+
+	for _, test := range []struct {
+		name      string
+		setValues []string
+		want      string // "" when the chart must not pass the flag
+	}{
+		{name: "default", want: "--graceful-stop-timeout=270s"},
+		{
+			name:      "longer grace period",
+			setValues: []string{"engine.terminationGracePeriodSeconds=600"},
+			want:      "--graceful-stop-timeout=570s",
+		},
+		{
+			name:      "margin for a preStop hook",
+			setValues: []string{"engine.gracefulStopMarginSeconds=90"},
+			want:      "--graceful-stop-timeout=210s",
+		},
+		{
+			name:      "statefulset",
+			setValues: []string{"engine.kind=StatefulSet"},
+			want:      "--graceful-stop-timeout=270s",
+		},
+		{
+			name:      "explicit duration",
+			setValues: []string{"engine.gracefulStopTimeout=4m"},
+			want:      "--graceful-stop-timeout=4m",
+		},
+		{
+			name:      "pinned engine image",
+			setValues: []string{"engine.image.ref=" + testEngineImage},
+		},
+		{
+			name:      "disabled",
+			setValues: []string{"engine.gracefulStopTimeout="},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			args := []string{"helm", "template", "."}
+			for _, value := range test.setValues {
+				args = append(args, "--set="+value)
+			}
+			out, err := helmContainer(dag).WithExec(args).Stdout(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := strings.Count(out, "--graceful-stop-timeout")
+			switch {
+			case test.want == "" && got != 0:
+				t.Fatalf("chart passed --graceful-stop-timeout %d times, want none", got)
+			case test.want != "" && (got != 1 || !strings.Contains(out, `"`+test.want+`"`)):
+				t.Fatalf("chart passed --graceful-stop-timeout %d times, want %q once", got, test.want)
+			}
+		})
+	}
+
+	t.Run("flag in engine.args", func(t *testing.T) {
+		out, err := helmContainer(dag).
+			WithExec([]string{"helm", "template", ".", "--set=engine.args[0]=--graceful-stop-timeout=4m"}).
+			Stdout(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := strings.Count(out, "--graceful-stop-timeout"); got != 1 {
+			t.Fatalf("chart passed --graceful-stop-timeout %d times, want only the user's", got)
+		}
+	})
+
+	t.Run("budget in engine.configJson", func(t *testing.T) {
+		values := "engine:\n  configJson: |\n    {\"shutdown\":{\"gracefulStopTimeout\":\"2m\"}}\n"
+		out, err := helmContainer(dag).
+			WithNewFile("/tmp/stop-budget.yaml", values).
+			WithExec([]string{"helm", "template", ".", "-f", "/tmp/stop-budget.yaml"}).
+			Stdout(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(out, "--graceful-stop-timeout") {
+			t.Fatal("chart passed --graceful-stop-timeout over the engine config's budget")
+		}
+	})
+
+	t.Run("margin not below the grace period", func(t *testing.T) {
+		_, err := helmContainer(dag).
+			WithExec([]string{"helm", "template", ".", "--set=engine.gracefulStopMarginSeconds=300"}).
+			Sync(t.Context())
+		if err == nil {
+			t.Fatal("chart rendered a stop budget that is not positive")
+		}
+	})
 }
 
 func TestPackageDryRun(t *testing.T) {

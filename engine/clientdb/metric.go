@@ -1,7 +1,9 @@
 package clientdb
 
 import (
+	"bytes"
 	"log/slog"
+	"slices"
 
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
@@ -11,8 +13,26 @@ import (
 )
 
 func MetricsToPB(dbMetrics []Metric) []*otlpmetricsv1.ResourceMetrics {
+	return NamedMetricsToPB(dbMetrics, nil)
+}
+
+// NamedMetricsToPB is MetricsToPB keeping only the metrics whose names are in
+// names; nil keeps every metric. A row whose encoding holds none of the names'
+// bytes is skipped without decoding it: an archive's metric stream is mostly
+// per-exec resource metrics a name selection leaves out.
+func NamedMetricsToPB(dbMetrics []Metric, names map[string]bool) []*otlpmetricsv1.ResourceMetrics {
 	if len(dbMetrics) == 0 {
 		return nil
+	}
+	if names != nil {
+		dbMetrics = slices.DeleteFunc(slices.Clone(dbMetrics), func(m Metric) bool {
+			for name := range names {
+				if bytes.Contains(m.Data, []byte(name)) {
+					return false
+				}
+			}
+			return true
+		})
 	}
 
 	resourceMetrics := make(map[attribute.Distinct]*otlpmetricsv1.ResourceMetrics)
@@ -33,6 +53,14 @@ func MetricsToPB(dbMetrics []Metric) []*otlpmetricsv1.ResourceMetrics {
 		res := telemetry.ResourceFromPB(metricResourcePB.SchemaUrl, metricResourcePB.Resource)
 
 		for _, scopeMetricPB := range metricResourcePB.ScopeMetrics {
+			if names != nil {
+				scopeMetricPB.Metrics = slices.DeleteFunc(scopeMetricPB.Metrics, func(m *otlpmetricsv1.Metric) bool {
+					return !names[m.GetName()]
+				})
+				if len(scopeMetricPB.Metrics) == 0 {
+					continue
+				}
+			}
 			scope := telemetry.InstrumentationScopeFromPB(scopeMetricPB.Scope)
 
 			rKey := res.Equivalent()

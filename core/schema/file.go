@@ -10,6 +10,8 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
+	"github.com/dagger/dagger/util/hashutil"
+	"github.com/opencontainers/go-digest"
 )
 
 type fileSchema struct{}
@@ -51,8 +53,12 @@ func (s *fileSchema) Install(srv *dagql.Server) {
 		Doc(`Parse the file contents as JSON.`)
 
 	dagql.Fields[*core.File]{
-		Syncer[*core.File]().
-			Doc(`Force evaluation in the engine.`),
+		dagql.NodeFunc("sync", s.sync).
+			DoNotCache(syncDoNotCacheReason).
+			Doc(`Force evaluation in the engine.`).
+			Args(
+				dagql.Arg("keyByContent").View(AfterVersion("v1.0.0-beta.26")).Doc(`Also key the file by its content, so that what consumes it is cached across any two recipes that produce the same file. This hashes the file unless it already has a content key.`),
+			),
 		dagql.NodeFunc("contents", s.contents).
 			IsPersistable().
 			Doc(`Retrieves the contents of the file.`).
@@ -517,4 +523,64 @@ func (s *fileSchema) asJSON(ctx context.Context, parent dagql.ObjectResult[*core
 		return nil, err
 	}
 	return &core.JSONValue{Data: []byte(json)}, nil
+}
+
+type fileSyncArgs struct {
+	KeyByContent bool `default:"false"`
+	Recipe       bool `default:"false" internal:"true"`
+}
+
+func (s *fileSchema) sync(ctx context.Context, parent dagql.ObjectResult[*core.File], args fileSyncArgs) (res dagql.Result[dagql.ID[*core.File]], _ error) {
+	if err := syncEvaluate(ctx, parent); err != nil {
+		return res, err
+	}
+	if args.KeyByContent {
+		if err := keyFileByContent(ctx, parent); err != nil {
+			return res, err
+		}
+	}
+	return syncedID(ctx, parent, args.Recipe)
+}
+
+func keyFileByContent(ctx context.Context, file dagql.ObjectResult[*core.File]) error {
+	frame, err := file.ResultCall()
+	if err != nil {
+		return err
+	}
+	if frame.ContentDigest() != "" {
+		return nil
+	}
+	// A sync can leave a result completed on another engine to its reader, so
+	// bring the content here to hash it.
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return err
+	}
+	if err := cache.Evaluate(ctx, file); err != nil {
+		return err
+	}
+	dgst, err := fileContentDigest(ctx, file.Self())
+	if err != nil {
+		return err
+	}
+	_, err = file.WithContentDigest(ctx, dgst)
+	return err
+}
+
+// fileContentDigest is the content key of an evaluated file: its path and its
+// content's hash.
+func fileContentDigest(ctx context.Context, file *core.File) (digest.Digest, error) {
+	snapshot, ok := file.Snapshot.Peek()
+	if !ok {
+		return "", fmt.Errorf("file snapshot not set after evaluation")
+	}
+	filePath, ok := file.File.Peek()
+	if !ok {
+		return "", fmt.Errorf("file path not set after evaluation")
+	}
+	dgst, err := core.GetContentHashFromFile(ctx, snapshot, filePath)
+	if err != nil {
+		return "", err
+	}
+	return hashutil.HashStrings(filePath, string(dgst)), nil
 }

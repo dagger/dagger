@@ -10,8 +10,6 @@ import (
 	doublestar "github.com/bmatcuk/doublestar/v4"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/telemetryattrs"
-
-	"github.com/dagger/dagger/util/parallel"
 )
 
 type ModTreeNode struct {
@@ -98,9 +96,9 @@ func NewModTree(ctx context.Context, mod dagql.ObjectResult[*Module]) (*ModTreeN
 const ServiceNameAttr = telemetryattrs.ServiceNameAttr
 
 // Initialize a standalone dagql server for querying the given module. A
-// client builds one per module and reuses it: the server is an immutable type
-// registry, and what a call depends on, such as its view or workspace, is on
-// the call's context.
+// session builds one per module and its clients reuse it: the server is an
+// immutable type registry, and what a call depends on, such as its view,
+// workspace or client, is on the call's context.
 func dagqlServerForModule(ctx context.Context, mod dagql.ObjectResult[*Module]) (*dagql.Server, error) {
 	main := mod.Self()
 	q, err := CurrentQuery(ctx)
@@ -112,12 +110,12 @@ func dagqlServerForModule(ctx context.Context, mod dagql.ObjectResult[*Module]) 
 	if err != nil {
 		return nil, fmt.Errorf("%q: load core schema: %w", main.Name(), err)
 	}
-	build := func() (*dagql.Server, error) {
+	build := func(root *Query) (*dagql.Server, error) {
 		coreSchema, err := defaultDeps.Schema(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("%q: serve core schema: %w", main.Name(), err)
 		}
-		srv, err := coreSchema.Fork(ctx, q)
+		srv, err := coreSchema.Fork(ctx, root)
 		if err != nil {
 			return nil, fmt.Errorf("%q: fork core schema: %w", main.Name(), err)
 		}
@@ -127,7 +125,21 @@ func dagqlServerForModule(ctx context.Context, mod dagql.ObjectResult[*Module]) 
 		if err := NewUserMod(mod).Install(ctx, srv); err != nil {
 			return nil, fmt.Errorf("%q: serve module: %w", main.Name(), err)
 		}
+		countModuleServer()
 		return srv, nil
+	}
+	set := defaultDeps.Append(NewUserMod(mod))
+	// The session's clients share one server for the module, on the
+	// session's neutral root, as they share a module set's schema
+	// (SchemaBuilderMemo.sharedBuilder): the server holds its root only as
+	// the receiver of Query fields, and a client's own state comes from the
+	// context. A module whose schema may depend on its client, such as one
+	// with .env defaults, keeps a server per client below.
+	if session := currentSessionSchemaBuilderMemo(ctx); session != nil {
+		if key, facade, ok := session.sharedKey(set); ok {
+			root := session.neutralRoot(facade)
+			return session.moduleServer(key, func() (*dagql.Server, error) { return build(root) })
+		}
 	}
 	memo, err := q.SchemaBuilderMemo(ctx)
 	if err != nil {
@@ -135,11 +147,11 @@ func dagqlServerForModule(ctx context.Context, mod dagql.ObjectResult[*Module]) 
 	}
 	// The core schema and the module identify the server, as they would
 	// the schema of a builder for the same module set.
-	key, ok := defaultDeps.Append(NewUserMod(mod)).memoKey()
+	key, ok := set.memoKey()
 	if memo == nil || !ok {
-		return build()
+		return build(q)
 	}
-	return memo.moduleServer(key, build)
+	return memo.moduleServer(key, func() (*dagql.Server, error) { return build(q) })
 }
 
 type moduleServerEntry struct {
@@ -150,16 +162,7 @@ type moduleServerEntry struct {
 // moduleServer returns the module server built for key, building it at most
 // once while builds succeed. A failed build is retried by the next call.
 func (m *SchemaBuilderMemo) moduleServer(key string, build func() (*dagql.Server, error)) (*dagql.Server, error) {
-	m.mu.Lock()
-	if m.moduleServers == nil {
-		m.moduleServers = make(map[string]*moduleServerEntry)
-	}
-	entry := m.moduleServers[key]
-	if entry == nil {
-		entry = &moduleServerEntry{}
-		m.moduleServers[key] = entry
-	}
-	m.mu.Unlock()
+	entry := memoEntry(m, m.moduleServers, key)
 	entry.mu.Lock()
 	defer entry.mu.Unlock()
 	if entry.srv != nil {
@@ -283,14 +286,6 @@ func boundWorkspaceArgs(ctx context.Context, srv *dagql.Server, fn *Function) ([
 	}}, nil
 }
 
-func debugTrace(ctx context.Context, msg string, args ...any) {
-	_ = parallel.
-		New().
-		WithContextualTracer(true).
-		WithJob(fmt.Sprintf(msg, args...), nil).
-		Run(ctx)
-}
-
 // Walk the tree and return all matching nodes, with include and exclude filters applied.
 func (node *ModTreeNode) RollupNodes(ctx context.Context, matches func(*ModTreeNode) (bool, bool), include []string, exclude []string) ([]*ModTreeNode, error) {
 	var res []*ModTreeNode
@@ -300,15 +295,14 @@ func (node *ModTreeNode) RollupNodes(ctx context.Context, matches func(*ModTreeN
 		collect, descend := matches(n)
 		if collect {
 			if len(include) > 0 {
-				if match, err := n.Match(ctx, include); err != nil {
+				if match, err := n.Match(include); err != nil {
 					return false, err
 				} else if !match {
-					debugTrace(ctx, "%q: does not match %v. Skipping", n.PathString(), include)
 					return false, nil
 				}
 			}
 			if len(exclude) > 0 {
-				if match, err := n.Match(ctx, exclude); err != nil {
+				if match, err := n.Match(exclude); err != nil {
 					return false, err
 				} else if match {
 					return false, nil
@@ -356,49 +350,35 @@ func (p ModTreePath) APICase(namer Namer) []string {
 	return apiCase
 }
 
-func (p ModTreePath) Contains(ctx context.Context, namer Namer, target ModTreePath) (result bool) {
-	defer func() {
-		debugTrace(ctx, "%v.Contains(%v) -> %v", p, target, result)
-	}()
+func (p ModTreePath) Contains(namer Namer, target ModTreePath) bool {
 	if len(target) < len(p) {
 		// if the target is shorter, it can't be a sub-path
 		return false
 	}
 	targetParent := target[:len(p)]
-	return p.Equals(ctx, namer, targetParent)
+	return p.Equals(namer, targetParent)
 }
 
-func (p ModTreePath) Equals(ctx context.Context, namer Namer, other ModTreePath) (result bool) {
-	defer func() {
-		debugTrace(ctx, "%v.Equals(%v) -> %v", p, other, result)
-	}()
+func (p ModTreePath) Equals(namer Namer, other ModTreePath) bool {
 	if len(p) != len(other) {
 		return false
 	}
 	for i := range p {
 		if namer.FieldName(p[i]) != namer.FieldName(other[i]) {
-			debugTrace(ctx, "%v.Equals(%v): %q != %q -> NOT EQUAL", p, other, namer.FieldName(p[i]), namer.FieldName(other[i]))
 			return false
 		}
 	}
 	return true
 }
 
-func (p ModTreePath) Glob(ctx context.Context, namer Namer, pattern string) (bool, error) {
+func (p ModTreePath) Glob(namer Namer, pattern string) (bool, error) {
 	// Normalize both pattern and path to CLI case (kebab-case) for consistent matching
 	slashPattern := strings.Join(NewModTreePath(pattern).CliCase(namer), "/")
 	slashPath := strings.Join(p.CliCase(namer), "/")
-	if match, err := doublestar.PathMatch(slashPattern, slashPath); err != nil {
-		return false, err
-	} else if match {
-		debugTrace(ctx, "%q.Glob(%q) -> MATCH", slashPath, slashPattern)
-		return true, nil
-	}
-	debugTrace(ctx, "%q.Glob(%q) -> no match", slashPath, slashPattern)
-	return false, nil
+	return doublestar.PathMatch(slashPattern, slashPath)
 }
 
-func (node *ModTreeNode) Match(ctx context.Context, patterns []string) (bool, error) {
+func (node *ModTreeNode) Match(patterns []string) (bool, error) {
 	if node.Parent == nil {
 		// The root node matches everything
 		return true, nil
@@ -408,7 +388,7 @@ func (node *ModTreeNode) Match(ctx context.Context, patterns []string) (bool, er
 	}
 	namer := LatestNamer
 	for _, pattern := range patterns {
-		if match, err := node.Path().Glob(ctx, namer, pattern); err != nil {
+		if match, err := node.Path().Glob(namer, pattern); err != nil {
 			return false, err
 		} else if match {
 			return true, nil
@@ -416,7 +396,7 @@ func (node *ModTreeNode) Match(ctx context.Context, patterns []string) (bool, er
 		// Includes also select descendants. Keep this a glob match: turning
 		// a pattern into API field names would strip classes such as [0-9]
 		// and make discovery disagree with the recorded include selector.
-		if match, err := node.Path().Glob(ctx, namer, pattern+":**"); err != nil {
+		if match, err := node.Path().Glob(namer, pattern+":**"); err != nil {
 			return false, err
 		} else if match {
 			return true, nil

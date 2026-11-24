@@ -94,3 +94,48 @@ func TestWalkLayerDeltaChangesCancelsAddedDir(t *testing.T) {
 	require.ErrorIs(t, err, canceled)
 	require.Equal(t, []string{"/added"}, changes)
 }
+
+// A path that isn't a directory in either view has no descendants there,
+// even when an older layer held a directory at it: a double walk lists none,
+// and looking one up beneath a symlink would follow the symlink elsewhere.
+func TestWalkLayerDeltaChangesBeneathNonDirectory(t *testing.T) {
+	writeFile := func(root, path, content string) {
+		require.NoError(t, os.MkdirAll(filepath.Dir(filepath.Join(root, path)), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(root, path), []byte(content), 0o644))
+	}
+	for _, tc := range []struct {
+		name string
+		// lowerZ and upperZ make /z in each view, if set.
+		lowerZ, upperZ bool
+	}{
+		{"symlink in both views", true, true},
+		{"symlink removed", true, false},
+		{"symlink added", false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			lowerView, upperView := t.TempDir(), t.TempDir()
+			writeFile(lowerView, "a/f", "old")
+			writeFile(upperView, "a/f", "new")
+			if tc.lowerZ {
+				require.NoError(t, os.Symlink("a", filepath.Join(lowerView, "z")))
+			}
+			if tc.upperZ {
+				require.NoError(t, os.Symlink("a", filepath.Join(upperView, "z")))
+			}
+			// An older layer held a directory at /z; a newer one wrote /a/f.
+			older, newer := t.TempDir(), t.TempDir()
+			writeFile(older, "z/f", "hidden")
+			writeFile(newer, "a/f", "new")
+
+			var changes []string
+			require.NoError(t, WalkLayerDeltaChanges(context.Background(), func(kind continuityfs.ChangeKind, path string, _ os.FileInfo, err error) error {
+				changes = append(changes, fmt.Sprintf("%s %s", kind, path))
+				return err
+			}, LayerDelta{Upper: []string{older, newer}}, upperView, lowerView, CompareInodeThenContent))
+			require.Contains(t, changes, "modify /a/f")
+			for _, change := range changes {
+				require.NotContains(t, change, "/z/", "a change beneath /z: %v", changes)
+			}
+		})
+	}
+}

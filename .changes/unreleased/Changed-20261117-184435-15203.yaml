@@ -1,0 +1,13 @@
+kind: Changed
+body: |
+  A module function with no cache setting no longer has its cached result
+  expire after one week. Dagger keeps the result until the function's inputs
+  change or the engine needs the disk space, so the function no longer runs
+  again every week. A function that fetches data from outside Dagger, such as
+  a web request its own code makes, now needs its own cache setting to stay
+  fresh: a time to live (TTL) such as `+cache="10m"` in Go, or `session` or
+  `never`. A TTL may now be longer than one week.
+time: 2026-11-17T18:44:35-08:00
+custom:
+  Author: sipsma
+  PR: 15203

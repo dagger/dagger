@@ -150,6 +150,9 @@ type EngineSpec struct {
 	URL            string                   `json:"url,omitempty"`
 	CertSerialized *SerializableCertificate `json:"cert,omitempty"`
 	InstanceID     string                   `json:"instance_id,omitempty"`
+	// ClaimID identifies this assignment's claim on the engine, for the
+	// client to send in its session metadata (engine.ClientMetadata.CloudClaimID).
+	ClaimID string `json:"claim_id,omitempty"`
 }
 
 func (es *EngineSpec) TLSCertificate() (*tls.Certificate, error) {

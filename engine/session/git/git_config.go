@@ -34,7 +34,7 @@ func isGitConfigKeyAllowed(key string) bool {
 // no push rewrite matches. Each pass uses the longest prefix, with the first
 // entry winning ties. Callers must validate the result before displaying it or
 // acquiring credentials.
-// Already-resolved captured remotes and explicit push URLs must not use this.
+// Explicit push URLs (remote.<name>.pushurl) must not use this.
 func ResolvePushURL(remote string, entries []*GitConfigEntry) string {
 	for _, suffix := range []string{".pushinsteadof", ".insteadof"} {
 		longest := -1

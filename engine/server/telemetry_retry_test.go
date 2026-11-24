@@ -430,7 +430,7 @@ func TestSessionExportersRecordPayloadsTheProcessorsDrop(t *testing.T) {
 	require.True(t, store.ClaimCallPayload(logDigest))
 
 	logs := enginetel.NewCallPayloadBatchProcessor(logExporter)
-	spans := enginetel.NewCallSpanProcessor(sessionSpanExporter{sess: sess, ps: ps})
+	spans := enginetel.NewProtectedSpanProcessor(sessionSpanExporter{sess: sess, ps: ps})
 	require.NoError(t, logs.OnEmit(t.Context(), &record))
 	spans.OnEnd(callSpan(t, "client", 1, spanBody, spanDigest))
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)

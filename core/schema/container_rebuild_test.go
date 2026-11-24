@@ -126,8 +126,7 @@ func TestContainerMutationsSaveRecipeOverEvaluatedParent(t *testing.T) {
 			case "withDirectory", "withFile", "withNewFile":
 				if evaluated {
 					// Over a built parent the write runs at the call, which mounts
-					// snapshots; TestRebuildContainerWritesOverEvaluatedParent in
-					// core/integration covers it.
+					// snapshots this test's engine can't.
 					continue
 				}
 			}

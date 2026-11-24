@@ -229,6 +229,23 @@ func TestRepoRootForImportPath(t *testing.T) {
 				Root: "bitbucket.org/workspace/pkgname",
 			},
 		},
+		// Bitbucket Cloud: SSH ref, served from ssh.bitbucket.org
+		{
+			"ssh.bitbucket.org/workspace/pkgname/subdir",
+			&RepoRoot{
+				VCS:  vcsGit,
+				Repo: "https://bitbucket.org/workspace/pkgname",
+				Root: "ssh.bitbucket.org/workspace/pkgname",
+			},
+		},
+		{
+			"ssh.bitbucket.org/workspace/pkgname.git/subdir",
+			&RepoRoot{
+				VCS:  vcsGit,
+				Repo: "https://bitbucket.org/workspace/pkgname",
+				Root: "ssh.bitbucket.org/workspace/pkgname.git",
+			},
+		},
 		{
 			"codeberg.org/workspace/pkgname/subdir",
 			&RepoRoot{

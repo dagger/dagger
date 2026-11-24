@@ -1,6 +1,7 @@
 package git
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -155,15 +156,15 @@ func (s GitAttachable) PackCheckout(req *PackCheckoutRequest, srv Git_PackChecko
 	defer os.RemoveAll(tmpDir)
 	bundlePath := filepath.Join(tmpDir, "checkout.bundle")
 
-	if _, err := runHostGit(ctx, checkout, "bundle", "create", bundlePath, "--branches", "--tags", "HEAD"); err != nil {
+	// The engine names the ref targets of a reconstruction it already holds;
+	// those the checkout also has bound what it needs to receive.
+	haves, err := checkoutHaves(ctx, checkout, req.GetHaveShas())
+	if err != nil {
 		return sendErr(PACK_FAILED, err.Error())
 	}
-	bundleInfo, err := os.Stat(bundlePath)
+	hasBundle, err := writeCheckoutBundle(ctx, checkout, bundlePath, haves)
 	if err != nil {
-		return sendErr(PACK_FAILED, fmt.Sprintf("stat checkout bundle: %v", err))
-	}
-	if bundleInfo.Size() > MaxGitPackBytes {
-		return sendErr(PACK_FAILED, fmt.Sprintf("checkout bundle size %d exceeds limit %d", bundleInfo.Size(), MaxGitPackBytes))
+		return sendErr(PACK_FAILED, err.Error())
 	}
 	latest, err := collectCheckoutState(ctx, checkout)
 	if err != nil {
@@ -175,6 +176,10 @@ func (s GitAttachable) PackCheckout(req *PackCheckoutRequest, srv Git_PackChecko
 	unlock()
 	locked = false
 
+	var refs []*CheckoutRef
+	if len(haves) > 0 {
+		refs = state.refList()
+	}
 	if err := srv.Send(&PackCheckoutResponse{
 		Msg: &PackCheckoutResponse_Metadata{
 			Metadata: &PackCheckoutMetadata{
@@ -185,10 +190,15 @@ func (s GitAttachable) PackCheckout(req *PackCheckoutRequest, srv Git_PackChecko
 				Remotes:           state.remotes,
 				UpstreamRemote:    state.upstreamRemote,
 				HasRemoteMetadata: true,
+				RelativeToHaves:   len(haves) > 0,
+				Refs:              refs,
 			},
 		},
 	}); err != nil {
 		return fmt.Errorf("send pack metadata: %w", err)
+	}
+	if !hasBundle {
+		return nil
 	}
 
 	bundle, err := os.Open(bundlePath)
@@ -214,6 +224,42 @@ func (s GitAttachable) PackCheckout(req *PackCheckoutRequest, srv Git_PackChecko
 		}
 	}
 	return nil
+}
+
+// writeCheckoutBundle bundles the checkout's HEAD, branches and tags at
+// bundlePath, leaving out what haves reach. It reports false, writing nothing,
+// when the refs reach nothing beyond haves: git refuses to create an empty
+// bundle.
+func writeCheckoutBundle(ctx context.Context, checkout, bundlePath string, haves []string) (bool, error) {
+	// Each command reading revisions from stdin gets its own reader.
+	exclude := func() io.Reader { return nil }
+	if len(haves) > 0 {
+		revs := "^" + strings.Join(haves, "\n^") + "\n"
+		exclude = func() io.Reader { return strings.NewReader(revs) }
+		// Ask first whether the refs reach anything the engine lacks.
+		missing, err := runHostGitBytes(ctx, checkout, nil, exclude(), "rev-list", "--objects", "--branches", "--tags", "HEAD", "--stdin")
+		if err != nil {
+			return false, err
+		}
+		if len(bytes.TrimSpace(missing)) == 0 {
+			return false, nil
+		}
+	}
+	args := []string{"bundle", "create", bundlePath, "--branches", "--tags", "HEAD"}
+	if len(haves) > 0 {
+		args = append(args, "--stdin")
+	}
+	if _, err := runHostGitBytes(ctx, checkout, nil, exclude(), args...); err != nil {
+		return false, err
+	}
+	bundleInfo, err := os.Stat(bundlePath)
+	if err != nil {
+		return false, fmt.Errorf("stat checkout bundle: %w", err)
+	}
+	if bundleInfo.Size() > MaxGitPackBytes {
+		return false, fmt.Errorf("checkout bundle size %d exceeds limit %d", bundleInfo.Size(), MaxGitPackBytes)
+	}
+	return true, nil
 }
 
 // checkoutState is the raw material of a checkout's state digest and pack
@@ -274,6 +320,43 @@ func collectCheckoutState(ctx context.Context, checkout string) (checkoutState, 
 		return state, err
 	}
 	return state, nil
+}
+
+// refList returns the branch and tag refs the state records.
+func (state checkoutState) refList() []*CheckoutRef {
+	var refs []*CheckoutRef
+	for _, line := range strings.Split(state.refs, "\n") {
+		name, sha, ok := strings.Cut(line, " ")
+		if !ok {
+			continue
+		}
+		refs = append(refs, &CheckoutRef{Name: name, Sha: sha})
+	}
+	return refs
+}
+
+// checkoutHaves returns the objects among shas that the checkout has. An
+// object the checkout lacks cannot bound what it sends: the engine's
+// reconstruction may come from an earlier state, or another repository at the
+// same path.
+func checkoutHaves(ctx context.Context, checkout string, shas []string) ([]string, error) {
+	if len(shas) == 0 {
+		return nil, nil
+	}
+	out, err := runHostGitBytes(ctx, checkout, nil, strings.NewReader(strings.Join(shas, "\n")+"\n"),
+		"cat-file", "--batch-check=%(objectname)")
+	if err != nil {
+		return nil, err
+	}
+	var haves []string
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		// A missing object is reported as "<name> missing".
+		if line == "" || strings.HasSuffix(line, " missing") {
+			continue
+		}
+		haves = append(haves, line)
+	}
+	return haves, nil
 }
 
 // checkoutHasGitEntry reports whether the checkout has a .git entry (directory

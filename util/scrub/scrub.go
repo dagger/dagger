@@ -149,6 +149,11 @@ var scrubs = []scrubber{
 		"/tmp/TestTelemetryXXXXXXXXXX",
 	},
 	{
+		regexp.MustCompile(`/tmp/gobuild-dependencies-\d+`),
+		"/tmp/gobuild-dependencies-2058023261",
+		"/tmp/gobuild-dependencies-XXXXXXXXXX",
+	},
+	{
 		regexp.MustCompile(`upload ([^ ]+) from [a-z0-9]+ \(client id: [a-z0-9]+, session id: [a-z0-9]+\)`),
 		"upload /app/dagql/idtui/viztest/broken from uiyf0ymsapvxhhgrsamouqh8h (client id: xutan9vz6sjtdcrqcqrd6cvh4, session id: u5mj1p0sw07k6579r3xcuiuf3)",
 		"upload /XXX/XXX/XXX from XXXXXXXXXXX (client id: XXXXXXXXXXX, session id: XXXXXXXXXXX)",

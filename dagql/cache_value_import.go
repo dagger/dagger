@@ -2,7 +2,9 @@ package dagql
 
 import (
 	"fmt"
+	"reflect"
 	"slices"
+	"strings"
 
 	"github.com/opencontainers/go-digest"
 )
@@ -21,10 +23,84 @@ func validateValueBundleShape(bundle ValueBundle) ([]uint64, error) {
 	return checkValueBundle(bundle, true)
 }
 
+// ResolveChainPrefixes gives each of the bundle's outputs that names a chain
+// prefix its chain, in place: the first layers of the chain of the output it
+// names, which the two share, with that chain's addresses, packs and renewal
+// key for them. It refuses a prefix that names no output of the
+// bundle carrying a chain, takes more layers than that chain has or none, or
+// sits on an output that carries a chain too. First, each output that names
+// its chain's layers in the bundle's list gets them (resolveSharedLayers).
+func ResolveChainPrefixes(bundle *ValueBundle) error {
+	if err := resolveSharedLayers(bundle); err != nil {
+		return err
+	}
+	chains := map[string]*OfferedChain{}
+	for _, output := range bundle.Outputs {
+		if output.Chain == nil {
+			continue
+		}
+		key, err := partAddressKey(output.Address)
+		if err != nil {
+			return err
+		}
+		chains[fmt.Sprintf("%d:%s", output.Ordinal, key)] = output.Chain
+	}
+	for i := range bundle.Outputs {
+		output := &bundle.Outputs[i]
+		prefix := output.Prefix
+		if prefix == nil {
+			continue
+		}
+		if output.Chain != nil {
+			return fmt.Errorf("output %d has both a chain and a prefix", output.Ordinal)
+		}
+		key, err := partAddressKey(prefix.Address)
+		if err != nil {
+			return err
+		}
+		chain := chains[fmt.Sprintf("%d:%s", prefix.Ordinal, key)]
+		if chain == nil {
+			return fmt.Errorf("output %d's prefix names no output %d:%s with a chain", output.Ordinal, prefix.Ordinal, key)
+		}
+		if prefix.Layers < 1 || prefix.Layers > len(chain.Layers) {
+			return fmt.Errorf("output %d's prefix takes %d of a chain of %d layers", output.Ordinal, prefix.Layers, len(chain.Layers))
+		}
+		// The full slice expression caps the prefix's layers at its own, so
+		// an append to them can't write over the chain's. The layers are the
+		// chain's blobs, so the prefix reads them as the chain does: at the
+		// chain's addresses and packs, renewed by its key.
+		resolved := &OfferedChain{Layers: chain.Layers[:prefix.Layers:prefix.Layers], RenewalKey: chain.RenewalKey}
+		for _, layer := range resolved.Layers {
+			blob := layer.Descriptor.Digest
+			if address, ok := chain.Addresses[blob]; ok {
+				if resolved.Addresses == nil {
+					resolved.Addresses = map[digest.Digest]BlobAddress{}
+				}
+				resolved.Addresses[blob] = address
+			}
+			if pack, ok := chain.Packs[blob]; ok {
+				if resolved.Packs == nil {
+					resolved.Packs = map[digest.Digest]digest.Digest{}
+				}
+				resolved.Packs[blob] = pack
+			}
+		}
+		output.Chain = resolved
+		output.Prefix = nil
+	}
+	return nil
+}
+
 //nolint:gocyclo // one check per bundle field and record kind; splitting hides the order of the checks
 func checkValueBundle(bundle ValueBundle, shapeOnly bool) ([]uint64, error) {
 	if bundle.Version != valueBundleVersion {
 		return nil, fmt.Errorf("unsupported value bundle version %d", bundle.Version)
+	}
+	// A prefix output is checked as the chain it names: resolved on a copy of
+	// the outputs, leaving the caller's bundle as it was.
+	bundle.Outputs = slices.Clone(bundle.Outputs)
+	if err := ResolveChainPrefixes(&bundle); err != nil {
+		return nil, err
 	}
 	if len(bundle.Roots) == 0 {
 		return nil, fmt.Errorf("bundle has no roots")
@@ -41,6 +117,13 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool) ([]uint64, error) {
 		if row.SenderNumber == 0 {
 			return nil, fmt.Errorf("row %d: no sender number", id)
 		}
+		if row.Held != "" {
+			if err := validateHeldRow(row); err != nil {
+				return nil, fmt.Errorf("row %d: %w", id, err)
+			}
+			rows[id] = row
+			continue
+		}
 		validate := validateTransferRecord
 		if shapeOnly {
 			validate = validateTransferRecordShape
@@ -49,6 +132,14 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool) ([]uint64, error) {
 			return nil, fmt.Errorf("row %d: %w", id, err)
 		}
 		rows[id] = row
+	}
+	for i, transferred := range bundle.Calls {
+		if transferred.Call == "" {
+			return nil, fmt.Errorf("call %d: no call", i)
+		}
+		if _, ok := rows[uint64(transferred.Value)]; !ok {
+			return nil, fmt.Errorf("call %d: value %d is no row", i, transferred.Value)
+		}
 	}
 	named := map[uint64]bool{}
 	for _, output := range bundle.Outputs {
@@ -60,7 +151,7 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool) ([]uint64, error) {
 	// an output names.
 	addresses := map[uint64]map[string]CapturedCodecOutput{}
 	for id, row := range rows {
-		if shapeOnly && !named[id] && len(row.Record.Envelope.PendingOffers) == 0 {
+		if row.Held != "" || shapeOnly && !named[id] && len(row.Record.Envelope.PendingOffers) == 0 {
 			continue
 		}
 		outputs, err := mapTransferredOutputs(row.Record)
@@ -111,9 +202,14 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool) ([]uint64, error) {
 	described := map[string]bool{}
 	for _, output := range bundle.Outputs {
 		id := uint64(output.Ordinal)
-		if _, ok := rows[id]; !ok {
+		row, ok := rows[id]
+		if !ok {
 			return nil, fmt.Errorf("output names missing ordinal %d", id)
 		}
+		// An output on a held row is checked against the recipient's own
+		// copy of the row, which the bundle doesn't carry
+		// (checkOutputPart).
+		held := row.Held != ""
 		key, err := partAddressKey(output.Address)
 		if err != nil {
 			return nil, err
@@ -124,7 +220,7 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool) ([]uint64, error) {
 		}
 		described[composite] = true
 		part, ok := addresses[id][key]
-		if !ok {
+		if !ok && !held {
 			return nil, fmt.Errorf("unknown output address %s", composite)
 		}
 		switch output.State {
@@ -135,8 +231,10 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool) ([]uint64, error) {
 		if slots[composite] {
 			return nil, fmt.Errorf("duplicate offer description %s", composite)
 		}
-		if output.State != part.State && (part.State != "pending" || output.State != "completed") {
-			return nil, fmt.Errorf("output state differs from recorded part %s", composite)
+		if !held {
+			if err := checkOutputPart(output, part); err != nil {
+				return nil, fmt.Errorf("%s: %w", composite, err)
+			}
 		}
 		if output.Value != nil {
 			if err := validateSnapshotValue(*output.Value); err != nil {
@@ -160,11 +258,9 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool) ([]uint64, error) {
 		if output.Value == nil || output.Owner == nil || output.State != "completed" {
 			return nil, fmt.Errorf("chain requires completed descriptor and owner")
 		}
-		offer := PersistedPartOffer{Address: output.Address, Value: *output.Value, Chain: *output.Chain, Owner: *output.Owner}
-		if err := validateTransferOffer(offer, part); err != nil {
-			return nil, err
-		}
-		if err := validateSlot(id, output.Address); err != nil {
+		if held {
+			slots[composite] = true
+		} else if err := validateSlot(id, output.Address); err != nil {
 			return nil, err
 		}
 		outputDeps[id] = append(outputDeps[id], output.Owner.DependencyIDs...)
@@ -213,6 +309,37 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool) ([]uint64, error) {
 		return nil, fmt.Errorf("bundle contains rows outside its root closure")
 	}
 	return order, nil
+}
+
+// validateHeldRow checks a held row: a recipe digest, in its algorithm:encoded
+// form (recipes are xxh3, which go-digest doesn't validate), and nothing a
+// record would carry but its ordinal. Its dependencies are checked as any
+// row's are.
+func validateHeldRow(row TransferredValue) error {
+	if algorithm, encoded, ok := strings.Cut(string(row.Held), ":"); !ok || algorithm == "" || encoded == "" {
+		return fmt.Errorf("held recipe %q is not a digest", row.Held)
+	}
+	if row.Record.Call != nil || len(row.Record.SnapshotLinks) > 0 || !reflect.ValueOf(row.Record.Envelope).IsZero() {
+		return fmt.Errorf("held row carries a record")
+	}
+	return nil
+}
+
+// checkOutputPart checks an output against the part its row's record has at
+// the output's address: the same state, or a completed output of a part the
+// record has pending; and an output with a chain, which becomes an offer,
+// only of a pending part, and as an offer the part takes.
+func checkOutputPart(output TransferredOutput, part CapturedCodecOutput) error {
+	if output.State != part.State && (part.State != "pending" || output.State != "completed") {
+		return fmt.Errorf("output state differs from recorded part")
+	}
+	if output.Chain == nil || output.Value == nil || output.Owner == nil {
+		return nil
+	}
+	if part.State != "pending" {
+		return fmt.Errorf("offer at final output")
+	}
+	return validateTransferOffer(PersistedPartOffer{Address: output.Address, Value: *output.Value, Chain: *output.Chain, Owner: *output.Owner}, part)
 }
 
 type transferIdentityPlan struct {

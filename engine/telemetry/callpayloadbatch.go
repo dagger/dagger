@@ -110,7 +110,7 @@ func (processor *CallPayloadBatchProcessor) Enabled(context.Context, sdklog.Enab
 
 // protectedBatcher is the lossless, retrying worker behind every protected
 // telemetry lane: call payload and agent control log records
-// (CallPayloadBatchProcessor) and call spans (CallSpanProcessor). Ingress
+// (CallPayloadBatchProcessor) and call and cache spans (ProtectedSpanProcessor). Ingress
 // never blocks and never drops; one worker coalesces a burst for
 // CallPayloadExportDelay, exports it in bounded batches, and retries a failed
 // batch in order with exponential backoff until it lands or
@@ -131,10 +131,21 @@ type protectedBatcher[T any] struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	mu       sync.Mutex
-	queue    []T
+	mu    sync.Mutex
+	queue []T
+	// spare is the backing array of the last queue an export pass took,
+	// emptied, for the queue to start from once the next pass takes it:
+	// a burst then refills capacity it already has, instead of growing a
+	// new slice from nothing.
+	spare    []T
 	failures int // consecutive failed exports of the batch at the queue head
 	stopped  bool
+	// enqueued counts the items taken in; held those taken in and not yet
+	// exported or given up on, wherever they wait; peakHeld the most held at
+	// once. The queue is unbounded, so the peak is what it cost.
+	enqueued int64
+	held     int
+	peakHeld int
 
 	wake     chan struct{}
 	flush    chan protectedBatchRequest
@@ -190,6 +201,9 @@ func (batcher *protectedBatcher[T]) enqueue(item T) error {
 	}
 	wake := len(batcher.queue) == 0
 	batcher.queue = append(batcher.queue, item)
+	batcher.enqueued++
+	batcher.held++
+	batcher.peakHeld = max(batcher.peakHeld, batcher.held)
 	batcher.mu.Unlock()
 
 	if wake {
@@ -411,8 +425,9 @@ func (batcher *protectedBatcher[T]) drain(ctx context.Context) error {
 // now queued.
 func (batcher *protectedBatcher[T]) exportPass(ctx context.Context) (retryIn time.Duration, more bool, dropped, failed error) {
 	batcher.mu.Lock()
-	queued := batcher.queue
-	batcher.queue = nil
+	taken := batcher.queue
+	queued := taken
+	batcher.queue, batcher.spare = batcher.spare, nil
 	failures := batcher.failures
 	batcher.mu.Unlock()
 
@@ -431,12 +446,17 @@ func (batcher *protectedBatcher[T]) exportPass(ctx context.Context) (retryIn tim
 			failures = 0
 			clear(batch)
 			queued = queued[batchSize:]
+			batcher.release(batchSize)
 			continue
 		}
 		failures++
 		if failures < CallPayloadMaxExportAttempts {
 			batcher.mu.Lock()
-			batcher.queue = append(queued, batcher.queue...)
+			arrived := batcher.queue
+			queued = append(queued, arrived...)
+			batcher.queue = queued
+			clear(arrived)
+			batcher.spare = arrived[:0]
 			batcher.failures = failures
 			batcher.mu.Unlock()
 			return callPayloadRetryDelay(failures), false, dropped, exportErr
@@ -458,12 +478,29 @@ func (batcher *protectedBatcher[T]) exportPass(ctx context.Context) (retryIn tim
 		failures = 0
 		clear(batch)
 		queued = queued[batchSize:]
+		batcher.release(batchSize)
 	}
 	batcher.mu.Lock()
 	batcher.failures = 0
+	batcher.spare = taken[:0]
 	more = len(batcher.queue) > 0
 	batcher.mu.Unlock()
 	return 0, more, dropped, nil
+}
+
+// release stops holding n items, exported or given up on.
+func (batcher *protectedBatcher[T]) release(n int) {
+	batcher.mu.Lock()
+	batcher.held -= n
+	batcher.mu.Unlock()
+}
+
+// QueueStats returns how many items the lane has taken in, and the most it
+// has held at once, waiting to be exported.
+func (batcher *protectedBatcher[T]) QueueStats() (enqueued int64, peakHeld int) {
+	batcher.mu.Lock()
+	defer batcher.mu.Unlock()
+	return batcher.enqueued, batcher.peakHeld
 }
 
 func (batcher *protectedBatcher[T]) deliveryError() error {

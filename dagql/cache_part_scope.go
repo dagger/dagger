@@ -83,8 +83,12 @@ func (dec *PersistDecodeContext) atPath(path PersistedRefPath) *PersistDecodeCon
 }
 
 func describePartRecord(record PersistedRecord) ([]PartProbe, error) {
+	return describeMemoPartRecord(record, nil)
+}
+
+func describeMemoPartRecord(record PersistedRecord, memos payloadMemos) ([]PartProbe, error) {
 	var probes []PartProbe
-	err := walkTransferPayloads(&record.Envelope, record.Call, record.SnapshotLinks, func(family PersistedObjectFamily, v PersistedPayloadVisit) (json.RawMessage, error) {
+	err := walkMemoTransferPayloads(&record.Envelope, record.Call, record.SnapshotLinks, memos, func(family PersistedObjectFamily, v PersistedPayloadVisit) (json.RawMessage, error) {
 		if describer, ok := family.Transfer.(PersistedPartDescriber); ok {
 			parts, err := describer.DescribeParts(v)
 			if err != nil {

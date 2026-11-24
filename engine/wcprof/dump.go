@@ -79,6 +79,7 @@ type DumpEvent struct {
 	ClientID uint32 `json:"cl,omitempty"`
 	MetaID   uint32 `json:"m,omitempty"`
 
+	Bytes int64 `json:"b,omitempty"`
 	// TraceID and SpanID are a span event's OTel span, in lower-case hex.
 	TraceID string `json:"tr,omitempty"`
 	SpanID  string `json:"sp,omitempty"`
@@ -136,7 +137,31 @@ type DumpEvent struct {
 	RunqWaitUS int64 `json:"rqw,omitempty"`
 	RunqWaits  int64 `json:"rqn,omitempty"`
 	OnCPUUS    int64 `json:"oncpu,omitempty"`
+
+	// A wait on an RWMutex carries the lock's holder when the wait began:
+	// HolderID the op that took it through WriteLock, HolderUnknown when
+	// it was taken directly, with no context to name the op, or
+	// HolderReaders when it was held for reading; and HolderSinceNS when
+	// the holder took it, 0 for readers or when not known. Only locks of
+	// type RWMutex have a holder: a wait on another lock has none. A lock
+	// taken directly, or caught between a release and the next taker's
+	// mark, reads as HolderUnknown, never as an earlier holder's op;
+	// readers aren't named one by one.
+	HolderID      uint64 `json:"h,omitempty"`
+	HolderSinceNS int64  `json:"hs,omitempty"`
+
+	// Tally events (DumpTypeTally) count the calls of one class (OpKind,
+	// ClassID) made under the op ParentID, from its start to its end, or to
+	// the dump for an op still open (StartNS, EndNS): how many, how many
+	// failed, and their summed duration. A later dump of the same recorder
+	// can have the same op's tally again, grown.
+	Count   int64 `json:"n,omitempty"`
+	Errors  int64 `json:"er,omitempty"`
+	TotalNS int64 `json:"tn,omitempty"`
 }
+
+// DumpTypeTally is the DumpEvent.Type of an op's tallied calls (Tally).
+const DumpTypeTally = "tally"
 
 // DumpTypeUsage is the DumpEvent.Type of a resource reading (RecordUsage).
 const DumpTypeUsage = "usage"
@@ -200,6 +225,8 @@ func eventTypeName(t EventType) string {
 		return "link"
 	case EventTypeSpan:
 		return "span"
+	case EventTypeTally:
+		return DumpTypeTally
 	default:
 		return "invalid"
 	}
@@ -216,6 +243,7 @@ func toDumpEvent(ev Event) DumpEvent {
 		IdentID:  ev.IdentID,
 		ClientID: ev.ClientID,
 		MetaID:   ev.MetaID,
+		Bytes:    ev.Bytes,
 		StartNS:  ev.StartNS,
 		EndNS:    ev.EndNS,
 	}
@@ -226,8 +254,14 @@ func toDumpEvent(ev Event) DumpEvent {
 		out.Outcome = ev.Outcome.String()
 	case EventTypeWait:
 		out.Reason = ev.Reason.String()
+		out.HolderID, out.HolderSinceNS = ev.ResultID, ev.Bytes
+		out.ResultID, out.Bytes = 0, 0
 	case EventTypeLink:
 		out.LinkKind = ev.LinkKind.String()
+	case EventTypeTally:
+		out.OpKind = ev.OpKind.String()
+		out.Count, out.Errors, out.TotalNS = int64(ev.TargetID), int64(ev.ResultID), ev.Bytes
+		out.TargetID, out.ResultID, out.Bytes = 0, 0, 0
 	case EventTypeSpan:
 		var trace [16]byte
 		var span [8]byte
@@ -254,8 +288,10 @@ func (r *Recorder) WriteDump(w io.Writer, flush bool) error {
 		batches [numShards][]Event
 		usages  [numShards][]usageRecord
 		open    []DumpOpenOp
+		tallies []Event
 		total   int
 	)
+	nowNS := r.Now()
 	for i := range r.shards {
 		sh := &r.shards[i]
 		sh.mu.Lock()
@@ -280,6 +316,9 @@ func (r *Recorder) WriteDump(w io.Writer, flush bool) error {
 				MetaID:   oo.metaID,
 				StartNS:  oo.startNS,
 			})
+			if oo.handle != nil {
+				tallies = append(tallies, oo.handle.tallyEvents(nowNS, false)...)
+			}
 		}
 		sh.mu.Unlock()
 		total += len(batches[i]) + len(usages[i])
@@ -288,6 +327,7 @@ func (r *Recorder) WriteDump(w io.Writer, flush bool) error {
 		r.total.Add(int64(-total))
 	}
 
+	total += len(tallies)
 	reportedEvents, producers := r.dumpReported(flush)
 	total += len(reportedEvents)
 
@@ -314,6 +354,11 @@ func (r *Recorder) WriteDump(w io.Writer, flush bool) error {
 			if err := enc.Encode(toDumpEvent(ev)); err != nil {
 				return fmt.Errorf("wcprof: encode dump event: %w", err)
 			}
+		}
+	}
+	for _, ev := range tallies {
+		if err := enc.Encode(toDumpEvent(ev)); err != nil {
+			return fmt.Errorf("wcprof: encode dump tally: %w", err)
 		}
 	}
 	for _, batch := range usages {

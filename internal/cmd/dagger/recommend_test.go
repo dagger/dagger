@@ -2,6 +2,7 @@ package daggercmd
 
 import (
 	"context"
+	"net/http"
 	"testing"
 
 	"dagger.io/dagger"
@@ -81,4 +82,40 @@ func TestRecommendModules(t *testing.T) {
 		},
 	}}, nil)
 	require.ErrorIs(t, err, context.Canceled)
+}
+
+// Without the module catalog (no cache and a failed fetch), dagger init says
+// so in one line and carries on, while dagger module recommend fails, naming
+// the URL and the cause. Neither touches the engine first.
+func TestPlanRecommendCatalogUnavailable(t *testing.T) {
+	srv := serveModuleCatalog(t, http.StatusBadGateway, "")
+	withModuleCatalogSource(t, srv.URL)
+
+	t.Run("init carries on", func(t *testing.T) {
+		recs, install, err := planRecommend(t.Context(), nil, nil, true)
+		require.NoError(t, err)
+		require.Empty(t, recs)
+		require.False(t, install)
+	})
+
+	t.Run("init line", func(t *testing.T) {
+		_, err := loadModuleRegistry(t.Context())
+		var unavailable *moduleCatalogUnavailableError
+		require.ErrorAs(t, err, &unavailable)
+		require.Equal(t,
+			"Module recommendations unavailable: couldn't fetch "+srv.URL+": unexpected status 502 Bad Gateway.",
+			recommendationsUnavailableMessage(unavailable))
+	})
+
+	t.Run("module recommend fails", func(t *testing.T) {
+		_, _, err := planRecommend(t.Context(), nil, nil, false)
+		require.EqualError(t, err, "module catalog unavailable: couldn't fetch "+srv.URL+": unexpected status 502 Bad Gateway")
+	})
+
+	t.Run("cancellation aborts init", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+		_, _, err := planRecommend(ctx, nil, nil, true)
+		require.ErrorIs(t, err, context.Canceled)
+	})
 }

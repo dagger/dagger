@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/stretchr/testify/require"
@@ -26,13 +27,14 @@ func TestPreparedDangSingleflightFreshClientsAndRelease(t *testing.T) {
 		builds.Add(1)
 		return dang.PrepareDir(ctx, dir)
 	}
-	key := preparedDangKey("schema-test", "source-a", "schema-a", "module", "original", dir)
+	modKey := preparedDangKey("schema-test", "module", "original")
+	key := preparedDangKey("source-a", "schema-a", dir)
 	var group errgroup.Group
 	for index := range 12 {
 		group.Go(func() error {
 			name := fmt.Sprintf("client-%d", index)
 			callCtx := dang.ContextWithImportConfigs(ctx, dang.ImportConfig{Name: "Session", Schema: schema, Client: schemaCacheClient(name)})
-			program, err := cachedPreparedDangDir(callCtx, key, build)
+			program, err := cachedPreparedDangDir(callCtx, modKey, key, build)
 			if err != nil {
 				return err
 			}
@@ -49,16 +51,26 @@ func TestPreparedDangSingleflightFreshClientsAndRelease(t *testing.T) {
 	}
 	require.NoError(t, group.Wait())
 	require.EqualValues(t, 1, builds.Load())
-	for index := range 6 {
-		parts := []string{"schema-test", "source-a", "schema-a", "module", "original", dir}
+	for index := range 3 {
+		parts := []string{"schema-test", "module", "original"}
 		parts[index] += "-different"
-		require.NotEqual(t, key, preparedDangKey(parts...), "key input %d was ignored", index)
+		require.NotEqual(t, modKey, preparedDangKey(parts...), "module key input %d was ignored", index)
+	}
+	source := stagedDangSource{dir: dir, version: dang.Version{Major: 2, Minor: 0}}
+	compilation := preparedDangCompilationKey(source, "v1.0.0", "schema-a")
+	for name, other := range map[string]string{
+		"staged source":  preparedDangCompilationKey(stagedDangSource{dir: dir + "-different", version: source.version}, "v1.0.0", "schema-a"),
+		"Dang version":   preparedDangCompilationKey(stagedDangSource{dir: dir, version: dang.Version{Major: 2, Minor: 1}}, "v1.0.0", "schema-a"),
+		"engine version": preparedDangCompilationKey(source, "v1.0.1", "schema-a"),
+		"schema":         preparedDangCompilationKey(source, "v1.0.0", "schema-b"),
+	} {
+		require.NotEqual(t, compilation, other, "compilation key input %s was ignored", name)
 	}
 	failure := errors.New("compilation failed")
-	_, err = cachedPreparedDangDir(ctx, "prepared-retry", func(context.Context) (*dang.PreparedDirectory, error) { return nil, failure })
+	_, err = cachedPreparedDangDir(ctx, modKey, "prepared-retry", func(context.Context) (*dang.PreparedDirectory, error) { return nil, failure })
 	require.ErrorIs(t, err, failure)
 	callCtx := dang.ContextWithImportConfigs(ctx, dang.ImportConfig{Name: "Session", Schema: schema, Client: schemaCacheClient("retry")})
-	_, err = cachedPreparedDangDir(callCtx, "prepared-retry", build)
+	_, err = cachedPreparedDangDir(callCtx, modKey, "prepared-retry", build)
 	require.NoError(t, err)
 	cache, err := dagql.EngineCache(ctx)
 	require.NoError(t, err)
@@ -66,4 +78,125 @@ func TestPreparedDangSingleflightFreshClientsAndRelease(t *testing.T) {
 	require.NoError(t, cache.WaitSessionRelease(ctx, "schema-test"))
 	require.Zero(t, cache.EntryStats().CompletedArbitrary)
 	require.Zero(t, cache.EntryStats().OngoingArbitrary)
+}
+
+// preparedDangProgramsOf returns the compilations the session keeps for the
+// module modKey.
+func preparedDangProgramsOf(t *testing.T, ctx context.Context, modKey string) *preparedDangPrograms {
+	t.Helper()
+	cache, err := dagql.EngineCache(ctx)
+	require.NoError(t, err)
+	result, err := cache.GetOrInitArbitrary(ctx, "schema-test", "native-dang-prepared-module:"+modKey, func(context.Context) (any, error) {
+		return nil, errors.New("module has no compilations")
+	})
+	require.NoError(t, err)
+	return result.Value().(*preparedDangPrograms)
+}
+
+// keptPreparedDangPrograms reports how many compilations the session keeps
+// for the module modKey.
+func keptPreparedDangPrograms(t *testing.T, ctx context.Context, modKey string) int {
+	t.Helper()
+	programs := preparedDangProgramsOf(t, ctx, modKey)
+	programs.mu.Lock()
+	defer programs.mu.Unlock()
+	return len(programs.builds)
+}
+
+func TestPreparedDangKeepsRecentCompilations(t *testing.T) {
+	ctx := schemaCacheContext(t)
+	var builds atomic.Int32
+	get := func(modKey, key string) *dang.PreparedDirectory {
+		program, err := cachedPreparedDangDir(ctx, modKey, key, func(context.Context) (*dang.PreparedDirectory, error) {
+			builds.Add(1)
+			return &dang.PreparedDirectory{}, nil
+		})
+		require.NoError(t, err)
+		return program
+	}
+	first := get("module", "key-0")
+	require.Same(t, first, get("module", "key-0"))
+	require.EqualValues(t, 1, builds.Load())
+	for index := 1; index < maxPreparedDangPrograms; index++ {
+		get("module", fmt.Sprintf("key-%d", index))
+	}
+	require.EqualValues(t, maxPreparedDangPrograms, builds.Load())
+	// Using key-0 again makes key-1 the least recently used.
+	require.Same(t, first, get("module", "key-0"))
+	get("module", "key-new")
+	require.EqualValues(t, maxPreparedDangPrograms+1, builds.Load())
+	require.Equal(t, maxPreparedDangPrograms, keptPreparedDangPrograms(t, ctx, "module"))
+	require.Same(t, first, get("module", "key-0"), "a recently used compilation is kept")
+	require.EqualValues(t, maxPreparedDangPrograms+1, builds.Load())
+	get("module", "key-1")
+	require.EqualValues(t, maxPreparedDangPrograms+2, builds.Load(), "the least recently used compilation was dropped")
+
+	// Another module has a bound of its own.
+	get("other-module", "key-0")
+	require.EqualValues(t, maxPreparedDangPrograms+3, builds.Load())
+	require.Equal(t, maxPreparedDangPrograms, keptPreparedDangPrograms(t, ctx, "module"))
+	require.Equal(t, 1, keptPreparedDangPrograms(t, ctx, "other-module"))
+
+	cache, err := dagql.EngineCache(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 2, cache.EntryStats().CompletedArbitrary, "a session keeps one entry per module")
+	require.NoError(t, cache.ReleaseSession(ctx, "schema-test"))
+	require.NoError(t, cache.WaitSessionRelease(ctx, "schema-test"))
+	require.Zero(t, cache.EntryStats().CompletedArbitrary)
+}
+
+// A call waiting on a preparation whose own caller gave up prepares again
+// rather than failing with that caller's cancellation, whatever its cause.
+func TestPreparedDangWaiterOutlivesCanceledPreparation(t *testing.T) {
+	for name, cause := range map[string]error{
+		"canceled": nil,
+		// A cause of its own, as an agent's interrupt has.
+		"custom cause": errors.New("interrupted"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			testPreparedDangWaiterOutlivesCanceledPreparation(t, cause)
+		})
+	}
+}
+
+func testPreparedDangWaiterOutlivesCanceledPreparation(t *testing.T, cause error) {
+	ctx := schemaCacheContext(t)
+	ownerCtx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	started := make(chan struct{})
+	ownerErr := make(chan error, 1)
+	go func() {
+		_, err := cachedPreparedDangDir(ownerCtx, "module", "key", func(ctx context.Context) (*dang.PreparedDirectory, error) {
+			close(started)
+			<-ctx.Done()
+			return nil, context.Cause(ctx)
+		})
+		ownerErr <- err
+	}()
+	<-started
+	want := &dang.PreparedDirectory{}
+	waiter := make(chan error, 1)
+	var got *dang.PreparedDirectory
+	go func() {
+		var err error
+		got, err = cachedPreparedDangDir(ctx, "module", "key", func(context.Context) (*dang.PreparedDirectory, error) {
+			return want, nil
+		})
+		waiter <- err
+	}()
+	// Let the waiter join the preparation in flight before it fails.
+	programs := preparedDangProgramsOf(t, ctx, "module")
+	require.Eventually(t, func() bool {
+		programs.mu.Lock()
+		defer programs.mu.Unlock()
+		return len(programs.builds) == 1 && programs.builds[0].joined == 1
+	}, 10*time.Second, time.Millisecond)
+	cancel(cause)
+	if cause == nil {
+		cause = context.Canceled
+	}
+	require.ErrorIs(t, <-ownerErr, cause)
+	require.NoError(t, <-waiter)
+	require.Same(t, want, got)
+	require.Equal(t, 1, keptPreparedDangPrograms(t, ctx, "module"))
 }

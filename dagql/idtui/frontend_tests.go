@@ -77,9 +77,10 @@ type TestView struct {
 	// dagui.FrontendOpts.AgentStyle (see idtui.agentStyle).
 	AgentStyle bool
 
-	// TraceID, when set (by 'dagger trace'), lets a failing entry's capped log
-	// tail point at 'dagger cloud traces view <trace> --log' for the full output.
-	TraceID string
+	// TraceCommand, when set (by 'dagger trace'), is the command prefix that
+	// addresses the trace, e.g. 'dagger trace <trace>': a failing entry's
+	// capped log tail points at '<TraceCommand> --log ...' for the full output.
+	TraceCommand string
 
 	sidebar *testSidebarView
 
@@ -101,6 +102,13 @@ type TestView struct {
 	SummaryIndent int
 	// SummaryLogLines caps inline logs per failing/skipped summary entry.
 	SummaryLogLines int
+	// FitWidth keeps an uncapped summary (SummaryLogLines < 0) to its width:
+	// its lines clipped, and its log windows wrapped as the log's screen
+	// lays them out, rather than raw lines left whole. For a summary framed
+	// in a tree -- the live view, or the transcript a shell session reprints
+	// on exit -- where a raw line would run past the edge of the screen, and
+	// its escapes move the cursor.
+	FitWidth bool
 	// ShowTestViewerHint renders the pretty-live "T inspect" affordance next to
 	// the TESTS summary heading. Final/non-pretty reports leave it disabled.
 	ShowTestViewerHint bool
@@ -681,7 +689,7 @@ type testSummaryBlock struct {
 }
 
 func (tv *TestView) renderTestSummaryLines(out TermOutput, view *dagui.TestView, width, height int) []string {
-	if tv.testSummaryFinal() {
+	if tv.testSummaryFinal() && !tv.FitWidth {
 		width = 0
 	}
 	prefix := strings.Repeat(" ", max(tv.SummaryIndent, 0))
@@ -945,7 +953,8 @@ func (tv *TestView) renderTestSummaryLogs(out TermOutput, entry testSummaryEntry
 	}
 	final := tv.testSummaryFinal()
 	indent := strings.Repeat(" ", max(tv.SummaryIndent, 0)+8)
-	if !final {
+	wrap := !final || (tv.FitWidth && width > 0)
+	if wrap {
 		logs.SetWidth(max(width-lipgloss.Width(indent), 1))
 	}
 	usedHeight := logs.UsedHeight()
@@ -956,6 +965,19 @@ func (tv *TestView) renderTestSummaryLogs(out TermOutput, entry testSummaryEntry
 	if limit < 0 || limit > usedHeight {
 		limit = usedHeight
 	}
+	if final && wrap {
+		// The rows the log's screen wraps it into, as plain text, then the
+		// same error-anchored window.
+		rows, _ := logs.PrintTail(usedHeight + 2)
+		for len(rows) > 0 && strings.TrimSpace(rows[len(rows)-1]) == "" {
+			rows = rows[:len(rows)-1]
+		}
+		lines := errorWindowLines(out, rows, indent, tv.TraceCommand, traceLogsHintTarget(entry.span))
+		for i, line := range lines {
+			lines[i] = clipTestSummaryLine(line, width)
+		}
+		return lines
+	}
 	if final {
 		var buf strings.Builder
 		if err := logs.PrintRaw(&buf); err != nil {
@@ -964,7 +986,7 @@ func (tv *TestView) renderTestSummaryLogs(out TermOutput, entry testSummaryEntry
 		rawLines := strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
 		// Anchor on the failure rather than an arbitrary tail, and point at the
 		// full logs -- the same treatment the zoomed (--test) view uses.
-		return errorWindowLines(out, rawLines, indent, tv.TraceID, cloudLogsHintTarget(entry.span))
+		return errorWindowLines(out, rawLines, indent, tv.TraceCommand, traceLogsHintTarget(entry.span))
 	}
 
 	// Live (interactive) summary: a small tail with a "more lines" footer.
@@ -1297,7 +1319,7 @@ func (tv *TestView) renderDetailLines(ctx tuist.Context, out *termenv.Output, ro
 		}
 	}
 
-	logNeed := tv.detailLogLineCount(span)
+	logNeed := tv.detailLogLineCount(span, width)
 	hasSplitter := logNeed > 0 && len(childLines) > 0 && contentHeight >= 3
 	sectionHeight := contentHeight
 	if hasSplitter {
@@ -1408,12 +1430,17 @@ func visibleCellAt(s string, col int) string {
 	return ""
 }
 
-func (tv *TestView) detailLogLineCount(span *dagui.Span) int {
+func (tv *TestView) detailLogLineCount(span *dagui.Span, width int) int {
 	if span == nil {
 		return 0
 	}
 	logs := tv.Logs[span.ID]
-	if logs == nil || logs.UsedHeight() == 0 {
+	if logs == nil {
+		return 0
+	}
+	// Count the rows at the width renderDetailLogLines lays them out at.
+	logs.SetWidth(width)
+	if logs.UsedHeight() == 0 {
 		return 0
 	}
 	return logs.UsedHeight() + 1
@@ -1578,7 +1605,7 @@ func (fe *frontendPretty) newTestView(root dagui.SpanID, scopeName string) *Test
 		RequestLogs:  fe.requestLogsOnRender,
 		ScopeName:    scopeName,
 		SpanChildren: fe.testSpanChildrenView,
-		TraceID:      fe.traceID,
+		TraceCommand: fe.traceViewCommand(),
 	}
 	if root.IsValid() {
 		tv.View = func() *dagui.TestView {
@@ -1842,7 +1869,7 @@ func (s *SpanTreeView) renderInlineTests(ctx tuist.Context, r *renderer, row *da
 			Logs:            s.fe.logs.Logs,
 			SummaryIndent:   2,
 			SummaryLogLines: -1,
-			TraceID:         s.fe.traceID,
+			TraceCommand:    s.fe.traceViewCommand(),
 		}
 		width := ctx.Width
 		if width <= 0 {
@@ -1889,6 +1916,12 @@ func (s *SpanTreeView) renderInlineTests(ctx tuist.Context, r *renderer, row *da
 	}
 	if tv.SummaryLogLines != summaryLogLines {
 		tv.SummaryLogLines = summaryLogLines
+		tv.Update()
+	}
+	// The transcript a shell reprints on exit frames the rollup too: its
+	// uncapped log windows wrap beside the frame.
+	if fit := s.framesInlineRollups(); tv.FitWidth != fit {
+		tv.FitWidth = fit
 		tv.Update()
 	}
 	showHint := !s.fe.finalRender
@@ -2261,10 +2294,11 @@ func errorTailStart(lines []string, context int) int {
 	return max(anchor-context, 0)
 }
 
-// cloudLogsTarget returns the 'dagger cloud traces view' selector that
-// addresses span by name when possible (--test/--check), else by --span. Empty
-// for a nil span. The drill-in suggestions and the "full:" log hint both use it.
-func cloudLogsTarget(span *dagui.Span) string {
+// traceSpanTarget returns the trace view selector ('dagger trace' and 'dagger
+// cloud traces view' take the same flags) that addresses span by name when
+// possible (--test/--check), else by --span. Empty for a nil span. The
+// drill-in suggestions and the "full:" log hint both use it.
+func traceSpanTarget(span *dagui.Span) string {
 	switch {
 	case span == nil:
 		return ""
@@ -2277,12 +2311,12 @@ func cloudLogsTarget(span *dagui.Span) string {
 	}
 }
 
-// cloudLogsHintTarget is cloudLogsTarget plus --descendants when the span
+// traceLogsHintTarget is traceSpanTarget plus --descendants when the span
 // rolls up its subtree's logs, so the "full:" hint fetches at least the scope
 // the window above it rendered ('--log --span' is otherwise just that span).
 // Only for the log hint: without --log, the view resolves roll-up on its own.
-func cloudLogsHintTarget(span *dagui.Span) string {
-	target := cloudLogsTarget(span)
+func traceLogsHintTarget(span *dagui.Span) string {
+	target := traceSpanTarget(span)
 	if span != nil && span.RollUpLogs && span.TestCaseName == "" && span.CheckName == "" {
 		target += " --descendants"
 	}
@@ -2291,10 +2325,11 @@ func cloudLogsHintTarget(span *dagui.Span) string {
 
 // errorWindowLines renders a failed span's rolled-up logs for a final report:
 // the error-anchored window (errorTailStart) prefixed with a marker for any
-// trimmed lines, then a '--log' hint for the full output when a
-// trace ID and selector target are known. Lines are prefixed with indent and
-// left unclipped -- the hint is a copy-paste command.
-func errorWindowLines(out TermOutput, rawLines []string, indent, traceID, target string) []string {
+// trimmed lines, then a '--log' hint for the full output when the trace's
+// command prefix (e.g. 'dagger trace <trace>') and a selector target are
+// known. Lines are prefixed with indent and left unclipped -- the hint is a
+// copy-paste command.
+func errorWindowLines(out TermOutput, rawLines []string, indent, traceCommand, target string) []string {
 	start := errorTailStart(rawLines, 5)
 	lines := make([]string, 0, len(rawLines)-start+2)
 	if start > 0 {
@@ -2304,8 +2339,8 @@ func errorWindowLines(out TermOutput, rawLines []string, indent, traceID, target
 	for _, line := range rawLines[start:] {
 		lines = append(lines, indent+line)
 	}
-	if traceID != "" && target != "" {
-		hint := out.String(fmt.Sprintf("full: dagger cloud traces view %s --log %s", traceID, target)).Foreground(termenv.ANSIBrightBlack).Faint().String()
+	if traceCommand != "" && target != "" {
+		hint := out.String(fmt.Sprintf("full: %s --log %s", traceCommand, target)).Foreground(termenv.ANSIBrightBlack).Faint().String()
 		lines = append(lines, indent+hint)
 	}
 	return lines

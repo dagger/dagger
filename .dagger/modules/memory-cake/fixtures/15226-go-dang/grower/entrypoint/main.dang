@@ -1,0 +1,63 @@
+# The module's Dang entrypoint, shaped like the one the Go SDK generates with
+# dangEntrypoint (internal/dagger/entrypoint/main.dang): call() hands the
+# request to the module's dispatcher on stdin, in an exec. The dispatcher is
+# built here with plain `go build` rather than the github.com/dagger/go
+# module, which changes nothing on the engine's side of a call.
+type Entrypoint implements ModuleEntrypoint {
+  let dispatch: File! {
+    container.from("golang:1.24-alpine")
+      .withDirectory("/src", currentModule.source, exclude: ["entrypoint"])
+      .withWorkdir("/src")
+      .withEnvVariable("CGO_ENABLED", "0")
+      .withExec(["go", "build", "-o", "/dispatch", "."])
+      .file("/dispatch")
+  }
+
+  pub prebuild(platform: Platform): File! {
+    dispatch
+  }
+
+  pub types(workspace: Workspace!): [TypeDef!]! {
+    [
+      typeDef.withObject("Grower", description: "An object whose state grows with every call.")
+        .withFunction(
+          function("Grow", typeDef.withObject("Grower"))
+            .withDescription("A copy with n more bytes of text.")
+            .withArg("n", typeDef.withKind(TypeDefKind.INTEGER_KIND))
+        )
+        .withFunction(
+          function("Size", typeDef.withKind(TypeDefKind.INTEGER_KIND))
+            .withDescription("The state's length.")
+        )
+        .withField("Log", typeDef.withKind(TypeDefKind.STRING_KIND))
+        .withConstructor(function("", typeDef.withObject("Grower")))
+    ]
+  }
+
+  pub call(
+    workspace: Workspace!,
+    receiverType: String!,
+    receiverValue: JSON,
+    fnName: String!,
+    fnArgs: JSON!,
+    callDigest: String,
+  ): JSON! {
+    let request = JSON.encode({{
+      receiverType: receiverType,
+      receiverValue: receiverValue,
+      fnName: fnName,
+      fnArgs: fnArgs,
+    }})
+    let result = container.from("alpine:3.22")
+      .withFile("/usr/local/bin/dispatch", dispatch, permissions: 755)
+      .withEnvVariable("DAGGER_MODULE_CALL_DIGEST", callDigest ?? "")
+      .withExec(
+        ["/usr/local/bin/dispatch", "engine-call", "/dagger/result.json"],
+        stdin: request,
+        experimentalPrivilegedNesting: true,
+      )
+      .file("/dagger/result.json")
+      .contents
+    (result :: JSON!)
+  }
+}

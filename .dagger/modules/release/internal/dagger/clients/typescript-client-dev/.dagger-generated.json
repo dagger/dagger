@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "files": {
+    "dagger.gen.go": "7ce344a3f64f1a4c184e686eef1831801e8adef32bce3259d76dc71027db7aa6",
+    "typescript-client-dev.gen.go": "59243d6788bf01e50484fcc848a9f5970a748ad75788658c041856be8b1031f3"
+  }
+}

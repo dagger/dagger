@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dagger/dagger/core"
@@ -61,15 +60,6 @@ func getIntrospection(ctx context.Context) (*introspection.Response, error) {
 	if err := json.Unmarshal([]byte(res), &schemaResp); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal introspection JSON: %w", err)
 	}
-
-	schemaTypes := introspection.Types{}
-	for _, schemaType := range schemaResp.Schema.Types {
-		if strings.HasPrefix(schemaType.Name, "_") {
-			continue
-		}
-		schemaTypes = append(schemaTypes, schemaType)
-	}
-	schemaResp.Schema.Types = schemaTypes
 
 	return &schemaResp, nil
 }

@@ -169,7 +169,7 @@ func (router *partRouter) route(demand dagql.PartKey, withWriteSet bool) (dagql.
 		if routing.err != nil {
 			return route, routing.err
 		}
-		if field == "_builtinContainer" || field == "import" {
+		if field == "import" {
 			route.Group.Group = dagql.LazyGroupWhole
 			for _, part := range routing.parts {
 				add(part)

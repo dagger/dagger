@@ -104,6 +104,57 @@ func (s FilesyncSource) TarStream(stream filesync.FileSync_TarStreamServer) erro
 	return fmt.Errorf("tarstream not supported")
 }
 
+// FindUp looks for each requested name in the start directory and then in each
+// parent up to the root, answering in one call what would otherwise take one
+// stat per name and level. A name found is reported with the absolute path of
+// its directory, the same path a stat of it returns.
+func (s FilesyncSource) FindUp(ctx context.Context, req *filesync.FindUpRequest) (*filesync.FindUpResponse, error) {
+	start, err := Filesyncer(s).fullRootPathAndBaseName(req.Start, false)
+	if err != nil {
+		return nil, fmt.Errorf("get full root path: %w", err)
+	}
+	return findUp(start, req.Names, nil)
+}
+
+// findUp searches start and its parents for names. A non-nil searchable stops
+// the search at the first directory that it rejects, and a name whose path it
+// rejects is not found.
+func findUp(start string, names []string, searchable func(path string) bool) (*filesync.FindUpResponse, error) {
+	remaining := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		remaining[name] = struct{}{}
+	}
+	found := make(map[string]string, len(remaining))
+	for dir := start; len(remaining) > 0; {
+		if searchable != nil && !searchable(dir) {
+			break
+		}
+		for name := range remaining {
+			p := filepath.Join(dir, name)
+			if searchable != nil && !searchable(p) {
+				continue
+			}
+			if _, err := fsutil.Stat(p); err != nil {
+				if errors.Is(err, os.ErrNotExist) {
+					continue
+				}
+				return nil, fmt.Errorf("stat %s: %w", p, err)
+			}
+			found[name] = filepath.ToSlash(filepath.Dir(p))
+			delete(remaining, name)
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	return &filesync.FindUpResponse{
+		Start: filepath.ToSlash(start),
+		Found: found,
+	}, nil
+}
+
 func (s FilesyncSource) DiffCopy(stream filesync.FileSync_DiffCopyServer) error {
 	ctx := extractTraceContext(stream.Context())
 
@@ -214,6 +265,12 @@ func normalizeLocalImportStat(st *fstypes.Stat) {
 	st.Uid = 0
 	st.Gid = 0
 	st.Xattrs = nil
+	// A symlink has permission bits of its own on some hosts (on macOS, those
+	// of the umask it was created under). On Linux it is always 0777, which is
+	// what the engine's mirror holds whatever was sent, so send that.
+	if os.FileMode(st.Mode)&os.ModeSymlink != 0 {
+		st.Mode |= uint32(os.ModePerm)
+	}
 }
 
 type FilesyncTarget Filesyncer
@@ -439,6 +496,10 @@ func (s FilesyncSourceProxy) Register(server *grpc.Server) {
 
 func (s FilesyncSourceProxy) TarStream(stream filesync.FileSync_TarStreamServer) error {
 	return fmt.Errorf("tarstream not supported")
+}
+
+func (s FilesyncSourceProxy) FindUp(ctx context.Context, req *filesync.FindUpRequest) (*filesync.FindUpResponse, error) {
+	return s.Client.FindUp(grpcutil.IncomingToOutgoingContext(ctx), req)
 }
 
 func (s FilesyncSourceProxy) DiffCopy(stream filesync.FileSync_DiffCopyServer) error {
@@ -712,11 +773,13 @@ func searchWithRipgrep(ctx context.Context, root string, rgPath string, opts *en
 	return results, nil
 }
 
+// searchWithGrep searches with the options that GNU grep and busybox grep
+// share. It does not report byte offsets, because busybox grep has no -b.
 func searchWithGrep(ctx context.Context, root string, opts *engine.LocalSearchOpts) (results []engine.LocalSearchResult, rerr error) {
 	var args []string
 	args = append(args, "-r") // recursive
 	args = append(args, "-n") // line numbers
-	args = append(args, "-b") // byte offset
+	args = append(args, "-H") // file names, also for a single file
 
 	if opts.Literal {
 		args = append(args, "-F") // fixed strings
@@ -738,6 +801,9 @@ func searchWithGrep(ctx context.Context, root string, opts *engine.LocalSearchOp
 
 	args = append(args, "-e", opts.Pattern)
 
+	// grep reads options after operands too, so "--" keeps a path such as
+	// "-R" a file name.
+	args = append(args, "--")
 	if len(opts.Paths) > 0 {
 		args = append(args, opts.Paths...)
 	} else {
@@ -787,30 +853,26 @@ func searchWithGrep(ctx context.Context, root string, opts *engine.LocalSearchOp
 			}
 		}
 	} else {
-		// Parse grep -rnb output: file:line:offset:content
+		// Parse grep -rnH output: file:line:content
 		scan := bufio.NewScanner(strings.NewReader(output))
 		for scan.Scan() {
 			line := scan.Text()
 			if line == "" {
 				continue
 			}
-			// Format: file:line:byte_offset:matched_line
-			parts := strings.SplitN(line, ":", 4)
-			if len(parts) < 4 {
+			parts := strings.SplitN(line, ":", 3)
+			if len(parts) < 3 {
 				continue
 			}
 			filePath := strings.TrimPrefix(filepath.ToSlash(parts[0]), "./")
 			lineNum := 0
 			fmt.Sscanf(parts[1], "%d", &lineNum)
-			byteOffset := 0
-			fmt.Sscanf(parts[2], "%d", &byteOffset)
-			matchedLine := parts[3]
+			matchedLine := parts[2]
 
 			results = append(results, engine.LocalSearchResult{
-				FilePath:       filePath,
-				LineNumber:     lineNum,
-				AbsoluteOffset: byteOffset,
-				MatchedLines:   matchedLine + "\n",
+				FilePath:     filePath,
+				LineNumber:   lineNum,
+				MatchedLines: matchedLine + "\n",
 			})
 			if opts.Limit != nil && len(results) >= *opts.Limit {
 				break

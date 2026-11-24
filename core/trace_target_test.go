@@ -56,10 +56,19 @@ func TestReadTraceSpanOnlySchema(t *testing.T) {
 	m.loadBuiltins(&dagql.Server{}, tools)
 	tool, err := m.LookupTool("ReadTrace", tools.Order)
 	require.NoError(t, err)
-	require.Equal(t, []string{"span"}, tool.Schema["required"])
+	// span is optional at the schema level: the agents view needs none, and
+	// the transcript view takes an agent instead. The span views still
+	// require it (TestInspectionArgumentErrorsThroughDispatch).
+	require.Equal(t, []string{}, tool.Schema["required"])
 	require.Equal(t, false, tool.Schema["additionalProperties"])
 	props := tool.Schema["properties"].(map[string]any)
 	require.Contains(t, props, "span")
+	for _, prop := range []string{"agent", "role", "tool", "grep", "offset", "clip", "limit"} {
+		require.Contains(t, props, prop)
+	}
+	require.Contains(t, props["view"].(map[string]any)["enum"], traceViewTranscript)
+	require.Contains(t, props["view"].(map[string]any)["enum"], traceViewAgents)
+	require.NotContains(t, props["limit"], "default", "limit's default depends on the view")
 	require.NotContains(t, props, "check")
 	require.NotContains(t, props, "test")
 	require.Contains(t, tool.Description, "FindSpans first")

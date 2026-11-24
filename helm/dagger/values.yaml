@@ -166,6 +166,20 @@ engine:
   #   You may want to adjust this to fit your workloads so that the Engine stops quicker.
   terminationGracePeriodSeconds: 300
 
+  ### The Engine bounds its own stop with --graceful-stop-timeout (engine v1.0.0-beta.22 and later).
+  #   That budget has to end before the kubelet kills the Engine at terminationGracePeriodSeconds:
+  #   an Engine killed before it marks its cache as cleanly shut down discards the whole local
+  #   cache on its next start.
+  #   - "auto": terminationGracePeriodSeconds minus gracefulStopMarginSeconds. Not passed when
+  #     engine.args or engine.configJson already set it, or when engine.image.ref is set, since
+  #     that Engine may predate the flag; set a duration here for such an Engine.
+  #   - a duration, such as "4m": passed as it is.
+  #   - "": not passed; the Engine's config or its default (5m) applies.
+  #   A preStop hook runs inside the same grace period, before the Engine is signalled: add the
+  #   hook's longest run to gracefulStopMarginSeconds.
+  gracefulStopTimeout: auto
+  gracefulStopMarginSeconds: 30
+
   newServiceAccount:
     # name: "dagger-helm"
     create: false

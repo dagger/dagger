@@ -1,0 +1,16 @@
+kind: Fixed
+body: |
+  The engine no longer fails to start over the cache entries its image ships.
+  Engines of v1.0.0-beta.26 (since Nov 16, 2026) and v1.0.0-beta.27 (since
+  Nov 17, 2026) fail every start, fresh or restarted, with "merge the engine
+  image's entries: root N did not merge (expired true, retained false)": one
+  of the Go module entries their images ship expired a week after the image
+  was built. Now an expired entry is left out, and an engine whose image's
+  entries can't be merged at all starts without them. Upgrade to this
+  release. Until then, those engines start with an empty directory mounted
+  over /usr/local/share/dagger/entries, without the pre-warmed Go module
+  entries.
+time: 2026-11-17T12:45:00-08:00
+custom:
+  Author: sipsma
+  PR: 15199

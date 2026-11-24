@@ -182,12 +182,6 @@ func (c *GenaiClient) prepareGenaiHistory(history []*LLMMessage) (genaiHistory [
 					ThoughtSignature: decodeThoughtSignature(block.Signature),
 				})
 			case LLMContentToolCall:
-				var args map[string]any
-				if len(block.Arguments) > 0 {
-					if err := json.Unmarshal(block.Arguments.Bytes(), &args); err != nil {
-						return nil, nil, err
-					}
-				}
 				part := &genai.Part{
 					FunctionCall: &genai.FunctionCall{
 						// Reuse the CallID as the function-call ID so its result
@@ -195,7 +189,9 @@ func (c *GenaiClient) prepareGenaiHistory(history []*LLMMessage) (genaiHistory [
 						// unambiguously, even for parallel calls to the same tool.
 						ID:   block.CallID,
 						Name: block.ToolName,
-						Args: args,
+						// Args is a map, so unlike the other providers' history
+						// this can't keep the key order the model wrote.
+						Args: toolCallInputMap(block.Arguments),
 					},
 				}
 				// Gemini attaches a thought signature to the function-call part
@@ -652,6 +648,10 @@ func bbiSchemaToGenaiSchema(bbi map[string]any) (*genai.Schema, error) {
 				return nil, err
 			}
 			schema.Properties = props
+			if ordered, ok := param.(ToolSchemaProperties); ok {
+				// Gemini keeps properties in a map; this keeps their order.
+				schema.PropertyOrdering = ordered.Names()
+			}
 		case "default": // just setting Nullable=true. Genai Schema does not have Default
 			yes := true
 			schema.Nullable = &yes
@@ -720,7 +720,7 @@ func bbiSchemaToGenaiSchema(bbi map[string]any) (*genai.Schema, error) {
 }
 
 func bbiPropertiesToGenaiSchemas(param any) (map[string]*genai.Schema, error) {
-	props, ok := param.(map[string]any)
+	props, ok := schemaPropertiesMap(param)
 	if !ok {
 		return nil, fmt.Errorf("properties must be a map, got %T", param)
 	}

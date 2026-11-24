@@ -32,6 +32,7 @@ import (
 	"github.com/vito/dang/v2/pkg/ioctx"
 	"github.com/vito/dang/v2/pkg/querybuilder"
 	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/sync/singleflight"
 )
 
 type dangSourceRunner func(context.Context, string) (dang.ValueScope, error)
@@ -58,11 +59,14 @@ func (r *runtime) eval(
 	// Only the module-initialization call builds type definitions from the
 	// environment; a function call never reads object directives.
 	forTypeDefs := fnCall.ParentName == ""
+	src := r.modSource.Self()
 	return evalDangSource(ctx, query, r.modSource, schemaFile, nestedClientMetadata, inertAttachables, fnCall, moduleContext, forTypeDefs, func(ctx context.Context, modSrcDir string) (dang.ValueScope, error) {
-		if forTypeDefs {
-			return dang.RunDir(ctx, modSrcDir, false)
-		}
-		return runPreparedDangDir(ctx, modSrcDir, r.modSource, schemaFile, moduleContext)
+		return runStagedDangSource(ctx, src, modSrcDir, func(ctx context.Context, source stagedDangSource, staged bool) (dang.ValueScope, error) {
+			if forTypeDefs || !staged {
+				return dang.RunDir(ctx, source.dir, false)
+			}
+			return runPreparedDangDir(ctx, source, src.EngineVersion, schemaFile, moduleContext)
+		})
 	}, func(ctx context.Context, env dang.ValueScope) ([]byte, error) {
 		if fnCall.ParentName == "" {
 			srv, err := core.CurrentDagqlServer(ctx)
@@ -81,7 +85,7 @@ func (r *runtime) eval(
 
 		result, err := callDangFunction(ctx, env, fnCall, module)
 		if err != nil {
-			return nil, err
+			return nil, returnRaisedError(ctx, fnCall, err)
 		}
 
 		if flushErr := query.Server.FlushSessionTelemetry(ctx); flushErr != nil {
@@ -221,15 +225,18 @@ func evalDangSource(
 	})
 }
 
-// dangSourceDir returns the directory to run a module's source in srcDir
-// from. Dang finds the dang.toml that decides the source's version by
-// walking up from it, to a .git or the filesystem root, while the engine
-// reads only one up to the module directory moduleDir (see
-// ModuleSource.DangVersion), whatever else the module context holds above it.
-// When Dang's walk would reach a dang.toml above moduleDir, the source runs
-// from a copy of its .dang files that no dang.toml governs, so the version
-// the engine resolved, set with ContextWithDangVersion, decides; otherwise
-// from srcDir itself. cleanup removes the copy.
+// dangSourceDir returns the directory to read a module's source in srcDir
+// from, whose version Dang decides as the engine does. The module runtime
+// stages the source from there (see runStagedDangSource) and runs the staged
+// copy, at the version this directory decides. Dang finds the dang.toml that
+// decides the source's version by walking up from it, to a .git or the
+// filesystem root, while the engine reads only one up to the module directory
+// moduleDir (see ModuleSource.DangVersion), whatever else the module context
+// holds above it. When Dang's walk would reach a dang.toml above moduleDir,
+// the source is read from a copy of its .dang files that no dang.toml
+// governs, so the version the engine resolved, set with
+// ContextWithDangVersion, decides; otherwise from srcDir itself. cleanup
+// removes the copy.
 func dangSourceDir(srcDir, moduleDir string) (dir string, cleanup func(), rerr error) {
 	noop := func() {}
 	configPath, _, err := dang.FindProjectConfig(srcDir)
@@ -559,19 +566,30 @@ func moduleDeclaredTypeNames(ctx context.Context, modSrcDir, moduleName string) 
 		slog.Debug("ensureModuleSelfTypes: determine Dang version", "dir", modSrcDir, "error", err)
 		complete = false
 	}
-	var key string
-	if complete {
-		key = declaredTypeNamesKey(moduleName, version, files)
-		if names, ok := declaredTypeNames.Get(key); ok {
-			return names
-		}
+	if !complete {
+		return parseDeclaredTypeNames(ctx, modSrcDir, moduleName, files)
 	}
-	names := parseDeclaredTypeNames(ctx, modSrcDir, moduleName, files)
-	if complete {
+	key := declaredTypeNamesKey(moduleName, version, files)
+	if names, ok := declaredTypeNames.Get(key); ok {
+		return names
+	}
+	// The module's prebuild (PrebuildRuntime) parses the same source while
+	// its dependencies load; a load that needs the names before it is done
+	// waits for that parse rather than parsing the source a second time. The
+	// parse reads the files from the first caller's modSrcDir, so that caller
+	// returns only once it is done, even when its context is canceled, and
+	// its directory stays in place until then.
+	names, _, _ := declaredTypeNamesParses.Do(key, func() (any, error) {
+		names := parseDeclaredTypeNames(ctx, modSrcDir, moduleName, files)
 		declaredTypeNames.Add(key, names)
-	}
-	return names
+		return names, nil
+	})
+	return names.([]string)
 }
+
+// declaredTypeNamesParses lets concurrent moduleDeclaredTypeNames calls for
+// the same source share one parse.
+var declaredTypeNamesParses singleflight.Group
 
 // declaredTypeNamesKey identifies a module's declared type names by its name,
 // the Dang version its source is parsed as, and the names and content of its
@@ -1458,13 +1476,21 @@ func createEnumTypeDef(ctx context.Context, srv *dagql.Server, name string, enum
 		},
 	}
 
-	for memberName, val := range enumMod.Values {
-		if _, ok := val.(dang.EnumValue); !ok {
-			continue
+	// Register the members in the order the module declares them, which Dang
+	// keeps in the enum's values list. enumMod.Values is a map, so ranging over
+	// it would give a different order on every load.
+	members, ok := enumMod.Values["values"].(dang.ListValue)
+	if !ok {
+		return res, fmt.Errorf("enum %s has no values list", name)
+	}
+	for _, member := range members.Elements {
+		enumVal, ok := member.(dang.EnumValue)
+		if !ok {
+			return res, fmt.Errorf("enum %s: unexpected member %T", name, member)
 		}
 		sels = append(sels, dagql.Selector{
 			Field: "withEnumMember",
-			Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(memberName)}},
+			Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(enumVal.Val)}},
 		})
 	}
 
@@ -1500,6 +1526,11 @@ func dangDeclaredType(val *dang.Object) (*dang.Type, bool) {
 func createInterfaceTypeDef(ctx context.Context, srv *dagql.Server, name string, mod *dang.Type, env dang.ValueScope, localTypes dangLocalTypes) (dagql.ObjectResult[*core.TypeDef], error) {
 	var res dagql.ObjectResult[*core.TypeDef]
 
+	// A module's imports are file-local: evaluate the methods' directive
+	// arguments in the scope of the file declaring the interface, so they
+	// can name its imports.
+	directiveScope := dang.DeclarationScope(env, name)
+
 	sels := []dagql.Selector{
 		{Field: "typeDef"},
 		{
@@ -1515,7 +1546,7 @@ func createInterfaceTypeDef(ctx context.Context, srv *dagql.Server, name string,
 		}
 		switch x := fieldType.(type) {
 		case *hm.FunctionType:
-			fnDef, err := createFunction(ctx, srv, mod, fieldName, x, env, localTypes)
+			fnDef, err := createFunction(ctx, srv, mod, fieldName, x, directiveScope, localTypes)
 			if err != nil {
 				return res, fmt.Errorf("failed to create method %s for interface %s: %w", fieldName, name, err)
 			}

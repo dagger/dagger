@@ -28,10 +28,7 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 )
 
-const (
-	MaxFunctionCacheTTLSeconds = 7 * 24 * 60 * 60 // 1 week
-	MinFunctionCacheTTLSeconds = 1
-)
+const MinFunctionCacheTTLSeconds = 1
 
 // declaredClientsInput puts a module's declared local clients into the cache
 // identity of its function calls. The module serves them at run time, after
@@ -861,16 +858,23 @@ func (fn *ModuleFunction) DynamicInputsForCall(
 	if err != nil || gitClientsDigest == "" {
 		return err
 	}
-	if err := req.SetImplicitInput(ctx, declaredGitClientsInput, dagql.NewString(gitClientsDigest)); err != nil {
-		return err
+	// A result that used credentials the session lent to a declared client
+	// requires them instead, as the call returns (see Call).
+	return req.SetImplicitInput(ctx, declaredGitClientsInput, dagql.NewString(gitClientsDigest))
+}
+
+// declaresGitClients reports whether call, a module function's, is keyed on
+// git clients its module declares (see DynamicInputsForCall).
+func declaresGitClients(call *dagql.ResultCall) bool {
+	if call == nil {
+		return false
 	}
-	// The result may come from credentials this session lent, which another
-	// session may lack.
-	session, err := dagql.PerSessionInput.Resolver(ctx, nil)
-	if err != nil {
-		return err
+	for _, input := range call.ImplicitInputs {
+		if input != nil && input.Name == declaredGitClientsInput {
+			return true
+		}
 	}
-	return req.SetImplicitInput(ctx, dagql.PerSessionInput.Name, session)
+	return false
 }
 
 // declaredGitClientsDigest digests the git clients that the config governing
@@ -1015,7 +1019,7 @@ func (fn *ModuleFunction) loadFunctionRuntime(ctx context.Context) (_ ModuleRunt
 		return nil, fmt.Errorf("no runtime implemented")
 	}
 
-	runtime, err := runtimeImpl.Runtime(ctx, mod.Deps, mod.Source.Value)
+	runtime, err := runtimeImpl.Runtime(ctx, mod.SDKDeps(), mod.Source.Value)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load runtime: %w", err)
 	}
@@ -1080,6 +1084,9 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		fnCall.ParentName = fn.objDef.OriginalName
 	}
 	fnCall.cacheTTLSeconds = fn.explicitCacheTTLSeconds()
+	if declaresGitClients(curCall) {
+		fnCall.trackBorrowing()
+	}
 	// Carry the receiver object (with its dagql ID) engine-side so the module can
 	// reach it via Query.currentNode. It rides the fnCall by reference into the
 	// nested client session (ServeHTTPToNestedClient) for both in-process and
@@ -1096,6 +1103,11 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	if caller, ok := CallerAgent(ctx); ok {
 		fnCall.SetCallerAgent(caller)
 	}
+	// A call made as the engine's own work, such as an SDK building a
+	// module's runtime, carries that to everything its module does to answer
+	// it: its calls are internal in telemetry, as the engine's own selects
+	// are, down through any module it calls in turn.
+	fnCall.engineWork = IsEngineWork(ctx)
 
 	// hide all this internal plumbing making up the call
 	hideCtx := dagql.WithSkip(ctx)
@@ -1107,6 +1119,11 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 
 	// Delegate the actual function execution to the runtime
 	err = runtime.Call(ctx, &execMD, fnCall, fn.mod)
+	// What the function's work borrowed of the session's resources, which
+	// its key doesn't name, its result requires.
+	if borrowErr := dagql.RequireSessionResourcesOf(ctx, fnCall.borrowedResults()...); borrowErr != nil {
+		return nil, borrowErr
+	}
 	returned, returnedSet, returnStateErr := fnCall.returnResult()
 	if returnStateErr != nil {
 		return nil, returnStateErr
@@ -1169,8 +1186,9 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 
 // A receiver's SDK form depends on the receiver result and the active result
 // scope, not on the function called. Each call on a collection item receives
-// the whole collection, so convert an attached receiver once per session and
-// scope; concurrent calls wait for the first conversion.
+// the whole collection, so a session keeps its recent conversions of attached
+// receivers by result and scope (see convertedReceivers); concurrent calls
+// wait for the first conversion.
 func moduleFunctionReceiverJSON(ctx context.Context, opts *CallOpts) ([]byte, error) {
 	convert := func(ctx context.Context) ([]byte, error) {
 		parentFields, err := moduleFunctionReceiverFields(ctx, opts)
@@ -1208,19 +1226,20 @@ func moduleFunctionReceiverJSON(ctx context.Context, opts *CallOpts) ([]byte, er
 		return nil, err
 	}
 	// The conversion attaches the receiver's inline objects to this session,
-	// so its handles are valid only here.
-	key := fmt.Sprintf("module-receiver-sdk-input:%q:%d:%q", metadata.SessionID, id.EngineResultID(), scopeKey)
-	res, err := cache.GetOrInitArbitrary(ctx, metadata.SessionID, key, func(ctx context.Context) (any, error) {
-		return convert(ctx)
+	// so its handles are valid only here. Arbitrary values are found by key
+	// alone, so the key carries the session.
+	key := fmt.Sprintf("module-receiver-sdk-input:%q", metadata.SessionID)
+	res, err := cache.GetOrInitArbitrary(ctx, metadata.SessionID, key, func(context.Context) (any, error) {
+		return newConvertedReceivers(maxConvertedReceiversWeight), nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	parentJSON, ok := res.Value().([]byte)
+	receivers, ok := res.Value().(*convertedReceivers)
 	if !ok {
-		return nil, fmt.Errorf("invalid converted receiver %T", res.Value())
+		return nil, fmt.Errorf("invalid converted receivers %T", res.Value())
 	}
-	return parentJSON, nil
+	return receivers.get(ctx, convertedReceiverKey{resultID: id.EngineResultID(), scope: scopeKey}, convert)
 }
 
 // Serialize receivers through the same scoped conversion as object arguments.

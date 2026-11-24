@@ -1,0 +1,9 @@
+kind: Fixed
+body: |
+  Support Bitbucket Cloud's new SSH host, ssh.bitbucket.org: refs like
+  git@ssh.bitbucket.org:workspace/repo resolve without go-import discovery and
+  link to their web view on bitbucket.org.
+time: 2026-11-13T12:00:00-08:00
+custom:
+  Author: vito
+  PR: 15192

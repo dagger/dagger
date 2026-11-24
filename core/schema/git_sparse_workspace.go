@@ -26,9 +26,12 @@ func (s *gitSchema) sparseWorkspaceTree(ctx context.Context, parent dagql.Object
 		return inst, err
 	}
 	// Pinned like a tree without .git: the commit alone decides these files, so
-	// a later selection by SHA must not reuse a mutable branch's recipe.
+	// a later selection by SHA must not reuse a mutable branch's recipe. A
+	// remote ref with no name was already looked up by a full SHA through a
+	// pinned recipe, as tree keeps it, so its sparse tree is its own.
 	ref := parent.Self()
-	if ref.Ref.Name != ref.Ref.SHA {
+	_, remote := ref.Repo.Self().Backend.(*core.RemoteGitRepository)
+	if ref.Ref.Name != ref.Ref.SHA && (ref.Ref.Name != "" || !remote) {
 		err := srv.Select(ctx, ref.Repo, &inst,
 			dagql.Selector{Field: "ref", Args: []dagql.NamedInput{{Name: "name", Value: dagql.NewString(ref.Ref.SHA)}}},
 			dagql.Selector{Field: "__sparseWorkspaceTree", Args: []dagql.NamedInput{{Name: "cwd", Value: dagql.NewString(args.Cwd)}}},
@@ -197,4 +200,34 @@ func gitWorkspaceModuleConfig(ctx context.Context, files *core.GitTreeFiles, dir
 		return src, nil
 	}
 	return nil, nil
+}
+
+type sparseFilesArgs struct {
+	Files []string
+	Dirs  []string `default:"[]"`
+}
+
+// sparseFiles is identified by the repository and the files' object IDs, not
+// by a commit, so a read of files no commit changed is the same call on every
+// commit.
+func (s *gitSchema) sparseFiles(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args sparseFilesArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	backend, ok := parent.Self().Backend.(*core.RemoteGitRepository)
+	if !ok {
+		return inst, fmt.Errorf("sparse files: %T is not a remote repository", parent.Self().Backend)
+	}
+	// Readers of one repository recipe share its credentials, so they may
+	// share fetches.
+	poolKey, err := parent.RecipeDigest(ctx)
+	if err != nil {
+		return inst, err
+	}
+	dir, err := backend.SparseFiles(ctx, srv, poolKey.String(), args.Files, args.Dirs)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }

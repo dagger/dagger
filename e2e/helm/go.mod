@@ -1,6 +1,6 @@
 module github.com/dagger/dagger/e2e/helm
 
-go 1.26.1
+go 1.27
 
 require (
 	dagger.io/dagger v0.21.7 // indirect

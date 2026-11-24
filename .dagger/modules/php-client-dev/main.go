@@ -1,4 +1,3 @@
-// Toolchain to develop the Dagger PHP SDK (experimental)
 package main
 
 import (
@@ -7,6 +6,10 @@ import (
 	"strings"
 
 	"dagger/php-client-dev/internal/dagger"
+	enginedev "dagger/php-client-dev/internal/dagger/clients/engine-dev"
+	gitreleaser "dagger/php-client-dev/internal/dagger/clients/git-releaser"
+
+	"dagger.io/dagger/core"
 )
 
 const (
@@ -16,6 +19,7 @@ const (
 		"@sha256:696bfbbb82d8ab6ad3672c505bedd659e3815fd1c03cb5ef65ef7ee07a083fa6"
 )
 
+// Toolchain to develop the Dagger PHP SDK (experimental)
 type PhpClientDev struct {
 	OriginalWorkspace  *dagger.Directory // +private
 	Workspace          *dagger.Directory // +private
@@ -50,38 +54,53 @@ func New(
 }
 
 func (t PhpClientDev) BaseContainer() *dagger.Container {
+	return t.installClient(t.base())
+}
+
+// base is the PHP base container, without a Dagger engine.
+func (t PhpClientDev) base() *dagger.Container {
 	// Extract the PHP base container from the native SDK dev module
 	// - We build the base container eagerly, to avoid keeping a reference to DaggerDev
 	// - But we build the full dev container *lazily*, because we may have mutated our workspace with generated files
-	composerBinary := dag.Container().
+	composerBinary := core.NewContainer().
 		From(phpSDKComposerImage).
 		File("/composer")
-	return dag.Container().
+	return core.NewContainer().
 		From(phpSDKImage+"@"+phpSDKDigest).
 		WithMountedFile("/usr/bin/composer", composerBinary).
 		WithMountedCache(
 			"/root/.composer",
-			dag.CacheVolume(fmt.Sprintf("composer-%s", phpSDKImage)),
+			core.NewCacheVolume(fmt.Sprintf("composer-%s", phpSDKImage)),
 		).
 		WithEnvVariable("COMPOSER_HOME", "/root/.composer").
 		WithEnvVariable("COMPOSER_NO_INTERACTION", "1").
 		WithEnvVariable("COMPOSER_ALLOW_SUPERUSER", "1").
-		WithWorkdir("/src").
-		With(func(c *dagger.Container) *dagger.Container {
-			return dag.DaggerEngine(t.Ws, dagger.DaggerEngineOpts{
-				ClientDockerConfig: t.ClientDockerConfig,
-			}).InstallClient(dagger.DaggerEngineInstallClientOpts{Client: c})
-		})
+		WithWorkdir("/src")
 }
 
-// Returns the PHP SDK workspace mounted in a dev container,
-// and working directory set to the SDK source
+// Returns the PHP SDK workspace mounted in a dev container, with a client of a
+// dev engine built from the workspace, and working directory set to the SDK source
 func (t PhpClientDev) DevContainer(
 	// Run composer install before returning the container
 	//+default="false"
 	runInstall bool,
 ) *dagger.Container {
-	ctr := t.BaseContainer().
+	return t.installClient(t.container(runInstall))
+}
+
+// installClient binds a dev engine built from the workspace to the given
+// container, and installs its CLI.
+func (t PhpClientDev) installClient(ctr *dagger.Container) *dagger.Container {
+	return enginedev.New(t.Ws, enginedev.EngineDevOpts{
+		ClientDockerConfig: t.ClientDockerConfig,
+	}).InstallClient(enginedev.EngineDevInstallClientOpts{Client: ctr})
+}
+
+// container is the PHP SDK workspace mounted in a container without a Dagger
+// engine, with working directory set to the SDK source, for what doesn't run a
+// Dagger client.
+func (t PhpClientDev) container(runInstall bool) *dagger.Container {
+	ctr := t.base().
 		WithMountedDirectory(".", t.Workspace).
 		WithWorkdir(t.SourcePath)
 
@@ -104,7 +123,7 @@ func (t PhpClientDev) Source() *dagger.Directory {
 // Lint the PHP code with PHP CodeSniffer (https://github.com/squizlabs/PHP_CodeSniffer)
 // +check
 func (t PhpClientDev) PhpCodeSniffer(ctx context.Context) error {
-	_, err := t.DevContainer(true).
+	_, err := t.container(true).
 		WithExec([]string{"phpcs"}).
 		Sync(ctx)
 
@@ -115,7 +134,7 @@ func (t PhpClientDev) PhpCodeSniffer(ctx context.Context) error {
 // +check
 func (t PhpClientDev) PhpStan(ctx context.Context) error {
 	_, err := t.
-		DevContainer(true).
+		container(true).
 		WithExec([]string{"phpstan", "--no-progress", "--memory-limit=1G"}).
 		Sync(ctx)
 
@@ -126,7 +145,7 @@ func (t PhpClientDev) PhpStan(ctx context.Context) error {
 // +check
 func (t PhpClientDev) Test(ctx context.Context) error {
 	_, err := t.DevContainer(true).
-		WithExec([]string{"phpunit"}).Sync(ctx)
+		WithExec([]string{"env", "-u", "DAGGER_SESSION_PORT", "-u", "DAGGER_SESSION_TOKEN", "phpunit"}).Sync(ctx)
 
 	return err
 }
@@ -143,7 +162,7 @@ func (t *PhpClientDev) Changes() *dagger.Changeset {
 
 func (t *PhpClientDev) WithGeneratedClient() *PhpClientDev {
 	relLayer := t.DevContainer(true).
-		WithExec([]string{"dagger", "api", "exec", "--load-workspace-modules", "./scripts/codegen.php"}).
+		WithExec([]string{"env", "-u", "DAGGER_SESSION_PORT", "-u", "DAGGER_SESSION_TOKEN", "dagger", "api", "exec", "--load-workspace-modules", "./scripts/codegen.php"}).
 		Directory(".").
 		Filter(dagger.DirectoryFilterOpts{
 			Exclude: []string{
@@ -171,12 +190,12 @@ func (t PhpClientDev) ReleaseDryRun(
 	// +default="https://github.com/dagger/dagger-php-sdk.git"
 	destRemote string,
 ) error {
-	return dag.GitReleaser().DryRun(
+	return gitreleaser.New().DryRun(
 		ctx,
 		sourceRepo,
 		sourceTag,
 		destRemote,
-		dagger.GitReleaserDryRunOpts{
+		gitreleaser.GitReleaserDryRunOpts{
 			DestTag:    t.VersionFromTag(sourceTag),
 			SourcePath: "sdk/php/",
 		},
@@ -206,12 +225,12 @@ func (t PhpClientDev) Release(
 	// +optional
 	githubToken *dagger.Secret,
 ) error {
-	return dag.GitReleaser().Release(
+	return gitreleaser.New().Release(
 		ctx,
 		sourceRepo,
 		sourceTag,
 		dest,
-		dagger.GitReleaserReleaseOpts{
+		gitreleaser.GitReleaserReleaseOpts{
 			DestTag:     t.VersionFromTag(sourceTag),
 			SourcePath:  "sdk/php/",
 			GithubToken: githubToken,

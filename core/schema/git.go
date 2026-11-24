@@ -48,6 +48,8 @@ var _ SchemaResolvers = &gitSchema{}
 type gitSchema struct {
 	// walkRevision overrides GitRepository.WalkRevision in tests.
 	walkRevision func(ctx context.Context, repo *core.GitRepository, base *gitutil.Ref, rev gitutil.Revision) (string, error)
+	// shortSHA overrides GitRepository.ResolveShortSHA in tests.
+	shortSHA func(ctx context.Context, repo *core.GitRepository, prefix string) (string, error)
 }
 
 func (s *gitSchema) Install(srv *dagql.Server) {
@@ -91,6 +93,14 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	dagql.Fields[*core.GitRepository]{
+		dagql.NodeFunc("__sparseFiles", s.sparseFiles).
+			View(AfterVersion("v1.0.0-beta.26")).
+			IsPersistable().
+			Doc(`(Internal-only) The given files of this repository, by object ID, with only those fetched.`).
+			Args(
+				dagql.Arg("files").Doc(`Each file as "mode oid path".`),
+				dagql.Arg("dirs").Doc("Directories to write, even when empty."),
+			),
 		dagql.NodeFunc("__resolvedRef", s.resolvedRef).
 			View(AllVersion).
 			IsPersistable().
@@ -114,7 +124,7 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("name").Doc(
 					`Ref's name (can be a commit identifier, a tag name, a branch name, or a fully-qualified ref).`,
-					`Commit identifiers may be abbreviated: an unambiguous hex prefix (4-40 characters) of a commit SHA resolves like git rev-parse, with named refs taking precedence. Abbreviated SHAs resolve against locally available objects, so remote repositories (resolved via ls-remote) can only expand prefixes of already-fetched commits; use the full SHA or a named ref otherwise.`,
+					`Commit identifiers may be abbreviated: an unambiguous hex prefix (4-40 characters) of a commit SHA resolves like git rev-parse, with named refs taking precedence, to the full SHA. A remote repository that has not fetched the commit yet fetches the history of the refs it advertises to find it, so only commits reachable from those refs can be abbreviated.`,
 					"The name may be followed by git revision suffixes, applied left to right: `~N` follows first parents N times and `^N` selects the Nth parent (`~` and `^` mean 1, `^0` is the commit itself), e.g. `HEAD~3`, `main^2` or `abc1234~2`. The result is a detached ref of the resulting commit; remote repositories fetch the history the walk needs. Other git revision syntax (`^{...}`, `@{...}`, `:path`, ranges) is not supported.",
 					`A repository derived from a remote one (e.g. a workspace's history after a snapshot or commit) resolves names and commits it does not contain itself through that remote, with its authentication. Its branches and tags listings include the remote's.`),
 				dagql.Arg("noLock").
@@ -148,7 +158,7 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 				// TODO: id is normally a reserved word; we should probably rename this
 				dagql.Arg("id").Doc(
 					`Identifier of the commit (e.g., "b6315d8f2810962c601af73f86831f6866ea798b").`,
-					`May be abbreviated to an unambiguous hex prefix (4-40 characters), which is expanded against locally available objects. Remote repositories (resolved via ls-remote) can only expand prefixes of already-fetched commits; use the full SHA otherwise.`),
+					`May be abbreviated to an unambiguous hex prefix (4-40 characters), which is expanded to the full SHA. A remote repository that has not fetched the commit yet fetches the history of the refs it advertises to find it.`),
 			),
 		dagql.NodeFunc("commit", s.commitRef).
 			WithInput(gitLockScopedInput("id")).
@@ -344,6 +354,7 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 			IsPersistable().
 			Doc(`(Internal-only) Materialize full history and Git metadata regardless of keepGitDir.`),
 		dagql.NodeFunc("__sparseWorkspaceTree", s.sparseWorkspaceTree).
+			View(AfterVersion("v1.0.0-beta.26")).
 			IsPersistable().
 			Doc(`(Internal-only) The files of this ref that loading a workspace at it reads, with only those fetched.`).
 			Args(
@@ -1200,8 +1211,10 @@ func agentAddressScopedInput(input dagql.ImplicitInput) dagql.ImplicitInput {
 // gets a fresh key per call, except for a full SHA: it is immutable.
 func gitLockScopedInput(argName string) dagql.ImplicitInput {
 	perClient := gitLiveInput(dagql.PerClientInput)
+	name := "cachePerClientLock:" + argName
+	dagql.SessionScopedInput(name)
 	return dagql.ImplicitInput{
-		Name:        "cachePerClientLock:" + argName,
+		Name:        name,
 		PerCallWhen: perClient.PerCallWhen,
 		Resolver: func(ctx context.Context, args map[string]dagql.Input) (dagql.Input, error) {
 			if name, ok := args[argName].(dagql.String); ok {
@@ -1779,6 +1792,12 @@ func (s *gitSchema) revision(ctx context.Context, parent dagql.ObjectResult[*cor
 	if err != nil {
 		return inst, err
 	}
+	if baseRef := base.Self().Ref; !gitutil.IsCommitSHA(rev.Base) && baseRef.Name == baseRef.SHA {
+		// The base was an abbreviated SHA, so the whole expression names
+		// one commit for good: record that commit, as an abbreviated SHA
+		// alone does.
+		return s.selectCommitRef(ctx, parent, sha)
+	}
 	return s.gitRefResult(ctx, parent, &gitutil.Ref{Name: sha, SHA: sha})
 }
 
@@ -1878,16 +1897,20 @@ func (s *gitSchema) ref(ctx context.Context, parent dagql.ObjectResult[*core.Git
 func (s *gitSchema) unresolvedRef(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args refArgs, err error) (dagql.Result[*core.GitRef], error) {
 	repo := parent.Self()
 	// A name that looks like a hex prefix may be an abbreviated commit SHA
-	// (tools routinely print short hashes): expand it against the locally
-	// available object database, like `git rev-parse` would. Named refs always
-	// win over prefixes, matching git's own precedence.
+	// (tools routinely print short hashes): expand it like `git rev-parse`
+	// would, against the objects the repository holds, which for a remote
+	// means fetching its advertised refs' history when the mirror lacks the
+	// commit. Named refs always win over prefixes, matching git's own
+	// precedence.
 	if gitutil.IsCommitSHAPrefix(args.Name) {
-		sha, shaErr := repo.ResolveShortSHA(ctx, args.Name)
+		if gitutil.IsCommitSHA(args.Commit) && strings.HasPrefix(args.Commit, args.Name) {
+			// The caller already knows the commit (e.g. a module dependency
+			// pinned at an abbreviated SHA): nothing to expand or fetch.
+			return s.commitSHARef(ctx, parent, args.Commit)
+		}
+		sha, shaErr := s.resolveShortSHA(ctx, repo, args.Name)
 		if shaErr == nil {
-			return s.gitRefResult(ctx, parent, &gitutil.Ref{
-				Name: sha,
-				SHA:  sha,
-			})
+			return s.selectCommitRef(ctx, parent, sha)
 		}
 		err = errors.Join(err, shaErr)
 		if !errors.Is(shaErr, gitutil.ErrShortSHANotFound) {
@@ -2023,6 +2046,57 @@ func (s *gitSchema) selectResolvedRef(ctx context.Context, parent dagql.ObjectRe
 	return result.Result, err
 }
 
+// selectCommitRef returns ref(name: sha) of parent, for a name that resolved
+// to that commit by itself, e.g. an abbreviated SHA or a revision of one. The
+// result's recipe names the full SHA, so replaying it (in another engine, or
+// after a restore) neither depends on which commits the engine fetched
+// before nor resolves the name again.
+func (s *gitSchema) selectCommitRef(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], sha string) (dagql.Result[*core.GitRef], error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.Result[*core.GitRef]{}, err
+	}
+	var result dagql.ObjectResult[*core.GitRef]
+	err = srv.Select(ctx, parent, &result, dagql.Selector{Field: "ref", View: currentCallView(ctx), Args: []dagql.NamedInput{
+		{Name: "name", Value: dagql.String(sha)},
+	}})
+	return result.Result, err
+}
+
+// selectCommit returns commit(id: sha) of parent, for an abbreviated SHA that
+// expanded to it: like selectCommitRef, the result's recipe names the full
+// SHA.
+func (s *gitSchema) selectCommit(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], sha string) (dagql.Result[*core.GitCommit], error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.Result[*core.GitCommit]{}, err
+	}
+	var result dagql.ObjectResult[*core.GitCommit]
+	err = srv.Select(ctx, parent, &result, dagql.Selector{Field: "commit", View: currentCallView(ctx), Args: []dagql.NamedInput{
+		{Name: "id", Value: dagql.String(sha)},
+	}})
+	return result.Result, err
+}
+
+// currentCallView is the view of the call being resolved, for a selection
+// standing in for it: made in the same view, it has the same recipe as a
+// caller's own selection of it.
+func currentCallView(ctx context.Context) call.View {
+	if cur := dagql.CurrentCall(ctx); cur != nil {
+		return cur.View
+	}
+	return ""
+}
+
+// resolveShortSHA expands an abbreviated SHA in repo (see
+// GitRepository.ResolveShortSHA), or through the test override.
+func (s *gitSchema) resolveShortSHA(ctx context.Context, repo *core.GitRepository, prefix string) (string, error) {
+	if s.shortSHA != nil {
+		return s.shortSHA(ctx, repo, prefix)
+	}
+	return repo.ResolveShortSHA(ctx, prefix)
+}
+
 func (s *gitSchema) gitRefResult(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], ref *gitutil.Ref) (inst dagql.Result[*core.GitRef], _ error) {
 	repo := parent.Self()
 	refBackend, err := repo.Backend.Get(ctx, ref)
@@ -2125,23 +2199,23 @@ func (s *gitSchema) commit(ctx context.Context, parent dagql.ObjectResult[*core.
 			return inst, fmt.Errorf("invalid commit SHA: %q", args.ID)
 		}
 		// An abbreviated SHA: expand it to the full SHA of the single
-		// matching commit, like `git rev-parse` would. Only locally available
-		// objects can answer this; see GitRepository.ResolveShortSHA.
-		sha, err := parent.Self().ResolveShortSHA(ctx, args.ID)
+		// matching commit, like `git rev-parse` would, and select the commit
+		// by it, so the result's recipe names the full SHA.
+		sha, err := s.resolveShortSHA(ctx, parent.Self(), args.ID)
 		if err != nil {
 			upstream := ownedUpstream(parent.Self())
 			if upstream.Self() == nil || !errors.Is(err, gitutil.ErrShortSHANotFound) {
 				return inst, err
 			}
-			// Not a local commit: expand it against the upstream's fetched
-			// objects instead, as GitRepository.ref does.
-			sha, err = upstream.Self().ResolveShortSHA(ctx, args.ID)
+			// Not a local commit: expand it against the upstream instead,
+			// as GitRepository.ref does.
+			sha, err = s.resolveShortSHA(ctx, upstream.Self(), args.ID)
 			if err != nil {
 				return inst, fmt.Errorf("commit %q not found locally; %s: %w", args.ID, upstreamDescription(upstream), err)
 			}
-			return s.gitCommitResult(ctx, upstream, &gitutil.Ref{Name: sha, SHA: sha})
+			return s.selectCommit(ctx, upstream, sha)
 		}
-		args.ID = sha
+		return s.selectCommit(ctx, parent, sha)
 	}
 	ref, err := parent.Self().Remote.Lookup(args.ID)
 	if err != nil {
@@ -2375,6 +2449,16 @@ func (s *gitSchema) asWorkspace(ctx context.Context, parent dagql.ObjectResult[*
 	if err := srv.Select(ctx, ref, &ws, dagql.Selector{Field: "asWorkspace", Args: []dagql.NamedInput{{Name: "cwd", Value: dagql.NewString(args.Cwd)}}}); err != nil {
 		return ws, err
 	}
+	// A clean repository has no uncommitted changes to apply, so its workspace
+	// is its head's: an overlay that changes nothing would still read as an
+	// edit to whatever keys on the workspace's edits.
+	dirty, err := parent.Self().Backend.Dirty(ctx)
+	if err != nil {
+		return ws, err
+	}
+	if dirty.Self() == nil {
+		return ws, nil
+	}
 	var changes dagql.ObjectResult[*core.Changeset]
 	if err := srv.Select(ctx, parent, &changes, dagql.Selector{Field: "uncommitted"}); err != nil {
 		return ws, err
@@ -2596,8 +2680,14 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 	// later SHA-based selection (such as Workspace.snapshot) can reuse the
 	// first writer's mutable branch recipe. Keep named refs for trees with .git,
 	// where the ref name is part of the checkout metadata and content identity.
+	// A remote ref with no name was looked up by a full SHA, as a workspace or
+	// module at a commit pins it: its recipe holds no mutable ref, so its trees
+	// stay its own, and a workspace and its module at one commit share one
+	// checkout (RemoteGitRef's tree without .git is made from its tree with
+	// .git).
 	ref := parent.Self()
-	if (ref.Repo.Self().DiscardGitDir || args.DiscardGitDir) && ref.Ref.Name != ref.Ref.SHA {
+	_, remote := ref.Repo.Self().Backend.(*core.RemoteGitRepository)
+	if (ref.Repo.Self().DiscardGitDir || args.DiscardGitDir) && ref.Ref.Name != ref.Ref.SHA && (ref.Ref.Name != "" || !remote) {
 		return pinnedGitTree(ctx, srv, ref.Repo, ref.Ref.SHA, args)
 	}
 

@@ -85,12 +85,12 @@ The built-in SDK list is defined in `core/sdk/consts.go`:
 - `elixir`
 - `java`
 
-Go is special. `core/sdk/go_sdk.go` implements the SDK directly in the engine by
-running the packaged `cmd/codegen` binary in a Go runtime container. It
-implements runtime, module types, codegen, and client generation without going
-through a module SDK wrapper.
-
-The other built-ins are module SDKs. `core/sdk/module.go` loads the SDK module,
+`dang` is implemented in the engine (`core/sdk/dang_sdk.go`). The other
+built-ins are module SDKs. Go's is a Dang module in the Go SDK image
+(`sdk/go/runtime`), beside the dagger/go it builds every runtime with; it runs
+the packaged `cmd/codegen` binary for codegen and client generation, and the
+engine gives it what a module can't reach itself as constructor arguments
+(`core/sdk/go_sdk_module.go`). `core/sdk/module.go` loads the SDK module,
 records which SDK functions it implements, and adapts those functions to the
 engine interfaces through:
 

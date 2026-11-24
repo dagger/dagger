@@ -4,6 +4,7 @@ import (
 	"container/list"
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"time"
 
@@ -32,6 +33,13 @@ type SharedMounter interface {
 	// and the mount it came from. release ends this reader's use of it; it
 	// must be called once.
 	MountShared(ctx context.Context) (root string, m mount.Mount, release func(), err error)
+	// SharedMountTopLayer returns the directory of the snapshot's topmost
+	// layer, if a shared mount of the snapshot has been made and that is still
+	// remembered. A regular file there is the file the snapshot shows, whatever
+	// the layers below hold, so a reader of it needs no mount. The directory
+	// may be gone by the time it is read, if the snapshot is; a reader that
+	// doesn't find its file there has learned nothing and uses MountShared.
+	SharedMountTopLayer() (dir string, ok bool)
 }
 
 // sharedMounts keeps one read-only mount per snapshot for all its readers.
@@ -53,6 +61,15 @@ type sharedMounts struct {
 	// finished; evicted is signaled when it drops to zero.
 	evicting int
 	evicted  *sync.Cond
+
+	// topLayers remembers each mounted snapshot's topmost layer directory,
+	// past the mount itself. A committed snapshot's layers never change. It
+	// holds at most maxIdle entries, one short path each, replacing the oldest
+	// (topLayerOrder is a ring, topLayerNext its oldest entry once full): a
+	// forgotten snapshot's next read mounts it, and it's remembered again.
+	topLayers     map[string]string
+	topLayerOrder []string
+	topLayerNext  int
 }
 
 type sharedMount struct {
@@ -84,6 +101,8 @@ func newSharedMounts(linger time.Duration, maxIdle int, release func(func() erro
 		release: release,
 		entries: map[string]*sharedMount{},
 		idle:    list.New(),
+
+		topLayers: map[string]string{},
 	}
 	s.evicted = sync.NewCond(&s.mu)
 	return s
@@ -276,10 +295,61 @@ func (sr *immutableRef) MountShared(ctx context.Context) (string, mount.Mount, f
 		if err != nil {
 			return "", mount.Mount{}, nil, errors.Join(err, releaseView())
 		}
+		if dir, ok := topLayerDir(ms[0]); ok {
+			sr.cm.sharedMounts.rememberTopLayer(sr.SnapshotID(), dir)
+		}
 		return root, ms[0], func() error {
 			return errors.Join(lm.Unmount(), releaseView())
 		}, nil
 	})
+}
+
+func (sr *immutableRef) SharedMountTopLayer() (string, bool) {
+	return sr.cm.sharedMounts.topLayer(sr.SnapshotID())
+}
+
+func (s *sharedMounts) topLayer(key string) (string, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	dir, ok := s.topLayers[key]
+	return dir, ok
+}
+
+func (s *sharedMounts) rememberTopLayer(key, dir string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.topLayers[key]; !ok {
+		if len(s.topLayerOrder) < s.maxIdle {
+			s.topLayerOrder = append(s.topLayerOrder, key)
+		} else {
+			delete(s.topLayers, s.topLayerOrder[s.topLayerNext])
+			s.topLayerOrder[s.topLayerNext] = key
+			s.topLayerNext = (s.topLayerNext + 1) % s.maxIdle
+		}
+	}
+	s.topLayers[key] = dir
+}
+
+// topLayerDir returns the directory of a read-only view's topmost layer: one
+// bind mount's source, or the first of an overlay mount's lowerdirs. A view with
+// an upperdir, or of any other kind, has none it can name.
+func topLayerDir(m mount.Mount) (string, bool) {
+	switch m.Type {
+	case "bind", "rbind":
+		return m.Source, m.Source != ""
+	case "overlay":
+		dir := ""
+		for _, opt := range m.Options {
+			if strings.HasPrefix(opt, "upperdir=") {
+				return "", false
+			}
+			if lowers, ok := strings.CutPrefix(opt, "lowerdir="); ok {
+				dir, _, _ = strings.Cut(lowers, ":")
+			}
+		}
+		return dir, dir != ""
+	}
+	return "", false
 }
 
 // ReleaseIdleSharedMounts releases the shared read-only mounts nobody is

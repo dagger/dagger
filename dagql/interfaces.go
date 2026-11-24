@@ -280,7 +280,7 @@ type ImplementsChecker func(typeName, ifaceName string) bool
 // Argument types are checked with contravariant rules: the implementing type's
 // argument may accept a wider (more permissive) type than the interface declares.
 func argsCompatible(ifaceArgs, objArgs InputSpecs, view call.View, checker ImplementsChecker) bool {
-	for _, ifaceArg := range ifaceArgs.Inputs(view) {
+	for _, ifaceArg := range ifaceArgs.inputs(view) {
 		objArg, ok := objArgs.Input(ifaceArg.Name, view)
 		if !ok {
 			return false
@@ -289,7 +289,7 @@ func argsCompatible(ifaceArgs, objArgs InputSpecs, view call.View, checker Imple
 			return false
 		}
 	}
-	for _, objArg := range objArgs.Inputs(view) {
+	for _, objArg := range objArgs.inputs(view) {
 		if _, ok := ifaceArgs.Input(objArg.Name, view); ok {
 			continue
 		}

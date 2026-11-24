@@ -7,10 +7,10 @@ import (
 
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/images"
-	cdcompression "github.com/containerd/containerd/v2/pkg/archive/compression"
 	"github.com/containerd/stargz-snapshotter/estargz"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/iohelper"
+	"github.com/dagger/dagger/util/compressutil"
 	digest "github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
@@ -246,7 +246,7 @@ func decompress(ctx context.Context, cs content.Store, desc ocispecs.Descriptor)
 			return nil, err
 		}
 	} else {
-		r, err = cdcompression.DecompressStream(io.NewSectionReader(ra, 0, ra.Size()))
+		r, err = compressutil.DecompressStream(io.NewSectionReader(ra, 0, ra.Size()))
 		if err != nil {
 			return nil, err
 		}

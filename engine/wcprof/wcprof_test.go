@@ -245,7 +245,7 @@ func TestLockRecordsContendedWait(t *testing.T) {
 // ReadLock and WriteLock record a blocked acquisition of an RWMutex as Lock
 // does, and nothing for one that doesn't block.
 func TestRWLockRecordsContendedWait(t *testing.T) {
-	for name, lock := range map[string]func(context.Context, *sync.RWMutex, string){
+	for name, lock := range map[string]func(context.Context, RWLocker, string){
 		"read":  ReadLock,
 		"write": WriteLock,
 	} {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/Khan/genqlient/graphql"
@@ -12,8 +13,11 @@ import (
 	"github.com/vito/dang/v2/pkg/dang"
 	"github.com/vito/dang/v2/pkg/hm"
 	"github.com/vito/dang/v2/pkg/introspection"
+	"golang.org/x/sync/errgroup"
 
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
 )
 
 // A collection whose items each hold the same module, as dagger/go's package
@@ -195,6 +199,105 @@ func TestConvertSharedDecodedValuePerCall(t *testing.T) {
 		}
 	}
 	require.NotSame(t, childrenA[0], childrenB[0])
+}
+
+func TestReceivedValuesKeepRecentlyUsed(t *testing.T) {
+	t.Parallel()
+
+	obj := func(name string) []byte { return []byte(`{"name":"` + name + `"}`) }
+	a, b, c := obj("a"), obj("b"), obj("c")
+	decodedA, err := decodeReceivedJSON(a)
+	require.NoError(t, err)
+	// Room for two of them.
+	values := newReceivedValues(2*receivedSize(decodedA) + 1)
+	decode := func(data []byte) *receivedObject {
+		val, err := values.decode(t.Context(), data)
+		require.NoError(t, err)
+		return val.(*receivedObject)
+	}
+	first := decode(a)
+	require.Same(t, first, decode(a), "calls receiving the same JSON share its decoded value")
+	firstB := decode(b)
+	require.Same(t, first, decode(a))
+	decode(c)
+	require.Same(t, first, decode(a), "a recently used value is kept")
+	againB := decode(b)
+	require.NotSame(t, firstB, againB, "the least recently used value was dropped")
+	require.Equal(t, firstB.fields, againB.fields)
+
+	big := []byte(`{"name":"` + strings.Repeat("x", values.maxWeight) + `"}`)
+	bigVal := decode(big)
+	require.Equal(t, receivedJSON(t, big), plainReceived(bigVal))
+	require.Same(t, bigVal, decode(big), "a value beyond the bound is kept apart")
+	require.Same(t, first, decode(a), "a value beyond the bound drops nothing")
+	bigger := []byte(`{"name":"` + strings.Repeat("y", values.maxWeight) + `"}`)
+	biggerVal := decode(bigger)
+	for range 3 {
+		require.Same(t, bigVal, decode(big), "values beyond the bound used in turn are kept")
+		require.Same(t, biggerVal, decode(bigger))
+	}
+	for i := range maxLargeReceivedValues - 1 {
+		decode([]byte(`{"name":"` + strings.Repeat(fmt.Sprint(i), values.maxWeight) + `"}`))
+	}
+	require.Same(t, biggerVal, decode(bigger))
+	require.NotSame(t, bigVal, decode(big), "only the most recently used values beyond the bound are kept")
+
+	_, err = values.decode(t.Context(), []byte(`{"name":`))
+	require.Error(t, err)
+	values.mu.Lock()
+	defer values.mu.Unlock()
+	require.LessOrEqual(t, values.weight, values.maxWeight)
+	require.Len(t, values.entries, values.lru.Len())
+	weight := 0
+	for _, elem := range values.entries {
+		entry := elem.Value.(*receivedEntry)
+		require.NoError(t, entry.err, "failures are not kept")
+		weight += entry.weight
+	}
+	require.Equal(t, values.weight, weight)
+}
+
+func TestReceivedValuesConcurrentAndReleased(t *testing.T) {
+	ctx := schemaCacheContext(t)
+	data := []byte(receivedCollectionJSON)
+	results := make([]any, 16)
+	var group errgroup.Group
+	for i := range results {
+		group.Go(func() error {
+			var err error
+			results[i], err = decodeReceived(ctx, data)
+			return err
+		})
+	}
+	require.NoError(t, group.Wait())
+	for _, got := range results[1:] {
+		require.Same(t, results[0], got)
+	}
+	cache, err := dagql.EngineCache(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, cache.EntryStats().CompletedArbitrary)
+
+	// Another session keeps values of its own.
+	lease := engine.NewClientLifecycleLease(engine.ClientLeaseRequest, "other-session", func() {},
+		func(kind engine.ClientLeaseKind, owner string) (*engine.ClientLifecycleLease, error) {
+			return engine.NewClientLifecycleLease(kind, owner, func() {}, nil), nil
+		})
+	t.Cleanup(lease.Release)
+	scope, err := engine.NewClientScope(&engine.ClientMetadata{SessionID: "other-session", ClientID: "other-client"}, lease)
+	require.NoError(t, err)
+	otherCtx, err := engine.ContextWithClientScope(ctx, scope)
+	require.NoError(t, err)
+	other, err := decodeReceived(otherCtx, data)
+	require.NoError(t, err)
+	require.NotSame(t, results[0], other, "sessions do not share received values")
+	require.Equal(t, 2, cache.EntryStats().CompletedArbitrary)
+
+	require.NoError(t, cache.ReleaseSession(ctx, "schema-test"))
+	require.NoError(t, cache.WaitSessionRelease(ctx, "schema-test"))
+	require.Equal(t, 1, cache.EntryStats().CompletedArbitrary, "received values leave with their session")
+	require.NoError(t, cache.ReleaseSession(ctx, "other-session"))
+	require.NoError(t, cache.WaitSessionRelease(ctx, "other-session"))
+	require.Zero(t, cache.EntryStats().CompletedArbitrary)
 }
 
 type namedClient struct{ name string }

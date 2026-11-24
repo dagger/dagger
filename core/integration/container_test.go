@@ -520,6 +520,28 @@ func (ContainerSuite) TestExecRedirectNotLogged(ctx context.Context, t *testctx.
 	require.Equal(t, "ERR-REDIRECTED\n", errOut)
 }
 
+// Each exec stacks a layer on the container's root filesystem. However many
+// stack, the root directory keeps its owner, and every exec's files.
+func (ContainerSuite) TestLongExecChain(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	const execs = 140
+	ctr := sdkcore.NewQuery(c).Container().From(alpineImage).
+		WithExec([]string{"chown", "1000:1000", "/"})
+	for i := range execs {
+		ctr = ctr.WithExec([]string{"touch", fmt.Sprintf("/f%03d", i)})
+		if i%20 == 19 {
+			// Evaluate as the chain grows, so each query stays small.
+			var err error
+			ctr, err = ctr.Sync(ctx)
+			require.NoError(t, err)
+		}
+	}
+	out, err := ctr.WithExec([]string{"sh", "-c", "stat -c %u:%g / && ls / | grep -c '^f[0-9]'"}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, fmt.Sprintf("1000:1000\n%d\n", execs), out)
+}
+
 func (ContainerSuite) TestExecWithWorkdir(ctx context.Context, t *testctx.T) {
 	res, err := testutil.Query[struct {
 		Container struct {
@@ -1828,6 +1850,24 @@ func (ContainerSuite) TestWithMountedFiles(ctx context.Context, t *testctx.T) {
 		require.Equal(t, "one", contents)
 	})
 
+	t.Run("files of a layered snapshot, read again", func(ctx context.Context, t *testctx.T) {
+		// One file changed in the snapshot's topmost layer, shadowing its old
+		// contents below, and one only in a layer below. The second read of each
+		// finds its layer already known.
+		layered := ctr.
+			WithExec([]string{"sh", "-c", "mkdir /out; echo old > /out/changed; echo kept > /out/kept; chmod 640 /out/changed /out/kept"}).
+			WithExec([]string{"sh", "-c", "echo new > /out/changed; chmod 640 /out/changed"})
+		files := []*sdkcore.File{layered.File("/out/changed"), layered.File("/out/kept")}
+		mounted := ctr.WithMountedFiles("/mnt/files", files)
+		for _, read := range []string{"first", "second"} {
+			out, err := mounted.
+				WithExec([]string{"sh", "-c", "echo " + read + "; cat /mnt/files/changed /mnt/files/kept; stat -c %a /mnt/files/changed /mnt/files/kept"}).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, read+"\nnew\nkept\n640\n640\n", out)
+		}
+	})
+
 	t.Run("empty list", func(ctx context.Context, t *testctx.T) {
 		out, err := ctr.WithMountedFiles("/mnt/files", []*sdkcore.File{}).
 			WithExec([]string{"sh", "-c", "test -d /mnt/files && ls -A /mnt/files"}).
@@ -2025,6 +2065,42 @@ func (ContainerSuite) TestWithMountedTemp(ctx context.Context, t *testctx.T) {
 
 		require.NoError(t, err)
 		require.Contains(t, output, "size=4k")
+	})
+
+	t.Run("on disk", func(ctx context.Context, t *testctx.T) {
+		output, err := output([]sdkcore.ContainerWithMountedTempOpts{
+			{Disk: true},
+		})
+
+		require.NoError(t, err)
+		require.Contains(t, output, " /mnt/tmp ")
+		require.NotContains(t, output, "tmpfs")
+	})
+
+	t.Run("on disk, empty for each process", func(ctx context.Context, t *testctx.T) {
+		ctr := sdkcore.NewQuery(c).Container().
+			From(alpineImage).
+			WithMountedTemp("/mnt/tmp", sdkcore.ContainerWithMountedTempOpts{Disk: true})
+
+		first, err := ctr.
+			WithExec([]string{"sh", "-c", "ls -A /mnt/tmp; stat -c %A /mnt/tmp; echo first > /mnt/tmp/file"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "drwxrwxrwt\n", first)
+
+		second, err := ctr.
+			WithExec([]string{"sh", "-c", "echo first > /mnt/tmp/file"}).
+			WithExec([]string{"ls", "-A", "/mnt/tmp"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Empty(t, second)
+	})
+
+	t.Run("on disk, with a size", func(ctx context.Context, t *testctx.T) {
+		_, err := output([]sdkcore.ContainerWithMountedTempOpts{
+			{Disk: true, Size: 4000},
+		})
+		requireErrOut(t, err, "size applies only to a temporary directory in memory")
 	})
 }
 

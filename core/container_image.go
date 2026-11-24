@@ -329,6 +329,9 @@ func (container *Container) FromOCIStore(
 	}
 	container.Config = loaded.Config.Config
 	container.ImageRef = imageRef
+	// Holding an image, it is no longer the scratch container From may give a
+	// content digest: From keeps this config's environment.
+	container.fromContentDigestSafe = false
 	rootfsDir := &Directory{
 		Platform: rootPlatform,
 		Services: slices.Clone(container.Services),

@@ -16,6 +16,7 @@ import (
 	"github.com/opencontainers/go-digest"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/remotecache/pack"
 	"github.com/dagger/dagger/engine/snapshots"
 )
 
@@ -41,6 +42,9 @@ const (
 // Error messages both sides recognize.
 const (
 	TooLargeMessage = "too large"
+	// StaleSettle ends a settle whose period is no longer the engine's
+	// current one, or that an open with a later period superseded.
+	StaleSettle = "stale settle"
 )
 
 // Type names a message.
@@ -59,6 +63,14 @@ const (
 	TypeOffered  Type = "offered"
 	TypeRenew    Type = "renew"
 	TypeRenewed  Type = "renewed"
+	TypeLookup   Type = "lookup"
+	TypeLookedUp Type = "lookedUp"
+	TypeOpen     Type = "open"
+	TypeOpened   Type = "opened"
+	TypeSettle   Type = "settle"
+	TypeSettled  Type = "settled"
+	TypeClaims   Type = "claims"
+	TypeClaimed  Type = "claimed"
 	TypeError    Type = "error"
 )
 
@@ -78,6 +90,14 @@ func ReplyType(request Type) (Type, bool) {
 		return TypeOffered, true
 	case TypeRenew:
 		return TypeRenewed, true
+	case TypeLookup:
+		return TypeLookedUp, true
+	case TypeOpen:
+		return TypeOpened, true
+	case TypeSettle:
+		return TypeSettled, true
+	case TypeClaims:
+		return TypeClaimed, true
 	}
 	return "", false
 }
@@ -121,13 +141,82 @@ type Hello struct {
 	Generation    uint64 `json:"generation"`
 	EngineVersion string `json:"engineVersion"`
 	EngineName    string `json:"engineName"`
+	// Period is the engine's current idle period (Open), and Settled is set
+	// when the engine connects already settled for it: the service then asks
+	// it for nothing until an Open with a later period.
+	Period  uint64 `json:"period"`
+	Settled bool   `json:"settled,omitempty"`
 }
 
 // Welcome is the service's reply to Hello.
 type Welcome struct{}
 
+// Open tells the service that a session started on an engine with no live
+// session: its idle periods are numbered from 1, and Period is the one that
+// begins when the sessions now starting have ended. The service may ask the
+// engine for exports again, and a settle for an earlier period is stale.
+type Open struct {
+	Period uint64 `json:"period"`
+}
+
+// Opened is the service's reply to Open.
+type Opened struct{}
+
+// Settle asks the service, once the engine has no live session, to finish
+// what it wants of the engine for Period: Sessions are the sessions that
+// ended and that no Settled has covered, kept across canceled requests and
+// reconnections.
+type Settle struct {
+	Period   uint64          `json:"period"`
+	Sessions []SettleSession `json:"sessions"`
+}
+
+// SettleSession is one ended session: ID is the engine session's ID, as its
+// telemetry names it (dagger.io/engine.session), and Marker is set when the
+// engine sent the session's completion marker, the span the service reads as
+// its end row. A session without one has no end row to wait for.
+type SettleSession struct {
+	ID     string `json:"id"`
+	Marker bool   `json:"marker"`
+}
+
+// Claims tells the service which Dagger Cloud claim each of the engine's
+// sessions started under, which the sessions' telemetry doesn't carry. The
+// engine sends each session with a claim
+// once on a connection, as it starts or, for a session live at hello or
+// ended and not yet settled, after it; always before the settle that lists
+// the session. A session with no claim isn't sent.
+type Claims struct {
+	Sessions []SessionClaim `json:"sessions"`
+}
+
+// SessionClaim is one session and its claim: ID is the engine session's ID,
+// as its telemetry names it (dagger.io/engine.session), and Claim is the
+// claim ID its client connected with.
+type SessionClaim struct {
+	ID    string `json:"id"`
+	Claim string `json:"claim"`
+}
+
+// Claimed is the service's reply to Claims.
+type Claimed struct{}
+
+// Settled is the service's reply to Settle, sent once it is done with every
+// listed session and has no export of the engine in flight or still to ask
+// for. The service then asks
+// the engine for nothing until an Open with a later period. A settle for a
+// period that is not the engine's current one ends with StaleSettle instead.
+type Settled struct{}
+
 // Export asks the engine for the values of some of its entries, by number,
-// and the selected parts' bytes.
+// and the selected parts' bytes. Its bundle sends each row the service merged
+// over this connection, and that hasn't changed since, as a held row
+// (Upload.Merged). In an export that selects parts, a held row keeps its
+// links to the rows below it, and a part can sit on it. The Cloud's merge
+// refuses the whole bundle as stale if any held row's recipe has no live
+// entry there, or that entry lacks a part the export puts on the held row,
+// and commits nothing; the service then sends Upload without Merged, and
+// asks for the roots again.
 type Export struct {
 	Roots   []uint64       `json:"roots"`
 	Outputs []ExportOutput `json:"outputs,omitempty"`
@@ -173,28 +262,71 @@ type SkippedRoot struct {
 }
 
 // Upload gives the engine one presigned PUT per blob the service needs from
-// an export. An empty map needs nothing, and the engine releases the chains.
+// an export, and one per pack of small blobs it needs stored together. An
+// upload with neither needs nothing, and the engine releases the chains.
+//
+// Merged says the service merged the export's bundle into the Cloud. The
+// engine then knows the rows the bundle carried in full, for this
+// connection's later exports. An Upload without Merged, for a merge that
+// failed, was refused as stale or was skipped, makes the rows the bundle held
+// unknown again, so that the next export of the same roots carries them in
+// full. It holds nothing that export carried or held; it can hold rows below
+// them that earlier merges proved.
 type Upload struct {
 	ExportID string                   `json:"exportID"`
 	URLs     map[digest.Digest]string `json:"urls"`
+	Packs    []UploadPack             `json:"packs,omitempty"`
+	Merged   bool                     `json:"merged,omitempty"`
 }
 
-// Uploaded answers Upload.
+// UploadPack is one pack to upload: its ID, its presigned PUT, and its
+// members in order. The engine PUTs the pack's header, then each member.
+type UploadPack struct {
+	Pack    digest.Digest `json:"pack"`
+	URL     string        `json:"url"`
+	Members []pack.Member `json:"members"`
+}
+
+// Uploaded answers Upload. Done and Failed name blobs and packs; a pack is
+// done or failed whole.
 type Uploaded struct {
 	Done   []digest.Digest `json:"done"`
 	Failed []UploadFailure `json:"failed,omitempty"`
 }
 
-// UploadFailure is one blob the engine could not upload.
+// UploadFailure is one blob or pack the engine could not upload.
 type UploadFailure struct {
 	Digest  digest.Digest `json:"digest"`
 	Message string        `json:"message"`
 }
 
 // Merge gives the engine a bundle of the Cloud's values. Its SenderNumbers
-// are the Cloud's numbers, and its outputs carry GET addresses.
+// are the Cloud's numbers, and its outputs carry GET addresses. A held row
+// names, by recipe, a value the engine is expected to hold; the engine
+// resolves it as it would keep a record of that recipe. The rows a committed
+// merge lands on are the Cloud's records, so the engine's later exports over
+// the connection send them as held rows, as they do the rows of an export
+// the service merged (Upload.Merged).
 type Merge struct {
 	Bundle dagql.ValueBundle `json:"bundle"`
+	// Lookup is the ID of the engine's Lookup this merge answers, or 0 for
+	// a merge of the service's own placement. The engine commits a merge
+	// that answers a lookup ahead of the others.
+	Lookup uint64 `json:"lookup"`
+}
+
+// MarshalJSON encodes a merge with its bundle's layers and addresses listed
+// once (dagql.ShareChainLayers): a merge of a large closure would otherwise
+// list each shared base layer, with its address, once for every output on
+// it, which put merges over MaxMessageBytes. The engine's merge gives each
+// output its chain back (dagql.ResolveChainPrefixes).
+func (m Merge) MarshalJSON() ([]byte, error) {
+	bundle, err := dagql.ShareChainLayers(m.Bundle)
+	if err != nil {
+		return nil, err
+	}
+	type merge Merge
+	return json.Marshal(merge{Bundle: bundle, Lookup: m.Lookup})
 }
 
 // Merged answers Merge with what the merge's commit left, read under the lock
@@ -207,6 +339,11 @@ type Merged struct {
 	Values     []MergedValue  `json:"values"`
 	Retained   []RetainedRoot `json:"retained"`
 	Skipped    []SkippedValue `json:"skipped,omitempty"`
+	// Stale are the bundle's held rows the engine didn't hold when the
+	// merge decided: no current entry for the recipe, one with no value of
+	// its own, or an expired one the row hasn't outlived. A reply with Stale
+	// committed nothing, and its Values, Retained and Skipped are empty.
+	Stale []dagql.TransferOrdinal `json:"stale"`
 }
 
 // MergedValue is the engine entry a bundle record landed on, and its value
@@ -314,6 +451,9 @@ type Renew struct {
 	RenewalKey string                  `json:"renewalKey"`
 	Layers     []snapshots.ExportLayer `json:"layers"`
 	NeededBlob digest.Digest           `json:"neededBlob"`
+	// Packs maps each of the layers stored in a pack to its pack's ID, as
+	// the chain's offer carried them.
+	Packs map[digest.Digest]digest.Digest `json:"packs,omitempty"`
 }
 
 // Renewed answers Renew: an address per layer, or Unavailable when a layer is
@@ -322,3 +462,73 @@ type Renewed struct {
 	Addresses   map[digest.Digest]dagql.BlobAddress `json:"addresses,omitempty"`
 	Unavailable bool                                `json:"unavailable,omitempty"`
 }
+
+// The bounds of a Lookup.
+const (
+	// LookupMisses is the most misses one Lookup names.
+	LookupMisses = 32
+	// LookupExtras is the most extra digests one miss names.
+	LookupExtras = 8
+)
+
+// Lookup asks the service for the Cloud's values of calls the engine's cache
+// missed. The service answers at once with what it will do for each, and
+// sends what it found as ordinary merges that name the lookup.
+type Lookup struct {
+	Misses []LookupMiss `json:"misses"`
+}
+
+// LookupMiss is one call the engine's cache missed: its recipe digest, its
+// extra digests, which the engine's own lookup tries after the recipe, and
+// its term, which that lookup tries last: the call's self digest over its
+// input digests, matched by the inputs' classes. Field names the call, for
+// logs.
+type LookupMiss struct {
+	Recipe digest.Digest   `json:"recipe"`
+	Extra  []digest.Digest `json:"extra,omitempty"`
+	Field  string          `json:"field,omitempty"`
+	Self   digest.Digest   `json:"self,omitempty"`
+	Inputs []digest.Digest `json:"inputs,omitempty"`
+}
+
+// LookedUp answers Lookup, one item per miss, in order. The service sends it
+// before any merge it names.
+type LookedUp struct {
+	Misses []LookedUpMiss `json:"misses"`
+}
+
+// LookedUpMiss is what the service does for one miss. Merge is the ID of the
+// Merge request that carries the call's value, with LookupInFlight and
+// LookupMerging, and Parts says how much of the value's bytes it carries.
+type LookedUpMiss struct {
+	Status LookupStatus `json:"status"`
+	Merge  uint64       `json:"merge,omitempty"`
+	Parts  LookupParts  `json:"parts,omitempty"`
+}
+
+// LookupStatus is what the service does for a missed call.
+type LookupStatus string
+
+const (
+	// LookupUnknown: the Cloud knows none of the call's digests.
+	LookupUnknown LookupStatus = "unknown"
+	// LookupNotStored: the Cloud has no stored, unexpired value of the call.
+	LookupNotStored LookupStatus = "notStored"
+	// LookupInFlight: a merge already sent to the engine carries the value.
+	LookupInFlight LookupStatus = "inFlight"
+	// LookupMerging: a merge sent now, after the answer, carries the value.
+	LookupMerging LookupStatus = "merging"
+	// LookupDeferred: the value goes at the front of the service's queue,
+	// with no merge named.
+	LookupDeferred LookupStatus = "deferred"
+)
+
+// LookupParts is how many of the value's parts a named merge carries bytes
+// for.
+type LookupParts string
+
+const (
+	LookupPartsComplete LookupParts = "complete"
+	LookupPartsPartial  LookupParts = "partial"
+	LookupPartsNone     LookupParts = "none"
+)

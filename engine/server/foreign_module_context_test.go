@@ -24,5 +24,4 @@ func TestForeignModuleContextReaders(t *testing.T) {
 	pending, err := pendingRelatedModule(dagql.ObjectResult[*core.ModuleSource]{}, native, nil, false)
 	require.NoError(t, err)
 	require.Equal(t, "/producer", pending.Ref)
-	require.True(t, isCoreRootField("_remoteCacheFixture"))
 }

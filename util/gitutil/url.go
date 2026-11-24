@@ -98,8 +98,17 @@ func (gitURL *GitURL) HTMLURL() string {
 		}
 		u.Scheme = HTTPSProtocol
 		u.Host = host
+		if web, ok := sshHostWebHosts[strings.ToLower(host)]; ok {
+			u.Host = web
+		}
 	}
 	return u.String()
+}
+
+// sshHostWebHosts maps forges' dedicated SSH hosts, which serve no web
+// pages, to the host their web view lives on.
+var sshHostWebHosts = map[string]string{
+	"ssh.bitbucket.org": "bitbucket.org",
 }
 
 func (gitURL *GitURL) String() string {

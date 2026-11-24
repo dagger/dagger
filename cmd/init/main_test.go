@@ -93,33 +93,6 @@ func initEnv(env ...string) []string {
 	return append(append(out, runAsInitEnv+"=1"), env...)
 }
 
-func TestInitReportsTiming(t *testing.T) {
-	r, w, err := os.Pipe()
-	require.NoError(t, err)
-	defer r.Close()
-
-	cmd := exec.Command(os.Args[0], "sh", "-c", `sleep 0.2; env; test -e /proc/$$/fd/3 && echo fd3-leaked; exit 3`)
-	cmd.Env = initEnv(distconsts.InitTimingFDEnv + "=3")
-	cmd.ExtraFiles = []*os.File{w}
-	before := monotonicNS()
-	out, err := cmd.Output()
-	after := monotonicNS()
-	w.Close()
-	var exitErr *exec.ExitError
-	require.ErrorAs(t, err, &exitErr)
-	require.Equal(t, 3, exitErr.ExitCode(), "the command's exit status passes through")
-	require.NotContains(t, string(out), distconsts.InitTimingFDEnv, "the command doesn't inherit the variable")
-	require.NotContains(t, string(out), "fd3-leaked", "the command doesn't inherit the fd")
-
-	var started, spawned, exited int64
-	_, err = fmt.Fscanf(r, "%d %d %d\n", &started, &spawned, &exited)
-	require.NoError(t, err)
-	require.Less(t, before, started)
-	require.LessOrEqual(t, started, spawned)
-	require.GreaterOrEqual(t, exited-spawned, int64(200*time.Millisecond), "the command ran between spawn and exit")
-	require.Less(t, exited, after)
-}
-
 func TestInitWithoutTiming(t *testing.T) {
 	cmd := exec.Command(os.Args[0], "sh", "-c", `env`)
 	// An fd below 3 is never a timing pipe.

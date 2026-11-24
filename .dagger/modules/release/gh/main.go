@@ -1,4 +1,3 @@
-// GitHub CLI
 package main
 
 import (
@@ -7,8 +6,10 @@ import (
 	"time"
 
 	"dagger/gh/internal/dagger"
+	"dagger/gh/internal/dagger/clients/apko"
 )
 
+// GitHub CLI
 type Gh struct {
 	// GitHub token.
 	//
@@ -223,8 +224,7 @@ func (m *Gh) host() string {
 
 func (m *Gh) base() *dagger.Container {
 	host := m.host()
-	ctr := dag.
-		Apko().
+	ctr := apko.New().
 		Wolfi().
 		WithPackages([]string{
 			"gh",

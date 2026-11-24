@@ -12,17 +12,9 @@ Expected stderr:
     ╰╴✘ ModuleSource.asModule: Module! X.Xs ERROR
       ╰╴✘ load dep modules X.Xs ERROR
         ╰╴✘ ModuleSource.asModule: Module! X.Xs ERROR
-          ├╴✔ go SDK: load runtime X.Xs
-          │ ╰╴✘ withExec go build -ldflags '-s -w' -o /runtime . X.Xs ERROR
-          │   ┃ # dagger/broken
-          │   ┃ ./main.go:6:6: undefined: ctx
-          │   ! exit code: 1
-          │
-          ╰╴✘ ModuleSource._moduleDefinition(
-            │ ┆ runtime: Container.withoutMount(path: "/root/.cache/go-build"): Container!
-            │ ┆ introspectionJson: __schemaJSONFile(hiddenTypes: ["Host", "Engine", "EngineCache", "EngineCacheEntry", "EngineCacheEntrySet"], hiddenFields: ["Query.currentWorkspace", "Query.engineVolume", "Query.sshfsVolume", "Query.setSessionTitle", "Address.volume"]): File!
-            │ ┆ moduleName: "broken"
-            │ ): Module! X.Xs ERROR
-            ╰╴✘ asModule getModDef X.Xs ERROR
+          ╰╴✘ module SDK: load runtime X.Xs ERROR
+            ╰╴✘ withExec sh /gobuild/build.sh dagger/broken (disableDaggerInDagger: true, noInit: true) X.Xs ERROR
+              ┃ ./main.go:6:6: undefined: ctx
+              ! exit code: 2
 
 Setup tracing by running "dagger cloud signup". To hide set DAGGER_NO_NAG=1

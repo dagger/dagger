@@ -1,0 +1,8 @@
+{
+  "name": "gprobe",
+  "engineVersion": "latest",
+  "sdk": {"source": "go"},
+  "dependencies": [
+    {"name": "probe", "source": "./probe"}
+  ]
+}

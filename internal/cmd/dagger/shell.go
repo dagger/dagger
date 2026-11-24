@@ -185,6 +185,10 @@ type shellCallHandler struct {
 	llmModel   string
 	llmL       sync.Mutex // synchronizing LLM init status
 
+	// historyBackfill imports a resumed session's whole history after a
+	// restore that loaded only its conversations (/backfill); nil otherwise.
+	historyBackfill func() error
+
 	// debug mode toggle
 	debug bool
 

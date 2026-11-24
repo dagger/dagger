@@ -9,13 +9,17 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/core"
+	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -733,4 +737,56 @@ func (GoSuite) TestGoProxyDefault(ctx context.Context, t *testctx.T) {
 			require.Equal(t, tc.want, strings.TrimSpace(stdout.String()))
 		})
 	}
+}
+
+// A fresh engine takes what a Go module load needs from its image's entries:
+// its first load of a small module runs none of the calls that made them. It
+// doesn't install git and SSH for the Go SDK's container, build a tool such
+// as gobuild's, or download a dependency into the module cache; it only
+// compiles the module's own packages.
+func (GoSuite) TestBuiltinSDKFromImageEntries(ctx context.Context, t *testctx.T) {
+	outer := connect(ctx, t)
+	logs := core.NewQuery(outer).CacheVolume("go-sdk-image-entries-log-" + rand.Text())
+	engine := devEngineContainerAsService(devEngineContainerWithStateKey(outer, "go-sdk-image-entries-"+rand.Text(), func(ctr *core.Container) *core.Container {
+		// The engine's own log, on a volume the test reads.
+		return ctr.WithMountedCache("/log", logs).
+			WithEntrypoint([]string{"sh", "-c", `exec /usr/local/bin/dagger-entrypoint.sh "$@" 2>>/log/engine.log`, "dagger-engine"})
+	}))
+	tunnel, err := core.NewQuery(outer).Host().Tunnel(engine).Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, _ = tunnel.Stop(ctx, core.ServiceStopOpts{Kill: true})
+		_, _ = engine.Stop(ctx)
+	})
+	endpoint, err := tunnel.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})
+	require.NoError(t, err)
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "dagger.json"), []byte(`{"name":"probe","engineVersion":"latest","sdk":{"source":"go"}}`), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\n\ntype Probe struct{}\n\nfunc (m *Probe) Hello() string { return \"hello\" }\n"), 0o644))
+	c, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithWorkdir(dir), dagger.WithLogOutput(testutil.NewTWriter(t)))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = c.Close() })
+	require.NoError(t, core.NewQuery(c).ModuleSource(".").AsModule().Serve(ctx))
+	var res struct{ Probe struct{ Hello string } }
+	require.NoError(t, c.Do(ctx, &dagger.Request{Query: `{probe{hello}}`}, &dagger.Response{Data: &res}))
+	require.Equal(t, "hello", res.Probe.Hello)
+
+	log, err := core.NewQuery(outer).Container().From(alpineImage).WithMountedCache("/log", logs).
+		WithEnvVariable("READ", rand.Text()).
+		WithExec([]string{"cat", "/log/engine.log"}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, log, `msg="starting container"`, "the log records the load's containers")
+	var made []string
+	for _, line := range strings.Split(log, "\n") {
+		if !strings.Contains(line, `msg="starting container"`) {
+			continue
+		}
+		if strings.Contains(line, `args="[/.init apk add`) || // the Go SDK's container
+			strings.Contains(line, `args="[go build -o `) || // a tool
+			strings.Contains(line, `mkdir -p '/gobuild/modcache/`) { // a dependency's download into its module@version directory
+			made = append(made, line)
+		}
+	}
+	require.Empty(t, made, "the load made again what the image's entries hold")
 }

@@ -60,7 +60,7 @@ func TestGitPushRewriteIsolation(t *testing.T) {
 		resolve     bool
 	}{
 		{name: "remote checkout or explicit to", resolve: true},
-		{name: "registered routing", opts: GitPushOpts{SkipDestinationRewrite: true}},
+		{name: "explicit push URL", opts: GitPushOpts{SkipDestinationRewrite: true}},
 		{name: "token", destination: RemoteGitRepository{AuthToken: dagql.ObjectResult[*Secret]{Result: secret}}},
 		{name: "header", destination: RemoteGitRepository{AuthHeader: dagql.ObjectResult[*Secret]{Result: secret}}},
 		{name: "socket", destination: RemoteGitRepository{SSHAuthSocket: dagql.ObjectResult[*Socket]{Result: socket}}},

@@ -116,8 +116,11 @@ var CurrentSchemaInput = ImplicitInput{
 // RequestedCacheInput scopes a call ID according to a boolean argument:
 // false => PerClientInput, true => PerCallInput.
 func RequestedCacheInput(argName string) ImplicitInput {
+	name := "cacheAsRequested:" + argName
+	// Its value always names the client or the call.
+	SessionScopedInput(name)
 	return ImplicitInput{
-		Name:        "cacheAsRequested:" + argName,
+		Name:        name,
 		PerCallWhen: []string{argName},
 		Resolver: func(ctx context.Context, args map[string]Input) (Input, error) {
 			noCache, err := inputBoolArg(args, argName)

@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "files": {
+    "bar.gen.go": "92b9a43cf7cb2bf8dbc4d884b7ddcb550655a854f8fc27794cf02c659a371591",
+    "dagger.gen.go": "5e6f237370c1783c429ec246aa3b623444bfc769695525391922d10529de5af7"
+  }
+}

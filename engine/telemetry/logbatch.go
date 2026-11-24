@@ -1,9 +1,15 @@
 package telemetry
 
 import (
+	"fmt"
+	"os"
+	"strconv"
 	"time"
 
+	"go.opentelemetry.io/otel"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
+
+	telemetry "github.com/dagger/otel-go"
 )
 
 // Log-record batch settings for client DB log routes (engine/server).
@@ -28,6 +34,39 @@ const (
 	LogExportInterval     = 250 * time.Millisecond
 	LogExportMaxBatchSize = 128
 )
+
+// NewLiveLogProcessor is what telemetry.Init would wrap a LiveLogExporter in
+// — exporting every telemetry.NearlyImmediate, with the SDK's queue size,
+// batch size and export timeout, from OTEL_BLRP_MAX_QUEUE_SIZE,
+// OTEL_BLRP_MAX_EXPORT_BATCH_SIZE and OTEL_BLRP_EXPORT_TIMEOUT like the SDK —
+// as a DroppingLogProcessor, which costs nothing while no logs arrive. For
+// long-lived processes such as the CLI.
+func NewLiveLogProcessor(exp sdklog.Exporter) *DroppingLogProcessor {
+	queueSize := blrpEnv("OTEL_BLRP_MAX_QUEUE_SIZE", LogQueueSize)
+	batchSize := min(blrpEnv("OTEL_BLRP_MAX_EXPORT_BATCH_SIZE", liveLogExportMaxBatchSize), queueSize)
+	timeout := time.Duration(blrpEnv("OTEL_BLRP_EXPORT_TIMEOUT", int(droppingLogExportTimeout/time.Millisecond))) * time.Millisecond
+	return newDroppingLogProcessor(exp, queueSize, batchSize, telemetry.NearlyImmediate, timeout)
+}
+
+const liveLogExportMaxBatchSize = 512
+
+// blrpEnv reads a positive integer OTEL_BLRP_* setting the way the SDK's
+// BatchProcessor does, or returns fallback.
+func blrpEnv(key string, fallback int) int {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		otel.Handle(fmt.Errorf("invalid %s value %s: %w", key, v, err))
+		return fallback
+	}
+	if n < 1 {
+		return fallback
+	}
+	return n
+}
 
 // NewLogBatchProcessor is the log analog of NewLargeQueueLiveSpanProcessor:
 // the session-owned batch processor for client DB log routes, with the bounded

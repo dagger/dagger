@@ -2,6 +2,7 @@ package daggercmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -39,7 +40,8 @@ func runModuleRecommend(cmd *cobra.Command, _ []string) error {
 		SkipWorkspaceModules: true,
 	}, func(ctx context.Context, engineClient *client.Client) error {
 		dag := engineClient.Dagger()
-		recs, install, err := planRecommend(ctx, dag, nil)
+		// The catalog is what this command is for: without it, fail.
+		recs, install, err := planRecommend(ctx, dag, nil, false)
 		if err != nil || !install {
 			return err
 		}
@@ -51,8 +53,24 @@ func runModuleRecommend(cmd *cobra.Command, _ []string) error {
 // form) whether to install them. Workspace setup and module recommend share it.
 // The caller owns the engine session and installs the selected modules. ui
 // may be nil; dagger init passes its view to show progress and outcomes.
-func planRecommend(ctx context.Context, dag *dagger.Client, ui *initUI) ([]recommendation, bool, error) {
-	recs, err := findRecommendations(ctx, dag, ui)
+//
+// When the module catalog is unavailable (no cache and a failed fetch), an
+// optional catalog reports that in one line and recommends nothing, so
+// dagger init carries on; otherwise it is an error. Cancellation is always
+// an error.
+func planRecommend(ctx context.Context, dag *dagger.Client, ui *initUI, optionalCatalog bool) ([]recommendation, bool, error) {
+	mods, err := loadModuleRegistry(ctx)
+	if err != nil {
+		var unavailable *moduleCatalogUnavailableError
+		if optionalCatalog && errors.As(err, &unavailable) {
+			msg := recommendationsUnavailableMessage(unavailable)
+			ui.modulesSkipped(msg)
+			setupMessage(ctx, "recommendations unavailable", msg)
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	recs, err := findRecommendations(ctx, dag, withBuiltinModules(mods), ui)
 	if err != nil {
 		return nil, false, err
 	}
@@ -75,11 +93,17 @@ func planRecommend(ctx context.Context, dag *dagger.Client, ui *initUI) ([]recom
 	return recs, true, nil
 }
 
-func findRecommendations(ctx context.Context, dag *dagger.Client, ui *initUI) (_ []recommendation, rerr error) {
+func findRecommendations(ctx context.Context, dag *dagger.Client, mods []registryModule, ui *initUI) (_ []recommendation, rerr error) {
 	ctx, span := Tracer().Start(ctx, "Find recommended modules", telemetry.Reveal(), telemetry.Encapsulate())
 	defer telemetry.EndWithCause(span, &rerr)
 	ui.modulesFinding(spanIDOf(span))
-	return runRecommend(ctx, dag)
+	return runRecommend(ctx, dag, mods)
+}
+
+// recommendationsUnavailableMessage is the line dagger init prints when it
+// carries on without recommendations.
+func recommendationsUnavailableMessage(err *moduleCatalogUnavailableError) string {
+	return "Module recommendations unavailable: " + err.Reason() + "."
 }
 
 // installRecommended installs the selected modules in the caller's session.

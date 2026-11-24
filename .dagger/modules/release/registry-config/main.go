@@ -1,3 +1,12 @@
+package main
+
+import (
+	"context"
+	"slices"
+
+	"dagger/registry-config/internal/dagger"
+)
+
 // Create an OCI registry configuration file and use it safely with tools, like Helm or Oras.
 //
 // Tools interacting with an OCI registry usually have their own way to authenticate.
@@ -10,15 +19,6 @@
 // Be advised that using the tool's built-in authentication mechanism may not work with the configuration file (since it's read only).
 //
 // You can read more about the topic in the readme: https://github.com/sagikazarmark/daggerverse/tree/main/registry-config#resources
-package main
-
-import (
-	"context"
-	"slices"
-
-	"dagger/registry-config/internal/dagger"
-)
-
 type RegistryConfig struct {
 	// +private
 	Auths []Auth

@@ -112,6 +112,11 @@ type ContainerExecState struct {
 	ModuleContext dagql.ObjectResult[*Module]
 	FunctionCall  *FunctionCall
 
+	// EngineWork marks an exec run as the engine's own work (WithEngineWork):
+	// the process it starts with nesting does the engine's own work too, and
+	// its calls are internal in telemetry.
+	EngineWork bool
+
 	// ExecMD changes during execution and retries. Persist the supplied input.
 	originalExecMD *engineutil.ExecutionMetadata
 }
@@ -687,10 +692,13 @@ type execMountState struct {
 	SourceRef bkcache.Ref
 
 	TmpfsOpt *pb.TmpfsOpt
-	Secret   *execSecretMountConfig
-	SSH      *execSSHMountConfig
-	Volume   *execVolumeMountConfig
-	Files    *execFilesMountConfig
+	// TmpfsDisk keeps the temp mount in a directory on the engine's disk
+	// instead of a tmpfs.
+	TmpfsDisk bool
+	Secret    *execSecretMountConfig
+	SSH       *execSSHMountConfig
+	Volume    *execVolumeMountConfig
+	Files     *execFilesMountConfig
 	// CacheDir is the pinned directory of a directory-backed cache volume.
 	CacheDir string
 
@@ -929,7 +937,14 @@ func prepareMounts(
 				}
 
 			case pb.MountType_TMPFS:
-				mountable = execTmpFSMountable(state.TmpfsOpt)
+				if state.TmpfsDisk {
+					mountable, err = prepareExecDiskTempMount(ctx)
+					if err != nil {
+						return err
+					}
+				} else {
+					mountable = execTmpFSMountable(state.TmpfsOpt)
+				}
 
 			case pb.MountType_SECRET:
 				mountable, err = prepareExecSecretMount(ctx, state.Secret)
@@ -1105,6 +1120,7 @@ func prepareMounts(
 			mountState.TmpfsOpt = &pb.TmpfsOpt{
 				Size_: int64(ctrMount.TmpfsSource.Size),
 			}
+			mountState.TmpfsDisk = ctrMount.TmpfsSource.Disk
 
 		default:
 			return materialized, fmt.Errorf("mount %d has no source", i)
@@ -1394,12 +1410,16 @@ func (container *Container) WithExec(
 	functionCall *FunctionCall,
 ) error {
 	state := &ContainerExecState{
-		LazyState:      NewLazyState(),
-		Parent:         parent,
-		Opts:           opts,
-		ExecMD:         execMD,
-		ModuleContext:  moduleContext,
-		FunctionCall:   functionCall,
+		LazyState:     NewLazyState(),
+		Parent:        parent,
+		Opts:          opts,
+		ExecMD:        execMD,
+		ModuleContext: moduleContext,
+		FunctionCall:  functionCall,
+		// A function runtime's exec for a call made as engine work, or an
+		// exec that a process doing engine work asks for, as a module
+		// entrypoint starts its module's process.
+		EngineWork:     functionCall.EngineWork() || IsEngineWork(ctx),
 		originalExecMD: copyExecInputMetadata(execMD),
 	}
 	container.Lazy = &ContainerExecLazy{State: state}
@@ -1790,7 +1810,14 @@ func (state *ContainerExecState) evaluateOutputs(ctx context.Context, container 
 					}
 
 				case pb.MountType_TMPFS:
-					mountable = execTmpFSMountable(state.TmpfsOpt)
+					if state.TmpfsDisk {
+						mountable, err = prepareExecDiskTempMount(ctx)
+						if err != nil {
+							return err
+						}
+					} else {
+						mountable = execTmpFSMountable(state.TmpfsOpt)
+					}
 
 				case pb.MountType_SECRET:
 					mountable, err = prepareExecSecretMount(ctx, state.Secret)
@@ -1970,6 +1997,7 @@ func (state *ContainerExecState) evaluateOutputs(ctx context.Context, container 
 				mountState.TmpfsOpt = &pb.TmpfsOpt{
 					Size_: int64(ctrMount.TmpfsSource.Size),
 				}
+				mountState.TmpfsDisk = ctrMount.TmpfsSource.Disk
 
 			default:
 				return failPrepare(fmt.Errorf("mount %d has no source", i))
@@ -2371,6 +2399,10 @@ func (state *ContainerExecState) evaluateOutputs(ctx context.Context, container 
 			defer stopServiceMonitors()
 		}
 
+		moduleContext, err := query.ProcessModuleContext(ctx, state.ModuleContext)
+		if err != nil {
+			return err
+		}
 		var nestedClientMetadata *engine.ClientMetadata
 		if opts.ExperimentalPrivilegedNesting {
 			nestedClientMetadata = &engine.ClientMetadata{
@@ -2379,6 +2411,7 @@ func (state *ContainerExecState) evaluateOutputs(ctx context.Context, container 
 				SessionID:             clientMetadata.SessionID,
 				AllowedLLMModules:     slices.Clone(clientMetadata.AllowedLLMModules),
 				UseRecipeIDsByDefault: execMD != nil && execMD.UseRecipeIDsByDefault,
+				EngineWork:            state.EngineWork,
 			}
 		}
 
@@ -2389,6 +2422,12 @@ func (state *ContainerExecState) evaluateOutputs(ctx context.Context, container 
 
 		execErrCh := make(chan error, 1)
 		go func() {
+			slot, err := engineClient.AcquireExecSlot(execCtx)
+			if err != nil {
+				execErrCh <- err
+				return
+			}
+			defer slot.Release()
 			container.recordPartDiagnostic("execRun", "")
 			execErrCh <- engineClient.Run(
 				execCtx,
@@ -2396,13 +2435,14 @@ func (state *ContainerExecState) evaluateOutputs(ctx context.Context, container 
 				rootMount,
 				execMounts,
 				procInfo,
+				slot,
 				nil,
 				causeCtx,
 				execMD,
 				clientMetadata.SessionID,
 				clientMetadata.ClientID,
 				nestedClientMetadata,
-				state.ModuleContext,
+				moduleContext,
 				state.FunctionCall,
 			)
 		}()

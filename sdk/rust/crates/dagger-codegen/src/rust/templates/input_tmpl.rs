@@ -1,6 +1,7 @@
 use dagger_sdk::core::introspection::{FullType, FullTypeInputFields};
 use genco::prelude::rust;
 use genco::quote;
+use genco::tokens::quoted;
 use itertools::Itertools;
 
 use crate::functions::CommonFunctions;
@@ -36,7 +37,10 @@ pub fn render_input_fields(
 }
 
 pub fn render_input_field(funcs: &CommonFunctions, field: &FullTypeInputFields) -> rust::Tokens {
+    // Always serialize by the schema's field name, not the snake_case Rust
+    // identifier (e.g. `call_id` must go over the wire as `callId`).
     quote! {
+        #[serde(rename = $(quoted(&field.input_value.name)))]
         pub $(format_struct_name(&field.input_value.name)): $(funcs.format_output_type(&field.input_value.type_)),
     }
 }

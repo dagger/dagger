@@ -246,11 +246,9 @@ func (IdentifierSuite) TestModuleIdentity(ctx context.Context, t *testctx.T) {
 	}
 }
 
-// The API is served on every v1 view, including the pre-cut view whose
-// modules keep the legacy strcase names (before
-// engine.IdentifierCasingVersion): SDK codegen picks its naming rules by the
-// engine version a module declares, not by whether the schema has
-// Query.naming. Without a version, it answers for the caller's.
+// Query.naming is served from v1.0.0-beta.26; without a version, it answers
+// for the caller's. The v1 views before it serve v1.0.0-beta.25's
+// Query.formatIdentifiers instead.
 func (IdentifierSuite) TestViews(ctx context.Context, t *testctx.T) {
 	cut := engine.IdentifierCasingVersion
 	preCut := engine.APIViewVersion("v1.0.0-0")
@@ -258,13 +256,14 @@ func (IdentifierSuite) TestViews(ctx context.Context, t *testctx.T) {
 		name    string
 		opts    []dagger.ClientOpt
 		want    bool
+		beta25  bool
 		version string
 	}{
 		{name: "current", want: true},
 		{name: cut, opts: []dagger.ClientOpt{dagger.WithVersionOverride(cut)}, want: true, version: engine.ModuleAPIViewVersion(cut)},
-		{name: preCut, opts: []dagger.ClientOpt{dagger.WithVersionOverride(preCut)}, want: true, version: engine.ModuleAPIViewVersion(preCut)},
-		{name: "v1.0.0-beta.20", opts: []dagger.ClientOpt{dagger.WithVersionOverride("v1.0.0-beta.20")}, want: true, version: engine.ModuleAPIViewVersion("v1.0.0-beta.20")},
-		{name: "v1.0.0-0", opts: []dagger.ClientOpt{dagger.WithVersionOverride("v1.0.0-0")}, want: true, version: engine.ModuleAPIViewVersion("v1.0.0-0")},
+		{name: preCut, opts: []dagger.ClientOpt{dagger.WithVersionOverride(preCut)}, beta25: true},
+		{name: "v1.0.0-beta.20", opts: []dagger.ClientOpt{dagger.WithVersionOverride("v1.0.0-beta.20")}, beta25: true},
+		{name: "v1.0.0-0", opts: []dagger.ClientOpt{dagger.WithVersionOverride("v1.0.0-0")}, beta25: true},
 		{name: "v0.21.0", opts: []dagger.ClientOpt{dagger.WithVersionOverride("v0.21.0")}},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
@@ -276,6 +275,11 @@ func (IdentifierSuite) TestViews(ctx context.Context, t *testctx.T) {
 			}](t, `{ naming { version formatIdentifiers(names: ["prerequisiteSHAs"], casing: SNAKE) } }`, nil, tc.opts...)
 			if !tc.want {
 				require.ErrorContains(t, err, "naming")
+				if tc.beta25 {
+					old, err := testutil.Query[struct{ FormatIdentifiers []string }](t, `{ formatIdentifiers(names: ["prerequisiteSHAs"], casing: SNAKE) }`, nil, tc.opts...)
+					require.NoError(t, err)
+					require.Equal(t, []string{"prerequisite_shas"}, old.FormatIdentifiers)
+				}
 				return
 			}
 			require.NoError(t, err)

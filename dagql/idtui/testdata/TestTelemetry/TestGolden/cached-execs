@@ -20,7 +20,7 @@ $ viztest: Viztest! X.Xs CACHED
 ├╴✔ withExec echo 'im a buster' '20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X' X.Xs
 │ ┃ im a buster 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X
 ├╴✔ withExec sleep 1 X.Xs
-╰╴✔ withExec echo 'im busted by that buster' X.Xs
+╰╴✔ withExec echo 'im busted by that buster' X.Xs ⋯ waited X.Xs on sleep 1
   ┃ im busted by that buster
 
 Setup tracing by running "dagger cloud signup". To hide set DAGGER_NO_NAG=1

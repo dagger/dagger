@@ -1,0 +1,11 @@
+kind: Fixed
+body: |
+  A module that declares a git client in its config no longer runs its
+  functions again in every new session. Its calls are served across sessions
+  like any other module's; only a call that used a credential the session lent
+  to a declared client requires that credential, so a session without it
+  computes its own result.
+time: 2026-11-19T14:52:04-08:00
+custom:
+  Author: sipsma
+  PR: 15238

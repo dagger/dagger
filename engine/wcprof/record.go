@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -12,10 +13,29 @@ type opCtxKey struct{}
 
 type profCtxKey struct{}
 
+// currentOp is ctx's current op: its ID, and the op itself when it was begun
+// in ctx (BeginOp) rather than handed over by ID (ContextWithOpID).
+type currentOp struct {
+	id uint64
+	op *Op
+}
+
 // CurrentOpID returns the profiling op ID carried by ctx, or 0.
 func CurrentOpID(ctx context.Context) uint64 {
-	id, _ := ctx.Value(opCtxKey{}).(uint64)
-	return id
+	cur, _ := ctx.Value(opCtxKey{}).(*currentOp)
+	if cur == nil {
+		return 0
+	}
+	return cur.id
+}
+
+// currentOpHandle returns ctx's current op when it was begun in ctx, or nil.
+func currentOpHandle(ctx context.Context) *Op {
+	cur, _ := ctx.Value(opCtxKey{}).(*currentOp)
+	if cur == nil {
+		return nil
+	}
+	return cur.op
 }
 
 // ContextWithOpID returns a context carrying the given op ID as the current
@@ -25,7 +45,7 @@ func ContextWithOpID(ctx context.Context, opID uint64) context.Context {
 	if opID == 0 {
 		return ctx
 	}
-	return context.WithValue(ctx, opCtxKey{}, opID)
+	return context.WithValue(ctx, opCtxKey{}, &currentOp{id: opID})
 }
 
 // ContextWithProfiling marks ctx (and any context derived from it) for
@@ -93,8 +113,11 @@ type Op struct {
 	identID     uint32
 	clientID    uint32
 	metaID      uint32
+	bytes       int64
 	startNS     int64
 	outcomeHint Outcome
+	// tallies are its tallied calls (BeginTally), allocated on the first.
+	tallies atomic.Pointer[opTallies]
 }
 
 // OpOpts carries optional per-op metadata.
@@ -103,13 +126,19 @@ type OpOpts struct {
 	Ident string
 	// ClientID is the dagger client this op serves, when known.
 	ClientID string
-	// ResultID may be set at Begin time when already known.
+	// WorkType attributes the op's self time.
 	WorkType WorkType
 	// Argv is the user command for a container-exec op (already scrubbed and
 	// bounded by the caller). The recorder marshals it to the canonical scalar
 	// JSON-array string and interns it as the op's MetaID, so offline analysis
 	// can rank the exec by its real command. Empty for non-exec ops.
 	Argv []string
+	// Bytes is a byte count the op moved (e.g. downloaded or uploaded), when
+	// known at Begin time; see Op.SetBytes.
+	Bytes int64
+	// ResultID is the dagql shared result the op is about, for RecordOp and
+	// RecordOpAt (a begun op takes it at End).
+	ResultID uint64
 	// Start, when set, is when the op began, for an op whose work began
 	// before BeginOp (e.g. at its OTel span's start); zero is now.
 	Start time.Time
@@ -154,6 +183,7 @@ func BeginOp(ctx context.Context, kind OpKind, class string, opts OpOpts) (conte
 		identID:  r.Intern(opts.Ident),
 		clientID: r.Intern(opts.ClientID),
 		metaID:   r.internArgv(opts.Argv),
+		bytes:    opts.Bytes,
 		startNS:  startNS,
 	}
 	sh := r.shardFor(op.id)
@@ -167,9 +197,10 @@ func BeginOp(ctx context.Context, kind OpKind, class string, opts OpOpts) (conte
 		metaID:   op.metaID,
 		parentID: op.parentID,
 		startNS:  op.startNS,
+		handle:   op,
 	}
 	sh.mu.Unlock()
-	return ContextWithOpID(ctx, op.id), op
+	return context.WithValue(ctx, opCtxKey{}, &currentOp{id: op.id, op: op}), op
 }
 
 // StartTime is when the op began, or the zero time for a nil handle.
@@ -196,6 +227,15 @@ func (op *Op) SetIdent(ident string) {
 		return
 	}
 	op.identID = op.r.Intern(ident)
+}
+
+// SetBytes sets the byte count the op moved. Must be called from the
+// goroutine that owns the op, before End.
+func (op *Op) SetBytes(n int64) {
+	if op == nil {
+		return
+	}
+	op.bytes = n
 }
 
 // outcomeHint carries an outcome decided mid-op (e.g. joined vs executed),
@@ -235,6 +275,19 @@ func (op *Op) EndWithResult(outcome Outcome, resultID uint64) {
 	if op == nil {
 		return
 	}
+	op.endAt(outcome, resultID, op.r.Now())
+}
+
+// EndAt is EndWithResult at end, stamped with time.Now, when a measurement
+// point already stamped the op's end.
+func (op *Op) EndAt(outcome Outcome, resultID uint64, end time.Time) {
+	if op == nil {
+		return
+	}
+	op.endAt(outcome, resultID, op.r.at(end))
+}
+
+func (op *Op) endAt(outcome Outcome, resultID uint64, endNS int64) {
 	sh := op.r.shardFor(op.id)
 	sh.mu.Lock()
 	delete(sh.openOps, op.id)
@@ -251,9 +304,13 @@ func (op *Op) EndWithResult(outcome Outcome, resultID uint64) {
 		IdentID:  op.identID,
 		ClientID: op.clientID,
 		MetaID:   op.metaID,
+		Bytes:    op.bytes,
 		StartNS:  op.startNS,
-		EndNS:    op.r.Now(),
+		EndNS:    endNS,
 	})
+	for _, ev := range op.tallyEvents(endNS, true) {
+		op.r.append(sh, ev)
+	}
 }
 
 // Wait is a handle for an in-progress wait interval. A nil *Wait is valid
@@ -265,6 +322,10 @@ type Wait struct {
 	identID  uint32
 	reason   WaitReason
 	startNS  int64
+	// holderID and holderSinceNS are a lock's holder when the wait began,
+	// and when it took the lock (see RWMutex); 0 when not known.
+	holderID      uint64
+	holderSinceNS int64
 }
 
 // BeginWait starts recording that the current op (from ctx) is blocked on
@@ -309,25 +370,48 @@ func Lock(ctx context.Context, mu *sync.Mutex, ident string) {
 }
 
 // ReadLock acquires mu for reading, recording a blocked acquisition as Lock
-// does.
-func ReadLock(ctx context.Context, mu *sync.RWMutex, ident string) {
+// does. On an RWMutex the wait names the lock's holder.
+func ReadLock(ctx context.Context, mu RWLocker, ident string) {
 	if mu.TryRLock() {
 		return
 	}
-	w := BeginWaitIdent(ctx, ident, WaitReasonLock)
+	w := beginLockWait(ctx, mu, ident)
 	mu.RLock()
 	w.End()
 }
 
 // WriteLock acquires mu for writing, recording a blocked acquisition as Lock
-// does.
-func WriteLock(ctx context.Context, mu *sync.RWMutex, ident string) {
-	if mu.TryLock() {
+// does. On an RWMutex the wait names the lock's holder, and the op of ctx
+// is its holder from then.
+func WriteLock(ctx context.Context, mu RWLocker, ident string) {
+	m, tracked := mu.(*RWMutex)
+	if !tracked {
+		if mu.TryLock() {
+			return
+		}
+		w := BeginWaitIdent(ctx, ident, WaitReasonLock)
+		mu.Lock()
+		w.End()
 		return
 	}
-	w := BeginWaitIdent(ctx, ident, WaitReasonLock)
-	mu.Lock()
+	if m.RWMutex.TryLock() {
+		m.markOp(ctx)
+		return
+	}
+	w := beginLockWait(ctx, m, ident)
+	m.RWMutex.Lock()
+	m.markOp(ctx)
 	w.End()
+}
+
+// beginLockWait begins a lock wait on mu, with its holder when mu is an
+// RWMutex.
+func beginLockWait(ctx context.Context, mu RWLocker, ident string) *Wait {
+	w := BeginWaitIdent(ctx, ident, WaitReasonLock)
+	if m, ok := mu.(*RWMutex); ok && w != nil {
+		w.holderID, w.holderSinceNS = m.holderAt()
+	}
+	return w
 }
 
 // SetTarget updates the awaited op (useful when the target becomes known
@@ -346,12 +430,16 @@ func (w *Wait) End() {
 	}
 	endNS := w.r.Now()
 	sh := w.r.shardFor(w.waiterID)
+	// A wait has no result or bytes: they carry its lock's holder and when
+	// the holder took it (see toDumpEvent).
 	w.r.append(sh, Event{
 		Type:     EventTypeWait,
 		Reason:   w.reason,
 		ParentID: w.waiterID,
 		TargetID: w.targetID,
 		IdentID:  w.identID,
+		ResultID: w.holderID,
+		Bytes:    w.holderSinceNS,
 		StartNS:  w.startNS,
 		EndNS:    endNS,
 	})
@@ -386,6 +474,21 @@ func RecordOp(ctx context.Context, kind OpKind, class string, opts OpOpts, start
 	if r == nil {
 		return 0
 	}
+	return r.recordOp(ctx, kind, class, opts, startNS, endNS, outcome)
+}
+
+// RecordOpAt is RecordOp for an interval stamped with time.Now, so a
+// measurement point that already keeps time.Time stamps (for logs or span
+// attributes) can feed the profile too. A zero start records nothing.
+func RecordOpAt(ctx context.Context, kind OpKind, class string, opts OpOpts, start, end time.Time, outcome Outcome) uint64 {
+	r := recorderFor(ctx)
+	if r == nil || start.IsZero() {
+		return 0
+	}
+	return r.recordOp(ctx, kind, class, opts, r.at(start), r.at(end), outcome)
+}
+
+func (r *Recorder) recordOp(ctx context.Context, kind OpKind, class string, opts OpOpts, startNS, endNS int64, outcome Outcome) uint64 {
 	id := r.newOpID()
 	sh := r.shardFor(id)
 	r.append(sh, Event{
@@ -399,6 +502,8 @@ func RecordOp(ctx context.Context, kind OpKind, class string, opts OpOpts, start
 		IdentID:  r.Intern(opts.Ident),
 		ClientID: r.Intern(opts.ClientID),
 		MetaID:   r.internArgv(opts.Argv),
+		ResultID: opts.ResultID,
+		Bytes:    opts.Bytes,
 		StartNS:  startNS,
 		EndNS:    endNS,
 	})
@@ -440,9 +545,44 @@ func (r *Recorder) recordSpan(opID uint64, traceID [16]byte, spanID [8]byte) {
 	})
 }
 
+// RecordWaitAt records that the current op (from ctx) was blocked on the
+// resource named ident from start to end, stamped with time.Now. A zero
+// start records nothing.
+func RecordWaitAt(ctx context.Context, ident string, reason WaitReason, start, end time.Time) {
+	r := recorderFor(ctx)
+	if r == nil || start.IsZero() {
+		return
+	}
+	waiterID := CurrentOpID(ctx)
+	r.append(r.shardFor(waiterID), Event{
+		Type:     EventTypeWait,
+		Reason:   reason,
+		ParentID: waiterID,
+		IdentID:  r.Intern(ident),
+		StartNS:  r.at(start),
+		EndNS:    r.at(end),
+	})
+}
+
 // Link records a non-blocking correlation from fromOpID (0 means the current
 // op in ctx) to an op, an interned ident, and/or a dagql result ID.
 func Link(ctx context.Context, kind LinkKind, fromOpID, targetOpID uint64, ident string, resultID uint64) {
+	link(ctx, kind, fromOpID, targetOpID, ident, resultID, 0)
+}
+
+// Fact records that fact was true of the op fromOpID (0 means the current op
+// in ctx), about the dagql result resultID when non-zero.
+func Fact(ctx context.Context, fromOpID uint64, fact string, resultID uint64) {
+	link(ctx, LinkKindFact, fromOpID, 0, fact, resultID, 0)
+}
+
+// Part records, from the op fromOpID (0 means the current op in ctx), that
+// the dagql result resultID has the part named part, of size bytes.
+func Part(ctx context.Context, fromOpID uint64, part string, resultID uint64, size int64) {
+	link(ctx, LinkKindPart, fromOpID, 0, part, resultID, size)
+}
+
+func link(ctx context.Context, kind LinkKind, fromOpID, targetOpID uint64, ident string, resultID uint64, size int64) {
 	r := recorderFor(ctx)
 	if r == nil {
 		return
@@ -459,6 +599,7 @@ func Link(ctx context.Context, kind LinkKind, fromOpID, targetOpID uint64, ident
 		TargetID: targetOpID,
 		IdentID:  r.Intern(ident),
 		ResultID: resultID,
+		Bytes:    size,
 		StartNS:  now,
 		EndNS:    now,
 	})

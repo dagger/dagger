@@ -229,6 +229,35 @@ func (DangSuite) TestEnums(_ context.Context, t *testctx.T) {
 		require.Equal(t, "P256", strings.TrimSpace(out))
 	})
 
+	t.Run("members keep their declared order", func(ctx context.Context, t *testctx.T) {
+		// More than eight members, declared out of alphabetical order, so
+		// neither a sort nor a map's iteration order matches by chance.
+		members := []string{"KILO", "ALPHA", "JULIET", "BRAVO", "INDIA", "CHARLIE", "HOTEL", "DELTA", "GOLF", "ECHO", "FOXTROT", "LIMA"}
+		src := "enum Wide {\n  " + strings.Join(members, "\n  ") + "\n}\n\n" +
+			"type Test {\n  pub pick(wide: Wide!): String! {\n    \"ok\"\n  }\n}\n"
+		want := make([]string, len(members))
+		for i, member := range members {
+			want[i] = `{"name":"` + member + `"}`
+		}
+
+		for _, engineVersion := range []string{
+			"v0.20.6", // a module pinned before Dang's v2 syntax (v0.21.5)
+			"latest",
+		} {
+			t.Run(engineVersion, func(ctx context.Context, t *testctx.T) {
+				c := connect(ctx, t)
+
+				out, err := goGitBase(t, c).
+					WithNewFile("dagger.json", `{"name":"test","engineVersion":"`+engineVersion+`","sdk":{"source":"dang"}}`).
+					WithNewFile("main.dang", src).
+					With(daggerQuery(`{ __type(name: "TestWide") { enumValues { name } } }`)).
+					Stdout(ctx)
+				require.NoError(t, err)
+				require.JSONEq(t, `{"__type":{"enumValues":[`+strings.Join(want, ",")+`]}}`, out)
+			})
+		}
+	})
+
 	t.Run("object with an enum field as an argument", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 

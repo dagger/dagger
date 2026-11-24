@@ -14,6 +14,7 @@ var (
 	moduleName string
 	isInit     bool
 	libVersion string
+	bootstrap  bool
 )
 
 var generateModuleCmd = &cobra.Command{
@@ -44,6 +45,7 @@ func GenerateModule(cmd *cobra.Command, args []string) error {
 	moduleConfig := &generator.ModuleGeneratorConfig{
 		IsInit:     isInit,
 		LibVersion: libVersion,
+		Bootstrap:  bootstrap,
 	}
 
 	moduleConfig.ModuleName = moduleName
@@ -81,4 +83,5 @@ func init() {
 
 	generateModuleCmd.Flags().BoolVar(&isInit, "is-init", false, "whether this command is initializing a new module")
 	generateModuleCmd.Flags().StringVar(&libVersion, "lib-version", "", "if set, use the given version of dagger.io/dagger in the generated client")
+	generateModuleCmd.Flags().BoolVar(&bootstrap, "bootstrap", false, "stop after the first pass: the module's go.mod and initial bindings")
 }

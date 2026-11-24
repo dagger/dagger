@@ -42,14 +42,17 @@ type hostHistoryRegistry struct {
 }
 
 // hostHistories returns the Query's registry, allocating it before it can be
-// shared with a clone.
-func (q *Query) hostHistories() *hostHistoryRegistry {
+// shared with a clone. A shared root has none: ErrSharedRootClientState.
+func (q *Query) hostHistories() (*hostHistoryRegistry, error) {
+	if err := q.clientState("approved host histories"); err != nil {
+		return nil, err
+	}
 	q.hostHistoryMu.Lock()
 	defer q.hostHistoryMu.Unlock()
 	if q.hostHistory == nil {
 		q.hostHistory = &hostHistoryRegistry{donors: map[hostHistoryKey]hostHistoryDonor{}}
 	}
-	return q.hostHistory
+	return q.hostHistory, nil
 }
 
 func (r *hostHistoryRegistry) register(key hostHistoryKey, donor hostHistoryDonor) {
@@ -114,7 +117,11 @@ func (q *Query) RegisterCapturedHostHistory(ctx context.Context, repo dagql.Obje
 	if err != nil {
 		return SkipHostHistoryDonor(ctx, "repository recipe digest failed", err)
 	}
-	q.hostHistories().register(hostHistoryKey{recipe, anchor}, hostHistoryDonor{owner, path})
+	hostHistories, err := q.hostHistories()
+	if err != nil {
+		return SkipHostHistoryDonor(ctx, "not a client's root", err)
+	}
+	hostHistories.register(hostHistoryKey{recipe, anchor}, hostHistoryDonor{owner, path})
 	trace.SpanFromContext(ctx).SetAttributes(attribute.Bool(hostHistoryDonorRegisteredAttr, true))
 	return true
 }
@@ -166,7 +173,11 @@ func (q *Query) capturedHostHistory(ctx context.Context, parent dagql.ObjectResu
 	if err != nil {
 		return hostHistoryDonor{}, false, err
 	}
-	donor, ok := q.hostHistories().lookup(hostHistoryKey{recipe, parent.Self().Ref.SHA})
+	hostHistories, err := q.hostHistories()
+	if err != nil {
+		return hostHistoryDonor{}, false, err
+	}
+	donor, ok := hostHistories.lookup(hostHistoryKey{recipe, parent.Self().Ref.SHA})
 	return donor, ok && donor.owner == md.ClientID, nil
 }
 
@@ -176,7 +187,11 @@ func (q *Query) approvedHostCommitPack(ctx context.Context, parent dagql.ObjectR
 	if depth != 0 {
 		return nil, nil
 	}
-	if q.hostHistories().empty() {
+	hostHistories, err := q.hostHistories()
+	if err != nil {
+		return nil, err
+	}
+	if hostHistories.empty() {
 		return nil, nil
 	}
 	donor, ok, err := q.capturedHostHistory(ctx, parent)

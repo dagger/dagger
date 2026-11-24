@@ -1,11 +1,13 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -14,6 +16,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/opencontainers/go-digest"
+	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/dagger/core"
@@ -24,6 +27,7 @@ import (
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/snapshots/config"
 	"github.com/dagger/dagger/engine/snapshots/testutil"
+	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/dagger/dagger/internal/buildkit/util/compression"
 )
 
@@ -51,7 +55,7 @@ func TestRemoteCacheAdapterMergesABundle(t *testing.T) {
 
 	target := newGCTestCache(t)
 	adapter := newTestRemoteCacheAdapter(t, target)
-	merged, err := adapter.Merge(t.Context(), protocol.Merge{Bundle: bundle})
+	merged, err := adapter.Merge(t.Context(), 1, protocol.Merge{Bundle: bundle}, nil)
 	require.NoError(t, err)
 	require.Equal(t, target.Identity().Generation, merged.Generation)
 	require.NotZero(t, merged.EngineTime)
@@ -69,6 +73,78 @@ func TestRemoteCacheAdapterMergesABundle(t *testing.T) {
 	cacheID, generation := adapter.CacheIdentity()
 	require.Equal(t, target.Identity().ID, cacheID)
 	require.Equal(t, target.Identity().Generation, generation)
+}
+
+// The rows a committed merge from the service lands on become known to the
+// connection, at their revisions as merged: the service holds the records it
+// sent, so a later export sends them as held rows. A merge given no known set
+// marks nothing.
+func TestRemoteCacheAdapterKnowsTheRowsAMergeLands(t *testing.T) {
+	source := newGCTestCache(t)
+	ctx, res := addGCTestPersistableResult(t, source, "source", "merged", dagql.NewInt(7))
+	var bundle dagql.ValueBundle
+	require.NoError(t, source.WithExportedValues(ctx, dagql.ValueSelection{Roots: []dagql.AnyResult{res}}, config.RefConfig{}, func(_ context.Context, exp *dagql.ExportedValues) error {
+		bundle = exp.Bundle
+		return nil
+	}))
+
+	target := newGCTestCache(t)
+	adapter := newTestRemoteCacheAdapter(t, target)
+	known := dagql.NewKnownRows()
+	merged, err := adapter.Merge(t.Context(), 1, protocol.Merge{Bundle: bundle}, known)
+	require.NoError(t, err)
+	require.Len(t, merged.Values, 1)
+	number := merged.Values[0].Number
+	require.Equal(t, 1, known.Len(), "the row the merge landed on is known")
+
+	var exp remotecache.Export
+	require.NoError(t, adapter.Export(t.Context(), protocol.Export{Roots: []uint64{number}}, known, func(_ context.Context, e remotecache.Export) error {
+		exp = e
+		return nil
+	}))
+	require.NotNil(t, exp.Bundle)
+	require.Equal(t, []uint64{number}, exp.Rows.Held, "an export sends it as a held row")
+
+	other := newTestRemoteCacheAdapter(t, newGCTestCache(t))
+	_, err = other.Merge(t.Context(), 1, protocol.Merge{Bundle: bundle}, nil)
+	require.NoError(t, err)
+}
+
+// The merge line carries the reply's generation and the engine's clock at the
+// commit, so a merge orders against the lookups the engine's spans time on
+// the same clock. Not parallel: it swaps the default logger.
+func TestRemoteCacheAdapterMergeLogsItsClock(t *testing.T) {
+	source := newGCTestCache(t)
+	ctx, res := addGCTestPersistableResult(t, source, "source", "merged", dagql.NewInt(7))
+	var bundle dagql.ValueBundle
+	require.NoError(t, source.WithExportedValues(ctx, dagql.ValueSelection{Roots: []dagql.AnyResult{res}}, config.RefConfig{}, func(_ context.Context, exp *dagql.ExportedValues) error {
+		bundle = exp.Bundle
+		return nil
+	}))
+	target := newGCTestCache(t)
+	adapter := newTestRemoteCacheAdapter(t, target)
+
+	logs := &lockedLog{}
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	merged, err := adapter.Merge(t.Context(), 1, protocol.Merge{Bundle: bundle}, nil)
+	require.NoError(t, err)
+
+	var lines []map[string]any
+	dec := json.NewDecoder(strings.NewReader(logs.String()))
+	dec.UseNumber()
+	for dec.More() {
+		var line map[string]any
+		require.NoError(t, dec.Decode(&line))
+		if line["msg"] == "remote cache merge" {
+			lines = append(lines, line)
+		}
+	}
+	require.Len(t, lines, 1)
+	require.Equal(t, json.Number(fmt.Sprint(merged.Generation)), lines[0]["generation"])
+	require.Equal(t, json.Number(fmt.Sprint(merged.EngineTime)), lines[0]["engine_time"])
+	require.Equal(t, "INFO", lines[0]["level"])
 }
 
 // A merge that committed and then failed to release something is still
@@ -89,7 +165,7 @@ func TestRemoteCacheAdapterAnswersACommittedMergeDespiteAReleaseError(t *testing
 			},
 		}, errors.New("release failed")
 	}
-	merged, err := adapter.Merge(t.Context(), protocol.Merge{})
+	merged, err := adapter.Merge(t.Context(), 1, protocol.Merge{}, nil)
 	require.NoError(t, err, "a committed merge is answered merged")
 	require.Equal(t, protocol.Merged{
 		Generation: 4,
@@ -100,14 +176,76 @@ func TestRemoteCacheAdapterAnswersACommittedMergeDespiteAReleaseError(t *testing
 	}, merged)
 }
 
+// A merge refused for stale held rows committed nothing, and is answered
+// with them, so the service resends their records.
+func TestRemoteCacheAdapterAnswersAStaleMerge(t *testing.T) {
+	adapter := newTestRemoteCacheAdapter(t, newGCTestCache(t))
+	adapter.mergeValues = func(context.Context, dagql.CacheID, dagql.ValueBundle) (dagql.MergeReply, error) {
+		return dagql.MergeReply{Generation: 4, EngineTimeUnixNano: 42, Stale: []dagql.TransferOrdinal{2, 5}}, nil
+	}
+	merged, err := adapter.Merge(t.Context(), 1, protocol.Merge{}, nil)
+	require.NoError(t, err, "a stale merge is answered merged")
+	require.Equal(t, protocol.Merged{
+		Generation: 4,
+		EngineTime: 42,
+		Values:     []protocol.MergedValue{},
+		Retained:   []protocol.RetainedRoot{},
+		Stale:      []dagql.TransferOrdinal{2, 5},
+	}, merged)
+}
+
 // A merge that changed nothing is answered with its error.
 func TestRemoteCacheAdapterMergeRefused(t *testing.T) {
 	adapter := newTestRemoteCacheAdapter(t, newGCTestCache(t))
 	adapter.mergeValues = func(context.Context, dagql.CacheID, dagql.ValueBundle) (dagql.MergeReply, error) {
 		return dagql.MergeReply{}, errors.New("the bundle would close a cycle")
 	}
-	_, err := adapter.Merge(t.Context(), protocol.Merge{})
+	_, err := adapter.Merge(t.Context(), 1, protocol.Merge{}, nil)
 	require.ErrorContains(t, err, "cycle")
+}
+
+// A merge that answers a lookup goes first: a placement merge that arrives
+// while one is in progress waits until it ends, and placement merges don't
+// wait for each other.
+func TestRemoteCacheAdapterLookupMergesGoFirst(t *testing.T) {
+	adapter := newTestRemoteCacheAdapter(t, newGCTestCache(t))
+	const lookupVersion, placementVersion = 1, 2
+	entered := make(chan int, 4)
+	release := map[int]chan struct{}{lookupVersion: make(chan struct{}), placementVersion: make(chan struct{})}
+	adapter.mergeValues = func(_ context.Context, _ dagql.CacheID, bundle dagql.ValueBundle) (dagql.MergeReply, error) {
+		entered <- bundle.Version
+		<-release[bundle.Version]
+		return dagql.MergeReply{}, errors.New("refused")
+	}
+	merge := func(ctx context.Context, id, lookup uint64, version int) <-chan error {
+		done := make(chan error, 1)
+		go func() {
+			_, err := adapter.Merge(ctx, id, protocol.Merge{Bundle: dagql.ValueBundle{Version: version}, Lookup: lookup}, nil)
+			done <- err
+		}()
+		return done
+	}
+	lookup := merge(t.Context(), 10, 3, lookupVersion)
+	require.Equal(t, lookupVersion, <-entered)
+	placement := merge(t.Context(), 11, 0, placementVersion)
+	canceledCtx, cancel := context.WithCancel(t.Context())
+	canceled := merge(canceledCtx, 12, 0, placementVersion)
+	select {
+	case v := <-entered:
+		t.Fatalf("merge %d went while a lookup's merge was in progress", v)
+	case <-time.After(100 * time.Millisecond):
+	}
+	cancel()
+	require.ErrorIs(t, <-canceled, context.Canceled, "a waiting merge ends with its context")
+
+	close(release[lookupVersion])
+	require.ErrorContains(t, <-lookup, "refused")
+	require.Equal(t, placementVersion, <-entered)
+	second := merge(t.Context(), 13, 0, placementVersion)
+	require.Equal(t, placementVersion, <-entered, "placement merges don't wait for each other")
+	close(release[placementVersion])
+	require.ErrorContains(t, <-placement, "refused")
+	require.ErrorContains(t, <-second, "refused")
 }
 
 // adapterTestServer gives the core query the one server facility a file
@@ -295,7 +433,7 @@ func TestRemoteCacheAdapterExport(t *testing.T) {
 		Outputs: []protocol.ExportOutput{{Number: entryNumber(t, ready), Address: snapshotPart}, {Number: goneNumber, Address: snapshotPart}},
 	}
 	calls := 0
-	err := e.adapter.Export(e.ctx, req, func(ctx context.Context, exp remotecache.Export) error {
+	err := e.adapter.Export(e.ctx, req, nil, func(ctx context.Context, exp remotecache.Export) error {
 		calls++
 		require.Equal(t, []protocol.SkippedRoot{{Number: goneNumber, Reason: protocol.SkipGone}}, exp.Skipped)
 		require.NotNil(t, exp.Bundle)
@@ -321,9 +459,51 @@ func TestRemoteCacheAdapterExport(t *testing.T) {
 	require.Equal(t, 1, calls)
 }
 
-// A root whose body is running fails the capture. Each root is then probed
-// alone: the busy one is skipped as busy, and the others go in one bundle
-// with only the outputs their closures hold.
+// An export sends as held rows the rows its known set knows, and hands on
+// the rows it carried; one that selects outputs holds those its parts don't
+// need, and sends the same parts as without them.
+func TestRemoteCacheAdapterExportHoldsKnownRows(t *testing.T) {
+	e := newAdapterTestEngine(t)
+	core := e.file(t, "core")
+	first, _ := e.publishFile(t, "first", core)
+	second, _ := e.publishFile(t, "second", core)
+	export := func(req protocol.Export, known *dagql.KnownRows) remotecache.Export {
+		t.Helper()
+		var got remotecache.Export
+		require.NoError(t, e.adapter.Export(e.ctx, req, known, func(_ context.Context, exp remotecache.Export) error {
+			got = exp
+			return nil
+		}))
+		require.NotNil(t, got.Bundle)
+		return got
+	}
+	known := dagql.NewKnownRows()
+	exp := export(protocol.Export{Roots: []uint64{entryNumber(t, first)}}, known)
+	require.Contains(t, exp.Rows.Full, entryNumber(t, core))
+	require.Empty(t, exp.Rows.Held)
+	known.Merged(exp.Rows)
+
+	exp = export(protocol.Export{Roots: []uint64{entryNumber(t, second)}}, known)
+	require.Equal(t, []uint64{entryNumber(t, core)}, exp.Rows.Held)
+	var held []uint64
+	for _, value := range exp.Bundle.Values {
+		if value.Held != "" {
+			held = append(held, value.SenderNumber)
+		}
+	}
+	require.Equal(t, []uint64{entryNumber(t, core)}, held)
+
+	content := protocol.Export{Roots: []uint64{entryNumber(t, second)}, Outputs: []protocol.ExportOutput{{Number: entryNumber(t, second), Address: snapshotPart}}}
+	whole := export(content, nil)
+	require.Empty(t, whole.Rows.Held)
+	exp = export(content, known)
+	require.Equal(t, []uint64{entryNumber(t, core)}, exp.Rows.Held, "the part doesn't need the shared row")
+	require.Equal(t, len(whole.Bundle.Outputs), len(exp.Bundle.Outputs), "the same parts go")
+	require.NotEmpty(t, exp.Bundle.Outputs)
+}
+
+// A root whose body is running is skipped as busy, and the others go in the
+// bundle with only the outputs their closures hold.
 func TestRemoteCacheAdapterExportSkipsBusyRoots(t *testing.T) {
 	e := newAdapterTestEngine(t)
 	ready := e.file(t, "ready")
@@ -334,7 +514,7 @@ func TestRemoteCacheAdapterExportSkipsBusyRoots(t *testing.T) {
 		Outputs: []protocol.ExportOutput{{Number: entryNumber(t, busy), Address: snapshotPart}, {Number: entryNumber(t, ready), Address: snapshotPart}},
 	}
 	calls := 0
-	err := e.adapter.Export(e.ctx, req, func(_ context.Context, exp remotecache.Export) error {
+	err := e.adapter.Export(e.ctx, req, nil, func(_ context.Context, exp remotecache.Export) error {
 		calls++
 		require.Len(t, exp.Skipped, 1)
 		requireBusySkip(t, entryNumber(t, busy), exp.Skipped[0])
@@ -348,6 +528,70 @@ func TestRemoteCacheAdapterExportSkipsBusyRoots(t *testing.T) {
 	require.Equal(t, 1, calls)
 }
 
+// An export captures its roots once, content or not. The roots whose
+// closure reaches a busy row, two here that share it, are skipped as busy
+// with that row's refusal; one whose record the capture refuses is skipped
+// as refused; and the others go in the bundle with only their outputs.
+// Nothing is probed.
+func TestRemoteCacheAdapterExportCapturesOnce(t *testing.T) {
+	e := newAdapterTestEngine(t)
+	busy := e.busyFile(t, "busy")
+	first, _ := e.publishFile(t, "on-busy-first", busy)
+	second, _ := e.publishFile(t, "on-busy-second", busy)
+	ready := e.file(t, "ready")
+	require.NoError(t, e.cache.Evaluate(e.ctx, ready))
+	refused := e.refusedFile(t, "refused")
+	wcprof.EnsureRecorder()
+	export := func(req protocol.Export) (remotecache.Export, map[string]int) {
+		t.Helper()
+		ctx, root := wcprof.BeginOp(wcprof.ContextWithProfiling(e.ctx), wcprof.OpKindRemoteCache, "test.export", wcprof.OpOpts{})
+		calls := 0
+		var got remotecache.Export
+		require.NoError(t, e.adapter.Export(ctx, req, nil, func(_ context.Context, exp remotecache.Export) error {
+			calls++
+			got = exp
+			return nil
+		}))
+		root.End(wcprof.OutcomeOK)
+		require.Equal(t, 1, calls)
+		ops := map[string]int{}
+		for _, ev := range profiledUnder(t, root.ID()) {
+			if ev.Type == "op" {
+				ops[ev.class]++
+			}
+		}
+		return got, ops
+	}
+	busyMessage := fmt.Sprintf("%s: result %d whole evaluation", dagql.ErrPersistStateNotReady, entryNumber(t, busy))
+
+	exp, ops := export(protocol.Export{
+		Roots:   []uint64{entryNumber(t, first), goneNumber, entryNumber(t, refused), entryNumber(t, ready), entryNumber(t, second)},
+		Outputs: []protocol.ExportOutput{{Number: entryNumber(t, first), Address: snapshotPart}, {Number: entryNumber(t, ready), Address: snapshotPart}},
+	})
+	require.Equal(t, 1, ops["remotecache.export.capture"], "the roots are captured once")
+	require.Zero(t, ops["remotecache.export.probe"], "no root is probed")
+	require.Len(t, exp.Skipped, 4)
+	require.Equal(t, protocol.SkippedRoot{Number: goneNumber, Reason: protocol.SkipGone}, exp.Skipped[0])
+	require.Equal(t, protocol.SkippedRoot{Number: entryNumber(t, first), Reason: protocol.SkipBusy, Message: busyMessage}, exp.Skipped[1])
+	require.Equal(t, entryNumber(t, refused), exp.Skipped[2].Number)
+	require.Equal(t, protocol.SkipRefused, exp.Skipped[2].Reason)
+	require.Contains(t, exp.Skipped[2].Message, "unsupported lazy type *server.unencodableFileLazy")
+	require.Equal(t, protocol.SkippedRoot{Number: entryNumber(t, second), Reason: protocol.SkipBusy, Message: busyMessage}, exp.Skipped[3])
+	require.NotNil(t, exp.Bundle)
+	require.Equal(t, []uint64{entryNumber(t, ready)}, bundleRoots(exp.Bundle))
+	require.Len(t, exp.Bundle.Outputs, 1, "the left-out root's output is left out with it")
+	require.Equal(t, exp.Bundle.Roots[0].Ordinal, exp.Bundle.Outputs[0].Ordinal)
+
+	exp, ops = export(protocol.Export{Roots: []uint64{entryNumber(t, first), entryNumber(t, second)}})
+	require.Equal(t, 1, ops["remotecache.export.capture"], "the roots are captured once")
+	require.Zero(t, ops["remotecache.export.probe"], "no root is probed")
+	require.Nil(t, exp.Bundle)
+	require.Equal(t, []protocol.SkippedRoot{
+		{Number: entryNumber(t, first), Reason: protocol.SkipBusy, Message: busyMessage},
+		{Number: entryNumber(t, second), Reason: protocol.SkipBusy, Message: busyMessage},
+	}, exp.Skipped)
+}
+
 // requireRefused checks that skipped is the one root skipped as refused, with
 // the capture's error as its message.
 func requireRefused(t *testing.T, number uint64, skipped []protocol.SkippedRoot) {
@@ -358,12 +602,11 @@ func requireRefused(t *testing.T, number uint64, skipped []protocol.SkippedRoot)
 	require.Contains(t, skipped[0].Message, "unsupported lazy type *server.unencodableFileLazy")
 }
 
-// A root the capture refuses with an error that isn't busy fails the capture
-// too. Each root is then probed alone: the refused one is skipped as refused,
-// with its error as the message, and the others go in one bundle with only the outputs their
-// closures hold. A request whose roots are all refused gets no bundle, only
-// skipped. The request's own cancellation is no refusal: it fails the
-// request.
+// A root the capture refuses with an error that isn't busy is skipped as
+// refused, with its error as the message, and the others go in the bundle
+// with only the outputs their closures hold. A request whose roots are all
+// refused gets no bundle, only skipped. The request's own cancellation is no
+// refusal: it fails the request.
 func TestRemoteCacheAdapterExportSkipsRefusedRoots(t *testing.T) {
 	e := newAdapterTestEngine(t)
 	first := e.file(t, "first")
@@ -376,7 +619,7 @@ func TestRemoteCacheAdapterExportSkipsRefusedRoots(t *testing.T) {
 		Outputs: []protocol.ExportOutput{{Number: entryNumber(t, first), Address: snapshotPart}, {Number: entryNumber(t, second), Address: snapshotPart}},
 	}
 	calls := 0
-	err := e.adapter.Export(e.ctx, req, func(_ context.Context, exp remotecache.Export) error {
+	err := e.adapter.Export(e.ctx, req, nil, func(_ context.Context, exp remotecache.Export) error {
 		calls++
 		requireRefused(t, entryNumber(t, refused), exp.Skipped)
 		require.NotNil(t, exp.Bundle)
@@ -388,7 +631,7 @@ func TestRemoteCacheAdapterExportSkipsRefusedRoots(t *testing.T) {
 	require.Equal(t, 1, calls)
 
 	calls = 0
-	err = e.adapter.Export(e.ctx, protocol.Export{Roots: []uint64{entryNumber(t, refused)}}, func(_ context.Context, exp remotecache.Export) error {
+	err = e.adapter.Export(e.ctx, protocol.Export{Roots: []uint64{entryNumber(t, refused)}}, nil, func(_ context.Context, exp remotecache.Export) error {
 		calls++
 		require.Nil(t, exp.Bundle)
 		requireRefused(t, entryNumber(t, refused), exp.Skipped)
@@ -399,7 +642,7 @@ func TestRemoteCacheAdapterExportSkipsRefusedRoots(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(e.ctx)
 	cancel()
-	err = e.adapter.Export(ctx, protocol.Export{Roots: []uint64{entryNumber(t, refused)}}, func(context.Context, remotecache.Export) error {
+	err = e.adapter.Export(ctx, protocol.Export{Roots: []uint64{entryNumber(t, refused)}}, nil, func(context.Context, remotecache.Export) error {
 		t.Error("a cancelled request is answered")
 		return nil
 	})
@@ -422,30 +665,151 @@ func TestSkippedMessageIsBounded(t *testing.T) {
 }
 
 // An export's log line counts its skipped roots by reason, and names them
-// with their reasons while there are at most maxLoggedSkippedRoots.
+// with their reasons while there are at most maxLoggedSkippedRoots, then its
+// busy rows and the rows no longer busy.
 func TestExportLogAttrs(t *testing.T) {
 	skipped := []protocol.SkippedRoot{
 		{Number: 2, Reason: protocol.SkipGone},
 		{Number: 3, Reason: protocol.SkipBusy},
 		{Number: 4, Reason: protocol.SkipRefused, Message: "refused"},
 	}
-	attrs := logAttrs(exportLogAttrs(protocol.Export{Roots: []uint64{1, 2, 3, 4}}, skipped, nil, time.Second))
+	busy := busyReport{rows: 1, named: []string{"3:running:2s:1"}, cleared: 1, freed: []string{"8:bookkeeping:9s"}}
+	attrs := logAttrs(exportLogAttrs(protocol.Export{Roots: []uint64{1, 2, 3, 4}}, skipped, nil, time.Second, exportCapture{}, busy))
 	require.Equal(t, 4, attrs["roots"])
 	require.Equal(t, 3, attrs["skipped"])
 	require.Equal(t, 1, attrs["skipped_gone"])
 	require.Equal(t, 1, attrs["skipped_busy"])
 	require.Equal(t, 1, attrs["skipped_refused"])
 	require.Equal(t, []string{"2:gone", "3:busy", "4:refused"}, attrs["skipped_roots"])
+	require.Equal(t, 1, attrs["busy_rows"])
+	require.Equal(t, []string{"3:running:2s:1"}, attrs["busy_named"])
+	require.Equal(t, 1, attrs["busy_cleared"])
+	require.Equal(t, []string{"8:bookkeeping:9s"}, attrs["busy_cleared_named"])
 	require.Equal(t, time.Second, attrs["capture"])
 
 	many := make([]protocol.SkippedRoot, maxLoggedSkippedRoots+1)
 	for i := range many {
 		many[i] = protocol.SkippedRoot{Number: uint64(i + 1), Reason: protocol.SkipBusy}
 	}
-	attrs = logAttrs(exportLogAttrs(protocol.Export{}, many, nil, 0))
+	attrs = logAttrs(exportLogAttrs(protocol.Export{}, many, nil, 0, exportCapture{}, busyReport{}))
 	require.Equal(t, maxLoggedSkippedRoots+1, attrs["skipped_busy"])
 	require.Zero(t, attrs["skipped_refused"])
 	require.NotContains(t, attrs, "skipped_roots", "past the limit, skipped roots are only counted")
+}
+
+// The export line counts the records its bundle carries and those it sent
+// as held rows. Its capture phases and chain layers follow the chains' time,
+// in order. With no bundle, those of the capture and the chains are 0, and
+// the adapter's own are still logged.
+func TestExportLogAttrsPhases(t *testing.T) {
+	local := exportCapture{hold: time.Millisecond}
+	values := &dagql.ExportedValues{
+		Bundle:    dagql.ValueBundle{Values: make([]dagql.TransferredValue, 3)},
+		Rows:      dagql.ExportedRows{Held: []uint64{4, 5}},
+		ChainTime: time.Second,
+		Phases:    dagql.ExportPhases{WalkWait: 6 * time.Microsecond, Walk: 7 * time.Microsecond, Copy: 8 * time.Microsecond, Bundle: 12 * time.Microsecond, RetriedStale: 1},
+		Chains:    &dagql.SelectedChains{Stats: bkcache.ExportStats{Layers: 3, LayersReused: 1, LayersDiffed: 2, RawBytes: 900, BlobBytes: 300, DiffTime: 9 * time.Millisecond, LockWait: 10 * time.Microsecond, BuildWait: 11 * time.Microsecond, LayersMerged: 1, MergedRawBytes: 400, MergedBlobBytes: 100, MergedDiffTime: 3 * time.Millisecond}},
+	}
+	want := []any{
+		"chains", time.Second,
+		"hold", time.Millisecond,
+		"walk_wait", 6 * time.Microsecond,
+		"walk", 7 * time.Microsecond,
+		"copy", 8 * time.Microsecond,
+		"bundle", 12 * time.Microsecond,
+		"retried_stale", 1,
+		"layers", 3,
+		"layers_reused", 1,
+		"layers_diffed", 2,
+		"raw_bytes", int64(900),
+		"blob_bytes", int64(300),
+		"diff_time", 9 * time.Millisecond,
+		"lock_wait", 10 * time.Microsecond,
+		"build_wait", 11 * time.Microsecond,
+		"layers_merged", 1,
+		"merged_raw_bytes", int64(400),
+		"merged_blob_bytes", int64(100),
+		"merged_diff_time", 3 * time.Millisecond,
+	}
+	attrs := exportLogAttrs(protocol.Export{Roots: []uint64{1}}, nil, values, 2*time.Second, local, busyReport{})
+	require.Equal(t, want, attrs[len(attrs)-len(want):], "appended after chains, in order")
+	require.Equal(t, 2*time.Second, logAttrs(attrs)["capture"])
+	require.Equal(t, 3, logAttrs(attrs)["records"])
+	require.Equal(t, 2, logAttrs(attrs)["held"], "the records it sent as held rows")
+
+	attrs = exportLogAttrs(protocol.Export{Roots: []uint64{1}}, nil, nil, time.Second, local, busyReport{})
+	require.Equal(t, []any{
+		"chains", time.Duration(0),
+		"hold", time.Millisecond,
+		"walk_wait", time.Duration(0),
+		"walk", time.Duration(0),
+		"copy", time.Duration(0),
+		"bundle", time.Duration(0),
+		"retried_stale", 0,
+		"layers", 0,
+		"layers_reused", 0,
+		"layers_diffed", 0,
+		"raw_bytes", int64(0),
+		"blob_bytes", int64(0),
+		"diff_time", time.Duration(0),
+		"lock_wait", time.Duration(0),
+		"build_wait", time.Duration(0),
+		"layers_merged", 0,
+		"merged_raw_bytes", int64(0),
+		"merged_blob_bytes", int64(0),
+		"merged_diff_time", time.Duration(0),
+	}, attrs[len(attrs)-len(want):])
+}
+
+// An offered part's line names the entry, the row and part its address
+// resolved to, the outcome, and the chain's size and earliest expiry, in
+// order, and never an address.
+func TestOfferLogAttrs(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	l1, l2 := digest.FromString("lower"), digest.FromString("upper")
+	offer := dagql.PersistedPartOffer{
+		Address: dagql.PersistedPartAddress{OutputPath: dagql.PersistedRefPath{}.Field("items").Index(0), Part: "fs"},
+		Chain: dagql.OfferedChain{
+			Layers: []bkcache.ExportLayer{{Descriptor: ocispecs.Descriptor{Digest: l1, Size: 10}}, {Descriptor: ocispecs.Descriptor{Digest: l2, Size: 32}}},
+			Addresses: map[digest.Digest]dagql.BlobAddress{
+				l1: {URL: "https://blobs.example/lower?X-Amz-Signature=secret", ExpiresAtUnix: now.Unix() + 60},
+				l2: {URL: "https://blobs.example/upper?X-Amz-Signature=secret", ExpiresAtUnix: now.Unix() + 30},
+			},
+		},
+	}
+	resolved := dagql.PersistedPartAddress{Part: "fs"}
+	disposition := dagql.OfferDisposition{Address: offer.Address, Outcome: dagql.OfferAccepted, Target: 7, TargetAddress: resolved}
+	attrs := offerLogAttrs(5, offer, disposition, protocol.OfferAccepted, time.Millisecond, now)
+	var keys []string
+	for i := 0; i < len(attrs); i += 2 {
+		keys = append(keys, attrs[i].(string))
+	}
+	require.Equal(t, []string{"entry", "target", "output", "part", "outcome", "replaced", "layers", "bytes", "expires_in", "admit"}, keys)
+	m := logAttrs(attrs)
+	require.Equal(t, uint64(5), m["entry"])
+	require.Equal(t, uint64(7), m["target"])
+	require.Equal(t, resolved.OutputPath.String(), m["output"], "the resolved row's output")
+	require.Equal(t, "fs", m["part"])
+	require.Equal(t, "accepted", m["outcome"])
+	require.Equal(t, false, m["replaced"])
+	require.Equal(t, 2, m["layers"])
+	require.Equal(t, int64(42), m["bytes"])
+	require.InDelta(t, float64(30*time.Second), float64(m["expires_in"].(time.Duration)), float64(time.Second))
+	require.Equal(t, time.Millisecond, m["admit"])
+	require.NotContains(t, fmt.Sprint(attrs), "blobs.example")
+
+	refused := dagql.OfferDisposition{Address: offer.Address, Outcome: dagql.OfferInvalid, Err: errors.New("offer: no Cloud entry number")}
+	m = logAttrs(offerLogAttrs(5, offer, refused, protocol.OfferInvalid, 0, now))
+	require.Equal(t, uint64(0), m["target"])
+	require.Equal(t, offer.Address.OutputPath.String(), m["output"], "before resolution, the offered address")
+	require.Equal(t, "offer: no Cloud entry number", m["error"])
+
+	expired := offer
+	expired.Chain.Addresses = map[digest.Digest]dagql.BlobAddress{l1: {URL: "https://blobs.example/lower", ExpiresAtUnix: now.Unix() - 5}}
+	m = logAttrs(offerLogAttrs(5, expired, disposition, protocol.OfferAccepted, 0, now))
+	require.Negative(t, m["expires_in"].(time.Duration))
+	m = logAttrs(offerLogAttrs(5, dagql.PersistedPartOffer{}, disposition, protocol.OfferAccepted, 0, now))
+	require.Equal(t, time.Duration(0), m["expires_in"], "no address expires")
 }
 
 // requireBusySkip checks that skip leaves out root, a busyFile, as busy,
@@ -472,7 +836,7 @@ func TestRemoteCacheAdapterExportWithNoSurvivingRoot(t *testing.T) {
 	e := newAdapterTestEngine(t)
 	busy := e.busyFile(t, "busy")
 	calls := 0
-	err := e.adapter.Export(e.ctx, protocol.Export{Roots: []uint64{entryNumber(t, busy), goneNumber}}, func(_ context.Context, exp remotecache.Export) error {
+	err := e.adapter.Export(e.ctx, protocol.Export{Roots: []uint64{entryNumber(t, busy), goneNumber}}, nil, func(_ context.Context, exp remotecache.Export) error {
 		calls++
 		require.Nil(t, exp.Bundle)
 		require.Len(t, exp.Skipped, 2)
@@ -505,6 +869,10 @@ func TestRemoteCacheAdapterOfferParts(t *testing.T) {
 		Offer:       dagql.PersistedPartOffer{Address: snapshotPart, Value: dagql.SnapshotValue{Kind: "file", Path: "/offered.txt", Platform: &spec}, Chain: dagql.OfferedChain{Layers: chain.Layers, RenewalKey: "7/snapshot"}},
 		CloudNumber: 7,
 	}
+	logs := &lockedLog{}
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
 	offered, err := e.adapter.OfferParts(e.ctx, protocol.Offer{Items: []protocol.OfferItem{
 		{Number: entryNumber(t, pending), Offers: []protocol.CloudPart{offer}},
 		{Number: entryNumber(t, complete), Offers: []protocol.CloudPart{offer}},
@@ -516,6 +884,43 @@ func TestRemoteCacheAdapterOfferParts(t *testing.T) {
 		{Number: entryNumber(t, complete), Parts: []protocol.OfferedPart{{Address: snapshotPart, Outcome: protocol.OfferAlreadyComplete}}},
 		{Number: goneNumber, Gone: true},
 	}}, offered)
+	// One line per offered part, none for the gone entry.
+	var lines []map[string]any
+	dec := json.NewDecoder(strings.NewReader(logs.String()))
+	dec.UseNumber()
+	for dec.More() {
+		var line map[string]any
+		require.NoError(t, dec.Decode(&line))
+		if line["msg"] == "remote cache part offered" {
+			lines = append(lines, line)
+		}
+	}
+	require.Len(t, lines, 2)
+	for i, item := range offered.Items[:2] {
+		require.Equal(t, json.Number(fmt.Sprint(item.Number)), lines[i]["entry"])
+		require.Equal(t, string(item.Parts[0].Outcome), lines[i]["outcome"])
+		admit, err := lines[i]["admit"].(json.Number).Int64()
+		require.NoError(t, err)
+		require.GreaterOrEqual(t, admit, int64(0))
+	}
+}
+
+// lockedLog is a log destination concurrent writers can share.
+type lockedLog struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (l *lockedLog) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.Write(p)
+}
+
+func (l *lockedLog) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.String()
 }
 
 // attachBlockedInt is an Int whose dependency attachment waits for release,
@@ -565,7 +970,7 @@ func TestRemoteCacheAdapterMergeReturnsWhenCancelled(t *testing.T) {
 	mergeCtx, cancel := context.WithCancel(t.Context())
 	merged := make(chan error, 1)
 	go func() {
-		_, err := adapter.Merge(mergeCtx, protocol.Merge{Bundle: bundle})
+		_, err := adapter.Merge(mergeCtx, 1, protocol.Merge{Bundle: bundle}, nil)
 		merged <- err
 	}()
 	select {

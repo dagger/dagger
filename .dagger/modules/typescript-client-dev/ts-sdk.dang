@@ -115,13 +115,13 @@ type TypescriptClientDev {
   Generate the Typescript client library
   """
   pub clientLibrary: Changeset! @generate {
-    let ctr = nodejsBase(nodeVersionPrevLts)
+    nodejsBase(nodeVersionPrevLts)
       .withMountedDirectory(".", workspaceDir)
       .withExec(["yarn", "--cwd", sourcePath, "install"])
-    ctr = daggerEngine(ws: self.ws).installClient(ctr)
-    ctr
-      .withFile("/usr/local/bin/codegen", codegen(ws: self.ws).binary)
-      .withExec(["codegen", "generate-library", "--lang", "typescript", "-o", "./sdk/typescript/src/api/"])
+      .withFile("/usr/local/bin/codegen", codegen.binary)
+      # Generating needs no engine: the introspection JSON is computed without one.
+      .withMountedFile("/schema.json", daggerEngine(ws: self.ws).introspectionJson)
+      .withExec(["codegen", "generate-library", "--lang", "typescript", "--introspection-json-path", "/schema.json", "-o", "./sdk/typescript/src/api/"])
       .withExec(["sh", "-c", "yarn --cwd " + sourcePath + " eslint --max-warnings=0 --fix ./src/api/"])
       .directory(".")
       # FIXME: more efficient way to exclude node_modules from the diff?
@@ -275,6 +275,6 @@ type TypescriptClientDev {
   }
 
   pub binary: File! {
-    go(ws: self.ws, source: source).binary("./cmd/codegen", noSymbols: true, noDwarf: true)
+    codegen.binary
   }
 }

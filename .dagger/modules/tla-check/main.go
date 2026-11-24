@@ -1,9 +1,3 @@
-// TLA+ model checking for the dagql cache spec (dagql/tla).
-//
-// Runs every TLC configuration of CacheLifecycle.tla. Green configurations
-// are regression checks: any violation fails the check. A configuration may
-// name an expected invariant only when it deliberately mutates behavior to
-// prove that the check detects the bug, or tracks an accepted model finding.
 package main
 
 import (
@@ -13,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	"dagger.io/dagger/core"
 	"dagger/tla-check/internal/dagger"
 )
 
@@ -36,6 +31,37 @@ const temporalOutcome = "temporal"
 var expectedOutcome = map[string]string{
 	"snapshot_import": "",
 	"snapshot_export": "",
+	// Per-object downloads (fetching chain layers ahead, joining, retrying
+	// another import's failed download). Each mutation re-breaks one
+	// property; see the config headers.
+	"snapshot_download":            "",
+	"snapshot_download_droppin":    "JoinedBlobPresent",
+	"snapshot_download_leaveearly": "ApplyHasBytes",
+	"snapshot_download_ownretry":   "NoOwnRetry",
+	"snapshot_download_aheadreuse": "ReuseBeforeBytes",
+	// Downloads ahead over a window of later layers (parallel layer
+	// downloads), and the mutation that keeps them past a failure.
+	"snapshot_download_window":           "",
+	"snapshot_download_window_keepahead": "CleanupComplete",
+	// Layers applied apart (overlayfs): each missing layer applies into a
+	// snapshot of its own under its chain-ID lock and commits in order.
+	"snapshot_apart":           "",
+	"snapshot_apart_window":    "",
+	"snapshot_apart_export":    "",
+	"snapshot_apart_keeplater": "CleanupComplete",
+	"snapshot_apart_nolock":    "ChainApplyExclusive",
+	"snapshot_apart_skipreuse": "ReuseBeforeBytes",
+	// Background prefetch: TTL holds, the import ahead of demand, and close.
+	"snapshot_prefetch":              "",
+	"snapshot_prefetch_apart":        "",
+	"snapshot_prefetch_leaveearly":   "PrefetchHeldPresent",
+	"snapshot_prefetch_keptgone":     "AheadRefTracked",
+	"snapshot_prefetch_closedropped": "PrefetchClosed",
+	// The import ahead's wait for each blob (ExportChain.Await).
+	"snapshot_prefetch_await_underlock":    "AwaitHoldsNoLock",
+	"snapshot_prefetch_await_liveness":     "",
+	"snapshot_prefetch_await_ignoresindex": temporalOutcome,
+	"snapshot_prefetch_await_nogiveup":     temporalOutcome,
 	// green: regression checks over the modeled cache behavior. (The
 	// former core configuration is folded into resources: same bounds,
 	// every core invariant, and strictly more behavior.)
@@ -146,6 +172,8 @@ var expectedOutcome = map[string]string{
 	"recipe_expiry_deps":    "",
 	"recipe_expiry_restart": "",
 	"recipe_merge":          "",
+	// call records: a merged entry hit by another call of its class
+	"recipe_merge_taught": "",
 
 	// green: the egraphMu read sections split where they nest sessionMu
 	// (SharedSections = "split"), so overlapping lookup hits, ID-load
@@ -174,6 +202,24 @@ var expectedOutcome = map[string]string{
 	"persist_decline_adopt":    "DeclinedNeverPersisted",
 	"persist_decline_retire":   "DeclinedNeverPersisted",
 	"persist_decline_flush":    "DeclinedNeverPersisted",
+
+	// green: part sources. A merged row with no download address
+	// decodes armed and evaluates natively, as a restored row does; a row
+	// with an offer, or a shell, goes managed at a demand unless a native
+	// attempt is in flight, and stays managed. One writer per part. Each
+	// mutation drops one rule; each probe must reach its witness. See the
+	// config headers.
+	"part_sources_merge":                     "",
+	"part_sources_import":                    "",
+	"part_sources_late_offer_over_native":    "OnePartWriter",
+	"part_sources_not_sticky":                "",
+	"part_sources_imported_predicate":        "ManagedOnlyWithSource",
+	"probe_part_sources_armed_native":        "ProbeArmedCloudNative",
+	"probe_part_sources_late_offer":          "ProbeLateOfferInstalled",
+	"probe_part_sources_shell":               "ProbeShellAcquired",
+	"probe_part_sources_armed_managed":       "ProbeArmedWithOfferManaged",
+	"part_sources_running_guard_off":         "NativeRunStaysNative",
+	"part_sources_tryacquire_guard_only_off": "",
 }
 
 var clientExpectedOutcome = map[string]string{
@@ -186,6 +232,12 @@ var clientExpectedOutcome = map[string]string{
 	"blocking_registration": temporalOutcome,
 }
 
+// TLA+ model checking for the dagql cache spec (dagql/tla).
+//
+// Runs every TLC configuration of CacheLifecycle.tla. Green configurations
+// are regression checks: any violation fails the check. A configuration may
+// name an expected invariant only when it deliberately mutates behavior to
+// prove that the check detects the bug, or tracks an accepted model finding.
 type TlaCheck struct {
 	// The dagql/tla spec directory.
 	Source *dagger.Directory
@@ -204,8 +256,8 @@ func New(ws *dagger.Workspace) *TlaCheck {
 // base returns a container with Java, the checksum-verified TLC jar, and
 // the spec directory mounted.
 func (m *TlaCheck) base(source *dagger.Directory) *dagger.Container {
-	jar := dag.HTTP(tla2toolsURL)
-	return dag.Container().
+	jar := core.HTTP(tla2toolsURL)
+	return core.NewContainer().
 		From(javaBaseImage).
 		WithFile("/tla2tools.jar", jar).
 		WithExec([]string{"sh", "-c",
@@ -566,14 +618,11 @@ func runOne(
 	}
 }
 
-// modelFiles preserves the existing short names and adds the snapshot component.
+// modelFiles preserves the existing short names and adds the snapshot
+// component: snapshot_<name> is SnapshotChain_<name>.cfg.
 func modelFiles(name string) (string, string) {
-	switch name {
-	case "snapshot_import":
-		return "SnapshotChain.tla", "SnapshotChain_import.cfg"
-	case "snapshot_export":
-		return "SnapshotChain.tla", "SnapshotChain_export.cfg"
-	default:
-		return "CacheLifecycle.tla", fmt.Sprintf("CacheLifecycle_%s.cfg", name)
+	if rest, ok := strings.CutPrefix(name, "snapshot_"); ok {
+		return "SnapshotChain.tla", fmt.Sprintf("SnapshotChain_%s.cfg", rest)
 	}
+	return "CacheLifecycle.tla", fmt.Sprintf("CacheLifecycle_%s.cfg", name)
 }

@@ -143,8 +143,8 @@ func TestOpenRefusesUncleanFile(t *testing.T) {
 // The save fails and leaves no partial file behind, and the file on disk
 // still marks the database in use, so the next Open refuses it rather than
 // reading part of a save. It needs a small filesystem of its own:
-// test-split's testFastbolt check mounts one and names it in
-// FASTBOLT_SMALL_FS.
+// test-split's testFastbolt, part of its testPackages check, mounts one and
+// names it in FASTBOLT_SMALL_FS.
 func TestCloseOnAFullDisk(t *testing.T) {
 	dir := os.Getenv("FASTBOLT_SMALL_FS")
 	if dir == "" {

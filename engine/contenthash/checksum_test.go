@@ -96,6 +96,41 @@ func TestChecksumUsesSharedMount(t *testing.T) {
 	assert.Equal(t, dgst, want)
 }
 
+// A checksum with patterns reads each file it includes once, whatever its
+// depth, as a checksum without them does, and gives the digest it gives from
+// records already hashed.
+func TestChecksumPatternsReadEachFileOnce(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	var files uint64
+	for _, dir := range []string{".", "a", "a/b", "a/b/c", "a/b/c/d"} {
+		for i := range 3 {
+			writeFile(t, root, filepath.Join(dir, fmt.Sprintf("f%d", i)), fmt.Sprintf("%s %d", dir, i))
+			files++
+		}
+	}
+	for i := range 5 {
+		writeFile(t, root, fmt.Sprintf(".git/objects/o%d", i), "object")
+	}
+	mnt := bindMountable{root}
+	opts := ChecksumOpts{ExcludePatterns: []string{".git"}}
+
+	hashed := newTestCacheContext(t)
+	_, err := hashed.Checksum(ctx, mnt, "/", ChecksumOpts{})
+	assert.NilError(t, err)
+	want, err := hashed.Checksum(ctx, mnt, "/", opts)
+	assert.NilError(t, err)
+
+	fileReadCounterEnable = true
+	t.Cleanup(func() { fileReadCounterEnable = false })
+	fileReadCounter.Store(0)
+
+	got, err := newTestCacheContext(t).Checksum(ctx, mnt, "/", opts)
+	assert.NilError(t, err)
+	assert.Equal(t, got, want)
+	assert.Equal(t, fileReadCounter.Load(), files)
+}
+
 func writeFile(t *testing.T, root, p, contents string) {
 	t.Helper()
 	fp := filepath.Join(root, p)
@@ -110,6 +145,21 @@ func newTestCacheContext(t *testing.T) *cacheContext {
 	return cc
 }
 
+// A tree that can't be read is an error, not a reason to rescan: a rescan of
+// an imported snapshot gives other digests.
+func TestCacheContextLoadFailsOnUnreadableTree(t *testing.T) {
+	_, err := newCacheContext(unreadableRefMetadata{})
+	assert.ErrorContains(t, err, "disk on fire")
+}
+
+type unreadableRefMetadata struct {
+	testRefMetadata
+}
+
+func (unreadableRefMetadata) GetExternal(string) ([]byte, error) {
+	return nil, errors.New("disk on fire")
+}
+
 // testRefMetadata stores nothing; the cache context only reads and writes its
 // serialized tree through it.
 type testRefMetadata struct {
@@ -117,7 +167,7 @@ type testRefMetadata struct {
 }
 
 func (testRefMetadata) GetExternal(string) ([]byte, error) {
-	return nil, errors.New("not found")
+	return nil, cache.ErrExternalNotFound
 }
 
 func (testRefMetadata) SetExternal(string, []byte) error {

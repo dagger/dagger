@@ -311,8 +311,6 @@ var persistedFileLazyVisitors = map[string]persistedLazyVisitor{
 // recipe payload keyed by the recorded call field, mirroring
 // decodePersistedContainerRecipe.
 var persistedContainerRecipeVisitors = map[string]persistedLazyVisitor{
-	"_builtinContainer": persistedLazyStructVisitor(func(p *persistedContainerBuiltinLazy, _ *persistedRefWalker) error { return p.validate() }),
-
 	"withEntrypoint":            parentOnly(func(p *persistedContainerWithEntrypointLazy) *uint64 { return &p.ParentResultID }),
 	"withoutEntrypoint":         parentOnly(func(p *persistedContainerWithoutEntrypointLazy) *uint64 { return &p.ParentResultID }),
 	"withDefaultArgs":           parentOnly(func(p *persistedContainerWithDefaultArgsLazy) *uint64 { return &p.ParentResultID }),
@@ -574,6 +572,9 @@ var persistedModuleVisitor = persistedStructVisitor("", func(p *persistedModuleP
 	if err := w.children("depModuleResultIDs", p.DepModuleResultIDs); err != nil {
 		return err
 	}
+	if err := w.children("entrypointDepModuleResultIDs", p.EntrypointDepModuleResultIDs); err != nil {
+		return err
+	}
 	if err := w.children("objectDefResultIDs", p.ObjectDefResultIDs); err != nil {
 		return err
 	}
@@ -616,6 +617,9 @@ func visitPersistedWorkspaceSourceRefs(w *persistedRefWalker, src *persistedWork
 		return err
 	}
 	if err := w.child("gitRefResultID", &src.GitRefResultID); err != nil {
+		return err
+	}
+	if err := w.child("sparseResultID", &src.SparseResultID); err != nil {
 		return err
 	}
 	if err := w.child("changesID", &src.ChangesID); err != nil {

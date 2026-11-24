@@ -1,0 +1,3 @@
+[modules.cred]
+source = "."
+main = true

@@ -6,6 +6,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"slices"
 	"strings"
@@ -2514,4 +2515,17 @@ func (ChangesetSuite) TestFilterRemovedDirectoryKeepsUnselectedEntries(ctx conte
 			require.True(t, equal, "applying the selection must preserve unselected entries")
 		})
 	}
+}
+
+// A merge conflict is reported by the call that asks for the merge, as before
+// merges saved their operation.
+func (ChangesetSuite) TestMergeConflictAtCall(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	seed := rand.Text()
+	change := func(contents string) *core.Changeset {
+		before := core.NewQuery(c).Directory().WithNewFile("data", "base "+seed+"\n")
+		return before.WithNewFile("data", contents).Changes(before)
+	}
+	_, err := change("ours\n").WithChangeset(change("theirs\n")).ID(ctx)
+	require.ErrorContains(t, err, "conflict")
 }

@@ -19,10 +19,10 @@ const checkCollectionMetadataVersion = "v1.0.0-beta.26"
 
 func (s checksSchema) Install(srv *dagql.Server) {
 	srv.InstallObject(dagql.NewClass[*core.Check](srv).View(AfterVersion("v1.0.0-0")))
-	run := dagql.NodeFuncWithDynamicInputs("__run", s.run, s.cachePolicy)
+	run := keptFromContent(dagql.NodeFuncWithDynamicInputs("__run", s.run, s.cachePolicy), checkFromContent)
 	run.Spec.NoTelemetry = true
 	dagql.Fields[*core.Check]{
-		dagql.NodeFunc("__withAddress", func(_ context.Context, check dagql.ObjectResult[*core.Check], args struct {
+		keptFromContent(dagql.NodeFunc("__withAddress", func(_ context.Context, check dagql.ObjectResult[*core.Check], args struct {
 			Address        string
 			CollectionItem bool `default:"false"`
 		}) (*core.Check, error) {
@@ -36,7 +36,7 @@ func (s checksSchema) Install(srv *dagql.Server) {
 			return copy, nil
 		}).View(AllVersion).Args(
 			dagql.Arg("collectionItem").View(AfterVersion(checkCollectionMetadataVersion)),
-		),
+		), checkFromContent),
 		dagql.NodeFunc("sync", s.sync).DoNotCache("Report each check execution request.").Doc("Run the check and retain its result."),
 		run,
 		dagql.NodeFunc("pass", s.pass).DoNotCache("Read the current check result.").Doc("Run the check and return whether it passes."),
@@ -105,10 +105,26 @@ func (s checksSchema) sync(ctx context.Context, check dagql.ObjectResult[*core.C
 	return result, nil
 }
 
+// checkFromContent reports whether a check runs in a workspace identified by
+// its content and is planned the same way in a later session (see
+// keptFromContent): not one whose function is cached per call or session. A
+// generator's check reports the generator's state on every run, so it is
+// never kept.
+func checkFromContent(check dagql.ObjectResult[*core.Check]) bool {
+	planned, err := check.ResultCall()
+	return err == nil && !planned.SessionBound() &&
+		workspaceFromContent(check.Self().Workspace) && check.Self().Generator.Self() == nil
+}
+
 func (s checksSchema) run(ctx context.Context, check dagql.ObjectResult[*core.Check], _ struct{}) (dagql.ObjectResult[*core.Check], error) {
 	result, err := check.Self().Run(ctx)
 	if err != nil {
 		return dagql.ObjectResult[*core.Check]{}, err
+	}
+	// A failed check runs again in the next session. Within this one, its
+	// requests share the run. A run that is never reused isn't kept either.
+	if !result.Passed || dagql.CurrentCall(ctx).SessionBound() {
+		dagql.DeclinePersistence(ctx)
 	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {

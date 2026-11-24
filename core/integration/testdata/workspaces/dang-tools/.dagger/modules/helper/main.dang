@@ -1,0 +1,6 @@
+"""
+A module the workspace doesn't install, which only snippets load.
+"""
+type Helper {
+  pub ping: String! { "pong" }
+}

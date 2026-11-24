@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 
@@ -158,9 +159,47 @@ func workspaceHostRoutingContext(ctx context.Context, ws *Workspace) (context.Co
 	return engine.ContextWithClientMetadata(ctx, clientMetadata), nil
 }
 
+// InstalledWorkspaceModules are the modules installed in a workspace, as
+// LoadWorkspaceModules loads them.
+type InstalledWorkspaceModules struct {
+	// Loaded are the modules that loaded.
+	Loaded []dagql.ObjectResult[*Module]
+	// Failures are the modules that failed to load, and why.
+	Failures []ModuleLoadFailure
+	// Removed names, by LatestNamer.CLIName, the modules a live workspace's
+	// session serves that its pending edits uninstall or break: those its
+	// dagger.toml no longer installs, and those that failed to load.
+	Removed []string
+}
+
+// workspaceModulesLoader loads the modules installed in a workspace; see
+// LoadWorkspaceModules. The schema package, which owns workspace module
+// loading, sets it.
+var workspaceModulesLoader func(context.Context, dagql.ObjectResult[*Workspace]) (*InstalledWorkspaceModules, error)
+
+// SetWorkspaceModulesLoader installs the implementation of
+// LoadWorkspaceModules.
+func SetWorkspaceModulesLoader(loader func(context.Context, dagql.ObjectResult[*Workspace]) (*InstalledWorkspaceModules, error)) {
+	workspaceModulesLoader = loader
+}
+
+// LoadWorkspaceModules loads the modules installed in ws, best effort, as
+// Workspace.artifacts discovers them: a live workspace's served modules with
+// its pending edits to dagger.toml and module sources resolved over them, a
+// value workspace's from its own tree, pinned by its own lock, never the
+// caller's. A module that fails to load is left out and returned as a
+// failure. ctx must have the dagql server to load them with.
+func LoadWorkspaceModules(ctx context.Context, ws dagql.ObjectResult[*Workspace]) (*InstalledWorkspaceModules, error) {
+	if workspaceModulesLoader == nil {
+		return nil, errors.New("no workspace module loader")
+	}
+	return workspaceModulesLoader(ctx, ws)
+}
+
 // loadWorkspaceOwnerContext switches to a live Workspace's owning client and
 // loads its served modules. MCP.baseServer calls this only for live workspaces;
-// value workspaces use core directly and never load the caller's modules.
+// value workspaces load their modules from their own trees (see
+// LoadWorkspaceModules), never the caller's.
 //
 // The load is best-effort: a module that cannot load is skipped rather than
 // failing every LLM step, so the FindArtifacts builtin (via Workspace.artifacts)

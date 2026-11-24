@@ -169,7 +169,6 @@ func probeTestCases(t testing.TB) []probeTestCase {
 		{name: "withDirectory", ctr: probeTestContainer{field: "withDirectory", lazy: persistedContainerWithDirectoryLazy{Path: "/src/child"}, metadata: mixed, consumed: true, pending: []dagql.PartKey{ContainerPartMount("/src")}}},
 		{name: "withSymlink", ctr: probeTestContainer{field: "withSymlink", lazy: persistedContainerWithSymlinkLazy{LinkPath: "/link"}, metadata: mixed, consumed: true, pending: []dagql.PartKey{ContainerPartFS}}},
 		{name: "from", ctr: probeTestContainer{field: "from", lazy: struct{}{}, metadata: mixed, consumed: true, pending: []dagql.PartKey{ContainerPartFS}}},
-		{name: "builtin container", ctr: probeTestContainer{field: "_builtinContainer", lazy: struct{}{}, metadata: mixed, consumed: true, pending: []dagql.PartKey{ContainerPartFS}}},
 		{name: "withWorkdir delegation", ctr: probeTestContainer{field: "withWorkdir", metadata: mixed, consumed: true, pending: []dagql.PartKey{ContainerPartMount("/src")}, absent: []dagql.PartKey{ContainerPartMount("/out")}}},
 		{name: "withDirectory into cache mount", ctr: probeTestContainer{field: "withDirectory", lazy: persistedContainerWithDirectoryLazy{Path: "/cache/child"}, metadata: mixed, consumed: true, pending: []dagql.PartKey{ContainerPartFS}}, wantErr: true},
 		{name: "unknown operation", ctr: probeTestContainer{field: "notAnOperation", lazy: struct{}{}, metadata: mixed, consumed: true}, wantErr: true},

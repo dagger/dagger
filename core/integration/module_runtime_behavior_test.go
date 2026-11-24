@@ -13,6 +13,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -20,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	bkconfig "github.com/dagger/dagger/internal/buildkit/cmd/buildkitd/config"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -692,5 +694,105 @@ func (ModuleSuite) TestFunctionCacheControl(ctx context.Context, t *testctx.T) {
 		callCmd = hostDaggerCommand(ctx, t, modDir, "call", "fn")
 		callOutput, err = callCmd.CombinedOutput()
 		require.NoError(t, err, string(callOutput))
+	})
+}
+
+// A module function's result is reused until it expires. A function with no
+// cache setting gives its result no expiry, so the result is reused past a
+// week, for as long as the engine keeps it. A declared time to live may be
+// longer than a week, and the result expires when it says. The engine's clock
+// can't be moved a week, so each subtest reads, from a nested engine's cache
+// snapshot, the expiry the function's result got and the expiry of the edge
+// that keeps the result past its session.
+func (ModuleSuite) TestFunctionCacheExpiry(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	// The nested engine's disk limits are measured on the host's disk, so on a
+	// full host a prune after a session ends would drop the results before the
+	// snapshot is read. Its limits are set out of reach.
+	const unreachableGCBytes = "1000000000000000"
+	devEngine := devEngineContainerAsService(devEngineContainer(c,
+		engineWithConfig(ctx, t,
+			engineConfigWithEnabled(true),
+			engineConfigWithGC(unreachableGCBytes, "0", unreachableGCBytes, "0"),
+		),
+		engineWithBkConfig(ctx, t, func(_ context.Context, _ *testctx.T, cfg bkconfig.Config) bkconfig.Config {
+			cfg.GRPC.DebugAddress = "0.0.0.0:6060"
+			return cfg
+		}),
+	))
+	tunnel, err := core.NewQuery(c).Host().Tunnel(devEngine).Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, _ = tunnel.Stop(context.Background())
+		_, _ = devEngine.Stop(context.Background())
+	})
+	endpoint, err := tunnel.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})
+	require.NoError(t, err)
+
+	type expiry struct{ result, edge int64 }
+	// callValue serves the Dang module name, with source, in a session of its
+	// own, calls its value function, and returns the expiries of the
+	// function's results, read once the session has ended.
+	callValue := func(ctx context.Context, t *testctx.T, name, source string) []expiry {
+		t.Helper()
+		session, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(testutil.NewTWriter(t)))
+		require.NoError(t, err)
+		require.NoError(t, core.NewQuery(session).Directory().
+			WithNewFile("dagger.json", fmt.Sprintf(`{"name":%q,"engineVersion":"latest","sdk":{"source":"dang"}}`, name)).
+			WithNewFile("main.dang", source).
+			AsModuleSource().AsModule().Serve(ctx))
+		_, err = testutil.QueryWithClient[map[string]struct{ Value string }](session, t, "{"+name+"{value}}", nil)
+		require.NoError(t, err)
+		require.NoError(t, session.Close())
+
+		var snapshot struct {
+			Results []struct {
+				ExpiresAtUnix              int64 `json:"expires_at_unix"`
+				HasPersistedEdge           bool  `json:"has_persisted_edge"`
+				PersistedEdgeExpiresAtUnix int64 `json:"persisted_edge_expires_at_unix"`
+				Call                       *struct {
+					Field  string `json:"field"`
+					Module *struct {
+						Name string `json:"name"`
+					} `json:"module"`
+				} `json:"result_call"`
+			} `json:"results"`
+		}
+		require.NoError(t, json.Unmarshal(readCacheDebugSnapshot(ctx, t, c, devEngine), &snapshot))
+		var expiries []expiry
+		for _, row := range snapshot.Results {
+			if row.Call == nil || row.Call.Field != "value" || row.Call.Module == nil || row.Call.Module.Name != name {
+				continue
+			}
+			require.True(t, row.HasPersistedEdge, "the result is kept past its session")
+			expiries = append(expiries, expiry{result: row.ExpiresAtUnix, edge: row.PersistedEdgeExpiresAtUnix})
+		}
+		require.NotEmpty(t, expiries, "the snapshot holds the function's result")
+		return expiries
+	}
+
+	t.Run("no cache setting", func(ctx context.Context, t *testctx.T) {
+		for _, got := range callValue(ctx, t, "kept", `type Kept {
+  pub value: String! { "kept" }
+}
+`) {
+			require.Equal(t, expiry{}, got, "the result never expires")
+		}
+	})
+
+	t.Run("time to live over a week", func(ctx context.Context, t *testctx.T) {
+		const ttl = 30 * 24 * time.Hour
+		before := time.Now()
+		expiries := callValue(ctx, t, "lasting", `type Lasting {
+  pub value: String! @cache(ttl: "720h") { "lasting" }
+}
+`)
+		after := time.Now()
+		for _, got := range expiries {
+			for _, at := range []int64{got.result, got.edge} {
+				require.GreaterOrEqual(t, at, before.Add(ttl).Unix(), "the result expires after its 30-day time to live")
+				require.LessOrEqual(t, at, after.Add(ttl).Unix(), "the result expires after its 30-day time to live")
+			}
+		}
 	})
 }

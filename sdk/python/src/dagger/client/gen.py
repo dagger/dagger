@@ -504,6 +504,13 @@ class BuildArg(Input):
     value: str
     """The build argument value."""
 
+    @classmethod
+    def _graphql_field_names(cls) -> dict[str, str]:
+        return {
+            "name": "name",
+            "value": "value",
+        }
+
 
 @typecheck
 @dataclass(slots=True)
@@ -543,6 +550,22 @@ class LLMContentBlockInput(Input):
     tool_name: str | None = ""
     """The name of the tool to call (for TOOL_CALL kind)."""
 
+    @classmethod
+    def _graphql_field_names(cls) -> dict[str, str]:
+        return {
+            "arguments": "arguments",
+            "call_id": "callId",
+            "content": "content",
+            "data": "data",
+            "errored": "errored",
+            "file": "file",
+            "kind": "kind",
+            "mime_type": "mimeType",
+            "signature": "signature",
+            "text": "text",
+            "tool_name": "toolName",
+        }
+
 
 @typecheck
 @dataclass(slots=True)
@@ -562,6 +585,15 @@ class LLMMessageOriginInput(Input):
     reply_to: str | None = ""
     """The ref of the message this one answers, if any."""
 
+    @classmethod
+    def _graphql_field_names(cls) -> dict[str, str]:
+        return {
+            "agent_name": "agentName",
+            "kind": "kind",
+            "ref": "ref",
+            "reply_to": "replyTo",
+        }
+
 
 @typecheck
 @dataclass(slots=True)
@@ -573,6 +605,13 @@ class PipelineLabel(Input):
 
     value: str
     """Label value."""
+
+    @classmethod
+    def _graphql_field_names(cls) -> dict[str, str]:
+        return {
+            "name": "name",
+            "value": "value",
+        }
 
 
 @typecheck
@@ -588,6 +627,14 @@ class PortForward(Input):
 
     protocol: NetworkProtocol | None = NetworkProtocol.TCP
     """Transport layer protocol to use for traffic."""
+
+    @classmethod
+    def _graphql_field_names(cls) -> dict[str, str]:
+        return {
+            "backend": "backend",
+            "frontend": "frontend",
+            "protocol": "protocol",
+        }
 
 
 @runtime_checkable
@@ -3487,6 +3534,7 @@ class Container(Type):
         path: str,
         *,
         expand: bool | None = False,
+        resolve_broken_symlinks: bool | None = False,
     ) -> "Directory":
         """Retrieve a directory from the container's root filesystem
 
@@ -3500,10 +3548,18 @@ class Container(Type):
             Replace "${VAR}" or "$VAR" in the value of path according to the
             current environment variables defined in the container (e.g.
             "/$VAR/foo").
+        resolve_broken_symlinks:
+            Repair symlinks that directory selection would break. Resolve
+            targets across the root filesystem and directory or file mounts.
+            Preserve working relative links and links that already have no
+            target. Cache, volume, tmpfs, secret, and socket mounts cause an
+            error if selection, a resolved link, or mount target resolution
+            needs their contents.
         """
         _args = [
             Arg("path", path),
             Arg("expand", expand, False),
+            Arg("resolveBrokenSymlinks", resolve_broken_symlinks, False),
         ]
         _ctx = self._select("directory", _args)
         return Directory(_ctx)
@@ -5230,6 +5286,7 @@ class Container(Type):
         *,
         size: int | None = None,
         expand: bool | None = False,
+        disk: bool | None = False,
     ) -> Self:
         """Retrieves this container plus a temporary directory mounted at the
         given path. Any writes will be ephemeral to a single withExec call;
@@ -5245,11 +5302,17 @@ class Container(Type):
             Replace "${VAR}" or "$VAR" in the value of path according to the
             current environment variables defined in the container (e.g.
             "/$VAR/foo").
+        disk:
+            Keep the temporary directory on the engine's disk instead of in
+            memory, for contents too large for memory. Each process gets an
+            empty directory of its own, removed once the process ends. It
+            can't be combined with size.
         """
         _args = [
             Arg("path", path),
             Arg("size", size, None),
             Arg("expand", expand, False),
+            Arg("disk", disk, False),
         ]
         _ctx = self._select("withMountedTemp", _args)
         return Container(_ctx)
@@ -6395,16 +6458,26 @@ class Directory(Type):
         _ctx = self._select("digest", _args)
         return await _ctx.execute(str)
 
-    def directory(self, path: str) -> Self:
+    def directory(
+        self,
+        path: str,
+        *,
+        resolve_broken_symlinks: bool | None = False,
+    ) -> Self:
         """Retrieves a directory at the given path.
 
         Parameters
         ----------
         path:
             Location of the directory to retrieve. Example: "/src"
+        resolve_broken_symlinks:
+            Repair symlinks that directory selection would break. Copy targets
+            from this directory into the result. Preserve working relative
+            links and links that already have no target.
         """
         _args = [
             Arg("path", path),
+            Arg("resolveBrokenSymlinks", resolve_broken_symlinks, False),
         ]
         _ctx = self._select("directory", _args)
         return Directory(_ctx)
@@ -7109,6 +7182,30 @@ class Directory(Type):
             Arg("onConflict", on_conflict, PatchConflict.FAIL),
         ]
         _ctx = self._select("withPatchFile", _args)
+        return Directory(_ctx)
+
+    def with_platform(self, platform: Platform) -> Self:
+        """Retrieves this directory, declared as made for the given platform.
+
+        Declare a result whose contents are the same whichever platform made
+        them, such as a Go package compiled for a platform by any platform's
+        Go toolchain. An engine of another platform that makes the same
+        directory for the same platform then finds this one, and the other way
+        around.
+
+        The contents are not checked: a declared result that depends on the
+        platform it was made on can be found where it doesn't belong.
+
+        Parameters
+        ----------
+        platform:
+            The platform the directory's contents are for (e.g.,
+            "linux/arm64").
+        """
+        _args = [
+            Arg("platform", platform),
+        ]
+        _ctx = self._select("withPlatform", _args)
         return Directory(_ctx)
 
     def with_symlink(self, target: str, link_name: str) -> Self:
@@ -8953,8 +9050,19 @@ class File(Type):
         _ctx = self._select("stat", _args)
         return await _ctx.execute_object(Stat)
 
-    async def sync(self) -> Self:
+    async def sync(
+        self,
+        *,
+        key_by_content: bool | None = False,
+    ) -> Self:
         """Force evaluation in the engine.
+
+        Parameters
+        ----------
+        key_by_content:
+            Also key the file by its content, so that what consumes it is
+            cached across any two recipes that produce the same file. This
+            hashes the file unless it already has a content key.
 
         Raises
         ------
@@ -8963,7 +9071,9 @@ class File(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("keyByContent", key_by_content, False),
+        ]
         return await self._ctx.execute_sync(self, "sync", _args)
 
     def __await__(self):
@@ -11203,9 +11313,9 @@ class GitRepository(Type):
             Identifier of the commit (e.g.,
             "b6315d8f2810962c601af73f86831f6866ea798b").
             May be abbreviated to an unambiguous hex prefix (4-40 characters),
-            which is expanded against locally available objects. Remote
-            repositories (resolved via ls-remote) can only expand prefixes of
-            already-fetched commits; use the full SHA otherwise.
+            which is expanded to the full SHA. A remote repository that has
+            not fetched the commit yet fetches the history of the refs it
+            advertises to find it.
         """
         _args = [
             Arg("id", id),
@@ -11308,10 +11418,10 @@ class GitRepository(Type):
             or a fully-qualified ref).
             Commit identifiers may be abbreviated: an unambiguous hex prefix
             (4-40 characters) of a commit SHA resolves like git rev-parse,
-            with named refs taking precedence. Abbreviated SHAs resolve
-            against locally available objects, so remote repositories
-            (resolved via ls-remote) can only expand prefixes of already-
-            fetched commits; use the full SHA or a named ref otherwise.
+            with named refs taking precedence, to the full SHA. A remote
+            repository that has not fetched the commit yet fetches the history
+            of the refs it advertises to find it, so only commits reachable
+            from those refs can be abbreviated.
             The name may be followed by git revision suffixes, applied left to
             right: `~N` follows first parents N times and `^N` selects the Nth
             parent (`~` and `^` mean 1, `^0` is the commit itself), e.g.
@@ -20033,13 +20143,13 @@ class Workspace(Type):
         return Workspace(_ctx)
 
     def with_mounted_directory(self, path: str, source: Directory) -> Self:
-        """Return this workspace with a directory mounted read-only at the given
-        path, without mutating the source.
+        """Return this workspace with a directory mounted at the given path,
+        without mutating the source.
 
-        Mounted content is readable through the normal workspace file tools
-        but shadows the source at the mount path and stays out of the pending
-        changeset: it never appears in changes, is never exported, and cannot
-        be modified.
+        Mounted content is readable and editable through the normal workspace
+        file tools but shadows the source at the mount path and stays out of
+        the pending changeset: neither it nor edits to it appear in changes or
+        are exported. Use withoutMount to remove the mount.
 
         Parameters
         ----------
@@ -20057,13 +20167,13 @@ class Workspace(Type):
         return Workspace(_ctx)
 
     def with_mounted_file(self, path: str, source: File) -> Self:
-        """Return this workspace with a file mounted read-only at the given path,
-        without mutating the source.
+        """Return this workspace with a file mounted at the given path, without
+        mutating the source.
 
-        Mounted content is readable through the normal workspace file tools
-        but shadows the source at the mount path and stays out of the pending
-        changeset: it never appears in changes, is never exported, and cannot
-        be modified.
+        Mounted content is readable and editable through the normal workspace
+        file tools but shadows the source at the mount path and stays out of
+        the pending changeset: neither it nor edits to it appear in changes or
+        are exported. Use withoutMount to remove the mount.
 
         Parameters
         ----------
@@ -20140,8 +20250,9 @@ class Workspace(Type):
         applied, without mutating the source.
 
         Paths in the patch are relative to the workspace root, whatever its
-        cwd, as `git diff` writes them. Patching a path at or under a mount is
-        an error.
+        cwd, as `git diff` writes them. Sections for paths in a mount apply to
+        the mounted content; a section cannot move a file across a mount
+        boundary or delete a mount point.
 
         .. caution::
             Experimental: This API is highly experimental and may be removed

@@ -7,6 +7,8 @@ import (
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
 type ModTreePathTestSuite struct {
@@ -15,6 +17,33 @@ type ModTreePathTestSuite struct {
 
 func TestModTreePath(t *testing.T) {
 	testctx.New(t).RunTests(ModTreePathTestSuite{})
+}
+
+// Matching a workspace's module tree against include and exclude patterns runs
+// a glob and an equality test per node and pattern, tens of thousands per
+// session. The tests are not work worth tracing: they open no spans.
+func TestModTreeMatchingOpensNoSpans(t *testing.T) {
+	t.Parallel()
+	rec := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(rec))
+	_, span := tp.Tracer("test").Start(t.Context(), "check")
+
+	root := &ModTreeNode{}
+	mod := &ModTreeNode{Parent: root, Name: "goTests"}
+	leaf := &ModTreeNode{Parent: mod, Name: "unitTests"}
+	for _, node := range []*ModTreeNode{mod, leaf} {
+		_, err := node.Match([]string{"go-tests:unit-tests", "lint", "**:lint"})
+		require.NoError(t, err)
+	}
+	_, err := leaf.Path().Glob(LatestNamer, "other:*")
+	require.NoError(t, err)
+	NewModTreePath("goTests:integration").Contains(LatestNamer, leaf.Path())
+	leaf.Path().Equals(LatestNamer, NewModTreePath("go-tests:lint"))
+	span.End()
+
+	ended := rec.Ended()
+	require.Len(t, ended, 1, "only the caller's own span")
+	require.Equal(t, "check", ended[0].Name())
 }
 
 func TestModTreeCommandNamePreservesQualifiedPath(t *testing.T) {
@@ -151,7 +180,7 @@ func (s *ModTreePathTestSuite) TestIsParentOf(ctx context.Context, t *testctx.T)
 	for _, tc := range testCases {
 		for _, namer := range []Namer{LegacyNamer, LatestNamer} {
 			s.Run(tc.name, func() {
-				result := tc.parent.Contains(ctx, namer, tc.child)
+				result := tc.parent.Contains(namer, tc.child)
 				require.Equal(s.T(), tc.expected, result, "parent: %v, child: %v, legacy: %v", tc.parent, tc.child, namer.Legacy())
 			})
 		}
@@ -350,7 +379,7 @@ func (s *ModTreePathTestSuite) TestGlob(ctx context.Context, t *testctx.T) {
 	for _, tc := range testCases {
 		for _, namer := range []Namer{LegacyNamer, LatestNamer} {
 			s.Run(tc.name, func() {
-				result, err := tc.path.Glob(ctx, namer, tc.pattern)
+				result, err := tc.path.Glob(namer, tc.pattern)
 				require.NoError(s.T(), err)
 				require.Equal(s.T(), tc.expected, result, "path: %v, pattern: %s, legacy: %v", tc.path, tc.pattern, namer.Legacy())
 			})

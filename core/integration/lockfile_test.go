@@ -569,6 +569,101 @@ func (LockfileSuite) TestNestedClientsUseOwnImagePins(ctx context.Context, t *te
 	}
 }
 
+// An entrypoint module pulls the image the workspace lock pins for a tag, both
+// in the entrypoint's own code and in a process it starts with nesting, which
+// is how an SDK entrypoint runs a module's code.
+func (LockfileSuite) TestEntrypointModuleUsesImagePin(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	pinned, err := core.NewQuery(c).Container().From("alpine:3.19").ImageRef(ctx)
+	require.NoError(t, err)
+	_, digest, found := strings.Cut(pinned, "@")
+	require.True(t, found, "expected canonical image ref with digest: %q", pinned)
+
+	ctr := workspaceBase(t, c).
+		WithNewFile("dagger.toml", "[modules.pins]\nsource = \"pins\"\n").
+		WithNewFile(workspace.LockFileName, mustMarshalOCISHALock(t, digest)).
+		WithNewFile("pins/dagger-module.toml", "name = \"pins\"\n\n[entrypoint]\nkind = \"dang\"\nsource = \"./entrypoint\"\n").
+		WithNewFile("pins/entrypoint/main.dang", pinnedPullEntrypointSource)
+	for _, fn := range []string{"pull", "process-pull"} {
+		t.Run(fn, func(ctx context.Context, t *testctx.T) {
+			out, err := ctr.With(daggerCallAt("pins", fn)).Stdout(ctx)
+			require.NoError(t, err)
+			require.True(t, strings.HasPrefix(strings.TrimSpace(out), "3.19."), "expected the pinned alpine 3.19 release, got %q", out)
+		})
+	}
+}
+
+var pinnedPullEntrypointSource = fmt.Sprintf(`type Entrypoint implements ModuleEntrypoint {
+  pub types(workspace: Workspace!): [TypeDef!]! {
+    let release = typeDef.withKind(TypeDefKind.STRING_KIND)
+    [
+      typeDef
+        .withObject("Pins")
+        .withConstructor(function("", typeDef.withObject("Pins")))
+        .withFunction(function("Pull", release))
+        .withFunction(function("ProcessPull", release)),
+    ]
+  }
+
+  pub call(
+    workspace: Workspace!,
+    receiverType: String!,
+    receiverValue: JSON,
+    fnName: String!,
+    fnArgs: JSON!,
+  ): JSON! {
+    if (fnName == "") {
+      ("{}" :: JSON!)
+    } else if (fnName == "Pull") {
+      let release = container.from("alpine:latest").withExec(["sh", "-c", "tr -d '\\n' < /etc/alpine-release"]).stdout
+      (("\"" + release + "\"") :: JSON!)
+    } else if (fnName == "ProcessPull") {
+      let result = container
+        .from(%q)
+        .withExec(["sh", "-c", %q], experimentalPrivilegedNesting: true)
+        .file("/result.json")
+        .contents
+      (result :: JSON!)
+    } else {
+      raise "unknown function: " + fnName
+    }
+  }
+}
+`, alpineImage, `set -e
+auth=$(printf '%s:' "$DAGGER_SESSION_TOKEN" | base64 | tr -d '\n')
+wget -qO /response.json --header "Authorization: Basic $auth" --header 'Content-Type: application/json' \
+  --post-data '{"query":"{container{from(address:\"alpine:latest\"){file(path:\"/etc/alpine-release\"){contents}}}}"}' \
+  "http://127.0.0.1:$DAGGER_SESSION_PORT/query"
+sed -n 's/.*"contents":"\([0-9.]*\).*/"\1"/p' /response.json > /result.json
+test -s /result.json || { cat /response.json >&2; exit 1; }`)
+
+// TestImageSettingResolvesOncePerSession covers a module setting set to an
+// image address: the checks of one run share one resolution of it.
+func (LockfileSuite) TestImageSettingResolvesOncePerSession(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	out, err := workspaceBase(t, c).
+		WithNewFile("dagger.toml", `[modules.imaged]
+source = "./imaged"
+settings.base = "alpine:latest"
+`).
+		WithNewFile("imaged/dagger-module.toml", `name = "imaged"
+engineVersion = "v1.0.0-beta.20"
+[runtime]
+source = "dang"
+`).
+		WithNewFile("imaged/main.dang", `type Imaged {
+  pub base: Container!
+  pub first: Void @check { base.withNewFile("/check", "first").sync; null }
+  pub second: Void @check { base.withNewFile("/check", "second").sync; null }
+  pub third: Void @check { base.withNewFile("/check", "third").sync; null }
+}`).
+		WithEnvVariable("NO_COLOR", "1").
+		With(daggerExec("--progress=plain", "-vvv", "check")).
+		CombinedOutput(ctx)
+	require.NoError(t, err, out)
+	require.Equal(t, 1, strings.Count(out, "Address.container DONE"), out)
+}
+
 func requireRemoteLockUnchanged(ctx context.Context, t *testctx.T, c *dagger.Client, remote remoteLockWorkspace, want string) {
 	t.Helper()
 	committedLock, err := core.NewQuery(c).Git(remote.repoURL).Commit(remote.commit).Tree().File(workspace.LockFileName).Contents(ctx)

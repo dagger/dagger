@@ -14,24 +14,24 @@ import (
 	"golang.org/x/mod/module"
 )
 
-// repoGoModuleFiles is the test runner's module cache download directory
-// and, relative to it, the files for the modules in the repo's go.sum.
+// repoGoModuleFiles is the directory of the repo's module downloads
+// (repoGoModuleDownloadDir) and, relative to it, the files for the modules in
+// the repo's go.sum.
 //
 // Tests that compile parts of this repo run in the dev engine, whose module
 // caches start empty for every test run. Without this, each of those caches
 // downloads most of the repo's dependency graph again, although the test
-// runner already has it: it just compiled the tests.
+// runner already has it.
 type repoGoModuleFiles struct {
 	downloadDir string
 	files       []string
 }
 
 var repoGoModules = sync.OnceValues(func() (repoGoModuleFiles, error) {
-	out, err := exec.Command("go", "env", "GOMODCACHE").Output()
+	downloadDir, err := repoGoModuleDownloadDir()
 	if err != nil {
-		return repoGoModuleFiles{}, fmt.Errorf("go env GOMODCACHE: %w", err)
+		return repoGoModuleFiles{}, err
 	}
-	downloadDir := filepath.Join(strings.TrimSpace(string(out)), "cache", "download")
 	goSum, err := os.ReadFile("../../go.sum")
 	if err != nil {
 		return repoGoModuleFiles{}, err
@@ -66,6 +66,21 @@ var repoGoModules = sync.OnceValues(func() (repoGoModuleFiles, error) {
 	}
 	return repoGoModuleFiles{downloadDir, files}, nil
 })
+
+// repoGoModuleDownloadDir is the directory of the repo's module downloads:
+// the one engine-dev's test container mounts and names in
+// _DAGGER_TESTS_GO_MODULE_DOWNLOADS, else the test runner's own module cache
+// download directory, as when the tests run outside engine-dev.
+func repoGoModuleDownloadDir() (string, error) {
+	if dir := os.Getenv("_DAGGER_TESTS_GO_MODULE_DOWNLOADS"); dir != "" {
+		return dir, nil
+	}
+	out, err := exec.Command("go", "env", "GOMODCACHE").Output()
+	if err != nil {
+		return "", fmt.Errorf("go env GOMODCACHE: %w", err)
+	}
+	return filepath.Join(strings.TrimSpace(string(out)), "cache", "download"), nil
+}
 
 // withRepoGoModules makes Go commands in the container get the repo's
 // dependencies from the test runner's module cache, used as a file://

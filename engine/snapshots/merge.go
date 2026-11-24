@@ -13,6 +13,8 @@ import (
 	"github.com/pkg/errors"
 )
 
+const instrumentationLibrary = "dagger.io/engine.snapshots"
+
 var hardlinkMergeSnapshotters = map[string]struct{}{
 	"native":    {},
 	"overlayfs": {},
@@ -27,6 +29,10 @@ type Diff struct {
 	Lower      string
 	Upper      string
 	Comparison fsdiff.Comparison
+	// Root also applies Upper's root directory itself (its owner, mode,
+	// xattrs and times), which a diff of its contents leaves out: for a
+	// diff with no Lower that copies a whole tree, as a flatten does.
+	Root bool
 }
 
 type MergeSnapshotter interface {
@@ -41,6 +47,11 @@ type mergeSnapshotter struct {
 	tryCrossSnapshotLink bool
 	skipBaseLayers       bool
 	userxattr            bool
+	// overlayBased says each layer of a snapshot's chain is a lower
+	// directory of its overlay mount, so a chain may hold only maxLayers.
+	overlayBased bool
+	// flattenLocker makes one flattened copy of a parent at a time.
+	flattenLocker keyedLocker
 }
 
 func NewMergeSnapshotter(ctx context.Context, sn Snapshotter, lm leases.Manager) MergeSnapshotter {
@@ -69,6 +80,7 @@ func NewMergeSnapshotter(ctx context.Context, sn Snapshotter, lm leases.Manager)
 		tryCrossSnapshotLink: tryCrossSnapshotLink,
 		skipBaseLayers:       skipBaseLayers,
 		userxattr:            userxattr,
+		overlayBased:         overlayBased,
 	}
 }
 

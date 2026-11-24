@@ -394,7 +394,8 @@ type Main {
 // the version it declares, as the engine serves it to that client. Overriding
 // the module's own version with withEngineVersion instead renames it, so a
 // client generated that way doesn't match what the engine serves. The caller's
-// version controls the API spelling, independently of the requested client view.
+// version controls the API spelling; callers before v1.0.0-beta.26 have no
+// clientVersion.
 func (ModuleNamingSuite) TestClientSchemaVersion(ctx context.Context, t *testctx.T) {
 	const preCut = "v1.0.0-beta.20"
 	c := connect(ctx, t)
@@ -435,12 +436,16 @@ func (ModuleNamingSuite) TestClientSchemaVersion(ctx context.Context, t *testctx
 			require.Equal(t, engine.APIViewVersion(callerVersion), gjson.Get(out, "__schemaVersion").String())
 		}
 		// Check the public caller schema too: clientVersion is optional with
-		// an empty default on both spellings, including pre-cut SDK callers.
+		// an empty default, and only from v1.0.0-beta.26.
 		arg := gjson.Get(out, `__type.fields.#(name%"clientSchemaIntrospection*").args.#(name=="clientVersion")`)
-		require.True(t, arg.Exists(), out)
-		require.Equal(t, "SCALAR", arg.Get("type.kind").String())
-		require.Equal(t, "String", arg.Get("type.name").String())
-		require.Equal(t, `""`, arg.Get("defaultValue").String())
+		if callerVersion != "" {
+			require.False(t, arg.Exists(), out)
+		} else {
+			require.True(t, arg.Exists(), out)
+			require.Equal(t, "SCALAR", arg.Get("type.kind").String())
+			require.Equal(t, "String", arg.Get("type.name").String())
+			require.Equal(t, `""`, arg.Get("defaultValue").String())
+		}
 		contents := gjson.Get(out, "moduleSource."+path+"schema.contents")
 		require.True(t, contents.Exists(), out)
 		var schema introspection.Response
@@ -461,14 +466,13 @@ func (ModuleNamingSuite) TestClientSchemaVersion(ctx context.Context, t *testctx
 		{"cut dependency of a pre-cut client", "./after", preCut, "", namingPreCut, "asJSON", "asJson", "AfterHTTPClient", "AfterHttpClient"},
 		{"default is the pre-cut module's own version", "./before", "", "", namingPreCut, "asJSON", "asJson", "BeforeHttpClient", "BeforeHTTPClient"},
 		{"default is the cut module's own version", "./after", "", "", namingCut, "asJson", "asJSON", "AfterHTTPClient", "AfterHttpClient"},
-		{"beta.20 caller requests a cut client", "./before", namingCut, preCut, namingCut, "asJson", "asJSON", "BeforeHttpClient", "BeforeHTTPClient"},
 		{"beta.25 caller defaults to the cut module's version", "./after", "", "v1.0.0-beta.25", namingCut, "asJson", "asJSON", "AfterHTTPClient", "AfterHttpClient"},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			field := "schema: clientSchemaIntrospectionJson"
 			if tc.callerVersion != "" {
-				// Both explicit callers predate the naming cut. The SDK's
-				// own version need not match either module or clientVersion.
+				// The explicit caller predates the naming cut. The SDK's
+				// own version need not match the module's.
 				field = "schema: clientSchemaIntrospectionJSON"
 			}
 			if tc.clientVersion != "" {

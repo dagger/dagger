@@ -466,7 +466,7 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * Return this workspace with the given Git-compatible patch file applied, without mutating the source.
      *
-     * Paths in the patch are relative to the workspace root, whatever its cwd, as `git diff` writes them. Patching a path at or under a mount is an error.
+     * Paths in the patch are relative to the workspace root, whatever its cwd, as `git diff` writes them. Sections for paths in a mount apply to the mounted content; a section cannot move a file across a mount boundary or delete a mount point.
      */
     public function withPatchFile(File $patch, ?PatchConflict $onConflict = null): Workspace
     {
@@ -489,9 +489,9 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Return this workspace with a directory mounted read-only at the given path, without mutating the source.
+     * Return this workspace with a directory mounted at the given path, without mutating the source.
      *
-     * Mounted content is readable through the normal workspace file tools but shadows the source at the mount path and stays out of the pending changeset: it never appears in changes, is never exported, and cannot be modified.
+     * Mounted content is readable and editable through the normal workspace file tools but shadows the source at the mount path and stays out of the pending changeset: neither it nor edits to it appear in changes or are exported. Use withoutMount to remove the mount.
      */
     public function withMountedDirectory(string $path, Directory $source): Workspace
     {
@@ -502,9 +502,9 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Return this workspace with a file mounted read-only at the given path, without mutating the source.
+     * Return this workspace with a file mounted at the given path, without mutating the source.
      *
-     * Mounted content is readable through the normal workspace file tools but shadows the source at the mount path and stays out of the pending changeset: it never appears in changes, is never exported, and cannot be modified.
+     * Mounted content is readable and editable through the normal workspace file tools but shadows the source at the mount path and stays out of the pending changeset: neither it nor edits to it appear in changes or are exported. Use withoutMount to remove the mount.
      */
     public function withMountedFile(string $path, File $source): Workspace
     {

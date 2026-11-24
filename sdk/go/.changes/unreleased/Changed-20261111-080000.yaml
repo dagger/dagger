@@ -1,0 +1,10 @@
+kind: Changed
+body: |
+  A client whose log output is unset or `io.Discard` asks its `dagger session`
+  for silent progress. The session no longer renders progress nobody reads, or
+  keeps every span in memory to render it from, which cost a test's session
+  several CPU-seconds per Go module load. Its telemetry still reaches Dagger
+  Cloud and any configured OpenTelemetry collector.
+time: 2026-11-11T08:00:00Z
+custom:
+  Author: sipsma

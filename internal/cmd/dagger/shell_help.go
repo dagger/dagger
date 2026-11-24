@@ -88,6 +88,7 @@ var agentCommandHelp = []struct {
 	{"effort", "Adjust how much reasoning the model uses", true},
 	{"history", "View the conversation history", true},
 	{"context", "Inspect what occupies the context window", true},
+	{"backfill", "Load a resumed session's whole history", true},
 	{"shell", "Switch to the Dagger shell", true},
 }
 

@@ -22,6 +22,17 @@ type partRefusal struct {
 	changed           bool
 	row               sharedResultID
 	expected, current partSourceFacts
+	// ended is set when the evaluation the refused attempt ran under has
+	// ended, so its own loop must not retry in place (refusalEndsEvaluation).
+	ended bool
+}
+
+// refusalEndsEvaluation reports whether err refuses because the evaluation
+// the attempt ran under has ended: its loop returns it to the decision that
+// began the evaluation instead of retrying.
+func refusalEndsEvaluation(err error) bool {
+	var refusal *partRefusal
+	return errors.As(err, &refusal) && refusal.ended
 }
 
 func (r *partRefusal) Error() string {

@@ -421,7 +421,6 @@ func (s *workspaceSchema) checkpointCapturedGitCompositionWithBase(
 			dagql.Selector{Field: "__gitDir", Args: []dagql.NamedInput{
 				{Name: "path", Value: dagql.NewString(captured.HostPath())},
 				{Name: "stateDigest", Value: dagql.NewString(metadata.CheckoutStateDigest)},
-				{Name: "validateState", Value: dagql.NewBoolean(true)},
 			}},
 		); err != nil {
 			return inst, fmt.Errorf("reconstruct session checkpoint: %w", err)

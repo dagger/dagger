@@ -73,6 +73,40 @@ type ChangesetPaths struct {
 	Renamed    map[string]string // newPath → oldPath (also included in Added/Removed)
 }
 
+// Filter returns the paths keep accepts, as given (a directory with its
+// trailing slash). A rename is kept only if both of its sides are.
+func (ch *ChangesetPaths) Filter(keep func(p string) bool) *ChangesetPaths {
+	filter := func(paths []string) []string {
+		var out []string
+		for _, p := range paths {
+			if keep(p) {
+				out = append(out, p)
+			}
+		}
+		return out
+	}
+	out := &ChangesetPaths{
+		Added:      filter(ch.Added),
+		Modified:   filter(ch.Modified),
+		Removed:    filter(ch.Removed),
+		AllRemoved: filter(ch.AllRemoved),
+	}
+	for newPath, oldPath := range ch.Renamed {
+		if keep(newPath) && keep(oldPath) {
+			if out.Renamed == nil {
+				out.Renamed = map[string]string{}
+			}
+			out.Renamed[newPath] = oldPath
+		}
+	}
+	return out
+}
+
+// IsEmpty reports whether there are no paths at all.
+func (ch *ChangesetPaths) IsEmpty() bool {
+	return len(ch.Added)+len(ch.Modified)+len(ch.Removed)+len(ch.AllRemoved) == 0
+}
+
 type DiffStatKind string
 
 var DiffStatKindEnum = dagql.NewEnum[DiffStatKind]()

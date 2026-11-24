@@ -40,6 +40,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/semaphore"
 	"golang.org/x/sys/unix"
 )
 
@@ -175,12 +176,53 @@ func SystemEnvEntry(name string, fallback *string) string {
 	return name + "=" + *fallback
 }
 
+// systemEnvPrefix prefixes the engine's own environment variables that set
+// the system env variables of its execs.
+const systemEnvPrefix = "_DAGGER_ENGINE_SYSTEMENV_"
+
+// SystemEnvValue is the value the engine sets for the system env variable
+// name, as an exec without its own value gets it.
+func SystemEnvValue(name string) (string, bool) {
+	return os.LookupEnv(systemEnvPrefix + name)
+}
+
+// ExecSlot is an exec's place under the engine's max parallelism. The exec
+// gives it up as soon as its command calls the Dagger API, because from then
+// on it mostly waits on the work it asked for, which may need slots of its own.
+type ExecSlot struct {
+	sem  *semaphore.Weighted
+	once sync.Once
+}
+
+// AcquireExecSlot waits for a free slot if the engine limits how many execs
+// run at once, and returns nil if it doesn't.
+func (c *Client) AcquireExecSlot(ctx context.Context) (*ExecSlot, error) {
+	if c.ParallelismSem == nil {
+		return nil, nil
+	}
+	if err := c.ParallelismSem.Acquire(ctx, 1); err != nil {
+		return nil, fmt.Errorf("wait for exec slot: %w", context.Cause(ctx))
+	}
+	return &ExecSlot{sem: c.ParallelismSem}, nil
+}
+
+// Release gives the slot back. It can be called more than once, and on nil.
+func (slot *ExecSlot) Release() {
+	if slot == nil {
+		return
+	}
+	slot.once.Do(func() {
+		slot.sem.Release(1)
+	})
+}
+
 func (c *Client) Run(
 	ctx context.Context,
 	id string,
 	rootMount executor.Mount,
 	mounts []executor.Mount,
 	procInfo executor.ProcessInfo,
+	slot *ExecSlot,
 	started chan<- struct{},
 	causeCtx trace.SpanContext,
 	execMD *ExecutionMetadata,
@@ -212,6 +254,7 @@ func (c *Client) Run(
 		nestedClientModule,
 		nestedClientFunctionCall,
 	)
+	state.slot = slot
 
 	execIdent := state.id
 	if execMD != nil && execMD.CallDigest != "" {
@@ -230,9 +273,10 @@ func (c *Client) Run(
 	// OTel analog of execOp: exec.run nests the container run under
 	// the withExec call_exec span (or the service exec span) via the propagated
 	// ctx, so the offline loader reconstructs the same exec shape from a Cloud
-	// trace. Gated only on telemetry being active, independent of wcprof. OTel
-	// gets nested-client parentage for free via traceparent, so unlike native it
-	// needs no nested-client link.
+	// trace. Gated only on telemetry being active, independent of wcprof. The
+	// traceparent a container gets names the call, not exec.run, so its nested
+	// clients' spans name exec.run as their causal parent instead (wcprof.parent,
+	// via otelExecRunSpanCtx), as native links them to execOp.
 	var execRunSpan trace.Span
 	if dagql.OTelProfActive(ctx) {
 		var attrs []attribute.KeyValue
@@ -243,6 +287,7 @@ func (c *Client) Run(
 		}
 		ctx, execRunSpan = beginOTelExecRun(ctx, execIdent, attrs...)
 		dagql.RecordOpSpan(execOp, execRunSpan)
+		state.otelExecRunSpanCtx = execRunSpan.SpanContext()
 	}
 	err := c.run(ctx, state,
 		namedSetupFunc{"setupNetwork", c.setupNetwork},

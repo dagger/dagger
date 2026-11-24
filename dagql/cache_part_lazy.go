@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/dagger/dagger/engine/snapshots"
+	"github.com/dagger/dagger/engine/wcprof"
 )
 
 // partCleanup releases what a part's install or a lazy operation built, once.
@@ -41,6 +42,10 @@ func (c *Cache) publishEvaluatedParts(ctx context.Context, res AnyResult, demand
 		}
 		watch.again(ctx, res.cacheSharedResult(), demanded)
 		prepared, err := c.prepareEvaluatedParts(ctx, res, demanded, produced, original, cleanup)
+		if refusalEndsEvaluation(err) {
+			// Retrying in place can't succeed: the decision selects again.
+			return err
+		}
 		if partCanReselect(err) {
 			watch.refused(err)
 			if stuck := demand.refused(watch.loop, watch.n, demanded, err); stuck != nil {
@@ -80,7 +85,7 @@ func (c *Cache) prepareEvaluatedParts(ctx context.Context, res AnyResult, demand
 			rerr = errors.Join(rerr, p.Release(ctx))
 		}
 	}()
-	c.egraphMu.Lock()
+	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 	if c.resultsByID[row.id] != row || original.task != PartTaskFromContext(ctx) {
 		c.egraphMu.Unlock()
 		return nil, fmt.Errorf("operation publication: invalid owner")
@@ -90,9 +95,19 @@ func (c *Cache) prepareEvaluatedParts(ctx context.Context, res AnyResult, demand
 	original.gate.mu.Lock()
 	group := original.gate.groups[lazyGroupAddressKey(original.group)]
 	if group == nil || group.phase != LazyEvaluationRunning || group.task != original.task {
+		// The evaluation this original began has ended, so no retry here can
+		// publish under it. When what it was to produce is installed, the part
+		// is there and there is nothing to publish. Otherwise the decision
+		// that began it selects again: from a source, or by evaluating anew.
+		key, _ := partAddressKey(demanded)
+		installed := key != "" && original.gate.outputs[key].phase != PartPending
+		state := ownGroupState(group, original)
 		original.gate.mu.Unlock()
 		c.egraphMu.Unlock()
-		return nil, partRefused("publish: own group not running")
+		if installed {
+			return nil, p.Release(ctx)
+		}
+		return nil, &partRefusal{site: "publish: own group not running", cause: errors.New(state), ended: true}
 	}
 	p.permit = original.gate.newPermit(original.task, demanded, true)
 	original.gate.mu.Unlock()
@@ -131,7 +146,7 @@ func (c *Cache) prepareEvaluatedParts(ctx context.Context, res AnyResult, demand
 	if len(descriptors) == 0 {
 		return nil, p.Release(ctx)
 	}
-	c.egraphMu.Lock()
+	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 	ids := c.partResourceLeavesLocked(row)
 	for _, d := range descriptors {
 		ids = append(ids, d.DependencyIDs...)
@@ -239,4 +254,13 @@ func (p *PreparedReadyPart) prepareProducedStores(ctx context.Context, res AnyRe
 	}
 	p.store, err = store.PreparePartStore(ctx, dec, local, descriptors[0], refs[0])
 	return err
+}
+
+// ownGroupState says how the group an original began stands now, for a
+// refusal to publish under it.
+func ownGroupState(group *partLazyEvaluationState, original *OriginalPermit) string {
+	if group == nil {
+		return "the group is gone"
+	}
+	return fmt.Sprintf("the group is in phase %d, owned by this task: %t", group.phase, group.task == original.task)
 }

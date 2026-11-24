@@ -31,3 +31,15 @@ func TestEnvironmentDoesNotConfigureRecording(t *testing.T) {
 		t.Fatalf("child test process: %v\n%s", err, out)
 	}
 }
+
+// The default event cap holds a test-base fresh engine's recording whole,
+// with room for the ops later changes add. On a development build of 31
+// Oct, a fresh engine's in-place recording needed up to about 4.7 million
+// events: the old cap of 4 << 20 dropped 23k-480k of them in 7 of 16 runs,
+// and lost the check's call with them.
+func TestDefaultCapHoldsTestBaseFresh(t *testing.T) {
+	const measured = 4_700_000
+	if defaultMaxEvents < 2*measured {
+		t.Errorf("default event cap = %d, want at least twice the %d events test-base's fresh engine records", defaultMaxEvents, measured)
+	}
+}

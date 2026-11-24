@@ -138,10 +138,14 @@ defmodule Dagger.Directory do
   @doc """
   Retrieves a directory at the given path.
   """
-  @spec directory(t(), String.t()) :: Dagger.Directory.t()
-  def directory(%__MODULE__{} = directory, path) do
+  @spec directory(t(), String.t(), [{:resolve_broken_symlinks, boolean() | nil}]) ::
+          Dagger.Directory.t()
+  def directory(%__MODULE__{} = directory, path, optional_args \\ []) do
     query_builder =
-      directory.query_builder |> QB.select("directory") |> QB.put_arg("path", path)
+      directory.query_builder
+      |> QB.select("directory")
+      |> QB.put_arg("path", path)
+      |> QB.maybe_put_arg("resolveBrokenSymlinks", optional_args[:resolve_broken_symlinks])
 
     %Dagger.Directory{
       query_builder: query_builder,
@@ -625,6 +629,24 @@ defmodule Dagger.Directory do
       |> QB.select("withPatchFile")
       |> QB.put_arg("patch", Dagger.ID.id!(patch))
       |> QB.maybe_put_arg("onConflict", optional_args[:on_conflict])
+
+    %Dagger.Directory{
+      query_builder: query_builder,
+      client: directory.client
+    }
+  end
+
+  @doc """
+  Retrieves this directory, declared as made for the given platform.
+
+  Declare a result whose contents are the same whichever platform made them, such as a Go package compiled for a platform by any platform's Go toolchain. An engine of another platform that makes the same directory for the same platform then finds this one, and the other way around.
+
+  The contents are not checked: a declared result that depends on the platform it was made on can be found where it doesn't belong.
+  """
+  @spec with_platform(t(), Dagger.Platform.t()) :: Dagger.Directory.t()
+  def with_platform(%__MODULE__{} = directory, platform) do
+    query_builder =
+      directory.query_builder |> QB.select("withPlatform") |> QB.put_arg("platform", platform)
 
     %Dagger.Directory{
       query_builder: query_builder,

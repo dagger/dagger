@@ -173,7 +173,7 @@ func (r *refCauseIndex) add(spanID string, causal []string) {
 func refHasDescendants(l *spanLookup, r *refCauseIndex, root string) bool {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
-	for _, kid := range l.children[root] {
+	for _, kid := range l.childrenLocked(root) {
 		if kid != root {
 			return true
 		}
@@ -190,7 +190,7 @@ func refDirectChildren(l *spanLookup, r *refCauseIndex, spanID string) map[strin
 	l.mu.RLock()
 	defer l.mu.RUnlock()
 	kids := map[string]struct{}{}
-	for _, kid := range l.children[spanID] {
+	for _, kid := range l.childrenLocked(spanID) {
 		if kid != spanID {
 			kids[kid] = struct{}{}
 		}
@@ -216,7 +216,7 @@ func refLogScope(l *spanLookup, r *refCauseIndex, root string) map[string]struct
 		parent := queue[0]
 		queue = queue[1:]
 		l.mu.RLock()
-		children := append(slices.Clone(l.children[parent]), r.causalChildren[parent]...)
+		children := append(l.childrenLocked(parent), r.causalChildren[parent]...)
 		l.mu.RUnlock()
 		for _, child := range children {
 			if _, exists := scope[child]; !exists {
