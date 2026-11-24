@@ -472,6 +472,7 @@ func (st *rowWaitsState) publish(span *Span, sum *waitSummary, now time.Time) bo
 	}
 	span.RowWaits = &RowWaits{AsOf: now, Segments: segs}
 	span.db.update(span)
+	span.db.noteRowWaits(span, prev)
 	return true
 }
 
@@ -491,29 +492,6 @@ func sameSegments(a, b []TimeSegment) bool {
 			x.Indirect == y.Indirect && x.Via == y.Via &&
 			sameTimeBlockers(x.Blockers, y.Blockers)
 	})
-}
-
-// rowWaitBlockers visits the blockers span's published waiting names, which
-// its own waits may not reach, each with its ancestors: a view draws them,
-// and jumps to them, from its tree (TimeBreakdownSpans).
-func (span *Span) rowWaitBlockers(visit func(*Span)) {
-	rw := span.RowWaits
-	if rw == nil {
-		return
-	}
-	visitPlaced := func(id SpanID) {
-		for s, depth := span.db.Spans.Map[id], 0; s != nil && depth < 100; s, depth = s.ParentSpan, depth+1 {
-			visit(s)
-		}
-	}
-	for _, seg := range rw.Segments {
-		if seg.Target.IsValid() {
-			visitPlaced(seg.Target)
-		}
-		for _, b := range seg.Blockers {
-			visitPlaced(b.Target)
-		}
-	}
 }
 
 // rowWaitSegments returns span's published waiting stretches as of clk: a

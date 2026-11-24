@@ -248,6 +248,17 @@ type DB struct {
 	blockerLabels map[*Span]string
 	breakdownsAt  uint64
 
+	// breakdownWalks keeps the TimeBreakdownSpans walks of wide rows, which
+	// structLog brings up to date (see breakdown_spans.go): it logs the
+	// changes to the structure of the spans they read (breakdownReads),
+	// structLog[0] at position structLogBase.
+	breakdownWalks map[*Span]*breakdownWalker
+	breakdownReads map[*Span]struct{}
+	// breakdownScratch is the walker of the walks not kept, between them.
+	breakdownScratch *breakdownWalker
+	structLog        []structTouch
+	structLogBase    uint64
+
 	// The surfacing memos below key on BOTH db.mutations and the root the walk
 	// was relative to (see surfaceRoot): a zoom change doesn't bump mutations,
 	// so without the root in the key a render zoomed to one span would be
@@ -594,6 +605,7 @@ func (db *DB) importSnapshots(snapshots []SpanSnapshot) {
 			// logs arrived before the span did (see noteHasLogs)
 			snapshot.HasLogs = true
 		}
+		prev := span.structure()
 		span.Received = true
 		snapshot.Version += span.Version // don't reset the version
 		snapshot.Name = db.internName(snapshot.Name)
@@ -633,6 +645,7 @@ func (db *DB) importSnapshots(snapshots []SpanSnapshot) {
 		}
 		span.SpanSnapshot = snapshot
 		db.integrateSpan(span)
+		db.noteStructure(span, prev)
 		spans[i] = span
 	}
 	propagateStatus(spans)
@@ -862,6 +875,7 @@ func (db *DB) ingestSpanName(record sdklog.Record) bool {
 	if span.Name != name {
 		span.Name = name
 		db.update(span)
+		db.touchStructure(span, touchFull)
 	}
 	return true
 }
@@ -1258,6 +1272,7 @@ func (db *DB) recordOTelSpan(span sdktrace.ReadOnlySpan) *Span {
 
 	// create or update the span itself
 	spanData := db.findOrAllocSpan(spanID)
+	prev := spanData.structure()
 	spanData.Received = true
 	spanData.TraceID = TraceID{span.SpanContext().TraceID()}
 	spanData.ParentID.SpanID = span.Parent().SpanID()
@@ -1306,6 +1321,7 @@ func (db *DB) recordOTelSpan(span sdktrace.ReadOnlySpan) *Span {
 
 	// integrate the span's data into the DB's live objects
 	db.integrateSpan(spanData)
+	db.noteStructure(spanData, prev)
 	return spanData
 }
 
@@ -1539,6 +1555,7 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 		if addToSpanSet(&span.ParentSpan.ChildSpans, span) {
 			// if we're a new child, take a new snapshot for ChildCount
 			db.update(span.ParentSpan)
+			db.touchStructure(span.ParentSpan, touchEdges)
 			// and, once its links are known too, pass on to the new
 			// ancestors what arrived beneath it before it did (see below)
 			joined = true
@@ -1564,8 +1581,10 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 			"":
 			installSite := linked.Purpose == telemetry.LinkPurposeCause && span.isLazyEvaluation()
 			linked := db.initSpan(linkedCtx.SpanID)
-			addToSpanSet(&linked.ChildSpans, span)
-			addToSpanSet(&linked.effectsViaLinks, span)
+			addedChild := addToSpanSet(&linked.ChildSpans, span)
+			if addToSpanSet(&linked.effectsViaLinks, span) || addedChild {
+				db.touchStructure(linked, touchEdges)
+			}
 			if addToSpanSet(&span.causesViaLinks, linked) && !span.ParentID.IsValid() {
 				// a span without a parent reaches its ancestors through
 				// its causes alone
@@ -1746,8 +1765,13 @@ func markCausalBeneath(span *Span) {
 
 func (db *DB) linkResumedOutput(span *Span, creator *Span) {
 	changed := addToSpanSet(&creator.ChildSpans, span)
-	addToSpanSet(&creator.effectsViaLinks, span)
-	addToSpanSet(&span.causesViaLinks, creator)
+	if addToSpanSet(&creator.effectsViaLinks, span) || changed {
+		db.touchStructure(creator, touchEdges)
+	}
+	if addToSpanSet(&span.causesViaLinks, creator) {
+		// it may resolve to the creator now
+		db.touchStructure(span, touchFull)
+	}
 	markCausalBeneath(span)
 	markCausalBeneath(creator)
 	if changed {

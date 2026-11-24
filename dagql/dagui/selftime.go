@@ -848,99 +848,15 @@ func (span *Span) TimeBreakdownSpans(visit func(*Span)) {
 	if span == nil || span.db == nil {
 		return
 	}
-	seen := map[*Span]bool{span: true}
-	walkedAt := map[*Span]int{}
-	expandedAt := map[*Span]int{}
-	var walk func(s *Span, depth int)
-	var emit func(c *Span, depth int)
-	visitOnce := func(c *Span) {
-		if c == nil || seen[c] {
-			return
-		}
-		seen[c] = true
-		visit(c)
+	if !span.keepsBreakdownWalk() {
+		span.db.walkBreakdownOnce(span, visit)
+		return
 	}
-	// blockerLabel searches two child levels for exec argv attributes.
-	var visitLabelSpans func(*Span, int)
-	visitLabelSpans = func(c *Span, depth int) {
-		if c == nil || depth >= 2 {
-			return
-		}
-		for _, child := range c.ChildSpans.Spans() {
-			visitOnce(child)
-			visitLabelSpans(child, depth+1)
-		}
+	// A row this wide is walked once and kept up to date from then on (see
+	// breakdown_spans.go).
+	for _, dep := range span.breakdownSpans() {
+		visit(dep)
 	}
-	emit = func(c *Span, depth int) {
-		if c == nil {
-			return
-		}
-		visitOnce(c)
-		if prev, ok := expandedAt[c]; ok && prev <= depth {
-			return
-		}
-		expandedAt[c] = depth
-
-		// Cause links and the parent fallback map resume markers to the
-		// operations retained in TimeSegment.Blockers. Expand those operations
-		// too: their waits form the next link and their descendants carry labels.
-		for _, cause := range c.causesViaLinks.Spans() {
-			// Preserve the existing dependency on every direct cause, even though
-			// resolveBlocker selects only the evaluated one.
-			visitOnce(cause)
-		}
-		resolved := resolveBlockerPath(c, visitOnce)
-		// shownBlocker names a hidden operation by its nearest drawn
-		// ancestor, so the breakdown draws on that ancestry too.
-		blockerAncestry(resolved, span, visitOnce)
-		visitLabelSpans(resolved, 0)
-		if resolved != nil && resolved != c {
-			emit(resolved, depth)
-		}
-		walk(c, depth+1)
-	}
-	walk = func(s *Span, depth int) {
-		if s == nil || depth > waitChainMaxDepth {
-			return
-		}
-		if prev, ok := walkedAt[s]; ok && prev <= depth {
-			return
-		}
-		walkedAt[s] = depth
-		for i := range s.Links {
-			if s.Links[i].IsWait() {
-				emit(s.db.Spans.Map[s.Links[i].SpanContext.SpanID], depth)
-			}
-		}
-		for _, child := range s.ChildSpans.Spans() {
-			if child.installedAt(s) {
-				continue
-			}
-			if child.Name == s.Name {
-				emit(child, depth)
-				for _, gc := range child.ChildSpans.Spans() {
-					if !gc.installedAt(child) {
-						emit(gc, depth)
-					}
-				}
-			} else if resolved := resolveBlocker(child); resolved != nil && resolved != child {
-				// collectInferredWaits inspects non-twin children which stand
-				// in for another operation, including live resume markers.
-				emit(child, depth)
-			}
-		}
-		for _, effect := range s.effectsViaLinks.Spans() {
-			if effect.installedAt(s) {
-				continue
-			}
-			emit(effect, depth)
-			for _, child := range effect.ChildSpans.Spans() {
-				emit(child, depth)
-			}
-		}
-	}
-	walk(span, 0)
-	span.rowWaitBlockers(visitOnce)
 }
 
 // resolveBlocker maps internal plumbing spans (lazy "resume" markers)
