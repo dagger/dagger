@@ -15,7 +15,6 @@ import (
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/codes"
-	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 	"google.golang.org/protobuf/proto"
 )
@@ -255,7 +254,7 @@ func TestSelectedPriorityConversation(t *testing.T) {
 	boolAttr := func(k string) *commonpb.KeyValue {
 		return &commonpb.KeyValue{Key: k, Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_BoolValue{BoolValue: true}}}
 	}
-	agentID := selectionAttr(string(semconv.GenAIAgentIDKey), "agent-1")
+	agentID := selectionAttr("gen_ai.agent.id", "agent-1")
 	attrs := map[int][]*commonpb.KeyValue{
 		3: {boolAttr(telemetryattrs.AgentAttr), agentID},
 		6: {selectionAttr(telemetry.LLMRoleAttr, "user"), agentID},
@@ -296,7 +295,7 @@ func TestSelectedConversationView(t *testing.T) {
 	db, err := openStore(t.Context(), t.TempDir(), "client", telemetryTailBudget)
 	require.NoError(t, err)
 	defer db.Close()
-	agentID := selectionAttr(string(semconv.GenAIAgentIDKey), "agent-1")
+	agentID := selectionAttr("gen_ai.agent.id", "agent-1")
 	attrs := map[int][]*commonpb.KeyValue{
 		2: {agentID}, // loop
 		3: {selectionAttr(telemetry.LLMRoleAttr, "assistant"), agentID},

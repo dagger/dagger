@@ -7,7 +7,6 @@ import (
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
-	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/dagql"
@@ -55,10 +54,10 @@ func agentSpanAttrs(ctx context.Context, name string, self dagql.ObjectResult[*A
 func genAIAgentAttrs(id, name string) []attribute.KeyValue {
 	attrs := make([]attribute.KeyValue, 0, 2)
 	if id != "" {
-		attrs = append(attrs, semconv.GenAIAgentID(id))
+		attrs = append(attrs, attribute.String(telemetryattrs.GenAIAgentIDAttr, id))
 	}
 	if name != "" {
-		attrs = append(attrs, semconv.GenAIAgentName(name))
+		attrs = append(attrs, attribute.String(telemetryattrs.GenAIAgentNameAttr, name))
 	}
 	return attrs
 }
