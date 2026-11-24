@@ -56,7 +56,7 @@ const (
 	modelDefaultGoogle     = "gemini-2.5-flash"
 	modelDefaultOpenAI     = "gpt-4.1"
 	modelDefaultCodex      = "gpt-5.5"
-	modelDefaultCopilot    = "claude-haiku-4.5"
+	modelDefaultCopilot    = "claude-sonnet-5"
 	modelDefaultOpenRouter = "anthropic/claude-sonnet-4.6"
 	modelDefaultMeta       = "llama-3.2"
 	modelDefaultMistral    = "mistral-7b-instruct"

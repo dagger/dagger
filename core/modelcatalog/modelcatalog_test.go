@@ -21,7 +21,8 @@ func TestCopilotCatalog(t *testing.T) {
 			got, ok := modelcatalog.Lookup("github-copilot", want.ID)
 			require.True(t, ok, want.ID)
 			assert.Equal(t, want.ContextWindow, got.ContextWindow, want.ID)
-			assert.Zero(t, modelcatalog.Cost("github-copilot", want.ID, 1_000_000, 1_000_000, 1_000_000, 1_000_000))
+			wantCost := want.CostPer1MIn + want.CostPer1MOut + want.CostPer1MOutCached + want.CostPer1MInCached
+			assert.InDelta(t, wantCost, modelcatalog.Cost("github-copilot", want.ID, 1_000_000, 1_000_000, 1_000_000, 1_000_000), 1e-9)
 		}
 		small, ok := modelcatalog.DefaultSmallModel("github-copilot")
 		require.True(t, ok)

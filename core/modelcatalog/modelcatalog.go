@@ -104,10 +104,6 @@ const costPerMillion = 1_000_000.0
 // assumed disjoint and billed at their respective rates. An uncatalogued model
 // (or unknown provider) costs 0.
 func Cost(provider, model string, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens int64) float64 {
-	// Copilot is a subscription; catalog prices must never become dollar usage.
-	if provider == "github-copilot" {
-		return 0
-	}
 	m, ok := Lookup(provider, model)
 	if !ok {
 		return 0

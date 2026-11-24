@@ -9,11 +9,25 @@ import (
 	"testing"
 	"time"
 
+	"charm.land/catwalk/pkg/catwalk"
+	"charm.land/catwalk/pkg/embedded"
 	"github.com/dagger/dagger/core/modelcatalog"
 	"github.com/dagger/dagger/engine"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestCopilotDefaultMatchesCatalog(t *testing.T) {
+	var catalogDefault string
+	for _, provider := range embedded.GetAll() {
+		if provider.ID == catwalk.InferenceProviderCopilot {
+			catalogDefault = provider.DefaultLargeModelID
+			break
+		}
+	}
+	require.NotEmpty(t, catalogDefault)
+	assert.Equal(t, catalogDefault, modelDefaultCopilot)
+}
 
 func TestCopilotRoute(t *testing.T) {
 	for _, baseURL := range []string{"", "https://copilot.example/api"} {
