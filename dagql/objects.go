@@ -247,6 +247,23 @@ func (class Class[T]) FieldSpec(name string, view call.View) (FieldSpec, bool) {
 	return *field.Spec, true
 }
 
+// plainField returns the spec of the field name and its entry for plain
+// values of the class (see Field.plain), if it has one.
+func (class Class[T]) plainField(name string, view call.View) (FieldSpec, plainFieldFunc, bool) {
+	field, ok := class.Field(name, view)
+	if !ok || field.plain == nil {
+		return FieldSpec{}, nil, false
+	}
+	plain := field.plain
+	return *field.Spec, func(ctx context.Context, self Typed) (Typed, error) {
+		val, ok := self.(T)
+		if !ok {
+			return nil, fmt.Errorf("%s.%s: expected %T, got %T", class.TypeName(), name, val, self)
+		}
+		return plain(ctx, val)
+	}, true
+}
+
 func (class Class[T]) FieldSpecs(view call.View) []FieldSpec {
 	class.fieldsL.Lock()
 	defer class.fieldsL.Unlock()
@@ -294,8 +311,6 @@ func (class Class[T]) Install(fields ...Field[T]) {
 			// a little hacky, but preserve a couple values
 			field.Spec.Type = oldSpec.Type
 			field.Spec.ViewFilter = oldSpec.ViewFilter
-			// the extension brings its own Func, not the struct getter
-			field.Spec.reflected = false
 		}
 
 		for _, other := range class.fields[field.Spec.Name] {
@@ -351,8 +366,6 @@ func (class Class[T]) Interfaces() []*Interface {
 }
 
 func (class Class[T]) Extend(spec FieldSpec, fun FieldFunc) {
-	// fun is not the struct getter, even if spec was copied from one
-	spec.reflected = false
 	class.fieldsL.Lock()
 	f := &Field[T]{
 		Spec: &spec,
@@ -968,9 +981,26 @@ func FuncWithDynamicInputs[T Typed, A any, R any](
 	fn FuncHandler[T, A, R],
 	cacheFn DynamicInputFunc[T, A],
 ) Field[T] {
-	return NodeFuncWithDynamicInputs(name, func(ctx context.Context, self ObjectResult[T], args A) (R, error) {
+	field, noArgs := nodeFunc(name, func(ctx context.Context, self ObjectResult[T], args A) (R, error) {
 		return fn(ctx, self.Self(), args)
 	}, cacheFn)
+	if noArgs && cacheFn == nil {
+		// fn sees only the receiver's value, so it can run on a plain value
+		// too (see Field.plain)
+		var zeroArgs A
+		field.plain = func(ctx context.Context, self T) (Typed, error) {
+			ret, err := fn(ctx, self, zeroArgs)
+			if err != nil {
+				return nil, err
+			}
+			val, err := builtinOrTyped(ret)
+			if err != nil {
+				return nil, fmt.Errorf("expected %T to be a Typed value, got %T: %w", ret, ret, err)
+			}
+			return val, nil
+		}
+	}
+	return field
 }
 
 // NodeFunc is the same as Func, except it passes the ObjectResult instead of the
@@ -987,6 +1017,17 @@ func NodeFuncWithDynamicInputs[T Typed, A any, R any](
 	fn NodeFuncHandler[T, A, R],
 	cacheFn DynamicInputFunc[T, A],
 ) Field[T] {
+	field, _ := nodeFunc(name, fn, cacheFn)
+	return field
+}
+
+// nodeFunc is NodeFuncWithDynamicInputs, also reporting whether the field
+// takes no arguments and its argument and return types are valid.
+func nodeFunc[T Typed, A any, R any](
+	name string,
+	fn NodeFuncHandler[T, A, R],
+	cacheFn DynamicInputFunc[T, A],
+) (Field[T], bool) {
 	var zeroArgs A
 	inputs, argsErr := InputSpecsForType(zeroArgs, true)
 	if argsErr != nil {
@@ -1059,7 +1100,7 @@ func NodeFuncWithDynamicInputs[T Typed, A any, R any](
 		}
 	}
 
-	return field
+	return field, argsErr == nil && returnTypeError == nil && len(inputs.raw) == 0
 }
 
 // FieldSpec is a specification for a field.
@@ -1142,12 +1183,12 @@ type FieldSpec struct {
 	// than performing meaningful work. Their telemetry spans are internal, and
 	// they skip install-span capture so they don't claim ownership of values
 	// they merely return.
+	//
+	// A Trivial field may also be resolved on an element of a list of plain
+	// values without a cache entry, a span, or a receiver result or call:
+	// its handler runs with only the receiver's value, and no CurrentCall
+	// (see Field.plain). So its handler must only read from its receiver.
 	Trivial bool
-
-	// reflected marks the getters Fields.Install reflects from struct fields:
-	// the field's value is the receiver's struct field of the same name, so
-	// it can be read from a plain value without a call (see plainSelections).
-	reflected bool
 
 	// PassthroughTelemetry keeps this field's telemetry span available for call
 	// metadata while asking the UI to show its children in its place.
@@ -1675,8 +1716,7 @@ func (fields Fields[T]) Install(server *Server) {
 			DoNotCache:         field.Field.Tag.Get("doNotCache"),
 			// Reflected struct fields are pure getter accessors. Keep their spans
 			// available as internal trace detail without presenting them as work.
-			Trivial:   true,
-			reflected: true,
+			Trivial: true,
 		}
 		if dep, ok := field.Field.Tag.Lookup("deprecated"); ok {
 			reason := dep // keep "" if that’s what the module author wrote: @deprecated("") != @deprecated()
@@ -1694,6 +1734,16 @@ func (fields Fields[T]) Install(server *Server) {
 			Spec: spec,
 			Func: func(ctx context.Context, self ObjectResult[T], args map[string]Input, view call.View) (AnyResult, error) {
 				t, found, err := getField(ctx, self.Self(), false, name)
+				if err != nil {
+					return nil, err
+				}
+				if !found {
+					return nil, fmt.Errorf("no such field: %q", name)
+				}
+				return t, nil
+			},
+			plain: func(_ context.Context, self T) (Typed, error) {
+				t, found, err := getFieldValue(self, false, name)
 				if err != nil {
 					return nil, err
 				}
@@ -1744,6 +1794,18 @@ type ImplicitInput struct {
 type Field[T Typed] struct {
 	Spec *FieldSpec
 	Func func(context.Context, ObjectResult[T], map[string]Input, call.View) (AnyResult, error)
+
+	// plain resolves the field on a plain value of the receiver, with no call
+	// frame, receiver result, cache entry or span, giving its value: an
+	// AnyResult, a Typed value, or nil for a null. The server uses it, in
+	// place of Func, for a Trivial field selected on the elements of a list
+	// of plain values (see Server.plainSelections). Func and
+	// FuncWithDynamicInputs set it for fields without arguments or dynamic
+	// inputs, running the same handler, and Fields.Install for the getters
+	// it reflects from struct fields. It is on the Field, not its Spec, so a
+	// spec installed with another Func never carries it; but code replacing
+	// the Func of a Trivial field must keep its behavior.
+	plain func(ctx context.Context, self T) (Typed, error)
 }
 
 func (field Field[T]) Extend() Field[T] {

@@ -1507,45 +1507,85 @@ func (s *Server) resolveLeafList(ctx context.Context, val AnyResult, enum Enumer
 	return results, nil
 }
 
-// plainObjectType returns the object type named by typ (a list's element
-// type) when sels can be resolved on plain values of it: see plainSelections.
-func (s *Server) plainObjectType(typ *ast.Type, sels []Selection) (ObjectType, bool) {
+// plainFieldFunc resolves a field on a plain value of its object type: see
+// Field.plain.
+type plainFieldFunc func(ctx context.Context, self Typed) (Typed, error)
+
+// plainFieldType is an ObjectType whose fields may have an entry for plain
+// values (Class).
+type plainFieldType interface {
+	plainField(name string, view call.View) (FieldSpec, plainFieldFunc, bool)
+}
+
+// plainSelection is a selection on plain values of an object type, which
+// plainSelections allowed.
+type plainSelection struct {
+	objType ObjectType
+	// sels is the selection itself, to resolve on a result instead
+	sels   []Selection
+	fields []plainSelectedField
+}
+
+// plainSelectedField is a field of a plainSelection.
+type plainSelectedField struct {
+	// key is the field's response key
+	key string
+	// typename is set for __typename
+	typename bool
+	get      plainFieldFunc
+	// sub is the selection of the field's subfields, nil for a leaf
+	sub *plainSelection
+}
+
+// plainObjectType returns the selection sels on plain values of the object
+// type named by typ (a list's element type), when plainSelections allows it.
+func (s *Server) plainObjectType(typ *ast.Type, sels []Selection) (*plainSelection, bool) {
 	if typ == nil {
 		return nil, false
 	}
 	objType, ok := s.ObjectType(typ.Name())
-	if !ok || !s.plainSelections(objType, sels) {
+	if !ok {
 		return nil, false
 	}
-	return objType, true
+	return s.plainSelections(objType, sels)
 }
 
-// plainSelections reports whether sels, on an object of objType, only read
-// the object's struct fields: every selected field (recursively) is a
-// trivial getter Fields.Install reflected from the struct, without arguments,
-// or __typename. Such a selection needs no result of the object: resolvePath
-// can read a list of such objects from their values, rather than giving
-// every element, and every element's list and object fields, a cached,
+// plainSelections reports whether sels, on an object of objType, can be
+// resolved on a plain value of it: every selected field (recursively) is
+// __typename, or a Trivial field without arguments that has an entry for
+// plain values (see Field.plain), which runs its handler on the value. Such
+// a selection needs no result of the object: resolvePath can resolve it on
+// a list of such objects from their values, rather than giving every
+// element, and every element's list and object fields, a cached,
 // session-owned result and a call per field. A selection of anything else,
-// such as id (which names the element's own result), resolves as usual.
-func (s *Server) plainSelections(objType ObjectType, sels []Selection) bool {
+// such as id (which names the element's own result) or a field whose
+// handler sees the receiver's result, resolves as usual.
+func (s *Server) plainSelections(objType ObjectType, sels []Selection) (*plainSelection, bool) {
 	if _, scoped := objType.Typed().(HasResultScope); scoped {
-		return false
+		return nil, false
 	}
+	plainType, ok := objType.(plainFieldType)
+	if !ok {
+		return nil, false
+	}
+	plan := &plainSelection{objType: objType, sels: sels}
 	for _, sel := range sels {
 		if !s.selectionMatches(sel, objType) {
 			continue
 		}
 		if sel.Selector.Field == "__typename" {
+			plan.fields = append(plan.fields, plainSelectedField{key: sel.Name(), typename: true})
 			continue
 		}
 		if sel.Selector.Nth != 0 || len(sel.Selector.Args) > 0 {
-			return false
+			return nil, false
 		}
-		spec, ok := objType.FieldSpec(sel.Selector.Field, sel.Selector.View)
-		if !ok || !spec.Trivial || !spec.reflected || spec.Type == nil {
-			return false
+		spec, get, ok := plainType.plainField(sel.Selector.Field, sel.Selector.View)
+		if !ok || !spec.Trivial || spec.Type == nil ||
+			spec.GetDynamicInput != nil || len(spec.ImplicitInputs) > 0 {
+			return nil, false
 		}
+		field := plainSelectedField{key: sel.Name(), get: get}
 		named := spec.Type.Type()
 		for named.Elem != nil {
 			named = named.Elem
@@ -1554,27 +1594,25 @@ func (s *Server) plainSelections(objType ObjectType, sels []Selection) bool {
 			if s.isObjectType(named.Name()) {
 				// an object without a selection of subfields is an error,
 				// which the usual path reports
-				return false
+				return nil, false
 			}
-			continue
+		} else if field.sub, ok = s.plainObjectType(named, sel.Subselections); !ok {
+			return nil, false
 		}
-		if _, ok := s.plainObjectType(named, sel.Subselections); !ok {
-			return false
-		}
+		plan.fields = append(plan.fields, field)
 	}
-	return true
+	return plan, true
 }
 
-// resolvePlainList resolves sels on every element of a list of plain values
-// of objType, which plainSelections allowed.
-func (s *Server) resolvePlainList(ctx context.Context, values valueEnumerable, objType ObjectType, sels []Selection) ([]any, error) {
+// resolvePlainList resolves sel on every element of a list of plain values.
+func (s *Server) resolvePlainList(ctx context.Context, values valueEnumerable, sel *plainSelection) ([]any, error) {
 	results := make([]any, values.Len())
 	for nth := 1; nth <= len(results); nth++ {
 		elem, err := values.Nth(nth)
 		if err != nil {
 			return nil, fmt.Errorf("nth %d: %w", nth, err)
 		}
-		results[nth-1], err = s.resolvePlainValue(ctx, elem, objType, sels)
+		results[nth-1], err = s.resolvePlainValue(ctx, elem, sel)
 		if err != nil {
 			return nil, fmt.Errorf("nth %d: %w", nth, err)
 		}
@@ -1582,18 +1620,18 @@ func (s *Server) resolvePlainList(ctx context.Context, values valueEnumerable, o
 	return results, nil
 }
 
-// resolvePlainValue resolves sels on a plain value: a leaf, a list, or an
-// object of objType (nil for a leaf).
-func (s *Server) resolvePlainValue(ctx context.Context, val Typed, objType ObjectType, sels []Selection) (any, error) {
-	if len(sels) == 0 {
+// resolvePlainValue resolves sel on a plain value: a leaf (sel is nil), a
+// list, or an object of sel's type.
+func (s *Server) resolvePlainValue(ctx context.Context, val Typed, sel *plainSelection) (any, error) {
+	if sel == nil {
 		return viewLeaf(val, s.View)
 	}
 	for unwrapped := false; !unwrapped; {
 		switch v := val.(type) {
 		case AnyResult:
-			// a struct field holding a result (perhaps nullable): resolve
-			// its selections on the result, as the field's call would have
-			return s.resolveResult(ctx, v, sels)
+			// a field giving a result (perhaps nullable): resolve its
+			// selections on the result, as the field's call would have
+			return s.resolveResult(ctx, v, sel.sels)
 		case Derefable:
 			inner, valid := v.Deref()
 			if !valid {
@@ -1614,40 +1652,26 @@ func (s *Server) resolvePlainValue(ctx context.Context, val Typed, objType Objec
 			if err != nil {
 				return nil, fmt.Errorf("nth %d: %w", nth, err)
 			}
-			results[nth-1], err = s.resolvePlainValue(ctx, elem, objType, sels)
+			results[nth-1], err = s.resolvePlainValue(ctx, elem, sel)
 			if err != nil {
 				return nil, fmt.Errorf("nth %d: %w", nth, err)
 			}
 		}
 		return results, nil
 	}
-	obj := make(map[string]any, len(sels))
-	for _, sel := range sels {
-		if !s.selectionMatches(sel, objType) {
+	obj := make(map[string]any, len(sel.fields))
+	for _, field := range sel.fields {
+		if field.typename {
+			obj[field.key] = sel.objType.TypeName()
 			continue
 		}
-		field := sel.Selector.Field
-		if field == "__typename" {
-			obj[sel.Name()] = objType.TypeName()
-			continue
-		}
-		fieldVal, found, err := getFieldValue(val, false, field)
+		// no call: the field's handler runs on the value alone, which a
+		// Trivial field's handler only reads (see FieldSpec.Trivial)
+		fieldVal, err := field.get(ctx, val)
 		if err != nil {
 			return nil, err
 		}
-		if !found {
-			return nil, fmt.Errorf("no such field: %q", field)
-		}
-		var fieldType ObjectType
-		if len(sel.Subselections) > 0 {
-			spec, _ := objType.FieldSpec(field, sel.Selector.View)
-			named := spec.Type.Type()
-			for named.Elem != nil {
-				named = named.Elem
-			}
-			fieldType, _ = s.ObjectType(named.Name())
-		}
-		obj[sel.Name()], err = s.resolvePlainValue(ctx, fieldVal, fieldType, sel.Subselections)
+		obj[field.key], err = s.resolvePlainValue(ctx, fieldVal, field.sub)
 		if err != nil {
 			return nil, err
 		}
@@ -2780,10 +2804,10 @@ func (s *Server) resolvePath(ctx context.Context, self AnyObjectResult, sel Sele
 		}
 
 		if values, ok := enum.(valueEnumerable); ok {
-			if elemType, ok := s.plainObjectType(val.Type().Elem, sel.Subselections); ok {
-				// plain values whose selected fields are their struct fields:
-				// read them straight from the list (see plainSelections)
-				return s.resolvePlainList(ctx, values, elemType, sel.Subselections)
+			if plain, ok := s.plainObjectType(val.Type().Elem, sel.Subselections); ok {
+				// plain values whose selected fields are all Trivial: resolve
+				// them on the list's values (see plainSelections)
+				return s.resolvePlainList(ctx, values, plain)
 			}
 		}
 

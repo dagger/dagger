@@ -1364,7 +1364,7 @@ type Enumerable interface {
 // of the list's call frame. The server reads the elements of such a list
 // directly when nothing needs an element's own result: in resolvePath when
 // they're leaves of the query, or objects whose selected fields are all
-// struct fields (resolvePlainList), and in Select into a slice of plain
+// Trivial (resolvePlainList), and in Select into a slice of plain
 // values (assignLeafValues). Each element's result would be cached and owned
 // by the session, and copying the frame once per element is quadratic when
 // the call has a large list argument.
