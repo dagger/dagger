@@ -144,7 +144,7 @@ func artifactTableCoordinates(item listedArtifact) []flattening.Coordinate {
 		}
 	}
 	for _, id := range item.Presence {
-		coordinates = append(coordinates, flattening.Coordinate{Dimension: id, Key: "*"})
+		coordinates = append(coordinates, flattening.Coordinate{Dimension: id, Key: flattening.RoutedKey(item.CollectionRoutes[id], "*")})
 	}
 	return coordinates
 }

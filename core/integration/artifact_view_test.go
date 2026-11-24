@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"dagger.io/dagger"
@@ -221,6 +222,36 @@ type Case {
   {"value":{"name":"c","parent":{"keys":["c"],"removed":["a","b"]}}}
  ]}}}}}}
 }`, out)
+}
+
+func (ArtifactsSuite) TestCollectionRouteListing(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := artifactViewWorkspace(t, c, `type View {
+  before: Cases! { Cases(names: ["unit"]) }
+  after: Cases! { Cases(names: ["unit"]) }
+}
+type Cases @collection {
+  pub names: [String!]! @keys
+  lookup(name: String!): Case! @get { Case(name: name) }
+}
+type Case {
+  pub name: String!
+  verify: Void @check { null }
+}
+`)
+	for _, all := range []bool{false, true} {
+		args := []string{"check", "-l"}
+		key := "*"
+		if all {
+			args = append(args, "--all")
+			key = "unit"
+		}
+		out, err := base.With(daggerExec(args...)).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "VIEW-CASE")
+		require.Regexp(t, `(?m)^before\.`+regexp.QuoteMeta(key)+`\s`, out)
+		require.Regexp(t, `(?m)^after\.`+regexp.QuoteMeta(key)+`\s`, out)
+	}
 }
 
 func (ArtifactsSuite) TestFilteredViewChecks(ctx context.Context, t *testctx.T) {

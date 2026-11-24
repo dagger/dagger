@@ -132,6 +132,23 @@ func TestArtifactListColumnSelection(t *testing.T) {
 	require.Equal(t, "generate.stale", rows[0].Coordinates[3].Key)
 }
 
+func TestArtifactListCollectionRoutes(t *testing.T) {
+	var rows []listedArtifact
+	for _, route := range []string{"before", "after"} {
+		rows = append(rows, listedArtifact{
+			URI:              "dag+check://app/" + route + "/verify",
+			Coordinates:      []struct{ Dimension, Key string }{{"module", "app"}, {"name", "verify"}},
+			Presence:         []string{"Cases"},
+			CollectionRoutes: map[string][]string{"Cases": {route}},
+		})
+	}
+	var out bytes.Buffer
+	require.NoError(t, writeArtifactTable(&out, rows, map[string]string{"Cases": "case"}))
+	require.Regexp(t, `(?m)^CASE +LINK$`, out.String())
+	require.Regexp(t, `(?m)^before\.\* +dag\+check://app/before/verify$`, out.String())
+	require.Regexp(t, `(?m)^after\.\* +dag\+check://app/after/verify$`, out.String())
+}
+
 func TestArtifactListMixedTypes(t *testing.T) {
 	rows := []listedArtifact{
 		{

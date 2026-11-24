@@ -468,14 +468,15 @@ func artifactURIs(ctx context.Context, dag *dagger.Client, artifacts *core.Artif
 }
 
 type listedArtifact struct {
-	ModuleFlag       string            `json:"-"`
-	OmitTypeKey      bool              `json:"-"`
-	OmitCLITypeKey   bool              `json:"-"`
-	CLIPath          string            `json:"-"`
-	Presence         []string          `json:"presence,omitempty"`
-	DisplayKeys      map[string]string `json:"-"`
-	PresenceNames    map[string]string `json:"-"`
-	CollectionItem   bool              `json:"-"`
+	ModuleFlag       string              `json:"-"`
+	OmitTypeKey      bool                `json:"-"`
+	OmitCLITypeKey   bool                `json:"-"`
+	CLIPath          string              `json:"-"`
+	Presence         []string            `json:"presence,omitempty"`
+	CollectionRoutes map[string][]string `json:"collectionRoutes,omitempty"`
+	DisplayKeys      map[string]string   `json:"-"`
+	PresenceNames    map[string]string   `json:"-"`
+	CollectionItem   bool                `json:"-"`
 	URI, Description string
 	ModuleName       string
 	LoadError        string

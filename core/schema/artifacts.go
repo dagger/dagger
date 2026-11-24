@@ -493,16 +493,17 @@ func (*artifactsSchema) listing(ctx context.Context, parent *core.Artifacts, arg
 
 func marshalArtifactListing(ctx context.Context, items []*core.Artifact, args artifactListingArgs) (core.JSON, error) {
 	type row struct {
-		URI           string                       `json:"uri"`
-		Description   string                       `json:"description"`
-		ModuleName    string                       `json:"moduleName"`
-		LoadError     string                       `json:"loadError,omitempty"`
-		Path          []string                     `json:"path"`
-		DimensionKeys []*core.ArtifactDimensionKey `json:"dimensionKeys"`
-		Name          string                       `json:"name"`
-		Coordinates   []*core.ArtifactDimensionKey `json:"coordinates,omitempty"`
-		Presence      []string                     `json:"presence,omitempty"`
-		Projection    *flattening.Field            `json:"projection,omitempty"`
+		URI              string                       `json:"uri"`
+		Description      string                       `json:"description"`
+		ModuleName       string                       `json:"moduleName"`
+		LoadError        string                       `json:"loadError,omitempty"`
+		Path             []string                     `json:"path"`
+		DimensionKeys    []*core.ArtifactDimensionKey `json:"dimensionKeys"`
+		Name             string                       `json:"name"`
+		Coordinates      []*core.ArtifactDimensionKey `json:"coordinates,omitempty"`
+		Presence         []string                     `json:"presence,omitempty"`
+		Projection       *flattening.Field            `json:"projection,omitempty"`
+		CollectionRoutes map[string][]string          `json:"collectionRoutes,omitempty"`
 	}
 	canonical := core.Supports(ctx, artifactDimensionViewVersion)
 	rows := make([]row, len(items))
@@ -551,6 +552,15 @@ func marshalArtifactListing(ctx context.Context, items []*core.Artifact, args ar
 			if canonical {
 				field := item.ProjectionField()
 				rows[i].Projection = &field
+				for node := item.Node; node != nil; node = node.Parent {
+					if node.CollectionDimension == nil || len(node.CollectionRoute) == 0 {
+						continue
+					}
+					if rows[i].CollectionRoutes == nil {
+						rows[i].CollectionRoutes = map[string][]string{}
+					}
+					rows[i].CollectionRoutes[node.CollectionDimension.CollectionType] = node.CollectionRoute
+				}
 			}
 			for _, d := range item.DimensionDefinitions() {
 				if !artifact.IsStaticDimension(d.Identifier) {
