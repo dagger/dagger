@@ -1,5 +1,5 @@
 using System;
-using System.Collections.Immutable;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
@@ -50,6 +50,19 @@ public class SourceGenerator(CodeGenerator codeGenerator) : IIncrementalGenerato
             location: null
         );
 
+    public static Diagnostic FailedToParseNamesFile =>
+        Diagnostic.Create(
+            new DiagnosticDescriptor(
+                id: "DAG005",
+                title: "Failed to read names.json file",
+                messageFormat: "Failed to read the names.json file next to introspection.json. The source generator will not generate any code.",
+                category: "Dagger.SDK.SourceGenerator",
+                DiagnosticSeverity.Error,
+                isEnabledByDefault: true
+            ),
+            location: null
+        );
+
     public SourceGenerator()
         : this(new CodeGenerator(new CodeRenderer())) { }
 
@@ -62,12 +75,19 @@ public class SourceGenerator(CodeGenerator codeGenerator) : IIncrementalGenerato
         IncrementalValuesProvider<SourceText?> sourceTexts = schemaFiles.Select(
             (text, ct) => text.GetText(cancellationToken: ct)
         );
-        IncrementalValueProvider<ImmutableArray<SourceText?>> items = sourceTexts.Collect();
+        // The names the engine formatted for the schema's names, written next
+        // to introspection.json by `codegen introspect --names-out` (see
+        // Namer). Without it, names get the legacy conversion.
+        IncrementalValuesProvider<SourceText?> namesTexts = additionalText
+            .Where(static x => IsNamesFile(x.Path))
+            .Select((text, ct) => text.GetText(cancellationToken: ct));
+        var items = sourceTexts.Collect().Combine(namesTexts.Collect());
 
         context.RegisterSourceOutput(
             items,
-            (spc, sources) =>
+            (spc, input) =>
             {
+                var (sources, namesSources) = input;
                 if (sources.Length == 0)
                 {
                     spc.ReportDiagnostic(NoSchemaFileFound);
@@ -86,12 +106,31 @@ public class SourceGenerator(CodeGenerator codeGenerator) : IIncrementalGenerato
                     return;
                 }
 
+                Dictionary<string, Dictionary<string, string>>? names = null;
+                if (namesSources.Length > 0)
+                {
+                    if (namesSources.Length != 1 || namesSources[0] is null)
+                    {
+                        spc.ReportDiagnostic(FailedToParseNamesFile);
+                        return;
+                    }
+                    try
+                    {
+                        names = Namer.ParseNames(namesSources[0]!.ToString());
+                    }
+                    catch (JsonException)
+                    {
+                        spc.ReportDiagnostic(FailedToParseNamesFile);
+                        return;
+                    }
+                }
+
                 try
                 {
                     Introspection introspection = JsonSerializer.Deserialize<Introspection>(
                         sources[0]!.ToString()
                     )!;
-                    string code = codeGenerator.Generate(introspection);
+                    string code = codeGenerator.Generate(introspection, names);
                     spc.AddSource("Dagger.SDK.g.cs", SourceText.From(code, Encoding.UTF8));
                 }
                 catch (JsonException)
@@ -105,6 +144,9 @@ public class SourceGenerator(CodeGenerator codeGenerator) : IIncrementalGenerato
             }
         );
     }
+
+    private static bool IsNamesFile(string path) =>
+        path == "names.json" || path.EndsWith("/names.json") || path.EndsWith("\\names.json");
 
     private static Diagnostic FailedToGenerateCode(Exception ex)
     {

@@ -11,13 +11,18 @@ public static class TypeRefExtension
     // This method doesn't indicate the type is nullable or not. The caller
     // must detecting it from TypeRef object by themself.
     // </summary>
-    public static string GetTypeName(this TypeRef typeRef)
+    public static string GetTypeName(this TypeRef typeRef) => typeRef.GetTypeName(Namer.Legacy);
+
+    // <summary>
+    // Get a type from TypeRef, named by a Namer.
+    // </summary>
+    public static string GetTypeName(this TypeRef typeRef, Namer namer)
     {
         var tr = typeRef.GetType_();
         if (tr.IsList())
         {
-            return $"{tr.OfType!.GetTypeName()}[]";
+            return $"{tr.OfType!.GetTypeName(namer)}[]";
         }
-        return Formatter.FormatType(tr.Name);
+        return namer.Type(tr.Name);
     }
 }

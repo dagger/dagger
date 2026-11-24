@@ -24,4 +24,10 @@ public static class Formatter
             _ => typeName,
         };
     }
+
+    /// <summary>
+    /// Whether a GraphQL type is a built-in scalar, with a fixed C# type.
+    /// </summary>
+    public static bool IsBuiltinType(string typeName) =>
+        typeName is "String" or "Boolean" or "Int" or "Float" or "ID";
 }
