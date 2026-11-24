@@ -27,7 +27,6 @@ type ContainerWithDirectoryOpts = core.ContainerWithDirectoryOpts
 type ContainerWithEnvVariableOpts = core.ContainerWithEnvVariableOpts
 type ContainerWithExecOpts = core.ContainerWithExecOpts
 type ContainerWithExposedPortOpts = core.ContainerWithExposedPortOpts
-type ContainerWithFileOpts = core.ContainerWithFileOpts
 type ContainerWithMountedCacheOpts = core.ContainerWithMountedCacheOpts
 type ContainerWithMountedSecretOpts = core.ContainerWithMountedSecretOpts
 type Directory = core.Directory

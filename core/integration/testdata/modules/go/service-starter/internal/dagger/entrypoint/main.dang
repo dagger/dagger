@@ -25,11 +25,13 @@ type Entrypoint implements ModuleEntrypoint {
 
   pub types: [TypeDef!]! {
     [
-      typeDef.withObject("Starter", sourceMap: sourceMap("main.go", 9, 6))
+      typeDef.withObject("Starter", sourceMap: sourceMap("main.go", 11, 6))
         .withFunction(
           function("Start", typeDef.withKind(TypeDefKind.VOID_KIND).withOptional(true))
-            .withSourceMap(sourceMap("main.go", 11, 1))
-            .withArg("s", typeDef.withObject("Service"), sourceMap: sourceMap("main.go", 11, 46))
+            .withDescription("Start brings svc up through a tunnel, as a client other than its caller,\nand keeps it up until the caller has bound it too, which the caller marks\nby creating /bound in cache.")
+            .withSourceMap(sourceMap("main.go", 16, 1))
+            .withArg("svc", typeDef.withObject("Service"), sourceMap: sourceMap("main.go", 16, 46))
+            .withArg("cache", typeDef.withObject("CacheVolume"), sourceMap: sourceMap("main.go", 16, 67))
         )
         .withConstructor(function("", typeDef.withObject("Starter")))
     ]
