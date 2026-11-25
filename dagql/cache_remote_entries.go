@@ -838,7 +838,7 @@ func (a *MergedReplyApply) Records() int {
 // carries, completed parts, a learned content digest and dependencies, as one
 // observation of its value state at the report's replacement count. It
 // reports false, and changes nothing, when the cache has no such holding: a
-// lazy span or share event never creates one. A higher count can drop
+// lazy span or parts event never creates one. A higher count can drop
 // dependencies, whose holdings it returns as candidates.
 func (c *Cache) UpdateRemoteHolding(ctx context.Context, key HolderKey, update RemoteHoldingUpdate) (RemoteChange, bool, error) {
 	return c.UpdatePreparedRemoteHolding(ctx, key, update, PrepareRemoteHoldingUpdate(key, update))

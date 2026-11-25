@@ -2911,9 +2911,9 @@ type Cache struct {
 	operationWaitMu        sync.Mutex
 	operationWaitCh        chan struct{}
 
-	// shareReport receives the complete parts entries' spans left out; see
-	// WithSnapshotShareReport. Set at construction.
-	shareReport func([]SnapshotSharedPart)
+	// owedPartReport receives the complete parts entries' spans left out; see
+	// WithOwedPartReport. Set at construction.
+	owedPartReport func([]OwedPart)
 	// partReads reports the parts of entries work reads; see
 	// WithPartReadReport. Nil unless set at construction.
 	partReads *partReadLog

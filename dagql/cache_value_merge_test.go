@@ -970,7 +970,7 @@ func valueStateCloud(t *testing.T, observations []valueStateObs) valueStateFinal
 		var err error
 		switch o.tag {
 		case "complete", "share":
-			// A lazy span, or a share event.
+			// A lazy span, or a parts event.
 			change, _, err = cloud.UpdateRemoteHolding(ctx, key(vsR), RemoteHoldingUpdate{Replacements: o.count, Parts: addresses(o.complete), Deps: o.deps})
 		case "hit", "replace":
 			// A call span.
