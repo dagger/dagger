@@ -158,11 +158,13 @@ type RemoteHoldingUpdate struct {
 // collects by itself.
 //
 // On a blob-backed cache, Holdings and Entries are what a reader that keeps
-// its answers asks again (cache_change_marks.go), sorted, holdings by number
-// and then cache:
+// its answers takes or asks again (cache_change_marks.go), sorted, holdings
+// by number and then cache:
 //   - Holdings: every holding whose facts (HoldingFacts, what a reader may
 //     keep of its description) may differ after the operation, those it
-//     created or removed included. The rest of a description, its content
+//     created or removed included, each with its facts and its entry's as the
+//     operation left them (ChangedHolding), so a reader keeps them without
+//     reading the holding again. The rest of a description, its content
 //     digest, the sessions holding it, its count of dependents and its
 //     offered parts, a reader reads fresh: a change to them alone names no
 //     holding;
@@ -183,12 +185,125 @@ type RemoteHoldingUpdate struct {
 // field of an entry, which only EntryInfo returns.
 type RemoteChange struct {
 	Candidates []HolderKey
-	Holdings   []HolderKey
+	Holdings   []ChangedHolding
 	Entries    []uint64
+	// At is the cache's count of hand-backs of changes at this one's (its
+	// last, for a change handed back more than once): a reader that also
+	// reads what it names keeps whichever is newer (RemoteHeldEntry.At,
+	// EntryFacts.At, RemoteEntryInfo.At). Operations can be noted out of the
+	// order they ran in, and At orders them. 0 for a change no hand-back
+	// made: one that names nothing, or an upload's start or end
+	// (StartPartUploads, EndPartUploads), which changes part answers alone,
+	// so a reader has no facts to order by it.
+	At uint64
 	// Saved reports that the operation changed what a save of the cache
 	// writes, beyond the holdings, which aren't saved: a call kept on a
 	// stored entry, the entry's expiry, or that its stored record's run ran.
 	Saved bool
+}
+
+// HoldingKeys are the keys of the holdings the change names, in its order.
+func (change RemoteChange) HoldingKeys() []HolderKey {
+	if len(change.Holdings) == 0 {
+		return nil
+	}
+	keys := make([]HolderKey, len(change.Holdings))
+	for i, held := range change.Holdings {
+		keys[i] = held.Key
+	}
+	return keys
+}
+
+// ChangedHolding is a holding a change names (RemoteChange.Holdings), as the
+// change left it: its facts (Facts) and its entry's (Entry), or that it is
+// gone. They are taken in the hold that hands the change back, where the
+// write has them at hand, so that a reader keeping them doesn't read the
+// holding back, waiting for the cache's lock again behind other writers.
+//
+// Taking them copies nothing but the holding's and its entry's scalars,
+// into as few bytes as hold them: a change names a holding for each write
+// to it, and writes hold the cache's lock. The holding's dependencies and
+// parts and its entry's recipes are kept as the cache's own slices, which a
+// write replaces or appends to and never changes in place, and Facts and
+// Entry decode, sort and copy them after the hold, when the reader asks.
+type ChangedHolding struct {
+	Key HolderKey
+	// At is the count of the hand-back that took this (RemoteChange.At).
+	At uint64
+
+	typeName                       unique.Handle[string]
+	expiresAtUnix, retentionExpiry int64
+	replacements                   uint64
+	deps, unknownDeps              []uint64
+	parts                          []heldPart
+	entry                          uint64
+	storedExpiresAtUnix            int64
+	recipes                        []digest.Digest
+	flags                          changedHoldingFlags
+}
+
+// changedHoldingFlags are a ChangedHolding's yes-or-no facts.
+type changedHoldingFlags uint8
+
+const (
+	changedGone changedHoldingFlags = 1 << iota
+	changedRetained
+	changedExecuted
+	changedFollows
+	changedRowed
+	changedStored
+)
+
+// Gone reports that the cache had no such holding when the change was
+// handed back; it has no facts.
+func (h ChangedHolding) Gone() bool {
+	return h.flags&changedGone != 0
+}
+
+// Facts is the holding's facts (HoldingFacts) as the change left them, its
+// complete parts' addresses decoded from their keys. Deps and UnknownDeps
+// are the holding's own slices, as HoldingFacts returns them: the caller
+// must not change them.
+func (h ChangedHolding) Facts() HoldingFacts {
+	facts := HoldingFacts{
+		TypeName:               handleString(h.typeName),
+		ExpiresAtUnix:          h.expiresAtUnix,
+		Retained:               h.flags&changedRetained != 0,
+		RetentionExpiresAtUnix: h.retentionExpiry,
+		Replacements:           h.replacements,
+		Executed:               h.flags&changedExecuted != 0,
+		FollowsFromInputs:      h.flags&changedFollows != 0,
+		CallRow:                h.flags&changedRowed != 0,
+		Deps:                   h.deps,
+		UnknownDeps:            h.unknownDeps,
+	}
+	facts.Parts, _ = heldPartAddresses(h.parts, false)
+	return facts
+}
+
+// Entry is the facts of the entry the holding sits on (EntryFacts) as the
+// change left them, as of At.
+func (h ChangedHolding) Entry() EntryFacts {
+	entry := EntryFacts{Number: h.entry, Stored: h.flags&changedStored != 0, StoredExpiresAtUnix: h.storedExpiresAtUnix, At: h.At}
+	entry.Recipes = slices.Clone(h.recipes)
+	slices.Sort(entry.Recipes)
+	return entry
+}
+
+// EntryNumber is the number of the entry the holding sits on (Entry), with
+// no copy of its recipes.
+func (h ChangedHolding) EntryNumber() uint64 {
+	return h.entry
+}
+
+// changedHoldingLocked takes the holding key as it stands, for a change
+// handed back with the count at (ChangedHolding). Requires egraphMu.
+func (c *Cache) changedHoldingLocked(key HolderKey, at uint64) ChangedHolding {
+	changed := ChangedHolding{Key: key, At: at}
+	if _, h := c.holdingLocked(key); h == nil {
+		changed.flags = changedGone
+	}
+	return changed
 }
 
 // HeldValueState is one observation of the value state of a holding's copy:
@@ -1856,6 +1971,9 @@ type RemoteEntryInfo struct {
 	// class representatives (the smallest digest of each input class), sorted.
 	Terms    []RemoteTerm
 	Holdings []RemoteHoldingInfo
+	// At is the cache's count of hand-backs of changes when this was read
+	// (RemoteChange.At).
+	At uint64
 }
 
 // RemoteHoldingInfo describes one holding: its key, what a reader may keep of
@@ -1914,6 +2032,9 @@ type RemoteHeldEntry struct {
 	Recipes             []digest.Digest
 	// Holding is the holding's description, as in RemoteEntryInfo.Holdings.
 	Holding RemoteHoldingInfo
+	// At is the cache's count of hand-backs of changes when this was read
+	// (RemoteChange.At): it shows every change with a count at or below it.
+	At uint64
 }
 
 // RemoteHoldingInfo returns what RemoteEntryInfo reports for the holding key
@@ -1952,7 +2073,7 @@ func (c *Cache) remoteHoldingInfoLocked(key HolderKey) (RemoteHeldEntry, bool) {
 	if h == nil {
 		return RemoteHeldEntry{}, false
 	}
-	held := RemoteHeldEntry{Holding: holdingInfo(key, h)}
+	held := RemoteHeldEntry{Holding: holdingInfo(key, h), At: c.handedLocked()}
 	held.Number, held.Stored, held.StoredExpiresAtUnix, held.Recipes = entryFactsLocked(entry)
 	return held, true
 }
@@ -2067,7 +2188,7 @@ func (c *Cache) cacheHoldingsLocked(cache CacheID, numbers []uint64) []RemoteHel
 		if len(refs) == 0 {
 			continue
 		}
-		var held RemoteHeldEntry
+		held := RemoteHeldEntry{At: c.handedLocked()}
 		held.Number, held.Stored, held.StoredExpiresAtUnix, held.Recipes = entryFactsLocked(entry)
 		for _, ref := range refs {
 			held.Holding = holdingInfo(ref.key, ref.h)
@@ -2140,6 +2261,9 @@ type EntryFacts struct {
 	Stored              bool
 	StoredExpiresAtUnix int64
 	Recipes             []digest.Digest
+	// At is the cache's count of hand-backs of changes when these were read
+	// or taken (RemoteChange.At).
+	At uint64
 }
 
 // EntriesFacts returns, for each of numbers the cache has an entry for, in
@@ -2160,7 +2284,7 @@ func (c *Cache) EntriesFacts(numbers []uint64) []EntryFacts {
 		if entry == nil {
 			continue
 		}
-		var facts EntryFacts
+		facts := EntryFacts{At: c.handedLocked()}
 		facts.Number, facts.Stored, facts.StoredExpiresAtUnix, facts.Recipes = entryFactsLocked(entry)
 		out = append(out, facts)
 		if c.testBatchAnswered != nil {
@@ -2185,7 +2309,7 @@ func entryFactsLocked(entry *sharedResult) (number uint64, stored bool, storedEx
 // record and that record's expiry, its identity and its holdings. Requires
 // egraphMu.
 func (c *Cache) remoteEntryInfoLocked(entry *sharedResult) RemoteEntryInfo {
-	info := RemoteEntryInfo{Field: entry.description}
+	info := RemoteEntryInfo{Field: entry.description, At: c.handedLocked()}
 	info.Number, info.Stored, info.StoredExpiresAtUnix, info.Recipes = entryFactsLocked(entry)
 	digests := map[string]struct{}{}
 	for _, dig := range c.resultIndexedDigests[entry.id] {
@@ -2245,8 +2369,8 @@ func heldPartAddresses(parts []heldPart, offered bool) (complete, offers []Persi
 		if part.state != heldPartComplete && !offered {
 			continue
 		}
-		var address PersistedPartAddress
-		if err := json.Unmarshal([]byte(handleString(part.key)), &address); err != nil {
+		address, ok := partAddressOfKey(handleString(part.key))
+		if !ok {
 			continue
 		}
 		if part.state == heldPartComplete {
@@ -2256,6 +2380,16 @@ func heldPartAddresses(parts []heldPart, offered bool) (complete, offers []Persi
 		}
 	}
 	return complete, offers
+}
+
+// partAddressOfKey parses a part's address key (partAddressKey); false for
+// one that doesn't parse.
+func partAddressOfKey(key string) (PersistedPartAddress, bool) {
+	var address PersistedPartAddress
+	if err := json.Unmarshal([]byte(key), &address); err != nil {
+		return PersistedPartAddress{}, false
+	}
+	return address, true
 }
 
 // HoldingFacts are what a reader may keep of a holding from one change to
@@ -2293,6 +2427,14 @@ func (c *Cache) HoldingFacts(key HolderKey) (HoldingFacts, bool) {
 	if h == nil {
 		return HoldingFacts{}, false
 	}
+	facts := holdingFactsLocked(h)
+	facts.Parts, _ = heldPartAddresses(h.parts, false)
+	return facts, true
+}
+
+// holdingFactsLocked is h's facts but for its parts, its dependencies its
+// own slices (HoldingFacts). Requires egraphMu.
+func holdingFactsLocked(h *holding) HoldingFacts {
 	facts := HoldingFacts{
 		TypeName:          handleString(h.typeName),
 		ExpiresAtUnix:     h.expiresAtUnix,
@@ -2307,8 +2449,7 @@ func (c *Cache) HoldingFacts(key HolderKey) (HoldingFacts, bool) {
 	if h.retention.retained {
 		facts.RetentionExpiresAtUnix = h.retention.expiresAtUnix
 	}
-	facts.Parts, _ = heldPartAddresses(h.parts, false)
-	return facts, true
+	return facts
 }
 
 // eqClassRootLocked returns the root of id's class, as findEqClassLocked
