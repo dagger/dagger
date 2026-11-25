@@ -6777,8 +6777,11 @@ func (fe *frontendPretty) renderProgressLines(r *renderer, ctx tuist.Context, ch
 
 		if len(pendingLogs) > 0 && len(result.Lines) > 0 {
 			// Logs from before this tree started, in place of its gap: they
-			// count as the gap for working out where the tree is.
-			block := logBlock(len(allLines) > 0, pendingLogs, true)
+			// count as the gap for working out where the tree is. A tree
+			// that opens with a blank line (an assistant reply) brings its
+			// own separation; a shaded prompt card's padding isn't blank.
+			opensBlank := strings.TrimSpace(result.Lines[0]) == ""
+			block := logBlock(len(allLines) > 0, pendingLogs, !opensBlank)
 			pendingLogs = nil
 			topGapCounts[i] = len(block)
 			allLines = append(allLines, block...)

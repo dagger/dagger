@@ -110,6 +110,25 @@ func TestZoomedLogsInterleaveWithRows(t *testing.T) {
 	)
 }
 
+// TestZoomedLogsSpacingBetweenReplies: a block of logs sits one blank line
+// apart from the replies around it, as replies sit from each other.
+func TestZoomedLogsSpacingBetweenReplies(t *testing.T) {
+	fe := zoomedLogsFrontend(t, timedLog{"log-after-first\n", after(2 * time.Second)})
+	for _, id := range []byte{2, 3, 4} {
+		// Replies, which open with a blank line of their own; one with
+		// nothing said isn't shown.
+		fe.db.Spans.Map[prettyTestSpanID(id)].LLMRole = "assistant"
+		_, _ = fe.logs.spanLogs(prettyTestSpanID(id)).WriteMarkdown([]byte("said"))
+	}
+	fe.recalculateViewLocked()
+	lines := zoomedLogsLines(fe)
+	requireOrder(t, lines, "first-step", "log-after-first", "second-step", "third-step")
+	for i := 1; i < len(lines); i++ {
+		require.False(t, strings.TrimSpace(lines[i-1]) == "" && strings.TrimSpace(lines[i]) == "",
+			"two blank lines in a row:\n%s", strings.Join(lines, "\n"))
+	}
+}
+
 // TestZoomedLogsSplitFollowsNewRows: a row arriving after logs that were
 // written after it started splits them, the piece before it keeping its
 // place.
