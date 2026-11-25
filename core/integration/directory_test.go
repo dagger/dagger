@@ -1944,6 +1944,31 @@ func (DirectorySuite) TestContentKeyCoversRoot(ctx context.Context, t *testctx.T
 	require.Equal(t, "/", name)
 }
 
+// Two directories rooted at / that hold the same files are one result,
+// however they were made: here a copy of a host directory, and a copy of a
+// subdirectory of a copy of another one.
+func (DirectorySuite) TestContentKeyAtRootIsItsFiles(ctx context.Context, t *testctx.T) {
+	contents := rand.Text()
+	flat, nested := t.TempDir(), t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(flat, "f"), []byte(contents), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(nested, "a"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(nested, "a", "f"), []byte(contents), 0o644))
+	c := connect(ctx, t)
+	q := sdkcore.NewQuery(c)
+	whole := sdkcore.DirectoryFilterOpts{Exclude: []string{"absent"}}
+	run := func(src *sdkcore.Directory) string {
+		out, err := q.Container().From(alpineImage).
+			WithMountedDirectory("/src", src).
+			WithExec([]string{"cat", "/proc/sys/kernel/random/uuid"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		return out
+	}
+	require.Equal(t,
+		run(q.Host().Directory(flat).Filter(whole)),
+		run(q.Host().Directory(nested).Filter(whole).Directory("a").Filter(whole)))
+}
+
 func (DirectorySuite) TestDirectoryName(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
