@@ -528,8 +528,8 @@ func TestHitDecodeMeetsChangesAfterItsGraphRead(t *testing.T) {
 
 // BenchmarkHitDecodeGraphRead is a load's read of the graph its decode
 // reaches, under one hold of the graph lock: a writer waits at most this
-// long behind a load. The closures are a module's, about 1,400 entries, the
-// largest seen on a pull request's checks, about 2,000, and ten times that.
+// long behind a load. The closures have 1,400, 2,000 and 20,000 entries,
+// covering module-sized loads and larger graphs.
 func BenchmarkHitDecodeGraphRead(b *testing.B) {
 	for _, n := range []int{1400, 2000, 20000} {
 		b.Run(fmt.Sprintf("%d entries", n), func(b *testing.B) {
