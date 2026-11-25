@@ -161,7 +161,7 @@ func runTestApplyServed(t *testing.T, ctx context.Context, cloud *Cache, sent Va
 // bundle or a value B kept.
 func runTestApplyReply(t *testing.T, ctx context.Context, cloud *Cache, sent ValueBundle, key HolderKey, replacements uint64, stored bool) {
 	t.Helper()
-	_, err := cloud.ApplyMergedReply(ctx, "cache-b", sent, MergeReply{Values: []MergedValue{{Ordinal: sent.Roots[0].Ordinal, Number: key.Number, Replacements: replacements, Stored: stored}}})
+	_, err := cloud.ApplyMergedReply(ctx, "cache-b", sent.Sent(), MergeReply{Values: []MergedValue{{Ordinal: sent.Roots[0].Ordinal, Number: key.Number, Replacements: replacements, Stored: stored}}})
 	require.NoError(t, err)
 }
 

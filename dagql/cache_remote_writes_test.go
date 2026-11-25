@@ -20,7 +20,7 @@ type remoteWriteOps interface {
 	AddRemoteHold(context.Context, HolderKey, string) (RemoteChange, error)
 	ObserveRemoteRetention(context.Context, HolderKey, RetentionObservation) (RemoteChange, error)
 	ApplyHeldValueState(context.Context, HolderKey, HeldValueState) (RemoteChange, bool, error)
-	ApplyMergedReply(context.Context, CacheID, ValueBundle, MergeReply) (RemoteChange, error)
+	ApplyMergedReply(context.Context, CacheID, SentBundle, MergeReply) (RemoteChange, error)
 	ReleaseRemoteSession(context.Context, CacheID, string) RemoteChange
 	ReleaseRemoteCache(context.Context, CacheID) RemoteChange
 	CollectRemoteHoldings(context.Context, []HolderKey, func(HolderKey) bool) ([]HolderKey, RemoteChange, error)
@@ -114,7 +114,7 @@ func remoteWritesScript(t *testing.T, ctx context.Context, ops remoteWriteOps) [
 	// ordinal that wasn't sent.
 	c := CacheID("cache-c")
 	merge := func(name string, cache CacheID, sent ValueBundle, reply MergeReply) {
-		change, err := ops.ApplyMergedReply(ctx, cache, sent, reply)
+		change, err := ops.ApplyMergedReply(ctx, cache, sent.Sent(), reply)
 		note(name, change, err)
 	}
 	e1, _ := ops.RemoteHoldingInfo(HolderKey{a, 1})
@@ -385,14 +385,14 @@ func TestRemoteWritesApplyAMergedReplyInPieces(t *testing.T) {
 
 	ctx, whole := storedPartTestCache(t, WithBlobStore())
 	sent, reply := setup(t, whole)
-	wholeChange, err := whole.ApplyMergedReply(ctx, c, sent, reply)
+	wholeChange, err := whole.ApplyMergedReply(ctx, c, sent.Sent(), reply)
 	require.NoError(t, err)
 	want := read(whole)
 	require.Len(t, want, records)
 
 	_, pieced := storedPartTestCache(t, WithBlobStore())
 	sent, reply = setup(t, pieced)
-	apply, err := PrepareMergedReply(c, sent, reply)
+	apply, err := PrepareMergedReply(c, sent.Sent(), reply)
 	require.NoError(t, err)
 	require.Equal(t, records, apply.Records())
 	var candidates []HolderKey

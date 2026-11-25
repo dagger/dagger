@@ -11,6 +11,7 @@ package protocol
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/opencontainers/go-digest"
@@ -146,6 +147,17 @@ func EncodeEnvelope(id, re uint64, typ Type, body any) ([]byte, error) {
 		return nil, fmt.Errorf("encode %s body: %w", typ, err)
 	}
 	return data, nil
+}
+
+// WriteEnvelope writes to w the message EncodeEnvelope returns, as it is
+// encoded (WriteJSON): the message is never in memory whole, so w can hold
+// it in another form, such as compressed, and a w that refuses more bytes,
+// as one bounding the message's size, stops the encoding.
+func WriteEnvelope(w io.Writer, id, re uint64, typ Type, body any) error {
+	if err := WriteJSON(w, outgoing{ID: id, Re: re, Type: typ, Body: body}); err != nil {
+		return fmt.Errorf("encode %s body: %w", typ, err)
+	}
+	return nil
 }
 
 // outgoing is an Envelope whose body is encoded with it.
