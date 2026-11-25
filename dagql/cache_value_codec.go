@@ -105,15 +105,24 @@ func (memos payloadMemos) visit(v PersistedPayloadVisit) PersistedPayloadVisit {
 	if memos == nil {
 		return v
 	}
-	key := v.Path.String()
+	v.Memo = memos.at(v.Path)
+	v.ReferencesVisitedApart = true
+	return v
+}
+
+// at returns the memo of the payload at path, the envelope's own path, made
+// if it has none yet; with no memos, nil.
+func (memos payloadMemos) at(path PersistedRefPath) *PayloadMemo {
+	if memos == nil {
+		return nil
+	}
+	key := path.String()
 	memo := memos[key]
 	if memo == nil {
 		memo = &PayloadMemo{}
 		memos[key] = memo
 	}
-	v.Memo = memo
-	v.ReferencesVisitedApart = true
-	return v
+	return memo
 }
 
 // walkMemoTransferPayloads is walkTransferPayloads with each payload's visit
