@@ -1734,9 +1734,7 @@ func (c *Cache) mergeAttachmentWaitLocked(prep *valueMergePrep, targets mergeTar
 		if res == nil || res.attachmentState() != resultAttachmentOpen {
 			continue
 		}
-		res.attachDepsMu.Lock()
-		wait := res.attachDepsWaitCh
-		res.attachDepsMu.Unlock()
+		wait, _ := res.attachmentWait()
 		return res, wait
 	}
 	return nil, nil
@@ -3043,12 +3041,8 @@ func (c *Cache) commitValueMergeLocked(ctx context.Context, commit *valueMergeCo
 			row.res.expiresAtUnix = row.value.ExpiresAtUnix
 			// The old value's release runs after the lock; until it has,
 			// readers wait on the entry's attachment.
-			row.res.attachDepsMu.Lock()
-			row.res.attachDepsWaitCh = make(chan struct{})
-			row.res.attachDepsErr = nil
 			// A merge has no span of its own to target.
-			row.res.attachHolder = newAttachHolder(wcprof.CurrentOpID(ctx), nil)
-			row.res.attachDepsMu.Unlock()
+			row.res.openAttachment(newAttachHolder(wcprof.CurrentOpID(ctx), nil))
 			replaced = append(replaced, mergeReplacement{res: row.res, old: old})
 		}
 	}
@@ -3726,16 +3720,8 @@ func (c *Cache) finishMergedReplacement(ctx context.Context, r mergeReplacement)
 		c.egraphMu.Unlock()
 		err = errors.Join(err, collectErr, runOnReleaseFuncs(ctx, releases))
 	}
-	r.res.attachDepsMu.Lock()
-	ended := r.res.attachDepsWaitCh != nil
-	if ended {
-		r.res.attachDepsErr = err
-		close(r.res.attachDepsWaitCh)
-		r.res.attachHolder = nil
-	}
-	r.res.attachDepsMu.Unlock()
 	// The attachment kept the row busy for a capture (BusyRows).
-	if ended {
+	if r.res.endAttachment(err) {
 		c.busyEnded(r.res.id)
 	}
 	return err

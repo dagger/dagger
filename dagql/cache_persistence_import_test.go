@@ -1133,7 +1133,7 @@ func TestCachePersistenceImportedDecodeStaleReaderDoesNotLeadAfterSuccess(t *tes
 
 	// The leader is the first caller through the pre-lock hook; the stale
 	// reader is the second and parks there - after its loop-top read of
-	// the encoded payload, before it can acquire persistDecodeMu - until
+	// the encoded payload, before it can acquire the decode state's mu - until
 	// the leader has completely finished.
 	var preLockCalls atomic.Int32
 	var leadPublishes atomic.Int32
