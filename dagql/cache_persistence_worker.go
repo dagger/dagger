@@ -258,15 +258,17 @@ func (c *Cache) snapshotPersistStateLocked(kept *persistKept, seed maphash.Seed)
 
 		taught = taught[:0]
 		var taughtPrint rowsPrint
-		for i, digest := range res.taught {
-			row := persistdb.MirrorResultTaught{
-				ResultID: int64(resultID),
-				Position: int64(i),
-				Digest:   digest.String(),
-				Given:    i < res.taughtGiven,
+		if t := res.taughtContent; t != nil {
+			for i, digest := range t.digests {
+				row := persistdb.MirrorResultTaught{
+					ResultID: int64(resultID),
+					Position: int64(i),
+					Digest:   digest.String(),
+					Given:    i < t.given,
+				}
+				taughtPrint.add(rowPrint(seed, row))
+				taught = append(taught, row)
 			}
-			taughtPrint.add(rowPrint(seed, row))
-			taught = append(taught, row)
 		}
 		next.taught = taughtPrint.value(seed)
 

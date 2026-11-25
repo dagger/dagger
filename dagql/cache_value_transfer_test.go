@@ -627,8 +627,8 @@ func TestValueTransferPersistenceDecodePublication(t *testing.T) {
 	var rowCleanups, losingReleases, winningReleases atomic.Int32
 	row.onRelease = joinOnRelease(row.onRelease, func(context.Context) error { rowCleanups.Add(1); return nil })
 	row.payloadMu.Lock()
-	row.snapshotOwnerLinks = []PersistedSnapshotRefLink{{Role: "snapshot", RefKey: "old-applied"}}
-	row.snapshotLinkIntent = &snapshotLinkIntent{Links: []PersistedSnapshotRefLink{}}
+	row.snapshotState().ownerLinks = []PersistedSnapshotRefLink{{Role: "snapshot", RefKey: "old-applied"}}
+	row.snapshotState().linkIntent = &snapshotLinkIntent{Links: []PersistedSnapshotRefLink{}}
 	row.payloadRevision++
 	row.payloadMu.Unlock()
 	var calls int
@@ -647,7 +647,7 @@ func TestValueTransferPersistenceDecodePublication(t *testing.T) {
 			}
 			next.ObjectJSON = json.RawMessage(`{"text":"new"}`)
 			row.persistedEnvelope = &next
-			row.snapshotLinkIntent = &snapshotLinkIntent{Links: []PersistedSnapshotRefLink{{Role: "snapshot", RefKey: "new-desired"}}}
+			row.snapshotState().linkIntent = &snapshotLinkIntent{Links: []PersistedSnapshotRefLink{{Role: "snapshot", RefKey: "new-desired"}}}
 			row.payloadRevision++
 			row.payloadMu.Unlock()
 		} else {

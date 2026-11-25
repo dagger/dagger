@@ -360,9 +360,16 @@ func sharedStateOf(c *Cache) string {
 		res.payloadMu.RLock()
 		hasValue, envelope := res.hasValue, res.persistedEnvelope != nil
 		res.payloadMu.RUnlock()
+		var (
+			taught []digest.Digest
+			given  int
+		)
+		if t := res.taughtContent; t != nil {
+			taught, given = t.digests, t.given
+		}
 		fmt.Fprintf(&b, "entry %d %s: value %v %v, expires %d, run %v %v, taught %v given %d, calls %v, recipes %v, stored %d, stamp %d %v, deps %v\n",
 			id, res.description, hasValue, envelope, res.expiresAtUnix, res.run, res.runRan,
-			res.taught, res.taughtGiven, slices.Sorted(maps.Keys(res.calls)), res.recipeKeys,
+			taught, given, slices.Sorted(maps.Keys(res.calls)), res.recipeKeys,
 			len(res.storedParts), res.changedAt, res.stampCause, slices.Sorted(maps.Keys(res.deps)))
 	}
 	for _, recipe := range slices.Sorted(maps.Keys(c.entriesByRecipe)) {
