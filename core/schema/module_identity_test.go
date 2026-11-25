@@ -438,3 +438,37 @@ func TestCallKeyedByGitBorrowingIsMadeAgainForAnotherPermission(t *testing.T) {
 	expand(host)
 	require.Equal(t, int32(3), calls.Load(), "a client that is its own non-module parent makes the call again")
 }
+
+// A read of a module source by a ref is shared only when the ref names what
+// is read without its caller. A ref that could be a local directory is its
+// caller's to decide, and so is a vanity ref, which resolves through the
+// session's workspace lock or the network: their reads keep their per-client
+// key. A ref to a known code host, such as github.com, read as Git, as a
+// module's dependency is read, names its repository outright, and module
+// code's read of it is shared.
+func TestModuleSourceReadByRefIsSharedOnlyWhenTheRefDecidesIt(t *testing.T) {
+	t.Parallel()
+	e := newTransferTestEngine(t, transferTestSalt(t))
+	ctx := e.session(t, "module")
+	perClient := func(ref string, git bool) bool {
+		t.Helper()
+		args := moduleSourceArgs{RefString: ref}
+		if git {
+			args.RequireKind = dagql.Opt(core.ModuleSourceKindGit)
+		}
+		req := &dagql.CallRequest{ResultCall: &dagql.ResultCall{Field: "moduleSource"}}
+		require.NoError(t, (&moduleSourceSchema{}).moduleSourceCacheKey(ctx, dagql.ObjectResult[*core.Query]{}, args, req))
+		for _, input := range req.ImplicitInputs {
+			if input != nil && input.Name == dagql.PerClientInput.Name {
+				return true
+			}
+		}
+		return false
+	}
+	const known = "github.com/dagger/go@79a92beb4df0898400ef7f7a632009035290383b"
+	require.True(t, perClient("./mod", false), "a local path is its caller's")
+	require.True(t, perClient("mod", false), "a ref that could be a local directory is its caller's")
+	require.True(t, perClient(known, false), "a ref without a scheme could be a local directory")
+	require.True(t, perClient("example.com/go@v1.2.3", true), "a vanity ref is its caller's")
+	require.False(t, perClient(known, true), "a known code host's ref read as Git is shared")
+}
