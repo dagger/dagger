@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/klauspost/compress/zstd"
+	"github.com/opencontainers/go-digest"
 
 	"github.com/dagger/dagger/dagql"
 )
@@ -21,8 +22,13 @@ import (
 // parts back to back, each exactly as many bytes as the header says. A part
 // is one zstd frame of the JSON of a closed dagql.ValueBundle, with its
 // layers listed once as a merge's is (Merge.MarshalJSON), and no download
-// addresses: a table beside the file gives them. A file is named by the
-// digest of its bytes.
+// addresses: a table beside the file gives them. A file's bytes are named
+// by their digest.
+//
+// What the service publishes of a set is a chain of such files, its
+// segments (SetFile), merged in order as one file: the set's first file is
+// one segment, and a file built again from the one before it is that
+// file's segments and one more. The chain is named by SetFileChain.
 
 // SetFileHeader is a set file's first line.
 type SetFileHeader struct {
@@ -65,6 +71,17 @@ type SetFilePart struct {
 type SetFileFetch struct {
 	Ordinal dagql.TransferOrdinal `json:"ordinal"`
 	Part    dagql.PartKey         `json:"part,omitempty"`
+}
+
+// SetFileChain is the digest that names a chain of segments, those whose
+// bytes have the digests, in order: the canonical digest of their digests,
+// one a line.
+func SetFileChain(segments ...digest.Digest) digest.Digest {
+	digester := digest.Canonical.Digester()
+	for _, segment := range segments {
+		_, _ = digester.Hash().Write([]byte(segment.String() + "\n"))
+	}
+	return digester.Digest()
 }
 
 // EncodeSetFilePart encodes a bundle as a set file's part with enc, and
