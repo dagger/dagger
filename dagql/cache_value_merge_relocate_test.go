@@ -190,6 +190,68 @@ func TestMergeValuesDecodesAMovedPayloadOnce(t *testing.T) {
 	require.Equal(t, 1, visits, "the root's payload is visited once")
 }
 
+// The Cloud prepares an engine's export as an engine prepares a merge from
+// the Cloud: a record whose references move is relocated to the numbers it
+// is installed at in the one visit of its payload, and that visit reads the
+// decode the record's validation made. Nothing relocates it again before the
+// commit or under the graph lock, and the Cloud measures the record it
+// stores.
+func TestCloudMergeVisitsAMovedPayloadOnce(t *testing.T) {
+	// Not parallel: the codec's step hook is the package's.
+	child, root := mergeTestMovingPayloadStream(t)
+	ctx, cloud := storedPartTestCache(t, WithBlobStore())
+	storedTestHoldWhole(cloud)
+	reply, err := cloud.MergeValues(ctx, "cache-a", child)
+	require.NoError(t, err)
+	require.True(t, reply.Committed)
+	require.Len(t, reply.Values, 1)
+	childNumber := reply.Values[0].Number
+
+	var mu sync.Mutex
+	memos := map[string][]*PayloadMemo{}
+	steps := func(step string, v PersistedPayloadVisit) {
+		if !bytes.Contains(v.Payload, []byte("moved-payload-root")) {
+			return
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		memos[step] = append(memos[step], v.Memo)
+	}
+	transferTestCodecSteps.Store(&steps)
+	defer transferTestCodecSteps.Store(nil)
+	var under []uint64
+	cloud.testRelocatedUnderLock = func(ordinal uint64) { under = append(under, ordinal) }
+	reply, err = cloud.MergeValues(ctx, "cache-a", root)
+	require.NoError(t, err)
+	require.True(t, reply.Committed)
+	require.Empty(t, under, "nothing is relocated under the lock")
+	mu.Lock()
+	require.Len(t, memos["validate"], 1)
+	require.Len(t, memos["visit"], 1, "the root's payload is visited once")
+	require.NotNil(t, memos["visit"][0])
+	require.Same(t, memos["validate"][0], memos["visit"][0], "the visit reads the validation's decode")
+	mu.Unlock()
+
+	var rootNumber uint64
+	for _, value := range reply.Values {
+		if value.Number != childNumber {
+			rootNumber = value.Number
+		}
+	}
+	require.NotZero(t, rootNumber)
+	cloud.egraphMu.RLock()
+	res := cloud.resultsByID[sharedResultID(rootNumber)]
+	require.NotNil(t, res)
+	require.NotNil(t, res.persistedEnvelope)
+	installed := PersistedRecord{ResultID: rootNumber, Envelope: *res.persistedEnvelope, Call: res.loadResultCall()}
+	measured := res.storedRecordBytes
+	cloud.egraphMu.RUnlock()
+	var payload transferTestValue
+	require.NoError(t, json.Unmarshal(installed.Envelope.ObjectJSON, &payload))
+	require.Equal(t, childNumber, payload.Child, "the root's payload names the child's entry")
+	require.Equal(t, encodedRecordBytes(installed), measured, "the record's size is the stored record's")
+}
+
 // A merge renumbers its records as it is prepared, outside its caller's
 // lock, which on the Cloud is the remote cache service's work lock, and the
 // commit uses them: here the root's record is relocated before the commit
