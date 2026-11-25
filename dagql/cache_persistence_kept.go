@@ -3,7 +3,6 @@ package dagql
 import (
 	"cmp"
 	"encoding/json"
-	"fmt"
 	"hash/maphash"
 	"slices"
 	"sync"
@@ -252,11 +251,12 @@ func (k *persistKeptCursor[T]) finish() []int64 {
 
 // keptFromImportedRows is what the database holds, as an open read it: the
 // fingerprints of every entry's, term's and class's rows as they are there,
-// before the restore changed anything. A row the restore dropped or changed
-// is kept as it was read, so the next save writes the unit again.
-// resultRows are sorted by entry number (listMirrorResults); the other
-// rows may come in any order. The fields of an entry's record are kept once
-// the restore's own work is done (keepRestoredRecords).
+// and of the fields each entry's saved envelope carries, with each entry's
+// count of record writes as the import installed it. Whatever the restore
+// changed or dropped is kept as it was read, so the next save compares it
+// and writes it again if it differs: a record whose count moved since its
+// install is encoded and its bytes compared. resultRows are sorted by entry
+// number (listMirrorResults); the other rows may come in any order.
 func keptFromImportedRows(
 	seed maphash.Seed,
 	resultRows []importedResultRow,
@@ -323,6 +323,8 @@ func keptFromImportedRows(
 		e, p := &kept.entries[i], &prints[i]
 		e.row = resultRowPrint(seed, resultRows[i].MirrorResult)
 		e.record = recordPrint(seed, resultRows[i].recordBytes, p.links)
+		e.recordInputs = resultRows[i].recordInputs
+		e.recordWrites = resultRows[i].recordWrites
 		e.deps = p.deps.value(seed)
 		e.classes = p.classes.value(seed)
 		e.calls = p.calls.value(seed)
@@ -369,31 +371,4 @@ func keptFromImportedRows(
 		kept.classes[i].fp = classDigests[i].value(seed)
 	}
 	return kept
-}
-
-// keepRestoredRecords sets, in what the database holds, each restored
-// entry's count of writes to its record and the fingerprint of the fields its
-// record takes, as the restore left them: the record row the database holds
-// is the record as it was restored. It then keeps kept as what the database
-// holds (Cache.persistKept).
-func (c *Cache) keepRestoredRecords(kept *persistKept) error {
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
-	for i := range kept.entries {
-		e := &kept.entries[i]
-		res := c.resultsByID[e.id]
-		if res == nil {
-			continue
-		}
-		e.recordWrites = res.loadPayloadState().recordWrites
-		offers, err := res.pendingOffersLocked()
-		if err != nil {
-			return err
-		}
-		if e.recordInputs, err = recordInputsPrint(c.persistSeed, res.persistDeclined, savedRunLocked(res), res.runRan, offers); err != nil {
-			return fmt.Errorf("restored result %d: %w", e.id, err)
-		}
-	}
-	c.persistKept = *kept
-	return nil
 }
