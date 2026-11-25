@@ -1239,7 +1239,9 @@ func filteredReadContentHash(ctx context.Context, dir dagql.ObjectResult[*core.D
 	if err != nil {
 		return "", false
 	}
-	dgst, err := core.GetContentHashFromDirectory(ctx, snapshot, dirPath)
+	// A filtered read is a copy rooted at /, which is keyed by its files alone,
+	// so it has no files hash apart from its content digest.
+	dgst, _, err := core.GetContentHashFromDirectory(ctx, snapshot, dirPath)
 	if err != nil {
 		return "", false
 	}
