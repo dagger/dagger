@@ -758,6 +758,47 @@ func (DirectorySuite) TestWithDirectoryContentKeyed(ctx context.Context, t *test
 	require.Equal(t, first, run())
 }
 
+// A copy keeps the files it copies and not where they were rooted, so copies of
+// the same files to the same place are one result whichever root they came
+// from: a command over the copy runs once.
+func (DirectorySuite) TestCopyKeyedByCopiedFiles(ctx context.Context, t *testctx.T) {
+	base := t.TempDir()
+	contents := rand.Text()
+	for _, sub := range []string{"a", "b"} {
+		require.NoError(t, os.MkdirAll(filepath.Join(base, sub), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(base, sub, "f"), []byte(contents), 0o644))
+	}
+	c := connect(ctx, t)
+	q := sdkcore.NewQuery(c)
+	host := q.Host().Directory(base)
+	uuid := func(ctr *sdkcore.Container) string {
+		out, err := ctr.WithExec([]string{"cat", "/proc/sys/kernel/random/uuid"}).Stdout(ctx)
+		require.NoError(t, err)
+		return out
+	}
+
+	t.Run("into a directory, from two subdirectories", func(ctx context.Context, t *testctx.T) {
+		run := func(sub string) string {
+			return uuid(q.Container().From(alpineImage).
+				WithMountedDirectory("/src", host.WithDirectory("copy", host.Directory(sub))))
+		}
+		require.Equal(t, run("a"), run("b"))
+	})
+
+	t.Run("into a container, from a subdirectory and a directory of its own", func(ctx context.Context, t *testctx.T) {
+		// A host directory and a copy of it can hash the same files
+		// differently, so both sources come from one copy of the host
+		// directory: the subdirectory is rooted at /a, and the filtered copy
+		// of it at /.
+		whole := sdkcore.DirectoryFilterOpts{Exclude: []string{"absent"}}
+		sub := host.Filter(whole).Directory("a")
+		run := func(src *sdkcore.Directory) string {
+			return uuid(q.Container().From(alpineImage).WithDirectory("/src", src))
+		}
+		require.Equal(t, run(sub), run(sub.Filter(whole)))
+	})
+}
+
 func (DirectorySuite) TestWithDirectoryIncludeExclude(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
