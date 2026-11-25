@@ -632,6 +632,7 @@ func (c *Cache) unindexRecipesLocked(res *sharedResult) {
 		}
 	}
 	res.recipeKeys = nil
+	c.noteSavedEntryLocked(res.id)
 }
 
 // AttachRemoteHolding records an engine cache's entry as its call span reports
@@ -1440,6 +1441,11 @@ func (c *Cache) compactEqClassesAfterCollectionLocked(removed bool) {
 	if c.eqClassSlotsLocked() == c.eqClassCheckedSlots && !c.eqClassRemoved {
 		return
 	}
+	// A save reading the store holds compaction off: the next collection
+	// after it checks.
+	if c.savingLocked() {
+		return
+	}
 	clock := c.eqClassClock
 	if clock == nil {
 		clock = time.Now
@@ -1756,6 +1762,7 @@ func (c *Cache) teachRemoteIdentityLocked(ctx context.Context, entry *sharedResu
 		if t := entry.taughtContent; t == nil || len(t.digests) == 0 || t.digests[len(t.digests)-1] != content {
 			t = entry.taughtStateLocked()
 			t.digests = append(t.digests, content)
+			c.noteSavedEntryLocked(entry.id)
 		}
 		c.queueTaughtContentLocked(entry)
 	}
@@ -1883,6 +1890,7 @@ func (c *Cache) writeRemoteIdentityLocked(ctx context.Context, entry *sharedResu
 		for _, extra := range extras {
 			classExtras[extra] = struct{}{}
 		}
+		c.noteSavedClassLocked(outputEqID)
 	}
 	if term == nil || term.Self == "" {
 		return
