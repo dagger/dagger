@@ -874,7 +874,7 @@ func (ChangesetSuite) TestWithChangesEmptyChangesetKeepsParentSnapshot(ctx conte
 
 	keeper, err := dagger.Connect(ctx,
 		dagger.WithRunnerHost(endpoint),
-		dagger.WithLogOutput(testutil.NewTWriter(t)))
+		dagger.WithLogOutput(testutil.ClientLogOutput(t)))
 	require.NoError(t, err)
 	t.Cleanup(func() { keeper.Close() })
 
@@ -891,7 +891,7 @@ func (ChangesetSuite) TestWithChangesEmptyChangesetKeepsParentSnapshot(ctx conte
 	// empty changeset, evaluates it, and disconnects.
 	secondSession, err := dagger.Connect(ctx,
 		dagger.WithRunnerHost(endpoint),
-		dagger.WithLogOutput(testutil.NewTWriter(t)))
+		dagger.WithLogOutput(testutil.ClientLogOutput(t)))
 	require.NoError(t, err)
 	_, err = parentOf(secondSession).WithChanges(core.NewQuery(secondSession).Changeset()).Sync(ctx)
 	require.NoError(t, err)
@@ -2235,7 +2235,7 @@ func (ChangesetSuite) TestMergedDirectoryReplay(ctx context.Context, t *testctx.
 			t.Cleanup(func() { _, _ = engineSvc.Stop(ctx) })
 			endpoint, err := engineSvc.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})
 			require.NoError(t, err)
-			target, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(testutil.NewTWriter(t)))
+			target, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(testutil.ClientLogOutput(t)))
 			require.NoError(t, err)
 			t.Cleanup(func() { require.NoError(t, target.Close()) })
 
