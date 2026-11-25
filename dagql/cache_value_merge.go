@@ -1544,40 +1544,48 @@ func (c *Cache) keptMergeRecords(ctx context.Context, prep *valueMergePrep) map[
 }
 
 // embedMergedParts prepares the bundle's parts for the cache. On an engine,
-// the outputs with chains become offers embedded in their records. The Cloud
-// drops every part, since the upload decides what it stores.
+// the outputs with chains become offers embedded in their records, and every
+// offer the records carry has its chain's layers taken from the cache's
+// table (valueMergePrep.chains), by ordinal and part key: the bundle's check
+// refused a row that offers one part twice. The Cloud drops every part,
+// since the upload decides what it stores.
 func (c *Cache) embedMergedParts(bundle *ValueBundle) (map[uint64]map[string][]*storedLayer, error) {
-	var chains map[uint64]map[string][]*storedLayer
 	if c.blobBacked {
 		for i := range bundle.Values {
 			bundle.Values[i].Record.Envelope.PendingOffers = nil
 		}
-	} else {
-		index := map[uint64]*TransferredValue{}
-		for i := range bundle.Values {
-			index[uint64(bundle.Values[i].Ordinal)] = &bundle.Values[i]
+		bundle.Outputs = nil
+		return nil, nil
+	}
+	index := map[uint64]*TransferredValue{}
+	for i := range bundle.Values {
+		index[uint64(bundle.Values[i].Ordinal)] = &bundle.Values[i]
+	}
+	for _, output := range bundle.Outputs {
+		if output.Chain == nil {
+			continue
 		}
-		for _, output := range bundle.Outputs {
-			if output.Chain == nil {
-				continue
-			}
-			row := index[uint64(output.Ordinal)]
-			offer := PersistedPartOffer{Address: output.Address, Value: *output.Value, Chain: *output.Chain, Owner: *output.Owner}
-			row.Record.Envelope.PendingOffers = append(row.Record.Envelope.PendingOffers, offer)
-			key, err := partAddressKey(output.Address)
+		row := index[uint64(output.Ordinal)]
+		row.Record.Envelope.PendingOffers = append(row.Record.Envelope.PendingOffers, PersistedPartOffer{Address: output.Address, Value: *output.Value, Chain: *output.Chain, Owner: *output.Owner})
+	}
+	bundle.Outputs = nil
+	var chains map[uint64]map[string][]*storedLayer
+	for i := range bundle.Values {
+		row := &bundle.Values[i]
+		for _, offer := range row.Record.Envelope.PendingOffers {
+			key, err := partAddressKey(offer.Address)
 			if err != nil {
 				return nil, err
 			}
 			if chains == nil {
 				chains = map[uint64]map[string][]*storedLayer{}
 			}
-			if chains[uint64(output.Ordinal)] == nil {
-				chains[uint64(output.Ordinal)] = map[string][]*storedLayer{}
+			if chains[uint64(row.Ordinal)] == nil {
+				chains[uint64(row.Ordinal)] = map[string][]*storedLayer{}
 			}
-			chains[uint64(output.Ordinal)][key] = c.storedLayers.hold(offer).layers
+			chains[uint64(row.Ordinal)][key] = c.storedLayers.hold(offer).layers
 		}
 	}
-	bundle.Outputs = nil
 	return chains, nil
 }
 
@@ -3600,7 +3608,7 @@ func (c *Cache) selectMergedOffersLocked(commit *valueMergeCommit) error {
 func mergedOfferLocked(prep *valueMergePrep, ordinal uint64, key string, offer PersistedPartOffer) (layeredOffer, error) {
 	layers, ok := prep.chains[ordinal][key]
 	if !ok {
-		return layeredOffer{}, fmt.Errorf("merge values: row %d offers part %s, which its bundle has no output for", ordinal, key)
+		return layeredOffer{}, fmt.Errorf("merge values: row %d's offer of part %s has no chain prepared", ordinal, key)
 	}
 	if len(offer.Chain.Layers) > 0 {
 		offer.Chain.Layers, offer.Chain.Packs = nil, nil

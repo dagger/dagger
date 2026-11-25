@@ -28,6 +28,7 @@ type offerOwner struct {
 	origin  sharedResultID
 	address PersistedPartAddress
 }
+
 // partOffer is a part the Cloud, or the engine's image, offers an entry, as
 // the cache holds it (layeredOffer), and its owner.
 type partOffer struct {
