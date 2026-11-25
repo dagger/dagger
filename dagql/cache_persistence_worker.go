@@ -203,6 +203,9 @@ func (c *Cache) snapshotPersistStateLocked(kept *persistKept, seed maphash.Seed)
 		taught  []persistdb.MirrorResultTaught
 	)
 	for _, resultID := range resultIDs {
+		if c.testPersistRead != nil {
+			c.testPersistRead()
+		}
 		res := c.resultsByID[resultID]
 		if res == nil {
 			continue

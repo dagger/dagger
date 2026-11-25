@@ -1,0 +1,86 @@
+package dagql
+
+import (
+	"context"
+	"fmt"
+	"path/filepath"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+)
+
+// A writer that comes while a save walks the store gets the cache's lock
+// while the walk goes on, not once it has ended, and so does a lookup that
+// comes after the writer, which Go's lock would otherwise queue behind it.
+// The walk is slowed by 2 ms an entry, so a walk under one hold keeps both
+// out for about a second.
+func TestCachePersistenceSaveLetsWritersInWhileItWalks(t *testing.T) {
+	t.Parallel()
+	ctx := cacheTestContext(t.Context())
+	c, err := NewCache(ctx, filepath.Join(t.TempDir(), "cache.db"), nil, nil)
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, c.Close(context.Background()))
+	}()
+	call := func(session, field string) {
+		t.Helper()
+		key := cacheTestIntCall(field)
+		_, err := c.GetOrInitCall(ctx, session, noopTypeResolver{}, &CallRequest{
+			ResultCall:    key,
+			IsPersistable: true,
+		}, func(context.Context) (AnyResult, error) {
+			return cacheTestIntResult(key, len(field)), nil
+		})
+		require.NoError(t, err)
+	}
+
+	const entries = 500
+	for i := range entries {
+		call("test-session", fmt.Sprintf("lets-writers-in-%d", i))
+	}
+	cacheTestReleaseSession(t, c, ctx)
+
+	var read atomic.Int64
+	walking := make(chan struct{})
+	var once sync.Once
+	c.testPersistRead = func() {
+		read.Add(1)
+		once.Do(func() { close(walking) })
+		time.Sleep(2 * time.Millisecond)
+	}
+	saved := make(chan error, 1)
+	go func() { saved <- c.persistCurrentState(ctx) }()
+	<-walking
+
+	type done struct {
+		waited time.Duration
+		read   int64
+	}
+	writer := make(chan done, 1)
+	start := time.Now()
+	go func() {
+		call("writer-session", "lets-writers-in-writer")
+		writer <- done{time.Since(start), read.Load()}
+	}()
+	// The lookup comes once the writer waits for the lock, or has had it.
+	for !c.egraphMu.Waiting() && len(writer) == 0 {
+		time.Sleep(100 * time.Microsecond)
+	}
+	lookup := make(chan done, 1)
+	lookupStart := time.Now()
+	go func() {
+		call("lookup-session", "lets-writers-in-0")
+		lookup <- done{time.Since(lookupStart), read.Load()}
+	}()
+
+	w, l := <-writer, <-lookup
+	require.NoError(t, <-saved)
+	t.Logf("writer waited %v, the walk having read %d entries; the lookup %v, at %d", w.waited, w.read, l.waited, l.read)
+	require.Less(t, w.read, int64(entries/2), "the writer got the lock only after the walk")
+	require.Less(t, l.read, int64(entries/2), "the lookup got the lock only after the walk")
+	require.Less(t, w.waited, 250*time.Millisecond)
+	require.Less(t, l.waited, 250*time.Millisecond)
+}
