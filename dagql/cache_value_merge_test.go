@@ -2614,8 +2614,9 @@ func TestMergeCommitNamesItsHolder(t *testing.T) {
 }
 
 // A merge decodes each payload once for the steps that read it as sent: its
-// validation and its part mapping share one memo, and its validation leaves
-// the references to the merge's own visit, which relocates them.
+// validation, its part mapping and its own visit, which relocates its
+// references, share one memo, and its validation leaves the references to
+// that visit.
 func TestMergeValuesSharesEachPayloadsDecode(t *testing.T) {
 	// Not parallel: the codec's step hook is the package's.
 	bundle, _ := mergeTestSource(t, "root", "decoded-once")
@@ -2645,6 +2646,8 @@ func TestMergeValuesSharesEachPayloadsDecode(t *testing.T) {
 	require.NotNil(t, memos["validate"][0])
 	require.Same(t, memos["validate"][0], memos["map"][0], "one memo for the payload's steps")
 	require.Equal(t, []bool{true}, apart, "the merge visits the references itself")
+	require.Len(t, memos["visit"], 1)
+	require.Same(t, memos["validate"][0], memos["visit"][0], "the merge's visit reads the same decode")
 }
 
 // A merge's reply counts its records by what the commit did with each: the
