@@ -85,10 +85,6 @@ type changeMarks struct {
 	// has named.
 	left      map[eqClassID]bool
 	leftNamed map[eqClassID]bool
-	// shared are the kinds of state engines share the write changed
-	// (noteSharedWriteLocked), handed back with the marks
-	// (RemoteChange.Shared).
-	shared SharedWrites
 }
 
 // markEntryLocked marks the entry numbered id: its own facts changed.
@@ -244,15 +240,9 @@ func (c *Cache) markHoldingLocked(key HolderKey) {
 // takeChangesLocked hands the marks back in change, sorted, and clears them:
 // each marked holding and entry, and every entry of the classes of each
 // class-marked entry that held a part at its mark or holds one now. A write takes them at its end, under the hold that made
-// them, so each is handed back by the write that made it. With them go the
-// kinds of state engines share the write changed (RemoteChange.Shared).
-// Requires egraphMu for writing.
+// them, so each is handed back by the write that made it. Requires egraphMu
+// for writing.
 func (c *Cache) takeChangesLocked(change *RemoteChange) {
-	if c.changes == nil {
-		return
-	}
-	change.Shared |= c.changes.shared
-	c.changes.shared = 0
 	if !c.changesPendingLocked() {
 		return
 	}
@@ -378,9 +368,6 @@ func (c *Cache) stampPendingLocked() {
 	c.stampClassMarksLocked(c.changes.stamped)
 	c.changes.stamped = len(c.changes.classes)
 	c.changes.lending = nil
-	// The kinds of shared state it changed are its own, and it reports
-	// them to no one: the next write's are the next write's.
-	c.changes.shared = 0
 	// A later hold of the write walks a leaving entry's classes afresh: their
 	// entries can have changed between the holds, and one walked in an
 	// earlier hold must still be stamped, and named, by a later entry's
