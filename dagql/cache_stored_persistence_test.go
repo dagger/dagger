@@ -130,6 +130,94 @@ func TestCloudSaveAndRestoreKeepThePool(t *testing.T) {
 	require.NotContains(t, before, next)
 }
 
+// storedPersistenceTestRootAndDep merges a root with one dependency from
+// engine cache-a into the Cloud, and returns the Cloud's numbers of both.
+func storedPersistenceTestRootAndDep(t *testing.T, ctx context.Context, cloud *Cache, text string) (uint64, uint64) {
+	t.Helper()
+	actx, a, asrv := transferTestCache(t)
+	r := persistedListTestResult(t, actx, a, asrv, text+"-root", &transferTestValue{Text: text})
+	p := persistedListTestResult(t, actx, a, asrv, text+"-dep", &transferTestValue{Text: "dep"})
+	transferTestDependency(a, actx, r, p)
+	root := storedPersistenceTestMerge(t, ctx, cloud, exportTestBundle(t, actx, a, r))[0]
+	built, err := cloud.StoredBundle(ctx, []uint64{root}, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	require.Len(t, built.Bundle.Values, 2)
+	for _, value := range built.Bundle.Values {
+		if value.SenderNumber != root {
+			return root, value.SenderNumber
+		}
+	}
+	t.Fatal("no dependency")
+	return 0, 0
+}
+
+// A Cloud's change stamps survive its save and its open, as its entries'
+// numbers do, so a stored bundle's position taken before a restart still
+// compares after it (ChangedSince): an entry changed between the bundle and
+// the save reads changed, one unchanged reads unchanged, and a write after
+// the open is counted above every stamp the save kept. A bundle built after
+// the open carries each record's stamp as the save kept it.
+func TestCloudChangeStampsSurviveARestart(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "cloud.db")
+	ctx, cloud := storedPersistenceTestCloud(t, path)
+	root, dep := storedPersistenceTestRootAndDep(t, ctx, cloud, "stamped")
+	before, err := cloud.StoredBundle(ctx, []uint64{root}, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	stored, _, err := cloud.SetStoredPart(ctx, root, testLiveOffer(), 0)
+	require.NoError(t, err)
+	require.True(t, stored)
+	written := cloud.BundlePosition()
+	require.Greater(t, written, before.Position)
+	saved, err := cloud.StoredBundle(ctx, []uint64{root}, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	require.NoError(t, cloud.Close(ctx))
+
+	ctx, cloud = storedPersistenceTestCloud(t, path)
+	defer func() { require.NoError(t, cloud.Close(ctx)) }()
+	require.Equal(t, CachePersistenceResetNone, cloud.PersistenceResetReason())
+	require.Equal(t, written, cloud.BundlePosition(), "the write count comes back as the save kept it")
+	require.Equal(t, []bool{true, false}, cloud.ChangedSince([]uint64{root, dep}, before.Position), "the root changed before the save, its dependency didn't")
+	require.Equal(t, []bool{false, false}, cloud.ChangedSince([]uint64{root, dep}, saved.Position), "nothing changed since the last bundle before the save")
+	again, err := cloud.StoredBundle(ctx, []uint64{root}, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	require.Equal(t, saved.Position, again.Position)
+	require.JSONEq(t, string(mustTransferJSON(t, saved.Bundle.Values)), string(mustTransferJSON(t, again.Bundle.Values)), "each record comes back with the stamp the save kept")
+
+	stored, _, err = cloud.SetStoredPart(ctx, dep, testLiveOffer(), 0)
+	require.NoError(t, err)
+	require.True(t, stored)
+	require.Greater(t, cloud.BundlePosition(), written, "a write after the open is counted above every stamp saved")
+	require.Equal(t, []bool{false, true}, cloud.ChangedSince([]uint64{root, dep}, saved.Position), "the dependency is a record of its own")
+	changedSinceTestRebuild(t, cloud, saved, root)
+}
+
+// After a crash, the Cloud restores its last save and the write count that
+// save kept: a bundle built after that save has a position above it, which
+// tells its reader the bundle may carry what the restored cache lost.
+func TestCloudRestoresTheWriteCountOfItsLastSave(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "cloud.db")
+	ctx, cloud := storedPersistenceTestCloud(t, path)
+	root, _ := storedPersistenceTestRootAndDep(t, ctx, cloud, "crashed")
+	require.NoError(t, cloud.Checkpoint(ctx))
+	checkpointed := cloud.BundlePosition()
+	require.NotZero(t, checkpointed)
+	stored, _, err := cloud.SetStoredPart(ctx, root, testLiveOffer(), 0)
+	require.NoError(t, err)
+	require.True(t, stored)
+	lost, err := cloud.StoredBundle(ctx, []uint64{root}, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	require.Greater(t, lost.Position, checkpointed)
+	// The process dies: nothing saves again.
+	require.NoError(t, cloud.CloseDiscardingPersistence())
+
+	ctx, cloud = storedPersistenceTestCloud(t, path)
+	defer func() { require.NoError(t, cloud.Close(ctx)) }()
+	require.Equal(t, checkpointed, cloud.BundlePosition(), "the write count of the last save")
+	require.Less(t, cloud.BundlePosition(), lost.Position, "a bundle built after the last save is newer than the restored cache")
+}
+
 // The restore keeps every record as it was saved, and decodes none, so a
 // restored closure is placed whatever it holds: an object, a list, a scalar
 // and a null value. An engine's restore decodes the scalar and the null at
