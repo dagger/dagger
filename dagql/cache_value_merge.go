@@ -1443,7 +1443,9 @@ func (prep *valueMergePrep) prepareRecordPayload(id uint64, relocateRecord, relo
 	ownRef := collect(relocateRecord)
 	bare := row.Record
 	bare.Envelope.PendingOffers = nil
-	rec, err := VisitEncodedReferences(bare, func(ref *PersistedRef) error {
+	// The visit reads each payload's decode from memos, and is their last
+	// reader.
+	rec, err := visitMemoEncodedReferences(bare, memos, func(ref *PersistedRef) error {
 		if err := checkDirect(ref); err != nil {
 			return fmt.Errorf("row %d: %w", id, err)
 		}
