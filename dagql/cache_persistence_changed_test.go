@@ -120,3 +120,57 @@ func TestCloudSavesWriteOnlyWhatChanged(t *testing.T) {
 		require.NoError(t, cloud.Close(ctx))
 	}
 }
+
+// A restore that settles a saved record's offer, for a part the record says
+// is complete, changes the record before anything else runs and while it is
+// still undecoded. The next save writes the record without the offer, as a
+// full save would: what the cache keeps of the database is the record as the
+// database holds it, not as the restore left it.
+func TestCachePersistenceSaveWritesWhatTheRestoreSettled(t *testing.T) {
+	t.Parallel()
+	chain := newChainFixture(t, "settled")
+	path := filepath.Join(t.TempDir(), "cache.db")
+	ctx, c, srv := persistedListTestCache(t, path)
+	srv.InstallObject(NewClass(srv, ClassOpts[*transferTestValue]{}))
+	receiver := persistedListTestResult(t, ctx, c, srv, "settled-receiver", &transferTestValue{
+		Text:  "settled",
+		Parts: []transferTestPart{{Part: "snapshot", State: "pending"}},
+	})
+	id := receiver.cacheSharedResult().id
+	out, err := c.testOfferParts(ctx, receiver, []PersistedPartOffer{exhaustionOffer(chain, "settled-key", false)})
+	require.NoError(t, err)
+	require.Equal(t, OfferAccepted, out[0].Outcome)
+	require.NoError(t, c.Close(ctx))
+
+	record := func() string {
+		t.Helper()
+		db, q, err := prepareCacheDBs(context.Background(), path, false)
+		require.NoError(t, err)
+		defer closeCacheDBs(db, q)
+		var payload string
+		require.NoError(t, db.QueryRow(`SELECT CAST(self_payload AS TEXT) FROM result_records WHERE result_id = ?`, int64(id)).Scan(&payload))
+		return payload
+	}
+	require.Contains(t, record(), `"pendingOffers"`)
+	// The record says its part is complete, with the offer still pending: a
+	// restore settles that offer.
+	db, q, err := prepareCacheDBs(context.Background(), path, false)
+	require.NoError(t, err)
+	res, err := db.Exec(`UPDATE result_records SET self_payload = CAST(REPLACE(CAST(self_payload AS TEXT), '"state":"pending"', '"state":"completed"') AS BLOB) WHERE result_id = ?`, int64(id))
+	require.NoError(t, err)
+	n, err := res.RowsAffected()
+	require.NoError(t, err)
+	require.EqualValues(t, 1, n)
+	require.NoError(t, closeCacheDBs(db, q))
+
+	ctx, c = reopenTransferTestCache(t, path)
+	c.egraphMu.RLock()
+	restored := c.resultsByID[id]
+	offers := len(restored.testPartOffers())
+	lazy := restored.loadPayloadState().persistedEnvelope != nil
+	c.egraphMu.RUnlock()
+	require.Zero(t, offers, "the restore settled the offer")
+	require.True(t, lazy, "the record was never decoded")
+	require.NoError(t, c.Close(ctx))
+	require.NotContains(t, record(), `"pendingOffers"`, "the save wrote what the restore settled")
+}
