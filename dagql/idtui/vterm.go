@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"math"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 
 	"charm.land/glamour/v2/styles"
@@ -70,7 +72,151 @@ type Vterm struct {
 	searchCurrent   int
 	searchMovedFrom int
 
+	// marks are the times lines of the raw log were written at, in write
+	// order, so the log can be split by time (see TimeOffsets).
+	marks []vtermMark
+
 	mu *sync.Mutex
+}
+
+// vtermMark is the time the screen's bytes from off onward were written at,
+// and the screen row they start on.
+type vtermMark struct {
+	at  int64 // unix nanos
+	off int
+	// row is set as the screen lays out the mark's bytes (see screen), and
+	// again each time it lays them out anew.
+	row int
+}
+
+// vtermMarkResolution is how close in time two writes must be for the
+// second to share the first's mark: a chatty log shouldn't keep a mark for
+// every line, and a split this close to a mark's time is never noticed.
+const vtermMarkResolution = 50 * time.Millisecond
+
+// MarkTime records that what is written next was logged at t, so TimeRows
+// can split the log there. Only a write starting a line is marked: a split
+// never cuts a line in two.
+func (term *Vterm) MarkTime(t time.Time) {
+	if t.IsZero() {
+		return
+	}
+	term.mu.Lock()
+	defer term.mu.Unlock()
+	screen := term.screenBytes()
+	off := len(screen)
+	if off > 0 && screen[off-1] != '\n' {
+		return
+	}
+	at := t.UnixNano()
+	if n := len(term.marks); n > 0 {
+		last := &term.marks[n-1]
+		if last.off == off {
+			// nothing was written since: the next write is this one's
+			last.at = at
+			return
+		}
+		if at >= last.at && at-last.at < int64(vtermMarkResolution) {
+			return
+		}
+	}
+	m := vtermMark{at: at, off: off}
+	if term.vt != nil {
+		m.row = term.vt.Cursor.Y
+	}
+	term.marks = append(term.marks, m)
+}
+
+// TimeRows splits the log's screen by time: for each of ats, the row the
+// first line logged at or after it starts on, or the screen's used height
+// if none was; a zero time splits where the time before it did. Rows never
+// decrease, even for ats out of order. Each piece is laid out on the one
+// screen, so output that moves the cursor back into an earlier piece shows
+// there as it ends up.
+//
+// It reports false when the log can't be split: nothing in it was marked,
+// or it isn't laid out on a screen alone (it holds media or Markdown).
+func (term *Vterm) TimeRows(ats []time.Time) ([]int, int, bool) {
+	term.mu.Lock()
+	defer term.mu.Unlock()
+	if len(term.marks) == 0 || term.segments != nil || term.markdownBuf.Len() > 0 {
+		return nil, 0, false
+	}
+	used := term.screen().UsedHeight()
+	rows := make([]int, len(ats))
+	// The first mark at or after a time is never before the first one at
+	// or after an earlier time, so ascending times resume the scan.
+	j, prev, prevNs := 0, 0, int64(math.MinInt64)
+	for i, at := range ats {
+		ns := prevNs
+		if !at.IsZero() {
+			ns = at.UnixNano()
+		}
+		if ns < prevNs {
+			j = 0
+		}
+		prevNs = ns
+		for j < len(term.marks) && term.marks[j].at < ns {
+			j++
+		}
+		row := used
+		switch {
+		case j == 0:
+			// The first mark covers whatever was written before it too.
+			row = 0
+		case j < len(term.marks):
+			row = min(term.marks[j].row, used)
+		}
+		row = max(row, prev)
+		rows[i] = row
+		prev = row
+	}
+	return rows, used, true
+}
+
+// RowsStamp changes whenever the rows RenderRows renders may have: the log
+// grew, its screen was laid out anew, or its prefix or search changed.
+func (term *Vterm) RowsStamp() VtermRowsStamp {
+	term.mu.Lock()
+	defer term.mu.Unlock()
+	return VtermRowsStamp{
+		vt:      term.vt,
+		size:    len(term.screenBytes()),
+		cols:    term.cols,
+		prefix:  term.Prefix,
+		query:   term.SearchQuery,
+		current: term.searchCurrent,
+	}
+}
+
+// VtermRowsStamp is a Vterm's RowsStamp.
+type VtermRowsStamp struct {
+	vt      *midterm.Terminal
+	size    int
+	cols    int
+	prefix  string
+	query   string
+	current int
+}
+
+// RenderRows renders the screen's rows from from up to to, each with the
+// prefix, regardless of the log's scroll offset and height.
+func (term *Vterm) RenderRows(from, to int) []string {
+	term.mu.Lock()
+	defer term.mu.Unlock()
+	if to <= from || term.segments != nil {
+		return nil
+	}
+	var buf strings.Builder
+	term.Render(&buf, from, to-from)
+	view := buf.String()
+	if term.Profile == termenv.Ascii {
+		view = ansi.Strip(view)
+	}
+	if view == "" {
+		return nil
+	}
+	return strings.Split(strings.TrimSuffix(view, "\n"), "\n")
 }
 
 func NewVterm(profile termenv.Profile) *Vterm {
@@ -107,7 +253,18 @@ func (term *Vterm) screen() *midterm.Terminal {
 		if term.cols > 0 {
 			vt.ResizeX(term.cols)
 		}
-		_, _ = vt.Write(term.screenBytes())
+		// Lay the bytes out a mark at a time, noting the row each mark's
+		// line starts on.
+		bs := term.screenBytes()
+		laid := 0
+		for i := range term.marks {
+			m := &term.marks[i]
+			off := min(m.off, len(bs))
+			_, _ = vt.Write(bs[laid:off])
+			laid = off
+			m.row = vt.Cursor.Y
+		}
+		_, _ = vt.Write(bs[laid:])
 		term.vt = vt
 		if term.keepOffset {
 			used := vt.UsedHeight()
