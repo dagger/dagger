@@ -4653,8 +4653,10 @@ func newDetachedResult[T Typed](call *ResultCall, self T) Result[T] {
 	}
 }
 
-func (c *Cache) normalizePendingResultCallRefs(ctx context.Context, frame *ResultCall) error {
-	return c.normalizePendingResultCallRefsWithSeen(ctx, frame, map[*ResultCall]struct{}{})
+// normalizePendingResultCallRefs resolves each ref in frame given by its call
+// to the result sessionID would be served for that call (resultIDForCall).
+func (c *Cache) normalizePendingResultCallRefs(ctx context.Context, sessionID string, frame *ResultCall) error {
+	return c.normalizePendingResultCallRefsWithSeen(ctx, sessionID, frame, map[*ResultCall]struct{}{})
 }
 
 // canonicalEquivalentSharedResultLocked picks the canonical equivalent of res
@@ -4690,7 +4692,7 @@ func (c *Cache) canonicalEquivalentSharedResultLocked(sessionID string, res *sha
 	return res
 }
 
-func (c *Cache) normalizePendingResultCallRefsWithSeen(ctx context.Context, frame *ResultCall, seen map[*ResultCall]struct{}) error {
+func (c *Cache) normalizePendingResultCallRefsWithSeen(ctx context.Context, sessionID string, frame *ResultCall, seen map[*ResultCall]struct{}) error {
 	if frame == nil {
 		return nil
 	}
@@ -4700,11 +4702,11 @@ func (c *Cache) normalizePendingResultCallRefsWithSeen(ctx context.Context, fram
 	seen[frame] = struct{}{}
 	defer delete(seen, frame)
 
-	if err := c.normalizePendingResultCallRefWithSeen(ctx, frame.Receiver, seen); err != nil {
+	if err := c.normalizePendingResultCallRefWithSeen(ctx, sessionID, frame.Receiver, seen); err != nil {
 		return fmt.Errorf("receiver: %w", err)
 	}
 	if frame.Module != nil {
-		if err := c.normalizePendingResultCallRefWithSeen(ctx, frame.Module.ResultRef, seen); err != nil {
+		if err := c.normalizePendingResultCallRefWithSeen(ctx, sessionID, frame.Module.ResultRef, seen); err != nil {
 			return fmt.Errorf("module: %w", err)
 		}
 	}
@@ -4712,7 +4714,7 @@ func (c *Cache) normalizePendingResultCallRefsWithSeen(ctx context.Context, fram
 		if arg == nil {
 			continue
 		}
-		if err := c.normalizePendingResultCallLiteralWithSeen(ctx, arg.Value, seen); err != nil {
+		if err := c.normalizePendingResultCallLiteralWithSeen(ctx, sessionID, arg.Value, seen); err != nil {
 			return fmt.Errorf("arg %q: %w", arg.Name, err)
 		}
 	}
@@ -4720,14 +4722,14 @@ func (c *Cache) normalizePendingResultCallRefsWithSeen(ctx context.Context, fram
 		if input == nil {
 			continue
 		}
-		if err := c.normalizePendingResultCallLiteralWithSeen(ctx, input.Value, seen); err != nil {
+		if err := c.normalizePendingResultCallLiteralWithSeen(ctx, sessionID, input.Value, seen); err != nil {
 			return fmt.Errorf("implicit input %q: %w", input.Name, err)
 		}
 	}
 	return nil
 }
 
-func (c *Cache) normalizePendingResultCallRefWithSeen(ctx context.Context, ref *ResultCallRef, seen map[*ResultCall]struct{}) error {
+func (c *Cache) normalizePendingResultCallRefWithSeen(ctx context.Context, sessionID string, ref *ResultCallRef, seen map[*ResultCall]struct{}) error {
 	if ref == nil {
 		return nil
 	}
@@ -4737,10 +4739,10 @@ func (c *Cache) normalizePendingResultCallRefWithSeen(ctx context.Context, ref *
 	if ref.Call == nil {
 		return nil
 	}
-	if err := c.normalizePendingResultCallRefsWithSeen(ctx, ref.Call, seen); err != nil {
+	if err := c.normalizePendingResultCallRefsWithSeen(ctx, sessionID, ref.Call, seen); err != nil {
 		return err
 	}
-	resultID, err := c.resultIDForCall(ctx, ref.Call)
+	resultID, err := c.resultIDForCall(ctx, sessionID, ref.Call)
 	if err != nil {
 		return err
 	}
@@ -4752,16 +4754,16 @@ func (c *Cache) normalizePendingResultCallRefWithSeen(ctx context.Context, ref *
 	return nil
 }
 
-func (c *Cache) normalizePendingResultCallLiteralWithSeen(ctx context.Context, lit *ResultCallLiteral, seen map[*ResultCall]struct{}) error {
+func (c *Cache) normalizePendingResultCallLiteralWithSeen(ctx context.Context, sessionID string, lit *ResultCallLiteral, seen map[*ResultCall]struct{}) error {
 	if lit == nil {
 		return nil
 	}
 	switch lit.Kind {
 	case ResultCallLiteralKindResultRef:
-		return c.normalizePendingResultCallRefWithSeen(ctx, lit.ResultRef, seen)
+		return c.normalizePendingResultCallRefWithSeen(ctx, sessionID, lit.ResultRef, seen)
 	case ResultCallLiteralKindList:
 		for _, item := range lit.ListItems {
-			if err := c.normalizePendingResultCallLiteralWithSeen(ctx, item, seen); err != nil {
+			if err := c.normalizePendingResultCallLiteralWithSeen(ctx, sessionID, item, seen); err != nil {
 				return err
 			}
 		}
@@ -4770,7 +4772,7 @@ func (c *Cache) normalizePendingResultCallLiteralWithSeen(ctx context.Context, l
 			if field == nil {
 				continue
 			}
-			if err := c.normalizePendingResultCallLiteralWithSeen(ctx, field.Value, seen); err != nil {
+			if err := c.normalizePendingResultCallLiteralWithSeen(ctx, sessionID, field.Value, seen); err != nil {
 				return err
 			}
 		}
@@ -4840,7 +4842,7 @@ func (c *Cache) attachResult(ctx context.Context, sessionID string, resolver Typ
 	req := &CallRequest{
 		ResultCall: frame.clone(),
 	}
-	if err := c.normalizePendingResultCallRefs(ctx, req.ResultCall); err != nil {
+	if err := c.normalizePendingResultCallRefs(ctx, sessionID, req.ResultCall); err != nil {
 		return nil, fmt.Errorf("attach dependency result: normalize pending result call refs: %w", err)
 	}
 	shared.storeResultCall(req.ResultCall)
