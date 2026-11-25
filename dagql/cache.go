@@ -309,6 +309,10 @@ type cacheSessionLifecycle struct {
 	// (boundSessionHandle), so a session's calls ask it without the
 	// session lock (sessionHasBound).
 	bound atomic.Bool
+	// boundFields holds the field of every call the session has published
+	// a result for under its own binding (noteBoundCall), so its lookups of
+	// other fields don't look for one (sessionMayHaveBound).
+	boundFields sync.Map
 
 	releaseMu      sync.Mutex
 	releasePlan    *cacheSessionReleasePlan
@@ -8165,6 +8169,12 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 			boundHandles = append(boundHandles, c.sessionBoundHandle(sessionID))
 			slices.Sort(boundHandles)
 			boundHandles = slices.Compact(boundHandles)
+		}
+	}
+	if len(boundHandles) > 0 && slices.Contains(boundHandles, c.sessionBoundHandle(sessionID)) {
+		c.noteBoundCall(sessionID, req.Field)
+		if frame := oc.res.loadResultCall(); frame != nil {
+			c.noteBoundCall(sessionID, frame.Field)
 		}
 	}
 	if len(boundHandles) > 0 && !resWasCacheBacked {
