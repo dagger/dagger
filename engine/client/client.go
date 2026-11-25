@@ -1640,7 +1640,7 @@ func (c *Client) exportLogs(ctx context.Context, httpClient *httpClient) error {
 			return fmt.Errorf("unmarshal spans: %w", err)
 		}
 		enginetel.NormalizeLogsRequest(&req)
-		if err := telemetry.ReexportLogsFromPB(ctx, c.engineLogs(exp.enginePublishes), &req); err != nil {
+		if err := telemetry.ReexportLogsFromPB(ctx, c.engineLogs(exp.enginePublishes), req.GetResourceLogs()); err != nil {
 			return fmt.Errorf("re-export logs: %w", err)
 		}
 		return nil

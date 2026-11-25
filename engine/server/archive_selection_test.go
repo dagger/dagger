@@ -14,7 +14,7 @@ import (
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/stretchr/testify/require"
-	logapi "go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/attribute"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
@@ -42,7 +42,7 @@ func selectedReadsArchive(t *testing.T) (*Server, *daggerSession, *clientdb.DB) 
 		}
 		_, err := db.AppendSpans([]clientdb.Span{row})
 		require.NoError(t, err)
-		rec := scopedLogRecord(t, "test", logapi.StringValue(fmt.Sprint(i)))
+		rec := scopedLogRecord(t, "test", attribute.StringValue(fmt.Sprint(i)))
 		log, err := logRecordRow(&rec)
 		require.NoError(t, err)
 		log.SpanID = sql.NullString{String: row.SpanID, Valid: true}

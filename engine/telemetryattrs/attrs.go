@@ -1,6 +1,13 @@
 package telemetryattrs
 
 const (
+	// GenAIAgentIDAttr and GenAIAgentNameAttr are OpenTelemetry's GenAI agent
+	// identity attributes, as semconv v1.40.0 named them. semconv v1.43.0, the
+	// version used here, no longer defines the gen_ai attributes, and the UI
+	// and Dagger Cloud match on these keys.
+	GenAIAgentIDAttr   = "gen_ai.agent.id"
+	GenAIAgentNameAttr = "gen_ai.agent.name"
+
 	// WorkloadTransfersAttr marks, in the workload export, the spans of an
 	// engine that records its external transfers, the readings of its
 	// executions and helper commands, and the results that each session uses.

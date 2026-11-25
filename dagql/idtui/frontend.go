@@ -18,7 +18,7 @@ import (
 	"github.com/muesli/termenv"
 	"github.com/opencontainers/go-digest"
 	"github.com/vito/tuist"
-	"go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/attribute"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
@@ -1470,7 +1470,7 @@ func writePrimaryOutput(w io.Writer, db *dagui.DB, primary dagui.SpanID, include
 // to: 1 for stdout, 2 for stderr, 0 when unmarked.
 func primaryLogStream(l sdklog.Record) int {
 	var stream int
-	l.WalkAttributes(func(attr log.KeyValue) bool {
+	l.WalkAttributes(func(attr attribute.KeyValue) bool {
 		if attr.Key == telemetry.StdioStreamAttr {
 			if value, ok := dagui.LogValueInt64(attr.Value); ok {
 				stream = int(value)

@@ -20,7 +20,7 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/stretchr/testify/require"
 	"github.com/vito/tuist"
-	otellog "go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/attribute"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -431,12 +431,12 @@ func publishAgentControl(t *testing.T, db *dagui.DB, handle string, revise func(
 func ingestAgentControl(t *testing.T, db *dagui.DB, a agentcontrol.Agent) {
 	t.Helper()
 	rec := a.Record()
-	var attrs []otellog.KeyValue
-	rec.WalkAttributes(func(kv otellog.KeyValue) bool {
+	var attrs []attribute.KeyValue
+	rec.WalkAttributes(func(kv attribute.KeyValue) bool {
 		attrs = append(attrs, kv)
 		return true
 	})
-	db.IngestLogs([]sdklog.Record{frontendTestLogRecord(trace.SpanID{}, otellog.StringValue(""), attrs...)})
+	db.IngestLogs([]sdklog.Record{frontendTestLogRecord(trace.SpanID{}, attribute.StringValue(""), attrs...)})
 	_, _, err := db.AgentControl()
 	require.NoError(t, err, "fixture: control record rejected")
 }

@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/attribute"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
 
@@ -49,7 +49,7 @@ func (*gatedLogExporter) ForceFlush(context.Context) error { return nil }
 
 func blockingTestRecord(i int) *sdklog.Record {
 	var rec sdklog.Record
-	rec.SetBody(log.StringValue(strconv.Itoa(i)))
+	rec.SetBody(attribute.StringValue(strconv.Itoa(i)))
 	return &rec
 }
 

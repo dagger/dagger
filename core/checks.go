@@ -11,7 +11,6 @@ import (
 	telemetry "github.com/dagger/otel-go"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -126,9 +125,9 @@ func (c *Check) ReportResult(ctx context.Context, cached bool) {
 	if !strings.HasSuffix(preview, "\n") {
 		preview += "\n"
 	}
-	var attrs []log.KeyValue
+	var attrs []attribute.KeyValue
 	if contentType := toolResultContentType(preview); contentType != "" {
-		attrs = append(attrs, log.String(telemetry.ContentTypeAttr, contentType))
+		attrs = append(attrs, attribute.String(telemetry.ContentTypeAttr, contentType))
 	}
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary, attrs...)
 	defer stdio.Close()

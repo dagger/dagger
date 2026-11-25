@@ -14,7 +14,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
@@ -384,7 +383,7 @@ func TestLiveLogsDiagnosticsRecords(t *testing.T) {
 	require.Contains(t, rec.Body().AsString(), "live logs: replay")
 	require.Equal(t, *d.span.Load(), rec.SpanID(), "not a record of the diagnostics span")
 	require.NotEqual(t, root.SpanContext().SpanID(), rec.SpanID())
-	rec.WalkAttributes(func(kv log.KeyValue) bool {
+	rec.WalkAttributes(func(kv attribute.KeyValue) bool {
 		require.NotEqual(t, telemetry.StdioStreamAttr, kv.Key, "diagnostics are not stdio")
 		return true
 	})

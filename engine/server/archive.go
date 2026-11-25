@@ -23,6 +23,7 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/telemetryattrs"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
@@ -163,8 +164,8 @@ func (sess *daggerSession) publishSessionTitle(ctx context.Context, md *engine.C
 	ctx = engine.ContextWithClientMetadata(ctx, md)
 	var rec log.Record
 	rec.SetTimestamp(time.Now())
-	rec.SetBody(log.StringValue(title))
-	rec.AddAttributes(log.String(telemetryattrs.LogRoleAttr, telemetryattrs.LogRoleSpanName))
+	rec.SetBody(attribute.StringValue(title))
+	rec.AddAttributes(attribute.String(telemetryattrs.LogRoleAttr, telemetryattrs.LogRoleSpanName))
 	sess.loggerProvider.Logger(InstrumentationLibrary).Emit(ctx, rec)
 }
 
@@ -415,7 +416,7 @@ func buildArchiveBootstrapWithPayloadLimit(ctx context.Context, db *clientdb.DB,
 			return nil, err
 		}
 		var c callpbv1.Call
-		if err := proto.Unmarshal(rec.Body().AsBytes(), &c); err != nil {
+		if err := proto.Unmarshal(rec.Body().AsByteSlice(), &c); err != nil {
 			return nil, err
 		}
 		rows = append(rows, row)

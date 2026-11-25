@@ -10,7 +10,6 @@ import (
 	telemetry "github.com/dagger/otel-go"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
-	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
@@ -314,9 +313,7 @@ func loadTraceReportSession(ctx context.Context, clientDB *clientdb.DB, root str
 	// come from the session's own log buffers.
 	for start := 0; start < len(logs); start += traceReportBatchSize {
 		batch := logs[start:min(start+traceReportBatchSize, len(logs))]
-		if err := telemetry.ReexportLogsFromPB(ctx, session.LogExporter(), &collogspb.ExportLogsServiceRequest{
-			ResourceLogs: clientdb.LogsToPB(batch),
-		}); err != nil {
+		if err := telemetry.ReexportLogsFromPB(ctx, session.LogExporter(), clientdb.LogsToPB(batch)); err != nil {
 			return nil, fmt.Errorf("export logs: %w", err)
 		}
 	}

@@ -12,7 +12,7 @@ import (
 	"github.com/dagger/dagger/engine/archive"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/stretchr/testify/require"
-	logapi "go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/attribute"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 )
 
@@ -28,7 +28,7 @@ func plainSessionFixture(t *testing.T, srv *Server, sessionID, clientID string, 
 	if record {
 		db, err := srv.clientDBs.Open(t.Context(), clientID)
 		require.NoError(t, err)
-		rec := scopedLogRecord(t, "test", logapi.StringValue("PLAIN-SESSION-OUTPUT"))
+		rec := scopedLogRecord(t, "test", attribute.StringValue("PLAIN-SESSION-OUTPUT"))
 		row, err := logRecordRow(&rec)
 		require.NoError(t, err)
 		_, err = db.AppendLogs([]clientdb.Log{row})

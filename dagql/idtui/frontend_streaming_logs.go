@@ -9,7 +9,7 @@ import (
 	"github.com/dagger/dagger/dagql/idtui/multiprefixw"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/muesli/termenv"
-	"go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/attribute"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
 
@@ -98,7 +98,7 @@ func (s *streamingLogExporter) printLogs(dbSpan *dagui.Span, records []sdklog.Re
 	for _, record := range records {
 		// Check if this log is marked as verbose
 		isVerbose := false
-		record.WalkAttributes(func(kv log.KeyValue) bool {
+		record.WalkAttributes(func(kv attribute.KeyValue) bool {
 			if kv.Key == telemetry.LogsVerboseAttr {
 				isVerbose, _ = dagui.LogValueBool(kv.Value)
 				return !isVerbose

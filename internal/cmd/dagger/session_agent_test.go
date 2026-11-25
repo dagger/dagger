@@ -331,9 +331,9 @@ func TestPrimarySpanNamerAppliesEngineRename(t *testing.T) {
 			TraceID: primary.SpanContext().TraceID(), SpanID: spanID,
 		}))
 		var rec otellog.Record
-		rec.SetBody(otellog.StringValue(body))
+		rec.SetBody(attribute.StringValue(body))
 		if role != "" {
-			rec.AddAttributes(otellog.String(telemetryattrs.LogRoleAttr, role))
+			rec.AddAttributes(attribute.String(telemetryattrs.LogRoleAttr, role))
 		}
 		loggerProvider.Logger("engine").Emit(ctx, rec)
 	}

@@ -14,7 +14,6 @@ import (
 
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
@@ -248,7 +247,7 @@ func newCloudForwarder(sessionID, clientID string, db *clientdb.DB, spans, cache
 				if err == nil && len(req.GetResourceLogs()) > 0 {
 					batch.size = proto.Size(req)
 					batch.send = func(ctx context.Context) error {
-						return telemetry.ReexportLogsFromPB(ctx, logs, req)
+						return telemetry.ReexportLogsFromPB(ctx, logs, req.GetResourceLogs())
 					}
 				}
 				return batch, err
@@ -816,7 +815,7 @@ func (exp cloudPublishedLogExporter) Export(ctx context.Context, records []sdklo
 	marked := make([]sdklog.Record, len(records))
 	for i := range records {
 		marked[i] = records[i].Clone()
-		marked[i].AddAttributes(log.Bool(telemetryattrs.TelemetryCloudPublishedAttr, true))
+		marked[i].AddAttributes(attribute.Bool(telemetryattrs.TelemetryCloudPublishedAttr, true))
 	}
 	return exp.next.Export(ctx, marked)
 }

@@ -19,6 +19,7 @@ import (
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/internal/cloud/auth"
 	telemetry "github.com/dagger/otel-go"
+	_ "github.com/dagger/otel-go/otlp" // OpenTelemetry's exporters for OTEL_EXPORTER_OTLP_*, grpc included
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
@@ -26,7 +27,7 @@ import (
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
-	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.43.0"
 )
 
 const (
@@ -66,7 +67,10 @@ func init() {
 // Cloud: a logger provider of its own, written only by the engine's event
 // emitter.
 type engineEventExport struct {
-	provider     *sdklog.LoggerProvider
+	provider *sdklog.LoggerProvider
+	// processor is the provider's processor, for Shutdown to shut down
+	// when the provider can't (see enginetel.ShutdownLoggerProvider).
+	processor    sdklog.Processor
 	shutdownOnce sync.Once
 	shutdownErr  error
 }
@@ -88,7 +92,7 @@ func (e *engineEventExport) Shutdown(ctx context.Context) error {
 		return nil
 	}
 	e.shutdownOnce.Do(func() {
-		e.shutdownErr = e.provider.Shutdown(ctx)
+		e.shutdownErr = enginetel.ShutdownLoggerProvider(ctx, e.provider, e.processor)
 	})
 	return e.shutdownErr
 }
@@ -123,8 +127,8 @@ func InitTelemetry(ctx context.Context, engineInstanceID string) (context.Contex
 	otelResource, err := resource.New(ctx,
 		resource.WithHost(),
 		resource.WithAttributes(
-			semconv.ServiceNameKey.String("dagger-engine"),
-			semconv.ServiceVersionKey.String(engine.Version),
+			semconv.ServiceName("dagger-engine"),
+			semconv.ServiceVersion(engine.Version),
 			attribute.String("dagger.io/engine.name", engineName),
 			semconv.ServiceInstanceID(engineInstanceID),
 		),
@@ -177,10 +181,13 @@ func newEngineEventExport(ctx context.Context, otelResource *resource.Resource, 
 		slog.Debug("shut down unused Cloud metric exporter", "error", err)
 	}
 	processor := enginetel.NewBlockingLogProcessor(logs, engineEventExportQueueSize, engineEventExportBatchSize, telemetry.NearlyImmediate)
-	return &engineEventExport{provider: sdklog.NewLoggerProvider(
-		sdklog.WithResource(otelResource),
-		sdklog.WithProcessor(processor),
-	)}
+	return &engineEventExport{
+		provider: sdklog.NewLoggerProvider(
+			sdklog.WithResource(otelResource),
+			sdklog.WithProcessor(processor),
+		),
+		processor: processor,
+	}
 }
 
 // serverEngineEventExport returns the export as the server takes it: nil, not

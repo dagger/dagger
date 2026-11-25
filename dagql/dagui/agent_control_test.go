@@ -6,14 +6,15 @@ import (
 
 	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/trace"
 )
 
 func controlRecord(rec log.Record) sdklog.Record {
-	var attrs []log.KeyValue
-	rec.WalkAttributes(func(kv log.KeyValue) bool { attrs = append(attrs, kv); return true })
+	var attrs []attribute.KeyValue
+	rec.WalkAttributes(func(kv attribute.KeyValue) bool { attrs = append(attrs, kv); return true })
 	return newTestLogRecord(trace.TraceID{1}, trace.SpanID{}, "", attrs...)
 }
 
@@ -86,7 +87,7 @@ func TestCanonicalMalformedRecords(t *testing.T) {
 	_, _, err := db.AgentControl()
 	require.NoError(t, err)
 	bad := a.Record()
-	bad.AddAttributes(log.Int(agentcontrol.VersionAttr, 99))
+	bad.AddAttributes(attribute.Int(agentcontrol.VersionAttr, 99))
 	renderable := db.ingestLogs([]sdklog.Record{controlRecord(bad)}, true)
 	require.Empty(t, renderable)
 	_, _, err = db.AgentControl()

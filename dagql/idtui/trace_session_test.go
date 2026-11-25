@@ -10,7 +10,7 @@ import (
 
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/vito/tuist"
-	otellog "go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/attribute"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -46,7 +46,7 @@ func traceLogRecords(traceID string, logs []traceLog) []sdklog.Record {
 	for _, l := range logs {
 		var rec sdklog.Record
 		rec.SetTimestamp(time.Now())
-		rec.SetBody(otellog.StringValue(l.Body))
+		rec.SetBody(attribute.StringValue(l.Body))
 		rec.SetTraceID(tid)
 		if l.SpanID != "" {
 			sid, _ := trace.SpanIDFromHex(l.SpanID)

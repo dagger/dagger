@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
-	otellog "go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
@@ -39,9 +38,9 @@ func TestLogsFrontendHidesInternalSpanLogs(t *testing.T) {
 		},
 	}
 	records := []sdklog.Record{
-		frontendTestLogRecord(execID.SpanID, otellog.StringValue("exec output\n")),
-		frontendTestLogRecord(internalID.SpanID, otellog.StringValue("internal line\n")),
-		frontendTestLogRecord(failedID.SpanID, otellog.StringValue("failure line\n")),
+		frontendTestLogRecord(execID.SpanID, attribute.StringValue("exec output\n")),
+		frontendTestLogRecord(internalID.SpanID, attribute.StringValue("internal line\n")),
+		frontendTestLogRecord(failedID.SpanID, attribute.StringValue("failure line\n")),
 	}
 
 	for _, tc := range []struct {
@@ -113,7 +112,7 @@ func TestLogsFrontendPrintsHeldLogsOfInternalSpanThatFails(t *testing.T) {
 				stub(2, 1, "llm request", time.Time{}, codes.Unset, internal),
 			}))
 			require.NoError(t, fe.LogExporter().Export(context.Background(), []sdklog.Record{
-				frontendTestLogRecord(trace.SpanID{2}, otellog.StringValue("request body\n")),
+				frontendTestLogRecord(trace.SpanID{2}, attribute.StringValue("request body\n")),
 			}))
 			require.NotContains(t, output.String(), "request body", "a running internal span's logs must not print yet")
 

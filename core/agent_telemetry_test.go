@@ -14,12 +14,11 @@ import (
 
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
-	otellog "go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
-	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/agentcontrol"
@@ -45,7 +44,7 @@ type stateRecorder struct {
 
 func (r *stateRecorder) OnEmit(ctx context.Context, rec *sdklog.Record) error {
 	got := recordedState{body: rec.Body().AsString()}
-	rec.WalkAttributes(func(kv otellog.KeyValue) bool {
+	rec.WalkAttributes(func(kv attribute.KeyValue) bool {
 		switch kv.Key {
 		case telemetryattrs.AgentStateAttr:
 			got.state = kv.Value.AsString()
@@ -245,8 +244,8 @@ func TestEmitAgentFailureMessage(t *testing.T) {
 	}
 	require.Equal(t, telemetry.LLMRoleAssistant, attrs[telemetry.LLMRoleAttr])
 	require.Equal(t, telemetry.UIMessageReceived, attrs[telemetry.UIMessageAttr])
-	require.Equal(t, "agent-123", attrs[string(semconv.GenAIAgentIDKey)])
-	require.Equal(t, "reviewer", attrs[string(semconv.GenAIAgentNameKey)])
+	require.Equal(t, "agent-123", attrs["gen_ai.agent.id"])
+	require.Equal(t, "reviewer", attrs["gen_ai.agent.name"])
 
 	logs.mu.Lock()
 	defer logs.mu.Unlock()
@@ -360,7 +359,7 @@ func TestReseedPublishesRewindMarker(t *testing.T) {
 	require.Equal(t, telemetry.LLMRoleUser, attrs[telemetry.LLMRoleAttr])
 	require.Equal(t, telemetryattrs.LLMMessageOriginKindEvent, attrs[telemetryattrs.LLMMessageOriginKindAttr],
 		"a client predating the marker must render it as an engine event, not as words the model said")
-	require.Equal(t, "agent-123", attrs[string(semconv.GenAIAgentIDKey)])
+	require.Equal(t, "agent-123", attrs["gen_ai.agent.id"])
 
 	logs.mu.Lock()
 	defer logs.mu.Unlock()

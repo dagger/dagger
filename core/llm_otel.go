@@ -15,7 +15,6 @@ import (
 	"github.com/opencontainers/go-digest"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -104,7 +103,7 @@ func (t *llmOTelTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	req = req.WithContext(ctx)
 
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
-		log.String("llm.provider", t.provider),
+		attribute.String("llm.provider", t.provider),
 	)
 
 	// Capture and log request body. Retain it to detect streaming intent below.

@@ -69,7 +69,7 @@ func TestSessionShutdownKeepsWorkloadExportOpen(t *testing.T) {
 			trace.WithAttributes(attribute.String(telemetry.DagDigestAttr, "recipe-"+name)))
 		var rec log.Record
 		rec.SetTimestamp(time.Now())
-		rec.SetBody(log.StringValue(name))
+		rec.SetBody(attribute.StringValue(name))
 		sess.loggerProvider.Logger("test").Emit(ctx, rec)
 		span.End()
 	}

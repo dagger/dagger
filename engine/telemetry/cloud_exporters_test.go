@@ -18,7 +18,7 @@ import (
 
 	"github.com/dagger/dagger/internal/cloud/auth"
 	"github.com/stretchr/testify/require"
-	"go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/attribute"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
@@ -112,7 +112,7 @@ func TestCloudLogExportWithEngineToken(t *testing.T) {
 	defer logs.Shutdown(ctx) //nolint:errcheck
 
 	var rec sdklog.Record
-	rec.SetBody(log.StringValue("fact"))
+	rec.SetBody(attribute.StringValue("fact"))
 	require.NoError(t, logs.Export(ctx, []sdklog.Record{rec}))
 	require.NoError(t, logs.Export(ctx, []sdklog.Record{rec}))
 	first := cloudExporterTestRequest(t, requests)
@@ -254,7 +254,7 @@ func TestCloudExportDoesNotWaitOnStalledRefresh(t *testing.T) {
 			},
 			"logs": func(ctx context.Context) error {
 				var rec sdklog.Record
-				rec.SetBody(log.StringValue("record"))
+				rec.SetBody(attribute.StringValue("record"))
 				return logs.Export(ctx, []sdklog.Record{rec})
 			},
 		} {

@@ -11,7 +11,7 @@ import (
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
-	otellog "go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
@@ -178,17 +178,17 @@ func cannedAgentControlLogs(agents ...cannedAgent) *collogspb.ExportLogsServiceR
 		}
 		rec := control.Record()
 		var attrs []*commonpb.KeyValue
-		rec.WalkAttributes(func(kv otellog.KeyValue) bool {
-			switch kv.Value.Kind() {
-			case otellog.KindString:
-				attrs = append(attrs, cannedStringAttr(kv.Key, kv.Value.AsString()))
-			case otellog.KindInt64:
+		rec.WalkAttributes(func(kv attribute.KeyValue) bool {
+			switch kv.Value.Type() {
+			case attribute.STRING:
+				attrs = append(attrs, cannedStringAttr(string(kv.Key), kv.Value.AsString()))
+			case attribute.INT64:
 				attrs = append(attrs, &commonpb.KeyValue{
-					Key:   kv.Key,
+					Key:   string(kv.Key),
 					Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_IntValue{IntValue: kv.Value.AsInt64()}},
 				})
 			default:
-				panic("unexpected control attribute kind " + kv.Value.Kind().String())
+				panic("unexpected control attribute kind " + kv.Value.Type().String())
 			}
 			return true
 		})

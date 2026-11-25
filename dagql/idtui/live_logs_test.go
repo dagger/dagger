@@ -12,15 +12,15 @@ import (
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
 	"github.com/vito/tuist"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
-	otellog "go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 )
 
-func liveTestLog(traceID dagui.TraceID, span dagui.SpanID, body string, attrs ...otellog.KeyValue) sdklog.Record {
-	rec := frontendTestLogRecord(span.SpanID, otellog.StringValue(body), attrs...)
+func liveTestLog(traceID dagui.TraceID, span dagui.SpanID, body string, attrs ...attribute.KeyValue) sdklog.Record {
+	rec := frontendTestLogRecord(span.SpanID, attribute.StringValue(body), attrs...)
 	rec.SetTraceID(traceID.TraceID)
 	return rec
 }
@@ -53,7 +53,7 @@ func TestLogPlacement(t *testing.T) {
 	unknown := prettyTestSpanID(9)
 	tool := prettyTestSpanID(5)
 	fe.ImportSnapshots([]dagui.SpanSnapshot{{ID: tool, TraceID: live, ParentID: root, Name: "tool", LLMRole: "assistant", LLMTool: "Read", StartTime: start, Final: true}})
-	json := otellog.String(telemetry.ContentTypeAttr, "application/json")
+	json := attribute.String(telemetry.ContentTypeAttr, "application/json")
 	for _, tc := range []struct {
 		name string
 		rec  sdklog.Record
@@ -61,10 +61,10 @@ func TestLogPlacement(t *testing.T) {
 	}{
 		{"rolled up", liveTestLog(live, kid, "x"), LogPlacement{Span: kid, RollUp: rollUp}},
 		{"the roll-up's own", liveTestLog(live, rollUp, "x"), LogPlacement{Span: rollUp}},
-		{"verbose", liveTestLog(live, kid, "x", otellog.Bool(telemetry.LogsVerboseAttr, true)), LogPlacement{Span: kid}},
+		{"verbose", liveTestLog(live, kid, "x", attribute.Bool(telemetry.LogsVerboseAttr, true)), LogPlacement{Span: kid}},
 		{"outside a roll-up", liveTestLog(live, root, "x"), LogPlacement{Span: root}},
 		{"not received", liveTestLog(live, unknown, "x"), LogPlacement{Span: unknown}},
-		{"parked", liveTestLog(live, orphan, "x", otellog.String(telemetry.DagDigestAttr, "xxh3:nobody")), LogPlacement{}},
+		{"parked", liveTestLog(live, orphan, "x", attribute.String(telemetry.DagDigestAttr, "xxh3:nobody")), LogPlacement{}},
 		{"tool args", liveTestLog(live, tool, "{}", json), LogPlacement{Span: tool, ToolArgs: true}},
 		{"tool output", liveTestLog(live, tool, "x"), LogPlacement{Span: tool}},
 		{"JSON of a span not received", liveTestLog(live, unknown, "{}", json), LogPlacement{Span: unknown}},
@@ -129,7 +129,7 @@ func TestLiveLogsReadOnDemand(t *testing.T) {
 	require.Equal(t, []LogRequest{{Span: step, Digests: []string{"xxh3:out"}}}, reqs)
 	require.NoError(t, read.Export(ctx, []sdklog.Record{
 		liveTestLog(live, step, "read\n"),
-		liveTestLog(live, step, "verbose\n", otellog.Bool("dagger.io/ui.verbose", true)),
+		liveTestLog(live, step, "verbose\n", attribute.Bool("dagger.io/ui.verbose", true)),
 	}))
 	require.Contains(t, vtermText(fe, step), "read")
 	require.Contains(t, vtermText(fe, step), "verbose")
@@ -161,7 +161,7 @@ func TestLiveLogsPresenceFlagsHasLogs(t *testing.T) {
 	fe.ImportSnapshots([]dagui.SpanSnapshot{{ID: step, TraceID: live, Name: "step", StartTime: time.Unix(100, 0), Final: true}})
 	fe.SetLiveLogs(live, func(LogRequest) {})
 	require.NoError(t, fe.LogExporter().Export(context.Background(), []sdklog.Record{
-		liveTestLog(live, step, "", otellog.String(telemetryattrs.LogRoleAttr, telemetryattrs.LogRolePresence)),
+		liveTestLog(live, step, "", attribute.String(telemetryattrs.LogRoleAttr, telemetryattrs.LogRolePresence)),
 	}))
 	require.True(t, db.Spans.Map[step].HasLogs)
 	require.Nil(t, fe.logs.Logs[step], "presence rendered")
@@ -206,7 +206,7 @@ func TestLiveLogsFilterAtApplication(t *testing.T) {
 	// caller's context carries a live-read filter.
 	checked = false
 	require.NoError(t, fe.LogExporter().Export(ctx, []sdklog.Record{
-		liveTestLog(live, step, "", otellog.String(telemetryattrs.LogRoleAttr, telemetryattrs.LogRolePresence)),
+		liveTestLog(live, step, "", attribute.String(telemetryattrs.LogRoleAttr, telemetryattrs.LogRolePresence)),
 	}))
 	fe.tui.Step()
 	require.False(t, checked, "live batch validation must not affect the normal exporter")

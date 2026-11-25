@@ -6,10 +6,12 @@ import (
 	"errors"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 
@@ -38,14 +40,15 @@ func (*engineEventTestExporter) ForceFlush(context.Context) error { return nil }
 
 // engineEventTestExport is an EngineEventExport over a test logger provider.
 type engineEventTestExport struct {
-	provider *sdklog.LoggerProvider
+	provider   *sdklog.LoggerProvider
+	processors []sdklog.Processor
 }
 
 func (e *engineEventTestExport) Logger() log.Logger {
 	return e.provider.Logger(telemetryattrs.EngineEventScope)
 }
 func (e *engineEventTestExport) Shutdown(ctx context.Context) error {
-	return e.provider.Shutdown(ctx)
+	return enginetel.ShutdownLoggerProvider(ctx, e.provider, e.processors...)
 }
 
 // engineEventTestServer is a server with an engine event export whose
@@ -77,10 +80,10 @@ func (e *engineEventTestExporter) events(t *testing.T) []engineTestEvent {
 	var events []engineTestEvent
 	for _, rec := range e.records {
 		require.Equal(t, telemetryattrs.EngineEventScope, rec.InstrumentationScope().Name)
-		require.Equal(t, log.KindString, rec.Body().Kind(), "the body is a JSON string")
+		require.Equal(t, attribute.STRING, rec.Body().Type(), "the body is a JSON string")
 		attrs := map[string]string{}
-		rec.WalkAttributes(func(kv log.KeyValue) bool {
-			attrs[kv.Key] = kv.Value.AsString()
+		rec.WalkAttributes(func(kv attribute.KeyValue) bool {
+			attrs[string(kv.Key)] = kv.Value.AsString()
 			return true
 		})
 		require.Len(t, attrs, 2, "the kind and the cache: %v", attrs)
@@ -341,22 +344,30 @@ func TestEngineEventBurstThroughBlockingExport(t *testing.T) {
 	}
 }
 
-type unavailableEventExporter struct{}
+type unavailableEventExporter struct {
+	shutdowns atomic.Int32
+}
 
-func (unavailableEventExporter) Export(context.Context, []sdklog.Record) error {
+func (*unavailableEventExporter) Export(context.Context, []sdklog.Record) error {
 	return errors.New("cloud unavailable")
 }
-func (unavailableEventExporter) Shutdown(context.Context) error   { return nil }
-func (unavailableEventExporter) ForceFlush(context.Context) error { return nil }
+func (e *unavailableEventExporter) Shutdown(context.Context) error {
+	e.shutdowns.Add(1)
+	return nil
+}
+func (*unavailableEventExporter) ForceFlush(context.Context) error { return nil }
 
 // With Cloud unavailable and every queue full, the events' shutdown, the
-// emitter's drain and the export's flush together, ends within one budget.
-// An event emitted after the shutdown is dropped rather than panicking.
+// emitter's drain and the export's flush together, ends within one budget,
+// and the export's processor stops retrying and shuts its exporter down. The
+// events left undelivered are counted as dropped by then. An event emitted
+// after the shutdown is dropped rather than panicking.
 func TestEngineEventsShutdownWithinBudget(t *testing.T) {
 	t.Parallel()
 	ctx := boundedContext(t)
-	provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(enginetel.NewBlockingLogProcessor(unavailableEventExporter{}, 2, 1, 0)))
-	export := &engineEventTestExport{provider: provider}
+	exporter := &unavailableEventExporter{}
+	processor := enginetel.NewBlockingLogProcessor(exporter, 2, 1, 0)
+	export := &engineEventTestExport{provider: sdklog.NewLoggerProvider(sdklog.WithProcessor(processor)), processors: []sdklog.Processor{processor}}
 	srv := &Server{engineEvents: newEngineEventEmitter(export.Logger()), engineEventExport: export, engineEventShutdownBudget: 300 * time.Millisecond}
 	for range 1000 {
 		srv.engineEvents.Emit(telemetryattrs.EngineEventPrune, dagql.CacheIdentity{}, time.Now(), telemetryattrs.EnginePruneEvent{})
@@ -366,11 +377,14 @@ func TestEngineEventsShutdownWithinBudget(t *testing.T) {
 	srv.stopEngineEvents(ctx, false)
 	elapsed := time.Since(start)
 	require.Less(t, elapsed, 5*time.Second, "shutdown took %s with a 300ms budget", elapsed)
+	require.Greater(t, srv.engineEvents.Dropped(), uint64(900), "the undelivered events are counted by the shutdown's end")
 	select {
 	case <-srv.engineEvents.done:
 	case <-ctx.Done():
 		t.Fatal("the emitter's drain did not end after the export shut down")
 	}
+	require.Eventually(t, func() bool { return exporter.shutdowns.Load() == 1 }, 10*time.Second, time.Millisecond,
+		"the export's exporter was not shut down")
 	dropped := srv.engineEvents.Dropped()
 	srv.engineEvents.Emit(telemetryattrs.EngineEventStop, dagql.CacheIdentity{}, time.Now(), telemetryattrs.EngineStopEvent{})
 	require.Equal(t, dropped+1, srv.engineEvents.Dropped(), "an event after the shutdown is dropped")
@@ -381,8 +395,8 @@ func TestEngineEventsShutdownWithinBudget(t *testing.T) {
 // telemetry flushes need too.
 func TestEngineEventsShutdownEndsWithTheStopWhenStateIsDiscarded(t *testing.T) {
 	t.Parallel()
-	provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(enginetel.NewBlockingLogProcessor(unavailableEventExporter{}, 2, 1, 0)))
-	export := &engineEventTestExport{provider: provider}
+	processor := enginetel.NewBlockingLogProcessor(&unavailableEventExporter{}, 2, 1, 0)
+	export := &engineEventTestExport{provider: sdklog.NewLoggerProvider(sdklog.WithProcessor(processor)), processors: []sdklog.Processor{processor}}
 	srv := &Server{stateDiscarded: true, engineEvents: newEngineEventEmitter(export.Logger()), engineEventExport: export, engineEventShutdownBudget: DiscardedStateStopReserve}
 	for range 1000 {
 		srv.engineEvents.Emit(telemetryattrs.EngineEventPrune, dagql.CacheIdentity{}, time.Now(), telemetryattrs.EnginePruneEvent{})

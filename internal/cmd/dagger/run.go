@@ -281,7 +281,7 @@ func setupTelemetryProxy(ctx context.Context) ([]string, error) {
 		}
 		enginetel.NormalizeLogsRequest(&req)
 		forwarder := telemetry.LogForwarder{Processors: telemetry.LogProcessors}
-		if exportErr := telemetry.ReexportLogsFromPB(r.Context(), forwarder, &req); exportErr != nil {
+		if exportErr := telemetry.ReexportLogsFromPB(r.Context(), forwarder, req.GetResourceLogs()); exportErr != nil {
 			http.Error(w, exportErr.Error(), http.StatusInternalServerError)
 			return
 		}

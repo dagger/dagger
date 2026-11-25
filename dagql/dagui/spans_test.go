@@ -7,8 +7,8 @@ import (
 	"time"
 	"unsafe"
 
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
-	otellog "go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
@@ -19,7 +19,7 @@ import (
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
-func newTestLogRecord(traceID trace.TraceID, spanID trace.SpanID, body string, attrs ...otellog.KeyValue) sdklog.Record {
+func newTestLogRecord(traceID trace.TraceID, spanID trace.SpanID, body string, attrs ...attribute.KeyValue) sdklog.Record {
 	r := new(sdklog.Record)
 
 	rf := reflect.ValueOf(r).Elem()
@@ -33,7 +33,7 @@ func newTestLogRecord(traceID trace.TraceID, spanID trace.SpanID, body string, a
 
 	r.SetTraceID(traceID)
 	r.SetSpanID(spanID)
-	r.SetBody(otellog.StringValue(body))
+	r.SetBody(attribute.StringValue(body))
 	r.SetAttributes(attrs...)
 
 	return *r
@@ -101,7 +101,7 @@ func TestSpanNameLogUpdatesLiveSpan(t *testing.T) {
 		trace.TraceID{1},
 		spanID.SpanID,
 		"live name",
-		otellog.String(telemetryattrs.LogRoleAttr, telemetryattrs.LogRoleSpanName),
+		attribute.String(telemetryattrs.LogRoleAttr, telemetryattrs.LogRoleSpanName),
 	)
 	if err := db.LogExporter().Export(context.Background(), []sdklog.Record{record}); err != nil {
 		t.Fatalf("export name record: %v", err)
@@ -165,7 +165,7 @@ func TestSpanNameLogBeforeSpanSnapshot(t *testing.T) {
 		trace.TraceID{1},
 		spanID.SpanID,
 		"early name",
-		otellog.String(telemetryattrs.LogRoleAttr, telemetryattrs.LogRoleSpanName),
+		attribute.String(telemetryattrs.LogRoleAttr, telemetryattrs.LogRoleSpanName),
 	)
 	if err := db.LogExporter().Export(context.Background(), []sdklog.Record{record}); err != nil {
 		t.Fatalf("export name record: %v", err)
@@ -358,7 +358,7 @@ func TestLogTargetSpanIDUsesCreatorFromSameTrace(t *testing.T) {
 		liveTraceID.TraceID,
 		trace.SpanID{9},
 		"hello",
-		otellog.String(telemetry.DagDigestAttr, outputDig),
+		attribute.String(telemetry.DagDigestAttr, outputDig),
 	)
 
 	spanID := db.LogTargetSpanID(record)
@@ -387,7 +387,7 @@ func TestLogTargetSpanIDWaitsForMatchingTraceCreator(t *testing.T) {
 		trace.TraceID{2},
 		trace.SpanID{9},
 		"hello",
-		otellog.String(telemetry.DagDigestAttr, outputDig),
+		attribute.String(telemetry.DagDigestAttr, outputDig),
 	)
 
 	spanID := db.LogTargetSpanID(record)
@@ -431,7 +431,7 @@ func TestLogTargetSpanIDFallsBackToServiceSpan(t *testing.T) {
 		traceID,
 		execID,
 		"nginx: ready",
-		otellog.String(telemetry.DagDigestAttr, "xxh3:never-created"),
+		attribute.String(telemetry.DagDigestAttr, "xxh3:never-created"),
 	)
 	if got := db.LogTargetSpanID(record); got != (SpanID{SpanID: execID}) {
 		t.Fatalf("expected the service exec span fallback, got %s", got)
@@ -441,7 +441,7 @@ func TestLogTargetSpanIDFallsBackToServiceSpan(t *testing.T) {
 		traceID,
 		plainID,
 		"hello",
-		otellog.String(telemetry.DagDigestAttr, "xxh3:never-created"),
+		attribute.String(telemetry.DagDigestAttr, "xxh3:never-created"),
 	)
 	if got := db.LogTargetSpanID(other); got.IsValid() {
 		t.Fatalf("expected unresolved target for non-service span, got %s", got)
@@ -466,14 +466,14 @@ func TestPendingDigestLogsResolveWhenServiceSpanArrives(t *testing.T) {
 		traceID,
 		execID.SpanID,
 		"nginx: ready",
-		otellog.String(telemetry.DagDigestAttr, outputDig),
+		attribute.String(telemetry.DagDigestAttr, outputDig),
 	)
 	// a record from a different span sharing the digest must stay parked
 	other := newTestLogRecord(
 		traceID,
 		otherID,
 		"unrelated",
-		otellog.String(telemetry.DagDigestAttr, outputDig),
+		attribute.String(telemetry.DagDigestAttr, outputDig),
 	)
 
 	if err := db.LogExporter().Export(context.Background(), []sdklog.Record{record, other}); err != nil {
@@ -544,7 +544,7 @@ func TestPendingDigestLogsResolveWhenCreatorArrives(t *testing.T) {
 		traceID,
 		trace.SpanID{9},
 		"hello",
-		otellog.String(telemetry.DagDigestAttr, outputDig),
+		attribute.String(telemetry.DagDigestAttr, outputDig),
 	)
 
 	if err := db.LogExporter().Export(context.Background(), []sdklog.Record{record}); err != nil {

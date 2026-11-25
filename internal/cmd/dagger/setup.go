@@ -13,7 +13,6 @@ import (
 	toml "github.com/pelletier/go-toml"
 	"github.com/spf13/cobra"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/log"
 )
 
 var initCmd = &cobra.Command{
@@ -60,7 +59,7 @@ func setupMessage(ctx context.Context, name, markdown string) {
 	ctx, span := Tracer().Start(ctx, name, telemetry.Reveal(), telemetry.Encapsulate())
 	span.SetAttributes(attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived))
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
-		log.String(telemetry.ContentTypeAttr, "text/markdown"))
+		attribute.String(telemetry.ContentTypeAttr, "text/markdown"))
 	_, _ = fmt.Fprintln(stdio.Stdout, markdown)
 	stdio.Close()
 	telemetry.EndWithCause(span, nil)

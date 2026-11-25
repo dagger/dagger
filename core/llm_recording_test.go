@@ -19,7 +19,6 @@ import (
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
-	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/dagql"
@@ -69,11 +68,11 @@ func TestMessageSpansCarryGenAIAgentIdentity(t *testing.T) {
 		span, ok := byName[name]
 		require.True(t, ok, "missing %q span", name)
 
-		id, ok := spanAttr(span, string(semconv.GenAIAgentIDKey))
+		id, ok := spanAttr(span, "gen_ai.agent.id")
 		require.True(t, ok, "%s: missing GenAI agent ID", name)
 		require.Equal(t, "agent-123", id.AsString())
 
-		agentName, ok := spanAttr(span, string(semconv.GenAIAgentNameKey))
+		agentName, ok := spanAttr(span, "gen_ai.agent.name")
 		require.True(t, ok, "%s: missing GenAI agent name", name)
 		require.Equal(t, "reviewer", agentName.AsString())
 	}
@@ -233,11 +232,11 @@ func TestRecordedResponseProviderEmitsPerToolCallDisplaySpans(t *testing.T) {
 		require.True(t, ok, "%s: missing call digest attr", toolName)
 		require.Equal(t, "sha256:deadbeef", v.AsString())
 
-		v, ok = spanAttr(s, string(semconv.GenAIAgentIDKey))
+		v, ok = spanAttr(s, "gen_ai.agent.id")
 		require.True(t, ok, "%s: missing GenAI agent ID", toolName)
 		require.Equal(t, "agent-123", v.AsString())
 
-		v, ok = spanAttr(s, string(semconv.GenAIAgentNameKey))
+		v, ok = spanAttr(s, "gen_ai.agent.name")
 		require.True(t, ok, "%s: missing GenAI agent name", toolName)
 		require.Equal(t, "reviewer", v.AsString())
 

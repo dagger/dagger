@@ -5,21 +5,21 @@ import (
 
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/stretchr/testify/require"
-	otellog "go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/attribute"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/trace"
 )
 
 func TestMediaRecord(t *testing.T) {
 	rec := newTestLogRecord(trace.TraceID{1}, trace.SpanID{1}, "[image: image/png]\n",
-		otellog.String(telemetryattrs.LogMediaKindAttr, "image"),
-		otellog.String(telemetryattrs.LogMediaMIMETypeAttr, "image/png"),
-		otellog.String(telemetryattrs.LogMediaDataAttr, "aW1hZ2U="),
+		attribute.String(telemetryattrs.LogMediaKindAttr, "image"),
+		attribute.String(telemetryattrs.LogMediaMIMETypeAttr, "image/png"),
+		attribute.String(telemetryattrs.LogMediaDataAttr, "aW1hZ2U="),
 	)
 	t.Run("ordered renderable records retain safe fallback", func(t *testing.T) {
 		var before, after sdklog.Record
-		before.SetBody(otellog.StringValue("before\n"))
-		after.SetBody(otellog.StringValue("after\n"))
+		before.SetBody(attribute.StringValue("before\n"))
+		after.SetBody(attribute.StringValue("after\n"))
 		db := NewDB()
 		logs := db.IngestLogs([]sdklog.Record{before, rec, after})
 		require.Len(t, logs, 3)
@@ -35,14 +35,14 @@ func TestMediaRecord(t *testing.T) {
 		require.Equal(t, MediaRecord{Kind: "image", MIMEType: "image/png", Data: "aW1hZ2U="}, media)
 		require.True(t, db.SpanHasLogs(SpanID{SpanID: rec.SpanID()}))
 	})
-	for name, attr := range map[string]otellog.KeyValue{
-		"wrong kind type":    otellog.Int(telemetryattrs.LogMediaKindAttr, 1),
-		"unknown kind":       otellog.String(telemetryattrs.LogMediaKindAttr, "video"),
-		"wrong MIME type":    otellog.Bool(telemetryattrs.LogMediaMIMETypeAttr, true),
-		"mismatched MIME":    otellog.String(telemetryattrs.LogMediaMIMETypeAttr, "audio/wav"),
-		"empty MIME subtype": otellog.String(telemetryattrs.LogMediaMIMETypeAttr, "image/"),
-		"wrong data type":    otellog.Bytes(telemetryattrs.LogMediaDataAttr, []byte("image")),
-		"missing data":       otellog.String(telemetryattrs.LogMediaDataAttr, ""),
+	for name, attr := range map[string]attribute.KeyValue{
+		"wrong kind type":    attribute.Int(telemetryattrs.LogMediaKindAttr, 1),
+		"unknown kind":       attribute.String(telemetryattrs.LogMediaKindAttr, "video"),
+		"wrong MIME type":    attribute.Bool(telemetryattrs.LogMediaMIMETypeAttr, true),
+		"mismatched MIME":    attribute.String(telemetryattrs.LogMediaMIMETypeAttr, "audio/wav"),
+		"empty MIME subtype": attribute.String(telemetryattrs.LogMediaMIMETypeAttr, "image/"),
+		"wrong data type":    attribute.ByteSlice(telemetryattrs.LogMediaDataAttr, []byte("image")),
+		"missing data":       attribute.String(telemetryattrs.LogMediaDataAttr, ""),
 	} {
 		t.Run(name, func(t *testing.T) {
 			invalid := rec.Clone()
@@ -54,7 +54,7 @@ func TestMediaRecord(t *testing.T) {
 			require.Equal(t, "[image: image/png]\n", body)
 		})
 	}
-	for _, body := range []otellog.Value{otellog.StringValue(""), otellog.BytesValue([]byte("data"))} {
+	for _, body := range []attribute.Value{attribute.StringValue(""), attribute.ByteSliceValue([]byte("data"))} {
 		invalid := rec.Clone()
 		invalid.SetBody(body)
 		_, ok := ParseMediaRecord(invalid)

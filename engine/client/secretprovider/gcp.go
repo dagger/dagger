@@ -11,7 +11,6 @@ import (
 
 	secretmanager "cloud.google.com/go/secretmanager/apiv1"
 	"cloud.google.com/go/secretmanager/apiv1/secretmanagerpb"
-	"google.golang.org/api/option"
 )
 
 type gcpSecretWithTTL struct {
@@ -174,21 +173,17 @@ func parseGCPSecretPath(path string) (string, error) {
 
 // Load configuration from environment and create a new GCP Secret Manager client
 func gcpConfigureClient(ctx context.Context) error {
-	var opts []option.ClientOption
-
-	// Check for explicit credentials file
-	if credFile := os.Getenv("GOOGLE_APPLICATION_CREDENTIALS"); credFile != "" {
-		opts = append(opts, option.WithCredentialsFile(credFile))
-	}
-	// Otherwise, the client will use Application Default Credentials (ADC)
-	// which includes:
+	// The client uses Application Default Credentials (ADC), which include:
 	// 1. GOOGLE_APPLICATION_CREDENTIALS environment variable
 	// 2. gcloud auth application-default login
 	// 3. GCE/GKE metadata service
 	// 4. Other Google Cloud environments
+	//
+	// ADC reads GOOGLE_APPLICATION_CREDENTIALS first, as the deprecated
+	// option.WithCredentialsFile of it did.
 
 	// Create the client
-	client, err := secretmanager.NewClient(ctx, opts...)
+	client, err := secretmanager.NewClient(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to create GCP Secret Manager client: %w", err)
 	}

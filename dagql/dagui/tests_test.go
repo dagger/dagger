@@ -11,7 +11,7 @@ import (
 
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.43.0"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -38,7 +38,7 @@ func TestProcessAttributeTestMetadata(t *testing.T) {
 	var snapshot SpanSnapshot
 	snapshot.ProcessAttribute(string(semconv.TestCaseNameKey), "case-a")
 	snapshot.ProcessAttribute(string(semconv.TestSuiteNameKey), "suite-a")
-	snapshot.ProcessAttribute(string(semconv.TestSuiteRunStatusKey), "skipped")
+	snapshot.ProcessAttribute(string(semconv.TestSuiteRunStatusKey), semconv.TestSuiteRunStatusSkipped.Value.AsString())
 	if snapshot.TestCaseName != "case-a" {
 		t.Fatalf("expected test case name, got %q", snapshot.TestCaseName)
 	}
@@ -52,13 +52,13 @@ func TestProcessAttributeTestMetadata(t *testing.T) {
 
 func TestProcessAttributeTestStatusNormalizationAndPrecedence(t *testing.T) {
 	var pass SpanSnapshot
-	pass.ProcessAttribute(string(semconv.TestCaseResultStatusKey), "pass")
+	pass.ProcessAttribute(string(semconv.TestCaseResultStatusKey), semconv.TestCaseResultStatusPass.Value.AsString())
 	if pass.TestStatus != TestStatusSuccess {
 		t.Fatalf("expected pass to normalize to success, got %q", pass.TestStatus)
 	}
 
 	var fail SpanSnapshot
-	fail.ProcessAttribute(string(semconv.TestCaseResultStatusKey), "fail")
+	fail.ProcessAttribute(string(semconv.TestCaseResultStatusKey), semconv.TestCaseResultStatusFail.Value.AsString())
 	if fail.TestStatus != TestStatusFailure {
 		t.Fatalf("expected fail to normalize to failure, got %q", fail.TestStatus)
 	}

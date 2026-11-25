@@ -247,7 +247,7 @@ func emitCloudTestTelemetry(t *testing.T, sess *daggerSession, client *clientRun
 	ctx, span := sess.tracerProvider.Tracer("test").Start(ctx, "cloud-span")
 	rec := otellog.Record{}
 	rec.SetTimestamp(time.Now())
-	rec.SetBody(otellog.StringValue("cloud-log"))
+	rec.SetBody(attribute.StringValue("cloud-log"))
 	telemetry.Logger(ctx, "test").Emit(ctx, rec)
 	gauge, err := client.meterProvider.Meter("test").Int64Gauge("cloud.metric")
 	require.NoError(t, err)
@@ -529,8 +529,8 @@ func TestScaleOutTelemetryFollowsTheSession(t *testing.T) {
 	}))
 	require.NoError(t, params.EngineTrace.ExportSpans(ctx, []sdktrace.ReadOnlySpan{remote.Snapshot()}))
 	var rec, published otellog.Record
-	rec.SetBody(otellog.StringValue("remote-log"))
-	published.SetBody(otellog.StringValue("published-log"))
+	rec.SetBody(attribute.StringValue("remote-log"))
+	published.SetBody(attribute.StringValue("published-log"))
 	require.NoError(t, params.EngineLogsWithoutCloud.Export(ctx, []sdklog.Record{controlTestRecord(t, published)}))
 	require.NoError(t, params.EngineLogs.Export(ctx, []sdklog.Record{controlTestRecord(t, rec)}))
 
@@ -901,10 +901,10 @@ func TestCallPayloadReachesCloudOnce(t *testing.T) {
 	}))
 	var rec otellog.Record
 	rec.SetTimestamp(time.Now())
-	rec.SetBody(otellog.BytesValue([]byte("payload")))
+	rec.SetBody(attribute.ByteSliceValue([]byte("payload")))
 	rec.AddAttributes(
-		otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType),
-		otellog.String(telemetryattrs.CallPayloadDigestAttr, digest),
+		attribute.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType),
+		attribute.String(telemetryattrs.CallPayloadDigestAttr, digest),
 	)
 	telemetry.Logger(emitCtx, "test").Emit(emitCtx, rec)
 	require.NoError(t, sess.FlushTelemetry(ctx, "test"))
@@ -950,10 +950,10 @@ func TestCallPayloadReachesCloudOnce(t *testing.T) {
 func cloudPayloadRecordValue(digest string) otellog.Record {
 	var rec otellog.Record
 	rec.SetTimestamp(time.Now())
-	rec.SetBody(otellog.BytesValue([]byte("payload " + digest)))
+	rec.SetBody(attribute.ByteSliceValue([]byte("payload " + digest)))
 	rec.AddAttributes(
-		otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType),
-		otellog.String(telemetryattrs.CallPayloadDigestAttr, digest),
+		attribute.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType),
+		attribute.String(telemetryattrs.CallPayloadDigestAttr, digest),
 	)
 	return rec
 }
@@ -961,7 +961,7 @@ func cloudPayloadRecordValue(digest string) otellog.Record {
 func cloudOtherRecord(i int) otellog.Record {
 	var rec otellog.Record
 	rec.SetTimestamp(time.Now())
-	rec.SetBody(otellog.StringValue(fmt.Sprintf("exec output %d", i)))
+	rec.SetBody(attribute.StringValue(fmt.Sprintf("exec output %d", i)))
 	return rec
 }
 

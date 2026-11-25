@@ -17,7 +17,7 @@ import (
 	telemetry "github.com/dagger/otel-go"
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
-	"go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
@@ -80,14 +80,14 @@ func TestAgentTraceCaptureWaitsForCurrentAnchor(t *testing.T) {
 					require.NoError(t, a.Validate())
 					rec := a.Record()
 					var attrs []*commonpb.KeyValue
-					rec.WalkAttributes(func(kv log.KeyValue) bool {
-						switch kv.Value.Kind() {
-						case log.KindString:
-							attrs = append(attrs, attr(kv.Key, kv.Value.AsString()))
-						case log.KindInt64:
-							attrs = append(attrs, &commonpb.KeyValue{Key: kv.Key, Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_IntValue{IntValue: kv.Value.AsInt64()}}})
+					rec.WalkAttributes(func(kv attribute.KeyValue) bool {
+						switch kv.Value.Type() {
+						case attribute.STRING:
+							attrs = append(attrs, attr(string(kv.Key), kv.Value.AsString()))
+						case attribute.INT64:
+							attrs = append(attrs, &commonpb.KeyValue{Key: string(kv.Key), Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_IntValue{IntValue: kv.Value.AsInt64()}}})
 						default:
-							t.Fatalf("unexpected control attribute kind %s for %s", kv.Value.Kind(), kv.Key)
+							t.Fatalf("unexpected control attribute kind %s for %s", kv.Value.Type(), kv.Key)
 						}
 						return true
 					})

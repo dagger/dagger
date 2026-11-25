@@ -19,7 +19,7 @@ import (
 	"github.com/muesli/termenv"
 	"github.com/stretchr/testify/require"
 	"github.com/vito/tuist"
-	otellog "go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/attribute"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
 
@@ -34,14 +34,14 @@ func frontendMediaRecordsSize(t *testing.T, id dagui.SpanID, width, height int) 
 	require.NoError(t, png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, width, height))))
 	data := base64.StdEncoding.EncodeToString(buf.Bytes())
 	return []sdklog.Record{
-		frontendTestLogRecord(id.SpanID, otellog.StringValue("before image\n"),
-			otellog.String(telemetry.ContentTypeAttr, "text/markdown")),
-		frontendTestLogRecord(id.SpanID, otellog.StringValue("[image: image/png]\n"),
-			otellog.String(telemetryattrs.LogMediaKindAttr, "image"),
-			otellog.String(telemetryattrs.LogMediaMIMETypeAttr, "image/png"),
-			otellog.String(telemetryattrs.LogMediaDataAttr, data)),
-		frontendTestLogRecord(id.SpanID, otellog.StringValue("after image\n"),
-			otellog.String(telemetry.ContentTypeAttr, "text/markdown")),
+		frontendTestLogRecord(id.SpanID, attribute.StringValue("before image\n"),
+			attribute.String(telemetry.ContentTypeAttr, "text/markdown")),
+		frontendTestLogRecord(id.SpanID, attribute.StringValue("[image: image/png]\n"),
+			attribute.String(telemetryattrs.LogMediaKindAttr, "image"),
+			attribute.String(telemetryattrs.LogMediaMIMETypeAttr, "image/png"),
+			attribute.String(telemetryattrs.LogMediaDataAttr, data)),
+		frontendTestLogRecord(id.SpanID, attribute.StringValue("after image\n"),
+			attribute.String(telemetry.ContentTypeAttr, "text/markdown")),
 	}, data
 }
 

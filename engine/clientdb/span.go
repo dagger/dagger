@@ -204,11 +204,43 @@ var errInvalidUTF8 = errors.New("failed to proto marshal: string field contains 
 
 // appendKeyValue appends kv's length and encoding as the OTLP KeyValue
 // otel-go makes of it: AnyValue's oneof carries the value, even a zero one,
-// slices as an ArrayValue, and any other type as the string "INVALID".
+// primitive slices as an ArrayValue, an empty value as an empty AnyValue, and
+// any other type as the string "INVALID". Byte slices and nested slices and
+// maps, rare in span attributes, take otel-go's own conversion.
 func appendKeyValue(b []byte, kv attribute.KeyValue) ([]byte, error) {
 	if !utf8.ValidString(string(kv.Key)) {
 		return nil, errInvalidUTF8
 	}
+	switch kv.Value.Type() {
+	case attribute.BYTESLICE, attribute.SLICE, attribute.MAP:
+		msg := telemetry.KeyValues([]attribute.KeyValue{kv})[0]
+		b = protowire.AppendVarint(b, uint64(proto.Size(msg)))
+		out, err := proto.MarshalOptions{UseCachedSize: true}.MarshalAppend(b, msg)
+		if err != nil {
+			return nil, fmt.Errorf("failed to proto marshal: %w", err)
+		}
+		return out, nil
+	case attribute.EMPTY:
+		// The key, and an empty AnyValue.
+		n := 1 + protowire.SizeBytes(0)
+		if kv.Key != "" {
+			n += 1 + protowire.SizeBytes(len(kv.Key))
+		}
+		b = protowire.AppendVarint(b, uint64(n))
+		if kv.Key != "" {
+			b = protowire.AppendTag(b, 1, protowire.BytesType)
+			b = protowire.AppendString(b, string(kv.Key))
+		}
+		b = protowire.AppendTag(b, 2, protowire.BytesType)
+		return protowire.AppendVarint(b, 0), nil
+	default:
+		return appendPrimitiveKeyValue(b, kv)
+	}
+}
+
+// appendPrimitiveKeyValue is appendKeyValue for a key and a value of any
+// other type than those appendKeyValue encodes itself.
+func appendPrimitiveKeyValue(b []byte, kv attribute.KeyValue) ([]byte, error) {
 	v := kv.Value
 	var (
 		bools  []bool

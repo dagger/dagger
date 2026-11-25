@@ -18,6 +18,7 @@ import (
 
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
 	logapi "go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"google.golang.org/protobuf/proto"
@@ -160,7 +161,7 @@ func TestLogBatchProcessorBurstSelfFlush(t *testing.T) {
 
 	var rec sdklog.Record
 	rec.SetTimestamp(time.Now())
-	rec.SetBody(logapi.StringValue("burst"))
+	rec.SetBody(attribute.StringValue("burst"))
 
 	start := time.Now()
 	for range 2 * LogExportMaxBatchSize {
@@ -194,7 +195,7 @@ func TestLogBatchProcessorTrickleDelivery(t *testing.T) {
 
 	var rec sdklog.Record
 	rec.SetTimestamp(time.Now())
-	rec.SetBody(logapi.StringValue("trickle"))
+	rec.SetBody(attribute.StringValue("trickle"))
 	require.NoError(t, proc.OnEmit(context.Background(), &rec))
 
 	require.Eventually(t, func() bool { return exp.count() >= 1 },
@@ -208,39 +209,39 @@ func TestCallPayloadBatchProcessorFastPathRecordShape(t *testing.T) {
 	tests := []struct {
 		name  string
 		scope string
-		body  logapi.Value
-		attrs []logapi.KeyValue
+		body  attribute.Value
+		attrs []attribute.KeyValue
 		want  bool
 	}{
 		{
 			name:  "valid raw payload",
 			scope: "test.core",
-			body:  logapi.BytesValue([]byte("payload")),
-			attrs: []logapi.KeyValue{logapi.String(otelgo.ContentTypeAttr, telemetryattrs.CallPayloadContentType)},
+			body:  attribute.ByteSliceValue([]byte("payload")),
+			attrs: []attribute.KeyValue{attribute.String(otelgo.ContentTypeAttr, telemetryattrs.CallPayloadContentType)},
 			want:  true,
 		},
 		{
 			name:  "other content type",
 			scope: "test.core",
-			body:  logapi.BytesValue([]byte("payload")),
-			attrs: []logapi.KeyValue{logapi.String(otelgo.ContentTypeAttr, "application/json")},
+			body:  attribute.ByteSliceValue([]byte("payload")),
+			attrs: []attribute.KeyValue{attribute.String(otelgo.ContentTypeAttr, "application/json")},
 		},
 		{
 			name:  "wrong content type kind",
 			scope: "test.core",
-			body:  logapi.BytesValue([]byte("payload")),
-			attrs: []logapi.KeyValue{logapi.Bool(otelgo.ContentTypeAttr, true)},
+			body:  attribute.ByteSliceValue([]byte("payload")),
+			attrs: []attribute.KeyValue{attribute.Bool(otelgo.ContentTypeAttr, true)},
 		},
 		{
 			name:  "missing content type",
 			scope: "test.core",
-			body:  logapi.BytesValue([]byte("payload")),
+			body:  attribute.ByteSliceValue([]byte("payload")),
 		},
 		{
 			name:  "wrong body kind",
 			scope: "test.core",
-			body:  logapi.StringValue("payload"),
-			attrs: []logapi.KeyValue{logapi.String(otelgo.ContentTypeAttr, telemetryattrs.CallPayloadContentType)},
+			body:  attribute.StringValue("payload"),
+			attrs: []attribute.KeyValue{attribute.String(otelgo.ContentTypeAttr, telemetryattrs.CallPayloadContentType)},
 		},
 	}
 
@@ -282,12 +283,12 @@ func testCallPayloadBatchProcessorFiltersAndDrainsQueue(t *testing.T) {
 	provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(proc))
 
 	var ordinary sdklog.Record
-	ordinary.SetBody(logapi.StringValue("ordinary"))
+	ordinary.SetBody(attribute.StringValue("ordinary"))
 	require.NoError(t, proc.OnEmit(t.Context(), &ordinary))
 
 	var payload logapi.Record
-	payload.SetBody(logapi.BytesValue([]byte("payload")))
-	payload.AddAttributes(logapi.String(otelgo.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
+	payload.SetBody(attribute.ByteSliceValue([]byte("payload")))
+	payload.AddAttributes(attribute.String(otelgo.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
 	logger := provider.Logger("test.core")
 	const records = 2*LogExportMaxBatchSize + 1
 	for range records {
@@ -324,10 +325,10 @@ func TestWithoutCallPayloadsKeepsPayloadsOffOrdinaryPath(t *testing.T) {
 	logger := provider.Logger("test.core")
 
 	var payload logapi.Record
-	payload.SetBody(logapi.BytesValue([]byte("payload")))
-	payload.AddAttributes(logapi.String(otelgo.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
+	payload.SetBody(attribute.ByteSliceValue([]byte("payload")))
+	payload.AddAttributes(attribute.String(otelgo.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
 	var ordinary logapi.Record
-	ordinary.SetBody(logapi.StringValue("exec output"))
+	ordinary.SetBody(attribute.StringValue("exec output"))
 	for range 3 {
 		logger.Emit(t.Context(), payload)
 		logger.Emit(t.Context(), ordinary)
@@ -364,7 +365,7 @@ func (e *flakyLogExporter) Export(ctx context.Context, recs []sdklog.Record) err
 	}
 	e.batches = append(e.batches, len(recs))
 	for _, rec := range recs {
-		e.bodies = append(e.bodies, string(rec.Body().AsBytes()))
+		e.bodies = append(e.bodies, string(rec.Body().AsByteSlice()))
 	}
 	return nil
 }
@@ -380,8 +381,8 @@ func (*flakyLogExporter) ForceFlush(context.Context) error { return nil }
 
 func payloadRecordWithBody(body string) logapi.Record {
 	var rec logapi.Record
-	rec.SetBody(logapi.BytesValue([]byte(body)))
-	rec.AddAttributes(logapi.String(otelgo.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
+	rec.SetBody(attribute.ByteSliceValue([]byte(body)))
+	rec.AddAttributes(attribute.String(otelgo.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
 	return rec
 }
 
@@ -553,7 +554,7 @@ func TestCallPayloadDigestsForDropReport(t *testing.T) {
 	t.Parallel()
 
 	stamped := payloadRecordWithBody("stamped")
-	stamped.AddAttributes(logapi.String(telemetryattrs.CallPayloadDigestAttr, "xxh3:abc"))
+	stamped.AddAttributes(attribute.String(telemetryattrs.CallPayloadDigestAttr, "xxh3:abc"))
 	capture := &captureLogExporter{}
 	provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(sdklog.NewSimpleProcessor(capture)))
 	logger := provider.Logger("test.core")
@@ -660,8 +661,8 @@ func TestCallPayloadBatchProcessorLosslessWhileExporterBlocked(t *testing.T) {
 			}},
 		})
 		require.NoError(t, err)
-		payloads[i].SetBody(logapi.BytesValue(body))
-		payloads[i].AddAttributes(logapi.String(otelgo.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
+		payloads[i].SetBody(attribute.ByteSliceValue(body))
+		payloads[i].AddAttributes(attribute.String(otelgo.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
 	}
 	logger.Emit(t.Context(), payloads[0])
 
