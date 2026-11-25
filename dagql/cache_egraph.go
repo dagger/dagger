@@ -113,10 +113,6 @@ func compareSharedResultID(a, b sharedResultID) int {
 	return cmp.Compare(a, b)
 }
 
-func newSharedResultIDSet() *set.TreeSet[sharedResultID] {
-	return set.NewTreeSet(compareSharedResultID)
-}
-
 func (c *Cache) ensureTermInputEqIDsLocked(ctx context.Context, inputDigests []digest.Digest) []eqClassID {
 	inputEqIDs := make([]eqClassID, len(inputDigests))
 	for i, inDig := range inputDigests {
