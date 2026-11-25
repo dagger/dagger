@@ -1080,6 +1080,9 @@ func (c *Cache) privateMergeCache(ctx context.Context, prep *valueMergePrep, hel
 	if err := private.restoreOfferOwnersLocked(ctx); err != nil {
 		return nil, err
 	}
+	if c.testPrivateMergeCache != nil {
+		c.testPrivateMergeCache(private)
+	}
 	return private, nil
 }
 

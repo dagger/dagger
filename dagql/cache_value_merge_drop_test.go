@@ -4,19 +4,23 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"runtime"
 	"slices"
 	"testing"
+	"weak"
 
 	"github.com/stretchr/testify/require"
 )
 
 // mergeTestDropStreams are bundle streams that exercise what a prepared merge
 // lets go of: a record renumbered before its commit (a root whose child
-// landed first), and a root sent with an offer as the Cloud sends a part
-// (an output with its owner), which an engine keeps and the Cloud drops.
+// landed first), a root sent with an offer as the Cloud sends a part (an
+// output with its owner), which an engine keeps and the Cloud drops, and an
+// engine's root sent above a held row, as the Cloud receives one.
 func mergeTestDropStreams(t *testing.T) map[string][]ValueBundle {
 	t.Helper()
 	child, root := mergeTestMovingStream(t)
+	heldChild, heldRoot := mergeTestHeldStream(t)
 	ctx, source, srv := transferTestCache(t)
 	owner := persistedListTestResult(t, ctx, source, srv, "drop-offer-owner", String("owner"))
 	offered := persistedListTestResult(t, ctx, source, srv, "drop-offered-root", &transferTestValue{Text: "offered"})
@@ -27,7 +31,23 @@ func mergeTestDropStreams(t *testing.T) map[string][]ValueBundle {
 	return map[string][]ValueBundle{
 		"moved":   {child, root},
 		"offered": {withOffer},
+		"held":    {heldChild, heldRoot},
 	}
+}
+
+// mergeTestHeldStream is an engine's export of a child, and then of a root
+// above it that sends the child as a held row, as an engine sends a row the
+// Cloud already holds.
+func mergeTestHeldStream(t *testing.T) (child, root ValueBundle) {
+	t.Helper()
+	ctx, engine, srv := transferTestCache(t)
+	c := persistedListTestResult(t, ctx, engine, srv, "drop-held-child", String("child"))
+	r := persistedListTestResult(t, ctx, engine, srv, "drop-held-root", String("root"))
+	transferTestDependency(engine, ctx, r, c)
+	child = exportTestBundle(t, ctx, engine, c)
+	root = engineHeldTestBundle(t, engine, exportTestBundle(t, ctx, engine, r), c)
+	require.Len(t, root.Values, 2, "the root and its held child")
+	return child, root
 }
 
 // mergeTestSentOffers counts the offers the bundle sends for the row at
@@ -45,9 +65,10 @@ func mergeTestSentOffers(bundle ValueBundle, ordinal TransferOrdinal) int {
 
 // mergeTestDropSkip reports a stream a kind of cache doesn't merge: the
 // Cloud drops offers and refuses the offered stream, whose offer's owner is
-// reachable only through the offer (TestMergeValuesCloudChecksClosureAfterDroppingParts).
+// reachable only through the offer (TestMergeValuesCloudChecksClosureAfterDroppingParts),
+// and only the Cloud merges an engine's held rows.
 func mergeTestDropSkip(cacheName, streamName string) bool {
-	return cacheName == "cloud" && streamName == "offered"
+	return cacheName == "cloud" && streamName == "offered" || cacheName == "engine" && streamName == "held"
 }
 
 // mergeTestDropCaches are the two kinds of cache that merge: an engine, from
@@ -100,6 +121,50 @@ func TestPreparedMergeHoldsNoCopyOfItsRecords(t *testing.T) {
 					reply, err := c.CommitValueMerge(ctx, p)
 					require.NoError(t, err)
 					require.True(t, reply.Committed)
+				}
+			})
+		}
+	}
+}
+
+// A prepared merge waiting for its commit holds nothing that only its
+// preparation read: no early decision of its rows, no record for a held row,
+// and nothing of the private cache it derived identities in, which a
+// collection then frees. The commit reads each row's plan and record as
+// prepared, and commits.
+func TestPreparedMergeHoldsNoPrivateCache(t *testing.T) {
+	t.Parallel()
+	for cacheName, newCache := range mergeTestDropCaches {
+		for streamName, bundles := range mergeTestDropStreams(t) {
+			if mergeTestDropSkip(cacheName, streamName) {
+				continue
+			}
+			t.Run(cacheName+"/"+streamName, func(t *testing.T) {
+				t.Parallel()
+				ctx, c, from := newCache(t)
+				for _, bundle := range bundles {
+					var private []weak.Pointer[sharedResult]
+					c.testPrivateMergeCache = func(p *Cache) {
+						for _, res := range p.resultsByID {
+							private = append(private, weak.Make(res))
+						}
+					}
+					p, err := c.PrepareValueMerge(ctx, from, bundle)
+					require.NoError(t, err)
+					require.NotEmpty(t, private)
+					require.Nil(t, p.prep.early, "the early decision of the rows is the preparation's")
+					for id := range p.prep.held {
+						_, ok := p.prep.records[id]
+						require.False(t, ok, "held row %d keeps no record", id)
+					}
+					runtime.GC()
+					for _, entry := range private {
+						require.Nil(t, entry.Value(), "the prepared merge holds no entry of its private cache")
+					}
+					reply, err := c.CommitValueMerge(ctx, p)
+					require.NoError(t, err)
+					require.True(t, reply.Committed)
+					require.Empty(t, reply.Stale)
 				}
 			})
 		}
