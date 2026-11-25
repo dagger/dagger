@@ -12,7 +12,7 @@ retract (
 require (
 	github.com/Khan/genqlient v0.8.1
 	github.com/adrg/xdg v0.5.3
-	github.com/dagger/otel-go v1.47.0
+	github.com/dagger/otel-go v1.47.1-0.20261124213443-e79f0e10530f
 	github.com/dagger/querybuilder v0.0.0-20260402040506-574a5e81cb59
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/stretchr/testify v1.12.1

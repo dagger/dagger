@@ -60,7 +60,7 @@ require (
 	github.com/creachadair/tomledit v0.0.29
 	github.com/creack/pty v1.1.24
 	github.com/dagger/dagger/engine/distconsts v0.21.9
-	github.com/dagger/otel-go v1.47.0
+	github.com/dagger/otel-go v1.47.1-0.20261124213443-e79f0e10530f
 	github.com/dagger/querybuilder v0.0.0-20260402040506-574a5e81cb59
 	github.com/dagger/testctx v0.1.2
 	github.com/dave/jennifer v1.7.1

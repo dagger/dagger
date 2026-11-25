@@ -12,7 +12,7 @@ require (
 	github.com/Khan/genqlient v0.8.1
 	github.com/containerd/platforms v1.0.0-rc.2
 	github.com/dagger/dagger v0.0.0-00010101000000-000000000000
-	github.com/dagger/otel-go v1.47.0
+	github.com/dagger/otel-go v1.47.1-0.20261124213443-e79f0e10530f
 	github.com/dagger/querybuilder v0.0.0-20260402040506-574a5e81cb59
 	github.com/vektah/gqlparser/v2 v2.5.36
 	go.opentelemetry.io/otel v1.47.0

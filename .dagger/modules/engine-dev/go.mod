@@ -15,7 +15,7 @@ require (
 	github.com/dagger/dagger v0.0.0-00010101000000-000000000000
 	github.com/dagger/dagger/engine/distconsts v0.21.9
 	github.com/dagger/dagger/sdk/typescript/runtime v0.0.0-00010101000000-000000000000
-	github.com/dagger/otel-go v1.47.0
+	github.com/dagger/otel-go v1.47.1-0.20261124213443-e79f0e10530f
 	github.com/dagger/querybuilder v0.0.0-20260402040506-574a5e81cb59
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/pelletier/go-toml v1.9.5

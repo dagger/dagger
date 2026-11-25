@@ -10,8 +10,8 @@ github.com/cenkalti/backoff/v5 v5.0.3 h1:ZN+IMa753KfX5hd8vVaMixjnqRZ3y8CuJKRKj1x
 github.com/cenkalti/backoff/v5 v5.0.3/go.mod h1:rkhZdG3JZukswDf7f0cwqPNk4K0sa+F97BxZthm/crw=
 github.com/cespare/xxhash/v2 v2.3.0 h1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UFvs=
 github.com/cespare/xxhash/v2 v2.3.0/go.mod h1:VGX0DQ3Q6kWi7AoAeZDth3/j3BFtOZR5XLFGgcrjCOs=
-github.com/dagger/otel-go v1.47.0 h1:6UkWja2w2hNBOUCW3Qr/9APRvGDWX9I3e3/n2S6K30s=
-github.com/dagger/otel-go v1.47.0/go.mod h1:mhyiHifjEVQaVqz18Otp3Uw6L5FnI01uh10Ts5SMkmg=
+github.com/dagger/otel-go v1.47.1-0.20261124213443-e79f0e10530f h1:LVykN7xcy6nPy994Qlv23kfUYHE/tG1zFyKB0TArOkA=
+github.com/dagger/otel-go v1.47.1-0.20261124213443-e79f0e10530f/go.mod h1:mhyiHifjEVQaVqz18Otp3Uw6L5FnI01uh10Ts5SMkmg=
 github.com/dagger/querybuilder v0.0.0-20260402040506-574a5e81cb59 h1:g6vfdGRyz6fAjfHz5FyYPZgHy8qcQ31fHrBl1iCOzxw=
 github.com/dagger/querybuilder v0.0.0-20260402040506-574a5e81cb59/go.mod h1:jsdUJeYzcbyK1j/EqMGPrQgNYxl/Zfg06vvM9C/xXxs=
 github.com/go-logr/logr v1.2.2/go.mod h1:jdQByPbusPIv2/zmleS9BjJVeZ6kBagPoEUsqbVz/1A=
