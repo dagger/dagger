@@ -28,7 +28,7 @@ func TestLookupLockWaitsNameTheirHolder(t *testing.T) {
 		require.NoError(t, <-done)
 	}
 
-	lookupBehind(workSharing, "lookupBehindSharing")
+	lookupBehind(workOffer, "lookupBehindOffer")
 	landed := c.Landing()
 	lookupBehind(workRestore, "lookupBehindRestore")
 	landed()
@@ -39,14 +39,14 @@ func TestLookupLockWaitsNameTheirHolder(t *testing.T) {
 	waits := c.LookupLockWaits()
 	require.Equal(t, LookupLockWaits{
 		Other: map[string]LockWaitStats{
-			"sharing": waits.Other["sharing"],
-			"export":  waits.Other["export"],
+			"offer":  waits.Other["offer"],
+			"export": waits.Other["export"],
 		},
 		Landing: map[string]LockWaitStats{
 			"restore": waits.Landing["restore"],
 		},
 	}, waits, "only the three waits, each by its writer's kind and window")
-	for name, stats := range map[string]LockWaitStats{"sharing": waits.Other["sharing"], "export": waits.Other["export"], "restore": waits.Landing["restore"]} {
+	for name, stats := range map[string]LockWaitStats{"offer": waits.Other["offer"], "export": waits.Other["export"], "restore": waits.Landing["restore"]} {
 		require.Equal(t, int64(1), stats.Waits, name)
 		require.GreaterOrEqual(t, stats.Total, time.Millisecond, name)
 		require.Equal(t, stats.Total, stats.Longest, name)
@@ -98,7 +98,7 @@ func TestMergePreparationReportsItsLockWaits(t *testing.T) {
 	t.Parallel()
 	set := firstUseTestCloud(t)
 	ctx, engine, _ := transferTestCache(t)
-	engine.lockGraphFor(ctx, workSharing)
+	engine.lockGraphFor(ctx, workOffer)
 	type restored struct {
 		reply MergeReply
 		err   error
@@ -115,9 +115,9 @@ func TestMergePreparationReportsItsLockWaits(t *testing.T) {
 	require.NoError(t, got.err)
 	reply := got.reply
 	require.True(t, reply.Committed)
-	require.GreaterOrEqual(t, reply.PrepareLockWaits["sharing"], time.Millisecond, "the preparation waited behind the sharing pass")
+	require.GreaterOrEqual(t, reply.PrepareLockWaits["offer"], time.Millisecond, "the preparation waited behind the offer")
 	require.Len(t, reply.PrepareLockWaits, 1)
-	require.Equal(t, reply.PrepareLockWaits["sharing"], reply.PrepareLockWait)
+	require.Equal(t, reply.PrepareLockWaits["offer"], reply.PrepareLockWait)
 	require.Less(t, reply.PrepareLockWait, reply.Prepare, "its waits are part of its preparation")
 	if reply.Release != nil {
 		require.NoError(t, reply.Release(ctx))
@@ -151,83 +151,6 @@ func TestFirstUsesCountByPath(t *testing.T) {
 	require.Positive(t, export.Prepared, "the export prepared what it captured")
 	require.Equal(t, stats.Prepared+stats.Refused, lookup.Prepared+export.Prepared, "every first use came by one of the two")
 	require.Len(t, stats.Paths, 2)
-}
-
-// A pass over a class of a merged record and a value computed here with no
-// part to give is counted as a class with no donor's. The merged record is
-// prepared by a sharing pass's probe once, this one's or, where a record
-// alone in its class is queued too, its own class's before: every first use
-// by sharing is a pass's.
-func TestSharingCountsANoDonorClassWithItsFirstUses(t *testing.T) {
-	set := firstUseTestCloud(t)
-	ctx, c, srv, _ := shareTestCache(t)
-	barrier := newSharePassBarrier(c)
-	reply, err := c.MergeValues(ctx, cloudCacheID, set.bundle)
-	require.NoError(t, err)
-	c.egraphMu.RLock()
-	merged := c.resultsByID[sharedResultID(firstUseTestEntry(t, set.bundle, reply, set.good))]
-	c.egraphMu.RUnlock()
-	computed := persistedListTestResult(t, ctx, c, srv, "computed-beside", &transferTestValue{Text: "ready"})
-	shareTestUnite(t, ctx, c, "share-no-donor", Result[Typed]{shared: merged}, computed)
-	shareTestAwaitQuiet(t, c, barrier)
-
-	stats := c.Sharing()
-	noDonor := stats.Kinds["no_donor"]
-	require.Positive(t, noDonor.Passes, "%+v", stats.Kinds)
-	require.GreaterOrEqual(t, noDonor.Members, 2*noDonor.Passes)
-	require.Zero(t, noDonor.Slotted)
-	require.False(t, merged.holdsUnpreparedPayload(), "a pass's probe prepared the merged record")
-	var prepared int64
-	var took time.Duration
-	for _, kind := range stats.Kinds {
-		prepared += kind.Prepared
-		took += kind.PrepareTotal
-	}
-	require.Positive(t, prepared)
-	sharing := c.FirstUse().Paths["sharing"]
-	require.Equal(t, sharing.Prepared, prepared, "the passes made every first use by sharing")
-	require.Equal(t, sharing.Total, took, "and spent all their time")
-}
-
-// A pass over a class with a member holding a part ready to give is counted
-// as a donor class's, with the slot it made.
-func TestSharingCountsADonorClassWithItsSlot(t *testing.T) {
-	ctx, c, srv, _ := shareTestCache(t)
-	barrier := newSharePassBarrier(c)
-	donorValue := &transferTestValue{Text: "snapshot", links: []PersistedSnapshotRefLink{{Role: "snapshot", RefKey: "donor-snapshot"}}}
-	donor := persistedListTestResult(t, ctx, c, srv, "donor", donorValue)
-	receiver := persistedListTestResult(t, ctx, c, srv, "receiver", &transferTestValue{Text: "pending"})
-	shareTestEncodedReceiver(t, ctx, c, receiver)
-	partTestEquivalent(t, c, receiver, donor)
-	shareTestUnite(t, ctx, c, "share-counts", donor, receiver)
-
-	require.Equal(t, 1, barrier.awaitPass(t), "one planned slot")
-	shareTestAwaitQuiet(t, c, barrier)
-	// The install queues the class again, for a pass with nothing left to
-	// give.
-	donorPasses := c.Sharing().Kinds["donor"]
-	require.Positive(t, donorPasses.Passes)
-	require.Equal(t, 2*donorPasses.Passes, donorPasses.Members, "each pass probed both members")
-	require.Equal(t, int64(1), donorPasses.Slotted, "one pass made a slot")
-	require.Equal(t, int64(1), donorPasses.Slots)
-	require.Zero(t, donorPasses.Prepared, "nothing merged was prepared")
-}
-
-// shareTestAwaitQuiet waits until no sharing pass is queued and none ends for
-// a while.
-func shareTestAwaitQuiet(t *testing.T, c *Cache, barrier *sharePassBarrier) {
-	t.Helper()
-	for quiet := false; !quiet; {
-		if pending, _ := shareTestQueueDepth(c); pending > 0 {
-			barrier.awaitPass(t)
-			continue
-		}
-		select {
-		case <-barrier.passes:
-		case <-time.After(300 * time.Millisecond):
-			quiet = true
-		}
-	}
 }
 
 // Every exclusive take of the graph lock on a call's path, and in the
@@ -288,7 +211,7 @@ func TestCacheWritersNameTheirKind(t *testing.T) {
 // record takes the lock only for reading, so it names none.
 func TestRemoteCacheWritersNameTheirKind(t *testing.T) {
 	set := firstUseTestCloud(t)
-	ctx, c, srv, _ := shareTestCache(t)
+	ctx, c, srv, _ := partTestCache(t)
 	takes := lockTakes(t, c)
 
 	reply, err := c.RestoreValues(ctx, set.bundle, nil, "test")
@@ -328,7 +251,7 @@ func TestRemoteCacheWritersNameTheirKind(t *testing.T) {
 // A first use, or a hold of the graph lock, is the work of the pathway that
 // started it: a later pathway's mark doesn't replace the first's.
 func TestCacheWorkKeepsTheFirstPathway(t *testing.T) {
-	ctx := withCacheWork(context.Background(), workSharing)
-	require.Equal(t, workSharing, cacheWorkOf(withCacheWork(ctx, workPart), workOther))
+	ctx := withCacheWork(context.Background(), workOffer)
+	require.Equal(t, workOffer, cacheWorkOf(withCacheWork(ctx, workPart), workOther))
 	require.Equal(t, workLookup, cacheWorkOf(context.Background(), workLookup))
 }

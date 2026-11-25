@@ -62,6 +62,30 @@ type owedPartReport struct {
 	reported     map[string]struct{}
 }
 
+// SnapshotSharedPart is one complete part of an entry that its spans left
+// out: the entry's result number, the part's address (as a span's
+// dagger.io/cache.parts lists it), the entry's dependencies, and the entry's
+// replacement count, which names the value the part and dependencies belong
+// to.
+type SnapshotSharedPart struct {
+	ResultID     uint64
+	Part         string
+	Deps         []uint64
+	Replacements uint64
+	// RawSize is the part's raw size, as a span reports it
+	// (CachePartSizesAttr), when the engine read it: nil when it didn't.
+	RawSize *int64
+}
+
+// WithSnapshotShareReport makes the cache report the complete parts entries'
+// spans left out (owedPartReports). report runs on the owed reports' worker,
+// or at the cache's close, with no cache lock held, and must not block.
+func WithSnapshotShareReport(report func([]SnapshotSharedPart)) CacheOption {
+	return func(c *Cache) {
+		c.shareReport = report
+	}
+}
+
 // owePartsReport notes that a span reported only reported, the settled
 // parts of row. It does nothing on a cache without the share report, whose
 // spans no remote cache reads.

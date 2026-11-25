@@ -105,7 +105,7 @@ type TelemetryConfig struct {
 	ResourceMetrics bool `json:"resourceMetrics,omitempty" jsonschema:"default=false"`
 
 	// EngineEvents enables the export of the engine's cache events to Dagger
-	// Cloud: its cache's start, prunes, snapshot sharing and stop. It is
+	// Cloud: its cache's start, prunes, part reports and stop. It is
 	// disabled by default. Export requires DAGGER_CLOUD_TOKEN in the engine
 	// environment, the credential it is sent under. The
 	// _EXPERIMENTAL_DAGGER_ENGINE_EVENTS environment variable enables it too.

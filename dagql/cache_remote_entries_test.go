@@ -1543,8 +1543,8 @@ func TestCompactEqClassesFreesEverySlotWhenNoClassIsLive(t *testing.T) {
 }
 
 // CompactEqClasses refuses, changing nothing, on a cache without a blob store,
-// with snapshot sharing enabled, and when its context is done before the
-// compaction starts, including while it waits for the graph.
+// and when its context is done before the compaction starts, including while
+// it waits for the graph.
 func TestCompactEqClassesRefusesAndChangesNothing(t *testing.T) {
 	t.Parallel()
 	refuses := func(t *testing.T, c *Cache, ctx context.Context, check func(error)) {
@@ -1559,13 +1559,6 @@ func TestCompactEqClassesRefusesAndChangesNothing(t *testing.T) {
 		cloud := newCloudCache(t)
 		testDeadEqClasses(t, cloud, 4)
 		refuses(t, cloud, t.Context(), func(err error) { require.ErrorContains(t, err, "the cache has no blob store") })
-	})
-	t.Run("snapshot sharing", func(t *testing.T) {
-		t.Parallel()
-		_, cloud := storedPartTestCache(t, WithBlobStore())
-		testDeadEqClasses(t, cloud, 4)
-		require.NoError(t, cloud.EnableSnapshotSharing())
-		refuses(t, cloud, t.Context(), func(err error) { require.ErrorContains(t, err, "snapshot sharing is enabled") })
 	})
 	t.Run("done context", func(t *testing.T) {
 		t.Parallel()

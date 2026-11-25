@@ -26,8 +26,6 @@ const (
 	workRestore
 	// workMerge is any other merge of the Cloud's records.
 	workMerge
-	// workSharing is a snapshot-sharing pass, and the slots it runs.
-	workSharing
 	// workExport is an export's capture of the records it sends.
 	workExport
 	// workOffer is the placing of the Cloud's offered parts on entries.
@@ -67,7 +65,6 @@ var cacheWorkNames = [numCacheWork]string{
 	workPublication: "publication",
 	workRestore:     "restore",
 	workMerge:       "merge",
-	workSharing:     "sharing",
 	workExport:      "export",
 	workOffer:       "offer",
 	workPart:        "part",
@@ -122,8 +119,8 @@ func (c *Cache) ObserveGraphHolds(f func(work wcprof.LockHolder, waited, held ti
 type cacheWorkKey struct{}
 
 // withCacheWork returns ctx carrying work as its kind, unless ctx already
-// carries one: work done for a pathway that another pathway started, such
-// as a part a sharing pass's slot fetches, is the first pathway's.
+// carries one: work done for a pathway that another pathway started is the
+// first pathway's.
 func withCacheWork(ctx context.Context, work cacheWork) context.Context {
 	if _, ok := ctx.Value(cacheWorkKey{}).(cacheWork); ok {
 		return ctx
@@ -250,10 +247,10 @@ type LockWaitStats struct {
 // LookupLockWaits are the calls' lookups' waits for the cache's graph lock,
 // over the cache's life, by the kind of writer whose release let each in:
 // lookup, publication, restore (a set file's part's merge), merge (another
-// merge of the Cloud's records), sharing (a snapshot-sharing pass), export,
-// offer, part (fetching, installing or settling parts), teach (a call's
-// teaching of what its result is the same as), dependency (a call's
-// explicit dependencies), evaluation (a lazy evaluation's bookkeeping),
+// merge of the Cloud's records), export, offer, part (fetching, installing
+// or settling parts), teach (a call's teaching of what its result is the
+// same as), dependency (a call's explicit dependencies), evaluation (a lazy
+// evaluation's bookkeeping),
 // upkeep (a session's release, a prune, a measurement or a save), hold (the
 // service's holds on entries), other (a writer that names no kind), or
 // readers (no writer: the lookup waited for readers to leave). Landing counts the waits that ended while a set of

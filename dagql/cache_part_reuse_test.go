@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -13,10 +12,10 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
-// partReuseTestValue gives a sharing test value the acquisition entry point
+// partReuseTestValue gives a part test value the acquisition entry point
 // of a core Directory: a demand of it binds its part host.
 type partReuseTestValue struct {
-	*shareTestValue
+	*partTestValue
 	host *PartHost
 }
 
@@ -27,17 +26,17 @@ func (*partReuseTestValue) Type() *ast.Type {
 func (v *partReuseTestValue) BindPartHost(host *PartHost) { v.host = host }
 
 func (*partReuseTestValue) DecodePersistedObject(ctx context.Context, dec *PersistDecodeContext, raw json.RawMessage) (Typed, error) {
-	value, err := (*shareTestValue)(nil).DecodePersistedObject(ctx, dec, raw)
+	value, err := (*partTestValue)(nil).DecodePersistedObject(ctx, dec, raw)
 	if err != nil {
 		return nil, err
 	}
-	return &partReuseTestValue{shareTestValue: value.(*shareTestValue)}, nil
+	return &partReuseTestValue{partTestValue: value.(*partTestValue)}, nil
 }
 
 func init() {
 	RegisterPersistedObjectFamily(PersistedObjectFamily{
 		Name: "dagql_test.PartReuse", Typed: (*partReuseTestValue)(nil),
-		Visitor: shareTestCodec{}, Transfer: shareTestCodec{}, BackgroundDecode: true,
+		Visitor: partTestCodec{}, Transfer: partTestCodec{},
 	})
 }
 
@@ -56,7 +55,7 @@ type partReuseCase struct {
 // first.
 func partReuseTestReceiver(t *testing.T, setup ...func(*Cache)) partReuseCase {
 	t.Helper()
-	ctx, c, srv, _ := shareTestCache(t)
+	ctx, c, srv, _ := partTestCache(t)
 	for _, f := range setup {
 		f(c)
 	}
@@ -74,17 +73,11 @@ func partReuseTestReceiver(t *testing.T, setup ...func(*Cache)) partReuseCase {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	t.Cleanup(cancel)
 	srv.InstallObject(NewClass(srv, ClassOpts[*partReuseTestValue]{}))
-	barrier := newSharePassBarrier(c)
-	held := make(chan struct{})
-	release := sync.OnceFunc(func() { close(held) })
-	barrier.hold.Store(&held)
-	t.Cleanup(release)
-	donor := persistedListTestResult(t, ctx, c, srv, "donor", &partReuseTestValue{shareTestValue: newShareTestValue("donor", map[string]sharePartState{"snapshot": {Snapshot: "local-snapshot"}})})
-	receiver := persistedListTestResult(t, ctx, c, srv, "receiver", &partReuseTestValue{shareTestValue: newShareTestValue("receiver", map[string]sharePartState{"snapshot": {}})})
-	shareTestEncodedReceiver(t, ctx, c, receiver)
+	donor := persistedListTestResult(t, ctx, c, srv, "donor", &partReuseTestValue{partTestValue: newPartTestValue("donor", map[string]partTestState{"snapshot": {Snapshot: "local-snapshot"}})})
+	receiver := persistedListTestResult(t, ctx, c, srv, "receiver", &partReuseTestValue{partTestValue: newPartTestValue("receiver", map[string]partTestState{"snapshot": {}})})
+	partTestEncodedReceiver(t, ctx, c, receiver)
 	receiverRow.Store(receiver.cacheSharedResult())
-	shareTestUnite(t, ctx, c, "part-reuse", donor, receiver)
-	require.Equal(t, 1, barrier.awaitEntered(t))
+	partTestUnite(t, ctx, c, "part-reuse", donor, receiver)
 	// The row itself, not an equivalent a load by ID could select instead:
 	// the donor is complete and would exercise nothing of the receiver's.
 	evaluate := func() error {
@@ -95,9 +88,7 @@ func partReuseTestReceiver(t *testing.T, setup ...func(*Cache)) partReuseCase {
 		return c.Evaluate(ctx, loaded)
 	}
 	require.NoError(t, evaluate())
-	release()
-	require.Equal(t, 1, barrier.awaitPass(t))
-	require.True(t, shareTestHasLink(receiver, "local-snapshot"))
+	require.True(t, partTestHasLink(receiver, "local-snapshot"))
 	return partReuseCase{c: c, receiver: receiver, evaluate: evaluate, tasks: func() int { return int(tasks.Load()) }}
 }
 

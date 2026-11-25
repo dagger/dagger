@@ -193,9 +193,8 @@ func (srv *Server) emitPruneEvent(drops []dagql.CacheRetentionDrop) {
 	srv.engineEvents.Emit(telemetryattrs.EngineEventPrune, srv.engineCache.Identity(), drops[len(drops)-1].DroppedAt, event)
 }
 
-// emitShareEvent reports the parts one snapshot-sharing pass completed, or
-// the parts entries' spans left out. The cache calls it on its sharing
-// worker or the worker that makes those reports.
+// emitShareEvent reports the complete parts entries' spans left out. The
+// cache calls it on the worker that makes those reports, or at its close.
 func (srv *Server) emitShareEvent(parts []dagql.SnapshotSharedPart) {
 	if srv.engineEvents == nil || srv.engineCache == nil || len(parts) == 0 {
 		return
@@ -241,7 +240,6 @@ func (srv *Server) stopEngineEvents(ctx context.Context, clean bool) {
 			UncountedMisses:    srv.uncountedMisses(),
 			FirstUse:           engineFirstUse(srv.engineCache.FirstUse()),
 			LookupLockWaits:    engineLookupLockWaits(srv.engineCache.LookupLockWaits()),
-			Sharing:            engineSharing(srv.engineCache.Sharing().Kinds),
 		})
 	}
 	shutdownCtx := context.WithoutCancel(ctx)
@@ -397,26 +395,6 @@ func engineLockWaits(byHolder map[string]dagql.LockWaitStats) map[string]telemet
 	return out
 }
 
-// engineSharing are the sharing passes by kind of class as the engine.stop
-// event carries them.
-func engineSharing(kinds map[string]dagql.SharePassStats) map[string]telemetryattrs.EngineSharePasses {
-	if len(kinds) == 0 {
-		return nil
-	}
-	out := make(map[string]telemetryattrs.EngineSharePasses, len(kinds))
-	for kind, stats := range kinds {
-		out[kind] = telemetryattrs.EngineSharePasses{
-			Passes:       stats.Passes,
-			Members:      stats.Members,
-			Slotted:      stats.Slotted,
-			Slots:        stats.Slots,
-			Prepared:     stats.Prepared,
-			PrepareTotal: int64(stats.PrepareTotal),
-		}
-	}
-	return out
-}
-
 // engineRestoreWindow is a restore's window as the engine.stop event
 // carries it.
 func engineRestoreWindow(w *remotecache.RestoreWindow) *telemetryattrs.EngineRestoreWindow {
@@ -433,7 +411,6 @@ func engineRestoreWindow(w *remotecache.RestoreWindow) *telemetryattrs.EngineRes
 		SchedWait:       int64(w.SchedWait),
 		LookupLockWaits: engineLockWaits(w.LookupLockWaits),
 		FirstUses:       engineFirstUsePaths(w.FirstUses),
-		Sharing:         engineSharing(w.Sharing),
 	}
 	if w.RunqWaitKnown {
 		runq := int64(w.RunqWait)

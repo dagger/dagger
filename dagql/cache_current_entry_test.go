@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
-	"slices"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -442,95 +441,6 @@ func TestCacheAttachResultReleasesTheAdoptedEntryWhenTheDiscardFails(t *testing.
 	defer c.egraphMu.RUnlock()
 	_, kept := c.resultsByID[winner.cacheSharedResult().id]
 	require.False(t, kept, "the adopted entry is collected once both sessions are released")
-}
-
-// A sharing pass reports its parts after it has let its entries go, so a
-// replacement can come between a part's settlement and the report. The
-// report keeps the count the part settled at: the old value's part is never
-// labelled with the new value's count. The test parks a real replacement in
-// the old value's release and runs the production report on the pass's real
-// receipt.
-func TestSnapshotShareReportKeepsTheCountItsPartsSettledAt(t *testing.T) {
-	ctx, c, srv, _ := shareTestCache(t)
-	var (
-		mu      sync.Mutex
-		reports []SnapshotSharedPart
-	)
-	c.shareReport = func(parts []SnapshotSharedPart) {
-		mu.Lock()
-		defer mu.Unlock()
-		reports = append(reports, parts...)
-	}
-	var receipt *ReadyPartReceipt
-	c.testBeforeShareFinish = func(r *ReadyPartReceipt) { receipt = r }
-	barrier := newSharePassBarrier(c)
-	receiver := currentEntryTestPublish(t, ctx, c, srv, "test-session", "report-settled-receiver", &transferTestValue{Text: "pending"})
-	donor := persistedListTestResult(t, ctx, c, srv, "report-settled-donor", &transferTestValue{Text: "old-snapshot", links: []PersistedSnapshotRefLink{{Role: "snapshot", RefKey: "old-donor-snapshot"}}})
-	shareTestEncodedReceiver(t, ctx, c, receiver)
-	partTestEquivalent(t, c, receiver, donor)
-	receiverHolds := shareTestHolds(c, receiver)
-	shareTestUnite(t, ctx, c, "report-settled", donor, receiver)
-	require.Equal(t, 1, barrier.awaitPass(t))
-	require.NotNil(t, receipt)
-	// The installing task's completion can queue an empty successor pass,
-	// which takes its own member holds, and the entry's lazy attempts hold it
-	// until they release: the slot's obtain attempt and, when that one has
-	// already retired, the attempt the pass's Finish leads. Each releases on
-	// its own goroutine after signalling done, potentially after its caller
-	// returns. Wait for the pass and for the holds to return to the baseline,
-	// so the replacement below finds the entry unused and replaces it rather
-	// than retiring it.
-	require.Equal(t, 0, barrier.awaitPass(t), "the completion trigger queued an empty successor")
-	shareTestAwaitHolds(t, c, receiver, receiverHolds)
-	mu.Lock()
-	require.NotEmpty(t, reports)
-	reports = nil
-	mu.Unlock()
-
-	row := receiver.cacheSharedResult()
-	releasing, resume := make(chan struct{}), make(chan struct{})
-	var once sync.Once
-	unblock := func() { once.Do(func() { close(resume) }) }
-	defer unblock()
-	row.payloadMu.Lock()
-	row.onRelease = joinOnRelease(row.onRelease, func(context.Context) error {
-		close(releasing)
-		<-resume
-		return nil
-	})
-	row.payloadMu.Unlock()
-	require.NoError(t, c.ReleaseSession(ctx, "test-session"))
-	// Both expire, so the donor cannot answer the new call's lookup.
-	currentEntryTestExpire(c, receiver)
-	currentEntryTestExpire(c, donor)
-	done := make(chan currentEntryTestOutcome, 1)
-	frame := row.loadResultCall().clone()
-	go func() {
-		res, err := c.GetOrInitCall(ctx, "fresh-session", srv, &CallRequest{ResultCall: frame, IsPersistable: true}, func(context.Context) (AnyResult, error) {
-			return NewResultForCall(&transferTestValue{Text: "new-pending"}, frame)
-		})
-		done <- currentEntryTestOutcome{res, err}
-	}()
-	select {
-	case <-releasing:
-	case out := <-done:
-		t.Fatalf("the replacement did not reach the old value's release: %+v", out)
-	case <-time.After(10 * time.Second):
-		t.Fatal("the replacement did not reach the old value's release")
-	}
-	require.Equal(t, resultAttachmentOpen, row.attachmentState())
-	c.reportSharedParts([]*ReadyPartReceipt{receipt})
-	mu.Lock()
-	require.NotEmpty(t, reports, "the settled part is still reported")
-	for _, report := range reports {
-		require.Zero(t, report.Replacements, "the old value's part keeps its count: %+v", report)
-	}
-	mu.Unlock()
-	unblock()
-	out := <-done
-	require.NoError(t, out.err)
-	require.Equal(t, row.id, out.res.cacheSharedResult().id)
-	require.NoError(t, c.ReleaseSession(ctx, "fresh-session"))
 }
 
 // currentEntryTestExpire makes res's value and its retention edge expire.
@@ -1223,47 +1133,6 @@ func TestCachePublicationReplacementIsReported(t *testing.T) {
 	assert.Equal(t, "1", last[telemetryattrs.CacheReplacementsAttr].AsString())
 	assert.DeepEqual(t, []string{snapshot}, last[telemetryattrs.CachePartsAttr].AsStringSlice())
 	assert.NilError(t, c.ReleaseSession(ctx, "session-b"))
-}
-
-// A snapshot-sharing pass that completes a part of a replaced value reports
-// the entry's replacement count with it, so the part is the new value's.
-func TestSnapshotShareReportsTheReplacementCount(t *testing.T) {
-	ctx, c, srv, _ := shareTestCache(t)
-	var (
-		mu      sync.Mutex
-		reports [][]SnapshotSharedPart
-	)
-	c.shareReport = func(parts []SnapshotSharedPart) {
-		mu.Lock()
-		defer mu.Unlock()
-		reports = append(reports, slices.Clone(parts))
-	}
-	barrier := newSharePassBarrier(c)
-	old := currentEntryTestPublish(t, ctx, c, srv, "old-session", "report-receiver", &transferTestValue{Text: "old"})
-	require.NoError(t, c.ReleaseSession(ctx, "old-session"))
-	currentEntryTestExpire(c, old)
-	receiver := currentEntryTestPublish(t, ctx, c, srv, "test-session", "report-receiver", &transferTestValue{Text: "pending"})
-	receiverID := receiver.cacheSharedResult().id
-	require.Equal(t, old.cacheSharedResult().id, receiverID, "the expired entry takes the new value in place")
-	donor := persistedListTestResult(t, ctx, c, srv, "report-donor", &transferTestValue{Text: "snapshot", links: []PersistedSnapshotRefLink{{Role: "snapshot", RefKey: "donor-snapshot"}}})
-	shareTestEncodedReceiver(t, ctx, c, receiver)
-	partTestEquivalent(t, c, receiver, donor)
-	shareTestUnite(t, ctx, c, "share-replaced", donor, receiver)
-	require.Equal(t, 1, barrier.awaitPass(t), "one planned slot")
-
-	snapshotKey, err := partAddressKey(PersistedPartAddress{Part: "snapshot"})
-	require.NoError(t, err)
-	c.egraphMu.RLock()
-	deps := sortedResultIDs(receiver.cacheSharedResult().deps)
-	c.egraphMu.RUnlock()
-	mu.Lock()
-	defer mu.Unlock()
-	require.Equal(t, [][]SnapshotSharedPart{{{
-		ResultID:     uint64(receiverID),
-		Part:         snapshotKey,
-		Deps:         deps,
-		Replacements: 1,
-	}}}, reports)
 }
 
 // A cached nil result has neither a value nor an envelope, but it is a value:

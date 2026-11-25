@@ -14,11 +14,11 @@ import (
 // original was to produce is installed by then.
 func endedGroupPublish(t *testing.T, installed bool) error {
 	t.Helper()
-	ctx, c, srv, _ := shareTestCache(t)
-	srv.InstallObject(NewClass(srv, ClassOpts[*shareTestValue]{}))
-	receiver := persistedListTestResult(t, ctx, c, srv, "ended-receiver", newShareTestValue("receiver", map[string]sharePartState{"fs": {}}))
-	shareTestEncodedReceiver(t, ctx, c, receiver)
-	evaluated := persistedListTestResult(t, ctx, c, srv, "ended-evaluated", newShareTestValue("evaluated", map[string]sharePartState{"fs": {Snapshot: "fs-snap"}}))
+	ctx, c, srv, _ := partTestCache(t)
+	srv.InstallObject(NewClass(srv, ClassOpts[*partTestValue]{}))
+	receiver := persistedListTestResult(t, ctx, c, srv, "ended-receiver", newPartTestValue("receiver", map[string]partTestState{"fs": {}}))
+	partTestEncodedReceiver(t, ctx, c, receiver)
+	evaluated := persistedListTestResult(t, ctx, c, srv, "ended-evaluated", newPartTestValue("evaluated", map[string]partTestState{"fs": {Snapshot: "fs-snap"}}))
 	address := PersistedPartAddress{Part: "fs"}
 	// A publication that retries in place is ended by this deadline, not by
 	// the go test timeout.
