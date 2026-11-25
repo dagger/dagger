@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -23,6 +24,7 @@ import (
 
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/slog"
+	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/engine/wcprof"
 )
@@ -220,6 +222,11 @@ func newCloudForwarder(sessionID, clientID string, db *clientdb.DB, spans, cache
 		return batch, err
 	}
 	ownCacheSpan := ownCacheSpanRow(sessionID)
+	// The logs lane's records Cloud already took from a batch that failed
+	// for other traces; used only by the lane's own goroutine. Spans need
+	// no such care: Cloud keeps the latest export of a span, and live spans
+	// are exported again anyway (SpanHeartbeater).
+	var delivered deliveredLogTraces
 	f.cacheSpanLane = &cloudForwardLane{
 		signal: "cache spans",
 		fetch: func(ctx context.Context, since int64, limit int) (cloudForwardBatch, error) {
@@ -243,12 +250,16 @@ func newCloudForwarder(sessionID, clientID string, db *clientdb.DB, spans, cache
 		{
 			signal: "logs",
 			fetch: func(ctx context.Context, since int64, limit int) (cloudForwardBatch, error) {
-				next, req, rows, err := fetchLogBatch(ctx, db, since, limit, forwardLogRow)
+				delivered.prune(since)
+				keep := func(row *clientdb.Log) bool { return forwardLogRow(row) && !delivered.has(row) }
+				next, req, rows, err := fetchLogBatch(ctx, db, since, limit, keep)
 				batch := cloudForwardBatch{next: next, rows: rows, limited: rows}
 				if err == nil && len(req.GetResourceLogs()) > 0 {
 					batch.size = proto.Size(req)
 					batch.send = func(ctx context.Context) error {
-						return telemetry.ReexportLogsFromPB(ctx, logs, req)
+						err := telemetry.ReexportLogsFromPB(ctx, logs, req)
+						delivered.record(next, err)
+						return err
 					}
 				}
 				return batch, err
@@ -267,6 +278,60 @@ func newCloudForwarder(sessionID, clientID string, db *clientdb.DB, spans, cache
 		f.release()
 	}()
 	return f
+}
+
+// maxDeliveredLogBatches bounds the partly delivered batches a logs lane
+// remembers; forgetting one only risks resending records Cloud has.
+const maxDeliveredLogBatches = 16
+
+// deliveredLogTraces remembers, for a logs lane, which traces' records Cloud
+// took from batches whose export failed for other traces. The Cloud log
+// exporter uploads a batch spanning several traces as one request per trace
+// (enginetel.TraceExportError), so a resend from the same cursor leaves out
+// the rows of the traces already delivered instead of sending them twice.
+type deliveredLogTraces struct {
+	batches []deliveredLogBatch
+}
+
+// deliveredLogBatch is the traces delivered from a failed batch whose rows
+// ran up to row ID upTo.
+type deliveredLogBatch struct {
+	upTo   int64
+	traces map[string]bool // hex trace IDs, as the store keeps them
+}
+
+// record notes the traces a failed export of the rows up to upTo delivered.
+func (d *deliveredLogTraces) record(upTo int64, err error) {
+	var traceErr *enginetel.TraceExportError
+	if err == nil || !errors.As(err, &traceErr) || len(traceErr.Delivered) == 0 {
+		return
+	}
+	batch := deliveredLogBatch{upTo: upTo, traces: map[string]bool{}}
+	for _, id := range traceErr.Delivered {
+		batch.traces[id.String()] = true
+	}
+	d.batches = append(d.batches, batch)
+	if len(d.batches) > maxDeliveredLogBatches {
+		d.batches = d.batches[len(d.batches)-maxDeliveredLogBatches:]
+	}
+}
+
+// prune forgets the batches whose rows are all behind cursor.
+func (d *deliveredLogTraces) prune(cursor int64) {
+	d.batches = slices.DeleteFunc(d.batches, func(b deliveredLogBatch) bool { return b.upTo <= cursor })
+}
+
+// has reports whether Cloud already took row in a failed batch.
+func (d *deliveredLogTraces) has(row *clientdb.Log) bool {
+	if !row.TraceID.Valid {
+		return false
+	}
+	for _, b := range d.batches {
+		if row.ID <= b.upTo && b.traces[row.TraceID.String] {
+			return true
+		}
+	}
+	return false
 }
 
 // forwardSpanRow and forwardLogRow leave out the rows another writer
@@ -634,8 +699,23 @@ func (f *cloudForwarder) release() {
 
 // isCloudPartialSuccess reports an OTLP partial success: Cloud took the
 // request but rejected some of its items, which sending it again would only
-// repeat.
+// repeat. The Cloud exporters upload an export spanning several traces as one
+// request per trace and join their errors: that is a partial success only if
+// every one of them is, since resending it is what delivers the others.
 func isCloudPartialSuccess(err error) bool {
+	var joined interface{ Unwrap() []error }
+	if errors.As(err, &joined) {
+		errs := joined.Unwrap()
+		if len(errs) == 0 {
+			return false
+		}
+		for _, err := range errs {
+			if !isCloudPartialSuccess(err) {
+				return false
+			}
+		}
+		return true
+	}
 	return strings.Contains(err.Error(), "OTLP partial success")
 }
 

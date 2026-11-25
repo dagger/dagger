@@ -189,8 +189,9 @@ func engineEventLines(r *http.Request, body []byte) []string {
 	return lines
 }
 
-// exportWriter is the writer ID of an export's X-Dagger-Export header: one
-// per exporter set, so the client's exports and the engine's differ.
+// exportWriter is the writer ID of an export's X-Dagger-Export header: each
+// exporter set has its own (one per trace), so the client's exports and the
+// engine's differ.
 func exportWriter(r *http.Request) string {
 	writer, _, _ := strings.Cut(r.Header.Get("X-Dagger-Export"), "/")
 	return writer

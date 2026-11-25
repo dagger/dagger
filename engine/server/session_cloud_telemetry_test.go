@@ -66,10 +66,18 @@ type cloudReceiver struct {
 	spanNames      []string
 	spanFrames     []string
 	logBodies      []string
+	logExports     []cloudLogExport
 	payloadDigests []string
 	metricNames    []string
 	// gaugePoints are the gauge points received, by metric name.
 	gaugePoints map[string][]*otlpmetricsv1.NumberDataPoint
+}
+
+// cloudLogExport is one log request the receiver took: its X-Dagger-Export
+// header and the trace ID of each of its records.
+type cloudLogExport struct {
+	header   string
+	traceIDs []string
 }
 
 func newCloudReceiver(t *testing.T, hold bool) *cloudReceiver {
@@ -141,9 +149,11 @@ func (r *cloudReceiver) serve(w http.ResponseWriter, req *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		export := cloudLogExport{header: req.Header.Get("X-Dagger-Export")}
 		for _, rl := range msg.GetResourceLogs() {
 			for _, sl := range rl.GetScopeLogs() {
 				for _, rec := range sl.GetLogRecords() {
+					export.traceIDs = append(export.traceIDs, fmt.Sprintf("%x", rec.GetTraceId()))
 					r.logBodies = append(r.logBodies, rec.GetBody().GetStringValue())
 					for _, kv := range rec.GetAttributes() {
 						if kv.GetKey() == telemetryattrs.CallPayloadDigestAttr {
@@ -153,6 +163,7 @@ func (r *cloudReceiver) serve(w http.ResponseWriter, req *http.Request) {
 				}
 			}
 		}
+		r.logExports = append(r.logExports, export)
 	case "/v1/metrics":
 		var msg colmetricspb.ExportMetricsServiceRequest
 		if err := proto.Unmarshal(body, &msg); err != nil {

@@ -1,0 +1,10 @@
+kind: Fixed
+body: |
+  Dagger Cloud no longer stalls a trace's live logs for minutes waiting on
+  uploads that carried only other traces' records. The Cloud exporters now
+  number their uploads per trace, with a writer of their own for each trace,
+  and split an export spanning several traces (as a session forwarding nested
+  sessions' telemetry makes) into one upload per trace.
+time: 2026-11-21T12:00:00Z
+custom:
+  Author: vito
