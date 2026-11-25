@@ -2080,7 +2080,18 @@ func (s *moduleSourceSchema) moduleSourceWithSDK(
 	args struct {
 		Source string
 	},
-) (*core.ModuleSource, error) {
+) (_ *core.ModuleSource, rerr error) {
+	// Keyed as a read of a module source (moduleSourceFieldCacheKey), so what
+	// loading the SDK takes from its session keeps the result there.
+	shared, _, err := moduleSourceReadShared(ctx, true, false)
+	if err != nil {
+		return nil, err
+	}
+	resolverCtx := ctx
+	ctx, scopes := dagql.WithCallScopes(ctx)
+	defer func() {
+		keepReadWithWhatItRead(resolverCtx, scopes, shared, "module source with SDK "+args.Source, rerr)
+	}()
 	wasDang := src.Entrypoint != nil || isDangSDKModule(src)
 	src = src.Clone()
 	if args.Source == "" {
