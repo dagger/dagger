@@ -535,3 +535,135 @@ clients = [%q]
 		require.Equal(t, "hi from hello", out)
 	})
 }
+
+// serveGitTrustSharedReadSource adds to the caller a function that serves an
+// address, and one that serves an address itself and then has the helper,
+// served from its tree, serve another.
+const serveGitTrustSharedReadSource = `package main
+
+import "context"
+
+func (m *Caller) AttemptAt(ctx context.Context, address string) string {
+	if err := dag.ServeModule(ctx, address); err != nil {
+		return err.Error()
+	}
+	return "served"
+}
+
+func (m *Caller) ServedThenHelper(ctx context.Context, address, helperAddress string) (string, error) {
+	if err := dag.ServeModule(ctx, address); err != nil {
+		return "", err
+	}
+	if err := dag.ServeModule(ctx, "/modules/helper"); err != nil {
+		return "", err
+	}
+	var out string
+	q := dag.QueryBuilder().Select("helper").Select("attemptAt").Arg("address", helperAddress).Bind(&out)
+	return out, q.Execute(ctx)
+}
+`
+
+// serveGitTrustSharedReadHelperSource is a helper module whose attemptAt
+// serves an address, as the caller's does.
+const serveGitTrustSharedReadHelperSource = `package main
+
+import "context"
+
+type Helper struct{}
+
+func (m *Helper) AttemptAt(ctx context.Context, address string) string {
+	if err := dag.ServeModule(ctx, address); err != nil {
+		return err.Error()
+	}
+	return "served"
+}
+`
+
+// serveGitTrustCallerOnlyConfig declares client for the caller alone: the
+// helper the caller serves from its tree declares nothing.
+func serveGitTrustCallerOnlyConfig(client string) string {
+	return fmt.Sprintf(`[modules.caller]
+source = "modules/caller"
+
+[modules.go]
+source = "go"
+
+[sdks.go]
+module = "go"
+
+[sdks.go.scopes."modules/caller"]
+is-module = true
+clients = [%q, "./modules/helper"]
+
+[sdks.go.scopes."modules/helper"]
+is-module = true
+`, client)
+}
+
+// A module source is read once for every session whose reads take nothing
+// from their caller that the read's key leaves out. Whose credentials a read
+// of a Git address may borrow is one such thing: a module may serve a
+// private address only when its config declares it. So a read of a pinned
+// commit that a declaring module made with the session's credentials is
+// never another module's that declares nothing, in the same session or in
+// another that holds the same credentials. And a session without the
+// credentials doesn't get the read at all: it reads the source itself and
+// fails.
+func (ModuleLoadingSuite) TestServeModuleSharedSourceReadKeepsItsPermission(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	repoURL := serveGitTrustPrivateRepo(ctx, t, c)
+	hello := repoURL + "/hello"
+	pin, err := core.NewQuery(c).Git(repoURL, core.GitOpts{
+		HTTPAuthToken: core.NewQuery(c).SetSecret("serve-git-trust-pin", serveGitTrustToken),
+	}).Head().CommitSHA(ctx)
+	require.NoError(t, err)
+
+	// caller is the caller and the helper in a CLI whose git credentials
+	// answer for the private repository when withCredentials is set. n keeps
+	// each run's CLI its own session.
+	caller := func(withCredentials bool, n string) *core.Container {
+		base := goGitBase(t, connect(ctx, t))
+		if withCredentials {
+			base = serveGitTrustBase(t, connect(ctx, t), repoURL)
+		}
+		return base.
+			WithEnvVariable("SERVE_MODULE_RUN", n).
+			WithNewFile("dagger.toml", serveGitTrustCallerOnlyConfig(hello)).
+			WithNewFile("modules/caller/dagger.json", serveTreeCallerManifest).
+			WithNewFile("modules/caller/main.go", serveGitTrustCallerSource).
+			WithNewFile("modules/caller/shared.go", serveGitTrustSharedReadSource).
+			WithNewFile("modules/helper/dagger.json", serveGitTrustHelperManifest).
+			WithNewFile("modules/helper/main.go", serveGitTrustSharedReadHelperSource)
+	}
+	stdout := func(t *testctx.T, ctr *core.Container) string {
+		t.Helper()
+		out, err := ctr.Stdout(ctx)
+		require.NoError(t, err)
+		return out
+	}
+	const hint = `declare it as a client of module "helper"'s scope`
+	// A dependency in a module's config names its commit as the ref's
+	// version, so the read resolves no branch or tag and isn't kept to its
+	// session for that.
+	atPin := hello + "@" + pin
+
+	t.Run("a module that declares nothing isn't served its session's read", func(ctx context.Context, t *testctx.T) {
+		out := stdout(t, caller(true, "same").With(daggerCallAt("caller", "served-then-helper", "--address="+atPin, "--helper-address="+atPin)))
+		require.Contains(t, out, hint)
+	})
+
+	t.Run("nor another session's that holds the same credentials", func(ctx context.Context, t *testctx.T) {
+		require.Equal(t, "served", stdout(t, caller(true, "first").With(daggerCallAt("caller", "attempt-at", "--address="+atPin))))
+		// This session's caller serves the address as it stands, which lends
+		// the session the credentials, and its helper asks for the read the
+		// first session made.
+		out := stdout(t, caller(true, "second").With(daggerCallAt("caller", "served-then-helper", "--address="+hello, "--helper-address="+atPin)))
+		require.Contains(t, out, hint)
+	})
+
+	t.Run("a session without the credentials reads the source itself and fails", func(ctx context.Context, t *testctx.T) {
+		require.Equal(t, "served", stdout(t, caller(true, "with").With(daggerCallAt("caller", "attempt-at", "--address="+atPin))))
+		out := stdout(t, caller(false, "without").With(daggerCallAt("caller", "attempt-at", "--address="+atPin)))
+		require.Contains(t, out, "git authentication failed")
+	})
+}
