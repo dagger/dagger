@@ -152,3 +152,94 @@ func persistTestFullSave(t *testing.T, c *Cache) *persistStateSnapshot {
 	require.NoError(t, err)
 	return &snapshot
 }
+
+// persistTestUnits is how many units a save's walk reads in a cache that
+// doesn't change: its entries, its terms and the classes that are their own
+// roots. With pieces of one step, the walk lets the lock go after each.
+func persistTestUnits(c *Cache) int {
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	n := len(c.resultsByID) + len(c.egraphTerms)
+	for id := 1; id < len(c.egraphParents); id++ {
+		if c.egraphParents[id] == eqClassID(id) {
+			n++
+		}
+	}
+	return n
+}
+
+// A content digest a span teaches an entry whose class already holds that
+// digest, after a save has read the class, gives the class a content label
+// and no join. The save writes the class's label as the cache holds it at
+// its end.
+func TestCloudSaveReadsAContentLabelTaughtAfterItReadTheClass(t *testing.T) {
+	t.Parallel()
+	ctx, cloud := storedPersistenceTestCloud(t, filepath.Join(t.TempDir(), "cloud.db"))
+	defer func() { require.NoError(t, cloud.Close(ctx)) }()
+	cloud.closeStoredBodies()
+	bundle, aNumber := storedContentTestRoot(t, "label-root")
+	number := storedPersistenceTestMerge(t, ctx, cloud, bundle)[0]
+	require.NoError(t, cloud.Checkpoint(ctx))
+	entry := storedBundleTestEntry(cloud, number)
+	cloud.egraphMu.RLock()
+	require.NotEmpty(t, entry.recipeKeys)
+	recipe := entry.recipeKeys[0]
+	cloud.egraphMu.RUnlock()
+
+	units, yields := persistTestUnits(cloud), 0
+	cloud.readPieceSize = 1
+	cloud.testReadPieceYielded = func() {
+		yields++
+		if yields == units {
+			// The recipe is in the entry's class already: no join.
+			storedContentTestTeach(t, ctx, cloud, aNumber, recipe)
+		}
+	}
+	require.NoError(t, cloud.Checkpoint(ctx))
+	cloud.readPieceSize, cloud.testReadPieceYielded = 0, nil
+	require.Greater(t, yields, units, "the span taught the entry while the save read")
+	require.NoError(t, checkPersistFullSave(ctx, cloud, persistTestFullSave(t, cloud)))
+}
+
+// The body worker gives an entry's frame a taught content digest, and then
+// records it given in a later hold of the lock. When that later hold comes
+// while a save reads, after the save read the entry, the save writes the
+// entry's taught digests as given.
+func TestCloudSaveReadsTheTaughtDigestsTheBodyWorkerGives(t *testing.T) {
+	t.Parallel()
+	content := testDigest("content-given-while-saving")
+	ctx, cloud := storedPersistenceTestCloud(t, filepath.Join(t.TempDir(), "cloud.db"))
+	defer func() { require.NoError(t, cloud.Close(ctx)) }()
+	bundle, aNumber := storedContentTestRoot(t, "given-root")
+	storedPersistenceTestMerge(t, ctx, cloud, bundle)
+	require.NoError(t, cloud.Checkpoint(ctx))
+
+	given, proceed, done := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	var held, freed, finished sync.Once
+	release := func() { freed.Do(func() { close(proceed) }) }
+	t.Cleanup(release)
+	cloud.testTaughtContentGiven = func() {
+		held.Do(func() {
+			close(given)
+			<-proceed
+		})
+	}
+	cloud.testTaughtContent = func(int) { finished.Do(func() { close(done) }) }
+	storedContentTestTeach(t, ctx, cloud, aNumber, content)
+	// The worker has given the frame the digest and not yet recorded it.
+	<-given
+
+	units, yields := persistTestUnits(cloud), 0
+	cloud.readPieceSize = 1
+	cloud.testReadPieceYielded = func() {
+		yields++
+		if yields == units {
+			release()
+			<-done
+		}
+	}
+	require.NoError(t, cloud.Checkpoint(ctx))
+	cloud.readPieceSize, cloud.testReadPieceYielded = 0, nil
+	require.Greater(t, yields, units, "the worker recorded the digest given while the save read")
+	require.NoError(t, checkPersistFullSave(ctx, cloud, persistTestFullSave(t, cloud)))
+}
