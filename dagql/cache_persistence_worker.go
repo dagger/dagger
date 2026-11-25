@@ -503,10 +503,12 @@ func (c *Cache) applyPersistStateSnapshot(ctx context.Context, snapshot persistS
 		return fmt.Errorf("begin persistence mirror tx: %w", err)
 	}
 	// The transaction is begun under ctx, so cancelling ctx rolls the save
-	// back before its next statement. Its statements run under a context
-	// that can't be cancelled: the SQLite driver starts a goroutine to
-	// interrupt each statement run under one that can, and a save runs one
-	// for each of its rows, millions of them. Each insert is prepared once.
+	// back: database/sql rolls the transaction back once the statement
+	// running then ends, and the save's later statements and its commit
+	// fail. Its statements run under a context that can't be cancelled: the
+	// SQLite driver starts a goroutine to interrupt each statement run under
+	// one that can, and a save runs one for each of its rows, millions of
+	// them. Each insert is prepared once.
 	saveCtx := ctx
 	ctx = context.WithoutCancel(ctx)
 	defer func() {
