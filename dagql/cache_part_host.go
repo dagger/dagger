@@ -94,7 +94,7 @@ func (host *PartHost) RunNative(ctx context.Context, group LazyGroupKey, parts [
 	token := PartTaskFromContext(ctx)
 	c := host.cache
 	c.lockGraphForCtx(ctx, workPart)
-	gate := host.row.partGate.loadOrCreate()
+	gate := host.row.partGateCell().loadOrCreate()
 	gate.mu.Lock()
 	groupAddress := LazyGroupAddress{OutputPath: host.path, Group: group}
 	key := lazyGroupAddressKey(groupAddress)
@@ -207,11 +207,12 @@ func (host *PartHost) DecodeContext(ctx context.Context) *PersistDecodeContext {
 	return host.cache.partDecodeContext(ctx, host.row, PersistedRecord{Call: host.row.loadResultCall(), SnapshotLinks: host.row.loadSnapshotOwnerLinks()}).atPath(host.path)
 }
 
-func (host *PartHost) Managed() bool { return host != nil && host.row.partGate.active.Load() }
+func (host *PartHost) Managed() bool { return host != nil && host.row.partGateActive() }
 
 func (c *Cache) partHostFor(row *sharedResult) *PartHost {
-	row.partGate.hostOnce.Do(func() { row.partGate.host = PartHost{cache: c, row: row} })
-	return &row.partGate.host
+	cell := row.partGateCell()
+	cell.hostOnce.Do(func() { cell.host = PartHost{cache: c, row: row} })
+	return &cell.host
 }
 
 func (host *PartHost) at(path PersistedRefPath) *PartHost {

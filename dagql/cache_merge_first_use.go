@@ -92,7 +92,7 @@ type mergedFirstUse struct {
 // the service learns it is gone when it next names it; a lookup that chose
 // the entry misses and takes it back (takeBackRefusedMerged); and a save
 // leaves it out (snapshotPersistedRootClosureLocked). It takes only the
-// record's own mutex and res.payloadMu, so a caller can hold res's lazyMu,
+// record's own mutex and res.payloadMu, so a caller can hold res's lazy state's mu,
 // but no other lock.
 //
 // A preparation is counted by the path it came by (FirstUseStats.Paths):

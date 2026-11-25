@@ -129,7 +129,7 @@ func TestAcquiredPartReuseEndsWhenTheRowChanges(t *testing.T) {
 		{"dependencies", func(row *sharedResult) { row.dependencyOwnershipRevision++ }},
 		{"value replacement", func(row *sharedResult) { row.replacements++ }},
 		{"gate", func(row *sharedResult) {
-			gate := row.partGate.gate.Load()
+			gate := row.writerGate()
 			gate.mu.Lock()
 			gate.revision++
 			gate.mu.Unlock()
@@ -207,7 +207,7 @@ func TestAcquiredPartReuseConditions(t *testing.T) {
 	c.recordPartReuse(row, key, c.capturePartReuse(row))
 	require.True(t, reusable())
 
-	gate := row.partGate.gate.Load()
+	gate := row.writerGate()
 	gate.mu.Lock()
 	gate.outputs[key] = partOutputState{phase: PartOutputInstalled}
 	gate.mu.Unlock()

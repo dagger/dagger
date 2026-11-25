@@ -87,9 +87,9 @@ func TestContentExportLateCopies(t *testing.T) {
 		target := f.rows[3].cacheSharedResult()
 		got, _ := lateCopied(t, f, func(res *sharedResult) bool {
 			if res == target {
-				res.lazyMu.Lock()
-				res.lazyWhole.syncPending = true
-				res.lazyMu.Unlock()
+				res.lazyState().mu.Lock()
+				res.lazyState().whole.syncPending = true
+				res.lazyState().mu.Unlock()
 				res.payloadMu.Lock()
 				res.payloadRevision++
 				res.payloadMu.Unlock()
@@ -97,9 +97,9 @@ func TestContentExportLateCopies(t *testing.T) {
 			return false
 		})
 		t.Cleanup(func() {
-			target.lazyMu.Lock()
-			target.lazyWhole.syncPending = false
-			target.lazyMu.Unlock()
+			target.lazyState().mu.Lock()
+			target.lazyState().whole.syncPending = false
+			target.lazyState().mu.Unlock()
 		})
 		require.Equal(t, 2, got.Passes)
 		require.Len(t, got.LeftOut, 1)
@@ -111,13 +111,13 @@ func TestContentExportLateCopies(t *testing.T) {
 		// it busy, as when every row was copied.
 		g := capturePrefixesFixture(t)
 		busy := g.rows[3].cacheSharedResult()
-		busy.lazyMu.Lock()
-		busy.lazyWhole.syncPending = true
-		busy.lazyMu.Unlock()
+		busy.lazyState().mu.Lock()
+		busy.lazyState().whole.syncPending = true
+		busy.lazyState().mu.Unlock()
 		t.Cleanup(func() {
-			busy.lazyMu.Lock()
-			busy.lazyWhole.syncPending = false
-			busy.lazyMu.Unlock()
+			busy.lazyState().mu.Lock()
+			busy.lazyState().whole.syncPending = false
+			busy.lazyState().mu.Unlock()
 		})
 		want := g.run(t)
 		require.Equal(t, 1, want.Passes)
