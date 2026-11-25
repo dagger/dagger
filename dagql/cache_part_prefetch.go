@@ -1725,16 +1725,17 @@ func (p *partPrefetcher) releaseIdle(now time.Time) {
 
 func (p *partPrefetcher) log(job *partPrefetchJob, outcome string, blobs int, bytes int64, stats *partInstallStats, duration time.Duration, err error) {
 	// requests and ttfb are the job's content requests and their summed wait
-	// for response headers, as an install's line gives them: with bytes and
-	// the lane, the store's time to first byte by blob size.
+	// for response headers, and idle_max the longest any of them waited
+	// without progress, as an install's line gives them: with bytes and the
+	// lane, the store's time to first byte by blob size.
 	p.countMu.Lock()
 	p.outcomes[outcome]++
 	p.fetched += bytes
 	p.countMu.Unlock()
 	var requests int64
-	var ttfb time.Duration
+	var ttfb, idleMax time.Duration
 	if stats != nil {
-		requests, ttfb = stats.requests.Load(), time.Duration(stats.ttfb.Load())
+		requests, ttfb, idleMax = stats.requests.Load(), time.Duration(stats.ttfb.Load()), time.Duration(stats.idleMax.Load())
 	}
 	args := []any{
 		"entry", uint64(job.row),
@@ -1749,6 +1750,7 @@ func (p *partPrefetcher) log(job *partPrefetchJob, outcome string, blobs int, by
 		"bytes", bytes,
 		"requests", requests,
 		"ttfb", ttfb,
+		"idle_max", idleMax,
 		"duration", duration,
 		"lead", time.Since(job.accepted),
 	}
