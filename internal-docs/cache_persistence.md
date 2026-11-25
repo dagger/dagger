@@ -223,6 +223,7 @@ Currently used for:
 ### 2. Mirrored dagql cache graph/state
 
 - `results`
+- `result_records`
 - `eq_classes`
 - `eq_class_digests`
 - `terms`
@@ -325,7 +326,10 @@ it controls what still exists to flush at shutdown.
 
 ## Persisted Self Payloads
 
-The `results` table stores one `self_payload` blob per result.
+The `result_records` table stores one `self_payload` blob per result, with its
+`call_frame_json`, apart from the result's own fields in `results`, so that a
+save that changes only those fields, such as a last use, leaves the record as
+it is.
 
 That blob is not a raw Go serialization of the whole object. It is a structured
 `PersistedResultEnvelope` defined in `dagql/cache_persistence_self.go`.
@@ -686,29 +690,41 @@ So the live cache is not held under the graph lock for the whole flush.
 
 ### 2. Apply the snapshot to SQLite
 
+A save writes only what differs from what the database already holds. The
+cache keeps, in memory, a fingerprint of the rows the database holds for each
+result, term and class (`persistKept`, `dagql/cache_persistence_kept.go`). The
+snapshot fingerprints the rows it would write, under the same read hold, and
+copies only the units whose fingerprints moved or that the database lacks; a
+unit the database holds that the snapshot no longer reaches is deleted. A
+result's record is not encoded just to fingerprint it: a record held encoded
+changes only under its payload lock, which counts each write (`recordLock`),
+so while the count is the one its row was written at, the row is current. A
+live value is encoded and its bytes compared.
+
 `applyPersistStateSnapshot` then:
 
 1. starts a transaction
-2. clears all mirror tables
-3. inserts the new rows
+2. deletes the rows of the units that went
+3. writes the rows of the units that changed or are new
 4. commits
 
-This is a whole-snapshot rewrite, not an incremental update.
+Only once it commits does the cache replace its fingerprints, so a failed save
+leaves them describing the database as it still is. After any successful save,
+the database holds exactly what a save of the whole snapshot would have
+written; the package's tests check every save against one
+(`checkPersistFullSave`).
 
-That is another deliberate simplification:
-
-- no change-by-change persistence logic
-- no merge logic against prior on-disk state
-- just replace the whole mirrored cache snapshot in one transaction
+The import sets the fingerprints from the rows it reads, so the first save after
+a restart writes only what changed since.
 
 ## Result Serialization Details
 
 For each result being flushed, persistence stores:
 
-- `call_frame_json`
-- `self_payload`
+- `call_frame_json` and `self_payload`, in `result_records`
 - expiration / time metadata
 - record type / description
+- on a blob-backed cache, its change stamp
 
 It also stores separately:
 

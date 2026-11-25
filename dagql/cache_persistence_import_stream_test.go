@@ -41,7 +41,7 @@ func importStreamTestStore(t *testing.T, ctx context.Context, dbPath string, n, 
 	assert.NilError(t, err)
 	if padBytes > 0 {
 		// hex() of a zeroblob is padBytes '0' characters, each made a space.
-		_, err = db.ExecContext(ctx, `UPDATE results SET self_payload = CAST(self_payload || replace(hex(zeroblob(?)), '0', ' ') AS BLOB)`, padBytes/2)
+		_, err = db.ExecContext(ctx, `UPDATE result_records SET self_payload = CAST(self_payload || replace(hex(zeroblob(?)), '0', ' ') AS BLOB)`, padBytes/2)
 		assert.NilError(t, err)
 	}
 	var ids []int64
@@ -131,7 +131,7 @@ func TestCachePersistenceImportReportsFirstInvalidRow(t *testing.T) {
 	db, q, err := prepareCacheDBs(ctx, dbPath, false)
 	assert.NilError(t, err)
 	for _, id := range []int64{first, later} {
-		_, err = db.ExecContext(ctx, `UPDATE results SET self_payload = x'7B6E6F742D6A736F6E' WHERE id = ?`, id)
+		_, err = db.ExecContext(ctx, `UPDATE result_records SET self_payload = x'7B6E6F742D6A736F6E' WHERE result_id = ?`, id)
 		assert.NilError(t, err)
 	}
 	assert.NilError(t, q.UpsertMeta(ctx, persistdb.MetaKeyCleanShutdown, "1"))
