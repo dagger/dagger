@@ -466,8 +466,8 @@ func (c *Cache) snapshotPersistStateLocked(kept *persistKept, seed maphash.Seed)
 	slices.Sort(eqIDs)
 	keptClasses := persistKeptCursor[keptUnit]{list: kept.classes, id: func(u keptUnit) uint64 { return u.id }}
 	for _, eqID := range eqIDs {
-		digestRows := make(map[string]persistdb.MirrorEqClassDigest, len(c.eqClassToDigests[eqID]))
-		for dig := range c.eqClassToDigests[eqID] {
+		digestRows := make(map[string]persistdb.MirrorEqClassDigest, c.eqClassToDigests[eqID].Size())
+		for dig := range c.eqClassToDigests[eqID].All() {
 			if dig == "" {
 				continue
 			}

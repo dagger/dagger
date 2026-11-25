@@ -3098,7 +3098,7 @@ type Cache struct {
 	freeEqClassIDs []eqClassID
 
 	// map of eqClassID -> all digests in that class
-	eqClassToDigests map[eqClassID]map[string]struct{}
+	eqClassToDigests map[eqClassID]*idSet[string]
 
 	// map of eqClassID -> all labeled extra digests known to belong to that class
 	eqClassExtraDigests map[eqClassID]map[call.ExtraDigest]struct{}

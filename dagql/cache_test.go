@@ -5165,7 +5165,7 @@ func TestCacheReleaseRemovesRecordedDigestPostingAfterOutputClassMerge(t *testin
 	foreignEqID := c.ensureEqClassForDigestLocked(ctxA, foreignDigest.String())
 	outputEqID = c.mergeEqClassesLocked(ctxA, outputEqID, foreignEqID)
 	digestsPresent := c.eqClassToDigests[outputEqID] != nil
-	_, ok := c.eqClassToDigests[outputEqID][foreignDigest.String()]
+	ok := c.eqClassToDigests[outputEqID].Contains(foreignDigest.String())
 
 	// Removal covers production-recorded exact postings and broad imported
 	// postings, not arbitrary white-box mutations that bypass bookkeeping.

@@ -173,7 +173,7 @@ func (c *Cache) initEgraphLocked() {
 		c.egraphUses = []uint32{0}
 	}
 	if c.eqClassToDigests == nil {
-		c.eqClassToDigests = make(map[eqClassID]map[string]struct{})
+		c.eqClassToDigests = make(map[eqClassID]*idSet[string])
 	}
 	if c.eqClassExtraDigests == nil {
 		c.eqClassExtraDigests = make(map[eqClassID]map[call.ExtraDigest]struct{})
@@ -236,10 +236,10 @@ func (c *Cache) ensureEqClassForDigestLocked(ctx context.Context, dig string) eq
 	c.forgetCallTermsLocked(dig)
 	digests := c.eqClassToDigests[id]
 	if digests == nil {
-		digests = make(map[string]struct{}, 1)
+		digests = newIDSet[string]()
 		c.eqClassToDigests[id] = digests
 	}
-	digests[dig] = struct{}{}
+	digests.Insert(dig)
 	c.traceEqClassCreated(ctx, id, dig)
 	return id
 }
@@ -325,13 +325,13 @@ func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID, moved *[]egraphTerm
 	// merge reverse digest indexes
 	dstDigests := c.eqClassToDigests[ra]
 	srcDigests := c.eqClassToDigests[rb]
-	if len(srcDigests) > 0 {
+	if srcDigests.Size() > 0 {
 		if dstDigests == nil {
-			dstDigests = make(map[string]struct{}, len(srcDigests))
+			dstDigests = newIDSet[string]()
 			c.eqClassToDigests[ra] = dstDigests
 		}
-		for dig := range srcDigests {
-			dstDigests[dig] = struct{}{}
+		for dig := range srcDigests.All() {
+			dstDigests.Insert(dig)
 			c.forgetCallTermsLocked(dig)
 		}
 		delete(c.eqClassToDigests, rb)
@@ -1106,7 +1106,7 @@ func (c *Cache) removeResultDigestsLocked(resID sharedResultID, outputEqClasses 
 			if outputEqID == 0 {
 				continue
 			}
-			for dig := range c.eqClassToDigests[outputEqID] {
+			for dig := range c.eqClassToDigests[outputEqID].All() {
 				c.removeResultDigestPostingLocked(resID, dig)
 			}
 		}
@@ -2671,22 +2671,20 @@ func (c *Cache) compactEqClassesModeLocked(force, freeAll bool) (changed bool, o
 		}
 	}
 
-	newEqClassToDigests := make(map[eqClassID]map[string]struct{}, len(oldRoots))
+	newEqClassToDigests := make(map[eqClassID]*idSet[string], len(oldRoots))
 	newEqClassExtraDigests := make(map[eqClassID]map[call.ExtraDigest]struct{}, len(oldRoots))
 	liveDigests := 0
 	for _, oldRoot := range oldRoots {
-		liveDigests += len(c.eqClassToDigests[oldRoot])
+		liveDigests += c.eqClassToDigests[oldRoot].Size()
 	}
 	newEgraphDigestToClass := make(map[string]eqClassID, liveDigests)
 	for _, oldRoot := range oldRoots {
 		newRoot := remap[oldRoot]
-		if oldDigests := c.eqClassToDigests[oldRoot]; len(oldDigests) > 0 {
-			newDigests := make(map[string]struct{}, len(oldDigests))
-			for dig := range oldDigests {
-				newDigests[dig] = struct{}{}
+		if oldDigests := c.eqClassToDigests[oldRoot]; oldDigests.Size() > 0 {
+			for dig := range oldDigests.All() {
 				newEgraphDigestToClass[dig] = newRoot
 			}
-			newEqClassToDigests[newRoot] = newDigests
+			newEqClassToDigests[newRoot] = oldDigests.Clone()
 		}
 		if oldExtras := c.eqClassExtraDigests[oldRoot]; len(oldExtras) > 0 {
 			newExtras := make(map[call.ExtraDigest]struct{}, len(oldExtras))

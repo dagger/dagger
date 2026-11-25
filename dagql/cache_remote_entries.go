@@ -2349,7 +2349,7 @@ func (c *Cache) remoteEntryInfoLocked(entry *sharedResult) RemoteEntryInfo {
 	}
 	classDigests := map[string]struct{}{}
 	for classID := range c.outputEqClassRootsLocked(entry.id) {
-		for dig := range c.eqClassToDigests[classID] {
+		for dig := range c.eqClassToDigests[classID].All() {
 			classDigests[dig] = struct{}{}
 		}
 		for termID := range c.outputEqClassToTerms[classID].All() {
@@ -2514,7 +2514,7 @@ func (c *Cache) outputEqClassRootsLocked(resID sharedResultID) map[eqClassID]str
 func (c *Cache) classRepresentativeLocked(id eqClassID) string {
 	root := c.eqClassRootLocked(id)
 	var rep string
-	for dig := range c.eqClassToDigests[root] {
+	for dig := range c.eqClassToDigests[root].All() {
 		if rep == "" || dig < rep {
 			rep = dig
 		}
