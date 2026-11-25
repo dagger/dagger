@@ -78,7 +78,7 @@ func engineEventRuns(ctx context.Context, t *testctx.T, cloud telemetrySplitClou
 func engineEventKinds(run []engineEventLine) []string {
 	var kinds []string
 	for _, event := range run {
-		if event.kind() != telemetryattrs.EngineEventShare && event.kind() != telemetryattrs.EngineEventRead {
+		if event.kind() != telemetryattrs.EngineEventParts && event.kind() != telemetryattrs.EngineEventRead {
 			kinds = append(kinds, event.kind())
 		}
 	}
@@ -329,10 +329,10 @@ func (ClientSuite) TestEngineEventsToCloud(ctx context.Context, t *testctx.T) {
 		hits[span.Cache][id] = unionParts(hits[span.Cache][id], span.parts())
 	}
 	for _, event := range first {
-		if event.kind() != telemetryattrs.EngineEventShare {
+		if event.kind() != telemetryattrs.EngineEventParts {
 			continue
 		}
-		for _, part := range decodeEngineEventLine[telemetryattrs.EngineShareEvent](t, event).Parts {
+		for _, part := range decodeEngineEventLine[telemetryattrs.EnginePartsEvent](t, event).Parts {
 			reported[part.ResultID] = unionParts(reported[part.ResultID], []string{part.Part})
 		}
 	}

@@ -842,7 +842,7 @@ func (srv *Server) initLocalCacheStateOnce(ctx context.Context, cfg config.Confi
 	snapshotGC := srv.snapshotGarbage.Collect
 	cacheOpts := []dagql.CacheOption{dagql.WithEngineInstanceID(srv.engineInstanceID), dagql.WithPartPrefetchRoom(srv.partPrefetchRoom)}
 	if srv.engineEvents != nil {
-		cacheOpts = append(cacheOpts, dagql.WithSnapshotShareReport(srv.emitShareEvent))
+		cacheOpts = append(cacheOpts, dagql.WithOwedPartReport(srv.emitPartsEvent))
 		cacheOpts = append(cacheOpts, dagql.WithPartReadReport(srv.emitReadEvent))
 	}
 	srv.engineCache, err = dagql.NewCache(ctx, dagqlCacheDBPath, srv.workerCache, snapshotGC, cacheOpts...)

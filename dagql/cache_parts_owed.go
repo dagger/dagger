@@ -17,8 +17,8 @@ import (
 // the engine lacks the rest: it never asks this engine to export them, and a
 // part only this engine holds is never stored. Each such entry owes a report
 // of the complete parts its spans left out, with their raw sizes as a span
-// reports them, which the cache makes through the share report
-// (WithSnapshotShareReport) once the entry's record can be read: the remote
+// reports them, which the cache makes through the owed part report
+// (WithOwedPartReport) once the entry's record can be read: the remote
 // cache takes a later report of the same value at the same replacement count
 // as more of its parts. A later span that reads the record whole reports
 // every part itself, and settles what the entry owed.
@@ -27,7 +27,7 @@ import (
 // since an evaluation is what holds an entry's record and what changes it,
 // and finally at the cache's close, once the engine's sessions are gone and
 // before the cache stops admitting reads (closeOwedPartReports). The engine's
-// events, which carry the share report, stop only after the cache closes.
+// events, which carry the owed part report, stop only after the cache closes.
 // Nothing waits on a timer: an engine that goes idle with an entry still owed
 // reports it at its next evaluation or its close.
 // An engine killed before then never reports it; its cache is wiped at the
@@ -62,12 +62,12 @@ type owedPartReport struct {
 	reported     map[string]struct{}
 }
 
-// SnapshotSharedPart is one complete part of an entry that its spans left
-// out: the entry's result number, the part's address (as a span's
+// OwedPart is one complete part of an entry that its spans left out: the
+// entry's result number, the part's address (as a span's
 // dagger.io/cache.parts lists it), the entry's dependencies, and the entry's
 // replacement count, which names the value the part and dependencies belong
 // to.
-type SnapshotSharedPart struct {
+type OwedPart struct {
 	ResultID     uint64
 	Part         string
 	Deps         []uint64
@@ -77,20 +77,20 @@ type SnapshotSharedPart struct {
 	RawSize *int64
 }
 
-// WithSnapshotShareReport makes the cache report the complete parts entries'
+// WithOwedPartReport makes the cache report the complete parts entries'
 // spans left out (owedPartReports). report runs on the owed reports' worker,
 // or at the cache's close, with no cache lock held, and must not block.
-func WithSnapshotShareReport(report func([]SnapshotSharedPart)) CacheOption {
+func WithOwedPartReport(report func([]OwedPart)) CacheOption {
 	return func(c *Cache) {
-		c.shareReport = report
+		c.owedPartReport = report
 	}
 }
 
 // owePartsReport notes that a span reported only reported, the settled
-// parts of row. It does nothing on a cache without the share report, whose
+// parts of row. It does nothing on a cache without the owed part report, whose
 // spans no remote cache reads.
 func (c *Cache) owePartsReport(ctx context.Context, row *sharedResult, reported []string) {
-	if c == nil || row == nil || c.shareReport == nil {
+	if c == nil || row == nil || c.owedPartReport == nil {
 		return
 	}
 	c.readLockGraphGathered(ctx)
@@ -205,7 +205,7 @@ func (c *Cache) reportOwedParts(ctx context.Context) int {
 	}
 	o.mu.Unlock()
 
-	var parts []SnapshotSharedPart
+	var parts []OwedPart
 	var settled []owedPartReport
 	for _, report := range owed {
 		row := report.row
@@ -237,7 +237,7 @@ func (c *Cache) reportOwedParts(ctx context.Context) int {
 				if _, ok := report.reported[key]; ok {
 					continue
 				}
-				part := SnapshotSharedPart{ResultID: uint64(row.id), Part: key, Deps: deps, Replacements: report.replacements}
+				part := OwedPart{ResultID: uint64(row.id), Part: key, Deps: deps, Replacements: report.replacements}
 				if sizes != nil {
 					part.RawSize = &sizes[i]
 				}
@@ -268,7 +268,7 @@ func (c *Cache) reportOwedParts(ctx context.Context) int {
 	left := len(o.rows)
 	o.mu.Unlock()
 	if len(parts) > 0 {
-		c.shareReport(parts)
+		c.owedPartReport(parts)
 	}
 	return left
 }
