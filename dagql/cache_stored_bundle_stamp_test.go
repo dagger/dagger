@@ -46,26 +46,6 @@ func TestStoredBundleCarriesTheStampOfEachRecord(t *testing.T) {
 	}
 }
 
-// withoutChangeStamps returns values with their change stamps cleared, and
-// bundleWithoutChangeStamps the bundle with them and its start count
-// cleared: stamps count one start's writes of the cache that built the
-// bundle, so a test comparing what two starts or two caches send leaves
-// them out.
-func withoutChangeStamps(values []TransferredValue) []TransferredValue {
-	out := make([]TransferredValue, len(values))
-	for i, value := range values {
-		value.SenderStamp = 0
-		out[i] = value
-	}
-	return out
-}
-
-func bundleWithoutChangeStamps(bundle ValueBundle) ValueBundle {
-	bundle.Values = withoutChangeStamps(bundle.Values)
-	bundle.SenderCache = ""
-	return bundle
-}
-
 // A stored size counts a value's change stamp as the stamp stands, without
 // measuring the value again: a call kept on its entry moves the stamp, and
 // leaves the record, dependencies, replacement count and expiry its measure
