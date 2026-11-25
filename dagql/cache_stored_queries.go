@@ -15,6 +15,11 @@ import (
 func (c *Cache) EquivalentEntries(dig string) []uint64 {
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
+	return c.equivalentEntriesLocked(dig)
+}
+
+// equivalentEntriesLocked is EquivalentEntries. Requires egraphMu.
+func (c *Cache) equivalentEntriesLocked(dig string) []uint64 {
 	classID, ok := c.egraphDigestToClass[dig]
 	if !ok {
 		return nil
@@ -40,6 +45,14 @@ func (c *Cache) TermEntries(self digest.Digest, inputs []digest.Digest) []uint64
 	}
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
+	return c.termEntriesLocked(self, inputs)
+}
+
+// termEntriesLocked is TermEntries. Requires egraphMu.
+func (c *Cache) termEntriesLocked(self digest.Digest, inputs []digest.Digest) []uint64 {
+	if self == "" {
+		return nil
+	}
 	ids, missing := c.termInputClassesLocked(inputs)
 	if missing >= 0 {
 		return nil
