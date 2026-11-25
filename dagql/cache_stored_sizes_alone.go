@@ -153,28 +153,41 @@ func (n *aloneNode) carried() bool {
 	return n.held || n.counted
 }
 
-// walk walks the roots' closures, in pieces: each root's ordinary closure,
-// then the inputs of the calls kept on the entries reached. It returns where
-// in nodes each root is, -1 for a root the cache has no value for, which
-// adds nothing, as walkStoredRoot answers it.
+// walk walks the roots' closures: each root's ordinary closure, then the
+// inputs of the calls kept on the entries reached, in rounds. What it reads
+// of the cache it reads in pieces (readInPieces); which roots reach which
+// entries it marks on its copy between them, without egraphMu, as that
+// takes a step for each entry of each root's closure. It returns where in
+// nodes each root is, -1 for a root the cache has no value for, which adds
+// nothing, as walkStoredRoot answers it.
 func (w *aloneWalk) walk(roots []uint64) []int32 {
-	w.hold = w.c.readInPieces()
-	w.hold.report = w.c.testStoredSizesHold
-	defer w.hold.done()
 	starts := make([]int32, len(roots))
-	for i, number := range roots {
-		starts[i] = -1
-		res := w.c.resultsByID[sharedResultID(number)]
-		if res == nil || res.noValueLocked() {
-			continue
+	w.inPieces(func() {
+		for i, number := range roots {
+			starts[i] = -1
+			res := w.c.resultsByID[sharedResultID(number)]
+			if res == nil || res.noValueLocked() {
+				continue
+			}
+			starts[i] = w.reach(res)
 		}
-		if at := w.reach(res); at >= 0 {
-			starts[i] = at
+	})
+	for i, at := range starts {
+		if at >= 0 {
 			w.spread(at, uint64(1)<<i, true, nil)
 		}
 	}
 	w.keptCalls()
 	return starts
+}
+
+// inPieces runs read with egraphMu held for reading in pieces, as the walk's
+// hold.
+func (w *aloneWalk) inPieces(read func()) {
+	w.hold = w.c.readInPieces()
+	w.hold.report = w.c.testStoredSizesHold
+	defer w.hold.done()
+	read()
 }
 
 // reach reads res and what it reaches, as storedSizeWalk.visit does, once
@@ -318,6 +331,9 @@ type aloneAsked struct {
 // alike makes the same choice. An input a root's ordinary closure has
 // already adds nothing for it. A root is chosen for once at each entry:
 // the roots an entry is reached by later are chosen for when they reach it.
+// It goes in rounds: each makes the choices due in pieces of egraphMu, and
+// then, without it, marks the roots the inputs it reached are reached by,
+// which makes the next round's choices due.
 func (w *aloneWalk) keptCalls() {
 	var calls []aloneSpread
 	for at := range w.nodes {
@@ -327,60 +343,76 @@ func (w *aloneWalk) keptCalls() {
 	}
 	terms := heldTerms(w.held)
 	for len(calls) > 0 {
-		next := calls[0]
-		calls = calls[1:]
-		w.hold.step()
-		res := w.c.resultsByID[w.nodes[next.at].id]
-		if res == nil || len(res.keptCallsLocked()) == 0 {
-			continue
-		}
-		for _, group := range w.c.keptCallTermsLocked(res) {
-			if group = w.c.sendableCallsLocked(w.held, terms, group); len(group) == 0 {
-				continue
+		var reached []aloneSpread
+		w.inPieces(func() {
+			for _, next := range calls {
+				reached = w.choose(next, terms, reached)
 			}
-			for left := next.roots; left != 0; {
-				root := bits.TrailingZeros64(left)
-				var asked []aloneAsked
-				_, places := w.c.placeableCallLocked(group, w.now, func(input *sharedResult) bool {
-					has := w.mineOf(input.id)>>root&1 == 1 || w.held.heldLocked(input, w.now)
-					asked = append(asked, aloneAsked{res: input, has: has})
-					return has
-				})
-				same := left
-				for _, a := range asked {
-					answers := w.mineOf(a.res.id)
-					if w.held.heldLocked(a.res, w.now) {
-						answers = ^uint64(0)
-					}
-					if a.has {
-						same &= answers
-					} else {
-						same &^= answers
-					}
-				}
-				left &^= same
-				call := aloneCall{roots: same}
-				for _, place := range places {
-					if place == nil {
-						continue
-					}
-					to := same &^ w.mineOf(place.id)
-					if to == 0 {
-						call.places = append(call.places, -1)
-						continue
-					}
-					at := w.reach(place)
-					call.places = append(call.places, at)
-					if at >= 0 {
-						w.spread(at, to, false, &calls)
-					}
-				}
-				// Reaching a place can have grown nodes: the entry is found
-				// again by its place in them.
-				w.nodes[next.at].calls = append(w.nodes[next.at].calls, call)
-			}
+		})
+		calls = nil
+		for _, places := range reached {
+			w.spread(places.at, places.roots, false, &calls)
 		}
 	}
+}
+
+// choose makes the choices of the calls kept on next's entry for next's
+// roots (keptCalls), and returns reached with the entries their inputs are
+// placed by, each with the roots it adds them for. Requires egraphMu, by
+// the walk's hold.
+func (w *aloneWalk) choose(next aloneSpread, terms map[digest.Digest][]RemoteTerm, reached []aloneSpread) []aloneSpread {
+	w.hold.step()
+	res := w.c.resultsByID[w.nodes[next.at].id]
+	if res == nil || len(res.keptCallsLocked()) == 0 {
+		return reached
+	}
+	for _, group := range w.c.keptCallTermsLocked(res) {
+		if group = w.c.sendableCallsLocked(w.held, terms, group); len(group) == 0 {
+			continue
+		}
+		for left := next.roots; left != 0; {
+			root := bits.TrailingZeros64(left)
+			var asked []aloneAsked
+			_, places := w.c.placeableCallLocked(group, w.now, func(input *sharedResult) bool {
+				has := w.mineOf(input.id)>>root&1 == 1 || w.held.heldLocked(input, w.now)
+				asked = append(asked, aloneAsked{res: input, has: has})
+				return has
+			})
+			same := left
+			for _, a := range asked {
+				answers := w.mineOf(a.res.id)
+				if w.held.heldLocked(a.res, w.now) {
+					answers = ^uint64(0)
+				}
+				if a.has {
+					same &= answers
+				} else {
+					same &^= answers
+				}
+			}
+			left &^= same
+			call := aloneCall{roots: same}
+			for _, place := range places {
+				if place == nil {
+					continue
+				}
+				to := same &^ w.mineOf(place.id)
+				if to == 0 {
+					call.places = append(call.places, -1)
+					continue
+				}
+				at := w.reach(place)
+				call.places = append(call.places, at)
+				if at >= 0 {
+					reached = append(reached, aloneSpread{at: at, roots: to})
+				}
+			}
+			// Reaching a place can have grown nodes: the entry is found
+			// again by its place in them.
+			w.nodes[next.at].calls = append(w.nodes[next.at].calls, call)
+		}
+	}
+	return reached
 }
 
 // aloneSum adds up each root's size on the walk's copy of the entries, in
