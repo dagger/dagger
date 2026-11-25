@@ -210,7 +210,7 @@ func (c *Cache) storedRootWalkLocked(res *sharedResult, nowUnix int64, held *Hel
 				continue
 			}
 		}
-		if len(entry.calls) == 0 {
+		if len(entry.keptCallsLocked()) == 0 {
 			continue
 		}
 		for _, group := range c.keptCallTermsLocked(entry) {
