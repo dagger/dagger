@@ -1535,8 +1535,9 @@ func (c *Cache) teachRemoteIdentityLocked(ctx context.Context, entry *sharedResu
 	// its class as the engine that computed it does. A digest taught again
 	// after another is the frame's content again, as on the engine.
 	if content != "" && entry != nil && entry.id != 0 {
-		if n := len(entry.taught); n == 0 || entry.taught[n-1] != content {
-			entry.taught = append(entry.taught, content)
+		if t := entry.taughtContent; t == nil || len(t.digests) == 0 || t.digests[len(t.digests)-1] != content {
+			t = entry.taughtStateLocked()
+			t.digests = append(t.digests, content)
 		}
 		c.queueTaughtContentLocked(entry)
 	}

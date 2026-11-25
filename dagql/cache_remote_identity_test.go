@@ -223,8 +223,8 @@ func egraphFactsForTest(c *Cache) string {
 	// The content digests each entry was taught, which its frame takes.
 	taught := make(map[sharedResultID]string, len(c.resultsByID))
 	for id, res := range c.resultsByID {
-		if len(res.taught) > 0 || res.taughtGiven != 0 || res.taughtFrom.ok() {
-			taught[id] = fmt.Sprint(res.taught, res.taughtGiven, res.taughtFrom.ok())
+		if t := res.taughtContent; t != nil && (len(t.digests) > 0 || t.given != 0 || t.from.ok()) {
+			taught[id] = fmt.Sprint(t.digests, t.given, t.from.ok())
 		}
 	}
 	line("taught", taught)

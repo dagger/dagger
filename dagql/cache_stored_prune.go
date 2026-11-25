@@ -113,17 +113,19 @@ func (c *Cache) dropValueLocked(ctx context.Context, res *sharedResult) ([]*shar
 	// value the drop takes. A record that fills the entry again may be
 	// another engine's run of the recipe, with other bytes, and until runs
 	// are named the cache can't tell, so they go with the value.
-	if len(res.taught) > 0 || res.taughtFrom.ok() {
-		c.taughtContentDropped.Add(1)
-		res.taughtDropped = true
+	if t := res.taughtContent; t != nil {
+		if len(t.digests) > 0 || t.from.ok() {
+			c.taughtContentDropped.Add(1)
+			res.taughtDropped = true
+		}
+		t.digests = nil
+		t.given = 0
+		t.from = entryFrame{}
+		// The frame the drop takes is no longer the one the worker is
+		// giving digests to: what it records of it is dropped, as after a
+		// replacement (applyTaughtContent).
+		t.frame++
 	}
-	res.taught = nil
-	res.taughtGiven = 0
-	res.taughtFrom = entryFrame{}
-	// The frame the drop takes is no longer the one the worker is giving
-	// digests to: what it records of it is dropped, as after a replacement
-	// (applyTaughtContent).
-	res.taughtFrame++
 	c.changeStoredPartsLocked(res, func() { res.storedParts = nil })
 	// The run goes with the value: a record that fills the entry again names
 	// its own.
