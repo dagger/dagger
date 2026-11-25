@@ -79,6 +79,28 @@ func TestLookup(t *testing.T) {
 	assert.False(t, ok)
 }
 
+func TestEndpointType(t *testing.T) {
+	for _, tc := range []struct {
+		provider, model string
+		want            catwalk.Type
+	}{
+		{"github-copilot", "albatross", catwalk.TypeResponses},
+		{"github-copilot", "claude-sonnet-5.5", catwalk.TypeCompletions},
+		{"github-copilot", "gpt-6-luna-decisions", catwalk.TypeCompletions},
+		{"openai", "gpt-6.2-sol", catwalk.TypeResponses},
+		{"anthropic", "claude-sonnet-5-5", catwalk.TypeMessages},
+		{"github-copilot", "unknown", ""},
+		{"unknown", "gpt-6.2-sol", ""},
+		{"local", "gpt-6.2-sol", ""},
+	} {
+		t.Run(tc.provider+"/"+tc.model, func(t *testing.T) {
+			got, ok := modelcatalog.EndpointType(tc.provider, tc.model)
+			assert.Equal(t, tc.want, got)
+			assert.Equal(t, tc.want != "", ok)
+		})
+	}
+}
+
 func TestDefaultSmallModel(t *testing.T) {
 	for provider, want := range map[string]string{
 		"anthropic":      "claude-haiku-5-5",

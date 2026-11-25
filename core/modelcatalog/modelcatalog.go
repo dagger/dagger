@@ -53,14 +53,17 @@ func DefaultModel(provider string) (string, bool) {
 }
 
 var (
-	catalogOnce sync.Once
-	catalog     map[catwalk.InferenceProvider]map[string]catwalk.Model
+	catalogOnce   sync.Once
+	catalog       map[catwalk.InferenceProvider]map[string]catwalk.Model
+	providerTypes map[catwalk.InferenceProvider]catwalk.Type
 )
 
 func load() map[catwalk.InferenceProvider]map[string]catwalk.Model {
 	catalogOnce.Do(func() {
 		catalog = make(map[catwalk.InferenceProvider]map[string]catwalk.Model)
+		providerTypes = make(map[catwalk.InferenceProvider]catwalk.Type)
 		for _, p := range embedded.GetAll() {
+			providerTypes[p.ID] = p.Type
 			models := make(map[string]catwalk.Model, len(p.Models))
 			for _, m := range p.Models {
 				key := NormalizeModelID(m.ID)
@@ -105,6 +108,19 @@ func Lookup(provider, model string) (catwalk.Model, bool) {
 	}
 	m, ok := load()[cwID][NormalizeModelID(model)]
 	return m, ok
+}
+
+// EndpointType returns the model's API format, falling back to its provider's
+// format. Unknown models return no type: their names alone are not catalog
+// evidence of which endpoint to use. This describes Catwalk's transport, not
+// necessarily Dagger's (for example, Dagger uses Gemini's native SDK).
+func EndpointType(provider, model string) (catwalk.Type, bool) {
+	m, ok := Lookup(provider, model)
+	if !ok {
+		return "", false
+	}
+	endpointType := m.EffectiveType(providerTypes[providerCatalogIDs[provider]])
+	return endpointType, endpointType != ""
 }
 
 // DefaultSmallModel returns Dagger's small model for a hosted provider.

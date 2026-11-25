@@ -241,6 +241,10 @@ func TestCopilotResponsesModels(t *testing.T) {
 		"gpt-5.4-mini": true, "gpt-5-mini": false, "gpt-4.1": false,
 		"claude-sonnet-5": false, "gemini-3.5-flash": false,
 		"grok-4.5": true, "mai-code-1": true,
+		// Explicit metadata takes precedence over the name heuristic.
+		"albatross": true, "gpt-6-luna-decisions": false,
+		// Uncatalogued models retain the forward-compatible fallback.
+		"gpt-99-future": true, "unknown-model": false,
 	} {
 		t.Run(model, func(t *testing.T) {
 			ep := &LLMEndpoint{Provider: GitHubCopilot, Model: model, BaseURL: "https://copilot.example"}
