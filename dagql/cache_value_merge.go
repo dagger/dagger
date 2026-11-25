@@ -2284,14 +2284,6 @@ func (c *Cache) prerelocateMergeRows(ctx context.Context, prep *valueMergePrep) 
 			}
 		}
 	}
-	// On the Cloud, a record relocated here is measured here too, at the
-	// numbers the commit takes it at when they hold (recordBytes).
-	measure := func(rec PersistedRecord) int64 {
-		if prep.recordBytes == nil {
-			return 0
-		}
-		return encodedRecordBytes(rec)
-	}
 	relocated := make([]*prerelocatedRecord, len(moved))
 	movedBytes := make([]int64, len(moved))
 	_ = forEachIndexParallel(len(moved), func(i int) error {
@@ -2312,7 +2304,7 @@ func (c *Cache) prerelocateMergeRows(ctx context.Context, prep *valueMergePrep) 
 		// relocates it under the lock and answers its error.
 		if err == nil {
 			relocated[i] = &prerelocatedRecord{rec: rec, numbers: numbers}
-			movedBytes[i] = measure(rec)
+			movedBytes[i] = prep.measuredBytes(rec)
 		}
 		return nil
 	})
@@ -2326,7 +2318,7 @@ func (c *Cache) prerelocateMergeRows(ctx context.Context, prep *valueMergePrep) 
 		rec, numbers, err := pre.relocateFrom(again[i], finalErr)
 		if err == nil {
 			relocatedAgain[i] = newPreparedRelocation(rec, numbers)
-			againBytes[i] = measure(rec)
+			againBytes[i] = prep.measuredBytes(rec)
 		}
 		return nil
 	})
@@ -2340,10 +2332,7 @@ func (c *Cache) prerelocateMergeRows(ctx context.Context, prep *valueMergePrep) 
 	}
 	for i, ordinal := range moved {
 		if relocated[i] != nil {
-			prep.prerelocated[ordinal] = relocated[i]
-			if prep.recordBytes != nil {
-				prep.recordBytes[ordinal] = movedBytes[i]
-			}
+			prep.keepPrerelocated(ordinal, relocated[i], movedBytes[i])
 		}
 	}
 	for i, row := range unprepared {
@@ -2353,13 +2342,29 @@ func (c *Cache) prerelocateMergeRows(ctx context.Context, prep *valueMergePrep) 
 	}
 	for i, ordinal := range again {
 		if relocatedAgain[i] != nil {
-			prep.prerelocated[ordinal] = relocatedAgain[i]
-			if prep.recordBytes != nil {
-				prep.recordBytes[ordinal] = againBytes[i]
-			}
+			prep.keepPrerelocated(ordinal, relocatedAgain[i], againBytes[i])
 		}
 	}
 	c.notePrerelocated(prep)
+}
+
+// measuredBytes is, on the Cloud, a record's size as it stores it
+// (recordBytes), measured where the record is relocated before the commit,
+// at the numbers the commit takes it at when they hold; 0 on an engine.
+func (prep *valueMergePrep) measuredBytes(rec PersistedRecord) int64 {
+	if prep.recordBytes == nil {
+		return 0
+	}
+	return encodedRecordBytes(rec)
+}
+
+// keepPrerelocated keeps pre, relocated before the commit, as the record of
+// ordinal, and on the Cloud its size measured with it (measuredBytes).
+func (prep *valueMergePrep) keepPrerelocated(ordinal uint64, pre *prerelocatedRecord, bytes int64) {
+	prep.prerelocated[ordinal] = pre
+	if prep.recordBytes != nil {
+		prep.recordBytes[ordinal] = bytes
+	}
 }
 
 // prerelocationDecision is the decision prerelocateMergeRows relocates by: on
