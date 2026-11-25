@@ -62,6 +62,14 @@ func (l *recordLock) noteWrite() {
 	l.writes.Add(1)
 }
 
+// unlockUncounted unlocks l for writing without counting a write to the
+// entry's record: for a write of a field the saved record doesn't hold, such
+// as the entry's last use, which its results row holds and a save
+// fingerprints every time.
+func (l *recordLock) unlockUncounted() {
+	l.RWMutex.Unlock()
+}
+
 // persistKept is what the persistence database holds of the cache: each
 // entry, term and class it holds, sorted by number, with the fingerprints of
 // their rows.
