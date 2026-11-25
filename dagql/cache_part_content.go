@@ -361,6 +361,16 @@ func (p *partContentProvider) renew(ctx context.Context, blob digest.Digest) (re
 	return nil
 }
 
+// requestError is a failed request's error without its URL, as an upload's
+// is: a content address carries a signature.
+func requestError(err error) error {
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		return urlErr.Err
+	}
+	return err
+}
+
 // partContentError wraps a reader failure once. Caller cancellation stays
 // cancellation.
 func partContentError(ctx context.Context, desc ocispecs.Descriptor, stage string, err error) error {
@@ -404,6 +414,8 @@ type partHTTPStream struct {
 	// idle is time spent blocked without byte progress, including the
 	// connection and headers.
 	idle time.Duration
+	// stats, when set, is told each wait without progress.
+	stats *partInstallStats
 	// release, when set, returns the request's place among the provider's
 	// requests in flight.
 	release func()
@@ -431,16 +443,19 @@ func (s *partHTTPStream) close() {
 
 // wait runs one blocked network operation under the idle bound. Only positive
 // byte progress resets the idle time already spent; nothing is armed between
-// operations, so local writer backpressure never counts.
+// operations, so local writer backpressure never counts. The stats hear of
+// the wait without progress so far.
 func (s *partHTTPStream) wait(op func() (int, error)) (int, error) {
 	start := time.Now()
 	timer := time.AfterFunc(partContentIdleTimeout-s.idle, func() { s.cancel(errPartContentIdle) })
 	n, err := op()
 	timer.Stop()
+	idle := s.idle + time.Since(start)
+	s.stats.idled(idle)
 	if n > 0 {
 		s.idle = 0
 	} else {
-		s.idle += time.Since(start)
+		s.idle = idle
 	}
 	if err != nil && errors.Is(context.Cause(s.ctx), errPartContentIdle) {
 		err = fmt.Errorf("%w for %s", errPartContentIdle, partContentIdleTimeout)
@@ -716,6 +731,9 @@ type partInstallStats struct {
 	// streams is the most requests one of the install's blobs had open at
 	// once.
 	streams atomic.Int64
+	// idleMax is the longest any request waited without progress, in
+	// nanoseconds: for its headers, or between bytes of its body.
+	idleMax atomic.Int64
 
 	mu sync.Mutex
 	// statuses counts the requests' HTTP statuses.
@@ -740,6 +758,20 @@ func (s *partInstallStats) renewed(start, end time.Time) {
 	s.renewNS.Add(int64(end.Sub(start)))
 }
 
+// idled notes a request's wait without progress so far. A nil stats counts
+// nothing.
+func (s *partInstallStats) idled(d time.Duration) {
+	if s == nil {
+		return
+	}
+	for {
+		longest := s.idleMax.Load()
+		if int64(d) <= longest || s.idleMax.CompareAndSwap(longest, int64(d)) {
+			return
+		}
+	}
+}
+
 // partInstallTiming is where one install's time went, as its lines log it.
 // ttfb is part of readWait, and the import's three sums of imported.
 // readWait sums the layers' reads, which run at once, so it can exceed
@@ -751,12 +783,15 @@ type partInstallTiming struct {
 	// requests and ttfb are the content requests and their summed wait for
 	// response headers, connsNew those on a new connection, and renew the
 	// time getting fresh addresses. readWait is the time blocked in content
-	// reads.
+	// reads, and idleMax the longest any request waited without progress:
+	// one wait, not a sum, so it says how close the install came to
+	// partContentIdleTimeout.
 	requests int
 	ttfb     time.Duration
 	connsNew int
 	renew    time.Duration
 	readWait time.Duration
+	idleMax  time.Duration
 	// streams, rangeMode and statuses are how the blobs were read: the most
 	// requests at once, whether the store answered ranges, and the count of
 	// each HTTP status.
@@ -778,6 +813,7 @@ func (t *partInstallTiming) count(stats *partInstallStats, downloaded *countingP
 	t.connsNew = int(stats.connsNew.Load())
 	t.renew = time.Duration(stats.renewNS.Load())
 	t.readWait = time.Duration(downloaded.readNS.Load())
+	t.idleMax = time.Duration(stats.idleMax.Load())
 	t.streams = int(stats.streams.Load())
 	t.rangeMode, t.statuses = stats.httpStatuses()
 }
@@ -790,6 +826,7 @@ func (t partInstallTiming) fields() []any {
 		"conns_new", t.connsNew,
 		"renew", t.renew,
 		"read_wait", t.readWait,
+		"idle_max", t.idleMax,
 		"layer_wait", t.LayerWait,
 		"fetch", t.Fetch,
 		"apply", t.Apply,
@@ -880,8 +917,11 @@ func (c *Cache) installChainPart(ctx context.Context, receiver AnyResult, source
 		timing.waited = start.Sub(demand.started)
 	}
 	// Every attempt that reaches the import logs one line: installed, or
-	// failed with its outcome.
-	var installed, contentFailed bool
+	// failed with its outcome. A content failure's line gives the import's
+	// error, contentErr, which names the layer and the step, not the refusal
+	// the demand sees.
+	var installed bool
+	var contentErr error
 	var committing time.Time
 	var commitOp *wcprof.Op
 	defer func() {
@@ -894,8 +934,12 @@ func (c *Cache) installChainPart(ctx context.Context, receiver AnyResult, source
 			timing.commit = now.Sub(committing)
 		}
 		// One classification for the line and the profile.
-		outcome, level := partInstallFailure(ctx, rerr, contentFailed)
-		logOfferInstallFailed(ctx, receiver, source, rerr, outcome, level, downloaded.read.Load(), now.Sub(start), timing, !committing.IsZero())
+		outcome, level := partInstallFailure(ctx, rerr, contentErr != nil)
+		failure := rerr
+		if contentErr != nil {
+			failure = contentErr
+		}
+		logOfferInstallFailed(ctx, receiver, source, failure, outcome, level, downloaded.read.Load(), now.Sub(start), timing, !committing.IsZero())
 		profEndInstall(ctx, profOp, commitOp, receiver, outcome, downloaded.read.Load(), now)
 	}()
 	timing.prefetched = c.partPrefetchHeld(ctx, copied[0].Chain.Layers)
@@ -906,9 +950,9 @@ func (c *Cache) installChainPart(ctx context.Context, receiver AnyResult, source
 		if cause := context.Cause(ctx); cause != nil {
 			return cause
 		}
-		var contentErr *snapshots.ChainContentError
-		if errors.As(err, &contentErr) {
-			contentFailed = true
+		var chainErr *snapshots.ChainContentError
+		if errors.As(err, &chainErr) {
+			contentErr = err
 			demand.exhaust(source, err)
 			return partRefused("chain: content failed, source exhausted")
 		}

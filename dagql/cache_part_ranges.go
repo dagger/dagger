@@ -84,7 +84,7 @@ func (p *partContentProvider) get(ctx context.Context, url string, start, end in
 			}
 		}})
 	}
-	stream := &partHTTPStream{ctx: ctx, cancel: cancel}
+	stream := &partHTTPStream{ctx: ctx, cancel: cancel, stats: p.stats}
 	if p.requests != nil {
 		stream.release = func() { p.requests.Release(1) }
 	}
@@ -108,7 +108,7 @@ func (p *partContentProvider) get(ctx context.Context, url string, start, end in
 	})
 	if err != nil {
 		stream.close()
-		return nil, nil, err
+		return nil, nil, requestError(err)
 	}
 	p.stats.status(resp.StatusCode)
 	stream.body = resp.Body
