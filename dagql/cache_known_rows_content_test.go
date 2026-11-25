@@ -40,13 +40,12 @@ func bundleRow(t *testing.T, bundle ValueBundle, res AnyResult) TransferredValue
 
 // A content export sends a row the recipient already has as a held row, as a
 // records-only export does, but only where something in the bundle stands on
-// it, and keeps a held row's links only to the rows something is needed at
-// or below: the row its selected part sits on and the rows on the way down
-// to it go held, with the links between them, and a known subtree with
-// nothing needed in it stays out, as a records-only export would send it.
-// Here every row is known: root, mid and out go held, side and base and
-// out's core stay out, and the Cloud, which has the rows from the first
-// export, merges the bundle and keeps every dependency its entries had.
+// it: the root and the row its selected part sits on go held, the root
+// linking straight to the part's row, and neither a known subtree with
+// nothing needed in it nor the held rows on the way down to the part go.
+// Here every row is known: root and out go held, mid, side, base and out's
+// core stay out, and the Cloud, which has the rows from the first export,
+// merges the bundle and keeps every dependency its entries had.
 func TestContentExportHoldsTheKnownRowsSomethingStandsOn(t *testing.T) {
 	t.Parallel()
 	ctx, c, srv := transferTestCache(t)
@@ -70,10 +69,10 @@ func TestContentExportHoldsTheKnownRowsSomethingStandsOn(t *testing.T) {
 	held, full := heldNumbers(values.Bundle)
 	n := knownRowsTestNumber
 	require.Empty(t, full, "the recipient has every row")
-	require.Equal(t, map[uint64]bool{n(root): true, n(mid): true, n(out): true}, held, "nothing stands on side, base or core")
-	require.Len(t, values.Rows.Held, 3)
-	require.Equal(t, []uint64{uint64(bundleRow(t, values.Bundle, mid).Ordinal)}, bundleRow(t, values.Bundle, root).DependencyIDs, "the root keeps its link on the way to the part, not to side")
-	require.Equal(t, []uint64{uint64(bundleRow(t, values.Bundle, out).Ordinal)}, bundleRow(t, values.Bundle, mid).DependencyIDs, "a held row keeps its link to the row the part sits on")
+	require.Equal(t, map[uint64]bool{n(root): true, n(out): true}, held, "nothing stands on mid, side, base or core")
+	require.Len(t, values.Rows.Held, 2)
+	require.Equal(t, 4, values.LeftOutHeld, "mid, side, base and core")
+	require.Equal(t, []uint64{uint64(bundleRow(t, values.Bundle, out).Ordinal)}, bundleRow(t, values.Bundle, root).DependencyIDs, "the root links straight to the part's row, past mid, and not to side")
 	require.Empty(t, bundleRow(t, values.Bundle, out).DependencyIDs, "nothing is needed below the part's row")
 	require.Len(t, values.Bundle.Outputs, 1)
 	require.Equal(t, ordinalOfNumber(t, values.Bundle, n(out)), values.Bundle.Outputs[0].Ordinal, "the selected part sits on its held row")

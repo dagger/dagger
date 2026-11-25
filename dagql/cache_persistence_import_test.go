@@ -621,7 +621,7 @@ func TestCachePersistenceImportFailureWipesStore(t *testing.T) {
 
 	db, q, err := prepareCacheDBs(ctx, dbPath, false)
 	assert.NilError(t, err)
-	_, err = db.Exec(`UPDATE results SET self_payload = x'7B6E6F742D6A736F6E'`)
+	_, err = db.Exec(`UPDATE result_records SET self_payload = x'7B6E6F742D6A736F6E'`)
 	assert.NilError(t, err)
 	assert.NilError(t, q.UpsertMeta(ctx, persistdb.MetaKeyCleanShutdown, "1"))
 	assert.NilError(t, closeCacheDBs(db, q))

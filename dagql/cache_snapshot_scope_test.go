@@ -118,7 +118,7 @@ func TestScopedSnapshotSQLConflict(t *testing.T) {
 	db, q, err := prepareCacheDBs(ctx, filepath.Join(t.TempDir(), "cache.db"), false)
 	require.NoError(t, err)
 	defer closeCacheDBs(db, q)
-	require.NoError(t, q.InsertMirrorResult(ctx, persistdb.MirrorResult{ID: 1, SelfPayload: []byte(`{}`)}))
+	require.NoError(t, q.UpsertMirrorResult(ctx, persistdb.MirrorResult{ID: 1}))
 	link := persistdb.MirrorResultSnapshotLink{ResultID: 1, OutputPath: "[]", Role: "snapshot", RefKey: "first"}
 	require.NoError(t, q.InsertMirrorResultSnapshotLink(ctx, link))
 	require.Error(t, q.InsertMirrorResultSnapshotLink(ctx, link))
