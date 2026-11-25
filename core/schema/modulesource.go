@@ -453,7 +453,7 @@ func moduleSourceReadCacheKey(ctx context.Context, req *dagql.CallRequest, decid
 		return req.SetImplicitInput(ctx, dagql.PerClientInput.Name, client)
 	}
 	if borrowing != "" {
-		if err := req.SetImplicitInput(ctx, "gitBorrowing", dagql.NewString(string(borrowing))); err != nil {
+		if err := req.SetImplicitInput(ctx, core.GitBorrowingInput.Name, dagql.NewString(string(borrowing))); err != nil {
 			return err
 		}
 	}
