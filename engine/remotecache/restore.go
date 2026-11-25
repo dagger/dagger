@@ -56,7 +56,7 @@ const (
 	// within it, and a part larger than it goes once none waits. A checked
 	// part holds 25 to 50 times its encoded bytes, so the parts waiting
 	// beside a merge hold at most about 150 MB, or one larger part alone
-	// (engine-dev's largest whole part: 3.1 MB encoded, 117 MB checked).
+	// (a large whole part: 3.1 MB encoded, 117 MB checked).
 	// Room for a few large parts keeps a run of small parts from leaving the
 	// merge waiting for the large part after it.
 	restoreAheadBytes = 3 << 20
@@ -727,8 +727,8 @@ func (f *restoreFile) noteEntries(part dagql.ValueBundle, reply dagql.MergeReply
 
 // decodePart decodes one part of a set file with a decoder of its own,
 // closed once the part is decoded: a decoder kept from one part to the next
-// keeps the last part's decompressed bytes, 236 MB for test-base's whole
-// set.
+// keeps the last part's decompressed bytes, hundreds of megabytes for a
+// large whole set.
 func decodePart(part []byte) (dagql.ValueBundle, error) {
 	dec, err := zstd.NewReader(nil, zstd.WithDecoderConcurrency(1))
 	if err != nil {

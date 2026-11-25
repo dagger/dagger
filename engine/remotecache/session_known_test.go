@@ -85,10 +85,10 @@ func TestMergeKnownRows(t *testing.T) {
 
 // An Upload without Merged that names the held rows the service found stale
 // makes only those unknown: the export's other held rows stay known, so the
-// next export carries the stale ones in full and holds the rest. On a whole
-// pull request's fill, test-base's engine forgot thousands of held rows for
-// each 2 to 108 the service named, until a test run's export, carrying its
-// closure in full, no longer fit in a message.
+// next export carries the stale ones in full and holds the rest. An engine
+// that forgot every held row for the few the service named sent thousands
+// in full, until a test run's export, carrying its closure in full, no
+// longer fit in a message.
 func TestExportStaleForgetsOnlyTheStaleRows(t *testing.T) {
 	rows := map[uint64]dagql.ExportedRows{
 		1: {Full: map[uint64]dagql.RowRevision{12: {}, 13: {}, 14: {}}},

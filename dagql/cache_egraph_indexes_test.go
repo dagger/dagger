@@ -405,11 +405,11 @@ func TestCacheCanonicalEquivalentReadsOutputEqClassResults(t *testing.T) {
 // A structural lookup whose term has no result of its own is answered from
 // the term's output class, and examines each of the class's results once: no
 // more on an engine restored from a saved state, whose terms come back
-// without their results, than on the engine that made them. On a warm rerun
-// of dagger's own checks, each restored engine's first probe of a workspace's
-// root for a module config was answered so from a class of 2,593 digests and
-// 1,212 results, by a walk of every digest's posting that held the graph lock
-// for up to 2.5 s while the engine's other calls queued behind it.
+// without their results, than on the engine that made them. A restored
+// engine's first probe of a workspace's root for a module config was
+// answered so from a class of thousands of digests and results, by a walk of
+// every digest's posting that held the graph lock for seconds while the
+// engine's other calls queued behind it.
 func TestCacheRestoredTermLookupExaminesEachClassResultOnce(t *testing.T) {
 	t.Parallel()
 	const width = 32

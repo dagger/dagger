@@ -115,9 +115,9 @@ func TestExportChainListingsCarryEachContentOnce(t *testing.T) {
 
 // A file under 256 KiB stays in its layer's listing, and only a larger one
 // gets a content blob of its own: a content blob costs an engine a content
-// commit and a lease entry, under its metadata store's one writer, and on the
-// nineteenth fill files under 256 KiB were four fifths of chains' content
-// blobs for a tenth of what storing each file once saved.
+// commit and a lease entry, under its metadata store's one writer, and on
+// real layers files under 256 KiB were four fifths of chains' content blobs
+// for a tenth of what storing each file once saved.
 func TestExportChainListingKeepsFilesUnder256KiB(t *testing.T) {
 	t.Parallel()
 	producer := testutil.NewStore(t)

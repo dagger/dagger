@@ -19,9 +19,9 @@ import (
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 )
 
-// reexportTestRows and reexportTestLayers are test-base's: the largest export
-// the service refused, 2,206 records, and its chains' length, about 23 base
-// layers under a row's own.
+// reexportTestRows and reexportTestLayers are a large refused export's
+// size, 2,206 records, and its chains' length, about 23 base layers under a
+// row's own.
 const (
 	reexportTestRows   = 2206
 	reexportTestLayers = 24
@@ -123,8 +123,8 @@ func newReexportTestCloud(t *testing.T) *dagql.Cache {
 // Cloud drops when it merges a bundle, since the upload decides what it
 // stores. And the Cloud that merges them holds what it held before.
 //
-// The seed engine makes test-base's largest refused export's rows, and the
-// Cloud stores each row's part as a chain of test-base's length. A second
+// The seed engine makes a large refused export's rows, and the Cloud stores
+// each row's part as a chain of that export's length. A second
 // engine imports the rows from the Cloud's bundle, with an address for every
 // layer, and exports them all in full to a Cloud that has lost them.
 func TestRemoteCacheAdapterReexportLeavesOutTheCloudsOffers(t *testing.T) {

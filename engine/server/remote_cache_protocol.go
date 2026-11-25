@@ -60,10 +60,9 @@ var exportRefConfig = config.RefConfig{
 // session's own cleanup, and the engine stops 20 s after that
 // session, so it reads as many of its layers at once as it has cores, through
 // a gate of their own, their frames compressing under the same budget as
-// every other layer's. On a ten-check stack a stopping engine's last export
-// built 113 layers, 23.2 s of diffs, 4 at once in 8.5 s; on the simulator a
-// stopping engine used 3 to 4 of its 16 cores while its last export built.
-// The blobs are the same: only how many build at once differs.
+// every other layer's. A stopping engine's last export can build a hundred
+// layers, and building a few at once left most of its cores idle. The blobs
+// are the same: only how many build at once differs.
 var idleExportRefConfig = config.RefConfig{
 	Compression: exportRefConfig.Compression,
 	Listings:    exportRefConfig.Listings,

@@ -11,12 +11,12 @@ import (
 	"github.com/dagger/dagger/dagql"
 )
 
-// stopExported is an export's reply shaped as the content exports at a
-// fill's stops are: held rows, each with its recipe and a few links, records
-// in full with a payload and a call, and outputs on some of the rows. The
-// sixth whole run's fill sent a median of 10,252 rows and about 4.4 MB a
-// reply at its stops, of which about 100 rows in full and 93 outputs; its
-// longest, 32,353 rows, 9,829 in full and 7,676 outputs, in 50 MB.
+// stopExported is an export's reply shaped as the content exports of
+// stopping engines are: held rows, each with its recipe and a few links,
+// records in full with a payload and a call, and outputs on some of the
+// rows. A typical one sends about ten thousand rows and a few megabytes,
+// of which about a hundred rows in full and as many outputs; a large one,
+// tens of thousands of rows, a third of them in full, in tens of megabytes.
 func stopExported(rows, full, outputs int) Exported {
 	payload, _ := json.Marshal(map[string]any{
 		"form":     "snapshot",

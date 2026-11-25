@@ -19,9 +19,8 @@ func factsTestKept(t *testing.T, cloud *Cache, key HolderKey) HoldingFacts {
 // holding: a holding depending on it, which raises its count of dependents;
 // a session's hold of it, and that session's end; a content digest it
 // learns; and a part it is offered. Each leaves what a reader keeps of it as
-// it was. On a whole pull request's fill, a stopping engine's pass after its
-// session's end read again whole every holding the session had held: one
-// read 10,762 again and found 157 changed.
+// it was. Otherwise a reader's pass after a session's end reads again whole
+// every holding the session held, and finds few of them changed.
 func TestChangeReportsNameNoHoldingForWhatNoReaderKeeps(t *testing.T) {
 	t.Parallel()
 	ctx, cloud := storedPartTestCache(t, WithBlobStore())
