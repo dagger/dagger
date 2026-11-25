@@ -4,8 +4,9 @@ import (
 	"strings"
 	"sync"
 
-	"charm.land/catwalk/pkg/catwalk"
-	"charm.land/catwalk/pkg/embedded"
+	"charm.land/catwalk/v3/pkg/catwalk"
+	"charm.land/catwalk/v3/pkg/embedded"
+	"github.com/dagger/dagger/core/modelcatalog"
 )
 
 // ModelInfo describes a model available from a provider.
@@ -87,6 +88,7 @@ func loadCatalog() map[string][]ModelInfo {
 				continue
 			}
 
+			defaultModel, _ := modelcatalog.DefaultModel(ourKey)
 			var models []ModelInfo
 			for _, m := range cw.Models {
 				// Codex-only models can't be used with a plain OpenAI API key;
@@ -99,10 +101,10 @@ func loadCatalog() map[string][]ModelInfo {
 				models = append(models, ModelInfo{
 					ID:                     m.ID,
 					Label:                  m.Name,
-					CanReason:              m.CanReason,
-					ReasoningLevels:        m.ReasoningLevels,
-					DefaultReasoningEffort: m.DefaultReasoningEffort,
-					Default:                m.ID == cw.DefaultLargeModelID,
+					CanReason:              m.CanReason(),
+					ReasoningLevels:        m.ReasoningEffortLevels(),
+					DefaultReasoningEffort: m.Reasoning.DefaultEffortLevel,
+					Default:                m.ID == defaultModel,
 				})
 			}
 

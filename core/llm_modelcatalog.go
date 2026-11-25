@@ -3,7 +3,7 @@ package core
 import (
 	"encoding/json"
 
-	"charm.land/catwalk/pkg/catwalk"
+	"charm.land/catwalk/v3/pkg/catwalk"
 
 	"github.com/dagger/dagger/core/modelcatalog"
 )
@@ -46,9 +46,9 @@ const (
 // but lists none takes a thinking-token budget instead.
 func catalogReasoningMode(m catwalk.Model) LLMReasoningMode {
 	switch {
-	case !m.CanReason:
+	case !m.CanReason():
 		return LLMReasoningUnsupported
-	case len(m.ReasoningLevels) == 0:
+	case len(m.Reasoning.EffortLevels) == 0:
 		return LLMReasoningBudget
 	default:
 		return LLMReasoningEffort

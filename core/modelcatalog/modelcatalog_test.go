@@ -3,8 +3,8 @@ package modelcatalog_test
 import (
 	"testing"
 
-	"charm.land/catwalk/pkg/catwalk"
-	"charm.land/catwalk/pkg/embedded"
+	"charm.land/catwalk/v3/pkg/catwalk"
+	"charm.land/catwalk/v3/pkg/embedded"
 	"github.com/dagger/dagger/core/modelcatalog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -21,12 +21,12 @@ func TestCopilotCatalog(t *testing.T) {
 			got, ok := modelcatalog.Lookup("github-copilot", want.ID)
 			require.True(t, ok, want.ID)
 			assert.Equal(t, want.ContextWindow, got.ContextWindow, want.ID)
-			wantCost := want.CostPer1MIn + want.CostPer1MOut + want.CostPer1MOutCached + want.CostPer1MInCached
+			wantCost := want.Pricing.Input + want.Pricing.Output + want.Pricing.CacheHit + want.Pricing.CacheCreate
 			assert.InDelta(t, wantCost, modelcatalog.Cost("github-copilot", want.ID, 1_000_000, 1_000_000, 1_000_000, 1_000_000), 1e-9)
 		}
 		small, ok := modelcatalog.DefaultSmallModel("github-copilot")
 		require.True(t, ok)
-		assert.Equal(t, provider.DefaultSmallModelID, small)
+		assert.Equal(t, "claude-haiku-5.5", small)
 	}
 	require.True(t, found, "the pinned Catwalk version has a Copilot catalog")
 	// These vendor spellings have metadata in their own catalogs, but not in
@@ -81,14 +81,20 @@ func TestLookup(t *testing.T) {
 
 func TestDefaultSmallModel(t *testing.T) {
 	for provider, want := range map[string]string{
-		"anthropic":    "claude-haiku-4-5-20251001",
-		"openai":       "gpt-5.6-luna",
-		"openai-codex": "gpt-5.6-luna",
-		"google":       "gemini-3-flash-preview",
+		"anthropic":      "claude-haiku-5-5",
+		"openai":         "gpt-6-luna",
+		"openai-codex":   "gpt-6-luna",
+		"google":         "gemini-3.8-flash",
+		"github-copilot": "claude-haiku-5.5",
+		"openrouter":     "anthropic/claude-haiku-5.5",
 	} {
 		got, ok := modelcatalog.DefaultSmallModel(provider)
 		require.True(t, ok, "expected %q to have a small-model default", provider)
 		assert.Equal(t, want, got)
+		metadata, ok := modelcatalog.Lookup(provider, got)
+		require.True(t, ok, "small model %s/%s must be catalogued", provider, got)
+		assert.Positive(t, metadata.ContextWindow)
+		assert.Positive(t, metadata.DefaultMaxTokens)
 	}
 
 	for _, provider := range []string{"local", "other", "unknown"} {

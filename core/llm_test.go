@@ -525,7 +525,7 @@ func TestSmallModelRouting(t *testing.T) {
 		r := new(LLMRouter)
 		model, ok := r.SmallModel(Anthropic)
 		require.True(t, ok)
-		assert.Equal(t, "claude-haiku-4-5-20251001", model)
+		assert.Equal(t, "claude-haiku-5-5", model)
 	})
 
 	t.Run("local and unknown providers safely retain their route", func(t *testing.T) {

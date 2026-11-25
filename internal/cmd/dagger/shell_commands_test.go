@@ -542,7 +542,7 @@ func TestReasoningEffortOptions(t *testing.T) {
 
 	t.Run("shared model ID uses the selected provider", func(t *testing.T) {
 		// Copilot and OpenAI disagree about this model's reasoning support.
-		copilot, ok := llmconfig.ModelByID("github-copilot", "gpt-5-mini")
+		copilot, ok := llmconfig.ModelByID("github-copilot", "gpt-6-luna")
 		require.True(t, ok)
 		require.False(t, copilot.CanReason)
 		openai, ok := llmconfig.ModelByID("openai", copilot.ID)
@@ -553,7 +553,7 @@ func TestReasoningEffortOptions(t *testing.T) {
 			Provider: "github-copilot", Model: copilot.ID,
 		})))
 		options := reasoningEffortOptions(modelSelection{Provider: "openai", Model: openai.ID})
-		require.Equal(t, []string{"none", "low", "medium", "high"}, values(options))
+		require.Equal(t, []string{"none", "low", "medium", "high", "xhigh", "max"}, values(options))
 		require.Equal(t, "medium (default)", options[2].Key)
 
 		// An unknown provider uses the first catalog match, even if it cannot reason.
