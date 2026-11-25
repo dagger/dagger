@@ -211,7 +211,7 @@ func storedPruneTestPlace(t *testing.T, ctx context.Context, cloud *Cache, roots
 	for _, root := range built.Bundle.Roots {
 		reply.Roots = append(reply.Roots, MergedRoot{Ordinal: root.Ordinal, Number: 1000 + uint64(root.Ordinal), Retained: true})
 	}
-	_, err = cloud.ApplyMergedReply(ctx, "cache-b", built.Bundle, reply)
+	_, err = cloud.ApplyMergedReply(ctx, "cache-b", built.Bundle.Sent(), reply)
 	require.NoError(t, err)
 }
 
