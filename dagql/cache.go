@@ -3187,10 +3187,10 @@ type Cache struct {
 
 	// reverse index from materialized result to all output eq classes it is
 	// currently associated with
-	resultOutputEqClasses map[sharedResultID]map[eqClassID]struct{}
+	resultOutputEqClasses map[sharedResultID]*idSet[eqClassID]
 
 	// inverse of resultOutputEqClasses, keyed by canonical output eq-class root
-	outputEqClassResults map[eqClassID]map[sharedResultID]struct{}
+	outputEqClassResults map[eqClassID]*idSet[sharedResultID]
 
 	// explicit result<->term associations. These are distinct from output eq
 	// class membership: multiple results can share an output eq class, but

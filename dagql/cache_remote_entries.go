@@ -1706,7 +1706,7 @@ func (c *Cache) remoteIdentityTeachesNothingLocked(entry *sharedResult, recipe, 
 	// addResultOutputEqClassLocked records in both directions.
 	members := c.resultOutputEqClasses[entry.id]
 	var root eqClassID
-	for id := range members {
+	for id := range members.All() {
 		r := c.eqClassRootLocked(id)
 		if r == 0 {
 			continue
@@ -1719,10 +1719,10 @@ func (c *Cache) remoteIdentityTeachesNothingLocked(entry *sharedResult, recipe, 
 	if root == 0 {
 		return false
 	}
-	if _, ok := members[root]; !ok {
+	if !members.Contains(root) {
 		return false
 	}
-	if _, ok := c.outputEqClassResults[root][entry.id]; !ok {
+	if !c.outputEqClassResults[root].Contains(entry.id) {
 		return false
 	}
 	for _, dig := range []digest.Digest{recipe, request, content} {
@@ -2175,7 +2175,7 @@ func (c *Cache) entryClassEntriesLocked(number uint64) (EntryClass, bool) {
 	class.Number, class.Stored, class.StoredExpiresAtUnix, _ = entryFactsLocked(entry)
 	entries := map[sharedResultID]struct{}{entry.id: {}}
 	for root := range c.outputEqClassRootsLocked(entry.id) {
-		for id := range c.outputEqClassResults[root] {
+		for id := range c.outputEqClassResults[root].All() {
 			if c.resultsByID[id] != nil {
 				entries[id] = struct{}{}
 			}
@@ -2500,8 +2500,8 @@ func (c *Cache) eqClassRootLocked(id eqClassID) eqClassID {
 // outputEqClassRootsLocked is outputEqClassesForResultLocked for a reader
 // holding only egraphMu.RLock.
 func (c *Cache) outputEqClassRootsLocked(resID sharedResultID) map[eqClassID]struct{} {
-	out := make(map[eqClassID]struct{}, len(c.resultOutputEqClasses[resID]))
-	for eqID := range c.resultOutputEqClasses[resID] {
+	out := make(map[eqClassID]struct{}, c.resultOutputEqClasses[resID].Size())
+	for eqID := range c.resultOutputEqClasses[resID].All() {
 		if root := c.eqClassRootLocked(eqID); root != 0 {
 			out[root] = struct{}{}
 		}

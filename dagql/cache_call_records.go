@@ -571,7 +571,7 @@ func (c *Cache) inputPlaceLocked(input digest.Digest, now int64, has func(*share
 		return nil, false, false
 	}
 	var heldBest, storedBest *sharedResult
-	for id := range c.outputEqClassResults[root] {
+	for id := range c.outputEqClassResults[root].All() {
 		member := c.resultsByID[id]
 		if member == nil || c.resultExpiredAtLocked(member, now) {
 			continue

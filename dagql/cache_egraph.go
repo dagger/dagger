@@ -189,10 +189,10 @@ func (c *Cache) initEgraphLocked() {
 		c.outputEqClassToTerms = make(map[eqClassID]map[egraphTermID]struct{})
 	}
 	if c.resultOutputEqClasses == nil {
-		c.resultOutputEqClasses = make(map[sharedResultID]map[eqClassID]struct{})
+		c.resultOutputEqClasses = make(map[sharedResultID]*idSet[eqClassID])
 	}
 	if c.outputEqClassResults == nil {
-		c.outputEqClassResults = make(map[eqClassID]map[sharedResultID]struct{})
+		c.outputEqClassResults = make(map[eqClassID]*idSet[sharedResultID])
 	}
 	if c.termResults == nil {
 		c.termResults = make(map[egraphTermID]map[sharedResultID]egraphResultTermAssoc)
@@ -396,33 +396,33 @@ func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID, moved *[]egraphTerm
 	// results' forward entries to the winning canonical root.
 	dstResults := c.outputEqClassResults[ra]
 	srcResults := c.outputEqClassResults[rb]
-	joinsEntries := len(dstResults) > 0 && len(srcResults) > 0
+	joinsEntries := dstResults.Size() > 0 && srcResults.Size() > 0
 	if joinsEntries {
 		// Every entry of both classes now answers from the other's holders:
 		// one mark of the union's class, for the stamps of the bundles that
 		// borrow from it, and the entries of each side whose answers that
 		// changes, for readers (markJoinLocked).
-		for resID := range srcResults {
+		for resID := range srcResults.All() {
 			c.markEntryClassLocked(resID, StampJoin)
 			break
 		}
 		c.markJoinLocked(srcResults, dstResults)
 	}
-	if len(srcResults) > 0 {
+	if srcResults.Size() > 0 {
 		if dstResults == nil {
-			dstResults = make(map[sharedResultID]struct{}, len(srcResults))
+			dstResults = newIDSet[sharedResultID]()
 			c.outputEqClassResults[ra] = dstResults
 		}
-		for resID := range srcResults {
-			dstResults[resID] = struct{}{}
+		for resID := range srcResults.All() {
+			dstResults.Insert(resID)
 			if outputEqClasses := c.resultOutputEqClasses[resID]; outputEqClasses != nil {
 				// An entry that named both classes names one now, which it
 				// uses once.
-				if _, both := outputEqClasses[ra]; both {
+				if outputEqClasses.Contains(ra) {
 					c.unuseEqClassLocked(ra)
 				}
-				delete(outputEqClasses, rb)
-				outputEqClasses[ra] = struct{}{}
+				outputEqClasses.Remove(rb)
+				outputEqClasses.Insert(ra)
 			}
 		}
 		delete(c.outputEqClassResults, rb)
@@ -689,7 +689,7 @@ func (c *Cache) hasUnexpiredResultForOutputEqClassLocked(
 	if outputEqID == 0 {
 		return false
 	}
-	for resID := range c.outputEqClassResults[outputEqID] {
+	for resID := range c.outputEqClassResults[outputEqID].All() {
 		res := c.resultsByID[resID]
 		if res == nil {
 			continue
@@ -772,7 +772,7 @@ func (c *Cache) appendDigestResultsLocked(candidates *set.TreeSet[*sharedResult]
 // result once, where the digests' walk visits it once for every digest it is
 // posted under. expired is filled as in appendDigestResultsLocked.
 func (c *Cache) appendOutputEqClassResultsLocked(candidates *set.TreeSet[*sharedResult], root eqClassID, nowUnix int64, expired *expirySeen) {
-	for resID := range c.outputEqClassResults[root] {
+	for resID := range c.outputEqClassResults[root].All() {
 		if res := c.servableCandidateLocked(resID, nowUnix, expired); res != nil {
 			candidates.Insert(res)
 		}
@@ -1963,11 +1963,11 @@ func (c *Cache) addResultExtraDigestsLocked(resID sharedResultID, frames ...*Res
 
 func (c *Cache) outputEqClassesForResultLocked(resID sharedResultID) map[eqClassID]struct{} {
 	classes := c.resultOutputEqClasses[resID]
-	if len(classes) == 0 {
+	if classes.Size() == 0 {
 		return nil
 	}
-	out := make(map[eqClassID]struct{}, len(classes))
-	for eqID := range classes {
+	out := make(map[eqClassID]struct{}, classes.Size())
+	for eqID := range classes.All() {
 		root := c.findEqClassLocked(eqID)
 		if root == 0 {
 			continue
@@ -1990,21 +1990,19 @@ func (c *Cache) addResultOutputEqClassLocked(resID sharedResultID, outputEqID eq
 
 	outputEqClasses := c.resultOutputEqClasses[resID]
 	if outputEqClasses == nil {
-		outputEqClasses = make(map[eqClassID]struct{})
+		outputEqClasses = newIDSet[eqClassID]()
 		c.resultOutputEqClasses[resID] = outputEqClasses
 	}
-	_, hadForward := outputEqClasses[outputEqID]
-	outputEqClasses[outputEqID] = struct{}{}
-	if !hadForward {
+	if outputEqClasses.Insert(outputEqID) {
 		c.useEqClassLocked(outputEqID)
 	}
 
 	results := c.outputEqClassResults[outputEqID]
 	if results == nil {
-		results = make(map[sharedResultID]struct{})
+		results = newIDSet[sharedResultID]()
 		c.outputEqClassResults[outputEqID] = results
 	}
-	results[resID] = struct{}{}
+	results.Insert(resID)
 }
 
 // removeResultOutputEqClassesLocked requires egraphMu and an e-graph initialized
@@ -2014,15 +2012,15 @@ func (c *Cache) removeResultOutputEqClassesLocked(resID sharedResultID) {
 		return
 	}
 	c.markLeavingLocked(resID)
-	for outputEqID := range c.resultOutputEqClasses[resID] {
+	for outputEqID := range c.resultOutputEqClasses[resID].All() {
 		outputEqID = c.findEqClassLocked(outputEqID)
 		if outputEqID == 0 {
 			continue
 		}
 		c.unuseEqClassLocked(outputEqID)
 		results := c.outputEqClassResults[outputEqID]
-		delete(results, resID)
-		if len(results) == 0 {
+		results.Remove(resID)
+		if results.Empty() {
 			delete(c.outputEqClassResults, outputEqID)
 		}
 	}
@@ -2753,29 +2751,29 @@ func (c *Cache) compactEqClassesModeLocked(force, freeAll bool) (changed bool, o
 		digestTerms.Insert(termID)
 	}
 
-	newResultOutputEqClasses := make(map[sharedResultID]map[eqClassID]struct{}, len(c.resultOutputEqClasses))
-	newOutputEqClassResults := make(map[eqClassID]map[sharedResultID]struct{}, len(c.outputEqClassResults))
+	newResultOutputEqClasses := make(map[sharedResultID]*idSet[eqClassID], len(c.resultOutputEqClasses))
+	newOutputEqClassResults := make(map[eqClassID]*idSet[sharedResultID], len(c.outputEqClassResults))
 	for resID, outputEqIDs := range c.resultOutputEqClasses {
-		newOutputEqIDs := make(map[eqClassID]struct{}, len(outputEqIDs))
-		for outputEqID := range outputEqIDs {
+		newOutputEqIDs := newIDSet[eqClassID]()
+		for outputEqID := range outputEqIDs.All() {
 			root := c.findEqClassLocked(outputEqID)
 			newRoot := remap[root]
 			if newRoot != 0 {
-				newOutputEqIDs[newRoot] = struct{}{}
+				newOutputEqIDs.Insert(newRoot)
 			}
 		}
-		for newOutputEqID := range newOutputEqIDs {
+		for newOutputEqID := range newOutputEqIDs.All() {
 			newUses[newOutputEqID]++
 		}
-		if len(newOutputEqIDs) > 0 {
+		if newOutputEqIDs.Size() > 0 {
 			newResultOutputEqClasses[resID] = newOutputEqIDs
-			for newOutputEqID := range newOutputEqIDs {
+			for newOutputEqID := range newOutputEqIDs.All() {
 				results := newOutputEqClassResults[newOutputEqID]
 				if results == nil {
-					results = make(map[sharedResultID]struct{})
+					results = newIDSet[sharedResultID]()
 					newOutputEqClassResults[newOutputEqID] = results
 				}
-				results[resID] = struct{}{}
+				results.Insert(resID)
 			}
 		}
 	}

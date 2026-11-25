@@ -119,7 +119,7 @@ func (c *Cache) walkEqClassUsesLocked() map[eqClassID]uint32 {
 		use(term.outputEqID)
 	}
 	for _, outputEqIDs := range c.resultOutputEqClasses {
-		for outputEqID := range outputEqIDs {
+		for outputEqID := range outputEqIDs.All() {
 			use(outputEqID)
 		}
 	}

@@ -140,7 +140,7 @@ func (c *Cache) markEntryClassLocked(id sharedResultID, cause StampCause) {
 // classLendsLocked reports whether an entry of the class rooted at root
 // stores a part, which its class mates can borrow. Requires egraphMu.
 func (c *Cache) classLendsLocked(root eqClassID) bool {
-	for member := range c.outputEqClassResults[root] {
+	for member := range c.outputEqClassResults[root].All() {
 		if res := c.resultsByID[member]; res != nil && len(res.storedParts) > 0 {
 			return true
 		}
@@ -168,7 +168,7 @@ func (c *Cache) markLeavingLocked(id sharedResultID) {
 	// to keep.
 	_, held := c.changes.holding[id]
 	holds := lends || held || leaving != nil && c.holdsAnyPartLocked(leaving)
-	for eqID := range c.resultOutputEqClasses[id] {
+	for eqID := range c.resultOutputEqClasses[id].All() {
 		root := c.eqClassRootLocked(eqID)
 		if root == 0 {
 			continue
@@ -178,7 +178,7 @@ func (c *Cache) markLeavingLocked(id sharedResultID) {
 				c.changes.leftNamed = map[eqClassID]bool{}
 			}
 			c.changes.leftNamed[root] = true
-			for member := range c.outputEqClassResults[root] {
+			for member := range c.outputEqClassResults[root].All() {
 				c.changes.entries = append(c.changes.entries, member)
 			}
 		}
@@ -193,7 +193,7 @@ func (c *Cache) markLeavingLocked(id sharedResultID) {
 		if !lends {
 			continue
 		}
-		for member := range c.outputEqClassResults[root] {
+		for member := range c.outputEqClassResults[root].All() {
 			if member != id {
 				c.stampEntryLocked(c.resultsByID[member], StampLeft|StampViaClass)
 			}
@@ -207,19 +207,19 @@ func (c *Cache) markLeavingLocked(id sharedResultID) {
 // side has a holder. A new entry that holds nothing, joining a class, changes
 // no class mate's answer, and its own marks name it. Requires egraphMu for
 // writing.
-func (c *Cache) markJoinLocked(a, b map[sharedResultID]struct{}) {
+func (c *Cache) markJoinLocked(a, b *idSet[sharedResultID]) {
 	if c.changes == nil {
 		return
 	}
 	aHolds, bHolds := c.someHoldsLocked(a), c.someHoldsLocked(b)
 	for _, side := range []struct {
-		names map[sharedResultID]struct{}
+		names *idSet[sharedResultID]
 		other bool
 	}{{a, bHolds}, {b, aHolds}} {
 		if !side.other {
 			continue
 		}
-		for id := range side.names {
+		for id := range side.names.All() {
 			c.changes.entries = append(c.changes.entries, id)
 		}
 	}
@@ -227,8 +227,8 @@ func (c *Cache) markJoinLocked(a, b map[sharedResultID]struct{}) {
 
 // someHoldsLocked reports whether any of the entries holds a part for its
 // class (holdsAnyPartLocked). Requires egraphMu.
-func (c *Cache) someHoldsLocked(ids map[sharedResultID]struct{}) bool {
-	for id := range ids {
+func (c *Cache) someHoldsLocked(ids *idSet[sharedResultID]) bool {
+	for id := range ids.All() {
 		if res := c.resultsByID[id]; res != nil && c.holdsAnyPartLocked(res) {
 			return true
 		}
@@ -280,7 +280,7 @@ func (c *Cache) takeChangesLocked(change *RemoteChange) {
 				continue
 			}
 		}
-		for eqID := range c.resultOutputEqClasses[id] {
+		for eqID := range c.resultOutputEqClasses[id].All() {
 			root := c.eqClassRootLocked(eqID)
 			if root == 0 {
 				continue
@@ -292,7 +292,7 @@ func (c *Cache) takeChangesLocked(change *RemoteChange) {
 				widened = map[eqClassID]struct{}{}
 			}
 			widened[root] = struct{}{}
-			for member := range c.outputEqClassResults[root] {
+			for member := range c.outputEqClassResults[root].All() {
 				change.Entries = append(change.Entries, uint64(member))
 			}
 		}
@@ -344,7 +344,7 @@ func (c *Cache) stampClassMarksLocked(from int) {
 	for i := from; i < len(marks.classes); i++ {
 		id, cause := marks.classes[i], marks.causes[i]
 		c.stampEntryLocked(c.resultsByID[id], cause)
-		for eqID := range c.resultOutputEqClasses[id] {
+		for eqID := range c.resultOutputEqClasses[id].All() {
 			root := c.eqClassRootLocked(eqID)
 			if root == 0 {
 				continue
@@ -375,7 +375,7 @@ func (c *Cache) stampClassMarksLocked(from int) {
 			if !lends {
 				continue
 			}
-			for member := range c.outputEqClassResults[root] {
+			for member := range c.outputEqClassResults[root].All() {
 				if member != id {
 					c.stampEntryLocked(c.resultsByID[member], cause|StampViaClass)
 				}
