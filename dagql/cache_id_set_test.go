@@ -50,10 +50,13 @@ func TestIDSetActsAsASet(t *testing.T) {
 	clone := o.Clone()
 	require.True(t, clone.Remove(7))
 	require.True(t, o.Contains(7), "removing from a clone leaves its source")
+	// Removing the clone's first member moves the rest within its array, so
+	// a clone that shared its source's array would change the source.
 	small := idSetOf[uint64](1, 2)
 	smallClone := small.Clone()
-	smallClone.Insert(3)
-	require.False(t, small.Contains(3), "adding to a clone leaves its source")
+	require.True(t, smallClone.Remove(1))
+	require.True(t, smallClone.Insert(3))
+	require.Equal(t, []uint64{1, 2}, slices.Collect(small.Items()), "changing a clone leaves its source")
 
 	// A set that became a map answers as a set while it drains, below the
 	// list's limit and to empty.
