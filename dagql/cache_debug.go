@@ -610,8 +610,8 @@ func (c *Cache) debugEqClassMergeDetails(ids []eqClassID) []map[string]any {
 		if root == 0 {
 			continue
 		}
-		digests := make([]string, 0, len(c.eqClassToDigests[root]))
-		for dig := range c.eqClassToDigests[root] {
+		digests := make([]string, 0, c.eqClassToDigests[root].Size())
+		for dig := range c.eqClassToDigests[root].All() {
 			digests = append(digests, dig)
 		}
 		slices.Sort(digests)

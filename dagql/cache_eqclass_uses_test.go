@@ -380,7 +380,7 @@ func sharedStateOf(c *Cache) string {
 		fmt.Fprintf(&b, "digest %s: class %d\n", dig, c.egraphDigestToClass[dig])
 	}
 	for _, class := range slices.Sorted(maps.Keys(c.eqClassToDigests)) {
-		fmt.Fprintf(&b, "class %d: digests %v, extras %d\n", class, slices.Sorted(maps.Keys(c.eqClassToDigests[class])), len(c.eqClassExtraDigests[class]))
+		fmt.Fprintf(&b, "class %d: digests %v, extras %d\n", class, slices.Collect(c.eqClassToDigests[class].Items()), len(c.eqClassExtraDigests[class]))
 	}
 	for _, dig := range slices.Sorted(maps.Keys(c.egraphResultsByDigest)) {
 		fmt.Fprintf(&b, "posting %s: %v\n", dig, slices.Sorted(c.egraphResultsByDigest[dig].Items()))

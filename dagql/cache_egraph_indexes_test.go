@@ -122,7 +122,7 @@ func cacheOutputEqClassSurvivorErrorLocked(c *Cache, nowUnix int64) error {
 	}
 	for root := range liveOutputRoots {
 		oldSemanticsHasUnexpiredResult := false
-		for dig := range c.eqClassToDigests[root] {
+		for dig := range c.eqClassToDigests[root].All() {
 			posting := c.egraphResultsByDigest[dig]
 			if posting == nil {
 				continue
@@ -155,7 +155,7 @@ func cacheOutputEqClassCandidatesErrorLocked(c *Cache, nowUnix int64) error {
 	for root := range c.outputEqClassResults {
 		fromPostings := newSharedResultSet()
 		var postingsExpired expirySeen
-		for dig := range c.eqClassToDigests[root] {
+		for dig := range c.eqClassToDigests[root].All() {
 			c.appendDigestResultsLocked(fromPostings, digest.Digest(dig), nowUnix, &postingsExpired)
 		}
 		fromClass := newSharedResultSet()
@@ -366,7 +366,7 @@ func TestCacheCanonicalEquivalentReadsOutputEqClassResults(t *testing.T) {
 			c.egraphMu.Lock()
 			root := c.eqClassRootLocked(c.egraphDigestToClass[digest.FromString("derived-index-wide-output-content").String()])
 			members := slices.Collect(c.outputEqClassResults[root].Items())
-			digestCount := len(c.eqClassToDigests[root])
+			digestCount := c.eqClassToDigests[root].Size()
 			_, broad := c.broadlyIndexedResults[members[0]]
 			c.egraphMu.Unlock()
 			assert.Equal(t, width, len(members))
@@ -537,7 +537,7 @@ func TestCacheOutputEqClassResultsMatchDigestPostings(t *testing.T) {
 			}
 			for id := range c.outputEqClassResults[root].All() {
 				posted := 0
-				for dig := range c.eqClassToDigests[root] {
+				for dig := range c.eqClassToDigests[root].All() {
 					if posting := c.egraphResultsByDigest[dig]; posting != nil && posting.Contains(id) {
 						posted++
 					}
@@ -996,7 +996,7 @@ type eqClassContents struct {
 func testEqClassContentsLocked(c *Cache) eqClassContents {
 	name := func(id eqClassID) string {
 		root := c.findEqClassLocked(id)
-		digests := slices.Sorted(maps.Keys(c.eqClassToDigests[root]))
+		digests := slices.Collect(c.eqClassToDigests[root].Items())
 		if len(digests) == 0 {
 			return fmt.Sprintf("<no digest: %d>", root)
 		}
