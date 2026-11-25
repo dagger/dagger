@@ -44,9 +44,13 @@ func GetContentHashFromDirectory(
 	}
 	// A Directory is rooted at its path within its snapshot, and that path is
 	// part of what it is: Directory.name reads it, and Directory.diff takes
-	// only directories rooted at /. So the content key says where the files
-	// are rooted as well as what they are, as a file's says its path.
-	dgst = hashutil.HashStrings(path.Join("/", dirPath), string(dgst))
+	// only directories rooted at /. So the content key of a directory rooted
+	// anywhere but / says where its files are rooted as well as what they
+	// are, as a file's says its path. One rooted at / is keyed by its files
+	// alone.
+	if root := path.Join("/", dirPath); root != "/" {
+		dgst = hashutil.HashStrings(root, string(dgst))
+	}
 	dagql.TraceEGraphDebug(ctx, "directory_content_hash_from_ref", "phase", "runtime", "path", hashPath, "snapshot_ref_id", snapshot.SnapshotID(), "content_digest", dgst)
 
 	return dgst, nil
