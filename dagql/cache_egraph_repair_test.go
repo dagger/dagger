@@ -236,7 +236,7 @@ func termsNameRootsErrorLocked(c *Cache) error {
 			if root := c.eqClassRootLocked(in); root != in {
 				return fmt.Errorf("term %d names class %d, under root %d", id, in, root)
 			}
-			if _, ok := c.inputEqClassToTerms[in][id]; !ok {
+			if !c.inputEqClassToTerms[in].Contains(id) {
 				return fmt.Errorf("term %d is not indexed under its input %d", id, in)
 			}
 		}
@@ -375,7 +375,7 @@ func TestUnionSurvivorTakesARankAboveTheLosers(t *testing.T) {
 			used := c.ensureEqClassForDigestLocked(ctx, "used")
 			other := c.ensureEqClassForDigestLocked(ctx, "other")
 			// The used class is a term's input: it has more terms.
-			c.inputEqClassToTerms[used] = map[egraphTermID]struct{}{1: {}}
+			c.inputEqClassToTerms[used] = idSetOf[egraphTermID](1)
 			c.egraphRanks[used], c.egraphRanks[other] = tc.survivor, tc.loser
 			root, _ := c.mergeEqClassesNoRepairLocked(other, used, nil)
 			require.Equal(t, used, root, "the class more terms use survives")

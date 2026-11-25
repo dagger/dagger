@@ -424,7 +424,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			c.termInputProvenance[termID] = inputProvenance
 			digestTerms := c.egraphTermsByTermDigest[term.termDigest]
 			if digestTerms == nil {
-				digestTerms = newEgraphTermIDSet()
+				digestTerms = newIDSet[egraphTermID]()
 				c.egraphTermsByTermDigest[term.termDigest] = digestTerms
 			}
 			digestTerms.Insert(termID)
@@ -434,17 +434,17 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				}
 				classTerms := c.inputEqClassToTerms[inputEqID]
 				if classTerms == nil {
-					classTerms = make(map[egraphTermID]struct{})
+					classTerms = newIDSet[egraphTermID]()
 					c.inputEqClassToTerms[inputEqID] = classTerms
 				}
-				classTerms[termID] = struct{}{}
+				classTerms.Insert(termID)
 			}
 			outputTerms := c.outputEqClassToTerms[outputEqID]
 			if outputTerms == nil {
-				outputTerms = make(map[egraphTermID]struct{})
+				outputTerms = newIDSet[egraphTermID]()
 				c.outputEqClassToTerms[outputEqID] = outputTerms
 			}
-			outputTerms[termID] = struct{}{}
+			outputTerms.Insert(termID)
 			c.traceTermCreated(ctx, "import", importRunID, term)
 		}
 
