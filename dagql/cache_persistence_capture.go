@@ -49,9 +49,12 @@ func (c *Cache) describeRowParts(ctx context.Context, shared *sharedResult) ([]s
 func (c *Cache) describeRowPartsHeld(ctx context.Context, shared *sharedResult, hold captureHold) ([]string, *capturedRowRevision, error) {
 	var keys []string
 	version, err := hold(func(imported bool, offers []PersistedPartOffer, version *capturedRowRevision) error {
-		shared.lazyMu.Lock()
-		defer shared.lazyMu.Unlock()
-		if err := lazyEvaluationInFlightLocked(shared); err != nil {
+		// The lazy state's mu keeps an evaluation from starting while the
+		// parts are described.
+		lz := shared.lazyState()
+		lz.mu.Lock()
+		defer lz.mu.Unlock()
+		if err := lz.evaluationInFlightLocked(shared.id); err != nil {
 			return err
 		}
 		var err error
@@ -233,26 +236,29 @@ func (c *Cache) holdRowsForCapture(ctx context.Context, rows []*sharedResult) ([
 }
 
 // The operation and row ownership are already held by the caller. Only this
-// row's lazyMu is acquired here, never a dependency's mutex or a new admission.
+// row's lazy state's mu is acquired here, which keeps an evaluation from
+// starting during the capture, never a dependency's mutex or a new
+// admission.
 func (c *Cache) captureHeldPersistedRecord(ctx context.Context, shared *sharedResult, imported bool, offers []PersistedPartOffer, version *capturedRowRevision) (PersistedRecord, error) {
-	shared.lazyMu.Lock()
-	defer shared.lazyMu.Unlock()
-	if err := lazyEvaluationInFlightLocked(shared); err != nil {
+	lz := shared.lazyState()
+	lz.mu.Lock()
+	defer lz.mu.Unlock()
+	if err := lz.evaluationInFlightLocked(shared.id); err != nil {
 		return PersistedRecord{}, err
 	}
 	return c.capturePartRecord(ctx, shared, imported, offers, version)
 }
 
-// lazyEvaluationInFlightLocked refuses a capture while the whole row or any
-// of its part groups has an attempt running or a sync pending. It requires
-// the row's lazyMu.
-func lazyEvaluationInFlightLocked(shared *sharedResult) error {
-	if shared.lazyWhole.attempt != nil || shared.lazyWhole.syncPending {
-		return fmt.Errorf("%w: result %d whole evaluation", ErrPersistStateNotReady, shared.id)
+// evaluationInFlightLocked refuses a capture of the row numbered id while
+// the whole row or any of its part groups has an attempt running or a sync
+// pending. It requires mu.
+func (lz *resultLazy) evaluationInFlightLocked(id sharedResultID) error {
+	if lz.whole.attempt != nil || lz.whole.syncPending {
+		return fmt.Errorf("%w: result %d whole evaluation", ErrPersistStateNotReady, id)
 	}
-	for key, group := range shared.lazyPartGroups {
+	for key, group := range lz.partGroups {
 		if group.attempt != nil || group.syncPending {
-			return fmt.Errorf("%w: result %d group %q", ErrPersistStateNotReady, shared.id, key)
+			return fmt.Errorf("%w: result %d group %q", ErrPersistStateNotReady, id, key)
 		}
 	}
 	return nil

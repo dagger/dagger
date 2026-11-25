@@ -161,7 +161,7 @@ func TestMarkRestoredPartDelegationRoutesEachPayloadOnce(t *testing.T) {
 			}
 			row := &sharedResult{}
 			markRestoredPartDelegation(row, tc.envelope, nil, nil)
-			require.Equal(t, tc.marked, row.partGate.restoredDelegation.Load())
+			require.Equal(t, tc.marked, row.partDelegationRestored())
 			require.Equal(t, tc.routeEach, tc.calls.routeEach.Load(), "batch calls")
 			require.Equal(t, tc.routeParts, tc.calls.routeParts.Load(), "single-part calls")
 			require.Equal(t, tc.routed, tc.calls.routedParts.Load(), "parts routed")

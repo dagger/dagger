@@ -785,9 +785,9 @@ func TestCacheResultStatePartsNotReady(t *testing.T) {
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		shared := res.cacheSharedResult()
-		shared.lazyMu.Lock()
-		running := shared.lazyPartGroups["fs"] != nil && shared.lazyPartGroups["fs"].attempt != nil
-		shared.lazyMu.Unlock()
+		shared.lazyState().mu.Lock()
+		running := shared.lazyState().partGroups["fs"] != nil && shared.lazyState().partGroups["fs"].attempt != nil
+		shared.lazyState().mu.Unlock()
 		if running {
 			break
 		}

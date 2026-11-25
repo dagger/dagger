@@ -220,15 +220,19 @@ func (c *Cache) finishValueReplacement(ctx context.Context, res *sharedResult, r
 	res.snapshotLeaseCleanupRoles = nil
 	res.payloadMu.Unlock()
 	res.completeParts.Store(nil)
-	res.partGate.gate.Store(nil)
-	res.partGate.active.Store(false)
-	res.partGate.restoredDelegation.Store(false)
+	if cell := res.partGate.Load(); cell != nil {
+		cell.gate.Store(nil)
+		cell.active.Store(false)
+		cell.restoredDelegation.Store(false)
+	}
 
-	res.lazyMu.Lock()
-	res.lazyWhole = lazyGroupState{}
-	res.lazyPartGroups = nil
-	res.lazyEvalComplete = false
-	res.lazyMu.Unlock()
+	if lz := res.lazy.Load(); lz != nil {
+		lz.mu.Lock()
+		lz.whole = lazyGroupState{}
+		lz.partGroups = nil
+		lz.evalComplete = false
+		lz.mu.Unlock()
+	}
 
 	res.persistDecodeMu.Lock()
 	res.persistDecodeErr = nil

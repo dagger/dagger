@@ -333,7 +333,7 @@ func TestOfferAlreadyCompleteRecordsTheCloudCounterpart(t *testing.T) {
 			if settled {
 				key, err := partAddressKey(testLiveOffer().Address)
 				require.NoError(t, err)
-				gate := row.partGate.loadOrCreate()
+				gate := row.partGateCell().loadOrCreate()
 				gate.mu.Lock()
 				if gate.outputs == nil {
 					gate.outputs = map[string]partOutputState{}
@@ -464,7 +464,7 @@ func TestOfferAlreadyCompleteOnAReferencedRowRecordsItsCounterpart(t *testing.T)
 	waitLazyAttemptReleased(t, attemptReleased)
 	key, err := partAddressKey(testLiveOffer().Address)
 	require.NoError(t, err)
-	gate := leafRow.partGate.loadOrCreate()
+	gate := leafRow.partGateCell().loadOrCreate()
 	gate.mu.Lock()
 	phase := gate.outputs[key].phase
 	gate.mu.Unlock()
@@ -554,7 +554,7 @@ func TestOfferDispositionCarriesTheReceiversValueState(t *testing.T) {
 		res := persistedListTestResult(t, ctx, c, srv, "offered-started", &transferTestValue{Text: "pending"})
 		dep := persistedListTestResult(t, ctx, c, srv, "offered-started-dep", String("dep"))
 		transferTestDependency(c, ctx, res, dep)
-		res.cacheSharedResult().partGate.loadOrCreate().groups[lazyGroupAddressKey(LazyGroupAddress{Group: "exec"})] = &partLazyEvaluationState{phase: LazyEvaluationRunning, writeSet: []PersistedPartAddress{{Part: "snapshot"}}}
+		res.cacheSharedResult().partGateCell().loadOrCreate().groups[lazyGroupAddressKey(LazyGroupAddress{Group: "exec"})] = &partLazyEvaluationState{phase: LazyEvaluationRunning, writeSet: []PersistedPartAddress{{Part: "snapshot"}}}
 		out, err := c.testOfferParts(ctx, res, []PersistedPartOffer{testLiveOffer()})
 		require.NoError(t, err)
 		require.Equal(t, OfferExecutionStarted, out[0].Outcome)

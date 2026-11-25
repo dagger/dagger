@@ -1724,9 +1724,17 @@ func HasPendingLazyEvaluation(res AnyResult) bool {
 		return false
 	}
 
-	shared.lazyMu.Lock()
-	defer shared.lazyMu.Unlock()
-	if shared.lazyEvalComplete {
+	if _, ok := UnwrapAs[HasLazyEvaluation](res); !ok && shared.lazy.Load() == nil {
+		// A value that can't be lazy whose entry never had lazy state has
+		// nothing pending.
+		return false
+	}
+	// The object-side state below is read under mu, which every attempt
+	// takes to start.
+	lz := shared.lazyState()
+	lz.mu.Lock()
+	defer lz.mu.Unlock()
+	if lz.evalComplete {
 		return false
 	}
 	// Attempt and pending-bookkeeping checks come before object-side state:
@@ -1734,10 +1742,10 @@ func HasPendingLazyEvaluation(res AnyResult) bool {
 	// while its attempt is still running cache-side bookkeeping. Object-side
 	// completion is sufficient only when no attempt is in flight. Any group with an attempt,
 	// pending bookkeeping, or an armed stored callback is pending work.
-	if g := &shared.lazyWhole; g.attempt != nil || g.syncPending || g.eval != nil {
+	if g := &lz.whole; g.attempt != nil || g.syncPending || g.eval != nil {
 		return true
 	}
-	for _, g := range shared.lazyPartGroups {
+	for _, g := range lz.partGroups {
 		if g.attempt != nil || g.syncPending || g.eval != nil {
 			return true
 		}
@@ -1756,21 +1764,24 @@ func HasPendingLazyComputation(res AnyResult) bool {
 	if shared == nil || shared.id == 0 {
 		return false
 	}
-	shared.lazyMu.Lock()
-	defer shared.lazyMu.Unlock()
-	return pendingLazyComputationLocked(shared, reporting)
+	// The object-side state it reads is read under mu, which every attempt
+	// takes to start.
+	lz := shared.lazyState()
+	lz.mu.Lock()
+	defer lz.mu.Unlock()
+	return lz.pendingComputationLocked(reporting)
 }
 
 // Read attempts and owed bookkeeping before object consumption. Their purpose
 // belongs to the typed value and stays valid after its retained operation completes.
-func pendingLazyComputationLocked(shared *sharedResult, reporting HasLazyEvaluationReporting) bool {
-	if shared.lazyEvalComplete {
+func (lz *resultLazy) pendingComputationLocked(reporting HasLazyEvaluationReporting) bool {
+	if lz.evalComplete {
 		return false
 	}
-	if reporting.LazyGroupStoredPart(LazyGroupWhole) == "" && !shared.lazyWhole.settled() {
+	if reporting.LazyGroupStoredPart(LazyGroupWhole) == "" && !lz.whole.settled() {
 		return true
 	}
-	for key, group := range shared.lazyPartGroups {
+	for key, group := range lz.partGroups {
 		if isPartDeliveryTaskKey(key) {
 			continue
 		}
@@ -3361,11 +3372,11 @@ func (c *Cache) raiseNextResultID(next sharedResultID) {
 }
 
 // lazyEvalAttempt is one execution of a shared result's lazy callback. The
-// shared result publishes the current attempt under lazyMu while its callback
+// shared result publishes the current attempt under the lazy state's mu while its callback
 // is running. Waiters keep this record after callback completion so they can
 // consume that attempt's outcome without reading or decrementing a later
 // attempt's state. All fields except the immutable done channel are read or
-// written under the shared result's lazyMu.
+// written under the shared result's lazy state's mu.
 type lazyEvalAttempt struct {
 	token            *PartTaskToken
 	done             chan struct{}
@@ -3376,7 +3387,7 @@ type lazyEvalAttempt struct {
 	releasedProducer string // callback failed after this attempt's producer session was released
 
 	// profOpID and spanCtx are the native and OTel wait targets for this
-	// attempt. They are minted under lazyMu before the attempt is published.
+	// attempt. They are minted under the lazy state's mu before the attempt is published.
 	// Their zero values mean that the corresponding telemetry source did not
 	// record this attempt.
 	profOpID uint64
@@ -3566,13 +3577,10 @@ type sharedResult struct {
 	// keeps a call after a change to an input's class, which changes keys
 	// (forgetCallTermsLocked). Not persisted; guarded by egraphMu.
 	callTermIndex map[string]*keptCall
-	// listItems are, on a list entry, the item read at each position of its
-	// value, and listItemOf and listItemNth name that list and position on
-	// such an item (CallRequest.ListItem). Not persisted; guarded by
-	// egraphMu. See cache_list_items.go.
-	listItems   map[int64]*sharedResult
-	listItemOf  *sharedResult
-	listItemNth int64
+	// list is the entry's place among list items (listLinks), or nil on an
+	// entry that is neither a list whose items were read nor such an item.
+	// Not persisted; guarded by egraphMu. See cache_list_items.go.
+	list *listLinks
 
 	// Immutable payload shared by all per-call Result values.
 	self     Typed
@@ -3738,37 +3746,66 @@ type sharedResult struct {
 	// unsynchronized.
 	persistLeaseSyncPending bool
 
-	partGate       PartGateCell
-	lazyGeneration uint64 // lazyMu; zero is never issued
+	// partGate is the row's part state (PartGateCell), made the first time
+	// its parts are gated, hosted or scanned (partGateCell): nil on an entry
+	// whose parts nothing has touched, as on every entry a blob-backed cache
+	// restores.
+	partGate atomic.Pointer[PartGateCell]
 
-	// lazyMu guards lazyWhole, lazyPartGroups, and lazyEvalComplete.
-	lazyMu sync.Mutex
-	// lazyPartGroups holds the named evaluation groups of a parts value
-	// (HasLazyEvaluationParts). nil until a named group is first used, so
-	// plain values and whole-group values allocate nothing. Per value
-	// exactly one regime is in use: a parts value never uses lazyWhole
-	// and a non-parts value never uses named groups.
-	lazyPartGroups map[LazyGroupKey]*lazyGroupState
+	// lazy is the entry's lazy evaluation state (resultLazy): nil until its
+	// value is registered as lazy or an evaluation of it starts
+	// (lazyState), as on every entry whose value is never lazy.
+	lazy atomic.Pointer[resultLazy]
 	// leaseSyncMu serializes syncResultSnapshotLeases for this result.
 	// Concurrent per-group attempts make concurrent lease syncs routine,
 	// and the read-diff-write sync can transiently drop stored links
-	// under interleaving. It does I/O and must never nest inside lazyMu.
+	// under interleaving. It does I/O and must never nest inside the lazy
+	// state's mu.
 	leaseSyncMu sync.Mutex
-	// lazyWhole is the implicit whole-result evaluation group: the lazy
-	// state of values that do not split their deferred work. It is the
-	// former per-result lazy field block, held inline so results that
-	// never split allocate nothing new.
-	lazyWhole lazyGroupState
-	// lazyEvalComplete is the result-level completion latch: everything
-	// deferred anywhere on this result is settled. It is the fast path;
-	// correctness derives from the group state.
-	lazyEvalComplete bool
 }
 
-// lazyGroupState is one evaluation group's cache-side lazy state. The
-// fields and their meaning are exactly the former sharedResult lazy
-// fields, per group. All fields are guarded by the owning sharedResult's
-// lazyMu.
+// resultLazy is an entry's lazy evaluation state. An entry has none until
+// its value is registered as lazy or an evaluation of it starts
+// (sharedResult.lazyState), and keeps it from then on. An entry with none
+// is in the state a new resultLazy describes: a reader that finds none
+// answers as for that state (noLazyState), and makes none.
+type resultLazy struct {
+	generation uint64 // mu; zero is never issued
+
+	// mu guards whole, partGroups, and evalComplete.
+	mu sync.Mutex
+	// partGroups holds the named evaluation groups of a parts value
+	// (HasLazyEvaluationParts). nil until a named group is first used, so
+	// plain values and whole-group values allocate nothing. Per value
+	// exactly one regime is in use: a parts value never uses whole and a
+	// non-parts value never uses named groups.
+	partGroups map[LazyGroupKey]*lazyGroupState
+	// whole is the implicit whole-result evaluation group: the lazy state
+	// of values that do not split their deferred work.
+	whole lazyGroupState
+	// evalComplete is the result-level completion latch: everything
+	// deferred anywhere on this result is settled. It is the fast path;
+	// correctness derives from the group state.
+	evalComplete bool
+}
+
+// noLazyState is the lazy state of an entry that has none: a reader that
+// finds no resultLazy reads this one, without its lock. It is never
+// written.
+var noLazyState resultLazy
+
+// lazyState returns res's lazy evaluation state, making it if res has
+// none.
+func (res *sharedResult) lazyState() *resultLazy {
+	if lz := res.lazy.Load(); lz != nil {
+		return lz
+	}
+	res.lazy.CompareAndSwap(nil, &resultLazy{})
+	return res.lazy.Load()
+}
+
+// lazyGroupState is one evaluation group's cache-side lazy state. All
+// fields are guarded by the owning entry's resultLazy.mu.
 type lazyGroupState struct {
 	continuation       *lazyTaskContinuation
 	nativeInstallation *PartTaskToken
@@ -3786,21 +3823,21 @@ type lazyGroupState struct {
 	syncPending bool
 }
 
-// lazyGroupStateLocked returns group's state record, allocating the
-// named-group record on first use. lazyMu must be held; the returned
-// pointer stays valid after unlocking (records are never removed) but
-// its fields remain guarded by lazyMu.
-func (res *sharedResult) lazyGroupStateLocked(group LazyGroupKey) *lazyGroupState {
+// groupStateLocked returns group's state record, allocating the
+// named-group record on first use. mu must be held; the returned pointer
+// stays valid after unlocking (records are never removed) but its fields
+// remain guarded by mu.
+func (lz *resultLazy) groupStateLocked(group LazyGroupKey) *lazyGroupState {
 	if group == LazyGroupWhole {
-		return &res.lazyWhole
+		return &lz.whole
 	}
-	st := res.lazyPartGroups[group]
+	st := lz.partGroups[group]
 	if st == nil {
-		if res.lazyPartGroups == nil {
-			res.lazyPartGroups = make(map[LazyGroupKey]*lazyGroupState)
+		if lz.partGroups == nil {
+			lz.partGroups = make(map[LazyGroupKey]*lazyGroupState)
 		}
 		st = &lazyGroupState{}
-		res.lazyPartGroups[group] = st
+		lz.partGroups[group] = st
 	}
 	return st
 }
@@ -5655,16 +5692,23 @@ func (c *Cache) registerLazyEvaluation(shared *sharedResult, val AnyResult) {
 		return
 	}
 
-	shared.lazyMu.Lock()
-	defer shared.lazyMu.Unlock()
+	// A value that can't be lazy has nothing to register, and its entry
+	// needs no lazy state.
+	if _, ok := UnwrapAs[HasLazyEvaluation](val); !ok {
+		return
+	}
+
+	lz := shared.lazyState()
+	lz.mu.Lock()
+	defer lz.mu.Unlock()
 	// Read object-side lazy state only when no attempt is in flight, for the
 	// same reason evaluateGroup does: callback bodies clear their object-side
-	// pointer without holding lazyMu, and attempt retirement under lazyMu
-	// orders those writes before a reader that observes no attempt. With an
+	// pointer without holding mu, and attempt retirement under mu orders
+	// those writes before a reader that observes no attempt. With an
 	// attempt published, a stored callback, pending bookkeeping, or completed
 	// evaluation, there is nothing to register.
-	g := &shared.lazyWhole
-	if g.eval != nil || shared.lazyEvalComplete ||
+	g := &lz.whole
+	if g.eval != nil || lz.evalComplete ||
 		g.attempt != nil || g.syncPending {
 		return
 	}
@@ -5722,14 +5766,17 @@ const (
 // callback context cancellation, or a foreign producer's session release. A
 // released producer cannot lead its own retry. The caller's cancellation wins.
 func (c *Cache) waitForLazyEvaluation(ctx context.Context, shared *sharedResult, attempt *lazyEvalAttempt) (lazyAttemptRetry, error) {
+	// An attempt is published under the lazy state's mu, so the entry has
+	// one.
+	lz := shared.lazyState()
 	select {
 	case <-attempt.done:
-		shared.lazyMu.Lock()
+		lz.mu.Lock()
 		waitErr := attempt.err
 		retry := attempt.retry
 		releasedProducer := attempt.releasedProducer
 		attempt.waiters--
-		shared.lazyMu.Unlock()
+		lz.mu.Unlock()
 		if retry || releasedProducer != "" {
 			if ownCause := context.Cause(ctx); ownCause != nil {
 				return lazyRetryNone, ownCause
@@ -5757,11 +5804,11 @@ func (c *Cache) waitForLazyEvaluation(ctx context.Context, shared *sharedResult,
 		return lazyRetryNone, waitErr
 	case <-ctx.Done():
 		waitErr := context.Cause(ctx)
-		shared.lazyMu.Lock()
+		lz.mu.Lock()
 		attempt.waiters--
 		lastWaiter := attempt.waiters == 0
 		cancel := attempt.cancel
-		shared.lazyMu.Unlock()
+		lz.mu.Unlock()
 		if lastWaiter && cancel != nil {
 			cancel(waitErr)
 		}
@@ -5987,19 +6034,21 @@ func (c *Cache) evaluateResolved(ctx context.Context, res AnyResult, shared *sha
 	if c.usesPartAcquisition(ctx, res, shared) {
 		return c.evaluateAcquiredParts(ctx, res, shared, parts)
 	}
-	shared.lazyMu.Lock()
-	if shared.lazyEvalComplete {
-		shared.lazyMu.Unlock()
-		return nil
+	if lz := shared.lazy.Load(); lz != nil {
+		lz.mu.Lock()
+		complete := lz.evalComplete
+		lz.mu.Unlock()
+		if complete {
+			return nil
+		}
 	}
-	shared.lazyMu.Unlock()
 
 	partsVal, ok := UnwrapAs[HasLazyEvaluationParts](res)
 	if !ok {
 		return c.evaluateGroup(ctx, res, shared, LazyGroupWhole, nil)
 	}
 
-	// Resolution runs outside lazyMu: it may re-enter the cache to settle
+	// Resolution runs outside the lazy state's mu: it may re-enter the cache to settle
 	// the value's own metadata part before mapping positional parts.
 	all := len(parts) == 0
 	var resolveParts []PartKey
@@ -6052,10 +6101,11 @@ func (c *Cache) evaluateResolved(ctx context.Context, res AnyResult, shared *sha
 		// just the resolved set - so completion can never be recorded
 		// while any group still has an attempt, pending bookkeeping, or
 		// an armed callback.
-		shared.lazyMu.Lock()
-		settled := shared.lazyWhole.settled()
+		lz := shared.lazyState()
+		lz.mu.Lock()
+		settled := lz.whole.settled()
 		if settled {
-			for _, g := range shared.lazyPartGroups {
+			for _, g := range lz.partGroups {
 				if !g.settled() {
 					settled = false
 					break
@@ -6064,36 +6114,36 @@ func (c *Cache) evaluateResolved(ctx context.Context, res AnyResult, shared *sha
 		}
 		if settled {
 			for _, group := range groups {
-				if !shared.lazyGroupStateLocked(group).complete {
+				if !lz.groupStateLocked(group).complete {
 					settled = false
 					break
 				}
 			}
 		}
 		if settled {
-			shared.lazyEvalComplete = true
+			lz.evalComplete = true
 		}
-		shared.lazyMu.Unlock()
+		lz.mu.Unlock()
 	}
 	return nil
 }
 
 // settled reports that the group has no live cache-side work: no
 // published attempt, no pending bookkeeping, no armed stored callback.
-// lazyMu must be held.
+// The lazy state's mu must be held.
 func (g *lazyGroupState) settled() bool {
 	return g.attempt == nil && !g.syncPending && g.eval == nil
 }
 
-// lazyPartsEvaluationPartialLocked reports whether a successful parts attempt
+// partsEvaluationPartialLocked reports whether a successful parts attempt
 // left other work on the result after that attempt was retired. This check
 // depends on Container.runLazyGroup consuming final parent delegations before
-// its callback returns. lazyMu must be held.
-func lazyPartsEvaluationPartialLocked(shared *sharedResult, res AnyResult) bool {
+// its callback returns. mu must be held.
+func (lz *resultLazy) partsEvaluationPartialLocked(res AnyResult) bool {
 	if reporting, ok := UnwrapAs[HasLazyEvaluationReporting](res); ok {
-		return pendingLazyComputationLocked(shared, reporting)
+		return lz.pendingComputationLocked(reporting)
 	}
-	for _, group := range shared.lazyPartGroups {
+	for _, group := range lz.partGroups {
 		if !group.settled() || !group.complete {
 			return true
 		}
@@ -6105,13 +6155,17 @@ func lazyPartsEvaluationPartialLocked(shared *sharedResult, res AnyResult) bool 
 // deterministic order. Used when resolution can no longer name a
 // consumed value's groups.
 func (res *sharedResult) pendingLazyGroups() []LazyGroupKey {
-	res.lazyMu.Lock()
-	defer res.lazyMu.Unlock()
+	lz := res.lazy.Load()
+	if lz == nil {
+		return nil
+	}
+	lz.mu.Lock()
+	defer lz.mu.Unlock()
 	var groups []LazyGroupKey
-	if !res.lazyWhole.settled() {
+	if !lz.whole.settled() {
 		groups = append(groups, LazyGroupWhole)
 	}
-	for key, g := range res.lazyPartGroups {
+	for key, g := range lz.partGroups {
 		if !g.settled() {
 			groups = append(groups, key)
 		}
@@ -6121,10 +6175,10 @@ func (res *sharedResult) pendingLazyGroups() []LazyGroupKey {
 }
 
 // prepareLazyGroupEvalLocked selects the callback for a new group attempt.
-// It also records completion when no callback remains. lazyMu must be held.
+// It also records completion when no callback remains. lz.mu must be held.
 func prepareLazyGroupEvalLocked(
 	res AnyResult,
-	shared *sharedResult,
+	lz *resultLazy,
 	g *lazyGroupState,
 	group LazyGroupKey,
 	partsVal HasLazyEvaluationParts,
@@ -6152,7 +6206,7 @@ func prepareLazyGroupEvalLocked(
 	if partsVal == nil {
 		// The whole group is the value's entire deferred work; a parts value's
 		// result-level latch is set only by an all-groups pass (evaluateResolved).
-		shared.lazyEvalComplete = true
+		lz.evalComplete = true
 	}
 	return true
 }
@@ -6184,30 +6238,31 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 		parent: stack,
 	})
 
-	shared.lazyMu.Lock()
-	g := shared.lazyGroupStateLocked(group)
-	shared.lazyMu.Unlock()
+	lz := shared.lazyState()
+	lz.mu.Lock()
+	g := lz.groupStateLocked(group)
+	lz.mu.Unlock()
 	retries := 0
 	for {
-		shared.lazyMu.Lock()
-		if spec == nil && (shared.lazyEvalComplete || g.complete) {
-			shared.lazyMu.Unlock()
+		lz.mu.Lock()
+		if spec == nil && (lz.evalComplete || g.complete) {
+			lz.mu.Unlock()
 			return nil
 		}
 		if spec != nil && spec.NoJoin && (g.attempt != nil || g.syncPending) {
-			shared.lazyMu.Unlock()
+			lz.mu.Unlock()
 			return ErrLazyTaskBusy
 		}
 		// Consult the published attempt before any object-side lazy state.
 		// Callback bodies clear their object-side callback pointer while the
 		// attempt is still running its cache-side bookkeeping, so object-side
 		// state is only trustworthy once no attempt is in flight: retirement
-		// happens under lazyMu after the callback returns, ordering the body's
+		// happens under the lazy state's mu after the callback returns, ordering the body's
 		// writes before a reader that observes no attempt.
 		if attempt := g.attempt; attempt != nil {
 			lazyOpID := attempt.profOpID
 			// The leader initializes this attempt's OTel wait target under
-			// lazyMu before publishing the group's attempt pointer
+			// the lazy state's mu before publishing the group's attempt pointer
 			// (target-before-primitive). A recording leader stores a valid target;
 			// an unrecorded leader leaves this fresh attempt record's zero value
 			// invalid. A joiner therefore cannot inherit a target from an earlier
@@ -6215,7 +6270,7 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 			// silently linking to the wrong lazy operation.
 			lazyOpSpanCtx := attempt.spanCtx
 			attempt.waiters++
-			shared.lazyMu.Unlock()
+			lz.mu.Unlock()
 			if c.testAfterLazyEvalJoin != nil {
 				c.testAfterLazyEvalJoin(attempt)
 			}
@@ -6268,15 +6323,15 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 				g.eval = nil
 			} else {
 				if spec.Body == nil {
-					shared.lazyMu.Unlock()
+					lz.mu.Unlock()
 					return fmt.Errorf("lazy task %q: missing supplied body", group)
 				}
 				g.eval = spec.Body
 				g.complete = false
 				g.continuation = nil
 			}
-		} else if prepareLazyGroupEvalLocked(res, shared, g, group, partsVal) {
-			shared.lazyMu.Unlock()
+		} else if prepareLazyGroupEvalLocked(res, lz, g, group, partsVal) {
+			lz.mu.Unlock()
 			return nil
 		}
 
@@ -6286,13 +6341,13 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 			fmt.Sprintf("lazy/%d", shared.id),
 		)
 		if err != nil {
-			shared.lazyMu.Unlock()
+			lz.mu.Unlock()
 			return fmt.Errorf("acquire lazy client scope: %w", err)
 		}
 		attemptCtx, cancel := context.WithCancelCause(attemptBase)
 		attemptOp, err := c.beginContextOperation(attemptCtx)
 		if err != nil {
-			shared.lazyMu.Unlock()
+			lz.mu.Unlock()
 			cancel(err)
 			clientScopeLease.Release()
 			return fmt.Errorf("start lazy evaluation: %w", err)
@@ -6303,8 +6358,8 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 		if resultCall != nil {
 			evalCtx = ContextWithCall(evalCtx, resultCall)
 		}
-		shared.lazyGeneration++
-		token := &PartTaskToken{ownerSync: make(chan struct{}), row: shared, key: group, generation: shared.lazyGeneration}
+		lz.generation++
+		token := &PartTaskToken{ownerSync: make(chan struct{}), row: shared, key: group, generation: lz.generation}
 		token.active.Store(true)
 		installationToken := token
 		if g.syncPending && g.nativeInstallation != nil {
@@ -6325,7 +6380,7 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 			waiters: 1,
 		}
 		// profOpID and spanCtx start invalid on every fresh attempt record. Mint
-		// either target below, while lazyMu is still held, before publishing the
+		// either target below, while the lazy state's mu is still held, before publishing the
 		// attempt pointer. A retry whose telemetry source is disabled therefore
 		// cannot expose a stale target from a recording attempt.
 		//
@@ -6345,7 +6400,7 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 			})
 			attempt.profOpID = lazyOp.ID()
 		}
-		// Mint the OTel lazy span under lazyMu before publishing the attempt, so
+		// Mint the OTel lazy span under the lazy state's mu before publishing the attempt, so
 		// every joiner sees this attempt's valid target or its deliberate invalid
 		// zero value. The callback goroutine adopts and ends the span.
 		var (
@@ -6369,7 +6424,7 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 			RecordOpSpan(lazyOp, lazySpan)
 		}
 		g.attempt = attempt
-		shared.lazyMu.Unlock()
+		lz.mu.Unlock()
 		if spec == nil && lazyEval != nil && storedPart == "" {
 			c.logRecordRunForWantOfOffers(stackCtx, shared)
 		}
@@ -6399,7 +6454,7 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 				}()
 			}
 			// The lazy op span and re-pointed callback context were minted under
-			// lazyMu before this attempt was published. A span created on one
+			// the lazy state's mu before this attempt was published. A span created on one
 			// goroutine and ended on another is safe.
 			partial := false
 			abandoned := false
@@ -6412,7 +6467,7 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 			}
 
 			retireCtx, retireStep := BeginStep(evalCtx, "lazy.retire")
-			wcprof.Lock(retireCtx, &shared.lazyMu, "dagql.sharedResult.lazyMu")
+			wcprof.Lock(retireCtx, &lz.mu, "dagql.sharedResult.lazyMu")
 			attempt.err = err
 			abandoned = err != nil && lazyEvalErrorCausedByContext(attemptCtx, err)
 			attempt.retry = abandoned
@@ -6433,7 +6488,7 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 			if err == nil {
 				g.complete = true
 				if partsVal == nil && spec == nil {
-					shared.lazyEvalComplete = true
+					lz.evalComplete = true
 				}
 				g.eval = nil
 				g.syncPending = false
@@ -6453,9 +6508,9 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 			// nil, and only this path clears it.
 			g.attempt = nil
 			if err == nil && partsVal != nil && spec == nil {
-				partial = lazyPartsEvaluationPartialLocked(shared, res)
+				partial = lz.partsEvaluationPartialLocked(res)
 			}
-			shared.lazyMu.Unlock()
+			lz.mu.Unlock()
 			retireStep.End(nil)
 			logProducerRemovedOutcome(attemptCtx, "lazy evaluation", fmt.Sprintf("%d/%s", shared.id, group), err)
 

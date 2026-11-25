@@ -78,7 +78,7 @@ func requireStepsNest(t *testing.T, events []profiledEvent, parent uint64) {
 func TestEndPartTaskBodyWaitsForGraphLockWcprof(t *testing.T) {
 	wcprof.EnsureRecorder()
 	row := &sharedResult{id: 12}
-	row.partGate.loadOrCreate()
+	row.partGateCell().loadOrCreate()
 	token := &PartTaskToken{row: row}
 	token.active.Store(true)
 	c := &Cache{resultsByID: map[sharedResultID]*sharedResult{}}

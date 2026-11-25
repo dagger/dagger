@@ -12,8 +12,8 @@ func TestPartUnusedHostAllocatesNoGate(t *testing.T) {
 	row := &sharedResult{id: 1}
 	host := c.partHostFor(row)
 	require.Same(t, host, c.partHostFor(row))
-	require.Nil(t, row.partGate.gate.Load())
-	require.Nil(t, row.lazyPartGroups)
+	require.Nil(t, row.writerGate())
+	require.Nil(t, row.lazy.Load())
 	// Unused remote abilities leave no override or bridge, including on a
 	// zero-value cache whose nil source keeps the default meaning.
 	require.Nil(t, c.PartContentSource().loadOverride())
