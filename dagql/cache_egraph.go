@@ -113,10 +113,6 @@ func compareSharedResultID(a, b sharedResultID) int {
 	return cmp.Compare(a, b)
 }
 
-func newEgraphTermIDSet() *set.TreeSet[egraphTermID] {
-	return set.NewTreeSet(compareEgraphTermID)
-}
-
 func newSharedResultIDSet() *set.TreeSet[sharedResultID] {
 	return set.NewTreeSet(compareSharedResultID)
 }
@@ -183,10 +179,10 @@ func (c *Cache) initEgraphLocked() {
 		c.eqClassExtraDigests = make(map[eqClassID]map[call.ExtraDigest]struct{})
 	}
 	if c.inputEqClassToTerms == nil {
-		c.inputEqClassToTerms = make(map[eqClassID]map[egraphTermID]struct{})
+		c.inputEqClassToTerms = make(map[eqClassID]*idSet[egraphTermID])
 	}
 	if c.outputEqClassToTerms == nil {
-		c.outputEqClassToTerms = make(map[eqClassID]map[egraphTermID]struct{})
+		c.outputEqClassToTerms = make(map[eqClassID]*idSet[egraphTermID])
 	}
 	if c.resultOutputEqClasses == nil {
 		c.resultOutputEqClasses = make(map[sharedResultID]*idSet[eqClassID])
@@ -204,7 +200,7 @@ func (c *Cache) initEgraphLocked() {
 		c.egraphTerms = make(map[egraphTermID]*egraphTerm)
 	}
 	if c.egraphTermsByTermDigest == nil {
-		c.egraphTermsByTermDigest = make(map[string]*set.TreeSet[egraphTermID])
+		c.egraphTermsByTermDigest = make(map[string]*idSet[egraphTermID])
 	}
 	if c.egraphResultsByDigest == nil {
 		c.egraphResultsByDigest = make(map[string]*resultDigestPosting)
@@ -294,7 +290,7 @@ func (c *Cache) unionRootsLocked(ra, rb eqClassID) (survivor, loser eqClassID) {
 		if c.egraphRanks[ra] < c.egraphRanks[rb] {
 			ra, rb = rb, ra
 		}
-	} else if na, nb := len(c.inputEqClassToTerms[ra]), len(c.inputEqClassToTerms[rb]); na < nb || (na == nb && c.egraphRanks[ra] < c.egraphRanks[rb]) {
+	} else if na, nb := c.inputEqClassToTerms[ra].Size(), c.inputEqClassToTerms[rb].Size(); na < nb || (na == nb && c.egraphRanks[ra] < c.egraphRanks[rb]) {
 		ra, rb = rb, ra
 	}
 	if r := c.egraphRanks[rb]; r >= c.egraphRanks[ra] {
@@ -357,12 +353,12 @@ func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID, moved *[]egraphTerm
 	// merge reverse input-term indexes
 	dst := c.inputEqClassToTerms[ra]
 	src := c.inputEqClassToTerms[rb]
-	if len(src) > 0 {
+	if src.Size() > 0 {
 		if dst == nil {
-			dst = make(map[egraphTermID]struct{}, len(src))
+			dst = newIDSet[egraphTermID]()
 			c.inputEqClassToTerms[ra] = dst
 		}
-		for termID := range src {
+		for termID := range src.All() {
 			if moved != nil {
 				// A term gone since it was indexed has nothing to repair:
 				// it leaves the index here, as a repair of the whole class
@@ -372,7 +368,7 @@ func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID, moved *[]egraphTerm
 				}
 				*moved = append(*moved, termID)
 			}
-			dst[termID] = struct{}{}
+			dst.Insert(termID)
 		}
 		delete(c.inputEqClassToTerms, rb)
 		absorbedInputTerms = true
@@ -381,14 +377,12 @@ func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID, moved *[]egraphTerm
 	// merge reverse output-term indexes
 	dstOutputTerms := c.outputEqClassToTerms[ra]
 	srcOutputTerms := c.outputEqClassToTerms[rb]
-	if len(srcOutputTerms) > 0 {
+	if srcOutputTerms.Size() > 0 {
 		if dstOutputTerms == nil {
-			dstOutputTerms = make(map[egraphTermID]struct{}, len(srcOutputTerms))
+			dstOutputTerms = newIDSet[egraphTermID]()
 			c.outputEqClassToTerms[ra] = dstOutputTerms
 		}
-		for termID := range srcOutputTerms {
-			dstOutputTerms[termID] = struct{}{}
-		}
+		dstOutputTerms.InsertAll(srcOutputTerms)
 		delete(c.outputEqClassToTerms, rb)
 	}
 
@@ -536,13 +530,13 @@ func (c *Cache) repairTermsLocked(ctx context.Context, termIDs []egraphTermID) [
 // as mergeEqClassesRepairingWholeClassLocked does.
 func (c *Cache) repairClassTermsLocked(ctx context.Context, root eqClassID) (merges []eqMergePair) {
 	termSet := c.inputEqClassToTerms[root]
-	if len(termSet) == 0 {
+	if termSet.Size() == 0 {
 		return nil
 	}
 	traceEnabled := c.traceEnabled()
 
-	termIDs := make([]egraphTermID, 0, len(termSet))
-	for termID := range termSet {
+	termIDs := make([]egraphTermID, 0, termSet.Size())
+	for termID := range termSet.All() {
 		termIDs = append(termIDs, termID)
 	}
 	processedTermDigests := make(map[string]struct{}, len(termIDs))
@@ -551,7 +545,7 @@ func (c *Cache) repairClassTermsLocked(ctx context.Context, root eqClassID) (mer
 		c.egraphRepairWalks++
 		term := c.egraphTerms[termID]
 		if term == nil {
-			delete(termSet, termID)
+			termSet.Remove(termID)
 			continue
 		}
 		c.repairTermLocked(ctx, term, traceEnabled)
@@ -585,8 +579,8 @@ func (c *Cache) repairTermLocked(ctx context.Context, term *egraphTerm, traceEna
 
 	for _, in := range oldInputs {
 		if set := c.inputEqClassToTerms[in]; set != nil {
-			delete(set, termID)
-			if len(set) == 0 {
+			set.Remove(termID)
+			if set.Empty() {
 				delete(c.inputEqClassToTerms, in)
 			}
 		}
@@ -597,10 +591,10 @@ func (c *Cache) repairTermLocked(ctx context.Context, term *egraphTerm, traceEna
 		}
 		set := c.inputEqClassToTerms[in]
 		if set == nil {
-			set = make(map[egraphTermID]struct{})
+			set = newIDSet[egraphTermID]()
 			c.inputEqClassToTerms[in] = set
 		}
-		set[termID] = struct{}{}
+		set.Insert(termID)
 	}
 	term.inputEqIDs = newInputs
 
@@ -614,7 +608,7 @@ func (c *Cache) repairTermLocked(ctx context.Context, term *egraphTerm, traceEna
 	}
 	set := c.egraphTermsByTermDigest[newTermDigest]
 	if set == nil {
-		set = newEgraphTermIDSet()
+		set = newIDSet[egraphTermID]()
 		c.egraphTermsByTermDigest[newTermDigest] = set
 	}
 	set.Insert(termID)
@@ -667,7 +661,7 @@ func (c *Cache) congruentTermMergesLocked(ctx context.Context, termDigests map[s
 	return merges
 }
 
-func (c *Cache) firstLiveTermInSetLocked(termSet *set.TreeSet[egraphTermID]) *egraphTerm {
+func (c *Cache) firstLiveTermInSetLocked(termSet *idSet[egraphTermID]) *egraphTerm {
 	if termSet == nil {
 		return nil
 	}
@@ -806,7 +800,7 @@ func (c *Cache) servableCandidateLocked(resID sharedResultID, nowUnix int64, exp
 	return res
 }
 
-func (c *Cache) appendTermSetResultsLocked(candidates *set.TreeSet[*sharedResult], termSet *set.TreeSet[egraphTermID], nowUnix int64, expired *expirySeen) {
+func (c *Cache) appendTermSetResultsLocked(candidates *set.TreeSet[*sharedResult], termSet *idSet[egraphTermID], nowUnix int64, expired *expirySeen) {
 	if termSet == nil {
 		return
 	}
@@ -1018,7 +1012,7 @@ func (c *Cache) lookupMatchForCallLocked(
 func (c *Cache) freshInputsLocked(inputEqIDs []eqClassID) []int {
 	var fresh []int
 	for i, id := range inputEqIDs {
-		if len(c.inputEqClassToTerms[id]) == 0 {
+		if c.inputEqClassToTerms[id].Size() == 0 {
 			fresh = append(fresh, i)
 		}
 	}
@@ -2238,7 +2232,7 @@ func (c *Cache) applyPreparedResultIdentityLocked(ctx context.Context, res *shar
 
 		digestTerms := c.egraphTermsByTermDigest[newTerm.termDigest]
 		if digestTerms == nil {
-			digestTerms = newEgraphTermIDSet()
+			digestTerms = newIDSet[egraphTermID]()
 			c.egraphTermsByTermDigest[newTerm.termDigest] = digestTerms
 		}
 		digestTerms.Insert(termID)
@@ -2249,17 +2243,17 @@ func (c *Cache) applyPreparedResultIdentityLocked(ctx context.Context, res *shar
 			}
 			classTerms := c.inputEqClassToTerms[inEqID]
 			if classTerms == nil {
-				classTerms = make(map[egraphTermID]struct{})
+				classTerms = newIDSet[egraphTermID]()
 				c.inputEqClassToTerms[inEqID] = classTerms
 			}
-			classTerms[termID] = struct{}{}
+			classTerms.Insert(termID)
 		}
 		outputTerms := c.outputEqClassToTerms[mergedOutputEqID]
 		if outputTerms == nil {
-			outputTerms = make(map[egraphTermID]struct{})
+			outputTerms = newIDSet[egraphTermID]()
 			c.outputEqClassToTerms[mergedOutputEqID] = outputTerms
 		}
-		outputTerms[termID] = struct{}{}
+		outputTerms.Insert(termID)
 
 		c.associateResultWithTermLocked(ctx, res, termID, inputProvenance)
 	}
@@ -2448,7 +2442,7 @@ func (c *Cache) indexWaitResultInEgraphLocked(
 
 		digestTerms := c.egraphTermsByTermDigest[newTerm.termDigest]
 		if digestTerms == nil {
-			digestTerms = newEgraphTermIDSet()
+			digestTerms = newIDSet[egraphTermID]()
 			c.egraphTermsByTermDigest[newTerm.termDigest] = digestTerms
 		}
 		digestTerms.Insert(termID)
@@ -2459,17 +2453,17 @@ func (c *Cache) indexWaitResultInEgraphLocked(
 			}
 			classTerms := c.inputEqClassToTerms[inEqID]
 			if classTerms == nil {
-				classTerms = make(map[egraphTermID]struct{})
+				classTerms = newIDSet[egraphTermID]()
 				c.inputEqClassToTerms[inEqID] = classTerms
 			}
-			classTerms[termID] = struct{}{}
+			classTerms.Insert(termID)
 		}
 		outputTerms := c.outputEqClassToTerms[mergedOutputEqID]
 		if outputTerms == nil {
-			outputTerms = make(map[egraphTermID]struct{})
+			outputTerms = newIDSet[egraphTermID]()
 			c.outputEqClassToTerms[mergedOutputEqID] = outputTerms
 		}
-		outputTerms[termID] = struct{}{}
+		outputTerms.Insert(termID)
 
 		c.associateResultWithTermLocked(ctx, res, termID, inputProvenance)
 	}
@@ -2526,8 +2520,8 @@ func (c *Cache) removeResultFromEgraphLocked(ctx context.Context, res *sharedRes
 
 		// no more results in this eq class, get the list of terms with this output eq class and clean them up
 		// since their results were pruned
-		termIDs := make([]egraphTermID, 0, len(c.outputEqClassToTerms[outputEqID]))
-		for termID := range c.outputEqClassToTerms[outputEqID] {
+		termIDs := make([]egraphTermID, 0, c.outputEqClassToTerms[outputEqID].Size())
+		for termID := range c.outputEqClassToTerms[outputEqID].All() {
 			termIDs = append(termIDs, termID)
 		}
 		for _, termID := range termIDs {
@@ -2543,14 +2537,14 @@ func (c *Cache) removeResultFromEgraphLocked(ctx context.Context, res *sharedRes
 			}
 			for _, in := range term.inputEqIDs {
 				if set := c.inputEqClassToTerms[in]; set != nil {
-					delete(set, termID)
-					if len(set) == 0 {
+					set.Remove(termID)
+					if set.Empty() {
 						delete(c.inputEqClassToTerms, in)
 					}
 				}
 			}
 			if set := c.outputEqClassToTerms[outputEqID]; set != nil {
-				delete(set, termID)
+				set.Remove(termID)
 			}
 			c.unuseTermLocked(term)
 			delete(c.egraphTerms, termID)
@@ -2703,9 +2697,9 @@ func (c *Cache) compactEqClassesModeLocked(force, freeAll bool) (changed bool, o
 		}
 	}
 
-	newInputEqClassToTerms := make(map[eqClassID]map[egraphTermID]struct{})
-	newOutputEqClassToTerms := make(map[eqClassID]map[egraphTermID]struct{})
-	newEgraphTermsByTermDigest := make(map[string]*set.TreeSet[egraphTermID], len(c.egraphTermsByTermDigest))
+	newInputEqClassToTerms := make(map[eqClassID]*idSet[egraphTermID])
+	newOutputEqClassToTerms := make(map[eqClassID]*idSet[egraphTermID])
+	newEgraphTermsByTermDigest := make(map[string]*idSet[egraphTermID], len(c.egraphTermsByTermDigest))
 	for termID, term := range c.egraphTerms {
 		if term == nil {
 			continue
@@ -2721,10 +2715,10 @@ func (c *Cache) compactEqClassesModeLocked(force, freeAll bool) (changed bool, o
 			newUses[newRoot]++
 			set := newInputEqClassToTerms[newRoot]
 			if set == nil {
-				set = make(map[egraphTermID]struct{})
+				set = newIDSet[egraphTermID]()
 				newInputEqClassToTerms[newRoot] = set
 			}
-			set[termID] = struct{}{}
+			set.Insert(termID)
 		}
 		term.inputEqIDs = newInputEqIDs
 
@@ -2737,15 +2731,15 @@ func (c *Cache) compactEqClassesModeLocked(force, freeAll bool) (changed bool, o
 		newUses[newOutputRoot]++
 		outputTerms := newOutputEqClassToTerms[newOutputRoot]
 		if outputTerms == nil {
-			outputTerms = make(map[egraphTermID]struct{})
+			outputTerms = newIDSet[egraphTermID]()
 			newOutputEqClassToTerms[newOutputRoot] = outputTerms
 		}
-		outputTerms[termID] = struct{}{}
+		outputTerms.Insert(termID)
 
 		term.termDigest = calcEgraphTermDigest(term.selfDigest, term.inputEqIDs)
 		digestTerms := newEgraphTermsByTermDigest[term.termDigest]
 		if digestTerms == nil {
-			digestTerms = newEgraphTermIDSet()
+			digestTerms = newIDSet[egraphTermID]()
 			newEgraphTermsByTermDigest[term.termDigest] = digestTerms
 		}
 		digestTerms.Insert(termID)

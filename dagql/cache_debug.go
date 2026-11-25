@@ -626,15 +626,14 @@ func (c *Cache) debugEqClassMergeDetails(ids []eqClassID) []map[string]any {
 	return out
 }
 
-func (c *Cache) debugEqClassTermIDs(terms map[egraphTermID]struct{}) []uint64 {
-	if len(terms) == 0 {
+func (c *Cache) debugEqClassTermIDs(terms *idSet[egraphTermID]) []uint64 {
+	if terms.Size() == 0 {
 		return nil
 	}
-	out := make([]uint64, 0, len(terms))
-	for termID := range terms {
+	out := make([]uint64, 0, terms.Size())
+	for termID := range terms.Items() {
 		out = append(out, uint64(termID))
 	}
-	slices.Sort(out)
 	return out
 }
 

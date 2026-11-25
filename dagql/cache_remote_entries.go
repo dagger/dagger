@@ -2352,7 +2352,7 @@ func (c *Cache) remoteEntryInfoLocked(entry *sharedResult) RemoteEntryInfo {
 		for dig := range c.eqClassToDigests[classID] {
 			classDigests[dig] = struct{}{}
 		}
-		for termID := range c.outputEqClassToTerms[classID] {
+		for termID := range c.outputEqClassToTerms[classID].All() {
 			if term := c.egraphTerms[termID]; term != nil {
 				info.Terms = append(info.Terms, c.portableTermLocked(term))
 			}

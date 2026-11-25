@@ -3154,7 +3154,7 @@ type Cache struct {
 	egraphTerms map[egraphTermID]*egraphTerm
 
 	// term digest -> all terms with that digest
-	egraphTermsByTermDigest map[string]*set.TreeSet[egraphTermID]
+	egraphTermsByTermDigest map[string]*idSet[egraphTermID]
 
 	//
 	// indexes for results
@@ -3179,11 +3179,11 @@ type Cache struct {
 
 	// map of eq class -> all terms that have it as an input, needed during repair to
 	// figure out all the terms that need repair after eq class union
-	inputEqClassToTerms map[eqClassID]map[egraphTermID]struct{}
+	inputEqClassToTerms map[eqClassID]*idSet[egraphTermID]
 
 	// reverse index from canonical output eq class to all terms whose outputs are
 	// currently represented by that class
-	outputEqClassToTerms map[eqClassID]map[egraphTermID]struct{}
+	outputEqClassToTerms map[eqClassID]*idSet[egraphTermID]
 
 	// reverse index from materialized result to all output eq classes it is
 	// currently associated with
