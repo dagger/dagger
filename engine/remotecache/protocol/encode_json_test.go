@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/klauspost/compress/zstd"
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/dagger/dagql"
@@ -70,4 +71,33 @@ func TestEncodeEnvelopeIsTheEnvelopesJSONForRecords(t *testing.T) {
 	got, err := EncodeEnvelope(9, 0, TypeMerge, merge)
 	require.NoError(t, err)
 	require.Equal(t, string(want), string(got))
+}
+
+// A set file's part is encoded once, in place: what encoding a part of a
+// file allocates is about its compressed bytes and its records' own values,
+// not copies of the part's JSON. The JSON of a part of 2,000 records was
+// written into a buffer that grew as it filled, then copied whole, before
+// it was compressed.
+func TestSetFilePartIsEncodedInPlace(t *testing.T) {
+	// One encoder, which the first part readies: an encoder's state is made
+	// on its first use, once for the life of what encodes files.
+	enc, err := zstd.NewWriter(nil, zstd.WithWindowSize(1<<20), zstd.WithLowerEncoderMem(true), zstd.WithEncoderConcurrency(1))
+	require.NoError(t, err)
+	defer enc.Close()
+	bundle := recordsMerge().Bundle
+	shared, err := dagql.ShareChainLayers(bundle)
+	require.NoError(t, err)
+	raw, err := json.Marshal(shared)
+	require.NoError(t, err)
+	part, _, err := EncodeSetFilePart(enc, bundle)
+	require.NoError(t, err)
+	allocated := allocatedBy(5, func() {
+		if _, _, err := EncodeSetFilePart(enc, bundle); err != nil {
+			t.Fatal(err)
+		}
+	})
+	t.Logf("%.0f bytes allocated for a part of %d bytes of JSON, %d compressed: %.2f times its JSON", allocated, len(raw), len(part), allocated/float64(len(raw)))
+	// 8.4 times its JSON when the JSON was copied as it grew and once whole;
+	// 1.6 times written in place, most of it each record's own values.
+	require.Less(t, allocated, 3*float64(len(raw)))
 }
