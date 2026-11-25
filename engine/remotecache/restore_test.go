@@ -1244,9 +1244,8 @@ func TestRestoreReportsEachPartsStagesAndItsWindow(t *testing.T) {
 	adapter.work = func() CacheWork {
 		n := reads.Add(1)
 		return CacheWork{
-			LookupLockWaits: dagql.LookupLockWaits{Landing: map[string]dagql.LockWaitStats{"sharing": {Waits: n, Total: time.Duration(n) * time.Millisecond}}},
-			FirstUse:        dagql.FirstUseStats{Paths: map[string]dagql.FirstUsePath{"sharing": {Prepared: 10 * n, Total: time.Duration(n) * time.Second}}},
-			Sharing:         dagql.SharingStats{Kinds: map[string]dagql.SharePassStats{"alone": {Passes: 2 * n, Members: 2 * n, Prepared: 10 * n, PrepareTotal: time.Duration(n) * time.Second}}},
+			LookupLockWaits: dagql.LookupLockWaits{Landing: map[string]dagql.LockWaitStats{"part": {Waits: n, Total: time.Duration(n) * time.Millisecond}}},
+			FirstUse:        dagql.FirstUseStats{Paths: map[string]dagql.FirstUsePath{"part": {Prepared: 10 * n, Total: time.Duration(n) * time.Second}}},
 		}
 	}
 	landing := make(chan int64, 8)
@@ -1286,11 +1285,10 @@ func TestRestoreReportsEachPartsStagesAndItsWindow(t *testing.T) {
 	require.NotNil(t, w)
 	require.GreaterOrEqual(t, w.Wall, report.Fetched.Sub(report.FetchStarted), "the window spans the download")
 	require.GreaterOrEqual(t, w.CPU, time.Duration(0))
-	waits := w.LookupLockWaits["sharing"].Waits
+	waits := w.LookupLockWaits["part"].Waits
 	require.Positive(t, waits, "the cache's counts grew between the window's readings")
-	require.Equal(t, map[string]dagql.LockWaitStats{"sharing": {Waits: waits, Total: time.Duration(waits) * time.Millisecond}}, w.LookupLockWaits)
-	require.Equal(t, map[string]dagql.FirstUsePath{"sharing": {Prepared: 10 * waits, Total: time.Duration(waits) * time.Second}}, w.FirstUses)
-	require.Equal(t, map[string]dagql.SharePassStats{"alone": {Passes: 2 * waits, Members: 2 * waits, Prepared: 10 * waits, PrepareTotal: time.Duration(waits) * time.Second}}, w.Sharing)
+	require.Equal(t, map[string]dagql.LockWaitStats{"part": {Waits: waits, Total: time.Duration(waits) * time.Millisecond}}, w.LookupLockWaits)
+	require.Equal(t, map[string]dagql.FirstUsePath{"part": {Prepared: 10 * waits, Total: time.Duration(waits) * time.Second}}, w.FirstUses)
 }
 
 // A window's goroutine waits are the scheduler latency samples the runtime

@@ -122,10 +122,10 @@ func TestCommitReadyPartChangedRefusals(t *testing.T) {
 		}, "commit: receiver representation", true, func(receiver, _ *sharedResult) *sharedResult { return receiver }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			ctx, c, srv, _ := shareTestCache(t)
-			donor, receiver := shareTestPair(t, ctx, c, srv,
-				map[string]sharePartState{"fs": {Snapshot: "fs-snap"}},
-				map[string]sharePartState{"fs": {}},
+			ctx, c, srv, _ := partTestCache(t)
+			donor, receiver := partTestPair(t, ctx, c, srv,
+				map[string]partTestState{"fs": {Snapshot: "fs-snap"}},
+				map[string]partTestState{"fs": {}},
 			)
 			address := PersistedPartAddress{Part: "fs"}
 			var refused error
@@ -168,10 +168,10 @@ func TestCommitReadyPartChangedRefusals(t *testing.T) {
 // receiver.
 func publishLoopFixture(t *testing.T, c *Cache, srv *Server, ctx context.Context, demand *PartDemandState) (*sharedResult, error) {
 	t.Helper()
-	srv.InstallObject(NewClass(srv, ClassOpts[*shareTestValue]{}))
-	receiver := persistedListTestResult(t, ctx, c, srv, "progress-receiver", newShareTestValue("receiver", map[string]sharePartState{"fs": {}}))
-	shareTestEncodedReceiver(t, ctx, c, receiver)
-	evaluated := persistedListTestResult(t, ctx, c, srv, "progress-evaluated", newShareTestValue("evaluated", map[string]sharePartState{"fs": {Snapshot: "fs-snap"}}))
+	srv.InstallObject(NewClass(srv, ClassOpts[*partTestValue]{}))
+	receiver := persistedListTestResult(t, ctx, c, srv, "progress-receiver", newPartTestValue("receiver", map[string]partTestState{"fs": {}}))
+	partTestEncodedReceiver(t, ctx, c, receiver)
+	evaluated := persistedListTestResult(t, ctx, c, srv, "progress-evaluated", newPartTestValue("evaluated", map[string]partTestState{"fs": {Snapshot: "fs-snap"}}))
 	address := PersistedPartAddress{Part: "fs"}
 	// A loop that never ends is ended by this deadline, not by the go test
 	// timeout.
@@ -208,7 +208,7 @@ func publishLoopFixture(t *testing.T, c *Cache, srv *Server, ctx context.Context
 // second refusal repeats the first and the publication fails instead of
 // retrying until its caller gives up.
 func TestPublishEvaluatedPartsStopsWithoutProgress(t *testing.T) {
-	ctx, c, srv, _ := shareTestCache(t)
+	ctx, c, srv, _ := partTestCache(t)
 	var commits int
 	c.testBeforePartCommit = func(p *PreparedReadyPart) {
 		commits++
@@ -231,7 +231,7 @@ func TestPublishEvaluatedPartsStopsWithoutProgress(t *testing.T) {
 // many times. Every refusal reads a greater revision than the one before, so
 // the rule stays silent and the publication succeeds once the row is still.
 func TestPublishEvaluatedPartsSurvivesContention(t *testing.T) {
-	ctx, c, srv, _ := shareTestCache(t)
+	ctx, c, srv, _ := partTestCache(t)
 	const rounds = 200
 	var commits int
 	c.testBeforePartCommit = func(p *PreparedReadyPart) {
@@ -250,10 +250,10 @@ func TestPublishEvaluatedPartsSurvivesContention(t *testing.T) {
 // task, InstallReadyPart and demandPart's two loops. The demand fails with the
 // hard error instead of spinning.
 func TestDemandPartStopsWithoutProgress(t *testing.T) {
-	ctx, c, srv, _ := shareTestCache(t)
-	_, receiver := shareTestPair(t, ctx, c, srv,
-		map[string]sharePartState{"fs": {Snapshot: "fs-snap"}},
-		map[string]sharePartState{"fs": {}},
+	ctx, c, srv, _ := partTestCache(t)
+	_, receiver := partTestPair(t, ctx, c, srv,
+		map[string]partTestState{"fs": {Snapshot: "fs-snap"}},
+		map[string]partTestState{"fs": {}},
 	)
 	var commits int
 	c.testBeforePartCommit = func(p *PreparedReadyPart) {

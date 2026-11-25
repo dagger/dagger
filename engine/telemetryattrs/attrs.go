@@ -726,7 +726,7 @@ const (
 	// its lookup waited for, to the span's end, as "<kind>=<nanoseconds>"
 	// strings sorted by kind: "graph.<writer>" for the cache's graph lock,
 	// by the kind of writer whose release let each wait in (lookup,
-	// publication, restore, merge, sharing, export, offer, part, teach,
+	// publication, restore, merge, export, offer, part, teach,
 	// dependency, evaluation, upkeep, hold, other, or readers when no writer
 	// did), "decode" for another caller's decode of an entry the hit loads,
 	// and "attach" for an entry's dependency attachment.
@@ -1159,7 +1159,7 @@ const (
 	// EngineEventPrune: a prune run dropped retention edges
 	// (EnginePruneEvent). Runs that drop none send nothing.
 	EngineEventPrune = "engine.prune"
-	// EngineEventShare: a snapshot-sharing pass completed parts
+	// EngineEventShare: complete parts of entries that their spans left out
 	// (EngineShareEvent).
 	EngineEventShare = "engine.share"
 	// EngineEventRead: work read a part of an entry for the first time
@@ -1198,15 +1198,15 @@ type EngineRetentionDrop struct {
 	DroppedAtUnixNano int64 `json:"droppedAtUnixNano"`
 }
 
-// EngineShareEvent is the body of an engine.share event: every part one
-// snapshot-sharing pass completed, or the complete parts an entry's spans
-// left out, which the engine reports once it can read the entry's record.
+// EngineShareEvent is the body of an engine.share event: the complete parts
+// entries' spans left out, which the engine reports once it can read each
+// entry's record.
 type EngineShareEvent struct {
 	Parts []EngineSharedPart `json:"parts"`
 }
 
-// EngineSharedPart is one complete part of an entry that no span reported:
-// one a snapshot-sharing pass completed, or one an entry's spans left out.
+// EngineSharedPart is one complete part of an entry that its spans left
+// out.
 type EngineSharedPart struct {
 	// ResultID is the entry's result number.
 	ResultID uint64 `json:"resultId"`
@@ -1276,24 +1276,19 @@ type EngineStopEvent struct {
 	// LookupLockWaits are the calls' lookups' waits for the cache's graph
 	// lock (dagql.Cache.LookupLockWaits).
 	LookupLockWaits EngineLookupLockWaits `json:"lookupLockWaits,omitzero"`
-	// Sharing is what the snapshot-sharing passes did, by the kind of class
-	// each ran for: "alone" (a class of one member), "no_donor" (several,
-	// none of which held a part ready to give) and "donor"
-	// (dagql.Cache.Sharing).
-	Sharing map[string]EngineSharePasses `json:"sharing,omitempty"`
 }
 
 // EngineLookupLockWaits are the calls' lookups' waits for the cache's graph
 // lock over the engine's life, by the kind of writer whose release let each
 // in: "lookup", "publication", "restore" (a set file's part's merge),
-// "merge" (another merge of the service's records), "sharing", "export",
-// "offer", "part" (fetching, installing or settling parts), "teach" (a
-// call's teaching of what its result is the same as), "dependency" (a
-// call's explicit dependencies), "evaluation" (a lazy evaluation's
-// bookkeeping), "upkeep" (a session's release, a prune, a measurement or a
-// save), "hold" (the service's holds on entries), "other" (a writer that
-// named no kind), or "readers" (no writer let it in: the lookup waited for
-// readers to leave). Landing are the waits begun while a whole
+// "merge" (another merge of the service's records), "export", "offer",
+// "part" (fetching, installing or settling parts), "teach" (a call's
+// teaching of what its result is the same as), "dependency" (a call's
+// explicit dependencies), "evaluation" (a lazy evaluation's bookkeeping),
+// "upkeep" (a session's release, a prune, a measurement or a save), "hold"
+// (the service's holds on entries), "other" (a writer that named no kind),
+// or "readers" (no writer let it in: the lookup waited for readers to
+// leave). Landing are the waits begun while a whole
 // set file was landing on the engine, from its arrival to its end, and
 // Other the rest. A lookup that took the lock at once isn't counted.
 type EngineLookupLockWaits struct {
@@ -1318,19 +1313,6 @@ type EngineFirstUsePath struct {
 	Longest  int64 `json:"longest,omitempty"`
 }
 
-// EngineSharePasses count the snapshot-sharing passes of one kind of
-// class: how many ran, the members they probed, how many selected a slot and
-// the slots they selected, and the payloads their first uses prepared, with
-// the time that took, in nanoseconds.
-type EngineSharePasses struct {
-	Passes       int64 `json:"passes"`
-	Members      int64 `json:"members,omitempty"`
-	Slotted      int64 `json:"slotted,omitempty"`
-	Slots        int64 `json:"slots,omitempty"`
-	Prepared     int64 `json:"prepared,omitempty"`
-	PrepareTotal int64 `json:"prepareTotal,omitempty"`
-}
-
 // EngineFirstUse counts the payloads of restored records the engine's calls
 // prepared at their first use, and those refused, with the time preparing
 // took in all and at the longest, in nanoseconds. The longest is named: its
@@ -1341,9 +1323,8 @@ type EngineSharePasses struct {
 // refused, with the time that took summed over them and the save's wall time
 // spent on them, in nanoseconds. Paths splits the first uses by the path
 // they came by: "lookup" (a call's decode of its hit), "export", "offer",
-// "part" (fetching or installing an entry's parts), "sharing" (a
-// snapshot-sharing pass), "merge" or "restore" (a merge warming the parts of
-// the entries it lands on), and "other". Routes splits them by the route
+// "part" (fetching or installing an entry's parts), "merge" or "restore" (a
+// merge warming the parts of the entries it lands on), and "other". Routes splits them by the route
 // that brought their records (EngineFirstUseRoute).
 type EngineFirstUse struct {
 	Prepared        int64  `json:"prepared,omitempty"`
@@ -1441,8 +1422,8 @@ type EngineRestore struct {
 // engine waiting for cores that others, such as the check's execs, hold. It
 // is absent when it couldn't be read. LookupLockWaits are the lookups' waits
 // for the graph lock begun in the window, by the kind of writer that let
-// each in (EngineLookupLockWaits); FirstUses the first uses in it, by path
-// (EngineFirstUse); Sharing the sharing passes, by kind of class.
+// each in (EngineLookupLockWaits); and FirstUses the first uses in it, by
+// path (EngineFirstUse).
 type EngineRestoreWindow struct {
 	Wall            int64                         `json:"wall"`
 	CPU             int64                         `json:"cpu"`
@@ -1454,7 +1435,6 @@ type EngineRestoreWindow struct {
 	RunqWait        *int64                        `json:"runqWait,omitempty"`
 	LookupLockWaits map[string]EngineLockWaits    `json:"lookupLockWaits,omitempty"`
 	FirstUses       map[string]EngineFirstUsePath `json:"firstUses,omitempty"`
-	Sharing         map[string]EngineSharePasses  `json:"sharing,omitempty"`
 }
 
 // EngineRestorePart is one merged part of a set file: its records, when it

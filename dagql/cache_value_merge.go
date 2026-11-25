@@ -2930,7 +2930,6 @@ func (c *Cache) commitValueMergeLocked(ctx context.Context, commit *valueMergeCo
 	if c.offerOwners == nil {
 		c.offerOwners = map[offerOwnerID]*offerOwner{}
 	}
-	notify, notifyOwner := c.beginShareNotificationsLocked()
 	var (
 		queue    collectionQueue
 		errs     error
@@ -3074,16 +3073,11 @@ func (c *Cache) commitValueMergeLocked(ctx context.Context, commit *valueMergeCo
 		}
 	}
 	// An entry the merge created that nothing owns, such as a dependency
-	// only a kept record's bundle needed, is collected now, before a sharing
-	// pass could hold it; the reply leaves it out. Roots are retained, and an
-	// installed record owns its dependencies.
+	// only a kept record's bundle needed, is collected now; the reply leaves
+	// it out. Roots are retained, and an installed record owns its
+	// dependencies.
 	releases, collectErr := c.collectUnownedResultsLocked(context.WithoutCancel(ctx), created)
 	errs = errors.Join(errs, collectErr)
-	for _, row := range commit.rows {
-		c.queueSnapshotShareRowLocked(ctx, row.res)
-	}
-	c.flushShareNotificationsLocked(ctx, notify, notifyOwner)
-	duplicates := c.takeShareDuplicateHoldsLocked()
 	more, collectErr := c.collectUnownedResultsLocked(context.WithoutCancel(ctx), queue)
 	releases = append(releases, more...)
 	errs = errors.Join(errs, collectErr)
@@ -3107,7 +3101,6 @@ func (c *Cache) commitValueMergeLocked(ctx context.Context, commit *valueMergeCo
 				c.partOfferAccepted(cleanupCtx, a.res, a.key, a.offer)
 			}
 		}
-		c.releaseShareDuplicateHolds(cleanupCtx, duplicates)
 		err := errors.Join(errs, runOnReleaseFuncs(cleanupCtx, releases))
 		for _, r := range replaced {
 			err = errors.Join(err, c.finishMergedReplacement(cleanupCtx, r))

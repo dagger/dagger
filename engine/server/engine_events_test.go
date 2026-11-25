@@ -446,8 +446,8 @@ func TestEngineStopEventCountsUncountedMisses(t *testing.T) {
 }
 
 // The stop event carries, for each restored file, its parts' own stages
-// and its window, and for the engine, its lookups' waits for the graph lock,
-// its first uses by path and its sharing passes.
+// and its window, and for the engine, its lookups' waits for the graph lock
+// and its first uses by path.
 func TestEngineStopEventCarriesWhereLandingTimeWent(t *testing.T) {
 	t.Parallel()
 	ctx := boundedContext(t)
@@ -461,15 +461,14 @@ func TestEngineStopEventCarriesWhereLandingTimeWent(t *testing.T) {
 		Parts: []remotecache.RestoredPartReport{{
 			Records: 3, Committed: time.Unix(101, 0),
 			Decode: time.Millisecond, Prepare: 2 * time.Millisecond, Commit: 3 * time.Millisecond, PriorityWait: 4 * time.Millisecond,
-			PrepareLockWait: 5 * time.Millisecond, PrepareLockWaits: map[string]time.Duration{"sharing": 5 * time.Millisecond},
+			PrepareLockWait: 5 * time.Millisecond, PrepareLockWaits: map[string]time.Duration{"part": 5 * time.Millisecond},
 			DecodeWait: 6 * time.Millisecond, Precheck: 7 * time.Millisecond,
 		}},
 		Window: &remotecache.RestoreWindow{
 			Wall: time.Second, CPU: 2 * time.Second, GCCPU: 300 * time.Millisecond, GCAssist: 100 * time.Millisecond, GCCycles: 2,
 			SchedWaits: 40, SchedWait: 5 * time.Millisecond, RunqWait: 7 * time.Millisecond, RunqWaitKnown: true,
-			LookupLockWaits: map[string]dagql.LockWaitStats{"sharing": {Waits: 2, Total: 6 * time.Millisecond}},
-			FirstUses:       map[string]dagql.FirstUsePath{"sharing": {Prepared: 9, Total: 8 * time.Millisecond}},
-			Sharing:         map[string]dagql.SharePassStats{"alone": {Passes: 9, Members: 9, Prepared: 9, PrepareTotal: 8 * time.Millisecond}},
+			LookupLockWaits: map[string]dagql.LockWaitStats{"part": {Waits: 2, Total: 6 * time.Millisecond}},
+			FirstUses:       map[string]dagql.FirstUsePath{"part": {Prepared: 9, Total: 8 * time.Millisecond}},
 		},
 	})
 	// The head ended first, though its report came in after the whole's.
@@ -484,16 +483,15 @@ func TestEngineStopEventCarriesWhereLandingTimeWent(t *testing.T) {
 	require.Equal(t, []telemetryattrs.EngineRestorePart{{
 		Records: 3, Committed: time.Unix(101, 0).UnixNano(),
 		Decode: int64(time.Millisecond), Prepare: int64(2 * time.Millisecond), Commit: int64(3 * time.Millisecond), PriorityWait: int64(4 * time.Millisecond),
-		PrepareLockWait: int64(5 * time.Millisecond), PrepareLockWaits: map[string]int64{"sharing": int64(5 * time.Millisecond)},
+		PrepareLockWait: int64(5 * time.Millisecond), PrepareLockWaits: map[string]int64{"part": int64(5 * time.Millisecond)},
 		DecodeWait: int64(6 * time.Millisecond), Precheck: int64(7 * time.Millisecond),
 	}}, stop.Restores[1].Parts)
 	runq := int64(7 * time.Millisecond)
 	require.Equal(t, &telemetryattrs.EngineRestoreWindow{
 		Wall: int64(time.Second), CPU: int64(2 * time.Second), GCCPU: int64(300 * time.Millisecond), GCAssist: int64(100 * time.Millisecond), GCCycles: 2,
 		SchedWaits: 40, SchedWait: int64(5 * time.Millisecond), RunqWait: &runq,
-		LookupLockWaits: map[string]telemetryattrs.EngineLockWaits{"sharing": {Waits: 2, Total: int64(6 * time.Millisecond)}},
-		FirstUses:       map[string]telemetryattrs.EngineFirstUsePath{"sharing": {Prepared: 9, Total: int64(8 * time.Millisecond)}},
-		Sharing:         map[string]telemetryattrs.EngineSharePasses{"alone": {Passes: 9, Members: 9, Prepared: 9, PrepareTotal: int64(8 * time.Millisecond)}},
+		LookupLockWaits: map[string]telemetryattrs.EngineLockWaits{"part": {Waits: 2, Total: int64(6 * time.Millisecond)}},
+		FirstUses:       map[string]telemetryattrs.EngineFirstUsePath{"part": {Prepared: 9, Total: int64(8 * time.Millisecond)}},
 	}, stop.Restores[1].Window)
 	require.Equal(t, &telemetryattrs.EngineRestoreWindow{Wall: int64(time.Second)}, stop.Restores[0].Window, "a run-queue wait that couldn't be read is absent, not 0")
 

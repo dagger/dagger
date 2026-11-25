@@ -302,30 +302,6 @@ func partRawSize(ctx context.Context, reader partSizeReader, desc PartDescriptor
 	return total, nil
 }
 
-// taskSettledPartKeys returns the address keys of the outputs task installed
-// that the row's gate has settled for that installation, sorted.
-func (res *sharedResult) taskSettledPartKeys(task *PartTaskToken) []string {
-	installed := task.installed.Load()
-	gate := res.partGate.gate.Load()
-	if installed == nil || gate == nil {
-		return nil
-	}
-	gate.mu.Lock()
-	defer gate.mu.Unlock()
-	var keys []string
-	for _, output := range installed.outputs {
-		key, err := partAddressKey(output.address)
-		if err != nil {
-			continue
-		}
-		if current := gate.outputs[key]; current.phase == PartComplete && current.installation == output.installation {
-			keys = append(keys, key)
-		}
-	}
-	slices.Sort(keys)
-	return keys
-}
-
 // settledPartKeys returns the address keys of the outputs the row's gate has
 // settled, sorted.
 func (res *sharedResult) settledPartKeys() []string {

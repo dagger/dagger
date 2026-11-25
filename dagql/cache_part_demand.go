@@ -11,7 +11,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/opencontainers/go-digest"
@@ -251,9 +250,6 @@ func (c *Cache) joinPartInstallation(ctx context.Context, res AnyResult, token *
 //nolint:gocyclo // Intrinsically long demand state machine: probe, route, select, obtain, delegate, run.
 func (c *Cache) demandPart(ctx context.Context, res AnyResult, address PersistedPartAddress) error {
 	ctx = withCacheWork(ctx, workPart)
-	if err := engine.CheckSnapshotSharePreparation(ctx, "demand part"); err != nil {
-		return err
-	}
 	var err error
 	ctx, err = enterPartDemand(ctx, res.cacheSharedResult(), address)
 	if err != nil {
@@ -538,9 +534,6 @@ func (c *Cache) sourceCheckCurrentLocked(check *SourceCheck) bool {
 	return true
 }
 func (c *Cache) runLazyOperationDecision(ctx context.Context, res AnyResult, address PersistedPartAddress, route LazyOperationRoute, demand *PartDemandState) error {
-	if err := engine.CheckSnapshotSharePreparation(ctx, "prepare lazy operation"); err != nil {
-		return err
-	}
 	return c.RunLazyTask(ctx, res, lazyEvaluationTaskKey(route.Group), LazyTaskSpec{Body: func(ctx context.Context) (rerr error) {
 		task := PartTaskFromContext(ctx)
 		drain, outcome, err := c.PrepareOriginal(ctx, res, route.Group, route.WriteSet, task)
@@ -581,9 +574,6 @@ func (c *Cache) runLazyOperationDecision(ctx context.Context, res AnyResult, add
 		factory, ok := family.Transfer.(PersistedLazyOperationFactory)
 		if !ok {
 			return fmt.Errorf("lazy: family has no saved invoker")
-		}
-		if err := engine.CheckSnapshotSharePreparation(ctx, "prepare lazy operation"); err != nil {
-			return err
 		}
 		invocation, err := factory.PrepareLazyOperation(ctx, c.partDecodeContext(ctx, row, record).atPath(address.OutputPath), local, route)
 		if err != nil {
@@ -631,9 +621,6 @@ func (c *Cache) runLazyOperationDecision(ctx context.Context, res AnyResult, add
 			}
 			if outcome != GateGranted {
 				return partRefused("decision: final source check refused")
-			}
-			if err := engine.CheckSnapshotSharePreparation(ctx, "run lazy operation"); err != nil {
-				return err
 			}
 			// No source could supply the part: it is computed here.
 			wcprof.Fact(ctx, 0, "part.no_source", uint64(row.id))

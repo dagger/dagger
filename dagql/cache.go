@@ -2710,10 +2710,6 @@ type Cache struct {
 	// Landing).
 	lookupWaits lookupLockWaits
 	landing     atomic.Int32
-	// shareStats are what the snapshot-sharing passes did, by the kind of
-	// class (Sharing). Guarded by shareStatsMu.
-	shareStatsMu sync.Mutex
-	shareStats   [numShareClassKinds]SharePassStats
 
 	// testBetweenLateMissHolds, nil but in tests, runs between
 	// LateRemoteMisses's two holds of the lookups' lock.
@@ -2915,20 +2911,7 @@ type Cache struct {
 	operationWaitMu        sync.Mutex
 	operationWaitCh        chan struct{}
 
-	// Early snapshot sharing. Every field here is guarded by egraphMu (E)
-	// except the wake channel, which is a nonblocking signal. See
-	// cache_snapshot_sharing.go.
-	shareAdmission     snapshotShareAdmission
-	shareNotify        *snapshotShareNotifications
-	sharePending       map[eqClassID]*snapshotShareItem
-	shareQueue         []eqClassID
-	shareWorkerStarted bool
-	shareWorkerCancel  context.CancelCauseFunc
-	shareWake          chan struct{}
-	// shareDuplicateHolds are member holds dropped by coalescing, released
-	// through the ordinary unlocked path by the next queue operation.
-	shareDuplicateHolds []*sharedResult
-	// shareReport receives the parts each pass completed; see
+	// shareReport receives the complete parts entries' spans left out; see
 	// WithSnapshotShareReport. Set at construction.
 	shareReport func([]SnapshotSharedPart)
 	// partReads reports the parts of entries work reads; see
@@ -2943,9 +2926,6 @@ type Cache struct {
 	// testOwedPartsRead, when set, runs after a pass of owed reports has read
 	// an entry's parts, before the pass ends.
 	testOwedPartsRead func(*sharedResult)
-	// partPreparation is the engine's registered preparation-context
-	// callback, nil on a cache that cannot reconstruct persisted services.
-	partPreparation PartPreparationContext
 
 	// sessionLifecycles retains one small atomic record per session for the
 	// engine lifetime. The packed release bit and operation count make admission
@@ -3223,13 +3203,6 @@ type Cache struct {
 	// testServableVisited runs for each result a candidate collection or
 	// equivalence test examines (servableCandidateLocked), under E.
 	testServableVisited func(sharedResultID)
-	// snapshot sharing hooks: after a cohort is taken and its slots are
-	// planned but before the first preparation, and after the pass has
-	// finished every Finish and released every member hold.
-	testBeforeSharePass   func(*snapshotShareItem, int)
-	testAfterSharePass    func(*snapshotShareItem)
-	testShareSkipped      func(sharedResultID, PersistedPartAddress, error)
-	testBeforeShareFinish func(*ReadyPartReceipt)
 	// testBeforePartCommit sees every preparation as Commit receives it.
 	testBeforePartCommit func(*PreparedReadyPart)
 	// testInResultIDLookup runs inside sharedResultByResultID's session
@@ -5700,9 +5673,6 @@ func blockedOnPrerequisite(err error, selfID sharedResultID) bool {
 }
 
 func (c *Cache) Evaluate(ctx context.Context, results ...AnyResult) error {
-	if err := engine.CheckSnapshotSharePreparation(ctx, "evaluate result"); err != nil {
-		return err
-	}
 	switch len(results) {
 	case 0:
 		return nil
@@ -5857,9 +5827,6 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) (rerr error) {
 // the whole-result group, so this degenerates to Evaluate; the same
 // conservative fallback applies when no parts are named.
 func (c *Cache) EvaluateParts(ctx context.Context, res AnyResult, parts ...PartKey) (rerr error) {
-	if err := engine.CheckSnapshotSharePreparation(ctx, "evaluate result parts"); err != nil {
-		return err
-	}
 	waiterOp, shared, err := c.beginEvaluateOne(ctx, res)
 	if err != nil {
 		return err
@@ -6403,15 +6370,6 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 			// after the body (retiring the attempt, the span's end) is its time.
 			lazyOp.EndWithResult(profErrOutcome(err), uint64(shared.id))
 			close(attempt.done)
-			// Sharing's completion trigger runs after the D unlock and after
-			// the waiter wake, so a waiter never waits for it. Only a
-			// successful attempt notifies: a Body that returned success but
-			// failed its ownership or settlement does not. The hook
-			// revalidates the row's registration under E; a counted operation
-			// is not a row hold.
-			if err == nil {
-				c.notifySnapshotShareCompletion(callbackCtx, shared)
-			}
 			// An evaluation's end frees the record it held, and can complete
 			// parts: owed reports may now be made, and a capture it kept the
 			// row out of may take it.
@@ -6526,19 +6484,11 @@ func (c *Cache) CloseWithShutdownError(ctx context.Context, cause error) error {
 		c.closeRemoteCacheBridge()
 		c.closePartPrefetch()
 		c.closeStoredBodies()
-		// After the bridge detach, which is what sets closing: an enqueue
-		// either finished its E section before this step, and is dropped
-		// here, or fails admission. Placed before it, an enqueue in between
-		// could strand a counted operation with no worker.
-		c.closeSnapshotSharing()
 		c.partReads.flush()
 		if err := c.waitForQuiescence(ctx); err != nil {
 			slog.Error("dagql cache close failed waiting for quiescence; persistence will remain dirty", "err", err)
 			c.closeErr = errors.Join(c.closeErr, fmt.Errorf("wait for dagql cache quiescence: %w", err))
 		}
-		// The registered preparation root outlives the worker and every
-		// decoded row until the drain has finished.
-		c.clearPartPreparationContext()
 		if err := c.releaseCleanupError(); err != nil {
 			slog.Error("dagql cache close found session cleanup errors; persistence will remain dirty", "err", err)
 			c.closeErr = errors.Join(c.closeErr, err)
@@ -6585,9 +6535,6 @@ func (c *Cache) CloseDiscardingPersistence() error {
 		c.closeRemoteCacheBridge()
 		c.closePartPrefetch()
 		c.closeStoredBodies()
-		// The discard path is the boot reset, before sharing is enabled:
-		// this closes admission and has nothing to drain.
-		c.closeSnapshotSharing()
 		// Nothing is reported for a cache whose state is discarded.
 		c.stopOwedPartReports()
 		slog.Info(
@@ -8485,7 +8432,6 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		oc.res.expiresAtUnix,
 		oc.candidateExpiryUnix(now.Unix()),
 	)
-	notify, notifyOwner := c.beginShareNotificationsLocked()
 	resultCall := oc.res.loadResultCall()
 	indexErr := c.indexWaitResultInEgraphLocked(
 		ctx,
@@ -8510,7 +8456,6 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 	// taken at adoption, so they are never rolled back.
 	failPartialPublication := func(cause error) error {
 		if resWasCacheBacked {
-			c.flushShareNotificationsLocked(ctx, notify, notifyOwner)
 			c.egraphMu.Unlock()
 			if adoptedCurrent {
 				cause = errors.Join(cause, runOnReleaseFuncs(context.WithoutCancel(ctx), []OnReleaseFunc{discardedValue}))
@@ -8535,10 +8480,6 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 			releases = append(append(releases, replaced.release), collectReleases...)
 			replacedErr = errors.Join(replacedErr, collectErr)
 		}
-		// Roll back first, then flush: queueing enumerates each class's
-		// current registered members, so the removed row cannot be retained
-		// and the surviving members stay valid.
-		c.flushShareNotificationsLocked(ctx, notify, notifyOwner)
 		c.egraphMu.Unlock()
 		return errors.Join(cause, rollbackErr, replacedErr, runOnReleaseFuncs(cleanupCtx, releases))
 	}
@@ -8602,7 +8543,6 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		releaseQueue, depErr = c.releaseReplacedDependenciesLocked(ctx, replaced, releaseQueue)
 		replacedReleases, collectErr = c.collectUnownedResultsLocked(context.WithoutCancel(ctx), releaseQueue)
 		if err := errors.Join(depErr, collectErr); err != nil {
-			c.flushShareNotificationsLocked(ctx, notify, notifyOwner)
 			c.egraphMu.Unlock()
 			return errors.Join(err, runOnReleaseFuncs(context.WithoutCancel(ctx), replacedReleases))
 		}
@@ -8615,14 +8555,8 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		oc.res.attachDepsMu.Unlock()
 	}
 	// The first E unlock of this publication, after direct-edge validation,
-	// handoff ownership and attachment-barrier setup are all decided. A queue
-	// hold taken here can retain a registered row for one pass if the
-	// unlocked attachment or sync below then fails; the probe skips that
-	// unfinished publication and releasing the cohort ends the retention.
-	c.flushShareNotificationsLocked(ctx, notify, notifyOwner)
-	shareDuplicates := c.takeShareDuplicateHoldsLocked()
+	// handoff ownership and attachment-barrier setup are all decided.
 	c.egraphMu.Unlock()
-	c.releaseShareDuplicateHolds(ctx, shareDuplicates)
 
 	// failAttachment rolls back a publication whose value failed to attach
 	// or sync after the critical section, and drops its handoff hold. An
@@ -8713,14 +8647,6 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		c.registerLazyEvaluation(oc.res, oc.val)
 	}
 	finishAttachDeps(nil)
-	// Eager completion: attachment, lease synchronization and lazy
-	// registration have all succeeded, and the publication handoff hold still
-	// protects the row. An attachment or sync failure above returns before
-	// this point and produces no completion notification. An adopted entry
-	// was announced when it was published.
-	if !adoptedCurrent {
-		c.notifySnapshotShareCompletion(ctx, oc.res)
-	}
 
 	return nil
 }

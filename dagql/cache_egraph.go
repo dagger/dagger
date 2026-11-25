@@ -427,9 +427,6 @@ func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID, moved *[]egraphTerm
 		delete(c.outputEqClassResults, rb)
 	}
 
-	// An actual union: the winner's membership and reverse indexes are in
-	// place. Pending queue keys are recanonicalized in the same union.
-	c.recordShareUnionLocked(ra, rb)
 	return ra, absorbedInputTerms
 }
 
@@ -1426,15 +1423,10 @@ func (c *Cache) lookupCacheForRequest(
 		// The hit teaches the e-graph: look it up again under the write lock.
 		c.egraphMu.RUnlock()
 		c.lookupLockGraph(ctx)
-		// One collector for this E interval: identity teaching can union
-		// classes or insert a new membership, and both are flushed before
-		// the unlock.
-		notify, notifyOwner := c.beginShareNotificationsLocked()
 		retRes, hit, persistedEdgeExpiresAtUnix, _, err = c.lookupCacheForRequestLocked(ctx, sessionID, req, requestDigest, requestSelf, requestInputs, requestInputRefs, false)
 		if err == nil && hit {
 			hitShared, trackedCount, requiredGenAtSelection, err = c.claimLookupHitLocked(ctx, sessionID, retRes)
 		}
-		c.flushShareNotificationsLocked(ctx, notify, notifyOwner)
 		c.egraphMu.Unlock()
 		if err == nil && !hit {
 			return retRes, false, nil
@@ -1566,11 +1558,7 @@ func (c *Cache) TeachCallEquivalentToResult(ctx context.Context, sessionID strin
 	}
 
 	c.lockGraphFor(ctx, workTeach)
-	notify, notifyOwner := c.beginShareNotificationsLocked()
-	defer func() {
-		c.flushShareNotificationsLocked(ctx, notify, notifyOwner)
-		c.egraphMu.Unlock()
-	}()
+	defer c.egraphMu.Unlock()
 	// Digest derivation above is outside egraphMu, so release can collect
 	// the result in that gap. Numeric result IDs are engine-lifetime unique,
 	// so registration under the ID means it is still this exact result.
@@ -1685,34 +1673,23 @@ func (c *Cache) teachContentDigest(ctx context.Context, shared *sharedResult, co
 		}
 
 		c.lockGraphFor(ctx, workTeach)
-		// A fresh collector for every acquisition of E: the changed-frame
-		// retry below unlocks and starts over, and a collector is never
-		// carried across an unlock.
-		notify, notifyOwner := c.beginShareNotificationsLocked()
 		// Numeric result IDs are engine-lifetime unique, so a registered ID
 		// still names the caller's result across retries.
 		if _, found := c.resultsByID[shared.id]; !found {
-			c.discardShareNotificationsLocked(notify, notifyOwner)
 			c.egraphMu.Unlock()
 			return false, fmt.Errorf("teach content digest: result %d was already collected", shared.id)
 		}
 		cur := shared.entryFrameLocked()
 		if !cur.ok() {
-			c.discardShareNotificationsLocked(notify, notifyOwner)
 			c.egraphMu.Unlock()
 			return false, fmt.Errorf("teach content digest: result %d has no call frame", shared.id)
 		}
 		if cur != base || c.blobBacked && (shared.persistedEnvelope != env || shared.stored != was) {
-			// Nothing was mutated in this interval.
-			c.discardShareNotificationsLocked(notify, notifyOwner)
 			c.egraphMu.Unlock()
 			continue
 		}
 		c.traceTeachContentDigest(ctx, shared, oldContentDigest.String(), contentDigest.String(), requestDigest.String(), requestSelf.String(), requestInputs, frame)
 		if err := c.teachResultIdentityLocked(ctx, shared, frame, requestDigest, requestSelf, requestInputs, requestInputRefs); err != nil {
-			// Partial identity mutation may have happened before the error;
-			// flush what survives rather than dropping it.
-			c.flushShareNotificationsLocked(ctx, notify, notifyOwner)
 			c.egraphMu.Unlock()
 			return false, err
 		}
@@ -1735,7 +1712,6 @@ func (c *Cache) teachContentDigest(ctx context.Context, shared *sharedResult, co
 		c.stampEntryLocked(shared, StampFrame)
 		c.stampPendingLocked()
 		c.traceResultCallFrameUpdated(ctx, shared, "teach_content_digest", baseFrame, frame)
-		c.flushShareNotificationsLocked(ctx, notify, notifyOwner)
 		c.egraphMu.Unlock()
 		return true, nil
 	}
@@ -1936,13 +1912,7 @@ func (c *Cache) addResultOutputEqClassLocked(resID sharedResultID, outputEqID eq
 		results = make(map[sharedResultID]struct{})
 		c.outputEqClassResults[outputEqID] = results
 	}
-	_, hadReverse := results[resID]
 	results[resID] = struct{}{}
-	if !hadForward || !hadReverse {
-		// New membership in an existing class, with no union of its own.
-		// Recorded only once both memberships exist.
-		c.recordShareMembershipLocked(outputEqID)
-	}
 }
 
 // removeResultOutputEqClassesLocked requires egraphMu and an e-graph initialized
