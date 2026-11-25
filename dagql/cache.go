@@ -2859,9 +2859,10 @@ type Cache struct {
 	// nothing in its bundle stands on (keepNeededRows), so a test can merge
 	// both and compare them.
 	testKeepEveryKnownRow bool
-	// testKeepRecordCopies, when set, keeps a prepared merge holding the
-	// copies of its bundle's records that only its preparation reads
-	// (dropRecordCopies).
+	// testKeepRecordCopies, when set, keeps a prepared merge holding what
+	// only its preparation reads: the copies of its bundle's records, its
+	// records' frames bound to its private cache (dropRecordCopies), and its
+	// early decision.
 	testKeepRecordCopies bool
 	// testPrivateMergeCache runs once a merge's preparation has built the
 	// private cache it derives identities in (privateMergeCache), with it.

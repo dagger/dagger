@@ -87,8 +87,8 @@ var mergeTestDropCaches = map[string]func(t *testing.T) (context.Context, *Cache
 // A prepared merge waiting for its commit holds no copy of its bundle's
 // payloads or call frames: of each row, only its own fields and its offers,
 // which the commit's closure reads, and of each record's entry in the
-// private cache it derived identities in, no envelope. The commit reads each
-// record as prepared, and commits.
+// private cache it derived identities in, only the frame its plan keeps. The
+// commit reads each record as prepared, and commits.
 func TestPreparedMergeHoldsNoCopyOfItsRecords(t *testing.T) {
 	t.Parallel()
 	for cacheName, newCache := range mergeTestDropCaches {
@@ -115,8 +115,7 @@ func TestPreparedMergeHoldsNoCopyOfItsRecords(t *testing.T) {
 						if p.prep.held[id] {
 							continue
 						}
-						require.Nil(t, plan.row.persistedEnvelope, "row %d's private entry holds no envelope", id)
-						require.NotNil(t, plan.row.loadResultCall(), "row %d's private entry keeps its frame", id)
+						require.NotNil(t, plan.frame, "row %d's plan keeps its frame", id)
 					}
 					reply, err := c.CommitValueMerge(ctx, p)
 					require.NoError(t, err)

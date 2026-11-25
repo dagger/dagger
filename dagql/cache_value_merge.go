@@ -320,6 +320,12 @@ func (c *Cache) prepareCheckedMerge(ctx context.Context, from CacheID, input Val
 		c.warmMergeTargetParts(warmCtx, prep)
 		c.prerelocateMergeRows(warmCtx, prep)
 	}
+	// The early decision is the preparation's, as the records it relocated
+	// by: the commit decides again under the lock, and takes each record
+	// relocated before it whose numbers still hold (prerelocated).
+	if !c.testKeepRecordCopies {
+		prep.early = nil
+	}
 	// A prepare cancelled while it warmed fails, as one cancelled before
 	// it did: its caller has no merge to commit or release.
 	if err := context.Cause(ctx); err != nil {
@@ -938,27 +944,34 @@ func (c *Cache) prepareCheckedValueMerge(ctx context.Context, prep *valueMergePr
 		return nil, err
 	}
 	if !c.testKeepRecordCopies {
-		prep.dropRecordCopies(private)
+		prep.dropRecordCopies()
 	}
 	return prep, nil
 }
 
-// dropRecordCopies lets go of the copies of the bundle's records that only
-// the preparation read, once every record is prepared: each row's record
-// but its offers, which the commit's closure reads (liveClosure), and each
-// private entry's envelope, which shares that record's payload. The commit
-// reads each record as prepared (records), each row's own fields, and of
-// each private entry its frame, description and record type, so it commits
-// the same merge; a prepared merge waiting for its commit holds only that.
-// After preparation, read a row's record, its call and payload, from records,
+// dropRecordCopies lets go of what only the preparation read, once every
+// record is prepared: each row's record but its offers, which the commit's
+// closure reads (liveClosure), and the private cache it derived identities
+// in. The plans keep what the commit reads of the private entries (their
+// frames, descriptions and record types), and the frames of the records,
+// which the private entries share, are unbound from it: the commit binds an
+// installed frame's references to the entries they name
+// (bindMergedFrameLocked). So the commit reads each record as prepared
+// (records), each row's own fields and its plan, and commits the same merge;
+// a prepared merge waiting for its commit holds only that. After
+// preparation, read a row's record, its call and payload, from records,
 // never from the bundle's row.
-func (prep *valueMergePrep) dropRecordCopies(private *Cache) {
+func (prep *valueMergePrep) dropRecordCopies() {
 	for i := range prep.bundle.Values {
 		row := &prep.bundle.Values[i]
 		row.Record = PersistedRecord{Envelope: PersistedResultEnvelope{PendingOffers: row.Record.Envelope.PendingOffers}}
 	}
-	for _, res := range private.resultsByID {
-		res.persistedEnvelope = nil
+	for _, rec := range prep.records {
+		// A held row keeps no record, and its frame is the cache's own.
+		_ = walkTransferCalls(rec.Call, func(*ResultCall) error { return nil }, func(ref *ResultCallRef) error {
+			ref.shared = nil
+			return nil
+		})
 	}
 }
 
@@ -1015,10 +1028,9 @@ func (c *Cache) privateMergeCache(ctx context.Context, prep *valueMergePrep, hel
 			// The held row stands in with its entry's own call frame, whose
 			// recipe the rows that depend on it derive theirs from: decoded,
 			// or held in the entry's stored body with its recipe. The frame
-			// is the cache's: nothing below relocates or rewires it.
-			rec := PersistedRecord{ResultID: prep.firstID + id - 1}
-			prep.records[id] = rec
-			res := &sharedResult{id: sharedResultID(rec.ResultID), imported: true, expiresAtUnix: row.ExpiresAtUnix}
+			// is the cache's: nothing below relocates or rewires it. It has
+			// no record: the commit installs none for it.
+			res := &sharedResult{id: sharedResultID(prep.firstID + id - 1), imported: true, expiresAtUnix: row.ExpiresAtUnix}
 			if frame := heldFrames[id]; frame.call != nil {
 				res.storeResultCall(frame.call)
 			} else {
@@ -1090,11 +1102,10 @@ func (c *Cache) privateMergeCache(ctx context.Context, prep *valueMergePrep, hel
 // in dependency order; a held row's is its recipe alone.
 func (c *Cache) planMergeIdentities(prep *valueMergePrep, private *Cache) error {
 	for i, id := range prep.order {
-		res := private.resultsByID[sharedResultID(prep.firstID+id-1)]
-		plan := transferIdentityPlan{row: res, recipe: prep.index[id].Held}
+		plan := transferIdentityPlan{recipe: prep.index[id].Held}
 		if !prep.held[id] {
 			var err error
-			if plan, err = private.transferIdentityPlanOf(res); err != nil {
+			if plan, err = private.transferIdentityPlanOf(private.resultsByID[sharedResultID(prep.firstID+id-1)]); err != nil {
 				return err
 			}
 		}
@@ -1640,7 +1651,7 @@ func (c *Cache) transferIdentityPlanOf(res *sharedResult) (transferIdentityPlan,
 	if err != nil {
 		return transferIdentityPlan{}, err
 	}
-	plan := transferIdentityPlan{row: res, recipe: recipe, self: self}
+	plan := transferIdentityPlan{frame: frame, description: res.description, recordType: res.recordType, recipe: recipe, self: self}
 	plan.provenance, err = c.inputProvenanceForRefs(refs)
 	if err != nil {
 		return transferIdentityPlan{}, err
@@ -3199,7 +3210,7 @@ func (c *Cache) applyMergedIdentitiesLocked(ctx context.Context, commit *valueMe
 			row.unchanged = true
 			continue
 		}
-		frame := row.plan.row.loadResultCall()
+		frame := row.plan.frame
 		if row.action.installs() {
 			frame = row.res.loadResultCall()
 		}
@@ -3407,8 +3418,8 @@ func (c *Cache) installMergedRecordLocked(res *sharedResult, row *mergeRow, orig
 	res.sessionResourceHandle = rec.Envelope.SessionResourceHandle
 	res.boundSession = rec.Envelope.BoundSession
 	res.payloadMu.Unlock()
-	res.description = row.plan.row.description
-	res.recordType = row.plan.row.recordType
+	res.description = row.plan.description
+	res.recordType = row.plan.recordType
 	res.storeResultCall(rec.Call)
 	// The record's frame has taken none of the content digests spans taught
 	// the entry before it arrived (an entry known only through holdings,
