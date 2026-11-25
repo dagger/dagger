@@ -475,7 +475,7 @@ func TestApplyMergedReplyCreatesTheEngineHoldings(t *testing.T) {
 	reply, err := b.MergeValues(bctx, cloudCacheID, sent)
 	require.NoError(t, err)
 
-	change, err := cloud.ApplyMergedReply(ctx, "cache-b", sent, reply)
+	change, err := cloud.ApplyMergedReply(ctx, "cache-b", sent.Sent(), reply)
 	require.NoError(t, err)
 	require.Len(t, change.Candidates, 2)
 	collected, _, err := cloud.CollectRemoteHoldings(ctx, change.Candidates, nil)
@@ -1275,7 +1275,7 @@ func TestApplyMergedReplyThenAPruneDrop(t *testing.T) {
 	reply, err := b.MergeValues(bctx, cloudCacheID, sent)
 	require.NoError(t, err)
 	rootKey := HolderKey{Cache: "cache-b", Number: reply.Roots[0].Number}
-	change, err := cloud.ApplyMergedReply(ctx, "cache-b", sent, reply)
+	change, err := cloud.ApplyMergedReply(ctx, "cache-b", sent.Sent(), reply)
 	require.NoError(t, err)
 	collected, _, err := cloud.CollectRemoteHoldings(ctx, change.Candidates, nil)
 	require.NoError(t, err)
@@ -1298,7 +1298,7 @@ func TestApplyMergedReplyThenAPruneDrop(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, collected, 2, "the root's holding and its dependency's")
 
-	change, err = cloud.ApplyMergedReply(ctx, "cache-b", sent, reply)
+	change, err = cloud.ApplyMergedReply(ctx, "cache-b", sent.Sent(), reply)
 	require.NoError(t, err)
 	collected, _, err = cloud.CollectRemoteHoldings(ctx, change.Candidates, nil)
 	require.NoError(t, err)
@@ -1327,7 +1327,7 @@ func TestApplyMergedReplyKeepsAKeptEntrysOwnDependencies(t *testing.T) {
 	reply, err := b.MergeValues(bctx, cloudCacheID, sent)
 	require.NoError(t, err)
 
-	change, err := cloud.ApplyMergedReply(ctx, "cache-b", sent, reply)
+	change, err := cloud.ApplyMergedReply(ctx, "cache-b", sent.Sent(), reply)
 	require.NoError(t, err)
 	collected, _, err := cloud.CollectRemoteHoldings(ctx, change.Candidates, nil)
 	require.NoError(t, err)

@@ -799,69 +799,148 @@ func (c *Cache) addHoldingLocked(ctx context.Context, state *remoteCacheState, k
 // observation, at the reply's generation and engine time. A record whose
 // Cloud entry is gone is skipped.
 //
-// It collects nothing. It returns the holdings it created or released an
-// owner of, for the next CollectRemoteHoldings, and the recipes it affected.
-func (c *Cache) ApplyMergedReply(ctx context.Context, cache CacheID, sent ValueBundle, reply MergeReply) (RemoteChange, error) {
-	cloudEntries, targets, err := prepareMergedReply(cache, sent, reply)
+// sent is what the Cloud kept of the bundle it sent (ValueBundle.Sent). It
+// collects nothing. It returns the holdings it created or released an owner
+// of, for the next CollectRemoteHoldings, and the recipes it affected.
+func (c *Cache) ApplyMergedReply(ctx context.Context, cache CacheID, sent SentBundle, reply MergeReply) (RemoteChange, error) {
+	targets, err := prepareMergedReply(cache, sent, reply)
 	if err != nil {
 		return RemoteChange{}, err
 	}
 	c.lockGraphFor(ctx, workRemote)
 	defer c.egraphMu.Unlock()
-	return c.applyMergedReplyLocked(ctx, cache, cloudEntries, targets, reply), nil
+	return c.applyMergedReplyLocked(ctx, cache, targets, reply), nil
 }
 
-// mergedTarget is a record of a merged reply, with its complete and offered
-// part address keys.
+// SentBundle is what applying an engine cache's merged reply reads of the
+// bundle the Cloud sent it (ApplyMergedReply): each row's Cloud entry, by
+// ordinal, and the run its record named when the bundle was built. A
+// sender keeps it in place of the bundle until the reply comes: a built
+// bundle's row is about a kilobyte, and its record's compressed body is the
+// cache's own, which a replacement or a prune lets go of only once nothing
+// else holds it.
+type SentBundle struct {
+	// entries are the rows' Cloud entries (TransferredValue.SenderNumber),
+	// and runs the runs their records named (TransferredValue.served), nil
+	// when none did, each in the rows' order.
+	entries []uint64
+	runs    []sentRun
+	// at is each row's place by its ordinal, for a bundle whose rows aren't
+	// in ordinal order from 1; nil for one whose are, as every bundle
+	// StoredBundle builds is.
+	at map[TransferOrdinal]int
+}
+
+// Sent returns what applying a merged reply to the bundle reads of it
+// (SentBundle).
+func (b ValueBundle) Sent() SentBundle {
+	sent := SentBundle{entries: make([]uint64, len(b.Values))}
+	for i, value := range b.Values {
+		sent.entries[i] = value.SenderNumber
+		if value.served != nil {
+			if sent.runs == nil {
+				sent.runs = make([]sentRun, len(b.Values))
+			}
+			sent.runs[i] = sentRun{run: value.served.run, ran: value.served.ran, known: value.served.known}
+		}
+		if value.Ordinal != TransferOrdinal(i+1) && sent.at == nil {
+			sent.at = make(map[TransferOrdinal]int, len(b.Values))
+			for j, earlier := range b.Values[:i] {
+				sent.at[earlier.Ordinal] = j
+			}
+		}
+		if sent.at != nil {
+			sent.at[value.Ordinal] = i
+		}
+	}
+	return sent
+}
+
+// sentRun is the run a sent row's record named when the bundle was built
+// (TransferredValue.served), and how the Cloud learned it ran its step;
+// known is false for a row whose record named none.
+type sentRun struct {
+	run   RunName
+	ran   runRanBy
+	known bool
+}
+
+// Len returns how many rows the bundle sent.
+func (s SentBundle) Len() int {
+	return len(s.entries)
+}
+
+// place returns the place of the sent row of ordinal, and whether the
+// bundle sent one.
+func (s SentBundle) place(ordinal TransferOrdinal) (int, bool) {
+	if s.at != nil {
+		i, ok := s.at[ordinal]
+		return i, ok
+	}
+	i := int(ordinal) - 1
+	return i, ordinal > 0 && i < len(s.entries)
+}
+
+// SenderNumber returns the Cloud entry of the sent row of ordinal (its
+// TransferredValue.SenderNumber), and whether the bundle sent one.
+func (s SentBundle) SenderNumber(ordinal TransferOrdinal) (uint64, bool) {
+	i, ok := s.place(ordinal)
+	if !ok {
+		return 0, false
+	}
+	return s.entries[i], true
+}
+
+// mergedTarget is a record of a merged reply, with the Cloud entry of the
+// row it landed, and its complete and offered part address keys.
 type mergedTarget struct {
 	value         MergedValue
+	entry         sharedResultID
 	parts, offers []string
-	// served is the run the sent record named when the bundle was built
-	// (TransferredValue.served), nil when it named none or the bundle
-	// doesn't carry it.
-	served *servedRun
+	// run is the run the sent record named when the bundle was built
+	// (SentBundle.runs), not known when it named none.
+	run sentRun
 }
 
 // prepareMergedReply checks a merged reply against the bundle sent, and
-// returns the Cloud entry of each of the bundle's ordinals and the reply's
-// records, ready to apply. It reads nothing of the cache.
-func prepareMergedReply(cache CacheID, sent ValueBundle, reply MergeReply) (map[TransferOrdinal]sharedResultID, []mergedTarget, error) {
+// returns the reply's records, each with its row's Cloud entry, ready to
+// apply. It reads nothing of the cache.
+func prepareMergedReply(cache CacheID, sent SentBundle, reply MergeReply) ([]mergedTarget, error) {
 	if cache == "" || senderCache(cache) {
-		return nil, nil, fmt.Errorf("apply merged reply: %q is not an engine cache", cache)
-	}
-	cloudEntries := make(map[TransferOrdinal]sharedResultID, len(sent.Values))
-	served := make(map[TransferOrdinal]*servedRun, len(sent.Values))
-	for _, value := range sent.Values {
-		cloudEntries[value.Ordinal] = sharedResultID(value.SenderNumber)
-		served[value.Ordinal] = value.served
+		return nil, fmt.Errorf("apply merged reply: %q is not an engine cache", cache)
 	}
 	targets := make([]mergedTarget, 0, len(reply.Values))
 	for _, value := range reply.Values {
 		if value.Number == 0 {
-			return nil, nil, fmt.Errorf("apply merged reply: ordinal %d has no number", value.Ordinal)
+			return nil, fmt.Errorf("apply merged reply: ordinal %d has no number", value.Ordinal)
 		}
-		if _, ok := cloudEntries[value.Ordinal]; !ok {
-			return nil, nil, fmt.Errorf("apply merged reply: ordinal %d was not sent", value.Ordinal)
+		i, ok := sent.place(value.Ordinal)
+		if !ok {
+			return nil, fmt.Errorf("apply merged reply: ordinal %d was not sent", value.Ordinal)
 		}
 		parts, err := heldPartKeys(value.Parts)
 		if err != nil {
-			return nil, nil, fmt.Errorf("apply merged reply: ordinal %d: %w", value.Ordinal, err)
+			return nil, fmt.Errorf("apply merged reply: ordinal %d: %w", value.Ordinal, err)
 		}
 		offers, err := heldPartKeys(value.OfferedParts)
 		if err != nil {
-			return nil, nil, fmt.Errorf("apply merged reply: ordinal %d: %w", value.Ordinal, err)
+			return nil, fmt.Errorf("apply merged reply: ordinal %d: %w", value.Ordinal, err)
 		}
-		targets = append(targets, mergedTarget{value: value, parts: parts, offers: offers, served: served[value.Ordinal]})
+		target := mergedTarget{value: value, entry: sharedResultID(sent.entries[i]), parts: parts, offers: offers}
+		if sent.runs != nil {
+			target.run = sent.runs[i]
+		}
+		targets = append(targets, target)
 	}
-	return cloudEntries, targets, nil
+	return targets, nil
 }
 
 // applyMergedReplyLocked applies a merged reply prepared by
 // prepareMergedReply, as ApplyMergedReply describes. Requires egraphMu for
 // writing.
-func (c *Cache) applyMergedReplyLocked(ctx context.Context, cache CacheID, cloudEntries map[TransferOrdinal]sharedResultID, targets []mergedTarget, reply MergeReply) (change RemoteChange) {
+func (c *Cache) applyMergedReplyLocked(ctx context.Context, cache CacheID, targets []mergedTarget, reply MergeReply) (change RemoteChange) {
 	defer c.takeChangesLocked(&change)
-	c.applyMergedTargetsLocked(ctx, cache, cloudEntries, targets, &change)
+	c.applyMergedTargetsLocked(ctx, cache, targets, &change)
 	c.applyMergedRootsLocked(cache, reply, &change)
 	return change
 }
@@ -869,14 +948,14 @@ func (c *Cache) applyMergedReplyLocked(ctx context.Context, cache CacheID, cloud
 // applyMergedTargetsLocked lands a merged reply's records, targets, on the
 // engine cache's holdings, as ApplyMergedReply describes, and adds what it
 // changed to change. Requires egraphMu for writing.
-func (c *Cache) applyMergedTargetsLocked(ctx context.Context, cache CacheID, cloudEntries map[TransferOrdinal]sharedResultID, targets []mergedTarget, change *RemoteChange) {
+func (c *Cache) applyMergedTargetsLocked(ctx context.Context, cache CacheID, targets []mergedTarget, change *RemoteChange) {
 	c.initEgraphLocked()
 	state := c.remoteCacheLocked(cache)
 	for _, t := range targets {
 		key := HolderKey{Cache: cache, Number: t.value.Number}
 		entry, h := c.holdingLocked(key)
 		if h == nil {
-			entry = c.resultsByID[cloudEntries[t.value.Ordinal]]
+			entry = c.resultsByID[t.entry]
 			if entry == nil {
 				continue
 			}
@@ -902,8 +981,8 @@ func (c *Cache) applyMergedTargetsLocked(ctx context.Context, cache CacheID, clo
 		// applyHeldValueStateLocked ignores its state.
 		if c.blobBacked && t.value.Stored && t.value.Replacements >= before {
 			served := servedRun{replacements: t.value.Replacements}
-			if t.served != nil && t.served.known {
-				served.run, served.ran, served.known = t.served.run, t.served.ran, true
+			if t.run.known {
+				served.run, served.ran, served.known = t.run.run, t.run.ran, true
 			}
 			h.served = &served
 		}
@@ -945,22 +1024,21 @@ func (c *Cache) applyMergedRootsLocked(cache CacheID, reply MergeReply, change *
 // observes: less than the engine holds, never other. Applied whole, piece
 // by piece, it changes the cache as ApplyMergedReply does.
 type MergedReplyApply struct {
-	cache        CacheID
-	cloudEntries map[TransferOrdinal]sharedResultID
-	targets      []mergedTarget
-	reply        MergeReply
-	next         int
+	cache   CacheID
+	targets []mergedTarget
+	reply   MergeReply
+	next    int
 }
 
 // PrepareMergedReply checks and prepares an engine cache's merged reply,
 // as ApplyMergedReply does before its lock, to apply in pieces. It reads
 // nothing of the cache.
-func PrepareMergedReply(cache CacheID, sent ValueBundle, reply MergeReply) (*MergedReplyApply, error) {
-	cloudEntries, targets, err := prepareMergedReply(cache, sent, reply)
+func PrepareMergedReply(cache CacheID, sent SentBundle, reply MergeReply) (*MergedReplyApply, error) {
+	targets, err := prepareMergedReply(cache, sent, reply)
 	if err != nil {
 		return nil, err
 	}
-	return &MergedReplyApply{cache: cache, cloudEntries: cloudEntries, targets: targets, reply: reply}, nil
+	return &MergedReplyApply{cache: cache, targets: targets, reply: reply}, nil
 }
 
 // Records returns how many records the reply lands.
