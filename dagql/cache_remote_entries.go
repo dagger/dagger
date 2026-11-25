@@ -1762,6 +1762,7 @@ func (c *Cache) teachRemoteIdentityLocked(ctx context.Context, entry *sharedResu
 		if t := entry.taughtContent; t == nil || len(t.digests) == 0 || t.digests[len(t.digests)-1] != content {
 			t = entry.taughtStateLocked()
 			t.digests = append(t.digests, content)
+			c.noteSavedEntryLocked(entry.id)
 		}
 		c.queueTaughtContentLocked(entry)
 	}
@@ -1889,6 +1890,7 @@ func (c *Cache) writeRemoteIdentityLocked(ctx context.Context, entry *sharedResu
 		for _, extra := range extras {
 			classExtras[extra] = struct{}{}
 		}
+		c.noteSavedClassLocked(outputEqID)
 	}
 	if term == nil || term.Self == "" {
 		return
