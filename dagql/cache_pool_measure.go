@@ -197,8 +197,10 @@ func (c *Cache) setStoredRecordBytesLocked(res *sharedResult, n int64) {
 }
 
 // changeStoredPartsLocked runs change, a write of res's stored parts, keeping
-// the pool's blobs. Requires egraphMu for writing.
+// the pool's blobs, and counts it as a write to res's saved record, which
+// holds them (recordLock). Requires egraphMu for writing.
 func (c *Cache) changeStoredPartsLocked(res *sharedResult, change func()) {
+	defer res.payloadMu.noteWrite()
 	if !res.inPool {
 		change()
 		return

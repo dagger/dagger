@@ -3,10 +3,12 @@ CREATE TABLE IF NOT EXISTS meta (
     value TEXT NOT NULL
 ) STRICT, WITHOUT ROWID;
 
+-- results are each entry's own fields. Its record, which is most of its
+-- bytes and changes rarely, is in result_records, so that a save writing a
+-- change of the entry's fields, such as its last use, leaves its record as it
+-- is.
 CREATE TABLE IF NOT EXISTS results (
     id INTEGER PRIMARY KEY,
-    call_frame_json TEXT NOT NULL,
-    self_payload BLOB NOT NULL,
     output_effect_ids_json TEXT NOT NULL DEFAULT '[]',
     expires_at_unix INTEGER NOT NULL DEFAULT 0,
     replacements INTEGER NOT NULL DEFAULT 0,
@@ -17,7 +19,15 @@ CREATE TABLE IF NOT EXISTS results (
     created_at_unix_nano INTEGER NOT NULL,
     last_used_at_unix_nano INTEGER NOT NULL,
     record_type TEXT NOT NULL DEFAULT '',
-    description TEXT NOT NULL DEFAULT ''
+    description TEXT NOT NULL DEFAULT '',
+    change_stamp INTEGER NOT NULL DEFAULT 0
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS result_records (
+    result_id INTEGER PRIMARY KEY,
+    call_frame_json TEXT NOT NULL,
+    self_payload BLOB NOT NULL,
+    FOREIGN KEY(result_id) REFERENCES results(id) ON DELETE CASCADE
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS eq_classes (
