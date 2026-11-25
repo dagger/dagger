@@ -178,6 +178,19 @@ to dagger.
 
 ## 🚀 Release
 
+- [ ] Before pushing the tag, create the winget branch the publish will use,
+      from a microsoft/winget-pkgs commit a few minutes old. The publish
+      otherwise creates it from microsoft's newest commit, and GitHub refused
+      that with `422 Reference update failed` during `v1.0.0-beta.29`, which
+      stopped the publish before the SDKs. The publish skips creating a branch
+      that exists.
+
+  ```console
+  # GNU date; on macOS use: date -u -v-5M +%Y-%m-%dT%H:%M:%SZ
+  WINGET_BASE=$(gh api "repos/microsoft/winget-pkgs/commits?sha=master&until=$(date -u -d '-5 minutes' +%Y-%m-%dT%H:%M:%SZ)&per_page=1" --jq '.[0].sha')
+  gh api -X POST repos/dagger/winget-pkgs/git/refs -f ref="refs/heads/dagger-${ENGINE_VERSION#v}" -f sha="$WINGET_BASE"
+  ```
+
 - [ ] When you have confirmed that all checks on `$RELEASE_BRANCH` are green, pull the latest changes, and push the tag to trigger the release workflow by running:
 
   ```console
@@ -192,19 +205,6 @@ to dagger.
 > [!NOTE]
 >
 > We should probably sign the git tag before pushing.
-
-- [ ] Before pushing the tag, create the winget branch the publish will use,
-      from a microsoft/winget-pkgs commit a few minutes old. The publish
-      otherwise creates it from microsoft's newest commit, and GitHub refused
-      that with `422 Reference update failed` during `v1.0.0-beta.29`, which
-      stopped the publish before the SDKs. The publish skips creating a branch
-      that exists.
-
-  ```console
-  # GNU date; on macOS use: date -u -v-5M +%Y-%m-%dT%H:%M:%SZ
-  WINGET_BASE=$(gh api "repos/microsoft/winget-pkgs/commits?sha=master&until=$(date -u -d '-5 minutes' +%Y-%m-%dT%H:%M:%SZ)&per_page=1" --jq '.[0].sha')
-  gh api -X POST repos/dagger/winget-pkgs/git/refs -f ref="refs/heads/dagger-${ENGINE_VERSION#v}" -f sha="$WINGET_BASE"
-  ```
 
 This will kick off [`.github/workflows/publish.yml`](https://github.com/dagger/dagger/actions/workflows/publish.yml) which publishes:
 
