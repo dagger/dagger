@@ -314,6 +314,70 @@ func (ModuleLoadingSuite) TestModuleSourceReadIsTheSameForEveryCallerVersion(ctx
 	require.Equal(t, olderFirst, currentFirst, "each module reads the same whichever reads first")
 }
 
+// A module-source read of a branch is each session's own: the branch is
+// resolved live, which keeps the read in its session, so a later session
+// reads where the branch points now, not where it pointed for an earlier one.
+// The reader's function is never cached, so only the read inside it could be
+// shared.
+func (ModuleLoadingSuite) TestModuleSourceReadOfABranchIsEachSessions(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	gitSrv, _ := gitService(ctx, t, c, core.NewQuery(c).Directory().
+		WithNewFile("dagger-module.toml", serveModuleHelloManifest).
+		WithNewFile("main.dang", serveModuleHelloSource).
+		WithNewFile("nonce", rand.Text()))
+	gitSrv, err := gitSrv.Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _, _ = gitSrv.Stop(ctx) })
+	host, err := gitSrv.Hostname(ctx)
+	require.NoError(t, err)
+	getent, err := core.NewQuery(c).Container().From(alpineImage).
+		WithExec([]string{"getent", "hosts", host}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	fields := strings.Fields(getent)
+	require.NotEmpty(t, fields, "getent hosts %s: %q", host, getent)
+	repoURL := "git://" + fields[0] + "/repo.git"
+
+	read := func(c *dagger.Client) string {
+		t.Helper()
+		reader := core.NewQuery(c).Directory().
+			WithNewFile("dagger.json", `{"name": "branch-reader", "engineVersion": "latest", "sdk": "dang"}`).
+			WithNewFile("main.dang", `type BranchReader {
+  pub read(ref: String!): String! @cache(policy: FunctionCachePolicy.NEVER) {
+    moduleSource(refString: ref).commit
+  }
+}
+`).
+			AsModuleSource().AsModule()
+		require.NoError(t, reader.Serve(ctx))
+		res, err := testutil.QueryWithClient[struct {
+			BranchReader struct{ Read string }
+		}](c, t, `query($ref: String!) {branchReader{read(ref: $ref)}}`, &testutil.QueryOptions{
+			Variables: map[string]any{"ref": repoURL + "@main"},
+		})
+		require.NoError(t, err)
+		return res.BranchReader.Read
+	}
+
+	before := read(connect(ctx, t))
+	_, err = core.NewQuery(c).Container().From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).With(gitUserConfig).
+		WithServiceBinding("gitsrv", gitSrv).
+		WithEnvVariable("CACHEBUST", rand.Text()).
+		WithExec([]string{"git", "clone", "git://gitsrv/repo.git", "/src"}).
+		WithWorkdir("/src").
+		WithNewFile("nonce", rand.Text()).
+		WithExec([]string{"git", "commit", "-am", "move main"}).
+		WithExec([]string{"git", "push", "origin", "HEAD:main"}).
+		Sync(ctx)
+	require.NoError(t, err)
+	now, err := core.NewQuery(c).Git(repoURL).Branch("main").CommitSHA(ctx)
+	require.NoError(t, err)
+	require.NotEqual(t, before, now, "the branch moved")
+
+	require.Equal(t, now, read(connect(ctx, t)), "a later session reads where the branch points now")
+}
+
 // A module serves its clients' targets at run time, after the engine has looked
 // up the calling function in the cache. The clients the workspace declares for
 // the module's scope must therefore reach the function's cache key before the
