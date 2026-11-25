@@ -105,8 +105,8 @@ func (*transferTestValue) DecodePersistedObject(ctx context.Context, dec *Persis
 		value.links, err = dec.SnapshotRoles(ctx)
 	}
 	if err == nil {
-		if hook, ok := transferDecodeHooks.Load(dec.ResultID()); ok {
-			err = hook.(func(context.Context, *PersistDecodeContext, *transferTestValue) error)(ctx, dec, value)
+		if hook, ok := transferDecodeHooks.Load(transferDecodeHookKey{dec.Server(), dec.ResultID()}); ok {
+			err = hook.(transferDecodeHook)(ctx, dec, value)
 		}
 	}
 	return value, err
@@ -601,7 +601,26 @@ func mustTransferJSON(t *testing.T, v any) []byte {
 	return raw
 }
 
+// transferDecodeHooks holds what a test runs when a transferTestValue
+// decodes, by the server it decodes for and the row it decodes. Every cache
+// numbers its rows from 1, so parallel tests share row ids; each test has a
+// server of its own.
 var transferDecodeHooks sync.Map
+
+type transferDecodeHookKey struct {
+	server   *Server
+	resultID uint64
+}
+type transferDecodeHook = func(context.Context, *PersistDecodeContext, *transferTestValue) error
+
+// onTransferDecode runs hook when row resultID decodes for srv, until the
+// test ends.
+func onTransferDecode(t testing.TB, srv *Server, resultID uint64, hook transferDecodeHook) {
+	t.Helper()
+	key := transferDecodeHookKey{srv, resultID}
+	transferDecodeHooks.Store(key, hook)
+	t.Cleanup(func() { transferDecodeHooks.Delete(key) })
+}
 
 func (v *transferTestValue) OnRelease(ctx context.Context) error {
 	if v.release != nil {
@@ -628,7 +647,7 @@ func TestValueTransferPersistenceDecodePublication(t *testing.T) {
 	row.payloadRevision++
 	row.payloadMu.Unlock()
 	var calls int
-	transferDecodeHooks.Store(id, func(ctx context.Context, dec *PersistDecodeContext, value *transferTestValue) error {
+	onTransferDecode(t, srv, id, func(ctx context.Context, dec *PersistDecodeContext, value *transferTestValue) error {
 		calls++
 		roles, err := dec.SnapshotRoles(ctx)
 		require.NoError(t, err)
@@ -652,7 +671,6 @@ func TestValueTransferPersistenceDecodePublication(t *testing.T) {
 		}
 		return nil
 	})
-	defer transferDecodeHooks.Delete(id)
 	loaded, err := b.LoadResultByResultID(ctx, "test-session", srv, id)
 	require.NoError(t, err)
 	require.Equal(t, "new", loaded.Unwrap().(*transferTestValue).Text)
