@@ -434,7 +434,7 @@ func (c *Cache) snapshotPersistStateLocked(kept *persistKept, seed maphash.Seed)
 				TermID:         int64(termID),
 				Position:       int64(i),
 				InputEqClassID: int64(inputEqID),
-				ProvenanceKind: string(inputProvenance[i]),
+				ProvenanceKind: inputProvenance[i].String(),
 			}
 			inputsPrint.add(rowPrint(seed, row))
 			inputs = append(inputs, row)
