@@ -609,7 +609,7 @@ func (d *artifactViewDiscovery) record(ctx context.Context, receiver *Artifact, 
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	original.source, err = d.recordSource(result)
+	original.source, err = d.recordSource(ctx, result)
 	if err != nil {
 		return err
 	}
@@ -619,7 +619,7 @@ func (d *artifactViewDiscovery) record(ctx context.Context, receiver *Artifact, 
 		original.source.origins = append(original.source.origins, artifactViewOrigin(recipe))
 		if base != nil {
 			// Base keys support evaluation; they must not widen the value's selection.
-			dependency, err := d.recordSource(base)
+			dependency, err := d.recordSource(ctx, base)
 			if err != nil {
 				return err
 			}
@@ -696,13 +696,33 @@ func artifactViewSelectionKeys(rules map[string][]string) []string {
 }
 
 // recordSource groups aliases by their current state. The caller holds d.mu.
-func (d *artifactViewDiscovery) recordSource(result dagql.AnyObjectResult) (*artifactViewSource, error) {
+func (d *artifactViewDiscovery) recordSource(ctx context.Context, result dagql.AnyObjectResult) (*artifactViewSource, error) {
 	for _, source := range d.sources {
 		same, err := sameArtifactViewCollection(source.result, result)
 		if err != nil {
 			return nil, err
 		}
 		if same {
+			// Choose the same representative regardless of discovery order.
+			current, err := source.result.RecipeID(ctx)
+			if err != nil {
+				return nil, err
+			}
+			candidate, err := result.RecipeID(ctx)
+			if err != nil {
+				return nil, err
+			}
+			currentRecipe, err := current.Encode()
+			if err != nil {
+				return nil, err
+			}
+			candidateRecipe, err := candidate.Encode()
+			if err != nil {
+				return nil, err
+			}
+			if candidateRecipe < currentRecipe {
+				source.result = result
+			}
 			return source, nil
 		}
 	}

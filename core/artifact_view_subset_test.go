@@ -77,6 +77,7 @@ func TestArtifactViewKeepsDistinctCollectionStates(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			var forwardKey string
 			for _, reverse := range []bool{false, true} {
 				values := []struct {
 					name     string
@@ -104,6 +105,11 @@ func TestArtifactViewKeepsDistinctCollectionStates(t *testing.T) {
 				}
 				view, err := discovery.buildView(ctx, nil)
 				require.NoError(t, err)
+				if reverse {
+					require.Equal(t, forwardKey, view.key, "discovery order must not change the view key")
+				} else {
+					forwardKey = view.key
+				}
 				// The base must retain enough keys to construct both values.
 				baseKeys, bound, err := view.collectionSelection(ctx, base)
 				require.NoError(t, err)
