@@ -248,8 +248,12 @@ dagger -W "$W" -c "rust-client | release $ENGINE_VERSION env://CARGO_REGISTRY_TO
   dagger -c "github.com/dagger/wolfi@fdec349f9aad840f2853bc2e6534f2555788da04 | container --packages=helm-3~3.19.2 | with-directory /dagger-helm \$(git https://github.com/dagger/dagger | tag $ENGINE_VERSION | tree | directory helm/dagger) | with-workdir /dagger-helm | with-secret-variable GITHUB_TOKEN env://GITHUB_TOKEN | with-exec -- sh -c 'helm registry login ghcr.io/dagger --username dagger --password \$GITHUB_TOKEN && helm package . && helm push dagger-helm-${ENGINE_VERSION#v}.tgz oci://ghcr.io/dagger && helm registry logout ghcr.io/dagger' | stdout"
   ```
 
-The CLI's package managers (Homebrew, Nix, winget) are written last in the CLI
-step: check which of them were updated before deciding what is left.
+These commands publish only the SDKs and the Helm chart. Check separately what
+else the failed run skipped. In the CLI step, the package managers (Homebrew,
+Nix, winget) are written after the upload, and the install scripts and version
+pointers after that. For a stable release, the run also skips the docs, the
+GitHub releases and the Discord announcement, and the dagger.io PR job runs only
+after a successful publish job.
 
 - [ ] Double-check the engine+cli release:
 
