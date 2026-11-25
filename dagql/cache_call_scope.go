@@ -69,6 +69,24 @@ func (s *CallScopes) record(req *CallRequest) {
 	}
 }
 
+// RecordSessionRead records, in the call scopes the resolver running under
+// ctx records into (WithCallScopes), that the resolver read state of its
+// session other than through a cached call, such as the session's workspace
+// lock: its result stands for that read too, which a later session may make
+// with another outcome. what names the read. It does nothing outside call
+// scopes.
+func RecordSessionRead(ctx context.Context, what string) {
+	s := callScopesFrom(ctx)
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.bound == "" {
+		s.bound = what
+	}
+}
+
 func (s *CallScopes) recordExpiry(expiresAt int64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
