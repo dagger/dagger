@@ -336,6 +336,7 @@ func (c *Cache) preparePartDependenciesLocked(receiver *sharedResult, deps []*sh
 	return requirements, nil
 }
 func (c *Cache) applyPartDependenciesLocked(ctx context.Context, receiver *sharedResult, deps []*sharedResult, requirements map[*sharedResult]*set.TreeSet[SessionResourceHandle]) {
+	c.noteSavedEntryLocked(receiver.id)
 	for _, dep := range deps {
 		if !receiver.deps.add(dep.id) {
 			continue

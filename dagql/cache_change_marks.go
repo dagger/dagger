@@ -97,6 +97,7 @@ type changeMarks struct {
 // markEntryLocked marks the entry numbered id: its own facts changed.
 // Requires egraphMu for writing.
 func (c *Cache) markEntryLocked(id sharedResultID) {
+	c.noteSavedEntryLocked(id)
 	if c.changes == nil || id == 0 {
 		return
 	}
@@ -108,6 +109,7 @@ func (c *Cache) markEntryLocked(id sharedResultID) {
 // or expiry changed, or it joined their class. Requires egraphMu for
 // writing.
 func (c *Cache) markEntryClassLocked(id sharedResultID, cause StampCause) {
+	c.noteSavedEntryLocked(id)
 	if c.changes == nil || id == 0 {
 		return
 	}
@@ -457,6 +459,7 @@ func (c *Cache) stampEntryLocked(res *sharedResult, cause StampCause) {
 	c.writes++
 	res.changedAt = c.writes
 	res.stampCause = cause
+	c.noteSavedEntryLocked(res.id)
 }
 
 // StampCause is what last changed what a stored bundle carries of an entry

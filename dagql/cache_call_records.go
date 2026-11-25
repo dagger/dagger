@@ -163,6 +163,7 @@ func (c *Cache) keepCallLocked(entry *sharedResult, desc RemoteHolding, kept *ke
 // It reports whether it changed the entry's calls. Requires egraphMu for
 // writing.
 func (c *Cache) keepTermCallLocked(entry *sharedResult, kept *keptCall) bool {
+	c.noteSavedEntryLocked(entry.id)
 	joined := false
 	calls := entry.callsStateLocked()
 	if calls.termIndex == nil {
@@ -249,6 +250,7 @@ func (c *Cache) joinedTermCallsLocked(entry *sharedResult) (map[string]*keptCall
 // the entry's index, and under each of its inputs. Requires egraphMu for
 // writing.
 func (c *Cache) dropKeptCallLocked(entry *sharedResult, kept *keptCall) {
+	c.noteSavedEntryLocked(entry.id)
 	calls := entry.callsStateLocked()
 	delete(calls.byRequest, kept.id.recipe)
 	if calls.termIndex != nil {

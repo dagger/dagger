@@ -1,0 +1,919 @@
+package dagql
+
+import (
+	"cmp"
+	"fmt"
+	"hash/maphash"
+	"maps"
+	"slices"
+	"time"
+
+	persistdb "github.com/dagger/dagger/dagql/persistdb"
+)
+
+// A save reads the store holding egraphMu for reading in pieces, letting it
+// go between them (readInPiecesFor), so that a writer that comes during the
+// read waits for one piece and not the whole store, and so does every reader
+// queued behind that writer. While a save reads, the writers of what it saves
+// note the entries, terms and classes they change (persistNotes). After its
+// walk of the whole store, the save reads again what was noted, in pieces
+// too, until what is left fits in one piece; then, in one last hold, it reads
+// again what was noted since and nothing else. A unit nobody noted since the
+// save read it is as it was then, so what the save has read is the store as
+// it was in that last hold. Which entries it keeps, the closure of the stored
+// roots, it then works out on its own copy with no lock held (assemble).
+//
+// What changes under egraphMu held for reading is not noted, and a save reads
+// it as a save under one hold did, at some moment of its read: an entry's
+// record, whose write count is its mark (recordLock), and its last use, which
+// its results row carries and every save compares.
+
+// persistPieceHold is how long a save holds egraphMu for reading in one
+// piece of its read. A writer waits for at most one piece behind a save.
+// When writers always wait, as they do at a fill's peak, each piece costs the
+// save one writer's hold: the save then reads for about this long between two
+// of them, and its read takes about 1 + h/persistPieceHold times its reading
+// time, h the writers' mean hold.
+const persistPieceHold = 10 * time.Millisecond
+
+// persistCatchUpRounds bounds the rounds in which a save reads again in
+// pieces what writers noted during its read, before its last hold.
+const persistCatchUpRounds = 3
+
+// persistNotes are the entries, terms and classes whose saved rows a write
+// changed while a save read the store, for the save to read again. Writers
+// note under egraphMu held for writing, and a save takes the notes under it
+// held for reading, which no writer can hold meanwhile. Guarded by egraphMu.
+type persistNotes struct {
+	// reading is set while a save reads the store.
+	reading bool
+	entries []sharedResultID
+	terms   []egraphTermID
+	classes []eqClassID
+}
+
+// testPersistNotesAlways, set in tests, has writers note what they change at
+// every write, not only while a save reads: each save then checks that every
+// unit it finds changed since the save before was noted (checkPersistNotes).
+var testPersistNotesAlways bool
+
+func (n *persistNotes) taking() bool {
+	return n.reading || testPersistNotesAlways
+}
+
+func (n *persistNotes) count() int {
+	return len(n.entries) + len(n.terms) + len(n.classes)
+}
+
+// take returns the notes made so far, and starts afresh.
+func (n *persistNotes) take() persistNotes {
+	taken := persistNotes{entries: n.entries, terms: n.terms, classes: n.classes}
+	n.entries, n.terms, n.classes = nil, nil, nil
+	return taken
+}
+
+func (n *persistNotes) add(o persistNotes) {
+	n.entries = append(n.entries, o.entries...)
+	n.terms = append(n.terms, o.terms...)
+	n.classes = append(n.classes, o.classes...)
+}
+
+// noteSavedEntryLocked notes that a write changed what a save writes of the
+// entry numbered id, or that the entry came or went. Requires egraphMu for
+// writing.
+func (c *Cache) noteSavedEntryLocked(id sharedResultID) {
+	if id == 0 || !c.persistNotes.taking() {
+		return
+	}
+	c.persistNotes.entries = append(c.persistNotes.entries, id)
+}
+
+// noteSavedTermLocked notes that a write changed what a save writes of the
+// term numbered id, or that the term came or went. Requires egraphMu for
+// writing.
+func (c *Cache) noteSavedTermLocked(id egraphTermID) {
+	if id == 0 || !c.persistNotes.taking() {
+		return
+	}
+	c.persistNotes.terms = append(c.persistNotes.terms, id)
+}
+
+// noteSavedClassLocked notes that a write changed what a save writes of the
+// class numbered id, or of the rows that name it, resolved to their roots:
+// its digests, its root, or whether it lives. Requires egraphMu for writing.
+func (c *Cache) noteSavedClassLocked(id eqClassID) {
+	if id == 0 || !c.persistNotes.taking() {
+		return
+	}
+	c.persistNotes.classes = append(c.persistNotes.classes, id)
+}
+
+// savingLocked reports whether a save is reading the store: no class number
+// is taken again meanwhile, and classes are not compacted, so that a number
+// a save has read names one class for the whole read. Requires egraphMu.
+func (c *Cache) savingLocked() bool {
+	return c.persistNotes.reading
+}
+
+// persistRead is what a save has read of the store: each entry, term and
+// class as it last read it, from which assemble works out the save with no
+// lock held. A unit read again replaces its earlier read.
+type persistRead struct {
+	kept    *persistKept
+	seed    maphash.Seed
+	entries []persistEntryRead
+	terms   []persistTermRead
+	classes []persistClassRead
+	// edges holds each entry read's ownership edges, and ids each entry
+	// read's output classes and each term read's input classes, all
+	// resolved to their roots.
+	edges []sharedResultID
+	ids   []eqClassID
+	// units counts the units read.
+	units int
+	// prints are, in tests that note always, each unit's fingerprint of
+	// what changes under egraphMu held for writing (checkPersistNotes).
+	prints *persistPrints
+}
+
+// persistEntryRead is what a save read of one entry.
+type persistEntryRead struct {
+	id sharedResultID
+	// present says the cache held the entry when it was read; nothing else
+	// is read of one it didn't.
+	present bool
+	// valid says the entry is attached cleanly with its payload prepared,
+	// root that it is a stored root.
+	valid, root bool
+	// edges and classes are where its ownership edges and its output
+	// classes are, in the read's edges and ids.
+	edgeAt, edgeN   int32
+	classAt, classN int32
+	// next is its fingerprints, for the save's next kept table, and result
+	// what the save writes of it when any moved from what the database
+	// holds.
+	next   keptEntry
+	result *persistResultSnapshot
+}
+
+// persistTermRead is what a save read of one term.
+type persistTermRead struct {
+	id      egraphTermID
+	present bool
+	output  eqClassID
+	inAt    int32
+	inN     int32
+	fp      uint64
+	term    *persistTermSnapshot
+}
+
+// persistClassRead is what a save read of one class: present only for a
+// class that is its own root.
+type persistClassRead struct {
+	id      eqClassID
+	present bool
+	fp      uint64
+	class   *persistClassSnapshot
+}
+
+func newPersistRead(kept *persistKept, seed maphash.Seed) *persistRead {
+	rd := &persistRead{kept: kept, seed: seed}
+	if testPersistNotesAlways {
+		rd.prints = newPersistPrints()
+	}
+	return rd
+}
+
+func keptEntryAt(kept *persistKept, id sharedResultID) (keptEntry, bool) {
+	i, found := slices.BinarySearchFunc(kept.entries, id, func(e keptEntry, id sharedResultID) int { return cmp.Compare(e.id, id) })
+	if !found {
+		return keptEntry{}, false
+	}
+	return kept.entries[i], true
+}
+
+func keptUnitAt(list []keptUnit, id uint64) (keptUnit, bool) {
+	i, found := slices.BinarySearchFunc(list, id, func(u keptUnit, id uint64) int { return cmp.Compare(u.id, id) })
+	if !found {
+		return keptUnit{}, false
+	}
+	return list[i], true
+}
+
+// readEntryLocked reads the entry numbered id, res or nil if the cache
+// doesn't hold it: what the closure of the stored roots needs, its
+// fingerprints, and, when any moved from what the database holds, what the
+// save writes of it. Requires egraphMu for reading.
+//
+//nolint:gocyclo // one entry's every kind of row, in the order the save writes them
+func (c *Cache) readEntryLocked(rd *persistRead, id sharedResultID, res *sharedResult) error {
+	rd.units++
+	if c.testPersistRead != nil {
+		c.testPersistRead()
+	}
+	if res == nil {
+		rd.entries = append(rd.entries, persistEntryRead{id: id})
+		if rd.prints != nil {
+			delete(rd.prints.entries, id)
+		}
+		return nil
+	}
+	seed := rd.seed
+	e := persistEntryRead{id: id, present: true}
+	// A record whose payload is still as the Cloud sent it names rows by the
+	// Cloud's numbers: one refused at its preparation
+	// (prepareMergedPayloadsForSave) is left out, with all that owns it.
+	e.valid = res.attachmentState() == resultAttachmentClean && !res.holdsUnpreparedPayload()
+	e.edgeAt = int32(len(rd.edges))
+	for depID := range c.ownedResultIDsLocked(res) {
+		rd.edges = append(rd.edges, depID)
+	}
+	e.edgeN = int32(len(rd.edges)) - e.edgeAt
+
+	prev, held := keptEntryAt(rd.kept, id)
+	next := keptEntry{id: id}
+
+	deps := make([]persistdb.MirrorResultDep, 0, len(res.deps))
+	var depsPrint rowsPrint
+	for _, depID := range res.deps {
+		row := persistdb.MirrorResultDep{ParentResultID: int64(id), DepResultID: int64(depID)}
+		depsPrint.add(rowPrint(seed, row))
+		deps = append(deps, row)
+	}
+	next.deps = depsPrint.value(seed)
+
+	var classes []persistdb.MirrorResultOutputEqClass
+	var classesPrint rowsPrint
+	e.classAt = int32(len(rd.ids))
+	for outputEqID := range c.outputEqClassRootsLocked(id) {
+		outputEqID = c.eqClassRootLocked(outputEqID)
+		if outputEqID == 0 {
+			continue
+		}
+		rd.ids = append(rd.ids, outputEqID)
+		row := persistdb.MirrorResultOutputEqClass{ResultID: int64(id), EqClassID: int64(outputEqID)}
+		classesPrint.add(rowPrint(seed, row))
+		classes = append(classes, row)
+	}
+	e.classN = int32(len(rd.ids)) - e.classAt
+	next.classes = classesPrint.value(seed)
+
+	var calls []persistdb.MirrorResultCall
+	var callsPrint rowsPrint
+	for request, call := range res.keptCallsLocked() {
+		row := persistdb.MirrorResultCall{ResultID: int64(id), RequestDigest: request.String(), Call: call.encoded}
+		callsPrint.add(rowPrint(seed, row))
+		calls = append(calls, row)
+	}
+	next.calls = callsPrint.value(seed)
+
+	var taught []persistdb.MirrorResultTaught
+	var taughtPrint rowsPrint
+	if tc := res.taughtContent; tc != nil {
+		for i, digest := range tc.digests {
+			row := persistdb.MirrorResultTaught{ResultID: int64(id), Position: int64(i), Digest: digest.String(), Given: i < tc.given}
+			taughtPrint.add(rowPrint(seed, row))
+			taught = append(taught, row)
+		}
+	}
+	next.taught = taughtPrint.value(seed)
+
+	var edge *persistdb.MirrorPersistedEdge
+	var edgePrint rowsPrint
+	if pe, root := c.persistedEdgesByResult[id]; root {
+		e.root = true
+		edge = &persistdb.MirrorPersistedEdge{
+			ResultID:          int64(id),
+			CreatedAtUnixNano: pe.createdAtUnixNano,
+			ExpiresAtUnix:     pe.expiresAtUnix,
+			Unpruneable:       pe.unpruneable,
+		}
+		edgePrint.add(rowPrint(seed, *edge))
+	}
+	next.edge = edgePrint.value(seed)
+
+	// The record's write count is read before the record itself
+	// (recordLock): a write the save misses moves it past what the save
+	// keeps.
+	payload := res.loadPayloadState()
+	offers, err := res.pendingOffersLocked()
+	if err != nil {
+		return err
+	}
+	cloudKey, cloud := res.cloudHoldingLocked()
+	var cloudStored bool
+	var cloudExpiresAtUnix int64
+	if cloud != nil {
+		cloudStored = !cloud.unstored
+		cloudExpiresAtUnix = cloud.expiresAtUnix
+	}
+	row := persistdb.MirrorResult{
+		ID:                        int64(id),
+		ExpiresAtUnix:             res.expiresAtUnix,
+		Replacements:              int64(res.replacements),
+		Indexed:                   len(res.recipeKeys) > 0,
+		CloudHoldingNumber:        int64(cloudKey.Number),
+		CloudHoldingStored:        cloudStored,
+		CloudHoldingExpiresAtUnix: cloudExpiresAtUnix,
+		CreatedAtUnixNano:         payload.createdAtUnixNano,
+		LastUsedAtUnixNano:        payload.lastUsedAtUnixNano,
+		RecordType:                res.recordType,
+		Description:               res.description,
+		ChangeStamp:               int64(res.changedAt),
+	}
+	next.row = resultRowPrint(seed, row)
+	run := savedRunLocked(res)
+	if next.recordInputs, err = recordInputsPrint(seed, res.persistDeclined, run, res.runRan, offers); err != nil {
+		return fmt.Errorf("persist result %d: %w", id, err)
+	}
+	next.recordWrites = payload.recordWrites
+	// A record held encoded is the one the database holds while its write
+	// count and the fields it takes haven't moved. A live value can change
+	// inside itself: it is encoded and compared.
+	live := payload.persistedEnvelope == nil && payload.hasValue && payload.self != nil
+	next.record = prev.record
+	e.next = next
+	if rd.prints != nil {
+		rd.prints.noteEntry(seed, &e, row)
+	}
+
+	var writes persistEntryWrites
+	if !held || next.row != prev.row {
+		writes |= persistWriteRow
+	}
+	if !held || live || next.recordWrites != prev.recordWrites || next.recordInputs != prev.recordInputs {
+		writes |= persistWriteRecord
+	}
+	if !held || next.deps != prev.deps {
+		writes |= persistWriteDeps
+	}
+	if !held || next.classes != prev.classes {
+		writes |= persistWriteClasses
+	}
+	if !held || next.calls != prev.calls {
+		writes |= persistWriteCalls
+	}
+	if !held || next.taught != prev.taught {
+		writes |= persistWriteTaught
+	}
+	if !held || next.edge != prev.edge {
+		writes |= persistWriteEdge
+	}
+	if writes != 0 {
+		result := &persistResultSnapshot{
+			resultID:   id,
+			row:        row,
+			write:      writes,
+			held:       held,
+			keptRecord: prev.record,
+		}
+		if writes&persistWriteDeps != 0 {
+			result.resultDeps = deps
+		}
+		if writes&persistWriteClasses != 0 {
+			result.outputEqClasses = classes
+		}
+		if writes&persistWriteCalls != 0 {
+			result.calls = calls
+		}
+		if writes&persistWriteTaught != 0 {
+			result.taught = taught
+		}
+		if writes&persistWriteEdge != 0 {
+			result.edge = edge
+		}
+		if writes&persistWriteRecord != 0 {
+			if payload.snapshotLinkIntent != nil {
+				payload.snapshotOwnerLinks = cloneSnapshotRefLinks(payload.snapshotLinkIntent.Links)
+			}
+			result.imported = res.imported
+			result.persistDeclined = res.persistDeclined
+			result.boundSession = res.boundSession
+			result.run = run
+			result.runRan = res.runRan
+			result.pendingOffers = offers
+			result.storedParts = res.storedPartsLocked()
+			result.frame = res.loadResultCall().clone()
+			result.self = payload.self
+			result.isObject = payload.isObject
+			result.hasValue = payload.hasValue
+			result.sessionResourceHandle = res.sessionResourceHandle
+			result.persistedEnvelope = payload.persistedEnvelope
+			result.stored = payload.stored
+			result.partFacts = payload.partFacts
+			result.snapshotOwnerLinks = payload.snapshotOwnerLinks
+		}
+		e.result = result
+	}
+	rd.entries = append(rd.entries, e)
+	return nil
+}
+
+// readTermLocked reads the term numbered id, term or nil if the cache doesn't
+// hold it. Requires egraphMu for reading.
+func (c *Cache) readTermLocked(rd *persistRead, id egraphTermID, term *egraphTerm) error {
+	rd.units++
+	if term == nil {
+		rd.terms = append(rd.terms, persistTermRead{id: id})
+		if rd.prints != nil {
+			delete(rd.prints.terms, id)
+		}
+		return nil
+	}
+	seed := rd.seed
+	t := persistTermRead{id: id, present: true, output: c.eqClassRootLocked(term.outputEqID)}
+	inputProvenance := c.termInputProvenance[id]
+	if len(inputProvenance) != len(term.inputEqIDs) {
+		return fmt.Errorf("persist term %d: input provenance len %d does not match input eq IDs len %d", id, len(inputProvenance), len(term.inputEqIDs))
+	}
+	inputs := make([]persistdb.MirrorTermInput, 0, len(term.inputEqIDs))
+	var inputsPrint rowsPrint
+	t.inAt = int32(len(rd.ids))
+	inputEqIDs := make([]eqClassID, len(term.inputEqIDs))
+	for i, inputEqID := range term.inputEqIDs {
+		inputEqID = c.eqClassRootLocked(inputEqID)
+		inputEqIDs[i] = inputEqID
+		rd.ids = append(rd.ids, inputEqID)
+		row := persistdb.MirrorTermInput{
+			TermID:         int64(id),
+			Position:       int64(i),
+			InputEqClassID: int64(inputEqID),
+			ProvenanceKind: inputProvenance[i].String(),
+		}
+		inputsPrint.add(rowPrint(seed, row))
+		inputs = append(inputs, row)
+	}
+	t.inN = int32(len(rd.ids)) - t.inAt
+	selfDigest := term.selfDigest.String()
+	t.fp = termPrint(seed, selfDigest, int64(t.output), inputsPrint)
+	if rd.prints != nil {
+		rd.prints.terms[id] = t.fp
+	}
+	if prev, held := keptUnitAt(rd.kept.terms, uint64(id)); !held || prev.fp != t.fp {
+		t.term = &persistTermSnapshot{
+			row: persistdb.MirrorTerm{
+				ID:              int64(id),
+				SelfDigest:      selfDigest,
+				TermDigest:      calcEgraphTermDigest(term.selfDigest, inputEqIDs),
+				OutputEqClassID: int64(t.output),
+			},
+			inputs: inputs,
+			held:   held,
+		}
+	}
+	rd.terms = append(rd.terms, t)
+	return nil
+}
+
+// readClassLocked reads the class numbered id: present only if it is its own
+// root, with the digests a save writes for it. Requires egraphMu for reading.
+func (c *Cache) readClassLocked(rd *persistRead, id eqClassID) {
+	rd.units++
+	if int(id) >= len(c.egraphParents) || c.egraphParents[id] != id {
+		rd.classes = append(rd.classes, persistClassRead{id: id})
+		return
+	}
+	seed := rd.seed
+	digestRows := make(map[string]persistdb.MirrorEqClassDigest, c.eqClassToDigests[id].Size())
+	for dig := range c.eqClassToDigests[id].All() {
+		if dig == "" {
+			continue
+		}
+		digestRows[dig+"\x00"] = persistdb.MirrorEqClassDigest{EqClassID: int64(id), Digest: dig}
+	}
+	for extra := range c.eqClassExtraDigests[id] {
+		if extra.Digest == "" {
+			continue
+		}
+		dig := extra.Digest.String()
+		digestRows[dig+"\x00"] = persistdb.MirrorEqClassDigest{EqClassID: int64(id), Digest: dig}
+		digestRows[dig+"\x01"+extra.Label] = persistdb.MirrorEqClassDigest{EqClassID: int64(id), Digest: dig, Label: extra.Label}
+	}
+	var digestsPrint rowsPrint
+	for _, row := range digestRows {
+		digestsPrint.add(rowPrint(seed, row))
+	}
+	k := persistClassRead{id: id, present: true, fp: digestsPrint.value(seed)}
+	if prev, held := keptUnitAt(rd.kept.classes, uint64(id)); !held || prev.fp != k.fp {
+		class := &persistClassSnapshot{id: int64(id), held: held}
+		for _, key := range slices.Sorted(maps.Keys(digestRows)) {
+			class.digests = append(class.digests, digestRows[key])
+		}
+		k.class = class
+	}
+	rd.classes = append(rd.classes, k)
+}
+
+// walkStoreLocked reads every entry, term and class of the store, taking a
+// step of r after each, which lets egraphMu go between two pieces; a nil r
+// reads it all in the hold the caller has. Requires egraphMu for reading.
+//
+// It ranges over the cache's maps across the holds it lets go. A map may
+// change between two steps of a range: every key there at the start and
+// still there is visited once, and one added or deleted meanwhile may or
+// may not be. A writer notes each of those, and the save reads it again.
+func (c *Cache) walkStoreLocked(rd *persistRead, r *readPieces) error {
+	for id, res := range c.resultsByID {
+		if err := c.readEntryLocked(rd, id, res); err != nil {
+			return err
+		}
+		if r != nil {
+			r.step()
+		}
+	}
+	for id, term := range c.egraphTerms {
+		if err := c.readTermLocked(rd, id, term); err != nil {
+			return err
+		}
+		if r != nil {
+			r.step()
+		}
+	}
+	for id := eqClassID(1); int(id) < len(c.egraphParents); id++ {
+		if c.egraphParents[id] != id {
+			continue
+		}
+		c.readClassLocked(rd, id)
+		if r != nil {
+			r.step()
+		}
+	}
+	return nil
+}
+
+// readNotedLocked reads again each unit noted, taking a step of r after
+// each, or none with a nil r, and returns how many it read. Requires
+// egraphMu for reading.
+func (c *Cache) readNotedLocked(rd *persistRead, notes persistNotes, r *readPieces) (int, error) {
+	read := 0
+	slices.Sort(notes.entries)
+	for _, id := range slices.Compact(notes.entries) {
+		if err := c.readEntryLocked(rd, id, c.resultsByID[id]); err != nil {
+			return read, err
+		}
+		read++
+		if r != nil {
+			r.step()
+		}
+	}
+	slices.Sort(notes.terms)
+	for _, id := range slices.Compact(notes.terms) {
+		if err := c.readTermLocked(rd, id, c.egraphTerms[id]); err != nil {
+			return read, err
+		}
+		read++
+		if r != nil {
+			r.step()
+		}
+	}
+	slices.Sort(notes.classes)
+	for _, id := range slices.Compact(notes.classes) {
+		c.readClassLocked(rd, id)
+		read++
+		if r != nil {
+			r.step()
+		}
+	}
+	return read, nil
+}
+
+// persistWalk is how a save's read of the store went, for its log line and
+// its tests.
+type persistWalk struct {
+	// longest is the longest a single hold of egraphMu lasted, held their
+	// total, and took the read's whole time, from its first hold to the end
+	// of its last.
+	longest, held, took time.Duration
+	// pieces counts the holds, rounds the rounds that read noted units
+	// again in pieces, and last the units the last hold read again.
+	pieces, rounds, last int
+}
+
+// readStore reads the store for a save: a walk of every unit in pieces,
+// rounds that read again in pieces what writers noted meanwhile, and a last
+// hold that reads again what was noted since. It returns what it read, how
+// the read went, the next result number and the write count as of the last
+// hold, and, in tests that check saves (testPersistFullSave), a read of the
+// whole store taken in that last hold.
+func (c *Cache) readStore() (rd *persistRead, walk persistWalk, nextResultID sharedResultID, writes uint64, full *persistRead, rerr error) {
+	rd = newPersistRead(&c.persistKept, c.persistSeed)
+	r := c.readInPiecesFor(persistPieceHold)
+	r.report = func(d time.Duration) {
+		walk.held += d
+		if d > walk.longest {
+			walk.longest = d
+		}
+		walk.pieces++
+	}
+	started := time.Now()
+	// What was noted since the last save, in tests that note always, is
+	// what testPersistNotes holds this save's changes against.
+	since := c.persistNotes.take()
+	c.persistNotes.reading = true
+	defer func() {
+		if rerr != nil {
+			// A save that fails leaves the notes for the next one, which
+			// reads the whole store again anyway.
+			c.persistNotes.reading = false
+			c.persistNotes.add(since)
+		}
+		r.done()
+		walk.took = time.Since(started)
+	}()
+	fail := func(err error) (*persistRead, persistWalk, sharedResultID, uint64, *persistRead, error) {
+		return nil, walk, 0, 0, nil, err
+	}
+	if err := c.walkStoreLocked(rd, r); err != nil {
+		return fail(err)
+	}
+	// What fits in one piece is read in the last hold.
+	perPiece := rd.units / (r.yields() + 1)
+	notes := c.persistNotes.take()
+	since.add(notes)
+	for ; walk.rounds < persistCatchUpRounds && notes.count() > perPiece; walk.rounds++ {
+		if _, err := c.readNotedLocked(rd, notes, r); err != nil {
+			return fail(err)
+		}
+		notes = c.persistNotes.take()
+		since.add(notes)
+	}
+	// The last hold starts afresh, with what was noted before it: it holds
+	// egraphMu for reading only as long as reading those again takes.
+	r.yield()
+	last := c.persistNotes.take()
+	since.add(last)
+	notes.add(last)
+	var err error
+	if walk.last, err = c.readNotedLocked(rd, notes, nil); err != nil {
+		return fail(err)
+	}
+	// Every entry the save keeps was installed under egraphMu, so its number
+	// is below this, whatever a merge reserves meanwhile (takeResultIDs). A
+	// write applies its stamps before it lets go of egraphMu
+	// (stampPendingLocked), so every row's stamp is at most this count.
+	nextResultID = sharedResultID(c.nextSharedResultID.Load())
+	writes = c.writes
+	// A save into a database that holds nothing writes everything, as a full
+	// save does: only one that could leave something out is checked.
+	if testPersistFullSave != nil && !c.persistKept.empty() {
+		full = newPersistRead(&persistKept{}, c.persistSeed)
+		full.prints = nil
+		if err := c.walkStoreLocked(full, nil); err != nil {
+			return fail(err)
+		}
+	}
+	c.persistNotes.reading = false
+	if rd.prints != nil {
+		rd.prints.noted = since
+	}
+	return rd, walk, nextResultID, writes, full, nil
+}
+
+// persistPrints are, in tests that note always (testPersistNotesAlways),
+// what a save read of each unit that changes only under egraphMu held for
+// writing: each entry's fingerprints without its last use and its record,
+// each term's fingerprint, and each class's that a unit names. noted is what
+// was noted since the save before. A test checks each save's prints against
+// the save before's (testPersistNotes): a unit that came, went or changed
+// without a note is a write that doesn't note.
+type persistPrints struct {
+	entries map[sharedResultID]persistEntryPrint
+	terms   map[egraphTermID]uint64
+	classes map[eqClassID]uint64
+	noted   persistNotes
+}
+
+func newPersistPrints() *persistPrints {
+	return &persistPrints{entries: map[sharedResultID]persistEntryPrint{}, terms: map[egraphTermID]uint64{}, classes: map[eqClassID]uint64{}}
+}
+
+// persistEntryPrint is an entry's fingerprints but its record's, with its
+// results row's taken without its last use.
+type persistEntryPrint struct {
+	Row, RecordInputs, Deps, Classes, Calls, Taught, Edge uint64
+}
+
+// noteEntry keeps an entry read's fingerprints without its last use, which a
+// lookup moves under egraphMu held for reading, and its record, which its
+// write count covers.
+func (p *persistPrints) noteEntry(seed maphash.Seed, e *persistEntryRead, row persistdb.MirrorResult) {
+	row.LastUsedAtUnixNano = 0
+	p.entries[e.id] = persistEntryPrint{
+		Row:          resultRowPrint(seed, row),
+		RecordInputs: e.next.recordInputs,
+		Deps:         e.next.deps,
+		Classes:      e.next.classes,
+		Calls:        e.next.calls,
+		Taught:       e.next.taught,
+		Edge:         e.next.edge,
+	}
+}
+
+// testPersistNotes, when set, is called after each save's read of the store
+// with the prints of the read before and of this one (persistPrints).
+var testPersistNotes func(c *Cache, before, after *persistPrints)
+
+// printClasses keeps the fingerprint of each class a present entry or term
+// read names, as its root, when it was read as one.
+func (rd *persistRead) printClasses(entries []persistEntryRead) {
+	named := make(map[eqClassID]struct{})
+	for i := range entries {
+		e := &entries[i]
+		for _, id := range rd.ids[e.classAt : e.classAt+e.classN] {
+			named[id] = struct{}{}
+		}
+	}
+	for i := range rd.terms {
+		t := &rd.terms[i]
+		if !t.present {
+			continue
+		}
+		named[t.output] = struct{}{}
+		for _, id := range rd.ids[t.inAt : t.inAt+t.inN] {
+			named[id] = struct{}{}
+		}
+	}
+	for i := range rd.classes {
+		k := &rd.classes[i]
+		if _, ok := named[k.id]; ok && k.present {
+			rd.prints.classes[k.id] = k.fp
+		}
+	}
+}
+
+// latest sorts reads by number and keeps the last read of each number, which
+// readStore made after the others.
+func latest[T any](reads []T, id func(*T) uint64) []T {
+	slices.SortStableFunc(reads, func(a, b T) int { return cmp.Compare(id(&a), id(&b)) })
+	out := reads[:0]
+	for i := range reads {
+		if len(out) > 0 && id(&out[len(out)-1]) == id(&reads[i]) {
+			out[len(out)-1] = reads[i]
+			continue
+		}
+		out = append(out, reads[i])
+	}
+	return out
+}
+
+// assemble works out a save from what readStore read, holding no lock: the
+// closure of the stored roots, with entries that aren't valid carried up to
+// what owns them; the terms whose output class a kept entry names; the
+// classes kept entries and terms name; what of each the database doesn't
+// hold as it is, and what the database holds that the store no longer does.
+//
+//nolint:gocyclo // the closure, then each kind of unit in turn
+func (rd *persistRead) assemble(nextResultID sharedResultID, writes uint64) (persistStateSnapshot, error) {
+	var snapshot persistStateSnapshot
+	snapshot.nextResultID = nextResultID
+	snapshot.writes = writes
+
+	rd.entries = latest(rd.entries, func(e *persistEntryRead) uint64 { return uint64(e.id) })
+	rd.terms = latest(rd.terms, func(t *persistTermRead) uint64 { return uint64(t.id) })
+	rd.classes = latest(rd.classes, func(k *persistClassRead) uint64 { return uint64(k.id) })
+	entries := slices.DeleteFunc(rd.entries, func(e persistEntryRead) bool { return !e.present })
+	if rd.prints != nil {
+		rd.printClasses(entries)
+	}
+	indexOf := func(id sharedResultID) int {
+		i, found := slices.BinarySearchFunc(entries, id, func(e persistEntryRead, id sharedResultID) int { return cmp.Compare(e.id, id) })
+		if !found {
+			return -1
+		}
+		return i
+	}
+
+	// The closure: an entry that isn't valid, or owns one the store doesn't
+	// hold, is invalid, and so is everything that owns it; the stored roots
+	// that are valid, and what they own, are kept. Each entry's ownership
+	// edges are turned into indexes of entries, beside the read's edges.
+	at := make([]int32, len(rd.edges))
+	invalid := make([]bool, len(entries))
+	var queue []int32
+	for i := range entries {
+		e := &entries[i]
+		for k := e.edgeAt; k < e.edgeAt+e.edgeN; k++ {
+			j := indexOf(rd.edges[k])
+			at[k] = int32(j)
+			if j < 0 {
+				e.valid = false
+			}
+		}
+		if !e.valid {
+			invalid[i] = true
+			queue = append(queue, int32(i))
+		}
+	}
+	owned := func(i int32) []int32 {
+		e := &entries[i]
+		return at[e.edgeAt : e.edgeAt+e.edgeN]
+	}
+	if len(queue) > 0 {
+		owners := make([][]int32, len(entries))
+		for i := range entries {
+			for _, j := range owned(int32(i)) {
+				if j >= 0 {
+					owners[j] = append(owners[j], int32(i))
+				}
+			}
+		}
+		for len(queue) > 0 {
+			i := queue[len(queue)-1]
+			queue = queue[:len(queue)-1]
+			for _, owner := range owners[i] {
+				if !invalid[owner] {
+					invalid[owner] = true
+					queue = append(queue, owner)
+				}
+			}
+		}
+	}
+	selected := make([]bool, len(entries))
+	var stack []int32
+	for i := range entries {
+		if entries[i].root && !invalid[i] {
+			stack = append(stack, int32(i))
+		}
+	}
+	for len(stack) > 0 {
+		i := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if selected[i] || invalid[i] {
+			continue
+		}
+		selected[i] = true
+		stack = append(stack, owned(i)...)
+	}
+
+	retainedOutputs := make(map[eqClassID]struct{})
+	namedClasses := make(map[eqClassID]struct{})
+	keptEntries := persistKeptCursor[keptEntry]{list: rd.kept.entries, id: func(e keptEntry) uint64 { return uint64(e.id) }}
+	snapshot.next.entries = make([]keptEntry, 0, len(entries))
+	for i := range entries {
+		if !selected[i] {
+			continue
+		}
+		e := &entries[i]
+		for k, j := range owned(int32(i)) {
+			if j < 0 || !selected[j] {
+				return persistStateSnapshot{}, fmt.Errorf("persist result %d: dependency %d is outside persisted root closure", e.id, rd.edges[e.edgeAt+int32(k)])
+			}
+		}
+		for _, id := range rd.ids[e.classAt : e.classAt+e.classN] {
+			retainedOutputs[id] = struct{}{}
+			namedClasses[id] = struct{}{}
+		}
+		keptEntries.at(uint64(e.id))
+		snapshot.next.entries = append(snapshot.next.entries, e.next)
+		if e.result != nil {
+			e.result.kept = len(snapshot.next.entries) - 1
+			snapshot.results = append(snapshot.results, *e.result)
+		}
+	}
+	snapshot.goneResults = keptEntries.finish()
+
+	keptTerms := persistKeptCursor[keptUnit]{list: rd.kept.terms, id: func(u keptUnit) uint64 { return u.id }}
+	for i := range rd.terms {
+		t := &rd.terms[i]
+		if !t.present {
+			continue
+		}
+		if _, retained := retainedOutputs[t.output]; !retained || t.output == 0 {
+			continue
+		}
+		namedClasses[t.output] = struct{}{}
+		for _, id := range rd.ids[t.inAt : t.inAt+t.inN] {
+			if id != 0 {
+				namedClasses[id] = struct{}{}
+			}
+		}
+		keptTerms.at(uint64(t.id))
+		snapshot.next.terms = append(snapshot.next.terms, keptUnit{id: uint64(t.id), fp: t.fp})
+		if t.term != nil {
+			snapshot.terms = append(snapshot.terms, *t.term)
+		}
+	}
+	snapshot.goneTerms = keptTerms.finish()
+
+	keptClasses := persistKeptCursor[keptUnit]{list: rd.kept.classes, id: func(u keptUnit) uint64 { return u.id }}
+	for i := range rd.classes {
+		k := &rd.classes[i]
+		if _, named := namedClasses[k.id]; !named {
+			continue
+		}
+		if !k.present {
+			return persistStateSnapshot{}, fmt.Errorf("persist eq class %d: a saved unit names it, but it was not read as its own root", k.id)
+		}
+		delete(namedClasses, k.id)
+		keptClasses.at(uint64(k.id))
+		snapshot.next.classes = append(snapshot.next.classes, keptUnit{id: uint64(k.id), fp: k.fp})
+		if k.class != nil {
+			snapshot.classes = append(snapshot.classes, *k.class)
+		}
+	}
+	for id := range namedClasses {
+		return persistStateSnapshot{}, fmt.Errorf("persist eq class %d: a saved unit names it, but it was not read", id)
+	}
+	snapshot.goneClasses = keptClasses.finish()
+	return snapshot, nil
+}
