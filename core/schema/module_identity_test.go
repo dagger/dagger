@@ -329,7 +329,7 @@ func TestModuleSourceReadByAHostReadingCallerIsItsOwn(t *testing.T) {
 	key := func(ctx context.Context) *dagql.CallRequest {
 		t.Helper()
 		req := &dagql.CallRequest{ResultCall: &dagql.ResultCall{Field: "asModuleSource"}}
-		require.NoError(t, moduleSourceReadCacheKey(ctx, req, true))
+		require.NoError(t, moduleSourceReadCacheKey(ctx, req, true, false))
 		return req
 	}
 	perClient := func(req *dagql.CallRequest) bool {
@@ -389,7 +389,7 @@ func TestModuleSourceReadIsKeyedByItsEnginePlatform(t *testing.T) {
 	e := newTransferTestEngine(t, transferTestSalt(t))
 	ctx := e.session(t, "module")
 	req := &dagql.CallRequest{ResultCall: &dagql.ResultCall{Field: "asModuleSource"}}
-	require.NoError(t, moduleSourceReadCacheKey(ctx, req, true))
+	require.NoError(t, moduleSourceReadCacheKey(ctx, req, true, false))
 	platform, err := core.CurrentEngineDefaultPlatform(ctx)
 	require.NoError(t, err)
 	var keyed string

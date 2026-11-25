@@ -160,7 +160,7 @@ type workspaceModuleSourceArgs struct {
 // decides what it reads without the caller, as its other reads are keyed
 // (workspaceReadCacheKey).
 func (s *workspaceSchema) moduleSourceCacheKey(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], _ workspaceModuleSourceArgs, req *dagql.CallRequest) error {
-	return moduleSourceReadCacheKey(ctx, req, parent.Self().HasContentIdentity())
+	return moduleSourceReadCacheKey(ctx, req, parent.Self().HasContentIdentity(), false)
 }
 
 // moduleSource loads a module source from a path within the workspace, applying
@@ -173,7 +173,7 @@ func (s *workspaceSchema) moduleSource(
 	parent dagql.ObjectResult[*core.Workspace],
 	args workspaceModuleSourceArgs,
 ) (inst dagql.ObjectResult[*core.ModuleSource], err error) {
-	shared, err := moduleSourceReadShared(ctx, parent.Self().HasContentIdentity())
+	shared, _, err := moduleSourceReadShared(ctx, parent.Self().HasContentIdentity(), false)
 	if err != nil {
 		return inst, err
 	}
