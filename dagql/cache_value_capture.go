@@ -1612,7 +1612,7 @@ func (c *Cache) exportPass(ctx context.Context, selection ValueSelection, cfg co
 		return nil, err
 	}
 	// Of the known rows, the bundle carries only those something in it
-	// stands on, and the held rows on the way down to them.
+	// stands on, a needed held row linking past those on the way down.
 	keepStart := time.Now()
 	order, leftOutHeld, keptAll := capture.order, 0, ""
 	if !c.testKeepEveryKnownRow {
