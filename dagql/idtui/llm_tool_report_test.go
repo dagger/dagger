@@ -18,6 +18,34 @@ import (
 	"github.com/dagger/dagger/dagql/dagui"
 )
 
+func TestToolResultSizePrefersBytes(t *testing.T) {
+	measured, zero := int64(12345), int64(0)
+	for _, tt := range []struct {
+		name        string
+		bytes       *int64
+		scope, want string
+	}{
+		{"legacy", nil, "", "~12.3k tok"},
+		{"bytes", &measured, "text", "12 kB"},
+		{"media", &measured, "text_only", "12 kB text"},
+		{"measured zero", &zero, "text", ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			span := &dagui.Span{SpanSnapshot: dagui.SpanSnapshot{LLMTool: "read", LLMToolResultTokens: 12345, LLMToolResultBytes: tt.bytes, LLMToolResultBytesScope: tt.scope}}
+			renderer{}.renderToolResultSize(NewOutput(&buf, termenv.WithProfile(termenv.Ascii)), span)
+			if tt.want == "" {
+				require.Empty(t, buf.String())
+			} else {
+				require.Contains(t, buf.String(), tt.want)
+			}
+			if tt.bytes != nil {
+				require.NotContains(t, buf.String(), "tok")
+			}
+		})
+	}
+}
+
 // TestASCIIReporterScopedToolCallReport covers the shape core renders for an
 // LLM tool result: the report is scoped to the tool call's span, every row is
 // force-expanded (so output behind a roll-up/tool-call boundary survives), the

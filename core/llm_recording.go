@@ -223,7 +223,7 @@ func (c *RecordedResponseProvider) SendQuery(ctx context.Context, history []*LLM
 		case LLMContentToolCall:
 			// The tool-call span stays open; the loop ends it (with the
 			// result-size badge) via endToolCallDisplay once the tool returns.
-			dp.EmitToolCall(idx, block.CallID, block.ToolName, string(block.Arguments))
+			dp.EmitToolCall(idx, block.CallID, block.ToolName, string(block.Arguments), recordedToolArguments)
 		}
 	}
 

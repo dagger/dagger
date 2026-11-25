@@ -402,7 +402,7 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 				dp.StartText(ev.Index)
 			case "tool_use":
 				toolInputs[ev.Index] = new(strings.Builder)
-				dp.StartToolCall(ev.Index, ev.ContentBlock.ID, ev.ContentBlock.Name)
+				dp.StartToolCall(ev.Index, ev.ContentBlock.ID, ev.ContentBlock.Name, modelToolArguments)
 			}
 		case anthropic.ContentBlockDeltaEvent:
 			switch ev.Delta.Type {

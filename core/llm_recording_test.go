@@ -88,7 +88,7 @@ func TestDisplayToolArgsAreLineTerminatedOnce(t *testing.T) {
 			ctx = telemetry.WithLoggerProvider(ctx, provider)
 
 			dp := newDisplayPhases(ctx, "", nil)
-			dp.EmitToolCall(0, "call_1", "read", args)
+			dp.EmitToolCall(0, "call_1", "read", args, modelToolArguments)
 
 			recorder.mu.Lock()
 			defer recorder.mu.Unlock()
@@ -197,8 +197,8 @@ func TestRecordedResponseProviderEmitsPerToolCallDisplaySpans(t *testing.T) {
 
 	// The loop ends them exactly as it does for a live provider: CallBatch ends
 	// the tool-call spans, step() ends the rest.
-	endToolCallDisplay(res.ToolCallDisplays, "call_1", false, "file contents")
-	endToolCallDisplay(res.ToolCallDisplays, "call_2", false, "")
+	endToolCallDisplay(res.ToolCallDisplays, "call_1", &LLMContentBlock{Kind: LLMContentToolResult, Text: "file contents"})
+	endToolCallDisplay(res.ToolCallDisplays, "call_2", &LLMContentBlock{Kind: LLMContentToolResult})
 	endedByCallBatch := map[trace.Span]bool{}
 	for _, tc := range res.ToolCallDisplays {
 		endedByCallBatch[tc.Span] = true
@@ -241,14 +241,22 @@ func TestRecordedResponseProviderEmitsPerToolCallDisplaySpans(t *testing.T) {
 		require.True(t, ok, "%s: missing GenAI agent name", toolName)
 		require.Equal(t, "reviewer", v.AsString())
 
+		// Replayed arguments have their actual footprint but no new generation.
+		v, ok = spanAttr(s, telemetryattrs.LLMToolArgumentBytesSourceAttr)
+		require.True(t, ok)
+		require.Equal(t, "recorded", v.AsString())
+		v, ok = spanAttr(s, telemetryattrs.LLMToolArgumentBytesAttr)
+		require.True(t, ok)
+		require.Positive(t, v.AsInt64())
+
 		// Tool calls hang off the assistant text that introduced them, the
 		// same anchoring the streaming providers use.
 		require.Equal(t, byName["LLM response"].SpanContext().SpanID(), s.Parent().SpanID())
 	}
 
 	// The result-size badge lands on the call that produced output.
-	v, ok := spanAttr(byName["read"], telemetryattrs.LLMToolResultTokensAttr)
-	require.True(t, ok, "read: missing result tokens attr")
+	v, ok := spanAttr(byName["read"], telemetryattrs.LLMToolResultBytesAttr)
+	require.True(t, ok, "read: missing result bytes attr")
 	require.Greater(t, v.AsInt64(), int64(0))
 }
 
@@ -274,7 +282,7 @@ func TestStampResponseDigestPointsDisplaySpansAtResponse(t *testing.T) {
 	dp := newDisplayPhases(ctx, requestDigest.String(), nil)
 	dp.StartText(0)
 	dp.Close(0)
-	dp.EmitToolCall(1, "call_1", "read", `{"path":"main.go"}`)
+	dp.EmitToolCall(1, "call_1", "read", `{"path":"main.go"}`, modelToolArguments)
 	spans, _ := dp.Response()
 	require.Len(t, spans, 2)
 
@@ -301,9 +309,9 @@ func TestToolCallDisplaySpanIdentifiesToolAtStart(t *testing.T) {
 		{Name: "editor_generate", Server: "editor"},
 		{Name: "CallMethod", HideSelf: true},
 	})
-	dp.StartToolCall(0, "call_1", "editor_generate")
-	dp.StartToolCall(1, "call_2", "CallMethod")
-	dp.StartToolCall(2, "call_3", "unknown_tool")
+	dp.StartToolCall(0, "call_1", "editor_generate", modelToolArguments)
+	dp.StartToolCall(1, "call_2", "CallMethod", modelToolArguments)
+	dp.StartToolCall(2, "call_3", "unknown_tool", modelToolArguments)
 
 	started := map[string]sdktrace.ReadOnlySpan{}
 	for _, s := range sr.Started() {
@@ -372,7 +380,7 @@ func TestToolCallDisplaySpanNamesHeaderArgsAtStart(t *testing.T) {
 	} {
 		t.Run(tc.tool, func(t *testing.T) {
 			dp := newDisplayPhases(ctx, "", tools)
-			p := dp.StartToolCall(int64(i), "call", tc.tool)
+			p := dp.StartToolCall(int64(i), "call", tc.tool, modelToolArguments)
 			var display sdktrace.ReadOnlySpan
 			for _, s := range sr.Started() {
 				if s.SpanContext().SpanID() == p.span.SpanContext().SpanID() {
@@ -390,8 +398,9 @@ func TestToolCallDisplaySpanNamesHeaderArgsAtStart(t *testing.T) {
 
 			p.writeToolArgs(tc.args)
 			dp.Close(int64(i))
-			_, failed := newMCP().Call(p.ctx, tools, &LLMToolCall{Name: tc.tool, Arguments: JSON(tc.args)})
-			require.False(t, failed)
+			results, rest := newMCP().CallBatch(ctx, tools, []*LLMToolCall{{CallID: "call", Name: tc.tool, Arguments: JSON(tc.args)}}, dp.toolCalls, nil)
+			require.Empty(t, rest)
+			require.False(t, results[0].Content[0].Errored)
 
 			var ended sdktrace.ReadOnlySpan
 			for _, s := range sr.Ended() {

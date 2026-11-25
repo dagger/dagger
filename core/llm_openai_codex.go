@@ -299,7 +299,7 @@ func (c *OpenAIResponsesClient) SendQuery(ctx context.Context, history []*LLMMes
 					Arguments: JSON(fc.Arguments),
 				})
 				toolIdx++
-				dp.EmitToolCall(toolIdx, fc.CallID, fc.Name, fc.Arguments)
+				dp.EmitToolCall(toolIdx, fc.CallID, fc.Name, fc.Arguments, modelToolArguments)
 			case "reasoning":
 				// Capture the reasoning item (its id, encrypted content, and
 				// summary) so it can be resubmitted before the function call it

@@ -1171,14 +1171,28 @@ func (r renderer) renderMetrics(out TermOutput, span *dagui.Span) {
 	}
 }
 
-// renderToolResultTokens flags, inline on a tool-call row, how many tokens the
-// tool's result added to the model's context. A tool result is usually the
-// biggest driver of context growth, so surfacing its size makes an inordinate
-// one easy to spot while scanning a conversation. The count is an estimate (see
-// LLMToolResultTokensAttr) and is colored by magnitude so large results stand
-// out; small ones stay faint to keep the transcript quiet.
-func (r renderer) renderToolResultTokens(out TermOutput, span *dagui.Span) {
-	if span == nil || span.LLMTool == "" || span.LLMToolResultTokens <= 0 {
+// renderToolResultSize prefers measured text bytes, retaining the estimated
+// token badge only for old traces. These are footprints, not provider usage.
+func (r renderer) renderToolResultSize(out TermOutput, span *dagui.Span) {
+	if span == nil || span.LLMTool == "" {
+		return
+	}
+	if span.LLMToolResultBytes != nil {
+		if bytes := *span.LLMToolResultBytes; bytes > 0 {
+			var color termenv.Color = kbColor
+			if bytes >= 1_000_000_000 {
+				color = bigColor
+			} else if bytes >= 1_000_000 {
+				color = mbColor
+			}
+			fmt.Fprint(out, out.String(" "+Diamond+" ").Faint(), out.String(humanizeBytes(bytes)).Foreground(color))
+			if span.LLMToolResultBytesScope == "text_only" {
+				fmt.Fprint(out, out.String(" text").Faint())
+			}
+		}
+		return // measured zero must not fall back to a stale token estimate
+	}
+	if span.LLMToolResultTokens <= 0 {
 		return
 	}
 	tokens := span.LLMToolResultTokens

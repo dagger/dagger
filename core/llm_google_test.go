@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"testing"
 
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/genai"
@@ -200,6 +201,24 @@ func TestGenaiParallelToolCallIDs(t *testing.T) {
 	assert.NotEqual(t, blocks[0].CallID, blocks[1].CallID, "parallel same-tool calls must get distinct CallIDs")
 }
 
+func TestGenaiTruncatedArgumentBytes(t *testing.T) {
+	sr, ctx := recordingTestRecorder(t)
+	displays := newDisplayPhases(ctx, "", nil)
+	response := &genai.GenerateContentResponse{Candidates: []*genai.Candidate{{
+		FinishReason: genai.FinishReasonMaxTokens,
+		Content:      &genai.Content{Role: "model", Parts: []*genai.Part{{FunctionCall: &genai.FunctionCall{ID: "call", Name: "write", Args: map[string]any{"x": "こんにちは"}}}}},
+	}}}
+	stream := func(yield func(*genai.GenerateContentResponse, error) bool) { yield(response, nil) }
+	_, _, err := (&GenaiClient{}).processStreamResponse(stream, displays, func(*genai.GenerateContentResponseUsageMetadata) LLMTokenUsage { return LLMTokenUsage{} })
+	var rejected *ModelFinishedError
+	require.ErrorAs(t, err, &rejected)
+	displays.Abort(err) // SendQuery's deferred failure path
+	require.Len(t, sr.Ended(), 1)
+	bytes, ok := spanAttr(sr.Ended()[0], telemetryattrs.LLMToolArgumentBytesAttr)
+	require.True(t, ok)
+	require.Equal(t, int64(len(`{"x":"こんにちは"}`)), bytes.AsInt64())
+}
+
 // TestGenaiToolCallUsesProvidedID covers B4: when Gemini populates the
 // function-call ID, it is used as the CallID.
 func TestGenaiToolCallUsesProvidedID(t *testing.T) {
@@ -218,10 +237,17 @@ func TestGenaiToolCallUsesProvidedID(t *testing.T) {
 	stream := func(yield func(*genai.GenerateContentResponse, error) bool) { yield(resp, nil) }
 	noUsage := func(*genai.GenerateContentResponseUsageMetadata) LLMTokenUsage { return LLMTokenUsage{} }
 
-	blocks, _, err := c.processStreamResponse(stream, newDisplayPhases(context.Background(), "", nil), noUsage)
+	sr, ctx := recordingTestRecorder(t)
+	displays := newDisplayPhases(ctx, "", nil)
+	blocks, _, err := c.processStreamResponse(stream, displays, noUsage)
 	require.NoError(t, err)
 	require.Len(t, blocks, 1)
 	assert.Equal(t, "gemini-id-1", blocks[0].CallID)
+	newMCP().CallBatch(ctx, nil, []*LLMToolCall{{CallID: blocks[0].CallID, Name: blocks[0].ToolName, Arguments: blocks[0].Arguments}}, displays.toolCalls, nil)
+	require.Len(t, sr.Ended(), 1)
+	scope, ok := spanAttr(sr.Ended()[0], telemetryattrs.LLMToolArgumentBytesScopeAttr)
+	require.True(t, ok)
+	require.Equal(t, "reserialized_argument_json", scope.AsString())
 }
 
 // TestGenaiToolCallIDRoundTrip covers B4: the CallID assigned on the response is
