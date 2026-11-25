@@ -8,8 +8,10 @@ import (
 	"io"
 	"runtime"
 	"runtime/debug"
+	"sync"
 	"testing"
 
+	"github.com/klauspost/compress/zstd"
 	"github.com/stretchr/testify/require"
 )
 
@@ -166,5 +168,44 @@ func TestZstdLayerAllocatesLittleOnceWarm(t *testing.T) {
 		}
 		got := zstdLayerAllocated(t, New(Zstd), layerBytes(c.size), 20)
 		require.Less(t, got, int64(most), "a %d-byte layer allocated %d bytes", c.size, got)
+	}
+}
+
+// An encoder the pools keep between layers holds a history of its window and
+// one block, not twice its window. No frame and no layer compressed with its
+// size is larger than the window (zstdSizedLimit), so the history never has
+// to move down, and every blob stays as it was (zstdLayerGolden). At twice
+// the window, 16 MB an encoder, a filling engine held 43 such histories,
+// 688 MB, at the peak of a Go test check's burst of calls, with 16 frames
+// compressing at once.
+func TestZstdKeptEncoderHoldsOneWindow(t *testing.T) {
+	data := layerBytes(zstdSizedLimit)
+	pools := &zstdEncoderPools{level: zstd.SpeedDefault}
+	for _, c := range []struct {
+		name     string
+		pool     *sync.Pool
+		compress func(*zstd.Encoder, []byte)
+	}{
+		{"frame", &pools.frames, func(enc *zstd.Encoder, out []byte) {
+			enc.EncodeAll(data, out)
+		}},
+		{"layer with its size", &pools.streams, func(enc *zstd.Encoder, out []byte) {
+			buf := bytes.NewBuffer(out)
+			enc.ResetContentSize(buf, int64(len(data)))
+			_, err := enc.Write(data)
+			require.NoError(t, err)
+			require.NoError(t, enc.Close())
+		}},
+	} {
+		out := make([]byte, 0, 2*len(data))
+		var before, after runtime.MemStats
+		runtime.ReadMemStats(&before)
+		enc, err := pools.get(c.pool)
+		require.NoError(t, err)
+		c.compress(enc, out)
+		runtime.ReadMemStats(&after)
+		pools.put(c.pool, enc)
+		got := int64(after.TotalAlloc - before.TotalAlloc)
+		require.Less(t, got, int64(zstdSizedLimit+4<<20), "a new %s encoder allocated %d bytes for a %d-byte input", c.name, got, len(data))
 	}
 }
