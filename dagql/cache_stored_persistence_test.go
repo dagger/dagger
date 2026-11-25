@@ -309,9 +309,10 @@ func TestCloudRestoreKeepsEveryRecord(t *testing.T) {
 	require.True(t, reply.Committed)
 }
 
-// A save times how long its snapshot held the cache for reading, in one
-// hold (PersistSnapshotHeld): the longest a writer of the cache, and every
-// reader behind it, waits behind the save. It is part of the save's time.
+// A save times how long its read of the store held the cache for reading in
+// its longest hold (PersistSnapshotHeld): the longest a writer of the cache,
+// and every reader behind it, waits behind the save. It is part of the save's
+// time.
 func TestCloudSaveTimesItsSnapshotsReadHold(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "cloud.db")

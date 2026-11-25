@@ -632,6 +632,7 @@ func (c *Cache) unindexRecipesLocked(res *sharedResult) {
 		}
 	}
 	res.recipeKeys = nil
+	c.noteSavedEntryLocked(res.id)
 }
 
 // AttachRemoteHolding records an engine cache's entry as its call span reports
@@ -1438,6 +1439,11 @@ func (c *Cache) compactEqClassesAfterCollectionLocked(removed bool) {
 		c.eqClassRemoved = true
 	}
 	if c.eqClassSlotsLocked() == c.eqClassCheckedSlots && !c.eqClassRemoved {
+		return
+	}
+	// A save reading the store holds compaction off: the next collection
+	// after it checks.
+	if c.savingLocked() {
 		return
 	}
 	clock := c.eqClassClock

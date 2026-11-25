@@ -767,10 +767,10 @@ func (c *Cache) PersistedWritten() int {
 	return c.persistedWritten
 }
 
-// PersistSnapshotHeld returns how long the snapshot of the cache's last
-// successful persistence held the cache's lock for reading, in one hold
-// (snapshotPersistState): the longest a writer of the cache, and every
-// reader behind that writer, can have waited for it.
+// PersistSnapshotHeld returns how long the cache's last successful
+// persistence held the cache's lock for reading in its longest single hold
+// (readStore): the longest a writer of the cache, and every reader behind
+// that writer, can have waited for it.
 func (c *Cache) PersistSnapshotHeld() time.Duration {
 	if c == nil {
 		return 0
@@ -778,6 +778,32 @@ func (c *Cache) PersistSnapshotHeld() time.Duration {
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
 	return c.persistSnapshotHeld
+}
+
+// SaveRead is how the read of the store by the cache's last successful
+// persistence went, holding the cache's lock for reading in pieces
+// (readStore).
+type SaveRead struct {
+	// LongestHold is its longest single hold of the lock, Held all its
+	// holds together, and Took its whole time, from its first hold to the
+	// end of its last.
+	LongestHold, Held, Took time.Duration
+	// Holds counts its holds; Rounds the rounds in which it read again, in
+	// pieces, what writers changed while it read; and LastHoldUnits the
+	// entries, terms and classes its last hold read again.
+	Holds, Rounds, LastHoldUnits int
+}
+
+// LastSaveRead returns how the read of the store by the cache's last
+// successful persistence went.
+func (c *Cache) LastSaveRead() SaveRead {
+	if c == nil {
+		return SaveRead{}
+	}
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	w := c.persistWalk
+	return SaveRead{LongestHold: w.longest, Held: w.held, Took: w.took, Holds: w.pieces, Rounds: w.rounds, LastHoldUnits: w.last}
 }
 
 // CacheIdentity names a persistent cache across the engine processes that open
@@ -2028,6 +2054,7 @@ func (c *Cache) upsertPersistedEdgeLocked(ctx context.Context, res *sharedResult
 		edge.expiresAtUnix = mergeSharedResultExpiryUnix(edge.expiresAtUnix, expiresAtUnix)
 	}
 	c.persistedEdgesByResult[res.id] = edge
+	c.noteSavedEntryLocked(res.id)
 	if !found {
 		c.poolRootLocked(res, 1)
 	}
@@ -2124,6 +2151,7 @@ func (c *Cache) removePrunedEdge(ctx context.Context, resultID sharedResultID) (
 		return time.Time{}, false, 0, nil
 	}
 	delete(c.persistedEdgesByResult, resultID)
+	c.noteSavedEntryLocked(resultID)
 	droppedAt = time.Now()
 	entriesBefore := len(c.resultsByID)
 	res = c.resultsByID[resultID]
@@ -2916,14 +2944,17 @@ type Cache struct {
 	// debug snapshot. bootRestoredResults counts the entries the boot restore
 	// installed that are not type definitions, persistedResults the
 	// entries the store holds after the last successful persistence,
-	// persistedWritten how many of them it wrote, and persistSnapshotHeld
-	// how long its snapshot held egraphMu for reading. They are guarded by
-	// egraphMu.
+	// persistedWritten how many of them it wrote, persistSnapshotHeld the
+	// longest its read of the store held egraphMu for reading in one hold,
+	// and persistWalk how that read went. persistNotes are what writers
+	// changed while a save read the store. They are guarded by egraphMu.
 	engineInstanceID    string
 	bootRestoredResults int
 	persistedResults    int
 	persistedWritten    int
 	persistSnapshotHeld time.Duration
+	persistWalk         persistWalk
+	persistNotes        persistNotes
 	// blobBacked marks a cache that keeps parts in a blob store: only it
 	// accepts SetStoredPart (WithBlobStore).
 	blobBacked bool
@@ -3006,6 +3037,9 @@ type Cache struct {
 	// checkpointMu or in Close after quiescence.
 	persistKept persistKept
 	persistSeed maphash.Seed
+	// testPersistPrints are, in tests that note always, what the last save
+	// read (persistPrints). Only the saver uses them.
+	testPersistPrints *persistPrints
 
 	persistenceResetReason CachePersistenceResetReason
 	// identity names the cache's persistence database across the engine
@@ -4876,6 +4910,7 @@ func (c *Cache) addExplicitDependenciesLocked(
 	if parentRes == nil {
 		return nil
 	}
+	c.noteSavedEntryLocked(parentRes.id)
 	added := false
 	for _, depRes := range deps {
 		if depRes == nil || depRes.id == parentRes.id {
@@ -6852,6 +6887,7 @@ func (c *Cache) deleteResultLocked(res *sharedResult) {
 		return
 	}
 	c.markLeavingLocked(res.id)
+	c.noteSavedEntryLocked(res.id)
 	c.forgetListItemLocked(res)
 	c.unindexKeptCallsLocked(res)
 	c.resultPayloadBytes.Add(-res.payloadBytes.Load())
@@ -8664,6 +8700,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 			// ownership its old value's dependency edges held.
 			if _, retained := c.persistedEdgesByResult[oc.res.id]; retained {
 				delete(c.persistedEdgesByResult, oc.res.id)
+				c.noteSavedEntryLocked(oc.res.id)
 				c.poolRootLocked(oc.res, -1)
 			}
 			releaseQueue, replacedErr = c.releaseReplacedDependenciesLocked(cleanupCtx, replaced, releaseQueue)
@@ -8765,6 +8802,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		if replacedInPlace {
 			if _, retained := c.persistedEdgesByResult[oc.res.id]; retained {
 				delete(c.persistedEdgesByResult, oc.res.id)
+				c.noteSavedEntryLocked(oc.res.id)
 				c.poolRootLocked(oc.res, -1)
 				queue, decErr = c.decrementIncomingOwnershipLocked(ctx, oc.res, queue)
 			}

@@ -3227,6 +3227,7 @@ func (c *Cache) applyMergedIdentitiesLocked(ctx context.Context, commit *valueMe
 			// when the Cloud has none yet (mergeHeldSenderHoldingLocked).
 			if !c.blobBacked {
 				row.res.noteSenderCopyLocked(commit.from, row.value.SenderNumber, true, row.value.ExpiresAtUnix)
+				c.noteSavedEntryLocked(row.res.id)
 			} else {
 				c.mergeHeldSenderHoldingLocked(ctx, cloudState, commit, row, change)
 			}
@@ -3262,6 +3263,7 @@ func (c *Cache) applyMergedIdentitiesLocked(ctx context.Context, commit *valueMe
 			// The sender's entry stores the record: the Cloud's, with the
 			// record's expiry, or the engine image's.
 			row.res.noteSenderCopyLocked(commit.from, row.value.SenderNumber, true, row.value.ExpiresAtUnix)
+			c.noteSavedEntryLocked(row.res.id)
 			c.noteCloudMergeLocked(commit, row)
 			continue
 		}
@@ -3773,6 +3775,7 @@ func (c *Cache) failMergedEntryLocked(ctx context.Context, res *sharedResult, qu
 	c.unindexRecipesLocked(res)
 	if _, retained := c.persistedEdgesByResult[res.id]; retained {
 		delete(c.persistedEdgesByResult, res.id)
+		c.noteSavedEntryLocked(res.id)
 		c.poolRootLocked(res, -1)
 		queue, _ = c.decrementIncomingOwnershipLocked(ctx, res, queue)
 	}

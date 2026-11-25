@@ -2,7 +2,6 @@ package dagql
 
 import (
 	"fmt"
-	"time"
 
 	persistdb "github.com/dagger/dagger/dagql/persistdb"
 )
@@ -121,14 +120,14 @@ type persistStateSnapshot struct {
 	importedLayerByBlob   []persistdb.MirrorImportedLayerBlobIndex
 	importedLayerByDiff   []persistdb.MirrorImportedLayerDiffIndex
 	next                  persistKept
-	// held is how long taking the snapshot held egraphMu for reading.
-	held time.Duration
+	// walk is how the save's read of the store went (readStore).
+	walk persistWalk
 	// writes is, on a blob-backed cache, its write count (Cache.writes),
-	// read under the same hold as every row's change stamp.
+	// read in the save's last hold, after every row's change stamp.
 	writes uint64
 	// written is how many entries the save wrote, once it has committed.
 	written int
 	// full is, while a test checks saves (testPersistFullSave), the
-	// snapshot of a full save taken under the same hold.
+	// snapshot of a full save taken in the save's last hold.
 	full *persistStateSnapshot
 }
