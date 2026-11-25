@@ -92,7 +92,8 @@ func touchSharedResultLastUsed(res *sharedResult, nowUnixNano int64) {
 	if nowUnixNano > res.lastUsedAtUnixNano {
 		res.lastUsedAtUnixNano = nowUnixNano
 	}
-	res.payloadMu.Unlock()
+	// The last use is the results row's, not the saved record's.
+	res.payloadMu.unlockUncounted()
 }
 
 func calcEgraphTermDigest(selfDigest digest.Digest, inputEqIDs []eqClassID) string {
