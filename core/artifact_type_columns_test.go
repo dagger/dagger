@@ -196,3 +196,44 @@ func TestArtifactScopeKeepsCompiledDimensions(t *testing.T) {
 		}
 	}
 }
+
+// A selection names its columns from every module's schema it is given, but
+// keeps collection roots, and so holds results, only of the modules it holds
+// artifacts of: a workspace's discovery with an include gives every module's
+// artifacts for the names, and a stored selection that kept the others' roots
+// would hold modules nothing in it can reach.
+func TestArtifactSchemaKeepsOnlySelectedModulesCollections(t *testing.T) {
+	ctx := dagql.ContextWithCall(t.Context(), &dagql.ResultCall{View: call.View(ArtifactTypeColumnsVersion)})
+	item := func(module, field, collection string) *Artifact {
+		root := &ModTreeNode{Name: module, Parent: &ModTreeNode{}}
+		return &Artifact{ModuleName: module, TypeName: "File", Path: []string{module, field},
+			Node: &ModTreeNode{Name: "get", Parent: &ModTreeNode{Name: field, Parent: root},
+				CollectionDimension: &ArtifactDimension{Identifier: collection, CollectionType: collection, ItemType: "File", Kind: "COLLECTION"}},
+		}
+	}
+	app := item("app", "packages", "Packages")
+	selection := &Artifacts{Entries: []*Artifact{app}}
+	require.NoError(t, selection.SetSchema(ctx, []*Artifact{app, item("tools", "dependencies", "Dependencies")}))
+
+	labels := map[string]string{}
+	for _, dimension := range selection.AllDimensions {
+		labels[dimension.Identifier] = dimension.Name
+	}
+	require.Equal(t, "packages", labels["Packages"])
+	require.Equal(t, "dependencies", labels["Dependencies"])
+
+	encoded, err := selection.EncodePersistedObject(ctx, nil)
+	require.NoError(t, err)
+	var stored persistedArtifacts
+	require.NoError(t, json.Unmarshal(encoded.JSON, &stored))
+	var roots, nodes []string
+	for _, root := range stored.CollectionRoots {
+		roots = append(roots, root.ModuleName)
+	}
+	for _, node := range stored.Tree.Nodes {
+		nodes = append(nodes, node.Name)
+	}
+	require.Equal(t, []string{"app"}, roots)
+	require.NotContains(t, nodes, "tools")
+	require.NotContains(t, nodes, "dependencies")
+}
