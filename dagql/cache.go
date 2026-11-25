@@ -2860,6 +2860,9 @@ type Cache struct {
 	testStoredSizeMeasure        func()
 	testStoredSizesHold          func(time.Duration)
 	testStoredTransferNormalized func()
+	// testStoredSizesAloneMarks runs as StoredSizesAlone marks the roots
+	// that reach an entry and what it reaches.
+	testStoredSizesAloneMarks func()
 	// storedPartClock, nil but in tests, is the clock SetStoredParts
 	// admits parts at (time.Now when nil). It is read under egraphMu.
 	storedPartClock func() time.Time
