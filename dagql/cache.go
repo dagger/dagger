@@ -2659,7 +2659,6 @@ func wipeSQLiteFiles(dbPath string) error {
 const (
 	egraphLockIdent        = "dagql.egraph"
 	sessionsLockIdent      = "dagql.sessions"
-	resultDepsLockIdent    = "dagql.result.deps"
 	resultDecodeLockIdent  = "dagql.result.decode"
 	resultPayloadLockIdent = "dagql.result.payload"
 )
@@ -3217,7 +3216,7 @@ type Cache struct {
 	// lock held.
 	testAfterRetentionDrop func(sharedResultID)
 	// persisted-decode singleflight hooks (ensurePersistedHitValueLoaded):
-	// before acquiring persistDecodeMu in the join-or-lead region, after a
+	// before acquiring the decode state's mu in the join-or-lead region, after a
 	// joiner captured the published channel, and after a leader published
 	// a fresh channel.
 	testPersistDecodePreLock       func(uint64)
@@ -3650,28 +3649,15 @@ type sharedResult struct {
 	// count of 0, and its release takes the write lock when it leaves 0.
 	incomingOwnershipCount atomic.Int64
 
-	attachDepsMu     sync.Mutex
-	attachDepsWaitCh chan struct{}
-	attachDepsErr    error
-	// attachHolder is the op and span holding the attachment open, when
-	// either is recorded, for a publication that waits for it.
-	attachHolder *attachHolder
+	// attachment is the entry's dependency attachment while it is open, or
+	// once it has failed (resultAttachment): nil when none is open and the
+	// last ended cleanly, as on an entry that never attached.
+	attachment atomic.Pointer[resultAttachment]
 
-	persistDecodeMu     sync.Mutex
-	persistDecodeWaitCh chan struct{}
-	persistDecodeErr    error
-	// persistDecodeRetry records whether persistDecodeErr was caused by the
-	// decode leader's own context being canceled. A woken joiner with a
-	// healthy context retries such an attempt instead of returning the
-	// departed leader's error as its own.
-	persistDecodeRetry bool
-	// persistLeaseSyncPending records that the decoded payload was installed
-	// but syncResultSnapshotLeases has not yet succeeded. While set, readers
-	// must join or lead a sync-only decode attempt before the value is
-	// served, so a leader that failed or was canceled between the install
-	// and finishPersistDecode cannot leave the owner-lease set silently
-	// unsynchronized.
-	persistLeaseSyncPending bool
+	// decode is the decode of the entry's persisted payload, and its last
+	// outcome (resultDecode): nil until a hit first joins or leads one
+	// (decodeState), as on an entry whose payload is never decoded.
+	decode atomic.Pointer[resultDecode]
 
 	// partGate is the row's part state (PartGateCell), made the first time
 	// its parts are gated, hosted or scanned (partGateCell): nil on an entry
@@ -3782,20 +3768,109 @@ func (res *sharedResult) attachmentState() resultAttachmentState {
 		return resultAttachmentFailed
 	}
 
-	res.attachDepsMu.Lock()
-	defer res.attachDepsMu.Unlock()
-	if res.attachDepsWaitCh == nil {
+	a := res.attachment.Load()
+	if a == nil {
 		return resultAttachmentClean
 	}
 	select {
-	case <-res.attachDepsWaitCh:
-		if res.attachDepsErr != nil {
+	case <-a.waitCh:
+		if a.err != nil {
 			return resultAttachmentFailed
 		}
 		return resultAttachmentClean
 	default:
 		return resultAttachmentOpen
 	}
+}
+
+// resultAttachment is an attachment of an entry's dependencies: a
+// publication's, or a merge's that replaces the entry's value. The entry
+// holds it from when it opens (openAttachment) until it ends cleanly
+// (endAttachment); one that failed stays, so the entry reads as failed.
+type resultAttachment struct {
+	// waitCh is closed when the attachment ends.
+	waitCh chan struct{}
+	// err is why the attachment failed: written before waitCh is closed,
+	// and read only after.
+	err error
+	// holder is the op and span holding the attachment open, when either is
+	// recorded, for a publication that waits for it.
+	holder *attachHolder
+}
+
+// endedAttachment is the wait of an attachment that has ended.
+var endedAttachment = func() chan struct{} {
+	ch := make(chan struct{})
+	close(ch)
+	return ch
+}()
+
+// openAttachment opens an attachment of res's dependencies, held by holder.
+func (res *sharedResult) openAttachment(holder *attachHolder) {
+	res.attachment.Store(&resultAttachment{waitCh: make(chan struct{}), holder: holder})
+}
+
+// endAttachment ends res's open attachment with err, and reports whether
+// one was open. An attachment that ends cleanly leaves the entry, which
+// then reads as never having attached; one that fails stays.
+func (res *sharedResult) endAttachment(err error) bool {
+	a := res.attachment.Load()
+	if a == nil {
+		return false
+	}
+	select {
+	case <-a.waitCh:
+		return false
+	default:
+	}
+	a.err = err
+	close(a.waitCh)
+	if err == nil {
+		res.attachment.CompareAndSwap(a, nil)
+	}
+	return true
+}
+
+// attachmentWait returns what to wait on for res's attachment to end, and
+// its holder: an ended wait and no holder when none is open.
+func (res *sharedResult) attachmentWait() (<-chan struct{}, *attachHolder) {
+	a := res.attachment.Load()
+	if a == nil {
+		return endedAttachment, nil
+	}
+	return a.waitCh, a.holder
+}
+
+// resultDecode is the singleflight decode of an entry's persisted payload
+// for a hit (ensurePersistedHitValueLoaded), and its last outcome. An
+// entry has none until a hit first joins or leads a decode
+// (sharedResult.decodeState), and keeps it from then on. One with none is
+// in the state a new resultDecode describes.
+type resultDecode struct {
+	mu     sync.Mutex
+	waitCh chan struct{}
+	err    error
+	// retry records whether err was caused by the decode leader's own
+	// context being canceled. A woken joiner with a healthy context retries
+	// such an attempt instead of returning the departed leader's error as
+	// its own.
+	retry bool
+	// leaseSyncPending records that the decoded payload was installed but
+	// syncResultSnapshotLeases has not yet succeeded. While set, readers
+	// must join or lead a sync-only decode attempt before the value is
+	// served, so a leader that failed or was canceled between the install
+	// and finishPersistDecode cannot leave the owner-lease set silently
+	// unsynchronized.
+	leaseSyncPending bool
+}
+
+// decodeState returns res's decode state, making it if res has none.
+func (res *sharedResult) decodeState() *resultDecode {
+	if d := res.decode.Load(); d != nil {
+		return d
+	}
+	res.decode.CompareAndSwap(nil, &resultDecode{})
+	return res.decode.Load()
 }
 
 // A non-nil intent describes the complete desired map, even when empty.
@@ -8081,16 +8156,8 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		if resWasCacheBacked || oc.res == nil {
 			return
 		}
-		oc.res.attachDepsMu.Lock()
-		ended := oc.res.attachDepsWaitCh != nil
-		if ended {
-			oc.res.attachDepsErr = err
-			close(oc.res.attachDepsWaitCh)
-			oc.res.attachHolder = nil
-		}
-		oc.res.attachDepsMu.Unlock()
 		// The attachment kept the row busy for a capture (BusyRows).
-		if ended {
+		if oc.res.endAttachment(err) {
 			c.busyEnded(oc.res.id)
 		}
 	}
@@ -8425,9 +8492,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 				break
 			}
 			if cur.attachmentState() == resultAttachmentOpen {
-				cur.attachDepsMu.Lock()
-				waitCh, holder := cur.attachDepsWaitCh, cur.attachHolder
-				cur.attachDepsMu.Unlock()
+				waitCh, holder := cur.attachmentWait()
 				var released <-chan struct{}
 				if state := c.sessionLifecycle(sessionID); state != nil {
 					released = state.released
@@ -8650,11 +8715,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		}
 	}
 	if !resWasCacheBacked {
-		oc.res.attachDepsMu.Lock()
-		oc.res.attachDepsWaitCh = make(chan struct{})
-		oc.res.attachDepsErr = nil
-		oc.res.attachHolder = newAttachHolder(wcprof.CurrentOpID(ctx), oc.pubSpan)
-		oc.res.attachDepsMu.Unlock()
+		oc.res.openAttachment(newAttachHolder(wcprof.CurrentOpID(ctx), oc.pubSpan))
 	}
 	// The first E unlock of this publication, after direct-edge validation,
 	// handoff ownership and attachment-barrier setup are all decided.

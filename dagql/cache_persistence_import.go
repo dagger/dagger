@@ -1013,18 +1013,12 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 	if err := c.prepareMergedPayload(ctx, res, workLookup); err != nil {
 		return nil, err
 	}
-	wcprof.Lock(ctx, &res.attachDepsMu, resultDepsLockIdent)
-	attachDepsWaitCh := res.attachDepsWaitCh
-	res.attachDepsMu.Unlock()
-	if attachDepsWaitCh != nil {
-		if err := awaitHitLoad(ctx, attachDepsWaitCh, hitLoadAttach); err != nil {
+	if a := res.attachment.Load(); a != nil {
+		if err := awaitHitLoad(ctx, a.waitCh, hitLoadAttach); err != nil {
 			return nil, err
 		}
-		wcprof.Lock(ctx, &res.attachDepsMu, resultDepsLockIdent)
-		attachDepsErr := res.attachDepsErr
-		res.attachDepsMu.Unlock()
-		if attachDepsErr != nil {
-			return nil, fmt.Errorf("wait for dependency attachment: %w", attachDepsErr)
+		if a.err != nil {
+			return nil, fmt.Errorf("wait for dependency attachment: %w", a.err)
 		}
 	}
 
@@ -1034,9 +1028,12 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 			return nil, fmt.Errorf("ensure persisted hit value loaded: invalid object payload state for result %d (hasValue=true, self=nil)", res.id)
 		}
 		if state.hasValue || state.persistedEnvelope == nil {
-			wcprof.Lock(ctx, &res.persistDecodeMu, resultDecodeLockIdent)
-			leaseSyncPending := res.persistLeaseSyncPending
-			res.persistDecodeMu.Unlock()
+			leaseSyncPending := false
+			if d := res.decode.Load(); d != nil {
+				wcprof.Lock(ctx, &d.mu, resultDecodeLockIdent)
+				leaseSyncPending = d.leaseSyncPending
+				d.mu.Unlock()
+			}
 			if !leaseSyncPending {
 				if !state.isObject {
 					c.registerLazyEvaluation(res, hit)
@@ -1058,10 +1055,11 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 		if c.testPersistDecodePreLock != nil {
 			c.testPersistDecodePreLock(uint64(res.id))
 		}
-		wcprof.Lock(ctx, &res.persistDecodeMu, resultDecodeLockIdent)
-		if res.persistDecodeWaitCh != nil {
-			waitCh := res.persistDecodeWaitCh
-			res.persistDecodeMu.Unlock()
+		d := res.decodeState()
+		wcprof.Lock(ctx, &d.mu, resultDecodeLockIdent)
+		if d.waitCh != nil {
+			waitCh := d.waitCh
+			d.mu.Unlock()
 			if c.testPersistDecodeJoined != nil {
 				c.testPersistDecodeJoined(uint64(res.id))
 			}
@@ -1070,10 +1068,10 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 				return nil, err
 			}
 
-			wcprof.Lock(ctx, &res.persistDecodeMu, resultDecodeLockIdent)
-			decodeErr := res.persistDecodeErr
-			decodeRetry := res.persistDecodeRetry
-			res.persistDecodeMu.Unlock()
+			wcprof.Lock(ctx, &d.mu, resultDecodeLockIdent)
+			decodeErr := d.err
+			decodeRetry := d.retry
+			d.mu.Unlock()
 			if decodeErr != nil {
 				if decodeRetry {
 					// The attempt failed only because its leader's own
@@ -1099,44 +1097,44 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 		// sync could fail or be canceled and re-latch an error.
 		state = res.loadPayloadState()
 		needDecode := !state.hasValue && state.persistedEnvelope != nil
-		if !needDecode && !res.persistLeaseSyncPending {
-			res.persistDecodeMu.Unlock()
+		if !needDecode && !d.leaseSyncPending {
+			d.mu.Unlock()
 			continue
 		}
 
-		res.persistDecodeWaitCh = make(chan struct{})
-		res.persistDecodeErr = nil
-		res.persistDecodeRetry = false
-		res.persistDecodeMu.Unlock()
+		d.waitCh = make(chan struct{})
+		d.err = nil
+		d.retry = false
+		d.mu.Unlock()
 		if c.testPersistDecodeLeadPublished != nil {
 			c.testPersistDecodeLeadPublished(uint64(res.id))
 		}
 
 		// finishPersistDecode latches the outcome, the retry
 		// classification, and the pending-sync flag, and clears the
-		// channel, all under persistDecodeMu; the cleared channel is then
+		// channel, all under the decode state's mu; the cleared channel is then
 		// closed after unlocking. installed reports whether the decoded
 		// payload is in place: a failure after the install means only the
-		// lease sync is outstanding, and persistLeaseSyncPending makes the
+		// lease sync is outstanding, and leaseSyncPending makes the
 		// next demand retry just that instead of serving the value with
 		// the owner-lease set unsynchronized.
 		finishPersistDecode := func(err error, installed bool) {
-			wcprof.Lock(ctx, &res.persistDecodeMu, resultDecodeLockIdent)
-			res.persistDecodeErr = err
+			wcprof.Lock(ctx, &d.mu, resultDecodeLockIdent)
+			d.err = err
 			// A failure after the leader's session was removed is that
 			// removal's, whatever the error, as for shared calls: the
 			// decode can need the leader's client.
-			res.persistDecodeRetry = lazyEvalErrorCausedByContext(ctx, err) ||
+			d.retry = lazyEvalErrorCausedByContext(ctx, err) ||
 				(err != nil && clientScopeSessionClosed(ctx))
-			res.persistLeaseSyncPending = installed && err != nil
-			waitCh := res.persistDecodeWaitCh
-			res.persistDecodeWaitCh = nil
-			res.persistDecodeMu.Unlock()
+			d.leaseSyncPending = installed && err != nil
+			waitCh := d.waitCh
+			d.waitCh = nil
+			d.mu.Unlock()
 			close(waitCh)
 			logProducerRemovedOutcome(ctx, "persisted decode", fmt.Sprint(res.id), err)
 		}
 
-		// A leader with an installed payload (persistLeaseSyncPending was
+		// A leader with an installed payload (leaseSyncPending was
 		// set) runs a sync-only attempt: it skips the decode below and
 		// just reconciles the leases.
 		if needDecode {

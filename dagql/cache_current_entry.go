@@ -234,11 +234,13 @@ func (c *Cache) finishValueReplacement(ctx context.Context, res *sharedResult, r
 		lz.mu.Unlock()
 	}
 
-	res.persistDecodeMu.Lock()
-	res.persistDecodeErr = nil
-	res.persistDecodeRetry = false
-	res.persistLeaseSyncPending = false
-	res.persistDecodeMu.Unlock()
+	if d := res.decode.Load(); d != nil {
+		d.mu.Lock()
+		d.err = nil
+		d.retry = false
+		d.leaseSyncPending = false
+		d.mu.Unlock()
+	}
 	return err
 }
 

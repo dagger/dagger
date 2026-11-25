@@ -416,16 +416,14 @@ func TestValueTransferCapture(t *testing.T) {
 					res.storeResultCall(res.loadResultCall().clone())
 				case "busy": // Attachment is rechecked after every copy guard is released.
 					c.egraphMu.Lock()
-					res.attachDepsMu.Lock()
-					res.attachDepsWaitCh = make(chan struct{})
-					res.attachDepsMu.Unlock()
+					res.openAttachment(nil)
 					c.egraphMu.Unlock()
 				}
 			}
 			err := c.WithExportedValues(ctx, ValueSelection{Roots: []AnyResult{root}}, config.RefConfig{}, func(context.Context, *ExportedValues) error { t.Fatal("incoherent capture delivered"); return nil })
 			c.testTransferCopied = nil
 			if kind == "busy" {
-				close(res.attachDepsWaitCh)
+				res.endAttachment(nil)
 			}
 			require.ErrorIs(t, err, ErrPersistStateNotReady)
 			require.Equal(t, owners, res.incomingOwnershipCount.Load())
