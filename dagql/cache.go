@@ -2882,7 +2882,10 @@ type Cache struct {
 	testBatchGaveWay  func()
 	// testPersistRead, nil but in tests, runs for each entry a save reads
 	// while it holds egraphMu for reading, with egraphMu held.
-	testPersistRead func()
+	// testPersistWalked runs once a save's walk has read every unit, with
+	// egraphMu let go, before the save reads again what writers noted.
+	testPersistRead   func()
+	testPersistWalked func()
 
 	// testRecordPayloadPreparing runs as a merge starts preparing the
 	// record of an ordinal with its payload; an error refuses that record.
