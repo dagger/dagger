@@ -2232,18 +2232,22 @@ func (p *prerelocatedRecord) holds(final func(uint64) (sharedResultID, error)) b
 // The Cloud doesn't decide its rows again once it decided them as it prepared
 // the records (earlyMergeRows): its commit comes later, behind the commits of
 // its sender's earlier exports, so a second decision here is no nearer the
-// commit's than the first, and the commit relocates under the lock each
-// record whose numbers no longer hold, as it relocates any.
+// commit's than the first. It relocates here, by that decision, only the
+// records the preparation didn't relocate, and the commit relocates under the
+// lock each record whose numbers no longer hold, as it relocates any.
 func (c *Cache) prerelocateMergeRows(ctx context.Context, prep *valueMergePrep) {
-	if c.testNoPrerelocation || len(prep.stale) > 0 || !prep.preparesPayloads() && len(prep.unprepared) == 0 || c.blobBacked && prep.early != nil {
+	if c.testNoPrerelocation || len(prep.stale) > 0 || !prep.preparesPayloads() && len(prep.unprepared) == 0 {
 		return
 	}
-	commit := &valueMergeCommit{prep: prep, byOrdinal: map[uint64]*mergeRow{}, now: time.Now().Unix()}
-	c.readLockGraphGathered(ctx)
-	c.decideMergeRowsLocked(commit)
-	c.egraphMu.RUnlock()
-	if commit.installsLight() {
-		return
+	commit := prep.early
+	if !c.blobBacked || commit == nil {
+		commit = &valueMergeCommit{prep: prep, byOrdinal: map[uint64]*mergeRow{}, now: time.Now().Unix()}
+		c.readLockGraphGathered(ctx)
+		c.decideMergeRowsLocked(commit)
+		c.egraphMu.RUnlock()
+		if commit.installsLight() {
+			return
+		}
 	}
 	final := func(provisional uint64) (sharedResultID, bool) {
 		row := commit.byOrdinal[provisional-prep.firstID+1]
