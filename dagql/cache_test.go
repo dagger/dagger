@@ -8258,6 +8258,91 @@ func TestCacheAttachedDependencyResultsRequireEveryDepsSessionResources(t *testi
 	cacheTestReleaseSession(t, c, ctx)
 }
 
+// A call whose key doesn't name its session can have a result for each
+// session, each built on resources only its own session holds, such as what
+// the session lent the call's work. A field the session's result holds,
+// attached after the result is published, is a field of that result, not of
+// another session's result of the same call: the session can load it by its
+// ID, as code handed the field's ID does. So too when the session bound its
+// result to itself, which publishes it under the call holding the binding.
+func TestCacheAttachedFieldBelongsToItsSessionsResult(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		// bindSecond binds the second session's result to its session.
+		bindSecond bool
+	}{
+		{name: "built on its session's resource"},
+		{name: "bound to its session", bindSecond: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			baseCtx := cacheTestContext(t.Context())
+			c, err := NewCache(baseCtx, "", nil, nil)
+			assert.NilError(t, err)
+			srv := cacheTestServer(t)
+			sessionCtx := func(session string) context.Context {
+				return ContextWithCache(engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+					ClientID:  session + "-client",
+					SessionID: session,
+				}), c)
+			}
+			resourceOf := func(session string) SessionResourceHandle {
+				return cacheTestVolatileSessionResourceHandle("FIELD_OWNER_" + session)
+			}
+
+			Fields[cacheTestQuery]{
+				NodeFunc("parent", func(ctx context.Context, _ ObjectResult[cacheTestQuery], _ struct{}) (Result[*cacheTestObject], error) {
+					md, err := engine.ClientMetadataFromContext(ctx)
+					if err != nil {
+						return Result[*cacheTestObject]{}, err
+					}
+					resource, err := cacheTestSessionResourceLeaf(ctx, resourceOf(md.SessionID))
+					if err != nil {
+						return Result[*cacheTestObject]{}, err
+					}
+					field, err := NewObjectResultForCall(&cacheTestObject{Value: 2}, srv,
+						ChildFieldCall(CurrentCall(ctx), "field", (&cacheTestObject{}).Type()))
+					if err != nil {
+						return Result[*cacheTestObject]{}, err
+					}
+					if tc.bindSecond && md.SessionID == "second" {
+						BindToSession(ctx)
+					}
+					return NewResultForCurrentCall(ctx, &cacheTestObject{
+						Value:             1,
+						dependencyResults: []AnyResult{resource, field},
+					})
+				}),
+			}.Install(srv)
+
+			fieldOf := func(session string) *call.ID {
+				t.Helper()
+				ctx := sessionCtx(session)
+				assert.NilError(t, c.BindSessionResource(ctx, session, session+"-client", resourceOf(session), "bound"))
+				var parent Result[*cacheTestObject]
+				assert.NilError(t, srv.Select(ctx, srv.Root(), &parent, Selector{Field: "parent"}))
+				id, err := parent.Self().dependencyResults[1].ID()
+				assert.NilError(t, err)
+				return id
+			}
+
+			first := fieldOf("first")
+			// The second session can't use the first's result, so its own
+			// call runs.
+			second := fieldOf("second")
+
+			_, err = srv.Load(sessionCtx("first"), first)
+			assert.NilError(t, err)
+			_, err = srv.Load(sessionCtx("second"), second)
+			assert.NilError(t, err, "a session loads the field its own result holds")
+
+			assert.NilError(t, c.ReleaseSession(sessionCtx("first"), "first"))
+			assert.NilError(t, c.ReleaseSession(sessionCtx("second"), "second"))
+		})
+	}
+}
+
 // cacheTestBlockingAttachObj holds its dependency attachment open until the
 // test releases it, so a second session can select the published result while
 // its required set is still growing.
