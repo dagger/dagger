@@ -3,11 +3,16 @@ package compression
 import (
 	"bytes"
 	"context"
+	"io"
+	"runtime/debug"
 	"runtime/pprof"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/klauspost/compress/zstd"
 
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/semaphore"
@@ -221,4 +226,41 @@ func waitFor(t *testing.T, cond func() bool) {
 		require.True(t, time.Now().Before(deadline), "waited 30 s")
 		time.Sleep(10 * time.Millisecond)
 	}
+}
+
+// The engine keeps no more zstd encoders than frames compress at once,
+// whichever of its cores compressed them. Layers compressing side by side on
+// every core, two frames at a time, make two encoders, and every later frame
+// takes one of those. Kept in a sync.Pool, an encoder given back on one core
+// sat in that core's own slot, which no other core takes, so each core made
+// its own: on a 16-core engine filling the remote cache, 35 to 41 of them
+// were alive at once, 284 to 333 MB of their history, whether 4 frames could
+// compress at once or 16.
+func TestZstdKeepsNoMoreEncodersThanFramesCompressAtOnce(t *testing.T) {
+	const budget = 2
+	frames, kept, made := zstdFrames, zstdBudget, zstdEncoderMade
+	t.Cleanup(func() { zstdFrames, zstdBudget, zstdEncoderMade = frames, kept, made })
+	zstdFrames, zstdBudget = semaphore.NewWeighted(budget), budget
+	var n atomic.Int64
+	zstdEncoderMade = func() { n.Add(1) }
+	// What the collector frees isn't kept by either; hold it off.
+	defer debug.SetGCPercent(debug.SetGCPercent(-1))
+
+	pools := newZstdEncoderPools(zstd.SpeedDefault)
+	data := layerBytes(zstdFrameSize + 1)
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Go(func() {
+			w := &zstdLayerWriter{encoders: pools, dest: io.Discard}
+			for rest := data; len(rest) > 0; {
+				piece := min(len(rest), 32<<10)
+				_, err := w.Write(rest[:piece])
+				require.NoError(t, err)
+				rest = rest[piece:]
+			}
+			require.NoError(t, w.Close())
+		})
+	}
+	wg.Wait()
+	require.LessOrEqual(t, n.Load(), int64(budget), "made %d encoders for 16 frames, two at a time", n.Load())
 }
