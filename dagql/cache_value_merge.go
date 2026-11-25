@@ -593,10 +593,6 @@ type MergedValue struct {
 	// target: a new entry, one with no value, or one in place of an expired
 	// value (MergeRowCounts' created, stored, replaced and retired).
 	Stored bool
-	// Own reports, on an engine, that the target holds the engine's own
-	// value, not a record another cache sent it: for a target the merge
-	// didn't store on, the engine's value stays its own.
-	Own bool
 }
 
 // MergedRoot is one root of the bundle: its target and retention, or expired.
@@ -3722,7 +3718,6 @@ func (c *Cache) mergeReplyLocked(commit *valueMergeCommit) (MergeReply, []mergeR
 		}
 		value := MergedValue{Ordinal: row.value.Ordinal, Number: uint64(res.id), Replacements: res.replacements, Revision: RowRevision{Replacements: res.replacements, Transfer: res.transferRevision, Dependencies: res.dependencyOwnershipRevision}, ExpiresAtUnix: res.expiresAtUnix}
 		value.Stored = row.value.Held == "" && (row.action == mergeCreate || row.action == mergeStore || row.action == mergeReplace || row.action == mergeRetire)
-		value.Own = !c.blobBacked && !res.imported
 		for dep := range res.deps {
 			value.Deps = append(value.Deps, uint64(dep))
 		}
