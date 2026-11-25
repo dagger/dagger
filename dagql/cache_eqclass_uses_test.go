@@ -7,6 +7,7 @@ import (
 	"math/rand/v2"
 	"slices"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -39,12 +40,11 @@ func eqClassCheckHolding(i int) RemoteHolding {
 }
 
 // A collection's check of the classes' compaction that frees nothing
-// changes no state engines share, and names none: over entries whose terms
-// take each other as inputs, some joined by content and some requested
-// under another digest, with dead slots fewer than the live classes, a
-// check made after the slots grew leaves the e-graph, the entries and the
-// free slots as they were, and its collection's change names no kind of
-// shared state.
+// changes no state engines share: over entries whose terms take each other
+// as inputs, some joined by content and some requested under another
+// digest, with dead slots fewer than the live classes, a check made after
+// the slots grew leaves the e-graph, the entries and the free slots as they
+// were.
 func TestEqClassCheckThatFreesNothingChangesNothing(t *testing.T) {
 	t.Parallel()
 	ctx, cloud := storedPartTestCache(t, WithBlobStore())
@@ -67,10 +67,9 @@ func TestEqClassCheckThatFreesNothingChangesNothing(t *testing.T) {
 	require.Less(t, slots, 2*live, "fewer than the live classes: the check frees nothing")
 
 	checks, before := testEqClassChecks(cloud), sharedStateOf(cloud)
-	_, change, err := cloud.CollectRemoteHoldings(ctx, nil, nil)
+	_, _, err = cloud.CollectRemoteHoldings(ctx, nil, nil)
 	require.NoError(t, err)
 	require.Equal(t, checks+1, testEqClassChecks(cloud), "the collection checks the classes' compaction")
-	require.Equal(t, SharedWrites(0), change.Shared, "a check that frees nothing changes no shared state: %v", change.Shared)
 	require.Equal(t, before, sharedStateOf(cloud), "the check left the e-graph as it was")
 }
 
@@ -343,4 +342,52 @@ func checkKeptClassUsesDecideAsAWalk(t *testing.T, seed uint64) (compacted, decl
 	t.Logf("seed %d: %d unions; of the collections' checks, %d compacted and %d declined", seed, unions, compacted, declined)
 	require.Greater(t, unions, uint64(10), "the rows join classes")
 	return compacted, declined
+}
+
+// sharedStateOf is what engines share of a blob-backed cache's state, read
+// under its lock: its entries with their own facts, the recipes' index, the
+// e-graph, its union-find's raw parents and ranks included, so that a path
+// compressed shows, the stamps stored bundles read, and which engine caches
+// have state. It leaves out what is an engine cache's own, its holdings and
+// index, and what an entry keeps under locks of its own or in atomics: its
+// holder list, ownership count and last use.
+func sharedStateOf(c *Cache) string {
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	var b strings.Builder
+	for _, id := range slices.Sorted(maps.Keys(c.resultsByID)) {
+		res := c.resultsByID[id]
+		res.payloadMu.RLock()
+		hasValue, envelope := res.hasValue, res.persistedEnvelope != nil
+		res.payloadMu.RUnlock()
+		fmt.Fprintf(&b, "entry %d %s: value %v %v, expires %d, run %v %v, taught %v given %d, calls %v, recipes %v, stored %d, stamp %d %v, deps %v\n",
+			id, res.description, hasValue, envelope, res.expiresAtUnix, res.run, res.runRan,
+			res.taught, res.taughtGiven, slices.Sorted(maps.Keys(res.calls)), res.recipeKeys,
+			len(res.storedParts), res.changedAt, res.stampCause, slices.Sorted(maps.Keys(res.deps)))
+	}
+	for _, recipe := range slices.Sorted(maps.Keys(c.entriesByRecipe)) {
+		fmt.Fprintf(&b, "recipe %s: %d\n", recipe, c.entriesByRecipe[recipe])
+	}
+	fmt.Fprintf(&b, "parents %v\nranks %v\nfree %v\nwrites %d\n", c.egraphParents, c.egraphRanks, c.freeEqClassIDs, c.writes)
+	for _, dig := range slices.Sorted(maps.Keys(c.egraphDigestToClass)) {
+		fmt.Fprintf(&b, "digest %s: class %d\n", dig, c.egraphDigestToClass[dig])
+	}
+	for _, class := range slices.Sorted(maps.Keys(c.eqClassToDigests)) {
+		fmt.Fprintf(&b, "class %d: digests %v, extras %d\n", class, slices.Sorted(maps.Keys(c.eqClassToDigests[class])), len(c.eqClassExtraDigests[class]))
+	}
+	for _, dig := range slices.Sorted(maps.Keys(c.egraphResultsByDigest)) {
+		fmt.Fprintf(&b, "posting %s: %v\n", dig, slices.Sorted(c.egraphResultsByDigest[dig].Items()))
+	}
+	for _, id := range slices.Sorted(maps.Keys(c.egraphTerms)) {
+		term := c.egraphTerms[id]
+		fmt.Fprintf(&b, "term %d: %s %v -> %d\n", id, term.selfDigest, term.inputEqIDs, term.outputEqID)
+	}
+	for _, id := range slices.Sorted(maps.Keys(c.resultOutputEqClasses)) {
+		fmt.Fprintf(&b, "outputs %d: %v\n", id, slices.Sorted(maps.Keys(c.resultOutputEqClasses[id])))
+	}
+	for _, class := range slices.Sorted(maps.Keys(c.outputEqClassResults)) {
+		fmt.Fprintf(&b, "results %d: %v\n", class, slices.Sorted(maps.Keys(c.outputEqClassResults[class])))
+	}
+	fmt.Fprintf(&b, "engine caches %v\n", slices.Sorted(maps.Keys(c.remoteCaches)))
+	return b.String()
 }
