@@ -267,6 +267,9 @@ type aloneSpread struct {
 // has its closure marked: spread stops there. A carried entry newly reached
 // is added to calls, for its kept calls' inputs.
 func (w *aloneWalk) spread(at int32, roots uint64, mine bool, calls *[]aloneSpread) {
+	if w.c.testStoredSizesAloneMarks != nil {
+		w.c.testStoredSizesAloneMarks()
+	}
 	stack := []aloneSpread{{at: at, roots: roots}}
 	for len(stack) > 0 {
 		next := stack[len(stack)-1]
