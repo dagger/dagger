@@ -778,11 +778,14 @@ func TestStoredSizesAllowForEachAddressOfABlobInDifferentPacks(t *testing.T) {
 // storedSizesTestAddresses counts the download addresses a merge's message
 // carries for the bundle once signed as the service signs it, a packed
 // layer's address its pack's and an unpacked one's its own, and its chains'
-// layers shared (ShareChainLayers): the bundle's, and its chains' own.
+// layers shared (ShareChainLayers): the bundle's, and its chains' own. The
+// bundle's outputs name their layers by place: each is signed as its full
+// chain.
 func storedSizesTestAddresses(t *testing.T, bundle ValueBundle) int {
 	t.Helper()
 	signed := bundle
 	signed.Outputs = slices.Clone(signed.Outputs)
+	require.NoError(t, ResolveChainPrefixes(&signed))
 	for i := range signed.Outputs {
 		chain := *signed.Outputs[i].Chain
 		chain.Addresses = map[digest.Digest]BlobAddress{}

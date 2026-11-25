@@ -122,7 +122,8 @@ func TestCloudSaveAndRestoreKeepThePool(t *testing.T) {
 		require.Empty(t, value.Record.Envelope.StoredParts, "records sent to engines carry no stored parts")
 	}
 	require.Len(t, got.Bundle.Outputs, 1)
-	require.Len(t, got.Bundle.Outputs[0].Chain.Layers, 2)
+	require.Len(t, got.Bundle.Outputs[0].Layers, 2, "the output names its chain's two layers")
+	require.Len(t, got.Bundle.Layers, 2)
 
 	// New entries take numbers the saved ones never had.
 	again, _ := mergeTestSource(t, "after-restore", "new")

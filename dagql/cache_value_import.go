@@ -108,10 +108,18 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool, stored, declared map[u
 	if bundle.Version != ValueBundleVersion {
 		return nil, fmt.Errorf("unsupported value bundle version %d", bundle.Version)
 	}
-	// A prefix output is checked as the chain it names: resolved on a copy of
-	// the outputs, leaving the caller's bundle as it was.
-	bundle.Outputs = slices.Clone(bundle.Outputs)
-	if err := ResolveChainPrefixes(&bundle); err != nil {
+	// An output that names its chain's layers by place in the bundle's list,
+	// as an output of a bundle a blob-backed cache builds does, is checked by
+	// its places, each layer they name once (checkListedLayers). A prefix
+	// output is checked as the chain it names: with one, every output gets
+	// its chain resolved, on a copy of the outputs, leaving the caller's
+	// bundle as it was.
+	if slices.ContainsFunc(bundle.Outputs, func(output TransferredOutput) bool { return output.Prefix != nil }) {
+		bundle.Outputs = slices.Clone(bundle.Outputs)
+		if err := ResolveChainPrefixes(&bundle); err != nil {
+			return nil, err
+		}
+	} else if err := checkListedLayers(bundle); err != nil {
 		return nil, err
 	}
 	if len(bundle.Roots) == 0 {
@@ -313,7 +321,7 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool, stored, declared map[u
 			return nil, fmt.Errorf("duplicate offer description %s", composite)
 		}
 		if !held {
-			if err := checkOutputPart(output, part); err != nil {
+			if err := checkListedOutputPart(output, part, bundle.Layers); err != nil {
 				return nil, fmt.Errorf("%s: %w", composite, err)
 			}
 		}
@@ -426,6 +434,14 @@ func validateHeldRow(row TransferredValue) error {
 // record has pending; and an output with a chain, which becomes an offer,
 // only of a pending part, and as an offer the part takes.
 func checkOutputPart(output TransferredOutput, part CapturedCodecOutput) error {
+	return checkListedOutputPart(output, part, nil)
+}
+
+// checkListedOutputPart is checkOutputPart for an output of a bundle whose
+// list of layers is listed: an output that names its chain's layers by
+// place there is checked by those places (validateListedOffer), whose
+// layers checkListedLayers checked.
+func checkListedOutputPart(output TransferredOutput, part CapturedCodecOutput, listed []BundleLayer) error {
 	if output.State != part.State && (part.State != "pending" || output.State != "completed") {
 		return fmt.Errorf("output state differs from recorded part: %s against %s", output.State, part.State)
 	}
@@ -435,7 +451,51 @@ func checkOutputPart(output TransferredOutput, part CapturedCodecOutput) error {
 	if part.State != "pending" {
 		return fmt.Errorf("offer at final output")
 	}
-	return validateTransferOffer(PersistedPartOffer{Address: output.Address, Value: *output.Value, Chain: *output.Chain, Owner: *output.Owner}, part)
+	offer := PersistedPartOffer{Address: output.Address, Value: *output.Value, Chain: *output.Chain, Owner: *output.Owner}
+	if output.Layers != nil {
+		return validateListedOffer(offer, part, output.Layers, listed)
+	}
+	return validateTransferOffer(offer, part)
+}
+
+// checkListedLayers checks the layers a bundle's outputs name by place, as
+// resolving them into the outputs' chains and checking those would
+// (resolveSharedLayers, validateTransferOffer): every place an output names
+// is in the bundle's list, and every layer named is checked once, with its
+// pack.
+func checkListedLayers(bundle ValueBundle) error {
+	var named []bool
+	for _, output := range bundle.Outputs {
+		if output.Layers == nil {
+			continue
+		}
+		if output.Chain == nil {
+			return fmt.Errorf("output %d names layers without a chain", output.Ordinal)
+		}
+		if named == nil {
+			named = make([]bool, len(bundle.Layers))
+		}
+		for _, place := range output.Layers {
+			if place < 0 || place >= len(bundle.Layers) {
+				return fmt.Errorf("output %d names layer %d of %d", output.Ordinal, place, len(bundle.Layers))
+			}
+			named[place] = true
+		}
+	}
+	for place, listed := range bundle.Layers {
+		if named == nil || !named[place] {
+			continue
+		}
+		if err := validateExportLayer(listed.Layer); err != nil {
+			return err
+		}
+		if listed.Pack != "" {
+			if err := listed.Pack.Validate(); err != nil {
+				return fmt.Errorf("invalid pack of layer %s: %w", listed.Layer.Descriptor.Digest, err)
+			}
+		}
+	}
+	return nil
 }
 
 // checkHeldPart checks a part an export puts on a held row against the
