@@ -140,8 +140,13 @@ func TestSetupReasoningEffortOptions(t *testing.T) {
 
 	m = ModelInfo{CanReason: true}
 	options = setupReasoningEffortOptions(m)
-	require.Len(t, options, 4, "budget models must offer more than Off")
-	require.Equal(t, "low", options[1].Value)
+	require.Len(t, options, 1, "setup must not persist invented effort levels for budget models")
+	require.Empty(t, options[0].Value)
+
+	gemini, ok := ModelByID("google", "gemini-2.5-flash")
+	require.True(t, ok)
+	require.Empty(t, gemini.ReasoningLevels)
+	require.Len(t, setupReasoningEffortOptions(gemini), 1, "Gemini budget translation is not implemented")
 }
 
 func TestCopilotCatalog(t *testing.T) {

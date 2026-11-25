@@ -793,6 +793,12 @@ func setupReasoningEffortOptions(m ModelInfo) []huh.Option[string] {
 		unsetLabel = "Provider default"
 	}
 	opts := []huh.Option[string]{huh.NewOption(unsetLabel, "")}
+	// Setup only persists native effort levels. The conversation picker's
+	// conventional budget levels are not translated by every provider yet
+	// (notably Gemini 2.5), so do not offer them as saved provider defaults.
+	if len(m.ReasoningLevels) == 0 {
+		return opts
+	}
 	for _, level := range m.ReasoningEffortLevels() {
 		if level.Value == "none" {
 			continue // folded into the unset option above
