@@ -297,12 +297,37 @@ func (h ChangedHolding) EntryNumber() uint64 {
 }
 
 // changedHoldingLocked takes the holding key as it stands, for a change
-// handed back with the count at (ChangedHolding). Requires egraphMu.
+// handed back with the count at (ChangedHolding): only what a reader keeps,
+// with no copy of the holding's sets or its entry's recipes. Requires
+// egraphMu.
 func (c *Cache) changedHoldingLocked(key HolderKey, at uint64) ChangedHolding {
 	changed := ChangedHolding{Key: key, At: at}
-	if _, h := c.holdingLocked(key); h == nil {
+	entry, h := c.holdingLocked(key)
+	if h == nil {
 		changed.flags = changedGone
+		return changed
 	}
+	changed.typeName, changed.expiresAtUnix, changed.replacements = h.typeName, h.expiresAtUnix, h.replacements
+	changed.deps, changed.unknownDeps, changed.parts = h.deps, h.unknownDeps, h.parts
+	if h.retention.retained {
+		changed.flags |= changedRetained
+		changed.retentionExpiry = h.retention.expiresAtUnix
+	}
+	if h.executed {
+		changed.flags |= changedExecuted
+	}
+	if h.follows {
+		changed.flags |= changedFollows
+	}
+	if h.rowed {
+		changed.flags |= changedRowed
+	}
+	var stored bool
+	changed.entry, stored, changed.storedExpiresAtUnix = entryOwnFactsLocked(entry)
+	if stored {
+		changed.flags |= changedStored
+	}
+	changed.recipes = entry.recipeKeys
 	return changed
 }
 
@@ -2297,12 +2322,19 @@ func (c *Cache) EntriesFacts(numbers []uint64) []EntryFacts {
 // entryFactsLocked returns entry's number, whether it stores a record and
 // that record's expiry, and its recipes, sorted. Requires egraphMu.
 func entryFactsLocked(entry *sharedResult) (number uint64, stored bool, storedExpiresAtUnix int64, recipes []digest.Digest) {
+	number, stored, storedExpiresAtUnix = entryOwnFactsLocked(entry)
+	recipes = slices.Clone(entry.recipeKeys)
+	slices.Sort(recipes)
+	return number, stored, storedExpiresAtUnix, recipes
+}
+
+// entryOwnFactsLocked is entryFactsLocked's answer but for the recipes.
+// Requires egraphMu.
+func entryOwnFactsLocked(entry *sharedResult) (number uint64, stored bool, storedExpiresAtUnix int64) {
 	if !entry.noValueLocked() {
 		stored, storedExpiresAtUnix = true, entry.expiresAtUnix
 	}
-	recipes = slices.Clone(entry.recipeKeys)
-	slices.Sort(recipes)
-	return uint64(entry.id), stored, storedExpiresAtUnix, recipes
+	return uint64(entry.id), stored, storedExpiresAtUnix
 }
 
 // remoteEntryInfoLocked describes entry: its number, whether it stores a
