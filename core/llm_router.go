@@ -425,7 +425,7 @@ func (r *LLMRouter) providerDefaultModel(provider LLMProvider) string {
 }
 
 // SmallModel returns the user-configured small model for provider, falling
-// back to Catwalk's recommendation. Unknown and local providers without an
+// back to Dagger's built-in default. Unknown and local providers without an
 // explicit small model return no route, allowing the caller to retain the
 // concrete model it is already using.
 func (r *LLMRouter) SmallModel(provider LLMProvider) (string, bool) {

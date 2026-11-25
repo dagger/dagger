@@ -1185,7 +1185,7 @@ func (q *Query) DefaultLLMRoute(ctx context.Context, provider string) (string, s
 }
 
 // SmallModelRoute resolves this conversation's current concrete route, then
-// selects that provider's configured or catalog-recommended small model. If the
+// selects that provider's configured or Dagger-default small model. If the
 // provider has neither (as with an arbitrary local or unknown provider), the
 // current concrete route is returned unchanged.
 func (llm *LLM) SmallModelRoute(ctx context.Context) (string, string, error) {
