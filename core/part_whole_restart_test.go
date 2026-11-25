@@ -47,9 +47,8 @@ func TestPartWholeOperationWithoutAddressesRunsItsOperation(t *testing.T) {
 // its recipe again, which no "part without a source" line shows: it is
 // logged once, with the entry and its recipe, however often it is
 // evaluated, as is each record below it that runs again for the same want,
-// here the blob the import reads. On a whole pull request's docs-only edit,
-// a test run's record arrived that way and its test binary ran again for
-// 81.6 s, with no line naming it.
+// here the blob the import reads. A test run's record that arrives that way
+// runs its test binary again, which no other line names.
 func TestPartRecordWithoutAddressesRunAgainIsLoggedOnce(t *testing.T) {
 	actx, _, a, asrv, _ := executionFixture(t)
 	b := newExecutionFixture(t)

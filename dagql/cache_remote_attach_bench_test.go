@@ -30,8 +30,8 @@ func benchmarkRerunRow(i int) RemoteHolding {
 // call row, with the row's session hold, as a rerun's fresh engine reports
 // its calls: rows of recipes the Cloud cache already holds from earlier
 // engines (held=N), each a holding of the new engine on an entry and class
-// that exist. held=0 is the same rows on an empty cache, as a fill's first
-// engine reports them.
+// that exist. held=0 is the same rows on an empty cache, as its first engine
+// reports them.
 func BenchmarkAttachRerunRows(b *testing.B) {
 	const rows = 20_000
 	for _, held := range []int{0, 30} {

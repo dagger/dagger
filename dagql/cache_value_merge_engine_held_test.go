@@ -362,7 +362,8 @@ func TestCloudHeldRowsHoldBesideAnotherEnginesRequestDigest(t *testing.T) {
 	require.NoError(t, err)
 
 	// The engine merges the child and mid in full, then exports rows above
-	// each, records only, as a whole fill does: each merged row is sent held.
+	// each, records only, as an engine that merged them does: each merged row
+	// is sent held.
 	known := NewKnownRows()
 	export := func(t *testing.T, root AnyResult, held AnyResult) MergeReply {
 		t.Helper()

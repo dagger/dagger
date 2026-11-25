@@ -240,9 +240,8 @@ func (cm *snapshotManager) ensureExportBlob(
 		compressorFunc, finalize := refCfg.Type.Compress(ctx, refCfg)
 		// The diff's time in the compressor, against the rest of it: reading
 		// and archiving the layer, hashing the archive and committing the
-		// blob (ExportStats.CompressTime). On a whole pull request's fill a
-		// stopping engine's export waited 9.8 s on one layer, 3.3 GB raw,
-		// with no record of which.
+		// blob (ExportStats.CompressTime). A stopping engine's export can wait
+		// seconds on one large layer, with no record of which.
 		var compressSpent atomic.Int64
 		compressorFunc = timedCompressor(compressorFunc, &compressSpent)
 		mediaType := refCfg.Type.MediaType()

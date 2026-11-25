@@ -399,8 +399,8 @@ func batchReadsTestCases(cloud *Cache, first uint64, key HolderKey, n int, now i
 
 // A batch read lets a writer that comes during it in before its end: the
 // lock prefers writers, so a writer that waited for a batch's whole hold
-// held up every reader that came after it, and on the thirteenth whole
-// run's fill one batch of part answers held the Cloud cache for over 7 s.
+// held up every reader that came after it, and one batch of part answers
+// could hold the Cloud cache for seconds.
 // The writer waits for the answer in progress at most; each answer stands
 // whole in one hold. Here a writer comes after a batch's first answer, and
 // gets in as the batch lets the lock go.
@@ -448,10 +448,8 @@ func TestABatchReadLetsAWaitingWriterIn(t *testing.T) {
 // A batch read gives way to a writer that waits after every answer, however
 // long its own take waited. A read that held the lock as long as its take
 // waited kept a writer pending for as long as that, and a pending writer
-// keeps every new reader out: on the eighteenth whole run's fill and on the
-// trial fill of its fix, a writer was pending 92 to 96% of the time, against
-// 40% on the seventeenth, lookups blocked six times as often, and 16 to 23
-// of 35 engines gave up their stops, against 4. Here a writer holds the lock
+// keeps every new reader out, so lookups blocked far more often, and
+// stopping engines gave up their stops. Here a writer holds the lock
 // for 100 ms as the read begins, so the read's take waits that long, and
 // then asks for the lock again after each answer, of 2 ms each: it gets in
 // after the read's first answer.

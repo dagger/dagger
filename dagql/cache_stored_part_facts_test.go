@@ -156,9 +156,9 @@ func partFactsTestAsk(t *testing.T, cloud *Cache, number uint64) {
 // from what the cache kept of the record when it was stored, never by
 // decoding the record again: a part's answer, a batch of answers and an
 // upload's start, over a record held whole, as a merge installs it, and over
-// one compressed, with its frame or without it, decode nothing. On the
-// eighteenth whole run's fill, decoding each whole record's envelope again
-// for every answer was 92% of passes' CPU under the Cloud cache's lock.
+// one compressed, with its frame or without it, decode nothing. Decoding
+// each whole record's envelope again for every answer could be most of the
+// passes' CPU under the Cloud cache's lock.
 func TestAPartAnswerDecodesNoStoredRecord(t *testing.T) {
 	t.Parallel()
 	for _, form := range partFactsForms {

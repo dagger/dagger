@@ -190,10 +190,10 @@ func TestStoredPartOffersAreAsStored(t *testing.T) {
 // A layer is found among the many the table holds for its blob as fast as
 // among one. Engines describe one blob many ways: each build of the same
 // content stamps its own creation time, and an export notes whether it
-// computed the blob. On a service that several pull requests had filled, an
-// upload's parts were compared against every such variant of each layer's
-// blob, one by one under the table's one lock: storing an upload's parts took
-// up to 11 s at a stopping engine's last export. The timing is each arm's
+// computed the blob. On a store that many engines filled, an upload's parts
+// were compared against every such variant of each layer's blob, one by one
+// under the table's one lock: storing an upload's parts could take seconds
+// at a stopping engine's last export. The timing is each arm's
 // fastest of several rounds, so a busy machine slows both alike.
 func TestStoredLayersFindALayerAmongManyOfItsBlobAsAmongOne(t *testing.T) {
 	t.Parallel()

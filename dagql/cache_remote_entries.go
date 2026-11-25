@@ -1705,9 +1705,9 @@ func (c *Cache) writeRemoteIdentityLocked(ctx context.Context, entry *sharedResu
 // exports for it. It is empty when the cache has no such holding.
 //
 // It reads the closure in pieces (readInPieces), letting egraphMu go between
-// them, so that a writer waits for one piece rather than a whole closure: a
-// test-base engine's closures reach tens of thousands of holdings, which held
-// the lock up to seconds. The answer is still one state's: a walk whose
+// them, so that a writer waits for one piece rather than a whole closure: an
+// engine's closures can reach tens of thousands of holdings, which held the
+// lock up to seconds. The answer is still one state's: a walk whose
 // cache's holdings or dependencies changed between two of its pieces
 // (graphVersion) starts again, and after holderClosureTries such walks it
 // reads the closure in one hold.

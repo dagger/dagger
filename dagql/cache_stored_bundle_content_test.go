@@ -486,9 +486,10 @@ func lateContentReceiverFrame(client string) *ResultCall {
 // A call on a per-client receiver hits on a fresh engine with a receiver of
 // its own of the same content, as on one engine, when the Cloud learned the
 // producer's receiver's content only after the export, from the producer's
-// later span: Go.module over a workspace whose directory's content the fill's
-// engine reported once it had evaluated it. The control is the receiver whose
-// frame carried its content at the export (TestCallRecordHitsOverAnEquivalentReceiver).
+// later span: Go.module over a workspace whose directory's content the
+// producing engine reported once it had evaluated it. The control is the
+// receiver whose frame carried its content at the export
+// (TestCallRecordHitsOverAnEquivalentReceiver).
 func TestCallRecordHitsOverAReceiverWhoseContentTheCloudLearnedLater(t *testing.T) {
 	t.Parallel()
 	cloudCtx, cloud := storedPartTestCache(t, WithBlobStore())

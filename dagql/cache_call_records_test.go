@@ -713,8 +713,8 @@ func TestAnUnplaceableKeptCallGivesWayToAPlaceableOneOfItsTerm(t *testing.T) {
 
 // A call of a kept term whose receiver the Cloud stores only after the call
 // came is sent once a receiver of its class is stored, though no call of the
-// term could be placed when it came. On a fill a call often comes before its
-// receiver is exported. The Cloud stores A's receiver under no recipe of its
+// term could be placed when it came. A call often comes before its receiver
+// is exported. The Cloud stores A's receiver under no recipe of its
 // own and in no class, and B's call comes while the Cloud knows B's receiver
 // only by its content, in A's class: neither call can be placed, and the
 // entry keeps A's, the term's first. cache-b's export then stores B's
