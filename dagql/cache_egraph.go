@@ -1393,11 +1393,12 @@ func (c *Cache) lookupCacheForRequest(
 ) (AnyResult, bool, error) {
 	// A result the session bound to itself is published under the call
 	// holding the binding (boundSessionInputName), and is the session's own
-	// outcome of the call: a session that has bound one looks the call up
-	// that way first, before another session's unbound result of it.
+	// outcome of the call: a session that has bound one for a call of this
+	// field looks the call up that way first, before another session's
+	// unbound result of it.
 	if req != nil && req.ResultCall != nil {
-		if handle := c.sessionBoundHandle(sessionID); c.sessionHasBound(sessionID) {
-			bound := req.withBoundSession(handle)
+		if c.sessionMayHaveBound(sessionID, req.Field) {
+			bound := req.withBoundSession(c.sessionBoundHandle(sessionID))
 			// The same invocation looks again: its evidence is the one it
 			// records.
 			bound.CacheEvidence = req.CacheEvidence
@@ -1439,6 +1440,36 @@ func (c *Cache) sessionHasBound(sessionID string) bool {
 	}
 	state, ok := c.sessionLifecycles.Load(sessionID)
 	return ok && state.(*cacheSessionLifecycle).bound.Load()
+}
+
+// noteBoundCall records that sessionID has published a result under its own
+// binding for a call of field.
+func (c *Cache) noteBoundCall(sessionID, field string) {
+	if state, ok := c.sessionLifecycles.Load(sessionID); ok {
+		state.(*cacheSessionLifecycle).boundFields.Store(field, struct{}{})
+	}
+}
+
+// sessionMayHaveBound reports whether sessionID may hold a result bound to
+// itself for a call of field: it has published one for a call of that field
+// (noteBoundCall). A bound result is found only by a call of its own field,
+// whose binding is part of the call, so a session's lookups of every other
+// field skip looking for one, and a session that has bound nothing takes no
+// lock for it.
+func (c *Cache) sessionMayHaveBound(sessionID, field string) bool {
+	if sessionID == "" {
+		return false
+	}
+	state, ok := c.sessionLifecycles.Load(sessionID)
+	if !ok {
+		return false
+	}
+	lifecycle := state.(*cacheSessionLifecycle)
+	if !lifecycle.bound.Load() {
+		return false
+	}
+	_, ok = lifecycle.boundFields.Load(field)
+	return ok
 }
 
 func (c *Cache) lookupCacheForRequestDigests(
