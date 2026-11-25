@@ -39,7 +39,7 @@ func TestTransferRoundTripState(t *testing.T) {
 		reply, err := b.MergeValues(bctx, cloudCacheID, got.Bundle)
 		require.NoError(t, err)
 		require.True(t, reply.Committed)
-		_, err = cloud.ApplyMergedReply(ctx, "cache-b", got.Bundle, reply)
+		_, err = cloud.ApplyMergedReply(ctx, "cache-b", got.Bundle.Sent(), reply)
 		require.NoError(t, err)
 		return got
 	}
