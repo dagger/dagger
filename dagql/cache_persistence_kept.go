@@ -78,6 +78,11 @@ type persistKept struct {
 	classes []keptUnit
 }
 
+// empty reports whether the database holds nothing of the cache.
+func (k *persistKept) empty() bool {
+	return len(k.entries) == 0 && len(k.terms) == 0 && len(k.classes) == 0
+}
+
 // keptEntry is what the database holds of one entry: a fingerprint of its
 // results row, of its record row with its snapshot links, and of each other
 // kind of its rows. recordWrites and recordInputs are the entry's count of

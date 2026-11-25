@@ -14,9 +14,9 @@ import (
 // any merge's two decisions differ. It also checks every blob-backed cache's
 // kept measure of its pool against a walk as the cache closes
 // (VerifyPoolMeasure), and every cache's kept uses of its classes against a
-// walk (verifyEqClassUses), and every save that writes only what changed
-// against a full save at its hold (checkPersistFullSave), and fails the run if
-// any differs.
+// walk (verifyEqClassUses), and every save into a database that held
+// something against a full save at its hold (checkPersistFullSave), and fails
+// the run if any differs.
 func TestMain(m *testing.M) {
 	var (
 		saves         int
