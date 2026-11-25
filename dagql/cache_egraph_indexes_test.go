@@ -60,8 +60,8 @@ func cacheOutputEqClassForwardErrorLocked(c *Cache) error {
 	}
 
 	for resID, outputEqIDs := range c.resultOutputEqClasses {
-		seenRoots := make(map[eqClassID]struct{}, len(outputEqIDs))
-		for outputEqID := range outputEqIDs {
+		seenRoots := make(map[eqClassID]struct{}, outputEqIDs.Size())
+		for outputEqID := range outputEqIDs.All() {
 			root := c.findEqClassLocked(outputEqID)
 			if outputEqID != root {
 				return fmt.Errorf("result %d has non-root output eq class %d (root %d)", resID, outputEqID, root)
@@ -72,8 +72,7 @@ func cacheOutputEqClassForwardErrorLocked(c *Cache) error {
 			}
 			seenRoots[root] = struct{}{}
 			results := c.outputEqClassResults[root]
-			_, found := results[resID]
-			if !found {
+			if !results.Contains(resID) {
 				return fmt.Errorf("result %d output eq class %d is missing inverse membership", resID, root)
 			}
 		}
@@ -90,11 +89,11 @@ func cacheOutputEqClassInverseErrorLocked(c *Cache) error {
 		if outputEqID != root {
 			return fmt.Errorf("inverse output eq-class key %d is not a root (root %d)", outputEqID, root)
 		}
-		for resID := range results {
+		for resID := range results.All() {
 			if c.resultsByID[resID] == nil {
 				return fmt.Errorf("inverse output eq class %d references missing result %d", outputEqID, resID)
 			}
-			_, found := c.resultOutputEqClasses[resID][root]
+			found := c.resultOutputEqClasses[resID].Contains(root)
 			if !found {
 				return fmt.Errorf("inverse output eq class %d result %d is missing forward membership", root, resID)
 			}
@@ -366,7 +365,7 @@ func TestCacheCanonicalEquivalentReadsOutputEqClassResults(t *testing.T) {
 
 			c.egraphMu.Lock()
 			root := c.eqClassRootLocked(c.egraphDigestToClass[digest.FromString("derived-index-wide-output-content").String()])
-			members := slices.Sorted(maps.Keys(c.outputEqClassResults[root]))
+			members := slices.Collect(c.outputEqClassResults[root].Items())
 			digestCount := len(c.eqClassToDigests[root])
 			_, broad := c.broadlyIndexedResults[members[0]]
 			c.egraphMu.Unlock()
@@ -536,7 +535,7 @@ func TestCacheOutputEqClassResultsMatchDigestPostings(t *testing.T) {
 			if seen.remote {
 				remoteSeen++
 			}
-			for id := range c.outputEqClassResults[root] {
+			for id := range c.outputEqClassResults[root].All() {
 				posted := 0
 				for dig := range c.eqClassToDigests[root] {
 					if posting := c.egraphResultsByDigest[dig]; posting != nil && posting.Contains(id) {
@@ -588,8 +587,8 @@ func TestCacheOutputEqClassInverseMixedSurvivor(t *testing.T) {
 	assert.NilError(t, c.ReleaseSession(ctxA, "inverse-mixed-a"))
 
 	c.egraphMu.Lock()
-	_, removedPresent := c.outputEqClassResults[outputEqID][sharedA.id]
-	_, survivorPresent := c.outputEqClassResults[outputEqID][sharedB.id]
+	removedPresent := c.outputEqClassResults[outputEqID].Contains(sharedA.id)
+	survivorPresent := c.outputEqClassResults[outputEqID].Contains(sharedB.id)
 	survivingTermCount := len(c.outputEqClassToTerms[outputEqID])
 	indexErr := cacheDerivedIndexesErrorLocked(c)
 	c.egraphMu.Unlock()
@@ -680,17 +679,17 @@ func TestCacheOutputEqClassInverseMergeThenRemoval(t *testing.T) {
 	// Exercise the idempotent result-already-in-both-roots merge case.
 	c.addResultOutputEqClassLocked(sharedA.id, rootB)
 	mergedRoot := c.mergeEqClassesLocked(baseCtx, rootA, rootB)
-	mergedA := maps.Clone(c.resultOutputEqClasses[sharedA.id])
-	mergedB := maps.Clone(c.resultOutputEqClasses[sharedB.id])
-	mergedCount := len(c.outputEqClassResults[mergedRoot])
+	mergedA := slices.Collect(c.resultOutputEqClasses[sharedA.id].Items())
+	mergedB := slices.Collect(c.resultOutputEqClasses[sharedB.id].Items())
+	mergedCount := c.outputEqClassResults[mergedRoot].Size()
 	indexErr := cacheDerivedIndexesErrorLocked(c)
 	c.egraphMu.Unlock()
 	assert.Equal(t, 1, classCountA)
 	assert.Equal(t, 1, classCountB)
 	assert.Assert(t, distinctRoots)
 	assert.Assert(t, mergedRoot != 0)
-	assert.DeepEqual(t, mergedA, map[eqClassID]struct{}{mergedRoot: {}})
-	assert.DeepEqual(t, mergedB, map[eqClassID]struct{}{mergedRoot: {}})
+	assert.DeepEqual(t, mergedA, []eqClassID{mergedRoot})
+	assert.DeepEqual(t, mergedB, []eqClassID{mergedRoot})
 	assert.Equal(t, 2, mergedCount)
 	assert.NilError(t, indexErr)
 
@@ -1018,7 +1017,7 @@ func testEqClassContentsLocked(c *Cache) eqClassContents {
 		out.Terms[id] = append(row, name(term.outputEqID))
 	}
 	for resID, classes := range c.resultOutputEqClasses {
-		for id := range classes {
+		for id := range classes.All() {
 			live[c.findEqClassLocked(id)] = true
 			out.Outputs[resID] = append(out.Outputs[resID], name(id))
 		}

@@ -23,7 +23,7 @@ func resultListSingletonFixture(t testing.TB, count int, persisted bool) *cacheD
 	assert.Equal(t, count, len(f.cache.resultsByID))
 	assert.Equal(t, count, len(f.cache.outputEqClassResults))
 	for _, results := range f.cache.outputEqClassResults {
-		assert.Equal(t, 1, len(results))
+		assert.Equal(t, 1, results.Size())
 	}
 	assert.NilError(t, f.cache.ReleaseSession(f.ctx, f.setupSession))
 	return f
@@ -45,7 +45,7 @@ func BenchmarkResultListSingletonImport(b *testing.B) {
 				assert.Equal(b, count, len(c.resultsByID))
 				assert.Equal(b, count, len(c.outputEqClassResults))
 				for _, results := range c.outputEqClassResults {
-					assert.Equal(b, 1, len(results))
+					assert.Equal(b, 1, results.Size())
 				}
 				c.egraphMu.Lock()
 				indexErr := cacheDerivedIndexesErrorLocked(c)
