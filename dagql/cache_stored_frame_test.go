@@ -319,7 +319,7 @@ func TestCloudSavesAndRestoresCompressedFrames(t *testing.T) {
 		compress(c)
 		require.NoError(t, c.Checkpoint(ctx))
 		rows := map[int64][2]string{}
-		q, err := c.sqlDB.QueryContext(ctx, `SELECT id, call_frame_json, self_payload FROM results`)
+		q, err := c.sqlDB.QueryContext(ctx, `SELECT result_id, call_frame_json, self_payload FROM result_records`)
 		require.NoError(t, err)
 		for q.Next() {
 			var id int64
