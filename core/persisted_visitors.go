@@ -742,6 +742,9 @@ var persistedModuleObjectVisitor = persistedStructVisitor("", func(p *persistedM
 	if err := w.child("collectionBase", &p.CollectionBase); err != nil {
 		return err
 	}
+	if err := visitPersistedArtifactViewRefs(w.at("artifactView"), p.ArtifactView); err != nil {
+		return err
+	}
 	for _, name := range slices.Sorted(maps.Keys(p.Fields)) {
 		field := p.Fields[name]
 		if err := visitPersistedModuleObjectValue(w.at("fields").at(name), &field); err != nil {
