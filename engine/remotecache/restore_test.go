@@ -875,12 +875,13 @@ func TestRestoreReportsWhatStoppedAFile(t *testing.T) {
 		}, 0, "404"},
 		{"other bytes", func(fs *fileServer) protocol.SetFile {
 			file := fs.add("other", good)
-			file.Digest = digest.FromString("another file")
+			file.Segments[0].Digest = digest.FromString("another file")
+			file.Digest = protocol.SetFileChain(file.Segments[0].Digest)
 			return file
-		}, 0, "the bytes don't match the file's digest"},
+		}, 0, "the bytes don't match the segment's digest"},
 		{"short", func(fs *fileServer) protocol.SetFile {
 			file := fs.add("short", good)
-			file.Size++
+			file.Segments[0].Size++
 			return file
 		}, 0, "bytes, the restore says"},
 		{"another version", func(fs *fileServer) protocol.SetFile {
