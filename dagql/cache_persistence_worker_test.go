@@ -188,7 +188,7 @@ func TestCachePersistenceWorkerMirrorsAuthoritativeEgraphState(t *testing.T) {
 	assert.Check(t, cmp.Equal(resultOutputEqClassesCount, 2))
 
 	var resultInputCount int
-	err = c.sqlDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM term_inputs WHERE provenance_kind = ?`, string(egraphInputProvenanceKindResult)).Scan(&resultInputCount)
+	err = c.sqlDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM term_inputs WHERE provenance_kind = ?`, egraphInputProvenanceKindResult.String()).Scan(&resultInputCount)
 	assert.NilError(t, err)
 	assert.Check(t, cmp.Equal(resultInputCount, 1))
 }
@@ -260,11 +260,8 @@ func TestCachePersistenceSnapshotKeepsOnlyCompletePersistedRootClosures(t *testi
 	assert.NilError(t, c.AddExplicitDependency(ctx, droppedRoot, keptDep, "shared-clean-dependency"))
 
 	dirtyShared := dirtyDep.cacheSharedResult()
-	dirtyShared.attachDepsMu.Lock()
-	dirtyShared.attachDepsWaitCh = make(chan struct{})
-	dirtyShared.attachDepsErr = context.Canceled
-	close(dirtyShared.attachDepsWaitCh)
-	dirtyShared.attachDepsMu.Unlock()
+	dirtyShared.openAttachment(nil)
+	dirtyShared.endAttachment(context.Canceled)
 
 	snapshot, err := c.snapshotPersistState(ctx)
 	assert.NilError(t, err)

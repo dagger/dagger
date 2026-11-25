@@ -246,7 +246,7 @@ func cloudStateOf(t *testing.T, cloud *Cache) map[string]string {
 			continue
 		}
 		var deps []string
-		for dep := range res.deps {
+		for _, dep := range res.deps {
 			deps = append(deps, recipeOf[dep])
 		}
 		sort.Strings(deps)

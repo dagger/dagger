@@ -25,7 +25,7 @@ func TestSyncResultSnapshotLeasesRecordsLockWait(t *testing.T) {
 	require.NotNil(t, op)
 
 	// What a concurrent sync of the same result holds.
-	row.leaseSyncMu.Lock()
+	row.snapshotState().leaseSyncMu.Lock()
 	done := make(chan error, 1)
 	go func() { done <- c.SyncResultSnapshotOwnerLeases(profCtx, res) }()
 	require.Eventually(t, func() bool {
@@ -37,7 +37,7 @@ func TestSyncResultSnapshotLeasesRecordsLockWait(t *testing.T) {
 		}
 		return false
 	}, 5*time.Second, time.Millisecond)
-	row.leaseSyncMu.Unlock()
+	row.snapshotState().leaseSyncMu.Unlock()
 	require.NoError(t, <-done)
 	op.End(wcprof.OutcomeOK)
 

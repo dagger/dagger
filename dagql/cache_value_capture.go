@@ -175,7 +175,7 @@ func (c *Cache) holdTransferClosure(ctx context.Context, selection ValueSelectio
 	// A root whose own evaluation is in flight can't be captured now,
 	// whatever its closure holds, unless it goes as a held row: its record's
 	// copy is refused
-	// (lazyEvaluationInFlightLocked). It's left out before the walk, so
+	// (evaluationInFlightLocked). It's left out before the walk, so
 	// nothing below it is walked or copied for it: a remote cache service
 	// asks for a running root every few seconds until it isn't busy, and
 	// each capture walked and copied its whole closure only to leave it
@@ -191,10 +191,7 @@ func (c *Cache) holdTransferClosure(ctx context.Context, selection ValueSelectio
 		if res == nil {
 			continue
 		}
-		res.lazyMu.Lock()
-		err := lazyEvaluationInFlightLocked(res)
-		res.lazyMu.Unlock()
-		if err != nil {
+		if err := res.evaluationInFlight(); err != nil {
 			running[res] = blockedRow{row: res.id, kind: res.busyKind(), err: err}
 		}
 	}
@@ -231,7 +228,7 @@ func (c *Cache) holdTransferClosure(ctx context.Context, selection ValueSelectio
 			// roots are left out whatever its attachment adds later.
 			seen[res.id] = 1
 			var children []sharedResultID
-			for id := range res.deps {
+			for _, id := range res.deps {
 				children = append(children, id)
 				_ = walk(id, c.resultsByID[id])
 			}
@@ -261,7 +258,7 @@ func (c *Cache) holdTransferClosure(ctx context.Context, selection ValueSelectio
 		c.incrementIncomingOwnershipLocked(ctx, res)
 		row := &capturedTransferRow{shared: res, imported: res.imported, frame: frame, expiry: res.expiresAtUnix, replacements: res.replacements, transferRev: res.transferRevision, dependencyRev: res.dependencyOwnershipRevision, requiredRev: res.requiredSessionResourcesGen.Load()}
 		capture.rows[res.id] = row
-		for id := range res.deps {
+		for _, id := range res.deps {
 			row.deps = append(row.deps, uint64(id))
 		}
 		slices.Sort(row.deps)
@@ -285,7 +282,7 @@ func (c *Cache) holdTransferClosure(ctx context.Context, selection ValueSelectio
 		// A row's children here are its dependencies alone: a transferred
 		// record carries no offers, so neither their owners nor what those
 		// own go with it.
-		for id := range res.deps {
+		for _, id := range res.deps {
 			below(id, c.resultsByID[id])
 		}
 		if cause != nil {
@@ -541,9 +538,13 @@ func (capture *HeldCapturedClosure) checkCopied(copied []bool, blockRow func(*ca
 // of a part of it runs, as its copy does (captureHeldPersistedRecord), for a
 // held row whose record isn't read.
 func (res *sharedResult) evaluationInFlight() error {
-	res.lazyMu.Lock()
-	defer res.lazyMu.Unlock()
-	return lazyEvaluationInFlightLocked(res)
+	lz := res.lazy.Load()
+	if lz == nil {
+		return nil
+	}
+	lz.mu.Lock()
+	defer lz.mu.Unlock()
+	return lz.evaluationInFlightLocked(res.id)
 }
 
 // ownedSnapshotLinks are the snapshots res holds, as its copy names them
@@ -553,9 +554,9 @@ func (res *sharedResult) evaluationInFlight() error {
 func (res *sharedResult) ownedSnapshotLinks(visit func(PersistedSnapshotRefLink) bool) bool {
 	res.payloadMu.RLock()
 	defer res.payloadMu.RUnlock()
-	links := res.snapshotOwnerLinks
-	if res.snapshotLinkIntent != nil {
-		links = res.snapshotLinkIntent.Links
+	links, intent := res.snapshotLinksLocked()
+	if intent != nil {
+		links = intent.Links
 	}
 	for _, link := range links {
 		if visit(link) {
@@ -634,10 +635,14 @@ func (res *sharedResult) busyKind() BusyKind {
 	if res.attachmentState() != resultAttachmentClean {
 		return BusyAttaching
 	}
-	res.lazyMu.Lock()
-	defer res.lazyMu.Unlock()
-	groups := []*lazyGroupState{&res.lazyWhole}
-	for _, group := range res.lazyPartGroups {
+	lz := res.lazy.Load()
+	if lz == nil {
+		return BusyOther
+	}
+	lz.mu.Lock()
+	defer lz.mu.Unlock()
+	groups := []*lazyGroupState{&lz.whole}
+	for _, group := range lz.partGroups {
 		groups = append(groups, group)
 	}
 	kind := BusyOther

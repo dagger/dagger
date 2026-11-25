@@ -976,7 +976,7 @@ func (c *Cache) recomputeRequiredSessionResourcesLocked(res *sharedResult) (bool
 		}
 		reqs.Insert(handle)
 	}
-	for depID := range res.deps {
+	for _, depID := range res.deps {
 		dep := c.resultsByID[depID]
 		if dep == nil {
 			return false, fmt.Errorf("recompute required session resources: missing dep result %d", depID)
@@ -1577,7 +1577,7 @@ func (c *Cache) installAncestorIDsLocked(rootID sharedResultID) []sharedResultID
 	marks := ancestorMarksPool.Get().(*ancestorMarks)
 	marks.visit(rootID)
 	var out []sharedResultID
-	for parentID := range root.depParents {
+	for _, parentID := range root.depParents {
 		if marks.visit(parentID) {
 			out = append(out, parentID)
 		}
@@ -1587,7 +1587,7 @@ func (c *Cache) installAncestorIDsLocked(rootID sharedResultID) []sharedResultID
 		if res == nil {
 			continue
 		}
-		for parentID := range res.depParents {
+		for _, parentID := range res.depParents {
 			if marks.visit(parentID) {
 				out = append(out, parentID)
 			}
@@ -1724,9 +1724,17 @@ func HasPendingLazyEvaluation(res AnyResult) bool {
 		return false
 	}
 
-	shared.lazyMu.Lock()
-	defer shared.lazyMu.Unlock()
-	if shared.lazyEvalComplete {
+	if _, ok := UnwrapAs[HasLazyEvaluation](res); !ok && shared.lazy.Load() == nil {
+		// A value that can't be lazy whose entry never had lazy state has
+		// nothing pending.
+		return false
+	}
+	// The object-side state below is read under mu, which every attempt
+	// takes to start.
+	lz := shared.lazyState()
+	lz.mu.Lock()
+	defer lz.mu.Unlock()
+	if lz.evalComplete {
 		return false
 	}
 	// Attempt and pending-bookkeeping checks come before object-side state:
@@ -1734,10 +1742,10 @@ func HasPendingLazyEvaluation(res AnyResult) bool {
 	// while its attempt is still running cache-side bookkeeping. Object-side
 	// completion is sufficient only when no attempt is in flight. Any group with an attempt,
 	// pending bookkeeping, or an armed stored callback is pending work.
-	if g := &shared.lazyWhole; g.attempt != nil || g.syncPending || g.eval != nil {
+	if g := &lz.whole; g.attempt != nil || g.syncPending || g.eval != nil {
 		return true
 	}
-	for _, g := range shared.lazyPartGroups {
+	for _, g := range lz.partGroups {
 		if g.attempt != nil || g.syncPending || g.eval != nil {
 			return true
 		}
@@ -1756,21 +1764,24 @@ func HasPendingLazyComputation(res AnyResult) bool {
 	if shared == nil || shared.id == 0 {
 		return false
 	}
-	shared.lazyMu.Lock()
-	defer shared.lazyMu.Unlock()
-	return pendingLazyComputationLocked(shared, reporting)
+	// The object-side state it reads is read under mu, which every attempt
+	// takes to start.
+	lz := shared.lazyState()
+	lz.mu.Lock()
+	defer lz.mu.Unlock()
+	return lz.pendingComputationLocked(reporting)
 }
 
 // Read attempts and owed bookkeeping before object consumption. Their purpose
 // belongs to the typed value and stays valid after its retained operation completes.
-func pendingLazyComputationLocked(shared *sharedResult, reporting HasLazyEvaluationReporting) bool {
-	if shared.lazyEvalComplete {
+func (lz *resultLazy) pendingComputationLocked(reporting HasLazyEvaluationReporting) bool {
+	if lz.evalComplete {
 		return false
 	}
-	if reporting.LazyGroupStoredPart(LazyGroupWhole) == "" && !shared.lazyWhole.settled() {
+	if reporting.LazyGroupStoredPart(LazyGroupWhole) == "" && !lz.whole.settled() {
 		return true
 	}
-	for key, group := range shared.lazyPartGroups {
+	for key, group := range lz.partGroups {
 		if isPartDeliveryTaskKey(key) {
 			continue
 		}
@@ -2318,7 +2329,7 @@ func (c *Cache) collectUnownedResultsLocked(ctx context.Context, queue []*shared
 		}
 
 		depIDs := make([]sharedResultID, 0, len(res.deps))
-		for depID := range res.deps {
+		for _, depID := range res.deps {
 			depIDs = append(depIDs, depID)
 		}
 
@@ -2428,8 +2439,10 @@ func (c *Cache) resultSnapshotLeaseCleanup(res *sharedResult) OnReleaseFunc {
 			seen[key] = struct{}{}
 		}
 		res.payloadMu.RLock()
-		for key := range res.snapshotLeaseCleanupRoles {
-			seen[key] = struct{}{}
+		if s := res.snapshots.Load(); s != nil {
+			for key := range s.leaseCleanupRoles {
+				seen[key] = struct{}{}
+			}
 		}
 		res.payloadMu.RUnlock()
 		for key := range seen {
@@ -2449,8 +2462,9 @@ func (c *Cache) syncResultSnapshotLeases(ctx context.Context, res *sharedResult)
 	// transiently store a link set missing a link the other just attached.
 	// Concurrent per-group attempts make concurrent syncs routine, so the
 	// case is removed rather than left to a later sync's repair.
-	wcprof.Lock(ctx, &res.leaseSyncMu, "dagql.sharedResult.leaseSyncMu")
-	defer res.leaseSyncMu.Unlock()
+	snapshots := res.snapshotState()
+	wcprof.Lock(ctx, &snapshots.leaseSyncMu, "dagql.sharedResult.leaseSyncMu")
+	defer snapshots.leaseSyncMu.Unlock()
 	return c.syncResultSnapshotLeasesLocked(ctx, res)
 }
 
@@ -2528,10 +2542,7 @@ func (c *Cache) syncResultSnapshotLeasesLocked(ctx context.Context, res *sharedR
 		oldLink, ok := oldByKey[key]
 		if !ok || oldLink.RefKey != newLink.RefKey {
 			res.payloadMu.Lock()
-			if res.snapshotLeaseCleanupRoles == nil {
-				res.snapshotLeaseCleanupRoles = map[snapshotOwnerKey]struct{}{}
-			}
-			res.snapshotLeaseCleanupRoles[key] = struct{}{}
+			res.snapshotState().addLeaseCleanupRoleLocked(key)
 			res.payloadMu.Unlock()
 			if err := c.snapshotManager.AttachLease(
 				ctx,
@@ -2553,16 +2564,16 @@ func (c *Cache) syncResultSnapshotLeasesLocked(ctx context.Context, res *sharedR
 }
 
 // snapshotsHeldByDependencies returns the snapshots the results res depends
-// on hold, owned or borrowed.
+// on hold, owned or borrowed. A decode's lease sync gives res's dependencies
+// as its load read them (graphReads.depsOf); otherwise they are read under
+// the graph lock.
 func (c *Cache) snapshotsHeldByDependencies(ctx context.Context, res *sharedResult) map[string]struct{} {
-	c.readLockGraphGathered(ctx)
-	deps := make([]*sharedResult, 0, len(res.deps))
-	for id := range res.deps {
-		if dep := c.resultsByID[id]; dep != nil {
-			deps = append(deps, dep)
-		}
+	deps, read := graphReadsOf(ctx).depsOf(res)
+	if !read {
+		c.readLockGraphGathered(ctx)
+		deps = c.dependencyResultsLocked(res)
+		c.egraphMu.RUnlock()
 	}
-	c.egraphMu.RUnlock()
 	held := map[string]struct{}{}
 	for _, dep := range deps {
 		for _, link := range dep.loadSnapshotOwnerLinks() {
@@ -2570,6 +2581,18 @@ func (c *Cache) snapshotsHeldByDependencies(ctx context.Context, res *sharedResu
 		}
 	}
 	return held
+}
+
+// dependencyResultsLocked returns the results res depends on that are still
+// in the cache. Requires egraphMu.
+func (c *Cache) dependencyResultsLocked(res *sharedResult) []*sharedResult {
+	deps := make([]*sharedResult, 0, len(res.deps))
+	for _, id := range res.deps {
+		if dep := c.resultsByID[id]; dep != nil {
+			deps = append(deps, dep)
+		}
+	}
+	return deps
 }
 
 func (c *Cache) SyncResultSnapshotOwnerLeases(ctx context.Context, res AnyResult) (rerr error) {
@@ -2721,7 +2744,6 @@ func wipeSQLiteFiles(dbPath string) error {
 const (
 	egraphLockIdent        = "dagql.egraph"
 	sessionsLockIdent      = "dagql.sessions"
-	resultDepsLockIdent    = "dagql.result.deps"
 	resultDecodeLockIdent  = "dagql.result.decode"
 	resultPayloadLockIdent = "dagql.result.payload"
 )
@@ -2849,10 +2871,14 @@ type Cache struct {
 	// nothing in its bundle stands on (keepNeededRows), so a test can merge
 	// both and compare them.
 	testKeepEveryKnownRow bool
-	// testKeepRecordCopies, when set, keeps a prepared merge holding the
-	// copies of its bundle's records that only its preparation reads
-	// (dropRecordCopies).
+	// testKeepRecordCopies, when set, keeps a prepared merge holding what
+	// only its preparation reads: the copies of its bundle's records, its
+	// records' frames bound to its private cache (dropRecordCopies), and its
+	// early decision.
 	testKeepRecordCopies bool
+	// testPrivateMergeCache runs once a merge's preparation has built the
+	// private cache it derives identities in (privateMergeCache), with it.
+	testPrivateMergeCache func(*Cache)
 	// testPrerelocated runs once a merge has relocated its records before
 	// its commit, with the numbers each relocation used, by ordinal and
 	// provisional number, which it may change.
@@ -2872,6 +2898,9 @@ type Cache struct {
 	testStoredSizeMeasure        func()
 	testStoredSizesHold          func(time.Duration)
 	testStoredTransferNormalized func()
+	// storedPartClock, nil but in tests, is the clock SetStoredParts
+	// admits parts at (time.Now when nil). It is read under egraphMu.
+	storedPartClock func() time.Time
 	// testCallTermsBuilt runs each time an entry's kept calls are grouped
 	// by term (keptCallTermsLocked).
 	testCallTermsBuilt func()
@@ -3069,7 +3098,7 @@ type Cache struct {
 	freeEqClassIDs []eqClassID
 
 	// map of eqClassID -> all digests in that class
-	eqClassToDigests map[eqClassID]map[string]struct{}
+	eqClassToDigests map[eqClassID]*idSet[string]
 
 	// map of eqClassID -> all labeled extra digests known to belong to that class
 	eqClassExtraDigests map[eqClassID]map[call.ExtraDigest]struct{}
@@ -3080,7 +3109,7 @@ type Cache struct {
 	egraphDigestToClass map[string]eqClassID
 
 	// callInputEntries are, for each digest that is an input of a call kept
-	// on an entry (sharedResult.calls), those entries, each with how many
+	// on an entry (entryCalls), those entries, each with how many
 	// of its calls name it: a change to the digest's class changes the term
 	// their calls derive, and so their kept grouping and index
 	// (forgetCallTermsLocked).
@@ -3125,7 +3154,7 @@ type Cache struct {
 	egraphTerms map[egraphTermID]*egraphTerm
 
 	// term digest -> all terms with that digest
-	egraphTermsByTermDigest map[string]*set.TreeSet[egraphTermID]
+	egraphTermsByTermDigest map[string]*idSet[egraphTermID]
 
 	//
 	// indexes for results
@@ -3150,18 +3179,18 @@ type Cache struct {
 
 	// map of eq class -> all terms that have it as an input, needed during repair to
 	// figure out all the terms that need repair after eq class union
-	inputEqClassToTerms map[eqClassID]map[egraphTermID]struct{}
+	inputEqClassToTerms map[eqClassID]*idSet[egraphTermID]
 
 	// reverse index from canonical output eq class to all terms whose outputs are
 	// currently represented by that class
-	outputEqClassToTerms map[eqClassID]map[egraphTermID]struct{}
+	outputEqClassToTerms map[eqClassID]*idSet[egraphTermID]
 
 	// reverse index from materialized result to all output eq classes it is
 	// currently associated with
-	resultOutputEqClasses map[sharedResultID]map[eqClassID]struct{}
+	resultOutputEqClasses map[sharedResultID]*idSet[eqClassID]
 
 	// inverse of resultOutputEqClasses, keyed by canonical output eq-class root
-	outputEqClassResults map[eqClassID]map[sharedResultID]struct{}
+	outputEqClassResults map[eqClassID]*idSet[sharedResultID]
 
 	// explicit result<->term associations. These are distinct from output eq
 	// class membership: multiple results can share an output eq class, but
@@ -3276,7 +3305,7 @@ type Cache struct {
 	// lock held.
 	testAfterRetentionDrop func(sharedResultID)
 	// persisted-decode singleflight hooks (ensurePersistedHitValueLoaded):
-	// before acquiring persistDecodeMu in the join-or-lead region, after a
+	// before acquiring the decode state's mu in the join-or-lead region, after a
 	// joiner captured the published channel, and after a leader published
 	// a fresh channel.
 	testPersistDecodePreLock       func(uint64)
@@ -3358,11 +3387,11 @@ func (c *Cache) raiseNextResultID(next sharedResultID) {
 }
 
 // lazyEvalAttempt is one execution of a shared result's lazy callback. The
-// shared result publishes the current attempt under lazyMu while its callback
+// shared result publishes the current attempt under the lazy state's mu while its callback
 // is running. Waiters keep this record after callback completion so they can
 // consume that attempt's outcome without reading or decrementing a later
 // attempt's state. All fields except the immutable done channel are read or
-// written under the shared result's lazyMu.
+// written under the shared result's lazy state's mu.
 type lazyEvalAttempt struct {
 	token            *PartTaskToken
 	done             chan struct{}
@@ -3373,7 +3402,7 @@ type lazyEvalAttempt struct {
 	releasedProducer string // callback failed after this attempt's producer session was released
 
 	// profOpID and spanCtx are the native and OTel wait targets for this
-	// attempt. They are minted under lazyMu before the attempt is published.
+	// attempt. They are minted under the lazy state's mu before the attempt is published.
 	// Their zero values mean that the corresponding telemetry source did not
 	// record this attempt.
 	profOpID uint64
@@ -3451,23 +3480,11 @@ type cacheUsageMayChange interface {
 // sharedResult holds cache-entry state and shared payload published to per-call Result values.
 type sharedResult struct {
 	inlineBorrow *PartHost
-	// Origin is immutable; slots and graph revisions are guarded by egraphMu.
-	imported bool
-	// persistDeclined records that the call that computed the entry's value
-	// declined to persist it (DeclinePersistence), so no hit persists it
-	// either. Set before the entry is indexed, and with the value when a
-	// replacement in place installs another. Guarded by egraphMu once
-	// indexed.
-	persistDeclined bool
 	// merged is the Cloud merge that installed the entry's value, on an
 	// engine: its route and when it committed (mergeOrigin). Nil for a
 	// value the engine computed, and for one restored after a restart. It
 	// goes with the value. Guarded by egraphMu.
 	merged *mergeOrigin
-	// recipeRunLogged is set once the entry's value, a record from another
-	// engine with no download address for any part, has been logged as run
-	// again (logRecordRunForWantOfOffers).
-	recipeRunLogged atomic.Bool
 	// run is, on the Cloud, the run its stored record comes from: the engine
 	// entry that ran it, set when a merge installs the record
 	// (mergeRunLocked). runRan is how the Cloud learned that run ran its step,
@@ -3476,8 +3493,7 @@ type sharedResult struct {
 	// neither is sent to an engine: run is nil on an engine, which keeps no
 	// runs, and on a Cloud entry with no stored record. Nothing decides by
 	// them in this cache. Guarded by egraphMu.
-	runRan runRanBy
-	run    *RunName
+	run *RunName
 	// storedParts are the parts whose layer chains are in this cache's own
 	// blob store, by part address key, their layers the cache's
 	// (storedLayers). Only a blob-backed cache (the Cloud) sets them, in
@@ -3487,13 +3503,6 @@ type sharedResult struct {
 	// for the entry, as persistence writes it (encodedRecordBytes), or 0.
 	// Written through setStoredRecordBytesLocked. Guarded by egraphMu.
 	storedRecordBytes int64
-	// poolRefs counts what keeps the entry in a blob-backed cache's pool:
-	// one for its retention edge, and one for each entry in the pool that
-	// depends on it. inPool is whether the pool's kept measure counts it:
-	// it has a value of its own and poolRefs is above 0
-	// (cache_pool_measure.go). Both guarded by egraphMu.
-	poolRefs int32
-	inPool   bool
 	// storedTransfer is the entry's stored record normalized for transfer,
 	// which StoredBundle keeps (storedTransferRecordLocked) and dropping or
 	// replacing the value releases. Builds hold egraphMu for reading, so it is set
@@ -3515,8 +3524,7 @@ type sharedResult struct {
 	// entry (stampEntryLocked), saved with its stored row; and stampCause
 	// what that write was (StampCause), for diagnostics, which isn't saved.
 	// Guarded by egraphMu.
-	changedAt  uint64
-	stampCause StampCause
+	changedAt uint64
 	// transferRevision and dependencyOwnershipRevision move when what a
 	// transfer capture copies of the row changes: its value, payload or
 	// expiry (a replacement, a prune, a merge), or its dependencies. A
@@ -3524,14 +3532,11 @@ type sharedResult struct {
 	// the row at them (KnownRows). Guarded by egraphMu.
 	transferRevision            uint64
 	dependencyOwnershipRevision uint64
-	// offerRevision moves when one of the row's part offers is attached,
-	// replaced or retired. Where a demand gets a part reads it (the part's
-	// source facts, partFactsLocked): an offer is a source. A transfer
-	// capture copies no offers, so an offer moves neither revision above.
+	// offers are the entry's part offers' bookkeeping (entryOffers): nil
+	// until an offer is first attached to it or an offer owner holds it
+	// (offersStateLocked), as on every entry of a blob-backed cache.
 	// Guarded by egraphMu.
-	offerRevision uint64
-	// Reverse offer ownership does not propagate lookup requirements.
-	offerParents map[offerOwnerID]struct{}
+	offers *entryOffers
 	// id is the stable cache-local identity for this materialized result.
 	id sharedResultID
 	// replacements counts how many times this entry's value was replaced in
@@ -3547,33 +3552,17 @@ type sharedResult struct {
 	holders    *entryHolders
 	recipeKeys []digest.Digest
 	// calls are, on the Cloud, the calls its engines reported returning this
-	// entry other than its own, by request digest, which StoredBundle sends
-	// with the entry (cache_call_records.go). They own nothing and go with
-	// the entry. Persisted and guarded by egraphMu.
-	calls map[digest.Digest]*keptCall
-	// callTerms is calls grouped by the term each derives, as
-	// keptCallTermsLocked groups them, or nil until it does: kept until the
-	// calls change or an input's class does (forgetCallTermsLocked). A
-	// reader holding egraphMu for reading may store it; a writer clears it.
-	callTerms atomic.Pointer[[][]*keptCall]
-	// callTermIndex is the call kept of each term the entry's calls derive,
-	// by term key (keptCallTermKeyLocked), so that keeping one more call
-	// takes its own key and one lookup (keepTermCallLocked). While it is
-	// set, the entry keeps one call of each term. It is nil until the entry
-	// keeps a call after a change to an input's class, which changes keys
-	// (forgetCallTermsLocked). Not persisted; guarded by egraphMu.
-	callTermIndex map[string]*keptCall
-	// listItems are, on a list entry, the item read at each position of its
-	// value, and listItemOf and listItemNth name that list and position on
-	// such an item (CallRequest.ListItem). Not persisted; guarded by
-	// egraphMu. See cache_list_items.go.
-	listItems   map[int64]*sharedResult
-	listItemOf  *sharedResult
-	listItemNth int64
+	// entry other than its own (entryCalls): nil until one is kept on it
+	// (callsStateLocked), as on every entry of an engine. Guarded by
+	// egraphMu.
+	calls *entryCalls
+	// list is the entry's place among list items (listLinks), or nil on an
+	// entry that is neither a list whose items were read nor such an item.
+	// Not persisted; guarded by egraphMu. See cache_list_items.go.
+	list *listLinks
 
-	// Immutable payload shared by all per-call Result values.
-	self     Typed
-	isObject bool
+	// Immutable payload shared by all per-call Result values, with isObject.
+	self Typed
 	// objClass refers to the ObjectType originally used to wrap this result
 	// the first time it became an AnyObjectResult. While that class's server
 	// is alive, reconstruction reuses it so the cache does not need to
@@ -3596,44 +3585,71 @@ type sharedResult struct {
 	// the result (storeResultCall), and frameContentKnown whether one was. A
 	// frame a restored body holds is known once it is decoded. Guarded by
 	// resultCallMu.
-	frameContent      digest.Digest
-	frameContentKnown bool
-	// taught are, on a blob-backed cache, the content digests holdings'
-	// spans taught the entry (teachRemoteIdentityLocked), in the order they
-	// were taught, the last its current one. The entry's frame takes them in
-	// that order, as a run of TeachContentDigest calls leaves an engine's,
-	// so one replaced by a later one is kept as replaced-content
-	// (queueTaughtContentLocked). taughtGiven is how many of them the
-	// current frame has taken, and taughtFrame counts the frames a
-	// replacement installed, which have taken none. Requires egraphMu.
-	taught      []digest.Digest
-	taughtGiven int
-	taughtFrame uint64
-	// taughtFrom is, for an entry with no taught digests whose record a
-	// newer one replaced, the replaced frame: the body worker reads its
-	// content digests, in order, as the entry's taught ones, which a
-	// restored entry doesn't keep (its frame does). Requires egraphMu.
-	taughtFrom entryFrame
-	// taughtDropped marks an entry whose taught digests a drop took, until a
-	// record fills it again (taughtContentRefilled). Requires egraphMu.
-	taughtDropped bool
+	frameContent digest.Digest
+	// taughtContent is, on a blob-backed cache, the content digests spans
+	// taught the entry and how far its frame has taken them
+	// (taughtContent): nil until one is first taught it, or a replacement
+	// leaves it a frame's to take (taughtStateLocked), as on every entry of
+	// an engine. Requires egraphMu.
+	taughtContent *taughtContent
 	// payloadMu guards lazy payload publication for imported persisted hits and
 	// prune-accounting timestamps that can change after initial publication.
 	// It counts the writes to what the entry's saved record holds (recordLock).
 	payloadMu recordLock
+
+	// The entry's small fields follow payloadMu, kept together so that they
+	// share words.
+
+	// poolRefs counts what keeps the entry in a blob-backed cache's pool:
+	// one for its retention edge, and one for each entry in the pool that
+	// depends on it. inPool is whether the pool's kept measure counts it:
+	// it has a value of its own and poolRefs is above 0
+	// (cache_pool_measure.go). Both guarded by egraphMu.
+	poolRefs int32
+	// recipeRunLogged is set once the entry's value, a record from another
+	// engine with no download address for any part, has been logged as run
+	// again (logRecordRunForWantOfOffers).
+	recipeRunLogged atomic.Bool
+	// Origin is immutable; slots and graph revisions are guarded by egraphMu.
+	imported bool
+	// persistDeclined records that the call that computed the entry's value
+	// declined to persist it (DeclinePersistence), so no hit persists it
+	// either. Set before the entry is indexed, and with the value when a
+	// replacement in place installs another. Guarded by egraphMu once
+	// indexed.
+	persistDeclined bool
+	// inPool is whether the pool's kept measure counts the entry (see
+	// poolRefs).
+	inPool bool
+	// runRan is how the Cloud learned that run ran its step (see run).
+	runRan runRanBy
+	// stampCause is what the write that set changedAt was (see changedAt).
+	stampCause StampCause
+	// isObject is part of the immutable payload (see self).
+	isObject bool
+	// frameContentKnown is whether frameContent is known (see frameContent).
+	frameContentKnown bool
+	// taughtDropped marks an entry whose taught digests a drop took, until a
+	// record fills it again (taughtContentRefilled). Requires egraphMu.
+	taughtDropped bool
 	// hasValue distinguishes "initialized with a nil value" from "not initialized".
-	hasValue  bool
+	hasValue bool
+	// payloadRefused marks an entry whose merged payload failed at its
+	// first use and was taken back (takeBackRefusedMerged). Guarded by
+	// egraphMu.
+	payloadRefused bool
+
 	onRelease OnReleaseFunc
 	// deps tracks exact materialized child-result dependencies used for
 	// release/liveness propagation and persistence closure. This includes
 	// explicit out-of-band deps and exact resultCall refs mirrored into deps
-	// during materialization.
-	deps map[sharedResultID]struct{}
+	// during materialization. Sorted by number (resultIDSet).
+	deps resultIDSet
 	// depParents is the reverse index for direct deps. It lets install-span
 	// lookups walk dep edges upward on demand to find closure-owning installs
-	// (module API call returns) for the result being evaluated. Nothing reads
-	// it in order.
-	depParents map[sharedResultID]struct{}
+	// (module API call returns) for the result being evaluated. Sorted by
+	// number (resultIDSet), but nothing reads it in order.
+	depParents resultIDSet
 	// boundSession is the handle that only the session that computed the
 	// result holds, when its call bound the result to its session
 	// (BindToSession). It is a requirement like a session-resource handle.
@@ -3654,15 +3670,11 @@ type sharedResult struct {
 	// set the selection-time subset check validated, so the locked re-check
 	// can be skipped.
 	requiredSessionResourcesGen atomic.Uint64
-	// snapshotOwnerLinks are the exact direct snapshot-owner links currently
-	// attached for this result. They are the source of truth for owner lease
-	// cleanup and debug output. Persistence export for newly encoded objects
-	// derives links from the same object encode pass that produced the payload.
-	// They are not child-result deps.
-	snapshotOwnerLinks        []PersistedSnapshotRefLink
-	snapshotLinkIntent        *snapshotLinkIntent
-	payloadRevision           uint64
-	snapshotLeaseCleanupRoles map[snapshotOwnerKey]struct{}
+	// snapshots are the snapshots the entry's value owns (resultSnapshots):
+	// nil until its links are first set or a lease sync of it runs
+	// (snapshotState), as on an entry that owns none.
+	snapshots       atomic.Pointer[resultSnapshots]
+	payloadRevision uint64
 
 	// expiresAtUnix is the in-memory TTL deadline for cache-hit eligibility.
 	// 0 means "never expires".
@@ -3676,10 +3688,6 @@ type sharedResult struct {
 	// Cloud's numbers until then. Guarded by payloadMu, beside
 	// persistedEnvelope.
 	firstUse *mergedFirstUse
-	// payloadRefused marks an entry whose merged payload failed at its
-	// first use and was taken back (takeBackRefusedMerged). Guarded by
-	// egraphMu.
-	payloadRefused bool
 	// payloadBytes is this result's share of Cache.resultPayloadBytes: the
 	// large in-memory byte payload its value or envelope retains, measured
 	// once before publication. Once registered it changes only through
@@ -3712,60 +3720,116 @@ type sharedResult struct {
 	// count of 0, and its release takes the write lock when it leaves 0.
 	incomingOwnershipCount atomic.Int64
 
-	attachDepsMu     sync.Mutex
-	attachDepsWaitCh chan struct{}
-	attachDepsErr    error
-	// attachHolder is the op and span holding the attachment open, when
-	// either is recorded, for a publication that waits for it.
-	attachHolder *attachHolder
+	// attachment is the entry's dependency attachment while it is open, or
+	// once it has failed (resultAttachment): nil when none is open and the
+	// last ended cleanly, as on an entry that never attached.
+	attachment atomic.Pointer[resultAttachment]
 
-	persistDecodeMu     sync.Mutex
-	persistDecodeWaitCh chan struct{}
-	persistDecodeErr    error
-	// persistDecodeRetry records whether persistDecodeErr was caused by the
-	// decode leader's own context being canceled. A woken joiner with a
-	// healthy context retries such an attempt instead of returning the
-	// departed leader's error as its own.
-	persistDecodeRetry bool
-	// persistLeaseSyncPending records that the decoded payload was installed
-	// but syncResultSnapshotLeases has not yet succeeded. While set, readers
-	// must join or lead a sync-only decode attempt before the value is
-	// served, so a leader that failed or was canceled between the install
-	// and finishPersistDecode cannot leave the owner-lease set silently
-	// unsynchronized.
-	persistLeaseSyncPending bool
+	// decode is the decode of the entry's persisted payload, and its last
+	// outcome (resultDecode): nil until a hit first joins or leads one
+	// (decodeState), as on an entry whose payload is never decoded.
+	decode atomic.Pointer[resultDecode]
 
-	partGate       PartGateCell
-	lazyGeneration uint64 // lazyMu; zero is never issued
+	// partGate is the row's part state (PartGateCell), made the first time
+	// its parts are gated, hosted or scanned (partGateCell): nil on an entry
+	// whose parts nothing has touched, as on every entry a blob-backed cache
+	// restores.
+	partGate atomic.Pointer[PartGateCell]
 
-	// lazyMu guards lazyWhole, lazyPartGroups, and lazyEvalComplete.
-	lazyMu sync.Mutex
-	// lazyPartGroups holds the named evaluation groups of a parts value
-	// (HasLazyEvaluationParts). nil until a named group is first used, so
-	// plain values and whole-group values allocate nothing. Per value
-	// exactly one regime is in use: a parts value never uses lazyWhole
-	// and a non-parts value never uses named groups.
-	lazyPartGroups map[LazyGroupKey]*lazyGroupState
+	// lazy is the entry's lazy evaluation state (resultLazy): nil until its
+	// value is registered as lazy or an evaluation of it starts
+	// (lazyState), as on every entry whose value is never lazy.
+	lazy atomic.Pointer[resultLazy]
+}
+
+// resultSnapshots are the snapshots an entry's value owns, and the leases
+// that hold them. An entry has none until its links are first set or a
+// lease sync of it runs (sharedResult.snapshotState), and keeps them from
+// then on. One with none owns no snapshots.
+type resultSnapshots struct {
 	// leaseSyncMu serializes syncResultSnapshotLeases for this result.
 	// Concurrent per-group attempts make concurrent lease syncs routine,
 	// and the read-diff-write sync can transiently drop stored links
-	// under interleaving. It does I/O and must never nest inside lazyMu.
+	// under interleaving. It does I/O and must never nest inside the lazy
+	// state's mu.
 	leaseSyncMu sync.Mutex
-	// lazyWhole is the implicit whole-result evaluation group: the lazy
-	// state of values that do not split their deferred work. It is the
-	// former per-result lazy field block, held inline so results that
-	// never split allocate nothing new.
-	lazyWhole lazyGroupState
-	// lazyEvalComplete is the result-level completion latch: everything
-	// deferred anywhere on this result is settled. It is the fast path;
-	// correctness derives from the group state.
-	lazyEvalComplete bool
+	// ownerLinks are the exact direct snapshot-owner links currently
+	// attached for this result. They are the source of truth for owner lease
+	// cleanup and debug output. Persistence export for newly encoded objects
+	// derives links from the same object encode pass that produced the payload.
+	// They are not child-result deps. ownerLinks, linkIntent and
+	// leaseCleanupRoles are guarded by the entry's payloadMu.
+	ownerLinks        []PersistedSnapshotRefLink
+	linkIntent        *snapshotLinkIntent
+	leaseCleanupRoles map[snapshotOwnerKey]struct{}
 }
 
-// lazyGroupState is one evaluation group's cache-side lazy state. The
-// fields and their meaning are exactly the former sharedResult lazy
-// fields, per group. All fields are guarded by the owning sharedResult's
-// lazyMu.
+// snapshotState returns res's snapshot state, making it if res has none.
+func (res *sharedResult) snapshotState() *resultSnapshots {
+	if s := res.snapshots.Load(); s != nil {
+		return s
+	}
+	res.snapshots.CompareAndSwap(nil, &resultSnapshots{})
+	return res.snapshots.Load()
+}
+
+// addLeaseCleanupRoleLocked records that a lease of role key may need
+// removing when the entry leaves. Requires the entry's payloadMu.
+func (s *resultSnapshots) addLeaseCleanupRoleLocked(key snapshotOwnerKey) {
+	if s.leaseCleanupRoles == nil {
+		s.leaseCleanupRoles = map[snapshotOwnerKey]struct{}{}
+	}
+	s.leaseCleanupRoles[key] = struct{}{}
+}
+
+// snapshotLinksLocked returns res's owner links and its link intent, or
+// none when it owns no snapshots. Requires payloadMu.
+func (res *sharedResult) snapshotLinksLocked() ([]PersistedSnapshotRefLink, *snapshotLinkIntent) {
+	s := res.snapshots.Load()
+	if s == nil {
+		return nil, nil
+	}
+	return s.ownerLinks, s.linkIntent
+}
+
+// resultLazy is an entry's lazy evaluation state. An entry has none until
+// its value is registered as lazy, an evaluation of it starts, or something
+// reads its value's own lazy state or holds its lock
+// (sharedResult.lazyState), and keeps it from then on. An entry with none
+// is in the state a new resultLazy describes: a reader that finds none and
+// reads nothing of the value answers as for that state, and makes none.
+type resultLazy struct {
+	generation uint64 // mu; zero is never issued
+
+	// mu guards whole, partGroups, and evalComplete.
+	mu sync.Mutex
+	// partGroups holds the named evaluation groups of a parts value
+	// (HasLazyEvaluationParts). nil until a named group is first used, so
+	// plain values and whole-group values allocate nothing. Per value
+	// exactly one regime is in use: a parts value never uses whole and a
+	// non-parts value never uses named groups.
+	partGroups map[LazyGroupKey]*lazyGroupState
+	// whole is the implicit whole-result evaluation group: the lazy state
+	// of values that do not split their deferred work.
+	whole lazyGroupState
+	// evalComplete is the result-level completion latch: everything
+	// deferred anywhere on this result is settled. It is the fast path;
+	// correctness derives from the group state.
+	evalComplete bool
+}
+
+// lazyState returns res's lazy evaluation state, making it if res has
+// none.
+func (res *sharedResult) lazyState() *resultLazy {
+	if lz := res.lazy.Load(); lz != nil {
+		return lz
+	}
+	res.lazy.CompareAndSwap(nil, &resultLazy{})
+	return res.lazy.Load()
+}
+
+// lazyGroupState is one evaluation group's cache-side lazy state. All
+// fields are guarded by the owning entry's resultLazy.mu.
 type lazyGroupState struct {
 	continuation       *lazyTaskContinuation
 	nativeInstallation *PartTaskToken
@@ -3783,21 +3847,21 @@ type lazyGroupState struct {
 	syncPending bool
 }
 
-// lazyGroupStateLocked returns group's state record, allocating the
-// named-group record on first use. lazyMu must be held; the returned
-// pointer stays valid after unlocking (records are never removed) but
-// its fields remain guarded by lazyMu.
-func (res *sharedResult) lazyGroupStateLocked(group LazyGroupKey) *lazyGroupState {
+// groupStateLocked returns group's state record, allocating the
+// named-group record on first use. mu must be held; the returned pointer
+// stays valid after unlocking (records are never removed) but its fields
+// remain guarded by mu.
+func (lz *resultLazy) groupStateLocked(group LazyGroupKey) *lazyGroupState {
 	if group == LazyGroupWhole {
-		return &res.lazyWhole
+		return &lz.whole
 	}
-	st := res.lazyPartGroups[group]
+	st := lz.partGroups[group]
 	if st == nil {
-		if res.lazyPartGroups == nil {
-			res.lazyPartGroups = make(map[LazyGroupKey]*lazyGroupState)
+		if lz.partGroups == nil {
+			lz.partGroups = make(map[LazyGroupKey]*lazyGroupState)
 		}
 		st = &lazyGroupState{}
-		res.lazyPartGroups[group] = st
+		lz.partGroups[group] = st
 	}
 	return st
 }
@@ -3815,20 +3879,109 @@ func (res *sharedResult) attachmentState() resultAttachmentState {
 		return resultAttachmentFailed
 	}
 
-	res.attachDepsMu.Lock()
-	defer res.attachDepsMu.Unlock()
-	if res.attachDepsWaitCh == nil {
+	a := res.attachment.Load()
+	if a == nil {
 		return resultAttachmentClean
 	}
 	select {
-	case <-res.attachDepsWaitCh:
-		if res.attachDepsErr != nil {
+	case <-a.waitCh:
+		if a.err != nil {
 			return resultAttachmentFailed
 		}
 		return resultAttachmentClean
 	default:
 		return resultAttachmentOpen
 	}
+}
+
+// resultAttachment is an attachment of an entry's dependencies: a
+// publication's, or a merge's that replaces the entry's value. The entry
+// holds it from when it opens (openAttachment) until it ends cleanly
+// (endAttachment); one that failed stays, so the entry reads as failed.
+type resultAttachment struct {
+	// waitCh is closed when the attachment ends.
+	waitCh chan struct{}
+	// err is why the attachment failed: written before waitCh is closed,
+	// and read only after.
+	err error
+	// holder is the op and span holding the attachment open, when either is
+	// recorded, for a publication that waits for it.
+	holder *attachHolder
+}
+
+// endedAttachment is the wait of an attachment that has ended.
+var endedAttachment = func() chan struct{} {
+	ch := make(chan struct{})
+	close(ch)
+	return ch
+}()
+
+// openAttachment opens an attachment of res's dependencies, held by holder.
+func (res *sharedResult) openAttachment(holder *attachHolder) {
+	res.attachment.Store(&resultAttachment{waitCh: make(chan struct{}), holder: holder})
+}
+
+// endAttachment ends res's open attachment with err, and reports whether
+// one was open. An attachment that ends cleanly leaves the entry, which
+// then reads as never having attached; one that fails stays.
+func (res *sharedResult) endAttachment(err error) bool {
+	a := res.attachment.Load()
+	if a == nil {
+		return false
+	}
+	select {
+	case <-a.waitCh:
+		return false
+	default:
+	}
+	a.err = err
+	close(a.waitCh)
+	if err == nil {
+		res.attachment.CompareAndSwap(a, nil)
+	}
+	return true
+}
+
+// attachmentWait returns what to wait on for res's attachment to end, and
+// its holder: an ended wait and no holder when none is open.
+func (res *sharedResult) attachmentWait() (<-chan struct{}, *attachHolder) {
+	a := res.attachment.Load()
+	if a == nil {
+		return endedAttachment, nil
+	}
+	return a.waitCh, a.holder
+}
+
+// resultDecode is the singleflight decode of an entry's persisted payload
+// for a hit (ensurePersistedHitValueLoaded), and its last outcome. An
+// entry has none until a hit first joins or leads a decode
+// (sharedResult.decodeState), and keeps it from then on. One with none is
+// in the state a new resultDecode describes.
+type resultDecode struct {
+	mu     sync.Mutex
+	waitCh chan struct{}
+	err    error
+	// retry records whether err was caused by the decode leader's own
+	// context being canceled. A woken joiner with a healthy context retries
+	// such an attempt instead of returning the departed leader's error as
+	// its own.
+	retry bool
+	// leaseSyncPending records that the decoded payload was installed but
+	// syncResultSnapshotLeases has not yet succeeded. While set, readers
+	// must join or lead a sync-only decode attempt before the value is
+	// served, so a leader that failed or was canceled between the install
+	// and finishPersistDecode cannot leave the owner-lease set silently
+	// unsynchronized.
+	leaseSyncPending bool
+}
+
+// decodeState returns res's decode state, making it if res has none.
+func (res *sharedResult) decodeState() *resultDecode {
+	if d := res.decode.Load(); d != nil {
+		return d
+	}
+	res.decode.CompareAndSwap(nil, &resultDecode{})
+	return res.decode.Load()
 }
 
 // A non-nil intent describes the complete desired map, even when empty.
@@ -3931,13 +4084,14 @@ func (res *sharedResult) loadPayloadState() sharedResultPayloadState {
 		return sharedResultPayloadState{}
 	}
 	res.payloadMu.RLock()
+	ownerLinks, linkIntent := res.snapshotLinksLocked()
 	state := sharedResultPayloadState{
 		recordWrites:          res.payloadMu.writes.Load(),
 		payloadRevision:       res.payloadRevision,
 		imported:              res.imported,
 		sessionResourceHandle: res.sessionResourceHandle,
 		boundSession:          res.boundSession,
-		snapshotLinkIntent:    res.snapshotLinkIntent,
+		snapshotLinkIntent:    linkIntent,
 		self:                  res.self,
 		isObject:              res.isObject,
 		hasValue:              res.hasValue,
@@ -3945,7 +4099,7 @@ func (res *sharedResult) loadPayloadState() sharedResultPayloadState {
 		persistedEnvelope:     res.persistedEnvelope,
 		stored:                res.stored,
 		partFacts:             res.partFacts,
-		snapshotOwnerLinks:    cloneSnapshotRefLinks(res.snapshotOwnerLinks),
+		snapshotOwnerLinks:    cloneSnapshotRefLinks(ownerLinks),
 		createdAtUnixNano:     res.createdAtUnixNano,
 		lastUsedAtUnixNano:    res.lastUsedAtUnixNano,
 	}
@@ -4013,7 +4167,8 @@ func (res *sharedResult) loadSnapshotOwnerLinks() []PersistedSnapshotRefLink {
 		return nil
 	}
 	res.payloadMu.RLock()
-	links := cloneSnapshotRefLinks(res.snapshotOwnerLinks)
+	ownerLinks, _ := res.snapshotLinksLocked()
+	links := cloneSnapshotRefLinks(ownerLinks)
 	res.payloadMu.RUnlock()
 	return links
 }
@@ -4027,10 +4182,11 @@ func (res *sharedResult) storeSnapshotOwnerLinks(links []PersistedSnapshotRefLin
 	}
 	res.payloadMu.Lock()
 	defer res.payloadMu.Unlock()
-	if sameSnapshotRefLinkSet(res.snapshotOwnerLinks, links) {
+	ownerLinks, _ := res.snapshotLinksLocked()
+	if sameSnapshotRefLinkSet(ownerLinks, links) {
 		return
 	}
-	res.snapshotOwnerLinks = cloneSnapshotRefLinks(links)
+	res.snapshotState().ownerLinks = cloneSnapshotRefLinks(links)
 	res.payloadRevision++
 }
 
@@ -4793,14 +4949,9 @@ func (c *Cache) addExplicitDependenciesLocked(
 		if depRes == nil || depRes.id == parentRes.id {
 			continue
 		}
-		if parentRes.deps == nil {
-			parentRes.deps = make(map[sharedResultID]struct{})
-		}
-		if _, ok := parentRes.deps[depRes.id]; ok {
+		if !parentRes.deps.add(depRes.id) {
 			continue
 		}
-
-		parentRes.deps[depRes.id] = struct{}{}
 		parentRes.dependencyOwnershipRevision++
 		c.rememberDependencyEdgeLocked(parentRes, depRes)
 		c.incrementIncomingOwnershipLocked(ctx, depRes)
@@ -4834,7 +4985,7 @@ func (c *Cache) addExplicitDependenciesLocked(
 		if !changed {
 			continue
 		}
-		for ancestorID := range res.depParents {
+		for _, ancestorID := range res.depParents {
 			if ancestor := c.resultsByID[ancestorID]; ancestor != nil {
 				queue = append(queue, ancestor)
 			}
@@ -4852,10 +5003,7 @@ func (c *Cache) rememberDependencyEdgeLocked(parentRes *sharedResult, depRes *sh
 	if parentRes == nil || depRes == nil || parentRes.id == 0 || depRes.id == 0 || parentRes.id == depRes.id {
 		return
 	}
-	if depRes.depParents == nil {
-		depRes.depParents = map[sharedResultID]struct{}{}
-	}
-	depRes.depParents[parentRes.id] = struct{}{}
+	depRes.depParents.add(parentRes.id)
 }
 
 // forgetDependencyEdgeLocked forgets that the entry numbered parentID
@@ -4865,13 +5013,10 @@ func (c *Cache) rememberDependencyEdgeLocked(parentRes *sharedResult, depRes *sh
 func (c *Cache) forgetDependencyEdgeLocked(parentID sharedResultID, depID sharedResultID) {
 	depRes := c.resultsByID[depID]
 	c.poolDependencyLocked(c.resultsByID[parentID], depRes, -1)
-	if depRes == nil || depRes.depParents == nil {
+	if depRes == nil {
 		return
 	}
-	delete(depRes.depParents, parentID)
-	if len(depRes.depParents) == 0 {
-		depRes.depParents = nil
-	}
+	depRes.depParents.remove(parentID)
 }
 
 type Result[T Typed] struct {
@@ -5235,13 +5380,7 @@ func (r Result[T]) WithContentDigest(ctx context.Context, contentDigest digest.D
 	if frame == nil {
 		return r, fmt.Errorf("set content digest on %T: missing call frame", r.Self())
 	}
-	var deps map[sharedResultID]struct{}
-	if len(r.shared.deps) > 0 {
-		deps = make(map[sharedResultID]struct{}, len(r.shared.deps))
-		for depID := range r.shared.deps {
-			deps[depID] = struct{}{}
-		}
-	}
+	deps := slices.Clone(r.shared.deps)
 	r.shared = &sharedResult{
 		self:                  state.self,
 		isObject:              state.isObject,
@@ -5257,7 +5396,6 @@ func (r Result[T]) WithContentDigest(ctx context.Context, contentDigest digest.D
 			return r.shared.requiredSessionResources.Copy()
 		}(),
 		persistedEnvelope:  state.persistedEnvelope,
-		snapshotOwnerLinks: state.snapshotOwnerLinks,
 		createdAtUnixNano:  state.createdAtUnixNano,
 		lastUsedAtUnixNano: state.lastUsedAtUnixNano,
 		cacheUsageSizeByIdentity: func() map[string]int64 {
@@ -5282,6 +5420,9 @@ func (r Result[T]) WithContentDigest(ctx context.Context, contentDigest digest.D
 		}(),
 		description: r.shared.description,
 		recordType:  r.shared.recordType,
+	}
+	if len(state.snapshotOwnerLinks) > 0 {
+		r.shared.snapshotState().ownerLinks = state.snapshotOwnerLinks
 	}
 	frame = r.shared.loadResultCall()
 	replaced := false
@@ -5345,13 +5486,7 @@ func (r Result[T]) WithSessionResourceHandle(ctx context.Context, handle Session
 
 	state := r.shared.loadPayloadState()
 	frame := r.shared.loadResultCall()
-	var deps map[sharedResultID]struct{}
-	if len(r.shared.deps) > 0 {
-		deps = make(map[sharedResultID]struct{}, len(r.shared.deps))
-		for depID := range r.shared.deps {
-			deps[depID] = struct{}{}
-		}
-	}
+	deps := slices.Clone(r.shared.deps)
 	reqs := set.NewTreeSet(compareSessionResourceHandles)
 	if r.shared.requiredSessionResources != nil {
 		reqs = r.shared.requiredSessionResources.Copy()
@@ -5367,7 +5502,6 @@ func (r Result[T]) WithSessionResourceHandle(ctx context.Context, handle Session
 		sessionResourceHandle:    handle,
 		requiredSessionResources: reqs,
 		persistedEnvelope:        state.persistedEnvelope,
-		snapshotOwnerLinks:       state.snapshotOwnerLinks,
 		createdAtUnixNano:        state.createdAtUnixNano,
 		lastUsedAtUnixNano:       state.lastUsedAtUnixNano,
 		cacheUsageSizeByIdentity: func() map[string]int64 {
@@ -5392,6 +5526,9 @@ func (r Result[T]) WithSessionResourceHandle(ctx context.Context, handle Session
 		}(),
 		description: r.shared.description,
 		recordType:  r.shared.recordType,
+	}
+	if len(state.snapshotOwnerLinks) > 0 {
+		r.shared.snapshotState().ownerLinks = state.snapshotOwnerLinks
 	}
 	if frame != nil {
 		r.shared.storeResultCall(frame.fork())
@@ -5652,16 +5789,23 @@ func (c *Cache) registerLazyEvaluation(shared *sharedResult, val AnyResult) {
 		return
 	}
 
-	shared.lazyMu.Lock()
-	defer shared.lazyMu.Unlock()
+	// A value that can't be lazy has nothing to register, and its entry
+	// needs no lazy state.
+	if _, ok := UnwrapAs[HasLazyEvaluation](val); !ok {
+		return
+	}
+
+	lz := shared.lazyState()
+	lz.mu.Lock()
+	defer lz.mu.Unlock()
 	// Read object-side lazy state only when no attempt is in flight, for the
 	// same reason evaluateGroup does: callback bodies clear their object-side
-	// pointer without holding lazyMu, and attempt retirement under lazyMu
-	// orders those writes before a reader that observes no attempt. With an
+	// pointer without holding mu, and attempt retirement under mu orders
+	// those writes before a reader that observes no attempt. With an
 	// attempt published, a stored callback, pending bookkeeping, or completed
 	// evaluation, there is nothing to register.
-	g := &shared.lazyWhole
-	if g.eval != nil || shared.lazyEvalComplete ||
+	g := &lz.whole
+	if g.eval != nil || lz.evalComplete ||
 		g.attempt != nil || g.syncPending {
 		return
 	}
@@ -5719,14 +5863,17 @@ const (
 // callback context cancellation, or a foreign producer's session release. A
 // released producer cannot lead its own retry. The caller's cancellation wins.
 func (c *Cache) waitForLazyEvaluation(ctx context.Context, shared *sharedResult, attempt *lazyEvalAttempt) (lazyAttemptRetry, error) {
+	// An attempt is published under the lazy state's mu, so the entry has
+	// one.
+	lz := shared.lazyState()
 	select {
 	case <-attempt.done:
-		shared.lazyMu.Lock()
+		lz.mu.Lock()
 		waitErr := attempt.err
 		retry := attempt.retry
 		releasedProducer := attempt.releasedProducer
 		attempt.waiters--
-		shared.lazyMu.Unlock()
+		lz.mu.Unlock()
 		if retry || releasedProducer != "" {
 			if ownCause := context.Cause(ctx); ownCause != nil {
 				return lazyRetryNone, ownCause
@@ -5754,11 +5901,11 @@ func (c *Cache) waitForLazyEvaluation(ctx context.Context, shared *sharedResult,
 		return lazyRetryNone, waitErr
 	case <-ctx.Done():
 		waitErr := context.Cause(ctx)
-		shared.lazyMu.Lock()
+		lz.mu.Lock()
 		attempt.waiters--
 		lastWaiter := attempt.waiters == 0
 		cancel := attempt.cancel
-		shared.lazyMu.Unlock()
+		lz.mu.Unlock()
 		if lastWaiter && cancel != nil {
 			cancel(waitErr)
 		}
@@ -5984,19 +6131,21 @@ func (c *Cache) evaluateResolved(ctx context.Context, res AnyResult, shared *sha
 	if c.usesPartAcquisition(ctx, res, shared) {
 		return c.evaluateAcquiredParts(ctx, res, shared, parts)
 	}
-	shared.lazyMu.Lock()
-	if shared.lazyEvalComplete {
-		shared.lazyMu.Unlock()
-		return nil
+	if lz := shared.lazy.Load(); lz != nil {
+		lz.mu.Lock()
+		complete := lz.evalComplete
+		lz.mu.Unlock()
+		if complete {
+			return nil
+		}
 	}
-	shared.lazyMu.Unlock()
 
 	partsVal, ok := UnwrapAs[HasLazyEvaluationParts](res)
 	if !ok {
 		return c.evaluateGroup(ctx, res, shared, LazyGroupWhole, nil)
 	}
 
-	// Resolution runs outside lazyMu: it may re-enter the cache to settle
+	// Resolution runs outside the lazy state's mu: it may re-enter the cache to settle
 	// the value's own metadata part before mapping positional parts.
 	all := len(parts) == 0
 	var resolveParts []PartKey
@@ -6049,10 +6198,11 @@ func (c *Cache) evaluateResolved(ctx context.Context, res AnyResult, shared *sha
 		// just the resolved set - so completion can never be recorded
 		// while any group still has an attempt, pending bookkeeping, or
 		// an armed callback.
-		shared.lazyMu.Lock()
-		settled := shared.lazyWhole.settled()
+		lz := shared.lazyState()
+		lz.mu.Lock()
+		settled := lz.whole.settled()
 		if settled {
-			for _, g := range shared.lazyPartGroups {
+			for _, g := range lz.partGroups {
 				if !g.settled() {
 					settled = false
 					break
@@ -6061,36 +6211,36 @@ func (c *Cache) evaluateResolved(ctx context.Context, res AnyResult, shared *sha
 		}
 		if settled {
 			for _, group := range groups {
-				if !shared.lazyGroupStateLocked(group).complete {
+				if !lz.groupStateLocked(group).complete {
 					settled = false
 					break
 				}
 			}
 		}
 		if settled {
-			shared.lazyEvalComplete = true
+			lz.evalComplete = true
 		}
-		shared.lazyMu.Unlock()
+		lz.mu.Unlock()
 	}
 	return nil
 }
 
 // settled reports that the group has no live cache-side work: no
 // published attempt, no pending bookkeeping, no armed stored callback.
-// lazyMu must be held.
+// The lazy state's mu must be held.
 func (g *lazyGroupState) settled() bool {
 	return g.attempt == nil && !g.syncPending && g.eval == nil
 }
 
-// lazyPartsEvaluationPartialLocked reports whether a successful parts attempt
+// partsEvaluationPartialLocked reports whether a successful parts attempt
 // left other work on the result after that attempt was retired. This check
 // depends on Container.runLazyGroup consuming final parent delegations before
-// its callback returns. lazyMu must be held.
-func lazyPartsEvaluationPartialLocked(shared *sharedResult, res AnyResult) bool {
+// its callback returns. mu must be held.
+func (lz *resultLazy) partsEvaluationPartialLocked(res AnyResult) bool {
 	if reporting, ok := UnwrapAs[HasLazyEvaluationReporting](res); ok {
-		return pendingLazyComputationLocked(shared, reporting)
+		return lz.pendingComputationLocked(reporting)
 	}
-	for _, group := range shared.lazyPartGroups {
+	for _, group := range lz.partGroups {
 		if !group.settled() || !group.complete {
 			return true
 		}
@@ -6102,13 +6252,17 @@ func lazyPartsEvaluationPartialLocked(shared *sharedResult, res AnyResult) bool 
 // deterministic order. Used when resolution can no longer name a
 // consumed value's groups.
 func (res *sharedResult) pendingLazyGroups() []LazyGroupKey {
-	res.lazyMu.Lock()
-	defer res.lazyMu.Unlock()
+	lz := res.lazy.Load()
+	if lz == nil {
+		return nil
+	}
+	lz.mu.Lock()
+	defer lz.mu.Unlock()
 	var groups []LazyGroupKey
-	if !res.lazyWhole.settled() {
+	if !lz.whole.settled() {
 		groups = append(groups, LazyGroupWhole)
 	}
-	for key, g := range res.lazyPartGroups {
+	for key, g := range lz.partGroups {
 		if !g.settled() {
 			groups = append(groups, key)
 		}
@@ -6118,10 +6272,10 @@ func (res *sharedResult) pendingLazyGroups() []LazyGroupKey {
 }
 
 // prepareLazyGroupEvalLocked selects the callback for a new group attempt.
-// It also records completion when no callback remains. lazyMu must be held.
+// It also records completion when no callback remains. lz.mu must be held.
 func prepareLazyGroupEvalLocked(
 	res AnyResult,
-	shared *sharedResult,
+	lz *resultLazy,
 	g *lazyGroupState,
 	group LazyGroupKey,
 	partsVal HasLazyEvaluationParts,
@@ -6149,7 +6303,7 @@ func prepareLazyGroupEvalLocked(
 	if partsVal == nil {
 		// The whole group is the value's entire deferred work; a parts value's
 		// result-level latch is set only by an all-groups pass (evaluateResolved).
-		shared.lazyEvalComplete = true
+		lz.evalComplete = true
 	}
 	return true
 }
@@ -6181,30 +6335,31 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 		parent: stack,
 	})
 
-	shared.lazyMu.Lock()
-	g := shared.lazyGroupStateLocked(group)
-	shared.lazyMu.Unlock()
+	lz := shared.lazyState()
+	lz.mu.Lock()
+	g := lz.groupStateLocked(group)
+	lz.mu.Unlock()
 	retries := 0
 	for {
-		shared.lazyMu.Lock()
-		if spec == nil && (shared.lazyEvalComplete || g.complete) {
-			shared.lazyMu.Unlock()
+		lz.mu.Lock()
+		if spec == nil && (lz.evalComplete || g.complete) {
+			lz.mu.Unlock()
 			return nil
 		}
 		if spec != nil && spec.NoJoin && (g.attempt != nil || g.syncPending) {
-			shared.lazyMu.Unlock()
+			lz.mu.Unlock()
 			return ErrLazyTaskBusy
 		}
 		// Consult the published attempt before any object-side lazy state.
 		// Callback bodies clear their object-side callback pointer while the
 		// attempt is still running its cache-side bookkeeping, so object-side
 		// state is only trustworthy once no attempt is in flight: retirement
-		// happens under lazyMu after the callback returns, ordering the body's
+		// happens under the lazy state's mu after the callback returns, ordering the body's
 		// writes before a reader that observes no attempt.
 		if attempt := g.attempt; attempt != nil {
 			lazyOpID := attempt.profOpID
 			// The leader initializes this attempt's OTel wait target under
-			// lazyMu before publishing the group's attempt pointer
+			// the lazy state's mu before publishing the group's attempt pointer
 			// (target-before-primitive). A recording leader stores a valid target;
 			// an unrecorded leader leaves this fresh attempt record's zero value
 			// invalid. A joiner therefore cannot inherit a target from an earlier
@@ -6212,7 +6367,7 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 			// silently linking to the wrong lazy operation.
 			lazyOpSpanCtx := attempt.spanCtx
 			attempt.waiters++
-			shared.lazyMu.Unlock()
+			lz.mu.Unlock()
 			if c.testAfterLazyEvalJoin != nil {
 				c.testAfterLazyEvalJoin(attempt)
 			}
@@ -6265,15 +6420,15 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 				g.eval = nil
 			} else {
 				if spec.Body == nil {
-					shared.lazyMu.Unlock()
+					lz.mu.Unlock()
 					return fmt.Errorf("lazy task %q: missing supplied body", group)
 				}
 				g.eval = spec.Body
 				g.complete = false
 				g.continuation = nil
 			}
-		} else if prepareLazyGroupEvalLocked(res, shared, g, group, partsVal) {
-			shared.lazyMu.Unlock()
+		} else if prepareLazyGroupEvalLocked(res, lz, g, group, partsVal) {
+			lz.mu.Unlock()
 			return nil
 		}
 
@@ -6283,13 +6438,13 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 			fmt.Sprintf("lazy/%d", shared.id),
 		)
 		if err != nil {
-			shared.lazyMu.Unlock()
+			lz.mu.Unlock()
 			return fmt.Errorf("acquire lazy client scope: %w", err)
 		}
 		attemptCtx, cancel := context.WithCancelCause(attemptBase)
 		attemptOp, err := c.beginContextOperation(attemptCtx)
 		if err != nil {
-			shared.lazyMu.Unlock()
+			lz.mu.Unlock()
 			cancel(err)
 			clientScopeLease.Release()
 			return fmt.Errorf("start lazy evaluation: %w", err)
@@ -6300,8 +6455,8 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 		if resultCall != nil {
 			evalCtx = ContextWithCall(evalCtx, resultCall)
 		}
-		shared.lazyGeneration++
-		token := &PartTaskToken{ownerSync: make(chan struct{}), row: shared, key: group, generation: shared.lazyGeneration}
+		lz.generation++
+		token := &PartTaskToken{ownerSync: make(chan struct{}), row: shared, key: group, generation: lz.generation}
 		token.active.Store(true)
 		installationToken := token
 		if g.syncPending && g.nativeInstallation != nil {
@@ -6322,7 +6477,7 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 			waiters: 1,
 		}
 		// profOpID and spanCtx start invalid on every fresh attempt record. Mint
-		// either target below, while lazyMu is still held, before publishing the
+		// either target below, while the lazy state's mu is still held, before publishing the
 		// attempt pointer. A retry whose telemetry source is disabled therefore
 		// cannot expose a stale target from a recording attempt.
 		//
@@ -6342,7 +6497,7 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 			})
 			attempt.profOpID = lazyOp.ID()
 		}
-		// Mint the OTel lazy span under lazyMu before publishing the attempt, so
+		// Mint the OTel lazy span under the lazy state's mu before publishing the attempt, so
 		// every joiner sees this attempt's valid target or its deliberate invalid
 		// zero value. The callback goroutine adopts and ends the span.
 		var (
@@ -6366,7 +6521,7 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 			RecordOpSpan(lazyOp, lazySpan)
 		}
 		g.attempt = attempt
-		shared.lazyMu.Unlock()
+		lz.mu.Unlock()
 		if spec == nil && lazyEval != nil && storedPart == "" {
 			c.logRecordRunForWantOfOffers(stackCtx, shared)
 		}
@@ -6396,7 +6551,7 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 				}()
 			}
 			// The lazy op span and re-pointed callback context were minted under
-			// lazyMu before this attempt was published. A span created on one
+			// the lazy state's mu before this attempt was published. A span created on one
 			// goroutine and ended on another is safe.
 			partial := false
 			abandoned := false
@@ -6409,7 +6564,7 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 			}
 
 			retireCtx, retireStep := BeginStep(evalCtx, "lazy.retire")
-			wcprof.Lock(retireCtx, &shared.lazyMu, "dagql.sharedResult.lazyMu")
+			wcprof.Lock(retireCtx, &lz.mu, "dagql.sharedResult.lazyMu")
 			attempt.err = err
 			abandoned = err != nil && lazyEvalErrorCausedByContext(attemptCtx, err)
 			attempt.retry = abandoned
@@ -6430,7 +6585,7 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 			if err == nil {
 				g.complete = true
 				if partsVal == nil && spec == nil {
-					shared.lazyEvalComplete = true
+					lz.evalComplete = true
 				}
 				g.eval = nil
 				g.syncPending = false
@@ -6450,9 +6605,9 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 			// nil, and only this path clears it.
 			g.attempt = nil
 			if err == nil && partsVal != nil && spec == nil {
-				partial = lazyPartsEvaluationPartialLocked(shared, res)
+				partial = lz.partsEvaluationPartialLocked(res)
 			}
-			shared.lazyMu.Unlock()
+			lz.mu.Unlock()
 			retireStep.End(nil)
 			logProducerRemovedOutcome(attemptCtx, "lazy evaluation", fmt.Sprintf("%d/%s", shared.id, group), err)
 
@@ -8060,7 +8215,7 @@ func (c *Cache) rollbackPartialPublicationLocked(ctx context.Context, res *share
 		return nil, nil
 	}
 	depIDs := make([]sharedResultID, 0, len(res.deps))
-	for depID := range res.deps {
+	for _, depID := range res.deps {
 		depIDs = append(depIDs, depID)
 	}
 	c.removeResultFromEgraphLocked(ctx, res)
@@ -8107,16 +8262,8 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		if resWasCacheBacked || oc.res == nil {
 			return
 		}
-		oc.res.attachDepsMu.Lock()
-		ended := oc.res.attachDepsWaitCh != nil
-		if ended {
-			oc.res.attachDepsErr = err
-			close(oc.res.attachDepsWaitCh)
-			oc.res.attachHolder = nil
-		}
-		oc.res.attachDepsMu.Unlock()
 		// The attachment kept the row busy for a capture (BusyRows).
-		if ended {
+		if oc.res.endAttachment(err) {
 			c.busyEnded(oc.res.id)
 		}
 	}
@@ -8487,9 +8634,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 				break
 			}
 			if cur.attachmentState() == resultAttachmentOpen {
-				cur.attachDepsMu.Lock()
-				waitCh, holder := cur.attachDepsWaitCh, cur.attachHolder
-				cur.attachDepsMu.Unlock()
+				waitCh, holder := cur.attachmentWait()
 				var released <-chan struct{}
 				if state := c.sessionLifecycle(sessionID); state != nil {
 					released = state.released
@@ -8667,13 +8812,9 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		if depRes == nil {
 			return failPartialPublication(fmt.Errorf("retain result call ref %d: missing cached result", depID))
 		}
-		if oc.res.deps == nil {
-			oc.res.deps = make(map[sharedResultID]struct{})
-		}
-		if _, alreadyHeld := oc.res.deps[depID]; alreadyHeld {
+		if !oc.res.deps.add(depID) {
 			continue
 		}
-		oc.res.deps[depID] = struct{}{}
 		oc.res.dependencyOwnershipRevision++
 		c.rememberDependencyEdgeLocked(oc.res, depRes)
 		c.incrementIncomingOwnershipLocked(ctx, depRes)
@@ -8712,11 +8853,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		}
 	}
 	if !resWasCacheBacked {
-		oc.res.attachDepsMu.Lock()
-		oc.res.attachDepsWaitCh = make(chan struct{})
-		oc.res.attachDepsErr = nil
-		oc.res.attachHolder = newAttachHolder(wcprof.CurrentOpID(ctx), oc.pubSpan)
-		oc.res.attachDepsMu.Unlock()
+		oc.res.openAttachment(newAttachHolder(wcprof.CurrentOpID(ctx), oc.pubSpan))
 	}
 	// The first E unlock of this publication, after direct-edge validation,
 	// handoff ownership and attachment-barrier setup are all decided.
@@ -8925,12 +9062,11 @@ func (c *Cache) attachDependencyResults(ctx context.Context, sessionID string, r
 	return nil
 }
 
-func sortedResultIDs(ids map[sharedResultID]struct{}) []uint64 {
-	out := make([]uint64, 0, len(ids))
-	for id := range ids {
-		out = append(out, uint64(id))
+func sortedResultIDs(ids resultIDSet) []uint64 {
+	out := make([]uint64, len(ids))
+	for i, id := range ids {
+		out[i] = uint64(id)
 	}
-	slices.Sort(out)
 	return out
 }
 

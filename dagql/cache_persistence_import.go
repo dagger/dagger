@@ -121,7 +121,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			eqID := eqClassID(row.ID)
 			c.egraphParents[eqID] = eqID
 			if c.eqClassToDigests[eqID] == nil {
-				c.eqClassToDigests[eqID] = make(map[string]struct{})
+				c.eqClassToDigests[eqID] = newIDSet[string]()
 			}
 		}
 		// Classes keep the numbers they were saved under; the numbers no saved
@@ -147,10 +147,10 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			c.egraphDigestToClass[row.Digest] = eqID
 			digests := c.eqClassToDigests[eqID]
 			if digests == nil {
-				digests = make(map[string]struct{})
+				digests = newIDSet[string]()
 				c.eqClassToDigests[eqID] = digests
 			}
-			digests[row.Digest] = struct{}{}
+			digests.Insert(row.Digest)
 			if row.Label != "" {
 				extras := c.eqClassExtraDigests[eqID]
 				if extras == nil {
@@ -301,10 +301,11 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				// keeping them: a save writes the calls kept in memory.
 				continue
 			}
-			if res.calls == nil {
-				res.calls = make(map[digest.Digest]*keptCall)
+			calls := res.callsStateLocked()
+			if calls.byRequest == nil {
+				calls.byRequest = make(map[digest.Digest]*keptCall)
 			}
-			res.calls[kept.id.recipe] = kept
+			calls.byRequest[kept.id.recipe] = kept
 			c.indexKeptCallLocked(res, kept)
 		}
 
@@ -316,14 +317,15 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			if res == nil {
 				return fmt.Errorf("import result_taught %d: missing result", row.ResultID)
 			}
-			if row.Position != int64(len(res.taught)) {
-				return fmt.Errorf("import result_taught %d: position %d after %d", row.ResultID, row.Position, len(res.taught))
+			t := res.taughtStateLocked()
+			if row.Position != int64(len(t.digests)) {
+				return fmt.Errorf("import result_taught %d: position %d after %d", row.ResultID, row.Position, len(t.digests))
 			}
-			res.taught = append(res.taught, digest.Digest(row.Digest))
-			if row.Given && res.taughtGiven == len(res.taught)-1 {
-				res.taughtGiven++
+			t.digests = append(t.digests, digest.Digest(row.Digest))
+			if row.Given && t.given == len(t.digests)-1 {
+				t.given++
 			}
-			if res.taughtGiven < len(res.taught) && (len(c.restoredTaught) == 0 || c.restoredTaught[len(c.restoredTaught)-1] != res) {
+			if t.given < len(t.digests) && (len(c.restoredTaught) == 0 || c.restoredTaught[len(c.restoredTaught)-1] != res) {
 				c.restoredTaught = append(c.restoredTaught, res)
 			}
 		}
@@ -365,10 +367,8 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			if termID == 0 {
 				return fmt.Errorf("import term_input: zero term_id")
 			}
-			provenance := egraphInputProvenanceKind(row.ProvenanceKind)
-			switch provenance {
-			case egraphInputProvenanceKindResult, egraphInputProvenanceKindDigest:
-			default:
+			provenance, ok := parseEgraphInputProvenanceKind(row.ProvenanceKind)
+			if !ok {
 				return fmt.Errorf("import term_input %d/%d: unsupported provenance %q", row.TermID, row.Position, row.ProvenanceKind)
 			}
 			inputsByTermID[termID] = append(inputsByTermID[termID], importTermInput{
@@ -422,7 +422,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			c.termInputProvenance[termID] = inputProvenance
 			digestTerms := c.egraphTermsByTermDigest[term.termDigest]
 			if digestTerms == nil {
-				digestTerms = newEgraphTermIDSet()
+				digestTerms = newIDSet[egraphTermID]()
 				c.egraphTermsByTermDigest[term.termDigest] = digestTerms
 			}
 			digestTerms.Insert(termID)
@@ -432,17 +432,17 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				}
 				classTerms := c.inputEqClassToTerms[inputEqID]
 				if classTerms == nil {
-					classTerms = make(map[egraphTermID]struct{})
+					classTerms = newIDSet[egraphTermID]()
 					c.inputEqClassToTerms[inputEqID] = classTerms
 				}
-				classTerms[termID] = struct{}{}
+				classTerms.Insert(termID)
 			}
 			outputTerms := c.outputEqClassToTerms[outputEqID]
 			if outputTerms == nil {
-				outputTerms = make(map[egraphTermID]struct{})
+				outputTerms = newIDSet[egraphTermID]()
 				c.outputEqClassToTerms[outputEqID] = outputTerms
 			}
-			outputTerms[termID] = struct{}{}
+			outputTerms.Insert(termID)
 			c.traceTermCreated(ctx, "import", importRunID, term)
 		}
 
@@ -469,11 +469,8 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			if c.resultsByID[depID] == nil {
 				return fmt.Errorf("import result_dep: missing dep result %d", row.DepResultID)
 			}
-			if parent.deps == nil {
-				parent.deps = make(map[sharedResultID]struct{})
-			}
 			dep := c.resultsByID[depID]
-			parent.deps[depID] = struct{}{}
+			parent.deps.add(depID)
 			c.rememberDependencyEdgeLocked(parent, dep)
 			c.incrementIncomingOwnershipLocked(ctx, dep)
 			c.traceImportResultDepLoaded(ctx, importRunID, parentID, depID)
@@ -495,7 +492,8 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				return err
 			}
 			res.payloadMu.Lock()
-			res.snapshotOwnerLinks = append(res.snapshotOwnerLinks, PersistedSnapshotRefLink{
+			snapshots := res.snapshotState()
+			snapshots.ownerLinks = append(snapshots.ownerLinks, PersistedSnapshotRefLink{
 				OutputPath: outputPath,
 				RefKey:     row.RefKey,
 				Role:       row.Role,
@@ -539,7 +537,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				return fmt.Errorf("recompute imported required session resources: dependency cycle through result %d", res.id)
 			}
 			recomputeState[res.id] = requiredRecomputePending
-			for depID := range res.deps {
+			for _, depID := range res.deps {
 				dep := c.resultsByID[depID]
 				if dep == nil {
 					return fmt.Errorf("recompute imported required session resources: missing dep result %d of result %d", depID, res.id)
@@ -932,12 +930,16 @@ func persistedEnvelopeTypeNames(env PersistedResultEnvelope, names []persistedEn
 // cannot re-enter a decode.
 // updateDecodedPayloadBytes replaces an imported row's envelope size with
 // its decoded value's, unless the row's payload changed after revision.
-// Callers hold no cache locks: sizing may take the value's own lock. It
-// holds the graph lock only for reading (setResultPayloadBytesLocked): a hit
-// decodes each entry its load reaches, and a write for each would wait for
-// every reader and queue behind every writer on the way.
+// Callers hold no cache locks: sizing may take the value's own lock. A load
+// that read the graph before decoding (graphReads) records the sizes it
+// decodes together once it ends (recordDecodedSizes); otherwise the size is
+// recorded here, holding the graph lock only for reading
+// (setResultPayloadBytesLocked).
 func (c *Cache) updateDecodedPayloadBytes(ctx context.Context, res *sharedResult, decoded Typed, revision uint64) {
 	n := cachePayloadBytes(decoded)
+	if graphReadsOf(ctx).addSize(res, n, revision) {
+		return
+	}
 	c.readLockGraphGathered(ctx)
 	defer c.egraphMu.RUnlock()
 	res.payloadMu.RLock()
@@ -960,6 +962,9 @@ func (c *Cache) retainDecodedDependencyResults(ctx context.Context, res *sharedR
 			return fmt.Errorf("decoded payload of result %d declares a detached %T dependency", res.id, dep)
 		}
 	}
+	// The load read res's dependencies before these: its lease sync reads
+	// them again.
+	graphReadsOf(ctx).changedDeps(res)
 	return c.addExplicitDependencies(ctx, Result[Typed]{shared: res}, deps, "decoded_dependency_result")
 }
 
@@ -992,6 +997,9 @@ func (c *Cache) decodeArmsRecipe(ctx context.Context, res *sharedResult, importe
 	if !imported {
 		return false
 	}
+	if row := graphReadsOf(ctx).row(res.id); row != nil && row.res == res {
+		return !row.offered
+	}
 	c.readLockGraphGathered(ctx)
 	defer c.egraphMu.RUnlock()
 	return !res.hasPartOffersLocked()
@@ -1009,22 +1017,25 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 	if res == nil {
 		return hit, nil
 	}
+	// The first load to lead a decode reads the graph its decode reaches
+	// before it decodes, and records the sizes its decodes sized as it
+	// returns (graphReads).
+	var reads *graphReads
+	defer func() {
+		if reads != nil {
+			c.recordDecodedSizes(ctx, reads)
+		}
+	}()
 	// A record merged unprepared is prepared before its payload is decoded.
 	if err := c.prepareMergedPayload(ctx, res, workLookup); err != nil {
 		return nil, err
 	}
-	wcprof.Lock(ctx, &res.attachDepsMu, resultDepsLockIdent)
-	attachDepsWaitCh := res.attachDepsWaitCh
-	res.attachDepsMu.Unlock()
-	if attachDepsWaitCh != nil {
-		if err := awaitHitLoad(ctx, attachDepsWaitCh, hitLoadAttach); err != nil {
+	if a := res.attachment.Load(); a != nil {
+		if err := awaitHitLoad(ctx, a.waitCh, hitLoadAttach); err != nil {
 			return nil, err
 		}
-		wcprof.Lock(ctx, &res.attachDepsMu, resultDepsLockIdent)
-		attachDepsErr := res.attachDepsErr
-		res.attachDepsMu.Unlock()
-		if attachDepsErr != nil {
-			return nil, fmt.Errorf("wait for dependency attachment: %w", attachDepsErr)
+		if a.err != nil {
+			return nil, fmt.Errorf("wait for dependency attachment: %w", a.err)
 		}
 	}
 
@@ -1034,9 +1045,12 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 			return nil, fmt.Errorf("ensure persisted hit value loaded: invalid object payload state for result %d (hasValue=true, self=nil)", res.id)
 		}
 		if state.hasValue || state.persistedEnvelope == nil {
-			wcprof.Lock(ctx, &res.persistDecodeMu, resultDecodeLockIdent)
-			leaseSyncPending := res.persistLeaseSyncPending
-			res.persistDecodeMu.Unlock()
+			leaseSyncPending := false
+			if d := res.decode.Load(); d != nil {
+				wcprof.Lock(ctx, &d.mu, resultDecodeLockIdent)
+				leaseSyncPending = d.leaseSyncPending
+				d.mu.Unlock()
+			}
 			if !leaseSyncPending {
 				if !state.isObject {
 					c.registerLazyEvaluation(res, hit)
@@ -1058,10 +1072,11 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 		if c.testPersistDecodePreLock != nil {
 			c.testPersistDecodePreLock(uint64(res.id))
 		}
-		wcprof.Lock(ctx, &res.persistDecodeMu, resultDecodeLockIdent)
-		if res.persistDecodeWaitCh != nil {
-			waitCh := res.persistDecodeWaitCh
-			res.persistDecodeMu.Unlock()
+		d := res.decodeState()
+		wcprof.Lock(ctx, &d.mu, resultDecodeLockIdent)
+		if d.waitCh != nil {
+			waitCh := d.waitCh
+			d.mu.Unlock()
 			if c.testPersistDecodeJoined != nil {
 				c.testPersistDecodeJoined(uint64(res.id))
 			}
@@ -1070,10 +1085,10 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 				return nil, err
 			}
 
-			wcprof.Lock(ctx, &res.persistDecodeMu, resultDecodeLockIdent)
-			decodeErr := res.persistDecodeErr
-			decodeRetry := res.persistDecodeRetry
-			res.persistDecodeMu.Unlock()
+			wcprof.Lock(ctx, &d.mu, resultDecodeLockIdent)
+			decodeErr := d.err
+			decodeRetry := d.retry
+			d.mu.Unlock()
 			if decodeErr != nil {
 				if decodeRetry {
 					// The attempt failed only because its leader's own
@@ -1099,44 +1114,51 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 		// sync could fail or be canceled and re-latch an error.
 		state = res.loadPayloadState()
 		needDecode := !state.hasValue && state.persistedEnvelope != nil
-		if !needDecode && !res.persistLeaseSyncPending {
-			res.persistDecodeMu.Unlock()
+		if !needDecode && !d.leaseSyncPending {
+			d.mu.Unlock()
 			continue
 		}
 
-		res.persistDecodeWaitCh = make(chan struct{})
-		res.persistDecodeErr = nil
-		res.persistDecodeRetry = false
-		res.persistDecodeMu.Unlock()
+		d.waitCh = make(chan struct{})
+		d.err = nil
+		d.retry = false
+		d.mu.Unlock()
 		if c.testPersistDecodeLeadPublished != nil {
 			c.testPersistDecodeLeadPublished(uint64(res.id))
 		}
 
 		// finishPersistDecode latches the outcome, the retry
 		// classification, and the pending-sync flag, and clears the
-		// channel, all under persistDecodeMu; the cleared channel is then
+		// channel, all under the decode state's mu; the cleared channel is then
 		// closed after unlocking. installed reports whether the decoded
 		// payload is in place: a failure after the install means only the
-		// lease sync is outstanding, and persistLeaseSyncPending makes the
+		// lease sync is outstanding, and leaseSyncPending makes the
 		// next demand retry just that instead of serving the value with
 		// the owner-lease set unsynchronized.
 		finishPersistDecode := func(err error, installed bool) {
-			wcprof.Lock(ctx, &res.persistDecodeMu, resultDecodeLockIdent)
-			res.persistDecodeErr = err
+			wcprof.Lock(ctx, &d.mu, resultDecodeLockIdent)
+			d.err = err
 			// A failure after the leader's session was removed is that
 			// removal's, whatever the error, as for shared calls: the
 			// decode can need the leader's client.
-			res.persistDecodeRetry = lazyEvalErrorCausedByContext(ctx, err) ||
+			d.retry = lazyEvalErrorCausedByContext(ctx, err) ||
 				(err != nil && clientScopeSessionClosed(ctx))
-			res.persistLeaseSyncPending = installed && err != nil
-			waitCh := res.persistDecodeWaitCh
-			res.persistDecodeWaitCh = nil
-			res.persistDecodeMu.Unlock()
+			d.leaseSyncPending = installed && err != nil
+			waitCh := d.waitCh
+			d.waitCh = nil
+			d.mu.Unlock()
 			close(waitCh)
 			logProducerRemovedOutcome(ctx, "persisted decode", fmt.Sprint(res.id), err)
 		}
 
-		// A leader with an installed payload (persistLeaseSyncPending was
+		// The decode reads the graph it reaches once, unless a load above
+		// it has: its decodes read that copy.
+		if needDecode && reads == nil && graphReadsOf(ctx) == nil {
+			reads = c.readGraphForDecode(ctx, res)
+			ctx = withGraphReads(ctx, reads)
+		}
+
+		// A leader with an installed payload (leaseSyncPending was
 		// set) runs a sync-only attempt: it skips the decode below and
 		// just reconciles the leases.
 		if needDecode {

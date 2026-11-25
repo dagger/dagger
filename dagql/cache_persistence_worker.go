@@ -212,7 +212,7 @@ func (c *Cache) snapshotPersistStateLocked(kept *persistKept, seed maphash.Seed)
 
 		deps = deps[:0]
 		var depsPrint rowsPrint
-		for depID := range res.deps {
+		for _, depID := range res.deps {
 			if _, selected := selectedResultIDs[depID]; !selected {
 				return persistStateSnapshot{}, fmt.Errorf("persist result %d: dependency %d is outside persisted root closure", resultID, depID)
 			}
@@ -245,7 +245,7 @@ func (c *Cache) snapshotPersistStateLocked(kept *persistKept, seed maphash.Seed)
 
 		calls = calls[:0]
 		var callsPrint rowsPrint
-		for request, call := range res.calls {
+		for request, call := range res.keptCallsLocked() {
 			row := persistdb.MirrorResultCall{
 				ResultID:      int64(resultID),
 				RequestDigest: request.String(),
@@ -258,15 +258,17 @@ func (c *Cache) snapshotPersistStateLocked(kept *persistKept, seed maphash.Seed)
 
 		taught = taught[:0]
 		var taughtPrint rowsPrint
-		for i, digest := range res.taught {
-			row := persistdb.MirrorResultTaught{
-				ResultID: int64(resultID),
-				Position: int64(i),
-				Digest:   digest.String(),
-				Given:    i < res.taughtGiven,
+		if t := res.taughtContent; t != nil {
+			for i, digest := range t.digests {
+				row := persistdb.MirrorResultTaught{
+					ResultID: int64(resultID),
+					Position: int64(i),
+					Digest:   digest.String(),
+					Given:    i < t.given,
+				}
+				taughtPrint.add(rowPrint(seed, row))
+				taught = append(taught, row)
 			}
-			taughtPrint.add(rowPrint(seed, row))
-			taught = append(taught, row)
 		}
 		next.taught = taughtPrint.value(seed)
 
@@ -432,7 +434,7 @@ func (c *Cache) snapshotPersistStateLocked(kept *persistKept, seed maphash.Seed)
 				TermID:         int64(termID),
 				Position:       int64(i),
 				InputEqClassID: int64(inputEqID),
-				ProvenanceKind: string(inputProvenance[i]),
+				ProvenanceKind: inputProvenance[i].String(),
 			}
 			inputsPrint.add(rowPrint(seed, row))
 			inputs = append(inputs, row)
@@ -464,8 +466,8 @@ func (c *Cache) snapshotPersistStateLocked(kept *persistKept, seed maphash.Seed)
 	slices.Sort(eqIDs)
 	keptClasses := persistKeptCursor[keptUnit]{list: kept.classes, id: func(u keptUnit) uint64 { return u.id }}
 	for _, eqID := range eqIDs {
-		digestRows := make(map[string]persistdb.MirrorEqClassDigest, len(c.eqClassToDigests[eqID]))
-		for dig := range c.eqClassToDigests[eqID] {
+		digestRows := make(map[string]persistdb.MirrorEqClassDigest, c.eqClassToDigests[eqID].Size())
+		for dig := range c.eqClassToDigests[eqID].All() {
 			if dig == "" {
 				continue
 			}

@@ -197,7 +197,7 @@ func transferTestCache(t testing.TB) (context.Context, *Cache, *Server) {
 	t.Cleanup(func() { require.NoError(t, c.CloseDiscardingPersistence()) })
 	return ctx, c, srv
 }
-func exportTestBundle(t *testing.T, ctx context.Context, c *Cache, roots ...AnyResult) ValueBundle {
+func exportTestBundle(t testing.TB, ctx context.Context, c *Cache, roots ...AnyResult) ValueBundle {
 	t.Helper()
 	var bundle ValueBundle
 	require.NoError(t, c.WithExportedValues(ctx, ValueSelection{Roots: roots}, config.RefConfig{}, func(_ context.Context, values *ExportedValues) error { bundle = values.Bundle; return nil }))
@@ -295,13 +295,9 @@ func transferTestDependency(c *Cache, ctx context.Context, parent, child AnyResu
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
 	p, d := parent.cacheSharedResult(), child.cacheSharedResult()
-	if p.deps == nil {
-		p.deps = map[sharedResultID]struct{}{}
-	}
-	if _, exists := p.deps[d.id]; exists {
+	if !p.deps.add(d.id) {
 		return
 	}
-	p.deps[d.id] = struct{}{}
 	p.dependencyOwnershipRevision++
 	c.rememberDependencyEdgeLocked(p, d)
 	c.incrementIncomingOwnershipLocked(ctx, d)
@@ -416,16 +412,14 @@ func TestValueTransferCapture(t *testing.T) {
 					res.storeResultCall(res.loadResultCall().clone())
 				case "busy": // Attachment is rechecked after every copy guard is released.
 					c.egraphMu.Lock()
-					res.attachDepsMu.Lock()
-					res.attachDepsWaitCh = make(chan struct{})
-					res.attachDepsMu.Unlock()
+					res.openAttachment(nil)
 					c.egraphMu.Unlock()
 				}
 			}
 			err := c.WithExportedValues(ctx, ValueSelection{Roots: []AnyResult{root}}, config.RefConfig{}, func(context.Context, *ExportedValues) error { t.Fatal("incoherent capture delivered"); return nil })
 			c.testTransferCopied = nil
 			if kind == "busy" {
-				close(res.attachDepsWaitCh)
+				res.endAttachment(nil)
 			}
 			require.ErrorIs(t, err, ErrPersistStateNotReady)
 			require.Equal(t, owners, res.incomingOwnershipCount.Load())
@@ -505,7 +499,7 @@ func TestValueTransferReferences(t *testing.T) {
 		require.NoError(t, err)
 		c.egraphMu.RLock()
 		class, known := c.egraphDigestToClass[extra.String()]
-		results := len(c.outputEqClassResults[c.eqClassRootLocked(class)])
+		results := c.outputEqClassResults[c.eqClassRootLocked(class)].Size()
 		c.egraphMu.RUnlock()
 		require.True(t, known)
 		require.Equal(t, 1, results)
@@ -629,8 +623,8 @@ func TestValueTransferPersistenceDecodePublication(t *testing.T) {
 	var rowCleanups, losingReleases, winningReleases atomic.Int32
 	row.onRelease = joinOnRelease(row.onRelease, func(context.Context) error { rowCleanups.Add(1); return nil })
 	row.payloadMu.Lock()
-	row.snapshotOwnerLinks = []PersistedSnapshotRefLink{{Role: "snapshot", RefKey: "old-applied"}}
-	row.snapshotLinkIntent = &snapshotLinkIntent{Links: []PersistedSnapshotRefLink{}}
+	row.snapshotState().ownerLinks = []PersistedSnapshotRefLink{{Role: "snapshot", RefKey: "old-applied"}}
+	row.snapshotState().linkIntent = &snapshotLinkIntent{Links: []PersistedSnapshotRefLink{}}
 	row.payloadRevision++
 	row.payloadMu.Unlock()
 	var calls int
@@ -649,7 +643,7 @@ func TestValueTransferPersistenceDecodePublication(t *testing.T) {
 			}
 			next.ObjectJSON = json.RawMessage(`{"text":"new"}`)
 			row.persistedEnvelope = &next
-			row.snapshotLinkIntent = &snapshotLinkIntent{Links: []PersistedSnapshotRefLink{{Role: "snapshot", RefKey: "new-desired"}}}
+			row.snapshotState().linkIntent = &snapshotLinkIntent{Links: []PersistedSnapshotRefLink{{Role: "snapshot", RefKey: "new-desired"}}}
 			row.payloadRevision++
 			row.payloadMu.Unlock()
 		} else {

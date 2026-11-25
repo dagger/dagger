@@ -533,6 +533,7 @@ func TestRelocatedTransferPayloadsStayValid(t *testing.T) {
 		"dagql_test.MarkBatch":     {`{"parts":["a"]}`, 0},
 		"dagql_test.PlanDelegate":  {`{"parent":7}`, 0},
 		"dagql_test.SyncDelegate":  {`{}`, 0},
+		"dagql_test.DecodeChain":   {`{"text":"relocated","child":5}`, 1},
 	}
 	for _, family := range PersistedObjectFamilies() {
 		// core's families, which this package's external tests register,
@@ -688,7 +689,7 @@ func storedPartTestDeps(c *Cache, number uint64) []uint64 {
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
 	var deps []uint64
-	for id := range c.resultsByID[sharedResultID(number)].deps {
+	for _, id := range c.resultsByID[sharedResultID(number)].deps {
 		deps = append(deps, uint64(id))
 	}
 	slices.Sort(deps)

@@ -163,7 +163,7 @@ func TestPartSettlementRetiresReplacement(t *testing.T) {
 	transferTestOffer(t, c, ctx, receiver, first)
 	address := PersistedPartAddress{Part: "snapshot"}
 	row := receiver.cacheSharedResult()
-	gate := row.partGate.loadOrCreate()
+	gate := row.partGateCell().loadOrCreate()
 	task := &PartTaskToken{row: row, generation: 1}
 	key, _ := partAddressKey(address)
 	c.egraphMu.Lock()
@@ -322,7 +322,7 @@ func TestPartNativeCompletionRetiresOffer(t *testing.T) {
 	c.egraphMu.RUnlock()
 	require.Zero(t, offerCount)
 	require.Zero(t, ownerCount)
-	gate := row.partGate.loadOrCreate()
+	gate := row.partGateCell().loadOrCreate()
 	gate.mu.Lock()
 	key, _ := partAddressKey(address)
 	phase := gate.outputs[key].phase

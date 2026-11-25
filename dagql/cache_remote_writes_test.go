@@ -256,7 +256,7 @@ func TestPreparedRemoteHoldingKeepsItsCall(t *testing.T) {
 	require.NoError(t, w.Release(ctx))
 	entry := storedBundleTestEntry(cloud, test.number)
 	cloud.egraphMu.RLock()
-	calls := len(entry.calls)
+	calls := len(entry.keptCallsLocked())
 	cloud.egraphMu.RUnlock()
 	require.Equal(t, 1, calls)
 }
@@ -371,6 +371,9 @@ func TestRemoteWritesApplyAMergedReplyInPieces(t *testing.T) {
 		out := map[HolderKey]RemoteHeldEntry{}
 		for _, key := range keys {
 			if held, ok := cache.RemoteHoldingInfo(key); ok {
+				// The count of hand-backs differs between a whole reply and
+				// its pieces; the holdings don't.
+				held.At = 0
 				out[key] = held
 			}
 		}

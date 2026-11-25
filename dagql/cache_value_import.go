@@ -529,11 +529,17 @@ func checkHeldPart(output TransferredOutput, part CapturedCodecOutput) error {
 	return checkOutputPart(output, part)
 }
 
+// transferIdentityPlan is a merged row's identity, as its merge's private
+// cache derived it (transferIdentityPlanOf), and what the commit reads of
+// the row's private entry: its call frame, description and record type. A
+// held row's is its recipe alone. It holds no private entry, so the private
+// cache goes with the preparation (dropRecordCopies).
 type transferIdentityPlan struct {
-	row          *sharedResult
-	recipe, self digest.Digest
-	inputs       []digest.Digest
-	provenance   []egraphInputProvenanceKind
+	frame                   *ResultCall
+	description, recordType string
+	recipe, self            digest.Digest
+	inputs                  []digest.Digest
+	provenance              []egraphInputProvenanceKind
 }
 
 // transferSenderNumbers maps a bundle's ordinals to its rows' sender numbers.
