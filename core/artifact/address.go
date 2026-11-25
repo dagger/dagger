@@ -209,6 +209,8 @@ func (index *AddressIndex) Selectors(target AddressRow) ([]dagaddress.Pair, bool
 
 // selectors finds target's plan, or the templates it must discover first.
 // Without templates it never needs any.
+//
+//nolint:gocyclo // one search, stopped wherever a lazy index must discover rows; splitting it hides the order of its tests
 func (index *AddressIndex) selectors(target AddressRow) (_ []dagaddress.Pair, _ bool, need []*addressTemplate) {
 	if len(index.invalid) > 0 {
 		return nil, false, slices.Clone(index.invalid)
@@ -219,12 +221,6 @@ func (index *AddressIndex) selectors(target AddressRow) (_ []dagaddress.Pair, _ 
 	group := index.types[target.Type]
 	if group == nil {
 		return nil, false, nil
-	}
-	depth := make(map[string]int, len(target.Coordinates))
-	for i, coordinate := range target.Coordinates {
-		if !flattening.IsStaticDimension(coordinate.Dimension) {
-			depth[coordinate.Dimension] = i
-		}
 	}
 	coordinates, valid := addressCoordinates(target.Coordinates)
 	if !valid {
@@ -258,27 +254,7 @@ func (index *AddressIndex) selectors(target AddressRow) (_ []dagaddress.Pair, _ 
 		need = group.colliders(keys, dimensions)
 		return len(need) == 0
 	}
-	slices.SortStableFunc(coordinates, func(a, b flattening.Coordinate) int {
-		priority := func(dimension string) int {
-			switch dimension {
-			case flattening.ModuleDimension:
-				return 2
-			case flattening.NameDimension:
-				return 1
-			default:
-				return 0
-			}
-		}
-		if difference := priority(a.Dimension) - priority(b.Dimension); difference != 0 {
-			return difference
-		}
-		if priority(a.Dimension) == 0 {
-			if difference := depth[b.Dimension] - depth[a.Dimension]; difference != 0 {
-				return difference
-			}
-		}
-		return strings.Compare(a.Dimension, b.Dimension)
-	})
+	sortBySearchOrder(coordinates, target.Coordinates)
 	present := make([]string, len(coordinates))
 	for i, coordinate := range coordinates {
 		present[i] = coordinate.Dimension
@@ -367,6 +343,39 @@ func (index *AddressIndex) selectors(target AddressRow) (_ []dagaddress.Pair, _ 
 		}
 	}
 	return nil, false, nil
+}
+
+// sortBySearchOrder orders coordinates as the selector search tries them:
+// collection dimensions first, deepest first in the target's order, then
+// name, then module.
+func sortBySearchOrder(coordinates, targetOrder []flattening.Coordinate) {
+	depth := make(map[string]int, len(targetOrder))
+	for i, coordinate := range targetOrder {
+		if !flattening.IsStaticDimension(coordinate.Dimension) {
+			depth[coordinate.Dimension] = i
+		}
+	}
+	priority := func(dimension string) int {
+		switch dimension {
+		case flattening.ModuleDimension:
+			return 2
+		case flattening.NameDimension:
+			return 1
+		default:
+			return 0
+		}
+	}
+	slices.SortStableFunc(coordinates, func(a, b flattening.Coordinate) int {
+		if difference := priority(a.Dimension) - priority(b.Dimension); difference != 0 {
+			return difference
+		}
+		if priority(a.Dimension) == 0 {
+			if difference := depth[b.Dimension] - depth[a.Dimension]; difference != 0 {
+				return difference
+			}
+		}
+		return strings.Compare(a.Dimension, b.Dimension)
+	})
 }
 
 // colliders are the pending templates that could hold a row equal to the
