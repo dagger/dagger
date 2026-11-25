@@ -3903,10 +3903,10 @@ func TestDirectDigestLookupHitsWithoutTermIndex(t *testing.T) {
 		assert.Assert(t, !firstRes.HitCache())
 
 		c.egraphMu.Lock()
-		c.inputEqClassToTerms = make(map[eqClassID]map[egraphTermID]struct{})
-		c.outputEqClassToTerms = make(map[eqClassID]map[egraphTermID]struct{})
+		c.inputEqClassToTerms = make(map[eqClassID]*idSet[egraphTermID])
+		c.outputEqClassToTerms = make(map[eqClassID]*idSet[egraphTermID])
 		c.egraphTerms = make(map[egraphTermID]*egraphTerm)
-		c.egraphTermsByTermDigest = make(map[string]*set.TreeSet[egraphTermID])
+		c.egraphTermsByTermDigest = make(map[string]*idSet[egraphTermID])
 		c.resultOutputEqClasses = make(map[sharedResultID]*idSet[eqClassID])
 		c.outputEqClassResults = make(map[eqClassID]*idSet[sharedResultID])
 		c.termInputProvenance = make(map[egraphTermID][]egraphInputProvenanceKind)
@@ -3954,10 +3954,10 @@ func TestDirectDigestLookupHitsWithoutTermIndex(t *testing.T) {
 		assert.Assert(t, !firstRes.HitCache())
 
 		c.egraphMu.Lock()
-		c.inputEqClassToTerms = make(map[eqClassID]map[egraphTermID]struct{})
-		c.outputEqClassToTerms = make(map[eqClassID]map[egraphTermID]struct{})
+		c.inputEqClassToTerms = make(map[eqClassID]*idSet[egraphTermID])
+		c.outputEqClassToTerms = make(map[eqClassID]*idSet[egraphTermID])
 		c.egraphTerms = make(map[egraphTermID]*egraphTerm)
-		c.egraphTermsByTermDigest = make(map[string]*set.TreeSet[egraphTermID])
+		c.egraphTermsByTermDigest = make(map[string]*idSet[egraphTermID])
 		c.resultOutputEqClasses = make(map[sharedResultID]*idSet[eqClassID])
 		c.outputEqClassResults = make(map[eqClassID]*idSet[sharedResultID])
 		c.termInputProvenance = make(map[egraphTermID][]egraphInputProvenanceKind)
@@ -7300,7 +7300,7 @@ func TestCachePruneDoesNotProtectTermProvenanceOnlyResultFromActiveResult(t *tes
 	termID := egraphTermID(1)
 	c.egraphTerms[termID] = newEgraphTerm(termID, digest.FromString("prune-structural-root-term"), []eqClassID{provenanceEq}, rootEq)
 	c.useTermLocked(c.egraphTerms[termID])
-	c.outputEqClassToTerms[rootEq] = map[egraphTermID]struct{}{termID: {}}
+	c.outputEqClassToTerms[rootEq] = idSetOf(termID)
 	c.termInputProvenance[termID] = []egraphInputProvenanceKind{egraphInputProvenanceKindResult}
 	c.egraphMu.Unlock()
 	c.sessionMu.Lock()
