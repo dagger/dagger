@@ -402,7 +402,7 @@ type moduleSourceArgs struct {
 // (moduleSourceReadCacheKey). Its ref decides what it reads without its
 // caller when it names a Git repository outright.
 func (s *moduleSourceSchema) moduleSourceCacheKey(ctx context.Context, _ dagql.ObjectResult[*core.Query], args moduleSourceArgs, req *dagql.CallRequest) error {
-	return moduleSourceReadCacheKey(ctx, req, args.decidedByContent())
+	return moduleSourceReadCacheKey(ctx, req, args.decidedByContent(), true)
 }
 
 // decidedByContent reports whether the ref decides what Query.moduleSource
@@ -416,7 +416,7 @@ func (args moduleSourceArgs) decidedByContent() bool {
 // source from its receiver as a read of a module source
 // (moduleSourceReadCacheKey): its receiver and arguments decide what it reads.
 func moduleSourceFieldCacheKey[T dagql.Typed, A any](ctx context.Context, _ dagql.ObjectResult[T], _ A, req *dagql.CallRequest) error {
-	return moduleSourceReadCacheKey(ctx, req, true)
+	return moduleSourceReadCacheKey(ctx, req, true, false)
 }
 
 // moduleSourceEngineBuild names the engine build that reads a module source:
@@ -435,11 +435,13 @@ var moduleSourceEngineBuild = engine.FullVersion
 // A shared read is still keyed by what it takes from its engine: the version
 // "latest" names and the built-in SDKs its image holds
 // (moduleSourceEngineBuild), and its default platform, which an entrypoint's
-// sources can read, as a module's function calls are keyed by it. And by the
+// sources can read, as a module's function calls are keyed by it. By the
 // cache scope a caller that busts its cache deliberately sets
-// (dagql.CacheScopeInput), as it reads its own again.
-func moduleSourceReadCacheKey(ctx context.Context, req *dagql.CallRequest, decided bool) error {
-	shared, err := moduleSourceReadShared(ctx, decided)
+// (dagql.CacheScopeInput), as it reads its own again. And, for a read that
+// borrows (moduleSourceReadShared), by whose credentials its Git read may
+// borrow.
+func moduleSourceReadCacheKey(ctx context.Context, req *dagql.CallRequest, decided, borrows bool) error {
+	shared, borrowing, err := moduleSourceReadShared(ctx, decided, borrows)
 	if err != nil {
 		return err
 	}
@@ -449,6 +451,11 @@ func moduleSourceReadCacheKey(ctx context.Context, req *dagql.CallRequest, decid
 			return err
 		}
 		return req.SetImplicitInput(ctx, dagql.PerClientInput.Name, client)
+	}
+	if borrowing != "" {
+		if err := req.SetImplicitInput(ctx, "gitBorrowing", dagql.NewString(string(borrowing))); err != nil {
+			return err
+		}
 	}
 	if err := req.SetImplicitInput(ctx, "moduleSourceEngineBuild", dagql.NewString(moduleSourceEngineBuild())); err != nil {
 		return err
@@ -476,15 +483,34 @@ func moduleSourceReadCacheKey(ctx context.Context, req *dagql.CallRequest, decid
 // its receiver and arguments decide what it reads without its caller, and a
 // caller that reads its own host (core.CallerReadsItsHost) gives the source
 // its .env and may name paths on its machine, so its reads stay its own.
-func moduleSourceReadShared(ctx context.Context, decided bool) (bool, error) {
+//
+// A read that borrows reads Git itself with its caller's permission, as
+// Query.moduleSource reads its ref: whose credentials it may borrow
+// (core.GitBorrowingOf) decides whether a private repository's read succeeds,
+// so a shared read names it (borrowing) in its key, and one an agent's model
+// supplied the address of, which may borrow its owner's credentials with
+// their approval, stays its client's own. Other reads resolve their Git
+// dependencies and SDK as trusted resolution whoever reads them.
+func moduleSourceReadShared(ctx context.Context, decided, borrows bool) (shared bool, borrowing core.GitBorrowing, _ error) {
 	if !decided {
-		return false, nil
+		return false, "", nil
 	}
 	readsHost, err := core.CallerReadsItsHost(ctx)
-	if err != nil {
-		return false, err
+	if err != nil || readsHost {
+		return false, "", err
 	}
-	return !readsHost, nil
+	if !borrows {
+		return true, "", nil
+	}
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return false, "", err
+	}
+	borrowing, err = core.GitBorrowingOf(ctx, query)
+	if err != nil {
+		return false, "", err
+	}
+	return borrowing != core.GitBorrowsForAgent, borrowing, nil
 }
 
 func (s *moduleSourceSchema) moduleSource(
@@ -492,7 +518,7 @@ func (s *moduleSourceSchema) moduleSource(
 	query dagql.ObjectResult[*core.Query],
 	args moduleSourceArgs,
 ) (inst dagql.Result[*core.ModuleSource], err error) {
-	shared, err := moduleSourceReadShared(ctx, args.decidedByContent())
+	shared, _, err := moduleSourceReadShared(ctx, args.decidedByContent(), true)
 	if err != nil {
 		return inst, err
 	}
@@ -1128,7 +1154,7 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 	contextDir dagql.ObjectResult[*core.Directory],
 	args directoryAsModuleSourceArgs,
 ) (inst dagql.Result[*core.ModuleSource], err error) {
-	shared, err := moduleSourceReadShared(ctx, true)
+	shared, _, err := moduleSourceReadShared(ctx, true, false)
 	if err != nil {
 		return inst, err
 	}
