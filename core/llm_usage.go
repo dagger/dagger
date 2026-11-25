@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
@@ -57,7 +58,7 @@ func (t *llmUsageTransport) RoundTrip(req *http.Request) (*http.Response, error)
 		attribute.String(telemetryattrs.LLMUsageOutputSemanticsAttr, output))
 	resp, err := t.base.RoundTrip(req)
 	if err != nil {
-		p.finish(err, false)
+		p.finish(err)
 		return resp, err
 	}
 	p.failed = resp.StatusCode >= 400
@@ -66,7 +67,7 @@ func (t *llmUsageTransport) RoundTrip(req *http.Request) (*http.Response, error)
 	// Detect the framing from bytes, not the response content type alone.
 	p.body = resp.Body
 	if resp.Body == nil {
-		p.finish(nil, true)
+		p.finish(nil)
 	} else {
 		resp.Body = p
 	}
@@ -118,7 +119,7 @@ func (p *llmUsageBody) Read(b []byte) (int, error) {
 	if !p.ended {
 		p.observe(b[:n])
 		if err != nil {
-			p.finishLocked(err, errors.Is(err, io.EOF))
+			p.finishLocked(err)
 		}
 	}
 	return n, err
@@ -126,17 +127,17 @@ func (p *llmUsageBody) Read(b []byte) (int, error) {
 
 func (p *llmUsageBody) Close() error {
 	err := p.body.Close()
-	p.finish(err, false)
+	p.finish(err)
 	return err
 }
 
-func (p *llmUsageBody) finish(err error, eof bool) {
+func (p *llmUsageBody) finish(err error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.finishLocked(err, eof)
+	p.finishLocked(err)
 }
 
-func (p *llmUsageBody) finishLocked(err error, eof bool) {
+func (p *llmUsageBody) finishLocked(err error) {
 	if p.ended {
 		return
 	}
@@ -151,7 +152,10 @@ func (p *llmUsageBody) finishLocked(err error, eof bool) {
 	if p.array && !p.arrayClosed {
 		p.finalUsage = false
 	}
-	if eof && p.protocol == "google" && p.googleFinished && (!p.array || p.arrayClosed) {
+	// Google has no SSE sentinel: a complete terminal candidate/block frame
+	// establishes completion. The consumer may close immediately on a failed
+	// finish reason, without asking the SDK for another read (and thus EOF).
+	if p.protocol == "google" && p.googleFinished && (!p.array || p.arrayClosed) {
 		p.terminal = true
 	}
 	completeness := "unavailable"
@@ -321,6 +325,7 @@ func (p *llmUsageBody) parse(data []byte, nonstream bool) {
 	}
 	switch p.protocol {
 	case "anthropic":
+		p.anthropicOutcome(obj, kind)
 		if kind == "message_start" {
 			obj = llmUsageObject(obj["message"])
 		}
@@ -337,6 +342,7 @@ func (p *llmUsageBody) parse(data []byte, nonstream bool) {
 			p.finalUsage = p.observed[telemetryattrs.LLMUsageOutputTokensAttr]
 		}
 	case "openai":
+		p.chatOutcome(obj)
 		u := p.capture(obj["usage"], map[string]string{
 			"prompt_tokens":     telemetryattrs.LLMUsageInputTokensAttr,
 			"completion_tokens": telemetryattrs.LLMUsageOutputTokensAttr,
@@ -350,6 +356,11 @@ func (p *llmUsageBody) parse(data []byte, nonstream bool) {
 	case "responses":
 		if response, ok := obj["response"]; ok {
 			obj = llmUsageObject(response)
+		}
+		var status string
+		_ = json.Unmarshal(obj["status"], &status)
+		if status == "failed" || status == "incomplete" {
+			p.failed = true
 		}
 		u := p.capture(obj["usage"], map[string]string{
 			"input_tokens":  telemetryattrs.LLMUsageInputTokensAttr,
@@ -366,6 +377,29 @@ func (p *llmUsageBody) parse(data []byte, nonstream bool) {
 	}
 	if nonstream {
 		p.terminal, p.finalUsage = true, p.snapshotComplete()
+	}
+}
+
+func (p *llmUsageBody) anthropicOutcome(obj map[string]json.RawMessage, kind string) {
+	if kind == "message_delta" {
+		obj = llmUsageObject(obj["delta"])
+	}
+	var reason anthropic.StopReason
+	if json.Unmarshal(obj["stop_reason"], &reason) == nil && !anthropicStoppedCleanly(reason) {
+		p.failed = true
+	}
+}
+
+func (p *llmUsageBody) chatOutcome(obj map[string]json.RawMessage) {
+	var choices []struct {
+		FinishReason string `json:"finish_reason"`
+	}
+	if json.Unmarshal(obj["choices"], &choices) == nil {
+		for _, choice := range choices {
+			if !openAIFinishedCleanly(choice.FinishReason) {
+				p.failed = true
+			}
+		}
 	}
 }
 

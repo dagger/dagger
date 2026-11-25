@@ -392,7 +392,7 @@ func TestLLMUsageSDKInterruptions(t *testing.T) {
 		{"openai", usageSSE(chatUsage), "partial", OpenAI, io.ErrUnexpectedEOF},
 		{"responses", usageSSE(strings.ReplaceAll(responsesUsage, "completed", "failed")), "final", OpenAI, io.EOF},
 		{"codex", usageSSE(strings.ReplaceAll(responsesUsage, "completed", "incomplete")), "final", OpenAICodex, io.EOF},
-		{"google", usageSSE(googleUsage), "partial", Google, context.Canceled},
+		{"google", usageSSE(googleUsage), "final", Google, context.Canceled},
 	} {
 		t.Run(tc.protocol, func(t *testing.T) {
 			ctx, recorder := usageTestContext(t)
@@ -444,6 +444,85 @@ func TestLLMUsageSDKInterruptions(t *testing.T) {
 			require.Equal(t, attribute.Int64Value(10), attrs[telemetryattrs.LLMUsageInputTokensAttr])
 		})
 	}
+}
+
+func TestLLMUsageSDKFailedFinish(t *testing.T) {
+	for _, protocol := range []string{"anthropic", "openai", "responses"} {
+		for _, streaming := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/stream=%t", protocol, streaming), func(t *testing.T) {
+				ctx, recorder := usageTestContext(t)
+				var body string
+				switch protocol {
+				case "anthropic":
+					body = `{"id":"m","type":"message","role":"assistant","content":[],"stop_reason":"max_tokens","usage":{"input_tokens":10,"output_tokens":3}}`
+					if streaming {
+						body = usageSSE(anthropicUsageStart, strings.ReplaceAll(anthropicUsageDelta, "end_turn", "max_tokens"), anthropicUsageStop)
+					}
+				case "openai":
+					body = `{"id":"c","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"partial"},"finish_reason":"length"}],"usage":{"prompt_tokens":10,"completion_tokens":3}}`
+					if streaming {
+						body = usageSSE(`{"id":"c","object":"chat.completion.chunk","choices":[{"index":0,"delta":{},"finish_reason":"length"}]}`, chatUsage, "[DONE]")
+					}
+				case "responses":
+					body = `{"id":"r","object":"response","status":"incomplete","output":[],"usage":{"input_tokens":10,"output_tokens":3}}`
+					if streaming {
+						body = usageSSE(strings.ReplaceAll(responsesUsage, "completed", "incomplete"))
+					}
+				}
+				endpoint := &LLMEndpoint{Provider: OpenAI, Model: "test-model", Key: "mock-key", BaseURL: "https://fixture.invalid/v1/"}
+				endpoint.httpTransport = usageFixtureTransport(func(r *http.Request) (*http.Response, error) {
+					header := http.Header{"Content-Type": []string{"application/json"}}
+					if streaming {
+						header.Set("Content-Type", "text/event-stream")
+					}
+					return &http.Response{StatusCode: 200, Header: header, Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
+				})
+				callUsageSDK(t, ctx, endpoint, protocol, streaming)
+				spans := usageSpans(recorder)
+				require.Len(t, spans, 1)
+				attrs := usageAttrs(spans[0])
+				require.Equal(t, attribute.StringValue("final"), attrs[telemetryattrs.LLMUsageCompletenessAttr])
+				require.Equal(t, attribute.StringValue("error"), attrs[telemetryattrs.LLMUsageOutcomeAttr])
+				require.Equal(t, attribute.Int64Value(3), attrs[telemetryattrs.LLMUsageOutputTokensAttr])
+			})
+		}
+	}
+}
+
+type usageEOFBody struct {
+	io.ReadCloser
+	sawEOF, closed bool
+}
+
+func (b *usageEOFBody) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	b.sawEOF = b.sawEOF || errors.Is(err, io.EOF)
+	return n, err
+}
+func (b *usageEOFBody) Close() error { b.closed = true; return b.ReadCloser.Close() }
+
+func TestLLMUsageGoogleFailedConsumer(t *testing.T) {
+	ctx, recorder := usageTestContext(t)
+	body := &usageEOFBody{ReadCloser: io.NopCloser(strings.NewReader(usageSSE(strings.ReplaceAll(googleUsage, "STOP", "MAX_TOKENS"))))}
+	endpoint := &LLMEndpoint{Provider: Google, Model: "test-model", Key: "mock-key"}
+	endpoint.httpTransport = usageFixtureTransport(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: body, Request: r}, nil
+	})
+	c, err := newGenaiClient(endpoint)
+	require.NoError(t, err)
+	stream := c.client.Models.GenerateContentStream(ctx, endpoint.Model, []*genai.Content{{Role: "user", Parts: []*genai.Part{{Text: "private prompt"}}}}, nil)
+	dp := newDisplayPhases(ctx, "", nil)
+	defer dp.CloseAll()
+	_, _, err = c.processStreamResponse(stream, dp, func(*genai.GenerateContentResponseUsageMetadata) LLMTokenUsage { return LLMTokenUsage{} })
+	require.ErrorContains(t, err, "MAX_TOKENS")
+	require.True(t, body.closed)
+	require.False(t, body.sawEOF, "consumer exits on terminal failure before draining to EOF")
+	spans := usageSpans(recorder)
+	require.Len(t, spans, 1)
+	attrs := usageAttrs(spans[0])
+	require.Equal(t, attribute.StringValue("final"), attrs[telemetryattrs.LLMUsageCompletenessAttr])
+	require.Equal(t, attribute.StringValue("error"), attrs[telemetryattrs.LLMUsageOutcomeAttr])
+	require.Equal(t, attribute.Int64Value(3), attrs[telemetryattrs.LLMUsageOutputTokensAttr])
 }
 
 func TestLLMUsageSDKRetry(t *testing.T) {
