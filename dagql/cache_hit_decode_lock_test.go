@@ -38,6 +38,26 @@ func (v *decodeChainValue) PersistedSnapshotRefLinks() []PersistedSnapshotRefLin
 	return cloneSnapshotRefLinks(v.links)
 }
 
+// CachePayloadBytes is a decoded value's size as the cache counts it: one
+// no stored payload of it has, so a test sees whether a decode's size was
+// recorded.
+func (v *decodeChainValue) CachePayloadBytes() int64 {
+	return decodeChainBytes(v.Text)
+}
+
+func decodeChainBytes(text string) int64 {
+	return 100_000 + int64(len(text))
+}
+
+// hitDecodeTestSizes requires each of entries to be counted at its decoded
+// value's size.
+func hitDecodeTestSizes(t *testing.T, entries map[string]*sharedResult) {
+	t.Helper()
+	for field, res := range entries {
+		require.Equal(t, decodeChainBytes(field), res.payloadBytes.Load(), "%s is counted at its decoded size", field)
+	}
+}
+
 // decodeChainHook runs in a decodeChainValue's decode, by the value's text:
 // before its decode loads its child, and after.
 type decodeChainHook struct {
@@ -168,6 +188,7 @@ func hitDecodeTestEntries(c *Cache, prefix string) map[string]*sharedResult {
 type hitDecodeTestWriter struct {
 	queued atomic.Int64
 	stop   chan struct{}
+	once   sync.Once
 	done   chan struct{}
 }
 
@@ -193,8 +214,10 @@ func startHitDecodeTestWriter(c *Cache, hold time.Duration) *hitDecodeTestWriter
 	return w
 }
 
+// close stops the writer, once; a second close waits for it to have
+// stopped.
 func (w *hitDecodeTestWriter) close() {
-	close(w.stop)
+	w.once.Do(func() { close(w.stop) })
 	<-w.done
 }
 
@@ -218,6 +241,7 @@ func hitDecodeTestHit(t *testing.T, ctx context.Context, c *Cache, srv *Server, 
 func hitDecodeTestLoad(t *testing.T, ctx context.Context, c *Cache, srv *Server, field string) (*CacheDecision, AnyResult, int64) {
 	t.Helper()
 	w := startHitDecodeTestWriter(c, time.Millisecond)
+	defer w.close()
 	ev, res := hitDecodeTestHit(t, ctx, c, srv, field)
 	w.close()
 	return ev, res, w.queued.Load()
@@ -276,12 +300,13 @@ func TestHitDecodingAStoredGraphQueuesBehindWritersAFewTimes(t *testing.T) {
 
 	t.Run("merged from the Cloud", func(t *testing.T) {
 		t.Parallel()
-		ctx, engine, srv, field, _ := hitDecodeTestCloudChain(t, "queue-cloud", n)
+		ctx, engine, srv, field, entries := hitDecodeTestCloudChain(t, "queue-cloud", n)
 		ev, res, queued := hitDecodeTestLoad(t, ctx, engine, srv, field)
 		t.Logf("the load queued %d times behind the writer, for %d entries", queued, n)
 		require.Equal(t, int64(n), ev.HitLoad().Decoded, "the hit decodes every entry of the chain")
 		require.LessOrEqual(t, queued, int64(few), "times the load queued behind a writer, for %d entries", n)
 		require.Equal(t, want("queue-cloud"), hitDecodeTestTexts(t, res))
+		hitDecodeTestSizes(t, entries)
 		total, sum := cacheTestPayloadTotalConsistent(engine)
 		require.Equal(t, sum, total, "the payload byte count follows its entries")
 	})
@@ -309,6 +334,9 @@ func TestHitDecodingAStoredGraphQueuesBehindWritersAFewTimes(t *testing.T) {
 		require.Equal(t, int64(n), ev.HitLoad().Decoded, "the hit decodes every entry of the chain")
 		require.LessOrEqual(t, queued, int64(few), "times the load queued behind a writer, for %d entries", n)
 		require.Equal(t, want("queue-restart"), hitDecodeTestTexts(t, res))
+		entries := hitDecodeTestEntries(engine, "queue-restart")
+		require.Len(t, entries, n)
+		hitDecodeTestSizes(t, entries)
 		total, sum := cacheTestPayloadTotalConsistent(engine)
 		require.Equal(t, sum, total, "the payload byte count follows its entries")
 	})
@@ -406,6 +434,7 @@ func TestHitDecodeMeetsChangesAfterItsGraphRead(t *testing.T) {
 		})
 		_, res := hitDecodeTestHit(t, ctx, engine, srv, field)
 		require.Equal(t, []string{"replace-before-2", "replaced", "replace-before-0"}, hitDecodeTestTexts(t, res))
+		require.Equal(t, decodeChainBytes("replaced"), middle.payloadBytes.Load(), "the replacement is counted at its decoded size")
 		total, sum := cacheTestPayloadTotalConsistent(engine)
 		require.Equal(t, sum, total, "the payload byte count follows its entries")
 
@@ -422,6 +451,8 @@ func TestHitDecodeMeetsChangesAfterItsGraphRead(t *testing.T) {
 		require.Equal(t, int64(3), ev.HitLoad().Decoded)
 		require.True(t, middle.holdsPayloadToDecode(), "the replacement waits for its own first use")
 		require.Equal(t, replacement, middle.payloadBytes.Load(), "the entry keeps the replacement's size")
+		require.NotEqual(t, decodeChainBytes("replace-after-1"), replacement, "not the decoded value's")
+		require.Equal(t, decodeChainBytes("replace-after-0"), leaf.payloadBytes.Load(), "an entry left alone is counted at its decoded size")
 		total, sum = cacheTestPayloadTotalConsistent(engine)
 		require.Equal(t, sum, total, "the payload byte count follows its entries")
 	})
