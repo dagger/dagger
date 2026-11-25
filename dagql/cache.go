@@ -2564,16 +2564,16 @@ func (c *Cache) syncResultSnapshotLeasesLocked(ctx context.Context, res *sharedR
 }
 
 // snapshotsHeldByDependencies returns the snapshots the results res depends
-// on hold, owned or borrowed.
+// on hold, owned or borrowed. A decode's lease sync gives res's dependencies
+// as its load read them (graphReads.depsOf); otherwise they are read under
+// the graph lock.
 func (c *Cache) snapshotsHeldByDependencies(ctx context.Context, res *sharedResult) map[string]struct{} {
-	c.readLockGraphGathered(ctx)
-	deps := make([]*sharedResult, 0, len(res.deps))
-	for _, id := range res.deps {
-		if dep := c.resultsByID[id]; dep != nil {
-			deps = append(deps, dep)
-		}
+	deps, read := graphReadsOf(ctx).depsOf(res)
+	if !read {
+		c.readLockGraphGathered(ctx)
+		deps = c.dependencyResultsLocked(res)
+		c.egraphMu.RUnlock()
 	}
-	c.egraphMu.RUnlock()
 	held := map[string]struct{}{}
 	for _, dep := range deps {
 		for _, link := range dep.loadSnapshotOwnerLinks() {
@@ -2581,6 +2581,18 @@ func (c *Cache) snapshotsHeldByDependencies(ctx context.Context, res *sharedResu
 		}
 	}
 	return held
+}
+
+// dependencyResultsLocked returns the results res depends on that are still
+// in the cache. Requires egraphMu.
+func (c *Cache) dependencyResultsLocked(res *sharedResult) []*sharedResult {
+	deps := make([]*sharedResult, 0, len(res.deps))
+	for _, id := range res.deps {
+		if dep := c.resultsByID[id]; dep != nil {
+			deps = append(deps, dep)
+		}
+	}
+	return deps
 }
 
 func (c *Cache) SyncResultSnapshotOwnerLeases(ctx context.Context, res AnyResult) (rerr error) {
