@@ -133,6 +133,26 @@ func (r *TypescriptClientDev) ClientLibrary() *Changeset { // typescript-client-
 	return new(Changeset).WithGraphQLQuery(q)
 }
 
+// Regenerate @dagger.io/core's bindings from this repo's engine.
+//
+// The engine is the source of truth for the API the bindings describe, so they
+// are rendered from its introspection — the same introspection `clientLibrary`
+// renders sdk/typescript/src/api from, and no session is opened for either.
+// A bump of the engine changes them and `core-bindings/stale` is red until the
+// result is committed.
+//
+// client.gen.ts is rendered. connect.ts, core.ts and index.ts are hand-written
+// upstream and no renderer produces them, so they come from the pinned release.
+// package.json, package-lock.json, tsconfig.json and README.md are this repo's
+// and are left alone — the version in particular is a placeholder the release
+// overwrites from the tag, which is what lets a client fix ship inside one
+// engine release (1.0.0-beta.25.2 did).
+func (r *TypescriptClientDev) CoreBindings() *Changeset { // typescript-client-dev (../../:0:0)
+	q := r.query.Select("coreBindings")
+
+	return new(Changeset).WithGraphQLQuery(q)
+}
+
 // Where @dagger.io/core lives, relative to the workspace root.
 func (r *TypescriptClientDev) CorePath(ctx context.Context) (string, error) { // typescript-client-dev (../../:0:0)
 	if r.corePath != nil {
