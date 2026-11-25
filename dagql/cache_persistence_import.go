@@ -367,10 +367,8 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			if termID == 0 {
 				return fmt.Errorf("import term_input: zero term_id")
 			}
-			provenance := egraphInputProvenanceKind(row.ProvenanceKind)
-			switch provenance {
-			case egraphInputProvenanceKindResult, egraphInputProvenanceKindDigest:
-			default:
+			provenance, ok := parseEgraphInputProvenanceKind(row.ProvenanceKind)
+			if !ok {
 				return fmt.Errorf("import term_input %d/%d: unsupported provenance %q", row.TermID, row.Position, row.ProvenanceKind)
 			}
 			inputsByTermID[termID] = append(inputsByTermID[termID], importTermInput{

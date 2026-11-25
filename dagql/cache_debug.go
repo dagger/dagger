@@ -206,7 +206,7 @@ func debugInputProvenance(inputs []egraphInputProvenanceKind) []map[string]any {
 	out := make([]map[string]any, 0, len(inputs))
 	for _, input := range inputs {
 		out = append(out, map[string]any{
-			"kind": string(input),
+			"kind": input.String(),
 		})
 	}
 	return out
@@ -1108,7 +1108,7 @@ func (c *Cache) DebugEGraphSnapshot() *EGraphDebugSnapshot {
 			inputProvenance := make([]EGraphDebugInputProvenance, 0, len(c.termInputProvenance[termID]))
 			for _, input := range c.termInputProvenance[termID] {
 				inputProvenance = append(inputProvenance, EGraphDebugInputProvenance{
-					Kind: string(input),
+					Kind: input.String(),
 				})
 			}
 			snap.ResultTerms = append(snap.ResultTerms, EGraphDebugResultTerm{
@@ -1566,7 +1566,7 @@ func (c *Cache) WriteDebugCacheSnapshot(w io.Writer) error {
 			for _, termID := range assocTermIDs {
 				inputProvenance := make([]EGraphDebugInputProvenance, 0, len(c.termInputProvenance[termID]))
 				for _, input := range c.termInputProvenance[termID] {
-					inputProvenance = append(inputProvenance, EGraphDebugInputProvenance{Kind: string(input)})
+					inputProvenance = append(inputProvenance, EGraphDebugInputProvenance{Kind: input.String()})
 				}
 				if err := writeElem(EGraphDebugResultTerm{
 					SharedResultID:  uint64(resultID),

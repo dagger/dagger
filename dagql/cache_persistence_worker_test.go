@@ -188,7 +188,7 @@ func TestCachePersistenceWorkerMirrorsAuthoritativeEgraphState(t *testing.T) {
 	assert.Check(t, cmp.Equal(resultOutputEqClassesCount, 2))
 
 	var resultInputCount int
-	err = c.sqlDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM term_inputs WHERE provenance_kind = ?`, string(egraphInputProvenanceKindResult)).Scan(&resultInputCount)
+	err = c.sqlDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM term_inputs WHERE provenance_kind = ?`, egraphInputProvenanceKindResult.String()).Scan(&resultInputCount)
 	assert.NilError(t, err)
 	assert.Check(t, cmp.Equal(resultInputCount, 1))
 }
