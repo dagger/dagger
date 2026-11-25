@@ -946,7 +946,7 @@ func (c *Cache) queueRestoredTaughtContent() {
 }
 
 // adoptReplacedContent takes, as res's taught content digests, those of the
-// frame a replacement took from res when res had none (taughtFrom): its
+// frame a replacement took from res when res had none (taughtContent.from): its
 // replaced content digests in the order the frame kept them, then its
 // content digest. The frame is decoded outside egraphMu.
 func (c *Cache) adoptReplacedContent(res *sharedResult) {
