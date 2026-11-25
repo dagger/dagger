@@ -15,12 +15,11 @@ import (
 )
 
 // CacheWork is the cache's counts a restore's window reads at its start and
-// at its end (RestoreWindow): the lookups' waits for the graph lock, the
-// first uses by path, and the snapshot-sharing passes.
+// at its end (RestoreWindow): the lookups' waits for the graph lock, and the
+// first uses by path.
 type CacheWork struct {
 	LookupLockWaits dagql.LookupLockWaits
 	FirstUse        dagql.FirstUseStats
-	Sharing         dagql.SharingStats
 }
 
 // RestoreWindow is what the engine did between a file's arrival and its end,
@@ -44,8 +43,8 @@ type CacheWork struct {
 // counts it (/proc/self/task/*/schedstat), when it could be read: a thread
 // that exited in the window takes its share with it. LookupLockWaits are the
 // lookups' waits for the graph lock begun in the window, by the kind of
-// writer that let each in, counted and summed; FirstUses the first uses
-// made in it, by path; Sharing the sharing passes, by kind of class.
+// writer that let each in, counted and summed; and FirstUses the first uses
+// made in it, by path.
 type RestoreWindow struct {
 	Wall            time.Duration
 	CPU, GCCPU      time.Duration
@@ -57,7 +56,6 @@ type RestoreWindow struct {
 	RunqWaitKnown   bool
 	LookupLockWaits map[string]dagql.LockWaitStats
 	FirstUses       map[string]dagql.FirstUsePath
-	Sharing         map[string]dagql.SharePassStats
 }
 
 // restoreReading is the engine's counters at one moment, which two of
@@ -132,7 +130,6 @@ func (r restoreReading) since(start restoreReading) *RestoreWindow {
 	}
 	w.LookupLockWaits = lockWaitsSince(r.work.LookupLockWaits, start.work.LookupLockWaits)
 	w.FirstUses = firstUsesSince(r.work.FirstUse.Paths, start.work.FirstUse.Paths)
-	w.Sharing = sharingSince(r.work.Sharing.Kinds, start.work.Sharing.Kinds)
 	return w
 }
 
@@ -227,28 +224,6 @@ func firstUsesSince(end, start map[string]dagql.FirstUsePath) map[string]dagql.F
 			out = map[string]dagql.FirstUsePath{}
 		}
 		out[path] = dagql.FirstUsePath{Prepared: prepared, Total: uses.Total - start[path].Total}
-	}
-	return out
-}
-
-func sharingSince(end, start map[string]dagql.SharePassStats) map[string]dagql.SharePassStats {
-	var out map[string]dagql.SharePassStats
-	for kind, stats := range end {
-		was := start[kind]
-		if stats.Passes == was.Passes {
-			continue
-		}
-		if out == nil {
-			out = map[string]dagql.SharePassStats{}
-		}
-		out[kind] = dagql.SharePassStats{
-			Passes:       stats.Passes - was.Passes,
-			Members:      stats.Members - was.Members,
-			Slotted:      stats.Slotted - was.Slotted,
-			Slots:        stats.Slots - was.Slots,
-			Prepared:     stats.Prepared - was.Prepared,
-			PrepareTotal: stats.PrepareTotal - was.PrepareTotal,
-		}
 	}
 	return out
 }

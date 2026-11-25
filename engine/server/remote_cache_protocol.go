@@ -751,7 +751,6 @@ func (a *RemoteCacheAdapter) CacheWork() remotecache.CacheWork {
 	return remotecache.CacheWork{
 		LookupLockWaits: a.cache.LookupLockWaits(),
 		FirstUse:        a.cache.FirstUse(),
-		Sharing:         a.cache.Sharing(),
 	}
 }
 

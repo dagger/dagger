@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"reflect"
 	"slices"
 	"sync"
 	"time"
@@ -38,13 +37,6 @@ type PartProbe struct {
 	DescriptorRev                                      uint64
 	OutputRev                                          OutputRevision
 	OfferRev                                           uint64
-	captured                                           *partProbeCapture
-}
-
-type partProbeCapture struct {
-	row     *sharedResult
-	record  PersistedRecord
-	version capturedRowRevision
 }
 
 // PersistedPartDescriber is pure: it neither loads references nor opens storage.
@@ -69,80 +61,24 @@ type PersistedPartsDescription struct {
 	SnapshotLinks []PersistedSnapshotRefLink
 }
 type PartSourceLease struct {
-	cache            *Cache
-	source           *sharedResult
-	sourceID         uint64
-	offerOwner       *offerOwner
-	descriptor       PartDescriptor
-	target           PersistedPartAddress
-	offer            *PersistedPartOffer
-	readiness        PartReadiness
-	route            CacheHitRoute
-	offerRev         uint64
-	sessionlessShare bool
-	delegation       *partDelegationProof
-	record           PersistedRecord
-	version          capturedRowRevision
-	facts            partSourceFacts
-	lookup           partLookup
-	sessionID        string
-	// A sessionless share validates the donated address alone. donated holds
-	// the per-address facts observed at admission; receiverID/receiverOwnGen
-	// hold the receiver's original structural admission, so Commit can refuse
-	// an actual change to Own(R) without refusing an unrelated sibling change.
-	donated        partDonatedFacts
-	receiverID     sharedResultID
-	receiverOwnGen uint64
-	once           sync.Once
-	releaseErr     error
-}
-
-// partDonatedFacts are the donor facts that belong to one full address. A
-// sibling publication, an offer attached elsewhere or a whole-payload revision
-// change leaves every field unchanged; a real change to this address's
-// publication, ownership link or offer slot changes one of them.
-type partDonatedFacts struct {
-	output     partOutputState
-	offerOwner offerOwnerID
-	ownerLink  bool
-	expires    int64
-}
-
-// partDonatedFactsLocked reads the donor's facts for one full address. The
-// applied owner link is the design's "applied role naming the same B-local
-// SnapshotID": a desired link or an accessor preseed is not one. E is held; P
-// is taken under it, following the encoded installer's E -> G -> P order.
-func (c *Cache) partDonatedFactsLocked(row *sharedResult, key string, address PersistedPartAddress, snapshotID string) partDonatedFacts {
-	f := partDonatedFacts{expires: row.expiresAtUnix}
-	if gate := row.partGate.gate.Load(); gate != nil {
-		gate.mu.Lock()
-		f.output = gate.outputs[key]
-		gate.mu.Unlock()
-	}
-	if offer := row.partOfferLocked(key); offer != nil && offer.owner != nil {
-		f.offerOwner = offer.owner.id
-	}
-	if snapshotID != "" {
-		want, err := canonicalPath(address.OutputPath)
-		if err == nil {
-			row.payloadMu.RLock()
-			for _, link := range row.snapshotOwnerLinks {
-				if link.RefKey != snapshotID {
-					continue
-				}
-				if got, err := canonicalPath(link.OutputPath); err == nil && got == want {
-					f.ownerLink = true
-					break
-				}
-			}
-			row.payloadMu.RUnlock()
-		}
-	}
-	return f
-}
-
-func partRowExpired(row *sharedResult, now int64) bool {
-	return row != nil && row.expiresAtUnix != 0 && row.expiresAtUnix <= now
+	cache      *Cache
+	source     *sharedResult
+	sourceID   uint64
+	offerOwner *offerOwner
+	descriptor PartDescriptor
+	target     PersistedPartAddress
+	offer      *PersistedPartOffer
+	readiness  PartReadiness
+	route      CacheHitRoute
+	offerRev   uint64
+	delegation *partDelegationProof
+	record     PersistedRecord
+	version    capturedRowRevision
+	facts      partSourceFacts
+	lookup     partLookup
+	sessionID  string
+	once       sync.Once
+	releaseErr error
 }
 
 func (s *PartSourceLease) Descriptor() PartDescriptor {
@@ -393,81 +329,7 @@ func (c *Cache) probePart(ctx context.Context, row *sharedResult, address Persis
 		}
 		gate.mu.Unlock()
 	}
-	if probe != nil {
-		probe.captured = &partProbeCapture{row: row, record: record, version: version}
-	}
 	return record, version, probe, nil
-}
-
-// probeAllParts describes every declared part of one row, outside E, with the
-// same nonblocking capture and gate reads probePart uses for one address. It
-// performs no typed decode, open, hash, content request or evaluation.
-func (c *Cache) probeAllParts(ctx context.Context, row *sharedResult) (PersistedRecord, capturedRowRevision, []PartProbe, error) {
-	var version capturedRowRevision
-	record, err := c.capturePartRecord(ctx, row, row.imported, nil, &version)
-	if err != nil {
-		return record, version, nil, err
-	}
-	var probes []PartProbe
-	err = walkTransferPayloads(&record.Envelope, record.Call, record.SnapshotLinks, func(f PersistedObjectFamily, v PersistedPayloadVisit) (json.RawMessage, error) {
-		d, ok := f.Transfer.(PersistedPartDescriber)
-		if !ok {
-			return v.Payload, nil
-		}
-		found, err := d.DescribeParts(v)
-		if err != nil {
-			return nil, err
-		}
-		for _, p := range found {
-			p.Descriptor.Family = f.Name
-			p.DescriptorRev = version.payload.payloadRevision
-			p.captured = &partProbeCapture{row: row, record: record, version: version}
-			probes = append(probes, p)
-		}
-		return v.Payload, nil
-	})
-	if err != nil {
-		return record, version, nil, err
-	}
-	if err = version.check(row); err != nil {
-		return record, version, nil, err
-	}
-	if gate := row.partGate.gate.Load(); gate != nil {
-		gate.mu.Lock()
-		for i := range probes {
-			key, err := partAddressKey(probes[i].Descriptor.Address)
-			if err != nil {
-				continue
-			}
-			state := gate.outputs[key]
-			probes[i].Busy = state.phase == PartOutputInstalled
-			probes[i].OutputRev = OutputRevision(state.installation)
-			for _, group := range gate.groups {
-				if group.phase == LazyEvaluationRunning && containsPart(group.writeSet, probes[i].Descriptor.Address) {
-					probes[i].Busy = true
-				}
-			}
-			for _, writer := range gate.writers {
-				if containsPart([]PersistedPartAddress{writer.address}, probes[i].Descriptor.Address) {
-					probes[i].Busy = true
-				}
-			}
-		}
-		gate.mu.Unlock()
-	}
-	// An active row-wide lease reconciliation makes every part of the row
-	// busy for this pass. The observation never blocks: a reconciliation that
-	// holds the row's lease guard is simply seen. One that finished during the
-	// probe advanced the payload revision, which the version check above or
-	// the constructor's and Commit's revalidation under E catches.
-	if !row.leaseSyncMu.TryLock() {
-		for i := range probes {
-			probes[i].Busy = true
-		}
-	} else {
-		row.leaseSyncMu.Unlock()
-	}
-	return record, version, probes, nil
 }
 
 func (c *Cache) AcquireEquivalentPartSource(ctx context.Context, receiver AnyResult, address PersistedPartAddress) (*PartSourceLease, error) {
@@ -713,234 +575,6 @@ func partCanReselect(err error) bool {
 	return err == ErrPartReselect || err == ErrPersistStateNotReady
 }
 
-// ownPartRequirementsFitLocked deliberately excludes offer-owner resources.
-func (c *Cache) ownPartRequirementsFitLocked(receiver, dependency *sharedResult) bool {
-	if receiver == nil || dependency == nil || c.resultsByID[dependency.id] != dependency {
-		return false
-	}
-	if dependency.requiredSessionResources == nil || dependency.requiredSessionResources.Empty() {
-		return true
-	}
-	return receiver.requiredSessionResources != nil && receiver.requiredSessionResources.Subset(dependency.requiredSessionResources)
-}
-
-// The caller holds the rows and probes outside E. Lookup preparation can
-// resolve persisted numeric references, so it must precede the E section.
-func (c *Cache) newSessionlessPartSourceLease(ctx context.Context, receiver, donor *sharedResult, target, address PersistedPartAddress, probe PartProbe) (*PartSourceLease, error) {
-	if receiver == nil || donor == nil {
-		return nil, fmt.Errorf("sessionless part source requires receiver and donor")
-	}
-	lookup, err := c.partLookupFor(receiver)
-	if err != nil {
-		return nil, err
-	}
-	if probe.captured == nil {
-		return nil, partRefused("sessionless source: probe without capture")
-	}
-	if err := probe.captured.version.check(donor); err != nil {
-		// A sibling of the donor published since the probe. As in Commit,
-		// which validates the donated address alone, observe the donor again
-		// and keep the selection only if the donated address is unchanged.
-		if probe, err = c.reprobeDonatedPart(ctx, donor, probe); err != nil {
-			return nil, err
-		}
-	}
-	c.lockGraphForCtx(ctx, workPart)
-	defer c.egraphMu.Unlock()
-	return c.newSessionlessPartSourceLeaseLocked(ctx, receiver, donor, target, address, probe, lookup)
-}
-
-// reprobeDonatedPart observes the donor again, as selection did, and returns
-// its fresh probe of the donated address when that address still has the
-// selected descriptor and installation and is still Ready. Any other change
-// refuses the slot.
-func (c *Cache) reprobeDonatedPart(ctx context.Context, donor *sharedResult, selected PartProbe) (PartProbe, error) {
-	key, err := partAddressKey(selected.Descriptor.Address)
-	if err != nil {
-		return PartProbe{}, err
-	}
-	_, _, probes, err := c.probeAllParts(ctx, donor)
-	if err != nil {
-		return PartProbe{}, err
-	}
-	for _, p := range probes {
-		if k, err := partAddressKey(p.Descriptor.Address); err != nil || k != key {
-			continue
-		}
-		if !reflect.DeepEqual(p.Descriptor, selected.Descriptor) || p.OutputRev != selected.OutputRev || !p.LocalComplete || p.Busy {
-			break
-		}
-		return p, nil
-	}
-	return PartProbe{}, partRefused("sessionless source: donated part changed")
-}
-
-// E held; lookup was prepared outside E. This admission boundary revalidates
-// the frame and current own requirements before taking its own donor hold.
-func (c *Cache) newSessionlessPartSourceLeaseLocked(ctx context.Context, receiver, donor *sharedResult, target, address PersistedPartAddress, probe PartProbe, lookup partLookup) (*PartSourceLease, error) {
-	if receiver == nil || donor == nil || !receiver.imported || c.resultsByID[receiver.id] != receiver || c.resultsByID[donor.id] != donor {
-		return nil, fmt.Errorf("sessionless part source requires registered rows and an imported receiver")
-	}
-	// Expiry blocks new sharing for either row. The candidate collector already
-	// excludes an expired donor, but it deliberately exempts the receiver,
-	// which for an ordinary demand is also the first candidate.
-	now := time.Now().Unix()
-	if partRowExpired(receiver, now) || partRowExpired(donor, now) {
-		return nil, partRefused("sessionless source: row expired")
-	}
-	if _, err := partAddressKey(target); err != nil {
-		return nil, err
-	}
-	key, err := partAddressKey(address)
-	if err != nil {
-		return nil, err
-	}
-	probedKey, err := partAddressKey(probe.Descriptor.Address)
-	if err != nil || key != probedKey || !probe.LocalComplete || probe.Busy || probe.captured == nil || probe.captured.row != donor {
-		return nil, partRefused("sessionless source: probe not usable")
-	}
-
-	// Resource filtering is performed below using only the receiver's current
-	// own set. The normal collector and foreground session filter stay intact.
-	route, eligible := c.sessionlessPartEquivalentLocked(receiver, donor, lookup)
-	if !eligible || !c.ownPartRequirementsFitLocked(receiver, donor) {
-		return nil, partRefused("sessionless source: donor not eligible")
-	}
-	source := &PartSourceLease{cache: c, source: donor, sourceID: uint64(donor.id), descriptor: probe.Descriptor, target: clonePartAddress(target), readiness: PartReady, route: route, sessionlessShare: true, record: probe.captured.record, version: probe.captured.version, lookup: lookup, facts: c.partFactsLocked(donor)}
-	source.descriptor = source.Descriptor()
-	source.descriptor.DependencyIDs = append(source.descriptor.DependencyIDs, c.partResourceLeavesLocked(donor)...)
-	slices.Sort(source.descriptor.DependencyIDs)
-	source.descriptor.DependencyIDs = slices.Compact(source.descriptor.DependencyIDs)
-	for _, id := range source.descriptor.DependencyIDs {
-		if !c.ownPartRequirementsFitLocked(receiver, c.resultsByID[sharedResultID(id)]) {
-			return nil, partRefused("sessionless source: dependency exceeds receiver requirements")
-		}
-	}
-	source.offerRev = source.facts.offers
-	source.receiverID = receiver.id
-	source.receiverOwnGen = receiver.requiredSessionResourcesGen.Load()
-	source.donated = c.partDonatedFactsLocked(donor, key, address, source.descriptor.SnapshotID)
-	// A donated snapshot must be owned by the donor now, not merely desired.
-	if source.descriptor.SnapshotID != "" && !source.donated.ownerLink {
-		return nil, partRefused("sessionless source: donor does not own the snapshot")
-	}
-	c.incrementIncomingOwnershipLocked(ctx, donor)
-	return source, nil
-}
-
-func (c *Cache) sessionlessPartEquivalentLocked(receiver, donor *sharedResult, lookup partLookup) (CacheHitRoute, bool) {
-	return c.sessionlessPartEquivalenceLocked(receiver, lookup)(donor)
-}
-
-// sessionlessStructuralRouteLocked is the structural route of a prepared
-// lookup, as appendTermSetResultsLocked reads it: the servable results of the
-// lookup's call over its inputs' classes, or, when none of those is servable,
-// the terms' output classes, whose results it reaches. E is held.
-func (c *Cache) sessionlessStructuralRouteLocked(lookup partLookup, now int64) (map[sharedResultID]struct{}, []eqClassID) {
-	if lookup.frame == nil {
-		return nil, nil
-	}
-	ids := make([]eqClassID, len(lookup.inputs))
-	for i, d := range lookup.inputs {
-		ids[i] = c.findEqClassLocked(c.egraphDigestToClass[d.String()])
-		if ids[i] == 0 {
-			return nil, nil
-		}
-	}
-	terms := c.egraphTermsByTermDigest[calcEgraphTermDigest(lookup.self, ids)]
-	if terms == nil {
-		return nil, nil
-	}
-	results := map[sharedResultID]struct{}{}
-	for termID := range terms.Items() {
-		for resID := range c.termResults[termID] {
-			if c.servableCandidateLocked(resID, now, nil) != nil {
-				results[resID] = struct{}{}
-			}
-		}
-	}
-	if len(results) > 0 {
-		return results, nil
-	}
-	var classes []eqClassID
-	seen := map[eqClassID]struct{}{}
-	for termID := range terms.Items() {
-		term := c.egraphTerms[termID]
-		if term == nil {
-			continue
-		}
-		outputEqID := c.eqClassRootLocked(term.outputEqID)
-		if _, ok := seen[outputEqID]; outputEqID == 0 || ok {
-			continue
-		}
-		seen[outputEqID] = struct{}{}
-		classes = append(classes, outputEqID)
-	}
-	return nil, classes
-}
-
-// sessionlessPartEquivalenceLocked prepares the test of whether a row is an
-// ordinary equivalent of receiver whose own resource requirements fit inside
-// the receiver's, and by which route: whether the candidate collector
-// (collectPartCandidatesWithAdmissionLocked) collects the row for the
-// receiver, and with which first route, decided for that one row. A test
-// reads the row's own postings, not every result the receiver's digests post:
-// a receiver in a class of many equal results posts the whole class under its
-// content digest. It validates the receiver's frame against the prepared
-// lookup and excludes expired rows, as the collector does. E is held while it
-// is prepared and while its test runs.
-func (c *Cache) sessionlessPartEquivalenceLocked(receiver *sharedResult, lookup partLookup) func(*sharedResult) (CacheHitRoute, bool) {
-	if receiver.loadResultCall() != lookup.frame {
-		return func(*sharedResult) (CacheHitRoute, bool) { return "", false }
-	}
-	now := time.Now().Unix()
-	posted := func(dig digest.Digest, row *sharedResult) bool {
-		if dig == "" {
-			return false
-		}
-		results := c.egraphResultsByDigest[dig.String()]
-		return results != nil && results.Contains(row.id)
-	}
-	structural, structuralClasses := c.sessionlessStructuralRouteLocked(lookup, now)
-	return func(row *sharedResult) (CacheHitRoute, bool) {
-		if row == nil || c.resultsByID[row.id] != row {
-			return "", false
-		}
-		if row != receiver && row.expiresAtUnix != 0 && row.expiresAtUnix <= now {
-			return "", false
-		}
-		if !c.ownPartRequirementsFitLocked(receiver, row) {
-			return "", false
-		}
-		if row == receiver {
-			return CacheHitRouteRecipe, true
-		}
-		if c.servableCandidateLocked(row.id, now, nil) != row {
-			return "", false
-		}
-		if posted(lookup.recipe, row) {
-			return CacheHitRouteRecipe, true
-		}
-		for _, extra := range lookup.extras {
-			if posted(extra.Digest, row) {
-				return CacheHitRouteDigest, true
-			}
-		}
-		if _, ok := structural[row.id]; ok {
-			return CacheHitRouteStructural, true
-		}
-		for _, root := range structuralClasses {
-			if _, ok := c.outputEqClassResults[root][row.id]; ok {
-				return CacheHitRouteStructural, true
-			}
-		}
-		return "", false
-	}
-}
-
-func (c *Cache) partSourceReferenceAllowedLocked(receiver *sharedResult, source *PartSourceLease, dep *sharedResult) bool {
-	if source.sessionlessShare {
-		return receiver.imported && c.ownPartRequirementsFitLocked(receiver, dep)
-	}
+func (c *Cache) partSourceReferenceAllowedLocked(source *PartSourceLease, dep *sharedResult) bool {
 	return source.sessionID != "" && c.sessionSatisfiesResourceRequirementsLocked(source.sessionID, dep)
 }

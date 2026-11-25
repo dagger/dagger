@@ -592,13 +592,6 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		return nil, err
 	}
 
-	// Early snapshot sharing is admitted only on an engine that can receive
-	// imports, after restored ownership is ready and before any external
-	// control or request can arrive.
-	if err := srv.initSnapshotSharing(ctx, opts); err != nil {
-		return nil, err
-	}
-
 	// The image's entries join the cache before the server dispatches any
 	// request, so the first module build already finds them. The start
 	// doesn't depend on them: an image without the built-in SDKs' files it

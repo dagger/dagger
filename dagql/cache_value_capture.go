@@ -1261,7 +1261,7 @@ func (capture *HeldCapturedClosure) checkRecords() {
 // WithExportedValues captures the selected closure and lends it to consume.
 // It is a capture and never waits. It leaves out each root whose closure
 // reaches a row it can't capture now, one with a task in flight (an
-// evaluation, a part installation, a sharing slot), or a row whose record it
+// evaluation or a part installation), or a row whose record it
 // refuses, and lends consume the bundle of the others, naming the roots it
 // left out (ExportedValues.LeftOut): the caller asks for those again later.
 // With every root left out, or any root of a selection of EveryRoot, it

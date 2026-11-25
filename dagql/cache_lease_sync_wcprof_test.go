@@ -15,9 +15,9 @@ import (
 // A lease sync blocked behind another sync of the same result records the
 // time blocked as a lock wait of its op, not as its own time.
 func TestSyncResultSnapshotLeasesRecordsLockWait(t *testing.T) {
-	ctx, c, srv, _ := shareTestCache(t)
-	srv.InstallObject(NewClass(srv, ClassOpts[*shareTestValue]{}))
-	res := persistedListTestResult(t, ctx, c, srv, "lease-sync-wait", newShareTestValue("v", map[string]sharePartState{"fs": {Snapshot: "fs-snap"}}))
+	ctx, c, srv, _ := partTestCache(t)
+	srv.InstallObject(NewClass(srv, ClassOpts[*partTestValue]{}))
+	res := persistedListTestResult(t, ctx, c, srv, "lease-sync-wait", newPartTestValue("v", map[string]partTestState{"fs": {Snapshot: "fs-snap"}}))
 	row := res.cacheSharedResult()
 
 	wcprof.EnsureRecorder()
