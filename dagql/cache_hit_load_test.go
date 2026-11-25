@@ -49,7 +49,7 @@ func TestHitSaysWhatItsLoadDecodedAndWaitedFor(t *testing.T) {
 		return held, released
 	}
 	var partReleased chan struct{}
-	transferDecodeHooks.Store(root, func(ctx context.Context, dec *PersistDecodeContext, value *transferTestValue) error {
+	onTransferDecode(t, srv, root, func(ctx context.Context, dec *PersistDecodeContext, value *transferTestValue) error {
 		held, released := holdGraph(workPart)
 		<-held
 		partReleased = released
@@ -58,7 +58,6 @@ func TestHitSaysWhatItsLoadDecodedAndWaitedFor(t *testing.T) {
 		require.Equal(t, "dep", child.Unwrap().(*transferTestValue).Text)
 		return nil
 	})
-	t.Cleanup(func() { transferDecodeHooks.Delete(root) })
 
 	call := func() (*CacheDecision, AnyResult) {
 		frame := &ResultCall{Kind: ResultCallKindField, Field: "fu-bad", Type: NewResultCallType((&transferTestValue{}).Type())}
