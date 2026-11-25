@@ -322,7 +322,7 @@ func TestEntriesFactsAnswersAsRemoteHoldingInfo(t *testing.T) {
 	require.Len(t, facts, 2, "the missing number is skipped")
 	for i, key := range []HolderKey{keys[2], keys[0]} {
 		want := held[key]
-		require.Equal(t, EntryFacts{Number: want.Number, Stored: want.Stored, StoredExpiresAtUnix: want.StoredExpiresAtUnix, Recipes: want.Recipes}, facts[i])
+		require.Equal(t, EntryFacts{Number: want.Number, Stored: want.Stored, StoredExpiresAtUnix: want.StoredExpiresAtUnix, Recipes: want.Recipes, At: handedForTest(cloud)}, facts[i])
 	}
 	require.Equal(t, held[keys[0]].Number, held[keys[1]].Number, "both engines' f are one entry")
 }
