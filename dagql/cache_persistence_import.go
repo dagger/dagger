@@ -301,10 +301,11 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				// keeping them: a save writes the calls kept in memory.
 				continue
 			}
-			if res.calls == nil {
-				res.calls = make(map[digest.Digest]*keptCall)
+			calls := res.callsStateLocked()
+			if calls.byRequest == nil {
+				calls.byRequest = make(map[digest.Digest]*keptCall)
 			}
-			res.calls[kept.id.recipe] = kept
+			calls.byRequest[kept.id.recipe] = kept
 			c.indexKeptCallLocked(res, kept)
 		}
 

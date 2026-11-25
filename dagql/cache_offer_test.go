@@ -35,10 +35,10 @@ func TestOfferDeliveredAgainIsKept(t *testing.T) {
 		return out[0]
 	}
 	deliver()
-	rev := row.offerRevision
+	rev := row.offerRevisionLocked()
 	again := deliver()
 	require.False(t, again.Replaced)
-	require.Equal(t, rev, row.offerRevision)
+	require.Equal(t, rev, row.offerRevisionLocked())
 }
 
 func TestOfferPartsBeforeStart(t *testing.T) {
@@ -118,11 +118,11 @@ func TestOfferPartsOwnership(t *testing.T) {
 	owner := row.testPartOffers()[key].owner
 	require.Equal(t, int64(1), owner.holds)
 	require.Equal(t, base+1, dep.cacheSharedResult().incomingOwnershipCount.Load())
-	rev := row.offerRevision
+	rev := row.offerRevisionLocked()
 	out, err = c.testOfferParts(ctx, r, []PersistedPartOffer{offer})
 	require.NoError(t, err)
 	require.False(t, out[0].Replaced)
-	require.Equal(t, rev, row.offerRevision)
+	require.Equal(t, rev, row.offerRevisionLocked())
 	offer.Value.Services[0].Aliases[0] = "caller mutation"
 	require.Equal(t, "a", row.testPartOffers()[key].record.Value.Services[0].Aliases[0])
 	offer.Value.Services[0].Aliases[0] = "a"

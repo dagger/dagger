@@ -3093,7 +3093,7 @@ type Cache struct {
 	egraphDigestToClass map[string]eqClassID
 
 	// callInputEntries are, for each digest that is an input of a call kept
-	// on an entry (sharedResult.calls), those entries, each with how many
+	// on an entry (entryCalls), those entries, each with how many
 	// of its calls name it: a change to the digest's class changes the term
 	// their calls derive, and so their kept grouping and index
 	// (forgetCallTermsLocked).
@@ -3516,14 +3516,11 @@ type sharedResult struct {
 	// the row at them (KnownRows). Guarded by egraphMu.
 	transferRevision            uint64
 	dependencyOwnershipRevision uint64
-	// offerRevision moves when one of the row's part offers is attached,
-	// replaced or retired. Where a demand gets a part reads it (the part's
-	// source facts, partFactsLocked): an offer is a source. A transfer
-	// capture copies no offers, so an offer moves neither revision above.
+	// offers are the entry's part offers' bookkeeping (entryOffers): nil
+	// until an offer is first attached to it or an offer owner holds it
+	// (offersStateLocked), as on every entry of a blob-backed cache.
 	// Guarded by egraphMu.
-	offerRevision uint64
-	// Reverse offer ownership does not propagate lookup requirements.
-	offerParents map[offerOwnerID]struct{}
+	offers *entryOffers
 	// id is the stable cache-local identity for this materialized result.
 	id sharedResultID
 	// replacements counts how many times this entry's value was replaced in
@@ -3539,22 +3536,10 @@ type sharedResult struct {
 	holders    *entryHolders
 	recipeKeys []digest.Digest
 	// calls are, on the Cloud, the calls its engines reported returning this
-	// entry other than its own, by request digest, which StoredBundle sends
-	// with the entry (cache_call_records.go). They own nothing and go with
-	// the entry. Persisted and guarded by egraphMu.
-	calls map[digest.Digest]*keptCall
-	// callTerms is calls grouped by the term each derives, as
-	// keptCallTermsLocked groups them, or nil until it does: kept until the
-	// calls change or an input's class does (forgetCallTermsLocked). A
-	// reader holding egraphMu for reading may store it; a writer clears it.
-	callTerms atomic.Pointer[[][]*keptCall]
-	// callTermIndex is the call kept of each term the entry's calls derive,
-	// by term key (keptCallTermKeyLocked), so that keeping one more call
-	// takes its own key and one lookup (keepTermCallLocked). While it is
-	// set, the entry keeps one call of each term. It is nil until the entry
-	// keeps a call after a change to an input's class, which changes keys
-	// (forgetCallTermsLocked). Not persisted; guarded by egraphMu.
-	callTermIndex map[string]*keptCall
+	// entry other than its own (entryCalls): nil until one is kept on it
+	// (callsStateLocked), as on every entry of an engine. Guarded by
+	// egraphMu.
+	calls *entryCalls
 	// list is the entry's place among list items (listLinks), or nil on an
 	// entry that is neither a list whose items were read nor such an item.
 	// Not persisted; guarded by egraphMu. See cache_list_items.go.
