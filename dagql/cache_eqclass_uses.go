@@ -58,6 +58,7 @@ func (c *Cache) unuseEqClassLocked(id eqClassID) {
 // useTermLocked counts the uses of a term made or imported: its inputs' and
 // its output's classes. Requires egraphMu for writing.
 func (c *Cache) useTermLocked(term *egraphTerm) {
+	c.noteSavedTermLocked(term.id)
 	for _, in := range term.inputEqIDs {
 		c.useEqClassLocked(in)
 	}
@@ -67,6 +68,7 @@ func (c *Cache) useTermLocked(term *egraphTerm) {
 // unuseTermLocked takes away a removed term's uses. Requires egraphMu for
 // writing.
 func (c *Cache) unuseTermLocked(term *egraphTerm) {
+	c.noteSavedTermLocked(term.id)
 	for _, in := range term.inputEqIDs {
 		c.unuseEqClassLocked(in)
 	}
@@ -81,6 +83,7 @@ func (c *Cache) setTermOutputLocked(term *egraphTerm, root eqClassID) {
 		c.useEqClassLocked(root)
 	}
 	term.outputEqID = root
+	c.noteSavedTermLocked(term.id)
 }
 
 // joinEqClassUsesLocked moves the uses of rb, a root a union has just put

@@ -247,6 +247,7 @@ func (c *Cache) attachPartOfferLocked(res *sharedResult, from CacheID, address P
 	offer.owner.slots++
 	offer.owner.origin, offer.owner.address = res.id, address
 	res.offersStateLocked().revision++
+	c.noteSavedEntryLocked(res.id)
 	return nil
 }
 func (c *Cache) replacePartOfferLocked(ctx context.Context, res *sharedResult, address PersistedPartAddress, offer *partOffer) (collectionQueue, error) {
@@ -268,6 +269,7 @@ func (c *Cache) replacePartOfferLocked(ctx context.Context, res *sharedResult, a
 	offer.owner.origin, offer.owner.address = res.id, address
 	old.owner.slots--
 	res.offersStateLocked().revision++
+	c.noteSavedEntryLocked(res.id)
 	return c.releaseOfferOwnerLocked(ctx, old.owner)
 }
 func (c *Cache) retirePartOfferLocked(ctx context.Context, res *sharedResult, address PersistedPartAddress) (collectionQueue, error) {
@@ -284,6 +286,7 @@ func (c *Cache) retirePartOfferLocked(ctx context.Context, res *sharedResult, ad
 	c.partOfferGone(old)
 	old.owner.slots--
 	res.offersStateLocked().revision++
+	c.noteSavedEntryLocked(res.id)
 	return c.releaseOfferOwnerLocked(ctx, old.owner)
 }
 
