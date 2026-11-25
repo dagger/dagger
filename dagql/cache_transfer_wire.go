@@ -19,16 +19,22 @@ import (
 // outputs build on the same bases, and each chain lists every layer from its
 // base up, so a merge of a large closure otherwise lists each layer, with its
 // pack and its address, about a hundred times over. ResolveChainPrefixes
-// gives each output its chain back. The bundle passed in is left as it is.
+// gives each output its chain back. An output that names its chain's
+// layers by place already, as in a bundle a blob-backed cache builds
+// (storedBundleBuild.listLayer), is left as it is, and the layers listed
+// for the others follow the bundle's. The bundle passed in is left as it
+// is.
 func ShareChainLayers(bundle ValueBundle) (ValueBundle, error) {
-	if !slices.ContainsFunc(bundle.Outputs, func(out TransferredOutput) bool { return out.Chain != nil }) {
+	if !slices.ContainsFunc(bundle.Outputs, func(out TransferredOutput) bool { return out.Chain != nil && out.Layers == nil }) {
 		return bundle, nil
 	}
 	places := map[string]int{}
 	bundle.Outputs = slices.Clone(bundle.Outputs)
+	bundle.Layers = slices.Clip(bundle.Layers)
+	bundle.Addresses = maps.Clone(bundle.Addresses)
 	for i := range bundle.Outputs {
 		out := &bundle.Outputs[i]
-		if out.Chain == nil {
+		if out.Chain == nil || out.Layers != nil {
 			continue
 		}
 		// The chain keeps all but its layers, their packs and their
