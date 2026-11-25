@@ -197,6 +197,7 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, item CloudPar
 				// The part is the root's own, and the offer still names the
 				// root's Cloud counterpart.
 				root.noteCloudCopyLocked(item.CloudNumber, item.CloudStored, item.CloudExpiresAtUnix)
+				c.noteSavedEntryLocked(root.id)
 			}
 		}
 		gate.mu.Unlock()
@@ -326,6 +327,7 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, item CloudPar
 		// The row's gate or its record has the part, and the offer still
 		// names the row's Cloud counterpart.
 		row.noteCloudCopyLocked(item.CloudNumber, item.CloudStored, item.CloudExpiresAtUnix)
+		c.noteSavedEntryLocked(row.id)
 	}
 	var queue collectionQueue
 	// accepted is the offer this call attached, for prefetching.
@@ -347,6 +349,7 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, item CloudPar
 			// The offer names the row's Cloud counterpart, which may be a new
 			// entry, as after a service restart.
 			row.noteCloudCopyLocked(item.CloudNumber, item.CloudStored, item.CloudExpiresAtUnix)
+			c.noteSavedEntryLocked(row.id)
 			if current == nil || !slices.Equal(current.layers, held.layers) || !reflect.DeepEqual(current.held, held.held) {
 				// Both primitives validate the owner graph before any mutation.
 				next := &partOffer{layeredOffer: held, owner: owner}

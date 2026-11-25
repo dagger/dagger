@@ -270,15 +270,19 @@ func (c *Cache) ensureEqClassForDigestLocked(ctx context.Context, dig string) eq
 // compaction freed, or the next after every slot. Requires egraphMu for
 // writing, and an initialized e-graph.
 func (c *Cache) allocEqClassLocked() eqClassID {
-	if n := len(c.freeEqClassIDs); n > 0 {
+	// While a save reads the store, a freed number isn't taken again: a
+	// number the save has read names one class until it ends.
+	if n := len(c.freeEqClassIDs); n > 0 && !c.savingLocked() {
 		id := c.freeEqClassIDs[n-1]
 		c.freeEqClassIDs = c.freeEqClassIDs[:n-1]
+		c.noteSavedClassLocked(id)
 		c.egraphParents[id] = id
 		c.egraphRanks[id] = 0
 		c.egraphUses[id] = 0
 		return id
 	}
 	id := eqClassID(len(c.egraphParents))
+	c.noteSavedClassLocked(id)
 	c.egraphParents = append(c.egraphParents, id)
 	c.egraphRanks = append(c.egraphRanks, 0)
 	c.egraphUses = append(c.egraphUses, 0)
@@ -343,6 +347,10 @@ func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID, moved *[]egraphTerm
 	ra, rb = c.unionRootsLocked(ra, rb)
 	c.egraphParents[rb] = ra
 	c.joinEqClassUsesLocked(ra, rb)
+	// Every row that named rb names ra once resolved: the classes, the terms
+	// that take or give rb and the entries of rb change for a save.
+	c.noteSavedClassLocked(ra)
+	c.noteSavedClassLocked(rb)
 
 	// merge reverse digest indexes
 	dstDigests := c.eqClassToDigests[ra]
@@ -381,6 +389,7 @@ func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID, moved *[]egraphTerm
 			c.inputEqClassToTerms[ra] = dst
 		}
 		for termID := range src.All() {
+			c.noteSavedTermLocked(termID)
 			if moved != nil {
 				// A term gone since it was indexed has nothing to repair:
 				// it leaves the index here, as a repair of the whole class
@@ -403,6 +412,9 @@ func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID, moved *[]egraphTerm
 		if dstOutputTerms == nil {
 			dstOutputTerms = newIDSet[egraphTermID]()
 			c.outputEqClassToTerms[ra] = dstOutputTerms
+		}
+		for termID := range srcOutputTerms.All() {
+			c.noteSavedTermLocked(termID)
 		}
 		dstOutputTerms.InsertAll(srcOutputTerms)
 		delete(c.outputEqClassToTerms, rb)
@@ -431,6 +443,7 @@ func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID, moved *[]egraphTerm
 		}
 		for resID := range srcResults.All() {
 			dstResults.Insert(resID)
+			c.noteSavedEntryLocked(resID)
 			if outputEqClasses := c.resultOutputEqClasses[resID]; outputEqClasses != nil {
 				// An entry that named both classes names one now, which it
 				// uses once.
@@ -619,6 +632,7 @@ func (c *Cache) repairTermLocked(ctx context.Context, term *egraphTerm, traceEna
 		set.Insert(termID)
 	}
 	term.inputEqIDs = newInputs
+	c.noteSavedTermLocked(termID)
 
 	oldTermDigest := term.termDigest
 	newTermDigest := calcEgraphTermDigest(term.selfDigest, newInputs)
@@ -1867,6 +1881,7 @@ func (c *Cache) termForResultByDigestLocked(resID sharedResultID, termDigest str
 // result's output eq-classes, which hold the outputs of all its terms.
 func (c *Cache) addResultExtraDigestsLocked(resID sharedResultID, frames ...*ResultCall) {
 	for outputEqID := range c.outputEqClassesForResultLocked(resID) {
+		c.noteSavedClassLocked(outputEqID)
 		extras := c.eqClassExtraDigests[outputEqID]
 		if extras == nil {
 			extras = make(map[call.ExtraDigest]struct{})
@@ -1908,6 +1923,7 @@ func (c *Cache) addResultOutputEqClassLocked(resID sharedResultID, outputEqID eq
 	if resID == 0 || outputEqID == 0 {
 		return
 	}
+	c.noteSavedEntryLocked(resID)
 	outputEqID = c.findEqClassLocked(outputEqID)
 	if outputEqID == 0 {
 		return
@@ -1937,6 +1953,7 @@ func (c *Cache) removeResultOutputEqClassesLocked(resID sharedResultID) {
 		return
 	}
 	c.markLeavingLocked(resID)
+	c.noteSavedEntryLocked(resID)
 	for outputEqID := range c.resultOutputEqClasses[resID].All() {
 		outputEqID = c.findEqClassLocked(outputEqID)
 		if outputEqID == 0 {
@@ -2035,6 +2052,7 @@ func (c *Cache) associateResultWithTermLocked(
 	if outputEqID == 0 {
 		return
 	}
+	c.noteSavedTermLocked(termID)
 	if existing, ok := c.termInputProvenance[termID]; ok {
 		if !sameInputProvenance(existing, inputProvenance) {
 			c.termInputProvenance[termID] = slices.Clone(inputProvenance)
@@ -2492,8 +2510,9 @@ func (c *Cache) maybeResetEgraphLocked() {
 	// An entry can hold classes without terms, such as one known only through
 	// holdings, and an entry can outlive its class's last term, such as an
 	// expired entry a session still owns: nothing is reset while any entry
-	// remains.
-	if len(c.egraphTerms) != 0 || len(c.resultsByID) != 0 {
+	// remains. Nor while a save reads the store: a reset starts class and
+	// term numbers again.
+	if len(c.egraphTerms) != 0 || len(c.resultsByID) != 0 || c.savingLocked() {
 		return
 	}
 
@@ -2546,6 +2565,11 @@ func (c *Cache) compactEqClassesLocked(force bool) (changed bool, oldSlots int, 
 func (c *Cache) compactEqClassesModeLocked(force, freeAll bool) (changed bool, oldSlots int, newSlots int) {
 	if len(c.egraphParents) <= 1 {
 		return false, 0, 0
+	}
+	// While a save reads the store, no slot is freed or trimmed: a number
+	// the save has read names one class until it ends.
+	if c.savingLocked() {
+		return false, c.eqClassSlotsLocked(), c.eqClassSlotsLocked()
 	}
 
 	var walked map[eqClassID]uint32
