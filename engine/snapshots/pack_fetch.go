@@ -75,9 +75,8 @@ const (
 	// and dropped.
 	packSpanGap = 1 << 20
 	// packHeaderMembers bounds the members of the headers an engine keeps
-	// (packHeaders), at about 100 bytes each in memory: about 25 MiB. On the
-	// many-pull-request test's run of 22 Nov, the engine that read the most
-	// packs read 1,298 of them over the run, with a median of 12 members a
+	// (packHeaders), at about 100 bytes each in memory: about 25 MiB. An engine
+	// can read over a thousand packs in a run, with about a dozen members a
 	// pack.
 	packHeaderMembers = 1 << 18
 )

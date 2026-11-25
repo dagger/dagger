@@ -59,7 +59,7 @@ import (
 // (storedRecordLocked).
 
 // storedBodyLevel is the zstd level stored envelopes are compressed at: the
-// default level, at which bodies of the service's saved stores measured 0.9
+// default level, at which bodies of saved stores measured 0.9
 // to 1.5 KB a record against 2.3 to 9.9 KB encoded, 36 to 40 µs a record to
 // compress, once, and 5 to 9 µs to decompress. Compressing runs of records
 // together compresses better, but a reader would then decompress the run.

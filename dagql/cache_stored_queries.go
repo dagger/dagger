@@ -198,8 +198,8 @@ func (c *Cache) AvailableParts(queries []PartQuery, nowUnix int64) []PartAnswer 
 // waiting, the batch keeps its one hold; under steady writers it takes one
 // hold an answer. It gives way at once, however long its take waited: a
 // read that held the lock as long as its take waited kept a writer pending,
-// and a pending writer keeps every new reader out, which on whole fills cost
-// far more stops than it saved a pass. The cache can change between two
+// and a pending writer keeps every new reader out, which cost stopping
+// engines far more than it saved a pass. The cache can change between two
 // answers, so a batch carries no pointer across one.
 func (c *Cache) giveWayLocked() {
 	if !c.egraphMu.Waiting() {

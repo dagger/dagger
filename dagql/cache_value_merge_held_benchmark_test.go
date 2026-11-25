@@ -12,16 +12,14 @@ import (
 )
 
 // BenchmarkCloudMergeHeldRows merges into a Cloud an engine's export that is
-// almost all held rows, the shape of a stopping engine's last export on a
-// whole pull request (48,801 held rows and 1 record took 2.39 s under the
-// remote cache service's work lock): one root over n leaves the Cloud
-// already holds from the engine, each leaf sent as a held row. With outputs,
-// each held row carries an output at its pending part, which the commit
-// checks against the Cloud's compressed copy of the row, as a fill's
-// exports that select parts do; the leaves' records are about the size of a
-// module's. It reports the prepare's and the commit's time a merge, and of
-// the commit, its warming and its hold of the graph lock (MergeReply.Warm,
-// CommitHold), each per held row.
+// almost all held rows, the shape of a stopping engine's last export: one
+// root over n leaves the Cloud already holds from the engine, each leaf sent
+// as a held row. With outputs, each held row carries an output at its
+// pending part, which the commit checks against the Cloud's compressed copy
+// of the row, as exports that select parts do; the leaves' records are
+// about the size of a module's. It reports the prepare's and the commit's
+// time a merge, and of the commit, its warming and its hold of the graph
+// lock (MergeReply.Warm, CommitHold), each per held row.
 func BenchmarkCloudMergeHeldRows(b *testing.B) {
 	for _, outputs := range []bool{false, true} {
 		for _, n := range []int{1_000, 10_000, 48_800} {
@@ -83,8 +81,8 @@ func BenchmarkCloudMergeHeldRows(b *testing.B) {
 				b.Cleanup(func() { require.NoError(b, cloud.CloseDiscardingPersistence()) })
 				_, err = cloud.MergeValues(cctx, "engine", leavesOnly)
 				require.NoError(b, err)
-				// The Cloud's copies are compressed, as a fill's are by the
-				// time an engine's later exports hold them.
+				// The Cloud's copies are compressed, as a busy Cloud's are by
+				// the time an engine's later exports hold them.
 				storedTestCompress(cloud)
 				first, err := cloud.MergeValues(cctx, "engine", heldBundle)
 				require.NoError(b, err)

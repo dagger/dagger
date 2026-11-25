@@ -11,11 +11,8 @@ import (
 // A capture of a finished result takes it while an offer lands on a row
 // below it, or while another export of the same engine retires an offer
 // there: a transferred record carries no offers, so neither changes what the
-// capture copies. At one stop on a whole pull request's fill, the service's
-// offers landed on 8 rows below a finished test run while its last export
-// was captured; the export refused the run as busy, and its content was never
-// stored. In 11 of the 18 other refusals at stops, another export of the same
-// engine had just retired offers below.
+// capture copies. Otherwise the export refused the finished result as busy,
+// and its content was never stored.
 func TestCaptureTakesAResultWhoseRowsTakeOrLoseAnOffer(t *testing.T) {
 	t.Parallel()
 	for _, change := range []string{"an offer lands", "an offer is retired"} {

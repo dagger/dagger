@@ -78,9 +78,9 @@ func (h *holderTestClass) number(t *testing.T, key HolderKey) uint64 {
 
 // A new entry that holds no part, joining a class, changes no class mate's
 // part answer, and no reader keeps a class's list of entries: its write names
-// it alone, not the class's holder or its other members. On a docs-only edit
-// such joins named a class's every entry at every new result, and the
-// service's passes asked each one's part answers again.
+// it alone, not the class's holder or its other members. Otherwise such
+// joins name a class's every entry at every new result, and the service's
+// passes ask each one's part answers again.
 func TestChangeReportsAJoinOfANonHolderNamesItAlone(t *testing.T) {
 	t.Parallel()
 	h := newHolderTestClass(t)
@@ -103,11 +103,9 @@ func TestChangeReportsAJoinOfANonHolderNamesItAlone(t *testing.T) {
 // keeps an entry's holders (RemoteChange), so each write names the holding
 // alone. Here cache-d's holding joins R, which cache-c holds, with R's
 // snapshot complete: a copy the Cloud could ask for, and its answer for R's
-// snapshot stays the stored copy's. On a whole pull request's fill every
-// holding that joined an entry named it, and every other engine holding the
-// entry read it again at its next pass: 13.0 million reads by entry, a fifth
-// of a percent of those in passes that read nothing else finding the entry's
-// facts changed.
+// snapshot stays the stored copy's. A holding that joined an entry and
+// named it would make every other engine holding the entry read it again at
+// its next pass, nearly always to find its facts unchanged.
 func TestChangeReportsAHoldingsArrivalAndRemovalNameItAlone(t *testing.T) {
 	t.Parallel()
 	h := newHolderTestClass(t)

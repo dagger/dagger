@@ -19,8 +19,8 @@ import (
 // entry's classes when the marks are handed back, when the entry held a part
 // at the mark or holds one then. A member that holds nothing changes no class
 // mate's answer, and a reader keeps no class's list of entries
-// (RemoteChange): on a docs-only edit, widening every new result's mark named
-// a class's thousand entries each time, and the reader asked all their part
+// (RemoteChange): widening every new result's mark would name a class's
+// thousands of entries each time, and the reader would ask all their part
 // answers again. A join names each side's entries when the other side holds a
 // part (markJoinLocked). Its recipes are its own (markEntryLocked). Its
 // holdings are no reader's to keep (RemoteChange): a holding's arrival or

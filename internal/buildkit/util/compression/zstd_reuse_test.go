@@ -128,7 +128,7 @@ func zstdLayerAllocated(t *testing.T, comp Config, data []byte, runs int) int64 
 	}
 	layer()
 	// The collector empties sync.Pools; hold it off so the reading is what a
-	// layer allocates while a fill keeps the pools in use, not when they ran.
+	// layer allocates while steady exports keep the pools in use, not when they ran.
 	defer debug.SetGCPercent(debug.SetGCPercent(-1))
 	var before, after runtime.MemStats
 	runtime.ReadMemStats(&before)

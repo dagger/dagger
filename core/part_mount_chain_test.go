@@ -64,9 +64,8 @@ type mountChain struct {
 	layers  []dagql.ObjectResult[*Container]
 	targets []string
 	// outputs are the content an engine that built the chain exports with
-	// it: each layer's rootfs. The mounted directories aren't exported, as
-	// the module proxy's weren't on the fill that ran away, so another
-	// engine makes each of them again.
+	// it: each layer's rootfs. The mounted directories aren't exported, so
+	// another engine makes each of them again.
 	outputs []dagql.SelectedValueOutput
 }
 
@@ -320,9 +319,9 @@ func requireMountChainLinear(t *testing.T, small, large mountChainCost, n int) {
 // mount of the chain's top at once. Each mount must come from the layer that
 // mounted it, as it does natively (TestContainerMountedFileChainCopiesFromWriter),
 // and not be copied through every layer above it: through n layers that is
-// n²/2 tasks, each capturing a record that grows with the chain. On a whole
-// pull request's fill, a 571-mount module proxy merged that way kept an
-// engine from serving anything for 24 minutes.
+// n²/2 tasks, each capturing a record that grows with the chain: a module
+// proxy of hundreds of mounts merged that way kept an engine from serving
+// anything for minutes.
 func TestImportedMountChainCopiesFromWriter(t *testing.T) {
 	t.Parallel()
 	requireMountChainLinear(t, importedMountChainCost(t, 16), importedMountChainCost(t, 64), 64)
@@ -330,9 +329,9 @@ func TestImportedMountChainCopiesFromWriter(t *testing.T) {
 
 // An engine that built the chain itself and then had the rootfs of its
 // layers offered and installed demands every mount of its top at once: each
-// mount must still come from the layer that mounted it. On a whole pull
-// request's edit, an engine that built a 585-mount module proxy that way
-// stopped serving requests until its check was cancelled.
+// mount must still come from the layer that mounted it: an engine that
+// built a module proxy of hundreds of mounts that way stopped serving
+// requests until its check was cancelled.
 func TestBuiltThenOfferedMountChainCopiesFromWriter(t *testing.T) {
 	t.Parallel()
 	requireMountChainLinear(t, builtThenOfferedMountChainCost(t, 16), builtThenOfferedMountChainCost(t, 64), 64)

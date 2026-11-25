@@ -369,10 +369,10 @@ func TestStoredBundlePartialRecords(t *testing.T) {
 	})
 }
 
-// BenchmarkChangedSince reads, for a file of test-base's whole set after four
-// pushes, 75,188 records, which changed since its build, a tenth of them
-// having changed: what the service's watcher reads for each file an engine
-// restored, each time the Cloud cache's position has moved.
+// BenchmarkChangedSince reads, for a file of a large whole set, 75,188
+// records, which changed since its build, a tenth of them having changed:
+// what the service's watcher reads for each file an engine restored, each
+// time the Cloud cache's position has moved.
 func BenchmarkChangedSince(b *testing.B) {
 	const records = 75_188
 	c := &Cache{resultsByID: map[sharedResultID]*sharedResult{}}
@@ -386,7 +386,7 @@ func BenchmarkChangedSince(b *testing.B) {
 		c.resultsByID[id] = res
 		numbers[i] = uint64(id)
 	}
-	// Entries other files carry, as a whole pull request's Cloud cache has.
+	// Entries other files carry, as a Cloud cache that many checks filled has.
 	for i := range 10 * records {
 		id := sharedResultID(2 + 3*i)
 		c.resultsByID[id] = &sharedResult{id: id}

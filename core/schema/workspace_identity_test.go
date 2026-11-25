@@ -76,9 +76,9 @@ func TestWorkspaceMadeAnotherWayMeetsEarlierReads(t *testing.T) {
 // An engine served another's read as the Cloud serves it, its entry with the
 // call that returned it and that call's receiver, meets it through the same
 // workspace made another way: the receiver's record carries the workspace's
-// identity, which the engine's own workspace has too. A fresh engine on a
-// whole pull request meets the other engines' module loads so; without the
-// identity on a workspace made by withWorkdir, it made every read again.
+// identity, which the engine's own workspace has too. A fresh engine meets
+// other engines' module loads so; without the identity on a workspace made
+// by withWorkdir, it made every read again.
 func TestWorkspaceMadeAnotherWayMeetsAnotherEnginesKeptRead(t *testing.T) {
 	t.Parallel()
 	salt := transferTestSalt(t)

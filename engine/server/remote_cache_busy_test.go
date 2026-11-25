@@ -276,7 +276,7 @@ func TestBusyWaitsWantTheRowsTheirRootsWaitOn(t *testing.T) {
 // As it hands busy roots on as ready, the engine logs a line of the notice's
 // way: how many roots and which, what woke the look that found them ready
 // and how long before, and how long they had waited. With the exec's end
-// from the traces and the service's line for the Ready, a fill reads where
+// from a trace and the service's line for the Ready, a reader can tell where
 // the time from an exec's end to its export goes.
 func TestRemoteCacheAdapterLogsTheRootsItHandsOnAsReady(t *testing.T) {
 	logs := &lockedLog{}
