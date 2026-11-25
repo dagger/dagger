@@ -187,7 +187,7 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, item CloudPar
 		c.incrementIncomingOwnershipLocked(ctx, row)
 		capture := &offerRowCapture{row: row}
 		captures[id] = capture
-		gate := row.partGate.loadOrCreate()
+		gate := row.partGateCell().loadOrCreate()
 		gate.mu.Lock()
 		capture.gateRevision = gate.revision
 		if row == root {
@@ -301,7 +301,7 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, item CloudPar
 		c.testOfferBeforeDecision(root)
 	}
 	c.lockGraphFor(ctx, workOffer)
-	gate := row.partGate.loadOrCreate()
+	gate := row.partGateCell().loadOrCreate()
 	gate.mu.Lock()
 	out.Outcome = offerGateOutcomeLocked(gate, address)
 	out.noteReceiverLocked(root)
@@ -367,7 +367,7 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, item CloudPar
 		// A native caller that selected its callback before this publication must
 		// return to the acquisition dispatcher before entering the body.
 		gate.managed = true
-		row.partGate.active.Store(true)
+		row.partGateCell().active.Store(true)
 	}
 	gate.mu.Unlock()
 	callbacks, collectErr := c.collectUnownedResultsLocked(context.WithoutCancel(ctx), queue)

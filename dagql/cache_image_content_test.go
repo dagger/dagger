@@ -328,19 +328,19 @@ func TestExportImageBundleFailsOnARowBusyUntilALaterEvaluation(t *testing.T) {
 	transferTestDependency(c, ctx, rows.first, late)
 	running, stuck := rows.shared.cacheSharedResult(), late.cacheSharedResult()
 	require.Less(t, running.id, stuck.id, "the running row is the one the root names")
-	running.lazyMu.Lock()
-	running.lazyWhole.attempt = &lazyEvalAttempt{done: make(chan struct{}), waiters: 1}
-	running.lazyMu.Unlock()
-	stuck.lazyMu.Lock()
-	stuck.lazyWhole.syncPending = true
-	stuck.lazyMu.Unlock()
+	running.lazyState().mu.Lock()
+	running.lazyState().whole.attempt = &lazyEvalAttempt{done: make(chan struct{}), waiters: 1}
+	running.lazyState().mu.Unlock()
+	stuck.lazyState().mu.Lock()
+	stuck.lazyState().whole.syncPending = true
+	stuck.lazyState().mu.Unlock()
 	t.Cleanup(func() {
-		running.lazyMu.Lock()
-		running.lazyWhole.attempt = nil
-		running.lazyMu.Unlock()
-		stuck.lazyMu.Lock()
-		stuck.lazyWhole.syncPending = false
-		stuck.lazyMu.Unlock()
+		running.lazyState().mu.Lock()
+		running.lazyState().whole.attempt = nil
+		running.lazyState().mu.Unlock()
+		stuck.lazyState().mu.Lock()
+		stuck.lazyState().whole.syncPending = false
+		stuck.lazyState().mu.Unlock()
 	})
 
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)

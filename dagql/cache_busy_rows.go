@@ -69,7 +69,7 @@ func (c *Cache) busyEnded(row sharedResultID) {
 // BusyRows returns those of rows, entries by number, that a capture would
 // leave out as busy now (ErrPersistStateNotReady) for what is in flight on
 // them: their dependencies' attachment is open, or an evaluation of them
-// runs or its bookkeeping is pending (lazyEvaluationInFlightLocked). A row
+// runs or its bookkeeping is pending (evaluationInFlightLocked). A row
 // the cache no longer has isn't busy, nor is one a capture found busy only
 // in a race with a change that has since ended, such as a row that changed
 // during the capture.
@@ -88,10 +88,7 @@ func (c *Cache) BusyRows(ctx context.Context, rows []uint64) []uint64 {
 			busy = append(busy, uint64(res.id))
 			continue
 		}
-		res.lazyMu.Lock()
-		err := lazyEvaluationInFlightLocked(res)
-		res.lazyMu.Unlock()
-		if err != nil {
+		if err := res.evaluationInFlight(); err != nil {
 			busy = append(busy, uint64(res.id))
 		}
 	}

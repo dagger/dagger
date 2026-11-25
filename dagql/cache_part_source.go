@@ -169,7 +169,7 @@ type partSourceFacts struct {
 
 func (c *Cache) partFactsLocked(row *sharedResult) partSourceFacts {
 	f := partSourceFacts{offers: row.offerRevision, resources: row.requiredSessionResourcesGen.Load(), ownership: row.dependencyOwnershipRevision, expires: row.expiresAtUnix}
-	if gate := row.partGate.gate.Load(); gate != nil {
+	if gate := row.writerGate(); gate != nil {
 		gate.mu.Lock()
 		f.gate = gate.revision
 		gate.mu.Unlock()
@@ -311,7 +311,7 @@ func (c *Cache) probePart(ctx context.Context, row *sharedResult, address Persis
 	if err = version.check(row); err != nil {
 		return record, version, nil, err
 	}
-	if gate := row.partGate.gate.Load(); gate != nil {
+	if gate := row.writerGate(); gate != nil {
 		gate.mu.Lock()
 		if probe != nil {
 			state := gate.outputs[key]
@@ -358,8 +358,8 @@ func (c *Cache) scanPartSources(ctx context.Context, receiver AnyResult, address
 		return nil, nil, err
 	}
 	key, _ := partAddressKey(address)
-	wcprof.Lock(ctx, &row.partGate.scanMu, "dagql.partGate.scanMu")
-	defer row.partGate.scanMu.Unlock()
+	wcprof.Lock(ctx, &row.partGateCell().scanMu, "dagql.partGate.scanMu")
+	defer row.partGateCell().scanMu.Unlock()
 	c.lockGraphForCtx(ctx, workPart)
 	candidates := c.collectPartCandidatesLocked(row, lookup, session)
 	held := 0

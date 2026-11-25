@@ -47,7 +47,7 @@ func TestOfferPartsBeforeStart(t *testing.T) {
 			ctx, c, srv := transferTestCache(t)
 			r := persistedListTestResult(t, ctx, c, srv, "receiver", &transferTestValue{Text: "pending"})
 			row := r.cacheSharedResult()
-			gate := row.partGate.loadOrCreate()
+			gate := row.partGateCell().loadOrCreate()
 			gate.groups[lazyGroupAddressKey(LazyGroupAddress{Group: "exec"})] = &partLazyEvaluationState{phase: phase, writeSet: []PersistedPartAddress{{Part: "snapshot"}}}
 			out, err := c.testOfferParts(ctx, r, []PersistedPartOffer{testLiveOffer()})
 			require.NoError(t, err)
@@ -67,7 +67,7 @@ func TestOfferPartsBeforeStart(t *testing.T) {
 		if whole {
 			group = LazyGroupWhole
 		}
-		r.cacheSharedResult().partGate.loadOrCreate().groups[lazyGroupAddressKey(LazyGroupAddress{Group: group})] = &partLazyEvaluationState{phase: LazyEvaluationRunning, writeSet: []PersistedPartAddress{{Part: "other"}}}
+		r.cacheSharedResult().partGateCell().loadOrCreate().groups[lazyGroupAddressKey(LazyGroupAddress{Group: group})] = &partLazyEvaluationState{phase: LazyEvaluationRunning, writeSet: []PersistedPartAddress{{Part: "other"}}}
 		out, err := c.testOfferParts(ctx, r, []PersistedPartOffer{testLiveOffer()})
 		require.NoError(t, err)
 		if whole {
@@ -176,7 +176,7 @@ func TestOfferPartsResourcesAndSettlement(t *testing.T) {
 	require.True(t, out[0].Replaced)
 	require.Equal(t, int64(1), old.holds)
 	row := r.cacheSharedResult()
-	gate := row.partGate.loadOrCreate()
+	gate := row.partGateCell().loadOrCreate()
 	key, _ := partAddressKey(offer.Address)
 	token := &PartTaskToken{row: row, generation: 1}
 	gate.outputs[key] = partOutputState{phase: PartOutputInstalled, task: token, installation: 1}

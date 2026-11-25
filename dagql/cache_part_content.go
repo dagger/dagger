@@ -1003,7 +1003,7 @@ func (c *Cache) installChainPart(ctx context.Context, receiver AnyResult, source
 func (c *Cache) settlePart(ctx context.Context, row *sharedResult, address PersistedPartAddress, ownerTask *PartTaskToken, generation uint64) error {
 	ctx = context.WithoutCancel(ctx)
 	c.lockGraphForCtx(ctx, workPart)
-	gate := row.partGate.loadOrCreate()
+	gate := row.partGateCell().loadOrCreate()
 	gate.mu.Lock()
 	key, _ := partAddressKey(address)
 	state := gate.outputs[key]
