@@ -64,8 +64,9 @@ func TestPromptSlashCommandMapping(t *testing.T) {
 }
 
 // TestAgentCommandsActingOnConversation pins which /commands are stamped with
-// the agent they were submitted to, and so render in its transcript alone:
-// session-wide ones (account setup, help) must keep showing in every tab.
+// the agent they were submitted to, and so render as its work rather than in
+// every agent's transcript: session-wide ones (account setup, help) must keep
+// showing in every tab.
 func TestAgentCommandsActingOnConversation(t *testing.T) {
 	for _, line := range []string{
 		"/compact", "/clear", "/history", "/model gpt-6-astra", "/effort\thigh",

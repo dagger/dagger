@@ -76,8 +76,8 @@ func (h *shellCallHandler) CommandsList(name string, cmds []*ShellCommand) strin
 // builtins. Routing, completion, and help share it so discovery stays honest.
 //
 // conversation marks the commands that act on the conversation they were
-// submitted to (see shellCallHandler.commandTarget), whose spans belong in that
-// agent's transcript alone; the rest are session-wide.
+// submitted to (see shellCallHandler.commandTarget), whose spans are stamped as
+// that agent's work (telemetryattrs.AgentOwnerAttr); the rest are session-wide.
 var agentCommandHelp = []struct {
 	name, description      string
 	advanced, conversation bool
