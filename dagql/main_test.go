@@ -31,7 +31,23 @@ func TestMain(m *testing.M) {
 		classes       int
 		classDrifts   []string
 		classChecked  time.Duration
+		noted         int
+		unnoted       []string
+		notedChecked  time.Duration
 	)
+	testPersistNotesAlways = true
+	testPersistNotes = func(_ *Cache, before, after *persistPrints) {
+		at := time.Now()
+		err := checkPersistNotes(before, after)
+		took := time.Since(at)
+		mu.Lock()
+		defer mu.Unlock()
+		noted++
+		notedChecked += took
+		if err != nil {
+			unnoted = append(unnoted, err.Error())
+		}
+	}
 	testCacheClosing = func(c *Cache) {
 		at := time.Now()
 		classErr := c.verifyEqClassUses()
@@ -87,6 +103,15 @@ func TestMain(m *testing.M) {
 		code = 1
 	} else {
 		fmt.Fprintf(os.Stderr, "saves against a full save: %d saves checked in %s, none differed\n", saves, saveChecked)
+	}
+	if len(unnoted) > 0 {
+		fmt.Fprintf(os.Stderr, "a write changed what a save writes without noting it in %d of %d saves, checked in %s:\n", len(unnoted), noted, notedChecked)
+		for _, d := range unnoted {
+			fmt.Fprintln(os.Stderr, "  "+d)
+		}
+		code = 1
+	} else {
+		fmt.Fprintf(os.Stderr, "saves against the writers' notes: %d saves checked in %s, every change noted\n", noted, notedChecked)
 	}
 	if len(disagreements) > 0 {
 		fmt.Fprintf(os.Stderr, "the narrowed and whole cycle searches disagreed on %d of %d merges:\n", len(disagreements), judged)
