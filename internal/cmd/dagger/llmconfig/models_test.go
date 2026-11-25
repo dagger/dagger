@@ -146,7 +146,7 @@ func TestSetupReasoningEffortOptions(t *testing.T) {
 	gemini, ok := ModelByID("google", "gemini-2.5-flash")
 	require.True(t, ok)
 	require.Empty(t, gemini.ReasoningLevels)
-	require.Len(t, setupReasoningEffortOptions(gemini), 1, "Gemini budget translation is not implemented")
+	require.Len(t, setupReasoningEffortOptions(gemini), 1, "setup persists only catalog-declared native levels")
 }
 
 func TestCopilotCatalog(t *testing.T) {

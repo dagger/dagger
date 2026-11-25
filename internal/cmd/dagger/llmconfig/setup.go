@@ -784,18 +784,18 @@ func promptReasoningEffort(ctx context.Context, ph PromptHandler, provider, mode
 	return nil
 }
 
-// setupReasoningEffortOptions keeps the saved empty effort backward-compatible:
-// it disables optional thinking, but means provider default for always-thinking
-// models. Neither case should persist a display name as the API value.
+// setupReasoningEffortOptions keeps the saved empty effort backward-compatible.
+// It omits an explicit effort, leaving thinking behavior to the provider.
+// Display names must never be persisted as API values.
 func setupReasoningEffortOptions(m ModelInfo) []huh.Option[string] {
 	unsetLabel := "Off"
 	if m.AlwaysReason {
 		unsetLabel = "Provider default"
 	}
 	opts := []huh.Option[string]{huh.NewOption(unsetLabel, "")}
-	// Setup only persists native effort levels. The conversation picker's
-	// conventional budget levels are not translated by every provider yet
-	// (notably Gemini 2.5), so do not offer them as saved provider defaults.
+	// Setup only persists catalog-declared native effort levels. Keep the
+	// conversation picker's conventional budget fallback out of saved
+	// provider defaults: not every transport translates those levels.
 	if len(m.ReasoningLevels) == 0 {
 		return opts
 	}
