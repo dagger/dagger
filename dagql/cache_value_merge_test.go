@@ -1923,7 +1923,9 @@ func TestMergeValuesRefusesADependencyCycle(t *testing.T) {
 
 // The same rule when one live list holds both values of the recipe, the
 // retired, expired one and the current one: the unexpired record is the
-// recipe's, into an engine and into the Cloud.
+// recipe's, into an engine and into the Cloud. The list's two items land on
+// one entry, so it is relocated after its preparation, still before the
+// commit's lock.
 func TestMergeValuesDecidesARecipeHeldTwiceInAList(t *testing.T) {
 	t.Parallel()
 	ctx, a, srv := transferTestCache(t)
@@ -1947,10 +1949,13 @@ func TestMergeValuesDecidesARecipeHeldTwiceInAList(t *testing.T) {
 				bctx, b = storedPartTestCache(t, WithBlobStore())
 				from = "cache-a"
 			}
+			var under []uint64
+			b.testRelocatedUnderLock = func(ordinal uint64) { under = append(under, ordinal) }
 			reply, err := b.MergeValues(bctx, from, bundle)
 			require.NoError(t, err)
 			value := mergeTestValueOf(t, reply, freshOrdinal)
 			require.True(t, value.ExpiresAtUnix == 0 || value.ExpiresAtUnix > time.Now().Unix(), "the unexpired record decides: %+v", value)
+			require.Empty(t, under, "nothing is relocated under the lock")
 		})
 	}
 	require.NoError(t, a.ReleaseSession(ctx, "new-session"))
