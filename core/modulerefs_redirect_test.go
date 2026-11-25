@@ -22,7 +22,9 @@ func TestDaggerGetEligible(t *testing.T) {
 	}{
 		{"www.marcosnils.com/go", true},
 		{"https://www.marcosnils.com/go", true},
-		{"github.com/dagger/dagger", true},
+		{"github.com/dagger/dagger", false},
+		{"https://github.com/dagger/dagger@main", false},
+		{"codeberg.org/dagger/dagger", false},
 		{"www.marcosnils.com/go@v1.2.3", true},
 		{"http://example.com/mod", false},
 		{"ssh://git@github.com/foo/bar", false},
@@ -448,4 +450,41 @@ func TestResolveDaggerGetRedirectPreservesDestinationVersion(t *testing.T) {
 			})
 		}
 	}
+}
+
+// A ref to a known code host, such as github.com, is never a vanity ref: a
+// vanity URL is served from its owner's own domain. Resolving one reads
+// nothing of the session's, so a resolver whose result stands for what it
+// read (dagql.WithCallScopes) isn't kept to its session by it, and a vanity
+// entry written by hand into the workspace's lock for such a host isn't
+// followed. The engine writes such entries only after probing a host, and it
+// never probes a known one. A vanity ref on another host still reads the
+// session's lock.
+func TestResolveDaggerGetRedirectReadsNothingOfTheSessionForAKnownCodeHost(t *testing.T) {
+	lock := workspace.NewLock()
+	for _, source := range []string{"https://github.com/dagger/go", "https://127.0.0.1/go"} {
+		require.NoError(t, lock.SetLookup(
+			workspace.CoreLockNamespace,
+			workspace.LockOperationVanityURL,
+			[]any{source},
+			"https://github.com/someone-else/go",
+		))
+	}
+	ctx := ContextWithQuery(t.Context(), &Query{Server: &mockServer{workspaceLock: lock}})
+
+	known := "github.com/dagger/go@79a92beb4df0898400ef7f7a632009035290383b"
+	require.False(t, daggerGetEligible(known))
+	scoped, scopes := dagql.WithCallScopes(ctx)
+	resolved, err := ResolveDaggerGetRedirect(scoped, known)
+	require.NoError(t, err)
+	require.Equal(t, known, resolved, "a known code host's ref isn't redirected by a lock entry")
+	require.Empty(t, scopes.SessionBound(), "resolving a known code host's ref reads nothing of the session")
+	require.True(t, ModuleRefDecidedByContent(known, "", true), "a known code host's ref read as Git names its repository outright")
+	require.False(t, ModuleRefDecidedByContent(known, "", false), "a ref without a scheme could be a local directory, the caller's to decide")
+
+	scoped, scopes = dagql.WithCallScopes(ctx)
+	resolved, err = ResolveDaggerGetRedirect(scoped, "https://127.0.0.1/go@v1")
+	require.NoError(t, err)
+	require.Equal(t, "https://github.com/someone-else/go@v1", resolved, "another host's vanity entry is followed")
+	require.NotEmpty(t, scopes.SessionBound(), "resolving a vanity ref reads the session's lock")
 }
