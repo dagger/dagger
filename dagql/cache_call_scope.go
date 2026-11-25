@@ -14,7 +14,9 @@ type callScopesKey struct{}
 // context stay reusable. A resolver whose result stands for those calls
 // keeps it no longer than they are: not past its session when one is keyed
 // per call, session or client, so a later session makes it again, and not
-// past the earliest expiry of their results.
+// past the earliest expiry of their results. A call keyed per client only to
+// borrow what its client lends it (FieldSpec.PerClientOnlyToBorrow) doesn't
+// keep it to its session.
 //
 // Only direct calls count. A cached call's result stands for the calls its
 // own resolver makes. An uncached call runs again each time, so the calls it
@@ -51,7 +53,10 @@ func (s *CallScopes) ExpiresAtUnix() int64 {
 }
 
 func (s *CallScopes) record(req *CallRequest) {
-	if req == nil || req.ResultCall == nil || req.DoNotCache || !sessionBoundInputs(req.ImplicitInputs) {
+	// A call keyed per client only to borrow (CallRequest.PerClientOnlyToBorrow)
+	// names what it took from its client in the result it returns, which the
+	// cache serves only to a session holding it.
+	if req == nil || req.ResultCall == nil || req.DoNotCache || req.PerClientOnlyToBorrow || !sessionBoundInputs(req.ImplicitInputs) {
 		return
 	}
 	s.mu.Lock()
