@@ -46,7 +46,11 @@ func (endpoint *LLMEndpoint) otelHTTPClient(provider string) *http.Client {
 	return &http.Client{
 		// A local endpoint is reached through the client's session, so its
 		// traffic is not external.
-		Transport: newLLMOTelTransport(base, provider, endpoint.dial == nil),
+		Transport: &llmUsageTransport{
+			base:     newLLMOTelTransport(base, provider, endpoint.dial == nil),
+			provider: string(endpoint.Provider),
+			model:    endpoint.Model,
+		},
 	}
 }
 
