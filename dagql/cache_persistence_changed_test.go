@@ -6,7 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
+	"github.com/stretchr/testify/require"
 	"gotest.tools/v3/assert"
 )
 
@@ -56,4 +58,65 @@ func TestCachePersistenceSaveWritesOnlyWhatChanged(t *testing.T) {
 	var saved int
 	assert.NilError(t, c.sqlDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM results`).Scan(&saved))
 	assert.Equal(t, saved, entries+1)
+}
+
+// A Cloud's saves write only what changed, across the changes a service
+// makes: new entries, a changed last use, a stored part, a prune that empties
+// the store, a compaction of its classes, a restart. TestMain checks every one
+// of these saves against a full save at its hold. It runs on several stores,
+// each with its own fingerprint seed.
+func TestCloudSavesWriteOnlyWhatChanged(t *testing.T) {
+	t.Parallel()
+	for i := range 6 {
+		path := filepath.Join(t.TempDir(), fmt.Sprintf("cloud-%d.db", i))
+		ctx, cloud := storedPersistenceTestCloud(t, path)
+		cloud.closeStoredBodies()
+		first, _ := storedPersistenceTestRootAndDep(t, ctx, cloud, fmt.Sprintf("first-%d", i))
+		second, _ := storedPersistenceTestRootAndDep(t, ctx, cloud, fmt.Sprintf("second-%d", i))
+		require.NoError(t, cloud.Checkpoint(ctx))
+		require.Positive(t, cloud.PersistedResults())
+		require.Equal(t, cloud.PersistedResults(), cloud.PersistedWritten(), "a first save writes every entry")
+
+		require.NoError(t, cloud.Checkpoint(ctx))
+		require.Zero(t, cloud.PersistedWritten(), "nothing changed")
+
+		storedPruneTestUse(cloud, first, time.Now().Add(-time.Hour))
+		require.NoError(t, cloud.Checkpoint(ctx))
+		require.Equal(t, 1, cloud.PersistedWritten(), "only the entry whose last use moved")
+
+		stored, _, err := cloud.SetStoredPart(ctx, second, storedPruneTestPart("snapshot", map[string]int64{fmt.Sprintf("layer-%d", i): 10}), 0)
+		require.NoError(t, err)
+		require.True(t, stored)
+		require.NoError(t, cloud.Checkpoint(ctx))
+		require.Positive(t, cloud.PersistedWritten(), "the entry that stores a part")
+		require.Less(t, cloud.PersistedWritten(), cloud.PersistedResults())
+
+		storedPersistenceTestRootAndDep(t, ctx, cloud, fmt.Sprintf("third-%d", i))
+		require.NoError(t, cloud.Checkpoint(ctx))
+
+		_, err = cloud.PruneMetadataEstimate(ctx, 2, 1)
+		require.NoError(t, err)
+		require.NoError(t, cloud.Checkpoint(ctx))
+		// The engine's holdings kept the pruned entries; a store keeps no
+		// holding, so they go with them.
+		_, _, err = cloud.CollectRemoteHoldings(ctx, cloud.ReleaseRemoteCache(ctx, "cache-a").Candidates, nil)
+		require.NoError(t, err)
+		require.NoError(t, cloud.Checkpoint(ctx))
+		_, _, err = cloud.CompactEqClasses(ctx)
+		require.NoError(t, err)
+		storedPersistenceTestRootAndDep(t, ctx, cloud, fmt.Sprintf("fourth-%d", i))
+		require.NoError(t, cloud.Checkpoint(ctx))
+
+		before := storedPersistenceTestState(cloud)
+		require.NoError(t, cloud.Close(ctx))
+		ctx, cloud = storedPersistenceTestCloud(t, path)
+		cloud.closeStoredBodies()
+		require.Equal(t, before, storedPersistenceTestState(cloud))
+		require.NoError(t, cloud.Checkpoint(ctx))
+		require.Zero(t, cloud.PersistedWritten(), "a save right after a restore writes nothing: the store holds what was restored")
+		storedPersistenceTestRootAndDep(t, ctx, cloud, fmt.Sprintf("fifth-%d", i))
+		require.NoError(t, cloud.Checkpoint(ctx))
+		require.Equal(t, 2, cloud.PersistedWritten(), "the new root and its dependency")
+		require.NoError(t, cloud.Close(ctx))
+	}
 }

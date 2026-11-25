@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"hash/maphash"
 	"runtime"
 	"slices"
 	"strconv"
@@ -46,7 +47,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 	// The tables are independent reads of a store nothing else writes yet, so
 	// they are listed concurrently, each on its own connection.
 	lists, listCtx := errgroup.WithContext(ctx)
-	listImportedResultRows(lists, listCtx, &resultRows, c.blobBacked, c.pdb.EachMirrorResult)
+	listImportedResultRows(lists, listCtx, &resultRows, c.blobBacked, c.persistSeed, c.pdb.EachMirrorResult)
 	listMirrorRows(lists, listCtx, "eq_classes", &eqClassRows, c.pdb.ListMirrorEqClasses)
 	listMirrorRows(lists, listCtx, "eq_class_digests", &eqClassDigestRows, c.pdb.ListMirrorEqClassDigests)
 	listMirrorRows(lists, listCtx, "terms", &termRows, c.pdb.ListMirrorTerms)
@@ -225,7 +226,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				description:           row.Description,
 				recordType:            row.RecordType,
 				persistedEnvelope:     env,
-				changedAt:             row.stamp,
+				changedAt:             uint64(row.ChangeStamp),
 			}
 			res.payloadBytes.Store(persistedEnvelopePayloadBytes(env))
 			res.storeResultCall(frame)
@@ -267,8 +268,8 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			}
 			c.putResultLocked(res)
 			c.traceImportResultLoaded(ctx, importRunID, resultID, frame)
-			if row.stamp > highestStamp {
-				highestStamp = row.stamp
+			if stamp := uint64(row.ChangeStamp); stamp > highestStamp {
+				highestStamp = stamp
 			}
 		}
 		if trusted && writes < highestStamp {
@@ -574,6 +575,10 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 	if importErr != nil {
 		return importErr
 	}
+	// What the database holds, as its rows were read, before the restore's
+	// own work below changes an entry: the next save compares with it.
+	kept := keptFromImportedRows(c.persistSeed, resultRows, eqClassRows, eqClassDigestRows, termRows, termInputRows,
+		resultOutputEqClassRows, persistedEdgeRows, resultCallRows, resultTaughtRows, resultDepRows, resultSnapshotRows)
 	if err := c.indexRestoredEntries(indexed); err != nil {
 		return err
 	}
@@ -737,7 +742,10 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 		}
 	}
 
-	return c.settleRestoredOffers(ctx, finalOffers)
+	if err := c.settleRestoredOffers(ctx, finalOffers); err != nil {
+		return err
+	}
+	return c.keepRestoredRecords(&kept)
 }
 
 // listMirrorRows lists one table of the persistence store into dst.
@@ -773,19 +781,24 @@ type importedResultRow struct {
 	frame          *ResultCall
 	frameErr       error
 	// body is, on a blob-backed cache, the row's stored record as it was
-	// held, whose envelope env is without its value, parts the record's
-	// parts, and stamp its entry's change stamp (decodeStoredRow).
+	// held, whose envelope env is without its value, and parts the record's
+	// parts (decodeStoredRow).
 	body  *storedBody
 	parts *partFacts
-	stamp uint64
+	// recordBytes fingerprints the record row as the database holds it
+	// (recordBytesPrint), for what the cache keeps of the database
+	// (persistKept).
+	recordBytes uint64
 }
 
-// decode decodes the row's call frame and self payload, and drops their raw
-// bytes. Decoding reads only the row. A blob-backed cache's stored record is
-// taken back as it was held, its value not decoded.
-func (row *importedResultRow) decode(blobBacked bool) {
+// decode decodes the row's call frame and self payload, fingerprints them
+// with seed, and drops their raw bytes. Decoding reads only the row. A
+// blob-backed cache's stored record is taken back as it was held, its value
+// not decoded.
+func (row *importedResultRow) decode(blobBacked bool, seed maphash.Seed) {
 	row.payloadBytes = len(row.SelfPayload)
 	row.callFrameBytes = len(row.CallFrameJSON)
+	row.recordBytes = recordBytesPrint(seed, row.CallFrameJSON, row.SelfPayload)
 	if row.CallFrameJSON != "" {
 		row.frame = &ResultCall{}
 		row.frameErr = json.Unmarshal([]byte(row.CallFrameJSON), row.frame)
@@ -793,7 +806,7 @@ func (row *importedResultRow) decode(blobBacked bool) {
 	switch {
 	case len(row.SelfPayload) == 0:
 	case blobBacked && isStoredRow(row.SelfPayload):
-		row.env, row.body, row.parts, row.stamp, row.envErr = decodeStoredRow(row.SelfPayload, row.frame)
+		row.env, row.body, row.parts, row.envErr = decodeStoredRow(row.SelfPayload, row.frame)
 	default:
 		row.env = new(PersistedResultEnvelope)
 		row.envErr = json.Unmarshal(row.SelfPayload, row.env)
@@ -808,7 +821,7 @@ func (row *importedResultRow) decode(blobBacked bool) {
 // decoded, so a restore never holds the whole table's bytes beside their
 // decoded form. The import loop checks the rows in order, so the error it
 // reports is the one of the first invalid row.
-func listImportedResultRows(lists *errgroup.Group, ctx context.Context, dst *[]importedResultRow, blobBacked bool, each func(context.Context, func(persistdb.MirrorResult) error) error) {
+func listImportedResultRows(lists *errgroup.Group, ctx context.Context, dst *[]importedResultRow, blobBacked bool, seed maphash.Seed, each func(context.Context, func(persistdb.MirrorResult) error) error) {
 	lists.Go(func() error {
 		pending := make(chan []importedResultRow, runtime.GOMAXPROCS(0))
 		var decoders sync.WaitGroup
@@ -816,7 +829,7 @@ func listImportedResultRows(lists *errgroup.Group, ctx context.Context, dst *[]i
 			decoders.Go(func() {
 				for batch := range pending {
 					for i := range batch {
-						batch[i].decode(blobBacked)
+						batch[i].decode(blobBacked, seed)
 					}
 				}
 			})

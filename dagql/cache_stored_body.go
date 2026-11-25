@@ -594,8 +594,10 @@ func isStoredRow(payload []byte) bool {
 
 // storedRowHeader is a saved stored record's header: its light envelope, with
 // the parts the cache stores and its decline mark, as an engine's saved
-// envelope carries them, the entries the body's references name, the
-// record's parts (partFacts), and the entry's change stamp.
+// envelope carries them, the entries the body's references name, and the
+// record's parts (partFacts). The entry's change stamp is saved in its results
+// row (persistdb.MirrorResult.ChangeStamp), which a stamp moved by a class mate
+// writes without writing the record.
 type storedRowHeader struct {
 	Envelope      PersistedResultEnvelope `json:"envelope"`
 	EnvelopeBytes int64                   `json:"envelopeBytes"`
@@ -603,12 +605,6 @@ type storedRowHeader struct {
 	Parts         []storedRowPart         `json:"parts,omitempty"`
 	// Complete are the parts the record proves complete (storedBody.complete).
 	Complete []PersistedPartAddress `json:"complete,omitempty"`
-	// Stamp is the entry's change stamp (sharedResult.changedAt) as the
-	// save read it, which the restored entry takes back. A row saved
-	// before rows carried it restores at zero, with its cache's write
-	// count (persistdb.MetaKeyBundleWrites), which such a store doesn't
-	// have either.
-	Stamp uint64 `json:"stamp,omitempty"`
 }
 
 type storedRowPart struct {
@@ -618,10 +614,9 @@ type storedRowPart struct {
 }
 
 // encodeStoredRow returns the saved self payload of a stored record: header
-// is its envelope as a save writes it, whose value the body holds, and stamp
-// its entry's change stamp.
-func encodeStoredRow(header *PersistedResultEnvelope, body *storedBody, parts *partFacts, stamp uint64) ([]byte, error) {
-	h := storedRowHeader{Envelope: *lightStoredEnvelope(header), EnvelopeBytes: body.envelopeBytes, Refs: body.refs, Stamp: stamp}
+// is its envelope as a save writes it, whose value the body holds.
+func encodeStoredRow(header *PersistedResultEnvelope, body *storedBody, parts *partFacts) ([]byte, error) {
+	h := storedRowHeader{Envelope: *lightStoredEnvelope(header), EnvelopeBytes: body.envelopeBytes, Refs: body.refs}
 	h.Envelope.StoredParts = header.StoredParts
 	h.Envelope.Run, h.Envelope.RunRan = header.Run, header.RunRan
 	for _, part := range parts.declaredParts() {
@@ -639,22 +634,21 @@ func encodeStoredRow(header *PersistedResultEnvelope, body *storedBody, parts *p
 
 // decodeStoredRow reads a saved stored record's self payload, as
 // encodeStoredRow writes it, with the call its row saved: its envelope as the
-// save wrote it, without its value, its body, its parts, and its entry's
-// change stamp.
-func decodeStoredRow(payload []byte, call *ResultCall) (*PersistedResultEnvelope, *storedBody, *partFacts, uint64, error) {
+// save wrote it, without its value, its body, and its parts.
+func decodeStoredRow(payload []byte, call *ResultCall) (*PersistedResultEnvelope, *storedBody, *partFacts, error) {
 	if !isStoredRow(payload) {
-		return nil, nil, nil, 0, errors.New("stored row: no mark")
+		return nil, nil, nil, errors.New("stored row: no mark")
 	}
 	payload = payload[1:]
 	n, read := binary.Uvarint(payload)
 	if read <= 0 || n > uint64(len(payload)-read) {
-		return nil, nil, nil, 0, errors.New("stored row: bad header length")
+		return nil, nil, nil, errors.New("stored row: bad header length")
 	}
 	var h storedRowHeader
 	dec := json.NewDecoder(bytes.NewReader(payload[read : read+int(n)]))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&h); err != nil {
-		return nil, nil, nil, 0, fmt.Errorf("stored row header: %w", err)
+		return nil, nil, nil, fmt.Errorf("stored row header: %w", err)
 	}
 	body := &storedBody{
 		envelope:      slices.Clone(payload[read+int(n):]),
@@ -666,7 +660,7 @@ func decodeStoredRow(payload []byte, call *ResultCall) (*PersistedResultEnvelope
 	for _, part := range h.Parts {
 		key, err := partAddressKey(part.Address)
 		if err != nil {
-			return nil, nil, nil, 0, fmt.Errorf("stored row part: %w", err)
+			return nil, nil, nil, fmt.Errorf("stored row part: %w", err)
 		}
 		parts.declared = append(parts.declared, declaredPart{key: key, address: part.Address, state: part.State, kind: part.Kind})
 	}
@@ -674,12 +668,12 @@ func decodeStoredRow(payload []byte, call *ResultCall) (*PersistedResultEnvelope
 	for _, address := range h.Complete {
 		key, err := partAddressKey(address)
 		if err != nil {
-			return nil, nil, nil, 0, fmt.Errorf("stored row complete part: %w", err)
+			return nil, nil, nil, fmt.Errorf("stored row complete part: %w", err)
 		}
 		complete = append(complete, key)
 	}
 	parts.complete = sharedPartKeys(complete)
-	return &h.Envelope, body, parts, h.Stamp, nil
+	return &h.Envelope, body, parts, nil
 }
 
 // holdRestoredFramesCompressed has each restored stored record's body hold

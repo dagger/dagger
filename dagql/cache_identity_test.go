@@ -83,7 +83,7 @@ func TestCacheIdentityNamesWipedDatabase(t *testing.T) {
 			spoil: func(t *testing.T, ctx context.Context, path string) {
 				db, q, err := prepareCacheDBs(ctx, path, false)
 				assert.NilError(t, err)
-				_, err = db.Exec(`UPDATE results SET self_payload = x'7B6E6F742D6A736F6E'`)
+				_, err = db.Exec(`UPDATE result_records SET self_payload = x'7B6E6F742D6A736F6E'`)
 				assert.NilError(t, err)
 				assert.NilError(t, closeCacheDBs(db, q))
 			},
