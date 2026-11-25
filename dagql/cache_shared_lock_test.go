@@ -94,7 +94,7 @@ func TestCacheReadPathsShareEgraphLock(t *testing.T) {
 
 	t.Run("result ID", func(t *testing.T) {
 		runWhileEgraphReadLocked(t, c, func() error {
-			id, err := c.resultIDForCall(ctx, cacheTestIntCall("shared-lock"))
+			id, err := c.resultIDForCall(ctx, "test-session", cacheTestIntCall("shared-lock"))
 			if err != nil {
 				return err
 			}
@@ -340,7 +340,7 @@ func TestCacheConcurrentResultIDsBesideEgraphMerges(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for range lookups {
-				id, err := c.resultIDForCall(ctx, opOver(inputDigest(1)))
+				id, err := c.resultIDForCall(ctx, "test-session", opOver(inputDigest(1)))
 				if err != nil {
 					errs <- err
 					return
@@ -360,7 +360,7 @@ func TestCacheConcurrentResultIDsBesideEgraphMerges(t *testing.T) {
 
 	// The merges joined every writer's inputs to the seeded input's class.
 	for w := range writers {
-		id, err := c.resultIDForCall(ctx, opOver(inputDigest(1+(w+1)*merges)))
+		id, err := c.resultIDForCall(ctx, "test-session", opOver(inputDigest(1+(w+1)*merges)))
 		assert.NilError(t, err)
 		assert.Equal(t, id, seededID)
 	}
