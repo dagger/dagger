@@ -929,7 +929,7 @@ A module can expose several services, and `dagger start` starts each one. This d
 
 ### Caching directives
 
-By default Dagger caches function results for up to 7 days, keyed by inputs (arguments, parent state, module source). Tune it per function with `@cache`:
+By default Dagger caches function results, keyed by inputs (arguments, parent state, module source). Tune it per function with `@cache`:
 
 ```dang
 # Cache for 10 minutes (e.g. external data that changes)

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "files": {
-    "apko.gen.go": "0fc74cab35e82b6df78142bc6c6b7992ae756ab155abab7974b35627e574878f",
+    "apko.gen.go": "576a00fe4b52d0b506eb6a4ece282296f2fa9ed4c139c7f0442eca3d3bc38796",
     "dagger.gen.go": "fc87538ffd58aaf8fe713c01e161a186b94f45a840aed4135d298e7c7f13b25e"
   }
 }

@@ -1,0 +1,919 @@
+---
+title: "Ruby SDK"
+slug: /reference/sdks/ruby
+description: "Develop Dagger modules in Ruby: declare objects and functions with RBS annotations, generate clients, type-check with Steep, and call modules from plain Ruby programs."
+---
+
+# Ruby SDK
+
+The Ruby SDK lets you write Dagger modules in Ruby. You write plain Ruby classes and declare each function with `function` and an RBS type annotation. Dagger exposes those functions as API functions that anyone can call from the CLI, from another module, or over the API. Inside your functions you orchestrate containers, files, services, and secrets through generated Ruby clients: one for the core API, and one for each module you use.
+
+This page assumes you already understand the Dagger module model. If you don't, read these first:
+
+- [SDKs overview](./index.mdx) covers what a module is and how it runs
+- [Types](../api/index.mdx) covers how language types map to the Dagger API
+- [Generating code](../../using/generating.mdx) covers how generated files are reviewed and applied
+
+:::warning
+The Ruby SDK is experimental. Generated files, the declaration methods and the API may change without notice between releases. It is not recommended for production yet.
+:::
+
+:::important
+**The Ruby SDK is itself a Dagger module**, `dagger.io/sdk/ruby`, developed in [github.com/dagger/ruby-sdk](https://github.com/dagger/ruby-sdk). The CLI module commands use the installed SDK for source and client generation.
+:::
+
+## Create a module
+
+:::note
+Run these commands from inside a Git repository. That's where the new module is created.
+:::
+
+Install the Ruby SDK into your workspace, then use the module initialization command:
+
+```shell
+dagger module install dagger.io/sdk/ruby
+dagger module init ruby --name ci-tools
+```
+
+The install records the SDK module and an `[sdks.ruby]` table in the workspace's `dagger.toml`, and pins the SDK's latest release tag in `dagger.lock`. `dagger module init` returns a [changeset](../../using/generating.mdx) describing the files to create, which Dagger shows you to review before anything is written to disk. Add `-y` to apply it without prompting.
+
+:::tip
+If the repository does not have a `dagger.toml` yet, use `dagger module install --here dagger.io/sdk/ruby` to create it in the current directory.
+:::
+
+`dagger module init` arguments:
+
+| Argument | Required | Description |
+|---|---|---|
+| `--name` | no | Module name. Without `--name` or `--path`, inferred as `<project>-dev` and installed as the workspace main. |
+| `--path` | no | Where to create the module. Defaults to `<dagger.toml directory>/.dagger/modules/<name>`. |
+| `--template` | no | The starter: `default` (a constructor over the workspace and a `container` function) or `empty` (the main class alone). |
+| `--ruby-version` | no | Written to `.ruby-version`. The module then builds on the `ruby:<version>` image instead of the SDK's pinned Ruby 4.0 image. |
+
+`dagger.toml` keeps `--template` and `--ruby-version` as settings of the module's scope, and every `dagger generate` passes them again. A module needs no Ruby on the host. It builds and runs in containers.
+
+### File layout
+
+Once created and generated, a Ruby module looks like this:
+
+```
+ci-tools/
+├── dagger-module.toml   # generated: name and entrypoint
+├── Gemfile              # yours; evaluates dagger.gemfile
+├── Gemfile.lock         # written by the module image's Bundler
+├── dagger.gemfile       # generated: one path gem per SDK and client
+├── Steepfile            # yours, from the template
+├── .gitattributes       # marks generated files for linguist
+├── .gitignore
+├── lib/
+│   └── ci_tools.rb      # your module code
+├── sdk/                 # generated: the dagger-sdk gem and the module's entrypoint
+└── clients/
+    ├── core/            # generated: the core API
+    └── roots/           # generated: one method per client, for your classes
+```
+
+The engine names the main class after the module (`ci-tools` gives `CiTools`, `http-server` gives `HTTPServer`). Its file is `lib/<snake_case name>.rb`.
+
+Each generated directory holds a `.dagger-generated` marker. Generation refuses to write over a directory without that marker, so a directory you created under `clients/` is safe. The `Gemfile` gets one line, `eval_gemfile "dagger.gemfile"`, when it lacks it, and nothing else.
+
+The module manifest contains the module's name and an `[entrypoint]` table that points at `./sdk/entrypoint`, a generated [Dang](./dang.mdx) module that Dagger runs and that calls your Ruby code in the module's container.
+
+The `Gemfile` from the template:
+
+```ruby title="Gemfile"
+source "https://rubygems.org"
+
+eval_gemfile "dagger.gemfile"
+
+# bundle exec steep check. The module's container installs without this group.
+group :development do
+  gem "steep", "~> 2.1", require: false
+end
+```
+
+Add the gems your functions need to it. The module's container installs the `Gemfile` without its `development` group.
+
+## Define objects and functions
+
+A module is a set of Ruby classes. A class that does `extend Dagger::Mod::Object` is an object type. `function "description"` declares the next method as a Dagger function. Its type is an RBS annotation in a `#:` comment right above the `def`. `dagger generate` reads these annotations, and [Steep](#type-checking-with-steep) checks the code against them.
+
+Generation checks every declaration and annotation. When one is wrong, such as a function without an annotation or a type the API cannot carry, it stops with an error that names the file and line. See [Troubleshooting](#troubleshooting) for an example.
+
+```ruby title="lib/ci_tools.rb"
+require "dagger"
+require "dagger/clients/roots"
+
+class CiTools
+  extend Dagger::Mod::Object
+  include Dagger::Clients::Roots
+
+  description "Build, test and package the greeting gem."
+
+  field :source, private: true #: Dagger::Clients::Core::Directory
+  field :ruby_version, doc: "The Ruby release to build on." #: String
+
+  constructor
+  arg :ruby_version, doc: "The Ruby release to build on."
+  #: (ws: Dagger::Clients::Core::Workspace, ?ruby_version: String) -> CiTools
+  def self.create(ws:, ruby_version: "3.4")
+    source = ws.directory(path: "/", exclude: ["**/.dagger", "**/.git", "**/vendor/bundle"])
+    new(source:, ruby_version:)
+  end
+
+  function "A container with the project's gems installed."
+  #: () -> Dagger::Clients::Core::Container
+  def build
+    core.container.from(address: "ruby:#{ruby_version}-slim")
+        .with_mounted_cache(path: "/usr/local/bundle", cache: core.cache_volume(key: "bundle-#{ruby_version}"))
+        .with_directory(path: "/app", source:)
+        .with_workdir(path: "/app")
+        .with_exec(args: %w[bundle install])
+  end
+end
+```
+
+Call your functions like any other installed module, by its install name:
+
+```shell
+dagger api call ci-tools build with-exec --args=bundle,exec,rake,--version stdout
+```
+
+```
+rake, version 13.4.2
+```
+
+Key points:
+
+- `include Dagger::Clients::Roots` gives the class one private method per client of the module: `core` for the core API, and one for each [module client](#module-dependencies). Both templates put it in the main class.
+- Core types are constants under `Dagger::Clients::Core`, such as `Dagger::Clients::Core::Directory`. Names in an annotation resolve as constants in the class body do.
+- Every API argument is a Ruby keyword argument: `from(address: ...)`, `with_exec(args: ...)`. A name that is a Ruby keyword gets a trailing underscore, as in `with_service_binding(alias_: ...)`.
+- The Dagger API is lazy. Each builder method returns a new object, and nothing runs until a leaf such as `stdout`, `sync` or `size` is called. Return an unevaluated `Container` and let the caller decide what to run.
+- A module's Ruby names become API names in the engine's style. `next_version(current:)` is `nextVersion(current:)` in the API and `dagger api call ci-tools next-version --current` on the CLI. A method name that ends in `?` or `!` needs an API name, given with `function "...", name: "negate"`.
+- Top-level code in a module file must not call the API. Generation loads the files without a session.
+
+### The constructor
+
+`constructor` declares `def self.create` on the main class. Its arguments become the module's constructor arguments, which callers (or workspace settings) set when they reference the module. Its annotation returns the class, and it builds the object with `new`.
+
+`field` declares state. Its type is the `#:` comment that ends its line. `new` takes one keyword per field, and each field has a reader. A field is part of the API unless it is `private: true`. Without `constructor`, the fields of the main class are the constructor's arguments, and `field :name, default: "value"` gives one a default.
+
+Constructor arguments are set like any other argument:
+
+```shell
+dagger api call ci-tools --ruby-version=3.3 build with-exec --args=ruby,--version stdout
+```
+
+```
+ruby 3.3.14 (2026-11-19 revision f4c37f481b) [x86_64-linux]
+```
+
+### Workspace inputs
+
+To read the user's project files, declare a `Dagger::Clients::Core::Workspace` argument. Dagger fills it from the current workspace when the caller omits it. Nothing is uploaded up front. The module reads project content lazily, so only the paths it touches are loaded and become part of the cache key.
+
+The constructor above reads the workspace root once and keeps it as a private `source` field:
+
+```ruby
+source = ws.directory(path: "/", exclude: ["**/.dagger", "**/.git", "**/vendor/bundle"])
+```
+
+A `Workspace` exposes lazy accessors for project content:
+
+- `ws.directory(path:, exclude:, include:, gitignore:)` returns a `Directory` for `path`. Use `exclude` to keep the cache key tight.
+- `ws.file(path:)` returns a `File` for `path`.
+- `ws.glob(pattern:)` returns the paths that match `pattern`.
+
+For `directory` and `file`, relative paths resolve from the workspace cwd, and absolute paths, such as `"/"`, resolve from the workspace root. `glob` patterns always match paths relative to the workspace root.
+
+A `Directory` argument cannot default to a path inside the module. The engine resolves it against the caller's workspace, which contains the module only when the module lives inside that workspace. To read the module's own files, use `Dagger::Mod.module_source`.
+
+## Arguments and return values
+
+A function's annotation is its method type: keyword arguments only, one signature. RBS types map onto the Dagger type system:
+
+| Annotation | Dagger API | Notes |
+|---|---|---|
+| `String`, `Integer`, `Float` | `String`, `Int`, `Float` | |
+| `bool` | `Boolean` | |
+| `void` or `nil`, as a result | `Void` | common for checks |
+| `T?` or `T \| nil` | `T`, nullable | |
+| `Array[T]` | list | |
+| a class with `extend Dagger::Mod::Object` | object | `self` or `instance` for the class itself |
+| a module with `extend Dagger::Mod::Interface` | interface | |
+| a `Dagger::Mod::Enum` subclass | enum | |
+| `Dagger::Clients::Core::Directory`, any core or client class | that object | |
+| `Dagger::Clients::Core::JSON`, any core scalar | that scalar | |
+
+Other RBS types, such as `untyped`, `Hash` or a record, have no API equivalent.
+
+### Documenting arguments and functions
+
+The string after `function` is the function's description. `arg :name, doc: "..."` describes an argument, and comes after `function` and before the annotation. `description "..."` describes a class, and `field ..., doc:` a field. All of them appear in `dagger api functions` and `dagger api call --help`:
+
+```ruby
+function "The version after a release."
+arg :current, doc: "The version released last."
+arg :bump, doc: "The part of the version to increment."
+#: (current: String, ?bump: Bump) -> String
+def next_version(current:, bump: Bump::MINOR)
+  parts = current.split(".").map(&:to_i)
+  major, minor, patch = parts.fetch(0), parts.fetch(1), parts.fetch(2)
+  case bump
+  when Bump::MAJOR then "#{major + 1}.0.0"
+  when Bump::MINOR then "#{major}.#{minor + 1}.0"
+  else "#{major}.#{minor}.#{patch + 1}"
+  end
+end
+```
+
+```shell
+dagger api call ci-tools next-version --help
+```
+
+```
+The version after a release.
+
+USAGE
+  dagger api call ci-tools next-version [arguments]
+
+ARGUMENTS
+      --current string           The version released last. [required]
+      --bump MAJOR,MINOR,PATCH   The part of the version to increment.
+                                 (default MINOR)
+```
+
+### Defaults and optional arguments
+
+A `?` keyword in the annotation is optional, and its default is in the `def`. The default is the API's when it is a literal, or a constant that holds one or names an enum member. Any other default is Ruby's alone, and the argument is then optional to callers with no default in the API. A keyword without `?` is required.
+
+`T?` makes an argument nullable. With a `nil` default, the caller may omit it and the function decides what to do:
+
+```ruby
+function "Check the syntax of Ruby files."
+arg :paths, doc: "Files to check. Defaults to every file under lib/."
+arg :warnings, doc: "Report warnings as well as errors."
+#: (?paths: Array[String]?, ?warnings: bool) -> String
+def syntax(paths: nil, warnings: true)
+  files = paths || source.glob(pattern: "lib/**/*.rb")
+  flag = warnings ? "-wc" : "-c"
+  ruby = core.container.from(address: "ruby:#{ruby_version}-slim")
+             .with_directory(path: "/app", source:)
+             .with_workdir(path: "/app")
+  files.map { |file| "#{file}: #{ruby.with_exec(args: ["ruby", flag, file]).stdout}" }.join
+end
+```
+
+```shell
+dagger api call ci-tools syntax
+```
+
+```
+lib/greeting.rb: Syntax OK
+```
+
+```shell
+dagger api call ci-tools syntax --paths=lib/greeting.rb,test/greeting_test.rb --warnings=false
+```
+
+```
+lib/greeting.rb: Syntax OK
+test/greeting_test.rb: Syntax OK
+```
+
+### Enums
+
+A subclass of `Dagger::Mod::Enum` is an enum. Its members are upper snake case, each with an optional `doc:`. Declare members without a value, so each member's value is its name:
+
+```ruby title="lib/ci_tools/bump.rb"
+class Bump < Dagger::Mod::Enum
+  description "The part of a version to increment."
+
+  member :MAJOR, doc: "Breaking changes."
+  member :MINOR, doc: "New features."
+  member :PATCH, doc: "Bug fixes."
+end
+```
+
+Each member is a constant of the class, `Bump::MINOR`, which the `next_version` function above uses as its default. Callers pass members by name:
+
+```shell
+dagger api call ci-tools next-version --current=0.3.0
+dagger api call ci-tools next-version --current=0.3.0 --bump=PATCH
+```
+
+```
+0.4.0
+0.3.1
+```
+
+Passing an invalid value produces an error listing the valid choices:
+
+```
+Error: invalid argument "HOTFIX" for "--bump" flag: value should be one of MAJOR,MINOR,PATCH
+```
+
+### Custom object types
+
+To return several related values, declare another object class. Its fields are its API, and `new` builds it:
+
+```ruby title="lib/ci_tools/build_result.rb"
+class BuildResult
+  extend Dagger::Mod::Object
+
+  description "A packaged gem and the version it was built at."
+
+  field :gem, doc: "The .gem file." #: Dagger::Clients::Core::File
+  field :version, doc: "The gem's version." #: String
+end
+```
+
+```ruby
+function "Package the gem."
+#: () -> BuildResult
+def package
+  built = build.with_exec(args: %w[gem build greeting.gemspec --output greeting.gem])
+  version = built.with_exec(args: ["ruby", "-r./lib/greeting", "-e", "print Greeting::VERSION"]).stdout
+  BuildResult.new(gem: built.file(path: "greeting.gem"), version:)
+end
+```
+
+```shell
+dagger api call ci-tools package version
+dagger api call ci-tools package gem size
+```
+
+```
+0.3.0
+4096
+```
+
+A file per class under `lib/ci_tools/`, loaded with `require_relative` from the main file, keeps a module readable. Dagger prefixes custom type names in the schema (`CiToolsBuildResult`) to avoid collisions when several modules are loaded together.
+
+### Interfaces
+
+An interface lets a function accept any object that provides the functions it needs, whatever module it comes from. A Ruby module that does `extend Dagger::Mod::Interface` declares one. Its functions are declarations only:
+
+```ruby title="lib/ci_tools/linter.rb"
+module Linter
+  extend Dagger::Mod::Interface
+
+  description "Anything that lints a directory."
+
+  function "Offenses in a directory, one per line."
+  #: (source: Dagger::Clients::Core::Directory) -> String
+  def lint_report(source:) = raise(NotImplementedError)
+end
+```
+
+```ruby
+function "Lint the project with any linter."
+arg :linter, doc: "The linter to run."
+#: (linter: Linter) -> String
+def lint(linter:) = linter.lint_report(source:)
+```
+
+Any object with a matching `lint_report` function satisfies `Linter`. This `rubocop` module, created with `--template empty`, provides one:
+
+```ruby title=".dagger/modules/rubocop/lib/rubocop.rb"
+require "dagger"
+require "dagger/clients/roots"
+
+class Rubocop
+  extend Dagger::Mod::Object
+  include Dagger::Clients::Roots
+
+  description "Lint Ruby code with RuboCop."
+
+  function "RuboCop's offenses in a directory, one per line."
+  arg :source, doc: "The Ruby code to lint."
+  #: (source: Dagger::Clients::Core::Directory) -> String
+  def lint_report(source:)
+    core.container.from(address: "ruby:3.4-slim")
+        .with_exec(args: %w[gem install rubocop --no-document])
+        .with_directory(path: "/src", source:)
+        .with_workdir(path: "/src")
+        .with_exec(args: %w[rubocop --format simple lib], expect: Dagger::Clients::Core::ReturnType::ANY)
+        .stdout
+  end
+end
+```
+
+An interface argument arrives as the implementing object, and its calls are served through the module's clients. So the implementation must come from a module that `ci-tools` declares as a [client](#module-dependencies):
+
+```shell
+cd .dagger/modules/ci-tools
+dagger module client add ../rubocop
+```
+
+Pass the `rubocop` module where `ci-tools` expects a `Linter`:
+
+```shell
+dagger -c 'ci-tools | lint $(rubocop)'
+```
+
+```
+== lib/greeting.rb ==
+C:  1:  1: Style/Documentation: Missing top-level documentation comment for module Greeting.
+...
+1 file inspected, 4 offenses detected, 3 offenses autocorrectable
+```
+
+An interface function returns scalars, core objects or other interfaces, not a module object.
+
+## Core Dagger types
+
+The `core` client exposes the full Dagger API. The patterns below are the ones you'll reach for most.
+
+### Containers and files
+
+The `build` function above shows the common container chain. `core.container.from(address:)` starts from an image, `with_directory` copies a `Directory` in, and `with_exec` runs a command. `with_mounted_cache` with `core.cache_volume(key:)` gives a persistent cache keyed by name, here for installed gems. Every operation is cached by its inputs.
+
+`Container#file(path:)` and `Container#directory(path:)` read results back out, as `package` does with `built.file(path: "greeting.gem")`.
+
+### Secrets
+
+Accept secrets as `Dagger::Clients::Core::Secret`, never as a plain string. Dagger scrubs secret values from logs, caches and output.
+
+```ruby
+function "Show the environment a gem release runs in."
+arg :api_key, doc: "A RubyGems API key."
+#: (api_key: Dagger::Clients::Core::Secret) -> String
+def release_env(api_key:)
+  core.container.from(address: "ruby:#{ruby_version}-slim")
+      .with_secret_variable(name: "GEM_HOST_API_KEY", secret: api_key)
+      .with_exec(args: ["sh", "-c", "env | grep ^GEM_"])
+      .stdout
+end
+```
+
+Callers supply secrets through providers, such as `env://`, `file://`, `cmd://` or `op://`:
+
+```shell
+dagger api call ci-tools release-env --api-key=env://GEM_HOST_API_KEY
+```
+
+```
+GEM_HOST_API_KEY=***
+GEM_HOME=/usr/local/bundle
+```
+
+### Services
+
+A `Service` is a long-running container. Bind one to another container with `with_service_binding`, and reach it by the alias as a hostname:
+
+```ruby
+function "A Redis server for integration tests."
+#: () -> Dagger::Clients::Core::Service
+def redis = core.container.from(address: "redis:7-alpine").with_exposed_port(port: 6379).as_service
+
+function "Ping Redis from a Ruby container."
+#: () -> String
+def redis_ping
+  script = 'redis = TCPSocket.new("redis", 6379); redis.write("PING\r\n"); print redis.gets'
+  core.container.from(address: "ruby:#{ruby_version}-slim")
+      .with_service_binding(alias_: "redis", service: redis)
+      .with_exec(args: ["ruby", "-rsocket", "-e", script])
+      .stdout
+end
+```
+
+```shell
+dagger api call ci-tools redis-ping
+```
+
+```
++PONG
+```
+
+## Module dependencies
+
+A module calls another module through a generated client. Manage clients from the module directory:
+
+```shell
+cd .dagger/modules/ci-tools
+dagger module client add ../rubocop
+dagger module client list
+```
+
+`dagger module client list` shows each client's exact target. Pass that target to `dagger module client rm` to remove the client:
+
+```
+SCOPE                     SDK   TARGET
+.dagger/modules/ci-tools  ruby  ./.dagger/modules/rubocop
+```
+
+Client add and remove commands update the scope's `clients` in `dagger.toml`, and run generation. No client reaches the module manifest:
+
+```toml title="dagger.toml"
+[sdks.ruby.scopes.".dagger/modules/ci-tools"]
+is-module = true
+name = "ci-tools"
+clients = ["./.dagger/modules/rubocop"]
+```
+
+Generation writes `clients/rubocop/`, adds a line to `dagger.gemfile`, relocks `Gemfile.lock`, and adds a `rubocop` method to `clients/roots/`. A client loads a module of the workspace by its path, also in a workspace opened from a Git ref.
+
+In a class that includes `Dagger::Clients::Roots`, call the client by its method. The method's name is the module's name in snake case, and it takes the module's constructor arguments:
+
+```ruby
+function "Lint the project with RuboCop."
+#: () -> String
+def rubocop_report = rubocop.lint_report(source:)
+```
+
+`dagger api call ci-tools rubocop-report` prints the same report as `lint` above.
+
+The methods are instance methods. `def self.create`, the class body and other classes use the long form, `Dagger::Clients::Rubocop.rubocop`. A field, function or argument of the class cannot share the name of a client method.
+
+### Gems outside the module
+
+A module's `Gemfile` can name gems elsewhere in its repository, with a path relative to the `Gemfile`:
+
+```ruby title=".dagger/modules/ci-tools/Gemfile"
+source "https://rubygems.org"
+
+eval_gemfile "dagger.gemfile"
+
+gem "shared", path: "../../../gems/shared"
+```
+
+`dagger generate` finds these paths, and the engine then loads them with the module. Each path must be a string literal inside the workspace. Run `dagger generate` after changing which gems outside the module the `Gemfile` names, or a gem's gemspec. Until then a call fails with Bundler's error and a hint:
+
+```
+The gemspecs for path gems changed, but the lockfile can't be updated because
+frozen mode is set
+...
+ruby-sdk: if you changed declarations, clients or gems, run `dagger generate`
+```
+
+Only what the `Gemfile` names is loaded. A file that module code reads outside its directory, with `require_relative` or `File.read`, is not there.
+
+## Regenerate bindings
+
+`dagger generate` regenerates every Ruby scope: the generated gems, `dagger.gemfile`, the lock, and for a module its entrypoint in `sdk/entrypoint/`.
+
+```shell
+dagger generate
+```
+
+A module needs it after a change to what it declares (a function, an argument, an annotation, a field), to its clients, or to its gems. A function declared since the last generation is unknown to the engine, so `dagger api call` reports an unknown command.
+
+An edit to a function's body runs at once. A call builds the module's container from its current source. Gem installation is cached by the contents of `Gemfile`, `Gemfile.lock`, `dagger.gemfile` and the gemspecs of the module's path gems, and by the contents of the gems and files outside the module that the `Gemfile` names. An edit to `lib/` reuses the installed gems. An edit to a gem outside the module runs the installation again.
+
+The generated entrypoint records the line of each function. An edit that moves functions up or down a file leaves the module callable, but its staleness check fails until the next `dagger generate`:
+
+```
+✘ dag://?check=ruby-sdk/generate/stale 4.1s ERROR
+  ┃ diff --git a/.dagger/modules/ci-tools/sdk/entrypoint/signatures.json b/.dagger/modules/ci-tools/sdk/entrypoint/signatures.json
+  ┃ ...
+  ┃ -          "line": 70,
+  ┃ +          "line": 68,
+```
+
+### Commit vs. generate
+
+Commit the generated files with the change that required them. A module runs from its committed generated files, from a local checkout as from a Git ref. The generated `.gitattributes` marks them as `linguist-generated`:
+
+```text title=".gitattributes"
+/sdk/** linguist-generated
+/clients/** linguist-generated
+/dagger.gemfile linguist-generated
+```
+
+`sdk/` vendors the SDK library, so a module runs the SDK it was generated with until it is generated again.
+
+## Engine version
+
+A Ruby module's manifest has no `engineVersion`, and generation refuses one. The Dagger API version a module uses is recorded in `sdk/entrypoint/dang.toml`:
+
+```toml title="sdk/entrypoint/dang.toml"
+dang = "2.1"
+
+[imports]
+[imports.Dagger]
+dagger = "v1.0.0-beta.27"
+```
+
+The SDK release sets this version, and the module gets a new one at its next `dagger generate` after an SDK update.
+
+## Checks, generators, services, and cache
+
+A useful, reusable module provides at least one first-class function type: a **check** (run by `dagger check`), a **generator** (run by `dagger generate`), or a **service** (started by `dagger start`). Checks and generators are marked with an option of `function`. A service needs no marker.
+
+| Option | Return type | Run by | Purpose |
+|---|---|---|---|
+| `check: true` | `void` | `dagger check` | validate the project (test, lint, scan) |
+| `generator: true` | `Dagger::Clients::Core::Changeset` | `dagger generate` | produce a diff to apply to the workspace |
+| none | `Dagger::Clients::Core::Service` | `dagger start` | start a long-running service |
+
+### Checks {#checks}
+
+A check validates something and fails when it raises. Mark it with `check: true`:
+
+```ruby
+function "Run the test suite.", check: true
+#: () -> void
+def test
+  build.with_exec(args: %w[bundle exec rake test]).sync
+  nil
+end
+```
+
+`sync` runs the container. A non-zero exit raises `Dagger::ExecError`, which fails the check. `dagger check` discovers and runs every check in the workspace. List them with `-l`:
+
+```shell
+dagger check -l
+```
+
+```
+MODULE    CHECK  DESCRIPTION
+ci-tools  stale  staleness check: lock the project's gems
+ci-tools  test   Run the test suite.
+ci-tools  run    Run this test file.
+ruby-sdk  stale  staleness check: re-generate modules and clients managed by the ruby SDK
+ruby-sdk  steep  dagger generate accepts every Ruby module this SDK generated in the workspace, ...
+```
+
+Each generator adds a `stale` check, which fails when `dagger generate` would change files. The SDK module adds `ruby-sdk:steep`, described in [Type checking with Steep](#type-checking-with-steep). Run one check by name:
+
+```shell
+dagger check ci-tools:test
+```
+
+### Generators {#generators}
+
+A generator produces a [changeset](../../using/generating.mdx), a diff between the current source and generated output. Mark it with `generator: true` and return a `Changeset`. `Directory#changes(from:)` computes it:
+
+```ruby
+function "Lock the project's gems.", generator: true
+#: () -> Dagger::Clients::Core::Changeset
+def lockfile
+  locked = core.container.from(address: "ruby:#{ruby_version}-slim")
+               .with_directory(path: "/app", source:)
+               .with_workdir(path: "/app")
+               .with_exec(args: %w[bundle lock])
+               .directory(path: "/app")
+  locked.changes(from: source)
+end
+```
+
+`dagger generate` runs every generator in the workspace, including the SDK's own `ruby-sdk:generate`, and presents the combined changeset for review. List the generators with `-l`:
+
+```shell
+dagger generate -l
+```
+
+```
+MODULE    GENERATOR  DESCRIPTION
+ci-tools  lockfile   Lock the project's gems.
+ruby-sdk  generate   re-generate modules and clients managed by the ruby SDK
+```
+
+Run one by name. The changeset of `ci-tools:lockfile` adds `Gemfile.lock` at the workspace root:
+
+```shell
+dagger generate ci-tools:lockfile
+```
+
+### Services {#up-services}
+
+A function that returns a `Service` and takes no required arguments is a service. `dagger start` starts every service in the workspace. See [Services](../../using/services.mdx). The `redis` function in [Services](#services) is one:
+
+```shell
+dagger start -l
+```
+
+```
+MODULE    SERVICE  DESCRIPTION
+ci-tools  redis    A Redis server for integration tests.
+```
+
+### Cache
+
+`cache:` sets how the engine reuses a function's result:
+
+```ruby
+function "The time this function ran.", cache: "never"
+#: () -> String
+def built_at = Time.now.utc.strftime("%H:%M:%S.%L")
+
+function "A random ID, the same for every call in one session.", cache: "session"
+#: () -> String
+def session_id = rand(1_000_000).to_s
+
+function "The latest rake release, looked up at most once an hour.", cache: "1h"
+#: () -> String
+def latest_rake
+  JSON.parse(core.http(url: "https://rubygems.org/api/v1/versions/rake/latest.json").contents).fetch("version")
+end
+```
+
+`latest_rake` needs `require "json"` at the top of the file.
+
+- `"never"` runs the function on every call.
+- `"session"` reuses a result within one session.
+- A time to live, from `"1s"` to `"168h"`, such as `"5m"` or `"1h30m"`, reuses a result across sessions for that long.
+- Without `cache:`, the engine reuses a result across sessions for up to a week.
+
+Generation refuses any other value. Operations inside the function keep their own layer cache whatever the setting.
+
+## Collections {#collections}
+
+A **collection** is a set of objects that a module discovers at run time, each with a unique key: the packages in a repository, the test files in a project, or the scripts in a directory. Return a collection when users should be able to run a check or generator on one item. Dagger adds a flag for each collection to `dagger check` and `dagger generate`, and users select items with it. See [Select collection items](../../using/checking.mdx#select-collection-items).
+
+### Declare a collection
+
+Call `collection` in an object class. A collection has two members:
+
+- A **keys** field, a list of strings, numbers, booleans, scalars or enum members, none of them `nil`. It holds one unique key per item.
+- A **get** function, which takes one required argument of the key type and returns the item for it.
+
+The members are named `keys` and `get`, or marked with `keys: true` on the field and `get: true` on the function.
+
+This collection holds the project's test files, keyed by path. `TestFiles` is the collection and `TestFile` is the item:
+
+```ruby title="lib/ci_tools/test_files.rb"
+class TestFile
+  extend Dagger::Mod::Object
+
+  description "A test file."
+
+  field :path, doc: "Test file path, relative to the workspace root." #: String
+  field :runner, private: true #: Dagger::Clients::Core::Container
+
+  function "Run this test file.", check: true
+  #: () -> void
+  def run
+    runner.with_exec(args: ["ruby", "-Ilib", path]).sync
+    nil
+  end
+end
+
+class TestFiles
+  extend Dagger::Mod::Object
+  collection
+
+  description "The project's test files, keyed by path."
+
+  field :paths, keys: true, doc: "Test file paths, relative to the workspace root." #: Array[String]
+  field :runner, private: true #: Dagger::Clients::Core::Container
+
+  function "The test file at this path.", get: true
+  #: (path: String) -> TestFile
+  def test_file(path:) = TestFile.new(path:, runner:)
+
+  function "Run the selected test files in one Ruby process.", check: true
+  #: () -> void
+  def run
+    script = "files = ARGV.dup; ARGV.clear; files.each { |file| require File.expand_path(file) }"
+    runner.with_exec(args: ["ruby", "-Ilib", "-e", script, *paths]).sync
+    nil
+  end
+end
+```
+
+The main class returns it:
+
+```ruby
+function "The project's test files."
+#: () -> TestFiles
+def test_files = TestFiles.new(paths: source.glob(pattern: "test/**/*_test.rb"), runner: build)
+```
+
+The flag is named after the item type, with the module name in front, so `TestFile` in the `ci-tools` module adds `--ci-tools-test-file`:
+
+```shell
+dagger list ci-tools-test-files -a
+```
+
+```
+MODULE    CI-TOOLS-TEST-FILE     DESCRIPTION
+ci-tools  test/greeting_test.rb  The test file at this path.
+ci-tools  test/version_test.rb   The test file at this path.
+```
+
+```shell
+dagger check --ci-tools-test-file=test/version_test.rb
+```
+
+### Batch functions
+
+The engine gives every collection `keys`, `get`, `list` and `subset`. A check of the item type runs once per item. The collection's other functions run on a selection: Dagger calls them on a copy of the collection whose keys field holds only the selected keys. `TestFiles#run` above runs once, with `paths` listing the selected files, while `TestFile#run` runs once per selected file. `dagger check -l -a` lists both:
+
+```
+MODULE    CI-TOOLS-TEST-FILE     CHECK  DESCRIPTION
+ci-tools                         run    Run the selected test files in one Ruby process.
+ci-tools  test/greeting_test.rb  run    Run this test file.
+ci-tools  test/version_test.rb   run    Run this test file.
+```
+
+## Plain Ruby programs
+
+A plain Ruby program calls the Dagger API and modules through the same generated clients. Give it a directory with a `Gemfile`, and add a client from that directory. `dagger module client add ../.dagger/modules/ci-tools`, run in `scripts/`, registers `scripts` as a Ruby scope that is not a module and generates its clients. The program uses the long form of each client:
+
+```ruby title="scripts/release.rb"
+require "dagger"
+require "dagger/clients/ci_tools"
+
+ws = Dagger::Clients::Core.core.current_workspace
+ci_tools = Dagger::Clients::CiTools.ci_tools(ws:)
+
+current = ci_tools.package.version
+bump = Dagger::Clients::CiTools::CiToolsBump::PATCH
+puts "greeting #{current} -> #{ci_tools.next_version(current:, bump:)}"
+```
+
+The program needs Ruby 3.4 or later and Bundler on the host. Run it under `dagger run`, or on its own, in which case it starts a `dagger session` and stops it on exit:
+
+```shell
+bundle install
+dagger run ruby -rbundler/setup release.rb
+ruby -rbundler/setup release.rb
+```
+
+```
+greeting 0.3.0 -> 0.3.1
+```
+
+See [Client libraries](../client-libraries/index.mdx) for client commands and targets.
+
+## Testing Ruby modules
+
+Call the module's functions, and run its checks:
+
+```shell
+dagger api call ci-tools build
+dagger check
+```
+
+In a workspace with Ruby modules, `dagger check` also runs each generator's staleness check and `ruby-sdk:steep`, so the same command catches stale generated files and type errors, locally and in CI.
+
+### Type checking with Steep
+
+Steep reads `lib/` and its annotations, and checks them against the SDK's signatures, each client's signatures, and `sdk/entrypoint/module.rbs`. `dagger generate` writes that file with the readers and initializer of each object's fields and the constants of each enum's members. So a function body that returns another type than its annotation, or a call to a client with a wrong argument, fails Steep.
+
+The SDK module runs Steep from Dagger, on every Ruby module of the workspace, each in its own image with its `development` group installed. The host needs no Ruby:
+
+```shell
+dagger check ruby-sdk:steep
+```
+
+The check runs generation's own checks on each module first, then Steep. Here `next_version` destructured an array, so Steep sees each part as `Integer | nil`:
+
+```
+The Steep check failed in 1 of 1 Ruby modules: .dagger/modules/ci-tools
+...
+lib/ci_tools.rb:72:35: [error] Type `(::Integer | nil)` does not have method `+`
+└     when Bump::MAJOR then "#{major + 1}.0.0"
+...
+steep ok: none
+```
+
+Reading each part with `fetch`, as the `next_version` function above does, gives Steep an `Integer`. A module without a `Steepfile` gets generation's checks and no Steep.
+
+## IDE setup
+
+A new module has a `Steepfile` and Steep in the `development` group of its `Gemfile`. With Ruby on the host, run `bundle install` and then `bundle exec steep check` in the module directory to run the same Steep outside Dagger. The template's `.gitignore` excludes `/vendor/bundle/` and `/.bundle/`.
+
+## Packaging and release
+
+A Ruby module is published as a Git repository, like any Dagger module. Keep `sdk/` and `clients/` committed: they are the module's vendored SDK and generated clients, and Dagger loads the module from them. Before tagging, confirm that `dagger check` passes, including the staleness checks and `ruby-sdk:steep`.
+
+The SDK itself is released by tags of `github.com/dagger/ruby-sdk`, which `dagger module install dagger.io/sdk/ruby@<tag>` takes. Nothing is published to RubyGems.
+
+## Troubleshooting
+
+**`dagger generate` refuses a module.** The error names the file and line, and what to write:
+
+```
+! ruby-sdk: RubySdk::Error: .dagger/modules/rubocop: describing the module failed: dagger-mod: Dagger::Mod::RegistrationError: lib/rubocop.rb:23: Rubocop.version has no annotation that generation read; write its type on the line above the def, as #: (name: String) -> String
+```
+
+**A new function doesn't show up, or a call fails with a hint to run `dagger generate`.** The module changed what it declares, its clients, or its gems since the last generation. Run `dagger generate`.
+
+**`dagger generate` does not regenerate a module.** Check that the module is registered as a Ruby scope:
+
+```shell
+dagger sdk scope list --sdk=ruby
+```
+
+```
+NAME      PATH                      SDK   IS-MODULE
+ci-tools  .dagger/modules/ci-tools  ruby  true
+rubocop   .dagger/modules/rubocop   ruby  true
+          scripts                   ruby  false
+```
+
+**A client of a module fails to generate with `cannot be a Ruby constant`.** Declare enum members without a value (`member :MAJOR`). A lowercase value, such as `member :MAJOR, "major"`, fails client generation with `codegen: "major" cannot be a Ruby constant`.
+
+**`Dagger::StaleClientError`.** A client was generated for another core than the scope's, or queries a field its module no longer has. Run `dagger generate`.
+
+**A call to another module fails with `Dagger::ExecError`.** A function that raises fails its call. A calling module receives an `ExecError` whose stderr holds the error.
+
+## Next steps
+
+- [SDKs overview](./index.mdx) covers platform concepts that apply to every SDK
+- [Types](../api/index.mdx)
+- [Generating code](../../using/generating.mdx)
+- [Ruby SDK repository](https://github.com/dagger/ruby-sdk), whose README documents the declaration options
