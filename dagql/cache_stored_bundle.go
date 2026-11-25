@@ -1,6 +1,7 @@
 package dagql
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"slices"
@@ -567,6 +568,47 @@ type storedBundleBuild struct {
 	// stored has, by ordinal, the declared parts of each value the build
 	// carries compressed (addStoredValue).
 	stored map[uint64][]declaredPart
+	// listed has the place of each stored layer the bundle's outputs name in
+	// its list of layers (listLayer), and listedByKey the places of the
+	// layers listed under each key (storedLayer.key).
+	listed      map[*storedLayer]int
+	listedByKey map[uint64][]int
+}
+
+// listLayer returns the place of a stored layer in the bundle's list of
+// layers (ValueBundle.Layers), listing it if it isn't yet. The bundle lists
+// each layer once, as the wire does (ShareChainLayers): each output names
+// its chain's layers by place, and none carries a copy of them. The wire
+// tells layers apart by their encoding, and the cache by reflect.DeepEqual,
+// so the cache can hold apart two layers that encode alike, as one whose
+// annotations are an empty map and one with none: such layers share a key,
+// and are listed once. The listed layer is a copy of the cache's.
+func (build *storedBundleBuild) listLayer(layer *storedLayer) int {
+	if place, ok := build.listed[layer]; ok {
+		return place
+	}
+	if build.listed == nil {
+		build.listed, build.listedByKey = map[*storedLayer]int{}, map[uint64][]int{}
+	}
+	place := -1
+	if alike := build.listedByKey[layer.key]; len(alike) > 0 {
+		if encoded := storedLayerEncoding(layer.layer, layer.pack); encoded != nil {
+			for _, other := range alike {
+				listed := build.bundle.Layers[other]
+				if bytes.Equal(encoded, storedLayerEncoding(listed.Layer, listed.Pack)) {
+					place = other
+					break
+				}
+			}
+		}
+	}
+	if place < 0 {
+		place = len(build.bundle.Layers)
+		build.bundle.Layers = append(build.bundle.Layers, BundleLayer{Layer: cloneExportLayer(layer.layer), Pack: layer.pack})
+		build.listedByKey[layer.key] = append(build.listedByKey[layer.key], place)
+	}
+	build.listed[layer] = place
+	return place
 }
 
 // alsoRoots returns the roots asked for, rootEntries, with the entries the
@@ -905,7 +947,8 @@ func (c *Cache) storedBundleOutputsLocked(build *storedBundleBuild, res *sharedR
 	}
 	slices.Sort(keys)
 	for _, key := range keys {
-		if err := build.addOutput(res, res.storedParts[key].offer(), res.id); err != nil {
+		part := res.storedParts[key]
+		if err := build.addOutput(res, part.heldOffer(), part.layers, res.id); err != nil {
 			return err
 		}
 	}
@@ -921,7 +964,7 @@ func (c *Cache) storedBundleOutputsLocked(build *storedBundleBuild, res *sharedR
 		if donor == nil {
 			continue
 		}
-		placed, ok := placeOwnedPart(part, func(service uint64) (uint64, bool) {
+		placed, ok := placeOwnedPart(part.heldOffer(), func(service uint64) (uint64, bool) {
 			row := c.closureRowOfClassLocked(sharedResultID(service), build.ordinals)
 			return uint64(row), row != 0
 		})
@@ -929,7 +972,7 @@ func (c *Cache) storedBundleOutputsLocked(build *storedBundleBuild, res *sharedR
 			build.markPartial(res)
 			continue
 		}
-		if err := build.addOutput(res, placed, donor.id); err != nil {
+		if err := build.addOutput(res, placed, part.layers, donor.id); err != nil {
 			return err
 		}
 	}
@@ -946,22 +989,27 @@ func (build *storedBundleBuild) markPartial(res *sharedResult) {
 }
 
 // addOutput adds a part of res to the bundle, relocated to ordinals and
-// without addresses, with donor as its storing entry.
-func (build *storedBundleBuild) addOutput(res *sharedResult, part PersistedPartOffer, donor sharedResultID) error {
-	part.Chain.Addresses, part.Chain.RenewalKey = nil, ""
+// without addresses, with donor as its storing entry. The part's chain has
+// no layers: the output names the layers by their place in the bundle's
+// list (listLayer).
+func (build *storedBundleBuild) addOutput(res *sharedResult, part PersistedPartOffer, layers []*storedLayer, donor sharedResultID) error {
+	part.Chain.Layers, part.Chain.Addresses, part.Chain.RenewalKey = nil, nil, ""
 	if err := visitPersistedPartOffer(&part, nil, build.relocate); err != nil {
 		return fmt.Errorf("stored bundle: entry %d part: %w", res.id, err)
 	}
-	build.bundle.Outputs = append(build.bundle.Outputs, TransferredOutput{Ordinal: build.ordinals[res.id], Address: part.Address, State: "completed", Value: &part.Value, Chain: &part.Chain, Owner: &part.Owner})
+	places := make([]int, len(layers))
+	for i, layer := range layers {
+		places[i] = build.listLayer(layer)
+	}
+	build.bundle.Outputs = append(build.bundle.Outputs, TransferredOutput{Ordinal: build.ordinals[res.id], Address: part.Address, State: "completed", Value: &part.Value, Chain: &part.Chain, Owner: &part.Owner, Layers: places})
 	build.donors = append(build.donors, uint64(donor))
 	return nil
 }
 
 // storedPartDonorLocked returns the unexpired entry of res's class, other
-// than res, with the lowest number that stores the part, and a copy of the
-// part's offer.
+// than res, with the lowest number that stores the part, and the part.
 // Requires egraphMu.
-func (c *Cache) storedPartDonorLocked(res *sharedResult, key string, now int64) (*sharedResult, PersistedPartOffer) {
+func (c *Cache) storedPartDonorLocked(res *sharedResult, key string, now int64) (*sharedResult, storedPart) {
 	var best *sharedResult
 	for root := range c.outputEqClassRootsLocked(res.id) {
 		for id := range c.outputEqClassResults[root] {
@@ -975,9 +1023,9 @@ func (c *Cache) storedPartDonorLocked(res *sharedResult, key string, now int64) 
 		}
 	}
 	if best == nil {
-		return nil, PersistedPartOffer{}
+		return nil, storedPart{}
 	}
-	return best, best.storedParts[key].offer()
+	return best, best.storedParts[key]
 }
 
 // closureRowOfClassLocked maps a service entry to a row of the closure of
