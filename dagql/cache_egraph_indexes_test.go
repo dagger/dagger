@@ -579,7 +579,7 @@ func TestCacheOutputEqClassInverseMixedSurvivor(t *testing.T) {
 	var outputEqID eqClassID
 	for outputEqID = range classes {
 	}
-	termCount := len(c.outputEqClassToTerms[outputEqID])
+	termCount := c.outputEqClassToTerms[outputEqID].Size()
 	c.egraphMu.Unlock()
 	assert.Equal(t, 1, classCount)
 	assert.Assert(t, termCount > 0)
@@ -589,7 +589,7 @@ func TestCacheOutputEqClassInverseMixedSurvivor(t *testing.T) {
 	c.egraphMu.Lock()
 	removedPresent := c.outputEqClassResults[outputEqID].Contains(sharedA.id)
 	survivorPresent := c.outputEqClassResults[outputEqID].Contains(sharedB.id)
-	survivingTermCount := len(c.outputEqClassToTerms[outputEqID])
+	survivingTermCount := c.outputEqClassToTerms[outputEqID].Size()
 	indexErr := cacheDerivedIndexesErrorLocked(c)
 	c.egraphMu.Unlock()
 	assert.Assert(t, !removedPresent)
@@ -625,8 +625,8 @@ func TestCacheOutputEqClassInverseExpiredOnlyDoesNotSurvive(t *testing.T) {
 	var outputEqID eqClassID
 	for outputEqID = range classes {
 	}
-	removedTermIDs := make([]egraphTermID, 0, len(c.outputEqClassToTerms[outputEqID]))
-	for termID := range c.outputEqClassToTerms[outputEqID] {
+	removedTermIDs := make([]egraphTermID, 0, c.outputEqClassToTerms[outputEqID].Size())
+	for termID := range c.outputEqClassToTerms[outputEqID].All() {
 		removedTermIDs = append(removedTermIDs, termID)
 	}
 	sharedB.expiresAtUnix = time.Now().Add(-time.Hour).Unix()
