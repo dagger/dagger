@@ -5,17 +5,14 @@ import "sync"
 // KnownRows are the entries of an engine cache whose records one recipient,
 // the Cloud over one service connection, holds: an export carried them in
 // full and the recipient said it merged that export, or a merge of the
-// recipient's own records stored one of them on the entry. A merge that keeps
-// the engine's own value on an entry doesn't make it known: the recipient
-// holds another record of its recipe, maybe another run of the step, and not
-// the engine's. An export sends a known row that hasn't changed since as a
-// held row, with no record, so that a record the closures of many exports
-// share travels once: with nothing below it in a records-only export, and
-// with its links to the rows below it and its parts in an export that selects
-// parts. Whether a held row holds is the recipient's merge's to decide: it
-// commits nothing unless every held row's recipe has a live value there, with
-// every part the export puts on the row. KnownRows only chooses what to leave
-// out.
+// recipient's own records landed on them. An export sends a known row that
+// hasn't changed since as a held row, with no record, so that a record the
+// closures of many exports share travels once: with nothing below it in a
+// records-only export, and with its links to the rows below it and its parts
+// in an export that selects parts. Whether a held row holds is the
+// recipient's merge's to decide: it commits nothing unless every held row's
+// recipe has a live value there, with every part the export puts on the
+// row. KnownRows only chooses what to leave out.
 type KnownRows struct {
 	mu   sync.Mutex
 	rows map[uint64]RowRevision
@@ -95,10 +92,10 @@ func (k *KnownRows) knowsLocked(res *sharedResult) bool {
 	return ok && rev == RowRevision{Replacements: res.replacements, Transfer: res.transferRevision, Dependencies: res.dependencyOwnershipRevision}
 }
 
-// Knows reports whether the recipient merged entry number at rev: an export
-// it merged carried the entry in full with those revisions, or a merge of its
-// records stored one there. A nil KnownRows knows nothing.
-func (k *KnownRows) Knows(number uint64, rev RowRevision) bool {
+// knows reports whether the recipient merged entry number at rev: an export
+// it merged carried the entry in full with those revisions. A nil KnownRows
+// knows nothing.
+func (k *KnownRows) knows(number uint64, rev RowRevision) bool {
 	if k == nil {
 		return false
 	}
