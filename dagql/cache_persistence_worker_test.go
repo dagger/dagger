@@ -260,11 +260,8 @@ func TestCachePersistenceSnapshotKeepsOnlyCompletePersistedRootClosures(t *testi
 	assert.NilError(t, c.AddExplicitDependency(ctx, droppedRoot, keptDep, "shared-clean-dependency"))
 
 	dirtyShared := dirtyDep.cacheSharedResult()
-	dirtyShared.attachDepsMu.Lock()
-	dirtyShared.attachDepsWaitCh = make(chan struct{})
-	dirtyShared.attachDepsErr = context.Canceled
-	close(dirtyShared.attachDepsWaitCh)
-	dirtyShared.attachDepsMu.Unlock()
+	dirtyShared.openAttachment(nil)
+	dirtyShared.endAttachment(context.Canceled)
 
 	snapshot, err := c.snapshotPersistState(ctx)
 	assert.NilError(t, err)
