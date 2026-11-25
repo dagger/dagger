@@ -41,6 +41,9 @@ type storedLayer struct {
 	// wire is the layer's entry, with its pack, in a merge's list of layers
 	// (ShareChainLayers), with its separator.
 	wire int64
+	// key is the key the table holds it under (storedLayerKey): layers that
+	// encode alike share it.
+	key uint64
 }
 
 // offer returns the part's offer, its chain's layers and packs back in it:
@@ -62,6 +65,16 @@ func (p storedPart) offer() PersistedPartOffer {
 			offer.Chain.Packs[layer.layer.Descriptor.Digest] = layer.pack
 		}
 	}
+	return offer
+}
+
+// heldOffer returns the part's offer without its chain's layers and packs,
+// which a bundle lists apart (storedBundleBuild.listLayer): a copy the caller
+// may change.
+func (p storedPart) heldOffer() PersistedPartOffer {
+	// The held offer has no layers, whose creation time is all that a copy
+	// can refuse.
+	offer, _ := clonePartOffer(p.held)
 	return offer
 }
 
@@ -105,7 +118,8 @@ func (t *storedLayers) part(offer PersistedPartOffer) storedPart {
 	for i, layer := range offer.Chain.Layers {
 		pack := offer.Chain.Packs[layer.Descriptor.Digest]
 		encoded := storedLayerEncoding(layer, pack)
-		layers[i] = t.layer(storedLayer{layer: layer, pack: pack, wire: storedLayerWire(encoded)}, storedLayerKey(layer, encoded))
+		key := storedLayerKey(layer, encoded)
+		layers[i] = t.layer(storedLayer{layer: layer, pack: pack, wire: storedLayerWire(encoded), key: key}, key)
 	}
 	offer.Chain.Layers, offer.Chain.Packs = nil, nil
 	return storedPart{held: offer, layers: layers, wire: storedPartWire(offer, layers)}

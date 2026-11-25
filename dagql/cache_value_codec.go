@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/snapshots"
 	"github.com/opencontainers/go-digest"
 )
 
@@ -563,6 +564,36 @@ func validateSnapshotValue(value SnapshotValue) error {
 }
 
 func validateTransferOffer(offer PersistedPartOffer, part CapturedCodecOutput) error {
+	if err := validateOfferDescriptor(offer, part); err != nil {
+		return err
+	}
+	blobs := map[digest.Digest]bool{}
+	for _, layer := range offer.Chain.Layers {
+		if err := validateExportLayer(layer); err != nil {
+			return err
+		}
+		blobs[layer.Descriptor.Digest] = true
+	}
+	return validateChainBlobs(offer.Chain, func(blob digest.Digest) bool { return blobs[blob] })
+}
+
+// validateListedOffer checks an offer as validateTransferOffer does, whose
+// chain names its layers by their places in a bundle's list, listed, as an
+// output of a bundle a blob-backed cache builds does: checkListedLayers
+// checked those layers, so only the chain's addresses and packs are checked
+// against the layers it names.
+func validateListedOffer(offer PersistedPartOffer, part CapturedCodecOutput, places []int, listed []BundleLayer) error {
+	if err := validateOfferDescriptor(offer, part); err != nil {
+		return err
+	}
+	return validateChainBlobs(offer.Chain, func(blob digest.Digest) bool {
+		return slices.ContainsFunc(places, func(place int) bool { return listed[place].Layer.Descriptor.Digest == blob })
+	})
+}
+
+// validateOfferDescriptor checks an offer's references, its value, and that
+// it fits the part it is offered for.
+func validateOfferDescriptor(offer PersistedPartOffer, part CapturedCodecOutput) error {
 	if err := validateOfferReferences(offer); err != nil {
 		return err
 	}
@@ -575,23 +606,31 @@ func validateTransferOffer(offer PersistedPartOffer, part CapturedCodecOutput) e
 	if part.Address.Part == "metadata" {
 		return fmt.Errorf("metadata cannot carry a chain")
 	}
-	blobs := map[digest.Digest]bool{}
-	for _, layer := range offer.Chain.Layers {
-		if err := validateLayerDigest(layer.Descriptor.Digest); err != nil {
-			return fmt.Errorf("invalid layer digest: %w", err)
-		}
-		if layer.Descriptor.Size < 0 || layer.Descriptor.MediaType == "" {
-			return fmt.Errorf("invalid layer descriptor")
-		}
-		blobs[layer.Descriptor.Digest] = true
+	return nil
+}
+
+// validateExportLayer checks a layer of an offer's chain: its digest, size
+// and media type.
+func validateExportLayer(layer snapshots.ExportLayer) error {
+	if err := validateLayerDigest(layer.Descriptor.Digest); err != nil {
+		return fmt.Errorf("invalid layer digest: %w", err)
 	}
-	for dig := range offer.Chain.Addresses {
-		if !blobs[dig] {
+	if layer.Descriptor.Size < 0 || layer.Descriptor.MediaType == "" {
+		return fmt.Errorf("invalid layer descriptor")
+	}
+	return nil
+}
+
+// validateChainBlobs checks that a chain's addresses and packs are each for
+// a blob of its own layers (own), and that each pack is a digest.
+func validateChainBlobs(chain OfferedChain, own func(blob digest.Digest) bool) error {
+	for dig := range chain.Addresses {
+		if !own(dig) {
 			return fmt.Errorf("address for unknown layer %s", dig)
 		}
 	}
-	for dig, pack := range offer.Chain.Packs {
-		if !blobs[dig] {
+	for dig, pack := range chain.Packs {
+		if !own(dig) {
 			return fmt.Errorf("pack for unknown layer %s", dig)
 		}
 		if err := pack.Validate(); err != nil {
