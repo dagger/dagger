@@ -1889,6 +1889,11 @@ func (c *Cache) RemoteEntryInfo(key HolderKey) (RemoteEntryInfo, bool) {
 func (c *Cache) EntryInfo(number uint64) (RemoteEntryInfo, bool) {
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
+	return c.entryInfoLocked(number)
+}
+
+// entryInfoLocked is EntryInfo. Requires egraphMu.
+func (c *Cache) entryInfoLocked(number uint64) (RemoteEntryInfo, bool) {
 	entry := c.resultsByID[sharedResultID(number)]
 	if entry == nil {
 		return RemoteEntryInfo{}, false
@@ -2046,6 +2051,11 @@ func (c *Cache) entryClassEntriesLocked(number uint64) (EntryClass, bool) {
 func (c *Cache) CacheHoldings(cache CacheID, numbers []uint64) []RemoteHeldEntry {
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
+	return c.cacheHoldingsLocked(cache, numbers)
+}
+
+// cacheHoldingsLocked is CacheHoldings. Requires egraphMu.
+func (c *Cache) cacheHoldingsLocked(cache CacheID, numbers []uint64) []RemoteHeldEntry {
 	var out []RemoteHeldEntry
 	for _, number := range numbers {
 		entry := c.resultsByID[sharedResultID(number)]
@@ -2086,9 +2096,15 @@ type EntryHeld struct {
 func (c *Cache) EntriesHeld(numbers []uint64, limit int) []EntryHeld {
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
+	return c.entriesHeldLocked(numbers, limit, true)
+}
+
+// entriesHeldLocked is EntriesHeld, giving way between two entries if
+// giveWay is set (giveWayLocked). Requires egraphMu for reading.
+func (c *Cache) entriesHeldLocked(numbers []uint64, limit int, giveWay bool) []EntryHeld {
 	out := make([]EntryHeld, 0, len(numbers))
 	for i, number := range numbers {
-		if i > 0 {
+		if i > 0 && giveWay {
 			c.giveWayLocked()
 		}
 		entry := c.resultsByID[sharedResultID(number)]
