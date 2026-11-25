@@ -138,6 +138,7 @@ func (w *changeWatch) step(name string, write func() RemoteChange) {
 	w.t.Helper()
 	before := w.last
 	beforeAddresses := changeTestAddresses(w.cache)
+	beforeAt := handedForTest(w.cache)
 	change := write()
 	after := w.read(beforeAddresses)
 	w.cache.egraphMu.RLock()
@@ -146,12 +147,14 @@ func (w *changeWatch) step(name string, write func() RemoteChange) {
 	require.False(w.t, pending, "%s: every mark is handed back by the write that made it", name)
 	requireCacheHoldersExact(w.t, w.cache)
 
-	require.True(w.t, slices.IsSortedFunc(change.Holdings, compareChangedHoldings), "%s: holdings sorted by number, then cache", name)
+	require.True(w.t, slices.IsSortedFunc(change.Holdings, func(a, b ChangedHolding) int { return compareChangedHoldings(a.Key, b.Key) }), "%s: holdings sorted by number, then cache", name)
 	require.True(w.t, slices.IsSorted(change.Entries), "%s: entries sorted", name)
 	holdings := map[HolderKey]bool{}
-	for _, key := range change.Holdings {
-		holdings[key] = true
+	for _, held := range change.Holdings {
+		require.False(w.t, holdings[held.Key], "%s: holding %v named once", name, held.Key)
+		holdings[held.Key] = true
 	}
+	w.checkHandedBack(name, change, beforeAt)
 	entries := map[uint64]bool{}
 	for _, number := range change.Entries {
 		entries[number] = true
@@ -181,6 +184,49 @@ func (w *changeWatch) step(name string, write func() RemoteChange) {
 		}
 	}
 	w.last = after
+}
+
+// checkHandedBack checks that a write's change hands back each holding it
+// names as the write left it, so that a reader can keep it without reading
+// it: its facts and its entry's equal a read of the holding right after the
+// write, or it is gone and the read finds nothing. And that the change's
+// count orders it after every earlier change and read, and before every
+// later one: it is the cache's count right after the write, above its count
+// before, beforeAt.
+func (w *changeWatch) checkHandedBack(name string, change RemoteChange, beforeAt uint64) {
+	w.t.Helper()
+	at := handedForTest(w.cache)
+	if len(change.Holdings)+len(change.Entries) == 0 {
+		if change.At == 0 {
+			require.Equal(w.t, beforeAt, at, "%s: a change with no count hands nothing back", name)
+		} else {
+			require.Equal(w.t, at, change.At, "%s: the cache's count right after the write is the change's", name)
+		}
+		return
+	}
+	require.Greater(w.t, change.At, beforeAt, "%s: a change's count is above every earlier one's", name)
+	require.Equal(w.t, at, change.At, "%s: the cache's count right after the write is the change's", name)
+	for _, changed := range change.Holdings {
+		require.LessOrEqual(w.t, changed.At, change.At, "%s: %v taken at a hand-back of the change", name, changed.Key)
+		require.Greater(w.t, changed.At, uint64(0), "%s: %v taken at a hand-back", name, changed.Key)
+		held, ok := w.cache.RemoteHoldingInfo(changed.Key)
+		require.Equal(w.t, !ok, changed.Gone(), "%s: %v is gone in the change as in a read after it", name, changed.Key)
+		if !ok {
+			continue
+		}
+		require.Equal(w.t, at, held.At, "%s: a read after the write has the write's count", name)
+		require.Equal(w.t, held.Holding.HoldingFacts, changed.Facts(), "%s: %v's facts in the change, against a read after it", name, changed.Key)
+		require.Equal(w.t, EntryFacts{Number: held.Number, Stored: held.Stored, StoredExpiresAtUnix: held.StoredExpiresAtUnix, Recipes: held.Recipes, At: changed.At}, changed.Entry(), "%s: %v's entry's facts in the change, against a read after it", name, changed.Key)
+		require.Equal(w.t, held.Number, changed.EntryNumber(), "%s: %v's entry", name, changed.Key)
+	}
+}
+
+// handedForTest is c's count of hand-backs of its changes now
+// (RemoteChange.At).
+func handedForTest(c *Cache) uint64 {
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	return c.handedLocked()
 }
 
 // changeTestEntryEqual compares two readings of an entry, its part answers
