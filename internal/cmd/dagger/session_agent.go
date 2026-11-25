@@ -337,6 +337,20 @@ func (s *LLMSession) newAgent(name string) *sessionAgent {
 // Name is the conversation's display label.
 func (a *sessionAgent) Name() string { return a.name }
 
+// logAttrs prefixes a log line's attributes with the agent it is about. The
+// session's logs interleave into whichever agent's transcript is focused, so a
+// line about one agent must say whose it is, or it reads as the focused one's.
+func (a *sessionAgent) logAttrs(args ...any) []any {
+	a.agentL.Lock()
+	handle := a.agentHandle
+	a.agentL.Unlock()
+	attrs := []any{"agent", a.name}
+	if handle != "" {
+		attrs = append(attrs, "handle", handle)
+	}
+	return append(attrs, args...)
+}
+
 // isTarget reports whether this conversation is the one the session's prompt
 // currently addresses. The UI surfaces that describe a conversation -- status
 // line, changes preview, references -- follow the target, so they refresh only
@@ -367,7 +381,7 @@ func (a *sessionAgent) ToggleAutocompact() {
 	// via ShouldAutocompact.
 	if a.llm != nil {
 		if err := a.updateStatusLine(a.llm); err != nil {
-			slog.Error("failed to update status line after toggling auto-compact", "error", err)
+			slog.Error("failed to update status line after toggling auto-compact", a.logAttrs("error", err)...)
 		}
 	}
 }
@@ -526,7 +540,8 @@ func (a *sessionAgent) bindRuntime(rt agentRuntime, agentHandle, attachedID stri
 // (telemetryattrs.AgentOwnerAttr). Client-side work on one conversation -- a
 // save, a reload, a compaction -- runs outside the agent's loop span, so
 // without it the TUI cannot tell whose it is and renders it in every agent's
-// transcript. A conversation with no runtime yet stamps nothing.
+// transcript, rather than only in this agent's and its chief's. A
+// conversation with no runtime yet stamps nothing.
 func (a *sessionAgent) spanOwner() trace.SpanStartOption {
 	a.agentL.Lock()
 	handle := a.agentHandle
@@ -604,7 +619,7 @@ func (a *sessionAgent) endTurn() {
 	// it (an error before the runtime existed). Report rather than drop: the
 	// user was told it landed.
 	for _, msg := range pending {
-		slog.Warn("message could not be delivered to the agent", "message", msg.Summary())
+		slog.Warn("message could not be delivered to the agent", a.logAttrs("message", msg.Summary())...)
 	}
 }
 
@@ -645,12 +660,12 @@ func (a *sessionAgent) SubmitPrompt(input idtui.PromptInput) bool {
 func (a *sessionAgent) sendPrompt(rt agentRuntime, input idtui.PromptInput) {
 	handle, err := sendAgentPrompt(a.session.plumbingCtx, rt, input)
 	if err != nil {
-		slog.Error("failed to submit message to agent", "error", err)
+		slog.Error("failed to submit message to agent", a.logAttrs("error", err)...)
 		return
 	}
 	delivery, err := handle.Delivery(a.session.plumbingCtx)
 	if err != nil {
-		slog.Error("failed to read submitted message delivery", "error", err)
+		slog.Error("failed to read submitted message delivery", a.logAttrs("error", err)...)
 		return
 	}
 	slog.Debug("submitted mid-turn message", "delivery", delivery)
@@ -814,12 +829,12 @@ func (a *sessionAgent) Branch(ctx context.Context, target *core.LLM, summary idt
 		if summary.Summarize {
 			if rt != nil {
 				if err := a.syncFromAgentLocked(rt); err != nil {
-					slog.Warn("failed to sync conversation before summarizing branch", "error", err)
+					slog.Warn("failed to sync conversation before summarizing branch", a.logAttrs("error", err)...)
 				}
 			}
 			summaryText, err := a.BranchSummary(ctx, summary.CustomPrompt)
 			if err != nil {
-				slog.Error("failed to summarize old branch", "error", err)
+				slog.Error("failed to summarize old branch", a.logAttrs("error", err)...)
 			} else {
 				target = target.WithPrompt(fmt.Sprintf(
 					"The user explored a different conversation branch before returning here. Summary of that exploration:\n\n%s",
@@ -861,7 +876,7 @@ func (a *sessionAgent) interruptAgent(rt agentRuntime) {
 		context.WithoutCancel(a.session.plumbingCtx), agentInterruptGrace)
 	defer cancel()
 	if err := rt.Interrupt(ctx); err != nil {
-		slog.Warn("failed to interrupt agent", "error", err)
+		slog.Warn("failed to interrupt agent", a.logAttrs("error", err)...)
 		return
 	}
 	if err := waitForAgentState(ctx, rt, core.AgentStatePaused); err != nil {
@@ -1006,7 +1021,7 @@ func (a *sessionAgent) WithPromptInput(ctx context.Context, input idtui.PromptIn
 	// the session reflects everything that actually happened.
 	if err := a.syncFromAgent(rt); err != nil {
 		if responseErr != nil {
-			slog.Warn("failed to sync LLM from agent snapshot", "error", err)
+			slog.Warn("failed to sync LLM from agent snapshot", a.logAttrs("error", err)...)
 			return responseErr
 		}
 		return err

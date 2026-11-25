@@ -509,7 +509,7 @@ func (h *shellCallHandler) BranchFromID(ctx context.Context, encodedID string, s
 		}
 		loadedLLM := core.Ref[*core.LLM](core.NewQuery(h.dag), core.ID(encodedID))
 		if err := target.Branch(ctx, loadedLLM, summary); err != nil {
-			slog.Error("failed to branch", "error", err)
+			slog.Error("failed to branch", target.logAttrs("error", err)...)
 			var detached *agentDetachedError
 			if !errors.As(err, &detached) {
 				return err
@@ -891,8 +891,8 @@ func (h *shellCallHandler) HandlePrompt(ctx context.Context, input idtui.PromptI
 	if submission, ok := input.CommandTarget.(*commandSubmission); ok &&
 		submission.target != nil && agentCommandActsOnConversation(line) {
 		// A command like /compact (.compact after /shell) acts on the
-		// conversation it was submitted to, so it belongs in that agent's
-		// transcript only.
+		// conversation it was submitted to, so it is that agent's work, not
+		// every agent's (see telemetryattrs.AgentOwnerAttr).
 		spanOpts = append(spanOpts, submission.target.spanOwner())
 	}
 	var span trace.Span
