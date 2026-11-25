@@ -256,17 +256,11 @@ func (c *OpenAIResponsesClient) SendQuery(ctx context.Context, history []*LLMMes
 		}
 	}
 
-	// Use streaming
 	turn := codexTurnIndex(history)
 	var httpResp *http.Response
 	reqOpts := append(c.endpoint.copilotRequestOptions(history), option.WithResponseInto(&httpResp))
 	if c.codex {
 		reqOpts = append(reqOpts, c.turnRequestOptions(cacheKey, turn)...)
-	}
-	stream := c.svc.NewStreaming(ctx, params, reqOpts...)
-	defer stream.Close()
-	if c.codex {
-		c.recordTurnState(cacheKey, turn, httpResp)
 	}
 
 	var content strings.Builder
@@ -278,113 +272,119 @@ func (c *OpenAIResponsesClient) SendQuery(ctx context.Context, history []*LLMMes
 	var reasonIdx int64
 	var hasReasoning bool
 
-	for stream.Next() {
-		event := stream.Current()
+	// Both delivery modes use the same item and usage handling so encrypted
+	// reasoning, tool calls and cache accounting survive non-streaming turns.
+	handleItem := func(item responses.ResponseOutputItemUnion) {
+		switch item.Type {
+		case "function_call":
+			fc := item.AsFunctionCall()
+			contentBlocks = append(contentBlocks, &LLMContentBlock{
+				Kind: LLMContentToolCall, CallID: fc.CallID,
+				ToolName: fc.Name, Arguments: JSON(fc.Arguments),
+			})
+			toolIdx++
+			dp.EmitToolCall(toolIdx, fc.CallID, fc.Name, fc.Arguments)
+		case "reasoning":
+			// Preserve the opaque reasoning item before the tool call it
+			// produced, so the next turn can resubmit it in the same order.
+			summary, sig := encodeCodexReasoning(item.AsReasoning())
+			contentBlocks = append(contentBlocks, &LLMContentBlock{
+				Kind: LLMContentThinking, Text: summary, Signature: sig,
+			})
+			hasReasoning = true
+			if summary != "" {
+				reasonIdx--
+				p := dp.StartThinking(reasonIdx)
+				fmt.Fprint(p.Stdio.Stdout, summary)
+				dp.Close(reasonIdx)
+			}
+		}
+	}
+	handleCompleted := func(resp responses.Response) {
+		cachedTokens := resp.Usage.InputTokensDetails.CachedTokens
+		usage.InputTokens = uncachedInputTokens(resp.Usage.InputTokens, cachedTokens)
+		usage.CachedTokenReads = cachedTokens
+		usage.OutputTokens = resp.Usage.OutputTokens
+		usage.TotalTokens = max(resp.Usage.TotalTokens, usage.InputTokens+usage.OutputTokens+usage.CachedTokenReads)
+		if usage.InputTokens > 0 {
+			inputTokens.Record(ctx, usage.InputTokens, metric.WithAttributes(attrs...))
+		}
+		if usage.CachedTokenReads > 0 {
+			inputTokensCacheReads.Record(ctx, usage.CachedTokenReads, metric.WithAttributes(attrs...))
+		}
+		if usage.OutputTokens > 0 {
+			outputTokens.Record(ctx, usage.OutputTokens, metric.WithAttributes(attrs...))
+		}
 
-		switch event.Type {
-		case "response.output_text.delta":
-			e := event.AsResponseOutputTextDelta()
-			fmt.Fprint(dp.StartText(0).MarkdownW, e.Delta)
-			content.WriteString(e.Delta)
-
-		case "response.output_item.done":
-			e := event.AsResponseOutputItemDone()
-			switch e.Item.Type {
-			case "function_call":
-				fc := e.Item.AsFunctionCall()
-				contentBlocks = append(contentBlocks, &LLMContentBlock{
-					Kind:      LLMContentToolCall,
-					CallID:    fc.CallID,
-					ToolName:  fc.Name,
-					Arguments: JSON(fc.Arguments),
-				})
-				toolIdx++
-				dp.EmitToolCall(toolIdx, fc.CallID, fc.Name, fc.Arguments)
-			case "reasoning":
-				// Capture the reasoning item (its id, encrypted content, and
-				// summary) so it can be resubmitted before the function call it
-				// produced. It's appended in stream order, so it precedes that
-				// call. The opaque data is stashed in a THINKING block's
-				// Signature; the summary text (if any) is human-readable.
-				r := e.Item.AsReasoning()
-				summary, sig := encodeCodexReasoning(r)
-				contentBlocks = append(contentBlocks, &LLMContentBlock{
-					Kind:      LLMContentThinking,
-					Text:      summary,
-					Signature: sig,
-				})
-				hasReasoning = true
-				if summary != "" {
-					reasonIdx--
-					p := dp.StartThinking(reasonIdx)
-					fmt.Fprint(p.Stdio.Stdout, summary)
-					dp.Close(reasonIdx)
-				}
-			}
-
-		case "response.incomplete", "response.failed":
-			// A turn cut short ends with one of these instead of
-			// response.completed. Anything streamed so far is partial — a
-			// truncated tool call, half a message — so report the stop rather
-			// than letting the partial turn read as a clean finish.
-			var resp responses.Response
-			if event.Type == "response.incomplete" {
-				resp = event.AsResponseIncomplete().Response
-			} else {
-				resp = event.AsResponseFailed().Response
-			}
-			reason := resp.IncompleteDetails.Reason
-			if reason == "" {
-				reason = resp.Error.Message
-			}
-			if reason == "" {
-				reason = string(resp.Status)
-			}
-			return nil, &ModelFinishedError{Reason: reason}
-
-		case "response.completed":
-			e := event.AsResponseCompleted()
-			resp := e.Response
-			cachedTokens := resp.Usage.InputTokensDetails.CachedTokens
-			usage.InputTokens = uncachedInputTokens(resp.Usage.InputTokens, cachedTokens)
-			usage.CachedTokenReads = cachedTokens
-			usage.OutputTokens = resp.Usage.OutputTokens
-			usage.TotalTokens = usage.InputTokens + usage.OutputTokens + usage.CachedTokenReads
-			if resp.Usage.TotalTokens > usage.TotalTokens {
-				usage.TotalTokens = resp.Usage.TotalTokens
-			}
-			if usage.InputTokens > 0 {
-				inputTokens.Record(ctx, usage.InputTokens, metric.WithAttributes(attrs...))
-			}
-			if usage.CachedTokenReads > 0 {
-				inputTokensCacheReads.Record(ctx, usage.CachedTokenReads, metric.WithAttributes(attrs...))
-			}
-			if usage.OutputTokens > 0 {
-				outputTokens.Record(ctx, usage.OutputTokens, metric.WithAttributes(attrs...))
-			}
-
-			// Extract text from the completed response (tool calls handled above)
+		// If no text deltas arrived, collect all text parts from the final
+		// response. This is also how non-streaming responses display text.
+		if content.Len() == 0 {
 			for _, item := range resp.Output {
-				if item.Type == "message" {
-					msg := item.AsMessage()
-					for _, part := range msg.Content {
-						if part.Type == "output_text" {
-							text := part.AsOutputText()
-							if content.Len() == 0 {
-								content.WriteString(text.Text)
-							}
-						}
+				if item.Type != "message" {
+					continue
+				}
+				for _, part := range item.AsMessage().Content {
+					if part.Type == "output_text" {
+						text := part.AsOutputText().Text
+						content.WriteString(text)
+						fmt.Fprint(dp.StartText(0).MarkdownW, text)
 					}
 				}
 			}
 		}
 	}
-
-	if err := stream.Err(); err != nil {
-		if c.codex {
-			return nil, codexAPIError(err)
+	finishedError := func(resp responses.Response) error {
+		reason := resp.IncompleteDetails.Reason
+		if reason == "" {
+			reason = resp.Error.Message
 		}
-		return nil, err
+		if reason == "" {
+			reason = string(resp.Status)
+		}
+		return &ModelFinishedError{Reason: reason}
+	}
+
+	if c.endpoint.disableStreaming && !c.codex {
+		resp, err := c.svc.New(ctx, params, reqOpts...)
+		if err != nil {
+			return nil, err
+		}
+		if resp.Status != responses.ResponseStatusCompleted {
+			return nil, finishedError(*resp)
+		}
+		for _, item := range resp.Output {
+			handleItem(item)
+		}
+		handleCompleted(*resp)
+	} else {
+		stream := c.svc.NewStreaming(ctx, params, reqOpts...)
+		defer stream.Close()
+		if c.codex {
+			c.recordTurnState(cacheKey, turn, httpResp)
+		}
+		for stream.Next() {
+			event := stream.Current()
+			switch event.Type {
+			case "response.output_text.delta":
+				e := event.AsResponseOutputTextDelta()
+				fmt.Fprint(dp.StartText(0).MarkdownW, e.Delta)
+				content.WriteString(e.Delta)
+			case "response.output_item.done":
+				handleItem(event.AsResponseOutputItemDone().Item)
+			case "response.incomplete":
+				return nil, finishedError(event.AsResponseIncomplete().Response)
+			case "response.failed":
+				return nil, finishedError(event.AsResponseFailed().Response)
+			case "response.completed":
+				handleCompleted(event.AsResponseCompleted().Response)
+			}
+		}
+		if err := stream.Err(); err != nil {
+			if c.codex {
+				return nil, codexAPIError(err)
+			}
+			return nil, err
+		}
 	}
 	// Close the streamed text response phase (if any).
 	dp.Close(0)

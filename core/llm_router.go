@@ -220,11 +220,11 @@ func (r *LLMRouter) routeOpenAIModel() *LLMEndpoint {
 
 // usesOpenAIResponses reports whether an OpenAI endpoint talks to OpenAI's own
 // API, which gets the Responses API: newer reasoning models (e.g.
-// gpt-6.1-sol) refuse function tools over chat completions. Azure, custom
+// gpt-6.1-sol) refuse function tools over chat completions. Azure and custom
 // base URLs (typically OpenAI-compatible servers that only implement chat
-// completions), and non-streaming configurations stay on chat completions.
+// completions) stay on chat completions, regardless of streaming mode.
 func (endpoint *LLMEndpoint) usesOpenAIResponses() bool {
-	if endpoint.azureVersion != "" || endpoint.disableStreaming {
+	if endpoint.azureVersion != "" {
 		return false
 	}
 	if endpoint.BaseURL == "" {
