@@ -98,6 +98,12 @@ func zstdEncodersFor(level zstd.EncoderLevel) *zstdEncoderPools {
 // get takes an encoder from pool, a new one when it has none. Only a frame
 // that holds its place in zstdFrames takes one, so no more are out at once
 // than the budget, nor kept in the pools.
+//
+// A new encoder keeps a history of its window and one block
+// (WithLowerEncoderMem), not twice its window. It never compresses more
+// than the window at once, a frame or a layer that fits in zstdSizedLimit,
+// so its history never has to move down to make room, and it writes the
+// same bytes either way. Each kept encoder holds about 8 MB less.
 func (p *zstdEncoderPools) get(pool *sync.Pool) (*zstd.Encoder, error) {
 	enc, _ := pool.Get().(*zstd.Encoder)
 	if enc == nil {
@@ -106,7 +112,7 @@ func (p *zstdEncoderPools) get(pool *sync.Pool) (*zstd.Encoder, error) {
 			concurrency = 2
 		}
 		var err error
-		if enc, err = zstd.NewWriter(nil, zstd.WithEncoderLevel(p.level), zstd.WithEncoderConcurrency(concurrency)); err != nil {
+		if enc, err = zstd.NewWriter(nil, zstd.WithEncoderLevel(p.level), zstd.WithEncoderConcurrency(concurrency), zstd.WithLowerEncoderMem(true)); err != nil {
 			return nil, err
 		}
 	}
