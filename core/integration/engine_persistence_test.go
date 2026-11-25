@@ -379,7 +379,10 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 		require.NoError(t, err)
 		warmToken, err := action(a, hostA.Directory("warm"))
 		require.NoError(t, err)
-		require.Equal(t, beforeToken, warmToken, "identical source projections should reuse the executed action")
+		// A mount keeps its source's root, which the container's directory at
+		// the mount point reports, so identical files mounted from two roots
+		// make two containers.
+		require.NotEqual(t, beforeToken, warmToken, "identical files mounted from another root should execute the action again")
 		stopEngine(ctx, t, upA, tunnelA, a)
 		upA, tunnelA, a = nil, nil, nil
 
@@ -393,7 +396,8 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 		require.Equal(t, beforeToken, originalToken, "the original action result must survive restart")
 
 		// This projection was never requested before the restart. Its bytes
-		// match the old source, so both its digest and action should match.
+		// match the old source, so its digest should match; it is mounted from
+		// another root, so its action executes again.
 		afterSource := restored.Directory("after")
 		afterDigest, err := afterSource.Digest(ctx)
 		require.NoError(t, err)
@@ -401,7 +405,7 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 		require.NoError(t, err)
 		t.Logf("unchanged projection after restart: before digest=%s after digest=%s action reused=%t", beforeDigest, afterDigest, beforeToken == afterToken)
 		require.Equal(t, beforeDigest, afterDigest, "unchanged content should keep its imported digest across restart")
-		require.Equal(t, beforeToken, afterToken, "unchanged content should reuse the action across restart")
+		require.NotEqual(t, beforeToken, afterToken, "identical files mounted from another root should execute the action again")
 	})
 
 	t.Run("dockerBuild with cache mounts survives restart", func(ctx context.Context, t *testctx.T) {
