@@ -171,41 +171,65 @@ func TestZstdLayerAllocatesLittleOnceWarm(t *testing.T) {
 	}
 }
 
-// An encoder the pools keep between layers holds a history of its window and
-// one block, not twice its window. No frame and no layer compressed with its
-// size is larger than the window (zstdSizedLimit), so the history never has
-// to move down, and every blob stays as it was (zstdLayerGolden). At twice
-// the window, 16 MB an encoder, a filling engine held 43 such histories,
-// 688 MB, at the peak of a Go test check's burst of calls, with 16 frames
-// compressing at once.
-func TestZstdKeptEncoderHoldsOneWindow(t *testing.T) {
-	data := layerBytes(zstdSizedLimit)
-	pools := &zstdEncoderPools{level: zstd.SpeedDefault}
-	for _, c := range []struct {
-		name     string
-		pool     *sync.Pool
-		compress func(*zstd.Encoder, []byte)
-	}{
-		{"frame", &pools.frames, func(enc *zstd.Encoder, out []byte) {
-			enc.EncodeAll(data, out)
-		}},
-		{"layer with its size", &pools.streams, func(enc *zstd.Encoder, out []byte) {
-			buf := bytes.NewBuffer(out)
-			enc.ResetContentSize(buf, int64(len(data)))
-			_, err := enc.Write(data)
-			require.NoError(t, err)
-			require.NoError(t, enc.Close())
-		}},
-	} {
+// An encoder the pools keep between layers holds a history of the largest
+// input it is given, a frame or a layer that fits in zstdSizedLimit, once:
+// enough that it never has to move down to make room, not twice its window.
+// At twice the window, 16 MB an encoder at the default level, a filling
+// engine held 43 such histories, 688 MB, at the peak of a Go test check's
+// burst of calls, with 16 frames compressing at once. The fastest level's
+// window is half the input, so twice its window is what holds the input.
+// Each kept encoder is measured against a new one as the library makes it,
+// with a history of twice its window; their tables differ by level. An
+// encoder sizes its history on its first block past the first, whatever the
+// input's length, so a few blocks of input measure it, quickly under the
+// race detector too.
+func TestZstdKeptEncoderHoldsItsLargestInputOnce(t *testing.T) {
+	data := layerBytes(256 << 10)
+	frame := func(enc *zstd.Encoder, out []byte) { enc.EncodeAll(data, out) }
+	sized := func(enc *zstd.Encoder, out []byte) {
+		buf := bytes.NewBuffer(out)
+		enc.ResetContentSize(buf, int64(len(data)))
+		_, err := enc.Write(data)
+		require.NoError(t, err)
+		require.NoError(t, enc.Close())
+	}
+	// allocated is what a new encoder from get allocates to compress data.
+	allocated := func(get func() *zstd.Encoder, compress func(*zstd.Encoder, []byte)) int64 {
 		out := make([]byte, 0, 2*len(data))
 		var before, after runtime.MemStats
 		runtime.ReadMemStats(&before)
-		enc, err := pools.get(c.pool)
-		require.NoError(t, err)
-		c.compress(enc, out)
+		compress(get(), out)
 		runtime.ReadMemStats(&after)
-		pools.put(c.pool, enc)
-		got := int64(after.TotalAlloc - before.TotalAlloc)
-		require.Less(t, got, int64(zstdSizedLimit+4<<20), "a new %s encoder allocated %d bytes for a %d-byte input", c.name, got, len(data))
+		return int64(after.TotalAlloc - before.TotalAlloc)
+	}
+	for _, level := range []zstd.EncoderLevel{zstd.SpeedFastest, zstd.SpeedDefault, zstd.SpeedBetterCompression, zstd.SpeedBestCompression} {
+		pools := &zstdEncoderPools{level: level}
+		for _, c := range []struct {
+			name        string
+			pool        *sync.Pool
+			concurrency int
+			compress    func(*zstd.Encoder, []byte)
+		}{
+			{"frame", &pools.frames, 1, frame},
+			{"layer with its size", &pools.streams, 2, sized},
+		} {
+			kept := allocated(func() *zstd.Encoder {
+				enc, err := pools.get(c.pool)
+				require.NoError(t, err)
+				t.Cleanup(func() { pools.put(c.pool, enc) })
+				return enc
+			}, c.compress)
+			full := allocated(func() *zstd.Encoder {
+				enc, err := zstd.NewWriter(nil, zstd.WithEncoderLevel(level), zstd.WithEncoderConcurrency(c.concurrency))
+				require.NoError(t, err)
+				return enc
+			}, c.compress)
+			require.GreaterOrEqual(t, kept, int64(zstdSizedLimit), "a new %s %s encoder allocated %d bytes: its history can't hold a %d-byte input", level, c.name, kept, zstdSizedLimit)
+			if level == zstd.SpeedFastest {
+				require.InDelta(t, full, kept, 1<<20, "a new %s %s encoder allocated %d bytes, one with twice its window %d", level, c.name, kept, full)
+			} else {
+				require.Less(t, kept, full-6<<20, "a new %s %s encoder allocated %d bytes, one with twice its window %d", level, c.name, kept, full)
+			}
+		}
 	}
 }
