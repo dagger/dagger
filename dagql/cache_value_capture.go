@@ -1224,7 +1224,7 @@ func (capture *HeldCapturedClosure) holdKnownRows(selection ValueSelection, carr
 		if _, blocked := capture.blocked[id]; blocked {
 			continue
 		}
-		if !known.Knows(uint64(id), RowRevision{Replacements: row.replacements, Transfer: row.transferRev, Dependencies: row.dependencyRev}) {
+		if !known.knows(uint64(id), RowRevision{Replacements: row.replacements, Transfer: row.transferRev, Dependencies: row.dependencyRev}) {
 			continue
 		}
 		row.held, row.knownHeld = true, true

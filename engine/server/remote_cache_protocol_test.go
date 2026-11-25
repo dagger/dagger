@@ -111,40 +111,6 @@ func TestRemoteCacheAdapterKnowsTheRowsAMergeLands(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// A merge that lands on a row whose own value the engine keeps doesn't make
-// the row known: the service holds another record of the recipe, not the
-// engine's, which may be another run of the step. The next export carries
-// the row in full, so the service names the engine's own run of it.
-func TestRemoteCacheAdapterDoesNotKnowARowAMergeKeepsTheEnginesValueOn(t *testing.T) {
-	source := newGCTestCache(t)
-	ctx, res := addGCTestPersistableResult(t, source, "source", "merged", dagql.NewInt(7))
-	var bundle dagql.ValueBundle
-	require.NoError(t, source.WithExportedValues(ctx, dagql.ValueSelection{Roots: []dagql.AnyResult{res}}, config.RefConfig{}, func(_ context.Context, exp *dagql.ExportedValues) error {
-		bundle = exp.Bundle
-		return nil
-	}))
-
-	target := newGCTestCache(t)
-	_, own := addGCTestPersistableResult(t, target, "target", "merged", dagql.NewInt(8))
-	adapter := newTestRemoteCacheAdapter(t, target)
-	known := dagql.NewKnownRows()
-	merged, err := adapter.Merge(t.Context(), 1, protocol.Merge{Bundle: bundle}, known)
-	require.NoError(t, err)
-	require.Len(t, merged.Values, 1)
-	number := merged.Values[0].Number
-	require.Equal(t, entryNumber(t, own), number, "the merge landed on the engine's own value")
-	require.Equal(t, 0, known.Len(), "the row the merge kept the engine's value on isn't known")
-
-	var exp remotecache.Export
-	require.NoError(t, adapter.Export(t.Context(), protocol.Export{Roots: []uint64{number}}, known, func(_ context.Context, e remotecache.Export) error {
-		exp = e
-		return nil
-	}))
-	require.NotNil(t, exp.Bundle)
-	require.Empty(t, exp.Rows.Held)
-	require.Contains(t, exp.Rows.Full, number, "an export sends it in full")
-}
-
 // An engine starts with the entries its image ships, and the service holds
 // records of the same recipes, which other engines running the same image
 // exported. A merge of the service's records that lands on an image entry
@@ -185,34 +151,6 @@ func TestRemoteCacheAdapterKnowsAnImageEntryAMergeKeeps(t *testing.T) {
 	require.NotNil(t, exp.Bundle)
 	require.Equal(t, []uint64{shipped}, exp.Rows.Held, "the image's entry goes as a held row")
 	require.NotContains(t, exp.Rows.Full, shipped)
-}
-
-// knowMerged makes known the rows a merge stored the service's records on, and
-// counts the rows it kept that aren't known at their revisions: those an
-// export carries in full, by whether the engine's value is its own or a
-// record the service sent before. A kept row known at its revision stays
-// known and counts in neither, and so does one kept on an entry the same
-// merge stored another record of its recipe on.
-func TestKnowMergedCountsTheKeptRowsAnExportCarriesInFull(t *testing.T) {
-	t.Parallel()
-	known := dagql.NewKnownRows()
-	before := dagql.RowRevision{Transfer: 1}
-	moved := dagql.RowRevision{Transfer: 1, Dependencies: 1}
-	known.Merged(dagql.ExportedRows{Full: map[uint64]dagql.RowRevision{2: before, 3: before}})
-	own, sent := knowMerged(known, dagql.MergeReply{Values: []dagql.MergedValue{
-		{Number: 1, Revision: before, Stored: true},
-		{Number: 2, Revision: before},
-		{Number: 3, Revision: moved},
-		{Number: 4, Revision: before, Own: true},
-		{Number: 5, Revision: before},
-		{Number: 5, Revision: before, Stored: true},
-	}})
-	require.Equal(t, 1, own, "the engine's own value")
-	require.Equal(t, 1, sent, "the record sent before, at revisions that moved since")
-	require.True(t, known.Knows(1, before), "the stored record is known")
-	require.True(t, known.Knows(2, before), "the kept row stays known")
-	require.False(t, known.Knows(3, moved))
-	require.False(t, known.Knows(4, before))
 }
 
 // The merge line carries the reply's generation and the engine's clock at the
