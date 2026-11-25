@@ -179,3 +179,14 @@ func TestCallScopesBindACallKeyedPerClientThatHandsOverWhatItRead(t *testing.T) 
 	s.handOff(ctx, "reading", false, "a value from the client's files", "")
 	require.Equal(t, "reading", scopes.SessionBound(), "a call that hands over what it read from its client binds its caller")
 }
+
+// A resolver that reads its session's state other than through a cached
+// call says so, and its call scopes count the read. Outside call scopes the
+// note does nothing.
+func TestCallScopesRecordASessionRead(t *testing.T) {
+	s := newCallScopesTest(t)
+	ctx, scopes := WithCallScopes(s.ctx)
+	RecordSessionRead(ctx, "the session's lock")
+	require.Equal(t, "the session's lock", scopes.SessionBound())
+	RecordSessionRead(s.ctx, "outside call scopes")
+}
