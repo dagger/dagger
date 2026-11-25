@@ -61,7 +61,7 @@ func testOfferPartLocked(t *testing.T, ctx context.Context, c *Cache, res *share
 	record := PersistedPartOffer{Address: PersistedPartAddress{Part: "snapshot"}, Value: SnapshotValue{Kind: "directory"}, Owner: PersistedOfferOwner{DependencyIDs: []uint64{uint64(dependency.id)}}}
 	owner, err := c.newOfferOwnerLocked(ctx, record.Owner)
 	require.NoError(t, err)
-	require.NoError(t, c.attachPartOfferLocked(res, cloudCacheID, record.Address, &partOffer{record: record, owner: owner}))
+	require.NoError(t, c.attachPartOfferLocked(res, cloudCacheID, record.Address, &partOffer{layeredOffer: c.storedLayers.hold(record), owner: owner}))
 }
 
 // An engine's Cloud holding owns nothing. An entry the Cloud holds a copy

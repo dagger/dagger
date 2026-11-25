@@ -1774,7 +1774,7 @@ func TestMergeValuesFirstOfExpiredRecordsDecides(t *testing.T) {
 			entry := b.resultsByID[sharedResultID(oldValue.Number)]
 			var paths []string
 			for _, offer := range entry.testPartOffers() {
-				paths = append(paths, offer.record.Value.Path)
+				paths = append(paths, offer.held.Value.Path)
 			}
 			env := entry.persistedEnvelope
 			b.egraphMu.RUnlock()
@@ -2138,7 +2138,7 @@ func TestMergeValuesChecksTheOffersTheCommitLeaves(t *testing.T) {
 			b.egraphMu.RLock()
 			var paths []string
 			for _, offer := range keptX.cacheSharedResult().testPartOffers() {
-				paths = append(paths, offer.record.Value.Path)
+				paths = append(paths, offer.held.Value.Path)
 			}
 			b.egraphMu.RUnlock()
 			require.Equal(t, []string{"/new"}, paths, "X's offer was replaced")
@@ -2220,7 +2220,7 @@ func mergeTestOfferPaths(c *Cache, res *sharedResult) []string {
 	defer c.egraphMu.RUnlock()
 	var paths []string
 	for _, offer := range res.testPartOffers() {
-		paths = append(paths, offer.record.Value.Path)
+		paths = append(paths, offer.held.Value.Path)
 	}
 	slices.Sort(paths)
 	return paths
@@ -2357,7 +2357,7 @@ func TestMergeValuesOfferOwnerNamingOneEntryTwice(t *testing.T) {
 			offers := b.resultsByID[sharedResultID(receiver)].testPartOffers()
 			require.Len(t, offers, 1)
 			for _, offer := range offers {
-				require.Equal(t, []uint64{entry}, offer.record.Owner.DependencyIDs, "the entry once")
+				require.Equal(t, []uint64{entry}, offer.held.Owner.DependencyIDs, "the entry once")
 			}
 		})
 	}

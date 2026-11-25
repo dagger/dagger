@@ -516,6 +516,14 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 		for _, res := range c.resultsByID {
 			if res.hasValue {
 				res.persistedEnvelope = nil
+			} else if env := res.persistedEnvelope; env != nil && len(env.PendingOffers) > 0 {
+				// The offers are the entry's now, which saves and captures
+				// read (attachedOffersLocked): the envelope it keeps holds
+				// none, as a merged record's doesn't
+				// (installMergedRecordLocked).
+				kept := *env
+				kept.PendingOffers = nil
+				res.persistedEnvelope = &kept
 			}
 			res.onRelease = joinOnRelease(c.resultSnapshotLeaseCleanup(res), res.onRelease)
 		}

@@ -259,11 +259,14 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, item CloudPar
 		return out
 	}
 	key, _ := partAddressKey(address)
+	// The offer as the cache would hold it, its layers the table's, taken
+	// before the lock.
+	held := c.storedLayers.hold(offer)
 	// A preparation hold protects references across the two E sections.
 	c.lockGraphFor(ctx, workOffer)
 	var owner *offerOwner
 	old := row.partOfferLocked(key)
-	if old != nil && sameOfferMeaning(old.record, offer) {
+	if old != nil && old.sameMeaning(held) {
 		owner = old.owner
 		c.retainOfferOwnerLocked(owner)
 	} else {
@@ -274,7 +277,7 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, item CloudPar
 		out.Outcome, out.Err = OfferInvalid, err
 		return out
 	}
-	offer.Owner.DependencyIDs = slices.Clone(owner.record.DependencyIDs)
+	held.held.Owner.DependencyIDs = slices.Clone(owner.record.DependencyIDs)
 	transferred := false
 	defer func() {
 		if transferred {
@@ -344,9 +347,9 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, item CloudPar
 			// The offer names the row's Cloud counterpart, which may be a new
 			// entry, as after a service restart.
 			row.noteCloudCopyLocked(item.CloudNumber, item.CloudStored, item.CloudExpiresAtUnix)
-			if current == nil || !reflect.DeepEqual(current.record, offer) {
+			if current == nil || !slices.Equal(current.layers, held.layers) || !reflect.DeepEqual(current.held, held.held) {
 				// Both primitives validate the owner graph before any mutation.
-				next := &partOffer{record: offer, owner: owner}
+				next := &partOffer{layeredOffer: held, owner: owner}
 				if current == nil {
 					out.Err = c.attachPartOfferLocked(row, cloudCacheID, address, next)
 				} else {

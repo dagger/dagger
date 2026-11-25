@@ -124,7 +124,7 @@ func TestOfferPartsPreparationWindow(t *testing.T) {
 			var copyErr error
 			if slot != nil {
 				slotOwner = slot.owner
-				records, err := clonePartOffers([]PersistedPartOffer{slot.record})
+				records, err := clonePartOffers([]PersistedPartOffer{slot.record()})
 				copyErr = err
 				if err == nil {
 					record = records[0]

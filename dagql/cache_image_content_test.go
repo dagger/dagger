@@ -45,7 +45,7 @@ func (f *exhaustionFixture) attachImage(t *testing.T, row AnyResult, offer Persi
 	row.cacheSharedResult().noteImageCopyLocked(1)
 	owner, err := f.cache.newOfferOwnerLocked(f.ctx, offer.Owner)
 	if err == nil {
-		err = f.cache.attachPartOfferLocked(row.cacheSharedResult(), imageCacheID, offer.Address, &partOffer{record: offer, owner: owner})
+		err = f.cache.attachPartOfferLocked(row.cacheSharedResult(), imageCacheID, offer.Address, &partOffer{layeredOffer: f.cache.storedLayers.hold(offer), owner: owner})
 	}
 	f.cache.egraphMu.Unlock()
 	require.NoError(t, err)
@@ -195,7 +195,7 @@ func TestCloudOfferOfAnImageEntryIsLeftOut(t *testing.T) {
 	require.Nil(t, cloud, "no Cloud holding")
 	require.Len(t, offers, 1)
 	for _, offer := range offers {
-		require.True(t, imageOfferLayers(&offer.record), "the image's offer stays")
+		require.True(t, offer.imageLayers(), "the image's offer stays")
 	}
 }
 
@@ -279,11 +279,11 @@ func TestCloudMergeGivesAnImageRecordWithoutAPartItsPart(t *testing.T) {
 	b.egraphMu.RUnlock()
 	require.Len(t, rootOffers, 1)
 	for _, offer := range rootOffers {
-		require.True(t, imageOfferLayers(&offer.record), "the root keeps the image's offer")
+		require.True(t, offer.imageLayers(), "the root keeps the image's offer")
 	}
 	require.Len(t, depOffers, 1, "the record takes the Cloud's part")
 	for _, offer := range depOffers {
-		require.False(t, imageOfferLayers(&offer.record), "the Cloud's offer")
+		require.False(t, offer.imageLayers(), "the Cloud's offer")
 	}
 	require.NotNil(t, depCloud, "in its Cloud holding")
 	require.NoError(t, savedErr)

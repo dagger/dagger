@@ -23,7 +23,6 @@ import (
 func WithBlobStore() CacheOption {
 	return func(c *Cache) {
 		c.blobBacked = true
-		c.storedLayers = &storedLayers{}
 		c.changes = &changeMarks{}
 	}
 }

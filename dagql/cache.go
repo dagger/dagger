@@ -576,6 +576,7 @@ func NewCache(
 		snapshotGC:        snapshotGC,
 		partContentSource: NewPartContentSource(nil),
 		partPrefetchRoom:  func(int64) bool { return true },
+		storedLayers:      &storedLayers{},
 	}
 	for _, opt := range opts {
 		opt(c)
@@ -664,7 +665,7 @@ func NewCache(
 		if err := runOnReleaseFuncs(context.WithoutCancel(ctx), releases); err != nil {
 			return nil, errors.Join(err, closeCacheDBs(db, persistDB))
 		}
-		c = &Cache{traceBootID: c.traceBootID, snapshotManager: snapshotManager, snapshotGC: snapshotGC, partContentSource: c.partContentSource, persistenceResetReason: CachePersistenceResetImportFailure, wipedCacheID: c.wipedCacheID, sqlDB: db, pdb: persistDB}
+		c = &Cache{traceBootID: c.traceBootID, snapshotManager: snapshotManager, snapshotGC: snapshotGC, partContentSource: c.partContentSource, storedLayers: &storedLayers{}, persistenceResetReason: CachePersistenceResetImportFailure, wipedCacheID: c.wipedCacheID, sqlDB: db, pdb: persistDB}
 		for _, opt := range opts {
 			opt(c)
 		}
@@ -2323,7 +2324,7 @@ func (c *Cache) collectUnownedResultsLocked(ctx context.Context, queue []*shared
 		}
 
 		for _, offer := range res.partOffersLocked() {
-			more, err := c.retirePartOfferLocked(ctx, res, offer.record.Address)
+			more, err := c.retirePartOfferLocked(ctx, res, offer.held.Address)
 			queue = append(queue, more...)
 			rerr = errors.Join(rerr, err)
 		}
@@ -2996,8 +2997,9 @@ type Cache struct {
 	// blobBacked marks a cache that keeps parts in a blob store: only it
 	// accepts SetStoredPart (WithBlobStore).
 	blobBacked bool
-	// storedLayers holds each distinct layer of the stored parts' chains
-	// once. Set with blobBacked.
+	// storedLayers holds each distinct layer of the chains of the parts the
+	// cache holds once: a blob-backed cache's stored parts', an engine's
+	// offered parts'.
 	storedLayers *storedLayers
 	// pool is a blob-backed cache's pool, kept as the cache changes, as
 	// its prunes' two stages measure it (cache_pool_measure.go). Guarded by
