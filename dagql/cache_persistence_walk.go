@@ -141,12 +141,11 @@ type persistRead struct {
 	inputs    []persistdb.MirrorTermInput
 	inputIDs  []eqClassID
 	digests   []persistdb.MirrorEqClassDigest
-	// keptAt are the places in kept of its entries, terms and classes, by
-	// number: the walk meets units in no order.
-	keptAt struct {
-		entries map[sharedResultID]int32
-		terms   map[uint64]int32
-		classes map[uint64]int32
+	// cursor is where the walk, which reads each kind of unit in number
+	// order, is in kept's list of that kind. A unit read again after the
+	// walk is found in kept by a search.
+	cursor struct {
+		entries, terms, classes int
 	}
 	// edges holds each entry read's ownership edges, and ids each entry
 	// read's output classes and each term read's input classes, all
@@ -202,32 +201,22 @@ type persistClassRead struct {
 
 func newPersistRead(kept *persistKept, seed maphash.Seed) *persistRead {
 	rd := &persistRead{kept: kept, seed: seed}
-	rd.keptAt.entries = make(map[sharedResultID]int32, len(kept.entries))
-	for i, e := range kept.entries {
-		rd.keptAt.entries[e.id] = int32(i)
-	}
-	rd.keptAt.terms = keptUnitIndex(kept.terms)
-	rd.keptAt.classes = keptUnitIndex(kept.classes)
 	if testPersistNotesAlways {
 		rd.prints = newPersistPrints()
 	}
 	return rd
 }
 
-func keptUnitIndex(list []keptUnit) map[uint64]int32 {
-	at := make(map[uint64]int32, len(list))
-	for i, u := range list {
-		at[u.id] = int32(i)
-	}
-	return at
-}
-
 // sizeFor makes room for a walk of the store as it is: one read of each
-// entry, term and class slot. Requires egraphMu for reading.
+// entry, term and live class, and of as many edges as the last save read,
+// with room for a little growth, so that no slice grows by copying. Requires
+// egraphMu for reading.
 func (rd *persistRead) sizeFor(c *Cache) {
-	rd.entries = slices.Grow(rd.entries, len(c.resultsByID))
-	rd.terms = slices.Grow(rd.terms, len(c.egraphTerms))
-	rd.classes = slices.Grow(rd.classes, len(c.egraphParents))
+	room := func(n int) int { return n + n/16 }
+	rd.entries = slices.Grow(rd.entries, room(len(c.resultsByID)))
+	rd.terms = slices.Grow(rd.terms, room(len(c.egraphTerms)))
+	rd.classes = slices.Grow(rd.classes, room(c.liveEqClasses))
+	rd.edges = slices.Grow(rd.edges, room(rd.kept.edges))
 }
 
 func (rd *persistRead) addEntry(e persistEntryRead) {
@@ -254,20 +243,31 @@ func (rd *persistRead) addClass(k persistClassRead) {
 	}
 }
 
-func (rd *persistRead) keptEntry(id sharedResultID) (keptEntry, bool) {
-	i, found := rd.keptAt.entries[id]
-	if !found {
-		return keptEntry{}, false
+// keptAt finds the unit numbered id in kept's sorted list: from the walk's
+// cursor, which only moves forward, or, for a unit read again, by a search.
+func keptAt[T any](list []T, cursor *int, rereading bool, id uint64, idOf func(*T) uint64) (T, bool) {
+	var zero T
+	if rereading {
+		i, found := slices.BinarySearchFunc(list, id, func(u T, id uint64) int { return cmp.Compare(idOf(&u), id) })
+		if !found {
+			return zero, false
+		}
+		return list[i], true
 	}
-	return rd.kept.entries[i], true
+	for *cursor < len(list) && idOf(&list[*cursor]) < id {
+		*cursor++
+	}
+	if *cursor < len(list) && idOf(&list[*cursor]) == id {
+		return list[*cursor], true
+	}
+	return zero, false
 }
 
-func keptUnitAt(list []keptUnit, at map[uint64]int32, id uint64) (keptUnit, bool) {
-	i, found := at[id]
-	if !found {
-		return keptUnit{}, false
-	}
-	return list[i], true
+func keptEntryID(e *keptEntry) uint64 { return uint64(e.id) }
+func keptUnitID(u *keptUnit) uint64   { return u.id }
+
+func (rd *persistRead) keptEntry(id sharedResultID) (keptEntry, bool) {
+	return keptAt(rd.kept.entries, &rd.cursor.entries, rd.rereading, uint64(id), keptEntryID)
 }
 
 // readEntryLocked reads the entry numbered id, res or nil if the cache
@@ -525,7 +525,7 @@ func (c *Cache) readTermLocked(rd *persistRead, id egraphTermID, term *egraphTer
 	if rd.prints != nil {
 		rd.prints.terms[id] = t.fp
 	}
-	if prev, held := keptUnitAt(rd.kept.terms, rd.keptAt.terms, uint64(id)); !held || prev.fp != t.fp {
+	if prev, held := keptAt(rd.kept.terms, &rd.cursor.terms, rd.rereading, uint64(id), keptUnitID); !held || prev.fp != t.fp {
 		t.term = &persistTermSnapshot{
 			row: persistdb.MirrorTerm{
 				ID:              int64(id),
@@ -576,46 +576,68 @@ func (c *Cache) readClassLocked(rd *persistRead, id eqClassID) {
 		digestsPrint.add(rowPrint(seed, row))
 	}
 	k := persistClassRead{id: id, present: true, fp: digestsPrint.value(seed)}
-	if prev, held := keptUnitAt(rd.kept.classes, rd.keptAt.classes, uint64(id)); !held || prev.fp != k.fp {
+	if prev, held := keptAt(rd.kept.classes, &rd.cursor.classes, rd.rereading, uint64(id), keptUnitID); !held || prev.fp != k.fp {
 		k.class = &persistClassSnapshot{id: int64(id), held: held, digests: slices.Clone(rows)}
 	}
 	rd.addClass(k)
 }
 
-// walkStoreLocked reads every entry, term and class of the store, taking a
-// step of r after each, which lets egraphMu go between two pieces; a nil r
-// reads it all in the hold the caller has. Requires egraphMu for reading.
+// walkStoreLocked reads every entry, term and class of the store, each kind
+// in number order, taking a step of r after each, which lets egraphMu go
+// between two pieces; a nil r reads it all in the hold the caller has.
+// Requires egraphMu for reading.
 //
-// It ranges over the cache's maps across the holds it lets go. A map may
-// change between two steps of a range: every key there at the start and
-// still there is visited once, and one added or deleted meanwhile may or
-// may not be. A writer notes each of those, and the save reads it again.
+// It first collects the numbers of the entries and of the terms by ranging
+// over the cache's maps across the holds it lets go, and sorts them with no
+// lock held. A map may change between two steps of a range: every key there
+// at the start and still there is visited once, and one added or deleted
+// meanwhile may or may not be. A writer notes each of those, and the save
+// reads it again. Classes are read by number, through the union-find's
+// slots.
 func (c *Cache) walkStoreLocked(rd *persistRead, r *readPieces) error {
 	rd.sizeFor(c)
-	for id, res := range c.resultsByID {
-		if err := c.readEntryLocked(rd, id, res); err != nil {
-			return err
-		}
+	step := func() {
 		if r != nil {
 			r.step()
 		}
 	}
-	for id, term := range c.egraphTerms {
-		if err := c.readTermLocked(rd, id, term); err != nil {
+	sorted := func(sortIDs func()) {
+		if r == nil {
+			sortIDs()
+			return
+		}
+		r.without(sortIDs)
+	}
+	resultIDs := make([]sharedResultID, 0, len(c.resultsByID))
+	for id := range c.resultsByID {
+		resultIDs = append(resultIDs, id)
+		step()
+	}
+	sorted(func() { slices.Sort(resultIDs) })
+	for _, id := range resultIDs {
+		if err := c.readEntryLocked(rd, id, c.resultsByID[id]); err != nil {
 			return err
 		}
-		if r != nil {
-			r.step()
+		step()
+	}
+	termIDs := make([]egraphTermID, 0, len(c.egraphTerms))
+	for id := range c.egraphTerms {
+		termIDs = append(termIDs, id)
+		step()
+	}
+	sorted(func() { slices.Sort(termIDs) })
+	for _, id := range termIDs {
+		if err := c.readTermLocked(rd, id, c.egraphTerms[id]); err != nil {
+			return err
 		}
+		step()
 	}
 	for id := eqClassID(1); int(id) < len(c.egraphParents); id++ {
 		if c.egraphParents[id] != id {
 			continue
 		}
 		c.readClassLocked(rd, id)
-		if r != nil {
-			r.step()
-		}
+		step()
 	}
 	return nil
 }
@@ -704,6 +726,9 @@ func (c *Cache) readStore() (rd *persistRead, walk persistWalk, nextResultID sha
 	}
 	if err := c.walkStoreLocked(rd, r); err != nil {
 		return fail(err)
+	}
+	if c.testPersistWalked != nil {
+		r.without(c.testPersistWalked)
 	}
 	rd.rereading = true
 	// What fits in one piece is read in the last hold.
@@ -821,52 +846,45 @@ func (rd *persistRead) printClasses(entries []persistEntryRead) {
 	}
 }
 
-// ordered returns the reads in number order, each number's last read: the
-// walk's, which reads each number once, or the last read made again after
-// it, which replaces it. It sorts the walk's reads by an index, not moving
-// them, and copies each once.
-func ordered[T any](walk, again []T, id func(*T) uint64) []T {
-	order := make([]int32, len(walk))
-	for i := range order {
-		order[i] = int32(i)
-	}
-	slices.SortFunc(order, func(a, b int32) int { return cmp.Compare(id(&walk[a]), id(&walk[b])) })
-	last := make(map[uint64]int, len(again))
+// readAgain lays the reads made after the walk over the walk's, which are in
+// number order with each number once: a number read again takes its last
+// read, in place, and a number only read again, as a unit made after the walk
+// passed its number, is merged in, moving the walk's reads from the end.
+func readAgain[T any](walk, again []T, id func(*T) uint64) []T {
+	var only []T
 	for i := range again {
-		last[id(&again[i])] = i
-	}
-	out := make([]T, 0, len(walk)+len(last))
-	for _, i := range order {
-		n := id(&walk[i])
-		if j, ok := last[n]; ok {
-			out = append(out, again[j])
-			delete(last, n)
+		n := id(&again[i])
+		if at, found := slices.BinarySearchFunc(walk, n, func(u T, n uint64) int { return cmp.Compare(id(&u), n) }); found {
+			walk[at] = again[i]
 			continue
 		}
-		out = append(out, walk[i])
-	}
-	if len(last) == 0 {
-		return out
-	}
-	// Units the walk didn't meet, read only again: merged in.
-	only := make([]T, 0, len(last))
-	for _, j := range last {
-		only = append(only, again[j])
-	}
-	slices.SortFunc(only, func(a, b T) int { return cmp.Compare(id(&a), id(&b)) })
-	merged := make([]T, 0, len(out)+len(only))
-	i, j := 0, 0
-	for i < len(out) || j < len(only) {
-		if j == len(only) || (i < len(out) && id(&out[i]) < id(&only[j])) {
-			merged = append(merged, out[i])
-			i++
+		if at, found := slices.BinarySearchFunc(only, n, func(u T, n uint64) int { return cmp.Compare(id(&u), n) }); found {
+			only[at] = again[i]
 		} else {
-			merged = append(merged, only[j])
-			j++
+			only = slices.Insert(only, at, again[i])
 		}
 	}
-	return merged
+	if len(only) == 0 {
+		return walk
+	}
+	n := len(walk)
+	walk = slices.Grow(walk, len(only))[:n+len(only)]
+	i, j := n-1, len(only)-1
+	for k := len(walk) - 1; j >= 0; k-- {
+		if i >= 0 && id(&walk[i]) > id(&only[j]) {
+			walk[k] = walk[i]
+			i--
+		} else {
+			walk[k] = only[j]
+			j--
+		}
+	}
+	return walk
 }
+
+// noEntry is an ownership edge to an entry the store doesn't hold, once the
+// edges are turned into entries' indexes.
+const noEntry = ^sharedResultID(0)
 
 // assemble works out a save from what readStore read, holding no lock: the
 // closure of the stored roots, with entries that aren't valid carried up to
@@ -880,56 +898,52 @@ func (rd *persistRead) assemble(nextResultID sharedResultID, writes uint64) (per
 	snapshot.nextResultID = nextResultID
 	snapshot.writes = writes
 
-	rd.entries = ordered(rd.entries, rd.again.entries, func(e *persistEntryRead) uint64 { return uint64(e.id) })
-	rd.terms = ordered(rd.terms, rd.again.terms, func(t *persistTermRead) uint64 { return uint64(t.id) })
-	rd.classes = ordered(rd.classes, rd.again.classes, func(k *persistClassRead) uint64 { return uint64(k.id) })
+	rd.entries = readAgain(rd.entries, rd.again.entries, func(e *persistEntryRead) uint64 { return uint64(e.id) })
+	rd.terms = readAgain(rd.terms, rd.again.terms, func(t *persistTermRead) uint64 { return uint64(t.id) })
+	rd.classes = readAgain(rd.classes, rd.again.classes, func(k *persistClassRead) uint64 { return uint64(k.id) })
 	rd.again.entries, rd.again.terms, rd.again.classes = nil, nil, nil
 	entries := slices.DeleteFunc(rd.entries, func(e persistEntryRead) bool { return !e.present })
 	if rd.prints != nil {
 		rd.printClasses(entries)
 	}
-	index := make(map[sharedResultID]int32, len(entries))
-	for i := range entries {
-		index[entries[i].id] = int32(i)
-	}
-	indexOf := func(id sharedResultID) int {
-		i, found := index[id]
-		if !found {
-			return -1
-		}
-		return int(i)
-	}
 
 	// The closure: an entry that isn't valid, or owns one the store doesn't
 	// hold, is invalid, and so is everything that owns it; the stored roots
 	// that are valid, and what they own, are kept. Each entry's ownership
-	// edges are turned into indexes of entries, beside the read's edges.
-	at := make([]int32, len(rd.edges))
+	// edges are turned into indexes of entries in place, and the next save
+	// sizes its edges by their count.
+	index := make(map[sharedResultID]int32, len(entries))
+	for i := range entries {
+		index[entries[i].id] = int32(i)
+	}
 	invalid := make([]bool, len(entries))
 	var queue []int32
 	for i := range entries {
 		e := &entries[i]
+		snapshot.next.edges += int(e.edgeN)
 		for k := e.edgeAt; k < e.edgeAt+e.edgeN; k++ {
-			j := indexOf(rd.edges[k])
-			at[k] = int32(j)
-			if j < 0 {
+			j, found := index[rd.edges[k]]
+			if !found {
+				rd.edges[k] = noEntry
 				e.valid = false
+				continue
 			}
+			rd.edges[k] = sharedResultID(j)
 		}
 		if !e.valid {
 			invalid[i] = true
 			queue = append(queue, int32(i))
 		}
 	}
-	owned := func(i int32) []int32 {
+	owned := func(i int32) []sharedResultID {
 		e := &entries[i]
-		return at[e.edgeAt : e.edgeAt+e.edgeN]
+		return rd.edges[e.edgeAt : e.edgeAt+e.edgeN]
 	}
 	if len(queue) > 0 {
 		owners := make([][]int32, len(entries))
 		for i := range entries {
 			for _, j := range owned(int32(i)) {
-				if j >= 0 {
+				if j != noEntry {
 					owners[j] = append(owners[j], int32(i))
 				}
 			}
@@ -952,6 +966,7 @@ func (rd *persistRead) assemble(nextResultID sharedResultID, writes uint64) (per
 			stack = append(stack, int32(i))
 		}
 	}
+	kept := 0
 	for len(stack) > 0 {
 		i := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
@@ -959,35 +974,29 @@ func (rd *persistRead) assemble(nextResultID sharedResultID, writes uint64) (per
 			continue
 		}
 		selected[i] = true
-		stack = append(stack, owned(i)...)
+		kept++
+		for _, j := range owned(i) {
+			stack = append(stack, int32(j))
+		}
 	}
 
 	retainedOutputs := make(map[eqClassID]struct{})
 	namedClasses := make(map[eqClassID]struct{})
-	keptEntries := persistKeptCursor[keptEntry]{list: rd.kept.entries, id: func(e keptEntry) uint64 { return uint64(e.id) }}
-	snapshot.next.entries = make([]keptEntry, 0, len(entries))
 	for i := range entries {
 		if !selected[i] {
 			continue
 		}
 		e := &entries[i]
-		for k, j := range owned(int32(i)) {
-			if j < 0 || !selected[j] {
-				return persistStateSnapshot{}, fmt.Errorf("persist result %d: dependency %d is outside persisted root closure", e.id, rd.edges[e.edgeAt+int32(k)])
+		for _, j := range owned(int32(i)) {
+			if j == noEntry || !selected[j] {
+				return persistStateSnapshot{}, fmt.Errorf("persist result %d: a dependency is outside persisted root closure", e.id)
 			}
 		}
 		for _, id := range rd.ids[e.classAt : e.classAt+e.classN] {
 			retainedOutputs[id] = struct{}{}
 			namedClasses[id] = struct{}{}
 		}
-		keptEntries.at(uint64(e.id))
-		snapshot.next.entries = append(snapshot.next.entries, e.next)
-		if e.result != nil {
-			e.result.kept = len(snapshot.next.entries) - 1
-			snapshot.results = append(snapshot.results, *e.result)
-		}
 	}
-	snapshot.goneResults = keptEntries.finish()
 
 	keptTerms := persistKeptCursor[keptUnit]{list: rd.kept.terms, id: func(u keptUnit) uint64 { return u.id }}
 	for i := range rd.terms {
@@ -1032,5 +1041,24 @@ func (rd *persistRead) assemble(nextResultID sharedResultID, writes uint64) (per
 		return persistStateSnapshot{}, fmt.Errorf("persist eq class %d: a saved unit names it, but it was not read", id)
 	}
 	snapshot.goneClasses = keptClasses.finish()
+
+	// What the read held of edges, classes and terms goes before the next
+	// kept table of entries is made.
+	rd.edges, rd.ids, rd.terms, rd.classes = nil, nil, nil, nil
+	keptEntries := persistKeptCursor[keptEntry]{list: rd.kept.entries, id: func(e keptEntry) uint64 { return uint64(e.id) }}
+	snapshot.next.entries = make([]keptEntry, 0, kept)
+	for i := range entries {
+		if !selected[i] {
+			continue
+		}
+		e := &entries[i]
+		keptEntries.at(uint64(e.id))
+		snapshot.next.entries = append(snapshot.next.entries, e.next)
+		if e.result != nil {
+			e.result.kept = len(snapshot.next.entries) - 1
+			snapshot.results = append(snapshot.results, *e.result)
+		}
+	}
+	snapshot.goneResults = keptEntries.finish()
 	return snapshot, nil
 }

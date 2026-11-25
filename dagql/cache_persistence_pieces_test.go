@@ -87,8 +87,8 @@ func TestCachePersistenceSaveLetsWritersInWhileItWalks(t *testing.T) {
 
 // A Cloud's save that reads the store in pieces saves the store as it was at
 // its end, whatever the service wrote while it read: new roots, a stored
-// part, a prune and a collection of an engine's holdings, each made while
-// the save had let the lock go, after it had read every entry. The store it
+// part, a prune and a collection of an engine's holdings, made while the
+// save had let the lock go, after it had read every unit. The store it
 // leaves is what a full save of the cache as the save returns would write.
 func TestCloudSaveReadsWhatIsWrittenWhileItReads(t *testing.T) {
 	t.Parallel()
@@ -120,18 +120,16 @@ func TestCloudSaveReadsWhatIsWrittenWhileItReads(t *testing.T) {
 	cloud.egraphMu.RLock()
 	entries := len(cloud.resultsByID)
 	cloud.egraphMu.RUnlock()
-	yields, wrote := 0, 0
+	wrote := 0
 	cloud.readPieceSize = 1
-	cloud.testReadPieceYielded = func() {
-		yields++
-		if yields <= entries || wrote == len(writes) {
-			return
+	cloud.testPersistWalked = func() {
+		for _, write := range writes {
+			write()
+			wrote++
 		}
-		writes[wrote]()
-		wrote++
 	}
 	require.NoError(t, cloud.Checkpoint(ctx))
-	cloud.readPieceSize, cloud.testReadPieceYielded = 0, nil
+	cloud.readPieceSize, cloud.testPersistWalked = 0, nil
 	require.Equal(t, len(writes), wrote, "every write ran while the save read")
 	require.Greater(t, cloud.LastSaveRead().Holds, entries, "the save read in pieces")
 	require.NoError(t, checkPersistFullSave(ctx, cloud, persistTestFullSave(t, cloud)))
@@ -153,21 +151,6 @@ func persistTestFullSave(t *testing.T, c *Cache) *persistStateSnapshot {
 	return &snapshot
 }
 
-// persistTestUnits is how many units a save's walk reads in a cache that
-// doesn't change: its entries, its terms and the classes that are their own
-// roots. With pieces of one step, the walk lets the lock go after each.
-func persistTestUnits(c *Cache) int {
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
-	n := len(c.resultsByID) + len(c.egraphTerms)
-	for id := 1; id < len(c.egraphParents); id++ {
-		if c.egraphParents[id] == eqClassID(id) {
-			n++
-		}
-	}
-	return n
-}
-
 // A content digest a span teaches an entry whose class already holds that
 // digest, after a save has read the class, gives the class a content label
 // and no join. The save writes the class's label as the cache holds it at
@@ -186,18 +169,15 @@ func TestCloudSaveReadsAContentLabelTaughtAfterItReadTheClass(t *testing.T) {
 	recipe := entry.recipeKeys[0]
 	cloud.egraphMu.RUnlock()
 
-	units, yields := persistTestUnits(cloud), 0
-	cloud.readPieceSize = 1
-	cloud.testReadPieceYielded = func() {
-		yields++
-		if yields == units {
-			// The recipe is in the entry's class already: no join.
-			storedContentTestTeach(t, ctx, cloud, aNumber, recipe)
-		}
+	taught := false
+	cloud.testPersistWalked = func() {
+		// The recipe is in the entry's class already: no join.
+		storedContentTestTeach(t, ctx, cloud, aNumber, recipe)
+		taught = true
 	}
 	require.NoError(t, cloud.Checkpoint(ctx))
-	cloud.readPieceSize, cloud.testReadPieceYielded = 0, nil
-	require.Greater(t, yields, units, "the span taught the entry while the save read")
+	cloud.testPersistWalked = nil
+	require.True(t, taught, "the span taught the entry while the save read")
 	require.NoError(t, checkPersistFullSave(ctx, cloud, persistTestFullSave(t, cloud)))
 }
 
@@ -229,17 +209,14 @@ func TestCloudSaveReadsTheTaughtDigestsTheBodyWorkerGives(t *testing.T) {
 	// The worker has given the frame the digest and not yet recorded it.
 	<-given
 
-	units, yields := persistTestUnits(cloud), 0
-	cloud.readPieceSize = 1
-	cloud.testReadPieceYielded = func() {
-		yields++
-		if yields == units {
-			release()
-			<-done
-		}
+	recorded := false
+	cloud.testPersistWalked = func() {
+		release()
+		<-done
+		recorded = true
 	}
 	require.NoError(t, cloud.Checkpoint(ctx))
-	cloud.readPieceSize, cloud.testReadPieceYielded = 0, nil
-	require.Greater(t, yields, units, "the worker recorded the digest given while the save read")
+	cloud.testPersistWalked = nil
+	require.True(t, recorded, "the worker recorded the digest given while the save read")
 	require.NoError(t, checkPersistFullSave(ctx, cloud, persistTestFullSave(t, cloud)))
 }

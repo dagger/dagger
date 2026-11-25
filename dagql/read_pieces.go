@@ -77,7 +77,17 @@ func (r *readPieces) step() bool {
 
 // yield lets egraphMu go and takes it again, ending the piece in progress.
 func (r *readPieces) yield() {
+	r.without(nil)
+}
+
+// without lets egraphMu go, runs f, unless nil, with no lock held, and takes
+// egraphMu again, ending the piece in progress: for the read's own work on
+// what it has read, such as sorting it.
+func (r *readPieces) without(f func()) {
 	r.release()
+	if f != nil {
+		f()
+	}
 	if r.c.testReadPieceYielded != nil {
 		r.c.testReadPieceYielded()
 	}
