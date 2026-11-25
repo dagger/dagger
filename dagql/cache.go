@@ -2799,6 +2799,9 @@ type Cache struct {
 	testStoredSizeMeasure        func()
 	testStoredSizesHold          func(time.Duration)
 	testStoredTransferNormalized func()
+	// storedPartClock, nil but in tests, is the clock SetStoredParts
+	// admits parts at (time.Now when nil). It is read under egraphMu.
+	storedPartClock func() time.Time
 	// testCallTermsBuilt runs each time an entry's kept calls are grouped
 	// by term (keptCallTermsLocked).
 	testCallTermsBuilt func()
