@@ -2857,7 +2857,7 @@ func (c *Cache) searchMergeGraphLocked(changed []*sharedResult, children func(*s
 // mergeReachLocked returns the stored ancestors of the changed entries that
 // already exist: every entry with a stored path to one, walked up through
 // each entry's dependents (depParents) and through the entries whose offers
-// it owns (offerParents, to the entry holding the owner's offer). An entry
+// it owns (entryOffers.parents, to the entry holding the owner's offer). An entry
 // the merge creates isn't registered yet, and nothing stored points at it.
 // Requires egraphMu.
 func (c *Cache) mergeReachLocked(changed []*sharedResult) map[*sharedResult]bool {
@@ -2882,8 +2882,10 @@ func (c *Cache) mergeReachLocked(changed []*sharedResult) map[*sharedResult]bool
 				add(c.resultsByID[id])
 			}
 		}
-		for id := range res.offerParents {
-			add(c.offerHolderLocked(c.offerOwners[id]))
+		if res.offers != nil {
+			for id := range res.offers.parents {
+				add(c.offerHolderLocked(c.offerOwners[id]))
+			}
 		}
 	}
 	return reach

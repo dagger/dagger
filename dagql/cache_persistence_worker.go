@@ -245,7 +245,7 @@ func (c *Cache) snapshotPersistStateLocked(kept *persistKept, seed maphash.Seed)
 
 		calls = calls[:0]
 		var callsPrint rowsPrint
-		for request, call := range res.calls {
+		for request, call := range res.keptCallsLocked() {
 			row := persistdb.MirrorResultCall{
 				ResultID:      int64(resultID),
 				RequestDigest: request.String(),
