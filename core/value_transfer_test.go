@@ -194,3 +194,33 @@ func TestForeignCodecReusesItsMemo(t *testing.T) {
 	require.Len(t, outputs, 1)
 	require.Equal(t, "/src", outputs[0].Value.Path, "part mapping reused the memo's decode")
 }
+
+// A family's reference visitor, the last read of a payload in a pass that
+// shares its decode, walks the decode the pass's earlier steps kept in the
+// memo, and takes it: a merge decodes the payload once for its validation,
+// its part mapping and its relocation.
+func TestForeignVisitWalksTheMemosDecode(t *testing.T) {
+	codec := foreignFamilyCodec("Directory")
+	native := dagql.PersistedPayloadVisit{Payload: json.RawMessage(`{"form":"snapshot","dir":"/src","platform":"linux/amd64","services":[{"serviceResultID":7,"hostname":"svc"}]}`)}
+	foreign, err := codec.NormalizeForeign(native)
+	require.NoError(t, err)
+	memo := &dagql.PayloadMemo{}
+	v := dagql.PersistedPayloadVisit{Payload: foreign.JSON, Memo: memo, ReferencesVisitedApart: true}
+	require.NoError(t, codec.ValidateForeign(v))
+	require.NotNil(t, memo.Value, "validation keeps its decode")
+
+	// Bytes the memo doesn't describe show which one the visit walked.
+	v.Payload = json.RawMessage(`{"form":"transfer_pending","dir":"/other","platform":"linux/amd64","services":[{"serviceResultID":7,"hostname":"svc"}]}`)
+	rewritten, err := persistedDirectoryVisitor.VisitPersistedReferences(v, func(ref *dagql.PersistedRef) error {
+		if ref.ResultID == 7 {
+			ref.ResultID = 9
+		}
+		return nil
+	})
+	require.NoError(t, err)
+	var visited persistedDirectoryPayload
+	require.NoError(t, json.Unmarshal(rewritten, &visited))
+	require.Equal(t, "/src", visited.Dir, "the visit walked the memo's decode")
+	require.Equal(t, uint64(9), visited.Services[0].ServiceResultID, "and relocated its reference")
+	require.Nil(t, memo.Value, "the visit took the decode")
+}
