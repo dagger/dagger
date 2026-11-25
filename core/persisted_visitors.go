@@ -667,16 +667,37 @@ var persistedArtifactsVisitor = persistedStructVisitor("", func(p *persistedArti
 	if err := visitPersistedModTreeRefs(w.at("Tree"), &p.Tree); err != nil {
 		return err
 	}
-	for i := range p.Entries {
-		if err := w.at("Entries").index(i).child("Workspace", &p.Entries[i].Workspace); err != nil {
-			return err
-		}
-		if err := w.at("Entries").index(i).child("ContextWorkspace", &p.Entries[i].ContextWorkspace); err != nil {
-			return err
+	// Collection roots are artifacts as entries are, with the same references.
+	for _, group := range []struct {
+		field     string
+		artifacts []persistedArtifact
+	}{{"Entries", p.Entries}, {"CollectionRoots", p.CollectionRoots}} {
+		for i := range group.artifacts {
+			if err := w.at(group.field).index(i).child("Workspace", &group.artifacts[i].Workspace); err != nil {
+				return err
+			}
+			if err := w.at(group.field).index(i).child("ContextWorkspace", &group.artifacts[i].ContextWorkspace); err != nil {
+				return err
+			}
+			if err := w.at(group.field).index(i).child("DimensionDisplaySource", &group.artifacts[i].DimensionDisplaySource); err != nil {
+				return err
+			}
+			if err := visitPersistedArtifactViewRefs(w.at(group.field).index(i).at("View"), group.artifacts[i].View); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
 })
+
+// visitPersistedArtifactViewRefs walks the collections an artifact view was
+// filtered from.
+func visitPersistedArtifactViewRefs(w *persistedRefWalker, view *persistedArtifactView) error {
+	if view == nil {
+		return nil
+	}
+	return w.children("Sources", view.Sources)
+}
 
 var persistedAddressVisitor = persistedStructVisitor("", func(p *persistedAddressPayload, w *persistedRefWalker) error {
 	return w.child("boundWorkspaceResultID", &p.BoundWorkspaceResultID)
