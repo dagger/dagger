@@ -354,6 +354,22 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool, stored, declared map[u
 		}
 		outputDeps[id] = append(outputDeps[id], output.Owner.DependencyIDs...)
 	}
+	return bundleClosure(bundle, rows, func(id uint64, row *TransferredValue) []uint64 {
+		var deps []uint64
+		for _, offer := range row.Record.Envelope.PendingOffers {
+			deps = append(deps, offer.Owner.DependencyIDs...)
+		}
+		return append(deps, outputDeps[id]...)
+	})
+}
+
+// bundleClosure returns the ordinals of the roots' closure in dependency
+// order, walking from each root through each row's dependencies and, with
+// edges, the rows edges gives it besides. It refuses a cycle, a dependency on
+// a row the bundle doesn't carry, a duplicate root, and a row outside the
+// closure but a held row a call alone names. rows has each of the bundle's
+// rows at its ordinal.
+func bundleClosure(bundle ValueBundle, rows bundleRows, edges func(id uint64, row *TransferredValue) []uint64) ([]uint64, error) {
 	seen := map[uint64]uint8{}
 	var order []uint64
 	var walk func(uint64) error
@@ -369,11 +385,10 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool, stored, declared map[u
 			return nil
 		}
 		seen[id] = 1
-		deps := slices.Clone(row.DependencyIDs)
-		for _, offer := range row.Record.Envelope.PendingOffers {
-			deps = append(deps, offer.Owner.DependencyIDs...)
+		deps := row.DependencyIDs
+		if edges != nil {
+			deps = append(slices.Clone(deps), edges(id, row)...)
 		}
-		deps = append(deps, outputDeps[id]...)
 		for _, id := range deps {
 			if err := walk(id); err != nil {
 				return err
