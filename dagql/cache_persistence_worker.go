@@ -107,8 +107,11 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 	step := c.readLockGraphAs(ctx, "dagql.persist.snapshot")
 	heldFrom := time.Now()
 	snapshot, err := c.snapshotPersistStateLocked(&c.persistKept, c.persistSeed)
+	// A save into a database that holds nothing writes everything, as a
+	// full save does: only one that could leave something out is checked.
+	check := testPersistFullSave != nil && !c.persistKept.empty()
 	var full persistStateSnapshot
-	if err == nil && testPersistFullSave != nil {
+	if err == nil && check {
 		full, err = c.snapshotPersistStateLocked(&persistKept{}, c.persistSeed)
 	}
 	snapshot.held = time.Since(heldFrom)
@@ -146,7 +149,7 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 			})
 		}
 	}
-	if testPersistFullSave != nil {
+	if check {
 		full.snapshotContentHashes = snapshot.snapshotContentHashes
 		full.snapshotContentLinks = snapshot.snapshotContentLinks
 		full.importedLayerByBlob = snapshot.importedLayerByBlob
