@@ -135,10 +135,6 @@ func calcEgraphTermDigest(selfDigest digest.Digest, inputEqIDs []eqClassID) stri
 	return h.DigestAndClose()
 }
 
-func compareEgraphTermID(a, b egraphTermID) int {
-	return cmp.Compare(a, b)
-}
-
 func compareSharedResultID(a, b sharedResultID) int {
 	return cmp.Compare(a, b)
 }
