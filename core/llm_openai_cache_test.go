@@ -356,7 +356,9 @@ func TestOpenAIEndpointUsesResponses(t *testing.T) {
 		{"explicit OpenAI base URL", LLMEndpoint{BaseURL: "https://api.openai.com/v1"}, true},
 		{"compatible server", LLMEndpoint{BaseURL: "http://localhost:11434/v1"}, false},
 		{"azure", LLMEndpoint{BaseURL: "https://x.openai.azure.com", azureVersion: "2024-06-01"}, false},
-		{"streaming disabled", LLMEndpoint{disableStreaming: true}, true},
+		{"streaming disabled", LLMEndpoint{Model: modelDefaultOpenAI, disableStreaming: true}, true},
+		{"uncatalogued non-streaming", LLMEndpoint{Model: "custom-model", disableStreaming: true}, false},
+		{"audio non-streaming", LLMEndpoint{Model: "gpt-4o-audio-preview", disableStreaming: true}, false},
 		{"compatible non-streaming", LLMEndpoint{BaseURL: "http://localhost:11434/v1", disableStreaming: true}, false},
 		{"azure non-streaming", LLMEndpoint{BaseURL: "https://x.openai.azure.com", azureVersion: "2024-06-01", disableStreaming: true}, false},
 	} {

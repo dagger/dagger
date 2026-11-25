@@ -6,6 +6,8 @@ import (
 	"net/url"
 	"strings"
 
+	"charm.land/catwalk/v3/pkg/catwalk"
+	"github.com/dagger/dagger/core/modelcatalog"
 	"github.com/dagger/dagger/engine"
 	telemetry "github.com/dagger/otel-go"
 )
@@ -223,8 +225,14 @@ func (r *LLMRouter) routeOpenAIModel() *LLMEndpoint {
 // gpt-6.1-sol) refuse function tools over chat completions. Azure and custom
 // base URLs (typically OpenAI-compatible servers that only implement chat
 // completions) stay on chat completions, regardless of streaming mode.
+// Non-streaming requests only move to Responses for catalogued Responses
+// models: uncatalogued audio/Chat-only models must retain their old transport.
 func (endpoint *LLMEndpoint) usesOpenAIResponses() bool {
 	if endpoint.azureVersion != "" {
+		return false
+	}
+	endpointType, known := modelcatalog.EndpointType(string(OpenAI), endpoint.Model)
+	if known && endpointType != catwalk.TypeResponses || !known && endpoint.disableStreaming {
 		return false
 	}
 	if endpoint.BaseURL == "" {
