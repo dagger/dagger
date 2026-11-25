@@ -161,15 +161,19 @@ func TestReplacementDropsStoredParts(t *testing.T) {
 
 // Admission reads the clock under the graph lock: a copy that expires while
 // SetStoredPart waits for the lock gives no part to an entry whose value is
-// still live, although it had not expired when the call started. The call is
-// observed blocked on the lock before the copy expires.
+// still live, although it had not expired when the call started. The cache's
+// clock stands still until the call is seen blocked on the lock, then moves
+// past the copy's expiry before the lock is let go: nothing waits on the
+// wall clock.
 func TestSetStoredPartAdmitsUnderTheGraphLock(t *testing.T) {
 	t.Parallel()
 	ctx, c := storedPartTestCache(t, WithBlobStore())
 	res := storedPartTestPublish(t, ctx, c, "s", "stored-part-clock", &captureTestValue{text: "live"})
 	t.Cleanup(func() { require.NoError(t, c.ReleaseSession(context.Background(), "s")) })
-	expires := time.Now().Unix() + 2
+	now := time.Now()
+	expires := now.Unix() + 2
 	c.egraphMu.Lock()
+	c.storedPartClock = func() time.Time { return now }
 	locked := true
 	defer func() {
 		if locked {
@@ -185,20 +189,25 @@ func TestSetStoredPartAdmitsUnderTheGraphLock(t *testing.T) {
 		stored, _, err := c.SetStoredPart(ctx, uint64(res.cacheSharedResult().id), testLiveOffer(), expires)
 		done <- outcome{stored, err}
 	}()
-	blocked := false
-	for deadline := time.Now().Add(time.Second); !blocked && time.Now().Before(deadline); time.Sleep(time.Millisecond) {
+	// This test's own call is seen blocked on the lock, by its goroutine's
+	// stack: another waiter, such as the body worker or another test's
+	// SetStoredPart, doesn't count.
+	waiting := func() bool {
 		buf := make([]byte, 1<<20)
 		n := runtime.Stack(buf, true)
 		for _, stack := range strings.Split(string(buf[:n]), "\n\n") {
-			if strings.Contains(stack, "(*Cache).SetStoredPart(") && strings.Contains(stack, "sync.(*RWMutex).Lock(") {
-				blocked = true
-				break
+			if strings.Contains(stack, "TestSetStoredPartAdmitsUnderTheGraphLock.func") && strings.Contains(stack, "(*Cache).SetStoredPart(") && strings.Contains(stack, "sync.(*RWMutex).Lock(") {
+				return true
 			}
 		}
+		return false
 	}
-	require.True(t, blocked, "SetStoredPart waits for the graph lock before the copy expires")
-	require.Less(t, time.Now().Unix(), expires)
-	time.Sleep(time.Until(time.Unix(expires, 0)) + 50*time.Millisecond)
+	for deadline := time.Now().Add(time.Minute); !waiting(); time.Sleep(time.Millisecond) {
+		require.True(t, time.Now().Before(deadline), "SetStoredPart waits for the graph lock")
+	}
+	// The call waits for the lock with the copy not yet expired; it expires
+	// before the call holds the lock.
+	now = now.Add(3 * time.Second)
 	c.egraphMu.Unlock()
 	locked = false
 	got := <-done
