@@ -177,33 +177,53 @@ func TestRevealedAgentWorkFollowsFocus(t *testing.T) {
 				AgentName: "worker",
 			},
 			reveal(98, "worker mcp server", prettyTestSpanID(97), "", 109),
+			// A helper the chief spawned, and the helper's own /compact: the
+			// stamp hangs off the session, so only the helper's loop says it
+			// runs beneath the chief.
+			{
+				ID:        prettyTestSpanID(99),
+				TraceID:   prettyTestTraceID(),
+				Name:      "agent: helper",
+				StartTime: time.Unix(110, 0),
+				ParentID:  prettyTestSpanID(1),
+				Agent:     true,
+				AgentID:   "agent-helper",
+				AgentName: "helper",
+			},
+			reveal(100, "/compact helper", prettyTestSpanID(90), "agent-helper", 111),
 		})
 		db.SetPrimarySpan(prettyTestSpanID(90))
 
 		handler := &focusShellHandler{}
 		fe := focusTestFrontend(t, db, handler)
+		// Focus by the handler's settled target, the source of truth: the
+		// roster's jump keys number the nested agents too.
+		focus := func(agentID string) {
+			handler.mu.Lock()
+			handler.target = agentID
+			handler.mu.Unlock()
+			fe.updateAgentRoster()
+			fe.recalculateViewLocked()
+		}
 
 		fe.recalculateViewLocked()
 		require.Equal(t, map[string]bool{
 			"chief-said": true, "scout-said": true, "agent failure": true,
 			"/compact": true, "start mcp server": true, "session step": true,
-			"worker mcp server": true,
+			"worker mcp server": true, "/compact helper": true,
 		}, topLevelNames(fe), "with no agent focused the tree is the whole session")
 
-		pressNavKey(t, fe, '2')
-		awaitFocus(t, fe, handler, "agent-scout")
-		fe.recalculateViewLocked()
+		focus("agent-scout")
 		require.Equal(t, map[string]bool{
 			"scout-said": true, "agent failure": true,
 			"/compact": true, "session step": true, "worker mcp server": true,
 		}, topLevelNames(fe), "the scout's tree keeps its own and its worker's work, not the chief's")
 
-		pressNavKey(t, fe, '1')
-		awaitFocus(t, fe, handler, "agent-scout", "agent-chief")
-		fe.recalculateViewLocked()
+		focus("agent-chief")
 		require.Equal(t, map[string]bool{
 			"chief-said": true, "start mcp server": true, "session step": true,
-		}, topLevelNames(fe), "the scout's work must not linger in the chief's tree")
+			"/compact helper": true,
+		}, topLevelNames(fe), "the chief's tree keeps its helper's /compact, but not the scout's work")
 	})
 }
 

@@ -6319,14 +6319,14 @@ func (fe *frontendPretty) liveTreeOpts() dagui.FrontendOpts {
 	if scope == "" || host == nil || opts.RootFilter != nil {
 		return opts
 	}
-	opts.RootFilter = func(_ *dagui.DB, zoomed *dagui.Span) []*dagui.Span {
+	opts.RootFilter = func(db *dagui.DB, zoomed *dagui.Span) []*dagui.Span {
 		if zoomed != host || !host.Passthrough {
 			return nil
 		}
 		var roots []*dagui.Span
 		for _, span := range host.RevealedSpans.Spans() {
 			// Messages are already the scope's: promotion put them there.
-			if span.LLMRole == "" && ownedByOtherAgent(span, scope) {
+			if span.LLMRole == "" && ownedByOtherAgent(db, span, scope) {
 				continue
 			}
 			roots = append(roots, span)
@@ -6339,25 +6339,49 @@ func (fe *frontendPretty) liveTreeOpts() dagui.FrontendOpts {
 // ownedByOtherAgent reports whether span is the work of an agent other than
 // scope: some agent owns it -- a loop span encloses it, or it is stamped with
 // the agent it was done for (client-side work such as a /compact, which runs
-// outside any loop span; see telemetryattrs.AgentOwnerAttr) -- and no span
-// of scope's encloses it. A worker's work beneath the chief's loop is the
-// chief's too, just as the worker's turns are in the chief's conversation.
-func ownedByOtherAgent(span *dagui.Span, scope string) bool {
+// outside any loop span; see telemetryattrs.AgentOwnerAttr) -- and scope's
+// loop encloses neither it nor, for a stamped span, its agent's loop. A
+// worker's work beneath the chief's loop is the chief's too, just as the
+// worker's turns are in the chief's conversation.
+func ownedByOtherAgent(db *dagui.DB, span *dagui.Span, scope string) bool {
 	owned := false
-	for cur := span; cur != nil; cur = cur.ParentSpan {
-		owner := cur.AgentOwner
-		if cur.Agent {
-			owner = cur.AgentID
+	var loops map[string][]*dagui.Span
+	walked := map[string]bool{}
+	var enclosedByScope func(*dagui.Span) bool
+	enclosedByScope = func(span *dagui.Span) bool {
+		for cur := span; cur != nil; cur = cur.ParentSpan {
+			owner := cur.AgentOwner
+			if cur.Agent {
+				owner = cur.AgentID
+			}
+			if owner == "" {
+				continue
+			}
+			if owner == scope {
+				return true
+			}
+			owned = true
+			if cur.Agent || walked[owner] {
+				continue
+			}
+			// A stamp names its agent but not where that agent runs: carry
+			// on from its loop spans, which a chief's worker lives beneath.
+			walked[owner] = true
+			if loops == nil {
+				loops = map[string][]*dagui.Span{}
+				for _, agent := range db.Agents() {
+					loops[agent.ID] = agent.Spans
+				}
+			}
+			for _, loop := range loops[owner] {
+				if enclosedByScope(loop) {
+					return true
+				}
+			}
 		}
-		if owner == "" {
-			continue
-		}
-		if owner == scope {
-			return false
-		}
-		owned = true
+		return false
 	}
-	return owned
+	return !enclosedByScope(span) && owned
 }
 
 // syncRewindsLocked forces every row to re-render when the set of messages
