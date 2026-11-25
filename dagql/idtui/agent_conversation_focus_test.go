@@ -130,6 +130,83 @@ func TestLiveTreeFollowsFocusedAgent(t *testing.T) {
 	})
 }
 
+// topLevelNames is what the live tree actually renders at its top level: the
+// spans of the rows view's body, by name.
+func topLevelNames(fe *frontendPretty) map[string]bool {
+	names := map[string]bool{}
+	for _, tree := range fe.rowsView.Body {
+		names[tree.Span.Name] = true
+	}
+	return names
+}
+
+// TestRevealedAgentWorkFollowsFocus covers the revealed spans that are not
+// messages: an agent's /compact (stamped by the CLI with the agent it acted
+// on, since it runs outside any loop span) and work revealed inside a loop.
+// Reveal bubbling carries both to the host whoever they belong to, so unlike
+// the promoted messages they used to render in every agent's transcript.
+// They belong to their own agent's alone -- a worker's to the agent whose loop
+// it runs beneath, too -- and a span of no agent shows in all.
+func TestRevealedAgentWorkFollowsFocus(t *testing.T) {
+	runFocusTest(t, func(t *testing.T) {
+		db := focusConversationDB(t)
+		reveal := func(id byte, name string, parent dagui.SpanID, owner string, at int64) dagui.SpanSnapshot {
+			return dagui.SpanSnapshot{
+				ID:         prettyTestSpanID(id),
+				TraceID:    prettyTestTraceID(),
+				Name:       name,
+				StartTime:  time.Unix(at, 0),
+				ParentID:   parent,
+				Reveal:     true,
+				AgentOwner: owner,
+			}
+		}
+		db.ImportSnapshots([]dagui.SpanSnapshot{
+			reveal(94, "/compact", prettyTestSpanID(90), "agent-scout", 105),
+			reveal(95, "start mcp server", prettyTestSpanID(1), "", 106),
+			reveal(96, "session step", prettyTestSpanID(90), "", 107),
+			// A worker the scout spawned, beneath the scout's loop.
+			{
+				ID:        prettyTestSpanID(97),
+				TraceID:   prettyTestTraceID(),
+				Name:      "agent: worker",
+				StartTime: time.Unix(108, 0),
+				ParentID:  prettyTestSpanID(3),
+				Agent:     true,
+				AgentID:   "agent-worker",
+				AgentName: "worker",
+			},
+			reveal(98, "worker mcp server", prettyTestSpanID(97), "", 109),
+		})
+		db.SetPrimarySpan(prettyTestSpanID(90))
+
+		handler := &focusShellHandler{}
+		fe := focusTestFrontend(t, db, handler)
+
+		fe.recalculateViewLocked()
+		require.Equal(t, map[string]bool{
+			"chief-said": true, "scout-said": true, "agent failure": true,
+			"/compact": true, "start mcp server": true, "session step": true,
+			"worker mcp server": true,
+		}, topLevelNames(fe), "with no agent focused the tree is the whole session")
+
+		pressNavKey(t, fe, '2')
+		awaitFocus(t, fe, handler, "agent-scout")
+		fe.recalculateViewLocked()
+		require.Equal(t, map[string]bool{
+			"scout-said": true, "agent failure": true,
+			"/compact": true, "session step": true, "worker mcp server": true,
+		}, topLevelNames(fe), "the scout's tree keeps its own and its worker's work, not the chief's")
+
+		pressNavKey(t, fe, '1')
+		awaitFocus(t, fe, handler, "agent-scout", "agent-chief")
+		fe.recalculateViewLocked()
+		require.Equal(t, map[string]bool{
+			"chief-said": true, "start mcp server": true, "session step": true,
+		}, topLevelNames(fe), "the scout's work must not linger in the chief's tree")
+	})
+}
+
 // TestFocusedAgentFailureRendersAboveInput verifies the durable failure message
 // occupies the conversation stream rather than a transient label: it renders
 // before the prompt and remains among the flowing lines used for scrollback.

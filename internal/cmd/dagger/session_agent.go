@@ -15,7 +15,10 @@ import (
 	"github.com/dagger/dagger/core/modelcatalog"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // One conversation of an interactive session (hack/designs/async-agents.md
@@ -517,6 +520,21 @@ func (a *sessionAgent) bindRuntime(rt agentRuntime, agentHandle, attachedID stri
 	a.agentHandle = agentHandle
 	a.attachedID = attachedID
 	a.owned = owned
+}
+
+// spanOwner stamps a span with the agent this conversation drives
+// (telemetryattrs.AgentOwnerAttr). Client-side work on one conversation -- a
+// save, a reload, a compaction -- runs outside the agent's loop span, so
+// without it the TUI cannot tell whose it is and renders it in every agent's
+// transcript. A conversation with no runtime yet stamps nothing.
+func (a *sessionAgent) spanOwner() trace.SpanStartOption {
+	a.agentL.Lock()
+	handle := a.agentHandle
+	a.agentL.Unlock()
+	if handle == "" {
+		return trace.WithAttributes()
+	}
+	return trace.WithAttributes(attribute.String(telemetryattrs.AgentOwnerAttr, handle))
 }
 
 // detachAgent unbinds the conversation's runtime, returning it only when this
@@ -1116,7 +1134,7 @@ func (a *sessionAgent) reportContextUsage(ctx context.Context, llm *core.LLM) {
 
 	_, span := Tracer().Start(ctx, fmt.Sprintf("context %s tokens (%s)",
 		fmtTokenCount(stepContext), fmtTokenGrowth(growth)),
-		telemetry.Reveal())
+		telemetry.Reveal(), a.spanOwner())
 	span.End()
 }
 
@@ -1358,7 +1376,7 @@ func (a *sessionAgent) ExportChanges(ctx context.Context) (rerr error) {
 		return fmt.Errorf("another save/reload is already in progress")
 	}
 	defer a.syncOpL.Unlock()
-	ctx, span := Tracer().Start(ctx, "saving changes to local checkout", telemetry.Reveal())
+	ctx, span := Tracer().Start(ctx, "saving changes to local checkout", telemetry.Reveal(), a.spanOwner())
 	defer telemetry.EndWithCause(span, &rerr)
 
 	if a.busy() {
@@ -1401,7 +1419,7 @@ func (a *sessionAgent) ResetWorkspace(ctx context.Context) (rerr error) {
 		return fmt.Errorf("another save/reload is already in progress")
 	}
 	defer a.syncOpL.Unlock()
-	ctx, span := Tracer().Start(ctx, "reloading workspace from local checkout", telemetry.Reveal())
+	ctx, span := Tracer().Start(ctx, "reloading workspace from local checkout", telemetry.Reveal(), a.spanOwner())
 	defer telemetry.EndWithCause(span, &rerr)
 
 	// Lock order is syncOpL -> conversation gate -> synchronization baseline.
@@ -1461,7 +1479,7 @@ func (a *sessionAgent) maybeAutoCompact(ctx context.Context) (_ *core.LLM, rerr 
 	}
 
 	if contextTokens > threshold {
-		ctx, span := Tracer().Start(ctx, "auto-compacting LLM history", telemetry.Reveal())
+		ctx, span := Tracer().Start(ctx, "auto-compacting LLM history", telemetry.Reveal(), a.spanOwner())
 		defer telemetry.EndWithCause(span, &rerr)
 		return a.Compact(ctx)
 	}

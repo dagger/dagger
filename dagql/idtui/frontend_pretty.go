@@ -5260,7 +5260,7 @@ func (fe *frontendPretty) recalculateViewLocked() {
 		fe.promoteGeneratorsLocked()
 	}
 	fe.syncRewindsLocked()
-	fe.rowsView = fe.db.RowsView(fe.FrontendOpts)
+	fe.rowsView = fe.db.RowsView(fe.liveTreeOpts())
 	fe.rows = fe.rowsView.Rows(fe.FrontendOpts)
 
 	// Interactive zoom: force-fetch the zoomed span's subtree so navigating
@@ -6300,6 +6300,64 @@ func withdrawStaleConversation(host *dagui.Span, old, nodes []*dagui.MessageNode
 			p.parent.RemoveRevealedSpan(p.span)
 		}
 	}
+}
+
+// liveTreeOpts is fe.FrontendOpts for walking the live tree: while the
+// promoted conversation is scoped to one agent, it keeps every OTHER agent's
+// revealed work off the host's top level.
+//
+// Promotion scopes only the messages it wires in. The host's revealed set
+// also holds whatever reveal bubbling carried up -- an agent's /compact or
+// save, a span revealed inside its loop -- and that bubbles regardless of
+// whose it is, so without this every such span lingered in every agent's
+// transcript. It filters at walk time rather than withdrawing those spans
+// from the host: bubbling re-adds a span on each of its updates, and spans
+// belonging to no agent keep showing whatever is focused.
+func (fe *frontendPretty) liveTreeOpts() dagui.FrontendOpts {
+	opts := fe.FrontendOpts
+	scope, host := fe.promotedConversationAgent, fe.promotedConversationHost
+	if scope == "" || host == nil || opts.RootFilter != nil {
+		return opts
+	}
+	opts.RootFilter = func(_ *dagui.DB, zoomed *dagui.Span) []*dagui.Span {
+		if zoomed != host || !host.Passthrough {
+			return nil
+		}
+		var roots []*dagui.Span
+		for _, span := range host.RevealedSpans.Spans() {
+			// Messages are already the scope's: promotion put them there.
+			if span.LLMRole == "" && ownedByOtherAgent(span, scope) {
+				continue
+			}
+			roots = append(roots, span)
+		}
+		return roots
+	}
+	return opts
+}
+
+// ownedByOtherAgent reports whether span is the work of an agent other than
+// scope: some agent owns it -- a loop span encloses it, or it is stamped with
+// the agent it was done for (client-side work such as a /compact, which runs
+// outside any loop span; see telemetryattrs.AgentOwnerAttr) -- and no span
+// of scope's encloses it. A worker's work beneath the chief's loop is the
+// chief's too, just as the worker's turns are in the chief's conversation.
+func ownedByOtherAgent(span *dagui.Span, scope string) bool {
+	owned := false
+	for cur := span; cur != nil; cur = cur.ParentSpan {
+		owner := cur.AgentOwner
+		if cur.Agent {
+			owner = cur.AgentID
+		}
+		if owner == "" {
+			continue
+		}
+		if owner == scope {
+			return false
+		}
+		owned = true
+	}
+	return owned
 }
 
 // syncRewindsLocked forces every row to re-render when the set of messages

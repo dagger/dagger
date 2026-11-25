@@ -882,12 +882,20 @@ func (h *shellCallHandler) HandlePrompt(ctx context.Context, input idtui.PromptI
 	}
 
 	// Create a new span for this command
-	var span trace.Span
-	ctx, span = Tracer().Start(ctx, line,
+	spanOpts := []trace.SpanStartOption{
 		telemetry.Reveal(),
 		trace.WithAttributes(
 			attribute.String(telemetry.ContentTypeAttr, contentType),
-		))
+		),
+	}
+	if submission, ok := input.CommandTarget.(*commandSubmission); ok &&
+		mode == modePrompt && submission.target != nil && agentCommandActsOnConversation(line) {
+		// A /command like /compact acts on the conversation it was submitted
+		// to, so it belongs in that agent's transcript only.
+		spanOpts = append(spanOpts, submission.target.spanOwner())
+	}
+	var span trace.Span
+	ctx, span = Tracer().Start(ctx, line, spanOpts...)
 	var telemetryErr error
 	defer telemetry.EndWithCause(span, &telemetryErr)
 	defer func() {
