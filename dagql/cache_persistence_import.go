@@ -91,7 +91,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 	c.egraphMu.Lock()
 	importErr := func() error {
 		c.initEgraphLocked()
-		c.writes = writes
+		c.writes, c.restoredWrites = writes, writes
 
 		var maxEqClassID eqClassID
 		for _, row := range eqClassRows {

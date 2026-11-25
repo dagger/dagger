@@ -493,12 +493,25 @@ func (c *Cache) StampCauses(numbers []uint64) map[string]int {
 
 // BundlePosition is the cache's write count (Cache.writes) now: a stored
 // bundle built now would have it as its Position, and if it equals a
-// bundle's Position, nothing the bundle carries has changed since. Right
-// after the cache opens, it is the count its last save kept.
+// bundle's Position, nothing the bundle carries has changed since.
 func (c *Cache) BundlePosition() uint64 {
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
 	return c.writes
+}
+
+// RestoredPosition is the write count a blob-backed cache's open took back
+// from its store: the count its last save read, under the same hold as each
+// entry's stamp. A stored bundle built before the cache opened compares
+// with ChangedSince only if its Position is at most this: one built after
+// the last save, before a crash, may carry what the restore lost. It is
+// read at the restore, before the cache's own work after the open, such as
+// the body worker's, moves the count on (BundlePosition). Zero for a cache
+// that restored nothing.
+func (c *Cache) RestoredPosition() uint64 {
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	return c.restoredWrites
 }
 
 // changedSincePiece is how many entries ChangedSince reads in one hold of
@@ -509,7 +522,7 @@ const changedSincePiece = 1024
 // position, a stored bundle's (StoredBundleResult.Position), changed what a
 // stored bundle carries of the entry (stampEntryLocked), or the entry is
 // gone. A position taken before a restart compares after it, as long as it
-// is at most the count the open took back (BundlePosition). It holds
+// is at most the count the open took back (RestoredPosition). It holds
 // egraphMu for reading changedSincePiece entries at a time.
 func (c *Cache) ChangedSince(numbers []uint64, position uint64) []bool {
 	changed := make([]bool, len(numbers))
