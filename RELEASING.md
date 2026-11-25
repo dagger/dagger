@@ -1,4 +1,4 @@
-# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-October%2021,%202026-success?style=flat-square)
+# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-November%2017,%202026-success?style=flat-square)
 
 This document describes the process for releasing Dagger.
 
