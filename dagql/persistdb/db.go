@@ -76,6 +76,9 @@ type Queries struct {
 
 	selectMetaStmt *sql.Stmt
 	upsertMetaStmt *sql.Stmt
+	// inserts are the mirror's insert statements, prepared on tx
+	// (PrepareMirrorInserts).
+	inserts *[mirrorInserts]*sql.Stmt
 }
 
 func (q *Queries) WithTx(tx *sql.Tx) *Queries {

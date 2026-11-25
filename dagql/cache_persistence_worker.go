@@ -493,7 +493,7 @@ func (c *Cache) snapshotPersistedRootClosureLocked() (map[sharedResultID]struct{
 }
 
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
-func (c *Cache) applyPersistStateSnapshot(ctx context.Context, snapshot persistStateSnapshot) error {
+func (c *Cache) applyPersistStateSnapshot(ctx context.Context, snapshot persistStateSnapshot) (rerr error) {
 	if c.sqlDB == nil || c.pdb == nil {
 		return nil
 	}
@@ -502,7 +502,23 @@ func (c *Cache) applyPersistStateSnapshot(ctx context.Context, snapshot persistS
 	if err != nil {
 		return fmt.Errorf("begin persistence mirror tx: %w", err)
 	}
+	// The transaction is begun under ctx, so cancelling ctx rolls the save
+	// back before its next statement. Its statements run under a context
+	// that can't be cancelled: the SQLite driver starts a goroutine to
+	// interrupt each statement run under one that can, and a save runs one
+	// for each of its rows, millions of them. Each insert is prepared once.
+	saveCtx := ctx
+	ctx = context.WithoutCancel(ctx)
+	defer func() {
+		if rerr != nil && saveCtx.Err() != nil {
+			rerr = fmt.Errorf("%w: %w", rerr, context.Cause(saveCtx))
+		}
+	}()
 	q := c.pdb.WithTx(tx)
+	if err := q.PrepareMirrorInserts(ctx); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("prepare persistence mirror inserts: %w", err)
+	}
 	if err := q.ClearMirrorState(ctx); err != nil {
 		_ = tx.Rollback()
 		return fmt.Errorf("clear mirror state: %w", err)
