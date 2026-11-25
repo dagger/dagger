@@ -367,5 +367,3 @@ tool github.com/matryer/moq
 // containerd and the engine run their metadata on an in-memory store with
 // bbolt's API, saved when the engine stops and loaded when it starts.
 replace go.etcd.io/bbolt => ./internal/fastbolt
-
-replace github.com/coder/websocket => github.com/sipsma/websocket v0.0.0-20261119232213-04819503bbe9
