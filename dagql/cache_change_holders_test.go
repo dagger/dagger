@@ -117,7 +117,7 @@ func TestChangeReportsAHoldingsArrivalAndRemovalNameItAlone(t *testing.T) {
 	key := HolderKey{"cache-d", 40}
 	change := h.attach(t, key, RemoteHolding{Recipe: rRecipe, Request: rRecipe, Field: rField, TypeName: "Directory", ContentDigest: testDigest("holder-content"), Parts: []PersistedPartAddress{h.snapshot}, Executed: true})
 	require.Equal(t, h.r, h.number(t, key), "cache-d's holding is on R")
-	require.Contains(t, change.Holdings, key)
+	require.Contains(t, change.HoldingKeys(), key)
 	require.NotContains(t, change.Entries, h.r, "R's facts and part answers don't change as cache-d joins it")
 	require.NotContains(t, change.Entries, h.m, "nor does M's")
 	after, err := h.cloud.AvailablePart(h.r, h.snapshot, h.now)
@@ -127,7 +127,7 @@ func TestChangeReportsAHoldingsArrivalAndRemovalNameItAlone(t *testing.T) {
 	collected, change, err := h.cloud.CollectRemoteHoldings(h.ctx, []HolderKey{key}, nil)
 	require.NoError(t, err)
 	require.Equal(t, []HolderKey{key}, collected, "cache-d's holding, which nothing owns, is collected")
-	require.Contains(t, change.Holdings, key)
+	require.Contains(t, change.HoldingKeys(), key)
 	require.NotContains(t, change.Entries, h.r, "R, which cache-c still holds, doesn't change as cache-d leaves it")
 	facts := h.cloud.EntriesFacts([]uint64{h.r})
 	require.Len(t, facts, 1, "R stays")
