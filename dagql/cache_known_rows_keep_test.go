@@ -16,7 +16,7 @@ import (
 //
 //	1  held, nothing below: left out
 //	2  the root, held: links 1, 3, 6, 9, 11, 14
-//	3  held, on the way to 5: links 4, 5
+//	3  held, on the way to 5: links 4, 5; left out, the root linking 5
 //	4  held, nothing below: left out
 //	5  held, an output with an owner (12) and a service (13)
 //	6  in full, a dependency (7) and an offer whose owner names 8 and whose
@@ -135,30 +135,34 @@ func bundleReferences(bundle ValueBundle, chains *SelectedChains) []string {
 // and services, the calls and the chains. The kept rows' ordinals are dense,
 // in their order, and the captured rows the bundle keeps take theirs. A
 // renumbering that is wrong but still a valid bundle would land a part or an
-// offer on the wrong entry; this would see it.
+// offer on the wrong entry; this would see it. Row 3, a link on the way to
+// 5, goes with the rows nothing is needed below, and the root links 5.
 func TestKeepNeededRowsRenumbersEveryRowReference(t *testing.T) {
 	t.Parallel()
 	bundle, chains, order := keepTestBundle()
 	before := bundleReferences(bundle, chains)
 	rows, leftOut, kept := keepNeededRows(&bundle, chains, order)
 	require.Empty(t, kept)
-	require.Equal(t, 4, leftOut, "1, 4, 10 and 14")
+	require.Equal(t, 5, leftOut, "1, 3, 4, 10 and 14")
 	var senders []uint64
 	for i, v := range bundle.Values {
 		require.Equal(t, TransferOrdinal(i+1), v.Ordinal, "dense ordinals")
 		require.Equal(t, v.Ordinal, rows[i].ordinal, "the captured row takes its value's ordinal")
 		senders = append(senders, v.SenderNumber)
 	}
-	require.Equal(t, []uint64{102, 103, 105, 106, 107, 108, 109, 111, 112, 113}, senders)
+	require.Equal(t, []uint64{102, 105, 106, 107, 108, 109, 111, 112, 113}, senders)
 	// Of the references before, those that are a kept row's: every one but
-	// the links to the rows left out.
-	left := map[string]bool{"101": true, "104": true, "110": true, "114": true}
-	var want []string
+	// those to or from the rows left out, and the root's link to 5 in place
+	// of 3's.
+	left := map[string]bool{"101": true, "103": true, "104": true, "110": true, "114": true}
+	want := []string{"dependency 102 -> 105"}
 	for _, ref := range before {
-		if !left[ref[strings.LastIndex(ref, " ")+1:]] {
+		from, to, _ := strings.Cut(ref, " -> ")
+		if !left[to] && !left[from[strings.LastIndex(from, " ")+1:]] {
 			want = append(want, ref)
 		}
 	}
+	sort.Strings(want)
 	require.Equal(t, want, bundleReferences(bundle, chains))
 }
 
@@ -184,6 +188,44 @@ func TestKeepNeededRowsSaysWhyItKeepsEveryRow(t *testing.T) {
 	_, _, kept = keepNeededRows(&bundle, chains, order)
 	require.Equal(t, keptAllUnreached, kept)
 	require.Len(t, bundle.Values, 14, "sent as it is")
+}
+
+// A row an output's owner names, and that the root reaches through held rows
+// nothing stands on, is linked from the root all the same: the Cloud drops
+// the outputs before it walks the roots' closure again (checkValueMerge), so
+// the owner's edge to it doesn't stand in for the links it went by. Here the
+// root holds a completed snapshot whose owner names 3, below 2.
+func TestKeepNeededRowsLinksAnOwnersRowThroughDependencies(t *testing.T) {
+	t.Parallel()
+	held := func(o uint64, deps ...uint64) TransferredValue {
+		return TransferredValue{Ordinal: TransferOrdinal(o), SenderNumber: 100 + o, Held: digest.FromString(fmt.Sprint("owner ", o)), DependencyIDs: deps}
+	}
+	bundle := ValueBundle{
+		Version: ValueBundleVersion,
+		Roots:   []TransferredRoot{{Ordinal: 1}},
+		Values:  []TransferredValue{held(1, 2), held(2, 3), held(3)},
+		Outputs: []TransferredOutput{{
+			Ordinal: 1,
+			Address: PersistedPartAddress{Part: "snapshot"},
+			State:   "completed",
+			Owner:   &PersistedOfferOwner{DependencyIDs: []uint64{3}},
+		}},
+	}
+	order := []*capturedTransferRow{{ordinal: 1}, {ordinal: 2}, {ordinal: 3}}
+	_, leftOut, kept := keepNeededRows(&bundle, nil, order)
+	require.Empty(t, kept)
+	require.Equal(t, 1, leftOut, "2, nothing stands on it")
+	require.Equal(t, []uint64{101, 103}, []uint64{bundle.Values[0].SenderNumber, bundle.Values[1].SenderNumber})
+	require.Equal(t, []uint64{2}, bundle.Values[0].DependencyIDs, "the root links the owner's row")
+	// The Cloud's second walk, without the outputs.
+	withoutParts := bundle
+	withoutParts.Outputs = nil
+	rows := make(bundleRows, len(withoutParts.Values)+1)
+	for i := range withoutParts.Values {
+		rows[withoutParts.Values[i].Ordinal] = &withoutParts.Values[i]
+	}
+	_, err := bundleClosure(withoutParts, rows, nil)
+	require.NoError(t, err)
 }
 
 // cloudStateOf describes every entry of a Cloud by its recipe: its
