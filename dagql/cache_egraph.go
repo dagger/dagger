@@ -1875,26 +1875,48 @@ func frameJSONGrowth(base entryFrame, baseFrame *ResultCall, body *storedBody, f
 	return now - was, nil
 }
 
-// resultIDForCall finds the attached result for frame. The lookup only reads
-// the e-graph, so it holds egraphMu for reading, as a cache-hit lookup does.
-func (c *Cache) resultIDForCall(ctx context.Context, frame *ResultCall) (sharedResultID, error) {
+// resultIDForCall finds the attached result for frame that sessionID would be
+// served for it, as a lookup of the call by the session would choose it: a
+// call whose key doesn't name its session can have a result for each
+// session, built on resources only that session has bound, and what is made
+// from a result requires what it requires. A result the session bound to
+// itself is found under the call holding the binding first, as
+// lookupCacheForRequest finds it.
+func (c *Cache) resultIDForCall(ctx context.Context, sessionID string, frame *ResultCall) (sharedResultID, error) {
 	if frame == nil {
 		return 0, fmt.Errorf("resolve result ID for call: nil call")
 	}
+	if c.sessionMayHaveBound(sessionID, frame.Field) {
+		bound := frame.withBoundSessions([]SessionResourceHandle{c.sessionBoundHandle(sessionID)})
+		if id, _, err := c.sessionResultIDForCall(ctx, sessionID, bound); err != nil || id != 0 {
+			return id, err
+		}
+	}
+	id, requestDigest, err := c.sessionResultIDForCall(ctx, sessionID, frame)
+	if err != nil || id != 0 {
+		return id, err
+	}
+	return 0, fmt.Errorf("resolve result ID for call: no attached result for %s", requestDigest)
+}
 
+// sessionResultIDForCall is resultIDForCall for frame as given: the number of
+// the candidate selectLookupCandidateForSessionLocked chooses for sessionID,
+// or 0 when there is none, with frame's recipe digest. The lookup only reads
+// the e-graph, so it holds egraphMu for reading, as a cache-hit lookup does.
+func (c *Cache) sessionResultIDForCall(ctx context.Context, sessionID string, frame *ResultCall) (sharedResultID, digest.Digest, error) {
 	requestDigest, err := frame.deriveRecipeDigest(c)
 	if err != nil {
-		return 0, fmt.Errorf("resolve result ID for call: derive request digest: %w", err)
+		return 0, "", fmt.Errorf("resolve result ID for call: derive request digest: %w", err)
 	}
 	requestSelf, requestInputRefs, err := frame.selfDigestAndInputRefs(c)
 	if err != nil {
-		return 0, fmt.Errorf("resolve result ID for call: derive request term digests: %w", err)
+		return 0, "", fmt.Errorf("resolve result ID for call: derive request term digests: %w", err)
 	}
 	requestInputs := make([]digest.Digest, 0, len(requestInputRefs))
 	for _, ref := range requestInputRefs {
 		dig, err := ref.inputDigest(c)
 		if err != nil {
-			return 0, fmt.Errorf("resolve result ID for call: derive request term input digest: %w", err)
+			return 0, "", fmt.Errorf("resolve result ID for call: derive request term input digest: %w", err)
 		}
 		requestInputs = append(requestInputs, dig)
 	}
@@ -1902,15 +1924,10 @@ func (c *Cache) resultIDForCall(ctx context.Context, frame *ResultCall) (sharedR
 	wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
 	defer c.egraphMu.RUnlock()
 	match := c.lookupMatchForCallLocked(frame, requestDigest, requestSelf, requestInputs, time.Now().Unix())
-	if match.candidates == nil || match.candidates.Empty() {
-		return 0, fmt.Errorf("resolve result ID for call: no attached result for %s", requestDigest)
+	if res := c.selectLookupCandidateForSessionLocked(sessionID, match.candidates); res != nil {
+		return res.id, requestDigest, nil
 	}
-	for hitRes := range match.candidates.Items() {
-		if hitRes != nil && hitRes.id != 0 {
-			return hitRes.id, nil
-		}
-	}
-	return 0, fmt.Errorf("resolve result ID for call: no attached result for %s", requestDigest)
+	return 0, requestDigest, nil
 }
 
 // termForResultByDigestLocked returns a live term with termDigest that the
