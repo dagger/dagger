@@ -2239,15 +2239,9 @@ func (c *Cache) prerelocateMergeRows(ctx context.Context, prep *valueMergePrep) 
 	if c.testNoPrerelocation || len(prep.stale) > 0 || !prep.preparesPayloads() && len(prep.unprepared) == 0 {
 		return
 	}
-	commit := prep.early
-	if !c.blobBacked || commit == nil {
-		commit = &valueMergeCommit{prep: prep, byOrdinal: map[uint64]*mergeRow{}, now: time.Now().Unix()}
-		c.readLockGraphGathered(ctx)
-		c.decideMergeRowsLocked(commit)
-		c.egraphMu.RUnlock()
-		if commit.installsLight() {
-			return
-		}
+	commit := c.prerelocationDecision(ctx, prep)
+	if commit == nil {
+		return
 	}
 	final := func(provisional uint64) (sharedResultID, bool) {
 		row := commit.byOrdinal[provisional-prep.firstID+1]
@@ -2348,6 +2342,25 @@ func (c *Cache) prerelocateMergeRows(ctx context.Context, prep *valueMergePrep) 
 		}
 	}
 	c.notePrerelocated(prep)
+}
+
+// prerelocationDecision is the decision prerelocateMergeRows relocates by: on
+// the Cloud, the one its preparation made (earlyMergeRows), if it made one;
+// otherwise one made now under the read lock, as the commit would decide, or
+// nil when that installs a light record, which the commit prepares in full
+// again first.
+func (c *Cache) prerelocationDecision(ctx context.Context, prep *valueMergePrep) *valueMergeCommit {
+	if c.blobBacked && prep.early != nil {
+		return prep.early
+	}
+	commit := &valueMergeCommit{prep: prep, byOrdinal: map[uint64]*mergeRow{}, now: time.Now().Unix()}
+	c.readLockGraphGathered(ctx)
+	c.decideMergeRowsLocked(commit)
+	c.egraphMu.RUnlock()
+	if commit.installsLight() {
+		return nil
+	}
+	return commit
 }
 
 // prerelocateUnpreparedRow relocates a record left unprepared as the commit
