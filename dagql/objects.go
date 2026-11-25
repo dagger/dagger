@@ -732,11 +732,12 @@ func (r ObjectResult[T]) preselect(ctx context.Context, srv *Server, sel Selecto
 			Args:              frameArgs,
 			ImplicitInputs:    implicitInputs,
 		},
-		TTL:                  field.Spec.TTL,
-		DoNotCache:           field.Spec.DoNotCache != "",
-		IsPersistable:        field.Spec.IsPersistable,
-		DeduplicateTelemetry: field.Spec.DeduplicateTelemetry,
-		PassthroughTelemetry: field.Spec.PassthroughTelemetry,
+		TTL:                   field.Spec.TTL,
+		DoNotCache:            field.Spec.DoNotCache != "",
+		IsPersistable:         field.Spec.IsPersistable,
+		DeduplicateTelemetry:  field.Spec.DeduplicateTelemetry,
+		PassthroughTelemetry:  field.Spec.PassthroughTelemetry,
+		PerClientOnlyToBorrow: field.Spec.PerClientOnlyToBorrow,
 		// The immediate receiver's type name is free here (r is the receiver);
 		// core.AroundFunc reads it to make the static profile-skip decision without
 		// an egraphMu receiver-resolution lookup per call.
@@ -1155,6 +1156,19 @@ type FieldSpec struct {
 	// is undeclared, not worked around. The call frame carries it
 	// (ResultCall.FollowsFromInputs).
 	FollowsFromInputs bool
+
+	// PerClientOnlyToBorrow marks a field keyed per client only to turn what
+	// its client lends it into explicit inputs of the call whose result it
+	// returns: everything it takes from the client is named there, each
+	// secret or socket as a session resource, so the cache serves that result,
+	// and whatever is made from it, only to a session that holds them. A
+	// resolver whose result stands for the calls it makes (CallScopes) is
+	// then not kept to its session by such a call: another session making the
+	// same call would get the same result, or one that names its own
+	// resources. A field whose result differs by anything else it takes from
+	// its client, such as values read from the client's files, must not
+	// declare it. The request carries it (CallRequest.PerClientOnlyToBorrow).
+	PerClientOnlyToBorrow bool
 
 	// Trivial marks fields that only unwrap data from their receiver rather
 	// than performing meaningful work. Their telemetry spans are internal, and
@@ -1790,6 +1804,17 @@ func (field Field[T]) Reevaluate() Field[T] {
 		panic("cannot call on extended field")
 	}
 	field.Spec.Reevaluate = true
+	return field
+}
+
+// PerClientOnlyToBorrow marks the field as keyed per client only to turn
+// what its client lends it into explicit inputs. See
+// FieldSpec.PerClientOnlyToBorrow.
+func (field Field[T]) PerClientOnlyToBorrow() Field[T] {
+	if field.Spec.extend {
+		panic("cannot call on extended field")
+	}
+	field.Spec.PerClientOnlyToBorrow = true
 	return field
 }
 

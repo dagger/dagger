@@ -124,3 +124,58 @@ func TestCallScopesRecordDeclaredSessionScopedInputs(t *testing.T) {
 	require.Equal(t, "session-scoped", scoped("session-scoped", "session-1"))
 	require.Empty(t, scoped("unscoped", ""))
 }
+
+// handOff makes outer, a call keyed per client, under ctx. Its resolver makes
+// inner, a call keyed by its argument alone, with arg as that argument, and
+// returns inner's result, holding resource as a session resource unless it is
+// empty. declared says whether outer is keyed per client only to borrow
+// (FieldSpec.PerClientOnlyToBorrow).
+func (s *callScopesTest) handOff(ctx context.Context, outer string, declared bool, arg, resource string) AnyResult {
+	s.t.Helper()
+	frame := &ResultCall{Kind: ResultCallKindField, Field: outer, Type: NewResultCallType(String("").Type())}
+	client, err := resultCallArgFromInput(ctx, PerClientInput.Name, NewString("client-1"), false)
+	require.NoError(s.t, err)
+	frame.ImplicitInputs = []*ResultCallArg{client}
+	req := &CallRequest{ResultCall: frame, IsPersistable: true, PerClientOnlyToBorrow: declared}
+	res, err := s.c.GetOrInitCall(ctx, s.session, s.srv, req, func(ctx context.Context) (AnyResult, error) {
+		innerFrame := &ResultCall{Kind: ResultCallKindField, Field: outer + "-inner", Type: NewResultCallType(String("").Type())}
+		input, err := resultCallArgFromInput(ctx, "input", NewString(arg), false)
+		if err != nil {
+			return nil, err
+		}
+		innerFrame.Args = []*ResultCallArg{input}
+		return s.c.GetOrInitCall(ctx, s.session, s.srv, &CallRequest{ResultCall: innerFrame, IsPersistable: true}, func(ctx context.Context) (AnyResult, error) {
+			res, err := NewResultForCall(String(arg), innerFrame)
+			if err != nil || resource == "" {
+				return res, err
+			}
+			return res.WithSessionResourceHandle(ctx, SessionResourceHandle(resource))
+		})
+	})
+	require.NoError(s.t, err)
+	return res
+}
+
+// A call keyed per client only to turn what its client lends it into
+// explicit inputs of the call it hands over to, which names each as a session
+// resource, doesn't keep the resolver that made it to its session: another
+// session making the call gets the same result, or one that names its own
+// resources, and the cache serves either only to a session holding them.
+func TestCallScopesDontBindACallKeyedPerClientOnlyToBorrow(t *testing.T) {
+	s := newCallScopesTest(t)
+	ctx, scopes := WithCallScopes(s.ctx)
+	s.handOff(ctx, "borrowing", true, "the client's credential", "lent-credential")
+	require.Empty(t, scopes.SessionBound(), "a call keyed per client only to borrow doesn't bind its caller")
+}
+
+// A call keyed per client that hands over to a call keyed by its arguments
+// alone, with arguments it chose from what its client holds, still keeps the
+// resolver that made it to its session, unless it declares that what it took
+// is only what it borrowed: another session's client may hold another value,
+// and the result it hands over names nothing that tells them apart.
+func TestCallScopesBindACallKeyedPerClientThatHandsOverWhatItRead(t *testing.T) {
+	s := newCallScopesTest(t)
+	ctx, scopes := WithCallScopes(s.ctx)
+	s.handOff(ctx, "reading", false, "a value from the client's files", "")
+	require.Equal(t, "reading", scopes.SessionBound(), "a call that hands over what it read from its client binds its caller")
+}
