@@ -814,8 +814,13 @@ func (c *Cache) checkValueMerge(from CacheID, input ValueBundle) (*valueMergePre
 	var facts map[uint64]*partFacts
 	if c.blobBacked {
 		// Dropping the parts drops their owners' edges, so the roots'
-		// closure is checked again without them.
-		if order, err = validateValueBundleShape(bundle); err != nil {
+		// closure is walked again without them. Its rows were checked above,
+		// and dropping their parts changed nothing else of them.
+		rows := make(bundleRows, len(bundle.Values)+1)
+		for i := range bundle.Values {
+			rows[bundle.Values[i].Ordinal] = &bundle.Values[i]
+		}
+		if order, err = bundleClosure(bundle, rows, nil); err != nil {
 			return nil, err
 		}
 		recordBytes = map[uint64]int64{}
