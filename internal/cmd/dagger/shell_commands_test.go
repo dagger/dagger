@@ -535,7 +535,7 @@ func TestReasoningEffortOptions(t *testing.T) {
 	// Catalog model that can reason but declares no explicit levels
 	// gets the conventional fallback.
 	withoutLevels := catalogModel(func(model llmconfig.ModelInfo) bool {
-		return model.CanReason && len(model.ReasoningLevels) == 0
+		return model.CanReason && !model.AlwaysReason && len(model.ReasoningLevels) == 0
 	})
 	require.Equal(t, []string{"none", "low", "medium", "high"},
 		values(reasoningEffortOptions(withoutLevels)))
@@ -554,7 +554,9 @@ func TestReasoningEffortOptions(t *testing.T) {
 		})))
 		options := reasoningEffortOptions(modelSelection{Provider: "openai", Model: openai.ID})
 		require.Equal(t, []string{"none", "low", "medium", "high", "xhigh", "max"}, values(options))
-		require.Equal(t, "medium (default)", options[2].Key)
+		require.Equal(t, "Medium (default)", options[2].Key)
+		require.Equal(t, "X-High", options[4].Key)
+		require.Equal(t, "xhigh", options[4].Value)
 
 		// An unknown provider uses the first catalog match, even if it cannot reason.
 		require.Equal(t, []string{"none"}, values(reasoningEffortOptions(modelSelection{Model: copilot.ID})))

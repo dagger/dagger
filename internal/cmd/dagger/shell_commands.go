@@ -530,11 +530,10 @@ func (h *shellCallHandler) selectEffortInteractive(ctx context.Context) error {
 
 // reasoningEffortOptions builds the option list for the interactive ".effort"
 // picker from the current provider's catwalk model metadata: the levels the model
-// actually supports, plus "none" to disable reasoning. When the model isn't in
-// the catalog (e.g. a local or custom endpoint), or is a reasoning-capable
-// model without explicit levels, it falls back to the conventional
-// low/medium/high levels. Known models that can't reason at all get only
-// "none". Only look across providers when the current provider is unknown.
+// actually supports, plus "none" when reasoning can be disabled. Unknown models
+// and budget-based models use Dagger's conventional low/medium/high levels.
+// Known models that can't reason at all get only "none". Only look across
+// providers when the current provider is unknown.
 func reasoningEffortOptions(model modelSelection) []huh.Option[string] {
 	var metadata llmconfig.ModelInfo
 	var found bool
@@ -549,27 +548,17 @@ func reasoningEffortOptions(model modelSelection) []huh.Option[string] {
 		}
 	}
 
-	var levels []string
-	var defaultLevel string
-	canReason := !found || metadata.CanReason // unknown models get the conventional fallback below
-	if found && metadata.CanReason {
-		levels = metadata.ReasoningLevels
-		defaultLevel = metadata.DefaultReasoningEffort
-	}
-	if canReason && len(levels) == 0 {
-		levels = []string{"low", "medium", "high"}
-	}
-	if !slices.Contains(levels, "none") {
-		levels = append([]string{"none"}, levels...)
+	if !found {
+		metadata.CanReason = true // retain the conventional fallback for unknown models
 	}
 
 	var options []huh.Option[string]
-	for _, level := range levels {
-		label := level
-		if level == defaultLevel {
+	for _, level := range metadata.ReasoningEffortLevels() {
+		label := level.Display
+		if level.Value == metadata.DefaultReasoningEffort {
 			label += " (default)"
 		}
-		options = append(options, huh.NewOption(label, level))
+		options = append(options, huh.NewOption(label, level.Value))
 	}
 	return options
 }

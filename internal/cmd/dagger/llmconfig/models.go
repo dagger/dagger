@@ -17,13 +17,46 @@ type ModelInfo struct {
 	Label string
 	// CanReason indicates that the model supports extended reasoning / thinking.
 	CanReason bool
-	// ReasoningLevels lists the reasoning effort levels the model supports
-	// (e.g. "low", "medium", "high"). Empty if reasoning is not supported.
-	ReasoningLevels []string
+	// AlwaysReason indicates that reasoning cannot be disabled.
+	AlwaysReason bool
+	// ReasoningLevels pairs the supported wire values with their display names.
+	ReasoningLevels []catwalk.EffortLevel
 	// DefaultReasoningEffort is the default reasoning level for the model.
 	DefaultReasoningEffort string
 	// Default indicates this is the recommended default for its provider.
 	Default bool
+}
+
+// ReasoningEffortLevels returns the selectable effort values and display names.
+// Models without native effort levels use Dagger's conventional levels, which
+// providers can translate into thinking-token budgets. For an unknown model,
+// callers can use ModelInfo{CanReason: true} to offer these same fallback levels.
+// The returned slice is independent of the cached catalog.
+func (m ModelInfo) ReasoningEffortLevels() []catwalk.EffortLevel {
+	var levels []catwalk.EffortLevel
+	if m.CanReason {
+		levels = m.ReasoningLevels
+		if len(levels) == 0 {
+			levels = catwalk.NewEffortLevels("low", "medium", "high")
+		}
+	}
+
+	options := make([]catwalk.EffortLevel, 0, len(levels)+1)
+	hasNone := false
+	for _, level := range levels {
+		if level.Value == "" || (m.AlwaysReason && level.Value == "none") {
+			continue
+		}
+		if level.Display == "" {
+			level.Display = level.Value
+		}
+		hasNone = hasNone || level.Value == "none"
+		options = append(options, level)
+	}
+	if !m.AlwaysReason && !hasNone {
+		options = append(catwalk.NewEffortLevels("none"), options...)
+	}
+	return options
 }
 
 // ProviderEntry describes a provider option for the setup UI.
@@ -102,7 +135,8 @@ func loadCatalog() map[string][]ModelInfo {
 					ID:                     m.ID,
 					Label:                  m.Name,
 					CanReason:              m.CanReason(),
-					ReasoningLevels:        m.ReasoningEffortLevels(),
+					AlwaysReason:           m.Reasoning.Thinking == catwalk.ThinkingAlways,
+					ReasoningLevels:        m.Reasoning.EffortLevels,
 					DefaultReasoningEffort: m.Reasoning.DefaultEffortLevel,
 					Default:                m.ID == defaultModel,
 				})
