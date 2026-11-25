@@ -4077,32 +4077,32 @@ type containerWithDirectoryArgs struct {
 	Expand       bool   `default:"false"`
 }
 
-func (s *containerSchema) withDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithDirectoryArgs) (*core.Container, error) {
+func (s *containerSchema) withDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithDirectoryArgs) (inst dagql.ObjectResult[*core.Container], _ error) {
 	if err := evaluateContainerMetadata(ctx, parent); err != nil {
-		return nil, err
+		return inst, err
 	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get server: %w", err)
+		return inst, fmt.Errorf("failed to get server: %w", err)
 	}
 
 	dir, err := cmp.Or(args.Source, args.Directory).Load(ctx, srv)
 	if err != nil {
-		return nil, err
+		return inst, err
 	}
 
 	path, err := expandEnvVar(ctx, parent.Self(), args.Path, args.Expand)
 	if err != nil {
-		return nil, err
+		return inst, err
 	}
 
 	ctr, parentPendingLazy, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
-		return nil, err
+		return inst, err
 	}
 	owner, err := inheritedOwner(parent, args.Owner, args.InheritOwner)
 	if err != nil {
-		return nil, err
+		return inst, err
 	}
 	ctr.Lazy = &core.ContainerWithDirectoryLazy{
 		LazyState: core.NewLazyState(),
@@ -4113,9 +4113,51 @@ func (s *containerSchema) withDirectory(ctx context.Context, parent dagql.Object
 		Owner:     owner,
 	}
 	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
-		return nil, err
+		return inst, err
 	}
-	return ctr, nil
+	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
+	if err != nil {
+		return inst, err
+	}
+
+	// Key the copy by what it takes from its source, as Directory.withDirectory
+	// is keyed (withDirectoryContentDigest), so that the same files copied to
+	// the same place from two roots make one container. A taught content
+	// digest is a global alias for the result's cache identity, so it covers
+	// the parent and every argument but the source, whose copied files
+	// srcDgst stands for. A source without a content digest leaves the copy
+	// keyed by its recipe.
+	srcDgst, err := copySourceDigest(dir, args.Gitignore)
+	if err != nil {
+		return inst, err
+	}
+	if srcDgst == "" {
+		return inst, nil
+	}
+	parentDgst, err := parent.ContentPreferredDigest(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("container withDirectory: parent digest: %w", err)
+	}
+	permissions := "unset"
+	if args.Permissions.Valid {
+		permissions = strconv.Itoa(int(args.Permissions.Value))
+	}
+	in := []string{
+		"__containerWithDirectory",
+		string(parentDgst),
+		args.Path,
+		strconv.FormatBool(args.Expand),
+		args.Owner,
+		strconv.FormatBool(args.InheritOwner),
+		permissions,
+		strconv.FormatBool(args.Gitignore),
+		strconv.Itoa(len(args.Include)),
+	}
+	in = append(in, args.Include...)
+	in = append(in, strconv.Itoa(len(args.Exclude)))
+	in = append(in, args.Exclude...)
+	in = append(in, string(srcDgst))
+	return inst.WithContentDigest(ctx, hashutil.HashStrings(in...))
 }
 
 type containerWithFileArgs struct {

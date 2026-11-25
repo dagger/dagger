@@ -31,6 +31,7 @@ import (
 	"github.com/dagger/dagger/util/layercopy"
 	"github.com/dagger/dagger/util/patternmatcher"
 	"github.com/dustin/go-humanize"
+	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/dagql"
@@ -54,7 +55,14 @@ type Directory struct {
 	// engine's record of an operation that completed there, and never
 	// changes after.
 	completedElsewhere bool
-	Platform           Platform
+	// filesDigest is the hash of the files under the directory's root,
+	// without the root, for a directory rooted below / whose content digest
+	// was made from that hash and its root (GetContentHashFromDirectory). A
+	// copy keeps those files and not where they were rooted, so a copy of the
+	// directory is keyed by it. It is set before the directory is published,
+	// or when it is decoded, and never changes after.
+	filesDigest digest.Digest
+	Platform    Platform
 	// Services necessary to provision the directory.
 	Services ServiceBindings
 
@@ -246,6 +254,7 @@ type persistedDirectoryPayload struct {
 	OperationState string                    `json:"operationState,omitempty"`
 	Form           string                    `json:"form"`
 	Dir            string                    `json:"dir,omitempty"`
+	FilesDigest    digest.Digest             `json:"filesDigest,omitempty"`
 	Platform       Platform                  `json:"platform"`
 	Services       []persistedServiceBinding `json:"services,omitempty"`
 	LazyKind       string                    `json:"lazyKind,omitempty"`
@@ -314,10 +323,11 @@ func (dir *Directory) persistedPayloadLocked(ctx context.Context, enc *dagql.Per
 		return persistedDirectoryPayload{}, nil, err
 	}
 	payload := persistedDirectoryPayload{
-		ValueKnown: valueKnown,
-		Dir:        dirPath,
-		Platform:   dir.Platform,
-		Services:   services,
+		ValueKnown:  valueKnown,
+		Dir:         dirPath,
+		FilesDigest: dir.filesDigest,
+		Platform:    dir.Platform,
+		Services:    services,
 	}
 	if identity, ok := dir.snapshotIdentityLocked(); ok {
 		payload.Form = persistedDirectoryFormSnapshot
@@ -374,10 +384,11 @@ func decodePersistedDirectoryWithSnapshotRole(ctx context.Context, dec *dagql.Pe
 	}
 
 	dir := &Directory{
-		Platform: persisted.Platform,
-		Services: services,
-		Dir:      new(LazyAccessor[string, *Directory]),
-		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
+		filesDigest: persisted.FilesDigest,
+		Platform:    persisted.Platform,
+		Services:    services,
+		Dir:         new(LazyAccessor[string, *Directory]),
+		Snapshot:    new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
 	}
 	defer func() {
 		dir.outputMu.Lock()
@@ -446,6 +457,23 @@ func (dir *Directory) PartTransferShell() bool { return dir.transferShell }
 // OperationCompletedElsewhere reports whether the directory decoded from
 // another engine's record of an operation that completed there.
 func (dir *Directory) OperationCompletedElsewhere() bool { return dir.completedElsewhere }
+
+// FilesDigest is the hash of the files under the directory's root, without
+// the root, or "" when the directory has none apart from its content digest: a
+// directory rooted at / is keyed by its files alone, and one whose content
+// digest wasn't made from its files has none.
+func (dir *Directory) FilesDigest() digest.Digest {
+	if dir == nil {
+		return ""
+	}
+	return dir.filesDigest
+}
+
+// SetFilesDigest records the files hash GetContentHashFromDirectory returned
+// with the content digest given to the directory's result. It is for a
+// directory its call has just made, before the result is returned: a
+// published directory never changes it.
+func (dir *Directory) SetFilesDigest(dgst digest.Digest) { dir.filesDigest = dgst }
 
 func loadCanonicalScratchDirectory(ctx context.Context) (string, bkcache.ImmutableRef, error) {
 	query, err := CurrentQuery(ctx)

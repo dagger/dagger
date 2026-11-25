@@ -21,6 +21,7 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/moby/patternmatcher/ignorefile"
+	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -577,13 +578,14 @@ func (s *directorySchema) withDirectory(ctx context.Context, parent dagql.Object
 }
 
 // withDirectoryContentDigest keys a copy of one content-keyed directory into
-// another by both directories' content and the copy's arguments, as a
-// Dockerfile COPY is keyed (withDirectoryDockerfileCompatContentHashed). So a
-// directory put together from content-keyed parts stays content-keyed, and
-// what is read from it afterwards, such as a subdirectory, is keyed by what it
-// holds rather than by every part it was made from. The digest comes from the
-// inputs' digests, so the copy stays lazy. Either side without a content
-// digest leaves the copy keyed by its recipe.
+// another by the parent's content, what the copy takes from its source
+// (copySourceDigest) and the copy's arguments, as a Dockerfile COPY is keyed
+// (withDirectoryDockerfileCompatContentHashed). So a directory put together
+// from content-keyed parts stays content-keyed, and what is read from it
+// afterwards, such as a subdirectory, is keyed by what it holds rather than by
+// every part it was made from. The digest comes from the inputs' digests, so
+// the copy stays lazy. Either side without a content digest leaves the copy
+// keyed by its recipe.
 func withDirectoryContentDigest(
 	ctx context.Context,
 	res dagql.ObjectResult[*core.Directory],
@@ -596,11 +598,11 @@ func withDirectoryContentDigest(
 	if err != nil {
 		return res, err
 	}
-	srcCall, err := src.ResultCall()
+	srcDgst, err := copySourceDigest(src, args.Gitignore)
 	if err != nil {
 		return res, err
 	}
-	parentDgst, srcDgst := parentCall.ContentDigest(), srcCall.ContentDigest()
+	parentDgst := parentCall.ContentDigest()
 	if parentDgst == "" || srcDgst == "" {
 		return res, nil
 	}
@@ -622,6 +624,30 @@ func withDirectoryContentDigest(
 	in = append(in, args.Exclude...)
 	in = append(in, string(srcDgst))
 	return res.WithContentDigest(ctx, hashutil.HashStrings(in...))
+}
+
+// copySourceDigest is what a copy of src, into a directory or a container, is
+// keyed by: the hash of the files under src's root (Directory.FilesDigest).
+// A copy keeps those files and not where they were rooted, so the same files
+// copied to the same place from two roots are one result. A directory rooted
+// at / is keyed by its files alone, and one with no files hash by what its
+// content digest says, so for those it is src's content digest. A copy that
+// applies .gitignore rules also reads rules above src's root, so it is keyed
+// by src's content digest, which says where src is rooted. It is "" when src
+// has no content digest.
+func copySourceDigest(src dagql.ObjectResult[*core.Directory], gitignore bool) (digest.Digest, error) {
+	srcCall, err := src.ResultCall()
+	if err != nil {
+		return "", err
+	}
+	contentDgst := srcCall.ContentDigest()
+	if contentDgst == "" {
+		return "", nil
+	}
+	if filesDgst := src.Self().FilesDigest(); filesDgst != "" && !gitignore {
+		return filesDgst, nil
+	}
+	return contentDgst, nil
 }
 
 type WithDirectoryDockerfileCompatArgs struct {
@@ -806,10 +832,11 @@ func (s *directorySchema) withDirectoryDockerfileCompatResultHashed(
 	if !ok {
 		return releaseErr(fmt.Errorf("failed to content hash dockerfile copy: directory path unset"))
 	}
-	dgst, err := core.GetContentHashFromDirectory(ctx, snapshot, dirPath)
+	dgst, filesDgst, err := core.GetContentHashFromDirectory(ctx, snapshot, dirPath)
 	if err != nil {
 		return releaseErr(fmt.Errorf("failed to content hash dockerfile copy: %w", err))
 	}
+	res.Self().SetFilesDigest(filesDgst)
 	res, err = res.WithContentDigest(ctx, dgst)
 	if err != nil {
 		return releaseErr(fmt.Errorf("failed to content hash dockerfile copy: %w", err))
@@ -2272,9 +2299,17 @@ func maintainContentHashing[A any](
 			if !ok {
 				return res, fmt.Errorf("failed to make directory content hashed: failed to get directory path: unset")
 			}
-			dgst, err := core.GetContentHashFromDirectory(ctx, snapshot, dirPath)
+			dgst, filesDgst, err := core.GetContentHashFromDirectory(ctx, snapshot, dirPath)
 			if err != nil {
 				return res, fmt.Errorf("failed to make directory content hashed: %w", err)
+			}
+			if filesDgst != "" {
+				// Only a directory rooted below / has a files hash apart from
+				// its content digest. Of the two calls this wraps, only
+				// Directory.directory returns one, and it returns a directory
+				// of its own, not yet published; a filter's result is a copy
+				// rooted at /.
+				res.Self().SetFilesDigest(filesDgst)
 			}
 			res, err = res.WithContentDigest(ctx, dgst)
 			if err != nil {
