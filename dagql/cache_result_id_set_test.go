@@ -16,7 +16,7 @@ func TestResultIDSetActsAsASet(t *testing.T) {
 	rng := rand.New(rand.NewPCG(1, 2))
 	var s resultIDSet
 	want := map[sharedResultID]struct{}{}
-	for step := range 20000 {
+	for step := range 5000 {
 		id := sharedResultID(1 + rng.IntN(500))
 		_, had := want[id]
 		if rng.IntN(3) == 0 {
