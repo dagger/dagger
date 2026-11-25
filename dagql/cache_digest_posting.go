@@ -2,8 +2,6 @@ package dagql
 
 import (
 	"iter"
-
-	set "github.com/hashicorp/go-set/v3"
 )
 
 // resultDigestPosting combines a digest's runtime postings with a snapshot of
@@ -14,13 +12,12 @@ import (
 // result is collected globally, so it also removes the result from the shared
 // snapshot. All access is protected by Cache.egraphMu.
 type resultDigestPosting struct {
-	exact    *set.TreeSet[sharedResultID]
-	imported map[sharedResultID]struct{}
+	exact    *idSet[sharedResultID]
+	imported *idSet[sharedResultID]
 }
 
 func (p *resultDigestPosting) Contains(id sharedResultID) bool {
-	_, ok := p.imported[id]
-	return ok || p.exact != nil && p.exact.Contains(id)
+	return p.imported.Contains(id) || p.exact.Contains(id)
 }
 
 func (p *resultDigestPosting) Insert(id sharedResultID) bool {
@@ -28,24 +25,18 @@ func (p *resultDigestPosting) Insert(id sharedResultID) bool {
 		return false
 	}
 	if p.exact == nil {
-		p.exact = newSharedResultIDSet()
+		p.exact = newIDSet[sharedResultID]()
 	}
 	return p.exact.Insert(id)
 }
 
 func (p *resultDigestPosting) Remove(id sharedResultID) {
-	delete(p.imported, id)
-	if p.exact != nil {
-		p.exact.Remove(id)
-	}
+	p.imported.Remove(id)
+	p.exact.Remove(id)
 }
 
 func (p *resultDigestPosting) Size() int {
-	n := len(p.imported)
-	if p.exact != nil {
-		n += p.exact.Size()
-	}
-	return n
+	return p.imported.Size() + p.exact.Size()
 }
 
 func (p *resultDigestPosting) Empty() bool {
@@ -56,16 +47,14 @@ func (p *resultDigestPosting) Empty() bool {
 // iteration order within an individual posting has no meaning.
 func (p *resultDigestPosting) Items() iter.Seq[sharedResultID] {
 	return func(yield func(sharedResultID) bool) {
-		for id := range p.imported {
+		for id := range p.imported.All() {
 			if !yield(id) {
 				return
 			}
 		}
-		if p.exact != nil {
-			for id := range p.exact.Items() {
-				if !yield(id) {
-					return
-				}
+		for id := range p.exact.All() {
+			if !yield(id) {
+				return
 			}
 		}
 	}
@@ -74,7 +63,7 @@ func (p *resultDigestPosting) Items() iter.Seq[sharedResultID] {
 // importedPostingGroup retains the original memberships and posting objects.
 // Class merges do not add digests or results to an imported snapshot.
 type importedPostingGroup struct {
-	members  map[sharedResultID]struct{}
+	members  *idSet[sharedResultID]
 	postings []importedDigestPosting
 }
 
@@ -89,15 +78,11 @@ func (c *Cache) restoreDigestPostingsLocked() {
 	// Rebuild both directions together, including when restoring more than once.
 	c.restoredDigestGroups = make(map[sharedResultID][]*importedPostingGroup, len(c.resultsByID))
 	for outputEqID, resultIDs := range c.outputEqClassResults {
-		members := make(map[sharedResultID]struct{}, resultIDs.Size())
-		for resultID := range resultIDs.All() {
-			members[resultID] = struct{}{}
-		}
 		group := &importedPostingGroup{
-			members:  members,
+			members:  resultIDs.Clone(),
 			postings: make([]importedDigestPosting, 0, c.eqClassToDigests[outputEqID].Size()),
 		}
-		for resultID := range group.members {
+		for resultID := range group.members.All() {
 			c.markResultBroadlyIndexedLocked(resultID)
 			if resultID != 0 {
 				c.restoredDigestGroups[resultID] = append(c.restoredDigestGroups[resultID], group)
@@ -115,8 +100,8 @@ func (c *Cache) restoreDigestPostingsLocked() {
 // per original group; visit its digests only when its last result disappears.
 func (c *Cache) removeImportedPostingGroupsLocked(resultID sharedResultID, groups []*importedPostingGroup) {
 	for _, group := range groups {
-		delete(group.members, resultID)
-		if len(group.members) != 0 {
+		group.members.Remove(resultID)
+		if !group.members.Empty() {
 			continue
 		}
 		for _, entry := range group.postings {
