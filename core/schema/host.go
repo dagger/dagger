@@ -146,6 +146,14 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 				dagql.Arg("path").Doc(`Absolute host path of the client checkout to reconstruct a .git directory for.`),
 				dagql.Arg("stateDigest").Doc(`Digest of the checkout's ref state. The pack must match it.`),
 			),
+		dagql.NodeFunc("__glob", s.glob).
+			WithInput(dagql.PerClientInput).
+			Doc(`(Internal-only) The paths under path on the client's host that match pattern.`,
+				`Cached per client, like directory: callers reading a workspace on a client's host select it as that client, so every module call shares one walk per pattern.`).
+			Args(
+				dagql.Arg("path").Doc(`Absolute host path to match under.`),
+				dagql.Arg("pattern").Doc(`Pattern to match, relative to path.`),
+			),
 		dagql.NodeFunc("__gitCheckoutPin", s.gitCheckoutPin).
 			NotReplayable("Reads a Git checkout's state from the originating client").
 			WithInput(dagql.PerClientInput).
@@ -666,6 +674,27 @@ func (s *hostSchema) file(ctx context.Context, host dagql.ObjectResult[*core.Hos
 		return i, err
 	}
 	return i, nil
+}
+
+type hostGlobArgs struct {
+	Path    string
+	Pattern string
+}
+
+func (s *hostSchema) glob(ctx context.Context, _ dagql.ObjectResult[*core.Host], args hostGlobArgs) (dagql.Array[dagql.String], error) {
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	bk, err := query.Engine(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get engine client: %w", err)
+	}
+	matches, err := bk.GlobCallerHostPath(ctx, args.Path, args.Pattern)
+	if err != nil {
+		return nil, err
+	}
+	return dagql.NewStringArray(matches...), nil
 }
 
 type hostFindUpArgs struct {

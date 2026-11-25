@@ -1992,21 +1992,42 @@ func (s *workspaceSchema) glob(
 
 	var matches []string
 	if ws.HostPath() != "" {
-		hostCtx, err := s.withWorkspaceClientContext(ctx, ws)
+		// Glob as the workspace's client, under its read epoch, so every
+		// caller shares the client's walk, as host directory reads do.
+		hostCtx, err := s.withWorkspaceHostReadContext(ctx, ws)
 		if err != nil {
 			return nil, err
 		}
-		query, err := core.CurrentQuery(hostCtx)
+		srv, err := core.CurrentDagqlServer(ctx)
 		if err != nil {
 			return nil, err
 		}
-		bk, err := query.Engine(hostCtx)
-		if err != nil {
-			return nil, fmt.Errorf("buildkit: %w", err)
-		}
-		matches, err = bk.GlobCallerHostPath(hostCtx, ws.HostPath(), args.Pattern)
-		if err != nil {
+		// Select the list itself and read its payload: a slice destination
+		// would make a cached result of every match.
+		var list dagql.AnyResult
+		if err := srv.Select(hostCtx, srv.Root(), &list,
+			dagql.Selector{Field: "host"},
+			dagql.Selector{Field: "__glob", Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString(ws.HostPath())},
+				{Name: "pattern", Value: dagql.NewString(args.Pattern)},
+			}},
+		); err != nil {
 			return nil, fmt.Errorf("glob: %w", err)
+		}
+		hostMatches, ok := list.Unwrap().(dagql.Enumerable)
+		if !ok {
+			return nil, fmt.Errorf("glob: unexpected %T", list.Unwrap())
+		}
+		for nth := 1; nth <= hostMatches.Len(); nth++ {
+			value, err := hostMatches.Nth(nth)
+			if err != nil {
+				return nil, fmt.Errorf("glob: %w", err)
+			}
+			match, ok := dagql.UnwrapAs[dagql.String](value)
+			if !ok {
+				return nil, fmt.Errorf("glob: unexpected %T", value)
+			}
+			matches = append(matches, match.String())
 		}
 		if _, ok := ws.OverlayChanges(); ok && ws.ClientLocalBase() {
 			overlayMatches, err := s.overlayGlobMatches(ctx, ws, args.Pattern)
