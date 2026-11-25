@@ -99,14 +99,6 @@ func ResolveDaggerGetRedirect(ctx context.Context, refString string) (string, er
 		}
 	}
 
-	// Known code hosts such as github.com are never probed, as go get never
-	// looks them up: a vanity URL is served from its owner's own domain. A
-	// renamed repository on such a host still resolves, because git follows the
-	// host's redirect when it clones.
-	if u, err := url.Parse(sourceURL); err == nil && vcs.IsKnownCodeHost(u.Host+u.Path) {
-		return refString, nil
-	}
-
 	cache, cacheErr := dagql.EngineCache(ctx)
 	clientMetadata, mdErr := engine.ClientMetadataFromContext(ctx)
 	if cacheErr != nil || mdErr != nil {
@@ -197,9 +189,16 @@ func sourceURLWithVersion(sourceURL, version string) string {
 	return resolved
 }
 
-// daggerGetEligible reports whether the redirect probe applies to refString.
-// Only https and schemeless refs qualify; local paths, SCP-like refs, and
-// explicit non-https schemes (http, ssh, git) are excluded.
+// daggerGetEligible reports whether refString can be a vanity ref, which
+// resolves through the session's workspace lock or the redirect probe. Only
+// https and schemeless refs qualify; local paths, SCP-like refs, and explicit
+// non-https schemes (http, ssh, git) are excluded. A ref to a known code host
+// such as github.com never is one: a vanity URL is served from its owner's
+// own domain, as go get never looks such a host up. Such a ref names its
+// repository outright, so resolving it reads nothing of the session's, not
+// even a vanity entry written into the workspace's lock by hand. A renamed
+// repository on such a host still resolves, because git follows the host's
+// redirect when it clones.
 func daggerGetEligible(refString string) bool {
 	if refString == "" || refString[0] == '/' || refString[0] == '.' {
 		return false
@@ -209,7 +208,6 @@ func daggerGetEligible(refString string) bool {
 	}
 	switch gitref.Scheme(refString) {
 	case gitref.SchemeHTTPS:
-		return true
 	case gitref.NoScheme:
 		// Schemeless refs are attempted over https; require a hostname with a
 		// dot so we don't probe obvious non-URLs.
@@ -217,10 +215,18 @@ func daggerGetEligible(refString string) bool {
 		if i := strings.IndexAny(host, "/@:"); i >= 0 {
 			host = host[:i]
 		}
-		return strings.Contains(host, ".")
+		if !strings.Contains(host, ".") {
+			return false
+		}
 	default:
 		return false
 	}
+	sourceURL, _, err := splitSourceURLVersion(refString)
+	if err != nil {
+		return true
+	}
+	u, err := url.Parse(sourceURL)
+	return err != nil || !vcs.IsKnownCodeHost(u.Host+u.Path)
 }
 
 // daggerGetProbe performs the actual single-hop redirect probe and returns the
