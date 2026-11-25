@@ -18,7 +18,7 @@ func TestCacheImportedDigestPostingsRemainLocalAfterMerge(t *testing.T) {
 	first, second := roots[0], roots[1]
 	digests := slices.Sorted(maps.Keys(c.eqClassToDigests[first]))
 	assert.Assert(t, len(digests) > 1)
-	fromSecond := slices.Sorted(maps.Keys(c.outputEqClassResults[second]))[0]
+	fromSecond := slices.Collect(c.outputEqClassResults[second].Items())[0]
 	before := make(map[string][]sharedResultID)
 	for dig, posting := range c.egraphResultsByDigest {
 		before[dig] = slices.Sorted(posting.Items())

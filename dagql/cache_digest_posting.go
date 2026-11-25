@@ -2,7 +2,6 @@ package dagql
 
 import (
 	"iter"
-	"maps"
 
 	set "github.com/hashicorp/go-set/v3"
 )
@@ -90,8 +89,12 @@ func (c *Cache) restoreDigestPostingsLocked() {
 	// Rebuild both directions together, including when restoring more than once.
 	c.restoredDigestGroups = make(map[sharedResultID][]*importedPostingGroup, len(c.resultsByID))
 	for outputEqID, resultIDs := range c.outputEqClassResults {
+		members := make(map[sharedResultID]struct{}, resultIDs.Size())
+		for resultID := range resultIDs.All() {
+			members[resultID] = struct{}{}
+		}
 		group := &importedPostingGroup{
-			members:  maps.Clone(resultIDs),
+			members:  members,
 			postings: make([]importedDigestPosting, 0, len(c.eqClassToDigests[outputEqID])),
 		}
 		for resultID := range group.members {

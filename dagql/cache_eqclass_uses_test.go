@@ -266,7 +266,7 @@ func checkKeptClassUsesDecideAsAWalk(t *testing.T, seed uint64) (compacted, decl
 			out = append(out, fmt.Sprint("term ", id, " ", term.selfDigest, " ", roots(term.inputEqIDs), " ", c.eqClassRootLocked(term.outputEqID), " ", term.termDigest))
 		}
 		for _, id := range slices.Sorted(maps.Keys(c.resultOutputEqClasses)) {
-			out = append(out, fmt.Sprint("outputs ", id, " ", slices.Sorted(slices.Values(roots(slices.Collect(maps.Keys(c.resultOutputEqClasses[id])))))))
+			out = append(out, fmt.Sprint("outputs ", id, " ", slices.Sorted(slices.Values(roots(slices.Collect(c.resultOutputEqClasses[id].All()))))))
 		}
 		out = append(out, fmt.Sprint("slots ", c.eqClassSlotsLocked(), " free ", c.freeEqClassIDs, " checks ", c.eqClassChecks))
 		return out
@@ -390,10 +390,10 @@ func sharedStateOf(c *Cache) string {
 		fmt.Fprintf(&b, "term %d: %s %v -> %d\n", id, term.selfDigest, term.inputEqIDs, term.outputEqID)
 	}
 	for _, id := range slices.Sorted(maps.Keys(c.resultOutputEqClasses)) {
-		fmt.Fprintf(&b, "outputs %d: %v\n", id, slices.Sorted(maps.Keys(c.resultOutputEqClasses[id])))
+		fmt.Fprintf(&b, "outputs %d: %v\n", id, slices.Collect(c.resultOutputEqClasses[id].Items()))
 	}
 	for _, class := range slices.Sorted(maps.Keys(c.outputEqClassResults)) {
-		fmt.Fprintf(&b, "results %d: %v\n", class, slices.Sorted(maps.Keys(c.outputEqClassResults[class])))
+		fmt.Fprintf(&b, "results %d: %v\n", class, slices.Collect(c.outputEqClassResults[class].Items()))
 	}
 	fmt.Fprintf(&b, "engine caches %v\n", slices.Sorted(maps.Keys(c.remoteCaches)))
 	return b.String()

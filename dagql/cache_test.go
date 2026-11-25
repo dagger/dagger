@@ -3907,8 +3907,8 @@ func TestDirectDigestLookupHitsWithoutTermIndex(t *testing.T) {
 		c.outputEqClassToTerms = make(map[eqClassID]map[egraphTermID]struct{})
 		c.egraphTerms = make(map[egraphTermID]*egraphTerm)
 		c.egraphTermsByTermDigest = make(map[string]*set.TreeSet[egraphTermID])
-		c.resultOutputEqClasses = make(map[sharedResultID]map[eqClassID]struct{})
-		c.outputEqClassResults = make(map[eqClassID]map[sharedResultID]struct{})
+		c.resultOutputEqClasses = make(map[sharedResultID]*idSet[eqClassID])
+		c.outputEqClassResults = make(map[eqClassID]*idSet[sharedResultID])
 		c.termInputProvenance = make(map[egraphTermID][]egraphInputProvenanceKind)
 		// The classes' uses went with the terms and the outputs.
 		clear(c.egraphUses)
@@ -3958,8 +3958,8 @@ func TestDirectDigestLookupHitsWithoutTermIndex(t *testing.T) {
 		c.outputEqClassToTerms = make(map[eqClassID]map[egraphTermID]struct{})
 		c.egraphTerms = make(map[egraphTermID]*egraphTerm)
 		c.egraphTermsByTermDigest = make(map[string]*set.TreeSet[egraphTermID])
-		c.resultOutputEqClasses = make(map[sharedResultID]map[eqClassID]struct{})
-		c.outputEqClassResults = make(map[eqClassID]map[sharedResultID]struct{})
+		c.resultOutputEqClasses = make(map[sharedResultID]*idSet[eqClassID])
+		c.outputEqClassResults = make(map[eqClassID]*idSet[sharedResultID])
 		c.termInputProvenance = make(map[egraphTermID][]egraphInputProvenanceKind)
 		// The classes' uses went with the terms and the outputs.
 		clear(c.egraphUses)
