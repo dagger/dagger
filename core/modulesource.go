@@ -1861,7 +1861,10 @@ func (src *ModuleSource) LoadContextDir(
 		if err != nil {
 			return inst, fmt.Errorf("context directory path: %w", err)
 		}
-		dgst, err := GetContentHashFromDirectory(ctx, snapshot, dirPath)
+		// The directory is a result the cache already holds, whose value
+		// can't take a files hash now: a copy of one rooted below / is keyed
+		// by its content digest, which says where it is rooted.
+		dgst, _, err := GetContentHashFromDirectory(ctx, snapshot, dirPath)
 		if err != nil {
 			return inst, fmt.Errorf("failed to content-hash contextual directory: %w", err)
 		}
@@ -2130,7 +2133,10 @@ func (src *ModuleSource) loadContextFromSource(
 		if err != nil {
 			return inst, fmt.Errorf("context directory path: %w", err)
 		}
-		dgst, err := GetContentHashFromDirectory(ctx, snapshot, dirPath)
+		// The directory is a result the cache already holds, whose value
+		// can't take a files hash now: a copy of one rooted below / is keyed
+		// by its content digest, which says where it is rooted.
+		dgst, _, err := GetContentHashFromDirectory(ctx, snapshot, dirPath)
 		if err != nil {
 			return inst, err
 		}

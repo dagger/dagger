@@ -39,7 +39,7 @@ func (family foreignFamilyCodec) PrepareLazyOperation(ctx context.Context, dec *
 		if err != nil {
 			return nil, err
 		}
-		dir := &Directory{Dir: new(LazyAccessor[string, *Directory]), Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]), Platform: p.Platform, Services: services, Lazy: lazy}
+		dir := &Directory{filesDigest: p.FilesDigest, Dir: new(LazyAccessor[string, *Directory]), Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]), Platform: p.Platform, Services: services, Lazy: lazy}
 		run := func(ctx context.Context) error {
 			if err := dir.LazyEvalFunc()(ctx); err != nil {
 				return err
