@@ -1885,7 +1885,7 @@ func TestMergeValuesRefusesADependencyCycle(t *testing.T) {
 		require.ErrorContains(t, err, "cycle")
 		cloud.egraphMu.RLock()
 		defer cloud.egraphMu.RUnlock()
-		require.Equal(t, map[sharedResultID]struct{}{bNumber: {}}, cloud.resultsByID[aNumber].deps, "the Cloud keeps A -> B")
+		require.Equal(t, resultIDSet{bNumber}, cloud.resultsByID[aNumber].deps, "the Cloud keeps A -> B")
 		require.Empty(t, cloud.resultsByID[bNumber].deps)
 		after, err := json.Marshal(cloud.resultsByID[bNumber].persistedEnvelope)
 		require.NoError(t, err)
