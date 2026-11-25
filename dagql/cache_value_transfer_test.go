@@ -197,7 +197,7 @@ func transferTestCache(t testing.TB) (context.Context, *Cache, *Server) {
 	t.Cleanup(func() { require.NoError(t, c.CloseDiscardingPersistence()) })
 	return ctx, c, srv
 }
-func exportTestBundle(t *testing.T, ctx context.Context, c *Cache, roots ...AnyResult) ValueBundle {
+func exportTestBundle(t testing.TB, ctx context.Context, c *Cache, roots ...AnyResult) ValueBundle {
 	t.Helper()
 	var bundle ValueBundle
 	require.NoError(t, c.WithExportedValues(ctx, ValueSelection{Roots: roots}, config.RefConfig{}, func(_ context.Context, values *ExportedValues) error { bundle = values.Bundle; return nil }))
