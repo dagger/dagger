@@ -108,13 +108,14 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 		keptFromContent(dagql.Func("__evaluationItems", func(ctx context.Context, parent *core.Artifacts, _ struct{}) (core.ArtifactItems, error) {
 			items, err := keptExpansion(ctx, parent.EvaluationItems)
 			return core.ArtifactItems{Array: items}, err
-		}), artifactsFromContent),
+		}).WithInput(core.GitBorrowingInput), artifactsFromContent),
 		dagql.Func("items", s.items).View(AllVersion).Doc("List artifact descriptions with their collection view. Discover collection keys without evaluating leaf values."),
 		keptFromContent(dagql.Func("__listing", func(ctx context.Context, parent *core.Artifacts, args artifactListingArgs) (core.JSON, error) {
 			return keptExpansion(ctx, func(ctx context.Context) (core.JSON, error) {
 				return s.listing(ctx, parent, args)
 			})
 		}).View(core.AllVersion).
+			WithInput(core.GitBorrowingInput).
 			Doc("Internal listing metadata, serialized without per-item GraphQL object materialization.").
 			Args(dagql.Arg("absolute").Doc("Prefix each address with the workspace's Git address and commit."), dagql.Arg("typeAssertion").Doc("Include the artifact type in each address scheme.")), artifactsFromContent),
 		dagql.Func("one", s.one).View(BeforeVersion(artifactDimensionViewVersion)).Doc("Require exactly one artifact; fail if there are zero or multiple matches. Several matches are listed, one address per line."),

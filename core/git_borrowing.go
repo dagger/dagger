@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 )
 
@@ -55,4 +56,24 @@ func GitBorrowingOf(ctx context.Context, query *Query) (GitBorrowing, error) {
 		return GitBorrowsForAgent, nil
 	}
 	return GitBorrowsNothing, nil
+}
+
+// GitBorrowingInput keys a call by whose credentials the Git reads it makes
+// with its caller's permission may borrow (GitBorrowingOf). A call whose
+// result stands for the calls it makes (dagql.CallScopes) takes it when one
+// of those can be a Git read under its caller's permission, which doesn't
+// keep it to its session (dagql.FieldSpec.PerClientOnlyToBorrow).
+var GitBorrowingInput = dagql.ImplicitInput{
+	Name: "gitBorrowing",
+	Resolver: func(ctx context.Context, _ map[string]dagql.Input) (dagql.Input, error) {
+		query, err := CurrentQuery(ctx)
+		if err != nil {
+			return nil, err
+		}
+		borrowing, err := GitBorrowingOf(ctx, query)
+		if err != nil {
+			return nil, err
+		}
+		return dagql.NewString(string(borrowing)), nil
+	},
 }
