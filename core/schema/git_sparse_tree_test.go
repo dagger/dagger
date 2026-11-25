@@ -209,8 +209,8 @@ func TestGitSparseReadFilesKeepsAPathsBytes(t *testing.T) {
 
 // An engine served another engine's records gets that engine's answers to
 // detection's lookups in a Git workspace's sparse tree and never evaluates the
-// tree or reads any of its content, as a fresh engine on a same-commit rerun is
-// served them.
+// tree or reads any of its content, as an engine running a check that another
+// engine ran at the same commit is served them.
 //
 // An answer can then send a read to the sparse tree on an engine that can't
 // get the tree's files, where reading the list from them would have failed and
@@ -309,11 +309,10 @@ func TestGitSparseTreeOnAnEngineServedAnothersAnswers(t *testing.T) {
 // A read of a Git workspace's files that runs asks its sparse tree where it
 // comes from and which files it selects, and copies out of that tree, or a
 // tree of its own, next. It works both out from the tree's list, held once a
-// session, with no call per read: the Go SDK's generator makes about 3,700
-// distinct reads in one check on a whole pull request's fill, and as calls
-// those were 3,865 entries, records and lookups on its engine, about 3 ms each,
-// on every fill and edit. A lookup of a path, which detection asks under no
-// cached call, stays a call.
+// session, with no call per read: a generator check can make thousands of
+// distinct reads, and as calls each was an entry, a record and a lookup, a
+// few milliseconds each, on every run. A lookup of a path, which detection
+// asks under no cached call, stays a call.
 func TestGitSparseReadsAreNotCalls(t *testing.T) {
 	t.Parallel()
 	e := newTransferTestEngine(t, transferTestSalt(t))
@@ -464,7 +463,8 @@ func TestModuleLoadingAsksAPinnedWorkspaceNothingInALaterSession(t *testing.T) {
 }
 
 // An engine served another engine's records loads a module from the same
-// pinned Git workspace, as a fresh engine on a same-commit rerun does: it gets
+// pinned Git workspace, as an engine running a check that another engine ran
+// at the same commit does: it gets
 // that engine's answers to whether paths exist, for a path the workspace
 // doesn't have as for one it has, and never evaluates the workspace's sparse
 // tree or reads any of its content.

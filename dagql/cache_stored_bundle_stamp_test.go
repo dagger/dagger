@@ -70,7 +70,7 @@ func bundleWithoutChangeStamps(bundle ValueBundle) ValueBundle {
 // measuring the value again: a call kept on its entry moves the stamp, and
 // leaves the record, dependencies, replacement count and expiry its measure
 // depends on as they were. The Cloud prices bundles under its work lock, and
-// calls are kept on its entries all through a fill.
+// calls are kept on its entries all the while engines export.
 func TestStoredSizesFollowAStampWithoutMeasuringAgain(t *testing.T) {
 	t.Parallel()
 	ctx, cloud := storedPartTestCache(t, WithBlobStore())

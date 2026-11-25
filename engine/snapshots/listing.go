@@ -48,10 +48,8 @@ const (
 	// lease entry under its metadata store's one writer, an entry in every
 	// chain that carries it, and that entry in every message and stored part
 	// that names the chain, while what storing a file's bytes once saves sits
-	// in few large files. On the nineteenth whole fill, files of 64 KiB to
-	// 256 KiB were four fifths of chains' content blobs and a tenth of that
-	// saving; on an earlier fill's file lists, 63% of the references to
-	// content and 6.5% of the saving.
+	// in few large files. Measured on real layers, files of 64 KiB to 256 KiB
+	// were four fifths of chains' content blobs and a tenth of that saving.
 	ListingInlineMax = 256 << 10
 
 	// The PAX records of an entry whose body is a content blob: the blob's
