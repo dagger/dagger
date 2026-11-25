@@ -915,13 +915,12 @@ func (c *Cache) prepareCheckedValueMerge(ctx context.Context, prep *valueMergePr
 	if skipKept && !c.blobBacked {
 		prep.light = c.keptMergeRecords(ctx, prep)
 	}
-	// An engine decides its rows now, as the cache stands, so that a record
-	// is relocated to its final numbers as it is prepared, with one decode
-	// of its payload (earlyMergeRows), rather than decoded again to be
-	// relocated after (prerelocateMergeRows). The Cloud relocates them after,
-	// so that each record's size is measured at its provisional numbers
-	// (recordBytes).
-	if !c.blobBacked && !c.testNoPrerelocation {
+	// The rows are decided now, as the cache stands, so that a record is
+	// relocated to its final numbers as it is prepared, with one decode of
+	// its payload (earlyMergeRows), rather than decoded again to be
+	// relocated after (prerelocateMergeRows). On the Cloud, a record's size
+	// is measured so, at the numbers it is installed at (recordBytes).
+	if !c.testNoPrerelocation {
 		prep.early = c.earlyMergeRows(ctx, prep)
 	}
 	// Every other record is prepared with its payload.
@@ -2224,8 +2223,14 @@ func (p *prerelocatedRecord) holds(final func(uint64) (sharedResultID, error)) b
 // A merge that prepares no record with its payload and leaves none
 // unprepared relocates nothing here, and doesn't decide its rows before its
 // commit.
+//
+// The Cloud doesn't decide its rows again once it decided them as it prepared
+// the records (earlyMergeRows): its commit comes later, behind the commits of
+// its sender's earlier exports, so a second decision here is no nearer the
+// commit's than the first, and the commit relocates under the lock each
+// record whose numbers no longer hold, as it relocates any.
 func (c *Cache) prerelocateMergeRows(ctx context.Context, prep *valueMergePrep) {
-	if c.testNoPrerelocation || len(prep.stale) > 0 || !prep.preparesPayloads() && len(prep.unprepared) == 0 {
+	if c.testNoPrerelocation || len(prep.stale) > 0 || !prep.preparesPayloads() && len(prep.unprepared) == 0 || c.blobBacked && prep.early != nil {
 		return
 	}
 	commit := &valueMergeCommit{prep: prep, byOrdinal: map[uint64]*mergeRow{}, now: time.Now().Unix()}
