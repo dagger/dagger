@@ -382,7 +382,7 @@ func (c *Cache) scanPartSources(ctx context.Context, receiver AnyResult, address
 		c.incrementIncomingOwnershipLocked(ctx, candidate.row)
 		held++
 		if offer := candidate.row.partOfferLocked(key); offer != nil && c.offerAllowedLocked(session, offer.owner) {
-			copies, err := clonePartOffers([]PersistedPartOffer{offer.record})
+			copies, err := clonePartOffers([]PersistedPartOffer{offer.record()})
 			if err != nil {
 				c.egraphMu.Unlock()
 				return nil, nil, err

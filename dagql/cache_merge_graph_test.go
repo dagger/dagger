@@ -174,7 +174,7 @@ func mergeGraphTestState(t *testing.T, c *Cache) string {
 		}
 		slices.Sort(e.Deps)
 		for key, offer := range res.partOffersLocked() {
-			e.Offers = append(e.Offers, fmt.Sprintf("%s:%v", key, offer.record.Owner.DependencyIDs))
+			e.Offers = append(e.Offers, fmt.Sprintf("%s:%v", key, offer.held.Owner.DependencyIDs))
 		}
 		slices.Sort(e.Offers)
 		if env := res.persistedEnvelope; env != nil {

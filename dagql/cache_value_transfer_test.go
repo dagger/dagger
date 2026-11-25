@@ -255,7 +255,7 @@ func cloudTestBundle(t *testing.T, ctx context.Context, c *Cache, roots ...AnyRe
 			held := c.resultsByID[sharedResultID(value.SenderNumber)].testPartOffers()
 			c.egraphMu.RUnlock()
 			for _, slot := range held {
-				copied, err := clonePartOffers([]PersistedPartOffer{slot.record})
+				copied, err := clonePartOffers([]PersistedPartOffer{slot.record()})
 				require.NoError(t, err)
 				offer := copied[0]
 				for i := range offer.Owner.DependencyIDs {
@@ -308,7 +308,7 @@ func transferTestOffer(t *testing.T, c *Cache, ctx context.Context, parent, chil
 	record := PersistedPartOffer{Address: PersistedPartAddress{Part: "snapshot"}, Value: SnapshotValue{Kind: "directory"}, Owner: PersistedOfferOwner{DependencyIDs: []uint64{uint64(child.cacheSharedResult().id)}}}
 	owner, err := c.newOfferOwnerLocked(ctx, record.Owner)
 	if err == nil {
-		err = c.testAttachPartOfferLocked(parent.cacheSharedResult(), record.Address, &partOffer{record: record, owner: owner})
+		err = c.testAttachPartOfferLocked(parent.cacheSharedResult(), record.Address, &partOffer{layeredOffer: c.storedLayers.hold(record), owner: owner})
 	}
 	c.egraphMu.Unlock()
 	require.NoError(t, err)
@@ -821,7 +821,7 @@ func testValueTransferCaptureConcurrent(t *testing.T) {
 		if err == nil {
 			address := PersistedPartAddress{Part: "snapshot"}
 			var queue []*sharedResult
-			queue, err = c.testReplacePartOfferLocked(ctx, root.cacheSharedResult(), address, &partOffer{owner: owner, record: PersistedPartOffer{Address: address, Owner: owner.record, Value: SnapshotValue{Kind: "directory"}}})
+			queue, err = c.testReplacePartOfferLocked(ctx, root.cacheSharedResult(), address, &partOffer{owner: owner, layeredOffer: layeredOffer{held: PersistedPartOffer{Address: address, Owner: owner.record, Value: SnapshotValue{Kind: "directory"}}}})
 			if err == nil {
 				releases, err = c.collectUnownedResultsLocked(ctx, queue)
 			}

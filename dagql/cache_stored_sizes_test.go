@@ -817,10 +817,10 @@ func TestStoredSizesAllowForAddressesInTheBundlesPartOrder(t *testing.T) {
 	t.Parallel()
 	blob := testDigest("order-blob")
 	in := func(part, pack string) storedPart {
-		return storedPart{
+		return storedPart{layeredOffer: layeredOffer{
 			held:   PersistedPartOffer{Address: PersistedPartAddress{Part: PartKey(part)}},
 			layers: []*storedLayer{{layer: snapshots.ExportLayer{Descriptor: ocispecs.Descriptor{Digest: blob}}, pack: testDigest(pack)}},
-		}
+		}}
 	}
 	first := &sharedResult{storedParts: map[string]storedPart{"a": in("a", "pack-a"), "b": in("b", "pack-b")}}
 	next := &sharedResult{storedParts: map[string]storedPart{"c": in("c", "pack-b")}}
