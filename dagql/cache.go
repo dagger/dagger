@@ -2863,6 +2863,9 @@ type Cache struct {
 	// copies of its bundle's records that only its preparation reads
 	// (dropRecordCopies).
 	testKeepRecordCopies bool
+	// testPrivateMergeCache runs once a merge's preparation has built the
+	// private cache it derives identities in (privateMergeCache), with it.
+	testPrivateMergeCache func(*Cache)
 	// testPrerelocated runs once a merge has relocated its records before
 	// its commit, with the numbers each relocation used, by ordinal and
 	// provisional number, which it may change.
