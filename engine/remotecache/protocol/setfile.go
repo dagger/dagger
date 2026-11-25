@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"time"
 
 	"github.com/klauspost/compress/zstd"
@@ -67,44 +68,50 @@ type SetFileFetch struct {
 }
 
 // EncodeSetFilePart encodes a bundle as a set file's part with enc, and
-// returns the part and what the header says of it.
-func EncodeSetFilePart(enc *zstd.Encoder, bundle dagql.ValueBundle) ([]byte, SetFilePart, error) {
+// returns the part and what the header says of it. The part's JSON is
+// written once, into buf, and compressed from there: give every part of a
+// file the same buf, which then grows once, to the file's largest part.
+func EncodeSetFilePart(enc *zstd.Encoder, buf *bytes.Buffer, bundle dagql.ValueBundle) ([]byte, SetFilePart, error) {
 	shared, err := dagql.ShareChainLayers(bundle)
 	if err != nil {
 		return nil, SetFilePart{}, err
 	}
-	raw, err := json.Marshal(shared)
-	if err != nil {
+	buf.Reset()
+	if err := marshalInto(buf, shared); err != nil {
 		return nil, SetFilePart{}, err
 	}
-	part := enc.EncodeAll(raw, nil)
+	part := enc.EncodeAll(buf.Bytes(), nil)
 	return part, SetFilePart{Bytes: int64(len(part)), Records: len(bundle.Values)}, nil
 }
 
-// WriteSetFile writes a set file of the parts, each as EncodeSetFilePart
-// made it with its header entry in header.Parts, at the same index.
-func WriteSetFile(w io.Writer, header SetFileHeader, parts [][]byte) error {
+// SetFileBuffers returns a set file of the parts, each as EncodeSetFilePart
+// made it with its header entry in header.Parts at the same index, as the
+// buffers it is made of: its header line, then the parts themselves, which
+// it doesn't copy.
+func SetFileBuffers(header SetFileHeader, parts [][]byte) (net.Buffers, error) {
 	if len(parts) != len(header.Parts) {
-		return fmt.Errorf("set file: %d parts and %d in the header", len(parts), len(header.Parts))
+		return nil, fmt.Errorf("set file: %d parts and %d in the header", len(parts), len(header.Parts))
 	}
 	for i, part := range parts {
 		if int64(len(part)) != header.Parts[i].Bytes {
-			return fmt.Errorf("set file: part %d is %d bytes and the header says %d", i, len(part), header.Parts[i].Bytes)
+			return nil, fmt.Errorf("set file: part %d is %d bytes and the header says %d", i, len(part), header.Parts[i].Bytes)
 		}
 	}
 	line, err := json.Marshal(header)
 	if err != nil {
+		return nil, err
+	}
+	return append(net.Buffers{append(line, '\n')}, parts...), nil
+}
+
+// WriteSetFile writes a set file of the parts (SetFileBuffers).
+func WriteSetFile(w io.Writer, header SetFileHeader, parts [][]byte) error {
+	file, err := SetFileBuffers(header, parts)
+	if err != nil {
 		return err
 	}
-	if _, err := w.Write(append(line, '\n')); err != nil {
-		return err
-	}
-	for _, part := range parts {
-		if _, err := w.Write(part); err != nil {
-			return err
-		}
-	}
-	return nil
+	_, err = file.WriteTo(w)
+	return err
 }
 
 // ReadSetFile splits a set file into its header and its parts, still

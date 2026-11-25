@@ -3,6 +3,7 @@
 package protocol
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -77,7 +78,8 @@ func TestEncodeEnvelopeIsTheEnvelopesJSONForRecords(t *testing.T) {
 // file allocates is about its compressed bytes and its records' own values,
 // not copies of the part's JSON. The JSON of a part of 2,000 records was
 // written into a buffer that grew as it filled, then copied whole, before
-// it was compressed.
+// it was compressed; it is now written into the file's buffer, which an
+// earlier part grew.
 func TestSetFilePartIsEncodedInPlace(t *testing.T) {
 	// One encoder, which the first part readies: an encoder's state is made
 	// on its first use, once for the life of what encodes files.
@@ -89,10 +91,12 @@ func TestSetFilePartIsEncodedInPlace(t *testing.T) {
 	require.NoError(t, err)
 	raw, err := json.Marshal(shared)
 	require.NoError(t, err)
-	part, _, err := EncodeSetFilePart(enc, bundle)
+	var buf bytes.Buffer
+	part, _, err := EncodeSetFilePart(enc, &buf, bundle)
 	require.NoError(t, err)
+	require.Equal(t, string(raw), buf.String(), "the part's JSON is json.Marshal's")
 	allocated := allocatedBy(5, func() {
-		if _, _, err := EncodeSetFilePart(enc, bundle); err != nil {
+		if _, _, err := EncodeSetFilePart(enc, &buf, bundle); err != nil {
 			t.Fatal(err)
 		}
 	})

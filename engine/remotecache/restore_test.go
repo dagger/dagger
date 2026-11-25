@@ -40,8 +40,9 @@ func setFile(t *testing.T, version int, parts ...dagql.ValueBundle) []byte {
 	defer enc.Close()
 	header := protocol.SetFileHeader{Version: version, Check: "test-base"}
 	var raw [][]byte
+	var encoded bytes.Buffer
 	for _, part := range parts {
-		data, entry, err := protocol.EncodeSetFilePart(enc, part)
+		data, entry, err := protocol.EncodeSetFilePart(enc, &encoded, part)
 		require.NoError(t, err)
 		raw = append(raw, data)
 		header.Parts = append(header.Parts, entry)
@@ -1047,8 +1048,9 @@ func setFileOf(t *testing.T, parts []dagql.ValueBundle, unretained [][]dagql.Tra
 	defer enc.Close()
 	header := protocol.SetFileHeader{Version: dagql.ValueBundleVersion}
 	var raw [][]byte
+	var encoded bytes.Buffer
 	for i, part := range parts {
-		data, entry, err := protocol.EncodeSetFilePart(enc, part)
+		data, entry, err := protocol.EncodeSetFilePart(enc, &encoded, part)
 		require.NoError(t, err)
 		entry.Unretained = unretained[i]
 		raw = append(raw, data)
