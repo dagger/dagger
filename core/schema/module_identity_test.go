@@ -472,3 +472,41 @@ func TestModuleSourceReadByRefIsSharedOnlyWhenTheRefDecidesIt(t *testing.T) {
 	require.True(t, perClient("example.com/go@v1.2.3", true), "a vanity ref is its caller's")
 	require.False(t, perClient(known, true), "a known code host's ref read as Git is shared")
 }
+
+// withSdk loads the SDK it names, and is shared by what decides it as a read
+// of a module source is. What loading the SDK takes from its session, such
+// as an SDK's vanity ref resolved through the session's workspace lock,
+// keeps the result to its session, as it does for the read: a later session
+// loads the SDK again, and the same session takes the result it made.
+// Not parallel: it replaces the package's SDK loader.
+func TestModuleSourceWithSDKKeepsWhatItReadToItsSession(t *testing.T) {
+	loadSDK := loadModuleSourceSDK
+	var loads atomic.Int32
+	loadModuleSourceSDK = func(ctx context.Context, _ *core.Query, _ *core.SDKConfig, _ *core.ModuleSource) (core.SDK, error) {
+		loads.Add(1)
+		dagql.RecordSessionRead(ctx, "the SDK's vanity ref")
+		return &prebuildTestSDK{}, nil
+	}
+	t.Cleanup(func() { loadModuleSourceSDK = loadSDK })
+	e := newTransferTestEngine(t, transferTestSalt(t))
+	withSDK := func(ctx context.Context) {
+		t.Helper()
+		var src dagql.ObjectResult[*core.ModuleSource]
+		require.NoError(t, e.dag.Select(ctx, e.dag.Root(), &src,
+			dagql.Selector{Field: "directory"},
+			dagql.Selector{Field: "withNewFile", Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString("dagger.json")},
+				{Name: "contents", Value: dagql.NewString(`{"name":"sdkread"}`)},
+			}},
+			dagql.Selector{Field: "asModuleSource"},
+			dagql.Selector{Field: "withSdk", Args: []dagql.NamedInput{
+				{Name: "source", Value: dagql.NewString("example.com/sdk@v1.0.0")},
+			}}))
+	}
+	first := e.session(t, "first")
+	withSDK(first)
+	withSDK(e.session(t, "later"))
+	require.Equal(t, int32(2), loads.Load(), "a later session loads the SDK again")
+	withSDK(first)
+	require.Equal(t, int32(2), loads.Load(), "the same session takes the result it made")
+}
