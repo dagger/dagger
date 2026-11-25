@@ -346,6 +346,64 @@ func TestOpenAINonStreamingResponses(t *testing.T) {
 	}
 }
 
+func TestOpenAIResponsesPreserveInterleavedItems(t *testing.T) {
+	items := []json.RawMessage{
+		json.RawMessage(`{"type":"reasoning","id":"rs_1","encrypted_content":"opaque1","summary":[]}`),
+		json.RawMessage(`{"type":"message","id":"msg_1","role":"assistant","content":[{"type":"output_text","text":"Let me check."}]}`),
+		json.RawMessage(`{"type":"reasoning","id":"rs_2","encrypted_content":"opaque2","summary":[]}`),
+		json.RawMessage(`{"type":"function_call","id":"fc_1","call_id":"call_1","name":"read","arguments":"{}"}`),
+	}
+	response := map[string]any{"id": "resp_1", "status": "completed", "output": items}
+	for _, streaming := range []bool{false, true} {
+		name := "non-streaming"
+		if streaming {
+			name = "streaming"
+		}
+		t.Run(name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if !streaming {
+					w.Header().Set("Content-Type", "application/json")
+					require.NoError(t, json.NewEncoder(w).Encode(response))
+					return
+				}
+				w.Header().Set("Content-Type", "text/event-stream")
+				emit := func(event map[string]any) {
+					data, err := json.Marshal(event)
+					require.NoError(t, err)
+					_, _ = io.WriteString(w, "data: "+string(data)+"\n\n")
+				}
+				for i, item := range items {
+					if i == 1 {
+						emit(map[string]any{"type": "response.output_text.delta", "delta": "Let me check."})
+					}
+					emit(map[string]any{"type": "response.output_item.done", "output_index": i, "item": item})
+				}
+				emit(map[string]any{"type": "response.completed", "response": response})
+			}))
+			defer server.Close()
+			client := newOpenAIResponsesClient(&LLMEndpoint{
+				Provider: OpenAI, Model: modelDefaultOpenAI, BaseURL: server.URL, disableStreaming: !streaming,
+			})
+			got, err := client.SendQuery(t.Context(), llmTestHistory(), nil, &LLMCallOpts{})
+			require.NoError(t, err)
+			require.Len(t, got.Content, 4)
+			for i, kind := range []LLMContentBlockKind{LLMContentThinking, LLMContentText, LLMContentThinking, LLMContentToolCall} {
+				assert.Equal(t, kind, got.Content[i].Kind)
+			}
+			assert.Equal(t, "Let me check.", got.Content[1].Text)
+			_, replay, err := convertToCodexResponsesFormat([]*LLMMessage{{Role: LLMMessageRoleAssistant, Content: got.Content}})
+			require.NoError(t, err)
+			require.Len(t, replay, 4)
+			require.NotNil(t, replay[0].OfReasoning)
+			require.NotNil(t, replay[1].OfMessage)
+			require.NotNil(t, replay[2].OfReasoning)
+			require.NotNil(t, replay[3].OfFunctionCall)
+			assert.Equal(t, "rs_1", replay[0].OfReasoning.ID)
+			assert.Equal(t, "rs_2", replay[2].OfReasoning.ID)
+		})
+	}
+}
+
 func TestOpenAIEndpointUsesResponses(t *testing.T) {
 	for _, tc := range []struct {
 		name     string

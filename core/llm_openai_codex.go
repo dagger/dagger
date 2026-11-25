@@ -271,11 +271,27 @@ func (c *OpenAIResponsesClient) SendQuery(ctx context.Context, history []*LLMMes
 	// collide with the text (0) or tool-call (1+) phases.
 	var reasonIdx int64
 	var hasReasoning bool
+	var hasMessageItems bool
 
 	// Both delivery modes use the same item and usage handling so encrypted
 	// reasoning, tool calls and cache accounting survive non-streaming turns.
 	handleItem := func(item responses.ResponseOutputItemUnion) {
 		switch item.Type {
+		case "message":
+			// Text is also accumulated for display, but replay must preserve
+			// each message's position between reasoning and tool-call items.
+			var text strings.Builder
+			for _, part := range item.AsMessage().Content {
+				if part.Type == "output_text" {
+					text.WriteString(part.AsOutputText().Text)
+				}
+			}
+			if text.Len() > 0 {
+				hasMessageItems = true
+				contentBlocks = append(contentBlocks, &LLMContentBlock{
+					Kind: LLMContentText, Text: text.String(),
+				})
+			}
 		case "function_call":
 			fc := item.AsFunctionCall()
 			contentBlocks = append(contentBlocks, &LLMContentBlock{
@@ -389,12 +405,10 @@ func (c *OpenAIResponsesClient) SendQuery(ctx context.Context, history []*LLMMes
 	// Close the streamed text response phase (if any).
 	dp.Close(0)
 
-	// Add the text answer as a content block. When there's reasoning, it must
-	// come after the reasoning/tool-call blocks: the Responses API requires each
-	// reasoning item to be immediately followed by the item it produced, so a
-	// leading text block would strand a reasoning item when resubmitted. Without
-	// reasoning, keep the text ahead of any tool calls (unchanged behavior).
-	if content.Len() > 0 {
+	// Normal responses already captured messages in output order. Retain the
+	// text-only fallback for streams that omit message items; never append a
+	// second, reordered copy of text that was captured alongside reasoning.
+	if !hasMessageItems && content.Len() > 0 {
 		textBlock := &LLMContentBlock{
 			Kind: LLMContentText,
 			Text: content.String(),
