@@ -2978,10 +2978,13 @@ type Cache struct {
 	// last one (sharedResult.changedAt), and a stored bundle the count it was
 	// built at (StoredBundleResult.Position). A save keeps the count and each
 	// entry's stamp, and an open takes them back (persistdb.MetaKeyBundleWrites),
-	// so a bundle's position taken before a restart compares after it. After
-	// a crash the count is the last save's, which a bundle built since can
-	// be above. Guarded by egraphMu.
-	writes uint64
+	// so a bundle's position taken before a restart compares after it.
+	// restoredWrites is the count the open took back (RestoredPosition):
+	// after a crash it is the last save's, which a bundle built since can be
+	// above, while writes moves on from it as soon as the cache runs.
+	// Guarded by egraphMu.
+	writes         uint64
+	restoredWrites uint64
 
 	closing                atomic.Bool
 	activeGlobalOperations atomic.Int64
