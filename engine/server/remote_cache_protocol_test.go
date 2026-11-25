@@ -145,6 +145,48 @@ func TestRemoteCacheAdapterDoesNotKnowARowAMergeKeepsTheEnginesValueOn(t *testin
 	require.Contains(t, exp.Rows.Full, number, "an export sends it in full")
 }
 
+// An engine starts with the entries its image ships, and the service holds
+// records of the same recipes, which other engines running the same image
+// exported. A merge of the service's records that lands on an image entry
+// keeps the image's value there, and makes the row known: the service holds a
+// record of the recipe, so an export of a result built over the entry sends
+// the entry as a held row, not in full.
+func TestRemoteCacheAdapterKnowsAnImageEntryAMergeKeeps(t *testing.T) {
+	src := newAdapterTestEngine(t)
+	dir, image := exportImageEntries(t, src, imageRefConfig, nil, "shipped")
+	var records dagql.ValueBundle
+	require.NoError(t, src.cache.WithExportedValues(src.ctx, dagql.ValueSelection{Roots: []dagql.AnyResult{src.file(t, "shipped")}}, config.RefConfig{}, func(_ context.Context, exp *dagql.ExportedValues) error {
+		records = exp.Bundle
+		return nil
+	}))
+
+	e := newAdapterTestEngine(t)
+	require.NoError(t, e.cache.SetImageContent(dir))
+	imaged, err := e.cache.MergeValues(e.ctx, dagql.ImageCacheID, image)
+	require.NoError(t, err)
+	require.Len(t, imaged.Roots, 1)
+	shipped := imaged.Roots[0].Number
+	hit := e.file(t, "shipped")
+	require.Equal(t, shipped, entryNumber(t, hit))
+
+	known := dagql.NewKnownRows()
+	merged, err := e.adapter.Merge(e.ctx, 1, protocol.Merge{Bundle: records}, known)
+	require.NoError(t, err)
+	require.Len(t, merged.Values, 1)
+	require.Equal(t, shipped, merged.Values[0].Number, "the service's record landed on the image's entry")
+	require.True(t, e.cache.FromImage(hit), "the entry keeps the image's value")
+
+	made, _ := e.publishFile(t, "made", hit)
+	var exp remotecache.Export
+	require.NoError(t, e.adapter.Export(e.ctx, protocol.Export{Roots: []uint64{entryNumber(t, made)}}, known, func(_ context.Context, got remotecache.Export) error {
+		exp = got
+		return nil
+	}))
+	require.NotNil(t, exp.Bundle)
+	require.Equal(t, []uint64{shipped}, exp.Rows.Held, "the image's entry goes as a held row")
+	require.NotContains(t, exp.Rows.Full, shipped)
+}
+
 // knowMerged makes known the rows a merge stored the service's records on, and
 // counts the rows it kept that aren't known at their revisions: those an
 // export carries in full, by whether the engine's value is its own or a
