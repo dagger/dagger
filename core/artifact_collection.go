@@ -97,7 +97,7 @@ func (a *Artifacts) SetSchema(ctx context.Context, entries []*Artifact) error {
 			}
 		}
 	}
-	a.SetCollectionRoots(entries)
+	a.SetCollectionRoots(a.ownModules(entries))
 	legacy := slices.DeleteFunc(a.AllDimensions, func(dimension *ArtifactDimension) bool {
 		return !strings.HasPrefix(dimension.Identifier, "type:")
 	})
@@ -108,6 +108,20 @@ func (a *Artifacts) SetSchema(ctx context.Context, entries []*Artifact) error {
 	a.AllDimensions = artifact.Union(a.AllDimensions, legacy)
 	a.nameEntries()
 	return nil
+}
+
+// ownModules is the entries of the modules the selection holds artifacts
+// of. The columns are named from every module's schema, but another
+// module's collections hold nothing the selection can reach: keeping them
+// as roots would make the selection hold that module's results.
+func (a *Artifacts) ownModules(entries []*Artifact) []*Artifact {
+	modules := map[string]bool{}
+	for _, entry := range a.Entries {
+		modules[entry.ModuleName] = true
+	}
+	return slices.DeleteFunc(slices.Clone(entries), func(entry *Artifact) bool {
+		return !modules[entry.ModuleName]
+	})
 }
 
 func (a *Artifacts) nameEntries() {
