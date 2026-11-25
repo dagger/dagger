@@ -84,3 +84,71 @@ func TestCachePersistenceSaveLetsWritersInWhileItWalks(t *testing.T) {
 	require.Less(t, w.waited, 250*time.Millisecond)
 	require.Less(t, l.waited, 250*time.Millisecond)
 }
+
+// A Cloud's save that reads the store in pieces saves the store as it was at
+// its end, whatever the service wrote while it read: new roots, a stored
+// part, a prune and a collection of an engine's holdings, each made while
+// the save had let the lock go, after it had read every entry. The store it
+// leaves is what a full save of the cache as the save returns would write.
+func TestCloudSaveReadsWhatIsWrittenWhileItReads(t *testing.T) {
+	t.Parallel()
+	ctx, cloud := storedPersistenceTestCloud(t, filepath.Join(t.TempDir(), "cloud.db"))
+	defer func() { require.NoError(t, cloud.Close(ctx)) }()
+	cloud.closeStoredBodies()
+	storedPersistenceTestRootAndDep(t, ctx, cloud, "before-first")
+	_, second := storedPersistenceTestRootAndDep(t, ctx, cloud, "before-second")
+	storedPersistenceTestRootAndDep(t, ctx, cloud, "before-third")
+	require.NoError(t, cloud.Checkpoint(ctx))
+
+	writes := []func(){
+		func() { storedPersistenceTestRootAndDep(t, ctx, cloud, "during-new") },
+		func() {
+			stored, _, err := cloud.SetStoredPart(ctx, second, storedPruneTestPart("snapshot", map[string]int64{"during-layer": 10}), 0)
+			require.NoError(t, err)
+			require.True(t, stored)
+		},
+		func() {
+			_, err := cloud.PruneMetadataEstimate(ctx, 2, 1)
+			require.NoError(t, err)
+		},
+		func() {
+			_, _, err := cloud.CollectRemoteHoldings(ctx, cloud.ReleaseRemoteCache(ctx, "cache-a").Candidates, nil)
+			require.NoError(t, err)
+		},
+		func() { storedPersistenceTestRootAndDep(t, ctx, cloud, "during-last") },
+	}
+	cloud.egraphMu.RLock()
+	entries := len(cloud.resultsByID)
+	cloud.egraphMu.RUnlock()
+	yields, wrote := 0, 0
+	cloud.readPieceSize = 1
+	cloud.testReadPieceYielded = func() {
+		yields++
+		if yields <= entries || wrote == len(writes) {
+			return
+		}
+		writes[wrote]()
+		wrote++
+	}
+	require.NoError(t, cloud.Checkpoint(ctx))
+	cloud.readPieceSize, cloud.testReadPieceYielded = 0, nil
+	require.Equal(t, len(writes), wrote, "every write ran while the save read")
+	require.Greater(t, cloud.LastSaveRead().Holds, entries, "the save read in pieces")
+	require.NoError(t, checkPersistFullSave(ctx, cloud, persistTestFullSave(t, cloud)))
+}
+
+// persistTestFullSave is a full save of the cache as it is now, read under
+// one hold, as an empty database would take it.
+func persistTestFullSave(t *testing.T, c *Cache) *persistStateSnapshot {
+	t.Helper()
+	c.egraphMu.RLock()
+	full := newPersistRead(&persistKept{}, c.persistSeed)
+	full.prints = nil
+	err := c.walkStoreLocked(full, nil)
+	next, writes := sharedResultID(c.nextSharedResultID.Load()), c.writes
+	c.egraphMu.RUnlock()
+	require.NoError(t, err)
+	snapshot, err := full.assemble(next, writes)
+	require.NoError(t, err)
+	return &snapshot
+}
