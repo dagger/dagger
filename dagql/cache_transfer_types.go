@@ -2,6 +2,7 @@ package dagql
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/dagger/dagger/engine/snapshots"
 	"github.com/opencontainers/go-digest"
@@ -144,29 +145,23 @@ func (v TransferredValue) MarshalJSON() ([]byte, error) {
 }
 
 // storedJSON is a value with a stored envelope as its JSON writes it: the
-// envelope and call frame as the cache holds them, decompressed, not
-// decoded.
+// envelope and call frame as the cache holds them, decompressed as they are
+// written, not decoded.
 func (v TransferredValue) storedJSON() (storedValueJSON, error) {
-	body := &storedBody{envelope: v.storedEnvelope, frame: v.storedCall, frameBytes: v.storedCallBytes}
-	raw, err := body.envelopeJSON()
-	if err != nil {
-		return storedValueJSON{}, err
-	}
-	var call json.RawMessage
-	if v.storedCall != nil {
-		call, err = body.frameJSON()
-	} else {
-		call, err = json.Marshal(v.Record.Call)
-	}
-	if err != nil {
-		return storedValueJSON{}, err
+	call := storedJSONBody{what: "call frame", compressed: v.storedCall}
+	if v.storedCall == nil {
+		raw, err := json.Marshal(v.Record.Call)
+		if err != nil {
+			return storedValueJSON{}, err
+		}
+		call.raw = raw
 	}
 	return storedValueJSON{
 		Ordinal:            v.Ordinal,
 		SenderNumber:       v.SenderNumber,
 		SenderReplacements: v.SenderReplacements,
 		SenderStamp:        v.SenderStamp,
-		Record:             storedRecordJSON{ResultID: v.Record.ResultID, Envelope: raw, Call: call, SnapshotLinks: v.Record.SnapshotLinks},
+		Record:             storedRecordJSON{ResultID: v.Record.ResultID, Envelope: storedJSONBody{what: "envelope", compressed: v.storedEnvelope}, Call: call, SnapshotLinks: v.Record.SnapshotLinks},
 		DependencyIDs:      v.DependencyIDs,
 		ExpiresAtUnix:      v.ExpiresAtUnix,
 		Held:               v.Held,
@@ -210,9 +205,39 @@ type storedValueJSON struct {
 // encoded JSON.
 type storedRecordJSON struct {
 	ResultID      uint64                     `json:"resultID"`
-	Envelope      json.RawMessage            `json:"envelope"`
-	Call          json.RawMessage            `json:"call"`
+	Envelope      storedJSONBody             `json:"envelope"`
+	Call          storedJSONBody             `json:"call"`
 	SnapshotLinks []PersistedSnapshotRefLink `json:"snapshotLinks,omitempty"`
+}
+
+// storedJSONBody is JSON a stored value writes out as it is: its envelope or
+// call frame compressed as the cache holds it (storedBody), decompressed
+// only as it is written; or a call frame's JSON, raw.
+type storedJSONBody struct {
+	what       string
+	compressed []byte
+	raw        json.RawMessage
+}
+
+// MarshalJSON returns the body's JSON, decompressed.
+func (b storedJSONBody) MarshalJSON() ([]byte, error) {
+	if b.compressed == nil {
+		return b.raw.MarshalJSON()
+	}
+	return b.decompress(nil)
+}
+
+// decompress appends the compressed body's JSON to dst.
+func (b storedJSONBody) decompress(dst []byte) ([]byte, error) {
+	_, dec, err := storedBodyCodec()
+	if err != nil {
+		return nil, err
+	}
+	raw, err := dec.DecodeAll(b.compressed, dst)
+	if err != nil {
+		return nil, fmt.Errorf("decompress stored %s: %w", b.what, err)
+	}
+	return raw, nil
 }
 
 type TransferredRoot struct {
