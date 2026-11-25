@@ -228,6 +228,41 @@ func TestCloudRestoresTheWriteCountOfItsLastSave(t *testing.T) {
 	require.Equal(t, checkpointed, cloud.RestoredPosition(), "while the restored count stays the save's")
 }
 
+// A saved write count the open can't read costs what kept bundles from
+// before the open current, not the store: the store is restored with no
+// position (RestoredPosition), and the cache counts on from its highest
+// restored stamp, so that a write after the open still counts above every
+// one.
+func TestCloudRestoresNoPositionWhenItsWriteCountIsUnreadable(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "cloud.db")
+	ctx, cloud := storedPersistenceTestCloud(t, path)
+	root, dep := storedPersistenceTestRootAndDep(t, ctx, cloud, "unreadable")
+	stored, _, err := cloud.SetStoredPart(ctx, root, testLiveOffer(), 0)
+	require.NoError(t, err)
+	require.True(t, stored)
+	cloud.egraphMu.RLock()
+	highest := cloud.resultsByID[sharedResultID(root)].changedAt
+	cloud.egraphMu.RUnlock()
+	require.NotZero(t, highest)
+	require.NoError(t, cloud.Close(ctx))
+	db, q, err := prepareCacheDBs(ctx, path, true)
+	require.NoError(t, err)
+	require.NoError(t, q.UpsertMeta(ctx, persistdb.MetaKeyBundleWrites, "not a count"))
+	require.NoError(t, closeCacheDBs(db, q))
+
+	ctx, cloud = storedPersistenceTestCloud(t, path)
+	defer func() { require.NoError(t, cloud.Close(ctx)) }()
+	require.Equal(t, CachePersistenceResetNone, cloud.PersistenceResetReason(), "the store is restored")
+	require.Contains(t, storedPersistenceTestState(cloud), root)
+	require.Zero(t, cloud.RestoredPosition(), "no bundle from before the open compares")
+	require.Equal(t, highest, cloud.BundlePosition(), "it counts on from its highest stamp")
+	stored, _, err = cloud.SetStoredPart(ctx, dep, testLiveOffer(), 0)
+	require.NoError(t, err)
+	require.True(t, stored)
+	require.Equal(t, []bool{true}, cloud.ChangedSince([]uint64{dep}, highest), "a write after the open counts above every restored stamp")
+}
+
 // The restore keeps every record as it was saved, and decodes none, so a
 // restored closure is placed whatever it holds: an object, a list, a scalar
 // and a null value. An engine's restore decodes the scalar and the null at
