@@ -76,6 +76,10 @@ type persistKept struct {
 	entries []keptEntry
 	terms   []keptUnit
 	classes []keptUnit
+	// edges counts the ownership edges of the entries the save that made
+	// this table read: the next save sizes its read by it. The database
+	// doesn't hold it.
+	edges int
 }
 
 // empty reports whether the database holds nothing of the cache.
