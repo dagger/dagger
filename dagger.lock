@@ -125,6 +125,7 @@
 ["","oci-sha",["docker.io/library/busybox:1.38.0"],"sha256:fd7dc98638c8e305f4dc34e979f1c0fdfdcaeb0fbf8fcff77ae834b6da3d7e6e"]
 ["","oci-sha",["docker.io/library/docker:cli"],"sha256:6fae2214c3121a28d5aa639d09032f61310b7c9c75ffbad1025f261a1b621800"]
 ["","oci-sha",["docker.io/library/eclipse-temurin:21-jre"],"sha256:227118764cccd3c3294617061aaa93a08309c63a395eefa83e6b35032992ea99"]
+["","oci-sha",["docker.io/library/golang:1.25-alpine"],"sha256:1ae0735f00daffa3aaf1363a5184c0d2dc55c78e3db4ec70241cdac97bf84b59"]
 ["","oci-sha",["docker.io/library/golang:1.26"],"sha256:5c3f3f28a273c9b61698b2d34f18375929790ab1f1d3835d032d21e2b31eae0c"]
 ["","oci-sha",["docker.io/library/golang:1.26-alpine"],"sha256:9ce231b28998b32e116927c61aa5c406183061d4f3f2d61b292c88e7f6bdf7ca"]
 ["","oci-sha",["docker.io/library/golang:1.26.1-alpine"],"sha256:2389ebfa5b7f43eeafbd6be0c3700cc46690ef842ad962f6c5bd6be49ed82039"]
