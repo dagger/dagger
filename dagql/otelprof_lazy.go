@@ -107,7 +107,7 @@ func (wcprofLazyParentProcessor) Shutdown(context.Context) error   { return nil 
 func (wcprofLazyParentProcessor) ForceFlush(context.Context) error { return nil }
 
 // beginOTelLazyOp mints the OTel `lazy` op span for a deferred evaluation. It
-// MUST be called under lazyMu, before the attempt pointer is published, so a
+// MUST be called under the lazy state's mu, before the attempt pointer is published, so a
 // joiner that observes the in-flight eval always has that attempt's valid wait
 // target (the target is minted before the waiter-observable primitive). It
 // returns the context the callback runs under,
@@ -194,7 +194,7 @@ func (c *Cache) beginOTelLazyOp(evalCtx context.Context, sharedID sharedResultID
 				}, opts...)...,
 			)
 			if !anchored {
-				// Under the result's lazyMu: no other evaluation of it is
+				// Under the result's lazy state's mu: no other evaluation of it is
 				// choosing its links meanwhile.
 				c.recordSessionLazyAnchor(evalCtx, clientMD.SessionID, sharedID, resumeSpan.SpanContext(), originalSpanCtx, installCtxs)
 			}

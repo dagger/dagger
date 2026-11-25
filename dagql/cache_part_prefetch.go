@@ -1222,7 +1222,7 @@ func (p *partPrefetcher) run(ctx context.Context, job *partPrefetchJob) {
 	current := row != nil && row.partOfferLocked(job.key) == offer
 	installed := false
 	if current {
-		if gate := row.partGate.gate.Load(); gate != nil {
+		if gate := row.writerGate(); gate != nil {
 			gate.mu.Lock()
 			installed = gate.outputs[job.key].phase != PartPending
 			gate.mu.Unlock()

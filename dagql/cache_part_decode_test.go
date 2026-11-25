@@ -76,7 +76,7 @@ func TestPartDecodeBeforeExternalFinish(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "snapshot", loaded.Unwrap().(*transferTestValue).Text)
 	require.Len(t, row.loadSnapshotOwnerLinks(), 1, "decode may synchronize leases independently")
-	gate := row.partGate.gate.Load()
+	gate := row.writerGate()
 	key, _ := partAddressKey(address)
 	gate.mu.Lock()
 	output := gate.outputs[key]

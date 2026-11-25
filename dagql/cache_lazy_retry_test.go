@@ -71,12 +71,12 @@ func updateLazyRetryMax(maxRunning *atomic.Int32, running int32) {
 }
 
 func currentLazyAttempt(shared *sharedResult) (*lazyEvalAttempt, int) {
-	shared.lazyMu.Lock()
-	defer shared.lazyMu.Unlock()
-	if shared.lazyWhole.attempt == nil {
+	shared.lazyState().mu.Lock()
+	defer shared.lazyState().mu.Unlock()
+	if shared.lazyState().whole.attempt == nil {
 		return nil, 0
 	}
-	return shared.lazyWhole.attempt, shared.lazyWhole.attempt.waiters
+	return shared.lazyState().whole.attempt, shared.lazyState().whole.attempt.waiters
 }
 
 func TestCacheEvaluateRetriesForeignCancellation(t *testing.T) {
@@ -443,9 +443,9 @@ func (m *lazyBookkeepingSnapshotManager) AttachLease(ctx context.Context, leaseI
 }
 
 func lazySyncState(shared *sharedResult) (pending, complete bool) {
-	shared.lazyMu.Lock()
-	defer shared.lazyMu.Unlock()
-	return shared.lazyWhole.syncPending, shared.lazyEvalComplete
+	shared.lazyState().mu.Lock()
+	defer shared.lazyState().mu.Unlock()
+	return shared.lazyState().whole.syncPending, shared.lazyState().evalComplete
 }
 
 // A callback body reports object-side completion before the attempt's snapshot-lease

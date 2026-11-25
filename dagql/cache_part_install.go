@@ -560,7 +560,7 @@ func (c *Cache) CommitReadyPart(ctx context.Context, p *PreparedReadyPart) (_ *R
 	}
 	row.payloadRevision++
 	gate.managed = true
-	row.partGate.active.Store(true)
+	row.partGateCell().active.Store(true)
 	gate.revision++
 	token := p.permit.task
 	installation := gate.revision

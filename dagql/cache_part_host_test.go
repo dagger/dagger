@@ -103,10 +103,10 @@ func TestPartHostInlineAllPartsRetriesCapture(t *testing.T) {
 			require.Equal(t, PersistedRefPath{}.Field("items").Index(0), value.host.path)
 			row := root.cacheSharedResult()
 			c.egraphMu.Lock()
-			gate := row.partGate.loadOrCreate()
+			gate := row.partGateCell().loadOrCreate()
 			gate.mu.Lock()
 			gate.managed = true
-			row.partGate.active.Store(true)
+			row.partGateCell().active.Store(true)
 			gate.mu.Unlock()
 			before := row.incomingOwnershipCount.Load()
 			c.egraphMu.Unlock()
@@ -131,16 +131,16 @@ func TestPartHostInlineAllPartsRetriesCapture(t *testing.T) {
 			// Call the inline host directly with no named parts. Root EvaluateParts
 			// would conceal the missing inline retry by applying its own loop.
 			released := armLazyAttemptReleased(c)
-			row.lazyMu.Lock()
-			generationBefore := row.lazyGeneration
-			row.lazyMu.Unlock()
+			row.lazyState().mu.Lock()
+			generationBefore := row.lazyState().generation
+			row.lazyState().mu.Unlock()
 			err = value.host.Evaluate(ctx)
 			// Each acquire task wakes its caller before its deferred row release.
 			// Count the attempts this call started, including any probe retries,
 			// and await their release hooks before observing ownership.
-			row.lazyMu.Lock()
-			attempts := row.lazyGeneration - generationBefore
-			row.lazyMu.Unlock()
+			row.lazyState().mu.Lock()
+			attempts := row.lazyState().generation - generationBefore
+			row.lazyState().mu.Unlock()
 			for range attempts {
 				waitLazyAttemptReleased(t, released)
 			}

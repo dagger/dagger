@@ -29,7 +29,7 @@ func onSecondRevisionRead(object *transferTestValue, fn func()) {
 }
 
 func bumpGateRevision(c *Cache, row *sharedResult) {
-	gate := row.partGate.loadOrCreate()
+	gate := row.partGateCell().loadOrCreate()
 	c.egraphMu.Lock()
 	gate.mu.Lock()
 	gate.revision++
@@ -260,7 +260,7 @@ func (f *settlementFixture) requireSettled(t *testing.T, firstBase, secondBase i
 	require.Equal(t, firstBase, first, "no double decrement")
 	require.Equal(t, secondBase, second, "no double decrement")
 	key, _ := partAddressKey(f.address)
-	gate := row.partGate.loadOrCreate()
+	gate := row.partGateCell().loadOrCreate()
 	gate.mu.Lock()
 	phase := gate.outputs[key].phase
 	gate.mu.Unlock()
@@ -365,7 +365,7 @@ func TestOfferSettlementReplacement(t *testing.T) {
 			out, err := f.cache.testOfferParts(f.ctx, f.receiver, []PersistedPartOffer{f.replacement()})
 			require.NoError(t, err)
 			require.Equal(t, OfferExecutionStarted, out[0].Outcome, "the retained output is not complete until a retry settles it")
-			gate := row.partGate.loadOrCreate()
+			gate := row.partGateCell().loadOrCreate()
 			gate.mu.Lock()
 			state := gate.outputs[key]
 			gate.mu.Unlock()
@@ -521,7 +521,7 @@ func TestRenewalShutdownDrainsOwnership(t *testing.T) {
 		for _, owner := range f.cache.offerOwners {
 			owners = append(owners, ownership{owner.slots, owner.holds})
 		}
-		gate := f.receiver.cacheSharedResult().partGate.loadOrCreate()
+		gate := f.receiver.cacheSharedResult().partGateCell().loadOrCreate()
 		gate.mu.Lock()
 		writerCount := len(gate.writers)
 		gate.mu.Unlock()

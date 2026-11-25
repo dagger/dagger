@@ -266,9 +266,9 @@ func TestCapturePersistedRecordBlocksOnlyItsUnstartedEvaluation(t *testing.T) {
 		<-evalEntered
 		// A mutex wait is not a durable synctest wait. Observe the held
 		// mutex directly after the real evaluation has entered instead.
-		acquired := res.cacheSharedResult().lazyMu.TryLock()
+		acquired := res.cacheSharedResult().lazyState().mu.TryLock()
 		if acquired {
-			res.cacheSharedResult().lazyMu.Unlock()
+			res.cacheSharedResult().lazyState().mu.Unlock()
 		}
 		require.False(t, acquired)
 		require.False(t, ran.Load())
@@ -314,9 +314,9 @@ func TestCapturePersistedRecordOwnershipAndCancellation(t *testing.T) {
 				<-entered
 				// Every row is copied under its own lazyMu, including settled
 				// rows. The capture hold still allows session release below.
-				locked := res.cacheSharedResult().lazyMu.TryLock()
+				locked := res.cacheSharedResult().lazyState().mu.TryLock()
 				if locked {
-					res.cacheSharedResult().lazyMu.Unlock()
+					res.cacheSharedResult().lazyState().mu.Unlock()
 				}
 				require.False(t, locked)
 				cacheTestReleaseSession(t, c, ctx)

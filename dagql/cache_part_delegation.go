@@ -269,6 +269,6 @@ func markRestoredPartDelegation(row *sharedResult, envelope PersistedResultEnvel
 		return v.Payload, nil
 	})
 	if err == nil && found {
-		row.partGate.restoredDelegation.Store(true)
+		row.partGateCell().restoredDelegation.Store(true)
 	}
 }
