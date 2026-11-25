@@ -23,6 +23,13 @@ const (
 // storedBodyTestExport exports the pool from an engine's cache.
 func storedBodyTestExport(t *testing.T) ValueBundle {
 	t.Helper()
+	return storedBodyTestExportOf(t, storedBodyTestRecords)
+}
+
+// storedBodyTestExportOf exports the first records records of the pool
+// from an engine's cache.
+func storedBodyTestExportOf(t *testing.T, records int) ValueBundle {
+	t.Helper()
 	actx := cacheTestContext(context.Background())
 	a, err := NewCache(actx, filepath.Join(t.TempDir(), "a.db"), nil, nil)
 	require.NoError(t, err)
@@ -31,7 +38,7 @@ func storedBodyTestExport(t *testing.T) ValueBundle {
 	srv.InstallObject(NewClass(srv, ClassOpts[*storedBenchValue]{}))
 	actx = srvToContext(ContextWithCache(actx, a), srv)
 	var roots []AnyResult
-	for i := range storedBodyTestRecords {
+	for i := range records {
 		field := fmt.Sprintf("body-%d", i)
 		value := &storedBenchValue{Text: field, Fields: mergeBenchBody(field, storedBodyTestFields)}
 		frame := &ResultCall{Kind: ResultCallKindField, Field: field, Type: NewResultCallType(value.Type())}
@@ -46,7 +53,7 @@ func storedBodyTestExport(t *testing.T) ValueBundle {
 		bundle = values.Bundle
 		return nil
 	}))
-	require.Len(t, bundle.Values, storedBodyTestRecords)
+	require.Len(t, bundle.Values, records)
 	return bundle
 }
 
