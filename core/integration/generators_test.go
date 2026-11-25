@@ -27,6 +27,7 @@ import (
 	"github.com/containerd/continuity/fs"
 	"github.com/creack/pty"
 	workspacecfg "github.com/dagger/dagger/core/workspace"
+	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/util/lockfile"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -121,12 +122,33 @@ func (GeneratorsSuite) TestGenerateDoesNotUploadGitignoredFiles(ctx context.Cont
 	require.NoError(t, os.WriteFile(sdkFile, sdkCode, 0644))
 
 	var logs safeBuffer
-	c := connect(ctx, t, dagger.WithWorkdir(workdir), dagger.WithLogOutput(&logs), dagger.WithVerbosity(2))
+	sink := newAgentTraceSink(t)
+	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithWorkdir(workdir), dagger.WithLogOutput(&logs), dagger.WithVerbosity(2))...)
 	empty, err := core.NewQuery(c).CurrentWorkspace().SDK("test").Generate().IsEmpty(ctx)
 	require.NoError(t, err)
 	require.False(t, empty)
 	require.NoError(t, c.Close())
 	require.NotRegexp(t, `(?m)^\d+\s+:\s+(?:┆\s+)*\.venv(?:\s+DONE.*)?$`, logs.String(), "generate must not upload gitignored content")
+
+	// A host read without an include makes the client walk every gitignored
+	// file. Only the local SDK's context directory needs the whole root.
+	var wholeRootReads int
+	sink.read(func(db *dagui.DB) {
+		for _, span := range db.Spans.Order {
+			// A call's exec span repeats the call's name and arguments.
+			if span.Name != "Host.directory" || span.Passthrough {
+				continue
+			}
+			args := map[string]bool{}
+			for _, arg := range span.Call().GetArgs() {
+				args[arg.GetName()] = true
+			}
+			if args["gitignore"] && !args["include"] {
+				wholeRootReads++
+			}
+		}
+	})
+	require.Equal(t, 1, wholeRootReads)
 }
 
 func (GeneratorsSuite) TestGeneratorsDirectSDK(ctx context.Context, t *testctx.T) {
