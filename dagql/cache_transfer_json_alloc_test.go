@@ -3,7 +3,6 @@
 package dagql
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	jsonv2 "encoding/json/v2"
@@ -21,6 +20,12 @@ import (
 // bundle of such values, into a buffer an earlier encoding grew, allocated
 // more than the values' envelopes and frames came to decompressed.
 func TestStoredValueIsWrittenInPlace(t *testing.T) {
+	if raceDetector {
+		// zstd keeps its decoders' tables in sync.Pool, which the race
+		// detector empties at random: decompressing there allocates what
+		// it otherwise doesn't, whatever the encoding does.
+		t.Skip("counts allocation, which the race detector changes")
+	}
 	bundle := storedBodyTestExport(t)
 	ctx := cacheTestContext(context.Background())
 	cloud, err := NewCache(ctx, "", nil, nil, WithBlobStore())
@@ -46,10 +51,12 @@ func TestStoredValueIsWrittenInPlace(t *testing.T) {
 		}
 	}
 
-	var buf bytes.Buffer
+	// Encoded to a writer that keeps nothing: what is counted is the
+	// encoding's, not a destination's growth.
+	var written countingWriter
 	encode := func() {
-		buf.Reset()
-		if err := jsonv2.MarshalWrite(&buf, stored, json.DefaultOptionsV1()); err != nil {
+		written = 0
+		if err := jsonv2.MarshalWrite(&written, stored, json.DefaultOptionsV1()); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -66,6 +73,14 @@ func TestStoredValueIsWrittenInPlace(t *testing.T) {
 		total += after.TotalAlloc - before.TotalAlloc
 	}
 	allocated := float64(total) / runs
-	t.Logf("%.0f bytes allocated encoding %d values whose envelopes and frames are %d bytes decompressed, %d bytes of JSON in all", allocated, len(stored.Values), bodies, buf.Len())
+	t.Logf("%.0f bytes allocated encoding %d values whose envelopes and frames are %d bytes decompressed, %d bytes of JSON in all", allocated, len(stored.Values), bodies, written)
 	require.Less(t, allocated, 0.5*float64(bodies))
+}
+
+// countingWriter counts what is written to it, and keeps none of it.
+type countingWriter int
+
+func (w *countingWriter) Write(p []byte) (int, error) {
+	*w += countingWriter(len(p))
+	return len(p), nil
 }
