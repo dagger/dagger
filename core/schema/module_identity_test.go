@@ -400,3 +400,41 @@ func TestModuleSourceReadIsKeyedByItsEnginePlatform(t *testing.T) {
 	}
 	require.Equal(t, platform.Format(), keyed, "the read is keyed by its engine's default platform")
 }
+
+// A call keyed by whose credentials its caller's Git reads may borrow
+// (core.GitBorrowingInput), as a planning expansion is, is made again for a
+// caller with another permission: module runtime code, which may borrow
+// nothing; trusted resolution of a module's dependencies; and a client that
+// is its own non-module parent, such as the CLI. A caller with the same
+// permission takes the call made before.
+// Not parallel: it makes one of its sessions the engine's non-module client.
+func TestCallKeyedByGitBorrowingIsMadeAgainForAnotherPermission(t *testing.T) {
+	e := newTransferTestEngine(t, transferTestSalt(t))
+	var calls atomic.Int32
+	dagql.Fields[*core.Query]{
+		dagql.Func("borrowingExpansion", func(context.Context, *core.Query, struct{}) (dagql.String, error) {
+			calls.Add(1)
+			return dagql.NewString("expanded"), nil
+		}).WithInput(core.GitBorrowingInput),
+	}.Install(e.dag)
+	expand := func(ctx context.Context) {
+		t.Helper()
+		var out dagql.String
+		require.NoError(t, e.dag.Select(ctx, e.dag.Root(), &out, dagql.Selector{Field: "borrowingExpansion"}))
+	}
+
+	module := e.session(t, "module")
+	expand(module)
+	expand(module)
+	require.Equal(t, int32(1), calls.Load(), "a caller with the same permission takes the call made before")
+
+	expand(core.WithModuleDependencyResolution(module))
+	require.Equal(t, int32(2), calls.Load(), "trusted resolution makes the call again")
+
+	host := e.session(t, "host")
+	md, err := engine.ClientMetadataFromContext(host)
+	require.NoError(t, err)
+	e.srv.parent = md
+	expand(host)
+	require.Equal(t, int32(3), calls.Load(), "a client that is its own non-module parent makes the call again")
+}

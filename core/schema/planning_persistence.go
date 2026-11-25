@@ -48,7 +48,10 @@ func artifactsFromContent(a dagql.ObjectResult[*core.Artifacts]) bool {
 // the same result: only for its own session when one is cached per call,
 // session or client, and not past the earliest expiry of their results.
 // Another session, even one open at the same time, lists the items its own
-// evaluations return.
+// evaluations return. An evaluation can read Git with its caller's
+// permission to borrow the session's credentials, such as for a function's
+// Git default argument, which doesn't keep the result to its session, so
+// such a field is keyed by that permission too (core.GitBorrowingInput).
 func keptExpansion[R any](ctx context.Context, resolve func(context.Context) (R, error)) (R, error) {
 	scoped, scopes := dagql.WithCallScopes(ctx)
 	result, err := resolve(scoped)
