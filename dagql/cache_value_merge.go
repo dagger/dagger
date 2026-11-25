@@ -3032,11 +3032,15 @@ func (c *Cache) commitValueMergeLocked(ctx context.Context, commit *valueMergeCo
 			// The entry took the fresh record's frame: the content digests
 			// spans taught it before go on that frame too, and those of the
 			// replaced frame when it has none (a restored entry).
-			if len(row.res.taught) == 0 && !row.res.taughtFrom.ok() {
-				row.res.taughtFrom = oldFrame
+			t := row.res.taughtContent
+			if (t == nil || len(t.digests) == 0 && !t.from.ok()) && oldFrame.ok() {
+				t = row.res.taughtStateLocked()
+				t.from = oldFrame
 			}
-			row.res.taughtGiven = 0
-			row.res.taughtFrame++
+			if t != nil {
+				t.given = 0
+				t.frame++
+			}
 			c.queueTaughtContentLocked(row.res)
 			row.res.expiresAtUnix = row.value.ExpiresAtUnix
 			// The old value's release runs after the lock; until it has,
@@ -3411,8 +3415,10 @@ func (c *Cache) installMergedRecordLocked(res *sharedResult, row *mergeRow, orig
 		res.taughtDropped = false
 		c.taughtContentRefilled.Add(1)
 	}
-	res.taughtGiven = 0
-	res.taughtFrame++
+	if t := res.taughtContent; t != nil {
+		t.given = 0
+		t.frame++
+	}
 	c.queueTaughtContentLocked(res)
 	res.payloadMu.Lock()
 	res.isObject = rec.Envelope.Kind == persistedResultKindObject

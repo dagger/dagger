@@ -215,9 +215,11 @@ func (c *Cache) finishValueReplacement(ctx context.Context, res *sharedResult, r
 	err := runOnReleaseFuncs(ctx, []OnReleaseFunc{release})
 
 	res.payloadMu.Lock()
-	res.snapshotOwnerLinks = nil
-	res.snapshotLinkIntent = nil
-	res.snapshotLeaseCleanupRoles = nil
+	if s := res.snapshots.Load(); s != nil {
+		s.ownerLinks = nil
+		s.linkIntent = nil
+		s.leaseCleanupRoles = nil
+	}
 	res.payloadMu.Unlock()
 	res.completeParts.Store(nil)
 	if cell := res.partGate.Load(); cell != nil {

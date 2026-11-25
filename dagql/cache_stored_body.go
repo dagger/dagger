@@ -799,6 +799,44 @@ func (c *Cache) queueStoredBodies(entries []*sharedResult) {
 	}
 }
 
+// taughtContent are the content digests holdings' spans taught an entry of
+// a blob-backed cache, and how far its frame has taken them. An entry has
+// them only once one is taught it, or a replacement leaves it a frame's
+// to take (sharedResult.taughtStateLocked), and keeps them from then on.
+// Requires egraphMu.
+type taughtContent struct {
+	// digests are the content digests holdings' spans taught the entry
+	// (teachRemoteIdentityLocked), in the order they were taught, the last
+	// its current one. The entry's frame takes them in that order, as a run
+	// of TeachContentDigest calls leaves an engine's, so one replaced by a
+	// later one is kept as replaced-content (queueTaughtContentLocked).
+	// given is how many of them the current frame has taken, and frame
+	// counts the frames a replacement installed, which have taken none.
+	digests []digest.Digest
+	given   int
+	frame   uint64
+	// from is, for an entry with no taught digests whose record a newer one
+	// replaced, the replaced frame: the body worker reads its content
+	// digests, in order, as the entry's taught ones, which a restored entry
+	// doesn't keep (its frame does).
+	from entryFrame
+}
+
+// taughtStateLocked returns res's taught content digests, making them if
+// res has none. Requires egraphMu for writing.
+func (res *sharedResult) taughtStateLocked() *taughtContent {
+	if res.taughtContent == nil {
+		res.taughtContent = &taughtContent{}
+	}
+	return res.taughtContent
+}
+
+// pendingLocked reports whether the entry's frame has yet to take a digest
+// taught it: false for an entry with none. Requires egraphMu.
+func (t *taughtContent) pendingLocked() bool {
+	return t != nil && (t.given < len(t.digests) || t.from.ok())
+}
+
 // queueTaughtContentLocked has the body worker give res's frame the content
 // digests spans taught res that the frame hasn't taken, when res has a frame.
 // A frame known to carry each of them as its content digest takes nothing:
@@ -806,16 +844,17 @@ func (c *Cache) queueStoredBodies(entries []*sharedResult) {
 // holds is not known until it is decoded. Requires egraphMu.
 func (c *Cache) queueTaughtContentLocked(res *sharedResult) {
 	w := c.storedBodies
-	seeded := res.taughtFrom.ok()
-	if !c.blobBacked || w == nil || (res.taughtGiven == len(res.taught) && !seeded) || !res.entryFrameLocked().ok() {
+	t := res.taughtContent
+	if !c.blobBacked || w == nil || !t.pendingLocked() || !res.entryFrameLocked().ok() {
 		return
 	}
+	seeded := t.from.ok()
 	res.resultCallMu.RLock()
 	known, carried := res.frameContentKnown, res.frameContent
 	res.resultCallMu.RUnlock()
-	if !seeded && known && !slices.ContainsFunc(res.taught[res.taughtGiven:], func(d digest.Digest) bool { return d != carried }) {
-		c.taughtContentCarried.Add(uint64(len(res.taught) - res.taughtGiven))
-		res.taughtGiven = len(res.taught)
+	if !seeded && known && !slices.ContainsFunc(t.digests[t.given:], func(d digest.Digest) bool { return d != carried }) {
+		c.taughtContentCarried.Add(uint64(len(t.digests) - t.given))
+		t.given = len(t.digests)
 		return
 	}
 	w.mu.Lock()
@@ -844,8 +883,19 @@ func (c *Cache) applyTaughtContent(entries []*sharedResult) {
 	for _, res := range entries {
 		c.adoptReplacedContent(res)
 		c.egraphMu.RLock()
-		from, frame, live := res.taughtGiven, res.taughtFrame, c.resultsByID[res.id] == res
-		pending := slices.Clone(res.taught[from:])
+		// An entry keeps its taught digests' state once it has one, so the
+		// state read here is the one checked below.
+		t := res.taughtContent
+		live := c.resultsByID[res.id] == res
+		var (
+			from    int
+			frame   uint64
+			pending []digest.Digest
+		)
+		if t != nil {
+			from, frame = t.given, t.frame
+			pending = slices.Clone(t.digests[from:])
+		}
 		c.egraphMu.RUnlock()
 		if !live || len(pending) == 0 {
 			continue
@@ -871,8 +921,8 @@ func (c *Cache) applyTaughtContent(entries []*sharedResult) {
 		// A frame a replacement installed since has taken none of them, and
 		// its queueing gives it them all. Digests taught meanwhile are
 		// given by their own queueing.
-		if res.taughtFrame == frame && res.taughtGiven == from {
-			res.taughtGiven = from + applied
+		if t.frame == frame && t.given == from {
+			t.given = from + applied
 		}
 		c.egraphMu.Unlock()
 	}
@@ -901,7 +951,11 @@ func (c *Cache) queueRestoredTaughtContent() {
 // content digest. The frame is decoded outside egraphMu.
 func (c *Cache) adoptReplacedContent(res *sharedResult) {
 	c.egraphMu.RLock()
-	from := res.taughtFrom
+	t := res.taughtContent
+	var from entryFrame
+	if t != nil {
+		from = t.from
+	}
 	c.egraphMu.RUnlock()
 	if !from.ok() {
 		return
@@ -921,12 +975,12 @@ func (c *Cache) adoptReplacedContent(res *sharedResult) {
 	}
 	c.lockGraphFor(context.Background(), workBody)
 	defer c.egraphMu.Unlock()
-	if res.taughtFrom != from {
+	if t.from != from {
 		return
 	}
-	res.taughtFrom = entryFrame{}
+	t.from = entryFrame{}
 	// Digests taught since the replacement come after the frame's.
-	res.taught = append(run, res.taught...)
+	t.digests = append(run, t.digests...)
 }
 
 // TaughtContentStats counts, since the cache opened, what giving entries'
@@ -974,7 +1028,7 @@ func (c *Cache) TaughtContentStats() TaughtContentStats {
 // waitsForTaughtContentLocked reports whether res's frame has yet to take a
 // content digest a span taught res. Requires egraphMu.
 func (res *sharedResult) waitsForTaughtContentLocked() bool {
-	return res.taughtGiven < len(res.taught) || res.taughtFrom.ok()
+	return res.taughtContent.pendingLocked()
 }
 
 // closeStoredBodies stops the body worker. Entries it hadn't compressed keep
