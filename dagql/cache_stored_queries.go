@@ -25,7 +25,7 @@ func (c *Cache) equivalentEntriesLocked(dig string) []uint64 {
 		return nil
 	}
 	var numbers []uint64
-	for id := range c.outputEqClassResults[c.eqClassRootLocked(classID)] {
+	for id := range c.outputEqClassResults[c.eqClassRootLocked(classID)].All() {
 		if c.resultsByID[id] != nil {
 			numbers = append(numbers, uint64(id))
 		}
@@ -73,7 +73,7 @@ func (c *Cache) termEntriesLocked(self digest.Digest, inputs []digest.Digest) []
 			continue
 		}
 		seen[root] = struct{}{}
-		for id := range c.outputEqClassResults[root] {
+		for id := range c.outputEqClassResults[root].All() {
 			if c.resultsByID[id] != nil {
 				numbers = append(numbers, uint64(id))
 			}
@@ -261,7 +261,7 @@ func (c *Cache) heldPartLocked(res *sharedResult, key string, nowUnix int64) (Pa
 	candidates := []*sharedResult{res}
 	var others []sharedResultID
 	for root := range c.outputEqClassRootsLocked(res.id) {
-		for id := range c.outputEqClassResults[root] {
+		for id := range c.outputEqClassResults[root].All() {
 			other := c.resultsByID[id]
 			if other == nil || other == res || !other.holdsPartLocked(key) || other.noValueLocked() || c.resultExpiredAtLocked(other, nowUnix) {
 				continue
@@ -324,7 +324,7 @@ func (c *Cache) classUploadLocked(res *sharedResult, key string) (sharedResultID
 	}
 	consider(res.id)
 	for root := range c.outputEqClassRootsLocked(res.id) {
-		for id := range c.outputEqClassResults[root] {
+		for id := range c.outputEqClassResults[root].All() {
 			if c.resultsByID[id] != nil {
 				consider(id)
 			}

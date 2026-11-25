@@ -1012,7 +1012,7 @@ func (build *storedBundleBuild) addOutput(res *sharedResult, part PersistedPartO
 func (c *Cache) storedPartDonorLocked(res *sharedResult, key string, now int64) (*sharedResult, storedPart) {
 	var best *sharedResult
 	for root := range c.outputEqClassRootsLocked(res.id) {
-		for id := range c.outputEqClassResults[root] {
+		for id := range c.outputEqClassResults[root].All() {
 			member := c.resultsByID[id]
 			if member == nil || member == res || c.resultExpiredAtLocked(member, now) {
 				continue
@@ -1042,7 +1042,7 @@ func (c *Cache) closureRowOfClassLocked(service sharedResultID, ordinals map[sha
 	}
 	var best sharedResultID
 	for root := range c.outputEqClassRootsLocked(service) {
-		for id := range c.outputEqClassResults[root] {
+		for id := range c.outputEqClassResults[root].All() {
 			if ordinals[id] != 0 && (best == 0 || id < best) {
 				best = id
 			}

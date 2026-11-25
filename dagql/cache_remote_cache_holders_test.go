@@ -20,7 +20,7 @@ func (c *Cache) equivalentHoldersForTest(dig string) []HolderKey {
 		return nil
 	}
 	var keys []HolderKey
-	for id := range c.outputEqClassResults[c.eqClassRootLocked(classID)] {
+	for id := range c.outputEqClassResults[c.eqClassRootLocked(classID)].All() {
 		if res := c.resultsByID[id]; res != nil {
 			for _, ref := range res.holderRefsLocked() {
 				keys = append(keys, ref.key)

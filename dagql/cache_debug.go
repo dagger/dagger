@@ -1016,7 +1016,7 @@ func (c *Cache) DebugEGraphSnapshot() *EGraphDebugSnapshot {
 			depIDs = append(depIDs, uint64(depID))
 		}
 		slices.Sort(depIDs)
-		outputEqIDs := make([]uint64, 0, len(c.resultOutputEqClasses[resultID]))
+		outputEqIDs := make([]uint64, 0, c.resultOutputEqClasses[resultID].Size())
 		for outputEqID := range c.outputEqClassesForResultLocked(resultID) {
 			outputEqIDs = append(outputEqIDs, uint64(outputEqID))
 		}
@@ -1377,7 +1377,7 @@ func (c *Cache) WriteDebugCacheSnapshot(w io.Writer) error {
 			}
 			slices.Sort(depIDs)
 
-			outputEqIDs := make([]uint64, 0, len(c.resultOutputEqClasses[resultID]))
+			outputEqIDs := make([]uint64, 0, c.resultOutputEqClasses[resultID].Size())
 			for outputEqID := range c.outputEqClassesForResultLocked(resultID) {
 				outputEqIDs = append(outputEqIDs, uint64(outputEqID))
 			}
