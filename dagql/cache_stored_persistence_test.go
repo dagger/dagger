@@ -176,7 +176,8 @@ func TestCloudChangeStampsSurviveARestart(t *testing.T) {
 	ctx, cloud = storedPersistenceTestCloud(t, path)
 	defer func() { require.NoError(t, cloud.Close(ctx)) }()
 	require.Equal(t, CachePersistenceResetNone, cloud.PersistenceResetReason())
-	require.Equal(t, written, cloud.BundlePosition(), "the write count comes back as the save kept it")
+	require.Equal(t, written, cloud.RestoredPosition(), "the write count comes back as the save kept it")
+	require.Equal(t, written, cloud.BundlePosition(), "and counts on from there")
 	require.Equal(t, []bool{true, false}, cloud.ChangedSince([]uint64{root, dep}, before.Position), "the root changed before the save, its dependency didn't")
 	require.Equal(t, []bool{false, false}, cloud.ChangedSince([]uint64{root, dep}, saved.Position), "nothing changed since the last bundle before the save")
 	again, err := cloud.StoredBundle(ctx, []uint64{root}, time.Now().Unix(), nil)
@@ -193,8 +194,10 @@ func TestCloudChangeStampsSurviveARestart(t *testing.T) {
 }
 
 // After a crash, the Cloud restores its last save and the write count that
-// save kept: a bundle built after that save has a position above it, which
-// tells its reader the bundle may carry what the restored cache lost.
+// save kept (RestoredPosition): a bundle built after that save has a
+// position above it, which tells its reader the bundle may carry what the
+// restored cache lost. The restored count stays what the save kept as the
+// cache writes on, which moves BundlePosition past it.
 func TestCloudRestoresTheWriteCountOfItsLastSave(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "cloud.db")
@@ -214,8 +217,15 @@ func TestCloudRestoresTheWriteCountOfItsLastSave(t *testing.T) {
 
 	ctx, cloud = storedPersistenceTestCloud(t, path)
 	defer func() { require.NoError(t, cloud.Close(ctx)) }()
-	require.Equal(t, checkpointed, cloud.BundlePosition(), "the write count of the last save")
-	require.Less(t, cloud.BundlePosition(), lost.Position, "a bundle built after the last save is newer than the restored cache")
+	require.Equal(t, checkpointed, cloud.RestoredPosition(), "the write count of the last save")
+	require.Less(t, cloud.RestoredPosition(), lost.Position, "a bundle built after the last save is newer than the restored cache")
+	for range 2 {
+		stored, _, err = cloud.SetStoredPart(ctx, root, storedBenchPart(cloud.BundlePosition()), 0)
+		require.NoError(t, err)
+		require.True(t, stored)
+	}
+	require.GreaterOrEqual(t, cloud.BundlePosition(), lost.Position, "writes after the open count on past the lost bundle's position")
+	require.Equal(t, checkpointed, cloud.RestoredPosition(), "while the restored count stays the save's")
 }
 
 // The restore keeps every record as it was saved, and decodes none, so a
