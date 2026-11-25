@@ -243,6 +243,61 @@ func TestCloudMergeRelocatesUnderTheLockWhatAnotherExportMoved(t *testing.T) {
 	require.Equal(t, encodedRecordBytes(installed), measured, "the record's size is the stored record's")
 }
 
+// The Cloud relocates before its commit's lock a record its preparation
+// couldn't, a list whose two items, the retired and the current value of one
+// recipe, land on the one entry the Cloud holds for it, and measures the
+// list there, at the numbers it is installed at: here numbers of fewer
+// digits than the ones the preparation gave its items.
+func TestCloudMeasuresARecordRelocatedBeforeTheLock(t *testing.T) {
+	t.Parallel()
+	ctx, a, srv := transferTestCache(t)
+	old := persistedListTestResult(t, ctx, a, srv, "measured-recipe", String("old"))
+	mergeTestExpire(a, old.cacheSharedResult())
+	frame := old.cacheSharedResult().loadResultCall().clone()
+	fresh, err := a.GetOrInitCall(ctx, "measured-session", srv, &CallRequest{ResultCall: frame, IsPersistable: true}, func(context.Context) (AnyResult, error) {
+		return NewResultForCall(String("fresh"), frame)
+	})
+	require.NoError(t, err)
+	root := persistedListTestResult(t, ctx, a, srv, "measured-both-values", DynamicResultArrayOutput{Elem: String(""), Values: []AnyResult{old, fresh}})
+	freshBundle := exportTestBundle(t, ctx, a, fresh)
+	bundle := exportTestBundle(t, ctx, a, root)
+	require.Len(t, bundle.Values, 3)
+	rootOrdinal := mergeTestOrdinalOf(t, bundle, root.cacheSharedResult())
+	others := mergeTestManyRoots(t, 99)
+
+	cctx, cloud := storedPartTestCache(t, WithBlobStore())
+	storedTestHoldWhole(cloud)
+	reply, err := cloud.MergeValues(cctx, "cache-a", freshBundle)
+	require.NoError(t, err)
+	require.True(t, reply.Committed)
+	require.Len(t, reply.Values, 1)
+	freshNumber := reply.Values[0].Number
+	reply, err = cloud.MergeValues(cctx, "cache-b", others)
+	require.NoError(t, err)
+	require.True(t, reply.Committed)
+
+	var under []uint64
+	cloud.testRelocatedUnderLock = func(ordinal uint64) { under = append(under, ordinal) }
+	reply, err = cloud.MergeValues(cctx, "cache-a", bundle)
+	require.NoError(t, err)
+	require.True(t, reply.Committed)
+	require.Empty(t, under, "nothing is relocated under the lock")
+	rootNumber := mergeTestValueOf(t, reply, rootOrdinal).Number
+	cloud.egraphMu.RLock()
+	res := cloud.resultsByID[sharedResultID(rootNumber)]
+	require.NotNil(t, res)
+	require.NotNil(t, res.persistedEnvelope)
+	installed := PersistedRecord{ResultID: rootNumber, Envelope: *res.persistedEnvelope, Call: res.loadResultCall()}
+	measured := res.storedRecordBytes
+	cloud.egraphMu.RUnlock()
+	require.Len(t, installed.Envelope.Items, 2)
+	for _, item := range installed.Envelope.Items {
+		require.Equal(t, freshNumber, item.ResultID, "each item names the recipe's entry")
+	}
+	require.Equal(t, encodedRecordBytes(installed), measured, "the record's size is the stored record's")
+	require.NoError(t, a.ReleaseSession(ctx, "measured-session"))
+}
+
 // The Cloud prepares an engine's export as an engine prepares a merge from
 // the Cloud: a record whose references move is relocated to the numbers it
 // is installed at in the one visit of its payload, and that visit reads the
