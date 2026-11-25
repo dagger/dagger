@@ -5222,7 +5222,7 @@ func (fe *frontendPretty) recalculateViewLocked() {
 		// render too, at exit (RequestFinalLogs), which has no later pass.
 		if fe.reportOnly || fe.finalLogs {
 			for _, row := range fe.rows.Order {
-				if row.Span != nil && row.Span.IsFailed() {
+				if row.Span != nil && (row.Span.IsFailed() || fe.rowShowsLogs(row)) {
 					fe.requestLogs(row.Span.ID)
 				}
 			}

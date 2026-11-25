@@ -416,3 +416,25 @@ func TestRequestFinalLogsSurfacesFailures(t *testing.T) {
 	fe.recalculateViewLocked()
 	require.Contains(t, reqs, failed)
 }
+
+// TestReportRequestsMessageLogs: a collapsed message row (e.g. a CLI's
+// setup message) shows its logs in the report, which renders once and
+// cannot ask as it renders, so the report requests them ahead.
+func TestReportRequestsMessageLogs(t *testing.T) {
+	live := dagui.TraceID{TraceID: trace.TraceID{2}}
+	primary, msg := prettyTestSpanID(1), prettyTestSpanID(2)
+	start := time.Unix(100, 0)
+	db := dagui.NewDB()
+	fe := NewWithDB(io.Discard, db)
+	fe.reportOnly = true
+	fe.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: primary, TraceID: live, Name: "cmd", StartTime: start, EndTime: start.Add(2 * time.Second), Final: true},
+		{ID: msg, TraceID: live, ParentID: primary, Name: "recommended modules", StartTime: start, EndTime: start,
+			Message: telemetry.UIMessageReceived, Reveal: true, Final: true},
+	})
+	fe.SetPrimary(primary)
+	var reqs []dagui.SpanID
+	fe.SetLiveLogs(live, func(r LogRequest) { reqs = append(reqs, r.Span) })
+	fe.recalculateViewLocked()
+	require.Contains(t, reqs, msg)
+}
