@@ -91,8 +91,12 @@ func zstdEncodersFor(level zstd.EncoderLevel) *zstdEncoderPools {
 	if p, ok := zstdEncoders.Load(level); ok {
 		return p.(*zstdEncoderPools)
 	}
-	p, _ := zstdEncoders.LoadOrStore(level, &zstdEncoderPools{level: level})
+	p, _ := zstdEncoders.LoadOrStore(level, newZstdEncoderPools(level))
 	return p.(*zstdEncoderPools)
+}
+
+func newZstdEncoderPools(level zstd.EncoderLevel) *zstdEncoderPools {
+	return &zstdEncoderPools{level: level}
 }
 
 // get takes an encoder from pool, a new one when it has none. Only a frame
@@ -117,6 +121,7 @@ func (p *zstdEncoderPools) get(pool *sync.Pool) (*zstd.Encoder, error) {
 		if enc, err = zstd.NewWriter(nil, zstd.WithEncoderLevel(p.level), zstd.WithEncoderConcurrency(concurrency), zstd.WithLowerEncoderMem(p.level != zstd.SpeedFastest)); err != nil {
 			return nil, err
 		}
+		zstdEncoderMade()
 	}
 	zstdEncoderOut(1)
 	return enc, nil
@@ -186,15 +191,20 @@ const zstdFrameSize = zstdSizedLimit
 // given in the order they're asked for, each frame asking in turn, so a
 // layer that starts while others compress, such as a stopping engine's last
 // export's, waits for what they asked before it, not for all their frames.
-var zstdFrames = semaphore.NewWeighted(int64(runtime.NumCPU()))
+var zstdFrames = semaphore.NewWeighted(int64(zstdBudget))
+
+// zstdBudget is how many places zstdFrames has: one a core.
+var zstdBudget = runtime.NumCPU()
 
 // Hooks for tests: zstdCompressing runs each frame's compression, of size
 // bytes of the layer; zstdEncoderOut and zstdBufferOut are told of each
-// encoder and each frame buffer taken (1) and given back (-1).
+// encoder and each frame buffer taken (1) and given back (-1), and
+// zstdEncoderMade of each encoder made.
 var (
 	zstdCompressing = func(size int, compress func()) { compress() }
 	zstdEncoderOut  = func(delta int) {}
 	zstdBufferOut   = func(delta int) {}
+	zstdEncoderMade = func() {}
 )
 
 // zstdLayerWriter compresses a layer into one zstd frame that names the
