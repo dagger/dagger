@@ -79,11 +79,11 @@ type TransferredValue struct {
 	SenderReplacements uint64 `json:"senderReplacements,omitempty"`
 	// SenderStamp is, on a value a blob-backed cache sends in full, its
 	// entry's change stamp (sharedResult.changedAt): the write count of the
-	// last change to what a stored bundle carries of the entry, in the start
-	// of the cache the bundle's SenderCache names. An engine that merged the
-	// value keeps it, so that a later value of the same entry at the same
-	// stamp, a record it holds already, isn't taught again
-	// (unchangedCloudRowLocked).
+	// last change to what a stored bundle carries of the entry. An engine
+	// compares it only within the start of the cache the bundle's
+	// SenderCache names. An engine that merged the value keeps it, so that a
+	// later value of the same entry at the same stamp, a record it holds
+	// already, isn't taught again (unchangedCloudRowLocked).
 	SenderStamp uint64 `json:"senderStamp,omitempty"`
 	// Record is the record as its sender holds it: it names itself, by
 	// ResultID, and every row it references by the sender's entry numbers,
@@ -283,10 +283,11 @@ type ValueBundle struct {
 	Addresses map[digest.Digest]BlobAddress `json:"addresses,omitempty"`
 	// SenderCache is, on a bundle a blob-backed cache with an identity
 	// builds, that identity: the cache's ID and start count
-	// (CacheIdentity.String). Its values' change stamps count writes from
-	// that start of that cache, so two bundles' stamps compare only when it
-	// is the same: a cache started again, or a new cache, counts from the
-	// start. Empty for a cache with no identity, whose stamps compare with
+	// (CacheIdentity.String). Two bundles' stamps compare only when it is
+	// the same. A cache keeps its stamps across a restart, but one that
+	// crashed counts on from its last save, so a count written after that
+	// save can come again for another change; and a new cache counts from
+	// zero. Empty for a cache with no identity, whose stamps compare with
 	// none.
 	SenderCache string `json:"senderCache,omitempty"`
 }

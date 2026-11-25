@@ -17,6 +17,11 @@ const (
 	// MetaKeyNextResultID is the next result number the cache allocates,
 	// saved with its state so a restored cache never reuses a number.
 	MetaKeyNextResultID = "next_result_id"
+	// MetaKeyBundleWrites is, on a blob-backed cache, its write count
+	// (Cache.writes) as its last save read it, with each stored row's
+	// change stamp: a restored cache counts on from it, so a stored
+	// bundle's position taken before a restart compares after it.
+	MetaKeyBundleWrites = "bundle_writes"
 )
 
 const selectMeta = `SELECT key, value FROM meta WHERE key = ?`

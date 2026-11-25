@@ -2976,7 +2976,11 @@ type Cache struct {
 	// writes counts, on a blob-backed cache, the changes to what stored
 	// bundles carry (stampEntryLocked): each entry keeps the count of the
 	// last one (sharedResult.changedAt), and a stored bundle the count it was
-	// built at (StoredBundleResult.Position). Guarded by egraphMu.
+	// built at (StoredBundleResult.Position). A save keeps the count and each
+	// entry's stamp, and an open takes them back (persistdb.MetaKeyBundleWrites),
+	// so a bundle's position taken before a restart compares after it. After
+	// a crash the count is the last save's, which a bundle built since can
+	// be above. Guarded by egraphMu.
 	writes uint64
 
 	closing                atomic.Bool
@@ -3477,8 +3481,9 @@ type sharedResult struct {
 	partFacts *partFacts
 	// changedAt is, on a blob-backed cache, the write count (Cache.writes)
 	// of the last write that changed what a stored bundle carries of the
-	// entry (stampEntryLocked), and stampCause what that write was
-	// (StampCause), for diagnostics. Guarded by egraphMu.
+	// entry (stampEntryLocked), saved with its stored row; and stampCause
+	// what that write was (StampCause), for diagnostics, which isn't saved.
+	// Guarded by egraphMu.
 	changedAt  uint64
 	stampCause StampCause
 	// transferRevision and dependencyOwnershipRevision move when what a

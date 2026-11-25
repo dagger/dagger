@@ -92,6 +92,9 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 	// Every entry it saves was installed under egraphMu, so its number is
 	// below this, whatever a merge reserves meanwhile (takeResultIDs).
 	snapshot.nextResultID = sharedResultID(c.nextSharedResultID.Load())
+	// A write applies its stamps before it lets go of egraphMu
+	// (stampPendingLocked), so every row's stamp is at most this count.
+	snapshot.writes = c.writes
 	selectedResultIDs, persistedRootIDs := c.snapshotPersistedRootClosureLocked()
 
 	addEqClassID := func(eqClassIDs map[eqClassID]struct{}, eqID eqClassID) {
@@ -186,6 +189,7 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 			stored:                payload.stored,
 			partFacts:             payload.partFacts,
 			snapshotOwnerLinks:    payload.snapshotOwnerLinks,
+			changedAt:             res.changedAt,
 			row: persistdb.MirrorResult{
 				ID:                        int64(resultID),
 				ExpiresAtUnix:             res.expiresAtUnix,
@@ -385,7 +389,7 @@ func (c *Cache) encodePersistedResultRow(ctx context.Context, resultSnapshot *pe
 				return fmt.Errorf("persist result %d stored record: %w", resultSnapshot.resultID, err)
 			}
 		}
-		payload, err = encodeStoredRow(&encoding.Envelope, body, resultSnapshot.partFacts)
+		payload, err = encodeStoredRow(&encoding.Envelope, body, resultSnapshot.partFacts, resultSnapshot.changedAt)
 	} else {
 		payload, err = json.Marshal(encoding.Envelope)
 	}
@@ -506,6 +510,12 @@ func (c *Cache) applyPersistStateSnapshot(ctx context.Context, snapshot persistS
 	if err := q.UpsertMeta(ctx, persistdb.MetaKeyNextResultID, strconv.FormatUint(uint64(snapshot.nextResultID), 10)); err != nil {
 		_ = tx.Rollback()
 		return fmt.Errorf("save next result ID: %w", err)
+	}
+	if c.blobBacked {
+		if err := q.UpsertMeta(ctx, persistdb.MetaKeyBundleWrites, strconv.FormatUint(snapshot.writes, 10)); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("save write count: %w", err)
+		}
 	}
 
 	for _, row := range snapshot.eqClasses {
