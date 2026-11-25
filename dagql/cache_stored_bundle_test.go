@@ -414,6 +414,10 @@ func TestStoredBundleRefusesAReferenceToAnIndirectEntry(t *testing.T) {
 	transferTestDependency(a, actx, mid, leaf)
 	bundle := exportTestBundle(t, actx, a, root)
 	ctx, cloud := storedPartTestCache(t, WithBlobStore())
+	// The test replaces R's record in place, which a build reads only while
+	// the record is whole: the body worker stops before the merge, so that it
+	// can't compress the record first.
+	storedTestHoldWhole(cloud)
 	reply, err := cloud.MergeValues(ctx, "cache-a", bundle)
 	require.NoError(t, err)
 	numbers := map[TransferOrdinal]uint64{}
@@ -488,11 +492,12 @@ func init() {
 // A stored record whose payload its codec refuses, can't map to its outputs,
 // or maps to an output with no part, is refused, though the codec normalizes
 // it: a build validates and maps each record's payloads when it normalizes
-// the record.
+// the record. The test replaces the record in place, which a build reads
+// only while the record is whole, so the Cloud's records stay whole.
 func TestStoredBundleRefusesAPayloadItsCodecRefuses(t *testing.T) {
 	t.Parallel()
 	for text, refusal := range map[string]string{"invalid": "invalid payload", "unmapped": "unmapped payload", "unaddressed": "empty part"} {
-		ctx, cloud, r, _ := storedBundleTestCloud(t, "root")
+		ctx, cloud, r, _ := storedBundleTestCloudIn(t, "root", true)
 		_, err := cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), nil)
 		require.NoError(t, err, text)
 		cloud.egraphMu.Lock()
