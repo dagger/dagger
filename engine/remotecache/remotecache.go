@@ -304,10 +304,12 @@ func (s *settings) dialService(ctx context.Context) (wsConn, error) {
 	header := http.Header{}
 	header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(s.Token+":")))
 	arrived := &arrivals{}
+	// The protocol compresses its own messages, before a write takes the
+	// connection (protocol.EncodeMessage).
 	conn, resp, err := websocket.Dial(ctx, strings.TrimSuffix(s.URL, "/")+protocol.EnginePath, &websocket.DialOptions{
 		HTTPClient:      &http.Client{Transport: arrived.transport()},
 		HTTPHeader:      header,
-		CompressionMode: websocket.CompressionNoContextTakeover,
+		CompressionMode: websocket.CompressionDisabled,
 	})
 	if resp != nil && resp.Body != nil {
 		resp.Body.Close()
@@ -320,10 +322,12 @@ func (s *settings) dialService(ctx context.Context) (wsConn, error) {
 }
 
 // wsConn is the connection a session uses: coder/websocket's Conn, which may
-// be written and closed from any goroutine, and read from one.
+// be written and closed from any goroutine, and read from one. Read returns
+// a message's JSON, decompressed (protocol.DecodeMessage); Write writes a
+// message as the protocol encoded it (protocol.EncodeMessage).
 type wsConn interface {
 	Read(ctx context.Context) ([]byte, error)
-	Write(ctx context.Context, data []byte) error
+	Write(ctx context.Context, msg protocol.Message) error
 	// Arrived returns when the last byte arrived on the connection, or the
 	// zero time if none has.
 	Arrived() time.Time
@@ -336,19 +340,21 @@ type websocketConn struct {
 }
 
 func (w websocketConn) Read(ctx context.Context) ([]byte, error) {
-	for {
-		typ, data, err := w.c.Read(ctx)
-		if err != nil {
-			return nil, err
-		}
-		if typ == websocket.MessageText {
-			return data, nil
-		}
+	typ, data, err := w.c.Read(ctx)
+	if err != nil {
+		return nil, err
 	}
+	return protocol.DecodeMessage(data, typ == websocket.MessageBinary, protocol.MaxMessageBytes)
 }
 
-func (w websocketConn) Write(ctx context.Context, data []byte) error {
-	return w.c.Write(ctx, websocket.MessageText, data)
+// Write writes a compressed message as a binary message, and a plain one as
+// text.
+func (w websocketConn) Write(ctx context.Context, msg protocol.Message) error {
+	typ := websocket.MessageText
+	if msg.Compressed {
+		typ = websocket.MessageBinary
+	}
+	return w.c.Write(ctx, typ, msg.Data)
 }
 
 func (w websocketConn) Arrived() time.Time { return w.arrived.last() }
