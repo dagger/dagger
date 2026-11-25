@@ -292,3 +292,22 @@ func TestStoredSizesAloneCountABlobInTwoPacksInEachRootsOrder(t *testing.T) {
 		require.Equal(t, want[0], got[i], "root %d", root)
 	}
 }
+
+// StoredSizesAlone marks which roots reach which entries on its copy of
+// them, without egraphMu: a step for each entry of each root's closure,
+// which for roots over one closure is that closure once a root. A writer
+// waits for one piece of its reads, never for its marks. Here each mark
+// takes the write lock, which it gets only while the walk holds no piece.
+func TestStoredSizesAloneMarkRootsWithoutTheLock(t *testing.T) {
+	t.Parallel()
+	ctx, cloud, r, p := storedBundleTestCloud(t, "root")
+	marks := 0
+	cloud.testStoredSizesAloneMarks = func() {
+		require.True(t, cloud.egraphMu.TryLock(), "the walk holds no piece of egraphMu as it marks")
+		cloud.egraphMu.Unlock()
+		marks++
+	}
+	_, err := cloud.StoredSizesAlone(ctx, []uint64{r, p}, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	require.Positive(t, marks)
+}
