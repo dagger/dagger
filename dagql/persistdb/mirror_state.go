@@ -1,6 +1,11 @@
 package persistdb
 
-import "context"
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+)
 
 type MirrorResult struct {
 	ID              int64
@@ -106,6 +111,78 @@ type MirrorImportedLayerDiffIndex struct {
 	SnapshotID       string
 }
 
+// mirrorInsert names one of the mirror's insert statements, so a save can
+// run each from a statement prepared once (PrepareMirrorInserts).
+type mirrorInsert uint8
+
+const (
+	mirrorInsertResult mirrorInsert = iota
+	mirrorInsertEqClass
+	mirrorInsertEqClassDigest
+	mirrorInsertTerm
+	mirrorInsertTermInput
+	mirrorInsertResultOutputEqClass
+	mirrorInsertResultDep
+	mirrorInsertResultCall
+	mirrorInsertResultTaught
+	mirrorInsertPersistedEdge
+	mirrorInsertResultSnapshotLink
+	mirrorInsertSnapshotContentLink
+	mirrorInsertSnapshotContentHash
+	mirrorInsertImportedLayerBlobIndex
+	mirrorInsertImportedLayerDiffIndex
+	mirrorInserts
+)
+
+var mirrorInsertSQL = [mirrorInserts]string{
+	mirrorInsertResult: insertMirrorResult,
+	mirrorInsertEqClass: insertMirrorEqClass,
+	mirrorInsertEqClassDigest: insertMirrorEqClassDigest,
+	mirrorInsertTerm: insertMirrorTerm,
+	mirrorInsertTermInput: insertMirrorTermInput,
+	mirrorInsertResultOutputEqClass: insertMirrorResultOutputEqClass,
+	mirrorInsertResultDep: insertMirrorResultDep,
+	mirrorInsertResultCall: insertMirrorResultCall,
+	mirrorInsertResultTaught: insertMirrorResultTaught,
+	mirrorInsertPersistedEdge: insertMirrorPersistedEdge,
+	mirrorInsertResultSnapshotLink: insertMirrorResultSnapshotLink,
+	mirrorInsertSnapshotContentLink: insertMirrorSnapshotContentLink,
+	mirrorInsertSnapshotContentHash: insertMirrorSnapshotContentHash,
+	mirrorInsertImportedLayerBlobIndex: insertMirrorImportedLayerBlobIndex,
+	mirrorInsertImportedLayerDiffIndex: insertMirrorImportedLayerDiffIndex,
+}
+
+// PrepareMirrorInserts prepares the mirror's insert statements on q's
+// transaction, so each is compiled once however many rows it inserts. The
+// transaction closes them when it ends.
+func (q *Queries) PrepareMirrorInserts(ctx context.Context) error {
+	if q.tx == nil {
+		return errors.New("prepare mirror inserts: not in a transaction")
+	}
+	var stmts [mirrorInserts]*sql.Stmt
+	for i, query := range mirrorInsertSQL {
+		stmt, err := q.tx.PrepareContext(ctx, query)
+		if err != nil {
+			return fmt.Errorf("prepare mirror insert %d: %w", i, err)
+		}
+		stmts[i] = stmt
+	}
+	q.inserts = &stmts
+	return nil
+}
+
+// execInsert runs one of the mirror's inserts with args: from its prepared
+// statement when the transaction has them, from its SQL otherwise.
+func (q *Queries) execInsert(ctx context.Context, which mirrorInsert, args ...any) error {
+	var err error
+	if q.inserts != nil {
+		_, err = q.inserts[which].ExecContext(ctx, args...)
+	} else {
+		_, err = q.db.ExecContext(ctx, mirrorInsertSQL[which], args...)
+	}
+	return err
+}
+
 const clearMirrorImportedLayerDiffIndex = `DELETE FROM imported_layer_diff_index`
 const clearMirrorImportedLayerBlobIndex = `DELETE FROM imported_layer_blob_index`
 const clearMirrorSnapshotContentLinks = `DELETE FROM snapshot_content_links`
@@ -157,21 +234,19 @@ INSERT INTO results (
 `
 
 func (q *Queries) InsertMirrorResult(ctx context.Context, arg MirrorResult) error {
-	_, err := q.exec(ctx, nil, insertMirrorResult,
+	return q.execInsert(ctx, mirrorInsertResult,
 		arg.ID, arg.CallFrameJSON, arg.SelfPayload, arg.OutputEffectIDs,
 		arg.ExpiresAtUnix, arg.Replacements, arg.Indexed, arg.CloudHoldingNumber,
 		arg.CloudHoldingStored, arg.CloudHoldingExpiresAtUnix,
 		arg.CreatedAtUnixNano, arg.LastUsedAtUnixNano, arg.RecordType,
 		arg.Description,
 	)
-	return err
 }
 
 const insertMirrorEqClass = `INSERT INTO eq_classes (id) VALUES (?)`
 
 func (q *Queries) InsertMirrorEqClass(ctx context.Context, arg MirrorEqClass) error {
-	_, err := q.exec(ctx, nil, insertMirrorEqClass, arg.ID)
-	return err
+	return q.execInsert(ctx, mirrorInsertEqClass, arg.ID)
 }
 
 const insertMirrorEqClassDigest = `
@@ -179,8 +254,7 @@ INSERT INTO eq_class_digests (eq_class_id, digest, label) VALUES (?, ?, ?)
 `
 
 func (q *Queries) InsertMirrorEqClassDigest(ctx context.Context, arg MirrorEqClassDigest) error {
-	_, err := q.exec(ctx, nil, insertMirrorEqClassDigest, arg.EqClassID, arg.Digest, arg.Label)
-	return err
+	return q.execInsert(ctx, mirrorInsertEqClassDigest, arg.EqClassID, arg.Digest, arg.Label)
 }
 
 const insertMirrorTerm = `
@@ -188,8 +262,7 @@ INSERT INTO terms (id, self_digest, term_digest, output_eq_class_id) VALUES (?, 
 `
 
 func (q *Queries) InsertMirrorTerm(ctx context.Context, arg MirrorTerm) error {
-	_, err := q.exec(ctx, nil, insertMirrorTerm, arg.ID, arg.SelfDigest, arg.TermDigest, arg.OutputEqClassID)
-	return err
+	return q.execInsert(ctx, mirrorInsertTerm, arg.ID, arg.SelfDigest, arg.TermDigest, arg.OutputEqClassID)
 }
 
 const insertMirrorTermInput = `
@@ -197,8 +270,7 @@ INSERT INTO term_inputs (term_id, position, input_eq_class_id, provenance_kind) 
 `
 
 func (q *Queries) InsertMirrorTermInput(ctx context.Context, arg MirrorTermInput) error {
-	_, err := q.exec(ctx, nil, insertMirrorTermInput, arg.TermID, arg.Position, arg.InputEqClassID, arg.ProvenanceKind)
-	return err
+	return q.execInsert(ctx, mirrorInsertTermInput, arg.TermID, arg.Position, arg.InputEqClassID, arg.ProvenanceKind)
 }
 
 const insertMirrorResultOutputEqClass = `
@@ -206,8 +278,7 @@ INSERT INTO result_output_eq_classes (result_id, eq_class_id) VALUES (?, ?)
 `
 
 func (q *Queries) InsertMirrorResultOutputEqClass(ctx context.Context, arg MirrorResultOutputEqClass) error {
-	_, err := q.exec(ctx, nil, insertMirrorResultOutputEqClass, arg.ResultID, arg.EqClassID)
-	return err
+	return q.execInsert(ctx, mirrorInsertResultOutputEqClass, arg.ResultID, arg.EqClassID)
 }
 
 const insertMirrorResultDep = `
@@ -215,8 +286,7 @@ INSERT INTO result_deps (parent_result_id, dep_result_id) VALUES (?, ?)
 `
 
 func (q *Queries) InsertMirrorResultDep(ctx context.Context, arg MirrorResultDep) error {
-	_, err := q.exec(ctx, nil, insertMirrorResultDep, arg.ParentResultID, arg.DepResultID)
-	return err
+	return q.execInsert(ctx, mirrorInsertResultDep, arg.ParentResultID, arg.DepResultID)
 }
 
 const insertMirrorResultCall = `
@@ -224,8 +294,7 @@ INSERT INTO result_calls (result_id, request_digest, call) VALUES (?, ?, ?)
 `
 
 func (q *Queries) InsertMirrorResultCall(ctx context.Context, arg MirrorResultCall) error {
-	_, err := q.exec(ctx, nil, insertMirrorResultCall, arg.ResultID, arg.RequestDigest, arg.Call)
-	return err
+	return q.execInsert(ctx, mirrorInsertResultCall, arg.ResultID, arg.RequestDigest, arg.Call)
 }
 
 const insertMirrorResultTaught = `
@@ -233,8 +302,7 @@ INSERT INTO result_taught (result_id, position, digest, given) VALUES (?, ?, ?, 
 `
 
 func (q *Queries) InsertMirrorResultTaught(ctx context.Context, arg MirrorResultTaught) error {
-	_, err := q.exec(ctx, nil, insertMirrorResultTaught, arg.ResultID, arg.Position, arg.Digest, arg.Given)
-	return err
+	return q.execInsert(ctx, mirrorInsertResultTaught, arg.ResultID, arg.Position, arg.Digest, arg.Given)
 }
 
 const insertMirrorPersistedEdge = `
@@ -242,8 +310,7 @@ INSERT INTO persisted_edges (result_id, created_at_unix_nano, expires_at_unix, u
 `
 
 func (q *Queries) InsertMirrorPersistedEdge(ctx context.Context, arg MirrorPersistedEdge) error {
-	_, err := q.exec(ctx, nil, insertMirrorPersistedEdge, arg.ResultID, arg.CreatedAtUnixNano, arg.ExpiresAtUnix, arg.Unpruneable)
-	return err
+	return q.execInsert(ctx, mirrorInsertPersistedEdge, arg.ResultID, arg.CreatedAtUnixNano, arg.ExpiresAtUnix, arg.Unpruneable)
 }
 
 const insertMirrorResultSnapshotLink = `
@@ -251,8 +318,7 @@ INSERT INTO result_snapshot_links (result_id, ref_key, role, output_path) VALUES
 `
 
 func (q *Queries) InsertMirrorResultSnapshotLink(ctx context.Context, arg MirrorResultSnapshotLink) error {
-	_, err := q.exec(ctx, nil, insertMirrorResultSnapshotLink, arg.ResultID, arg.RefKey, arg.Role, arg.OutputPath)
-	return err
+	return q.execInsert(ctx, mirrorInsertResultSnapshotLink, arg.ResultID, arg.RefKey, arg.Role, arg.OutputPath)
 }
 
 const insertMirrorSnapshotContentLink = `
@@ -260,8 +326,7 @@ INSERT INTO snapshot_content_links (snapshot_id, digest) VALUES (?, ?)
 `
 
 func (q *Queries) InsertMirrorSnapshotContentLink(ctx context.Context, arg MirrorSnapshotContentLink) error {
-	_, err := q.exec(ctx, nil, insertMirrorSnapshotContentLink, arg.SnapshotID, arg.Digest)
-	return err
+	return q.execInsert(ctx, mirrorInsertSnapshotContentLink, arg.SnapshotID, arg.Digest)
 }
 
 const insertMirrorSnapshotContentHash = `
@@ -269,8 +334,7 @@ INSERT INTO snapshot_content_hashes (snapshot_id, data) VALUES (?, ?)
 `
 
 func (q *Queries) InsertMirrorSnapshotContentHash(ctx context.Context, arg MirrorSnapshotContentHash) error {
-	_, err := q.exec(ctx, nil, insertMirrorSnapshotContentHash, arg.SnapshotID, arg.Data)
-	return err
+	return q.execInsert(ctx, mirrorInsertSnapshotContentHash, arg.SnapshotID, arg.Data)
 }
 
 const insertMirrorImportedLayerBlobIndex = `
@@ -278,8 +342,7 @@ INSERT INTO imported_layer_blob_index (parent_snapshot_id, blob_digest, snapshot
 `
 
 func (q *Queries) InsertMirrorImportedLayerBlobIndex(ctx context.Context, arg MirrorImportedLayerBlobIndex) error {
-	_, err := q.exec(ctx, nil, insertMirrorImportedLayerBlobIndex, arg.ParentSnapshotID, arg.BlobDigest, arg.SnapshotID)
-	return err
+	return q.execInsert(ctx, mirrorInsertImportedLayerBlobIndex, arg.ParentSnapshotID, arg.BlobDigest, arg.SnapshotID)
 }
 
 const insertMirrorImportedLayerDiffIndex = `
@@ -287,8 +350,7 @@ INSERT INTO imported_layer_diff_index (parent_snapshot_id, diff_id, snapshot_id)
 `
 
 func (q *Queries) InsertMirrorImportedLayerDiffIndex(ctx context.Context, arg MirrorImportedLayerDiffIndex) error {
-	_, err := q.exec(ctx, nil, insertMirrorImportedLayerDiffIndex, arg.ParentSnapshotID, arg.DiffID, arg.SnapshotID)
-	return err
+	return q.execInsert(ctx, mirrorInsertImportedLayerDiffIndex, arg.ParentSnapshotID, arg.DiffID, arg.SnapshotID)
 }
 
 const listMirrorResults = `
