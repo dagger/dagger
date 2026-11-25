@@ -140,7 +140,14 @@ type persistRead struct {
 	taught    []persistdb.MirrorResultTaught
 	inputs    []persistdb.MirrorTermInput
 	inputIDs  []eqClassID
-	digests   map[persistDigestKey]persistdb.MirrorEqClassDigest
+	digests   []persistdb.MirrorEqClassDigest
+	// keptAt are the places in kept of its entries, terms and classes, by
+	// number: the walk meets units in no order.
+	keptAt struct {
+		entries map[sharedResultID]int32
+		terms   map[uint64]int32
+		classes map[uint64]int32
+	}
 	// edges holds each entry read's ownership edges, and ids each entry
 	// read's output classes and each term read's input classes, all
 	// resolved to their roots.
@@ -195,15 +202,32 @@ type persistClassRead struct {
 
 func newPersistRead(kept *persistKept, seed maphash.Seed) *persistRead {
 	rd := &persistRead{kept: kept, seed: seed}
+	rd.keptAt.entries = make(map[sharedResultID]int32, len(kept.entries))
+	for i, e := range kept.entries {
+		rd.keptAt.entries[e.id] = int32(i)
+	}
+	rd.keptAt.terms = keptUnitIndex(kept.terms)
+	rd.keptAt.classes = keptUnitIndex(kept.classes)
 	if testPersistNotesAlways {
 		rd.prints = newPersistPrints()
 	}
 	return rd
 }
 
-// persistDigestKey is a class's digest row as a save writes it once.
-type persistDigestKey struct {
-	digest, label string
+func keptUnitIndex(list []keptUnit) map[uint64]int32 {
+	at := make(map[uint64]int32, len(list))
+	for i, u := range list {
+		at[u.id] = int32(i)
+	}
+	return at
+}
+
+// sizeFor makes room for a walk of the store as it is: one read of each
+// entry, term and class slot. Requires egraphMu for reading.
+func (rd *persistRead) sizeFor(c *Cache) {
+	rd.entries = slices.Grow(rd.entries, len(c.resultsByID))
+	rd.terms = slices.Grow(rd.terms, len(c.egraphTerms))
+	rd.classes = slices.Grow(rd.classes, len(c.egraphParents))
 }
 
 func (rd *persistRead) addEntry(e persistEntryRead) {
@@ -230,16 +254,16 @@ func (rd *persistRead) addClass(k persistClassRead) {
 	}
 }
 
-func keptEntryAt(kept *persistKept, id sharedResultID) (keptEntry, bool) {
-	i, found := slices.BinarySearchFunc(kept.entries, id, func(e keptEntry, id sharedResultID) int { return cmp.Compare(e.id, id) })
+func (rd *persistRead) keptEntry(id sharedResultID) (keptEntry, bool) {
+	i, found := rd.keptAt.entries[id]
 	if !found {
 		return keptEntry{}, false
 	}
-	return kept.entries[i], true
+	return rd.kept.entries[i], true
 }
 
-func keptUnitAt(list []keptUnit, id uint64) (keptUnit, bool) {
-	i, found := slices.BinarySearchFunc(list, id, func(u keptUnit, id uint64) int { return cmp.Compare(u.id, id) })
+func keptUnitAt(list []keptUnit, at map[uint64]int32, id uint64) (keptUnit, bool) {
+	i, found := at[id]
 	if !found {
 		return keptUnit{}, false
 	}
@@ -276,7 +300,7 @@ func (c *Cache) readEntryLocked(rd *persistRead, id sharedResultID, res *sharedR
 	}
 	e.edgeN = int32(len(rd.edges)) - e.edgeAt
 
-	prev, held := keptEntryAt(rd.kept, id)
+	prev, held := rd.keptEntry(id)
 	next := keptEntry{id: id}
 
 	deps := rd.deps[:0]
@@ -292,9 +316,10 @@ func (c *Cache) readEntryLocked(rd *persistRead, id sharedResultID, res *sharedR
 	classes := rd.classRows[:0]
 	var classesPrint rowsPrint
 	e.classAt = int32(len(rd.ids))
-	for outputEqID := range c.outputEqClassRootsLocked(id) {
+	for outputEqID := range c.resultOutputEqClasses[id].All() {
 		outputEqID = c.eqClassRootLocked(outputEqID)
-		if outputEqID == 0 {
+		// Two of the entry's classes joined since name one root once.
+		if outputEqID == 0 || slices.Contains(rd.ids[e.classAt:], outputEqID) {
 			continue
 		}
 		rd.ids = append(rd.ids, outputEqID)
@@ -500,7 +525,7 @@ func (c *Cache) readTermLocked(rd *persistRead, id egraphTermID, term *egraphTer
 	if rd.prints != nil {
 		rd.prints.terms[id] = t.fp
 	}
-	if prev, held := keptUnitAt(rd.kept.terms, uint64(id)); !held || prev.fp != t.fp {
+	if prev, held := keptUnitAt(rd.kept.terms, rd.keptAt.terms, uint64(id)); !held || prev.fp != t.fp {
 		t.term = &persistTermSnapshot{
 			row: persistdb.MirrorTerm{
 				ID:              int64(id),
@@ -525,39 +550,34 @@ func (c *Cache) readClassLocked(rd *persistRead, id eqClassID) {
 		return
 	}
 	seed := rd.seed
-	if rd.digests == nil {
-		rd.digests = make(map[persistDigestKey]persistdb.MirrorEqClassDigest)
-	}
-	digestRows := rd.digests
-	clear(digestRows)
+	rows := rd.digests[:0]
 	for dig := range c.eqClassToDigests[id].All() {
-		if dig == "" {
-			continue
+		if dig != "" {
+			rows = append(rows, persistdb.MirrorEqClassDigest{EqClassID: int64(id), Digest: dig})
 		}
-		digestRows[persistDigestKey{digest: dig}] = persistdb.MirrorEqClassDigest{EqClassID: int64(id), Digest: dig}
 	}
 	for extra := range c.eqClassExtraDigests[id] {
 		if extra.Digest == "" {
 			continue
 		}
 		dig := extra.Digest.String()
-		digestRows[persistDigestKey{digest: dig}] = persistdb.MirrorEqClassDigest{EqClassID: int64(id), Digest: dig}
-		digestRows[persistDigestKey{digest: dig, label: extra.Label}] = persistdb.MirrorEqClassDigest{EqClassID: int64(id), Digest: dig, Label: extra.Label}
+		rows = append(rows,
+			persistdb.MirrorEqClassDigest{EqClassID: int64(id), Digest: dig},
+			persistdb.MirrorEqClassDigest{EqClassID: int64(id), Digest: dig, Label: extra.Label})
 	}
+	// A digest the class holds and an extra digest of it name one row once.
+	slices.SortFunc(rows, func(a, b persistdb.MirrorEqClassDigest) int {
+		return cmp.Or(cmp.Compare(a.Digest, b.Digest), cmp.Compare(a.Label, b.Label))
+	})
+	rows = slices.Compact(rows)
+	rd.digests = rows
 	var digestsPrint rowsPrint
-	for _, row := range digestRows {
+	for _, row := range rows {
 		digestsPrint.add(rowPrint(seed, row))
 	}
 	k := persistClassRead{id: id, present: true, fp: digestsPrint.value(seed)}
-	if prev, held := keptUnitAt(rd.kept.classes, uint64(id)); !held || prev.fp != k.fp {
-		class := &persistClassSnapshot{id: int64(id), held: held}
-		for _, row := range digestRows {
-			class.digests = append(class.digests, row)
-		}
-		slices.SortFunc(class.digests, func(a, b persistdb.MirrorEqClassDigest) int {
-			return cmp.Or(cmp.Compare(a.Digest, b.Digest), cmp.Compare(a.Label, b.Label))
-		})
-		k.class = class
+	if prev, held := keptUnitAt(rd.kept.classes, rd.keptAt.classes, uint64(id)); !held || prev.fp != k.fp {
+		k.class = &persistClassSnapshot{id: int64(id), held: held, digests: slices.Clone(rows)}
 	}
 	rd.addClass(k)
 }
@@ -571,6 +591,7 @@ func (c *Cache) readClassLocked(rd *persistRead, id eqClassID) {
 // still there is visited once, and one added or deleted meanwhile may or
 // may not be. A writer notes each of those, and the save reads it again.
 func (c *Cache) walkStoreLocked(rd *persistRead, r *readPieces) error {
+	rd.sizeFor(c)
 	for id, res := range c.resultsByID {
 		if err := c.readEntryLocked(rd, id, res); err != nil {
 			return err
