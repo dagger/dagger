@@ -2526,10 +2526,12 @@ func (c *Cache) relocateMergeRowsLocked(commit *valueMergeCommit) error {
 			moved = moved || uint64(n) != provisional
 		}
 		rec := source
+		// relocated is whether the record is relocated here, under the lock.
+		relocated := false
 		if pre := prep.prerelocated[row.ordinal]; pre != nil && pre.from != nil {
 			delete(prep.prerelocated, row.ordinal)
 			var err error
-			if rec, err = c.relocatePreparedRecordLocked(row.ordinal, pre, final); err != nil {
+			if rec, relocated, err = c.relocatePreparedRecordLocked(row.ordinal, pre, final); err != nil {
 				return err
 			}
 		} else if moved {
@@ -2546,6 +2548,7 @@ func (c *Cache) relocateMergeRowsLocked(commit *valueMergeCommit) error {
 				if rec, err = VisitEncodedReferences(source, relocate); err != nil {
 					return err
 				}
+				relocated = true
 			}
 		} else {
 			// The record is shared with the preparation: copy what the
@@ -2580,6 +2583,11 @@ func (c *Cache) relocateMergeRowsLocked(commit *valueMergeCommit) error {
 		// at the final numbers with the graph (checkMergeGraphLocked).
 		row.rec = rec
 		row.recordBytes = prep.recordBytes[row.ordinal]
+		if c.blobBacked && relocated {
+			// The preparation measured the record at the numbers it gave it,
+			// and the commit installs it at others.
+			row.recordBytes = encodedRecordBytes(rec)
+		}
 		if !c.blobBacked {
 			row.offers = rec.Envelope.PendingOffers
 		}
@@ -2608,16 +2616,17 @@ func (c *Cache) relocateUnpreparedRowLocked(prep *valueMergePrep, row *mergeRow,
 // relocatePreparedRecordLocked returns a record relocated as it was prepared
 // (earlyNumbers) at the commit's numbers, final: as it is when those are the
 // numbers it was given, and otherwise relocated from those, each of which
-// names one provisional number (prerelocatedRecord.from). Requires egraphMu.
-func (c *Cache) relocatePreparedRecordLocked(ordinal uint64, pre *prerelocatedRecord, final func(uint64) (sharedResultID, error)) (PersistedRecord, error) {
+// names one provisional number (prerelocatedRecord.from), and then whether it
+// relocated it. Requires egraphMu.
+func (c *Cache) relocatePreparedRecordLocked(ordinal uint64, pre *prerelocatedRecord, final func(uint64) (sharedResultID, error)) (PersistedRecord, bool, error) {
 	if pre.holds(final) {
-		return pre.rec, nil
+		return pre.rec, false, nil
 	}
 	if c.testRelocatedUnderLock != nil {
 		c.testRelocatedUnderLock(ordinal)
 	}
 	rec, _, err := pre.relocateFrom(ordinal, final)
-	return rec, err
+	return rec, true, err
 }
 
 // relocateFrom returns a record relocated as it was prepared, of ordinal, at
