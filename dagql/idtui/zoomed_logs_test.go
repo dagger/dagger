@@ -181,6 +181,25 @@ func TestZoomedLogsOutsideShellStayBelowRows(t *testing.T) {
 	requireOrder(t, lines, "third-step", "log-before-all")
 }
 
+// TestOnlyShellPrimaryLogKeepsTimes: no other log is split by time, so no
+// other log pays to keep the times.
+func TestOnlyShellPrimaryLogKeepsTimes(t *testing.T) {
+	fe := zoomedLogsFrontend(t, timedLog{"primary\n", after(time.Second)})
+	export := func(span dagui.SpanID) {
+		rec := frontendTestLogRecord(span.SpanID, otellog.StringValue("line\n"))
+		rec.SetTraceID(prettyTestTraceID().TraceID)
+		rec.SetTimestamp(after(2 * time.Second))
+		require.NoError(t, fe.logs.Export(context.Background(), []sdklog.Record{rec}))
+	}
+	export(prettyTestSpanID(2))
+	require.NotEmpty(t, fe.logs.Logs[prettyTestSpanID(1)].marks)
+	require.Empty(t, fe.logs.Logs[prettyTestSpanID(2)].marks, "a step's log keeps no times")
+
+	fe.shell = nil
+	export(prettyTestSpanID(1))
+	require.Len(t, fe.logs.Logs[prettyTestSpanID(1)].marks, 1, "outside a shell, nothing keeps times")
+}
+
 // TestVtermTouchedRow: appending touches only the rows from the cursor's
 // down, colours included, while moving the cursor may touch any row.
 func TestVtermTouchedRow(t *testing.T) {

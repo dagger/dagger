@@ -1389,6 +1389,11 @@ func newWithTerminalProfile(w io.Writer, db *dagui.DB, term tuist.Terminal, prof
 		claims:             newRenderClaims(),
 		promptColorProfile: promptProfile,
 	}
+	// Only a shell's primary span interleaves its logs with its rows (see
+	// interleavesZoomedLogs), so only its log keeps the times to split it by.
+	logs.markTimes = func(id dagui.SpanID) bool {
+		return fe.shell != nil && id == fe.primarySpan()
+	}
 	tui.AddInputListener(fe.handlePromptBackground)
 	tui.AddInputListener(fe.handleHUDKey)
 	tui.AddChild(fe)
@@ -10709,6 +10714,17 @@ type prettyLogs struct {
 	Output         TermOutput
 	Images         *kittyImages
 	tableRuleColor termenv.Color
+	// markTimes reports whether a span's log notes when each line was
+	// written, to be split by time (Vterm.MarkTime); nil for none.
+	markTimes func(dagui.SpanID) bool
+}
+
+// markTime notes, if the span's log keeps times, that what is written to it
+// next was logged when rec was.
+func (l *prettyLogs) markTime(spanID dagui.SpanID, rec sdklog.Record) {
+	if l.markTimes != nil && l.markTimes(spanID) {
+		l.spanLogs(spanID).MarkTime(logRecordTime(rec))
+	}
 }
 
 func newPrettyLogs(profile termenv.Profile, db *dagui.DB) *prettyLogs {
@@ -10776,13 +10792,13 @@ func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 			if isMedia {
 				l.spanLogs(rollUpID).WriteMedia(media, pw.Prefix+body)
 			} else {
-				l.spanLogs(rollUpID).MarkTime(logRecordTime(log))
+				l.markTime(rollUpID, log)
 				fmt.Fprint(pw, body)
 			}
 		}
 
+		l.markTime(spanID, log)
 		vterm := l.spanLogs(spanID)
-		vterm.MarkTime(logRecordTime(log))
 		if isMedia {
 			vterm.WriteMedia(media, body)
 			continue
