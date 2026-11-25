@@ -93,12 +93,29 @@ func newFileServer(t *testing.T) *fileServer {
 	return fs
 }
 
-// add serves data as name, and returns the file a restore names for it.
+// add serves data as name, and returns the file a restore names for it: a
+// chain of that one segment.
 func (fs *fileServer) add(name string, data []byte) protocol.SetFile {
+	return fs.addChain(map[string][]byte{name: data}, name)
+}
+
+// addChain serves each segment by name, and returns the file a restore
+// names for the chain of the names, in order.
+func (fs *fileServer) addChain(segments map[string][]byte, names ...string) protocol.SetFile {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
-	fs.files[name] = data
-	return protocol.SetFile{Digest: digest.FromBytes(data), Size: int64(len(data)), Address: dagql.BlobAddress{URL: fs.URL + "/" + name}}
+	var file protocol.SetFile
+	var digests []digest.Digest
+	for _, name := range names {
+		data := segments[name]
+		fs.files[name] = data
+		segment := protocol.SetFileSegment{Digest: digest.FromBytes(data), Size: int64(len(data)), Address: dagql.BlobAddress{URL: fs.URL + "/" + name}}
+		file.Segments = append(file.Segments, segment)
+		file.Size += segment.Size
+		digests = append(digests, segment.Digest)
+	}
+	file.Digest = protocol.SetFileChain(digests...)
+	return file
 }
 
 func (fs *fileServer) gate(name string) chan struct{} {
@@ -211,6 +228,71 @@ func TestRestoreMergesAFilesParts(t *testing.T) {
 	require.False(t, report.FetchStarted.IsZero())
 	require.False(t, report.Fetched.Before(report.FetchStarted))
 	require.Equal(t, 1, files.getsOf("whole"))
+}
+
+// A set file can be a chain of segments, each a set file of its own, as
+// the service publishes a file it built again from the one before: the
+// restore fetches every segment, checks each, and merges their parts in
+// order as one file's. It answers the chain's digest, and each record's
+// entry in the order the chain first carries it, with its complete parts as
+// the merge of its last copy left them: a later segment carries a record
+// again when it changed.
+func TestRestoreMergesAChainsSegmentsInOrder(t *testing.T) {
+	t.Parallel()
+	adapter := newFakeAdapter()
+	adapter.restore = func(_ context.Context, part dagql.ValueBundle, _ *dagql.KnownRows) (dagql.MergeReply, error) {
+		reply := merged(part, time.Now())
+		for i := range reply.Values {
+			if part.Values[i].ExpiresAtUnix != 0 {
+				// The later copy of 12 lands with a part complete.
+				reply.Values[i].Parts = []dagql.PersistedPartAddress{{Part: "fs"}}
+			}
+		}
+		return reply, nil
+	}
+	s, conn := restoreSession(t, adapter)
+	files := newFileServer(t)
+	again := part(12)
+	again.Values[0].ExpiresAtUnix = 1
+	whole := files.addChain(map[string][]byte{
+		"first":  setFile(t, dagql.ValueBundleVersion, part(11), part(12)),
+		"second": setFile(t, dagql.ValueBundleVersion, again, part(13)),
+	}, "first", "second")
+
+	s.dispatch(request(t, 1, protocol.TypeRestore, restoreOf("test-base", nil, &whole)))
+	require.Equal(t, []uint64{11, 12, 12, 13}, seen(t, adapter, 4), "both segments' parts, in the chain's order")
+	file := decode[protocol.Restored](t, conn.next(t)).Files[0]
+	require.Equal(t, whole.Digest, file.Digest, "the chain's digest names the file")
+	require.True(t, file.Complete)
+	require.Equal(t, 4, file.Parts)
+	require.Equal(t, protocol.EntryNumbers{11, 12, 13}, file.Entries, "each record once, where the chain first carries it")
+	complete, err := protocol.UnpackCompleteParts(file.PartsTable, file.CompleteParts)
+	require.NoError(t, err)
+	require.Equal(t, map[int][]dagql.PersistedPartAddress{1: {{Part: "fs"}}}, complete, "12's complete parts as its later copy's merge left them")
+	require.Equal(t, 1, files.getsOf("first"))
+	require.Equal(t, 1, files.getsOf("second"))
+}
+
+// A chain whose digest isn't its segments' is refused before any part
+// merges, as a segment whose bytes aren't its digest's is.
+func TestRestoreRefusesAChainNotOfItsSegments(t *testing.T) {
+	t.Parallel()
+	adapter := newFakeAdapter()
+	adapter.restore = func(_ context.Context, part dagql.ValueBundle, _ *dagql.KnownRows) (dagql.MergeReply, error) {
+		return merged(part, time.Now()), nil
+	}
+	s, conn := restoreSession(t, adapter)
+	files := newFileServer(t)
+	whole := files.addChain(map[string][]byte{
+		"first":  setFile(t, dagql.ValueBundleVersion, part(11)),
+		"second": setFile(t, dagql.ValueBundleVersion, part(12)),
+	}, "first", "second")
+	whole.Segments = whole.Segments[:1]
+	s.dispatch(request(t, 1, protocol.TypeRestore, restoreOf("test-base", nil, &whole)))
+	file := decode[protocol.Restored](t, conn.next(t)).Files[0]
+	require.False(t, file.Complete)
+	require.Contains(t, file.Error, "segments")
+	require.Zero(t, file.Parts)
 }
 
 // A committed part's fetches ahead, which its header names by record
