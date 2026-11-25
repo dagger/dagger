@@ -49,7 +49,7 @@ func (c *Cache) restoredFinalOffersLocked() ([]restoredFinalOffer, error) {
 			if !ok {
 				return nil, fmt.Errorf("restore offer on result %d: unknown part %s", row.id, key)
 			}
-			if err := validateTransferOffer(offer.record, part); err != nil {
+			if err := validateTransferOffer(offer.record(), part); err != nil {
 				return nil, err
 			}
 			switch part.State {

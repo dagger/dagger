@@ -1023,7 +1023,7 @@ func (f *exhaustionFixture) attach(t *testing.T, row AnyResult, offer PersistedP
 	f.cache.egraphMu.Lock()
 	owner, err := f.cache.newOfferOwnerLocked(f.ctx, offer.Owner)
 	if err == nil {
-		err = f.cache.testAttachPartOfferLocked(row.cacheSharedResult(), offer.Address, &partOffer{record: offer, owner: owner})
+		err = f.cache.testAttachPartOfferLocked(row.cacheSharedResult(), offer.Address, &partOffer{layeredOffer: f.cache.storedLayers.hold(offer), owner: owner})
 	}
 	f.cache.egraphMu.Unlock()
 	require.NoError(t, err)

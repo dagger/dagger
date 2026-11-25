@@ -26,7 +26,7 @@ func TestValueTransferOfferCopyFailure(t *testing.T) {
 	invalid := time.Date(10000, 1, 1, 0, 0, 0, 0, time.UTC)
 	c.egraphMu.Lock()
 	for _, offer := range row.testPartOffers() {
-		offer.record.Chain.Layers = []snapshots.ExportLayer{{CreatedAt: &invalid}}
+		offer.layers = []*storedLayer{{layer: snapshots.ExportLayer{CreatedAt: &invalid}}}
 	}
 	before := row.incomingOwnershipCount.Load()
 	c.egraphMu.Unlock()
@@ -43,7 +43,7 @@ func TestValueTransferOfferCopyFailure(t *testing.T) {
 	c.egraphMu.Lock()
 	after := row.incomingOwnershipCount.Load()
 	for _, offer := range row.testPartOffers() {
-		offer.record.Chain.Layers = nil
+		offer.layers = nil
 	}
 	c.egraphMu.Unlock()
 	require.Equal(t, before, after)
@@ -176,7 +176,7 @@ func TestValueTransferOfferOwners(t *testing.T) {
 			if err != nil {
 				return nil, err
 			}
-			return &partOffer{owner: owner, record: PersistedPartOffer{Address: PersistedPartAddress{Part: part}, Owner: owner.record, Value: SnapshotValue{Kind: "directory", Services: []TransferredServiceBinding{{ServiceResultID: uint64(dep.id)}}}}}, nil
+			return &partOffer{owner: owner, layeredOffer: layeredOffer{held: PersistedPartOffer{Address: PersistedPartAddress{Part: part}, Owner: owner.record, Value: SnapshotValue{Kind: "directory", Services: []TransferredServiceBinding{{ServiceResultID: uint64(dep.id)}}}}}}, nil
 		}
 		first, err := makeOffer("fs", s)
 		if err != nil {
@@ -186,10 +186,10 @@ func TestValueTransferOfferOwners(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		if err := c.testAttachPartOfferLocked(r, first.record.Address, first); err != nil {
+		if err := c.testAttachPartOfferLocked(r, first.held.Address, first); err != nil {
 			return err
 		}
-		if err := c.testAttachPartOfferLocked(r, second.record.Address, second); err != nil {
+		if err := c.testAttachPartOfferLocked(r, second.held.Address, second); err != nil {
 			return err
 		}
 		initialOwners = s.incomingOwnershipCount.Load()
@@ -205,7 +205,7 @@ func TestValueTransferOfferOwners(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		queue, err := c.testReplacePartOfferLocked(ctx, r, replacement.record.Address, replacement)
+		queue, err := c.testReplacePartOfferLocked(ctx, r, replacement.held.Address, replacement)
 		if err != nil {
 			return err
 		}
@@ -229,12 +229,12 @@ func TestValueTransferOfferOwners(t *testing.T) {
 			return err
 		}
 		before = r.transferRevision
-		_, cycleErr = c.testReplacePartOfferLocked(ctx, r, cycle.record.Address, cycle)
+		_, cycleErr = c.testReplacePartOfferLocked(ctx, r, cycle.held.Address, cycle)
 		after = r.transferRevision
 		if _, err := c.releaseOfferOwnerLocked(ctx, cycle.owner); err != nil {
 			return err
 		}
-		if _, err := c.retirePartOfferLocked(ctx, r, replacement.record.Address); err != nil {
+		if _, err := c.retirePartOfferLocked(ctx, r, replacement.held.Address); err != nil {
 			return err
 		}
 		retiredOwners = s.incomingOwnershipCount.Load()
@@ -262,7 +262,7 @@ func TestValueTransferOfferOwners(t *testing.T) {
 	require.Len(t, snapshot.owners, 1)
 	c.egraphMu.Lock()
 	c.retainOfferOwnerLocked(second.owner)
-	_, err = c.retirePartOfferLocked(ctx, r, second.record.Address)
+	_, err = c.retirePartOfferLocked(ctx, r, second.held.Address)
 	c.egraphMu.Unlock()
 	require.NoError(t, err)
 	snapshot = c.snapshotPruneState(pruneSnapshotMetadata, 10)
@@ -287,8 +287,8 @@ func TestValueTransferOwnerPersistence(t *testing.T) {
 	r.imported = true
 	owner, err := c.newOfferOwnerLocked(ctx, PersistedOfferOwner{DependencyIDs: []uint64{uint64(s.id)}})
 	if err == nil {
-		offer := &partOffer{owner: owner, record: PersistedPartOffer{Address: PersistedPartAddress{Part: "snapshot"}, Owner: owner.record, Value: SnapshotValue{Kind: "directory"}}}
-		err = c.testAttachPartOfferLocked(r, offer.record.Address, offer)
+		offer := &partOffer{owner: owner, layeredOffer: layeredOffer{held: PersistedPartOffer{Address: PersistedPartAddress{Part: "snapshot"}, Owner: owner.record, Value: SnapshotValue{Kind: "directory"}}}}
+		err = c.testAttachPartOfferLocked(r, offer.held.Address, offer)
 	}
 	c.egraphMu.Unlock()
 	require.NoError(t, err)

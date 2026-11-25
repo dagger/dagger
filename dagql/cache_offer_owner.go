@@ -28,9 +28,11 @@ type offerOwner struct {
 	origin  sharedResultID
 	address PersistedPartAddress
 }
+// partOffer is a part the Cloud, or the engine's image, offers an entry, as
+// the cache holds it (layeredOffer), and its owner.
 type partOffer struct {
-	record PersistedPartOffer
-	owner  *offerOwner
+	layeredOffer
+	owner *offerOwner
 }
 type resultOwnershipChild struct {
 	result   *sharedResult
@@ -177,14 +179,14 @@ func (c *Cache) validateOfferAttachmentLocked(res *sharedResult, address Persist
 	if offer == nil || offer.owner == nil || c.offerOwners[offer.owner.id] != offer.owner || offer.owner.holds <= offer.owner.slots {
 		return "", fmt.Errorf("offer attachment: missing preparation hold")
 	}
-	describedKey, err := partAddressKey(offer.record.Address)
+	describedKey, err := partAddressKey(offer.held.Address)
 	if err != nil || describedKey != key {
 		return "", fmt.Errorf("offer attachment: descriptor address mismatch")
 	}
-	if !slices.Equal(offer.record.Owner.DependencyIDs, offer.owner.record.DependencyIDs) {
+	if !slices.Equal(offer.held.Owner.DependencyIDs, offer.owner.record.DependencyIDs) {
 		return "", fmt.Errorf("offer attachment: owner record mismatch")
 	}
-	if err := validateOfferReferences(offer.record); err != nil {
+	if err := validateOfferReferences(offer.held); err != nil {
 		return "", err
 	}
 	seen := map[sharedResultID]bool{}
@@ -414,7 +416,7 @@ func (res *sharedResult) attachedOffersLocked() ([]PersistedPartOffer, error) {
 	slices.Sort(keys)
 	offers := make([]PersistedPartOffer, 0, len(keys))
 	for _, key := range keys {
-		offers = append(offers, res.partOfferLocked(key).record)
+		offers = append(offers, res.partOfferLocked(key).record())
 	}
 	return clonePartOffers(offers)
 }
@@ -465,7 +467,7 @@ func (c *Cache) restoreOfferOwnersLocked(ctx context.Context) error {
 				return err
 			}
 			record.Owner = owner.record
-			if err := c.attachPartOfferLocked(res, from, record.Address, &partOffer{record: record, owner: owner}); err != nil {
+			if err := c.attachPartOfferLocked(res, from, record.Address, &partOffer{layeredOffer: c.storedLayers.hold(record), owner: owner}); err != nil {
 				return err
 			}
 		}

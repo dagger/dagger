@@ -210,7 +210,7 @@ func (f *prefetchFixture) replace(t *testing.T, record PersistedPartOffer) *part
 	f.cache.egraphMu.Lock()
 	owner, err := f.cache.newOfferOwnerLocked(f.ctx, record.Owner)
 	var callbacks []OnReleaseFunc
-	next := &partOffer{record: record, owner: owner}
+	next := &partOffer{layeredOffer: f.cache.storedLayers.hold(record), owner: owner}
 	if err == nil {
 		var queue []*sharedResult
 		queue, err = f.cache.testReplacePartOfferLocked(f.ctx, row, f.address, next)
@@ -319,7 +319,7 @@ func TestPartPrefetchQueueDropDoesNotBlockRetirement(t *testing.T) {
 	release, entered := make(chan struct{}), make(chan struct{}, 1)
 	defer close(release)
 	f.prefetch.logger = slog.New(blockingHandler{release: release, entered: entered})
-	second := &partOffer{record: f.offer.record}
+	second := &partOffer{layeredOffer: f.offer.layeredOffer}
 	go f.cache.partOfferAccepted(f.ctx, f.receiver.cacheSharedResult(), f.key, second)
 	within(t, entered)
 	retired := make(chan struct{})
@@ -889,7 +889,7 @@ func TestPartPrefetchAheadKeepsSharedLayers(t *testing.T) {
 	first, second := offers[0], offers[1]
 	firstOwn, secondOwn := byOffer[first].layers[1], byOffer[second].layers[1]
 
-	next := &partOffer{record: second.record}
+	next := &partOffer{layeredOffer: second.layeredOffer}
 	c.partOfferReplaced(second, next)
 	p.mu.Lock()
 	defer p.mu.Unlock()

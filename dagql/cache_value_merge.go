@@ -698,6 +698,12 @@ type valueMergePrep struct {
 	// preparation stops once they are known.
 	held  map[uint64]bool
 	stale []TransferOrdinal
+	// chains are, on an engine, the layers of the chain of each output the
+	// bundle offers, as the cache holds them (storedLayers), by ordinal and
+	// part key: taken from the table as the outputs become offers
+	// (embedMergedParts), before the commit's lock, under which the commit
+	// attaches the offers it admits with them (mergedOfferLocked).
+	chains map[uint64]map[string][]*storedLayer
 	// callOnly are the held rows outside the roots' closure, which a call
 	// alone names as the row placing an input (TransferredCall.Inputs): no
 	// row of the merge, never stale, each read when its call is taught.
@@ -815,7 +821,10 @@ func (c *Cache) checkValueMerge(from CacheID, input ValueBundle) (*valueMergePre
 	if c.blobBacked {
 		heldParts = heldRowOutputs(bundle)
 	}
-	c.embedMergedParts(&bundle)
+	chains, err := c.embedMergedParts(&bundle)
+	if err != nil {
+		return nil, err
+	}
 	var recordBytes map[uint64]int64
 	var facts map[uint64]*partFacts
 	if c.blobBacked {
@@ -832,7 +841,7 @@ func (c *Cache) checkValueMerge(from CacheID, input ValueBundle) (*valueMergePre
 		recordBytes = map[uint64]int64{}
 		facts = map[uint64]*partFacts{}
 	}
-	prep := &valueMergePrep{lockWaits: &graphLockWaits{}, payloadPreparing: c.testRecordPayloadPreparing, from: from, bundle: bundle, order: order, index: map[uint64]*TransferredValue{}, plans: map[uint64]transferIdentityPlan{}, records: map[uint64]PersistedRecord{}, refs: map[uint64][]uint64{}, recordBytes: recordBytes, completeParts: map[uint64][]string{}, partFacts: facts, held: map[uint64]bool{}, heldParts: heldParts}
+	prep := &valueMergePrep{lockWaits: &graphLockWaits{}, payloadPreparing: c.testRecordPayloadPreparing, from: from, bundle: bundle, order: order, index: map[uint64]*TransferredValue{}, plans: map[uint64]transferIdentityPlan{}, records: map[uint64]PersistedRecord{}, refs: map[uint64][]uint64{}, recordBytes: recordBytes, completeParts: map[uint64][]string{}, partFacts: facts, held: map[uint64]bool{}, heldParts: heldParts, chains: chains}
 	prep.rows = make(map[uint64]uint64, len(prep.bundle.Values))
 	for i := range prep.bundle.Values {
 		row := &prep.bundle.Values[i]
@@ -1021,7 +1030,7 @@ func (c *Cache) prepareMergedCalls(calls []TransferredCall) ([]mergedCall, error
 // frame (heldFrames), and the bundle's ownership graph, with its offers'
 // owners. It holds no lock: the private cache is the preparation's own.
 func (c *Cache) privateMergeCache(ctx context.Context, prep *valueMergePrep, heldFrames map[uint64]entryFrame, relocateRecord, relocate PersistedRefVisitor) (*Cache, error) {
-	private := &Cache{resultsByID: map[sharedResultID]*sharedResult{}, testRecipeFromBody: c.testRecipeFromBody}
+	private := &Cache{resultsByID: map[sharedResultID]*sharedResult{}, testRecipeFromBody: c.testRecipeFromBody, storedLayers: c.storedLayers}
 	for _, id := range prep.order {
 		row := prep.index[id]
 		if prep.held[id] {
@@ -1537,7 +1546,8 @@ func (c *Cache) keptMergeRecords(ctx context.Context, prep *valueMergePrep) map[
 // embedMergedParts prepares the bundle's parts for the cache. On an engine,
 // the outputs with chains become offers embedded in their records. The Cloud
 // drops every part, since the upload decides what it stores.
-func (c *Cache) embedMergedParts(bundle *ValueBundle) {
+func (c *Cache) embedMergedParts(bundle *ValueBundle) (map[uint64]map[string][]*storedLayer, error) {
+	var chains map[uint64]map[string][]*storedLayer
 	if c.blobBacked {
 		for i := range bundle.Values {
 			bundle.Values[i].Record.Envelope.PendingOffers = nil
@@ -1552,10 +1562,23 @@ func (c *Cache) embedMergedParts(bundle *ValueBundle) {
 				continue
 			}
 			row := index[uint64(output.Ordinal)]
-			row.Record.Envelope.PendingOffers = append(row.Record.Envelope.PendingOffers, PersistedPartOffer{Address: output.Address, Value: *output.Value, Chain: *output.Chain, Owner: *output.Owner})
+			offer := PersistedPartOffer{Address: output.Address, Value: *output.Value, Chain: *output.Chain, Owner: *output.Owner}
+			row.Record.Envelope.PendingOffers = append(row.Record.Envelope.PendingOffers, offer)
+			key, err := partAddressKey(output.Address)
+			if err != nil {
+				return nil, err
+			}
+			if chains == nil {
+				chains = map[uint64]map[string][]*storedLayer{}
+			}
+			if chains[uint64(output.Ordinal)] == nil {
+				chains[uint64(output.Ordinal)] = map[string][]*storedLayer{}
+			}
+			chains[uint64(output.Ordinal)][key] = c.storedLayers.hold(offer).layers
 		}
 	}
 	bundle.Outputs = nil
+	return chains, nil
 }
 
 // cloneValueBundle copies a bundle for merge to change, leaving the input
@@ -1824,7 +1847,7 @@ type mergeRow struct {
 	// one for the same part. The final set per entry and part key is
 	// commit.finalOffers (selectMergedOffersLocked).
 	offers   []PersistedPartOffer
-	admitted []PersistedPartOffer
+	admitted []layeredOffer
 }
 
 // valueMergeCommit is a merge decided and checked, ready to change the cache.
@@ -1840,7 +1863,7 @@ type valueMergeCommit struct {
 	// finalOffers holds, for each entry a row admits offers to, its offer
 	// per part key as the commit leaves it, and newOffers the keys whose
 	// final offer is an admitted one (selectMergedOffersLocked).
-	finalOffers map[*sharedResult]map[string]PersistedPartOffer
+	finalOffers map[*sharedResult]map[string]layeredOffer
 	newOffers   map[*sharedResult]map[string]bool
 	// attached are the offers applyMergedOffersLocked attached, which the
 	// commit's finish queues for prefetch once egraphMu is released.
@@ -2740,7 +2763,7 @@ func (c *Cache) checkMergeGraphLocked(ctx context.Context, commit *valueMergeCom
 		}
 		if offers, ok := commit.finalOffers[res]; ok {
 			for _, offer := range offers {
-				for _, dep := range offer.Owner.DependencyIDs {
+				for _, dep := range offer.held.Owner.DependencyIDs {
 					out = append(out, c.mergeEntryLocked(commit, sharedResultID(dep)))
 				}
 			}
@@ -3438,6 +3461,10 @@ func (c *Cache) installMergedRecordLocked(res *sharedResult, row *mergeRow, orig
 	res.isObject = rec.Envelope.Kind == persistedResultKindObject
 	res.hasValue = false
 	res.self = nil
+	// The record's offers are the entry's once the commit attaches those it
+	// admits (applyMergedOffersLocked), which saves and captures read
+	// (attachedOffersLocked): the envelope the entry keeps holds none.
+	rec.Envelope.PendingOffers = nil
 	res.persistedEnvelope = &rec.Envelope
 	res.firstUse = row.firstUse
 	// The body worker compresses it after the merge (queueStoredBodies). Its
@@ -3514,17 +3541,17 @@ func (c *Cache) mergeHeldSenderHoldingLocked(ctx context.Context, state *remoteC
 // applyMergedOffersLocked then attaches the final set, in two steps.
 // Requires egraphMu.
 func (c *Cache) selectMergedOffersLocked(commit *valueMergeCommit) error {
-	held := map[*sharedResult]map[string]PersistedPartOffer{}
+	held := map[*sharedResult]map[string]layeredOffer{}
 	commit.finalOffers = held
 	commit.newOffers = map[*sharedResult]map[string]bool{}
-	heldOffers := func(res *sharedResult) map[string]PersistedPartOffer {
+	heldOffers := func(res *sharedResult) map[string]layeredOffer {
 		if offers := held[res]; offers != nil {
 			return offers
 		}
-		offers := map[string]PersistedPartOffer{}
+		offers := map[string]layeredOffer{}
 		if commit.installed[res] == nil {
 			for key, offer := range res.partOffersLocked() {
-				offers[key] = offer.record
+				offers[key] = offer.layeredOffer
 			}
 		}
 		held[res] = offers
@@ -3548,11 +3575,15 @@ func (c *Cache) selectMergedOffersLocked(commit *valueMergeCommit) error {
 			if complete[key] {
 				continue
 			}
-			if existing, ok := offers[key]; ok && (row.expired || sameOfferMeaning(existing, offer)) {
+			layered, err := mergedOfferLocked(commit.prep, row.ordinal, key, offer)
+			if err != nil {
+				return err
+			}
+			if existing, ok := offers[key]; ok && (row.expired || existing.sameMeaning(layered)) {
 				continue
 			}
-			offers[key] = offer
-			row.admitted = append(row.admitted, offer)
+			offers[key] = layered
+			row.admitted = append(row.admitted, layered)
 			if commit.newOffers[row.res] == nil {
 				commit.newOffers[row.res] = map[string]bool{}
 			}
@@ -3560,6 +3591,21 @@ func (c *Cache) selectMergedOffersLocked(commit *valueMergeCommit) error {
 		}
 	}
 	return nil
+}
+
+// mergedOfferLocked returns offer, one a merge's row of ordinal offers at the
+// part key, as the cache holds it: its chain's layers those the preparation
+// took from the table for the row's output (valueMergePrep.chains), which
+// relocating the offer leaves as they were. Requires egraphMu.
+func mergedOfferLocked(prep *valueMergePrep, ordinal uint64, key string, offer PersistedPartOffer) (layeredOffer, error) {
+	layers, ok := prep.chains[ordinal][key]
+	if !ok {
+		return layeredOffer{}, fmt.Errorf("merge values: row %d offers part %s, which its bundle has no output for", ordinal, key)
+	}
+	if len(offer.Chain.Layers) > 0 {
+		offer.Chain.Layers, offer.Chain.Packs = nil, nil
+	}
+	return layeredOffer{held: offer, layers: layers}, nil
 }
 
 // applyMergedOffersLocked applies the offers selectMergedOffersLocked chose,
@@ -3595,7 +3641,7 @@ func (c *Cache) applyMergedOffersLocked(ctx context.Context, commit *valueMergeC
 		var retired []PersistedPartAddress
 		for key, offer := range res.partOffersLocked() {
 			if _, kept := final[key]; !kept || fresh[key] {
-				retired = append(retired, offer.record.Address)
+				retired = append(retired, offer.held.Address)
 			}
 		}
 		for _, address := range retired {
@@ -3609,14 +3655,14 @@ func (c *Cache) applyMergedOffersLocked(ctx context.Context, commit *valueMergeC
 		keys := slices.Sorted(maps.Keys(commit.newOffers[res]))
 		for _, key := range keys {
 			offer := final[key]
-			owner, err := c.newOfferOwnerLocked(ctx, offer.Owner)
+			owner, err := c.newOfferOwnerLocked(ctx, offer.held.Owner)
 			if err != nil {
 				errs = errors.Join(errs, err)
 				continue
 			}
-			offer.Owner = owner.record
-			attached := &partOffer{record: offer, owner: owner}
-			if err := c.attachPartOfferLocked(res, commit.from, offer.Address, attached); err != nil {
+			offer.held.Owner = owner.record
+			attached := &partOffer{layeredOffer: offer, owner: owner}
+			if err := c.attachPartOfferLocked(res, commit.from, offer.held.Address, attached); err != nil {
 				more, releaseErr := c.releaseOfferOwnerLocked(ctx, owner)
 				queue = append(queue, more...)
 				errs = errors.Join(errs, err, releaseErr)

@@ -37,22 +37,22 @@ func forwardedOfferOwner(c *Cache, id uint64) (*offerOwner, error) {
 	for _, slot := range row.testPartOffers() {
 		offer = slot
 	}
-	if len(offer.record.Value.Services) != 1 {
-		return nil, fmt.Errorf("got %d services, want 1", len(offer.record.Value.Services))
+	if len(offer.held.Value.Services) != 1 {
+		return nil, fmt.Errorf("got %d services, want 1", len(offer.held.Value.Services))
 	}
-	service := offer.record.Value.Services[0].ServiceResultID
-	if len(offer.record.Owner.DependencyIDs) != 2 {
-		return nil, fmt.Errorf("got %d owner dependencies, want 2", len(offer.record.Owner.DependencyIDs))
+	service := offer.held.Value.Services[0].ServiceResultID
+	if len(offer.held.Owner.DependencyIDs) != 2 {
+		return nil, fmt.Errorf("got %d owner dependencies, want 2", len(offer.held.Owner.DependencyIDs))
 	}
-	if !slices.Contains(offer.record.Owner.DependencyIDs, service) {
+	if !slices.Contains(offer.held.Owner.DependencyIDs, service) {
 		return nil, fmt.Errorf("owner dependencies do not contain service %d", service)
 	}
-	explicit := offer.record.Owner.DependencyIDs[0]
+	explicit := offer.held.Owner.DependencyIDs[0]
 	if explicit == service {
-		explicit = offer.record.Owner.DependencyIDs[1]
+		explicit = offer.held.Owner.DependencyIDs[1]
 	}
-	if !slices.Equal(offer.record.Owner.DependencyIDs, offer.owner.record.DependencyIDs) {
-		return nil, fmt.Errorf("offer dependencies %v differ from owner dependencies %v", offer.record.Owner.DependencyIDs, offer.owner.record.DependencyIDs)
+	if !slices.Equal(offer.held.Owner.DependencyIDs, offer.owner.record.DependencyIDs) {
+		return nil, fmt.Errorf("offer dependencies %v differ from owner dependencies %v", offer.held.Owner.DependencyIDs, offer.owner.record.DependencyIDs)
 	}
 	if !row.deps.has(sharedResultID(service)) {
 		return nil, fmt.Errorf("the direct edge to service %d did not survive", service)

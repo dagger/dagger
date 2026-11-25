@@ -140,7 +140,7 @@ func (c *Cache) replaceResultValueInPlaceLocked(ctx context.Context, cur, fresh 
 	c.forgetListItemLocked(cur)
 	c.setStoredRecordBytesLocked(cur, fresh.storedRecordBytes)
 	for _, offer := range cur.partOffersLocked() {
-		more, err := c.retirePartOfferLocked(ctx, cur, offer.record.Address)
+		more, err := c.retirePartOfferLocked(ctx, cur, offer.held.Address)
 		queue = append(queue, more...)
 		rerr = errors.Join(rerr, err)
 	}
