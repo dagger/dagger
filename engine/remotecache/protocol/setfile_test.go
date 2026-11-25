@@ -48,8 +48,9 @@ func TestSetFileRoundTrip(t *testing.T) {
 	bundles := []dagql.ValueBundle{setFileTestBundle(2), setFileTestBundle(3)}
 	header := SetFileHeader{Version: 9, Check: "test-base", Line: "pr-1", Kind: "head", Built: time.Unix(1700000000, 0).UTC()}
 	var parts [][]byte
+	var buf bytes.Buffer
 	for _, bundle := range bundles {
-		part, entry, err := EncodeSetFilePart(enc, bundle)
+		part, entry, err := EncodeSetFilePart(enc, &buf, bundle)
 		require.NoError(t, err)
 		require.Equal(t, len(bundle.Values), entry.Records)
 		entry.Unretained = []dagql.TransferOrdinal{bundle.Values[0].Ordinal}
@@ -80,7 +81,7 @@ func TestSetFileRefusesAFileOfAnotherLength(t *testing.T) {
 	t.Parallel()
 	enc, err := zstd.NewWriter(nil)
 	require.NoError(t, err)
-	part, entry, err := EncodeSetFilePart(enc, setFileTestBundle(1))
+	part, entry, err := EncodeSetFilePart(enc, &bytes.Buffer{}, setFileTestBundle(1))
 	require.NoError(t, err)
 	var file bytes.Buffer
 	require.NoError(t, WriteSetFile(&file, SetFileHeader{Version: 9, Parts: []SetFilePart{entry}}, [][]byte{part}))
