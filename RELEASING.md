@@ -1,4 +1,4 @@
-# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-November%209,%202026-success?style=flat-square)
+# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-November%2024,%202026-success?style=flat-square)
 
 This document describes the process for releasing Dagger.
 
@@ -113,7 +113,6 @@ to dagger.
 - [dagger](https://github.com/dagger/dagger) (the most recent release)
 - [changie](https://changie.dev)
 - [gh](https://cli.github.com/) github cli tool
-- [golang](https://go.dev)
 
 ## 📝 Preparation
 
@@ -174,7 +173,8 @@ to dagger.
 
 > [!NOTE]
 >
-> CI on main currently has the MacOS workflow failing, it needs fixing.
+> The macOS SDK provisioning test that runs after the publish job is flaky: it
+> failed after the `v1.0.0-beta.28` publish while passing on `main`.
 
 ## 🚀 Release
 
@@ -204,7 +204,52 @@ This will kick off [`.github/workflows/publish.yml`](https://github.com/dagger/d
 - PHP packages to [🐘 packagist.org/packages/dagger/dagger](https://packagist.org/packages/dagger/dagger) via [github.com/dagger/dagger-php-sdk](https://github.com/dagger/dagger-php-sdk/tags).
 - Helm charts to [☸️ registry.dagger.io/dagger-helm](https://github.com/dagger/dagger/pkgs/container/dagger-helm).
 
-This will also kick off [`.github/workflows/evals.yml`], which is currently broken at the moment.
+For a prerelease (a version with a suffix, such as `v1.0.0-beta.N`), the
+workflow publishes the engine, the CLI and every package above, but creates no
+GitHub releases or per-SDK tags, deploys no docs, sends no Discord announcement
+and opens no dagger.io PR.
+
+### If the publish workflow fails partway
+
+The job summary holds the release report, which lists what was published.
+`release publish` publishes the engine first and the CLI second, and stops
+before the SDKs and the Helm chart if either fails.
+
+Once the CLI has been uploaded, don't rerun the workflow. A rerun rebuilds the
+CLI and uploads it again to the same paths on dl.dagger.io, but the CDN is
+invalidated only for the install scripts: it can keep serving the first upload
+while the Homebrew and Nix formulas get the rebuild's checksums. A rerun also
+pushes the engine image again under the same tag.
+
+Instead, publish what is missing from a checkout of the tag, with the most
+recent release's CLI and the registry credentials, calling the same functions
+`release publish` calls:
+
+```console
+git checkout "$ENGINE_VERSION"
+W="github.com/dagger/dagger@$ENGINE_VERSION"
+
+dagger -W "$W" call go-client release --source-repo https://github.com/dagger/dagger --source-tag "$ENGINE_VERSION" --callback .dagger/modules/go-client-dev/git-filter-callback.py --github-token env://GITHUB_TOKEN
+dagger -W "$W" call php-client release --source-repo https://github.com/dagger/dagger --source-tag "$ENGINE_VERSION" --github-token env://GITHUB_TOKEN
+dagger -W "$W" call python-client release --source-tag "$ENGINE_VERSION" --pypi-token env://PYPI_TOKEN
+dagger -W "$W" call typescript-client release --source-tag "$ENGINE_VERSION" --npm-token env://NPM_TOKEN
+dagger -W "$W" call elixir-client publish --tag "$ENGINE_VERSION" --hex-api-key env://HEX_API_KEY
+dagger -W "$W" -c "rust-client | release $ENGINE_VERSION env://CARGO_REGISTRY_TOKEN"
+```
+
+- Pass `--callback` to the Go SDK: from the CLI, its default resolves against
+  the workspace root instead of the module's directory.
+- Call the Rust SDK through `dagger -c`: `dagger call` rejects it, because its
+  constructor's `workspace` argument collides with the `--workspace` flag.
+- The Helm chart's publish step is private to the `release` module. Run its
+  steps in a container:
+
+  ```console
+  dagger -c "github.com/dagger/wolfi@fdec349f9aad840f2853bc2e6534f2555788da04 | container --packages=helm-3~3.19.2 | with-directory /dagger-helm \$(git https://github.com/dagger/dagger | tag $ENGINE_VERSION | tree | directory helm/dagger) | with-workdir /dagger-helm | with-secret-variable GITHUB_TOKEN env://GITHUB_TOKEN | with-exec -- sh -c 'helm registry login ghcr.io/dagger --username dagger --password \$GITHUB_TOKEN && helm package . && helm push dagger-helm-${ENGINE_VERSION#v}.tgz oci://ghcr.io/dagger && helm registry logout ghcr.io/dagger' | stdout"
+  ```
+
+The CLI's package managers (Homebrew, Nix, winget) are written last in the CLI
+step: check which of them were updated before deciding what is left.
 
 - [ ] Double-check the engine+cli release:
 
@@ -227,11 +272,11 @@ This will also kick off [`.github/workflows/evals.yml`], which is currently brok
       and updated to their latest versions.
       _Note_: the [Go package](https://pkg.go.dev/dagger.io/dagger) may not be instantly updated due to caching.
 
-- [ ] Double-check that git tags + github releases have been made for each component.
+- [ ] For a stable release, double-check that git tags + github releases have been made for each component.
 
 ## 🌌 Daggerverse && Dagger Cloud
 
-- [ ] Ask @marcosnils @matipan @sipsma on the release thread to review and merge the newly opened dagger.io PR (this is created by the publish workflow). This PR updates both the Daggerverse and Dagger Cloud. If anything fails, cc @kpenfound @matipan.
+- [ ] For a stable release, ask @marcosnils @matipan @sipsma on the release thread to review and merge the newly opened dagger.io PR (this is created by the publish workflow; it is not opened for prereleases). This PR updates both the Daggerverse and Dagger Cloud. If anything fails, cc @kpenfound @matipan.
 
 - [ ] Make sure the new engine image is available to Dagger Cloud's engines. This is automated for regular releases, but for prereleases (such as `v1.0.0-beta.N`) it is a manual step: ask the team if you don't know how to run it. Until it is done, `dagger --cloud` with the new CLI cannot start an engine.
 
