@@ -22,18 +22,18 @@ func TestPartLazyOperationCleanupReleasesItsInvocation(t *testing.T) {
 		encoded bool
 	}{{"encoded receiver", true}, {"typed receiver", false}} {
 		t.Run(tc.name, func(t *testing.T) {
-			ctx, c, srv, _ := shareTestCache(t)
-			srv.InstallObject(NewClass(srv, ClassOpts[*shareTestValue]{}))
-			receiver := persistedListTestResult(t, ctx, c, srv, "cleanup-receiver", newShareTestValue("receiver", map[string]sharePartState{"fs": {}}))
+			ctx, c, srv, _ := partTestCache(t)
+			srv.InstallObject(NewClass(srv, ClassOpts[*partTestValue]{}))
+			receiver := persistedListTestResult(t, ctx, c, srv, "cleanup-receiver", newPartTestValue("receiver", map[string]partTestState{"fs": {}}))
 			row := receiver.cacheSharedResult()
 			if tc.encoded {
-				shareTestEncodedReceiver(t, ctx, c, receiver)
+				partTestEncodedReceiver(t, ctx, c, receiver)
 			} else {
 				c.egraphMu.Lock()
 				row.imported = true
 				c.egraphMu.Unlock()
 			}
-			evaluated := persistedListTestResult(t, ctx, c, srv, "cleanup-evaluated", newShareTestValue("evaluated", map[string]sharePartState{"fs": {Snapshot: "fs-snap"}}))
+			evaluated := persistedListTestResult(t, ctx, c, srv, "cleanup-evaluated", newPartTestValue("evaluated", map[string]partTestState{"fs": {Snapshot: "fs-snap"}}))
 			address := PersistedPartAddress{Part: "fs"}
 
 			var releases atomic.Int32

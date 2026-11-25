@@ -277,10 +277,10 @@ func TestOfferInstallFailedProfiled(t *testing.T) {
 // or join, so that a profile can say where a long acquisition spends the
 // time between them.
 func TestDemandPartProfilesItsSteps(t *testing.T) {
-	ctx, c, srv, _ := shareTestCache(t)
-	_, receiver := shareTestPair(t, ctx, c, srv,
-		map[string]sharePartState{"fs": {Snapshot: "fs-snap"}},
-		map[string]sharePartState{"fs": {}},
+	ctx, c, srv, _ := partTestCache(t)
+	_, receiver := partTestPair(t, ctx, c, srv,
+		map[string]partTestState{"fs": {Snapshot: "fs-snap"}},
+		map[string]partTestState{"fs": {}},
 	)
 	ctx, root := profiledRoot(ctx, "test.demand")
 	require.NoError(t, c.demandPart(ctx, receiver, PersistedPartAddress{Part: "fs"}))

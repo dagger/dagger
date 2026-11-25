@@ -111,9 +111,8 @@ func TestFilesystemPersistenceRetainsBodyLatch(t *testing.T) {
 
 // A persistence read does not refuse another. A span reads its call's complete
 // parts as it ends, and that read can overlap another reader of the same
-// value, such as an early snapshot-sharing pass that probes it as a donor.
-// Refused, the span would report only the parts the gate settled: none, for a
-// value built with its snapshot, which no later span may name.
+// value. Refused, the span would report only the parts the gate settled:
+// none, for a value built with its snapshot, which no later span may name.
 func TestFilesystemPersistenceReadersShareTheGuard(t *testing.T) {
 	snapshotKey, err := json.Marshal(dagql.PersistedPartAddress{Part: "snapshot"})
 	require.NoError(t, err)

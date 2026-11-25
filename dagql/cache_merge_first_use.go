@@ -295,8 +295,8 @@ func (res *sharedResult) holdsUnpreparedPayload() bool {
 // or a wait. Paths splits the first uses by the path they came by, so work a
 // call needed can be told from work nothing asked for: lookup (a call's
 // decode of its hit), export, offer, part (fetching or installing an
-// entry's parts), sharing (a snapshot-sharing pass), merge or restore (a
-// merge warming the parts of the entries it lands on), and other; a path
+// entry's parts), merge or restore (a merge warming the parts of the
+// entries it lands on), and other; a path
 // with none is left out. The Save fields count the same for the records
 // nothing used, which a save prepared before it wrote them
 // (prepareMergedPayloadsForSave), with SaveWall the time the save spent
@@ -513,11 +513,4 @@ func (c *Cache) FirstUse() FirstUseStats {
 		stats.Routes[MergeRoute(route).String()] = counted
 	}
 	return stats
-}
-
-// firstUsesBy returns the first uses that came by path so far.
-func (c *Cache) firstUsesBy(path cacheWork) FirstUsePath {
-	c.firstUseMu.Lock()
-	defer c.firstUseMu.Unlock()
-	return c.firstUsePaths[path]
 }

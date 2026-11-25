@@ -1146,8 +1146,7 @@ func (c *Cache) releaseRemoteCacheLocked(cache CacheID) (change RemoteChange) {
 // It then checks whether to compact the e-graph's classes, at most once per
 // eqClassCheckInterval and only when something changed since the last check
 // (compactEqClassesAfterCollectionLocked), which frees the dead ones. Only the
-// Cloud calls it, and never with snapshot sharing enabled, whose pending queue
-// keeps class IDs. Engines compact through prune.
+// Cloud calls it. Engines compact through prune.
 func (c *Cache) CollectRemoteHoldings(ctx context.Context, candidates []HolderKey, owned func(HolderKey) bool) ([]HolderKey, RemoteChange, error) {
 	c.lockGraphFor(ctx, workRemote)
 	collected, change, releases, err := c.collectRemoteHoldingsLocked(ctx, candidates, owned)
@@ -1265,8 +1264,7 @@ func (c *Cache) compactEqClassesAfterCollectionLocked(removed bool) {
 // is live. It returns the class slots before and after. It counts as that
 // check, so the next collection checks again only after eqClassCheckInterval.
 //
-// Only a blob-backed cache answers, and never with snapshot sharing enabled,
-// whose pending queue keeps class IDs: then, or when ctx is done before the
+// Only a blob-backed cache answers: otherwise, or when ctx is done before the
 // compaction starts, it returns an error and changes nothing. A compaction
 // that has started is not interrupted.
 func (c *Cache) CompactEqClasses(ctx context.Context) (oldSlots, newSlots int, rerr error) {
@@ -1281,9 +1279,6 @@ func (c *Cache) CompactEqClasses(ctx context.Context) (oldSlots, newSlots int, r
 	// The context can end while another operation holds the graph.
 	if err := ctx.Err(); err != nil {
 		return 0, 0, fmt.Errorf("compact eq classes: %w", err)
-	}
-	if c.shareAdmission != snapshotShareOff {
-		return 0, 0, errors.New("compact eq classes: snapshot sharing is enabled")
 	}
 	clock := c.eqClassClock
 	if clock == nil {

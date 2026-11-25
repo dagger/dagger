@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/containerd/containerd/v2/core/content"
-	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/telemetryattrs"
@@ -144,13 +143,6 @@ func (s *PartContentSource) Available(offer PersistedPartOffer, now time.Time) b
 // Provider freezes the copied offer's layers and copies its addresses. It
 // creates no request.
 func (s *PartContentSource) Provider(ctx context.Context, offer PersistedPartOffer, demand *PartDemandState) content.InfoReaderProvider {
-	// Provider returns an interface rather than an error, so marked
-	// construction returns a refusing provider. The check precedes the
-	// override lookup: a marked context must not reach a test's override,
-	// which may count reads.
-	if engine.IsSnapshotSharePreparation(ctx) {
-		return refusingContentProvider{}
-	}
 	if imageOfferLayers(&offer) {
 		if root := s.imageRoot(); root != nil {
 			return newImagePartProvider(root, offer)
@@ -866,11 +858,6 @@ func (c *Cache) installChainPart(ctx context.Context, receiver AnyResult, source
 	c.partInstallStarted()
 	defer c.partInstallEnded()
 	start := time.Now()
-	// The content-source boundary: refuse before the offer clone and before
-	// any provider read, so the sentinel precedes any observable read.
-	if err := engine.CheckSnapshotSharePreparation(ctx, "acquire chain content"); err != nil {
-		return err
-	}
 	if c.snapshotManager == nil {
 		return fmt.Errorf("chain acquisition: no snapshot manager")
 	}
@@ -1045,15 +1032,17 @@ func (c *Cache) retireFinalPartOffersLocked(ctx context.Context, row *sharedResu
 	return c.retirePartOfferLocked(ctx, row, address)
 }
 
-// refusingContentProvider holds no pointer to the source, the transport or
-// the renewal bridge. Info and ReaderAt return the sentinel without touching
-// any of them.
+// refusingContentProvider is the provider of an image's offer on a cache
+// without the image's directory, which Available reports unavailable. Info
+// and ReaderAt return errNoImageContent.
 type refusingContentProvider struct{}
 
+var errNoImageContent = errors.New("part content: the cache has no engine image directory")
+
 func (refusingContentProvider) Info(context.Context, digest.Digest) (content.Info, error) {
-	return content.Info{}, engine.ErrSnapshotShareEvaluation
+	return content.Info{}, errNoImageContent
 }
 
 func (refusingContentProvider) ReaderAt(context.Context, ocispecs.Descriptor) (content.ReaderAt, error) {
-	return nil, engine.ErrSnapshotShareEvaluation
+	return nil, errNoImageContent
 }

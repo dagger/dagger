@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/wcprof"
 )
@@ -154,9 +153,6 @@ func (lazy *LazyState) Evaluate(ctx context.Context, typeName string, run func(c
 	if lazy.lazyInitComplete.Load() {
 		return nil
 	}
-	if err := engine.CheckSnapshotSharePreparation(ctx, "evaluate "+typeName); err != nil {
-		return err
-	}
 	if lazy.LazyMu == nil {
 		return fmt.Errorf("invalid %s: missing LazyMu", typeName)
 	}
@@ -205,9 +201,6 @@ func (lazy *LazyState) Evaluate(ctx context.Context, typeName string, run func(c
 // cache-side regime split between whole-result and named-group
 // evaluation.
 func (lazy *LazyState) EvaluateGroup(ctx context.Context, typeName string, group dagql.LazyGroupKey, run func(context.Context) error) (rerr error) {
-	if err := engine.CheckSnapshotSharePreparation(ctx, "evaluate "+typeName+" group"); err != nil {
-		return err
-	}
 	if lazy.LazyMu == nil {
 		return fmt.Errorf("invalid %s: missing LazyMu", typeName)
 	}
