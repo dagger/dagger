@@ -190,6 +190,59 @@ func TestMergeValuesDecodesAMovedPayloadOnce(t *testing.T) {
 	require.Equal(t, 1, visits, "the root's payload is visited once")
 }
 
+// A Cloud merge whose early decision no longer holds at its commit: between
+// the root's preparation and its commit, another engine's exports land, the
+// root's child among them as an entry of its own, so the commit relocates
+// the root under the lock. The root is stored, and measured, at the numbers
+// it is installed at.
+func TestCloudMergeRelocatesUnderTheLockWhatAnotherExportMoved(t *testing.T) {
+	t.Parallel()
+	child, root := mergeTestMovingPayloadStream(t)
+	others := mergeTestManyRoots(t, 9)
+	ctx, cloud := storedPartTestCache(t, WithBlobStore())
+	storedTestHoldWhole(cloud)
+	var under []uint64
+	cloud.testRelocatedUnderLock = func(ordinal uint64) { under = append(under, ordinal) }
+	p, err := cloud.PrepareValueMerge(ctx, "cache-a", root)
+	require.NoError(t, err)
+	require.Empty(t, under)
+
+	// The other engine's exports take numbers past the root's own, so that
+	// the child's entry has a number of more digits than the one the
+	// preparation gave it.
+	reply, err := cloud.MergeValues(ctx, "cache-b", others)
+	require.NoError(t, err)
+	require.True(t, reply.Committed)
+	reply, err = cloud.MergeValues(ctx, "cache-b", child)
+	require.NoError(t, err)
+	require.True(t, reply.Committed)
+	require.Len(t, reply.Values, 1)
+	childNumber := reply.Values[0].Number
+
+	reply, err = cloud.CommitValueMerge(ctx, p)
+	require.NoError(t, err)
+	require.True(t, reply.Committed)
+	require.NotEmpty(t, under, "the root is relocated under the lock")
+	var rootNumber uint64
+	for _, value := range reply.Values {
+		if value.Number != childNumber {
+			rootNumber = value.Number
+		}
+	}
+	require.NotZero(t, rootNumber)
+	cloud.egraphMu.RLock()
+	res := cloud.resultsByID[sharedResultID(rootNumber)]
+	require.NotNil(t, res)
+	require.NotNil(t, res.persistedEnvelope)
+	installed := PersistedRecord{ResultID: rootNumber, Envelope: *res.persistedEnvelope, Call: res.loadResultCall()}
+	measured := res.storedRecordBytes
+	cloud.egraphMu.RUnlock()
+	var payload transferTestValue
+	require.NoError(t, json.Unmarshal(installed.Envelope.ObjectJSON, &payload))
+	require.Equal(t, childNumber, payload.Child, "the root's payload names the child's entry")
+	require.Equal(t, encodedRecordBytes(installed), measured, "the record's size is the stored record's")
+}
+
 // The Cloud prepares an engine's export as an engine prepares a merge from
 // the Cloud: a record whose references move is relocated to the numbers it
 // is installed at in the one visit of its payload, and that visit reads the
