@@ -1681,7 +1681,7 @@ func keepNeededRows(bundle *ValueBundle, chains *SelectedChains, order []*captur
 		}
 	}
 	needed, outputDeps := neededBundleRows(*bundle)
-	links := heldRowLinks(*bundle, needed, outputDeps)
+	links := heldRowLinks(*bundle, needed)
 	kept := reachedBundleRows(*bundle, links, outputDeps)
 	for i := range needed {
 		if needed[i] && !kept[i] {
@@ -1785,25 +1785,36 @@ func serviceOrdinals(services []TransferredServiceBinding) []uint64 {
 // the needed held row above it that gives it the most of the roots it lost,
 // in turn, so that the bundle's live closure (liveClosure) for any set of
 // its roots is the one it had.
-func heldRowLinks(bundle ValueBundle, needed []bool, outputDeps map[int][]uint64) [][]uint64 {
+//
+// Roots are followed through dependencies alone: the Cloud drops a bundle's
+// outputs and offers before it walks the roots' closure again
+// (checkValueMerge), so a row an output's owner names has to be reached
+// through dependencies all the same, as the links it went by did.
+//
+// Each row left out keeps, as where links past it can come from, only the
+// needed held rows above it that its roots need, at most one a root, so
+// what the walk holds grows with the rows and the roots, not with the paths.
+func heldRowLinks(bundle ValueBundle, needed []bool) [][]uint64 {
 	n := len(bundle.Values)
 	links := make([][]uint64, n)
+	leaving := false
 	for i, v := range bundle.Values {
 		if v.Held == "" {
 			links[i] = v.DependencyIDs
 			continue
 		}
+		leaving = leaving || !needed[i]
 		for _, dep := range v.DependencyIDs {
 			if j := bundleRowIndex(n, dep); j >= 0 && needed[j] {
 				links[i] = append(links[i], dep)
 			}
 		}
 	}
-	if len(bundle.Roots) == 0 {
+	if !leaving || len(bundle.Roots) == 0 {
 		return links
 	}
-	walks := bundleWalks(bundle, outputDeps)
-	order, acyclic := bundleRowsTopDown(walks)
+	deps := bundleDependencyRows(bundle)
+	order, acyclic := bundleRowsTopDown(deps)
 	if !acyclic {
 		// The recipient refuses a cycle (bundleClosure); the bundle goes with
 		// every held row's links, for its check to say so.
@@ -1814,25 +1825,45 @@ func heldRowLinks(bundle ValueBundle, needed []bool, outputDeps map[int][]uint64
 		}
 		return links
 	}
+	parents := make([][]int, n)
+	for i, below := range deps {
+		for _, j := range below {
+			parents[j] = append(parents[j], i)
+		}
+	}
 	reached := newRootSets(bundle)
-	reached.pass(order, walks)
+	reached.pass(order, deps)
 	kept := newRootSets(bundle)
-	above := neededHeldAbove(bundle, needed)
+	// via are, for each row left out, the needed held rows above it that
+	// together hold every root it was reached from.
+	via := make([][]int, n)
 	for _, i := range order {
+		var pool []int
+		for _, p := range parents[i] {
+			switch {
+			case !needed[p]:
+				pool = append(pool, via[p]...)
+			case bundle.Values[p].Held != "":
+				pool = append(pool, p)
+			}
+		}
 		if !needed[i] {
+			via[i] = kept.cover(reached, i, pool)
 			continue
 		}
 		for {
-			best := kept.bestCover(reached, i, above[i])
+			best := kept.bestCover(reached, i, pool)
 			if best < 0 {
 				break
 			}
 			links[best] = append(links[best], uint64(bundle.Values[i].Ordinal))
 			kept.add(i, best)
 		}
-		// The kept links pass the roots on, as the check walks them.
-		for _, j := range bundleRowWalks(bundle, outputDeps, links[i], i) {
-			kept.add(j, i)
+		// The kept links pass the roots on.
+		for _, o := range links[i] {
+			if j := bundleRowIndex(n, o); j >= 0 {
+				kept.add(j, i)
+			}
 		}
 	}
 	for i, v := range bundle.Values {
@@ -1844,81 +1875,18 @@ func heldRowLinks(bundle ValueBundle, needed []bool, outputDeps map[int][]uint64
 	return links
 }
 
-// bundleWalks returns, by index, the rows the bundle's check walks to from
-// each row (bundleRowWalks), through its dependencies.
-func bundleWalks(bundle ValueBundle, outputDeps map[int][]uint64) [][]int {
-	walks := make([][]int, len(bundle.Values))
-	for i, v := range bundle.Values {
-		walks[i] = bundleRowWalks(bundle, outputDeps, v.DependencyIDs, i)
-	}
-	return walks
-}
-
-// bundleRowWalks returns the rows the bundle's check walks to from row i
-// (bundleClosure), by index: those links names, its offers' owners and its
-// outputs' owners.
-func bundleRowWalks(bundle ValueBundle, outputDeps map[int][]uint64, links []uint64, i int) []int {
+// bundleDependencyRows returns, by index, each row's dependencies' rows.
+func bundleDependencyRows(bundle ValueBundle) [][]int {
 	n := len(bundle.Values)
-	var walks []int
-	add := func(ordinals []uint64) {
-		for _, o := range ordinals {
+	rows := make([][]int, n)
+	for i, v := range bundle.Values {
+		for _, o := range v.DependencyIDs {
 			if j := bundleRowIndex(n, o); j >= 0 {
-				walks = append(walks, j)
+				rows[i] = append(rows[i], j)
 			}
 		}
 	}
-	add(links)
-	for _, offer := range bundle.Values[i].Record.Envelope.PendingOffers {
-		add(offer.Owner.DependencyIDs)
-	}
-	add(outputDeps[i])
-	return walks
-}
-
-// neededHeldAbove returns, for each needed row, the needed held rows it is
-// nearest below, through rows that aren't needed: the rows a link to it can
-// come from.
-func neededHeldAbove(bundle ValueBundle, needed []bool) map[int][]int {
-	n := len(bundle.Values)
-	nearest := map[int][]int{}
-	var nearestBelow func(int) []int
-	nearestBelow = func(i int) []int {
-		if got, ok := nearest[i]; ok {
-			return got
-		}
-		nearest[i] = nil
-		var found []int
-		for _, dep := range bundle.Values[i].DependencyIDs {
-			if j := bundleRowIndex(n, dep); j >= 0 {
-				if needed[j] {
-					found = append(found, j)
-				} else {
-					found = append(found, nearestBelow(j)...)
-				}
-			}
-		}
-		slices.Sort(found)
-		found = slices.Compact(found)
-		nearest[i] = found
-		return found
-	}
-	above := map[int][]int{}
-	for i, v := range bundle.Values {
-		if !needed[i] || v.Held == "" {
-			continue
-		}
-		var below []int
-		for _, dep := range v.DependencyIDs {
-			if j := bundleRowIndex(n, dep); j >= 0 && !needed[j] {
-				below = append(below, nearestBelow(j)...)
-			}
-		}
-		slices.Sort(below)
-		for _, j := range slices.Compact(below) {
-			above[j] = append(above[j], i)
-		}
-	}
-	return above
+	return rows
 }
 
 // rootSets are, for each row of a bundle by index, the bundle's roots it is
@@ -1982,8 +1950,38 @@ func (sets rootSets) bestCover(reached rootSets, i int, candidates []int) int {
 	return best
 }
 
+// cover returns, of candidates, rows that together hold every root row i
+// had in reached, as sets holds them, chosen as bestCover chooses, without
+// changing row i's set: the needed rows above a row left out that a link
+// past it can come from.
+func (sets rootSets) cover(reached rootSets, i int, candidates []int) []int {
+	had := reached.row(i)
+	has := make([]uint64, sets.words)
+	var chosen []int
+	for {
+		best, bestGain := -1, 0
+		for _, a := range candidates {
+			from := sets.row(a)
+			gain := 0
+			for w := range had {
+				gain += bits.OnesCount64(had[w] &^ has[w] & from[w])
+			}
+			if gain > bestGain {
+				best, bestGain = a, gain
+			}
+		}
+		if best < 0 {
+			return chosen
+		}
+		chosen = append(chosen, best)
+		for w, b := range sets.row(best) {
+			has[w] |= b
+		}
+	}
+}
+
 // bundleRowsTopDown returns the rows of a bundle's graph, by index, each
-// before every row it walks to (walks), and whether the graph has no cycle.
+// before every row it goes to (walks), and whether the graph has no cycle.
 func bundleRowsTopDown(walks [][]int) ([]int, bool) {
 	n := len(walks)
 	state := make([]uint8, n)
