@@ -7322,6 +7322,7 @@ func (c *Cache) publishUsageMeasurementsLocked(snapshot *cacheUsageSnapshot, ide
 		res.cacheUsageRecordTypeByID = recordTypes
 		if types := cacheUsageRecordTypesFromMap(recordTypes); len(types) > 0 {
 			res.recordType = cacheUsagePrimaryRecordType(types, "")
+			c.noteSavedEntryLocked(res.id)
 		}
 	}
 }
