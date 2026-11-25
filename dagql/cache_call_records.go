@@ -90,7 +90,6 @@ func (c *Cache) keepCallLocked(entry *sharedResult, desc RemoteHolding, kept *ke
 	if expires := mergeSharedResultExpiryUnix(entry.expiresAtUnix, desc.ExpiresAtUnix); expires != entry.expiresAtUnix {
 		entry.expiresAtUnix = expires
 		c.markEntryClassLocked(entry.id, StampCallExpiry)
-		c.noteSharedWriteLocked(SharedExpiry)
 		changed = true
 	}
 	if kept != nil {
@@ -131,7 +130,6 @@ func (c *Cache) keepTermCallLocked(entry *sharedResult, kept *keptCall) bool {
 		}
 		if len(calls) > 0 {
 			c.stampEntryLocked(entry, StampKeptCallsJoined)
-			c.noteSharedWriteLocked(SharedKeptCall)
 			joined = true
 		}
 		entry.callTermIndex = terms
@@ -158,7 +156,6 @@ func (c *Cache) keepTermCallLocked(entry *sharedResult, kept *keptCall) bool {
 	entry.callTermIndex[key] = kept
 	c.stampEntryLocked(entry, cause)
 	c.indexKeptCallLocked(entry, kept)
-	c.noteSharedWriteLocked(SharedKeptCall)
 	c.verifyCallTermIndexLocked(entry)
 	return true
 }

@@ -189,10 +189,6 @@ type RemoteChange struct {
 	// writes, beyond the holdings, which aren't saved: a call kept on a
 	// stored entry, the entry's expiry, or that its stored record's run ran.
 	Saved bool
-	// Shared are the kinds of state engines share that the operation
-	// changed, on a blob-backed cache (SharedWrites): none when it changed
-	// only its engine caches' own.
-	Shared SharedWrites
 }
 
 // HeldValueState is one observation of the value state of a holding's copy:
@@ -472,7 +468,6 @@ func (c *Cache) remoteCacheLocked(id CacheID) *remoteCacheState {
 			sessions:          make(map[string]map[uint64]struct{}),
 		}
 		c.remoteCaches[id] = state
-		c.noteSharedWriteLocked(SharedNewEngineCache)
 	}
 	return state
 }
@@ -622,7 +617,6 @@ func (c *Cache) newHoldingLocked(ctx context.Context, state *remoteCacheState, k
 		}
 		c.putResultLocked(entry)
 		c.indexRecipeLocked(desc.Recipe, entry)
-		c.noteSharedWriteLocked(SharedNewEntry)
 	}
 	return entry, c.addHoldingLocked(ctx, state, key, entry)
 }
@@ -1183,15 +1177,10 @@ func (c *Cache) collectRemoteHoldingsLocked(ctx context.Context, candidates []Ho
 	for id, state := range c.remoteCaches {
 		if state.holdings == 0 {
 			delete(c.remoteCaches, id)
-			c.noteSharedWriteLocked(SharedEngineCacheGone)
 		}
 	}
 	releases, err := c.collectUnownedResultsLocked(ctx, entries)
-	removed := len(c.resultsByID) < entriesBefore
-	if removed {
-		c.noteSharedWriteLocked(SharedEntryRemoved)
-	}
-	c.compactEqClassesAfterCollectionLocked(removed)
+	c.compactEqClassesAfterCollectionLocked(len(c.resultsByID) < entriesBefore)
 	c.takeChangesLocked(&change)
 	return collected, change, releases, errors.Join(rerr, err)
 }
@@ -1219,8 +1208,8 @@ const eqClassCheckInterval = 10 * time.Second
 //
 // The check reads the slots and the live classes the cache keeps
 // (cache_eqclass_uses.go), so a check that frees nothing walks nothing and
-// changes no shared state; a compaction walks every term, entry and digest,
-// and reports SharedClassesCompacted. The service collects at the end of
+// changes no shared state; a compaction walks every term, entry and digest.
+// The service collects at the end of
 // every read, idle or not, so a pending check runs soon after its interval.
 // At each check, the non-forced compaction frees the dead classes once they
 // reach the live ones; between checks, the dead can exceed that by the
@@ -1244,9 +1233,6 @@ func (c *Cache) compactEqClassesAfterCollectionLocked(removed bool) {
 	start := time.Now()
 	c.eqClassChecks++
 	compacted, oldSlots, newSlots := c.compactEqClassesLocked(false)
-	if compacted {
-		c.noteSharedWriteLocked(SharedClassesCompacted)
-	}
 	c.eqClassCheckedAt = now
 	c.eqClassCheckedSlots = c.eqClassSlotsLocked()
 	c.eqClassRemoved = false
@@ -1379,7 +1365,6 @@ func (c *Cache) CollectGoneHoldings(ctx context.Context, keys []HolderKey) (Remo
 	releases, collectErr := c.collectUnownedResultsLocked(ctx, entries)
 	if len(c.resultsByID) < entriesBefore {
 		c.eqClassRemoved = true
-		c.noteSharedWriteLocked(SharedEntryRemoved)
 	}
 	c.takeChangesLocked(&change)
 	c.egraphMu.Unlock()
@@ -1421,7 +1406,6 @@ func (c *Cache) removeGoneHoldingLocked(ctx context.Context, key HolderKey, entr
 	deps, entries, err := c.removeHoldingLocked(ctx, state, key, entry, h, entries)
 	if state.holdings == 0 {
 		delete(c.remoteCaches, key.Cache)
-		c.noteSharedWriteLocked(SharedEngineCacheGone)
 	}
 	return deps, entries, true, err
 }
@@ -1553,18 +1537,12 @@ func (c *Cache) teachRemoteIdentityLocked(ctx context.Context, entry *sharedResu
 	if content != "" && entry != nil && entry.id != 0 {
 		if n := len(entry.taught); n == 0 || entry.taught[n-1] != content {
 			entry.taught = append(entry.taught, content)
-			c.noteSharedWriteLocked(SharedTaughtContent)
 		}
-		given := entry.taughtGiven
 		c.queueTaughtContentLocked(entry)
-		if entry.taughtGiven != given {
-			c.noteSharedWriteLocked(SharedTaughtContent)
-		}
 	}
 	if c.remoteIdentityTeachesNothingLocked(entry, recipe, request, content, term) {
 		return
 	}
-	c.noteSharedWriteLocked(SharedIdentity)
 	c.writeRemoteIdentityLocked(ctx, entry, field, recipe, request, content, term)
 }
 
