@@ -144,7 +144,7 @@ func (c *Cache) poolSettleLocked(res *sharedResult) {
 		c.pool.values += int(sign)
 		c.pool.bytes += sign * res.storedValueBytes()
 		c.poolBlobsLocked(res.storedBlobsLocked(), sign)
-		for depID := range res.deps {
+		for _, depID := range res.deps {
 			if dep := c.resultsByID[depID]; dep != nil {
 				dep.poolRefs += int32(sign)
 				queue = append(queue, dep)
@@ -249,7 +249,7 @@ func (c *Cache) walkPoolLocked() walkedPool {
 		for blob, size := range res.storedBlobsLocked() {
 			w.measure.add(blob, size)
 		}
-		for depID := range res.deps {
+		for _, depID := range res.deps {
 			if c.resultsByID[depID] != nil {
 				w.refs[depID]++
 			}

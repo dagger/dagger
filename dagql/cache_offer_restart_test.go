@@ -54,10 +54,10 @@ func forwardedOfferOwner(c *Cache, id uint64) (*offerOwner, error) {
 	if !slices.Equal(offer.record.Owner.DependencyIDs, offer.owner.record.DependencyIDs) {
 		return nil, fmt.Errorf("offer dependencies %v differ from owner dependencies %v", offer.record.Owner.DependencyIDs, offer.owner.record.DependencyIDs)
 	}
-	if _, found := row.deps[sharedResultID(service)]; !found {
+	if !row.deps.has(sharedResultID(service)) {
 		return nil, fmt.Errorf("the direct edge to service %d did not survive", service)
 	}
-	if _, found := row.deps[sharedResultID(explicit)]; found {
+	if row.deps.has(sharedResultID(explicit)) {
 		return nil, fmt.Errorf("explicit-only reference %d must stay offer-owned", explicit)
 	}
 	for _, dep := range []uint64{service, explicit} {

@@ -451,7 +451,7 @@ func TestRemoteEntryOutlivesItsHoldings(t *testing.T) {
 			cloud.egraphMu.RLock()
 			sameEntry := cloud.resultsByID[entry.id] == entry
 			sameDep := cloud.resultsByID[depEntry.id] == depEntry
-			_, depEdge := entry.deps[depEntry.id]
+			depEdge := entry.deps.has(depEntry.id)
 			owners, depOwners := entry.incomingOwnershipCount.Load(), depEntry.incomingOwnershipCount.Load()
 			postings := slices.Clone(cloud.resultIndexedDigests[entry.id])
 			keyed := map[digest.Digest]bool{}

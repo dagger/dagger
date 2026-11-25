@@ -89,7 +89,7 @@ func (c *Cache) dropValueLocked(ctx context.Context, res *sharedResult) ([]*shar
 		deps []*sharedResult
 		rerr error
 	)
-	for depID := range res.deps {
+	for _, depID := range res.deps {
 		c.forgetDependencyEdgeLocked(res.id, depID)
 		dep := c.resultsByID[depID]
 		if dep == nil {
@@ -195,7 +195,7 @@ func (c *Cache) storedPoolLocked() map[sharedResultID]*sharedResult {
 			continue
 		}
 		pool[id] = res
-		for dep := range res.deps {
+		for _, dep := range res.deps {
 			stack = append(stack, dep)
 		}
 	}

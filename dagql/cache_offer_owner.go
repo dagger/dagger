@@ -40,7 +40,7 @@ type resultOwnershipChild struct {
 
 func (c *Cache) resultOwnershipChildrenLocked(res *sharedResult) iter.Seq[resultOwnershipChild] {
 	return func(yield func(resultOwnershipChild) bool) {
-		for id := range res.deps {
+		for _, id := range res.deps {
 			if !yield(resultOwnershipChild{result: c.resultsByID[id], resultID: id}) {
 				return
 			}
@@ -526,7 +526,7 @@ func validateStoredOwnership(res *sharedResult) error {
 	if res.stored != nil {
 		// A record held compressed names what its body says.
 		for _, ref := range res.stored.refs {
-			if _, ok := res.deps[sharedResultID(ref)]; !ok {
+			if !res.deps.has(sharedResultID(ref)) {
 				return fmt.Errorf("result %d: reference to %d is not a direct dependency", res.id, ref)
 			}
 		}
@@ -538,7 +538,7 @@ func validateStoredOwnership(res *sharedResult) error {
 		}
 		switch ref.Kind {
 		case PersistedRefChild, PersistedRefCall:
-			if _, ok := res.deps[sharedResultID(ref.ResultID)]; !ok {
+			if !res.deps.has(sharedResultID(ref.ResultID)) {
 				return fmt.Errorf("reference %s to %d is not a direct dependency", ref.Path, ref.ResultID)
 			}
 		}

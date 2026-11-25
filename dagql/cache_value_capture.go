@@ -228,7 +228,7 @@ func (c *Cache) holdTransferClosure(ctx context.Context, selection ValueSelectio
 			// roots are left out whatever its attachment adds later.
 			seen[res.id] = 1
 			var children []sharedResultID
-			for id := range res.deps {
+			for _, id := range res.deps {
 				children = append(children, id)
 				_ = walk(id, c.resultsByID[id])
 			}
@@ -258,7 +258,7 @@ func (c *Cache) holdTransferClosure(ctx context.Context, selection ValueSelectio
 		c.incrementIncomingOwnershipLocked(ctx, res)
 		row := &capturedTransferRow{shared: res, imported: res.imported, frame: frame, expiry: res.expiresAtUnix, replacements: res.replacements, transferRev: res.transferRevision, dependencyRev: res.dependencyOwnershipRevision, requiredRev: res.requiredSessionResourcesGen.Load()}
 		capture.rows[res.id] = row
-		for id := range res.deps {
+		for _, id := range res.deps {
 			row.deps = append(row.deps, uint64(id))
 		}
 		slices.Sort(row.deps)
@@ -282,7 +282,7 @@ func (c *Cache) holdTransferClosure(ctx context.Context, selection ValueSelectio
 		// A row's children here are its dependencies alone: a transferred
 		// record carries no offers, so neither their owners nor what those
 		// own go with it.
-		for id := range res.deps {
+		for _, id := range res.deps {
 			below(id, c.resultsByID[id])
 		}
 		if cause != nil {

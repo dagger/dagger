@@ -1197,7 +1197,7 @@ func TestMergeValuesRetiresAnExpiredEntryADependentUses(t *testing.T) {
 	listID := sharedResultID(listReply.Imported()[0].ResultID)
 	b.egraphMu.RLock()
 	var depID sharedResultID
-	for id := range b.resultsByID[listID].deps {
+	for _, id := range b.resultsByID[listID].deps {
 		depID = id
 	}
 	depRow := b.resultsByID[depID]
@@ -1473,7 +1473,7 @@ func TestMergeValuesThenAPublicationRetiresAnEntryInUse(t *testing.T) {
 	b.egraphMu.RLock()
 	current := b.entriesByRecipe[recipe]
 	registered := b.resultsByID[mergedChild.id] == mergedChild
-	_, stillDepends := mergedRoot.deps[mergedChild.id]
+	stillDepends := mergedRoot.deps.has(mergedChild.id)
 	b.egraphMu.RUnlock()
 	require.Equal(t, kept.id, current, "the publication's value is the recipe's current entry")
 	require.True(t, registered, "the retired entry stays")
@@ -1875,7 +1875,7 @@ func TestMergeValuesRefusesADependencyCycle(t *testing.T) {
 
 		cloud.egraphMu.RLock()
 		var bNumber sharedResultID
-		for dep := range cloud.resultsByID[aNumber].deps {
+		for _, dep := range cloud.resultsByID[aNumber].deps {
 			bNumber = dep
 		}
 		before, err := json.Marshal(cloud.resultsByID[bNumber].persistedEnvelope)
@@ -2302,7 +2302,7 @@ func TestMergeValuesRelocationKeepsReferencesWithinDependencies(t *testing.T) {
 	defer b.egraphMu.RUnlock()
 	r := b.resultsByID[sharedResultID(mergeTestValueOf(t, reply, rootOrdinal).Number)]
 	require.Len(t, r.deps, 1, "both records land on one entry")
-	for id := range r.deps {
+	for _, id := range r.deps {
 		require.Equal(t, 1, int(b.resultsByID[id].incomingOwnershipCount.Load()), "the root owns the entry once")
 	}
 	refs := 0

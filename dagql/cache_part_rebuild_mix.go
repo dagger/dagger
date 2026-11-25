@@ -19,7 +19,7 @@ const rebuildMixCountLimit = 4096
 // reports whether the walk stopped there. A merged entry was computed on another engine
 // from row's first execution. Requires egraphMu at least for read.
 func (c *Cache) mergedDependentsLocked(row *sharedResult, limit int) (int, bool) {
-	if row == nil || row.depParents == nil {
+	if row == nil || len(row.depParents) == 0 {
 		return 0, false
 	}
 	seen := map[sharedResultID]struct{}{row.id: {}}
@@ -28,10 +28,10 @@ func (c *Cache) mergedDependentsLocked(row *sharedResult, limit int) (int, bool)
 	for len(queue) > 0 {
 		res := queue[0]
 		queue = queue[1:]
-		if res.depParents == nil {
+		if len(res.depParents) == 0 {
 			continue
 		}
-		for parentID := range res.depParents {
+		for _, parentID := range res.depParents {
 			if _, ok := seen[parentID]; ok {
 				continue
 			}
