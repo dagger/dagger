@@ -106,12 +106,13 @@ func agentCommandDescription(name string) (string, bool) {
 }
 
 // agentCommandActsOnConversation reports whether the agent command line
-// invokes (e.g. "/compact") acts on the conversation it was submitted to.
+// invokes -- "/compact" in prompt mode, or its builtin ".compact" in shell
+// mode -- acts on the conversation it was submitted to.
 func agentCommandActsOnConversation(line string) bool {
-	name, ok := strings.CutPrefix(line, "/")
-	if !ok {
+	if line == "" || (line[0] != '/' && line[0] != '.') {
 		return false
 	}
+	name := line[1:]
 	if i := strings.IndexAny(name, " \t"); i >= 0 {
 		name = name[:i]
 	}

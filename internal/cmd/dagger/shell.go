@@ -889,9 +889,10 @@ func (h *shellCallHandler) HandlePrompt(ctx context.Context, input idtui.PromptI
 		),
 	}
 	if submission, ok := input.CommandTarget.(*commandSubmission); ok &&
-		mode == modePrompt && submission.target != nil && agentCommandActsOnConversation(line) {
-		// A /command like /compact acts on the conversation it was submitted
-		// to, so it belongs in that agent's transcript only.
+		submission.target != nil && agentCommandActsOnConversation(line) {
+		// A command like /compact (.compact after /shell) acts on the
+		// conversation it was submitted to, so it belongs in that agent's
+		// transcript only.
 		spanOpts = append(spanOpts, submission.target.spanOwner())
 	}
 	var span trace.Span
@@ -1209,8 +1210,11 @@ func (h *shellCallHandler) ReactToInput(ctx context.Context, ev uv.KeyPressEvent
 					Title:   "Changes",
 					Content: termenv.String("saving to checkout...").Faint().String(),
 				})
+				// No log line on failure: one would interleave into whichever
+				// transcript is focused. The save's own span records a failed
+				// export in its agent's transcript, and the bubble below
+				// reports every failure, a refused save included.
 				if err := h.llmSession.Target().ExportChanges(ctx); err != nil {
-					slog.Error("failed to export changes to local filesystem", "error", err.Error())
 					h.frontend.SetSidebarContent(idtui.SidebarSection{
 						Title:   "Changes",
 						Content: termenv.String("SAVE ERROR: " + err.Error()).Foreground(termenv.ANSIRed).String(),
@@ -1227,8 +1231,8 @@ func (h *shellCallHandler) ReactToInput(ctx context.Context, ev uv.KeyPressEvent
 					Title:   "Changes",
 					Content: termenv.String("reloading from checkout...").Faint().String(),
 				})
+				// As for ctrl+s: the reload's span and the bubble report it.
 				if err := h.llmSession.Target().ResetWorkspace(ctx); err != nil {
-					slog.Error("failed to reset agent workspace", "error", err.Error())
 					h.frontend.SetSidebarContent(idtui.SidebarSection{
 						Title:   "Changes",
 						Content: termenv.String("RESET ERROR: " + err.Error()).Foreground(termenv.ANSIRed).String(),
