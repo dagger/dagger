@@ -169,7 +169,7 @@ func mergeGraphTestState(t *testing.T, c *Cache) string {
 	state := map[sharedResultID]entry{}
 	for id, res := range c.resultsByID {
 		var e entry
-		for dep := range res.deps {
+		for _, dep := range res.deps {
 			e.Deps = append(e.Deps, dep)
 		}
 		slices.Sort(e.Deps)

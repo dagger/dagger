@@ -708,7 +708,7 @@ func (c *Cache) storedBundleVisitLocked(build *storedBundleBuild, res *sharedRes
 // services name. Requires egraphMu.
 func storedClosureChildrenLocked(res *sharedResult) []sharedResultID {
 	var children []sharedResultID
-	for dep := range res.deps {
+	for _, dep := range res.deps {
 		children = append(children, dep)
 	}
 	for _, part := range res.storedParts {
@@ -786,7 +786,7 @@ func transferredRecordParts(declared []declaredPart, complete *partKeySet) *Tran
 // found it names (refs). Requires egraphMu.
 func (build *storedBundleBuild) addStoredValue(res *sharedResult, rec PersistedRecord, storedEnvelope []byte, refs []uint64, parts *TransferredRecordParts) error {
 	for _, ref := range refs {
-		if _, ok := res.deps[sharedResultID(ref)]; !ok {
+		if !res.deps.has(sharedResultID(ref)) {
 			return fmt.Errorf("stored bundle: entry %d: reference to %d is not a direct dependency", res.id, ref)
 		}
 	}
@@ -795,7 +795,7 @@ func (build *storedBundleBuild) addStoredValue(res *sharedResult, rec PersistedR
 	if res.run != nil {
 		value.served = &servedRun{run: *res.run, ran: res.runRan, known: true}
 	}
-	for dep := range res.deps {
+	for _, dep := range res.deps {
 		value.DependencyIDs = append(value.DependencyIDs, uint64(build.ordinals[dep]))
 	}
 	slices.Sort(value.DependencyIDs)

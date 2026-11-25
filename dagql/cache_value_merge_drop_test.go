@@ -222,7 +222,7 @@ func mergeTestWholeState(t *testing.T, c *Cache) []string {
 	var out []string
 	for id, res := range c.resultsByID {
 		var deps []uint64
-		for dep := range res.deps {
+		for _, dep := range res.deps {
 			deps = append(deps, uint64(dep))
 		}
 		slices.Sort(deps)

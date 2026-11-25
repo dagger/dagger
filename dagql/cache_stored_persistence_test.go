@@ -61,7 +61,7 @@ func storedPersistenceTestState(c *Cache) map[uint64]storedPersistenceTestEntry 
 	for id, res := range c.resultsByID {
 		_, retained := c.persistedEdgesByResult[id]
 		var deps []uint64
-		for dep := range res.deps {
+		for _, dep := range res.deps {
 			deps = append(deps, uint64(dep))
 		}
 		slices.Sort(deps)

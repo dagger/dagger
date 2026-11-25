@@ -44,7 +44,7 @@ type OfferDisposition struct {
 func (out *OfferDisposition) noteReceiverLocked(root *sharedResult) {
 	out.Replacements = root.replacements
 	out.Deps = out.Deps[:0]
-	for dep := range root.deps {
+	for _, dep := range root.deps {
 		out.Deps = append(out.Deps, uint64(dep))
 	}
 	slices.Sort(out.Deps)

@@ -689,7 +689,7 @@ func (c *Cache) snapshotPruneStateLocked(
 		_, activelyUsed := activeRoots[resID]
 
 		deps := make([]sharedResultID, 0, len(res.deps))
-		for depID := range res.deps {
+		for _, depID := range res.deps {
 			if checker != nil {
 				if err := checker.check(); err != nil {
 					return pruneSnapshot{}, err

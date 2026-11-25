@@ -471,11 +471,8 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			if c.resultsByID[depID] == nil {
 				return fmt.Errorf("import result_dep: missing dep result %d", row.DepResultID)
 			}
-			if parent.deps == nil {
-				parent.deps = make(map[sharedResultID]struct{})
-			}
 			dep := c.resultsByID[depID]
-			parent.deps[depID] = struct{}{}
+			parent.deps.add(depID)
 			c.rememberDependencyEdgeLocked(parent, dep)
 			c.incrementIncomingOwnershipLocked(ctx, dep)
 			c.traceImportResultDepLoaded(ctx, importRunID, parentID, depID)
@@ -542,7 +539,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				return fmt.Errorf("recompute imported required session resources: dependency cycle through result %d", res.id)
 			}
 			recomputeState[res.id] = requiredRecomputePending
-			for depID := range res.deps {
+			for _, depID := range res.deps {
 				dep := c.resultsByID[depID]
 				if dep == nil {
 					return fmt.Errorf("recompute imported required session resources: missing dep result %d of result %d", depID, res.id)
