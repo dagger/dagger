@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"runtime"
 	"slices"
+	"strconv"
 	"sync"
 
 	"github.com/dagger/dagger/dagql/call"
@@ -66,6 +67,23 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 	if len(resultRows) == 0 && len(eqClassRows) == 0 && len(termRows) == 0 {
 		return c.reconcileEmptyOwnerLeases(ctx)
 	}
+	// A blob-backed cache counts its writes on from where its last save
+	// read them, as each restored entry takes back its change stamp, so a
+	// stored bundle's position taken before the restart compares after it
+	// (ChangedSince). A store saved before saves kept them has neither, and
+	// counts from zero.
+	var writes uint64
+	if c.blobBacked {
+		val, found, err := c.pdb.SelectMetaValue(ctx, persistdb.MetaKeyBundleWrites)
+		if err != nil {
+			return fmt.Errorf("read the write count: %w", err)
+		}
+		if found {
+			if writes, err = strconv.ParseUint(val, 10, 64); err != nil {
+				return fmt.Errorf("parse the write count %q: %w", val, err)
+			}
+		}
+	}
 
 	var eagerDecodeResultIDs []sharedResultID
 	indexed := make(map[sharedResultID]struct{})
@@ -73,6 +91,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 	c.egraphMu.Lock()
 	importErr := func() error {
 		c.initEgraphLocked()
+		c.writes = writes
 
 		var maxEqClassID eqClassID
 		for _, row := range eqClassRows {
@@ -198,6 +217,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				description:           row.Description,
 				recordType:            row.RecordType,
 				persistedEnvelope:     env,
+				changedAt:             row.stamp,
 			}
 			res.payloadBytes.Store(persistedEnvelopePayloadBytes(env))
 			res.storeResultCall(frame)
@@ -733,10 +753,11 @@ type importedResultRow struct {
 	frame          *ResultCall
 	frameErr       error
 	// body is, on a blob-backed cache, the row's stored record as it was
-	// held, whose envelope env is without its value, and parts the record's
-	// parts (decodeStoredRow).
+	// held, whose envelope env is without its value, parts the record's
+	// parts, and stamp its entry's change stamp (decodeStoredRow).
 	body  *storedBody
 	parts *partFacts
+	stamp uint64
 }
 
 // decode decodes the row's call frame and self payload, and drops their raw
@@ -752,7 +773,7 @@ func (row *importedResultRow) decode(blobBacked bool) {
 	switch {
 	case len(row.SelfPayload) == 0:
 	case blobBacked && isStoredRow(row.SelfPayload):
-		row.env, row.body, row.parts, row.envErr = decodeStoredRow(row.SelfPayload, row.frame)
+		row.env, row.body, row.parts, row.stamp, row.envErr = decodeStoredRow(row.SelfPayload, row.frame)
 	default:
 		row.env = new(PersistedResultEnvelope)
 		row.envErr = json.Unmarshal(row.SelfPayload, row.env)
