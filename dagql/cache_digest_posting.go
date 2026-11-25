@@ -95,7 +95,7 @@ func (c *Cache) restoreDigestPostingsLocked() {
 		}
 		group := &importedPostingGroup{
 			members:  members,
-			postings: make([]importedDigestPosting, 0, len(c.eqClassToDigests[outputEqID])),
+			postings: make([]importedDigestPosting, 0, c.eqClassToDigests[outputEqID].Size()),
 		}
 		for resultID := range group.members {
 			c.markResultBroadlyIndexedLocked(resultID)
@@ -103,7 +103,7 @@ func (c *Cache) restoreDigestPostingsLocked() {
 				c.restoredDigestGroups[resultID] = append(c.restoredDigestGroups[resultID], group)
 			}
 		}
-		for dig := range c.eqClassToDigests[outputEqID] {
+		for dig := range c.eqClassToDigests[outputEqID].All() {
 			posting := &resultDigestPosting{imported: group.members}
 			c.egraphResultsByDigest[dig] = posting
 			group.postings = append(group.postings, importedDigestPosting{digest: dig, posting: posting})

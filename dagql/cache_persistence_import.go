@@ -121,7 +121,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			eqID := eqClassID(row.ID)
 			c.egraphParents[eqID] = eqID
 			if c.eqClassToDigests[eqID] == nil {
-				c.eqClassToDigests[eqID] = make(map[string]struct{})
+				c.eqClassToDigests[eqID] = newIDSet[string]()
 			}
 		}
 		// Classes keep the numbers they were saved under; the numbers no saved
@@ -147,10 +147,10 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			c.egraphDigestToClass[row.Digest] = eqID
 			digests := c.eqClassToDigests[eqID]
 			if digests == nil {
-				digests = make(map[string]struct{})
+				digests = newIDSet[string]()
 				c.eqClassToDigests[eqID] = digests
 			}
-			digests[row.Digest] = struct{}{}
+			digests.Insert(row.Digest)
 			if row.Label != "" {
 				extras := c.eqClassExtraDigests[eqID]
 				if extras == nil {
