@@ -552,7 +552,7 @@ func (c *Cache) CommitReadyPart(ctx context.Context, p *PreparedReadyPart) (_ *R
 	if p.beforeSyncCleanup != nil {
 		row.onRelease = joinOnRelease(row.onRelease, p.beforeSyncCleanup.release)
 	}
-	row.snapshotLinkIntent = &snapshotLinkIntent{Links: cloneSnapshotRefLinks(p.next.SnapshotLinks)}
+	row.snapshotState().linkIntent = &snapshotLinkIntent{Links: cloneSnapshotRefLinks(p.next.SnapshotLinks)}
 	if p.store == nil {
 		row.persistedEnvelope = p.published
 	} else {

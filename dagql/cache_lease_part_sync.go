@@ -50,13 +50,14 @@ func (c *Cache) syncInstalledPartLeases(ctx context.Context, res *sharedResult, 
 		return c.syncResultSnapshotLeases(ctx, res)
 	}
 
-	wcprof.Lock(ctx, &res.leaseSyncMu, "dagql.sharedResult.leaseSyncMu")
+	snapshots := res.snapshotState()
+	wcprof.Lock(ctx, &snapshots.leaseSyncMu, "dagql.sharedResult.leaseSyncMu")
 	links, roles, ok := reader.ReadSnapshotOwnerParts(parts)
 	if !ok {
-		res.leaseSyncMu.Unlock()
+		snapshots.leaseSyncMu.Unlock()
 		return c.syncResultSnapshotLeases(ctx, res)
 	}
-	defer res.leaseSyncMu.Unlock()
+	defer snapshots.leaseSyncMu.Unlock()
 
 	scoped := make(map[string]bool, len(roles))
 	for _, role := range roles {
@@ -118,10 +119,7 @@ func (c *Cache) reconcilePartLeases(ctx context.Context, res *sharedResult, oldB
 			return err
 		}
 		res.payloadMu.Lock()
-		if res.snapshotLeaseCleanupRoles == nil {
-			res.snapshotLeaseCleanupRoles = map[snapshotOwnerKey]struct{}{}
-		}
-		res.snapshotLeaseCleanupRoles[key] = struct{}{}
+		res.snapshotState().addLeaseCleanupRoleLocked(key)
 		res.payloadMu.Unlock()
 		if err := c.snapshotManager.AttachLease(ctx, resultSnapshotLeaseIDForKey(res.id, key), cur.RefKey); err != nil {
 			return err

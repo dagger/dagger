@@ -554,9 +554,9 @@ func (res *sharedResult) evaluationInFlight() error {
 func (res *sharedResult) ownedSnapshotLinks(visit func(PersistedSnapshotRefLink) bool) bool {
 	res.payloadMu.RLock()
 	defer res.payloadMu.RUnlock()
-	links := res.snapshotOwnerLinks
-	if res.snapshotLinkIntent != nil {
-		links = res.snapshotLinkIntent.Links
+	links, intent := res.snapshotLinksLocked()
+	if intent != nil {
+		links = intent.Links
 	}
 	for _, link := range links {
 		if visit(link) {

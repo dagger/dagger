@@ -316,14 +316,15 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			if res == nil {
 				return fmt.Errorf("import result_taught %d: missing result", row.ResultID)
 			}
-			if row.Position != int64(len(res.taught)) {
-				return fmt.Errorf("import result_taught %d: position %d after %d", row.ResultID, row.Position, len(res.taught))
+			t := res.taughtStateLocked()
+			if row.Position != int64(len(t.digests)) {
+				return fmt.Errorf("import result_taught %d: position %d after %d", row.ResultID, row.Position, len(t.digests))
 			}
-			res.taught = append(res.taught, digest.Digest(row.Digest))
-			if row.Given && res.taughtGiven == len(res.taught)-1 {
-				res.taughtGiven++
+			t.digests = append(t.digests, digest.Digest(row.Digest))
+			if row.Given && t.given == len(t.digests)-1 {
+				t.given++
 			}
-			if res.taughtGiven < len(res.taught) && (len(c.restoredTaught) == 0 || c.restoredTaught[len(c.restoredTaught)-1] != res) {
+			if t.given < len(t.digests) && (len(c.restoredTaught) == 0 || c.restoredTaught[len(c.restoredTaught)-1] != res) {
 				c.restoredTaught = append(c.restoredTaught, res)
 			}
 		}
@@ -495,7 +496,8 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				return err
 			}
 			res.payloadMu.Lock()
-			res.snapshotOwnerLinks = append(res.snapshotOwnerLinks, PersistedSnapshotRefLink{
+			snapshots := res.snapshotState()
+			snapshots.ownerLinks = append(snapshots.ownerLinks, PersistedSnapshotRefLink{
 				OutputPath: outputPath,
 				RefKey:     row.RefKey,
 				Role:       row.Role,

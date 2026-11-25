@@ -2366,8 +2366,10 @@ func (c *Cache) resultSnapshotLeaseCleanup(res *sharedResult) OnReleaseFunc {
 			seen[key] = struct{}{}
 		}
 		res.payloadMu.RLock()
-		for key := range res.snapshotLeaseCleanupRoles {
-			seen[key] = struct{}{}
+		if s := res.snapshots.Load(); s != nil {
+			for key := range s.leaseCleanupRoles {
+				seen[key] = struct{}{}
+			}
 		}
 		res.payloadMu.RUnlock()
 		for key := range seen {
@@ -2387,8 +2389,9 @@ func (c *Cache) syncResultSnapshotLeases(ctx context.Context, res *sharedResult)
 	// transiently store a link set missing a link the other just attached.
 	// Concurrent per-group attempts make concurrent syncs routine, so the
 	// case is removed rather than left to a later sync's repair.
-	wcprof.Lock(ctx, &res.leaseSyncMu, "dagql.sharedResult.leaseSyncMu")
-	defer res.leaseSyncMu.Unlock()
+	snapshots := res.snapshotState()
+	wcprof.Lock(ctx, &snapshots.leaseSyncMu, "dagql.sharedResult.leaseSyncMu")
+	defer snapshots.leaseSyncMu.Unlock()
 	return c.syncResultSnapshotLeasesLocked(ctx, res)
 }
 
@@ -2466,10 +2469,7 @@ func (c *Cache) syncResultSnapshotLeasesLocked(ctx context.Context, res *sharedR
 		oldLink, ok := oldByKey[key]
 		if !ok || oldLink.RefKey != newLink.RefKey {
 			res.payloadMu.Lock()
-			if res.snapshotLeaseCleanupRoles == nil {
-				res.snapshotLeaseCleanupRoles = map[snapshotOwnerKey]struct{}{}
-			}
-			res.snapshotLeaseCleanupRoles[key] = struct{}{}
+			res.snapshotState().addLeaseCleanupRoleLocked(key)
 			res.payloadMu.Unlock()
 			if err := c.snapshotManager.AttachLease(
 				ctx,
@@ -3391,23 +3391,11 @@ type cacheUsageMayChange interface {
 // sharedResult holds cache-entry state and shared payload published to per-call Result values.
 type sharedResult struct {
 	inlineBorrow *PartHost
-	// Origin is immutable; slots and graph revisions are guarded by egraphMu.
-	imported bool
-	// persistDeclined records that the call that computed the entry's value
-	// declined to persist it (DeclinePersistence), so no hit persists it
-	// either. Set before the entry is indexed, and with the value when a
-	// replacement in place installs another. Guarded by egraphMu once
-	// indexed.
-	persistDeclined bool
 	// merged is the Cloud merge that installed the entry's value, on an
 	// engine: its route and when it committed (mergeOrigin). Nil for a
 	// value the engine computed, and for one restored after a restart. It
 	// goes with the value. Guarded by egraphMu.
 	merged *mergeOrigin
-	// recipeRunLogged is set once the entry's value, a record from another
-	// engine with no download address for any part, has been logged as run
-	// again (logRecordRunForWantOfOffers).
-	recipeRunLogged atomic.Bool
 	// run is, on the Cloud, the run its stored record comes from: the engine
 	// entry that ran it, set when a merge installs the record
 	// (mergeRunLocked). runRan is how the Cloud learned that run ran its step,
@@ -3416,8 +3404,7 @@ type sharedResult struct {
 	// neither is sent to an engine: run is nil on an engine, which keeps no
 	// runs, and on a Cloud entry with no stored record. Nothing decides by
 	// them in this cache. Guarded by egraphMu.
-	runRan runRanBy
-	run    *RunName
+	run *RunName
 	// storedParts are the parts whose layer chains are in this cache's own
 	// blob store, by part address key, their layers the cache's
 	// (storedLayers). Only a blob-backed cache (the Cloud) sets them, in
@@ -3427,13 +3414,6 @@ type sharedResult struct {
 	// for the entry, as persistence writes it (encodedRecordBytes), or 0.
 	// Written through setStoredRecordBytesLocked. Guarded by egraphMu.
 	storedRecordBytes int64
-	// poolRefs counts what keeps the entry in a blob-backed cache's pool:
-	// one for its retention edge, and one for each entry in the pool that
-	// depends on it. inPool is whether the pool's kept measure counts it:
-	// it has a value of its own and poolRefs is above 0
-	// (cache_pool_measure.go). Both guarded by egraphMu.
-	poolRefs int32
-	inPool   bool
 	// storedTransfer is the entry's stored record normalized for transfer,
 	// which StoredBundle keeps (storedTransferRecordLocked) and dropping or
 	// replacing the value releases. Builds hold egraphMu for reading, so it is set
@@ -3455,8 +3435,7 @@ type sharedResult struct {
 	// entry (stampEntryLocked), saved with its stored row; and stampCause
 	// what that write was (StampCause), for diagnostics, which isn't saved.
 	// Guarded by egraphMu.
-	changedAt  uint64
-	stampCause StampCause
+	changedAt uint64
 	// transferRevision and dependencyOwnershipRevision move when what a
 	// transfer capture copies of the row changes: its value, payload or
 	// expiry (a replacement, a prune, a merge), or its dependencies. A
@@ -3508,9 +3487,8 @@ type sharedResult struct {
 	// Not persisted; guarded by egraphMu. See cache_list_items.go.
 	list *listLinks
 
-	// Immutable payload shared by all per-call Result values.
-	self     Typed
-	isObject bool
+	// Immutable payload shared by all per-call Result values, with isObject.
+	self Typed
 	// objClass refers to the ObjectType originally used to wrap this result
 	// the first time it became an AnyObjectResult. While that class's server
 	// is alive, reconstruction reuses it so the cache does not need to
@@ -3533,33 +3511,60 @@ type sharedResult struct {
 	// the result (storeResultCall), and frameContentKnown whether one was. A
 	// frame a restored body holds is known once it is decoded. Guarded by
 	// resultCallMu.
-	frameContent      digest.Digest
-	frameContentKnown bool
-	// taught are, on a blob-backed cache, the content digests holdings'
-	// spans taught the entry (teachRemoteIdentityLocked), in the order they
-	// were taught, the last its current one. The entry's frame takes them in
-	// that order, as a run of TeachContentDigest calls leaves an engine's,
-	// so one replaced by a later one is kept as replaced-content
-	// (queueTaughtContentLocked). taughtGiven is how many of them the
-	// current frame has taken, and taughtFrame counts the frames a
-	// replacement installed, which have taken none. Requires egraphMu.
-	taught      []digest.Digest
-	taughtGiven int
-	taughtFrame uint64
-	// taughtFrom is, for an entry with no taught digests whose record a
-	// newer one replaced, the replaced frame: the body worker reads its
-	// content digests, in order, as the entry's taught ones, which a
-	// restored entry doesn't keep (its frame does). Requires egraphMu.
-	taughtFrom entryFrame
-	// taughtDropped marks an entry whose taught digests a drop took, until a
-	// record fills it again (taughtContentRefilled). Requires egraphMu.
-	taughtDropped bool
+	frameContent digest.Digest
+	// taughtContent is, on a blob-backed cache, the content digests spans
+	// taught the entry and how far its frame has taken them
+	// (taughtContent): nil until one is first taught it, or a replacement
+	// leaves it a frame's to take (taughtStateLocked), as on every entry of
+	// an engine. Requires egraphMu.
+	taughtContent *taughtContent
 	// payloadMu guards lazy payload publication for imported persisted hits and
 	// prune-accounting timestamps that can change after initial publication.
 	// It counts the writes to what the entry's saved record holds (recordLock).
 	payloadMu recordLock
+
+	// The entry's small fields follow payloadMu, kept together so that they
+	// share words.
+
+	// poolRefs counts what keeps the entry in a blob-backed cache's pool:
+	// one for its retention edge, and one for each entry in the pool that
+	// depends on it. inPool is whether the pool's kept measure counts it:
+	// it has a value of its own and poolRefs is above 0
+	// (cache_pool_measure.go). Both guarded by egraphMu.
+	poolRefs int32
+	// recipeRunLogged is set once the entry's value, a record from another
+	// engine with no download address for any part, has been logged as run
+	// again (logRecordRunForWantOfOffers).
+	recipeRunLogged atomic.Bool
+	// Origin is immutable; slots and graph revisions are guarded by egraphMu.
+	imported bool
+	// persistDeclined records that the call that computed the entry's value
+	// declined to persist it (DeclinePersistence), so no hit persists it
+	// either. Set before the entry is indexed, and with the value when a
+	// replacement in place installs another. Guarded by egraphMu once
+	// indexed.
+	persistDeclined bool
+	// inPool is whether the pool's kept measure counts the entry (see
+	// poolRefs).
+	inPool bool
+	// runRan is how the Cloud learned that run ran its step (see run).
+	runRan runRanBy
+	// stampCause is what the write that set changedAt was (see changedAt).
+	stampCause StampCause
+	// isObject is part of the immutable payload (see self).
+	isObject bool
+	// frameContentKnown is whether frameContent is known (see frameContent).
+	frameContentKnown bool
+	// taughtDropped marks an entry whose taught digests a drop took, until a
+	// record fills it again (taughtContentRefilled). Requires egraphMu.
+	taughtDropped bool
 	// hasValue distinguishes "initialized with a nil value" from "not initialized".
-	hasValue  bool
+	hasValue bool
+	// payloadRefused marks an entry whose merged payload failed at its
+	// first use and was taken back (takeBackRefusedMerged). Guarded by
+	// egraphMu.
+	payloadRefused bool
+
 	onRelease OnReleaseFunc
 	// deps tracks exact materialized child-result dependencies used for
 	// release/liveness propagation and persistence closure. This includes
@@ -3591,15 +3596,11 @@ type sharedResult struct {
 	// set the selection-time subset check validated, so the locked re-check
 	// can be skipped.
 	requiredSessionResourcesGen atomic.Uint64
-	// snapshotOwnerLinks are the exact direct snapshot-owner links currently
-	// attached for this result. They are the source of truth for owner lease
-	// cleanup and debug output. Persistence export for newly encoded objects
-	// derives links from the same object encode pass that produced the payload.
-	// They are not child-result deps.
-	snapshotOwnerLinks        []PersistedSnapshotRefLink
-	snapshotLinkIntent        *snapshotLinkIntent
-	payloadRevision           uint64
-	snapshotLeaseCleanupRoles map[snapshotOwnerKey]struct{}
+	// snapshots are the snapshots the entry's value owns (resultSnapshots):
+	// nil until its links are first set or a lease sync of it runs
+	// (snapshotState), as on an entry that owns none.
+	snapshots       atomic.Pointer[resultSnapshots]
+	payloadRevision uint64
 
 	// expiresAtUnix is the in-memory TTL deadline for cache-hit eligibility.
 	// 0 means "never expires".
@@ -3613,10 +3614,6 @@ type sharedResult struct {
 	// Cloud's numbers until then. Guarded by payloadMu, beside
 	// persistedEnvelope.
 	firstUse *mergedFirstUse
-	// payloadRefused marks an entry whose merged payload failed at its
-	// first use and was taken back (takeBackRefusedMerged). Guarded by
-	// egraphMu.
-	payloadRefused bool
 	// payloadBytes is this result's share of Cache.resultPayloadBytes: the
 	// large in-memory byte payload its value or envelope retains, measured
 	// once before publication. Once registered it changes only through
@@ -3669,12 +3666,56 @@ type sharedResult struct {
 	// value is registered as lazy or an evaluation of it starts
 	// (lazyState), as on every entry whose value is never lazy.
 	lazy atomic.Pointer[resultLazy]
+}
+
+// resultSnapshots are the snapshots an entry's value owns, and the leases
+// that hold them. An entry has none until its links are first set or a
+// lease sync of it runs (sharedResult.snapshotState), and keeps them from
+// then on. One with none owns no snapshots.
+type resultSnapshots struct {
 	// leaseSyncMu serializes syncResultSnapshotLeases for this result.
 	// Concurrent per-group attempts make concurrent lease syncs routine,
 	// and the read-diff-write sync can transiently drop stored links
 	// under interleaving. It does I/O and must never nest inside the lazy
 	// state's mu.
 	leaseSyncMu sync.Mutex
+	// ownerLinks are the exact direct snapshot-owner links currently
+	// attached for this result. They are the source of truth for owner lease
+	// cleanup and debug output. Persistence export for newly encoded objects
+	// derives links from the same object encode pass that produced the payload.
+	// They are not child-result deps. ownerLinks, linkIntent and
+	// leaseCleanupRoles are guarded by the entry's payloadMu.
+	ownerLinks        []PersistedSnapshotRefLink
+	linkIntent        *snapshotLinkIntent
+	leaseCleanupRoles map[snapshotOwnerKey]struct{}
+}
+
+// snapshotState returns res's snapshot state, making it if res has none.
+func (res *sharedResult) snapshotState() *resultSnapshots {
+	if s := res.snapshots.Load(); s != nil {
+		return s
+	}
+	res.snapshots.CompareAndSwap(nil, &resultSnapshots{})
+	return res.snapshots.Load()
+}
+
+// addLeaseCleanupRoleLocked records that a lease of role key may need
+// removing when the entry leaves. Requires the entry's payloadMu.
+func (s *resultSnapshots) addLeaseCleanupRoleLocked(key snapshotOwnerKey) {
+	if s.leaseCleanupRoles == nil {
+		s.leaseCleanupRoles = map[snapshotOwnerKey]struct{}{}
+	}
+	s.leaseCleanupRoles[key] = struct{}{}
+}
+
+// snapshotLinksLocked returns res's owner links and its link intent, or
+// none when it owns no snapshots. Requires payloadMu.
+func (res *sharedResult) snapshotLinksLocked() ([]PersistedSnapshotRefLink, *snapshotLinkIntent) {
+	s := res.snapshots.Load()
+	if s == nil {
+		return nil, nil
+	}
+	return s.ownerLinks, s.linkIntent
 }
 
 // resultLazy is an entry's lazy evaluation state. An entry has none until
@@ -3973,13 +4014,14 @@ func (res *sharedResult) loadPayloadState() sharedResultPayloadState {
 		return sharedResultPayloadState{}
 	}
 	res.payloadMu.RLock()
+	ownerLinks, linkIntent := res.snapshotLinksLocked()
 	state := sharedResultPayloadState{
 		recordWrites:          res.payloadMu.writes.Load(),
 		payloadRevision:       res.payloadRevision,
 		imported:              res.imported,
 		sessionResourceHandle: res.sessionResourceHandle,
 		boundSession:          res.boundSession,
-		snapshotLinkIntent:    res.snapshotLinkIntent,
+		snapshotLinkIntent:    linkIntent,
 		self:                  res.self,
 		isObject:              res.isObject,
 		hasValue:              res.hasValue,
@@ -3987,7 +4029,7 @@ func (res *sharedResult) loadPayloadState() sharedResultPayloadState {
 		persistedEnvelope:     res.persistedEnvelope,
 		stored:                res.stored,
 		partFacts:             res.partFacts,
-		snapshotOwnerLinks:    cloneSnapshotRefLinks(res.snapshotOwnerLinks),
+		snapshotOwnerLinks:    cloneSnapshotRefLinks(ownerLinks),
 		createdAtUnixNano:     res.createdAtUnixNano,
 		lastUsedAtUnixNano:    res.lastUsedAtUnixNano,
 	}
@@ -4055,7 +4097,8 @@ func (res *sharedResult) loadSnapshotOwnerLinks() []PersistedSnapshotRefLink {
 		return nil
 	}
 	res.payloadMu.RLock()
-	links := cloneSnapshotRefLinks(res.snapshotOwnerLinks)
+	ownerLinks, _ := res.snapshotLinksLocked()
+	links := cloneSnapshotRefLinks(ownerLinks)
 	res.payloadMu.RUnlock()
 	return links
 }
@@ -4069,10 +4112,11 @@ func (res *sharedResult) storeSnapshotOwnerLinks(links []PersistedSnapshotRefLin
 	}
 	res.payloadMu.Lock()
 	defer res.payloadMu.Unlock()
-	if sameSnapshotRefLinkSet(res.snapshotOwnerLinks, links) {
+	ownerLinks, _ := res.snapshotLinksLocked()
+	if sameSnapshotRefLinkSet(ownerLinks, links) {
 		return
 	}
-	res.snapshotOwnerLinks = cloneSnapshotRefLinks(links)
+	res.snapshotState().ownerLinks = cloneSnapshotRefLinks(links)
 	res.payloadRevision++
 }
 
@@ -5299,7 +5343,6 @@ func (r Result[T]) WithContentDigest(ctx context.Context, contentDigest digest.D
 			return r.shared.requiredSessionResources.Copy()
 		}(),
 		persistedEnvelope:  state.persistedEnvelope,
-		snapshotOwnerLinks: state.snapshotOwnerLinks,
 		createdAtUnixNano:  state.createdAtUnixNano,
 		lastUsedAtUnixNano: state.lastUsedAtUnixNano,
 		cacheUsageSizeByIdentity: func() map[string]int64 {
@@ -5324,6 +5367,9 @@ func (r Result[T]) WithContentDigest(ctx context.Context, contentDigest digest.D
 		}(),
 		description: r.shared.description,
 		recordType:  r.shared.recordType,
+	}
+	if len(state.snapshotOwnerLinks) > 0 {
+		r.shared.snapshotState().ownerLinks = state.snapshotOwnerLinks
 	}
 	frame = r.shared.loadResultCall()
 	replaced := false
@@ -5409,7 +5455,6 @@ func (r Result[T]) WithSessionResourceHandle(ctx context.Context, handle Session
 		sessionResourceHandle:    handle,
 		requiredSessionResources: reqs,
 		persistedEnvelope:        state.persistedEnvelope,
-		snapshotOwnerLinks:       state.snapshotOwnerLinks,
 		createdAtUnixNano:        state.createdAtUnixNano,
 		lastUsedAtUnixNano:       state.lastUsedAtUnixNano,
 		cacheUsageSizeByIdentity: func() map[string]int64 {
@@ -5434,6 +5479,9 @@ func (r Result[T]) WithSessionResourceHandle(ctx context.Context, handle Session
 		}(),
 		description: r.shared.description,
 		recordType:  r.shared.recordType,
+	}
+	if len(state.snapshotOwnerLinks) > 0 {
+		r.shared.snapshotState().ownerLinks = state.snapshotOwnerLinks
 	}
 	if frame != nil {
 		r.shared.storeResultCall(frame.fork())

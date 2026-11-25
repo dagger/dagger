@@ -186,7 +186,7 @@ func TestCacheUsageDefersLateRowWithUnresolvedChain(t *testing.T) {
 	late.payloadMu.Lock()
 	late.self = nil
 	late.hasValue = false
-	late.snapshotOwnerLinks = []PersistedSnapshotRefLink{{RefKey: "exec-1", Role: "snapshot"}}
+	late.snapshotState().ownerLinks = []PersistedSnapshotRefLink{{RefKey: "exec-1", Role: "snapshot"}}
 	late.payloadRevision++
 	late.payloadMu.Unlock()
 
@@ -303,7 +303,7 @@ func TestCacheUsageFinalizeLeavesPublishedChainsUnchanged(t *testing.T) {
 	late.payloadMu.Lock()
 	late.self = nil
 	late.hasValue = false
-	late.snapshotOwnerLinks = []PersistedSnapshotRefLink{{RefKey: "image-top", Role: "snapshot"}}
+	late.snapshotState().ownerLinks = []PersistedSnapshotRefLink{{RefKey: "image-top", Role: "snapshot"}}
 	late.payloadRevision++
 	late.payloadMu.Unlock()
 
