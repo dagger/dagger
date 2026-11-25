@@ -47,10 +47,10 @@ type artifactViewRule struct {
 }
 
 type artifactViewState struct {
-	Rules   []artifactViewRule
-	Keys    [][]string
-	Origins []string
-	Paths   []artifactViewPath
+	Rules []artifactViewRule
+	Paths []artifactViewPath
+	// Producer origins ignore view wrappers, so selections survive scoped calls.
+	Selections map[string][]string
 }
 
 // Remove view wrappers from call inputs to match a collection's source across
@@ -356,55 +356,81 @@ func (obj *ModuleObject) artifactViewField(srv *dagql.Server) (dagql.Field[*Modu
 	}, nil
 }
 
+// A base records collection ancestry. Subsets and author state changes retain
+// it, so aliases must also have the same current fields.
+func sameArtifactViewCollection(left, right dagql.AnyResult) (bool, error) {
+	a, ok := dagql.UnwrapAs[*ModuleObject](left)
+	if !ok || a.TypeDef.Collection == nil || !a.TypeDef.Collection.Enabled {
+		return false, nil
+	}
+	b, ok := dagql.UnwrapAs[*ModuleObject](right)
+	if !ok || a.TypeDef.Name != b.TypeDef.Name {
+		return false, nil
+	}
+	leftBase, rightBase := left, right
+	if a.CollectionBase != nil {
+		leftBase = a.CollectionBase
+	}
+	if b.CollectionBase != nil {
+		rightBase = b.CollectionBase
+	}
+	leftID, err := leftBase.ID()
+	if err != nil {
+		return false, err
+	}
+	rightID, err := rightBase.ID()
+	if err != nil {
+		return false, err
+	}
+	if leftID.EngineResultID() != rightID.EngineResultID() {
+		return false, nil
+	}
+	changed, err := changedStateFields(a.Fields, b.Fields)
+	if err != nil {
+		return false, err
+	}
+	members, err := a.TypeDef.CollectionMembers()
+	if err != nil {
+		return false, err
+	}
+	for _, field := range changed {
+		// The engine fills delta metadata during SDK conversion.
+		if members.Delta == nil || field != members.Delta.OriginalName {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+func (v *ArtifactView) collectionSelection(ctx context.Context, result dagql.AnyResult) ([]string, bool, error) {
+	if len(v.state.Selections) == 0 {
+		return nil, false, nil
+	}
+	recipe, err := result.RecipeID(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	keys, found := v.state.Selections[artifactViewOrigin(recipe)]
+	return keys, found, nil
+}
+
 func applyModuleObjectView(ctx context.Context, self dagql.ObjectResult[*ModuleObject], view *ArtifactView) (dagql.AnyResult, error) {
 	copy := *self.Self()
 	copy.Fields = maps.Clone(self.Self().Fields)
 	copy.ArtifactView = view
 	if copy.TypeDef.Collection != nil && copy.TypeDef.Collection.Enabled {
-		id, err := self.ID()
+		selected, bound, err := view.collectionSelection(ctx, self)
 		if err != nil {
 			return nil, err
 		}
-		baseID := id
-		if copy.CollectionBase != nil {
-			baseID, err = copy.CollectionBase.ID()
-			if err != nil {
-				return nil, err
-			}
-		}
-		var selected, route []string
-		bound := false
-		for i, source := range view.sources {
-			sourceID, err := source.ID()
-			if err != nil {
-				return nil, err
-			}
-			if sourceID.EngineResultID() == id.EngineResultID() || sourceID.EngineResultID() == baseID.EngineResultID() {
-				selected, bound = view.state.Keys[i], true
-				break
-			}
-		}
+		var route []string
 		if !bound {
-			var recipes []*call.ID
-			for _, origin := range []dagql.AnyResult{self, copy.CollectionBase} {
-				if origin == nil {
-					continue
-				}
-				recipe, err := origin.RecipeID(ctx)
-				if err != nil {
-					return nil, err
-				}
-				recipes = append(recipes, recipe)
-				if i := slices.Index(view.state.Origins, artifactViewOrigin(recipe)); i >= 0 {
-					selected, bound = view.state.Keys[i], true
-					break
-				}
+			recipe, err := self.RecipeID(ctx)
+			if err != nil {
+				return nil, err
 			}
 			for _, path := range view.state.Paths {
-				if bound {
-					break
-				}
-				if !slices.ContainsFunc(recipes, path.matches) {
+				if !path.matches(recipe) {
 					continue
 				}
 				// Known unfiltered paths must not use another dimension's rule.
@@ -418,6 +444,14 @@ func applyModuleObjectView(ctx context.Context, self dagql.ObjectResult[*ModuleO
 					return dagql.NewResultForCurrentCall(ctx, &copy)
 				}
 				break
+			}
+		}
+		// A value's own selection takes precedence over the keys kept on its
+		// base to let module code construct aliases and derived collections.
+		if !bound && copy.CollectionBase != nil {
+			selected, bound, err = view.collectionSelection(ctx, copy.CollectionBase)
+			if err != nil {
+				return nil, err
 			}
 		}
 		if !bound {
@@ -468,16 +502,23 @@ func (a *Artifacts) SetCollectionRoots(entries []*Artifact) {
 type artifactViewDiscoveryKey struct{}
 type artifactViewDiscovery struct {
 	mu        sync.Mutex
-	view      ArtifactView
+	rules     []artifactViewRule
+	sources   []*artifactViewSource
 	originals map[string]artifactCollectionSnapshot
-	// rules holds, for each view source, the dimension of the rule that
-	// selected its keys.
-	rules []string
 }
 
 type artifactCollectionSnapshot struct {
-	source uint64
+	source *artifactViewSource
 	keys   []string
+}
+
+// A source can supply both a selected value and the base needed to construct
+// other values. Only aliases with the same current state share selected keys.
+type artifactViewSource struct {
+	result   dagql.AnyObjectResult
+	origins  []string
+	selected map[string][]string
+	required map[string][]string
 }
 
 func artifactCollectionIdentity(receiver *Artifact) (string, error) {
@@ -502,19 +543,11 @@ func (d *artifactViewDiscovery) validate(receiver *Artifact, keys []collectionKe
 		return fmt.Errorf("collection filtering introduced a new path at %s", receiver.Node.PathString())
 	}
 	expected := original.keys
-	for i, source := range d.view.sources {
-		id, err := source.ID()
-		if err != nil {
-			return err
-		}
-		if id.EngineResultID() == original.source {
-			// A subset can share its base with another route. Keep only the
-			// selected keys that this receiver originally contained.
-			expected = slices.DeleteFunc(slices.Clone(original.keys), func(key string) bool {
-				return !slices.Contains(d.view.state.Keys[i], key)
-			})
-			break
-		}
+	if len(original.source.selected) > 0 {
+		selected := artifactViewSelectionKeys(original.source.selected)
+		expected = slices.DeleteFunc(slices.Clone(original.keys), func(key string) bool {
+			return !slices.Contains(selected, key)
+		})
 	}
 	actual := make([]string, len(keys))
 	for i, key := range keys {
@@ -533,7 +566,7 @@ func (d *artifactViewDiscovery) record(ctx context.Context, receiver *Artifact, 
 	var selected []string
 	var dimension string
 	filtered := false
-	for _, rule := range d.view.state.Rules {
+	for _, rule := range d.rules {
 		if dimensionMatches(node.CollectionDimension, rule.Dimension) {
 			filtered, dimension = true, rule.Dimension
 			for _, key := range keys {
@@ -544,58 +577,138 @@ func (d *artifactViewDiscovery) record(ctx context.Context, receiver *Artifact, 
 			break
 		}
 	}
-	// Computed aliases have their own result IDs, but carry the original
-	// collection as their base. Scope that base once so reading a shared
-	// stored field does not erase keys selected through one of its aliases.
+	recipe, err := result.RecipeID(ctx)
+	if err != nil {
+		return err
+	}
+	var base dagql.AnyObjectResult
 	if obj, ok := dagql.UnwrapAs[*ModuleObject](result); ok && obj.CollectionBase != nil {
 		srv, err := CurrentDagqlServer(ctx)
 		if err != nil {
 			return err
 		}
-		result, err = srv.ToSelectable(dagql.WithResultScope(ctx, nil), obj.CollectionBase)
+		base, err = srv.ToSelectable(dagql.WithResultScope(ctx, nil), obj.CollectionBase)
 		if err != nil {
 			return err
 		}
-	}
-	id, err := result.ID()
-	if err != nil {
-		return err
+		same, err := sameArtifactViewCollection(result, base)
+		if err != nil {
+			return err
+		}
+		if same {
+			result = base
+		}
 	}
 	identity, err := artifactCollectionIdentity(receiver)
 	if err != nil {
 		return err
 	}
-	original := artifactCollectionSnapshot{source: id.EngineResultID(), keys: make([]string, len(keys))}
+	original := artifactCollectionSnapshot{keys: make([]string, len(keys))}
 	for i, key := range keys {
 		original.keys[i] = key.text
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	d.originals[identity] = original
-	if !filtered {
-		return nil
+	original.source, err = d.recordSource(result)
+	if err != nil {
+		return err
 	}
-	for i, source := range d.view.sources {
-		sourceID, err := source.ID()
-		if err != nil {
-			return err
-		}
-		if sourceID.EngineResultID() == id.EngineResultID() {
-			kept := d.view.state.Keys[i]
-			if d.rules[i] == dimension {
-				union := append(slices.Clone(kept), selected...)
-				slices.Sort(union)
-				d.view.state.Keys[i] = slices.Compact(union)
-			} else {
-				d.view.state.Keys[i] = slices.DeleteFunc(kept, func(key string) bool { return !slices.Contains(selected, key) })
+	if filtered {
+		artifactViewAddSelection(original.source.selected, dimension, selected)
+		artifactViewAddSelection(original.source.required, dimension, selected)
+		original.source.origins = append(original.source.origins, artifactViewOrigin(recipe))
+		if base != nil {
+			// Base keys support evaluation; they must not widen the value's selection.
+			dependency, err := d.recordSource(base)
+			if err != nil {
+				return err
 			}
-			return nil
+			artifactViewAddSelection(dependency.required, dimension, selected)
 		}
 	}
-	d.view.sources = append(d.view.sources, result)
-	d.view.state.Keys = append(d.view.state.Keys, selected)
-	d.rules = append(d.rules, dimension)
+	d.originals[identity] = original
 	return nil
+}
+
+// buildView freezes discovery into one lookup table. Base requirements are
+// defaults; each producer's own selection takes precedence.
+func (d *artifactViewDiscovery) buildView(ctx context.Context, roots []*Artifact) (*ArtifactView, error) {
+	view := &ArtifactView{state: artifactViewState{Rules: d.rules, Selections: map[string][]string{}}}
+	if err := view.addPaths(ctx, roots); err != nil {
+		return nil, err
+	}
+	// Sort references by recipe so discovery order and local handles do not
+	// change the view's cache identity.
+	type sourceKey struct {
+		result dagql.AnyObjectResult
+		recipe string
+	}
+	var order []sourceKey
+	for _, source := range d.sources {
+		if len(source.required) == 0 {
+			continue
+		}
+		recipe, err := source.result.RecipeID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		encoded, err := recipe.Encode()
+		if err != nil {
+			return nil, err
+		}
+		order = append(order, sourceKey{source.result, encoded})
+		view.state.Selections[artifactViewOrigin(recipe)] = artifactViewSelectionKeys(source.required)
+	}
+	slices.SortFunc(order, func(a, b sourceKey) int { return strings.Compare(a.recipe, b.recipe) })
+	for _, source := range order {
+		view.sources = append(view.sources, source.result)
+	}
+	for _, source := range d.sources {
+		keys := artifactViewSelectionKeys(source.selected)
+		for _, origin := range source.origins {
+			view.state.Selections[origin] = keys
+		}
+	}
+	if err := view.setKey(); err != nil {
+		return nil, err
+	}
+	return view, nil
+}
+
+func artifactViewAddSelection(rules map[string][]string, dimension string, selected []string) {
+	keys := append(slices.Clone(rules[dimension]), selected...)
+	slices.Sort(keys)
+	rules[dimension] = slices.Compact(keys)
+}
+
+func artifactViewSelectionKeys(rules map[string][]string) []string {
+	var keys []string
+	for i, dimension := range slices.Sorted(maps.Keys(rules)) {
+		if i == 0 {
+			keys = slices.Clone(rules[dimension])
+		} else {
+			keys = slices.DeleteFunc(keys, func(key string) bool {
+				return !slices.Contains(rules[dimension], key)
+			})
+		}
+	}
+	return keys
+}
+
+// recordSource groups aliases by their current state. The caller holds d.mu.
+func (d *artifactViewDiscovery) recordSource(result dagql.AnyObjectResult) (*artifactViewSource, error) {
+	for _, source := range d.sources {
+		same, err := sameArtifactViewCollection(source.result, result)
+		if err != nil {
+			return nil, err
+		}
+		if same {
+			return source, nil
+		}
+	}
+	source := &artifactViewSource{result: result, selected: map[string][]string{}, required: map[string][]string{}}
+	d.sources = append(d.sources, source)
+	return source, nil
 }
 
 func (a *Artifacts) viewDiscovery() (*artifactViewDiscovery, error) {
@@ -618,7 +731,7 @@ func (a *Artifacts) viewDiscovery() (*artifactViewDiscovery, error) {
 						sameType++
 					}
 				}
-				d.view.state.Rules = append(d.view.state.Rules, artifactViewRule{
+				d.rules = append(d.rules, artifactViewRule{
 					Dimension: filter.Dimension, Type: dimension.CollectionType,
 					Keys: slices.Compact(keys), UniqueType: filter.Dimension == dimension.CollectionType || sameType == 1,
 				})
@@ -626,7 +739,7 @@ func (a *Artifacts) viewDiscovery() (*artifactViewDiscovery, error) {
 			}
 		}
 	}
-	slices.SortFunc(d.view.state.Rules, func(a, b artifactViewRule) int {
+	slices.SortFunc(d.rules, func(a, b artifactViewRule) int {
 		return strings.Compare(a.Dimension, b.Dimension)
 	})
 	return d, nil

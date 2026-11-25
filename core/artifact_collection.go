@@ -523,7 +523,7 @@ func (a *Artifacts) Expand(ctx context.Context) (*Artifacts, error) {
 	if err != nil {
 		return nil, err
 	}
-	if len(discovery.view.state.Rules) == 0 {
+	if len(discovery.rules) == 0 {
 		return a.expand(ctx, artifactCollectionKeys)
 	}
 	ctx = dagql.WithResultScope(ctx, nil)
@@ -535,7 +535,7 @@ func (a *Artifacts) Expand(ctx context.Context) (*Artifacts, error) {
 		roots = catalog.CollectionRoots
 	}
 	var filters []ArtifactDimensionFilter
-	for _, rule := range discovery.view.state.Rules {
+	for _, rule := range discovery.rules {
 		filters = append(filters, ArtifactDimensionFilter{Dimension: rule.Dimension, Keys: rule.Keys})
 	}
 	rootsCtx := withArtifactReceivers(discoveryCtx)
@@ -557,36 +557,8 @@ func (a *Artifacts) Expand(ctx context.Context) (*Artifacts, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Sort references by recipe so discovery order and local handles do not
-	// change the view's cache identity.
-	type sourceKey struct {
-		index  int
-		recipe string
-		origin string
-	}
-	order := make([]sourceKey, len(discovery.view.sources))
-	for i, source := range discovery.view.sources {
-		id, err := source.RecipeID(ctx)
-		if err != nil {
-			return nil, err
-		}
-		encoded, err := id.Encode()
-		if err != nil {
-			return nil, err
-		}
-		order[i] = sourceKey{i, encoded, artifactViewOrigin(id)}
-	}
-	slices.SortFunc(order, func(a, b sourceKey) int { return strings.Compare(a.recipe, b.recipe) })
-	view := &ArtifactView{state: artifactViewState{Rules: discovery.view.state.Rules}}
-	if err := view.addPaths(ctx, roots); err != nil {
-		return nil, err
-	}
-	for _, source := range order {
-		view.sources = append(view.sources, discovery.view.sources[source.index])
-		view.state.Keys = append(view.state.Keys, discovery.view.state.Keys[source.index])
-		view.state.Origins = append(view.state.Origins, source.origin)
-	}
-	if err := view.setKey(); err != nil {
+	view, err := discovery.buildView(ctx, roots)
+	if err != nil {
 		return nil, err
 	}
 	selected := a.filter(func(*Artifact) bool { return true })
