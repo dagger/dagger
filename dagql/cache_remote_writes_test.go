@@ -256,7 +256,7 @@ func TestPreparedRemoteHoldingKeepsItsCall(t *testing.T) {
 	require.NoError(t, w.Release(ctx))
 	entry := storedBundleTestEntry(cloud, test.number)
 	cloud.egraphMu.RLock()
-	calls := len(entry.calls)
+	calls := len(entry.keptCallsLocked())
 	cloud.egraphMu.RUnlock()
 	require.Equal(t, 1, calls)
 }

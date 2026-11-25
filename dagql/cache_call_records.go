@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/dagger/dagger/dagql/call/callpbv1"
@@ -79,6 +80,46 @@ func decodeKeptCall(encoded string, request digest.Digest) (*keptCall, error) {
 // or read late, and neither its call nor its expiry is kept. It reports
 // whether it changed a stored entry, which a save writes. Requires egraphMu
 // for writing.
+// entryCalls are, on the Cloud, the calls its engines reported returning an
+// entry other than its own. An entry has them only once one is kept on it
+// (sharedResult.callsStateLocked), and keeps them from then on. Guarded by
+// egraphMu.
+type entryCalls struct {
+	// byRequest are the calls, by request digest, which StoredBundle sends
+	// with the entry. They own nothing and go with the entry. Persisted.
+	byRequest map[digest.Digest]*keptCall
+	// terms is byRequest grouped by the term each derives, as
+	// keptCallTermsLocked groups them, or nil until it does: kept until the
+	// calls change or an input's class does (forgetCallTermsLocked). A
+	// reader holding egraphMu for reading may store it; a writer clears it.
+	terms atomic.Pointer[[][]*keptCall]
+	// termIndex is the call kept of each term the entry's calls derive, by
+	// term key (keptCallTermKeyLocked), so that keeping one more call takes
+	// its own key and one lookup (keepTermCallLocked). While it is set, the
+	// entry keeps one call of each term. It is nil until the entry keeps a
+	// call after a change to an input's class, which changes keys
+	// (forgetCallTermsLocked). Not persisted.
+	termIndex map[string]*keptCall
+}
+
+// callsStateLocked returns res's kept calls, making them if it has none.
+// Requires egraphMu for writing.
+func (res *sharedResult) callsStateLocked() *entryCalls {
+	if res.calls == nil {
+		res.calls = &entryCalls{}
+	}
+	return res.calls
+}
+
+// keptCallsLocked returns the calls kept on res, by request digest, or nil.
+// Requires egraphMu.
+func (res *sharedResult) keptCallsLocked() map[digest.Digest]*keptCall {
+	if res.calls == nil {
+		return nil
+	}
+	return res.calls.byRequest
+}
+
 func (c *Cache) keepCallLocked(entry *sharedResult, desc RemoteHolding, kept *keptCall) bool {
 	if desc.Request == "" || desc.Request == desc.Recipe {
 		return false
@@ -93,7 +134,7 @@ func (c *Cache) keepCallLocked(entry *sharedResult, desc RemoteHolding, kept *ke
 		changed = true
 	}
 	if kept != nil {
-		if _, ok := entry.calls[kept.id.recipe]; !ok && c.keepTermCallLocked(entry, kept) {
+		if _, ok := entry.keptCallsLocked()[kept.id.recipe]; !ok && c.keepTermCallLocked(entry, kept) {
 			changed = true
 		}
 	}
@@ -123,19 +164,20 @@ func (c *Cache) keepCallLocked(entry *sharedResult, desc RemoteHolding, kept *ke
 // writing.
 func (c *Cache) keepTermCallLocked(entry *sharedResult, kept *keptCall) bool {
 	joined := false
-	if entry.callTermIndex == nil {
-		terms, calls := c.joinedTermCallsLocked(entry)
-		for _, call := range calls {
+	calls := entry.callsStateLocked()
+	if calls.termIndex == nil {
+		terms, joinedCalls := c.joinedTermCallsLocked(entry)
+		for _, call := range joinedCalls {
 			c.dropKeptCallLocked(entry, call)
 		}
-		if len(calls) > 0 {
+		if len(joinedCalls) > 0 {
 			c.stampEntryLocked(entry, StampKeptCallsJoined)
 			joined = true
 		}
-		entry.callTermIndex = terms
+		calls.termIndex = terms
 	}
 	key := c.keptCallTermKeyLocked(kept)
-	if other := entry.callTermIndex[key]; other != nil {
+	if other := calls.termIndex[key]; other != nil {
 		// No call places better than one whose inputs are its own stored
 		// entries, so kept is ranked, which can scan its inputs' classes,
 		// only when the kept call isn't one.
@@ -149,11 +191,11 @@ func (c *Cache) keepTermCallLocked(entry *sharedResult, kept *keptCall) bool {
 	if c.keptCallPlacementLocked(kept) == placementNone {
 		cause = StampKeptCallUnsendable
 	}
-	if entry.calls == nil {
-		entry.calls = make(map[digest.Digest]*keptCall)
+	if calls.byRequest == nil {
+		calls.byRequest = make(map[digest.Digest]*keptCall)
 	}
-	entry.calls[kept.id.recipe] = kept
-	entry.callTermIndex[key] = kept
+	calls.byRequest[kept.id.recipe] = kept
+	calls.termIndex[key] = kept
 	c.stampEntryLocked(entry, cause)
 	c.indexKeptCallLocked(entry, kept)
 	c.verifyCallTermIndexLocked(entry)
@@ -164,7 +206,7 @@ func (c *Cache) keepTermCallLocked(entry *sharedResult, kept *keptCall) bool {
 // against its calls' terms taken fresh (joinedTermCallsLocked), and panics
 // if they differ. Requires egraphMu.
 func (c *Cache) verifyCallTermIndexLocked(entry *sharedResult) {
-	if !verifyKeptCallTerms || entry.callTermIndex == nil {
+	if !verifyKeptCallTerms || entry.calls == nil || entry.calls.termIndex == nil {
 		return
 	}
 	// The keys taken here are the check's, not the keeping's.
@@ -172,8 +214,8 @@ func (c *Cache) verifyCallTermIndexLocked(entry *sharedResult) {
 	c.testCallTermKeyed = nil
 	defer func() { c.testCallTermKeyed = keyed }()
 	fresh, joined := c.joinedTermCallsLocked(entry)
-	if len(joined) > 0 || !maps.Equal(fresh, entry.callTermIndex) {
-		panic(fmt.Sprintf("entry %d: call term index %v, taken fresh %v and %d joined", entry.id, entry.callTermIndex, fresh, len(joined)))
+	if len(joined) > 0 || !maps.Equal(fresh, entry.calls.termIndex) {
+		panic(fmt.Sprintf("entry %d: call term index %v, taken fresh %v and %d joined", entry.id, entry.calls.termIndex, fresh, len(joined)))
 	}
 }
 
@@ -183,10 +225,11 @@ func (c *Cache) verifyCallTermIndexLocked(entry *sharedResult) {
 // keeps the first, by request digest, of those a bundle places best
 // (keptCallPlacementLocked). Requires egraphMu.
 func (c *Cache) joinedTermCallsLocked(entry *sharedResult) (map[string]*keptCall, []*keptCall) {
-	terms := make(map[string]*keptCall, len(entry.calls))
+	byRequest := entry.keptCallsLocked()
+	terms := make(map[string]*keptCall, len(byRequest))
 	var joined []*keptCall
-	for _, recipe := range slices.Sorted(maps.Keys(entry.calls)) {
-		call := entry.calls[recipe]
+	for _, recipe := range slices.Sorted(maps.Keys(byRequest)) {
+		call := byRequest[recipe]
 		key := c.keptCallTermKeyLocked(call)
 		first, ok := terms[key]
 		switch {
@@ -206,9 +249,10 @@ func (c *Cache) joinedTermCallsLocked(entry *sharedResult) (map[string]*keptCall
 // the entry's index, and under each of its inputs. Requires egraphMu for
 // writing.
 func (c *Cache) dropKeptCallLocked(entry *sharedResult, kept *keptCall) {
-	delete(entry.calls, kept.id.recipe)
-	if entry.callTermIndex != nil {
-		delete(entry.callTermIndex, c.keptCallTermKeyLocked(kept))
+	calls := entry.callsStateLocked()
+	delete(calls.byRequest, kept.id.recipe)
+	if calls.termIndex != nil {
+		delete(calls.termIndex, c.keptCallTermKeyLocked(kept))
 	}
 	for _, input := range kept.id.inputs {
 		entries := c.callInputEntries[input.String()]
@@ -221,7 +265,7 @@ func (c *Cache) dropKeptCallLocked(entry *sharedResult, kept *keptCall) {
 			delete(c.callInputEntries, input.String())
 		}
 	}
-	entry.callTerms.Store(nil)
+	calls.terms.Store(nil)
 }
 
 // storedBundleCallsLocked adds to the build, for each of its entries from
@@ -243,7 +287,7 @@ func (c *Cache) storedBundleCallsLocked(build *storedBundleBuild, start int) err
 	// Entries the bundle adds for a call's inputs are visited too.
 	for i := start; i < len(build.order); i++ {
 		res := build.order[i]
-		if len(res.calls) == 0 {
+		if len(res.keptCallsLocked()) == 0 {
 			continue
 		}
 		for _, group := range c.keptCallTermsLocked(res) {
@@ -334,7 +378,11 @@ var verifyKeptCallTerms bool
 // visits it, and an entry's calls grow with the runs that taught them.
 // Requires egraphMu.
 func (c *Cache) keptCallTermsLocked(res *sharedResult) [][]*keptCall {
-	if kept := res.callTerms.Load(); kept != nil {
+	if res.calls == nil {
+		// No call was ever kept on res: it has no terms.
+		return nil
+	}
+	if kept := res.calls.terms.Load(); kept != nil {
 		if verifyKeptCallTerms {
 			if fresh := c.callTermsLocked(res); !slices.EqualFunc(*kept, fresh, slices.Equal) {
 				panic(fmt.Sprintf("entry %d: kept call terms %v, built fresh %v", res.id, *kept, fresh))
@@ -346,7 +394,7 @@ func (c *Cache) keptCallTermsLocked(res *sharedResult) [][]*keptCall {
 		c.testCallTermsBuilt()
 	}
 	groups := c.callTermsLocked(res)
-	res.callTerms.Store(&groups)
+	res.calls.terms.Store(&groups)
 	return groups
 }
 
@@ -354,7 +402,7 @@ func (c *Cache) keptCallTermsLocked(res *sharedResult) [][]*keptCall {
 // egraphMu.
 func (c *Cache) callTermsLocked(res *sharedResult) [][]*keptCall {
 	byTerm := map[string][]*keptCall{}
-	for _, kept := range res.calls {
+	for _, kept := range res.keptCallsLocked() {
 		key := c.keptCallTermKeyLocked(kept)
 		byTerm[key] = append(byTerm[key], kept)
 	}
@@ -381,13 +429,13 @@ func (c *Cache) indexKeptCallLocked(entry *sharedResult, kept *keptCall) {
 		}
 		entries[entry.id]++
 	}
-	entry.callTerms.Store(nil)
+	entry.callsStateLocked().terms.Store(nil)
 }
 
 // unindexKeptCallsLocked forgets the inputs of the calls kept on entry, which
 // is leaving the cache. Requires egraphMu for writing.
 func (c *Cache) unindexKeptCallsLocked(entry *sharedResult) {
-	for _, kept := range entry.calls {
+	for _, kept := range entry.keptCallsLocked() {
 		for _, input := range kept.id.inputs {
 			entries := c.callInputEntries[input.String()]
 			delete(entries, entry.id)
@@ -403,9 +451,9 @@ func (c *Cache) unindexKeptCallsLocked(entry *sharedResult) {
 // key of the call's term. Requires egraphMu for writing.
 func (c *Cache) forgetCallTermsLocked(dig string) {
 	for id := range c.callInputEntries[dig] {
-		if res := c.resultsByID[id]; res != nil {
-			res.callTerms.Store(nil)
-			res.callTermIndex = nil
+		if res := c.resultsByID[id]; res != nil && res.calls != nil {
+			res.calls.terms.Store(nil)
+			res.calls.termIndex = nil
 		}
 	}
 }
@@ -415,9 +463,9 @@ func (c *Cache) forgetCallTermsLocked(dig string) {
 func (c *Cache) forgetAllCallTermsLocked() {
 	for _, entries := range c.callInputEntries {
 		for id := range entries {
-			if res := c.resultsByID[id]; res != nil {
-				res.callTerms.Store(nil)
-				res.callTermIndex = nil
+			if res := c.resultsByID[id]; res != nil && res.calls != nil {
+				res.calls.terms.Store(nil)
+				res.calls.termIndex = nil
 			}
 		}
 	}

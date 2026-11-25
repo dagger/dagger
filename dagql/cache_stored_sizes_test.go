@@ -203,7 +203,7 @@ func TestStoredSizesChooseCallsInTheBundlesOrder(t *testing.T) {
 			}
 			cloud.egraphMu.RUnlock()
 			require.Less(t, test.number, numbers["c"], "inner's calls come first in R's bundle")
-			require.Len(t, storedBundleTestEntry(cloud, test.number).calls, 2)
+			require.Len(t, storedBundleTestEntry(cloud, test.number).keptCallsLocked(), 2)
 
 			built, err := cloud.StoredBundle(test.ctx, []uint64{numbers["r"]}, time.Now().Unix(), nil)
 			require.NoError(t, err)
@@ -328,7 +328,7 @@ func TestStoredSizesNeverPriceLessThanTheBundle(t *testing.T) {
 		}
 	}
 	cloud.egraphMu.RUnlock()
-	require.Len(t, storedBundleTestEntry(cloud, qNumber).calls, 2)
+	require.Len(t, storedBundleTestEntry(cloud, qNumber).keptCallsLocked(), 2)
 
 	built, err := cloud.StoredBundle(a.ctx, []uint64{test.number, qNumber}, time.Now().Unix(), nil)
 	require.NoError(t, err)
