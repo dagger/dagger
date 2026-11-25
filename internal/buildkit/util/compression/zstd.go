@@ -7,6 +7,7 @@ import (
 	"io"
 	"runtime"
 	"sync"
+	"weak"
 
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/images"
@@ -70,9 +71,48 @@ func zstdWriter(comp Config) func(io.Writer) (io.WriteCloser, error) {
 // each frame or stream it starts resets them as a new encoder would, so a
 // layer's blob doesn't depend on the layers its encoder compressed before.
 // An engine exporting to the remote cache compresses thousands of layers,
-// and a new encoder for each allocated tens of megabytes. A pool, not a
+// and a new encoder for each allocated tens of megabytes. Kept, not a
 // fixed set: those the collector finds idle it frees.
 var zstdEncoders sync.Map
+
+// zstdKept keeps the idle items of one kind between frames, at most as many
+// as frames compress at once (zstdBudget), by weak pointers: the collector
+// frees those that sit idle, as it would from a sync.Pool, and no more are
+// kept than the budget, whichever core gave them back. A sync.Pool keeps
+// one item in a slot of each core's own, which no other core takes, and
+// what it held before the last collection besides, so each core made its
+// own: on a 16-core engine filling the remote cache, 35 to 41 encoders
+// were alive at once, 284 to 333 MB of their history, and as many frame
+// buffers and outputs, whether 4 frames could compress at once or 16.
+type zstdKept[T any] struct {
+	idle chan weak.Pointer[T]
+}
+
+func newZstdKept[T any]() *zstdKept[T] {
+	return &zstdKept[T]{idle: make(chan weak.Pointer[T], zstdBudget)}
+}
+
+// get takes an idle item, or returns nil when none is left.
+func (k *zstdKept[T]) get() *T {
+	for {
+		select {
+		case idle := <-k.idle:
+			if v := idle.Value(); v != nil {
+				return v
+			}
+		default:
+			return nil
+		}
+	}
+}
+
+// put keeps v idle, unless as many as the budget are kept already.
+func (k *zstdKept[T]) put(v *T) {
+	select {
+	case k.idle <- weak.Make(v):
+	default:
+	}
+}
 
 // zstdEncoderPools are one level's encoders, each compressing one frame at
 // a time, so that it keeps one frame's history: a frame of a larger layer
@@ -84,7 +124,7 @@ var zstdEncoders sync.Map
 // on a goroutine of its own while the next is read, on its one history.
 type zstdEncoderPools struct {
 	level           zstd.EncoderLevel
-	frames, streams sync.Pool
+	frames, streams *zstdKept[zstd.Encoder]
 }
 
 func zstdEncodersFor(level zstd.EncoderLevel) *zstdEncoderPools {
@@ -96,12 +136,12 @@ func zstdEncodersFor(level zstd.EncoderLevel) *zstdEncoderPools {
 }
 
 func newZstdEncoderPools(level zstd.EncoderLevel) *zstdEncoderPools {
-	return &zstdEncoderPools{level: level}
+	return &zstdEncoderPools{level: level, frames: newZstdKept[zstd.Encoder](), streams: newZstdKept[zstd.Encoder]()}
 }
 
-// get takes an encoder from pool, a new one when it has none. Only a frame
+// get takes an encoder kept idle, a new one when none is. Only a frame
 // that holds its place in zstdFrames takes one, so no more are out at once
-// than the budget, nor kept in the pools.
+// than the budget, nor kept.
 //
 // A new encoder keeps a history of its window and one block
 // (WithLowerEncoderMem), not twice its window, when its window holds the
@@ -110,11 +150,11 @@ func newZstdEncoderPools(level zstd.EncoderLevel) *zstdEncoderPools {
 // and it writes the same bytes. Each such kept encoder holds about 8 MB
 // less. The fastest level's window is half that input, so its encoders
 // keep twice their window, which the input fills.
-func (p *zstdEncoderPools) get(pool *sync.Pool) (*zstd.Encoder, error) {
-	enc, _ := pool.Get().(*zstd.Encoder)
+func (p *zstdEncoderPools) get(kept *zstdKept[zstd.Encoder]) (*zstd.Encoder, error) {
+	enc := kept.get()
 	if enc == nil {
 		concurrency := 1
-		if pool == &p.streams {
+		if kept == p.streams {
 			concurrency = 2
 		}
 		var err error
@@ -127,22 +167,22 @@ func (p *zstdEncoderPools) get(pool *sync.Pool) (*zstd.Encoder, error) {
 	return enc, nil
 }
 
-// put gives enc back to pool, once its frame is compressed.
-func (p *zstdEncoderPools) put(pool *sync.Pool, enc *zstd.Encoder) {
+// put keeps enc idle, once its frame is compressed.
+func (p *zstdEncoderPools) put(kept *zstdKept[zstd.Encoder], enc *zstd.Encoder) {
 	zstdEncoderOut(-1)
-	pool.Put(enc)
+	kept.put(enc)
 }
 
 // zstdBuffers keeps a layer writer's buffers of zstdFrameSize between
 // layers: the layer held back, and each frame the writer fills.
-var zstdBuffers = sync.Pool{New: func() any {
-	b := make([]byte, 0, zstdFrameSize)
-	return &b
-}}
+var zstdBuffers = newZstdKept[[]byte]()
 
 func getZstdBuffer() []byte {
 	zstdBufferOut(1)
-	return (*zstdBuffers.Get().(*[]byte))[:0]
+	if b := zstdBuffers.get(); b != nil {
+		return (*b)[:0]
+	}
+	return make([]byte, 0, zstdFrameSize)
 }
 
 func putZstdBuffer(b []byte) {
@@ -151,15 +191,15 @@ func putZstdBuffer(b []byte) {
 	}
 	zstdBufferOut(-1)
 	b = b[:0]
-	zstdBuffers.Put(&b)
+	zstdBuffers.put(&b)
 }
 
 // zstdOutputs keeps the buffers a layer's frames are compressed into,
 // between frames: each goes back once its frame is written.
-var zstdOutputs sync.Pool
+var zstdOutputs = newZstdKept[[]byte]()
 
 func getZstdOutput() []byte {
-	if b, ok := zstdOutputs.Get().(*[]byte); ok {
+	if b := zstdOutputs.get(); b != nil {
 		return (*b)[:0]
 	}
 	return make([]byte, 0, zstdFrameSize/2)
@@ -167,7 +207,7 @@ func getZstdOutput() []byte {
 
 func putZstdOutput(b []byte) {
 	b = b[:0]
-	zstdOutputs.Put(&b)
+	zstdOutputs.put(&b)
 }
 
 // zstdSizedLimit is the largest layer a zstdLayerWriter holds back to write
@@ -288,13 +328,13 @@ func (w *zstdLayerWriter) compressFrame() error {
 		defer close(f.done)
 		defer zstdFrames.Release(1)
 		defer putZstdBuffer(src)
-		enc, err := w.encoders.get(&w.encoders.frames)
+		enc, err := w.encoders.get(w.encoders.frames)
 		if err != nil {
 			f.err = err
 			return
 		}
 		zstdCompressing(len(src), func() { f.out = enc.EncodeAll(src, getZstdOutput()) })
-		w.encoders.put(&w.encoders.frames, enc)
+		w.encoders.put(w.encoders.frames, enc)
 	}()
 	w.compressing = append(w.compressing, f)
 	return nil
@@ -382,7 +422,7 @@ func (w *zstdLayerWriter) compressSized(layer []byte) ([]byte, error) {
 		return nil, err
 	}
 	defer zstdFrames.Release(1)
-	enc, err := w.encoders.get(&w.encoders.streams)
+	enc, err := w.encoders.get(w.encoders.streams)
 	if err != nil {
 		return nil, err
 	}
@@ -401,7 +441,7 @@ func (w *zstdLayerWriter) compressSized(layer []byte) ([]byte, error) {
 	}
 	// It lets go of the frame's buffer before it goes back.
 	enc.Reset(nil)
-	w.encoders.put(&w.encoders.streams, enc)
+	w.encoders.put(w.encoders.streams, enc)
 	return out.Bytes(), nil
 }
 
