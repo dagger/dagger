@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/maphash"
 	"io/fs"
 	"maps"
 	"net/url"
@@ -249,7 +250,12 @@ type persistedEdge struct {
 // (engine/contenthash), such as Directory.digest's, whose format a release
 // may change. A change to the checksum's output raises this version, so an
 // old store is wiped rather than serving an old digest beside new ones.
-const cachePersistenceSchemaVersion = "26"
+//
+// 27: an entry's record and call frame are saved in a row of their own
+// (result_records), apart from its results row, which holds its change stamp
+// too; a save writes only the rows that changed (persistKept). Older stores
+// keep the record in the results row, so they are wiped on import.
+const cachePersistenceSchemaVersion = "27"
 
 // blobBackedStoreFormat names the format a blob-backed cache saves its stored
 // records in (encodeStoredRow), on top of the schema: it saves in a format of
@@ -591,6 +597,7 @@ func NewCache(
 	}
 	c.sqlDB = db
 	c.pdb = persistDB
+	c.persistSeed = maphash.MakeSeed()
 
 	schemaVersionVal, found, err := c.pdb.SelectMetaValue(ctx, persistdb.MetaKeySchemaVersion)
 	if err != nil {
@@ -745,8 +752,8 @@ func (c *Cache) BootRestoredResults() int {
 	return c.bootRestoredResults
 }
 
-// PersistedResults returns the number of entries the cache's last successful
-// persistence, normally at Close, wrote.
+// PersistedResults returns the number of entries the cache's store holds
+// after its last successful persistence.
 func (c *Cache) PersistedResults() int {
 	if c == nil {
 		return 0
@@ -754,6 +761,18 @@ func (c *Cache) PersistedResults() int {
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
 	return c.persistedResults
+}
+
+// PersistedWritten returns how many of those entries the last successful
+// persistence wrote: the entries whose rows changed since the one before, or
+// that are new. A save leaves the others as the store holds them.
+func (c *Cache) PersistedWritten() int {
+	if c == nil {
+		return 0
+	}
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	return c.persistedWritten
 }
 
 // PersistSnapshotHeld returns how long the snapshot of the cache's last
@@ -2935,13 +2954,15 @@ type Cache struct {
 
 	// engineInstanceID names the engine instance that owns the cache, for the
 	// debug snapshot. bootRestoredResults counts the entries the boot restore
-	// installed that are not type definitions, and persistedResults the
-	// entries the last successful persistence wrote, and
-	// persistSnapshotHeld how long its snapshot held egraphMu for reading.
-	// They are guarded by egraphMu.
+	// installed that are not type definitions, persistedResults the
+	// entries the store holds after the last successful persistence,
+	// persistedWritten how many of them it wrote, and persistSnapshotHeld
+	// how long its snapshot held egraphMu for reading. They are guarded by
+	// egraphMu.
 	engineInstanceID    string
 	bootRestoredResults int
 	persistedResults    int
+	persistedWritten    int
 	persistSnapshotHeld time.Duration
 	// blobBacked marks a cache that keeps parts in a blob store: only it
 	// accepts SetStoredPart (WithBlobStore).
@@ -3017,6 +3038,13 @@ type Cache struct {
 
 	// checkpointMu serializes Checkpoint's saves.
 	checkpointMu sync.Mutex
+	// persistKept is what the persistence database holds, as the last
+	// committed save wrote it or the open read it, and persistSeed the seed
+	// of its fingerprints, made when the cache opens: a save writes only
+	// what differs from it (persistKept). Only the saver uses them, under
+	// checkpointMu or in Close after quiescence.
+	persistKept persistKept
+	persistSeed maphash.Seed
 
 	persistenceResetReason CachePersistenceResetReason
 	// identity names the cache's persistence database across the engine
@@ -3591,7 +3619,8 @@ type sharedResult struct {
 	taughtDropped bool
 	// payloadMu guards lazy payload publication for imported persisted hits and
 	// prune-accounting timestamps that can change after initial publication.
-	payloadMu sync.RWMutex
+	// It counts the writes to what the entry's saved record holds (recordLock).
+	payloadMu recordLock
 	// hasValue distinguishes "initialized with a nil value" from "not initialized".
 	hasValue  bool
 	onRelease OnReleaseFunc
@@ -3806,6 +3835,9 @@ func (res *sharedResult) attachmentState() resultAttachmentState {
 type snapshotLinkIntent struct{ Links []PersistedSnapshotRefLink }
 
 type sharedResultPayloadState struct {
+	// recordWrites is the count of writes to the entry's saved record
+	// (recordLock), read before the rest.
+	recordWrites    uint32
 	payloadRevision uint64
 	imported        bool
 	// sessionResourceHandle and boundSession are the row's, read with the
@@ -3848,6 +3880,8 @@ func (res *sharedResult) storeResultCall(frame *ResultCall) {
 	if frame != nil {
 		res.frameContent, res.frameContentKnown = frame.ContentDigest(), true
 	}
+	// The saved record holds the frame (recordLock).
+	res.payloadMu.noteWrite()
 	res.resultCallMu.Unlock()
 }
 
@@ -3861,6 +3895,7 @@ func (res *sharedResult) dropResultCall() {
 	}
 	res.resultCallMu.Lock()
 	res.resultCall = nil
+	res.payloadMu.noteWrite()
 	res.resultCallMu.Unlock()
 }
 
@@ -3897,6 +3932,7 @@ func (res *sharedResult) loadPayloadState() sharedResultPayloadState {
 	}
 	res.payloadMu.RLock()
 	state := sharedResultPayloadState{
+		recordWrites:          res.payloadMu.writes.Load(),
 		payloadRevision:       res.payloadRevision,
 		imported:              res.imported,
 		sessionResourceHandle: res.sessionResourceHandle,
