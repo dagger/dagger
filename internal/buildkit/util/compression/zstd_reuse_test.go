@@ -8,7 +8,6 @@ import (
 	"io"
 	"runtime"
 	"runtime/debug"
-	"sync"
 	"testing"
 
 	"github.com/klauspost/compress/zstd"
@@ -129,8 +128,9 @@ func zstdLayerAllocated(t *testing.T, comp Config, data []byte, runs int) int64 
 		require.NoError(t, w.Close())
 	}
 	layer()
-	// The collector empties sync.Pools; hold it off so the reading is what a
-	// layer allocates while steady exports keep the pools in use, not when they ran.
+	// The collector frees what is kept idle; hold it off so the reading is
+	// what a layer allocates while steady exports keep their encoders and
+	// buffers in use, not when they ran.
 	defer debug.SetGCPercent(debug.SetGCPercent(-1))
 	var before, after runtime.MemStats
 	runtime.ReadMemStats(&before)
@@ -146,28 +146,17 @@ func zstdLayerAllocated(t *testing.T, comp Config, data []byte, runs int) int64 
 // size: the encoders, their history and the frames' buffers are kept from
 // one layer to the next, not made again for each. Before they were, a
 // 64 KB layer allocated 2.5 MB, a 3 MB layer 37 MB, and a 33 MB layer
-// 260 MB. Under the race detector, which CI runs this package
-// with, a sync.Pool drops a quarter of what it's given at random, so the
-// limits there are looser, and a 64 KB layer's isn't measured: its share of
-// a dropped 8 MB buffer is as much as the encoder it saves.
+// 260 MB. Under the race detector too, which CI runs this package with.
 func TestZstdLayerAllocatesLittleOnceWarm(t *testing.T) {
 	for _, c := range []struct {
-		size           int
-		most, mostRace int
+		size, most int
 	}{
-		{64 << 10, 64 << 10, 0},
-		{3 << 20, 1 << 20, 18 << 20},
-		{33 << 20, 16 << 20, 130 << 20},
+		{64 << 10, 64 << 10},
+		{3 << 20, 1 << 20},
+		{33 << 20, 16 << 20},
 	} {
-		most := c.most
-		if raceEnabled {
-			most = c.mostRace
-		}
-		if most == 0 {
-			continue
-		}
 		got := zstdLayerAllocated(t, New(Zstd), layerBytes(c.size), 20)
-		require.Less(t, got, int64(most), "a %d-byte layer allocated %d bytes", c.size, got)
+		require.Less(t, got, int64(c.most), "a %d-byte layer allocated %d bytes", c.size, got)
 	}
 }
 
@@ -203,15 +192,15 @@ func TestZstdKeptEncoderHoldsItsLargestInputOnce(t *testing.T) {
 		return int64(after.TotalAlloc - before.TotalAlloc)
 	}
 	for _, level := range []zstd.EncoderLevel{zstd.SpeedFastest, zstd.SpeedDefault, zstd.SpeedBetterCompression, zstd.SpeedBestCompression} {
-		pools := &zstdEncoderPools{level: level}
+		pools := newZstdEncoderPools(level)
 		for _, c := range []struct {
 			name        string
-			pool        *sync.Pool
+			pool        *zstdKept[zstd.Encoder]
 			concurrency int
 			compress    func(*zstd.Encoder, []byte)
 		}{
-			{"frame", &pools.frames, 1, frame},
-			{"layer with its size", &pools.streams, 2, sized},
+			{"frame", pools.frames, 1, frame},
+			{"layer with its size", pools.streams, 2, sized},
 		} {
 			kept := allocated(func() *zstd.Encoder {
 				enc, err := pools.get(c.pool)
