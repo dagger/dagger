@@ -898,6 +898,8 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 			// session's originating client.
 			sshSocketCtx := ctx
 			sshAuthSocketPath := clientMetadata.SSHAuthSocketPath
+			// core.GitBorrowsForDependencies is exactly this predicate, asked
+			// directly so this path makes no client lookup that could fail.
 			if sshAuthSocketPath == "" && core.IsModuleDependencyResolution(ctx) {
 				mainClientMetadata, err := parent.Self().MainClientCallerMetadata(ctx)
 				if err != nil {
@@ -991,27 +993,28 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 				return inst, err
 			}
 
-			// Determine which client(s) may supply implicit credentials. Arbitrary
-			// git access from nested module runtime code must not implicitly use the
-			// host's credentials, so by default we only do so when we ARE the
-			// non-module caller. For trusted module dependency/SDK resolution we
-			// additionally fall back to the session's originating client, since
-			// codegen can run under a nested client (e.g. a git-less codegen exec
-			// during `dagger generate`) that doesn't itself hold the user's
-			// credentials.
-			isTrustedDepResolution := core.IsModuleDependencyResolution(ctx)
-			directCaller := clientMetadata.ClientID == parentClientMetadata.ClientID
+			// Determine which client(s) may supply implicit credentials
+			// (core.GitBorrowingOf). Arbitrary git access from nested module
+			// runtime code must not implicitly use the host's credentials, so
+			// by default we only do so when we ARE the non-module caller. For
+			// trusted module dependency/SDK resolution we additionally fall back
+			// to the session's originating client, since codegen can run under a
+			// nested client (e.g. a git-less codegen exec during `dagger
+			// generate`) that doesn't itself hold the user's credentials.
+			borrowing, err := core.GitBorrowingOf(ctx, parent.Self())
+			if err != nil {
+				return inst, err
+			}
 			// A remote that an agent's model supplied as a tool argument may
 			// also use the agent owner's credentials, approved by the owner when
 			// a module drives the agent (see Server.AuthorizeGitRead). URLs with
 			// their own userinfo keep it.
-			agentAddress := !directCaller && !isTrustedDepResolution &&
-				remote.User == nil && core.IsAgentAddressResolution(ctx)
-			if !directCaller && !isTrustedDepResolution && !agentAddress {
+			agentAddress := borrowing == core.GitBorrowsForAgent && remote.User == nil
+			if borrowing == core.GitBorrowsNothing || borrowing == core.GitBorrowsForAgent && !agentAddress {
 				break
 			}
 			credClientMetadatas := []*engine.ClientMetadata{parentClientMetadata}
-			if isTrustedDepResolution {
+			if borrowing == core.GitBorrowsForDependencies {
 				mainClientMetadata, err := parent.Self().MainClientCallerMetadata(ctx)
 				if err != nil {
 					return inst, err
