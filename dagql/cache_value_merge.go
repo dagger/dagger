@@ -1045,9 +1045,9 @@ func (c *Cache) privateMergeCache(ctx context.Context, prep *valueMergePrep, hel
 			}
 		}
 		rec.Envelope.PendingOffers = offers
-		deps := make(map[sharedResultID]struct{}, len(row.DependencyIDs))
+		deps := make(resultIDSet, 0, len(row.DependencyIDs))
 		for _, dep := range row.DependencyIDs {
-			deps[sharedResultID(prep.firstID+dep-1)] = struct{}{}
+			deps.add(sharedResultID(prep.firstID + dep - 1))
 		}
 		prep.records[id] = rec
 		res := &sharedResult{id: sharedResultID(rec.ResultID), imported: true, isObject: rec.Envelope.Kind == persistedResultKindObject, persistedEnvelope: &rec.Envelope, deps: deps, expiresAtUnix: row.ExpiresAtUnix, sessionResourceHandle: rec.Envelope.SessionResourceHandle, boundSession: rec.Envelope.BoundSession}
@@ -1069,7 +1069,7 @@ func (c *Cache) privateMergeCache(ctx context.Context, prep *valueMergePrep, hel
 		}); err != nil {
 			return nil, err
 		}
-		for depID := range res.deps {
+		for _, depID := range res.deps {
 			dep := private.resultsByID[depID]
 			private.rememberDependencyEdgeLocked(res, dep)
 			private.incrementIncomingOwnershipLocked(ctx, dep)
@@ -2720,7 +2720,7 @@ func (c *Cache) checkMergeGraphLocked(ctx context.Context, commit *valueMergeCom
 				out = append(out, c.mergeEntryLocked(commit, dep))
 			}
 		} else {
-			for id := range res.deps {
+			for _, id := range res.deps {
 				out = append(out, c.resultsByID[id])
 			}
 		}
@@ -2878,7 +2878,7 @@ func (c *Cache) mergeReachLocked(changed []*sharedResult) map[*sharedResult]bool
 		res := queue[len(queue)-1]
 		queue = queue[:len(queue)-1]
 		if res.depParents != nil {
-			for id := range res.depParents {
+			for _, id := range res.depParents {
 				add(c.resultsByID[id])
 			}
 		}
@@ -3057,16 +3057,14 @@ func (c *Cache) commitValueMergeLocked(ctx context.Context, commit *valueMergeCo
 			continue
 		}
 		res := row.res
-		if res.deps == nil {
-			res.deps = make(map[sharedResultID]struct{}, len(row.deps))
-		}
+		res.deps = slices.Grow(res.deps, len(row.deps))
 		for _, depID := range row.deps {
 			dep := c.resultsByID[depID]
 			if dep == nil {
 				errs = errors.Join(errs, fmt.Errorf("merge values: missing dependency %d of %d", depID, res.id))
 				continue
 			}
-			res.deps[depID] = struct{}{}
+			res.deps.add(depID)
 			c.rememberDependencyEdgeLocked(res, dep)
 			c.incrementIncomingOwnershipLocked(ctx, dep)
 		}
@@ -3773,7 +3771,7 @@ func (c *Cache) mergeReplyLocked(commit *valueMergeCommit) (MergeReply, []mergeR
 		}
 		value := MergedValue{Ordinal: row.value.Ordinal, Number: uint64(res.id), Replacements: res.replacements, Revision: RowRevision{Replacements: res.replacements, Transfer: res.transferRevision, Dependencies: res.dependencyOwnershipRevision}, ExpiresAtUnix: res.expiresAtUnix}
 		value.Stored = row.value.Held == "" && (row.action == mergeCreate || row.action == mergeStore || row.action == mergeReplace || row.action == mergeRetire)
-		for dep := range res.deps {
+		for _, dep := range res.deps {
 			value.Deps = append(value.Deps, uint64(dep))
 		}
 		// A blob-backed cache, the Cloud's, holds no local completion or

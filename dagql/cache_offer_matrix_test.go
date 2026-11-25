@@ -450,7 +450,7 @@ func TestOfferResourcesDoNotGateLookup(t *testing.T) {
 	require.True(t, f.installed())
 	require.EqualValues(t, 1, f.operation.runs.Load())
 	c.egraphMu.RLock()
-	_, ownsSocket := row.deps[sharedResultID(socketID)]
+	ownsSocket := row.deps.has(sharedResultID(socketID))
 	requiresSocket := cacheTestSessionResourceSetContains(row.requiredSessionResources, "socket")
 	c.egraphMu.RUnlock()
 	require.True(t, ownsSocket, "installed references are direct edges")

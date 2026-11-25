@@ -1340,7 +1340,7 @@ func cacheRequiredSessionResourcesError(c *Cache) error {
 		if res.sessionResourceHandle != "" {
 			handles[res.sessionResourceHandle] = struct{}{}
 		}
-		for depID := range res.deps {
+		for _, depID := range res.deps {
 			dep := c.resultsByID[depID]
 			if dep == nil {
 				return nil, fmt.Errorf("result %d references missing dep %d", res.id, depID)

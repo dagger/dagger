@@ -212,7 +212,7 @@ func (c *Cache) snapshotPersistStateLocked(kept *persistKept, seed maphash.Seed)
 
 		deps = deps[:0]
 		var depsPrint rowsPrint
-		for depID := range res.deps {
+		for _, depID := range res.deps {
 			if _, selected := selectedResultIDs[depID]; !selected {
 				return persistStateSnapshot{}, fmt.Errorf("persist result %d: dependency %d is outside persisted root closure", resultID, depID)
 			}

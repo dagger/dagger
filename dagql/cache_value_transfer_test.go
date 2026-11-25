@@ -295,13 +295,9 @@ func transferTestDependency(c *Cache, ctx context.Context, parent, child AnyResu
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
 	p, d := parent.cacheSharedResult(), child.cacheSharedResult()
-	if p.deps == nil {
-		p.deps = map[sharedResultID]struct{}{}
-	}
-	if _, exists := p.deps[d.id]; exists {
+	if !p.deps.add(d.id) {
 		return
 	}
-	p.deps[d.id] = struct{}{}
 	p.dependencyOwnershipRevision++
 	c.rememberDependencyEdgeLocked(p, d)
 	c.incrementIncomingOwnershipLocked(ctx, d)
