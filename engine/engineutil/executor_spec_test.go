@@ -3,6 +3,7 @@ package engineutil
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -280,6 +281,56 @@ func TestUnmountFromRootfs(t *testing.T) {
 				unmountSyscall:   record("syscall", tc.detachErr),
 			}
 			require.NoError(t, unmountFromRootfs(ops, dst, tc.recursive))
+			require.Equal(t, tc.want, calls)
+		})
+	}
+}
+
+// A rootfs still busy after the unmount retries is detached rather than
+// failing the exec; any other unmount failure is still reported.
+func TestUnmountRootfs(t *testing.T) {
+	t.Parallel()
+
+	const rootfs = "/tmp/rootfs1"
+	type call struct {
+		op    string
+		flags int
+	}
+	busy := fmt.Errorf("failed to unmount target %s: %w", rootfs, unix.EBUSY)
+	for _, tc := range []struct {
+		name       string
+		unmountErr error
+		detachErr  error
+		want       []call
+		wantErr    []error
+	}{
+		{name: "unmounts", want: []call{{"unmount", 0}}},
+		{name: "busy detaches", unmountErr: busy, want: []call{{"unmount", 0}, {"syscall", unix.MNT_DETACH}}},
+		{name: "busy and detach fails", unmountErr: busy, detachErr: unix.EPERM, want: []call{{"unmount", 0}, {"syscall", unix.MNT_DETACH}}, wantErr: []error{unix.EBUSY, unix.EPERM}},
+		{name: "other error is reported", unmountErr: unix.EPERM, want: []call{{"unmount", 0}}, wantErr: []error{unix.EPERM}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var calls []call
+			record := func(op string, err error) func(string, int) error {
+				return func(target string, flags int) error {
+					require.Equal(t, rootfs, target)
+					calls = append(calls, call{op, flags})
+					return err
+				}
+			}
+			ops := rootfsUnmountOps{
+				unmount:          record("unmount", tc.unmountErr),
+				unmountRecursive: record("recursive", nil),
+				unmountSyscall:   record("syscall", tc.detachErr),
+			}
+			err := unmountRootfs(t.Context(), ops, "exec-id", rootfs)
+			if len(tc.wantErr) == 0 {
+				require.NoError(t, err)
+			}
+			for _, want := range tc.wantErr {
+				require.ErrorIs(t, err, want)
+			}
 			require.Equal(t, tc.want, calls)
 		})
 	}

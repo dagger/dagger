@@ -914,6 +914,7 @@ func isIntrospection(ctx context.Context, frame *dagql.ResultCall) bool {
 // (profileSkip) can never diverge on the root set.
 var introspectionRootFields = map[string]struct{}{
 	"__schema":            {},
+	"__type":              {}, // e.g. the CLI reading an artifact type's fields
 	"__schemaJSONFile":    {},
 	"__schemaVersion":     {},
 	"currentTypeDefs":     {},
