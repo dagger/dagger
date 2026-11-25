@@ -11,6 +11,7 @@ import (
 
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/persistdb"
+	"github.com/dagger/dagger/engine/slog"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/opencontainers/go-digest"
@@ -70,9 +71,14 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 	// A blob-backed cache counts its writes on from where its last save
 	// read them, as each restored entry takes back its change stamp, so a
 	// stored bundle's position taken before the restart compares after it
-	// (ChangedSince). A store saved before saves kept them has neither, and
-	// counts from zero.
+	// (ChangedSince, RestoredPosition). A count the store doesn't have, as
+	// one saved before saves kept it doesn't, or that can't be read, isn't
+	// taken: the cache counts on from its highest restored stamp, so that a
+	// write after the open still counts above every one, and restores no
+	// position, so that no bundle kept from before the open compares. That
+	// loses only what kept those bundles current; the store is restored.
 	var writes uint64
+	trusted := false
 	if c.blobBacked {
 		val, found, err := c.pdb.SelectMetaValue(ctx, persistdb.MetaKeyBundleWrites)
 		if err != nil {
@@ -80,7 +86,9 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 		}
 		if found {
 			if writes, err = strconv.ParseUint(val, 10, 64); err != nil {
-				return fmt.Errorf("parse the write count %q: %w", val, err)
+				slog.Warn("dagql persistence: the saved write count can't be read; no bundle from before the open compares after it", "value", val, "err", err)
+			} else {
+				trusted = true
 			}
 		}
 	}
@@ -91,7 +99,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 	c.egraphMu.Lock()
 	importErr := func() error {
 		c.initEgraphLocked()
-		c.writes, c.restoredWrites = writes, writes
+		var highestStamp uint64
 
 		var maxEqClassID eqClassID
 		for _, row := range eqClassRows {
@@ -259,6 +267,18 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			}
 			c.putResultLocked(res)
 			c.traceImportResultLoaded(ctx, importRunID, resultID, frame)
+			if row.stamp > highestStamp {
+				highestStamp = row.stamp
+			}
+		}
+		if trusted && writes < highestStamp {
+			slog.Warn("dagql persistence: the saved write count is below a saved stamp; no bundle from before the open compares after it", "count", writes, "stamp", highestStamp)
+			trusted = false
+		}
+		if trusted {
+			c.writes, c.restoredWrites = writes, writes
+		} else {
+			c.writes, c.restoredWrites = highestStamp, 0
 		}
 
 		for _, row := range resultCallRows {
