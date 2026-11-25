@@ -1,4 +1,4 @@
-# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-November%2024,%202026-success?style=flat-square)
+# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-November%2025,%202026-success?style=flat-square)
 
 This document describes the process for releasing Dagger.
 
@@ -193,6 +193,19 @@ to dagger.
 >
 > We should probably sign the git tag before pushing.
 
+- [ ] Before pushing the tag, create the winget branch the publish will use,
+      from a microsoft/winget-pkgs commit a few minutes old. The publish
+      otherwise creates it from microsoft's newest commit, and GitHub refused
+      that with `422 Reference update failed` during `v1.0.0-beta.29`, which
+      stopped the publish before the SDKs. The publish skips creating a branch
+      that exists.
+
+  ```console
+  # GNU date; on macOS use: date -u -v-5M +%Y-%m-%dT%H:%M:%SZ
+  WINGET_BASE=$(gh api "repos/microsoft/winget-pkgs/commits?sha=master&until=$(date -u -d '-5 minutes' +%Y-%m-%dT%H:%M:%SZ)&per_page=1" --jq '.[0].sha')
+  gh api -X POST repos/dagger/winget-pkgs/git/refs -f ref="refs/heads/dagger-${ENGINE_VERSION#v}" -f sha="$WINGET_BASE"
+  ```
+
 This will kick off [`.github/workflows/publish.yml`](https://github.com/dagger/dagger/actions/workflows/publish.yml) which publishes:
 
 - A new image to [ghcr.io/dagger/engine](https://github.com/dagger/dagger/pkgs/container/engine) (mirrored to registry.dagger.io/engine using https://github.com/dagger/registry-redirect).
@@ -352,6 +365,11 @@ after a successful publish job.
   git commit -a -s -m "chore: bump internal tooling to $ENGINE_VERSION"
   ```
 
+  CI's checks may still run an older engine than the one just released. Code
+  that only the new engine generates differently, such as a new doc comment,
+  then fails the PR's `go-sdk/generate/stale` check. Keep `main`'s version of
+  those files until CI's checks move to the new engine.
+
 - [ ] Choose the next release version and update `internal/version/VERSION`.
       For stable releases, default to the next patch unless a minor or major
       release is planned. For numbered prereleases, advance the prerelease
@@ -370,11 +388,15 @@ after a successful publish job.
   provisioning version. CI checks that these generated files are up to date.
 
   ```console
-  dagger generate \
-    'release:*target-version' \
-    golang:modules:packages:generate \
-    -y
+  dagger generate 'release:*target-version' -y
+  dagger generate 'dag://?golang-package=sdk/go/engineconn&name=generate' -y
   ```
+
+  The second command runs only the Go generator of `sdk/go/engineconn`, which
+  writes the only Go file derived from `internal/version/VERSION`. Selecting
+  every Go package's generator (`golang:modules:packages:generate`) runs
+  hundreds of them, and during `v1.0.0-beta.29` that made the engine
+  unreachable. The two selections can't be combined in one command.
 
   This updates source files for the next release. Already-published artifacts and
   the versioned docs snapshot stay at the released version; `current_docs` is the
