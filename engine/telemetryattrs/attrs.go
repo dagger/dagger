@@ -1159,9 +1159,9 @@ const (
 	// EngineEventPrune: a prune run dropped retention edges
 	// (EnginePruneEvent). Runs that drop none send nothing.
 	EngineEventPrune = "engine.prune"
-	// EngineEventShare: complete parts of entries that their spans left out
-	// (EngineShareEvent).
-	EngineEventShare = "engine.share"
+	// EngineEventParts: complete parts of entries that their spans left out
+	// (EnginePartsEvent).
+	EngineEventParts = "engine.parts"
 	// EngineEventRead: work read a part of an entry for the first time
 	// (EngineReadEvent).
 	EngineEventRead = "engine.read"
@@ -1198,16 +1198,15 @@ type EngineRetentionDrop struct {
 	DroppedAtUnixNano int64 `json:"droppedAtUnixNano"`
 }
 
-// EngineShareEvent is the body of an engine.share event: the complete parts
+// EnginePartsEvent is the body of an engine.parts event: the complete parts
 // entries' spans left out, which the engine reports once it can read each
 // entry's record.
-type EngineShareEvent struct {
-	Parts []EngineSharedPart `json:"parts"`
+type EnginePartsEvent struct {
+	Parts []EnginePart `json:"parts"`
 }
 
-// EngineSharedPart is one complete part of an entry that its spans left
-// out.
-type EngineSharedPart struct {
+// EnginePart is one complete part of an entry that its spans left out.
+type EnginePart struct {
 	// ResultID is the entry's result number.
 	ResultID uint64 `json:"resultId"`
 	// Part is the part's address, as in dagger.io/cache.parts.
