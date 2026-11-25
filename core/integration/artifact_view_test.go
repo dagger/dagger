@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"dagger.io/dagger"
@@ -65,20 +66,20 @@ func (ArtifactsSuite) TestFilteredViewReferences(ctx context.Context, t *testctx
 	base := artifactViewWorkspace(t, c, nestedArtifactViewSource)
 	out, err := base.With(daggerQuery(`{
  currentWorkspace { artifacts { filterTypes(types: ["ViewCase"]) {
-  filterDimensionKeys(dimension: "/view/packages", keys: ["left", "right"]) {
-   selected: filterDimensionKeys(dimension: "/view/packages/tests", keys: ["Foo", "Bar", "absent"]) {
+  filterDimensionKeys(dimension: "ViewPackages", keys: ["left", "right"]) {
+   selected: filterDimensionKeys(dimension: "ViewCases", keys: ["Foo", "Bar", "absent"]) {
     items { value { ... on ViewCase {
      name parent { keys removed results { id } owner { name parent { keys removed } } }
     } } }
-    withoutUri(uri: "packages/tests?view-package=left&view-case=Bar") {
+    withoutUri(uri: "?name=.&ViewPackages=left&ViewCases=Bar") {
      items { value { ... on ViewCase { name parent { keys results { id } } } } }
     }
-    intersection: filterDimensionKeys(dimension: "/view/packages/tests", keys: ["Bar"]) {
+    intersection: filterDimensionKeys(dimension: "ViewCases", keys: ["Bar"]) {
      items { value { ... on ViewCase { name parent { keys removed } } } }
     }
-    empty: filterDimensionKeys(dimension: "/view/packages/tests", keys: ["Other"]) { items { uri } }
+    empty: filterDimensionKeys(dimension: "ViewCases", keys: ["Other"]) { items { uri } }
    }
-   other: filterDimensionKeys(dimension: "/view/packages/tests", keys: ["Other"]) {
+   other: filterDimensionKeys(dimension: "ViewCases", keys: ["Other"]) {
     items { value { ... on ViewCase { name parent { keys removed } } } }
    }
   }
@@ -167,12 +168,14 @@ func (ArtifactsSuite) TestFilteredViewCollectionOrigins(ctx context.Context, t *
 	base := artifactViewWorkspace(t, c, `type View {
   pub shared: Cases! = Cases(names: ["a", "b", "c"])
   first: Cases! { shared }
-  second: Cases! { Cases(names: ["b", "c", "d"]) }
+  second: Cases! { Cases(names: ["b", "c", "d"], other: shared) }
   alias: Cases! { first }
 }
 type Cases @collection {
   pub names: [String!]! @keys
   pub selection: CollectionDelta @delta
+  other: Cases = null
+  peer: [String!]! { other!.names }
   lookup(name: String!): Case! @get { Case(name: name, parent: self, alias: self) }
   removed: [String!]! { selection!.removedKeys }
   bound: LLM! { llm.withTools(currentNode) }
@@ -183,20 +186,21 @@ type Case {
   pub alias: Cases!
 }
 `)
+
 	out, err := base.With(daggerQuery(`{
  currentWorkspace { artifacts { filterTypes(types: ["ViewCase"]) {
-  first: filterDimensionKeys(dimension: "/view/first", keys: ["a", "b"]) {
+  first: filterUri(uri: "?ViewCases=first.a&ViewCases=first.b") {
    items { value { ... on ViewCase { name alias { keys } parent {
     keys removed narrow: subset(keys: ["b"]) { keys removed }
    } } } }
   }
-  second: filterDimensionKeys(dimension: "/view/second", keys: ["d"]) {
-   items { value { ... on ViewCase { name alias { keys } parent { keys removed } } } }
+  second: filterUri(uri: "?ViewCases=second.b&ViewCases=second.d") {
+   items { value { ... on ViewCase { name alias { keys } parent { keys removed peer } } } }
   }
  } } }
  second { keys }
  first { keys subset(keys: ["b", "c"]) { bound { artifacts { filterTypes(types: ["ViewCase"]) {
-  filterDimensionKeys(dimension: "view-case", keys: ["c", "absent"]) {
+  filterDimensionKeys(dimension: "ViewCases", keys: ["c", "absent"]) {
    items { value { ... on ViewCase { name parent { keys removed } } } }
   }
  } } } } }
@@ -209,7 +213,8 @@ type Case {
    {"value":{"name":"b","alias":{"keys":["a","b"]},"parent":{"keys":["a","b"],"removed":["c"],"narrow":{"keys":["b"],"removed":["a","c"]}}}}
   ]},
   "second":{"items":[
-   {"value":{"name":"d","alias":{"keys":["d"]},"parent":{"keys":["d"],"removed":["b","c"]}}}
+   {"value":{"name":"b","alias":{"keys":["b","d"]},"parent":{"keys":["b","d"],"removed":["c"],"peer":[]}}},
+   {"value":{"name":"d","alias":{"keys":["b","d"]},"parent":{"keys":["b","d"],"removed":["c"],"peer":[]}}}
   ]}
  }}},
  "second":{"keys":["b","c","d"]},
@@ -219,14 +224,81 @@ type Case {
 }`, out)
 }
 
+func (ArtifactsSuite) TestCollectionRouteListing(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := artifactViewWorkspace(t, c, `type View {
+  before: Cases! { Cases(names: ["unit"]) }
+  after: Cases! { Cases(names: ["unit"]) }
+}
+type Cases @collection {
+  pub names: [String!]! @keys
+  lookup(name: String!): Case! @get { Case(name: name) }
+}
+type Case {
+  pub name: String!
+  verify: Void @check { null }
+}
+`)
+	for _, all := range []bool{false, true} {
+		args := []string{"check", "-l"}
+		key := "*"
+		if all {
+			args = append(args, "--all")
+			key = "unit"
+		}
+		out, err := base.With(daggerExec(args...)).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "VIEW-CASE")
+		require.Regexp(t, `(?m)^before\.`+regexp.QuoteMeta(key)+`\s`, out)
+		require.Regexp(t, `(?m)^after\.`+regexp.QuoteMeta(key)+`\s`, out)
+	}
+}
+
 func (ArtifactsSuite) TestFilteredViewChecks(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	base := artifactViewWorkspace(t, c, nestedArtifactViewSource)
-	selection := "packages/tests/verify?view-package=left&view-package=right&view-case=Foo&view-case=Bar"
+	selection := "?name=verify&view-package=left&view-package=right&view-case=Foo&view-case=Bar"
 	out, err := base.With(daggerExec("check", "-la", "-f=link", selection)).Stdout(ctx)
 	require.NoError(t, err, out)
-	require.Contains(t, out, "view-case=Foo")
-	require.Contains(t, out, "view-case=Bar")
+	links := strings.Fields(out)
+	require.Len(t, links, 3)
+
+	var query strings.Builder
+	query.WriteString("{ currentWorkspace { artifacts {")
+	for i, link := range links {
+		fmt.Fprintf(&query, "copy%d: filterUri(uri: %q) { one { dimensionKeys(all: true) { dimension key } } }", i, link)
+	}
+	query.WriteString("} } }")
+	out, err = base.With(daggerQuery(query.String())).Stdout(ctx)
+	require.NoError(t, err, out)
+	var copied struct {
+		CurrentWorkspace struct {
+			Artifacts map[string]struct {
+				One struct {
+					DimensionKeys []struct{ Dimension, Key string }
+				}
+			}
+		}
+	}
+	require.NoError(t, json.Unmarshal([]byte(out), &copied))
+	var copiedCoordinates []map[string]string
+	for _, item := range copied.CurrentWorkspace.Artifacts {
+		coordinates := map[string]string{}
+		for _, key := range item.One.DimensionKeys {
+			coordinates[key.Dimension] = key.Key
+		}
+		copiedCoordinates = append(copiedCoordinates, coordinates)
+	}
+	require.ElementsMatch(t, []map[string]string{
+		{"module": "view", "ViewPackages": "left", "ViewCases": "Foo", "name": "verify"},
+		{"module": "view", "ViewPackages": "left", "ViewCases": "Bar", "name": "verify"},
+		{"module": "view", "ViewPackages": "right", "ViewCases": "Bar", "name": "verify"},
+	}, copiedCoordinates)
+
+	pathSelection := "packages/tests/verify?view-package=left&view-package=right&view-case=Foo&view-case=Bar"
+	out, err = base.With(daggerExec("check", "-la", "-f=link", pathSelection)).Stdout(ctx)
+	require.NoError(t, err, out)
+	require.ElementsMatch(t, links, strings.Fields(out))
 	out, err = base.With(daggerQuery(`{
  currentWorkspace { artifacts { filterUri(uri: "` + selection + `") {
   asChecks { sync { pass error { message } } }
@@ -280,7 +352,7 @@ type Case {
 `)
 	out, err := base.With(daggerQuery(`{
  currentWorkspace { artifacts { filterTypes(types: ["ViewCase"]) {
-  filterDimensionKeys(dimension: "/view/cases", keys: ["b"]) {
+  filterDimensionKeys(dimension: "ViewCases", keys: ["b"]) {
    items { value { ... on ViewCase { name selected removed } } }
   }
  } } }
@@ -312,7 +384,7 @@ type Pkg {
 				WithNewFile("dagger.toml", fmt.Sprintf("[modules.%s]\nsource = \"./view\"\n", name))
 			out, err := base.With(daggerExec("check", "-l", "--all", "-f=link")).Stdout(ctx)
 			require.NoError(t, err, out)
-			require.Equal(t, 2, strings.Count(out, "check=test"), out)
+			require.Equal(t, 2, strings.Count(out, "dag+check://"), out)
 			out, err = base.With(daggerExec("check")).CombinedOutput(ctx)
 			require.NoError(t, err, out)
 		})

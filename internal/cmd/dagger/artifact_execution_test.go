@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dagger/dagger/core/dagaddress"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
@@ -36,4 +37,18 @@ func TestArtifactFailureOutputUsesCurrentExecution(t *testing.T) {
 		require.Contains(t, output.String(), "boom")
 		require.Contains(t, output.String(), "before failure")
 	}
+}
+
+func TestSharedArtifactFiltersKeepAbsenceSeparate(t *testing.T) {
+	first, err := dagaddress.Parse("dag://?row=top&row=bottom&!cell&cell=left")
+	require.NoError(t, err)
+	second, err := dagaddress.Parse("dag://?cell=left&!cell&row=bottom&row=top")
+	require.NoError(t, err)
+	shared, err := sharedArtifactFilters([]*dagaddress.Address{first, second})
+	require.NoError(t, err)
+	require.Equal(t, first.Query, shared.Query)
+	third, err := dagaddress.Parse("dag://?row=top&row=bottom&cell&cell=left")
+	require.NoError(t, err)
+	_, err = sharedArtifactFilters([]*dagaddress.Address{first, third})
+	require.Error(t, err)
 }

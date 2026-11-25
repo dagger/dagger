@@ -18,7 +18,7 @@ func (ArtifactsSuite) TestLegacyCollectionCheckBatching(ctx context.Context, t *
 		count                           int
 	}{
 		{"old full selection", "v1.0.0-beta.21", "", "a,b", 1},
-		{"old one item", "v1.0.0-beta.21", `filterDimensionKeys(dimension: "/view/tests", keys: ["b"])`, "b", 1},
+		{"old one item", "v1.0.0-beta.21", `filterDimensionKeys(dimension: "ViewCases", keys: ["b"])`, "b", 1},
 		{"old exclusion", "v1.0.0-beta.21", `withoutUri(uri: "dag+check://?view-case=a")`, "b", 1},
 		{"old all excluded", "v1.0.0-beta.21", `withoutUri(uri: "dag+check://?view-case=a&view-case=b")`, "", 0},
 		{"new full selection", engine.CollectionItemChecksVersion, "", "a,b", 3},

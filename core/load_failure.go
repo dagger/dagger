@@ -42,6 +42,8 @@ const (
 	// unloadable modules, `dagger generate`, whose failure messages must not
 	// advise running the command already running.
 	ModuleLoadRepairing
+
+	ModuleLoadMetadata
 )
 
 // BestEffort reports whether a module that cannot load is skipped rather than

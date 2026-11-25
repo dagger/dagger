@@ -280,6 +280,13 @@ export function AgentStateNameToValue(name: string): AgentState {
       return name as AgentState
   }
 }
+export type ArtifactDimensionKeysOpts = {
+  /**
+   * Return all artifact coordinates, including constant dimensions.
+   */
+  all?: boolean
+}
+
 export type ArtifactUriOpts = {
   /**
    * Prefix the workspace's Git address and commit: dag://<workspace>@<commit>:<path>. Fails if the artifact has no workspace, or its workspace has no Git address.
@@ -307,6 +314,7 @@ export type ArtifactValueOpts = {
 export enum ArtifactDimensionKind {
   Collection = "COLLECTION",
   Module = "MODULE",
+  Name = "NAME",
   Type = "TYPE",
 }
 
@@ -322,6 +330,8 @@ export function ArtifactDimensionKindValueToName(
       return "COLLECTION"
     case ArtifactDimensionKind.Module:
       return "MODULE"
+    case ArtifactDimensionKind.Name:
+      return "NAME"
     case ArtifactDimensionKind.Type:
       return "TYPE"
     default:
@@ -341,12 +351,28 @@ export function ArtifactDimensionKindNameToValue(
       return ArtifactDimensionKind.Collection
     case "MODULE":
       return ArtifactDimensionKind.Module
+    case "NAME":
+      return ArtifactDimensionKind.Name
     case "TYPE":
       return ArtifactDimensionKind.Type
     default:
       return name as ArtifactDimensionKind
   }
 }
+export type ArtifactsDimensionsOpts = {
+  /**
+   * List all workspace schema dimensions without runtime discovery.
+   */
+  all?: boolean
+}
+
+export type ArtifactsFilterDimensionsOpts = {
+  /**
+   * Remove artifacts with any listed dimension.
+   */
+  exclude?: boolean
+}
+
 export type ArtifactsFilterDirectivesOpts = {
   /**
    * Remove the matching artifacts instead.
@@ -5415,14 +5441,17 @@ export class Artifact extends BaseClient {
   }
 
   /**
-   * The module name, collection keys, and full path key in the artifact type dimension.
+   * The artifact coordinates in its source selection's visible dimensions. Without a source selection, return all coordinates.
+   * @param opts.all Return all artifact coordinates, including constant dimensions.
    */
-  dimensionKeys = async (): Promise<ArtifactDimensionKey[]> => {
+  dimensionKeys = async (
+    opts?: ArtifactDimensionKeysOpts,
+  ): Promise<ArtifactDimensionKey[]> => {
     type dimensionKeys = {
       id: ID
     }
 
-    const ctx = this._ctx.select("dimensionKeys").select("id")
+    const ctx = this._ctx.select("dimensionKeys", { ...opts }).select("id")
 
     const response: Awaited<dimensionKeys[]> = await ctx.execute()
 
@@ -5598,7 +5627,7 @@ export class ArtifactDimension extends BaseClient {
   }
 
   /**
-   * Stable identifier: collection schema path, type:TypeName for an artifact type, or module.
+   * Collection schema type name, module, name, or a legacy selector identifier.
    */
   identifier = async (): Promise<string> => {
     if (this._identifier) {
@@ -6016,7 +6045,7 @@ export class Artifacts extends BaseClient {
   }
 
   /**
-   * List collection items represented in this selection for the given dimension. Preserve parent keys and remove duplicate item addresses. Does not evaluate item values.
+   * List collection items represented in this selection. Retain the source selection's visible dimensions without evaluating item values.
    */
   dimensionItems = async (dimension: string): Promise<Artifact[]> => {
     type dimensionItems = {
@@ -6044,10 +6073,11 @@ export class Artifacts extends BaseClient {
   }
 
   /**
-   * List dimension identifiers represented in this selection, sorted with no duplicates.
+   * List dimensions whose cells differ across selected rows. Missing cells differ from present keys.
+   * @param opts.all List all workspace schema dimensions without runtime discovery.
    */
-  dimensions = async (): Promise<string[]> => {
-    const ctx = this._ctx.select("dimensions")
+  dimensions = async (opts?: ArtifactsDimensionsOpts): Promise<string[]> => {
+    const ctx = this._ctx.select("dimensions", { ...opts })
 
     const response: Awaited<string[]> = await ctx.execute()
 
@@ -6064,9 +6094,13 @@ export class Artifacts extends BaseClient {
 
   /**
    * Keep artifacts selected through any listed dimension.
+   * @param opts.exclude Remove artifacts with any listed dimension.
    */
-  filterDimensions = (dimensions: string[]): Artifacts => {
-    const ctx = this._ctx.select("filterDimensions", { dimensions })
+  filterDimensions = (
+    dimensions: string[],
+    opts?: ArtifactsFilterDimensionsOpts,
+  ): Artifacts => {
+    const ctx = this._ctx.select("filterDimensions", { dimensions, ...opts })
     return new Artifacts(ctx)
   }
 
@@ -6185,7 +6219,7 @@ export class Artifacts extends BaseClient {
   }
 
   /**
-   * Require exactly one artifact; fail if there are zero or multiple matches. Several matches are listed, one address per line.
+   * Require exactly one artifact from the selected items snapshot; fail if there are zero or multiple matches.
    */
   one = (): Artifact => {
     const ctx = this._ctx.select("one")

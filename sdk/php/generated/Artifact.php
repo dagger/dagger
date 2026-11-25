@@ -100,11 +100,14 @@ class Artifact extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * The module name, collection keys, and full path key in the artifact type dimension.
+     * The artifact coordinates in its source selection's visible dimensions. Without a source selection, return all coordinates.
      */
-    public function dimensionKeys(): array
+    public function dimensionKeys(?bool $all = false): array
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('dimensionKeys');
+        if (true === $all) {
+        $leafQueryBuilder->setArgument('all', $all);
+        }
         return (array)$this->queryLeaf($leafQueryBuilder, 'dimensionKeys');
     }
 

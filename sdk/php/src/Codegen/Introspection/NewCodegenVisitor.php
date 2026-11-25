@@ -214,7 +214,7 @@ class NewCodegenVisitor extends CodeWriter
             // ID handle: resolve the ID, then load the object it names
             [$handleType, , $handleLoadClass] = $this->resolveIdHandle($field, $parentType);
             $method->addBody('$leafQueryBuilder = new \Dagger\Client\QueryBuilder(?);', [$field->name]);
-            $this->generateMethodArgsBody($method, $sortedArgs, 'leafQueryBuilder');
+            $this->generateMethodArgsBody($method, $field, $sortedArgs, 'leafQueryBuilder');
             $method->addBody('$id = $this->queryLeaf($leafQueryBuilder, ?);', [$field->name]);
             $method->addBody(
                 'return $this->client->loadObjectFromId(' . $handleLoadClass
@@ -227,7 +227,7 @@ class NewCodegenVisitor extends CodeWriter
             && ($returnType->isObject() || $returnType->isInterface())
         ) {
             $method->addBody('$objectQueryBuilder = new \Dagger\Client\QueryBuilder(?);', [$field->name]);
-            $this->generateMethodArgsBody($method, $sortedArgs, 'objectQueryBuilder');
+            $this->generateMethodArgsBody($method, $field, $sortedArgs, 'objectQueryBuilder');
             $method->addBody('$objectQueryBuilder->selectField(?);', ['id']);
             $method->addBody('$id = $this->queryLeaf($objectQueryBuilder, ?);', ['id']);
             $method->addBody('if ($id === null) {');
@@ -243,7 +243,7 @@ class NewCodegenVisitor extends CodeWriter
         } elseif ($this->isLeafReturn($returnType, $field)) {
             // Scalar/list/enum return: use queryLeaf
             $method->addBody('$leafQueryBuilder = new \Dagger\Client\QueryBuilder(?);', [$field->name]);
-            $this->generateMethodArgsBody($method, $sortedArgs, 'leafQueryBuilder');
+            $this->generateMethodArgsBody($method, $field, $sortedArgs, 'leafQueryBuilder');
 
             $unwrapped = $this->unwrapNonNull($returnType);
 
@@ -285,7 +285,7 @@ class NewCodegenVisitor extends CodeWriter
         } else {
             // Object/interface return: chain query builder
             $method->addBody('$innerQueryBuilder = new \Dagger\Client\QueryBuilder(?);', [$field->name]);
-            $this->generateMethodArgsBody($method, $sortedArgs, 'innerQueryBuilder');
+            $this->generateMethodArgsBody($method, $field, $sortedArgs, 'innerQueryBuilder');
 
             $returnClassName = $this->resolveReturnClassName($returnType, $field);
             $method->addBody(
@@ -488,11 +488,25 @@ class NewCodegenVisitor extends CodeWriter
     /**
      * @param IntrospectionInputValue[] $args
      */
-    private function generateMethodArgsBody(Method $method, array $args, string $targetVar): void
-    {
+    private function generateMethodArgsBody(
+        Method $method,
+        IntrospectionField $field,
+        array $args,
+        string $targetVar,
+    ): void {
+        $omitFalseArgument = match ($field->parentTypeName . '.' . $field->name) {
+            'Artifact.dimensionKeys', 'Artifacts.dimensions' => 'all',
+            'Artifacts.filterDimensions' => 'exclude',
+            default => null,
+        };
         foreach ($args as $arg) {
             if (!$arg->isRequired()) {
-                $method->addBody('if (null !== $?) {', [$arg->name]);
+                $comparison = $arg->name === $omitFalseArgument
+                    && $arg->defaultValue === 'false'
+                    && $this->unwrapNonNull($arg->type)->name === 'Boolean'
+                    ? 'true ==='
+                    : 'null !==';
+                $method->addBody('if (' . $comparison . ' $?) {', [$arg->name]);
             }
             $method->addBody('$?->setArgument(?, $?);', [$targetVar, $arg->name, $arg->name]);
             if (!$arg->isRequired()) {

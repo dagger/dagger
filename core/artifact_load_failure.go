@@ -9,19 +9,6 @@ import (
 	"github.com/dagger/dagger/core/artifact"
 )
 
-// A module that fails to load has no schema, so its load failure stands in
-// for whatever the module would have held. Inclusion filters keep the failure
-// when the module could have held something they select, so consumers report
-// the load error instead of an incomplete result; FilterTypes does the same.
-// Exclusions match the failure only by its own path and keys (see
-// Artifacts.exact), so excluding part of a broken module does not hide its
-// failure.
-//
-// Whether a module could hold something follows from how discovery names
-// artifacts: paths start with the module's address name (a main's may
-// omit it), collection dimension identifiers start with /<module>/ and their
-// names with <module>-, and a type dimension's key is an artifact path.
-
 // failedModule is the address name of the module whose load failure a is: the
 // first segment of its path. Empty for any other artifact.
 func (a *Artifact) failedModule() string {
@@ -91,11 +78,17 @@ func (a *Artifact) mayHaveDimension(id string, keys []string) bool {
 	switch {
 	case id == artifact.ModuleDimension:
 		return keys == nil || moduleKeysMatch(keys, a.ModuleName)
+	case id == artifact.NameDimension:
+
+		return true
 	case strings.HasPrefix(id, "type:"):
 		return paths()
 	case strings.HasPrefix(id, "/"):
 		owner, _, _ := strings.Cut(strings.TrimPrefix(id, "/"), "/")
 		return slices.Contains(modules, owner)
+	case len(id) > 0 && id[0] >= 'A' && id[0] <= 'Z':
+
+		return true
 	case namedByModule(id):
 		// An unknown name of one of the module's collections.
 		return true
