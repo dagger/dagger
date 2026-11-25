@@ -2764,11 +2764,15 @@ func ResolveDepToSource(
 		// main client and private dependency resolution fails.
 		ctx = WithModuleDependencyResolution(ctx)
 
+		// The parent decided from its own files that the dependency is Git,
+		// so the read is told so and doesn't decide again from its caller's
+		// host, which its key would then have to name.
 		selectors := []dagql.Selector{{
 			Field: "moduleSource",
 			Args: []dagql.NamedInput{
 				{Name: "refString", Value: dagql.String(depSrcRef)},
 				{Name: "refPin", Value: dagql.String(depPin)},
+				{Name: "requireKind", Value: dagql.Opt(ModuleSourceKindGit)},
 			},
 		}}
 		if depName != "" {
