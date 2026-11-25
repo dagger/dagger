@@ -3719,10 +3719,11 @@ func (res *sharedResult) snapshotLinksLocked() ([]PersistedSnapshotRefLink, *sna
 }
 
 // resultLazy is an entry's lazy evaluation state. An entry has none until
-// its value is registered as lazy or an evaluation of it starts
+// its value is registered as lazy, an evaluation of it starts, or something
+// reads its value's own lazy state or holds its lock
 // (sharedResult.lazyState), and keeps it from then on. An entry with none
-// is in the state a new resultLazy describes: a reader that finds none
-// answers as for that state (noLazyState), and makes none.
+// is in the state a new resultLazy describes: a reader that finds none and
+// reads nothing of the value answers as for that state, and makes none.
 type resultLazy struct {
 	generation uint64 // mu; zero is never issued
 
@@ -3742,11 +3743,6 @@ type resultLazy struct {
 	// correctness derives from the group state.
 	evalComplete bool
 }
-
-// noLazyState is the lazy state of an entry that has none: a reader that
-// finds no resultLazy reads this one, without its lock. It is never
-// written.
-var noLazyState resultLazy
 
 // lazyState returns res's lazy evaluation state, making it if res has
 // none.
