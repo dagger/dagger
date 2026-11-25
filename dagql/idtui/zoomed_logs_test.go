@@ -155,10 +155,15 @@ func TestZoomedLogsSplitFollowsNewRows(t *testing.T) {
 // so output rewriting a line logged before a row started shows the line as
 // it ends up, in its place, rather than both versions.
 func TestZoomedLogsKeepTerminalState(t *testing.T) {
-	fe := zoomedLogsFrontend(t,
-		timedLog{"progress 0%\n", after(500 * time.Millisecond)},
-		timedLog{"\x1b[1A\x1b[2Kprogress 100%\n", after(2 * time.Second)},
-	)
+	fe := zoomedLogsFrontend(t, timedLog{"progress 0%\n", after(500 * time.Millisecond)})
+	requireOrder(t, zoomedLogsLines(fe), "progress 0%", "first-step")
+
+	// Rewritten once the piece holding it has rendered.
+	rec := frontendTestLogRecord(prettyTestSpanID(1).SpanID, otellog.StringValue("\x1b[1A\x1b[2Kprogress 100%\n"))
+	rec.SetTraceID(prettyTestTraceID().TraceID)
+	rec.SetTimestamp(after(2 * time.Second))
+	require.NoError(t, fe.logs.Export(context.Background(), []sdklog.Record{rec}))
+	fe.Update()
 	lines := zoomedLogsLines(fe)
 	text := strings.Join(lines, "\n")
 	require.NotContains(t, text, "progress 0%")
@@ -174,6 +179,28 @@ func TestZoomedLogsOutsideShellStayBelowRows(t *testing.T) {
 	fe.recalculateViewLocked()
 	lines := strings.Split(ansi.Strip(strings.Join(fe.tui.Frame(), "\n")), "\n")
 	requireOrder(t, lines, "third-step", "log-before-all")
+}
+
+// TestVtermTouchedRow: appending touches only the rows from the cursor's
+// down, colours included, while moving the cursor may touch any row.
+func TestVtermTouchedRow(t *testing.T) {
+	vt := NewVterm(termenv.Ascii)
+	_, _ = vt.Write([]byte("a\nb\n"))
+	vt.RenderRows(0, 1) // lay the screen out
+	_, _ = vt.TakeTouchedRow()
+
+	_, touched := vt.TakeTouchedRow()
+	require.False(t, touched)
+
+	_, _ = vt.Write([]byte("\x1b[33mWRN\x1b[0m c\n"))
+	_, _ = vt.Write([]byte("\x1b]8;;https://dagger.io\x1b\\link\x1b]8;;\x1b\\\r\n"))
+	row, touched := vt.TakeTouchedRow()
+	require.True(t, touched)
+	require.Equal(t, 2, row, "an appended line touches its own row on")
+
+	_, _ = vt.Write([]byte("\x1b[1A\x1b[2Kd\n"))
+	row, _ = vt.TakeTouchedRow()
+	require.Equal(t, 0, row, "moving the cursor up may touch any row")
 }
 
 // TestVtermTimeRows pins the split points: each time splits at the first

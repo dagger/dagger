@@ -5087,7 +5087,10 @@ func (fe *frontendPretty) renderZoomedLogSegments(logs *Vterm, trees []*SpanTree
 	if fe.zoomedLogSegments == nil {
 		fe.zoomedLogSegments = make(map[zoomedLogSegmentKey]*zoomedLogSegment)
 	}
+	// Only pieces reaching down to a row written since they rendered render
+	// again: a log mostly grows at its end, into its last piece.
 	stamp := logs.RowsStamp()
+	touchedRow, touched := logs.TakeTouchedRow()
 	segments := make([][]string, len(trees)+1)
 	from := 0
 	for i := range segments {
@@ -5102,7 +5105,7 @@ func (fe *frontendPretty) renderZoomedLogSegments(logs *Vterm, trees []*SpanTree
 				seg = &zoomedLogSegment{}
 				fe.zoomedLogSegments[key] = seg
 			}
-			if seg.lines == nil || seg.stamp != stamp {
+			if seg.lines == nil || seg.stamp != stamp || touched && to > touchedRow {
 				seg.lines = trimBlankTail(logs.RenderRows(from, to))
 				seg.stamp = stamp
 			}

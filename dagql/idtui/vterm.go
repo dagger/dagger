@@ -73,8 +73,12 @@ type Vterm struct {
 	searchMovedFrom int
 
 	// marks are the times lines of the raw log were written at, in write
-	// order, so the log can be split by time (see TimeOffsets).
+	// order, so the log can be split by time (see TimeRows).
 	marks []vtermMark
+	// touchedRow is the topmost row of the screen a write may have changed
+	// since TakeTouchedRow last asked; touched is unset while none did.
+	touchedRow int
+	touched    bool
 
 	mu *sync.Mutex
 }
@@ -174,14 +178,14 @@ func (term *Vterm) TimeRows(ats []time.Time) ([]int, int, bool) {
 	return rows, used, true
 }
 
-// RowsStamp changes whenever the rows RenderRows renders may have: the log
-// grew, its screen was laid out anew, or its prefix or search changed.
+// RowsStamp changes whenever every row RenderRows renders may have: the
+// screen was laid out anew, or its prefix or search changed. What writes
+// change since tells TakeTouchedRow.
 func (term *Vterm) RowsStamp() VtermRowsStamp {
 	term.mu.Lock()
 	defer term.mu.Unlock()
 	return VtermRowsStamp{
 		vt:      term.vt,
-		size:    len(term.screenBytes()),
 		cols:    term.cols,
 		prefix:  term.Prefix,
 		query:   term.SearchQuery,
@@ -192,11 +196,83 @@ func (term *Vterm) RowsStamp() VtermRowsStamp {
 // VtermRowsStamp is a Vterm's RowsStamp.
 type VtermRowsStamp struct {
 	vt      *midterm.Terminal
-	size    int
 	cols    int
 	prefix  string
 	query   string
 	current int
+}
+
+// TakeTouchedRow returns the topmost screen row written since it last
+// returned, and false if none was: the rows above it render as they did.
+// It has one caller, which keeps what it rendered of the rows.
+func (term *Vterm) TakeTouchedRow() (int, bool) {
+	term.mu.Lock()
+	defer term.mu.Unlock()
+	row, touched := term.touchedRow, term.touched
+	term.touched = false
+	return row, touched
+}
+
+// touch notes that p is about to be written to the screen: text lands at
+// the cursor and below, unless it moves the cursor, which may take it
+// anywhere. Callers hold term.mu.
+func (term *Vterm) touch(p []byte) {
+	if term.vt == nil {
+		// Nothing is laid out: the screen built later is new altogether.
+		return
+	}
+	row := term.vt.Cursor.Y
+	if mayLeaveRow(p) {
+		row = 0
+	}
+	if !term.touched || row < term.touchedRow {
+		term.touchedRow = row
+	}
+	term.touched = true
+}
+
+// mayLeaveRow reports whether p holds an escape sequence that may move the
+// cursor off its row, above it: anything but colours (SGR), erasing or
+// moving within the line, and OSC strings such as hyperlinks. Carriage
+// returns and backspaces stay on the row.
+func mayLeaveRow(p []byte) bool {
+	for i := 0; i < len(p); i++ {
+		if p[i] != '\x1b' {
+			continue
+		}
+		i++
+		if i >= len(p) {
+			return true // split across writes: can't tell
+		}
+		switch p[i] {
+		case '[':
+			// CSI: parameter and intermediate bytes, then a final byte.
+			i++
+			for i < len(p) && p[i] >= 0x20 && p[i] <= 0x3f {
+				i++
+			}
+			if i >= len(p) {
+				return true
+			}
+			switch p[i] {
+			case 'm', 'K', 'G', 'X':
+			default:
+				return true
+			}
+		case ']':
+			// OSC: up to BEL or ST.
+			i++
+			for i < len(p) && p[i] != '\a' && p[i] != '\x1b' {
+				i++
+			}
+			if i < len(p) && p[i] == '\x1b' {
+				i++ // ST's backslash
+			}
+		default:
+			return true
+		}
+	}
+	return false
 }
 
 // RenderRows renders the screen's rows from from up to to, each with the
@@ -402,6 +478,7 @@ func (term *Vterm) WriteDiff(p []byte) (int, error) {
 		atBottom = true
 	}
 
+	term.touch([]byte(highlighted))
 	if _, err := term.vt.Write([]byte(highlighted)); err != nil {
 		return 0, err
 	}
@@ -435,6 +512,7 @@ func (term *Vterm) Write(p []byte) (int, error) {
 		atBottom = true
 	}
 
+	term.touch(p)
 	n, err := term.vt.Write(p)
 	if err != nil {
 		return n, err
