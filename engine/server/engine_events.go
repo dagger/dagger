@@ -161,17 +161,17 @@ func (srv *Server) emitPruneEvent(drops []dagql.CacheRetentionDrop) {
 	srv.engineEvents.Emit(telemetryattrs.EngineEventPrune, srv.engineCache.Identity(), drops[len(drops)-1].DroppedAt, event)
 }
 
-// emitShareEvent reports the complete parts entries' spans left out. The
+// emitPartsEvent reports the complete parts entries' spans left out. The
 // cache calls it on the worker that makes those reports, or at its close.
-func (srv *Server) emitShareEvent(parts []dagql.SnapshotSharedPart) {
+func (srv *Server) emitPartsEvent(parts []dagql.OwedPart) {
 	if srv.engineEvents == nil || srv.engineCache == nil || len(parts) == 0 {
 		return
 	}
-	event := telemetryattrs.EngineShareEvent{Parts: make([]telemetryattrs.EngineSharedPart, len(parts))}
+	event := telemetryattrs.EnginePartsEvent{Parts: make([]telemetryattrs.EnginePart, len(parts))}
 	for i, part := range parts {
-		event.Parts[i] = telemetryattrs.EngineSharedPart{ResultID: part.ResultID, Part: part.Part, Deps: part.Deps, Replacements: part.Replacements, RawSize: part.RawSize}
+		event.Parts[i] = telemetryattrs.EnginePart{ResultID: part.ResultID, Part: part.Part, Deps: part.Deps, Replacements: part.Replacements, RawSize: part.RawSize}
 	}
-	srv.engineEvents.Emit(telemetryattrs.EngineEventShare, srv.engineCache.Identity(), time.Now(), event)
+	srv.engineEvents.Emit(telemetryattrs.EngineEventParts, srv.engineCache.Identity(), time.Now(), event)
 }
 
 // emitReadEvent reports the parts of entries work read. The cache calls it

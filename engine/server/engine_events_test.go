@@ -126,7 +126,7 @@ func TestEngineEventsCarryKindCacheAndBody(t *testing.T) {
 	first, second := time.Unix(100, 1), time.Unix(100, 2)
 	srv.emitPruneEvent([]dagql.CacheRetentionDrop{{ResultID: 7, DroppedAt: first}, {ResultID: 9, DroppedAt: second}})
 	srv.emitPruneEvent(nil)
-	srv.emitShareEvent([]dagql.SnapshotSharedPart{
+	srv.emitPartsEvent([]dagql.OwedPart{
 		{ResultID: 12, Part: `{"part":"snapshot"}`, Deps: []uint64{3, 4}},
 		{ResultID: 13, Part: `{"part":"snapshot"}`, Deps: []uint64{3}, Replacements: 2},
 	})
@@ -148,11 +148,11 @@ func TestEngineEventsCarryKindCacheAndBody(t *testing.T) {
 	}}, decodeEngineEvent[telemetryattrs.EnginePruneEvent](t, events[1]))
 	require.True(t, events[1].at.Equal(second), "timed at the run's last drop")
 
-	require.Equal(t, telemetryattrs.EngineEventShare, events[2].kind)
-	require.Equal(t, telemetryattrs.EngineShareEvent{Parts: []telemetryattrs.EngineSharedPart{
+	require.Equal(t, telemetryattrs.EngineEventParts, events[2].kind)
+	require.Equal(t, telemetryattrs.EnginePartsEvent{Parts: []telemetryattrs.EnginePart{
 		{ResultID: 12, Part: `{"part":"snapshot"}`, Deps: []uint64{3, 4}},
 		{ResultID: 13, Part: `{"part":"snapshot"}`, Deps: []uint64{3}, Replacements: 2},
-	}}, decodeEngineEvent[telemetryattrs.EngineShareEvent](t, events[2]))
+	}}, decodeEngineEvent[telemetryattrs.EnginePartsEvent](t, events[2]))
 	shareParts := decodeEngineEvent[struct {
 		Parts []map[string]json.RawMessage `json:"parts"`
 	}](t, events[2]).Parts

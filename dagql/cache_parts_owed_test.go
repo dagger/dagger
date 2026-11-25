@@ -11,16 +11,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// ownedPartsCache is a cache with the share report, whose reports go to the
+// ownedPartsCache is a cache with the owed part report, whose reports go to the
 // returned channel, and an entry of value, of one part, "snapshot", complete,
 // whose record can't be read from then on while value.fail is set: fail is
 // set once the entry is made, and the entry's last read of its parts is
 // forgotten.
-func ownedPartsCache(t *testing.T, value *describedPartValue, fail error) (context.Context, *Cache, *sharedResult, chan []SnapshotSharedPart) {
+func ownedPartsCache(t *testing.T, value *describedPartValue, fail error) (context.Context, *Cache, *sharedResult, chan []OwedPart) {
 	t.Helper()
-	reports := make(chan []SnapshotSharedPart, 8)
+	reports := make(chan []OwedPart, 8)
 	ctx := cacheTestContext(t.Context())
-	c, err := NewCache(ctx, "", nil, nil, WithSnapshotShareReport(func(parts []SnapshotSharedPart) { reports <- parts }))
+	c, err := NewCache(ctx, "", nil, nil, WithOwedPartReport(func(parts []OwedPart) { reports <- parts }))
 	require.NoError(t, err)
 	srv := newDagqlServerForTest(t, &persistCodecRoot{})
 	srv.InstallObject(NewClass(srv, ClassOpts[*statePartValue]{}))
@@ -40,7 +40,7 @@ func snapshotPartKey(t *testing.T) string {
 	return key
 }
 
-func requireNoReport(t *testing.T, reports chan []SnapshotSharedPart) {
+func requireNoReport(t *testing.T, reports chan []OwedPart) {
 	t.Helper()
 	select {
 	case parts := <-reports:
@@ -52,7 +52,7 @@ func requireNoReport(t *testing.T, reports chan []SnapshotSharedPart) {
 // A span whose read of an entry's parts can't read the entry's record
 // reports the parts its gate has settled, a subset. The entry then owes the
 // remote cache a report of its complete parts: once its record can be read
-// and an evaluation's end wakes the reports, the share report names every
+// and an evaluation's end wakes the reports, the owed part report names every
 // complete part, at the entry's replacement count. Without it, the remote
 // cache would go on believing the engine lacks the rest.
 func TestSpanOfSettledPartsOwesAFullReport(t *testing.T) {
@@ -190,14 +190,14 @@ func TestSpanReadingTheRecordSettlesWhatWasOwed(t *testing.T) {
 // recorded, 300 + 20 + 1.
 func TestOwedPartsCarryRawSizes(t *testing.T) {
 	t.Parallel()
-	reports := make(chan []SnapshotSharedPart, 8)
+	reports := make(chan []OwedPart, 8)
 	mgr := &partSizeTestManager{
 		fakeSnapshotManager: &fakeSnapshotManager{},
 		usage:               map[string]int64{"top": 300, "mid": 20, "base": 1},
 		parent:              map[string]string{"top": "mid", "mid": "base"},
 	}
 	ctx := cacheTestContext(t.Context())
-	c, err := NewCache(ctx, filepath.Join(t.TempDir(), "cache.db"), mgr, nil, WithSnapshotShareReport(func(parts []SnapshotSharedPart) { reports <- parts }))
+	c, err := NewCache(ctx, filepath.Join(t.TempDir(), "cache.db"), mgr, nil, WithOwedPartReport(func(parts []OwedPart) { reports <- parts }))
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, c.CloseDiscardingPersistence()) })
 	_, created, err := c.AttachRemoteCacheBridge()
