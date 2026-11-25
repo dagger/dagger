@@ -346,10 +346,24 @@ func TestMergeReplyTimesItsWaitForTheLock(t *testing.T) {
 	root := persistedListTestResult(t, ctx, a, srv, "root", String("value"))
 	bundle := exportTestBundle(t, ctx, a, root)
 	ctx, b, _ := transferTestCache(t)
+	// The lock is held for held after the commit starts waiting for it: the
+	// commit starts timing its wait before it counts itself waiting, so its
+	// wait can't come out shorter. Timed from this hook, which runs before
+	// the commit starts timing, it could.
 	const held = 50 * time.Millisecond
 	b.testBeforeTransferCommit = func() {
 		b.egraphMu.Lock()
-		time.AfterFunc(held, b.egraphMu.Unlock)
+		go func() {
+			for deadline := time.Now().Add(time.Minute); !b.egraphMu.Waiting(); time.Sleep(time.Millisecond) {
+				if time.Now().After(deadline) {
+					b.egraphMu.Unlock()
+					t.Error("the commit didn't wait for the graph lock")
+					return
+				}
+			}
+			time.Sleep(held)
+			b.egraphMu.Unlock()
+		}()
 	}
 	reply, err := b.MergeValues(ctx, cloudCacheID, bundle)
 	require.NoError(t, err)
