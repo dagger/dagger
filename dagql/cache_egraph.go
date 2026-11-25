@@ -48,12 +48,42 @@ type egraphTerm struct {
 	outputEqID eqClassID
 }
 
-type egraphInputProvenanceKind string
+// egraphInputProvenanceKind is whether a term's input slot was result-backed
+// or digest-only when the term was observed: one byte a slot, as a term's
+// provenance is held for each of its inputs. Persistence and debug output
+// name it as String does.
+type egraphInputProvenanceKind uint8
 
 const (
-	egraphInputProvenanceKindResult egraphInputProvenanceKind = "result"
-	egraphInputProvenanceKindDigest egraphInputProvenanceKind = "digest"
+	egraphInputProvenanceKindResult egraphInputProvenanceKind = iota + 1
+	egraphInputProvenanceKindDigest
 )
+
+// String is the kind's name as persistence stores it: "result" or
+// "digest".
+func (k egraphInputProvenanceKind) String() string {
+	switch k {
+	case egraphInputProvenanceKindResult:
+		return "result"
+	case egraphInputProvenanceKindDigest:
+		return "digest"
+	default:
+		return fmt.Sprintf("provenance(%d)", uint8(k))
+	}
+}
+
+// parseEgraphInputProvenanceKind is the kind String names name, and
+// whether it names one.
+func parseEgraphInputProvenanceKind(name string) (egraphInputProvenanceKind, bool) {
+	switch name {
+	case "result":
+		return egraphInputProvenanceKindResult, true
+	case "digest":
+		return egraphInputProvenanceKindDigest, true
+	default:
+		return 0, false
+	}
+}
 
 // egraphResultTermAssoc stores metadata for one result<->term association.
 // Today this is just per-input provenance indicating whether each input slot
