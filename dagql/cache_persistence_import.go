@@ -932,12 +932,16 @@ func persistedEnvelopeTypeNames(env PersistedResultEnvelope, names []persistedEn
 // cannot re-enter a decode.
 // updateDecodedPayloadBytes replaces an imported row's envelope size with
 // its decoded value's, unless the row's payload changed after revision.
-// Callers hold no cache locks: sizing may take the value's own lock. It
-// holds the graph lock only for reading (setResultPayloadBytesLocked): a hit
-// decodes each entry its load reaches, and a write for each would wait for
-// every reader and queue behind every writer on the way.
+// Callers hold no cache locks: sizing may take the value's own lock. A load
+// that read the graph before decoding (graphReads) records the sizes it
+// decodes together once it ends (recordDecodedSizes); otherwise the size is
+// recorded here, holding the graph lock only for reading
+// (setResultPayloadBytesLocked).
 func (c *Cache) updateDecodedPayloadBytes(ctx context.Context, res *sharedResult, decoded Typed, revision uint64) {
 	n := cachePayloadBytes(decoded)
+	if graphReadsOf(ctx).addSize(res, n, revision) {
+		return
+	}
 	c.readLockGraphGathered(ctx)
 	defer c.egraphMu.RUnlock()
 	res.payloadMu.RLock()
@@ -960,6 +964,9 @@ func (c *Cache) retainDecodedDependencyResults(ctx context.Context, res *sharedR
 			return fmt.Errorf("decoded payload of result %d declares a detached %T dependency", res.id, dep)
 		}
 	}
+	// The load read res's dependencies before these: its lease sync reads
+	// them again.
+	graphReadsOf(ctx).changedDeps(res)
 	return c.addExplicitDependencies(ctx, Result[Typed]{shared: res}, deps, "decoded_dependency_result")
 }
 
@@ -992,6 +999,9 @@ func (c *Cache) decodeArmsRecipe(ctx context.Context, res *sharedResult, importe
 	if !imported {
 		return false
 	}
+	if row := graphReadsOf(ctx).row(res.id); row != nil && row.res == res {
+		return !row.offered
+	}
 	c.readLockGraphGathered(ctx)
 	defer c.egraphMu.RUnlock()
 	return !res.hasPartOffersLocked()
@@ -1009,6 +1019,15 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 	if res == nil {
 		return hit, nil
 	}
+	// The first load to lead a decode reads the graph its decode reaches
+	// before it decodes, and records the sizes its decodes sized as it
+	// returns (graphReads).
+	var reads *graphReads
+	defer func() {
+		if reads != nil {
+			c.recordDecodedSizes(ctx, reads)
+		}
+	}()
 	// A record merged unprepared is prepared before its payload is decoded.
 	if err := c.prepareMergedPayload(ctx, res, workLookup); err != nil {
 		return nil, err
@@ -1132,6 +1151,13 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 			d.mu.Unlock()
 			close(waitCh)
 			logProducerRemovedOutcome(ctx, "persisted decode", fmt.Sprint(res.id), err)
+		}
+
+		// The decode reads the graph it reaches once, unless a load above
+		// it has: its decodes read that copy.
+		if needDecode && reads == nil && graphReadsOf(ctx) == nil {
+			reads = c.readGraphForDecode(ctx, res)
+			ctx = withGraphReads(ctx, reads)
 		}
 
 		// A leader with an installed payload (leaseSyncPending was

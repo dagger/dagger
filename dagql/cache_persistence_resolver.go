@@ -74,6 +74,14 @@ func (c *Cache) sharedResultByResultID(ctx context.Context, sessionID string, re
 		return sharedResultLookup{}, fmt.Errorf("resolve result %d: canonical equivalent lookup requires session ID", resultID)
 	}
 	if sessionID == "" {
+		// A decode under a load that read its graph (graphReads) finds the
+		// entries its payloads name there.
+		if row := graphReadsOf(ctx).row(resultID); row != nil {
+			if row.noValue {
+				return sharedResultLookup{}, fmt.Errorf("resolve result %d: %w", resultID, errEntryHasNoValue)
+			}
+			return sharedResultLookup{res: row.res, requiredGenAtCheck: row.res.requiredSessionResourcesGen.Load()}, nil
+		}
 		c.readLockGraphGathered(ctx)
 		res := c.resultsByID[resultID]
 		var (
