@@ -124,7 +124,7 @@ func TestOfferPartsOwnership(t *testing.T) {
 	require.False(t, out[0].Replaced)
 	require.Equal(t, rev, row.offerRevisionLocked())
 	offer.Value.Services[0].Aliases[0] = "caller mutation"
-	require.Equal(t, "a", row.testPartOffers()[key].record.Value.Services[0].Aliases[0])
+	require.Equal(t, "a", row.testPartOffers()[key].held.Value.Services[0].Aliases[0])
 	offer.Value.Services[0].Aliases[0] = "a"
 	// An address refresh preserves the exact same owner.
 	offer.Chain.Addresses = map[digest.Digest]BlobAddress{blob: {URL: "https://example.invalid/blob"}}
@@ -284,6 +284,6 @@ func TestOfferPartsAcceptedCleanupFailure(t *testing.T) {
 	require.Equal(t, 1, releases)
 	require.Len(t, c.offerOwners, 1)
 	key, _ := partAddressKey(offer.Address)
-	require.Equal(t, "/next", r.cacheSharedResult().testPartOffers()[key].record.Value.Path)
+	require.Equal(t, "/next", r.cacheSharedResult().testPartOffers()[key].held.Value.Path)
 	require.Equal(t, int64(1), r.cacheSharedResult().testPartOffers()[key].owner.holds)
 }

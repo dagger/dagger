@@ -58,13 +58,33 @@ func imageOfferLayers(offer *PersistedPartOffer) bool {
 		return false
 	}
 	for _, layer := range offer.Chain.Layers {
-		d := layer.Descriptor.Digest
-		address, ok := offer.Chain.Addresses[d]
-		if !ok || !isImageBlobAddress(address) || address.URL[len(imageBlobPrefix):] != string(d) {
+		if !imageBlobAddressed(offer.Chain.Addresses, layer.Descriptor.Digest) {
 			return false
 		}
 	}
 	return true
+}
+
+// imageLayers reports whether every layer of the offer the cache holds is
+// addressed in the engine's image, as imageOfferLayers does of an offer. It
+// allocates nothing.
+func (p layeredOffer) imageLayers() bool {
+	if len(p.layers) == 0 {
+		return false
+	}
+	for _, layer := range p.layers {
+		if !imageBlobAddressed(p.held.Chain.Addresses, layer.layer.Descriptor.Digest) {
+			return false
+		}
+	}
+	return true
+}
+
+// imageBlobAddressed reports whether addresses has the blob in the engine's
+// image, at its own digest.
+func imageBlobAddressed(addresses map[digest.Digest]BlobAddress, blob digest.Digest) bool {
+	address, ok := addresses[blob]
+	return ok && isImageBlobAddress(address) && address.URL[len(imageBlobPrefix):] == string(blob)
 }
 
 // checkSenderAddresses refuses a bundle whose addresses don't belong to its
