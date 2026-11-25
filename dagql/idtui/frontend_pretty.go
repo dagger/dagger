@@ -5212,7 +5212,8 @@ func (fe *frontendPretty) recalculateViewLocked() {
 		// Eager failure-detail fetch is REPORT-ONLY. The non-interactive report
 		// renders once and can't wait for a fetch dispatched mid-render, so it
 		// pre-fetches every surfaced failure's logs here -- failed rows, failed
-		// test cases, root-cause origins, surfaced checks' causes. Interactive
+		// test cases, root-cause origins, surfaced checks' causes -- and the
+		// logs of message rows, which are the message itself. Interactive
 		// must NOT do this: it re-renders on arrival, so it fetches lazily from
 		// each view as it actually renders (LogsView.OnMount for inline logs,
 		// TestView.RequestLogs for test cases, renderErrorCause / renderCauseDetail
@@ -5222,7 +5223,7 @@ func (fe *frontendPretty) recalculateViewLocked() {
 		// render too, at exit (RequestFinalLogs), which has no later pass.
 		if fe.reportOnly || fe.finalLogs {
 			for _, row := range fe.rows.Order {
-				if row.Span != nil && (row.Span.IsFailed() || fe.rowShowsLogs(row)) {
+				if row.Span != nil && (row.Span.IsFailed() || row.Span.Message != "") {
 					fe.requestLogs(row.Span.ID)
 				}
 			}
