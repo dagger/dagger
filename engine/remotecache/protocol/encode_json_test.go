@@ -5,6 +5,7 @@ package protocol
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -104,4 +105,81 @@ func TestSetFilePartIsEncodedInPlace(t *testing.T) {
 	// 8.4 times its JSON when the JSON was copied as it grew and once whole;
 	// 1.6 times written in place, most of it each record's own values.
 	require.Less(t, allocated, 3*float64(len(raw)))
+}
+
+// writeRecorder records what is written to it: every byte, and the largest
+// single write.
+type writeRecorder struct {
+	buf     bytes.Buffer
+	largest int
+}
+
+func (w *writeRecorder) Write(p []byte) (int, error) {
+	w.largest = max(w.largest, len(p))
+	return w.buf.Write(p)
+}
+
+// byteCount counts the bytes written to it and keeps none.
+type byteCount int
+
+func (c *byteCount) Write(p []byte) (int, error) {
+	*c += byteCount(len(p))
+	return len(p), nil
+}
+
+// WriteEnvelope writes the message EncodeEnvelope returns as it is encoded:
+// the same bytes, handed over in pieces far smaller than the message, and,
+// to a writer that keeps nothing, for a fraction of what encoding it whole
+// allocates.
+func TestWriteEnvelopeWritesTheMessageAsItIsEncoded(t *testing.T) {
+	merge := recordsMerge()
+	want, err := EncodeEnvelope(9, 0, TypeMerge, merge)
+	require.NoError(t, err)
+	var w writeRecorder
+	require.NoError(t, WriteEnvelope(&w, 9, 0, TypeMerge, merge))
+	require.Equal(t, string(want), w.buf.String())
+	require.Less(t, w.largest, len(want)/8, "the largest write of a %d-byte message", len(want))
+	whole := allocatedBy(5, func() {
+		if _, err := EncodeEnvelope(9, 0, TypeMerge, merge); err != nil {
+			t.Fatal(err)
+		}
+	})
+	written := allocatedBy(5, func() {
+		var n byteCount
+		if err := WriteEnvelope(&n, 9, 0, TypeMerge, merge); err != nil {
+			t.Fatal(err)
+		}
+	})
+	t.Logf("a %d-byte message: %.0f bytes allocated encoded whole, %.0f written as encoded", len(want), whole, written)
+	require.Less(t, written, float64(len(want)), "written as encoded, it allocates less than the message itself")
+}
+
+// errFull is what a fullWriter refuses with.
+var errFull = errors.New("full")
+
+// fullWriter takes room bytes, then refuses every write.
+type fullWriter struct {
+	room, written int
+	refused       int
+}
+
+func (w *fullWriter) Write(p []byte) (int, error) {
+	if w.written+len(p) > w.room {
+		w.refused++
+		return 0, errFull
+	}
+	w.written += len(p)
+	return len(p), nil
+}
+
+// A writer that refuses more bytes stops the encoding: WriteEnvelope
+// returns its error, and writes nothing after it.
+func TestWriteEnvelopeStopsAtAWriterThatRefuses(t *testing.T) {
+	t.Parallel()
+	merge := recordsMerge()
+	w := &fullWriter{room: 64 << 10}
+	err := WriteEnvelope(w, 9, 0, TypeMerge, merge)
+	require.ErrorIs(t, err, errFull)
+	require.Equal(t, 1, w.refused, "no write after the first refused")
+	require.LessOrEqual(t, w.written, w.room)
 }
