@@ -39,7 +39,8 @@ const (
 
 	// dagger/golangci-lint commit whose export driver the Go SDK's codegen
 	// loads a module's imports through, from dagger/go's archives.
-	GolangciLintCommit = "124019e8bb1fdc33a818759ba78e32ab429e28d5"
+	GolangciLintCommit   = "124019e8bb1fdc33a818759ba78e32ab429e28d5"
+	GolangciLintChecksum = "sha256:c2c2b608f0adb8cf992e2ad7ba25ba486ff9a7ebff4612b014f705b395b97897"
 
 	EntireCLIVersion = "0.12.2"
 )
