@@ -80,9 +80,7 @@ func TestExportLeavesOutRootsReachingABusyRow(t *testing.T) {
 			owners := heldOwnershipCounts(rows.all())
 			attach := func() {
 				c.egraphMu.Lock()
-				res.attachDepsMu.Lock()
-				res.attachDepsWaitCh = make(chan struct{})
-				res.attachDepsMu.Unlock()
+				res.openAttachment(nil)
 				c.egraphMu.Unlock()
 			}
 			switch tc.when {
@@ -110,7 +108,7 @@ func TestExportLeavesOutRootsReachingABusyRow(t *testing.T) {
 			c.testTransferCopied = nil
 			switch tc.when {
 			case "walk", "after copy":
-				close(res.attachDepsWaitCh)
+				res.endAttachment(nil)
 			case "copy":
 				res.lazyState().mu.Lock()
 				res.lazyState().whole.syncPending = false
@@ -346,11 +344,9 @@ func TestExportLeavesOutOutputsBelowARootBlockedAtTheWalk(t *testing.T) {
 	}
 	res := busy.cacheSharedResult()
 	c.egraphMu.Lock()
-	res.attachDepsMu.Lock()
-	res.attachDepsWaitCh = make(chan struct{})
-	res.attachDepsMu.Unlock()
+	res.openAttachment(nil)
 	c.egraphMu.Unlock()
-	defer close(res.attachDepsWaitCh)
+	defer res.endAttachment(nil)
 	var values *ExportedValues
 	require.NoError(t, c.WithExportedValues(ctx, selection, config.RefConfig{}, func(_ context.Context, exported *ExportedValues) error {
 		values = exported
@@ -387,9 +383,7 @@ func TestExportWalksBelowAnAttachingRoot(t *testing.T) {
 	}()
 	res := attaching.cacheSharedResult()
 	c.egraphMu.Lock()
-	res.attachDepsMu.Lock()
-	res.attachDepsWaitCh = make(chan struct{})
-	res.attachDepsMu.Unlock()
+	res.openAttachment(nil)
 	c.egraphMu.Unlock()
 	selection := ValueSelection{Roots: []AnyResult{attaching, other}, Outputs: []SelectedValueOutput{{Result: ready, Address: PersistedPartAddress{Part: "snapshot"}}}}
 	var values *ExportedValues
@@ -397,7 +391,7 @@ func TestExportWalksBelowAnAttachingRoot(t *testing.T) {
 		values = exported
 		return nil
 	})
-	close(res.attachDepsWaitCh)
+	res.endAttachment(nil)
 	require.NoError(t, err)
 	require.Len(t, values.LeftOut, 1)
 	left := values.LeftOut[0]

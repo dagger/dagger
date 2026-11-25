@@ -523,12 +523,8 @@ func TestCacheOutputEqClassResultsMatchDigestPostings(t *testing.T) {
 				res.expiresAtUnix = nowUnix - 1
 				res.imported = rng.IntN(2) == 0
 			case 1:
-				failed := make(chan struct{})
-				close(failed)
-				res.attachDepsMu.Lock()
-				res.attachDepsWaitCh = failed
-				res.attachDepsErr = fmt.Errorf("generated attachment failure")
-				res.attachDepsMu.Unlock()
+				res.openAttachment(nil)
+				res.endAttachment(fmt.Errorf("generated attachment failure"))
 			}
 		}
 		for root := range c.outputEqClassResults {
