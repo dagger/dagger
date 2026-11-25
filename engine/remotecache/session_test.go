@@ -46,7 +46,11 @@ func (c *recordingConn) Read(ctx context.Context) ([]byte, error) {
 	return nil, context.Cause(ctx)
 }
 
-func (c *recordingConn) Write(_ context.Context, data []byte) error {
+func (c *recordingConn) Write(_ context.Context, msg protocol.Message) error {
+	data, err := protocol.DecodeMessage(msg.Data, msg.Compressed, protocol.MaxMessageBytes)
+	if err != nil {
+		return err
+	}
 	var env protocol.Envelope
 	if err := json.Unmarshal(data, &env); err != nil {
 		return err
@@ -1565,14 +1569,14 @@ type queuedWriterConn struct {
 	writeSlot chan struct{}
 }
 
-func (c *queuedWriterConn) Write(ctx context.Context, data []byte) error {
+func (c *queuedWriterConn) Write(ctx context.Context, msg protocol.Message) error {
 	select {
 	case c.writeSlot <- struct{}{}:
 	case <-ctx.Done():
 		return context.Cause(ctx)
 	}
 	defer func() { <-c.writeSlot }()
-	return c.recordingConn.Write(ctx, data)
+	return c.recordingConn.Write(ctx, msg)
 }
 
 // A renewal whose read gives up while another message holds the writer fails
@@ -1806,11 +1810,11 @@ type liveConn struct {
 	*recordingConn
 }
 
-func (c liveConn) Write(ctx context.Context, data []byte) error {
+func (c liveConn) Write(ctx context.Context, msg protocol.Message) error {
 	if err := context.Cause(ctx); err != nil {
 		return err
 	}
-	return c.recordingConn.Write(ctx, data)
+	return c.recordingConn.Write(ctx, msg)
 }
 
 // A lookup the service answers with an error has failed, and the next miss
