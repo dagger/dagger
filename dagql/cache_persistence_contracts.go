@@ -50,6 +50,9 @@ type persistResultSnapshot struct {
 	row                   persistdb.MirrorResult
 	resultDeps            []persistdb.MirrorResultDep
 	resultSnapshotLinks   []persistdb.MirrorResultSnapshotLink
+	// changedAt is, on a blob-backed cache, the entry's change stamp
+	// (sharedResult.changedAt), which its stored row saves.
+	changedAt uint64
 }
 
 type persistStateSnapshot struct {
@@ -69,4 +72,7 @@ type persistStateSnapshot struct {
 	importedLayerByDiff   []persistdb.MirrorImportedLayerDiffIndex
 	// held is how long taking the snapshot held egraphMu for reading.
 	held time.Duration
+	// writes is, on a blob-backed cache, its write count (Cache.writes),
+	// read under the same hold as every row's change stamp.
+	writes uint64
 }

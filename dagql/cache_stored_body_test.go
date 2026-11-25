@@ -184,8 +184,7 @@ func TestCloudRestoresStoredRecordsCompressed(t *testing.T) {
 	ctx, cloud := storedPersistenceTestCloud(t, path)
 	roots := storedPersistenceTestMerge(t, ctx, cloud, bundle)
 	require.Len(t, roots, storedBodyTestRecords)
-	// The restored Cloud counts its writes again from its start.
-	want := mustTransferJSON(t, withoutChangeStamps(storedBodyTestUse(t, ctx, cloud, roots).Values))
+	want := mustTransferJSON(t, storedBodyTestUse(t, ctx, cloud, roots).Values)
 	require.NoError(t, cloud.Close(ctx))
 
 	before := storedBodyTestHeap()
@@ -197,7 +196,7 @@ func TestCloudRestoresStoredRecordsCompressed(t *testing.T) {
 	requireHeldCompressed(t, restored, heap)
 
 	got := storedBodyTestUse(t, ctx, restored, roots)
-	require.JSONEq(t, string(want), string(mustTransferJSON(t, withoutChangeStamps(got.Values))), "the restored Cloud sends the records it sent before")
+	require.JSONEq(t, string(want), string(mustTransferJSON(t, got.Values)), "the restored Cloud sends the records it sent before, at the stamps it sent them")
 }
 
 // A Cloud's store saved in another format, here an engine's, is wiped once
