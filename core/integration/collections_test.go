@@ -348,12 +348,9 @@ func (CollectionsSuite) TestCLI(ctx context.Context, t *testctx.T) {
 	requireErrOut(t, err, "unknown flag: --item")
 }
 
-func (CollectionsSuite) TestPrunedLinks(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-	base := workspaceBase(t, c).
-		WithNewFile("dagger.toml", "[modules.selectors]\nsource = \"./selectors\"\nmain = true\n").
-		WithNewFile("selectors/dagger.json", `{"name":"selectors","engineVersion":"v1.0.0","sdk":{"source":"dang"},"source":"."}`).
-		WithNewFile("selectors/main.dang", `type Selectors {
+// prunedLinksModule has static artifacts, a collection's items as
+// artifacts, and nested collections whose keys repeat across parents.
+const prunedLinksModule = `type Selectors {
   pub projects: Projects! { Projects(paths: ["./api", "./web"]) }
   pub qualityTools: QualityTools! { QualityTools() }
   pub otherContainer: Container! { raise "metadata evaluated a leaf" }
@@ -381,7 +378,22 @@ type Suite {
   pub file: String!
   pub run: Void @check { null }
 }
-`)
+`
+
+func prunedLinksWorkspace(t testing.TB, c *dagger.Client) *core.Container {
+	return selectorsWorkspace(t, c, prunedLinksModule)
+}
+
+func selectorsWorkspace(t testing.TB, c *dagger.Client, source string) *core.Container {
+	return workspaceBase(t, c).
+		WithNewFile("dagger.toml", "[modules.selectors]\nsource = \"./selectors\"\nmain = true\n").
+		WithNewFile("selectors/dagger.json", `{"name":"selectors","engineVersion":"v1.0.0","sdk":{"source":"dang"},"source":"."}`).
+		WithNewFile("selectors/main.dang", source)
+}
+
+func (CollectionsSuite) TestPrunedLinks(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := prunedLinksWorkspace(t, c)
 	const link = "dag+check://?selectors-project=./api&selectors-suite=unit.test.ts"
 	out, err := base.With(daggerExec("check", "--list", "--all", "--format=link", "--selectors-project=./api", "--selectors-suite=unit.test.ts")).Stdout(ctx)
 	require.NoError(t, err)
@@ -445,6 +457,65 @@ type Suite {
   },
   "resolve":{"container":{"file":{"contents":"literal field names"}}}
 }}`, out)
+}
+
+// An artifact addressed on its own gets the link a listing of the whole
+// workspace gives it, untyped and typed: addressing it expands only the
+// collections its link depends on.
+func (CollectionsSuite) TestLinksMatchWorkspaceListing(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	// The Projects collection also has suites of its own, so projects/suites/run
+	// is two artifacts that differ only in their collections.
+	source := strings.Replace(prunedLinksModule, `  get(path: String!): Project! @get { Project(path: path) }
+}`, `  get(path: String!): Project! @get { Project(path: path) }
+  pub suites: SharedSuites! { SharedSuites(names: ["unit.test.ts", "lint"]) }
+}
+type SharedSuites @collection {
+  pub names: [String!]! @keys
+  get(name: String!): SharedSuite! @get { SharedSuite(name: name) }
+}
+type SharedSuite {
+  pub name: String!
+  pub run: Void @check { null }
+}`, 1)
+	require.NotEqual(t, prunedLinksModule, source)
+	base := selectorsWorkspace(t, c, source)
+	out, err := base.With(daggerQueryAt("core", `{
+  currentWorkspace { artifacts { items { path untyped: uri typed: uri(typeAssertion: true) } } }
+}`)).Stdout(ctx)
+	require.NoError(t, err)
+	var listing struct {
+		CurrentWorkspace struct {
+			Artifacts struct {
+				Items []struct {
+					Path           []string
+					Untyped, Typed string
+				}
+			}
+		}
+	}
+	require.NoError(t, json.Unmarshal([]byte(out), &listing))
+	items := listing.CurrentWorkspace.Artifacts.Items
+	require.NotEmpty(t, items)
+	var query strings.Builder
+	query.WriteString("{ currentWorkspace { artifacts {\n")
+	for i, item := range items {
+		fmt.Fprintf(&query, "  untyped%d: filterUri(uri: %q) { one { uri } }\n", i, item.Untyped)
+		fmt.Fprintf(&query, "  typed%d: filterUri(uri: %q) { one { uri(typeAssertion: true) } }\n", i, item.Typed)
+	}
+	query.WriteString("} } }")
+	out, err = base.With(daggerQueryAt("core", "%s", query.String())).Stdout(ctx)
+	require.NoError(t, err)
+	var addressed struct {
+		CurrentWorkspace struct {
+			Artifacts map[string]struct{ One struct{ URI string } }
+		}
+	}
+	require.NoError(t, json.Unmarshal([]byte(out), &addressed))
+	for i, item := range items {
+		require.Equal(t, item.Untyped, addressed.CurrentWorkspace.Artifacts[fmt.Sprintf("untyped%d", i)].One.URI, "untyped link of %v", item.Path)
+		require.Equal(t, item.Typed, addressed.CurrentWorkspace.Artifacts[fmt.Sprintf("typed%d", i)].One.URI, "typed link of %v", item.Path)
+	}
 }
 
 func (CollectionsSuite) TestListFormats(ctx context.Context, t *testctx.T) {
