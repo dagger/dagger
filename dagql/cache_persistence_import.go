@@ -267,6 +267,11 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				eagerDecodeResultIDs = append(eagerDecodeResultIDs, resultID)
 			}
 			c.putResultLocked(res)
+			// What the database holds of the record is the record as it is
+			// installed now: anything the restore changes of it from here
+			// on moves the count, and the next save compares the record with
+			// the saved bytes (keptFromImportedRows).
+			row.recordWrites = res.payloadMu.writes.Load()
 			c.traceImportResultLoaded(ctx, importRunID, resultID, frame)
 			if stamp := uint64(row.ChangeStamp); stamp > highestStamp {
 				highestStamp = stamp
@@ -575,8 +580,9 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 	if importErr != nil {
 		return importErr
 	}
-	// What the database holds, as its rows were read, before the restore's
-	// own work below changes an entry: the next save compares with it.
+	// What the database holds, as its rows were read: the next save compares
+	// with it, so what the restore's own work changes from here on, such as
+	// an offer it settles, is written then.
 	kept := keptFromImportedRows(c.persistSeed, resultRows, eqClassRows, eqClassDigestRows, termRows, termInputRows,
 		resultOutputEqClassRows, persistedEdgeRows, resultCallRows, resultTaughtRows, resultDepRows, resultSnapshotRows)
 	if err := c.indexRestoredEntries(indexed); err != nil {
@@ -745,7 +751,8 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 	if err := c.settleRestoredOffers(ctx, finalOffers); err != nil {
 		return err
 	}
-	return c.keepRestoredRecords(&kept)
+	c.persistKept = kept
+	return nil
 }
 
 // listMirrorRows lists one table of the persistence store into dst.
@@ -786,9 +793,13 @@ type importedResultRow struct {
 	body  *storedBody
 	parts *partFacts
 	// recordBytes fingerprints the record row as the database holds it
-	// (recordBytesPrint), for what the cache keeps of the database
-	// (persistKept).
-	recordBytes uint64
+	// (recordBytesPrint), and recordInputs the fields of the entry its
+	// envelope there carries (recordInputsPrint), for what the cache keeps
+	// of the database (persistKept). recordWrites is the installed entry's
+	// count of writes to its record as the import installed it.
+	recordBytes  uint64
+	recordInputs uint64
+	recordWrites uint32
 }
 
 // decode decodes the row's call frame and self payload, fingerprints them
@@ -810,6 +821,12 @@ func (row *importedResultRow) decode(blobBacked bool, seed maphash.Seed) {
 	default:
 		row.env = new(PersistedResultEnvelope)
 		row.envErr = json.Unmarshal(row.SelfPayload, row.env)
+	}
+	if row.env != nil && row.envErr == nil {
+		// The fields as the saved envelope carries them, before the import
+		// moves any onto the entry. Offers that can't be fingerprinted keep
+		// 0, so the save compares the record.
+		row.recordInputs, _ = recordInputsPrint(seed, row.env.PersistDeclined, row.env.Run, runRanBy(row.env.RunRan), row.env.PendingOffers)
 	}
 	row.SelfPayload = nil
 	row.CallFrameJSON = ""
