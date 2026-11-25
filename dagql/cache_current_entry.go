@@ -145,7 +145,7 @@ func (c *Cache) replaceResultValueInPlaceLocked(ctx context.Context, cur, fresh 
 		rerr = errors.Join(rerr, err)
 	}
 	old := replacedValue{release: cur.onRelease}
-	for depID := range cur.deps {
+	for _, depID := range cur.deps {
 		c.forgetDependencyEdgeLocked(cur.id, depID)
 		old.deps = append(old.deps, depID)
 	}

@@ -37,12 +37,12 @@ func cacheOwnershipError(c *Cache, activeHolds ...*ongoingCall) error {
 	}
 	for resultID, shared := range c.resultsByID {
 		expected[resultID] += int64(len(shared.depParents))
-		for parentID := range shared.depParents {
+		for _, parentID := range shared.depParents {
 			parent := c.resultsByID[parentID]
 			if parent == nil {
 				return fmt.Errorf("result %d references missing parent %d", resultID, parentID)
 			}
-			_, found := parent.deps[resultID]
+			found := parent.deps.has(resultID)
 			if !found {
 				return fmt.Errorf("parent %d is missing dependency %d", parentID, resultID)
 			}
@@ -59,12 +59,12 @@ func cacheOwnershipError(c *Cache, activeHolds ...*ongoingCall) error {
 			return fmt.Errorf("result %d ownership count: got %v, want %v", resultID, shared.incomingOwnershipCount.Load(), expected[resultID])
 		}
 
-		for depID := range shared.deps {
+		for _, depID := range shared.deps {
 			dep := c.resultsByID[depID]
 			if dep == nil {
 				return fmt.Errorf("result %d references missing dependency %d", resultID, depID)
 			}
-			if _, found := dep.depParents[resultID]; !found {
+			if !dep.depParents.has(resultID) {
 				return fmt.Errorf("dependency %d is missing parent %d", depID, resultID)
 			}
 		}

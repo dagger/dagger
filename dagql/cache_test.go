@@ -1267,7 +1267,7 @@ func TestCacheVolatileSessionResourceInvariants(t *testing.T) {
 	c.egraphMu.Lock()
 	parentRequiresHandle := cacheTestSessionResourceSetContains(firstShared.requiredSessionResources, handle)
 	var leafShared *sharedResult
-	for depID := range firstShared.deps {
+	for _, depID := range firstShared.deps {
 		dep := c.resultsByID[depID]
 		if dep != nil && dep.sessionResourceHandle == handle {
 			leafShared = dep
@@ -7380,7 +7380,7 @@ func TestCacheAttachDependencyResults(t *testing.T) {
 	parentDependsOnChild := false
 	childIncomingOwnershipCount := int64(0)
 	if cachedParent != nil {
-		_, parentDependsOnChild = cachedParent.deps[childShared.id]
+		parentDependsOnChild = cachedParent.deps.has(childShared.id)
 	}
 	if cachedChild != nil {
 		childIncomingOwnershipCount = cachedChild.incomingOwnershipCount.Load()
@@ -7448,7 +7448,7 @@ func TestCacheAttachDependencyResultsAlreadyAttachedChild(t *testing.T) {
 	heldParent := c.resultsByID[parentShared.id]
 	parentDependsOnChild := false
 	if heldParent != nil {
-		_, parentDependsOnChild = heldParent.deps[childShared.id]
+		parentDependsOnChild = heldParent.deps.has(childShared.id)
 	}
 	c.egraphMu.RUnlock()
 	assert.Assert(t, heldChild != nil)
@@ -7500,7 +7500,7 @@ func TestCacheAddExplicitDependency(t *testing.T) {
 	parentDependsOnChild := false
 	childIncomingOwnershipCount := int64(0)
 	if cachedParent != nil {
-		_, parentDependsOnChild = cachedParent.deps[childShared.id]
+		parentDependsOnChild = cachedParent.deps.has(childShared.id)
 	}
 	if cachedChild := c.resultsByID[childShared.id]; cachedChild != nil {
 		childIncomingOwnershipCount = cachedChild.incomingOwnershipCount.Load()
@@ -8147,7 +8147,7 @@ func TestCacheAddExplicitDependencyAcceptsSessionResourceDepsAndRecomputesAncest
 	resourceRequiringShared := resourceRequiring.cacheSharedResult()
 	assert.Assert(t, resourceRequiringShared != nil && resourceRequiringShared.id != 0)
 	c.egraphMu.RLock()
-	_, edgeAdded := middleShared.deps[resourceRequiringShared.id]
+	edgeAdded := middleShared.deps.has(resourceRequiringShared.id)
 	middleRequired := cacheTestSessionResourceSetContains(middleShared.requiredSessionResources, handle)
 	topRequired := cacheTestSessionResourceSetContains(topShared.requiredSessionResources, handle)
 	middleGenAfter := middleShared.requiredSessionResourcesGen.Load()
@@ -8166,7 +8166,7 @@ func TestCacheAddExplicitDependencyAcceptsSessionResourceDepsAndRecomputesAncest
 	plainDepShared := plainDep.cacheSharedResult()
 	assert.Assert(t, plainDepShared != nil && plainDepShared.id != 0)
 	c.egraphMu.RLock()
-	_, retained := middleShared.deps[plainDepShared.id]
+	retained := middleShared.deps.has(plainDepShared.id)
 	middleGenFinal := middleShared.requiredSessionResourcesGen.Load()
 	c.egraphMu.RUnlock()
 	assert.Assert(t, retained, "requirement-free retention edge must be recorded")
@@ -9420,7 +9420,7 @@ func TestCacheAttachmentClaimPinsTargetAgainstForeignRelease(t *testing.T) {
 	bShared := bRes.cacheSharedResult()
 	assert.Assert(t, bShared != nil && bShared.id != 0)
 	c.egraphMu.RLock()
-	_, childRetained := bShared.deps[childID]
+	childRetained := bShared.deps.has(childID)
 	c.egraphMu.RUnlock()
 	assert.Assert(t, childRetained, "the attachment must retain the original pinned child")
 

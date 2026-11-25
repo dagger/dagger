@@ -412,7 +412,7 @@ func storedValueMeasuredLocked(res *sharedResult) (int64, bool) {
 // Requires egraphMu.
 func storedSizeMissLocked(res *sharedResult) storedSizeMiss {
 	miss := storedSizeMiss{res: res, env: res.persistedEnvelope, body: res.stored, parts: res.partFacts, call: res.loadResultCall(), dependencyRevision: res.dependencyOwnershipRevision, replacements: res.replacements, expiresAtUnix: res.expiresAtUnix, changedAt: res.changedAt}
-	for dep := range res.deps {
+	for _, dep := range res.deps {
 		miss.deps = append(miss.deps, uint64(dep))
 	}
 	slices.Sort(miss.deps)

@@ -139,7 +139,7 @@ func roundTripStateLines(t *testing.T, name string, c *Cache) []string {
 	for _, id := range ids {
 		res := c.resultsByID[id]
 		deps := make([]sharedResultID, 0, len(res.deps))
-		for dep := range res.deps {
+		for _, dep := range res.deps {
 			deps = append(deps, dep)
 		}
 		slices.Sort(deps)

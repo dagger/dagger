@@ -661,7 +661,7 @@ func TestCachePublicationRetiresAnExpiredEntryWithADependent(t *testing.T) {
 			listID := sharedResultID(mapping[0].ResultID)
 			b.egraphMu.RLock()
 			var depID sharedResultID
-			for id := range b.resultsByID[listID].deps {
+			for _, id := range b.resultsByID[listID].deps {
 				depID = id
 			}
 			depRow := b.resultsByID[depID]

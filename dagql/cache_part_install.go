@@ -312,7 +312,7 @@ func (c *Cache) preparePartDependenciesLocked(receiver *sharedResult, deps []*sh
 			continue
 		}
 		seen[row.id] = true
-		for id := range row.deps {
+		for _, id := range row.deps {
 			if c.resultsByID[id] == nil {
 				return nil, fmt.Errorf("part graph: missing ancestor dependency %d", id)
 			}
@@ -325,7 +325,7 @@ func (c *Cache) preparePartDependenciesLocked(receiver *sharedResult, deps []*sh
 			req = req.Union(row.requiredSessionResources).(*set.TreeSet[SessionResourceHandle])
 		}
 		requirements[row] = req
-		for id := range row.depParents {
+		for _, id := range row.depParents {
 			parent := c.resultsByID[id]
 			if parent == nil {
 				return nil, fmt.Errorf("part graph: missing ancestor %d", id)
@@ -336,14 +336,10 @@ func (c *Cache) preparePartDependenciesLocked(receiver *sharedResult, deps []*sh
 	return requirements, nil
 }
 func (c *Cache) applyPartDependenciesLocked(ctx context.Context, receiver *sharedResult, deps []*sharedResult, requirements map[*sharedResult]*set.TreeSet[SessionResourceHandle]) {
-	if receiver.deps == nil {
-		receiver.deps = map[sharedResultID]struct{}{}
-	}
 	for _, dep := range deps {
-		if _, ok := receiver.deps[dep.id]; ok {
+		if !receiver.deps.add(dep.id) {
 			continue
 		}
-		receiver.deps[dep.id] = struct{}{}
 		receiver.dependencyOwnershipRevision++
 		c.rememberDependencyEdgeLocked(receiver, dep)
 		c.incrementIncomingOwnershipLocked(ctx, dep)

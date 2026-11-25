@@ -143,7 +143,7 @@ func TestReadyPartDonorBackreferenceReleasedBeforeSync(t *testing.T) {
 	require.EqualValues(t, 1, released.Load(), "Ready donor must collect before receiver bookkeeping despite donor-to-receiver backreference")
 	c.egraphMu.RLock()
 	donorCollected := c.resultsByID[donor.cacheSharedResult().id] == nil
-	_, retainsDonor := receiver.cacheSharedResult().deps[donor.cacheSharedResult().id]
+	retainsDonor := receiver.cacheSharedResult().deps.has(donor.cacheSharedResult().id)
 	c.egraphMu.RUnlock()
 	require.True(t, donorCollected)
 	require.False(t, retainsDonor)

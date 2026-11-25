@@ -269,7 +269,7 @@ func (c *Cache) partResourceLeavesLocked(row *sharedResult) []uint64 {
 		if r.sessionResourceHandle != "" {
 			ids = append(ids, uint64(r.id))
 		}
-		for id := range r.deps {
+		for _, id := range r.deps {
 			walk(c.resultsByID[id])
 		}
 	}

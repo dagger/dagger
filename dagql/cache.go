@@ -967,7 +967,7 @@ func (c *Cache) recomputeRequiredSessionResourcesLocked(res *sharedResult) (bool
 		}
 		reqs.Insert(handle)
 	}
-	for depID := range res.deps {
+	for _, depID := range res.deps {
 		dep := c.resultsByID[depID]
 		if dep == nil {
 			return false, fmt.Errorf("recompute required session resources: missing dep result %d", depID)
@@ -1504,7 +1504,7 @@ func (c *Cache) installAncestorIDsLocked(rootID sharedResultID) []sharedResultID
 	marks := ancestorMarksPool.Get().(*ancestorMarks)
 	marks.visit(rootID)
 	var out []sharedResultID
-	for parentID := range root.depParents {
+	for _, parentID := range root.depParents {
 		if marks.visit(parentID) {
 			out = append(out, parentID)
 		}
@@ -1514,7 +1514,7 @@ func (c *Cache) installAncestorIDsLocked(rootID sharedResultID) []sharedResultID
 		if res == nil {
 			continue
 		}
-		for parentID := range res.depParents {
+		for _, parentID := range res.depParents {
 			if marks.visit(parentID) {
 				out = append(out, parentID)
 			}
@@ -2256,7 +2256,7 @@ func (c *Cache) collectUnownedResultsLocked(ctx context.Context, queue []*shared
 		}
 
 		depIDs := make([]sharedResultID, 0, len(res.deps))
-		for depID := range res.deps {
+		for _, depID := range res.deps {
 			depIDs = append(depIDs, depID)
 		}
 
@@ -2495,7 +2495,7 @@ func (c *Cache) syncResultSnapshotLeasesLocked(ctx context.Context, res *sharedR
 func (c *Cache) snapshotsHeldByDependencies(ctx context.Context, res *sharedResult) map[string]struct{} {
 	c.readLockGraphGathered(ctx)
 	deps := make([]*sharedResult, 0, len(res.deps))
-	for id := range res.deps {
+	for _, id := range res.deps {
 		if dep := c.resultsByID[id]; dep != nil {
 			deps = append(deps, dep)
 		}
@@ -3554,13 +3554,13 @@ type sharedResult struct {
 	// deps tracks exact materialized child-result dependencies used for
 	// release/liveness propagation and persistence closure. This includes
 	// explicit out-of-band deps and exact resultCall refs mirrored into deps
-	// during materialization.
-	deps map[sharedResultID]struct{}
+	// during materialization. Sorted by number (resultIDSet).
+	deps resultIDSet
 	// depParents is the reverse index for direct deps. It lets install-span
 	// lookups walk dep edges upward on demand to find closure-owning installs
-	// (module API call returns) for the result being evaluated. Nothing reads
-	// it in order.
-	depParents map[sharedResultID]struct{}
+	// (module API call returns) for the result being evaluated. Sorted by
+	// number (resultIDSet), but nothing reads it in order.
+	depParents resultIDSet
 	// boundSession is the handle that only the session that computed the
 	// result holds, when its call bound the result to its session
 	// (BindToSession). It is a requirement like a session-resource handle.
@@ -4860,14 +4860,9 @@ func (c *Cache) addExplicitDependenciesLocked(
 		if depRes == nil || depRes.id == parentRes.id {
 			continue
 		}
-		if parentRes.deps == nil {
-			parentRes.deps = make(map[sharedResultID]struct{})
-		}
-		if _, ok := parentRes.deps[depRes.id]; ok {
+		if !parentRes.deps.add(depRes.id) {
 			continue
 		}
-
-		parentRes.deps[depRes.id] = struct{}{}
 		parentRes.dependencyOwnershipRevision++
 		c.rememberDependencyEdgeLocked(parentRes, depRes)
 		c.incrementIncomingOwnershipLocked(ctx, depRes)
@@ -4901,7 +4896,7 @@ func (c *Cache) addExplicitDependenciesLocked(
 		if !changed {
 			continue
 		}
-		for ancestorID := range res.depParents {
+		for _, ancestorID := range res.depParents {
 			if ancestor := c.resultsByID[ancestorID]; ancestor != nil {
 				queue = append(queue, ancestor)
 			}
@@ -4919,10 +4914,7 @@ func (c *Cache) rememberDependencyEdgeLocked(parentRes *sharedResult, depRes *sh
 	if parentRes == nil || depRes == nil || parentRes.id == 0 || depRes.id == 0 || parentRes.id == depRes.id {
 		return
 	}
-	if depRes.depParents == nil {
-		depRes.depParents = map[sharedResultID]struct{}{}
-	}
-	depRes.depParents[parentRes.id] = struct{}{}
+	depRes.depParents.add(parentRes.id)
 }
 
 // forgetDependencyEdgeLocked forgets that the entry numbered parentID
@@ -4932,13 +4924,10 @@ func (c *Cache) rememberDependencyEdgeLocked(parentRes *sharedResult, depRes *sh
 func (c *Cache) forgetDependencyEdgeLocked(parentID sharedResultID, depID sharedResultID) {
 	depRes := c.resultsByID[depID]
 	c.poolDependencyLocked(c.resultsByID[parentID], depRes, -1)
-	if depRes == nil || depRes.depParents == nil {
+	if depRes == nil {
 		return
 	}
-	delete(depRes.depParents, parentID)
-	if len(depRes.depParents) == 0 {
-		depRes.depParents = nil
-	}
+	depRes.depParents.remove(parentID)
 }
 
 type Result[T Typed] struct {
@@ -5302,13 +5291,7 @@ func (r Result[T]) WithContentDigest(ctx context.Context, contentDigest digest.D
 	if frame == nil {
 		return r, fmt.Errorf("set content digest on %T: missing call frame", r.Self())
 	}
-	var deps map[sharedResultID]struct{}
-	if len(r.shared.deps) > 0 {
-		deps = make(map[sharedResultID]struct{}, len(r.shared.deps))
-		for depID := range r.shared.deps {
-			deps[depID] = struct{}{}
-		}
-	}
+	deps := slices.Clone(r.shared.deps)
 	r.shared = &sharedResult{
 		self:                  state.self,
 		isObject:              state.isObject,
@@ -5414,13 +5397,7 @@ func (r Result[T]) WithSessionResourceHandle(ctx context.Context, handle Session
 
 	state := r.shared.loadPayloadState()
 	frame := r.shared.loadResultCall()
-	var deps map[sharedResultID]struct{}
-	if len(r.shared.deps) > 0 {
-		deps = make(map[sharedResultID]struct{}, len(r.shared.deps))
-		for depID := range r.shared.deps {
-			deps[depID] = struct{}{}
-		}
-	}
+	deps := slices.Clone(r.shared.deps)
 	reqs := set.NewTreeSet(compareSessionResourceHandles)
 	if r.shared.requiredSessionResources != nil {
 		reqs = r.shared.requiredSessionResources.Copy()
@@ -8138,7 +8115,7 @@ func (c *Cache) rollbackPartialPublicationLocked(ctx context.Context, res *share
 		return nil, nil
 	}
 	depIDs := make([]sharedResultID, 0, len(res.deps))
-	for depID := range res.deps {
+	for _, depID := range res.deps {
 		depIDs = append(depIDs, depID)
 	}
 	c.removeResultFromEgraphLocked(ctx, res)
@@ -8699,13 +8676,9 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		if depRes == nil {
 			return failPartialPublication(fmt.Errorf("retain result call ref %d: missing cached result", depID))
 		}
-		if oc.res.deps == nil {
-			oc.res.deps = make(map[sharedResultID]struct{})
-		}
-		if _, alreadyHeld := oc.res.deps[depID]; alreadyHeld {
+		if !oc.res.deps.add(depID) {
 			continue
 		}
-		oc.res.deps[depID] = struct{}{}
 		oc.res.dependencyOwnershipRevision++
 		c.rememberDependencyEdgeLocked(oc.res, depRes)
 		c.incrementIncomingOwnershipLocked(ctx, depRes)
@@ -8953,12 +8926,11 @@ func (c *Cache) attachDependencyResults(ctx context.Context, sessionID string, r
 	return nil
 }
 
-func sortedResultIDs(ids map[sharedResultID]struct{}) []uint64 {
-	out := make([]uint64, 0, len(ids))
-	for id := range ids {
-		out = append(out, uint64(id))
+func sortedResultIDs(ids resultIDSet) []uint64 {
+	out := make([]uint64, len(ids))
+	for i, id := range ids {
+		out[i] = uint64(id)
 	}
-	slices.Sort(out)
 	return out
 }
 

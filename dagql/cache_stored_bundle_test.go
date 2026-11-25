@@ -688,7 +688,7 @@ func storedPartTestDeps(c *Cache, number uint64) []uint64 {
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
 	var deps []uint64
-	for id := range c.resultsByID[sharedResultID(number)].deps {
+	for _, id := range c.resultsByID[sharedResultID(number)].deps {
 		deps = append(deps, uint64(id))
 	}
 	slices.Sort(deps)

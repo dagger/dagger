@@ -47,7 +47,7 @@ func (proof *partDelegationProof) currentLocked(c *Cache, source *PartSourceLeas
 		row == proof.parent || row.loadResultCall() != proof.childFrame || proof.parent.loadResultCall() != proof.parentFrame {
 		return false
 	}
-	if _, ok := row.deps[proof.parent.id]; !ok {
+	if !row.deps.has(proof.parent.id) {
 		return false
 	}
 	if proof.mapping.ParentResultID != uint64(proof.parent.id) || !containsPart([]PersistedPartAddress{proof.mapping.Address}, proof.source) {
@@ -128,7 +128,7 @@ func (c *Cache) selectDemandPartSource(ctx context.Context, receiver AnyResult, 
 	}
 	c.lockGraphForCtx(ctx, workPart)
 	parent := c.resultsByID[sharedResultID(mapping.ParentResultID)]
-	_, direct := row.deps[sharedResultID(mapping.ParentResultID)]
+	direct := row.deps.has(sharedResultID(mapping.ParentResultID))
 	if c.resultsByID[row.id] != row || parent == nil || parent == row || !direct {
 		c.egraphMu.Unlock()
 		return nil, nil, fmt.Errorf("part delegation: receiver %d has no distinct exact direct parent %d", row.id, mapping.ParentResultID)
