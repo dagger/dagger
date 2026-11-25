@@ -614,7 +614,7 @@ Commit generated SDK files so consumers and CI can build the module. Run `dagger
 
 ## Engine version
 
-`dagger-module.toml`'s `engineVersion` records the engine your module targets. Edit that field to change the requirement, then regenerate bindings with `dagger generate`.
+A module on the generated entrypoint records its target engine version in `entrypoint/dang.toml`. The SDK's library bundle sets the target, so the target follows the SDK release, not the engine. A module created with `--legacy-runtime` records its target as `engineVersion` in `dagger-module.toml` instead. Update the SDK, then regenerate bindings with `dagger generate`. See [SDK and engine versions](./versions.mdx).
 
 ## Checks, generators, directives, and ignore
 
@@ -1013,7 +1013,7 @@ Recommended release checklist:
 
 1. `dagger check` passes.
 2. `dagger check --generated=true` produces no drift.
-3. `engineVersion` in `dagger-module.toml` matches the engine you support.
+3. The module is generated with the SDK release whose default target is the engine release the module supports.
 4. Tag and push: `git tag vX.Y.Z && git push --tags`.
 
 ## Troubleshooting
@@ -1035,5 +1035,5 @@ before `dag.<dep>()` resolves.
 directory, or run `dagger generate` as a build step before
 calling the module.
 
-**Engine version mismatch warnings.** Align `dagger-module.toml`'s `engineVersion`
-with your engine, then regenerate bindings with `dagger generate`.
+**Engine version mismatch warnings.** Update the SDK to the release that targets
+the running engine, then regenerate bindings with `dagger generate`.

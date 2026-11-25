@@ -639,9 +639,9 @@ If `dagger_sdk/mix.exs` is missing when the engine loads the module, the runtime
 
 ## Engine version
 
-Each module declares the Dagger engine version it requires in the `engineVersion` field of `dagger-module.toml`. Set it to a concrete version.
+Each module declares its target engine version in the `engineVersion` field of `dagger-module.toml`. Set it to a concrete version.
 
-Bumping the engine version usually means the generated bindings should change too, so follow with `dagger generate`.
+Raising the target usually means the generated bindings should change too, so follow with `dagger generate`. See [SDK and engine versions](./versions.mdx) for the API a module gets.
 
 ## Checks, cache policy, directives, and ignore patterns
 
