@@ -279,6 +279,9 @@ func (family foreignFamilyCodec) ValidateForeign(v dagql.PersistedPayloadVisit) 
 	if v.ReferencesVisitedApart {
 		return nil
 	}
+	// The visit is a check, not its pass's last read of the payload: it
+	// leaves the memo's decode to the steps after it (dagql.PayloadMemo).
+	v.Memo = nil
 	_, err := registered.Visitor.VisitPersistedReferences(v, func(*dagql.PersistedRef) error { return nil })
 	return err
 }
@@ -318,6 +321,10 @@ type partPayload struct {
 	directory persistedDirectoryPayload
 	file      persistedFilePayload
 	container persistedContainerPayload
+	// decoded points at whichever of the three a strict decode filled
+	// (decodePartPayload), for the family's reference visitor to take from
+	// a visit's memo (memoPayload).
+	decoded any
 	// containerRoute is the Container's live recipe's route, when the recipe
 	// isn't encoded into the payload.
 	containerRoute *containerRecipeRoute
@@ -339,10 +346,13 @@ func (family foreignFamilyCodec) decodePartPayload(v dagql.PersistedPayloadVisit
 	switch family {
 	case "File":
 		err = readForeignPayload(v.Payload, &payload.file)
+		payload.decoded = &payload.file
 	case "Directory":
 		err = readForeignPayload(v.Payload, &payload.directory)
+		payload.decoded = &payload.directory
 	case "Container":
 		err = readForeignPayload(v.Payload, &payload.container)
+		payload.decoded = &payload.container
 	}
 	if err != nil {
 		return nil, err
