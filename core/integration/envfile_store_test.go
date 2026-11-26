@@ -69,8 +69,8 @@ func writeEnvProbeModule(t *testctx.T, dir, name string) {
 // there (inner).
 //
 // The test asserts that no value of a line of the outer .env that is not
-// namespaced to the module is in the engine's saved store; it reports the
-// others, and where in the state each value is.
+// namespaced to the module is anywhere in the engine's state, the saved
+// store included; it reports the others.
 func (CachePersistenceSuite) TestEnvFileLinesInStore(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	const noGC = "1000000000000000"
@@ -308,11 +308,11 @@ func (CachePersistenceSuite) TestEnvFileLinesInStore(ctx context.Context, t *tes
 				t.Logf("ENVFINDING %s:     kept by saved root %s", p.name, describe(root))
 			}
 		}
-		if p.kind == "other" && len(hits[i]) > 0 {
+		if p.kind == "other" && (len(hits[i]) > 0 || len(strings.Fields(string(files))) > 0) {
 			leaked = append(leaked, p.name)
 		}
 	}
-	require.Empty(t, leaked, "values of outer .env lines not namespaced to the module are in the engine's saved store")
+	require.Empty(t, leaked, "values of outer .env lines not namespaced to the module are in the engine's state")
 }
 
 func queryStrings(db *sql.DB, q string) ([]string, error) {
