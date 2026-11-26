@@ -395,15 +395,20 @@ func (c *Cache) storedBundle(kind wcprof.LockHolder, roots []uint64, nowUnix int
 	var frames map[TransferOrdinal]entryFrame
 	var err error
 	gaveWay := false
+	// The lock is let go however the build ends, a panic in it too.
 	if pieces {
-		read := c.readGivingWay(kind, storedBundlePieceHold)
-		out, frames, err = c.storedBundleLocked(read, roots, nowUnix, held, opts)
-		gaveWay = read.yields() > 0
-		read.done()
+		func() {
+			read := c.readGivingWay(kind, storedBundlePieceHold)
+			defer read.done()
+			out, frames, err = c.storedBundleLocked(read, roots, nowUnix, held, opts)
+			gaveWay = read.yields() > 0
+		}()
 	} else {
-		hold := c.egraphMu.RLockAs(kind)
-		out, frames, err = c.storedBundleLocked(nil, roots, nowUnix, held, opts)
-		hold.Unlock()
+		func() {
+			hold := c.egraphMu.RLockAs(kind)
+			defer hold.Unlock()
+			out, frames, err = c.storedBundleLocked(nil, roots, nowUnix, held, opts)
+		}()
 	}
 	if err != nil || len(out.Bundle.Values) == 0 {
 		return out, gaveWay, err
