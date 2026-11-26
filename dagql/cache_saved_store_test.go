@@ -41,6 +41,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unique"
 	"unsafe"
 
 	"github.com/klauspost/compress/zstd"
@@ -262,7 +263,8 @@ func savedStoreEntryCounts(c *Cache, say func(format string, args ...any)) {
 		withUsageMaps, offerParents, listItems                                             int
 		rootsWithCalls                                                                     int
 	)
-	descSeen := map[unsafe.Pointer]bool{}
+	descSeen := map[unique.Handle[string]]bool{}
+	recordTypeSeen := map[unique.Handle[string]]bool{}
 	for _, res := range c.resultsByID {
 		if b := res.stored; b != nil {
 			withBody++
@@ -301,11 +303,15 @@ func savedStoreEntryCounts(c *Cache, say func(format string, args ...any)) {
 		if res.partFacts != nil {
 			withPartFacts++
 		}
-		if p := unsafe.StringData(res.description); p != nil && !descSeen[unsafe.Pointer(p)] {
-			descSeen[unsafe.Pointer(p)] = true
-			descBytes += len(res.description)
+		// Names are interned handles: each distinct name is held once.
+		if !descSeen[res.description] {
+			descSeen[res.description] = true
+			descBytes += len(handleString(res.description))
 		}
-		recordTypeBytes += len(res.recordType)
+		if !recordTypeSeen[res.recordType] {
+			recordTypeSeen[res.recordType] = true
+			recordTypeBytes += len(handleString(res.recordType))
+		}
 		recipeKeys += len(res.recipeKeys)
 		if res.taughtContent != nil {
 			taught += len(res.taughtContent.digests)
@@ -328,7 +334,7 @@ func savedStoreEntryCounts(c *Cache, say func(format string, args ...any)) {
 	say("kept calls: %d on %d entries, %.3f GB encoded, %d inputs; entries with a term index %d", calls, withCalls, savedStoreGB(uint64(callBytes)), callInputs, withCallTermIndex)
 	say("deps %d, dep parents %d, persisted edges %d", deps, depParents, len(c.persistedEdgesByResult))
 	say("stored parts %d on %d entries; part facts on %d", storedParts, withStoredParts, withPartFacts)
-	say("description bytes (distinct) %d, recordType bytes %d, recipe keys %d (entriesByRecipe %d), taught %d, with holders %d, with usage maps %d, offer parents %d, list items %d",
+	say("description bytes (distinct) %d, recordType bytes (distinct) %d, recipe keys %d (entriesByRecipe %d), taught %d, with holders %d, with usage maps %d, offer parents %d, list items %d",
 		descBytes, recordTypeBytes, recipeKeys, len(c.entriesByRecipe), taught, holders, withUsageMaps, offerParents, listItems)
 	_ = rootsWithCalls
 }
@@ -483,8 +489,8 @@ func savedStoreCompositionSteps(c *Cache, base uint64, say func(format string, a
 	})
 	step("labels, stamps' maps, taught digests, holders, runs", func() {
 		for _, res := range c.resultsByID {
-			res.description = ""
-			res.recordType = ""
+			res.description = unique.Handle[string]{}
+			res.recordType = unique.Handle[string]{}
 			res.cacheUsageSizeByIdentity = nil
 			res.cacheUsageRecordTypeByID = nil
 			res.taughtContent = nil
