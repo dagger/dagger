@@ -329,3 +329,42 @@ func TestKeepNeededRowsMergesAsTheWholeBundleDoes(t *testing.T) {
 	require.Equal(t, wholeOutputs, keptOutputs, "each output lands on the same entry")
 	require.Equal(t, wholeState, keptState, "the same entries, dependencies, holdings, values and stored roots")
 }
+
+// A bundle captured with every known row, given to KeepNeededBundleRows, is
+// the bundle the capture gives with the rows nothing stands on left out: the
+// same closure and known rows, one bundle. Here the root changed since the
+// first export, so it goes in full, with a new row beside a known side
+// subtree, and the known rows on the way to the output's row are left out.
+func TestKeepNeededBundleRowsIsACapturesKeep(t *testing.T) {
+	t.Parallel()
+	ctx, c, srv := transferTestCache(t)
+	base := persistedListTestResult(t, ctx, c, srv, "bundle-base", String("base"))
+	side := persistedListTestResult(t, ctx, c, srv, "bundle-side", String("side"))
+	core := persistedListTestResult(t, ctx, c, srv, "bundle-core", String("core"))
+	out := persistedListTestResult(t, ctx, c, srv, "bundle-out", &transferTestValue{Text: "pending"})
+	mid := persistedListTestResult(t, ctx, c, srv, "bundle-mid", String("mid"))
+	root := persistedListTestResult(t, ctx, c, srv, "bundle-root", String("root"))
+	transferTestDependency(c, ctx, side, base)
+	transferTestDependency(c, ctx, out, core)
+	transferTestDependency(c, ctx, mid, out)
+	transferTestDependency(c, ctx, root, mid)
+	transferTestDependency(c, ctx, root, side)
+	known := NewKnownRows()
+	_, rows, _ := recordsOnlyCapture(t, ctx, c, known, root)
+	known.Merged(rows)
+	fresh := persistedListTestResult(t, ctx, c, srv, "bundle-new", String("new"))
+	transferTestDependency(c, ctx, root, fresh)
+
+	kept := contentCapture(t, ctx, c, known, root, out)
+	require.Positive(t, kept.LeftOutHeld)
+	c.testKeepEveryKnownRow = true
+	whole := contentCapture(t, ctx, c, known, root, out)
+	c.testKeepEveryKnownRow = false
+	require.Zero(t, whole.LeftOutHeld)
+
+	bundle := whole.Bundle
+	leftOut, keptEveryRow := KeepNeededBundleRows(&bundle, whole.Chains)
+	require.Empty(t, keptEveryRow)
+	require.Equal(t, kept.LeftOutHeld, leftOut)
+	require.Equal(t, kept.Bundle, bundle)
+}

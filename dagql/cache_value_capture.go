@@ -1638,6 +1638,22 @@ func (c *Cache) exportPass(ctx context.Context, selection ValueSelection, cfg co
 	return nil, consume(ctx, &ExportedValues{Bundle: bundle, Chains: chains, ChainTime: passes.chainTime, Phases: *phases, CopiedRows: passes.copiedRows, UnpredictedLinks: passes.unpredicted, LateMoved: passes.lateMoved, Sources: sources, LeftOut: leftOut, Rows: rows, LeftOutHeld: leftOutHeld, KeptEveryRow: keptAll})
 }
 
+// KeepNeededBundleRows leaves out of bundle the known rows nothing in it
+// stands on, as an export's capture does (keepNeededRows), linking past them
+// and renumbering what it keeps and every ordinal bundle and chains name. It
+// is for a producer of bundles other than a capture, such as a tool that
+// rebuilds an engine's exports from a saved store, so that its bundles carry
+// what an engine's would. It returns how many held rows it left out, and,
+// when it sends the bundle as it is, why (ExportedValues.KeptEveryRow).
+func KeepNeededBundleRows(bundle *ValueBundle, chains *SelectedChains) (leftOut int, keptEveryRow string) {
+	order := make([]*capturedTransferRow, len(bundle.Values))
+	for i, v := range bundle.Values {
+		order[i] = &capturedTransferRow{ordinal: v.Ordinal}
+	}
+	_, leftOut, keptEveryRow = keepNeededRows(bundle, chains, order)
+	return leftOut, keptEveryRow
+}
+
 // keepNeededRows leaves out of bundle the known rows nothing in it stands
 // on, and returns the captured rows it keeps, in order, renumbered to their
 // new ordinals, how many held rows it left out, and, when it sends the
