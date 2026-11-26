@@ -719,8 +719,8 @@ func TestCacheOutputEqClassInverseFreedClassesAndReset(t *testing.T) {
 	assert.NilError(t, c.ReleaseSession(ctxB, "inverse-free-b"))
 
 	c.egraphMu.Lock()
-	outputEqClassResultsNil := c.outputEqClassResults.Len() == 0
-	resultOutputEqClassesNil := c.resultOutputEqClasses.Len() == 0
+	outputEqClassResultsNil := idSetIndexResetForTest(&c.outputEqClassResults)
+	resultOutputEqClassesNil := idSetIndexResetForTest(&c.resultOutputEqClasses)
 	resultIndexedDigestsNil := c.resultIndexedDigests == nil
 	broadlyIndexedResultsNil := c.broadlyIndexedResults == nil
 	c.egraphMu.Unlock()
@@ -768,7 +768,7 @@ func TestCacheReleaseCascadePreservesCallbacksAndCleansDerivedIndexes(t *testing
 	assert.Assert(t, slices.Equal(callbacks, []string{"parent", "child"}), "callback order: %v", callbacks)
 	assert.Equal(t, 0, c.Size())
 	c.egraphMu.Lock()
-	outputEqClassResultsNil := c.outputEqClassResults.Len() == 0
+	outputEqClassResultsNil := idSetIndexResetForTest(&c.outputEqClassResults)
 	c.egraphMu.Unlock()
 	assert.Assert(t, outputEqClassResultsNil)
 }
@@ -926,7 +926,7 @@ func TestCacheBroadImportedPostingRemoval(t *testing.T) {
 	egraphResultsByDigestNil := postingsResetForTest(&f.cache.egraphResultsByDigest)
 	resultIndexedDigestsNil := f.cache.resultIndexedDigests == nil
 	broadlyIndexedResultsNil := f.cache.broadlyIndexedResults == nil
-	outputEqClassResultsNil := f.cache.outputEqClassResults.Len() == 0
+	outputEqClassResultsNil := idSetIndexResetForTest(&f.cache.outputEqClassResults)
 	f.cache.egraphMu.Unlock()
 	assert.Assert(t, egraphResultsByDigestNil)
 	assert.Assert(t, resultIndexedDigestsNil)
@@ -965,7 +965,7 @@ func TestCachePersistedFreshPruneCleansDerivedIndexes(t *testing.T) {
 	egraphResultsByDigestNil := postingsResetForTest(&f.cache.egraphResultsByDigest)
 	resultIndexedDigestsNil := f.cache.resultIndexedDigests == nil
 	broadlyIndexedResultsNil := f.cache.broadlyIndexedResults == nil
-	outputEqClassResultsNil := f.cache.outputEqClassResults.Len() == 0
+	outputEqClassResultsNil := idSetIndexResetForTest(&f.cache.outputEqClassResults)
 	f.cache.egraphMu.Unlock()
 	assert.Assert(t, egraphResultsByDigestNil)
 	assert.Assert(t, resultIndexedDigestsNil)

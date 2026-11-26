@@ -178,8 +178,8 @@ func (c *Cache) walkEqClassUsesLocked() map[eqClassID]uint32 {
 		}
 		use(term.outputEqID)
 	}
-	for resID := range c.resultOutputEqClasses.Keys() {
-		for outputEqID := range c.resultOutputEqClasses.All(resID) {
+	for _, outputEqIDs := range c.resultOutputEqClasses.Entries() {
+		for outputEqID := range outputEqIDs.All() {
 			use(outputEqID)
 		}
 	}
@@ -249,8 +249,8 @@ func (c *Cache) verifyEqClassSlotsLocked() error {
 			bad(fmt.Sprintf("term %d's output", termID), term.outputEqID)
 		}
 	}
-	for resID := range c.resultOutputEqClasses.Keys() {
-		for id := range c.resultOutputEqClasses.All(resID) {
+	for resID, ids := range c.resultOutputEqClasses.Entries() {
+		for id := range ids.All() {
 			if !live(id) {
 				bad(fmt.Sprintf("entry %d", resID), id)
 			}
