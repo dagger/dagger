@@ -166,7 +166,10 @@ func (cm *snapshotManager) leaveFetch(ctx context.Context, f *contentFetch) bool
 }
 
 // dropFetch drops one hold of f and, when that abandons the download, waits
-// for it to stop and release its lease and partial content.
+// for it to stop and release its lease and partial content. An import lets go
+// of every download it holds with it: one it no longer needs, such as one
+// whose blob it found stored before the download had ended, is gone with its
+// lease before the import returns.
 func (cm *snapshotManager) dropFetch(ctx context.Context, f *contentFetch) {
 	if cm.leaveFetch(ctx, f) {
 		<-f.done
@@ -219,7 +222,7 @@ func (cm *snapshotManager) fetchChainContent(ctx context.Context, desc ocispecs.
 // download that brings the blob for owner, still holds one: its pack's
 // read, which the blob's download joins. With no slot free it starts
 // nothing and reports full, and the caller tries again later. The caller
-// drops the returned hold, which may be nil, with leaveFetch once the layer
+// drops the returned hold, which may be nil, with dropFetch once the layer
 // is imported. It returns the slot the download holds, which the blob's
 // pack's other members may share, and reports whether it started a
 // download.
