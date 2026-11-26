@@ -1390,7 +1390,10 @@ type EngineFirstUseRoute struct {
 // memory in bytes before its first part and after its last, 0 when unknown.
 // Decode, Precheck, Prepare and Commit are the wall time its parts took to
 // decode, to check for their merges ahead of them, to prepare the rest of
-// their merges and to commit them, in all, in nanoseconds. Ended is
+// their merges and to commit them, in all, in nanoseconds. FirstPart is
+// when the last part of a head's first part committed, on the engine's
+// clock, in Unix nanoseconds, 0 for a file with none or one that stopped
+// before (remotecache.RestoreReport.FirstPart). Ended is
 // when the file's restore ended, on the engine's clock, in Unix nanoseconds,
 // and Window what the engine did from the file's arrival to then, for a file
 // it downloaded and ended.
@@ -1412,6 +1415,7 @@ type EngineRestore struct {
 	Precheck     int64                `json:"precheck,omitempty"`
 	Prepare      int64                `json:"prepare,omitempty"`
 	Commit       int64                `json:"commit,omitempty"`
+	FirstPart    int64                `json:"firstPart,omitempty"`
 	Ended        int64                `json:"ended,omitempty"`
 	Window       *EngineRestoreWindow `json:"window,omitempty"`
 }
