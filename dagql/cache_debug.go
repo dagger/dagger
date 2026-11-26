@@ -464,8 +464,8 @@ func (c *Cache) traceRefUnderflow(ctx context.Context, res *sharedResult, owners
 			"phase", "runtime",
 			"shared_result_id", res.id,
 			"incoming_ownership_count", ownershipCount,
-			"record_type", res.recordType,
-			"description", res.description,
+			"record_type", handleString(res.recordType),
+			"description", handleString(res.description),
 			"payload_state", payloadState,
 		}
 		if state.self != nil {
@@ -495,8 +495,8 @@ func (c *Cache) traceSessionResultTracked(ctx context.Context, sessionID string,
 			args = append(args,
 				"shared_result_id", shared.id,
 				"incoming_ownership_count", shared.incomingOwnershipCount.Load(),
-				"record_type", shared.recordType,
-				"description", shared.description,
+				"record_type", handleString(shared.recordType),
+				"description", handleString(shared.description),
 				"dep_count", len(shared.deps),
 			)
 			if frame := shared.loadResultCall(); frame != nil {
@@ -529,8 +529,8 @@ func (c *Cache) traceSessionResultReleasing(ctx context.Context, sessionID strin
 			args = append(args,
 				"shared_result_id", shared.id,
 				"incoming_ownership_count", shared.incomingOwnershipCount.Load(),
-				"record_type", shared.recordType,
-				"description", shared.description,
+				"record_type", handleString(shared.recordType),
+				"description", handleString(shared.description),
 				"dep_count", len(shared.deps),
 			)
 			if frame := shared.loadResultCall(); frame != nil {
@@ -642,8 +642,8 @@ func (c *Cache) traceTeachContentDigest(ctx context.Context, res *sharedResult, 
 		args := []any{
 			"phase", "runtime",
 			"shared_result_id", res.id,
-			"record_type", res.recordType,
-			"description", res.description,
+			"record_type", handleString(res.recordType),
+			"description", handleString(res.description),
 			"old_content_digest", oldContentDigest,
 			"new_content_digest", newContentDigest,
 			"request_digest", requestDigest,
@@ -679,8 +679,8 @@ func (c *Cache) traceTeachResultIdentityRootSet(ctx context.Context, res *shared
 		args := []any{
 			"phase", "runtime",
 			"shared_result_id", res.id,
-			"record_type", res.recordType,
-			"description", res.description,
+			"record_type", handleString(res.recordType),
+			"description", handleString(res.description),
 			"request_digest", requestDigest,
 			"request_self_digest", requestSelf,
 			"request_input_digests", requestInputs,
@@ -743,7 +743,7 @@ func (c *Cache) traceLookupHit(ctx context.Context, requestDigest string, res *s
 
 func (c *Cache) traceResultCreated(ctx context.Context, res *sharedResult) {
 	c.traceLazy(ctx, "result_created", func() []any {
-		return []any{"phase", "runtime", "shared_result_id", res.id, "record_type", res.recordType, "description", res.description}
+		return []any{"phase", "runtime", "shared_result_id", res.id, "record_type", handleString(res.recordType), "description", handleString(res.description)}
 	})
 }
 
@@ -820,8 +820,8 @@ func (c *Cache) traceResultCallFrameUpdated(ctx context.Context, res *sharedResu
 			"phase", "runtime",
 			"reason", reason,
 			"shared_result_id", res.id,
-			"record_type", res.recordType,
-			"description", res.description,
+			"record_type", handleString(res.recordType),
+			"description", handleString(res.description),
 			"incoming_ownership_count", res.incomingOwnershipCount.Load(),
 			"dep_count", len(res.deps),
 			"old_frame_present", oldFrame != nil,
@@ -842,8 +842,8 @@ func (c *Cache) traceResultRemoved(ctx context.Context, res *sharedResult, oldFr
 		return []any{
 			"phase", "runtime",
 			"shared_result_id", res.id,
-			"record_type", res.recordType,
-			"description", res.description,
+			"record_type", handleString(res.recordType),
+			"description", handleString(res.description),
 			"incoming_ownership_count", res.incomingOwnershipCount.Load(),
 			"dep_count", depCount,
 			"had_result_call", oldFrame != nil,
@@ -862,8 +862,8 @@ func (c *Cache) traceAttachResultReusedCacheBacked(ctx context.Context, sessionI
 			"phase", "runtime",
 			"session_id", sessionID,
 			"shared_result_id", shared.id,
-			"record_type", shared.recordType,
-			"description", shared.description,
+			"record_type", handleString(shared.recordType),
+			"description", handleString(shared.description),
 			"incoming_ownership_count", shared.incomingOwnershipCount.Load(),
 			"dep_count", len(shared.deps),
 			"has_result_call", frame != nil,
@@ -908,8 +908,8 @@ func (c *Cache) traceRecipeIDRebuildFailed(ctx context.Context, rootFrame *Resul
 			args = append(args,
 				"cache_result_present", true,
 				"cache_result_has_frame", frame != nil,
-				"cache_result_record_type", res.recordType,
-				"cache_result_description", res.description,
+				"cache_result_record_type", handleString(res.recordType),
+				"cache_result_description", handleString(res.description),
 				"cache_result_incoming_ownership_count", res.incomingOwnershipCount.Load(),
 				"cache_result_dep_count", len(res.deps),
 				"cache_result_call_field", field,
@@ -959,8 +959,8 @@ func (c *Cache) traceResultCallRefFromResultFailed(ctx context.Context, res AnyR
 			args = append(args,
 				"cache_result_present", true,
 				"cache_result_has_frame", frame != nil,
-				"cache_result_record_type", cacheRes.recordType,
-				"cache_result_description", cacheRes.description,
+				"cache_result_record_type", handleString(cacheRes.recordType),
+				"cache_result_description", handleString(cacheRes.description),
 				"cache_result_incoming_ownership_count", cacheRes.incomingOwnershipCount.Load(),
 				"cache_result_dep_count", len(cacheRes.deps),
 				"cache_result_call_field", field,
@@ -1054,8 +1054,8 @@ func (c *Cache) DebugEGraphSnapshot() *EGraphDebugSnapshot {
 		snap.Results = append(snap.Results, EGraphDebugResult{
 			SharedResultID:             uint64(res.id),
 			OutputEqClassIDs:           outputEqIDs,
-			RecordType:                 res.recordType,
-			Description:                res.description,
+			RecordType:                 handleString(res.recordType),
+			Description:                handleString(res.description),
 			TypeName:                   typeName,
 			IncomingOwnershipCount:     res.incomingOwnershipCount.Load(),
 			HasValue:                   state.hasValue,
@@ -1447,8 +1447,8 @@ func (c *Cache) WriteDebugCacheSnapshot(w io.Writer) error {
 				EGraphDebugResult: EGraphDebugResult{
 					SharedResultID:             uint64(res.id),
 					OutputEqClassIDs:           outputEqIDs,
-					RecordType:                 res.recordType,
-					Description:                res.description,
+					RecordType:                 handleString(res.recordType),
+					Description:                handleString(res.description),
 					TypeName:                   typeName,
 					IncomingOwnershipCount:     res.incomingOwnershipCount.Load(),
 					HasValue:                   state.hasValue,

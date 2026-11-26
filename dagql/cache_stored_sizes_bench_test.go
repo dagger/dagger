@@ -120,7 +120,7 @@ func storedSizesBenchCloud(b *testing.B) (context.Context, *Cache, []uint64) {
 	for _, value := range reply.Values {
 		res := cloud.resultsByID[sharedResultID(value.Number)]
 		recipe := res.recipeKeys[0]
-		entries = append(entries, entry{number: value.Number, recipe: RemoteHolding{Recipe: recipe, Request: recipe, Field: res.description}})
+		entries = append(entries, entry{number: value.Number, recipe: RemoteHolding{Recipe: recipe, Request: recipe, Field: handleString(res.description)}})
 	}
 	cloud.egraphMu.RUnlock()
 	holdings := 0

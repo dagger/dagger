@@ -17,7 +17,7 @@ func heldTestHoldOver(t *testing.T, cloud *Cache, cache CacheID, number, cloudNu
 	cloud.egraphMu.RLock()
 	recipe := entry.recipeKeys[0]
 	cloud.egraphMu.RUnlock()
-	_, err := cloud.AttachRemoteHolding(t.Context(), HolderKey{Cache: cache, Number: number}, RemoteHolding{Recipe: recipe, Request: recipe, Field: entry.description, Deps: deps})
+	_, err := cloud.AttachRemoteHolding(t.Context(), HolderKey{Cache: cache, Number: number}, RemoteHolding{Recipe: recipe, Request: recipe, Field: handleString(entry.description), Deps: deps})
 	require.NoError(t, err)
 }
 

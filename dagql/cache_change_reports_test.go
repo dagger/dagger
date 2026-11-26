@@ -290,7 +290,7 @@ func changeTestRecipe(c *Cache, number uint64) (digest.Digest, string) {
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
 	res := c.resultsByID[sharedResultID(number)]
-	return res.recipeKeys[0], res.description
+	return res.recipeKeys[0], handleString(res.description)
 }
 
 // changeTestMerge merges a bundle into the Cloud from an engine cache and

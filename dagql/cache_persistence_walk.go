@@ -392,8 +392,8 @@ func (c *Cache) readEntryLocked(rd *persistRead, id sharedResultID, res *sharedR
 		CloudHoldingExpiresAtUnix: cloudExpiresAtUnix,
 		CreatedAtUnixNano:         payload.createdAtUnixNano,
 		LastUsedAtUnixNano:        payload.lastUsedAtUnixNano,
-		RecordType:                res.recordType,
-		Description:               res.description,
+		RecordType:                handleString(res.recordType),
+		Description:               handleString(res.description),
 		ChangeStamp:               int64(res.changedAt),
 	}
 	next.row = resultRowPrint(seed, row)

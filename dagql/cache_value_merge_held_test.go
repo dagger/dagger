@@ -16,7 +16,7 @@ func heldTestHold(t *testing.T, ctx context.Context, cloud *Cache, cache CacheID
 	cloud.egraphMu.RLock()
 	recipe := entry.recipeKeys[0]
 	cloud.egraphMu.RUnlock()
-	_, err := cloud.AttachRemoteHolding(ctx, HolderKey{Cache: cache, Number: number}, RemoteHolding{Recipe: recipe, Request: recipe, Field: entry.description, ExpiresAtUnix: expiresAtUnix})
+	_, err := cloud.AttachRemoteHolding(ctx, HolderKey{Cache: cache, Number: number}, RemoteHolding{Recipe: recipe, Request: recipe, Field: handleString(entry.description), ExpiresAtUnix: expiresAtUnix})
 	require.NoError(t, err)
 	cloud.egraphMu.RLock()
 	defer cloud.egraphMu.RUnlock()
