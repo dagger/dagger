@@ -446,11 +446,6 @@ func (f entryFrame) decode() (*ResultCall, error) {
 	return nil, nil
 }
 
-// envelopeJSON returns the body's envelope JSON, decompressed.
-func (b *storedBody) envelopeJSON() ([]byte, error) {
-	return storedEnvelopeJSON(b.envelope(), int64(b.envelopeBytes))
-}
-
 // storedEnvelopeJSON returns the JSON of envelope, an envelope compressed as a
 // body holds it, whose JSON is jsonBytes long, or 0 if not known.
 func storedEnvelopeJSON(envelope []byte, jsonBytes int64) ([]byte, error) {
