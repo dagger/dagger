@@ -8188,8 +8188,11 @@ func (c *Cache) wait(
 	touchSharedResultLastUsed(oc.res, time.Now().UnixNano())
 	if ev := req.CacheEvidence; ev != nil {
 		// The last waiter creates the edge, possibly after this call's span
-		// ends; until then the span reports it as the publication's.
+		// ends; until then the span reports it as the publication's. The
+		// edge is this call's own only when its request is persistable: a
+		// waiter that isn't shares an edge another waiter asked for.
 		ev.pendingEdge = oc.pendingEdge
+		ev.Persisted = req.IsPersistable && oc.pendingEdge != nil
 		ev.Adopted = oc.adopted
 		ev.AdoptedRemote = oc.adoptedRemote
 		ev.AdoptedMergedAtUnixNano = oc.adoptedMergedAt

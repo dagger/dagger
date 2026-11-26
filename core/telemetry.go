@@ -482,6 +482,7 @@ func appendCacheEvidenceAttrs(ctx context.Context, attrs []attribute.KeyValue, e
 		}
 	}
 	attrs = appendAdoptionAttrs(attrs, ev)
+	attrs = appendPersistedAttr(attrs, ev)
 	if ev.LookupAtUnixNano != 0 {
 		attrs = append(attrs, attribute.String(telemetryattrs.CacheLookupAtAttr, strconv.FormatInt(ev.LookupAtUnixNano, 10)))
 	}
@@ -613,6 +614,16 @@ func appendAdoptionAttrs(attrs []attribute.KeyValue, ev *dagql.CacheDecision) []
 		}
 	}
 	return attrs
+}
+
+// appendPersistedAttr appends that the call itself kept its result past its
+// session (CacheDecision.Persisted): the call's own fact, beside the entry's
+// retention from any source, which the entry's state reports.
+func appendPersistedAttr(attrs []attribute.KeyValue, ev *dagql.CacheDecision) []attribute.KeyValue {
+	if !ev.Persisted {
+		return attrs
+	}
+	return append(attrs, attribute.String(telemetryattrs.CachePersistedAttr, "true"))
 }
 
 // cacheStateAttrs maps an entry's cache state onto the dagger.io/cache.*

@@ -175,6 +175,13 @@ type CacheDecision struct {
 	// at its session's top, and for CacheOutcomeUncached.
 	Caller digest.Digest
 
+	// Persisted records that this call kept its result past its session: its
+	// request is persistable and neither the call nor the value declined to
+	// persist (DeclinePersistence), so the publication it executed or joined
+	// adds a retention edge, or its hit does. It is the call's own, apart from
+	// the edge its result's entry holds from any source (ResultState).
+	Persisted bool
+
 	// pendingEdge is the retention edge the publication this call executed or
 	// joined adds to its result, set when the call is persistable. The last of
 	// the publication's waiters creates it, possibly after this call's span
