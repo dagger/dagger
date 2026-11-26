@@ -7,6 +7,7 @@ package userconfig
 import (
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/adrg/xdg"
 	toml "github.com/pelletier/go-toml"
@@ -41,4 +42,32 @@ func leaveOldEngines(path string) (bool, bool) {
 	}
 	leave, ok := doc.GetPath([]string{"engine", "leave_old_engines"}).(bool)
 	return leave, ok
+}
+
+// StopTimeout reports the top-level stopTimeout setting: how long the CLI
+// lets a run's work stop gracefully after its first interrupt, as a duration
+// such as "30s". ok is false when the setting is absent or not a duration,
+// or when the file is missing, unreadable, or malformed.
+func StopTimeout() (timeout time.Duration, ok bool) {
+	return stopTimeout(Path())
+}
+
+func stopTimeout(path string) (time.Duration, bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0, false
+	}
+	doc, err := toml.LoadBytes(data)
+	if err != nil {
+		return 0, false
+	}
+	value, ok := doc.Get("stopTimeout").(string)
+	if !ok {
+		return 0, false
+	}
+	timeout, err := time.ParseDuration(value)
+	if err != nil || timeout < 0 {
+		return 0, false
+	}
+	return timeout, true
 }

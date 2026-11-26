@@ -8384,16 +8384,34 @@ func (fe *frontendPretty) quitAction(interruptErr error) {
 	} else if fe.interrupted {
 		slog.Warn("exiting immediately")
 		fe.quitting = true
+		if fe.OnInterrupt != nil && !errors.Is(interruptErr, ErrShellExited) {
+			// tell the engine to kill what is still stopping before we go
+			go func() {
+				fe.OnInterrupt()
+				fe.dispatch(fe.doQuit)
+			}()
+			return
+		}
 		fe.doQuit()
 	} else {
 		// Ctrl+D on an empty prompt is an ordinary exit, not an interrupt:
 		// tearing the session down is the expected outcome, so don't warn
 		// about it. A second press still exits immediately.
-		if !errors.Is(interruptErr, ErrShellExited) {
-			slog.Warn("canceling... (press again to exit immediately)")
-		}
 		fe.interrupted = true
-		fe.interrupt(interruptErr)
+		if errors.Is(interruptErr, ErrShellExited) || fe.OnInterrupt == nil {
+			if !errors.Is(interruptErr, ErrShellExited) {
+				slog.Warn("canceling... (press again to exit immediately)")
+			}
+			fe.interrupt(interruptErr)
+			return
+		}
+		slog.Warn("canceling... (press again to exit immediately)")
+		// Tell the engine to stop the run's work gracefully before cancelling
+		// it, so the execs the cancellation leaves get SIGTERM, not SIGKILL.
+		go func() {
+			fe.OnInterrupt()
+			fe.interrupt(interruptErr)
+		}()
 	}
 }
 

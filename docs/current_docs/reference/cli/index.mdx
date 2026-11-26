@@ -72,17 +72,18 @@ dagger agent [FILTERS] [OPTIONS]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
-  -E, --no-exit            Leave the TUI running after completion
-      --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
-  -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -s, --silent             Do not show progress at all
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -w, --web                Open trace URL in a web browser
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string              Apply a named env overlay; writes target it, creating it if missing
+  -E, --no-exit                 Leave the TUI running after completion
+      --progress string         Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
+  -q, --quiet count             Reduce verbosity (show progress, but clean up at the end)
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+  -s, --silent                  Do not show progress at all
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -w, --web                     Open trace URL in a web browser
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -138,18 +139,19 @@ dagger api call [options] [function]...
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply         Automatically apply changes when an output is returned
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
-  -E, --no-exit            Leave the TUI running after completion
-      --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
-  -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -s, --silent             Do not show progress at all
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -w, --web                Open trace URL in a web browser
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -y, --auto-apply              Automatically apply changes when an output is returned
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string              Apply a named env overlay; writes target it, creating it if missing
+  -E, --no-exit                 Leave the TUI running after completion
+      --progress string         Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
+  -q, --quiet count             Reduce verbosity (show progress, but clean up at the end)
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+  -s, --silent                  Do not show progress at all
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -w, --web                     Open trace URL in a web browser
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -189,12 +191,13 @@ dagger api functions [options] [function]...
 ### Options inherited from parent commands
 
 ```
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string              Apply a named env overlay; writes target it, creating it if missing
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -250,17 +253,18 @@ EOF
 ### Options inherited from parent commands
 
 ```
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
-  -E, --no-exit            Leave the TUI running after completion
-      --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
-  -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -s, --silent             Do not show progress at all
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -w, --web                Open trace URL in a web browser
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string              Apply a named env overlay; writes target it, creating it if missing
+  -E, --no-exit                 Leave the TUI running after completion
+      --progress string         Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
+  -q, --quiet count             Reduce verbosity (show progress, but clean up at the end)
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+  -s, --silent                  Do not show progress at all
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -w, --web                     Open trace URL in a web browser
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -311,17 +315,18 @@ dagger api with-session python main.py
 ### Options inherited from parent commands
 
 ```
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
-  -E, --no-exit            Leave the TUI running after completion
-      --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
-  -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -s, --silent             Do not show progress at all
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -w, --web                Open trace URL in a web browser
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string              Apply a named env overlay; writes target it, creating it if missing
+  -E, --no-exit                 Leave the TUI running after completion
+      --progress string         Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
+  -q, --quiet count             Reduce verbosity (show progress, but clean up at the end)
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+  -s, --silent                  Do not show progress at all
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -w, --web                     Open trace URL in a web browser
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -355,17 +360,18 @@ dagger check [--fail-fast] [FILTERS] [OPTIONS]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
-  -E, --no-exit            Leave the TUI running after completion
-      --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
-  -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -s, --silent             Do not show progress at all
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -w, --web                Open trace URL in a web browser
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string              Apply a named env overlay; writes target it, creating it if missing
+  -E, --no-exit                 Leave the TUI running after completion
+      --progress string         Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
+  -q, --quiet count             Reduce verbosity (show progress, but clean up at the end)
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+  -s, --silent                  Do not show progress at all
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -w, --web                     Open trace URL in a web browser
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -1210,18 +1216,19 @@ dagger generate [FILTERS] [OPTIONS]
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply         Automatically apply changes when an output is returned
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
-  -E, --no-exit            Leave the TUI running after completion
-      --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
-  -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -s, --silent             Do not show progress at all
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -w, --web                Open trace URL in a web browser
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -y, --auto-apply              Automatically apply changes when an output is returned
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string              Apply a named env overlay; writes target it, creating it if missing
+  -E, --no-exit                 Leave the TUI running after completion
+      --progress string         Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
+  -q, --quiet count             Reduce verbosity (show progress, but clean up at the end)
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+  -s, --silent                  Do not show progress at all
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -w, --web                     Open trace URL in a web browser
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -1250,18 +1257,19 @@ dagger init
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply         Automatically apply changes when an output is returned
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
-  -E, --no-exit            Leave the TUI running after completion
-      --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
-  -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -s, --silent             Do not show progress at all
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -w, --web                Open trace URL in a web browser
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -y, --auto-apply              Automatically apply changes when an output is returned
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string              Apply a named env overlay; writes target it, creating it if missing
+  -E, --no-exit                 Leave the TUI running after completion
+      --progress string         Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
+  -q, --quiet count             Reduce verbosity (show progress, but clean up at the end)
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+  -s, --silent                  Do not show progress at all
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -w, --web                     Open trace URL in a web browser
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -1304,12 +1312,13 @@ dagger module install github.com/shykes/daggerverse/hello@v0.3.0
 ### Options inherited from parent commands
 
 ```
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string              Apply a named env overlay; writes target it, creating it if missing
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -1396,12 +1405,13 @@ dagger list [TYPE | COLLECTION]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string              Apply a named env overlay; writes target it, creating it if missing
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -1451,12 +1461,13 @@ dagger lock list [SELECTOR...]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string              Apply a named env overlay; writes target it, creating it if missing
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -1513,12 +1524,13 @@ dagger lock update [SELECTOR...]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string              Apply a named env overlay; writes target it, creating it if missing
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -1604,18 +1616,19 @@ dagger module client add <module> [--sdk=SDK]
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply         Automatically apply changes when an output is returned
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
-  -E, --no-exit            Leave the TUI running after completion
-      --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
-  -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -s, --silent             Do not show progress at all
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -w, --web                Open trace URL in a web browser
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -y, --auto-apply              Automatically apply changes when an output is returned
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string              Apply a named env overlay; writes target it, creating it if missing
+  -E, --no-exit                 Leave the TUI running after completion
+      --progress string         Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
+  -q, --quiet count             Reduce verbosity (show progress, but clean up at the end)
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+  -s, --silent                  Do not show progress at all
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -w, --web                     Open trace URL in a web browser
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -1647,12 +1660,13 @@ dagger module client list [flags]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string              Apply a named env overlay; writes target it, creating it if missing
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -1685,18 +1699,19 @@ dagger module client rm <module> [--sdk=SDK]
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply         Automatically apply changes when an output is returned
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
-  -E, --no-exit            Leave the TUI running after completion
-      --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
-  -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -s, --silent             Do not show progress at all
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -w, --web                Open trace URL in a web browser
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -y, --auto-apply              Automatically apply changes when an output is returned
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string              Apply a named env overlay; writes target it, creating it if missing
+  -E, --no-exit                 Leave the TUI running after completion
+      --progress string         Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
+  -q, --quiet count             Reduce verbosity (show progress, but clean up at the end)
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+  -s, --silent                  Do not show progress at all
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -w, --web                     Open trace URL in a web browser
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -1720,12 +1735,13 @@ dagger module client scope [flags]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string              Apply a named env overlay; writes target it, creating it if missing
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -1763,18 +1779,19 @@ dagger module client update
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply         Automatically apply changes when an output is returned
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
-  -E, --no-exit            Leave the TUI running after completion
-      --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
-  -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -s, --silent             Do not show progress at all
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -w, --web                Open trace URL in a web browser
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -y, --auto-apply              Automatically apply changes when an output is returned
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string              Apply a named env overlay; writes target it, creating it if missing
+  -E, --no-exit                 Leave the TUI running after completion
+      --progress string         Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
+  -q, --quiet count             Reduce verbosity (show progress, but clean up at the end)
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+  -s, --silent                  Do not show progress at all
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -w, --web                     Open trace URL in a web browser
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -1806,18 +1823,19 @@ dagger module init SDK [flags]
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply         Automatically apply changes when an output is returned
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
-  -E, --no-exit            Leave the TUI running after completion
-      --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
-  -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -s, --silent             Do not show progress at all
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -w, --web                Open trace URL in a web browser
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -y, --auto-apply              Automatically apply changes when an output is returned
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string              Apply a named env overlay; writes target it, creating it if missing
+  -E, --no-exit                 Leave the TUI running after completion
+      --progress string         Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
+  -q, --quiet count             Reduce verbosity (show progress, but clean up at the end)
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+  -s, --silent                  Do not show progress at all
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -w, --web                     Open trace URL in a web browser
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -1860,12 +1878,13 @@ dagger module install github.com/shykes/daggerverse/hello@v0.3.0
 ### Options inherited from parent commands
 
 ```
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string              Apply a named env overlay; writes target it, creating it if missing
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -1883,12 +1902,13 @@ dagger module list [flags]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string              Apply a named env overlay; writes target it, creating it if missing
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -1925,18 +1945,19 @@ dagger module migrate [PATH] [flags]
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply         Automatically apply changes when an output is returned
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
-  -E, --no-exit            Leave the TUI running after completion
-      --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
-  -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -s, --silent             Do not show progress at all
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -w, --web                Open trace URL in a web browser
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -y, --auto-apply              Automatically apply changes when an output is returned
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string              Apply a named env overlay; writes target it, creating it if missing
+  -E, --no-exit                 Leave the TUI running after completion
+      --progress string         Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
+  -q, --quiet count             Reduce verbosity (show progress, but clean up at the end)
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+  -s, --silent                  Do not show progress at all
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -w, --web                     Open trace URL in a web browser
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -1963,18 +1984,19 @@ dagger module recommend [flags]
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply         Automatically apply changes when an output is returned
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
-  -E, --no-exit            Leave the TUI running after completion
-      --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
-  -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -s, --silent             Do not show progress at all
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -w, --web                Open trace URL in a web browser
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -y, --auto-apply              Automatically apply changes when an output is returned
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string              Apply a named env overlay; writes target it, creating it if missing
+  -E, --no-exit                 Leave the TUI running after completion
+      --progress string         Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
+  -q, --quiet count             Reduce verbosity (show progress, but clean up at the end)
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+  -s, --silent                  Do not show progress at all
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -w, --web                     Open trace URL in a web browser
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -2037,12 +2059,13 @@ dagger module settings [module] [key] [value...] [flags]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string              Apply a named env overlay; writes target it, creating it if missing
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -2081,12 +2104,13 @@ dagger module uninstall hello
 ### Options inherited from parent commands
 
 ```
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string              Apply a named env overlay; writes target it, creating it if missing
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -2128,12 +2152,13 @@ dagger module update [NAME|SOURCE...] [flags]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string              Apply a named env overlay; writes target it, creating it if missing
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -2159,12 +2184,13 @@ dagger module version NAME|SOURCE [flags]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string              Apply a named env overlay; writes target it, creating it if missing
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -2202,12 +2228,13 @@ dagger sdk list [flags]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string              Apply a named env overlay; writes target it, creating it if missing
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -2263,13 +2290,14 @@ dagger sdk scope is-module [BOOL] [flags]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
-      --path string        Select a scope by path instead of the workspace CWD
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string              Apply a named env overlay; writes target it, creating it if missing
+      --path string             Select a scope by path instead of the workspace CWD
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -2295,13 +2323,14 @@ dagger sdk scope list [flags]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
-      --path string        Select a scope by path instead of the workspace CWD
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string              Apply a named env overlay; writes target it, creating it if missing
+      --path string             Select a scope by path instead of the workspace CWD
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -2325,13 +2354,14 @@ dagger sdk scope name [NAME] [flags]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
-      --path string        Select a scope by path instead of the workspace CWD
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string              Apply a named env overlay; writes target it, creating it if missing
+      --path string             Select a scope by path instead of the workspace CWD
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -2355,13 +2385,14 @@ dagger sdk scope sdk [SDK] [flags]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
-      --path string        Select a scope by path instead of the workspace CWD
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string              Apply a named env overlay; writes target it, creating it if missing
+      --path string             Select a scope by path instead of the workspace CWD
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -2388,12 +2419,13 @@ dagger settings [module] [key] [value...]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string              Apply a named env overlay; writes target it, creating it if missing
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -2424,17 +2456,18 @@ dagger shell [FILTERS] [OPTIONS]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
-  -E, --no-exit            Leave the TUI running after completion
-      --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
-  -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -s, --silent             Do not show progress at all
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -w, --web                Open trace URL in a web browser
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string              Apply a named env overlay; writes target it, creating it if missing
+  -E, --no-exit                 Leave the TUI running after completion
+      --progress string         Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
+  -q, --quiet count             Reduce verbosity (show progress, but clean up at the end)
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+  -s, --silent                  Do not show progress at all
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -w, --web                     Open trace URL in a web browser
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -2462,17 +2495,18 @@ dagger start [FILTERS] [OPTIONS]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
-  -E, --no-exit            Leave the TUI running after completion
-      --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
-  -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -s, --silent             Do not show progress at all
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -w, --web                Open trace URL in a web browser
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string              Apply a named env overlay; writes target it, creating it if missing
+  -E, --no-exit                 Leave the TUI running after completion
+      --progress string         Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
+  -q, --quiet count             Reduce verbosity (show progress, but clean up at the end)
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+  -s, --silent                  Do not show progress at all
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -w, --web                     Open trace URL in a web browser
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -2511,12 +2545,13 @@ dagger module uninstall hello
 ### Options inherited from parent commands
 
 ```
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string              Apply a named env overlay; writes target it, creating it if missing
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -2566,12 +2601,13 @@ applies a named overlay; dagger.toml is the source of truth.
 ### Options inherited from parent commands
 
 ```
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string              Apply a named env overlay; writes target it, creating it if missing
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -2640,11 +2676,12 @@ dagger workspace cat PATH [PATH...] [flags]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -2691,12 +2728,13 @@ dagger workspace config [key] [value] [flags]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string              Apply a named env overlay; writes target it, creating it if missing
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -2714,11 +2752,12 @@ dagger workspace config-file [flags]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -2736,11 +2775,12 @@ dagger workspace cwd [flags]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -2769,17 +2809,18 @@ dagger workspace doctor [flags]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
-  -E, --no-exit            Leave the TUI running after completion
-      --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
-  -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -s, --silent             Do not show progress at all
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -w, --web                Open trace URL in a web browser
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string              Apply a named env overlay; writes target it, creating it if missing
+  -E, --no-exit                 Leave the TUI running after completion
+      --progress string         Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
+  -q, --quiet count             Reduce verbosity (show progress, but clean up at the end)
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+  -s, --silent                  Do not show progress at all
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -w, --web                     Open trace URL in a web browser
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -2825,18 +2866,19 @@ dagger workspace exec [OPTIONS] [--] COMMAND [ARGS...] [flags]
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply         Automatically apply changes when an output is returned
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
-  -E, --no-exit            Leave the TUI running after completion
-      --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
-  -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -s, --silent             Do not show progress at all
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -w, --web                Open trace URL in a web browser
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -y, --auto-apply              Automatically apply changes when an output is returned
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string              Apply a named env overlay; writes target it, creating it if missing
+  -E, --no-exit                 Leave the TUI running after completion
+      --progress string         Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
+  -q, --quiet count             Reduce verbosity (show progress, but clean up at the end)
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+  -s, --silent                  Do not show progress at all
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -w, --web                     Open trace URL in a web browser
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -2881,11 +2923,12 @@ dagger workspace export [PATH] -o DEST [flags]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -2922,11 +2965,12 @@ dagger workspace find [PATH...] [flags]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -2947,11 +2991,12 @@ They do not load installed modules.
 ### Options inherited from parent commands
 
 ```
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -2982,11 +3027,12 @@ dagger workspace git dirty [flags]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -3022,11 +3068,12 @@ dagger workspace git log [flags]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -3044,11 +3091,12 @@ dagger workspace git ref [flags]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -3066,11 +3114,12 @@ dagger workspace git sha [flags]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -3101,11 +3150,12 @@ dagger workspace git url [flags]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -3163,10 +3213,11 @@ dagger workspace grep PATTERN [PATH...] [flags]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -3195,11 +3246,12 @@ dagger workspace ls [PATH...] [flags]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -3232,12 +3284,13 @@ dagger workspace main [NAME] [flags]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string              Apply a named env overlay; writes target it, creating it if missing
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -3273,18 +3326,19 @@ dagger workspace migrate [flags]
 ### Options inherited from parent commands
 
 ```
-  -y, --auto-apply         Automatically apply changes when an output is returned
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
-  -E, --no-exit            Leave the TUI running after completion
-      --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
-  -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -s, --silent             Do not show progress at all
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -w, --web                Open trace URL in a web browser
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -y, --auto-apply              Automatically apply changes when an output is returned
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string              Apply a named env overlay; writes target it, creating it if missing
+  -E, --no-exit                 Leave the TUI running after completion
+      --progress string         Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
+  -q, --quiet count             Reduce verbosity (show progress, but clean up at the end)
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+  -s, --silent                  Do not show progress at all
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -w, --web                     Open trace URL in a web browser
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -3321,11 +3375,12 @@ dagger workspace remotes [flags]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -3343,11 +3398,12 @@ dagger workspace root [flags]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+  -d, --debug                   Enable engine and trace diagnostics
+      --engine string           Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+  -i, --shell-on-error          Open a shell when a container exec fails (needs an interactive terminal)
+      --stop-timeout duration   How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file (default 10s)
+  -v, --verbose count           Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string        Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO

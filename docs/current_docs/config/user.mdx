@@ -60,3 +60,13 @@ leave_old_engines = true
 ```
 
 The `DAGGER_LEAVE_OLD_ENGINE` environment variable, when set, takes precedence over this setting. The setting takes precedence over the `cleanup` parameter of an `image://` engine URL.
+
+## Stop timeout
+
+When you interrupt a run (Ctrl-C, or SIGTERM to the CLI), Dagger sends SIGTERM to its running services and execs, and SIGKILL to any still running after the stop timeout. A second interrupt sends SIGKILL at once. The stop timeout is 10 seconds by default. To change it, set a duration:
+
+```toml
+stopTimeout = "30s"
+```
+
+`--stop-timeout` overrides this setting for one command. `0s` sends SIGKILL without SIGTERM.

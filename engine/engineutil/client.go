@@ -101,6 +101,13 @@ type Opts struct {
 	Interactive        bool
 	InteractiveCommand []string
 
+	// GracefulStop, when set, says how to stop an exec whose request was
+	// cancelled. A zero deadline means SIGKILL at once, as without it.
+	// Otherwise the exec gets SIGTERM, then SIGKILL at deadline or once force
+	// is closed, whichever comes first. done reports that the exec's stop is
+	// over.
+	GracefulStop func() (deadline time.Time, force <-chan struct{}, done func())
+
 	imageExportWriter *imageexport.Writer
 	running           map[string]*execState
 	runningMu         *sync.RWMutex

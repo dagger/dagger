@@ -38,6 +38,11 @@ type FrontendOpts struct {
 	// Leave the TUI running instead of exiting after completion.
 	NoExit bool
 
+	// OnInterrupt, when set, is called on each interrupt (Ctrl-C) before the
+	// frontend acts on it: before it cancels the run on the first, and before
+	// it exits on the next.
+	OnInterrupt func()
+
 	// DotOutputFilePath is the path to write the DOT output to after execution, if any
 	DotOutputFilePath string
 
