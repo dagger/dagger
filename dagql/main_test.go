@@ -1,6 +1,7 @@
 package dagql
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"flag"
@@ -24,7 +25,9 @@ import (
 // a database that held
 // something against a full save at its hold (checkPersistFullSave), and every
 // frame a merge installed against the recipe the merge landed it by
-// (checkMergedRecipes), and fails the run if any differs. It has every share
+// (checkMergedRecipes), and every body a merge's preparation made against
+// the one the body worker would have made of the record it installed
+// (checkPreparedBody), and fails the run if any differs. It has every share
 // of a shared value, and every cache's close, check the values the caches
 // share against their keys (verifySharedValues), and fails the run if a
 // holder changed one.
@@ -48,6 +51,9 @@ func TestMain(m *testing.M) {
 		recipes       int
 		recipeDrifts  []string
 		recipeChecked time.Duration
+		bodies        int
+		bodyDrifts    []string
+		bodyChecked   time.Duration
 		sharedChecks  int
 		sharedDrifts  []string
 		slotChecks    int
@@ -98,6 +104,18 @@ func TestMain(m *testing.M) {
 		notedChecked += took
 		if err != nil {
 			unnoted = append(unnoted, err.Error())
+		}
+	}
+	testPreparedBodies = func(res *sharedResult, env *PersistedResultEnvelope, call *ResultCall, body *storedBody, light *PersistedResultEnvelope) {
+		at := time.Now()
+		drift := checkPreparedBody(res, env, call, body, light)
+		took := time.Since(at)
+		mu.Lock()
+		defer mu.Unlock()
+		bodies++
+		bodyChecked += took
+		if drift != "" {
+			bodyDrifts = append(bodyDrifts, drift)
 		}
 	}
 	testCacheClosing = func(c *Cache) {
@@ -164,6 +182,7 @@ func TestMain(m *testing.M) {
 	}
 	code := m.Run()
 	mu.Lock()
+	code = reportPreparedBodies(code, bodies, bodyDrifts, bodyChecked)
 	if len(recipeDrifts) > 0 {
 		fmt.Fprintf(os.Stderr, "a merged frame's recipe differed from the one its merge landed it by in %d of %d installed records, checked in %s:\n", len(recipeDrifts), recipes, recipeChecked)
 		for _, d := range recipeDrifts {
@@ -238,6 +257,48 @@ func TestMain(m *testing.M) {
 	}
 	mu.Unlock()
 	os.Exit(code)
+}
+
+// reportPreparedBodies reports what checkPreparedBody found over a run, and
+// returns the run's exit code: code, or a failure if any body differed.
+func reportPreparedBodies(code, bodies int, drifts []string, checked time.Duration) int {
+	if len(drifts) == 0 {
+		fmt.Fprintf(os.Stderr, "prepared bodies: %d installed records checked in %s, none differed\n", bodies, checked)
+		return code
+	}
+	fmt.Fprintf(os.Stderr, "a body a merge's preparation made differed from the body worker's in %d of %d installed records, checked in %s:\n", len(drifts), bodies, checked)
+	for _, d := range drifts {
+		fmt.Fprintln(os.Stderr, "  "+d)
+	}
+	return 1
+}
+
+// checkPreparedBody checks a body a merge's preparation made, as the commit
+// installs it on res (testPreparedBodies), against the body the body worker
+// makes of the whole envelope env and frame call it stands for
+// (newStoredBody): the same compressed envelope, of the same JSON length,
+// with the same references, and the same light envelope. It returns what
+// differs, or "".
+func checkPreparedBody(res *sharedResult, env *PersistedResultEnvelope, call *ResultCall, body *storedBody, light *PersistedResultEnvelope) string {
+	want, err := newStoredBody(res, env, call)
+	if err != nil {
+		return fmt.Sprintf("entry %d: the body worker would fail: %v", res.id, err)
+	}
+	switch {
+	case !bytes.Equal(body.envelope(), want.envelope()):
+		got, _ := storedEnvelopeJSON(body.envelope(), int64(body.envelopeBytes))
+		worker, _ := storedEnvelopeJSON(want.envelope(), int64(want.envelopeBytes))
+		return fmt.Sprintf("entry %d: envelope %s, the body worker's %s", res.id, got, worker)
+	case body.envelopeBytes != want.envelopeBytes:
+		return fmt.Sprintf("entry %d: envelope of %d bytes, the body worker's %d", res.id, body.envelopeBytes, want.envelopeBytes)
+	case body.refs != want.refs:
+		return fmt.Sprintf("entry %d: references %v, the body worker's %v", res.id, body.refs.list(), want.refs.list())
+	case lightEnvelopeKeyOf(light) != lightEnvelopeKeyOf(sharedLightStoredEnvelope(env)):
+		return fmt.Sprintf("entry %d: another light envelope than the body worker's", res.id)
+	case body.call != call || body.holdsFrame():
+		return fmt.Sprintf("entry %d: the body isn't made with the entry's frame alone", res.id)
+	}
+	return ""
 }
 
 // checkMergedRecipes checks each frame a merge installed, under the commit's

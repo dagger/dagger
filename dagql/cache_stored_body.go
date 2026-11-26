@@ -54,10 +54,15 @@ import (
 // (encodePersistedResultRow), and a restore takes it back without decoding
 // it.
 //
-// A merge installs a record whole, as on an engine, with its parts. The
-// cache's body worker compresses it after the merge, outside every lock
-// (storedBodyWorker), so a merge's commit costs what it did. Until then the
-// entry holds its whole envelope, and its readers take either
+// A merge's preparation makes the body of each record it expects to install,
+// outside every lock, from the envelope JSON it measures the record's size
+// with (preparedBody), and the commit installs that body when it installs the
+// record as it was measured. The record is then decoded once on its way to
+// the store, by the preparation, which validated it in transfer form, and the
+// body worker only adds the frame to its body (storedBodyWorker). A record
+// the commit relocates again under its lock is installed whole, as on an
+// engine, with its parts, and the worker compresses it after the merge. Until
+// then the entry holds its whole envelope, and its readers take either
 // (storedRecordLocked).
 
 // storedBodyLevel is the zstd level stored envelopes are compressed at: the
@@ -195,6 +200,67 @@ func newStoredBody(res *sharedResult, env *PersistedResultEnvelope, call *Result
 		return nil, err
 	}
 	return compressStoredBody(raw, call, kept.refs)
+}
+
+// preparedBody is a stored body a merge's preparation made of a record, at
+// the numbers it measured the record at (valueMergePrep.recordBytes), and the
+// light envelope the record's entry keeps with it
+// (sharedLightStoredEnvelope): the commit installs both when it installs that
+// record (installPreparedBodyLocked). The body holds no frame and was made
+// with none: the commit gives it the entry's frame as it installs it.
+type preparedBody struct {
+	body  *storedBody
+	light *PersistedResultEnvelope
+}
+
+// storedForm returns, on a blob-backed cache, rec's size as persistence
+// writes it (encodedRecordBytes) and, for a record of ordinal id the early
+// decision installs (earlyMergeRows), its stored body: the envelope JSON that
+// size counts, compressed as the body worker compresses a record, whose
+// references name named, the entries its child and call references name. The
+// preparation validated each of rec's payloads in transfer form
+// (validateMemoTransferRecordContent), its relocation changed only numbers,
+// and the Cloud's records carry no offers, so rec is the record the body
+// worker would normalize it to (normalizeStoredTransfer), and the body is the
+// one it would make. A record the early decision keeps gets none: a commit
+// that installs it all the same installs it whole.
+func (prep *valueMergePrep) storedForm(id uint64, rec PersistedRecord, named []uint64) (int64, *preparedBody) {
+	envelope, size := encodedRecord(rec)
+	if envelope == nil || len(rec.Envelope.PendingOffers) > 0 || prep.early == nil {
+		return size, nil
+	}
+	if row := prep.early.byOrdinal[id]; row == nil || !row.action.installs() {
+		return size, nil
+	}
+	slices.Sort(named)
+	body, err := compressStoredBody(envelope, nil, slices.Compact(named))
+	if err != nil {
+		return size, nil
+	}
+	return size, &preparedBody{body: body, light: sharedLightStoredEnvelope(&rec.Envelope)}
+}
+
+// testPreparedBodies, when set, is called as the commit installs each body a
+// merge's preparation made (installPreparedBodyLocked), under its hold of
+// egraphMu, with the entry, the whole envelope and frame the body stands for,
+// the body and its light envelope: a test checks that the body worker would
+// have made the same of them. It must not take egraphMu.
+var testPreparedBodies func(res *sharedResult, env *PersistedResultEnvelope, call *ResultCall, body *storedBody, light *PersistedResultEnvelope)
+
+// installPreparedBodyLocked makes prepared, the body the merge's preparation
+// made of the record the commit installed on res, res's stored record, once
+// res's frame is bound (bindMergedFrameLocked): the body is made with that
+// frame, and the body worker adds the frame to it after the merge
+// (storeBodies). The entry holds the record compressed from the commit on, as
+// it would once the worker had compressed it whole. Requires egraphMu for
+// writing.
+func (c *Cache) installPreparedBodyLocked(res *sharedResult, prepared *preparedBody) {
+	body := prepared.body
+	body.call = res.loadResultCall()
+	if testPreparedBodies != nil {
+		testPreparedBodies(res, res.persistedEnvelope, body.call, body, prepared.light)
+	}
+	c.installStoredBodyLocked(res, res.persistedEnvelope, prepared.light, body)
 }
 
 // compressStoredBody is a body of the envelope JSON raw, made with call,
@@ -344,6 +410,22 @@ func (b *storedBody) reframe(c *Cache, id sharedResultID, frame *ResultCall) (*s
 		return nil, nil, err
 	}
 	return next, storedTransferPartFacts(kept), nil
+}
+
+// sizeWith returns the size measured of b with call, its decoded frame, as
+// the size of a body that holds that frame, or nil if none was measured so,
+// or b is nil.
+func (b *storedBody) sizeWith(call *ResultCall) *storedValueSize {
+	if b == nil {
+		return nil
+	}
+	size := b.size.Load()
+	if size == nil || size.call != call {
+		return nil
+	}
+	carried := *size
+	carried.call = nil
+	return &carried
 }
 
 // holdsFrame reports whether there is a body and it holds the frame.
@@ -866,9 +948,10 @@ func (c *Cache) holdRestoredFramesCompressed() error {
 // in flight are small beside the restored cache.
 const storedFrameRestoreBatch = 4096
 
-// storedBodyWorker compresses the records merges installed on a blob-backed
-// cache, outside every lock, and installs each body under egraphMu if the
-// entry still holds the record it compressed.
+// storedBodyWorker compresses the records merges installed whole on a
+// blob-backed cache, and adds the frame to the bodies merges' preparations
+// made, outside every lock, and installs each body under egraphMu if the
+// entry still holds what it read.
 type storedBodyWorker struct {
 	mu      sync.Mutex
 	pending []*sharedResult
@@ -1188,24 +1271,45 @@ func (c *Cache) closeStoredBodies() {
 // storeBodies compresses each entry's record, as it stands when read, and
 // installs the bodies in one hold of egraphMu, on the entries that still hold
 // the records compressed. A record that fails to compress stays whole: its
-// readers normalize it, and report its error, as they would have.
+// readers normalize it, and report its error, as they would have. An entry
+// whose body the merge's preparation made (installPreparedBodyLocked) has
+// its frame added to that body, as a restored entry has
+// (holdRestoredFramesCompressed): its record isn't read again.
 func (c *Cache) storeBodies(entries []*sharedResult) {
 	type read struct {
 		res   *sharedResult
 		env   *PersistedResultEnvelope
 		light *PersistedResultEnvelope
 		call  *ResultCall
-		body  *storedBody
+		// was is the body the entry holds without its frame, for a body the
+		// preparation made, nil for a record held whole.
+		was  *storedBody
+		body *storedBody
 	}
 	reads := make([]read, 0, len(entries))
 	readHold := c.readGraphAs(workBody)
 	for _, res := range entries {
-		if res.stored == nil && res.persistedEnvelope != nil && c.resultsByID[res.id] == res {
+		if c.resultsByID[res.id] != res {
+			continue
+		}
+		switch was := res.stored; {
+		case was == nil && res.persistedEnvelope != nil:
 			reads = append(reads, read{res: res, env: res.persistedEnvelope, call: res.loadResultCall()})
+		case was != nil && !was.holdsFrame() && was.call != nil && was.call == res.loadResultCall():
+			// The entry holds its record's light envelope already.
+			reads = append(reads, read{res: res, env: res.persistedEnvelope, light: res.persistedEnvelope, call: was.call, was: was})
 		}
 	}
 	readHold.Unlock()
 	for i := range reads {
+		if was := reads[i].was; was != nil {
+			// The frame goes into the body with its recipe digest, which
+			// deriving reads from the cache: no lock is held here.
+			if body, err := was.withFrame(c, reads[i].call); err == nil && body != was {
+				reads[i].body = body
+			}
+			continue
+		}
 		body, err := newStoredBody(reads[i].res, reads[i].env, reads[i].call)
 		if err == nil {
 			// The frame goes into the body too, with its recipe digest,
@@ -1220,7 +1324,14 @@ func (c *Cache) storeBodies(entries []*sharedResult) {
 	c.lockGraphFor(context.Background(), workBody)
 	defer c.egraphMu.Unlock()
 	for _, r := range reads {
-		if r.body != nil && r.res.stored == nil && r.res.persistedEnvelope == r.env && r.res.loadResultCall() == r.call && c.resultsByID[r.res.id] == r.res {
+		if r.body != nil && r.res.stored == r.was && r.res.persistedEnvelope == r.env && r.res.loadResultCall() == r.call && c.resultsByID[r.res.id] == r.res {
+			// A size measured of the body the frame went into is the new
+			// body's: a value measures the same with its frame decoded or
+			// held in its body. Sizes are kept under egraphMu, which this
+			// hold excludes (publishStoredSizes).
+			if size := r.was.sizeWith(r.call); size != nil {
+				r.body.size.Store(size)
+			}
 			c.installStoredBodyLocked(r.res, r.env, r.light, r.body)
 		}
 	}

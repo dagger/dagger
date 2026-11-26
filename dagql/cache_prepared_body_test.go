@@ -5,6 +5,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 	"unsafe"
 
 	"github.com/stretchr/testify/require"
@@ -166,5 +167,37 @@ func TestCloudHoldsAMergedRecordCompressedFromItsCommit(t *testing.T) {
 		require.Equal(t, w.partFacts, g.partFacts, "recipe %s: the same parts", recipe)
 		require.Equal(t, w.storedRecordBytes, g.storedRecordBytes, "recipe %s: the same size", recipe)
 		require.Equal(t, w.payloadBytes.Load(), g.payloadBytes.Load(), "recipe %s: the same payload bytes", recipe)
+	}
+}
+
+// A size measured of a record held in the body its merge's preparation made
+// is kept when the body worker adds the record's frame to that body: a value
+// measures the same with its frame decoded or held in its body.
+func TestCloudKeepsAPreparedBodysSizeWhenItsFrameIsAdded(t *testing.T) {
+	t.Parallel()
+	bundle := storedBodyTestExportOf(t, 8)
+	ctx := cacheTestContext(t.Context())
+	cloud, err := NewCache(ctx, "", nil, nil, WithBlobStore())
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, cloud.CloseDiscardingPersistence()) })
+	// The body worker stays stopped until the test runs it.
+	cloud.closeStoredBodies()
+	reply, err := cloud.MergeValues(ctx, "cache-a", bundle)
+	require.NoError(t, err)
+	require.True(t, reply.Committed)
+	var roots []uint64
+	for _, value := range reply.Imported() {
+		roots = append(roots, value.ResultID)
+	}
+	require.Len(t, roots, 8)
+	_, err = cloud.StoredSizes(ctx, roots, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	storedTestCompress(cloud)
+	cloud.egraphMu.RLock()
+	defer cloud.egraphMu.RUnlock()
+	for _, number := range roots {
+		res := cloud.resultsByID[sharedResultID(number)]
+		require.True(t, res.stored.holdsFrame(), "entry %d's body holds its frame", number)
+		require.NotNil(t, res.stored.size.Load(), "entry %d keeps the size measured before its frame went into its body", number)
 	}
 }

@@ -217,9 +217,19 @@ func (c *Cache) poolEstimateLocked() CacheMetadataEstimate {
 // encodedRecordBytes is a record's size as persistence writes it: its call
 // frame's JSON and its envelope's.
 func encodedRecordBytes(rec PersistedRecord) int64 {
+	_, size := encodedRecord(rec)
+	return size
+}
+
+// encodedRecord returns rec's envelope's JSON, nil if it can't be encoded,
+// and rec's size as encodedRecordBytes measures it.
+func encodedRecord(rec PersistedRecord) ([]byte, int64) {
 	frame, _ := json.Marshal(rec.Call)
-	envelope, _ := json.Marshal(rec.Envelope)
-	return int64(len(frame) + len(envelope))
+	envelope, err := json.Marshal(rec.Envelope)
+	if err != nil {
+		envelope = nil
+	}
+	return envelope, int64(len(frame) + len(envelope))
 }
 
 // storedBlobsLocked returns the distinct layer blobs res's stored parts name,

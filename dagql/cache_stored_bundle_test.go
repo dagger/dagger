@@ -354,10 +354,20 @@ func TestStoredBundleCarriesTheCurrentRecord(t *testing.T) {
 			require.Contains(t, rootRecord().Call.ExtraDigests, call.ExtraDigest{Digest: content, Label: call.ExtraDigestLabelContent}, "the new call")
 
 			mergeTestExpire(cloud, storedBundleTestEntry(cloud, r))
+			res := storedBundleTestEntry(cloud, r)
+			cloud.egraphMu.RLock()
+			oldBody := res.stored
+			cloud.egraphMu.RUnlock()
 			fresh, _ := mergeTestSource(t, "bundle-root", "new")
 			_, err := cloud.MergeValues(ctx, "cache-b", fresh)
 			require.NoError(t, err)
-			require.False(t, storedBundleTestKept(cloud, r), "the replacement releases the old record")
+			cloud.egraphMu.RLock()
+			kept, body := res.storedTransfer.Load(), res.stored
+			cloud.egraphMu.RUnlock()
+			require.Nil(t, kept, "the replacement releases the old normalized record")
+			if oldBody != nil {
+				require.NotSame(t, oldBody, body, "the replacement releases the old compressed record")
+			}
 			settle()
 			require.Contains(t, string(rootRecord().Envelope.ObjectJSON), "new", "the new record")
 		})
