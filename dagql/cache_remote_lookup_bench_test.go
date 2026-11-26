@@ -127,9 +127,10 @@ func BenchmarkLateRemoteMisses(b *testing.B) {
 }
 
 // BenchmarkRemoteMissLogTrim times the miss that finds the miss log full
-// (noteRemoteMiss): it trims the log, dropping the misses a part returned
-// and then the oldest quarter. Half the logged misses were returned, and
-// each names a recipe and a term, and every fourth an extra digest.
+// (noteRemoteMiss): it trims the log, dropping the misses a part returned,
+// and indexes again the misses it keeps. Every other logged miss was
+// returned, so the trim drops that half and not the oldest quarter. Each
+// miss names a recipe and a term, and every fourth an extra digest.
 func BenchmarkRemoteMissLogTrim(b *testing.B) {
 	ctx := cacheTestContext(b.Context())
 	c, err := NewCache(ctx, "", nil, nil)
@@ -160,9 +161,7 @@ func BenchmarkRemoteMissLogTrim(b *testing.B) {
 		}
 		l.mu.Lock()
 		for i := range l.missed {
-			if l.missed[i].seq%2 == 0 {
-				l.missed[i].found = true
-			}
+			l.missed[i].found = i%2 == 0
 		}
 		l.mu.Unlock()
 	}
