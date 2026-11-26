@@ -173,7 +173,8 @@ func benchmarkChangeMarksMergePrune(b *testing.B, bundle ValueBundle, marks bool
 // holding whose new entry joins, by its content digest, a class of size
 // entries that hold no part, as a commit's or a row's new entry joins the
 // class of results equal to it. It reports join-us, one such holding's
-// attach with its join and its marks handed back.
+// attach with its join and its marks handed back, and named/join, the
+// entries its change names for readers.
 func BenchmarkClassJoin(b *testing.B) {
 	for _, size := range []int{1_000, 10_000} {
 		b.Run(fmt.Sprintf("class=%d", size), func(b *testing.B) {
@@ -200,14 +201,69 @@ func benchmarkClassJoin(b *testing.B, size int) {
 	require.True(b, ok)
 	require.Len(b, class.Entries, size, "one class of size entries")
 	b.ResetTimer()
-	i := 0
+	i, named := 0, 0
 	for b.Loop() {
 		key, desc := holding("cache-join", i)
 		i++
-		_, err := cloud.AttachRemoteHolding(ctx, key, desc)
+		change, err := cloud.AttachRemoteHolding(ctx, key, desc)
 		require.NoError(b, err)
+		named += len(change.Entries)
 	}
 	b.ReportMetric(float64(b.Elapsed().Microseconds())/float64(b.N), "join-us")
+	b.ReportMetric(float64(named)/float64(b.N), "named/join")
+}
+
+// BenchmarkClassJoinOfTwoClasses times a join of two classes of size
+// entries each, none holding a part, on a blob-backed cache: an entry of
+// one class, given the other's content digest by a holding of its recipe,
+// joins them, as a kept record's identity can join two classes of entries
+// the cache had. It reports join-us and named/join, as BenchmarkClassJoin
+// does.
+func BenchmarkClassJoinOfTwoClasses(b *testing.B) {
+	for _, size := range []int{100, 1_000} {
+		b.Run(fmt.Sprintf("classes=%d+%d", size, size), func(b *testing.B) {
+			benchmarkClassJoinOfTwoClasses(b, size)
+		})
+	}
+}
+
+func benchmarkClassJoinOfTwoClasses(b *testing.B, size int) {
+	holding := func(class string, i int) (HolderKey, RemoteHolding) {
+		recipe := testDigest(fmt.Sprintf("two-classes-%s-%d", class, i))
+		return HolderKey{Cache: CacheID("cache-" + class), Number: uint64(i + 1)}, RemoteHolding{
+			Recipe: recipe, Request: recipe, Field: "field", TypeName: "Directory", ContentDigest: testDigest("two-classes-content-" + class),
+		}
+	}
+	var took time.Duration
+	named := 0
+	for b.Loop() {
+		b.StopTimer()
+		ctx, cloud := changeMarksBenchCloud(b, true)
+		for _, class := range []string{"a", "b"} {
+			for i := range size {
+				key, desc := holding(class, i)
+				_, err := cloud.AttachRemoteHolding(ctx, key, desc)
+				require.NoError(b, err)
+			}
+		}
+		// Another engine's holding of class a's first recipe, with class b's
+		// content: its entry joins the two classes.
+		_, desc := holding("a", 0)
+		desc.ContentDigest = testDigest("two-classes-content-b")
+		b.StartTimer()
+		start := time.Now()
+		change, err := cloud.AttachRemoteHolding(ctx, HolderKey{Cache: "cache-join", Number: 1}, desc)
+		took += time.Since(start)
+		require.NoError(b, err)
+		named += len(change.Entries)
+		b.StopTimer()
+		class, ok := cloud.EntryClassEntries(changeMarksBenchNumber(b, HolderKey{Cache: "cache-b", Number: 1}))
+		require.True(b, ok)
+		require.Len(b, class.Entries, 2*size, "the two classes joined")
+		b.StartTimer()
+	}
+	b.ReportMetric(float64(took.Microseconds())/float64(b.N), "join-us")
+	b.ReportMetric(float64(named)/float64(b.N), "named/join")
 }
 
 // changeMarksBenchNumber is the entry number of a holding the cache has.
