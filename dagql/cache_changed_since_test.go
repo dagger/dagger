@@ -532,10 +532,10 @@ func narrowTestJoin(t *testing.T, ctx context.Context, cloud *Cache, content str
 // A record's bundle reads its class only to borrow a part a class mate
 // stores, so a write to a class mate moves the record's position only when
 // it can change what the record borrows. A class mate's value replaced while
-// it stores no part, or a join with a class that stores none, leaves the
-// record current; a class mate's value replaced while it stores a part the
-// record borrows, or a join that brings a stored part, doesn't. The rebuild
-// judges each.
+// it stores no part, a join with a class that stores none, or an entry that
+// stores none joining the record's class, leaves the record current; a class
+// mate's value replaced while it stores a part the record borrows, or a join
+// that brings a stored part, doesn't. The rebuild judges each.
 func TestChangedSinceAClassMatesWrite(t *testing.T) {
 	t.Parallel()
 
@@ -578,6 +578,21 @@ func TestChangedSinceAClassMatesWrite(t *testing.T) {
 		require.Empty(t, before.Bundle.Outputs)
 		narrowTestJoin(t, ctx, cloud, "narrow-join-lending", member)
 		require.Equal(t, []uint64{r}, changedSinceTestRebuild(t, cloud, before, r), "the record now borrows the mate's part")
+	})
+
+	t.Run("an entry that stores none joining a class that stores a part", func(t *testing.T) {
+		t.Parallel()
+		ctx, cloud, r, _ := storedBundleTestCloud(t, "root")
+		lending, _ := narrowTestMember(t, ctx, cloud, "narrow-joined-lending", true)
+		plain, _ := narrowTestMember(t, ctx, cloud, "narrow-joined-plain", false)
+		narrowTestJoin(t, ctx, cloud, "narrow-joined", r, lending)
+		before := changedSinceTestBuild(t, cloud, r)
+		require.Len(t, before.Bundle.Outputs, 1, "the record borrows the lending mate's part")
+		narrowTestJoin(t, ctx, cloud, "narrow-joined", plain)
+		require.Empty(t, changedSinceTestRebuild(t, cloud, before, r))
+		require.False(t, changedSinceTestOne(t, cloud, r, before.Position), "the joining entry brings nothing the record can borrow")
+		require.False(t, changedSinceTestOne(t, cloud, lending, before.Position), "nor the lending mate")
+		require.True(t, changedSinceTestOne(t, cloud, plain, before.Position), "the joining entry can borrow the class's part now")
 	})
 
 	t.Run("a join with a class that stores none", func(t *testing.T) {
