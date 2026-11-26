@@ -188,10 +188,12 @@ func storedTestRecordLocked(t *testing.T, res *sharedResult) PersistedRecord {
 	return PersistedRecord{ResultID: uint64(res.id), Envelope: *res.persistedEnvelope, Call: frame}
 }
 
-// storedTestHoldWhole stops the Cloud's body worker, so that its records
-// stay whole: a test of the path a record takes until it is compressed.
+// storedTestHoldWhole stops the Cloud's body worker, and has its merges
+// install their records whole, so that its records stay whole: a test of the
+// path a record takes until it is compressed.
 func storedTestHoldWhole(c *Cache) {
 	c.closeStoredBodies()
+	c.testMergesInstallWhole = true
 }
 
 // storedTestCompress stops the Cloud's body worker and compresses every

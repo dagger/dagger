@@ -85,3 +85,86 @@ func TestAPayloadReadIsShownTheRecordsOwnBytes(t *testing.T) {
 	require.Equal(t, 3, own, "each of the three reads is shown the record's own payload, not a copy")
 	require.Equal(t, unsafe.SliceData(payload), unsafe.SliceData(rec.Envelope.Items[0].ObjectJSON), "the record keeps its payload")
 }
+
+// TestCloudHoldsAMergedRecordCompressedFromItsCommit checks that a record a
+// Cloud merge installs is held compressed from its commit on, before the
+// body worker runs: in the body its preparation made, with the entry's frame
+// still decoded beside it. Once the worker has added each frame to its body,
+// the Cloud holds every record byte for byte as a Cloud that installed the
+// records whole and compressed them after holds them.
+func TestCloudHoldsAMergedRecordCompressedFromItsCommit(t *testing.T) {
+	t.Parallel()
+	bundle := storedBodyTestExport(t)
+	ctx := cacheTestContext(t.Context())
+	open := func(whole bool) *Cache {
+		c, err := NewCache(ctx, "", nil, nil, WithBlobStore())
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, c.CloseDiscardingPersistence()) })
+		// The body worker stays stopped until the test runs it: what the
+		// commit leaves is read as the commit left it. The whole arm
+		// installs every record whole, as a merge does a record its commit
+		// relocates under the lock.
+		storedTestHoldWhole(c)
+		c.testMergesInstallWhole = whole
+		reply, err := c.MergeValues(ctx, "cache-a", bundle)
+		require.NoError(t, err)
+		require.True(t, reply.Committed)
+		return c
+	}
+	prepared, whole := open(false), open(true)
+
+	byRecipe := func(c *Cache) map[string]*sharedResult {
+		out := map[string]*sharedResult{}
+		for _, res := range c.resultsByID {
+			if res.persistedEnvelope != nil && len(res.recipeKeys) > 0 {
+				out[res.recipeKeys[0].String()] = res
+			}
+		}
+		return out
+	}
+
+	stored := 0
+	func() {
+		prepared.egraphMu.RLock()
+		defer prepared.egraphMu.RUnlock()
+		for _, res := range prepared.resultsByID {
+			if res.persistedEnvelope == nil {
+				continue
+			}
+			stored++
+			require.NotNil(t, res.stored, "entry %d holds its record compressed from its commit", res.id)
+			require.False(t, res.stored.holdsFrame(), "entry %d's body waits for the body worker to add its frame", res.id)
+			require.NotNil(t, res.loadResultCall(), "entry %d keeps its decoded frame until then", res.id)
+			require.Same(t, res.loadResultCall(), res.stored.call, "entry %d's body is made with the entry's frame", res.id)
+			require.Same(t, sharedLightStoredEnvelope(res.persistedEnvelope), res.persistedEnvelope, "entry %d keeps its record's shared light envelope", res.id)
+		}
+	}()
+	require.Equal(t, storedBodyTestRecords, stored)
+
+	storedTestCompress(prepared)
+	storedTestCompress(whole)
+	requireFramesHeldCompressed(t, prepared)
+	requireFramesHeldCompressed(t, whole)
+
+	prepared.egraphMu.RLock()
+	defer prepared.egraphMu.RUnlock()
+	whole.egraphMu.RLock()
+	defer whole.egraphMu.RUnlock()
+	got, want := byRecipe(prepared), byRecipe(whole)
+	require.Len(t, got, storedBodyTestRecords)
+	require.Len(t, want, storedBodyTestRecords)
+	for recipe, w := range want {
+		g := got[recipe]
+		require.NotNil(t, g, "recipe %s is stored", recipe)
+		require.Equal(t, w.stored.bytes, g.stored.bytes, "recipe %s: the same body, envelope and frame", recipe)
+		require.Equal(t, w.stored.envelopeLen, g.stored.envelopeLen)
+		require.Equal(t, w.stored.envelopeBytes, g.stored.envelopeBytes)
+		require.Equal(t, w.stored.frameBytes, g.stored.frameBytes)
+		require.Equal(t, w.stored.refs.list(), g.stored.refs.list(), "recipe %s: the same references", recipe)
+		require.Equal(t, w.stored.recipe, g.stored.recipe)
+		require.Same(t, w.persistedEnvelope, g.persistedEnvelope, "recipe %s: the same light envelope", recipe)
+		require.Equal(t, w.partFacts, g.partFacts, "recipe %s: the same parts", recipe)
+		require.Equal(t, w.storedRecordBytes, g.storedRecordBytes, "recipe %s: the same size", recipe)
+		require.Equal(t, w.payloadBytes.Load(), g.payloadBytes.Load(), "recipe %s: the same payload bytes", recipe)
+	}
+}
