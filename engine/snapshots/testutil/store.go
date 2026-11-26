@@ -41,6 +41,9 @@ type Store struct {
 	ContentRead atomic.Int64
 	Diffs       atomic.Int64
 	BeforeWrite func([]byte) error
+	// AfterCommit runs after each content write commits, on the writer's
+	// goroutine and with its context, before the commit returns.
+	AfterCommit func(ctx context.Context, dgst digest.Digest)
 	BeforeApply func(context.Context, ocispecs.Descriptor) error
 	BeforeDiff  func(context.Context) error
 	// BeforeSnapshotUpdate runs before each snapshot label update.
@@ -435,4 +438,14 @@ func (w observedWriter) Write(p []byte) (int, error) {
 		}
 	}
 	return w.Writer.Write(p)
+}
+
+func (w observedWriter) Commit(ctx context.Context, size int64, expected digest.Digest, opts ...content.Opt) error {
+	if err := w.Writer.Commit(ctx, size, expected, opts...); err != nil {
+		return err
+	}
+	if w.owner.AfterCommit != nil {
+		w.owner.AfterCommit(ctx, expected)
+	}
+	return nil
 }

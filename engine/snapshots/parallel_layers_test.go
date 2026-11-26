@@ -136,6 +136,49 @@ func TestImportChainFailureReleasesEveryDownload(t *testing.T) {
 	assertNoTemporaryResources(t, consumer)
 }
 
+// downloadEnding is how long a download started ahead goes on after its blob
+// is stored, in TestImportChainReturnsAfterItsDownloadsEnd: far longer than
+// the rest of that import takes.
+const downloadEnding = 500 * time.Millisecond
+
+// A download started ahead ends a moment after its blob is stored. An import
+// that gets to the layer in that moment uses the stored blob, and still
+// returns only once the download has ended and let go of it: released and
+// collected, the import leaves no lease and no blob behind.
+func TestImportChainReturnsAfterItsDownloadsEnd(t *testing.T) {
+	ctx := context.Background()
+	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+	chain := layeredChain(t, producer, "layer", 2)
+	first, ahead := chain.Layers[0].Descriptor.Digest, chain.Layers[1].Descriptor.Digest
+	stored := make(chan struct{})
+	consumer.AfterCommit = func(_ context.Context, dgst digest.Digest) {
+		if dgst == ahead {
+			close(stored)
+			time.Sleep(downloadEnding)
+		}
+	}
+	// The import gets to the second layer once its blob is stored.
+	consumer.BeforeApply = func(_ context.Context, desc ocispecs.Descriptor) error {
+		if desc.Digest != first {
+			return nil
+		}
+		select {
+		case <-stored:
+			return nil
+		case <-time.After(30 * time.Second):
+			return errors.New("the second layer's blob was not stored ahead")
+		}
+	}
+	ref, err := consumer.Manager.ImportChain(ctx, chain)
+	require.NoError(t, err)
+	require.NoError(t, ref.Release(ctx))
+	assertNoTemporaryResources(t, consumer)
+	consumer.GC(t)
+	for i, layer := range chain.Layers {
+		require.False(t, blobPresent(t, consumer, layer.Descriptor.Digest), "layer %d's blob is collected", i)
+	}
+}
+
 // A chain whose first layers the engine imported already downloads only the
 // rest: no blob of that local prefix, even with those blobs gone from the
 // content store, as when an owner keeps the snapshots and not their blobs.
