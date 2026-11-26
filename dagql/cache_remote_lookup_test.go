@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
 
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 )
@@ -403,4 +405,101 @@ func TestLateRemoteMissesSurviveATrim(t *testing.T) {
 	require.Equal(t, cacheTestCallDigest(frame), late[0].Recipe)
 	c.testBetweenLateMissHolds = nil
 	require.Empty(t, c.LateRemoteMisses(time.Now(), landed))
+}
+
+// A miss is late for a part by any digest its lookup tries, its recipe's or
+// an extra digest's, and by its term alone, its self digest over its inputs'
+// classes: the late count finds the misses a lookup would, by whichever the
+// part's entries are found. A term an input of which has no class finds
+// nothing.
+func TestLateRemoteMissesFindByEveryDigestAndByTerm(t *testing.T) {
+	t.Parallel()
+	ctx, c, srv, sessionID, bridge := lookupTestCache(t)
+	content := call.ExtraDigest{Digest: digest.FromString("late content"), Label: call.ExtraDigestLabelContent}
+	frame := cacheTestIntCall("late by its content", content)
+	res, err := c.GetOrInitCall(ctx, sessionID, srv, &CallRequest{ResultCall: frame.clone()}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(frame, 1), nil
+	})
+	require.NoError(t, err)
+	byContent := uint64(res.cacheSharedResult().id)
+	byTerm, term := lateMissTestTermEntry(t, ctx, c, srv, sessionID, "late by its term")
+
+	bridge.StartRemoteLookups()
+	noted := func(miss RemoteMiss) RemoteMiss {
+		t.Helper()
+		miss.At = time.Now()
+		require.Equal(t, RemoteLookupQueued, bridge.noteRemoteMiss(miss))
+		return miss
+	}
+	extra := noted(RemoteMiss{Recipe: digest.FromString("a recipe the content is the same as"), Extra: []digest.Digest{content.Digest}})
+	termOnly := noted(RemoteMiss{Recipe: digest.FromString("a recipe the term is the same as"), Self: term.Self, Inputs: term.Inputs})
+	noted(RemoteMiss{Recipe: digest.FromString("an input with no class"), Self: term.Self, Inputs: []digest.Digest{digest.FromString("unknown input")}})
+	noted(RemoteMiss{Recipe: digest.FromString("unrelated"), Extra: []digest.Digest{digest.FromString("unrelated content")}})
+
+	require.Equal(t, []RemoteMiss{extra}, c.LateRemoteMisses(time.Now(), map[uint64]struct{}{byContent: {}}))
+	require.Equal(t, []RemoteMiss{termOnly}, c.LateRemoteMisses(time.Now(), map[uint64]struct{}{byTerm: {}}))
+	require.Empty(t, c.LateRemoteMisses(time.Now(), map[uint64]struct{}{byContent: {}, byTerm: {}}), "each is late once")
+}
+
+// A part's late count reads the graph in a fixed number of holds, however
+// many misses its connection logged: it asks for the misses its own entries
+// can be found by, not for every miss whether it finds one of them. A count
+// that held the graph lock once or more for each logged miss cost more as an
+// engine's connection aged, and waited behind the graph's writers once for
+// each.
+func TestLateRemoteMissesReadTheGraphInAFewHolds(t *testing.T) {
+	t.Parallel()
+	ctx, c, srv, sessionID, bridge := lookupTestCache(t)
+	landedFrame := cacheTestIntCall("landed")
+	res, err := c.GetOrInitCall(ctx, sessionID, srv, &CallRequest{ResultCall: landedFrame.clone()}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(landedFrame, 1), nil
+	})
+	require.NoError(t, err)
+	landed := map[uint64]struct{}{uint64(res.cacheSharedResult().id): {}}
+
+	bridge.StartRemoteLookups()
+	var receiver AnyResult
+	for i := range 1000 {
+		frame := cacheTestIntCall(fmt.Sprint("missed ", i))
+		if i%2 == 1 {
+			frame.Receiver = &ResultCallRef{ResultID: uint64(receiver.cacheSharedResult().id)}
+		}
+		receiver, err = c.GetOrInitCall(ctx, sessionID, srv, &CallRequest{ResultCall: frame, CacheReported: true}, func(context.Context) (AnyResult, error) {
+			return cacheTestIntResult(frame, i), nil
+		})
+		require.NoError(t, err)
+	}
+	bridge.lookups.mu.Lock()
+	require.Len(t, bridge.lookups.missed, 1000)
+	bridge.lookups.mu.Unlock()
+
+	var holds atomic.Int64
+	stop := c.ObserveGraphReadHolds(func(wcprof.LockHolder, time.Duration, time.Duration) { holds.Add(1) })
+	late := c.LateRemoteMisses(time.Now(), landed)
+	stop()
+	require.Empty(t, late)
+	require.LessOrEqual(t, holds.Load(), int64(2), "the count's holds of the graph lock for reading")
+}
+
+// lateMissTestTermEntry stores a call over a receiver, and returns its entry
+// and the term a lookup of it tries: its self digest and its receiver's
+// digest as its input.
+func lateMissTestTermEntry(t *testing.T, ctx context.Context, c *Cache, srv *Server, sessionID, field string) (uint64, RemoteMiss) {
+	t.Helper()
+	receiverFrame := cacheTestIntCall(field + " receiver")
+	receiver, err := c.GetOrInitCall(ctx, sessionID, srv, &CallRequest{ResultCall: receiverFrame.clone()}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(receiverFrame, 1), nil
+	})
+	require.NoError(t, err)
+	frame := cacheTestIntCall(field)
+	frame.Receiver = &ResultCallRef{ResultID: uint64(receiver.cacheSharedResult().id)}
+	req := cacheTestArmedRequest(frame.clone())
+	req.CacheReported = false
+	res, err := c.GetOrInitCall(ctx, sessionID, srv, req, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(frame, 2), nil
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, req.CacheEvidence.SelfDigest)
+	require.Len(t, req.CacheEvidence.StructuralInputs, 1)
+	return uint64(res.cacheSharedResult().id), RemoteMiss{Self: req.CacheEvidence.SelfDigest, Inputs: req.CacheEvidence.StructuralInputs}
 }

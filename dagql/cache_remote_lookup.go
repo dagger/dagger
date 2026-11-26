@@ -80,6 +80,13 @@ type remoteLookups struct {
 	missed     []loggedMiss
 	missedSeq  uint64
 	generation uint64
+	// missedByDigest and missedBySelf index missed by what a lookup finds a
+	// miss by: each miss's number under its recipe and extra digests, and
+	// under its term's self digest. A part's late count asks them for the
+	// misses its own entries can be found by (LateRemoteMisses). A trim
+	// indexes the misses it keeps again.
+	missedByDigest map[string][]uint64
+	missedBySelf   map[digest.Digest][]uint64
 	// trimmed counts the misses a full log dropped before any call returned
 	// them, over every connection.
 	trimmed uint64
@@ -105,7 +112,7 @@ func (b *RemoteCacheBridge) StartRemoteLookups() {
 	}
 	l.asked = map[digest.Digest]struct{}{}
 	l.queue, l.dropped = nil, 0
-	l.missed = nil
+	l.missed, l.missedByDigest, l.missedBySelf = nil, nil, nil
 	l.generation++
 	l.on.Store(true)
 }
@@ -117,7 +124,7 @@ func (b *RemoteCacheBridge) StopRemoteLookups() {
 	defer l.mu.Unlock()
 	l.on.Store(false)
 	l.asked, l.queue, l.dropped = nil, nil, 0
-	l.missed = nil
+	l.missed, l.missedByDigest, l.missedBySelf = nil, nil, nil
 	l.generation++
 }
 
@@ -148,6 +155,7 @@ func (b *RemoteCacheBridge) noteRemoteMiss(miss RemoteMiss) string {
 	}
 	l.missedSeq++
 	l.missed = append(l.missed, loggedMiss{miss: miss, seq: l.missedSeq})
+	l.indexMissLocked(miss, l.missedSeq)
 	select {
 	case l.notify <- struct{}{}:
 	default:
@@ -267,7 +275,7 @@ type loggedMiss struct {
 
 // trimMissedLocked makes room in a full miss log: it drops the misses
 // already returned, then, while the log is still over three quarters full,
-// its oldest quarter.
+// its oldest quarter, and indexes the misses it keeps again.
 func (l *remoteLookups) trimMissedLocked() {
 	kept := slices.DeleteFunc(l.missed, func(m loggedMiss) bool { return m.found })
 	if len(kept) > remoteLookupLogCapacity*3/4 {
@@ -275,20 +283,60 @@ func (l *remoteLookups) trimMissedLocked() {
 		l.trimmed += remoteLookupLogCapacity / 4
 	}
 	l.missed = kept
+	clear(l.missedByDigest)
+	clear(l.missedBySelf)
+	for _, m := range l.missed {
+		l.indexMissLocked(m.miss, m.seq)
+	}
+}
+
+// indexMissLocked indexes the logged miss numbered seq by its recipe and
+// extra digests, and by its term's self digest when it names one.
+func (l *remoteLookups) indexMissLocked(miss RemoteMiss, seq uint64) {
+	if l.missedByDigest == nil {
+		l.missedByDigest = map[string][]uint64{}
+		l.missedBySelf = map[digest.Digest][]uint64{}
+	}
+	l.missedByDigest[miss.Recipe.String()] = append(l.missedByDigest[miss.Recipe.String()], seq)
+	for _, extra := range miss.Extra {
+		l.missedByDigest[extra.String()] = append(l.missedByDigest[extra.String()], seq)
+	}
+	if miss.Self != "" {
+		l.missedBySelf[miss.Self] = append(l.missedBySelf[miss.Self], seq)
+	}
+}
+
+// loggedLocked returns the logged miss numbered seq, or nil once a trim has
+// dropped it.
+func (l *remoteLookups) loggedLocked(seq uint64) *loggedMiss {
+	i, ok := slices.BinarySearchFunc(l.missed, seq, func(e loggedMiss, seq uint64) int { return cmp.Compare(e.seq, seq) })
+	if !ok {
+		return nil
+	}
+	return &l.missed[i]
 }
 
 // LateRemoteMisses returns the misses queued on the current connection
 // before before, that no earlier call returned, whose lookup now finds one
-// of entries, by the cache's entry numbers (missFinds). It is how a merge
-// that landed late is counted: the entries are the ones it landed on, and a
-// miss it returns is a call that missed before the merge would have served
-// it. A miss whose recipe the connection had already asked for, or that a
-// full queue dropped, isn't kept, and a full log drops the oldest
-// (remoteLookupLogCapacity), so misses older than the log are never
-// counted. Of the misses kept it is an upper bound: an entry found by digest
-// or term is counted without the session checks a real lookup makes, so a
-// result the missed session couldn't have used, such as one needing a
+// of entries, by the cache's entry numbers: by the class of its recipe or of
+// one of its extra digests, or by its term, as the service resolves a
+// lookup. It is how a merge that landed late is counted: the entries are the
+// ones it landed on, and a miss it returns is a call that missed before the
+// merge would have served it. A miss whose recipe the connection had already
+// asked for, or that a full queue dropped, isn't kept, and a full log drops
+// the oldest (remoteLookupLogCapacity), so misses older than the log are
+// never counted. Of the misses kept it is an upper bound: an entry found by
+// digest or term is counted without the session checks a real lookup makes,
+// so a result the missed session couldn't have used, such as one needing a
 // secret it lacks, still counts.
+//
+// It asks for the misses entries can be found by, not every miss for every
+// entry. It notes the log's last miss, then, in one hold of the graph lock,
+// walks the classes of the entries and takes from the log's indexes the
+// misses under their digests and their terms' self digests, and makes again
+// the term of each miss that only its term could find (lateMissCandidates).
+// So a count costs what its part costs, however many misses the connection
+// logged.
 func (c *Cache) LateRemoteMisses(before time.Time, entries map[uint64]struct{}) []RemoteMiss {
 	b := c.partContentSource.attachedBridge()
 	if b == nil || len(entries) == 0 {
@@ -296,19 +344,14 @@ func (c *Cache) LateRemoteMisses(before time.Time, entries map[uint64]struct{}) 
 	}
 	l := &b.lookups
 	l.mu.Lock()
-	generation := l.generation
-	var candidates []loggedMiss
-	for _, m := range l.missed {
-		if !m.found && m.miss.At.Before(before) {
-			candidates = append(candidates, m)
-		}
-	}
+	generation, last, logged := l.generation, l.missedSeq, len(l.missed)
 	l.mu.Unlock()
-	var late []loggedMiss
-	for _, m := range candidates {
-		if c.missFinds(m.miss, entries) {
-			late = append(late, m)
-		}
+	if logged == 0 {
+		return nil
+	}
+	late := c.lateMissCandidates(l, before, generation, last, entries)
+	if len(late) == 0 {
+		return nil
 	}
 	if c.testBetweenLateMissHolds != nil {
 		c.testBetweenLateMissHolds()
@@ -322,13 +365,101 @@ func (c *Cache) LateRemoteMisses(before time.Time, entries map[uint64]struct{}) 
 	// may have returned some of them: each is found by its number.
 	var returned []RemoteMiss
 	for _, m := range late {
-		i, ok := slices.BinarySearchFunc(l.missed, m.seq, func(e loggedMiss, seq uint64) int { return cmp.Compare(e.seq, seq) })
-		if ok && !l.missed[i].found {
-			l.missed[i].found = true
+		if logged := l.loggedLocked(m.seq); logged != nil && !logged.found {
+			logged.found = true
 			returned = append(returned, m.miss)
 		}
 	}
 	return returned
+}
+
+// lateMissCandidates returns, in the order they were logged, the misses of
+// the log's connection generation, numbered up to last, queued before
+// before and not yet returned, whose lookup finds one of entries: read in
+// one hold of the graph lock. A lookup by a digest finds the entries of its
+// class (EquivalentEntries), and a lookup by a term the entries of the
+// classes its terms are outputs of (TermEntries), so it walks the classes of
+// the live ones of entries, taking from the log's indexes, in a hold of the
+// log's lock, the misses under those classes' digests and under their
+// terms' self digests. A miss found by a self digest is found if its term,
+// made again from its inputs' classes, is one of those terms.
+func (c *Cache) lateMissCandidates(l *remoteLookups, before time.Time, generation, last uint64, entries map[uint64]struct{}) []loggedMiss {
+	read := c.readGraphAs(workRemote)
+	defer read.Unlock()
+	roots := make(map[eqClassID]struct{}, len(entries))
+	for number := range entries {
+		id := sharedResultID(number)
+		if c.resultsByID[id] == nil {
+			continue
+		}
+		for eqID := range c.resultOutputEqClasses.All(id) {
+			if root := c.eqClassRootLocked(eqID); root != 0 {
+				roots[root] = struct{}{}
+			}
+		}
+	}
+	if len(roots) == 0 {
+		return nil
+	}
+	var late, byTerm []loggedMiss
+	// terms are the digests of the classes' terms whose self digest some
+	// logged miss names, and selves those self digests.
+	terms := map[string]struct{}{}
+	selves := map[digest.Digest]struct{}{}
+	l.mu.Lock()
+	if l.generation == generation {
+		open := func(seq uint64) (loggedMiss, bool) {
+			if seq > last {
+				return loggedMiss{}, false
+			}
+			if m := l.loggedLocked(seq); m != nil && !m.found && m.miss.At.Before(before) {
+				return *m, true
+			}
+			return loggedMiss{}, false
+		}
+		for root := range roots {
+			for dig := range c.eqClassToDigests[root].All() {
+				for _, seq := range l.missedByDigest[dig] {
+					if m, ok := open(seq); ok {
+						late = append(late, m)
+					}
+				}
+			}
+			for termID := range c.outputEqClassToTerms.All(root) {
+				term := c.egraphTerms[termID]
+				if term == nil {
+					continue
+				}
+				seqs := l.missedBySelf[term.selfDigest]
+				if len(seqs) == 0 {
+					continue
+				}
+				terms[term.termDigest] = struct{}{}
+				if _, ok := selves[term.selfDigest]; ok {
+					continue
+				}
+				selves[term.selfDigest] = struct{}{}
+				for _, seq := range seqs {
+					if m, ok := open(seq); ok {
+						byTerm = append(byTerm, m)
+					}
+				}
+			}
+		}
+	}
+	l.mu.Unlock()
+	for _, m := range byTerm {
+		ids, missing := c.termInputClassesLocked(m.miss.Inputs)
+		if missing >= 0 {
+			continue
+		}
+		if _, ok := terms[calcEgraphTermDigest(m.miss.Self, ids)]; ok {
+			late = append(late, m)
+		}
+	}
+	// A miss can be found by more than one digest, term or both.
+	slices.SortFunc(late, func(a, b loggedMiss) int { return cmp.Compare(a.seq, b.seq) })
+	return slices.CompactFunc(late, func(a, b loggedMiss) bool { return a.seq == b.seq })
 }
 
 // TrimmedRemoteMisses returns how many misses a full log dropped before
@@ -342,25 +473,4 @@ func (c *Cache) TrimmedRemoteMisses() uint64 {
 	b.lookups.mu.Lock()
 	defer b.lookups.mu.Unlock()
 	return b.lookups.trimmed
-}
-
-// missFinds reports whether a miss's lookup now finds one of entries: by
-// the class of its recipe or of one of its extra digests, or by its term,
-// as the service resolves a lookup.
-func (c *Cache) missFinds(miss RemoteMiss, entries map[uint64]struct{}) bool {
-	found := func(numbers []uint64) bool {
-		return slices.ContainsFunc(numbers, func(n uint64) bool {
-			_, ok := entries[n]
-			return ok
-		})
-	}
-	if found(c.EquivalentEntries(miss.Recipe.String())) {
-		return true
-	}
-	for _, extra := range miss.Extra {
-		if found(c.EquivalentEntries(extra.String())) {
-			return true
-		}
-	}
-	return found(c.TermEntries(miss.Self, miss.Inputs))
 }
