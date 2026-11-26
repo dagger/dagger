@@ -3561,7 +3561,8 @@ type sharedResult struct {
 	storedTransfer atomic.Pointer[storedTransferRecord]
 	// stored is, on a blob-backed cache, the entry's stored record held
 	// compressed (cache_stored_body.go), once its body is made: its
-	// persistedEnvelope then has only the envelope's small fields. Guarded
+	// persistedEnvelope is then a light envelope, which entries of its
+	// content share and nothing changes (sharedLightStoredEnvelope). Guarded
 	// by egraphMu, and set under payloadMu too.
 	stored *storedBody
 	// partFacts are, on a blob-backed cache, the parts of the entry's stored
