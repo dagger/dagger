@@ -295,7 +295,7 @@ after a successful publish job.
 
 - [ ] For a stable release, ask @marcosnils @matipan @sipsma on the release thread to review and merge the newly opened dagger.io PR (this is created by the publish workflow; it is not opened for prereleases). This PR updates both the Daggerverse and Dagger Cloud. If anything fails, cc @kpenfound @matipan.
 
-- [ ] Make sure the new engine image is available to Dagger Cloud's engines. This is automated for regular releases, but for prereleases (such as `v1.0.0-beta.N`) it is a manual step: ask the team if you don't know how to run it. Until it is done, `dagger --cloud` with the new CLI cannot start an engine.
+- [ ] Make sure the new engine image is available to Dagger Cloud's engines.  A "Publish Namespace Engine" workflow is triggered as part of the tagged pipelines which publishes the image to namespace. Verify this workflow ended successfully.
 
 - [ ] Check that the new version works on Dagger Cloud. Making the image available there also loads a module on each built-in SDK (Go, Python and TypeScript) on a Cloud engine of `$ENGINE_VERSION`, and fails if one doesn't load. Don't go on until it has passed. `dagger --cloud core version` is not enough on its own: it loads no module, and it passed on the `v1.0.0-beta.29` and `v1.0.0-beta.30` Cloud engines, which could load none.
 
