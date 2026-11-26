@@ -330,13 +330,11 @@ func (l *remoteLookups) loggedLocked(seq uint64) *loggedMiss {
 // so a result the missed session couldn't have used, such as one needing a
 // secret it lacks, still counts.
 //
-// It asks for the misses entries can be found by, not every miss for every
-// entry. It notes the log's last miss, then, in one hold of the graph lock,
-// walks the classes of the entries and takes from the log's indexes the
-// misses under their digests and their terms' self digests, and makes again
-// the term of each miss that only its term could find (lateMissCandidates).
-// So a count costs what its part costs, however many misses the connection
-// logged.
+// It notes the log's last miss, then, in one hold of the graph lock, walks
+// the cheaper side: the misses still open, each looked up as a lookup would,
+// or the classes of the entries, taking from the log's indexes the misses
+// under their digests and their terms' self digests (lateMissCandidates). So
+// a count costs what the lesser of its part and its log holds.
 func (c *Cache) LateRemoteMisses(before time.Time, entries map[uint64]struct{}) []RemoteMiss {
 	b := c.partContentSource.attachedBridge()
 	if b == nil || len(entries) == 0 {
@@ -376,16 +374,101 @@ func (c *Cache) LateRemoteMisses(before time.Time, entries map[uint64]struct{}) 
 // lateMissCandidates returns, in the order they were logged, the misses of
 // the log's connection generation, numbered up to last, queued before
 // before and not yet returned, whose lookup finds one of entries: read in
-// one hold of the graph lock. A lookup by a digest finds the entries of its
-// class (EquivalentEntries), and a lookup by a term the entries of the
-// classes its terms are outputs of (TermEntries), so it walks the classes of
-// the live ones of entries, taking from the log's indexes, in a hold of the
-// log's lock, the misses under those classes' digests and under their
-// terms' self digests. A miss found by a self digest is found if its term,
-// made again from its inputs' classes, is one of those terms.
+// one hold of the graph lock. It walks the cheaper side: the misses still
+// open, each looked up as a lookup would (lateMissesByLog), when they are
+// fewer than half the entries, and otherwise the classes of entries, asking
+// the log's indexes (lateMissesByPart): looking a miss up, its term made
+// again, costs about twice what walking an entry's classes does. So a count
+// costs what the lesser of its part and its log holds.
 func (c *Cache) lateMissCandidates(l *remoteLookups, before time.Time, generation, last uint64, entries map[uint64]struct{}) []loggedMiss {
 	read := c.readGraphAs(workRemote)
 	defer read.Unlock()
+	l.mu.Lock()
+	if l.generation != generation {
+		l.mu.Unlock()
+		return nil
+	}
+	var open []loggedMiss
+	byLog, most := true, len(entries)/2
+	for i := range l.missed {
+		m := &l.missed[i]
+		if m.seq > last {
+			break
+		}
+		if m.found || !m.miss.At.Before(before) {
+			continue
+		}
+		if len(open) == most {
+			byLog, open = false, nil
+			break
+		}
+		open = append(open, *m)
+	}
+	l.mu.Unlock()
+	if c.testLateMissWalk != nil {
+		c.testLateMissWalk(byLog)
+	}
+	if byLog {
+		return c.lateMissesByLog(open, entries)
+	}
+	return c.lateMissesByPart(l, before, generation, last, entries)
+}
+
+// lateMissesByLog keeps, of open, the misses whose lookup finds one of
+// entries, as missFindsLocked looks each up. Requires egraphMu.
+func (c *Cache) lateMissesByLog(open []loggedMiss, entries map[uint64]struct{}) []loggedMiss {
+	return slices.DeleteFunc(open, func(m loggedMiss) bool { return !c.missFindsLocked(m.miss, entries) })
+}
+
+// missFindsLocked reports whether a miss's lookup now finds one of entries,
+// live: by the class of its recipe or of one of its extra digests
+// (EquivalentEntries), or by its term, its self digest over its inputs'
+// classes (TermEntries). Requires egraphMu.
+func (c *Cache) missFindsLocked(miss RemoteMiss, entries map[uint64]struct{}) bool {
+	inClass := func(root eqClassID) bool {
+		for id := range c.outputEqClassResults.All(root) {
+			if _, ok := entries[uint64(id)]; ok && c.resultsByID[id] != nil {
+				return true
+			}
+		}
+		return false
+	}
+	byDigest := func(dig digest.Digest) bool {
+		classID, ok := c.egraphDigestToClass[dig.String()]
+		return ok && inClass(c.eqClassRootLocked(classID))
+	}
+	if byDigest(miss.Recipe) || slices.ContainsFunc(miss.Extra, byDigest) {
+		return true
+	}
+	if miss.Self == "" {
+		return false
+	}
+	ids, missing := c.termInputClassesLocked(miss.Inputs)
+	if missing >= 0 {
+		return false
+	}
+	for termID := range c.egraphTermsByTermDigest.Members(calcEgraphTermDigest(miss.Self, ids)).All() {
+		term := c.egraphTerms[termID]
+		if term == nil {
+			continue
+		}
+		if root := c.eqClassRootLocked(term.outputEqID); root != 0 && inClass(root) {
+			return true
+		}
+	}
+	return false
+}
+
+// lateMissesByPart walks the classes of the live ones of entries, taking from
+// the log's indexes, in a hold of the log's lock, the misses of its
+// connection generation, numbered up to last, queued before before and not
+// yet returned, under those classes' digests and under their terms' self
+// digests: a lookup by a digest finds the entries of its class
+// (EquivalentEntries), and a lookup by a term the entries of the classes its
+// terms are outputs of (TermEntries). A miss found by a self digest is
+// found if its term, made again from its inputs' classes, is one of those
+// terms. Requires egraphMu.
+func (c *Cache) lateMissesByPart(l *remoteLookups, before time.Time, generation, last uint64, entries map[uint64]struct{}) []loggedMiss {
 	roots := make(map[eqClassID]struct{}, len(entries))
 	for number := range entries {
 		id := sharedResultID(number)

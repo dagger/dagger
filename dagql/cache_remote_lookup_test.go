@@ -410,35 +410,104 @@ func TestLateRemoteMissesSurviveATrim(t *testing.T) {
 // A miss is late for a part by any digest its lookup tries, its recipe's or
 // an extra digest's, and by its term alone, its self digest over its inputs'
 // classes: the late count finds the misses a lookup would, by whichever the
-// part's entries are found. A term an input of which has no class finds
-// nothing.
+// part's entries are found, walking the log's open misses (a part larger than
+// the log) or the part's classes (a log larger than the part) alike. A term
+// an input of which has no class finds nothing.
 func TestLateRemoteMissesFindByEveryDigestAndByTerm(t *testing.T) {
 	t.Parallel()
-	ctx, c, srv, sessionID, bridge := lookupTestCache(t)
-	content := call.ExtraDigest{Digest: digest.FromString("late content"), Label: call.ExtraDigestLabelContent}
-	frame := cacheTestIntCall("late by its content", content)
-	res, err := c.GetOrInitCall(ctx, sessionID, srv, &CallRequest{ResultCall: frame.clone()}, func(context.Context) (AnyResult, error) {
-		return cacheTestIntResult(frame, 1), nil
-	})
-	require.NoError(t, err)
-	byContent := uint64(res.cacheSharedResult().id)
-	byTerm, term := lateMissTestTermEntry(t, ctx, c, srv, sessionID, "late by its term")
+	for _, byLog := range []bool{true, false} {
+		t.Run(fmt.Sprintf("by the log %v", byLog), func(t *testing.T) {
+			t.Parallel()
+			ctx, c, srv, sessionID, bridge := lookupTestCache(t)
+			content := call.ExtraDigest{Digest: digest.FromString("late content"), Label: call.ExtraDigestLabelContent}
+			frame := cacheTestIntCall("late by its content", content)
+			res, err := c.GetOrInitCall(ctx, sessionID, srv, &CallRequest{ResultCall: frame.clone()}, func(context.Context) (AnyResult, error) {
+				return cacheTestIntResult(frame, 1), nil
+			})
+			require.NoError(t, err)
+			byContent := uint64(res.cacheSharedResult().id)
+			byTerm, term := lateMissTestTermEntry(t, ctx, c, srv, sessionID, "late by its term")
+			// Entries a part lands beside the one a miss finds: enough to
+			// make the part the larger side when the log is walked.
+			var others []uint64
+			for i := range 10 {
+				other := cacheTestIntCall(fmt.Sprint("landed beside ", i))
+				res, err := c.GetOrInitCall(ctx, sessionID, srv, &CallRequest{ResultCall: other.clone()}, func(context.Context) (AnyResult, error) {
+					return cacheTestIntResult(other, i), nil
+				})
+				require.NoError(t, err)
+				others = append(others, uint64(res.cacheSharedResult().id))
+			}
+			part := func(entry uint64) map[uint64]struct{} {
+				entries := map[uint64]struct{}{entry: {}}
+				if byLog {
+					for _, other := range others {
+						entries[other] = struct{}{}
+					}
+				}
+				return entries
+			}
 
-	bridge.StartRemoteLookups()
-	noted := func(miss RemoteMiss) RemoteMiss {
-		t.Helper()
-		miss.At = time.Now()
-		require.Equal(t, RemoteLookupQueued, bridge.noteRemoteMiss(miss))
-		return miss
+			bridge.StartRemoteLookups()
+			noted := func(miss RemoteMiss) RemoteMiss {
+				t.Helper()
+				miss.At = time.Now()
+				require.Equal(t, RemoteLookupQueued, bridge.noteRemoteMiss(miss))
+				return miss
+			}
+			extra := noted(RemoteMiss{Recipe: digest.FromString("a recipe the content is the same as"), Extra: []digest.Digest{content.Digest}})
+			termOnly := noted(RemoteMiss{Recipe: digest.FromString("a recipe the term is the same as"), Self: term.Self, Inputs: term.Inputs})
+			noted(RemoteMiss{Recipe: digest.FromString("an input with no class"), Self: term.Self, Inputs: []digest.Digest{digest.FromString("unknown input")}})
+			noted(RemoteMiss{Recipe: digest.FromString("unrelated"), Extra: []digest.Digest{digest.FromString("unrelated content")}})
+			if !byLog {
+				for i := range 20 {
+					noted(RemoteMiss{Recipe: digest.FromString(fmt.Sprint("filler ", i))})
+				}
+			}
+			var walked []bool
+			c.testLateMissWalk = func(byLog bool) { walked = append(walked, byLog) }
+
+			require.Equal(t, []RemoteMiss{extra}, c.LateRemoteMisses(time.Now(), part(byContent)))
+			require.Equal(t, []RemoteMiss{termOnly}, c.LateRemoteMisses(time.Now(), part(byTerm)))
+			both := part(byContent)
+			both[byTerm] = struct{}{}
+			require.Empty(t, c.LateRemoteMisses(time.Now(), both), "each is late once")
+			require.Equal(t, []bool{byLog, byLog, byLog}, walked, "each count walked the side meant")
+		})
 	}
-	extra := noted(RemoteMiss{Recipe: digest.FromString("a recipe the content is the same as"), Extra: []digest.Digest{content.Digest}})
-	termOnly := noted(RemoteMiss{Recipe: digest.FromString("a recipe the term is the same as"), Self: term.Self, Inputs: term.Inputs})
-	noted(RemoteMiss{Recipe: digest.FromString("an input with no class"), Self: term.Self, Inputs: []digest.Digest{digest.FromString("unknown input")}})
-	noted(RemoteMiss{Recipe: digest.FromString("unrelated"), Extra: []digest.Digest{digest.FromString("unrelated content")}})
+}
 
-	require.Equal(t, []RemoteMiss{extra}, c.LateRemoteMisses(time.Now(), map[uint64]struct{}{byContent: {}}))
-	require.Equal(t, []RemoteMiss{termOnly}, c.LateRemoteMisses(time.Now(), map[uint64]struct{}{byTerm: {}}))
-	require.Empty(t, c.LateRemoteMisses(time.Now(), map[uint64]struct{}{byContent: {}, byTerm: {}}), "each is late once")
+// A late count walks the cheaper side: the log's open misses when they are
+// fewer than half the part's entries, so that a part of thousands of entries
+// counted on a log of a few misses costs what the misses do, and the part's
+// classes when the log holds more.
+func TestLateRemoteMissesWalkTheSmallerSide(t *testing.T) {
+	t.Parallel()
+	ctx, c, srv, sessionID, bridge := lookupTestCache(t)
+	part := map[uint64]struct{}{}
+	for i := range 100 {
+		frame := cacheTestIntCall(fmt.Sprint("landed ", i))
+		res, err := c.GetOrInitCall(ctx, sessionID, srv, &CallRequest{ResultCall: frame.clone()}, func(context.Context) (AnyResult, error) {
+			return cacheTestIntResult(frame, i), nil
+		})
+		require.NoError(t, err)
+		part[uint64(res.cacheSharedResult().id)] = struct{}{}
+	}
+	bridge.StartRemoteLookups()
+	noted := 0
+	note := func(n int) {
+		for range n {
+			noted++
+			bridge.noteRemoteMiss(RemoteMiss{Recipe: digest.FromString(fmt.Sprint("missed ", noted)), At: time.Now()})
+		}
+	}
+	var walked []bool
+	c.testLateMissWalk = func(byLog bool) { walked = append(walked, byLog) }
+	note(3)
+	require.Empty(t, c.LateRemoteMisses(time.Now(), part))
+	note(200)
+	require.Empty(t, c.LateRemoteMisses(time.Now(), part))
+	require.Equal(t, []bool{true, false}, walked, "3 misses against 100 entries walk the log; 203 walk the part")
 }
 
 // A part's late count reads the graph in a fixed number of holds, however

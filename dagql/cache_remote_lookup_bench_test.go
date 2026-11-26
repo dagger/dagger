@@ -30,7 +30,7 @@ import (
 // the most a count can be asked to check by term.
 func BenchmarkLateRemoteMisses(b *testing.B) {
 	const partEntries = 4000
-	for _, n := range []int{1000, 4000, remoteLookupLogCapacity} {
+	for _, n := range []int{10, 1000, 4000, remoteLookupLogCapacity} {
 		for _, shape := range []string{"writer false", "writer true", "one field"} {
 			writer, oneField := shape == "writer true", shape == "one field"
 			b.Run(fmt.Sprintf("%d misses logged, %s", n, shape), func(b *testing.B) {

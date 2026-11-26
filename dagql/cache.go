@@ -2870,6 +2870,9 @@ type Cache struct {
 	// LateRemoteMisses's hold of the graph lock and its last hold of the
 	// lookups' lock.
 	testBetweenLateMissHolds func()
+	// testLateMissWalk, nil but in tests, is told which side a late count
+	// walks: the log's open misses, or the part's classes.
+	testLateMissWalk func(byLog bool)
 	// testCaptureWriteLock, nil but in tests, runs as holding rows for a
 	// capture, or letting them go, is about to take egraphMu for writing.
 	// capturePieceSize, when set, is how many rows holdRowsForCapture takes
