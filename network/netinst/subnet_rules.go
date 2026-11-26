@@ -14,6 +14,7 @@ import (
 
 	"github.com/coreos/go-iptables/iptables"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
+	"github.com/dagger/dagger/network"
 	"sigs.k8s.io/knftables"
 )
 
@@ -95,12 +96,10 @@ func newSubnetNetwork(name, cidr string) (*subnetNetwork, error) {
 	if err != nil {
 		return nil, err
 	}
-	if subnet.IP.To4() == nil {
-		return nil, fmt.Errorf("subnet %s is not IPv4", cidr)
+	gateway, err := network.BridgeFromCIDR(cidr)
+	if err != nil {
+		return nil, err
 	}
-	gateway := make(net.IP, 4)
-	copy(gateway, subnet.IP.To4())
-	gateway[3] = 1
 	return &subnetNetwork{
 		name:    name,
 		bridge:  name + "0",

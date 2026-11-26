@@ -41,3 +41,20 @@ func IsSkipped(ctx context.Context) bool {
 	}
 	return false
 }
+
+type telemetrySuppressedKey struct{}
+
+// WithTelemetrySuppressed marks a context whose calls emit no telemetry at
+// all: a request whose client opted out of it. WithSkip only hides a call
+// from the session's view; a skipped call still reports its cache decision,
+// on a span no view shows, unless its telemetry is suppressed.
+func WithTelemetrySuppressed(ctx context.Context) context.Context {
+	return context.WithValue(WithSkip(ctx), telemetrySuppressedKey{}, true)
+}
+
+// IsTelemetrySuppressed reports whether ctx was marked with
+// WithTelemetrySuppressed.
+func IsTelemetrySuppressed(ctx context.Context) bool {
+	val, _ := ctx.Value(telemetrySuppressedKey{}).(bool)
+	return val
+}

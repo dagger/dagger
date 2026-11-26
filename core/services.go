@@ -597,9 +597,6 @@ type ServiceStartOpts struct {
 // already starting, it waits for it to finish and returns the running service.
 // If the service failed to start, it tries again.
 func (ss *Services) Start(ctx context.Context, dig digest.Digest, svc Startable, clientSpecific bool) (*RunningService, error) {
-	if err := engine.CheckSnapshotSharePreparation(ctx, "start service"); err != nil {
-		return nil, err
-	}
 	return ss.StartWithOpts(ctx, dig, svc, ServiceStartOpts{
 		ClientSpecific: clientSpecific,
 	})
@@ -723,7 +720,7 @@ func lookupServiceOriginSpanContexts(ctx context.Context, svc dagql.ObjectResult
 	if err != nil || clientMD.SessionID == "" {
 		return nil
 	}
-	return cache.ResultInstallSpans(clientMD.SessionID, svc)
+	return cache.ResultInstallSpans(ctx, clientMD.SessionID, svc)
 }
 
 func (ss *Services) StartInteractive(
@@ -755,9 +752,6 @@ func (ss *Services) StartInteractive(
 // StartBindings starts each of the bound services in parallel and returns a
 // function that will detach from all of them after 10 seconds.
 func (ss *Services) StartBindings(ctx context.Context, bindings ServiceBindings) (_ func(), _ []*RunningService, err error) {
-	if err := engine.CheckSnapshotSharePreparation(ctx, "start service bindings"); err != nil {
-		return nil, nil, err
-	}
 	running := make([]*RunningService, len(bindings))
 	detachOnce := sync.Once{}
 	detach := func() {

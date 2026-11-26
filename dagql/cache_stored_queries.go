@@ -4,24 +4,29 @@ import (
 	"fmt"
 	"maps"
 	"slices"
-	"time"
 
+	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/opencontainers/go-digest"
 )
 
 // EquivalentEntries returns the numbers of the entries in the class that dig
 // names, sorted, read under one hold. It is nil when no class has the digest.
-// An entry's number stays its own across the classes' renumbering, so the
-// numbers are safe to keep past the call.
+// An entry's number stays its own while its class changes or is freed, so
+// the numbers are safe to keep past the call.
 func (c *Cache) EquivalentEntries(dig string) []uint64 {
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workRemote)
+	defer read.Unlock()
+	return c.equivalentEntriesLocked(dig)
+}
+
+// equivalentEntriesLocked is EquivalentEntries. Requires egraphMu.
+func (c *Cache) equivalentEntriesLocked(dig string) []uint64 {
 	classID, ok := c.egraphDigestToClass[dig]
 	if !ok {
 		return nil
 	}
 	var numbers []uint64
-	for id := range c.outputEqClassResults[c.eqClassRootLocked(classID)] {
+	for id := range c.outputEqClassResults.All(c.eqClassRootLocked(classID)) {
 		if c.resultsByID[id] != nil {
 			numbers = append(numbers, uint64(id))
 		}
@@ -39,14 +44,22 @@ func (c *Cache) TermEntries(self digest.Digest, inputs []digest.Digest) []uint64
 	if self == "" {
 		return nil
 	}
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workRemote)
+	defer read.Unlock()
+	return c.termEntriesLocked(self, inputs)
+}
+
+// termEntriesLocked is TermEntries. Requires egraphMu.
+func (c *Cache) termEntriesLocked(self digest.Digest, inputs []digest.Digest) []uint64 {
+	if self == "" {
+		return nil
+	}
 	ids, missing := c.termInputClassesLocked(inputs)
 	if missing >= 0 {
 		return nil
 	}
-	termSet := c.egraphTermsByTermDigest[calcEgraphTermDigest(self, ids)]
-	if termSet == nil {
+	termSet := c.egraphTermsByTermDigest.Members(calcEgraphTermDigest(self, ids))
+	if termSet.Size() == 0 {
 		return nil
 	}
 	seen := map[eqClassID]struct{}{}
@@ -61,7 +74,7 @@ func (c *Cache) TermEntries(self digest.Digest, inputs []digest.Digest) []uint64
 			continue
 		}
 		seen[root] = struct{}{}
-		for id := range c.outputEqClassResults[root] {
+		for id := range c.outputEqClassResults.All(root) {
 			if c.resultsByID[id] != nil {
 				numbers = append(numbers, uint64(id))
 			}
@@ -83,19 +96,30 @@ const (
 	// PartAbsent: a stored record maps the part as absent, a part with no
 	// bytes, so it is never stored.
 	PartAbsent
+	// PartUploading: neither stored nor absent, and an upload of the part is
+	// in progress for the entry or an entry of its class (StartPartUploads).
+	PartUploading
 )
 
 // PartAvailability is AvailablePart's answer. Donor is the number of the
-// entry whose stored part or record it is, and Part the stored part, for
-// PartStored.
+// entry whose stored part or record it is. ValidUntilUnix is the soonest
+// moment, after the clock it was read at, that one of the entries the answer
+// considered expires (0: none does): before it, only a write can change the
+// answer, and the write's change names the entry (RemoteChange.Entries).
+//
+// It carries no part: its readers read what the cache has, from whom and
+// until when, and a stored part's contents reach a reader in a stored bundle
+// (StoredBundle).
 type PartAvailability struct {
-	State PartAvailabilityState
-	Donor uint64
-	Part  PersistedPartOffer
+	State          PartAvailabilityState
+	Donor          uint64
+	ValidUntilUnix int64
 }
 
 // AvailablePart reports what the cache has of a part of the entry numbered
-// number, read under one hold with the clock:
+// number at nowUnix, the reader's clock, read under one hold. A reader that
+// judges other facts of the cache by its own clock asks at that same moment,
+// so its answers agree with each other:
 //   - stored: the entry, while its value has not expired, or else an
 //     unexpired entry of its class, has the part in its blob store: a stored
 //     part is available only while the value it belongs to is;
@@ -103,11 +127,17 @@ type PartAvailability struct {
 //     unexpired entry of its class, maps the part as absent through the
 //     transfer codec, read from the stored envelope, never a decoded value.
 //     Absence is a property of the value's structure, not of its freshness;
+//   - uploading: an upload of the part is in progress for the entry or an
+//     entry of its class, whether or not that entry stores a value or has
+//     expired (StartPartUploads), as its reader's claim counts it. The
+//     lowest-numbered such entry is the donor. An upload's start and end
+//     move no ValidUntilUnix: its reader names the class at each
+//     (StartPartUploads, EndPartUploads);
 //   - otherwise unavailable.
 //
-// Among the class's other entries, the lowest number answers first. Part is
-// a copy of the stored part. Only a blob-backed cache answers.
-func (c *Cache) AvailablePart(number uint64, address PersistedPartAddress) (PartAvailability, error) {
+// Among the class's other entries, the lowest number answers first. Only a
+// blob-backed cache answers.
+func (c *Cache) AvailablePart(number uint64, address PersistedPartAddress, nowUnix int64) (PartAvailability, error) {
 	if !c.blobBacked {
 		return PartAvailability{}, fmt.Errorf("available part: the cache has no blob store")
 	}
@@ -115,19 +145,122 @@ func (c *Cache) AvailablePart(number uint64, address PersistedPartAddress) (Part
 	if err != nil {
 		return PartAvailability{}, fmt.Errorf("available part: %w", err)
 	}
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
-	now := time.Now().Unix()
+	read := c.readGraphAs(workRemote)
+	defer read.Unlock()
+	return c.availablePartLocked(number, key, nowUnix)
+}
+
+// PartQuery is a part of an entry a reader asks about (AvailableParts).
+type PartQuery struct {
+	Number  uint64
+	Address PersistedPartAddress
+}
+
+// PartAnswer is AvailablePart's answer for one PartQuery, or the error it
+// answered with.
+type PartAnswer struct {
+	PartAvailability
+	Err error
+}
+
+// AvailableParts is AvailablePart for each of queries at nowUnix, in their
+// order, read under one hold. A reader asking about many parts waits for the
+// cache's lock once, not once a part, as EntriesFacts does for entries'
+// facts: a writer waiting for the lock stops every new reader, so a reader
+// that took it once a part waited for every writer queued between two of its
+// parts. A writer that comes during the read waits for the answer in
+// progress, not the read: the read gives way between two answers when
+// someone waits (giveWayLocked), and each answer stands whole in one hold.
+func (c *Cache) AvailableParts(queries []PartQuery, nowUnix int64) []PartAnswer {
+	out := make([]PartAnswer, len(queries))
+	if !c.blobBacked {
+		for i := range out {
+			out[i].Err = fmt.Errorf("available part: the cache has no blob store")
+		}
+		return out
+	}
+	keys := make([]string, len(queries))
+	for i, q := range queries {
+		key, err := partAddressKey(q.Address)
+		if err != nil {
+			out[i].Err = fmt.Errorf("available part: %w", err)
+			continue
+		}
+		keys[i] = key
+	}
+	read := c.readGraphAs(workRemote)
+	defer read.Unlock()
+	for i, q := range queries {
+		if out[i].Err == nil {
+			out[i].PartAvailability, out[i].Err = c.availablePartLocked(q.Number, keys[i], nowUnix)
+		}
+		if c.testBatchAnswered != nil {
+			c.testBatchAnswered(i)
+		}
+		if i+1 < len(queries) {
+			c.giveWayLocked(&read)
+		}
+	}
+	return out
+}
+
+// giveWayLocked lets egraphMu, held once for reading by a batch read as
+// read, go and takes it again when another acquisition waits for it,
+// between two of the batch's answers, as RemoteWrites lets its hold go
+// between two writes: a writer that comes during the batch then waits for
+// the answer in progress, not the batch, and so do the readers queued
+// behind it. With nobody waiting, the batch keeps its one hold; under
+// steady writers it takes one hold an answer. It gives way at once, however long its take waited: a
+// read that held the lock as long as its take waited kept a writer pending,
+// and a pending writer keeps every new reader out, which cost stopping
+// engines far more than it saved a pass. The cache can change between two
+// answers, so a batch carries no pointer across one.
+func (c *Cache) giveWayLocked(read *wcprof.ReadHold) {
+	if !c.egraphMu.Waiting() {
+		return
+	}
+	read.Again(c.testBatchGaveWay)
+}
+
+// availablePartLocked is AvailablePart's answer for the part key of the
+// entry numbered number. Requires egraphMu.
+func (c *Cache) availablePartLocked(number uint64, key string, nowUnix int64) (PartAvailability, error) {
 	res := c.resultsByID[sharedResultID(number)]
 	if res == nil {
 		return PartAvailability{}, fmt.Errorf("available part of %d: %w", number, ErrUnknownEntry)
 	}
+	av, held := c.heldPartLocked(res, key, nowUnix)
+	if held {
+		return av, nil
+	}
+	// An upload in progress answers after stored and absent: a reader needs
+	// neither, whatever uploads. The count is read a part at a time, so a
+	// reader counting an upload never waits for a batch of answers.
+	c.uploadsMu.Lock()
+	donor, uploading := c.classUploadLocked(res, key)
+	c.uploadsMu.Unlock()
+	if uploading {
+		av.State, av.Donor = PartUploading, uint64(donor)
+	}
+	return av, nil
+}
+
+// heldPartLocked is the answer for the part key of res from its class's
+// holders alone, a stored copy or a record that marks it absent, and whether
+// one answered: when none does, the answer is unavailable, with the moment
+// time alone may change it, and an upload in progress is the caller's to
+// count (classUploadLocked). Requires egraphMu.
+func (c *Cache) heldPartLocked(res *sharedResult, key string, nowUnix int64) (PartAvailability, bool) {
+	// Only the part's holders in the class answer for it: the members that
+	// store it, or whose stored record marks it absent (holdsPartLocked).
+	// Whether a member holds it is asked first: most members of a large class
+	// hold nothing, and the checks after it walk a member's holdings.
 	candidates := []*sharedResult{res}
 	var others []sharedResultID
 	for root := range c.outputEqClassRootsLocked(res.id) {
-		for id := range c.outputEqClassResults[root] {
+		for id := range c.outputEqClassResults.All(root) {
 			other := c.resultsByID[id]
-			if other == nil || other == res || other.noValueLocked() || c.resultExpiredAtLocked(other, now) {
+			if other == nil || other == res || !other.holdsPartLocked(key) || other.noValueLocked() || c.resultExpiredAtLocked(other, nowUnix) {
 				continue
 			}
 			others = append(others, id)
@@ -137,33 +270,64 @@ func (c *Cache) AvailablePart(number uint64, address PersistedPartAddress) (Part
 	for _, id := range slices.Compact(others) {
 		candidates = append(candidates, c.resultsByID[id])
 	}
+	// Time alone changes the answer only when a holder expires: the entry
+	// itself, or another holder of the class, which then stops answering.
+	// Expired ones never come back but by a write, and a member that holds
+	// nothing never answers, whenever it expires.
+	var validUntil int64
 	for _, candidate := range candidates {
-		if candidate == res && c.resultExpiredAtLocked(res, now) {
+		if candidate == res && !res.holdsPartLocked(key) {
 			continue
 		}
-		if part, ok := candidate.storedParts[key]; ok {
-			copied, err := clonePartOffers([]PersistedPartOffer{part})
-			if err != nil {
-				return PartAvailability{}, fmt.Errorf("available part: %w", err)
-			}
-			return PartAvailability{State: PartStored, Donor: uint64(candidate.id), Part: copied[0]}, nil
+		if expires := candidate.expiresAtUnix; expires > nowUnix && (validUntil == 0 || expires < validUntil) {
+			validUntil = expires
 		}
 	}
 	for _, candidate := range candidates {
-		if candidate.persistedEnvelope == nil {
+		if candidate == res && c.resultExpiredAtLocked(res, nowUnix) {
 			continue
 		}
-		outputs, err := mapTransferredOutputs(PersistedRecord{ResultID: uint64(candidate.id), Envelope: *candidate.persistedEnvelope, Call: candidate.loadResultCall()})
-		if err != nil {
-			continue
+		if candidate.storedParts.has(key) {
+			return PartAvailability{State: PartStored, Donor: uint64(candidate.id), ValidUntilUnix: validUntil}, true
 		}
-		for _, output := range outputs {
-			if outputKey, _ := partAddressKey(output.Address); outputKey == key && output.State == "absent" {
-				return PartAvailability{State: PartAbsent, Donor: uint64(candidate.id)}, nil
+	}
+	for _, candidate := range candidates {
+		for _, part := range candidate.declaredPartsLocked() {
+			if part.key == key && part.state == "absent" {
+				return PartAvailability{State: PartAbsent, Donor: uint64(candidate.id), ValidUntilUnix: validUntil}, true
 			}
 		}
 	}
-	return PartAvailability{}, nil
+	return PartAvailability{ValidUntilUnix: validUntil}, false
+}
+
+// classUploadLocked is the lowest-numbered entry of res's class, res
+// included, with an upload of the part whose address key is key in progress
+// (StartPartUploads), whether or not it stores a value or has expired: an
+// upload counts for its class as its reader's claim does. A caller that
+// decides by the answer, as a start that counts an upload only where none is
+// in progress (StartPartUploads), decides under the same take of uploadsMu. Requires egraphMu
+// and uploadsMu.
+func (c *Cache) classUploadLocked(res *sharedResult, key string) (sharedResultID, bool) {
+	if len(c.uploads) == 0 {
+		return 0, false
+	}
+	var donor sharedResultID
+	found := false
+	consider := func(id sharedResultID) {
+		if c.uploads[id][key] > 0 && (!found || id < donor) {
+			donor, found = id, true
+		}
+	}
+	consider(res.id)
+	for root := range c.outputEqClassRootsLocked(res.id) {
+		for id := range c.outputEqClassResults.All(root) {
+			if c.resultsByID[id] != nil {
+				consider(id)
+			}
+		}
+	}
+	return donor, found
 }
 
 // StoredState is what a blob-backed cache stores: its stored roots, and each
@@ -180,8 +344,8 @@ func (c *Cache) StoredState() (StoredState, error) {
 	if !c.blobBacked {
 		return StoredState{}, fmt.Errorf("stored state: the cache has no blob store")
 	}
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workUpkeep)
+	defer read.Unlock()
 	state := StoredState{Parts: map[uint64][]PersistedPartAddress{}}
 	for id := range c.persistedEdgesByResult {
 		if res := c.resultsByID[id]; res != nil && res.hasOwnValueLocked() {
@@ -191,10 +355,30 @@ func (c *Cache) StoredState() (StoredState, error) {
 	slices.Sort(state.Roots)
 	for id, res := range c.resultsByID {
 		for _, part := range res.storedPartsLocked() {
-			state.Parts[uint64(id)] = append(state.Parts[uint64(id)], part.Address)
+			state.Parts[uint64(id)] = append(state.Parts[uint64(id)], part.address())
 		}
 	}
 	return state, nil
+}
+
+// StoredParts returns the parts the cache stores for the entry numbered
+// number, as StoredState names them, sorted by their address keys: none for
+// an entry that stores none or that the cache doesn't have. It reads that
+// entry alone, so a reader asks for one entry's parts without walking the
+// cache, and without keeping a copy of every entry's that has to change with
+// it.
+func (c *Cache) StoredParts(number uint64) []PersistedPartAddress {
+	read := c.readGraphAs(workRemote)
+	defer read.Unlock()
+	res := c.resultsByID[sharedResultID(number)]
+	if res == nil {
+		return nil
+	}
+	var parts []PersistedPartAddress
+	for _, part := range res.storedPartsLocked() {
+		parts = append(parts, part.address())
+	}
+	return parts
 }
 
 // LiveBlobs returns every layer blob a stored part names, in the pool or
@@ -204,12 +388,14 @@ func (c *Cache) LiveBlobs() ([]digest.Digest, error) {
 	if !c.blobBacked {
 		return nil, fmt.Errorf("live blobs: the cache has no blob store")
 	}
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workUpkeep)
+	defer read.Unlock()
 	live := map[digest.Digest]struct{}{}
 	for _, res := range c.resultsByID {
-		for blob := range res.storedBlobsLocked() {
-			live[blob] = struct{}{}
+		for _, part := range res.storedParts {
+			for _, layer := range part.layers {
+				live[layer.layer.Descriptor.Digest] = struct{}{}
+			}
 		}
 	}
 	return slices.Sorted(maps.Keys(live)), nil
@@ -222,13 +408,15 @@ func (c *Cache) LivePacks() ([]digest.Digest, error) {
 	if !c.blobBacked {
 		return nil, fmt.Errorf("live packs: the cache has no blob store")
 	}
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workUpkeep)
+	defer read.Unlock()
 	live := map[digest.Digest]struct{}{}
 	for _, res := range c.resultsByID {
 		for _, part := range res.storedParts {
-			for _, pack := range part.Chain.Packs {
-				live[pack] = struct{}{}
+			for _, layer := range part.layers {
+				if layer.pack != "" {
+					live[layer.pack] = struct{}{}
+				}
 			}
 		}
 	}
@@ -243,14 +431,18 @@ func (c *Cache) LivePackMembers() (map[digest.Digest]digest.Digest, error) {
 	if !c.blobBacked {
 		return nil, fmt.Errorf("live pack members: the cache has no blob store")
 	}
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workUpkeep)
+	defer read.Unlock()
 	members := map[digest.Digest]digest.Digest{}
 	for _, res := range c.resultsByID {
 		for _, part := range res.storedParts {
-			for layer, pack := range part.Chain.Packs {
-				if current, ok := members[layer]; !ok || pack < current {
-					members[layer] = pack
+			for _, layer := range part.layers {
+				blob, pack := layer.layer.Descriptor.Digest, layer.pack
+				if pack == "" {
+					continue
+				}
+				if current, ok := members[blob]; !ok || pack < current {
+					members[blob] = pack
 				}
 			}
 		}
@@ -266,49 +458,39 @@ type BlobCacheUsage struct {
 	PoolValues int
 	PoolBytes  int64
 	// PoolBlobs and PoolBlobBytes are the distinct layer blobs the pool's
-	// stored parts name, as the disk stage measures them.
+	// stored parts name, each at the largest size they give it, as the disk
+	// stage measures them.
 	PoolBlobs     int
 	PoolBlobBytes int64
 	// Entries, Terms, ClassSlots and Holdings are the counts the service's
-	// memory estimate weighs, and RecordBytes the bytes of every stored
-	// record, in the pool or not.
-	Entries     int
-	Terms       int
-	ClassSlots  int
-	Holdings    int
-	RecordBytes int64
+	// memory estimate weighs.
+	Entries    int
+	Terms      int
+	ClassSlots int
+	Holdings   int
 }
 
-// BlobCacheUsage measures the cache, read under one hold. Only a blob-backed
-// cache answers.
+// BlobCacheUsage reads what the cache holds, as its limits count it, under
+// one hold of egraphMu for reading: the pool's measure as the cache keeps it
+// (cache_pool_measure.go), and the counts beside it. It walks nothing. Only
+// a blob-backed cache answers.
 func (c *Cache) BlobCacheUsage() (BlobCacheUsage, error) {
 	if !c.blobBacked {
 		return BlobCacheUsage{}, fmt.Errorf("blob cache usage: the cache has no blob store")
 	}
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workUpkeep)
+	defer read.Unlock()
 	usage := BlobCacheUsage{
-		Entries:    len(c.resultsByID),
-		Terms:      len(c.egraphTerms),
-		ClassSlots: c.eqClassSlotsLocked(),
-		Holdings:   len(c.holderEntries),
+		PoolValues:    c.pool.values,
+		PoolBytes:     c.pool.bytes,
+		PoolBlobs:     len(c.pool.blobs),
+		PoolBlobBytes: c.pool.blobBytes,
+		Entries:       len(c.resultsByID),
+		Terms:         len(c.egraphTerms),
+		ClassSlots:    c.eqClassSlotsLocked(),
 	}
-	// Only the pool's values name the blobs it counts, so this walks the
-	// pool, not every entry as a prune's membership count must.
-	poolBlobs := map[digest.Digest]struct{}{}
-	for _, res := range c.storedPoolLocked() {
-		usage.PoolValues++
-		usage.PoolBytes += res.storedValueBytes()
-		for blob, size := range res.storedBlobsLocked() {
-			if _, counted := poolBlobs[blob]; !counted {
-				poolBlobs[blob] = struct{}{}
-				usage.PoolBlobBytes += size
-			}
-		}
-	}
-	usage.PoolBlobs = len(poolBlobs)
-	for _, res := range c.resultsByID {
-		usage.RecordBytes += res.storedRecordBytes
+	for _, state := range c.remoteCaches {
+		usage.Holdings += state.holdings
 	}
 	return usage, nil
 }

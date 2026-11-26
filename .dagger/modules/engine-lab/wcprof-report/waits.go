@@ -22,10 +22,14 @@ func (a *waitAgg) add(w *Wait, waiter string) {
 	a.waiters[waiter] = true
 }
 
+// waitTarget names what w waited on: the op, or the resource, with the
+// kind of writer that let a lock wait in when the dump names it.
 func waitTarget(w *Wait) string {
 	switch {
 	case w.Target != nil:
 		return w.Target.Key()
+	case w.Ident != "" && w.Holder != "":
+		return w.Ident + " behind " + w.Holder
 	case w.Ident != "":
 		return w.Ident
 	}

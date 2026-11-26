@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -14,7 +15,7 @@ import (
 func TestMergePreparationRelocatesAsValidateThenVisit(t *testing.T) {
 	t.Parallel()
 	cctx, cloud, batch := storedBenchCloud(t)
-	got, err := cloud.StoredBundle(cctx, batch, nil)
+	got, err := cloud.StoredBundle(cctx, batch, time.Now().Unix(), nil)
 	require.NoError(t, err)
 	// Each part is owned by its row's dependencies, as an engine that
 	// captured it from its row's inputs offers it.
@@ -29,11 +30,19 @@ func TestMergePreparationRelocatesAsValidateThenVisit(t *testing.T) {
 		}
 	}
 
+	// Without their parts, the records are prepared as they land, as a
+	// merge prepares an engine's.
+	for i := range got.Bundle.Values {
+		got.Bundle.Values[i].Parts = nil
+	}
 	ctx, engine, _ := transferTestCache(t)
+	// The test reads each row's record as the bundle carried it, from the
+	// prepared merge: the preparation keeps its copies of them.
+	engine.testKeepRecordCopies = true
 	// Provisional numbers start past the ordinals, so that relocating
 	// changes every reference.
 	engine.egraphMu.Lock()
-	engine.nextSharedResultID = 10_000
+	engine.nextSharedResultID.Store(10_000)
 	engine.egraphMu.Unlock()
 	prep, err := engine.prepareValueMerge(ctx, cloudCacheID, got.Bundle, false)
 	require.NoError(t, err)
@@ -82,13 +91,21 @@ func TestMergePreparationRelocatesAsValidateThenVisit(t *testing.T) {
 }
 
 // A payload reference to a row the record doesn't depend on is refused, as
-// a call reference is.
+// a call reference is, by a merge that prepares the record as it lands: one
+// whose value carries no parts, as an engine sends it. A record from the
+// Cloud carrying its parts is refused at its first use instead
+// (TestMergedSetWithOneBadPayloadMissesOnlyThatRecord).
 func TestMergeValuesRefusesUndeclaredPayloadReference(t *testing.T) {
 	t.Parallel()
 	cctx, cloud, batch := storedBenchCloud(t)
-	got, err := cloud.StoredBundle(cctx, batch[:1], nil)
+	got, err := cloud.StoredBundle(cctx, batch[:1], time.Now().Unix(), nil)
 	require.NoError(t, err)
-	bundle := got.Bundle
+	// The bundle as its encoding carries it, without its records' parts.
+	bundle, err := cloneValueBundle(got.Bundle)
+	require.NoError(t, err)
+	for i := range bundle.Values {
+		bundle.Values[i].Parts = nil
+	}
 	var target *TransferredValue
 	for i := range bundle.Values {
 		if len(bundle.Values[i].DependencyIDs) == 1 {

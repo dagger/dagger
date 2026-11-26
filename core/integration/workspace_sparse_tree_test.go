@@ -129,6 +129,14 @@ func workspaceQuery(ctx context.Context, t *testctx.T, c *dagger.Client, ref, qu
 
 func workspaceReadDigest(ctx context.Context, t *testctx.T, c *dagger.Client, ref, dirPath string, opts core.WorkspaceDirectoryOpts) (string, error) {
 	t.Helper()
+	return workspaceReadDigestFrom(ctx, t, core.NewQuery(c).Container().From(alpineImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)), ref, dirPath, opts)
+}
+
+// workspaceReadDigestFrom is workspaceReadDigest from client, a container
+// whose dagger CLI reaches the engine to read on.
+func workspaceReadDigestFrom(ctx context.Context, t *testctx.T, client *core.Container, ref, dirPath string, opts core.WorkspaceDirectoryOpts) (string, error) {
+	t.Helper()
 	args := []string{fmt.Sprintf("path: %q", dirPath)}
 	quoted := func(patterns []string) string {
 		bs, err := json.Marshal(patterns)
@@ -144,7 +152,9 @@ func workspaceReadDigest(ctx context.Context, t *testctx.T, c *dagger.Client, re
 	if opts.Gitignore {
 		args = append(args, "gitignore: true")
 	}
-	out, err := workspaceQuery(ctx, t, c, ref, fmt.Sprintf(`{currentWorkspace{directory(%s){digest}}}`, strings.Join(args, ", ")))
+	out, err := client.WithWorkdir("/empty").
+		With(workspaceSelectionDaggerQuery(fmt.Sprintf(`{currentWorkspace{directory(%s){digest}}}`, strings.Join(args, ", ")), "-W", ref)).
+		Stdout(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -157,6 +167,42 @@ func workspaceReadDigest(ctx context.Context, t *testctx.T, c *dagger.Client, re
 	}
 	require.NoError(t, json.Unmarshal([]byte(out), &res))
 	return res.CurrentWorkspace.Directory.Digest, nil
+}
+
+// TestGitWorkspaceSparseReadsAreTheSameOnTwoEngines reads a Git workspace's
+// files on two fresh engines from a server that has lost a file outside its
+// modules, so that each read goes through what loading a workspace fetches:
+// the sparse tree of the module (__sparseWorkspaceTree, keyed by its commit)
+// and the files read outside it (__sparseFiles, keyed by their blob ids).
+// What each copies out is the same on both engines: the reads fetch only
+// content a hash in their key addresses, so another engine's run of either
+// call is the same result (dagql.FieldSpec.FollowsFromInputs).
+func (WorkspaceSuite) TestGitWorkspaceSparseReadsAreTheSameOnTwoEngines(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	_, partial := sparseWorkspaceRepo(ctx, t, c, "type Probe { pub name: String! { \"probe\" } }\n")
+	reads := []struct {
+		name string
+		path string
+		opts core.WorkspaceDirectoryOpts
+	}{
+		{"module files", "/", core.WorkspaceDirectoryOpts{Include: []string{".dagger/modules/probe/**"}}},
+		{"attributes from outside the read", "/.dagger/modules/probe", core.WorkspaceDirectoryOpts{Include: []string{"notes.crlf"}}},
+		{"a file outside the modules", "/outside", core.WorkspaceDirectoryOpts{Include: []string{"also.txt"}}},
+	}
+	var first []string
+	for engine := range 2 {
+		client := engineClientContainer(ctx, t, c, devEngineContainerAsService(devEngineContainer(c)))
+		for i, read := range reads {
+			digest, err := workspaceReadDigestFrom(ctx, t, client, partial+"@moved", read.path, read.opts)
+			require.NoError(t, err, read.name)
+			require.NotEmpty(t, digest, read.name)
+			if engine == 0 {
+				first = append(first, digest)
+				continue
+			}
+			require.Equal(t, first[i], digest, read.name)
+		}
+	}
 }
 
 // TestGitWorkspaceLoadsWithoutItsWholeTree asserts that a Git workspace's
@@ -340,6 +386,95 @@ func (WorkspaceSuite) TestGitWorkspaceSparseReadsMatchFullReads(ctx context.Cont
 			})
 		})
 	}
+}
+
+// TestGitWorkspaceSparseReadsAcrossCommits asserts that a read of a Git
+// workspace's files a commit didn't change is the same call at that commit as
+// at the one before, for a workspace named by its full commit SHA, as CI names
+// one; and that a read of a file the commit changed reads the new commit's
+// file. Two sessions of one engine read the workspace, at base and then at
+// moved, and the engine reports each read's cache outcome to Cloud.
+func (WorkspaceSuite) TestGitWorkspaceSparseReadsAcrossCommits(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	_, partial := sparseWorkspaceRepo(ctx, t, c, "type Probe { pub name: String! { \"probe\" } }\n")
+	commit := func(tag string) string {
+		sha, err := core.NewQuery(c).Git(partial).Ref(tag).CommitSHA(ctx)
+		require.NoError(t, err)
+		return sha
+	}
+	base, moved := commit("base"), commit("moved")
+
+	cloud := newTelemetrySplitCloud(t, c)
+	engine, err := devEngineContainerAsService(telemetrySplitEngineWithoutCloud(c, devEngineContainer(c))).Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _, _ = engine.Stop(ctx) })
+	client := telemetrySplitClient(ctx, t, c, daggerCliFile(t, c), engine, cloud)
+
+	// Neither read is one the sparse tree covers, so each makes a sparse tree
+	// of its own. moved changes outside/also.txt and nothing in outside/nested.
+	const query = `{currentWorkspace{
+  unchanged: directory(path: "/outside/nested", include: ["notes.crlf"]){digest}
+  changed: directory(path: "/outside", include: ["also.txt"]){file(path: "also.txt"){contents}}
+}}`
+	type reads struct {
+		CurrentWorkspace struct {
+			Unchanged struct {
+				Digest string
+			}
+			Changed struct {
+				File struct {
+					Contents string
+				}
+			}
+		}
+	}
+	read := func(sha string) reads {
+		out, err := client.
+			WithNewFile("/query.graphql", query).
+			WithEnvVariable("CACHEBUSTER", rand.Text()).
+			WithExec([]string{"/bin/dagger", "query", "--doc", "/query.graphql", "-W", partial + "@" + sha}, core.ContainerWithExecOpts{DisableDaggerInDagger: true}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		var res reads
+		require.NoError(t, json.Unmarshal([]byte(out), &res))
+		return res
+	}
+	atBase, atMoved := read(base), read(moved)
+	require.Equal(t, atBase.CurrentWorkspace.Unchanged.Digest, atMoved.CurrentWorkspace.Unchanged.Digest)
+	require.Equal(t, "also\n", atBase.CurrentWorkspace.Changed.File.Contents)
+	require.Equal(t, "moved\n", atMoved.CurrentWorkspace.Changed.File.Contents, "a read of a file the commit changed must read the new commit's file")
+
+	type span struct {
+		Session string            `json:"session"`
+		Name    string            `json:"name"`
+		Attrs   map[string]string `json:"attrs"`
+	}
+	spans := readTelemetrySplitLines[span](ctx, t, cloud, "v1/traces.json.spans")
+	// Both sessions run under the test's trace. The engine names each span's
+	// session, and parsing each session's workspace ref names its commit.
+	commitOf := map[string]string{}
+	for _, s := range spans {
+		for _, sha := range []string{base, moved} {
+			if s.Session != "" && strings.Contains(s.Name, "@"+sha) {
+				commitOf[s.Session] = sha
+			}
+		}
+	}
+	outcomes := map[string][]string{}
+	for _, s := range spans {
+		if s.Name != "GitRepository.__sparseFiles" || s.Attrs["dagger.io/cache.outcome"] == "" {
+			continue
+		}
+		sha := commitOf[s.Session]
+		outcomes[sha] = append(outcomes[sha], s.Attrs["dagger.io/cache.outcome"])
+	}
+	t.Logf("sparse read outcomes: base %v, moved %v, other %v", outcomes[base], outcomes[moved], outcomes[""])
+	require.NotEmpty(t, outcomes[base], "the first session's reads must be found by their session")
+	require.NotEmpty(t, outcomes[moved], "the second session's reads must be found by their session")
+	require.NotContains(t, outcomes[base], "hit", "the first session's reads have nothing to reuse")
+	require.Contains(t, outcomes[moved], "hit", "a read of files the commit didn't change must be the same call as at the commit before")
+	require.Contains(t, outcomes[moved], "executed", "a read of a file the commit changed must be made again")
 }
 
 // TestGitWorkspaceFullReadsReachOutsideASparseRead asserts that a read of a

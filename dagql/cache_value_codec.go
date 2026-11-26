@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/snapshots"
 	"github.com/opencontainers/go-digest"
 )
 
@@ -104,15 +105,24 @@ func (memos payloadMemos) visit(v PersistedPayloadVisit) PersistedPayloadVisit {
 	if memos == nil {
 		return v
 	}
-	key := v.Path.String()
+	v.Memo = memos.at(v.Path)
+	v.ReferencesVisitedApart = true
+	return v
+}
+
+// at returns the memo of the payload at path, the envelope's own path, made
+// if it has none yet; with no memos, nil.
+func (memos payloadMemos) at(path PersistedRefPath) *PayloadMemo {
+	if memos == nil {
+		return nil
+	}
+	key := path.String()
 	memo := memos[key]
 	if memo == nil {
 		memo = &PayloadMemo{}
 		memos[key] = memo
 	}
-	v.Memo = memo
-	v.ReferencesVisitedApart = true
-	return v
+	return memo
 }
 
 // walkMemoTransferPayloads is walkTransferPayloads with each payload's visit
@@ -127,13 +137,30 @@ func walkMemoTransferPayloads(env *PersistedResultEnvelope, frame *ResultCall, l
 	if err != nil {
 		return err
 	}
-	if err := walkScopedTransferPayloads(&next, frame, scopes, nil, memos, visit); err != nil {
+	if err := walkScopedTransferPayloads(&next, frame, scopes, nil, memos, true, visit); err != nil {
 		return err
 	}
 	*env = next
 	return nil
 }
-func walkScopedTransferPayloads(env *PersistedResultEnvelope, frame *ResultCall, scopes *snapshotLinkScopes, path PersistedRefPath, memos payloadMemos, visit func(PersistedObjectFamily, PersistedPayloadVisit) (json.RawMessage, error)) error {
+
+// readMemoTransferPayloads visits each payload of env as
+// walkMemoTransferPayloads does, with its memo from memos, for a reader that
+// changes none: it walks env itself, which it neither copies nor writes, so
+// that a read of a record costs no copy of its payloads.
+func readMemoTransferPayloads(env *PersistedResultEnvelope, frame *ResultCall, links []PersistedSnapshotRefLink, memos payloadMemos, read func(PersistedObjectFamily, PersistedPayloadVisit) error) error {
+	scopes, err := partitionSnapshotLinks(*env, links)
+	if err != nil {
+		return err
+	}
+	return walkScopedTransferPayloads(env, frame, scopes, nil, memos, false, func(family PersistedObjectFamily, v PersistedPayloadVisit) (json.RawMessage, error) {
+		return nil, read(family, v)
+	})
+}
+
+// walkScopedTransferPayloads visits each payload of env, and with rewrite
+// puts the payload each visit returns in its place.
+func walkScopedTransferPayloads(env *PersistedResultEnvelope, frame *ResultCall, scopes *snapshotLinkScopes, path PersistedRefPath, memos payloadMemos, rewrite bool, visit func(PersistedObjectFamily, PersistedPayloadVisit) (json.RawMessage, error)) error {
 	switch env.Kind {
 	case persistedResultKindObject:
 		family, ok := PersistedObjectFamilyByName(env.ObjectCodec)
@@ -144,14 +171,16 @@ func walkScopedTransferPayloads(env *PersistedResultEnvelope, frame *ResultCall,
 		if err != nil {
 			return fmt.Errorf("codec %s at %s: %w", family.Name, path, err)
 		}
-		env.ObjectJSON = raw
+		if rewrite {
+			env.ObjectJSON = raw
+		}
 	case persistedResultKindList:
 		for i := range env.Items {
 			childCall := frame
 			if frame != nil {
 				childCall = persistedListItemCall(frame, i+1)
 			}
-			if err := walkScopedTransferPayloads(&env.Items[i], childCall, scopes, path.Field("items").Index(i), memos, visit); err != nil {
+			if err := walkScopedTransferPayloads(&env.Items[i], childCall, scopes, path.Field("items").Index(i), memos, rewrite, visit); err != nil {
 				return err
 			}
 		}
@@ -165,19 +194,109 @@ func mapTransferredOutputs(rec PersistedRecord) ([]CapturedCodecOutput, error) {
 
 func mapMemoTransferredOutputs(rec PersistedRecord, memos payloadMemos) ([]CapturedCodecOutput, error) {
 	var outputs []CapturedCodecOutput
-	err := walkMemoTransferPayloads(&rec.Envelope, rec.Call, rec.SnapshotLinks, memos, func(family PersistedObjectFamily, v PersistedPayloadVisit) (json.RawMessage, error) {
+	err := readMemoTransferPayloads(&rec.Envelope, rec.Call, rec.SnapshotLinks, memos, func(family PersistedObjectFamily, v PersistedPayloadVisit) error {
 		if family.Transfer != nil {
 			mapped, err := family.Transfer.MapSnapshotParts(v)
 			if err != nil {
-				return nil, err
+				return err
 			}
 			outputs = append(outputs, mapped...)
 		}
-		return v.Payload, nil
+		return nil
 	})
 	return outputs, err
 }
 func normalizeTransferRecord(rec PersistedRecord) (PersistedRecord, error) {
+	rec, _, err := normalizeTransferRecordRefs(rec)
+	return rec, err
+}
+
+// normalizeTransferCall is normalizeTransferRecord's call alone: a copy with
+// the extra digests and recipe digests another cache takes.
+func normalizeTransferCall(frame *ResultCall) (*ResultCall, error) {
+	frame = frame.clone()
+	if err := walkTransferCalls(frame, func(frame *ResultCall) error { frame.ExtraDigests = transferExtras(frame.ExtraDigests); return nil }, func(ref *ResultCallRef) error { ref.shared = nil; return nil }); err != nil {
+		return nil, err
+	}
+	if err := visitResultCallReferences(frame, func(ref *PersistedRef) error {
+		if ref.RecipeID != nil {
+			copied, err := ref.RecipeID.FilterTransferDigests()
+			ref.RecipeID = copied
+			return err
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return frame, nil
+}
+
+// normalizeTransferRecordRefs is normalizeTransferRecord, and returns too
+// the entries the record's child and call references name, sorted and once
+// each, which its last walk finds.
+func normalizeTransferRecordRefs(rec PersistedRecord) (PersistedRecord, []uint64, error) {
+	var refs []uint64
+	rec, err := normalizeTransferRecordSeen(rec, func(ref *PersistedRef) {
+		if ref.ResultID != 0 && (ref.Kind == PersistedRefChild || ref.Kind == PersistedRefCall) {
+			refs = append(refs, ref.ResultID)
+		}
+	})
+	if err != nil {
+		return PersistedRecord{}, nil, err
+	}
+	slices.Sort(refs)
+	return rec, slices.Compact(refs), nil
+}
+
+// normalizeCheckedTransferRecord is normalizeTransferRecord, then
+// validateTransferRecord of the normalized record against deps, with each
+// of its payloads walked for its references once: the walk that normalizes
+// the record's references gives the child and call references validation
+// checks against deps, in their order, and each payload's codec is told so
+// (ReferencesVisitedApart). That walk visits every payload with its
+// family's visitor, as validation's own walks would. A record it refuses
+// for a reference is refused with validateTransferRecord's error. A record
+// with offers is validated by validateTransferRecord, which leaves its
+// offers out.
+func normalizeCheckedTransferRecord(rec PersistedRecord, deps []uint64) (PersistedRecord, error) {
+	if len(rec.Envelope.PendingOffers) != 0 {
+		normalized, err := normalizeTransferRecord(rec)
+		if err != nil {
+			return PersistedRecord{}, err
+		}
+		return normalized, validateTransferRecord(normalized, deps)
+	}
+	var checked []PersistedRef
+	normalized, err := normalizeTransferRecordSeen(rec, func(ref *PersistedRef) {
+		if ref.Kind == PersistedRefChild || ref.Kind == PersistedRefCall {
+			checked = append(checked, *ref)
+		}
+	})
+	if err != nil {
+		return PersistedRecord{}, err
+	}
+	direct, err := validateMemoTransferRecordContent(normalized, deps, payloadMemos{})
+	if err != nil {
+		return PersistedRecord{}, err
+	}
+	check := directTransferReferences(direct)
+	for i := range checked {
+		if err := check(&checked[i]); err != nil {
+			// A refusal says what validation's own walk says, which names
+			// the payload or call the reference is in.
+			if walked := validateTransferRecord(normalized, deps); walked != nil {
+				err = walked
+			}
+			return PersistedRecord{}, err
+		}
+	}
+	return normalized, nil
+}
+
+// normalizeTransferRecordSeen is normalizeTransferRecord, showing seen each
+// reference with no recipe that its last walk finds, as the normalized
+// record holds it.
+func normalizeTransferRecordSeen(rec PersistedRecord, seen func(*PersistedRef)) (PersistedRecord, error) {
 	var err error
 	rec.Envelope, err = clonePersistedEnvelope(rec.Envelope)
 	if err != nil {
@@ -200,14 +319,19 @@ func normalizeTransferRecord(rec PersistedRecord) (PersistedRecord, error) {
 		return PersistedRecord{}, err
 	}
 	rec.SnapshotLinks = nil
-	return VisitEncodedReferences(rec, func(ref *PersistedRef) error {
+	rec, err = VisitEncodedReferences(rec, func(ref *PersistedRef) error {
 		if ref.RecipeID != nil {
 			copied, err := ref.RecipeID.FilterTransferDigests()
 			ref.RecipeID = copied
 			return err
 		}
+		seen(ref)
 		return nil
 	})
+	if err != nil {
+		return PersistedRecord{}, err
+	}
+	return rec, nil
 }
 
 // validateTransferRecord checks a transferred record against its direct
@@ -234,7 +358,7 @@ func validateTransferRecordContent(rec PersistedRecord, deps []uint64) (map[uint
 // pass that shares payload decodes in memos and visits the record's
 // references itself.
 func validateMemoTransferRecordContent(rec PersistedRecord, deps []uint64, memos payloadMemos) (map[uint64]bool, error) {
-	if err := validateTransferRecordHeader(rec); err != nil {
+	if err := validateTransferRecordHeader(rec, true); err != nil {
 		return nil, err
 	}
 	if err := validateMemoTransferPayloads(rec, memos); err != nil {
@@ -243,20 +367,12 @@ func validateMemoTransferRecordContent(rec PersistedRecord, deps []uint64, memos
 	return validateTransferDependencies(rec, deps)
 }
 
-// validateTransferPayloads checks each payload of a transferred record by
-// its codec.
-func validateTransferPayloads(rec PersistedRecord) error {
-	return validateMemoTransferPayloads(rec, nil)
-}
-
 func validateMemoTransferPayloads(rec PersistedRecord, memos payloadMemos) error {
-	return walkMemoTransferPayloads(&rec.Envelope, rec.Call, nil, memos, func(family PersistedObjectFamily, v PersistedPayloadVisit) (json.RawMessage, error) {
+	return readMemoTransferPayloads(&rec.Envelope, rec.Call, nil, memos, func(family PersistedObjectFamily, v PersistedPayloadVisit) error {
 		if family.Transfer != nil {
-			if err := family.Transfer.ValidateForeign(v); err != nil {
-				return nil, err
-			}
+			return family.Transfer.ValidateForeign(v)
 		}
-		return v.Payload, nil
+		return nil
 	})
 }
 
@@ -265,7 +381,22 @@ func validateMemoTransferPayloads(rec PersistedRecord, memos payloadMemos) error
 // structure, its dependencies, its offers' references, and its call's
 // references.
 func validateTransferRecordShape(rec PersistedRecord, deps []uint64) error {
-	if err := validateTransferRecordHeader(rec); err != nil {
+	return validateRecordShape(rec, deps, true)
+}
+
+// validateUnpreparedRecordShape checks what validateTransferRecordShape
+// checks of a record an engine merges with its payload unprepared, but that
+// its payloads are JSON: the record's first use checks its whole content,
+// that included, with its codecs (prepareFirstUseRecord), and refuses that
+// record alone, where a refusal here refuses its whole bundle.
+func validateUnpreparedRecordShape(rec PersistedRecord, deps []uint64) error {
+	return validateRecordShape(rec, deps, false)
+}
+
+// validateRecordShape is validateTransferRecordShape, which checks that the
+// record's payloads are JSON only with payloads.
+func validateRecordShape(rec PersistedRecord, deps []uint64, payloads bool) error {
+	if err := validateTransferRecordHeader(rec, payloads); err != nil {
 		return err
 	}
 	if err := validateTransferEnvelopeStructure(rec.Envelope, true); err != nil {
@@ -275,19 +406,48 @@ func validateTransferRecordShape(rec PersistedRecord, deps []uint64) error {
 	if err != nil {
 		return err
 	}
-	return visitResultCallReferences(rec.Call, nil, directTransferReferences(direct))
+	return visitResultCallReferences(rec.Call, directTransferReferences(direct))
+}
+
+// validateStoredRecordShape checks a record a blob-backed cache sends as it
+// holds it, compressed: its call, its dependencies, and its call's
+// references against them. Its envelope was checked when it was compressed
+// (newStoredBody).
+func validateStoredRecordShape(rec PersistedRecord, deps []uint64) error {
+	if rec.ResultID == 0 || rec.Call == nil || rec.Call.Type == nil || rec.Call.Type.NamedType == "Query" {
+		return fmt.Errorf("missing transferable result call")
+	}
+	direct, err := validateTransferDependencies(rec, deps)
+	if err != nil {
+		return err
+	}
+	return visitResultCallReferences(rec.Call, directTransferReferences(direct))
+}
+
+// validateStoredFrameRecordShape checks a record a blob-backed cache sends
+// with its call frame as it holds it too, compressed: its dependencies. Its
+// call was checked as validateStoredRecordShape checks it when the body took
+// it (storedBody.withFrame), and its call's references, which the body's
+// facts list, against the entry's dependencies as the bundle took the
+// record (addStoredValue).
+func validateStoredFrameRecordShape(rec PersistedRecord, deps []uint64) error {
+	if rec.ResultID == 0 {
+		return fmt.Errorf("missing transferable result call")
+	}
+	_, err := validateTransferDependencies(rec, deps)
+	return err
 }
 
 // validateTransferRecordHeader checks a transferred record's identity, call,
-// envelope and storage links.
-func validateTransferRecordHeader(rec PersistedRecord) error {
+// envelope and storage links, and with payloads that its payloads are JSON.
+func validateTransferRecordHeader(rec PersistedRecord, payloads bool) error {
 	if rec.ResultID == 0 || rec.Envelope.ResultID != rec.ResultID {
 		return fmt.Errorf("row/envelope self ID mismatch")
 	}
 	if rec.Call == nil || rec.Call.Type == nil || rec.Call.Type.NamedType == "Query" {
 		return fmt.Errorf("missing transferable result call")
 	}
-	if err := validateTransferEnvelope(rec.Envelope, rec.Call.Type, true); err != nil {
+	if err := validateTransferEnvelope(rec.Envelope, rec.Call.Type, true, payloads); err != nil {
 		return err
 	}
 	if len(rec.SnapshotLinks) != 0 {
@@ -328,7 +488,7 @@ func directTransferReferences(direct map[uint64]bool) PersistedRefVisitor {
 	}
 }
 
-func validateTransferEnvelope(env PersistedResultEnvelope, typ *ResultCallType, root bool) error {
+func validateTransferEnvelope(env PersistedResultEnvelope, typ *ResultCallType, root, payloads bool) error {
 	if typ == nil {
 		return fmt.Errorf("missing envelope type")
 	}
@@ -338,12 +498,12 @@ func validateTransferEnvelope(env PersistedResultEnvelope, typ *ResultCallType, 
 	if !root && env.SessionResourceHandle != "" {
 		return fmt.Errorf("inline resource handle has no owner row")
 	}
-	return validateTransferEnvelopeKind(env, typ, root)
+	return validateTransferEnvelopeKind(env, typ, root, payloads)
 }
 
 // validateTransferEnvelopeKind is validateTransferEnvelope's per-kind check,
 // one case per envelope kind.
-func validateTransferEnvelopeKind(env PersistedResultEnvelope, typ *ResultCallType, root bool) error {
+func validateTransferEnvelopeKind(env PersistedResultEnvelope, typ *ResultCallType, root, payloads bool) error {
 	switch env.Kind {
 	case persistedResultKindNull:
 		if typ.NonNull {
@@ -361,22 +521,27 @@ func validateTransferEnvelopeKind(env PersistedResultEnvelope, typ *ResultCallTy
 			return fmt.Errorf("invalid list envelope")
 		}
 		for _, item := range env.Items {
-			if err := validateTransferEnvelope(item, typ.Elem, false); err != nil {
+			if err := validateTransferEnvelope(item, typ.Elem, false, payloads); err != nil {
 				return err
 			}
 		}
 	case persistedResultKindObject:
-		if typ.Elem != nil || env.TypeName == "" || len(env.Items) != 0 || len(env.ScalarJSON) != 0 || !json.Valid(env.ObjectJSON) {
+		if typ.Elem != nil || env.TypeName == "" || len(env.Items) != 0 || len(env.ScalarJSON) != 0 || !validPayload(env.ObjectJSON, payloads) {
 			return fmt.Errorf("invalid object envelope")
 		}
 	case persistedResultKindScalar:
-		if typ.Elem != nil || env.TypeName == "" || env.ObjectCodec != "" || !json.Valid(env.ScalarJSON) {
+		if typ.Elem != nil || env.TypeName == "" || env.ObjectCodec != "" || !validPayload(env.ScalarJSON, payloads) {
 			return fmt.Errorf("invalid scalar envelope")
 		}
 	default:
 		return fmt.Errorf("unknown envelope kind %q", env.Kind)
 	}
 	return nil
+}
+
+// validPayload reports whether payload is JSON, when payloads are checked.
+func validPayload(payload json.RawMessage, payloads bool) bool {
+	return !payloads || json.Valid(payload)
 }
 
 // validateTransferEnvelopeStructure checks what visitPersistedEnvelope checks
@@ -425,6 +590,36 @@ func validateSnapshotValue(value SnapshotValue) error {
 }
 
 func validateTransferOffer(offer PersistedPartOffer, part CapturedCodecOutput) error {
+	if err := validateOfferDescriptor(offer, part); err != nil {
+		return err
+	}
+	blobs := map[digest.Digest]bool{}
+	for _, layer := range offer.Chain.Layers {
+		if err := validateExportLayer(layer); err != nil {
+			return err
+		}
+		blobs[layer.Descriptor.Digest] = true
+	}
+	return validateChainBlobs(offer.Chain, func(blob digest.Digest) bool { return blobs[blob] })
+}
+
+// validateListedOffer checks an offer as validateTransferOffer does, whose
+// chain names its layers by their places in a bundle's list, listed, as an
+// output of a bundle a blob-backed cache builds does: checkListedLayers
+// checked those layers, so only the chain's addresses and packs are checked
+// against the layers it names.
+func validateListedOffer(offer PersistedPartOffer, part CapturedCodecOutput, places []int, listed []BundleLayer) error {
+	if err := validateOfferDescriptor(offer, part); err != nil {
+		return err
+	}
+	return validateChainBlobs(offer.Chain, func(blob digest.Digest) bool {
+		return slices.ContainsFunc(places, func(place int) bool { return listed[place].Layer.Descriptor.Digest == blob })
+	})
+}
+
+// validateOfferDescriptor checks an offer's references, its value, and that
+// it fits the part it is offered for.
+func validateOfferDescriptor(offer PersistedPartOffer, part CapturedCodecOutput) error {
 	if err := validateOfferReferences(offer); err != nil {
 		return err
 	}
@@ -437,23 +632,31 @@ func validateTransferOffer(offer PersistedPartOffer, part CapturedCodecOutput) e
 	if part.Address.Part == "metadata" {
 		return fmt.Errorf("metadata cannot carry a chain")
 	}
-	blobs := map[digest.Digest]bool{}
-	for _, layer := range offer.Chain.Layers {
-		if err := validateLayerDigest(layer.Descriptor.Digest); err != nil {
-			return fmt.Errorf("invalid layer digest: %w", err)
-		}
-		if layer.Descriptor.Size < 0 || layer.Descriptor.MediaType == "" {
-			return fmt.Errorf("invalid layer descriptor")
-		}
-		blobs[layer.Descriptor.Digest] = true
+	return nil
+}
+
+// validateExportLayer checks a layer of an offer's chain: its digest, size
+// and media type.
+func validateExportLayer(layer snapshots.ExportLayer) error {
+	if err := validateLayerDigest(layer.Descriptor.Digest); err != nil {
+		return fmt.Errorf("invalid layer digest: %w", err)
 	}
-	for dig := range offer.Chain.Addresses {
-		if !blobs[dig] {
+	if layer.Descriptor.Size < 0 || layer.Descriptor.MediaType == "" {
+		return fmt.Errorf("invalid layer descriptor")
+	}
+	return nil
+}
+
+// validateChainBlobs checks that a chain's addresses and packs are each for
+// a blob of its own layers (own), and that each pack is a digest.
+func validateChainBlobs(chain OfferedChain, own func(blob digest.Digest) bool) error {
+	for dig := range chain.Addresses {
+		if !own(dig) {
 			return fmt.Errorf("address for unknown layer %s", dig)
 		}
 	}
-	for dig, pack := range offer.Chain.Packs {
-		if !blobs[dig] {
+	for dig, pack := range chain.Packs {
+		if !own(dig) {
 			return fmt.Errorf("pack for unknown layer %s", dig)
 		}
 		if err := pack.Validate(); err != nil {

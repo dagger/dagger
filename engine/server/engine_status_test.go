@@ -131,6 +131,8 @@ func (rt *remoteSettleTest) remoteCache() StatusRemoteCache {
 func TestRemoteCacheSettles(t *testing.T) {
 	t.Parallel()
 	rt := newRemoteSettleTest(time.Hour)
+	ended := time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC)
+	rt.ledger.now = func() time.Time { return ended }
 	require.Equal(t, StatusRemoteCache{State: RemoteCacheSettled}, rt.remoteCache(), "nothing to settle yet")
 
 	rt.ledger.sessionStarted("sess-a", "a", "claim-a")
@@ -143,7 +145,8 @@ func TestRemoteCacheSettles(t *testing.T) {
 	sessions := []protocol.SettleSession{{ID: "sess-a", Marker: true}, {ID: "sess-b"}}
 	state, changed := rt.ledger.settleState()
 	claims := []protocol.SessionClaim{{ID: "sess-a", Claim: "claim-a"}, {ID: "sess-b", Claim: "claim-b"}}
-	require.Equal(t, remotecache.SettleState{Period: 1, Sessions: sessions, Claims: claims}, state, "the ended sessions' claims until they're settled")
+	state.Claims = withoutStarts(state.Claims)
+	require.Equal(t, remotecache.SettleState{Period: 1, Sessions: sessions, Claims: claims, IdleSince: ended, Bound: time.Hour}, state, "the ended sessions' claims until they're settled")
 	require.Equal(t, StatusRemoteCache{State: RemoteCacheBusy, IdlePeriod: 1}, rt.remoteCache(), "unacknowledged sessions")
 
 	rt.ledger.settledFor(1, sessions)
@@ -153,7 +156,7 @@ func TestRemoteCacheSettles(t *testing.T) {
 		t.Fatal("a Settled changes the settle state")
 	}
 	state, _ = rt.ledger.settleState()
-	require.Equal(t, remotecache.SettleState{Period: 1, Sessions: []protocol.SettleSession{}, Settled: true}, state)
+	require.Equal(t, remotecache.SettleState{Period: 1, Sessions: []protocol.SettleSession{}, Settled: true, IdleSince: ended, Bound: time.Hour}, state)
 	require.Equal(t, StatusRemoteCache{State: RemoteCacheSettled, IdlePeriod: 1}, rt.remoteCache())
 
 	rt.mu.Lock()
@@ -173,6 +176,51 @@ func TestRemoteCacheSettles(t *testing.T) {
 	require.Equal(t, []protocol.SettleSession{{ID: "sess-c", Marker: true}}, state.Sessions)
 }
 
+// The settle state carries when the period's last live session ended, which
+// starts the engine's bound, and the bound's length, for the service to
+// record with the settle: an earlier session's end doesn't start it, a
+// session starting clears it, and the next period's last end starts it
+// again.
+func TestRemoteCacheSettleCarriesItsBoundsStart(t *testing.T) {
+	t.Parallel()
+	rt := newRemoteSettleTest(time.Hour)
+	var mu sync.Mutex
+	now := time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC)
+	rt.ledger.now = func() time.Time {
+		mu.Lock()
+		defer mu.Unlock()
+		return now
+	}
+	at := func(d time.Duration) time.Time {
+		mu.Lock()
+		defer mu.Unlock()
+		now = time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC).Add(d)
+		return now
+	}
+
+	rt.ledger.sessionStarted("sess-a", "a", "")
+	rt.ledger.sessionStarted("sess-b", "b", "")
+	at(time.Second)
+	rt.ledger.sessionEnded("sess-a", "a", "", true)
+	state, _ := rt.ledger.settleState()
+	require.Zero(t, state.IdleSince, "b is live: the bound hasn't started")
+	last := at(3 * time.Second)
+	rt.ledger.sessionEnded("sess-b", "b", "", true)
+	at(5 * time.Second)
+	state, _ = rt.ledger.settleState()
+	require.Equal(t, last, state.IdleSince, "the last live session's end starts the bound")
+	require.Equal(t, time.Hour, state.Bound)
+
+	rt.ledger.sessionStarted("sess-c", "c", "")
+	state, _ = rt.ledger.settleState()
+	require.Zero(t, state.IdleSince, "a live session clears it")
+	next := at(9 * time.Second)
+	rt.ledger.sessionEnded("sess-c", "c", "", true)
+	state, _ = rt.ledger.settleState()
+	require.Equal(t, uint64(2), state.Period)
+	require.Equal(t, next, state.IdleSince, "the next period's last end starts it again")
+}
+
 // With the remote cache, the settle state reports each session that started
 // under a claim, from its start until a Settled covers it.
 func TestRemoteCacheReportsSessionClaims(t *testing.T) {
@@ -188,7 +236,7 @@ func TestRemoteCacheReportsSessionClaims(t *testing.T) {
 	rt.ledger.sessionStarted("sess-a", "a", "claim-a")
 	rt.ledger.sessionStarted("sess-c", "c", "")
 	state, changed := rt.ledger.settleState()
-	require.Equal(t, []protocol.SessionClaim{{ID: "sess-a", Claim: "claim-a"}, {ID: "sess-b", Claim: "claim-b"}}, state.Claims)
+	require.Equal(t, []protocol.SessionClaim{{ID: "sess-a", Claim: "claim-a"}, {ID: "sess-b", Claim: "claim-b"}}, withoutStarts(state.Claims))
 
 	rt.ledger.sessionEnded("sess-b", "b", "claim-b", true)
 	select {
@@ -197,7 +245,7 @@ func TestRemoteCacheReportsSessionClaims(t *testing.T) {
 		t.Fatal("a session's end changes the settle state")
 	}
 	state, _ = rt.ledger.settleState()
-	require.Equal(t, []protocol.SessionClaim{{ID: "sess-a", Claim: "claim-a"}, {ID: "sess-b", Claim: "claim-b"}}, state.Claims, "an ended session is reported until it's settled")
+	require.Equal(t, []protocol.SessionClaim{{ID: "sess-a", Claim: "claim-a"}, {ID: "sess-b", Claim: "claim-b"}}, withoutStarts(state.Claims), "an ended session is reported until it's settled")
 
 	rt.ledger.sessionEnded("sess-a", "a", "claim-a", true)
 	rt.ledger.sessionEnded("sess-c", "c", "", true)
@@ -205,6 +253,35 @@ func TestRemoteCacheReportsSessionClaims(t *testing.T) {
 	rt.ledger.settledFor(1, state.Sessions)
 	state, _ = rt.ledger.settleState()
 	require.Empty(t, state.Claims, "a settled session isn't reported")
+}
+
+// withoutStarts returns claims with their sessions' starts left out, for
+// the tests about which sessions are reported.
+func withoutStarts(claims []protocol.SessionClaim) []protocol.SessionClaim {
+	out := make([]protocol.SessionClaim, len(claims))
+	for i, c := range claims {
+		out[i] = protocol.SessionClaim{ID: c.ID, Claim: c.Claim}
+	}
+	return out
+}
+
+// The settle state reports when each session with a claim started, on the
+// engine's clock: the service counts the claim's run from it.
+func TestRemoteCacheReportsWhenEachClaimedSessionStarted(t *testing.T) {
+	t.Parallel()
+	rt := newRemoteSettleTest(time.Hour)
+	start := time.Date(2026, 11, 11, 13, 0, 0, 0, time.UTC)
+	now := start
+	rt.ledger.now = func() time.Time { return now }
+	rt.ledger.sessionStarted("sess-a", "a", "claim-a")
+	now = start.Add(5 * time.Second)
+	rt.ledger.sessionStarted("sess-b", "b", "claim-a")
+	now = start.Add(time.Minute)
+	state, _ := rt.ledger.settleState()
+	require.Equal(t, []protocol.SessionClaim{
+		{ID: "sess-a", Claim: "claim-a", Started: start},
+		{ID: "sess-b", Claim: "claim-a", Started: start.Add(5 * time.Second)},
+	}, state.Claims)
 }
 
 // Once the bound passes after the last session ended without the engine

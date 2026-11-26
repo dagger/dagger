@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/engine/snapshots/config"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -24,7 +25,7 @@ func engineHeldTestBundle(t *testing.T, c *Cache, bundle ValueBundle, held ...An
 			if row.SenderNumber != uint64(shared.id) {
 				continue
 			}
-			out.Values[i] = TransferredValue{Ordinal: row.Ordinal, SenderNumber: row.SenderNumber, SenderReplacements: row.SenderReplacements, Record: PersistedRecord{ResultID: uint64(row.Ordinal)}, ExpiresAtUnix: row.ExpiresAtUnix, Held: recipe}
+			out.Values[i] = TransferredValue{Ordinal: row.Ordinal, SenderNumber: row.SenderNumber, SenderReplacements: row.SenderReplacements, Record: PersistedRecord{ResultID: row.SenderNumber}, ExpiresAtUnix: row.ExpiresAtUnix, Held: recipe}
 			found = true
 		}
 		require.True(t, found, "the bundle carries entry %d", shared.id)
@@ -45,7 +46,7 @@ func cloudEntryOfRecipe(t *testing.T, cloud *Cache, engine *Cache, res AnyResult
 		return nil, nil
 	}
 	var deps []sharedResultID
-	for dep := range entry.deps {
+	for _, dep := range entry.deps {
 		deps = append(deps, dep)
 	}
 	return entry, deps
@@ -122,13 +123,13 @@ func TestCloudRefusesAnEnginesStaleHeldRow(t *testing.T) {
 	require.Empty(t, cloud.resultsByID, "nothing commits")
 }
 
-// A held row stands for the sender's own holding of the row, which the
-// Cloud learned when the row arrived in full or when the Cloud's merge into
-// the sender landed it. A held row from an engine the Cloud holds no holding
-// of the row for is stale like one whose value is gone: nothing commits, and
-// the sender's retry carries the row in full, which gives the Cloud the
-// holding.
-func TestCloudRefusesAHeldRowItsSenderDoesntHold(t *testing.T) {
+// A held row from an engine the Cloud holds no holding of the row for, whose
+// recipe has a live value there, teaches the Cloud that engine's holding: an
+// engine sends a row the Cloud has from another engine as a held row, before
+// the engine's telemetry has named it. The commit records the holding on the
+// Cloud's entry for the recipe, and the rows above it depend on it there, as
+// they would on the row sent in full.
+func TestCloudLearnsAnEnginesHoldingFromItsHeldRow(t *testing.T) {
 	t.Parallel()
 	ctx, engine, srv := transferTestCache(t)
 	child := persistedListTestResult(t, ctx, engine, srv, "unheld-child", String("child"))
@@ -144,15 +145,22 @@ func TestCloudRefusesAHeldRowItsSenderDoesntHold(t *testing.T) {
 
 	reply, err = cloud.MergeValues(cctx, "engine", held)
 	require.NoError(t, err)
-	require.False(t, reply.Committed, "the sender holds no holding of the held row")
-	require.Len(t, reply.Stale, 1)
+	require.True(t, reply.Committed, "the held row holds on the other engine's copy")
+	require.Empty(t, reply.Stale)
 
-	reply, err = cloud.MergeValues(cctx, "engine", childOnly)
-	require.NoError(t, err)
-	require.True(t, reply.Committed)
-	reply, err = cloud.MergeValues(cctx, "engine", held)
-	require.NoError(t, err)
-	require.True(t, reply.Committed, "once the sender's own copy arrived, its held row holds")
+	childEntry, _ := cloudEntryOfRecipe(t, cloud, engine, child)
+	require.NotNil(t, childEntry)
+	childNumber := uint64(child.cacheSharedResult().id)
+	rootNumber := uint64(root.cacheSharedResult().id)
+	cloud.egraphMu.RLock()
+	defer cloud.egraphMu.RUnlock()
+	entry, h := cloud.holdingLocked(HolderKey{Cache: "engine", Number: childNumber})
+	require.NotNil(t, h, "the held row taught the engine's holding")
+	require.Equal(t, childEntry, entry, "on the Cloud's entry for its recipe")
+	_, rootHolding := cloud.holdingLocked(HolderKey{Cache: "engine", Number: rootNumber})
+	require.NotNil(t, rootHolding)
+	require.Contains(t, rootHolding.deps, childNumber, "the row above depends on the held row's holding")
+	require.Empty(t, rootHolding.unknownDepsLocked())
 }
 
 // heldPartTestBundles are an engine's bundles over root above out: out's own
@@ -182,52 +190,75 @@ func heldPartTestBundles(t *testing.T, name string) (engine *Cache, outOnly, hel
 // same address, and, for an upload, with a descriptor of the same kind. Where
 // the Cloud never had the row, no longer has its value, or has a copy without
 // that part, the held row is stale: nothing commits, and the engine's retry
-// carries the row in full.
+// carries the row in full. The reply says why each stale row is stale, for
+// the Cloud's log. The same holds once the Cloud's copy is
+// compressed, when the check reads the facts its body keeps.
 func TestCloudChecksAPartOnAHeldRowAgainstItsOwnCopy(t *testing.T) {
 	t.Parallel()
-	for _, tc := range []string{"matches", "uploads", "never had", "no longer has", "differs", "uploads another kind"} {
-		t.Run(tc, func(t *testing.T) {
-			t.Parallel()
-			engine, outOnly, held, out, root := heldPartTestBundles(t, "part-"+tc)
-			cctx, cloud := storedPartTestCache(t, WithBlobStore())
-			if tc != "never had" {
-				reply, err := cloud.MergeValues(cctx, "engine", outOnly)
-				require.NoError(t, err)
-				require.True(t, reply.Committed)
+	// Why each stale case is stale, as the Cloud's reply says it.
+	why := map[string]string{
+		"never had":            "no entry",
+		"no longer has":        "expired",
+		"differs":              "missing",
+		"uploads another kind": "part ",
+		"absent":               "output state differs from recorded part: absent against pending",
+	}
+	for _, tc := range []string{"matches", "uploads", "never had", "no longer has", "differs", "uploads another kind", "absent"} {
+		for _, compressed := range []bool{false, true} {
+			name := tc
+			if compressed {
+				name += "-compressed"
 			}
-			switch tc {
-			case "no longer has":
-				entry, _ := cloudEntryOfRecipe(t, cloud, engine, out)
-				require.NotNil(t, entry)
-				cloud.egraphMu.Lock()
-				entry.expiresAtUnix = time.Now().Unix() - 60
-				cloud.egraphMu.Unlock()
-			case "differs":
-				held.Outputs[0].Address = PersistedPartAddress{Part: "other"}
-			case "uploads", "uploads another kind":
-				kind := "directory"
-				if tc == "uploads another kind" {
-					kind = "file"
+			t.Run(name, func(t *testing.T) {
+				t.Parallel()
+				engine, outOnly, held, out, root := heldPartTestBundles(t, "part-"+name)
+				cctx, cloud := storedPartTestCache(t, WithBlobStore())
+				if tc != "never had" {
+					reply, err := cloud.MergeValues(cctx, "engine", outOnly)
+					require.NoError(t, err)
+					require.True(t, reply.Committed)
 				}
-				output := &held.Outputs[0]
-				output.State = "completed"
-				output.Value = &SnapshotValue{Kind: kind, Path: "/"}
-				output.Chain = &OfferedChain{Layers: storedBenchPart(1).Chain.Layers}
-				output.Owner = &PersistedOfferOwner{}
-			}
-			reply, err := cloud.MergeValues(cctx, "engine", held)
-			require.NoError(t, err)
-			rootEntry, _ := cloudEntryOfRecipe(t, cloud, engine, root)
-			if tc == "matches" || tc == "uploads" {
-				require.True(t, reply.Committed)
-				require.Empty(t, reply.Stale)
-				require.NotNil(t, rootEntry)
-				return
-			}
-			require.False(t, reply.Committed)
-			require.Equal(t, []TransferOrdinal{ordinalOfNumber(t, held, uint64(out.cacheSharedResult().id))}, reply.Stale)
-			require.Nil(t, rootEntry, "nothing commits")
-		})
+				if compressed {
+					storedTestCompress(cloud)
+				}
+				switch tc {
+				case "no longer has":
+					entry, _ := cloudEntryOfRecipe(t, cloud, engine, out)
+					require.NotNil(t, entry)
+					cloud.egraphMu.Lock()
+					entry.expiresAtUnix = time.Now().Unix() - 60
+					cloud.egraphMu.Unlock()
+				case "differs":
+					held.Outputs[0].Address = PersistedPartAddress{Part: "other"}
+				case "absent":
+					held.Outputs[0].State = "absent"
+				case "uploads", "uploads another kind":
+					kind := "directory"
+					if tc == "uploads another kind" {
+						kind = "file"
+					}
+					output := &held.Outputs[0]
+					output.State = "completed"
+					output.Value = &SnapshotValue{Kind: kind, Path: "/"}
+					output.Chain = &OfferedChain{Layers: storedBenchPart(1).Chain.Layers}
+					output.Owner = &PersistedOfferOwner{}
+				}
+				reply, err := cloud.MergeValues(cctx, "engine", held)
+				require.NoError(t, err)
+				rootEntry, _ := cloudEntryOfRecipe(t, cloud, engine, root)
+				if tc == "matches" || tc == "uploads" {
+					require.True(t, reply.Committed)
+					require.Empty(t, reply.Stale)
+					require.NotNil(t, rootEntry)
+					return
+				}
+				require.False(t, reply.Committed)
+				require.Equal(t, []TransferOrdinal{ordinalOfNumber(t, held, uint64(out.cacheSharedResult().id))}, reply.Stale)
+				require.Len(t, reply.StaleWhy, 1, "a reason for each stale row")
+				require.Contains(t, reply.StaleWhy[0], why[tc])
+				require.Nil(t, rootEntry, "nothing commits")
+			})
+		}
 	}
 }
 
@@ -277,9 +308,139 @@ func TestCloudStoresAnUploadOnAHeldRowNamingAHeldRow(t *testing.T) {
 	require.True(t, ok, "the named held row lands on an entry")
 	part := PersistedPartOffer{Address: output.Address, Value: *output.Value, Chain: *output.Chain, Owner: PersistedOfferOwner{DependencyIDs: []uint64{svcNumber}}}
 	part.Value.Services = []TransferredServiceBinding{{ServiceResultID: svcNumber, Hostname: "svc"}}
-	stored, err := cloud.SetStoredPart(cctx, numbers[outOrdinal], part, 0)
+	stored, _, err := cloud.SetStoredPart(cctx, numbers[outOrdinal], part, 0)
 	require.NoError(t, err)
 	require.True(t, stored)
 	_, deps = cloudEntryOfRecipe(t, cloud, engine, out)
 	require.Equal(t, []sharedResultID{sharedResultID(svcNumber)}, deps, "the stored part makes its entry depend on the entry it names")
+}
+
+// receiverTestResult is a result of field called on receiver, so that its
+// recipe derives from receiver's.
+func receiverTestResult(t *testing.T, ctx context.Context, c *Cache, srv *Server, field string, receiver AnyResult) AnyResult {
+	t.Helper()
+	frame := &ResultCall{Kind: ResultCallKindField, Field: field, Type: NewResultCallType(String("").Type()), Receiver: &ResultCallRef{ResultID: uint64(receiver.cacheSharedResult().id)}}
+	res, err := c.GetOrInitCall(ctx, "test-session", srv, &CallRequest{ResultCall: frame, IsPersistable: true}, func(context.Context) (AnyResult, error) {
+		return NewResultForCall(String(field), frame)
+	})
+	require.NoError(t, err)
+	return res
+}
+
+// One engine's call can be answered with an entry of another recipe: its
+// call span reports the call's request digest beside the recipe of what came
+// back. Another engine that computed the call itself has a row whose recipe
+// is that request digest. Once that engine has merged the row, and the row
+// above it, in full, the Cloud holds both, and the engine's next exports send
+// them as held rows: each holds, as on any other recipe.
+func TestCloudHeldRowsHoldBesideAnotherEnginesRequestDigest(t *testing.T) {
+	t.Parallel()
+	ctx, engine, srv := transferTestCache(t)
+	child := persistedListTestResult(t, ctx, engine, srv, "asked-child", String("child"))
+	mid := receiverTestResult(t, ctx, engine, srv, "asked-mid", child)
+	top := receiverTestResult(t, ctx, engine, srv, "asked-top", mid)
+	childRecipe, err := child.cacheSharedResult().loadResultCall().deriveRecipeDigest(engine)
+	require.NoError(t, err)
+
+	octx, other, osrv := transferTestCache(t)
+	answer := persistedListTestResult(t, octx, other, osrv, "asked-answer", String("child"))
+	answerRecipe, err := answer.cacheSharedResult().loadResultCall().deriveRecipeDigest(other)
+	require.NoError(t, err)
+	require.NotEqual(t, childRecipe, answerRecipe)
+
+	cctx, cloud := storedPartTestCache(t, WithBlobStore())
+	merge := func(t *testing.T, from CacheID, bundle ValueBundle) MergeReply {
+		t.Helper()
+		reply, err := cloud.MergeValues(cctx, from, bundle)
+		require.NoError(t, err)
+		return reply
+	}
+	// The other engine's entry, in full, then its call span: a call whose
+	// request digest is the child's recipe, answered with that entry.
+	require.True(t, merge(t, "other-engine", exportTestBundle(t, octx, other, answer)).Committed)
+	_, err = cloud.AttachRemoteHolding(cctx, HolderKey{Cache: "other-engine", Number: uint64(answer.cacheSharedResult().id)}, RemoteHolding{Recipe: answerRecipe, Request: childRecipe, Field: "asked-answer", TypeName: "String"})
+	require.NoError(t, err)
+
+	// The engine merges the child and mid in full, then exports rows above
+	// each, records only, as an engine that merged them does: each merged row
+	// is sent held.
+	known := NewKnownRows()
+	export := func(t *testing.T, root AnyResult, held AnyResult) MergeReply {
+		t.Helper()
+		bundle, rows, _ := recordsOnlyCapture(t, ctx, engine, known, root)
+		if held != nil {
+			heldRows, _ := heldNumbers(bundle)
+			require.True(t, heldRows[knownRowsTestNumber(held)], "the export sends the merged row held")
+		}
+		reply := merge(t, "engine", bundle)
+		if reply.Committed {
+			known.Merged(rows)
+		}
+		return reply
+	}
+	require.True(t, export(t, mid, nil).Committed)
+
+	reply := export(t, top, mid)
+	assert.Empty(t, reply.Stale, "mid, merged in full on the child, holds")
+	assert.True(t, reply.Committed)
+
+	reply = export(t, receiverTestResult(t, ctx, engine, srv, "asked-side", child), child)
+	assert.Empty(t, reply.Stale, "the child, merged in full, holds")
+	assert.True(t, reply.Committed)
+}
+
+// A held row accepts nothing on the Cloud that it wouldn't accept once the
+// sending engine's telemetry had named the row's holding: the row's recipe
+// has a live value that another engine's run gave it, the sending engine
+// ran the row's call itself, and its bundle sends the row held. One Cloud
+// has the engine's holding of the row already, as telemetry attaches it to
+// the entry of the row's recipe; the other doesn't. Both commit the same
+// rows, keep the other engine's value on the same entry, and end with the
+// engine's holding of the row on it.
+func TestCloudHeldRowAcceptsWhatItWouldOnceTelemetryNamedTheHolding(t *testing.T) {
+	t.Parallel()
+	ctx, engine, srv := transferTestCache(t)
+	child := persistedListTestResult(t, ctx, engine, srv, "named-child", String("child"))
+	root := persistedListTestResult(t, ctx, engine, srv, "named-root", String("root"))
+	transferTestDependency(engine, ctx, root, child)
+	held := engineHeldTestBundle(t, engine, exportTestBundle(t, ctx, engine, root), child)
+	childNumber := uint64(child.cacheSharedResult().id)
+
+	// otherRun is another engine's run of the child's call.
+	octx, other, osrv := transferTestCache(t)
+	otherChild := persistedListTestResult(t, octx, other, osrv, "named-child", String("child"))
+	otherRun := exportTestBundle(t, octx, other, otherChild)
+
+	type outcome struct {
+		rows   MergeRowCounts
+		entry  sharedResultID
+		holder sharedResultID
+	}
+	run := func(t *testing.T, named bool) outcome {
+		cctx, cloud := storedPartTestCache(t, WithBlobStore())
+		reply, err := cloud.MergeValues(cctx, "other-engine", otherRun)
+		require.NoError(t, err)
+		require.True(t, reply.Committed)
+		before, _ := cloudEntryOfRecipe(t, cloud, engine, child)
+		require.NotNil(t, before)
+		if named {
+			heldTestHold(t, cctx, cloud, "engine", childNumber, uint64(before.id), 0)
+		}
+		reply, err = cloud.MergeValues(cctx, "engine", held)
+		require.NoError(t, err)
+		require.True(t, reply.Committed)
+		after, _ := cloudEntryOfRecipe(t, cloud, engine, child)
+		require.Same(t, before, after, "the entry keeps the other engine's value")
+		requireCacheHoldersExact(t, cloud)
+		cloud.egraphMu.RLock()
+		defer cloud.egraphMu.RUnlock()
+		_, h := cloud.holdingLocked(HolderKey{Cache: "other-engine", Number: uint64(otherChild.cacheSharedResult().id)})
+		require.NotNil(t, h, "the other engine still holds its run")
+		return outcome{rows: reply.Rows, entry: after.id, holder: cloud.holderEntriesForTest()[HolderKey{Cache: "engine", Number: childNumber}]}
+	}
+	named, unnamed := run(t, true), run(t, false)
+	require.Equal(t, MergeRowCounts{Held: 1, Created: 1}, named.rows, "the held row stores nothing over the other engine's run")
+	require.Equal(t, named.rows, unnamed.rows, "both commit the same rows")
+	require.Equal(t, named.entry, named.holder)
+	require.Equal(t, unnamed.entry, unnamed.holder, "the engine's holding sits on the entry of the row's recipe either way")
 }

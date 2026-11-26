@@ -1319,6 +1319,7 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	// session is intentionally left in srv.daggerSessions as a tombstone until
 	// the caller retires it after lifecycleMu is released.
 	sess.markSessionRemoved()
+	srv.sessionLedger.sessionTearingDown(sess.sessionID)
 	sess.beginClientScopeTeardown()
 	sess.beginClosing()
 	sess.endMainClientAttachables()
@@ -2039,12 +2040,6 @@ func (sess *daggerSession) clientRuntimeForRecord(record *clientRecord) (*client
 // ClientScope from that exact session. Metadata alone is never execution
 // authority.
 func (srv *Server) executableClientFromContext(ctx context.Context) (*clientRuntime, error) {
-	// Guards never grant authority, and they are checked before it: an
-	// accidental ClientScope on a share's preparation context does not make
-	// this lookup legitimate.
-	if err := engine.CheckSnapshotSharePreparation(ctx, "look up executable client"); err != nil {
-		return nil, err
-	}
 	scope, ok := engine.ClientScopeFromContext(ctx)
 	if !ok {
 		return nil, errors.New("executable client lookup requires a client scope")
@@ -3012,14 +3007,15 @@ func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Reques
 
 // withRequestTelemetrySuppression applies a request's telemetry opt-out (the
 // engine.SuppressTelemetryHeader header): when opted out, the returned context
-// is marked with dagql.WithSkip so core.AroundFunc emits no spans, no
-// seen-keys, and no call payloads for the request's selection, and the
-// returned bool tells serveQuery to skip the per-request wrapper span as well.
+// is marked with dagql.WithTelemetrySuppressed so core.AroundFunc emits no
+// spans, no seen-keys, and no call payloads for the request's selection, not
+// even a hidden call's cache report, and the returned bool tells serveQuery
+// to skip the per-request wrapper span as well.
 func withRequestTelemetrySuppression(ctx context.Context, r *http.Request) (context.Context, bool) {
 	if r.Header.Get(engine.SuppressTelemetryHeader) != "true" {
 		return ctx, false
 	}
-	return dagql.WithSkip(ctx), true
+	return dagql.WithTelemetrySuppressed(ctx), true
 }
 
 func recoverQueryPanic(ctx context.Context, result *error) {
@@ -3178,6 +3174,12 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *cl
 	if client.fnCall != nil && client.fnCall.ResultScope != nil {
 		ctx = dagql.WithResultScope(ctx, client.fnCall.ResultScope)
 	}
+	// A module client's calls are made under the function call it answers.
+	if caller := client.fnCall.CallerRecipe(); caller != "" {
+		ctx = dagql.ContextWithCallerRecipe(ctx, caller)
+	}
+	// Its part reads count as reads made under that call.
+	ctx = dagql.ContextWithReadScope(ctx, client.fnCall.ReadScope())
 
 	// A module client's typedef constructors name the module's declarations
 	// by the module's rules, even when the client declared a core view of

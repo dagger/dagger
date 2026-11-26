@@ -7,6 +7,7 @@ import (
 	"maps"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/containerd/containerd/v2/core/content"
@@ -158,6 +159,12 @@ type partPrefetcher struct {
 	// aheadTaken counts the offers the ahead worker has taken, against
 	// aheadMax.
 	aheadTaken int
+	// planned are the jobs of planned offers (Cache.PlanPartFetch) not yet
+	// run, in the order they were planned, which the planned workers run
+	// ahead of any lane; plannedOffers are the offers planned, whose chains
+	// are imported ahead as their blobs land.
+	planned       []*partPrefetchJob
+	plannedOffers map[*partOffer]bool
 	// jobs are the queued and running jobs, by offer and lane.
 	jobs  map[partPrefetchJobKey]*partPrefetchJob
 	holds map[digest.Digest]*partPrefetchHold
@@ -188,6 +195,22 @@ type partPrefetcher struct {
 	aheadBytes map[digest.Digest]int64
 	// aheadLayers counts, for each layer, the chains in aheads that name it.
 	aheadLayers map[digest.Digest]int
+	// used and unread are the bytes of downloaded blobs that an install
+	// then used, and that were released unread.
+	used, unread int64
+	// offers counts the offers accepted, which numbers each offer's place
+	// in the order of acceptance; placeFetched and placeUsed are the
+	// downloaded bytes, and the part of them an install then used, by the
+	// place of the offer whose job downloaded them.
+	offers                  int64
+	placeFetched, placeUsed map[int64]int64
+
+	// countMu guards outcomes and fetched, which log counts outside mu.
+	countMu sync.Mutex
+	// outcomes counts the jobs by logged outcome, and fetched the bytes
+	// they downloaded.
+	outcomes map[string]int64
+	fetched  int64
 }
 
 // partPrefetchAhead is an offer's chain imported ahead of demand: ref holds
@@ -217,16 +240,26 @@ type partPrefetchJobKey struct {
 
 // partPrefetchJob is one accepted offer's blobs of one lane to prefetch.
 type partPrefetchJob struct {
-	row      sharedResultID
-	key      string
+	row sharedResultID
+	key string
+	// offer is the job's offer, which a replacement of the same meaning
+	// swaps under p.mu; the job reads its chain as it runs. address is the
+	// offer's, the same for every offer of the part.
 	offer    *partOffer
+	address  PersistedPartAddress
 	lane     partPrefetchLane
-	record   PersistedPartOffer
 	accepted time.Time
+	// place is its offer's place in the order offers were accepted, from 1.
+	place int64
 	// size is the offer's chain size, and ahead whether the job waits in
-	// the ahead queue.
+	// the ahead queue or the planned queue, and runs as an ahead job does.
 	size  int64
 	ahead bool
+	// planned is set on a planned offer's job, under p.mu, and read there
+	// or by its log line; budgetSkipped is set, under p.mu, once the job,
+	// not planned when it was admitted, was skipped against the budget.
+	planned       atomic.Bool
+	budgetSkipped bool
 	// demand holds an ahead job's renewals, one for all of its offer's
 	// jobs the worker runs together.
 	demand *PartDemandState
@@ -251,6 +284,12 @@ type partPrefetchHold struct {
 	release func(context.Context) error
 	offers  map[*partOffer]struct{}
 	expires time.Time
+	// downloaded is set when prefetching downloaded the blob, rather than
+	// holding one already in the content store.
+	downloaded bool
+	// place is the place, in the order of acceptance, of the offer whose
+	// job downloaded it.
+	place int64
 }
 
 // jobKey is the job's current key. Requires p.mu: a replacement passes the
@@ -282,8 +321,10 @@ func (c *Cache) partPrefetch(ctx context.Context) *partPrefetcher {
 	if c.partPrefetchConfig != nil {
 		cfg = *c.partPrefetchConfig
 	}
-	base, cancel := context.WithCancel(context.Background())
-	p := &partPrefetcher{cache: c, cfg: cfg, snapshot: snapshot, importer: importer, ctx: base, cancel: cancel, logger: slog.FromContext(ctx), wake: make(chan struct{}, 1), jobs: map[partPrefetchJobKey]*partPrefetchJob{}, holds: map[digest.Digest]*partPrefetchHold{}, fetching: map[digest.Digest]*partPrefetchDownload{}, changed: make(chan struct{}), consumed: map[digest.Digest]time.Time{}, aheads: map[*partOffer]*partPrefetchAhead{}, rows: map[*partOffer]sharedResultID{}, aheadBytes: map[digest.Digest]int64{}, aheadLayers: map[digest.Digest]int{}}
+	// The prefetcher's work is the parts': a first use it makes, or a hold of
+	// the graph lock, is named so (withCacheWork).
+	base, cancel := context.WithCancel(withCacheWork(context.Background(), workPart))
+	p := &partPrefetcher{cache: c, cfg: cfg, snapshot: snapshot, importer: importer, ctx: base, cancel: cancel, logger: slog.FromContext(ctx), wake: make(chan struct{}, 1), jobs: map[partPrefetchJobKey]*partPrefetchJob{}, outcomes: map[string]int64{}, placeFetched: map[int64]int64{}, placeUsed: map[int64]int64{}, holds: map[digest.Digest]*partPrefetchHold{}, fetching: map[digest.Digest]*partPrefetchDownload{}, changed: make(chan struct{}), consumed: map[digest.Digest]time.Time{}, aheads: map[*partOffer]*partPrefetchAhead{}, rows: map[*partOffer]sharedResultID{}, aheadBytes: map[digest.Digest]int64{}, aheadLayers: map[digest.Digest]int{}, plannedOffers: map[*partOffer]bool{}}
 	p.cond = sync.NewCond(&p.mu)
 	p.wg.Add(cfg.workers + cfg.smallWorkers + 1)
 	for range cfg.workers {
@@ -295,6 +336,11 @@ func (c *Cache) partPrefetch(ctx context.Context) *partPrefetcher {
 	if cfg.aheadOffer > 0 {
 		p.wg.Add(1)
 		go p.workAhead()
+	}
+	// The planned queue has as many workers as the large lane.
+	p.wg.Add(cfg.workers)
+	for range cfg.workers {
+		go p.workPlanned()
 	}
 	go p.expire()
 	c.partPrefetcher.Store(p)
@@ -316,6 +362,12 @@ func (c *Cache) closePartPrefetch() {
 	p.cancel()
 	p.wg.Wait()
 	p.mu.Lock()
+	// A dropped hold was consumed, and counted as used already.
+	for _, h := range p.holds {
+		if h.downloaded {
+			p.unread += h.bytes
+		}
+	}
 	holds := append(slices.Collect(maps.Values(p.holds)), p.dropped...)
 	p.holds, p.dropped = map[digest.Digest]*partPrefetchHold{}, nil
 	p.held, p.pending = 0, 0
@@ -346,16 +398,16 @@ func (c *Cache) partOfferAccepted(ctx context.Context, row *sharedResult, key st
 	if p == nil || offer == nil {
 		return
 	}
-	if imageOfferLayers(&offer.record) {
+	if offer.imageLayers() {
 		// The image's blobs are on the engine's own disk: a demand reads
 		// them there, with nothing to fetch ahead.
 		return
 	}
 	var wanted [partPrefetchLanes]bool
 	var size int64
-	for _, layer := range offer.record.Chain.Layers {
-		wanted[p.cfg.lane(layer.Descriptor.Size)] = true
-		size += layer.Descriptor.Size
+	for _, layer := range offer.layers {
+		wanted[p.cfg.lane(layer.layer.Descriptor.Size)] = true
+		size += layer.layer.Descriptor.Size
 	}
 	ahead := p.cfg.aheadOffer > 0 && size >= p.cfg.aheadOffer
 	var jobs []*partPrefetchJob
@@ -364,12 +416,7 @@ func (c *Cache) partOfferAccepted(ctx context.Context, row *sharedResult, key st
 		if !wanted[lane] {
 			continue
 		}
-		// Each job has its own copy: a replacement refreshes a queued job's.
-		record, err := clonePartOffer(offer.record)
-		if err != nil {
-			return
-		}
-		jobs = append(jobs, &partPrefetchJob{row: row.id, key: key, offer: offer, lane: lane, record: record, accepted: now, size: size, ahead: ahead})
+		jobs = append(jobs, &partPrefetchJob{row: row.id, key: key, offer: offer, address: offer.held.Address, lane: lane, accepted: now, size: size, ahead: ahead})
 	}
 	var dropped []*partPrefetchJob
 	p.mu.Lock()
@@ -378,10 +425,12 @@ func (c *Cache) partOfferAccepted(ctx context.Context, row *sharedResult, key st
 		return
 	}
 	p.rows[offer] = row.id
+	p.offers++
 	for _, job := range jobs {
 		if p.jobs[job.jobKey()] != nil {
 			continue
 		}
+		job.place = p.offers
 		// The cap is read under the mutex the worker takes offers under.
 		if job.ahead && p.aheadFullLocked() {
 			job.ahead = false
@@ -402,6 +451,128 @@ func (c *Cache) partOfferAccepted(ctx context.Context, row *sharedResult, key st
 	// slow log writer must not stall the cache.
 	for _, job := range dropped {
 		p.log(job, "skipped_queue", 0, 0, nil, 0, nil)
+	}
+}
+
+// partOfferRestored queues an offer a restore just attached for prefetch,
+// as partOfferAccepted queues any merge's.
+func (c *Cache) partOfferRestored(ctx context.Context, row *sharedResult, key string, offer *partOffer) {
+	c.partOfferAccepted(ctx, row, key, offer)
+}
+
+// partOfferPlanned queues a planned offer (PlanPartFetch) in the prefetcher's
+// planned queue: its blobs download ahead of any lane's, in the order the
+// plan fires, and its chain is imported as they land, so that its install
+// finds its layers unpacked. A job of the offer still waiting in a lane or the
+// ahead queue moves to the planned queue. One a worker has taken, whether or
+// not it has started it, is left to it, and its chain is imported ahead all
+// the same: marked planned, it is downloaded whatever the budget, unless it
+// was already skipped against the budget, when a planned job takes its place.
+// It never blocks.
+func (c *Cache) partOfferPlanned(ctx context.Context, row *sharedResult, key string, offer *partOffer) {
+	p := c.partPrefetch(ctx)
+	if p == nil || offer == nil || offer.imageLayers() {
+		return
+	}
+	var wanted [partPrefetchLanes]bool
+	var size int64
+	for _, layer := range offer.layers {
+		wanted[p.cfg.lane(layer.layer.Descriptor.Size)] = true
+		size += layer.layer.Descriptor.Size
+	}
+	var jobs []*partPrefetchJob
+	now := time.Now()
+	for lane := range partPrefetchLanes {
+		if !wanted[lane] {
+			continue
+		}
+		job := &partPrefetchJob{row: row.id, key: key, offer: offer, address: offer.held.Address, lane: lane, accepted: now, size: size, ahead: true}
+		job.planned.Store(true)
+		jobs = append(jobs, job)
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.closed || p.plannedOffers[offer] {
+		return
+	}
+	p.plannedOffers[offer] = true
+	if _, ok := p.rows[offer]; !ok {
+		p.rows[offer] = row.id
+		p.offers++
+	}
+	for _, job := range jobs {
+		if queued := p.jobs[job.jobKey()]; queued != nil {
+			switch {
+			case queued.cancel == nil && p.unqueueLocked(queued):
+				queued.ahead = true
+				queued.planned.Store(true)
+				p.planned = append(p.planned, queued)
+				continue
+			case !queued.budgetSkipped:
+				// Taken by a worker, as the ahead worker takes all of an
+				// offer's jobs before it starts the first.
+				queued.planned.Store(true)
+				continue
+			}
+			// The worker that took it lets it go: only the job it ran is
+			// its to forget (runAhead, work).
+		}
+		job.place = p.offers
+		p.jobs[job.jobKey()] = job
+		p.planned = append(p.planned, job)
+	}
+	// A blob already held for the offer starts its import now.
+	p.checkAheadLocked(offer)
+	p.changedLocked()
+	p.cond.Broadcast()
+}
+
+// unqueueLocked takes job out of the lane or ahead queue it waits in, and
+// reports whether it was there. Requires p.mu.
+func (p *partPrefetcher) unqueueLocked(job *partPrefetchJob) bool {
+	take := func(queue []*partPrefetchJob) ([]*partPrefetchJob, bool) {
+		if i := slices.Index(queue, job); i >= 0 {
+			return slices.Delete(queue, i, i+1), true
+		}
+		return queue, false
+	}
+	var ok bool
+	if p.queues[job.lane], ok = take(p.queues[job.lane]); ok {
+		return true
+	}
+	p.ahead, ok = take(p.ahead)
+	return ok
+}
+
+// workPlanned runs the planned queue until the prefetcher closes: each time,
+// every queued job of the first planned offer, as the ahead worker runs an
+// offer's jobs, without waiting for the offer's import, which runs as its
+// blobs land.
+func (p *partPrefetcher) workPlanned() {
+	defer p.wg.Done()
+	_, unlabel := wcprof.WithCPUKind(p.ctx, wcprof.CPUKindFetch)
+	defer unlabel()
+	for {
+		p.mu.Lock()
+		for !p.closed && len(p.planned) == 0 {
+			p.cond.Wait()
+		}
+		if p.closed {
+			p.mu.Unlock()
+			return
+		}
+		offer := p.planned[0].offer
+		var jobs, rest []*partPrefetchJob
+		for _, job := range p.planned {
+			if job.offer == offer {
+				jobs = append(jobs, job)
+			} else {
+				rest = append(rest, job)
+			}
+		}
+		p.planned = rest
+		p.mu.Unlock()
+		p.runAhead(jobs)
 	}
 }
 
@@ -475,6 +646,7 @@ func (p *partPrefetcher) goneLocked(offer *partOffer, next *partOffer, keep ...d
 	}
 	p.changedLocked()
 	delete(p.rows, offer)
+	delete(p.plannedOffers, offer)
 	if a := p.aheads[offer]; a != nil {
 		p.dropAheadLocked(a)
 		idle = true
@@ -557,10 +729,10 @@ func (c *Cache) partOfferReplaced(old, next *partOffer) {
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if !sameOfferMeaning(old.record, next.record) {
+	if !old.sameMeaning(next.layeredOffer) {
 		var shared []digest.Digest
-		for _, layer := range next.record.Chain.Layers {
-			shared = append(shared, layer.Descriptor.Digest)
+		for _, layer := range next.layers {
+			shared = append(shared, layer.layer.Descriptor.Digest)
 		}
 		p.goneLocked(old, next, shared...)
 		return
@@ -569,14 +741,9 @@ func (c *Cache) partOfferReplaced(old, next *partOffer) {
 		oldKey, nextKey := partPrefetchJobKey{offer: old, lane: lane}, partPrefetchJobKey{offer: next, lane: lane}
 		if job := p.jobs[oldKey]; job != nil && p.jobs[nextKey] == nil {
 			delete(p.jobs, oldKey)
+			// A queued job runs with the replacement's fresh addresses.
 			job.offer = next
 			p.jobs[nextKey] = job
-			if job.cancel == nil {
-				// Queued: run it with the replacement's fresh addresses.
-				if record, err := clonePartOffer(next.record); err == nil {
-					job.record = record
-				}
-			}
 		}
 	}
 	for _, h := range p.holds {
@@ -597,12 +764,79 @@ func (c *Cache) partOfferReplaced(old, next *partOffer) {
 	if p.aheadCurrent == old {
 		p.aheadCurrent = next
 	}
+	if p.plannedOffers[old] {
+		delete(p.plannedOffers, old)
+		p.plannedOffers[next] = true
+	}
 	for _, download := range p.fetching {
 		if _, ok := download.offers[old]; ok {
 			delete(download.offers, old)
 			download.offers[next] = struct{}{}
 		}
 	}
+}
+
+// PartPrefetchCounts is what prefetching has done since the cache started:
+// its jobs by outcome, and the bytes of the blobs it downloaded by what
+// became of them. A blob counts in Used, Unread or Held as it lands, and in
+// Fetched once its job ends.
+type PartPrefetchCounts struct {
+	// Jobs counts the jobs by outcome, as their lines log it.
+	Jobs map[string]int64
+	// Fetched is the bytes prefetching downloaded.
+	Fetched int64
+	// Used is the part of them an install then used.
+	Used int64
+	// Unread is the part released without an install using it: no offer
+	// wanted it any more, or its time to be held passed.
+	Unread int64
+	// Held is the part still held, unread so far.
+	Held int64
+	// Offers is how many offers were accepted for prefetch. ByTenth splits
+	// the downloaded bytes, and the part an install then used, by where
+	// their offer sits in the order of acceptance: the first tenth of the
+	// offers, the second, and so on.
+	Offers  int64
+	ByTenth [10]PartPrefetchTenth
+}
+
+// PartPrefetchTenth is the bytes prefetching downloaded for the offers of one
+// tenth of the order of acceptance, and the part of them an install used.
+type PartPrefetchTenth struct {
+	Fetched, Used int64
+}
+
+// PartPrefetchCounts returns what prefetching has done since the cache
+// started; zero counts when it never started.
+func (c *Cache) PartPrefetchCounts() PartPrefetchCounts {
+	counts := PartPrefetchCounts{Jobs: map[string]int64{}}
+	p := c.partPrefetcher.Load()
+	if p == nil {
+		return counts
+	}
+	p.countMu.Lock()
+	maps.Copy(counts.Jobs, p.outcomes)
+	counts.Fetched = p.fetched
+	p.countMu.Unlock()
+	p.mu.Lock()
+	counts.Used, counts.Unread = p.used, p.unread
+	counts.Offers = p.offers
+	if p.offers > 0 {
+		tenth := func(place int64) int { return int((place - 1) * 10 / p.offers) }
+		for place, n := range p.placeFetched {
+			counts.ByTenth[tenth(place)].Fetched += n
+		}
+		for place, n := range p.placeUsed {
+			counts.ByTenth[tenth(place)].Used += n
+		}
+	}
+	for _, h := range p.holds {
+		if h.downloaded {
+			counts.Held += h.bytes
+		}
+	}
+	p.mu.Unlock()
+	return counts
 }
 
 // partPrefetcherLockIdent names the prefetcher's lock in profiles.
@@ -633,6 +867,10 @@ func (c *Cache) partPrefetchConsumed(ctx context.Context, layers []snapshots.Exp
 			// janitor releases its lease outside the mutex.
 			delete(p.holds, d)
 			p.held -= h.bytes
+			if h.downloaded {
+				p.used += h.bytes
+				p.placeUsed[h.place] += h.bytes
+			}
 			p.dropped = append(p.dropped, h)
 			idle = true
 		} else if _, ok := p.fetching[d]; ok {
@@ -671,6 +909,8 @@ func (c *Cache) partPrefetchHeld(ctx context.Context, layers []snapshots.ExportL
 // work runs lane's jobs, one at a time, until the prefetcher closes.
 func (p *partPrefetcher) work(lane partPrefetchLane) {
 	defer p.wg.Done()
+	_, unlabel := wcprof.WithCPUKind(p.ctx, wcprof.CPUKindFetch)
+	defer unlabel()
 	for {
 		p.mu.Lock()
 		for !p.closed && len(p.queues[lane]) == 0 {
@@ -707,6 +947,8 @@ func (p *partPrefetcher) work(lane partPrefetchLane) {
 // competes with the engine's own work.
 func (p *partPrefetcher) workAhead() {
 	defer p.wg.Done()
+	_, unlabel := wcprof.WithCPUKind(p.ctx, wcprof.CPUKindFetch)
+	defer unlabel()
 	for {
 		p.mu.Lock()
 		// An offer starts only while no install runs: an import ahead
@@ -816,14 +1058,14 @@ func (c *Cache) partInstallEnded() {
 // chainAheadLocked reports whether another offer's chain, with the same
 // layers as offer's, is imported or importing ahead. Requires p.mu.
 func (p *partPrefetcher) chainAheadLocked(offer *partOffer) bool {
-	layers := offer.record.Chain.Layers
+	layers := offer.layers
 	for other, a := range p.aheads {
 		if other == offer || a.gone || len(a.layers) != len(layers) {
 			continue
 		}
 		same := true
 		for i, layer := range layers {
-			if a.layers[i] != layer.Descriptor.Digest {
+			if a.layers[i] != layer.layer.Descriptor.Digest {
 				same = false
 				break
 			}
@@ -846,11 +1088,7 @@ func (p *partPrefetcher) aheadFullLocked() bool {
 // renew once.
 func (p *partPrefetcher) runAhead(jobs []*partPrefetchJob) {
 	if len(jobs) > 0 {
-		// A replacement may swap a queued job's record: read it under the
-		// mutex.
-		p.mu.Lock()
-		target := clonePartAddress(jobs[0].record.Address)
-		p.mu.Unlock()
+		target := clonePartAddress(jobs[0].address)
 		demand := &PartDemandState{target: target, started: time.Now()}
 		for _, job := range jobs {
 			job.demand = demand
@@ -929,8 +1167,8 @@ func (p *partPrefetcher) waitAheadImport() {
 			}
 		} else {
 			coming := false
-			for _, layer := range offer.record.Chain.Layers {
-				if p.holds[layer.Descriptor.Digest] == nil && p.comingLocked(offer, layer.Descriptor) {
+			for _, layer := range offer.layers {
+				if p.holds[layer.layer.Descriptor.Digest] == nil && p.comingLocked(offer, layer.layer.Descriptor) {
 					coming = true
 					break
 				}
@@ -961,7 +1199,7 @@ func (p *partPrefetcher) run(ctx context.Context, job *partPrefetchJob) {
 	}
 	// The job's offer is read under egraphMu, which a replacement holds to
 	// pass the job on, so the row and the job agree.
-	c.egraphMu.RLock()
+	readHold := c.readGraphAs(workPart)
 	p.mu.Lock()
 	offer := job.offer
 	p.mu.Unlock()
@@ -969,13 +1207,13 @@ func (p *partPrefetcher) run(ctx context.Context, job *partPrefetchJob) {
 	current := row != nil && row.partOfferLocked(job.key) == offer
 	installed := false
 	if current {
-		if gate := row.partGate.gate.Load(); gate != nil {
+		if gate := row.writerGate(); gate != nil {
 			gate.mu.Lock()
 			installed = gate.outputs[job.key].phase != PartPending
 			gate.mu.Unlock()
 		}
 	}
-	c.egraphMu.RUnlock()
+	readHold.Unlock()
 	switch {
 	case !current:
 		p.log(job, "offer_gone", 0, 0, nil, time.Since(start), nil)
@@ -1003,14 +1241,14 @@ func (p *partPrefetcher) run(ctx context.Context, job *partPrefetchJob) {
 	offer = job.offer
 	// An ahead job renews a blob's expired address as it reads the blob,
 	// when the offer has a renewal key; it says which blobs it skips.
-	renews := job.ahead && job.record.Chain.RenewalKey != ""
+	renews := job.ahead && offer.held.Chain.RenewalKey != ""
 	var skipped []string
-	for _, layer := range job.record.Chain.Layers {
-		desc := layer.Descriptor
+	for _, layer := range offer.layers {
+		desc := layer.layer.Descriptor
 		if p.cfg.lane(desc.Size) != job.lane {
 			continue
 		}
-		address, ok := job.record.Chain.Addresses[desc.Digest]
+		address, ok := offer.held.Chain.Addresses[desc.Digest]
 		switch use := blobAddressUsability(address, ok, now); {
 		case use == blobAddressMissing && renews:
 		case use != blobAddressUsable:
@@ -1050,7 +1288,11 @@ func (p *partPrefetcher) run(ctx context.Context, job *partPrefetchJob) {
 			p.log(job, "skipped_expired", 0, 0, nil, time.Since(start), nil)
 		}
 		return
-	case p.held+need > p.cfg.budget:
+	case !job.planned.Load() && p.held+need > p.cfg.budget:
+		// The budget bounds what fetching ahead holds unread on a guess; a
+		// planned offer is what the job's runs read, and is bounded by the
+		// disk's room alone.
+		job.budgetSkipped = true
 		p.mu.Unlock()
 		p.log(job, "skipped_budget", 0, 0, nil, time.Since(start), nil)
 		return
@@ -1080,7 +1322,7 @@ func (p *partPrefetcher) run(ctx context.Context, job *partPrefetchJob) {
 		return
 	}
 
-	blobs, bytes, stats, failure := p.fetch(ctx, job, wanted)
+	blobs, bytes, stats, failure := p.fetch(ctx, job, offer.record(), wanted)
 	outcome := "done"
 	if failure != nil {
 		outcome = "error"
@@ -1104,10 +1346,10 @@ func (p *partPrefetcher) run(ctx context.Context, job *partPrefetchJob) {
 // canceled job can leave a download an install joined running on, so its
 // line can miss requests, those still awaiting headers when it was logged
 // among them: only a done job's counts are complete.
-func (p *partPrefetcher) fetch(ctx context.Context, job *partPrefetchJob, wanted []ocispecs.Descriptor) (blobs int, bytes int64, stats *partInstallStats, failure error) {
+func (p *partPrefetcher) fetch(ctx context.Context, job *partPrefetchJob, record PersistedPartOffer, wanted []ocispecs.Descriptor) (blobs int, bytes int64, stats *partInstallStats, failure error) {
 	// An ahead job's reads may renew an expired address, which takes a
 	// demand to hold the renewal: its offer's, set by runAhead.
-	provider := p.cache.PartContentSource().Provider(ctx, job.record, job.demand)
+	provider := p.cache.PartContentSource().Provider(ctx, record, job.demand)
 	if parts, ok := provider.(*partContentProvider); ok {
 		stats = &partInstallStats{}
 		parts.stats = stats
@@ -1165,7 +1407,7 @@ func (p *partPrefetcher) fetch(ctx context.Context, job *partPrefetchJob, wanted
 				bytes += desc.Size
 			}
 			mu.Unlock()
-			if release = p.settle(job, desc, release, fetched || held); release != nil {
+			if release = p.settle(job, desc, release, fetched || held, fetched); release != nil {
 				_ = release(context.WithoutCancel(ctx))
 			}
 		})
@@ -1185,8 +1427,10 @@ func (p *partPrefetcher) wanted(job *partPrefetchJob, d digest.Digest) bool {
 // settle ends desc's download for job: a fetched blob becomes a hold for the
 // offers that still want it, unless none does, it was consumed meanwhile or
 // prefetching closed. It returns the release to run, outside the mutex, for
-// a blob that isn't held.
-func (p *partPrefetcher) settle(job *partPrefetchJob, desc ocispecs.Descriptor, release func(context.Context) error, fetched bool) func(context.Context) error {
+// a blob that isn't held. downloaded says whether the job downloaded the
+// blob, which the counts take as used if an install consumed it meanwhile,
+// and as unread if it isn't held.
+func (p *partPrefetcher) settle(job *partPrefetchJob, desc ocispecs.Descriptor, release func(context.Context) error, fetched, downloaded bool) func(context.Context) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.pending -= desc.Size
@@ -1200,11 +1444,21 @@ func (p *partPrefetcher) settle(job *partPrefetchJob, desc ocispecs.Descriptor, 
 	p.cancelUnwantedLocked(job)
 	_, consumed := p.consumed[desc.Digest]
 	delete(p.consumed, desc.Digest)
+	if downloaded {
+		p.placeFetched[job.place] += desc.Size
+	}
 	if !fetched || len(offers) == 0 || consumed || p.closed {
 		p.held -= desc.Size
+		switch {
+		case downloaded && consumed:
+			p.used += desc.Size
+			p.placeUsed[job.place] += desc.Size
+		case downloaded:
+			p.unread += desc.Size
+		}
 		return release
 	}
-	p.holds[desc.Digest] = &partPrefetchHold{bytes: desc.Size, release: release, offers: offers, expires: job.accepted.Add(p.cfg.ttl)}
+	p.holds[desc.Digest] = &partPrefetchHold{bytes: desc.Size, release: release, offers: offers, expires: job.accepted.Add(p.cfg.ttl), downloaded: downloaded, place: job.place}
 	for offer := range offers {
 		p.checkAheadLocked(offer)
 	}
@@ -1218,15 +1472,15 @@ func (p *partPrefetcher) checkAheadLocked(offer *partOffer) {
 	if p.importer == nil || p.closed || p.aheads[offer] != nil {
 		return
 	}
-	// With the ahead queue on, only its worker's offer is imported ahead:
-	// the lanes download and hold.
-	if p.cfg.aheadOffer > 0 && offer != p.aheadCurrent {
+	// With the ahead queue on, only its worker's offer and planned offers
+	// are imported ahead: the lanes download and hold.
+	if p.cfg.aheadOffer > 0 && offer != p.aheadCurrent && !p.plannedOffers[offer] {
 		return
 	}
-	layers := offer.record.Chain.Layers
+	layers := offer.layers
 	expires := time.Time{}
 	for _, layer := range layers {
-		h := p.holds[layer.Descriptor.Digest]
+		h := p.holds[layer.layer.Descriptor.Digest]
 		if h == nil {
 			continue
 		}
@@ -1243,7 +1497,7 @@ func (p *partPrefetcher) checkAheadLocked(offer *partOffer) {
 	ctx, cancel := context.WithCancel(p.ctx)
 	a := &partPrefetchAhead{cancel: cancel, expires: expires, done: make(chan struct{})}
 	for _, layer := range layers {
-		a.layers = append(a.layers, layer.Descriptor.Digest)
+		a.layers = append(a.layers, layer.layer.Descriptor.Digest)
 	}
 	p.addAheadLocked(offer, a)
 	p.wg.Add(1)
@@ -1258,14 +1512,15 @@ func (p *partPrefetcher) checkAheadLocked(offer *partOffer) {
 // jobs have yet to write.
 func (p *partPrefetcher) importAhead(ctx context.Context, offer *partOffer, row sharedResultID, a *partPrefetchAhead) {
 	defer p.wg.Done()
+	ctx, unlabel := wcprof.WithCPUKind(ctx, wcprof.CPUKindFetch)
+	defer unlabel()
 	if a.done != nil {
 		defer close(a.done)
 	}
 	start := time.Now()
-	record := offer.record
 	var size int64
-	for _, layer := range record.Chain.Layers {
-		size += layer.Descriptor.Size
+	for _, layer := range offer.layers {
+		size += layer.layer.Descriptor.Size
 	}
 	var (
 		ref     snapshots.ImmutableRef
@@ -1279,7 +1534,7 @@ func (p *partPrefetcher) importAhead(ctx context.Context, offer *partOffer, row 
 		applied  int
 	)
 	chain := &snapshots.ExportChain{
-		Layers: record.Chain.Layers,
+		Layers: offer.chainLayers(),
 		Await: func(ctx context.Context, desc ocispecs.Descriptor) error {
 			return p.awaitBlob(ctx, a, desc)
 		},
@@ -1330,10 +1585,10 @@ func (p *partPrefetcher) importAhead(ctx context.Context, offer *partOffer, row 
 	defer mu.Unlock()
 	args := []any{
 		"entry", uint64(row),
-		"output", record.Address.OutputPath.String(),
-		"part", string(record.Address.Part),
+		"output", offer.held.Address.OutputPath.String(),
+		"part", string(offer.held.Address.Part),
 		"outcome", outcome,
-		"layers", len(record.Chain.Layers),
+		"layers", len(offer.layers),
 		"unpacked_layers", applied,
 		"unpacked", unpacked,
 		"apply", timing.Apply,
@@ -1442,6 +1697,9 @@ func (p *partPrefetcher) releaseIdle(now time.Time) {
 			idle = append(idle, h)
 			delete(p.holds, d)
 			p.held -= h.bytes
+			if h.downloaded {
+				p.unread += h.bytes
+			}
 		}
 	}
 	for d, at := range p.consumed {
@@ -1467,25 +1725,32 @@ func (p *partPrefetcher) releaseIdle(now time.Time) {
 
 func (p *partPrefetcher) log(job *partPrefetchJob, outcome string, blobs int, bytes int64, stats *partInstallStats, duration time.Duration, err error) {
 	// requests and ttfb are the job's content requests and their summed wait
-	// for response headers, as an install's line gives them: with bytes and
-	// the lane, the store's time to first byte by blob size.
+	// for response headers, and idle_max the longest any of them waited
+	// without progress, as an install's line gives them: with bytes and the
+	// lane, the store's time to first byte by blob size.
+	p.countMu.Lock()
+	p.outcomes[outcome]++
+	p.fetched += bytes
+	p.countMu.Unlock()
 	var requests int64
-	var ttfb time.Duration
+	var ttfb, idleMax time.Duration
 	if stats != nil {
-		requests, ttfb = stats.requests.Load(), time.Duration(stats.ttfb.Load())
+		requests, ttfb, idleMax = stats.requests.Load(), time.Duration(stats.ttfb.Load()), time.Duration(stats.idleMax.Load())
 	}
 	args := []any{
 		"entry", uint64(job.row),
-		"output", job.record.Address.OutputPath.String(),
-		"part", string(job.record.Address.Part),
+		"output", job.address.OutputPath.String(),
+		"part", string(job.address.Part),
 		"lane", job.lane.String(),
 		"ahead", job.ahead,
+		"planned", job.planned.Load(),
 		"chain_bytes", job.size,
 		"outcome", outcome,
 		"blobs", blobs,
 		"bytes", bytes,
 		"requests", requests,
 		"ttfb", ttfb,
+		"idle_max", idleMax,
 		"duration", duration,
 		"lead", time.Since(job.accepted),
 	}

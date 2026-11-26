@@ -98,15 +98,20 @@ func (w *persistedRefWalker) lazy(field string, raw *json.RawMessage, visitor pe
 
 // visitPersistedPayload decodes one payload struct losslessly, walks its
 // declared references and re-encodes it only when a reference was replaced.
+// A payload the visit's memo holds decoded already is walked in that decode,
+// which it takes (memoPayload).
 func visitPersistedPayload[T any](v dagql.PersistedPayloadVisit, visit dagql.PersistedRefVisitor, walk func(*T, *persistedRefWalker) error) (json.RawMessage, error) {
-	var payload T
-	if len(v.Payload) > 0 {
-		if err := unmarshalPersistedPayload(v.Payload, &payload); err != nil {
-			return nil, fmt.Errorf("decode payload: %w", err)
+	payload, ok := memoPayload[T](v.Memo)
+	if !ok {
+		payload = new(T)
+		if len(v.Payload) > 0 {
+			if err := unmarshalPersistedPayload(v.Payload, payload); err != nil {
+				return nil, fmt.Errorf("decode payload: %w", err)
+			}
 		}
 	}
 	w := newPersistedRefWalker(visit, v.Path)
-	if err := walk(&payload, w); err != nil {
+	if err := walk(payload, w); err != nil {
 		return nil, err
 	}
 	if !*w.changed {
@@ -117,6 +122,27 @@ func visitPersistedPayload[T any](v dagql.PersistedPayloadVisit, visit dagql.Per
 		return nil, fmt.Errorf("re-encode payload: %w", err)
 	}
 	return rewritten, nil
+}
+
+// memoPayload takes the decode of a payload as T that memo holds, a family
+// with snapshot parts' strict decode (decodePartPayload), and leaves memo
+// empty: the walk changes the decode in place. A payload the strict decode
+// accepts decodes losslessly to the same value (unmarshalPersistedPayload),
+// since those families' payloads hold no untyped numbers, and the strict
+// decode refuses what the lossless one would drop, unknown members.
+func memoPayload[T any](memo *dagql.PayloadMemo) (*T, bool) {
+	if memo == nil {
+		return nil, false
+	}
+	decoded, ok := memo.Value.(*partPayload)
+	if !ok {
+		return nil, false
+	}
+	payload, ok := decoded.decoded.(*T)
+	if ok {
+		memo.Value = nil
+	}
+	return payload, ok
 }
 
 // persistedPayloadVisitorFunc adapts a payload-struct walk into a family
@@ -604,7 +630,11 @@ var persistedModuleSourceVisitor = persistedStructVisitor("", func(p *persistedM
 		return err
 	}
 	if p.DirSrc != nil {
-		return w.at("dirSrc").child("originalContextDirResultID", &p.DirSrc.OriginalContextDirResultID)
+		dirSrc := w.at("dirSrc")
+		if err := dirSrc.child("originalContextDirResultID", &p.DirSrc.OriginalContextDirResultID); err != nil {
+			return err
+		}
+		return dirSrc.child("originGitResultID", &p.DirSrc.OriginGitResultID)
 	}
 	return nil
 })
@@ -736,6 +766,9 @@ func visitPersistedModuleObjectValue(w *persistedRefWalker, val *persistedModule
 
 var persistedModuleObjectVisitor = persistedStructVisitor("", func(p *persistedModuleObjectPayload, w *persistedRefWalker) error {
 	if err := w.child("collectionBase", &p.CollectionBase); err != nil {
+		return err
+	}
+	if err := visitPersistedArtifactViewRefs(w.at("artifactView"), p.ArtifactView); err != nil {
 		return err
 	}
 	for _, name := range slices.Sorted(maps.Keys(p.Fields)) {

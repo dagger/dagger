@@ -560,3 +560,20 @@ func (EnvFileSuite) TestUpdateVariableWithTheSameValue(ctx context.Context, t *t
 	_, err := core.NewQuery(c).Directory().WithFile(".env", ef).Sync(ctx)
 	require.NoError(t, err)
 }
+
+// TestOuterEnvFileOverReadLimit checks that a caller's .env larger than the
+// engine reads of it fails the module load with an error that names the file
+// and the limit.
+func (EnvFileSuite) TestOuterEnvFileOverReadLimit(ctx context.Context, t *testctx.T) {
+	dir := t.TempDir()
+	envPath := filepath.Join(dir, ".env")
+	line := "UNRELATED_FILLER=" + strings.Repeat("x", 1023) + "\n"
+	// 4,164,000 bytes, over the 3,984,588 the engine reads of one host file.
+	require.NoError(t, os.WriteFile(envPath, []byte(strings.Repeat(line, 4000)), 0o600))
+	writeEnvProbeModule(t, filepath.Join(dir, "envbig"), "envbig")
+
+	c := connect(ctx, t, dagger.WithWorkdir(dir))
+	err := core.NewQuery(c).ModuleSource("./envbig").AsModule().Serve(ctx)
+	require.ErrorContains(t, err, `".env" is 4164000 bytes`)
+	require.ErrorContains(t, err, "3984588")
+}

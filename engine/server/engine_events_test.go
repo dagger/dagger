@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
@@ -18,6 +20,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/remotecache"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
@@ -126,7 +129,7 @@ func TestEngineEventsCarryKindCacheAndBody(t *testing.T) {
 	first, second := time.Unix(100, 1), time.Unix(100, 2)
 	srv.emitPruneEvent([]dagql.CacheRetentionDrop{{ResultID: 7, DroppedAt: first}, {ResultID: 9, DroppedAt: second}})
 	srv.emitPruneEvent(nil)
-	srv.emitShareEvent([]dagql.SnapshotSharedPart{
+	srv.emitPartsEvent([]dagql.OwedPart{
 		{ResultID: 12, Part: `{"part":"snapshot"}`, Deps: []uint64{3, 4}},
 		{ResultID: 13, Part: `{"part":"snapshot"}`, Deps: []uint64{3}, Replacements: 2},
 	})
@@ -148,11 +151,11 @@ func TestEngineEventsCarryKindCacheAndBody(t *testing.T) {
 	}}, decodeEngineEvent[telemetryattrs.EnginePruneEvent](t, events[1]))
 	require.True(t, events[1].at.Equal(second), "timed at the run's last drop")
 
-	require.Equal(t, telemetryattrs.EngineEventShare, events[2].kind)
-	require.Equal(t, telemetryattrs.EngineShareEvent{Parts: []telemetryattrs.EngineSharedPart{
+	require.Equal(t, telemetryattrs.EngineEventParts, events[2].kind)
+	require.Equal(t, telemetryattrs.EnginePartsEvent{Parts: []telemetryattrs.EnginePart{
 		{ResultID: 12, Part: `{"part":"snapshot"}`, Deps: []uint64{3, 4}},
 		{ResultID: 13, Part: `{"part":"snapshot"}`, Deps: []uint64{3}, Replacements: 2},
-	}}, decodeEngineEvent[telemetryattrs.EngineShareEvent](t, events[2]))
+	}}, decodeEngineEvent[telemetryattrs.EnginePartsEvent](t, events[2]))
 	shareParts := decodeEngineEvent[struct {
 		Parts []map[string]json.RawMessage `json:"parts"`
 	}](t, events[2]).Parts
@@ -160,7 +163,7 @@ func TestEngineEventsCarryKindCacheAndBody(t *testing.T) {
 	require.Equal(t, json.RawMessage("2"), shareParts[1]["replacements"])
 
 	require.Equal(t, telemetryattrs.EngineEventStop, events[3].kind)
-	require.Equal(t, telemetryattrs.EngineStopEvent{Clean: true}, decodeEngineEvent[telemetryattrs.EngineStopEvent](t, events[3]))
+	require.Equal(t, telemetryattrs.EngineStopEvent{Clean: true}, withoutPeak(t, decodeEngineEvent[telemetryattrs.EngineStopEvent](t, events[3])))
 	require.Zero(t, srv.engineEvents.Dropped())
 }
 
@@ -186,7 +189,7 @@ func TestEngineEventsAcrossRestart(t *testing.T) {
 	events := exporter.events(t)
 	require.Len(t, events, 2)
 	firstIdentity := events[0].cache
-	require.Equal(t, telemetryattrs.EngineStopEvent{Clean: true, SavedEntries: 2}, decodeEngineEvent[telemetryattrs.EngineStopEvent](t, events[1]))
+	require.Equal(t, telemetryattrs.EngineStopEvent{Clean: true, SavedEntries: 2}, withoutPeak(t, decodeEngineEvent[telemetryattrs.EngineStopEvent](t, events[1])))
 
 	cache = openEngineEventTestCache(t, path)
 	t.Cleanup(func() { require.NoError(t, cache.Close(context.Background())) })
@@ -408,4 +411,107 @@ func TestEngineEventsShutdownEndsWithTheStopWhenStateIsDiscarded(t *testing.T) {
 	srv.stopEngineEvents(ctx, false)
 	elapsed := time.Since(start)
 	require.Less(t, elapsed, 5*time.Second, "shutdown took %s with 300ms left of the stop", elapsed)
+}
+
+// withoutPeak checks a stop event carries the process's peak memory, and
+// returns it without, for comparing what is the same on every run.
+func withoutPeak(t *testing.T, event telemetryattrs.EngineStopEvent) telemetryattrs.EngineStopEvent {
+	t.Helper()
+	require.Positive(t, event.PeakResident, "the stop says the engine's peak memory")
+	event.PeakResident = 0
+	return event
+}
+
+// The stop event counts the lookup misses the remote cache dropped before a
+// restored part could count them, though the engine's stop has closed the
+// integration, and detached the bridge that keeps the count, before it.
+func TestEngineStopEventCountsUncountedMisses(t *testing.T) {
+	t.Parallel()
+	ctx := boundedContext(t)
+	cache := openEngineEventTestCache(t, "")
+	srv, exporter := engineEventTestServer(cache)
+	srv.startEngineEvents()
+	adapter := newTestRemoteCacheAdapter(t, cache)
+	srv.remoteCacheAdapter = adapter
+	adapter.StartLookups()
+	sessionCtx := engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{ClientID: "misses", SessionID: "misses"})
+	for i := 0; cache.TrimmedRemoteMisses() == 0; i++ {
+		require.Less(t, i, 1<<17, "the miss log never filled")
+		frame := &dagql.ResultCall{Kind: dagql.ResultCallKindField, Type: dagql.NewResultCallType(dagql.NewInt(0).Type()), Field: fmt.Sprint("missed", i)}
+		_, err := cache.GetOrInitCall(sessionCtx, "misses", gcTestTypeResolver{}, &dagql.CallRequest{ResultCall: frame, CacheReported: true}, func(context.Context) (dagql.AnyResult, error) {
+			return dagql.NewResultForCall(dagql.NewInt(int64(i)), frame)
+		})
+		require.NoError(t, err)
+		if i%1000 == 999 {
+			// Keep the lookup queue from refusing misses, as the connection does.
+			_, _, err := adapter.TakeLookupMisses(t.Context(), 1000, 0)
+			require.NoError(t, err)
+		}
+	}
+	uncounted := cache.TrimmedRemoteMisses()
+	adapter.close(errors.New("stopping"))
+	require.Zero(t, cache.TrimmedRemoteMisses(), "the detached bridge's count is gone from the cache")
+	require.NoError(t, cache.Close(ctx))
+	srv.stopEngineEvents(ctx, true)
+	events := exporter.events(t)
+	stop := events[len(events)-1]
+	require.Equal(t, telemetryattrs.EngineEventStop, stop.kind)
+	require.Equal(t, uncounted, decodeEngineEvent[telemetryattrs.EngineStopEvent](t, stop).UncountedMisses)
+}
+
+// The stop event carries, for each restored file, its parts' own stages
+// and its window, and for the engine, its lookups' waits for the graph lock
+// and its first uses by path.
+func TestEngineStopEventCarriesWhereLandingTimeWent(t *testing.T) {
+	t.Parallel()
+	ctx := boundedContext(t)
+	cache := openEngineEventTestCache(t, "")
+	srv, exporter := engineEventTestServer(cache)
+	srv.startEngineEvents()
+	adapter := newTestRemoteCacheAdapter(t, cache)
+	srv.remoteCacheAdapter = adapter
+	adapter.Restored(remotecache.RestoreReport{
+		Check: "test-base", Kind: "whole", Digest: digest.FromString("whole"), Arrived: time.Unix(100, 0), Ended: time.Unix(102, 0),
+		Parts: []remotecache.RestoredPartReport{{
+			Records: 3, Committed: time.Unix(101, 0),
+			Decode: time.Millisecond, Prepare: 2 * time.Millisecond, Commit: 3 * time.Millisecond, PriorityWait: 4 * time.Millisecond,
+			PrepareLockWait: 5 * time.Millisecond, PrepareLockWaits: map[string]time.Duration{"part": 5 * time.Millisecond},
+			DecodeWait: 6 * time.Millisecond, Precheck: 7 * time.Millisecond,
+		}},
+		Window: &remotecache.RestoreWindow{
+			Wall: time.Second, CPU: 2 * time.Second, GCCPU: 300 * time.Millisecond, GCAssist: 100 * time.Millisecond, GCCycles: 2,
+			SchedWaits: 40, SchedWait: 5 * time.Millisecond, RunqWait: 7 * time.Millisecond, RunqWaitKnown: true,
+			LookupLockWaits: map[string]dagql.LockWaitStats{"part": {Waits: 2, Total: 6 * time.Millisecond}},
+			FirstUses:       map[string]dagql.FirstUsePath{"part": {Prepared: 9, Total: 8 * time.Millisecond}},
+		},
+	})
+	// The head ended first, though its report came in after the whole's.
+	adapter.Restored(remotecache.RestoreReport{Check: "test-base", Kind: "head", Digest: digest.FromString("head"), Arrived: time.Unix(100, 0), Ended: time.Unix(101, 0), Window: &remotecache.RestoreWindow{Wall: time.Second}})
+	require.NoError(t, cache.Close(ctx))
+	srv.stopEngineEvents(ctx, true)
+	events := exporter.events(t)
+	stop := decodeEngineEvent[telemetryattrs.EngineStopEvent](t, events[len(events)-1])
+	require.Len(t, stop.Restores, 2)
+	require.Equal(t, []string{"head", "whole"}, []string{stop.Restores[0].Kind, stop.Restores[1].Kind}, "in the order they ended")
+	require.Equal(t, time.Unix(102, 0).UnixNano(), stop.Restores[1].Ended)
+	require.Equal(t, []telemetryattrs.EngineRestorePart{{
+		Records: 3, Committed: time.Unix(101, 0).UnixNano(),
+		Decode: int64(time.Millisecond), Prepare: int64(2 * time.Millisecond), Commit: int64(3 * time.Millisecond), PriorityWait: int64(4 * time.Millisecond),
+		PrepareLockWait: int64(5 * time.Millisecond), PrepareLockWaits: map[string]int64{"part": int64(5 * time.Millisecond)},
+		DecodeWait: int64(6 * time.Millisecond), Precheck: int64(7 * time.Millisecond),
+	}}, stop.Restores[1].Parts)
+	runq := int64(7 * time.Millisecond)
+	require.Equal(t, &telemetryattrs.EngineRestoreWindow{
+		Wall: int64(time.Second), CPU: int64(2 * time.Second), GCCPU: int64(300 * time.Millisecond), GCAssist: int64(100 * time.Millisecond), GCCycles: 2,
+		SchedWaits: 40, SchedWait: int64(5 * time.Millisecond), RunqWait: &runq,
+		LookupLockWaits: map[string]telemetryattrs.EngineLockWaits{"part": {Waits: 2, Total: int64(6 * time.Millisecond)}},
+		FirstUses:       map[string]telemetryattrs.EngineFirstUsePath{"part": {Prepared: 9, Total: int64(8 * time.Millisecond)}},
+	}, stop.Restores[1].Window)
+	require.Equal(t, &telemetryattrs.EngineRestoreWindow{Wall: int64(time.Second)}, stop.Restores[0].Window, "a run-queue wait that couldn't be read is absent, not 0")
+
+	require.Equal(t, telemetryattrs.EngineLookupLockWaits{
+		Landing: map[string]telemetryattrs.EngineLockWaits{"restore": {Waits: 1, Total: 5, Longest: 5}},
+	}, engineLookupLockWaits(dagql.LookupLockWaits{Landing: map[string]dagql.LockWaitStats{"restore": {Waits: 1, Total: 5, Longest: 5}}}))
+	require.Equal(t, map[string]telemetryattrs.EngineFirstUsePath{"lookup": {Prepared: 2, Total: 9, Longest: 7}},
+		engineFirstUsePaths(map[string]dagql.FirstUsePath{"lookup": {Prepared: 2, Total: 9, Longest: 7}}))
 }

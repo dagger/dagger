@@ -30,7 +30,16 @@ import (
 //     goes up by one (D9);
 //   - any other expired entry is retired: it leaves the index and keeps
 //     serving its existing users only, and the new value registers as the
-//     recipe's current entry.
+//     recipe's current entry;
+//   - a live entry whose value is a Cloud merge's record expires and is
+//     taken as an expired one when the new value's content is made
+//     (freshValueMade):
+//     the engine keeps what it made, as a merge keeps an engine's value over
+//     a record of its recipe, so the order the two land in doesn't decide
+//     what the engine holds. A retired record's users that demand its
+//     content find the new value as a source of the same recipe. A new
+//     value with computation pending adopts the record, whose content can
+//     be fetched.
 //
 // An entry known only through holdings, on a cache built from other caches'
 // telemetry, has no value to adopt or expire: the new value is stored into it
@@ -57,14 +66,14 @@ func (c *Cache) currentEntryForRecipeLocked(recipe digest.Digest) *sharedResult 
 // caches' holdings. An engine's Cloud and image holdings are no units: they own nothing.
 // Those units are other entries' dependency edges and offer owners,
 // sessions, and the holds of tasks working on the entry: a publication's
-// handoff, a part task or demand, a capture, a sharing pass. A lazy attempt
+// handoff, a part task or demand, a capture. A lazy attempt
 // or a decode runs for a caller that holds the entry through its session or
 // through a dependent, so it holds a unit too. Requires egraphMu; nests
 // sessionMu.
 func (c *Cache) resultInUseLocked(res *sharedResult) bool {
 	idle := int64(0)
-	for key := range res.holders {
-		if !senderCache(key.Cache) {
+	for _, ref := range res.holderRefsLocked() {
+		if !senderCache(ref.key.Cache) {
 			idle++
 		}
 	}
@@ -103,7 +112,8 @@ type replacedValue struct {
 }
 
 // replaceResultValueInPlaceLocked installs fresh's value into cur, an expired
-// entry that nothing uses (D9), or one with no value. cur keeps its identity:
+// entry that nothing uses (D9), one with no value, or a Cloud merge's record
+// that nothing uses and a made value takes the place of. cur keeps its identity:
 // its number, its recipe index key, its retention edge, its e-graph identity
 // and other caches' holdings. It takes the new value, its call frame,
 // requirements and accounting, and whether the value came from a record: a
@@ -120,21 +130,22 @@ func (c *Cache) replaceResultValueInPlaceLocked(ctx context.Context, cur, fresh 
 		queue collectionQueue
 		rerr  error
 	)
+	c.markEntryClassLocked(cur.id, StampReplaced)
 	// The stored parts, like the offers, belonged to the old value, and so
 	// did its normalized record and its place in a list's items
 	// (cache_list_items.go).
-	cur.storedParts = nil
+	c.changeStoredPartsLocked(cur, func() { cur.storedParts = nil })
 	cur.storedTransfer.Store(nil)
 	cur.unavailableParts = nil
 	c.forgetListItemLocked(cur)
-	cur.storedRecordBytes = fresh.storedRecordBytes
+	c.setStoredRecordBytesLocked(cur, fresh.storedRecordBytes)
 	for _, offer := range cur.partOffersLocked() {
-		more, err := c.retirePartOfferLocked(ctx, cur, offer.record.Address)
+		more, err := c.retirePartOfferLocked(ctx, cur, offer.held.Address)
 		queue = append(queue, more...)
 		rerr = errors.Join(rerr, err)
 	}
 	old := replacedValue{release: cur.onRelease}
-	for depID := range cur.deps {
+	for _, depID := range cur.deps {
 		c.forgetDependencyEdgeLocked(cur.id, depID)
 		old.deps = append(old.deps, depID)
 	}
@@ -144,13 +155,12 @@ func (c *Cache) replaceResultValueInPlaceLocked(ctx context.Context, cur, fresh 
 	if !cur.noValueLocked() {
 		cur.replacements++
 	}
-	cur.imported = fresh.imported
-	cur.mergedAtUnixNano = fresh.mergedAtUnixNano
+	cur.merged = fresh.merged
+	cur.run, cur.runRan = fresh.run, fresh.runRan
 	// A declined value never meets a retention edge here: its publication
 	// retires an entry that has one instead.
 	cur.persistDeclined = fresh.persistDeclined
 	cur.inlineBorrow = fresh.inlineBorrow
-	cur.sessionResourceHandle = fresh.sessionResourceHandle
 	cur.requiredSessionResources = fresh.requiredSessionResources
 	cur.expiresAtUnix = 0
 	cur.recordType = fresh.recordType
@@ -158,14 +168,24 @@ func (c *Cache) replaceResultValueInPlaceLocked(ctx context.Context, cur, fresh 
 	cur.storeResultCall(fresh.loadResultCall())
 
 	cur.payloadMu.Lock()
+	// A capture reads these with the value (loadPayloadState), outside
+	// egraphMu: on the Cloud a replacement doesn't wait for one to end.
+	cur.imported = fresh.imported
+	cur.sessionResourceHandle = fresh.sessionResourceHandle
+	cur.boundSession = fresh.boundSession
 	cur.self = fresh.self
 	cur.isObject = fresh.isObject
 	cur.objClass = fresh.objClass
 	// A nil new value leaves hasValue false, as its fresh publication would.
 	cur.hasValue = fresh.hasValue
 	cur.persistedEnvelope = fresh.persistedEnvelope
+	// A record merged unprepared brings what its first use prepares it
+	// with; any other value leaves none (mergedFirstUse).
+	cur.firstUse = fresh.firstUse
+	cur.stored = fresh.stored
+	cur.partFacts = fresh.partFacts
 	cur.payloadRevision++
-	c.setResultPayloadBytesLocked(cur, fresh.payloadBytes)
+	c.setResultPayloadBytesLocked(cur, fresh.payloadBytes.Load())
 	// fresh was never registered, so its own lease cleanup does nothing.
 	cur.onRelease = joinOnRelease(c.resultSnapshotLeaseCleanup(cur), fresh.onRelease)
 	cur.createdAtUnixNano = fresh.createdAtUnixNano
@@ -173,6 +193,7 @@ func (c *Cache) replaceResultValueInPlaceLocked(ctx context.Context, cur, fresh 
 	cur.cacheUsageSizeByIdentity = nil
 	cur.cacheUsageRecordTypeByID = nil
 	cur.payloadMu.Unlock()
+	c.poolSettleLocked(cur)
 
 	if edge, retained := c.persistedEdgesByResult[cur.id]; retained && !edge.unpruneable {
 		edge.expiresAtUnix = retentionExpiresAtUnix
@@ -194,26 +215,34 @@ func (c *Cache) finishValueReplacement(ctx context.Context, res *sharedResult, r
 	err := runOnReleaseFuncs(ctx, []OnReleaseFunc{release})
 
 	res.payloadMu.Lock()
-	res.snapshotOwnerLinks = nil
-	res.snapshotLinkIntent = nil
-	res.snapshotLeaseCleanupRoles = nil
+	if s := res.snapshots.Load(); s != nil {
+		s.ownerLinks = nil
+		s.linkIntent = nil
+		s.leaseCleanupRoles = nil
+	}
 	res.payloadMu.Unlock()
 	res.completeParts.Store(nil)
-	res.partGate.gate.Store(nil)
-	res.partGate.active.Store(false)
-	res.partGate.restoredDelegation.Store(false)
+	if cell := res.partGate.Load(); cell != nil {
+		cell.gate.Store(nil)
+		cell.active.Store(false)
+		cell.restoredDelegation.Store(false)
+	}
 
-	res.lazyMu.Lock()
-	res.lazyWhole = lazyGroupState{}
-	res.lazyPartGroups = nil
-	res.lazyEvalComplete = false
-	res.lazyMu.Unlock()
+	if lz := res.lazy.Load(); lz != nil {
+		lz.mu.Lock()
+		lz.whole = lazyGroupState{}
+		lz.partGroups = nil
+		lz.evalComplete = false
+		lz.mu.Unlock()
+	}
 
-	res.persistDecodeMu.Lock()
-	res.persistDecodeErr = nil
-	res.persistDecodeRetry = false
-	res.persistLeaseSyncPending = false
-	res.persistDecodeMu.Unlock()
+	if d := res.decode.Load(); d != nil {
+		d.mu.Lock()
+		d.err = nil
+		d.retry = false
+		d.leaseSyncPending = false
+		d.mu.Unlock()
+	}
 	return err
 }
 
@@ -242,14 +271,14 @@ func (c *Cache) releaseReplacedDependenciesLocked(ctx context.Context, replaced 
 // lookups. Deriving a recipe reads other entries' frames under egraphMu, so
 // the digests are derived first and indexed in one critical section.
 func (c *Cache) indexRestoredEntries(indexed map[sharedResultID]struct{}) error {
-	c.egraphMu.RLock()
+	read := c.readGraphAs(workUpkeep)
 	rows := make([]*sharedResult, 0, len(indexed))
 	for id := range indexed {
 		if res := c.resultsByID[id]; res != nil {
 			rows = append(rows, res)
 		}
 	}
-	c.egraphMu.RUnlock()
+	read.Unlock()
 	slices.SortFunc(rows, compareSharedResults)
 	recipes := make([]digest.Digest, len(rows))
 	for i, res := range rows {

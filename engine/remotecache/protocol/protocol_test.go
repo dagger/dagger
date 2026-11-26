@@ -80,8 +80,18 @@ func TestMessagesRoundTrip(t *testing.T) {
 		{TypeSettled, Settled{}, func() any { return &Settled{} }},
 		{TypeClaims, Claims{Sessions: []SessionClaim{{ID: "sess-1", Claim: "claim-1"}}}, func() any { return &Claims{} }},
 		{TypeClaimed, Claimed{}, func() any { return &Claimed{} }},
+		{TypeHello, Hello{CacheID: "cache-1", Generation: 6, EngineVersion: "v0.20.0", EngineName: "dagger-engine", Restored: []digest.Digest{digest.FromString("head"), digest.FromString("whole")}}, func() any { return &Hello{} }},
+		{TypeRestore, Restore{Sets: []RestoreSet{{Check: "test-base", Head: &SetFile{Digest: SetFileChain(digest.FromString("head")), Size: 712, Segments: []SetFileSegment{{Digest: digest.FromString("head"), Size: 712, Address: dagql.BlobAddress{URL: "https://blobs/head"}}}, Table: AddressTable{Blobs: map[digest.Digest]dagql.BlobAddress{layer.Descriptor.Digest: {URL: "https://blobs/get", ExpiresAtUnix: 1790007200}}, Packs: map[digest.Digest]dagql.BlobAddress{digest.FromString("pack"): {URL: "https://blobs/pack"}}}}}}}, func() any { return &Restore{} }},
+		{TypeRestore, Restore{Sets: []RestoreSet{{Check: "test-base", Whole: &SetFile{Digest: SetFileChain(digest.FromString("whole"), digest.FromString("again")), Size: 23_300_000, Segments: []SetFileSegment{{Digest: digest.FromString("whole"), Size: 23_000_000, Address: dagql.BlobAddress{URL: "https://blobs/whole"}}, {Digest: digest.FromString("again"), Size: 300_000, Address: dagql.BlobAddress{URL: "https://blobs/again"}}}, Table: AddressTable{}}}}}, func() any { return &Restore{} }},
+		{TypeRestored, Restored{Generation: 2, EngineTime: 1790000000123456789, Files: []RestoredFile{
+			{Digest: digest.FromString("head"), Complete: true, Parts: 2, Records: 12212, Rows: RowCounts{Kept: 4745, Created: 7467}, FirstCommit: 1790000000023456789, Entries: EntryNumbers{40, 41, 0, 12}, PartsTable: []dagql.PersistedPartAddress{{Part: "metadata"}}, CompleteParts: []byte{1, 1, 0}},
+			{Digest: digest.FromString("whole"), Parts: 0, Error: "unsupported value bundle version 9"},
+			{Digest: digest.FromString("again"), Complete: true, Already: true},
+		}}, func() any { return &Restored{} }},
 		{TypeError, Error{Message: StaleSettle}, func() any { return &Error{} }},
 		{TypeWelcome, Welcome{}, func() any { return &Welcome{} }},
+		{TypeProbe, Probe{}, func() any { return &Probe{} }},
+		{TypeProbed, Probed{}, func() any { return &Probed{} }},
 		{TypeExport, Export{Roots: []uint64{12, 13}, Outputs: []ExportOutput{{Number: 12, Address: testAddress()}}}, func() any { return &Export{} }},
 		{TypeExported, Exported{ExportID: "x-1", Bundle: &bundle, Skipped: []SkippedRoot{{Number: 13, Reason: SkipBusy}}}, func() any { return &Exported{} }},
 		{TypeExported, Exported{Skipped: []SkippedRoot{{Number: 12, Reason: SkipGone}}}, func() any { return &Exported{} }},
@@ -112,8 +122,6 @@ func TestMessagesRoundTrip(t *testing.T) {
 			Misses: []LookupMiss{{Recipe: digest.FromString("recipe"), Extra: []digest.Digest{digest.FromString("extra")}, Field: "withExec"}, {Recipe: digest.FromString("other")}},
 		}, func() any { return &Lookup{} }},
 		{TypeLookedUp, LookedUp{Misses: []LookedUpMiss{
-			{Status: LookupMerging, Merge: 40, Parts: LookupPartsComplete},
-			{Status: LookupInFlight, Merge: 38, Parts: LookupPartsPartial},
 			{Status: LookupUnknown},
 			{Status: LookupNotStored},
 			{Status: LookupDeferred},
@@ -180,6 +188,14 @@ func derefBody(v any) any {
 		return *b
 	case *Claimed:
 		return *b
+	case *Restore:
+		return *b
+	case *Restored:
+		return *b
+	case *Probe:
+		return *b
+	case *Probed:
+		return *b
 	case *Error:
 		return *b
 	}
@@ -230,22 +246,24 @@ func TestOfferShape(t *testing.T) {
 // Every request has a reply type, and nothing else does.
 func TestReplyType(t *testing.T) {
 	for request, reply := range map[Type]Type{
-		TypeHello:  TypeWelcome,
-		TypeExport: TypeExported,
-		TypeUpload: TypeUploaded,
-		TypeMerge:  TypeMerged,
-		TypeOffer:  TypeOffered,
-		TypeRenew:  TypeRenewed,
-		TypeLookup: TypeLookedUp,
-		TypeOpen:   TypeOpened,
-		TypeSettle: TypeSettled,
-		TypeClaims: TypeClaimed,
+		TypeHello:   TypeWelcome,
+		TypeExport:  TypeExported,
+		TypeUpload:  TypeUploaded,
+		TypeMerge:   TypeMerged,
+		TypeOffer:   TypeOffered,
+		TypeRenew:   TypeRenewed,
+		TypeLookup:  TypeLookedUp,
+		TypeOpen:    TypeOpened,
+		TypeSettle:  TypeSettled,
+		TypeClaims:  TypeClaimed,
+		TypeRestore: TypeRestored,
+		TypeProbe:   TypeProbed,
 	} {
 		got, ok := ReplyType(request)
 		require.True(t, ok, request)
 		require.Equal(t, reply, got)
 	}
-	for _, notRequest := range []Type{TypeWelcome, TypeExported, TypeUploaded, TypeMerged, TypeOffered, TypeRenewed, TypeLookedUp, TypeOpened, TypeSettled, TypeClaimed, TypeError} {
+	for _, notRequest := range []Type{TypeWelcome, TypeExported, TypeUploaded, TypeMerged, TypeOffered, TypeRenewed, TypeLookedUp, TypeOpened, TypeSettled, TypeClaimed, TypeRestored, TypeProbed, TypeError} {
 		_, ok := ReplyType(notRequest)
 		require.False(t, ok, notRequest)
 	}
@@ -276,25 +294,16 @@ func TestLookupShape(t *testing.T) {
 	require.NoError(t, err)
 	require.JSONEq(t, `{"misses": [{"recipe": "xxh3:1", "extra": ["xxh3:2"], "field": "withExec"}]}`, string(raw))
 
-	raw, err = json.Marshal(LookedUp{Misses: []LookedUpMiss{{Status: LookupMerging, Merge: 40, Parts: LookupPartsNone}, {Status: LookupUnknown}}})
+	raw, err = json.Marshal(LookedUp{Misses: []LookedUpMiss{{Status: LookupDeferred}, {Status: LookupUnknown}}})
 	require.NoError(t, err)
-	require.JSONEq(t, `{"misses": [{"status": "merging", "merge": 40, "parts": "none"}, {"status": "unknown"}]}`, string(raw))
+	require.JSONEq(t, `{"misses": [{"status": "deferred"}, {"status": "unknown"}]}`, string(raw))
 
 	for status, want := range map[LookupStatus]string{
 		LookupUnknown:   "unknown",
 		LookupNotStored: "notStored",
-		LookupInFlight:  "inFlight",
-		LookupMerging:   "merging",
 		LookupDeferred:  "deferred",
 	} {
 		require.Equal(t, want, string(status))
-	}
-	for parts, want := range map[LookupParts]string{
-		LookupPartsComplete: "complete",
-		LookupPartsPartial:  "partial",
-		LookupPartsNone:     "none",
-	} {
-		require.Equal(t, want, string(parts))
 	}
 
 	raw, err = json.Marshal(Merge{})
@@ -312,7 +321,7 @@ func TestLookupShape(t *testing.T) {
 func TestMergeListsSharedLayersOnce(t *testing.T) {
 	layer := testLayer()
 	addresses := map[digest.Digest]dagql.BlobAddress{layer.Descriptor.Digest: {URL: "https://blobs.example/layer"}}
-	bundle := dagql.ValueBundle{Version: 7, Roots: []dagql.TransferredRoot{{Ordinal: 1}}}
+	bundle := dagql.ValueBundle{Version: 9, Roots: []dagql.TransferredRoot{{Ordinal: 1}}}
 	for i := range 2 {
 		bundle.Values = append(bundle.Values, dagql.TransferredValue{Ordinal: dagql.TransferOrdinal(i + 1), SenderNumber: uint64(i + 1)})
 		bundle.Outputs = append(bundle.Outputs, dagql.TransferredOutput{

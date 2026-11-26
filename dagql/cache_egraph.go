@@ -3,13 +3,14 @@ package dagql
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"time"
 
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/dagger/dagger/util/hashutil"
 	set "github.com/hashicorp/go-set/v3"
 	"github.com/opencontainers/go-digest"
@@ -46,23 +47,41 @@ type egraphTerm struct {
 	outputEqID eqClassID
 }
 
-type egraphInputProvenanceKind string
+// egraphInputProvenanceKind is whether a term's input slot was result-backed
+// or digest-only when the term was observed: one byte a slot, as a term's
+// provenance is held for each of its inputs. Persistence and debug output
+// name it as String does.
+type egraphInputProvenanceKind uint8
 
 const (
-	egraphInputProvenanceKindResult egraphInputProvenanceKind = "result"
-	egraphInputProvenanceKindDigest egraphInputProvenanceKind = "digest"
+	egraphInputProvenanceKindResult egraphInputProvenanceKind = iota + 1
+	egraphInputProvenanceKindDigest
 )
 
-// egraphResultTermAssoc stores metadata for one result<->term association.
-// Today this is just per-input provenance indicating whether each input slot
-// was result-backed or digest-only when the association was created.
-//
-// NOTE: we intentionally assume for now that a congruent term will not be
-// observed with conflicting provenance for the same input slot. If that ever
-// does happen, the most recently observed provenance simply replaces the older
-// one.
-type egraphResultTermAssoc struct {
-	inputProvenance []egraphInputProvenanceKind
+// String is the kind's name as persistence stores it: "result" or
+// "digest".
+func (k egraphInputProvenanceKind) String() string {
+	switch k {
+	case egraphInputProvenanceKindResult:
+		return "result"
+	case egraphInputProvenanceKindDigest:
+		return "digest"
+	default:
+		return fmt.Sprintf("provenance(%d)", uint8(k))
+	}
+}
+
+// parseEgraphInputProvenanceKind is the kind String names name, and
+// whether it names one.
+func parseEgraphInputProvenanceKind(name string) (egraphInputProvenanceKind, bool) {
+	switch name {
+	case "result":
+		return egraphInputProvenanceKindResult, true
+	case "digest":
+		return egraphInputProvenanceKindDigest, true
+	default:
+		return 0, false
+	}
 }
 
 func sameInputProvenance(a, b []egraphInputProvenanceKind) bool {
@@ -90,7 +109,8 @@ func touchSharedResultLastUsed(res *sharedResult, nowUnixNano int64) {
 	if nowUnixNano > res.lastUsedAtUnixNano {
 		res.lastUsedAtUnixNano = nowUnixNano
 	}
-	res.payloadMu.Unlock()
+	// The last use is the results row's, not the saved record's.
+	res.payloadMu.unlockUncounted()
 }
 
 func calcEgraphTermDigest(selfDigest digest.Digest, inputEqIDs []eqClassID) string {
@@ -102,20 +122,8 @@ func calcEgraphTermDigest(selfDigest digest.Digest, inputEqIDs []eqClassID) stri
 	return h.DigestAndClose()
 }
 
-func compareEgraphTermID(a, b egraphTermID) int {
-	return cmp.Compare(a, b)
-}
-
 func compareSharedResultID(a, b sharedResultID) int {
 	return cmp.Compare(a, b)
-}
-
-func newEgraphTermIDSet() *set.TreeSet[egraphTermID] {
-	return set.NewTreeSet(compareEgraphTermID)
-}
-
-func newSharedResultIDSet() *set.TreeSet[sharedResultID] {
-	return set.NewTreeSet(compareSharedResultID)
 }
 
 func (c *Cache) ensureTermInputEqIDsLocked(ctx context.Context, inputDigests []digest.Digest) []eqClassID {
@@ -170,38 +178,17 @@ func (c *Cache) initEgraphLocked() {
 	if c.egraphRanks == nil {
 		c.egraphRanks = []uint8{0}
 	}
+	if c.egraphUses == nil {
+		c.egraphUses = []uint32{0}
+	}
 	if c.eqClassToDigests == nil {
-		c.eqClassToDigests = make(map[eqClassID]map[string]struct{})
+		c.eqClassToDigests = make(map[eqClassID]*idSet[string])
 	}
 	if c.eqClassExtraDigests == nil {
-		c.eqClassExtraDigests = make(map[eqClassID]map[call.ExtraDigest]struct{})
-	}
-	if c.inputEqClassToTerms == nil {
-		c.inputEqClassToTerms = make(map[eqClassID]map[egraphTermID]struct{})
-	}
-	if c.outputEqClassToTerms == nil {
-		c.outputEqClassToTerms = make(map[eqClassID]map[egraphTermID]struct{})
-	}
-	if c.resultOutputEqClasses == nil {
-		c.resultOutputEqClasses = make(map[sharedResultID]map[eqClassID]struct{})
-	}
-	if c.outputEqClassResults == nil {
-		c.outputEqClassResults = make(map[eqClassID]map[sharedResultID]struct{})
-	}
-	if c.termResults == nil {
-		c.termResults = make(map[egraphTermID]map[sharedResultID]egraphResultTermAssoc)
-	}
-	if c.resultTerms == nil {
-		c.resultTerms = make(map[sharedResultID]map[egraphTermID]struct{})
+		c.eqClassExtraDigests = make(map[eqClassID][]call.ExtraDigest)
 	}
 	if c.egraphTerms == nil {
 		c.egraphTerms = make(map[egraphTermID]*egraphTerm)
-	}
-	if c.egraphTermsByTermDigest == nil {
-		c.egraphTermsByTermDigest = make(map[string]*set.TreeSet[egraphTermID])
-	}
-	if c.egraphResultsByDigest == nil {
-		c.egraphResultsByDigest = make(map[string]*resultDigestPosting)
 	}
 	if c.resultIndexedDigests == nil {
 		c.resultIndexedDigests = make(map[sharedResultID][]string)
@@ -215,15 +202,10 @@ func (c *Cache) initEgraphLocked() {
 	if c.resultsByID == nil {
 		c.resultsByID = make(map[sharedResultID]*sharedResult)
 	}
-	if c.nextEgraphClassID == 0 {
-		c.nextEgraphClassID = 1
-	}
 	if c.nextEgraphTermID == 0 {
 		c.nextEgraphTermID = 1
 	}
-	if c.nextSharedResultID == 0 {
-		c.nextSharedResultID = 1
-	}
+	c.nextSharedResultID.CompareAndSwap(0, 1)
 }
 
 func (c *Cache) ensureEqClassForDigestLocked(ctx context.Context, dig string) eqClassID {
@@ -234,18 +216,42 @@ func (c *Cache) ensureEqClassForDigestLocked(ctx context.Context, dig string) eq
 	if id, ok := c.egraphDigestToClass[dig]; ok {
 		return c.findEqClassLocked(id)
 	}
-	id := c.nextEgraphClassID
-	c.nextEgraphClassID++
-	c.egraphParents = append(c.egraphParents, id)
-	c.egraphRanks = append(c.egraphRanks, 0)
+	id := c.allocEqClassLocked()
 	c.egraphDigestToClass[dig] = id
+	c.forgetCallTermsLocked(dig)
 	digests := c.eqClassToDigests[id]
 	if digests == nil {
-		digests = make(map[string]struct{}, 1)
+		digests = newIDSet[string]()
 		c.eqClassToDigests[id] = digests
 	}
-	digests[dig] = struct{}{}
+	digests.Insert(dig)
 	c.traceEqClassCreated(ctx, id, dig)
+	return id
+}
+
+// allocEqClassLocked returns a number for a new class: the last a freed
+// class left (freeEndedEqClassesLocked), or the next after every slot. The
+// class is noted as ended until a term or an entry uses it: one made by an
+// operation that stops before using it is freed by the next collection.
+// Requires egraphMu for writing, and an initialized e-graph.
+func (c *Cache) allocEqClassLocked() eqClassID {
+	var id eqClassID
+	// While a save reads the store, a freed number isn't taken again: a
+	// number the save has read names one class until it ends.
+	if n := len(c.freeEqClassIDs); n > 0 && !c.savingLocked() {
+		id = c.freeEqClassIDs[n-1]
+		c.freeEqClassIDs = c.freeEqClassIDs[:n-1]
+		c.egraphParents[id] = id
+		c.egraphRanks[id] = 0
+		c.egraphUses[id] = 0
+	} else {
+		id = eqClassID(len(c.egraphParents))
+		c.egraphParents = append(c.egraphParents, id)
+		c.egraphRanks = append(c.egraphRanks, 0)
+		c.egraphUses = append(c.egraphUses, 0)
+	}
+	c.noteSavedClassLocked(id)
+	c.endedEqClasses = append(c.endedEqClasses, id)
 	return id
 }
 
@@ -265,11 +271,36 @@ func (c *Cache) findEqClassLocked(id eqClassID) eqClassID {
 	return root
 }
 
+// unionRootsLocked orders two roots a union joins, the survivor first: the
+// class more terms take as an input, then the one of higher rank, then ra.
+// Keeping the class with more terms moves the fewest. The survivor takes a
+// rank above the loser's when the loser's is as high as its own, which
+// keeps a rank above its tree's height, up to the most a rank holds. With
+// testRepairWholeClass, the survivor is the one of higher rank, then ra.
+func (c *Cache) unionRootsLocked(ra, rb eqClassID) (survivor, loser eqClassID) {
+	if c.testRepairWholeClass {
+		if c.egraphRanks[ra] < c.egraphRanks[rb] {
+			ra, rb = rb, ra
+		}
+	} else if na, nb := c.inputEqClassToTerms.Size(ra), c.inputEqClassToTerms.Size(rb); na < nb || (na == nb && c.egraphRanks[ra] < c.egraphRanks[rb]) {
+		ra, rb = rb, ra
+	}
+	if r := c.egraphRanks[rb]; r >= c.egraphRanks[ra] {
+		c.egraphRanks[ra] = min(r, math.MaxUint8-1) + 1
+	}
+	return ra, rb
+}
+
 // mergeEqClassesNoRepairLocked unions the classes of a and b and returns the
-// surviving root. absorbedInputTerms reports whether the union moved input
-// terms from the losing root to the survivor; those terms are still keyed by
-// the losing root until the survivor is repaired.
-func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID) (root eqClassID, absorbedInputTerms bool) {
+// surviving root (unionRootsLocked). absorbedInputTerms reports whether the
+// union moved input terms from the losing root to the survivor, and moved,
+// unless nil, takes each live term it moved: those terms still name the
+// losing root until they are repaired. Everything else that names the losing
+// root names the survivor once the union returns: its digests, the terms it
+// was the output of, and its entries. So once the repair is done, only its
+// parent link names it, for a number an operation still holds, and it is
+// noted for the collector to free (freeEndedEqClassesLocked).
+func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID, moved *[]egraphTermID) (root eqClassID, absorbedInputTerms bool) {
 	ra := c.findEqClassLocked(a)
 	rb := c.findEqClassLocked(b)
 	if ra == 0 {
@@ -281,101 +312,111 @@ func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID) (root eqClassID, ab
 	if ra == rb {
 		return ra, false
 	}
+	c.egraphUnions++
 
-	// union by rank
-	if c.egraphRanks[ra] < c.egraphRanks[rb] {
-		ra, rb = rb, ra
-	}
+	ra, rb = c.unionRootsLocked(ra, rb)
 	c.egraphParents[rb] = ra
-	if c.egraphRanks[ra] == c.egraphRanks[rb] {
-		c.egraphRanks[ra]++
-	}
+	c.joinEqClassUsesLocked(ra, rb)
+	// Every row that named rb names ra once resolved: the classes, the terms
+	// that take or give rb and the entries of rb change for a save.
+	c.noteSavedClassLocked(ra)
+	c.noteSavedClassLocked(rb)
 
 	// merge reverse digest indexes
 	dstDigests := c.eqClassToDigests[ra]
 	srcDigests := c.eqClassToDigests[rb]
-	if len(srcDigests) > 0 {
+	if srcDigests.Size() > 0 {
 		if dstDigests == nil {
-			dstDigests = make(map[string]struct{}, len(srcDigests))
+			dstDigests = newIDSet[string]()
 			c.eqClassToDigests[ra] = dstDigests
 		}
-		for dig := range srcDigests {
-			dstDigests[dig] = struct{}{}
+		for dig := range srcDigests.All() {
+			dstDigests.Insert(dig)
+			c.egraphDigestToClass[dig] = ra
+			c.forgetCallTermsLocked(dig)
 		}
 		delete(c.eqClassToDigests, rb)
 	}
 
-	dstExtraDigests := c.eqClassExtraDigests[ra]
-	srcExtraDigests := c.eqClassExtraDigests[rb]
-	if len(srcExtraDigests) > 0 {
-		if dstExtraDigests == nil {
-			dstExtraDigests = make(map[call.ExtraDigest]struct{}, len(srcExtraDigests))
-			c.eqClassExtraDigests[ra] = dstExtraDigests
-		}
-		for extra := range srcExtraDigests {
-			dstExtraDigests[extra] = struct{}{}
-		}
+	if srcExtraDigests := c.eqClassExtraDigests[rb]; len(srcExtraDigests) > 0 {
+		c.eqClassExtraDigests[ra] = withExtraDigests(c.eqClassExtraDigests[ra], srcExtraDigests...)
 		delete(c.eqClassExtraDigests, rb)
 	}
 
 	// merge reverse input-term indexes
-	dst := c.inputEqClassToTerms[ra]
-	src := c.inputEqClassToTerms[rb]
-	if len(src) > 0 {
-		if dst == nil {
-			dst = make(map[egraphTermID]struct{}, len(src))
-			c.inputEqClassToTerms[ra] = dst
+	if srcInputTerms := c.inputEqClassToTerms.Members(rb); srcInputTerms.Size() > 0 {
+		var gone []egraphTermID
+		for termID := range srcInputTerms.All() {
+			c.noteSavedTermLocked(termID)
+			if moved != nil {
+				// A term gone since it was indexed has nothing to repair:
+				// it leaves the index here, as a repair of the whole class
+				// drops it.
+				if c.egraphTerms[termID] == nil {
+					gone = append(gone, termID)
+					continue
+				}
+				*moved = append(*moved, termID)
+			}
 		}
-		for termID := range src {
-			dst[termID] = struct{}{}
+		for _, termID := range gone {
+			c.inputEqClassToTerms.Remove(rb, termID)
 		}
-		delete(c.inputEqClassToTerms, rb)
+		c.inputEqClassToTerms.Move(rb, ra)
 		absorbedInputTerms = true
 	}
 
 	// merge reverse output-term indexes
-	dstOutputTerms := c.outputEqClassToTerms[ra]
-	srcOutputTerms := c.outputEqClassToTerms[rb]
-	if len(srcOutputTerms) > 0 {
-		if dstOutputTerms == nil {
-			dstOutputTerms = make(map[egraphTermID]struct{}, len(srcOutputTerms))
-			c.outputEqClassToTerms[ra] = dstOutputTerms
+	if srcOutputTerms := c.outputEqClassToTerms.Members(rb); srcOutputTerms.Size() > 0 {
+		for termID := range srcOutputTerms.All() {
+			c.noteSavedTermLocked(termID)
+			// The term's use moved with the class's (joinEqClassUsesLocked).
+			if term := c.egraphTerms[termID]; term != nil {
+				term.outputEqID = ra
+			}
 		}
-		for termID := range srcOutputTerms {
-			dstOutputTerms[termID] = struct{}{}
-		}
-		delete(c.outputEqClassToTerms, rb)
+		c.outputEqClassToTerms.Move(rb, ra)
 	}
 
 	// Merge result/output-class associations and eagerly rewrite the moved
 	// results' forward entries to the winning canonical root.
-	dstResults := c.outputEqClassResults[ra]
-	srcResults := c.outputEqClassResults[rb]
-	joinsEntries := len(dstResults) > 0 && len(srcResults) > 0
-	if len(srcResults) > 0 {
-		if dstResults == nil {
-			dstResults = make(map[sharedResultID]struct{}, len(srcResults))
-			c.outputEqClassResults[ra] = dstResults
-		}
-		for resID := range srcResults {
-			dstResults[resID] = struct{}{}
-			if outputEqClasses := c.resultOutputEqClasses[resID]; outputEqClasses != nil {
-				delete(outputEqClasses, rb)
-				outputEqClasses[ra] = struct{}{}
+	dstResults := c.outputEqClassResults.Members(ra)
+	srcResults := c.outputEqClassResults.Members(rb)
+	joinsEntries := dstResults.Size() > 0 && srcResults.Size() > 0
+	if joinsEntries {
+		// Every entry of both classes now answers from the other's holders
+		// and borrows the other's stored parts: the join marks, for readers
+		// and for the stamps of the bundles that borrow from the class, what
+		// that changes, walking the smaller side (markJoinLocked).
+		c.markJoinLocked(srcResults, dstResults, ra)
+	}
+	if srcResults.Size() > 0 {
+		for resID := range srcResults.All() {
+			c.noteSavedEntryLocked(resID)
+			// An entry that named both classes names one now, which it
+			// uses once.
+			if c.resultOutputEqClasses.Rename(resID, rb, ra) {
+				c.unuseEqClassLocked(ra)
 			}
 		}
-		delete(c.outputEqClassResults, rb)
+		c.outputEqClassResults.Move(rb, ra)
 	}
+	c.endedEqClasses = append(c.endedEqClasses, rb)
 
-	// An actual union: the winner's membership and reverse indexes are in
-	// place. Pending queue keys are recanonicalized in the same union.
-	c.recordShareUnionLocked(ra, rb)
-	if joinsEntries {
-		c.noteJoinedEntriesLocked(ra)
-	}
 	return ra, absorbedInputTerms
 }
 
+// mergeEqClassesLocked unions the classes of ids and repairs the terms the
+// unions moved until no two terms share a digest across classes: a term
+// whose inputs are now one class with another's is congruent to it, and
+// their outputs are unioned in turn. It returns the root of ids[0]'s class.
+//
+// Only a term that named an absorbed class can change its inputs or its
+// digest, so only such a term can come to share a digest with another: the
+// surviving class's own terms already name roots, which every union's repair
+// keeps true, as every term is made, imported and repaired naming roots.
+// So the repair walks the terms each union moved, and a union into a class
+// that many terms take as an input costs what the absorbed class had.
 func (c *Cache) mergeEqClassesLocked(ctx context.Context, ids ...eqClassID) eqClassID {
 	if len(ids) == 0 {
 		return 0
@@ -383,10 +424,38 @@ func (c *Cache) mergeEqClassesLocked(ctx context.Context, ids ...eqClassID) eqCl
 	if len(ids) == 1 {
 		return c.findEqClassLocked(ids[0])
 	}
+	if c.testRepairWholeClass {
+		return c.mergeEqClassesRepairingWholeClassLocked(ctx, ids...)
+	}
 
+	var moved []egraphTermID
 	root := c.findEqClassLocked(ids[0])
 	for _, id := range ids[1:] {
-		root, _ = c.mergeEqClassesNoRepairLocked(root, id)
+		root, _ = c.mergeEqClassesNoRepairLocked(root, id, &moved)
+	}
+	c.traceEqClassMerged(ctx, ids, root)
+
+	// Repair until closure. A repair's congruent terms union their outputs,
+	// which moves the absorbed class's terms in turn. Each union removes a
+	// root for good, so the loop ends.
+	for len(moved) > 0 {
+		batch := moved
+		moved = nil
+		for _, pair := range c.repairTermsLocked(ctx, batch) {
+			c.mergeEqClassesNoRepairLocked(pair.a, pair.b, &moved)
+		}
+	}
+	return c.findEqClassLocked(ids[0])
+}
+
+// mergeEqClassesRepairingWholeClassLocked is mergeEqClassesLocked as it was
+// before its repair walked only the terms its unions moved: each repair
+// walks every term of the class that survives. Tests set
+// testRepairWholeClass to compare the two.
+func (c *Cache) mergeEqClassesRepairingWholeClassLocked(ctx context.Context, ids ...eqClassID) eqClassID {
+	root := c.findEqClassLocked(ids[0])
+	for _, id := range ids[1:] {
+		root, _ = c.mergeEqClassesNoRepairLocked(root, id, nil)
 	}
 	c.traceEqClassMerged(ctx, ids, root)
 
@@ -407,7 +476,7 @@ func (c *Cache) mergeEqClassesLocked(ctx context.Context, ids ...eqClassID) eqCl
 		}
 		repaired[cur] = struct{}{}
 		for _, pair := range c.repairClassTermsLocked(ctx, cur) {
-			next, absorbedInputTerms := c.mergeEqClassesNoRepairLocked(pair.a, pair.b)
+			next, absorbedInputTerms := c.mergeEqClassesNoRepairLocked(pair.a, pair.b, nil)
 			if next == 0 {
 				continue
 			}
@@ -420,94 +489,107 @@ func (c *Cache) mergeEqClassesLocked(ctx context.Context, ids ...eqClassID) eqCl
 	return c.findEqClassLocked(ids[0])
 }
 
-//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
+// repairTermsLocked repairs the terms a union moved (repairTermLocked), and
+// returns a merge for each term that now shares a digest with another: their
+// outputs are one class. A term walked twice repairs once.
+func (c *Cache) repairTermsLocked(ctx context.Context, termIDs []egraphTermID) []eqMergePair {
+	traceEnabled := c.traceEnabled()
+	processedTermDigests := make(map[string]struct{}, len(termIDs))
+	for _, termID := range termIDs {
+		c.egraphRepairWalks++
+		term := c.egraphTerms[termID]
+		if term == nil {
+			continue
+		}
+		c.repairTermLocked(ctx, term, traceEnabled)
+		processedTermDigests[term.termDigest] = struct{}{}
+	}
+	return c.congruentTermMergesLocked(ctx, processedTermDigests, traceEnabled)
+}
+
+// repairClassTermsLocked repairs every term that takes root as an input,
+// as mergeEqClassesRepairingWholeClassLocked does.
 func (c *Cache) repairClassTermsLocked(ctx context.Context, root eqClassID) (merges []eqMergePair) {
-	termSet := c.inputEqClassToTerms[root]
-	if len(termSet) == 0 {
+	inputTerms := c.inputEqClassToTerms.Members(root)
+	if inputTerms.Size() == 0 {
 		return nil
 	}
 	traceEnabled := c.traceEnabled()
 
-	termIDs := make([]egraphTermID, 0, len(termSet))
-	for termID := range termSet {
+	termIDs := make([]egraphTermID, 0, inputTerms.Size())
+	for termID := range inputTerms.All() {
 		termIDs = append(termIDs, termID)
 	}
 	processedTermDigests := make(map[string]struct{}, len(termIDs))
 
 	for _, termID := range termIDs {
+		c.egraphRepairWalks++
 		term := c.egraphTerms[termID]
 		if term == nil {
-			delete(termSet, termID)
+			c.inputEqClassToTerms.Remove(root, termID)
 			continue
 		}
-
-		oldInputs := term.inputEqIDs
-		var newInputs []eqClassID
-		inputsChanged := false
-		for i, in := range oldInputs {
-			rootIn := c.findEqClassLocked(in)
-			if rootIn == in {
-				continue
-			}
-			if !inputsChanged {
-				newInputs = append([]eqClassID(nil), oldInputs...)
-				inputsChanged = true
-			}
-			newInputs[i] = rootIn
-		}
-
-		if inputsChanged {
-			for _, in := range oldInputs {
-				if set := c.inputEqClassToTerms[in]; set != nil {
-					delete(set, termID)
-					if len(set) == 0 {
-						delete(c.inputEqClassToTerms, in)
-					}
-				}
-			}
-			for _, in := range newInputs {
-				if in == 0 {
-					continue
-				}
-				set := c.inputEqClassToTerms[in]
-				if set == nil {
-					set = make(map[egraphTermID]struct{})
-					c.inputEqClassToTerms[in] = set
-				}
-				set[termID] = struct{}{}
-			}
-			term.inputEqIDs = newInputs
-
-			oldTermDigest := term.termDigest
-			newTermDigest := calcEgraphTermDigest(term.selfDigest, newInputs)
-			if set := c.egraphTermsByTermDigest[term.termDigest]; set != nil {
-				set.Remove(termID)
-				if set.Empty() {
-					delete(c.egraphTermsByTermDigest, term.termDigest)
-				}
-			}
-			set := c.egraphTermsByTermDigest[newTermDigest]
-			if set == nil {
-				set = newEgraphTermIDSet()
-				c.egraphTermsByTermDigest[newTermDigest] = set
-			}
-			set.Insert(termID)
-			term.termDigest = newTermDigest
-
-			if traceEnabled {
-				oldInputsCopy := append([]eqClassID(nil), oldInputs...)
-				c.traceTermInputsRepaired(ctx, term.id, oldInputsCopy, newInputs)
-				c.traceTermRehomedUnderEqClasses(ctx, term.id, newInputs)
-				c.traceTermDigestRecomputed(ctx, term.id, oldTermDigest, newTermDigest)
-			}
-		}
-
+		c.repairTermLocked(ctx, term, traceEnabled)
 		processedTermDigests[term.termDigest] = struct{}{}
 	}
+	return c.congruentTermMergesLocked(ctx, processedTermDigests, traceEnabled)
+}
 
-	for termDigest := range processedTermDigests {
-		set := c.egraphTermsByTermDigest[termDigest]
-		if set == nil || set.Size() <= 1 {
+// repairTermLocked moves each of a term's inputs that is no longer a root
+// to its root, in the input-term index and the term-digest index, with the
+// term's digest made again from its new inputs.
+func (c *Cache) repairTermLocked(ctx context.Context, term *egraphTerm, traceEnabled bool) {
+	termID := term.id
+	oldInputs := term.inputEqIDs
+	var newInputs []eqClassID
+	inputsChanged := false
+	for i, in := range oldInputs {
+		rootIn := c.findEqClassLocked(in)
+		if rootIn == in {
+			continue
+		}
+		if !inputsChanged {
+			newInputs = append([]eqClassID(nil), oldInputs...)
+			inputsChanged = true
+		}
+		newInputs[i] = rootIn
+	}
+	if !inputsChanged {
+		return
+	}
+
+	for _, in := range oldInputs {
+		c.inputEqClassToTerms.Remove(in, termID)
+	}
+	for _, in := range newInputs {
+		if in == 0 {
+			continue
+		}
+		c.inputEqClassToTerms.Insert(in, termID)
+	}
+	term.inputEqIDs = newInputs
+	c.noteSavedTermLocked(termID)
+
+	oldTermDigest := term.termDigest
+	newTermDigest := calcEgraphTermDigest(term.selfDigest, newInputs)
+	c.egraphTermsByTermDigest.Remove(term.termDigest, termID)
+	c.egraphTermsByTermDigest.Insert(newTermDigest, termID)
+	term.termDigest = newTermDigest
+
+	if traceEnabled {
+		oldInputsCopy := append([]eqClassID(nil), oldInputs...)
+		c.traceTermInputsRepaired(ctx, term.id, oldInputsCopy, newInputs)
+		c.traceTermRehomedUnderEqClasses(ctx, term.id, newInputs)
+		c.traceTermDigestRecomputed(ctx, term.id, oldTermDigest, newTermDigest)
+	}
+}
+
+// congruentTermMergesLocked returns, for each digest repaired terms now
+// have, a merge of the first live term's output with every other's.
+func (c *Cache) congruentTermMergesLocked(ctx context.Context, termDigests map[string]struct{}, traceEnabled bool) (merges []eqMergePair) {
+	for termDigest := range termDigests {
+		set := c.egraphTermsByTermDigest.Members(termDigest)
+		if set.Size() <= 1 {
 			continue
 		}
 
@@ -541,10 +623,7 @@ func (c *Cache) repairClassTermsLocked(ctx context.Context, root eqClassID) (mer
 	return merges
 }
 
-func (c *Cache) firstLiveTermInSetLocked(termSet *set.TreeSet[egraphTermID]) *egraphTerm {
-	if termSet == nil {
-		return nil
-	}
+func (c *Cache) firstLiveTermInSetLocked(termSet idMembers[egraphTermID]) *egraphTerm {
 	for termID := range termSet.Items() {
 		term := c.egraphTerms[termID]
 		if term == nil {
@@ -563,7 +642,7 @@ func (c *Cache) hasUnexpiredResultForOutputEqClassLocked(
 	if outputEqID == 0 {
 		return false
 	}
-	for resID := range c.outputEqClassResults[outputEqID] {
+	for resID := range c.outputEqClassResults.All(outputEqID) {
 		res := c.resultsByID[resID]
 		if res == nil {
 			continue
@@ -627,11 +706,7 @@ func (c *Cache) appendDigestResultsLocked(candidates *set.TreeSet[*sharedResult]
 	if dig == "" {
 		return
 	}
-	resultSet := c.egraphResultsByDigest[dig.String()]
-	if resultSet == nil {
-		return
-	}
-	for resID := range resultSet.Items() {
+	for resID := range c.egraphResultsByDigest.Items(dig.String()) {
 		if res := c.servableCandidateLocked(resID, nowUnix, expired); res != nil {
 			candidates.Insert(res)
 		}
@@ -642,10 +717,12 @@ func (c *Cache) appendDigestResultsLocked(candidates *set.TreeSet[*sharedResult]
 // eq-class root, read from outputEqClassResults. It finds the same results
 // as appendDigestResultsLocked over every digest of the class: a result is
 // posted only under digests merged into one of its output classes, and every
-// output class of a result holds a digest it is posted under.
-func (c *Cache) appendOutputEqClassResultsLocked(candidates *set.TreeSet[*sharedResult], root eqClassID, nowUnix int64) {
-	for resID := range c.outputEqClassResults[root] {
-		if res := c.servableCandidateLocked(resID, nowUnix, nil); res != nil {
+// output class of a result holds a digest it is posted under. It visits each
+// result once, where the digests' walk visits it once for every digest it is
+// posted under. expired is filled as in appendDigestResultsLocked.
+func (c *Cache) appendOutputEqClassResultsLocked(candidates *set.TreeSet[*sharedResult], root eqClassID, nowUnix int64, expired *expirySeen) {
+	for resID := range c.outputEqClassResults.All(root) {
+		if res := c.servableCandidateLocked(resID, nowUnix, expired); res != nil {
 			candidates.Insert(res)
 		}
 	}
@@ -654,6 +731,9 @@ func (c *Cache) appendOutputEqClassResultsLocked(candidates *set.TreeSet[*shared
 // servableCandidateLocked returns the result lookup may serve for resID, or
 // nil. expired is filled as in appendDigestResultsLocked.
 func (c *Cache) servableCandidateLocked(resID sharedResultID, nowUnix int64, expired *expirySeen) *sharedResult {
+	if c.testServableVisited != nil {
+		c.testServableVisited(resID)
+	}
 	res := c.resultsByID[resID]
 	if res == nil {
 		return nil
@@ -675,13 +755,13 @@ func (c *Cache) servableCandidateLocked(resID sharedResultID, nowUnix int64, exp
 	return res
 }
 
-func (c *Cache) appendTermSetResultsLocked(candidates *set.TreeSet[*sharedResult], termSet *set.TreeSet[egraphTermID], nowUnix int64, expired *expirySeen) {
-	if termSet == nil {
+func (c *Cache) appendTermSetResultsLocked(candidates *set.TreeSet[*sharedResult], termSet idMembers[egraphTermID], nowUnix int64, expired *expirySeen) {
+	if termSet.Size() == 0 {
 		return
 	}
 
 	for termID := range termSet.Items() {
-		for resID := range c.termResults[termID] {
+		for resID := range c.termResults.All(termID) {
 			if res := c.servableCandidateLocked(resID, nowUnix, expired); res != nil {
 				candidates.Insert(res)
 			}
@@ -705,9 +785,7 @@ func (c *Cache) appendTermSetResultsLocked(candidates *set.TreeSet[*sharedResult
 			continue
 		}
 		seenOutputEqClasses[outputEqID] = struct{}{}
-		for dig := range c.eqClassToDigests[outputEqID] {
-			c.appendDigestResultsLocked(candidates, digest.Digest(dig), nowUnix, expired)
-		}
+		c.appendOutputEqClassResultsLocked(candidates, outputEqID, nowUnix, expired)
 	}
 }
 
@@ -745,21 +823,36 @@ func (c *Cache) sessionStillSatisfiesResourceRequirements(ctx context.Context, s
 	if res.requiredSessionResourcesGen.Load() == requiredGenAtSelection {
 		return true
 	}
-	wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
-	defer c.egraphMu.RUnlock()
+	read := c.lookupReadLockGraph(ctx)
+	defer read.Unlock()
 	return c.sessionSatisfiesResourceRequirementsLocked(sessionID, res)
 }
 
+// selectLookupCandidateForSessionLocked returns the first candidate the
+// session may use, or one bound to the session (BindToSession) when there is
+// one: that value is the session's own outcome, which an entry another
+// session made doesn't stand for. A bound candidate the session may use is
+// bound to that session, since only it holds the handle.
 func (c *Cache) selectLookupCandidateForSessionLocked(sessionID string, candidates *set.TreeSet[*sharedResult]) *sharedResult {
 	if candidates == nil {
 		return nil
 	}
+	var first *sharedResult
 	for res := range candidates.Items() {
-		if c.sessionSatisfiesResourceRequirementsLocked(sessionID, res) && servableLocked(res) {
+		if first != nil && res.boundSession == "" {
+			continue
+		}
+		if !c.sessionSatisfiesResourceRequirementsLocked(sessionID, res) || !servableLocked(res) {
+			continue
+		}
+		if res.boundSession != "" {
 			return res
 		}
+		if first == nil {
+			first = res
+		}
 	}
-	return nil
+	return first
 }
 
 // servableLocked reports whether a lookup may return res: not while a part of
@@ -854,10 +947,8 @@ func (c *Cache) lookupMatchForCallLocked(
 	match.primaryLookupPossible = match.missingInputIndex < 0
 	if match.primaryLookupPossible {
 		match.termDigest = calcEgraphTermDigest(selfDigest, match.inputEqIDs)
-		termSet := c.egraphTermsByTermDigest[match.termDigest]
-		if termSet != nil {
-			match.termSetSize = termSet.Size()
-		}
+		termSet := c.egraphTermsByTermDigest.Members(match.termDigest)
+		match.termSetSize = termSet.Size()
 		candidates := newSharedResultSet()
 		c.appendTermSetResultsLocked(candidates, termSet, nowUnix, &match.expired)
 		if !candidates.Empty() {
@@ -874,7 +965,7 @@ func (c *Cache) lookupMatchForCallLocked(
 func (c *Cache) freshInputsLocked(inputEqIDs []eqClassID) []int {
 	var fresh []int
 	for i, id := range inputEqIDs {
-		if len(c.inputEqClassToTerms[id]) == 0 {
+		if c.inputEqClassToTerms.Size(id) == 0 {
 			fresh = append(fresh, i)
 		}
 	}
@@ -918,13 +1009,7 @@ func (c *Cache) addResultDigestPostingLocked(resID sharedResultID, dig string) {
 	if resID == 0 || dig == "" {
 		return
 	}
-	results := c.egraphResultsByDigest[dig]
-	if results == nil {
-		results = &resultDigestPosting{}
-		c.egraphResultsByDigest[dig] = results
-	}
-	inserted := results.Insert(resID)
-	if inserted {
+	if c.egraphResultsByDigest.Insert(dig, resID) {
 		c.resultIndexedDigests[resID] = append(c.resultIndexedDigests[resID], dig)
 	}
 }
@@ -942,14 +1027,7 @@ func (c *Cache) removeResultDigestPostingLocked(resID sharedResultID, dig string
 	if resID == 0 || dig == "" {
 		return
 	}
-	results := c.egraphResultsByDigest[dig]
-	if results == nil {
-		return
-	}
-	results.Remove(resID)
-	if results.Empty() {
-		delete(c.egraphResultsByDigest, dig)
-	}
+	c.egraphResultsByDigest.Remove(dig, resID)
 }
 
 func (c *Cache) removeResultDigestsLocked(resID sharedResultID, outputEqClasses map[eqClassID]struct{}) {
@@ -968,7 +1046,7 @@ func (c *Cache) removeResultDigestsLocked(resID sharedResultID, outputEqClasses 
 			if outputEqID == 0 {
 				continue
 			}
-			for dig := range c.eqClassToDigests[outputEqID] {
+			for dig := range c.eqClassToDigests[outputEqID].All() {
 				c.removeResultDigestPostingLocked(resID, dig)
 			}
 		}
@@ -1020,7 +1098,11 @@ func (c *Cache) lookupCacheForRequestLocked(
 		if hitRes != nil {
 			ev.HitRoute = match.route
 			ev.HitRemote = hitRes.imported
-			ev.HitMergedAtUnixNano = hitRes.mergedAtUnixNano
+			if origin := hitRes.merged; origin != nil {
+				ev.HitMergedAtUnixNano = origin.committedAt
+				ev.HitMergedRoute, ev.HitMerge, ev.HitMergedFile = origin.route, origin.number, origin.file
+				ev.HitFirstUse = hitRes.holdsUnpreparedPayload()
+			}
 		} else {
 			ev.MissSawExpired = match.expired.any
 			ev.MissExpiredRemote = match.expired.remote
@@ -1085,6 +1167,7 @@ func (c *Cache) lookupCacheForRequestLocked(
 		res.expiresAtUnix,
 		persistedEdgeExpiresAtUnix,
 	)
+	c.markEntryClassLocked(res.id, StampEdgeExpiry)
 	touchSharedResultLastUsed(res, now.UnixNano())
 	if err := c.teachResultIdentityLocked(ctx, res, req.ResultCall, requestDigest, requestSelf, requestInputs, requestInputRefs); err != nil {
 		return nil, false, 0, false, err
@@ -1170,8 +1253,8 @@ func (c *Cache) hitTeachesNothingLocked(
 	}
 	// mergeOutputsForTermDigestLocked stores the root on every term of the
 	// digest, so a term still holding a non-root class would be written.
-	if digestTerms := c.egraphTermsByTermDigest[termDigest]; digestTerms != nil {
-		for termID := range digestTerms.Items() {
+	{
+		for termID := range c.egraphTermsByTermDigest.Items(termDigest) {
 			if term := c.egraphTerms[termID]; term != nil && term.outputEqID != outputRoot {
 				return false
 			}
@@ -1181,8 +1264,7 @@ func (c *Cache) hitTeachesNothingLocked(
 		if dig == "" {
 			return true
 		}
-		posting := c.egraphResultsByDigest[dig]
-		return posting != nil && posting.Contains(res.id)
+		return c.egraphResultsByDigest.Contains(dig, res.id)
 	}
 	if !postedUnder(indexDigest.String()) {
 		return false
@@ -1196,7 +1278,7 @@ func (c *Cache) hitTeachesNothingLocked(
 		if extra.Digest == "" {
 			continue
 		}
-		for termID := range c.resultTerms[res.id] {
+		for termID := range c.resultTerms.All(res.id) {
 			term := c.egraphTerms[termID]
 			if term == nil {
 				continue
@@ -1205,7 +1287,7 @@ func (c *Cache) hitTeachesNothingLocked(
 			if root == 0 {
 				continue
 			}
-			if _, ok := c.eqClassExtraDigests[root][extra]; !ok {
+			if !slices.Contains(c.eqClassExtraDigests[root], extra) {
 				return false
 			}
 		}
@@ -1257,10 +1339,10 @@ func (c *Cache) lookupCacheForRequest(
 	// the e-graph, and the hit's session claim changes only state with its
 	// own synchronization, so they run under the read lock and concurrent
 	// lookups do not queue behind each other.
-	wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
+	readHold := c.lookupReadLockGraph(ctx)
 	retRes, hit, persistedEdgeExpiresAtUnix, needsWrite, err := c.lookupCacheForRequestLocked(ctx, sessionID, req, requestDigest, requestSelf, requestInputs, requestInputRefs, true)
 	if err != nil || (!hit && !needsWrite) {
-		c.egraphMu.RUnlock()
+		readHold.Unlock()
 		return retRes, hit, err
 	}
 	var (
@@ -1270,20 +1352,15 @@ func (c *Cache) lookupCacheForRequest(
 	)
 	if hit {
 		hitShared, trackedCount, requiredGenAtSelection, err = c.claimLookupHitLocked(ctx, sessionID, retRes)
-		c.egraphMu.RUnlock()
+		readHold.Unlock()
 	} else {
 		// The hit teaches the e-graph: look it up again under the write lock.
-		c.egraphMu.RUnlock()
-		wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
-		// One collector for this E interval: identity teaching can union
-		// classes or insert a new membership, and both are flushed before
-		// the unlock.
-		notify, notifyOwner := c.beginShareNotificationsLocked()
+		readHold.Unlock()
+		c.lookupLockGraph(ctx)
 		retRes, hit, persistedEdgeExpiresAtUnix, _, err = c.lookupCacheForRequestLocked(ctx, sessionID, req, requestDigest, requestSelf, requestInputs, requestInputRefs, false)
 		if err == nil && hit {
 			hitShared, trackedCount, requiredGenAtSelection, err = c.claimLookupHitLocked(ctx, sessionID, retRes)
 		}
-		c.flushShareNotificationsLocked(ctx, notify, notifyOwner)
 		c.egraphMu.Unlock()
 		if err == nil && !hit {
 			return retRes, false, nil
@@ -1293,7 +1370,17 @@ func (c *Cache) lookupCacheForRequest(
 		return nil, false, err
 	}
 
+	// From here on the hit's own work gathers what it waits for and what
+	// its load decodes, for its span (CacheDecision.HitLoad).
+	ev := req.CacheEvidence
+	if ev != nil {
+		ev.hitLoad = &hitLoad{}
+		ctx = withHitLoad(ctx, ev.hitLoad)
+	}
 	loadedHit, err := c.ensurePersistedHitValueLoaded(ctx, resolver, retRes)
+	if ev != nil && err == nil {
+		ev.HitLoadedAtUnixNano = time.Now().UnixNano()
+	}
 	if err != nil {
 		if errors.Is(err, errAttachRefusedByProducerRelease) {
 			// The hit's attachment failed only because the producing
@@ -1303,9 +1390,17 @@ func (c *Cache) lookupCacheForRequest(
 			// producer's release as this caller's failure. The recorded
 			// session edge stays until session release, exactly as the
 			// requirement re-validation's miss conversion below keeps it.
-			if ev := req.CacheEvidence; ev != nil {
+			if ev != nil {
 				ev.MissProducerReleased = true
 			}
+			return nil, false, nil
+		}
+		if errors.Is(err, errMergedPayloadRefused) {
+			// The hit's record, merged from the Cloud, failed its check at
+			// its first use, or one it depends on did: they are taken back
+			// (takeBackRefused), and the call runs instead, as it would
+			// have had the record never arrived.
+			c.takeBackRefused(ctx, hitShared, err)
 			return nil, false, nil
 		}
 		return nil, false, err
@@ -1320,7 +1415,7 @@ func (c *Cache) lookupCacheForRequest(
 		// singleflight instead. The recorded session edge stays until
 		// session release; over-retaining one result is cheaper than a
 		// dedicated decrement-and-collect path here.
-		if ev := req.CacheEvidence; ev != nil {
+		if ev != nil {
 			ev.MissRequirementsGrew = true
 		}
 		return nil, false, nil
@@ -1331,11 +1426,14 @@ func (c *Cache) lookupCacheForRequest(
 		// expiry captured at hit selection even if the barrier wait took long
 		// enough to cross a wall-clock second. A value its call declined to
 		// persist stays unpersisted.
-		wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
+		if ev != nil {
+			ev.Persisted = !hitShared.persistDeclined
+		}
+		readHold = c.lookupReadLockGraph(ctx)
 		unchanged := hitShared.persistDeclined || c.persistedEdgeUpsertUnchangedLocked(hitShared, persistedEdgeExpiresAtUnix)
-		c.egraphMu.RUnlock()
+		readHold.Unlock()
 		if !unchanged {
-			wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+			c.lookupLockGraph(ctx)
 			if !hitShared.persistDeclined {
 				c.upsertPersistedEdgeLocked(ctx, hitShared, persistedEdgeExpiresAtUnix, false)
 			}
@@ -1396,12 +1494,8 @@ func (c *Cache) TeachCallEquivalentToResult(ctx context.Context, sessionID strin
 		requestInputs = append(requestInputs, dig)
 	}
 
-	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
-	notify, notifyOwner := c.beginShareNotificationsLocked()
-	defer func() {
-		c.flushShareNotificationsLocked(ctx, notify, notifyOwner)
-		c.egraphMu.Unlock()
-	}()
+	c.lockGraphFor(ctx, workTeach)
+	defer c.egraphMu.Unlock()
 	// Digest derivation above is outside egraphMu, so release can collect
 	// the result in that gap. Numeric result IDs are engine-lifetime unique,
 	// so registration under the ID means it is still this exact result.
@@ -1422,108 +1516,210 @@ func (c *Cache) TeachContentDigest(ctx context.Context, res AnyResult, contentDi
 	if shared == nil || shared.id == 0 {
 		return fmt.Errorf("teach content digest: result %T is not an attached result in this cache", res)
 	}
+	_, err := c.teachContentDigest(ctx, shared, contentDigest, additionalLabels, false)
+	return err
+}
 
+// teachContentDigest is TeachContentDigest on an attached result. With
+// lacking, a frame whose content digest is already contentDigest is left as
+// it is, and reports no rewrite: the body worker gives a Cloud entry's frame
+// the content digest a span taught it only when the frame lacks it
+// (applyTaughtContent). It reports whether it replaced the frame.
+func (c *Cache) teachContentDigest(ctx context.Context, shared *sharedResult, contentDigest digest.Digest, additionalLabels []string, lacking bool) (bool, error) {
 	for {
 		if err := ctx.Err(); err != nil {
-			return err
+			return false, err
 		}
 
-		baseFrame := shared.loadResultCall()
+		// A blob-backed cache's entry can hold its frame in its stored
+		// body: it is decoded here, and replaced with the body below.
+		base := entryFrame{call: shared.loadResultCall()}
+		if base.call == nil {
+			readHold := c.readGraphAs(workTeach)
+			base = shared.entryFrameLocked()
+			readHold.Unlock()
+		}
+		baseFrame, err := base.decode()
+		if err != nil {
+			return false, fmt.Errorf("teach content digest: %w", err)
+		}
 		if baseFrame == nil {
-			return fmt.Errorf("teach content digest: result %T has no call frame", res)
+			return false, fmt.Errorf("teach content digest: result %d has no call frame", shared.id)
 		}
 		oldContentDigest := baseFrame.ContentDigest()
-		frame := baseFrame.fork()
-
-		replaced := false
-		var replacedDigest digest.Digest
-		for i, extra := range frame.ExtraDigests {
-			if extra.Label != call.ExtraDigestLabelContent {
-				continue
+		if lacking && oldContentDigest == contentDigest {
+			// The frame carries it: nothing to rewrite. Its content digest is
+			// known now, as a decoded frame's is.
+			shared.resultCallMu.Lock()
+			if shared.resultCall == nil || shared.resultCall == base.call {
+				shared.frameContent, shared.frameContentKnown = oldContentDigest, true
 			}
-			if extra.Digest != contentDigest {
-				replacedDigest = extra.Digest
-			}
-			frame.ExtraDigests[i].Digest = contentDigest
-			replaced = true
-			break
+			shared.resultCallMu.Unlock()
+			return false, nil
 		}
-		if !replaced {
-			frame.ExtraDigests = append(frame.ExtraDigests, call.ExtraDigest{
-				Label:  call.ExtraDigestLabelContent,
-				Digest: contentDigest,
-			})
-		}
-		// A replaced content digest still names this result. Keep it on the
-		// frame, so it travels with the result to other engines.
-		if replacedDigest != "" {
-			kept := call.ExtraDigest{Digest: replacedDigest, Label: call.ExtraDigestLabelReplacedContent}
-			if !slices.Contains(frame.ExtraDigests, kept) {
-				frame.ExtraDigests = append(frame.ExtraDigests, kept)
-			}
-		}
-
-		for _, label := range additionalLabels {
-			extra := call.ExtraDigest{Digest: contentDigest, Label: label}
-			if !slices.Contains(frame.ExtraDigests, extra) {
-				frame.ExtraDigests = append(frame.ExtraDigests, extra)
-			}
-		}
+		frame := frameWithContentDigest(baseFrame, contentDigest, additionalLabels)
 
 		requestDigest, err := frame.deriveRecipeDigest(c)
 		if err != nil {
-			return fmt.Errorf("teach content digest: derive request digest: %w", err)
+			return false, fmt.Errorf("teach content digest: derive request digest: %w", err)
 		}
 		requestSelf, requestInputRefs, err := frame.selfDigestAndInputRefs(c)
 		if err != nil {
-			return fmt.Errorf("teach content digest: derive request term digests: %w", err)
+			return false, fmt.Errorf("teach content digest: derive request term digests: %w", err)
 		}
 		requestInputs := make([]digest.Digest, 0, len(requestInputRefs))
 		for _, ref := range requestInputRefs {
 			dig, err := ref.inputDigest(c)
 			if err != nil {
-				return fmt.Errorf("teach content digest: derive request term input digest: %w", err)
+				return false, fmt.Errorf("teach content digest: derive request term input digest: %w", err)
 			}
 			requestInputs = append(requestInputs, dig)
 		}
+		// A blob-backed cache's stored record takes the new frame with its
+		// parts worked out for it, here, outside the lock: a body is
+		// reframed, whether or not it holds the frame, so that its
+		// references are the frame's too; a record still whole is mapped
+		// with the frame. The record read here is checked under the lock.
+		var (
+			env   *PersistedResultEnvelope
+			was   *storedBody
+			body  *storedBody
+			parts *partFacts
+		)
+		if c.blobBacked {
+			readHold := c.readGraphAs(workTeach)
+			env, was = shared.persistedEnvelope, shared.stored
+			readHold.Unlock()
+			switch {
+			case was != nil:
+				if body, parts, err = was.reframe(c, shared.id, frame); err != nil {
+					return false, fmt.Errorf("teach content digest: %w", err)
+				}
+			case env != nil:
+				parts = recordPartFacts(PersistedRecord{ResultID: uint64(shared.id), Envelope: *env, Call: frame})
+			}
+		}
+		// A blob-backed cache's record is measured with its frame's JSON
+		// (storedRecordBytes), as a restore of the saved frame measures it:
+		// the new frame changes the record's size by its JSON's growth.
+		var grown int64
+		if c.blobBacked {
+			if grown, err = frameJSONGrowth(base, baseFrame, body, frame); err != nil {
+				return false, fmt.Errorf("teach content digest: %w", err)
+			}
+		}
 
-		wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
-		// A fresh collector for every acquisition of E: the changed-frame
-		// retry below unlocks and starts over, and a collector is never
-		// carried across an unlock.
-		notify, notifyOwner := c.beginShareNotificationsLocked()
+		c.lockGraphFor(ctx, workTeach)
 		// Numeric result IDs are engine-lifetime unique, so a registered ID
 		// still names the caller's result across retries.
 		if _, found := c.resultsByID[shared.id]; !found {
-			c.discardShareNotificationsLocked(notify, notifyOwner)
 			c.egraphMu.Unlock()
-			return fmt.Errorf("teach content digest: result %d was already collected", shared.id)
+			return false, fmt.Errorf("teach content digest: result %d was already collected", shared.id)
 		}
-		if shared.loadResultCall() == nil {
-			c.discardShareNotificationsLocked(notify, notifyOwner)
+		cur := shared.entryFrameLocked()
+		if !cur.ok() {
 			c.egraphMu.Unlock()
-			return fmt.Errorf("teach content digest: result %T has no call frame", res)
+			return false, fmt.Errorf("teach content digest: result %d has no call frame", shared.id)
 		}
-		if shared.loadResultCall() != baseFrame {
-			// Nothing was mutated in this interval.
-			c.discardShareNotificationsLocked(notify, notifyOwner)
+		if cur != base || c.blobBacked && (shared.persistedEnvelope != env || shared.stored != was) {
 			c.egraphMu.Unlock()
 			continue
 		}
 		c.traceTeachContentDigest(ctx, shared, oldContentDigest.String(), contentDigest.String(), requestDigest.String(), requestSelf.String(), requestInputs, frame)
 		if err := c.teachResultIdentityLocked(ctx, shared, frame, requestDigest, requestSelf, requestInputs, requestInputRefs); err != nil {
-			// Partial identity mutation may have happened before the error;
-			// flush what survives rather than dropping it.
-			c.flushShareNotificationsLocked(ctx, notify, notifyOwner)
 			c.egraphMu.Unlock()
-			return err
+			return false, err
 		}
 		shared.storeResultCall(frame)
+		if body != nil {
+			// The new frame goes into a new body, held in it if it can be. The
+			// entry, whose record a body held, holds its light envelope.
+			c.installStoredBodyLocked(shared, shared.persistedEnvelope, shared.persistedEnvelope, body)
+		}
+		if parts != nil {
+			shared.payloadMu.Lock()
+			shared.partFacts = parts
+			shared.payloadMu.Unlock()
+		}
+		if shared.storedRecordBytes != 0 {
+			c.setStoredRecordBytesLocked(shared, shared.storedRecordBytes+grown)
+		}
+		// A stored bundle of the entry carries the new frame, and those of its
+		// class mates whatever the identity taught joined; this write hands
+		// back no marks.
+		c.stampEntryLocked(shared, StampFrame)
+		c.stampPendingLocked()
 		c.traceResultCallFrameUpdated(ctx, shared, "teach_content_digest", baseFrame, frame)
-		c.flushShareNotificationsLocked(ctx, notify, notifyOwner)
 		c.egraphMu.Unlock()
-		return nil
+		return true, nil
 	}
+}
+
+// frameWithContentDigest returns a fork of baseFrame whose content digest is
+// contentDigest, with each additional label for it: a content digest it
+// replaces still names the result, so it stays on the frame as
+// replaced-content and travels with the result to other engines.
+func frameWithContentDigest(baseFrame *ResultCall, contentDigest digest.Digest, additionalLabels []string) *ResultCall {
+	frame := baseFrame.fork()
+
+	replaced := false
+	var replacedDigest digest.Digest
+	for i, extra := range frame.ExtraDigests {
+		if extra.Label != call.ExtraDigestLabelContent {
+			continue
+		}
+		if extra.Digest != contentDigest {
+			replacedDigest = extra.Digest
+		}
+		frame.ExtraDigests[i].Digest = contentDigest
+		replaced = true
+		break
+	}
+	if !replaced {
+		frame.ExtraDigests = append(frame.ExtraDigests, call.ExtraDigest{
+			Label:  call.ExtraDigestLabelContent,
+			Digest: contentDigest,
+		})
+	}
+	if replacedDigest != "" {
+		kept := call.ExtraDigest{Digest: replacedDigest, Label: call.ExtraDigestLabelReplacedContent}
+		if !slices.Contains(frame.ExtraDigests, kept) {
+			frame.ExtraDigests = append(frame.ExtraDigests, kept)
+		}
+	}
+
+	for _, label := range additionalLabels {
+		extra := call.ExtraDigest{Digest: contentDigest, Label: label}
+		if !slices.Contains(frame.ExtraDigests, extra) {
+			frame.ExtraDigests = append(frame.ExtraDigests, extra)
+		}
+	}
+	return frame
+}
+
+// frameJSONGrowth is how much longer the JSON of frame, the frame replacing
+// baseFrame, is than baseFrame's: from the bodies' kept lengths when the
+// frames are held in them, and encoded otherwise. It reads no lock.
+func frameJSONGrowth(base entryFrame, baseFrame *ResultCall, body *storedBody, frame *ResultCall) (int64, error) {
+	length := func(held *storedBody, f *ResultCall) (int64, error) {
+		if held.holdsFrame() {
+			return int64(held.frameBytes), nil
+		}
+		raw, err := json.Marshal(f)
+		if err != nil {
+			return 0, fmt.Errorf("measure call frame: %w", err)
+		}
+		return int64(len(raw)), nil
+	}
+	was, err := length(base.body, baseFrame)
+	if err != nil {
+		return 0, err
+	}
+	now, err := length(body, frame)
+	if err != nil {
+		return 0, err
+	}
+	return now - was, nil
 }
 
 // resultIDForCall finds the attached result for frame. The lookup only reads
@@ -1550,8 +1746,8 @@ func (c *Cache) resultIDForCall(ctx context.Context, frame *ResultCall) (sharedR
 		requestInputs = append(requestInputs, dig)
 	}
 
-	wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
-	defer c.egraphMu.RUnlock()
+	read := c.readGraph(ctx, workLookup)
+	defer read.Unlock()
 	match := c.lookupMatchForCallLocked(frame, requestDigest, requestSelf, requestInputs, time.Now().Unix())
 	if match.candidates == nil || match.candidates.Empty() {
 		return 0, fmt.Errorf("resolve result ID for call: no attached result for %s", requestDigest)
@@ -1569,16 +1765,11 @@ func (c *Cache) resultIDForCall(ctx context.Context, frame *ResultCall) (sharedR
 // result's terms: a long-lived result gathers a term for every recipe that
 // reached it, such as one per session for a session-scoped call.
 func (c *Cache) termForResultByDigestLocked(resID sharedResultID, termDigest string) *egraphTerm {
-	resultTerms := c.resultTerms[resID]
-	if len(resultTerms) == 0 {
+	if c.resultTerms.Size(resID) == 0 {
 		return nil
 	}
-	termSet := c.egraphTermsByTermDigest[termDigest]
-	if termSet == nil {
-		return nil
-	}
-	for termID := range termSet.Items() {
-		if _, ok := resultTerms[termID]; !ok {
+	for termID := range c.egraphTermsByTermDigest.Items(termDigest) {
+		if !c.resultTerms.Contains(resID, termID) {
 			continue
 		}
 		if term := c.egraphTerms[termID]; term != nil {
@@ -1592,11 +1783,8 @@ func (c *Cache) termForResultByDigestLocked(resID sharedResultID, termDigest str
 // result's output eq-classes, which hold the outputs of all its terms.
 func (c *Cache) addResultExtraDigestsLocked(resID sharedResultID, frames ...*ResultCall) {
 	for outputEqID := range c.outputEqClassesForResultLocked(resID) {
+		c.noteSavedClassLocked(outputEqID)
 		extras := c.eqClassExtraDigests[outputEqID]
-		if extras == nil {
-			extras = make(map[call.ExtraDigest]struct{})
-			c.eqClassExtraDigests[outputEqID] = extras
-		}
 		for _, frame := range frames {
 			if frame == nil {
 				continue
@@ -1605,19 +1793,34 @@ func (c *Cache) addResultExtraDigestsLocked(resID sharedResultID, frames ...*Res
 				if extra.Digest == "" {
 					continue
 				}
-				extras[extra] = struct{}{}
+				extras = withExtraDigests(extras, extra)
 			}
+		}
+		if len(extras) > 0 {
+			c.eqClassExtraDigests[outputEqID] = extras
 		}
 	}
 }
 
+// withExtraDigests returns extras with each of adds it lacks appended. A
+// class's extra digests are a short list, nearly always of one content
+// digest, where a Go map would take a header and a group of eight slots.
+func withExtraDigests(extras []call.ExtraDigest, adds ...call.ExtraDigest) []call.ExtraDigest {
+	for _, add := range adds {
+		if !slices.Contains(extras, add) {
+			extras = append(extras, add)
+		}
+	}
+	return extras
+}
+
 func (c *Cache) outputEqClassesForResultLocked(resID sharedResultID) map[eqClassID]struct{} {
-	classes := c.resultOutputEqClasses[resID]
-	if len(classes) == 0 {
+	classes := c.resultOutputEqClasses.Members(resID)
+	if classes.Size() == 0 {
 		return nil
 	}
-	out := make(map[eqClassID]struct{}, len(classes))
-	for eqID := range classes {
+	out := make(map[eqClassID]struct{}, classes.Size())
+	for eqID := range classes.All() {
 		root := c.findEqClassLocked(eqID)
 		if root == 0 {
 			continue
@@ -1633,31 +1836,16 @@ func (c *Cache) addResultOutputEqClassLocked(resID sharedResultID, outputEqID eq
 	if resID == 0 || outputEqID == 0 {
 		return
 	}
+	c.noteSavedEntryLocked(resID)
 	outputEqID = c.findEqClassLocked(outputEqID)
 	if outputEqID == 0 {
 		return
 	}
 
-	outputEqClasses := c.resultOutputEqClasses[resID]
-	if outputEqClasses == nil {
-		outputEqClasses = make(map[eqClassID]struct{})
-		c.resultOutputEqClasses[resID] = outputEqClasses
+	if c.resultOutputEqClasses.Insert(resID, outputEqID) {
+		c.useEqClassLocked(outputEqID)
 	}
-	_, hadForward := outputEqClasses[outputEqID]
-	outputEqClasses[outputEqID] = struct{}{}
-
-	results := c.outputEqClassResults[outputEqID]
-	if results == nil {
-		results = make(map[sharedResultID]struct{})
-		c.outputEqClassResults[outputEqID] = results
-	}
-	_, hadReverse := results[resID]
-	results[resID] = struct{}{}
-	if !hadForward || !hadReverse {
-		// New membership in an existing class, with no union of its own.
-		// Recorded only once both memberships exist.
-		c.recordShareMembershipLocked(outputEqID)
-	}
+	c.outputEqClassResults.Insert(outputEqID, resID)
 }
 
 // removeResultOutputEqClassesLocked requires egraphMu and an e-graph initialized
@@ -1666,27 +1854,26 @@ func (c *Cache) removeResultOutputEqClassesLocked(resID sharedResultID) {
 	if resID == 0 {
 		return
 	}
-	for outputEqID := range c.resultOutputEqClasses[resID] {
+	c.markLeavingLocked(resID)
+	c.noteSavedEntryLocked(resID)
+	for outputEqID := range c.resultOutputEqClasses.All(resID) {
 		outputEqID = c.findEqClassLocked(outputEqID)
 		if outputEqID == 0 {
 			continue
 		}
-		results := c.outputEqClassResults[outputEqID]
-		delete(results, resID)
-		if len(results) == 0 {
-			delete(c.outputEqClassResults, outputEqID)
-		}
+		c.unuseEqClassLocked(outputEqID)
+		c.outputEqClassResults.Remove(outputEqID, resID)
 	}
-	delete(c.resultOutputEqClasses, resID)
+	c.resultOutputEqClasses.Delete(resID)
 }
 
 func (c *Cache) termIDsForResultLocked(resID sharedResultID) map[egraphTermID]struct{} {
-	termIDs := c.resultTerms[resID]
-	if len(termIDs) == 0 {
+	n := c.resultTerms.Size(resID)
+	if n == 0 {
 		return nil
 	}
-	out := make(map[egraphTermID]struct{}, len(termIDs))
-	for termID := range termIDs {
+	out := make(map[egraphTermID]struct{}, n)
+	for termID := range c.resultTerms.All(resID) {
 		if c.egraphTerms[termID] == nil {
 			continue
 		}
@@ -1699,8 +1886,8 @@ func (c *Cache) termIDsForResultLocked(resID sharedResultID) map[egraphTermID]st
 }
 
 func (c *Cache) mergeOutputsForTermDigestLocked(ctx context.Context, termDigest string, outputEqID eqClassID) eqClassID {
-	set := c.egraphTermsByTermDigest[termDigest]
-	if set == nil || set.Empty() {
+	set := c.egraphTermsByTermDigest.Members(termDigest)
+	if set.Size() == 0 {
 		return c.findEqClassLocked(outputEqID)
 	}
 
@@ -1731,17 +1918,19 @@ func (c *Cache) mergeOutputsForTermDigestLocked(ctx context.Context, termDigest 
 			if term == nil {
 				continue
 			}
-			term.outputEqID = root
+			c.setTermOutputLocked(term, root)
 		}
 		return root
 	}
 	root = c.mergeEqClassesLocked(ctx, mergeIDs...)
-	for termID := range set.Items() {
+	// The merge's repairs may have moved terms between digests: read the
+	// digest's terms as they are now.
+	for termID := range c.egraphTermsByTermDigest.Items(termDigest) {
 		term := c.egraphTerms[termID]
 		if term == nil {
 			continue
 		}
-		term.outputEqID = root
+		c.setTermOutputLocked(term, root)
 	}
 	return root
 }
@@ -1763,6 +1952,7 @@ func (c *Cache) associateResultWithTermLocked(
 	if outputEqID == 0 {
 		return
 	}
+	c.noteSavedTermLocked(termID)
 	if existing, ok := c.termInputProvenance[termID]; ok {
 		if !sameInputProvenance(existing, inputProvenance) {
 			c.termInputProvenance[termID] = slices.Clone(inputProvenance)
@@ -1774,29 +1964,10 @@ func (c *Cache) associateResultWithTermLocked(
 
 	c.addResultOutputEqClassLocked(res.id, outputEqID)
 
-	termResults := c.termResults[termID]
-	if termResults == nil {
-		termResults = make(map[sharedResultID]egraphResultTermAssoc)
-		c.termResults[termID] = termResults
-	}
-	resultTerms := c.resultTerms[res.id]
-	if resultTerms == nil {
-		resultTerms = make(map[egraphTermID]struct{})
-		c.resultTerms[res.id] = resultTerms
-	}
-	assoc, ok := termResults[res.id]
-	if ok {
-		if !sameInputProvenance(assoc.inputProvenance, inputProvenance) {
-			assoc.inputProvenance = slices.Clone(inputProvenance)
-			termResults[res.id] = assoc
-			c.traceResultTermAssocUpdated(ctx, res.id, termID, inputProvenance)
-		}
+	if !c.termResults.Insert(termID, res.id) {
 		return
 	}
-	termResults[res.id] = egraphResultTermAssoc{
-		inputProvenance: slices.Clone(inputProvenance),
-	}
-	resultTerms[termID] = struct{}{}
+	c.resultTerms.Insert(res.id, termID)
 	c.traceResultTermAssocAdded(ctx, res.id, termID, inputProvenance)
 }
 
@@ -1870,7 +2041,7 @@ func (c *Cache) applyPreparedResultIdentityLocked(ctx context.Context, res *shar
 
 	inputEqIDs := c.ensureTermInputEqIDsLocked(ctx, requestInputs)
 	termDigest := calcEgraphTermDigest(requestSelf, inputEqIDs)
-	existingTerm := c.firstLiveTermInSetLocked(c.egraphTermsByTermDigest[termDigest])
+	existingTerm := c.firstLiveTermInSetLocked(c.egraphTermsByTermDigest.Members(termDigest))
 
 	switch {
 	case c.termForResultByDigestLocked(res.id, termDigest) != nil:
@@ -1886,32 +2057,17 @@ func (c *Cache) applyPreparedResultIdentityLocked(ctx context.Context, res *shar
 
 		newTerm := newEgraphTerm(termID, requestSelf, inputEqIDs, mergedOutputEqID)
 		c.egraphTerms[termID] = newTerm
+		c.useTermLocked(newTerm)
 		c.traceTermCreated(ctx, "runtime", "", newTerm)
 
-		digestTerms := c.egraphTermsByTermDigest[newTerm.termDigest]
-		if digestTerms == nil {
-			digestTerms = newEgraphTermIDSet()
-			c.egraphTermsByTermDigest[newTerm.termDigest] = digestTerms
-		}
-		digestTerms.Insert(termID)
-
+		c.egraphTermsByTermDigest.Insert(newTerm.termDigest, termID)
 		for _, inEqID := range newTerm.inputEqIDs {
 			if inEqID == 0 {
 				continue
 			}
-			classTerms := c.inputEqClassToTerms[inEqID]
-			if classTerms == nil {
-				classTerms = make(map[egraphTermID]struct{})
-				c.inputEqClassToTerms[inEqID] = classTerms
-			}
-			classTerms[termID] = struct{}{}
+			c.inputEqClassToTerms.Insert(inEqID, termID)
 		}
-		outputTerms := c.outputEqClassToTerms[mergedOutputEqID]
-		if outputTerms == nil {
-			outputTerms = make(map[egraphTermID]struct{})
-			c.outputEqClassToTerms[mergedOutputEqID] = outputTerms
-		}
-		outputTerms[termID] = struct{}{}
+		c.outputEqClassToTerms.Insert(mergedOutputEqID, termID)
 
 		c.associateResultWithTermLocked(ctx, res, termID, inputProvenance)
 	}
@@ -1929,7 +2085,6 @@ func (c *Cache) addFramePostingsLocked(resID sharedResultID, recipe digest.Diges
 	}
 }
 
-//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (c *Cache) indexWaitResultInEgraphLocked(
 	ctx context.Context,
 	requestFrame *ResultCall,
@@ -2012,11 +2167,12 @@ func (c *Cache) indexWaitResultInEgraphLocked(
 	// ensure the result has its int ID initialized, then index it by that int it
 	// and by all of its digests in our various maps
 	if res.id == 0 {
-		res.id = c.nextSharedResultID
-		c.nextSharedResultID++
+		res.id = c.takeResultIDs(1)
 	}
 	c.putResultLocked(res)
-	if res.loadResultCall() == nil && requestFrame != nil {
+	// An entry with a frame keeps it, decoded or held compressed in its
+	// stored body: a call that returned it teaches it identity, not a frame.
+	if requestFrame != nil && !res.hasCallFrameLocked() {
 		res.storeResultCall(requestFrame.clone())
 		c.traceResultCallFrameUpdated(ctx, res, "index_wait_result_request_frame", nil, res.loadResultCall())
 	}
@@ -2071,7 +2227,7 @@ func (c *Cache) indexWaitResultInEgraphLocked(
 			c.mergeOutputsForTermDigestLocked(ctx, termDigest, outputEqID)
 			continue
 		}
-		if existingTerm := c.firstLiveTermInSetLocked(c.egraphTermsByTermDigest[termDigest]); existingTerm != nil {
+		if existingTerm := c.firstLiveTermInSetLocked(c.egraphTermsByTermDigest.Members(termDigest)); existingTerm != nil {
 			// we ended up with a duplicate term that has the same digest; just associate this
 			// result with that term and merge the output eq class as needed, no need to create
 			// a new term
@@ -2094,32 +2250,17 @@ func (c *Cache) indexWaitResultInEgraphLocked(
 			mergedOutputEqID,
 		)
 		c.egraphTerms[termID] = newTerm
+		c.useTermLocked(newTerm)
 		c.traceTermCreated(ctx, "runtime", "", newTerm)
 
-		digestTerms := c.egraphTermsByTermDigest[newTerm.termDigest]
-		if digestTerms == nil {
-			digestTerms = newEgraphTermIDSet()
-			c.egraphTermsByTermDigest[newTerm.termDigest] = digestTerms
-		}
-		digestTerms.Insert(termID)
-
+		c.egraphTermsByTermDigest.Insert(newTerm.termDigest, termID)
 		for _, inEqID := range newTerm.inputEqIDs {
 			if inEqID == 0 {
 				continue
 			}
-			classTerms := c.inputEqClassToTerms[inEqID]
-			if classTerms == nil {
-				classTerms = make(map[egraphTermID]struct{})
-				c.inputEqClassToTerms[inEqID] = classTerms
-			}
-			classTerms[termID] = struct{}{}
+			c.inputEqClassToTerms.Insert(inEqID, termID)
 		}
-		outputTerms := c.outputEqClassToTerms[mergedOutputEqID]
-		if outputTerms == nil {
-			outputTerms = make(map[egraphTermID]struct{})
-			c.outputEqClassToTerms[mergedOutputEqID] = outputTerms
-		}
-		outputTerms[termID] = struct{}{}
+		c.outputEqClassToTerms.Insert(mergedOutputEqID, termID)
 
 		c.associateResultWithTermLocked(ctx, res, termID, inputProvenance)
 	}
@@ -2146,19 +2287,17 @@ func (c *Cache) removeResultFromEgraphLocked(ctx context.Context, res *sharedRes
 	}
 
 	affectedOutputEqClasses := c.outputEqClassesForResultLocked(res.id)
-	for termID := range c.resultTerms[res.id] {
-		if termResults := c.termResults[termID]; termResults != nil {
-			delete(termResults, res.id)
-			if len(termResults) == 0 {
-				delete(c.termResults, termID)
-			}
-		}
+	for termID := range c.resultTerms.All(res.id) {
+		c.termResults.Remove(termID, res.id)
 		c.traceResultTermAssocRemoved(ctx, res.id, termID)
 	}
-	delete(c.resultTerms, res.id)
+	c.resultTerms.Delete(res.id)
 	c.removeResultDigestsLocked(res.id, affectedOutputEqClasses)
 	c.removeResultOutputEqClassesLocked(res.id)
 	oldFrame := res.loadResultCall()
+	if oldFrame == nil && c.traceEnabled() {
+		oldFrame, _ = res.entryFrameLocked().decode()
+	}
 	depCount := len(res.deps)
 	res.dropResultCall()
 	c.deleteResultLocked(res)
@@ -2173,8 +2312,8 @@ func (c *Cache) removeResultFromEgraphLocked(ctx context.Context, res *sharedRes
 
 		// no more results in this eq class, get the list of terms with this output eq class and clean them up
 		// since their results were pruned
-		termIDs := make([]egraphTermID, 0, len(c.outputEqClassToTerms[outputEqID]))
-		for termID := range c.outputEqClassToTerms[outputEqID] {
+		termIDs := make([]egraphTermID, 0, c.outputEqClassToTerms.Size(outputEqID))
+		for termID := range c.outputEqClassToTerms.All(outputEqID) {
 			termIDs = append(termIDs, termID)
 		}
 		for _, termID := range termIDs {
@@ -2182,29 +2321,18 @@ func (c *Cache) removeResultFromEgraphLocked(ctx context.Context, res *sharedRes
 			if term == nil {
 				continue
 			}
-			if set := c.egraphTermsByTermDigest[term.termDigest]; set != nil {
-				set.Remove(termID)
-				if set.Empty() {
-					delete(c.egraphTermsByTermDigest, term.termDigest)
-				}
-			}
+			c.egraphTermsByTermDigest.Remove(term.termDigest, termID)
 			for _, in := range term.inputEqIDs {
-				if set := c.inputEqClassToTerms[in]; set != nil {
-					delete(set, termID)
-					if len(set) == 0 {
-						delete(c.inputEqClassToTerms, in)
-					}
-				}
+				c.inputEqClassToTerms.Remove(in, termID)
 			}
-			if set := c.outputEqClassToTerms[outputEqID]; set != nil {
-				delete(set, termID)
-			}
+			c.outputEqClassToTerms.Remove(outputEqID, termID)
+			c.unuseTermLocked(term)
 			delete(c.egraphTerms, termID)
-			delete(c.termResults, termID)
+			c.termResults.Delete(termID)
 			delete(c.termInputProvenance, termID)
 			c.traceTermRemoved(ctx, termID)
 		}
-		delete(c.outputEqClassToTerms, outputEqID)
+		c.outputEqClassToTerms.Delete(outputEqID)
 	}
 	c.maybeResetEgraphLocked()
 }
@@ -2213,35 +2341,46 @@ func (c *Cache) maybeResetEgraphLocked() {
 	// An entry can hold classes without terms, such as one known only through
 	// holdings, and an entry can outlive its class's last term, such as an
 	// expired entry a session still owns: nothing is reset while any entry
-	// remains.
-	if len(c.egraphTerms) != 0 || len(c.resultsByID) != 0 {
+	// remains. Nor while a save reads the store: a reset starts class and
+	// term numbers again.
+	if len(c.egraphTerms) != 0 || len(c.resultsByID) != 0 || c.savingLocked() {
 		return
 	}
 
 	c.egraphDigestToClass = nil
+	c.callInputEntries = nil
 	c.egraphParents = nil
 	c.egraphRanks = nil
+	c.egraphUses = nil
+	c.liveEqClasses = 0
 	c.eqClassToDigests = nil
 	c.eqClassExtraDigests = nil
-	c.inputEqClassToTerms = nil
-	c.outputEqClassToTerms = nil
-	c.resultOutputEqClasses = nil
-	c.outputEqClassResults = nil
-	c.termResults = nil
-	c.resultTerms = nil
+	c.inputEqClassToTerms = idSetIndex[eqClassID, egraphTermID]{}
+	c.outputEqClassToTerms = idSetIndex[eqClassID, egraphTermID]{}
+	c.resultOutputEqClasses = idSetIndex[sharedResultID, eqClassID]{}
+	c.outputEqClassResults = idSetIndex[eqClassID, sharedResultID]{}
+	c.termResults = idSetIndex[egraphTermID, sharedResultID]{}
+	c.resultTerms = idSetIndex[sharedResultID, egraphTermID]{}
 	c.egraphTerms = nil
 	c.termInputProvenance = nil
-	c.egraphTermsByTermDigest = nil
-	c.egraphResultsByDigest = nil
+	c.egraphTermsByTermDigest = idSetIndex[string, egraphTermID]{}
+	c.egraphResultsByDigest = digestPostings{}
 	c.resultIndexedDigests = nil
 	c.broadlyIndexedResults = nil
 	c.restoredDigestGroups = nil
 	c.resultsByID = nil
-	c.resultPayloadBytes = 0
-	c.holderEntries = nil
+	c.resultPayloadBytes.Store(0)
 	c.entriesByRecipe = nil
 	c.remoteCaches = nil
-	c.nextEgraphClassID = 0
+	c.freeEqClassIDs = nil
+	c.endedEqClasses = nil
+	if c.changes != nil {
+		// The classes this hold's marks walked, or a join marked, are gone
+		// with the rest.
+		c.changes.left = nil
+		c.changes.leftNamed = nil
+		c.changes.joined = nil
+	}
 	c.nextEgraphTermID = 0
 	// nextSharedResultID deliberately survives the reset: numeric result IDs
 	// must be engine-lifetime unique because they outlive this index (session
@@ -2250,174 +2389,4 @@ func (c *Cache) maybeResetEgraphLocked() {
 	// and term IDs never leave the index maps cleared above, so their
 	// counters can restart. Import seeds nextSharedResultID past the highest
 	// persisted ID at startup for the same reason.
-}
-
-func (c *Cache) compactEqClassesLocked(force bool) (changed bool, oldSlots int, newSlots int) {
-	return c.compactEqClassesModeLocked(force, false)
-}
-
-// compactEqClassesModeLocked is compactEqClassesLocked; with freeAll, it also
-// frees every slot when no class is live, which compactEqClassesLocked leaves.
-//
-//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
-func (c *Cache) compactEqClassesModeLocked(force, freeAll bool) (changed bool, oldSlots int, newSlots int) {
-	if len(c.egraphParents) <= 1 {
-		return false, 0, 0
-	}
-
-	liveRoots := make(map[eqClassID]struct{})
-	for _, term := range c.egraphTerms {
-		if term == nil {
-			continue
-		}
-		for _, inputEqID := range term.inputEqIDs {
-			root := c.findEqClassLocked(inputEqID)
-			if root != 0 {
-				liveRoots[root] = struct{}{}
-			}
-		}
-		root := c.findEqClassLocked(term.outputEqID)
-		if root != 0 {
-			liveRoots[root] = struct{}{}
-		}
-	}
-	for _, outputEqIDs := range c.resultOutputEqClasses {
-		for outputEqID := range outputEqIDs {
-			root := c.findEqClassLocked(outputEqID)
-			if root != 0 {
-				liveRoots[root] = struct{}{}
-			}
-		}
-	}
-
-	oldSlots = len(c.egraphParents) - 1
-	newSlots = len(liveRoots)
-	if (newSlots == 0 && !freeAll) || oldSlots == newSlots || (!force && oldSlots < newSlots*2) {
-		return false, oldSlots, newSlots
-	}
-
-	oldRoots := make([]eqClassID, 0, len(liveRoots))
-	for root := range liveRoots {
-		oldRoots = append(oldRoots, root)
-	}
-	slices.Sort(oldRoots)
-
-	remap := make(map[eqClassID]eqClassID, len(oldRoots))
-	newParents := make([]eqClassID, len(oldRoots)+1)
-	newRanks := make([]uint8, len(oldRoots)+1)
-	for i, oldRoot := range oldRoots {
-		newRoot := eqClassID(i + 1)
-		remap[oldRoot] = newRoot
-		newParents[newRoot] = newRoot
-	}
-
-	newEqClassToDigests := make(map[eqClassID]map[string]struct{}, len(oldRoots))
-	newEqClassExtraDigests := make(map[eqClassID]map[call.ExtraDigest]struct{}, len(oldRoots))
-	liveDigests := 0
-	for _, oldRoot := range oldRoots {
-		liveDigests += len(c.eqClassToDigests[oldRoot])
-	}
-	newEgraphDigestToClass := make(map[string]eqClassID, liveDigests)
-	for _, oldRoot := range oldRoots {
-		newRoot := remap[oldRoot]
-		if oldDigests := c.eqClassToDigests[oldRoot]; len(oldDigests) > 0 {
-			newDigests := make(map[string]struct{}, len(oldDigests))
-			for dig := range oldDigests {
-				newDigests[dig] = struct{}{}
-				newEgraphDigestToClass[dig] = newRoot
-			}
-			newEqClassToDigests[newRoot] = newDigests
-		}
-		if oldExtras := c.eqClassExtraDigests[oldRoot]; len(oldExtras) > 0 {
-			newExtras := make(map[call.ExtraDigest]struct{}, len(oldExtras))
-			for extra := range oldExtras {
-				newExtras[extra] = struct{}{}
-			}
-			newEqClassExtraDigests[newRoot] = newExtras
-		}
-	}
-
-	newInputEqClassToTerms := make(map[eqClassID]map[egraphTermID]struct{})
-	newOutputEqClassToTerms := make(map[eqClassID]map[egraphTermID]struct{})
-	newEgraphTermsByTermDigest := make(map[string]*set.TreeSet[egraphTermID], len(c.egraphTermsByTermDigest))
-	for termID, term := range c.egraphTerms {
-		if term == nil {
-			continue
-		}
-		newInputEqIDs := make([]eqClassID, 0, len(term.inputEqIDs))
-		for _, inputEqID := range term.inputEqIDs {
-			root := c.findEqClassLocked(inputEqID)
-			newRoot := remap[root]
-			if newRoot == 0 {
-				continue
-			}
-			newInputEqIDs = append(newInputEqIDs, newRoot)
-			set := newInputEqClassToTerms[newRoot]
-			if set == nil {
-				set = make(map[egraphTermID]struct{})
-				newInputEqClassToTerms[newRoot] = set
-			}
-			set[termID] = struct{}{}
-		}
-		term.inputEqIDs = newInputEqIDs
-
-		outputRoot := c.findEqClassLocked(term.outputEqID)
-		newOutputRoot := remap[outputRoot]
-		if newOutputRoot == 0 {
-			continue
-		}
-		term.outputEqID = newOutputRoot
-		outputTerms := newOutputEqClassToTerms[newOutputRoot]
-		if outputTerms == nil {
-			outputTerms = make(map[egraphTermID]struct{})
-			newOutputEqClassToTerms[newOutputRoot] = outputTerms
-		}
-		outputTerms[termID] = struct{}{}
-
-		term.termDigest = calcEgraphTermDigest(term.selfDigest, term.inputEqIDs)
-		digestTerms := newEgraphTermsByTermDigest[term.termDigest]
-		if digestTerms == nil {
-			digestTerms = newEgraphTermIDSet()
-			newEgraphTermsByTermDigest[term.termDigest] = digestTerms
-		}
-		digestTerms.Insert(termID)
-	}
-
-	newResultOutputEqClasses := make(map[sharedResultID]map[eqClassID]struct{}, len(c.resultOutputEqClasses))
-	newOutputEqClassResults := make(map[eqClassID]map[sharedResultID]struct{}, len(c.outputEqClassResults))
-	for resID, outputEqIDs := range c.resultOutputEqClasses {
-		newOutputEqIDs := make(map[eqClassID]struct{}, len(outputEqIDs))
-		for outputEqID := range outputEqIDs {
-			root := c.findEqClassLocked(outputEqID)
-			newRoot := remap[root]
-			if newRoot != 0 {
-				newOutputEqIDs[newRoot] = struct{}{}
-			}
-		}
-		if len(newOutputEqIDs) > 0 {
-			newResultOutputEqClasses[resID] = newOutputEqIDs
-			for newOutputEqID := range newOutputEqIDs {
-				results := newOutputEqClassResults[newOutputEqID]
-				if results == nil {
-					results = make(map[sharedResultID]struct{})
-					newOutputEqClassResults[newOutputEqID] = results
-				}
-				results[resID] = struct{}{}
-			}
-		}
-	}
-
-	c.egraphParents = newParents
-	c.egraphRanks = newRanks
-	c.eqClassToDigests = newEqClassToDigests
-	c.eqClassExtraDigests = newEqClassExtraDigests
-	c.egraphDigestToClass = newEgraphDigestToClass
-	c.inputEqClassToTerms = newInputEqClassToTerms
-	c.outputEqClassToTerms = newOutputEqClassToTerms
-	c.resultOutputEqClasses = newResultOutputEqClasses
-	c.outputEqClassResults = newOutputEqClassResults
-	c.egraphTermsByTermDigest = newEgraphTermsByTermDigest
-	c.nextEgraphClassID = eqClassID(len(newParents))
-
-	return true, oldSlots, newSlots
 }

@@ -246,7 +246,9 @@ main = true
 				require.Contains(t, attrs, attribute.String("fizz", "buzz"))
 			},
 		},
-		{Function: "use-exec-service"},
+		// Its module's own container() shows its line, though loading the
+		// Go SDK makes the same call hidden (goSDKContainer, dagql.WithSkip).
+		{Function: "use-exec-service", DBTest: assertHiddenCallsShowNoRow},
 		{Function: "service-error-attribution", Fail: true},
 		{Function: "use-no-exec-service"},
 		{Function: "docker-build", Args: []string{
@@ -897,4 +899,29 @@ func brokenGoModulePlainOutput(t *testctx.T, out string) {
 	}
 	// About 40 lines; it was over 10,000, with each package's build.
 	require.Less(t, strings.Count(out, "\n"), 100, "plain progress runs on:\n%s", out)
+}
+
+// assertHiddenCallsShowNoRow checks the spans of the calls a session makes
+// hidden (dagql.WithSkip), such as the Go SDK's container: they report their
+// cache decision, and no view shows them as a row, not the terminal's default
+// nor Cloud's trace view, which renders at dagui.ShowInternalVerbosity.
+func assertHiddenCallsShowNoRow(t *testctx.T, db *dagui.DB) {
+	hidden := map[dagui.SpanID]bool{}
+	var sdkCall bool
+	for _, span := range db.Spans.Order {
+		if span.Internal && span.Passthrough && span.CallDigest != "" {
+			hidden[span.ID] = true
+			// The Go SDK's container sets GOTOOLCHAIN (goSDKContainer).
+			if call := span.Call(); call != nil && call.Field == "withEnvVariable" && strings.Contains(span.Name, "withEnvVariable") {
+				sdkCall = true
+			}
+		}
+	}
+	require.True(t, sdkCall, "loading the Go SDK reports its hidden calls")
+	for _, verbosity := range []int{dagui.ShowCompletedVerbosity, dagui.ShowInternalVerbosity, dagui.ShowSpammyVerbosity} {
+		opts := dagui.FrontendOpts{Verbosity: verbosity}
+		for _, row := range db.RowsView(opts).Rows(opts).Order {
+			require.False(t, hidden[row.Span.ID], "a hidden call's span is a row at verbosity %d: %s", verbosity, row.Span.Name)
+		}
+	}
 }

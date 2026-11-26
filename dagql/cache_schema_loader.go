@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"time"
-
-	"github.com/dagger/dagger/engine/wcprof"
 )
 
 // SchemaModuleCandidate keeps the installed operational Module separate from
@@ -38,7 +36,7 @@ func (c *Cache) schemaModuleLookup(ctx context.Context, sessionID string, record
 	if sessionID == "" {
 		return sharedResultLookup{}, fmt.Errorf("schema module selection requires session ID")
 	}
-	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+	c.lockGraphFor(ctx, workLookup)
 	defer c.egraphMu.Unlock()
 	recorded := c.resultsByID[sharedResultID(recordedID)]
 	if recorded == nil {

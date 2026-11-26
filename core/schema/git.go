@@ -92,8 +92,8 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 			Doc(`(Internal-only) Construct a remote Git repository from fully explicit inputs.`),
 	}.Install(srv)
 
-	dagql.Fields[*core.GitRepository]{
-		dagql.NodeFunc("__sparseFiles", s.sparseFiles).
+	identifyWorkspaceResults(dagql.Fields[*core.GitRepository]{
+		dagql.NodeFunc("__sparseFiles", s.sparseFiles).FollowsFromInputs().
 			View(AfterVersion("v1.0.0-beta.26")).
 			IsPersistable().
 			Doc(`(Internal-only) The given files of this repository, by object ID, with only those fetched.`).
@@ -298,7 +298,7 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("header").Doc(`Secret used to populate the Authorization HTTP header`),
 			),
-	}.Install(srv)
+	}).Install(srv)
 
 	// GitRef.push(expectedRemoteSha:) and commitSha are spelled
 	// expectedRemoteSHA and commitSHA in views before
@@ -328,7 +328,7 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 		Doc(`The ID of the commit's Git tree object.`,
 			`Commits with identical trees have identical contents and file modes.`)
 
-	dagql.Fields[*core.GitRef]{
+	identifyWorkspaceResults(dagql.Fields[*core.GitRef]{
 		dagql.Func("__workspaceExportBaseReady", func(ctx context.Context, ref *core.GitRef, _ struct{}) (dagql.Boolean, error) {
 			ready, err := ref.WorkspaceExportBaseReady(ctx)
 			return dagql.Boolean(ready), err
@@ -350,17 +350,19 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 			Doc(`The commit this ref resolves to.`),
 		casedField(commitSHAField),
 		legacyField(commitSHAField, "commitSHA"),
+		// Not declared to follow from its inputs: a full checkout holds every
+		// tag that points into its history (gitTreeFollowsFromInputs).
 		dagql.NodeFunc("__fullCheckout", s.fullCheckout).
 			IsPersistable().
 			Doc(`(Internal-only) Materialize full history and Git metadata regardless of keepGitDir.`),
-		dagql.NodeFunc("__sparseWorkspaceTree", s.sparseWorkspaceTree).
+		dagql.NodeFunc("__sparseWorkspaceTree", s.sparseWorkspaceTree).FollowsFromInputs().
 			View(AfterVersion("v1.0.0-beta.26")).
 			IsPersistable().
 			Doc(`(Internal-only) The files of this ref that loading a workspace at it reads, with only those fetched.`).
 			Args(
 				dagql.Arg("cwd").Doc("The workspace directory, from the repository's root."),
 			),
-		dagql.NodeFuncWithDynamicInputs("tree", s.tree, s.treeCacheKey).
+		dagql.NodeFuncWithDynamicInputs("tree", s.tree, s.treeCacheKey).FollowsFromInputs().
 			IsPersistable().
 			View(AllVersion).
 			Doc(`The filesystem tree at this ref.`).
@@ -460,7 +462,8 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("cwd").Doc("Current working directory inside the workspace root. Defaults to the workspace root."),
 			),
-	}.Install(srv)
+	}).Install(srv)
+	s.sparseTreeFields().Install(srv)
 
 	srv.InstallObject(dagql.NewClass[*core.GitRemoteHandle](srv).View(AfterVersion("v1.0.0-0")))
 	dagql.Fields[*core.GitRemoteHandle]{
@@ -517,7 +520,7 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("includePreRelease").Doc(`Include pre-release tags when choosing the latest tag.`),
 			),
-		dagql.NodeFuncWithDynamicInputs("tree", s.commitTree, s.commitTreeCacheKey).
+		dagql.NodeFuncWithDynamicInputs("tree", s.commitTree, s.commitTreeCacheKey).FollowsFromInputs().
 			IsPersistable().
 			Doc(`The filesystem tree at this commit.`).
 			Args(
@@ -1274,6 +1277,49 @@ func gitRepositoryNamedInputs(remote *gitutil.GitURL, args gitArgs, serviceID, s
 		inputs = append(inputs, dagql.NamedInput{Name: "ref", Value: dagql.NewString(args.Ref)})
 	}
 	return inputs
+}
+
+// gitRepositoryWithoutHead returns the repository a remote repository's
+// objects are read from: __gitRepository with its remote, credentials and
+// services and no head, whatever call made repo. A workspace at a commit pins
+// its repository to that commit (core.workspaceGitPin), and a read of objects
+// by their IDs (__sparseFiles) depends on none of it, so made on this
+// repository it is the same call on every commit. A hit on it still needs the
+// session to hold the repository's credentials.
+func gitRepositoryWithoutHead(ctx context.Context, srv *dagql.Server, repo dagql.ObjectResult[*core.GitRepository]) (inst dagql.ObjectResult[*core.GitRepository], _ error) {
+	remote, ok := repo.Self().Backend.(*core.RemoteGitRepository)
+	if !ok {
+		return inst, fmt.Errorf("%T is not a remote repository", repo.Self().Backend)
+	}
+	var serviceID, sshAuthSocketID, httpAuthTokenID, httpAuthHeaderID *call.ID
+	var err error
+	if len(remote.Services) > 0 {
+		// git takes one service host, its only binding.
+		if serviceID, err = remote.Services[0].Service.RecipeID(ctx); err != nil {
+			return inst, fmt.Errorf("experimental service host: %w", err)
+		}
+	}
+	if remote.SSHAuthSocket.Self() != nil {
+		if sshAuthSocketID, err = remote.SSHAuthSocket.RecipeID(ctx); err != nil {
+			return inst, fmt.Errorf("ssh auth socket: %w", err)
+		}
+	}
+	if remote.AuthToken.Self() != nil {
+		if httpAuthTokenID, err = remote.AuthToken.RecipeID(ctx); err != nil {
+			return inst, fmt.Errorf("http auth token: %w", err)
+		}
+	}
+	if remote.AuthHeader.Self() != nil {
+		if httpAuthHeaderID, err = remote.AuthHeader.RecipeID(ctx); err != nil {
+			return inst, fmt.Errorf("http auth header: %w", err)
+		}
+	}
+	args := gitArgs{SSHKnownHosts: remote.SSHKnownHosts, HTTPAuthUsername: remote.AuthUsername}
+	err = srv.Select(ctx, srv.Root(), &inst, dagql.Selector{
+		Field: "__gitRepository",
+		Args:  gitRepositoryNamedInputs(remote.URL, args, serviceID, sshAuthSocketID, httpAuthTokenID, httpAuthHeaderID),
+	})
+	return inst, err
 }
 
 // gitRepository constructs a remote repository from explicit inputs only. It
@@ -2644,7 +2690,29 @@ func (s *gitSchema) commitTreeCacheKey(ctx context.Context, parent dagql.ObjectR
 	return nil
 }
 
+// canonicalGitTreeArgs drops a tree call's arguments that shape nothing in
+// it (treeCacheKey), and keeps the field's declaration that the tree follows
+// from its inputs only where gitTreeFollowsFromInputs says it does.
+// gitTreeFollowsFromInputs reports whether a tree call follows from its
+// inputs (dagql.FieldSpec.FollowsFromInputs), as the field declares. A tree's
+// files are its commit's, which its key's SHA addresses, and the engine's own
+// cache counts two trees of one commit as the same, .git included: git reads
+// the same objects from either's pack, though the pack's bytes can differ. One
+// that keeps .git with tags in it doesn't follow: its tags are those the
+// repository has when it's fetched, which no hash in its key addresses. A tree
+// with its full history (depth 0) has them whether it asks or not, since its
+// checkout copies every tag that points into that history (packGitCheckout).
+// A shallower tree that doesn't ask can still get a tag at its commit, when
+// its checkout falls back to a fetch (fetchGitCheckout); the engine's own
+// cache counts it as the same, and so does this.
+func gitTreeFollowsFromInputs(keepsGitDir bool, depth int, includeTags bool) bool {
+	return !keepsGitDir || (depth > 0 && !includeTags)
+}
+
 func canonicalGitTreeArgs(req *dagql.CallRequest, repoDiscardsGitDir, discardGitDir bool, depth int, includeTags bool) {
+	if req.ResultCall != nil && !gitTreeFollowsFromInputs(!repoDiscardsGitDir && !discardGitDir, depth, includeTags) {
+		req.ResultCall.FollowsFromInputs = false
+	}
 	if repoDiscardsGitDir || discardGitDir {
 		if repoDiscardsGitDir || !discardGitDir {
 			req.DeleteArg("discardGitDir")

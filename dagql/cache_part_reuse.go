@@ -13,11 +13,12 @@ import (
 // session's resource requirements, which are access control.
 
 // partReuse is the state of a row a part was found complete and opened at.
-// A gate change (an installation, a permit, a settlement), an offer's
-// attachment, replacement or retirement, a dependency change (whose
-// snapshots a demand's owner lease sync would cover), a value replacement or
-// a payload change (a stored-part prune) each move one of them, and a reuse
-// then demands the part again.
+// A gate change (an installation, a permit, a settlement), a dependency
+// change (whose snapshots a demand's owner lease sync would cover), a value
+// replacement or a payload change (a stored-part prune) each move one of
+// them, and a reuse then demands the part again. An offer moves none: it is
+// a source of a part not complete, and the part reused is complete and
+// open.
 type partReuse struct {
 	gateRevision       uint64
 	transferRevision   uint64
@@ -56,9 +57,9 @@ func partScopeReuseKey(path PersistedRefPath) string {
 // capturePartReuse returns row's state as a demand sees it before it probes
 // a part, for recordPartReuse to compare against once the part is opened.
 func (c *Cache) capturePartReuse(row *sharedResult) partReuse {
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
-	gate := row.partGate.loadOrCreate()
+	read := c.readGraphAs(workPart)
+	defer read.Unlock()
+	gate := row.partGateCell().loadOrCreate()
 	gate.mu.Lock()
 	defer gate.mu.Unlock()
 	return currentPartReuseLocked(row, gate)
@@ -68,12 +69,12 @@ func (c *Cache) capturePartReuse(row *sharedResult) partReuse {
 // complete and opened, as seen when it was probed, unless row has changed
 // since: a record must never date a reopening it didn't see.
 func (c *Cache) recordPartReuse(row *sharedResult, key string, seen partReuse) bool {
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workPart)
+	defer read.Unlock()
 	if c.resultsByID[row.id] != row {
 		return false
 	}
-	gate := row.partGate.loadOrCreate()
+	gate := row.partGateCell().loadOrCreate()
 	gate.mu.Lock()
 	defer gate.mu.Unlock()
 	if !seen.sameState(currentPartReuseLocked(row, gate)) {
@@ -113,7 +114,7 @@ func (c *Cache) recordAcquiredPart(ctx context.Context, res AnyResult, address P
 // and opened at row's current state, and none of them is being written now.
 // egraphMu is held, for reading or writing; gate.mu is taken under it.
 func partReusableLocked(row *sharedResult, keys []string) bool {
-	gate := row.partGate.gate.Load()
+	gate := row.writerGate()
 	if gate == nil || len(keys) == 0 {
 		return false
 	}
@@ -177,8 +178,8 @@ func (c *Cache) reuseAcquiredScope(ctx context.Context, row *sharedResult, path 
 	if err != nil {
 		return false
 	}
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workPart)
+	defer read.Unlock()
 	return c.resultsByID[row.id] == row &&
 		partReusableLocked(row, keys) &&
 		c.sessionSatisfiesResourceRequirementsLocked(session, row)

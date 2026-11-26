@@ -2,11 +2,10 @@ package dagql
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
-
-	"github.com/dagger/dagger/engine/wcprof"
 )
 
 // The active path is per demand, independent of exhaustion and task lifetime.
@@ -46,7 +45,7 @@ func (proof *partDelegationProof) currentLocked(c *Cache, source *PartSourceLeas
 		row == proof.parent || row.loadResultCall() != proof.childFrame || proof.parent.loadResultCall() != proof.parentFrame {
 		return false
 	}
-	if _, ok := row.deps[proof.parent.id]; !ok {
+	if !row.deps.has(proof.parent.id) {
 		return false
 	}
 	if proof.mapping.ParentResultID != uint64(proof.parent.id) || !containsPart([]PersistedPartAddress{proof.mapping.Address}, proof.source) {
@@ -125,9 +124,9 @@ func (c *Cache) selectDemandPartSource(ctx context.Context, receiver AnyResult, 
 	if mapping == nil || mapping.ParentResultID != route.Delegation.ParentResultID || !containsPart([]PersistedPartAddress{mapping.Address}, route.Delegation.Address) {
 		return nil, nil, partRefused("delegation: mapping changed")
 	}
-	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+	c.lockGraphForCtx(ctx, workPart)
 	parent := c.resultsByID[sharedResultID(mapping.ParentResultID)]
-	_, direct := row.deps[sharedResultID(mapping.ParentResultID)]
+	direct := row.deps.has(sharedResultID(mapping.ParentResultID))
 	if c.resultsByID[row.id] != row || parent == nil || parent == row || !direct {
 		c.egraphMu.Unlock()
 		return nil, nil, fmt.Errorf("part delegation: receiver %d has no distinct exact direct parent %d", row.id, mapping.ParentResultID)
@@ -165,7 +164,7 @@ func (c *Cache) selectDemandPartSource(ctx context.Context, receiver AnyResult, 
 	if probe != nil {
 		hold.descriptor = probe.Descriptor
 	}
-	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+	c.lockGraphForCtx(ctx, workPart)
 	valid := proof.currentLocked(c, hold, row) && c.partFactsLocked(parent) == facts
 	if valid && ready {
 		hold.descriptor.DependencyIDs = append(hold.descriptor.DependencyIDs, c.partResourceLeavesLocked(parent)...)
@@ -215,9 +214,9 @@ func (c *Cache) demandDelegatedParent(ctx context.Context, pending *PartSourceLe
 	if err != nil {
 		return err
 	}
-	wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
+	read := c.readGraph(ctx, workPart)
 	allowed := proof.currentLocked(c, pending, proof.child)
-	c.egraphMu.RUnlock()
+	read.Unlock()
 	if !allowed {
 		return partRefused("delegation: proof not current after loading the parent")
 	}
@@ -225,26 +224,49 @@ func (c *Cache) demandDelegatedParent(ctx context.Context, pending *PartSourceLe
 	// active path is retained, but no child permit or task generation is reused.
 	// In particular, do not race this wait against a faster child installation.
 	// The child reads the parent's part it delegates to, once it asks for it.
-	c.partReads.record(proof.parent.id, []PartKey{proof.source.Part})
+	c.recordPartRead(ctx, proof.parent.id, []PartKey{proof.source.Part})
 	return c.demandPart(ctx, parent, proof.source)
 }
 
 // Restore marks only validated pending mappings for foreground acquisition.
 // Boot/decoding performs no parent load, body, provider or snapshot operation.
+// Each payload's pending parts are routed together, so a payload is decoded
+// once, not once per part: a container with n pending mounts would otherwise
+// decode its record n times each time it's decoded. A payload whose parts
+// can't be mapped keeps the record from being marked, wherever it is.
 func markRestoredPartDelegation(row *sharedResult, envelope PersistedResultEnvelope, frame *ResultCall, links []PersistedSnapshotRefLink) {
-	record := PersistedRecord{Envelope: envelope, Call: frame, SnapshotLinks: links}
-	outputs, err := mapTransferredOutputs(record)
-	if err != nil {
-		return
-	}
-	for _, output := range outputs {
-		if output.State != "pending" {
-			continue
+	found := false
+	err := walkTransferPayloads(&envelope, frame, links, func(f PersistedObjectFamily, v PersistedPayloadVisit) (json.RawMessage, error) {
+		if f.Transfer == nil {
+			return v.Payload, nil
 		}
-		route, err := routePartRecord(record, output.Address)
-		if err == nil && route.Delegation != nil {
-			row.partGate.restoredDelegation.Store(true)
-			return
+		mapped, err := f.Transfer.MapSnapshotParts(v)
+		if err != nil {
+			return nil, err
 		}
+		router, ok := f.Transfer.(PersistedPartRouter)
+		if found || !ok {
+			return v.Payload, nil
+		}
+		var pending []PartKey
+		for _, output := range mapped {
+			if output.State == "pending" && slices.Equal(output.Address.OutputPath, v.Path) {
+				pending = append(pending, output.Address.Part)
+			}
+		}
+		if len(pending) == 0 {
+			return v.Payload, nil
+		}
+		routes, errs := routeEachPart(router, v, pending)
+		for i := range routes {
+			if errs[i] == nil && routes[i].Delegation != nil {
+				found = true
+				break
+			}
+		}
+		return v.Payload, nil
+	})
+	if err == nil && found {
+		row.partGateCell().restoredDelegation.Store(true)
 	}
 }

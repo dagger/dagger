@@ -181,6 +181,64 @@ func TestLoadCurrentModuleSourceConfigPreservesGitDependencySourceAndPin(t *test
 	require.NotContains(t, string(out), `version =`)
 }
 
+// A module's config names a git dependency by the ref the module declares, here
+// a vanity URL that resolves to another clone ref. A dependency restored from
+// its persisted form, from the engine's disk or from another engine's record,
+// must be named the same way, or the config written for the same module differs
+// and so does every result made from the files that hold it.
+func TestModuleConfigNamesARestoredGitDependencyAsDeclared(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	dag, err := dagql.NewServer(ctx, &core.Query{})
+	require.NoError(t, err)
+	dag.InstallObject(dagql.NewClass(dag, dagql.ClassOpts[*core.ModuleSource]{Typed: &core.ModuleSource{}}))
+
+	loaded := &core.ModuleSource{
+		Kind:              core.ModuleSourceKindGit,
+		ModuleName:        "helpers",
+		OriginalRefString: "example.com/sdk/helpers@v1.0.11",
+		SourceRootSubpath: ".",
+		Git: &core.GitModuleSource{
+			CloneRef: "https://github.com/acme/sdk-helpers",
+			Version:  "v1.0.11",
+			Commit:   "3be7456c40d9206b648ac44e418f30aa79bc6190",
+		},
+	}
+	encoded, err := loaded.EncodePersistedObject(ctx, dagql.NewPersistEncodeContext(nil, 0, nil))
+	require.NoError(t, err)
+	decoded, err := (&core.ModuleSource{}).DecodePersistedObject(ctx, dagql.NewPersistDecodeContext(nil, 0, nil), encoded.JSON)
+	require.NoError(t, err)
+	restored, ok := decoded.(*core.ModuleSource)
+	require.True(t, ok)
+
+	configWith := func(dep *core.ModuleSource) string {
+		t.Helper()
+		parent := &core.ModuleSource{
+			Kind:               core.ModuleSourceKindLocal,
+			ConfigFilename:     modules.Filename,
+			ModuleOriginalName: "parent",
+			EngineVersion:      engine.Version,
+			SourceRootSubpath:  ".",
+			Local: &core.LocalModuleSource{
+				ContextDirectoryPath: "/work/parent",
+			},
+			Dependencies: dagql.ObjectResultArray[*core.ModuleSource]{
+				moduleSourceObjectResult(t, dag, "helpers", dep),
+			},
+		}
+		cfg, err := (&moduleSourceSchema{}).loadModuleSourceConfig(parent)
+		require.NoError(t, err)
+		out, err := modules.MarshalModuleConfigForFilename(cfg, modules.Filename)
+		require.NoError(t, err)
+		return string(out)
+	}
+
+	written := configWith(loaded)
+	require.Contains(t, written, `source = "example.com/sdk/helpers@v1.0.11"`)
+	require.Equal(t, written, configWith(restored))
+}
+
 // A manifest version 2 module declares its engine version in the dang.toml of
 // its entrypoint, not in the manifest, so the version is checked on the source
 // and not written to the manifest. currentModule.source loads the config this

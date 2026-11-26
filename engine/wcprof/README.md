@@ -82,7 +82,25 @@ Current hook points:
   carrier's own fact gathering, such as the new-inputs check, is then the
   profile's only added cost).
   Lookups and publications record contended waits for the cache's graph
-  lock as lock waits on `dagql.egraph`, as an export's walk does.
+  lock as lock waits on `dagql.egraph`, as an export's walk does. A lock
+  wait on an `RWMutex` names, as its class, the kind of work of the writer
+  whose release let it in (`WriteLockAs`, `LockWait`): for the graph lock,
+  `lookup`, `publication`, `restore` (a set file's part's merge), `merge`,
+  `export`, `offer`, `part` (fetching, installing or settling parts),
+  `teach`, `dependency`, `evaluation`, `upkeep` (a session's release, a
+  prune, a measurement or a save), `hold` (the service's holds on
+  entries), `remote` (the service's writes and collections of engines'
+  holdings and stored parts that take the lock themselves), `body`
+  (installing stored bodies), `other` (a writer that named no kind) or
+  `readers` (no writer let it in).
+  wcprof-report's `waits` view shows it as `dagql.egraph behind merge`.
+  The kinds are kept whether or not anything records: a waited
+  acquisition returns its wait and that kind, and the cache counts its
+  lookups' waits by kind for the engine's stop event
+  (`dagql.Cache.LookupLockWaits`). An acquisition that doesn't wait pays
+  nothing more, and a writer's release one load of the lock's waiting
+  count, and a store only while someone waits; an acquisition that waits
+  pays two clock reads and two updates of that count.
 - `engine/server/resolver`, registry I/O: an `io` op per image pull
   (`image.pull`), resolve (`image.resolve`) and push (`image.push`), with the
   ref as ident and external work type. Under a pull, an `image.fetch` op

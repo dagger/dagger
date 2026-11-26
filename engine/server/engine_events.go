@@ -12,6 +12,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/remotecache"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
@@ -192,17 +193,17 @@ func (srv *Server) emitPruneEvent(drops []dagql.CacheRetentionDrop) {
 	srv.engineEvents.Emit(telemetryattrs.EngineEventPrune, srv.engineCache.Identity(), drops[len(drops)-1].DroppedAt, event)
 }
 
-// emitShareEvent reports the parts one snapshot-sharing pass completed. The
-// cache calls it on its sharing worker.
-func (srv *Server) emitShareEvent(parts []dagql.SnapshotSharedPart) {
+// emitPartsEvent reports the complete parts entries' spans left out. The
+// cache calls it on the worker that makes those reports, or at its close.
+func (srv *Server) emitPartsEvent(parts []dagql.OwedPart) {
 	if srv.engineEvents == nil || srv.engineCache == nil || len(parts) == 0 {
 		return
 	}
-	event := telemetryattrs.EngineShareEvent{Parts: make([]telemetryattrs.EngineSharedPart, len(parts))}
+	event := telemetryattrs.EnginePartsEvent{Parts: make([]telemetryattrs.EnginePart, len(parts))}
 	for i, part := range parts {
-		event.Parts[i] = telemetryattrs.EngineSharedPart{ResultID: part.ResultID, Part: part.Part, Deps: part.Deps, Replacements: part.Replacements}
+		event.Parts[i] = telemetryattrs.EnginePart{ResultID: part.ResultID, Part: part.Part, Deps: part.Deps, Replacements: part.Replacements, RawSize: part.RawSize}
 	}
-	srv.engineEvents.Emit(telemetryattrs.EngineEventShare, srv.engineCache.Identity(), time.Now(), event)
+	srv.engineEvents.Emit(telemetryattrs.EngineEventParts, srv.engineCache.Identity(), time.Now(), event)
 }
 
 // emitReadEvent reports the parts of entries work read. The cache calls it
@@ -213,7 +214,10 @@ func (srv *Server) emitReadEvent(reads []dagql.PartRead) {
 	}
 	event := telemetryattrs.EngineReadEvent{Reads: make([]telemetryattrs.EngineRead, len(reads))}
 	for i, read := range reads {
-		event.Reads[i] = telemetryattrs.EngineRead{ResultID: read.ResultID, Part: string(read.Part)}
+		event.Reads[i] = telemetryattrs.EngineRead{ResultID: read.ResultID, Part: string(read.Part), Session: read.Session}
+		if !read.At.IsZero() {
+			event.Reads[i].At = read.At.UnixNano()
+		}
 	}
 	srv.engineEvents.Emit(telemetryattrs.EngineEventRead, srv.engineCache.Identity(), time.Now(), event)
 }
@@ -228,8 +232,14 @@ func (srv *Server) stopEngineEvents(ctx context.Context, clean bool) {
 	}
 	if srv.engineCache != nil {
 		srv.engineEvents.Emit(telemetryattrs.EngineEventStop, srv.engineCache.Identity(), time.Now(), telemetryattrs.EngineStopEvent{
-			Clean:        clean,
-			SavedEntries: srv.engineCache.PersistedResults(),
+			Clean:              clean,
+			SavedEntries:       srv.engineCache.PersistedResults(),
+			PeakResident:       remotecache.PeakResident(),
+			Restores:           srv.restoreEvents(),
+			PartsWithoutSource: srv.engineCache.PartsWithoutSource(),
+			UncountedMisses:    srv.uncountedMisses(),
+			FirstUse:           engineFirstUse(srv.engineCache.FirstUse()),
+			LookupLockWaits:    engineLookupLockWaits(srv.engineCache.LookupLockWaits()),
 		})
 	}
 	shutdownCtx := context.WithoutCancel(ctx)
@@ -248,4 +258,176 @@ func (srv *Server) stopEngineEvents(ctx context.Context, clean bool) {
 	if err := srv.engineEventExport.Shutdown(ctx); err != nil {
 		slog.Warn("engine cache events not exported before shutdown", "error", err)
 	}
+}
+
+// uncountedMisses is how many lookup misses the remote cache's late count
+// never saw (RemoteCacheAdapter.uncountedMisses), for the engine.stop event.
+func (srv *Server) uncountedMisses() uint64 {
+	if srv.remoteCacheAdapter == nil {
+		return 0
+	}
+	return srv.remoteCacheAdapter.uncountedMisses()
+}
+
+// restoreEvents are what the remote cache's restores did with each file,
+// for the engine.stop event.
+func (srv *Server) restoreEvents() []telemetryattrs.EngineRestore {
+	if srv.remoteCacheAdapter == nil {
+		return nil
+	}
+	reports := srv.remoteCacheAdapter.restoreReports()
+	if len(reports) == 0 {
+		return nil
+	}
+	unix := func(t time.Time) int64 {
+		if t.IsZero() {
+			return 0
+		}
+		return t.UnixNano()
+	}
+	events := make([]telemetryattrs.EngineRestore, len(reports))
+	for i, report := range reports {
+		event := telemetryattrs.EngineRestore{
+			Check:        report.Check,
+			Kind:         report.Kind,
+			Digest:       report.Digest.String(),
+			Bytes:        report.Bytes,
+			Arrived:      unix(report.Arrived),
+			FetchStarted: unix(report.FetchStarted),
+			Fetched:      unix(report.Fetched),
+			Complete:     report.Complete,
+			Already:      report.Already,
+			Error:        report.Error,
+			PeakBefore:   report.PeakBefore,
+			PeakAfter:    report.PeakAfter,
+			Decode:       int64(report.Decode),
+			Precheck:     int64(report.Precheck),
+			Prepare:      int64(report.Prepare),
+			Commit:       int64(report.Commit),
+			FirstPart:    unix(report.FirstPart),
+			Ended:        unix(report.Ended),
+			Window:       engineRestoreWindow(report.Window),
+		}
+		for _, part := range report.Parts {
+			event.Parts = append(event.Parts, telemetryattrs.EngineRestorePart{
+				Records:          part.Records,
+				Committed:        unix(part.Committed),
+				Late:             part.Late,
+				WorstLate:        int64(part.WorstLate),
+				LeastLate:        int64(part.LeastLate),
+				LockWait:         int64(part.LockWait),
+				CommitHold:       int64(part.CommitHold),
+				Decode:           int64(part.Decode),
+				Precheck:         int64(part.Precheck),
+				Prepare:          int64(part.Prepare),
+				Commit:           int64(part.Commit),
+				PriorityWait:     int64(part.PriorityWait),
+				PrepareLockWait:  int64(part.PrepareLockWait),
+				PrepareLockWaits: nanoseconds(part.PrepareLockWaits),
+				DecodeWait:       int64(part.DecodeWait),
+			})
+		}
+		events[i] = event
+	}
+	return events
+}
+
+// engineFirstUse is the cache's FirstUseStats as the engine.stop event
+// carries them.
+func engineFirstUse(stats dagql.FirstUseStats) telemetryattrs.EngineFirstUse {
+	return telemetryattrs.EngineFirstUse{
+		Prepared:        stats.Prepared,
+		Refused:         stats.Refused,
+		Total:           int64(stats.Total),
+		Longest:         int64(stats.Longest),
+		LongestRecipe:   stats.LongestRecipe,
+		LongestBytes:    stats.LongestBytes,
+		LongestPrepare:  int64(stats.LongestPrepare),
+		LongestLockWait: int64(stats.LongestLockWait),
+		Paths:           engineFirstUsePaths(stats.Paths),
+		SavePrepared:    stats.SavePrepared,
+		SaveRefused:     stats.SaveRefused,
+		SaveTotal:       int64(stats.SaveTotal),
+		SaveWall:        int64(stats.SaveWall),
+		Routes:          engineFirstUseRoutes(stats.Routes),
+	}
+}
+
+// engineFirstUseRoutes are first uses by route as the engine.stop event
+// carries them.
+func engineFirstUseRoutes(routes map[string]dagql.FirstUseRoute) map[string]telemetryattrs.EngineFirstUseRoute {
+	if len(routes) == 0 {
+		return nil
+	}
+	out := make(map[string]telemetryattrs.EngineFirstUseRoute, len(routes))
+	for route, counted := range routes {
+		out[route] = telemetryattrs.EngineFirstUseRoute{Merges: counted.Merges, Sent: counted.Sent, Merged: counted.Merged, FirstUses: counted.FirstUses, Total: int64(counted.Total), Used: counted.Used}
+	}
+	return out
+}
+
+// engineFirstUsePaths are first uses by path as the engine.stop event
+// carries them.
+func engineFirstUsePaths(paths map[string]dagql.FirstUsePath) map[string]telemetryattrs.EngineFirstUsePath {
+	if len(paths) == 0 {
+		return nil
+	}
+	out := make(map[string]telemetryattrs.EngineFirstUsePath, len(paths))
+	for path, uses := range paths {
+		out[path] = telemetryattrs.EngineFirstUsePath{Prepared: uses.Prepared, Total: int64(uses.Total), Longest: int64(uses.Longest)}
+	}
+	return out
+}
+
+// engineLookupLockWaits are the cache's LookupLockWaits as the engine.stop
+// event carries them.
+func engineLookupLockWaits(waits dagql.LookupLockWaits) telemetryattrs.EngineLookupLockWaits {
+	return telemetryattrs.EngineLookupLockWaits{Landing: engineLockWaits(waits.Landing), Other: engineLockWaits(waits.Other)}
+}
+
+func engineLockWaits(byHolder map[string]dagql.LockWaitStats) map[string]telemetryattrs.EngineLockWaits {
+	if len(byHolder) == 0 {
+		return nil
+	}
+	out := make(map[string]telemetryattrs.EngineLockWaits, len(byHolder))
+	for holder, waits := range byHolder {
+		out[holder] = telemetryattrs.EngineLockWaits{Waits: waits.Waits, Total: int64(waits.Total), Longest: int64(waits.Longest)}
+	}
+	return out
+}
+
+// engineRestoreWindow is a restore's window as the engine.stop event
+// carries it.
+func engineRestoreWindow(w *remotecache.RestoreWindow) *telemetryattrs.EngineRestoreWindow {
+	if w == nil {
+		return nil
+	}
+	out := &telemetryattrs.EngineRestoreWindow{
+		Wall:            int64(w.Wall),
+		CPU:             int64(w.CPU),
+		GCCPU:           int64(w.GCCPU),
+		GCAssist:        int64(w.GCAssist),
+		GCCycles:        w.GCCycles,
+		SchedWaits:      w.SchedWaits,
+		SchedWait:       int64(w.SchedWait),
+		LookupLockWaits: engineLockWaits(w.LookupLockWaits),
+		FirstUses:       engineFirstUsePaths(w.FirstUses),
+	}
+	if w.RunqWaitKnown {
+		runq := int64(w.RunqWait)
+		out.RunqWait = &runq
+	}
+	return out
+}
+
+// nanoseconds is durations by name as the engine.stop event carries them.
+func nanoseconds(durations map[string]time.Duration) map[string]int64 {
+	if len(durations) == 0 {
+		return nil
+	}
+	out := make(map[string]int64, len(durations))
+	for name, d := range durations {
+		out[name] = int64(d)
+	}
+	return out
 }

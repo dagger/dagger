@@ -10,14 +10,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// BenchmarkRemoteCollectionCompaction measures the Cloud's collection under
+// BenchmarkRemoteCollection measures the Cloud's collection under
 // session-end churn over a live set: each operation is one session of two
 // holdings, applied, ended and collected, as the service does when a session's
-// end is read at its count. The checks' clock moves at the full-scale replay's
-// rate of session ends, 88,000 in 164.7 s. It reports the class checks per
-// collection and per 10 s of that clock, the compactions, the collection's
-// mean time and its longest call, which holds egraphMu throughout.
-func BenchmarkRemoteCollectionCompaction(b *testing.B) {
+// end is read at its count. Each collection frees the classes it ends. It
+// reports the collection's mean time and its longest call, which holds
+// egraphMu throughout, and the class slots in use at the end, which stay at
+// the live set's however long the churn runs.
+func BenchmarkRemoteCollection(b *testing.B) {
 	for _, liveCount := range []int{10_000, 175_000} {
 		b.Run("live="+strconv.Itoa(liveCount), func(b *testing.B) {
 			ctx := context.Background()
@@ -34,36 +34,29 @@ func BenchmarkRemoteCollectionCompaction(b *testing.B) {
 			attach := func(key HolderKey, session string, h RemoteHolding) {
 				_, err := cloud.AttachRemoteHolding(ctx, key, h)
 				require.NoError(b, err)
-				require.NoError(b, cloud.AddRemoteHold(ctx, key, session))
+				require.NoError(b, errOf(cloud.AddRemoteHold(ctx, key, session)))
 			}
 			for i := range liveCount {
 				// Each live entry's term takes the one before it as its input.
 				attach(HolderKey{"cache-live", uint64(i + 1)}, "live", holding(fmt.Sprintf("live-%d", i), (i+liveCount-1)%liveCount))
 			}
-			advance := testEqClassClock(cloud)
-			const perCollection = 164_700 * time.Millisecond / 88_000
-			_, err = cloud.CollectRemoteHoldings(ctx, nil)
+			_, _, err = cloud.CollectRemoteHoldings(ctx, nil, nil)
 			require.NoError(b, err)
 			cloud.egraphMu.RLock()
-			checks := cloud.eqClassChecks
+			liveSlots := cloud.eqClassSlotsLocked()
 			cloud.egraphMu.RUnlock()
 
 			var total, longest time.Duration
-			compactions := 0
 			b.ResetTimer()
 			for i := range b.N {
-				advance(perCollection)
 				session := "churn-" + strconv.Itoa(i)
 				for j := range 2 {
 					field := fmt.Sprintf("churn-%d-%d", i, j)
 					attach(HolderKey{"cache-churn", uint64(2*i + j + 1)}, session, holding(field, (i*2+j)%liveCount))
 				}
-				candidates := cloud.ReleaseRemoteSession(ctx, "cache-churn", session)
-				cloud.egraphMu.RLock()
-				before := cloud.eqClassSlotsLocked()
-				cloud.egraphMu.RUnlock()
+				candidates := cloud.ReleaseRemoteSession(ctx, "cache-churn", session).Candidates
 				start := time.Now()
-				collected, err := cloud.CollectRemoteHoldings(ctx, candidates)
+				collected, _, err := cloud.CollectRemoteHoldings(ctx, candidates, nil)
 				took := time.Since(start)
 				require.NoError(b, err)
 				require.Len(b, collected, 2)
@@ -71,21 +64,15 @@ func BenchmarkRemoteCollectionCompaction(b *testing.B) {
 				if took > longest {
 					longest = took
 				}
-				cloud.egraphMu.RLock()
-				if cloud.eqClassSlotsLocked() < before {
-					compactions++
-				}
-				cloud.egraphMu.RUnlock()
 			}
 			b.StopTimer()
 			cloud.egraphMu.RLock()
-			checks = cloud.eqClassChecks - checks
+			slots := cloud.eqClassSlotsLocked()
 			cloud.egraphMu.RUnlock()
-			b.ReportMetric(float64(checks)/float64(b.N), "checks/collection")
-			b.ReportMetric(float64(checks)/(float64(b.N)*perCollection.Seconds()/10), "checks/10s")
-			b.ReportMetric(float64(compactions), "compactions")
 			b.ReportMetric(float64(total.Nanoseconds())/float64(b.N), "collect-ns/collection")
 			b.ReportMetric(float64(longest.Microseconds())/1000, "longest-collect-ms")
+			b.ReportMetric(float64(slots), "class-slots")
+			require.Equal(b, liveSlots, slots, "the churn leaves the live set's slots")
 		})
 	}
 }

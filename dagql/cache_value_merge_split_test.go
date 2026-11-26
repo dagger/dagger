@@ -22,9 +22,10 @@ func splitTestSource(t *testing.T) ValueBundle {
 }
 
 // splitTestReply returns reply without what differs between two equal
-// commits: the clock and the length of the hold.
+// commits: the clock, and the lengths of the hold, of the wait for it and of
+// the warming.
 func splitTestReply(reply MergeReply) MergeReply {
-	reply.CommitHold, reply.EngineTimeUnixNano = 0, 0
+	reply.CommitHold, reply.LockWait, reply.Warm, reply.EngineTimeUnixNano = 0, 0, 0, 0
 	return reply
 }
 
@@ -95,9 +96,7 @@ func TestPreparedValueMergeReleaseEndsItsOperation(t *testing.T) {
 	t.Parallel()
 	bundle := splitTestSource(t)
 	ctx, cloud := storedPartTestCache(t, WithBlobStore())
-	cloud.egraphMu.RLock()
-	reserved := cloud.nextSharedResultID
-	cloud.egraphMu.RUnlock()
+	reserved := cloud.nextSharedResultID.Load()
 
 	p, err := cloud.PrepareValueMerge(ctx, "cache-a", bundle)
 	require.NoError(t, err)
@@ -112,7 +111,7 @@ func TestPreparedValueMergeReleaseEndsItsOperation(t *testing.T) {
 	reply, err := cloud.MergeValues(ctx, "cache-a", bundle)
 	require.NoError(t, err)
 	for _, value := range reply.Values {
-		require.GreaterOrEqual(t, value.Number, uint64(reserved)+uint64(len(bundle.Values)), "the released numbers are not reused")
+		require.GreaterOrEqual(t, value.Number, reserved+uint64(len(bundle.Values)), "the released numbers are not reused")
 	}
 
 	bad, _ := mergeTestSource(t, "bad-root", "sent")

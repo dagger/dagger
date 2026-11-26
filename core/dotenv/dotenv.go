@@ -3,6 +3,7 @@ package dotenv
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 
 	"mvdan.cc/sh/v3/expand"
@@ -284,6 +285,78 @@ func mergeEnviron(context, own []string) []string {
 	return merged
 }
 
+// ReferencedContext returns the lines of context that own's values name: the
+// lines of every name written in a line of own, or in a line it returns,
+// anywhere in its value (in an expansion, a branch, arithmetic or quotes, or
+// as the target an indirect ${!NAME} reads), and of the names expansion
+// reads without their being written (implicitReads). Lines of names own
+// defines are left out, since own's lines win. Every word that could be a
+// name counts, so a line may be returned that expansion won't read. A name
+// expansion builds from parts of values, or takes from the host, reads only
+// the lines returned. A line that doesn't parse is returned only when its
+// name is written, so that expansion fails as it did with the whole of
+// context.
+func ReferencedContext(own, context []string) []string {
+	if len(context) == 0 {
+		return nil
+	}
+	defined := map[string]bool{}
+	names := slices.Clone(implicitReads)
+	for _, line := range own {
+		name, ok := entryName(line)
+		if !ok {
+			// Expansion fails whatever context holds.
+			return nil
+		}
+		defined[name] = true
+		names = append(names, nameRegexp.FindAllString(line, -1)...)
+	}
+	byName := map[string][]string{}
+	for _, line := range context {
+		name, _ := entryName(line)
+		byName[name] = append(byName[name], line)
+	}
+	used := map[string]bool{}
+	for len(names) > 0 {
+		name := names[len(names)-1]
+		names = names[:len(names)-1]
+		if used[name] || defined[name] || byName[name] == nil {
+			continue
+		}
+		used[name] = true
+		for _, line := range byName[name] {
+			names = append(names, nameRegexp.FindAllString(line, -1)...)
+		}
+	}
+	var kept []string
+	for _, line := range context {
+		if name, _ := entryName(line); used[name] {
+			kept = append(kept, line)
+		}
+	}
+	return kept
+}
+
+// implicitReads are the variables expansion reads without their names being
+// written: IFS to split fields, and HOME, USERPROFILE and PWD for a tilde
+// and paths.
+var implicitReads = []string{"IFS", "HOME", "USERPROFILE", "PWD"}
+
+// entryName is the name a line assigns as the evaluator reads it, and true,
+// or, for a line it can't parse, the text before its "=", and false.
+func entryName(line string) (string, bool) {
+	line = strings.TrimSpace(line)
+	entry, err := (&GraphEvaluator{}).parseEntry(line)
+	if err != nil {
+		name, _, _ := strings.Cut(StripExportPrefix(line), "=")
+		return name, false
+	}
+	if entry == nil {
+		return "", true
+	}
+	return entry.name, true
+}
+
 // Evaluate an array of key=value strings in the dotenv syntax,
 // in raw mode: values are left unprocessed.
 func AllRaw(environ []string) map[string]string {
@@ -332,6 +405,9 @@ func Exists(environ []string, name string) bool {
 	}
 	return false
 }
+
+// nameRegexp matches every word that could name a variable.
+var nameRegexp = regexp.MustCompile(`[A-Za-z_][A-Za-z0-9_]*`)
 
 // simpleKeyRegexp checks if a key is a valid environment variable name
 var simpleKeyRegexp = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)

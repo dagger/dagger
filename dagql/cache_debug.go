@@ -79,6 +79,10 @@ type EGraphDebugResult struct {
 	ExplicitDeps               []uint64                   `json:"explicit_dep_ids,omitempty"`
 	HeldDependencyResults      int                        `json:"held_dependency_results_count"`
 	SnapshotLinks              []PersistedSnapshotRefLink `json:"snapshot_links,omitempty"`
+	// FromImage reports that the engine image ships the entry: its merge at
+	// start gave it an image holding (FromImage), so every engine of the
+	// image has it, and the engine never exports it.
+	FromImage bool `json:"from_image,omitempty"`
 }
 
 type CacheDebugResult struct {
@@ -202,7 +206,7 @@ func debugInputProvenance(inputs []egraphInputProvenanceKind) []map[string]any {
 	out := make([]map[string]any, 0, len(inputs))
 	for _, input := range inputs {
 		out = append(out, map[string]any{
-			"kind": string(input),
+			"kind": input.String(),
 		})
 	}
 	return out
@@ -331,8 +335,7 @@ func (c *Cache) traceMetadataPruneFinished(ctx context.Context, report CacheMeta
 		"triggered", report.Triggered,
 		"maximum_estimated_bytes", report.MaximumEstimatedBytes,
 		"target_estimated_bytes", report.TargetEstimatedBytes,
-		"before_estimated_bytes", report.BeforeCompaction.EstimatedBytes,
-		"after_initial_compaction_estimated_bytes", report.AfterInitialCompaction.EstimatedBytes,
+		"before_estimated_bytes", report.Before.EstimatedBytes,
 		"after_prune_estimated_bytes", report.AfterPrune.EstimatedBytes,
 		"candidate_count", report.CandidateCount,
 		"planned_root_count", report.PlannedRootCount,
@@ -460,8 +463,8 @@ func (c *Cache) traceRefUnderflow(ctx context.Context, res *sharedResult, owners
 			"phase", "runtime",
 			"shared_result_id", res.id,
 			"incoming_ownership_count", ownershipCount,
-			"record_type", res.recordType,
-			"description", res.description,
+			"record_type", handleString(res.recordType),
+			"description", handleString(res.description),
 			"payload_state", payloadState,
 		}
 		if state.self != nil {
@@ -491,8 +494,8 @@ func (c *Cache) traceSessionResultTracked(ctx context.Context, sessionID string,
 			args = append(args,
 				"shared_result_id", shared.id,
 				"incoming_ownership_count", shared.incomingOwnershipCount.Load(),
-				"record_type", shared.recordType,
-				"description", shared.description,
+				"record_type", handleString(shared.recordType),
+				"description", handleString(shared.description),
 				"dep_count", len(shared.deps),
 			)
 			if frame := shared.loadResultCall(); frame != nil {
@@ -525,8 +528,8 @@ func (c *Cache) traceSessionResultReleasing(ctx context.Context, sessionID strin
 			args = append(args,
 				"shared_result_id", shared.id,
 				"incoming_ownership_count", shared.incomingOwnershipCount.Load(),
-				"record_type", shared.recordType,
-				"description", shared.description,
+				"record_type", handleString(shared.recordType),
+				"description", handleString(shared.description),
 				"dep_count", len(shared.deps),
 			)
 			if frame := shared.loadResultCall(); frame != nil {
@@ -580,12 +583,12 @@ func (c *Cache) traceEqClassMerged(ctx context.Context, ids []eqClassID, root eq
 	})
 }
 
-func debugExtraDigestsForTrace(extras map[call.ExtraDigest]struct{}) []string {
+func debugExtraDigestsForTrace(extras []call.ExtraDigest) []string {
 	if len(extras) == 0 {
 		return nil
 	}
 	out := make([]string, 0, len(extras))
-	for extra := range extras {
+	for _, extra := range extras {
 		label := extra.Label
 		if label == "" {
 			label = "unlabeled"
@@ -606,8 +609,8 @@ func (c *Cache) debugEqClassMergeDetails(ids []eqClassID) []map[string]any {
 		if root == 0 {
 			continue
 		}
-		digests := make([]string, 0, len(c.eqClassToDigests[root]))
-		for dig := range c.eqClassToDigests[root] {
+		digests := make([]string, 0, c.eqClassToDigests[root].Size())
+		for dig := range c.eqClassToDigests[root].All() {
 			digests = append(digests, dig)
 		}
 		slices.Sort(digests)
@@ -615,22 +618,21 @@ func (c *Cache) debugEqClassMergeDetails(ids []eqClassID) []map[string]any {
 			"eq_class_id":     root,
 			"digests":         digests,
 			"extra_digests":   debugExtraDigestsForTrace(c.eqClassExtraDigests[root]),
-			"input_term_ids":  c.debugEqClassTermIDs(c.inputEqClassToTerms[root]),
-			"output_term_ids": c.debugEqClassTermIDs(c.outputEqClassToTerms[root]),
+			"input_term_ids":  c.debugEqClassTermIDs(c.inputEqClassToTerms.Members(root)),
+			"output_term_ids": c.debugEqClassTermIDs(c.outputEqClassToTerms.Members(root)),
 		})
 	}
 	return out
 }
 
-func (c *Cache) debugEqClassTermIDs(terms map[egraphTermID]struct{}) []uint64 {
-	if len(terms) == 0 {
+func (c *Cache) debugEqClassTermIDs(terms idMembers[egraphTermID]) []uint64 {
+	if terms.Size() == 0 {
 		return nil
 	}
-	out := make([]uint64, 0, len(terms))
-	for termID := range terms {
+	out := make([]uint64, 0, terms.Size())
+	for termID := range terms.Items() {
 		out = append(out, uint64(termID))
 	}
-	slices.Sort(out)
 	return out
 }
 
@@ -639,8 +641,8 @@ func (c *Cache) traceTeachContentDigest(ctx context.Context, res *sharedResult, 
 		args := []any{
 			"phase", "runtime",
 			"shared_result_id", res.id,
-			"record_type", res.recordType,
-			"description", res.description,
+			"record_type", handleString(res.recordType),
+			"description", handleString(res.description),
 			"old_content_digest", oldContentDigest,
 			"new_content_digest", newContentDigest,
 			"request_digest", requestDigest,
@@ -676,8 +678,8 @@ func (c *Cache) traceTeachResultIdentityRootSet(ctx context.Context, res *shared
 		args := []any{
 			"phase", "runtime",
 			"shared_result_id", res.id,
-			"record_type", res.recordType,
-			"description", res.description,
+			"record_type", handleString(res.recordType),
+			"description", handleString(res.description),
 			"request_digest", requestDigest,
 			"request_self_digest", requestSelf,
 			"request_input_digests", requestInputs,
@@ -740,7 +742,7 @@ func (c *Cache) traceLookupHit(ctx context.Context, requestDigest string, res *s
 
 func (c *Cache) traceResultCreated(ctx context.Context, res *sharedResult) {
 	c.traceLazy(ctx, "result_created", func() []any {
-		return []any{"phase", "runtime", "shared_result_id", res.id, "record_type", res.recordType, "description", res.description}
+		return []any{"phase", "runtime", "shared_result_id", res.id, "record_type", handleString(res.recordType), "description", handleString(res.description)}
 	})
 }
 
@@ -790,9 +792,10 @@ func (c *Cache) tracePersistedPayloadImportedLazy(ctx context.Context, importRun
 	})
 }
 
-func (c *Cache) traceImportResultLoaded(ctx context.Context, importRunID string, resID sharedResultID, callFrameJSON string) {
+func (c *Cache) traceImportResultLoaded(ctx context.Context, importRunID string, resID sharedResultID, frame *ResultCall) {
 	c.traceLazy(ctx, "import_result_loaded", func() []any {
-		return []any{"phase", "import", "import_run_id", importRunID, "shared_result_id", resID, "call_frame_json", callFrameJSON}
+		callFrameJSON, _ := json.Marshal(frame)
+		return []any{"phase", "import", "import_run_id", importRunID, "shared_result_id", resID, "call_frame_json", string(callFrameJSON)}
 	})
 }
 
@@ -816,8 +819,8 @@ func (c *Cache) traceResultCallFrameUpdated(ctx context.Context, res *sharedResu
 			"phase", "runtime",
 			"reason", reason,
 			"shared_result_id", res.id,
-			"record_type", res.recordType,
-			"description", res.description,
+			"record_type", handleString(res.recordType),
+			"description", handleString(res.description),
 			"incoming_ownership_count", res.incomingOwnershipCount.Load(),
 			"dep_count", len(res.deps),
 			"old_frame_present", oldFrame != nil,
@@ -838,8 +841,8 @@ func (c *Cache) traceResultRemoved(ctx context.Context, res *sharedResult, oldFr
 		return []any{
 			"phase", "runtime",
 			"shared_result_id", res.id,
-			"record_type", res.recordType,
-			"description", res.description,
+			"record_type", handleString(res.recordType),
+			"description", handleString(res.description),
 			"incoming_ownership_count", res.incomingOwnershipCount.Load(),
 			"dep_count", depCount,
 			"had_result_call", oldFrame != nil,
@@ -858,8 +861,8 @@ func (c *Cache) traceAttachResultReusedCacheBacked(ctx context.Context, sessionI
 			"phase", "runtime",
 			"session_id", sessionID,
 			"shared_result_id", shared.id,
-			"record_type", shared.recordType,
-			"description", shared.description,
+			"record_type", handleString(shared.recordType),
+			"description", handleString(shared.description),
 			"incoming_ownership_count", shared.incomingOwnershipCount.Load(),
 			"dep_count", len(shared.deps),
 			"has_result_call", frame != nil,
@@ -896,7 +899,7 @@ func (c *Cache) traceRecipeIDRebuildFailed(ctx context.Context, rootFrame *Resul
 			args = append(args, "cache_present", false)
 			return args
 		}
-		c.egraphMu.RLock()
+		read := c.readGraphAs(workOther)
 		res := c.resultsByID[sharedResultID(ref.ResultID)]
 		if res != nil {
 			frame := res.loadResultCall()
@@ -904,8 +907,8 @@ func (c *Cache) traceRecipeIDRebuildFailed(ctx context.Context, rootFrame *Resul
 			args = append(args,
 				"cache_result_present", true,
 				"cache_result_has_frame", frame != nil,
-				"cache_result_record_type", res.recordType,
-				"cache_result_description", res.description,
+				"cache_result_record_type", handleString(res.recordType),
+				"cache_result_description", handleString(res.description),
 				"cache_result_incoming_ownership_count", res.incomingOwnershipCount.Load(),
 				"cache_result_dep_count", len(res.deps),
 				"cache_result_call_field", field,
@@ -915,7 +918,7 @@ func (c *Cache) traceRecipeIDRebuildFailed(ctx context.Context, rootFrame *Resul
 		} else {
 			args = append(args, "cache_result_present", false)
 		}
-		c.egraphMu.RUnlock()
+		read.Unlock()
 		return args
 	})
 }
@@ -947,7 +950,7 @@ func (c *Cache) traceResultCallRefFromResultFailed(ctx context.Context, res AnyR
 		if c == nil || shared.id == 0 {
 			return args
 		}
-		c.egraphMu.RLock()
+		read := c.readGraphAs(workOther)
 		cacheRes := c.resultsByID[shared.id]
 		if cacheRes != nil {
 			frame := cacheRes.loadResultCall()
@@ -955,8 +958,8 @@ func (c *Cache) traceResultCallRefFromResultFailed(ctx context.Context, res AnyR
 			args = append(args,
 				"cache_result_present", true,
 				"cache_result_has_frame", frame != nil,
-				"cache_result_record_type", cacheRes.recordType,
-				"cache_result_description", cacheRes.description,
+				"cache_result_record_type", handleString(cacheRes.recordType),
+				"cache_result_description", handleString(cacheRes.description),
 				"cache_result_incoming_ownership_count", cacheRes.incomingOwnershipCount.Load(),
 				"cache_result_dep_count", len(cacheRes.deps),
 				"cache_result_call_field", field,
@@ -966,7 +969,7 @@ func (c *Cache) traceResultCallRefFromResultFailed(ctx context.Context, res AnyR
 		} else {
 			args = append(args, "cache_result_present", false)
 		}
-		c.egraphMu.RUnlock()
+		read.Unlock()
 		return args
 	})
 }
@@ -985,8 +988,8 @@ func (c *Cache) tracePersistedPayloadDecoded(ctx context.Context, res *sharedRes
 
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (c *Cache) DebugEGraphSnapshot() *EGraphDebugSnapshot {
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workOther)
+	defer read.Unlock()
 
 	snap := &EGraphDebugSnapshot{
 		OfferOwners:        c.debugOfferOwnersLocked(),
@@ -1007,11 +1010,11 @@ func (c *Cache) DebugEGraphSnapshot() *EGraphDebugSnapshot {
 			continue
 		}
 		depIDs := make([]uint64, 0, len(res.deps))
-		for depID := range res.deps {
+		for _, depID := range res.deps {
 			depIDs = append(depIDs, uint64(depID))
 		}
 		slices.Sort(depIDs)
-		outputEqIDs := make([]uint64, 0, len(c.resultOutputEqClasses[resultID]))
+		outputEqIDs := make([]uint64, 0, c.resultOutputEqClasses.Size(resultID))
 		for outputEqID := range c.outputEqClassesForResultLocked(resultID) {
 			outputEqIDs = append(outputEqIDs, uint64(outputEqID))
 		}
@@ -1050,8 +1053,8 @@ func (c *Cache) DebugEGraphSnapshot() *EGraphDebugSnapshot {
 		snap.Results = append(snap.Results, EGraphDebugResult{
 			SharedResultID:             uint64(res.id),
 			OutputEqClassIDs:           outputEqIDs,
-			RecordType:                 res.recordType,
-			Description:                res.description,
+			RecordType:                 handleString(res.recordType),
+			Description:                handleString(res.description),
 			TypeName:                   typeName,
 			IncomingOwnershipCount:     res.incomingOwnershipCount.Load(),
 			HasValue:                   state.hasValue,
@@ -1064,6 +1067,7 @@ func (c *Cache) DebugEGraphSnapshot() *EGraphDebugSnapshot {
 			ExplicitDeps:               depIDs,
 			HeldDependencyResults:      len(res.deps),
 			SnapshotLinks:              links,
+			FromImage:                  fromImageLocked(res),
 		})
 	}
 
@@ -1103,7 +1107,7 @@ func (c *Cache) DebugEGraphSnapshot() *EGraphDebugSnapshot {
 			inputProvenance := make([]EGraphDebugInputProvenance, 0, len(c.termInputProvenance[termID]))
 			for _, input := range c.termInputProvenance[termID] {
 				inputProvenance = append(inputProvenance, EGraphDebugInputProvenance{
-					Kind: string(input),
+					Kind: input.String(),
 				})
 			}
 			snap.ResultTerms = append(snap.ResultTerms, EGraphDebugResultTerm{
@@ -1155,14 +1159,14 @@ type cacheDebugCallDigests struct {
 }
 
 func (c *Cache) debugResultCallDigests() map[*ResultCall]cacheDebugCallDigests {
-	c.egraphMu.RLock()
+	read := c.readGraphAs(workOther)
 	frames := make(map[*ResultCall]cacheDebugCallDigests, len(c.resultsByID))
 	for _, res := range c.resultsByID {
 		if frame := res.loadResultCall(); frame != nil {
 			frames[frame] = cacheDebugCallDigests{}
 		}
 	}
-	c.egraphMu.RUnlock()
+	read.Unlock()
 
 	// Digest reconstruction can acquire egraphMu, so it must finish before
 	// the streamed snapshot holds that lock. These diagnostic observations
@@ -1203,14 +1207,14 @@ func (c *Cache) debugResultCallDigests() map[*ResultCall]cacheDebugCallDigests {
 // entry, as any capture would. An entry nothing owns is not read: the
 // snapshot reports its settled parts as partial.
 func (c *Cache) debugWarmCompleteParts(ctx context.Context) {
-	c.egraphMu.RLock()
+	read := c.readGraphAs(workOther)
 	rows := make([]*sharedResult, 0, len(c.resultsByID))
 	for _, res := range c.resultsByID {
 		if res.incomingOwnershipCount.Load() > 0 && !res.noValueLocked() {
 			rows = append(rows, res)
 		}
 	}
-	c.egraphMu.RUnlock()
+	read.Unlock()
 	for _, res := range rows {
 		c.completePartKeys(ctx, res)
 	}
@@ -1226,7 +1230,7 @@ func debugPartsLocked(res *sharedResult) (complete []string, partial bool, offer
 	}
 	slices.Sort(offered)
 	if key, h := res.cloudHoldingLocked(); h != nil {
-		holding = &CacheDebugCloudHolding{Number: key.Number, Stored: !h.unstored, ExpiresAtUnix: h.expiresAtUnix}
+		holding = &CacheDebugCloudHolding{Number: key.Number, Stored: !h.is(heldUnstored), ExpiresAtUnix: h.expiresAtUnix}
 	}
 	return complete, partial, offered, holding
 }
@@ -1237,8 +1241,8 @@ func (c *Cache) WriteDebugCacheSnapshot(w io.Writer) error {
 	c.debugWarmCompleteParts(context.Background())
 	sessionResults := c.debugSessionResultsSnapshot()
 	c.callsMu.Lock()
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	readHold := c.readGraphAs(workOther)
+	defer readHold.Unlock()
 	defer c.callsMu.Unlock()
 
 	bw := bufio.NewWriterSize(w, 128<<10)
@@ -1346,14 +1350,10 @@ func (c *Cache) WriteDebugCacheSnapshot(w io.Writer) error {
 	}
 	slices.Sort(resultIDs)
 
-	resultIndexDigests := make([]string, 0, len(c.egraphResultsByDigest))
-	for dig := range c.egraphResultsByDigest {
-		resultIndexDigests = append(resultIndexDigests, dig)
-	}
-	slices.Sort(resultIndexDigests)
+	resultIndexDigests := slices.Sorted(c.egraphResultsByDigest.Digests())
 	indexedDigestsByResult := make(map[sharedResultID][]string, len(resultIDs))
 	for _, dig := range resultIndexDigests {
-		for resultID := range c.egraphResultsByDigest[dig].Items() {
+		for resultID := range c.egraphResultsByDigest.Items(dig) {
 			indexedDigestsByResult[resultID] = append(indexedDigestsByResult[resultID], dig)
 		}
 	}
@@ -1366,12 +1366,12 @@ func (c *Cache) WriteDebugCacheSnapshot(w io.Writer) error {
 			}
 
 			depIDs := make([]uint64, 0, len(res.deps))
-			for depID := range res.deps {
+			for _, depID := range res.deps {
 				depIDs = append(depIDs, uint64(depID))
 			}
 			slices.Sort(depIDs)
 
-			outputEqIDs := make([]uint64, 0, len(c.resultOutputEqClasses[resultID]))
+			outputEqIDs := make([]uint64, 0, c.resultOutputEqClasses.Size(resultID))
 			for outputEqID := range c.outputEqClassesForResultLocked(resultID) {
 				outputEqIDs = append(outputEqIDs, uint64(outputEqID))
 			}
@@ -1442,8 +1442,8 @@ func (c *Cache) WriteDebugCacheSnapshot(w io.Writer) error {
 				EGraphDebugResult: EGraphDebugResult{
 					SharedResultID:             uint64(res.id),
 					OutputEqClassIDs:           outputEqIDs,
-					RecordType:                 res.recordType,
-					Description:                res.description,
+					RecordType:                 handleString(res.recordType),
+					Description:                handleString(res.description),
 					TypeName:                   typeName,
 					IncomingOwnershipCount:     res.incomingOwnershipCount.Load(),
 					HasValue:                   state.hasValue,
@@ -1456,6 +1456,7 @@ func (c *Cache) WriteDebugCacheSnapshot(w io.Writer) error {
 					ExplicitDeps:               depIDs,
 					HeldDependencyResults:      len(res.deps),
 					SnapshotLinks:              links,
+					FromImage:                  fromImageLocked(res),
 				},
 				ResultCall:                            frame,
 				ResultCallRecipeDigest:                observed.recipeDigest,
@@ -1496,12 +1497,11 @@ func (c *Cache) WriteDebugCacheSnapshot(w io.Writer) error {
 
 	if err := writeArrayField("result_digest_indexes", func(writeElem func(any) error) error {
 		for _, dig := range resultIndexDigests {
-			resultSet := c.egraphResultsByDigest[dig]
-			if resultSet == nil || resultSet.Empty() {
+			if !c.egraphResultsByDigest.Has(dig) {
 				continue
 			}
-			indexedResultIDs := make([]uint64, 0, resultSet.Size())
-			for resultID := range resultSet.Items() {
+			indexedResultIDs := make([]uint64, 0, c.egraphResultsByDigest.Size(dig))
+			for resultID := range c.egraphResultsByDigest.Items(dig) {
 				indexedResultIDs = append(indexedResultIDs, uint64(resultID))
 			}
 			slices.Sort(indexedResultIDs)
@@ -1560,7 +1560,7 @@ func (c *Cache) WriteDebugCacheSnapshot(w io.Writer) error {
 			for _, termID := range assocTermIDs {
 				inputProvenance := make([]EGraphDebugInputProvenance, 0, len(c.termInputProvenance[termID]))
 				for _, input := range c.termInputProvenance[termID] {
-					inputProvenance = append(inputProvenance, EGraphDebugInputProvenance{Kind: string(input)})
+					inputProvenance = append(inputProvenance, EGraphDebugInputProvenance{Kind: input.String()})
 				}
 				if err := writeElem(EGraphDebugResultTerm{
 					SharedResultID:  uint64(resultID),

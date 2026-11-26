@@ -1,10 +1,12 @@
 package dagql
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"slices"
+	"strings"
 
 	"github.com/opencontainers/go-digest"
 )
@@ -31,8 +33,8 @@ import (
 // egraphMu.
 func (res *sharedResult) engineHoldingsLocked() int64 {
 	var n int64
-	for key := range res.holders {
-		if !senderCache(key.Cache) {
+	for _, ref := range res.holderRefsLocked() {
+		if !senderCache(ref.key.Cache) {
 			n++
 		}
 	}
@@ -89,7 +91,7 @@ func (c *Cache) dropValueLocked(ctx context.Context, res *sharedResult) ([]*shar
 		deps []*sharedResult
 		rerr error
 	)
-	for depID := range res.deps {
+	for _, depID := range res.deps {
 		c.forgetDependencyEdgeLocked(res.id, depID)
 		dep := c.resultsByID[depID]
 		if dep == nil {
@@ -101,18 +103,45 @@ func (c *Cache) dropValueLocked(ctx context.Context, res *sharedResult) ([]*shar
 	}
 	// The cache takes the value back only from a cache that computes it
 	// after the drop.
-	for _, h := range res.holders {
-		h.executed = false
+	c.markEntryClassLocked(res.id, StampPruned)
+	for _, ref := range res.holderRefsLocked() {
+		if ref.h.is(heldExecuted) {
+			ref.h.setFlag(heldExecuted, false)
+			c.markHoldingLocked(ref.key)
+		}
 	}
 	res.deps = nil
-	res.storedParts = nil
-	res.storedRecordBytes = 0
+	// The content digests spans taught the entry name the bytes of the
+	// value the drop takes. A record that fills the entry again may be
+	// another engine's run of the recipe, with other bytes, and until runs
+	// are named the cache can't tell, so they go with the value.
+	if t := res.taughtContent; t != nil {
+		if len(t.digests) > 0 || t.from.ok() {
+			c.taughtContentDropped.Add(1)
+			res.taughtDropped = true
+		}
+		t.digests = nil
+		t.given = 0
+		t.from = entryFrame{}
+		// The frame the drop takes is no longer the one the worker is
+		// giving digests to: what it records of it is dropped, as after a
+		// replacement (applyTaughtContent).
+		t.frame++
+	}
+	c.changeStoredPartsLocked(res, func() { res.storedParts = nil })
+	// The run goes with the value: a record that fills the entry again names
+	// its own.
+	res.run, res.runRan = nil, runNotRan
+	c.setStoredRecordBytesLocked(res, 0)
 	res.storedTransfer.Store(nil)
 	res.dependencyOwnershipRevision++
 	res.transferRevision++
-	res.imported = false
 	res.expiresAtUnix = 0
+	res.payloadMu.Lock()
+	res.imported = false
 	res.sessionResourceHandle = ""
+	res.boundSession = ""
+	res.payloadMu.Unlock()
 	if _, err := c.recomputeRequiredSessionResourcesLocked(res); err != nil {
 		rerr = errors.Join(rerr, err)
 	}
@@ -123,10 +152,13 @@ func (c *Cache) dropValueLocked(ctx context.Context, res *sharedResult) ([]*shar
 	res.objClass = objectClassRef{}
 	res.hasValue = false
 	res.persistedEnvelope = nil
+	res.stored = nil
+	res.partFacts = nil
 	res.createdAtUnixNano = 0
 	res.payloadRevision++
 	res.payloadMu.Unlock()
 	c.setResultPayloadBytesLocked(res, 0)
+	c.poolSettleLocked(res)
 	return deps, rerr
 }
 
@@ -138,9 +170,12 @@ func (c *Cache) dropValueLocked(ctx context.Context, res *sharedResult) ([]*shar
 // disk stage counts the distinct layer blobs its values' stored parts name,
 // each at its descriptor's size: a blob shared by several values is counted
 // once, and freed only when the last value that names it goes, as an engine
-// counts a shared snapshot. Neither depends on the e-graph's classes, which
-// the Cloud compacts on collection (compactEqClassesAfterCollectionLocked),
-// so a prune of a blob-backed cache leaves compaction to it.
+// counts a shared snapshot. Engines can describe one blob at different
+// sizes, and the cache holds such layers apart (storedLayers), but the
+// store holds the blob once: a value counts it at the largest size its parts
+// give it, and the disk stage counts it once, at the largest size a value
+// of the pool gives it, whichever the stage meets first. Neither depends on
+// the e-graph's classes.
 
 // storedPoolLocked returns the pool of a blob-backed cache. Requires
 // egraphMu.
@@ -161,7 +196,7 @@ func (c *Cache) storedPoolLocked() map[sharedResultID]*sharedResult {
 			continue
 		}
 		pool[id] = res
-		for dep := range res.deps {
+		for _, dep := range res.deps {
 			stack = append(stack, dep)
 		}
 	}
@@ -175,37 +210,55 @@ func (res *sharedResult) storedValueBytes() int64 {
 }
 
 // poolEstimateLocked is the memory stage's measure of a blob-backed cache:
-// its pool's values and their bytes. Requires egraphMu.
+// its pool's values and their bytes, as the cache keeps them
+// (cache_pool_measure.go). Requires egraphMu.
 func (c *Cache) poolEstimateLocked() CacheMetadataEstimate {
-	pool := c.storedPoolLocked()
-	estimate := CacheMetadataEstimate{ResultCount: len(pool)}
-	for _, res := range pool {
-		estimate.EstimatedBytes += res.storedValueBytes()
-	}
-	return estimate
+	return CacheMetadataEstimate{ResultCount: c.pool.values, EstimatedBytes: c.pool.bytes}
 }
 
 // encodedRecordBytes is a record's size as persistence writes it: its call
 // frame's JSON and its envelope's.
 func encodedRecordBytes(rec PersistedRecord) int64 {
+	_, size := encodedRecord(rec)
+	return size
+}
+
+// encodedRecord returns rec's envelope's JSON, nil if it can't be encoded,
+// and rec's size as encodedRecordBytes measures it.
+func encodedRecord(rec PersistedRecord) ([]byte, int64) {
 	frame, _ := json.Marshal(rec.Call)
-	envelope, _ := json.Marshal(rec.Envelope)
-	return int64(len(frame) + len(envelope))
+	envelope, err := json.Marshal(rec.Envelope)
+	if err != nil {
+		envelope = nil
+	}
+	return envelope, int64(len(frame) + len(envelope))
+}
+
+// storedBlob is a layer blob a stored part names, at the size it gives it.
+type storedBlob struct {
+	digest digest.Digest
+	size   int64
 }
 
 // storedBlobsLocked returns the distinct layer blobs res's stored parts name,
-// with their sizes. Requires egraphMu.
-func (res *sharedResult) storedBlobsLocked() map[digest.Digest]int64 {
-	if len(res.storedParts) == 0 {
-		return nil
-	}
-	blobs := make(map[digest.Digest]int64)
+// each at the largest size they give it, sorted by digest, in blobs, which it
+// empties first: a walk of many entries passes the same slice for each.
+// Requires egraphMu.
+func (res *sharedResult) storedBlobsLocked(blobs []storedBlob) []storedBlob {
+	blobs = blobs[:0]
 	for _, part := range res.storedParts {
-		for _, layer := range part.Chain.Layers {
-			blobs[layer.Descriptor.Digest] = layer.Descriptor.Size
+		for _, layer := range part.layers {
+			blobs = append(blobs, storedBlob{digest: layer.layer.Descriptor.Digest, size: layer.layer.Descriptor.Size})
 		}
 	}
-	return blobs
+	if len(blobs) < 2 {
+		return blobs
+	}
+	// Each blob's largest size first, which compacting keeps.
+	slices.SortFunc(blobs, func(a, b storedBlob) int {
+		return cmp.Or(strings.Compare(string(a.digest), string(b.digest)), cmp.Compare(b.size, a.size))
+	})
+	return slices.CompactFunc(blobs, func(a, b storedBlob) bool { return a.digest == b.digest })
 }
 
 // storedBlobUsage is the disk stage's measure of a blob-backed cache: each
@@ -219,35 +272,43 @@ type storedBlobUsage struct {
 
 // storedBlobUsageLocked measures a blob-backed cache's blobs. Every value
 // counts as a member of the blobs it names, in the pool or not, so a blob
-// that a value outside the pool names is never simulated freed. Requires
-// egraphMu.
+// that a value outside the pool names is never simulated freed. A blob's
+// size is the largest a value of the pool gives it, as the pool's kept
+// measure counts it (cache_pool_measure.go), or, for a blob only values
+// outside the pool name, the largest any gives it. Requires egraphMu.
 func (c *Cache) storedBlobUsageLocked(checker *pruneCancellationChecker) (*storedBlobUsage, error) {
 	usage := &storedBlobUsage{byResult: map[sharedResultID][]string{}, sizes: map[string]int64{}}
 	pool := c.storedPoolLocked()
-	counted := map[string]bool{}
+	inPool := map[string]bool{}
+	var blobs []storedBlob
 	for id, res := range c.resultsByID {
 		if checker != nil {
 			if err := checker.check(); err != nil {
 				return nil, err
 			}
 		}
-		blobs := res.storedBlobsLocked()
+		blobs = res.storedBlobsLocked(blobs)
 		if len(blobs) == 0 || !res.hasOwnValueLocked() {
 			continue
 		}
-		_, inPool := pool[id]
+		_, member := pool[id]
 		identities := make([]string, 0, len(blobs))
-		for blob, size := range blobs {
-			identity := blob.String()
+		for _, blob := range blobs {
+			identity, size := blob.digest.String(), blob.size
 			identities = append(identities, identity)
-			usage.sizes[identity] = size
-			if inPool && !counted[identity] {
-				counted[identity] = true
-				usage.poolBytes += size
+			switch seen, ok := usage.sizes[identity]; {
+			case member && !inPool[identity]:
+				inPool[identity] = true
+				usage.sizes[identity] = size
+			case member == inPool[identity] && (!ok || size > seen):
+				usage.sizes[identity] = size
 			}
 		}
 		slices.Sort(identities)
 		usage.byResult[id] = identities
+	}
+	for identity := range inPool {
+		usage.poolBytes += usage.sizes[identity]
 	}
 	return usage, nil
 }

@@ -323,9 +323,12 @@ type Wait struct {
 	reason   WaitReason
 	startNS  int64
 	// holderID and holderSinceNS are a lock's holder when the wait began,
-	// and when it took the lock (see RWMutex); 0 when not known.
+	// and when it took the lock (see RWMutex); 0 when not known. holderKind
+	// is the interned kind of the writer that let the wait in (LockWait), 0
+	// when not known.
 	holderID      uint64
 	holderSinceNS int64
+	holderKind    uint32
 }
 
 // BeginWait starts recording that the current op (from ctx) is blocked on
@@ -370,19 +373,24 @@ func Lock(ctx context.Context, mu *sync.Mutex, ident string) {
 }
 
 // ReadLock acquires mu for reading, recording a blocked acquisition as Lock
-// does. On an RWMutex the wait names the lock's holder.
+// does. On an RWMutex the wait names the lock's holder, as ReadLockWaited's
+// does.
 func ReadLock(ctx context.Context, mu RWLocker, ident string) {
 	if mu.TryRLock() {
 		return
 	}
-	w := beginLockWait(ctx, mu, ident)
+	if m, tracked := mu.(*RWMutex); tracked {
+		m.waitFor(ctx, ident, true)
+		return
+	}
+	w := BeginWaitIdent(ctx, ident, WaitReasonLock)
 	mu.RLock()
 	w.End()
 }
 
 // WriteLock acquires mu for writing, recording a blocked acquisition as Lock
-// does. On an RWMutex the wait names the lock's holder, and the op of ctx
-// is its holder from then.
+// does. On an RWMutex the wait names the lock's holder, the op of ctx is
+// its holder from then, and it names no kind of work (WriteLockAs).
 func WriteLock(ctx context.Context, mu RWLocker, ident string) {
 	m, tracked := mu.(*RWMutex)
 	if !tracked {
@@ -394,21 +402,75 @@ func WriteLock(ctx context.Context, mu RWLocker, ident string) {
 		w.End()
 		return
 	}
-	if m.RWMutex.TryLock() {
-		m.markOp(ctx)
-		return
+	var lw LockWait
+	if !m.RWMutex.TryLock() {
+		lw = m.waitFor(ctx, ident, false)
 	}
-	w := beginLockWait(ctx, m, ident)
-	m.RWMutex.Lock()
 	m.markOp(ctx)
-	w.End()
+	m.took(lw.Waited)
 }
 
-// beginLockWait begins a lock wait on mu, with its holder when mu is an
-// RWMutex.
-func beginLockWait(ctx context.Context, mu RWLocker, ident string) *Wait {
+// ReadLockWaited acquires m for reading, and returns how long it waited and
+// the kind of the writer that let it in (LockWait), whether or not anything
+// records: an acquisition that doesn't wait costs what TryRLock does. While
+// work under ctx is recorded, a blocked acquisition is a lock wait on ident,
+// as Lock records one, naming m's holder when it began and that kind.
+func ReadLockWaited(ctx context.Context, m *RWMutex, ident string) LockWait {
+	if m.TryRLock() {
+		return LockWait{}
+	}
+	return m.waitFor(ctx, ident, true)
+}
+
+// ReadLockAs acquires m for reading as kind of work, and returns the hold,
+// whose Unlock releases m and tells m's read hold observer of it
+// (ObserveReadHolds), and what ReadLockWaited returns: it waits as
+// ReadLockWaited does.
+func ReadLockAs(ctx context.Context, m *RWMutex, ident string, kind LockHolder) (ReadHold, LockWait) {
+	observed := m.readHolds.Load() != nil
+	if m.TryRLock() {
+		return m.readHold(kind, 0, observed), LockWait{}
+	}
+	lw := m.waitFor(ctx, ident, true)
+	return m.readHold(kind, lw.Waited, observed), lw
+}
+
+type lockHolderKey struct{}
+
+// WithLockHolder returns ctx naming kind as the kind of work its holds of a
+// lock are for (LockHolderOf), so that a caller can tell the code it calls
+// what it reads for: the reads of a dagql cache's lock under ctx name kind,
+// in place of the cache's own kind of work.
+func WithLockHolder(ctx context.Context, kind LockHolder) context.Context {
+	return context.WithValue(ctx, lockHolderKey{}, kind)
+}
+
+// LockHolderOf is the kind of work ctx names (WithLockHolder), and whether
+// it names one.
+func LockHolderOf(ctx context.Context) (LockHolder, bool) {
+	kind, ok := ctx.Value(lockHolderKey{}).(LockHolder)
+	return kind, ok
+}
+
+// WriteLockAs acquires m for writing as kind of work, so that a waiter it
+// keeps out can tell what it waited behind, and returns how long it waited
+// and the kind of the writer that let it in, as ReadLockWaited does. The op
+// of ctx is m's holder from then, while a recorder is active.
+func WriteLockAs(ctx context.Context, m *RWMutex, ident string, kind LockHolder) LockWait {
+	var lw LockWait
+	if !m.RWMutex.TryLock() {
+		lw = m.waitFor(ctx, ident, false)
+	}
+	m.kind = kind
+	m.markOp(ctx)
+	m.took(lw.Waited)
+	return lw
+}
+
+// beginLockWait begins a lock wait on m, with its holder.
+func beginLockWait(ctx context.Context, m *RWMutex, ident string) *Wait {
 	w := BeginWaitIdent(ctx, ident, WaitReasonLock)
-	if m, ok := mu.(*RWMutex); ok && w != nil {
+	if w != nil {
 		w.holderID, w.holderSinceNS = m.holderAt()
 	}
 	return w
@@ -437,6 +499,7 @@ func (w *Wait) End() {
 		Reason:   w.reason,
 		ParentID: w.waiterID,
 		TargetID: w.targetID,
+		ClassID:  w.holderKind,
 		IdentID:  w.identID,
 		ResultID: w.holderID,
 		Bytes:    w.holderSinceNS,

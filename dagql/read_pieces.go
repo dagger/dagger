@@ -1,0 +1,150 @@
+package dagql
+
+import (
+	"time"
+
+	"github.com/dagger/dagger/engine/wcprof"
+)
+
+// readPieceSteps is how many steps a read in pieces (readInPieces) takes in
+// one hold of egraphMu: a count, not a time, so that a read is the same on
+// every machine. A step of the Cloud's closure walks takes about one to two
+// microseconds, so a piece about one to two milliseconds.
+const readPieceSteps = 1024
+
+// readPieces is a read of the cache that holds egraphMu for reading in
+// pieces of readPieceSteps steps, letting it go between them, so that a
+// writer waits for one piece rather than the whole read. Outside the
+// service's work lock, the Cloud's long reads, such as a closure's walk, held
+// the lock up to seconds, and every write waited for them.
+type readPieces struct {
+	c     *Cache
+	size  int
+	steps int
+	// kind is the kind of work the read is for, and read the hold of the
+	// piece in progress: each piece is a hold of its own
+	// (ObserveGraphReadHolds).
+	kind wcprof.LockHolder
+	read wcprof.ReadHold
+	// hold, when set, bounds a piece by its time instead of its steps: a
+	// piece ends at the first step after it has held egraphMu that long
+	// (readInPiecesFor), and, with waited, only once something waits for
+	// egraphMu (readGivingWay). yielded counts the times the read let
+	// egraphMu go.
+	hold    time.Duration
+	waited  bool
+	yielded int
+	// report, if set, is told the length of each hold, as it ends; locked
+	// is when the current one began.
+	report func(time.Duration)
+	locked time.Time
+	// held is whether the read holds egraphMu: not between two pieces, so
+	// that done, deferred by the read, lets go only of a hold it has, even
+	// when the read ends there, as a test's failed check in
+	// testReadPieceYielded ends its goroutine.
+	held bool
+}
+
+// readInPieces takes egraphMu for reading as kind of work, for a read in
+// pieces: step after each step of the read, and done at its end.
+func (c *Cache) readInPieces(kind wcprof.LockHolder) *readPieces {
+	size := c.readPieceSize
+	if size <= 0 {
+		size = readPieceSteps
+	}
+	read := c.egraphMu.RLockAs(kind)
+	return &readPieces{c: c, size: size, kind: kind, read: read, locked: time.Now(), held: true}
+}
+
+// readInPiecesFor takes egraphMu for reading, for a read in pieces each of
+// which holds it for about hold: a piece ends at the first step after hold.
+// A writer then waits for at most one piece, however long each step takes
+// on a busy or slow machine, and under writers that always wait, the read
+// still reads hold between two of their holds. A cache whose tests set
+// readPieceSize reads in pieces of that many steps instead.
+func (c *Cache) readInPiecesFor(kind wcprof.LockHolder, hold time.Duration) *readPieces {
+	r := c.readInPieces(kind)
+	if c.readPieceSize <= 0 {
+		r.hold = hold
+	}
+	return r
+}
+
+// readGivingWay takes egraphMu for reading, for a read in pieces that gives
+// way only to what waits for it: a piece ends at the first step after it
+// has held egraphMu for hold while another acquisition, a writer's or a
+// reader's queued behind one, waits for it. With nothing waiting, the read
+// keeps its one hold, and what it keeps of the cache's state for the hold,
+// such as a term's key, stays good; a writer that comes waits for at most
+// hold and one step. A cache whose tests set readPieceSize reads in pieces
+// of that many steps instead, whatever waits.
+func (c *Cache) readGivingWay(kind wcprof.LockHolder, hold time.Duration) *readPieces {
+	r := c.readInPiecesFor(kind, hold)
+	r.waited = r.hold > 0
+	return r
+}
+
+// step counts a step of the read and, after each piece's last, lets egraphMu
+// go and takes it again. It reports whether it did: the cache may have
+// changed since the read's last step, and a caller that needs one state
+// checks for that.
+func (r *readPieces) step() bool {
+	r.steps++
+	if r.hold > 0 {
+		if r.waited && !r.c.egraphMu.Waiting() || time.Since(r.locked) < r.hold {
+			return false
+		}
+	} else if r.steps%r.size != 0 {
+		return false
+	}
+	r.yield()
+	return true
+}
+
+// yield lets egraphMu go and takes it again, ending the piece in progress.
+func (r *readPieces) yield() {
+	r.without(nil)
+}
+
+// without lets egraphMu go, runs f, unless nil, with no lock held, and takes
+// egraphMu again, ending the piece in progress: for the read's own work on
+// what it has read, such as sorting it.
+func (r *readPieces) without(f func()) {
+	r.release()
+	if f != nil {
+		f()
+	}
+	if r.c.testReadPieceYielded != nil {
+		r.c.testReadPieceYielded()
+	}
+	r.read = r.c.egraphMu.RLockAs(r.kind)
+	r.held = true
+	r.locked = time.Now()
+	r.yielded++
+}
+
+// yields is how many times the read has let egraphMu go so far: a caller
+// that holds a pointer across a stretch of the read compares it before and
+// after, to know whether to read it again. A nil read never lets it go.
+func (r *readPieces) yields() int {
+	if r == nil {
+		return 0
+	}
+	return r.yielded
+}
+
+// done ends the read, letting egraphMu go if it holds it.
+func (r *readPieces) done() {
+	if r.held {
+		r.release()
+	}
+}
+
+func (r *readPieces) release() {
+	hold := time.Since(r.locked)
+	r.held = false
+	r.read.Unlock()
+	if r.report != nil {
+		r.report(hold)
+	}
+}

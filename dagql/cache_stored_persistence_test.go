@@ -3,14 +3,17 @@ package dagql
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -60,14 +63,14 @@ func storedPersistenceTestState(c *Cache) map[uint64]storedPersistenceTestEntry 
 	for id, res := range c.resultsByID {
 		_, retained := c.persistedEdgesByResult[id]
 		var deps []uint64
-		for dep := range res.deps {
+		for _, dep := range res.deps {
 			deps = append(deps, uint64(dep))
 		}
 		slices.Sort(deps)
 		state := res.loadPayloadState()
 		out[uint64(id)] = storedPersistenceTestEntry{
 			retained:                retained,
-			storedParts:             res.storedParts,
+			storedParts:             storedPartTestOffers(res.storedParts),
 			deps:                    deps,
 			recordBytes:             res.storedRecordBytes,
 			createdAt:               state.createdAtUnixNano,
@@ -94,7 +97,7 @@ func TestCloudSaveAndRestoreKeepThePool(t *testing.T) {
 	p := persistedListTestResult(t, actx, a, asrv, "saved-dep", &transferTestValue{Text: "dep"})
 	transferTestDependency(a, actx, r, p)
 	root := storedPersistenceTestMerge(t, ctx, cloud, exportTestBundle(t, actx, a, r))[0]
-	stored, err := cloud.SetStoredPart(ctx, root, storedPruneTestPart("snapshot", map[string]int64{"saved-base": 10, "saved-top": 20}), 0)
+	stored, _, err := cloud.SetStoredPart(ctx, root, storedPruneTestPart("snapshot", map[string]int64{"saved-base": 10, "saved-top": 20}), 0)
 	require.NoError(t, err)
 	require.True(t, stored)
 	storedPruneTestUse(cloud, root, time.Now().Add(-time.Hour))
@@ -114,19 +117,217 @@ func TestCloudSaveAndRestoreKeepThePool(t *testing.T) {
 	cloud.egraphMu.RUnlock()
 	require.Equal(t, poolBefore, poolAfter, "the record sizes come back as merge measured them")
 
-	got, err := cloud.StoredBundle(ctx, []uint64{root}, nil)
+	got, err := cloud.StoredBundle(ctx, []uint64{root}, time.Now().Unix(), nil)
 	require.NoError(t, err)
 	require.Len(t, got.Bundle.Values, 2)
 	for _, value := range got.Bundle.Values {
 		require.Empty(t, value.Record.Envelope.StoredParts, "records sent to engines carry no stored parts")
 	}
 	require.Len(t, got.Bundle.Outputs, 1)
-	require.Len(t, got.Bundle.Outputs[0].Chain.Layers, 2)
+	require.Len(t, got.Bundle.Outputs[0].Layers, 2, "the output names its chain's two layers")
+	require.Len(t, got.Bundle.Layers, 2)
 
 	// New entries take numbers the saved ones never had.
 	again, _ := mergeTestSource(t, "after-restore", "new")
 	next := storedPersistenceTestMerge(t, ctx, cloud, again)[0]
 	require.NotContains(t, before, next)
+}
+
+// A restore holds each stored part as the cache holds it (storedLayers) on
+// the cores that decode the rows, before it takes the cache's lock to build
+// the cache from them: the lock waits on no part's holding, and the parts
+// come back as they were saved.
+func TestCloudRestoreHoldsStoredPartsOutsideItsLock(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "cloud.db")
+	ctx, cloud := storedPersistenceTestCloud(t, path)
+	actx, a, asrv := transferTestCache(t)
+	r := persistedListTestResult(t, actx, a, asrv, "held-root", &transferTestValue{Text: "root"})
+	root := storedPersistenceTestMerge(t, ctx, cloud, exportTestBundle(t, actx, a, r))[0]
+	stored, _, err := cloud.SetStoredPart(ctx, root, storedPruneTestPart("snapshot", map[string]int64{"held-base": 10, "held-top": 20}), 0)
+	require.NoError(t, err)
+	require.True(t, stored)
+	before := storedPersistenceTestState(cloud)
+	require.NoError(t, cloud.Close(ctx))
+
+	var held, underLock atomic.Int32
+	ctx = cacheTestContext(t.Context())
+	cloud, err = NewCache(ctx, path, nil, nil, WithBlobStore(), func(c *Cache) {
+		c.storedLayers.testHold = func() {
+			held.Add(1)
+			if !c.egraphMu.TryLock() {
+				underLock.Add(1)
+				return
+			}
+			c.egraphMu.Unlock()
+		}
+	})
+	require.NoError(t, err)
+	defer func() { require.NoError(t, cloud.Close(ctx)) }()
+	require.Equal(t, CachePersistenceResetNone, cloud.PersistenceResetReason())
+	require.Equal(t, before, storedPersistenceTestState(cloud), "the stored parts come back as saved")
+	require.NotZero(t, held.Load(), "the restore held the saved stored part")
+	require.Zero(t, underLock.Load(), "no stored part was held under the cache's lock")
+}
+
+// A row saved without a stored record, whole, with stored parts and a run,
+// is counted at the size merge measures: its envelope as the entry keeps
+// it, without its parts, and without its run and decline mark, which the
+// import moves onto the entry.
+func TestARestoredWholeRecordIsCountedWithoutWhatTheEntryHolds(t *testing.T) {
+	t.Parallel()
+	env := &PersistedResultEnvelope{
+		Version:         persistedResultEnvelopeVersion,
+		Kind:            persistedResultKindObject,
+		TypeName:        "Directory",
+		PersistDeclined: true,
+		Run:             &RunName{Cache: "cache-a", Number: 7, Replacements: 1},
+		RunRan:          1,
+		StoredParts:     []PersistedPartOffer{storedPruneTestPart("snapshot", map[string]int64{"whole-base": 10})},
+	}
+	kept := *env
+	kept.PersistDeclined, kept.Run, kept.RunRan, kept.StoredParts = false, nil, 0, nil
+	want, err := json.Marshal(&kept)
+	require.NoError(t, err)
+
+	row := importedResultRow{env: env}
+	row.holdStoredParts(&storedLayers{})
+	require.NoError(t, row.partsErr)
+	require.Len(t, row.storedParts, 1, "the part is held")
+	require.Equal(t, len(want), row.strippedBytes)
+}
+
+// storedPersistenceTestRootAndDep merges a root with one dependency from
+// engine cache-a into the Cloud, and returns the Cloud's numbers of both.
+func storedPersistenceTestRootAndDep(t *testing.T, ctx context.Context, cloud *Cache, text string) (uint64, uint64) {
+	t.Helper()
+	actx, a, asrv := transferTestCache(t)
+	r := persistedListTestResult(t, actx, a, asrv, text+"-root", &transferTestValue{Text: text})
+	p := persistedListTestResult(t, actx, a, asrv, text+"-dep", &transferTestValue{Text: "dep"})
+	transferTestDependency(a, actx, r, p)
+	root := storedPersistenceTestMerge(t, ctx, cloud, exportTestBundle(t, actx, a, r))[0]
+	built, err := cloud.StoredBundle(ctx, []uint64{root}, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	require.Len(t, built.Bundle.Values, 2)
+	for _, value := range built.Bundle.Values {
+		if value.SenderNumber != root {
+			return root, value.SenderNumber
+		}
+	}
+	t.Fatal("no dependency")
+	return 0, 0
+}
+
+// A Cloud's change stamps survive its save and its open, as its entries'
+// numbers do, so a stored bundle's position taken before a restart still
+// compares after it (ChangedSince): an entry changed between the bundle and
+// the save reads changed, one unchanged reads unchanged, and a write after
+// the open is counted above every stamp the save kept. A bundle built after
+// the open carries each record's stamp as the save kept it.
+func TestCloudChangeStampsSurviveARestart(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "cloud.db")
+	ctx, cloud := storedPersistenceTestCloud(t, path)
+	root, dep := storedPersistenceTestRootAndDep(t, ctx, cloud, "stamped")
+	before, err := cloud.StoredBundle(ctx, []uint64{root}, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	stored, _, err := cloud.SetStoredPart(ctx, root, testLiveOffer(), 0)
+	require.NoError(t, err)
+	require.True(t, stored)
+	written := cloud.BundlePosition()
+	require.Greater(t, written, before.Position)
+	saved, err := cloud.StoredBundle(ctx, []uint64{root}, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	require.NoError(t, cloud.Close(ctx))
+
+	ctx, cloud = storedPersistenceTestCloud(t, path)
+	defer func() { require.NoError(t, cloud.Close(ctx)) }()
+	require.Equal(t, CachePersistenceResetNone, cloud.PersistenceResetReason())
+	require.Equal(t, written, cloud.RestoredPosition(), "the write count comes back as the save kept it")
+	require.Equal(t, written, cloud.BundlePosition(), "and counts on from there")
+	require.Equal(t, []bool{true, false}, cloud.ChangedSince([]uint64{root, dep}, before.Position), "the root changed before the save, its dependency didn't")
+	require.Equal(t, []bool{false, false}, cloud.ChangedSince([]uint64{root, dep}, saved.Position), "nothing changed since the last bundle before the save")
+	again, err := cloud.StoredBundle(ctx, []uint64{root}, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	require.Equal(t, saved.Position, again.Position)
+	require.JSONEq(t, string(mustTransferJSON(t, saved.Bundle.Values)), string(mustTransferJSON(t, again.Bundle.Values)), "each record comes back with the stamp the save kept")
+
+	stored, _, err = cloud.SetStoredPart(ctx, dep, testLiveOffer(), 0)
+	require.NoError(t, err)
+	require.True(t, stored)
+	require.Greater(t, cloud.BundlePosition(), written, "a write after the open is counted above every stamp saved")
+	require.Equal(t, []bool{false, true}, cloud.ChangedSince([]uint64{root, dep}, saved.Position), "the dependency is a record of its own")
+	changedSinceTestRebuild(t, cloud, saved, root)
+}
+
+// After a crash, the Cloud restores its last save and the write count that
+// save kept (RestoredPosition): a bundle built after that save has a
+// position above it, which tells its reader the bundle may carry what the
+// restored cache lost. The restored count stays what the save kept as the
+// cache writes on, which moves BundlePosition past it.
+func TestCloudRestoresTheWriteCountOfItsLastSave(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "cloud.db")
+	ctx, cloud := storedPersistenceTestCloud(t, path)
+	root, _ := storedPersistenceTestRootAndDep(t, ctx, cloud, "crashed")
+	require.NoError(t, cloud.Checkpoint(ctx))
+	checkpointed := cloud.BundlePosition()
+	require.NotZero(t, checkpointed)
+	stored, _, err := cloud.SetStoredPart(ctx, root, testLiveOffer(), 0)
+	require.NoError(t, err)
+	require.True(t, stored)
+	lost, err := cloud.StoredBundle(ctx, []uint64{root}, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	require.Greater(t, lost.Position, checkpointed)
+	// The process dies: nothing saves again.
+	require.NoError(t, cloud.CloseDiscardingPersistence())
+
+	ctx, cloud = storedPersistenceTestCloud(t, path)
+	defer func() { require.NoError(t, cloud.Close(ctx)) }()
+	require.Equal(t, checkpointed, cloud.RestoredPosition(), "the write count of the last save")
+	require.Less(t, cloud.RestoredPosition(), lost.Position, "a bundle built after the last save is newer than the restored cache")
+	for range 2 {
+		stored, _, err = cloud.SetStoredPart(ctx, root, storedBenchPart(cloud.BundlePosition()), 0)
+		require.NoError(t, err)
+		require.True(t, stored)
+	}
+	require.GreaterOrEqual(t, cloud.BundlePosition(), lost.Position, "writes after the open count on past the lost bundle's position")
+	require.Equal(t, checkpointed, cloud.RestoredPosition(), "while the restored count stays the save's")
+}
+
+// A saved write count the open can't read costs what kept bundles from
+// before the open current, not the store: the store is restored with no
+// position (RestoredPosition), and the cache counts on from its highest
+// restored stamp, so that a write after the open still counts above every
+// one.
+func TestCloudRestoresNoPositionWhenItsWriteCountIsUnreadable(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "cloud.db")
+	ctx, cloud := storedPersistenceTestCloud(t, path)
+	root, dep := storedPersistenceTestRootAndDep(t, ctx, cloud, "unreadable")
+	stored, _, err := cloud.SetStoredPart(ctx, root, testLiveOffer(), 0)
+	require.NoError(t, err)
+	require.True(t, stored)
+	cloud.egraphMu.RLock()
+	highest := cloud.resultsByID[sharedResultID(root)].changedAt
+	cloud.egraphMu.RUnlock()
+	require.NotZero(t, highest)
+	require.NoError(t, cloud.Close(ctx))
+	db, q, err := prepareCacheDBs(ctx, path, true)
+	require.NoError(t, err)
+	require.NoError(t, q.UpsertMeta(ctx, persistdb.MetaKeyBundleWrites, "not a count"))
+	require.NoError(t, closeCacheDBs(db, q))
+
+	ctx, cloud = storedPersistenceTestCloud(t, path)
+	defer func() { require.NoError(t, cloud.Close(ctx)) }()
+	require.Equal(t, CachePersistenceResetNone, cloud.PersistenceResetReason(), "the store is restored")
+	require.Contains(t, storedPersistenceTestState(cloud), root)
+	require.Zero(t, cloud.RestoredPosition(), "no bundle from before the open compares")
+	require.Equal(t, highest, cloud.BundlePosition(), "it counts on from its highest stamp")
+	stored, _, err = cloud.SetStoredPart(ctx, dep, testLiveOffer(), 0)
+	require.NoError(t, err)
+	require.True(t, stored)
+	require.Equal(t, []bool{true}, cloud.ChangedSince([]uint64{dep}, highest), "a write after the open counts above every restored stamp")
 }
 
 // The restore keeps every record as it was saved, and decodes none, so a
@@ -147,12 +348,12 @@ func TestCloudRestoreKeepsEveryRecord(t *testing.T) {
 	r := persistedListTestResult(t, actx, a, asrv, "list-holder", &transferTestValue{Text: "holder"})
 	transferTestDependency(a, actx, r, list)
 	root := storedPersistenceTestMerge(t, ctx, cloud, exportTestBundle(t, actx, a, r))[0]
-	before, err := cloud.StoredBundle(ctx, []uint64{root}, nil)
+	before, err := cloud.StoredBundle(ctx, []uint64{root}, time.Now().Unix(), nil)
 	require.NoError(t, err)
 	kinds := func(bundle ValueBundle) []string {
 		var out []string
 		for _, value := range bundle.Values {
-			out = append(out, value.Record.Envelope.Kind)
+			out = append(out, sentRecord(t, value).Envelope.Kind)
 		}
 		slices.Sort(out)
 		return out
@@ -162,15 +363,36 @@ func TestCloudRestoreKeepsEveryRecord(t *testing.T) {
 
 	ctx, cloud = storedPersistenceTestCloud(t, path)
 	defer func() { require.NoError(t, cloud.Close(ctx)) }()
-	after, err := cloud.StoredBundle(ctx, []uint64{root}, nil)
+	after, err := cloud.StoredBundle(ctx, []uint64{root}, time.Now().Unix(), nil)
 	require.NoError(t, err, "every record of the closure is still stored")
 	require.Equal(t, kinds(before.Bundle), kinds(after.Bundle))
-	require.Equal(t, before.Bundle.Values, after.Bundle.Values)
+	// Each record comes back with its change stamp.
+	require.JSONEq(t, string(mustTransferJSON(t, before.Bundle.Values)), string(mustTransferJSON(t, after.Bundle.Values)))
 
 	bctx, b, _ := transferTestCache(t)
 	reply, err := b.MergeValues(bctx, cloudCacheID, after.Bundle)
 	require.NoError(t, err, "the restored bundle merges into an engine")
 	require.True(t, reply.Committed)
+}
+
+// A save times how long its read of the store held the cache for reading in
+// its longest hold (PersistSnapshotHeld): the longest a writer of the cache,
+// and every reader behind it, waits behind the save. It is part of the save's
+// time.
+func TestCloudSaveTimesItsSnapshotsReadHold(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "cloud.db")
+	ctx, cloud := storedPersistenceTestCloud(t, path)
+	defer func() { require.NoError(t, cloud.Close(ctx)) }()
+	require.Zero(t, cloud.PersistSnapshotHeld(), "no save yet")
+	saved, _ := mergeTestSource(t, "checkpointed", "saved")
+	storedPersistenceTestMerge(t, ctx, cloud, saved)
+	start := time.Now()
+	require.NoError(t, cloud.Checkpoint(ctx))
+	took := time.Since(start)
+	held := cloud.PersistSnapshotHeld()
+	require.Positive(t, held, "the save's snapshot is timed")
+	require.LessOrEqual(t, held, took, "within the save")
 }
 
 // A blob-backed cache restores its last save whatever ended the process:
@@ -247,9 +469,9 @@ func TestCheckpointRunsBesideReaders(t *testing.T) {
 				default:
 				}
 				cloud.EquivalentEntries(recipeA.String())
-				cloud.EquivalentHolders(recipeB.String())
+				cloud.equivalentHoldersForTest(recipeB.String())
 				_, _ = cloud.EntryInfo(rootA)
-				_, _ = cloud.StoredBundle(ctx, []uint64{rootA}, nil)
+				_, _ = cloud.StoredBundle(ctx, []uint64{rootA}, time.Now().Unix(), nil)
 				_, _ = cloud.BlobCacheUsage()
 			}
 		})
@@ -272,7 +494,7 @@ func TestCheckpointBoundsTheWriteAheadLog(t *testing.T) {
 	t.Parallel()
 	const (
 		roots    = 3000
-		pad      = 4096
+		pad      = 6144
 		saves    = 5
 		walBound = 1 << 20
 	)
@@ -281,7 +503,13 @@ func TestCheckpointBoundsTheWriteAheadLog(t *testing.T) {
 	actx, a, asrv := transferTestCache(t)
 	var results []AnyResult
 	for i := range roots {
-		value := &transferTestValue{Text: fmt.Sprintf("%d-%s", i, strings.Repeat("x", pad))}
+		// Random padding, which the Cloud's compression of its records
+		// can't shrink.
+		random := make([]byte, pad*3/4)
+		for j := range random {
+			random[j] = byte(rand.New(rand.NewPCG(uint64(i), uint64(j))).Uint32())
+		}
+		value := &transferTestValue{Text: fmt.Sprintf("%d-%s", i, base64.StdEncoding.EncodeToString(random))}
 		results = append(results, persistedListTestResult(t, actx, a, asrv, fmt.Sprintf("wal-root-%d", i), value))
 	}
 	require.Len(t, storedPersistenceTestMerge(t, ctx, cloud, exportTestBundle(t, actx, a, results...)), roots)

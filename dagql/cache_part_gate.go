@@ -3,7 +3,9 @@ package dagql
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strconv"
 	"strings"
@@ -13,13 +15,51 @@ import (
 	"github.com/dagger/dagger/engine/wcprof"
 )
 
-// PartGateCell is a stable row attachment. Merely binding it allocates no gate.
+// PartGateCell is a row's part state: its writer gate, made on first use,
+// and what hosts and scans its parts. A row has none until one of them is
+// first needed (sharedResult.partGateCell), and keeps it from then on: a
+// pointer to its host or scan lock stays valid.
 type PartGateCell struct {
 	gate               atomic.Pointer[PartWriterGate]
 	active             atomic.Bool
 	restoredDelegation atomic.Bool
 	hostOnce           sync.Once
 	host               PartHost
+	// scanMu admits one scan for the row's part sources at a time
+	// (scanPartSources). A scan checks that nothing about its candidates
+	// changed while it probed them, which any part's installation on the row
+	// changes; concurrent scans of one row's parts would each be refused by
+	// the others' installations and scan again, about n² scans for n parts.
+	scanMu sync.Mutex
+}
+
+// partGateCell returns res's part state, making it if res has none.
+func (res *sharedResult) partGateCell() *PartGateCell {
+	if cell := res.partGate.Load(); cell != nil {
+		return cell
+	}
+	res.partGate.CompareAndSwap(nil, &PartGateCell{})
+	return res.partGate.Load()
+}
+
+// writerGate returns res's part writer gate, or nil when it has none.
+func (res *sharedResult) writerGate() *PartWriterGate {
+	if cell := res.partGate.Load(); cell != nil {
+		return cell.gate.Load()
+	}
+	return nil
+}
+
+// partGateActive reports whether res's parts are managed by its gate.
+func (res *sharedResult) partGateActive() bool {
+	cell := res.partGate.Load()
+	return cell != nil && cell.active.Load()
+}
+
+// partDelegationRestored reports whether res's part delegation was restored.
+func (res *sharedResult) partDelegationRestored() bool {
+	cell := res.partGate.Load()
+	return cell != nil && cell.restoredDelegation.Load()
 }
 
 func (cell *PartGateCell) loadOrCreate() *PartWriterGate {
@@ -94,48 +134,104 @@ func (c *Cache) completePartKeys(ctx context.Context, row *sharedResult) []strin
 // reads no size, and gets nil sizes. Sizes are nil too when the record could
 // not be captured, or a size could not be read.
 func (c *Cache) completePartKeysAndSizes(ctx context.Context, row *sharedResult) ([]string, []int64) {
+	keys, sizes, _ := c.completeParts(ctx, row, c.completePartSizeReader())
+	return keys, sizes
+}
+
+// spanPartKeysAndSizes is completePartKeysAndSizes for a span, which reports
+// the parts as the entry's complete parts. A read that could only return the
+// settled subset leaves the entry owing a report of the parts it left out
+// (owePartsReport), so the remote cache isn't left believing that subset is
+// all the engine holds; one that read the record reports them all, and
+// settles what the entry owed. The span's caller owns the entry, so a read
+// of its record holds it through that ownership (holdOwnedRowForCapture),
+// not with the graph lock: it runs on the call's own path.
+func (c *Cache) spanPartKeysAndSizes(ctx context.Context, row *sharedResult) ([]string, []int64) {
+	seq := c.owedPartsSeq()
+	keys, sizes, err := c.completePartsHeld(ctx, row, c.completePartSizeReader(), func(capture captureFunc) (*capturedRowRevision, error) {
+		return c.holdOwnedRowForCapture(ctx, row, capture)
+	})
+	if err != nil {
+		c.owePartsReport(ctx, row, keys)
+	} else {
+		c.settleOwedPartsReport(row, seq)
+	}
+	return keys, sizes
+}
+
+// completePartSizeReader is what reads complete parts' raw sizes: on an
+// engine with the remote cache, its snapshot manager; nil elsewhere.
+func (c *Cache) completePartSizeReader() partSizeReader {
 	var reader partSizeReader
 	if c.partContentSource.attachedBridge() != nil {
 		reader, _ = c.snapshotManager.(partSizeReader)
 	}
-	return c.completeParts(ctx, row, reader)
+	return reader
+}
+
+// completePartsCurrent reports whether the row's complete parts, read
+// earlier, still describe its value, with sizes when reader reads them:
+// completeParts would answer from them.
+func completePartsCurrent(row *sharedResult, reader partSizeReader) bool {
+	cached := row.completeParts.Load()
+	return cached != nil && cached.stamp.current(row) && (reader == nil || cached.sizes != nil)
 }
 
 // completeParts reads the row's complete part keys and, with reader, their
 // raw sizes, once per revision of the row's value. On an engine with the
 // remote cache every read takes the sizes, so a read for the keys alone,
-// such as a merge's warming, never leaves them unread.
-func (c *Cache) completeParts(ctx context.Context, row *sharedResult, reader partSizeReader) ([]string, []int64) {
+// such as a merge's warming, never leaves them unread. When it can't read
+// the row's record, it returns the parts the row's gate has settled, a
+// subset, and the error that stopped it (completePartsFellBack).
+func (c *Cache) completeParts(ctx context.Context, row *sharedResult, reader partSizeReader) ([]string, []int64, error) {
+	return c.completePartsHeld(ctx, row, reader, func(capture captureFunc) (*capturedRowRevision, error) {
+		return c.holdRowForCapture(ctx, row, capture)
+	})
+}
+
+// completePartsHeld is completeParts with the row held by hold, when it
+// captures.
+func (c *Cache) completePartsHeld(ctx context.Context, row *sharedResult, reader partSizeReader, hold captureHold) ([]string, []int64, error) {
 	if cached := row.completeParts.Load(); cached != nil && cached.stamp.current(row) && (reader == nil || cached.sizes != nil) {
 		if reader == nil {
 			// Sizes read while the remote cache was attached are not
 			// reported once it has detached.
-			return cached.keys, nil
+			return cached.keys, nil, nil
 		}
-		return cached.keys, cached.sizes
+		return cached.keys, cached.sizes, nil
 	}
 	if reader == nil {
-		keys, version, err := c.describeRowParts(ctx, row)
+		// A record merged unprepared proves the parts its bundle carried.
+		row.payloadMu.RLock()
+		carried, unprepared := row.firstUseCompletePartsLocked()
+		row.payloadMu.RUnlock()
+		if unprepared {
+			return carried, nil, nil
+		}
+		keys, version, err := c.describeRowPartsHeld(ctx, row, hold)
 		if err != nil {
-			return row.settledPartKeys(), nil
+			return completePartsFellBack(ctx, row, err), nil, err
 		}
 		row.completeParts.Store(&rowCompleteParts{stamp: newCompletePartsStamp(version), keys: keys})
-		return keys, nil
+		return keys, nil, nil
 	}
 	// A size is read from its part's descriptor, which only the row's record
 	// carries: capture it, held as captureRowRecord holds it.
 	var record PersistedRecord
-	version, err := c.holdRowForCapture(ctx, row, func(imported bool, offers []PersistedPartOffer, version *capturedRowRevision) error {
+	version, err := hold(func(imported bool, offers []PersistedPartOffer, version *capturedRowRevision) error {
 		var err error
 		record, err = c.captureHeldPersistedRecord(ctx, row, imported, offers, version)
 		return err
 	})
 	if version == nil || err != nil {
-		return row.settledPartKeys(), nil
+		if err == nil {
+			err = errors.New("no capture of the record")
+		}
+		return completePartsFellBack(ctx, row, err), nil, err
 	}
 	probes, err := describePartRecord(record)
 	if err != nil {
-		return row.settledPartKeys(), nil
+		return completePartsFellBack(ctx, row, err), nil, err
 	}
 	type completePart struct {
 		key  string
@@ -164,7 +260,18 @@ func (c *Cache) completeParts(ctx context.Context, row *sharedResult, reader par
 		}
 	}
 	row.completeParts.Store(&rowCompleteParts{stamp: newCompletePartsStamp(version), keys: keys, sizes: sizes})
-	return keys, sizes
+	return keys, sizes, nil
+}
+
+// completePartsFellBack returns the parts row's gate has settled, which
+// completeParts returns when it cannot read the row's record: a subset of its
+// complete parts. A span that reports them owes a full report later
+// (spanPartKeysAndSizes). It logs each such read at Debug, with the row, the
+// settled parts and why the record couldn't be read.
+func completePartsFellBack(ctx context.Context, row *sharedResult, err error) []string {
+	settled := row.settledPartKeys()
+	slog.DebugContext(ctx, "complete parts fell back to settled", "row", uint64(row.id), "settled", settled, "cause", err)
+	return settled
 }
 
 // partSizeStrings formats sizes, index-aligned with parts, as the decimal
@@ -227,34 +334,10 @@ func partRawSize(ctx context.Context, reader partSizeReader, desc PartDescriptor
 	return total, nil
 }
 
-// taskSettledPartKeys returns the address keys of the outputs task installed
-// that the row's gate has settled for that installation, sorted.
-func (res *sharedResult) taskSettledPartKeys(task *PartTaskToken) []string {
-	installed := task.installed.Load()
-	gate := res.partGate.gate.Load()
-	if installed == nil || gate == nil {
-		return nil
-	}
-	gate.mu.Lock()
-	defer gate.mu.Unlock()
-	var keys []string
-	for _, output := range installed.outputs {
-		key, err := partAddressKey(output.address)
-		if err != nil {
-			continue
-		}
-		if current := gate.outputs[key]; current.phase == PartComplete && current.installation == output.installation {
-			keys = append(keys, key)
-		}
-	}
-	slices.Sort(keys)
-	return keys
-}
-
 // settledPartKeys returns the address keys of the outputs the row's gate has
 // settled, sorted.
 func (res *sharedResult) settledPartKeys() []string {
-	gate := res.partGate.gate.Load()
+	gate := res.writerGate()
 	if gate == nil {
 		return nil
 	}
@@ -395,13 +478,13 @@ func (c *Cache) TryAcquire(ctx context.Context, receiver AnyResult, address Pers
 	if err != nil {
 		return nil, GateReselect, err
 	}
-	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+	c.lockGraphForCtx(ctx, workPart)
 	defer c.egraphMu.Unlock()
 	row, err := c.validatePartTaskLocked(receiver, task)
 	if err != nil {
 		return nil, GateReselect, err
 	}
-	gate := row.partGate.loadOrCreate()
+	gate := row.partGateCell().loadOrCreate()
 	gate.mu.Lock()
 	defer gate.mu.Unlock()
 	if gate.outputs[key].phase != PartPending {
@@ -424,7 +507,7 @@ func (c *Cache) TryAcquire(ctx context.Context, receiver AnyResult, address Pers
 		}
 	}
 	gate.managed = true
-	row.partGate.active.Store(true)
+	row.partGateCell().active.Store(true)
 	return gate.newPermit(task, address, false), GateGranted, nil
 }
 func (gate *PartWriterGate) newPermit(task *PartTaskToken, address PersistedPartAddress, decision bool) *PartPermit {
@@ -462,13 +545,13 @@ func (c *Cache) PrepareOriginal(ctx context.Context, receiver AnyResult, group L
 			return nil, GateReselect, err
 		}
 	}
-	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+	c.lockGraphForCtx(ctx, workPart)
 	defer c.egraphMu.Unlock()
 	row, err := c.validatePartTaskLocked(receiver, task)
 	if err != nil {
 		return nil, GateReselect, err
 	}
-	gate := row.partGate.loadOrCreate()
+	gate := row.partGateCell().loadOrCreate()
 	gate.mu.Lock()
 	defer gate.mu.Unlock()
 	for _, current := range gate.groups {
@@ -524,13 +607,13 @@ func (c *Cache) TryAcquireForDecision(ctx context.Context, receiver AnyResult, a
 	if _, err := partAddressKey(address); err != nil {
 		return nil, GateReselect, err
 	}
-	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+	c.lockGraphForCtx(ctx, workPart)
 	defer c.egraphMu.Unlock()
 	row, err := c.validatePartTaskLocked(receiver, task)
 	if err != nil {
 		return nil, GateReselect, err
 	}
-	if drain == nil || drain.task != task || drain.gate != row.partGate.gate.Load() || !containsPart(drain.writeSet, address) {
+	if drain == nil || drain.task != task || drain.gate != row.writerGate() || !containsPart(drain.writeSet, address) {
 		return nil, GateReselect, fmt.Errorf("lazy: invalid decision permit")
 	}
 	gate := drain.gate
@@ -553,7 +636,7 @@ func (c *Cache) BeginOriginal(ctx context.Context, check *SourceCheck) (*Origina
 		return nil, GateReselect, fmt.Errorf("lazy: missing source check")
 	}
 	drain := check.drain
-	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+	c.lockGraphForCtx(ctx, workPart)
 	defer c.egraphMu.Unlock()
 	if c.resultsByID[drain.task.row.id] != drain.task.row {
 		return nil, GateReselect, fmt.Errorf("lazy: unregistered receiver")
@@ -578,11 +661,11 @@ func (c *Cache) endPartTaskBody(ctx context.Context, task *PartTaskToken, succes
 	if !task.active.Swap(false) {
 		return
 	}
-	gate := task.row.partGate.gate.Load()
+	gate := task.row.writerGate()
 	if gate == nil {
 		return
 	}
-	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+	c.lockGraphForCtx(ctx, workPart)
 	gate.mu.Lock()
 	for _, group := range gate.groups {
 		if group.task != task {

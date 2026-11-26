@@ -10,6 +10,7 @@ package dagql
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -285,4 +286,52 @@ func exportedSpanHasParentAttr(exp *tracetest.InMemoryExporter, id trace.SpanID)
 		}
 	}
 	return false
+}
+
+// TestLazySpanNamesTheStoredPartItOpened: a lazy attempt that opened a part
+// this engine saved before, as a value restored from the engine's own state is
+// opened on its first use, ran none of the value's step. Its span names that
+// part (CacheStoredPartAttr), as an offer's install names the part it
+// installed, so that a reader of cache rows doesn't count it as the engine
+// computing the value. An attempt that computed names none, nor does one that
+// failed to open its part.
+func TestLazySpanNamesTheStoredPartItOpened(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		stored PartKey
+		err    error
+		want   bool
+	}{
+		{name: "opened a stored part", stored: "snapshot", want: true},
+		{name: "computed", stored: ""},
+		{name: "failed to open its stored part", stored: "snapshot", err: errors.New("open failed")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sr, rootCtx, root := newLazyRecordingRoot("POST /query")
+			c := &Cache{}
+			evalCtx := engine.ContextWithClientMetadata(rootCtx, &engine.ClientMetadata{
+				SessionID: "sess", ClientID: "client",
+			})
+			_, span, isResume := c.beginOTelLazyOp(evalCtx, sharedResultID(7), LazyGroupWhole, &ResultCall{Field: "withExec"}, tc.stored)
+			err := tc.err
+			endOTelLazyOp(span, nil, isResume, sharedResultID(7), false, false, tc.stored, lazySpanCacheState{parts: []string{`{"part":"snapshot"}`}}, &err)
+			root.End()
+
+			got := spanBySpanID(t, sr.Ended(), span.SpanContext().SpanID())
+			part, ok := attrString(got, telemetryattrs.CacheStoredPartAttr)
+			if !tc.want {
+				if ok {
+					t.Fatalf("the span names stored part %q", part)
+				}
+				return
+			}
+			want, kerr := partAddressKey(PersistedPartAddress{Part: tc.stored})
+			if kerr != nil {
+				t.Fatal(kerr)
+			}
+			if !ok || part != want {
+				t.Fatalf("the span names stored part %q (present %v), want %q", part, ok, want)
+			}
+		})
+	}
 }

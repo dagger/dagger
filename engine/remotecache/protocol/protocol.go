@@ -11,6 +11,7 @@ package protocol
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/opencontainers/go-digest"
@@ -29,10 +30,13 @@ const (
 	// message, so a sender answers TypeError with TooLargeMessage instead.
 	MaxMessageBytes = 64 << 20
 
-	// PingInterval is how often the engine pings the service. A ping with
-	// no pong within PingTimeout closes the connection.
-	PingInterval = 15 * time.Second
-	PingTimeout  = 15 * time.Second
+	// ProbeInterval is how often the engine probes its connection: it sends
+	// the service a Probe, which the service answers in order, behind what
+	// it is already sending that engine. The engine ends the connection when
+	// nothing at all arrives on it within ProbeTimeout of a probe. Any byte
+	// counts, so a connection that is slow but still delivering stays up.
+	ProbeInterval = 15 * time.Second
+	ProbeTimeout  = 15 * time.Second
 
 	// CloseTokenRevoked is the WebSocket close status of a connection whose
 	// token the service found revoked.
@@ -71,6 +75,12 @@ const (
 	TypeSettled  Type = "settled"
 	TypeClaims   Type = "claims"
 	TypeClaimed  Type = "claimed"
+	TypeReady    Type = "ready"
+	TypeReadied  Type = "readied"
+	TypeRestore  Type = "restore"
+	TypeRestored Type = "restored"
+	TypeProbe    Type = "probe"
+	TypeProbed   Type = "probed"
 	TypeError    Type = "error"
 )
 
@@ -98,6 +108,12 @@ func ReplyType(request Type) (Type, bool) {
 		return TypeSettled, true
 	case TypeClaims:
 		return TypeClaimed, true
+	case TypeReady:
+		return TypeReadied, true
+	case TypeRestore:
+		return TypeRestored, true
+	case TypeProbe:
+		return TypeProbed, true
 	}
 	return "", false
 }
@@ -119,6 +135,37 @@ func NewEnvelope(id, re uint64, typ Type, body any) (Envelope, error) {
 		return Envelope{}, fmt.Errorf("encode %s body: %w", typ, err)
 	}
 	return Envelope{ID: id, Re: re, Type: typ, Body: raw}, nil
+}
+
+// EncodeEnvelope returns the message an envelope of body is, the bytes
+// json.Marshal gives for NewEnvelope's envelope, in one encoding: NewEnvelope
+// encodes the body into its own bytes, and encoding the envelope checks and
+// copies them again.
+func EncodeEnvelope(id, re uint64, typ Type, body any) ([]byte, error) {
+	data, err := json.Marshal(outgoing{ID: id, Re: re, Type: typ, Body: body})
+	if err != nil {
+		return nil, fmt.Errorf("encode %s body: %w", typ, err)
+	}
+	return data, nil
+}
+
+// WriteEnvelope writes to w the message EncodeEnvelope returns, as it is
+// encoded (WriteJSON): the message is never in memory whole, so w can hold
+// it in another form, such as compressed, and a w that refuses more bytes,
+// as one bounding the message's size, stops the encoding.
+func WriteEnvelope(w io.Writer, id, re uint64, typ Type, body any) error {
+	if err := WriteJSON(w, outgoing{ID: id, Re: re, Type: typ, Body: body}); err != nil {
+		return fmt.Errorf("encode %s body: %w", typ, err)
+	}
+	return nil
+}
+
+// outgoing is an Envelope whose body is encoded with it.
+type outgoing struct {
+	ID   uint64 `json:"id"`
+	Re   uint64 `json:"re,omitempty"`
+	Type Type   `json:"type"`
+	Body any    `json:"body"`
 }
 
 // Decode decodes the envelope's body into v.
@@ -146,10 +193,34 @@ type Hello struct {
 	// it for nothing until an Open with a later period.
 	Period  uint64 `json:"period"`
 	Settled bool   `json:"settled,omitempty"`
+	// Restored are the set files (Restore) this engine process merged
+	// whole, by digest. The service doesn't offer one again once it has
+	// read its answer, which says where its records landed; one whose
+	// answer it never read, as when the connection dropped first, it offers
+	// again, and the engine answers it Already, with the entries its merge
+	// answered.
+	Restored []digest.Digest `json:"restored,omitempty"`
+	// Image are the engine's entries its image ships: those the merge of the
+	// image's bundle at start landed on. The engine never exports such an
+	// entry. The image ships parts for the results it was built from, and
+	// such an entry takes no part from the service, offered or merged; it
+	// ships the records of their closures without any, and such a record
+	// takes the service's parts as any entry does. The image merges before
+	// the engine first connects and never again, so the set is the
+	// process's: every hello of the process names the same entries.
+	Image EntryNumbers `json:"image,omitempty"`
 }
 
 // Welcome is the service's reply to Hello.
 type Welcome struct{}
+
+// Probe asks the service for a reply on the connection itself (see
+// ProbeInterval). The service answers it on the connection, never on its
+// work path, so the answer waits only behind messages it is already sending.
+type Probe struct{}
+
+// Probed answers Probe.
+type Probed struct{}
 
 // Open tells the service that a session started on an engine with no live
 // session: its idle periods are numbered from 1, and Period is the one that
@@ -166,9 +237,18 @@ type Opened struct{}
 // what it wants of the engine for Period: Sessions are the sessions that
 // ended and that no Settled has covered, kept across canceled requests and
 // reconnections.
+//
+// IdleSince is when, by the engine's clock, the period's last live session
+// ended, which started the engine's bound, and Bound is how long the engine
+// waits for Settled from then before it gives up the period's remote-cache
+// work. A settle sent again in the same period carries the same two. The
+// service records them with the settle, for a run's reader to time its
+// answer against the engine's own bound; it decides nothing with them.
 type Settle struct {
-	Period   uint64          `json:"period"`
-	Sessions []SettleSession `json:"sessions"`
+	Period    uint64          `json:"period"`
+	Sessions  []SettleSession `json:"sessions"`
+	IdleSince time.Time       `json:"idleSince"`
+	Bound     time.Duration   `json:"bound"`
 }
 
 // SettleSession is one ended session: ID is the engine session's ID, as its
@@ -191,15 +271,33 @@ type Claims struct {
 }
 
 // SessionClaim is one session and its claim: ID is the engine session's ID,
-// as its telemetry names it (dagger.io/engine.session), and Claim is the
-// claim ID its client connected with.
+// as its telemetry names it (dagger.io/engine.session), Claim is the claim
+// ID its client connected with, and Started is when the session started,
+// on the engine's clock, the clock its spans' times are on: the service
+// counts how far into the claim's run each of the run's calls came from its
+// first session's start.
 type SessionClaim struct {
-	ID    string `json:"id"`
-	Claim string `json:"claim"`
+	ID      string    `json:"id"`
+	Claim   string    `json:"claim"`
+	Started time.Time `json:"started"`
 }
 
 // Claimed is the service's reply to Claims.
 type Claimed struct{}
+
+// Ready tells the service that roots an export left out busy (SkipBusy) can
+// be captured now, by number: what kept each out has ended, as an
+// evaluation of its row or of a row below it. The engine sends a root once
+// for each busy answer, when the last row that kept it out stops being busy,
+// or at once when nothing was in flight on them, as after a capture raced a
+// change that had already ended. The service asks for a root again when it
+// is told it is ready, and not before.
+type Ready struct {
+	Roots []uint64 `json:"roots"`
+}
+
+// Readied is the service's reply to Ready.
+type Readied struct{}
 
 // Settled is the service's reply to Settle, sent once it is done with every
 // listed session and has no export of the engine in flight or still to ask
@@ -234,8 +332,8 @@ type SkipReason string
 const (
 	// SkipGone: the engine no longer has the entry.
 	SkipGone SkipReason = "gone"
-	// SkipBusy: the entry could not be captured now; ask again later. The
-	// skip's Message says what was busy.
+	// SkipBusy: the entry could not be captured now; the engine sends Ready
+	// for it once it can be. The skip's Message says what was busy.
 	SkipBusy SkipReason = "busy"
 	// SkipRefused: the engine refused to capture the entry, and would again;
 	// the skip's Message says why.
@@ -246,7 +344,9 @@ const (
 
 // Exported answers Export. Bundle is nil when no root survived. The engine
 // keeps the bundle's chains open under ExportID until Upload, or until the
-// connection ends.
+// connection ends. The bundle's records carry no offers of parts: an
+// engine's offers are the Cloud's own, and its parts go as the bundle's
+// outputs.
 type Exported struct {
 	ExportID string             `json:"exportID,omitempty"`
 	Bundle   *dagql.ValueBundle `json:"bundle,omitempty"`
@@ -272,11 +372,19 @@ type SkippedRoot struct {
 // unknown again, so that the next export of the same roots carries them in
 // full. It holds nothing that export carried or held; it can hold rows below
 // them that earlier merges proved.
+//
+// Stale, on an Upload without Merged for a merge refused as stale, names by
+// the engine's numbers the held rows the Cloud found stale: only those become
+// unknown, and the bundle's other held rows stay known. The Cloud names every
+// held row stale by one check of the merge; one stale by another check is
+// named by the next export's refusal, so each refusal makes at least one row
+// unknown until the export merges.
 type Upload struct {
 	ExportID string                   `json:"exportID"`
 	URLs     map[digest.Digest]string `json:"urls"`
 	Packs    []UploadPack             `json:"packs,omitempty"`
 	Merged   bool                     `json:"merged,omitempty"`
+	Stale    []uint64                 `json:"stale,omitempty"`
 }
 
 // UploadPack is one pack to upload: its ID, its presigned PUT, and its
@@ -309,9 +417,9 @@ type UploadFailure struct {
 // the service merged (Upload.Merged).
 type Merge struct {
 	Bundle dagql.ValueBundle `json:"bundle"`
-	// Lookup is the ID of the engine's Lookup this merge answers, or 0 for
-	// a merge of the service's own placement. The engine commits a merge
-	// that answers a lookup ahead of the others.
+	// Lookup is the ID of the engine's Lookup this merge answers, or 0 for a
+	// merge that answers none, such as one of roots lookups deferred. The
+	// engine commits a merge that answers a lookup ahead of the others.
 	Lookup uint64 `json:"lookup"`
 }
 
@@ -356,6 +464,10 @@ type MergedValue struct {
 	Deps          []uint64                     `json:"deps"`
 	Complete      []dagql.PersistedPartAddress `json:"complete"`
 	Offered       []dagql.PersistedPartAddress `json:"offered"`
+	// Stored reports that the engine stored the value's record from the
+	// bundle (dagql.MergedValue.Stored), not that it kept a value it had:
+	// only then is the engine's copy the record the service sent it.
+	Stored bool `json:"stored,omitempty"`
 }
 
 // RetainedRoot is a merged root the engine retains, until ExpiresAtUnix
@@ -472,8 +584,9 @@ const (
 )
 
 // Lookup asks the service for the Cloud's values of calls the engine's cache
-// missed. The service answers at once with what it will do for each, and
-// sends what it found as ordinary merges that name the lookup.
+// missed. The service answers with what it found for each, and sends what
+// it found as ordinary merges: one of its own, which names the lookup, a
+// placement merge, or one already on its way.
 type Lookup struct {
 	Misses []LookupMiss `json:"misses"`
 }
@@ -491,19 +604,16 @@ type LookupMiss struct {
 	Inputs []digest.Digest `json:"inputs,omitempty"`
 }
 
-// LookedUp answers Lookup, one item per miss, in order. The service sends it
-// before any merge it names.
+// LookedUp answers Lookup, one item per miss, in order, as soon as the
+// service has resolved the misses. The merges that carry what it found go
+// on their own, before or after the answer.
 type LookedUp struct {
 	Misses []LookedUpMiss `json:"misses"`
 }
 
-// LookedUpMiss is what the service does for one miss. Merge is the ID of the
-// Merge request that carries the call's value, with LookupInFlight and
-// LookupMerging, and Parts says how much of the value's bytes it carries.
+// LookedUpMiss is what the service found for one miss.
 type LookedUpMiss struct {
 	Status LookupStatus `json:"status"`
-	Merge  uint64       `json:"merge,omitempty"`
-	Parts  LookupParts  `json:"parts,omitempty"`
 }
 
 // LookupStatus is what the service does for a missed call.
@@ -514,21 +624,147 @@ const (
 	LookupUnknown LookupStatus = "unknown"
 	// LookupNotStored: the Cloud has no stored, unexpired value of the call.
 	LookupNotStored LookupStatus = "notStored"
-	// LookupInFlight: a merge already sent to the engine carries the value.
-	LookupInFlight LookupStatus = "inFlight"
-	// LookupMerging: a merge sent now, after the answer, carries the value.
-	LookupMerging LookupStatus = "merging"
-	// LookupDeferred: the value goes at the front of the service's queue,
-	// with no merge named.
+	// LookupDeferred: the service sends nothing named for the miss now: the
+	// Cloud may store a value of the call, which a merge carries if the
+	// engine still lacks it, or the service had no room to look (a full
+	// connection answers every miss deferred).
 	LookupDeferred LookupStatus = "deferred"
 )
 
-// LookupParts is how many of the value's parts a named merge carries bytes
-// for.
-type LookupParts string
+// Restore asks the engine to fetch published files of its claims' sets and
+// merge their parts (SetFile), each through the path a Merge takes. The
+// engine merges heads and wholes on lanes of their own, side by side: the
+// heads' lane takes, among the heads downloaded, each head's next part in
+// turn, so heads downloaded by then land every first part before any second,
+// the earliest to arrive first among equals; each whole merges on a
+// lane of its own; and each file's parts merge in the file's order. So a
+// head never waits for a whole, even one of another set that started first,
+// nor for another head's later parts or its download. A restore can come at any time after Welcome. Nothing in
+// a restore fails it: a file that can't be fetched, read or merged is
+// reported in Restored, and leaves the engine as it was without it, but for
+// the parts that merged.
+type Restore struct {
+	Sets []RestoreSet `json:"sets"`
+}
+
+// RestoreSet is one claim's set: its head, its whole, or both. Check names
+// the set's check, for logs only.
+type RestoreSet struct {
+	Check string   `json:"check"`
+	Head  *SetFile `json:"head,omitempty"`
+	Whole *SetFile `json:"whole,omitempty"`
+}
+
+// SetFile is one published file of a set: a chain of segments, each a set
+// file's bytes of its own (setfile.go), whose parts merge one segment after
+// another, in order, as one file's. A set's first file is one segment; one
+// the service builds again from the file before it keeps that file's
+// segments and adds one, which carries only the records that changed or
+// are new. Digest is the chain's (SetFileChain), which names the file in
+// Restored and Hello, Size its segments' bytes together, and Table the
+// download addresses of the blobs and packs any segment's parts name.
+type SetFile struct {
+	Digest   digest.Digest    `json:"digest"`
+	Size     int64            `json:"size"`
+	Segments []SetFileSegment `json:"segments"`
+	Table    AddressTable     `json:"table"`
+}
+
+// SetFileSegment is one segment of a set file: the digest and size of its
+// bytes, its download address, and its role in the file.
+type SetFileSegment struct {
+	Digest  digest.Digest     `json:"digest"`
+	Size    int64             `json:"size"`
+	Address dagql.BlobAddress `json:"address"`
+	Role    SetFileRole       `json:"role,omitempty"`
+}
+
+// SetFileRole is what a segment is in its file. A head's first part, what
+// its check's run asks for first, is a segment of its own (SetFileFirst),
+// and what a later build of the head adds to that part, its lead
+// (SetFileLead), follows it and merges in the same turn of a restore's head
+// lane as the first part's last part: a head's first part lands in its
+// first turns, whatever else its file holds. The rest of a head as its full
+// build wrote it, built holding the first part alone, is SetFileRest, and
+// the set segment (SetFileSet) ends a file built again. Any other segment
+// has no role.
+type SetFileRole string
 
 const (
-	LookupPartsComplete LookupParts = "complete"
-	LookupPartsPartial  LookupParts = "partial"
-	LookupPartsNone     LookupParts = "none"
+	SetFileFirst SetFileRole = "first"
+	SetFileLead  SetFileRole = "lead"
+	SetFileRest  SetFileRole = "rest"
+	SetFileSet   SetFileRole = "set"
 )
+
+// Restored answers Restore once every file it named is done, one item per
+// file, as the restore named them, heads first. Generation and EngineTime are
+// the engine cache's start count and clock when it answers, as Merged has
+// them.
+type Restored struct {
+	Generation uint64         `json:"generation"`
+	EngineTime int64          `json:"engineTime"`
+	Files      []RestoredFile `json:"files"`
+}
+
+// RestoredFile is what the engine did with one file: Complete when every
+// part merged, Already when this engine process had merged it whole and
+// merged nothing this time. Parts counts the parts that merged, Records the
+// records they carried, and Rows what their merges did with them.
+// FirstCommit is the engine's clock, in Unix nanoseconds, when its first
+// part committed; FirstPart, when the last part of a head's first part
+// committed, its segments of the roles SetFileFirst and SetFileLead, 0 for a
+// file with none or one that stopped before; and Error is what stopped it,
+// if anything did.
+//
+// Entries, set when Complete, are the engine entries the file's records
+// landed on, by the numbers the engine's rows, replies and prune events
+// name them by: one for each record the file carries in full
+// (a value with no Held), in the order of its first appearance, segment by
+// segment, part by part and within a part in its bundle's Values order. A
+// record a later part carries again in full, as a later segment carries
+// one that changed, keeps its place and takes the entry its later copy
+// landed on. A record that landed on no entry, such as a root that had
+// expired, is 0. CompleteParts, with PartsTable, are the parts each of
+// those entries had complete as the merge of the record's last copy that
+// landed left it (PackCompleteParts): the engine's own parts for a record
+// it kept. Both
+// are set when Entries is, and empty when no entry has a complete part.
+// With Already, all three are what this engine process's merge of the file
+// answered, on this connection or an earlier one.
+type RestoredFile struct {
+	Digest      digest.Digest `json:"digest"`
+	Complete    bool          `json:"complete,omitempty"`
+	Already     bool          `json:"already,omitempty"`
+	Parts       int           `json:"parts"`
+	Records     int           `json:"records"`
+	Rows        RowCounts     `json:"rows"`
+	FirstCommit int64         `json:"firstCommit,omitempty"`
+	FirstPart   int64         `json:"firstPart,omitempty"`
+	Error       string        `json:"error,omitempty"`
+	Entries     EntryNumbers  `json:"entries,omitempty"`
+
+	PartsTable    []dagql.PersistedPartAddress `json:"partsTable,omitempty"`
+	CompleteParts []byte                       `json:"completeParts,omitempty"`
+}
+
+// RowCounts counts merged records by what their merge did with each
+// (dagql.MergeRowCounts).
+type RowCounts struct {
+	Held     int `json:"held,omitempty"`
+	Kept     int `json:"kept,omitempty"`
+	Created  int `json:"created,omitempty"`
+	Stored   int `json:"stored,omitempty"`
+	Replaced int `json:"replaced,omitempty"`
+	Retired  int `json:"retired,omitempty"`
+}
+
+// AddressTable is a set file's download addresses: one for each blob and
+// pack its parts' outputs name, by the layer's digest or the pack's ID. A
+// set file carries none of its own, so that only the table is signed again
+// as addresses expire. One the store couldn't sign is left out: a read of
+// its layer renews it, by its chain's renewal key.
+type AddressTable struct {
+	Blobs map[digest.Digest]dagql.BlobAddress `json:"blobs,omitempty"`
+	Packs map[digest.Digest]dagql.BlobAddress `json:"packs,omitempty"`
+}

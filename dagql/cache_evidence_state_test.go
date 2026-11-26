@@ -393,8 +393,12 @@ type statePartValue struct {
 	snapshotID string
 	file       string
 	block      chan struct{}
-	host       atomic.Pointer[PartHost]
-	rev        atomic.Uint64
+	// fail, when set, is what encoding the value returns.
+	fail error
+	// encoding, when set, runs each time the value is encoded.
+	encoding atomic.Pointer[func()]
+	host     atomic.Pointer[PartHost]
+	rev      atomic.Uint64
 }
 
 type persistedStatePartValue struct {
@@ -409,6 +413,12 @@ func (*statePartValue) Type() *ast.Type {
 }
 
 func (v *statePartValue) EncodePersistedObject(context.Context, *PersistEncodeContext) (PersistedObjectEncoding, error) {
+	if encoding := v.encoding.Load(); encoding != nil {
+		(*encoding)()
+	}
+	if v.fail != nil {
+		return PersistedObjectEncoding{}, v.fail
+	}
 	raw, err := json.Marshal(persistedStatePartValue{Done: v.done.Load(), AbsentMeta: v.absentMeta, SnapshotID: v.snapshotID, File: v.file})
 	return PersistedObjectEncoding{JSON: raw}, err
 }
@@ -775,9 +785,9 @@ func TestCacheResultStatePartsNotReady(t *testing.T) {
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		shared := res.cacheSharedResult()
-		shared.lazyMu.Lock()
-		running := shared.lazyPartGroups["fs"] != nil && shared.lazyPartGroups["fs"].attempt != nil
-		shared.lazyMu.Unlock()
+		shared.lazyState().mu.Lock()
+		running := shared.lazyState().partGroups["fs"] != nil && shared.lazyState().partGroups["fs"].attempt != nil
+		shared.lazyState().mu.Unlock()
 		if running {
 			break
 		}

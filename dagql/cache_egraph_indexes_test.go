@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"math/rand/v2"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -54,13 +55,14 @@ func cacheDerivedIndexesErrorLocked(c *Cache) error {
 // associations: every association names a root, once, with its inverse
 // membership present.
 func cacheOutputEqClassForwardErrorLocked(c *Cache) error {
-	if len(c.egraphTerms) != 0 && len(c.resultOutputEqClasses) == 0 {
+	if len(c.egraphTerms) != 0 && c.resultOutputEqClasses.Len() == 0 {
 		return fmt.Errorf("e-graph has %d terms but no result/output eq-class associations", len(c.egraphTerms))
 	}
 
-	for resID, outputEqIDs := range c.resultOutputEqClasses {
-		seenRoots := make(map[eqClassID]struct{}, len(outputEqIDs))
-		for outputEqID := range outputEqIDs {
+	for resID := range c.resultOutputEqClasses.Keys() {
+		outputEqIDs := c.resultOutputEqClasses.Members(resID)
+		seenRoots := make(map[eqClassID]struct{}, outputEqIDs.Size())
+		for outputEqID := range outputEqIDs.All() {
 			root := c.findEqClassLocked(outputEqID)
 			if outputEqID != root {
 				return fmt.Errorf("result %d has non-root output eq class %d (root %d)", resID, outputEqID, root)
@@ -70,9 +72,8 @@ func cacheOutputEqClassForwardErrorLocked(c *Cache) error {
 				return fmt.Errorf("result %d has duplicate associations for output eq-class root %d", resID, root)
 			}
 			seenRoots[root] = struct{}{}
-			results := c.outputEqClassResults[root]
-			_, found := results[resID]
-			if !found {
+			results := c.outputEqClassResults.Members(root)
+			if !results.Contains(resID) {
 				return fmt.Errorf("result %d output eq class %d is missing inverse membership", resID, root)
 			}
 		}
@@ -84,16 +85,17 @@ func cacheOutputEqClassForwardErrorLocked(c *Cache) error {
 // map: every key is a root and every member exists with its forward
 // membership present.
 func cacheOutputEqClassInverseErrorLocked(c *Cache) error {
-	for outputEqID, results := range c.outputEqClassResults {
+	for outputEqID := range c.outputEqClassResults.Keys() {
+		results := c.outputEqClassResults.Members(outputEqID)
 		root := c.findEqClassLocked(outputEqID)
 		if outputEqID != root {
 			return fmt.Errorf("inverse output eq-class key %d is not a root (root %d)", outputEqID, root)
 		}
-		for resID := range results {
+		for resID := range results.All() {
 			if c.resultsByID[resID] == nil {
 				return fmt.Errorf("inverse output eq class %d references missing result %d", outputEqID, resID)
 			}
-			_, found := c.resultOutputEqClasses[resID][root]
+			found := c.resultOutputEqClasses.Contains(resID, root)
 			if !found {
 				return fmt.Errorf("inverse output eq class %d result %d is missing forward membership", root, resID)
 			}
@@ -107,14 +109,14 @@ func cacheOutputEqClassInverseErrorLocked(c *Cache) error {
 // semantics at nowUnix: a class survives while an entry posted under one of
 // its digests has an unexpired value, its own or another cache's copy.
 func cacheOutputEqClassSurvivorErrorLocked(c *Cache, nowUnix int64) error {
-	liveOutputRoots := make(map[eqClassID]struct{}, len(c.outputEqClassToTerms)+len(c.outputEqClassResults))
-	for outputEqID := range c.outputEqClassToTerms {
+	liveOutputRoots := make(map[eqClassID]struct{}, c.outputEqClassToTerms.Len()+c.outputEqClassResults.Len())
+	for outputEqID := range c.outputEqClassToTerms.Keys() {
 		root := c.findEqClassLocked(outputEqID)
 		if root != 0 {
 			liveOutputRoots[root] = struct{}{}
 		}
 	}
-	for outputEqID := range c.outputEqClassResults {
+	for outputEqID := range c.outputEqClassResults.Keys() {
 		root := c.findEqClassLocked(outputEqID)
 		if root != 0 {
 			liveOutputRoots[root] = struct{}{}
@@ -122,12 +124,8 @@ func cacheOutputEqClassSurvivorErrorLocked(c *Cache, nowUnix int64) error {
 	}
 	for root := range liveOutputRoots {
 		oldSemanticsHasUnexpiredResult := false
-		for dig := range c.eqClassToDigests[root] {
-			posting := c.egraphResultsByDigest[dig]
-			if posting == nil {
-				continue
-			}
-			for resID := range posting.Items() {
+		for dig := range c.eqClassToDigests[root].All() {
+			for resID := range c.egraphResultsByDigest.Items(dig) {
 				res := c.resultsByID[resID]
 				if res != nil && (!res.noValueLocked() && !c.resultExpiredAtLocked(res, nowUnix) || res.hasUnexpiredHoldingLocked(nowUnix)) {
 					oldSemanticsHasUnexpiredResult = true
@@ -147,19 +145,27 @@ func cacheOutputEqClassSurvivorErrorLocked(c *Cache, nowUnix int64) error {
 
 // cacheOutputEqClassCandidatesErrorLocked checks that the servable results
 // of every output eq-class root read from outputEqClassResults are the ones
-// the digest postings of its digests name, so the canonical equivalent search
-// finds the same candidates through either index.
+// the digest postings of its digests name, and that both record the same
+// expiry evidence, so a structural lookup's fallback to a term's output class
+// and the canonical equivalent search find the same candidates, and a miss
+// reports the same facts, through either index.
 func cacheOutputEqClassCandidatesErrorLocked(c *Cache, nowUnix int64) error {
-	for root := range c.outputEqClassResults {
+	for root := range c.outputEqClassResults.Keys() {
 		fromPostings := newSharedResultSet()
-		for dig := range c.eqClassToDigests[root] {
-			c.appendDigestResultsLocked(fromPostings, digest.Digest(dig), nowUnix, nil)
+		var postingsExpired expirySeen
+		for dig := range c.eqClassToDigests[root].All() {
+			c.appendDigestResultsLocked(fromPostings, digest.Digest(dig), nowUnix, &postingsExpired)
 		}
 		fromClass := newSharedResultSet()
-		c.appendOutputEqClassResultsLocked(fromClass, root, nowUnix)
+		var classExpired expirySeen
+		c.appendOutputEqClassResultsLocked(fromClass, root, nowUnix, &classExpired)
 		if !slices.Equal(sharedResultSetIDs(fromPostings), sharedResultSetIDs(fromClass)) {
 			return fmt.Errorf("output eq-class root %d candidates %v differ from its digest postings' %v",
 				root, sharedResultSetIDs(fromClass), sharedResultSetIDs(fromPostings))
+		}
+		if postingsExpired != classExpired {
+			return fmt.Errorf("output eq-class root %d records expiry %+v, its digest postings %+v",
+				root, classExpired, postingsExpired)
 		}
 	}
 	return nil
@@ -189,8 +195,7 @@ func cacheExactDigestIndexErrorLocked(c *Cache) (map[sharedResultID]map[string]s
 				return nil, fmt.Errorf("result %d exact digest index contains duplicate %q", resID, dig)
 			}
 			seen[dig] = struct{}{}
-			posting := c.egraphResultsByDigest[dig]
-			if posting == nil || !posting.Contains(resID) {
+			if !c.egraphResultsByDigest.Contains(dig, resID) {
 				return nil, fmt.Errorf("result %d exact digest %q is missing its posting", resID, dig)
 			}
 		}
@@ -213,11 +218,8 @@ func cacheBroadDigestMarkerErrorLocked(c *Cache) error {
 // cacheDigestPostingErrorLocked checks the digest postings: every member
 // exists and is either exact-listed for that digest or broadly indexed.
 func cacheDigestPostingErrorLocked(c *Cache, exactDigestsByResult map[sharedResultID]map[string]struct{}) error {
-	for dig, posting := range c.egraphResultsByDigest {
-		if posting == nil {
-			continue
-		}
-		for resID := range posting.Items() {
+	for dig := range c.egraphResultsByDigest.Digests() {
+		for resID := range c.egraphResultsByDigest.Items(dig) {
 			if c.resultsByID[resID] == nil {
 				return fmt.Errorf("digest posting %q references missing result %d", dig, resID)
 			}
@@ -357,8 +359,8 @@ func TestCacheCanonicalEquivalentReadsOutputEqClassResults(t *testing.T) {
 
 			c.egraphMu.Lock()
 			root := c.eqClassRootLocked(c.egraphDigestToClass[digest.FromString("derived-index-wide-output-content").String()])
-			members := slices.Sorted(maps.Keys(c.outputEqClassResults[root]))
-			digestCount := len(c.eqClassToDigests[root])
+			members := slices.Collect(c.outputEqClassResults.Items(root))
+			digestCount := c.eqClassToDigests[root].Size()
 			_, broad := c.broadlyIndexedResults[members[0]]
 			c.egraphMu.Unlock()
 			assert.Equal(t, width, len(members))
@@ -393,6 +395,164 @@ func TestCacheCanonicalEquivalentReadsOutputEqClassResults(t *testing.T) {
 	}
 }
 
+// A structural lookup whose term has no result of its own is answered from
+// the term's output class, and examines each of the class's results once: no
+// more on an engine restored from a saved state, whose terms come back
+// without their results, than on the engine that made them. A restored
+// engine's first probe of a workspace's root for a module config was
+// answered so from a class of thousands of digests and results, by a walk of
+// every digest's posting that held the graph lock for seconds while the
+// engine's other calls queued behind it.
+func TestCacheRestoredTermLookupExaminesEachClassResultOnce(t *testing.T) {
+	t.Parallel()
+	const width = 32
+	examined := func(t *testing.T, imported bool) int {
+		f := cacheDerivedIndexWideOutputFixture(t, width, imported)
+		defer f.close(t)
+		c := f.cache
+		const lookupSession = "restored-term-lookup"
+		ctx := cacheTestSessionContext(f.ctx, lookupSession)
+		defer func() { assert.NilError(t, c.ReleaseSession(ctx, lookupSession)) }()
+		// A new session's receiver joins the receivers' class by its
+		// content, as a session's workspace joins the class of the
+		// workspaces identified by the same content: the call on it reaches
+		// the output class only through the term of the calls on the others.
+		receiverCall := cacheTestIntCall("derived-index-wide-input-request-new")
+		receiverResponse := cacheTestIntCall("derived-index-wide-input-response-new", call.ExtraDigest{
+			Label:  call.ExtraDigestLabelContent,
+			Digest: digest.FromString("derived-index-wide-input-content"),
+		})
+		receiver, err := c.GetOrInitCall(ctx, lookupSession, noopTypeResolver{}, &CallRequest{ResultCall: receiverCall, IsPersistable: true}, func(context.Context) (AnyResult, error) {
+			return cacheTestIntResult(receiverResponse, width+1), nil
+		})
+		assert.NilError(t, err)
+		structural := &ResultCall{
+			Kind:     ResultCallKindField,
+			Type:     NewResultCallType(Int(0).Type()),
+			Field:    "derived-index-wide-structural",
+			Receiver: &ResultCallRef{ResultID: uint64(receiver.cacheSharedResult().id)},
+		}
+		visits := 0
+		c.egraphMu.Lock()
+		c.testServableVisited = func(sharedResultID) { visits++ }
+		c.egraphMu.Unlock()
+		ran := false
+		evidence := &CacheDecision{}
+		res, err := c.GetOrInitCall(ctx, lookupSession, noopTypeResolver{}, &CallRequest{ResultCall: structural, CacheEvidence: evidence}, func(context.Context) (AnyResult, error) {
+			ran = true
+			return cacheTestIntResult(structural, -1), nil
+		})
+		c.egraphMu.Lock()
+		c.testServableVisited = nil
+		c.egraphMu.Unlock()
+		assert.NilError(t, err)
+		assert.Assert(t, !ran, "the call on the new receiver hits the class's results")
+		assert.Assert(t, res.HitCache())
+		assert.Equal(t, CacheHitRouteStructural, evidence.HitRoute)
+		return visits
+	}
+	live := examined(t, false)
+	restored := examined(t, true)
+	t.Logf("a class of %d results: the lookup examined %d results on the engine that made them, %d restored", width, live, restored)
+	assert.Assert(t, live >= width, "the live lookup examines every result of its term")
+	assert.Equal(t, live, restored, "a restored engine's lookup examines the class's results once each, as the live one's does")
+}
+
+// Reading a class's results from its own set finds the same candidates as
+// reading them through every digest's posting, and records the same expiry
+// evidence, over generated classes: results posted under several digests of
+// their class (content digests shared across results, structural calls
+// taught onto them), classes merged through a shared digest, and among the
+// results expired ones, imported ones and ones whose dependency attachment
+// failed, on a live engine and on one restored from its saved state.
+func TestCacheOutputEqClassResultsMatchDigestPostings(t *testing.T) {
+	t.Parallel()
+	rng := rand.New(rand.NewPCG(5, 23))
+	var multiPosted, expiredSeen, remoteSeen, failedSeen int
+	for i := range 24 {
+		imported := i%2 == 1
+		f := &cacheDerivedIndexFixture{setupSession: fmt.Sprintf("generated-classes-%d", i)}
+		if imported {
+			f.dbPath = filepath.Join(t.TempDir(), "cache.db")
+		}
+		f.cache, f.ctx = newCacheDerivedIndexFixtureCache(t, f.setupSession, f.dbPath)
+		classes := 2 + rng.IntN(4)
+		contents := make([]digest.Digest, classes)
+		for j := range contents {
+			contents[j] = digest.FromString(fmt.Sprintf("generated-%d-content-%d", i, j))
+		}
+		receiver := cacheDerivedIndexPublishPersistedResult(t, f, cacheTestIntCall(fmt.Sprintf("generated-%d-receiver", i)), cacheTestIntCall(fmt.Sprintf("generated-%d-receiver", i)), 0)
+		for k := range 6 + rng.IntN(20) {
+			extras := []call.ExtraDigest{{Label: call.ExtraDigestLabelContent, Digest: contents[rng.IntN(classes)]}}
+			if rng.IntN(4) == 0 {
+				// A second shared content digest merges two classes, and
+				// posts the result under both.
+				extras = append(extras, call.ExtraDigest{Label: call.ExtraDigestLabelContent, Digest: contents[rng.IntN(classes)]})
+			}
+			field := fmt.Sprintf("generated-%d-%d", i, k)
+			res := cacheDerivedIndexPublishPersistedResult(t, f, cacheTestIntCall(field), cacheTestIntCall(field, extras...), k)
+			for s := range rng.IntN(3) {
+				structural := &ResultCall{
+					Kind:     ResultCallKindField,
+					Type:     NewResultCallType(Int(0).Type()),
+					Field:    fmt.Sprintf("generated-%d-%d-structural-%d", i, k, s),
+					Receiver: &ResultCallRef{ResultID: uint64(receiver.cacheSharedResult().id)},
+				}
+				assert.NilError(t, f.cache.TeachCallEquivalentToResult(f.ctx, f.setupSession, structural, res))
+			}
+		}
+		assert.NilError(t, f.cache.ReleaseSession(f.ctx, f.setupSession))
+		if imported {
+			assert.NilError(t, f.cache.Close(t.Context()))
+			f.cache, f.ctx = newCacheDerivedIndexFixtureCache(t, f.setupSession, f.dbPath)
+		}
+		c := f.cache
+		nowUnix := time.Now().Unix()
+		c.egraphMu.Lock()
+		for _, id := range slices.Sorted(maps.Keys(c.resultsByID)) {
+			res := c.resultsByID[id]
+			switch rng.IntN(5) {
+			case 0:
+				res.expiresAtUnix = nowUnix - 1
+				res.imported = rng.IntN(2) == 0
+			case 1:
+				res.openAttachment(nil)
+				res.endAttachment(fmt.Errorf("generated attachment failure"))
+			}
+		}
+		for root := range c.outputEqClassResults.Keys() {
+			var seen expirySeen
+			c.appendOutputEqClassResultsLocked(newSharedResultSet(), root, nowUnix, &seen)
+			if seen.any {
+				expiredSeen++
+			}
+			if seen.remote {
+				remoteSeen++
+			}
+			for id := range c.outputEqClassResults.All(root) {
+				posted := 0
+				for dig := range c.eqClassToDigests[root].All() {
+					if c.egraphResultsByDigest.Contains(dig, id) {
+						posted++
+					}
+				}
+				if posted > 1 {
+					multiPosted++
+				}
+				if c.resultsByID[id].attachmentState() == resultAttachmentFailed {
+					failedSeen++
+				}
+			}
+		}
+		err := cacheOutputEqClassCandidatesErrorLocked(c, nowUnix)
+		c.egraphMu.Unlock()
+		assert.NilError(t, err, "generated case %d (imported=%v)", i, imported)
+		f.close(t)
+	}
+	t.Logf("results posted under several digests %d, classes with expired results %d, with imported expired results %d, failed attachments %d", multiPosted, expiredSeen, remoteSeen, failedSeen)
+	assert.Assert(t, multiPosted > 0 && expiredSeen > 0 && remoteSeen > 0 && failedSeen > 0, "the generated classes cover every case")
+}
+
 func TestCacheOutputEqClassInverseMixedSurvivor(t *testing.T) {
 	baseCtx := t.Context()
 	c, err := NewCache(baseCtx, "", nil, nil)
@@ -413,7 +573,7 @@ func TestCacheOutputEqClassInverseMixedSurvivor(t *testing.T) {
 	var outputEqID eqClassID
 	for outputEqID = range classes {
 	}
-	termCount := len(c.outputEqClassToTerms[outputEqID])
+	termCount := c.outputEqClassToTerms.Size(outputEqID)
 	c.egraphMu.Unlock()
 	assert.Equal(t, 1, classCount)
 	assert.Assert(t, termCount > 0)
@@ -421,9 +581,9 @@ func TestCacheOutputEqClassInverseMixedSurvivor(t *testing.T) {
 	assert.NilError(t, c.ReleaseSession(ctxA, "inverse-mixed-a"))
 
 	c.egraphMu.Lock()
-	_, removedPresent := c.outputEqClassResults[outputEqID][sharedA.id]
-	_, survivorPresent := c.outputEqClassResults[outputEqID][sharedB.id]
-	survivingTermCount := len(c.outputEqClassToTerms[outputEqID])
+	removedPresent := c.outputEqClassResults.Contains(outputEqID, sharedA.id)
+	survivorPresent := c.outputEqClassResults.Contains(outputEqID, sharedB.id)
+	survivingTermCount := c.outputEqClassToTerms.Size(outputEqID)
 	indexErr := cacheDerivedIndexesErrorLocked(c)
 	c.egraphMu.Unlock()
 	assert.Assert(t, !removedPresent)
@@ -459,8 +619,8 @@ func TestCacheOutputEqClassInverseExpiredOnlyDoesNotSurvive(t *testing.T) {
 	var outputEqID eqClassID
 	for outputEqID = range classes {
 	}
-	removedTermIDs := make([]egraphTermID, 0, len(c.outputEqClassToTerms[outputEqID]))
-	for termID := range c.outputEqClassToTerms[outputEqID] {
+	removedTermIDs := make([]egraphTermID, 0, c.outputEqClassToTerms.Size(outputEqID))
+	for termID := range c.outputEqClassToTerms.All(outputEqID) {
 		removedTermIDs = append(removedTermIDs, termID)
 	}
 	sharedB.expiresAtUnix = time.Now().Add(-time.Hour).Unix()
@@ -513,17 +673,17 @@ func TestCacheOutputEqClassInverseMergeThenRemoval(t *testing.T) {
 	// Exercise the idempotent result-already-in-both-roots merge case.
 	c.addResultOutputEqClassLocked(sharedA.id, rootB)
 	mergedRoot := c.mergeEqClassesLocked(baseCtx, rootA, rootB)
-	mergedA := maps.Clone(c.resultOutputEqClasses[sharedA.id])
-	mergedB := maps.Clone(c.resultOutputEqClasses[sharedB.id])
-	mergedCount := len(c.outputEqClassResults[mergedRoot])
+	mergedA := slices.Collect(c.resultOutputEqClasses.Items(sharedA.id))
+	mergedB := slices.Collect(c.resultOutputEqClasses.Items(sharedB.id))
+	mergedCount := c.outputEqClassResults.Size(mergedRoot)
 	indexErr := cacheDerivedIndexesErrorLocked(c)
 	c.egraphMu.Unlock()
 	assert.Equal(t, 1, classCountA)
 	assert.Equal(t, 1, classCountB)
 	assert.Assert(t, distinctRoots)
 	assert.Assert(t, mergedRoot != 0)
-	assert.DeepEqual(t, mergedA, map[eqClassID]struct{}{mergedRoot: {}})
-	assert.DeepEqual(t, mergedB, map[eqClassID]struct{}{mergedRoot: {}})
+	assert.DeepEqual(t, mergedA, []eqClassID{mergedRoot})
+	assert.DeepEqual(t, mergedB, []eqClassID{mergedRoot})
 	assert.Equal(t, 2, mergedCount)
 	assert.NilError(t, indexErr)
 
@@ -533,33 +693,34 @@ func TestCacheOutputEqClassInverseMergeThenRemoval(t *testing.T) {
 	assert.Equal(t, 0, c.Size())
 }
 
-func TestCacheOutputEqClassInverseForcedCompactionAndReset(t *testing.T) {
+func TestCacheOutputEqClassInverseFreedClassesAndReset(t *testing.T) {
 	baseCtx := t.Context()
 	c, err := NewCache(baseCtx, "", nil, nil)
 	assert.NilError(t, err)
-	ctxA := cacheTestSessionContext(baseCtx, "inverse-compact-a")
-	ctxB := cacheTestSessionContext(baseCtx, "inverse-compact-b")
-	cacheTestPublishContentResult(t, c, ctxA, "inverse-compact-a", 1, digest.FromString("inverse-compact-a"))
-	cacheTestPublishContentResult(t, c, ctxB, "inverse-compact-b", 2, digest.FromString("inverse-compact-b"))
+	ctxA := cacheTestSessionContext(baseCtx, "inverse-free-a")
+	ctxB := cacheTestSessionContext(baseCtx, "inverse-free-b")
+	cacheTestPublishContentResult(t, c, ctxA, "inverse-free-a", 1, digest.FromString("inverse-free-a"))
+	cacheTestPublishContentResult(t, c, ctxB, "inverse-free-b", 2, digest.FromString("inverse-free-b"))
 
 	c.egraphMu.Lock()
 	for i := range 8 {
-		c.ensureEqClassForDigestLocked(baseCtx, fmt.Sprintf("inverse-compact-dead-%d", i))
+		c.ensureEqClassForDigestLocked(baseCtx, fmt.Sprintf("inverse-free-dead-%d", i))
 	}
-	changed, oldSlots, newSlots := c.compactEqClassesLocked(true)
+	oldSlots := c.eqClassSlotsLocked()
+	c.freeEndedEqClassesLocked()
+	newSlots := c.eqClassSlotsLocked()
 	indexErr := cacheDerivedIndexesErrorLocked(c)
 	c.egraphMu.Unlock()
-	assert.Assert(t, changed)
 	assert.Assert(t, oldSlots > newSlots)
 	assert.NilError(t, indexErr)
 
-	assert.NilError(t, c.ReleaseSession(ctxA, "inverse-compact-a"))
+	assert.NilError(t, c.ReleaseSession(ctxA, "inverse-free-a"))
 	assertCacheDerivedIndexesConsistent(t, c)
-	assert.NilError(t, c.ReleaseSession(ctxB, "inverse-compact-b"))
+	assert.NilError(t, c.ReleaseSession(ctxB, "inverse-free-b"))
 
 	c.egraphMu.Lock()
-	outputEqClassResultsNil := c.outputEqClassResults == nil
-	resultOutputEqClassesNil := c.resultOutputEqClasses == nil
+	outputEqClassResultsNil := idSetIndexResetForTest(&c.outputEqClassResults)
+	resultOutputEqClassesNil := idSetIndexResetForTest(&c.resultOutputEqClasses)
 	resultIndexedDigestsNil := c.resultIndexedDigests == nil
 	broadlyIndexedResultsNil := c.broadlyIndexedResults == nil
 	c.egraphMu.Unlock()
@@ -607,7 +768,7 @@ func TestCacheReleaseCascadePreservesCallbacksAndCleansDerivedIndexes(t *testing
 	assert.Assert(t, slices.Equal(callbacks, []string{"parent", "child"}), "callback order: %v", callbacks)
 	assert.Equal(t, 0, c.Size())
 	c.egraphMu.Lock()
-	outputEqClassResultsNil := c.outputEqClassResults == nil
+	outputEqClassResultsNil := idSetIndexResetForTest(&c.outputEqClassResults)
 	c.egraphMu.Unlock()
 	assert.Assert(t, outputEqClassResultsNil)
 }
@@ -665,8 +826,7 @@ func TestCacheExactDigestPostingRemoval(t *testing.T) {
 	_, reversePresent := c.resultIndexedDigests[shared.id]
 	removedPostings := make(map[string]bool, len(expectedDigests))
 	for _, dig := range expectedDigests {
-		posting := c.egraphResultsByDigest[dig]
-		removedPostings[dig] = posting == nil || !posting.Contains(shared.id)
+		removedPostings[dig] = !c.egraphResultsByDigest.Contains(dig, shared.id)
 	}
 	indexErr = cacheDerivedIndexesErrorLocked(c)
 	c.egraphMu.Unlock()
@@ -719,7 +879,9 @@ func TestCacheBroadImportedPostingRemoval(t *testing.T) {
 	for i := range 8 {
 		f.cache.ensureEqClassForDigestLocked(f.ctx, fmt.Sprintf("broad-imported-dead-%d", i))
 	}
-	changed, oldSlots, newSlots := f.cache.compactEqClassesLocked(true)
+	oldSlots := f.cache.eqClassSlotsLocked()
+	f.cache.freeEndedEqClassesLocked()
+	newSlots := f.cache.eqClassSlotsLocked()
 	indexErr := cacheDerivedIndexesErrorLocked(f.cache)
 	f.cache.egraphMu.Unlock()
 	for resultID, state := range imported {
@@ -734,7 +896,7 @@ func TestCacheBroadImportedPostingRemoval(t *testing.T) {
 		assert.Equal(t, int64(1), state.owners, "fixture result %d does not have exactly one persisted owner", resultID)
 		assert.Equal(t, 0, state.deps, "fixture result %d unexpectedly owns dependency edges", resultID)
 	}
-	assert.Assert(t, changed, "forced compaction did not run: %d -> %d", oldSlots, newSlots)
+	assert.Assert(t, newSlots < oldSlots, "the classes that ended were not freed: %d -> %d", oldSlots, newSlots)
 	assert.NilError(t, indexErr)
 
 	pruneCtx := withMetadataPruneContext(f.ctx)
@@ -746,9 +908,9 @@ func TestCacheBroadImportedPostingRemoval(t *testing.T) {
 		f.cache.egraphMu.Lock()
 		collected := f.cache.resultsByID[resultID] == nil
 		resultCount := len(f.cache.resultsByID)
-		removedPostings := make(map[string]bool, len(f.cache.egraphResultsByDigest))
-		for dig, posting := range f.cache.egraphResultsByDigest {
-			removedPostings[dig] = posting == nil || !posting.Contains(resultID)
+		removedPostings := make(map[string]bool, f.cache.egraphResultsByDigest.Len())
+		for dig := range f.cache.egraphResultsByDigest.Digests() {
+			removedPostings[dig] = !f.cache.egraphResultsByDigest.Contains(dig, resultID)
 		}
 		indexErr := cacheDerivedIndexesErrorLocked(f.cache)
 		f.cache.egraphMu.Unlock()
@@ -761,10 +923,10 @@ func TestCacheBroadImportedPostingRemoval(t *testing.T) {
 	}
 
 	f.cache.egraphMu.Lock()
-	egraphResultsByDigestNil := f.cache.egraphResultsByDigest == nil
+	egraphResultsByDigestNil := postingsResetForTest(&f.cache.egraphResultsByDigest)
 	resultIndexedDigestsNil := f.cache.resultIndexedDigests == nil
 	broadlyIndexedResultsNil := f.cache.broadlyIndexedResults == nil
-	outputEqClassResultsNil := f.cache.outputEqClassResults == nil
+	outputEqClassResultsNil := idSetIndexResetForTest(&f.cache.outputEqClassResults)
 	f.cache.egraphMu.Unlock()
 	assert.Assert(t, egraphResultsByDigestNil)
 	assert.Assert(t, resultIndexedDigestsNil)
@@ -800,10 +962,10 @@ func TestCachePersistedFreshPruneCleansDerivedIndexes(t *testing.T) {
 	assert.Assert(t, report.Triggered)
 	assert.Equal(t, len(f.allResultIDs), report.RemovedPersistedRootCount)
 	f.cache.egraphMu.Lock()
-	egraphResultsByDigestNil := f.cache.egraphResultsByDigest == nil
+	egraphResultsByDigestNil := postingsResetForTest(&f.cache.egraphResultsByDigest)
 	resultIndexedDigestsNil := f.cache.resultIndexedDigests == nil
 	broadlyIndexedResultsNil := f.cache.broadlyIndexedResults == nil
-	outputEqClassResultsNil := f.cache.outputEqClassResults == nil
+	outputEqClassResultsNil := idSetIndexResetForTest(&f.cache.outputEqClassResults)
 	f.cache.egraphMu.Unlock()
 	assert.Assert(t, egraphResultsByDigestNil)
 	assert.Assert(t, resultIndexedDigestsNil)
@@ -825,12 +987,12 @@ type eqClassContents struct {
 }
 
 // testEqClassContentsLocked reads the tables' contents over the classes a
-// term or an entry uses, the ones compaction keeps. Requires egraphMu for
-// writing.
+// term or an entry uses, each class named by its smallest digest. Requires
+// egraphMu for writing.
 func testEqClassContentsLocked(c *Cache) eqClassContents {
 	name := func(id eqClassID) string {
 		root := c.findEqClassLocked(id)
-		digests := slices.Sorted(maps.Keys(c.eqClassToDigests[root]))
+		digests := slices.Collect(c.eqClassToDigests[root].Items())
 		if len(digests) == 0 {
 			return fmt.Sprintf("<no digest: %d>", root)
 		}
@@ -850,8 +1012,9 @@ func testEqClassContentsLocked(c *Cache) eqClassContents {
 		live[c.findEqClassLocked(term.outputEqID)] = true
 		out.Terms[id] = append(row, name(term.outputEqID))
 	}
-	for resID, classes := range c.resultOutputEqClasses {
-		for id := range classes {
+	for resID := range c.resultOutputEqClasses.Keys() {
+		classes := c.resultOutputEqClasses.Members(resID)
+		for id := range classes.All() {
 			live[c.findEqClassLocked(id)] = true
 			out.Outputs[resID] = append(out.Outputs[resID], name(id))
 		}
@@ -864,7 +1027,7 @@ func testEqClassContentsLocked(c *Cache) eqClassContents {
 	}
 	for root := range live {
 		var extras []string
-		for extra := range c.eqClassExtraDigests[root] {
+		for _, extra := range c.eqClassExtraDigests[root] {
 			extras = append(extras, extra.Label+":"+extra.Digest.String())
 		}
 		if len(extras) > 0 {
@@ -875,13 +1038,83 @@ func testEqClassContentsLocked(c *Cache) eqClassContents {
 	return out
 }
 
-// Compaction renumbers the classes and rebuilds their tables at the live
-// size, the digest map included; what the tables hold is unchanged. Across a
-// forced compaction that frees dead classes, every table reads the same when
-// each class is named by its digests: which digests share a class, each
-// class's extra digests, each entry's output classes, and each term's self,
-// inputs and output. The digest map then holds exactly the live digests.
-func TestCompactEqClassesKeepsTheLiveContents(t *testing.T) {
+// Freeing the classes that ended keeps the number of every live class: a
+// class's number names it for as long as it lives, so what holds the number
+// outside the e-graph's own tables, such as a saved row, stays right. The
+// numbers it frees, the dead classes' and the class a union joined away, are
+// taken by the classes created after it before any new number, and the slots
+// in use count only the classes that hold one.
+func TestFreeingClassesKeepsLiveClassNumbers(t *testing.T) {
+	t.Parallel()
+	ctx := cacheTestContext(t.Context())
+	c, err := NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+
+	c.egraphMu.Lock()
+	defer c.egraphMu.Unlock()
+	c.initEgraphLocked()
+	a := c.ensureEqClassForDigestLocked(ctx, "numbers-a")
+	dead1 := c.ensureEqClassForDigestLocked(ctx, "numbers-dead-1")
+	b := c.ensureEqClassForDigestLocked(ctx, "numbers-b")
+	dead2 := c.ensureEqClassForDigestLocked(ctx, "numbers-dead-2")
+	joined := c.ensureEqClassForDigestLocked(ctx, "numbers-joined")
+	d := c.ensureEqClassForDigestLocked(ctx, "numbers-d")
+	dead3 := c.ensureEqClassForDigestLocked(ctx, "numbers-dead-3")
+	c.resultsByID = map[sharedResultID]*sharedResult{
+		1: {id: 1, self: Int(1), hasValue: true, resultCall: cacheTestIntCall("numbers-a")},
+		2: {id: 2, self: Int(2), hasValue: true, resultCall: cacheTestIntCall("numbers-b")},
+		3: {id: 3, self: Int(3), hasValue: true, resultCall: cacheTestIntCall("numbers-d")},
+	}
+	c.addResultOutputEqClassLocked(1, a)
+	c.addResultOutputEqClassLocked(2, b)
+	c.addResultOutputEqClassLocked(3, d)
+	// numbers-joined joins b's class: its digest now names b's root.
+	root := c.mergeEqClassesLocked(ctx, b, joined)
+	absorbed := joined
+	if root == joined {
+		absorbed = b
+	}
+	live := map[string]eqClassID{}
+	for _, dig := range []string{"numbers-a", "numbers-b", "numbers-joined", "numbers-d"} {
+		live[dig] = c.findEqClassLocked(c.egraphDigestToClass[dig])
+	}
+	assert.Equal(t, root, live["numbers-b"])
+	assert.Equal(t, root, live["numbers-joined"])
+	assert.Equal(t, 7, c.eqClassSlotsLocked())
+
+	c.freeEndedEqClassesLocked()
+	for dig, want := range live {
+		assert.Equal(t, want, c.egraphDigestToClass[dig], "digest %s keeps its class's number", dig)
+		assert.Equal(t, want, c.findEqClassLocked(want), "class of %s is a root under its own number", dig)
+	}
+	freed := []eqClassID{dead1, dead2, dead3, absorbed}
+	for _, id := range freed {
+		assert.Equal(t, eqClassID(0), c.findEqClassLocked(id), "class %d is freed", id)
+	}
+	_, deadDigest := c.egraphDigestToClass["numbers-dead-1"]
+	assert.Assert(t, !deadDigest)
+	assert.Equal(t, 3, c.eqClassSlotsLocked())
+
+	// The freed numbers are taken before any new one, which comes after
+	// every slot.
+	slots := eqClassID(len(c.egraphParents))
+	var got []eqClassID
+	for i := range freed {
+		got = append(got, c.ensureEqClassForDigestLocked(ctx, fmt.Sprintf("numbers-new-%d", i)))
+	}
+	slices.Sort(freed)
+	slices.Sort(got)
+	assert.DeepEqual(t, freed, got)
+	next := c.ensureEqClassForDigestLocked(ctx, "numbers-new-last")
+	assert.Equal(t, slots, next)
+	assert.Equal(t, 3+len(freed)+1, c.eqClassSlotsLocked())
+}
+
+// Freeing the classes that ended leaves what the live classes hold as it
+// was: which digests share a class, each class's extra digests, each entry's
+// output classes, and each term's self, inputs and output, each class named
+// by its digests. The digest map then holds exactly the live digests.
+func TestFreeingClassesKeepsTheLiveContents(t *testing.T) {
 	baseCtx := t.Context()
 	c, err := NewCache(baseCtx, "", nil, nil)
 	assert.NilError(t, err)
@@ -900,13 +1133,12 @@ func TestCompactEqClassesKeepsTheLiveContents(t *testing.T) {
 	for i := range 8 {
 		c.ensureEqClassForDigestLocked(baseCtx, fmt.Sprintf("contents-dead-%d", i))
 	}
-	before := testEqClassContentsLocked(c)
-	changed, oldSlots, newSlots := c.compactEqClassesLocked(true)
-	after := testEqClassContentsLocked(c)
+	before, oldSlots := testEqClassContentsLocked(c), c.eqClassSlotsLocked()
+	c.freeEndedEqClassesLocked()
+	after, newSlots := testEqClassContentsLocked(c), c.eqClassSlotsLocked()
 	digests := slices.Sorted(maps.Keys(c.egraphDigestToClass))
 	indexErr := cacheDerivedIndexesErrorLocked(c)
 	c.egraphMu.Unlock()
-	assert.Assert(t, changed)
 	assert.Assert(t, oldSlots > newSlots)
 	assert.NilError(t, indexErr)
 	assert.Assert(t, len(before.Terms) > 0)

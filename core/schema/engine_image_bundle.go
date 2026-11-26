@@ -9,7 +9,6 @@ import (
 	"path"
 	"runtime"
 
-	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -26,16 +25,19 @@ import (
 const EngineImageBundleFile = "bundle.json"
 
 type engineImageBundleArgs struct {
-	Results dagql.ArrayInput[dagql.AnyID]
+	Results         dagql.ArrayInput[dagql.AnyID]
+	SourceDateEpoch dagql.Optional[dagql.Int]
 }
 
 // engineImageBundle exports results for an engine image to ship, as a
 // directory holding the bundle and its blobs (dagql.ExportImageBundle): a
 // directory's or file's snapshot, a container's image config and filesystem,
 // and a Git module source's checkout, the tree it loads from as the module
-// loader selects it, which no client can select itself. The engine image's
-// build calls it on an engine of the same build, with the results the image
-// pre-warms; nothing in an engine's runtime does.
+// loader selects it, which no client can select itself. With a
+// sourceDateEpoch, every blob's entries are dated at it at the latest, so the
+// same files make the same blobs whenever they were written. The engine
+// image's build calls it on an engine of the same build, with the results the
+// image pre-warms; nothing in an engine's runtime does.
 func (s *hostSchema) engineImageBundle(ctx context.Context, parent dagql.ObjectResult[*core.Query], args engineImageBundleArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -117,7 +119,7 @@ func (s *hostSchema) engineImageBundle(ctx context.Context, parent dagql.ObjectR
 			return err
 		}
 		defer dir.Close()
-		return cache.ExportImageBundle(ctx, outputs, cfg, imageBundleDir{root: dir})
+		return cache.ExportImageBundle(ctx, outputs, cfg, sourceDateEpochArg(args.SourceDateEpoch), imageBundleDir{root: dir})
 	})
 	if err != nil {
 		return inst, err
@@ -147,7 +149,7 @@ func (d imageBundleDir) WriteBundle(_ context.Context, bundle dagql.ValueBundle)
 	return d.root.WriteFile(EngineImageBundleFile, raw, 0o644)
 }
 
-func (d imageBundleDir) WriteBlob(ctx context.Context, dgst digest.Digest, r content.ReaderAt) error {
+func (d imageBundleDir) WriteBlob(ctx context.Context, dgst digest.Digest, r io.Reader) error {
 	name := dagql.ImageBlobPath(dgst)
 	if err := d.root.MkdirAll(path.Dir(name), 0o755); err != nil {
 		return err
@@ -157,7 +159,7 @@ func (d imageBundleDir) WriteBlob(ctx context.Context, dgst digest.Digest, r con
 		return err
 	}
 	verifier := dgst.Verifier()
-	_, err = io.Copy(io.MultiWriter(f, verifier), io.NewSectionReader(r, 0, r.Size()))
+	_, err = io.Copy(io.MultiWriter(f, verifier), r)
 	if closeErr := f.Close(); err == nil {
 		err = closeErr
 	}

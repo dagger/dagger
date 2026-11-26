@@ -221,6 +221,29 @@ type ResultCall struct {
 	// profileSkip in core/telemetry.go.
 	ProfileSkip bool `json:"profileSkip,omitempty"`
 
+	// FollowsFromInputs is the field's declaration that its result is a
+	// function of its inputs and arguments alone (FieldSpec.FollowsFromInputs),
+	// set when the frame is built. Like ProfileSkip it is a pure function of
+	// the recipe, travels with the frame through clone, fork and records,
+	// and enters no digest. A record carries it, so another cache, or the
+	// Cloud, reads it without the schema.
+	FollowsFromInputs bool `json:"followsFromInputs,omitempty"`
+
+	// ContentPreferred is the content-preferred digest an engine computed
+	// for this frame, with the recipe digest of the frame it computed it for.
+	// A clone writes it (cloneWith): from the frame's own memo once it has
+	// been computed, or as the source carried it. So an engine's records, in
+	// its exports and its store, carry the value it used, and an engine that
+	// receives the record uses that value for a frame of the same recipe with
+	// no content digest of its own (contentPreferredDigestWithVisiting), as
+	// an engine that hits its own entry uses that entry's memo. The value
+	// otherwise depends on the content digests the walk's refs happen to
+	// carry on each engine, and core derives identities other calls see from
+	// it, such as a service's hostname. A clone that changes the frame's
+	// recipe leaves it unused; a fork, which derives a new frame, drops it.
+	// It enters no digest.
+	ContentPreferred *ResultCallContentPreferred `json:"contentPreferred,omitempty"`
+
 	// recipeDigest is memoized once the frame has reached its finalized
 	// semantic shape. Do not mutate the frame after calling RecipeDigest.
 	recipeDigestOnce sync.Once
@@ -245,6 +268,26 @@ type ResultCall struct {
 	contentPreferredDigestOnce sync.Once
 	contentPreferredDigestErr  error
 	contentPreferredDigest     digest.Digest
+	// contentPreferredComputed is the memo with the frame's recipe digest,
+	// set once a frame with no content digest has it: what a clone carries
+	// as ContentPreferred.
+	contentPreferredComputed atomic.Pointer[ResultCallContentPreferred]
+}
+
+// ResultCallContentPreferred is a content-preferred digest an engine
+// computed for a frame of a recipe (ResultCall.ContentPreferred).
+type ResultCallContentPreferred struct {
+	Recipe digest.Digest `json:"recipe"`
+	Digest digest.Digest `json:"digest"`
+}
+
+// carriedContentPreferred is what a clone of the frame carries: the value
+// computed for this frame, or else the one it carries.
+func (frame *ResultCall) carriedContentPreferred() *ResultCallContentPreferred {
+	if computed := frame.contentPreferredComputed.Load(); computed != nil {
+		return computed
+	}
+	return frame.ContentPreferred
 }
 
 type ResultCallStructuralInputRef struct {
@@ -273,6 +316,10 @@ func (frame *ResultCall) cloneWith(memo resultCallCloneMemo) *ResultCall {
 		EffectIDs:    slices.Clone(frame.EffectIDs),
 		ExtraDigests: slices.Clone(frame.ExtraDigests),
 		ProfileSkip:  frame.ProfileSkip,
+		// A pure function of the recipe, as ProfileSkip is.
+		FollowsFromInputs: frame.FollowsFromInputs,
+		// Immutable once set, so the clone shares it.
+		ContentPreferred: frame.carriedContentPreferred(),
 	}
 	// Register before recursing so a shared (or, defensively, cyclic) sub-DAG
 	// resolves to this same clone instead of being re-expanded into a tree.
@@ -316,6 +363,8 @@ func (frame *ResultCall) fork() *ResultCall {
 		// receiver is the list (not a reflection type), so recomputing here would
 		// wrongly profile a reflection-list walk — inheritance is the correct rule.
 		ProfileSkip: frame.ProfileSkip,
+		// An element of a list that follows from its inputs does too.
+		FollowsFromInputs: frame.FollowsFromInputs,
 	}
 }
 
@@ -887,6 +936,20 @@ func (frame *ResultCall) recipeDigestWithVisiting(c *Cache, visiting map[sharedR
 	return frame.recipeDigest, frame.recipeDigestErr
 }
 
+// knowRecipeDigest gives the frame recipe as its recipe digest without
+// deriving it, unless it has one already: a merge's frame takes the digest
+// the merge derived for its record as it prepared it. It is set once, as a
+// derived one is.
+func (frame *ResultCall) knowRecipeDigest(recipe digest.Digest) {
+	if frame == nil || recipe == "" {
+		return
+	}
+	frame.recipeDigestOnce.Do(func() {
+		frame.recipeDigest = recipe
+		frame.recipeDigestDerived.Store(true)
+	})
+}
+
 // derivedRecipeDigest returns the frame's recipe digest, or the error
 // deriving it gave, and whether it has been derived. It never derives it, so
 // a caller holding the cache's graph lock can call it: deriving resolves an
@@ -996,6 +1059,14 @@ func (frame *ResultCall) contentPreferredDigestWithVisiting(c *Cache, visiting m
 			frame.contentPreferredDigest = content
 			return
 		}
+		// The recipe digest keys the value a record carries to frames of
+		// that recipe: a frame derived from a clone has another.
+		recipe, recipeErr := frame.deriveRecipeDigest(c)
+		if carried := frame.ContentPreferred; carried != nil && recipeErr == nil && carried.Recipe == recipe {
+			frame.contentPreferredDigest = carried.Digest
+			frame.contentPreferredComputed.Store(carried)
+			return
+		}
 
 		field, err := resultCallIdentityField(frame)
 		if err != nil {
@@ -1083,6 +1154,9 @@ func (frame *ResultCall) contentPreferredDigestWithVisiting(c *Cache, visiting m
 			WithDelim()
 
 		frame.contentPreferredDigest = digest.Digest(h.DigestAndClose())
+		if recipeErr == nil {
+			frame.contentPreferredComputed.Store(&ResultCallContentPreferred{Recipe: recipe, Digest: frame.contentPreferredDigest})
+		}
 	})
 	return frame.contentPreferredDigest, frame.contentPreferredDigestErr
 }
@@ -1307,15 +1381,28 @@ func recipeDigestForCachedResult(c *Cache, resultID sharedResultID, visiting map
 	if _, seen := visiting[resultID]; seen {
 		return "", fmt.Errorf("cycle while reconstructing recipe digest for shared result %d", resultID)
 	}
-	c.egraphMu.RLock()
+	read := c.readGraphAs(workOther)
 	res := c.resultsByID[resultID]
-	c.egraphMu.RUnlock()
+	var held entryFrame
+	if res != nil {
+		held = res.entryFrameLocked()
+	}
+	read.Unlock()
 	if res == nil {
 		return "", fmt.Errorf("missing shared result %d", resultID)
 	}
-	frame := res.loadResultCall()
+	frame := held.call
 	if frame == nil {
-		return "", fmt.Errorf("missing result call frame for shared result %d", resultID)
+		if held.body == nil {
+			return "", fmt.Errorf("missing result call frame for shared result %d", resultID)
+		}
+		// A blob-backed cache's entry holds its frame in its stored body,
+		// with the frame's recipe digest, the one thing a reference reads
+		// from it.
+		if c.testRecipeFromBody != nil {
+			c.testRecipeFromBody()
+		}
+		return held.body.recipe, nil
 	}
 
 	visiting[resultID] = struct{}{}
@@ -1347,15 +1434,23 @@ func contentPreferredDigestForCachedResult(c *Cache, resultID sharedResultID, vi
 	if _, seen := visiting[resultID]; seen {
 		return "", fmt.Errorf("cycle while reconstructing content-preferred digest for shared result %d", resultID)
 	}
-	c.egraphMu.RLock()
+	read := c.readGraphAs(workOther)
 	res := c.resultsByID[resultID]
-	c.egraphMu.RUnlock()
+	var held entryFrame
+	if res != nil {
+		held = res.entryFrameLocked()
+	}
+	read.Unlock()
 	if res == nil {
 		return "", fmt.Errorf("missing shared result %d", resultID)
 	}
-	frame := res.loadResultCall()
-	if frame == nil {
+	if !held.ok() {
 		return "", fmt.Errorf("missing result call frame for shared result %d", resultID)
+	}
+	// A frame held in a stored body is decoded for this one derivation.
+	frame, err := held.decode()
+	if err != nil {
+		return "", fmt.Errorf("result call frame for shared result %d: %w", resultID, err)
 	}
 
 	visiting[resultID] = struct{}{}
@@ -1681,8 +1776,8 @@ func (c *Cache) resultCallByResultID(resultID sharedResultID) *ResultCall {
 	if resultID == 0 {
 		return nil
 	}
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workOther)
+	defer read.Unlock()
 	res := c.resultsByID[resultID]
 	if res == nil {
 		return nil

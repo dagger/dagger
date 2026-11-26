@@ -80,18 +80,16 @@ func TestExportLeavesOutRootsReachingABusyRow(t *testing.T) {
 			owners := heldOwnershipCounts(rows.all())
 			attach := func() {
 				c.egraphMu.Lock()
-				res.attachDepsMu.Lock()
-				res.attachDepsWaitCh = make(chan struct{})
-				res.attachDepsMu.Unlock()
+				res.openAttachment(nil)
 				c.egraphMu.Unlock()
 			}
 			switch tc.when {
 			case "walk":
 				attach()
 			case "copy":
-				res.lazyMu.Lock()
-				res.lazyWhole.syncPending = true
-				res.lazyMu.Unlock()
+				res.lazyState().mu.Lock()
+				res.lazyState().whole.syncPending = true
+				res.lazyState().mu.Unlock()
 			case "after copy":
 				c.testTransferCopied = func(id uint64) {
 					if id == uint64(res.id) {
@@ -110,11 +108,11 @@ func TestExportLeavesOutRootsReachingABusyRow(t *testing.T) {
 			c.testTransferCopied = nil
 			switch tc.when {
 			case "walk", "after copy":
-				close(res.attachDepsWaitCh)
+				res.endAttachment(nil)
 			case "copy":
-				res.lazyMu.Lock()
-				res.lazyWhole.syncPending = false
-				res.lazyMu.Unlock()
+				res.lazyState().mu.Lock()
+				res.lazyState().whole.syncPending = false
+				res.lazyState().mu.Unlock()
 			}
 			require.NoError(t, err)
 			require.Equal(t, 1, calls)
@@ -157,20 +155,22 @@ func TestExportNamesARunningRowsKind(t *testing.T) {
 			ctx, c, srv := transferTestCache(t)
 			rows := newLeftOutTestRows(t, ctx, c, srv)
 			res := rows.shared.cacheSharedResult()
-			res.lazyMu.Lock()
-			res.lazyWhole.attempt = &lazyEvalAttempt{done: make(chan struct{}), waiters: tc.waiters}
-			res.lazyMu.Unlock()
+			res.lazyState().mu.Lock()
+			res.lazyState().whole.attempt = &lazyEvalAttempt{done: make(chan struct{}), waiters: tc.waiters}
+			res.lazyState().mu.Unlock()
 			var values *ExportedValues
 			err := c.WithExportedValues(ctx, ValueSelection{Roots: []AnyResult{rows.first, rows.ready}}, config.RefConfig{}, func(_ context.Context, exported *ExportedValues) error {
 				values = exported
 				return nil
 			})
-			res.lazyMu.Lock()
-			res.lazyWhole.attempt = nil
-			res.lazyMu.Unlock()
+			res.lazyState().mu.Lock()
+			res.lazyState().whole.attempt = nil
+			res.lazyState().mu.Unlock()
 			require.NoError(t, err)
 			require.Len(t, values.LeftOut, 1)
-			require.Equal(t, LeftOutRoot{Index: 0, Row: rowNumber(rows.shared), Kind: tc.kind, Err: values.LeftOut[0].Err, Busy: []BusyRow{{Row: rowNumber(rows.shared), Kind: tc.kind}}}, values.LeftOut[0])
+			require.Len(t, values.LeftOut[0].Busy, 1)
+			require.ErrorIs(t, values.LeftOut[0].Busy[0].Err, ErrPersistStateNotReady, "the busy row carries the capture's own error for it")
+			require.Equal(t, LeftOutRoot{Index: 0, Row: rowNumber(rows.shared), Kind: tc.kind, Err: values.LeftOut[0].Err, Busy: []BusyRow{{Row: rowNumber(rows.shared), Kind: tc.kind, Err: values.LeftOut[0].Busy[0].Err}}}, values.LeftOut[0])
 			require.Equal(t, map[uint64]bool{rowNumber(rows.ready): true, rowNumber(rows.base): true}, senderNumbers(values.Bundle))
 		})
 	}
@@ -216,13 +216,13 @@ func TestExportWithEveryRootLeftOut(t *testing.T) {
 	ctx, c, srv := transferTestCache(t)
 	rows := newLeftOutTestRows(t, ctx, c, srv)
 	res := rows.shared.cacheSharedResult()
-	res.lazyMu.Lock()
-	res.lazyWhole.syncPending = true
-	res.lazyMu.Unlock()
+	res.lazyState().mu.Lock()
+	res.lazyState().whole.syncPending = true
+	res.lazyState().mu.Unlock()
 	defer func() {
-		res.lazyMu.Lock()
-		res.lazyWhole.syncPending = false
-		res.lazyMu.Unlock()
+		res.lazyState().mu.Lock()
+		res.lazyState().whole.syncPending = false
+		res.lazyState().mu.Unlock()
 	}()
 	owners := heldOwnershipCounts(rows.all())
 	err := c.WithExportedValues(ctx, ValueSelection{Roots: []AnyResult{rows.first, rows.second}}, config.RefConfig{}, func(context.Context, *ExportedValues) error {
@@ -251,13 +251,13 @@ func TestExportLeavesOutTheOutputsOfLeftOutRoots(t *testing.T) {
 	ready := persistedListTestResult(t, ctx, c, srv, "outputs-ready", &transferTestValue{Text: "pending"})
 	busy := persistedListTestResult(t, ctx, c, srv, "outputs-busy", &transferTestValue{Text: "pending"})
 	res := busy.cacheSharedResult()
-	res.lazyMu.Lock()
-	res.lazyWhole.syncPending = true
-	res.lazyMu.Unlock()
+	res.lazyState().mu.Lock()
+	res.lazyState().whole.syncPending = true
+	res.lazyState().mu.Unlock()
 	defer func() {
-		res.lazyMu.Lock()
-		res.lazyWhole.syncPending = false
-		res.lazyMu.Unlock()
+		res.lazyState().mu.Lock()
+		res.lazyState().whole.syncPending = false
+		res.lazyState().mu.Unlock()
 	}()
 	selection := ValueSelection{
 		Roots: []AnyResult{busy, ready},
@@ -303,13 +303,13 @@ func TestExportNamesEveryBusyRowARootReaches(t *testing.T) {
 	transferTestDependency(c, ctx, one, second)
 	for _, r := range []AnyResult{first, second} {
 		res := r.cacheSharedResult()
-		res.lazyMu.Lock()
-		res.lazyWhole.attempt = &lazyEvalAttempt{done: make(chan struct{}), waiters: 1}
-		res.lazyMu.Unlock()
+		res.lazyState().mu.Lock()
+		res.lazyState().whole.attempt = &lazyEvalAttempt{done: make(chan struct{}), waiters: 1}
+		res.lazyState().mu.Unlock()
 		defer func() {
-			res.lazyMu.Lock()
-			res.lazyWhole.attempt = nil
-			res.lazyMu.Unlock()
+			res.lazyState().mu.Lock()
+			res.lazyState().whole.attempt = nil
+			res.lazyState().mu.Unlock()
 		}()
 	}
 	err := c.WithExportedValues(ctx, ValueSelection{Roots: []AnyResult{both, one}}, config.RefConfig{}, func(context.Context, *ExportedValues) error {
@@ -319,8 +319,8 @@ func TestExportNamesEveryBusyRowARootReaches(t *testing.T) {
 	var left *RootsLeftOutError
 	require.True(t, errors.As(err, &left), "the error names the left-out roots: %v", err)
 	require.Len(t, left.Roots, 2)
-	require.Equal(t, []BusyRow{{Row: rowNumber(first), Kind: BusyRunning}, {Row: rowNumber(second), Kind: BusyRunning}}, left.Roots[0].Busy)
-	require.Equal(t, []BusyRow{{Row: rowNumber(second), Kind: BusyRunning}}, left.Roots[1].Busy)
+	require.Equal(t, []BusyRow{{Row: rowNumber(first), Kind: BusyRunning}, {Row: rowNumber(second), Kind: BusyRunning}}, busyRowsWithoutErr(t, left.Roots[0].Busy))
+	require.Equal(t, []BusyRow{{Row: rowNumber(second), Kind: BusyRunning}}, busyRowsWithoutErr(t, left.Roots[1].Busy))
 }
 
 // An output selected on a ready row below a root that's left out is left
@@ -344,11 +344,9 @@ func TestExportLeavesOutOutputsBelowARootBlockedAtTheWalk(t *testing.T) {
 	}
 	res := busy.cacheSharedResult()
 	c.egraphMu.Lock()
-	res.attachDepsMu.Lock()
-	res.attachDepsWaitCh = make(chan struct{})
-	res.attachDepsMu.Unlock()
+	res.openAttachment(nil)
 	c.egraphMu.Unlock()
-	defer close(res.attachDepsWaitCh)
+	defer res.endAttachment(nil)
 	var values *ExportedValues
 	require.NoError(t, c.WithExportedValues(ctx, selection, config.RefConfig{}, func(_ context.Context, exported *ExportedValues) error {
 		values = exported
@@ -375,19 +373,17 @@ func TestExportWalksBelowAnAttachingRoot(t *testing.T) {
 	transferTestDependency(c, ctx, attaching, running)
 	owners := heldOwnershipCounts([]AnyResult{attaching, ready, running, other})
 	run := running.cacheSharedResult()
-	run.lazyMu.Lock()
-	run.lazyWhole.attempt = &lazyEvalAttempt{done: make(chan struct{}), waiters: 1}
-	run.lazyMu.Unlock()
+	run.lazyState().mu.Lock()
+	run.lazyState().whole.attempt = &lazyEvalAttempt{done: make(chan struct{}), waiters: 1}
+	run.lazyState().mu.Unlock()
 	defer func() {
-		run.lazyMu.Lock()
-		run.lazyWhole.attempt = nil
-		run.lazyMu.Unlock()
+		run.lazyState().mu.Lock()
+		run.lazyState().whole.attempt = nil
+		run.lazyState().mu.Unlock()
 	}()
 	res := attaching.cacheSharedResult()
 	c.egraphMu.Lock()
-	res.attachDepsMu.Lock()
-	res.attachDepsWaitCh = make(chan struct{})
-	res.attachDepsMu.Unlock()
+	res.openAttachment(nil)
 	c.egraphMu.Unlock()
 	selection := ValueSelection{Roots: []AnyResult{attaching, other}, Outputs: []SelectedValueOutput{{Result: ready, Address: PersistedPartAddress{Part: "snapshot"}}}}
 	var values *ExportedValues
@@ -395,7 +391,7 @@ func TestExportWalksBelowAnAttachingRoot(t *testing.T) {
 		values = exported
 		return nil
 	})
-	close(res.attachDepsWaitCh)
+	res.endAttachment(nil)
 	require.NoError(t, err)
 	require.Len(t, values.LeftOut, 1)
 	left := values.LeftOut[0]
@@ -406,10 +402,119 @@ func TestExportWalksBelowAnAttachingRoot(t *testing.T) {
 	if want[1].Row < want[0].Row {
 		want[0], want[1] = want[1], want[0]
 	}
-	require.Equal(t, want, left.Busy)
+	require.Equal(t, want, busyRowsWithoutErr(t, left.Busy))
 	require.Equal(t, map[uint64]bool{rowNumber(other): true}, senderNumbers(values.Bundle))
 	require.Empty(t, values.Bundle.Outputs, "the left-out root's dependency's output is left out with it")
 	for r, count := range owners {
 		require.Equal(t, count, r.incomingOwnershipCount.Load(), "the capture releases every row it held")
 	}
+}
+
+// A root whose own evaluation is in flight is left out before the capture
+// walks it: it can't be captured now whatever its closure holds, so nothing
+// below it is walked or copied for it, and the other roots go as before. A
+// remote cache service asks for a running test's root every few seconds
+// until it stops being busy, and each capture walked and copied its whole
+// closure only to leave it out.
+func TestExportLeavesOutARunningRootBeforeItsWalk(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		set  func(*sharedResult, bool)
+		kind BusyKind
+	}{
+		{"running", func(res *sharedResult, on bool) {
+			res.lazyState().whole.attempt = nil
+			if on {
+				res.lazyState().whole.attempt = &lazyEvalAttempt{done: make(chan struct{}), waiters: 1}
+			}
+		}, BusyRunning},
+		{"sync pending", func(res *sharedResult, on bool) { res.lazyState().whole.syncPending = on }, BusyBookkeeping},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx, c, srv := transferTestCache(t)
+			rows := newLeftOutTestRows(t, ctx, c, srv)
+			owners := heldOwnershipCounts(rows.all())
+			res := rows.first.cacheSharedResult()
+			res.lazyState().mu.Lock()
+			tc.set(res, true)
+			res.lazyState().mu.Unlock()
+			var copied []uint64
+			c.testTransferCopied = func(id uint64) { copied = append(copied, id) }
+			var values *ExportedValues
+			err := c.WithExportedValues(ctx, ValueSelection{Roots: []AnyResult{rows.first, rows.ready}, Outputs: []SelectedValueOutput{{Result: rows.shared, Address: PersistedPartAddress{Part: "snapshot"}}}}, config.RefConfig{}, func(_ context.Context, exported *ExportedValues) error {
+				values = exported
+				return nil
+			})
+			c.testTransferCopied = nil
+			res.lazyState().mu.Lock()
+			tc.set(res, false)
+			res.lazyState().mu.Unlock()
+			require.NoError(t, err)
+			require.NotContains(t, copied, rowNumber(rows.shared), "nothing below the running root is copied for it")
+			require.Len(t, values.LeftOut, 1)
+			require.Equal(t, 0, values.LeftOut[0].Index)
+			require.Equal(t, rowNumber(rows.first), values.LeftOut[0].Row)
+			require.Equal(t, tc.kind, values.LeftOut[0].Kind)
+			require.ErrorIs(t, values.LeftOut[0].Err, ErrPersistStateNotReady)
+			require.Equal(t, map[uint64]bool{rowNumber(rows.ready): true, rowNumber(rows.base): true}, senderNumbers(values.Bundle))
+			for r, count := range owners {
+				require.Equal(t, count, r.incomingOwnershipCount.Load(), "the capture releases every row it held")
+			}
+		})
+	}
+}
+
+// A running root the selection's Known knows goes as a held row, as it did
+// before the capture read roots' lazy state first: a held row's record
+// isn't copied, so its evaluation keeps it from nothing. Alone, or beside a
+// ready root built on it, it goes, and so does that root.
+func TestExportHoldsAKnownRunningRoot(t *testing.T) {
+	t.Parallel()
+	for _, beside := range []bool{false, true} {
+		t.Run(fmt.Sprint("beside=", beside), func(t *testing.T) {
+			t.Parallel()
+			ctx, c, srv := transferTestCache(t)
+			run := persistedListTestResult(t, ctx, c, srv, "known-running", String("run"))
+			known := NewKnownRows()
+			_, rows, _ := recordsOnlyCapture(t, ctx, c, known, run)
+			known.Merged(rows)
+			roots := []AnyResult{run}
+			if beside {
+				on := persistedListTestResult(t, ctx, c, srv, "known-running-on", String("on"))
+				transferTestDependency(c, ctx, on, run)
+				roots = append(roots, on)
+			}
+			res := run.cacheSharedResult()
+			res.lazyState().mu.Lock()
+			res.lazyState().whole.attempt = &lazyEvalAttempt{done: make(chan struct{}), waiters: 1}
+			res.lazyState().mu.Unlock()
+			var values *ExportedValues
+			err := c.WithExportedValues(ctx, ValueSelection{Roots: roots, Known: known}, config.RefConfig{}, func(_ context.Context, v *ExportedValues) error {
+				values = v
+				return nil
+			})
+			res.lazyState().mu.Lock()
+			res.lazyState().whole.attempt = nil
+			res.lazyState().mu.Unlock()
+			require.NoError(t, err)
+			require.Empty(t, values.LeftOut, "nothing is left out")
+			held, _ := heldNumbers(values.Bundle)
+			require.True(t, held[knownRowsTestNumber(run)], "the running root goes held")
+		})
+	}
+}
+
+// busyRowsWithoutErr checks that each busy row carries the capture's own
+// error for it, a not-ready one, and returns the rows without it, to compare.
+func busyRowsWithoutErr(t *testing.T, rows []BusyRow) []BusyRow {
+	t.Helper()
+	out := make([]BusyRow, len(rows))
+	for i, row := range rows {
+		require.ErrorIs(t, row.Err, ErrPersistStateNotReady, "busy row %d carries the capture's own error for it", row.Row)
+		row.Err = nil
+		out[i] = row
+	}
+	return out
 }

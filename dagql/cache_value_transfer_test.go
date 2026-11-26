@@ -30,7 +30,11 @@ type transferTestValue struct {
 	PartDeps []uint64 `json:"partDeps,omitempty"`
 	// Fields is an optional body, shaped like a module's type definitions,
 	// that gives the value a realistic payload size.
-	Fields  []transferTestField `json:"fields,omitempty"`
+	Fields []transferTestField `json:"fields,omitempty"`
+	// Parts, when set, are the parts the codec maps the value's payload to
+	// and describes, in place of its one pending snapshot part: a record
+	// with parts in each state a part can be in.
+	Parts   []transferTestPart `json:"parts,omitempty"`
 	rev     atomic.Uint64
 	release OnReleaseFunc
 	links   []PersistedSnapshotRefLink
@@ -47,6 +51,29 @@ type transferTestField struct {
 	Description string            `json:"description"`
 	Type        string            `json:"type"`
 	Args        []transferTestArg `json:"args,omitempty"`
+}
+
+// transferTestPart is one part a transferTestValue's payload maps to: its
+// name, its state (pending, completed, absent or metadata) and the kind of
+// its value.
+type transferTestPart struct {
+	Part  string `json:"part"`
+	State string `json:"state"`
+	Kind  string `json:"kind,omitempty"`
+}
+
+// transferTestParts are the parts v's payload maps to, when its value has
+// Parts, at v's path; false otherwise.
+func transferTestParts(v PersistedPayloadVisit) ([]CapturedCodecOutput, bool) {
+	var p transferTestValue
+	if err := json.Unmarshal(v.Payload, &p); err != nil || len(p.Parts) == 0 {
+		return nil, false
+	}
+	outputs := make([]CapturedCodecOutput, 0, len(p.Parts))
+	for _, part := range p.Parts {
+		outputs = append(outputs, CapturedCodecOutput{Address: PersistedPartAddress{OutputPath: v.Path, Part: PartKey(part.Part)}, State: part.State, ValueKind: part.Kind})
+	}
+	return outputs, true
 }
 
 type transferTestArg struct {
@@ -78,8 +105,8 @@ func (*transferTestValue) DecodePersistedObject(ctx context.Context, dec *Persis
 		value.links, err = dec.SnapshotRoles(ctx)
 	}
 	if err == nil {
-		if hook, ok := transferDecodeHooks.Load(dec.ResultID()); ok {
-			err = hook.(func(context.Context, *PersistDecodeContext, *transferTestValue) error)(ctx, dec, value)
+		if hook, ok := transferDecodeHooks.Load(transferDecodeHookKey{dec.Server(), dec.ResultID()}); ok {
+			err = hook.(transferDecodeHook)(ctx, dec, value)
 		}
 	}
 	return value, err
@@ -88,6 +115,14 @@ func (*transferTestValue) DecodePersistedObject(ctx context.Context, dec *Persis
 type transferTestCodec struct{}
 
 func (transferTestCodec) VisitPersistedReferences(v PersistedPayloadVisit, visit PersistedRefVisitor) (json.RawMessage, error) {
+	if steps := transferTestCodecSteps.Load(); steps != nil {
+		(*steps)("visit", v)
+	}
+	return transferTestVisit(v, visit)
+}
+
+// transferTestVisit visits a transferTestValue payload's references.
+func transferTestVisit(v PersistedPayloadVisit, visit PersistedRefVisitor) (json.RawMessage, error) {
 	if err := VisitPersistedSnapshotRoles(visit, PersistedRefOutputRole, v.Path, v.SnapshotLinks); err != nil {
 		return nil, err
 	}
@@ -112,49 +147,157 @@ func (transferTestCodec) NormalizeForeign(v PersistedPayloadVisit) (ForeignPaylo
 }
 
 // transferTestCodecSteps, when set, sees each payload visit the codec's
-// ValidateForeign and MapSnapshotParts get, by step.
+// ValidateForeign, MapSnapshotParts and VisitPersistedReferences get, by
+// step: validate, map and visit.
 var transferTestCodecSteps atomic.Pointer[func(step string, v PersistedPayloadVisit)]
 
 func (transferTestCodec) ValidateForeign(v PersistedPayloadVisit) error {
 	if steps := transferTestCodecSteps.Load(); steps != nil {
 		(*steps)("validate", v)
 	}
-	_, err := (transferTestCodec{}).VisitPersistedReferences(v, func(*PersistedRef) error { return nil })
+	_, err := transferTestVisit(v, func(*PersistedRef) error { return nil })
 	return err
 }
+
+// transferTestMapped counts the payloads the codec has mapped to their parts,
+// by each payload's text: a test whose values have a text of their own counts
+// how often the cache decodes its records, beside other tests in parallel.
+var transferTestMapped sync.Map // text → *atomic.Int64
+
+// transferTestMappedCount is how many payloads of the text the codec has
+// mapped to their parts.
+func transferTestMappedCount(text string) int64 {
+	n, _ := transferTestMapped.LoadOrStore(text, new(atomic.Int64))
+	return n.(*atomic.Int64).Load()
+}
+
 func (transferTestCodec) MapSnapshotParts(v PersistedPayloadVisit) ([]CapturedCodecOutput, error) {
 	if steps := transferTestCodecSteps.Load(); steps != nil {
 		(*steps)("map", v)
+	}
+	var mapped struct {
+		Text string `json:"text"`
+	}
+	if json.Unmarshal(v.Payload, &mapped) == nil {
+		n, _ := transferTestMapped.LoadOrStore(mapped.Text, new(atomic.Int64))
+		n.(*atomic.Int64).Add(1)
+	}
+	if outputs, ok := transferTestParts(v); ok {
+		return outputs, nil
 	}
 	return []CapturedCodecOutput{{Address: PersistedPartAddress{OutputPath: v.Path, Part: "snapshot"}, State: "pending", Value: &SnapshotValue{Kind: "directory"}}}, nil
 }
 func init() {
 	RegisterPersistedObjectFamily(PersistedObjectFamily{Name: "dagql_test.Transfer", Typed: (*transferTestValue)(nil), Visitor: transferTestCodec{}, Transfer: transferTestCodec{}})
 }
-func transferTestCache(t *testing.T) (context.Context, *Cache, *Server) {
+func transferTestCache(t testing.TB) (context.Context, *Cache, *Server) {
 	t.Helper()
 	ctx, c, srv := persistedListTestCache(t, filepath.Join(t.TempDir(), "cache.db"))
 	srv.InstallObject(NewClass(srv, ClassOpts[*transferTestValue]{}))
 	t.Cleanup(func() { require.NoError(t, c.CloseDiscardingPersistence()) })
 	return ctx, c, srv
 }
-func exportTestBundle(t *testing.T, ctx context.Context, c *Cache, roots ...AnyResult) ValueBundle {
+func exportTestBundle(t testing.TB, ctx context.Context, c *Cache, roots ...AnyResult) ValueBundle {
 	t.Helper()
 	var bundle ValueBundle
 	require.NoError(t, c.WithExportedValues(ctx, ValueSelection{Roots: roots}, config.RefConfig{}, func(_ context.Context, values *ExportedValues) error { bundle = values.Bundle; return nil }))
 	return bundle
 }
+
+// cloudTestBundle exports roots from c and sends each offer on a row of the
+// bundle as the Cloud sends a part it stores (StoredBundle): as that row's
+// output, with its owner, and the rows its owner and its Services name in the
+// bundle, beside the roots' closure rather than as roots. An engine's export
+// carries no offers, so a test of what an engine does with an offer it is
+// sent builds its bundle here. An expired row an owner names, which an export
+// refuses as a root, is exported unexpired and goes with its expiry.
+func cloudTestBundle(t *testing.T, ctx context.Context, c *Cache, roots ...AnyResult) ValueBundle {
+	t.Helper()
+	sent := slices.Clone(roots)
+	lifted := map[*sharedResult]int64{}
+	defer func() {
+		c.egraphMu.Lock()
+		for row, expiry := range lifted {
+			row.expiresAtUnix = expiry
+		}
+		c.egraphMu.Unlock()
+	}()
+	for {
+		bundle := exportTestBundle(t, ctx, c, sent...)
+		ordinals := map[uint64]uint64{}
+		for _, value := range bundle.Values {
+			ordinals[value.SenderNumber] = uint64(value.Ordinal)
+		}
+		var offers []TransferredOutput
+		var missing []AnyResult
+		named := map[uint64]bool{}
+		relocate := func(id *uint64) {
+			if ordinal, ok := ordinals[*id]; ok {
+				*id = ordinal
+				return
+			}
+			if named[*id] {
+				return
+			}
+			named[*id] = true
+			c.egraphMu.Lock()
+			row := c.resultsByID[sharedResultID(*id)]
+			if row != nil && row.expiresAtUnix != 0 && row.expiresAtUnix <= time.Now().Unix() {
+				lifted[row] = row.expiresAtUnix
+				row.expiresAtUnix = 0
+			}
+			c.egraphMu.Unlock()
+			require.NotNil(t, row, "an offer names row %d", *id)
+			missing = append(missing, Result[Typed]{shared: row})
+		}
+		for _, value := range bundle.Values {
+			c.egraphMu.RLock()
+			held := c.resultsByID[sharedResultID(value.SenderNumber)].testPartOffers()
+			c.egraphMu.RUnlock()
+			for _, slot := range held {
+				copied, err := clonePartOffers([]PersistedPartOffer{slot.record()})
+				require.NoError(t, err)
+				offer := copied[0]
+				for i := range offer.Owner.DependencyIDs {
+					relocate(&offer.Owner.DependencyIDs[i])
+				}
+				for i := range offer.Value.Services {
+					relocate(&offer.Value.Services[i].ServiceResultID)
+				}
+				offers = append(offers, TransferredOutput{Ordinal: value.Ordinal, Address: offer.Address, State: "completed", Value: &offer.Value, Chain: &offer.Chain, Owner: &offer.Owner})
+			}
+		}
+		if len(missing) > 0 {
+			sent = append(sent, missing...)
+			continue
+		}
+		bundle.Roots = bundle.Roots[:len(roots)]
+		for row, expiry := range lifted {
+			for i := range bundle.Values {
+				if bundle.Values[i].SenderNumber == uint64(row.id) {
+					bundle.Values[i].ExpiresAtUnix = expiry
+				}
+			}
+		}
+		for _, offer := range offers {
+			key, err := partAddressKey(offer.Address)
+			require.NoError(t, err)
+			bundle.Outputs = slices.DeleteFunc(bundle.Outputs, func(output TransferredOutput) bool {
+				other, _ := partAddressKey(output.Address)
+				return output.Ordinal == offer.Ordinal && other == key
+			})
+			bundle.Outputs = append(bundle.Outputs, offer)
+		}
+		return bundle
+	}
+}
 func transferTestDependency(c *Cache, ctx context.Context, parent, child AnyResult) {
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
 	p, d := parent.cacheSharedResult(), child.cacheSharedResult()
-	if p.deps == nil {
-		p.deps = map[sharedResultID]struct{}{}
-	}
-	if _, exists := p.deps[d.id]; exists {
+	if !p.deps.add(d.id) {
 		return
 	}
-	p.deps[d.id] = struct{}{}
 	p.dependencyOwnershipRevision++
 	c.rememberDependencyEdgeLocked(p, d)
 	c.incrementIncomingOwnershipLocked(ctx, d)
@@ -165,7 +308,7 @@ func transferTestOffer(t *testing.T, c *Cache, ctx context.Context, parent, chil
 	record := PersistedPartOffer{Address: PersistedPartAddress{Part: "snapshot"}, Value: SnapshotValue{Kind: "directory"}, Owner: PersistedOfferOwner{DependencyIDs: []uint64{uint64(child.cacheSharedResult().id)}}}
 	owner, err := c.newOfferOwnerLocked(ctx, record.Owner)
 	if err == nil {
-		err = c.testAttachPartOfferLocked(parent.cacheSharedResult(), record.Address, &partOffer{record: record, owner: owner})
+		err = c.testAttachPartOfferLocked(parent.cacheSharedResult(), record.Address, &partOffer{layeredOffer: c.storedLayers.hold(record), owner: owner})
 	}
 	c.egraphMu.Unlock()
 	require.NoError(t, err)
@@ -184,15 +327,13 @@ func TestValueTransferCapturePhases(t *testing.T) {
 	require.GreaterOrEqual(t, phases.WalkWait, time.Duration(0))
 	require.Positive(t, phases.Walk)
 	require.Positive(t, phases.Copy)
-	require.Zero(t, phases.RetriedStale)
 }
 
 // An offer can be left on a part its value already has: a part can complete
 // without its gate settling it, and only a settlement retires the offer on
-// it. Such an offer is obsolete. A capture that finds one retires it, as boot
-// does, and captures the value; the offer no longer holds every capture of
-// the value busy.
-func TestValueTransferCaptureRetiresAnOfferOnACompletedOutput(t *testing.T) {
+// it. Such an offer is obsolete, and boot retires it. A capture copies no
+// offers, so it captures the value at once and leaves the offer as it is.
+func TestValueTransferCaptureTakesAValueWithAnOfferOnACompletedOutput(t *testing.T) {
 	ctx, c, srv := statePartCache(t, "")
 	t.Cleanup(func() { require.NoError(t, c.CloseDiscardingPersistence()) })
 	value := &statePartValue{}
@@ -207,18 +348,16 @@ func TestValueTransferCaptureRetiresAnOfferOnACompletedOutput(t *testing.T) {
 	owners := res.incomingOwnershipCount.Load()
 
 	var bundle ValueBundle
-	var phases ExportPhases
 	require.NoError(t, c.WithExportedValues(ctx, ValueSelection{Roots: []AnyResult{root}}, config.RefConfig{}, func(_ context.Context, values *ExportedValues) error {
-		bundle, phases = values.Bundle, values.Phases
+		bundle = values.Bundle
 		return nil
 	}))
-	require.Equal(t, 1, phases.RetriedStale, "the capture ran again")
 	require.Len(t, bundle.Values, 1)
 	require.Empty(t, bundle.Values[0].Record.Envelope.PendingOffers)
 	c.egraphMu.RLock()
 	offers := len(res.testPartOffers())
 	c.egraphMu.RUnlock()
-	require.Zero(t, offers, "the capture retired the obsolete offer")
+	require.Equal(t, 1, offers, "the capture leaves the offer for boot to retire")
 	require.Equal(t, owners, res.incomingOwnershipCount.Load())
 	require.Zero(t, c.activeGlobalOperations.Load())
 }
@@ -236,14 +375,15 @@ func TestValueTransferCapture(t *testing.T) {
 		transferTestDependency(c, ctx, root, left)
 		transferTestOffer(t, c, ctx, root, right)
 		bundle := exportTestBundle(t, ctx, c, root)
-		require.Len(t, bundle.Values, 4)
+		// The root's record carries no offers, so the row only its offer's
+		// owner reaches doesn't go.
+		require.Equal(t, map[uint64]bool{rowNumber(root): true, rowNumber(left): true, rowNumber(leaf): true}, senderNumbers(bundle))
 		rootValue := bundle.Values[int(bundle.Roots[0].Ordinal)-1]
 		require.Len(t, rootValue.DependencyIDs, 1)
-		require.Len(t, rootValue.Record.Envelope.PendingOffers, 1)
-		require.Len(t, rootValue.Record.Envelope.PendingOffers[0].Owner.DependencyIDs, 1)
+		require.Empty(t, rootValue.Record.Envelope.PendingOffers)
 		require.Zero(t, c.activeGlobalOperations.Load())
 	})
-	for _, kind := range []string{"output", "payload", "offer", "ownership", "requirements", "frame", "busy"} {
+	for _, kind := range []string{"output", "payload", "transfer", "ownership", "requirements", "frame", "busy"} {
 		t.Run(kind, func(t *testing.T) {
 			ctx, c, srv := transferTestCache(t)
 			object := &transferTestValue{Text: "pending"}
@@ -258,7 +398,7 @@ func TestValueTransferCapture(t *testing.T) {
 					res.payloadMu.Lock()
 					res.payloadRevision++
 					res.payloadMu.Unlock()
-				case "offer":
+				case "transfer":
 					c.egraphMu.Lock()
 					res.transferRevision++
 					c.egraphMu.Unlock()
@@ -272,16 +412,14 @@ func TestValueTransferCapture(t *testing.T) {
 					res.storeResultCall(res.loadResultCall().clone())
 				case "busy": // Attachment is rechecked after every copy guard is released.
 					c.egraphMu.Lock()
-					res.attachDepsMu.Lock()
-					res.attachDepsWaitCh = make(chan struct{})
-					res.attachDepsMu.Unlock()
+					res.openAttachment(nil)
 					c.egraphMu.Unlock()
 				}
 			}
 			err := c.WithExportedValues(ctx, ValueSelection{Roots: []AnyResult{root}}, config.RefConfig{}, func(context.Context, *ExportedValues) error { t.Fatal("incoherent capture delivered"); return nil })
 			c.testTransferCopied = nil
 			if kind == "busy" {
-				close(res.attachDepsWaitCh)
+				res.endAttachment(nil)
 			}
 			require.ErrorIs(t, err, ErrPersistStateNotReady)
 			require.Equal(t, owners, res.incomingOwnershipCount.Load())
@@ -361,7 +499,7 @@ func TestValueTransferReferences(t *testing.T) {
 		require.NoError(t, err)
 		c.egraphMu.RLock()
 		class, known := c.egraphDigestToClass[extra.String()]
-		results := len(c.outputEqClassResults[c.eqClassRootLocked(class)])
+		results := c.outputEqClassResults.Size(c.eqClassRootLocked(class))
 		c.egraphMu.RUnlock()
 		require.True(t, known)
 		require.Equal(t, 1, results)
@@ -463,7 +601,26 @@ func mustTransferJSON(t *testing.T, v any) []byte {
 	return raw
 }
 
+// transferDecodeHooks holds what a test runs when a transferTestValue
+// decodes, by the server it decodes for and the row it decodes. Every cache
+// numbers its rows from 1, so parallel tests share row ids; each test has a
+// server of its own.
 var transferDecodeHooks sync.Map
+
+type transferDecodeHookKey struct {
+	server   *Server
+	resultID uint64
+}
+type transferDecodeHook = func(context.Context, *PersistDecodeContext, *transferTestValue) error
+
+// onTransferDecode runs hook when row resultID decodes for srv, until the
+// test ends.
+func onTransferDecode(t testing.TB, srv *Server, resultID uint64, hook transferDecodeHook) {
+	t.Helper()
+	key := transferDecodeHookKey{srv, resultID}
+	transferDecodeHooks.Store(key, hook)
+	t.Cleanup(func() { transferDecodeHooks.Delete(key) })
+}
 
 func (v *transferTestValue) OnRelease(ctx context.Context) error {
 	if v.release != nil {
@@ -485,12 +642,12 @@ func TestValueTransferPersistenceDecodePublication(t *testing.T) {
 	var rowCleanups, losingReleases, winningReleases atomic.Int32
 	row.onRelease = joinOnRelease(row.onRelease, func(context.Context) error { rowCleanups.Add(1); return nil })
 	row.payloadMu.Lock()
-	row.snapshotOwnerLinks = []PersistedSnapshotRefLink{{Role: "snapshot", RefKey: "old-applied"}}
-	row.snapshotLinkIntent = &snapshotLinkIntent{Links: []PersistedSnapshotRefLink{}}
+	row.snapshotState().ownerLinks = []PersistedSnapshotRefLink{{Role: "snapshot", RefKey: "old-applied"}}
+	row.snapshotState().linkIntent = &snapshotLinkIntent{Links: []PersistedSnapshotRefLink{}}
 	row.payloadRevision++
 	row.payloadMu.Unlock()
 	var calls int
-	transferDecodeHooks.Store(id, func(ctx context.Context, dec *PersistDecodeContext, value *transferTestValue) error {
+	onTransferDecode(t, srv, id, func(ctx context.Context, dec *PersistDecodeContext, value *transferTestValue) error {
 		calls++
 		roles, err := dec.SnapshotRoles(ctx)
 		require.NoError(t, err)
@@ -505,7 +662,7 @@ func TestValueTransferPersistenceDecodePublication(t *testing.T) {
 			}
 			next.ObjectJSON = json.RawMessage(`{"text":"new"}`)
 			row.persistedEnvelope = &next
-			row.snapshotLinkIntent = &snapshotLinkIntent{Links: []PersistedSnapshotRefLink{{Role: "snapshot", RefKey: "new-desired"}}}
+			row.snapshotState().linkIntent = &snapshotLinkIntent{Links: []PersistedSnapshotRefLink{{Role: "snapshot", RefKey: "new-desired"}}}
 			row.payloadRevision++
 			row.payloadMu.Unlock()
 		} else {
@@ -514,7 +671,6 @@ func TestValueTransferPersistenceDecodePublication(t *testing.T) {
 		}
 		return nil
 	})
-	defer transferDecodeHooks.Delete(id)
 	loaded, err := b.LoadResultByResultID(ctx, "test-session", srv, id)
 	require.NoError(t, err)
 	require.Equal(t, "new", loaded.Unwrap().(*transferTestValue).Text)
@@ -665,7 +821,7 @@ func testValueTransferCaptureConcurrent(t *testing.T) {
 		if err == nil {
 			address := PersistedPartAddress{Part: "snapshot"}
 			var queue []*sharedResult
-			queue, err = c.testReplacePartOfferLocked(ctx, root.cacheSharedResult(), address, &partOffer{owner: owner, record: PersistedPartOffer{Address: address, Owner: owner.record, Value: SnapshotValue{Kind: "directory"}}})
+			queue, err = c.testReplacePartOfferLocked(ctx, root.cacheSharedResult(), address, &partOffer{owner: owner, layeredOffer: layeredOffer{held: PersistedPartOffer{Address: address, Owner: owner.record, Value: SnapshotValue{Kind: "directory"}}}})
 			if err == nil {
 				releases, err = c.collectUnownedResultsLocked(ctx, queue)
 			}
@@ -678,12 +834,14 @@ func testValueTransferCaptureConcurrent(t *testing.T) {
 			require.NoError(t, err)
 		}
 		require.NoError(t, c.ReleaseSession(ctx, "test-session"))
+		// The capture holds no offer: the replaced offer's owner goes with the
+		// replacement, and the row only it owned with it.
 		snapshot := c.snapshotPruneState(pruneSnapshotMetadata, 10)
-		require.Contains(t, pruneActiveClosure(snapshot, nil), old.cacheSharedResult().id)
+		require.NotContains(t, pruneActiveClosure(snapshot, nil), old.cacheSharedResult().id)
 		c.egraphMu.RLock()
 		ownerCount := len(c.offerOwners)
 		c.egraphMu.RUnlock()
-		require.Equal(t, 2, ownerCount)
+		require.Equal(t, 1, ownerCount)
 		close(finish)
 		require.NoError(t, <-done)
 		require.Empty(t, c.resultsByID)
@@ -737,5 +895,54 @@ func testValueTransferImportConcurrent(t *testing.T) {
 		close(commit)
 		require.NoError(t, <-done)
 		require.NoError(t, <-closed)
+	})
+}
+
+// A capture splits its bundle phase into its steps, summed over its passes:
+// holding the known rows, checking the copied records, settling the roots,
+// deriving the held rows' recipes, and building the bundle's values. A known
+// row whose recipe another row of the closure shares goes in full, which
+// takes a second pass.
+func TestValueTransferCaptureBundlePhases(t *testing.T) {
+	t.Parallel()
+	steps := func(p ExportPhases) time.Duration {
+		return p.BundleKnown + p.BundleCheck + p.BundleSettle + p.BundleRecipes + p.BundleValues
+	}
+	t.Run("one pass", func(t *testing.T) {
+		t.Parallel()
+		ctx, c, srv := transferTestCache(t)
+		root := persistedListTestResult(t, ctx, c, srv, "root", &transferTestValue{Text: "bundle phases"})
+		var phases ExportPhases
+		require.NoError(t, c.WithExportedValues(ctx, ValueSelection{Roots: []AnyResult{root}}, config.RefConfig{}, func(_ context.Context, values *ExportedValues) error {
+			phases = values.Phases
+			return nil
+		}))
+		require.Equal(t, 1, phases.BundlePasses)
+		require.Positive(t, phases.BundleCheck, "the root's record is checked")
+		require.Positive(t, phases.BundleSettle)
+		require.Positive(t, phases.BundleValues)
+		require.LessOrEqual(t, steps(phases), phases.Bundle)
+	})
+	t.Run("a held row carried in full", func(t *testing.T) {
+		t.Parallel()
+		ctx, c, srv := transferTestCache(t)
+		old := persistedListTestResult(t, ctx, c, srv, "phases-recipe", String("old"))
+		known := NewKnownRows()
+		_, rows, _ := recordsOnlyCapture(t, ctx, c, known, old)
+		known.Merged(rows)
+		root := persistedListTestResult(t, ctx, c, srv, "phases-recipe-root", String("root"))
+		transferTestDependency(c, ctx, root, old)
+		currentEntryTestExpire(c, old)
+		fresh := persistedListTestResult(t, ctx, c, srv, "phases-recipe", String("fresh"))
+		transferTestDependency(c, ctx, root, fresh)
+
+		var phases ExportPhases
+		require.NoError(t, c.WithExportedValues(ctx, ValueSelection{Roots: []AnyResult{root}, Known: known}, config.RefConfig{}, func(_ context.Context, values *ExportedValues) error {
+			phases = values.Phases
+			return nil
+		}))
+		require.Equal(t, 2, phases.BundlePasses, "the old entry goes in full in a second pass")
+		require.Positive(t, phases.BundleRecipes, "the held row's recipe is derived")
+		require.LessOrEqual(t, steps(phases), phases.Bundle)
 	})
 }

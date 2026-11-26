@@ -193,6 +193,17 @@ type Server struct {
 	armedMu sync.Mutex
 	armed   *armedProfile
 
+	// cpuProfile is the process's one CPU profiler, shared by the engine
+	// CPU sampler and wcprof's profiles (engine_cpu.go). engineCPUOn,
+	// engineCPUWindowLen, engineCPUPoll and testEngineCPUWindow are tests'
+	// stand-ins for wcprof recording, the window and poll lengths, and a
+	// window's report.
+	cpuProfile          cpuProfiler
+	engineCPUOn         func() bool
+	engineCPUWindowLen  time.Duration
+	engineCPUPoll       time.Duration
+	testEngineCPUWindow func(engineCPUWindow)
+
 	// The session watch (wcprof_watch.go): its threshold in nanoseconds, 0
 	// while it's off; the start of each watched session while it runs;
 	// captureMu, which lets one capture run at a time; and the last few
@@ -573,17 +584,11 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 
 	// garbage collect client DBs
 	go srv.gcClientDBs()
+	srv.startEngineCPU(srv.shutdownCtx)
 
 	// initialize the secret salt
 	srv.secretSalt, err = loadSecretSalt(srv.rootDir)
 	if err != nil {
-		return nil, err
-	}
-
-	// Early snapshot sharing is admitted only on an engine that can receive
-	// imports, after restored ownership is ready and before any external
-	// control or request can arrive.
-	if err := srv.initSnapshotSharing(ctx, opts); err != nil {
 		return nil, err
 	}
 
@@ -837,7 +842,7 @@ func (srv *Server) initLocalCacheStateOnce(ctx context.Context, cfg config.Confi
 	snapshotGC := srv.snapshotGarbage.Collect
 	cacheOpts := []dagql.CacheOption{dagql.WithEngineInstanceID(srv.engineInstanceID), dagql.WithPartPrefetchRoom(srv.partPrefetchRoom)}
 	if srv.engineEvents != nil {
-		cacheOpts = append(cacheOpts, dagql.WithSnapshotShareReport(srv.emitShareEvent))
+		cacheOpts = append(cacheOpts, dagql.WithOwedPartReport(srv.emitPartsEvent))
 		cacheOpts = append(cacheOpts, dagql.WithPartReadReport(srv.emitReadEvent))
 	}
 	srv.engineCache, err = dagql.NewCache(ctx, dagqlCacheDBPath, srv.workerCache, snapshotGC, cacheOpts...)

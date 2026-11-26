@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func storedPartTestCache(t *testing.T, opts ...CacheOption) (context.Context, *Cache) {
+func storedPartTestCache(t testing.TB, opts ...CacheOption) (context.Context, *Cache) {
 	t.Helper()
 	ctx := cacheTestContext(t.Context())
 	c, err := NewCache(ctx, "", nil, nil, opts...)
@@ -32,7 +32,35 @@ func storedPartTestPublish(t *testing.T, ctx context.Context, c *Cache, session,
 func storedPartTestStored(c *Cache, res AnyResult) map[string]PersistedPartOffer {
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
-	return c.resultsByID[res.cacheSharedResult().id].storedParts
+	return storedPartTestOffers(c.resultsByID[res.cacheSharedResult().id].storedParts)
+}
+
+// storedPartTestOffer returns the offer of the part at address that the
+// entry numbered number stores itself, copied as its readers copy it.
+func storedPartTestOffer(t *testing.T, c *Cache, number uint64, address PersistedPartAddress) PersistedPartOffer {
+	t.Helper()
+	key, err := partAddressKey(address)
+	require.NoError(t, err)
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	res := c.resultsByID[sharedResultID(number)]
+	require.NotNil(t, res, "entry %d", number)
+	part, ok := res.storedParts.find(key)
+	require.True(t, ok, "entry %d stores no %s part", number, key)
+	return part.offer()
+}
+
+// storedPartTestOffers returns the offers of an entry's stored parts, by
+// part address key, or nil if it has none.
+func storedPartTestOffers(parts storedPartList) map[string]PersistedPartOffer {
+	if parts == nil {
+		return nil
+	}
+	offers := make(map[string]PersistedPartOffer, len(parts))
+	for _, part := range parts {
+		offers[part.key] = part.offer()
+	}
+	return offers
 }
 
 // Only a blob-backed cache stores parts. An engine's cache refuses them.
@@ -40,7 +68,7 @@ func TestSetStoredPartNeedsABlobStore(t *testing.T) {
 	t.Parallel()
 	ctx, c := storedPartTestCache(t)
 	res := storedPartTestPublish(t, ctx, c, "s", "engine-stored-part", &captureTestValue{text: "v"})
-	stored, err := c.SetStoredPart(ctx, uint64(res.cacheSharedResult().id), testLiveOffer(), 0)
+	stored, _, err := c.SetStoredPart(ctx, uint64(res.cacheSharedResult().id), testLiveOffer(), 0)
 	require.ErrorContains(t, err, "no blob store")
 	require.False(t, stored)
 	require.Empty(t, storedPartTestStored(c, res))
@@ -57,17 +85,17 @@ func TestSetStoredPart(t *testing.T) {
 	key, err := partAddressKey(testLiveOffer().Address)
 	require.NoError(t, err)
 
-	stored, err := c.SetStoredPart(ctx, number, testLiveOffer(), 0)
+	stored, _, err := c.SetStoredPart(ctx, number, testLiveOffer(), 0)
 	require.NoError(t, err)
 	require.True(t, stored)
 	require.Equal(t, testLiveOffer(), storedPartTestStored(c, res)[key])
 
 	metadata := testLiveOffer()
 	metadata.Address.Part = "metadata"
-	_, err = c.SetStoredPart(ctx, number, metadata, 0)
+	_, _, err = c.SetStoredPart(ctx, number, metadata, 0)
 	require.ErrorContains(t, err, "metadata")
 
-	_, err = c.SetStoredPart(ctx, number+1000, testLiveOffer(), 0)
+	_, _, err = c.SetStoredPart(ctx, number+1000, testLiveOffer(), 0)
 	require.ErrorContains(t, err, "no entry")
 
 	a := newCloudApplier(t, c)
@@ -76,7 +104,7 @@ func TestSetStoredPart(t *testing.T) {
 	c.egraphMu.RLock()
 	heldEntry := c.entriesByRecipe[held.Recipe]
 	c.egraphMu.RUnlock()
-	_, err = c.SetStoredPart(ctx, uint64(heldEntry), testLiveOffer(), 0)
+	_, _, err = c.SetStoredPart(ctx, uint64(heldEntry), testLiveOffer(), 0)
 	require.ErrorContains(t, err, "no value")
 }
 
@@ -104,7 +132,7 @@ func TestSetStoredPartAdmission(t *testing.T) {
 			if tc.entryExpired {
 				currentEntryTestExpire(c, res)
 			}
-			stored, err := c.SetStoredPart(ctx, uint64(res.cacheSharedResult().id), testLiveOffer(), tc.copyExpires)
+			stored, _, err := c.SetStoredPart(ctx, uint64(res.cacheSharedResult().id), testLiveOffer(), tc.copyExpires)
 			require.NoError(t, err)
 			require.Equal(t, tc.stored, stored)
 			require.Equal(t, tc.stored, len(storedPartTestStored(c, res)) == 1)
@@ -118,7 +146,7 @@ func TestReplacementDropsStoredParts(t *testing.T) {
 	t.Parallel()
 	ctx, c := storedPartTestCache(t, WithBlobStore())
 	old := storedPartTestPublish(t, ctx, c, "a", "stored-part-replaced", &captureTestValue{text: "old"})
-	stored, err := c.SetStoredPart(ctx, uint64(old.cacheSharedResult().id), testLiveOffer(), 0)
+	stored, _, err := c.SetStoredPart(ctx, uint64(old.cacheSharedResult().id), testLiveOffer(), 0)
 	require.NoError(t, err)
 	require.True(t, stored)
 	require.NoError(t, c.ReleaseSession(ctx, "a"))
@@ -127,20 +155,25 @@ func TestReplacementDropsStoredParts(t *testing.T) {
 	replaced := storedPartTestPublish(t, ctx, c, "b", "stored-part-replaced", &captureTestValue{text: "new"})
 	require.Equal(t, old.cacheSharedResult().id, replaced.cacheSharedResult().id, "replaced in place")
 	require.Empty(t, storedPartTestStored(c, replaced))
+	require.NoError(t, c.VerifyPoolMeasure(), "the pool's kept measure follows the replacement")
 	require.NoError(t, c.ReleaseSession(ctx, "b"))
 }
 
 // Admission reads the clock under the graph lock: a copy that expires while
 // SetStoredPart waits for the lock gives no part to an entry whose value is
-// still live, although it had not expired when the call started. The call is
-// observed blocked on the lock before the copy expires.
+// still live, although it had not expired when the call started. The cache's
+// clock stands still until the call is seen blocked on the lock, then moves
+// past the copy's expiry before the lock is let go: nothing waits on the
+// wall clock.
 func TestSetStoredPartAdmitsUnderTheGraphLock(t *testing.T) {
 	t.Parallel()
 	ctx, c := storedPartTestCache(t, WithBlobStore())
 	res := storedPartTestPublish(t, ctx, c, "s", "stored-part-clock", &captureTestValue{text: "live"})
 	t.Cleanup(func() { require.NoError(t, c.ReleaseSession(context.Background(), "s")) })
-	expires := time.Now().Unix() + 2
+	now := time.Now()
+	expires := now.Unix() + 2
 	c.egraphMu.Lock()
+	c.storedPartClock = func() time.Time { return now }
 	locked := true
 	defer func() {
 		if locked {
@@ -153,23 +186,28 @@ func TestSetStoredPartAdmitsUnderTheGraphLock(t *testing.T) {
 	}
 	done := make(chan outcome, 1)
 	go func() {
-		stored, err := c.SetStoredPart(ctx, uint64(res.cacheSharedResult().id), testLiveOffer(), expires)
+		stored, _, err := c.SetStoredPart(ctx, uint64(res.cacheSharedResult().id), testLiveOffer(), expires)
 		done <- outcome{stored, err}
 	}()
-	blocked := false
-	for deadline := time.Now().Add(time.Second); !blocked && time.Now().Before(deadline); time.Sleep(time.Millisecond) {
+	// This test's own call is seen blocked on the lock, by its goroutine's
+	// stack: another waiter, such as the body worker or another test's
+	// SetStoredPart, doesn't count.
+	waiting := func() bool {
 		buf := make([]byte, 1<<20)
 		n := runtime.Stack(buf, true)
 		for _, stack := range strings.Split(string(buf[:n]), "\n\n") {
-			if strings.Contains(stack, "(*Cache).SetStoredPart(") && strings.Contains(stack, "sync.(*RWMutex).Lock(") {
-				blocked = true
-				break
+			if strings.Contains(stack, "TestSetStoredPartAdmitsUnderTheGraphLock.func") && strings.Contains(stack, "(*Cache).SetStoredPart(") && strings.Contains(stack, "sync.(*RWMutex).Lock(") {
+				return true
 			}
 		}
+		return false
 	}
-	require.True(t, blocked, "SetStoredPart waits for the graph lock before the copy expires")
-	require.Less(t, time.Now().Unix(), expires)
-	time.Sleep(time.Until(time.Unix(expires, 0)) + 50*time.Millisecond)
+	for deadline := time.Now().Add(time.Minute); !waiting(); time.Sleep(time.Millisecond) {
+		require.True(t, time.Now().Before(deadline), "SetStoredPart waits for the graph lock")
+	}
+	// The call waits for the lock with the copy not yet expired; it expires
+	// before the call holds the lock.
+	now = now.Add(3 * time.Second)
 	c.egraphMu.Unlock()
 	locked = false
 	got := <-done

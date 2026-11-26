@@ -536,7 +536,10 @@ type PersistedPayloadVisit struct {
 // one pass that read it, such as a merge's validation, part mapping and part
 // description: the first step to decode the payload keeps its decode in
 // Value, and the next reuse it instead of decoding the same bytes again. A
-// codec that reuses Value must not change it.
+// codec that reuses Value must not change it, but for a family's reference
+// visitor, which a pass runs after every other step that reads the payload
+// (visitMemoEncodedReferences): the visitor takes the decode, walks its
+// references in place, and leaves the memo empty.
 type PayloadMemo struct {
 	Value any
 }
@@ -571,13 +574,6 @@ type PersistedObjectFamily struct {
 	// Visitor walks the family's declared references.
 	Visitor  PersistedPayloadVisitor
 	Transfer PersistedTransferCodec
-	// BackgroundDecode marks a family whose decoder has been audited for a
-	// background, sessionless decode attempt: it loads only exact persisted
-	// references and performs no client lookup, service start, schema
-	// evaluation or output evaluation. It is false by default, so a newly
-	// registered or unaudited decoder makes a receiver that needs it
-	// ineligible for early sharing instead of entering a shared attempt.
-	BackgroundDecode bool
 }
 
 var (
@@ -661,6 +657,17 @@ type PersistedRecord struct {
 // subgraphs stay shared. No schema, provider, storage or typed construction is
 // involved.
 func VisitEncodedReferences(rec PersistedRecord, visit PersistedRefVisitor) (PersistedRecord, error) {
+	return visitMemoEncodedReferences(rec, nil, visit)
+}
+
+// visitMemoEncodedReferences is VisitEncodedReferences for a pass that has
+// read the record's payloads already, sharing their decodes in memos
+// (payloadMemos): each payload's scope check and its family's visitor read
+// the decode a step before them kept there, and the visitor takes it
+// (PayloadMemo), so it is the pass's last read of the record's payloads.
+// With no memos, each object payload's scope check and visitor still share
+// one decode.
+func visitMemoEncodedReferences(rec PersistedRecord, memos payloadMemos, visit PersistedRefVisitor) (PersistedRecord, error) {
 	if visit == nil {
 		return PersistedRecord{}, fmt.Errorf("visit encoded references: nil visitor")
 	}
@@ -680,7 +687,7 @@ func VisitEncodedReferences(rec PersistedRecord, visit PersistedRefVisitor) (Per
 	if err != nil {
 		return PersistedRecord{}, err
 	}
-	env, err := visitPersistedEnvelope(rec.Envelope, rec.Call, scopes, nil, true, visit)
+	env, err := visitPersistedEnvelope(rec.Envelope, rec.Call, scopes, nil, true, memos, visit)
 	if err != nil {
 		return PersistedRecord{}, err
 	}
@@ -692,14 +699,40 @@ func VisitEncodedReferences(rec PersistedRecord, visit PersistedRefVisitor) (Per
 	out.SnapshotLinks = scopes.links
 	if rec.Call != nil {
 		out.Call = rec.Call.clone()
-		if err := visitResultCallReferences(out.Call, nil, visit); err != nil {
+		if err := visitResultCallReferences(out.Call, visit); err != nil {
 			return PersistedRecord{}, err
 		}
 	}
 	return out, nil
 }
 
-func visitPersistedEnvelope(env PersistedResultEnvelope, ownerCall *ResultCall, scopes *snapshotLinkScopes, path PersistedRefPath, root bool, visit PersistedRefVisitor) (PersistedResultEnvelope, error) {
+// visitEncodedPayloadReferences walks the declared references of a row's
+// envelope, and its snapshot links, as VisitEncodedReferences does, but not
+// the row's own identity or its recorded call, which it passes to the
+// payload's family as its owner call: a record merged unprepared, whose
+// identity and call are already the cache's, relocates only its payload at
+// its first use (prepareFirstUseRecord). It returns the rewritten envelope,
+// whose identity is rec's, and links.
+func visitEncodedPayloadReferences(rec PersistedRecord, visit PersistedRefVisitor) (PersistedResultEnvelope, []PersistedSnapshotRefLink, error) {
+	if visit == nil {
+		return PersistedResultEnvelope{}, nil, fmt.Errorf("visit encoded payload references: nil visitor")
+	}
+	scopes, err := partitionSnapshotLinks(rec.Envelope, cloneSnapshotRefLinks(rec.SnapshotLinks))
+	if err != nil {
+		return PersistedResultEnvelope{}, nil, err
+	}
+	env, err := visitPersistedEnvelope(rec.Envelope, rec.Call, scopes, nil, true, nil, visit)
+	if err != nil {
+		return PersistedResultEnvelope{}, nil, err
+	}
+	env.ResultID = rec.Envelope.ResultID
+	return env, scopes.links, nil
+}
+
+// visitPersistedEnvelope walks one envelope's references, an object
+// payload's with the decode memos keep for its path, if any
+// (visitMemoEncodedReferences).
+func visitPersistedEnvelope(env PersistedResultEnvelope, ownerCall *ResultCall, scopes *snapshotLinkScopes, path PersistedRefPath, root bool, memos payloadMemos, visit PersistedRefVisitor) (PersistedResultEnvelope, error) {
 	if env.Version != persistedResultEnvelopeVersion {
 		return PersistedResultEnvelope{}, fmt.Errorf("visit persisted envelope at %q: unsupported version %d", path, env.Version)
 	}
@@ -735,7 +768,7 @@ func visitPersistedEnvelope(env PersistedResultEnvelope, ownerCall *ResultCall, 
 		}
 		return env, nil
 	case persistedResultKindObject:
-		return visitPersistedObjectEnvelope(env, ownerCall, scopes, path, visit)
+		return visitPersistedObjectEnvelope(env, ownerCall, scopes, path, memos.at(path), visit)
 	case persistedResultKindList:
 		items := make([]PersistedResultEnvelope, len(env.Items))
 		for i, item := range env.Items {
@@ -743,7 +776,7 @@ func visitPersistedEnvelope(env PersistedResultEnvelope, ownerCall *ResultCall, 
 			if ownerCall != nil {
 				itemCall = persistedListItemCall(ownerCall, i+1)
 			}
-			rewritten, err := visitPersistedEnvelope(item, itemCall, scopes, path.Field("items").Index(i), false, visit)
+			rewritten, err := visitPersistedEnvelope(item, itemCall, scopes, path.Field("items").Index(i), false, memos, visit)
 			if err != nil {
 				return PersistedResultEnvelope{}, err
 			}
@@ -758,16 +791,22 @@ func visitPersistedEnvelope(env PersistedResultEnvelope, ownerCall *ResultCall, 
 
 // visitPersistedObjectEnvelope is visitPersistedEnvelope's object case: every
 // storage role the owner declares is classified by its family exactly once.
-func visitPersistedObjectEnvelope(env PersistedResultEnvelope, ownerCall *ResultCall, scopes *snapshotLinkScopes, path PersistedRefPath, visit PersistedRefVisitor) (PersistedResultEnvelope, error) {
+// The payload's scope check and its family's visitor share memo, the
+// payload's decode, which the visitor takes; with no memo, they share one of
+// their own.
+func visitPersistedObjectEnvelope(env PersistedResultEnvelope, ownerCall *ResultCall, scopes *snapshotLinkScopes, path PersistedRefPath, memo *PayloadMemo, visit PersistedRefVisitor) (PersistedResultEnvelope, error) {
 	family, ok := PersistedObjectFamilyByName(env.ObjectCodec)
 	if !ok {
 		return PersistedResultEnvelope{}, fmt.Errorf("visit persisted envelope at %q: unknown object codec family %q for type %q", path, env.ObjectCodec, env.TypeName)
+	}
+	if memo == nil {
+		memo = &PayloadMemo{}
 	}
 	payloadLinks := scopes.project(path)
 	if validator, ok := family.Transfer.(interface {
 		ValidateSnapshotScope(PersistedPayloadVisit) error
 	}); ok {
-		if err := validator.ValidateSnapshotScope(PersistedPayloadVisit{Version: env.Version, Call: ownerCall, Path: path, Payload: env.ObjectJSON, SnapshotLinks: cloneSnapshotRefLinks(payloadLinks)}); err != nil {
+		if err := validator.ValidateSnapshotScope(PersistedPayloadVisit{Version: env.Version, Call: ownerCall, Path: path, Payload: env.ObjectJSON, SnapshotLinks: cloneSnapshotRefLinks(payloadLinks), Memo: memo}); err != nil {
 			return PersistedResultEnvelope{}, err
 		}
 	}
@@ -797,6 +836,7 @@ func visitPersistedObjectEnvelope(env PersistedResultEnvelope, ownerCall *Result
 		Path:          path.Field("objectJSON"),
 		Payload:       env.ObjectJSON,
 		SnapshotLinks: payloadLinks,
+		Memo:          memo,
 	}, countingVisit)
 	if err != nil {
 		return PersistedResultEnvelope{}, fmt.Errorf("visit persisted %s payload at %q: %w", family.Name, path, err)
@@ -815,9 +855,10 @@ func visitPersistedObjectEnvelope(env PersistedResultEnvelope, ownerCall *Result
 
 // visitResultCallReferences walks the descriptive references of a recorded
 // call in place: receiver, module, argument and implicit-input literals, and
-// nested call descriptions. Each shared frame is visited once.
-func visitResultCallReferences(frame *ResultCall, path PersistedRefPath, visit PersistedRefVisitor) error {
-	return visitResultCallReferencesSeen(frame, path.Field("call"), visit, map[*ResultCall]struct{}{})
+// nested call descriptions, at paths under "call". Each shared frame is
+// visited once.
+func visitResultCallReferences(frame *ResultCall, visit PersistedRefVisitor) error {
+	return visitResultCallReferencesSeen(frame, PersistedRefPath(nil).Field("call"), visit, map[*ResultCall]struct{}{})
 }
 
 func visitResultCallReferencesSeen(frame *ResultCall, path PersistedRefPath, visit PersistedRefVisitor, seen map[*ResultCall]struct{}) error {

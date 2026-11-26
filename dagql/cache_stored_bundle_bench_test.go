@@ -157,6 +157,13 @@ func storedBenchPart(seed uint64) PersistedPartOffer {
 // merged, as the service receives it.
 func storedBenchCloud(b testing.TB) (context.Context, *Cache, []uint64) {
 	b.Helper()
+	return storedBenchCloudAt(b, "")
+}
+
+// storedBenchCloudAt is storedBenchCloud with the Cloud saved at path, or
+// in memory only for "".
+func storedBenchCloudAt(b testing.TB, path string) (context.Context, *Cache, []uint64) {
+	b.Helper()
 	actx := cacheTestContext(context.Background())
 	a, err := NewCache(actx, filepath.Join(b.TempDir(), "a.db"), nil, nil)
 	require.NoError(b, err)
@@ -201,7 +208,7 @@ func storedBenchCloud(b testing.TB) (context.Context, *Cache, []uint64) {
 	require.Len(b, bundle.Values, storedBenchChain+storedBenchRoots*(storedBenchOwn+1))
 
 	ctx := cacheTestContext(context.Background())
-	cloud, err := NewCache(ctx, "", nil, nil, WithBlobStore())
+	cloud, err := NewCache(ctx, path, nil, nil, WithBlobStore())
 	require.NoError(b, err)
 	b.Cleanup(func() { require.NoError(b, cloud.CloseDiscardingPersistence()) })
 	reply, err := cloud.MergeValues(ctx, "cache-a", bundle)
@@ -213,7 +220,7 @@ func storedBenchCloud(b testing.TB) (context.Context, *Cache, []uint64) {
 	}
 	for _, value := range bundle.Values {
 		if stored[value.SenderNumber] {
-			ok, err := cloud.SetStoredPart(ctx, numbers[value.Ordinal], storedBenchPart(value.SenderNumber), 0)
+			ok, _, err := cloud.SetStoredPart(ctx, numbers[value.Ordinal], storedBenchPart(value.SenderNumber), 0)
 			require.NoError(b, err)
 			require.True(b, ok)
 		}
@@ -263,7 +270,7 @@ func BenchmarkStoredBundle(b *testing.B) {
 	var before, after runtime.MemStats
 	runtime.GC()
 	runtime.ReadMemStats(&before)
-	_, err := cloud.StoredBundle(ctx, batch, nil)
+	_, err := cloud.StoredBundle(ctx, batch, time.Now().Unix(), nil)
 	require.NoError(b, err)
 	runtime.GC()
 	runtime.ReadMemStats(&after)
@@ -274,7 +281,7 @@ func BenchmarkStoredBundle(b *testing.B) {
 	for range b.N {
 		storedBenchSettle(b)
 		var err error
-		got, err = cloud.StoredBundle(ctx, batch, nil)
+		got, err = cloud.StoredBundle(ctx, batch, time.Now().Unix(), nil)
 		require.NoError(b, err)
 	}
 	b.StopTimer()
@@ -304,7 +311,9 @@ func BenchmarkStoredBundleValues(b *testing.B) {
 	order, build := storedBenchClosure(b, cloud, batch)
 	normalized := make([]PersistedRecord, len(order))
 	for i, res := range order {
-		rec, err := normalizeTransferRecord(PersistedRecord{ResultID: uint64(res.id), Envelope: *res.persistedEnvelope, Call: res.loadResultCall()})
+		frame, err := res.entryFrameLocked().decode()
+		require.NoError(b, err)
+		rec, err := normalizeTransferRecord(PersistedRecord{ResultID: uint64(res.id), Envelope: *res.persistedEnvelope, Call: frame})
 		require.NoError(b, err)
 		rec.Envelope.PendingOffers = nil
 		normalized[i] = rec
@@ -353,9 +362,9 @@ func BenchmarkStoredBundleValues(b *testing.B) {
 	}
 }
 
-// BenchmarkStoredBundlePartCopies measures StoredBundle's deep copies of the
-// closure's stored parts, which relocation and the removal of addresses and
-// renewal keys then change, against copying the same parts by a JSON round
+// BenchmarkStoredBundlePartCopies measures StoredBundle's copies of the
+// closure's stored parts' offers (storedPart.offer), which relocation and
+// the removal of addresses and renewal keys then change, against copying the same parts by a JSON round
 // trip, the way clonePartOffers copied them before (in a profile of the
 // remote cache service under load: 1.75 s of StoredBundle's 11.70 s).
 //
@@ -363,29 +372,31 @@ func BenchmarkStoredBundleValues(b *testing.B) {
 func BenchmarkStoredBundlePartCopies(b *testing.B) {
 	_, cloud, batch := storedBenchCloud(b)
 	order, _ := storedBenchClosure(b, cloud, batch)
-	var parts []PersistedPartOffer
+	var parts []storedPart
 	cloud.egraphMu.RLock()
 	for _, res := range order {
 		for _, part := range res.storedParts {
-			parts = append(parts, part)
+			parts = append(parts, part.storedPart)
 		}
 	}
 	cloud.egraphMu.RUnlock()
 	require.Len(b, parts, storedBenchChain/4+storedBenchRoots)
+	offers := make([]PersistedPartOffer, len(parts))
+	for i, part := range parts {
+		offers[i] = part.offer()
+	}
 	var copying, roundTrips time.Duration
 	b.ResetTimer()
 	for range b.N {
 		storedBenchSettle(b)
 		start := time.Now()
 		for _, part := range parts {
-			if _, err := clonePartOffers([]PersistedPartOffer{part}); err != nil {
-				b.Fatal(err)
-			}
+			_ = part.offer()
 		}
 		copying += time.Since(start)
 		storedBenchSettle(b)
 		start = time.Now()
-		for _, part := range parts {
+		for _, part := range offers {
 			data, err := json.Marshal([]PersistedPartOffer{part})
 			if err != nil {
 				b.Fatal(err)
@@ -422,7 +433,7 @@ func BenchmarkStoredBundlePartCopies(b *testing.B) {
 // largest part of a build and keeps it from fitting.
 func BenchmarkStoredBundleValidation(b *testing.B) {
 	ctx, cloud, batch := storedBenchCloud(b)
-	got, err := cloud.StoredBundle(ctx, batch, nil)
+	got, err := cloud.StoredBundle(ctx, batch, time.Now().Unix(), nil)
 	require.NoError(b, err)
 	bundle := got.Bundle
 	var validating, full, encoding time.Duration
@@ -430,7 +441,7 @@ func BenchmarkStoredBundleValidation(b *testing.B) {
 	for range b.N {
 		storedBenchSettle(b)
 		start := time.Now()
-		if err := validateStoredBundle(bundle); err != nil {
+		if err := validateStoredBundle(bundle, got.stored); err != nil {
 			b.Fatal(err)
 		}
 		validating += time.Since(start)
@@ -456,5 +467,22 @@ func BenchmarkStoredBundleValidation(b *testing.B) {
 	b.ReportMetric(ratio, "validate/encode")
 	if ratio > 1.5 {
 		b.Errorf("validating the bundle costs %.2f times encoding it (%.1f ms against %.1f ms, the full validation %.1f ms); the target is at most 1.5", ratio, perBuild(validating), perBuild(encoding), perBuild(full))
+	}
+}
+
+// BenchmarkAvailablePart answers for the batch's roots' stored parts, each of
+// storedBenchLayers layers as an engine's export describes them, as
+// selection's readers ask: for the state alone.
+func BenchmarkAvailablePart(b *testing.B) {
+	_, cloud, batch := storedBenchCloud(b)
+	address := storedBenchPart(0).Address
+	now := time.Now().Unix()
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := range b.N {
+		av, err := cloud.AvailablePart(batch[i%len(batch)], address, now)
+		if err != nil || av.State != PartStored {
+			b.Fatalf("root %d: %v, %v", batch[i%len(batch)], av.State, err)
+		}
 	}
 }

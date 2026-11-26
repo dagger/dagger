@@ -2,6 +2,7 @@ package dagql
 
 import (
 	"context"
+	"time"
 
 	"github.com/opencontainers/go-digest"
 
@@ -57,10 +58,35 @@ type CacheDecision struct {
 	// hits.
 	HitRemote           bool
 	HitMergedAtUnixNano int64
+	// HitMergedRoute is the route of that merge (MergeRoute), and HitMerge
+	// the service's number for it or HitMergedFile its set file; unknown,
+	// as HitMergedAtUnixNano, after a restart. HitFirstUse records that the
+	// record's payload was still left for its first use as the lookup chose
+	// it, so that the hit's decode prepares it, unless a use that raced it
+	// did first. Meaningful only for hits.
+	HitMergedRoute MergeRoute
+	HitMerge       uint64
+	HitMergedFile  string
+	HitFirstUse    bool
 
 	// LookupAtUnixNano is the time the lookup chose its candidates, under
 	// egraphMu; 0 when no lookup ran.
 	LookupAtUnixNano int64
+
+	// HitLoadedAtUnixNano is when the hit's value was loaded: its payload,
+	// and those of the results it references, decoded where they weren't yet
+	// (ensurePersistedHitValueLoaded). HitServedAtUnixNano is when the cache
+	// handed the hit back, its retention edge and the session's record of it
+	// done. With LookupAtUnixNano and the span's start and end they split a
+	// hit's own time into its lookup, its load, its serving and the span's
+	// end. 0 when not reached. Meaningful only for hits.
+	HitLoadedAtUnixNano int64
+	HitServedAtUnixNano int64
+
+	// hitLoad gathers what the hit's own work after its lookup waited for,
+	// and what its load decoded (HitLoad), from the lookup's choice of the
+	// hit on; nil for a call that didn't hit.
+	hitLoad *hitLoad
 
 	// MissIncompatibleCandidates records that the lookup's post-expiry
 	// candidate set was non-empty but no candidate satisfied this session's
@@ -109,7 +135,8 @@ type CacheDecision struct {
 
 	// MissRemoteLookup is what the miss did about asking the remote cache
 	// service for the call's value (RemoteLookupQueued, RemoteLookupAsked or
-	// RemoteLookupDropped), or "" when no connection serves lookups.
+	// RemoteLookupDropped), or "" when it asked nothing: no connection serves
+	// lookups, or no other engine can have the call (Cache.noteRemoteMiss).
 	// Meaningful only for misses (Outcome executed).
 	MissRemoteLookup string
 
@@ -120,6 +147,15 @@ type CacheDecision struct {
 	Adopted                 bool
 	AdoptedRemote           bool
 	AdoptedMergedAtUnixNano int64
+
+	// KeptOverRemote records that the publication this call executed or
+	// joined found its recipe's current entry holding a Cloud merge's record
+	// and kept the call's value, whose content was made, in its place: in the
+	// entry, or as a new current entry beside the retired one.
+	// KeptOverRemoteMergedAtUnixNano is when that merge committed (0 when
+	// unknown).
+	KeptOverRemote                 bool
+	KeptOverRemoteMergedAtUnixNano int64
 
 	// SelfDigest is the engine-derived structural self digest of the call.
 	// Empty for CacheOutcomeUncached, whose path skips identity derivation.
@@ -133,6 +169,18 @@ type CacheDecision struct {
 	// PairingDigest is the self digest derived with implicit inputs excluded —
 	// the cross-run pairing anchor. Empty for CacheOutcomeUncached.
 	PairingDigest digest.Digest
+
+	// Caller is the recipe digest of the nearest enclosing cached call, the
+	// call this one was made while running (CallerRecipe): empty for a call
+	// at its session's top, and for CacheOutcomeUncached.
+	Caller digest.Digest
+
+	// Persisted records that this call kept its result past its session: its
+	// request is persistable and neither the call nor the value declined to
+	// persist (DeclinePersistence), so the publication it executed or joined
+	// adds a retention edge, or its hit does. It is the call's own, apart from
+	// the edge its result's entry holds from any source (ResultState).
+	Persisted bool
 
 	// pendingEdge is the retention edge the publication this call executed or
 	// joined adds to its result, set when the call is persistable. The last of
@@ -178,7 +226,33 @@ func (ev *CacheDecision) ResultState(ctx context.Context, res AnyResult) (CacheR
 	if shared == nil || shared.id == 0 {
 		return CacheResultState{}, false
 	}
+	if ev.hitLoad != nil {
+		// A hit's wait for the read is its own work's too (HitLoad).
+		ctx = withGraphLockWaits(ctx, &ev.hitLoad.graph)
+	}
 	return ev.cache.resultState(ctx, shared, ev.pendingEdge)
+}
+
+// HitLoad is what a hit's own work after its lookup did, as its span reports
+// it: how many entries its load decoded, its own value if it wasn't decoded
+// yet and the results its payload references that weren't either, and what
+// its work waited for, to the span's end, by kind: "graph.<writer>" for the
+// cache's graph lock, by the kind of writer whose release let each wait in,
+// named as LookupLockWaits names them; "decode" for another caller's decode
+// of an entry the hit loads; and "attach" for an entry's dependency
+// attachment. Waits is nil when it waited for nothing.
+type HitLoad struct {
+	Decoded int64
+	Waits   map[string]time.Duration
+}
+
+// HitLoad is what the hit's own work after its lookup did so far; zero for
+// a call that didn't hit.
+func (ev *CacheDecision) HitLoad() HitLoad {
+	if ev == nil || ev.hitLoad == nil {
+		return HitLoad{}
+	}
+	return HitLoad{Decoded: ev.hitLoad.decoded.Load(), Waits: ev.hitLoad.waits()}
 }
 
 // NewCacheDecision returns an empty carrier with its index sentinel set.

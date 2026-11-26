@@ -57,7 +57,7 @@ func TestNullResultRecordsFrameDependencies(t *testing.T) {
 	cache.egraphMu.RLock()
 	row := cache.resultsByID[null.id]
 	if row != nil {
-		for id := range row.deps {
+		for _, id := range row.deps {
 			deps[uint64(id)] = true
 		}
 	}

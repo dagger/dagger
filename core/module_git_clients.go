@@ -64,8 +64,16 @@ func moduleTreeReader(ctx context.Context, dag *dagql.Server, src *ModuleSource)
 		// A module loaded through a Git workspace has that workspace's tree.
 		if ws := src.Workspace.Self(); ws != nil {
 			if fs, ok := ws.GitSparseTreeFS(); ok {
+				type file struct {
+					data []byte
+					ok   bool
+				}
 				return func(rel string) ([]byte, bool, error) {
-					return directoryFileReader(ctx, dag, fs.dirFor(ctx, rel))(rel)
+					got, err := readGitSparseTreeFS(ctx, fs, rel, func(dir dagql.ObjectResult[*Directory]) (file, error) {
+						data, ok, err := directoryFileReader(ctx, dag, dir)(rel)
+						return file{data, ok}, err
+					})
+					return got.data, got.ok, err
 				}, nil
 			}
 		}

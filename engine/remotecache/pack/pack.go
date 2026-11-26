@@ -119,6 +119,36 @@ func Size(members []Member) (int64, error) {
 	return size, nil
 }
 
+// A Sizer sizes a pack a member at a time: its Size is Size's for the
+// members added to it. Filling a pack of n members with it takes time
+// linear in n, where calling Size as each member joins takes time
+// quadratic in n. It checks nothing: Header and ID do, once the pack's
+// members are chosen.
+type Sizer struct {
+	members int
+	lines   int64
+	bytes   int64
+}
+
+// With returns the sizer with m added.
+func (s Sizer) With(m Member) Sizer {
+	s.members++
+	s.lines += int64(len(m.Digest.String())) + 1 + int64(len(strconv.FormatInt(m.Size, 10))) + 1
+	s.bytes += m.Size
+	return s
+}
+
+// Members returns how many members were added.
+func (s Sizer) Members() int {
+	return s.members
+}
+
+// Size returns the length of a pack of the members added: its header and
+// every member.
+func (s Sizer) Size() int64 {
+	return int64(len(magic)+len(strconv.Itoa(s.members))+1) + s.lines + s.bytes
+}
+
 // ReadHeader reads a pack's header from r, leaving r at the first member's
 // bytes, and checks it against the pack's ID: the bytes read must be the
 // header Header writes for the members they list, and hash to the ID. It

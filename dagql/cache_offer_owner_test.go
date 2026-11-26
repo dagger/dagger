@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 
@@ -14,6 +15,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// An offer that can't be copied fails the record's local persistence, which
+// saves its offers, and not its transfer, which carries none.
 func TestValueTransferOfferCopyFailure(t *testing.T) {
 	ctx, c, srv := transferTestCache(t)
 	root := persistedListTestResult(t, ctx, c, srv, "root", &transferTestValue{Text: "pending"})
@@ -23,22 +26,24 @@ func TestValueTransferOfferCopyFailure(t *testing.T) {
 	invalid := time.Date(10000, 1, 1, 0, 0, 0, 0, time.UTC)
 	c.egraphMu.Lock()
 	for _, offer := range row.testPartOffers() {
-		offer.record.Chain.Layers = []snapshots.ExportLayer{{CreatedAt: &invalid}}
+		offer.layers = []*storedLayer{{layer: snapshots.ExportLayer{CreatedAt: &invalid}}}
 	}
 	before := row.incomingOwnershipCount.Load()
 	c.egraphMu.Unlock()
 	_, err := c.CapturePersistedRecord(ctx, root)
 	require.ErrorIs(t, err, ErrPersistStateNotReady)
-	err = c.WithExportedValues(ctx, ValueSelection{Roots: []AnyResult{root}}, config.RefConfig{}, func(context.Context, *ExportedValues) error {
-		t.Fatal("invalid offer must not reach consumer")
+	var bundle ValueBundle
+	require.NoError(t, c.WithExportedValues(ctx, ValueSelection{Roots: []AnyResult{root}}, config.RefConfig{}, func(_ context.Context, values *ExportedValues) error {
+		bundle = values.Bundle
 		return nil
-	})
-	require.ErrorIs(t, err, ErrPersistStateNotReady)
-	// Both failed captures released the graph lock and leaked no capture hold.
+	}))
+	require.Len(t, bundle.Values, 1, "the value goes without its offer or the offer's owner")
+	require.Empty(t, bundle.Values[0].Record.Envelope.PendingOffers)
+	// Both captures released the graph lock and leaked no capture hold.
 	c.egraphMu.Lock()
 	after := row.incomingOwnershipCount.Load()
 	for _, offer := range row.testPartOffers() {
-		offer.record.Chain.Layers = nil
+		offer.layers = nil
 	}
 	c.egraphMu.Unlock()
 	require.Equal(t, before, after)
@@ -46,18 +51,20 @@ func TestValueTransferOfferCopyFailure(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// A copied offer equals the original and shares none of its maps, slices or
-// pointers, whatever fields its types gain: StoredBundle relocates the copy of
-// a stored part and removes its addresses and renewal key, and neither may
-// reach the part.
-func TestClonePartOffersShareNothing(t *testing.T) {
+// A copied offer equals the original and shares its chain's layers and
+// nothing else, whatever fields its types gain: StoredBundle relocates the
+// copy of a stored part and removes its addresses and renewal key, and
+// neither may reach the part. An offered layer is never written after it's
+// built, so copies share the layers, which are most of an offer.
+func TestClonePartOffersShareOnlyLayers(t *testing.T) {
 	var offer PersistedPartOffer
 	fillCloneTestValue(reflect.ValueOf(&offer).Elem())
 	require.NotEmpty(t, offer.Chain.Layers[0].Descriptor.Annotations)
 	copied, err := clonePartOffers([]PersistedPartOffer{offer})
 	require.NoError(t, err)
 	require.Equal(t, offer, copied[0])
-	requireNothingShared(t, reflect.ValueOf(offer), reflect.ValueOf(copied[0]), "offer")
+	require.Equal(t, reflect.ValueOf(offer.Chain.Layers).Pointer(), reflect.ValueOf(copied[0].Chain.Layers).Pointer(), "the layers are shared")
+	requireNothingShared(t, reflect.ValueOf(offer), reflect.ValueOf(copied[0]), "offer", "offer.Chain.Layers")
 }
 
 // fillCloneTestValue sets every exported field v reaches to a value that
@@ -98,20 +105,24 @@ func fillCloneTestValue(v reflect.Value) {
 }
 
 // requireNothingShared fails if a and b share a map, a slice's elements or a
-// pointer's target through their exported fields.
-func requireNothingShared(t *testing.T, a, b reflect.Value, path string) {
+// pointer's target through their exported fields, apart from the paths named
+// as shared.
+func requireNothingShared(t *testing.T, a, b reflect.Value, path string, shared ...string) {
 	t.Helper()
+	if slices.Contains(shared, path) {
+		return
+	}
 	switch a.Kind() {
 	case reflect.Pointer:
 		if a.IsNil() {
 			return
 		}
 		require.NotEqual(t, a.Pointer(), b.Pointer(), "%s is shared", path)
-		requireNothingShared(t, a.Elem(), b.Elem(), path)
+		requireNothingShared(t, a.Elem(), b.Elem(), path, shared...)
 	case reflect.Struct:
 		for i := range a.NumField() {
 			if field := a.Type().Field(i); field.IsExported() {
-				requireNothingShared(t, a.Field(i), b.Field(i), path+"."+field.Name)
+				requireNothingShared(t, a.Field(i), b.Field(i), path+"."+field.Name, shared...)
 			}
 		}
 	case reflect.Slice:
@@ -120,7 +131,7 @@ func requireNothingShared(t *testing.T, a, b reflect.Value, path string) {
 		}
 		require.NotEqual(t, a.Pointer(), b.Pointer(), "%s is shared", path)
 		for i := range a.Len() {
-			requireNothingShared(t, a.Index(i), b.Index(i), fmt.Sprintf("%s[%d]", path, i))
+			requireNothingShared(t, a.Index(i), b.Index(i), fmt.Sprintf("%s[%d]", path, i), shared...)
 		}
 	case reflect.Map:
 		if a.Len() == 0 {
@@ -128,7 +139,7 @@ func requireNothingShared(t *testing.T, a, b reflect.Value, path string) {
 		}
 		require.NotEqual(t, a.Pointer(), b.Pointer(), "%s is shared", path)
 		for _, key := range a.MapKeys() {
-			requireNothingShared(t, a.MapIndex(key), b.MapIndex(key), fmt.Sprintf("%s[%v]", path, key))
+			requireNothingShared(t, a.MapIndex(key), b.MapIndex(key), fmt.Sprintf("%s[%v]", path, key), shared...)
 		}
 	}
 }
@@ -165,7 +176,7 @@ func TestValueTransferOfferOwners(t *testing.T) {
 			if err != nil {
 				return nil, err
 			}
-			return &partOffer{owner: owner, record: PersistedPartOffer{Address: PersistedPartAddress{Part: part}, Owner: owner.record, Value: SnapshotValue{Kind: "directory", Services: []TransferredServiceBinding{{ServiceResultID: uint64(dep.id)}}}}}, nil
+			return &partOffer{owner: owner, layeredOffer: layeredOffer{held: PersistedPartOffer{Address: PersistedPartAddress{Part: part}, Owner: owner.record, Value: SnapshotValue{Kind: "directory", Services: []TransferredServiceBinding{{ServiceResultID: uint64(dep.id)}}}}}}, nil
 		}
 		first, err := makeOffer("fs", s)
 		if err != nil {
@@ -175,10 +186,10 @@ func TestValueTransferOfferOwners(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		if err := c.testAttachPartOfferLocked(r, first.record.Address, first); err != nil {
+		if err := c.testAttachPartOfferLocked(r, first.held.Address, first); err != nil {
 			return err
 		}
-		if err := c.testAttachPartOfferLocked(r, second.record.Address, second); err != nil {
+		if err := c.testAttachPartOfferLocked(r, second.held.Address, second); err != nil {
 			return err
 		}
 		initialOwners = s.incomingOwnershipCount.Load()
@@ -194,7 +205,7 @@ func TestValueTransferOfferOwners(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		queue, err := c.testReplacePartOfferLocked(ctx, r, replacement.record.Address, replacement)
+		queue, err := c.testReplacePartOfferLocked(ctx, r, replacement.held.Address, replacement)
 		if err != nil {
 			return err
 		}
@@ -218,12 +229,12 @@ func TestValueTransferOfferOwners(t *testing.T) {
 			return err
 		}
 		before = r.transferRevision
-		_, cycleErr = c.testReplacePartOfferLocked(ctx, r, cycle.record.Address, cycle)
+		_, cycleErr = c.testReplacePartOfferLocked(ctx, r, cycle.held.Address, cycle)
 		after = r.transferRevision
 		if _, err := c.releaseOfferOwnerLocked(ctx, cycle.owner); err != nil {
 			return err
 		}
-		if _, err := c.retirePartOfferLocked(ctx, r, replacement.record.Address); err != nil {
+		if _, err := c.retirePartOfferLocked(ctx, r, replacement.held.Address); err != nil {
 			return err
 		}
 		retiredOwners = s.incomingOwnershipCount.Load()
@@ -251,7 +262,7 @@ func TestValueTransferOfferOwners(t *testing.T) {
 	require.Len(t, snapshot.owners, 1)
 	c.egraphMu.Lock()
 	c.retainOfferOwnerLocked(second.owner)
-	_, err = c.retirePartOfferLocked(ctx, r, second.record.Address)
+	_, err = c.retirePartOfferLocked(ctx, r, second.held.Address)
 	c.egraphMu.Unlock()
 	require.NoError(t, err)
 	snapshot = c.snapshotPruneState(pruneSnapshotMetadata, 10)
@@ -276,8 +287,8 @@ func TestValueTransferOwnerPersistence(t *testing.T) {
 	r.imported = true
 	owner, err := c.newOfferOwnerLocked(ctx, PersistedOfferOwner{DependencyIDs: []uint64{uint64(s.id)}})
 	if err == nil {
-		offer := &partOffer{owner: owner, record: PersistedPartOffer{Address: PersistedPartAddress{Part: "snapshot"}, Owner: owner.record, Value: SnapshotValue{Kind: "directory"}}}
-		err = c.testAttachPartOfferLocked(r, offer.record.Address, offer)
+		offer := &partOffer{owner: owner, layeredOffer: layeredOffer{held: PersistedPartOffer{Address: PersistedPartAddress{Part: "snapshot"}, Owner: owner.record, Value: SnapshotValue{Kind: "directory"}}}}
+		err = c.testAttachPartOfferLocked(r, offer.held.Address, offer)
 	}
 	c.egraphMu.Unlock()
 	require.NoError(t, err)

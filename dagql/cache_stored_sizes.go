@@ -4,17 +4,31 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 	"time"
 
+	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/opencontainers/go-digest"
 )
 
 // StoredSize is what a root adds to a stored bundle: its values, and the sum
-// of their encoded sizes, each as json.Marshal encodes a TransferredValue.
+// of their encoded sizes, each as json.Marshal encodes a TransferredValue;
+// and what its closure's outputs add to the message a merge of the bundle is
+// sent in.
 type StoredSize struct {
 	Records int
 	Bytes   int64
+	// OutputBytes counts the outputs as the message carries them
+	// (ShareChainLayers): each of the closure's own stored parts without its
+	// layers (storedPartWire), each layer the bundle doesn't list yet
+	// (storedLayerWire), and storedBlobAddressAllowance for each download
+	// address it adds, which signing adds when the merge is sent: one for
+	// each blob, and one for each output that names a blob in another pack
+	// than the bundle's address is for (storedOutputsSeen). It is never less than the message carries for them, but
+	// for an address over the allowance. Parts a closure entry borrows from
+	// another entry of its class aren't counted: the merge carries them too.
+	OutputBytes int64
 	// Unmeasured marks a root MeasuredStoredSizes didn't measure: its
 	// closure has a value no measure has sized yet.
 	Unmeasured bool
@@ -24,8 +38,9 @@ type StoredSize struct {
 // recipe key to measure by: an xxh3 digest, as recipes are.
 var heldRowSizeDigest = digest.Digest("xxh3:0000000000000000")
 
-// StoredSizes measures what StoredBundle(roots, held) carries without
-// building it: for each root, in order, what its closure adds beyond the
+// StoredSizes measures what StoredBundle(roots, nowUnix, held) carries
+// without building it, judging held's holdings at nowUnix, the reader's
+// clock: for each root, in order, what its closure adds beyond the
 // closures of the roots before it, an entry held holds counted as its held
 // row. A root's closure includes the entries StoredBundle adds for the inputs
 // of its entries' kept calls, priced so that the sizes of the first roots
@@ -45,10 +60,29 @@ var heldRowSizeDigest = digest.Digest("xxh3:0000000000000000")
 // sizes already measured and reading the value state of each entry not yet
 // measured; it normalizes and encodes those after releasing the lock, and
 // keeps each size under the lock again only for an entry whose value is
-// still the one read. A hold is the walk, or that check, alone. Only a
-// blob-backed cache answers.
-func (c *Cache) StoredSizes(ctx context.Context, roots []uint64, held *HeldBy) ([]StoredSize, error) {
-	return c.storedSizes(ctx, roots, held, true)
+// still the one read. The walk is a read in pieces (readInPieces): it lets
+// the lock go between entries, every readPieceSteps of them, so a writer
+// waiting for it waits for one piece, not the whole walk; it re-reads each
+// entry when it takes the lock again, and reads each entry whole within one
+// piece. So a walk that a
+// write lands in reads each entry as the write left it if it reaches it
+// after, and may count a closure that grew between two of its pieces: what
+// no single hold would have seen at once, but every entry as the cache held
+// it at some moment of the walk. With no write during it, a walk counts
+// what one hold would. Only a blob-backed cache answers.
+func (c *Cache) StoredSizes(ctx context.Context, roots []uint64, nowUnix int64, held *HeldBy) ([]StoredSize, error) {
+	return c.storedSizes(ctx, roots, nowUnix, held, true, nil)
+}
+
+// StoredSizesUntil measures as StoredSizes does, root by root, and after
+// each root calls done with the sizes measured so far: once done reports
+// true it stops, and returns those sizes, the first of StoredSizes'. done
+// is given the returned slice as it grows, to read and not to keep. A
+// caller that keeps the roots whose sizes fit a bound, such as a merge's
+// batch, so reads and measures nothing of the roots past the first one over
+// it, whose sizes it would not use.
+func (c *Cache) StoredSizesUntil(ctx context.Context, roots []uint64, nowUnix int64, held *HeldBy, done func([]StoredSize) bool) ([]StoredSize, error) {
+	return c.storedSizes(ctx, roots, nowUnix, held, true, done)
 }
 
 // MeasuredStoredSizes answers as StoredSizes does without measuring anything:
@@ -56,8 +90,8 @@ func (c *Cache) StoredSizes(ctx context.Context, roots []uint64, held *HeldBy) (
 // yet measured is answered Unmeasured, with no records or bytes, and the
 // later roots are measured as if it weren't there. It normalizes and encodes
 // nothing: a held row's size is computed (heldRowSize).
-func (c *Cache) MeasuredStoredSizes(ctx context.Context, roots []uint64, held *HeldBy) ([]StoredSize, error) {
-	return c.storedSizes(ctx, roots, held, false)
+func (c *Cache) MeasuredStoredSizes(ctx context.Context, roots []uint64, nowUnix int64, held *HeldBy) ([]StoredSize, error) {
+	return c.storedSizes(ctx, roots, nowUnix, held, false, nil)
 }
 
 // StoredSizeEncodes counts the values StoredSizes has measured: each first
@@ -67,17 +101,18 @@ func (c *Cache) StoredSizeEncodes() uint64 {
 	return c.storedSizeEncodes.Load()
 }
 
-func (c *Cache) storedSizes(ctx context.Context, roots []uint64, held *HeldBy, measure bool) ([]StoredSize, error) {
+func (c *Cache) storedSizes(ctx context.Context, roots []uint64, nowUnix int64, held *HeldBy, measure bool, done func([]StoredSize) bool) ([]StoredSize, error) {
 	if !c.blobBacked {
 		return nil, fmt.Errorf("stored sizes: the cache has no blob store")
 	}
 	sizes := make([]StoredSize, len(roots))
-	seen, ordinary := map[sharedResultID]bool{}, map[sharedResultID]bool{}
+	seen, ordinary, named := map[sharedResultID]bool{}, map[sharedResultID]bool{}, map[sharedResultID]bool{}
+	outputs := &storedOutputsSeen{layers: map[*storedLayer]bool{}, blobs: map[digest.Digest]digest.Digest{}}
 	for i, number := range roots {
 		if err := context.Cause(ctx); err != nil {
 			return nil, err
 		}
-		size, closure, own, misses := c.walkStoredRoot(sharedResultID(number), held, seen, ordinary)
+		size, closure, own, misses := c.walkStoredRoot(c.graphReader(ctx, workExport), sharedResultID(number), nowUnix, held, seen, ordinary, named, outputs)
 		if len(misses) > 0 && !measure {
 			sizes[i] = StoredSize{Unmeasured: true}
 			continue
@@ -88,10 +123,10 @@ func (c *Cache) storedSizes(ctx context.Context, roots []uint64, held *HeldBy, m
 			if err != nil {
 				return nil, fmt.Errorf("stored sizes: entry %d: %w", miss.res.id, err)
 			}
-			size.Bytes += m.size.bytes
+			size.Bytes += m.size.bytes + senderStampBytes(miss.changedAt)
 			measured = append(measured, m)
 		}
-		c.publishStoredSizes(measured)
+		c.publishStoredSizes(c.graphReader(ctx, workExport), measured)
 		for _, id := range closure {
 			seen[id] = true
 		}
@@ -99,6 +134,9 @@ func (c *Cache) storedSizes(ctx context.Context, roots []uint64, held *HeldBy, m
 			ordinary[id] = true
 		}
 		sizes[i] = size
+		if done != nil && done(sizes[:i+1]) {
+			return sizes[:i+1], nil
+		}
 	}
 	return sizes, nil
 }
@@ -106,36 +144,50 @@ func (c *Cache) storedSizes(ctx context.Context, roots []uint64, held *HeldBy, m
 // storedSizeMiss is a value StoredSizes measures after releasing egraphMu:
 // its entry, and the value state the walk read under the lock.
 type storedSizeMiss struct {
-	res                *sharedResult
-	env                *PersistedResultEnvelope
-	call               *ResultCall
+	res   *sharedResult
+	env   *PersistedResultEnvelope
+	body  *storedBody
+	parts *partFacts
+	call  *ResultCall
+	// The value state its size depends on.
 	deps               []uint64
 	dependencyRevision uint64
 	replacements       uint64
 	expiresAtUnix      int64
+	// changedAt is the entry's change stamp as the walk read it: a value
+	// sent in full carries it (TransferredValue.SenderStamp), and its
+	// encoding is added to the measure, which leaves it out
+	// (senderStampBytes).
+	changedAt uint64
 }
 
-// storedSizesRLock takes egraphMu for reading and returns its release, which
-// reports the hold to testStoredSizesHold.
-func (c *Cache) storedSizesRLock() func() {
-	c.egraphMu.RLock()
+// storedSizesRLock takes egraphMu for reading as kind of work and returns
+// its release, which reports the hold to testStoredSizesHold.
+func (c *Cache) storedSizesRLock(kind wcprof.LockHolder) func() {
+	read := c.egraphMu.RLockAs(kind)
 	locked := time.Now()
 	return func() {
 		hold := time.Since(locked)
-		c.egraphMu.RUnlock()
+		read.Unlock()
 		if c.testStoredSizesHold != nil {
 			c.testStoredSizesHold(hold)
 		}
 	}
 }
 
-// walkStoredRoot walks what root's closure adds beyond seen, in one hold of
-// egraphMu.RLock: the entries it adds, the size of those already measured or
-// held, counting every value, and the values not yet measured; and how many
-// of the entries, first, are its ordinary closure. It walks as StoredBundle
+// walkStoredRoot walks what root's closure adds beyond seen, under
+// egraphMu.RLock, let go between entries (readInPieces): the entries it adds,
+// the size of those already measured or held, counting every value, and the
+// values not yet measured; and how many of the entries, first, are its
+// ordinary closure. It walks as StoredBundle
 // builds (storedBundleVisitLocked, storedBundleCallsLocked): the closure,
 // dependencies first, then, entry by entry in that order, the calls kept on
-// each, adding the closure of each input a chosen call needs.
+// each that the recipient's check made (HeldBy.Calls), adding the closure of
+// each input a chosen call needs. A root that goes as a part of another
+// root's merge (HeldBy.Parts) adds no input: it places a call only on what
+// the bundle carries or the recipient holds. An entry the recipient holds
+// that the walk goes through (HeldBy.Through) is counted as a held row once
+// a call names it, the first time in the bundle (named).
 //
 // The price is never less than what a bundle of the roots up to this one
 // adds for it. Which of a term's calls a bundle chooses depends on what the
@@ -144,34 +196,95 @@ func (c *Cache) storedSizesRLock() func() {
 // (ordinary), or the recipient (held), have its inputs, never for an input
 // another call adds. Otherwise its first stored alternative's inputs are
 // priced, which is the call a bundle that can't place it chooses too.
-func (c *Cache) walkStoredRoot(root sharedResultID, held *HeldBy, seen, ordinary map[sharedResultID]bool) (StoredSize, []sharedResultID, int, []storedSizeMiss) {
-	defer c.storedSizesRLock()()
+func (c *Cache) walkStoredRoot(kind wcprof.LockHolder, root sharedResultID, nowUnix int64, held *HeldBy, seen, ordinary, named map[sharedResultID]bool, outputs *storedOutputsSeen) (StoredSize, []sharedResultID, int, []storedSizeMiss) {
+	hold := c.readInPieces(kind)
+	hold.report = c.testStoredSizesHold
+	defer hold.done()
 	res := c.resultsByID[root]
 	if res == nil || res.noValueLocked() {
 		return StoredSize{}, nil, 0, nil
 	}
-	walk := &storedSizeWalk{c: c, held: held, seen: seen, visited: map[sharedResultID]bool{}}
+	walk, own := c.storedRootWalkLocked(res, nowUnix, held, seen, ordinary, named, outputs, hold, nil, nil)
+	return walk.size, walk.closure, own, walk.misses
+}
+
+// storedRootWalkLocked is walkStoredRoot's walk of res, and how many of the
+// entries it reached, first, are res's ordinary closure, letting egraphMu go
+// between entries by hold, or never with a nil hold. named are the entries
+// the bundle's walks reached through what they go through, and whether a
+// record or a call has named each (storedSizeWalk.name). With list, it sizes nothing and lists instead
+// (StoredClosure), which walks through no held entry; with cut, it keeps
+// what StoredLowerPart cuts by. Requires egraphMu.
+func (c *Cache) storedRootWalkLocked(res *sharedResult, nowUnix int64, held *HeldBy, seen, ordinary, named map[sharedResultID]bool, outputs *storedOutputsSeen, hold *readPieces, list *storedClosureList, cut *storedCut) (*storedSizeWalk, int) {
+	walk := &storedSizeWalk{c: c, held: held, now: nowUnix, seen: seen, visited: map[sharedResultID]bool{}, passing: map[sharedResultID]bool{}, named: named,
+		outputs: outputs, hold: hold, list: list, cut: cut}
 	walk.visit(res)
 	own := len(walk.closure)
 	mine := make(map[sharedResultID]bool, own)
 	for _, id := range walk.closure {
 		mine[id] = true
 	}
-	for i := 0; i < len(walk.order); i++ {
-		entry := walk.order[i]
-		if len(entry.calls) == 0 {
+	terms := newNamedTerms(held, hold)
+	part := held.partLocked(res.id)
+	// The calls kept on the entries the walk adds, then on those it went
+	// through, as storedBundleCallsLocked takes them: both grow as calls'
+	// inputs are reached.
+	for i, j := 0, 0; i < len(walk.order) || j < len(walk.passed); {
+		var entry *sharedResult
+		if i < len(walk.order) {
+			entry = walk.order[i]
+			i++
+			if walk.passing[entry.id] {
+				continue
+			}
+		} else {
+			entry = walk.passed[j]
+			j++
+		}
+		if hold != nil {
+			hold.step()
+			if entry = c.resultsByID[entry.id]; entry == nil {
+				continue
+			}
+		}
+		if len(entry.keptCallsLocked()) == 0 {
 			continue
 		}
 		for _, group := range c.keptCallTermsLocked(entry) {
-			_, add := c.placeableCallLocked(group, func(input *sharedResult) bool {
-				return ordinary[input.id] || mine[input.id] || held.heldLocked(input)
-			})
-			for _, input := range add {
-				walk.visit(input)
+			if group = c.sendableCallsLocked(held, terms, group); len(group) == 0 {
+				continue
+			}
+			// The entries placing the chosen call's inputs, as
+			// storedBundleCallsLocked adds them: one the recipient holds as
+			// a held row, one the Cloud stores in full as a call root.
+			has := func(input *sharedResult) bool {
+				return ordinary[input.id] || mine[input.id] || held.heldLocked(input, nowUnix)
+			}
+			chosen, places := c.placeableCallLocked(group, nowUnix, has)
+			if part && slices.ContainsFunc(places, func(place *sharedResult) bool { return place != nil && !has(place) }) {
+				// A part adds no input: the call goes with its root's own
+				// merge (HeldBy.Parts).
+				continue
+			}
+			if chosen != nil {
+				walk.name(entry)
+				walk.noteCall(chosen, entry, places)
+			}
+			for _, place := range places {
+				if place == nil {
+					continue
+				}
+				if !ordinary[place.id] && !mine[place.id] {
+					walk.visit(place)
+					if list != nil && !held.heldLocked(place, nowUnix) {
+						list.callInput(place)
+					}
+				}
+				walk.name(place)
 			}
 		}
 	}
-	return walk.size, walk.closure, own, walk.misses
+	return walk, own
 }
 
 // storedSizeWalk is walkStoredRoot's walk: the entries it reached
@@ -180,12 +293,83 @@ func (c *Cache) walkStoredRoot(root sharedResultID, held *HeldBy, seen, ordinary
 type storedSizeWalk struct {
 	c       *Cache
 	held    *HeldBy
+	now     int64
 	seen    map[sharedResultID]bool
 	visited map[sharedResultID]bool
 	order   []*sharedResult
 	size    StoredSize
 	closure []sharedResultID
 	misses  []storedSizeMiss
+	outputs *storedOutputsSeen
+	// passed are the entries the recipient holds that the walk went
+	// through (HeldBy.Through), and those it reached below them, in the
+	// order it reached them, each in passing. named has, for the whole
+	// bundle, each entry so reached: true once a record or a call names
+	// it, and its held row is counted.
+	passed  []*sharedResult
+	passing map[sharedResultID]bool
+	named   map[sharedResultID]bool
+	// hold lets egraphMu go between entries, or never if nil.
+	hold *readPieces
+	// list, if set, is what a StoredClosure walk lists: the walk then
+	// sizes nothing.
+	list *storedClosureList
+	// cut, if set, keeps what StoredLowerPart cuts a bundle by.
+	cut *storedCut
+}
+
+// storedClosureList is what a StoredClosure walk lists beside its order:
+// the entries it carries as held rows; and the inputs of the calls it sends
+// that are no root it was asked for (asked), each once, in the order the
+// walk added them, as a bundle's call roots are (storedBundleCallsLocked).
+type storedClosureList struct {
+	asked      map[sharedResultID]bool
+	held       map[sharedResultID]bool
+	inputs     map[sharedResultID]bool
+	callInputs []uint64
+}
+
+// callInput lists a call's input the walk added.
+func (l *storedClosureList) callInput(input *sharedResult) {
+	if l.asked[input.id] || l.inputs[input.id] {
+		return
+	}
+	l.inputs[input.id] = true
+	l.callInputs = append(l.callInputs, uint64(input.id))
+}
+
+// storedOutputsSeen are the layers a bundle's outputs list so far, which a
+// merge's message carries once (ShareChainLayers), and the blobs whose
+// address it carries, with the pack the first was signed for: a packed
+// layer's address is its pack's, so a blob in another pack, or in none, has
+// another address, which the message carries on the chain of each output
+// that names it.
+type storedOutputsSeen struct {
+	layers map[*storedLayer]bool
+	blobs  map[digest.Digest]digest.Digest
+}
+
+// addOutputs counts what res's own stored parts add to the message
+// (StoredSize's OutputBytes), in the order a bundle adds them, by key
+// (storedBundleOutputsLocked): which of a blob's addresses the message
+// shares depends on it. Requires egraphMu.
+func (w *storedSizeWalk) addOutputs(res *sharedResult) {
+	for _, part := range res.storedParts {
+		w.size.OutputBytes += part.wire
+		for _, layer := range part.layers {
+			if !w.outputs.layers[layer] {
+				w.outputs.layers[layer] = true
+				w.size.OutputBytes += layer.wire
+			}
+			blob := layer.layer.Descriptor.Digest
+			if pack, ok := w.outputs.blobs[blob]; !ok {
+				w.outputs.blobs[blob] = layer.pack
+				w.size.OutputBytes += storedBlobAddressAllowance
+			} else if pack != layer.pack {
+				w.size.OutputBytes += storedBlobAddressAllowance
+			}
+		}
+	}
 }
 
 // carries reports whether the bundle carries the entry: an earlier root's
@@ -196,14 +380,43 @@ func (w *storedSizeWalk) carries(id sharedResultID) bool {
 
 // visit adds res's closure, dependencies first, as storedBundleVisitLocked
 // does: a held row alone, with nothing below it, and an entry with no
-// stored record not at all. Requires egraphMu.
+// stored record not at all. With a hold, an entry is read by its number
+// once the walk holds the lock for it (readPieces.step), as the pointer it
+// was reached by may be from before a piece let the lock go; its reading
+// after its dependencies is a step too, and reads it again if a piece let
+// the lock go since. Requires
+// egraphMu.
 func (w *storedSizeWalk) visit(res *sharedResult) {
 	if w.carries(res.id) {
+		// One the walk went through, reached from a record now, goes as a
+		// held row the record names.
+		w.name(res)
 		return
+	}
+	if w.hold != nil {
+		w.hold.step()
+		if res = w.c.resultsByID[res.id]; res == nil {
+			return
+		}
 	}
 	w.visited[res.id] = true
 	w.closure = append(w.closure, res.id)
-	if w.held.heldLocked(res) {
+	if w.held.heldLocked(res, w.now) {
+		if w.list == nil && w.held.throughLocked(res) {
+			// A held row, as any entry the recipient holds is, that the
+			// walk goes through for the calls kept below it (pass).
+			w.named[res.id] = true
+			w.size.Records++
+			w.size.Bytes += heldRowSizeLocked(res)
+			w.order = append(w.order, res)
+			w.pass(res)
+			return
+		}
+		if w.list != nil {
+			w.list.held[res.id] = true
+			w.order = append(w.order, res)
+			return
+		}
 		w.size.Records++
 		w.size.Bytes += heldRowSizeLocked(res)
 		w.order = append(w.order, res)
@@ -212,40 +425,139 @@ func (w *storedSizeWalk) visit(res *sharedResult) {
 	if res.noValueLocked() || res.persistedEnvelope == nil {
 		return
 	}
+	yields := w.hold.yields()
 	for _, id := range storedClosureChildrenLocked(res) {
 		if child := w.c.resultsByID[id]; child != nil {
 			w.visit(child)
 		}
 	}
+	// The entry's own reading, after its dependencies, is a step of its own:
+	// a chain deeper than a piece reads its entries on the way back up.
+	if w.hold != nil {
+		w.hold.step()
+	}
+	if w.hold.yields() != yields {
+		if res = w.c.resultsByID[res.id]; res == nil || res.noValueLocked() || res.persistedEnvelope == nil {
+			return
+		}
+	}
+	if w.list != nil {
+		w.order = append(w.order, res)
+		return
+	}
+	before := w.size.Bytes
 	w.size.Records++
+	w.addOutputs(res)
 	if bytes, ok := storedValueMeasuredLocked(res); ok {
 		w.size.Bytes += bytes
 	} else {
 		w.misses = append(w.misses, storedSizeMissLocked(res))
 	}
+	w.cut.sized(res, w.size.Bytes-before)
 	w.order = append(w.order, res)
 }
 
+// pass goes through res, an entry the recipient holds that the walk goes
+// through (HeldBy.Through), for the calls kept on it and below it, as
+// storedBundlePassLocked does: res stands for its closure, as a held row
+// does. Of its dependencies, those the recipient holds are reached, each
+// with no row until a call or a record names it (name), for the calls kept
+// on them; the walk goes on below those it goes through, and stops at the
+// others, as a walk stops at a held row. Requires egraphMu.
+func (w *storedSizeWalk) pass(res *sharedResult) {
+	w.passed = append(w.passed, res)
+	w.passing[res.id] = true
+	for _, id := range storedClosureChildrenLocked(res) {
+		child := w.c.resultsByID[id]
+		if child == nil || w.carries(id) || !w.held.heldLocked(child, w.now) {
+			continue
+		}
+		if w.hold != nil {
+			w.hold.step()
+			if child = w.c.resultsByID[id]; child == nil {
+				continue
+			}
+		}
+		w.visited[id] = true
+		w.closure = append(w.closure, id)
+		if _, ok := w.named[id]; !ok {
+			w.named[id] = false
+		}
+		if w.held.throughLocked(child) {
+			w.pass(child)
+		} else {
+			w.passed = append(w.passed, child)
+			w.passing[id] = true
+		}
+	}
+}
+
+// name counts the held row of res, an entry the walk reached through what
+// it goes through (pass) with no row, the first time the bundle names it: a
+// record that depends on it, or a call, as its value or an input, which
+// alone names it then (storedBundleBuild.nameLocked). Requires egraphMu.
+func (w *storedSizeWalk) name(res *sharedResult) {
+	if w.list != nil {
+		return
+	}
+	if rowed, ok := w.named[res.id]; !ok || rowed {
+		return
+	}
+	if w.hold != nil {
+		if res = w.c.resultsByID[res.id]; res == nil {
+			return
+		}
+	}
+	w.named[res.id] = true
+	w.size.Records++
+	w.size.Bytes += heldRowSizeLocked(res)
+}
+
+// noteCall notes a call the walk chose, kept on entry, with the entries
+// that place its inputs, for StoredLowerPart (storedCut). Requires egraphMu.
+func (w *storedSizeWalk) noteCall(chosen *keptCall, entry *sharedResult, places []*sharedResult) {
+	if w.cut == nil {
+		return
+	}
+	w.cut.callBytes += storedCallSize(chosen, len(places))
+	w.cut.named[entry.id] = true
+	for _, place := range places {
+		if place != nil {
+			w.cut.named[place.id] = true
+		}
+	}
+}
+
 // storedValueMeasuredLocked returns res's measured size, if its record,
-// dependencies, replacement count and expiry are the ones measured. Requires
+// dependencies, replacement count and expiry are the ones measured, with its
+// change stamp's encoding as the stamp stands: the stamp moves with every
+// change to what a bundle carries of the entry, a call kept on it or a
+// write to its class among them, which leave its measure as it is. Requires
 // egraphMu.
 func storedValueMeasuredLocked(res *sharedResult) (int64, bool) {
-	kept := res.storedTransfer.Load()
-	if kept == nil || kept.envelope != res.persistedEnvelope || kept.call != res.loadResultCall() {
-		return 0, false
+	var size *storedValueSize
+	if body := res.stored; body != nil {
+		if size = body.size.Load(); size != nil && size.call != res.loadResultCall() {
+			return 0, false
+		}
+	} else {
+		kept := res.storedTransfer.Load()
+		if kept == nil || kept.envelope != res.persistedEnvelope || kept.call != res.loadResultCall() {
+			return 0, false
+		}
+		size = kept.size.Load()
 	}
-	size := kept.size.Load()
 	if size == nil || size.dependencyRevision != res.dependencyOwnershipRevision || size.replacements != res.replacements || size.expiresAtUnix != res.expiresAtUnix {
 		return 0, false
 	}
-	return size.bytes, true
+	return size.bytes + senderStampBytes(res.changedAt), true
 }
 
 // storedSizeMissLocked reads the value state of res that its size depends on.
 // Requires egraphMu.
 func storedSizeMissLocked(res *sharedResult) storedSizeMiss {
-	miss := storedSizeMiss{res: res, env: res.persistedEnvelope, call: res.loadResultCall(), dependencyRevision: res.dependencyOwnershipRevision, replacements: res.replacements, expiresAtUnix: res.expiresAtUnix}
-	for dep := range res.deps {
+	miss := storedSizeMiss{res: res, env: res.persistedEnvelope, body: res.stored, parts: res.partFacts, call: res.loadResultCall(), dependencyRevision: res.dependencyOwnershipRevision, replacements: res.replacements, expiresAtUnix: res.expiresAtUnix, changedAt: res.changedAt}
+	for _, dep := range res.deps {
 		miss.deps = append(miss.deps, uint64(dep))
 	}
 	slices.Sort(miss.deps)
@@ -268,38 +580,86 @@ func (c *Cache) measureStoredValue(miss storedSizeMiss) (storedSizeMeasure, erro
 	if c.testStoredSizeMeasure != nil {
 		c.testStoredSizeMeasure()
 	}
-	kept, err := normalizeStoredTransfer(miss.res, miss.env, miss.call)
-	if err != nil {
-		return storedSizeMeasure{}, err
-	}
-	bytes, err := encodedSize(TransferredValue{Ordinal: TransferOrdinal(miss.res.id), SenderNumber: uint64(miss.res.id), SenderReplacements: miss.replacements, Record: kept.record, DependencyIDs: miss.deps, ExpiresAtUnix: miss.expiresAtUnix})
-	if err != nil {
-		return storedSizeMeasure{}, err
+	value := TransferredValue{Ordinal: TransferOrdinal(miss.res.id), SenderNumber: uint64(miss.res.id), SenderReplacements: miss.replacements, DependencyIDs: miss.deps, ExpiresAtUnix: miss.expiresAtUnix}
+	var kept *storedTransferRecord
+	var bytes int64
+	if miss.body != nil {
+		// A body's value is measured with an empty envelope in its place,
+		// and its envelope's own length added: nothing is decompressed. A
+		// frame the body holds is measured the same way, in place of a null
+		// call.
+		var call *ResultCall
+		if !miss.body.holdsFrame() {
+			var err error
+			if call, err = normalizeTransferCall(miss.call); err != nil {
+				return storedSizeMeasure{}, err
+			}
+		}
+		value.Record = PersistedRecord{ResultID: uint64(miss.res.id), Call: call}
+		// Its parts are the entry's, as the bundle carries them.
+		value.Parts = transferredRecordParts(miss.parts.declaredParts(), miss.parts.completeParts())
+		empty, err := encodedSize(value)
+		if err != nil {
+			return storedSizeMeasure{}, err
+		}
+		bytes = empty - emptyEnvelopeBytes + int64(miss.body.envelopeBytes)
+		if miss.body.holdsFrame() {
+			bytes += int64(miss.body.frameBytes) - nullCallBytes
+		}
+	} else {
+		var err error
+		if kept, err = normalizeStoredTransfer(miss.res, miss.env, miss.call); err != nil {
+			return storedSizeMeasure{}, err
+		}
+		value.Record = kept.record
+		value.Parts = transferredRecordParts(kept.parts, kept.complete)
+		if bytes, err = encodedSize(value); err != nil {
+			return storedSizeMeasure{}, err
+		}
 	}
 	c.storedSizeEncodes.Add(1)
-	return storedSizeMeasure{miss: miss, kept: kept, size: &storedValueSize{dependencyRevision: miss.dependencyRevision, replacements: miss.replacements, expiresAtUnix: miss.expiresAtUnix, bytes: bytes}}, nil
+	return storedSizeMeasure{miss: miss, kept: kept, size: &storedValueSize{call: miss.call, dependencyRevision: miss.dependencyRevision, replacements: miss.replacements, expiresAtUnix: miss.expiresAtUnix, bytes: bytes}}, nil
 }
 
 // publishStoredSizes keeps each measure's size on its entry, in one hold of
-// egraphMu.RLock, if the entry is still in the state measured: the same
-// envelope and call, dependencies, replacement count and expiry. An entry
-// changed since then keeps nothing, so a late measure never brings back a
-// record the cache let go, nor replaces a size measured for a newer state.
+// egraphMu.RLock as kind of work, if the entry is still in the state
+// measured: the same envelope and call, dependencies, replacement count and
+// expiry. An entry changed since then keeps nothing, so a late measure never
+// brings back a record the cache let go, nor replaces a size measured for a
+// newer state.
 // The size goes on the record kept for that envelope and call: the
 // measure's own, or one a build kept meanwhile (keepStoredTransfer).
-func (c *Cache) publishStoredSizes(measured []storedSizeMeasure) {
+func (c *Cache) publishStoredSizes(kind wcprof.LockHolder, measured []storedSizeMeasure) {
 	if len(measured) == 0 {
 		return
 	}
-	defer c.storedSizesRLock()()
+	defer c.storedSizesRLock(kind)()
 	for _, m := range measured {
 		res, miss := m.miss.res, m.miss
-		if res.persistedEnvelope != miss.env || res.loadResultCall() != miss.call || res.dependencyOwnershipRevision != miss.dependencyRevision || res.replacements != miss.replacements || res.expiresAtUnix != miss.expiresAtUnix {
+		if res.persistedEnvelope != miss.env || res.stored != miss.body || res.loadResultCall() != miss.call || res.dependencyOwnershipRevision != miss.dependencyRevision || res.replacements != miss.replacements || res.expiresAtUnix != miss.expiresAtUnix {
+			continue
+		}
+		if miss.body != nil {
+			miss.body.size.Store(m.size)
 			continue
 		}
 		keepStoredTransfer(res, m.kept).size.Store(m.size)
 	}
 }
+
+// nullCallBytes is the length of a missing call's encoding, which a measure
+// of a body that holds its frame replaces with the frame's.
+const nullCallBytes = int64(len("null"))
+
+// emptyEnvelopeBytes is the length of an empty envelope's encoding, which a
+// body's measure replaces with its envelope's.
+var emptyEnvelopeBytes = func() int64 {
+	raw, err := json.Marshal(PersistedResultEnvelope{})
+	if err != nil {
+		panic(err)
+	}
+	return int64(len(raw))
+}()
 
 // sizeCounter is an io.Writer that counts what is written to it.
 type sizeCounter int64
@@ -330,6 +690,28 @@ func heldRowSizeLocked(res *sharedResult) int64 {
 		recipe = res.recipeKeys[0]
 	}
 	return heldRowSize(uint64(res.id), res.replacements, res.expiresAtUnix, recipe)
+}
+
+// senderStampEncoding is what a nonzero change stamp adds to a value's
+// json.Marshal encoding beyond its digits.
+var senderStampEncoding = func() int64 {
+	size := func(v TransferredValue) int64 {
+		data, err := json.Marshal(v)
+		if err != nil {
+			panic(err)
+		}
+		return int64(len(data))
+	}
+	return size(TransferredValue{SenderStamp: 1}) - size(TransferredValue{}) - 1
+}()
+
+// senderStampBytes returns what the change stamp adds to the encoding of a
+// value that carries it: nothing for a stamp of zero, which isn't encoded.
+func senderStampBytes(stamp uint64) int64 {
+	if stamp == 0 {
+		return 0
+	}
+	return senderStampEncoding + decimalDigits(stamp)
 }
 
 // heldRowEncoding is what a held row's json.Marshal encoding is made of:
@@ -374,4 +756,430 @@ func decimalDigits(n uint64) int64 {
 		digits++
 	}
 	return digits
+}
+
+// storedBlobAddressAllowance is what a price allows for each blob's download
+// address in a merge's message (BlobAddress), which signing adds: a presigned
+// URL and its expiry, which run to about 1.5 KiB with a session token.
+// storedOutputReferenceSlack bounds what a price counts for an output beyond
+// a bundle built without addresses: the renewal key signing adds, and its
+// references at storedWireReference's digits.
+const (
+	storedBlobAddressAllowance = 2 << 10
+	storedOutputReferenceSlack = 96
+)
+
+// StoredClosureEntry is an entry a stored bundle carries (StoredClosure):
+// its number, and whether it goes as a held row.
+type StoredClosureEntry struct {
+	Number uint64
+	Held   bool
+}
+
+// StoredClosureResult is StoredClosure's answer.
+type StoredClosureResult struct {
+	// Entries are what the bundle carries, in its order.
+	Entries []StoredClosureEntry
+	// CallInputs are the bundle's (StoredBundleResult.CallInputs).
+	CallInputs []uint64
+}
+
+// StoredClosure lists what StoredBundle(roots, nowUnix, held) carries,
+// without building it: each entry, in the bundle's order, dependencies
+// first, and whether it goes as a held row; and the entries the bundle
+// carries as roots only because a call it sends takes them as inputs. It
+// walks as StoredSizes does (walkStoredRoot), root by root, and reads no
+// value: it copies, normalizes, encodes and sizes nothing. So it is a read
+// in pieces too, letting egraphMu go every readPieceSteps steps, and with no
+// write during it, it lists what one hold would. A write between two of its
+// pieces is seen as StoredSizes sees it. Like StoredSizes, it doesn't walk
+// as HeldBy.Whole has a bundle walk, and refuses a held with Whole. Only a
+// blob-backed cache answers.
+func (c *Cache) StoredClosure(ctx context.Context, roots []uint64, nowUnix int64, held *HeldBy) (StoredClosureResult, error) {
+	var out StoredClosureResult
+	if !c.blobBacked {
+		return out, fmt.Errorf("stored closure: the cache has no blob store")
+	}
+	if held != nil && held.Whole {
+		return out, fmt.Errorf("stored closure: a recipient held whole isn't listed")
+	}
+	if held != nil && held.Through != nil {
+		return out, fmt.Errorf("stored closure: a walk through held entries isn't listed")
+	}
+	list := &storedClosureList{asked: make(map[sharedResultID]bool, len(roots)), held: map[sharedResultID]bool{}, inputs: map[sharedResultID]bool{}}
+	for _, number := range roots {
+		list.asked[sharedResultID(number)] = true
+	}
+	seen, ordinary := map[sharedResultID]bool{}, map[sharedResultID]bool{}
+	for _, number := range roots {
+		if err := context.Cause(ctx); err != nil {
+			return StoredClosureResult{}, err
+		}
+		order, closure, own := c.listStoredRoot(c.graphReader(ctx, workExport), sharedResultID(number), nowUnix, held, seen, ordinary, list)
+		for _, res := range order {
+			out.Entries = append(out.Entries, StoredClosureEntry{Number: uint64(res.id), Held: list.held[res.id]})
+		}
+		for _, id := range closure {
+			seen[id] = true
+		}
+		for _, id := range closure[:own] {
+			ordinary[id] = true
+		}
+	}
+	out.CallInputs = list.callInputs
+	return out, nil
+}
+
+// listStoredRoot is StoredClosure's walk of one root, beyond seen, in
+// pieces: the entries it adds in the bundle's order, those it reached, and
+// how many of those, first, are the root's ordinary closure.
+func (c *Cache) listStoredRoot(kind wcprof.LockHolder, root sharedResultID, nowUnix int64, held *HeldBy, seen, ordinary map[sharedResultID]bool, list *storedClosureList) ([]*sharedResult, []sharedResultID, int) {
+	hold := c.readInPieces(kind)
+	defer hold.done()
+	res := c.resultsByID[root]
+	if res == nil || res.noValueLocked() {
+		return nil, nil, 0
+	}
+	walk, own := c.storedRootWalkLocked(res, nowUnix, held, seen, ordinary, nil, nil, hold, list, nil)
+	return walk.order, walk.closure, own
+}
+
+// StoredLowerPart is what a split sends ahead of a merge of a root whose
+// message would be over the limit (Cache.StoredLowerPart).
+type StoredLowerPart struct {
+	// Lower are the part's entries that no other of them depends on, which
+	// go to the recipient as roots of their own (HeldBy.Parts).
+	Lower []uint64
+	// Part is every entry of the part, sorted: the root's own merge, once
+	// the recipient holds them, walks through them (HeldBy.Through).
+	Part []uint64
+	// Carried is how many records, but held rows, a bundle of the root
+	// carries, as the split counts them.
+	Carried int
+	// CallBytes and NamedBytes are what the root's own merge carries beside
+	// its records, by the bundle's walk: its calls, as the message encodes
+	// them, and a held row for each entry of the part they name.
+	CallBytes, NamedBytes int64
+}
+
+// StoredLowerPart returns what goes ahead of a merge of root whose message
+// would be over limit, so that root's own merge, once the recipient holds
+// that part, carries the rest within limit. Of the entries a bundle of root
+// carries (StoredBundle, its kept calls' inputs included), but the entries
+// held holds, the part is those below root, not root nor an entry that
+// depends on it, as a call's input can, in the bundle's order, dependencies
+// first, but for the last ones, whose records fit within limit beside what
+// root's own merge carries anyway: root's record and those above it, held
+// rows for what held holds, the bundle's calls and the held rows they name,
+// a held row for each entry of the part that a record it carries depends
+// on, and the outputs of what it carries, each layer and address once.
+// The part goes as its entries no other of them depends on, each a root of
+// its own that places calls only on what its own merge carries or the
+// recipient holds (HeldBy.Parts); root's own merge walks through the part
+// (HeldBy.Through), and so sends every call kept on its entries. A root
+// whose rest fits within limit with nothing ahead of it has no part, nor
+// has one the cache has no value for.
+func (c *Cache) StoredLowerPart(ctx context.Context, root uint64, nowUnix int64, held *HeldBy, limit int64) (StoredLowerPart, error) {
+	var out StoredLowerPart
+	if !c.blobBacked {
+		return out, fmt.Errorf("stored lower part: the cache has no blob store")
+	}
+	if err := context.Cause(ctx); err != nil {
+		return out, err
+	}
+	kind := c.graphReader(ctx, workExport)
+	cut := c.storedCutWalk(kind, root, nowUnix, held)
+	out.Carried, out.CallBytes = len(cut.order), cut.callBytes
+	if len(cut.below) == 0 {
+		return out, nil
+	}
+	// The records not yet measured, measured as StoredSizes measures them.
+	measured := make([]storedSizeMeasure, 0, len(cut.misses))
+	for _, miss := range cut.misses {
+		m, err := c.measureStoredValue(miss)
+		if err != nil {
+			return StoredLowerPart{}, fmt.Errorf("stored lower part: entry %d: %w", miss.res.id, err)
+		}
+		cut.sizes[miss.res.id] += m.size.bytes + senderStampBytes(miss.changedAt)
+		measured = append(measured, m)
+	}
+	c.publishStoredSizes(kind, measured)
+	room := limit - cut.fixed - cut.callBytes
+	ahead := cut.settle(cut.grow(room), room)
+	if ahead == 0 {
+		return out, nil
+	}
+	part := cut.below[:ahead]
+	under := map[sharedResultID]bool{}
+	for _, id := range part {
+		for _, dep := range cut.children[id] {
+			under[dep] = true
+		}
+	}
+	for _, id := range part {
+		if !under[id] {
+			out.Lower = append(out.Lower, uint64(id))
+		}
+		if cut.named[id] {
+			out.NamedBytes += cut.rows[id]
+		}
+		out.Part = append(out.Part, uint64(id))
+	}
+	slices.Sort(out.Part)
+	return out, nil
+}
+
+// storedCutWalk walks root's bundle for StoredLowerPart in one hold of
+// egraphMu, as StoredSizes walks it, and keeps what its cut reads: the
+// records the bundle carries, in its order, and of those the ones above the
+// part, root and those that depend on it, and the ones below it, each with
+// its dependencies and the size of its held row; and the held rows of what
+// held holds.
+func (c *Cache) storedCutWalk(kind wcprof.LockHolder, root uint64, nowUnix int64, held *HeldBy) *storedCut {
+	cut := &storedCut{sizes: map[sharedResultID]int64{}, outputs: map[sharedResultID][]storedCutPart{}, named: map[sharedResultID]bool{},
+		children: map[sharedResultID][]sharedResultID{}, rows: map[sharedResultID]int64{}}
+	defer c.storedSizesRLock(kind)()
+	res := c.resultsByID[sharedResultID(root)]
+	if res == nil || res.noValueLocked() {
+		return cut
+	}
+	walk, _ := c.storedRootWalkLocked(res, nowUnix, held, map[sharedResultID]bool{}, map[sharedResultID]bool{}, map[sharedResultID]bool{},
+		&storedOutputsSeen{layers: map[*storedLayer]bool{}, blobs: map[digest.Digest]digest.Digest{}}, nil, nil, cut)
+	cut.misses = walk.misses
+	isAbove := map[sharedResultID]bool{res.id: true}
+	for _, entry := range walk.order {
+		if held.heldLocked(entry, nowUnix) {
+			cut.fixed += heldRowSizeLocked(entry)
+			continue
+		}
+		cut.order = append(cut.order, entry.id)
+		deps := storedClosureChildrenLocked(entry)
+		cut.children[entry.id] = deps
+		if !isAbove[entry.id] && slices.ContainsFunc(deps, func(id sharedResultID) bool { return isAbove[id] }) {
+			isAbove[entry.id] = true
+		}
+		if isAbove[entry.id] {
+			cut.above = append(cut.above, entry.id)
+			continue
+		}
+		cut.below = append(cut.below, entry.id)
+		cut.rows[entry.id] = heldRowSizeLocked(entry)
+	}
+	return cut
+}
+
+// grow returns how many of the entries below root go ahead when the tail
+// root's merge keeps grows from the bundle's end while it fits within room.
+// That merge carries the records above the part, with their outputs, each
+// layer and address once, and a held row for each entry of the part that a
+// call names or one of those records depends on. A record the tail takes
+// adds its outputs but what the merge lists already, needs no held row of
+// its own, and brings held rows for those of its dependencies the part
+// keeps.
+func (cut *storedCut) grow(room int64) int {
+	outputs := &storedCutOutputs{layers: map[*storedLayer]bool{}, blobs: map[digest.Digest]digest.Digest{}}
+	needed, inTail := map[sharedResultID]bool{}, map[sharedResultID]bool{}
+	for id := range cut.named {
+		if row, ok := cut.rows[id]; ok {
+			needed[id] = true
+			room -= row
+		}
+	}
+	needs := func(id sharedResultID) (bytes int64, deps []sharedResultID) {
+		for _, dep := range cut.children[id] {
+			if row, ok := cut.rows[dep]; ok && !inTail[dep] && !needed[dep] && !slices.Contains(deps, dep) {
+				bytes += row
+				deps = append(deps, dep)
+			}
+		}
+		return bytes, deps
+	}
+	for _, id := range cut.above {
+		bytes, deps := needs(id)
+		room -= cut.sizes[id] + outputs.add(cut.outputs[id], true) + bytes
+		for _, dep := range deps {
+			needed[dep] = true
+		}
+	}
+	ahead := len(cut.below)
+	for ; ahead > 0; ahead-- {
+		id := cut.below[ahead-1]
+		left := room - cut.sizes[id] - outputs.add(cut.outputs[id], false)
+		if needed[id] {
+			left += cut.rows[id]
+		}
+		bytes, deps := needs(id)
+		if left -= bytes; left < 0 {
+			break
+		}
+		room, inTail[id] = left, true
+		outputs.add(cut.outputs[id], true)
+		delete(needed, id)
+		for _, dep := range deps {
+			needed[dep] = true
+		}
+	}
+	return ahead
+}
+
+// settle returns ahead, grow's cut, if root's merge carries the rest within
+// room as that merge counts it (fits), or else the first cut after it that
+// fits: which of a blob's addresses the merge carries depends on the order
+// it lists its outputs in, which the tail's growth from the end doesn't
+// follow.
+func (cut *storedCut) settle(ahead int, room int64) int {
+	if ahead == len(cut.below) || cut.fits(ahead, room) {
+		return ahead
+	}
+	low, high := ahead+1, len(cut.below)
+	for low < high {
+		if mid := (low + high) / 2; cut.fits(mid, room) {
+			high = mid
+		} else {
+			low = mid + 1
+		}
+	}
+	return low
+}
+
+// storedCut is what StoredLowerPart cuts a bundle by. Its walk keeps the
+// size of each record it carries, 0 for one not measured yet until it is
+// (misses), and its stored parts; the encoded size of the calls it chose;
+// and the entries those calls name. storedCutWalk adds the records in the
+// bundle's order, those above the part and those below it, each record's
+// dependencies, the held row of each below, and the held rows of what the
+// recipient holds (fixed).
+type storedCut struct {
+	sizes     map[sharedResultID]int64
+	outputs   map[sharedResultID][]storedCutPart
+	callBytes int64
+	named     map[sharedResultID]bool
+	misses    []storedSizeMiss
+
+	order, above, below []sharedResultID
+	children            map[sharedResultID][]sharedResultID
+	rows                map[sharedResultID]int64
+	fixed               int64
+}
+
+// storedCutPart is a stored part of a record the walk carries: what it adds
+// to the message but its layers, and its layers (storedSizeWalk.addOutputs).
+type storedCutPart struct {
+	wire   int64
+	layers []*storedLayer
+}
+
+// sized notes the size of res's record, which the walk carries, and its
+// stored parts. Requires egraphMu.
+func (cut *storedCut) sized(res *sharedResult, bytes int64) {
+	if cut == nil {
+		return
+	}
+	cut.sizes[res.id] = bytes
+	for _, part := range res.storedParts {
+		cut.outputs[res.id] = append(cut.outputs[res.id], storedCutPart{wire: part.wire, layers: part.layers})
+	}
+}
+
+// fits reports whether root's merge, with the first ahead entries below it
+// held, carries the rest within room, as that merge counts it: the records
+// the bundle carries, but the part's, with their outputs, in the bundle's
+// order, each layer once, a blob's address for the pack it first names it
+// in, and one more for each output that names it in another; and a held row
+// for each entry of the part that a call or one of those records names.
+func (cut *storedCut) fits(ahead int, room int64) bool {
+	inPart := make(map[sharedResultID]bool, ahead)
+	for _, id := range cut.below[:ahead] {
+		inPart[id] = true
+	}
+	outputs := &storedCutOutputs{layers: map[*storedLayer]bool{}, blobs: map[digest.Digest]digest.Digest{}}
+	named := map[sharedResultID]bool{}
+	for id := range cut.named {
+		if inPart[id] && !named[id] {
+			named[id] = true
+			room -= cut.rows[id]
+		}
+	}
+	for _, id := range cut.order {
+		if inPart[id] {
+			continue
+		}
+		room -= cut.sizes[id] + outputs.add(cut.outputs[id], true)
+		for _, dep := range cut.children[id] {
+			if inPart[dep] && !named[dep] {
+				named[dep] = true
+				room -= cut.rows[dep]
+			}
+		}
+	}
+	return room >= 0
+}
+
+// storedCutOutputs are the layers and blob addresses a merge lists so far,
+// as storedOutputsSeen counts them for a walk, for StoredLowerPart's cut.
+type storedCutOutputs struct {
+	layers map[*storedLayer]bool
+	blobs  map[digest.Digest]digest.Digest
+}
+
+// add returns what parts add to the merge's message, as addOutputs counts
+// it: each part, each layer the merge doesn't list yet, and an address for
+// each blob it doesn't have one of, or names in another pack. With keep, the
+// merge lists them from then on.
+func (o *storedCutOutputs) add(parts []storedCutPart, keep bool) int64 {
+	var bytes int64
+	layers, blobs := map[*storedLayer]bool{}, map[digest.Digest]digest.Digest{}
+	for _, part := range parts {
+		bytes += part.wire
+		for _, layer := range part.layers {
+			if !o.layers[layer] && !layers[layer] {
+				layers[layer] = true
+				bytes += layer.wire
+			}
+			blob := layer.layer.Descriptor.Digest
+			pack, ok := o.blobs[blob]
+			if !ok {
+				pack, ok = blobs[blob]
+			}
+			if !ok {
+				blobs[blob] = layer.pack
+				bytes += storedBlobAddressAllowance
+			} else if pack != layer.pack {
+				bytes += storedBlobAddressAllowance
+			}
+		}
+	}
+	if keep {
+		maps.Copy(o.layers, layers)
+		maps.Copy(o.blobs, blobs)
+	}
+	return bytes
+}
+
+// storedCallEncoding is what a call a bundle sends (TransferredCall) adds
+// to its message beyond its call's encoding: its fields with its value at
+// storedWireReference's digits, its first input, with the list's field,
+// and each input after it, at those digits.
+var storedCallEncoding = func() (enc struct{ base, first, input int64 }) {
+	size := func(inputs int) int64 {
+		data, err := json.Marshal(TransferredCall{Value: storedWireReference, Inputs: slices.Repeat([]TransferOrdinal{storedWireReference}, inputs)})
+		if err != nil {
+			panic(err)
+		}
+		return int64(len(data))
+	}
+	enc.base = size(0)
+	enc.first = size(1) - enc.base
+	enc.input = size(2) - size(1)
+	return enc
+}()
+
+// storedCallSize is what a bundle's call kept adds to its message, with
+// inputs inputs.
+func storedCallSize(kept *keptCall, inputs int) int64 {
+	size := storedCallEncoding.base + int64(len(kept.encoded))
+	if inputs > 0 {
+		size += storedCallEncoding.first + int64(inputs-1)*storedCallEncoding.input
+	}
+	return size
 }

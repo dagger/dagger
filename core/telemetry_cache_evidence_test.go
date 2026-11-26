@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	telemetry "github.com/dagger/otel-go"
 	"github.com/opencontainers/go-digest"
@@ -24,6 +25,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	enginetelemetry "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
@@ -69,7 +71,7 @@ func evidenceTestCacheAttrs(t *testing.T, kvs []attribute.KeyValue) map[string]s
 		}
 		switch k {
 		case telemetryattrs.CacheStructuralInputsAttr, telemetryattrs.CacheDepsAttr, telemetryattrs.CachePartsAttr,
-			telemetryattrs.CacheMissFreshInputsAttr:
+			telemetryattrs.CacheMissFreshInputsAttr, telemetryattrs.CacheHitWaitsAttr:
 			// The contract's native string slices (checked separately via
 			// evidenceTestStructuralInputs and evidenceTestStringSlice).
 			assert.Equal(t, attribute.STRINGSLICE, kv.Value.Type(), "contract attribute %s must be STRINGSLICE-typed", k)
@@ -109,14 +111,15 @@ func evidenceTestStringSlice(kvs []attribute.KeyValue, key string) ([]string, bo
 func TestInitCacheEvidenceGates(t *testing.T) {
 	t.Parallel()
 
-	// Recording span + ordinary call: armed.
+	// Recording span + reported call: armed.
 	_, span := evidenceTestRecordingSpan(t)
-	req := &dagql.CallRequest{ResultCall: evidenceTestFrame("ordinary")}
+	req := &dagql.CallRequest{ResultCall: evidenceTestFrame("ordinary"), CacheReported: true}
 	initCacheEvidence(span, req)
 	assert.Assert(t, req.CacheEvidence != nil)
 	assert.Equal(t, -1, req.CacheEvidence.MissUnknownInputIndex)
 
-	// ProfileSkip-classified call: never armed.
+	// A call telemetry doesn't report, such as a ProfileSkip-classified one,
+	// which AroundFunc leaves unreported: never armed.
 	skipReq := &dagql.CallRequest{ResultCall: evidenceTestFrame("skipped")}
 	skipReq.ResultCall.ProfileSkip = true
 	initCacheEvidence(span, skipReq)
@@ -124,7 +127,7 @@ func TestInitCacheEvidenceGates(t *testing.T) {
 
 	// Non-recording span: never armed.
 	_, noopSpan := tracenoop.NewTracerProvider().Tracer("t").Start(context.Background(), "noop")
-	noopReq := &dagql.CallRequest{ResultCall: evidenceTestFrame("nonrecording")}
+	noopReq := &dagql.CallRequest{ResultCall: evidenceTestFrame("nonrecording"), CacheReported: true}
 	initCacheEvidence(noopSpan, noopReq)
 	assert.Assert(t, noopReq.CacheEvidence == nil)
 
@@ -173,6 +176,28 @@ func TestRecordCacheEvidenceMappingHit(t *testing.T) {
 	assert.Assert(t, present)
 	// Exact values in exact order — the miss unknown-input index points here.
 	assert.DeepEqual(t, inputs, []string{inputA.String(), inputB.String()})
+}
+
+// A call span names its caller's recipe digest when the call has one, and
+// carries no caller attribute when it has none.
+func TestRecordCacheEvidenceMappingCaller(t *testing.T) {
+	t.Parallel()
+	caller := digest.FromString("evidence-map-caller")
+	for _, named := range []bool{true, false} {
+		sr, span := evidenceTestRecordingSpan(t)
+		ev := &dagql.CacheDecision{Outcome: dagql.CacheOutcomeExecuted, MissUnknownInputIndex: -1}
+		if named {
+			ev.Caller = caller
+		}
+		span.SetAttributes(appendCacheEvidenceAttrs(context.Background(), nil, ev, nil)...)
+		got := evidenceTestCacheAttrs(t, evidenceTestEndedAttrs(t, sr, span))
+		if named {
+			assert.Equal(t, caller.String(), got[telemetryattrs.CacheCallerAttr])
+		} else {
+			_, present := got[telemetryattrs.CacheCallerAttr]
+			assert.Assert(t, !present)
+		}
+	}
 }
 
 func TestRecordCacheEvidenceMappingExecutedMissFacts(t *testing.T) {
@@ -237,7 +262,8 @@ func TestRecordCacheEvidenceMappingJoinedStampsNoMissFacts(t *testing.T) {
 }
 
 // A hit on a value from the remote cache says so, with the merge's commit
-// time, beside the lookup's own time.
+// time, route and number, and that it was the record's first use, beside
+// the lookup's own time.
 func TestRecordCacheEvidenceMappingRemoteHit(t *testing.T) {
 	t.Parallel()
 	sr, span := evidenceTestRecordingSpan(t)
@@ -248,6 +274,9 @@ func TestRecordCacheEvidenceMappingRemoteHit(t *testing.T) {
 		HitRoute:              dagql.CacheHitRouteRecipe,
 		HitRemote:             true,
 		HitMergedAtUnixNano:   1760000000123456789,
+		HitMergedRoute:        dagql.MergeRouteDeferred,
+		HitMerge:              42,
+		HitFirstUse:           true,
 		LookupAtUnixNano:      1760000000987654321,
 		MissUnknownInputIndex: -1,
 		SelfDigest:            selfDig,
@@ -256,14 +285,17 @@ func TestRecordCacheEvidenceMappingRemoteHit(t *testing.T) {
 
 	got := evidenceTestCacheAttrs(t, evidenceTestEndedAttrs(t, sr, span))
 	assert.DeepEqual(t, got, map[string]string{
-		telemetryattrs.CacheContractAttr:      telemetryattrs.CacheContractV1,
-		telemetryattrs.CacheOutcomeAttr:       "hit",
-		telemetryattrs.CacheHitRouteAttr:      "recipe",
-		telemetryattrs.CacheHitRemoteAttr:     "true",
-		telemetryattrs.CacheHitMergedAtAttr:   "1760000000123456789",
-		telemetryattrs.CacheLookupAtAttr:      "1760000000987654321",
-		telemetryattrs.CacheSelfDigestAttr:    selfDig.String(),
-		telemetryattrs.CachePairingDigestAttr: selfDig.String(),
+		telemetryattrs.CacheContractAttr:       telemetryattrs.CacheContractV1,
+		telemetryattrs.CacheOutcomeAttr:        "hit",
+		telemetryattrs.CacheHitRouteAttr:       "recipe",
+		telemetryattrs.CacheHitRemoteAttr:      "true",
+		telemetryattrs.CacheHitMergedAtAttr:    "1760000000123456789",
+		telemetryattrs.CacheHitMergedRouteAttr: "deferred",
+		telemetryattrs.CacheHitMergeAttr:       "42",
+		telemetryattrs.CacheHitFirstUseAttr:    "true",
+		telemetryattrs.CacheLookupAtAttr:       "1760000000987654321",
+		telemetryattrs.CacheSelfDigestAttr:     selfDig.String(),
+		telemetryattrs.CachePairingDigestAttr:  selfDig.String(),
 	})
 }
 
@@ -433,9 +465,9 @@ func TestRecordCacheEvidenceMappingRemoteLookup(t *testing.T) {
 	}
 }
 
-// Adoption is a fact of the publication, so the executed call and the calls
-// that joined it stamp it, with the merge's origin when the adopted entry is
-// remote.
+// Adoption, and keeping a made value over a merged record, are facts of the
+// publication, so the executed call and the calls that joined it stamp them,
+// with the merge's origin when the entry was remote.
 func TestRecordCacheEvidenceMappingAdopted(t *testing.T) {
 	t.Parallel()
 	selfDig := digest.FromString("evidence-adopted-self")
@@ -474,6 +506,28 @@ func TestRecordCacheEvidenceMappingAdopted(t *testing.T) {
 		{
 			name: "hit",
 			ev:   dagql.CacheDecision{Outcome: dagql.CacheOutcomeHit, Adopted: true, AdoptedRemote: true},
+			want: map[string]string{telemetryattrs.CacheOutcomeAttr: "hit"},
+		},
+		{
+			name: "executed, kept over a merged record",
+			ev:   dagql.CacheDecision{Outcome: dagql.CacheOutcomeExecuted, KeptOverRemote: true, KeptOverRemoteMergedAtUnixNano: 1760000000123456789},
+			want: map[string]string{
+				telemetryattrs.CacheOutcomeAttr:                "executed",
+				telemetryattrs.CacheKeptOverRemoteAttr:         "true",
+				telemetryattrs.CacheKeptOverRemoteMergedAtAttr: "1760000000123456789",
+			},
+		},
+		{
+			name: "joined, kept over a merged record after a restart",
+			ev:   dagql.CacheDecision{Outcome: dagql.CacheOutcomeJoined, KeptOverRemote: true},
+			want: map[string]string{
+				telemetryattrs.CacheOutcomeAttr:        "joined",
+				telemetryattrs.CacheKeptOverRemoteAttr: "true",
+			},
+		},
+		{
+			name: "hit, kept",
+			ev:   dagql.CacheDecision{Outcome: dagql.CacheOutcomeHit, KeptOverRemote: true},
 			want: map[string]string{telemetryattrs.CacheOutcomeAttr: "hit"},
 		},
 	} {
@@ -680,6 +734,79 @@ func TestRecordCacheEvidenceCacheState(t *testing.T) {
 	assert.DeepEqual(t, []string{`{"part":"fs"}`}, mapped[1].Value.AsStringSlice())
 }
 
+// A call's span says whether the call itself kept its result past its
+// session, apart from the entry's retention from any source: a persistable
+// call that ran or hit kept it, and so did neither a call whose field isn't
+// persistable nor a persistable call or hit on a value its call declined to
+// persist. A call that keeps nothing reports the edge another call gave its
+// entry, as retained, and does not report it as its own.
+func TestRecordCacheEvidencePersisted(t *testing.T) {
+	t.Parallel()
+	type call struct {
+		session     string
+		persistable bool
+		declines    bool
+	}
+	for _, tc := range []struct {
+		name          string
+		before        []call
+		call          call
+		wantOutcome   dagql.CacheOutcome
+		wantPersisted bool
+		wantRetained  bool
+	}{
+		{name: "a persistable call that ran", call: call{session: "s1", persistable: true},
+			wantOutcome: dagql.CacheOutcomeExecuted, wantPersisted: true, wantRetained: true},
+		{name: "a call that keeps nothing", call: call{session: "s1"},
+			wantOutcome: dagql.CacheOutcomeExecuted},
+		{name: "a persistable call that declined", call: call{session: "s1", persistable: true, declines: true},
+			wantOutcome: dagql.CacheOutcomeExecuted},
+		{name: "a persistable hit", before: []call{{session: "s1", persistable: true}}, call: call{session: "s2", persistable: true},
+			wantOutcome: dagql.CacheOutcomeHit, wantPersisted: true, wantRetained: true},
+		{name: "a hit that keeps nothing, on an entry another call kept", before: []call{{session: "s1", persistable: true}}, call: call{session: "s2"},
+			wantOutcome: dagql.CacheOutcomeHit, wantRetained: true},
+		{name: "a persistable hit on a value its call declined", before: []call{{session: "s1", persistable: true, declines: true}}, call: call{session: "s2", persistable: true},
+			wantOutcome: dagql.CacheOutcomeHit},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := context.Background()
+			cache, err := dagql.NewCache(ctx, "", nil, nil)
+			assert.NilError(t, err)
+			t.Cleanup(func() { assert.NilError(t, cache.CloseDiscardingPersistence()) })
+			frame := evidenceTestFrame("persisted")
+			run := func(c call, ev *dagql.CacheDecision) dagql.AnyResult {
+				t.Helper()
+				res, err := cache.GetOrInitCall(ctx, c.session, evidenceTestTypeResolver{}, &dagql.CallRequest{ResultCall: frame, CacheEvidence: ev, IsPersistable: c.persistable}, func(ctx context.Context) (dagql.AnyResult, error) {
+					if c.declines {
+						dagql.DeclinePersistence(ctx)
+					}
+					return dagql.NewResultForCall(dagql.NewInt(1), frame)
+				})
+				assert.NilError(t, err)
+				return res
+			}
+			for _, c := range tc.before {
+				run(c, nil)
+			}
+			ev := dagql.NewCacheDecision()
+			res := run(tc.call, ev)
+			assert.Equal(t, tc.wantOutcome, ev.Outcome)
+
+			sr, span := evidenceTestRecordingSpan(t)
+			span.SetAttributes(appendCacheEvidenceAttrs(ctx, nil, ev, res)...)
+			got := evidenceTestCacheAttrs(t, evidenceTestEndedAttrs(t, sr, span))
+			_, retained := got[telemetryattrs.CacheRetainedAttr]
+			assert.Equal(t, tc.wantRetained, retained, "the entry's retention, from any source")
+			value, kept := got[telemetryattrs.CachePersistedAttr]
+			assert.Equal(t, tc.wantPersisted, kept, "whether the call itself kept its result")
+			if tc.wantPersisted {
+				assert.Equal(t, "true", value)
+			}
+		})
+	}
+}
+
 // A call span carries its parts' raw sizes beside the parts, index-aligned,
 // when the state has them, as on an engine with the remote cache; without
 // them, as elsewhere, it carries none.
@@ -751,5 +878,181 @@ func BenchmarkRecordCacheEvidence(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		span.SetAttributes(appendCacheEvidenceAttrs(ctx, nil, ev, res)...)
+	}
+}
+
+// A call hidden from the session's view (dagql.WithSkip) shows no line, but
+// it is still the cache's: it reports its cache decision as any other call
+// does, on a span the UI treats as internal, so the remote cache learns the
+// entry it returns. A hidden call that is profile-skipped reports nothing.
+func TestAroundFuncHiddenCallReportsCacheEvidence(t *testing.T) {
+	t.Parallel()
+
+	sr := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithSampler(sdktrace.AlwaysSample()),
+		sdktrace.WithSpanProcessor(sr),
+	)
+	ctx, root := tp.Tracer("cache-evidence-test").Start(context.Background(), "root")
+	defer root.End()
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+	t.Cleanup(func() { assert.NilError(t, cache.CloseDiscardingPersistence()) })
+	ctx = dagql.WithSkip(dagql.ContextWithCache(ctx, cache))
+
+	req := &dagql.CallRequest{
+		ResultCall:       evidenceTestFrame("withEnvVariable"),
+		ReceiverTypeName: "Container",
+	}
+	_, done := AroundFunc(ctx, req)
+	assert.Assert(t, req.CacheReported, "a hidden call's miss asks the remote cache, as any reported call's does")
+	assert.Assert(t, req.CacheEvidence != nil, "a hidden call reports its cache decision")
+	req.CacheEvidence.Outcome = dagql.CacheOutcomeExecuted
+	// The result is made outside the recorded trace, whose spans the test
+	// counts.
+	resCtx := dagql.ContextWithCache(context.Background(), cache)
+	res, err := cache.GetOrInitCall(resCtx, "evidence-session", evidenceTestTypeResolver{}, &dagql.CallRequest{ResultCall: req.ResultCall}, func(context.Context) (dagql.AnyResult, error) {
+		return dagql.NewResultForCall(dagql.NewInt(1), req.ResultCall)
+	})
+	assert.NilError(t, err)
+	recipe, err := res.RecipeDigest(resCtx)
+	assert.NilError(t, err)
+	var rerr error
+	done(res, false, &rerr)
+
+	ended := sr.Ended()
+	assert.Equal(t, 1, len(ended))
+	var internal, passthrough, sawDigest, sawOutput, sawCall bool
+	for _, attr := range ended[0].Attributes() {
+		switch string(attr.Key) {
+		case telemetry.UIInternalAttr:
+			internal = attr.Value.AsBool()
+		case telemetry.UIPassthroughAttr:
+			passthrough = attr.Value.AsBool()
+		case telemetry.DagDigestAttr:
+			sawDigest = true
+		case telemetry.DagOutputAttr:
+			sawOutput = true
+		case telemetry.DagCallAttr:
+			sawCall = true
+		}
+	}
+	assert.Assert(t, enginetelemetry.IsProtectedSpan(ended[0]), "the hidden call's span takes the protected export lane, as the cache report of any call span does")
+	assert.Assert(t, !sawOutput, "the hidden call's span names no output: it would be the result's creator in the session's rendering")
+	assert.Assert(t, !sawCall, "the hidden call's span carries no call frame: its delivery would stand for its closure's")
+	assert.Assert(t, internal, "the hidden call's span is internal: hidden at the terminal's default verbosity")
+	assert.Assert(t, passthrough, "the hidden call's span is passthrough: never a row, as in Cloud's trace view")
+	assert.Assert(t, sawDigest, "the hidden call's span names its call")
+	got := evidenceTestCacheAttrs(t, ended[0].Attributes())
+	assert.Equal(t, got[telemetryattrs.CacheContractAttr], telemetryattrs.CacheContractV1)
+	assert.Equal(t, got[telemetryattrs.CacheOutcomeAttr], "executed")
+	assert.Equal(t, got[telemetryattrs.CacheRecipeAttr], recipe.String(), "the hidden call's span names the recipe of the entry it returned")
+
+	// A hidden profile-skipped call reports nothing, and has no span.
+	skipReq := &dagql.CallRequest{
+		ResultCall:       evidenceTestFrame("load"),
+		ReceiverTypeName: "TypeDef",
+	}
+	_, skipDone := AroundFunc(ctx, skipReq)
+	skipDone(nil, false, &rerr)
+	assert.Assert(t, skipReq.ResultCall.ProfileSkip)
+	assert.Assert(t, !skipReq.CacheReported)
+	assert.Assert(t, skipReq.CacheEvidence == nil)
+	assert.Equal(t, 1, len(sr.Ended()), "a hidden profile-skipped call has no span")
+
+	// A call of a request whose client opted out of telemetry reports
+	// nothing, and has no span.
+	optedOut := &dagql.CallRequest{
+		ResultCall:       evidenceTestFrame("withEnvVariable"),
+		ReceiverTypeName: "Container",
+	}
+	_, optedOutDone := AroundFunc(dagql.WithTelemetrySuppressed(ctx), optedOut)
+	optedOutDone(nil, false, &rerr)
+	assert.Assert(t, !optedOut.CacheReported)
+	assert.Assert(t, optedOut.CacheEvidence == nil)
+	assert.Equal(t, 1, len(sr.Ended()), "a call of a suppressed request has no span")
+}
+
+// A hit's span says what its own time after its lookup is made of: when its
+// value was loaded and when the cache handed it back, as decimal-string
+// nanoseconds, how many entries its load decoded, and what its work waited
+// for, as a native string slice of "<kind>=<nanoseconds>" sorted by kind.
+// None of them is stamped when there is nothing to say, nor on a call that
+// didn't hit.
+func TestRecordCacheEvidenceMappingHitLoad(t *testing.T) {
+	t.Parallel()
+	const loadedAt, servedAt = int64(1760000000123456789), int64(1760000000223456789)
+	sr, span := evidenceTestRecordingSpan(t)
+	span.SetAttributes(appendCacheEvidenceAttrs(context.Background(), nil, &dagql.CacheDecision{
+		Outcome:               dagql.CacheOutcomeHit,
+		HitRoute:              dagql.CacheHitRouteRecipe,
+		HitLoadedAtUnixNano:   loadedAt,
+		HitServedAtUnixNano:   servedAt,
+		MissUnknownInputIndex: -1,
+	}, nil)...)
+	got := evidenceTestCacheAttrs(t, evidenceTestEndedAttrs(t, sr, span))
+	assert.Equal(t, strconv.FormatInt(loadedAt, 10), got[telemetryattrs.CacheHitLoadedAtAttr])
+	assert.Equal(t, strconv.FormatInt(servedAt, 10), got[telemetryattrs.CacheHitServedAtAttr])
+	_, decoded := got[telemetryattrs.CacheHitDecodedAttr]
+	assert.Assert(t, !decoded, "a load that decoded nothing says nothing")
+
+	sr, span = evidenceTestRecordingSpan(t)
+	span.SetAttributes(appendHitLoadAttrs(nil, loadedAt, 0, dagql.HitLoad{
+		Decoded: 3,
+		Waits:   map[string]time.Duration{"graph.part": 1500 * time.Millisecond, "decode": 20 * time.Millisecond, "graph.hold": 7},
+	})...)
+	kvs := evidenceTestEndedAttrs(t, sr, span)
+	got = evidenceTestCacheAttrs(t, kvs)
+	assert.Equal(t, "3", got[telemetryattrs.CacheHitDecodedAttr])
+	_, served := got[telemetryattrs.CacheHitServedAtAttr]
+	assert.Assert(t, !served, "a hit not handed back says nothing of when")
+	waits, ok := evidenceTestStringSlice(kvs, telemetryattrs.CacheHitWaitsAttr)
+	assert.Assert(t, ok)
+	assert.DeepEqual(t, []string{"decode=20000000", "graph.hold=7", "graph.part=1500000000"}, waits)
+
+	sr, span = evidenceTestRecordingSpan(t)
+	span.SetAttributes(appendCacheEvidenceAttrs(context.Background(), nil, &dagql.CacheDecision{
+		Outcome:               dagql.CacheOutcomeExecuted,
+		HitLoadedAtUnixNano:   loadedAt,
+		HitServedAtUnixNano:   servedAt,
+		MissUnknownInputIndex: -1,
+	}, nil)...)
+	got = evidenceTestCacheAttrs(t, evidenceTestEndedAttrs(t, sr, span))
+	for _, key := range []string{telemetryattrs.CacheHitLoadedAtAttr, telemetryattrs.CacheHitServedAtAttr, telemetryattrs.CacheHitDecodedAttr} {
+		_, stamped := got[key]
+		assert.Assert(t, !stamped, "a call that didn't hit says nothing of %s", key)
+	}
+}
+
+// A call of a field whose result follows from its inputs says so on its row,
+// which is how the remote cache service learns it; another call's row, and a
+// row with no cache decision, carry no such attribute.
+func TestRecordCacheEvidenceMappingFollowsFromInputs(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		follows bool
+		outcome dagql.CacheOutcome
+		want    bool
+	}{
+		{"declared", true, dagql.CacheOutcomeExecuted, true},
+		{"declared, a hit", true, dagql.CacheOutcomeHit, true},
+		{"not declared", false, dagql.CacheOutcomeExecuted, false},
+		{"no cache decision", true, "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			sr, span := evidenceTestRecordingSpan(t)
+			frame := evidenceTestFrame("follows")
+			frame.FollowsFromInputs = tc.follows
+			req := &dagql.CallRequest{ResultCall: frame, CacheEvidence: &dagql.CacheDecision{Outcome: tc.outcome, MissUnknownInputIndex: -1}}
+			span.SetAttributes(appendFollowsFromInputsAttr(nil, req)...)
+			got := evidenceTestCacheAttrs(t, evidenceTestEndedAttrs(t, sr, span))
+			_, present := got[telemetryattrs.CacheFollowsFromInputsAttr]
+			assert.Equal(t, present, tc.want)
+			if tc.want {
+				assert.Equal(t, got[telemetryattrs.CacheFollowsFromInputsAttr], "true")
+			}
+		})
 	}
 }

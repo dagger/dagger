@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"runtime"
+	"slices"
 	"strconv"
 	"time"
 	"unicode/utf8"
@@ -38,14 +40,46 @@ const exportLayerWorkers = 4
 // has a blob, such as a pulled image's, keeps it. It is also how many build at
 // once: up to exportLayerWorkers per export, and across all exports no more
 // than remotecache.ExportsInFlight serial exports built. Only building a blob
-// takes the gate, so it bounds the engine's compression streams and layer
-// reads.
+// takes the gate, so it bounds the layers the engine mounts and reads at once,
+// and the files their listings hold; how many frames compress at once is the
+// engine's own budget of them, whatever builds. A layer the export computes
+// goes as a listing and its content blobs, so the store keeps each file's
+// contents once.
 var exportRefConfig = config.RefConfig{
 	Compression: compression.New(compression.Zstd),
+	Listings:    true,
 	Builds: config.LayerBuilds{
 		Workers: exportLayerWorkers,
 		Gate:    semaphore.NewWeighted(max(exportLayerWorkers, remotecache.ExportsInFlight)),
 	},
+}
+
+// idleExportRefConfig is exportRefConfig for an export the service asks for
+// while no session runs work, as an engine's last exports as its last
+// session tears down or after it ends: no check runs then, only the
+// session's own cleanup, and the engine stops 20 s after that
+// session, so it reads as many of its layers at once as it has cores, through
+// a gate of their own, their frames compressing under the same budget as
+// every other layer's. A stopping engine's last export can build a hundred
+// layers, and building a few at once left most of its cores idle. The blobs
+// are the same: only how many build at once differs.
+var idleExportRefConfig = config.RefConfig{
+	Compression: exportRefConfig.Compression,
+	Listings:    exportRefConfig.Listings,
+	Builds: config.LayerBuilds{
+		Workers: runtime.NumCPU(),
+		Gate:    semaphore.NewWeighted(int64(runtime.NumCPU())),
+	},
+}
+
+// exportConfig is how an export asked for now builds its layers:
+// idleExportRefConfig while no session runs work (sessionLedger.idle),
+// exportRefConfig otherwise.
+func (a *RemoteCacheAdapter) exportConfig() config.RefConfig {
+	if a.ledger != nil && a.ledger.idle() {
+		return idleExportRefConfig
+	}
+	return exportRefConfig
 }
 
 // CacheIdentity returns the engine cache's identity and generation, which the
@@ -53,6 +87,12 @@ var exportRefConfig = config.RefConfig{
 func (a *RemoteCacheAdapter) CacheIdentity() (string, uint64) {
 	identity := a.cache.Identity()
 	return identity.ID, identity.Generation
+}
+
+// ImageEntries returns the numbers of the cache's entries its engine image
+// ships, which the remote cache integration says in hello.
+func (a *RemoteCacheAdapter) ImageEntries() []uint64 {
+	return a.cache.ImageEntries()
 }
 
 // Export holds the requested entries by number and captures the held roots
@@ -115,7 +155,8 @@ func (a *RemoteCacheAdapter) Export(ctx context.Context, req protocol.Export, kn
 		case err != nil:
 			return err
 		case a.cache.FromImage(res):
-			// The image supplies the part to every engine built from it.
+			// An entry the image ships exports no part, whether or not the
+			// image ships that part (dagql.ErrFromImage).
 		default:
 			outputs = append(outputs, dagql.SelectedValueOutput{Result: res, Address: output.Address})
 		}
@@ -132,11 +173,13 @@ func (a *RemoteCacheAdapter) Export(ctx context.Context, req protocol.Export, kn
 		selection.Roots = append(selection.Roots, root.result)
 	}
 	// leftOut skips the roots the capture left out, in the request's order.
+	// A busy one waits to be told ready (TakeReadyRoots).
 	leftOut := func(left []dagql.LeftOutRoot) {
 		for _, root := range left {
 			reason := protocol.SkipRefused
 			if errors.Is(root.Err, dagql.ErrPersistStateNotReady) {
 				reason = protocol.SkipBusy
+				a.waits.wait(roots[root.Index].number, root)
 			} else {
 				slog.Warn("remote cache export refused a root", "number", roots[root.Index].number, "row", root.Row, "error", root.Err)
 			}
@@ -151,7 +194,7 @@ func (a *RemoteCacheAdapter) Export(ctx context.Context, req protocol.Export, kn
 	captureCtx, captureOp := wcprof.BeginOp(ctx, wcprof.OpKindRemoteCache, "remotecache.export.capture", wcprof.OpOpts{})
 	captured := false
 	var chainsReleased time.Time
-	err := a.cache.WithExportedValues(captureCtx, selection, exportRefConfig, func(captureCtx context.Context, values *dagql.ExportedValues) error {
+	err := a.cache.WithExportedValues(captureCtx, selection, a.exportConfig(), func(captureCtx context.Context, values *dagql.ExportedValues) error {
 		captured = true
 		leftOut(values.LeftOut)
 		carried := make([]uint64, len(values.Bundle.Values))
@@ -266,16 +309,101 @@ const maxLoggedSkippedRoots = 8
 // exportLogAttrs are an export's log attributes: its roots, its skipped roots
 // counted by reason and, when there are at most maxLoggedSkippedRoots of
 // them, named with their reasons, its busy rows (busyReport), then what the
-// bundle holds, with the rows it sent held, and how long the capture and the
-// chains took, and then the capture's phases and the chains' layers. With no
-// bundle, those of the capture and the chains are 0.
+// bundle holds, with the rows it sent held, those of them nothing in it
+// stands on (countHeldUnneeded) and the known rows it left out, and how long the capture and the chains
+// took, and then the capture's phases, with the records it copied among
+// them, and the chains' layers. With no bundle, those of the capture and the
+// chains are 0.
+// carriedContentPreferred counts an export's records whose frame carries
+// the content-preferred digest the engine computed for it: the records, the
+// field's JSON bytes, and the service records with no content digest that
+// carry none, whose hostname a receiving engine derives anew.
+type carriedContentPreferred struct {
+	records, bytes, servicesWithout int
+}
+
+func countCarriedContentPreferred(values []dagql.TransferredValue) carriedContentPreferred {
+	var out carriedContentPreferred
+	for _, value := range values {
+		frame := value.Record.Call
+		if frame == nil {
+			continue
+		}
+		if frame.ContentPreferred != nil {
+			out.records++
+			if raw, err := json.Marshal(frame.ContentPreferred); err == nil {
+				out.bytes += len(raw)
+			}
+			continue
+		}
+		if frame.Type != nil && frame.Type.NamedType == "Service" && frame.ContentDigest() == "" {
+			out.servicesWithout++
+		}
+	}
+	return out
+}
+
+// countHeldUnneeded counts a bundle's held rows that nothing in the bundle
+// stands on: no root, no output on it, named by no output's owner or as a
+// service an output's value binds, and the dependency of no row sent in
+// full. The receiver lands a row sent in full on the rows its dependencies
+// name, and an output on its row; a held row that only held rows depend on
+// carries nothing it reads, since the held row above stands for its
+// closure. One pass over the bundle's roots, outputs and rows, by ordinal.
+func countHeldUnneeded(bundle dagql.ValueBundle) int {
+	stood := make([]bool, len(bundle.Values)+1)
+	stand := func(ordinal uint64) {
+		if ordinal < uint64(len(stood)) {
+			stood[ordinal] = true
+		}
+	}
+	for _, root := range bundle.Roots {
+		stand(uint64(root.Ordinal))
+	}
+	for _, output := range bundle.Outputs {
+		stand(uint64(output.Ordinal))
+		if output.Owner != nil {
+			for _, dep := range output.Owner.DependencyIDs {
+				stand(dep)
+			}
+		}
+		if output.Value != nil {
+			for _, service := range output.Value.Services {
+				stand(service.ServiceResultID)
+			}
+		}
+	}
+	for _, value := range bundle.Values {
+		if value.Held != "" {
+			continue
+		}
+		for _, dep := range value.DependencyIDs {
+			stand(dep)
+		}
+	}
+	unneeded := 0
+	for _, value := range bundle.Values {
+		if value.Held != "" && (uint64(value.Ordinal) >= uint64(len(stood)) || !stood[value.Ordinal]) {
+			unneeded++
+		}
+	}
+	return unneeded
+}
+
 func exportLogAttrs(req protocol.Export, skipped []protocol.SkippedRoot, values *dagql.ExportedValues, capture time.Duration, local exportCapture, busy busyReport) []any {
-	var records, held, outputs int
+	var records, held, heldUnneeded, heldLeftOut, outputs, copied, unpredicted, lateMoved int
+	var keptEveryRow string
 	var chains time.Duration
 	var phases dagql.ExportPhases
 	var stats snapshots.ExportStats
+	var carried carriedContentPreferred
 	if values != nil {
 		records, held, outputs, chains = len(values.Bundle.Values), len(values.Rows.Held), len(values.Bundle.Outputs), values.ChainTime
+		heldUnneeded = countHeldUnneeded(values.Bundle)
+		heldLeftOut = values.LeftOutHeld
+		keptEveryRow = values.KeptEveryRow
+		copied, unpredicted, lateMoved = values.CopiedRows, values.UnpredictedLinks, values.LateMoved
+		carried = countCarriedContentPreferred(values.Bundle.Values)
 		phases = values.Phases
 		if values.Chains != nil {
 			stats = values.Chains.Stats
@@ -300,9 +428,16 @@ func exportLogAttrs(req protocol.Export, skipped []protocol.SkippedRoot, values 
 		attrs = append(attrs, "skipped_roots", named)
 	}
 	attrs = append(attrs, busy.attrs()...)
+	// Why the export left out none of the known rows nothing stands on,
+	// though it could have: only ever a bug (dagql's keepNeededRows).
+	if keptEveryRow != "" {
+		attrs = append(attrs, "held_kept_every_row", keptEveryRow)
+	}
 	return append(attrs,
 		"records", records,
 		"held", held,
+		"held_unneeded", heldUnneeded,
+		"held_left_out", heldLeftOut,
 		"outputs", outputs,
 		"capture", capture,
 		"chains", chains,
@@ -310,20 +445,35 @@ func exportLogAttrs(req protocol.Export, skipped []protocol.SkippedRoot, values 
 		"walk_wait", phases.WalkWait,
 		"walk", phases.Walk,
 		"copy", phases.Copy,
+		"copied", copied,
+		"links_unpredicted", unpredicted,
+		"late_moved", lateMoved,
 		"bundle", phases.Bundle,
-		"retried_stale", phases.RetriedStale,
+		"bundle_passes", phases.BundlePasses,
+		"bundle_known", phases.BundleKnown,
+		"bundle_check", phases.BundleCheck,
+		"bundle_settle", phases.BundleSettle,
+		"bundle_recipes", phases.BundleRecipes,
+		"bundle_values", phases.BundleValues,
+		"bundle_keep", phases.BundleKeep,
 		"layers", stats.Layers,
+		"listings", stats.Listings,
+		"contents", stats.Contents,
 		"layers_reused", stats.LayersReused,
 		"layers_diffed", stats.LayersDiffed,
 		"raw_bytes", stats.RawBytes,
 		"blob_bytes", stats.BlobBytes,
 		"diff_time", stats.DiffTime,
+		"compress_time", stats.CompressTime,
 		"lock_wait", stats.LockWait,
 		"build_wait", stats.BuildWait,
 		"layers_merged", stats.LayersMerged,
 		"merged_raw_bytes", stats.MergedRawBytes,
 		"merged_blob_bytes", stats.MergedBlobBytes,
-		"merged_diff_time", stats.MergedDiffTime)
+		"merged_diff_time", stats.MergedDiffTime,
+		"content_preferred", carried.records,
+		"content_preferred_bytes", carried.bytes,
+		"services_without_content_preferred", carried.servicesWithout)
 }
 
 // offerLogAttrs are an offered part's log attributes: the entry offered to,
@@ -416,27 +566,15 @@ func (a *RemoteCacheAdapter) Merge(ctx context.Context, id uint64, req protocol.
 		return protocol.Merged{}, ErrRemoteCacheAdapterClosed
 	}
 	start := time.Now()
-	// A merge that answers a lookup goes first: the others wait while one
-	// is in progress.
+	// A merge that answers a lookup is the lookup's route; any other carries
+	// roots the engine's lookups deferred.
+	source := dagql.MergeSource{Route: dagql.MergeRouteDeferred, Merge: id}
 	if req.Lookup != 0 {
-		a.lookupMerges.begin()
-		defer a.lookupMerges.end()
-	} else if err := a.lookupMerges.wait(ctx); err != nil {
-		return protocol.Merged{}, err
+		source.Route = dagql.MergeRouteLookup
 	}
-	priorityWait := time.Since(start)
-	// The merge's op is named by its ID, the ID of the protocol request
-	// that carried it, so overlapping merges can be told apart.
-	mergeCtx, mergeOp := wcprof.BeginOp(ctx, wcprof.OpKindRemoteCache, "remotecache.merge", wcprof.OpOpts{})
-	if mergeOp != nil {
-		mergeOp.SetIdent(strconv.FormatUint(id, 10))
-	}
-	reply, err := a.mergeValues(mergeCtx, dagql.CloudCacheID, req.Bundle)
-	if reply.Committed {
-		mergeOp.End(wcprof.OutcomeOK)
-	} else {
-		mergeOp.EndErr(err)
-	}
+	reply, priorityWait, err := a.merge(ctx, "remotecache.merge", strconv.FormatUint(id, 10), req.Lookup != 0, func(ctx context.Context) (dagql.MergeReply, error) {
+		return a.mergeValues(ctx, req.Bundle, source)
+	})
 	held := 0
 	for _, value := range req.Bundle.Values {
 		if value.Held != "" {
@@ -466,14 +604,152 @@ func (a *RemoteCacheAdapter) Merge(ctx context.Context, id uint64, req protocol.
 	if err != nil {
 		slog.Warn("remote cache merge committed, then a release failed", "error", err)
 	}
-	if known != nil {
-		rows := dagql.ExportedRows{Full: make(map[uint64]dagql.RowRevision, len(reply.Values))}
-		for _, value := range reply.Values {
-			rows.Full[value.Number] = value.Revision
-		}
-		known.Merged(rows)
-	}
+	knowMerged(known, reply)
 	return mergedReply(reply), nil
+}
+
+// merge runs one merge of the service's values, a merge's or a restore's
+// part, as an op named name and ident: a merge that answers a lookup goes
+// first, and the others wait while one is in progress. It returns the
+// merge's reply and error, and how long it waited for its turn.
+func (a *RemoteCacheAdapter) merge(ctx context.Context, name, ident string, lookup bool, merge func(context.Context) (dagql.MergeReply, error)) (dagql.MergeReply, time.Duration, error) {
+	start := time.Now()
+	if lookup {
+		a.lookupMerges.begin()
+		defer a.lookupMerges.end()
+	} else if err := a.lookupMerges.wait(ctx); err != nil {
+		return dagql.MergeReply{}, time.Since(start), err
+	}
+	priorityWait := time.Since(start)
+	// The op is named by its ident, so overlapping merges can be told
+	// apart.
+	mergeCtx, mergeOp := wcprof.BeginOp(ctx, wcprof.OpKindRemoteCache, name, wcprof.OpOpts{})
+	if mergeOp != nil {
+		mergeOp.SetIdent(ident)
+	}
+	reply, err := merge(mergeCtx)
+	if reply.Committed {
+		mergeOp.End(wcprof.OutcomeOK)
+	} else {
+		mergeOp.EndErr(err)
+	}
+	return reply, priorityWait, err
+}
+
+// knowMerged adds the rows a committed merge landed on to known: the
+// service holds the records it sent.
+func knowMerged(known *dagql.KnownRows, reply dagql.MergeReply) {
+	if known == nil {
+		return
+	}
+	rows := dagql.ExportedRows{Full: make(map[uint64]dagql.RowRevision, len(reply.Values))}
+	for _, value := range reply.Values {
+		rows.Full[value.Number] = value.Revision
+	}
+	known.Merged(rows)
+}
+
+// CheckRestorePart checks a part of a set file for its merge ahead of it
+// (dagql.Cache.CheckRestoreValues): it reads nothing of the cache's state,
+// and waits for nothing.
+func (a *RemoteCacheAdapter) CheckRestorePart(part dagql.ValueBundle) (*dagql.CheckedValues, error) {
+	if a.stopped.Load() {
+		return nil, ErrRemoteCacheAdapterClosed
+	}
+	return a.checkRestore(part)
+}
+
+// RestorePart merges one part of a set file, as CheckRestorePart checked it,
+// through the path a merge takes (merge), behind the merges that answer
+// lookups, and its rows join known as a merge's do. Its commit holds what it
+// lands on until the reply's Release (dagql.Cache.RestoreCheckedValues). A
+// part that commits is answered even
+// when a release after the commit failed, as a merge is; one refused for
+// stale held rows, such as a later part naming an earlier part's record the
+// engine no longer has, is an error, and holds nothing. source names the set
+// file, for the log of a record whose payload fails at its first use.
+func (a *RemoteCacheAdapter) RestorePart(ctx context.Context, part dagql.ValueBundle, checked *dagql.CheckedValues, unretained []dagql.TransferOrdinal, known *dagql.KnownRows, source string) (dagql.MergeReply, time.Duration, error) {
+	if a.stopped.Load() {
+		return dagql.MergeReply{}, 0, ErrRemoteCacheAdapterClosed
+	}
+	start := time.Now()
+	reply, priorityWait, err := a.merge(ctx, "remotecache.restore", "", false, func(ctx context.Context) (dagql.MergeReply, error) {
+		return a.restoreValues(ctx, checked, unretained, source)
+	})
+	slog.Info("remote cache restore merge",
+		"records", len(part.Values),
+		"roots", len(part.Roots),
+		"committed", reply.Committed,
+		"stale", len(reply.Stale),
+		"kept", reply.Rows.Kept,
+		"unchanged", reply.Rows.Unchanged,
+		"created", reply.Rows.Created,
+		"commitHold", reply.CommitHold,
+		"duration", time.Since(start),
+		"priority_wait", priorityWait,
+		"error", err)
+	if err == nil && len(reply.Stale) > 0 {
+		return dagql.MergeReply{}, priorityWait, fmt.Errorf("%d held rows are stale", len(reply.Stale))
+	}
+	if !reply.Committed {
+		return dagql.MergeReply{}, priorityWait, err
+	}
+	if err != nil {
+		slog.Warn("remote cache restore merge committed, then a release failed", "error", err)
+	}
+	knowMerged(known, reply)
+	return reply, priorityWait, nil
+}
+
+// Landing marks a whole set landing on the cache (dagql.Cache.Landing).
+func (a *RemoteCacheAdapter) Landing() func() {
+	return a.cache.Landing()
+}
+
+// PlanPartFetch plans a fetch ahead of a restored entry's part
+// (dagql.Cache.PlanPartFetch).
+func (a *RemoteCacheAdapter) PlanPartFetch(ctx context.Context, number uint64, part dagql.PartKey) {
+	a.cache.PlanPartFetch(ctx, number, part)
+}
+
+// CacheWork returns the cache's counts a restore's window reads.
+func (a *RemoteCacheAdapter) CacheWork() remotecache.CacheWork {
+	return remotecache.CacheWork{
+		LookupLockWaits: a.cache.LookupLockWaits(),
+		FirstUse:        a.cache.FirstUse(),
+	}
+}
+
+// LateMisses returns the cache's misses on this connection that a merge
+// landing on entries would have served (dagql.Cache.LateRemoteMisses).
+func (a *RemoteCacheAdapter) LateMisses(before time.Time, entries map[uint64]struct{}) []dagql.RemoteMiss {
+	return a.cache.LateRemoteMisses(before, entries)
+}
+
+// Restored keeps what a restore did with a file, for the engine's stop
+// event.
+func (a *RemoteCacheAdapter) Restored(report remotecache.RestoreReport) {
+	a.restoresMu.Lock()
+	defer a.restoresMu.Unlock()
+	a.restores = append(a.restores, report)
+}
+
+// uncountedMisses returns how many lookup misses the cache dropped before
+// a restored part could count them as late, before or after the adapter
+// closed.
+func (a *RemoteCacheAdapter) uncountedMisses() uint64 {
+	return max(a.uncounted.Load(), a.cache.TrimmedRemoteMisses())
+}
+
+// restoreReports returns what the restores did, in the order their files
+// ended: a file's report can come in after a later one's, once its window
+// is read (remotecache.RestoreReport.Window).
+func (a *RemoteCacheAdapter) restoreReports() []remotecache.RestoreReport {
+	a.restoresMu.Lock()
+	reports := slices.Clone(a.restores)
+	a.restoresMu.Unlock()
+	slices.SortStableFunc(reports, func(x, y remotecache.RestoreReport) int { return x.Ended.Compare(y.Ended) })
+	return reports
 }
 
 // mergedReply is the merged message for a committed merge's reply.
@@ -493,6 +769,7 @@ func mergedReply(reply dagql.MergeReply) protocol.Merged {
 			Deps:          nonNilNumbers(value.Deps),
 			Complete:      nonNilAddresses(value.Parts),
 			Offered:       nonNilAddresses(value.OfferedParts),
+			Stored:        value.Stored,
 		})
 	}
 	for _, root := range reply.Roots {

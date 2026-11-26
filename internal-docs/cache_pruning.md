@@ -442,20 +442,21 @@ Configuration is under
 zero resolves to the built-in default, and the resolved target must be positive
 and lower than the maximum.
 
-When the estimate exceeds the maximum, `PruneMetadataEstimate`:
+Before it estimates, `PruneMetadataEstimate` frees the classes that ended since
+the last collection (joined into another, or made and never used), as the next
+collection would: they hold no entry. When the estimate exceeds the maximum,
+it:
 
-1. force-compacts equivalence classes under `egraphMu`
-2. returns without cuts if compaction alone restores the maximum
-3. snapshots active session roots and the retained graph in structural mode
-4. computes active closure and candidates using `KeepDuration=0`, no filters,
+1. snapshots active session roots and the retained graph in structural mode
+2. computes active closure and candidates using `KeepDuration=0`, no filters,
    and the current deterministic order
-5. gives each simulated collected result the same coarse structural credit
+3. gives each simulated collected result the same coarse structural credit
    plus its own payload bytes
-6. reuses the existing greedy ownership simulation until the target is reached
+4. reuses the existing greedy ownership simulation until the target is reached
    or candidates are exhausted
-7. applies persisted-edge cuts through the shared live collector
-8. force-compacts classes again after a non-empty plan and reports the final
-   structural estimate
+5. applies persisted-edge cuts through the shared live collector, which frees
+   the classes the cuts end
+6. reports the final structural estimate
 
 Structural snapshot mode skips physical size measurement, usage-identity
 details, call labels, cloned call frames, digest derivation, and per-root report
@@ -789,25 +790,15 @@ already reclaimed the data.
 That is enough to understand the current prune story at a high level. The
 lease/snapshot side can be documented in finer detail separately.
 
-## Eq-Class Compaction After Prune
+## Eq-Classes Freed As Pruning Ends Them
 
-Pruning can leave the union-find class ID space sparse. Disk prune keeps the
-existing heuristic compaction after removals; it declines when allocated slots
-are less than twice the live roots.
-
-Structural pruning charges the allocated class-slot high-water, so it uses
-forced compaction before planning and after a non-empty cut plan. Forced mode
-rebuilds whenever allocated slots exceed the compacted live slot count, even
-when the normal two-times guard would decline. A pre-plan compaction can resolve
-pressure without evicting a root.
-
-This:
-
-- rebuilds the live eq-class ID space
-- rewrites term input/output eq-class IDs
-- rebuilds eq-class/digest mappings
-- rebuilds output-eq-class membership
-- recomputes term digests
+A prune removes results through the shared live collector, which frees each
+eq-class the removal leaves with no term and no entry, and each class a union
+joined away, as it finishes (`freeEndedEqClassesLocked`). Every live class keeps
+its number: a number names its class for as long as the class lives. Freed
+numbers are taken again by new classes; the class arrays keep their
+high-water length. Structural pruning charges allocated class slots, which
+are then the live classes and those ended since the last collection.
 
 This keeps the e-graph structure tidy after repeated merge-and-prune cycles and
 makes cuts lower the structural class term. It does not broadly rebuild all
@@ -833,8 +824,8 @@ Structural pruning has one separate Prometheus gauge:
 used by the trigger. There are no per-type, per-field, or per-root structural
 metrics.
 
-A structural pass returns and logs only aggregate counts, estimates, compaction
-slot counts, outcome, and duration. A below-threshold call emits no INFO
+A structural pass returns and logs only aggregate counts, estimates, outcome,
+and duration. A below-threshold call emits no INFO
 start/finish record. Manual pruning remains compatible with its existing
 detailed response for disk-stage removals.
 
@@ -898,6 +889,10 @@ timed the `egraphMu` write-lock hold. Compaction reduced the slots from
 1,000,000 to 2,000 in 31.709 ms; the fresh benchmark process reached 4,341,664
 KiB maximum RSS.
 
+Those churn and sparse figures predate freeing classes as they end: the
+churn's session release now frees its 200,000 classes in its own collection,
+and there is no compaction to time.
+
 At one million results, each fixture had `R=T=C=1,000,000` before pruning and a
 4,352,000,000-byte estimate. Every fixture ended with zero results, terms, and
 class slots. The no-match and shared fixtures cut 999,999 persisted roots plus
@@ -953,8 +948,7 @@ ownership model.
 The current dagql prune model treats persisted edges as prunable retention roots
 and protects live session closure and unpruneable roots. Disk mode uses measured
 physical size and worker policies. Structural mode triggers automatically or
-manually from an O(1) `R/T/C` estimate plus reported payload bytes,
-force-compacts class slots, and credits each result an equal structural share
-plus its own payload bytes, without physical details. Both modes reuse the same graph
+manually from an O(1) `R/T/C` estimate plus reported payload bytes, and
+credits each result an equal structural share plus its own payload bytes, without physical details. Both modes reuse the same graph
 snapshot, greedy ownership simulation, live unpruneable recheck, persisted-edge
 cuts, normal ownership cascade, and containerd lease cleanup.

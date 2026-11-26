@@ -7,9 +7,6 @@ import (
 
 	"github.com/opencontainers/go-digest"
 	"golang.org/x/sync/errgroup"
-
-	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/wcprof"
 )
 
 // HasPartHost binds a typed adapter to the stable owning row. Binding never
@@ -31,9 +28,6 @@ func (c *Cache) bindPartHost(row *sharedResult, result AnyResult) {
 	}
 }
 func (host *PartHost) Evaluate(ctx context.Context, parts ...PartKey) error {
-	if err := engine.CheckSnapshotSharePreparation(ctx, "evaluate hosted parts"); err != nil {
-		return err
-	}
 	if len(host.path) == 0 {
 		return host.cache.EvaluateParts(ctx, Result[Typed]{shared: host.row}, parts...)
 	}
@@ -45,7 +39,7 @@ func (host *PartHost) Evaluate(ctx context.Context, parts ...PartKey) error {
 	watch := partReselectWatch{loop: "PartHost.Evaluate"}
 	for {
 		watch.again(ctx, host.row, PersistedPartAddress{OutputPath: host.path})
-		if host.cache.usesPartAcquisition(value, host.row) {
+		if host.cache.usesPartAcquisition(ctx, value, host.row) {
 			err := host.cache.evaluateAcquiredScope(ctx, root, host.row, host.path, parts)
 			if partCanReselect(err) {
 				continue
@@ -94,16 +88,13 @@ func (host *PartHost) Admitted(ctx context.Context) bool {
 // RunNative enters the gate before the body takes any core latch. The raw
 // callback remains the only owner of native completion and consumption.
 func (host *PartHost) RunNative(ctx context.Context, group LazyGroupKey, parts []PartKey, body func(context.Context) error) error {
-	if err := engine.CheckSnapshotSharePreparation(ctx, "run native evaluation"); err != nil {
-		return err
-	}
 	if !host.Admitted(ctx) {
 		return host.Evaluate(ctx, parts...)
 	}
 	token := PartTaskFromContext(ctx)
 	c := host.cache
-	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
-	gate := host.row.partGate.loadOrCreate()
+	c.lockGraphForCtx(ctx, workPart)
+	gate := host.row.partGateCell().loadOrCreate()
 	gate.mu.Lock()
 	groupAddress := LazyGroupAddress{OutputPath: host.path, Group: group}
 	key := lazyGroupAddressKey(groupAddress)
@@ -129,7 +120,7 @@ func (host *PartHost) RunNative(ctx context.Context, group LazyGroupKey, parts [
 	c.egraphMu.Unlock()
 	err := body(ctx)
 	// Native core callbacks have released their latches before this publication.
-	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+	c.lockGraphForCtx(ctx, workPart)
 	gate.mu.Lock()
 	current := gate.groups[key]
 	if current.task == token {
@@ -163,7 +154,7 @@ func (host *PartHost) AddDependencies(ctx context.Context, deps []AnyResult) err
 		return nil
 	}
 	c := host.cache
-	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+	c.lockGraphForCtx(ctx, workPart)
 	defer c.egraphMu.Unlock()
 	if _, found := c.resultsByID[host.row.id]; !found {
 		return fmt.Errorf("add part dependencies: result %d was already collected", host.row.id)
@@ -216,11 +207,12 @@ func (host *PartHost) DecodeContext(ctx context.Context) *PersistDecodeContext {
 	return host.cache.partDecodeContext(ctx, host.row, PersistedRecord{Call: host.row.loadResultCall(), SnapshotLinks: host.row.loadSnapshotOwnerLinks()}).atPath(host.path)
 }
 
-func (host *PartHost) Managed() bool { return host != nil && host.row.partGate.active.Load() }
+func (host *PartHost) Managed() bool { return host != nil && host.row.partGateActive() }
 
 func (c *Cache) partHostFor(row *sharedResult) *PartHost {
-	row.partGate.hostOnce.Do(func() { row.partGate.host = PartHost{cache: c, row: row} })
-	return &row.partGate.host
+	cell := row.partGateCell()
+	cell.hostOnce.Do(func() { cell.host = PartHost{cache: c, row: row} })
+	return &cell.host
 }
 
 func (host *PartHost) at(path PersistedRefPath) *PartHost {
@@ -258,8 +250,8 @@ func (c *Cache) validateInlineBorrow(host *PartHost, req *CallRequest, val AnyRe
 	if host == nil || len(host.path) == 0 || host.cache != c || req.Receiver == nil {
 		return fmt.Errorf("invalid inline borrow")
 	}
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workPart)
+	defer read.Unlock()
 	if c.resultsByID[host.row.id] != host.row {
 		return fmt.Errorf("inline borrow owner disappeared")
 	}

@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
 
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 )
@@ -49,7 +51,7 @@ func TestRemoteLookupQueuesMisses(t *testing.T) {
 	frame := cacheTestIntCall("missed", extra)
 	run := func(frame *ResultCall, doNotCache bool) {
 		t.Helper()
-		_, err := c.GetOrInitCall(ctx, sessionID, srv, &CallRequest{ResultCall: frame.clone(), DoNotCache: doNotCache}, func(context.Context) (AnyResult, error) {
+		_, err := c.GetOrInitCall(ctx, sessionID, srv, &CallRequest{ResultCall: frame.clone(), DoNotCache: doNotCache, CacheReported: true}, func(context.Context) (AnyResult, error) {
 			return cacheTestIntResult(frame, 1), nil
 		})
 		require.NoError(t, err)
@@ -59,19 +61,25 @@ func TestRemoteLookupQueuesMisses(t *testing.T) {
 	require.Empty(t, queuedMisses(t, bridge), "nothing is queued while no connection serves lookups")
 
 	bridge.StartRemoteLookups()
-	req := &CallRequest{ResultCall: frame.clone(), CacheEvidence: NewCacheDecision()}
+	before := time.Now()
+	req := &CallRequest{ResultCall: frame.clone(), CacheEvidence: NewCacheDecision(), CacheReported: true}
 	_, err := c.GetOrInitCall(ctx, sessionID, srv, req, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(frame, 1), nil
 	})
 	require.NoError(t, err)
 	require.NotEmpty(t, req.CacheEvidence.SelfDigest)
+	missed := queuedMisses(t, bridge)
+	require.Len(t, missed, 1)
+	require.False(t, missed[0].At.Before(before), "the miss is stamped with when it missed")
+	require.False(t, missed[0].At.After(time.Now()))
+	missed[0].At = time.Time{}
 	require.Equal(t, []RemoteMiss{{
 		Recipe: cacheTestCallDigest(frame),
 		Extra:  []digest.Digest{extra.Digest},
 		Field:  "missed",
 		Self:   req.CacheEvidence.SelfDigest,
 		Inputs: req.CacheEvidence.StructuralInputs,
-	}}, queuedMisses(t, bridge), "the miss names its recipe, extras and the term its lookup tried")
+	}}, missed, "the miss names its recipe, extras and the term its lookup tried")
 
 	run(frame, false)
 	require.Empty(t, queuedMisses(t, bridge), "a hit queues nothing")
@@ -90,6 +98,100 @@ func TestRemoteLookupQueuesMisses(t *testing.T) {
 	require.Len(t, queuedMisses(t, bridge), 1)
 }
 
+// The service learns a call only from the cache decision telemetry reports
+// for it, so a miss asks it only about a call whose decision is reported: a
+// call telemetry leaves out, such as one building a module's type
+// definitions, queues nothing, with or without evidence armed for profiling.
+func TestRemoteLookupOnlyReportedCalls(t *testing.T) {
+	ctx, c, srv, sessionID, bridge := lookupTestCache(t)
+	bridge.StartRemoteLookups()
+	miss := func(field string, reported bool, evidence *CacheDecision) *CallRequest {
+		t.Helper()
+		frame := cacheTestIntCall(field)
+		req := &CallRequest{ResultCall: frame.clone(), CacheReported: reported, CacheEvidence: evidence}
+		_, err := c.GetOrInitCall(ctx, sessionID, srv, req, func(context.Context) (AnyResult, error) {
+			return cacheTestIntResult(frame, 1), nil
+		})
+		require.NoError(t, err)
+		return req
+	}
+
+	miss("unreported", false, nil)
+	armed := miss("armed", false, NewCacheDecision())
+	require.Empty(t, queuedMisses(t, bridge), "a call telemetry doesn't report asks the service nothing")
+	require.Empty(t, armed.CacheEvidence.MissRemoteLookup, "its evidence records no lookup")
+
+	reported := miss("reported", true, NewCacheDecision())
+	misses := queuedMisses(t, bridge)
+	require.Len(t, misses, 1, "a reported call's miss is asked")
+	require.Equal(t, cacheTestCallDigest(cacheTestIntCall("reported")), misses[0].Recipe)
+	require.Equal(t, RemoteLookupQueued, reported.CacheEvidence.MissRemoteLookup)
+
+	miss("reported-unarmed", true, nil)
+	require.Len(t, queuedMisses(t, bridge), 1, "whether this engine's span records doesn't matter: another engine's may have")
+}
+
+// A call keyed to its session, one of its clients or itself names that key
+// in its recipe and its term, so no other engine can have it: its miss asks
+// the service nothing. One with an extra digest is asked, since another
+// engine's value can have that digest, and so is a call keyed by an input
+// that names no session, and a call made on a keyed call's result, whose own
+// inputs name no key.
+func TestRemoteLookupSkipsSessionBoundCalls(t *testing.T) {
+	t.Parallel()
+	ctx, c, srv, sessionID, bridge := lookupTestCache(t)
+	bridge.StartRemoteLookups()
+	scoped := "cacheTestSessionScoped:" + t.Name()
+	SessionScopedInput(scoped)
+	keyed := func(field, input, value string, extras ...call.ExtraDigest) *ResultCall {
+		frame := cacheTestIntCall(field, extras...)
+		frame.ImplicitInputs = []*ResultCallArg{{
+			Name:  input,
+			Value: &ResultCallLiteral{Kind: ResultCallLiteralKindString, StringValue: value},
+		}}
+		return frame
+	}
+	miss := func(frame *ResultCall) string {
+		t.Helper()
+		req := &CallRequest{ResultCall: frame.clone(), CacheReported: true, CacheEvidence: NewCacheDecision()}
+		_, err := c.GetOrInitCall(ctx, sessionID, srv, req, func(context.Context) (AnyResult, error) {
+			return cacheTestIntResult(frame, 1), nil
+		})
+		require.NoError(t, err)
+		return req.CacheEvidence.MissRemoteLookup
+	}
+
+	perClient := keyed("perClient", PerClientInput.Name, "client")
+	for _, frame := range []*ResultCall{
+		perClient,
+		keyed("perSession", PerSessionInput.Name, "session"),
+		keyed("perCall", PerCallInput.Name, "call"),
+		keyed("sessionScoped", scoped, "session"),
+	} {
+		require.Empty(t, miss(frame), "%s's miss asks nothing", frame.Field)
+	}
+	require.Empty(t, queuedMisses(t, bridge), "no other engine can have a call keyed to its session, a client or itself")
+
+	content := call.ExtraDigest{Digest: digest.FromString("content"), Label: call.ExtraDigestLabelContent}
+	onKeyed := cacheTestIntCall("onPerClient")
+	onKeyed.Receiver = &ResultCallRef{Call: perClient}
+	var want []string
+	for _, frame := range []*ResultCall{
+		keyed("perClientByContent", PerClientInput.Name, "client", content),
+		keyed("sessionScopedUnset", scoped, ""),
+		keyed("perSchema", "cachePerSchema", "schema"),
+		onKeyed,
+	} {
+		require.Equal(t, RemoteLookupQueued, miss(frame), frame.Field)
+		want = append(want, frame.Field)
+	}
+	var queued []string
+	for _, m := range queuedMisses(t, bridge) {
+		queued = append(queued, m.Field)
+	}
+	require.Equal(t, want, queued)
+}
+
 // A miss names at most remoteLookupMaxExtras extra digests.
 func TestRemoteLookupBoundsExtras(t *testing.T) {
 	ctx, c, srv, sessionID, bridge := lookupTestCache(t)
@@ -99,7 +201,7 @@ func TestRemoteLookupBoundsExtras(t *testing.T) {
 		extras = append(extras, call.ExtraDigest{Digest: digest.FromString(fmt.Sprint("extra", i)), Label: "extra"})
 	}
 	frame := cacheTestIntCall("extras", extras...)
-	_, err := c.GetOrInitCall(ctx, sessionID, srv, &CallRequest{ResultCall: frame.clone()}, func(context.Context) (AnyResult, error) {
+	_, err := c.GetOrInitCall(ctx, sessionID, srv, &CallRequest{ResultCall: frame.clone(), CacheReported: true}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(frame, 1), nil
 	})
 	require.NoError(t, err)
@@ -216,4 +318,188 @@ func TestRemoteLookupMissFact(t *testing.T) {
 		bridge.noteRemoteMiss(RemoteMiss{Recipe: digest.FromString(fmt.Sprint("filler", i))})
 	}
 	require.Equal(t, RemoteLookupDropped, miss("dropped"))
+}
+
+// A miss queued before a merge is late for it when its lookup now finds an
+// entry the merge landed on: it is returned once, never for a merge that
+// landed elsewhere or for a miss after the merge, and not on a later
+// connection.
+func TestLateRemoteMisses(t *testing.T) {
+	ctx, c, srv, sessionID, bridge := lookupTestCache(t)
+	bridge.StartRemoteLookups()
+	frame := cacheTestIntCall("late")
+	beforeMiss := time.Now()
+	res, err := c.GetOrInitCall(ctx, sessionID, srv, &CallRequest{ResultCall: frame.clone(), CacheReported: true}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(frame, 1), nil
+	})
+	require.NoError(t, err)
+	landed := map[uint64]struct{}{uint64(res.cacheSharedResult().id): {}}
+
+	require.Empty(t, c.LateRemoteMisses(beforeMiss, landed), "a miss after the merge isn't late for it")
+	require.Empty(t, c.LateRemoteMisses(time.Now(), map[uint64]struct{}{uint64(res.cacheSharedResult().id) + 1000: {}}), "a merge that landed elsewhere wouldn't have served it")
+	late := c.LateRemoteMisses(time.Now(), landed)
+	require.Len(t, late, 1)
+	require.Equal(t, cacheTestCallDigest(frame), late[0].Recipe)
+	require.Empty(t, c.LateRemoteMisses(time.Now(), landed), "a miss is late once")
+
+	other := cacheTestIntCall("late on the next connection")
+	res, err = c.GetOrInitCall(ctx, sessionID, srv, &CallRequest{ResultCall: other.clone(), CacheReported: true}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(other, 2), nil
+	})
+	require.NoError(t, err)
+	bridge.StopRemoteLookups()
+	bridge.StartRemoteLookups()
+	require.Empty(t, c.LateRemoteMisses(time.Now(), map[uint64]struct{}{uint64(res.cacheSharedResult().id): {}}), "a connection's misses end with it")
+}
+
+// A full miss log makes room by dropping the misses already returned, then
+// its oldest, so a merge that lands late on a long-lived connection is still
+// counted against the recent misses.
+func TestLateRemoteMissesKeepTheRecentMisses(t *testing.T) {
+	_, c, _, _, bridge := lookupTestCache(t) //nolint:dogsled // the test reads only the cache and its bridge
+	bridge.StartRemoteLookups()
+	l := &bridge.lookups
+	miss := func(i int) RemoteMiss {
+		return RemoteMiss{Recipe: digest.FromString(fmt.Sprint("recipe", i)), At: time.Now()}
+	}
+	for i := range remoteLookupLogCapacity {
+		bridge.noteRemoteMiss(miss(i))
+		// Keep the queue from refusing misses: only the log is under test.
+		l.mu.Lock()
+		l.queue = l.queue[:0]
+		l.mu.Unlock()
+	}
+	bridge.noteRemoteMiss(miss(remoteLookupLogCapacity))
+	require.Equal(t, uint64(remoteLookupLogCapacity/4), c.TrimmedRemoteMisses(), "the misses dropped uncounted are counted")
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	require.Len(t, l.missed, remoteLookupLogCapacity*3/4+1)
+	require.Equal(t, miss(remoteLookupLogCapacity/4).Recipe, l.missed[0].miss.Recipe, "the oldest quarter is dropped")
+	require.Equal(t, miss(remoteLookupLogCapacity).Recipe, l.missed[len(l.missed)-1].miss.Recipe, "the newest miss is kept")
+}
+
+// A trim of the log while a scan checks its candidates doesn't lose the
+// scan: a late miss the trim kept is still returned, once.
+func TestLateRemoteMissesSurviveATrim(t *testing.T) {
+	ctx, c, srv, sessionID, bridge := lookupTestCache(t)
+	bridge.StartRemoteLookups()
+	frame := cacheTestIntCall("late across a trim")
+	res, err := c.GetOrInitCall(ctx, sessionID, srv, &CallRequest{ResultCall: frame.clone(), CacheReported: true}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(frame, 1), nil
+	})
+	require.NoError(t, err)
+	l := &bridge.lookups
+	// The trim lands while the scan is between its two holds of the lock:
+	// an older miss is added first, so the trim drops something.
+	l.mu.Lock()
+	l.missed = append([]loggedMiss{{miss: RemoteMiss{Recipe: "xxh3:old", At: time.Now()}, found: true}}, l.missed...)
+	l.mu.Unlock()
+	landed := map[uint64]struct{}{uint64(res.cacheSharedResult().id): {}}
+	c.testBetweenLateMissHolds = func() {
+		l.mu.Lock()
+		l.trimMissedLocked()
+		l.mu.Unlock()
+	}
+	late := c.LateRemoteMisses(time.Now(), landed)
+	require.Len(t, late, 1)
+	require.Equal(t, cacheTestCallDigest(frame), late[0].Recipe)
+	c.testBetweenLateMissHolds = nil
+	require.Empty(t, c.LateRemoteMisses(time.Now(), landed))
+}
+
+// A miss is late for a part by any digest its lookup tries, its recipe's or
+// an extra digest's, and by its term alone, its self digest over its inputs'
+// classes: the late count finds the misses a lookup would, by whichever the
+// part's entries are found. A term an input of which has no class finds
+// nothing.
+func TestLateRemoteMissesFindByEveryDigestAndByTerm(t *testing.T) {
+	t.Parallel()
+	ctx, c, srv, sessionID, bridge := lookupTestCache(t)
+	content := call.ExtraDigest{Digest: digest.FromString("late content"), Label: call.ExtraDigestLabelContent}
+	frame := cacheTestIntCall("late by its content", content)
+	res, err := c.GetOrInitCall(ctx, sessionID, srv, &CallRequest{ResultCall: frame.clone()}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(frame, 1), nil
+	})
+	require.NoError(t, err)
+	byContent := uint64(res.cacheSharedResult().id)
+	byTerm, term := lateMissTestTermEntry(t, ctx, c, srv, sessionID, "late by its term")
+
+	bridge.StartRemoteLookups()
+	noted := func(miss RemoteMiss) RemoteMiss {
+		t.Helper()
+		miss.At = time.Now()
+		require.Equal(t, RemoteLookupQueued, bridge.noteRemoteMiss(miss))
+		return miss
+	}
+	extra := noted(RemoteMiss{Recipe: digest.FromString("a recipe the content is the same as"), Extra: []digest.Digest{content.Digest}})
+	termOnly := noted(RemoteMiss{Recipe: digest.FromString("a recipe the term is the same as"), Self: term.Self, Inputs: term.Inputs})
+	noted(RemoteMiss{Recipe: digest.FromString("an input with no class"), Self: term.Self, Inputs: []digest.Digest{digest.FromString("unknown input")}})
+	noted(RemoteMiss{Recipe: digest.FromString("unrelated"), Extra: []digest.Digest{digest.FromString("unrelated content")}})
+
+	require.Equal(t, []RemoteMiss{extra}, c.LateRemoteMisses(time.Now(), map[uint64]struct{}{byContent: {}}))
+	require.Equal(t, []RemoteMiss{termOnly}, c.LateRemoteMisses(time.Now(), map[uint64]struct{}{byTerm: {}}))
+	require.Empty(t, c.LateRemoteMisses(time.Now(), map[uint64]struct{}{byContent: {}, byTerm: {}}), "each is late once")
+}
+
+// A part's late count reads the graph in a fixed number of holds, however
+// many misses its connection logged: it asks for the misses its own entries
+// can be found by, not for every miss whether it finds one of them. A count
+// that held the graph lock once or more for each logged miss cost more as an
+// engine's connection aged, and waited behind the graph's writers once for
+// each.
+func TestLateRemoteMissesReadTheGraphInAFewHolds(t *testing.T) {
+	t.Parallel()
+	ctx, c, srv, sessionID, bridge := lookupTestCache(t)
+	landedFrame := cacheTestIntCall("landed")
+	res, err := c.GetOrInitCall(ctx, sessionID, srv, &CallRequest{ResultCall: landedFrame.clone()}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(landedFrame, 1), nil
+	})
+	require.NoError(t, err)
+	landed := map[uint64]struct{}{uint64(res.cacheSharedResult().id): {}}
+
+	bridge.StartRemoteLookups()
+	var receiver AnyResult
+	for i := range 1000 {
+		frame := cacheTestIntCall(fmt.Sprint("missed ", i))
+		if i%2 == 1 {
+			frame.Receiver = &ResultCallRef{ResultID: uint64(receiver.cacheSharedResult().id)}
+		}
+		receiver, err = c.GetOrInitCall(ctx, sessionID, srv, &CallRequest{ResultCall: frame, CacheReported: true}, func(context.Context) (AnyResult, error) {
+			return cacheTestIntResult(frame, i), nil
+		})
+		require.NoError(t, err)
+	}
+	bridge.lookups.mu.Lock()
+	require.Len(t, bridge.lookups.missed, 1000)
+	bridge.lookups.mu.Unlock()
+
+	var holds atomic.Int64
+	stop := c.ObserveGraphReadHolds(func(wcprof.LockHolder, time.Duration, time.Duration) { holds.Add(1) })
+	late := c.LateRemoteMisses(time.Now(), landed)
+	stop()
+	require.Empty(t, late)
+	require.LessOrEqual(t, holds.Load(), int64(2), "the count's holds of the graph lock for reading")
+}
+
+// lateMissTestTermEntry stores a call over a receiver, and returns its entry
+// and the term a lookup of it tries: its self digest and its receiver's
+// digest as its input.
+func lateMissTestTermEntry(t *testing.T, ctx context.Context, c *Cache, srv *Server, sessionID, field string) (uint64, RemoteMiss) {
+	t.Helper()
+	receiverFrame := cacheTestIntCall(field + " receiver")
+	receiver, err := c.GetOrInitCall(ctx, sessionID, srv, &CallRequest{ResultCall: receiverFrame.clone()}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(receiverFrame, 1), nil
+	})
+	require.NoError(t, err)
+	frame := cacheTestIntCall(field)
+	frame.Receiver = &ResultCallRef{ResultID: uint64(receiver.cacheSharedResult().id)}
+	req := cacheTestArmedRequest(frame.clone())
+	req.CacheReported = false
+	res, err := c.GetOrInitCall(ctx, sessionID, srv, req, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(frame, 2), nil
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, req.CacheEvidence.SelfDigest)
+	require.Len(t, req.CacheEvidence.StructuralInputs, 1)
+	return uint64(res.cacheSharedResult().id), RemoteMiss{Self: req.CacheEvidence.SelfDigest, Inputs: req.CacheEvidence.StructuralInputs}
 }

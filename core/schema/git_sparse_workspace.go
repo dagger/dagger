@@ -202,6 +202,33 @@ func gitWorkspaceModuleConfig(ctx context.Context, files *core.GitTreeFiles, dir
 	return nil, nil
 }
 
+// sparseTreeFields are the questions about a sparse workspace tree that
+// sessions ask under no cached call: whether looking a path up in it answers
+// as the full checkout does, which workspace detection and the config readers
+// ask in every session (core.GitSparseTree). Each is a call on the tree, so a
+// hit answers it from the call's record without the tree's files. It's a
+// function of the tree alone, whose recipe holds its commit and workspace
+// directory. On a directory that isn't a sparse workspace tree, which has no
+// list beside it, it fails.
+func (s *gitSchema) sparseTreeFields() dagql.Fields[*core.Directory] {
+	return dagql.Fields[*core.Directory]{
+		dagql.NodeFunc("__gitSparseCovers", s.gitSparseCovers).
+			View(AfterVersion("v1.0.0-beta.26")).
+			IsPersistable().
+			Doc(`(Internal-only) Whether looking the path up in this sparse workspace tree answers as the full checkout does.`).
+			Args(dagql.Arg("path").Doc("The path, from the repository's root.")),
+	}
+}
+
+type gitSparseCoversArgs struct {
+	Path string
+}
+
+func (s *gitSchema) gitSparseCovers(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args gitSparseCoversArgs) (dagql.Boolean, error) {
+	covered, err := core.GitSparseTreeCovers(ctx, parent, args.Path)
+	return dagql.NewBoolean(covered), err
+}
+
 type sparseFilesArgs struct {
 	Files []string
 	Dirs  []string `default:"[]"`

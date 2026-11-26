@@ -13,7 +13,7 @@ import (
 // filesystemOutput guards typed publication. Publication writes under
 // outputMu's write lock; reads share its read lock, so one reader does not
 // refuse another on outputMu: a span reading its call's complete parts can
-// overlap a snapshot-sharing probe of the same value. An unevaluated body's
+// overlap another reader of the same value. An unevaluated body's
 // latch still admits one reader at a time. The body latch is retained after
 // acquisition replaces Lazy so direct callers are excluded until their body
 // returns; readers record it too, so it is atomic. OutputRev is process-local

@@ -125,6 +125,7 @@ func (*Module) TypeDescription() string {
 var _ dagql.PersistedObject = (*Module)(nil)
 var _ dagql.PersistedObjectDecoder = (*Module)(nil)
 var _ dagql.HasDependencyResults = (*Module)(nil)
+var _ dagql.HasResultReference = (*Module)(nil)
 
 func (mod *Module) Name() string {
 	return mod.NameField
@@ -1103,6 +1104,26 @@ func (mod *Module) AttachDependencyResults(
 	return owned, nil
 }
 
+// InitializeResultReference gives a Module decoded from a stored record its
+// own entry in its dependencies, as AttachDependencyResults gives a module
+// built fresh. EncodePersistedObject leaves that entry out, since a record
+// can't reference itself, and the cache doesn't run AttachDependencyResults
+// for a decoded payload. Without it, the module's SDK would serve the module
+// an API without its own constructor, so a module that calls itself, as a
+// Dang module can, would fail.
+func (mod *Module) InitializeResultReference(self dagql.AnyResult) {
+	if !mod.IncludeSelfInDeps {
+		return
+	}
+	selfMod := NewUserMod(self.(dagql.ObjectResult[*Module]))
+	if mod.Deps != nil {
+		mod.Deps = mod.Deps.Append(selfMod)
+	}
+	if mod.EntrypointDeps != nil {
+		mod.EntrypointDeps = mod.EntrypointDeps.Append(selfMod)
+	}
+}
+
 type persistedModulePayload struct {
 	SourceResultID                uint64                          `json:"sourceResultID,omitempty"`
 	ContextSourceResultID         uint64                          `json:"contextSourceResultID,omitempty"`
@@ -1236,6 +1257,19 @@ func (mod *Module) EncodePersistedObject(ctx context.Context, enc *dagql.Persist
 	return encodePersistedObjectRawJSON(jsonBytes), nil
 }
 
+// persistedModuleDefaultDeps is a decoded module's default dependencies:
+// Query.DefaultDeps, with its core module pinned to view, the core API view
+// of the decoded module (see Module.coreView), as a fresh load pins it to
+// the module's declared engine version, since the persisted payload does not
+// record it. An empty view keeps the default's.
+func persistedModuleDefaultDeps(ctx context.Context, query *Query, view call.View) (*SchemaBuilder, error) {
+	deps, err := query.DefaultDeps(ctx)
+	if err != nil || view == "" {
+		return deps, err
+	}
+	return deps.WithCoreView(view), nil
+}
+
 func (*Module) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	var persisted persistedModulePayload
 	if err := unmarshalPersistedPayload(payload, &persisted); err != nil {
@@ -1271,10 +1305,7 @@ func (*Module) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDeco
 	if sourceRes.Self() != nil {
 		coreView = (&Module{Source: dagql.NonNull(sourceRes)}).coreView()
 	}
-	// Under a sharing preparation marker this returns a fresh builder from
-	// the registered core descriptors instead of asking the engine root for
-	// a client's defaults; every other caller keeps Query.DefaultDeps.
-	deps, err := persistedDecodeDefaultDeps(ctx, dec, query, coreView)
+	deps, err := persistedModuleDefaultDeps(ctx, query, coreView)
 	if err != nil {
 		return nil, fmt.Errorf("decode persisted module default deps: %w", err)
 	}
@@ -1288,7 +1319,7 @@ func (*Module) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDeco
 	}
 	var entrypointDeps *SchemaBuilder
 	if persisted.HasEntrypointDeps {
-		entrypointDeps, err = persistedDecodeDefaultDeps(ctx, dec, query, coreView)
+		entrypointDeps, err = persistedModuleDefaultDeps(ctx, query, coreView)
 		if err != nil {
 			return nil, fmt.Errorf("decode persisted module default deps: %w", err)
 		}

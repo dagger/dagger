@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"time"
-
-	"github.com/dagger/dagger/engine/wcprof"
 )
 
 type sharedResultLookupMode uint8
@@ -76,7 +74,15 @@ func (c *Cache) sharedResultByResultID(ctx context.Context, sessionID string, re
 		return sharedResultLookup{}, fmt.Errorf("resolve result %d: canonical equivalent lookup requires session ID", resultID)
 	}
 	if sessionID == "" {
-		wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
+		// A decode under a load that read its graph (graphReads) finds the
+		// entries its payloads name there.
+		if row := graphReadsOf(ctx).row(resultID); row != nil {
+			if row.noValue {
+				return sharedResultLookup{}, fmt.Errorf("resolve result %d: %w", resultID, errEntryHasNoValue)
+			}
+			return sharedResultLookup{res: row.res, requiredGenAtCheck: row.res.requiredSessionResourcesGen.Load()}, nil
+		}
+		readHold := c.readLockGraphGathered(ctx, workOther)
 		res := c.resultsByID[resultID]
 		var (
 			requiredGenAtCheck uint64
@@ -86,7 +92,7 @@ func (c *Cache) sharedResultByResultID(ctx context.Context, sessionID string, re
 			requiredGenAtCheck = res.requiredSessionResourcesGen.Load()
 			noValue = res.noValueLocked()
 		}
-		c.egraphMu.RUnlock()
+		readHold.Unlock()
 		if res == nil {
 			return sharedResultLookup{}, fmt.Errorf("resolve result %d: missing shared result", resultID)
 		}
@@ -101,8 +107,8 @@ func (c *Cache) sharedResultByResultID(ctx context.Context, sessionID string, re
 	// The deferred unlock matters on panic: resolvePath recovers a panic
 	// raised in this section, and a lock left held would block every later
 	// cache operation in the engine.
-	wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
-	defer c.egraphMu.RUnlock()
+	readHold := c.readLockGraphGathered(ctx, workOther)
+	defer readHold.Unlock()
 	res := c.resultsByID[resultID]
 	if res == nil {
 		return sharedResultLookup{}, fmt.Errorf("resolve result %d: missing shared result", resultID)

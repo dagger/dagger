@@ -24,26 +24,41 @@ import (
 
 var checksumG singleflight.Group[string, digest.Digest]
 
+// GetContentHashFromDirectory returns the content digest of the directory
+// rooted at dirPath in snapshot. A Directory is rooted at its path within its
+// snapshot, and that path is part of what it is: Directory.name reads it, and
+// Directory.diff takes only directories rooted at /. So the content digest of
+// a directory rooted anywhere but / says where its files are rooted as well as
+// what they are, as a file's says its path, and filesDigest is the hash of its
+// files alone. A directory rooted at / is keyed by its files alone, and
+// filesDigest is "".
 func GetContentHashFromDirectory(
 	ctx context.Context,
 	snapshot bkcache.ImmutableRef,
 	dirPath string,
-) (digest.Digest, error) {
+) (contentDigest digest.Digest, filesDigest digest.Digest, _ error) {
 	if snapshot == nil {
-		return "", fmt.Errorf("failed to get directory snapshot: nil")
+		return "", "", fmt.Errorf("failed to get directory snapshot: nil")
 	}
 
-	if !strings.HasSuffix(dirPath, "/") {
+	hashPath := dirPath
+	if !strings.HasSuffix(hashPath, "/") {
 		// omit directory name from the hash
-		dirPath += "/"
+		hashPath += "/"
 	}
-	dgst, err := getContentHashFromRef(ctx, snapshot, dirPath)
+	filesDigest, err := getContentHashFromRef(ctx, snapshot, hashPath)
 	if err != nil {
-		return "", fmt.Errorf("failed to get content hash: %w", err)
+		return "", "", fmt.Errorf("failed to get content hash: %w", err)
 	}
-	dagql.TraceEGraphDebug(ctx, "directory_content_hash_from_ref", "phase", "runtime", "path", dirPath, "snapshot_ref_id", snapshot.SnapshotID(), "content_digest", dgst)
+	contentDigest = filesDigest
+	if root := path.Join("/", dirPath); root != "/" {
+		contentDigest = hashutil.HashStrings(root, string(filesDigest))
+	} else {
+		filesDigest = ""
+	}
+	dagql.TraceEGraphDebug(ctx, "directory_content_hash_from_ref", "phase", "runtime", "path", hashPath, "snapshot_ref_id", snapshot.SnapshotID(), "content_digest", contentDigest, "files_digest", filesDigest)
 
-	return dgst, nil
+	return contentDigest, filesDigest, nil
 }
 
 func GetContentHashFromFile(

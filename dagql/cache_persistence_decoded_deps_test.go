@@ -177,7 +177,7 @@ func TestCachePersistenceDecodedPayloadOwnsDecoderSuppliedResults(t *testing.T) 
 			}
 			assertDecodeOwnerModules(t, loaded)
 			cacheB.egraphMu.RLock()
-			_, owns := cacheB.resultsByID[sharedResultID(rowID)].deps[sharedResultID(moduleBID)]
+			owns := cacheB.resultsByID[sharedResultID(rowID)].deps.has(sharedResultID(moduleBID))
 			cacheB.egraphMu.RUnlock()
 			assert.Assert(t, owns, "the decoded row must own the decoder-supplied module")
 

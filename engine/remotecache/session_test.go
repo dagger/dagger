@@ -46,7 +46,11 @@ func (c *recordingConn) Read(ctx context.Context) ([]byte, error) {
 	return nil, context.Cause(ctx)
 }
 
-func (c *recordingConn) Write(_ context.Context, data []byte) error {
+func (c *recordingConn) Write(_ context.Context, msg protocol.Message) error {
+	data, err := protocol.DecodeMessage(msg.Data, msg.Compressed, protocol.MaxMessageBytes)
+	if err != nil {
+		return err
+	}
 	var env protocol.Envelope
 	if err := json.Unmarshal(data, &env); err != nil {
 		return err
@@ -58,7 +62,9 @@ func (c *recordingConn) Write(_ context.Context, data []byte) error {
 	return nil
 }
 
-func (c *recordingConn) Ping(context.Context) error { return nil }
+// Arrived is always now: these tests don't model the wire, so a probe never
+// finds the connection silent.
+func (c *recordingConn) Arrived() time.Time { return time.Now() }
 
 func (c *recordingConn) CloseNow() error {
 	c.closed.Store(true)
@@ -136,6 +142,38 @@ type fakeAdapter struct {
 	settle   SettleState
 	settleCh chan struct{}
 	settled  chan settledCall
+
+	// plannedMu guards planned, the fetches a restore planned
+	// (PlanPartFetch), in order.
+	plannedMu sync.Mutex
+	planned   []plannedFetchCall
+
+	// restore merges a restore's part, after restoreSeen receives it; late
+	// answers LateMisses, and restored receives each file's report.
+	restore     func(context.Context, dagql.ValueBundle, *dagql.KnownRows) (dagql.MergeReply, error)
+	late        func(time.Time, map[uint64]struct{}) []dagql.RemoteMiss
+	restored    chan RestoreReport
+	restoreSeen chan dagql.ValueBundle
+	// check, if set, answers CheckRestorePart's error for each part it
+	// checks.
+	check func(dagql.ValueBundle) error
+	// unretainedSeen receives each part's unretained roots, and sourceSeen
+	// the first part's file name.
+	unretainedSeen chan []dagql.TransferOrdinal
+	sourceSeen     chan string
+	// priorityWait is what RestorePart returns as its part's wait behind
+	// lookup merges; landing counts the wholes marked landing now, and work
+	// is what CacheWork returns.
+	priorityWait time.Duration
+	landing      atomic.Int64
+	work         func() CacheWork
+	// image is what ImageEntries returns.
+	image []uint64
+	// ready are the batches TakeReadyRoots returns, in order; readyEnded
+	// closes once a TakeReadyRoots ends with the connection.
+	ready      chan []uint64
+	readyEnded chan struct{}
+	readyOnce  sync.Once
 }
 
 type settledCall struct {
@@ -151,8 +189,68 @@ func newFakeAdapter() *fakeAdapter {
 		lookups:  make(chan bool, 8),
 		mergeIDs: make(chan uint64, 64),
 		settled:  make(chan settledCall, 8),
+		ready:    make(chan []uint64, 8),
+
+		readyEnded: make(chan struct{}),
+
+		restored:       make(chan RestoreReport, 64),
+		restoreSeen:    make(chan dagql.ValueBundle, 64),
+		unretainedSeen: make(chan []dagql.TransferOrdinal, 64),
+		sourceSeen:     make(chan string, 1),
 	}
 }
+
+func (a *fakeAdapter) CheckRestorePart(part dagql.ValueBundle) (*dagql.CheckedValues, error) {
+	if a.check != nil {
+		return nil, a.check(part)
+	}
+	return nil, nil
+}
+
+func (a *fakeAdapter) RestorePart(ctx context.Context, part dagql.ValueBundle, _ *dagql.CheckedValues, unretained []dagql.TransferOrdinal, known *dagql.KnownRows, source string) (dagql.MergeReply, time.Duration, error) {
+	a.unretainedSeen <- unretained
+	select {
+	case a.sourceSeen <- source:
+	default:
+	}
+	a.restoreSeen <- part
+	reply, err := a.restore(ctx, part, known)
+	return reply, a.priorityWait, err
+}
+
+// plannedFetchCall is one PlanPartFetch call a fakeAdapter saw.
+type plannedFetchCall struct {
+	number uint64
+	part   dagql.PartKey
+}
+
+func (a *fakeAdapter) PlanPartFetch(_ context.Context, number uint64, part dagql.PartKey) {
+	a.plannedMu.Lock()
+	defer a.plannedMu.Unlock()
+	a.planned = append(a.planned, plannedFetchCall{number: number, part: part})
+}
+
+func (a *fakeAdapter) Landing() func() {
+	a.landing.Add(1)
+	var once sync.Once
+	return func() { once.Do(func() { a.landing.Add(-1) }) }
+}
+
+func (a *fakeAdapter) CacheWork() CacheWork {
+	if a.work == nil {
+		return CacheWork{}
+	}
+	return a.work()
+}
+
+func (a *fakeAdapter) LateMisses(before time.Time, entries map[uint64]struct{}) []dagql.RemoteMiss {
+	if a.late == nil {
+		return nil
+	}
+	return a.late(before, entries)
+}
+
+func (a *fakeAdapter) Restored(report RestoreReport) { a.restored <- report }
 
 func (a *fakeAdapter) SettleState() (SettleState, <-chan struct{}) {
 	a.settleMu.Lock()
@@ -191,7 +289,19 @@ func (a *fakeAdapter) Settled(period uint64, sessions []protocol.SettleSession) 
 	a.settled <- settledCall{period: period, sessions: sessions}
 }
 
+func (a *fakeAdapter) TakeReadyRoots(ctx context.Context) ([]uint64, error) {
+	select {
+	case roots := <-a.ready:
+		return roots, nil
+	case <-ctx.Done():
+		a.readyOnce.Do(func() { close(a.readyEnded) })
+		return nil, context.Cause(ctx)
+	}
+}
+
 func (a *fakeAdapter) CacheIdentity() (string, uint64) { return "cache-1", 3 }
+
+func (a *fakeAdapter) ImageEntries() []uint64 { return a.image }
 
 func (a *fakeAdapter) Export(ctx context.Context, req protocol.Export, known *dagql.KnownRows, consume func(context.Context, Export) error) error {
 	a.known.Store(known)
@@ -289,10 +399,11 @@ func TestBackoff(t *testing.T) {
 	require.InDelta(t, float64(2400*time.Millisecond), float64(b.next(0.99999)), float64(time.Millisecond))
 }
 
-// The engine's first message says hello with its identity and that it merges
-// held rows, numbered 1; the session is served once the service welcomes it.
+// The engine's first message says hello with its identity and the entries its
+// image ships, numbered 1; the session is served once the service welcomes it.
 func TestHello(t *testing.T) {
 	adapter := newFakeAdapter()
+	adapter.image = []uint64{1, 2, 3, 7}
 	adapter.renewals <- renewalRequest(time.Minute)
 	s, conn := testSession(t, adapter)
 	served := make(chan bool, 1)
@@ -303,7 +414,7 @@ func TestHello(t *testing.T) {
 	hello := conn.next(t)
 	require.Equal(t, protocol.TypeHello, hello.Type)
 	require.Equal(t, uint64(1), hello.ID, "IDs start at 1")
-	require.Equal(t, protocol.Hello{CacheID: "cache-1", Generation: 3, EngineVersion: "v0.20.0", EngineName: "dagger-engine"}, decode[protocol.Hello](t, hello))
+	require.Equal(t, protocol.Hello{CacheID: "cache-1", Generation: 3, EngineVersion: "v0.20.0", EngineName: "dagger-engine", Image: protocol.EntryNumbers{1, 2, 3, 7}}, decode[protocol.Hello](t, hello))
 	s.dispatch(protocol.Envelope{ID: 1, Re: hello.ID, Type: protocol.TypeWelcome, Body: json.RawMessage(`{}`)})
 	// Renewals start only after the welcome is consumed. Wait for one before
 	// canceling so the hello reply cannot race with cancellation.
@@ -325,6 +436,30 @@ func TestHelloRefused(t *testing.T) {
 	require.NoError(t, err)
 	s.dispatch(reply)
 	require.ErrorContains(t, <-served, "refused")
+}
+
+// A message from the service that doesn't decode ends the session, with why:
+// the stream it came on is broken, and what follows it can't be trusted.
+// Engines have read messages cut off by their connection's end as whole
+// ones, logged each, and read on.
+func TestUndecodableMessageEndsSession(t *testing.T) {
+	conn := newServiceConn()
+	s := newSession(t.Context(), conn, newFakeAdapter(), newSettings(Config{}))
+	t.Cleanup(s.close)
+	served := make(chan error, 1)
+	go func() {
+		_, err := s.serve()
+		served <- err
+	}()
+	hello := conn.next(t)
+	conn.send(t, protocol.Envelope{ID: 1, Re: hello.ID, Type: protocol.TypeWelcome, Body: json.RawMessage(`{}`)})
+	conn.inbound <- []byte(`{"id":2,"type":"merge","body":{"bundle":{"vers`)
+	select {
+	case err := <-served:
+		require.ErrorContains(t, err, "undecodable message: unexpected end of JSON input", "why: the message, as what it is")
+	case <-time.After(10 * time.Second):
+		t.Fatal("the session read on past a message it couldn't decode")
+	}
 }
 
 // An export whose roots are all gone or busy is answered with skipped roots
@@ -914,6 +1049,7 @@ func TestExportEndedLogged(t *testing.T) {
 			require.Equal(t, "INFO", line["level"])
 			require.Equal(t, "uploaded", line["outcome"])
 			require.Equal(t, exportID, line["export"])
+			require.Equal(t, json.Number("7"), line["request"], "the service's request, which its record of the export carries from its start")
 			require.Equal(t, json.Number("2"), line["roots"])
 			require.Equal(t, json.Number("2"), line["blobs"])
 			require.Equal(t, json.Number("0"), line["failed"])
@@ -1433,14 +1569,14 @@ type queuedWriterConn struct {
 	writeSlot chan struct{}
 }
 
-func (c *queuedWriterConn) Write(ctx context.Context, data []byte) error {
+func (c *queuedWriterConn) Write(ctx context.Context, msg protocol.Message) error {
 	select {
 	case c.writeSlot <- struct{}{}:
 	case <-ctx.Done():
 		return context.Cause(ctx)
 	}
 	defer func() { <-c.writeSlot }()
-	return c.recordingConn.Write(ctx, data)
+	return c.recordingConn.Write(ctx, msg)
 }
 
 // A renewal whose read gives up while another message holds the writer fails
@@ -1652,9 +1788,9 @@ func TestLookup(t *testing.T) {
 	misses := lookupMisses(6)
 	adapter.misses <- misses
 	sent := answerLookup(t, s, conn, protocol.LookedUp{Misses: []protocol.LookedUpMiss{
-		{Status: protocol.LookupMerging, Merge: 40, Parts: protocol.LookupPartsComplete},
-		{Status: protocol.LookupInFlight, Merge: 38, Parts: protocol.LookupPartsPartial},
-		{Status: protocol.LookupMerging, Merge: 41, Parts: protocol.LookupPartsNone},
+		{Status: protocol.LookupDeferred},
+		{Status: protocol.LookupDeferred},
+		{Status: protocol.LookupDeferred},
 		{Status: protocol.LookupDeferred},
 		{Status: protocol.LookupNotStored},
 		{Status: protocol.LookupUnknown},
@@ -1674,11 +1810,11 @@ type liveConn struct {
 	*recordingConn
 }
 
-func (c liveConn) Write(ctx context.Context, data []byte) error {
+func (c liveConn) Write(ctx context.Context, msg protocol.Message) error {
 	if err := context.Cause(ctx); err != nil {
 		return err
 	}
-	return c.recordingConn.Write(ctx, data)
+	return c.recordingConn.Write(ctx, msg)
 }
 
 // A lookup the service answers with an error has failed, and the next miss

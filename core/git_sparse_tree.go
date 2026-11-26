@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
@@ -56,7 +58,6 @@ type GitTreeFiles struct {
 	repo    *RemoteGitRepository
 	git     *gitutil.GitCLI
 	entries map[string]gitTreeEntry
-	missing map[string]struct{}
 }
 
 type gitTreeEntry struct {
@@ -73,7 +74,6 @@ func loadGitTreeFiles(ctx context.Context, repo *RemoteGitRepository, git *gitut
 		repo:    repo,
 		git:     git,
 		entries: map[string]gitTreeEntry{},
-		missing: map[string]struct{}{},
 	}
 	var paths []string
 	for line := range bytes.SplitSeq(listing, []byte{0}) {
@@ -90,17 +90,6 @@ func loadGitTreeFiles(ctx context.Context, repo *RemoteGitRepository, git *gitut
 		paths = append(paths, p)
 	}
 	files.Tree = layercopy.NewPathTree(paths)
-
-	// --missing=print reports what the mirror lacks without fetching it.
-	objects, err := git.Run(ctx, "rev-list", "--objects", "--missing=print", sha)
-	if err != nil {
-		return nil, fmt.Errorf("list missing objects: %w", err)
-	}
-	for line := range bytes.SplitSeq(objects, []byte{'\n'}) {
-		if oid, ok := bytes.CutPrefix(line, []byte{'?'}); ok {
-			files.missing[string(oid)] = struct{}{}
-		}
-	}
 	return files, nil
 }
 
@@ -113,8 +102,8 @@ func (files *GitTreeFiles) writeSubmodulesManifest(snapshotRoot string) error {
 		return err
 	}
 	var manifest bytes.Buffer
-	for p, entry := range files.entries {
-		if entry.mode == gitModeGitlink {
+	for _, p := range slices.Sorted(maps.Keys(files.entries)) {
+		if files.entries[p].mode == gitModeGitlink {
 			manifest.WriteByte(gitSparseEntryGitlink)
 			manifest.WriteString(p)
 			manifest.WriteByte(0)
@@ -133,10 +122,12 @@ func (files *GitTreeFiles) hasSubmodules() bool {
 }
 
 // objectList returns "mode oid path\0" for every path of the tree that isn't
-// a directory.
+// a directory, in path order, as the manifest is written: two runs of one
+// commit write the same list.
 func (files *GitTreeFiles) objectList() []byte {
 	var list bytes.Buffer
-	for p, entry := range files.entries {
+	for _, p := range slices.Sorted(maps.Keys(files.entries)) {
+		entry := files.entries[p]
 		list.WriteString(entry.mode + " " + entry.oid + " " + p)
 		list.WriteByte(0)
 	}
@@ -163,32 +154,25 @@ func (files *GitTreeFiles) Named(names ...string) []string {
 
 // Fetch gets the contents of paths in one request, as Git itself asks a
 // promisor remote for a batch of objects. A path the tree doesn't have, or
-// whose contents the mirror holds, needs nothing.
+// whose contents the mirror holds, needs nothing. It asks the mirror only
+// about these paths' objects, not the commit's whole tree: on an empty mirror
+// that is every object of the commit.
 func (files *GitTreeFiles) Fetch(ctx context.Context, paths []string) error {
-	var oids bytes.Buffer
-	seen := map[string]struct{}{}
+	var oids []string
 	for _, p := range paths {
-		entry, ok := files.entries[p]
-		if !ok || entry.mode == gitModeGitlink {
-			continue
+		if entry, ok := files.entries[p]; ok && entry.mode != gitModeGitlink {
+			oids = append(oids, entry.oid)
 		}
-		if _, missing := files.missing[entry.oid]; !missing {
-			continue
-		}
-		if _, dup := seen[entry.oid]; dup {
-			continue
-		}
-		seen[entry.oid] = struct{}{}
-		oids.WriteString(entry.oid + "\n")
 	}
-	if len(seen) == 0 {
-		return nil
-	}
-	if err := files.repo.fetchBlobs(ctx, files.git, &oids); err != nil {
+	lacking, err := gitMissingObjects(ctx, files.git, oids)
+	if err != nil {
 		return fmt.Errorf("fetch file contents: %w", err)
 	}
-	for oid := range seen {
-		delete(files.missing, oid)
+	if len(lacking) == 0 {
+		return nil
+	}
+	if err := files.repo.fetchBlobs(ctx, files.git, strings.NewReader(strings.Join(lacking, "\n")+"\n")); err != nil {
+		return fmt.Errorf("fetch file contents: %w", err)
 	}
 	return nil
 }
@@ -203,9 +187,10 @@ func (files *GitTreeFiles) Read(ctx context.Context, p string) ([]byte, error) {
 }
 
 // writeSparseTree writes paths under dest as a checkout of the commit writes
-// them, with Git applying the tree's attributes, along with every directory of
-// the tree and its symlinks. So a path's parents and any symlink resolve as they
-// do in a full checkout, and the only difference is which files are there.
+// them, with Git applying the tree's attributes, along with the tree's
+// symlinks. With the directories writeSparseDirs adds, a path's parents and any
+// symlink resolve as they do in a full checkout, and the only difference is
+// which files are there.
 //
 // It returns the manifest describing every path of the commit.
 func (files *GitTreeFiles) writeSparseTree(ctx context.Context, snapshotRoot string, paths []string) ([]byte, error) {
@@ -239,11 +224,6 @@ func (files *GitTreeFiles) writeSparseTree(ctx context.Context, snapshotRoot str
 	}
 	if err := os.Chmod(dest, rootInfo.Mode().Perm()); err != nil {
 		return nil, err
-	}
-	for p := range files.entries {
-		if err := os.MkdirAll(filepath.Join(dest, filepath.Dir(p)), 0o755); err != nil {
-			return nil, err
-		}
 	}
 
 	var index bytes.Buffer
@@ -287,6 +267,38 @@ func (files *GitTreeFiles) writeSparseTree(ctx context.Context, snapshotRoot str
 	return manifest.Bytes(), nil
 }
 
+// gitSparseDirs returns every directory of a tree with these paths (slash
+// separated, relative to its root), each once and every directory after its
+// parent, so making them in order needs no directory made twice and none made
+// with its parents.
+func gitSparseDirs(paths []string) []string {
+	dirs := map[string]struct{}{}
+	for _, p := range paths {
+		for d := path.Dir(p); d != "." && d != "/"; d = path.Dir(d) {
+			if _, seen := dirs[d]; seen {
+				break
+			}
+			dirs[d] = struct{}{}
+		}
+	}
+	// A directory sorts after its parent, which is a prefix of it.
+	return slices.Sorted(maps.Keys(dirs))
+}
+
+// writeSparseDirs makes every directory of the commit's tree in a sparse tree
+// writeSparseTree wrote: checkout-index has made those of the files it wrote,
+// and this makes the rest. It reads nothing of the mirror, only the commit's
+// listing.
+func (files *GitTreeFiles) writeSparseDirs(snapshotRoot string) error {
+	dest := filepath.Join(snapshotRoot, gitSparseTreeDir)
+	for _, d := range gitSparseDirs(slices.Collect(maps.Keys(files.entries))) {
+		if err := os.Mkdir(filepath.Join(dest, filepath.FromSlash(d)), 0o755); err != nil && !errors.Is(err, os.ErrExist) {
+			return err
+		}
+	}
+	return nil
+}
+
 // SparseTree writes the files plan picks from this commit's tree into a new
 // snapshot, fetching only them. It holds the blobless mirror for all of it,
 // since reading the mirror is all it does, and for few files.
@@ -321,6 +333,12 @@ func (ref *RemoteGitRef) SparseTree(
 		}
 	}()
 	err = MountRef(ctx, checkoutRef, func(root string, _ *mount.Mount) error {
+		// What reads the mirror runs while it's held: the commit's listing, the
+		// plan and the files written out of it. The rest of the snapshot, its
+		// directories and its lists of the commit's paths, needs only the
+		// listing, so it's written after the mirror is released.
+		var written *GitTreeFiles
+		var manifest []byte
 		err := repo.mount(ctx, 1, false, []GitRefBackend{ref}, func(ctx context.Context, git *gitutil.GitCLI) error {
 			files, err := loadGitTreeFiles(ctx, repo, git, ref.SHA)
 			if err != nil {
@@ -333,17 +351,26 @@ func (ref *RemoteGitRef) SparseTree(
 			if err != nil {
 				return err
 			}
-			manifest, err := files.writeSparseTree(ctx, root, paths)
+			manifest, err = files.writeSparseTree(ctx, root, paths)
 			if err != nil {
 				return err
 			}
-			if err := os.WriteFile(filepath.Join(root, gitSparseObjectsFile), files.objectList(), 0o600); err != nil {
-				return err
-			}
-			return os.WriteFile(filepath.Join(root, gitSparseManifestFile), manifest, 0o600)
+			written = files
+			return nil
 		})
 		if err != nil {
 			return err
+		}
+		if written != nil {
+			if err := written.writeSparseDirs(root); err != nil {
+				return err
+			}
+			if err := os.WriteFile(filepath.Join(root, gitSparseObjectsFile), written.objectList(), 0o600); err != nil {
+				return err
+			}
+			if err := os.WriteFile(filepath.Join(root, gitSparseManifestFile), manifest, 0o600); err != nil {
+				return err
+			}
 		}
 		return normalizeGitCheckoutTimes(ctx, root, "")
 	})
@@ -370,31 +397,104 @@ func (ref *RemoteGitRef) SparseTree(
 // checkout would give. Whether a read can come from it is decided from the
 // commit's whole list of paths, so a file it doesn't hold can never go missing:
 // a read selecting one, or a path it can't answer for, goes to the full tree.
+//
+// Whether a lookup of a path answers as the full tree does is a call on Root
+// (core/schema's __gitSparseCovers), since workspace detection and the config
+// readers ask it in every session, under no cached call: a hit answers it from
+// the call's record, without the tree's files, and a miss reads the list from
+// the tree's snapshot (GitSparseTreeCovers). A read's route and files are
+// worked out from the list itself (ReadSource, ReadFiles): they're asked only
+// by a workspace read that runs, which copies out of this tree or a tree of
+// its own anyway.
 type GitSparseTree struct {
 	Root dagql.ObjectResult[*Directory]
-
-	manifestOnce sync.Once
-	manifest     *gitSparseManifest
-	manifestErr  error
 }
 
 type gitSparseManifest struct {
 	tree       *layercopy.PathTree
 	entries    map[string]byte
 	submodules bool
-	// objects holds each path's mode and object ID; nil for a tree written
-	// before sparse trees listed them.
+	// objects holds each path's mode and object ID, for readFiles; nil for a
+	// tree written before sparse trees listed them.
 	objects map[string]gitTreeEntry
 }
 
-func (t *GitSparseTree) loadManifest(ctx context.Context) (*gitSparseManifest, error) {
-	t.manifestOnce.Do(func() {
-		t.manifest, t.manifestErr = readGitSparseManifest(ctx, t.Root)
+// gitSparseListKind is one of the two lists a sparse tree's snapshot holds.
+type gitSparseListKind string
+
+const (
+	gitSparseListManifest gitSparseListKind = gitSparseManifestFile
+	gitSparseListObjects  gitSparseListKind = gitSparseObjectsFile
+)
+
+// loadGitSparseList reads one of a sparse tree's lists, parsed, once per
+// session: a session's questions that miss share it. The list is a function of
+// the tree alone, so sharing it changes no answer.
+func loadGitSparseList[T any](ctx context.Context, root dagql.ObjectResult[*Directory], kind gitSparseListKind, parse func([]byte) T) (T, error) {
+	read := func(ctx context.Context) (T, error) {
+		var zero T
+		data, err := readGitSparseList(ctx, root, kind)
+		if err != nil {
+			return zero, err
+		}
+		return parse(data), nil
+	}
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return read(ctx)
+	}
+	metadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil || metadata.SessionID == "" {
+		return read(ctx)
+	}
+	recipe, err := root.RecipeDigest(ctx)
+	if err != nil {
+		return read(ctx)
+	}
+	res, err := cache.GetOrInitArbitrary(ctx, metadata.SessionID, "git sparse tree "+string(kind)+" "+recipe.String(), func(ctx context.Context) (any, error) {
+		return read(ctx)
 	})
-	return t.manifest, t.manifestErr
+	if err != nil {
+		var zero T
+		return zero, err
+	}
+	list, ok := res.Value().(T)
+	if !ok {
+		var zero T
+		return zero, fmt.Errorf("sparse tree %s: unexpected %T", kind, res.Value())
+	}
+	return list, nil
 }
 
-func readGitSparseManifest(ctx context.Context, root dagql.ObjectResult[*Directory]) (*gitSparseManifest, error) {
+func loadGitSparseManifest(ctx context.Context, root dagql.ObjectResult[*Directory]) (*gitSparseManifest, error) {
+	return loadGitSparseList(ctx, root, gitSparseListManifest, parseGitSparseManifest)
+}
+
+// loadGitSparseManifestWithObjects is the manifest with each path's object,
+// whose objects are nil for a tree written before sparse trees listed them.
+func loadGitSparseManifestWithObjects(ctx context.Context, root dagql.ObjectResult[*Directory]) (*gitSparseManifest, error) {
+	m, err := loadGitSparseManifest(ctx, root)
+	if err != nil {
+		return nil, err
+	}
+	objects, err := loadGitSparseList(ctx, root, gitSparseListObjects, func(data []byte) map[string]gitTreeEntry {
+		if data == nil {
+			return nil
+		}
+		return parseGitSparseObjects(data)
+	})
+	if err != nil {
+		return nil, err
+	}
+	withObjects := *m
+	withObjects.objects = objects
+	return &withObjects, nil
+}
+
+// readGitSparseList reads one of the lists beside a sparse tree's files in its
+// snapshot. It's nil for an objects list a tree written before sparse trees
+// listed them doesn't have.
+func readGitSparseList(ctx context.Context, root dagql.ObjectResult[*Directory], kind gitSparseListKind) ([]byte, error) {
 	// A tree held only as another engine's record decodes its snapshot from the
 	// server in the context, and loading a workspace has none attached.
 	dag, err := CurrentDagqlServer(ctx)
@@ -407,27 +507,17 @@ func readGitSparseManifest(ctx context.Context, root dagql.ObjectResult[*Directo
 		return nil, fmt.Errorf("sparse tree snapshot: %w", err)
 	}
 	var data []byte
-	if err := MountRef(ctx, snapshot, func(dir string, _ *mount.Mount) (err error) {
-		data, err = os.ReadFile(filepath.Join(dir, gitSparseManifestFile))
-		return err
-	}, mountRefAsReadOnly); err != nil {
-		return nil, fmt.Errorf("read sparse tree manifest: %w", err)
-	}
-	m := parseGitSparseManifest(data)
 	if err := MountRef(ctx, snapshot, func(dir string, _ *mount.Mount) error {
-		objects, err := os.ReadFile(filepath.Join(dir, gitSparseObjectsFile))
-		if errors.Is(err, os.ErrNotExist) {
+		read, err := os.ReadFile(filepath.Join(dir, string(kind)))
+		if kind == gitSparseListObjects && errors.Is(err, os.ErrNotExist) {
 			return nil
 		}
-		if err != nil {
-			return err
-		}
-		m.objects = parseGitSparseObjects(objects)
-		return nil
+		data = read
+		return err
 	}, mountRefAsReadOnly); err != nil {
-		return nil, fmt.Errorf("read sparse tree objects: %w", err)
+		return nil, fmt.Errorf("read sparse tree %s: %w", kind, err)
 	}
-	return m, nil
+	return data, nil
 }
 
 func parseGitSparseObjects(data []byte) map[string]gitTreeEntry {
@@ -483,8 +573,14 @@ const (
 // file and every .gitignore a gitignore filter reads, and otherwise one of the
 // read's own. A dir the commit doesn't have, which fails the same way in both,
 // is read from this one as well.
+//
+// It reads the tree's list, once a session. So a read that runs on an engine
+// holding the tree only as another engine's record unpacks the tree here,
+// even where its route and files would be enough: a known limit, which only a
+// read routed to a tree of its own pays for no reason, since one this tree
+// serves copies out of it next.
 func (t *GitSparseTree) ReadSource(ctx context.Context, dir string, filter CopyFilter) (GitSparseReadSource, error) {
-	m, err := t.loadManifest(ctx)
+	m, err := loadGitSparseManifest(ctx, t.Root)
 	if err != nil {
 		return GitSparseReadFull, err
 	}
@@ -544,7 +640,7 @@ type GitSparseReadFiles struct {
 // tree of its own. It's nil for a tree written before sparse trees listed
 // their objects.
 func (t *GitSparseTree) ReadFiles(ctx context.Context, dir string, filter CopyFilter) (*GitSparseReadFiles, error) {
-	m, err := t.loadManifest(ctx)
+	m, err := loadGitSparseManifestWithObjects(ctx, t.Root)
 	if err != nil || m.objects == nil {
 		return nil, err
 	}
@@ -655,7 +751,24 @@ func (m *gitSparseManifest) gitignoresHeld(dir string) (held, ok bool) {
 // full tree does. A symlink on the way, or at p, could lead to a file the
 // sparse tree doesn't have.
 func (t *GitSparseTree) coversPath(ctx context.Context, p string) (bool, error) {
-	m, err := t.loadManifest(ctx)
+	dag, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return false, err
+	}
+	var covered dagql.Boolean
+	if err := dag.Select(ctx, t.Root, &covered, dagql.Selector{
+		Field: "__gitSparseCovers",
+		Args:  []dagql.NamedInput{{Name: "path", Value: dagql.NewString(p)}},
+	}); err != nil {
+		return false, err
+	}
+	return covered.Bool(), nil
+}
+
+// GitSparseTreeCovers is coversPath's answer for the sparse tree root, read
+// from its manifest: what __gitSparseCovers computes.
+func GitSparseTreeCovers(ctx context.Context, root dagql.ObjectResult[*Directory], p string) (bool, error) {
+	m, err := loadGitSparseManifest(ctx, root)
 	if err != nil {
 		return false, err
 	}
@@ -695,29 +808,64 @@ var (
 	_ ExistsFS = (*GitSparseTreeFS)(nil)
 )
 
-// dirFor picks the directory to look p up in.
-func (fs *GitSparseTreeFS) dirFor(ctx context.Context, p string) dagql.ObjectResult[*Directory] {
+// dirFor picks the directory to look p up in, and says whether it's the
+// sparse tree.
+func (fs *GitSparseTreeFS) dirFor(ctx context.Context, p string) (dagql.ObjectResult[*Directory], bool) {
 	covered, err := fs.Sparse.coversPath(ctx, p)
 	if err != nil {
 		slog.Warn("reading the sparse tree's paths failed; reading the full tree", "error", err)
-		return fs.Full
+		return fs.Full, false
 	}
 	if covered {
-		return fs.Sparse.Root
+		return fs.Sparse.Root, true
 	}
-	return fs.Full
+	return fs.Full, false
+}
+
+// readGitSparseTreeFS reads p with read from the directory dirFor picks. An
+// answer from the cache can pick the sparse tree on an engine that can't get
+// the tree's files, as one served another engine's records can, where
+// reading the list from the files would have failed and picked the full
+// tree. So a read of the sparse tree that fails for any reason but p's
+// absence reads the full tree, which answers the same.
+func readGitSparseTreeFS[T any](ctx context.Context, fs *GitSparseTreeFS, p string, read func(dagql.ObjectResult[*Directory]) (T, error)) (T, error) {
+	dir, sparse := fs.dirFor(ctx, p)
+	out, err := read(dir)
+	if err == nil || !sparse || errors.Is(err, os.ErrNotExist) {
+		return out, err
+	}
+	slog.Warn("reading the sparse tree failed; reading the full tree", "path", p, "error", err)
+	return read(fs.Full)
 }
 
 func (fs *GitSparseTreeFS) Stat(ctx context.Context, p string) (string, *Stat, error) {
-	return CallDirStat(ctx, fs.dirFor(ctx, p), p)
+	type stat struct {
+		dir  string
+		stat *Stat
+	}
+	got, err := readGitSparseTreeFS(ctx, fs, p, func(dir dagql.ObjectResult[*Directory]) (stat, error) {
+		parent, st, err := CallDirStat(ctx, dir, p)
+		return stat{parent, st}, err
+	})
+	return got.dir, got.stat, err
 }
 
 func (fs *GitSparseTreeFS) Exists(ctx context.Context, p string) (string, bool, error) {
-	return CallDirExists(ctx, fs.dirFor(ctx, p), p)
+	type exists struct {
+		dir    string
+		exists bool
+	}
+	got, err := readGitSparseTreeFS(ctx, fs, p, func(dir dagql.ObjectResult[*Directory]) (exists, error) {
+		parent, ok, err := CallDirExists(ctx, dir, p)
+		return exists{parent, ok}, err
+	})
+	return got.dir, got.exists, err
 }
 
 func (fs *GitSparseTreeFS) ReadFile(ctx context.Context, p string) ([]byte, error) {
-	return DirectoryReadFile(ctx, fs.dirFor(ctx, p), p)
+	return readGitSparseTreeFS(ctx, fs, p, func(dir dagql.ObjectResult[*Directory]) ([]byte, error) {
+		return DirectoryReadFile(ctx, dir, p)
+	})
 }
 
 // gitBlobPools holds, per repository result, the objects readers are waiting

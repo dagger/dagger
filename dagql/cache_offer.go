@@ -5,8 +5,11 @@ import (
 	"errors"
 	"reflect"
 	"slices"
+	"time"
 
-	"github.com/dagger/dagger/engine/wcprof"
+	"github.com/dagger/dagger/engine/snapshots"
+	"github.com/opencontainers/go-digest"
+	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 type OfferOutcome uint8
@@ -23,7 +26,6 @@ type OfferDisposition struct {
 	Address  PersistedPartAddress
 	Outcome  OfferOutcome
 	Replaced bool
-	OfferRev uint64
 	Err      error
 	// Target is the row the offer's address resolved to, the receiver or a
 	// descendant, and TargetAddress the address re-rooted at it. Target is 0
@@ -42,7 +44,7 @@ type OfferDisposition struct {
 func (out *OfferDisposition) noteReceiverLocked(root *sharedResult) {
 	out.Replacements = root.replacements
 	out.Deps = out.Deps[:0]
-	for dep := range root.deps {
+	for _, dep := range root.deps {
 		out.Deps = append(out.Deps, uint64(dep))
 	}
 	slices.Sort(out.Deps)
@@ -76,6 +78,7 @@ func unavailableOffers(offers []CloudPartOffer, err error) []OfferDisposition {
 // OfferParts is an engine control operation. It publishes descriptions without
 // evaluating outputs or checking the control caller's session resources.
 func (c *Cache) OfferParts(ctx context.Context, receiver AnyResult, offers []CloudPartOffer) (out []OfferDisposition, rerr error) {
+	ctx = withCacheWork(ctx, workOffer)
 	out = unavailableOffers(offers, nil)
 	op, err := c.beginCacheOperation()
 	if err != nil {
@@ -87,7 +90,7 @@ func (c *Cache) OfferParts(ctx context.Context, receiver AnyResult, offers []Clo
 		return unavailableOffers(offers, err), err
 	}
 	root := receiver.cacheSharedResult()
-	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+	c.lockGraphFor(ctx, workOffer)
 	if c.resultsByID[root.id] != root || root.attachmentState() != resultAttachmentClean {
 		c.egraphMu.Unlock()
 		err := errors.New("offer: receiver is unavailable")
@@ -174,7 +177,7 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, item CloudPar
 		if capture := captures[id]; capture != nil {
 			return capture.record, true
 		}
-		wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+		c.lockGraphFor(ctx, workOffer)
 		row := c.resultsByID[sharedResultID(id)]
 		if row == nil || row.attachmentState() != resultAttachmentClean {
 			c.egraphMu.Unlock()
@@ -184,7 +187,7 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, item CloudPar
 		c.incrementIncomingOwnershipLocked(ctx, row)
 		capture := &offerRowCapture{row: row}
 		captures[id] = capture
-		gate := row.partGate.loadOrCreate()
+		gate := row.partGateCell().loadOrCreate()
 		gate.mu.Lock()
 		capture.gateRevision = gate.revision
 		if row == root {
@@ -194,6 +197,7 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, item CloudPar
 				// The part is the root's own, and the offer still names the
 				// root's Cloud counterpart.
 				root.noteCloudCopyLocked(item.CloudNumber, item.CloudStored, item.CloudExpiresAtUnix)
+				c.noteSavedEntryLocked(root.id)
 			}
 		}
 		gate.mu.Unlock()
@@ -256,11 +260,14 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, item CloudPar
 		return out
 	}
 	key, _ := partAddressKey(address)
+	// The offer as the cache would hold it, its layers the table's, taken
+	// before the lock.
+	held := c.storedLayers.hold(offer)
 	// A preparation hold protects references across the two E sections.
-	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+	c.lockGraphFor(ctx, workOffer)
 	var owner *offerOwner
 	old := row.partOfferLocked(key)
-	if old != nil && sameOfferMeaning(old.record, offer) {
+	if old != nil && old.sameMeaning(held) {
 		owner = old.owner
 		c.retainOfferOwnerLocked(owner)
 	} else {
@@ -271,14 +278,14 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, item CloudPar
 		out.Outcome, out.Err = OfferInvalid, err
 		return out
 	}
-	offer.Owner.DependencyIDs = slices.Clone(owner.record.DependencyIDs)
+	held.held.Owner.DependencyIDs = slices.Clone(owner.record.DependencyIDs)
 	transferred := false
 	defer func() {
 		if transferred {
 			return
 		}
 		cleanupCtx := context.WithoutCancel(ctx)
-		wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+		c.lockGraphFor(ctx, workOffer)
 		queue, err := c.releaseOfferOwnerLocked(cleanupCtx, owner)
 		callbacks, collectErr := c.collectUnownedResultsLocked(cleanupCtx, queue)
 		c.egraphMu.Unlock()
@@ -297,8 +304,8 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, item CloudPar
 	if c.testOfferBeforeDecision != nil {
 		c.testOfferBeforeDecision(root)
 	}
-	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
-	gate := row.partGate.loadOrCreate()
+	c.lockGraphFor(ctx, workOffer)
+	gate := row.partGateCell().loadOrCreate()
 	gate.mu.Lock()
 	out.Outcome = offerGateOutcomeLocked(gate, address)
 	out.noteReceiverLocked(root)
@@ -320,15 +327,17 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, item CloudPar
 		// The row's gate or its record has the part, and the offer still
 		// names the row's Cloud counterpart.
 		row.noteCloudCopyLocked(item.CloudNumber, item.CloudStored, item.CloudExpiresAtUnix)
+		c.noteSavedEntryLocked(row.id)
 	}
 	var queue collectionQueue
 	// accepted is the offer this call attached, for prefetching.
 	var accepted *partOffer
 	if out.Outcome == OfferAccepted {
-		if _, image := row.imageHoldingLocked(); image != nil {
-			// The engine image ships the row and offers its parts from the
-			// engine's own disk: the Cloud's offer is left out, and the row
-			// takes no Cloud holding from it.
+		if row.imageSuppliesLocked() {
+			// The engine image supplies the row's parts from the engine's
+			// own disk: the row takes no Cloud part and no Cloud holding.
+			// A record the image ships without a part has no content of
+			// its own, and takes the Cloud's part as any row does.
 			out.Outcome = OfferUnavailable
 		}
 	}
@@ -340,11 +349,12 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, item CloudPar
 			// The offer names the row's Cloud counterpart, which may be a new
 			// entry, as after a service restart.
 			row.noteCloudCopyLocked(item.CloudNumber, item.CloudStored, item.CloudExpiresAtUnix)
-			if current == nil || !reflect.DeepEqual(current.record, offer) {
+			c.noteSavedEntryLocked(row.id)
+			if current == nil || !slices.Equal(current.layers, held.layers) || !reflect.DeepEqual(current.held, held.held) {
 				// Both primitives validate the owner graph before any mutation.
-				next := &partOffer{record: offer, owner: owner}
+				next := &partOffer{layeredOffer: held, owner: owner}
 				if current == nil {
-					out.Err = c.attachPartOfferLocked(row, address, next)
+					out.Err = c.attachPartOfferLocked(row, cloudCacheID, address, next)
 				} else {
 					queue, out.Err = c.replacePartOfferLocked(ctx, row, address, next)
 				}
@@ -359,12 +369,11 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, item CloudPar
 			}
 		}
 	}
-	out.OfferRev = row.transferRevision
 	if out.Outcome == OfferAccepted {
 		// A native caller that selected its callback before this publication must
 		// return to the acquisition dispatcher before entering the body.
 		gate.managed = true
-		row.partGate.active.Store(true)
+		row.partGateCell().active.Store(true)
 	}
 	gate.mu.Unlock()
 	callbacks, collectErr := c.collectUnownedResultsLocked(context.WithoutCancel(ctx), queue)
@@ -376,7 +385,94 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, item CloudPar
 	return out
 }
 
+// sameOfferMeaning reports whether two offers of a part mean the same: they
+// are equal in everything but their chain's blob addresses, which renewal
+// replaces. It is reflect.DeepEqual over the two offers less their
+// addresses, written out field by field: a merge compares each kept row's
+// offers with its entry's under the graph lock, and reflecting over them
+// cost a landing about a third of its kept rows' time there. As with
+// DeepEqual, a nil slice or map differs from an empty one.
 func sameOfferMeaning(a, b PersistedPartOffer) bool {
-	a.Chain.Addresses, b.Chain.Addresses = nil, nil
-	return reflect.DeepEqual(a, b)
+	return equalSlices(a.Address.OutputPath, b.Address.OutputPath, func(x, y PersistedRefPathElem) bool { return x == y }) &&
+		a.Address.Part == b.Address.Part &&
+		sameSnapshotValue(a.Value, b.Value) &&
+		equalSlices(a.Chain.Layers, b.Chain.Layers, sameExportLayer) &&
+		a.Chain.RenewalKey == b.Chain.RenewalKey &&
+		equalMaps(a.Chain.Packs, b.Chain.Packs, func(x, y digest.Digest) bool { return x == y }) &&
+		equalSlices(a.Owner.DependencyIDs, b.Owner.DependencyIDs, func(x, y uint64) bool { return x == y })
+}
+
+func sameSnapshotValue(a, b SnapshotValue) bool {
+	return a.Kind == b.Kind && a.Path == b.Path &&
+		equalPointers(a.Platform, b.Platform, samePlatform) &&
+		equalSlices(a.Services, b.Services, func(x, y TransferredServiceBinding) bool {
+			return x.ServiceResultID == y.ServiceResultID && x.Hostname == y.Hostname &&
+				equalSlices(x.Aliases, y.Aliases, func(p, q string) bool { return p == q })
+		})
+}
+
+func sameExportLayer(a, b snapshots.ExportLayer) bool {
+	return sameDescriptor(a.Descriptor, b.Descriptor) && a.Description == b.Description && a.Computed == b.Computed &&
+		// Two times are DeepEqual when equal by ==, which also compares
+		// their locations' pointers; only a time in a location of its own
+		// needs DeepEqual's look into the location. Equal would answer
+		// differently: it ignores the location.
+		equalPointers(a.CreatedAt, b.CreatedAt, func(x, y time.Time) bool {
+			return x == y || reflect.DeepEqual(x, y) //nolint:staticcheck // QF1009: DeepEqual's rule for times, not Equal's.
+		})
+}
+
+func sameDescriptor(a, b ocispecs.Descriptor) bool {
+	return a.MediaType == b.MediaType && a.Digest == b.Digest && a.Size == b.Size && a.ArtifactType == b.ArtifactType &&
+		equalSlices(a.URLs, b.URLs, func(x, y string) bool { return x == y }) &&
+		equalMaps(a.Annotations, b.Annotations, func(x, y string) bool { return x == y }) &&
+		equalSlices(a.Data, b.Data, func(x, y byte) bool { return x == y }) &&
+		equalPointers(a.Platform, b.Platform, samePlatform)
+}
+
+func samePlatform(a, b ocispecs.Platform) bool {
+	return a.Architecture == b.Architecture && a.OS == b.OS && a.OSVersion == b.OSVersion && a.Variant == b.Variant &&
+		equalSlices(a.OSFeatures, b.OSFeatures, func(x, y string) bool { return x == y })
+}
+
+// equalSlices is reflect.DeepEqual's rule for slices, with same comparing
+// elements: both nil or both not, and equal element by element.
+func equalSlices[T any](a, b []T, same func(T, T) bool) bool {
+	if (a == nil) != (b == nil) || len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if !same(a[i], b[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+// equalMaps is reflect.DeepEqual's rule for maps, with same comparing
+// values: both nil or both not, the same keys, and equal values.
+func equalMaps[K comparable, V any](a, b map[K]V, same func(V, V) bool) bool {
+	if (a == nil) != (b == nil) || len(a) != len(b) {
+		return false
+	}
+	for k, x := range a {
+		y, ok := b[k]
+		if !ok || !same(x, y) {
+			return false
+		}
+	}
+	return true
+}
+
+// equalPointers is reflect.DeepEqual's rule for pointers, with same
+// comparing what they point to: the same pointer, or both set to equal
+// values.
+func equalPointers[T any](a, b *T, same func(T, T) bool) bool {
+	if a == b {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return same(*a, *b)
 }

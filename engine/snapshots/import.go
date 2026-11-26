@@ -16,11 +16,16 @@ import (
 // giving an ordinary caller time to attach its own snapshot lease.
 //
 // The blobs of the layers after the one importing are downloaded ahead, up to
-// chainAheadWindow of them, from the first layer the engine doesn't already
-// have imported, unless the chain's blobs arrive by chain.Await. Layers apply
+// chainAheadWindow downloads of them, from the first layer the engine doesn't
+// already have imported, unless the chain's blobs arrive by chain.Await: the
+// layers whose blobs one pack holds are one download, its read. Layers apply
 // strictly in order, unless the snapshotter can rebase (cm.applyLayersApart):
 // the layers from that first one then apply at once, up to chainAheadWindow
 // of them, and are committed onto their parents in order.
+//
+// A content blob in the chain is no layer: it is fetched in its turn, as a
+// layer's blob is, and a listing after it reads it when it applies. The
+// layers the engine already has need none of theirs.
 func (cm *snapshotManager) ImportChain(ctx context.Context, chain *ExportChain) (_ ImmutableRef, rerr error) {
 	if chain == nil {
 		return nil, fmt.Errorf("import snapshot chain: nil chain")
@@ -28,12 +33,15 @@ func (cm *snapshotManager) ImportChain(ctx context.Context, chain *ExportChain) 
 	if len(chain.Layers) == 0 {
 		return cm.Scratch(ctx)
 	}
+	if chain.packs == nil {
+		chain.packs = &chainPacks{}
+	}
 	pin, ctx, err := cm.newResourcePin(ctx)
 	if err != nil {
 		return nil, err
 	}
 	var current ImmutableRef
-	ahead := &chainAhead{cm: cm, chain: chain, held: map[int]*contentFetch{}}
+	ahead := newChainAhead(cm, chain)
 	defer func() {
 		if rerr != nil {
 			ahead.drop(ctx)
@@ -58,21 +66,29 @@ func (cm *snapshotManager) ImportChain(ctx context.Context, chain *ExportChain) 
 			current, start = ref, first
 		}
 	}
-	// importInOrder imports layer i onto current, as the next in order.
+	// importInOrder imports layer i onto current, as the next in order. A
+	// content blob is fetched, unless the engine has the layers after it.
 	importInOrder := func(i int) error {
 		if i >= first {
 			ahead.fill(ctx, i)
 		}
 		held := ahead.take(i)
+		if desc := chain.Layers[i].Descriptor; IsContent(desc) {
+			var err error
+			if i >= first {
+				err = cm.fetchLayerContent(ctx, desc, chain.Provider, true, &chainLayer{owner: chain, ahead: held}, importClock{timing: chain.Timing, prof: wcprof.Enabled(ctx)})
+			}
+			cm.dropFetch(ctx, held)
+			return err
+		}
 		// A layer that needed its bytes after all, as when its snapshot is
 		// gone, starts the downloads after it too.
 		layerImport := &chainLayer{owner: chain, ahead: held, fetched: func() { ahead.fill(ctx, i) }}
 		next, err := cm.importLayer(ctx, chain.Layers[i].Descriptor, current, chain.Provider, ImportImageOpts{}, true, chain.Timing, layerImport)
+		cm.dropFetch(ctx, held)
 		if err != nil {
-			cm.dropFetch(ctx, held)
 			return err
 		}
-		cm.leaveFetch(ctx, held)
 		if current != nil {
 			_ = current.Release(context.WithoutCancel(ctx))
 		}
@@ -106,10 +122,13 @@ func (cm *snapshotManager) ImportChain(ctx context.Context, chain *ExportChain) 
 // parent, or nil when another import already had the layer, and the import
 // lock of the layer's chain, held until the layer is committed in order.
 type appliedLayer struct {
-	mut    MutableRef
-	unlock func()
-	timing ImportTiming
-	err    error
+	mut MutableRef
+	// contents are the content blobs the layer's listing named, when it is
+	// one.
+	contents []ocispecs.Descriptor
+	unlock   func()
+	timing   ImportTiming
+	err      error
 }
 
 func (a appliedLayer) release(ctx context.Context) {
@@ -164,7 +183,7 @@ func (cm *snapshotManager) importChainApart(ctx context.Context, chain *ExportCh
 			err = importInOrder(i)
 		} else {
 			var ref ImmutableRef
-			ref, err = cm.commitAppliedLayer(ctx, applied.mut, chain.Layers[i].Descriptor, *current, chain)
+			ref, err = cm.commitAppliedLayer(ctx, applied.mut, chain.Layers[i].Descriptor, applied.contents, *current, chain)
 			applied.mut = nil
 			if err == nil {
 				if *current != nil {
@@ -183,18 +202,21 @@ func (cm *snapshotManager) importChainApart(ctx context.Context, chain *ExportCh
 
 // chainIDsFrom returns the chain ID of each of chain's layers: the identity
 // of the layers up to and including it.
+//
+// A content blob is no layer, and has none.
 func chainIDsFrom(chain *ExportChain) ([]digest.Digest, error) {
-	diffIDs := make([]digest.Digest, len(chain.Layers))
+	diffIDs := make([]digest.Digest, 0, len(chain.Layers))
+	chainIDs := make([]digest.Digest, len(chain.Layers))
 	for i, layer := range chain.Layers {
+		if IsContent(layer.Descriptor) {
+			continue
+		}
 		diffID, err := diffIDFromDescriptor(layer.Descriptor)
 		if err != nil {
 			return nil, err
 		}
-		diffIDs[i] = diffID
-	}
-	chainIDs := make([]digest.Digest, len(diffIDs))
-	for i := range diffIDs {
-		chainIDs[i] = identity.ChainID(diffIDs[:i+1])
+		diffIDs = append(diffIDs, diffID)
+		chainIDs[i] = identity.ChainID(diffIDs)
 	}
 	return chainIDs, nil
 }
@@ -208,14 +230,16 @@ func chainIDsFrom(chain *ExportChain) ([]digest.Digest, error) {
 func (cm *snapshotManager) applyChainLayer(ctx context.Context, chain *ExportChain, i int, chainID digest.Digest, held *contentFetch) (applied appliedLayer) {
 	desc := chain.Layers[i].Descriptor
 	clock := importClock{timing: &applied.timing, prof: wcprof.Enabled(ctx)}
-	defer func() {
-		if applied.err != nil {
-			cm.dropFetch(ctx, held)
-		} else {
-			cm.leaveFetch(ctx, held)
-		}
-	}()
+	defer cm.dropFetch(ctx, held)
 	if applied.err = cm.awaitLayer(ctx, chain, i); applied.err != nil {
+		return applied
+	}
+	// A content blob is fetched here, and imported in order, which then
+	// finds it in the store.
+	if IsContent(desc) {
+		if cm.chainLocalPrefix(ctx, chain) <= i {
+			applied.err = cm.fetchLayerContent(ctx, desc, chain.Provider, true, &chainLayer{owner: chain, ahead: held}, clock)
+		}
 		return applied
 	}
 	applied.unlock, applied.err = cm.acquireImportLock(ctx, "chain/"+chainID.String(), clock)
@@ -226,6 +250,9 @@ func (cm *snapshotManager) applyChainLayer(ctx context.Context, chain *ExportCha
 		return applied
 	}
 	if applied.err = cm.fetchLayerContent(ctx, desc, chain.Provider, true, &chainLayer{owner: chain, ahead: held}, clock); applied.err != nil {
+		return applied
+	}
+	if applied.contents, applied.err = cm.fetchListingContents(ctx, desc, chain.Provider, true, &chainLayer{owner: chain}, clock); applied.err != nil {
 		return applied
 	}
 	mut, err := cm.New(ctx, nil, nil, WithDescription(fmt.Sprintf("import snapshot layer %s", desc.Digest)))
@@ -244,7 +271,7 @@ func (cm *snapshotManager) applyChainLayer(ctx context.Context, chain *ExportCha
 // commitAppliedLayer commits mut, desc's layer of chain applied apart, onto
 // parent, unless the engine has imported the layer on parent meanwhile: it
 // then reuses that and releases mut. It takes ownership of mut.
-func (cm *snapshotManager) commitAppliedLayer(ctx context.Context, mut MutableRef, desc ocispecs.Descriptor, parent ImmutableRef, chain *ExportChain) (_ ImmutableRef, rerr error) {
+func (cm *snapshotManager) commitAppliedLayer(ctx context.Context, mut MutableRef, desc ocispecs.Descriptor, contents []ocispecs.Descriptor, parent ImmutableRef, chain *ExportChain) (_ ImmutableRef, rerr error) {
 	timing := chain.Timing
 	defer func() {
 		if mut != nil {
@@ -284,7 +311,7 @@ func (cm *snapshotManager) commitAppliedLayer(ctx context.Context, mut MutableRe
 		return nil, err
 	}
 	mut = nil
-	ref, err = cm.recordImportedLayer(ctx, ref, desc, diffID, ImportImageOpts{}, blobKey, diffKey)
+	ref, err = cm.recordImportedLayer(ctx, ref, desc, contents, diffID, ImportImageOpts{}, blobKey, diffKey)
 	if err == nil && chain.Applied != nil {
 		chain.Applied(ctx, desc, ref.SnapshotID())
 	}
@@ -357,12 +384,18 @@ func (cm *snapshotManager) chainLocalPrefix(ctx context.Context, chain *ExportCh
 }
 
 // chainLocalTop is chainLocalPrefix with the snapshot of the last of those
-// layers and that snapshot's parent, or "" when there are none.
+// layers and that snapshot's parent, or "" when there are none. The prefix
+// ends after the last of those layers: the content blobs after it are the
+// next layer's.
 func (cm *snapshotManager) chainLocalTop(ctx context.Context, chain *ExportChain) (int, string, string) {
 	wcprof.Lock(ctx, &cm.mu, managerMuProfIdent)
 	defer cm.mu.Unlock()
 	parent, grandparent := "", ""
+	local := 0
 	for i, layer := range chain.Layers {
+		if IsContent(layer.Descriptor) {
+			continue
+		}
 		snapshotID := cm.importedLayerByBlob[ImportedLayerBlobKey{ParentSnapshotID: parent, BlobDigest: layer.Descriptor.Digest}]
 		if snapshotID == "" {
 			if diffID, err := diffIDFromDescriptor(layer.Descriptor); err == nil {
@@ -370,9 +403,10 @@ func (cm *snapshotManager) chainLocalTop(ctx context.Context, chain *ExportChain
 			}
 		}
 		if snapshotID == "" {
-			return i, parent, grandparent
+			return local, parent, grandparent
 		}
 		parent, grandparent = snapshotID, parent
+		local = i + 1
 	}
 	return len(chain.Layers), parent, grandparent
 }
@@ -409,25 +443,68 @@ type chainAhead struct {
 	cm    *snapshotManager
 	chain *ExportChain
 	held  map[int]*contentFetch
+	// reads names, by layer held, the read of the blob store that brings its
+	// blob: its pack's, or its own (aheadRead). holding counts, by read, the
+	// layers held whose blob it brings, so that the reads held are its
+	// keys; slots is the engine slot of each read the chain started ahead,
+	// which the other layers it brings share.
+	reads   map[int]digest.Digest
+	holding map[digest.Digest]int
+	slots   map[digest.Digest]*aheadSlot
 	// next is the first layer fill hasn't considered yet.
 	next int
 }
 
-// fill starts the downloads of the layers after layer i, in layer order, up
-// to chainAheadWindow past it. It stops at the first that finds no free slot;
-// a later fill tries that layer again.
+func newChainAhead(cm *snapshotManager, chain *ExportChain) *chainAhead {
+	return &chainAhead{
+		cm:      cm,
+		chain:   chain,
+		held:    map[int]*contentFetch{},
+		reads:   map[int]digest.Digest{},
+		holding: map[digest.Digest]int{},
+		slots:   map[digest.Digest]*aheadSlot{},
+	}
+}
+
+// aheadRead names the read of the blob store that brings desc's blob: its
+// pack's, when the chain's provider stores it in one, or its own.
+func (a *chainAhead) aheadRead(desc ocispecs.Descriptor) digest.Digest {
+	if packs, ok := a.chain.Provider.(PackProvider); ok {
+		if id, ok := packs.PackOf(desc.Digest); ok {
+			return id
+		}
+	}
+	return desc.Digest
+}
+
+// fill starts the downloads of the layers after layer i, in layer order,
+// while the chain holds fewer than chainAheadWindow reads ahead: a layer
+// whose blob comes with a read the chain holds already joins it. It stops at
+// the first that would start another read past the window, or finds no free
+// slot; a later fill, once the layers before it are imported, tries that
+// layer again.
 func (a *chainAhead) fill(ctx context.Context, i int) {
 	if a.chain.Provider == nil {
 		return
 	}
 	a.next = max(a.next, i+1)
-	for ; a.next < len(a.chain.Layers) && a.next <= i+chainAheadWindow; a.next++ {
-		f, started, full := a.cm.fetchAhead(ctx, a.chain.Layers[a.next].Descriptor, a.chain.Provider, a.chain)
+	for ; a.next < len(a.chain.Layers); a.next++ {
+		desc := a.chain.Layers[a.next].Descriptor
+		read := a.aheadRead(desc)
+		if a.holding[read] == 0 && len(a.holding) >= chainAheadWindow {
+			return
+		}
+		f, slot, started, full := a.cm.fetchAhead(ctx, desc, a.chain.Provider, a.chain, a.slots[read])
 		if full {
 			return
 		}
+		if slot != nil {
+			a.slots[read] = slot
+		}
 		if f != nil {
 			a.held[a.next] = f
+			a.reads[a.next] = read
+			a.holding[read]++
 		}
 		if started && a.chain.Timing != nil {
 			a.chain.Timing.Ahead++
@@ -437,16 +514,23 @@ func (a *chainAhead) fill(ctx context.Context, i int) {
 
 // take hands layer i's download, if any, to its import.
 func (a *chainAhead) take(i int) *contentFetch {
-	f := a.held[i]
+	f, ok := a.held[i]
+	if !ok {
+		return nil
+	}
 	delete(a.held, i)
+	read := a.reads[i]
+	delete(a.reads, i)
+	if a.holding[read]--; a.holding[read] == 0 {
+		delete(a.holding, read)
+	}
 	return f
 }
 
 // drop lets go of every download still held, waiting for those it abandons
 // to stop and release their leases.
 func (a *chainAhead) drop(ctx context.Context) {
-	for i, f := range a.held {
-		delete(a.held, i)
-		a.cm.dropFetch(ctx, f)
+	for i := range a.held {
+		a.cm.dropFetch(ctx, a.take(i))
 	}
 }

@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
+	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/dagger/dagger/dagql/call/callpbv1"
@@ -17,11 +20,14 @@ import (
 // (indexWaitResultInEgraphLocked). A record carries only its entry's own call,
 // so another engine that gets the entry wouldn't know the call returned it.
 //
-// The Cloud keeps each call its engines' spans report returning one of its
-// entries, as the span encodes it, on that entry, and StoredBundle sends the
-// calls with the entry. The receiving engine derives each call's identity
-// itself and teaches it onto the entry (teachCallIdentityLocked), as its own
-// cache would have when the call completed.
+// The Cloud keeps a call its engines' spans report returning one of its
+// entries, as the span encodes it, on that entry, one call of each term
+// (keepTermCallLocked), and StoredBundle sends the calls with the entry. The
+// receiving engine derives each call's identity itself and teaches it onto
+// the entry (teachCallIdentityLocked), as its own cache would have when the
+// call completed. A call no other session can ever match
+// (ResultCall.onlyItsSessionMatches), such as one keyed to the client that
+// made it, isn't kept: no receiving engine could use it.
 
 // keptCall is a call the Cloud keeps on the entry it returned: its encoding
 // and the identity derived from it.
@@ -31,8 +37,9 @@ type keptCall struct {
 }
 
 // newKeptCall derives the call a span reports returning an entry of another
-// recipe, or returns nil when it reports none. An error is the call's alone:
-// the span's holding attaches without it.
+// recipe, or returns nil when it reports none or one the Cloud doesn't keep
+// (decodeKeptCall). An error is the call's alone: the span's holding
+// attaches without it.
 func newKeptCall(desc RemoteHolding) (*keptCall, error) {
 	if desc.Call == "" || desc.Request == "" || desc.Request == desc.Recipe {
 		return nil, nil
@@ -41,7 +48,9 @@ func newKeptCall(desc RemoteHolding) (*keptCall, error) {
 }
 
 // decodeKeptCall derives an encoded call's identity, which must have the
-// request digest the call is known by.
+// request digest the call is known by. It returns nil for a call no other
+// session can ever match (ResultCall.onlyItsSessionMatches): the Cloud
+// keeps none, from a span or from a saved store.
 func decodeKeptCall(encoded string, request digest.Digest) (*keptCall, error) {
 	var pb callpbv1.Call
 	if err := pb.Decode(encoded); err != nil {
@@ -54,19 +63,63 @@ func decodeKeptCall(encoded string, request digest.Digest) (*keptCall, error) {
 	if id.recipe != request {
 		return nil, fmt.Errorf("call %s: encodes call %s", request, id.recipe)
 	}
+	if id.onlyItsSession {
+		return nil, nil
+	}
 	return &keptCall{encoded: encoded, id: id}, nil
 }
 
-// keepCallLocked keeps kept, a call that returned entry, on entry, once per
-// request digest, and gives the entry the expiry the span reports: as a
-// local cache does when a call completes returning an existing entry, the
-// entry's expiry is the earliest of its calls'. A request digest names a
+// keepCallLocked keeps kept, a call that returned entry, on entry, unless
+// the entry keeps a call of its term (keepTermCallLocked), and gives the
+// entry the expiry the span reports: as a local cache does when a call
+// completes returning an existing entry, the entry's expiry is the earliest
+// of its calls'. A request digest names a
 // computation, not a completion, so a call already kept can still report a
 // new one. A completion expires after it, so a span whose expiry has passed
 // reports a call that has expired, which no engine may hit: it is read again,
 // or read late, and neither its call nor its expiry is kept. It reports
 // whether it changed a stored entry, which a save writes. Requires egraphMu
 // for writing.
+// entryCalls are, on the Cloud, the calls its engines reported returning an
+// entry other than its own. An entry has them only once one is kept on it
+// (sharedResult.callsStateLocked), and keeps them from then on. Guarded by
+// egraphMu.
+type entryCalls struct {
+	// byRequest are the calls, by request digest, which StoredBundle sends
+	// with the entry. They own nothing and go with the entry. Persisted.
+	byRequest map[digest.Digest]*keptCall
+	// terms is byRequest grouped by the term each derives, as
+	// keptCallTermsLocked groups them, or nil until it does: kept until the
+	// calls change or an input's class does (forgetCallTermsLocked). A
+	// reader holding egraphMu for reading may store it; a writer clears it.
+	terms atomic.Pointer[[][]*keptCall]
+	// termIndex is the call kept of each term the entry's calls derive, by
+	// term key (keptCallTermKeyLocked), so that keeping one more call takes
+	// its own key and one lookup (keepTermCallLocked). While it is set, the
+	// entry keeps one call of each term. It is nil until the entry keeps a
+	// call after a change to an input's class, which changes keys
+	// (forgetCallTermsLocked). Not persisted.
+	termIndex map[string]*keptCall
+}
+
+// callsStateLocked returns res's kept calls, making them if it has none.
+// Requires egraphMu for writing.
+func (res *sharedResult) callsStateLocked() *entryCalls {
+	if res.calls == nil {
+		res.calls = &entryCalls{}
+	}
+	return res.calls
+}
+
+// keptCallsLocked returns the calls kept on res, by request digest, or nil.
+// Requires egraphMu.
+func (res *sharedResult) keptCallsLocked() map[digest.Digest]*keptCall {
+	if res.calls == nil {
+		return nil
+	}
+	return res.calls.byRequest
+}
+
 func (c *Cache) keepCallLocked(entry *sharedResult, desc RemoteHolding, kept *keptCall) bool {
 	if desc.Request == "" || desc.Request == desc.Recipe {
 		return false
@@ -77,82 +130,307 @@ func (c *Cache) keepCallLocked(entry *sharedResult, desc RemoteHolding, kept *ke
 	changed := false
 	if expires := mergeSharedResultExpiryUnix(entry.expiresAtUnix, desc.ExpiresAtUnix); expires != entry.expiresAtUnix {
 		entry.expiresAtUnix = expires
+		c.markEntryClassLocked(entry.id, StampCallExpiry)
 		changed = true
 	}
 	if kept != nil {
-		if _, ok := entry.calls[kept.id.recipe]; !ok {
-			if entry.calls == nil {
-				entry.calls = make(map[digest.Digest]*keptCall)
-			}
-			entry.calls[kept.id.recipe] = kept
+		if _, ok := entry.keptCallsLocked()[kept.id.recipe]; !ok && c.keepTermCallLocked(entry, kept) {
 			changed = true
 		}
 	}
 	return changed && !entry.noValueLocked() && entry.persistedEnvelope != nil
 }
 
+// keepTermCallLocked keeps kept on entry as the one call of its term, and
+// reports whether it did. The calls of one term are one call to the cache,
+// which matches a call by its term, and a bundle sends one call of a term,
+// one the recipient can place (placeableCallLocked): a local cache adds no
+// second term of a term it has (indexWaitResultInEgraphLocked). So a call of
+// a term the entry keeps a call of adds nothing, unless a bundle can place
+// kept better than the kept call (keptCallPlacementLocked): kept then
+// replaces it. Calls of one term have their inputs in the same classes, so a
+// bundle can place either both or neither through those classes, and kept
+// replaces a call only when its own inputs are stored and the kept call's
+// aren't. The entry finds the call of
+// kept's term in its index (callTermIndex), so that keeping a call on an
+// entry of thousands takes one key, under the cache's write hold. Two calls
+// the entry kept as two terms are one term once their inputs' classes are
+// joined, which drops the index, and the entry keeps them both until a call
+// is next kept on it, which leaves one of each term of its calls
+// (joinedTermCallsLocked) and indexes them again. A stored bundle of the entry
+// carries its kept calls, so a change to them stamps the entry, with a cause
+// that tells a term the bundle can send from one it can't, for diagnostics.
+// It reports whether it changed the entry's calls. Requires egraphMu for
+// writing.
+func (c *Cache) keepTermCallLocked(entry *sharedResult, kept *keptCall) bool {
+	c.noteSavedEntryLocked(entry.id)
+	joined := false
+	calls := entry.callsStateLocked()
+	if calls.termIndex == nil {
+		terms, joinedCalls := c.joinedTermCallsLocked(entry)
+		for _, call := range joinedCalls {
+			c.dropKeptCallLocked(entry, call)
+		}
+		if len(joinedCalls) > 0 {
+			c.stampEntryLocked(entry, StampKeptCallsJoined)
+			joined = true
+		}
+		calls.termIndex = terms
+	}
+	key := c.keptCallTermKeyLocked(kept)
+	if other := calls.termIndex[key]; other != nil {
+		// No call places better than one whose inputs are its own stored
+		// entries, so kept is ranked, which can scan its inputs' classes,
+		// only when the kept call isn't one.
+		if otherRank := c.keptCallPlacementLocked(other); otherRank == placementOwnStored || c.keptCallPlacementLocked(kept) >= otherRank {
+			c.verifyCallTermIndexLocked(entry)
+			return joined
+		}
+		c.dropKeptCallLocked(entry, other)
+	}
+	cause := StampKeptCallNewTerm
+	if c.keptCallPlacementLocked(kept) == placementNone {
+		cause = StampKeptCallUnsendable
+	}
+	if calls.byRequest == nil {
+		calls.byRequest = make(map[digest.Digest]*keptCall)
+	}
+	calls.byRequest[kept.id.recipe] = kept
+	calls.termIndex[key] = kept
+	c.stampEntryLocked(entry, cause)
+	c.indexKeptCallLocked(entry, kept)
+	c.verifyCallTermIndexLocked(entry)
+	return true
+}
+
+// verifyCallTermIndexLocked, with verifyKeptCallTerms, checks entry's index
+// against its calls' terms taken fresh (joinedTermCallsLocked), and panics
+// if they differ. Requires egraphMu.
+func (c *Cache) verifyCallTermIndexLocked(entry *sharedResult) {
+	if !verifyKeptCallTerms || entry.calls == nil || entry.calls.termIndex == nil {
+		return
+	}
+	// The keys taken here are the check's, not the keeping's.
+	keyed := c.testCallTermKeyed
+	c.testCallTermKeyed = nil
+	defer func() { c.testCallTermKeyed = keyed }()
+	fresh, joined := c.joinedTermCallsLocked(entry)
+	if len(joined) > 0 || !maps.Equal(fresh, entry.calls.termIndex) {
+		panic(fmt.Sprintf("entry %d: call term index %v, taken fresh %v and %d joined", entry.id, entry.calls.termIndex, fresh, len(joined)))
+	}
+}
+
+// joinedTermCallsLocked returns the call entry keeps of each term its calls
+// derive now, by term key, and the calls beyond those: calls kept as two terms
+// whose inputs' classes have since been joined. Of the calls of one term it
+// keeps the first, by request digest, of those a bundle places best
+// (keptCallPlacementLocked). Requires egraphMu.
+func (c *Cache) joinedTermCallsLocked(entry *sharedResult) (map[string]*keptCall, []*keptCall) {
+	byRequest := entry.keptCallsLocked()
+	terms := make(map[string]*keptCall, len(byRequest))
+	var joined []*keptCall
+	for _, recipe := range slices.Sorted(maps.Keys(byRequest)) {
+		call := byRequest[recipe]
+		key := c.keptCallTermKeyLocked(call)
+		first, ok := terms[key]
+		switch {
+		case !ok:
+			terms[key] = call
+		case c.keptCallPlacementLocked(call) < c.keptCallPlacementLocked(first):
+			terms[key] = call
+			joined = append(joined, first)
+		default:
+			joined = append(joined, call)
+		}
+	}
+	return terms, joined
+}
+
+// dropKeptCallLocked forgets kept, a call entry keeps, under its term in
+// the entry's index, and under each of its inputs. Requires egraphMu for
+// writing.
+func (c *Cache) dropKeptCallLocked(entry *sharedResult, kept *keptCall) {
+	c.noteSavedEntryLocked(entry.id)
+	calls := entry.callsStateLocked()
+	delete(calls.byRequest, kept.id.recipe)
+	if calls.termIndex != nil {
+		delete(calls.termIndex, c.keptCallTermKeyLocked(kept))
+	}
+	for _, input := range kept.id.inputs {
+		entries := c.callInputEntries[input.String()]
+		entries[entry.id]--
+		if entries[entry.id] > 0 {
+			continue
+		}
+		delete(entries, entry.id)
+		if len(entries) == 0 {
+			delete(c.callInputEntries, input.String())
+		}
+	}
+	calls.terms.Store(nil)
+}
+
 // storedBundleCallsLocked adds to the build, for each of its entries from
 // start, those a root's closure added and the inputs added for their calls,
 // one of the calls kept on it for each term they derive on the Cloud: one
-// the recipient can place. The recipient can place an input of a call when
-// it holds the input's entry, or the bundle carries it in the closure of a
-// root so far: the entry's record names the input's recipe, and the
-// recipient derives its equivalence to its own inputs as it does for any
-// record. So the first choice is a call whose every input the recipient
-// holds or those closures carry; the next is a call whose inputs the Cloud
-// stores, whose entries the bundle then carries too, with the root whose
-// entry's call needs them. An input another call added doesn't place a
-// call, nor does a later root's closure: the calls chosen are those
-// StoredSizes prices, root by root. A term with neither is counted, and
-// sends nothing. Requires egraphMu.
-func (c *Cache) storedBundleCallsLocked(build *storedBundleBuild, start int) error {
-	// Entries the bundle adds for a call's inputs are visited too.
-	for i := start; i < len(build.order); i++ {
-		res := build.order[i]
-		if len(res.calls) == 0 {
-			continue
-		}
-		for _, group := range c.keptCallTermsLocked(res) {
-			chosen, add := c.placeableCallLocked(group, func(entry *sharedResult) bool {
-				return build.ordinary[entry.id] || build.heldBy.heldLocked(entry)
-			})
-			if chosen == nil {
-				build.unsendableCalls++
+// the recipient can place (placeableCallLocked). Each of the call's inputs
+// goes with the row of the entry that places it, an entry of the input's
+// class (TransferredCall.Inputs): one the bundle carries in the closure of a
+// root so far; else one the recipient holds, as a held row the call alone
+// names; else one the Cloud stores, which the bundle carries as a root of its
+// own, with the root whose entry's call needs it. An input another call added doesn't place a call,
+// nor does a later root's closure: the calls chosen are those StoredSizes
+// prices, root by root. A term none of whose calls can be placed is counted,
+// and sends nothing. Only the terms the recipient's check made are candidates
+// (HeldBy.Calls), each with all its calls: a term with none of the check's
+// calls sends nothing and isn't counted. A root that goes as a part of
+// another root's merge (HeldBy.Parts) adds no input: it sends a call only
+// if the bundle carries or the recipient holds each of its inputs, and
+// leaves the others to that root's own merge, uncounted. The entries the
+// recipient holds that the build went through (HeldBy.Through), from
+// passedStart, are taken after the others, and one a call names goes as a
+// held row the call alone names (nameLocked).
+// Requires egraphMu.
+func (c *Cache) storedBundleCallsLocked(build *storedBundleBuild, start, passedStart int) error {
+	// Entries the bundle adds for a call's inputs are visited too, as are
+	// those it goes through; one it went through that a call named is in
+	// the order too, and is taken where it was gone through.
+	for i, j := start, passedStart; i < len(build.order) || j < len(build.passed); {
+		var res *sharedResult
+		if i < len(build.order) {
+			res = build.order[i]
+			i++
+			if build.passedSeen[res.id] {
 				continue
 			}
-			for _, input := range add {
-				if err := c.storedBundleVisitLocked(build, input, map[sharedResultID]bool{}); err != nil {
+		} else {
+			res = build.passed[j]
+			j++
+		}
+		if len(res.keptCallsLocked()) == 0 {
+			continue
+		}
+		build.step()
+		for _, group := range c.keptCallTermsLocked(res) {
+			if group = c.sendableCallsLocked(build.heldBy, build.terms, group); len(group) == 0 {
+				continue
+			}
+			has := func(entry *sharedResult) bool {
+				return build.ordinary[entry.id] || build.holdsLocked(entry)
+			}
+			chosen, places := c.placeableCallLocked(group, build.now, has)
+			if build.part && slices.ContainsFunc(places, func(place *sharedResult) bool { return place != nil && !has(place) }) {
+				continue
+			}
+			if chosen == nil {
+				build.unsendableCalls++
+				build.markPartial(res)
+				continue
+			}
+			build.nameLocked(res)
+			inputs := make([]TransferOrdinal, len(places))
+			for k, place := range places {
+				if place == nil {
+					continue
+				}
+				if err := c.storedBundleVisitLocked(build, place, map[sharedResultID]bool{}); err != nil {
 					return fmt.Errorf("call %s input: %w", chosen.id.recipe, err)
 				}
-				// A merge installs only what its roots need, so an input
-				// entry travels as a root.
-				if !build.rootSeen[input.id] {
-					build.rootSeen[input.id] = true
-					build.callRoots = append(build.callRoots, input)
-					build.callInputs = append(build.callInputs, uint64(input.id))
+				build.nameLocked(place)
+				// A merge installs only what its roots need, so a stored
+				// input entry the roots' closures don't carry travels as a
+				// root of its own: carried below another call's input, it
+				// would go if that one expired. One the recipient holds
+				// goes as a held row the call alone names, no root: a merge
+				// that doesn't find it then drops the call, not the bundle.
+				if !build.ordinary[place.id] && !build.held[place.id] && !build.rootSeen[place.id] {
+					build.rootSeen[place.id] = true
+					build.callRoots = append(build.callRoots, place)
+					build.callInputs = append(build.callInputs, uint64(place.id))
 				}
+				inputs[k] = build.ordinals[place.id]
 			}
-			build.bundle.Calls = append(build.bundle.Calls, TransferredCall{Call: chosen.encoded, Value: build.ordinals[res.id]})
+			build.bundle.Calls = append(build.bundle.Calls, TransferredCall{Call: chosen.encoded, Value: build.ordinals[res.id], Inputs: inputs})
 		}
 	}
 	return nil
 }
 
+// keptCallTermKeyLocked is the term a kept call derives on the Cloud, as
+// keptCallTermsLocked groups calls by: its self digest over its inputs'
+// classes, an input the Cloud has no class for standing for itself. Each
+// call kept takes one, so it is built in one allocation. Requires egraphMu.
+func (c *Cache) keptCallTermKeyLocked(kept *keptCall) string {
+	if c.testCallTermKeyed != nil {
+		c.testCallTermKeyed()
+	}
+	var key strings.Builder
+	size := len(kept.id.self)
+	for _, input := range kept.id.inputs {
+		size += 1 + len(input)
+	}
+	key.Grow(size)
+	key.WriteString(kept.id.self.String())
+	for _, input := range kept.id.inputs {
+		key.WriteByte('|')
+		if root := c.eqClassRootLocked(c.egraphDigestToClass[input.String()]); root != 0 {
+			var number [20]byte
+			key.Write(strconv.AppendUint(number[:0], uint64(root), 10))
+		} else {
+			key.WriteString(input.String())
+		}
+	}
+	return key.String()
+}
+
+// keptCallPlacementLocked is how a bundle can place kept with what the Cloud
+// stores, for a recipient that holds none of its inputs: by the rule a bundle
+// sends a call by (callPlacementLocked), so that keeping and sending judge a
+// call's inputs alike. placementNone means no bundle can place it. Requires
+// egraphMu.
+func (c *Cache) keptCallPlacementLocked(kept *keptCall) callPlacement {
+	rank, _ := c.callPlacementLocked(kept, time.Now().Unix(), func(*sharedResult) bool { return false })
+	return rank
+}
+
+// verifyKeptCallTerms, set only by tests, checks every kept grouping of an
+// entry's calls against one built fresh, and panics if they differ.
+var verifyKeptCallTerms bool
+
 // keptCallTermsLocked groups the calls kept on res by the term each derives
 // on the Cloud, the call's self digest over its inputs' classes, in a stable
 // order: by term, then by request digest. An input the Cloud has no class for
-// stands for itself. Requires egraphMu.
+// stands for itself. The grouping is kept with the entry until its calls, or
+// an input's class, change (forgetCallTermsLocked): each pricing and bundle
+// visits it, and an entry's calls grow with the runs that taught them.
+// Requires egraphMu.
 func (c *Cache) keptCallTermsLocked(res *sharedResult) [][]*keptCall {
-	byTerm := map[string][]*keptCall{}
-	for _, kept := range res.calls {
-		key := kept.id.self.String()
-		for _, input := range kept.id.inputs {
-			if root := c.eqClassRootLocked(c.egraphDigestToClass[input.String()]); root != 0 {
-				key += fmt.Sprintf("|%d", root)
-			} else {
-				key += "|" + input.String()
+	if res.calls == nil {
+		// No call was ever kept on res: it has no terms.
+		return nil
+	}
+	if kept := res.calls.terms.Load(); kept != nil {
+		if verifyKeptCallTerms {
+			if fresh := c.callTermsLocked(res); !slices.EqualFunc(*kept, fresh, slices.Equal) {
+				panic(fmt.Sprintf("entry %d: kept call terms %v, built fresh %v", res.id, *kept, fresh))
 			}
 		}
+		return *kept
+	}
+	if c.testCallTermsBuilt != nil {
+		c.testCallTermsBuilt()
+	}
+	groups := c.callTermsLocked(res)
+	res.calls.terms.Store(&groups)
+	return groups
+}
+
+// callTermsLocked is keptCallTermsLocked's grouping, built fresh. Requires
+// egraphMu.
+func (c *Cache) callTermsLocked(res *sharedResult) [][]*keptCall {
+	byTerm := map[string][]*keptCall{}
+	for _, kept := range res.keptCallsLocked() {
+		key := c.keptCallTermKeyLocked(kept)
 		byTerm[key] = append(byTerm[key], kept)
 	}
 	groups := make([][]*keptCall, 0, len(byTerm))
@@ -164,52 +442,183 @@ func (c *Cache) keptCallTermsLocked(res *sharedResult) [][]*keptCall {
 	return groups
 }
 
-// placeableCallLocked chooses, of calls that derive one term, the first whose
-// every input the recipient holds or the bundle carries (has); else the first
-// whose every input the Cloud stores, with the input entries the bundle must
-// add. A digest-witnessed string's digest needs neither: the recipient's own
-// call reproduces it.
-// It returns nil when there is neither. Requires egraphMu.
-func (c *Cache) placeableCallLocked(group []*keptCall, has func(*sharedResult) bool) (*keptCall, []*sharedResult) {
-	var fallback *keptCall
-	var fallbackAdd []*sharedResult
-	for _, kept := range group {
-		placed, stored := true, true
-		var add []*sharedResult
-		for i, input := range kept.id.inputs {
-			if kept.id.witnesses[i] {
-				// The recipient's own call reproduces a witness.
-				continue
+// indexKeptCallLocked notes kept, newly kept on entry, under each of its
+// inputs, and drops entry's grouping. Requires egraphMu for writing.
+func (c *Cache) indexKeptCallLocked(entry *sharedResult, kept *keptCall) {
+	for _, input := range kept.id.inputs {
+		entries := c.callInputEntries[input.String()]
+		if entries == nil {
+			if c.callInputEntries == nil {
+				c.callInputEntries = make(map[string]map[sharedResultID]int)
 			}
-			entry := c.entryOfOwnRecipeLocked(input)
-			switch {
-			case entry == nil:
-				placed, stored = false, false
-			case has(entry):
-			case entry.noValueLocked() || entry.persistedEnvelope == nil:
-				placed, stored = false, false
-			default:
-				placed = false
-				add = append(add, entry)
-			}
+			entries = make(map[sharedResultID]int)
+			c.callInputEntries[input.String()] = entries
 		}
-		if placed {
-			return kept, nil
-		}
-		if stored && fallback == nil {
-			fallback, fallbackAdd = kept, add
-		}
+		entries[entry.id]++
 	}
-	return fallback, fallbackAdd
+	entry.callsStateLocked().terms.Store(nil)
 }
 
-// entryOfOwnRecipeLocked returns the entry whose own recipe is dig: the
-// recipe index also names entries by the request digests their calls taught
-// them, which a record doesn't carry. Requires egraphMu.
-func (c *Cache) entryOfOwnRecipeLocked(dig digest.Digest) *sharedResult {
-	entry := c.resultsByID[c.entriesByRecipe[dig]]
-	if entry == nil || len(entry.recipeKeys) == 0 || entry.recipeKeys[0] != dig {
-		return nil
+// unindexKeptCallsLocked forgets the inputs of the calls kept on entry, which
+// is leaving the cache. Requires egraphMu for writing.
+func (c *Cache) unindexKeptCallsLocked(entry *sharedResult) {
+	for _, kept := range entry.keptCallsLocked() {
+		for _, input := range kept.id.inputs {
+			entries := c.callInputEntries[input.String()]
+			delete(entries, entry.id)
+			if len(entries) == 0 {
+				delete(c.callInputEntries, input.String())
+			}
+		}
 	}
-	return entry
+}
+
+// forgetCallTermsLocked drops the grouping and the term index of each entry
+// with a kept call whose input is dig, whose class has changed, and so the
+// key of the call's term. Requires egraphMu for writing.
+func (c *Cache) forgetCallTermsLocked(dig string) {
+	for id := range c.callInputEntries[dig] {
+		if res := c.resultsByID[id]; res != nil && res.calls != nil {
+			res.calls.terms.Store(nil)
+			res.calls.termIndex = nil
+		}
+	}
+}
+
+// forgetAllCallTermsLocked drops every entry's grouping and term index.
+// Requires egraphMu for writing.
+func (c *Cache) forgetAllCallTermsLocked() {
+	for _, entries := range c.callInputEntries {
+		for id := range entries {
+			if res := c.resultsByID[id]; res != nil && res.calls != nil {
+				res.calls.terms.Store(nil)
+				res.calls.termIndex = nil
+			}
+		}
+	}
+}
+
+// placeableCallLocked chooses, of calls that derive one term, one the
+// recipient can place, and returns it with the entry that places each of its
+// inputs (callPlacementLocked), or nil when none can be placed. It prefers
+// the call whose inputs are all on their own entries, which the recipient
+// holds or the bundle carries (has); then on their own entries, some of
+// which the bundle adds; then on entries of their classes, held or carried;
+// then with some of those added: the first call of the group at the best of
+// these. Requires egraphMu.
+func (c *Cache) placeableCallLocked(group []*keptCall, now int64, has func(*sharedResult) bool) (*keptCall, []*sharedResult) {
+	var best *keptCall
+	var bestPlaces []*sharedResult
+	bestRank := placementNone
+	for _, kept := range group {
+		rank, places := c.callPlacementLocked(kept, now, has)
+		if rank < bestRank {
+			best, bestPlaces, bestRank = kept, places, rank
+		}
+		if bestRank == placementOwnHeld {
+			break
+		}
+	}
+	return best, bestPlaces
+}
+
+// callPlacement ranks how a recipient can place a call's inputs, the best
+// first (callPlacementLocked).
+type callPlacement int
+
+const (
+	// placementOwnHeld: every input on its own entry, held or carried.
+	placementOwnHeld callPlacement = iota
+	// placementOwnStored: every input on its own entry, some stored only.
+	placementOwnStored
+	// placementClassHeld: some input on another entry of its class, every
+	// input's entry held or carried.
+	placementClassHeld
+	// placementClassStored: some input on another entry of its class, some
+	// input's entry stored only.
+	placementClassStored
+	// placementNone: some input has no entry that can place it.
+	placementNone
+)
+
+// callPlacementLocked returns how the recipient can place kept's inputs and,
+// by input, the entry that places it, nil for a digest-witnessed string's
+// digest, which the recipient's own call reproduces. An input is placed by
+// an entry of its class (inputPlaceLocked). Requires egraphMu.
+func (c *Cache) callPlacementLocked(kept *keptCall, now int64, has func(*sharedResult) bool) (callPlacement, []*sharedResult) {
+	places := make([]*sharedResult, len(kept.id.inputs))
+	byClass, added := false, false
+	for i, input := range kept.id.inputs {
+		if kept.id.witnesses[i] {
+			continue
+		}
+		entry, own, held := c.inputPlaceLocked(input, now, has)
+		if entry == nil {
+			return placementNone, nil
+		}
+		places[i] = entry
+		byClass = byClass || !own
+		added = added || !held
+	}
+	switch {
+	case !byClass && !added:
+		return placementOwnHeld, places
+	case !byClass:
+		return placementOwnStored, places
+	case !added:
+		return placementClassHeld, places
+	default:
+		return placementClassStored, places
+	}
+}
+
+// inputPlaceLocked returns the entry that places input, a call's input, for
+// a recipient: the entry under input's own recipe, when the recipient holds
+// it or the bundle carries it (has) or the Cloud stores it; else another
+// unexpired entry of input's class, the lowest-numbered one held or carried,
+// else the lowest-numbered one stored. The Cloud holds input in that class
+// from an engine's word, a recipe or content digest a span or record
+// reported: members of a class are interchangeable, and the recipient puts
+// input in the entry's class (TransferredCall.Inputs). own reports whether
+// the entry is input's own, and held whether the recipient holds it or the
+// bundle carries it. It returns nil when no entry can place input. Requires
+// egraphMu.
+func (c *Cache) inputPlaceLocked(input digest.Digest, now int64, has func(*sharedResult) bool) (entry *sharedResult, own, held bool) {
+	stored := func(e *sharedResult) bool { return !e.noValueLocked() && e.persistedEnvelope != nil }
+	if e := c.currentEntryForRecipeLocked(input); e != nil {
+		if has(e) {
+			return e, true, true
+		}
+		if stored(e) {
+			return e, true, false
+		}
+	}
+	root := c.eqClassRootLocked(c.egraphDigestToClass[input.String()])
+	if root == 0 {
+		return nil, false, false
+	}
+	var heldBest, storedBest *sharedResult
+	for id := range c.outputEqClassResults.All(root) {
+		member := c.resultsByID[id]
+		if member == nil || c.resultExpiredAtLocked(member, now) {
+			continue
+		}
+		switch {
+		case has(member):
+			if heldBest == nil || member.id < heldBest.id {
+				heldBest = member
+			}
+		case stored(member):
+			if storedBest == nil || member.id < storedBest.id {
+				storedBest = member
+			}
+		}
+	}
+	if heldBest != nil {
+		return heldBest, false, true
+	}
+	if storedBest != nil {
+		return storedBest, false, false
+	}
+	return nil, false, false
 }

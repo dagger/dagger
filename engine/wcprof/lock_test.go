@@ -5,7 +5,11 @@ import (
 	"context"
 	"regexp"
 	"runtime"
+	"slices"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // lockWait has one goroutine take mu with WriteLock under ctx while the
@@ -42,9 +46,9 @@ func writeLockWaiter(ctx context.Context, mu *RWMutex, locked chan<- struct{}) {
 }
 
 // waiterInLock reports whether writeLockWaiter is in the sync.RWMutex Lock
-// that WriteLock calls itself, after its wait has read the holder; not in
-// another Lock before it, such as the recorder's as the wait interns its
-// ident.
+// that WriteLock has its wait call itself, after the wait has read the
+// holder; not in another Lock before it, such as the recorder's as the wait
+// interns its ident.
 func waiterInLock() bool {
 	buf := make([]byte, 1<<20)
 	buf = buf[:runtime.Stack(buf, true)]
@@ -57,9 +61,9 @@ func waiterInLock() bool {
 }
 
 // lockedByWriteLock matches a goroutine's stack whose sync.RWMutex Lock frame
-// is called from WriteLock: each frame is a line naming the function and a
-// line naming its file.
-var lockedByWriteLock = regexp.MustCompile(`(?m)^sync\.\(\*RWMutex\)\.Lock\(.*\n.*\n\S*/engine/wcprof\.WriteLock\(`)
+// is called from an RWMutex's wait (wait, from waitFor): each frame is a line
+// naming the function and a line naming its file.
+var lockedByWriteLock = regexp.MustCompile(`(?m)^sync\.\(\*RWMutex\)\.Lock\(.*\n.*\n\S*/engine/wcprof\.\(\*RWMutex\)\.wait\(`)
 
 // A wait on an RWMutex names the op that held it, taken with WriteLock, and
 // when it took it; the dump writes them as the wait's holder.
@@ -103,6 +107,39 @@ func TestReadLockedHolderIsReaders(t *testing.T) {
 	mu.RLock()
 	if w := lockWait(t, r, waiterCtx, &mu, mu.RUnlock); w.ResultID != HolderReaders {
 		t.Fatalf("wait %+v: want holder HolderReaders", w)
+	}
+}
+
+// A lock that overlapping readers hold stays held by HolderReaders when one
+// of them leaves: a writer that starts waiting while the others still read
+// names the readers, not an unknown holder.
+func TestOverlappingReadersHolderIsReaders(t *testing.T) {
+	r := withTestRecorder(t, 0)
+	waiterCtx, _ := BeginOp(context.Background(), OpKindLazy, "Container.withExec", OpOpts{})
+	var mu RWMutex
+	mu.RLock()
+	mu.RLock()
+	mu.RUnlock() //nolint:staticcheck // SA2001: a reader that leaves while another still holds the lock.
+	if w := lockWait(t, r, waiterCtx, &mu, mu.RUnlock); w.ResultID != HolderReaders {
+		t.Fatalf("wait %+v: want holder HolderReaders while a reader still holds the lock", w)
+	}
+}
+
+// Once the last reader leaves, the lock's holder is unknown until its next
+// taker marks itself: a writer that takes it and hasn't marked itself yet is
+// never named as the readers.
+func TestLastReaderLeavingIsNotNamed(t *testing.T) {
+	r := withTestRecorder(t, 0)
+	waiterCtx, _ := BeginOp(context.Background(), OpKindLazy, "Container.withExec", OpOpts{})
+	var mu RWMutex
+	mu.RLock()
+	mu.RLock()
+	mu.RUnlock() //nolint:staticcheck // SA2001: a reader that leaves while another still holds the lock.
+	mu.RUnlock()
+	// The next taker holds the mutex but hasn't marked itself yet.
+	mu.RWMutex.Lock()
+	if w := lockWait(t, r, waiterCtx, &mu, mu.RWMutex.Unlock); w.ResultID != HolderUnknown {
+		t.Fatalf("wait %+v: want holder HolderUnknown once the readers have left", w)
 	}
 }
 
@@ -187,4 +224,435 @@ func TestWriteLockWithoutRecorderLooksNothingUp(t *testing.T) {
 	if ctx.lookups != 0 {
 		t.Fatalf("WriteLock looked into its context %d times with no recorder", ctx.lookups)
 	}
+}
+
+// testHolder is a kind of work a test's writer names itself as.
+var testHolder = NewLockHolder("test.commit")
+
+// blockedIn waits until a goroutine whose stack has a frame of fn is blocked
+// on a lock: a sync.RWMutex's, or the sync.Mutex it queues its writers on;
+// and fails the test after 10 s.
+func blockedIn(t *testing.T, fn string) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		buf := make([]byte, 1<<20)
+		for _, g := range bytes.Split(buf[:runtime.Stack(buf, true)], []byte("\n\n")) {
+			if bytes.Contains(g, []byte(fn)) && (bytes.Contains(g, []byte("[sync.RWMutex.")) || bytes.Contains(g, []byte("[sync.Mutex.Lock"))) {
+				return
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("nothing blocked on the lock in %s", fn)
+		}
+		runtime.Gosched()
+	}
+}
+
+// withoutRecorder runs the test with no recorder, as every engine that
+// doesn't record runs.
+func withoutRecorder(t *testing.T) {
+	prev, prevOn := global.Load(), globalOn.Load()
+	global.Store(nil)
+	globalOn.Store(false)
+	t.Cleanup(func() {
+		global.Store(prev)
+		globalOn.Store(prevOn)
+	})
+}
+
+// A reader that waits for a writer is told, with no recorder, how long it
+// waited and the kind of work of the writer that let it in.
+func TestReadWaitNamesTheWriterThatLetItIn(t *testing.T) {
+	withoutRecorder(t)
+	var mu RWMutex
+	WriteLockAs(context.Background(), &mu, "test.mu", testHolder)
+	got := make(chan LockWait)
+	go func() {
+		lw := ReadLockWaited(context.Background(), &mu, "test.mu")
+		mu.RUnlock()
+		got <- lw
+	}()
+	blockedIn(t, "wcprof.ReadLockWaited(")
+	time.Sleep(time.Millisecond)
+	mu.Unlock()
+	lw := <-got
+	if lw.Holder != testHolder || lw.Waited < time.Millisecond {
+		t.Fatalf("wait %+v: want at least 1ms behind %s", lw, testHolder)
+	}
+	if lw.Holder.String() != "test.commit" {
+		t.Fatalf("holder named %q", lw.Holder.String())
+	}
+}
+
+// A reader that begins to wait as a writer is releasing the lock, after its
+// look for waiters, sees no release recorded: it names no kind, and never
+// the readers, since a reader waits only for writers.
+func TestReadWaitBehindAReleasingWriterIsNeverReaders(t *testing.T) {
+	withoutRecorder(t)
+	var mu RWMutex
+	WriteLockAs(context.Background(), &mu, "test.mu", testHolder)
+	// The writer looked for waiters and saw none; it is about to unlock.
+	got := make(chan LockWait)
+	go func() {
+		lw := ReadLockWaited(context.Background(), &mu, "test.mu")
+		mu.RUnlock()
+		got <- lw
+	}()
+	blockedIn(t, "wcprof.ReadLockWaited(")
+	mu.kind = 0
+	mu.RWMutex.Unlock()
+	if lw := <-got; lw.Holder != 0 || lw.Waited <= 0 {
+		t.Fatalf("wait %+v: want behind an unnamed writer", lw)
+	}
+}
+
+// A release that keeps no one waiting writes nothing for waiters.
+func TestReleaseWithNoWaiterRecordsNothing(t *testing.T) {
+	withoutRecorder(t)
+	var mu RWMutex
+	WriteLockAs(context.Background(), &mu, "test.mu", testHolder)
+	mu.Unlock()
+	if got := mu.released.Load(); got != 0 {
+		t.Fatalf("an unwaited release recorded %x", got)
+	}
+}
+
+// A writer that waits only for readers is told it waited for readers; one
+// that waits for a writer that named no kind is told "other".
+func TestWriteWaitNamesReadersOrAnUnnamedWriter(t *testing.T) {
+	withoutRecorder(t)
+	for name, tc := range map[string]struct {
+		hold, release func(*RWMutex)
+		want          LockHolder
+	}{
+		"readers":          {hold: (*RWMutex).RLock, release: (*RWMutex).RUnlock, want: LockHolderReaders},
+		"an unnamed write": {hold: (*RWMutex).Lock, release: (*RWMutex).Unlock, want: 0},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var mu RWMutex
+			// An earlier writer of a named kind, which released mu before
+			// the wait began, is not who let the waiter in.
+			WriteLockAs(context.Background(), &mu, "test.mu", testHolder)
+			mu.Unlock()
+			tc.hold(&mu)
+			got := make(chan LockWait)
+			go func() {
+				lw := WriteLockAs(context.Background(), &mu, "test.mu", testHolder)
+				mu.Unlock()
+				got <- lw
+			}()
+			blockedIn(t, "wcprof.WriteLockAs(")
+			tc.release(&mu)
+			lw := <-got
+			if lw.Holder != tc.want || lw.Waited <= 0 {
+				t.Fatalf("wait %+v: want behind %s", lw, tc.want)
+			}
+		})
+	}
+}
+
+// A recorded wait on an RWMutex names, beside the op that held it, the kind
+// of work of the writer that let it in; the dump writes it as the wait's
+// class.
+func TestRecordedWaitNamesTheWriterKind(t *testing.T) {
+	r := withTestRecorder(t, 0)
+	holderCtx, _ := BeginOp(context.Background(), OpKindRemoteCache, "remotecache.merge.commit", OpOpts{})
+	waiterCtx, _ := BeginOp(context.Background(), OpKindLazy, "Container.withExec", OpOpts{})
+	var mu RWMutex
+	WriteLockAs(holderCtx, &mu, "test.mu", testHolder)
+	w := lockWait(t, r, waiterCtx, &mu, mu.Unlock)
+	if got := r.strings.snapshot()[w.ClassID]; got != "test.commit" {
+		t.Fatalf("wait %+v: its class names %q, want test.commit", w, got)
+	}
+	if d := toDumpEvent(w); d.ClassID != w.ClassID {
+		t.Fatalf("dump %+v: want the kind as its class", d)
+	}
+}
+
+// A holder of the lock for writing can tell whether anyone waits for it,
+// whichever way the waiter takes it: a plain RLock or Lock as dagql takes
+// the graph lock for most reads, or a recorded one (ReadLockWaited,
+// WriteLockAs). The waiter counts itself only while it waits.
+func TestWaitingCountsEveryWaiter(t *testing.T) {
+	t.Parallel()
+	for name, take := range map[string]func(*RWMutex) (release func()){
+		"a plain read":    func(mu *RWMutex) func() { mu.RLock(); return mu.RUnlock },
+		"a plain write":   func(mu *RWMutex) func() { mu.Lock(); return mu.Unlock },
+		"a recorded read": func(mu *RWMutex) func() { ReadLockWaited(context.Background(), mu, "test.mu"); return mu.RUnlock },
+		"a recorded write": func(mu *RWMutex) func() {
+			WriteLockAs(context.Background(), mu, "test.mu", testHolder)
+			return mu.Unlock
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			var mu RWMutex
+			mu.Lock()
+			if mu.Waiting() {
+				t.Fatal("waiting with no waiter")
+			}
+			taken := make(chan func())
+			go func() { taken <- take(&mu) }()
+			deadline := time.Now().Add(10 * time.Second)
+			for !mu.Waiting() && time.Now().Before(deadline) {
+				runtime.Gosched()
+			}
+			saw := mu.Waiting()
+			mu.Unlock()
+			release := <-taken
+			still := mu.Waiting()
+			release()
+			if !saw {
+				t.Fatal("the holder never saw the waiter")
+			}
+			if still {
+				t.Fatal("still waiting once the waiter holds the lock")
+			}
+		})
+	}
+}
+
+// An acquisition that doesn't wait allocates nothing and records nothing,
+// with no recorder: what every engine that doesn't record pays.
+func TestUncontendedAcquisitionsCostNoAllocation(t *testing.T) {
+	withoutRecorder(t)
+	ctx := context.Background()
+	var mu RWMutex
+	allocs := testing.AllocsPerRun(1000, func() {
+		if lw := ReadLockWaited(ctx, &mu, "test.mu"); lw != (LockWait{}) {
+			t.Fatalf("an uncontended read waited: %+v", lw)
+		}
+		mu.RUnlock()
+		if lw := WriteLockAs(ctx, &mu, "test.mu", testHolder); lw != (LockWait{}) {
+			t.Fatalf("an uncontended write waited: %+v", lw)
+		}
+		mu.Unlock()
+	})
+	if allocs != 0 {
+		t.Fatalf("%v allocations per uncontended read and write", allocs)
+	}
+}
+
+// heldHold is one hold an RWMutex's hold observer saw (ObserveHolds).
+type heldHold struct {
+	kind         LockHolder
+	waited, held time.Duration
+}
+
+// observeHolds sets an observer of mu's holds for the test, and returns
+// the holds it has seen so far.
+func observeHolds(t *testing.T, mu *RWMutex) func() []heldHold {
+	t.Helper()
+	var (
+		seenMu sync.Mutex
+		seen   []heldHold
+	)
+	stop := mu.ObserveHolds(func(kind LockHolder, waited, held time.Duration) {
+		seenMu.Lock()
+		seen = append(seen, heldHold{kind, waited, held})
+		seenMu.Unlock()
+	})
+	t.Cleanup(stop)
+	return func() []heldHold {
+		seenMu.Lock()
+		defer seenMu.Unlock()
+		return slices.Clone(seen)
+	}
+}
+
+// Every way a writer takes an RWMutex ends in a hold its observer sees,
+// with the kind the writer named and how long it held the lock: a plain
+// Lock or TryLock, as dagql takes the graph lock for the remote cache's
+// holdings, names no kind.
+func TestHoldObserverSeesEveryWrite(t *testing.T) {
+	withoutRecorder(t)
+	ctx := context.Background()
+	for name, tc := range map[string]struct {
+		take func(*RWMutex)
+		kind LockHolder
+	}{
+		"Lock":        {take: (*RWMutex).Lock},
+		"TryLock":     {take: func(mu *RWMutex) { mu.TryLock() }},
+		"WriteLock":   {take: func(mu *RWMutex) { WriteLock(ctx, mu, "test.mu") }},
+		"WriteLockAs": {take: func(mu *RWMutex) { WriteLockAs(ctx, mu, "test.mu", testHolder) }, kind: testHolder},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var mu RWMutex
+			seen := observeHolds(t, &mu)
+			tc.take(&mu)
+			time.Sleep(20 * time.Millisecond)
+			mu.Unlock()
+			got := seen()
+			if len(got) != 1 {
+				t.Fatalf("saw %d holds, want 1: %+v", len(got), got)
+			}
+			if got[0].kind != tc.kind || got[0].held < 20*time.Millisecond || got[0].waited != 0 {
+				t.Fatalf("saw %+v: want kind %s, held at least 20ms, no wait", got[0], tc.kind)
+			}
+		})
+	}
+}
+
+// A writer that waited to take the lock is seen with its wait, whichever
+// way it took it.
+func TestHoldObserverSeesTheWritersWait(t *testing.T) {
+	withoutRecorder(t)
+	ctx := context.Background()
+	for name, take := range map[string]func(*RWMutex){
+		"Lock":        (*RWMutex).Lock,
+		"WriteLockAs": func(mu *RWMutex) { WriteLockAs(ctx, mu, "test.mu", testHolder) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			var mu RWMutex
+			mu.RLock()
+			seen := observeHolds(t, &mu)
+			done := make(chan struct{})
+			go func() {
+				take(&mu)
+				mu.Unlock()
+				close(done)
+			}()
+			for !mu.Waiting() {
+				runtime.Gosched()
+			}
+			time.Sleep(20 * time.Millisecond)
+			mu.RUnlock()
+			<-done
+			got := seen()
+			if len(got) != 1 || got[0].waited < 20*time.Millisecond {
+				t.Fatalf("saw %+v: want one hold that waited at least 20ms", got)
+			}
+		})
+	}
+}
+
+// The observer sees no hold taken with LockSelfTimed, whose holder times it
+// itself, none taken before it was set, none ended after its stop, and no
+// reader.
+func TestHoldObserverSkipsWhatIsNotItsToSee(t *testing.T) {
+	withoutRecorder(t)
+	var mu RWMutex
+	mu.Lock()
+	seen := observeHolds(t, &mu)
+	mu.Unlock()
+	mu.LockSelfTimed()
+	mu.Unlock()
+	mu.RLock()
+	mu.RUnlock() //nolint:staticcheck // SA2001: a reader the observer must not see.
+	if got := seen(); len(got) != 0 {
+		t.Fatalf("saw %+v: want none", got)
+	}
+	var stopped RWMutex
+	var n atomic.Int32
+	stop := stopped.ObserveHolds(func(LockHolder, time.Duration, time.Duration) { n.Add(1) })
+	stopped.Lock()
+	stop()
+	stopped.Unlock()
+	stopped.Lock()
+	stopped.Unlock() //nolint:staticcheck // SA2001: a hold ended after the stop.
+	if n.Load() != 0 {
+		t.Fatalf("saw %d holds after stop: want none", n.Load())
+	}
+}
+
+// An observed hold that doesn't wait allocates nothing: what the remote
+// cache's service pays on each of its Cloud cache's writes.
+func TestObservedHoldCostsNoAllocation(t *testing.T) {
+	withoutRecorder(t)
+	ctx := context.Background()
+	var mu RWMutex
+	var held time.Duration
+	stop := mu.ObserveHolds(func(_ LockHolder, _, d time.Duration) { held += d })
+	defer stop()
+	allocs := testing.AllocsPerRun(1000, func() {
+		WriteLockAs(ctx, &mu, "test.mu", testHolder)
+		mu.Unlock()
+		mu.Lock()
+		mu.Unlock() //nolint:staticcheck // SA2001: the observed hold's own cost.
+	})
+	if allocs != 0 {
+		t.Fatalf("%v allocations per observed hold", allocs)
+	}
+	if held <= 0 {
+		t.Fatal("the observer saw no time held")
+	}
+}
+
+// BenchmarkRWMutex measures a write and a read of the lock that don't wait,
+// and writers and readers contending on every core, for a sync.RWMutex and
+// for an RWMutex taken as an engine with no recorder takes the graph lock.
+func BenchmarkRWMutex(b *testing.B) {
+	withoutRecorderB(b)
+	ctx := context.Background()
+	b.Run("sync/uncontended", func(b *testing.B) {
+		var mu sync.RWMutex
+		for b.Loop() {
+			mu.Lock()
+			mu.Unlock() //nolint:staticcheck // SA2001: the lock's own cost.
+			mu.RLock()
+			mu.RUnlock() //nolint:staticcheck // SA2001: the lock's own cost.
+		}
+	})
+	b.Run("wcprof/uncontended", func(b *testing.B) {
+		var mu RWMutex
+		for b.Loop() {
+			WriteLockAs(ctx, &mu, "bench.mu", testHolder)
+			mu.Unlock()
+			ReadLockWaited(ctx, &mu, "bench.mu")
+			mu.RUnlock()
+		}
+	})
+	b.Run("wcprof/uncontended/observed", func(b *testing.B) {
+		var mu RWMutex
+		var holds atomic.Int64
+		stop := mu.ObserveHolds(func(_ LockHolder, _, held time.Duration) { holds.Add(int64(held)) })
+		defer stop()
+		for b.Loop() {
+			WriteLockAs(ctx, &mu, "bench.mu", testHolder)
+			mu.Unlock()
+			ReadLockWaited(ctx, &mu, "bench.mu")
+			mu.RUnlock()
+		}
+	})
+	b.Run("sync/contended", func(b *testing.B) {
+		var mu sync.RWMutex
+		var n atomic.Int64
+		b.RunParallel(func(pb *testing.PB) {
+			for pb.Next() {
+				if n.Add(1)%8 == 0 {
+					mu.Lock()
+					mu.Unlock() //nolint:staticcheck // SA2001: the lock's own cost.
+					continue
+				}
+				mu.RLock()
+				mu.RUnlock() //nolint:staticcheck // SA2001: the lock's own cost.
+			}
+		})
+	})
+	b.Run("wcprof/contended", func(b *testing.B) {
+		var mu RWMutex
+		var n atomic.Int64
+		b.RunParallel(func(pb *testing.PB) {
+			for pb.Next() {
+				if n.Add(1)%8 == 0 {
+					WriteLockAs(ctx, &mu, "bench.mu", testHolder)
+					mu.Unlock()
+					continue
+				}
+				ReadLockWaited(ctx, &mu, "bench.mu")
+				mu.RUnlock()
+			}
+		})
+	})
+}
+
+func withoutRecorderB(b *testing.B) {
+	prev, prevOn := global.Load(), globalOn.Load()
+	global.Store(nil)
+	globalOn.Store(false)
+	b.Cleanup(func() {
+		global.Store(prev)
+		globalOn.Store(prevOn)
+	})
 }

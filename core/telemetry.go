@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -103,7 +104,7 @@ func aroundFuncTelemetry(
 	// the object call site.
 	req.ResultCall.ProfileSkip = profileSkip(req.ReceiverTypeName, req.Field)
 	if dagql.IsSkipped(ctx) {
-		return ctx, dagql.NoopDone
+		return hiddenCallEvidence(ctx, req)
 	}
 	introspection, internalRoot, receiver, returnsError := callChainInfo(ctx, req.ResultCall)
 	if introspection {
@@ -128,6 +129,13 @@ func aroundFuncTelemetry(
 		slog.WarnContext(ctx, "failed to derive call digest", "field", spanName, "err", err)
 		return ctx, dagql.NoopDone
 	}
+	// Past the calls telemetry hides above, this is the one rule for whether
+	// telemetry reports the call's cache decision: it arms the span's
+	// evidence below, and decides whether the call's miss asks the remote
+	// cache service, which learns calls only from what telemetry reports.
+	// A repeat of a call already reported in this session is reported too:
+	// the service knows it from its first span.
+	req.CacheReported = !req.ResultCall.ProfileSkip
 	var q *Query
 	var payloadKeys dagql.CallPayloadSeenKeyStore
 	if currentQuery, currentQueryErr := CurrentQuery(ctx); currentQueryErr == nil {
@@ -252,6 +260,80 @@ func aroundFuncTelemetry(
 	}
 }
 
+// hiddenCallEvidence reports the cache decision of a call hidden from the
+// session's view (dagql.WithSkip), which shows no line for it. The call is
+// still the cache's: what it returns is an entry like any other, and the
+// remote cache learns calls only from what telemetry reports. So, unless it is
+// profile-skipped, the call reports its cache decision as any other call does
+// (CacheReported), on a span no view shows but debug's: internal, hidden
+// below dagui.ShowInternalVerbosity, and passthrough, never a row of its own
+// at any verbosity, which Cloud's trace view, at ShowInternalVerbosity, needs
+// too. The span takes no line from the session: it is deduplicated apart from
+// the session's shown calls, so a later identical call still shows its own.
+// It is no part of the session's rendering either: it carries neither the
+// call's frame, whose delivery would stand for its closure's (call payloads),
+// nor its output, which would make it the result's creator, but the recipe
+// of the entry it returned as telemetryattrs.CacheRecipeAttr.
+// A request whose client opted out of telemetry (dagql.IsTelemetrySuppressed)
+// reports nothing, as before.
+func hiddenCallEvidence(ctx context.Context, req *dagql.CallRequest) (context.Context, func(dagql.AnyResult, bool, *error)) {
+	if req.ResultCall.ProfileSkip || dagql.IsTelemetrySuppressed(ctx) {
+		return ctx, dagql.NoopDone
+	}
+	callDigest, err := req.RecipeDigest(ctx)
+	if err != nil {
+		return ctx, dagql.NoopDone
+	}
+	req.CacheReported = true
+	if q, err := CurrentQuery(ctx); err == nil {
+		if seenKeys, err := q.TelemetrySeenKeyStore(ctx); err == nil {
+			repeat := req.DoNotCache && !req.DeduplicateTelemetry
+			if !dagql.ShouldEmitTelemetry(ctx, seenKeys, hiddenCallSeenKey(callDigest.String()), repeat) {
+				return ctx, dagql.NoopDone
+			}
+		}
+	}
+	spanName := req.Field
+	if req.ReceiverTypeName != "" {
+		spanName = req.ReceiverTypeName + "." + req.Field
+	}
+	attrs := []attribute.KeyValue{
+		attribute.String(telemetry.DagDigestAttr, callDigest.String()),
+		attribute.Bool(telemetry.UIInternalAttr, true),
+		attribute.Bool(telemetry.UIPassthroughAttr, true),
+	}
+	// Its inputs, as every call span's, mark it from its start as a span
+	// whose cache report the remote cache reads: it takes the protected
+	// export lane (enginetel.IsProtectedSpan).
+	if callInputs, err := req.ResultCall.Inputs(ctx); err != nil {
+		slog.WarnContext(ctx, "failed to compute inputs(call)", "field", spanName, "err", err)
+	} else {
+		inputs := make([]string, len(callInputs))
+		for i, input := range callInputs {
+			inputs[i] = input.String()
+		}
+		attrs = append(attrs, attribute.StringSlice(telemetry.DagInputsAttr, inputs))
+	}
+	ctx, span := Tracer(ctx).Start(ctx, spanName, trace.WithAttributes(attrs...))
+	initCacheEvidence(span, req)
+	return ctx, func(res dagql.AnyResult, cached bool, err *error) {
+		defer telemetry.EndWithCause(span, err)
+		end := callEndAttrs(ctx, span, req, res, cached)
+		for i, attr := range end {
+			if attr.Key == telemetry.DagOutputAttr {
+				end[i] = attribute.String(telemetryattrs.CacheRecipeAttr, attr.Value.AsString())
+			}
+		}
+		span.SetAttributes(end...)
+	}
+}
+
+// hiddenCallSeenKey is the session's deduplication key of a hidden call's
+// report, apart from its shown calls' keys (hiddenCallEvidence).
+func hiddenCallSeenKey(callDigest string) string {
+	return "hidden:" + callDigest
+}
+
 // isUIInternal reports whether a call's span is internal machinery rather
 // than work to present: an engine-internal select, a getter accessor (a real
 // call, so it keeps its trace metadata), or a module's call on its own behalf
@@ -323,15 +405,15 @@ func callPayloadAttr(ctx context.Context, spanName string, frame *dagql.ResultCa
 }
 
 // initCacheEvidence arms the request's cache-evidence carrier
-// (dagql.CacheDecision) exactly when this call's span records and the call is
-// not ProfileSkip-classified — the same volume class the OTel profiling source
-// uses — so suppressed/deduplicated/introspection/profile-skipped calls record
-// nothing and dagql needs no filtering logic of its own (nil carrier ⇒ no-op).
+// (dagql.CacheDecision) exactly when this call's span records and telemetry
+// reports the call's cache decision (CacheReported, set by AroundFunc), so
+// suppressed/deduplicated/introspection/profile-skipped calls record nothing
+// and dagql needs no filtering logic of its own (nil carrier ⇒ no-op).
 func initCacheEvidence(span trace.Span, req *dagql.CallRequest) {
 	if span == nil || !span.IsRecording() {
 		return
 	}
-	if req == nil || req.ResultCall == nil || req.ResultCall.ProfileSkip {
+	if req == nil || req.ResultCall == nil || !req.CacheReported {
 		return
 	}
 	req.CacheEvidence = dagql.NewCacheDecision()
@@ -357,7 +439,18 @@ func appendCacheEvidenceAttrs(ctx context.Context, attrs []attribute.KeyValue, e
 	if ev.Outcome == dagql.CacheOutcomeHit && ev.HitRemote {
 		attrs = append(attrs, attribute.String(telemetryattrs.CacheHitRemoteAttr, "true"))
 		if ev.HitMergedAtUnixNano != 0 {
-			attrs = append(attrs, attribute.String(telemetryattrs.CacheHitMergedAtAttr, strconv.FormatInt(ev.HitMergedAtUnixNano, 10)))
+			attrs = append(attrs,
+				attribute.String(telemetryattrs.CacheHitMergedAtAttr, strconv.FormatInt(ev.HitMergedAtUnixNano, 10)),
+				attribute.String(telemetryattrs.CacheHitMergedRouteAttr, ev.HitMergedRoute.String()))
+			if ev.HitMerge != 0 {
+				attrs = append(attrs, attribute.String(telemetryattrs.CacheHitMergeAttr, strconv.FormatUint(ev.HitMerge, 10)))
+			}
+			if ev.HitMergedFile != "" {
+				attrs = append(attrs, attribute.String(telemetryattrs.CacheHitMergedFileAttr, ev.HitMergedFile))
+			}
+			if ev.HitFirstUse {
+				attrs = append(attrs, attribute.String(telemetryattrs.CacheHitFirstUseAttr, "true"))
+			}
 		}
 	}
 	if ev.Outcome == dagql.CacheOutcomeExecuted {
@@ -389,6 +482,7 @@ func appendCacheEvidenceAttrs(ctx context.Context, attrs []attribute.KeyValue, e
 		}
 	}
 	attrs = appendAdoptionAttrs(attrs, ev)
+	attrs = appendPersistedAttr(attrs, ev)
 	if ev.LookupAtUnixNano != 0 {
 		attrs = append(attrs, attribute.String(telemetryattrs.CacheLookupAtAttr, strconv.FormatInt(ev.LookupAtUnixNano, 10)))
 	}
@@ -406,6 +500,9 @@ func appendCacheEvidenceAttrs(ctx context.Context, attrs []attribute.KeyValue, e
 		if ev.PairingDigest != "" {
 			attrs = append(attrs, attribute.String(telemetryattrs.CachePairingDigestAttr, ev.PairingDigest.String()))
 		}
+	}
+	if ev.Caller != "" {
+		attrs = append(attrs, attribute.String(telemetryattrs.CacheCallerAttr, ev.Caller.String()))
 	}
 	if resultNumber, ok := dagql.CacheResultNumber(res); ok {
 		attrs = append(attrs, attribute.String(telemetryattrs.CacheResultIDAttr, strconv.FormatUint(resultNumber, 10)))
@@ -429,6 +526,45 @@ func appendCacheEvidenceAttrs(ctx context.Context, attrs []attribute.KeyValue, e
 	// reports the state its result is in.
 	if state, ok := ev.ResultState(context.WithoutCancel(ctx), res); ok {
 		attrs = append(attrs, cacheStateAttrs(state)...)
+	}
+	// After the state's read, so that its wait is among the hit's.
+	return appendHitAttrs(attrs, ev)
+}
+
+// appendHitAttrs appends a hit's load attributes (appendHitLoadAttrs), and
+// nothing for a call that didn't hit.
+func appendHitAttrs(attrs []attribute.KeyValue, ev *dagql.CacheDecision) []attribute.KeyValue {
+	if ev.Outcome != dagql.CacheOutcomeHit {
+		return attrs
+	}
+	return appendHitLoadAttrs(attrs, ev.HitLoadedAtUnixNano, ev.HitServedAtUnixNano, ev.HitLoad())
+}
+
+// appendHitLoadAttrs appends what a hit's own time after its lookup is made
+// of: when its value was loaded and when the cache handed it back, each
+// unless 0, how many entries its load decoded, and what its work waited for,
+// by kind.
+func appendHitLoadAttrs(attrs []attribute.KeyValue, loadedAt, servedAt int64, load dagql.HitLoad) []attribute.KeyValue {
+	if loadedAt != 0 {
+		attrs = append(attrs, attribute.String(telemetryattrs.CacheHitLoadedAtAttr, strconv.FormatInt(loadedAt, 10)))
+	}
+	if servedAt != 0 {
+		attrs = append(attrs, attribute.String(telemetryattrs.CacheHitServedAtAttr, strconv.FormatInt(servedAt, 10)))
+	}
+	if load.Decoded > 0 {
+		attrs = append(attrs, attribute.String(telemetryattrs.CacheHitDecodedAttr, strconv.FormatInt(load.Decoded, 10)))
+	}
+	if len(load.Waits) > 0 {
+		kinds := make([]string, 0, len(load.Waits))
+		for kind := range load.Waits {
+			kinds = append(kinds, kind)
+		}
+		slices.Sort(kinds)
+		waits := make([]string, len(kinds))
+		for i, kind := range kinds {
+			waits[i] = kind + "=" + strconv.FormatInt(int64(load.Waits[kind]), 10)
+		}
+		attrs = append(attrs, attribute.StringSlice(telemetryattrs.CacheHitWaitsAttr, waits))
 	}
 	return attrs
 }
@@ -458,7 +594,7 @@ func appendRemoteMissAttrs(attrs []attribute.KeyValue, ev *dagql.CacheDecision) 
 }
 
 // appendAdoptionAttrs appends the facts of a publication that adopted its
-// recipe's live entry.
+// recipe's live entry, or kept its made value over a Cloud merge's record.
 func appendAdoptionAttrs(attrs []attribute.KeyValue, ev *dagql.CacheDecision) []attribute.KeyValue {
 	if (ev.Outcome == dagql.CacheOutcomeExecuted || ev.Outcome == dagql.CacheOutcomeJoined) && ev.Adopted {
 		// A publication fact, shared by the call that executed and the calls
@@ -471,7 +607,23 @@ func appendAdoptionAttrs(attrs []attribute.KeyValue, ev *dagql.CacheDecision) []
 			}
 		}
 	}
+	if (ev.Outcome == dagql.CacheOutcomeExecuted || ev.Outcome == dagql.CacheOutcomeJoined) && ev.KeptOverRemote {
+		attrs = append(attrs, attribute.String(telemetryattrs.CacheKeptOverRemoteAttr, "true"))
+		if ev.KeptOverRemoteMergedAtUnixNano != 0 {
+			attrs = append(attrs, attribute.String(telemetryattrs.CacheKeptOverRemoteMergedAtAttr, strconv.FormatInt(ev.KeptOverRemoteMergedAtUnixNano, 10)))
+		}
+	}
 	return attrs
+}
+
+// appendPersistedAttr appends that the call itself kept its result past its
+// session (CacheDecision.Persisted): the call's own fact, beside the entry's
+// retention from any source, which the entry's state reports.
+func appendPersistedAttr(attrs []attribute.KeyValue, ev *dagql.CacheDecision) []attribute.KeyValue {
+	if !ev.Persisted {
+		return attrs
+	}
+	return append(attrs, attribute.String(telemetryattrs.CachePersistedAttr, "true"))
 }
 
 // cacheStateAttrs maps an entry's cache state onto the dagger.io/cache.*
@@ -627,7 +779,18 @@ func callEndAttrs(ctx context.Context, span trace.Span, req *dagql.CallRequest, 
 		attrs = dagql.AppendContentPreferredDigestAttr(ctx, attrs, req.ResultCall, res)
 	}
 	attrs = appendPendingAttrs(attrs, res)
-	return appendCacheEvidenceAttrs(ctx, attrs, req.CacheEvidence, res)
+	attrs = appendCacheEvidenceAttrs(ctx, attrs, req.CacheEvidence, res)
+	return appendFollowsFromInputsAttr(attrs, req)
+}
+
+// appendFollowsFromInputsAttr stamps the declaration that the call's result
+// follows from its inputs (dagql.FieldSpec.FollowsFromInputs) on a call row
+// that reached a cache decision, as its other cache facts are stamped.
+func appendFollowsFromInputsAttr(attrs []attribute.KeyValue, req *dagql.CallRequest) []attribute.KeyValue {
+	if req.CacheEvidence == nil || req.CacheEvidence.Outcome == "" || req.ResultCall == nil || !req.ResultCall.FollowsFromInputs {
+		return attrs
+	}
+	return append(attrs, attribute.String(telemetryattrs.CacheFollowsFromInputsAttr, "true"))
 }
 
 // appendStatusAttrs appends the attributes that record the status of a call

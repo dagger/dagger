@@ -92,8 +92,8 @@ func (build *Builder) withRerun(ctr *dagger.Container) *dagger.Container {
 }
 
 // RerunOutputs are the outputs of the build steps that have built to
-// different bytes before, by what they are: QEMU's emulators and the Go SDK's
-// files.
+// different bytes before, by what they are: QEMU's emulators, the Go SDK's
+// files and the Python SDK's.
 func (build *Builder) RerunOutputs(ctx context.Context) (map[string]*dagger.Directory, error) {
 	qemu, _ := build.qemuBins()
 	goFiles, err := build.goSDKFiles(ctx)
@@ -101,8 +101,9 @@ func (build *Builder) RerunOutputs(ctx context.Context) (map[string]*dagger.Dire
 		return nil, err
 	}
 	return map[string]*dagger.Directory{
-		"QEMU's emulators":   qemu,
-		"the Go SDK's files": goFiles,
+		"QEMU's emulators":       qemu,
+		"the Go SDK's files":     goFiles,
+		"the Python SDK's files": build.pythonSDKFiles(),
 	}, nil
 }
 
@@ -125,7 +126,22 @@ func (build *Builder) WithGPUSupport() *Builder {
 	return &b
 }
 
+// Engine is the engine's container: EngineBase with the engine's binaries
+// (WithEngineBinaries).
 func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
+	base, err := build.EngineBase(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return build.WithEngineBinaries(ctx, base)
+}
+
+// EngineBase is the engine's container without the binaries built from the
+// source (WithEngineBinaries): Wolfi's packages, then the tools built from
+// pinned releases in one layer. A commit of the source changes none of it, so
+// an image of another commit shares these layers' bytes, and a host that holds
+// one pulls none of them again.
+func (build *Builder) EngineBase(ctx context.Context) (*dagger.Container, error) {
 	eg, ctx := errgroup.WithContext(ctx)
 
 	if build.gpuSupport {
@@ -184,19 +200,9 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 		base = base.WithAnnotation(versionAnnotation, build.version)
 	}
 
-	type binAndPath struct {
-		path     string
-		file     *dagger.File
-		fileOpts []dagger.ContainerWithFileOpts
-	}
 	bins := []binAndPath{
-		{path: consts.EngineServerPath, file: build.engineBinary(build.race)},
 		{path: "/usr/bin/sshfs", file: build.sshfsBin()},
-		{path: "/usr/bin/dial-stdio", file: build.dialstdioBinary()},
-		{path: "/opt/cni/bin/dnsname", file: build.dnsnameBinary()},
-		{path: consts.DaggerInitPath, file: build.daggerInit()},
-		{path: consts.DaggerInitSessionPath, file: build.binary("./cmd/init-session", false)},
-		{path: consts.TiniPath, file: build.Init(), fileOpts: []dagger.ContainerWithFileOpts{{Permissions: 0o755}}},
+		{path: consts.TiniPath, file: build.Init(), permissions: 0o755},
 	}
 	if entire := build.gitRemoteEntireBin(); entire != nil {
 		bins = append(bins, binAndPath{path: consts.GitRemoteEntirePath, file: entire})
@@ -208,19 +214,12 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 	for _, plugin := range build.cniPlugins() {
 		bins = append(bins, binAndPath{path: filepath.Join("/opt/cni/bin", plugin.name), file: plugin.file})
 	}
+	tools := build.binDir(ctx, eg, bins).
+		WithDirectory(distconsts.EngineDefaultStateDir, core.NewDirectory())
 
 	ctr := base.
-		WithExec([]string{"sh", "-c", "mkdir -p /etc && touch /etc/fuse.conf && (grep -qxF user_allow_other /etc/fuse.conf || printf '%s\\n' user_allow_other >> /etc/fuse.conf)"})
-	for _, bin := range bins {
-		ctr = ctr.WithFile(bin.path, bin.file, bin.fileOpts...)
-		eg.Go(func() error {
-			return build.verifyPlatform(ctx, bin.file)
-		})
-	}
-
-	ctr = ctr.
-		WithSymlink("/usr/bin/dial-stdio", "/usr/bin/buildctl").
-		WithDirectory(distconsts.EngineDefaultStateDir, core.NewDirectory())
+		WithExec([]string{"sh", "-c", "mkdir -p /etc && touch /etc/fuse.conf && (grep -qxF user_allow_other /etc/fuse.conf || printf '%s\\n' user_allow_other >> /etc/fuse.conf)"}).
+		WithDirectory("/", tools)
 
 	if err := eg.Wait(); err != nil {
 		return nil, err
@@ -229,37 +228,105 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 	return ctr, nil
 }
 
+// WithEngineBinaries is ctr with the engine's binaries built from the source:
+// dial-stdio, dnsname and dagger-init in one layer, then dagger-init-session
+// in its own, then the engine in its own. A commit of the source changes
+// them, and a layer is made again, and unpacked again on a host, whenever a
+// layer below it changes; so they go above every layer a commit leaves
+// alone, the image's entries among them, and up in the order of how often a
+// commit changes them. The first three build from a handful of the source's
+// packages (the engine package's constants, the DNS hosts file, the init
+// process), which few commits change. dagger-init-session is a client of the
+// engine: it builds from the engine's client package and, through it,
+// telemetry, the profiler, the snapshotter and dagql's call IDs, which most
+// commits change, as they change the engine.
+func (build *Builder) WithEngineBinaries(ctx context.Context, ctr *dagger.Container) (*dagger.Container, error) {
+	eg, ctx := errgroup.WithContext(ctx)
+	helpers := build.binDir(ctx, eg, []binAndPath{
+		{path: "/usr/bin/dial-stdio", file: build.dialstdioBinary()},
+		{path: "/opt/cni/bin/dnsname", file: build.dnsnameBinary()},
+		{path: consts.DaggerInitPath, file: build.daggerInit()},
+	}).WithSymlink("/usr/bin/dial-stdio", "/usr/bin/buildctl")
+	initSession := build.binDir(ctx, eg, []binAndPath{
+		{path: consts.DaggerInitSessionPath, file: build.binary("./cmd/init-session")},
+	})
+	engine := build.engineBinary(build.race)
+	eg.Go(func() error {
+		return build.verifyPlatform(ctx, engine)
+	})
+	ctr = ctr.
+		WithDirectory("/", helpers).
+		WithDirectory("/", initSession).
+		WithFile(consts.EngineServerPath, engine)
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+	return ctr, nil
+}
+
+// binAndPath is a binary and where the engine's image installs it.
+type binAndPath struct {
+	path        string
+	file        *dagger.File
+	permissions int
+}
+
+// binDir is a directory of bins, each at its path, for an image to add in one
+// layer, with a check in eg of each one's platform.
+func (build *Builder) binDir(ctx context.Context, eg *errgroup.Group, bins []binAndPath) *dagger.Directory {
+	dir := core.NewDirectory()
+	for _, bin := range bins {
+		dir = dir.WithFile(bin.path, bin.file, dagger.DirectoryWithFileOpts{Permissions: bin.permissions})
+		eg.Go(func() error {
+			return build.verifyPlatform(ctx, bin.file)
+		})
+	}
+	return dir
+}
+
 func (build *Builder) CodegenBinary() *dagger.File {
-	return build.binary("./cmd/codegen", false)
+	return build.binary("./cmd/codegen")
 }
 
 // ImageEntriesBinary exports the cache entries the engine image ships
 // (cmd/engine-image-entries).
 func (build *Builder) ImageEntriesBinary() *dagger.File {
-	return build.binary("./cmd/engine-image-entries", false)
+	return build.binary("./cmd/engine-image-entries")
 }
 
 // IntrospectBinary is cmd/introspect, which prints the engine API's schema
 // without running an engine.
 func (build *Builder) IntrospectBinary() *dagger.File {
-	return build.binary("./cmd/introspect", false)
+	return build.binary("./cmd/introspect")
 }
 
+// engineBinary is the engine. It reports its commit (engine.FullVersion), so
+// it is stamped with it: with the CLI (cli-dev), the only binary of the image
+// that is.
 func (build *Builder) engineBinary(race bool) *dagger.File {
-	return build.binary("./cmd/engine", race)
+	return build.buildBinary("./cmd/engine", race, build.VCSValues())
 }
 
 func (build *Builder) dnsnameBinary() *dagger.File {
-	return build.binary("./cmd/dnsname", false)
+	return build.binary("./cmd/dnsname")
 }
 
 func (build *Builder) dialstdioBinary() *dagger.File {
-	return build.binary("./cmd/dialstdio", false)
+	return build.binary("./cmd/dialstdio")
 }
 
 // binary is pkg, a main package of the source, built for the builder's
-// platform with the source's VCS info stamped in.
-func (build *Builder) binary(pkg string, race bool) *dagger.File {
+// platform. It carries no VCS info: a binary stamped with the commit differs
+// at every commit, and so does every image layer and cache entry that holds
+// it, though nothing else of it changed. Only the engine reports its commit
+// (engineBinary).
+func (build *Builder) binary(pkg string) *dagger.File {
+	return build.buildBinary(pkg, false, nil)
+}
+
+// buildBinary is pkg, a main package of the source, built for the builder's
+// platform with vcs, the -X definitions of VCS info (VCSValues), stamped in.
+func (build *Builder) buildBinary(pkg string, race bool, vcs []string) *dagger.File {
 	opts := golang.GoOpts{
 		Version: consts.GolangVersion,
 		BuildFlags: []string{
@@ -270,7 +337,7 @@ func (build *Builder) binary(pkg string, race bool) *dagger.File {
 			// A build flag rather than GOFLAGS, which would be in every
 			// package's exec and keep it from the CLI's and codegen's.
 			"-tags=dfexcludepatterns,dfparents",
-			ldflags([]string{"-s", "-w"}, build.VCSValues()),
+			ldflags([]string{"-s", "-w"}, vcs),
 		},
 	}
 	if race {
@@ -498,7 +565,7 @@ func (build *Builder) cniPlugins() []cniPlugin {
 }
 
 func (build *Builder) daggerInit() *dagger.File {
-	return build.binary("./cmd/init", false)
+	return build.binary("./cmd/init")
 }
 
 func (build *Builder) Init() *dagger.File {

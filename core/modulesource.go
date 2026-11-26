@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"net/url"
 	"os"
 	"path"
@@ -24,6 +25,7 @@ import (
 
 	"github.com/dagger/dagger/core/gitref"
 	"github.com/dagger/dagger/core/modules"
+	"github.com/dagger/dagger/core/sdk/sdkmeta"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
@@ -144,6 +146,11 @@ func (*SDKConfig) TypeDescription() string {
 
 func (sdk SDKConfig) Clone() *SDKConfig {
 	cp := sdk
+	// Copied, not shared: withExperimentalFeatures and
+	// withoutExperimentalFeatures write into a clone's map, and the source
+	// cloned from may be held by other clients.
+	cp.Config = maps.Clone(sdk.Config)
+	cp.Experimental = maps.Clone(sdk.Experimental)
 	return &cp
 }
 
@@ -255,7 +262,9 @@ type ModuleSource struct {
 	SourceSubpath string
 
 	// OriginalRefString is the exact ref string used to instantiate this module
-	// source. Internal only, used for user-facing follow-up commands.
+	// source. Internal only, used for user-facing follow-up commands and as the
+	// declared ref a parent's config names this source by, so it is persisted
+	// with the source.
 	OriginalRefString string
 
 	OriginalSubpath string
@@ -572,6 +581,7 @@ type persistedModuleSourcePayload struct {
 	ConfigClients                       []*modules.ModuleConfigClient         `json:"configClients,omitempty"`
 	SourceRootSubpath                   string                                `json:"sourceRootSubpath,omitempty"`
 	SourceSubpath                       string                                `json:"sourceSubpath,omitempty"`
+	OriginalRefString                   string                                `json:"originalRefString,omitempty"`
 	OriginalSubpath                     string                                `json:"originalSubpath,omitempty"`
 	ContextDirectoryResultID            uint64                                `json:"contextDirectoryResultID,omitempty"`
 	WorkspaceResultID                   uint64                                `json:"workspaceResultID,omitempty"`
@@ -888,8 +898,22 @@ func (sdk persistedModuleSourceLazyRuntimeTarget) TargetRuntime(ctx context.Cont
 }
 
 func (src *ModuleSource) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
+	payload, err := src.persistedPayload(func(res dagql.AnyResult, label string) (uint64, error) {
+		return encodePersistedObjectRef(enc, res, label)
+	})
+	if err != nil {
+		return dagql.PersistedObjectEncoding{}, err
+	}
+	return encodePersistedObjectPayload(payload)
+}
+
+// persistedPayload is everything the source persists: its plain fields, and
+// each result it holds as ref names it. Its persisted encoding names a result
+// by its stored result ID, its content identity by its content
+// (ContentIdentity), so the two hold the same fields.
+func (src *ModuleSource) persistedPayload(ref func(res dagql.AnyResult, label string) (uint64, error)) (persistedModuleSourcePayload, error) {
 	if src == nil {
-		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted module source: nil module source")
+		return persistedModuleSourcePayload{}, fmt.Errorf("encode persisted module source: nil module source")
 	}
 	payload := persistedModuleSourcePayload{
 		ConfigExists:                        src.ConfigExists,
@@ -918,13 +942,14 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, enc *dagql.P
 		ConfigClients:                       slices.Clone(src.ConfigClients),
 		SourceRootSubpath:                   src.SourceRootSubpath,
 		SourceSubpath:                       src.SourceSubpath,
+		OriginalRefString:                   src.OriginalRefString,
 		OriginalSubpath:                     src.OriginalSubpath,
 		Kind:                                src.Kind,
 		Local:                               src.Local,
 	}
 	if src.SDK != nil {
 		if src.SDKImpl == nil {
-			return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted module source: sdk config is set but sdk impl is not initialized")
+			return persistedModuleSourcePayload{}, fmt.Errorf("encode persisted module source: sdk config is set but sdk impl is not initialized")
 		}
 		_, hasRuntime := src.SDKImpl.AsRuntime()
 		_, hasModuleTypes := src.SDKImpl.AsModuleTypes()
@@ -949,16 +974,16 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, enc *dagql.P
 		}
 	}
 	if src.ContextDirectory.Self() != nil {
-		contextDirID, err := encodePersistedObjectRef(enc, src.ContextDirectory, "module source context directory")
+		contextDirID, err := ref(src.ContextDirectory, "module source context directory")
 		if err != nil {
-			return dagql.PersistedObjectEncoding{}, err
+			return persistedModuleSourcePayload{}, err
 		}
 		payload.ContextDirectoryResultID = contextDirID
 	}
 	if src.Workspace.Self() != nil {
-		workspaceID, err := encodePersistedObjectRef(enc, src.Workspace, "module source workspace")
+		workspaceID, err := ref(src.Workspace, "module source workspace")
 		if err != nil {
-			return dagql.PersistedObjectEncoding{}, err
+			return persistedModuleSourcePayload{}, err
 		}
 		payload.WorkspaceResultID = workspaceID
 	}
@@ -967,16 +992,16 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, enc *dagql.P
 		if dep.Self() == nil {
 			continue
 		}
-		depID, err := encodePersistedObjectRef(enc, dep, "module source dependency")
+		depID, err := ref(dep, "module source dependency")
 		if err != nil {
-			return dagql.PersistedObjectEncoding{}, err
+			return persistedModuleSourcePayload{}, err
 		}
 		payload.DependencyResultIDs = append(payload.DependencyResultIDs, depID)
 	}
 	if src.Blueprint.Self() != nil {
-		blueprintID, err := encodePersistedObjectRef(enc, src.Blueprint, "module source blueprint")
+		blueprintID, err := ref(src.Blueprint, "module source blueprint")
 		if err != nil {
-			return dagql.PersistedObjectEncoding{}, err
+			return persistedModuleSourcePayload{}, err
 		}
 		payload.BlueprintResultID = blueprintID
 	}
@@ -985,9 +1010,9 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, enc *dagql.P
 		if toolchain.Self() == nil {
 			continue
 		}
-		toolchainID, err := encodePersistedObjectRef(enc, toolchain, "module source toolchain")
+		toolchainID, err := ref(toolchain, "module source toolchain")
 		if err != nil {
-			return dagql.PersistedObjectEncoding{}, err
+			return persistedModuleSourcePayload{}, err
 		}
 		payload.ToolchainResultIDs = append(payload.ToolchainResultIDs, toolchainID)
 	}
@@ -1006,9 +1031,9 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, enc *dagql.P
 			Ref:              src.Git.Ref,
 		}
 		if src.Git.UnfilteredContextDir.Self() != nil {
-			unfilteredID, err := encodePersistedObjectRef(enc, src.Git.UnfilteredContextDir, "module source git unfiltered context dir")
+			unfilteredID, err := ref(src.Git.UnfilteredContextDir, "module source git unfiltered context dir")
 			if err != nil {
-				return dagql.PersistedObjectEncoding{}, err
+				return persistedModuleSourcePayload{}, err
 			}
 			payload.GitUnfilteredContextDirResultID = unfilteredID
 		}
@@ -1020,21 +1045,90 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, enc *dagql.P
 			OriginHostPath:            src.DirSrc.OriginHostPath,
 		}
 		if src.DirSrc.OriginalContextDir.Self() != nil {
-			originalContextDirID, err := encodePersistedObjectRef(enc, src.DirSrc.OriginalContextDir, "module source dir original context dir")
+			originalContextDirID, err := ref(src.DirSrc.OriginalContextDir, "module source dir original context dir")
 			if err != nil {
-				return dagql.PersistedObjectEncoding{}, err
+				return persistedModuleSourcePayload{}, err
 			}
 			payload.DirSrc.OriginalContextDirResultID = originalContextDirID
 		}
 		if src.DirSrc.OriginGit.Self() != nil {
-			originGitID, err := encodePersistedObjectRef(enc, src.DirSrc.OriginGit, "module source dir origin git")
+			originGitID, err := ref(src.DirSrc.OriginGit, "module source dir origin git")
 			if err != nil {
-				return dagql.PersistedObjectEncoding{}, err
+				return persistedModuleSourcePayload{}, err
 			}
 			payload.DirSrc.OriginGitResultID = originGitID
 		}
 	}
-	return encodePersistedObjectPayload(payload)
+	return payload, nil
+}
+
+// ContentIdentity is the source's identity by content: everything it
+// persists, its plain fields as its persisted encoding holds them and each
+// result it holds by its content (ContentPreferredDigest). Two sources with
+// the same identity are interchangeable, so loading a module is keyed by it
+// (ModuleSource.asModule). It needs no file's bytes: a result is named by its
+// content digest when it has one, and by its recipe otherwise, so a source
+// holding a result made for one client alone has an identity no other
+// client's source shares. A source loaded from a local path has none: its
+// files are the caller's.
+//
+// Besides what it persists, it holds the SDK the source resolved, by the
+// SDK's own module: the source persists only the SDK's config, and a
+// module SDK's ref can name a branch, which resolves to another commit
+// later. A source that holds a module SDK's config without its module, as
+// one restored from a saved cache does, has no identity. It holds too the
+// source's user defaults as a function sees them (expandedUserDefaults):
+// they persist as written, but a value can name a variable of the client's
+// environment, which differs between clients.
+//
+// It isn't SourceImplementationDigest, which says whether two sources' code
+// is the same: it leaves out the name withName sets, the kind, the ref and
+// workspace the source was loaded from, and it reads the context's bytes.
+func (src *ModuleSource) ContentIdentity(ctx context.Context) (digest.Digest, bool, error) {
+	if src == nil || src.Kind == ModuleSourceKindLocal {
+		return "", false, nil
+	}
+	var refs []string
+	payload, err := src.persistedPayload(func(res dagql.AnyResult, label string) (uint64, error) {
+		frame, err := res.ResultCall()
+		if err != nil {
+			return 0, fmt.Errorf("%s call: %w", label, err)
+		}
+		dgst, err := frame.ContentPreferredDigest(ctx)
+		if err != nil {
+			return 0, fmt.Errorf("%s content: %w", label, err)
+		}
+		refs = append(refs, label+"="+dgst.String())
+		return uint64(len(refs)), nil
+	})
+	if err != nil {
+		return "", false, err
+	}
+	if src.SDK != nil && src.SDKImpl != nil {
+		if sdkMod, ok := src.SDKImpl.AsModule(); ok && sdkMod.Self() != nil {
+			frame, err := sdkMod.ResultCall()
+			if err != nil {
+				return "", false, fmt.Errorf("module source sdk module call: %w", err)
+			}
+			dgst, err := frame.ContentPreferredDigest(ctx)
+			if err != nil {
+				return "", false, fmt.Errorf("module source sdk module content: %w", err)
+			}
+			refs = append(refs, "module source sdk module="+dgst.String())
+		} else if name, _, _ := strings.Cut(src.SDK.Source, "@"); !sdkmeta.IsBuiltin(name) {
+			return "", false, nil
+		}
+	}
+	defaults, err := src.expandedUserDefaults(ctx)
+	if err != nil {
+		return "", false, fmt.Errorf("module source user defaults: %w", err)
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return "", false, fmt.Errorf("module source content identity: %w", err)
+	}
+	parts := append([]string{"ModuleSource.contentIdentity", string(body)}, refs...)
+	return hashutil.HashStrings(append(parts, defaults...)...), true, nil
 }
 
 func (*ModuleSource) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
@@ -1100,6 +1194,7 @@ func (*ModuleSource) DecodePersistedObject(ctx context.Context, dec *dagql.Persi
 		ConfigClients:                       slices.Clone(persisted.ConfigClients),
 		SourceRootSubpath:                   persisted.SourceRootSubpath,
 		SourceSubpath:                       persisted.SourceSubpath,
+		OriginalRefString:                   persisted.OriginalRefString,
 		OriginalSubpath:                     persisted.OriginalSubpath,
 		ContextDirectory:                    contextDirectory,
 		Workspace:                           workspace,
@@ -1451,23 +1546,21 @@ func (src *ModuleSource) outerEnvFile(ctx context.Context) (*EnvFile, string, er
 	if stat.FileType != FileTypeRegular {
 		return &EnvFile{}, "", nil
 	}
-	var envFile *EnvFile
-	if err := dag.Select(ctx, dag.Root(), &envFile,
-		dagql.Selector{Field: "host"},
-		dagql.Selector{
-			Field: "file",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: envFilePath},
-			},
-		},
-		dagql.Selector{
-			Field: "asEnvFile",
-			Args: []dagql.NamedInput{
-				{Name: "expand", Value: dagql.Opt(dagql.NewBoolean(true))},
-			},
-		},
-	); err != nil {
+	// Read the file itself rather than import it with host.file, which would
+	// keep all of it in the caller's file-sync mirror on the engine's disk:
+	// of its lines, the source keeps only the module's and those they expand
+	// from (LoadUserDefaults). The session reads one file of up to
+	// MaxFileContentsChunkSize bytes.
+	if stat.Size > engineutil.MaxFileContentsChunkSize {
+		return nil, envFilePath.String(), fmt.Errorf("outer env file %q is %d bytes, over the %d bytes the engine reads of it", envFilePath.String(), stat.Size, engineutil.MaxFileContentsChunkSize)
+	}
+	contents, err := bk.ReadCallerHostFile(ctx, envFilePath.String())
+	if err != nil {
 		return nil, envFilePath.String(), fmt.Errorf("failed to load outer env file from %q: %s", envFilePath.String(), err.Error())
+	}
+	envFile, err := NewEnvFile(true).WithContents(string(contents))
+	if err != nil {
+		return nil, envFilePath.String(), fmt.Errorf("failed to parse outer env file from %q: %w", envFilePath.String(), err)
 	}
 	return envFile, envFilePath.String(), nil
 }
@@ -1514,7 +1607,12 @@ func (src *ModuleSource) LoadUserDefaults(ctx context.Context) (rerr error) {
 	if err != nil {
 		return err
 	}
-	src.UserDefaults = NewEnvFile(true).WithEnvFiles(innerEnvFile, outerForName, outerForOriginalName)
+	// Of the outer lines that aren't the module's, only those its own lines
+	// name stay: the source, and its defaults with it, is saved and shared
+	// with other engines.
+	src.UserDefaults = NewEnvFile(true).
+		WithEnvFiles(innerEnvFile, outerForName, outerForOriginalName).
+		WithoutUnreferencedContext()
 	return nil
 }
 
@@ -1526,6 +1624,43 @@ const moduleSourceHashMix = "moduleSource"
 // implementation. Two module sources with the same digest should share
 // implementation-scoped cache identity for SDK operations and module function
 // calls even if they came from different client-specific sources.
+// errUserDefaultsUnexpanded wraps a failure to expand a source's user
+// defaults, as distinct from failing to find the client to expand them for.
+var errUserDefaultsUnexpanded = errors.New("expand user defaults")
+
+// expandedUserDefaults is the source's user defaults as a function sees
+// them, each "env:NAME=VALUE", sorted by name. Their values are expanded in
+// the main client's context, as UserDefault does when it applies them, so
+// they hold the variables of that client's environment. A dependent module
+// calling this one has none of them set, and calls to this module expand
+// them in the caller's context.
+func (src *ModuleSource) expandedUserDefaults(ctx context.Context) ([]string, error) {
+	if src.UserDefaults == nil || len(src.UserDefaults.Environ) == 0 {
+		return nil, nil
+	}
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get current query: %w", err)
+	}
+	mainClient, err := query.NonModuleParentClientMetadata(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("access main client: %w", err)
+	}
+	vars, err := src.UserDefaults.Variables(engine.ContextWithClientMetadata(ctx, mainClient), false)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", errUserDefaultsUnexpanded, err)
+	}
+	// Sort by variable name for better digest stability
+	sort.Slice(vars, func(i, j int) bool {
+		return vars[i].Name < vars[j].Name
+	})
+	defaults := make([]string, 0, len(vars))
+	for _, v := range vars {
+		defaults = append(defaults, fmt.Sprintf("env:%s=%s", v.Name, v.Value))
+	}
+	return defaults, nil
+}
+
 func (src *ModuleSource) SourceImplementationDigest(ctx context.Context) (digest.Digest, error) {
 	dag, err := CurrentDagqlServer(ctx)
 	if err != nil {
@@ -1550,36 +1685,19 @@ func (src *ModuleSource) SourceImplementationDigest(ctx context.Context) (digest
 	}
 
 	// Include user defaults in digest so changes to env files invalidate cache
-	if src.UserDefaults != nil && len(src.UserDefaults.Environ) > 0 {
-		// Expand system variables from the main client, as UserDefault does
-		// when it applies them. A dependent module calling this one has none
-		// of them set, and calls to this module compute the digest in the
-		// caller's context.
-		query, err := CurrentQuery(ctx)
-		if err != nil {
-			return "", fmt.Errorf("get current query: %w", err)
-		}
-		mainClient, err := query.NonModuleParentClientMetadata(ctx)
-		if err != nil {
-			return "", fmt.Errorf("access main client: %w", err)
-		}
-		vars, err := src.UserDefaults.Variables(engine.ContextWithClientMetadata(ctx, mainClient), false)
-		if err != nil {
-			// If user defaults fail to load, log the error and skip them from digest calculation
-			// FIXME: change the signature to bubble up the error?
-			slog.Error("failed to load user defaults for module source",
-				"module_name", src.ModuleName,
-				"error", err,
-			)
-		} else {
-			// Sort by variable name for better digest stability
-			sort.Slice(vars, func(i, j int) bool {
-				return vars[i].Name < vars[j].Name
-			})
-			for _, v := range vars {
-				inputs = append(inputs, fmt.Sprintf("env:%s=%s", v.Name, v.Value))
-			}
-		}
+	defaults, err := src.expandedUserDefaults(ctx)
+	switch {
+	case errors.Is(err, errUserDefaultsUnexpanded):
+		// If user defaults fail to load, log the error and skip them from digest calculation
+		// FIXME: change the signature to bubble up the error?
+		slog.Error("failed to load user defaults for module source",
+			"module_name", src.ModuleName,
+			"error", err,
+		)
+	case err != nil:
+		return "", err
+	default:
+		inputs = append(inputs, defaults...)
 	}
 
 	if src.SDK != nil {
@@ -1746,7 +1864,10 @@ func (src *ModuleSource) LoadContextDir(
 		if err != nil {
 			return inst, fmt.Errorf("context directory path: %w", err)
 		}
-		dgst, err := GetContentHashFromDirectory(ctx, snapshot, dirPath)
+		// The directory is a result the cache already holds, whose value
+		// can't take a files hash now: a copy of one rooted below / is keyed
+		// by its content digest, which says where it is rooted.
+		dgst, _, err := GetContentHashFromDirectory(ctx, snapshot, dirPath)
 		if err != nil {
 			return inst, fmt.Errorf("failed to content-hash contextual directory: %w", err)
 		}
@@ -2015,7 +2136,10 @@ func (src *ModuleSource) loadContextFromSource(
 		if err != nil {
 			return inst, fmt.Errorf("context directory path: %w", err)
 		}
-		dgst, err := GetContentHashFromDirectory(ctx, snapshot, dirPath)
+		// The directory is a result the cache already holds, whose value
+		// can't take a files hash now: a copy of one rooted below / is keyed
+		// by its content digest, which says where it is rooted.
+		dgst, _, err := GetContentHashFromDirectory(ctx, snapshot, dirPath)
 		if err != nil {
 			return inst, err
 		}
@@ -2883,6 +3007,9 @@ func (fs ModuleSourceFS) Exists(ctx context.Context, path string) (string, bool,
 	if fs.src == nil {
 		return "", false, nil
 	}
+	if tree, ok := fs.workspaceGitSparseTreeFS(); ok {
+		return tree.Exists(ctx, fs.workspaceTreePath(path))
+	}
 	if fs.src.Workspace.Self() != nil {
 		dir, basename, err := fs.workspaceEntry(ctx, path)
 		if errors.Is(err, os.ErrNotExist) || status.Code(err) == codes.NotFound {
@@ -2911,6 +3038,39 @@ func (fs ModuleSourceFS) Exists(ctx context.Context, path string) (string, bool,
 	default:
 		return "", false, fmt.Errorf("unsupported module source kind: %s", fs.src.Kind)
 	}
+}
+
+// workspaceGitSparseTreeFS returns where to ask whether a path of the
+// source's workspace exists when the commit's tree alone answers for every
+// path: a Git workspace with a sparse tree, whose source is then the commit
+// itself, not an edited one, and with nothing mounted on it, since a mount
+// answers for the paths at and under it. It's asked as detection asks it, as
+// calls on the sparse tree, which is identified by the commit: an answer,
+// "absent" included, holds for that commit and path in any session and on any
+// engine, and a session served one never evaluates the tree. Any other
+// workspace's paths are read through the workspace, as for a read.
+//
+// A stat isn't asked this way: Directory.stat isn't kept, so asked of the
+// tree it would evaluate the whole tree in every session.
+func (fs ModuleSourceFS) workspaceGitSparseTreeFS() (*GitSparseTreeFS, bool) {
+	ws := fs.src.Workspace.Self()
+	if ws == nil {
+		return nil, false
+	}
+	if _, mounted := ws.MountsDir(); mounted {
+		return nil, false
+	}
+	return ws.GitSparseTreeFS()
+}
+
+// workspaceTreePath is path, relative to the source root, as a path of the
+// workspace's tree, as detection names them.
+func (fs ModuleSourceFS) workspaceTreePath(path string) string {
+	p := strings.TrimPrefix(filepath.ToSlash(filepath.Join("/", fs.src.SourceRootSubpath, path)), "/")
+	if p == "" {
+		return "."
+	}
+	return p
 }
 
 func (fs ModuleSourceFS) workspaceEntry(ctx context.Context, path string) (dagql.ObjectResult[*Directory], string, error) {

@@ -1,17 +1,23 @@
 package snapshots_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"log/slog"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/containerd/containerd/v2/core/content"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/snapshots/config"
 	"github.com/dagger/dagger/engine/snapshots/testutil"
 	"github.com/dagger/dagger/internal/buildkit/util/compression"
+	"github.com/klauspost/compress/zstd"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/semaphore"
@@ -278,6 +284,52 @@ func TestExportChainsZstd(t *testing.T) {
 	testutil.CheckFile(t, imported, "c.txt", "zstd other")
 }
 
+// Every zstd layer the engine writes is framed, not only the remote cache's
+// exports: a layer larger than zstd's window is frames of 8 MiB, each naming
+// its size, whether the export diffs it, as an image's export or the engine
+// cache's does, or converts its gzip blob, as a forced export does. The
+// engine imports it back.
+func TestExportZstdLayerLargerThanTheWindowIsFramed(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store, consumer := testutil.NewStore(t), testutil.NewStore(t)
+	const frame = 8 << 20
+	line := "a layer larger than zstd's window\n"
+	diffed := strings.Repeat(line, 3*frame/len(line))
+	converted := strings.Repeat("converted: "+line, 3*frame/len(line))
+	diffedRef, _ := store.Build(t, nil, "diffed.txt", diffed)
+	convertedRef, _ := store.Build(t, nil, "converted.txt", converted)
+
+	export := func(ref bkcache.ImmutableRef, comp compression.Config) *bkcache.ExportChain {
+		t.Helper()
+		chain, err := ref.ExportChain(ctx, config.RefConfig{Compression: comp})
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, chain.Release(context.Background())) })
+		require.Len(t, chain.Layers, 1)
+		return chain
+	}
+	export(convertedRef, compression.New(compression.Gzip))
+	for name, tc := range map[string]struct {
+		chain      *bkcache.ExportChain
+		file, want string
+	}{
+		"diffed":    {export(diffedRef, compression.New(compression.Zstd)), "diffed.txt", diffed},
+		"converted": {export(convertedRef, compression.New(compression.Zstd).SetForce(true)), "converted.txt", converted},
+	} {
+		desc := tc.chain.Layers[0].Descriptor
+		require.Equal(t, compression.Zstd.MediaType(), desc.MediaType, name)
+		require.True(t, tc.chain.Layers[0].Computed, name)
+		blob, err := content.ReadBlob(ctx, tc.chain.Provider, desc)
+		require.NoError(t, err, name)
+		var h zstd.Header
+		require.NoError(t, h.Decode(blob), name)
+		require.True(t, h.HasFCS, "%s: the layer's first frame names its size", name)
+		require.EqualValues(t, frame, h.FrameContentSize, "%s: the layer's first frame holds 8 MiB of it", name)
+		imported := importChain(t, consumer, tc.chain)
+		testutil.CheckFile(t, imported, tc.file, tc.want)
+	}
+}
+
 // A gate shared by exports bounds their builds together, and each export
 // counts its wait for it.
 func TestExportChainsGateBoundsExports(t *testing.T) {
@@ -377,4 +429,67 @@ func TestExportChainsCanceledGateWait(t *testing.T) {
 	}
 	require.Zero(t, store.Diffs.Load())
 	require.Equal(t, before, transferPins(t, store))
+}
+
+// Each layer an export builds logs when its blob was ready, with its size:
+// at an engine's stop, what could have gone up while the rest still built.
+// A layer whose blob already existed builds nothing and logs nothing.
+func TestExportLayerBuiltLogsWhenItsBlobIsReady(t *testing.T) {
+	var buf bytes.Buffer
+	var mu sync.Mutex
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(lockedWriter{&mu, &buf}, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	store := testutil.NewStore(t)
+	a, _ := store.Build(t, nil, "a.txt", "ready a")
+	ab, _ := store.Build(t, a, "b.txt", "ready b")
+	before := time.Now()
+	chain := exportChains(t, []bkcache.ImmutableRef{ab}, buildsConfig(2, nil))[0]
+	require.Len(t, chain.Layers, 2)
+
+	mu.Lock()
+	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
+	mu.Unlock()
+	built := map[string]map[string]any{}
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		var rec map[string]any
+		require.NoError(t, json.Unmarshal([]byte(line), &rec))
+		if rec["msg"] == "export layer built" {
+			built[rec["blob"].(string)] = rec
+		}
+	}
+	require.Len(t, built, 2, "one line a layer built")
+	for _, layer := range chain.Layers {
+		rec := built[layer.Descriptor.Digest.String()]
+		require.NotNil(t, rec, "layer %s", layer.Descriptor.Digest)
+		require.EqualValues(t, layer.Descriptor.Size, rec["bytes"])
+		ready, err := time.Parse(time.RFC3339Nano, rec["ready"].(string))
+		require.NoError(t, err)
+		require.False(t, ready.Before(before), "ready once built")
+	}
+
+	// Exported again, its blobs exist: nothing is built, and nothing logged.
+	mu.Lock()
+	buf.Reset()
+	mu.Unlock()
+	exportChains(t, []bkcache.ImmutableRef{ab}, buildsConfig(2, nil))
+	mu.Lock()
+	defer mu.Unlock()
+	require.NotContains(t, buf.String(), "export layer built")
+}
+
+// lockedWriter serializes writes from the builds' goroutines.
+type lockedWriter struct {
+	mu *sync.Mutex
+	w  *bytes.Buffer
+}
+
+func (l lockedWriter) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.w.Write(p)
 }

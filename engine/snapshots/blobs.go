@@ -2,9 +2,12 @@ package snapshots
 
 import (
 	"context"
+	"io"
+	"log/slog"
 	"maps"
 	"os"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/containerd/containerd/v2/core/diff"
@@ -27,7 +30,11 @@ import (
 var ErrNoBlobs = errors.Errorf("no blobs for snapshot")
 
 type ensureExportBlobResult struct {
-	desc     ocispecs.Descriptor
+	desc ocispecs.Descriptor
+	// contents are a listing's content blobs, in the order it first names
+	// them: a layer the remote cache carries goes as its contents, then its
+	// listing.
+	contents []ocispecs.Descriptor
 	hasLayer bool
 	// computed is set when the export computed the layer's blob.
 	computed bool
@@ -116,11 +123,12 @@ func (cm *snapshotManager) ensureExportBlob(
 	parentSnapshotID string,
 	ref *immutableRef,
 	refCfg compression.Config,
+	listings bool,
 	gate *semaphore.Weighted,
 	stats *ExportStats,
-) (_ ocispecs.Descriptor, _, _ bool, rerr error) {
+) (_ ensureExportBlobResult, rerr error) {
 	if ref == nil {
-		return ocispecs.Descriptor{}, false, false, errors.New("ensure export blob: nil ref")
+		return ensureExportBlobResult{}, errors.New("ensure export blob: nil ref")
 	}
 
 	// A caller owns its own pins while waiting and doing I/O. Serializing by
@@ -131,7 +139,7 @@ func (cm *snapshotManager) ensureExportBlob(
 	stats.LockWait += waited.Sub(waitStart)
 	wcprof.RecordWaitAt(ctx, "snapshots.exportLayer", wcprof.WaitReasonLock, waitStart, waited)
 	if err != nil {
-		return ocispecs.Descriptor{}, false, false, err
+		return ensureExportBlobResult{}, err
 	}
 	defer unlock()
 	result, err := func() (_ ensureExportBlobResult, err error) {
@@ -156,11 +164,28 @@ func (cm *snapshotManager) ensureExportBlob(
 			if err != nil {
 				return ensureExportBlobResult{}, err
 			}
+			var desc ocispecs.Descriptor
 			if present {
-				desc, err := ref.ociDesc(ctx, false)
-				if err != nil {
+				if desc, err = ref.ociDesc(ctx, false); err != nil {
 					return ensureExportBlobResult{}, err
 				}
+			}
+			// A layer recorded as a listing goes as one only to an export of
+			// listings, with every content blob it names still in the store:
+			// an image's export builds the layer's tar, which then becomes the
+			// layer's recorded blob.
+			var contents []ocispecs.Descriptor
+			if present && IsListing(desc) {
+				if listings {
+					contents, present, err = cm.pinListingContents(ctx, ref.SnapshotID(), desc)
+					if err != nil {
+						return ensureExportBlobResult{}, err
+					}
+				} else {
+					present = false
+				}
+			}
+			if present {
 				converted := false
 				if refCfg.Force {
 					desc, converted, err = getBlobWithCompressionWithRetry(ctx, ref, refCfg)
@@ -181,7 +206,7 @@ func (cm *snapshotManager) ensureExportBlob(
 					return ensureExportBlobResult{}, err
 				}
 				stats.LayersReused++
-				return ensureExportBlobResult{desc: desc, hasLayer: true, computed: converted}, nil
+				return ensureExportBlobResult{desc: desc, contents: contents, hasLayer: true, computed: converted}, nil
 			}
 		}
 
@@ -213,7 +238,22 @@ func (cm *snapshotManager) ensureExportBlob(
 		}
 
 		compressorFunc, finalize := refCfg.Type.Compress(ctx, refCfg)
+		// The diff's time in the compressor, against the rest of it: reading
+		// and archiving the layer, hashing the archive and committing the
+		// blob (ExportStats.CompressTime). A stopping engine's export can wait
+		// seconds on one large layer, with no record of which.
+		var compressSpent atomic.Int64
+		compressorFunc = timedCompressor(compressorFunc, &compressSpent)
 		mediaType := refCfg.Type.MediaType()
+		// An export of listings diffs the layer as any export does, through a
+		// compressor that writes the listing in place of the tar.
+		var listed func() []ocispecs.Descriptor
+		if listings {
+			if listingType, contentType, ok := listingMediaType(refCfg.Type); ok {
+				mediaType = listingType
+				compressorFunc, listed = listingCompressor(ctx, cm.ContentStore, compressorFunc, contentType, ref.ID())
+			}
+		}
 
 		var lower []mount.Mount
 		if parentSnapshotID != "" {
@@ -317,6 +357,10 @@ func (cm *snapshotManager) ensureExportBlob(
 		if desc.Annotations == nil {
 			desc.Annotations = map[string]string{}
 		}
+		var contents []ocispecs.Descriptor
+		if listed != nil {
+			contents = listed()
+		}
 		if finalize != nil {
 			annotations, err := finalize(diffCtx, cm.ContentStore)
 			if err != nil {
@@ -388,20 +432,57 @@ func (cm *snapshotManager) ensureExportBlob(
 		if err := cm.recordSnapshotContent(ctx, ref.SnapshotID(), desc); err != nil {
 			return ensureExportBlobResult{}, err
 		}
+		for _, c := range contents {
+			if err := cm.recordSnapshotContent(ctx, ref.SnapshotID(), c); err != nil {
+				return ensureExportBlobResult{}, err
+			}
+			stats.BlobBytes += c.Size
+		}
 		stats.LayersDiffed++
 		stats.RawBytes += usage.Size
 		stats.BlobBytes += desc.Size
 		stats.DiffTime += diffTime
+		compressTime := time.Duration(compressSpent.Load())
+		stats.CompressTime += compressTime
+		// When the blob was ready, against when its upload starts: at an
+		// engine's stop, what could have gone up while the export's other
+		// layers still built. One line a layer built, at debug.
+		slog.Debug("export layer built", "blob", desc.Digest, "bytes", desc.Size, "raw_bytes", usage.Size,
+			"diff_start", diffStart, "ready", time.Now(), "diff_time", diffTime, "compress_time", compressTime)
 		return ensureExportBlobResult{
 			desc:     desc,
+			contents: contents,
 			hasLayer: true,
 			computed: true,
 		}, nil
 	}()
 	if err != nil {
-		return ocispecs.Descriptor{}, false, false, err
+		return ensureExportBlobResult{}, err
 	}
-	return result.desc, result.hasLayer, result.computed, nil
+	return result, nil
+}
+
+// pinListingContents pins every content blob a listing names into ctx's
+// lease and records each as content of the snapshot, and reports whether the
+// store still has them all: a listing whose content went is built again.
+func (cm *snapshotManager) pinListingContents(ctx context.Context, snapshotID string, listing ocispecs.Descriptor) ([]ocispecs.Descriptor, bool, error) {
+	contents, err := listingContents(ctx, cm.ContentStore, listing)
+	if err != nil {
+		return nil, false, err
+	}
+	for _, c := range contents {
+		present, err := cm.pinContent(ctx, c)
+		if err != nil {
+			return nil, false, err
+		}
+		if !present {
+			return nil, false, nil
+		}
+		if err := cm.recordSnapshotContent(ctx, snapshotID, c); err != nil {
+			return nil, false, err
+		}
+	}
+	return contents, true, nil
 }
 
 func isTypeWindows(sr *immutableRef) bool {
@@ -429,4 +510,41 @@ func ensureCompression(ctx context.Context, ref *immutableRef, comp compression.
 		return false, errors.Wrapf(err, "failed to convert")
 	}
 	return true, ref.linkBlob(ctx, *newDesc)
+}
+
+// timedCompressor wraps compress so that the time its writer takes, each
+// write of a layer's archive into it and its close, adds to spent: a diff's
+// time in compressing and writing the blob, apart from the rest of the diff
+// (ExportStats.CompressTime). Two clock reads a write; the blob is
+// compress's.
+func timedCompressor(compress compression.Compressor, spent *atomic.Int64) compression.Compressor {
+	return func(dest io.Writer, mediaType string) (io.WriteCloser, error) {
+		start := time.Now()
+		w, err := compress(dest, mediaType)
+		spent.Add(int64(time.Since(start)))
+		if err != nil {
+			return nil, err
+		}
+		return &timedWriter{w: w, spent: spent}, nil
+	}
+}
+
+// timedWriter is a compressor's writer whose calls add their time to spent.
+type timedWriter struct {
+	w     io.WriteCloser
+	spent *atomic.Int64
+}
+
+func (t *timedWriter) Write(p []byte) (int, error) {
+	start := time.Now()
+	n, err := t.w.Write(p)
+	t.spent.Add(int64(time.Since(start)))
+	return n, err
+}
+
+func (t *timedWriter) Close() error {
+	start := time.Now()
+	err := t.w.Close()
+	t.spent.Add(int64(time.Since(start)))
+	return err
 }

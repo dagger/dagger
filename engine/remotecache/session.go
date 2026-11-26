@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -48,6 +47,8 @@ type session struct {
 	uploadSlots chan struct{}
 	// lookupSlots bounds the lookups unanswered.
 	lookupSlots chan struct{}
+	// restorer merges the files restores name, one part at a time.
+	restorer *restorer
 	// known are the rows the service merged over this connection, from
 	// exports and from its own merges, which exports send as held rows.
 	known *dagql.KnownRows
@@ -68,7 +69,7 @@ type session struct {
 
 func newSession(ctx context.Context, conn wsConn, adapter Adapter, cfg *settings) *session {
 	ctx, cancel := context.WithCancelCause(ctx)
-	return &session{
+	s := &session{
 		ctx:         ctx,
 		cancel:      cancel,
 		conn:        conn,
@@ -82,6 +83,8 @@ func newSession(ctx context.Context, conn wsConn, adapter Adapter, cfg *settings
 		pending:     map[uint64]chan protocol.Envelope{},
 		exports:     map[string]chan protocol.Envelope{},
 	}
+	s.restorer = newRestorer(s)
+	return s
 }
 
 // serve reads the connection, says hello, and serves requests until the
@@ -92,10 +95,12 @@ func (s *session) serve() (bool, error) {
 		s.cancel(err)
 		return false, err
 	}
-	s.go_(s.ping)
+	s.go_(s.probe)
 	s.go_(s.renewals)
 	s.go_(s.lookups)
 	s.go_(s.settles)
+	s.go_(s.readies)
+	s.go_(s.restorer.run)
 	<-s.ctx.Done()
 	return true, context.Cause(s.ctx)
 }
@@ -129,6 +134,8 @@ func (s *session) hello() error {
 		EngineName:    s.cfg.EngineName,
 		Period:        settle.Period,
 		Settled:       settle.Settled && !settle.Live,
+		Restored:      s.cfg.restored.list(),
+		Image:         s.adapter.ImageEntries(),
 	})
 	if err != nil {
 		return fmt.Errorf("hello: %w", err)
@@ -148,8 +155,11 @@ func (s *session) read() {
 		}
 		env, body, err := s.readEnvelope(data)
 		if err != nil {
-			s.cfg.Logger.Warn("remote cache: undecodable message", "error", err)
-			continue
+			// The service encodes every message itself, so the stream is
+			// broken, and what follows can't be trusted: the session ends,
+			// and the engine reconnects.
+			s.cancel(fmt.Errorf("undecodable message: %w", err))
+			return
 		}
 		s.dispatchBody(env, body)
 	}
@@ -194,6 +204,9 @@ func (s *session) dispatchBody(env protocol.Envelope, body any) {
 		s.go_(func() { s.handleMerge(env, merge) })
 	case protocol.TypeOffer:
 		s.go_(func() { s.handleOffer(env) })
+	case protocol.TypeRestore:
+		// Queued here, in the order restores arrive.
+		s.restorer.handleRestore(env)
 	default:
 		s.go_(func() { s.replyError(env, fmt.Errorf("unexpected request %q", env.Type)) })
 	}
@@ -280,7 +293,7 @@ func (s *session) settle(state SettleState) {
 			}
 		}
 	}()
-	reply, err := s.request(ctx, protocol.TypeSettle, protocol.Settle{Period: state.Period, Sessions: state.Sessions})
+	reply, err := s.request(ctx, protocol.TypeSettle, protocol.Settle{Period: state.Period, Sessions: state.Sessions, IdleSince: state.IdleSince, Bound: state.Bound})
 	switch {
 	case err == nil && reply.Type == protocol.TypeSettled:
 		s.adapter.Settled(state.Period, state.Sessions)
@@ -306,23 +319,64 @@ func isStaleSettle(reply protocol.Envelope) bool {
 	return reply.Decode(&e) == nil && e.Message == protocol.StaleSettle
 }
 
-// ping checks the connection every PingInterval, and ends the session on a
-// ping without a pong within PingTimeout.
-func (s *session) ping() {
-	t := time.NewTicker(protocol.PingInterval)
+// probe checks the connection every probe interval: it sends the service a
+// probe, and ends the session when nothing at all has arrived on the
+// connection within the probe timeout. The service answers a probe in order,
+// behind what it is already sending, so a connection that is slow but still
+// delivering keeps receiving bytes, and stays up, however late the answer.
+// A probe is written without a deadline, since a write the library abandons
+// ends the connection; while one waits behind the engine's own messages, the
+// next is not sent, and the connection is still judged by what arrives.
+func (s *session) probe() {
+	t := time.NewTicker(s.cfg.probeInterval)
 	defer t.Stop()
+	written := make(chan struct{}, 1)
+	written <- struct{}{}
 	for {
 		select {
 		case <-s.ctx.Done():
 			return
 		case <-t.C:
 		}
-		ctx, cancel := context.WithTimeout(s.ctx, protocol.PingTimeout)
-		err := s.conn.Ping(ctx)
-		cancel()
-		if err != nil {
-			s.cancel(fmt.Errorf("ping: %w", err))
+		sent := time.Now()
+		select {
+		case <-written:
+			s.go_(func() {
+				defer func() { written <- struct{}{} }()
+				if env, err := protocol.NewEnvelope(s.lastID.Add(1), 0, protocol.TypeProbe, protocol.Probe{}); err == nil {
+					_ = s.write(s.ctx, env)
+				}
+			})
+		default:
+		}
+		wait := time.NewTimer(s.cfg.probeTimeout)
+		select {
+		case <-s.ctx.Done():
+			wait.Stop()
 			return
+		case <-wait.C:
+		}
+		if s.conn.Arrived().Before(sent) {
+			s.cancel(fmt.Errorf("probe: nothing arrived for %s", s.cfg.probeTimeout))
+			return
+		}
+	}
+}
+
+// readies tells the service of the roots it was answered busy for that can
+// be captured now (protocol.Ready), as the adapter finds them, until the
+// connection ends. A root the service no longer waits for is ignored there.
+// It returns only once the adapter's look has ended with the connection: a
+// Ready the connection's end cut off comes back to the adapter, whose look
+// then ends with it.
+func (s *session) readies() {
+	for {
+		roots, err := s.adapter.TakeReadyRoots(s.ctx)
+		if err != nil {
+			return
+		}
+		if _, err := s.request(s.ctx, protocol.TypeReady, protocol.Ready{Roots: roots}); err != nil && s.ctx.Err() == nil {
+			s.cfg.Logger.Warn("remote cache: ready failed", "roots", len(roots), "error", err)
 		}
 	}
 }
@@ -417,9 +471,14 @@ func (s *session) handleExport(env protocol.Envelope) {
 	if profOp != nil {
 		wcprof.RecordWaitAt(profCtx, slotsName, wcprof.WaitReasonLock, arrived, slotted)
 	}
-	ended := exportEnded{roots: len(req.Roots), slotWait: slotted.Sub(arrived)}
+	ended := exportEnded{request: env.ID, roots: len(req.Roots), slotWait: slotted.Sub(arrived)}
 	replied := false
-	err := s.adapter.Export(profCtx, req, s.known, func(ctx context.Context, exp Export) error {
+	captureCtx, unlabel := wcprof.WithCPUKind(profCtx, wcprof.CPUKindExportCapture)
+	defer unlabel()
+	err := s.adapter.Export(captureCtx, req, s.known, func(ctx context.Context, exp Export) error {
+		// The bundle's reply and its upload send what the capture made.
+		ctx, unlabel := wcprof.WithCPUKind(ctx, wcprof.CPUKindExportSend)
+		defer unlabel()
 		replied = true
 		if exp.Bundle == nil {
 			ended.noBundle = true
@@ -456,10 +515,15 @@ func (s *session) handleExport(env protocol.Envelope) {
 				return s.replyError(up, err)
 			}
 			// The service merged the bundle before it asked for the
-			// blobs, or it didn't merge it at all.
-			if req.Merged {
+			// blobs, or it didn't merge it at all: refused as stale, it
+			// names the held rows that no longer hold, and only those
+			// are forgotten.
+			switch {
+			case req.Merged:
 				s.known.Merged(exp.Rows)
-			} else {
+			case len(req.Stale) > 0:
+				s.known.Stale(exp.Rows, req.Stale)
+			default:
 				s.known.NotMerged(exp.Rows)
 			}
 			uploadCtx, uploadOp := wcprof.BeginOp(ctx, wcprof.OpKindRemoteCache, "remotecache.upload", wcprof.OpOpts{WorkType: wcprof.WorkTypeExternal})
@@ -490,9 +554,14 @@ func (s *session) handleExport(env protocol.Envelope) {
 // exportEnded is what one export took, from its request to the release of
 // its chains.
 type exportEnded struct {
-	// export is the ID of the bundle sent, if one was.
-	export string
-	roots  int
+	// request is the ID of the service's request for the export, which the
+	// service puts on its record of the export from its start: it matches
+	// the record to this line when the record's end row, the only row with
+	// the export's own ID, was lost on its way to the span store. export is
+	// the ID of the bundle sent, if one was.
+	request uint64
+	export  string
+	roots   int
 	// slotWait is the wait for an export slot, uploadWait the wait from
 	// sending the bundle to the service's upload, upload the upload, and
 	// held the time from the slot to the chains' release.
@@ -509,6 +578,7 @@ type exportEnded struct {
 func (s *session) logExportEnded(ended exportEnded, err error, level slog.Level, outcome string) {
 	args := []any{
 		"export", ended.export,
+		"request", ended.request,
 		"roots", ended.roots,
 		"slot_wait", ended.slotWait,
 		"upload_wait", ended.uploadWait,
@@ -906,7 +976,9 @@ func (s *session) handleMerge(env protocol.Envelope, req *protocol.Merge) {
 			return
 		}
 	}
-	merged, err := s.adapter.Merge(s.ctx, env.ID, *req, s.known)
+	ctx, unlabel := wcprof.WithCPUKind(s.ctx, wcprof.CPUKindMerge)
+	defer unlabel()
+	merged, err := s.adapter.Merge(ctx, env.ID, *req, s.known)
 	if err != nil {
 		s.replyError(env, err)
 		return
@@ -965,23 +1037,22 @@ func (s *session) requestAs(ctx context.Context, id uint64, typ protocol.Type, b
 	}
 }
 
-// reply answers a request. A reply over the message limit is not sent: the
-// request is answered with an error reply "too large" instead, which the
-// connection survives, and the reply is reported as errTooLarge.
+// reply answers a request, its body encoded with its envelope in one pass
+// and compressed as it is encoded (protocol.EncodeMessage), as the service
+// encodes what it sends: an export's bundle is most of an engine's bytes
+// out. A reply over the message limit is not sent: its encoding stops at the
+// limit, the request is answered with an error reply "too large" instead,
+// which the connection survives, and the reply is reported as errTooLarge.
 func (s *session) reply(to protocol.Envelope, typ protocol.Type, body any) error {
-	env, err := protocol.NewEnvelope(s.lastID.Add(1), to.ID, typ, body)
-	if err != nil {
-		return s.replyError(to, err)
-	}
-	data, err := json.Marshal(env)
-	if err != nil {
-		return s.replyError(to, err)
-	}
-	if len(data) > s.cfg.maxMessage {
+	msg, err := protocol.EncodeMessage(s.lastID.Add(1), to.ID, typ, body, s.cfg.maxMessage)
+	if errors.Is(err, protocol.ErrTooLarge) {
 		_ = s.replyError(to, errTooLarge)
 		return errTooLarge
 	}
-	return s.writeData(s.ctx, data)
+	if err != nil {
+		return s.replyError(to, err)
+	}
+	return s.writeMessage(s.ctx, msg)
 }
 
 // replyError answers a request with an error reply, and returns err.
@@ -993,21 +1064,23 @@ func (s *session) replyError(to protocol.Envelope, err error) error {
 	return err
 }
 
+// write writes an envelope, as the protocol sends it (protocol.EncodeMessage):
+// the same JSON json.Marshal gives for it, compressed when it is large.
 func (s *session) write(ctx context.Context, env protocol.Envelope) error {
-	data, err := json.Marshal(env)
+	msg, err := protocol.EncodeMessage(env.ID, env.Re, env.Type, env.Body, s.cfg.maxMessage)
 	if err != nil {
 		return err
 	}
-	return s.writeData(ctx, data)
+	return s.writeMessage(ctx, msg)
 }
 
-// writeData writes one message. A write that fails while its own context is
-// still live ends the session. One whose context has ended belongs to that
-// request alone, such as a renewal whose read gave up while another message
-// held the writer: the connection is left to the reader, which sees it fail
-// if the library closed it mid-frame.
-func (s *session) writeData(ctx context.Context, data []byte) error {
-	if err := s.conn.Write(ctx, data); err != nil {
+// writeMessage writes one message. A write that fails while its own context
+// is still live ends the session. One whose context has ended belongs to
+// that request alone, such as a renewal whose read gave up while another
+// message held the writer: the connection is left to the reader, which sees
+// it fail if the library closed it mid-frame.
+func (s *session) writeMessage(ctx context.Context, msg protocol.Message) error {
+	if err := s.conn.Write(ctx, msg); err != nil {
 		if ctx.Err() == nil {
 			s.cancel(fmt.Errorf("write: %w", err))
 		}

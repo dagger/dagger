@@ -146,7 +146,10 @@ type DumpEvent struct {
 	// type RWMutex have a holder: a wait on another lock has none. A lock
 	// taken directly, or caught between a release and the next taker's
 	// mark, reads as HolderUnknown, never as an earlier holder's op;
-	// readers aren't named one by one.
+	// readers aren't named one by one. Such a wait's ClassID names, in the
+	// strings table, the kind of work of the writer whose release let it in
+	// (LockWait): a kind its writer named with WriteLockAs, "other" for a
+	// writer that named none, or "readers" when no writer did.
 	HolderID      uint64 `json:"h,omitempty"`
 	HolderSinceNS int64  `json:"hs,omitempty"`
 

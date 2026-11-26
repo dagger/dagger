@@ -758,6 +758,47 @@ func (DirectorySuite) TestWithDirectoryContentKeyed(ctx context.Context, t *test
 	require.Equal(t, first, run())
 }
 
+// A copy keeps the files it copies and not where they were rooted, so copies of
+// the same files to the same place are one result whichever root they came
+// from: a command over the copy runs once.
+func (DirectorySuite) TestCopyKeyedByCopiedFiles(ctx context.Context, t *testctx.T) {
+	base := t.TempDir()
+	contents := rand.Text()
+	for _, sub := range []string{"a", "b"} {
+		require.NoError(t, os.MkdirAll(filepath.Join(base, sub), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(base, sub, "f"), []byte(contents), 0o644))
+	}
+	c := connect(ctx, t)
+	q := sdkcore.NewQuery(c)
+	host := q.Host().Directory(base)
+	uuid := func(ctr *sdkcore.Container) string {
+		out, err := ctr.WithExec([]string{"cat", "/proc/sys/kernel/random/uuid"}).Stdout(ctx)
+		require.NoError(t, err)
+		return out
+	}
+
+	t.Run("into a directory, from two subdirectories", func(ctx context.Context, t *testctx.T) {
+		run := func(sub string) string {
+			return uuid(q.Container().From(alpineImage).
+				WithMountedDirectory("/src", host.WithDirectory("copy", host.Directory(sub))))
+		}
+		require.Equal(t, run("a"), run("b"))
+	})
+
+	t.Run("into a container, from a subdirectory and a directory of its own", func(ctx context.Context, t *testctx.T) {
+		// A host directory and a copy of it can hash the same files
+		// differently, so both sources come from one copy of the host
+		// directory: the subdirectory is rooted at /a, and the filtered copy
+		// of it at /.
+		whole := sdkcore.DirectoryFilterOpts{Exclude: []string{"absent"}}
+		sub := host.Filter(whole).Directory("a")
+		run := func(src *sdkcore.Directory) string {
+			return uuid(q.Container().From(alpineImage).WithDirectory("/src", src))
+		}
+		require.Equal(t, run(sub), run(sub.Filter(whole)))
+	})
+}
+
 func (DirectorySuite) TestWithDirectoryIncludeExclude(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -1876,6 +1917,56 @@ func (DirectorySuite) TestDigest(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, "sha256:0e5db88383bce812f795689f5318a2b2f4fde740ef31c2a2365a46368aafddd2", digest)
 	})
+}
+
+// A directory read at a subpath and a directory holding the same files at its
+// root are keyed by content, and both keys must say where each is rooted:
+// otherwise the cache treats them as one, and a call on one returns the
+// other's result, rooted elsewhere.
+func (DirectorySuite) TestContentKeyCoversRoot(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	q := sdkcore.NewQuery(c)
+	daemon, url := gitService(ctx, t, c, q.Directory().WithNewFile("pkg/a.txt", rand.Text()))
+	ws := q.Git(url, sdkcore.GitOpts{ExperimentalServiceHost: daemon}).Head().AsWorkspace()
+	// A Git workspace's root is keyed by content, and so is a subdirectory read
+	// from it.
+	atSubpath := ws.Directory("/").Directory("pkg")
+	// A filtered read that drops nothing copies the same files into a
+	// directory of their own, rooted at /.
+	atRoot := ws.Directory("pkg", sdkcore.WorkspaceDirectoryOpts{Exclude: []string{"**/.git"}, Gitignore: true})
+
+	name, err := atSubpath.WithNewFile("b.txt", "b").Name(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "pkg/", name)
+
+	name, err = atRoot.WithNewFile("b.txt", "b").Name(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "/", name)
+}
+
+// Two directories rooted at / that hold the same files are one result,
+// however they were made: here a copy of a host directory, and a copy of a
+// subdirectory of a copy of another one.
+func (DirectorySuite) TestContentKeyAtRootIsItsFiles(ctx context.Context, t *testctx.T) {
+	contents := rand.Text()
+	flat, nested := t.TempDir(), t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(flat, "f"), []byte(contents), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(nested, "a"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(nested, "a", "f"), []byte(contents), 0o644))
+	c := connect(ctx, t)
+	q := sdkcore.NewQuery(c)
+	whole := sdkcore.DirectoryFilterOpts{Exclude: []string{"absent"}}
+	run := func(src *sdkcore.Directory) string {
+		out, err := q.Container().From(alpineImage).
+			WithMountedDirectory("/src", src).
+			WithExec([]string{"cat", "/proc/sys/kernel/random/uuid"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		return out
+	}
+	require.Equal(t,
+		run(q.Host().Directory(flat).Filter(whole)),
+		run(q.Host().Directory(nested).Filter(whole).Directory("a").Filter(whole)))
 }
 
 func (DirectorySuite) TestDirectoryName(ctx context.Context, t *testctx.T) {

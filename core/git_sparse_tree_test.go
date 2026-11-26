@@ -1,9 +1,14 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"os"
+	"os/exec"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -34,9 +39,10 @@ func (s *sparseManifestTestServer) Server(context.Context) (*dagql.Server, error
 }
 
 // TestGitSparseTreeManifestOfAMergedRecord reads the manifest of a sparse tree
-// this engine holds only as another engine's record, as loading a workspace
-// does: from a context with no dagql server. Failing here leaves the workspace
-// reading its full checkout, whatever the sparse tree holds.
+// this engine holds only as another engine's record, as a question about it
+// that misses does when loading a workspace asks it: from a context with no
+// dagql server. Failing here leaves the workspace reading its full checkout,
+// whatever the sparse tree holds.
 func TestGitSparseTreeManifestOfAMergedRecord(t *testing.T) {
 	aStore, bStore := testutil.NewStore(t), testutil.NewStore(t)
 	actx, a, asrv := transferCache(t, aStore, filepath.Join(t.TempDir(), "a.db"), "a")
@@ -63,12 +69,12 @@ func TestGitSparseTreeManifestOfAMergedRecord(t *testing.T) {
 		ctx := ContextWithQuery(dagql.ContextWithServer(bctx, nil), &Query{
 			Server: &sparseManifestTestServer{queryServer: query.Server, srv: bsrv},
 		})
-		sparse := &GitSparseTree{Root: loaded.(dagql.ObjectResult[*Directory])}
+		root := loaded.(dagql.ObjectResult[*Directory])
 
-		covered, err := sparse.coversPath(ctx, "dagger.toml")
+		covered, err := GitSparseTreeCovers(ctx, root, "dagger.toml")
 		require.NoError(t, err)
 		require.True(t, covered)
-		covered, err = sparse.coversPath(ctx, "gone.txt")
+		covered, err = GitSparseTreeCovers(ctx, root, "gone.txt")
 		require.NoError(t, err)
 		require.False(t, covered)
 		return nil
@@ -136,10 +142,10 @@ func TestGitWorkspaceKeepsItsSparseTreeInAMergedRecord(t *testing.T) {
 	}, func(ctx context.Context, _ *testutil.Store, _ *dagql.Cache, _ *dagql.Server, ws *Workspace) {
 		sparse, ok := ws.GitSparseTree()
 		require.True(t, ok, "a merged Git workspace must keep its sparse tree")
-		covered, err := sparse.coversPath(ctx, "dagger.toml")
+		covered, err := GitSparseTreeCovers(ctx, sparse.Root, "dagger.toml")
 		require.NoError(t, err)
 		require.True(t, covered)
-		covered, err = sparse.coversPath(ctx, "gone.txt")
+		covered, err = GitSparseTreeCovers(ctx, sparse.Root, "gone.txt")
 		require.NoError(t, err)
 		require.False(t, covered)
 	})
@@ -160,6 +166,7 @@ func TestGitWorkspaceReadsFullTreeWithoutSparseContent(t *testing.T) {
 	}, func(ctx context.Context, bStore *testutil.Store, cache *dagql.Cache, srv *dagql.Server, ws *Workspace) {
 		sparse, ok := ws.GitSparseTree()
 		require.True(t, ok, "a merged Git workspace must keep its sparse tree")
+		installGitSparseTreeQuestions(srv)
 
 		fullRef, _ := bStore.Build(t, nil, "dagger.toml", "from the full tree")
 		full := attachTransferObject(t, ctx, cache, srv, "b", "fullTree", partTestDirectory(fullRef, "/"))
@@ -168,8 +175,12 @@ func TestGitWorkspaceReadsFullTreeWithoutSparseContent(t *testing.T) {
 		// Twice: a failure must keep sending reads to the full tree, not only
 		// the first one.
 		for range 2 {
-			require.Same(t, full.Self(), fs.dirFor(ctx, "dagger.toml").Self())
-			require.Same(t, full.Self(), fs.dirFor(ctx, "gone.txt").Self())
+			dir, onSparse := fs.dirFor(ctx, "dagger.toml")
+			require.False(t, onSparse)
+			require.Same(t, full.Self(), dir.Self())
+			dir, onSparse = fs.dirFor(ctx, "gone.txt")
+			require.False(t, onSparse)
+			require.Same(t, full.Self(), dir.Self())
 			require.NoError(t, MountRef(ctx, fullRef, func(root string, _ *mount.Mount) error {
 				got, err := os.ReadFile(filepath.Join(root, "dagger.toml"))
 				require.NoError(t, err)
@@ -182,6 +193,18 @@ func TestGitWorkspaceReadsFullTreeWithoutSparseContent(t *testing.T) {
 			require.ErrorIs(t, err, errPartInjectedProvider)
 		}
 	})
+}
+
+// installGitSparseTreeQuestions installs the sparse tree's question as
+// core/schema declares it (gitSchema.sparseTreeFields), which this package
+// can't import.
+func installGitSparseTreeQuestions(srv *dagql.Server) {
+	dagql.Fields[*Directory]{
+		dagql.NodeFunc("__gitSparseCovers", func(ctx context.Context, parent dagql.ObjectResult[*Directory], args struct{ Path string }) (dagql.Boolean, error) {
+			covered, err := GitSparseTreeCovers(ctx, parent, args.Path)
+			return dagql.NewBoolean(covered), err
+		}).IsPersistable(),
+	}.Install(srv)
 }
 
 // TestGitSparseReadSource checks where each read of a Git workspace's tree
@@ -334,4 +357,160 @@ func TestFetchPooled(t *testing.T) {
 			require.Equal(t, tc.fetched, fetched)
 		})
 	}
+}
+
+// gitSparseTestPartialMirror is a blobless mirror of a one-commit source
+// holding the commit's trees and only the contents of held, as a sparse tree
+// leaves the engine's mirror. It returns the mirror, the commit and each
+// path's object ID.
+func gitSparseTestPartialMirror(t *testing.T, held ...string) (mirror, sha string, oids map[string]string) {
+	t.Helper()
+	source := t.TempDir()
+	gitMirrorTestRun(t, source, "init", "--quiet", "--initial-branch=main")
+	for _, p := range []string{"held.txt", "missing.txt", "dir/also-missing.txt"} {
+		require.NoError(t, os.MkdirAll(filepath.Join(source, filepath.Dir(p)), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(source, p), []byte("contents of "+p+"\n"), 0o644))
+	}
+	gitMirrorTestRun(t, source, "add", "-A")
+	gitMirrorTestRun(t, source, "-c", "user.name=Dagger", "-c", "user.email=dagger@localhost", "commit", "--quiet", "-m", "base")
+	gitMirrorTestRun(t, source, "config", "uploadpack.allowFilter", "true")
+	gitMirrorTestRun(t, source, "config", "uploadpack.allowAnySHA1InWant", "true")
+	sha = gitMirrorTestRun(t, source, "rev-parse", "HEAD")
+	oids = map[string]string{}
+	for _, p := range []string{"held.txt", "missing.txt", "dir/also-missing.txt"} {
+		oids[p] = gitMirrorTestRun(t, source, "rev-parse", "HEAD:"+p)
+	}
+
+	mirror = t.TempDir()
+	gitMirrorTestRun(t, mirror, "init", "--bare", "--quiet")
+	gitMirrorTestRun(t, mirror, "remote", "add", "origin", "file://"+source)
+	gitMirrorTestRun(t, mirror, "config", "extensions.partialClone", "origin")
+	gitMirrorTestRun(t, mirror, "config", "remote.origin.promisor", "true")
+	gitMirrorTestRun(t, mirror, "config", "remote.origin.partialCloneFilter", "blob:none")
+	gitMirrorTestRun(t, mirror, "fetch", "--quiet", "--filter=blob:none", "--depth=1", "origin", sha)
+	for _, p := range held {
+		gitMirrorTestRun(t, mirror, "-c", "fetch.negotiationAlgorithm=noop", "fetch", "--quiet", "--no-tags", "--no-write-fetch-head", "--filter=blob:none", "origin", oids[p])
+	}
+	return mirror, sha, oids
+}
+
+// TestGitTreeFilesAsksOnlyAboutTheObjectsItFetches asserts that reading a
+// commit's tree in a blobless mirror lists the tree and asks the mirror about
+// the contents a fetch would take, and no more: not every object of the
+// commit, which on an empty mirror is all of them. What it would fetch is
+// exactly the contents the mirror lacks.
+func TestGitTreeFilesAsksOnlyAboutTheObjectsItFetches(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	mirror, sha, oids := gitSparseTestPartialMirror(t, "held.txt")
+
+	type run struct {
+		args  []string
+		stdin string
+	}
+	var runs []run
+	git := gitutil.NewGitCLI(gitutil.WithGitDir(mirror), gitutil.WithEnv("GIT_NO_LAZY_FETCH=1"),
+		gitutil.WithExec(func(_ context.Context, cmd *exec.Cmd) error {
+			r := run{args: slices.Clone(cmd.Args)}
+			if cmd.Stdin != nil {
+				in, err := io.ReadAll(cmd.Stdin)
+				if err != nil {
+					return err
+				}
+				r.stdin = string(in)
+				cmd.Stdin = strings.NewReader(r.stdin)
+			}
+			runs = append(runs, r)
+			return cmd.Run()
+		}))
+	commands := func() []string {
+		var out []string
+		for _, r := range runs {
+			out = append(out, strings.Join(r.args[1:], " "))
+		}
+		return out
+	}
+
+	files, err := loadGitTreeFiles(ctx, &RemoteGitRepository{URL: &gitutil.GitURL{Scheme: "file", Path: mirror}}, git, sha)
+	require.NoError(t, err)
+	require.True(t, files.Has("dir/also-missing.txt"))
+	for _, c := range commands() {
+		require.NotContains(t, c, "rev-list", "reading the tree must not walk the commit's objects")
+	}
+
+	// Contents the mirror holds need nothing fetched, and only they are asked about.
+	runs = nil
+	require.NoError(t, files.Fetch(ctx, []string{"held.txt", "no/such/path"}))
+	require.Len(t, runs, 1, "commands run: %v", commands())
+	require.Contains(t, strings.Join(runs[0].args, " "), "cat-file --batch-check")
+	require.Equal(t, oids["held.txt"]+"\n", runs[0].stdin)
+
+	// What a fetch of all three would take is the two the mirror lacks.
+	lacking, err := gitMissingObjects(ctx, git, []string{oids["held.txt"], oids["missing.txt"], oids["dir/also-missing.txt"]})
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{oids["missing.txt"], oids["dir/also-missing.txt"]}, lacking)
+}
+
+// TestGitSparseDirs asserts the plan of a sparse tree's directories: every
+// directory of the tree, each once, each after its parent.
+func TestGitSparseDirs(t *testing.T) {
+	t.Parallel()
+	paths := []string{
+		"top.txt",
+		"a/one.txt",
+		"a/two.txt",
+		"a/b/c/deep.txt",
+		"a/b/c/deeper.txt",
+		"a.b/file.txt",
+		"a-b/file.txt",
+		"x/y/z/link",
+		".github/workflows/ci.yml",
+	}
+	dirs := gitSparseDirs(paths)
+	require.ElementsMatch(t, []string{".github", ".github/workflows", "a", "a/b", "a/b/c", "a.b", "a-b", "x", "x/y", "x/y/z"}, dirs)
+	seen := map[string]int{}
+	for i, d := range dirs {
+		_, dup := seen[d]
+		require.False(t, dup, "directory %q planned twice", d)
+		seen[d] = i
+	}
+	for _, d := range dirs {
+		if parent := path.Dir(d); parent != "." {
+			require.Less(t, seen[parent], seen[d], "%q planned before its parent %q", d, parent)
+		}
+	}
+	require.Empty(t, gitSparseDirs([]string{"only.txt"}))
+}
+
+// A sparse tree's lists beside its files are written in path order, so two
+// runs of one commit write the same bytes: __sparseWorkspaceTree declares
+// that its content follows from its inputs. A tree of many paths ranged in
+// map order would write them in another order nearly every time.
+func TestGitSparseTreeListsAreInPathOrder(t *testing.T) {
+	t.Parallel()
+	files := &GitTreeFiles{entries: map[string]gitTreeEntry{}}
+	var objects, gitlinks bytes.Buffer
+	var paths []string
+	for i := range 64 {
+		paths = append(paths, fmt.Sprintf("d%02d/f", i))
+	}
+	for _, p := range paths {
+		mode := "100644"
+		if strings.HasSuffix(p[:3], "7") {
+			mode = gitModeGitlink
+			gitlinks.WriteByte(gitSparseEntryGitlink)
+			gitlinks.WriteString(p)
+			gitlinks.WriteByte(0)
+		}
+		files.entries[p] = gitTreeEntry{mode: mode, oid: "oid-" + p}
+		objects.WriteString(mode + " oid-" + p + " " + p)
+		objects.WriteByte(0)
+	}
+	require.Equal(t, objects.String(), string(files.objectList()))
+
+	root := t.TempDir()
+	require.NoError(t, files.writeSubmodulesManifest(root))
+	manifest, err := os.ReadFile(filepath.Join(root, gitSparseManifestFile))
+	require.NoError(t, err)
+	require.Equal(t, gitlinks.String(), string(manifest))
 }

@@ -1,0 +1,372 @@
+package dagql
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"flag"
+	"fmt"
+	"os"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/opencontainers/go-digest"
+)
+
+// TestMain has every merge of the package's tests decided by both the
+// narrowed cycle search and the whole one it replaced, and fails the run if
+// any merge's two decisions differ. It also checks every blob-backed cache's
+// kept measure of its pool against a walk as the cache closes
+// (VerifyPoolMeasure), and every cache's kept uses of its classes against a
+// walk (verifyEqClassUses), every collection's classes as it finishes, which
+// must hold no class it ended (verifyEqClassSlotsLocked), and every save into
+// a database that held
+// something against a full save at its hold (checkPersistFullSave), and every
+// frame a merge installed against the recipe the merge landed it by
+// (checkMergedRecipes), and every body a merge's preparation made against
+// the one the body worker would have made of the record it installed
+// (checkPreparedBody), and fails the run if any differs. It has every share
+// of a shared value, and every cache's close, check the values the caches
+// share against their keys (verifySharedValues), and fails the run if a
+// holder changed one.
+func TestMain(m *testing.M) {
+	var (
+		saves         int
+		saveDrifts    []string
+		saveChecked   time.Duration
+		mu            sync.Mutex
+		judged        int
+		disagreements []string
+		pools         int
+		poolDrifts    []string
+		poolChecked   time.Duration
+		classes       int
+		classDrifts   []string
+		classChecked  time.Duration
+		noted         int
+		unnoted       []string
+		notedChecked  time.Duration
+		recipes       int
+		recipeDrifts  []string
+		recipeChecked time.Duration
+		bodies        int
+		bodyDrifts    []string
+		bodyChecked   time.Duration
+		sharedChecks  int
+		sharedDrifts  []string
+		slotChecks    int
+		slotDrifts    []string
+		slotChecked   time.Duration
+	)
+	testPersistNotesAlways = true
+	verifySharedValues = true
+	flag.Parse()
+	// The check walks the whole e-graph at every collection, which a
+	// benchmark of the collector would time.
+	if flag.Lookup("test.bench").Value.String() == "" {
+		var collections atomic.Uint64
+		testCollected = func(c *Cache) {
+			// One collection in 8 is checked, and past 8,192 slots, terms
+			// and entries one in so many more, so that the checks cost
+			// about as much per collection however large the e-graph
+			// grows: a test that times a cache's calls as its e-graph grows
+			// times them too. The package's tests make some 480,000
+			// collections, so a gap that every test's collections leave is
+			// still checked thousands of times.
+			every := uint64(8)
+			if size := len(c.egraphParents) + len(c.egraphTerms) + len(c.resultsByID); size > 8192 && uint64(size/32) > every {
+				every = uint64(size / 32)
+			}
+			if collections.Add(1)%every != 0 {
+				return
+			}
+			at := time.Now()
+			err := c.verifyEqClassSlotsLocked()
+			took := time.Since(at)
+			mu.Lock()
+			defer mu.Unlock()
+			slotChecks++
+			slotChecked += took
+			if err != nil {
+				slotDrifts = append(slotDrifts, err.Error())
+			}
+		}
+	}
+	testPersistNotes = func(_ *Cache, before, after *persistPrints) {
+		at := time.Now()
+		err := checkPersistNotes(before, after)
+		took := time.Since(at)
+		mu.Lock()
+		defer mu.Unlock()
+		noted++
+		notedChecked += took
+		if err != nil {
+			unnoted = append(unnoted, err.Error())
+		}
+	}
+	testPreparedBodies = func(res *sharedResult, env *PersistedResultEnvelope, call *ResultCall, body *storedBody, light *PersistedResultEnvelope) {
+		at := time.Now()
+		drift := checkPreparedBody(res, env, call, body, light)
+		took := time.Since(at)
+		mu.Lock()
+		defer mu.Unlock()
+		bodies++
+		bodyChecked += took
+		if drift != "" {
+			bodyDrifts = append(bodyDrifts, drift)
+		}
+	}
+	testCacheClosing = func(c *Cache) {
+		sharedErr := errors.Join(lightStoredEnvelopes.verify(), sharedPlatforms.verify())
+		mu.Lock()
+		sharedChecks++
+		if sharedErr != nil {
+			sharedDrifts = append(sharedDrifts, sharedErr.Error())
+		}
+		mu.Unlock()
+		at := time.Now()
+		classErr := c.verifyEqClassUses()
+		classTook := time.Since(at)
+		mu.Lock()
+		classes++
+		classChecked += classTook
+		if classErr != nil {
+			classDrifts = append(classDrifts, classErr.Error())
+		}
+		mu.Unlock()
+		if !c.blobBacked {
+			return
+		}
+		at = time.Now()
+		err := c.VerifyPoolMeasure()
+		took := time.Since(at)
+		mu.Lock()
+		defer mu.Unlock()
+		pools++
+		poolChecked += took
+		if err != nil {
+			poolDrifts = append(poolDrifts, err.Error())
+		}
+	}
+	JudgeMergeGraphs(func(_ context.Context, j MergeGraphJudgement) {
+		mu.Lock()
+		defer mu.Unlock()
+		judged++
+		if j.Disagrees() {
+			disagreements = append(disagreements, fmt.Sprintf("merge from %s: narrowed %v, whole %v", j.From, j.Narrow, j.Whole))
+		}
+	})
+	testPersistFullSave = func(ctx context.Context, c *Cache, full *persistStateSnapshot) {
+		at := time.Now()
+		err := checkPersistFullSave(context.WithoutCancel(ctx), c, full)
+		took := time.Since(at)
+		mu.Lock()
+		defer mu.Unlock()
+		saves++
+		saveChecked += took
+		if err != nil {
+			saveDrifts = append(saveDrifts, err.Error())
+		}
+	}
+	testMergedRecipes = func(c *Cache, landed []mergedRecipe) {
+		at := time.Now()
+		drifts := checkMergedRecipes(c, landed)
+		took := time.Since(at)
+		mu.Lock()
+		defer mu.Unlock()
+		recipes += len(landed)
+		recipeChecked += took
+		recipeDrifts = append(recipeDrifts, drifts...)
+	}
+	code := m.Run()
+	mu.Lock()
+	code = reportPreparedBodies(code, bodies, bodyDrifts, bodyChecked)
+	if len(recipeDrifts) > 0 {
+		fmt.Fprintf(os.Stderr, "a merged frame's recipe differed from the one its merge landed it by in %d of %d installed records, checked in %s:\n", len(recipeDrifts), recipes, recipeChecked)
+		for _, d := range recipeDrifts {
+			fmt.Fprintln(os.Stderr, "  "+d)
+		}
+		code = 1
+	} else {
+		fmt.Fprintf(os.Stderr, "merged frames' recipes: %d installed records checked in %s, none differed\n", recipes, recipeChecked)
+	}
+	if len(saveDrifts) > 0 {
+		fmt.Fprintf(os.Stderr, "a save left other rows than a full save in %d of %d saves, checked in %s:\n", len(saveDrifts), saves, saveChecked)
+		for _, d := range saveDrifts {
+			fmt.Fprintln(os.Stderr, "  "+d)
+		}
+		code = 1
+	} else {
+		fmt.Fprintf(os.Stderr, "saves against a full save: %d saves checked in %s, none differed\n", saves, saveChecked)
+	}
+	if len(unnoted) > 0 {
+		fmt.Fprintf(os.Stderr, "a write changed what a save writes without noting it in %d of %d saves, checked in %s:\n", len(unnoted), noted, notedChecked)
+		for _, d := range unnoted {
+			fmt.Fprintln(os.Stderr, "  "+d)
+		}
+		code = 1
+	} else {
+		fmt.Fprintf(os.Stderr, "saves against the writers' notes: %d saves checked in %s, every change noted\n", noted, notedChecked)
+	}
+	if len(disagreements) > 0 {
+		fmt.Fprintf(os.Stderr, "the narrowed and whole cycle searches disagreed on %d of %d merges:\n", len(disagreements), judged)
+		for _, d := range disagreements {
+			fmt.Fprintln(os.Stderr, "  "+d)
+		}
+		code = 1
+	} else {
+		fmt.Fprintf(os.Stderr, "merge graph judge: %d merges, no disagreement\n", judged)
+	}
+	if len(poolDrifts) > 0 {
+		fmt.Fprintf(os.Stderr, "the kept pool measure differed from a walk in %d of %d blob-backed caches, checked in %s:\n", len(poolDrifts), pools, poolChecked)
+		for _, d := range poolDrifts {
+			fmt.Fprintln(os.Stderr, "  "+d)
+		}
+		code = 1
+	} else {
+		fmt.Fprintf(os.Stderr, "kept pool measure: %d blob-backed caches checked in %s, none differed\n", pools, poolChecked)
+	}
+	if len(classDrifts) > 0 {
+		fmt.Fprintf(os.Stderr, "the kept uses of classes differed from a walk in %d of %d caches, checked in %s:\n", len(classDrifts), classes, classChecked)
+		for _, d := range classDrifts {
+			fmt.Fprintln(os.Stderr, "  "+d)
+		}
+		code = 1
+	} else {
+		fmt.Fprintf(os.Stderr, "kept class uses: %d caches checked in %s, none differed\n", classes, classChecked)
+	}
+	if len(slotDrifts) > 0 {
+		fmt.Fprintf(os.Stderr, "a collection left a class it ended, or a name of one, in %d of %d collections, checked in %s:\n", len(slotDrifts), slotChecks, slotChecked)
+		for _, d := range slotDrifts[:min(len(slotDrifts), 20)] {
+			fmt.Fprintln(os.Stderr, "  "+d)
+		}
+		code = 1
+	} else {
+		fmt.Fprintf(os.Stderr, "classes as collections leave them: %d collections checked in %s, none left a class it ended\n", slotChecks, slotChecked)
+	}
+	if len(sharedDrifts) > 0 {
+		fmt.Fprintf(os.Stderr, "a shared value was changed by a holder, found in %d of %d checks:\n", len(sharedDrifts), sharedChecks)
+		for _, d := range sharedDrifts {
+			fmt.Fprintln(os.Stderr, "  "+d)
+		}
+		code = 1
+	} else {
+		fmt.Fprintf(os.Stderr, "shared values: %d checks, none changed\n", sharedChecks)
+	}
+	mu.Unlock()
+	os.Exit(code)
+}
+
+// reportPreparedBodies reports what checkPreparedBody found over a run, and
+// returns the run's exit code: code, or a failure if any body differed.
+func reportPreparedBodies(code, bodies int, drifts []string, checked time.Duration) int {
+	if len(drifts) == 0 {
+		fmt.Fprintf(os.Stderr, "prepared bodies: %d installed records checked in %s, none differed\n", bodies, checked)
+		return code
+	}
+	fmt.Fprintf(os.Stderr, "a body a merge's preparation made differed from the body worker's in %d of %d installed records, checked in %s:\n", len(drifts), bodies, checked)
+	for _, d := range drifts {
+		fmt.Fprintln(os.Stderr, "  "+d)
+	}
+	return 1
+}
+
+// checkPreparedBody checks a body a merge's preparation made, as the commit
+// installs it on res (testPreparedBodies), against the body the body worker
+// makes of the whole envelope env and frame call it stands for
+// (newStoredBody): the same compressed envelope, of the same JSON length,
+// with the same references, and the same light envelope. It returns what
+// differs, or "".
+func checkPreparedBody(res *sharedResult, env *PersistedResultEnvelope, call *ResultCall, body *storedBody, light *PersistedResultEnvelope) string {
+	want, err := newStoredBody(res, env, call)
+	if err != nil {
+		return fmt.Sprintf("entry %d: the body worker would fail: %v", res.id, err)
+	}
+	switch {
+	case !bytes.Equal(body.envelope(), want.envelope()):
+		got, _ := storedEnvelopeJSON(body.envelope(), int64(body.envelopeBytes))
+		worker, _ := storedEnvelopeJSON(want.envelope(), int64(want.envelopeBytes))
+		return fmt.Sprintf("entry %d: envelope %s, the body worker's %s", res.id, got, worker)
+	case body.envelopeBytes != want.envelopeBytes:
+		return fmt.Sprintf("entry %d: envelope of %d bytes, the body worker's %d", res.id, body.envelopeBytes, want.envelopeBytes)
+	case body.refs != want.refs:
+		return fmt.Sprintf("entry %d: references %v, the body worker's %v", res.id, body.refs.list(), want.refs.list())
+	case lightEnvelopeKeyOf(light) != lightEnvelopeKeyOf(sharedLightStoredEnvelope(env)):
+		return fmt.Sprintf("entry %d: another light envelope than the body worker's", res.id)
+	case body.call != call || body.holdsFrame():
+		return fmt.Sprintf("entry %d: the body isn't made with the entry's frame alone", res.id)
+	}
+	return ""
+}
+
+// checkMergedRecipes checks each frame a merge installed, under the commit's
+// hold of egraphMu (testMergedRecipes): that it keeps the recipe its merge
+// landed its record by, and that deriving the frame again, from the entries
+// its references name as the commit leaves them, gives that recipe. It
+// derives without the frames' memos and without taking egraphMu, and calls
+// none of the cache's test hooks, so what other tests observe of a merge
+// stays theirs. An input held in a stored body gives the recipe the body
+// keeps, as it does to a derivation. Requires egraphMu.
+func checkMergedRecipes(c *Cache, landed []mergedRecipe) []string {
+	// The walk's own memo, shared across the batch: a frame's inputs form a
+	// graph, and an input reached along two paths is hashed once.
+	derived := map[*ResultCall]digest.Digest{}
+	visiting := map[*ResultCall]bool{}
+	var derive func(frame *ResultCall) (digest.Digest, error)
+	derive = func(frame *ResultCall) (digest.Digest, error) {
+		if recipe, ok := derived[frame]; ok {
+			return recipe, nil
+		}
+		if visiting[frame] {
+			return "", fmt.Errorf("a cycle through field %q", frame.Field)
+		}
+		visiting[frame] = true
+		defer delete(visiting, frame)
+		recipe, err := frame.digestWithInputs(func(ref *ResultCallRef) (digest.Digest, error) {
+			if err := ref.Validate(); err != nil {
+				return "", err
+			}
+			if ref.Call != nil {
+				return derive(ref.Call)
+			}
+			if frame := ref.loadSharedCall(); frame != nil {
+				return derive(frame)
+			}
+			res := c.resultsByID[sharedResultID(ref.ResultID)]
+			if res == nil {
+				return "", fmt.Errorf("missing entry %d", ref.ResultID)
+			}
+			held := res.entryFrameLocked()
+			switch {
+			case held.call != nil:
+				return derive(held.call)
+			case held.body != nil:
+				return held.body.recipe, nil
+			}
+			return "", fmt.Errorf("entry %d has no frame", ref.ResultID)
+		})
+		if err != nil {
+			return "", err
+		}
+		derived[frame] = recipe
+		return recipe, nil
+	}
+	var drifts []string
+	for _, l := range landed {
+		if l.frame == nil {
+			continue
+		}
+		kept, derived, err := l.frame.derivedRecipeDigest()
+		if !derived || err != nil || kept != l.recipe {
+			drifts = append(drifts, fmt.Sprintf("field %q keeps recipe %q (derived %v, error %v), landed by %s", l.frame.Field, kept, derived, err, l.recipe))
+			continue
+		}
+		fresh, err := derive(l.frame)
+		if err != nil || fresh != l.recipe {
+			drifts = append(drifts, fmt.Sprintf("field %q derives recipe %q (error %v), landed by %s", l.frame.Field, fresh, err, l.recipe))
+		}
+	}
+	return drifts
+}

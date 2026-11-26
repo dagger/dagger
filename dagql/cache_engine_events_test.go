@@ -2,13 +2,11 @@ package dagql
 
 // What the cache reports for the engine's cache events: each retention edge
 // a prune run drops, with the time of its own drop; the entries a boot
-// restore installed, type definitions aside; and the parts a snapshot-sharing
-// pass completed.
+// restore installed, type definitions aside.
 
 import (
 	"context"
 	"path/filepath"
-	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -141,47 +139,4 @@ func TestCacheBootRestoredResultsExcludesTypeDefinitions(t *testing.T) {
 	t.Cleanup(func() { assert.NilError(t, c.Close(context.Background())) })
 	assert.Equal(t, 5, c.Size(), "every entry is restored")
 	assert.Equal(t, 2, c.BootRestoredResults(), "type definitions aside")
-}
-
-// A snapshot-sharing pass reports the parts it completed, with each entry's
-// number and dependencies, as they stand once the part is installed: the
-// donor's part brings a dependency the receiver did not have.
-func TestSnapshotShareReportsCompletedParts(t *testing.T) {
-	ctx, c, srv, _ := shareTestCache(t)
-	var (
-		mu      sync.Mutex
-		reports [][]SnapshotSharedPart
-	)
-	c.shareReport = func(parts []SnapshotSharedPart) {
-		mu.Lock()
-		defer mu.Unlock()
-		reports = append(reports, slices.Clone(parts))
-	}
-	barrier := newSharePassBarrier(c)
-	partDep := persistedListTestResult(t, ctx, c, srv, "report-part-dep", &transferTestValue{Text: "dependency"})
-	partDepID := uint64(partDep.cacheSharedResult().id)
-	donor := persistedListTestResult(t, ctx, c, srv, "report-donor", &transferTestValue{Text: "snapshot", PartDeps: []uint64{partDepID}, links: []PersistedSnapshotRefLink{{Role: "snapshot", RefKey: "donor-snapshot"}}})
-	receiver := persistedListTestResult(t, ctx, c, srv, "report-receiver", &transferTestValue{Text: "pending"})
-	c.egraphMu.RLock()
-	_, hadDep := receiver.cacheSharedResult().deps[sharedResultID(partDepID)]
-	c.egraphMu.RUnlock()
-	assert.Assert(t, !hadDep, "the receiver has no dependency on it before the share")
-	shareTestEncodedReceiver(t, ctx, c, receiver)
-	partTestEquivalent(t, c, receiver, donor)
-	shareTestUnite(t, ctx, c, "share-report", donor, receiver)
-	assert.Equal(t, 1, barrier.awaitPass(t), "one planned slot")
-
-	snapshotKey, err := partAddressKey(PersistedPartAddress{Part: "snapshot"})
-	assert.NilError(t, err)
-	c.egraphMu.RLock()
-	deps := sortedResultIDs(receiver.cacheSharedResult().deps)
-	c.egraphMu.RUnlock()
-	assert.Assert(t, slices.Contains(deps, partDepID), "the installed part brought its dependency: %v", deps)
-	mu.Lock()
-	defer mu.Unlock()
-	assert.DeepEqual(t, [][]SnapshotSharedPart{{{
-		ResultID: uint64(receiver.cacheSharedResult().id),
-		Part:     snapshotKey,
-		Deps:     deps,
-	}}}, reports)
 }

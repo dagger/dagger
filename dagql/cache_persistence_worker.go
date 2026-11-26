@@ -2,10 +2,11 @@ package dagql
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
+	"hash/maphash"
 	"slices"
 	"strconv"
 
@@ -62,251 +63,66 @@ func (c *Cache) persistCurrentState(ctx context.Context) error {
 		return nil
 	}
 
+	c.prepareMergedPayloadsForSave(ctx)
 	snapshot, err := c.snapshotPersistState(ctx)
 	if err != nil {
 		return err
 	}
-	if err := c.applyPersistStateSnapshot(ctx, snapshot); err != nil {
+	if err := c.applyPersistStateSnapshot(ctx, c.sqlDB, c.pdb, &snapshot); err != nil {
 		return err
 	}
-	c.egraphMu.Lock()
-	c.persistedResults = len(snapshot.results)
-	c.egraphMu.Unlock()
+	// The database holds what this save wrote: the next save compares with
+	// it.
+	c.persistKept = snapshot.next
+	step := c.lockGraphAs(ctx, "dagql.persist")
+	c.persistedResults = len(snapshot.next.entries)
+	c.persistedWritten = snapshot.written
+	c.persistSnapshotHeld = snapshot.walk.longest
+	c.persistWalk = snapshot.walk
+	c.unlockGraphAs(step)
+	if testPersistFullSave != nil && snapshot.full != nil {
+		testPersistFullSave(ctx, c, snapshot.full)
+	}
 	return nil
 }
 
-// snapshotPersistState copies, under egraphMu for reading, what the save
-// writes. A Checkpoint runs it beside other readers, so it reads class roots
-// without compressing their paths, which writes.
-//
-//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
+// testPersistFullSave, when set, is called after each successful save with
+// the snapshot of a full save, as an empty database would take it, taken in
+// the save's last hold: a test checks that the database the save left holds
+// exactly what a full save would have written.
+var testPersistFullSave func(ctx context.Context, c *Cache, full *persistStateSnapshot)
+
+// snapshotPersistState reads the store, holding egraphMu for reading in
+// pieces (readStore), and works out with no lock held what the save writes:
+// what of the store differs from what the database holds (persistKept). A
+// Checkpoint runs it beside other readers, so it reads class roots without
+// compressing their paths, which writes. It doesn't encode results' rows:
+// applyPersistStateSnapshot encodes each as it writes it.
 func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot, error) {
-	var snapshot persistStateSnapshot
-
-	c.egraphMu.RLock()
-	snapshot.nextResultID = c.nextSharedResultID
-	selectedResultIDs, persistedRootIDs := c.snapshotPersistedRootClosureLocked()
-
-	addEqClassID := func(eqClassIDs map[eqClassID]struct{}, eqID eqClassID) {
-		eqID = c.eqClassRootLocked(eqID)
-		if eqID == 0 {
-			return
-		}
-		eqClassIDs[eqID] = struct{}{}
+	if c.persistSeed == (maphash.Seed{}) {
+		// A cache that restored nothing keeps nothing yet, so any seed
+		// fingerprints it.
+		c.persistSeed = maphash.MakeSeed()
 	}
-
-	eqClassIDs := make(map[eqClassID]struct{})
-	retainedOutputEqClassIDs := make(map[eqClassID]struct{})
-
-	resultIDs := make([]sharedResultID, 0, len(selectedResultIDs))
-	for resultID := range selectedResultIDs {
-		resultIDs = append(resultIDs, resultID)
+	_, step := BeginStep(ctx, "dagql.persist.snapshot")
+	rd, walk, nextResultID, writes, fullRead, err := c.readStore()
+	step.End(err)
+	if err != nil {
+		return persistStateSnapshot{}, err
 	}
-	slices.Sort(resultIDs)
-	for _, resultID := range resultIDs {
-		res := c.resultsByID[resultID]
-		if res == nil {
-			continue
-		}
-
-		depIDs := make([]sharedResultID, 0, len(res.deps))
-		for depID := range res.deps {
-			depIDs = append(depIDs, depID)
-		}
-		slices.Sort(depIDs)
-		resultDeps := make([]persistdb.MirrorResultDep, 0, len(depIDs))
-		for _, depID := range depIDs {
-			if _, selected := selectedResultIDs[depID]; !selected {
-				c.egraphMu.RUnlock()
-				return persistStateSnapshot{}, fmt.Errorf("persist result %d: dependency %d is outside persisted root closure", resultID, depID)
-			}
-			resultDeps = append(resultDeps, persistdb.MirrorResultDep{
-				ParentResultID: int64(resultID),
-				DepResultID:    int64(depID),
-			})
-		}
-
-		outputEqClasses := c.outputEqClassRootsLocked(resultID)
-		outputEqIDs := make([]eqClassID, 0, len(outputEqClasses))
-		for outputEqID := range outputEqClasses {
-			outputEqID = c.eqClassRootLocked(outputEqID)
-			if outputEqID == 0 {
-				continue
-			}
-			retainedOutputEqClassIDs[outputEqID] = struct{}{}
-			addEqClassID(eqClassIDs, outputEqID)
-			outputEqIDs = append(outputEqIDs, outputEqID)
-		}
-		slices.Sort(outputEqIDs)
-		for _, outputEqID := range outputEqIDs {
-			snapshot.resultOutputEqClasses = append(snapshot.resultOutputEqClasses, persistdb.MirrorResultOutputEqClass{
-				ResultID:  int64(resultID),
-				EqClassID: int64(outputEqID),
-			})
-		}
-
-		offers, err := res.pendingOffersLocked()
-		if err != nil {
-			c.egraphMu.RUnlock()
-			return persistStateSnapshot{}, err
-		}
-		cloudKey, cloud := res.cloudHoldingLocked()
-		var cloudStored bool
-		var cloudExpiresAtUnix int64
-		if cloud != nil {
-			cloudStored = !cloud.unstored
-			cloudExpiresAtUnix = cloud.expiresAtUnix
-		}
-		payload := res.loadPayloadState()
-		if payload.snapshotLinkIntent != nil {
-			payload.snapshotOwnerLinks = cloneSnapshotRefLinks(payload.snapshotLinkIntent.Links)
-		}
-		snapshot.results = append(snapshot.results, persistResultSnapshot{
-			resultID:              resultID,
-			imported:              res.imported,
-			persistDeclined:       res.persistDeclined,
-			pendingOffers:         offers,
-			storedParts:           res.storedPartsLocked(),
-			frame:                 res.loadResultCall().clone(),
-			self:                  payload.self,
-			isObject:              payload.isObject,
-			hasValue:              payload.hasValue,
-			sessionResourceHandle: res.sessionResourceHandle,
-			persistedEnvelope:     payload.persistedEnvelope,
-			snapshotOwnerLinks:    payload.snapshotOwnerLinks,
-			row: persistdb.MirrorResult{
-				ID:                        int64(resultID),
-				ExpiresAtUnix:             res.expiresAtUnix,
-				Replacements:              int64(res.replacements),
-				Indexed:                   len(res.recipeKeys) > 0,
-				CloudHoldingNumber:        int64(cloudKey.Number),
-				CloudHoldingStored:        cloudStored,
-				CloudHoldingExpiresAtUnix: cloudExpiresAtUnix,
-				CreatedAtUnixNano:         payload.createdAtUnixNano,
-				LastUsedAtUnixNano:        payload.lastUsedAtUnixNano,
-				RecordType:                res.recordType,
-				Description:               res.description,
-			},
-			resultDeps: resultDeps,
-		})
+	snapshot, err := rd.assemble(nextResultID, writes)
+	if err != nil {
+		return persistStateSnapshot{}, err
 	}
-
-	termIDs := make([]egraphTermID, 0, len(c.egraphTerms))
-	for termID := range c.egraphTerms {
-		termIDs = append(termIDs, termID)
+	snapshot.walk = walk
+	if testPersistNotes != nil && rd.prints != nil {
+		before := c.testPersistPrints
+		if before == nil {
+			before = newPersistPrints()
+		}
+		testPersistNotes(c, before, rd.prints)
+		c.testPersistPrints = rd.prints
 	}
-	slices.Sort(termIDs)
-	for _, termID := range termIDs {
-		term := c.egraphTerms[termID]
-		if term == nil {
-			continue
-		}
-		outputEqID := c.eqClassRootLocked(term.outputEqID)
-		if _, retained := retainedOutputEqClassIDs[outputEqID]; !retained {
-			continue
-		}
-		addEqClassID(eqClassIDs, outputEqID)
-		inputProvenance := c.termInputProvenance[termID]
-		if len(inputProvenance) != len(term.inputEqIDs) {
-			c.egraphMu.RUnlock()
-			return persistStateSnapshot{}, fmt.Errorf("persist term %d: input provenance len %d does not match input eq IDs len %d", termID, len(inputProvenance), len(term.inputEqIDs))
-		}
-		inputEqIDs := make([]eqClassID, len(term.inputEqIDs))
-		copy(inputEqIDs, term.inputEqIDs)
-		for i, inputEqID := range inputEqIDs {
-			inputEqID = c.eqClassRootLocked(inputEqID)
-			inputEqIDs[i] = inputEqID
-			addEqClassID(eqClassIDs, inputEqID)
-			snapshot.termInputs = append(snapshot.termInputs, persistdb.MirrorTermInput{
-				TermID:         int64(termID),
-				Position:       int64(i),
-				InputEqClassID: int64(inputEqID),
-				ProvenanceKind: string(inputProvenance[i]),
-			})
-		}
-		snapshot.terms = append(snapshot.terms, persistdb.MirrorTerm{
-			ID:              int64(termID),
-			SelfDigest:      term.selfDigest.String(),
-			TermDigest:      calcEgraphTermDigest(term.selfDigest, inputEqIDs),
-			OutputEqClassID: int64(outputEqID),
-		})
-	}
-
-	for _, resultID := range resultIDs {
-		res := c.resultsByID[resultID]
-		if res == nil {
-			continue
-		}
-		for _, request := range slices.Sorted(maps.Keys(res.calls)) {
-			snapshot.resultCalls = append(snapshot.resultCalls, persistdb.MirrorResultCall{
-				ResultID:      int64(resultID),
-				RequestDigest: request.String(),
-				Call:          res.calls[request].encoded,
-			})
-		}
-	}
-
-	persistedResultIDs := make([]sharedResultID, 0, len(persistedRootIDs))
-	for resultID := range persistedRootIDs {
-		persistedResultIDs = append(persistedResultIDs, resultID)
-	}
-	slices.Sort(persistedResultIDs)
-	for _, resultID := range persistedResultIDs {
-		edge := c.persistedEdgesByResult[resultID]
-		snapshot.persistedEdges = append(snapshot.persistedEdges, persistdb.MirrorPersistedEdge{
-			ResultID:          int64(resultID),
-			CreatedAtUnixNano: edge.createdAtUnixNano,
-			ExpiresAtUnix:     edge.expiresAtUnix,
-			Unpruneable:       edge.unpruneable,
-		})
-	}
-
-	eqIDs := make([]eqClassID, 0, len(eqClassIDs))
-	for eqID := range eqClassIDs {
-		eqIDs = append(eqIDs, eqID)
-	}
-	slices.Sort(eqIDs)
-	for _, eqID := range eqIDs {
-		snapshot.eqClasses = append(snapshot.eqClasses, persistdb.MirrorEqClass{ID: int64(eqID)})
-
-		digestRows := make(map[string]persistdb.MirrorEqClassDigest, len(c.eqClassToDigests[eqID]))
-		for dig := range c.eqClassToDigests[eqID] {
-			if dig == "" {
-				continue
-			}
-			digestRows[dig+"\x00"] = persistdb.MirrorEqClassDigest{
-				EqClassID: int64(eqID),
-				Digest:    dig,
-				Label:     "",
-			}
-		}
-		for extra := range c.eqClassExtraDigests[eqID] {
-			if extra.Digest == "" {
-				continue
-			}
-			dig := extra.Digest.String()
-			digestRows[dig+"\x00"] = persistdb.MirrorEqClassDigest{
-				EqClassID: int64(eqID),
-				Digest:    dig,
-				Label:     "",
-			}
-			digestRows[dig+"\x01"+extra.Label] = persistdb.MirrorEqClassDigest{
-				EqClassID: int64(eqID),
-				Digest:    dig,
-				Label:     extra.Label,
-			}
-		}
-		rowKeys := make([]string, 0, len(digestRows))
-		for key := range digestRows {
-			rowKeys = append(rowKeys, key)
-		}
-		slices.Sort(rowKeys)
-		for _, key := range rowKeys {
-			snapshot.eqClassDigests = append(snapshot.eqClassDigests, digestRows[key])
-		}
-	}
-
-	c.egraphMu.RUnlock()
 
 	if c.snapshotManager != nil {
 		rows := c.snapshotManager.PersistentMetadataRows()
@@ -337,222 +153,343 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 			})
 		}
 	}
-
-	for i := range snapshot.results {
-		resultSnapshot := &snapshot.results[i]
-		if resultSnapshot.frame == nil {
-			if resultSnapshot.self == nil || resultSnapshot.self.Type() == nil || resultSnapshot.self.Type().Name() != "Query" {
-				return persistStateSnapshot{}, fmt.Errorf("persist result %d: missing result call frame", resultSnapshot.resultID)
-			}
-		}
-
-		encoding, err := c.persistResultEnvelope(ctx, resultSnapshot)
-		switch {
-		case errors.Is(err, ErrPersistStateNotReady):
-			return persistStateSnapshot{}, err
-		case err != nil:
-			return persistStateSnapshot{}, fmt.Errorf("persist result %d envelope: %w", resultSnapshot.resultID, err)
-		}
-		payload, err := json.Marshal(encoding.Envelope)
+	if fullRead != nil {
+		full, err := fullRead.assemble(nextResultID, writes)
 		if err != nil {
-			return persistStateSnapshot{}, fmt.Errorf("persist result %d payload JSON: %w", resultSnapshot.resultID, err)
+			return persistStateSnapshot{}, fmt.Errorf("the full save in the last hold: %w", err)
 		}
-		if resultSnapshot.frame != nil {
-			callFrameJSON, err := json.Marshal(resultSnapshot.frame)
-			if err != nil {
-				return persistStateSnapshot{}, fmt.Errorf("persist result %d call frame JSON: %w", resultSnapshot.resultID, err)
-			}
-			resultSnapshot.row.CallFrameJSON = string(callFrameJSON)
-		}
-		resultSnapshot.row.SelfPayload = payload
-		resultSnapshot.resultSnapshotLinks, err = resultSnapshotLinkRows(resultSnapshot.resultID, encoding.SnapshotLinks)
-		if err != nil {
-			return persistStateSnapshot{}, err
-		}
+		full.snapshotContentHashes = snapshot.snapshotContentHashes
+		full.snapshotContentLinks = snapshot.snapshotContentLinks
+		full.importedLayerByBlob = snapshot.importedLayerByBlob
+		full.importedLayerByDiff = snapshot.importedLayerByDiff
+		snapshot.full = &full
 	}
 	return snapshot, nil
 }
 
-// snapshotPersistedRootClosureLocked returns every clean result reachable from
-// a persisted root whose full dependency closure is clean and registered. It
-// requires egraphMu for reading.
-func (c *Cache) snapshotPersistedRootClosureLocked() (map[sharedResultID]struct{}, map[sharedResultID]struct{}) {
-	invalid := make(map[sharedResultID]struct{})
-	parentsByDependency := make(map[sharedResultID][]sharedResultID)
-	invalidQueue := make([]sharedResultID, 0)
-	markInvalid := func(resultID sharedResultID) {
-		if _, found := invalid[resultID]; found {
-			return
-		}
-		invalid[resultID] = struct{}{}
-		invalidQueue = append(invalidQueue, resultID)
+// encodePersistedResultRow encodes one entry's saved row from its snapshot:
+// its self payload, its call frame and its snapshot links. It reads only the
+// snapshot, so a save calls it for each row it writes, whichever rows those
+// are. A blob-backed cache's stored record is saved as it is held
+// (encodeStoredRow).
+func (c *Cache) encodePersistedResultRow(ctx context.Context, resultSnapshot *persistResultSnapshot) error {
+	encoding, err := c.persistResultEnvelope(ctx, resultSnapshot)
+	switch {
+	case errors.Is(err, ErrPersistStateNotReady):
+		return err
+	case err != nil:
+		return fmt.Errorf("persist result %d envelope: %w", resultSnapshot.resultID, err)
 	}
-
-	for resultID, res := range c.resultsByID {
-		if res == nil {
-			continue
-		}
-		if res.attachmentState() != resultAttachmentClean {
-			markInvalid(resultID)
-		}
-		for depID := range c.ownedResultIDsLocked(res) {
-			parentsByDependency[depID] = append(parentsByDependency[depID], resultID)
-			if c.resultsByID[depID] == nil {
-				markInvalid(resultID)
+	var payload []byte
+	if c.blobBacked && resultSnapshot.persistedEnvelope != nil {
+		body := resultSnapshot.stored
+		if body == nil {
+			// A record the body worker hasn't compressed yet is
+			// compressed here, as the worker would.
+			if body, err = newStoredBody(&sharedResult{id: resultSnapshot.resultID}, resultSnapshot.persistedEnvelope, resultSnapshot.frame); err != nil {
+				return fmt.Errorf("persist result %d stored record: %w", resultSnapshot.resultID, err)
 			}
 		}
+		// A light envelope is shared by the entries of its content, and
+		// names no row: the saved record names the entry's own.
+		encoding.Envelope.ResultID = uint64(resultSnapshot.resultID)
+		payload, err = encodeStoredRow(&encoding.Envelope, body, resultSnapshot.partFacts)
+	} else {
+		payload, err = json.Marshal(encoding.Envelope)
 	}
-	for len(invalidQueue) > 0 {
-		resultID := invalidQueue[len(invalidQueue)-1]
-		invalidQueue = invalidQueue[:len(invalidQueue)-1]
-		for _, parentID := range parentsByDependency[resultID] {
-			markInvalid(parentID)
-		}
+	if err != nil {
+		return fmt.Errorf("persist result %d payload: %w", resultSnapshot.resultID, err)
 	}
-
-	persistedRoots := make(map[sharedResultID]struct{}, len(c.persistedEdgesByResult))
-	stack := make([]sharedResultID, 0, len(c.persistedEdgesByResult))
-	for resultID := range c.persistedEdgesByResult {
-		if c.resultsByID[resultID] == nil {
-			continue
+	switch {
+	case resultSnapshot.frame != nil:
+		callFrameJSON, err := json.Marshal(resultSnapshot.frame)
+		if err != nil {
+			return fmt.Errorf("persist result %d call frame JSON: %w", resultSnapshot.resultID, err)
 		}
-		if _, rejected := invalid[resultID]; rejected {
-			continue
+		resultSnapshot.row.CallFrameJSON = string(callFrameJSON)
+	case resultSnapshot.stored.holdsFrame():
+		// A frame held in the body is written out as it is held: the JSON
+		// the frame itself encodes to (storedBody.withFrame).
+		callFrameJSON, err := resultSnapshot.stored.frameJSON()
+		if err != nil {
+			return fmt.Errorf("persist result %d call frame JSON: %w", resultSnapshot.resultID, err)
 		}
-		persistedRoots[resultID] = struct{}{}
-		stack = append(stack, resultID)
+		resultSnapshot.row.CallFrameJSON = string(callFrameJSON)
 	}
-
-	selected := make(map[sharedResultID]struct{})
-	for len(stack) > 0 {
-		resultID := stack[len(stack)-1]
-		stack = stack[:len(stack)-1]
-		if _, found := selected[resultID]; found {
-			continue
-		}
-		res := c.resultsByID[resultID]
-		if res == nil {
-			continue
-		}
-		if _, rejected := invalid[resultID]; rejected {
-			continue
-		}
-		selected[resultID] = struct{}{}
-		for depID := range c.ownedResultIDsLocked(res) {
-			stack = append(stack, depID)
-		}
-	}
-	return selected, persistedRoots
+	resultSnapshot.row.SelfPayload = payload
+	resultSnapshot.resultSnapshotLinks, err = resultSnapshotLinkRows(resultSnapshot.resultID, encoding.SnapshotLinks)
+	return err
 }
 
+// applyPersistStateSnapshot writes what the snapshot holds to the database
+// db and its queries pdb, in one transaction: it deletes the rows of each
+// unit the store no longer holds, and writes the rows of each unit that
+// changed or is new, the kinds of them whose fingerprints moved. Each record
+// it checks it encodes, and writes only if its bytes differ from what the
+// database holds. It fills the record fingerprints of the snapshot's next
+// kept table as it goes.
+//
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
-func (c *Cache) applyPersistStateSnapshot(ctx context.Context, snapshot persistStateSnapshot) error {
-	if c.sqlDB == nil || c.pdb == nil {
-		return nil
-	}
-
-	tx, err := c.sqlDB.BeginTx(ctx, nil)
+func (c *Cache) applyPersistStateSnapshot(ctx context.Context, db *sql.DB, pdb *persistdb.Queries, snapshot *persistStateSnapshot) (rerr error) {
+	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin persistence mirror tx: %w", err)
 	}
-	q := c.pdb.WithTx(tx)
-	if err := q.ClearMirrorState(ctx); err != nil {
-		_ = tx.Rollback()
-		return fmt.Errorf("clear mirror state: %w", err)
+	// The transaction is begun under ctx, so cancelling ctx rolls the save
+	// back: database/sql rolls the transaction back once the statement
+	// running then ends, and the save's later statements and its commit
+	// fail. Its statements run under a context that can't be cancelled: the
+	// SQLite driver starts a goroutine to interrupt each statement run under
+	// one that can, and a save runs one for each of its rows, millions of
+	// them. Each statement is prepared once.
+	saveCtx := ctx
+	ctx = context.WithoutCancel(ctx)
+	defer func() {
+		if rerr != nil {
+			_ = tx.Rollback()
+			if saveCtx.Err() != nil {
+				rerr = fmt.Errorf("%w: %w", rerr, context.Cause(saveCtx))
+			}
+		}
+	}()
+	q := pdb.WithTx(tx)
+	if err := q.PrepareMirrorWrites(ctx); err != nil {
+		return fmt.Errorf("prepare persistence mirror writes: %w", err)
 	}
 	if err := q.UpsertMeta(ctx, persistdb.MetaKeyNextResultID, strconv.FormatUint(uint64(snapshot.nextResultID), 10)); err != nil {
-		_ = tx.Rollback()
 		return fmt.Errorf("save next result ID: %w", err)
 	}
+	if c.blobBacked {
+		if err := q.UpsertMeta(ctx, persistdb.MetaKeyBundleWrites, strconv.FormatUint(snapshot.writes, 10)); err != nil {
+			return fmt.Errorf("save write count: %w", err)
+		}
+	}
 
-	for _, row := range snapshot.eqClasses {
-		if err := q.InsertMirrorEqClass(ctx, row); err != nil {
-			_ = tx.Rollback()
-			return fmt.Errorf("insert eq_class %d: %w", row.ID, err)
+	// What the store no longer holds goes, the rows that name a unit
+	// before the unit's own.
+	for _, id := range snapshot.goneResults {
+		for _, del := range []struct {
+			table string
+			fn    func(context.Context, int64) error
+		}{
+			{"result_snapshot_links", q.DeleteMirrorResultSnapshotLinks},
+			{"persisted_edges", q.DeleteMirrorPersistedEdge},
+			{"result_taught", q.DeleteMirrorResultTaught},
+			{"result_calls", q.DeleteMirrorResultCalls},
+			{"result_deps", q.DeleteMirrorResultDeps},
+			{"result_output_eq_classes", q.DeleteMirrorResultOutputEqClasses},
+			{"result_records", q.DeleteMirrorResultRecord},
+			{"results", q.DeleteMirrorResult},
+		} {
+			if err := del.fn(ctx, id); err != nil {
+				return fmt.Errorf("delete %s of result %d: %w", del.table, id, err)
+			}
 		}
 	}
-	for _, row := range snapshot.eqClassDigests {
-		if err := q.InsertMirrorEqClassDigest(ctx, row); err != nil {
-			_ = tx.Rollback()
-			return fmt.Errorf("insert eq_class_digest (%d,%s,%s): %w", row.EqClassID, row.Digest, row.Label, err)
+	for _, id := range snapshot.goneTerms {
+		if err := q.DeleteMirrorTermInputs(ctx, id); err != nil {
+			return fmt.Errorf("delete term_inputs of term %d: %w", id, err)
+		}
+		if err := q.DeleteMirrorTerm(ctx, id); err != nil {
+			return fmt.Errorf("delete term %d: %w", id, err)
 		}
 	}
-	for _, result := range snapshot.results {
-		if err := q.InsertMirrorResult(ctx, result.row); err != nil {
-			_ = tx.Rollback()
-			return fmt.Errorf("insert result %d: %w", result.resultID, err)
+	for _, id := range snapshot.goneClasses {
+		if err := q.DeleteMirrorEqClassDigests(ctx, id); err != nil {
+			return fmt.Errorf("delete eq_class_digests of eq_class %d: %w", id, err)
+		}
+		if err := q.DeleteMirrorEqClass(ctx, id); err != nil {
+			return fmt.Errorf("delete eq_class %d: %w", id, err)
 		}
 	}
-	for _, row := range snapshot.terms {
-		if err := q.InsertMirrorTerm(ctx, row); err != nil {
-			_ = tx.Rollback()
-			return fmt.Errorf("insert term %d: %w", row.ID, err)
+
+	for _, class := range snapshot.classes {
+		if err := q.InsertMirrorEqClass(ctx, persistdb.MirrorEqClass{ID: class.id}); err != nil {
+			return fmt.Errorf("insert eq_class %d: %w", class.id, err)
+		}
+		if class.held {
+			if err := q.DeleteMirrorEqClassDigests(ctx, class.id); err != nil {
+				return fmt.Errorf("delete eq_class_digests of eq_class %d: %w", class.id, err)
+			}
+		}
+		for _, row := range class.digests {
+			if err := q.InsertMirrorEqClassDigest(ctx, row); err != nil {
+				return fmt.Errorf("insert eq_class_digest (%d,%s,%s): %w", row.EqClassID, row.Digest, row.Label, err)
+			}
 		}
 	}
-	for _, row := range snapshot.termInputs {
-		if err := q.InsertMirrorTermInput(ctx, row); err != nil {
-			_ = tx.Rollback()
-			return fmt.Errorf("insert term_input (%d,%d): %w", row.TermID, row.Position, err)
+	for i := range snapshot.results {
+		result := &snapshot.results[i]
+		if result.write&persistWriteRow == 0 {
+			continue
+		}
+		if err := q.UpsertMirrorResult(ctx, result.row); err != nil {
+			return fmt.Errorf("upsert result %d: %w", result.resultID, err)
 		}
 	}
-	for _, row := range snapshot.resultOutputEqClasses {
-		if err := q.InsertMirrorResultOutputEqClass(ctx, row); err != nil {
-			_ = tx.Rollback()
-			return fmt.Errorf("insert result_output_eq_class (%d,%d): %w", row.ResultID, row.EqClassID, err)
+	// Each result's record is encoded just before it is compared and
+	// written, and its encoding and the snapshot's copies of its call frame
+	// and value are let go once it is: the save holds one record's encoding
+	// at a time, not every record's until the commit.
+	for i := range snapshot.results {
+		result := &snapshot.results[i]
+		if result.write&persistWriteRecord == 0 {
+			continue
+		}
+		if result.frame == nil && !result.stored.holdsFrame() {
+			if result.self == nil || result.self.Type() == nil || result.self.Type().Name() != "Query" {
+				return fmt.Errorf("persist result %d: missing result call frame", result.resultID)
+			}
+		}
+		if err := c.encodePersistedResultRow(ctx, result); err != nil {
+			return err
+		}
+		var links rowsPrint
+		for _, row := range result.resultSnapshotLinks {
+			links.add(rowPrint(c.persistSeed, row))
+		}
+		record := recordPrint(c.persistSeed, recordBytesPrint(c.persistSeed, result.row.CallFrameJSON, result.row.SelfPayload), links)
+		snapshot.next.entries[result.kept].record = record
+		if !result.held || record != result.keptRecord {
+			result.recordWritten = true
+			if err := q.UpsertMirrorResultRecord(ctx, result.row); err != nil {
+				return fmt.Errorf("upsert result_record %d: %w", result.resultID, err)
+			}
+			if result.held {
+				if err := q.DeleteMirrorResultSnapshotLinks(ctx, int64(result.resultID)); err != nil {
+					return fmt.Errorf("delete result_snapshot_links of result %d: %w", result.resultID, err)
+				}
+			}
+			for _, row := range result.resultSnapshotLinks {
+				if err := q.InsertMirrorResultSnapshotLink(ctx, row); err != nil {
+					return fmt.Errorf("insert result_snapshot_link (%d,%s,%s): %w", row.ResultID, row.RefKey, row.Role, err)
+				}
+			}
+		}
+		result.row.SelfPayload = nil
+		result.row.CallFrameJSON = ""
+		result.frame = nil
+		result.self = nil
+		result.stored = nil
+		result.partFacts = nil
+	}
+	for _, term := range snapshot.terms {
+		if err := q.UpsertMirrorTerm(ctx, term.row); err != nil {
+			return fmt.Errorf("upsert term %d: %w", term.row.ID, err)
+		}
+		if term.held {
+			if err := q.DeleteMirrorTermInputs(ctx, term.row.ID); err != nil {
+				return fmt.Errorf("delete term_inputs of term %d: %w", term.row.ID, err)
+			}
+		}
+		for _, row := range term.inputs {
+			if err := q.InsertMirrorTermInput(ctx, row); err != nil {
+				return fmt.Errorf("insert term_input (%d,%d): %w", row.TermID, row.Position, err)
+			}
 		}
 	}
-	for _, row := range snapshot.resultCalls {
-		if err := q.InsertMirrorResultCall(ctx, row); err != nil {
-			_ = tx.Rollback()
-			return fmt.Errorf("insert result_call (%d,%s): %w", row.ResultID, row.RequestDigest, err)
+	for i := range snapshot.results {
+		result := &snapshot.results[i]
+		id := int64(result.resultID)
+		if result.write&persistWriteClasses != 0 {
+			if result.held {
+				if err := q.DeleteMirrorResultOutputEqClasses(ctx, id); err != nil {
+					return fmt.Errorf("delete result_output_eq_classes of result %d: %w", id, err)
+				}
+			}
+			for _, row := range result.outputEqClasses {
+				if err := q.InsertMirrorResultOutputEqClass(ctx, row); err != nil {
+					return fmt.Errorf("insert result_output_eq_class (%d,%d): %w", row.ResultID, row.EqClassID, err)
+				}
+			}
+		}
+		if result.write&persistWriteCalls != 0 {
+			if result.held {
+				if err := q.DeleteMirrorResultCalls(ctx, id); err != nil {
+					return fmt.Errorf("delete result_calls of result %d: %w", id, err)
+				}
+			}
+			for _, row := range result.calls {
+				if err := q.InsertMirrorResultCall(ctx, row); err != nil {
+					return fmt.Errorf("insert result_call (%d,%s): %w", row.ResultID, row.RequestDigest, err)
+				}
+			}
+		}
+		if result.write&persistWriteTaught != 0 {
+			if result.held {
+				if err := q.DeleteMirrorResultTaught(ctx, id); err != nil {
+					return fmt.Errorf("delete result_taught of result %d: %w", id, err)
+				}
+			}
+			for _, row := range result.taught {
+				if err := q.InsertMirrorResultTaught(ctx, row); err != nil {
+					return fmt.Errorf("insert result_taught (%d,%d): %w", row.ResultID, row.Position, err)
+				}
+			}
+		}
+		if result.write&persistWriteEdge != 0 {
+			if result.held {
+				if err := q.DeleteMirrorPersistedEdge(ctx, id); err != nil {
+					return fmt.Errorf("delete persisted_edge of result %d: %w", id, err)
+				}
+			}
+			if result.edge != nil {
+				if err := q.InsertMirrorPersistedEdge(ctx, *result.edge); err != nil {
+					return fmt.Errorf("insert persisted_edge (%d): %w", id, err)
+				}
+			}
 		}
 	}
-	for _, row := range snapshot.persistedEdges {
-		if err := q.InsertMirrorPersistedEdge(ctx, row); err != nil {
-			_ = tx.Rollback()
-			return fmt.Errorf("insert persisted_edge (%d): %w", row.ResultID, err)
+	// Dependency edges come after every entry's row, as each names two.
+	for i := range snapshot.results {
+		result := &snapshot.results[i]
+		if result.write&persistWriteDeps == 0 {
+			continue
 		}
-	}
-	for _, result := range snapshot.results {
+		if result.held {
+			if err := q.DeleteMirrorResultDeps(ctx, int64(result.resultID)); err != nil {
+				return fmt.Errorf("delete result_deps of result %d: %w", result.resultID, err)
+			}
+		}
 		for _, row := range result.resultDeps {
 			if err := q.InsertMirrorResultDep(ctx, row); err != nil {
-				_ = tx.Rollback()
 				return fmt.Errorf("insert result_dep (%d,%d): %w", row.ParentResultID, row.DepResultID, err)
 			}
 		}
-		for _, row := range result.resultSnapshotLinks {
-			if err := q.InsertMirrorResultSnapshotLink(ctx, row); err != nil {
-				_ = tx.Rollback()
-				return fmt.Errorf("insert result_snapshot_link (%d,%s,%s): %w", row.ResultID, row.RefKey, row.Role, err)
-			}
-		}
+	}
+	// An engine's snapshot metadata is written whole: a blob-backed cache
+	// has none.
+	if err := q.ClearMirrorSnapshotMetadata(ctx); err != nil {
+		return fmt.Errorf("clear snapshot metadata: %w", err)
 	}
 	for _, row := range snapshot.snapshotContentLinks {
 		if err := q.InsertMirrorSnapshotContentLink(ctx, row); err != nil {
-			_ = tx.Rollback()
 			return fmt.Errorf("insert snapshot_content_link (%s,%s): %w", row.SnapshotID, row.Digest, err)
 		}
 	}
 	for _, row := range snapshot.snapshotContentHashes {
 		if err := q.InsertMirrorSnapshotContentHash(ctx, row); err != nil {
-			_ = tx.Rollback()
 			return fmt.Errorf("insert snapshot_content_hash (%s): %w", row.SnapshotID, err)
 		}
 	}
 	for _, row := range snapshot.importedLayerByBlob {
 		if err := q.InsertMirrorImportedLayerBlobIndex(ctx, row); err != nil {
-			_ = tx.Rollback()
 			return fmt.Errorf("insert imported_layer_blob_index (%s,%s,%s): %w", row.ParentSnapshotID, row.BlobDigest, row.SnapshotID, err)
 		}
 	}
 	for _, row := range snapshot.importedLayerByDiff {
 		if err := q.InsertMirrorImportedLayerDiffIndex(ctx, row); err != nil {
-			_ = tx.Rollback()
 			return fmt.Errorf("insert imported_layer_diff_index (%s,%s,%s): %w", row.ParentSnapshotID, row.DiffID, row.SnapshotID, err)
 		}
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit persistence mirror tx: %w", err)
+	}
+	snapshot.written = 0
+	for i := range snapshot.results {
+		if result := &snapshot.results[i]; result.recordWritten || result.write&^persistWriteRecord != 0 {
+			snapshot.written++
+		}
 	}
 	return nil
 }
@@ -592,8 +529,12 @@ func (c *Cache) persistResultEnvelope(ctx context.Context, snapshot *persistResu
 		if rerr == nil && snapshot != nil {
 			encoding.Envelope.Imported = snapshot.imported
 			encoding.Envelope.PersistDeclined = snapshot.persistDeclined
+			encoding.Envelope.BoundSession = snapshot.boundSession
+			encoding.Envelope.Run, encoding.Envelope.RunRan = snapshot.run, uint8(snapshot.runRan)
 			encoding.Envelope.PendingOffers, rerr = clonePartOffers(snapshot.pendingOffers)
-			encoding.Envelope.StoredParts = snapshot.storedParts
+			for _, part := range snapshot.storedParts {
+				encoding.Envelope.StoredParts = append(encoding.Envelope.StoredParts, part.offer())
+			}
 		}
 	}()
 	if snapshot != nil && snapshot.persistedEnvelope != nil {

@@ -472,15 +472,16 @@ test(source: Directory): Container {
     .from("node:20")
     .withDirectory("/app", source)
     .withWorkdir("/app")
-    .withMountedCache("/app/node_modules", dag.cacheVolume("node-modules"))
+    .withMountedCache("/root/.npm", dag.cacheVolume("npm-cache"))
     .withExec(["npm", "ci"])
     .withExec(["npm", "test"])
 }
 ```
 
-`withMountedCache` + `dag.cacheVolume("name")` give you a persistent,
-content-addressed cache keyed by name. Every builder operation is layer-cached
-automatically by its inputs.
+`withMountedCache` + `dag.cacheVolume("name")` give you a persistent cache
+keyed by name, here npm's download cache. Its contents can be absent on any
+run, so a pipeline must be correct with the volume empty. Every builder
+operation is layer-cached automatically by its inputs.
 
 ### Secrets
 

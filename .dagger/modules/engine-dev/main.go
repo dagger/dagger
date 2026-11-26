@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -19,6 +20,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"dagger/engine-dev/build"
+	"dagger/engine-dev/consts"
 	"dagger/engine-dev/internal/dagger"
 	clidev "dagger/engine-dev/internal/dagger/clients/cli-dev"
 	"dagger/engine-dev/internal/dagger/clients/wolfi"
@@ -182,7 +184,7 @@ func (dev *EngineDev) Container(
 	if gpuSupport {
 		builder = builder.WithGPUSupport()
 	}
-	ctr, err := dev.engine(ctx, builder, platform, version)
+	base, err := dev.engineBase(ctx, builder)
 	if err != nil {
 		return nil, err
 	}
@@ -204,7 +206,11 @@ func (dev *EngineDev) Container(
 	// nothing in them waits for the entries.
 	var engineBuilt errgroup.Group
 	engineBuilt.Go(func() error {
-		_, err := ctr.Sync(ctx)
+		ctr, err := dev.withEngine(ctx, base, builder, platform, version)
+		if err != nil {
+			return err
+		}
+		_, err = ctr.Sync(ctx)
 		return err
 	})
 	entries, digests, err := dev.imageEntries(ctx, native, builder.Platform(), sdks, dev.ImageEntries)
@@ -215,16 +221,40 @@ func (dev *EngineDev) Container(
 	if builtErr != nil {
 		return nil, builtErr
 	}
-	ctr = ctr.WithDirectory(distconsts.EngineContainerImageEntriesDir, entries)
+	// The entries go under the binaries a commit changes and over
+	// everything else: first their blobs, which change only when what they
+	// hold does, then the bundle that names them, which differs at every
+	// build.
+	ctr := base.
+		WithDirectory(distconsts.EngineContainerImageEntriesDir, entries.WithoutFile(imageEntriesBundleFile)).
+		WithFile(path.Join(distconsts.EngineContainerImageEntriesDir, imageEntriesBundleFile), entries.File(imageEntriesBundleFile))
+	ctr, err = dev.withEngine(ctx, ctr, builder, platform, version)
+	if err != nil {
+		return nil, err
+	}
 	for _, sdk := range sdks {
 		ctr = ctr.WithEnvVariable(sdk.EnvName, digests[sdk.Name])
 	}
 	return ctr, nil
 }
 
+// imageEntriesBundleFile is the bundle in an image's entries, beside the
+// blobs it names (core/schema's EngineImageBundleFile).
+const imageEntriesBundleFile = "bundle.json"
+
 // engine is the engine container builder builds, without the entries its
 // image ships.
 func (dev *EngineDev) engine(ctx context.Context, builder *build.Builder, platform dagger.Platform, version string) (*dagger.Container, error) {
+	base, err := dev.engineBase(ctx, builder)
+	if err != nil {
+		return nil, err
+	}
+	return dev.withEngine(ctx, base, builder, platform, version)
+}
+
+// engineBase is the engine container builder builds, with its configuration,
+// without the binaries a commit of the source changes (withEngine).
+func (dev *EngineDev) engineBase(ctx context.Context, builder *build.Builder) (*dagger.Container, error) {
 	cfg, err := generateConfig(dev.LogLevel)
 	if err != nil {
 		return nil, err
@@ -238,7 +268,7 @@ func (dev *EngineDev) engine(ctx context.Context, builder *build.Builder, platfo
 		return nil, err
 	}
 
-	ctr, err := builder.Engine(ctx)
+	ctr, err := builder.EngineBase(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -246,22 +276,28 @@ func (dev *EngineDev) engine(ctx context.Context, builder *build.Builder, platfo
 		ctr = ctr.WithEnvVariable("DAGGER_EBPF_PROG_"+strings.ToUpper(prog), "y")
 	}
 
-	ctr = ctr.
+	return ctr.
 		WithFile(engineJSONPath, cfg).
 		WithFile(engineTOMLPath, engineTOML).
 		WithFile(engineEntrypointPath, entrypoint).
-		WithEntrypoint([]string{filepath.Base(engineEntrypointPath)})
+		WithEntrypoint([]string{filepath.Base(engineEntrypointPath)}), nil
+}
 
+// withEngine is ctr with the binaries a commit of the source changes: the
+// engine's (builder's WithEngineBinaries), then the CLI. They are the image's
+// last layers, so that an image of another commit shares every layer below
+// them.
+func (dev *EngineDev) withEngine(ctx context.Context, ctr *dagger.Container, builder *build.Builder, platform dagger.Platform, version string) (*dagger.Container, error) {
+	ctr, err := builder.WithEngineBinaries(ctx, ctr)
+	if err != nil {
+		return nil, err
+	}
 	cli := clidev.New(clidev.CLIDevOpts{Version: version, Ws: dev.Ws}).Binary(clidev.CLIDevBinaryOpts{
 		Platform: platform,
 	})
-	ctr = ctr.
+	return ctr.
 		WithFile(cliPath, cli).
-		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", distconsts.DefaultEngineSockAddr)
-
-	// ctr = ctr.WithEnvVariable("BUILDKIT_SCHEDULER_DEBUG", "1")
-
-	return ctr, nil
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", distconsts.DefaultEngineSockAddr), nil
 }
 
 // goSDK is go-sdk's tree at the commit this workspace's module go-sdk pins
@@ -341,6 +377,10 @@ func (dev *EngineDev) entriesTool(ctx context.Context, builder *build.Builder, c
 	exporter := []string{"engine-image-entries",
 		"-go-version", distconsts.GolangVersion,
 		"-platform", platform,
+		// The entries' blobs carry their files dated as the image's
+		// layers are, so that the same files make the same blobs in every
+		// build.
+		"-source-date-epoch", strconv.Itoa(imageSourceDateEpoch),
 	}
 	for _, sdk := range sdks {
 		path := "/builtin-sdks/" + sdk.Name
@@ -535,7 +575,11 @@ func entriesExported(ctx context.Context, ran *dagger.Container, exporter []stri
 // The entries an engine image ships can be made again on the state an
 // earlier making left after a prune cut part of it, as a later release's
 // making does: an engine of this build makes them, prunes its cache to half
-// its size, least recently used first, and makes them again. ReleaseDryRun
+// its size, least recently used first, and makes them again. The two makings
+// ship the same blobs, those of results the prune cut and the engine made
+// again among them: the next image's build, on an engine of its own, then
+// makes the same blobs for every result its commit leaves alone, and a host
+// that holds one image pulls only what the next one changed. ReleaseDryRun
 // checks it.
 func (dev *EngineDev) ImageEntriesAfterPrune(ctx context.Context) error {
 	builder, err := dev.builder(ctx, "")
@@ -563,14 +607,23 @@ half=$((size / 2 / 1048576))MB
 echo "pruning the cache of $size bytes to $half"
 echo "{ engine { localCache { prune(maxUsedSpace: \"$half\", targetSpace: \"$half\") } } }" | dagger query
 "$@" -out /entries -sdk-digests /sdk-digests.json
+ls /entries-before/blobs/sha256 > /blobs-before
+ls /entries/blobs/sha256 > /blobs
+differ=$(comm -3 /blobs-before /blobs)
+if [ -n "$differ" ]; then
+	echo "the two makings ship different blobs: $(wc -l < /blobs-before) before the prune, $(wc -l < /blobs) after, these in one only (first column before, second after):"
+	echo "$differ" | head -40
+	exit 1
+fi
+echo "the two makings ship the same $(wc -l < /blobs) blobs"
 `, "sh"}, exporter...))
 	return entriesExported(ctx, ran, exporter)
 }
 
 // The build steps that have built to different bytes before build to the
-// same bytes when they run twice: QEMU's emulators, crun and the Go SDK's
-// files. Two engines that each build the image then hold the same
-// image, and the cache can serve what one built on it to the other.
+// same bytes when they run twice: QEMU's emulators, crun and the Go and
+// Python SDKs' files. Two engines that each build the image then hold the
+// same image, and the cache can serve what one built on it to the other.
 // ReleaseDryRun checks it.
 func (dev *EngineDev) ReproducibleBuild(ctx context.Context) error {
 	builder, err := dev.builder(ctx, "")
@@ -887,29 +940,58 @@ type targetResult struct {
 }
 
 // Every engine image target of a release builds, with its entries, without
-// being pushed; the entries can be made again after a prune; and the build
-// steps that have built to different bytes before build to the same bytes
-// twice.
+// being pushed, with only the engine and the CLI carrying the commit; the
+// entries can be made again after a prune; and the build steps that have
+// built to different bytes before build to the same bytes twice.
 // +check
 func (dev *EngineDev) ReleaseDryRun(ctx context.Context) error {
 	// One check rather than three: each is a few minutes of work, which as
 	// a check of its own would take a CI engine of its own.
 	return parallel.New().
 		WithJob("build the release's engine images", func(ctx context.Context) error {
-			return dev.Publish(
-				ctx,
-				"dagger-engine.dev", // image
-				// FIXME: why not from HEAD like the SDKs?
-				[]string{"main"}, // tag
-				true,             // dryRun
-				nil,              // registryUsername
-				nil,              // registryPassword
-			)
+			// As Publish builds them, without pushing them.
+			// FIXME: why not from HEAD like the SDKs?
+			results, err := dev.WithImageEntries().buildTargets(ctx, []string{"main"})
+			if err != nil {
+				return err
+			}
+			return dev.onlyEngineStamped(ctx, results[0].Platforms[0])
 		}).
 		WithJob("make the image's entries again after a prune", dev.ImageEntriesAfterPrune).
 		WithJob("build reproducibly", dev.ReproducibleBuild).
 		Run(ctx)
 }
+
+// onlyEngineStamped fails unless, of what image, an engine image, holds that
+// was built from the source, only the engine and the CLI carry the commit:
+// any other binary stamped with it, or a cache entry that holds one, differs
+// at every commit, and so does its layer, which every host then pulls again.
+func (dev *EngineDev) onlyEngineStamped(ctx context.Context, image *dagger.Container) error {
+	commit, _ := dev.vcs(ctx)
+	if commit == "" {
+		// Built without a commit, nothing carries one.
+		return nil
+	}
+	_, err := image.WithExec([]string{"sh", "-c", onlyEngineStampedScript, "sh",
+		commit, consts.EngineServerPath, cliPath,
+	}).Sync(ctx)
+	var execErr *dagger.ExecError
+	if errors.As(err, &execErr) {
+		return fmt.Errorf("the image's binaries and the commit %s: %s", commit, strings.TrimSpace(execErr.Stdout))
+	}
+	return err
+}
+
+// onlyEngineStampedScript fails unless the commit $1 is in the engine, $2,
+// and the CLI, $3, and in no other file under /usr or /opt, the image's
+// entries among them (distconsts.EngineContainerImageEntriesDir).
+const onlyEngineStampedScript = `commit=$1 engine=$2 cli=$3
+for f in "$engine" "$cli"; do
+	grep -q "$commit" "$f" || { echo "$f doesn't carry it"; exit 1; }
+done
+others=$(grep -rl "$commit" /usr /opt | grep -vx -e "$engine" -e "$cli")
+[ -z "$others" ] || { echo "carried by more than the engine and the CLI:"; echo "$others"; exit 1; }
+`
 
 // Publish all engine images to a registry
 // +cache="session"
@@ -984,6 +1066,15 @@ func releaseVersionFromTags(tags []string) string {
 	return ""
 }
 
+// imageSourceDateEpoch is the time every file of a published engine image
+// carries (Container.publish's sourceDateEpoch), and every file of its
+// entries' blobs (engine-image-entries -source-date-epoch), in seconds: one
+// constant, not the commit's time, so that a layer whose files didn't change
+// is the same bytes in every image, and a host that holds one image pulls
+// only the layers the next one changed. It is 1980-01-02T00:00:00Z: zip
+// can't hold a time before 1980, and in no time zone is this one before it.
+const imageSourceDateEpoch = 315619200
+
 func (dev *EngineDev) pushTargets(
 	ctx context.Context,
 	targetResults []targetResult,
@@ -1006,6 +1097,7 @@ func (dev *EngineDev) pushTargets(
 						PlatformVariants: result.Platforms,
 						// use gzip to avoid incompatibility w/ older docker versions
 						ForcedCompression: dagger.ImageLayerCompressionGzip,
+						SourceDateEpoch:   imageSourceDateEpoch,
 					}); err != nil {
 						return err
 					}

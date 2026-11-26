@@ -3,6 +3,7 @@ package dagql
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"testing"
 
 	"github.com/dagger/dagger/engine/snapshots"
@@ -16,7 +17,8 @@ import (
 // resolves as it was: every chain with its own layers and its layers'
 // addresses, and the packs it names, a chain that carried no address with
 // none, and an address of a blob none of a chain's layers is kept on that
-// chain.
+// chain. Chains given the same listed layer share it, as copies of an offer
+// do: an offered layer is never written after it's built.
 func TestValueBundleWireListsLayersOnce(t *testing.T) {
 	layer := func(name string) snapshots.ExportLayer {
 		return snapshots.ExportLayer{
@@ -36,7 +38,7 @@ func TestValueBundleWireListsLayersOnce(t *testing.T) {
 	for i := range 20 {
 		base = append(base, layer(fmt.Sprint("base-", i)))
 	}
-	bundle := ValueBundle{Version: valueBundleVersion, Roots: []TransferredRoot{{Ordinal: 1}}}
+	bundle := ValueBundle{Version: ValueBundleVersion, Roots: []TransferredRoot{{Ordinal: 1}}}
 	for i := range 50 {
 		bundle.Values = append(bundle.Values, TransferredValue{Ordinal: TransferOrdinal(i + 1), SenderNumber: uint64(100 + i)})
 		layers := append(append([]snapshots.ExportLayer{}, base...), layer(fmt.Sprint("own-", i)))
@@ -81,6 +83,78 @@ func TestValueBundleWireListsLayersOnce(t *testing.T) {
 	require.Equal(t, bundle.Outputs, decoded.Outputs)
 	require.Equal(t, bundle.Roots, decoded.Roots)
 	require.Len(t, decoded.Values, len(bundle.Values))
+
+	first, second := decoded.Outputs[0].Chain, decoded.Outputs[1].Chain
+	require.Equal(t, reflect.ValueOf(first.Layers[0].Descriptor.Annotations).Pointer(), reflect.ValueOf(second.Layers[0].Descriptor.Annotations).Pointer(), "a base layer is listed once and shared")
+	require.NotEqual(t, reflect.ValueOf(first.Addresses).Pointer(), reflect.ValueOf(second.Addresses).Pointer(), "each chain has its own addresses")
+}
+
+// A merge's message names each packed layer's pack once, with the layer, as
+// the Cloud holds a stored layer: outputs whose chains store shared layers in
+// a pack carry no packs of their own, and resolve to their chains with their
+// packs. A layer one chain stores alone and another in a second pack is
+// listed once for each, every output naming the one its chain stores.
+func TestValueBundleWireListsPacksOnce(t *testing.T) {
+	layer := func(name string) snapshots.ExportLayer {
+		return snapshots.ExportLayer{
+			Descriptor: ocispecs.Descriptor{
+				MediaType: ocispecs.MediaTypeImageLayerGzip,
+				Digest:    digest.FromString(name),
+				Size:      int64(len(name)),
+			},
+			Description: "exec go build " + name,
+		}
+	}
+	pack := digest.FromString("pack")
+	var base []snapshots.ExportLayer
+	for i := range 40 {
+		base = append(base, layer(fmt.Sprint("packed-", i)))
+	}
+	bundle := func(packed bool) ValueBundle {
+		b := ValueBundle{Version: ValueBundleVersion, Roots: []TransferredRoot{{Ordinal: 1}}}
+		for i := range 50 {
+			chain := &OfferedChain{Layers: append([]snapshots.ExportLayer{}, base...), RenewalKey: fmt.Sprintf("%d/fs", 100+i)}
+			if packed {
+				chain.Packs = map[digest.Digest]digest.Digest{}
+				for _, l := range base {
+					chain.Packs[l.Descriptor.Digest] = pack
+				}
+			}
+			b.Values = append(b.Values, TransferredValue{Ordinal: TransferOrdinal(i + 1), SenderNumber: uint64(100 + i)})
+			b.Outputs = append(b.Outputs, TransferredOutput{Ordinal: TransferOrdinal(i + 1), Address: PersistedPartAddress{Part: "fs"}, State: "completed", Chain: chain})
+		}
+		return b
+	}
+	size := func(b ValueBundle) int {
+		shared, err := ShareChainLayers(b)
+		require.NoError(t, err)
+		data, err := json.Marshal(shared)
+		require.NoError(t, err)
+		return len(data)
+	}
+	packed := bundle(true)
+	entry := len(`,"pack":""`) + len(pack.String())
+	require.LessOrEqual(t, size(packed)-size(bundle(false)), len(base)*entry, "each layer's pack once, not once an output")
+
+	other := digest.FromString("another pack")
+	packed.Outputs = append(packed.Outputs,
+		TransferredOutput{Ordinal: 1, Address: PersistedPartAddress{Part: "alone"}, State: "completed", Chain: &OfferedChain{Layers: base[:1]}},
+		TransferredOutput{Ordinal: 2, Address: PersistedPartAddress{Part: "other"}, State: "completed", Chain: &OfferedChain{Layers: base[:1], Packs: map[digest.Digest]digest.Digest{base[0].Descriptor.Digest: other}}})
+	// A chain may list one layer twice, as an image holding two equal layers
+	// does: both are its one listed layer in its pack.
+	packed.Outputs = append(packed.Outputs, TransferredOutput{Ordinal: 3, Address: PersistedPartAddress{Part: "twice"}, State: "completed", Chain: &OfferedChain{Layers: []snapshots.ExportLayer{base[1], base[1]}, Packs: map[digest.Digest]digest.Digest{base[1].Descriptor.Digest: pack}}})
+	shared, err := ShareChainLayers(packed)
+	require.NoError(t, err)
+	require.Len(t, shared.Layers, len(base)+2, "each packed layer once, and the first layer alone and in another pack")
+	for _, out := range shared.Outputs {
+		require.Empty(t, out.Chain.Packs, "output %d names its layers' packs by place", out.Ordinal)
+	}
+	data, err := json.Marshal(shared)
+	require.NoError(t, err)
+	var decoded ValueBundle
+	require.NoError(t, json.Unmarshal(data, &decoded))
+	require.NoError(t, ResolveChainPrefixes(&decoded))
+	require.Equal(t, packed.Outputs, decoded.Outputs)
 }
 
 // A bundle of version 5, from before a merge listed its layers once, is

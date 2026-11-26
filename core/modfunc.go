@@ -144,7 +144,10 @@ func (fn *ModuleFunction) cacheImplicitInputs() []dagql.ImplicitInput {
 		return nil
 	}
 
-	var implicitInputs []dagql.ImplicitInput
+	// A function body can read the engine's default platform, directly or by
+	// running on the engine, so its result is scoped by that platform: an
+	// engine of another platform must not be served it.
+	implicitInputs := []dagql.ImplicitInput{EngineDefaultPlatformImplicitInput}
 	cachePolicy := fn.metadata.derivedCachePolicy(fn.mod.Self())
 	switch cachePolicy {
 	case FunctionCachePolicyNever:
@@ -1103,6 +1106,13 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	if caller, ok := CallerAgent(ctx); ok {
 		fnCall.SetCallerAgent(caller)
 	}
+	// The function's own call, which the cache installed as the caller of
+	// what runs under it, is the caller of the calls its module makes.
+	fnCall.callerRecipe = dagql.CallerRecipe(ctx)
+	// The part reads they make count as reads made under the function's
+	// call, which the recipe alone doesn't say: a session-bound call's own
+	// reads count, under the call above it.
+	fnCall.readScope = dagql.CurrentReadScope(ctx)
 	// A call made as the engine's own work, such as an SDK building a
 	// module's runtime, carries that to everything its module does to answer
 	// it: its calls are internal in telemetry, as the engine's own selects

@@ -6,6 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -35,20 +38,47 @@ type packProvider struct {
 	fail error
 	// opened, when set, sees each OpenPack's context.
 	opened func(context.Context)
+	// ranged serves ranges of the pack, and ranges records each
+	// OpenPackRange's offset and size. Without it every OpenPackRange is
+	// answered with ErrNoPackRanges, as a provider that reads none answers,
+	// and the pack is read whole.
+	ranged   bool
+	rangesMu sync.Mutex
+	ranges   [][2]int64
 }
 
 // newPackProvider packs the given layers' blobs, read from inner, in order.
 func newPackProvider(t *testing.T, inner content.InfoReaderProvider, layers ...ocispecs.Descriptor) *packProvider {
 	t.Helper()
+	members := make([]any, len(layers))
+	for i, l := range layers {
+		members[i] = l
+	}
+	return newMixedPackProvider(t, inner, members...)
+}
+
+// newMixedPackProvider packs, in order, each member: a layer's blob read from
+// inner (an ocispecs.Descriptor), or other bytes ([]byte), as another
+// chain's blob that shares the pack.
+func newMixedPackProvider(t *testing.T, inner content.InfoReaderProvider, in ...any) *packProvider {
+	t.Helper()
 	p := &packProvider{InfoReaderProvider: inner, members: map[digest.Digest]bool{}}
 	var members []pack.Member
 	var blobs [][]byte
-	for _, desc := range layers {
-		data, err := content.ReadBlob(context.Background(), inner, desc)
-		require.NoError(t, err)
-		members = append(members, pack.Member{Digest: desc.Digest, Size: desc.Size})
+	for _, x := range in {
+		var data []byte
+		switch v := x.(type) {
+		case ocispecs.Descriptor:
+			var err error
+			data, err = content.ReadBlob(context.Background(), inner, v)
+			require.NoError(t, err)
+		case []byte:
+			data = v
+		}
+		dgst := digest.FromBytes(data)
+		members = append(members, pack.Member{Digest: dgst, Size: int64(len(data))})
 		blobs = append(blobs, data)
-		p.members[desc.Digest] = true
+		p.members[dgst] = true
 	}
 	header, err := pack.Header(members)
 	require.NoError(t, err)
@@ -66,6 +96,28 @@ func (p *packProvider) ReaderAt(ctx context.Context, desc ocispecs.Descriptor) (
 		return nil, errors.New("a packed blob read alone")
 	}
 	return p.InfoReaderProvider.ReaderAt(ctx, desc)
+}
+
+func (p *packProvider) OpenPackRange(_ context.Context, _ digest.Digest, off, size int64) (io.ReadCloser, error) {
+	if !p.ranged {
+		return nil, bkcache.ErrNoPackRanges
+	}
+	p.rangesMu.Lock()
+	p.ranges = append(p.ranges, [2]int64{off, size})
+	p.rangesMu.Unlock()
+	end := min(off+size, int64(len(p.data)))
+	return io.NopCloser(bytes.NewReader(p.data[off:end])), nil
+}
+
+// rangeBytes sums the bytes the provider's range reads asked for, cut at the
+// pack's end.
+func (p *packProvider) rangeBytes() (n int64, reads int) {
+	p.rangesMu.Lock()
+	defer p.rangesMu.Unlock()
+	for _, r := range p.ranges {
+		n += min(r[0]+r[1], int64(len(p.data))) - r[0]
+	}
+	return n, len(p.ranges)
 }
 
 func (p *packProvider) PackOf(blob digest.Digest) (digest.Digest, bool) {
@@ -102,6 +154,35 @@ func TestImportChainFromPack(t *testing.T) {
 	require.EqualValues(t, 1, provider.opens.Load(), "the pack is read once for both layers")
 	testutil.CheckFile(t, ref, "a.txt", "lower")
 	testutil.CheckFile(t, ref, "b.txt", "upper")
+}
+
+// A pack can hold a blob that the engine's image already holds in place,
+// such as a base layer the image's entries made. The store answers for that
+// blob before the engine has recorded it, so the import records it as it is
+// and reads past its bytes in the pack, and the chain imports whole.
+func TestImportChainFromPackHoldingAnImageBlob(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	producer := testutil.NewStore(t)
+	a, _ := producer.Build(t, nil, "a.txt", "lower, in the image")
+	ab, _ := producer.Build(t, a, "b.txt", "upper")
+	chain := exportChain(t, ab)
+	lower := chain.Layers[0].Descriptor
+	blob, err := content.ReadBlob(ctx, chain.Provider, lower)
+	require.NoError(t, err)
+	image := t.TempDir()
+	name := filepath.Join(image, "blobs", lower.Digest.Algorithm().String(), lower.Digest.Encoded())
+	require.NoError(t, os.MkdirAll(filepath.Dir(name), 0o755))
+	require.NoError(t, os.WriteFile(name, blob, 0o444))
+
+	consumer := testutil.NewStoreWithImageBlobs(t, image)
+	provider := newPackProvider(t, chain.Provider, lower, chain.Layers[1].Descriptor)
+	ref := importChain(t, consumer, supplied(chain, provider))
+	testutil.CheckFile(t, ref, "a.txt", "lower, in the image")
+	testutil.CheckFile(t, ref, "b.txt", "upper")
+	info, err := consumer.Content.Info(ctx, lower.Digest)
+	require.NoError(t, err, "the image's blob is recorded")
+	require.Equal(t, lower.Size, info.Size)
 }
 
 // A download of a packed blob that a sibling's read already stored, as one
@@ -249,9 +330,10 @@ func TestImportChainFromPackWithCorruptMember(t *testing.T) {
 	require.Positive(t, provider.opens.Load())
 }
 
-// An import that joined another import's read of a pack, which failed for
-// that import's provider, reads the pack once more with its own.
-func TestImportChainsJoinPackRetriesOwnProvider(t *testing.T) {
+// An import that joined another import's read of a pack, which failed,
+// fails with it as a content failure, though its own provider is healthy: it
+// doesn't read the pack again.
+func TestImportChainsJoinPackFailWithTheRead(t *testing.T) {
 	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
 	a, _ := producer.Build(t, nil, "a.txt", "first")
 	b, _ := producer.Build(t, nil, "b.txt", "second")
@@ -261,11 +343,6 @@ func TestImportChainsJoinPackRetriesOwnProvider(t *testing.T) {
 	providerA.gate, providerA.fail = gate, errors.New("expired address")
 	providerB := newPackProvider(t, chainA.Provider, chainA.Layers[0].Descriptor, chainB.Layers[0].Descriptor)
 	providerB.InfoReaderProvider = chainB.Provider
-	// The second import's own read also stores the first import's blob,
-	// which the first import would then link instead of failing: it waits
-	// until the first import has returned.
-	gateB := make(chan struct{})
-	providerB.gate = gateB
 
 	first := make(chan error, 1)
 	go func() {
@@ -277,21 +354,20 @@ func TestImportChainsJoinPackRetriesOwnProvider(t *testing.T) {
 	}()
 	require.Eventually(t, func() bool { return providerA.opens.Load() == 1 }, 10*time.Second, 10*time.Millisecond)
 	second := make(chan error, 1)
-	var ref bkcache.ImmutableRef
 	go func() {
-		var err error
-		ref, err = consumer.Manager.ImportChain(context.Background(), supplied(chainB, providerB))
+		ref, err := consumer.Manager.ImportChain(context.Background(), supplied(chainB, providerB))
+		if err == nil {
+			_ = ref.Release(context.Background())
+		}
 		second <- err
 	}()
 	require.Eventually(t, func() bool { return bkcache.PackWaiters(consumer.Manager, providerA.id) == 2 }, 10*time.Second, 10*time.Millisecond, "the second import joined the first one's read")
 	close(gate)
 	var contentErr *bkcache.ChainContentError
 	require.ErrorAs(t, <-first, &contentErr, "the first import's own provider failed")
-	close(gateB)
-	require.NoError(t, <-second)
-	defer ref.Release(context.Background())
-	require.EqualValues(t, 1, providerB.opens.Load(), "the second import read the pack with its own provider")
-	testutil.CheckFile(t, ref, "b.txt", "second")
+	require.ErrorAs(t, <-second, &contentErr, "the second import fails with the read it joined")
+	require.Equal(t, chainB.Layers[0].Descriptor.Digest, contentErr.Layer)
+	require.Zero(t, providerB.opens.Load(), "the second import doesn't read the pack itself")
 }
 
 // A read ends before its lease can expire: its deadline, which the provider
@@ -394,21 +470,409 @@ func TestPackReadCutOffAtItsLimit(t *testing.T) {
 	require.EqualValues(t, 1, provider.opens.Load())
 }
 
-// valuePackProvider is a provider that isn't a pointer.
-type valuePackProvider struct{ *packProvider }
+// otherChainBlob is n bytes of another chain's blob, different for each seed.
+func otherChainBlob(seed string, n int) []byte {
+	b := bytes.Repeat([]byte(seed), n/len(seed)+1)
+	return b[:n]
+}
 
-// An import whose own read fails stops there, even when its provider isn't
-// one it can tell apart from another's.
-func TestImportChainFromPackOwnFailureWithValueProvider(t *testing.T) {
+// A chain that needs a small share of a pack reads its header and then only
+// its own members, in a range each where they lie apart, never the whole
+// pack: the other chains' blobs between them stay unread.
+func TestImportChainReadsOnlyItsMembersOfAPack(t *testing.T) {
+	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+	a, _ := producer.Build(t, nil, "a.txt", "lower")
+	ab, _ := producer.Build(t, a, "b.txt", "upper")
+	chain := exportChain(t, ab)
+	provider := newMixedPackProvider(t, chain.Provider,
+		chain.Layers[0].Descriptor, otherChainBlob("other one", 2<<20),
+		chain.Layers[1].Descriptor, otherChainBlob("other two", 2<<20))
+	provider.ranged = true
+	ref := importChain(t, consumer, supplied(chain, provider))
+	testutil.CheckFile(t, ref, "a.txt", "lower")
+	testutil.CheckFile(t, ref, "b.txt", "upper")
+	require.Zero(t, provider.opens.Load(), "the pack isn't read whole")
+	read, reads := provider.rangeBytes()
+	require.Equal(t, 3, reads, "the header, then one range for each member, 2 MiB apart")
+	require.Less(t, read, int64(256<<10), "the other chains' 4 MiB stay unread")
+}
+
+// A chain that needs most of a pack reads it whole, once, after its header.
+func TestImportChainReadsMostOfAPackWhole(t *testing.T) {
+	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+	a, _ := producer.Build(t, nil, "a.txt", strings.Repeat("lower ", 100<<10))
+	ab, _ := producer.Build(t, a, "b.txt", "upper")
+	chain := exportChain(t, ab)
+	provider := newMixedPackProvider(t, chain.Provider,
+		chain.Layers[0].Descriptor, otherChainBlob("other", 1<<10), chain.Layers[1].Descriptor)
+	provider.ranged = true
+	ref := importChain(t, consumer, supplied(chain, provider))
+	testutil.CheckFile(t, ref, "a.txt", strings.Repeat("lower ", 100<<10))
+	testutil.CheckFile(t, ref, "b.txt", "upper")
+	require.EqualValues(t, 1, provider.opens.Load(), "read whole, once")
+	_, reads := provider.rangeBytes()
+	require.Equal(t, 1, reads, "only the header by range")
+}
+
+// Two imports that each need another small member of the same pack, through
+// providers of their own as two installs have, read its header once: the
+// second reads only its own member's range, planned from the header the
+// first read, which the pack's ID names.
+func TestImportChainsReadAPacksHeaderOnce(t *testing.T) {
+	t.Parallel()
 	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
 	a, _ := producer.Build(t, nil, "a.txt", "first")
+	b, _ := producer.Build(t, nil, "b.txt", "second")
+	chainA, chainB := exportChain(t, a), exportChain(t, b)
+	members := []any{chainA.Layers[0].Descriptor, otherChainBlob("other one", 2<<20), chainB.Layers[0].Descriptor, otherChainBlob("other two", 2<<20)}
+
+	providerA := newMixedPackProvider(t, chainA.Provider, members...)
+	providerA.ranged = true
+	refA := importChain(t, consumer, supplied(chainA, providerA))
+	testutil.CheckFile(t, refA, "a.txt", "first")
+	_, reads := providerA.rangeBytes()
+	require.Equal(t, 2, reads, "the header, then the first chain's member")
+
+	providerB := newMixedPackProvider(t, chainA.Provider, members...)
+	providerB.InfoReaderProvider = chainB.Provider
+	providerB.ranged = true
+	refB := importChain(t, consumer, supplied(chainB, providerB))
+	testutil.CheckFile(t, refB, "b.txt", "second")
+	require.Zero(t, providerB.opens.Load(), "the pack isn't read whole")
+	_, reads = providerB.rangeBytes()
+	require.Equal(t, 1, reads, "only the second chain's member: the engine has the header")
+}
+
+// A header kept from a whole read spares a later import its header request,
+// not its provider's answer: a provider that reads no ranges still has the
+// pack read whole.
+func TestImportChainWithAKeptHeaderReadsAPackWholeWithoutRanges(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+	a, _ := producer.Build(t, nil, "a.txt", "first")
+	b, _ := producer.Build(t, nil, "b.txt", "second")
+	chainA, chainB := exportChain(t, a), exportChain(t, b)
+	members := []any{chainA.Layers[0].Descriptor, otherChainBlob("other one", 2<<20), chainB.Layers[0].Descriptor, otherChainBlob("other two", 2<<20)}
+
+	providerA := newMixedPackProvider(t, chainA.Provider, members...)
+	importChain(t, consumer, supplied(chainA, providerA))
+	require.EqualValues(t, 1, providerA.opens.Load(), "read whole: the provider reads no ranges")
+	dropPackReads(t, consumer)
+	_, err := consumer.Content.Info(ctx, chainB.Layers[0].Descriptor.Digest)
+	require.Error(t, err, "the second chain's member, which that read stored, is gone again")
+
+	providerB := newMixedPackProvider(t, chainA.Provider, members...)
+	providerB.InfoReaderProvider = chainB.Provider
+	ref := importChain(t, consumer, supplied(chainB, providerB))
+	testutil.CheckFile(t, ref, "b.txt", "second")
+	require.EqualValues(t, 1, providerB.opens.Load(), "read whole again")
+}
+
+// A pack its header's read holds whole is read and stored whole by that one
+// request whenever an import needs it: no header of it is kept to plan a read
+// of fewer of its members.
+func TestImportChainReadsASmallPackWholeAfterItsMembersAreGone(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+	a, _ := producer.Build(t, nil, "a.txt", "first")
+	b, _ := producer.Build(t, nil, "b.txt", "second")
+	chainA, chainB := exportChain(t, a), exportChain(t, b)
+	other := otherChainBlob("other", 8<<10)
+	members := []any{chainA.Layers[0].Descriptor, other, chainB.Layers[0].Descriptor}
+
+	providerA := newMixedPackProvider(t, chainA.Provider, members...)
+	providerA.ranged = true
+	importChain(t, consumer, supplied(chainA, providerA))
+	_, reads := providerA.rangeBytes()
+	require.Equal(t, 1, reads, "the header's read holds the whole pack")
+	dropPackReads(t, consumer)
+	_, err := consumer.Content.Info(ctx, digest.FromBytes(other))
+	require.Error(t, err, "the members no import linked are gone again")
+
+	providerB := newMixedPackProvider(t, chainA.Provider, members...)
+	providerB.InfoReaderProvider = chainB.Provider
+	providerB.ranged = true
+	ref := importChain(t, consumer, supplied(chainB, providerB))
+	testutil.CheckFile(t, ref, "b.txt", "second")
+	read, reads := providerB.rangeBytes()
+	require.Equal(t, 1, reads)
+	require.EqualValues(t, len(providerB.data), read, "the whole pack, in one read")
+	_, err = consumer.Content.Info(ctx, digest.FromBytes(other))
+	require.NoError(t, err, "every member is stored again")
+}
+
+// dropPackReads lets go of the leases by which pack reads hold the members
+// they stored, and collects the garbage: the members no import linked are
+// gone again, as they go once those leases expire.
+func dropPackReads(t *testing.T, store *testutil.Store) {
+	t.Helper()
+	ctx := context.Background()
+	all, err := store.Leases.List(ctx)
+	require.NoError(t, err)
+	for _, l := range all {
+		if l.Labels["dagger.io/snapshot-transfer"] == "true" {
+			require.NoError(t, store.Leases.Delete(ctx, l))
+		}
+	}
+	store.GC(t)
+}
+
+// A provider that reads no ranges has every pack read whole.
+func TestImportChainReadsAPackWholeWithoutRanges(t *testing.T) {
+	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+	a, _ := producer.Build(t, nil, "a.txt", "lower")
 	chain := exportChain(t, a)
-	provider := newPackProvider(t, chain.Provider, chain.Layers[0].Descriptor)
-	provider.fail = errors.New("expired address")
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	_, err := consumer.Manager.ImportChain(ctx, supplied(chain, valuePackProvider{provider}))
-	var contentErr *bkcache.ChainContentError
-	require.ErrorAs(t, err, &contentErr)
-	require.EqualValues(t, 1, provider.opens.Load(), "the import's own read failed, and it stopped")
+	provider := newMixedPackProvider(t, chain.Provider, chain.Layers[0].Descriptor, otherChainBlob("other", 2<<20))
+	ref := importChain(t, consumer, supplied(chain, provider))
+	testutil.CheckFile(t, ref, "a.txt", "lower")
+	require.EqualValues(t, 1, provider.opens.Load())
+}
+
+// A member a range read finds corrupt fails the import, as a whole read's
+// does: nothing is applied from bytes that aren't the blob's.
+func TestImportChainFromPackRangeWithCorruptMember(t *testing.T) {
+	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+	a, _ := producer.Build(t, nil, "a.txt", "lower")
+	chain := exportChain(t, a)
+	provider := newMixedPackProvider(t, chain.Provider, chain.Layers[0].Descriptor, otherChainBlob("other", 2<<20))
+	header, err := pack.Header([]pack.Member{{Digest: chain.Layers[0].Descriptor.Digest, Size: chain.Layers[0].Descriptor.Size}, {Digest: digest.FromBytes(otherChainBlob("other", 2<<20)), Size: 2 << 20}})
+	require.NoError(t, err)
+	provider.data[len(header)] ^= 0xff
+	provider.ranged = true
+	_, err = consumer.Manager.ImportChain(context.Background(), supplied(chain, provider))
+	require.Error(t, err)
+	require.Zero(t, provider.opens.Load(), "the pack isn't read whole")
+}
+
+// A pack whose header doesn't hash to its ID fails a range read's import,
+// as it fails a whole read's.
+func TestImportChainFromPackRangeWithWrongID(t *testing.T) {
+	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+	a, _ := producer.Build(t, nil, "a.txt", "lower")
+	chain := exportChain(t, a)
+	provider := newMixedPackProvider(t, chain.Provider, chain.Layers[0].Descriptor, otherChainBlob("other", 2<<20))
+	provider.ranged = true
+	provider.id = digest.FromString("another pack")
+	_, err := consumer.Manager.ImportChain(context.Background(), supplied(chain, provider))
+	require.Error(t, err)
+	require.Zero(t, provider.opens.Load())
+}
+
+// multiPackProvider serves a chain's blobs only through its packs: reading
+// a member alone fails.
+type multiPackProvider struct {
+	content.InfoReaderProvider
+	packOf map[digest.Digest]digest.Digest
+	packs  map[digest.Digest][]byte
+	// opened, when set, runs as each OpenPack starts; its error fails the
+	// read.
+	opened func(context.Context) error
+	// ranged serves ranges of the packs; ranged, when set, runs as each
+	// OpenPackRange starts, and its error fails the read. Without it every
+	// OpenPackRange is answered with ErrNoPackRanges and packs are read
+	// whole.
+	ranged func(ctx context.Context, pack digest.Digest, off, size int64) error
+}
+
+// newMultiPackProvider packs each group of the given layers' blobs, read
+// from inner, in order, as a pack of its own. With apart above zero, each
+// layer's blob is followed in its pack by another chain's blob of apart
+// bytes.
+func newMultiPackProvider(t *testing.T, inner content.InfoReaderProvider, apart int, groups ...[]ocispecs.Descriptor) *multiPackProvider {
+	t.Helper()
+	p := &multiPackProvider{InfoReaderProvider: inner, packOf: map[digest.Digest]digest.Digest{}, packs: map[digest.Digest][]byte{}}
+	for g, group := range groups {
+		members := make([]pack.Member, 0, 2*len(group))
+		var body []byte
+		add := func(data []byte) {
+			members = append(members, pack.Member{Digest: digest.FromBytes(data), Size: int64(len(data))})
+			body = append(body, data...)
+		}
+		for i, desc := range group {
+			data, err := content.ReadBlob(context.Background(), inner, desc)
+			require.NoError(t, err)
+			add(data)
+			if apart > 0 {
+				add(otherChainBlob(fmt.Sprintf("other %d %d ", g, i), apart))
+			}
+		}
+		header, err := pack.Header(members)
+		require.NoError(t, err)
+		id, err := pack.ID(members)
+		require.NoError(t, err)
+		p.packs[id] = append(header, body...)
+		for _, desc := range group {
+			p.packOf[desc.Digest] = id
+		}
+	}
+	return p
+}
+
+func (p *multiPackProvider) ReaderAt(ctx context.Context, desc ocispecs.Descriptor) (content.ReaderAt, error) {
+	if _, ok := p.packOf[desc.Digest]; ok {
+		return nil, errors.New("a packed blob read alone")
+	}
+	return p.InfoReaderProvider.ReaderAt(ctx, desc)
+}
+
+func (p *multiPackProvider) PackOf(blob digest.Digest) (digest.Digest, bool) {
+	id, ok := p.packOf[blob]
+	return id, ok
+}
+
+func (p *multiPackProvider) OpenPack(ctx context.Context, blob digest.Digest) (io.ReadCloser, error) {
+	if p.opened != nil {
+		if err := p.opened(ctx); err != nil {
+			return nil, err
+		}
+	}
+	return io.NopCloser(bytes.NewReader(p.packs[p.packOf[blob]])), nil
+}
+
+func (p *multiPackProvider) OpenPackRange(ctx context.Context, blob digest.Digest, off, size int64) (io.ReadCloser, error) {
+	if p.ranged == nil {
+		return nil, bkcache.ErrNoPackRanges
+	}
+	id := p.packOf[blob]
+	if err := p.ranged(ctx, id, off, size); err != nil {
+		return nil, err
+	}
+	data := p.packs[id]
+	end := min(off+size, int64(len(data)))
+	return io.NopCloser(bytes.NewReader(data[off:end])), nil
+}
+
+// A chain downloads ahead by reads of the blob store, not by layers: the
+// layers whose blobs one pack holds are one download, its read. Three packs
+// of 20 layers each, more layers than an import holds downloads ahead, are
+// read at once, which a provider that answers no read until all three are
+// in flight checks.
+func TestImportChainReadsItsPacksAtOnce(t *testing.T) {
+	t.Parallel()
+	const packs, perPack = 3, 20
+	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+	chain := layeredChain(t, producer, "packed", packs*perPack)
+	groups := make([][]ocispecs.Descriptor, packs)
+	for i, layer := range chain.Layers {
+		groups[i/perPack] = append(groups[i/perPack], layer.Descriptor)
+	}
+	provider := newMultiPackProvider(t, chain.Provider, 0, groups...)
+	gauge := &getGauge{}
+	all := make(chan struct{})
+	var arrived atomic.Int64
+	provider.opened = func(ctx context.Context) error {
+		gauge.enter()
+		defer gauge.inflight.Add(-1)
+		if arrived.Add(1) == packs {
+			close(all)
+		}
+		select {
+		case <-all:
+			return nil
+		case <-time.After(10 * time.Second):
+			return errors.New("the chain's pack reads were not all in flight at once")
+		case <-ctx.Done():
+			return context.Cause(ctx)
+		}
+	}
+	ref := importChain(t, consumer, supplied(chain, provider))
+	require.EqualValues(t, packs, gauge.most.Load(), "every pack's read in flight at once")
+	require.EqualValues(t, packs, arrived.Load(), "each pack read once")
+	testutil.CheckFile(t, ref, "packed-00.txt", "packed 0")
+	testutil.CheckFile(t, ref, "packed-59.txt", "packed 59")
+}
+
+// A chain reads a pack it needs little of by its own members' spans, one
+// span after another: however the pack is read, it is one read of the blob
+// store in flight, as the chain's downloads ahead count it. Three packs
+// whose 12 layers each lie 1 MiB apart, among another chain's blobs, are
+// read at once, one span of each at a time, which a provider that holds
+// every span until the test lets go checks.
+func TestImportChainReadsAPacksSpansOneAtATime(t *testing.T) {
+	t.Parallel()
+	const packs, perPack = 3, 12
+	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+	chain := layeredChain(t, producer, "spans", packs*perPack)
+	groups := make([][]ocispecs.Descriptor, packs)
+	for i, layer := range chain.Layers {
+		groups[i/perPack] = append(groups[i/perPack], layer.Descriptor)
+	}
+	provider := newMultiPackProvider(t, chain.Provider, 1<<20, groups...)
+	release := make(chan struct{})
+	var released sync.Once
+	var mu sync.Mutex
+	inflight, most := map[digest.Digest]int{}, map[digest.Digest]int{}
+	all := 0
+	provider.ranged = func(ctx context.Context, id digest.Digest, off, _ int64) error {
+		if off == 0 {
+			// The pack's header.
+			return nil
+		}
+		mu.Lock()
+		inflight[id]++
+		all++
+		most[id] = max(most[id], inflight[id])
+		mu.Unlock()
+		defer func() {
+			mu.Lock()
+			inflight[id]--
+			all--
+			mu.Unlock()
+		}()
+		select {
+		case <-release:
+			return nil
+		case <-ctx.Done():
+			return context.Cause(ctx)
+		}
+	}
+	reading := func() (int, int) {
+		mu.Lock()
+		defer mu.Unlock()
+		most1 := 0
+		for _, n := range most {
+			most1 = max(most1, n)
+		}
+		return all, most1
+	}
+	done := make(chan error, 1)
+	var ref bkcache.ImmutableRef
+	go func() {
+		var err error
+		ref, err = consumer.Manager.ImportChain(context.Background(), supplied(chain, provider))
+		done <- err
+	}()
+	var importErr error
+	finished := false
+	wait := func() error {
+		if !finished {
+			select {
+			case importErr = <-done:
+				finished = true
+			case <-time.After(30 * time.Second):
+				return errors.New("the import never finished")
+			}
+		}
+		return importErr
+	}
+	// An import still held when the test fails ends, and lets go of what
+	// it imported, before the stores go.
+	t.Cleanup(func() {
+		released.Do(func() { close(release) })
+		if wait() == nil && ref != nil {
+			_ = ref.Release(context.Background())
+		}
+	})
+	require.Eventually(t, func() bool { n, _ := reading(); return n == packs }, 30*time.Second, 10*time.Millisecond,
+		"a span of every pack in flight at once")
+	time.Sleep(200 * time.Millisecond)
+	n, most1 := reading()
+	require.Equal(t, packs, n, "and no more")
+	require.Equal(t, 1, most1, "one span of a pack at a time")
+	released.Do(func() { close(release) })
+	require.NoError(t, wait())
+	testutil.CheckFile(t, ref, "spans-00.txt", "spans 0")
+	testutil.CheckFile(t, ref, "spans-35.txt", "spans 35")
 }

@@ -2,6 +2,7 @@ package dagql
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -492,13 +493,13 @@ func TestCaptureSessionLazySpanContextFirstWriterWinsAndRelease(t *testing.T) {
 	assert.Assert(t, sharedB != nil)
 	assert.Equal(t, sharedA.id, sharedB.id)
 
-	gotSpanCtx, ok := c.sessionLazySpanContext("test-session", sharedA.id)
+	gotSpanCtx, ok := c.sessionLazySpanContext(t.Context(), "test-session", sharedA.id)
 	assert.Assert(t, ok)
 	assert.Equal(t, gotSpanCtx.TraceID(), spanCtxA.TraceID())
 	assert.Equal(t, gotSpanCtx.SpanID(), spanCtxA.SpanID())
 
 	cacheTestReleaseSession(t, c, ctx)
-	_, ok = c.sessionLazySpanContext("test-session", sharedA.id)
+	_, ok = c.sessionLazySpanContext(t.Context(), "test-session", sharedA.id)
 	assert.Assert(t, !ok)
 }
 
@@ -519,7 +520,7 @@ func TestSessionResultInstallSpanContextsSorted(t *testing.T) {
 	c.recordSessionResultInstallSpanLocked(t.Context(), "test-session", 1, spanCtxA, false)
 	c.recordSessionResultInstallSpanLocked(t.Context(), "test-session", 1, spanCtxB, false)
 
-	got := c.sessionResultInstallSpanContexts("test-session", 1)
+	got := c.sessionResultInstallSpanContexts(t.Context(), "test-session", 1)
 	assert.DeepEqual(t, got, []trace.SpanContext{spanCtxA, spanCtxB})
 }
 
@@ -548,7 +549,7 @@ func TestSessionResultInstallSpansMergeClosureOwnership(t *testing.T) {
 		})
 		c.recordSessionResultInstallSpanLocked(ctx, "test-session", owner.id, spanCtxs[i], false)
 	}
-	assert.DeepEqual(t, c.sessionResultInstallSpanContexts("test-session", dep.id), []trace.SpanContext(nil))
+	assert.DeepEqual(t, c.sessionResultInstallSpanContexts(ctx, "test-session", dep.id), []trace.SpanContext(nil))
 
 	// The first span and a later one come to own the closure.
 	c.recordSessionResultInstallSpanLocked(ctx, "test-session", owner.id, spanCtxs[2], true)
@@ -556,8 +557,8 @@ func TestSessionResultInstallSpansMergeClosureOwnership(t *testing.T) {
 	c.recordSessionResultInstallSpanLocked(ctx, "test-session", owner.id, spanCtxs[2], false)
 	c.recordSessionResultInstallSpanLocked(ctx, "test-session", owner.id, spanCtxs[0], false)
 
-	assert.DeepEqual(t, c.sessionResultInstallSpanContexts("test-session", owner.id), spanCtxs)
-	assert.DeepEqual(t, c.sessionResultInstallSpanContexts("test-session", dep.id),
+	assert.DeepEqual(t, c.sessionResultInstallSpanContexts(ctx, "test-session", owner.id), spanCtxs)
+	assert.DeepEqual(t, c.sessionResultInstallSpanContexts(ctx, "test-session", dep.id),
 		[]trace.SpanContext{spanCtxs[0], spanCtxs[2]})
 }
 
@@ -598,8 +599,8 @@ func TestSessionResultInstallSpansBeyondTheSlice(t *testing.T) {
 	c.recordSessionResultInstallSpanLocked(ctx, "test-session", owner.id, spanCtxs[n-1], false)
 	c.recordSessionResultInstallSpanLocked(ctx, "test-session", owner.id, spanCtxs[2], false)
 
-	assert.DeepEqual(t, c.sessionResultInstallSpanContexts("test-session", owner.id), spanCtxs)
-	assert.DeepEqual(t, c.sessionResultInstallSpanContexts("test-session", dep.id),
+	assert.DeepEqual(t, c.sessionResultInstallSpanContexts(ctx, "test-session", owner.id), spanCtxs)
+	assert.DeepEqual(t, c.sessionResultInstallSpanContexts(ctx, "test-session", dep.id),
 		[]trace.SpanContext{spanCtxs[2], spanCtxs[n-1]})
 }
 
@@ -654,18 +655,99 @@ func TestInstallSpanLookupWalksClosureOwnersUpward(t *testing.T) {
 	// leaf sees its own install plus the module span via closure ownership,
 	// but not the chained result's plain install.
 	assert.DeepEqual(t,
-		c.sessionResultInstallSpanContexts("test-session", leaf.id),
+		c.sessionResultInstallSpanContexts(t.Context(), "test-session", leaf.id),
 		[]trace.SpanContext{moduleSpanCtx, leafSpanCtx})
 
 	// chained likewise sees itself plus the module span.
 	assert.DeepEqual(t,
-		c.sessionResultInstallSpanContexts("test-session", chained.id),
+		c.sessionResultInstallSpanContexts(t.Context(), "test-session", chained.id),
 		[]trace.SpanContext{moduleSpanCtx, chainedSpanCtx})
 
 	// moduleReturn has no ancestors; it sees only its own install.
 	assert.DeepEqual(t,
-		c.sessionResultInstallSpanContexts("test-session", moduleReturn.id),
+		c.sessionResultInstallSpanContexts(t.Context(), "test-session", moduleReturn.id),
 		[]trace.SpanContext{moduleSpanCtx})
+}
+
+// installSpanTestSession builds a cache with a leaf result under one module
+// call's return, records both installs, and records returns more module call
+// returns that sit on nothing the leaf is under, each installed from several
+// call sites. It returns the cache, the leaf, the install spans a lookup of
+// the leaf finds, and the other returns with their install spans.
+func installSpanTestSession(t *testing.T, returns int) (*Cache, *sharedResult, []trace.SpanContext, map[*sharedResult][]trace.SpanContext) {
+	t.Helper()
+	ctx := t.Context()
+	c := &Cache{resultsByID: map[sharedResultID]*sharedResult{}}
+	next := sharedResultID(1)
+	newResult := func() *sharedResult {
+		res := &sharedResult{id: next}
+		next++
+		c.resultsByID[res.id] = res
+		return res
+	}
+	spanN := 0
+	span := func() trace.SpanContext {
+		spanN++
+		var id trace.SpanID
+		binary.BigEndian.PutUint64(id[:], uint64(spanN))
+		return trace.NewSpanContext(trace.SpanContextConfig{TraceID: trace.TraceID{1}, SpanID: id})
+	}
+	leaf := newResult()
+	moduleReturn := newResult()
+	c.egraphMu.Lock()
+	assert.NilError(t, c.addExplicitDependencyLocked(ctx, moduleReturn, leaf, "test"))
+	c.egraphMu.Unlock()
+	leafSpan, moduleSpan := span(), span()
+	c.recordSessionResultInstallSpanLocked(ctx, "test-session", leaf.id, leafSpan, false)
+	c.recordSessionResultInstallSpanLocked(ctx, "test-session", moduleReturn.id, moduleSpan, true)
+	others := make(map[*sharedResult][]trace.SpanContext, returns)
+	for range returns {
+		other := newResult()
+		for range 4 {
+			otherSpan := span()
+			c.recordSessionResultInstallSpanLocked(ctx, "test-session", other.id, otherSpan, true)
+			others[other] = append(others[other], otherSpan)
+		}
+	}
+	return c, leaf, []trace.SpanContext{leafSpan, moduleSpan}, others
+}
+
+// Every lazy evaluation looks up its result's install spans. A build that
+// makes one module call return per package has thousands of them in a
+// session, nearly all on results the evaluated one isn't under, so a lookup
+// must cost what is above the result, not what the session has built. The
+// cost is counted as allocations, which don't vary from run to run; the
+// count is process-wide, so the test doesn't run in parallel. It catches a
+// lookup that allocates for each return in the session, not every lookup
+// whose cost grows with the session: one that scans without allocating
+// would pass.
+func TestInstallSpanLookupCostIsIndependentOfSessionReturns(t *testing.T) {
+	allocs := func(returns int) float64 {
+		c, leaf, spans, _ := installSpanTestSession(t, returns)
+		assert.DeepEqual(t, c.sessionResultInstallSpanContexts(t.Context(), "test-session", leaf.id), spans)
+		return testing.AllocsPerRun(50, func() {
+			c.sessionResultInstallSpanContexts(t.Context(), "test-session", leaf.id)
+		})
+	}
+	few, many := allocs(20), allocs(2000)
+	assert.Assert(t, many <= few, "lookup allocations grew from %v with 20 other module returns in the session to %v with 2000", few, many)
+}
+
+// A module call's return owns its closure as it is when a lookup asks, so a
+// result that joins the closure after the return was recorded is linked to it.
+func TestInstallSpanLookupFollowsAClosureThatGrows(t *testing.T) {
+	t.Parallel()
+	c, leaf, spans, others := installSpanTestSession(t, 1)
+	assert.DeepEqual(t, c.sessionResultInstallSpanContexts(t.Context(), "test-session", leaf.id), spans)
+
+	for other, otherSpans := range others {
+		c.egraphMu.Lock()
+		assert.NilError(t, c.addExplicitDependencyLocked(t.Context(), other, leaf, "test"))
+		c.egraphMu.Unlock()
+		assert.DeepEqual(t,
+			c.sessionResultInstallSpanContexts(t.Context(), "test-session", leaf.id),
+			append(spans, otherSpans...))
+	}
 }
 
 func TestEvaluateLazyUsesOriginalSpanForLogsAndNestedSpans(t *testing.T) {
@@ -1185,7 +1267,7 @@ func TestCacheVolatileSessionResourceInvariants(t *testing.T) {
 	c.egraphMu.Lock()
 	parentRequiresHandle := cacheTestSessionResourceSetContains(firstShared.requiredSessionResources, handle)
 	var leafShared *sharedResult
-	for depID := range firstShared.deps {
+	for _, depID := range firstShared.deps {
 		dep := c.resultsByID[depID]
 		if dep != nil && dep.sessionResourceHandle == handle {
 			leafShared = dep
@@ -3821,13 +3903,16 @@ func TestDirectDigestLookupHitsWithoutTermIndex(t *testing.T) {
 		assert.Assert(t, !firstRes.HitCache())
 
 		c.egraphMu.Lock()
-		c.inputEqClassToTerms = make(map[eqClassID]map[egraphTermID]struct{})
-		c.outputEqClassToTerms = make(map[eqClassID]map[egraphTermID]struct{})
+		c.inputEqClassToTerms = idSetIndex[eqClassID, egraphTermID]{}
+		c.outputEqClassToTerms = idSetIndex[eqClassID, egraphTermID]{}
 		c.egraphTerms = make(map[egraphTermID]*egraphTerm)
-		c.egraphTermsByTermDigest = make(map[string]*set.TreeSet[egraphTermID])
-		c.resultOutputEqClasses = make(map[sharedResultID]map[eqClassID]struct{})
-		c.outputEqClassResults = make(map[eqClassID]map[sharedResultID]struct{})
+		c.egraphTermsByTermDigest = idSetIndex[string, egraphTermID]{}
+		c.resultOutputEqClasses = idSetIndex[sharedResultID, eqClassID]{}
+		c.outputEqClassResults = idSetIndex[eqClassID, sharedResultID]{}
 		c.termInputProvenance = make(map[egraphTermID][]egraphInputProvenanceKind)
+		// The classes' uses went with the terms and the outputs.
+		clear(c.egraphUses)
+		c.liveEqClasses = 0
 		c.egraphMu.Unlock()
 
 		initCalls := 0
@@ -3869,13 +3954,16 @@ func TestDirectDigestLookupHitsWithoutTermIndex(t *testing.T) {
 		assert.Assert(t, !firstRes.HitCache())
 
 		c.egraphMu.Lock()
-		c.inputEqClassToTerms = make(map[eqClassID]map[egraphTermID]struct{})
-		c.outputEqClassToTerms = make(map[eqClassID]map[egraphTermID]struct{})
+		c.inputEqClassToTerms = idSetIndex[eqClassID, egraphTermID]{}
+		c.outputEqClassToTerms = idSetIndex[eqClassID, egraphTermID]{}
 		c.egraphTerms = make(map[egraphTermID]*egraphTerm)
-		c.egraphTermsByTermDigest = make(map[string]*set.TreeSet[egraphTermID])
-		c.resultOutputEqClasses = make(map[sharedResultID]map[eqClassID]struct{})
-		c.outputEqClassResults = make(map[eqClassID]map[sharedResultID]struct{})
+		c.egraphTermsByTermDigest = idSetIndex[string, egraphTermID]{}
+		c.resultOutputEqClasses = idSetIndex[sharedResultID, eqClassID]{}
+		c.outputEqClassResults = idSetIndex[eqClassID, sharedResultID]{}
 		c.termInputProvenance = make(map[egraphTermID][]egraphInputProvenanceKind)
+		// The classes' uses went with the terms and the outputs.
+		clear(c.egraphUses)
+		c.liveEqClasses = 0
 		c.egraphMu.Unlock()
 
 		initCalls := 0
@@ -3943,8 +4031,7 @@ func TestIndexResultDigestsUsesExplicitRequestAndResponseIDs(t *testing.T) {
 		responseDigest,
 		responseExtra.Digest,
 	} {
-		postings := c.egraphResultsByDigest[dig.String()]
-		ok := postings != nil && postings.Contains(shared.id)
+		ok := c.egraphResultsByDigest.Contains(dig.String(), shared.id)
 		assert.Assert(t, ok, "expected posting for digest %s", dig)
 	}
 
@@ -4786,7 +4873,7 @@ func TestCacheTeachContentDigestPreservesAttachment(t *testing.T) {
 	shared := res.cacheSharedResult()
 	assert.Assert(t, shared != nil)
 	c.egraphMu.RLock()
-	ok := c.egraphResultsByDigest[contentDigest.String()].Contains(shared.id)
+	ok := c.egraphResultsByDigest.Contains(contentDigest.String(), shared.id)
 	c.egraphMu.RUnlock()
 	assert.Assert(t, ok)
 
@@ -5020,15 +5107,15 @@ func TestCacheSecondaryIndexesCleanedOnRelease(t *testing.T) {
 	storageKey := storageID.Digest().String()
 	resultOutputEq := resultContent.String()
 	assert.Assert(t, storageKey != resultOutputEq)
-	assert.Equal(t, 1, len(c.resultOutputEqClasses))
+	assert.Equal(t, 1, c.resultOutputEqClasses.Len())
 	assert.Assert(t, len(c.egraphTerms) > 0)
 	assert.Assert(t, c.Size() > 0)
 
 	cacheTestReleaseSession(t, c, ctx)
 	assert.Equal(t, 0, len(c.ongoingCalls))
-	assert.Equal(t, 0, len(c.resultOutputEqClasses))
+	assert.Equal(t, 0, c.resultOutputEqClasses.Len())
 	assert.Equal(t, 0, len(c.egraphTerms))
-	assert.Equal(t, 0, len(c.resultOutputEqClasses))
+	assert.Equal(t, 0, c.resultOutputEqClasses.Len())
 }
 
 func TestCacheReleaseRemovesRecordedDigestPostingAfterOutputClassMerge(t *testing.T) {
@@ -5077,7 +5164,7 @@ func TestCacheReleaseRemovesRecordedDigestPostingAfterOutputClassMerge(t *testin
 	foreignEqID := c.ensureEqClassForDigestLocked(ctxA, foreignDigest.String())
 	outputEqID = c.mergeEqClassesLocked(ctxA, outputEqID, foreignEqID)
 	digestsPresent := c.eqClassToDigests[outputEqID] != nil
-	_, ok := c.eqClassToDigests[outputEqID][foreignDigest.String()]
+	ok := c.eqClassToDigests[outputEqID].Contains(foreignDigest.String())
 
 	// Removal covers production-recorded exact postings and broad imported
 	// postings, not arbitrary white-box mutations that bypass bookkeeping.
@@ -5092,7 +5179,7 @@ func TestCacheReleaseRemovesRecordedDigestPostingAfterOutputClassMerge(t *testin
 	assert.NilError(t, c.ReleaseSession(ctxA, "release-eq-class-a"))
 
 	c.egraphMu.RLock()
-	_, ok = c.egraphResultsByDigest[foreignDigest.String()]
+	ok = postingHeldForTest(&c.egraphResultsByDigest, foreignDigest.String())
 	c.egraphMu.RUnlock()
 	assert.Assert(t, !ok)
 	assert.Equal(t, 1, c.Size())
@@ -6133,12 +6220,12 @@ func TestCacheTTLWithDBUsesStorageAndCallIndexes(t *testing.T) {
 	assert.NilError(t, err)
 	assert.Equal(t, 1, initCalls)
 	assert.Assert(t, res2.HitCache())
-	assert.Equal(t, 1, len(c.resultOutputEqClasses))
+	assert.Equal(t, 1, c.resultOutputEqClasses.Len())
 
 	cacheTestReleaseSession(t, c, ctx)
 	// Persist-safe only affects DB metadata persistence; in-memory cache entries are
 	// released when refs drain.
-	assert.Equal(t, 0, len(c.resultOutputEqClasses))
+	assert.Equal(t, 0, c.resultOutputEqClasses.Len())
 	assert.Equal(t, 0, c.Size())
 }
 
@@ -6388,11 +6475,11 @@ func TestCacheNonPersistableDropsWhenRefsDrain(t *testing.T) {
 	})
 	assert.NilError(t, err)
 	assert.Equal(t, 0, c.EntryStats().RetainedCalls)
-	assert.Equal(t, 1, len(c.resultOutputEqClasses))
+	assert.Equal(t, 1, c.resultOutputEqClasses.Len())
 
 	cacheTestReleaseSession(t, c, ctx)
 	assert.Equal(t, 0, c.EntryStats().RetainedCalls)
-	assert.Equal(t, 0, len(c.resultOutputEqClasses))
+	assert.Equal(t, 0, c.resultOutputEqClasses.Len())
 	assert.Equal(t, 0, c.Size())
 }
 
@@ -6432,7 +6519,7 @@ func TestCachePersistableHitUpgradesExistingResultToRetained(t *testing.T) {
 
 	cacheTestReleaseSession(t, c, ctx)
 	assert.Equal(t, 1, c.EntryStats().RetainedCalls)
-	assert.Equal(t, 1, len(c.resultOutputEqClasses))
+	assert.Equal(t, 1, c.resultOutputEqClasses.Len())
 
 	initCallsAfter := 0
 	resC, err := c.GetOrInitCall(ctx, "persistable-hit-after-release", noopTypeResolver{}, &CallRequest{
@@ -6995,42 +7082,9 @@ func TestCachePruneOrderedSimulationKeepsZeroDeltaPrerequisites(t *testing.T) {
 	assert.Equal(t, int64(120), report.ReclaimedBytes)
 }
 
-func TestCompactEqClassesSkipsWhenBelowThreshold(t *testing.T) {
-	t.Parallel()
-	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "", nil, nil)
-	assert.NilError(t, err)
-	c := cacheIface
-
-	c.egraphMu.Lock()
-	c.initEgraphLocked()
-	a := c.ensureEqClassForDigestLocked(ctx, "compact-threshold-a")
-	b := c.ensureEqClassForDigestLocked(ctx, "compact-threshold-b")
-	c1 := c.ensureEqClassForDigestLocked(ctx, "compact-threshold-c")
-	_ = c.ensureEqClassForDigestLocked(ctx, "compact-threshold-dead-1")
-	_ = c.ensureEqClassForDigestLocked(ctx, "compact-threshold-dead-2")
-	c.resultsByID = map[sharedResultID]*sharedResult{
-		1: {id: 1, self: Int(1), hasValue: true, resultCall: cacheTestIntCall("compact-threshold-a")},
-		2: {id: 2, self: Int(2), hasValue: true, resultCall: cacheTestIntCall("compact-threshold-b")},
-		3: {id: 3, self: Int(3), hasValue: true, resultCall: cacheTestIntCall("compact-threshold-c")},
-	}
-	c.addResultOutputEqClassLocked(1, a)
-	c.addResultOutputEqClassLocked(2, b)
-	c.addResultOutputEqClassLocked(3, c1)
-	compacted, oldSlots, newSlots := c.compactEqClassesLocked(false)
-	forced, forcedOldSlots, forcedNewSlots := c.compactEqClassesLocked(true)
-	c.egraphMu.Unlock()
-
-	assert.Assert(t, !compacted)
-	assert.Equal(t, 5, oldSlots)
-	assert.Equal(t, 3, newSlots)
-	assert.Assert(t, forced)
-	assert.Equal(t, 5, forcedOldSlots)
-	assert.Equal(t, 3, forcedNewSlots)
-	assert.Equal(t, 4, len(c.egraphParents))
-}
-
-func TestCachePruneCompactsEqClassesAndPreservesLookup(t *testing.T) {
+// A prune's collection frees the classes it ends, and with them the ones
+// made and never used since the last collection, and what stays still hits.
+func TestCachePruneFreesEqClassesAndPreservesLookup(t *testing.T) {
 	t.Parallel()
 	baseCtx := t.Context()
 	ctxActive := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
@@ -7068,12 +7122,12 @@ func TestCachePruneCompactsEqClassesAndPreservesLookup(t *testing.T) {
 
 	assert.NilError(t, c.ReleaseSession(ctxPrunable, "prune-compact-prunable"))
 	c.egraphMu.Lock()
-	originalSlots := len(c.egraphParents)
+	originalSlots := c.eqClassSlotsLocked()
 	_ = c.ensureEqClassForDigestLocked(baseCtx, "prune-compact-dead-1")
 	_ = c.ensureEqClassForDigestLocked(baseCtx, "prune-compact-dead-2")
 	_ = c.ensureEqClassForDigestLocked(baseCtx, "prune-compact-dead-3")
 	_ = c.ensureEqClassForDigestLocked(baseCtx, "prune-compact-dead-4")
-	bloatedSlots := len(c.egraphParents)
+	bloatedSlots := c.eqClassSlotsLocked()
 	c.egraphMu.Unlock()
 	assert.Assert(t, bloatedSlots > originalSlots)
 
@@ -7082,13 +7136,13 @@ func TestCachePruneCompactsEqClassesAndPreservesLookup(t *testing.T) {
 	assert.Equal(t, 1, len(report.Entries))
 	assert.Equal(t, cacheTestSharedResultEntryID(prunableRes), report.Entries[0].ID)
 
-	c.egraphMu.RLock()
-	compactedSlots := len(c.egraphParents)
+	c.egraphMu.Lock()
+	freedSlots, liveClasses := c.eqClassSlotsLocked(), testLiveEqClassesLocked(c)
 	_, activePresent := c.resultsByID[activeShared.id]
 	_, prunablePresent := c.resultsByID[prunableShared.id]
-	c.egraphMu.RUnlock()
-	assert.Assert(t, compactedSlots < bloatedSlots)
-	assert.Assert(t, compactedSlots >= 2)
+	c.egraphMu.Unlock()
+	assert.Assert(t, freedSlots < originalSlots)
+	assert.Equal(t, liveClasses, freedSlots)
 	assert.Assert(t, activePresent)
 	assert.Assert(t, !prunablePresent)
 
@@ -7211,7 +7265,9 @@ func TestCachePruneDoesNotProtectTermProvenanceOnlyResultFromActiveResult(t *tes
 
 	termID := egraphTermID(1)
 	c.egraphTerms[termID] = newEgraphTerm(termID, digest.FromString("prune-structural-root-term"), []eqClassID{provenanceEq}, rootEq)
-	c.outputEqClassToTerms[rootEq] = map[egraphTermID]struct{}{termID: {}}
+	c.useTermLocked(c.egraphTerms[termID])
+	c.outputEqClassToTerms.Delete(rootEq)
+	c.outputEqClassToTerms.Insert(rootEq, termID)
 	c.termInputProvenance[termID] = []egraphInputProvenanceKind{egraphInputProvenanceKindResult}
 	c.egraphMu.Unlock()
 	c.sessionMu.Lock()
@@ -7291,7 +7347,7 @@ func TestCacheAttachDependencyResults(t *testing.T) {
 	parentDependsOnChild := false
 	childIncomingOwnershipCount := int64(0)
 	if cachedParent != nil {
-		_, parentDependsOnChild = cachedParent.deps[childShared.id]
+		parentDependsOnChild = cachedParent.deps.has(childShared.id)
 	}
 	if cachedChild != nil {
 		childIncomingOwnershipCount = cachedChild.incomingOwnershipCount.Load()
@@ -7359,7 +7415,7 @@ func TestCacheAttachDependencyResultsAlreadyAttachedChild(t *testing.T) {
 	heldParent := c.resultsByID[parentShared.id]
 	parentDependsOnChild := false
 	if heldParent != nil {
-		_, parentDependsOnChild = heldParent.deps[childShared.id]
+		parentDependsOnChild = heldParent.deps.has(childShared.id)
 	}
 	c.egraphMu.RUnlock()
 	assert.Assert(t, heldChild != nil)
@@ -7411,7 +7467,7 @@ func TestCacheAddExplicitDependency(t *testing.T) {
 	parentDependsOnChild := false
 	childIncomingOwnershipCount := int64(0)
 	if cachedParent != nil {
-		_, parentDependsOnChild = cachedParent.deps[childShared.id]
+		parentDependsOnChild = cachedParent.deps.has(childShared.id)
 	}
 	if cachedChild := c.resultsByID[childShared.id]; cachedChild != nil {
 		childIncomingOwnershipCount = cachedChild.incomingOwnershipCount.Load()
@@ -8058,7 +8114,7 @@ func TestCacheAddExplicitDependencyAcceptsSessionResourceDepsAndRecomputesAncest
 	resourceRequiringShared := resourceRequiring.cacheSharedResult()
 	assert.Assert(t, resourceRequiringShared != nil && resourceRequiringShared.id != 0)
 	c.egraphMu.RLock()
-	_, edgeAdded := middleShared.deps[resourceRequiringShared.id]
+	edgeAdded := middleShared.deps.has(resourceRequiringShared.id)
 	middleRequired := cacheTestSessionResourceSetContains(middleShared.requiredSessionResources, handle)
 	topRequired := cacheTestSessionResourceSetContains(topShared.requiredSessionResources, handle)
 	middleGenAfter := middleShared.requiredSessionResourcesGen.Load()
@@ -8077,7 +8133,7 @@ func TestCacheAddExplicitDependencyAcceptsSessionResourceDepsAndRecomputesAncest
 	plainDepShared := plainDep.cacheSharedResult()
 	assert.Assert(t, plainDepShared != nil && plainDepShared.id != 0)
 	c.egraphMu.RLock()
-	_, retained := middleShared.deps[plainDepShared.id]
+	retained := middleShared.deps.has(plainDepShared.id)
 	middleGenFinal := middleShared.requiredSessionResourcesGen.Load()
 	c.egraphMu.RUnlock()
 	assert.Assert(t, retained, "requirement-free retention edge must be recorded")
@@ -9331,7 +9387,7 @@ func TestCacheAttachmentClaimPinsTargetAgainstForeignRelease(t *testing.T) {
 	bShared := bRes.cacheSharedResult()
 	assert.Assert(t, bShared != nil && bShared.id != 0)
 	c.egraphMu.RLock()
-	_, childRetained := bShared.deps[childID]
+	childRetained := bShared.deps.has(childID)
 	c.egraphMu.RUnlock()
 	assert.Assert(t, childRetained, "the attachment must retain the original pinned child")
 

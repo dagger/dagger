@@ -176,6 +176,11 @@ const (
 	// resumption does not resolve the owning API span's pending state. (bool)
 	DagPartialAttr = "dagger.io/dag.partial"
 
+	// LazyAnchorAttr marks a lazy result's evaluation span that carries the
+	// result's cause links in its session: later evaluations of the result
+	// in the session link only this span. (bool)
+	LazyAnchorAttr = "dagger.io/lazy.anchor"
+
 	// GenerateSkippedAttr marks a span reporting a workspace module that
 	// best-effort `dagger generate` skipped because it could not be loaded. The
 	// TUI collects these into a persisted "SKIPPED MODULES" final-report section
@@ -699,6 +704,43 @@ const (
 	// Unix nanoseconds, comparable with CacheLookupAtAttr. The engine keeps it
 	// in memory only, so it is absent for a value restored after a restart.
 	CacheHitMergedAtAttr = "dagger.io/cache.hit.merged_at_unix_ns"
+	// CacheHitMergedRouteAttr (with CacheHitMergedAtAttr) is the route that
+	// merge brought the served value by: "set_file" (a part of a set file
+	// the engine restored), "deferred" (a merge of roots the engine's
+	// lookups deferred to its queue), "lookup" (a merge answering one of the
+	// engine's lookups), or "unnamed". CacheHitMergeAttr is the service's
+	// number for a deferred or a lookup merge, as in its remotecache.merge
+	// spans, in decimal;
+	// CacheHitMergedFileAttr names a set file's. CacheHitFirstUseAttr
+	// ("true", absent otherwise) records that the record's payload was still
+	// left for its first use when the lookup chose it: this hit's decode
+	// prepared it, unless another use racing it did first.
+	CacheHitMergedRouteAttr = "dagger.io/cache.hit.merged_route"
+	CacheHitMergeAttr       = "dagger.io/cache.hit.merge"
+	CacheHitMergedFileAttr  = "dagger.io/cache.hit.merged_file"
+	CacheHitFirstUseAttr    = "dagger.io/cache.hit.first_use"
+
+	// What a hit's own time after its lookup is made of (hits only, each
+	// absent when there is nothing to say). CacheHitLoadedAtAttr is when the
+	// hit's value was loaded: its payload, and those of the results it
+	// references, decoded where they weren't yet. CacheHitServedAtAttr is
+	// when the cache handed the hit back, its retention edge and the
+	// session's record of it done. Both are decimal-string absolute Unix
+	// nanoseconds, comparable with CacheLookupAtAttr: with the span's start
+	// and end they split its time into the lookup, the load, the serving and
+	// the span's end. CacheHitDecodedAttr is how many entries the load
+	// decoded, in decimal. CacheHitWaitsAttr is what the hit's own work after
+	// its lookup waited for, to the span's end, as "<kind>=<nanoseconds>"
+	// strings sorted by kind: "graph.<writer>" for the cache's graph lock,
+	// by the kind of writer whose release let each wait in (lookup,
+	// publication, restore, merge, export, offer, part, teach,
+	// dependency, evaluation, upkeep, hold, other, or readers when no writer
+	// did), "decode" for another caller's decode of an entry the hit loads,
+	// and "attach" for an entry's dependency attachment.
+	CacheHitLoadedAtAttr = "dagger.io/cache.hit.loaded_at_unix_ns"
+	CacheHitServedAtAttr = "dagger.io/cache.hit.served_at_unix_ns"
+	CacheHitDecodedAttr  = "dagger.io/cache.hit.decoded"
+	CacheHitWaitsAttr    = "dagger.io/cache.hit.waits"
 
 	// CacheLookupAtAttr is the time the call's cache lookup chose its
 	// candidates, in decimal-string absolute Unix nanoseconds, for hit,
@@ -780,7 +822,9 @@ const (
 	// about asking the remote cache service for the call's value: "queued"
 	// when it queued a lookup, "asked" when the call's recipe was already
 	// asked for on the engine's connection, "dropped" when the lookup queue
-	// was full. Absent when no connection serves lookups.
+	// was full. Absent when the miss asked nothing: no connection serves
+	// lookups, or the call is keyed to its session, client or call and has
+	// no extra digest, so no other engine can have it.
 	CacheMissRemoteLookupAttr = "dagger.io/cache.miss.remote_lookup"
 
 	// CacheAdoptedAttr ("true", executed and joined calls, absent otherwise)
@@ -797,6 +841,18 @@ const (
 	CacheAdoptedAttr         = "dagger.io/cache.adopted"
 	CacheAdoptedRemoteAttr   = "dagger.io/cache.adopted.remote"
 	CacheAdoptedMergedAtAttr = "dagger.io/cache.adopted.merged_at_unix_ns"
+
+	// CacheKeptOverRemoteAttr ("true", executed and joined calls, absent
+	// otherwise) records that the publication of the call's value found its
+	// recipe's current entry holding a Cloud merge's record, and kept the
+	// call's value, whose content was made, in its place: the call ran, its
+	// value stands, and CacheResultIDAttr names the entry holding it (the
+	// merged entry, its value replaced, or a new current entry beside it).
+	// CacheKeptOverRemoteMergedAtAttr is when that merge committed, in
+	// decimal-string absolute Unix nanoseconds (in memory only), on the clock
+	// of CacheLookupAtAttr.
+	CacheKeptOverRemoteAttr         = "dagger.io/cache.kept_over_remote"
+	CacheKeptOverRemoteMergedAtAttr = "dagger.io/cache.kept_over_remote.merged_at_unix_ns"
 
 	// CacheValueRemoteAttr ("true", on a lazy-evaluation span, absent
 	// otherwise) records that the value of the entry the attempt evaluated
@@ -836,6 +892,15 @@ const (
 	// call with no implicit inputs it equals CacheSelfDigestAttr.
 	CachePairingDigestAttr = "dagger.io/cache.pairing_digest"
 
+	// CacheCallerAttr is the recipe digest (dagger.io/dag.digest) of the
+	// nearest enclosing cached call: the call this one was made while
+	// running, a resolver's own call for the calls it selects, a module
+	// function's call for the calls the module makes. It is omitted for a
+	// call at its session's top. The remote cache service orders what it
+	// sends an engine by it: an engine asks for its run's calls from the
+	// top down, and never for those below a call it is served.
+	CacheCallerAttr = "dagger.io/cache.caller"
+
 	// CacheOutputContentDigestAttr is the completed result's RECORDED content
 	// digest — the last content-labeled extra digest on the result's
 	// authoritative call frame at span completion — emitted only when
@@ -847,12 +912,28 @@ const (
 	// simply not claimed here.
 	CacheOutputContentDigestAttr = "dagger.io/cache.output.content_digest"
 
+	// CacheFollowsFromInputsAttr ("true", absent otherwise) is the call's
+	// field's declaration that its result is a function of its inputs and
+	// arguments alone (dagql.FieldSpec.FollowsFromInputs): another engine's
+	// run of the call is the same result wherever their inputs are. It rides
+	// every call row with a cache decision, so the remote cache service reads
+	// it from the row, as it learns each record, without the schema.
+	CacheFollowsFromInputsAttr = "dagger.io/cache.follows_from_inputs"
+
 	// CacheResultIDAttr is the decimal-string engine-local result number of
 	// the call's cache-backed result, stamped for any stamped outcome that
 	// returned one. Together with the cache identity resource attribute
 	// (EngineCacheAttr) it names one entry of one cache for the cache's
 	// lifetime.
 	CacheResultIDAttr = "dagger.io/cache.result.id"
+
+	// CacheRecipeAttr is the recipe digest of the entry a call returned, on
+	// the span of a call hidden from the session's view, which reports only
+	// its cache decision. Such a span carries no dagger.io/dag.output, which
+	// would make it the result's creator in the session's rendering
+	// (dagui.DB.CreatorSpans), nor its call frame: a consumer of the cache
+	// contract reads this in its place.
+	CacheRecipeAttr = "dagger.io/cache.recipe"
 
 	// The entry's state in its cache, stamped beside CacheResultIDAttr when
 	// the span ends, so a consumer can follow the cache's ownership without
@@ -866,8 +947,18 @@ const (
 	CacheDepsAttr = "dagger.io/cache.deps"
 	// CacheRetainedAttr is "true" when the entry has a retention edge, the
 	// record that keeps it after its session, or when this call's publication
-	// adds one; absent otherwise. It states the edge at the span's end.
+	// adds one; absent otherwise. It states the edge at the span's end, from
+	// any source: this call, another call of the entry, or a merge that
+	// rooted its record. What this call itself kept is CachePersistedAttr.
 	CacheRetainedAttr = "dagger.io/cache.retained"
+	// CachePersistedAttr is "true" on a call span when the call itself kept
+	// its result past its session: its field is persistable and neither the
+	// call nor the value it returned declined to persist, so its publication
+	// or its hit gives the entry a retention edge of its own; absent
+	// otherwise. It is the call's own, where CacheRetainedAttr is the entry's
+	// state from any source: a call that keeps nothing reports the edge
+	// another gave its entry as retained, and not as persisted.
+	CachePersistedAttr = "dagger.io/cache.persisted"
 	// CacheRetentionExpiresAttr is the retention edge's expiry, in decimal
 	// Unix seconds, when retained and the edge expires.
 	CacheRetentionExpiresAttr = "dagger.io/cache.retention.expires"
@@ -896,6 +987,15 @@ const (
 	// with the state beside it: the parts, dependencies and expiry it names
 	// belong to that value. Absent while the count is 0.
 	CacheReplacementsAttr = "dagger.io/cache.replacements"
+
+	// CacheStoredPartAttr is, on a lazy-evaluation span whose attempt opened
+	// a part this engine saved before (as a value restored from the engine's
+	// own state is opened on its first use), that part's address, as in
+	// CachePartsAttr. Such an attempt ran none of the value's step: a reader
+	// that takes an evaluation for the engine computing the value leaves it
+	// out, as it leaves out an offer's install (CacheOfferPartAttr). Absent on
+	// any other span, and on an attempt that failed.
+	CacheStoredPartAttr = "dagger.io/cache.stored.part"
 
 	// A part installed from a Cloud offer, stamped on the lazy-evaluation
 	// span of the task that installed it, which names the receiving entry
@@ -1076,9 +1176,9 @@ const (
 	// EngineEventPrune: a prune run dropped retention edges
 	// (EnginePruneEvent). Runs that drop none send nothing.
 	EngineEventPrune = "engine.prune"
-	// EngineEventShare: a snapshot-sharing pass completed parts
-	// (EngineShareEvent).
-	EngineEventShare = "engine.share"
+	// EngineEventParts: complete parts of entries that their spans left out
+	// (EnginePartsEvent).
+	EngineEventParts = "engine.parts"
 	// EngineEventRead: work read a part of an entry for the first time
 	// (EngineReadEvent).
 	EngineEventRead = "engine.read"
@@ -1115,14 +1215,15 @@ type EngineRetentionDrop struct {
 	DroppedAtUnixNano int64 `json:"droppedAtUnixNano"`
 }
 
-// EngineShareEvent is the body of an engine.share event: every part one
-// snapshot-sharing pass completed.
-type EngineShareEvent struct {
-	Parts []EngineSharedPart `json:"parts"`
+// EnginePartsEvent is the body of an engine.parts event: the complete parts
+// entries' spans left out, which the engine reports once it can read each
+// entry's record.
+type EnginePartsEvent struct {
+	Parts []EnginePart `json:"parts"`
 }
 
-// EngineSharedPart is one part a snapshot-sharing pass completed.
-type EngineSharedPart struct {
+// EnginePart is one complete part of an entry that its spans left out.
+type EnginePart struct {
 	// ResultID is the entry's result number.
 	ResultID uint64 `json:"resultId"`
 	// Part is the part's address, as in dagger.io/cache.parts.
@@ -1132,6 +1233,9 @@ type EngineSharedPart struct {
 	// Replacements is the entry's replacement count (CacheReplacementsAttr),
 	// when not 0: the part and the dependencies are its current value's.
 	Replacements uint64 `json:"replacements,omitempty"`
+	// RawSize is the part's raw size, as CachePartSizesAttr gives a span's,
+	// when the engine read it; absent when it didn't.
+	RawSize *int64 `json:"rawSize,omitempty"`
 }
 
 // EngineReadEvent is the body of an engine.read event: the parts of entries
@@ -1150,6 +1254,14 @@ type EngineRead struct {
 	// Part is the part read, as the part of an address in
 	// dagger.io/cache.parts names it; empty for the whole entry.
 	Part string `json:"part,omitempty"`
+	// Session and At say where the part was read when every session that
+	// gets there makes the read again: when no call above it, up to the
+	// session's top, is a cached call that isn't session-bound. They are the
+	// session, and when, in Unix nanoseconds on the engine's clock. Such a
+	// read is reported once per part and session, beside the engine-wide
+	// report of the entry, which leaves both empty.
+	Session string `json:"session,omitempty"`
+	At      int64  `json:"at,omitempty"`
 }
 
 // EngineStopEvent is the body of an engine.stop event.
@@ -1158,4 +1270,219 @@ type EngineStopEvent struct {
 	Clean bool `json:"clean"`
 	// SavedEntries counts the entries the save wrote.
 	SavedEntries int `json:"savedEntries"`
+	// PeakResident is the engine process's peak resident memory, in bytes,
+	// or 0 when unknown.
+	PeakResident int64 `json:"peakResident,omitempty"`
+	// Restores are what the engine did with each set file the remote cache
+	// service had it restore, in the order they ended.
+	Restores []EngineRestore `json:"restores,omitempty"`
+	// PartsWithoutSource counts, by reason, the parts work read with no
+	// source to read them from over the engine's life, each made again: by
+	// an operation of the value, or by running its call again (call_run)
+	// (dagql.Cache.PartsWithoutSource).
+	PartsWithoutSource map[string]uint64 `json:"partsWithoutSource,omitempty"`
+	// UncountedMisses counts the lookup misses the engine dropped before a
+	// restored part could count them as late (EngineRestorePart.Late): a
+	// run with any undercounts its late lookups.
+	UncountedMisses uint64 `json:"uncountedMisses,omitempty"`
+	// FirstUse is what the engine's calls, and its save, spent preparing the
+	// payloads of records restores left for their first use
+	// (dagql.Cache.FirstUse).
+	FirstUse EngineFirstUse `json:"firstUse,omitzero"`
+	// LookupLockWaits are the calls' lookups' waits for the cache's graph
+	// lock (dagql.Cache.LookupLockWaits).
+	LookupLockWaits EngineLookupLockWaits `json:"lookupLockWaits,omitzero"`
+}
+
+// EngineLookupLockWaits are the calls' lookups' waits for the cache's graph
+// lock over the engine's life, by the kind of writer whose release let each
+// in: "lookup", "publication", "restore" (a set file's part's merge),
+// "merge" (another merge of the service's records), "export", "offer",
+// "part" (fetching, installing or settling parts), "teach" (a call's
+// teaching of what its result is the same as), "dependency" (a call's
+// explicit dependencies), "evaluation" (a lazy evaluation's bookkeeping),
+// "upkeep" (a session's release, a prune, a measurement or a save), "hold"
+// (the service's holds on entries), "other" (a writer that named no kind),
+// or "readers" (no writer let it in: the lookup waited for readers to
+// leave). Landing are the waits begun while a whole
+// set file was landing on the engine, from its arrival to its end, and
+// Other the rest. A lookup that took the lock at once isn't counted.
+type EngineLookupLockWaits struct {
+	Landing map[string]EngineLockWaits `json:"landing,omitempty"`
+	Other   map[string]EngineLockWaits `json:"other,omitempty"`
+}
+
+// EngineLockWaits count waits for a lock: how many, their summed time, and
+// the longest, in nanoseconds. A restore's window has no longest.
+type EngineLockWaits struct {
+	Waits   int64 `json:"waits"`
+	Total   int64 `json:"total"`
+	Longest int64 `json:"longest,omitempty"`
+}
+
+// EngineFirstUsePath counts the first uses that came by one path: the
+// payloads prepared, refused ones included, and the time that took in all
+// and at the longest, in nanoseconds. A restore's window has no longest.
+type EngineFirstUsePath struct {
+	Prepared int64 `json:"prepared"`
+	Total    int64 `json:"total"`
+	Longest  int64 `json:"longest,omitempty"`
+}
+
+// EngineFirstUse counts the payloads of restored records the engine's calls
+// prepared at their first use, and those refused, with the time preparing
+// took in all and at the longest, in nanoseconds. The longest is named: its
+// record's recipe, its payload's size in bytes, and its time split into
+// preparing the payload and waiting for the entry's payload lock, in
+// nanoseconds. The Save fields count the payloads of the records nothing
+// used, which the engine's save prepared before it wrote them, and those
+// refused, with the time that took summed over them and the save's wall time
+// spent on them, in nanoseconds. Paths splits the first uses by the path
+// they came by: "lookup" (a call's decode of its hit), "export", "offer",
+// "part" (fetching or installing an entry's parts), "merge" or "restore" (a
+// merge warming the parts of the entries it lands on), and "other". Routes splits them by the route
+// that brought their records (EngineFirstUseRoute).
+type EngineFirstUse struct {
+	Prepared        int64  `json:"prepared,omitempty"`
+	Refused         int64  `json:"refused,omitempty"`
+	Total           int64  `json:"total,omitempty"`
+	Longest         int64  `json:"longest,omitempty"`
+	LongestRecipe   string `json:"longestRecipe,omitempty"`
+	LongestBytes    int64  `json:"longestBytes,omitempty"`
+	LongestPrepare  int64  `json:"longestPrepare,omitempty"`
+	LongestLockWait int64  `json:"longestLockWait,omitempty"`
+	// Paths are the first uses by path.
+	Paths        map[string]EngineFirstUsePath `json:"paths,omitempty"`
+	SavePrepared int64                         `json:"savePrepared,omitempty"`
+	SaveRefused  int64                         `json:"saveRefused,omitempty"`
+	SaveTotal    int64                         `json:"saveTotal,omitempty"`
+	SaveWall     int64                         `json:"saveWall,omitempty"`
+	// Routes are the first uses by route.
+	Routes map[string]EngineFirstUseRoute `json:"routes,omitempty"`
+}
+
+// EngineFirstUseRoute counts what one route brought the engine and what of
+// it the engine's calls first used, over the engine's life. The route is
+// "set_file" (the parts of the set files the engine restored), "deferred"
+// (the merges of roots the engine's lookups deferred to its queue),
+// "lookup" (the merges answering the engine's lookups) or "unnamed". Merges are the
+// merges committed, a set file's parts each one; Sent the records they
+// carried, held rows aside; Merged the records they installed, which leaves
+// out those the engine already held a value for; FirstUses the first uses
+// of those records, refused ones included, with Total their time in
+// nanoseconds; and Used the merges at least one of whose records was first
+// used. A record merged and never used is Merged less FirstUses.
+type EngineFirstUseRoute struct {
+	Merges    int64 `json:"merges"`
+	Sent      int64 `json:"sent"`
+	Merged    int64 `json:"merged"`
+	FirstUses int64 `json:"firstUses,omitempty"`
+	Total     int64 `json:"total,omitempty"`
+	Used      int64 `json:"used,omitempty"`
+}
+
+// EngineRestore is what an engine did with one set file: the check's name,
+// which file of its set ("head" or "whole"), its digest and size; when its
+// restore arrived and its download began and ended, on the engine's clock,
+// in Unix nanoseconds (0 when not fetched); each part that merged; whether
+// every part merged, whether the engine had merged it whole already, and
+// what stopped it. PeakBefore and PeakAfter are the engine's peak resident
+// memory in bytes before its first part and after its last, 0 when unknown.
+// Decode, Precheck, Prepare and Commit are the wall time its parts took to
+// decode, to check for their merges ahead of them, to prepare the rest of
+// their merges and to commit them, in all, in nanoseconds. FirstPart is
+// when the last part of a head's first part committed, on the engine's
+// clock, in Unix nanoseconds, 0 for a file with none or one that stopped
+// before (remotecache.RestoreReport.FirstPart). Ended is
+// when the file's restore ended, on the engine's clock, in Unix nanoseconds,
+// and Window what the engine did from the file's arrival to then, for a file
+// it downloaded and ended.
+type EngineRestore struct {
+	Check        string               `json:"check"`
+	Kind         string               `json:"kind"`
+	Digest       string               `json:"digest"`
+	Bytes        int64                `json:"bytes"`
+	Arrived      int64                `json:"arrived"`
+	FetchStarted int64                `json:"fetchStarted,omitempty"`
+	Fetched      int64                `json:"fetched,omitempty"`
+	Parts        []EngineRestorePart  `json:"parts,omitempty"`
+	Complete     bool                 `json:"complete,omitempty"`
+	Already      bool                 `json:"already,omitempty"`
+	Error        string               `json:"error,omitempty"`
+	PeakBefore   int64                `json:"peakBefore,omitempty"`
+	PeakAfter    int64                `json:"peakAfter,omitempty"`
+	Decode       int64                `json:"decode,omitempty"`
+	Precheck     int64                `json:"precheck,omitempty"`
+	Prepare      int64                `json:"prepare,omitempty"`
+	Commit       int64                `json:"commit,omitempty"`
+	FirstPart    int64                `json:"firstPart,omitempty"`
+	Ended        int64                `json:"ended,omitempty"`
+	Window       *EngineRestoreWindow `json:"window,omitempty"`
+}
+
+// EngineRestoreWindow is what the engine did between a set file's arrival
+// and its end, its last commit or what stopped it: what else used the engine
+// while the file landed. Every count is the engine's, whatever it was for,
+// and the windows of files that land together overlap. Durations are in
+// nanoseconds. Wall is exact; the counts are read beside the restore,
+// each reading started as the window begins and ends, so a count can take in
+// work past either end: the time until the reading runs, which grows when
+// the engine is short of CPU, and the reading's own, about 15 µs for each of
+// the engine's threads.
+//
+// Wall is the window's length. CPU is the engine process's CPU time, user
+// and system, and GCCPU the part of it the Go runtime estimates its garbage
+// collector took, GCAssist the part of that the goroutines that allocated
+// were made to do themselves, and GCCycles the collections that completed. SchedWaits
+// and SchedWait are the waits of runnable goroutines for a processor, as the
+// Go runtime samples them in its /sched/latencies histogram, how many and
+// their time estimated from the histogram's buckets: the engine's own
+// goroutines waiting their turn. RunqWait is the time the engine process's
+// threads were runnable and waiting for a CPU, as the kernel counts it: the
+// engine waiting for cores that others, such as the check's execs, hold. It
+// is absent when it couldn't be read. LookupLockWaits are the lookups' waits
+// for the graph lock begun in the window, by the kind of writer that let
+// each in (EngineLookupLockWaits); and FirstUses the first uses in it, by
+// path (EngineFirstUse).
+type EngineRestoreWindow struct {
+	Wall            int64                         `json:"wall"`
+	CPU             int64                         `json:"cpu"`
+	GCCPU           int64                         `json:"gcCpu,omitempty"`
+	GCAssist        int64                         `json:"gcAssist,omitempty"`
+	GCCycles        int64                         `json:"gcCycles,omitempty"`
+	SchedWaits      int64                         `json:"schedWaits,omitempty"`
+	SchedWait       int64                         `json:"schedWait,omitempty"`
+	RunqWait        *int64                        `json:"runqWait,omitempty"`
+	LookupLockWaits map[string]EngineLockWaits    `json:"lookupLockWaits,omitempty"`
+	FirstUses       map[string]EngineFirstUsePath `json:"firstUses,omitempty"`
+}
+
+// EngineRestorePart is one merged part of a set file: its records, when it
+// committed (Unix nanoseconds), and the lookups that missed before it
+// committed and that it would have served, with the longest and shortest
+// time from such a miss to the commit; then how long its commit waited for
+// the cache's lock and held it; then its own decode, its check for its merge
+// ahead of it, the rest of its merge's preparation and the merge's commit,
+// and how long the merge waited behind the
+// merges that answer lookups before it began; then how long its merge's
+// preparation waited for the cache's lock, in all and by the kind of writer
+// that let each wait in, as EngineLookupLockWaits names them; then how long
+// its merge waited for its decode and check, which run while the part before
+// it merges. Durations are in nanoseconds.
+type EngineRestorePart struct {
+	Records          int              `json:"records"`
+	Committed        int64            `json:"committed"`
+	Late             int              `json:"late,omitempty"`
+	WorstLate        int64            `json:"worstLate,omitempty"`
+	LeastLate        int64            `json:"leastLate,omitempty"`
+	LockWait         int64            `json:"lockWait,omitempty"`
+	CommitHold       int64            `json:"commitHold,omitempty"`
+	Decode           int64            `json:"decode,omitempty"`
+	Precheck         int64            `json:"precheck,omitempty"`
+	Prepare          int64            `json:"prepare,omitempty"`
+	Commit           int64            `json:"commit,omitempty"`
+	PriorityWait     int64            `json:"priorityWait,omitempty"`
+	PrepareLockWait  int64            `json:"prepareLockWait,omitempty"`
+	PrepareLockWaits map[string]int64 `json:"prepareLockWaits,omitempty"`
+	DecodeWait       int64            `json:"decodeWait,omitempty"`
 }

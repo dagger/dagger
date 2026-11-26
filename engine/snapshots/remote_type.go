@@ -44,12 +44,20 @@ type ExportChain struct {
 	// Stats are what exporting the chain took.
 	Stats ExportStats
 	pin   *resourcePin
+	// packs is how its import reads the packs that hold its blobs, set
+	// when ImportChain starts.
+	packs *chainPacks
 }
 
 // ExportStats sum what exporting chains took, over their layers.
 type ExportStats struct {
-	// Layers counts the layers emitted.
-	Layers int
+	// Layers counts the layers emitted, and Listings those of them that are
+	// listings, which the export of listings (config.RefConfig.Listings)
+	// emits for the layers it computes. Contents counts the content blobs
+	// emitted before the listings, each once a chain.
+	Layers   int
+	Listings int
+	Contents int
 	// LayersReused counts the layers whose blob already existed, and
 	// LayersDiffed those whose blob was computed.
 	LayersReused int
@@ -62,6 +70,15 @@ type ExportStats struct {
 	// archiving, compressing and writing the content. Layers that build at
 	// once each add their own, so it can exceed the export's wall time.
 	DiffTime time.Duration
+	// CompressTime is the part of DiffTime spent in the compressor: every
+	// write of a layer's archive into the compressor's writer and its close,
+	// compressing and writing the blob, waits for the compressor's own
+	// frames included. DiffTime less CompressTime is the rest of the diff:
+	// reading the mounts and archiving them, hashing the archive (its
+	// uncompressed digest is taken beside the compressor), and flushing,
+	// committing and finalizing the blob once the compressor has closed. It
+	// adds as DiffTime does.
+	CompressTime time.Duration
 	// LockWait is the wait for the per-snapshot export lock, held by another
 	// export of the same layer.
 	LockWait time.Duration
@@ -81,11 +98,14 @@ type ExportStats struct {
 // Add adds o to s.
 func (s *ExportStats) Add(o ExportStats) {
 	s.Layers += o.Layers
+	s.Listings += o.Listings
+	s.Contents += o.Contents
 	s.LayersReused += o.LayersReused
 	s.LayersDiffed += o.LayersDiffed
 	s.RawBytes += o.RawBytes
 	s.BlobBytes += o.BlobBytes
 	s.DiffTime += o.DiffTime
+	s.CompressTime += o.CompressTime
 	s.LockWait += o.LockWait
 	s.BuildWait += o.BuildWait
 	s.LayersMerged += o.LayersMerged
@@ -119,6 +139,11 @@ type ImportTiming struct {
 	// Packed counts the layers whose blob the import got with its pack's:
 	// read, joined, or held from an earlier read.
 	Packed int
+	// Files counts the regular files of the listings the import applied, and
+	// FileBytes their bytes: what applying them created, counted as each
+	// listing's tar is rebuilt. A layer applied from its own tar counts none.
+	Files     int64
+	FileBytes int64
 }
 
 // add adds o to t.
@@ -129,6 +154,8 @@ func (t *ImportTiming) add(o ImportTiming) {
 	t.Ahead += o.Ahead
 	t.Joined += o.Joined
 	t.Packed += o.Packed
+	t.Files += o.Files
+	t.FileBytes += o.FileBytes
 }
 
 // Release ends provider consumption. Copies of a locally exported chain share

@@ -78,7 +78,7 @@ func requireStepsNest(t *testing.T, events []profiledEvent, parent uint64) {
 func TestEndPartTaskBodyWaitsForGraphLockWcprof(t *testing.T) {
 	wcprof.EnsureRecorder()
 	row := &sharedResult{id: 12}
-	row.partGate.loadOrCreate()
+	row.partGateCell().loadOrCreate()
 	token := &PartTaskToken{row: row}
 	token.active.Store(true)
 	c := &Cache{resultsByID: map[sharedResultID]*sharedResult{}}
@@ -91,7 +91,7 @@ func TestEndPartTaskBodyWaitsForGraphLockWcprof(t *testing.T) {
 		defer close(done)
 		c.endPartTaskBody(stepCtx, token, true)
 	}()
-	waitBlockedIn(t, "wcprof.WriteLock(")
+	waitBlockedIn(t, "wcprof.WriteLockAs(")
 	c.egraphMu.Unlock()
 	<-done
 	step.End(nil)
@@ -101,9 +101,10 @@ func TestEndPartTaskBodyWaitsForGraphLockWcprof(t *testing.T) {
 	requireWaitUnder(t, header, events, map[uint64]bool{step.op.ID(): true}, egraphLockIdent)
 }
 
-// The cache state a lazy op's span reports captures the row's record under
-// the graph lock. A wait for the lock there is recorded under the
-// evaluation's op, as the part machinery's other graph-lock waits are.
+// The cache state a lazy op's span reports reads the row's dependencies and
+// replacement count under the graph lock. A wait for the lock there is
+// recorded under the evaluation's op, as the part machinery's other
+// graph-lock waits are.
 func TestLazySpanCacheStateWaitsForGraphLockWcprof(t *testing.T) {
 	wcprof.EnsureRecorder()
 	_, rootCtx, root := newLazyRecordingRoot("POST /query")
@@ -118,7 +119,7 @@ func TestLazySpanCacheStateWaitsForGraphLockWcprof(t *testing.T) {
 		defer close(done)
 		c.lazySpanCacheState(evalCtx, row, nil)
 	}()
-	waitBlockedIn(t, "wcprof.WriteLock(")
+	waitBlockedIn(t, "wcprof.ReadLockAs(")
 	c.egraphMu.Unlock()
 	<-done
 	lazyOp.End(wcprof.OutcomeOK)

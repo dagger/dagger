@@ -77,7 +77,7 @@ func TestExtraDigestMetadata(t *testing.T) {
 				c.egraphMu.RLock()
 				seen := map[call.ExtraDigest]struct{}{}
 				for eqID := range c.outputEqClassesForResultLocked(result.cacheSharedResult().id) {
-					for extra := range c.eqClassExtraDigests[c.findEqClassLocked(eqID)] {
+					for _, extra := range c.eqClassExtraDigests[c.findEqClassLocked(eqID)] {
 						seen[extra] = struct{}{}
 					}
 				}

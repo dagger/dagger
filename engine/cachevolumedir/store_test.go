@@ -2,13 +2,16 @@ package cachevolumedir
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -136,18 +139,61 @@ func TestOpenOwnership(t *testing.T) {
 	require.NoError(t, s2.Close())
 }
 
-func TestOpenRemovesDebris(t *testing.T) {
+func TestOpenDeletesLeftoversInTheBackground(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
-	for _, sub := range []string{"v1/tmp/half-made/fs", "v1/trash/half-gone/fs"} {
-		require.NoError(t, os.MkdirAll(filepath.Join(dir, sub), 0o755))
-		writeFile(t, filepath.Join(dir, sub, "f"), 10)
+	// A previous owner stopped while deleting a measured volume and while
+	// creating another.
+	gone := filepath.Join(dir, "v1", "trash", "half-gone", "volume")
+	require.NoError(t, os.MkdirAll(filepath.Join(gone, "fs"), 0o755))
+	writeFile(t, filepath.Join(gone, "fs", "f"), 2*mib)
+	size := int64(2 * mib)
+	dt, err := json.Marshal(meta{Format: FormatVersion, ID: "half-gone", SizeBytes: &size})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(gone, "meta.json"), dt, 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "v1", "tmp", "half-made", "fs"), 0o755))
+	writeFile(t, filepath.Join(dir, "v1", "tmp", "half-made", "fs", "f"), 10)
+
+	gate := make(chan struct{})
+	opened := make(chan *Store, 1)
+	go func() {
+		s, err := Open(dir, Options{EngineVersion: "test", RemoveAll: func(path string) error {
+			<-gate
+			return os.RemoveAll(path)
+		}})
+		assert.NoError(t, err)
+		opened <- s
+	}()
+	var s *Store
+	select {
+	case s = <-opened:
+	case <-time.After(10 * time.Second):
+		close(gate)
+		t.Fatal("Open waited for the previous owner's leftovers to be deleted")
 	}
-	openStore(t, dir, nil)
-	for _, sub := range []string{"v1/tmp", "v1/trash"} {
-		ents, err := os.ReadDir(filepath.Join(dir, sub))
-		require.NoError(t, err)
-		require.Empty(t, ents, sub)
-	}
+	t.Cleanup(func() { _ = s.Close() })
+
+	ents, err := os.ReadDir(filepath.Join(dir, "v1", "tmp"))
+	require.NoError(t, err)
+	require.Empty(t, ents, "a volume the previous owner was creating moves to trash")
+	require.DirExists(t, gone, "leftovers are deleted in the background")
+
+	use(t, s, Identity{Key: "k"}, true, "f", mib)
+	_, used, err := s.Usage(t.Context())
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, used, int64(3*mib), "leftovers being deleted count as used")
+	report, err := s.Collect(t.Context(), Policy{MaxUsedSpace: mib + mib/2})
+	require.NoError(t, err)
+	require.Empty(t, report.Removed, "leftovers being deleted count as freed")
+
+	close(gate)
+	require.NoError(t, s.WaitRemovals(t.Context()))
+	ents, err = os.ReadDir(filepath.Join(dir, "v1", "trash"))
+	require.NoError(t, err)
+	require.Empty(t, ents)
+	_, used, err = s.Usage(t.Context())
+	require.NoError(t, err)
+	require.Less(t, used, int64(mib+mib/2))
 }
 
 func TestAcquireCreatesOnceAndReuses(t *testing.T) {
@@ -358,6 +404,59 @@ func TestCollectLRUUnderCap(t *testing.T) {
 	require.False(t, ok)
 }
 
+func TestCollectReportsWhatItMeasured(t *testing.T) {
+	t.Parallel()
+	s := openStore(t, t.TempDir(), nil)
+	use(t, s, Identity{Key: "written"}, true, "f", mib)
+	use(t, s, Identity{Key: "read"}, false, "", 0)
+	report, err := s.Collect(t.Context(), Policy{})
+	require.NoError(t, err)
+	require.Equal(t, 2, report.Measured, "volumes never measured are walked")
+
+	use(t, s, Identity{Key: "written"}, true, "g", mib)
+	use(t, s, Identity{Key: "read"}, false, "", 0)
+	report, err = s.Collect(t.Context(), Policy{})
+	require.NoError(t, err)
+	require.Empty(t, report.Removed)
+	require.Equal(t, 1, report.Measured, "only the volume written since its last measurement is walked")
+	require.GreaterOrEqual(t, report.MeasuredBytes, int64(2*mib))
+	require.GreaterOrEqual(t, report.MeasuredFiles, int64(3), "its root and both files")
+	require.Positive(t, report.MeasureTime)
+	require.GreaterOrEqual(t, report.UsedBytes, int64(2*mib))
+
+	report, err = s.Collect(t.Context(), Policy{})
+	require.NoError(t, err)
+	require.Zero(t, report.Measured, "a measured volume keeps its size until it is written again")
+	require.Zero(t, report.MeasuredBytes)
+}
+
+func TestCollectFreesSpaceBelowTheReserve(t *testing.T) {
+	clock := newFakeClock()
+	s := openStore(t, t.TempDir(), clock)
+	for _, key := range []string{"old", "mid", "new"} {
+		use(t, s, Identity{Key: key}, true, "f", mib)
+		clock.Advance(time.Minute)
+	}
+
+	// The filesystem is 2 MiB short of its free-space minimum, and the
+	// reserve covers every volume: free space wins over the reserve.
+	report, err := s.Collect(t.Context(), Policy{
+		ReservedSpace:    10 * mib,
+		MinFreeSpace:     4 * mib,
+		CurrentFreeSpace: 2 * mib,
+	})
+	require.NoError(t, err)
+	require.Len(t, report.Removed, 2)
+	require.Equal(t, "old", report.Removed[0].Identity.Key)
+	require.Equal(t, "mid", report.Removed[1].Identity.Key)
+	require.NoError(t, s.WaitRemovals(t.Context()))
+
+	entries, _, err := s.Usage(t.Context())
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	require.Equal(t, "new", entries[0].Identity.Key)
+}
+
 func TestCollectSkipsPinned(t *testing.T) {
 	clock := newFakeClock()
 	s := openStore(t, t.TempDir(), clock)
@@ -405,9 +504,9 @@ func TestPolicyTargetBytes(t *testing.T) {
 		{name: "over the maximum", policy: Policy{MaxUsedSpace: 100}, used: 130, want: 30},
 		{name: "over the maximum, down to the reserve at most", policy: Policy{MaxUsedSpace: 100, ReservedSpace: 110}, used: 130, want: 20},
 		{name: "free space low", policy: Policy{MinFreeSpace: 50, CurrentFreeSpace: 20}, used: 80, want: 30},
-		{name: "free space low, down to the reserve at most", policy: Policy{MinFreeSpace: 50, CurrentFreeSpace: 20, ReservedSpace: 60}, used: 80, want: 20},
+		{name: "free space low, past the reserve", policy: Policy{MinFreeSpace: 50, CurrentFreeSpace: 20, ReservedSpace: 60}, used: 80, want: 30},
 		{name: "both, the larger wins", policy: Policy{MaxUsedSpace: 100, MinFreeSpace: 50, CurrentFreeSpace: 10}, used: 110, want: 40},
-		{name: "used below the reserve", policy: Policy{MinFreeSpace: 50, CurrentFreeSpace: 20, ReservedSpace: 100}, used: 80, want: 0},
+		{name: "free space low, used below the reserve", policy: Policy{MinFreeSpace: 50, CurrentFreeSpace: 20, ReservedSpace: 100}, used: 80, want: 30},
 		{name: "all", policy: Policy{All: true}, used: 1, want: math.MaxInt64},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -743,4 +842,180 @@ func TestUnmeasurableFailedRemovalCountsInFull(t *testing.T) {
 	_, used, err := s.Usage(t.Context())
 	require.NoError(t, err)
 	require.GreaterOrEqual(t, used, int64(2*mib), "the removed volume still counts in full")
+}
+
+// blocksOf is the disk space path takes, as stat reports it.
+func blocksOf(t *testing.T, path string) int64 {
+	t.Helper()
+	var st syscall.Stat_t
+	require.NoError(t, syscall.Lstat(path, &st))
+	return st.Blocks * 512
+}
+
+func TestTreeWalkCountsEachInodeOnce(t *testing.T) {
+	t.Parallel()
+	root := filepath.Join(t.TempDir(), "fs")
+	var want, entries int64
+	add := func(path string) {
+		want += blocksOf(t, path)
+		entries++
+	}
+	require.NoError(t, os.Mkdir(root, 0o755))
+	add(root)
+	// Wide, as a Go build cache is, and deep.
+	for i := range 64 {
+		sub := filepath.Join(root, fmt.Sprintf("%02x", i))
+		require.NoError(t, os.Mkdir(sub, 0o755))
+		add(sub)
+		for j := range 8 {
+			f := filepath.Join(sub, fmt.Sprintf("f%d", j))
+			writeFile(t, f, 4096*(j+1))
+			add(f)
+		}
+	}
+	deep := root
+	for i := range 12 {
+		deep = filepath.Join(deep, fmt.Sprintf("d%d", i))
+		require.NoError(t, os.Mkdir(deep, 0o755))
+		add(deep)
+	}
+	writeFile(t, filepath.Join(deep, "leaf"), mib)
+	add(filepath.Join(deep, "leaf"))
+	// Hard links in other subdirectories are entries, but take no more space.
+	for i := range 16 {
+		link := filepath.Join(root, fmt.Sprintf("%02x", 63-i), "link")
+		require.NoError(t, os.Link(filepath.Join(deep, "leaf"), link))
+		entries++
+	}
+	require.NoError(t, os.Symlink("leaf", filepath.Join(deep, "symlink")))
+	add(filepath.Join(deep, "symlink"))
+
+	size, files, err := treeWalk(t.Context(), root)
+	require.NoError(t, err)
+	require.Equal(t, want, size)
+	require.Equal(t, entries, files)
+
+	size, err = treeSize(t.Context(), root)
+	require.NoError(t, err)
+	require.Equal(t, want, size)
+}
+
+func TestTreeWalkOfAMissingTreeIsEmpty(t *testing.T) {
+	t.Parallel()
+	size, files, err := treeWalk(t.Context(), filepath.Join(t.TempDir(), "missing"))
+	require.NoError(t, err)
+	require.Zero(t, size)
+	require.Zero(t, files)
+}
+
+func TestTreeWalkStopsWhenCancelled(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	for i := range 32 {
+		sub := filepath.Join(root, fmt.Sprintf("%02x", i))
+		require.NoError(t, os.Mkdir(sub, 0o755))
+		writeFile(t, filepath.Join(sub, "f"), 1)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	_, _, err := treeWalk(ctx, root)
+	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestTreeWalkCountsAnInodeOnceWhenItsLinksChange(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	a, b := filepath.Join(dir, "a"), filepath.Join(dir, "b")
+	writeFile(t, a, mib)
+	require.NoError(t, os.Link(a, b))
+
+	// The walk reaches a while both names exist, a writer removes a, and
+	// then the walk reaches b, which now has a single link.
+	w := newTreeWalker()
+	infoA, err := os.Lstat(a)
+	require.NoError(t, err)
+	w.count(infoA)
+	require.NoError(t, os.Remove(a))
+	infoB, err := os.Lstat(b)
+	require.NoError(t, err)
+	w.count(infoB)
+
+	require.Equal(t, blocksOf(t, b), w.size.Load(), "one inode's space, counted once")
+	require.Equal(t, int64(2), w.files.Load())
+}
+
+func TestFailedDeletionIsReported(t *testing.T) {
+	t.Parallel()
+	failed := make(chan error, 1)
+	s, err := Open(t.TempDir(), Options{
+		EngineVersion:   "test",
+		RemoveAll:       func(string) error { return errors.New("disk on fire") },
+		OnDeletionError: func(err error) { failed <- err },
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = s.Close() })
+	use(t, s, Identity{Key: "k"}, true, "f", mib)
+	report, err := s.Collect(t.Context(), Policy{All: true})
+	require.NoError(t, err)
+	require.Len(t, report.Removed, 1)
+
+	select {
+	case err := <-failed:
+		require.ErrorContains(t, err, "disk on fire")
+	case <-time.After(10 * time.Second):
+		t.Fatal("a failed deletion wasn't reported")
+	}
+}
+
+func TestOpenReportsLeftoverDeletion(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	gone := filepath.Join(dir, "v1", "trash", "half-gone", "volume")
+	require.NoError(t, os.MkdirAll(filepath.Join(gone, "fs"), 0o755))
+	writeFile(t, filepath.Join(gone, "fs", "f"), 2*mib)
+	size := int64(2 * mib)
+	dt, err := json.Marshal(meta{Format: FormatVersion, ID: "half-gone", SizeBytes: &size})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(gone, "meta.json"), dt, 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "v1", "tmp", "half-made", "fs"), 0o755))
+
+	type found struct {
+		count      int
+		recorded   int64
+		unmeasured int
+	}
+	var leftovers []found
+	deleted := make(chan int, 1)
+	s, err := Open(dir, Options{
+		EngineVersion: "test",
+		OnLeftovers: func(count int, recorded int64, unmeasured int) {
+			leftovers = append(leftovers, found{count, recorded, unmeasured})
+		},
+		OnLeftoversDeleted: func(count int, took time.Duration) {
+			assert.Positive(t, took)
+			deleted <- count
+		},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = s.Close() })
+	require.Equal(t, []found{{2, 2 * mib, 1}}, leftovers, "Open reports what it found before it returns")
+	select {
+	case count := <-deleted:
+		require.Equal(t, 2, count)
+	case <-time.After(10 * time.Second):
+		t.Fatal("the end of the leftovers' deletion wasn't reported")
+	}
+
+	// A directory with nothing left over reports nothing.
+	require.NoError(t, s.Close())
+	reported := false
+	again, err := Open(dir, Options{
+		EngineVersion:      "test",
+		OnLeftovers:        func(int, int64, int) { reported = true },
+		OnLeftoversDeleted: func(int, time.Duration) { reported = true },
+	})
+	require.NoError(t, err)
+	require.NoError(t, again.WaitRemovals(t.Context()))
+	require.NoError(t, again.Close())
+	require.False(t, reported)
 }

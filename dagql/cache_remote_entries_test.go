@@ -3,14 +3,13 @@ package dagql
 import (
 	"context"
 	"fmt"
+	"maps"
 	"math/rand/v2"
-	"runtime"
+	"path/filepath"
 	"slices"
 	"strconv"
-	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
@@ -60,34 +59,40 @@ func (a *cloudApplier) call(row callRow) {
 	require.NoError(a.t, err)
 	a.candidates = append(a.candidates, change.Candidates...)
 	if row.session != "" && !a.ended[row.session] {
-		require.NoError(a.t, a.cloud.AddRemoteHold(ctx, row.key, row.session))
+		require.NoError(a.t, errOf(a.cloud.AddRemoteHold(ctx, row.key, row.session)))
 	}
 	if row.retained != nil {
-		candidates, err := a.cloud.ObserveRemoteRetention(ctx, row.key, *row.retained)
+		change, err := a.cloud.ObserveRemoteRetention(ctx, row.key, *row.retained)
 		require.NoError(a.t, err)
-		a.candidates = append(a.candidates, candidates...)
+		a.candidates = append(a.candidates, change.Candidates...)
 	}
 }
 
 func (a *cloudApplier) observe(key HolderKey, obs RetentionObservation) {
 	a.t.Helper()
-	candidates, err := a.cloud.ObserveRemoteRetention(a.t.Context(), key, obs)
+	change, err := a.cloud.ObserveRemoteRetention(a.t.Context(), key, obs)
 	require.NoError(a.t, err)
-	a.candidates = append(a.candidates, candidates...)
+	a.candidates = append(a.candidates, change.Candidates...)
 }
 
 func (a *cloudApplier) endSession(cache CacheID, session string) {
 	a.ended[session] = true
-	a.candidates = append(a.candidates, a.cloud.ReleaseRemoteSession(a.t.Context(), cache, session)...)
+	a.candidates = append(a.candidates, a.cloud.ReleaseRemoteSession(a.t.Context(), cache, session).Candidates...)
 }
 
 // collect ends the batch: one collection pass over its candidates.
 func (a *cloudApplier) collect() []HolderKey {
 	a.t.Helper()
-	collected, err := a.cloud.CollectRemoteHoldings(a.t.Context(), a.candidates)
+	collected, _, err := a.cloud.CollectRemoteHoldings(a.t.Context(), a.candidates, nil)
 	require.NoError(a.t, err)
 	a.candidates = nil
 	return collected
+}
+
+// errOf returns the error of a call that also returns a value, for
+// require.NoError.
+func errOf[T any](_ T, err error) error {
+	return err
 }
 
 func holdingOf(field string, deps ...uint64) RemoteHolding {
@@ -133,7 +138,7 @@ func cloudIndexes(cloud *Cache) ([]HolderKey, []digest.Digest) {
 	cloud.egraphMu.RLock()
 	defer cloud.egraphMu.RUnlock()
 	var keys []HolderKey
-	for key := range cloud.holderEntries {
+	for key := range cloud.holderEntriesForTest() {
 		keys = append(keys, key)
 	}
 	slices.SortFunc(keys, compareHolderKeys)
@@ -146,8 +151,8 @@ func cloudIndexes(cloud *Cache) ([]HolderKey, []digest.Digest) {
 }
 
 // A holding attaches to the entry of its stored recipe. A request digest that
-// differs is taught as an equivalence; it keys the entry only when no entry
-// has it yet.
+// differs is taught as an equivalence only: as in an engine's cache, the
+// recipe index names an entry by its own recipe alone.
 func TestRemoteHoldingAttachesByStoredRecipe(t *testing.T) {
 	t.Parallel()
 	cloud := newCloudCache(t)
@@ -173,25 +178,26 @@ func TestRemoteHoldingAttachesByStoredRecipe(t *testing.T) {
 
 	info, ok := cloud.RemoteEntryInfo(HolderKey{engineA, 7})
 	require.True(t, ok)
-	require.ElementsMatch(t, []digest.Digest{testDigest("from-request"), testDigest("from-stored")}, info.Recipes, "the request digest keys the entry: no entry had it")
+	require.Equal(t, []digest.Digest{testDigest("from-stored")}, info.Recipes, "the request digest doesn't key the entry")
 	require.Len(t, info.Holdings, 2)
 	require.Equal(t, HolderKey{engineA, 7}, info.Holdings[0].Key)
 	require.Equal(t, HolderKey{engineB, 3}, info.Holdings[1].Key)
 	require.Equal(t, testDigest("from-content"), info.Holdings[0].ContentDigest)
 	for _, dig := range []digest.Digest{testDigest("from-stored"), testDigest("from-request"), testDigest("from-content")} {
 		require.Contains(t, info.ClassDigests, dig.String(), "one class")
-		require.Equal(t, []HolderKey{{engineA, 7}, {engineB, 3}}, cloud.EquivalentHolders(dig.String()))
+		require.Equal(t, []HolderKey{{engineA, 7}, {engineB, 3}}, cloud.equivalentHoldersForTest(dig.String()))
 	}
 	require.Equal(t, []RemoteTerm{{Self: testDigest("from-self"), Inputs: []digest.Digest{testDigest("address")}}}, info.Terms)
 
-	// A request digest another entry already has stays an equivalence only.
+	// Another stored recipe asked by the same request digest is another
+	// entry, equivalent through it.
 	a.call(callRow{key: HolderKey{engineA, 8}, session: "s1", holding: RemoteHolding{Recipe: testDigest("other-stored"), Request: testDigest("from-request"), Field: "from", TypeName: "Container"}})
 	require.Empty(t, a.collect())
 	other, ok := cloud.RemoteEntryInfo(HolderKey{engineA, 8})
 	require.True(t, ok)
 	require.Equal(t, []digest.Digest{testDigest("other-stored")}, other.Recipes)
 	require.Len(t, other.Holdings, 1, "a separate entry: its stored recipe differs")
-	require.Equal(t, []HolderKey{{engineA, 7}, {engineA, 8}, {engineB, 3}}, cloud.EquivalentHolders(testDigest("other-stored").String()), "taught equivalent through the request digest")
+	require.Equal(t, []HolderKey{{engineA, 7}, {engineA, 8}, {engineB, 3}}, cloud.equivalentHoldersForTest(testDigest("other-stored").String()), "taught equivalent through the request digest")
 }
 
 // Two holdings of one cache on one entry keep their own holds, retention,
@@ -248,7 +254,7 @@ func TestRemoteHoldingsShareAnEntry(t *testing.T) {
 			keys, recipes := cloudIndexes(cloud)
 			require.Equal(t, []HolderKey{dep, first}, keys)
 			require.Contains(t, recipes, testDigest("host"), "the other holding keeps the recipe")
-			require.Equal(t, []HolderKey{first}, cloud.EquivalentHolders(testDigest("host").String()))
+			require.Equal(t, []HolderKey{first}, cloud.equivalentHoldersForTest(testDigest("host").String()))
 
 			a.endSession(engine, "s1")
 			a.observe(first, droppedAt(1, 30))
@@ -327,7 +333,7 @@ func testRemoteHoldingDependenciesCascade(t *testing.T, terms bool) {
 	cloud.egraphMu.RUnlock()
 	require.True(t, stays, "the leaf's entry has another owner")
 	require.True(t, recipeStays, "and keeps its recipe")
-	require.Equal(t, []HolderKey(nil), cloud.EquivalentHolders(testDigest("leaf").String()), "with no holding left")
+	require.Equal(t, []HolderKey(nil), cloud.equivalentHoldersForTest(testDigest("leaf").String()), "with no holding left")
 
 	cloud.egraphMu.Lock()
 	queue, err := cloud.decrementIncomingOwnershipLocked(t.Context(), leafEntry, nil)
@@ -343,9 +349,9 @@ func testRemoteHoldingDependenciesCascade(t *testing.T, terms bool) {
 // An entry that another unit owns outlives its last holding, with or without
 // terms, while other entries leave around it. It keeps its entry dependency,
 // its recipe keys, its postings and its class membership. The collection that
-// takes those holdings leaves more dead classes than live ones and compacts
-// them: the entry keeps all of that through the renumbering, and a holding
-// that stays keeps its number, recipes, postings, classes and terms. When the
+// takes those holdings frees the classes it ends: the entry keeps all of
+// that, and a holding that stays keeps its number, recipes, postings,
+// classes and terms. When the
 // unit goes, the entry and its entry dependency go, and only then, with no
 // entry left, does the e-graph reset.
 func TestRemoteEntryOutlivesItsHoldings(t *testing.T) {
@@ -354,7 +360,6 @@ func TestRemoteEntryOutlivesItsHoldings(t *testing.T) {
 		t.Run("terms="+strconv.FormatBool(terms), func(t *testing.T) {
 			t.Parallel()
 			cloud := newCloudCache(t)
-			advance := testEqClassClock(cloud)
 			a := newCloudApplier(t, cloud)
 			key, scratch, dep := HolderKey{"cache-a", 1}, HolderKey{"cache-a", 2}, HolderKey{"cache-a", 3}
 			kept := holdingOf("kept")
@@ -395,8 +400,7 @@ func TestRemoteEntryOutlivesItsHoldings(t *testing.T) {
 			cloud.egraphMu.Unlock()
 			require.NoError(t, err)
 
-			// Churn from a third engine cache leaves with them: more dead
-			// classes than live ones.
+			// Churn from a third engine cache leaves with them.
 			var churn []HolderKey
 			for i := range 40 {
 				k := HolderKey{"cache-c", uint64(i + 1)}
@@ -412,37 +416,34 @@ func TestRemoteEntryOutlivesItsHoldings(t *testing.T) {
 			stayed, ok := cloud.RemoteEntryInfo(stays)
 			require.True(t, ok)
 			cloud.egraphMu.Lock()
-			slotsBefore, checksBefore := cloud.eqClassSlotsLocked(), cloud.eqClassChecks
+			slotsBefore := cloud.eqClassSlotsLocked()
 			cloud.egraphMu.Unlock()
 
 			// Every holding leaves, and the scratch entry with its holding, in
-			// one pass that compacts the classes, an interval after the last
-			// check.
-			advance(eqClassCheckInterval)
+			// one pass that frees the classes it ends.
 			a.endSession("cache-a", "s")
 			require.Equal(t, append([]HolderKey{key, scratch, dep}, churn...), a.collect())
 			cloud.egraphMu.Lock()
-			slotsAfter, checksAfter, liveClasses := cloud.eqClassSlotsLocked(), cloud.eqClassChecks, testLiveEqClassesLocked(cloud)
+			slotsAfter, liveClasses := cloud.eqClassSlotsLocked(), testLiveEqClassesLocked(cloud)
 			cloud.egraphMu.Unlock()
-			require.Equal(t, checksBefore+1, checksAfter, "the collection checked the classes")
-			require.Less(t, slotsAfter, slotsBefore, "and compacted them")
-			require.Equal(t, liveClasses, slotsAfter, "to the live classes")
+			require.Less(t, slotsAfter, slotsBefore, "the collection freed the classes it ended")
+			require.Equal(t, liveClasses, slotsAfter, "every slot left is a live class")
 			after, ok := cloud.RemoteEntryInfo(stays)
 			require.True(t, ok, "the holding that stays resolves by its number")
 			require.Equal(t, stayed, after, "with its recipes, postings, classes and terms")
 			cloud.egraphMu.RLock()
 			stayEntry, _ := cloud.holdingLocked(stays)
-			stayKeyed := cloud.entriesByRecipe[live.Recipe] == stayEntry.id && cloud.entriesByRecipe[live.Request] == stayEntry.id
-			_, stayClassed := cloud.outputEqClassResults[cloud.eqClassRootLocked(cloud.egraphDigestToClass[live.ContentDigest.String()])][stayEntry.id]
+			stayKeyed := cloud.entriesByRecipe[live.Recipe] == stayEntry.id
+			stayClassed := cloud.outputEqClassResults.Contains(cloud.eqClassRootLocked(cloud.egraphDigestToClass[live.ContentDigest.String()]), stayEntry.id)
 			cloud.egraphMu.RUnlock()
-			require.True(t, stayKeyed, "by its recipe and alias")
+			require.True(t, stayKeyed, "by its recipe")
 			require.True(t, stayClassed, "and by its content")
-			require.Equal(t, []HolderKey{stays}, cloud.EquivalentHolders(live.ContentDigest.String()))
+			require.Equal(t, []HolderKey{stays}, cloud.equivalentHoldersForTest(live.ContentDigest.String()))
 
 			cloud.egraphMu.RLock()
 			sameEntry := cloud.resultsByID[entry.id] == entry
 			sameDep := cloud.resultsByID[depEntry.id] == depEntry
-			_, depEdge := entry.deps[depEntry.id]
+			depEdge := entry.deps.has(depEntry.id)
 			owners, depOwners := entry.incomingOwnershipCount.Load(), depEntry.incomingOwnershipCount.Load()
 			postings := slices.Clone(cloud.resultIndexedDigests[entry.id])
 			keyed := map[digest.Digest]bool{}
@@ -450,10 +451,10 @@ func TestRemoteEntryOutlivesItsHoldings(t *testing.T) {
 			for _, dig := range []digest.Digest{kept.Recipe, kept.Request, kept.ContentDigest} {
 				keyed[dig] = cloud.entriesByRecipe[dig] == entry.id
 				class := cloud.eqClassRootLocked(cloud.egraphDigestToClass[dig.String()])
-				_, classed[dig] = cloud.outputEqClassResults[class][entry.id]
+				classed[dig] = cloud.outputEqClassResults.Contains(class, entry.id)
 			}
-			holdings := len(entry.holders)
-			for k := range cloud.holderEntries {
+			holdings := len(entry.holderRefsLocked())
+			for k := range cloud.holderEntriesForTest() {
 				if k.Cache == key.Cache {
 					holdings++
 				}
@@ -473,8 +474,8 @@ func TestRemoteEntryOutlivesItsHoldings(t *testing.T) {
 				require.True(t, classed[dig], "the entry stays in the class of %s", dig)
 			}
 			require.True(t, keyed[kept.Recipe])
-			require.True(t, keyed[kept.Request])
-			require.Empty(t, cloud.EquivalentHolders(kept.Recipe.String()), "with no holding left")
+			require.False(t, keyed[kept.Request], "a request digest is no recipe key")
+			require.Empty(t, cloud.equivalentHoldersForTest(kept.Recipe.String()), "with no holding left")
 
 			a.endSession("cache-b", "stays")
 			require.Equal(t, []HolderKey{stays}, a.collect())
@@ -622,7 +623,7 @@ func TestRemoteRetentionEveryArrivalOrder(t *testing.T) {
 		_, err := cloud.AttachRemoteHolding(ctx, key, holdingOf("retention"))
 		require.NoError(t, err)
 		// The session hold keeps the holding while the observations apply.
-		require.NoError(t, cloud.AddRemoteHold(ctx, key, session))
+		require.NoError(t, errOf(cloud.AddRemoteHold(ctx, key, session)))
 		for _, obs := range order {
 			_, err := cloud.ObserveRemoteRetention(ctx, key, obs)
 			require.NoError(t, err)
@@ -632,9 +633,9 @@ func TestRemoteRetentionEveryArrivalOrder(t *testing.T) {
 		require.Equal(t, wantExpires, got.RetentionExpiresAtUnix, "order %v", order)
 		orders++
 		// A drop of a later generation, then the session's end, collect it.
-		candidates, err := cloud.ObserveRemoteRetention(ctx, key, droppedAt(100, 0))
+		change, err := cloud.ObserveRemoteRetention(ctx, key, droppedAt(100, 0))
 		require.NoError(t, err)
-		collected, err := cloud.CollectRemoteHoldings(ctx, append(candidates, cloud.ReleaseRemoteSession(ctx, engine, session)...))
+		collected, _, err := cloud.CollectRemoteHoldings(ctx, append(change.Candidates, cloud.ReleaseRemoteSession(ctx, engine, session).Candidates...), nil)
 		require.NoError(t, err)
 		require.Equal(t, []HolderKey{key}, collected)
 	}
@@ -679,7 +680,7 @@ func TestRemoteRetentionTies(t *testing.T) {
 			key := HolderKey{"cache-a", uint64(i + 1)}
 			_, err := cloud.AttachRemoteHolding(ctx, key, holdingOf("tie"))
 			require.NoError(t, err)
-			require.NoError(t, cloud.AddRemoteHold(ctx, key, "s"))
+			require.NoError(t, errOf(cloud.AddRemoteHold(ctx, key, "s")))
 			for _, obs := range order {
 				_, err := cloud.ObserveRemoteRetention(ctx, key, obs)
 				require.NoError(t, err)
@@ -687,7 +688,7 @@ func TestRemoteRetentionTies(t *testing.T) {
 			got := requireHolding(t, cloud, key)
 			require.Equal(t, tc.wantRetained, got.Retained, "case %d order %v", i, order)
 			require.Equal(t, tc.wantExpires, got.RetentionExpiresAtUnix, "case %d order %v", i, order)
-			collected, err := cloud.CollectRemoteHoldings(ctx, append(cloud.ReleaseRemoteCache(ctx, "cache-a"), key))
+			collected, _, err := cloud.CollectRemoteHoldings(ctx, append(cloud.ReleaseRemoteCache(ctx, "cache-a").Candidates, key), nil)
 			require.NoError(t, err)
 			require.Equal(t, []HolderKey{key}, collected)
 		}
@@ -711,6 +712,129 @@ func TestRemoteSessionEndCollects(t *testing.T) {
 	require.Equal(t, []HolderKey{scratch}, a.collect())
 	require.Empty(t, requireHolding(t, cloud, root).Sessions)
 	require.Equal(t, 1, requireHolding(t, cloud, dir).Dependents, "the retained root owns the directory")
+}
+
+// A collection asks the caller of each holding it would remove whether
+// something the caller keeps owns it: one that is stays, whether a
+// candidate or a dependency the collection of another holding reaches.
+func TestCollectionAsksBeforeRemovingAHolding(t *testing.T) {
+	t.Parallel()
+	cloud := newCloudCache(t)
+	a := newCloudApplier(t, cloud)
+	engine := CacheID("cache-a")
+	dep, result := HolderKey{engine, 1}, HolderKey{engine, 2}
+	a.call(callRow{key: dep, session: "s", holding: holdingOf("dep")})
+	a.call(callRow{key: result, session: "s", holding: holdingOf("result", dep.Number)})
+	a.endSession(engine, "s")
+	owned := func(key HolderKey) bool { return key == dep }
+
+	collected, _, err := cloud.CollectRemoteHoldings(t.Context(), []HolderKey{result}, owned)
+	require.NoError(t, err)
+	require.Equal(t, []HolderKey{result}, collected, "not the dependency the caller owns")
+	require.Zero(t, requireHolding(t, cloud, dep).Dependents)
+	collected, _, err = cloud.CollectRemoteHoldings(t.Context(), []HolderKey{dep}, owned)
+	require.NoError(t, err)
+	require.Empty(t, collected, "nor as a candidate")
+	collected, _, err = cloud.CollectRemoteHoldings(t.Context(), []HolderKey{dep}, nil)
+	require.NoError(t, err)
+	require.Equal(t, []HolderKey{dep}, collected, "once nothing owns it")
+}
+
+// A number no holding of the cache has is owned by the holdings that name it
+// among their dependencies, which the cache counts (RemoteDependents). The
+// write that takes the last of them, a collection or a newer value's
+// dependencies, hands the number back (UnheldCandidates), for what the
+// caller keeps of it beside the holdings. One still named, or one that gains
+// a holding of its own, isn't handed back.
+func TestTheLastHoldingNamingAnUnheldNumber(t *testing.T) {
+	t.Parallel()
+	cloud := newCloudCache(t)
+	a := newCloudApplier(t, cloud)
+	engine := CacheID("cache-a")
+	first, second := HolderKey{engine, 10}, HolderKey{engine, 11}
+	shared, own := HolderKey{engine, 7}, HolderKey{engine, 8}
+	a.call(callRow{key: first, session: "s1", holding: holdingOf("first", shared.Number)})
+	a.call(callRow{key: second, session: "s2", holding: holdingOf("second", shared.Number, own.Number)})
+	require.Empty(t, a.collect())
+	require.Equal(t, 2, cloud.RemoteDependents(shared))
+	require.Equal(t, 1, cloud.RemoteDependents(own))
+
+	collectOf := func(session string) ([]HolderKey, RemoteChange) {
+		t.Helper()
+		a.endSession(engine, session)
+		collected, change, err := cloud.CollectRemoteHoldings(t.Context(), a.candidates, nil)
+		require.NoError(t, err)
+		a.candidates = nil
+		return collected, change
+	}
+	collected, change := collectOf("s1")
+	require.Equal(t, []HolderKey{first}, collected)
+	require.Empty(t, change.UnheldCandidates, "the second holding still names the shared number")
+	require.Equal(t, 1, cloud.RemoteDependents(shared))
+
+	collected, change = collectOf("s2")
+	require.Equal(t, []HolderKey{second}, collected)
+	require.Equal(t, []HolderKey{shared, own}, change.UnheldCandidates)
+	require.Zero(t, cloud.RemoteDependents(shared))
+	require.Zero(t, cloud.RemoteDependents(own))
+
+	// A newer value with other dependencies takes the old ones'.
+	third, old, next := HolderKey{engine, 12}, HolderKey{engine, 9}, HolderKey{engine, 13}
+	a.call(callRow{key: third, session: "s3", holding: holdingOf("third", old.Number)})
+	change, found, err := cloud.ApplyHeldValueState(t.Context(), third, HeldValueState{Replacements: 1, Deps: []uint64{next.Number}})
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, []HolderKey{old}, change.UnheldCandidates)
+	require.Zero(t, cloud.RemoteDependents(old))
+	require.Equal(t, 1, cloud.RemoteDependents(next))
+
+	// A number that gains a holding is owned through that holding's
+	// dependents, and its parent's collection collects it as a dependency.
+	a.call(callRow{key: next, session: "s3", holding: holdingOf("next")})
+	require.Equal(t, 1, cloud.RemoteDependents(next))
+	w := cloud.HoldRemoteWrites()
+	require.Equal(t, 1, w.RemoteDependents(next), "the same in a hold")
+	require.NoError(t, w.Release(t.Context()))
+	collected, change = collectOf("s3")
+	require.Equal(t, []HolderKey{third, next}, sortedKeys2(collected))
+	require.Empty(t, change.UnheldCandidates)
+}
+
+// A write of several parts, as a merged reply's targets are, hands back only
+// the numbers it leaves with no holding and no holding naming them
+// (UnheldCandidates): not one a later part gave a holding of its own, nor one
+// a later part named again, after an earlier part replaced the dependencies
+// of its last naming holding.
+func TestAWriteHandsBackOnlyTheNumbersItLeavesUnheld(t *testing.T) {
+	t.Parallel()
+	cloud := newCloudCache(t)
+	a := newCloudApplier(t, cloud)
+	engine := CacheID("cache-a")
+	first, second := HolderKey{engine, 10}, HolderKey{engine, 11}
+	held, named, gone := HolderKey{engine, 7}, HolderKey{engine, 8}, HolderKey{engine, 9}
+	a.call(callRow{key: first, session: "s", holding: holdingOf("first", held.Number, gone.Number)})
+	a.call(callRow{key: second, session: "s", holding: holdingOf("second", named.Number)})
+	require.Empty(t, a.collect())
+
+	ctx := t.Context()
+	cloud.egraphMu.Lock()
+	state := cloud.remoteCacheLocked(engine)
+	replace := func(key HolderKey) {
+		entry, h := cloud.holdingLocked(key)
+		require.NotNil(t, h)
+		cloud.applyHeldValueStateLocked(ctx, state, key, entry, h, HeldValueState{Replacements: 1}, nil, nil)
+	}
+	replace(first)
+	replace(second)
+	// Later parts of the same write, before it hands its change back: 7
+	// gains a holding, and a holding names 8 again.
+	cloud.newHoldingLocked(ctx, state, held, holdingOf("seven"))
+	_, h := cloud.holdingLocked(first)
+	cloud.addHoldingDepsLocked(state, first, h, []uint64{named.Number})
+	var change RemoteChange
+	cloud.takeChangesLocked(&change)
+	cloud.egraphMu.Unlock()
+	require.Equal(t, []HolderKey{gone}, change.UnheldCandidates, "only 9 is left with no holding naming it")
 }
 
 // A late call row of an ended session creates its holding with no hold; the
@@ -796,7 +920,7 @@ func TestRemoteLazyUpdateBeforeHolding(t *testing.T) {
 	h := requireHolding(t, cloud, key)
 	require.Equal(t, []PersistedPartAddress{{Part: "fs"}}, h.Parts)
 	require.Equal(t, testDigest("content"), h.ContentDigest)
-	require.Equal(t, []HolderKey{key}, cloud.EquivalentHolders(testDigest("content").String()))
+	require.Equal(t, []HolderKey{key}, cloud.equivalentHoldersForTest(testDigest("content").String()))
 
 	// A lazy row after the holding adds to it.
 	_, found, err = cloud.UpdateRemoteHolding(t.Context(), key, RemoteHoldingUpdate{Parts: []PersistedPartAddress{{OutputPath: PersistedRefPath{}.Field("rootfs"), Part: "snapshot"}}, Deps: []uint64{4}})
@@ -821,7 +945,7 @@ func TestRemoteCleanStopThenNextGenerationPrune(t *testing.T) {
 	a.call(callRow{key: scratch, session: "s2", holding: holdingOf("scratch")})
 	require.Empty(t, a.collect())
 
-	a.candidates = append(a.candidates, cloud.EndRemoteProcess(t.Context(), engine, []string{"s1", "s2"})...)
+	a.candidates = append(a.candidates, cloud.EndRemoteProcess(t.Context(), engine, []string{"s1", "s2"}).Candidates...)
 	require.Equal(t, []HolderKey{scratch}, a.collect())
 	keys, _ := cloudIndexes(cloud)
 	require.Equal(t, []HolderKey{dep, root}, keys, "what the engine saved, under the same keys")
@@ -846,7 +970,7 @@ func TestRemoteReleaseCache(t *testing.T) {
 	a.call(callRow{key: HolderKey{engineB, 1}, session: "b", holding: holdingOf("root"), retained: retainedAt(1, 1, 0)})
 	require.Empty(t, a.collect())
 
-	a.candidates = append(a.candidates, cloud.ReleaseRemoteCache(t.Context(), engineA)...)
+	a.candidates = append(a.candidates, cloud.ReleaseRemoteCache(t.Context(), engineA).Candidates...)
 	require.Equal(t, []HolderKey{{engineA, 1}, {engineA, 2}}, sortedKeys2(a.collect()))
 	keys, recipes := cloudIndexes(cloud)
 	require.Equal(t, []HolderKey{{engineB, 1}}, keys)
@@ -899,9 +1023,9 @@ func TestRemoteEntryHasNoValue(t *testing.T) {
 	require.NoError(t, err)
 	_, err = cloud.AttachRemoteHolding(ctx, HolderKey{"cache-a", 1}, RemoteHolding{Recipe: recipe, Request: recipe, Field: "leaf", TypeName: "Int"})
 	require.NoError(t, err)
-	require.NoError(t, cloud.AddRemoteHold(ctx, HolderKey{"cache-a", 1}, "s"))
+	require.NoError(t, errOf(cloud.AddRemoteHold(ctx, HolderKey{"cache-a", 1}, "s")))
 	cloud.egraphMu.RLock()
-	id := uint64(cloud.holderEntries[HolderKey{"cache-a", 1}])
+	id := uint64(cloud.holderEntriesForTest()[HolderKey{"cache-a", 1}])
 	cloud.egraphMu.RUnlock()
 	require.NotZero(t, id)
 
@@ -940,11 +1064,11 @@ func TestRemoteHoldingsRelateThroughTerms(t *testing.T) {
 	}
 	a.call(callRow{key: HolderKey{engineA, 1}, session: "a", holding: f("x")})
 	a.call(callRow{key: HolderKey{engineA, 2}, session: "a", holding: f("y")})
-	require.Equal(t, []HolderKey{{engineA, 1}}, cloud.EquivalentHolders(testDigest("f-x").String()))
+	require.Equal(t, []HolderKey{{engineA, 1}}, cloud.equivalentHoldersForTest(testDigest("f-x").String()))
 
 	a.call(callRow{key: HolderKey{engineB, 1}, session: "b", holding: RemoteHolding{Recipe: testDigest("x"), Request: testDigest("y"), Field: "x"}})
 	require.Empty(t, a.collect())
-	require.Equal(t, []HolderKey{{engineA, 1}, {engineA, 2}}, cloud.EquivalentHolders(testDigest("f-x").String()), "f(x) and f(y) are one class")
+	require.Equal(t, []HolderKey{{engineA, 1}, {engineA, 2}}, cloud.equivalentHoldersForTest(testDigest("f-x").String()), "f(x) and f(y) are one class")
 }
 
 // Readers run concurrently with each other and with writers. Run with -race.
@@ -959,14 +1083,14 @@ func TestRemoteHoldingsConcurrentReads(t *testing.T) {
 		desc := RemoteHolding{Recipe: testDigest("merge-" + strconv.Itoa(i)), Request: testDigest("merge-" + strconv.Itoa(i+1)), Field: "f"}
 		_, err := cloud.AttachRemoteHolding(ctx, HolderKey{engine, uint64(i + 1)}, desc)
 		require.NoError(t, err)
-		require.NoError(t, cloud.AddRemoteHold(ctx, HolderKey{engine, uint64(i + 1)}, "s"))
+		require.NoError(t, errOf(cloud.AddRemoteHold(ctx, HolderKey{engine, uint64(i + 1)}, "s")))
 	}
 	var wg sync.WaitGroup
 	for g := range 8 {
 		wg.Go(func() {
 			for i := range 50 {
 				dig := testDigest("merge-" + strconv.Itoa((g+i)%n)).String()
-				require.Len(t, cloud.EquivalentHolders(dig), n)
+				require.Len(t, cloud.equivalentHoldersForTest(dig), n)
 				info, ok := cloud.RemoteEntryInfo(HolderKey{engine, uint64((g+i)%n + 1)})
 				require.True(t, ok)
 				require.Len(t, info.ClassDigests, n+1)
@@ -979,8 +1103,8 @@ func TestRemoteHoldingsConcurrentReads(t *testing.T) {
 			key := HolderKey{"cache-w", uint64(i + 1)}
 			_, err := cloud.AttachRemoteHolding(ctx, key, holdingOf("writer-"+strconv.Itoa(i)))
 			require.NoError(t, err)
-			candidates := cloud.ReleaseRemoteCache(ctx, "cache-w")
-			_, err = cloud.CollectRemoteHoldings(ctx, append(candidates, key))
+			candidates := cloud.ReleaseRemoteCache(ctx, "cache-w").Candidates
+			_, _, err = cloud.CollectRemoteHoldings(ctx, append(candidates, key), nil)
 			require.NoError(t, err)
 		}
 	})
@@ -988,7 +1112,7 @@ func TestRemoteHoldingsConcurrentReads(t *testing.T) {
 }
 
 // testLiveEqClassesLocked counts the classes that a term or an entry uses,
-// the ones compaction keeps. Requires egraphMu for writing.
+// by a walk. Requires egraphMu for writing.
 func testLiveEqClassesLocked(c *Cache) int {
 	live := map[eqClassID]struct{}{}
 	use := func(id eqClassID) {
@@ -1005,217 +1129,22 @@ func testLiveEqClassesLocked(c *Cache) int {
 		}
 		use(term.outputEqID)
 	}
-	for _, classes := range c.resultOutputEqClasses {
-		for id := range classes {
+	for key := range c.resultOutputEqClasses.Keys() {
+		classes := c.resultOutputEqClasses.Members(key)
+		for id := range classes.All() {
 			use(id)
 		}
 	}
 	return len(live)
 }
 
-// testEqClassClock gives the cache a clock for its compaction checks that
-// only the test moves, and returns the function that moves it.
-func testEqClassClock(c *Cache) func(time.Duration) {
-	now := time.Unix(1_000_000, 0)
-	c.egraphMu.Lock()
-	c.eqClassClock = func() time.Time { return now }
-	c.egraphMu.Unlock()
-	return func(d time.Duration) {
-		c.egraphMu.Lock()
-		now = now.Add(d)
-		c.egraphMu.Unlock()
-	}
-}
-
-// testEqClassChecks returns the cache's count of compaction checks.
-func testEqClassChecks(c *Cache) int {
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
-	return c.eqClassChecks
-}
-
-// The Cloud's collection checks its classes for compaction at most once per
-// interval, and only when something changed since the last check: the class
-// slots differ, or a collection removed entries. Under churn, with holdings
-// created and collected at every one-second read, the collections check once
-// per interval, and each check leaves the slots under twice the live classes.
-func TestCollectionChecksOncePerInterval(t *testing.T) {
-	t.Parallel()
-	cloud := newCloudCache(t)
-	advance := testEqClassClock(cloud)
-	a := newCloudApplier(t, cloud)
-	for i := range 100 {
-		live := holdingOf(fmt.Sprintf("live-%d", i))
-		live.ContentDigest = testDigest(fmt.Sprintf("live-%d-content", i))
-		a.call(callRow{key: HolderKey{"cache-live", uint64(i + 1)}, session: "live", holding: live})
-	}
-	require.Empty(t, a.collect())
-
-	const rounds, perRound = 200, 5
-	compactions := 0
-	for r := range rounds {
-		advance(time.Second)
-		session := fmt.Sprintf("churn-%d", r)
-		for i := range perRound {
-			field := fmt.Sprintf("churn-%d-%d", r, i)
-			churn := holdingOf(field)
-			churn.ContentDigest = testDigest(field + "-content")
-			a.call(callRow{key: HolderKey{"cache-churn", uint64(r*perRound + i + 1)}, session: session, holding: churn})
-		}
-		a.endSession("cache-churn", session)
-		cloud.egraphMu.Lock()
-		checkedAt, checkedSlots, removed := cloud.eqClassCheckedAt, cloud.eqClassCheckedSlots, cloud.eqClassRemoved
-		checks, before, now, entries := cloud.eqClassChecks, cloud.eqClassSlotsLocked(), cloud.eqClassClock(), len(cloud.resultsByID)
-		cloud.egraphMu.Unlock()
-		require.Len(t, a.collect(), perRound)
-		cloud.egraphMu.Lock()
-		after, checksAfter, live, entriesAfter := cloud.eqClassSlotsLocked(), cloud.eqClassChecks, testLiveEqClassesLocked(cloud), len(cloud.resultsByID)
-		cloud.egraphMu.Unlock()
-		changed := before != checkedSlots || removed || entriesAfter < entries
-		if changed && now.Sub(checkedAt) >= eqClassCheckInterval {
-			require.Equal(t, checks+1, checksAfter, "round %d: the interval has passed, and something changed", r)
-			require.Less(t, after, 2*live, "round %d: the check leaves the slots under twice the live classes", r)
-		} else {
-			require.Equal(t, checks, checksAfter, "round %d: within the interval, no check", r)
-		}
-		if after < before {
-			compactions++
-		}
-	}
-	checks := testEqClassChecks(cloud)
-	require.Positive(t, compactions)
-	require.LessOrEqual(t, checks, 1+rounds/10, "one check per interval, not one per collection")
-}
-
-// A collection that changes nothing never checks, however long the cache is
-// idle; the first change after that checks at the next collection.
-func TestCollectionNeverChecksWithoutChange(t *testing.T) {
-	t.Parallel()
-	cloud := newCloudCache(t)
-	advance := testEqClassClock(cloud)
-	a := newCloudApplier(t, cloud)
-	a.call(callRow{key: HolderKey{"cache-a", 1}, session: "s", holding: holdingOf("idle")})
-	require.Empty(t, a.collect())
-	checks := testEqClassChecks(cloud)
-	for range 100 {
-		advance(time.Hour)
-		require.Empty(t, a.collect())
-	}
-	require.Equal(t, checks, testEqClassChecks(cloud), "an idle cache never checks")
-
-	a.call(callRow{key: HolderKey{"cache-a", 2}, session: "s", holding: holdingOf("change")})
-	require.Empty(t, a.collect())
-	require.Equal(t, checks+1, testEqClassChecks(cloud), "a change checks once its interval has passed")
-}
-
-// Entries of different recipes with equivalent content share one class, so a
-// class's slot doesn't measure a check's cost: 100 live entries and their 100
-// terms sit in one class. Twenty one-second sessions of two holdings each,
-// created and collected, check once per interval.
-func TestCollectionChecksManyEquivalentEntriesPerInterval(t *testing.T) {
-	t.Parallel()
-	cloud := newCloudCache(t)
-	advance := testEqClassClock(cloud)
-	a := newCloudApplier(t, cloud)
-	for i := range 100 {
-		h := holdingOf(fmt.Sprintf("equivalent-%d", i))
-		h.ContentDigest = testDigest("same-content")
-		a.call(callRow{key: HolderKey{"live", uint64(i + 1)}, session: "live", holding: h})
-	}
-	require.Empty(t, a.collect())
-	cloud.egraphMu.Lock()
-	live, entries, terms := testLiveEqClassesLocked(cloud), len(cloud.resultsByID), len(cloud.egraphTerms)
-	cloud.egraphMu.Unlock()
-	require.Equal(t, 1, live)
-	require.Equal(t, 100, entries)
-	require.Equal(t, 100, terms)
-	checks := testEqClassChecks(cloud)
-	const rounds = 20
-	for round := range rounds {
-		advance(time.Second)
-		session := fmt.Sprintf("churn-%d", round)
-		for j := range 2 {
-			key := HolderKey{"churn", uint64(round*2 + j + 1)}
-			a.call(callRow{key: key, session: session, holding: holdingOf(fmt.Sprintf("fresh-%d-%d", round, j))})
-		}
-		a.endSession("churn", session)
-		require.Len(t, a.collect(), 2)
-	}
-	require.LessOrEqual(t, testEqClassChecks(cloud)-checks, rounds/10, "one check per interval: each scans the live entries and terms")
-}
-
-// Request digests that an engine's ordinary cache hits add to an entry's class
-// grow the digests a compaction copies with no new entry or term. The engine's
-// own calls produce them: a seed and 100 nested no-op calls hit the seed's
-// entry, and the Cloud applies their evidence. Twenty one-second sessions of
-// churn check once per interval, not once per session.
-func TestCollectionChecksManyRequestDigestsPerInterval(t *testing.T) {
-	t.Parallel()
-	ctx, engineCache := cacheTestEvidenceEnv(t)
-	defer cacheTestReleaseSession(t, engineCache, ctx)
-	cloud := newCloudCache(t)
-	advance := testEqClassClock(cloud)
-	a := newCloudApplier(t, cloud)
-	apply := func(req *CallRequest, res AnyResult) {
-		frame, err := res.ResultCall()
-		require.NoError(t, err)
-		recipe, err := frame.deriveRecipeDigest(engineCache)
-		require.NoError(t, err)
-		request, err := req.ResultCall.deriveRecipeDigest(engineCache)
-		require.NoError(t, err)
-		ev := req.CacheEvidence
-		h := RemoteHolding{Recipe: recipe, Request: request, Field: req.ResultCall.Field, Term: &RemoteTerm{Self: ev.SelfDigest, Inputs: ev.StructuralInputs}, TypeName: "Int"}
-		a.call(callRow{key: HolderKey{"live", uint64(res.cacheSharedResult().id)}, session: "live", holding: h})
-	}
-	seed := cacheTestIntCall("alias-seed")
-	req := cacheTestArmedRequest(seed)
-	parent, err := engineCache.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, req, ValueFunc(cacheTestIntResult(seed, 42)))
-	require.NoError(t, err)
-	apply(req, parent)
-	prev := seed
-	for i := range 100 {
-		frame := cacheTestIntCall("alias-noop")
-		frame.Receiver = &ResultCallRef{Call: prev}
-		req = cacheTestArmedRequest(frame)
-		got, err := engineCache.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, req, ValueFunc(parent))
-		require.NoError(t, err)
-		require.Same(t, parent.cacheSharedResult(), got.cacheSharedResult())
-		if i > 0 {
-			require.True(t, got.HitCache())
-		}
-		apply(req, got)
-		prev = frame
-	}
-	require.Empty(t, a.collect())
-	cloud.egraphMu.Lock()
-	entries, digests := len(cloud.resultsByID), len(cloud.egraphDigestToClass)
-	cloud.egraphMu.Unlock()
-	require.Equal(t, 1, entries)
-	require.GreaterOrEqual(t, digests, 100)
-	checks := testEqClassChecks(cloud)
-	const rounds = 20
-	for round := range rounds {
-		advance(time.Second)
-		session := fmt.Sprintf("real-churn-%d", round)
-		for j := range 2 {
-			field := fmt.Sprintf("real-churn-%d-%d", round, j)
-			a.call(callRow{key: HolderKey{"churn", uint64(round*2 + j + 1)}, session: session, holding: holdingOf(field)})
-		}
-		a.endSession("churn", session)
-		require.Len(t, a.collect(), 2)
-	}
-	require.LessOrEqual(t, testEqClassChecks(cloud)-checks, rounds/10, "one check per interval: each copies every request digest")
-}
-
 // A release with no new class, as an engine's unclean stop releases its whole
-// cache, is a change: 200 of 201 entries go within an interval of the last
-// check, and the first collection after the interval, with no candidates,
-// checks and compacts the classes to the live ones. The entry that stays keeps
-// its identity.
-func TestCollectionChecksAReleaseAfterTheInterval(t *testing.T) {
+// cache, frees the classes it ends in its own collection: 200 of 201 entries
+// go, and when the collection returns, every slot left is a live class. The
+// entry that stays keeps its identity.
+func TestAReleaseFreesTheClassesItEnds(t *testing.T) {
 	t.Parallel()
 	cloud := newCloudCache(t)
-	advance := testEqClassClock(cloud)
 	a := newCloudApplier(t, cloud)
 	keep := HolderKey{"stays", 1}
 	a.call(callRow{key: keep, session: "stays", holding: holdingOf("stays")})
@@ -1225,35 +1154,25 @@ func TestCollectionChecksAReleaseAfterTheInterval(t *testing.T) {
 	require.Empty(t, a.collect())
 	before, ok := cloud.RemoteEntryInfo(keep)
 	require.True(t, ok)
-	checks := testEqClassChecks(cloud)
 
-	advance(time.Second)
-	collected, err := cloud.CollectRemoteHoldings(t.Context(), cloud.ReleaseRemoteCache(t.Context(), "wiped"))
+	collected, _, err := cloud.CollectRemoteHoldings(t.Context(), cloud.ReleaseRemoteCache(t.Context(), "wiped").Candidates, nil)
 	require.NoError(t, err)
 	require.Len(t, collected, 200)
-	require.Equal(t, checks, testEqClassChecks(cloud), "within the interval, the release waits")
-
-	advance(eqClassCheckInterval)
-	collected, err = cloud.CollectRemoteHoldings(t.Context(), nil)
-	require.NoError(t, err)
-	require.Empty(t, collected)
 	cloud.egraphMu.Lock()
 	slots, live := cloud.eqClassSlotsLocked(), testLiveEqClassesLocked(cloud)
 	cloud.egraphMu.Unlock()
-	require.Equal(t, checks+1, testEqClassChecks(cloud), "the first collection after the interval checks")
-	require.Equal(t, live, slots, "and compacts to the live classes")
+	require.Equal(t, 1, live)
+	require.Equal(t, live, slots, "the release's collection freed the classes it ended")
 	after, ok := cloud.RemoteEntryInfo(keep)
 	require.True(t, ok)
 	require.Equal(t, before, after)
 }
 
-// Gone answers remove entries too, and never check by themselves: their
-// removal counts toward the next collection's check after the interval, which
-// compacts the classes to the live ones though it collects nothing itself.
-func TestCollectionChecksGoneAnswersAfterTheInterval(t *testing.T) {
+// Gone answers remove entries through the collector too, which frees the
+// classes they end as each answer's removal finishes.
+func TestGoneAnswersFreeTheClassesTheyEnd(t *testing.T) {
 	t.Parallel()
 	cloud := newCloudCache(t)
-	advance := testEqClassClock(cloud)
 	a := newCloudApplier(t, cloud)
 	keep := HolderKey{"stays", 1}
 	a.call(callRow{key: keep, session: "stays", holding: holdingOf("stays")})
@@ -1261,36 +1180,27 @@ func TestCollectionChecksGoneAnswersAfterTheInterval(t *testing.T) {
 		a.call(callRow{key: HolderKey{"gone", uint64(i + 1)}, session: "running", holding: holdingOf(fmt.Sprintf("gone-%d", i))})
 	}
 	require.Empty(t, a.collect())
-	checks := testEqClassChecks(cloud)
 
-	advance(eqClassCheckInterval)
 	for i := range 200 {
 		_, found, err := cloud.CollectRemoteHolding(t.Context(), HolderKey{"gone", uint64(i + 1)})
 		require.NoError(t, err)
 		require.True(t, found)
 	}
-	require.Equal(t, checks, testEqClassChecks(cloud), "gone answers don't check, even after the interval")
-
-	collected, err := cloud.CollectRemoteHoldings(t.Context(), nil)
-	require.NoError(t, err)
-	require.Empty(t, collected)
 	cloud.egraphMu.Lock()
 	slots, live := cloud.eqClassSlotsLocked(), testLiveEqClassesLocked(cloud)
 	cloud.egraphMu.Unlock()
-	require.Equal(t, checks+1, testEqClassChecks(cloud), "the next collection checks")
-	require.Equal(t, live, slots, "and compacts to the live classes")
+	require.Equal(t, 1, live)
+	require.Equal(t, live, slots, "the gone answers freed the classes they ended")
 	_, ok := cloud.RemoteEntryInfo(keep)
 	require.True(t, ok)
 }
 
 // A term over many inputs whose holdings the Cloud never saw adds one class
-// per input. Releasing that one entry is a change even though it removes only
-// one entry and one term: the first collection after the interval checks and
-// compacts the classes to the live ones.
-func TestCollectionChecksAWideTermReleaseAfterTheInterval(t *testing.T) {
+// per input. Releasing that one entry ends them all, and its collection frees
+// them.
+func TestAWideTermsReleaseFreesItsInputClasses(t *testing.T) {
 	t.Parallel()
 	cloud := newCloudCache(t)
-	advance := testEqClassClock(cloud)
 	a := newCloudApplier(t, cloud)
 	for i := range 30 {
 		a.call(callRow{key: HolderKey{"anchors", uint64(i + 1)}, session: "anchors", holding: holdingOf(fmt.Sprintf("anchor-%d", i))})
@@ -1301,77 +1211,14 @@ func TestCollectionChecksAWideTermReleaseAfterTheInterval(t *testing.T) {
 	}
 	a.call(callRow{key: HolderKey{"burst", 1}, session: "burst", holding: wide})
 	require.Empty(t, a.collect())
-	checks := testEqClassChecks(cloud)
 
-	advance(time.Second)
 	a.endSession("burst", "burst")
 	require.Len(t, a.collect(), 1)
-	require.Equal(t, checks, testEqClassChecks(cloud), "within the interval, the release waits")
-
-	advance(eqClassCheckInterval)
-	require.Empty(t, a.collect())
 	cloud.egraphMu.Lock()
 	slots, live := cloud.eqClassSlotsLocked(), testLiveEqClassesLocked(cloud)
 	cloud.egraphMu.Unlock()
-	require.Equal(t, checks+1, testEqClassChecks(cloud))
 	require.Equal(t, 30, live)
 	require.Equal(t, live, slots, "the wide term's input classes are freed")
-}
-
-// A row returns the recipe digest of each entry it affected: one it created,
-// gave a new holding, or changed the holding's value state of (parts, count or
-// expiry), and every entry it joined to another class, directly or by
-// congruence. A row that does none of these returns no digest.
-func TestHoldingRowsReturnTheAffectedRecipes(t *testing.T) {
-	t.Parallel()
-	ctx := t.Context()
-	cloud := newCloudCache(t)
-	key := func(cache CacheID, n uint64) HolderKey { return HolderKey{Cache: cache, Number: n} }
-	attach := func(k HolderKey, h RemoteHolding) []digest.Digest {
-		t.Helper()
-		change, err := cloud.AttachRemoteHolding(ctx, k, h)
-		require.NoError(t, err)
-		return change.Recipes
-	}
-	update := func(k HolderKey, u RemoteHoldingUpdate) []digest.Digest {
-		t.Helper()
-		change, found, err := cloud.UpdateRemoteHolding(ctx, k, u)
-		require.NoError(t, err)
-		require.True(t, found)
-		return change.Recipes
-	}
-	parent := func(field, input string) RemoteHolding {
-		h := holdingOf(field)
-		h.Term = &RemoteTerm{Self: testDigest("parent-self"), Inputs: []digest.Digest{testDigest(input)}}
-		return h
-	}
-
-	require.Equal(t, []digest.Digest{testDigest("x")}, attach(key("a", 1), holdingOf("x")), "created")
-	require.Equal(t, []digest.Digest{testDigest("x")}, attach(key("b", 1), holdingOf("x")), "a new holding")
-	require.Empty(t, attach(key("a", 1), holdingOf("x")), "the same report again")
-	withExpiry := holdingOf("x")
-	withExpiry.ExpiresAtUnix = time.Now().Add(time.Hour).Unix()
-	require.Equal(t, []digest.Digest{testDigest("x")}, attach(key("a", 1), withExpiry), "the expiry")
-	require.Equal(t, []digest.Digest{testDigest("x")}, update(key("a", 1), RemoteHoldingUpdate{Parts: []PersistedPartAddress{{Part: "fs"}}}), "a part")
-	require.Equal(t, []digest.Digest{testDigest("x")}, update(key("a", 1), RemoteHoldingUpdate{Replacements: 1}), "the count")
-	require.Empty(t, update(key("a", 1), RemoteHoldingUpdate{Replacements: 1, Deps: []uint64{9}}), "dependencies only")
-
-	attach(key("a", 2), holdingOf("y"))
-	attach(key("a", 3), parent("parent-x", "x"))
-	attach(key("a", 4), parent("parent-y", "y"))
-	require.Empty(t, update(key("a", 1), RemoteHoldingUpdate{Replacements: 1, ContentDigest: testDigest("content")}), "a content digest no other entry has")
-	joined := update(key("a", 2), RemoteHoldingUpdate{ContentDigest: testDigest("content")})
-	require.ElementsMatch(t,
-		[]digest.Digest{testDigest("x"), testDigest("y"), testDigest("parent-x"), testDigest("parent-y")},
-		joined, "y joins x's class, and the parents join by congruence")
-	// Each returned digest names its entry's class for EquivalentHolders.
-	for _, dig := range joined {
-		want := []HolderKey{key("a", 1), key("a", 2), key("b", 1)}
-		if dig == testDigest("parent-x") || dig == testDigest("parent-y") {
-			want = []HolderKey{key("a", 3), key("a", 4)}
-		}
-		require.Equal(t, want, cloud.EquivalentHolders(dig.String()), "%s", dig)
-	}
 }
 
 // A content digest is class identity, which every observation teaches
@@ -1418,45 +1265,13 @@ func TestContentDigestIsTaughtWhateverTheCount(t *testing.T) {
 					oldValue()
 					replaced()
 				}
-				require.Equal(t, []HolderKey{r, x}, cloud.EquivalentHolders(first.Recipe.String()), "R's class learned the old content digest")
+				require.Equal(t, []HolderKey{r, x}, cloud.equivalentHoldersForTest(first.Recipe.String()), "R's class learned the old content digest")
 				h := requireHolding(t, cloud, r)
 				require.Equal(t, uint64(1), h.Replacements)
 				require.Empty(t, h.ContentDigest, "the holding's value state follows the count")
 			})
 		}
 	}
-}
-
-// testBlobCloud returns a blob-backed Cloud cache, the remote-cache service's
-// kind, with the compaction checks' test clock and an applier. It holds live
-// holdings of distinct content, and its first collection has checked.
-func testBlobCloud(t *testing.T, live int) (*Cache, func(time.Duration), *cloudApplier) {
-	t.Helper()
-	_, cloud := storedPartTestCache(t, WithBlobStore())
-	advance := testEqClassClock(cloud)
-	a := newCloudApplier(t, cloud)
-	for i := range live {
-		h := holdingOf(fmt.Sprintf("live-%d", i))
-		h.ContentDigest = testDigest(fmt.Sprintf("live-%d-content", i))
-		a.call(callRow{key: HolderKey{"cache-live", uint64(i + 1)}, session: "live", holding: h})
-	}
-	require.Empty(t, a.collect())
-	require.Equal(t, 1, testEqClassChecks(cloud))
-	return cloud, advance, a
-}
-
-// testEqClassCheckState is what a compaction check changes: the class slots,
-// the count of checks and when the last one ran.
-type testEqClassCheckState struct {
-	slots     int
-	checks    int
-	checkedAt time.Time
-}
-
-func testEqClassCheckStateOf(c *Cache) testEqClassCheckState {
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
-	return testEqClassCheckState{slots: c.eqClassSlotsLocked(), checks: c.eqClassChecks, checkedAt: c.eqClassCheckedAt}
 }
 
 // testDeadEqClasses adds classes known only by a digest, which no term and no
@@ -1469,87 +1284,24 @@ func testDeadEqClasses(t *testing.T, c *Cache, n int) {
 	}
 }
 
-// The service compacts before it forgets any engine's holdings. Right after a
-// collection, within the interval and with fewer dead classes than live ones,
-// neither of which the collection's check would compact, CompactEqClasses
-// frees every dead slot. What the live classes hold is unchanged, and the call
-// counts as a check.
-func TestCompactEqClassesForcesTheCheck(t *testing.T) {
-	t.Parallel()
-	cloud, advance, a := testBlobCloud(t, 20)
-	advance(time.Second)
-	for i := range 2 {
-		churn := holdingOf(fmt.Sprintf("churn-%d", i))
-		churn.ContentDigest = testDigest(fmt.Sprintf("churn-%d-content", i))
-		a.call(callRow{key: HolderKey{"cache-churn", uint64(i + 1)}, session: "churn", holding: churn})
-	}
-	a.endSession("cache-churn", "churn")
-	require.Len(t, a.collect(), 2)
-
-	cloud.egraphMu.Lock()
-	before, live, checks := cloud.eqClassSlotsLocked(), testLiveEqClassesLocked(cloud), cloud.eqClassChecks
-	contents := testEqClassContentsLocked(cloud)
-	cloud.egraphMu.Unlock()
-	require.Equal(t, 1, checks, "the collection within the interval didn't check")
-	require.Greater(t, before, live, "the collected holdings left dead classes")
-	require.Less(t, before, 2*live, "fewer dead classes than live ones: the unforced compaction keeps them")
-
-	oldSlots, newSlots, err := cloud.CompactEqClasses(t.Context())
-	require.NoError(t, err)
-	require.Equal(t, before, oldSlots)
-	require.Equal(t, live, newSlots)
-
-	cloud.egraphMu.Lock()
-	after, checksAfter := cloud.eqClassSlotsLocked(), cloud.eqClassChecks
-	afterContents, indexErr := testEqClassContentsLocked(cloud), cacheDerivedIndexesErrorLocked(cloud)
-	cloud.egraphMu.Unlock()
-	require.Equal(t, live, after)
-	require.NoError(t, indexErr)
-	require.Equal(t, contents, afterContents)
-	require.Equal(t, checks+1, checksAfter)
-}
-
-// A forced compaction is a check: the collection checks again only once the
-// interval since the forced call has passed, though the interval since the
-// check before it has.
-func TestCompactEqClassesRestartsTheInterval(t *testing.T) {
-	t.Parallel()
-	cloud, advance, a := testBlobCloud(t, 20)
-	advance(9 * time.Second)
-	_, _, err := cloud.CompactEqClasses(t.Context())
-	require.NoError(t, err)
-	require.Equal(t, 2, testEqClassChecks(cloud))
-
-	// A change after the forced call, for the collection to check.
-	a.call(callRow{key: HolderKey{"cache-new", 1}, session: "new", holding: holdingOf("after-force")})
-	advance(2 * time.Second)
-	require.Empty(t, a.collect())
-	require.Equal(t, 2, testEqClassChecks(cloud), "11s after the first check, 2s after the forced one: no check")
-	advance(8 * time.Second)
-	require.Empty(t, a.collect())
-	require.Equal(t, 3, testEqClassChecks(cloud), "10s after the forced check: the change is checked")
-}
-
-// With no class live, the forced compaction frees every slot, which the
-// unforced one leaves, and keeps the entries: here one entry with no class,
-// which keeps the e-graph from its reset. The next class is class 1.
-func TestCompactEqClassesFreesEverySlotWhenNoClassIsLive(t *testing.T) {
+// With no class live, a collection frees every slot, and keeps the entries:
+// here one entry with no class, which keeps the e-graph from its reset. The
+// next class takes a freed number.
+func TestACollectionFreesEverySlotWhenNoClassIsLive(t *testing.T) {
 	t.Parallel()
 	_, cloud := storedPartTestCache(t, WithBlobStore())
 	testDeadEqClasses(t, cloud, 8)
 	cloud.egraphMu.Lock()
-	entry := &sharedResult{id: cloud.nextSharedResultID}
-	cloud.nextSharedResultID++
+	entry := &sharedResult{id: cloud.takeResultIDs(1)}
 	cloud.putResultLocked(entry)
 	before, live := cloud.eqClassSlotsLocked(), testLiveEqClassesLocked(cloud)
 	cloud.egraphMu.Unlock()
 	require.Equal(t, 8, before)
 	require.Zero(t, live)
 
-	oldSlots, newSlots, err := cloud.CompactEqClasses(t.Context())
+	collected, _, err := cloud.CollectRemoteHoldings(t.Context(), nil, nil)
 	require.NoError(t, err)
-	require.Equal(t, 8, oldSlots)
-	require.Zero(t, newSlots)
+	require.Empty(t, collected)
 
 	cloud.egraphMu.Lock()
 	after, digests, kept := cloud.eqClassSlotsLocked(), len(cloud.egraphDigestToClass), cloud.resultsByID[entry.id] == entry
@@ -1560,78 +1312,199 @@ func TestCompactEqClassesFreesEverySlotWhenNoClassIsLive(t *testing.T) {
 	require.Zero(t, after)
 	require.Zero(t, digests)
 	require.True(t, kept, "the entry stays")
-	require.Equal(t, eqClassID(1), next)
+	require.LessOrEqual(t, next, eqClassID(8), "the next class takes a freed number")
 	require.NoError(t, indexErr)
 }
 
-// CompactEqClasses refuses, changing nothing, on a cache without a blob store,
-// with snapshot sharing enabled, and when its context is done before the
-// compaction starts, including while it waits for the graph.
-func TestCompactEqClassesRefusesAndChangesNothing(t *testing.T) {
-	t.Parallel()
-	refuses := func(t *testing.T, c *Cache, ctx context.Context, check func(error)) {
-		t.Helper()
-		before := testEqClassCheckStateOf(c)
-		_, _, err := c.CompactEqClasses(ctx)
-		check(err)
-		require.Equal(t, before, testEqClassCheckStateOf(c))
+// A stored entry outlives the holdings engines had of it, and once the last
+// one goes it holds nothing for them: attaching a holding to every stored
+// entry and then releasing them all leaves the live heap where it was. An
+// entry's holding maps take about 600 bytes, which a Go map keeps after its
+// last key is deleted.
+//
+// Not parallel: it measures the process's live heap, which other tests
+// running beside it would change.
+func TestStoredEntryHoldsNothingForHoldingsGone(t *testing.T) {
+	const entries = 2000
+	actx, a, asrv := transferTestCache(t)
+	roots := make([]AnyResult, entries)
+	for i := range roots {
+		roots[i] = persistedListTestResult(t, actx, a, asrv, fmt.Sprintf("held-then-gone-%d", i), &transferTestValue{Text: strconv.Itoa(i)})
 	}
-	t.Run("no blob store", func(t *testing.T) {
-		t.Parallel()
-		cloud := newCloudCache(t)
-		testDeadEqClasses(t, cloud, 4)
-		refuses(t, cloud, t.Context(), func(err error) { require.ErrorContains(t, err, "the cache has no blob store") })
-	})
-	t.Run("snapshot sharing", func(t *testing.T) {
-		t.Parallel()
-		_, cloud := storedPartTestCache(t, WithBlobStore())
-		testDeadEqClasses(t, cloud, 4)
-		require.NoError(t, cloud.EnableSnapshotSharing())
-		refuses(t, cloud, t.Context(), func(err error) { require.ErrorContains(t, err, "snapshot sharing is enabled") })
-	})
-	t.Run("done context", func(t *testing.T) {
-		t.Parallel()
-		_, cloud := storedPartTestCache(t, WithBlobStore())
-		testDeadEqClasses(t, cloud, 4)
-		ctx, cancel := context.WithCancel(t.Context())
-		cancel()
-		refuses(t, cloud, ctx, func(err error) { require.ErrorIs(t, err, context.Canceled) })
-	})
-	t.Run("done while waiting for the graph", func(t *testing.T) {
-		t.Parallel()
-		_, cloud := storedPartTestCache(t, WithBlobStore())
-		testDeadEqClasses(t, cloud, 4)
-		before := testEqClassCheckStateOf(cloud)
-		ctx, cancel := context.WithCancel(t.Context())
-		defer cancel()
-		cloud.egraphMu.Lock()
-		locked := true
-		defer func() {
-			if locked {
-				cloud.egraphMu.Unlock()
+	// The store as the service starts with it: saved, and restored with no
+	// engine holding anything.
+	path := filepath.Join(t.TempDir(), "cloud.db")
+	ctx, cloud := storedPersistenceTestCloud(t, path)
+	reply, err := cloud.MergeValues(ctx, "cache-a", exportTestBundle(t, actx, a, roots...))
+	require.NoError(t, err)
+	require.Len(t, reply.Imported(), entries)
+	require.NoError(t, cloud.Close(ctx))
+	ctx, cloud = storedPersistenceTestCloud(t, path)
+	defer func() { require.NoError(t, cloud.Close(ctx)) }()
+	keys, recipes := cloudIndexes(cloud)
+	require.Empty(t, keys, "a restored store holds no engine's holdings")
+	require.Len(t, recipes, entries, "each stored entry is indexed by its recipe")
+
+	engine := CacheID("cache-x")
+	before := storedLayersTestLiveHeap()
+	applier := newCloudApplier(t, cloud)
+	for i, recipe := range recipes {
+		applier.call(callRow{key: HolderKey{engine, uint64(i + 1)}, session: "s", holding: RemoteHolding{Recipe: recipe, Request: recipe, Field: "held", TypeName: "Transfer"}})
+	}
+	require.Empty(t, applier.collect())
+	cloud.egraphMu.RLock()
+	for i := range recipes {
+		entry, h := cloud.holdingLocked(HolderKey{engine, uint64(i + 1)})
+		require.NotNil(t, h)
+		require.True(t, entry.hasOwnValueLocked(), "the holding sits on its stored entry")
+	}
+	cloud.egraphMu.RUnlock()
+
+	applier.candidates = append(applier.candidates, cloud.ReleaseRemoteCache(ctx, engine).Candidates...)
+	require.Len(t, applier.collect(), entries)
+	keys, after := cloudIndexes(cloud)
+	require.Empty(t, keys)
+	require.Equal(t, recipes, after, "every stored entry stays")
+	left := storedLayersTestLiveHeap() - before
+
+	perEntry := float64(left) / entries
+	t.Logf("after every holding of %d stored entries went, the live heap was %d bytes from where it stood, %.0f bytes an entry", entries, left, perEntry)
+	require.Less(t, perEntry, 64.0, "after every holding of %d stored entries went, the live heap was %d bytes above where it stood before they came, %.0f bytes an entry", entries, left, perEntry)
+}
+
+// A holding's closure is read in pieces, letting the graph lock go between
+// them, and is still one a single hold could have read: here a write lands
+// between two pieces, adding a holding under the root, read in the first
+// piece, and one under the leaf, read in the last. A walk that went on
+// across it would see the leaf's and not the root's, which neither state
+// had; the closure is the state's before the write or after it, whole.
+func TestHolderClosureInPiecesIsOneState(t *testing.T) {
+	t.Parallel()
+	cloud := newCloudCache(t)
+	a := newCloudApplier(t, cloud)
+	engine := CacheID("cache-a")
+	const chain = 10
+	var before []HolderKey
+	for n := uint64(1); n <= chain; n++ {
+		var deps []uint64
+		if n > 1 {
+			deps = []uint64{n - 1}
+		}
+		a.call(callRow{key: HolderKey{engine, n}, session: "s", holding: holdingOf(fmt.Sprintf("chain-%d", n), deps...)})
+		before = append(before, HolderKey{engine, n})
+	}
+	root, leaf := HolderKey{engine, chain}, HolderKey{engine, 1}
+	underRoot, underLeaf := HolderKey{engine, 100}, HolderKey{engine, 101}
+	after := append(slices.Clone(before), underRoot, underLeaf)
+	require.Equal(t, before, cloud.HolderClosure(root))
+
+	cloud.readPieceSize = 3
+	pieces, wrote := 0, false
+	cloud.testReadPieceYielded = func() {
+		pieces++
+		if wrote {
+			return
+		}
+		wrote = true
+		a.call(callRow{key: underRoot, session: "s", holding: holdingOf("under-root")})
+		a.call(callRow{key: underLeaf, session: "s", holding: holdingOf("under-leaf")})
+		a.call(callRow{key: root, session: "s", holding: holdingOf(fmt.Sprintf("chain-%d", chain), chain-1, underRoot.Number)})
+		a.call(callRow{key: leaf, session: "s", holding: holdingOf("chain-1", underLeaf.Number)})
+	}
+	got := cloud.HolderClosure(root)
+	require.True(t, wrote, "the walk let go between its pieces")
+	require.Positive(t, pieces)
+	require.Contains(t, [][]HolderKey{before, after}, got, "the closure is one state's, whole")
+	require.Equal(t, after, cloud.HolderClosure(root))
+}
+
+// HolderGraph reads the closures of several holdings as one graph: each
+// holding in any of them once, with its dependencies that are holdings,
+// so that each root's closure (HolderClosure) is what it reaches. Here
+// two roots share a chain, one holding's dependency was never attached,
+// two holdings an engine turned around depend on each other, and one root
+// is held nowhere.
+func TestHolderGraphIsTheClosuresTogether(t *testing.T) {
+	t.Parallel()
+	cloud := newCloudCache(t)
+	a := newCloudApplier(t, cloud)
+	engine := CacheID("cache-a")
+	a.call(callRow{key: HolderKey{engine, 1}, session: "s", holding: holdingOf("graph-leaf")})
+	a.call(callRow{key: HolderKey{engine, 2}, session: "s", holding: holdingOf("graph-mid", 1, 99)})
+	a.call(callRow{key: HolderKey{engine, 3}, session: "s", holding: holdingOf("graph-left", 2)})
+	a.call(callRow{key: HolderKey{engine, 4}, session: "s", holding: holdingOf("graph-right", 2, 5)})
+	a.call(callRow{key: HolderKey{engine, 5}, session: "s", holding: holdingOf("graph-turned")})
+	a.call(callRow{key: HolderKey{engine, 6}, session: "s", holding: holdingOf("graph-around", 5)})
+	a.call(callRow{key: HolderKey{engine, 5}, session: "s", holding: holdingOf("graph-turned", 6)})
+	a.call(callRow{key: HolderKey{"cache-b", 7}, session: "s", holding: holdingOf("graph-other", 1)})
+
+	graph := cloud.HolderGraph(engine, []uint64{3, 4, 42})
+	require.Equal(t, map[uint64][]uint64{1: nil, 2: {1}, 3: {2}, 4: {2, 5}, 5: {6}, 6: {5}}, graph)
+	for _, root := range []uint64{3, 4, 42} {
+		var reached []HolderKey
+		seen := map[uint64]bool{}
+		var reach func(uint64)
+		reach = func(n uint64) {
+			if seen[n] {
+				return
 			}
-		}()
-		done := make(chan error, 1)
-		go func() {
-			_, _, err := cloud.CompactEqClasses(ctx)
-			done <- err
-		}()
-		blocked := false
-		for deadline := time.Now().Add(10 * time.Second); !blocked && time.Now().Before(deadline); time.Sleep(time.Millisecond) {
-			buf := make([]byte, 1<<20)
-			n := runtime.Stack(buf, true)
-			for _, stack := range strings.Split(string(buf[:n]), "\n\n") {
-				if strings.Contains(stack, "(*Cache).CompactEqClasses(") && strings.Contains(stack, "sync.(*RWMutex).Lock(") {
-					blocked = true
-					break
-				}
+			if _, ok := graph[n]; !ok {
+				return
+			}
+			seen[n] = true
+			reached = append(reached, HolderKey{engine, n})
+			for _, dep := range graph[n] {
+				reach(dep)
 			}
 		}
-		require.True(t, blocked, "CompactEqClasses waits for the graph")
-		cancel()
-		cloud.egraphMu.Unlock()
-		locked = false
-		require.ErrorIs(t, <-done, context.Canceled)
-		require.Equal(t, before, testEqClassCheckStateOf(cloud))
-	})
+		reach(root)
+		slices.SortFunc(reached, compareHolderKeys)
+		require.Equal(t, cloud.HolderClosure(HolderKey{engine, root}), reached, "root %d reaches its closure", root)
+	}
+	require.Empty(t, cloud.HolderGraph("cache-none", []uint64{1}))
+}
+
+// HolderGraph reads in pieces, letting the graph lock go between them, and
+// is still one state's graph, as HolderClosure is
+// (TestHolderClosureInPiecesIsOneState).
+func TestHolderGraphInPiecesIsOneState(t *testing.T) {
+	t.Parallel()
+	cloud := newCloudCache(t)
+	a := newCloudApplier(t, cloud)
+	engine := CacheID("cache-a")
+	const chain = 10
+	before := map[uint64][]uint64{}
+	for n := uint64(1); n <= chain; n++ {
+		var deps []uint64
+		if n > 1 {
+			deps = []uint64{n - 1}
+		}
+		a.call(callRow{key: HolderKey{engine, n}, session: "s", holding: holdingOf(fmt.Sprintf("graph-chain-%d", n), deps...)})
+		before[n] = deps
+	}
+	underRoot, underLeaf := uint64(100), uint64(101)
+	after := maps.Clone(before)
+	after[chain] = []uint64{chain - 1, underRoot}
+	after[1] = []uint64{underLeaf}
+	after[underRoot], after[underLeaf] = nil, nil
+	require.Equal(t, before, cloud.HolderGraph(engine, []uint64{chain}))
+
+	cloud.readPieceSize = 3
+	pieces, wrote := 0, false
+	cloud.testReadPieceYielded = func() {
+		pieces++
+		if wrote {
+			return
+		}
+		wrote = true
+		a.call(callRow{key: HolderKey{engine, underRoot}, session: "s", holding: holdingOf("graph-under-root")})
+		a.call(callRow{key: HolderKey{engine, underLeaf}, session: "s", holding: holdingOf("graph-under-leaf")})
+		a.call(callRow{key: HolderKey{engine, chain}, session: "s", holding: holdingOf(fmt.Sprintf("graph-chain-%d", chain), chain-1, underRoot)})
+		a.call(callRow{key: HolderKey{engine, 1}, session: "s", holding: holdingOf("graph-chain-1", underLeaf)})
+	}
+	got := cloud.HolderGraph(engine, []uint64{chain})
+	require.True(t, wrote, "the walk let go between its pieces")
+	require.Positive(t, pieces)
+	require.Contains(t, []map[uint64][]uint64{before, after}, got, "the graph is one state's, whole")
+	require.Equal(t, after, cloud.HolderGraph(engine, []uint64{chain}))
 }

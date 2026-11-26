@@ -74,7 +74,7 @@ var loadModuleSourceSDK = func(ctx context.Context, query *core.Query, cfg *core
 }
 
 func (s *moduleSourceSchema) Install(dag *dagql.Server) {
-	dagql.Fields[*core.Query]{
+	identifyModuleSourceResults(dagql.Fields[*core.Query]{
 		dagql.NodeFunc("moduleSource", s.moduleSource).
 			WithInput(dagql.PerClientInput).
 			Doc(`Create a new module source instance from a source ref string`).
@@ -88,9 +88,9 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 				dagql.Arg("allowNotExists").Doc(`If true, do not error out if the provided ref string is a local path and does not exist yet. Useful when initializing new modules in directories that don't exist yet.`),
 				dagql.Arg("requireKind").Doc(`If set, error out if the ref string is not of the provided requireKind.`),
 			),
-	}.Install(dag)
+	}).Install(dag)
 
-	dagql.Fields[*core.Directory]{
+	identifyModuleSourceResults(dagql.Fields[*core.Directory]{
 		dagql.NodeFunc("asModule", s.directoryAsModule).
 			Doc(`Load the directory as a Dagger module source`).
 			Args(
@@ -112,13 +112,16 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 				dagql.Arg("originHostPath").View(AfterVersion("v1.0.0-beta.26")),
 				dagql.Arg("originGit").View(AfterVersion("v1.0.0-beta.26")),
 			),
-	}.Install(dag)
+	}).Install(dag)
 
 	// These ModuleSource and GeneratedCode fields are spelled
 	// withSDK, introspectionSchemaJSON, clientSchemaIntrospectionJSON, htmlURL,
 	// htmlRepoURL, withVCSGeneratedPaths and withVCSIgnoredPaths in views
 	// before engine.IdentifierCasingVersion.
+	// Reloads the calling client's user defaults (its .env), so it is keyed
+	// per client, as withName is.
 	withSDKField := dagql.Func("withSdk", s.moduleSourceWithSDK).
+		WithInput(dagql.PerClientInput).
 		Doc(`Update the module source with a new SDK.`).
 		Args(
 			dagql.Arg("source").Doc(`The SDK source to set.`),
@@ -148,7 +151,7 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 	withVCSIgnoredPathsField := dagql.Func("withVcsIgnoredPaths", s.generatedCodeWithVCSIgnoredPaths).
 		Doc(`Set the list of paths to ignore in version control.`)
 
-	dagql.Fields[*core.ModuleSource]{
+	identifyModuleSourceResults(identifyWorkspaceResults(dagql.Fields[*core.ModuleSource]{
 		// sync is used by external dependencies like daggerverse
 		Syncer[*core.ModuleSource]().
 			Doc(`Forces evaluation of the module source, including any loading into the engine and associated validation.`),
@@ -175,7 +178,10 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 				dagql.Arg("path").Doc(`The path to set as the source subpath. Must be relative to the module source's source root directory.`),
 			),
 
+		// Reloads the calling client's user defaults (its .env) for the new
+		// name, so it is keyed per client.
 		dagql.Func("withName", s.moduleSourceWithName).
+			WithInput(dagql.PerClientInput).
 			Doc(`Update the module source with a new name.`).
 			Args(
 				dagql.Arg("name").Doc(`The name to set.`),
@@ -203,7 +209,10 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 				dagql.Arg("dependencies").Doc(`The dependencies to append.`),
 			),
 
+		// Resolves versions live, through the calling client's module-source
+		// and Git reads, so it is keyed per client.
 		dagql.NodeFunc("withUpdateDependencies", s.moduleSourceWithUpdateDependencies).
+			WithInput(dagql.PerClientInput).
 			Doc(`Update one or more module dependencies.`).
 			Args(
 				dagql.Arg("dependencies").Doc(`The dependencies to update.`),
@@ -229,7 +238,10 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 				dagql.Arg("toolchains").Doc(`The toolchain modules to add.`),
 			),
 
+		// Resolves versions live, through the calling client's module-source
+		// and Git reads, so it is keyed per client.
 		dagql.NodeFunc("withUpdateToolchains", s.moduleSourceWithUpdateToolchains).
+			WithInput(dagql.PerClientInput).
 			Doc(`Update one or more toolchains.`).
 			Deprecated("Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.").
 			Args(
@@ -243,7 +255,10 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 				dagql.Arg("toolchains").Doc(`The toolchains to remove.`),
 			),
 
+		// Resolves versions live, through the calling client's module-source
+		// and Git reads, so it is keyed per client.
 		dagql.NodeFunc("withUpdateBlueprint", s.moduleSourceWithUpdateBlueprint).
+			WithInput(dagql.PerClientInput).
 			Doc(`Update the blueprint module to the latest version.`).
 			Deprecated("Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead."),
 
@@ -291,8 +306,11 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 		dagql.Func("localContextDirectoryPath", s.moduleSourceLocalContextDirectoryPath).
 			Doc(`The full absolute path to the context directory on the caller's host filesystem that this module source is loaded from. Only valid for local module sources.`),
 
-		dagql.NodeFunc("asModule", s.moduleSourceAsModule).
-			WithInput(dagql.PerClientInput).
+		// Keyed by its receiver, which is keyed by its content when it has
+		// one (identifiedModuleSourceResult), so equal sources share one
+		// loaded module across clients, sessions and engines.
+		dagql.NodeFuncWithDynamicInputs("asModule", s.moduleSourceAsModule, s.moduleSourceAsModuleCacheKey).
+			WithInput(eagerRuntimeInput).
 			Doc(`Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation`),
 		dagql.NodeFunc("_implementationScoped", s.moduleSourceImplementationScoped).
 			Doc(`The module source scoped to implementation identity only, i.e. source code and dependency content rather than client-specific provenance.`),
@@ -333,14 +351,20 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 			Doc(`The URL to clone the root of the git repo from`).
 			Deprecated("Use `cloneRef` instead. `cloneRef` supports both URL-style and SCP-like SSH references"),
 
+		// Resolves the generator's module through the calling client's
+		// module-source and Git reads, so it is keyed per client.
 		dagql.Func("withClient", s.moduleSourceWithClient).
+			WithInput(dagql.PerClientInput).
 			Doc(`Update the module source with a new client to generate.`).
 			Args(
 				dagql.Arg("generator").Doc(`The generator to use`),
 				dagql.Arg("outputDir").Doc(`The output directory for the generated client.`),
 			),
 
+		// Resolves the generator's module through the calling client's
+		// module-source and Git reads, so it is keyed per client.
 		dagql.Func("withUpdatedClients", s.moduleSourceWithUpdatedClients).
+			WithInput(dagql.PerClientInput).
 			Doc(`Update one or more clients.`).
 			Args(
 				dagql.Arg("clients").Doc(`The clients to update`),
@@ -351,7 +375,7 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 			Args(
 				dagql.Arg("path").Doc(`The path of the client to remove.`),
 			),
-	}.Install(dag)
+	})).Install(dag)
 
 	dagql.Fields[*core.SDKConfig]{}.Install(dag)
 	dagql.Fields[*modules.ModuleConfigClient]{}.Install(dag)
@@ -3851,10 +3875,20 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, mod *core.Mo
 		// runtimes). This also covers a runtime selected before a cached
 		// definition: the definition hit skipped the exec that used to
 		// evaluate the runtime, and an eager client still wants it filled.
-		var runtimeRes dagql.ID[*core.Container]
-		if err = dag.Select(ctx, mod.Runtime.Value, &runtimeRes, dagql.Selector{
-			Field: "sync",
-		}); err != nil {
+		// It gets the parts a function call's exec over the runtime mounts
+		// (Container.RunParts), not a sync: a sync completes the runtime's
+		// operation, which for a runtime another engine ran needs none of
+		// its content. The runtime's own exec metadata isn't among them, as
+		// no exec over it reads it.
+		runtime := mod.Runtime.Value
+		if err := evaluateContainerMetadata(ctx, runtime); err != nil {
+			return nil, err
+		}
+		cache, err := dagql.EngineCache(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if err := cache.EvaluateParts(ctx, runtime, runtime.Self().RunParts()...); err != nil {
 			return nil, err
 		}
 	}
@@ -4614,54 +4648,69 @@ func resolveDefaultPathContextSource(
 	return defaultPathContextSrc, defaultPathContextSourceVariant, nil
 }
 
+// moduleSourceAsModuleArgs are ModuleSource.asModule's arguments.
+type moduleSourceAsModuleArgs struct {
+	// This internal-only flag allows us to force SDK modules to enable default function
+	// caching even when they are on older modules, which ensures they don't see a regression
+	// right after function caching is enabled. It can be removed after SDKs have been updated
+	// to latest engine versions.
+	ForceDefaultFunctionCaching bool `internal:"true" default:"false"`
+
+	// LegacyDefaultPath marks modules projected from legacy workspace fields.
+	// The caller should also pass DefaultPathContextSourceRef so
+	// +defaultPath inputs resolve from the legacy project/workspace context.
+	LegacyDefaultPath bool `internal:"true" default:"false"`
+
+	// LegacyArgCustomizationsJSON is a JSON-encoded []*modules.ModuleConfigArgument
+	// carrying arg customizations from the workspace dagger.json.
+	// Applied after type defs are populated so constructor arg metadata
+	// (Ignore, DefaultPath, etc.) can be overridden before Install.
+	LegacyArgCustomizationsJSON string `internal:"true" default:""`
+
+	// LegacyNameOverride, when non-empty, overrides the module name.
+	LegacyNameOverride string `internal:"true" default:""`
+
+	// LegacyWorkspaceConfigJSON is a JSON-encoded map[string]any
+	// carrying workspace config defaults from the workspace dagger.json.
+	LegacyWorkspaceConfigJSON string `internal:"true" default:""`
+
+	// LegacyDefaultsFromDotEnv, when true and workspace config is set,
+	// also load .env defaults for args not found in WorkspaceConfig.
+	LegacyDefaultsFromDotEnv bool `internal:"true" default:"false"`
+
+	// DefaultPathContextSourceRef, when set, loads implementation code from
+	// the receiver but resolves +defaultPath inputs from this source ref.
+	DefaultPathContextSourceRef string `internal:"true" default:""`
+
+	// DefaultPathContextSourcePin pins DefaultPathContextSourceRef when set.
+	DefaultPathContextSourcePin string `internal:"true" default:""`
+
+	// DefaultPathContextSource supplies an already-resolved source whose
+	// tree +defaultPath inputs resolve from, taking precedence over
+	// DefaultPathContextSourceRef. Value workspaces pass their own
+	// (possibly overlaid) root tree this way: no ref string names it, and
+	// a frozen workspace's commits may exist nowhere a ref could fetch
+	// from.
+	DefaultPathContextSource dagql.Optional[core.ModuleSourceID] `internal:"true"`
+}
+
 func (s *moduleSourceSchema) moduleSourceAsModule(
 	ctx context.Context,
 	src dagql.ObjectResult[*core.ModuleSource],
-	args struct {
-		// This internal-only flag allows us to force SDK modules to enable default function
-		// caching even when they are on older modules, which ensures they don't see a regression
-		// right after function caching is enabled. It can be removed after SDKs have been updated
-		// to latest engine versions.
-		ForceDefaultFunctionCaching bool `internal:"true" default:"false"`
-
-		// LegacyDefaultPath marks modules projected from legacy workspace fields.
-		// The caller should also pass DefaultPathContextSourceRef so
-		// +defaultPath inputs resolve from the legacy project/workspace context.
-		LegacyDefaultPath bool `internal:"true" default:"false"`
-
-		// LegacyArgCustomizationsJSON is a JSON-encoded []*modules.ModuleConfigArgument
-		// carrying arg customizations from the workspace dagger.json.
-		// Applied after type defs are populated so constructor arg metadata
-		// (Ignore, DefaultPath, etc.) can be overridden before Install.
-		LegacyArgCustomizationsJSON string `internal:"true" default:""`
-
-		// LegacyNameOverride, when non-empty, overrides the module name.
-		LegacyNameOverride string `internal:"true" default:""`
-
-		// LegacyWorkspaceConfigJSON is a JSON-encoded map[string]any
-		// carrying workspace config defaults from the workspace dagger.json.
-		LegacyWorkspaceConfigJSON string `internal:"true" default:""`
-
-		// LegacyDefaultsFromDotEnv, when true and workspace config is set,
-		// also load .env defaults for args not found in WorkspaceConfig.
-		LegacyDefaultsFromDotEnv bool `internal:"true" default:"false"`
-
-		// DefaultPathContextSourceRef, when set, loads implementation code from
-		// the receiver but resolves +defaultPath inputs from this source ref.
-		DefaultPathContextSourceRef string `internal:"true" default:""`
-
-		// DefaultPathContextSourcePin pins DefaultPathContextSourceRef when set.
-		DefaultPathContextSourcePin string `internal:"true" default:""`
-
-		// DefaultPathContextSource supplies an already-resolved source whose
-		// tree +defaultPath inputs resolve from, taking precedence over
-		// DefaultPathContextSourceRef. Value workspaces pass their own
-		// (possibly overlaid) root tree this way: no ref string names it, and
-		// a frozen workspace's commits may exist nowhere a ref could fetch
-		// from.
-		DefaultPathContextSource dagql.Optional[core.ModuleSourceID] `internal:"true"`
-	},
+	args moduleSourceAsModuleArgs,
 ) (inst dagql.ObjectResult[*core.Module], err error) {
+	// The loaded module is keyed by its source and these arguments, and
+	// stands for what loading it read. A call it makes that is keyed per
+	// call, session or client, such as resolving a default-path context
+	// named by ref from the caller, reads what another session may see
+	// otherwise: then the module stays in this session, and no longer than
+	// what it read.
+	resolverCtx := ctx
+	ctx, scopes := dagql.WithCallScopes(ctx)
+	// Deferred before the runtime prebuild's join below, so it runs after
+	// it and sees every call the prebuild made.
+	defer func() { keepWithWhatItRead(resolverCtx, scopes, "module "+src.Self().ModuleName, err) }()
+
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
@@ -4835,6 +4884,53 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		return inst, fmt.Errorf("failed to create instance for module %q: %w", src.Self().ModuleName, err)
 	}
 	return inst, nil
+}
+
+// moduleSourceAsModuleCacheKey keeps a module loaded from a source with a
+// content identity past its session, as the module's definitions are kept: a
+// later session, or an engine the module is sent to, then loads the same
+// source without loading it again. A source without one is its client's
+// alone, and so is the module loaded from it.
+func (s *moduleSourceSchema) moduleSourceAsModuleCacheKey(ctx context.Context, src dagql.ObjectResult[*core.ModuleSource], _ moduleSourceAsModuleArgs, req *dagql.CallRequest) error {
+	frame, err := src.ResultCall()
+	if err != nil {
+		return fmt.Errorf("module source call: %w", err)
+	}
+	if frame.ContentDigest() != "" {
+		req.IsPersistable = true
+	}
+	return nil
+}
+
+// eagerRuntimeInput keys a module's load by whether its client asked for
+// the module's runtime to be built as it loads (EagerRuntime), which
+// runModuleDefInSDK reads from the client: a lazy load hasn't built it, so it
+// isn't one an eager client can take.
+var eagerRuntimeInput = dagql.ImplicitInput{
+	Name: "eagerRuntime",
+	Resolver: func(ctx context.Context, _ map[string]dagql.Input) (dagql.Input, error) {
+		md, err := engine.ClientMetadataFromContext(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get client metadata: %w", err)
+		}
+		return dagql.NewBoolean(md.EagerRuntime), nil
+	},
+}
+
+// keepWithWhatItRead keeps the result of the resolver running under
+// resolverCtx no wider and no longer than the calls scopes recorded: in its
+// session when one of them was keyed per call, session or client, and not
+// past their earliest expiry. what names the result in the debug log. It
+// does nothing when the resolver failed (err).
+func keepWithWhatItRead(resolverCtx context.Context, scopes *dagql.CallScopes, what string, err error) {
+	if err != nil {
+		return
+	}
+	if bound := scopes.SessionBound(); bound != "" {
+		slog.Debug("result bound to its session", "result", what, "boundBy", bound)
+		dagql.BindToSession(resolverCtx)
+	}
+	dagql.ExpireBy(resolverCtx, scopes.ExpiresAtUnix())
 }
 
 // runtimePrebuilds bounds the engine's runtime prebuilds in flight to one per

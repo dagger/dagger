@@ -15,15 +15,7 @@ func containerPartDelegation(v dagql.PersistedPayloadVisit, p persistedContainer
 	if len(p.LazyJSON) != 0 || !p.Metadata.Consumed || demand == ContainerPartMetadata {
 		return nil, nil
 	}
-	if v.Call == nil {
-		return nil, nil
-	}
-	switch v.Call.Field {
-	case "withWorkdir", "withEnvVariable", "withoutDefaultArgs", "__withSystemEnvVariable", "withEntrypoint", "withMountedCache", "withoutMount", "withUnixSocket", "withoutUnixSocket", "withoutEnvVariable":
-	default:
-		return nil, nil
-	}
-	if v.Call.Kind != dagql.ResultCallKindField || v.Call.Module != nil || v.Call.Nth != 0 {
+	if !containerDelegatingCall(v.Call) {
 		return nil, nil
 	}
 	if v.Call.Type == nil || v.Call.Type.NamedType != "Container" || v.Call.Type.Elem != nil {
@@ -47,6 +39,58 @@ func containerPartDelegation(v dagql.PersistedPayloadVisit, p persistedContainer
 	return nil, fmt.Errorf("Container delegation: undeclared part %q", demand)
 }
 
+// containerDelegatingCall reports whether call is one of the metadata
+// effects whose Container's parts, but its metadata, are each its receiver's
+// part of the same key, unchanged, or absent (containerPartDelegation).
+func containerDelegatingCall(call *dagql.ResultCall) bool {
+	if call == nil {
+		return false
+	}
+	if containerKeepsEveryPart(call) {
+		return true
+	}
+	switch call.Field {
+	case "withMountedCache", "withoutMount":
+		return call.Kind == dagql.ResultCallKindField && call.Module == nil && call.Nth == 0
+	}
+	return false
+}
+
+// containerKeepsEveryPart reports whether call is one of the metadata
+// effects whose Container keeps every part of its receiver unchanged but its
+// metadata: those of containerDelegatingCall that leave the mount list as it
+// was. A withoutMount drops a mount, and a withMountedCache covers any mount
+// at its target with a cache, which has no part.
+func containerKeepsEveryPart(call *dagql.ResultCall) bool {
+	if call == nil {
+		return false
+	}
+	switch call.Field {
+	case "withWorkdir", "withEnvVariable", "withoutDefaultArgs", "__withSystemEnvVariable", "withEntrypoint", "withUnixSocket", "withoutUnixSocket", "withoutEnvVariable":
+	default:
+		return false
+	}
+	return call.Kind == dagql.ResultCallKindField && call.Module == nil && call.Nth == 0
+}
+
+// DelegatedParts is, by a Container's call alone, the receiver whose parts it
+// keeps, every one of them unchanged but its metadata, its own: the calls
+// containerKeepsEveryPart names, made on an exact receiver. A call that drops
+// or covers a mount is not one: a sync of its receiver would make the mount
+// it no longer holds.
+func (family foreignFamilyCodec) DelegatedParts(call *dagql.ResultCall) (uint64, []dagql.PartKey, bool) {
+	if family != "Container" || !containerKeepsEveryPart(call) {
+		return 0, nil, false
+	}
+	if call.Type == nil || call.Type.NamedType != "Container" || call.Type.Elem != nil {
+		return 0, nil, false
+	}
+	if call.Receiver == nil || call.Receiver.ResultID == 0 || call.Receiver.Call != nil {
+		return 0, nil, false
+	}
+	return call.Receiver.ResultID, []dagql.PartKey{ContainerPartMetadata}, true
+}
+
 // RouteParts describes the saved operation without resolving references or
 // constructing an operational lazy state. Mount keys are always target paths.
 func (family foreignFamilyCodec) RouteParts(v dagql.PersistedPayloadVisit, demand dagql.PartKey) (dagql.LazyOperationRoute, error) {
@@ -55,6 +99,23 @@ func (family foreignFamilyCodec) RouteParts(v dagql.PersistedPayloadVisit, deman
 		return dagql.LazyOperationRoute{Group: dagql.LazyGroupAddress{OutputPath: slices.Clone(v.Path)}}, err
 	}
 	return router.route(demand, true)
+}
+
+// RouteEachPart routes parts of one payload with one router, so the payload
+// is decoded once: each route and error is what RouteParts gives for it,
+// without its write set, whose enumeration would read every part of the
+// payload for each part routed.
+func (family foreignFamilyCodec) RouteEachPart(v dagql.PersistedPayloadVisit, parts []dagql.PartKey) ([]dagql.LazyOperationRoute, []error) {
+	routes, errs := make([]dagql.LazyOperationRoute, len(parts)), make([]error, len(parts))
+	router, err := family.newPartRouter(v)
+	for i, part := range parts {
+		if err != nil {
+			routes[i], errs[i] = dagql.LazyOperationRoute{Group: dagql.LazyGroupAddress{OutputPath: slices.Clone(v.Path)}}, err
+			continue
+		}
+		routes[i], errs[i] = router.route(part, false)
+	}
+	return routes, errs
 }
 
 // partRouter routes demands on one decoded payload. A probe routes every

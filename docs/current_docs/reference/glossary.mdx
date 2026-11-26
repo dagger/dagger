@@ -18,7 +18,7 @@ Each [engine](#engine) caches the result of each operation, for example a built 
 
 ## Cache volume
 
-A directory whose contents persist across Dagger [sessions](#session), such as a package manager's download cache. A function mounts it into a container. See [`CacheVolume`](./api/cache-volume.mdx).
+A directory whose contents persist across Dagger [sessions](#session), such as a package manager's download cache. A function mounts it into a container. Its contents are only a cache and can be absent on any run, so a pipeline must be correct with it empty. See [`CacheVolume`](./api/cache-volume.mdx).
 
 ## Changeset
 

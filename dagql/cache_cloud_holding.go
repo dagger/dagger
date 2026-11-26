@@ -9,16 +9,16 @@ import "iter"
 // most one per entry, in holders under cloudCacheID.
 //
 // Unlike the holdings the Cloud keeps of engine caches, it owns nothing: it
-// adds no ownership unit to its entry, is not in holderEntries, and no
+// adds no ownership unit to its entry, is in no engine cache's index, and no
 // collection pass looks at it. Sessions, retention edges and dependents own
 // engine entries as they always have. It goes with its entry.
 
 // cloudHoldingLocked returns res's Cloud holding and its key, if it has one.
 // Requires egraphMu.
 func (res *sharedResult) cloudHoldingLocked() (HolderKey, *holding) {
-	for key, h := range res.holders {
-		if key.Cache == cloudCacheID {
-			return key, h
+	for _, ref := range res.holderRefsLocked() {
+		if ref.key.Cache == cloudCacheID {
+			return ref.key, ref.h
 		}
 	}
 	return HolderKey{}, nil
@@ -28,20 +28,48 @@ func (res *sharedResult) cloudHoldingLocked() (HolderKey, *holding) {
 // the engine image ships res, and the holding carries the image's offers of
 // its parts. Requires egraphMu.
 func (res *sharedResult) imageHoldingLocked() (HolderKey, *holding) {
-	for key, h := range res.holders {
-		if key.Cache == imageCacheID {
-			return key, h
+	for _, ref := range res.holderRefsLocked() {
+		if ref.key.Cache == imageCacheID {
+			return ref.key, ref.h
 		}
 	}
 	return HolderKey{}, nil
 }
 
+// imageSuppliesLocked reports whether the engine image supplies res's parts:
+// its image holding carries the image's offer of one. The image ships parts
+// for the results it was built from, and the records of their closures
+// without any. Such a record has no content of its own on the engine, and
+// takes its parts as any other entry does. Requires egraphMu.
+func (res *sharedResult) imageSuppliesLocked() bool {
+	_, h := res.imageHoldingLocked()
+	if h == nil {
+		return false
+	}
+	for _, part := range h.parts {
+		if part.offer != nil {
+			return true
+		}
+	}
+	return false
+}
+
 // offerHoldingLocked returns the holding whose offers supply res's parts: its
-// image holding, whose content is on the engine's own disk, or else its Cloud
-// holding. Requires egraphMu.
+// image holding when the image supplies them (imageSuppliesLocked), whose
+// content is on the engine's own disk, or else its Cloud holding. Requires
+// egraphMu.
 func (res *sharedResult) offerHoldingLocked() (HolderKey, *holding) {
-	if key, h := res.imageHoldingLocked(); h != nil {
-		return key, h
+	if res.imageSuppliesLocked() {
+		return res.imageHoldingLocked()
+	}
+	return res.cloudHoldingLocked()
+}
+
+// senderHoldingLocked returns res's holding of the cache from, the image or
+// the Cloud, which an offer from that cache goes into. Requires egraphMu.
+func (res *sharedResult) senderHoldingLocked(from CacheID) (HolderKey, *holding) {
+	if from == imageCacheID {
+		return res.imageHoldingLocked()
 	}
 	return res.cloudHoldingLocked()
 }
@@ -54,12 +82,9 @@ func (res *sharedResult) noteImageCopyLocked(number uint64) {
 	if h == nil {
 		h = &holding{}
 	} else if key.Number != number {
-		delete(res.holders, key)
+		res.deleteHolderLocked(key)
 	}
-	if res.holders == nil {
-		res.holders = make(map[HolderKey]*holding)
-	}
-	res.holders[HolderKey{Cache: imageCacheID, Number: number}] = h
+	res.putHolderLocked(HolderKey{Cache: imageCacheID, Number: number}, h)
 }
 
 // noteSenderCopyLocked records res's counterpart in the cache a merge is
@@ -83,14 +108,13 @@ func (res *sharedResult) noteCloudCopyLocked(number uint64, stored bool, expires
 		h = &holding{}
 	} else if key.Number != number {
 		// A later message names another Cloud entry, as after a service
-		// restart: the one holding moves to it, with its offers.
-		delete(res.holders, key)
+		// restart: the one holding moves to it, with its offers. What the
+		// engine merged was the other entry's.
+		res.deleteHolderLocked(key)
+		h.setCloudMergeLocked(nil)
 	}
-	if res.holders == nil {
-		res.holders = make(map[HolderKey]*holding)
-	}
-	res.holders[HolderKey{Cache: cloudCacheID, Number: number}] = h
-	h.unstored = !stored
+	res.putHolderLocked(HolderKey{Cache: cloudCacheID, Number: number}, h)
+	h.setFlag(heldUnstored, !stored)
 	if !stored {
 		expiresAtUnix = 0
 	}
@@ -104,7 +128,7 @@ func (res *sharedResult) partOfferLocked(key string) *partOffer {
 	if h == nil {
 		return nil
 	}
-	return h.parts[key].offer
+	return h.partLocked(key).offer
 }
 
 // partOffersLocked yields the offers of res's parts by part address key, the
@@ -116,8 +140,10 @@ func (res *sharedResult) partOffersLocked() iter.Seq2[string, *partOffer] {
 		if h == nil {
 			return
 		}
-		for key, part := range h.parts {
-			if part.offer != nil && !yield(key, part.offer) {
+		// A caller may retire the offer, which replaces h.parts: this walks
+		// the slice it started with.
+		for _, part := range h.parts {
+			if part.offer != nil && !yield(handleString(part.key), part.offer) {
 				return
 			}
 		}
@@ -132,4 +158,33 @@ func (res *sharedResult) hasPartOffersLocked() bool {
 		return true
 	}
 	return false
+}
+
+// HasPartOffer reports whether the image or the Cloud offers res's part: an
+// address the part can be fetched from instead of made.
+func (c *Cache) HasPartOffer(res AnyResult, part PartKey) bool {
+	row := res.cacheSharedResult()
+	if row == nil {
+		return false
+	}
+	key, err := partAddressKey(PersistedPartAddress{Part: part})
+	if err != nil {
+		return false
+	}
+	read := c.readGraphAs(workOffer)
+	defer read.Unlock()
+	return row.partOfferLocked(key) != nil
+}
+
+// cloudMergeNote is what an engine last merged of its Cloud holding's entry:
+// the Cloud cache's identity and the entry's change stamp the merged value
+// carried (ValueBundle.SenderCache, TransferredValue.SenderStamp), and the
+// engine entry's own transfer revision once the merge left it. A later value
+// of the same Cloud entry from the same start of the same cache at the same
+// stamp carries the same record and expiry, and while the engine entry's
+// revision is unchanged, its identity and the Cloud's copy are what the
+// merge taught it then (unchangedCloudRowLocked).
+type cloudMergeNote struct {
+	cache           string
+	stamp, revision uint64
 }

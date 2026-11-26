@@ -182,6 +182,8 @@ func (tr *contentTestTransport) RoundTrip(req *http.Request) (*http.Response, er
 		} else if _, err := fmt.Sscanf(spec, "bytes=%d-%d", &start, &end); err != nil {
 			return nil, err
 		}
+		// A range past the object's end is cut at its end, as HTTP's are.
+		end = min(end, int64(len(data))-1)
 		resp.StatusCode = http.StatusPartialContent
 		resp.Header.Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, len(data)))
 		data = data[start : end+1]
@@ -1021,7 +1023,7 @@ func (f *exhaustionFixture) attach(t *testing.T, row AnyResult, offer PersistedP
 	f.cache.egraphMu.Lock()
 	owner, err := f.cache.newOfferOwnerLocked(f.ctx, offer.Owner)
 	if err == nil {
-		err = f.cache.testAttachPartOfferLocked(row.cacheSharedResult(), offer.Address, &partOffer{record: offer, owner: owner})
+		err = f.cache.testAttachPartOfferLocked(row.cacheSharedResult(), offer.Address, &partOffer{layeredOffer: f.cache.storedLayers.hold(offer), owner: owner})
 	}
 	f.cache.egraphMu.Unlock()
 	require.NoError(t, err)

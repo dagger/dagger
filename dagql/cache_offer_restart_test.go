@@ -37,27 +37,27 @@ func forwardedOfferOwner(c *Cache, id uint64) (*offerOwner, error) {
 	for _, slot := range row.testPartOffers() {
 		offer = slot
 	}
-	if len(offer.record.Value.Services) != 1 {
-		return nil, fmt.Errorf("got %d services, want 1", len(offer.record.Value.Services))
+	if len(offer.held.Value.Services) != 1 {
+		return nil, fmt.Errorf("got %d services, want 1", len(offer.held.Value.Services))
 	}
-	service := offer.record.Value.Services[0].ServiceResultID
-	if len(offer.record.Owner.DependencyIDs) != 2 {
-		return nil, fmt.Errorf("got %d owner dependencies, want 2", len(offer.record.Owner.DependencyIDs))
+	service := offer.held.Value.Services[0].ServiceResultID
+	if len(offer.held.Owner.DependencyIDs) != 2 {
+		return nil, fmt.Errorf("got %d owner dependencies, want 2", len(offer.held.Owner.DependencyIDs))
 	}
-	if !slices.Contains(offer.record.Owner.DependencyIDs, service) {
+	if !slices.Contains(offer.held.Owner.DependencyIDs, service) {
 		return nil, fmt.Errorf("owner dependencies do not contain service %d", service)
 	}
-	explicit := offer.record.Owner.DependencyIDs[0]
+	explicit := offer.held.Owner.DependencyIDs[0]
 	if explicit == service {
-		explicit = offer.record.Owner.DependencyIDs[1]
+		explicit = offer.held.Owner.DependencyIDs[1]
 	}
-	if !slices.Equal(offer.record.Owner.DependencyIDs, offer.owner.record.DependencyIDs) {
-		return nil, fmt.Errorf("offer dependencies %v differ from owner dependencies %v", offer.record.Owner.DependencyIDs, offer.owner.record.DependencyIDs)
+	if !slices.Equal(offer.held.Owner.DependencyIDs, offer.owner.record.DependencyIDs) {
+		return nil, fmt.Errorf("offer dependencies %v differ from owner dependencies %v", offer.held.Owner.DependencyIDs, offer.owner.record.DependencyIDs)
 	}
-	if _, found := row.deps[sharedResultID(service)]; !found {
+	if !row.deps.has(sharedResultID(service)) {
 		return nil, fmt.Errorf("the direct edge to service %d did not survive", service)
 	}
-	if _, found := row.deps[sharedResultID(explicit)]; found {
+	if row.deps.has(sharedResultID(explicit)) {
 		return nil, fmt.Errorf("explicit-only reference %d must stay offer-owned", explicit)
 	}
 	for _, dep := range []uint64{service, explicit} {
@@ -106,10 +106,11 @@ func TestOfferPendingRestartAndForward(t *testing.T) {
 	require.Equal(t, OfferAccepted, out[0].Outcome)
 	requireForwardedOffer(t, a, uint64(receiver.cacheSharedResult().id))
 
-	// A to B forwards the pending offer without typed decode or bytes.
+	// A sends B the pending offer as the Cloud does, without typed decode or
+	// bytes.
 	path := filepath.Join(t.TempDir(), "b.db")
 	bctx, b := reopenTransferTestCache(t, path)
-	mappingReply, err := b.MergeValues(bctx, cloudCacheID, exportTestBundle(t, actx, a, receiver))
+	mappingReply, err := b.MergeValues(bctx, cloudCacheID, cloudTestBundle(t, actx, a, receiver))
 	mapping := mappingReply.Imported()
 	require.NoError(t, err)
 	id := mapping[0].ResultID
@@ -145,12 +146,17 @@ func TestOfferPendingRestartAndForward(t *testing.T) {
 	taken := renewalConsumer(t, bridge, renewChain(chain))
 	require.Equal(t, RenewalReplyDiscarded, bridge.ReplyRenewal(RenewalReply{ID: oldRequest.ID, Chain: oldRequest.Chain, Unavailable: true}), "an old engine's reply cannot enter")
 
-	// B to C forwards the restored offer, still without any request.
+	// B's export to C carries the entry without the restored offer, and asks
+	// for nothing.
 	cctx, c, _ := transferTestCache(t)
 	forwardedReply, err := c.MergeValues(cctx, cloudCacheID, exportTestBundle(t, bctx, b, Result[Typed]{shared: b.resultsByID[sharedResultID(id)]}))
 	forwarded := forwardedReply.Imported()
 	require.NoError(t, err)
-	requireForwardedOffer(t, c, forwarded[0].ResultID)
+	c.egraphMu.RLock()
+	forwardedOffers := len(c.resultsByID[sharedResultID(forwarded[0].ResultID)].testPartOffers())
+	c.egraphMu.RUnlock()
+	require.Zero(t, forwardedOffers, "an engine's export carries no offer")
+	require.Empty(t, c.offerOwners)
 	require.Zero(t, transport.total())
 	require.Empty(t, taken())
 

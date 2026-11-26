@@ -2,7 +2,6 @@ package dagql
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"slices"
 )
@@ -88,18 +87,18 @@ func describePartRecord(record PersistedRecord) ([]PartProbe, error) {
 
 func describeMemoPartRecord(record PersistedRecord, memos payloadMemos) ([]PartProbe, error) {
 	var probes []PartProbe
-	err := walkMemoTransferPayloads(&record.Envelope, record.Call, record.SnapshotLinks, memos, func(family PersistedObjectFamily, v PersistedPayloadVisit) (json.RawMessage, error) {
+	err := readMemoTransferPayloads(&record.Envelope, record.Call, record.SnapshotLinks, memos, func(family PersistedObjectFamily, v PersistedPayloadVisit) error {
 		if describer, ok := family.Transfer.(PersistedPartDescriber); ok {
 			parts, err := describer.DescribeParts(v)
 			if err != nil {
-				return nil, err
+				return err
 			}
 			for i := range parts {
 				parts[i].Descriptor.Family = family.Name
 			}
 			probes = append(probes, parts...)
 		}
-		return v.Payload, nil
+		return nil
 	})
 	return probes, err
 }

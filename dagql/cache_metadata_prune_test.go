@@ -191,9 +191,9 @@ func TestCacheMetadataPruneDependencySortCancellation(t *testing.T) {
 	t.Parallel()
 
 	const dependencyCount = pruneCancellationCheckInterval + 44
-	deps := make(map[sharedResultID]struct{}, dependencyCount)
+	deps := make(resultIDSet, 0, dependencyCount)
 	for i := 1; i <= dependencyCount; i++ {
-		deps[sharedResultID(i)] = struct{}{}
+		deps.add(sharedResultID(i))
 	}
 	c := &Cache{resultsByID: map[sharedResultID]*sharedResult{
 		dependencyCount + 1: {
@@ -273,8 +273,8 @@ func TestCachePruneMetadataEstimateSkipsPhysicalMeasurementAndUsesColdOrder(t *t
 		assert.Equal(t, directBytes, res.directResultBytes)
 		assert.Equal(t, "", res.entry.ID)
 		assert.Equal(t, "", res.entry.Description)
-		assert.Equal(t, "", res.callLabel)
-		assert.Assert(t, res.callFrame == nil)
+		assert.Equal(t, "", res.entry.DagqlCall)
+		assert.Assert(t, !res.frame.ok())
 		assert.Equal(t, 0, len(res.usageIdentities))
 	}
 
@@ -290,7 +290,7 @@ func TestCachePruneMetadataEstimateSkipsPhysicalMeasurementAndUsesColdOrder(t *t
 	assert.Equal(t, int32(1), snapshotGCCalls.Load())
 	assert.Assert(t, report.SnapshotGCAttempted)
 	assert.Assert(t, report.SnapshotGCSucceeded)
-	assert.Assert(t, report.FinalCompactionOldClassSlots > report.FinalCompactionNewClassSlots)
+	assert.Assert(t, report.AfterPrune.ClassSlotCount < report.Before.ClassSlotCount, "the prune's collections freed the classes they ended")
 
 	c.egraphMu.RLock()
 	_, oldestPresent := c.resultsByID[results[0].cacheSharedResult().id]
@@ -382,7 +382,10 @@ func TestCachePruneMetadataEstimateProtectsActiveAndUnpruneableResults(t *testin
 	assert.NilError(t, c.ReleaseSession(activeCtx, "metadata-prune-active"))
 }
 
-func TestCachePruneMetadataEstimateCompactionCanRestoreMaximumWithoutEviction(t *testing.T) {
+// Classes that ended since the last collection hold no entry, and a metadata
+// prune frees them before its estimate counts them: freeing them alone can
+// bring the estimate to the maximum, and then nothing is evicted.
+func TestCachePruneMetadataEstimateFreesEndedClassesBeforeEvicting(t *testing.T) {
 	t.Parallel()
 
 	ctx := cacheTestContext(t.Context())
@@ -392,7 +395,7 @@ func TestCachePruneMetadataEstimateCompactionCanRestoreMaximumWithoutEviction(t 
 		return nil
 	})
 	assert.NilError(t, err)
-	call := cacheTestIntCall("metadata-prune-compact-only")
+	call := cacheTestIntCall("metadata-prune-ended-classes-only")
 	res, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: call, IsPersistable: true}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(call, 1), nil
 	})
@@ -409,13 +412,12 @@ func TestCachePruneMetadataEstimateCompactionCanRestoreMaximumWithoutEviction(t 
 	maximum := before.EstimatedBytes - 3*cacheMetadataClassSlotEstimatedBytes
 	report, err := c.PruneMetadataEstimate(ctx, maximum, maximum-1)
 	assert.NilError(t, err)
-	assert.Assert(t, report.Triggered)
-	assert.Equal(t, maximum, report.AfterInitialCompaction.EstimatedBytes)
+	assert.Equal(t, maximum, report.Before.EstimatedBytes)
+	assert.Assert(t, !report.Triggered)
 	assert.Equal(t, 0, report.CandidateCount)
 	assert.Equal(t, 0, report.PlannedRootCount)
 	assert.Equal(t, 0, report.RemovedPersistedRootCount)
 	assert.Equal(t, int64(0), snapshotGCCalls.Load())
-	assert.Assert(t, report.InitialCompactionOldClassSlots > report.InitialCompactionNewClassSlots)
 
 	c.egraphMu.RLock()
 	_, present := c.resultsByID[res.cacheSharedResult().id]

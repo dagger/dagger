@@ -14,10 +14,12 @@ import (
 	"io"
 	"log/slog"
 	"math/rand/v2"
+	"net"
 	"net/http"
 	"net/http/httptrace"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
@@ -25,6 +27,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/remotecache/protocol"
+	"github.com/dagger/dagger/engine/wcprof"
 )
 
 // The engine side's limits.
@@ -91,6 +94,9 @@ type Config struct {
 type Adapter interface {
 	// CacheIdentity returns the engine cache's identity and generation.
 	CacheIdentity() (cacheID string, generation uint64)
+	// ImageEntries returns the numbers of the cache's entries its engine
+	// image ships, sorted (protocol.Hello's Image).
+	ImageEntries() []uint64
 	// Export captures the requested roots and calls consume exactly once,
 	// while the captured chains stay open. The export's Bundle is nil when no
 	// root survived. The chains are released when consume returns. known are
@@ -108,6 +114,37 @@ type Adapter interface {
 	// addresses; ReplyRenewal answers it.
 	TakeRenewalRequest(ctx context.Context) (*dagql.RenewalRequest, error)
 	ReplyRenewal(dagql.RenewalReply) dagql.RenewalReplyDisposition
+	// CheckRestorePart checks a part of a set file for its merge, by
+	// everything its merge does before it reads the cache's state
+	// (dagql.Cache.CheckRestoreValues), so that a restore can check a file's
+	// next part while the part before it merges.
+	CheckRestorePart(part dagql.ValueBundle) (*dagql.CheckedValues, error)
+	// RestorePart merges one part of a set file (protocol.Restore), as
+	// CheckRestorePart checked it, into the cache, through the path Merge
+	// takes, with the roots in unretained given no retention edge, and
+	// returns what its commit left. The commit holds every entry it lands on
+	// until the reply's Release (dagql.Cache.RestoreCheckedValues). known are
+	// as for Merge: the rows the part lands on join them. source names the
+	// set file, for the log of a record whose payload fails at its first use.
+	// It also returns how long the part's merge waited behind the merges that
+	// answer lookups before it began.
+	RestorePart(ctx context.Context, part dagql.ValueBundle, checked *dagql.CheckedValues, unretained []dagql.TransferOrdinal, known *dagql.KnownRows, source string) (dagql.MergeReply, time.Duration, error)
+	// PlanPartFetch plans a fetch ahead of entry number's part, or the whole
+	// entry when part is empty (dagql.Cache.PlanPartFetch).
+	PlanPartFetch(ctx context.Context, number uint64, part dagql.PartKey)
+	// Landing marks a whole set landing on the cache, from its arrival to
+	// its end, until the returned func is called (dagql.Cache.Landing).
+	Landing() func()
+	// CacheWork returns the cache's counts a restore's window reads at its
+	// start and end (RestoreWindow).
+	CacheWork() CacheWork
+	// LateMisses returns the cache's lookup misses on this connection before
+	// before, not returned already, whose lookup now finds one of entries,
+	// by the engine's numbers (dagql.Cache.LateRemoteMisses).
+	LateMisses(before time.Time, entries map[uint64]struct{}) []dagql.RemoteMiss
+	// Restored records what a restore did with one file, for the engine's
+	// stop event.
+	Restored(RestoreReport)
 	// StartLookups starts queuing the cache's lookup misses for this
 	// connection, with nothing asked yet, and StopLookups stops it.
 	StartLookups()
@@ -122,6 +159,9 @@ type Adapter interface {
 	// Settled records the service's Settled for a settle of period that
 	// listed sessions.
 	Settled(period uint64, sessions []protocol.SettleSession)
+	// TakeReadyRoots waits until some of the roots exports left out busy can
+	// be captured, and returns their numbers, for Ready.
+	TakeReadyRoots(ctx context.Context) ([]uint64, error)
 }
 
 // SettleState is where the engine stands in settling with the service.
@@ -141,6 +181,11 @@ type SettleState struct {
 	// sorted by session ID (protocol.Claims): those live, and those ended
 	// that no Settled has covered.
 	Claims []protocol.SessionClaim
+	// IdleSince is when the period's last live session ended, starting the
+	// engine's bound, zero while a session is live; Bound is the bound's
+	// length. The settle tells the service both (protocol.Settle).
+	IdleSince time.Time
+	Bound     time.Duration
 }
 
 // settling reports whether the engine should ask the service to settle:
@@ -166,13 +211,25 @@ type BlobSource interface {
 	ReadBlob(ctx context.Context, dgst digest.Digest) (io.ReadCloser, int64, error)
 }
 
-// settings are Run's configuration with the limits and seams tests change.
+// settings are Run's configuration with the limits and seams tests change,
+// and what outlives a connection.
 type settings struct {
 	Config
 	dial       func(context.Context) (wsConn, error)
 	put        func(ctx context.Context, url string, body io.Reader, size int64) error
+	getFile    func(context.Context, protocol.SetFileSegment) ([]byte, fetchTiming, error)
+	decode     func([]byte) (dagql.ValueBundle, error)
+	peakRSS    func() int64
 	maxMessage int
 	jitter     func() float64
+	// aheadBytes is restoreAheadBytes but in tests.
+	aheadBytes int
+	// probeInterval and probeTimeout are protocol.ProbeInterval and
+	// protocol.ProbeTimeout but in tests.
+	probeInterval time.Duration
+	probeTimeout  time.Duration
+	// restored are the set files this engine process merged whole.
+	restored restoredFiles
 }
 
 func newSettings(cfg Config) *settings {
@@ -180,10 +237,16 @@ func newSettings(cfg Config) *settings {
 		cfg.Logger = slog.New(slog.DiscardHandler)
 	}
 	s := &settings{
-		Config:     cfg,
-		put:        httpPut(uploadClient(uploadResponseTimeout), uploadIdleTimeout),
-		maxMessage: protocol.MaxMessageBytes,
-		jitter:     rand.Float64,
+		Config:        cfg,
+		put:           httpPut(uploadClient(uploadResponseTimeout), uploadIdleTimeout),
+		getFile:       getSetFile(&http.Client{}, restoreIdleTimeout),
+		decode:        decodePart,
+		peakRSS:       PeakResident,
+		maxMessage:    protocol.MaxMessageBytes,
+		jitter:        rand.Float64,
+		aheadBytes:    restoreAheadBytes,
+		probeInterval: protocol.ProbeInterval,
+		probeTimeout:  protocol.ProbeTimeout,
 	}
 	s.dial = s.dialService
 	return s
@@ -193,6 +256,10 @@ func newSettings(cfg Config) *settings {
 // then returns nil promptly: it closes the connection without waiting for the
 // service, cancels uploads, and releases the chains held for exports.
 func Run(ctx context.Context, adapter Adapter, cfg Config) error {
+	// Everything the integration starts is the remote cache's work unless a
+	// kind of its own labels it.
+	ctx, unlabel := wcprof.WithCPUKind(ctx, wcprof.CPUKindRemoteCache)
+	defer unlabel()
 	return newSettings(cfg).run(ctx, adapter)
 }
 
@@ -236,9 +303,13 @@ func (s *settings) serve(ctx context.Context, adapter Adapter) (bool, error) {
 func (s *settings) dialService(ctx context.Context) (wsConn, error) {
 	header := http.Header{}
 	header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(s.Token+":")))
+	arrived := &arrivals{}
+	// The protocol compresses its own messages, before a write takes the
+	// connection (protocol.EncodeMessage).
 	conn, resp, err := websocket.Dial(ctx, strings.TrimSuffix(s.URL, "/")+protocol.EnginePath, &websocket.DialOptions{
+		HTTPClient:      &http.Client{Transport: arrived.transport()},
 		HTTPHeader:      header,
-		CompressionMode: websocket.CompressionNoContextTakeover,
+		CompressionMode: websocket.CompressionDisabled,
 	})
 	if resp != nil && resp.Body != nil {
 		resp.Body.Close()
@@ -247,38 +318,87 @@ func (s *settings) dialService(ctx context.Context) (wsConn, error) {
 		return nil, err
 	}
 	conn.SetReadLimit(protocol.MaxMessageBytes)
-	return websocketConn{conn}, nil
+	return websocketConn{c: conn, arrived: arrived}, nil
 }
 
 // wsConn is the connection a session uses: coder/websocket's Conn, which may
-// be written, pinged and closed from any goroutine, and read from one.
+// be written and closed from any goroutine, and read from one. Read returns
+// a message's JSON, decompressed (protocol.DecodeMessage); Write writes a
+// message as the protocol encoded it (protocol.EncodeMessage).
 type wsConn interface {
 	Read(ctx context.Context) ([]byte, error)
-	Write(ctx context.Context, data []byte) error
-	Ping(ctx context.Context) error
+	Write(ctx context.Context, msg protocol.Message) error
+	// Arrived returns when the last byte arrived on the connection, or the
+	// zero time if none has.
+	Arrived() time.Time
 	CloseNow() error
 }
 
-type websocketConn struct{ c *websocket.Conn }
+type websocketConn struct {
+	c       *websocket.Conn
+	arrived *arrivals
+}
 
 func (w websocketConn) Read(ctx context.Context) ([]byte, error) {
-	for {
-		typ, data, err := w.c.Read(ctx)
+	typ, data, err := w.c.Read(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return protocol.DecodeMessage(data, typ == websocket.MessageBinary, protocol.MaxMessageBytes)
+}
+
+// Write writes a compressed message as a binary message, and a plain one as
+// text.
+func (w websocketConn) Write(ctx context.Context, msg protocol.Message) error {
+	typ := websocket.MessageText
+	if msg.Compressed {
+		typ = websocket.MessageBinary
+	}
+	return w.c.Write(ctx, typ, msg.Data)
+}
+
+func (w websocketConn) Arrived() time.Time { return w.arrived.last() }
+func (w websocketConn) CloseNow() error    { return w.c.CloseNow() }
+
+// arrivals records when bytes last arrived on a connection, counted as they
+// are read off the network, below TLS: part of a message still on its way
+// counts, as does a message whole.
+type arrivals struct{ at atomic.Int64 }
+
+// transport is http.DefaultTransport, its connections recording arrivals.
+func (a *arrivals) transport() *http.Transport {
+	t := http.DefaultTransport.(*http.Transport).Clone()
+	dial := t.DialContext
+	t.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		conn, err := dial(ctx, network, addr)
 		if err != nil {
 			return nil, err
 		}
-		if typ == websocket.MessageText {
-			return data, nil
-		}
+		return arrivalConn{Conn: conn, arrivals: a}, nil
 	}
+	return t
 }
 
-func (w websocketConn) Write(ctx context.Context, data []byte) error {
-	return w.c.Write(ctx, websocket.MessageText, data)
+func (a *arrivals) last() time.Time {
+	at := a.at.Load()
+	if at == 0 {
+		return time.Time{}
+	}
+	return time.Unix(0, at)
 }
 
-func (w websocketConn) Ping(ctx context.Context) error { return w.c.Ping(ctx) }
-func (w websocketConn) CloseNow() error                { return w.c.CloseNow() }
+type arrivalConn struct {
+	net.Conn
+	arrivals *arrivals
+}
+
+func (c arrivalConn) Read(p []byte) (int, error) {
+	n, err := c.Conn.Read(p)
+	if n > 0 {
+		c.arrivals.at.Store(time.Now().UnixNano())
+	}
+	return n, err
+}
 
 // backoff is the reconnection wait: backoffMin doubling to backoffMax, each
 // wait moved by up to backoffJitter of itself either way.

@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"unique"
 
 	"github.com/opencontainers/go-digest"
 )
@@ -12,7 +13,7 @@ import (
 // validateValueBundle checks a bundle and every record's payload, and returns
 // its ordinals in dependency order.
 func validateValueBundle(bundle ValueBundle) ([]uint64, error) {
-	return checkValueBundle(bundle, false)
+	return checkValueBundle(bundle, false, nil, nil)
 }
 
 // validateValueBundleShape checks a bundle as validateValueBundle does, except
@@ -20,7 +21,7 @@ func validateValueBundle(bundle ValueBundle) ([]uint64, error) {
 // and a payload is decoded only to find the parts the record's offers and
 // outputs name. The caller checks the payloads it uses.
 func validateValueBundleShape(bundle ValueBundle) ([]uint64, error) {
-	return checkValueBundle(bundle, true)
+	return checkValueBundle(bundle, true, nil, nil)
 }
 
 // ResolveChainPrefixes gives each of the bundle's outputs that names a chain
@@ -91,34 +92,65 @@ func ResolveChainPrefixes(bundle *ValueBundle) error {
 	return nil
 }
 
+// checkValueBundle checks a bundle as validateValueBundle does, or, with
+// shapeOnly, as validateValueBundleShape does. stored has, for each row whose
+// record a blob-backed cache sends as it holds it, compressed, the parts the
+// record declares (storedBody.parts): its content was checked when its body
+// was made, and its references by the build, so the row is checked by its
+// dependencies and call, and its outputs against those parts. declared has,
+// for each row whose record carries its parts (TransferredValue.Parts), the
+// parts it declares: its outputs are checked against those parts, without
+// mapping them from its payload. Only an engine has a declared, and with
+// shapeOnly and a declared, a row whose record carries its parts is checked
+// without its payloads' JSON (validateUnpreparedRecordShape).
+//
 //nolint:gocyclo // one check per bundle field and record kind; splitting hides the order of the checks
-func checkValueBundle(bundle ValueBundle, shapeOnly bool) ([]uint64, error) {
-	if bundle.Version != valueBundleVersion {
+func checkValueBundle(bundle ValueBundle, shapeOnly bool, stored, declared map[uint64][]declaredPart) ([]uint64, error) {
+	if bundle.Version != ValueBundleVersion {
 		return nil, fmt.Errorf("unsupported value bundle version %d", bundle.Version)
 	}
-	// A prefix output is checked as the chain it names: resolved on a copy of
-	// the outputs, leaving the caller's bundle as it was.
-	bundle.Outputs = slices.Clone(bundle.Outputs)
-	if err := ResolveChainPrefixes(&bundle); err != nil {
+	// An output that names its chain's layers by place in the bundle's list,
+	// as an output of a bundle a blob-backed cache builds does, is checked by
+	// its places, each layer they name once (checkListedLayers). A prefix
+	// output is checked as the chain it names: with one, every output gets
+	// its chain resolved, on a copy of the outputs, leaving the caller's
+	// bundle as it was.
+	if slices.ContainsFunc(bundle.Outputs, func(output TransferredOutput) bool { return output.Prefix != nil }) {
+		bundle.Outputs = slices.Clone(bundle.Outputs)
+		if err := ResolveChainPrefixes(&bundle); err != nil {
+			return nil, err
+		}
+	} else if err := checkListedLayers(bundle); err != nil {
 		return nil, err
 	}
 	if len(bundle.Roots) == 0 {
 		return nil, fmt.Errorf("bundle has no roots")
 	}
-	rows := map[uint64]TransferredValue{}
-	for _, row := range bundle.Values {
+	rows := make(bundleRows, len(bundle.Values)+1)
+	senders := transferSenders(bundle)
+	sent := make(map[uint64]bool, len(bundle.Values))
+	for i := range bundle.Values {
+		row := &bundle.Values[i]
 		id := uint64(row.Ordinal)
-		if id == 0 || id > uint64(len(bundle.Values)) || row.Record.ResultID != id {
+		if id == 0 || id > uint64(len(bundle.Values)) {
 			return nil, fmt.Errorf("invalid ordinal %d", id)
 		}
-		if _, exists := rows[id]; exists {
+		if rows[id] != nil {
 			return nil, fmt.Errorf("duplicate ordinal %d", id)
 		}
 		if row.SenderNumber == 0 {
 			return nil, fmt.Errorf("row %d: no sender number", id)
 		}
+		if sent[row.SenderNumber] {
+			return nil, fmt.Errorf("row %d: duplicate sender number %d", id, row.SenderNumber)
+		}
+		sent[row.SenderNumber] = true
+		// A record names itself and its references by the sender's numbers.
+		if row.Record.ResultID != row.SenderNumber {
+			return nil, fmt.Errorf("row %d: record %d is not its sender number %d", id, row.Record.ResultID, row.SenderNumber)
+		}
 		if row.Held != "" {
-			if err := validateHeldRow(row); err != nil {
+			if err := validateHeldRow(*row); err != nil {
 				return nil, fmt.Errorf("row %d: %w", id, err)
 			}
 			rows[id] = row
@@ -127,8 +159,20 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool) ([]uint64, error) {
 		validate := validateTransferRecord
 		if shapeOnly {
 			validate = validateTransferRecordShape
+			// An engine merges a record that carries its parts with its
+			// payload unprepared (valueMergePrep.markUnprepared), and its
+			// first use checks the payload.
+			if declared != nil && row.Parts != nil {
+				validate = validateUnpreparedRecordShape
+			}
 		}
-		if err := validate(row.Record, row.DependencyIDs); err != nil {
+		if _, ok := stored[id]; ok {
+			validate = validateStoredRecordShape
+			if row.storedCall != nil {
+				validate = validateStoredFrameRecordShape
+			}
+		}
+		if err := validate(row.Record, senders.dependencies(row.DependencyIDs)); err != nil {
 			return nil, fmt.Errorf("row %d: %w", id, err)
 		}
 		rows[id] = row
@@ -137,8 +181,18 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool) ([]uint64, error) {
 		if transferred.Call == "" {
 			return nil, fmt.Errorf("call %d: no call", i)
 		}
-		if _, ok := rows[uint64(transferred.Value)]; !ok {
+		if _, ok := rows.get(uint64(transferred.Value)); !ok {
 			return nil, fmt.Errorf("call %d: value %d is no row", i, transferred.Value)
+		}
+		// Each input's row is one the bundle carries, or a held row for the
+		// recipient's own entry.
+		for j, input := range transferred.Inputs {
+			if input == 0 {
+				continue
+			}
+			if _, ok := rows.get(uint64(input)); !ok {
+				return nil, fmt.Errorf("call %d: input %d's row %d is no row", i, j, input)
+			}
 		}
 	}
 	named := map[uint64]bool{}
@@ -149,9 +203,21 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool) ([]uint64, error) {
 	// slot may replace the descriptor, but cannot change the part's existence.
 	// Checking the shape only, a payload is mapped only for a row an offer or
 	// an output names.
+	// A row carried compressed is checked against its declared parts in
+	// place (storedMapped).
 	addresses := map[uint64]map[string]CapturedCodecOutput{}
-	for id, row := range rows {
-		if row.Held != "" || shapeOnly && !named[id] && len(row.Record.Envelope.PendingOffers) == 0 {
+	storedMapped := make([]bool, len(rows))
+	for i, row := range rows {
+		id := uint64(i)
+		if row == nil || row.Held != "" || shapeOnly && !named[id] && len(row.Record.Envelope.PendingOffers) == 0 {
+			continue
+		}
+		if _, ok := stored[id]; ok {
+			storedMapped[id] = true
+			continue
+		}
+		if _, ok := declared[id]; ok {
+			storedMapped[id] = true
 			continue
 		}
 		outputs, err := mapTransferredOutputs(row.Record)
@@ -167,13 +233,32 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool) ([]uint64, error) {
 			addresses[id][key] = output
 		}
 	}
+	// partAt returns the part a row's record has at an address key, as
+	// mapped above: the last of its declared parts at the key, for a row
+	// carried compressed or carrying its parts.
+	partAt := func(id uint64, key string) (CapturedCodecOutput, bool) {
+		if id < uint64(len(storedMapped)) && storedMapped[id] {
+			parts, ok := stored[id]
+			if !ok {
+				parts = declared[id]
+			}
+			for i := len(parts) - 1; i >= 0; i-- {
+				if parts[i].key == key {
+					return parts[i].output(), true
+				}
+			}
+			return CapturedCodecOutput{}, false
+		}
+		part, ok := addresses[id][key]
+		return part, ok
+	}
 	slots := map[string]bool{}
 	validateSlot := func(id uint64, address PersistedPartAddress) error {
 		key, err := partAddressKey(address)
 		if err != nil {
 			return err
 		}
-		part, ok := addresses[id][key]
+		part, ok := partAt(id, key)
 		if !ok {
 			return fmt.Errorf("row %d has no output at %s", id, key)
 		}
@@ -187,13 +272,18 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool) ([]uint64, error) {
 		slots[key] = true
 		return nil
 	}
-	for id, row := range rows {
+	for i, row := range rows {
+		if row == nil {
+			continue
+		}
+		id := uint64(i)
 		for _, offer := range row.Record.Envelope.PendingOffers {
 			if err := validateSlot(id, offer.Address); err != nil {
 				return nil, err
 			}
 			key, _ := partAddressKey(offer.Address)
-			if err := validateTransferOffer(offer, addresses[id][key]); err != nil {
+			part, _ := partAt(id, key)
+			if err := validateTransferOffer(offer, part); err != nil {
 				return nil, err
 			}
 		}
@@ -202,7 +292,7 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool) ([]uint64, error) {
 	described := map[string]bool{}
 	for _, output := range bundle.Outputs {
 		id := uint64(output.Ordinal)
-		row, ok := rows[id]
+		row, ok := rows.get(id)
 		if !ok {
 			return nil, fmt.Errorf("output names missing ordinal %d", id)
 		}
@@ -219,7 +309,7 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool) ([]uint64, error) {
 			return nil, fmt.Errorf("duplicate output %s", composite)
 		}
 		described[composite] = true
-		part, ok := addresses[id][key]
+		part, ok := partAt(id, key)
 		if !ok && !held {
 			return nil, fmt.Errorf("unknown output address %s", composite)
 		}
@@ -232,7 +322,7 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool) ([]uint64, error) {
 			return nil, fmt.Errorf("duplicate offer description %s", composite)
 		}
 		if !held {
-			if err := checkOutputPart(output, part); err != nil {
+			if err := checkListedOutputPart(output, part, bundle.Layers); err != nil {
 				return nil, fmt.Errorf("%s: %w", composite, err)
 			}
 		}
@@ -241,7 +331,7 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool) ([]uint64, error) {
 				return nil, err
 			}
 			for _, service := range output.Value.Services {
-				if _, ok := rows[service.ServiceResultID]; !ok {
+				if _, ok := rows.get(service.ServiceResultID); !ok {
 					return nil, fmt.Errorf("output refers to missing service %d", service.ServiceResultID)
 				}
 			}
@@ -265,11 +355,27 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool) ([]uint64, error) {
 		}
 		outputDeps[id] = append(outputDeps[id], output.Owner.DependencyIDs...)
 	}
+	return bundleClosure(bundle, rows, func(id uint64, row *TransferredValue) []uint64 {
+		var deps []uint64
+		for _, offer := range row.Record.Envelope.PendingOffers {
+			deps = append(deps, offer.Owner.DependencyIDs...)
+		}
+		return append(deps, outputDeps[id]...)
+	})
+}
+
+// bundleClosure returns the ordinals of the roots' closure in dependency
+// order, walking from each root through each row's dependencies and, with
+// edges, the rows edges gives it besides. It refuses a cycle, a dependency on
+// a row the bundle doesn't carry, a duplicate root, and a row outside the
+// closure but a held row a call alone names. rows has each of the bundle's
+// rows at its ordinal.
+func bundleClosure(bundle ValueBundle, rows bundleRows, edges func(id uint64, row *TransferredValue) []uint64) ([]uint64, error) {
 	seen := map[uint64]uint8{}
 	var order []uint64
 	var walk func(uint64) error
 	walk = func(id uint64) error {
-		row, ok := rows[id]
+		row, ok := rows.get(id)
 		if !ok {
 			return fmt.Errorf("missing dependency ordinal %d", id)
 		}
@@ -280,11 +386,10 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool) ([]uint64, error) {
 			return nil
 		}
 		seen[id] = 1
-		deps := slices.Clone(row.DependencyIDs)
-		for _, offer := range row.Record.Envelope.PendingOffers {
-			deps = append(deps, offer.Owner.DependencyIDs...)
+		deps := row.DependencyIDs
+		if edges != nil {
+			deps = append(slices.Clone(deps), edges(id, row)...)
 		}
-		deps = append(deps, outputDeps[id]...)
 		for _, id := range deps {
 			if err := walk(id); err != nil {
 				return err
@@ -305,7 +410,30 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool) ([]uint64, error) {
 			return nil, err
 		}
 	}
-	if len(seen) != len(rows) {
+	// A row outside the roots' closure is one a call alone names, as the row
+	// placing an input (TransferredCall.Inputs), or as its value, an entry
+	// below what a split's parts landed (HeldBy.Through): a held row,
+	// standing for the recipient's own entry, which no root needs. It is no
+	// row of the merge.
+	for i, transferred := range bundle.Calls {
+		if id := uint64(transferred.Value); seen[id] == 0 {
+			if row, ok := rows.get(id); !ok || row.Held == "" {
+				return nil, fmt.Errorf("call %d: its value's row %d is outside the roots' closure and not held", i, id)
+			}
+			seen[id] = 2
+		}
+		for j, input := range transferred.Inputs {
+			id := uint64(input)
+			if id == 0 || seen[id] != 0 {
+				continue
+			}
+			if rows[id].Held == "" {
+				return nil, fmt.Errorf("call %d: input %d's row %d is outside the roots' closure and not held", i, j, id)
+			}
+			seen[id] = 2
+		}
+	}
+	if len(seen) != len(bundle.Values) {
 		return nil, fmt.Errorf("bundle contains rows outside its root closure")
 	}
 	return order, nil
@@ -330,8 +458,16 @@ func validateHeldRow(row TransferredValue) error {
 // record has pending; and an output with a chain, which becomes an offer,
 // only of a pending part, and as an offer the part takes.
 func checkOutputPart(output TransferredOutput, part CapturedCodecOutput) error {
+	return checkListedOutputPart(output, part, nil)
+}
+
+// checkListedOutputPart is checkOutputPart for an output of a bundle whose
+// list of layers is listed: an output that names its chain's layers by
+// place there is checked by those places (validateListedOffer), whose
+// layers checkListedLayers checked.
+func checkListedOutputPart(output TransferredOutput, part CapturedCodecOutput, listed []BundleLayer) error {
 	if output.State != part.State && (part.State != "pending" || output.State != "completed") {
-		return fmt.Errorf("output state differs from recorded part")
+		return fmt.Errorf("output state differs from recorded part: %s against %s", output.State, part.State)
 	}
 	if output.Chain == nil || output.Value == nil || output.Owner == nil {
 		return nil
@@ -339,12 +475,117 @@ func checkOutputPart(output TransferredOutput, part CapturedCodecOutput) error {
 	if part.State != "pending" {
 		return fmt.Errorf("offer at final output")
 	}
-	return validateTransferOffer(PersistedPartOffer{Address: output.Address, Value: *output.Value, Chain: *output.Chain, Owner: *output.Owner}, part)
+	offer := PersistedPartOffer{Address: output.Address, Value: *output.Value, Chain: *output.Chain, Owner: *output.Owner}
+	if output.Layers != nil {
+		return validateListedOffer(offer, part, output.Layers, listed)
+	}
+	return validateTransferOffer(offer, part)
 }
 
+// checkListedLayers checks the layers a bundle's outputs name by place, as
+// resolving them into the outputs' chains and checking those would
+// (resolveSharedLayers, validateTransferOffer): every place an output names
+// is in the bundle's list, and every layer named is checked once, with its
+// pack.
+func checkListedLayers(bundle ValueBundle) error {
+	var named []bool
+	for _, output := range bundle.Outputs {
+		if output.Layers == nil {
+			continue
+		}
+		if output.Chain == nil {
+			return fmt.Errorf("output %d names layers without a chain", output.Ordinal)
+		}
+		if named == nil {
+			named = make([]bool, len(bundle.Layers))
+		}
+		for _, place := range output.Layers {
+			if place < 0 || place >= len(bundle.Layers) {
+				return fmt.Errorf("output %d names layer %d of %d", output.Ordinal, place, len(bundle.Layers))
+			}
+			named[place] = true
+		}
+	}
+	for place, listed := range bundle.Layers {
+		if named == nil || !named[place] {
+			continue
+		}
+		if err := validateExportLayer(listed.Layer); err != nil {
+			return err
+		}
+		if listed.Pack != "" {
+			if err := listed.Pack.Validate(); err != nil {
+				return fmt.Errorf("invalid pack of layer %s: %w", listed.Layer.Descriptor.Digest, err)
+			}
+		}
+	}
+	return nil
+}
+
+// checkHeldPart checks a part an export puts on a held row against the
+// Cloud's own copy of that part, the row's recipe's current entry's
+// (entryPartsWhyLocked). The row's recipe is the copy's, so the two are
+// interchangeable: a part the row says is pending is held by a copy that has
+// it completed, which holds everything still to come of it, as long as the
+// row puts nothing on it to store. Every other part is checked as a bundle
+// checks an output against its own record (checkOutputPart): an upload onto
+// a completed part, and a part in any other state than the copy's, don't
+// hold.
+func checkHeldPart(output TransferredOutput, part CapturedCodecOutput) error {
+	if output.State == "pending" && part.State == "completed" && output.Chain == nil && output.Value == nil && output.Owner == nil {
+		return nil
+	}
+	return checkOutputPart(output, part)
+}
+
+// transferIdentityPlan is a merged row's identity, as its merge's private
+// cache derived it (transferIdentityPlanOf), and what the commit reads of
+// the row's private entry: its call frame, description and record type. A
+// held row's is its recipe alone. It holds no private entry, so the private
+// cache goes with the preparation (dropRecordCopies).
 type transferIdentityPlan struct {
-	row          *sharedResult
-	recipe, self digest.Digest
-	inputs       []digest.Digest
-	provenance   []egraphInputProvenanceKind
+	frame                   *ResultCall
+	description, recordType unique.Handle[string]
+	recipe, self            digest.Digest
+	inputs                  []digest.Digest
+	provenance              []egraphInputProvenanceKind
+}
+
+// transferSenderNumbers maps a bundle's ordinals to its rows' sender numbers.
+// A transferred record names itself and every row it references by the
+// sender's entry numbers, as the sender stores it: everything else in the
+// bundle, the rows' dependencies, roots, outputs and calls, names rows by
+// ordinal.
+type transferSenderNumbers map[uint64]uint64
+
+// transferSenders returns the bundle's ordinals' sender numbers.
+func transferSenders(bundle ValueBundle) transferSenderNumbers {
+	senders := make(transferSenderNumbers, len(bundle.Values))
+	for _, row := range bundle.Values {
+		senders[uint64(row.Ordinal)] = row.SenderNumber
+	}
+	return senders
+}
+
+// dependencies returns a row's dependencies, ordinals, as the sender numbers
+// its record's references name them by; one no row has becomes 0, which
+// validation refuses.
+func (s transferSenderNumbers) dependencies(deps []uint64) []uint64 {
+	out := make([]uint64, len(deps))
+	for i, dep := range deps {
+		out[i] = s[dep]
+	}
+	return out
+}
+
+// bundleRows are a bundle's rows by ordinal, as checkValueBundle checks
+// them: the row of each ordinal it has checked so far, at that index.
+type bundleRows []*TransferredValue
+
+// get returns the row of ordinal id, if checked.
+func (rows bundleRows) get(id uint64) (*TransferredValue, bool) {
+	if id >= uint64(len(rows)) || rows[id] == nil {
+		return nil, false
+	}
+	return rows[id], true
 }

@@ -72,13 +72,13 @@ func engineEventRuns(ctx context.Context, t *testctx.T, cloud telemetrySplitClou
 	return runs
 }
 
-// kinds returns the kinds of a run's events, snapshot-sharing passes and
-// reads aside: how many of each a pipeline makes, and when they flush, is not
-// what these tests cover.
+// kinds returns the kinds of a run's events, part reports and reads aside:
+// how many of each a pipeline makes, and when they flush, is not what these
+// tests cover.
 func engineEventKinds(run []engineEventLine) []string {
 	var kinds []string
 	for _, event := range run {
-		if event.kind() != telemetryattrs.EngineEventShare && event.kind() != telemetryattrs.EngineEventRead {
+		if event.kind() != telemetryattrs.EngineEventParts && event.kind() != telemetryattrs.EngineEventRead {
 			kinds = append(kinds, event.kind())
 		}
 	}
@@ -298,7 +298,7 @@ func (ClientSuite) TestEngineEventsToCloud(ctx context.Context, t *testctx.T) {
 	retained := map[uint64]bool{}
 	// reported is what the first process's first session, its first pipeline
 	// run, reported of each entry's parts: on its spans, and in any
-	// snapshot-sharing event of that process. hits is what hits in later
+	// part report of that process. hits is what hits in later
 	// sessions reported, by cache and entry.
 	var firstSession string
 	reported := map[uint64][]string{}
@@ -329,10 +329,10 @@ func (ClientSuite) TestEngineEventsToCloud(ctx context.Context, t *testctx.T) {
 		hits[span.Cache][id] = unionParts(hits[span.Cache][id], span.parts())
 	}
 	for _, event := range first {
-		if event.kind() != telemetryattrs.EngineEventShare {
+		if event.kind() != telemetryattrs.EngineEventParts {
 			continue
 		}
-		for _, part := range decodeEngineEventLine[telemetryattrs.EngineShareEvent](t, event).Parts {
+		for _, part := range decodeEngineEventLine[telemetryattrs.EnginePartsEvent](t, event).Parts {
 			reported[part.ResultID] = unionParts(reported[part.ResultID], []string{part.Part})
 		}
 	}

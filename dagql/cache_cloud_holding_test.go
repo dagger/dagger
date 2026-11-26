@@ -40,7 +40,7 @@ func (c *Cache) testAttachPartOfferLocked(res *sharedResult, address PersistedPa
 	if res != nil {
 		res.noteCloudCopyLocked(testCloudNumber, false, 0)
 	}
-	return c.attachPartOfferLocked(res, address, offer)
+	return c.attachPartOfferLocked(res, cloudCacheID, address, offer)
 }
 
 // testReplacePartOfferLocked replaces res's offer at address as an offer from
@@ -61,7 +61,7 @@ func testOfferPartLocked(t *testing.T, ctx context.Context, c *Cache, res *share
 	record := PersistedPartOffer{Address: PersistedPartAddress{Part: "snapshot"}, Value: SnapshotValue{Kind: "directory"}, Owner: PersistedOfferOwner{DependencyIDs: []uint64{uint64(dependency.id)}}}
 	owner, err := c.newOfferOwnerLocked(ctx, record.Owner)
 	require.NoError(t, err)
-	require.NoError(t, c.attachPartOfferLocked(res, record.Address, &partOffer{record: record, owner: owner}))
+	require.NoError(t, c.attachPartOfferLocked(res, cloudCacheID, record.Address, &partOffer{layeredOffer: c.storedLayers.hold(record), owner: owner}))
 }
 
 // An engine's Cloud holding owns nothing. An entry the Cloud holds a copy
@@ -132,7 +132,7 @@ func TestCloudHoldingOwnsNothing(t *testing.T) {
 	c.egraphMu.RLock()
 	key, cloud := receiver.cacheSharedResult().cloudHoldingLocked()
 	owners := receiver.cacheSharedResult().incomingOwnershipCount.Load()
-	indexed := len(c.holderEntries) + len(c.remoteCaches)
+	indexed := len(c.holderEntriesForTest()) + len(c.remoteCaches)
 	c.egraphMu.RUnlock()
 	require.Equal(t, HolderKey{Cache: cloudCacheID, Number: 11}, key)
 	require.NotNil(t, cloud)
@@ -161,8 +161,8 @@ func TestOfferRekeysTheCloudHolding(t *testing.T) {
 		defer c.egraphMu.RUnlock()
 		key, cloud := row.cloudHoldingLocked()
 		clouds := 0
-		for k := range row.holders {
-			if k.Cache == cloudCacheID {
+		for _, ref := range row.holderRefsLocked() {
+			if ref.key.Cache == cloudCacheID {
 				clouds++
 			}
 		}
@@ -230,7 +230,7 @@ func TestCloudHoldingSurvivesRestart(t *testing.T) {
 			offers := row.testPartOffers()
 			restored.egraphMu.RUnlock()
 			require.Equal(t, HolderKey{Cache: cloudCacheID, Number: 42}, key)
-			require.Equal(t, !stored, cloud.unstored)
+			require.Equal(t, !stored, cloud.is(heldUnstored))
 			if stored {
 				require.Equal(t, expires, cloud.expiresAtUnix)
 			} else {
@@ -253,7 +253,7 @@ func TestImportValuesKeepsTheSendersNumber(t *testing.T) {
 	out, err := a.testOfferParts(actx, receiver, []PersistedPartOffer{testLiveOffer()})
 	require.NoError(t, err)
 	require.Equal(t, OfferAccepted, out[0].Outcome)
-	bundle := exportTestBundle(t, actx, a, receiver)
+	bundle := cloudTestBundle(t, actx, a, receiver)
 	require.Len(t, bundle.Values, 1)
 	require.Equal(t, uint64(receiver.cacheSharedResult().id), bundle.Values[0].SenderNumber)
 
@@ -267,7 +267,7 @@ func TestImportValuesKeepsTheSendersNumber(t *testing.T) {
 	offers := row.testPartOffers()
 	b.egraphMu.RUnlock()
 	require.Equal(t, HolderKey{Cache: cloudCacheID, Number: bundle.Values[0].SenderNumber}, key)
-	require.False(t, cloud.unstored, "a merged record is stored")
+	require.False(t, cloud.is(heldUnstored), "a merged record is stored")
 	require.Equal(t, bundle.Values[0].ExpiresAtUnix, cloud.expiresAtUnix)
 	require.Len(t, offers, 1)
 
@@ -333,7 +333,7 @@ func TestOfferAlreadyCompleteRecordsTheCloudCounterpart(t *testing.T) {
 			if settled {
 				key, err := partAddressKey(testLiveOffer().Address)
 				require.NoError(t, err)
-				gate := row.partGate.loadOrCreate()
+				gate := row.partGateCell().loadOrCreate()
 				gate.mu.Lock()
 				if gate.outputs == nil {
 					gate.outputs = map[string]partOutputState{}
@@ -354,7 +354,7 @@ func TestOfferAlreadyCompleteRecordsTheCloudCounterpart(t *testing.T) {
 				offers := len(row.testPartOffers())
 				c.egraphMu.RUnlock()
 				require.Equal(t, HolderKey{Cache: cloudCacheID, Number: counterpart.number}, key)
-				require.Equal(t, !counterpart.stored, cloud.unstored)
+				require.Equal(t, !counterpart.stored, cloud.is(heldUnstored))
 				if !counterpart.stored {
 					expires = 0
 				}
@@ -434,7 +434,7 @@ func TestBorrowedOfferRenewsByItsOwnKey(t *testing.T) {
 	key, cloud := row.cloudHoldingLocked()
 	f.cache.egraphMu.RUnlock()
 	require.Equal(t, HolderKey{Cache: cloudCacheID, Number: 21}, key, "the holding names the counterpart, not the donor")
-	require.True(t, cloud.unstored)
+	require.True(t, cloud.is(heldUnstored))
 
 	require.NoError(t, f.run())
 	require.True(t, f.installed())
@@ -464,7 +464,7 @@ func TestOfferAlreadyCompleteOnAReferencedRowRecordsItsCounterpart(t *testing.T)
 	waitLazyAttemptReleased(t, attemptReleased)
 	key, err := partAddressKey(testLiveOffer().Address)
 	require.NoError(t, err)
-	gate := leafRow.partGate.loadOrCreate()
+	gate := leafRow.partGateCell().loadOrCreate()
 	gate.mu.Lock()
 	phase := gate.outputs[key].phase
 	gate.mu.Unlock()
@@ -495,10 +495,10 @@ func TestOfferAlreadyCompleteOnAReferencedRowRecordsItsCounterpart(t *testing.T)
 	c.egraphMu.RUnlock()
 	require.NotNil(t, leafCloud, "the referenced row records the counterpart")
 	require.Equal(t, HolderKey{Cache: cloudCacheID, Number: 42}, leafKey)
-	require.False(t, leafCloud.unstored)
+	require.False(t, leafCloud.is(heldUnstored))
 	require.Equal(t, expires, leafCloud.expiresAtUnix)
 	require.Equal(t, HolderKey{Cache: cloudCacheID, Number: 30}, listKey, "the receiver keeps its own counterpart")
-	require.False(t, listCloud.unstored)
+	require.False(t, listCloud.is(heldUnstored))
 	require.Equal(t, listExpires, listCloud.expiresAtUnix)
 	require.Zero(t, offers, "a complete part takes no offer")
 	require.Zero(t, owners)
@@ -554,7 +554,7 @@ func TestOfferDispositionCarriesTheReceiversValueState(t *testing.T) {
 		res := persistedListTestResult(t, ctx, c, srv, "offered-started", &transferTestValue{Text: "pending"})
 		dep := persistedListTestResult(t, ctx, c, srv, "offered-started-dep", String("dep"))
 		transferTestDependency(c, ctx, res, dep)
-		res.cacheSharedResult().partGate.loadOrCreate().groups[lazyGroupAddressKey(LazyGroupAddress{Group: "exec"})] = &partLazyEvaluationState{phase: LazyEvaluationRunning, writeSet: []PersistedPartAddress{{Part: "snapshot"}}}
+		res.cacheSharedResult().partGateCell().loadOrCreate().groups[lazyGroupAddressKey(LazyGroupAddress{Group: "exec"})] = &partLazyEvaluationState{phase: LazyEvaluationRunning, writeSet: []PersistedPartAddress{{Part: "snapshot"}}}
 		out, err := c.testOfferParts(ctx, res, []PersistedPartOffer{testLiveOffer()})
 		require.NoError(t, err)
 		require.Equal(t, OfferExecutionStarted, out[0].Outcome)

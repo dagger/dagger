@@ -17,7 +17,7 @@ import (
 // assemble a list that is neither value.
 //
 // So a list entry records the item read at each position of its value
-// (sharedResult.listItems), and an item read (CallRequest.ListItem) is
+// (listLinks), and an item read (CallRequest.ListItem) is
 // answered only by the item its list recorded there: a lookup has no other
 // candidate, and a publication adopts no other entry. A new item registers
 // as its recipe's current entry when the recipe has none, and otherwise
@@ -30,6 +30,34 @@ import (
 // only when nothing uses it, and every item depends on its list through its
 // call, so a list never keeps records while its value is replaced.
 
+// listLinks are an entry's place among list items: on a list entry, the
+// item read at each position of its value, and on such an item, its list
+// and position (CallRequest.ListItem). An entry has them only once it is
+// one of these (sharedResult.list). Guarded by egraphMu.
+type listLinks struct {
+	items map[int64]*sharedResult
+	of    *sharedResult
+	nth   int64
+}
+
+// listItemAtLocked returns the item res recorded for position nth, or nil.
+// Requires egraphMu.
+func (res *sharedResult) listItemAtLocked(nth int64) *sharedResult {
+	if res.list == nil {
+		return nil
+	}
+	return res.list.items[nth]
+}
+
+// listLinksLocked returns res's list links, making them if it has none.
+// Requires egraphMu for writing.
+func (res *sharedResult) listLinksLocked() *listLinks {
+	if res.list == nil {
+		res.list = &listLinks{}
+	}
+	return res.list
+}
+
 // listItemLocked returns the item req's receiver recorded for req.Nth, if it
 // can serve: it is registered with a value, its attachment did not fail, and
 // it has not expired. Requires egraphMu.
@@ -41,7 +69,7 @@ func (c *Cache) listItemLocked(req *CallRequest, nowUnix int64) *sharedResult {
 	if list == nil {
 		return nil
 	}
-	item := list.listItems[req.Nth]
+	item := list.listItemAtLocked(req.Nth)
 	if item == nil || c.resultsByID[item.id] != item || item.noValueLocked() ||
 		item.attachmentState() == resultAttachmentFailed || c.resultExpiredAtLocked(item, nowUnix) {
 		return nil
@@ -73,22 +101,24 @@ func (c *Cache) recordListItemLocked(req *CallRequest, item *sharedResult) {
 	if list == nil {
 		return
 	}
-	if list.listItems == nil {
-		list.listItems = make(map[int64]*sharedResult)
+	links := list.listLinksLocked()
+	if links.items == nil {
+		links.items = make(map[int64]*sharedResult)
 	}
-	list.listItems[req.Nth] = item
-	item.listItemOf, item.listItemNth = list, req.Nth
+	links.items[req.Nth] = item
+	itemLinks := item.listLinksLocked()
+	itemLinks.of, itemLinks.nth = list, req.Nth
 }
 
 // forgetListItemLocked drops res from its list's record, as res leaves the
 // cache. Requires egraphMu for writing.
 func (c *Cache) forgetListItemLocked(res *sharedResult) {
-	list := res.listItemOf
-	if list == nil {
+	if res.list == nil || res.list.of == nil {
 		return
 	}
-	if list.listItems[res.listItemNth] == res {
-		delete(list.listItems, res.listItemNth)
+	list := res.list.of
+	if list.listItemAtLocked(res.list.nth) == res {
+		delete(list.list.items, res.list.nth)
 	}
-	res.listItemOf = nil
+	res.list.of = nil
 }

@@ -176,13 +176,13 @@ func TestCacheLazySessionTakeoverBudget(t *testing.T) {
 				}
 				synctest.Wait()
 				shared := result.cacheSharedResult()
-				shared.lazyMu.Lock()
+				shared.lazyState().mu.Lock()
 				waiters := make([]int, len(retired))
 				for i, attempt := range retired {
 					waiters[i] = attempt.waiters
 				}
-				current := shared.lazyWhole.attempt
-				shared.lazyMu.Unlock()
+				current := shared.lazyState().whole.attempt
+				shared.lazyState().mu.Unlock()
 				require.Len(t, retired, maxLazySessionRetries+1)
 				for i, count := range waiters {
 					require.Zero(t, count, "retired attempt %d", i)
@@ -204,9 +204,9 @@ func TestCacheLazyCancellationDoesNotConsumeSessionBudget(t *testing.T) {
 			if calls.Add(1) > maxLazySessionRetries+1 {
 				return nil
 			}
-			shared.lazyMu.Lock()
-			cancel := shared.lazyWhole.attempt.cancel
-			shared.lazyMu.Unlock()
+			shared.lazyState().mu.Lock()
+			cancel := shared.lazyState().whole.attempt.cancel
+			shared.lazyState().mu.Unlock()
 			cancel(cause)
 			return context.Cause(cb)
 		})

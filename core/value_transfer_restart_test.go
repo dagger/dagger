@@ -60,6 +60,10 @@ func TestValueTransferPersistenceFinalOfferRestart(t *testing.T) {
 	bStore.Reload(t)
 	// The new cache restores durable snapshot owners before ending the offer.
 	bCtx, b, bServer = transferCache(t, bStore, path, "restarted")
+	// Opening the restored snapshot runs no recipe: the merged File isn't
+	// logged as run again for want of an offer.
+	var logs partSourceLogs
+	bCtx = logs.into(bCtx)
 	require.Equal(t, dagql.CachePersistenceResetNone, b.PersistenceResetReason())
 	require.Empty(t, b.DebugEGraphSnapshot().OfferOwners, "the restart ended the final offer")
 	probeCtx := engine.ContextWithClientMetadata(bCtx, &engine.ClientMetadata{ClientID: "probe", SessionID: "probe"})
@@ -77,4 +81,5 @@ func TestValueTransferPersistenceFinalOfferRestart(t *testing.T) {
 	restored := loaded.(dagql.ObjectResult[*File])
 	contents := demandedFileContents(t, bCtx, restored)
 	require.Equal(t, "durable bytes", string(contents))
+	require.Empty(t, logs.ranAgain(t), "opening a stored snapshot is no run of its recipe")
 }
