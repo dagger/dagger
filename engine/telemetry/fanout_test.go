@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	logapi "go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/attribute"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
@@ -182,7 +182,7 @@ func testLogRecords(n int) []sdklog.Record {
 	recs := make([]sdklog.Record, n)
 	for i := range recs {
 		recs[i].SetTimestamp(time.Now())
-		recs[i].SetBody(logapi.StringValue("fanout"))
+		recs[i].SetBody(attribute.StringValue("fanout"))
 	}
 	return recs
 }

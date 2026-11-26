@@ -51,7 +51,7 @@ func TestArchiveRegistrationFailureDoesNotDropControl(t *testing.T) {
 	a := archiveAgent()
 	a.Session = other.sessionID
 	rec := controlTestRecord(t, a.Record())
-	rec.AddAttributes(otellog.String(telemetryattrs.TelemetryOriginClientIDAttr, "other"))
+	rec.AddAttributes(attribute.String(telemetryattrs.TelemetryOriginClientIDAttr, "other"))
 	exp := sessionLogExporter{sess: other, ps: other.telemetryPubSub}
 	require.NoError(t, exp.Export(t.Context(), []sdklog.Record{rec}))
 	db, err := srv.clientDBs.Open(t.Context(), "other")
@@ -140,9 +140,9 @@ func TestSessionSpanExporterSettlesCallSpanDelivery(t *testing.T) {
 
 	// A later payload record for the same frame (a re-posted copy, a racing
 	// walk) finds every target delivered.
-	record := scopedLogRecord(t, "test.core", otellog.BytesValue(body),
-		otellog.String(telemetryattrs.TelemetryOriginClientIDAttr, "child"),
-		otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
+	record := scopedLogRecord(t, "test.core", attribute.ByteSliceValue(body),
+		attribute.String(telemetryattrs.TelemetryOriginClientIDAttr, "child"),
+		attribute.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
 	require.NoError(t, sessionLogExporter{sess: sess, ps: ps}.Export(t.Context(), []sdklog.Record{record}))
 
 	// Another snapshot of the span is still written: it is also the span.
@@ -210,9 +210,9 @@ func TestSessionLogExporterRetriesPayloadAfterStoreFailure(t *testing.T) {
 	sess.clientRecords["client"] = &clientRecord{daggerSession: sess, clientID: "client"}
 	exporter := sessionLogExporter{sess: sess, ps: NewPubSub(srv)}
 	body, _ := serverCallPayload(t, "lookup", "retry")
-	record := scopedLogRecord(t, "test.core", otellog.BytesValue(body),
-		otellog.String(telemetryattrs.TelemetryOriginClientIDAttr, "client"),
-		otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
+	record := scopedLogRecord(t, "test.core", attribute.ByteSliceValue(body),
+		attribute.String(telemetryattrs.TelemetryOriginClientIDAttr, "client"),
+		attribute.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
 	require.Error(t, exporter.Export(t.Context(), []sdklog.Record{record}))
 	require.NoError(t, os.Remove(root))
 	require.NoError(t, exporter.Export(t.Context(), []sdklog.Record{record}))
@@ -235,9 +235,9 @@ func TestSessionLogExporterRetriesOnlyFailedPayloadTargets(t *testing.T) {
 	sess.clientRecords["child"] = &clientRecord{daggerSession: sess, clientID: "child", parentClientIDs: []string{"parent"}}
 	exporter := sessionLogExporter{sess: sess, ps: NewPubSub(srv)}
 	body, digest := serverCallPayload(t, "lookup", "retry")
-	record := scopedLogRecord(t, "test.core", otellog.BytesValue(body),
-		otellog.String(telemetryattrs.TelemetryOriginClientIDAttr, "child"),
-		otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
+	record := scopedLogRecord(t, "test.core", attribute.ByteSliceValue(body),
+		attribute.String(telemetryattrs.TelemetryOriginClientIDAttr, "child"),
+		attribute.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
 	require.Error(t, exporter.Export(t.Context(), []sdklog.Record{record}))
 	require.Equal(t, []string{"parent"}, sess.callPayloadMissingTargets(digest, []string{"child", "parent"}))
 	require.NoError(t, os.Remove(blocked))
@@ -276,15 +276,15 @@ func TestSessionLogExporterSkipsUnroutableRecords(t *testing.T) {
 	sess.clientRecords["client"] = &clientRecord{daggerSession: sess, clientID: "client"}
 	exporter := sessionLogExporter{sess: sess, ps: NewPubSub(srv)}
 	body, digest := serverCallPayload(t, "lookup", "retry")
-	record := scopedLogRecord(t, "test.core", otellog.BytesValue(body),
-		otellog.String(telemetryattrs.TelemetryOriginClientIDAttr, "client"),
-		otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
+	record := scopedLogRecord(t, "test.core", attribute.ByteSliceValue(body),
+		attribute.String(telemetryattrs.TelemetryOriginClientIDAttr, "client"),
+		attribute.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
 	strayBody, strayDigest := serverCallPayload(t, "lookup", "stray")
-	originless := scopedLogRecord(t, "test.core", otellog.BytesValue(strayBody),
-		otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
-	unknownOrigin := scopedLogRecord(t, "test.core", otellog.BytesValue(strayBody),
-		otellog.String(telemetryattrs.TelemetryOriginClientIDAttr, "nobody"),
-		otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
+	originless := scopedLogRecord(t, "test.core", attribute.ByteSliceValue(strayBody),
+		attribute.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
+	unknownOrigin := scopedLogRecord(t, "test.core", attribute.ByteSliceValue(strayBody),
+		attribute.String(telemetryattrs.TelemetryOriginClientIDAttr, "nobody"),
+		attribute.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
 
 	store := &callPayloadDeliveryStore{session: sess, targets: []string{"client"}}
 	require.True(t, store.ClaimCallPayload(digest))
@@ -317,14 +317,14 @@ func TestSessionLogExporterSkipsInvalidControlRecords(t *testing.T) {
 	sess.clientRecords["client"] = &clientRecord{daggerSession: sess, clientID: "client"}
 	exporter := sessionLogExporter{sess: sess, ps: sess.telemetryPubSub}
 	withOrigin := func(rec sdklog.Record, origin string) sdklog.Record {
-		rec.AddAttributes(otellog.String(telemetryattrs.TelemetryOriginClientIDAttr, origin))
+		rec.AddAttributes(attribute.String(telemetryattrs.TelemetryOriginClientIDAttr, origin))
 		return rec
 	}
 
 	valid := withOrigin(controlTestRecord(t, archiveAgent().Record()), "client")
 	var bad otellog.Record
-	bad.SetBody(otellog.StringValue(""))
-	bad.AddAttributes(otellog.Int(agentcontrol.VersionAttr, agentcontrol.Version+1))
+	bad.SetBody(attribute.StringValue(""))
+	bad.AddAttributes(attribute.Int(agentcontrol.VersionAttr, agentcontrol.Version+1))
 	malformed := withOrigin(controlTestRecord(t, bad), "client")
 	stranger := archiveAgent()
 	stranger.Session = "another-session"
@@ -362,8 +362,8 @@ func TestClientLogsFlushesOnlyForControlRecords(t *testing.T) {
 	}
 
 	body, _ := serverCallPayload(t, "lookup", "hot-path")
-	payload := scopedLogRecord(t, "test.core", otellog.BytesValue(body),
-		otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
+	payload := scopedLogRecord(t, "test.core", attribute.ByteSliceValue(body),
+		attribute.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
 	require.NoError(t, ps.Logs("client").Export(t.Context(), []sdklog.Record{payload}))
 	require.Equal(t, 1, tailRows(), "a payload-only batch must stay in the in-memory tail")
 
@@ -388,9 +388,9 @@ func TestSessionLogExporterReleasesFailedPayloadClaims(t *testing.T) {
 	sess.clientRecords["client"] = &clientRecord{daggerSession: sess, clientID: "client"}
 	exporter := sessionLogExporter{sess: sess, ps: NewPubSub(srv)}
 	body, digest := serverCallPayload(t, "lookup", "retry")
-	record := scopedLogRecord(t, "test.core", otellog.BytesValue(body),
-		otellog.String(telemetryattrs.TelemetryOriginClientIDAttr, "client"),
-		otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
+	record := scopedLogRecord(t, "test.core", attribute.ByteSliceValue(body),
+		attribute.String(telemetryattrs.TelemetryOriginClientIDAttr, "client"),
+		attribute.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
 
 	store := &callPayloadDeliveryStore{session: sess, targets: []string{"client"}}
 	require.True(t, store.ClaimCallPayload(digest))
@@ -418,9 +418,9 @@ func TestSessionExportersRecordPayloadsTheProcessorsDrop(t *testing.T) {
 
 	logBody, logDigest := serverCallPayload(t, "lookup", "log")
 	spanBody, spanDigest := serverCallPayload(t, "lookup", "span")
-	record := scopedLogRecord(t, "test.core", otellog.BytesValue(logBody),
-		otellog.String(telemetryattrs.TelemetryOriginClientIDAttr, "client"),
-		otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
+	record := scopedLogRecord(t, "test.core", attribute.ByteSliceValue(logBody),
+		attribute.String(telemetryattrs.TelemetryOriginClientIDAttr, "client"),
+		attribute.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
 	require.True(t, store.ClaimCallPayload(logDigest))
 	require.True(t, store.ClaimCallPayload(spanDigest))
 

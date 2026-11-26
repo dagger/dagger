@@ -18,7 +18,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
-	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.43.0"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/dagql/call/callpbv1"
@@ -218,7 +218,7 @@ func (tr *Trace) Stub(i int, done bool) sdktrace.ReadOnlySpan {
 			str(string(semconv.TestSuiteNameKey), "TestThing"),
 		)
 		if done {
-			attrs = append(attrs, str(string(semconv.TestCaseResultStatusKey), "pass"))
+			attrs = append(attrs, str(string(semconv.TestCaseResultStatusKey), semconv.TestCaseResultStatusPass.Value.AsString()))
 		}
 	case kind < 13:
 		stub.Name = fmt.Sprintf("check-%d", i%40)

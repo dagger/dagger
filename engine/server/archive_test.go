@@ -77,7 +77,7 @@ func archiveFixture(t *testing.T) (*Server, *daggerSession, *clientdb.DB, agentc
 	a.Digest = id.Digest().String()
 	data, err := proto.Marshal(id.Call())
 	require.NoError(t, err)
-	payload := scopedLogRecord(t, "test", logapi.BytesValue(data), logapi.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
+	payload := scopedLogRecord(t, "test", attribute.ByteSliceValue(data), attribute.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
 	for _, rec := range []sdklog.Record{controlTestRecord(t, a.Record()), payload} {
 		row, err := logRecordRow(&rec)
 		require.NoError(t, err)
@@ -172,7 +172,7 @@ func TestArchiveBootstrapSplitsLargeRecipeClosure(t *testing.T) {
 					call.WithArgs(call.NewArgument("result", call.NewLiteralString(result), false)))
 				data, err := proto.Marshal(id.Call())
 				require.NoError(t, err)
-				rec := scopedLogRecord(t, "test", logapi.BytesValue(data), logapi.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
+				rec := scopedLogRecord(t, "test", attribute.ByteSliceValue(data), attribute.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
 				row, err := logRecordRow(&rec)
 				require.NoError(t, err)
 				_, err = db.AppendLogs([]clientdb.Log{row})
@@ -300,7 +300,7 @@ func TestArchiveCallClosure(t *testing.T) {
 	response := prompt.Append(&ast.Type{NamedType: "LLM", NonNull: true}, "withResponse")
 	data, err := proto.Marshal(prompt.Call())
 	require.NoError(t, err)
-	rec := scopedLogRecord(t, "test", logapi.BytesValue(data), logapi.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
+	rec := scopedLogRecord(t, "test", attribute.ByteSliceValue(data), attribute.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
 	row, err := logRecordRow(&rec)
 	require.NoError(t, err)
 	_, err = db.AppendLogs([]clientdb.Log{row})
@@ -581,7 +581,7 @@ func appendArchiveSignalRow(t *testing.T, db *clientdb.DB, signal string, index 
 		}})
 		require.NoError(t, err)
 	case "logs":
-		rec := scopedLogRecord(t, "test", logapi.StringValue(value))
+		rec := scopedLogRecord(t, "test", attribute.StringValue(value))
 		row, err := logRecordRow(&rec)
 		require.NoError(t, err)
 		row.TraceID.String = traceID
@@ -673,7 +673,7 @@ func TestControlPersistenceRetriesOnlyFailedTargets(t *testing.T) {
 	exp := sessionLogExporter{sess: sess, ps: sess.telemetryPubSub}
 	a := archiveAgent()
 	rec := controlTestRecord(t, a.Record())
-	rec.AddAttributes(logapi.String(telemetryattrs.TelemetryOriginClientIDAttr, "child"))
+	rec.AddAttributes(attribute.String(telemetryattrs.TelemetryOriginClientIDAttr, "child"))
 	require.Error(t, exp.Export(t.Context(), []sdklog.Record{rec}))
 	require.NoError(t, os.Remove(filepath.Join(root, "parent.logs.log")))
 	require.NoError(t, exp.Export(t.Context(), []sdklog.Record{rec}))
@@ -688,7 +688,7 @@ func TestControlPersistenceRetriesOnlyFailedTargets(t *testing.T) {
 	// A forwarded malformed control record is dropped on its own; it neither
 	// fails the batch nor persists.
 	foreign := rec.Clone()
-	foreign.SetAttributes(logapi.String(agentcontrol.VersionAttr, "unsupported"))
+	foreign.SetAttributes(attribute.String(agentcontrol.VersionAttr, "unsupported"))
 	require.NoError(t, originLogExporter{origin: "child", next: exp}.Export(t.Context(), []sdklog.Record{foreign}))
 	db, err := srv.clientDBs.Open(t.Context(), "child")
 	require.NoError(t, err)
@@ -710,7 +710,7 @@ func TestForwardedBatchWithControlRecordKeepsLogs(t *testing.T) {
 	exp := sessionLogExporter{sess: sess, ps: sess.telemetryPubSub}
 
 	batch := []sdklog.Record{
-		scopedLogRecord(t, "test", logapi.StringValue("build output"), logapi.String(telemetryattrs.LogRoleAttr, "stdout")),
+		scopedLogRecord(t, "test", attribute.StringValue("build output"), attribute.String(telemetryattrs.LogRoleAttr, "stdout")),
 		controlTestRecord(t, archiveAgent().Record()),
 	}
 	require.NoError(t, (originLogExporter{origin: "main", next: exp}).Export(t.Context(), batch))
@@ -1094,8 +1094,8 @@ func TestSetSessionTitle(t *testing.T) {
 		require.Equal(t, primary.TraceID(), rec.TraceID())
 		require.Equal(t, primary.SpanID(), rec.SpanID())
 		attrs := map[string]string{}
-		rec.WalkAttributes(func(kv logapi.KeyValue) bool {
-			attrs[kv.Key] = kv.Value.AsString()
+		rec.WalkAttributes(func(kv attribute.KeyValue) bool {
+			attrs[string(kv.Key)] = kv.Value.AsString()
 			return true
 		})
 		require.Equal(t, telemetryattrs.LogRoleSpanName, attrs[telemetryattrs.LogRoleAttr])

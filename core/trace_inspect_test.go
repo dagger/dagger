@@ -9,8 +9,8 @@ import (
 
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
-	otellog "go.opentelemetry.io/otel/log"
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
 	"google.golang.org/protobuf/proto"
 
@@ -363,8 +363,8 @@ func agentInspectStore(t *testing.T) (*clientdb.DB, map[string]string) {
 		}
 		rec := a.Record()
 		var attrs []*otlpcommonv1.KeyValue
-		rec.WalkAttributes(func(kv otellog.KeyValue) bool {
-			attrs = append(attrs, &otlpcommonv1.KeyValue{Key: kv.Key, Value: telemetry.LogValueToPB(kv.Value)})
+		rec.WalkAttributes(func(kv attribute.KeyValue) bool {
+			attrs = append(attrs, &otlpcommonv1.KeyValue{Key: string(kv.Key), Value: telemetry.LogValueToPB(kv.Value)})
 			return true
 		})
 		encoded, err := clientdb.MarshalProtoList(attrs)

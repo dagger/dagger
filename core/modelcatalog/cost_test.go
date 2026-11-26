@@ -3,7 +3,7 @@ package modelcatalog
 import (
 	"testing"
 
-	"charm.land/catwalk/pkg/catwalk"
+	"charm.land/catwalk/v3/pkg/catwalk"
 )
 
 func TestCopilotCostUsesCatalogPricing(t *testing.T) {
@@ -11,11 +11,10 @@ func TestCopilotCostUsesCatalogPricing(t *testing.T) {
 	models := catalog[catwalk.InferenceProviderCopilot]
 	const modelID = "copilot-cost-regression"
 	models[modelID] = catwalk.Model{
-		ID:                 modelID,
-		CostPer1MIn:        1,
-		CostPer1MOut:       2,
-		CostPer1MInCached:  3,
-		CostPer1MOutCached: 4,
+		ID: modelID,
+		Pricing: catwalk.Pricing{
+			Input: 1, Output: 2, CacheCreate: 3, CacheHit: 4,
+		},
 	}
 	t.Cleanup(func() {
 		delete(models, modelID)

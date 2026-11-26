@@ -7,8 +7,6 @@ import (
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/log"
-	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/dagql"
@@ -56,10 +54,10 @@ func agentSpanAttrs(ctx context.Context, name string, self dagql.ObjectResult[*A
 func genAIAgentAttrs(id, name string) []attribute.KeyValue {
 	attrs := make([]attribute.KeyValue, 0, 2)
 	if id != "" {
-		attrs = append(attrs, semconv.GenAIAgentID(id))
+		attrs = append(attrs, attribute.String(telemetryattrs.GenAIAgentIDAttr, id))
 	}
 	if name != "" {
-		attrs = append(attrs, semconv.GenAIAgentName(name))
+		attrs = append(attrs, attribute.String(telemetryattrs.GenAIAgentNameAttr, name))
 	}
 	return attrs
 }
@@ -94,7 +92,7 @@ func emitAgentFailure(ctx context.Context, loopErr error) {
 	ctx, span := Tracer(ctx).Start(ctx, "agent failure", trace.WithAttributes(attrs...))
 	span.SetStatus(codes.Error, loopErr.Error())
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
-		log.String(telemetry.ContentTypeAttr, "text/plain"))
+		attribute.String(telemetry.ContentTypeAttr, "text/plain"))
 	fmt.Fprint(stdio.Stderr, loopErr.Error())
 	stdio.Close()
 	span.End()
@@ -131,7 +129,7 @@ func emitAgentRewind(ctx context.Context, from, to string) {
 	attrs = append(attrs, genAIAgentAttrsFromContext(ctx)...)
 	ctx, span := Tracer(ctx).Start(ctx, "conversation rewound", trace.WithAttributes(attrs...))
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
-		log.String(telemetry.ContentTypeAttr, "text/plain"))
+		attribute.String(telemetry.ContentTypeAttr, "text/plain"))
 	fmt.Fprint(stdio.Stdout, agentRewindMessage)
 	stdio.Close()
 	span.End()

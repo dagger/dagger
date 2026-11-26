@@ -9,7 +9,7 @@ import (
 	telemetry "github.com/dagger/otel-go"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
-	otellog "go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/attribute"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/protobuf/proto"
@@ -72,9 +72,9 @@ func rawCallPayload(t *testing.T, callPB *callpbv1.Call) []byte {
 func newTestCallPayloadRecord(t *testing.T, span SpanID, callPB *callpbv1.Call) sdklog.Record {
 	t.Helper()
 	record := newTestLogRecord(trace.TraceID{1}, span.SpanID, "",
-		otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType),
+		attribute.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType),
 	)
-	record.SetBody(otellog.BytesValue(rawCallPayload(t, callPB)))
+	record.SetBody(attribute.ByteSliceValue(rawCallPayload(t, callPB)))
 	return record
 }
 
@@ -94,7 +94,7 @@ func TestCallPayloadRecordReservationAndValidation(t *testing.T) {
 	callPB := frames[1]
 	payload := rawCallPayload(t, callPB)
 
-	newRecord := func(body otellog.Value, attrs ...otellog.KeyValue) sdklog.Record {
+	newRecord := func(body attribute.Value, attrs ...attribute.KeyValue) sdklog.Record {
 		record := newTestLogRecord(trace.TraceID{1}, trace.SpanID{1}, "", attrs...)
 		record.SetBody(body)
 		return record
@@ -107,32 +107,32 @@ func TestCallPayloadRecordReservationAndValidation(t *testing.T) {
 	}{
 		{
 			name: "call content type with bytes body",
-			record: newRecord(otellog.BytesValue(payload),
-				otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType)),
+			record: newRecord(attribute.ByteSliceValue(payload),
+				attribute.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType)),
 			reserved: true,
 			valid:    true,
 		},
 		{
 			name: "call content type reserves non-bytes body",
-			record: newRecord(otellog.StringValue(string(payload)),
-				otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType)),
+			record: newRecord(attribute.StringValue(string(payload)),
+				attribute.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType)),
 			reserved: true,
 		},
 		{
 			name: "other content type is not reserved",
-			record: newRecord(otellog.BytesValue(payload),
-				otellog.String(telemetry.ContentTypeAttr, "application/json")),
+			record: newRecord(attribute.ByteSliceValue(payload),
+				attribute.String(telemetry.ContentTypeAttr, "application/json")),
 			reserved: false,
 		},
 		{
 			name: "wrong content type value kind is not reserved",
-			record: newRecord(otellog.BytesValue(payload),
-				otellog.Bool(telemetry.ContentTypeAttr, true)),
+			record: newRecord(attribute.ByteSliceValue(payload),
+				attribute.Bool(telemetry.ContentTypeAttr, true)),
 			reserved: false,
 		},
 		{
 			name:     "record without content type is not reserved",
-			record:   newRecord(otellog.BytesValue(payload)),
+			record:   newRecord(attribute.ByteSliceValue(payload)),
 			reserved: false,
 		},
 	} {
@@ -313,7 +313,7 @@ func TestCallPayloadRecordsDoNotDisturbLogOrdering(t *testing.T) {
 	before := newTestLogRecord(trace.TraceID{1}, span.SpanID, "before")
 	payload := newTestCallPayloadRecord(t, span, frames[1])
 	malformed := newTestCallPayloadRecord(t, span, frames[1])
-	malformed.SetBody(otellog.StringValue("not protobuf bytes"))
+	malformed.SetBody(attribute.StringValue("not protobuf bytes"))
 	after := newTestLogRecord(trace.TraceID{1}, span.SpanID, "after")
 
 	if err := db.LogExporter().Export(context.Background(), []sdklog.Record{before, payload, malformed, after}); err != nil {

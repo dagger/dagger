@@ -14,7 +14,6 @@ import (
 	"github.com/vito/tuist"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
-	otellog "go.opentelemetry.io/otel/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
@@ -90,7 +89,7 @@ func (l *liveToolCalls) expand(id byte) {
 // of a call that errored.
 func TestRichToolCallsHideTheirResult(t *testing.T) {
 	result := func(l *liveToolCalls, id byte, text string) {
-		l.logs(frontendTestLogRecord(trace.SpanID{id}, otellog.StringValue(text+"\n")))
+		l.logs(frontendTestLogRecord(trace.SpanID{id}, attribute.StringValue(text+"\n")))
 	}
 	collapsedAndExpanded := func(l *liveToolCalls, id byte) (string, string) {
 		l.fe.viewDirty = true

@@ -10,7 +10,7 @@ import (
 
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/vito/tuist"
-	otellog "go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/attribute"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -112,7 +112,7 @@ func newBenchSession(b *testing.B, tools, checks, testsPerCheck int) *benchSessi
 
 	logs := make([]sdklog.Record, 5)
 	for i := range logs {
-		logs[i] = frontendTestLogRecord(liveID.SpanID, otellog.StringValue(fmt.Sprintf("output line %d\n", i)))
+		logs[i] = frontendTestLogRecord(liveID.SpanID, attribute.StringValue(fmt.Sprintf("output line %d\n", i)))
 	}
 	return &benchSession{
 		fe:      fe,

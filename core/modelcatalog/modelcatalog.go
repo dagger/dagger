@@ -9,8 +9,8 @@ import (
 	"strings"
 	"sync"
 
-	"charm.land/catwalk/pkg/catwalk"
-	"charm.land/catwalk/pkg/embedded"
+	"charm.land/catwalk/v3/pkg/catwalk"
+	"charm.land/catwalk/v3/pkg/embedded"
 )
 
 // providerCatalogIDs maps a Dagger LLM provider name (the string form of
@@ -25,17 +25,45 @@ var providerCatalogIDs = map[string]catwalk.InferenceProvider{
 	"github-copilot": catwalk.InferenceProviderCopilot,
 }
 
+// Dagger's defaults track the latest general-purpose models in each provider's
+// existing tier, rather than Catwalk's recommendations (which can lag releases).
+// Keep these shared by engine routing and CLI setup. Local/custom endpoints have
+// no defaults here: their available models are controlled by the user.
+const (
+	DefaultAnthropic  = "claude-sonnet-5-5"
+	DefaultOpenAI     = "gpt-6.2-sol"
+	DefaultGoogle     = "gemini-3.8-flash"
+	DefaultCopilot    = "claude-sonnet-5.5"
+	DefaultOpenRouter = "anthropic/claude-sonnet-5.5"
+)
+
+var providerDefaults = map[string]struct{ large, small string }{
+	"anthropic":      {DefaultAnthropic, "claude-haiku-5-5"},
+	"openai":         {DefaultOpenAI, "gpt-6-luna"},
+	"openai-codex":   {DefaultOpenAI, "gpt-6-luna"},
+	"google":         {DefaultGoogle, "gemini-3.8-flash"},
+	"github-copilot": {DefaultCopilot, "claude-haiku-5.5"},
+	"openrouter":     {DefaultOpenRouter, "anthropic/claude-haiku-5.5"},
+}
+
+// DefaultModel returns Dagger's default model for a hosted provider.
+func DefaultModel(provider string) (string, bool) {
+	defaults, ok := providerDefaults[provider]
+	return defaults.large, ok
+}
+
 var (
-	catalogOnce        sync.Once
-	catalog            map[catwalk.InferenceProvider]map[string]catwalk.Model
-	defaultSmallModels map[catwalk.InferenceProvider]string
+	catalogOnce   sync.Once
+	catalog       map[catwalk.InferenceProvider]map[string]catwalk.Model
+	providerTypes map[catwalk.InferenceProvider]catwalk.Type
 )
 
 func load() map[catwalk.InferenceProvider]map[string]catwalk.Model {
 	catalogOnce.Do(func() {
 		catalog = make(map[catwalk.InferenceProvider]map[string]catwalk.Model)
-		defaultSmallModels = make(map[catwalk.InferenceProvider]string)
+		providerTypes = make(map[catwalk.InferenceProvider]catwalk.Type)
 		for _, p := range embedded.GetAll() {
+			providerTypes[p.ID] = p.Type
 			models := make(map[string]catwalk.Model, len(p.Models))
 			for _, m := range p.Models {
 				key := NormalizeModelID(m.ID)
@@ -46,7 +74,6 @@ func load() map[catwalk.InferenceProvider]map[string]catwalk.Model {
 				}
 			}
 			catalog[p.ID] = models
-			defaultSmallModels[p.ID] = p.DefaultSmallModelID
 		}
 	})
 	return catalog
@@ -83,17 +110,24 @@ func Lookup(provider, model string) (catwalk.Model, bool) {
 	return m, ok
 }
 
-// DefaultSmallModel returns Catwalk's recommended small model for a Dagger
-// provider. Providers without a reliable catalog mapping (local, other, ...)
-// return no model so callers can safely retain their current route.
-func DefaultSmallModel(provider string) (string, bool) {
-	cwID, ok := providerCatalogIDs[provider]
+// EndpointType returns the model's API format, falling back to its provider's
+// format. Unknown models return no type: their names alone are not catalog
+// evidence of which endpoint to use. This describes Catwalk's transport, not
+// necessarily Dagger's (for example, Dagger uses Gemini's native SDK).
+func EndpointType(provider, model string) (catwalk.Type, bool) {
+	m, ok := Lookup(provider, model)
 	if !ok {
 		return "", false
 	}
-	load()
-	model := defaultSmallModels[cwID]
-	return model, model != ""
+	endpointType := m.EffectiveType(providerTypes[providerCatalogIDs[provider]])
+	return endpointType, endpointType != ""
+}
+
+// DefaultSmallModel returns Dagger's small model for a hosted provider.
+// Local/custom providers return no model so callers retain their current route.
+func DefaultSmallModel(provider string) (string, bool) {
+	defaults, ok := providerDefaults[provider]
+	return defaults.small, ok
 }
 
 // costPerMillion is the denominator for catwalk's per-1M-token prices.
@@ -108,11 +142,8 @@ func Cost(provider, model string, inputTokens, outputTokens, cacheReadTokens, ca
 	if !ok {
 		return 0
 	}
-	// catwalk names the cached rates from the cache's perspective:
-	// CostPer1MInCached is the cache-write (creation) rate and
-	// CostPer1MOutCached is the cache-read rate.
-	return m.CostPer1MIn/costPerMillion*float64(inputTokens) +
-		m.CostPer1MOut/costPerMillion*float64(outputTokens) +
-		m.CostPer1MOutCached/costPerMillion*float64(cacheReadTokens) +
-		m.CostPer1MInCached/costPerMillion*float64(cacheWriteTokens)
+	return m.Pricing.Input/costPerMillion*float64(inputTokens) +
+		m.Pricing.Output/costPerMillion*float64(outputTokens) +
+		m.Pricing.CacheHit/costPerMillion*float64(cacheReadTokens) +
+		m.Pricing.CacheCreate/costPerMillion*float64(cacheWriteTokens)
 }

@@ -761,23 +761,11 @@ func promptReasoningEffort(ctx context.Context, ph PromptHandler, provider, mode
 		return nil
 	}
 
-	// Build options from the model's reasoning levels. Catwalk's own "none"
-	// level is folded into the explicit "Off" entry.
-	opts := []huh.Option[string]{
-		huh.NewOption("Off", ""),
+	opts := setupReasoningEffortOptions(m)
+	effort := cfg.ReasoningEffort
+	if effort == "none" {
+		effort = "" // setup has historically persisted Off as an unset effort
 	}
-	for _, level := range m.ReasoningLevels {
-		if level == "none" {
-			continue
-		}
-		label := strings.ToUpper(level[:1]) + level[1:]
-		if level == m.DefaultReasoningEffort {
-			label += " (model default)"
-		}
-		opts = append(opts, huh.NewOption(label, level))
-	}
-
-	var effort string
 	form := huh.NewForm(
 		huh.NewGroup(
 			huh.NewSelect[string]().
@@ -794,6 +782,34 @@ func promptReasoningEffort(ctx context.Context, ph PromptHandler, provider, mode
 
 	cfg.ReasoningEffort = effort
 	return nil
+}
+
+// setupReasoningEffortOptions keeps the saved empty effort backward-compatible.
+// It omits an explicit effort, leaving thinking behavior to the provider.
+// Display names must never be persisted as API values.
+func setupReasoningEffortOptions(m ModelInfo) []huh.Option[string] {
+	unsetLabel := "Off"
+	if m.AlwaysReason {
+		unsetLabel = "Provider default"
+	}
+	opts := []huh.Option[string]{huh.NewOption(unsetLabel, "")}
+	// Setup only persists catalog-declared native effort levels. Keep the
+	// conversation picker's conventional budget fallback out of saved
+	// provider defaults: not every transport translates those levels.
+	if len(m.ReasoningLevels) == 0 {
+		return opts
+	}
+	for _, level := range m.ReasoningEffortLevels() {
+		if level.Value == "none" {
+			continue // folded into the unset option above
+		}
+		label := level.Display
+		if level.Value == m.DefaultReasoningEffort {
+			label += " (model default)"
+		}
+		opts = append(opts, huh.NewOption(label, level.Value))
+	}
+	return opts
 }
 
 // setupLocalProvider guides the user through configuring a local / custom LLM endpoint.

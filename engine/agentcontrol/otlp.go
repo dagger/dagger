@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/engine/telemetryattrs"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
@@ -28,11 +29,11 @@ const (
 func record(ns Namespace, kind string, revision int64) log.Record {
 	var rec log.Record
 	rec.SetTimestamp(time.Now())
-	rec.SetBody(log.StringValue(""))
+	rec.SetBody(attribute.StringValue(""))
 	rec.AddAttributes(
-		log.Int(VersionAttr, Version), log.String(KindAttr, kind),
-		log.String(SessionAttr, ns.Session), log.String(TraceAttr, ns.Trace),
-		log.String(IncarnationAttr, ns.Incarnation), log.Int64(RevisionAttr, revision),
+		attribute.Int(VersionAttr, Version), attribute.String(KindAttr, kind),
+		attribute.String(SessionAttr, ns.Session), attribute.String(TraceAttr, ns.Trace),
+		attribute.String(IncarnationAttr, ns.Incarnation), attribute.Int64(RevisionAttr, revision),
 	)
 	return rec
 }
@@ -40,27 +41,27 @@ func record(ns Namespace, kind string, revision int64) log.Record {
 func (a Agent) Record() log.Record {
 	rec := record(a.Namespace, "agent", a.Revision)
 	rec.AddAttributes(
-		log.String(telemetryattrs.AgentIDAttr, a.Handle),
-		log.String(telemetryattrs.AgentNameAttr, a.Name),
-		log.String(telemetryattrs.AgentCallDigestAttr, a.CallDigest),
-		log.String(telemetryattrs.AgentSnapshotDigestAttr, a.Digest),
-		log.String(telemetryattrs.AgentStateAttr, a.State),
-		log.String(telemetryattrs.AgentStopReasonAttr, a.StopReason),
-		log.String(ParentAttr, a.Parent), log.String(CaptureErrorAttr, a.CaptureError),
-		log.String(PreTeardownAttr, a.PreTeardownState), log.String(FailureAttr, a.Failure),
-		log.Int64(ActivityAttr, a.Activity.UnixNano()),
+		attribute.String(telemetryattrs.AgentIDAttr, a.Handle),
+		attribute.String(telemetryattrs.AgentNameAttr, a.Name),
+		attribute.String(telemetryattrs.AgentCallDigestAttr, a.CallDigest),
+		attribute.String(telemetryattrs.AgentSnapshotDigestAttr, a.Digest),
+		attribute.String(telemetryattrs.AgentStateAttr, a.State),
+		attribute.String(telemetryattrs.AgentStopReasonAttr, a.StopReason),
+		attribute.String(ParentAttr, a.Parent), attribute.String(CaptureErrorAttr, a.CaptureError),
+		attribute.String(PreTeardownAttr, a.PreTeardownState), attribute.String(FailureAttr, a.Failure),
+		attribute.Int64(ActivityAttr, a.Activity.UnixNano()),
 	)
 	return rec
 }
 
 func (s Subscription) Record() log.Record {
 	rec := record(s.Namespace, "subscription", s.Revision)
-	states := make([]log.Value, len(s.States))
+	states := make([]attribute.Value, len(s.States))
 	for i, state := range s.States {
-		states[i] = log.StringValue(state)
+		states[i] = attribute.StringValue(state)
 	}
-	rec.AddAttributes(log.String(telemetryattrs.AgentIDAttr, s.Watched),
-		log.String(SubscriberAttr, s.Subscriber), log.Slice(StatesAttr, states...))
+	rec.AddAttributes(attribute.String(telemetryattrs.AgentIDAttr, s.Watched),
+		attribute.String(SubscriberAttr, s.Subscriber), attribute.Slice(StatesAttr, states...))
 	return rec
 }
 
@@ -68,7 +69,7 @@ func (s Subscription) Record() log.Record {
 // cannot leak into ordinary logs.
 func IsRecord(rec sdklog.Record) bool {
 	found := false
-	rec.WalkAttributes(func(kv log.KeyValue) bool {
+	rec.WalkAttributes(func(kv attribute.KeyValue) bool {
 		if kv.Key == VersionAttr {
 			found = true
 			return false
@@ -81,18 +82,18 @@ func IsRecord(rec sdklog.Record) bool {
 // Decode rejects missing or wrongly typed fields instead of manufacturing
 // completeness. Optional facts are explicit empty strings on the wire.
 func Decode(rec sdklog.Record) (*Agent, *Subscription, error) {
-	attrs := map[string]log.Value{}
+	attrs := map[string]attribute.Value{}
 	var decodeErr error
-	rec.WalkAttributes(func(kv log.KeyValue) bool {
-		if _, ok := attrs[kv.Key]; ok {
+	rec.WalkAttributes(func(kv attribute.KeyValue) bool {
+		if _, ok := attrs[string(kv.Key)]; ok {
 			decodeErr = fmt.Errorf("duplicate control attribute %s", kv.Key)
 		}
-		attrs[kv.Key] = kv.Value
+		attrs[string(kv.Key)] = kv.Value
 		return true
 	})
 	str := func(key string) string {
 		v, ok := attrs[key]
-		if !ok || v.Kind() != log.KindString {
+		if !ok || v.Type() != attribute.STRING {
 			decodeErr = fmt.Errorf("missing or non-string control attribute %s", key)
 			return ""
 		}
@@ -100,7 +101,7 @@ func Decode(rec sdklog.Record) (*Agent, *Subscription, error) {
 	}
 	integer := func(key string) int64 {
 		v, ok := attrs[key]
-		if !ok || v.Kind() != log.KindInt64 {
+		if !ok || v.Type() != attribute.INT64 {
 			decodeErr = fmt.Errorf("missing or non-integer control attribute %s", key)
 			return 0
 		}
@@ -131,11 +132,11 @@ func Decode(rec sdklog.Record) (*Agent, *Subscription, error) {
 	case "subscription":
 		s := Subscription{EdgeKey: EdgeKey{ns, handle, str(SubscriberAttr)}, Revision: revision}
 		v, ok := attrs[StatesAttr]
-		if !ok || v.Kind() != log.KindSlice {
+		if !ok || v.Type() != attribute.SLICE {
 			return nil, nil, fmt.Errorf("missing or non-array %s", StatesAttr)
 		}
 		for _, state := range v.AsSlice() {
-			if state.Kind() != log.KindString {
+			if state.Type() != attribute.STRING {
 				return nil, nil, fmt.Errorf("non-string subscription state")
 			}
 			s.States = append(s.States, state.AsString())

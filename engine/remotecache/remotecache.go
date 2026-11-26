@@ -217,7 +217,7 @@ type settings struct {
 	Config
 	dial       func(context.Context) (wsConn, error)
 	put        func(ctx context.Context, url string, body io.Reader, size int64) error
-	getFile    func(context.Context, protocol.SetFile) ([]byte, fetchTiming, error)
+	getFile    func(context.Context, protocol.SetFileSegment) ([]byte, fetchTiming, error)
 	decode     func([]byte) (dagql.ValueBundle, error)
 	peakRSS    func() int64
 	maxMessage int

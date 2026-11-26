@@ -9,24 +9,31 @@ import (
 	"testing"
 	"time"
 
-	"charm.land/catwalk/pkg/catwalk"
-	"charm.land/catwalk/pkg/embedded"
 	"github.com/dagger/dagger/core/modelcatalog"
 	"github.com/dagger/dagger/engine"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestCopilotDefaultMatchesCatalog(t *testing.T) {
-	var catalogDefault string
-	for _, provider := range embedded.GetAll() {
-		if provider.ID == catwalk.InferenceProviderCopilot {
-			catalogDefault = provider.DefaultLargeModelID
-			break
-		}
+func TestProviderDefaultsMatchCatalog(t *testing.T) {
+	for provider, model := range map[string]string{
+		"anthropic":      modelDefaultAnthropic,
+		"openai":         modelDefaultOpenAI,
+		"openai-codex":   modelDefaultCodex,
+		"google":         modelDefaultGoogle,
+		"github-copilot": modelDefaultCopilot,
+		"openrouter":     modelDefaultOpenRouter,
+	} {
+		t.Run(provider, func(t *testing.T) {
+			shared, ok := modelcatalog.DefaultModel(provider)
+			require.True(t, ok)
+			assert.Equal(t, shared, model)
+			metadata, ok := modelcatalog.Lookup(provider, model)
+			require.True(t, ok)
+			assert.Positive(t, metadata.ContextWindow)
+			assert.Positive(t, metadata.DefaultMaxTokens)
+		})
 	}
-	require.NotEmpty(t, catalogDefault)
-	assert.Equal(t, catalogDefault, modelDefaultCopilot)
 }
 
 func TestCopilotRoute(t *testing.T) {
@@ -234,6 +241,10 @@ func TestCopilotResponsesModels(t *testing.T) {
 		"gpt-5.4-mini": true, "gpt-5-mini": false, "gpt-4.1": false,
 		"claude-sonnet-5": false, "gemini-3.5-flash": false,
 		"grok-4.5": true, "mai-code-1": true,
+		// Explicit metadata takes precedence over the name heuristic.
+		"albatross": true, "gpt-6-luna-decisions": false,
+		// Uncatalogued models retain the forward-compatible fallback.
+		"gpt-99-future": true, "unknown-model": false,
 	} {
 		t.Run(model, func(t *testing.T) {
 			ep := &LLMEndpoint{Provider: GitHubCopilot, Model: model, BaseURL: "https://copilot.example"}

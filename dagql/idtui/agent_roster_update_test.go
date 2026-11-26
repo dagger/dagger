@@ -13,7 +13,7 @@ import (
 	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/stretchr/testify/require"
 	"github.com/vito/tuist"
-	otellog "go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/attribute"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -117,12 +117,12 @@ func largeRosterDB(t testing.TB, n int) *dagui.DB {
 			Digest:     "xxh3:" + handle + "-step",
 		}
 		rec := a.Record()
-		var attrs []otellog.KeyValue
-		rec.WalkAttributes(func(kv otellog.KeyValue) bool {
+		var attrs []attribute.KeyValue
+		rec.WalkAttributes(func(kv attribute.KeyValue) bool {
 			attrs = append(attrs, kv)
 			return true
 		})
-		records = append(records, frontendTestLogRecord(trace.SpanID{}, otellog.StringValue(""), attrs...))
+		records = append(records, frontendTestLogRecord(trace.SpanID{}, attribute.StringValue(""), attrs...))
 	}
 	db.ImportSnapshots(snapshots)
 	db.IngestLogs(records)

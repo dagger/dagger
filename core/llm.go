@@ -16,15 +16,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/cenkalti/backoff/v4"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/iancoleman/strcase"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/dagger/dagger/core/modelcatalog"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/dagui"
@@ -52,12 +51,12 @@ func init() {
 }
 
 const (
-	modelDefaultAnthropic  = anthropic.ModelClaudeSonnet4_6
-	modelDefaultGoogle     = "gemini-2.5-flash"
-	modelDefaultOpenAI     = "gpt-4.1"
-	modelDefaultCodex      = "gpt-5.5"
-	modelDefaultCopilot    = "claude-sonnet-5"
-	modelDefaultOpenRouter = "anthropic/claude-sonnet-4.6"
+	modelDefaultAnthropic  = modelcatalog.DefaultAnthropic
+	modelDefaultGoogle     = modelcatalog.DefaultGoogle
+	modelDefaultOpenAI     = modelcatalog.DefaultOpenAI
+	modelDefaultCodex      = modelcatalog.DefaultOpenAI
+	modelDefaultCopilot    = modelcatalog.DefaultCopilot
+	modelDefaultOpenRouter = modelcatalog.DefaultOpenRouter
 	modelDefaultMeta       = "llama-3.2"
 	modelDefaultMistral    = "mistral-7b-instruct"
 )
@@ -67,7 +66,7 @@ const (
 const openRouterBaseURL = "https://openrouter.ai/api/v1"
 
 // codexModelPrefix pins a model to the Codex (ChatGPT subscription) backend.
-// Current Codex models (gpt-5.5, gpt-5.4, …) no longer carry "codex" in their
+// Current Codex models (gpt-6.2-sol, gpt-6-luna, …) no longer carry "codex" in their
 // IDs, so the prefix — not the name — is what routes them to the Codex client.
 // Route strips it back off so the model still displays and is sent to the API
 // under its bare name.
@@ -1186,7 +1185,7 @@ func (q *Query) DefaultLLMRoute(ctx context.Context, provider string) (string, s
 }
 
 // SmallModelRoute resolves this conversation's current concrete route, then
-// selects that provider's configured or catalog-recommended small model. If the
+// selects that provider's configured or Dagger-default small model. If the
 // provider has neither (as with an arbitrary local or unknown provider), the
 // current concrete route is returned unchanged.
 func (llm *LLM) SmallModelRoute(ctx context.Context) (string, string, error) {
@@ -2596,7 +2595,7 @@ func (llm *LLM) Interject(ctx context.Context, self dagql.ObjectResult[*LLM]) (d
 	ctx, span := Tracer(ctx).Start(ctx, "LLM prompt", trace.WithAttributes(attrs...))
 	defer span.End()
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
-		log.String(telemetry.ContentTypeAttr, "text/markdown"))
+		attribute.String(telemetry.ContentTypeAttr, "text/markdown"))
 	defer stdio.Close()
 	lastAssistantMessage, foundReply := llm.LastReply()
 	if !foundReply {
@@ -2738,7 +2737,7 @@ func emitUserMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string
 	ctx, span := Tracer(ctx).Start(ctx, "LLM prompt", trace.WithAttributes(attrs...))
 	defer span.End()
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
-		log.String(telemetry.ContentTypeAttr, "text/markdown"))
+		attribute.String(telemetry.ContentTypeAttr, "text/markdown"))
 	defer stdio.Close()
 	for _, block := range msg.Content {
 		switch block.Kind {
@@ -2746,7 +2745,7 @@ func emitUserMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string
 			fmt.Fprint(stdio.Stdout, block.Text)
 		case LLMContentImage, LLMContentAudio, LLMContentDocument:
 			emitContentLog(ctx, stdio.Stdout, block, "\n",
-				log.String(telemetry.ContentTypeAttr, "text/markdown"))
+				attribute.String(telemetry.ContentTypeAttr, "text/markdown"))
 		}
 	}
 }
@@ -2843,13 +2842,13 @@ func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest s
 			}
 			defer span.End()
 			stdio := telemetry.SpanStdio(spanCtx, InstrumentationLibrary,
-				log.String(telemetry.ContentTypeAttr, contentType))
+				attribute.String(telemetry.ContentTypeAttr, contentType))
 			defer stdio.Close()
 			for _, block := range g.blocks {
 				switch block.Kind {
 				case LLMContentText, LLMContentThinking, LLMContentImage, LLMContentAudio, LLMContentDocument:
 					emitContentLog(spanCtx, stdio.Stdout, block, "",
-						log.String(telemetry.ContentTypeAttr, contentType))
+						attribute.String(telemetry.ContentTypeAttr, contentType))
 				case LLMContentToolCall:
 					fmt.Fprintln(stdio.Stdout, string(block.Arguments))
 				}

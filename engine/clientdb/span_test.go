@@ -254,7 +254,10 @@ func sdkAttrs() []attribute.KeyValue {
 		attribute.Float64Slice("ds", []float64{0, -2.5}),
 		attribute.StringSlice("ss", []string{"", "a", strings.Repeat("b", 300)}),
 		attribute.StringSlice("none", nil),
-		{Key: "invalid"},
+		attribute.ByteSlice("bytes", []byte{0, 0xff}),
+		attribute.Slice("mixed", attribute.StringValue("a"), attribute.IntValue(1), attribute.SliceValue()),
+		attribute.Map("map", attribute.String("k", "v"), attribute.Bool("b", true)),
+		{Key: "empty value"},
 	}
 }
 
@@ -292,6 +295,8 @@ func TestMarshalKeyValueList(t *testing.T) {
 		attribute.String("k", "\xff"),
 		attribute.String("\xff", "v"),
 		attribute.StringSlice("k", []string{"ok", "\xff"}),
+		attribute.Slice("k", attribute.StringValue("\xff")),
+		attribute.Map("k", attribute.String("\xff", "v")),
 	} {
 		_, protoErr := MarshalProtoList(telemetry.KeyValues([]attribute.KeyValue{bad}))
 		require.Error(t, protoErr)

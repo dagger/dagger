@@ -17,7 +17,7 @@ import (
 	telemetry "github.com/dagger/otel-go"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"go.opentelemetry.io/otel/sdk/resource"
-	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.43.0"
 )
 
 // callRequest is the ModuleEntrypoint.call input. The entrypoint passes each

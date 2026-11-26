@@ -25,6 +25,7 @@ import (
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
@@ -128,18 +129,18 @@ func (s *restoreTestArchive) Metrics(ctx context.Context, _ string, opts archive
 
 func controlLogs(records ...log.Record) *collogspb.ExportLogsServiceRequest {
 	var logs []*logspb.LogRecord
-	var value func(log.Value) *commonpb.AnyValue
-	value = func(v log.Value) *commonpb.AnyValue {
-		switch v.Kind() {
-		case log.KindBytes:
-			return &commonpb.AnyValue{Value: &commonpb.AnyValue_BytesValue{BytesValue: v.AsBytes()}}
-		case log.KindString:
+	var value func(attribute.Value) *commonpb.AnyValue
+	value = func(v attribute.Value) *commonpb.AnyValue {
+		switch v.Type() {
+		case attribute.BYTESLICE:
+			return &commonpb.AnyValue{Value: &commonpb.AnyValue_BytesValue{BytesValue: v.AsByteSlice()}}
+		case attribute.STRING:
 			return &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: v.AsString()}}
-		case log.KindInt64:
+		case attribute.INT64:
 			return &commonpb.AnyValue{Value: &commonpb.AnyValue_IntValue{IntValue: v.AsInt64()}}
-		case log.KindBool:
+		case attribute.BOOL:
 			return &commonpb.AnyValue{Value: &commonpb.AnyValue_BoolValue{BoolValue: v.AsBool()}}
-		case log.KindSlice:
+		case attribute.SLICE:
 			var vals []*commonpb.AnyValue
 			for _, item := range v.AsSlice() {
 				vals = append(vals, value(item))
@@ -151,8 +152,8 @@ func controlLogs(records ...log.Record) *collogspb.ExportLogsServiceRequest {
 	}
 	for _, rec := range records {
 		entry := &logspb.LogRecord{TimeUnixNano: uint64(rec.Timestamp().UnixNano()), Body: value(rec.Body())}
-		rec.WalkAttributes(func(kv log.KeyValue) bool {
-			entry.Attributes = append(entry.Attributes, &commonpb.KeyValue{Key: kv.Key, Value: value(kv.Value)})
+		rec.WalkAttributes(func(kv attribute.KeyValue) bool {
+			entry.Attributes = append(entry.Attributes, &commonpb.KeyValue{Key: string(kv.Key), Value: value(kv.Value)})
 			return true
 		})
 		logs = append(logs, entry)
@@ -912,8 +913,8 @@ func TestArchiveRestoreNoBackfillFetchesCallClosures(t *testing.T) {
 	data, err := proto.Marshal(frame)
 	require.NoError(t, err)
 	var payload log.Record
-	payload.SetBody(log.BytesValue(data))
-	payload.AddAttributes(log.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
+	payload.SetBody(attribute.ByteSliceValue(data))
+	payload.AddAttributes(attribute.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
 	source.closure = controlLogs(payload)
 	fe := &lazyRestoreFrontend{restoreTestFrontend: newRestoreTestFrontend()}
 	cleanup, err := restoreArchive(t.Context(), source, fe, newFakeRestoreTarget(), restoreRequest())

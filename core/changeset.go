@@ -36,7 +36,6 @@ import (
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/log"
 	"golang.org/x/sys/unix"
 )
 
@@ -1011,7 +1010,7 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 				}
 
 				return enginetel.Task(ctx, "git diff", func(ctx context.Context) error {
-					stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary, log.Bool(telemetry.LogsVerboseAttr, true))
+					stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary, attribute.Bool(telemetry.LogsVerboseAttr, true))
 					defer stdio.Close()
 					// The patch file gets everything; the span's logs only
 					// get a bounded prefix, since the whole patch would

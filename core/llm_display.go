@@ -19,7 +19,7 @@ import (
 // emitContentLog preserves the text projection while carrying media out of band
 // at its exact position. SpanStdio writes synchronously to the same logger, so
 // adjacent text records retain their ordering relative to the attachment.
-func emitContentLog(ctx context.Context, stdout io.Writer, block *LLMContentBlock, suffix string, attrs ...log.KeyValue) {
+func emitContentLog(ctx context.Context, stdout io.Writer, block *LLMContentBlock, suffix string, attrs ...attribute.KeyValue) {
 	if block == nil {
 		return
 	}
@@ -27,14 +27,14 @@ func emitContentLog(ctx context.Context, stdout io.Writer, block *LLMContentBloc
 	case LLMContentImage, LLMContentAudio, LLMContentDocument:
 		rec := log.Record{}
 		rec.SetTimestamp(time.Now())
-		rec.SetBody(log.StringValue(block.ContentText() + suffix))
+		rec.SetBody(attribute.StringValue(block.ContentText() + suffix))
 		rec.AddAttributes(attrs...)
 		rec.AddAttributes(
-			log.Int(telemetry.StdioStreamAttr, 1),
-			log.String(telemetryattrs.LogMediaKindAttr, strings.ToLower(string(block.Kind))),
-			log.String(telemetryattrs.LogMediaMIMETypeAttr, block.MIMEType),
+			attribute.Int(telemetry.StdioStreamAttr, 1),
+			attribute.String(telemetryattrs.LogMediaKindAttr, strings.ToLower(string(block.Kind))),
+			attribute.String(telemetryattrs.LogMediaMIMETypeAttr, block.MIMEType),
 			// The attribute is a base64 string: the UI decodes it (dagui).
-			log.String(telemetryattrs.LogMediaDataAttr, base64.StdEncoding.EncodeToString(block.Data)),
+			attribute.String(telemetryattrs.LogMediaDataAttr, base64.StdEncoding.EncodeToString(block.Data)),
 		)
 		telemetry.Logger(ctx, InstrumentationLibrary).Emit(ctx, rec)
 	case LLMContentToolResult:
@@ -63,9 +63,9 @@ func emitContentLog(ctx context.Context, stdout io.Writer, block *LLMContentBloc
 // results into ordered text and attachment records.
 func emitToolResultLogs(ctx context.Context, result *LLMContentBlock) {
 	text := result.ContentText()
-	attrs := []log.KeyValue{log.Bool(telemetry.LogsVerboseAttr, true)}
+	attrs := []attribute.KeyValue{attribute.Bool(telemetry.LogsVerboseAttr, true)}
 	if contentType := toolResultContentType(text); contentType != "" {
-		attrs = append(attrs, log.String(telemetry.ContentTypeAttr, contentType))
+		attrs = append(attrs, attribute.String(telemetry.ContentTypeAttr, contentType))
 	}
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary, attrs...)
 	defer stdio.Close()
@@ -186,7 +186,7 @@ func (dp *displayPhases) StartText(idx int64) *displayPhase {
 	}
 	p.Stdio = telemetry.SpanStdio(phaseCtx, InstrumentationLibrary)
 	p.MarkdownW = telemetry.NewWriter(phaseCtx, InstrumentationLibrary,
-		log.String(telemetry.ContentTypeAttr, "text/markdown"))
+		attribute.String(telemetry.ContentTypeAttr, "text/markdown"))
 	dp.phases[idx] = p
 	return p
 }
@@ -212,8 +212,8 @@ func (dp *displayPhases) StartThinking(idx int64) *displayPhase {
 		span: span,
 	}
 	p.Stdio = telemetry.SpanStdio(phaseCtx, InstrumentationLibrary,
-		log.String(telemetry.ContentTypeAttr, "text/markdown"),
-		log.Bool("llm.thinking", true),
+		attribute.String(telemetry.ContentTypeAttr, "text/markdown"),
+		attribute.Bool("llm.thinking", true),
 	)
 	dp.phases[idx] = p
 	return p
@@ -260,8 +260,8 @@ func (dp *displayPhases) StartToolCall(idx int64, callID, toolName string) *disp
 		callID: callID,
 	}
 	p.Stdio = telemetry.SpanStdio(phaseCtx, InstrumentationLibrary,
-		log.String(telemetry.ContentTypeAttr, "application/json"),
-		log.Bool(telemetry.LogsVerboseAttr, true))
+		attribute.String(telemetry.ContentTypeAttr, "application/json"),
+		attribute.Bool(telemetry.LogsVerboseAttr, true))
 	dp.phases[idx] = p
 	return p
 }

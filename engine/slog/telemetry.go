@@ -9,8 +9,8 @@ import (
 	telemetry "github.com/dagger/otel-go"
 	"github.com/lmittmann/tint"
 	"github.com/muesli/termenv"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/baggage"
-	"go.opentelemetry.io/otel/log"
 )
 
 const (
@@ -56,7 +56,7 @@ func ColorProfileFromContext(ctx context.Context) termenv.Profile {
 //
 // - If debug=true is set in baggage, the log level will be Debug. Otherwise,
 // it will be Info.
-func SpanLogger(ctx context.Context, name string, attrs ...log.KeyValue) *Logger {
+func SpanLogger(ctx context.Context, name string, attrs ...attribute.KeyValue) *Logger {
 	bag := baggage.FromContext(ctx)
 	profile := termenv.ANSI
 	if bag.Member(noColorBaggageKey).Value() == "true" {
@@ -75,7 +75,7 @@ func SpanLogger(ctx context.Context, name string, attrs ...log.KeyValue) *Logger
 
 // GlobalLogger returns a Logger that sends logs to the global span, or the
 // current span if none is configured.
-func GlobalLogger(ctx context.Context, name string, attrs ...log.KeyValue) *Logger {
+func GlobalLogger(ctx context.Context, name string, attrs ...attribute.KeyValue) *Logger {
 	return SpanLogger(telemetry.GlobalLogsSpanContext(ctx), name, attrs...)
 }
 

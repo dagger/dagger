@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 
+	"charm.land/catwalk/v3/pkg/catwalk"
+	"github.com/dagger/dagger/core/modelcatalog"
 	"github.com/dagger/dagger/engine"
 	"github.com/openai/openai-go/v3/option"
 )
@@ -59,11 +61,19 @@ func (r *LLMRouter) routeCopilotModel() *LLMEndpoint {
 
 // usesCopilotResponses is independent of usesOpenAIResponses: a Copilot
 // endpoint may have any host, including a Business/Enterprise API origin.
-// GPT-5 and later (except GPT-5 mini) and Codex use Responses. This follows
-// OpenCode's fallback for models without live supported_endpoints metadata:
-// https://github.com/anomalyco/opencode/blob/dev/packages/core/src/plugin/provider/github-copilot.ts
+// Prefer Catwalk's endpoint metadata for known models. For uncatalogued models,
+// keep the name-based fallback: GPT-5 and later (except GPT-5 mini), Codex,
+// Grok and MAI Code use Responses.
 func (endpoint *LLMEndpoint) usesCopilotResponses() bool {
 	model := endpoint.Model
+	if endpointType, ok := modelcatalog.EndpointType(string(GitHubCopilot), model); ok {
+		switch endpointType {
+		case catwalk.TypeResponses:
+			return true
+		case catwalk.TypeCompletions:
+			return false
+		}
+	}
 	if strings.Contains(model, "codex") || strings.HasPrefix(model, "grok-") || strings.HasPrefix(model, "mai-code-") {
 		return true
 	}

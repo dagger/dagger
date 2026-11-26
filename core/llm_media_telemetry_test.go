@@ -11,7 +11,7 @@ import (
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
-	otellog "go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/attribute"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
 
@@ -82,7 +82,7 @@ func TestMediaTelemetryOrdering(t *testing.T) {
 					require.True(t, record.SpanID().IsValid())
 					if mode != "user" {
 						verbose := false
-						record.WalkAttributes(func(kv otellog.KeyValue) bool {
+						record.WalkAttributes(func(kv attribute.KeyValue) bool {
 							if kv.Key == telemetry.LogsVerboseAttr {
 								verbose = kv.Value.AsBool()
 							}

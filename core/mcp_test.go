@@ -16,7 +16,6 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/attribute"
-	otellog "go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
@@ -744,7 +743,7 @@ func TestHumanOnlyLogsExcludedFromLLMLogs(t *testing.T) {
 	require.NotEmpty(t, recorder.records)
 	for _, record := range recorder.records {
 		humanOnly := false
-		record.WalkAttributes(func(kv otellog.KeyValue) bool {
+		record.WalkAttributes(func(kv attribute.KeyValue) bool {
 			if kv.Key == telemetryattrs.LogHumanOnlyAttr {
 				humanOnly = kv.Value.AsBool()
 			}

@@ -17,7 +17,6 @@ import (
 	"github.com/vito/dang/v2/pkg/dang"
 	"github.com/vito/tuist"
 	"go.opentelemetry.io/otel/attribute"
-	otellog "go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/dagql/dagui"
@@ -256,7 +255,7 @@ func TestDangCheckRow(t *testing.T) {
 			require.NoError(t, err)
 			l.stream(liveTimeout, string(argsJSON), 1<<10, nil)
 			l.closeArgs(liveTimeout)
-			l.logs(frontendTestLogRecord(trace.SpanID{liveTimeout}, otellog.StringValue(c.report)))
+			l.logs(frontendTestLogRecord(trace.SpanID{liveTimeout}, attribute.StringValue(c.report)))
 			// It ends with the arguments the engine records.
 			var names, values []string
 			for _, name := range []string{"at", "source"} {

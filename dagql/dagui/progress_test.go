@@ -8,17 +8,17 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/engine/telemetryattrs"
-	otellog "go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/attribute"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/trace"
 )
 
 func newTestProgressRecord(traceID trace.TraceID, spanID trace.SpanID, item string, current, total int64) sdklog.Record {
 	return newTestLogRecord(traceID, spanID, "",
-		otellog.String(telemetryattrs.ProgressItemAttr, item),
-		otellog.Int64(telemetryattrs.ProgressCurrentAttr, current),
-		otellog.Int64(telemetryattrs.ProgressTotalAttr, total),
-		otellog.String(telemetryattrs.ProgressUnitAttr, "bytes"),
+		attribute.String(telemetryattrs.ProgressItemAttr, item),
+		attribute.Int64(telemetryattrs.ProgressCurrentAttr, current),
+		attribute.Int64(telemetryattrs.ProgressTotalAttr, total),
+		attribute.String(telemetryattrs.ProgressUnitAttr, "bytes"),
 	)
 }
 

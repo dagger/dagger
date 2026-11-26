@@ -21,7 +21,7 @@ import (
 	"github.com/muesli/termenv"
 	"github.com/pkg/browser"
 	"github.com/vito/go-interact/interact"
-	"go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/attribute"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
@@ -361,7 +361,7 @@ func (fe plainLogExporter) Export(ctx context.Context, logs []sdklog.Record) err
 	for _, record := range logs {
 		// Check if this log is marked as verbose
 		isVerbose := false
-		record.WalkAttributes(func(kv log.KeyValue) bool {
+		record.WalkAttributes(func(kv attribute.KeyValue) bool {
 			if kv.Key == telemetry.LogsVerboseAttr {
 				isVerbose, _ = dagui.LogValueBool(kv.Value)
 				return !isVerbose

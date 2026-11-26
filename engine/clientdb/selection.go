@@ -12,7 +12,7 @@ import (
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/codes"
-	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.43.0"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 	"google.golang.org/protobuf/encoding/protowire"
 )
@@ -463,7 +463,7 @@ func spanViewClass(attrs []*commonpb.KeyValue) (priority, agent, passthrough boo
 	var hasTool, hasRole bool
 	for _, a := range attrs {
 		switch a.GetKey() {
-		case string(semconv.GenAIAgentIDKey):
+		case telemetryattrs.GenAIAgentIDAttr:
 			priority, agent = true, true
 		case telemetry.LLMToolAttr:
 			hasTool = true

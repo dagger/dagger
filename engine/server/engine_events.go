@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
 
 	"github.com/dagger/dagger/dagql"
@@ -62,12 +63,24 @@ type engineEventEmitter struct {
 	closeMu sync.RWMutex
 	closed  bool
 	done    chan struct{}
+
+	// emitCtx is the drain's context for the logger: Close cancels it when
+	// its own context ends, so an emit waiting on a full export queue gives
+	// up. The SDK's LoggerProvider.Shutdown waits for every emit in flight
+	// before shutting its processors down, so an emit that waits for the
+	// processor's shutdown would hold the export's shutdown to its deadline
+	// and the drain forever.
+	emitCtx    context.Context
+	cancelEmit context.CancelFunc
 }
 
 func newEngineEventEmitter(logger log.Logger) *engineEventEmitter {
+	emitCtx, cancelEmit := context.WithCancel(context.Background())
 	e := &engineEventEmitter{
-		queue: make(chan queuedEngineEvent, engineEventQueueSize),
-		done:  make(chan struct{}),
+		queue:      make(chan queuedEngineEvent, engineEventQueueSize),
+		done:       make(chan struct{}),
+		emitCtx:    emitCtx,
+		cancelEmit: cancelEmit,
 	}
 	go e.run(logger)
 	return e
@@ -95,7 +108,9 @@ func (e *engineEventEmitter) Dropped() uint64 {
 }
 
 // Close stops accepting events and waits, bounded by ctx, until every queued
-// event has been handed to the logger.
+// event has been handed to the logger. When ctx ends first, the events not
+// handed over yet are dropped, and the drain ends without waiting on the
+// logger.
 func (e *engineEventEmitter) Close(ctx context.Context) error {
 	e.closeMu.Lock()
 	if !e.closed {
@@ -107,14 +122,31 @@ func (e *engineEventEmitter) Close(ctx context.Context) error {
 	case <-e.done:
 		return nil
 	case <-ctx.Done():
+		e.cancelEmit()
+		// The drain now only counts what is left as dropped; wait for it, so
+		// Dropped includes those, but not on a logger that ignores the
+		// cancellation.
+		select {
+		case <-e.done:
+		case <-time.After(engineEventDrainGrace):
+		}
 		return context.Cause(ctx)
 	}
 }
 
+// engineEventDrainGrace bounds how long Close waits for the drain to count
+// the events left once its context ended.
+const engineEventDrainGrace = time.Second
+
 func (e *engineEventEmitter) run(logger log.Logger) {
 	defer close(e.done)
-	ctx := context.Background()
+	defer e.cancelEmit()
+	ctx := e.emitCtx
 	for queued := range e.queue {
+		if ctx.Err() != nil {
+			e.dropped.Add(1)
+			continue
+		}
 		body, err := json.Marshal(queued.body)
 		if err != nil {
 			e.dropped.Add(1)
@@ -125,10 +157,10 @@ func (e *engineEventEmitter) run(logger log.Logger) {
 		rec.SetTimestamp(queued.at)
 		rec.SetObservedTimestamp(queued.at)
 		rec.SetSeverity(log.SeverityInfo)
-		rec.SetBody(log.StringValue(string(body)))
+		rec.SetBody(attribute.StringValue(string(body)))
 		rec.AddAttributes(
-			log.String(telemetryattrs.EngineEventAttr, queued.kind),
-			log.String(telemetryattrs.EngineCacheAttr, queued.cache),
+			attribute.String(telemetryattrs.EngineEventAttr, queued.kind),
+			attribute.String(telemetryattrs.EngineCacheAttr, queued.cache),
 		)
 		logger.Emit(ctx, rec)
 	}

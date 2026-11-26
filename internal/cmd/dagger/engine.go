@@ -24,6 +24,7 @@ import (
 	"github.com/dagger/dagger/internal/cmd/dagger/llmconfig"
 	"github.com/dagger/dagger/util/cleanups"
 	telemetry "github.com/dagger/otel-go"
+	_ "github.com/dagger/otel-go/otlp" // OpenTelemetry's exporters for OTEL_EXPORTER_OTLP_*, grpc included
 	"github.com/muesli/termenv"
 	"go.opentelemetry.io/otel"
 	sdklog "go.opentelemetry.io/otel/sdk/log"

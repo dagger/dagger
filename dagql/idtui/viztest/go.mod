@@ -44,6 +44,12 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 )
 
+// TEMPORARY: viztest stays on the otel-go and OpenTelemetry versions, and
+// the replaces, that released engines (v1.0.0-beta.27 and earlier) generate,
+// because CI regenerates it with one: their codegen pins otel/log to
+// v0.16.0, an import cycle with the otel v1.47 that otel-go v1.47 requires.
+// Move it to otel-go v1.47 (main.go to the attribute log API) once CI's
+// engine includes dagger/dagger#15261, whose codegen drops these replaces.
 replace go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc => go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.16.0
 
 replace go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp => go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.16.0

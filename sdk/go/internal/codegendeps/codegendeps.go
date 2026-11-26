@@ -20,6 +20,6 @@ import (
 	_ "go.opentelemetry.io/otel"
 	_ "go.opentelemetry.io/otel/propagation"
 	_ "go.opentelemetry.io/otel/sdk/resource"
-	_ "go.opentelemetry.io/otel/semconv/v1.40.0"
+	_ "go.opentelemetry.io/otel/semconv/v1.43.0"
 	_ "go.opentelemetry.io/otel/trace"
 )

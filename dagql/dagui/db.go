@@ -11,7 +11,6 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
-	otellog "go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
@@ -764,11 +763,11 @@ func (db *DB) LogExporter() sdklog.Exporter {
 	return DBLogExporter{db}
 }
 
-// LogValueString returns value as a string only when its OpenTelemetry kind
+// LogValueString returns value as a string only when its OpenTelemetry type
 // is string. Callers must not use AsString without first establishing this
-// invariant: the OTel API reports invalid-kind conversions as diagnostics.
-func LogValueString(value otellog.Value) (string, bool) {
-	if value.Kind() != otellog.KindString {
+// invariant: AsString returns a byte slice's bytes too.
+func LogValueString(value attribute.Value) (string, bool) {
+	if value.Type() != attribute.STRING {
 		return "", false
 	}
 	return value.AsString(), true
@@ -776,8 +775,8 @@ func LogValueString(value otellog.Value) (string, bool) {
 
 // LogValueBool returns value as a bool only when its OpenTelemetry kind is
 // bool.
-func LogValueBool(value otellog.Value) (bool, bool) {
-	if value.Kind() != otellog.KindBool {
+func LogValueBool(value attribute.Value) (bool, bool) {
+	if value.Type() != attribute.BOOL {
 		return false, false
 	}
 	return value.AsBool(), true
@@ -785,8 +784,8 @@ func LogValueBool(value otellog.Value) (bool, bool) {
 
 // LogValueInt64 returns value as an int64 only when its OpenTelemetry kind is
 // int64.
-func LogValueInt64(value otellog.Value) (int64, bool) {
-	if value.Kind() != otellog.KindInt64 {
+func LogValueInt64(value attribute.Value) (int64, bool) {
+	if value.Type() != attribute.INT64 {
 		return 0, false
 	}
 	return value.AsInt64(), true
@@ -810,7 +809,7 @@ func IsSpanNameRecord(record sdklog.Record) bool {
 // role. Unknown and malformed roles remain reserved so they cannot render as
 // ordinary output.
 func spanNameRecordReservation(record sdklog.Record) (reserved, isSpanName bool) {
-	record.WalkAttributes(func(kv otellog.KeyValue) bool {
+	record.WalkAttributes(func(kv attribute.KeyValue) bool {
 		if kv.Key == telemetryattrs.LogRoleAttr {
 			reserved = true
 			role, valid := LogValueString(kv.Value)
@@ -913,9 +912,9 @@ func (db *DB) ingestLogs(logs []sdklog.Record, collectRenderable bool) []sdklog.
 			// dagql call payload, not log text
 			continue
 		}
-		if log.Body().Kind() != otellog.KindString {
-			// Never log text, whatever produced it; checking the kind first
-			// also keeps AsString from reporting to the global error handler.
+		if log.Body().Type() != attribute.STRING {
+			// Never log text, whatever produced it; checking the type first
+			// also keeps AsString from reading a byte slice as text.
 			continue
 		}
 		body, isText := LogBodyString(log)
@@ -951,7 +950,7 @@ func (db *DB) ingestLogs(logs []sdklog.Record, collectRenderable bool) []sdklog.
 // frontend reads on demand, saying only that the span it routes to has logs.
 func IsLogPresence(record sdklog.Record) bool {
 	var presence bool
-	record.WalkAttributes(func(kv otellog.KeyValue) bool {
+	record.WalkAttributes(func(kv attribute.KeyValue) bool {
 		if kv.Key == telemetryattrs.LogRoleAttr {
 			role, _ := LogValueString(kv.Value)
 			presence = role == telemetryattrs.LogRolePresence
@@ -1891,7 +1890,7 @@ func (db *DB) DrainResolvedLogs(spanID SpanID) []sdklog.Record {
 
 func (db *DB) routeLog(record sdklog.Record) (SpanID, *resumeOutputKey) {
 	var targetDig string
-	record.WalkAttributes(func(kv otellog.KeyValue) bool {
+	record.WalkAttributes(func(kv attribute.KeyValue) bool {
 		if kv.Key == telemetry.DagDigestAttr {
 			if value, ok := LogValueString(kv.Value); ok {
 				targetDig = value

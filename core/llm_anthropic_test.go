@@ -167,17 +167,13 @@ func resubmittedThinking(t *testing.T, request map[string]json.RawMessage) bool 
 
 // TestAnthropicReasoningByModel covers translating a provider-configured
 // reasoning effort for models that can't take it natively. Claude Haiku 4.5
-// (the catalog's default small model, so what withSmallModel picks) rejects
-// adaptive thinking with a 400 ("adaptive thinking is not supported on this
-// model"), so it must get budget-based extended thinking instead, while
-// effort-capable and uncatalogued models keep effort + adaptive thinking.
+// rejects adaptive thinking with a 400 ("adaptive thinking is not supported
+// on this model"), so it must still get budget-based extended thinking, while
+// the current defaults and uncatalogued models keep effort + adaptive thinking.
 func TestAnthropicReasoningByModel(t *testing.T) {
-	small, ok := (&LLMRouter{}).SmallModel(Anthropic)
-	require.True(t, ok)
-	require.Equal(t, "claude-haiku-4-5-20251001", small,
-		"catalog's default small model changed; check it still exercises budget-based thinking")
+	const small = "claude-haiku-4-5-20251001"
 
-	t.Run("small model gets budget thinking, not adaptive", func(t *testing.T) {
+	t.Run("legacy small model gets budget thinking, not adaptive", func(t *testing.T) {
 		request := anthropicReasoningRequest(t, small, "high", 0)
 		assert.NotContains(t, request, "output_config")
 		assert.JSONEq(t, `{"type":"enabled","budget_tokens":16384}`, string(request["thinking"]))
@@ -213,8 +209,13 @@ func TestAnthropicReasoningByModel(t *testing.T) {
 		assert.False(t, resubmittedThinking(t, request))
 	})
 
+	currentSmall, ok := (&LLMRouter{}).SmallModel(Anthropic)
+	require.True(t, ok)
+	require.Equal(t, "claude-haiku-5-5", currentSmall)
 	for _, model := range []string{
 		// Takes effort levels natively, per the catalog.
+		modelDefaultAnthropic,
+		currentSmall,
 		"claude-sonnet-4-6",
 		// Not in the catalog (e.g. newer than it): unchanged behavior.
 		"claude-unreleased-model",

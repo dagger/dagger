@@ -9,7 +9,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	telemetry "github.com/dagger/otel-go"
-	"go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 // Report only explicitly resolved install/update sources. Dependency and SDK
@@ -33,7 +33,7 @@ func reportWorkspaceModuleResolution(ctx context.Context, original string, src *
 		"module-resolution-report:"+md.SessionID+":"+original,
 		func(ctx context.Context) (any, error) {
 			writer := telemetry.GlobalWriter(ctx, core.InstrumentationLibrary,
-				log.Int(telemetry.StdioStreamAttr, 2))
+				attribute.Int(telemetry.StdioStreamAttr, 2))
 			_, _ = fmt.Fprintln(writer, line)
 			return true, nil
 		})

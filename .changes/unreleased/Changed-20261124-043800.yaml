@@ -1,0 +1,17 @@
+kind: Changed
+body: |
+  Go modules now build with github.com/dagger/otel-go
+  v1.47.1-0.20261124213443-e79f0e10530f and OpenTelemetry v1.47, whose log
+  modules are stable. Codegen drops the replace directives earlier Go SDKs
+  wrote into a module's go.mod (and go.work) to pin
+  go.opentelemetry.io/otel/log, sdk/log and the otlplog exporters to v0.16.0:
+  with OpenTelemetry v1.47 they made an import cycle.
+  While another module of the same go.work still has them, the go.work
+  replaces otel/log and sdk/log with the SDK's versions instead.
+  Module code that uses the OpenTelemetry log API directly moves from
+  log.KeyValue and log.Value to attribute.KeyValue and attribute.Value, as
+  OpenTelemetry v1.45 did.
+time: 2026-11-24T04:38:00Z
+custom:
+  Author: vito
+  PR: "15261"

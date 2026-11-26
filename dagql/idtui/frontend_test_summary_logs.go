@@ -6,7 +6,7 @@ import (
 	"github.com/dagger/dagger/dagql/dagui"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/muesli/termenv"
-	"go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/attribute"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
 
@@ -39,7 +39,7 @@ func appendTestSummaryLogRecords(logs map[dagui.SpanID]*Vterm, profile termenv.P
 }
 
 func testSummaryLogRecordInfo(record sdklog.Record) (contentType string, skip bool) {
-	record.WalkAttributes(func(kv log.KeyValue) bool {
+	record.WalkAttributes(func(kv attribute.KeyValue) bool {
 		switch kv.Key {
 		case telemetry.ContentTypeAttr:
 			contentType, _ = dagui.LogValueString(kv.Value)

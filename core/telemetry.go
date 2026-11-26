@@ -11,7 +11,6 @@ import (
 	"unicode/utf8"
 
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/dagql"
@@ -851,7 +850,7 @@ func logResult(ctx context.Context, res dagql.AnyResult, frame *dagql.ResultCall
 		return
 	}
 
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary, log.Bool(telemetry.LogsVerboseAttr, true))
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary, attribute.Bool(telemetry.LogsVerboseAttr, true))
 	defer stdio.Close()
 	fmt.Fprint(stdio.Stdout, loggedResult(output))
 }

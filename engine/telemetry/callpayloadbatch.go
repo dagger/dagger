@@ -13,7 +13,7 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/attribute"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
 
@@ -523,8 +523,8 @@ func callPayloadDigests(records []sdklog.Record) []string {
 	digests := make([]string, 0, len(records))
 	for _, record := range records {
 		digest := "?"
-		record.WalkAttributes(func(attr log.KeyValue) bool {
-			if attr.Key == telemetryattrs.CallPayloadDigestAttr && attr.Value.Kind() == log.KindString {
+		record.WalkAttributes(func(attr attribute.KeyValue) bool {
+			if attr.Key == telemetryattrs.CallPayloadDigestAttr && attr.Value.Type() == attribute.STRING {
 				digest = attr.Value.AsString()
 				return false
 			}
@@ -574,13 +574,13 @@ func (p withoutCallPayloadsProcessor) ForceFlush(ctx context.Context) error {
 // IsCallPayloadRecord reports whether a record is on the call payload channel:
 // a bytes body whose content type attribute names an encoded call.
 func IsCallPayloadRecord(record sdklog.Record) bool {
-	if record.Body().Kind() != log.KindBytes {
+	if record.Body().Type() != attribute.BYTESLICE {
 		return false
 	}
 	payload := false
-	record.WalkAttributes(func(attr log.KeyValue) bool {
+	record.WalkAttributes(func(attr attribute.KeyValue) bool {
 		if attr.Key == otelgo.ContentTypeAttr {
-			payload = attr.Value.Kind() == log.KindString &&
+			payload = attr.Value.Type() == attribute.STRING &&
 				attr.Value.AsString() == telemetryattrs.CallPayloadContentType
 			return false
 		}

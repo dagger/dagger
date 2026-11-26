@@ -15,7 +15,7 @@ import (
 
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
-	otellog "go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/attribute"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
@@ -29,12 +29,12 @@ import (
 // recordedPayload is one call-payload record as it crossed the logger API.
 type recordedPayload struct {
 	scope           string
-	bodyKind        otellog.Kind
+	bodyKind        attribute.Type
 	body            []byte
 	contentType     string
-	contentTypeKind otellog.Kind
+	contentTypeKind attribute.Type
 	digestAttr      string
-	digestAttrKind  otellog.Kind
+	digestAttrKind  attribute.Type
 	call            *callpbv1.Call
 	digest          string
 	err             error
@@ -52,16 +52,16 @@ type payloadRecorder struct {
 func (r *payloadRecorder) OnEmit(ctx context.Context, rec *sdklog.Record) error {
 	got := recordedPayload{
 		scope:    rec.InstrumentationScope().Name,
-		bodyKind: rec.Body().Kind(),
-		body:     append([]byte(nil), rec.Body().AsBytes()...),
+		bodyKind: rec.Body().Type(),
+		body:     append([]byte(nil), rec.Body().AsByteSlice()...),
 	}
-	rec.WalkAttributes(func(kv otellog.KeyValue) bool {
+	rec.WalkAttributes(func(kv attribute.KeyValue) bool {
 		switch kv.Key {
 		case telemetry.ContentTypeAttr:
-			got.contentTypeKind = kv.Value.Kind()
+			got.contentTypeKind = kv.Value.Type()
 			got.contentType = kv.Value.AsString()
 		case telemetryattrs.CallPayloadDigestAttr:
-			got.digestAttrKind = kv.Value.Kind()
+			got.digestAttrKind = kv.Value.Type()
 			got.digestAttr = kv.Value.AsString()
 		}
 		return true
@@ -438,7 +438,7 @@ func TestAroundFuncLogsFramesTooLargeForSpan(t *testing.T) {
 	}
 	require.Len(t, logged, 1, "a frame over the cap must be logged exactly once")
 	require.NoError(t, logged[0].err)
-	require.Equal(t, otellog.KindBytes, logged[0].bodyKind)
+	require.Equal(t, attribute.BYTESLICE, logged[0].bodyKind)
 	require.Equal(t, telemetryattrs.CallPayloadContentType, logged[0].contentType)
 	require.Equal(t, overDigest, logged[0].digest)
 	require.Equal(t, "blob", logged[0].call.Field)
@@ -462,12 +462,12 @@ func TestRecordCallPayloadsEmitsTransitiveClosure(t *testing.T) {
 	for _, record := range records {
 		require.NoError(t, record.err)
 		require.Equal(t, InstrumentationLibrary, record.scope)
-		require.Equal(t, otellog.KindBytes, record.bodyKind)
-		require.Equal(t, otellog.KindString, record.contentTypeKind)
+		require.Equal(t, attribute.BYTESLICE, record.bodyKind)
+		require.Equal(t, attribute.STRING, record.contentTypeKind)
 		require.Equal(t, telemetryattrs.CallPayloadContentType, record.contentType)
 		require.NotNil(t, record.call)
 		require.NotEmpty(t, record.call.Digest, "the payload must carry its own digest")
-		require.Equal(t, otellog.KindString, record.digestAttrKind)
+		require.Equal(t, attribute.STRING, record.digestAttrKind)
 		require.Equal(t, record.call.Digest, record.digestAttr,
 			"the digest attribute must name the payload it rides on")
 

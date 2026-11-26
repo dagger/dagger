@@ -6,7 +6,6 @@ import (
 	"github.com/stretchr/testify/require"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
-	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 
 	"github.com/dagger/dagger/dagql"
 )
@@ -47,5 +46,5 @@ func TestReseedRewindMarkerThroughLoopSpanCtx(t *testing.T) {
 	for _, attr := range marker.Attributes() {
 		attrs[string(attr.Key)] = attr.Value.AsString()
 	}
-	require.Equal(t, "agent-123", attrs[string(semconv.GenAIAgentIDKey)])
+	require.Equal(t, "agent-123", attrs["gen_ai.agent.id"])
 }

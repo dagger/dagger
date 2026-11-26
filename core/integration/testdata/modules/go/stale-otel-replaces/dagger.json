@@ -1,0 +1,5 @@
+{
+  "name": "stale-otel-replaces",
+  "sdk": "go",
+  "source": "."
+}

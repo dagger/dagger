@@ -14,6 +14,35 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestOpenAINonStreamingAudioRoute(t *testing.T) {
+	endpoint := &LLMEndpoint{Provider: OpenAI, Model: "gpt-4o-audio-preview", disableStreaming: true}
+	require.False(t, endpoint.usesOpenAIResponses(), "uncatalogued audio models must retain Chat Completions")
+	client, err := endpoint.newClient()
+	require.NoError(t, err)
+	require.IsType(t, &OpenAIClient{}, client)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/chat/completions", r.URL.Path)
+		body, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		assert.Contains(t, string(body), `"input_audio"`)
+		assert.Contains(t, string(body), `"format":"wav"`)
+		assert.NotContains(t, string(body), `"stream":true`)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"role":"assistant","content":"heard"},"finish_reason":"stop"}]}`)
+	}))
+	defer server.Close()
+	endpoint.BaseURL = server.URL
+	client, err = endpoint.newClient()
+	require.NoError(t, err)
+	response, err := client.SendQuery(t.Context(), []*LLMMessage{{
+		Role:    LLMMessageRoleUser,
+		Content: []*LLMContentBlock{{Kind: LLMContentAudio, MIMEType: "audio/wav", Data: []byte("audio")}},
+	}}, []LLMTool{{Name: "read", Schema: map[string]any{"type": "object"}}}, &LLMCallOpts{})
+	require.NoError(t, err)
+	require.Len(t, response.Content, 1)
+	assert.Equal(t, "heard", response.Content[0].Text)
+}
+
 func TestOpenAIMediaPayload(t *testing.T) {
 	messages, err := convertHistoryToOpenAI([]*LLMMessage{{
 		Role: LLMMessageRoleUser,

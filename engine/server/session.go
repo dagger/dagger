@@ -181,6 +181,9 @@ type daggerSession struct {
 	// spans; its unbounded queue's peak is reported at shutdown.
 	protectedSpans *enginetel.ProtectedSpanProcessor
 	loggerProvider *sdklog.LoggerProvider
+	// logProcessors are loggerProvider's processors, for its shutdown to
+	// shut down when the provider can't (enginetel.ShutdownLoggerProvider).
+	logProcessors  []sdklog.Processor
 	spanExporter   sdktrace.SpanExporter
 	logExporter    sdklog.Exporter
 	telemetryDebug LifecycleTelemetryCounts
@@ -929,7 +932,9 @@ func (sess *daggerSession) shutdownTelemetry(ctx context.Context) error {
 		traceDur += timedProviderOp(ctx, &errs, sess.workloadTracerProvider.Shutdown)
 	}
 	if sess.loggerProvider != nil {
-		logDur += timedProviderOp(ctx, &errs, sess.loggerProvider.Shutdown)
+		logDur += timedProviderOp(ctx, &errs, func(ctx context.Context) error {
+			return enginetel.ShutdownLoggerProvider(ctx, sess.loggerProvider, sess.logProcessors...)
+		})
 	}
 	if sess.cloudForwarder != nil {
 		// Nothing reaches the store anymore: the forwarder publishes the
@@ -1125,21 +1130,24 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession, clientMetadat
 		loggerResource = telemetry.Resource
 	}
 	callPayloads := enginetel.NewCallPayloadBatchProcessor(logExporter)
-	loggerOpts := []sdklog.LoggerProviderOption{
-		sdklog.WithResource(loggerResource),
-		// Stamp origin before either batch processor copies the record. Call
-		// payloads take their own lossless, retrying, on-demand batch path so
-		// sparse closures reach clients before fast calls finish and recipe
-		// bursts never evict ordinary logs (exec output) from the bounded queue;
-		// the ordinary 250ms batch processor carries everything else. Agent
-		// control records follow the call frames queued before them.
-		sdklog.WithProcessor(telemetryOriginLogProcessor{sessionID: sess.sessionID}),
-		sdklog.WithProcessor(callPayloads),
-		sdklog.WithProcessor(enginetel.NewControlBatchProcessor(controlAfterCallsExporter{
+	// Stamp origin before either batch processor copies the record. Call
+	// payloads take their own lossless, retrying, on-demand batch path so
+	// sparse closures reach clients before fast calls finish and recipe
+	// bursts never evict ordinary logs (exec output) from the bounded queue;
+	// the ordinary 250ms batch processor carries everything else. Agent
+	// control records follow the call frames queued before them.
+	sess.logProcessors = []sdklog.Processor{
+		telemetryOriginLogProcessor{sessionID: sess.sessionID},
+		callPayloads,
+		enginetel.NewControlBatchProcessor(controlAfterCallsExporter{
 			next:  logExporter,
 			calls: []func(context.Context) error{protectedSpans.ForceFlush, callPayloads.ForceFlush},
-		})),
-		sdklog.WithProcessor(enginetel.WithoutCallPayloads(enginetel.NewLogBatchProcessor(logExporter))),
+		}),
+		enginetel.WithoutCallPayloads(enginetel.NewLogBatchProcessor(logExporter)),
+	}
+	loggerOpts := []sdklog.LoggerProviderOption{sdklog.WithResource(loggerResource)}
+	for _, processor := range sess.logProcessors {
+		loggerOpts = append(loggerOpts, sdklog.WithProcessor(processor))
 	}
 	// Span: wcprof lazy parent, wcprof count, cache spans, origin, call
 	// spans, live, and workload export when enabled.

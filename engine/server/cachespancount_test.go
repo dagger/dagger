@@ -13,7 +13,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
-	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.43.0"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/dagql"
@@ -105,9 +105,7 @@ func TestSessionSpansNameEngine(t *testing.T) {
 		require.NotEmpty(t, spans)
 		for _, row := range spans {
 			res := row.ReadOnly().Resource().Set()
-			requireResourceAttr(t, res, string(semconv.ServiceNameKey), "dagger-engine")
-			requireResourceAttr(t, res, string(semconv.ServiceVersionKey), "v1.2.3")
-			requireResourceAttr(t, res, string(semconv.ServiceInstanceIDKey), "instance-1")
+			require.Subset(t, res.ToSlice(), engineResource.Attributes())
 			requireResourceAttr(t, res, telemetryattrs.EngineSessionAttr, md.SessionID)
 			_, isCloud := res.Value(attribute.Key(telemetryattrs.CloudEngineAttr))
 			require.Equal(t, cloudEngine, isCloud)

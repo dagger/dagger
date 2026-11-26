@@ -8,7 +8,6 @@ import (
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/attribute"
-	otellog "go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
@@ -142,27 +141,27 @@ func TestNormalizeLogsRequest(t *testing.T) {
 
 	NormalizeLogsRequest(req)
 	capture := &normLogCapture{}
-	require.NoError(t, telemetry.ReexportLogsFromPB(t.Context(), capture, req))
+	require.NoError(t, telemetry.ReexportLogsFromPB(t.Context(), capture, req.GetResourceLogs()))
 	require.Len(t, capture.records, 3)
 
 	bodiless := capture.records[0]
-	require.Equal(t, otellog.KindString, bodiless.Body().Kind())
+	require.Equal(t, attribute.STRING, bodiless.Body().Type())
 	require.Equal(t, "", bodiless.Body().AsString())
-	var attrs []otellog.KeyValue
-	bodiless.WalkAttributes(func(kv otellog.KeyValue) bool {
+	var attrs []attribute.KeyValue
+	bodiless.WalkAttributes(func(kv attribute.KeyValue) bool {
 		attrs = append(attrs, kv)
 		return true
 	})
 	require.Len(t, attrs, 1)
-	require.True(t, attrs[0].Equal(otellog.String("valueless", "")), "got %v", attrs[0])
+	require.Equal(t, attribute.String("valueless", ""), attrs[0])
 	require.Zero(t, bodiless.Resource().Len())
 
 	nested := capture.records[1].Body().AsMap()
 	require.Len(t, nested, 1)
-	require.True(t, nested[0].Equal(otellog.String("nested", "")), "got %v", nested[0])
+	require.Equal(t, attribute.String("nested", ""), nested[0])
 	elems := capture.records[2].Body().AsSlice()
 	require.Len(t, elems, 1)
-	require.True(t, elems[0].Equal(otellog.StringValue("")), "got %v", elems[0])
+	require.Equal(t, attribute.StringValue(""), elems[0])
 
 	NormalizeLogsRequest(nil)
 }

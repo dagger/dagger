@@ -20,12 +20,13 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/metric"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
-	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.43.0"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	"google.golang.org/grpc"
@@ -72,10 +73,10 @@ func TestEngineEventExportSendsOnlyEventsToCloud(t *testing.T) {
 	require.NotSame(t, export.provider, telemetry.LoggerProvider(ctx), "the process context keeps its own logger provider")
 
 	var event log.Record
-	event.SetBody(log.StringValue("event"))
+	event.SetBody(attribute.StringValue("event"))
 	export.Logger().Emit(ctx, event)
 	var other log.Record
-	other.SetBody(log.StringValue("snapshot progress"))
+	other.SetBody(attribute.StringValue("snapshot progress"))
 	telemetry.Logger(ctx, "dagger.io/engine").Emit(ctx, other)
 	require.NoError(t, export.Shutdown(context.Background()))
 	require.NoError(t, export.Shutdown(context.Background()), "a second shutdown returns the first result")
@@ -141,7 +142,7 @@ func TestEngineEventExportDisabledWithTokenAlone(t *testing.T) {
 	// A record in the events scope on the process's own provider does not
 	// reach Cloud either.
 	var event log.Record
-	event.SetBody(log.StringValue("event"))
+	event.SetBody(attribute.StringValue("event"))
 	telemetry.Logger(ctx, telemetryattrs.EngineEventScope).Emit(ctx, event)
 	require.NoError(t, export.Shutdown(context.Background()))
 
@@ -242,7 +243,7 @@ func TestEngineTelemetry(t *testing.T) {
 		_, span := otel.Tracer("test").Start(ctx, "engine test span")
 		span.End()
 		var record log.Record
-		record.SetBody(log.StringValue("engine test log"))
+		record.SetBody(attribute.StringValue("engine test log"))
 		telemetry.Logger(ctx, "test").Emit(ctx, record)
 		cancel()
 		closeResourceMetrics(ctx, resources)

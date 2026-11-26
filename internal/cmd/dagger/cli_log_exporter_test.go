@@ -8,7 +8,7 @@ import (
 
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/stretchr/testify/require"
-	"go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/attribute"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
 
@@ -38,7 +38,7 @@ func (e *bodyLogExporter) ForceFlush(context.Context) error { return nil }
 
 func diagnosticRecords(body string) []sdklog.Record {
 	var record sdklog.Record
-	record.SetBody(log.StringValue(body))
+	record.SetBody(attribute.StringValue(body))
 	return []sdklog.Record{record}
 }
 

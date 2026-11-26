@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/engine/telemetryattrs"
-	otellog "go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/attribute"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
 
@@ -29,7 +29,7 @@ func ParseMediaRecord(record sdklog.Record) (MediaRecord, bool) {
 	}
 	var media MediaRecord
 	valid := true
-	record.WalkAttributes(func(kv otellog.KeyValue) bool {
+	record.WalkAttributes(func(kv attribute.KeyValue) bool {
 		var dst *string
 		switch kv.Key {
 		case telemetryattrs.LogMediaKindAttr:

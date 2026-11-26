@@ -26,6 +26,7 @@ import (
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2/ast"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
@@ -63,8 +64,8 @@ func cloudControlFixture(t *testing.T) (agentcontrol.Agent, agentcontrol.Agent, 
 		data, err := proto.Marshal(frame)
 		require.NoError(t, err)
 		var rec log.Record
-		rec.SetBody(log.BytesValue(data))
-		rec.AddAttributes(log.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType), log.String(telemetryattrs.CallPayloadDigestAttr, frame.Digest))
+		rec.SetBody(attribute.ByteSliceValue(data))
+		rec.AddAttributes(attribute.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType), attribute.String(telemetryattrs.CallPayloadDigestAttr, frame.Digest))
 		records = append(records, rec)
 	}
 	return chief, worker, edge, records
@@ -198,7 +199,7 @@ func TestCloudRestoreRejectsIncompleteObservedData(t *testing.T) {
 			req := restoreRequest()
 			switch kind {
 			case "corrupt payload":
-				records[0].SetBody(log.BytesValue([]byte{0xff}))
+				records[0].SetBody(attribute.ByteSliceValue([]byte{0xff}))
 			case "missing payload":
 				records = nil
 			}
@@ -236,7 +237,7 @@ func TestCloudRestoreSkipsIncompleteSnapshot(t *testing.T) {
 	chief, worker, edge, records := cloudControlFixture(t)
 	records = slices.DeleteFunc(records, func(rec log.Record) bool {
 		frame := new(callpbv1.Call)
-		require.NoError(t, proto.Unmarshal(rec.Body().AsBytes(), frame))
+		require.NoError(t, proto.Unmarshal(rec.Body().AsByteSlice(), frame))
 		return frame.Digest == worker.Digest
 	})
 	records = append(records, chief.Record(), worker.Record(), edge.Record())
@@ -262,7 +263,7 @@ func TestCloudRestoreCapturesSpanCarriedFrames(t *testing.T) {
 	var spanned *callpbv1.Call
 	records = slices.DeleteFunc(records, func(rec log.Record) bool {
 		frame := new(callpbv1.Call)
-		require.NoError(t, proto.Unmarshal(rec.Body().AsBytes(), frame))
+		require.NoError(t, proto.Unmarshal(rec.Body().AsByteSlice(), frame))
 		if frame.Digest == worker.Digest {
 			spanned = frame
 			return true
