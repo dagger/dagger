@@ -53,10 +53,17 @@ func (m idMembers[V]) Contains(v V) bool {
 
 // All yields each member once, in no order a caller may rely on.
 func (m idMembers[V]) All() iter.Seq[V] {
-	if m.hasOne {
-		return func(yield func(V) bool) { yield(m.one) }
+	return func(yield func(V) bool) {
+		if m.hasOne {
+			yield(m.one)
+			return
+		}
+		for v := range m.many.All() {
+			if !yield(v) {
+				return
+			}
+		}
 	}
-	return m.many.All()
 }
 
 // Clone returns a set of the members of its own.
@@ -69,10 +76,17 @@ func (m idMembers[V]) Clone() *idSet[V] {
 
 // Items yields each member once, in ascending order.
 func (m idMembers[V]) Items() iter.Seq[V] {
-	if m.hasOne {
-		return func(yield func(V) bool) { yield(m.one) }
+	return func(yield func(V) bool) {
+		if m.hasOne {
+			yield(m.one)
+			return
+		}
+		for v := range m.many.Items() {
+			if !yield(v) {
+				return
+			}
+		}
 	}
-	return m.many.Items()
 }
 
 // Insert adds v to k's members, and reports whether k didn't have it.
