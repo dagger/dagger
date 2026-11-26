@@ -155,7 +155,9 @@ type RemoteHoldingUpdate struct {
 // RemoteChange is what one operation on the Cloud cache's holdings changed,
 // for the service to act on. Candidates are the holdings it created or
 // released an owner of, for the next CollectRemoteHoldings: no operation
-// collects by itself.
+// collects by itself. UnheldCandidates are numbers no holding has, of which
+// it released the last holding that named them: for what the caller keeps of
+// them beside the holdings.
 //
 // On a blob-backed cache, Holdings and Entries are what a reader that keeps
 // its answers takes or asks again (cache_change_marks.go), sorted, holdings
@@ -185,8 +187,16 @@ type RemoteHoldingUpdate struct {
 // field of an entry, which only EntryInfo returns.
 type RemoteChange struct {
 	Candidates []HolderKey
-	Holdings   []ChangedHolding
-	Entries    []uint64
+	// UnheldCandidates are numbers of an engine cache that no holding of the
+	// cache has, which the operation left named by none of its holdings: the
+	// last holding that named one among its dependencies (UnknownDeps) was
+	// removed, or replaced its dependencies with others. The holdings no
+	// longer own them, as they no longer own Candidates, so what the caller
+	// keeps of them beside the holdings may have no owner left. Sorted, each
+	// once.
+	UnheldCandidates []HolderKey
+	Holdings         []ChangedHolding
+	Entries          []uint64
 	// At is the cache's count of hand-backs of changes at this one's (its
 	// last, for a change handed back more than once): a reader that also
 	// reads what it names keeps whichever is newer (RemoteHeldEntry.At,
@@ -1309,7 +1319,7 @@ func (c *Cache) applyHeldValueStateLocked(ctx context.Context, state *remoteCach
 			if _, ok := kept[number]; ok {
 				return true
 			}
-			state.forgetUnknownDependent(number, key.Number)
+			c.forgetUnknownDependentLocked(state, key.Cache, number, key.Number)
 			return false
 		}))
 	}
@@ -1565,7 +1575,7 @@ func (c *Cache) removeHoldingLocked(ctx context.Context, state *remoteCacheState
 		}
 	}
 	for _, number := range h.unknownDepsLocked() {
-		state.forgetUnknownDependent(number, key.Number)
+		c.forgetUnknownDependentLocked(state, key.Cache, number, key.Number)
 	}
 	entries, err := c.decrementIncomingOwnershipLocked(ctx, entry, entries)
 	return deps, entries, err
@@ -1716,15 +1726,44 @@ func (c *Cache) addHoldingDepsLocked(state *remoteCacheState, key HolderKey, h *
 	h.setUnknownDepsLocked(withNumbers(h.unknownDepsLocked(), unknown))
 }
 
-// forgetUnknownDependent removes parent from the holdings waiting for the
-// holding number. Requires egraphMu for writing.
-func (state *remoteCacheState) forgetUnknownDependent(number, parent uint64) {
-	parents := removeNumber(state.unknownDependents[number], parent)
-	if parents == nil {
-		delete(state.unknownDependents, number)
+// forgetUnknownDependentLocked removes parent from the holdings of cache
+// waiting for the holding number, and keeps number to hand back with the
+// write's change (UnheldCandidates) when parent was the last of them.
+// Requires egraphMu for writing.
+func (c *Cache) forgetUnknownDependentLocked(state *remoteCacheState, cache CacheID, number, parent uint64) {
+	parents, named := state.unknownDependents[number]
+	if !named {
 		return
 	}
-	state.unknownDependents[number] = parents
+	if parents = removeNumber(parents, parent); parents != nil {
+		state.unknownDependents[number] = parents
+		return
+	}
+	delete(state.unknownDependents, number)
+	c.unheldCandidates = append(c.unheldCandidates, HolderKey{Cache: cache, Number: number})
+}
+
+// takeUnheldCandidatesLocked hands back, in change, the numbers the write
+// left named by no holding (UnheldCandidates), sorted, and clears them: those
+// that, as it hands them back, still have no holding and no holding naming
+// them. A write of several parts, such as a merged reply's targets, can give
+// a number a holding, or name it again, after an earlier part let go of its
+// last naming holding. Requires egraphMu for writing.
+func (c *Cache) takeUnheldCandidatesLocked(change *RemoteChange) {
+	if len(c.unheldCandidates) == 0 {
+		return
+	}
+	for _, key := range c.unheldCandidates {
+		if state := c.remoteCaches[key.Cache]; state != nil {
+			if _, h := state.holdingLocked(key.Number); h != nil || len(state.unknownDependents[key.Number]) > 0 {
+				continue
+			}
+		}
+		change.UnheldCandidates = append(change.UnheldCandidates, key)
+	}
+	slices.SortFunc(change.UnheldCandidates, compareHolderKeys)
+	change.UnheldCandidates = slices.Compact(change.UnheldCandidates)
+	c.unheldCandidates = c.unheldCandidates[:0]
 }
 
 func heldPartKeys(addresses []PersistedPartAddress) ([]string, error) {
@@ -1839,7 +1878,8 @@ func (c *Cache) remoteIdentityTeachesNothingLocked(entry *sharedResult, recipe, 
 		if !ok || c.eqClassRootLocked(id) != root {
 			return false
 		}
-		if !c.egraphResultsByDigest.Contains(dig.String(), entry.id) {
+		posting := c.egraphResultsByDigest[dig.String()]
+		if posting == nil || !posting.Contains(entry.id) {
 			return false
 		}
 	}
@@ -2226,6 +2266,28 @@ func (c *Cache) holderEntryLocked(key HolderKey) (uint64, bool) {
 		return 0, false
 	}
 	return uint64(entry.id), true
+}
+
+// RemoteDependents returns how many holdings of key's cache name its number
+// among their dependencies: its holding's count of dependents, when the cache
+// has one, and otherwise the holdings that name the number before it has a
+// holding (UnknownDeps).
+func (c *Cache) RemoteDependents(key HolderKey) int {
+	read := c.readGraphAs(workRemote)
+	defer read.Unlock()
+	return c.remoteDependentsLocked(key)
+}
+
+// remoteDependentsLocked is RemoteDependents' answer. Requires egraphMu.
+func (c *Cache) remoteDependentsLocked(key HolderKey) int {
+	state := c.remoteCaches[key.Cache]
+	if state == nil {
+		return 0
+	}
+	if _, h := state.holdingLocked(key.Number); h != nil {
+		return int(h.dependents)
+	}
+	return len(state.unknownDependents[key.Number])
 }
 
 // EntryRecipe returns a recipe that names the entry numbered number in the

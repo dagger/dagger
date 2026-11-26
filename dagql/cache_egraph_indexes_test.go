@@ -123,7 +123,11 @@ func cacheOutputEqClassSurvivorErrorLocked(c *Cache, nowUnix int64) error {
 	for root := range liveOutputRoots {
 		oldSemanticsHasUnexpiredResult := false
 		for dig := range c.eqClassToDigests[root].All() {
-			for resID := range c.egraphResultsByDigest.Items(dig) {
+			posting := c.egraphResultsByDigest[dig]
+			if posting == nil {
+				continue
+			}
+			for resID := range posting.Items() {
 				res := c.resultsByID[resID]
 				if res != nil && (!res.noValueLocked() && !c.resultExpiredAtLocked(res, nowUnix) || res.hasUnexpiredHoldingLocked(nowUnix)) {
 					oldSemanticsHasUnexpiredResult = true
@@ -193,7 +197,8 @@ func cacheExactDigestIndexErrorLocked(c *Cache) (map[sharedResultID]map[string]s
 				return nil, fmt.Errorf("result %d exact digest index contains duplicate %q", resID, dig)
 			}
 			seen[dig] = struct{}{}
-			if !c.egraphResultsByDigest.Contains(dig, resID) {
+			posting := c.egraphResultsByDigest[dig]
+			if posting == nil || !posting.Contains(resID) {
 				return nil, fmt.Errorf("result %d exact digest %q is missing its posting", resID, dig)
 			}
 		}
@@ -216,8 +221,11 @@ func cacheBroadDigestMarkerErrorLocked(c *Cache) error {
 // cacheDigestPostingErrorLocked checks the digest postings: every member
 // exists and is either exact-listed for that digest or broadly indexed.
 func cacheDigestPostingErrorLocked(c *Cache, exactDigestsByResult map[sharedResultID]map[string]struct{}) error {
-	for dig := range c.egraphResultsByDigest.Digests() {
-		for resID := range c.egraphResultsByDigest.Items(dig) {
+	for dig, posting := range c.egraphResultsByDigest {
+		if posting == nil {
+			continue
+		}
+		for resID := range posting.Items() {
 			if c.resultsByID[resID] == nil {
 				return fmt.Errorf("digest posting %q references missing result %d", dig, resID)
 			}
@@ -530,7 +538,7 @@ func TestCacheOutputEqClassResultsMatchDigestPostings(t *testing.T) {
 			for id := range c.outputEqClassResults[root].All() {
 				posted := 0
 				for dig := range c.eqClassToDigests[root].All() {
-					if c.egraphResultsByDigest.Contains(dig, id) {
+					if posting := c.egraphResultsByDigest[dig]; posting != nil && posting.Contains(id) {
 						posted++
 					}
 				}
@@ -824,7 +832,8 @@ func TestCacheExactDigestPostingRemoval(t *testing.T) {
 	_, reversePresent := c.resultIndexedDigests[shared.id]
 	removedPostings := make(map[string]bool, len(expectedDigests))
 	for _, dig := range expectedDigests {
-		removedPostings[dig] = !c.egraphResultsByDigest.Contains(dig, shared.id)
+		posting := c.egraphResultsByDigest[dig]
+		removedPostings[dig] = posting == nil || !posting.Contains(shared.id)
 	}
 	indexErr = cacheDerivedIndexesErrorLocked(c)
 	c.egraphMu.Unlock()
@@ -906,9 +915,9 @@ func TestCacheBroadImportedPostingRemoval(t *testing.T) {
 		f.cache.egraphMu.Lock()
 		collected := f.cache.resultsByID[resultID] == nil
 		resultCount := len(f.cache.resultsByID)
-		removedPostings := make(map[string]bool, f.cache.egraphResultsByDigest.Len())
-		for dig := range f.cache.egraphResultsByDigest.Digests() {
-			removedPostings[dig] = !f.cache.egraphResultsByDigest.Contains(dig, resultID)
+		removedPostings := make(map[string]bool, len(f.cache.egraphResultsByDigest))
+		for dig, posting := range f.cache.egraphResultsByDigest {
+			removedPostings[dig] = posting == nil || !posting.Contains(resultID)
 		}
 		indexErr := cacheDerivedIndexesErrorLocked(f.cache)
 		f.cache.egraphMu.Unlock()
@@ -921,7 +930,7 @@ func TestCacheBroadImportedPostingRemoval(t *testing.T) {
 	}
 
 	f.cache.egraphMu.Lock()
-	egraphResultsByDigestNil := postingsResetForTest(&f.cache.egraphResultsByDigest)
+	egraphResultsByDigestNil := f.cache.egraphResultsByDigest == nil
 	resultIndexedDigestsNil := f.cache.resultIndexedDigests == nil
 	broadlyIndexedResultsNil := f.cache.broadlyIndexedResults == nil
 	outputEqClassResultsNil := f.cache.outputEqClassResults == nil
@@ -960,7 +969,7 @@ func TestCachePersistedFreshPruneCleansDerivedIndexes(t *testing.T) {
 	assert.Assert(t, report.Triggered)
 	assert.Equal(t, len(f.allResultIDs), report.RemovedPersistedRootCount)
 	f.cache.egraphMu.Lock()
-	egraphResultsByDigestNil := postingsResetForTest(&f.cache.egraphResultsByDigest)
+	egraphResultsByDigestNil := f.cache.egraphResultsByDigest == nil
 	resultIndexedDigestsNil := f.cache.resultIndexedDigests == nil
 	broadlyIndexedResultsNil := f.cache.broadlyIndexedResults == nil
 	outputEqClassResultsNil := f.cache.outputEqClassResults == nil

@@ -253,8 +253,11 @@ func (c *Cache) markHoldingLocked(key HolderKey) {
 // its end, under the hold that made them, so each is handed back by the write
 // that made it, and a holding's facts are taken under that hold too. Each
 // hand-back raises the cache's count of them, which the change carries
-// (RemoteChange.At). Requires egraphMu for writing.
+// (RemoteChange.At). The numbers the write left named by no holding go back
+// with it too, on any cache (takeUnheldCandidatesLocked). Requires egraphMu
+// for writing.
 func (c *Cache) takeChangesLocked(change *RemoteChange) {
+	c.takeUnheldCandidatesLocked(change)
 	if !c.changesPendingLocked() {
 		return
 	}

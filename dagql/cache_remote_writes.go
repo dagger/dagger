@@ -152,6 +152,11 @@ func (w *RemoteWrites) RemoteHoldingInfo(key HolderKey) (RemoteHeldEntry, bool) 
 	return w.c.remoteHoldingInfoLocked(key)
 }
 
+// RemoteDependents is Cache.RemoteDependents, in the hold.
+func (w *RemoteWrites) RemoteDependents(key HolderKey) int {
+	return w.c.remoteDependentsLocked(key)
+}
+
 // HolderEntry is Cache.HolderEntry, in the hold.
 func (w *RemoteWrites) HolderEntry(key HolderKey) (uint64, bool) {
 	return w.c.holderEntryLocked(key)

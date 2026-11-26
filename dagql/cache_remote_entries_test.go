@@ -740,6 +740,103 @@ func TestCollectionAsksBeforeRemovingAHolding(t *testing.T) {
 	require.Equal(t, []HolderKey{dep}, collected, "once nothing owns it")
 }
 
+// A number no holding of the cache has is owned by the holdings that name it
+// among their dependencies, which the cache counts (RemoteDependents). The
+// write that takes the last of them, a collection or a newer value's
+// dependencies, hands the number back (UnheldCandidates), for what the
+// caller keeps of it beside the holdings. One still named, or one that gains
+// a holding of its own, isn't handed back.
+func TestTheLastHoldingNamingAnUnheldNumber(t *testing.T) {
+	t.Parallel()
+	cloud := newCloudCache(t)
+	a := newCloudApplier(t, cloud)
+	engine := CacheID("cache-a")
+	first, second := HolderKey{engine, 10}, HolderKey{engine, 11}
+	shared, own := HolderKey{engine, 7}, HolderKey{engine, 8}
+	a.call(callRow{key: first, session: "s1", holding: holdingOf("first", shared.Number)})
+	a.call(callRow{key: second, session: "s2", holding: holdingOf("second", shared.Number, own.Number)})
+	require.Empty(t, a.collect())
+	require.Equal(t, 2, cloud.RemoteDependents(shared))
+	require.Equal(t, 1, cloud.RemoteDependents(own))
+
+	collectOf := func(session string) ([]HolderKey, RemoteChange) {
+		t.Helper()
+		a.endSession(engine, session)
+		collected, change, err := cloud.CollectRemoteHoldings(t.Context(), a.candidates, nil)
+		require.NoError(t, err)
+		a.candidates = nil
+		return collected, change
+	}
+	collected, change := collectOf("s1")
+	require.Equal(t, []HolderKey{first}, collected)
+	require.Empty(t, change.UnheldCandidates, "the second holding still names the shared number")
+	require.Equal(t, 1, cloud.RemoteDependents(shared))
+
+	collected, change = collectOf("s2")
+	require.Equal(t, []HolderKey{second}, collected)
+	require.Equal(t, []HolderKey{shared, own}, change.UnheldCandidates)
+	require.Zero(t, cloud.RemoteDependents(shared))
+	require.Zero(t, cloud.RemoteDependents(own))
+
+	// A newer value with other dependencies takes the old ones'.
+	third, old, next := HolderKey{engine, 12}, HolderKey{engine, 9}, HolderKey{engine, 13}
+	a.call(callRow{key: third, session: "s3", holding: holdingOf("third", old.Number)})
+	change, found, err := cloud.ApplyHeldValueState(t.Context(), third, HeldValueState{Replacements: 1, Deps: []uint64{next.Number}})
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, []HolderKey{old}, change.UnheldCandidates)
+	require.Zero(t, cloud.RemoteDependents(old))
+	require.Equal(t, 1, cloud.RemoteDependents(next))
+
+	// A number that gains a holding is owned through that holding's
+	// dependents, and its parent's collection collects it as a dependency.
+	a.call(callRow{key: next, session: "s3", holding: holdingOf("next")})
+	require.Equal(t, 1, cloud.RemoteDependents(next))
+	w := cloud.HoldRemoteWrites()
+	require.Equal(t, 1, w.RemoteDependents(next), "the same in a hold")
+	require.NoError(t, w.Release(t.Context()))
+	collected, change = collectOf("s3")
+	require.Equal(t, []HolderKey{third, next}, sortedKeys2(collected))
+	require.Empty(t, change.UnheldCandidates)
+}
+
+// A write of several parts, as a merged reply's targets are, hands back only
+// the numbers it leaves with no holding and no holding naming them
+// (UnheldCandidates): not one a later part gave a holding of its own, nor one
+// a later part named again, after an earlier part replaced the dependencies
+// of its last naming holding.
+func TestAWriteHandsBackOnlyTheNumbersItLeavesUnheld(t *testing.T) {
+	t.Parallel()
+	cloud := newCloudCache(t)
+	a := newCloudApplier(t, cloud)
+	engine := CacheID("cache-a")
+	first, second := HolderKey{engine, 10}, HolderKey{engine, 11}
+	held, named, gone := HolderKey{engine, 7}, HolderKey{engine, 8}, HolderKey{engine, 9}
+	a.call(callRow{key: first, session: "s", holding: holdingOf("first", held.Number, gone.Number)})
+	a.call(callRow{key: second, session: "s", holding: holdingOf("second", named.Number)})
+	require.Empty(t, a.collect())
+
+	ctx := t.Context()
+	cloud.egraphMu.Lock()
+	state := cloud.remoteCacheLocked(engine)
+	replace := func(key HolderKey) {
+		entry, h := cloud.holdingLocked(key)
+		require.NotNil(t, h)
+		cloud.applyHeldValueStateLocked(ctx, state, key, entry, h, HeldValueState{Replacements: 1}, nil, nil)
+	}
+	replace(first)
+	replace(second)
+	// Later parts of the same write, before it hands its change back: 7
+	// gains a holding, and a holding names 8 again.
+	cloud.newHoldingLocked(ctx, state, held, holdingOf("seven"))
+	_, h := cloud.holdingLocked(first)
+	cloud.addHoldingDepsLocked(state, first, h, []uint64{named.Number})
+	var change RemoteChange
+	cloud.takeChangesLocked(&change)
+	cloud.egraphMu.Unlock()
+	require.Equal(t, []HolderKey{gone}, change.UnheldCandidates, "only 9 is left with no holding naming it")
+}
+
 // A late call row of an ended session creates its holding with no hold; the
 // pass after its batch collects it unless its retention or a dependent owns
 // it.

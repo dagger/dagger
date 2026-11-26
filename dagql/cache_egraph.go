@@ -84,6 +84,18 @@ func parseEgraphInputProvenanceKind(name string) (egraphInputProvenanceKind, boo
 	}
 }
 
+// egraphResultTermAssoc stores metadata for one result<->term association.
+// Today this is just per-input provenance indicating whether each input slot
+// was result-backed or digest-only when the association was created.
+//
+// NOTE: we intentionally assume for now that a congruent term will not be
+// observed with conflicting provenance for the same input slot. If that ever
+// does happen, the most recently observed provenance simply replaces the older
+// one.
+type egraphResultTermAssoc struct {
+	inputProvenance []egraphInputProvenanceKind
+}
+
 func sameInputProvenance(a, b []egraphInputProvenanceKind) bool {
 	if len(a) != len(b) {
 		return false
@@ -199,11 +211,20 @@ func (c *Cache) initEgraphLocked() {
 	if c.outputEqClassResults == nil {
 		c.outputEqClassResults = make(map[eqClassID]*idSet[sharedResultID])
 	}
+	if c.termResults == nil {
+		c.termResults = make(map[egraphTermID]map[sharedResultID]egraphResultTermAssoc)
+	}
+	if c.resultTerms == nil {
+		c.resultTerms = make(map[sharedResultID]map[egraphTermID]struct{})
+	}
 	if c.egraphTerms == nil {
 		c.egraphTerms = make(map[egraphTermID]*egraphTerm)
 	}
 	if c.egraphTermsByTermDigest == nil {
 		c.egraphTermsByTermDigest = make(map[string]*idSet[egraphTermID])
+	}
+	if c.egraphResultsByDigest == nil {
+		c.egraphResultsByDigest = make(map[string]*resultDigestPosting)
 	}
 	if c.resultIndexedDigests == nil {
 		c.resultIndexedDigests = make(map[sharedResultID][]string)
@@ -774,7 +795,11 @@ func (c *Cache) appendDigestResultsLocked(candidates *set.TreeSet[*sharedResult]
 	if dig == "" {
 		return
 	}
-	for resID := range c.egraphResultsByDigest.Items(dig.String()) {
+	resultSet := c.egraphResultsByDigest[dig.String()]
+	if resultSet == nil {
+		return
+	}
+	for resID := range resultSet.Items() {
 		if res := c.servableCandidateLocked(resID, nowUnix, expired); res != nil {
 			candidates.Insert(res)
 		}
@@ -829,7 +854,7 @@ func (c *Cache) appendTermSetResultsLocked(candidates *set.TreeSet[*sharedResult
 	}
 
 	for termID := range termSet.Items() {
-		for resID := range c.termResults.All(termID) {
+		for resID := range c.termResults[termID] {
 			if res := c.servableCandidateLocked(resID, nowUnix, expired); res != nil {
 				candidates.Insert(res)
 			}
@@ -1079,7 +1104,13 @@ func (c *Cache) addResultDigestPostingLocked(resID sharedResultID, dig string) {
 	if resID == 0 || dig == "" {
 		return
 	}
-	if c.egraphResultsByDigest.Insert(dig, resID) {
+	results := c.egraphResultsByDigest[dig]
+	if results == nil {
+		results = &resultDigestPosting{}
+		c.egraphResultsByDigest[dig] = results
+	}
+	inserted := results.Insert(resID)
+	if inserted {
 		c.resultIndexedDigests[resID] = append(c.resultIndexedDigests[resID], dig)
 	}
 }
@@ -1097,7 +1128,14 @@ func (c *Cache) removeResultDigestPostingLocked(resID sharedResultID, dig string
 	if resID == 0 || dig == "" {
 		return
 	}
-	c.egraphResultsByDigest.Remove(dig, resID)
+	results := c.egraphResultsByDigest[dig]
+	if results == nil {
+		return
+	}
+	results.Remove(resID)
+	if results.Empty() {
+		delete(c.egraphResultsByDigest, dig)
+	}
 }
 
 func (c *Cache) removeResultDigestsLocked(resID sharedResultID, outputEqClasses map[eqClassID]struct{}) {
@@ -1334,7 +1372,8 @@ func (c *Cache) hitTeachesNothingLocked(
 		if dig == "" {
 			return true
 		}
-		return c.egraphResultsByDigest.Contains(dig, res.id)
+		posting := c.egraphResultsByDigest[dig]
+		return posting != nil && posting.Contains(res.id)
 	}
 	if !postedUnder(indexDigest.String()) {
 		return false
@@ -1348,7 +1387,7 @@ func (c *Cache) hitTeachesNothingLocked(
 		if extra.Digest == "" {
 			continue
 		}
-		for termID := range c.resultTerms.All(res.id) {
+		for termID := range c.resultTerms[res.id] {
 			term := c.egraphTerms[termID]
 			if term == nil {
 				continue
@@ -1943,7 +1982,8 @@ func (c *Cache) sessionResultIDForCall(ctx context.Context, sessionID string, fr
 // result's terms: a long-lived result gathers a term for every recipe that
 // reached it, such as one per session for a session-scoped call.
 func (c *Cache) termForResultByDigestLocked(resID sharedResultID, termDigest string) *egraphTerm {
-	if c.resultTerms.Size(resID) == 0 {
+	resultTerms := c.resultTerms[resID]
+	if len(resultTerms) == 0 {
 		return nil
 	}
 	termSet := c.egraphTermsByTermDigest[termDigest]
@@ -1951,7 +1991,7 @@ func (c *Cache) termForResultByDigestLocked(resID sharedResultID, termDigest str
 		return nil
 	}
 	for termID := range termSet.Items() {
-		if !c.resultTerms.Contains(resID, termID) {
+		if _, ok := resultTerms[termID]; !ok {
 			continue
 		}
 		if term := c.egraphTerms[termID]; term != nil {
@@ -2054,12 +2094,12 @@ func (c *Cache) removeResultOutputEqClassesLocked(resID sharedResultID) {
 }
 
 func (c *Cache) termIDsForResultLocked(resID sharedResultID) map[egraphTermID]struct{} {
-	n := c.resultTerms.Size(resID)
-	if n == 0 {
+	termIDs := c.resultTerms[resID]
+	if len(termIDs) == 0 {
 		return nil
 	}
-	out := make(map[egraphTermID]struct{}, n)
-	for termID := range c.resultTerms.All(resID) {
+	out := make(map[egraphTermID]struct{}, len(termIDs))
+	for termID := range termIDs {
 		if c.egraphTerms[termID] == nil {
 			continue
 		}
@@ -2148,10 +2188,29 @@ func (c *Cache) associateResultWithTermLocked(
 
 	c.addResultOutputEqClassLocked(res.id, outputEqID)
 
-	if !c.termResults.Insert(termID, res.id) {
+	termResults := c.termResults[termID]
+	if termResults == nil {
+		termResults = make(map[sharedResultID]egraphResultTermAssoc)
+		c.termResults[termID] = termResults
+	}
+	resultTerms := c.resultTerms[res.id]
+	if resultTerms == nil {
+		resultTerms = make(map[egraphTermID]struct{})
+		c.resultTerms[res.id] = resultTerms
+	}
+	assoc, ok := termResults[res.id]
+	if ok {
+		if !sameInputProvenance(assoc.inputProvenance, inputProvenance) {
+			assoc.inputProvenance = slices.Clone(inputProvenance)
+			termResults[res.id] = assoc
+			c.traceResultTermAssocUpdated(ctx, res.id, termID, inputProvenance)
+		}
 		return
 	}
-	c.resultTerms.Insert(res.id, termID)
+	termResults[res.id] = egraphResultTermAssoc{
+		inputProvenance: slices.Clone(inputProvenance),
+	}
+	resultTerms[termID] = struct{}{}
 	c.traceResultTermAssocAdded(ctx, res.id, termID, inputProvenance)
 }
 
@@ -2504,11 +2563,16 @@ func (c *Cache) removeResultFromEgraphLocked(ctx context.Context, res *sharedRes
 	}
 
 	affectedOutputEqClasses := c.outputEqClassesForResultLocked(res.id)
-	for termID := range c.resultTerms.All(res.id) {
-		c.termResults.Remove(termID, res.id)
+	for termID := range c.resultTerms[res.id] {
+		if termResults := c.termResults[termID]; termResults != nil {
+			delete(termResults, res.id)
+			if len(termResults) == 0 {
+				delete(c.termResults, termID)
+			}
+		}
 		c.traceResultTermAssocRemoved(ctx, res.id, termID)
 	}
-	c.resultTerms.Delete(res.id)
+	delete(c.resultTerms, res.id)
 	c.removeResultDigestsLocked(res.id, affectedOutputEqClasses)
 	c.removeResultOutputEqClassesLocked(res.id)
 	oldFrame := res.loadResultCall()
@@ -2557,7 +2621,7 @@ func (c *Cache) removeResultFromEgraphLocked(ctx context.Context, res *sharedRes
 			}
 			c.unuseTermLocked(term)
 			delete(c.egraphTerms, termID)
-			c.termResults.Delete(termID)
+			delete(c.termResults, termID)
 			delete(c.termInputProvenance, termID)
 			c.traceTermRemoved(ctx, termID)
 		}
@@ -2588,12 +2652,12 @@ func (c *Cache) maybeResetEgraphLocked() {
 	c.outputEqClassToTerms = nil
 	c.resultOutputEqClasses = nil
 	c.outputEqClassResults = nil
-	c.termResults = idSetIndex[egraphTermID, sharedResultID]{}
-	c.resultTerms = idSetIndex[sharedResultID, egraphTermID]{}
+	c.termResults = nil
+	c.resultTerms = nil
 	c.egraphTerms = nil
 	c.termInputProvenance = nil
 	c.egraphTermsByTermDigest = nil
-	c.egraphResultsByDigest = digestPostings{}
+	c.egraphResultsByDigest = nil
 	c.resultIndexedDigests = nil
 	c.broadlyIndexedResults = nil
 	c.restoredDigestGroups = nil
