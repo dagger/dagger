@@ -10,7 +10,8 @@ import (
 )
 
 // An idSetIndex answers as a map of sets would, through random inserts,
-// removes and deletes that move keys between one member and many, across
+// removes, deletes and moves of one key's members into another's, that move
+// keys between one member and many, across
 // the size where a key's set becomes a map. After every step each key with
 // members is in exactly one of its two maps, in the set map only with two
 // or more members.
@@ -56,6 +57,20 @@ func TestIDSetIndexActsAsAMapOfSets(t *testing.T) {
 		case op == 0:
 			x.Delete(k)
 			delete(want, k)
+		case op == 1:
+			// A join moves one key's members into another's.
+			dst := uint64(rng.IntN(24))
+			x.Move(k, dst)
+			if k != dst && len(members) > 0 {
+				if want[dst] == nil {
+					want[dst] = map[uint64]struct{}{}
+				}
+				for m := range members {
+					want[dst][m] = struct{}{}
+				}
+				delete(want, k)
+			}
+			require.Equal(t, slices.Sorted(maps.Keys(want[dst])), slices.Collect(x.Clone(dst).Items()), "step %d: move %d into %d", step, k, dst)
 		case op < 9:
 			require.Equal(t, had, x.Remove(k, v), "step %d: remove %d from %d", step, v, k)
 			delete(members, v)
