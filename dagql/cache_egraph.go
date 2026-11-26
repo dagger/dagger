@@ -205,9 +205,6 @@ func (c *Cache) initEgraphLocked() {
 	if c.egraphTermsByTermDigest == nil {
 		c.egraphTermsByTermDigest = make(map[string]*idSet[egraphTermID])
 	}
-	if c.egraphResultsByDigest == nil {
-		c.egraphResultsByDigest = make(map[string]*resultDigestPosting)
-	}
 	if c.resultIndexedDigests == nil {
 		c.resultIndexedDigests = make(map[sharedResultID][]string)
 	}
@@ -777,11 +774,7 @@ func (c *Cache) appendDigestResultsLocked(candidates *set.TreeSet[*sharedResult]
 	if dig == "" {
 		return
 	}
-	resultSet := c.egraphResultsByDigest[dig.String()]
-	if resultSet == nil {
-		return
-	}
-	for resID := range resultSet.Items() {
+	for resID := range c.egraphResultsByDigest.Items(dig.String()) {
 		if res := c.servableCandidateLocked(resID, nowUnix, expired); res != nil {
 			candidates.Insert(res)
 		}
@@ -1086,13 +1079,7 @@ func (c *Cache) addResultDigestPostingLocked(resID sharedResultID, dig string) {
 	if resID == 0 || dig == "" {
 		return
 	}
-	results := c.egraphResultsByDigest[dig]
-	if results == nil {
-		results = &resultDigestPosting{}
-		c.egraphResultsByDigest[dig] = results
-	}
-	inserted := results.Insert(resID)
-	if inserted {
+	if c.egraphResultsByDigest.Insert(dig, resID) {
 		c.resultIndexedDigests[resID] = append(c.resultIndexedDigests[resID], dig)
 	}
 }
@@ -1110,14 +1097,7 @@ func (c *Cache) removeResultDigestPostingLocked(resID sharedResultID, dig string
 	if resID == 0 || dig == "" {
 		return
 	}
-	results := c.egraphResultsByDigest[dig]
-	if results == nil {
-		return
-	}
-	results.Remove(resID)
-	if results.Empty() {
-		delete(c.egraphResultsByDigest, dig)
-	}
+	c.egraphResultsByDigest.Remove(dig, resID)
 }
 
 func (c *Cache) removeResultDigestsLocked(resID sharedResultID, outputEqClasses map[eqClassID]struct{}) {
@@ -1354,8 +1334,7 @@ func (c *Cache) hitTeachesNothingLocked(
 		if dig == "" {
 			return true
 		}
-		posting := c.egraphResultsByDigest[dig]
-		return posting != nil && posting.Contains(res.id)
+		return c.egraphResultsByDigest.Contains(dig, res.id)
 	}
 	if !postedUnder(indexDigest.String()) {
 		return false
@@ -2614,7 +2593,7 @@ func (c *Cache) maybeResetEgraphLocked() {
 	c.egraphTerms = nil
 	c.termInputProvenance = nil
 	c.egraphTermsByTermDigest = nil
-	c.egraphResultsByDigest = nil
+	c.egraphResultsByDigest = digestPostings{}
 	c.resultIndexedDigests = nil
 	c.broadlyIndexedResults = nil
 	c.restoredDigestGroups = nil

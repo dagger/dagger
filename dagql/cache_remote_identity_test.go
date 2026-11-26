@@ -222,9 +222,9 @@ func egraphFactsForTest(c *Cache) string {
 		byDigest[dig] = slices.Collect(set.Items())
 	}
 	line("termsByDigest", byDigest)
-	postings := make(map[string][]sharedResultID, len(c.egraphResultsByDigest))
-	for dig, posting := range c.egraphResultsByDigest {
-		postings[dig] = slices.Sorted(posting.Items())
+	postings := make(map[string][]sharedResultID, c.egraphResultsByDigest.Len())
+	for dig := range c.egraphResultsByDigest.Digests() {
+		postings[dig] = slices.Sorted(c.egraphResultsByDigest.Items(dig))
 	}
 	line("postings", postings)
 	line("indexedDigests", c.resultIndexedDigests)
