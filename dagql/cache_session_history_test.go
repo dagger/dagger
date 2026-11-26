@@ -77,7 +77,7 @@ func TestCacheSessionScopedCallCostDoesNotGrowWithEarlierSessions(t *testing.T) 
 	late := sample()
 
 	c.egraphMu.RLock()
-	terms := len(c.resultTerms[sharedID])
+	terms := c.resultTerms.Size(sharedID)
 	c.egraphMu.RUnlock()
 	assert.Assert(t, terms > 10_000, "the shared result should hold every session's identity, has %d", terms)
 	t.Logf("100 sessions took %s on a new cache and %s after %d earlier sessions", early, late, history)

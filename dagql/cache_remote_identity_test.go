@@ -1,6 +1,7 @@
 package dagql
 
 import (
+	"cmp"
 	"fmt"
 	"math/rand/v2"
 	"runtime"
@@ -8,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 )
@@ -169,6 +169,15 @@ func checkKnownRemoteIdentityWritesNothing(t *testing.T, seed uint64) {
 	require.Greater(t, known, checked/4, "most rows of calls taught before are known")
 }
 
+// idSetIndexMembers returns each key's members, in order, for printing.
+func idSetIndexMembers[K comparable, V cmp.Ordered](x *idSetIndex[K, V]) map[K][]V {
+	out := make(map[K][]V, x.Len())
+	for k := range x.Keys() {
+		out[k] = slices.Collect(x.Items(k))
+	}
+	return out
+}
+
 // egraphFactsForTest prints every structure of the e-graph, with each
 // class's slot given by its root: finding a root compresses paths, which no
 // reader sees; and the marks the cache's writes have made. Requires egraphMu.
@@ -184,37 +193,37 @@ func egraphFactsForTest(c *Cache) string {
 	line("free", c.freeEqClassIDs)
 	line("digestToClass", c.egraphDigestToClass)
 	line("classDigests", c.eqClassToDigests)
-	// A class's empty set of extra digests is no set: every reader iterates
-	// it or asks it for one digest, and merges carry only a set that holds
-	// one. addResultExtraDigestsLocked makes an empty one for
-	// a frame without extra digests.
-	extras := make(map[eqClassID]map[call.ExtraDigest]struct{}, len(c.eqClassExtraDigests))
+	// A class's extra digests, sorted: their list keeps the order they were
+	// taught in, which a full teach may repeat in another order.
+	extras := make(map[eqClassID][]string, len(c.eqClassExtraDigests))
 	for id, set := range c.eqClassExtraDigests {
-		if len(set) > 0 {
-			extras[id] = set
+		for _, extra := range set {
+			extras[id] = append(extras[id], extra.Label+"="+extra.Digest.String())
 		}
+		slices.Sort(extras[id])
 	}
 	line("classExtras", extras)
-	line("inputTerms", c.inputEqClassToTerms)
-	line("outputTerms", c.outputEqClassToTerms)
-	line("resultClasses", c.resultOutputEqClasses)
-	line("classResults", c.outputEqClassResults)
-	line("termResults", c.termResults)
-	line("resultTerms", c.resultTerms)
+	line("inputTerms", idSetIndexMembers(&c.inputEqClassToTerms))
+	line("outputTerms", idSetIndexMembers(&c.outputEqClassToTerms))
+	line("resultClasses", idSetIndexMembers(&c.resultOutputEqClasses))
+	line("classResults", idSetIndexMembers(&c.outputEqClassResults))
+	line("termResults", idSetIndexMembers(&c.termResults))
+	line("resultTerms", idSetIndexMembers(&c.resultTerms))
 	line("provenance", c.termInputProvenance)
 	terms := make(map[egraphTermID]egraphTerm, len(c.egraphTerms))
 	for id, term := range c.egraphTerms {
 		terms[id] = *term
 	}
 	line("terms", terms)
-	byDigest := make(map[string][]egraphTermID, len(c.egraphTermsByTermDigest))
-	for dig, set := range c.egraphTermsByTermDigest {
+	byDigest := make(map[string][]egraphTermID, c.egraphTermsByTermDigest.Len())
+	for dig := range c.egraphTermsByTermDigest.Keys() {
+		set := c.egraphTermsByTermDigest.Members(dig)
 		byDigest[dig] = slices.Collect(set.Items())
 	}
 	line("termsByDigest", byDigest)
-	postings := make(map[string][]sharedResultID, len(c.egraphResultsByDigest))
-	for dig, posting := range c.egraphResultsByDigest {
-		postings[dig] = slices.Sorted(posting.Items())
+	postings := make(map[string][]sharedResultID, c.egraphResultsByDigest.Len())
+	for dig := range c.egraphResultsByDigest.Digests() {
+		postings[dig] = slices.Sorted(c.egraphResultsByDigest.Items(dig))
 	}
 	line("postings", postings)
 	line("indexedDigests", c.resultIndexedDigests)

@@ -152,15 +152,10 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			}
 			digests.Insert(row.Digest)
 			if row.Label != "" {
-				extras := c.eqClassExtraDigests[eqID]
-				if extras == nil {
-					extras = make(map[call.ExtraDigest]struct{})
-					c.eqClassExtraDigests[eqID] = extras
-				}
-				extras[call.ExtraDigest{
+				c.eqClassExtraDigests[eqID] = withExtraDigests(c.eqClassExtraDigests[eqID], call.ExtraDigest{
 					Digest: digest.Digest(row.Digest),
 					Label:  row.Label,
-				}] = struct{}{}
+				})
 			}
 		}
 
@@ -420,29 +415,14 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			c.egraphTerms[termID] = term
 			c.useTermLocked(term)
 			c.termInputProvenance[termID] = inputProvenance
-			digestTerms := c.egraphTermsByTermDigest[term.termDigest]
-			if digestTerms == nil {
-				digestTerms = newIDSet[egraphTermID]()
-				c.egraphTermsByTermDigest[term.termDigest] = digestTerms
-			}
-			digestTerms.Insert(termID)
+			c.egraphTermsByTermDigest.Insert(term.termDigest, termID)
 			for _, inputEqID := range inputEqIDs {
 				if inputEqID == 0 {
 					continue
 				}
-				classTerms := c.inputEqClassToTerms[inputEqID]
-				if classTerms == nil {
-					classTerms = newIDSet[egraphTermID]()
-					c.inputEqClassToTerms[inputEqID] = classTerms
-				}
-				classTerms.Insert(termID)
+				c.inputEqClassToTerms.Insert(inputEqID, termID)
 			}
-			outputTerms := c.outputEqClassToTerms[outputEqID]
-			if outputTerms == nil {
-				outputTerms = newIDSet[egraphTermID]()
-				c.outputEqClassToTerms[outputEqID] = outputTerms
-			}
-			outputTerms.Insert(termID)
+			c.outputEqClassToTerms.Insert(outputEqID, termID)
 			c.traceTermCreated(ctx, "import", importRunID, term)
 		}
 

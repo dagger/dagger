@@ -305,7 +305,7 @@ func testCompactEqClassesLocked(c *Cache) {
 		}
 	}
 	newEqClassToDigests := make(map[eqClassID]*idSet[string], len(oldRoots))
-	newEqClassExtraDigests := make(map[eqClassID]map[call.ExtraDigest]struct{}, len(oldRoots))
+	newEqClassExtraDigests := make(map[eqClassID][]call.ExtraDigest, len(oldRoots))
 	newEgraphDigestToClass := make(map[string]eqClassID)
 	for _, root := range oldRoots {
 		if digests := c.eqClassToDigests[root]; digests.Size() > 0 {
@@ -315,19 +315,13 @@ func testCompactEqClassesLocked(c *Cache) {
 			newEqClassToDigests[root] = digests.Clone()
 		}
 		if extras := c.eqClassExtraDigests[root]; len(extras) > 0 {
-			newEqClassExtraDigests[root] = maps.Clone(extras)
+			newEqClassExtraDigests[root] = slices.Clone(extras)
 		}
 	}
-	newInputEqClassToTerms := make(map[eqClassID]*idSet[egraphTermID])
-	newOutputEqClassToTerms := make(map[eqClassID]*idSet[egraphTermID])
-	newEgraphTermsByTermDigest := make(map[string]*idSet[egraphTermID], len(c.egraphTermsByTermDigest))
-	add := func(index map[eqClassID]*idSet[egraphTermID], id eqClassID, termID egraphTermID) {
-		set := index[id]
-		if set == nil {
-			set = newIDSet[egraphTermID]()
-			index[id] = set
-		}
-		set.Insert(termID)
+	var newInputEqClassToTerms, newOutputEqClassToTerms idSetIndex[eqClassID, egraphTermID]
+	var newEgraphTermsByTermDigest idSetIndex[string, egraphTermID]
+	add := func(index *idSetIndex[eqClassID, egraphTermID], id eqClassID, termID egraphTermID) {
+		index.Insert(id, termID)
 	}
 	for termID, term := range c.egraphTerms {
 		if term == nil {
@@ -347,7 +341,7 @@ func testCompactEqClassesLocked(c *Cache) {
 			}
 			inputs = append(inputs, root)
 			newUses[root]++
-			add(newInputEqClassToTerms, root, termID)
+			add(&newInputEqClassToTerms, root, termID)
 		}
 		term.inputEqIDs = inputs
 		output := c.findEqClassLocked(term.outputEqID)
@@ -356,18 +350,14 @@ func testCompactEqClassesLocked(c *Cache) {
 		}
 		term.outputEqID = output
 		newUses[output]++
-		add(newOutputEqClassToTerms, output, termID)
+		add(&newOutputEqClassToTerms, output, termID)
 		term.termDigest = calcEgraphTermDigest(term.selfDigest, term.inputEqIDs)
-		digestTerms := newEgraphTermsByTermDigest[term.termDigest]
-		if digestTerms == nil {
-			digestTerms = newIDSet[egraphTermID]()
-			newEgraphTermsByTermDigest[term.termDigest] = digestTerms
-		}
-		digestTerms.Insert(termID)
+		newEgraphTermsByTermDigest.Insert(term.termDigest, termID)
 	}
-	newResultOutputEqClasses := make(map[sharedResultID]*idSet[eqClassID], len(c.resultOutputEqClasses))
-	newOutputEqClassResults := make(map[eqClassID]*idSet[sharedResultID], len(c.outputEqClassResults))
-	for resID, outputs := range c.resultOutputEqClasses {
+	var newResultOutputEqClasses idSetIndex[sharedResultID, eqClassID]
+	var newOutputEqClassResults idSetIndex[eqClassID, sharedResultID]
+	for resID := range c.resultOutputEqClasses.Keys() {
+		outputs := c.resultOutputEqClasses.Members(resID)
 		roots := newIDSet[eqClassID]()
 		for id := range outputs.All() {
 			if root := c.findEqClassLocked(id); live[root] {
@@ -377,15 +367,10 @@ func testCompactEqClassesLocked(c *Cache) {
 		if roots.Size() == 0 {
 			continue
 		}
-		newResultOutputEqClasses[resID] = roots
 		for root := range roots.All() {
+			newResultOutputEqClasses.Insert(resID, root)
 			newUses[root]++
-			results := newOutputEqClassResults[root]
-			if results == nil {
-				results = newIDSet[sharedResultID]()
-				newOutputEqClassResults[root] = results
-			}
-			results.Insert(resID)
+			newOutputEqClassResults.Insert(root, resID)
 		}
 	}
 	if c.changes != nil {
@@ -454,18 +439,18 @@ func sharedStateOf(c *Cache) string {
 	for _, class := range slices.Sorted(maps.Keys(c.eqClassToDigests)) {
 		fmt.Fprintf(&b, "class %d: digests %v, extras %d\n", class, slices.Collect(c.eqClassToDigests[class].Items()), len(c.eqClassExtraDigests[class]))
 	}
-	for _, dig := range slices.Sorted(maps.Keys(c.egraphResultsByDigest)) {
-		fmt.Fprintf(&b, "posting %s: %v\n", dig, slices.Sorted(c.egraphResultsByDigest[dig].Items()))
+	for _, dig := range slices.Sorted(c.egraphResultsByDigest.Digests()) {
+		fmt.Fprintf(&b, "posting %s: %v\n", dig, slices.Sorted(c.egraphResultsByDigest.Items(dig)))
 	}
 	for _, id := range slices.Sorted(maps.Keys(c.egraphTerms)) {
 		term := c.egraphTerms[id]
 		fmt.Fprintf(&b, "term %d: %s %v -> %d\n", id, term.selfDigest, term.inputEqIDs, term.outputEqID)
 	}
-	for _, id := range slices.Sorted(maps.Keys(c.resultOutputEqClasses)) {
-		fmt.Fprintf(&b, "outputs %d: %v\n", id, slices.Collect(c.resultOutputEqClasses[id].Items()))
+	for _, id := range slices.Sorted(c.resultOutputEqClasses.Keys()) {
+		fmt.Fprintf(&b, "outputs %d: %v\n", id, slices.Collect(c.resultOutputEqClasses.Items(id)))
 	}
-	for _, class := range slices.Sorted(maps.Keys(c.outputEqClassResults)) {
-		fmt.Fprintf(&b, "results %d: %v\n", class, slices.Collect(c.outputEqClassResults[class].Items()))
+	for _, class := range slices.Sorted(c.outputEqClassResults.Keys()) {
+		fmt.Fprintf(&b, "results %d: %v\n", class, slices.Collect(c.outputEqClassResults.Items(class)))
 	}
 	fmt.Fprintf(&b, "engine caches %v\n", slices.Sorted(maps.Keys(c.remoteCaches)))
 	return b.String()

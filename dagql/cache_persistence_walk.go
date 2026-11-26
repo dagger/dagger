@@ -316,7 +316,7 @@ func (c *Cache) readEntryLocked(rd *persistRead, id sharedResultID, res *sharedR
 	classes := rd.classRows[:0]
 	var classesPrint rowsPrint
 	e.classAt = int32(len(rd.ids))
-	for outputEqID := range c.resultOutputEqClasses[id].All() {
+	for outputEqID := range c.resultOutputEqClasses.All(id) {
 		outputEqID = c.eqClassRootLocked(outputEqID)
 		// Two of the entry's classes joined since name one root once.
 		if outputEqID == 0 || slices.Contains(rd.ids[e.classAt:], outputEqID) {
@@ -556,7 +556,7 @@ func (c *Cache) readClassLocked(rd *persistRead, id eqClassID) {
 			rows = append(rows, persistdb.MirrorEqClassDigest{EqClassID: int64(id), Digest: dig})
 		}
 	}
-	for extra := range c.eqClassExtraDigests[id] {
+	for _, extra := range c.eqClassExtraDigests[id] {
 		if extra.Digest == "" {
 			continue
 		}

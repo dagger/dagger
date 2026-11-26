@@ -583,12 +583,12 @@ func (c *Cache) traceEqClassMerged(ctx context.Context, ids []eqClassID, root eq
 	})
 }
 
-func debugExtraDigestsForTrace(extras map[call.ExtraDigest]struct{}) []string {
+func debugExtraDigestsForTrace(extras []call.ExtraDigest) []string {
 	if len(extras) == 0 {
 		return nil
 	}
 	out := make([]string, 0, len(extras))
-	for extra := range extras {
+	for _, extra := range extras {
 		label := extra.Label
 		if label == "" {
 			label = "unlabeled"
@@ -618,14 +618,14 @@ func (c *Cache) debugEqClassMergeDetails(ids []eqClassID) []map[string]any {
 			"eq_class_id":     root,
 			"digests":         digests,
 			"extra_digests":   debugExtraDigestsForTrace(c.eqClassExtraDigests[root]),
-			"input_term_ids":  c.debugEqClassTermIDs(c.inputEqClassToTerms[root]),
-			"output_term_ids": c.debugEqClassTermIDs(c.outputEqClassToTerms[root]),
+			"input_term_ids":  c.debugEqClassTermIDs(c.inputEqClassToTerms.Members(root)),
+			"output_term_ids": c.debugEqClassTermIDs(c.outputEqClassToTerms.Members(root)),
 		})
 	}
 	return out
 }
 
-func (c *Cache) debugEqClassTermIDs(terms *idSet[egraphTermID]) []uint64 {
+func (c *Cache) debugEqClassTermIDs(terms idMembers[egraphTermID]) []uint64 {
 	if terms.Size() == 0 {
 		return nil
 	}
@@ -1014,7 +1014,7 @@ func (c *Cache) DebugEGraphSnapshot() *EGraphDebugSnapshot {
 			depIDs = append(depIDs, uint64(depID))
 		}
 		slices.Sort(depIDs)
-		outputEqIDs := make([]uint64, 0, c.resultOutputEqClasses[resultID].Size())
+		outputEqIDs := make([]uint64, 0, c.resultOutputEqClasses.Size(resultID))
 		for outputEqID := range c.outputEqClassesForResultLocked(resultID) {
 			outputEqIDs = append(outputEqIDs, uint64(outputEqID))
 		}
@@ -1350,14 +1350,10 @@ func (c *Cache) WriteDebugCacheSnapshot(w io.Writer) error {
 	}
 	slices.Sort(resultIDs)
 
-	resultIndexDigests := make([]string, 0, len(c.egraphResultsByDigest))
-	for dig := range c.egraphResultsByDigest {
-		resultIndexDigests = append(resultIndexDigests, dig)
-	}
-	slices.Sort(resultIndexDigests)
+	resultIndexDigests := slices.Sorted(c.egraphResultsByDigest.Digests())
 	indexedDigestsByResult := make(map[sharedResultID][]string, len(resultIDs))
 	for _, dig := range resultIndexDigests {
-		for resultID := range c.egraphResultsByDigest[dig].Items() {
+		for resultID := range c.egraphResultsByDigest.Items(dig) {
 			indexedDigestsByResult[resultID] = append(indexedDigestsByResult[resultID], dig)
 		}
 	}
@@ -1375,7 +1371,7 @@ func (c *Cache) WriteDebugCacheSnapshot(w io.Writer) error {
 			}
 			slices.Sort(depIDs)
 
-			outputEqIDs := make([]uint64, 0, c.resultOutputEqClasses[resultID].Size())
+			outputEqIDs := make([]uint64, 0, c.resultOutputEqClasses.Size(resultID))
 			for outputEqID := range c.outputEqClassesForResultLocked(resultID) {
 				outputEqIDs = append(outputEqIDs, uint64(outputEqID))
 			}
@@ -1501,12 +1497,11 @@ func (c *Cache) WriteDebugCacheSnapshot(w io.Writer) error {
 
 	if err := writeArrayField("result_digest_indexes", func(writeElem func(any) error) error {
 		for _, dig := range resultIndexDigests {
-			resultSet := c.egraphResultsByDigest[dig]
-			if resultSet == nil || resultSet.Empty() {
+			if !c.egraphResultsByDigest.Has(dig) {
 				continue
 			}
-			indexedResultIDs := make([]uint64, 0, resultSet.Size())
-			for resultID := range resultSet.Items() {
+			indexedResultIDs := make([]uint64, 0, c.egraphResultsByDigest.Size(dig))
+			for resultID := range c.egraphResultsByDigest.Items(dig) {
 				indexedResultIDs = append(indexedResultIDs, uint64(resultID))
 			}
 			slices.Sort(indexedResultIDs)

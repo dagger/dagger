@@ -3903,12 +3903,12 @@ func TestDirectDigestLookupHitsWithoutTermIndex(t *testing.T) {
 		assert.Assert(t, !firstRes.HitCache())
 
 		c.egraphMu.Lock()
-		c.inputEqClassToTerms = make(map[eqClassID]*idSet[egraphTermID])
-		c.outputEqClassToTerms = make(map[eqClassID]*idSet[egraphTermID])
+		c.inputEqClassToTerms = idSetIndex[eqClassID, egraphTermID]{}
+		c.outputEqClassToTerms = idSetIndex[eqClassID, egraphTermID]{}
 		c.egraphTerms = make(map[egraphTermID]*egraphTerm)
-		c.egraphTermsByTermDigest = make(map[string]*idSet[egraphTermID])
-		c.resultOutputEqClasses = make(map[sharedResultID]*idSet[eqClassID])
-		c.outputEqClassResults = make(map[eqClassID]*idSet[sharedResultID])
+		c.egraphTermsByTermDigest = idSetIndex[string, egraphTermID]{}
+		c.resultOutputEqClasses = idSetIndex[sharedResultID, eqClassID]{}
+		c.outputEqClassResults = idSetIndex[eqClassID, sharedResultID]{}
 		c.termInputProvenance = make(map[egraphTermID][]egraphInputProvenanceKind)
 		// The classes' uses went with the terms and the outputs.
 		clear(c.egraphUses)
@@ -3954,12 +3954,12 @@ func TestDirectDigestLookupHitsWithoutTermIndex(t *testing.T) {
 		assert.Assert(t, !firstRes.HitCache())
 
 		c.egraphMu.Lock()
-		c.inputEqClassToTerms = make(map[eqClassID]*idSet[egraphTermID])
-		c.outputEqClassToTerms = make(map[eqClassID]*idSet[egraphTermID])
+		c.inputEqClassToTerms = idSetIndex[eqClassID, egraphTermID]{}
+		c.outputEqClassToTerms = idSetIndex[eqClassID, egraphTermID]{}
 		c.egraphTerms = make(map[egraphTermID]*egraphTerm)
-		c.egraphTermsByTermDigest = make(map[string]*idSet[egraphTermID])
-		c.resultOutputEqClasses = make(map[sharedResultID]*idSet[eqClassID])
-		c.outputEqClassResults = make(map[eqClassID]*idSet[sharedResultID])
+		c.egraphTermsByTermDigest = idSetIndex[string, egraphTermID]{}
+		c.resultOutputEqClasses = idSetIndex[sharedResultID, eqClassID]{}
+		c.outputEqClassResults = idSetIndex[eqClassID, sharedResultID]{}
 		c.termInputProvenance = make(map[egraphTermID][]egraphInputProvenanceKind)
 		// The classes' uses went with the terms and the outputs.
 		clear(c.egraphUses)
@@ -4031,8 +4031,7 @@ func TestIndexResultDigestsUsesExplicitRequestAndResponseIDs(t *testing.T) {
 		responseDigest,
 		responseExtra.Digest,
 	} {
-		postings := c.egraphResultsByDigest[dig.String()]
-		ok := postings != nil && postings.Contains(shared.id)
+		ok := c.egraphResultsByDigest.Contains(dig.String(), shared.id)
 		assert.Assert(t, ok, "expected posting for digest %s", dig)
 	}
 
@@ -4874,7 +4873,7 @@ func TestCacheTeachContentDigestPreservesAttachment(t *testing.T) {
 	shared := res.cacheSharedResult()
 	assert.Assert(t, shared != nil)
 	c.egraphMu.RLock()
-	ok := c.egraphResultsByDigest[contentDigest.String()].Contains(shared.id)
+	ok := c.egraphResultsByDigest.Contains(contentDigest.String(), shared.id)
 	c.egraphMu.RUnlock()
 	assert.Assert(t, ok)
 
@@ -5108,15 +5107,15 @@ func TestCacheSecondaryIndexesCleanedOnRelease(t *testing.T) {
 	storageKey := storageID.Digest().String()
 	resultOutputEq := resultContent.String()
 	assert.Assert(t, storageKey != resultOutputEq)
-	assert.Equal(t, 1, len(c.resultOutputEqClasses))
+	assert.Equal(t, 1, c.resultOutputEqClasses.Len())
 	assert.Assert(t, len(c.egraphTerms) > 0)
 	assert.Assert(t, c.Size() > 0)
 
 	cacheTestReleaseSession(t, c, ctx)
 	assert.Equal(t, 0, len(c.ongoingCalls))
-	assert.Equal(t, 0, len(c.resultOutputEqClasses))
+	assert.Equal(t, 0, c.resultOutputEqClasses.Len())
 	assert.Equal(t, 0, len(c.egraphTerms))
-	assert.Equal(t, 0, len(c.resultOutputEqClasses))
+	assert.Equal(t, 0, c.resultOutputEqClasses.Len())
 }
 
 func TestCacheReleaseRemovesRecordedDigestPostingAfterOutputClassMerge(t *testing.T) {
@@ -5180,7 +5179,7 @@ func TestCacheReleaseRemovesRecordedDigestPostingAfterOutputClassMerge(t *testin
 	assert.NilError(t, c.ReleaseSession(ctxA, "release-eq-class-a"))
 
 	c.egraphMu.RLock()
-	_, ok = c.egraphResultsByDigest[foreignDigest.String()]
+	ok = postingHeldForTest(&c.egraphResultsByDigest, foreignDigest.String())
 	c.egraphMu.RUnlock()
 	assert.Assert(t, !ok)
 	assert.Equal(t, 1, c.Size())
@@ -6221,12 +6220,12 @@ func TestCacheTTLWithDBUsesStorageAndCallIndexes(t *testing.T) {
 	assert.NilError(t, err)
 	assert.Equal(t, 1, initCalls)
 	assert.Assert(t, res2.HitCache())
-	assert.Equal(t, 1, len(c.resultOutputEqClasses))
+	assert.Equal(t, 1, c.resultOutputEqClasses.Len())
 
 	cacheTestReleaseSession(t, c, ctx)
 	// Persist-safe only affects DB metadata persistence; in-memory cache entries are
 	// released when refs drain.
-	assert.Equal(t, 0, len(c.resultOutputEqClasses))
+	assert.Equal(t, 0, c.resultOutputEqClasses.Len())
 	assert.Equal(t, 0, c.Size())
 }
 
@@ -6476,11 +6475,11 @@ func TestCacheNonPersistableDropsWhenRefsDrain(t *testing.T) {
 	})
 	assert.NilError(t, err)
 	assert.Equal(t, 0, c.EntryStats().RetainedCalls)
-	assert.Equal(t, 1, len(c.resultOutputEqClasses))
+	assert.Equal(t, 1, c.resultOutputEqClasses.Len())
 
 	cacheTestReleaseSession(t, c, ctx)
 	assert.Equal(t, 0, c.EntryStats().RetainedCalls)
-	assert.Equal(t, 0, len(c.resultOutputEqClasses))
+	assert.Equal(t, 0, c.resultOutputEqClasses.Len())
 	assert.Equal(t, 0, c.Size())
 }
 
@@ -6520,7 +6519,7 @@ func TestCachePersistableHitUpgradesExistingResultToRetained(t *testing.T) {
 
 	cacheTestReleaseSession(t, c, ctx)
 	assert.Equal(t, 1, c.EntryStats().RetainedCalls)
-	assert.Equal(t, 1, len(c.resultOutputEqClasses))
+	assert.Equal(t, 1, c.resultOutputEqClasses.Len())
 
 	initCallsAfter := 0
 	resC, err := c.GetOrInitCall(ctx, "persistable-hit-after-release", noopTypeResolver{}, &CallRequest{
@@ -7267,7 +7266,8 @@ func TestCachePruneDoesNotProtectTermProvenanceOnlyResultFromActiveResult(t *tes
 	termID := egraphTermID(1)
 	c.egraphTerms[termID] = newEgraphTerm(termID, digest.FromString("prune-structural-root-term"), []eqClassID{provenanceEq}, rootEq)
 	c.useTermLocked(c.egraphTerms[termID])
-	c.outputEqClassToTerms[rootEq] = idSetOf(termID)
+	c.outputEqClassToTerms.Delete(rootEq)
+	c.outputEqClassToTerms.Insert(rootEq, termID)
 	c.termInputProvenance[termID] = []egraphInputProvenanceKind{egraphInputProvenanceKindResult}
 	c.egraphMu.Unlock()
 	c.sessionMu.Lock()

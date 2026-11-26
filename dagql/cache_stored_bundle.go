@@ -1131,7 +1131,7 @@ func (c *Cache) classDonorsLocked(build *storedBundleBuild, root eqClassID) map[
 		c.testDonorClassRead()
 	}
 	donors := map[string]*sharedResult{}
-	for id := range c.outputEqClassResults[root].All() {
+	for id := range c.outputEqClassResults.All(root) {
 		member := c.resultsByID[id]
 		if member == nil || c.resultExpiredAtLocked(member, build.now) {
 			continue
@@ -1163,7 +1163,7 @@ func (c *Cache) closureRowOfClassLocked(service sharedResultID, ordinals map[sha
 	}
 	var best sharedResultID
 	for root := range c.outputEqClassRootsLocked(service) {
-		for id := range c.outputEqClassResults[root].All() {
+		for id := range c.outputEqClassResults.All(root) {
 			if ordinals[id] != 0 && (best == 0 || id < best) {
 				best = id
 			}
