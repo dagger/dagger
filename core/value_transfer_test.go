@@ -84,6 +84,12 @@ func TestValueTransferRelocatedForeignStaysValid(t *testing.T) {
 		require.NoError(t, err, family.Name)
 		v.Payload = foreign.JSON
 		require.NoError(t, codec.ValidateForeign(v), family.Name)
+		// A payload validation accepts is in its normal form, byte for byte,
+		// relocated or not (dagql.PersistedTransferCodec): the Cloud stores
+		// a merged record as validated and relocated.
+		again, err := codec.NormalizeForeign(v)
+		require.NoError(t, err, family.Name)
+		require.Equal(t, string(v.Payload), string(again.JSON), "%s: a normal payload normalizes to itself", family.Name)
 		moved := 0
 		relocated, err := family.Visitor.VisitPersistedReferences(v, func(ref *dagql.PersistedRef) error {
 			if ref.RecipeID == nil && ref.ResultID != 0 {
@@ -99,6 +105,9 @@ func TestValueTransferRelocatedForeignStaysValid(t *testing.T) {
 		}
 		v.Payload = relocated
 		require.NoError(t, codec.ValidateForeign(v), "%s, relocated", family.Name)
+		again, err = codec.NormalizeForeign(v)
+		require.NoError(t, err, family.Name)
+		require.Equal(t, string(relocated), string(again.JSON), "%s: a relocated payload is still normal", family.Name)
 	}
 }
 

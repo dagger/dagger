@@ -1878,7 +1878,8 @@ func (c *Cache) remoteIdentityTeachesNothingLocked(entry *sharedResult, recipe, 
 		if !ok || c.eqClassRootLocked(id) != root {
 			return false
 		}
-		if !c.egraphResultsByDigest.Contains(dig.String(), entry.id) {
+		posting := c.egraphResultsByDigest[dig.String()]
+		if posting == nil || !posting.Contains(entry.id) {
 			return false
 		}
 	}

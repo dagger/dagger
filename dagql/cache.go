@@ -2909,6 +2909,11 @@ type Cache struct {
 	// testNoPrerelocation, when set, keeps a merge from relocating its
 	// records before its commit takes egraphMu.
 	testNoPrerelocation bool
+	// testMergesInstallWhole, when set, has a blob-backed cache's merge
+	// install each record whole, as it installs a record its commit
+	// relocates under egraphMu, though its preparation made the record's
+	// body (preparedBody): a test of the readers of a record held whole.
+	testMergesInstallWhole bool
 	// testNoUnchangedRows, when set, has a merge teach every kept record of
 	// the Cloud's again, as one whose entry never merged it would be
 	// (unchangedCloudRowLocked): a test compares the two.
@@ -3253,14 +3258,12 @@ type Cache struct {
 	// class membership: multiple results can share an output eq class, but
 	// cache lookup for a matched term should first prefer results that were
 	// actually observed for that term before falling back to equivalent outputs.
-	// termResults holds each term's results and resultTerms each result's terms;
-	// nearly every term has one result and every result one term.
-	termResults idSetIndex[egraphTermID, sharedResultID]
-	resultTerms idSetIndex[sharedResultID, egraphTermID]
+	termResults map[egraphTermID]map[sharedResultID]egraphResultTermAssoc
+	resultTerms map[sharedResultID]map[egraphTermID]struct{}
 
 	// Reverse index from any known result-associated digest to materialized results.
 	// This includes request recipe+extra digests and result recipe+extra digests.
-	egraphResultsByDigest digestPostings
+	egraphResultsByDigest map[string]*resultDigestPosting
 	// Exact reverse postings recorded for ordinary runtime results. Imported
 	// class-wide postings are deliberately omitted and marked broad instead.
 	resultIndexedDigests  map[sharedResultID][]string

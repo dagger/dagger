@@ -189,10 +189,6 @@ The bridge between symbolic graph and concrete payload is:
 - `resultIndexedDigests`
 - `broadlyIndexedResults`
 
-`termResults` and `resultTerms` are `idSetIndex`es: nearly every term has
-one result and every result one term, so a key's only member is held in the
-index's map slot, and a set is made only for a key with more.
-
 `resultOutputEqClasses` and `outputEqClassResults` are paired forward and
 inverse indexes. The inverse is keyed by canonical output eq-class roots and
 lets lifecycle cleanup find surviving results without re-deriving membership
@@ -624,17 +620,14 @@ repair step is what propagates "equivalent inputs imply equivalent outputs."
 
 ## Why Input Provenance Exists
 
-Each term stores per-input provenance (`termInputProvenance`):
+Each term/result association stores per-input provenance:
 
 - `result`
 - `digest`
 
 That is subtle but important. The cache wants to remember not just that a result
 matched a term, but whether the match came from fully attached result-backed
-inputs or from digest-only witness inputs. A later observation of a congruent
-term with other provenance replaces it. The term/result associations
-themselves (`termResults`, `resultTerms`) record only which results were
-observed for which terms.
+inputs or from digest-only witness inputs.
 
 Today this mostly matters for preserving more honest associations and for keeping
 the door open to stricter behavior if provenance-sensitive cases matter more in

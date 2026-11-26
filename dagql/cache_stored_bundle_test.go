@@ -354,10 +354,20 @@ func TestStoredBundleCarriesTheCurrentRecord(t *testing.T) {
 			require.Contains(t, rootRecord().Call.ExtraDigests, call.ExtraDigest{Digest: content, Label: call.ExtraDigestLabelContent}, "the new call")
 
 			mergeTestExpire(cloud, storedBundleTestEntry(cloud, r))
+			res := storedBundleTestEntry(cloud, r)
+			cloud.egraphMu.RLock()
+			oldBody := res.stored
+			cloud.egraphMu.RUnlock()
 			fresh, _ := mergeTestSource(t, "bundle-root", "new")
 			_, err := cloud.MergeValues(ctx, "cache-b", fresh)
 			require.NoError(t, err)
-			require.False(t, storedBundleTestKept(cloud, r), "the replacement releases the old record")
+			cloud.egraphMu.RLock()
+			kept, body := res.storedTransfer.Load(), res.stored
+			cloud.egraphMu.RUnlock()
+			require.Nil(t, kept, "the replacement releases the old normalized record")
+			if oldBody != nil {
+				require.NotSame(t, oldBody, body, "the replacement releases the old compressed record")
+			}
 			settle()
 			require.Contains(t, string(rootRecord().Envelope.ObjectJSON), "new", "the new record")
 		})
@@ -604,6 +614,7 @@ func TestRelocatedTransferPayloadsStayValid(t *testing.T) {
 		"dagql_test.PlanDelegate":  {`{"parent":7}`, 0},
 		"dagql_test.SyncDelegate":  {`{}`, 0},
 		"dagql_test.DecodeChain":   {`{"text":"relocated","child":5}`, 1},
+		"dagql_test.ReadPayload":   {`{"text":"relocated"}`, 0},
 	}
 	for _, family := range PersistedObjectFamilies() {
 		// core's families, which this package's external tests register,
@@ -618,6 +629,11 @@ func TestRelocatedTransferPayloadsStayValid(t *testing.T) {
 		require.NoError(t, err, family.Name)
 		v.Payload = foreign.JSON
 		require.NoError(t, family.Transfer.ValidateForeign(v), family.Name)
+		// A payload validation accepts is in its normal form, relocated or
+		// not (PersistedTransferCodec).
+		again, err := family.Transfer.NormalizeForeign(v)
+		require.NoError(t, err, family.Name)
+		require.Equal(t, string(v.Payload), string(again.JSON), "%s: a normal payload normalizes to itself", family.Name)
 		moved := 0
 		relocated, err := family.Visitor.VisitPersistedReferences(v, func(ref *PersistedRef) error {
 			if ref.RecipeID == nil && ref.ResultID != 0 {
@@ -633,6 +649,9 @@ func TestRelocatedTransferPayloadsStayValid(t *testing.T) {
 		}
 		v.Payload = relocated
 		require.NoError(t, family.Transfer.ValidateForeign(v), "%s, relocated", family.Name)
+		again, err = family.Transfer.NormalizeForeign(v)
+		require.NoError(t, err, family.Name)
+		require.Equal(t, string(relocated), string(again.JSON), "%s: a relocated payload is still normal", family.Name)
 	}
 }
 

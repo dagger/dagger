@@ -32,9 +32,9 @@ func TestRestoredDigestPostingRemovalKeepsRuntimePostingsAfterMerge(t *testing.T
 	}
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
-	assert.DeepEqual(t, slices.Sorted(c.egraphResultsByDigest.Items(digests[0])), []sharedResultID{survivor})
+	assert.DeepEqual(t, slices.Sorted(c.egraphResultsByDigest[digests[0]].Items()), []sharedResultID{survivor})
 	for _, dig := range digests[1:] {
-		assert.Assert(t, !postingHeldForTest(&c.egraphResultsByDigest, dig), "empty imported posting remains under %s", dig)
+		assert.Assert(t, c.egraphResultsByDigest[dig] == nil, "empty imported posting remains under %s", dig)
 	}
 	assert.NilError(t, cacheDerivedIndexesErrorLocked(c))
 }
@@ -51,11 +51,11 @@ func TestRestoredDigestPostingRemovalAcrossOriginalGroups(t *testing.T) {
 	c.outputEqClassResults[2] = idSetOf[sharedResultID](1, 3)
 	c.restoreDigestPostingsLocked()
 	c.removeResultDigestsLocked(1, map[eqClassID]struct{}{1: {}, 2: {}})
-	assert.DeepEqual(t, slices.Sorted(c.egraphResultsByDigest.Items("first")), []sharedResultID{2})
-	assert.DeepEqual(t, slices.Sorted(c.egraphResultsByDigest.Items("second")), []sharedResultID{3})
+	assert.DeepEqual(t, slices.Sorted(c.egraphResultsByDigest["first"].Items()), []sharedResultID{2})
+	assert.DeepEqual(t, slices.Sorted(c.egraphResultsByDigest["second"].Items()), []sharedResultID{3})
 	c.removeResultDigestsLocked(2, map[eqClassID]struct{}{1: {}})
-	assert.Assert(t, !postingHeldForTest(&c.egraphResultsByDigest, "first"))
-	assert.Assert(t, c.egraphResultsByDigest.Contains("second", 3))
+	assert.Assert(t, c.egraphResultsByDigest["first"] == nil)
+	assert.Assert(t, c.egraphResultsByDigest["second"].Contains(3))
 	c.removeResultDigestsLocked(3, map[eqClassID]struct{}{2: {}})
-	assert.Equal(t, 0, postingsHeldForTest(&c.egraphResultsByDigest))
+	assert.Equal(t, 0, len(c.egraphResultsByDigest))
 }

@@ -1,7 +1,6 @@
 package dagql
 
 import (
-	"cmp"
 	"fmt"
 	"math/rand/v2"
 	"runtime"
@@ -170,15 +169,6 @@ func checkKnownRemoteIdentityWritesNothing(t *testing.T, seed uint64) {
 	require.Greater(t, known, checked/4, "most rows of calls taught before are known")
 }
 
-// idSetIndexMembers returns each key's members, in order, for printing.
-func idSetIndexMembers[K comparable, V cmp.Ordered](x *idSetIndex[K, V]) map[K][]V {
-	out := make(map[K][]V, x.Len())
-	for k := range x.Keys() {
-		out[k] = slices.Collect(x.Items(k))
-	}
-	return out
-}
-
 // egraphFactsForTest prints every structure of the e-graph, with each
 // class's slot given by its root: finding a root compresses paths, which no
 // reader sees; and the marks the cache's writes have made. Requires egraphMu.
@@ -209,8 +199,8 @@ func egraphFactsForTest(c *Cache) string {
 	line("outputTerms", c.outputEqClassToTerms)
 	line("resultClasses", c.resultOutputEqClasses)
 	line("classResults", c.outputEqClassResults)
-	line("termResults", idSetIndexMembers(&c.termResults))
-	line("resultTerms", idSetIndexMembers(&c.resultTerms))
+	line("termResults", c.termResults)
+	line("resultTerms", c.resultTerms)
 	line("provenance", c.termInputProvenance)
 	terms := make(map[egraphTermID]egraphTerm, len(c.egraphTerms))
 	for id, term := range c.egraphTerms {
@@ -222,9 +212,9 @@ func egraphFactsForTest(c *Cache) string {
 		byDigest[dig] = slices.Collect(set.Items())
 	}
 	line("termsByDigest", byDigest)
-	postings := make(map[string][]sharedResultID, c.egraphResultsByDigest.Len())
-	for dig := range c.egraphResultsByDigest.Digests() {
-		postings[dig] = slices.Sorted(c.egraphResultsByDigest.Items(dig))
+	postings := make(map[string][]sharedResultID, len(c.egraphResultsByDigest))
+	for dig, posting := range c.egraphResultsByDigest {
+		postings[dig] = slices.Sorted(posting.Items())
 	}
 	line("postings", postings)
 	line("indexedDigests", c.resultIndexedDigests)
