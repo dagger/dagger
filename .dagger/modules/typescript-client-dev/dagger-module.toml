@@ -11,3 +11,7 @@ engineVersion = "v0.21.9"
 [[dependencies]]
   name = "dagger-engine"
   source = "../engine-dev"
+
+[[dependencies]]
+  name = "ts-sdk-codegen"
+  source = "github.com/dagger/typescript-sdk/helpers/codegen@v1.3.0"
