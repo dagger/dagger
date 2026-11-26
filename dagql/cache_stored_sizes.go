@@ -70,7 +70,18 @@ var heldRowSizeDigest = digest.Digest("xxh3:0000000000000000")
 // it at some moment of the walk. With no write during it, a walk counts
 // what one hold would. Only a blob-backed cache answers.
 func (c *Cache) StoredSizes(ctx context.Context, roots []uint64, nowUnix int64, held *HeldBy) ([]StoredSize, error) {
-	return c.storedSizes(ctx, roots, nowUnix, held, true)
+	return c.storedSizes(ctx, roots, nowUnix, held, true, nil)
+}
+
+// StoredSizesUntil measures as StoredSizes does, root by root, and after
+// each root calls done with the sizes measured so far: once done reports
+// true it stops, and returns those sizes, the first of StoredSizes'. done
+// is given the returned slice as it grows, to read and not to keep. A
+// caller that keeps the roots whose sizes fit a bound, such as a merge's
+// batch, so reads and measures nothing of the roots past the first one over
+// it, whose sizes it would not use.
+func (c *Cache) StoredSizesUntil(ctx context.Context, roots []uint64, nowUnix int64, held *HeldBy, done func([]StoredSize) bool) ([]StoredSize, error) {
+	return c.storedSizes(ctx, roots, nowUnix, held, true, done)
 }
 
 // MeasuredStoredSizes answers as StoredSizes does without measuring anything:
@@ -79,7 +90,7 @@ func (c *Cache) StoredSizes(ctx context.Context, roots []uint64, nowUnix int64, 
 // later roots are measured as if it weren't there. It normalizes and encodes
 // nothing: a held row's size is computed (heldRowSize).
 func (c *Cache) MeasuredStoredSizes(ctx context.Context, roots []uint64, nowUnix int64, held *HeldBy) ([]StoredSize, error) {
-	return c.storedSizes(ctx, roots, nowUnix, held, false)
+	return c.storedSizes(ctx, roots, nowUnix, held, false, nil)
 }
 
 // StoredSizeEncodes counts the values StoredSizes has measured: each first
@@ -89,7 +100,7 @@ func (c *Cache) StoredSizeEncodes() uint64 {
 	return c.storedSizeEncodes.Load()
 }
 
-func (c *Cache) storedSizes(ctx context.Context, roots []uint64, nowUnix int64, held *HeldBy, measure bool) ([]StoredSize, error) {
+func (c *Cache) storedSizes(ctx context.Context, roots []uint64, nowUnix int64, held *HeldBy, measure bool, done func([]StoredSize) bool) ([]StoredSize, error) {
 	if !c.blobBacked {
 		return nil, fmt.Errorf("stored sizes: the cache has no blob store")
 	}
@@ -122,6 +133,9 @@ func (c *Cache) storedSizes(ctx context.Context, roots []uint64, nowUnix int64, 
 			ordinary[id] = true
 		}
 		sizes[i] = size
+		if done != nil && done(sizes[:i+1]) {
+			return sizes[:i+1], nil
+		}
 	}
 	return sizes, nil
 }
