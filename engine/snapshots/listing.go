@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 
 	"github.com/containerd/containerd/v2/core/content"
@@ -111,20 +112,20 @@ func listingCompressor(ctx context.Context, cs content.Store, compress compressi
 		if err != nil {
 			return nil, err
 		}
-		pr, pw := io.Pipe()
-		w := &listingWriter{pw: pw, done: make(chan struct{})}
+		buf := newSplitBuffer(splitBuffered)
+		w := &listingWriter{buf: buf, done: make(chan struct{})}
 		go func() {
 			defer close(w.done)
-			split, err := splitLayerTar(ctx, cs, pr, listing, compress, contentType, ref)
+			split, err := splitLayerTar(ctx, cs, buf, listing, compress, contentType, ref)
 			if err == nil {
 				// The tar reader stops at the archive's end; what the
 				// differ writes after it is read, so its writes end.
-				_, err = io.Copy(io.Discard, pr)
+				_, err = io.Copy(io.Discard, buf)
 			}
 			if cerr := listing.Close(); err == nil {
 				err = cerr
 			}
-			pr.CloseWithError(err)
+			buf.CloseWithError(err)
 			listed, w.err = split, err
 		}()
 		return w, nil
@@ -134,17 +135,140 @@ func listingCompressor(ctx context.Context, cs content.Store, compress compressi
 // listingWriter is a listing compressor's writer: the layer's tar goes
 // through it to the split, and Close waits for the split to end.
 type listingWriter struct {
-	pw   *io.PipeWriter
+	buf  *splitBuffer
 	done chan struct{}
 	err  error
 }
 
-func (w *listingWriter) Write(p []byte) (int, error) { return w.pw.Write(p) }
+func (w *listingWriter) Write(p []byte) (int, error) { return w.buf.Write(p) }
 
 func (w *listingWriter) Close() error {
-	_ = w.pw.Close()
+	w.buf.Close()
 	<-w.done
 	return w.err
+}
+
+// splitBuffered is how many bytes of a layer's tar its differ may write
+// ahead of its split. The differ walks the layer and reads its files one at a
+// time, and the split stops reading the tar while it writes a file too large
+// to hold or waits for room to hold one: tied by a pipe, each waits for the
+// other. On a layer of about a hundred thousand files, 16 MiB between them
+// took about a fifth off its build, and four times as much a few points more.
+const splitBuffered = 16 << 20
+
+// splitBuffer carries a layer's tar from its differ to its split, as a pipe
+// does, holding up to max bytes written and not yet read: a Write returns
+// once its bytes are held, and waits only for room. The bytes are held in
+// pieces from layerDigestPieceBuffers, taken as writes need them and given
+// back as they are read, so a small layer's tar takes one piece. Close ends
+// the writes: reads take what is held, then io.EOF. CloseWithError ends the
+// reads: a write waiting or made after it returns its error.
+type splitBuffer struct {
+	mu   sync.Mutex
+	cond *sync.Cond
+	max  int
+	// pieces are what is held, oldest first: off bytes of the first are
+	// read, and held counts the rest of them all.
+	pieces [][]byte
+	off    int
+	held   int
+	closed bool
+	err    error
+}
+
+func newSplitBuffer(max int) *splitBuffer {
+	b := &splitBuffer{max: max}
+	b.cond = sync.NewCond(&b.mu)
+	return b
+}
+
+func (b *splitBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	n := 0
+	for len(p) > 0 {
+		for b.held >= b.max && b.err == nil {
+			b.cond.Wait()
+		}
+		if b.err != nil {
+			return n, b.err
+		}
+		last := len(b.pieces) - 1
+		if last < 0 || len(b.pieces[last]) == cap(b.pieces[last]) {
+			b.pieces = append(b.pieces, (*layerDigestPieceBuffers.Get().(*[]byte))[:0])
+			last++
+		}
+		piece := b.pieces[last]
+		take := min(len(p), cap(piece)-len(piece), b.max-b.held)
+		b.pieces[last] = append(piece, p[:take]...)
+		p = p[take:]
+		n += take
+		b.held += take
+		b.cond.Broadcast()
+	}
+	return n, nil
+}
+
+func (b *splitBuffer) Read(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for b.held == 0 && !b.closed && b.err == nil {
+		b.cond.Wait()
+	}
+	if b.err != nil {
+		return 0, b.err
+	}
+	if b.held == 0 {
+		return 0, io.EOF
+	}
+	n := 0
+	for n < len(p) && b.held > 0 {
+		piece := b.pieces[0]
+		c := copy(p[n:], piece[b.off:])
+		n += c
+		b.off += c
+		b.held -= c
+		if b.off == len(piece) && (len(b.pieces) > 1 || len(piece) == cap(piece)) {
+			b.release()
+		}
+	}
+	b.cond.Broadcast()
+	return n, nil
+}
+
+// release gives the first piece back, once all of it is read.
+func (b *splitBuffer) release() {
+	piece := b.pieces[0][:0]
+	layerDigestPieceBuffers.Put(&piece)
+	b.pieces[0] = nil
+	b.pieces = b.pieces[1:]
+	b.off = 0
+}
+
+// Close ends the writes.
+func (b *splitBuffer) Close() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.closed = true
+	b.cond.Broadcast()
+}
+
+// CloseWithError ends the reads with err, io.ErrClosedPipe if nil, and gives
+// back what is held.
+func (b *splitBuffer) CloseWithError(err error) {
+	if err == nil {
+		err = io.ErrClosedPipe
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.err == nil {
+		b.err = err
+	}
+	for len(b.pieces) > 0 {
+		b.release()
+	}
+	b.held = 0
+	b.cond.Broadcast()
 }
 
 const (
