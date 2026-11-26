@@ -248,6 +248,37 @@ func (p *PreparedValueMerge) Unretained(ordinals ...TransferOrdinal) {
 	}
 }
 
+// testMergedRecipes, when set, is called after each committed merge, still
+// under the commit's hold of egraphMu, with the frame each entry that took a
+// record holds and the recipe the merge landed the record by: a test checks
+// that the frame keeps that recipe, and that deriving the frame again from
+// the graph as the commit leaves it gives it. It must not take egraphMu.
+var testMergedRecipes func(c *Cache, landed []mergedRecipe)
+
+// mergedRecipe is an installed record's frame, and the recipe its merge
+// landed it by (testMergedRecipes).
+type mergedRecipe struct {
+	frame  *ResultCall
+	recipe digest.Digest
+}
+
+// checkMergedRecipesForTests calls testMergedRecipes, when set, with the
+// records the commit installed. Requires egraphMu, which the commit holds.
+func (c *Cache) checkMergedRecipesForTests(commit *valueMergeCommit) {
+	if testMergedRecipes == nil {
+		return
+	}
+	var landed []mergedRecipe
+	for _, row := range commit.rows {
+		if row.action.installs() {
+			landed = append(landed, mergedRecipe{frame: row.res.loadResultCall(), recipe: row.plan.recipe})
+		}
+	}
+	if len(landed) > 0 {
+		testMergedRecipes(c, landed)
+	}
+}
+
 // errValueMergeEnded is CommitValueMerge's answer for a prepared merge whose
 // terminal action has already run.
 var errValueMergeEnded = errors.New("commit value merge: the prepared merge has ended")
@@ -445,6 +476,7 @@ func (c *Cache) CommitValueMerge(ctx context.Context, p *PreparedValueMerge) (Me
 				merged++
 			}
 		}
+		c.checkMergedRecipesForTests(commit)
 		c.egraphMu.Unlock()
 		c.finishMergeReply(&reply, parts)
 		c.queueStoredBodies(stored)
@@ -3453,6 +3485,12 @@ func (c *Cache) installMergedRecordLocked(res *sharedResult, row *mergeRow, orig
 	res.payloadMu.Unlock()
 	res.description = row.plan.description
 	res.recordType = row.plan.recordType
+	// The frame's recipe is the one the merge derived as it prepared the
+	// record, which it lands the record by. The relocated frame is a copy
+	// without it, and deriving it again reads each input's entry under
+	// egraphMu: on the Cloud an input's frame is held in its stored body,
+	// and the body worker derives the recipe of every frame it compresses.
+	rec.Call.knowRecipeDigest(row.plan.recipe)
 	res.storeResultCall(rec.Call)
 	// The record's frame has taken none of the content digests spans taught
 	// the entry before it arrived (an entry known only through holdings,
@@ -3814,7 +3852,14 @@ func (c *Cache) finishMergedReplacement(ctx context.Context, r mergeReplacement)
 func (c *Cache) bindMergedFrameLocked(res *sharedResult, published bool) error {
 	frame := res.loadResultCall()
 	if published && frame != nil {
-		frame = frame.clone()
+		// Binding changes no recipe: the copy keeps the one the frame was
+		// given (installMergedRecordLocked) before it is published, so that
+		// no reader derives it again.
+		bound := frame.clone()
+		if recipe, derived, err := frame.derivedRecipeDigest(); derived && err == nil {
+			bound.knowRecipeDigest(recipe)
+		}
+		frame = bound
 	}
 	err := walkTransferCalls(frame, func(*ResultCall) error { return nil }, func(ref *ResultCallRef) error {
 		ref.shared = c.resultsByID[sharedResultID(ref.ResultID)]
