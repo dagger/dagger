@@ -137,13 +137,30 @@ func walkMemoTransferPayloads(env *PersistedResultEnvelope, frame *ResultCall, l
 	if err != nil {
 		return err
 	}
-	if err := walkScopedTransferPayloads(&next, frame, scopes, nil, memos, visit); err != nil {
+	if err := walkScopedTransferPayloads(&next, frame, scopes, nil, memos, true, visit); err != nil {
 		return err
 	}
 	*env = next
 	return nil
 }
-func walkScopedTransferPayloads(env *PersistedResultEnvelope, frame *ResultCall, scopes *snapshotLinkScopes, path PersistedRefPath, memos payloadMemos, visit func(PersistedObjectFamily, PersistedPayloadVisit) (json.RawMessage, error)) error {
+
+// readMemoTransferPayloads visits each payload of env as
+// walkMemoTransferPayloads does, with its memo from memos, for a reader that
+// changes none: it walks env itself, which it neither copies nor writes, so
+// that a read of a record costs no copy of its payloads.
+func readMemoTransferPayloads(env *PersistedResultEnvelope, frame *ResultCall, links []PersistedSnapshotRefLink, memos payloadMemos, read func(PersistedObjectFamily, PersistedPayloadVisit) error) error {
+	scopes, err := partitionSnapshotLinks(*env, links)
+	if err != nil {
+		return err
+	}
+	return walkScopedTransferPayloads(env, frame, scopes, nil, memos, false, func(family PersistedObjectFamily, v PersistedPayloadVisit) (json.RawMessage, error) {
+		return nil, read(family, v)
+	})
+}
+
+// walkScopedTransferPayloads visits each payload of env, and with rewrite
+// puts the payload each visit returns in its place.
+func walkScopedTransferPayloads(env *PersistedResultEnvelope, frame *ResultCall, scopes *snapshotLinkScopes, path PersistedRefPath, memos payloadMemos, rewrite bool, visit func(PersistedObjectFamily, PersistedPayloadVisit) (json.RawMessage, error)) error {
 	switch env.Kind {
 	case persistedResultKindObject:
 		family, ok := PersistedObjectFamilyByName(env.ObjectCodec)
@@ -154,14 +171,16 @@ func walkScopedTransferPayloads(env *PersistedResultEnvelope, frame *ResultCall,
 		if err != nil {
 			return fmt.Errorf("codec %s at %s: %w", family.Name, path, err)
 		}
-		env.ObjectJSON = raw
+		if rewrite {
+			env.ObjectJSON = raw
+		}
 	case persistedResultKindList:
 		for i := range env.Items {
 			childCall := frame
 			if frame != nil {
 				childCall = persistedListItemCall(frame, i+1)
 			}
-			if err := walkScopedTransferPayloads(&env.Items[i], childCall, scopes, path.Field("items").Index(i), memos, visit); err != nil {
+			if err := walkScopedTransferPayloads(&env.Items[i], childCall, scopes, path.Field("items").Index(i), memos, rewrite, visit); err != nil {
 				return err
 			}
 		}
@@ -175,15 +194,15 @@ func mapTransferredOutputs(rec PersistedRecord) ([]CapturedCodecOutput, error) {
 
 func mapMemoTransferredOutputs(rec PersistedRecord, memos payloadMemos) ([]CapturedCodecOutput, error) {
 	var outputs []CapturedCodecOutput
-	err := walkMemoTransferPayloads(&rec.Envelope, rec.Call, rec.SnapshotLinks, memos, func(family PersistedObjectFamily, v PersistedPayloadVisit) (json.RawMessage, error) {
+	err := readMemoTransferPayloads(&rec.Envelope, rec.Call, rec.SnapshotLinks, memos, func(family PersistedObjectFamily, v PersistedPayloadVisit) error {
 		if family.Transfer != nil {
 			mapped, err := family.Transfer.MapSnapshotParts(v)
 			if err != nil {
-				return nil, err
+				return err
 			}
 			outputs = append(outputs, mapped...)
 		}
-		return v.Payload, nil
+		return nil
 	})
 	return outputs, err
 }
@@ -349,13 +368,11 @@ func validateMemoTransferRecordContent(rec PersistedRecord, deps []uint64, memos
 }
 
 func validateMemoTransferPayloads(rec PersistedRecord, memos payloadMemos) error {
-	return walkMemoTransferPayloads(&rec.Envelope, rec.Call, nil, memos, func(family PersistedObjectFamily, v PersistedPayloadVisit) (json.RawMessage, error) {
+	return readMemoTransferPayloads(&rec.Envelope, rec.Call, nil, memos, func(family PersistedObjectFamily, v PersistedPayloadVisit) error {
 		if family.Transfer != nil {
-			if err := family.Transfer.ValidateForeign(v); err != nil {
-				return nil, err
-			}
+			return family.Transfer.ValidateForeign(v)
 		}
-		return v.Payload, nil
+		return nil
 	})
 }
 
