@@ -114,6 +114,57 @@ func TestClassJoinStampsOnlyTheClassItJoined(t *testing.T) {
 	require.LessOrEqual(t, c.resultsByID[bystander].changedAt, start, "the third class gained nothing to borrow")
 }
 
+// holds reports whether an entry of side holds a part (holdsAnyPartLocked).
+func (c *joinTestCache) holds(side *idSet[sharedResultID]) bool {
+	for id := range side.All() {
+		if c.holdsAnyPartLocked(c.resultsByID[id]) {
+			return true
+		}
+	}
+	return false
+}
+
+// lends reports whether an entry of side stores a part.
+func (c *joinTestCache) lends(side *idSet[sharedResultID]) bool {
+	for id := range side.All() {
+		if len(c.resultsByID[id].storedParts) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// checkedJoin joins the classes rooted at ra and rb, requires the join to
+// name every entry the exact rule names, and adds those to wantNamed and the
+// entries the rule stamps to wantStamped. It returns how many entries the
+// rule named and how many the join named.
+func (c *joinTestCache) checkedJoin(t *testing.T, seed uint64, ra, rb eqClassID, wantNamed, wantStamped map[sharedResultID]bool) (exact, named int) {
+	t.Helper()
+	dst, src := c.outputEqClassResults[ra], c.outputEqClassResults[rb]
+	joinNames := map[sharedResultID]bool{}
+	for _, side := range []struct{ names, other *idSet[sharedResultID] }{{dst, src}, {src, dst}} {
+		otherHolds, otherLends := c.holds(side.other), c.lends(side.other)
+		for id := range side.names.All() {
+			if otherHolds {
+				joinNames[id] = true
+				wantNamed[id] = true
+			}
+			if otherLends {
+				wantStamped[id] = true
+			}
+		}
+	}
+	got := c.join(ra, rb)
+	gotNamed := map[sharedResultID]bool{}
+	for _, id := range got {
+		gotNamed[id] = true
+	}
+	for id := range joinNames {
+		require.True(t, gotNamed[id], "seed %d: entry %d gained a holder in a join, and the join doesn't name it", seed, id)
+	}
+	return len(joinNames), len(got)
+}
+
 // A join of two classes marks, for readers and for the stamps of the bundles
 // that borrow from the class, at least what each side gains from the other
 // (markJoinLocked): by the exact rule, a side's entries are named when the
@@ -121,9 +172,9 @@ func TestClassJoinStampsOnlyTheClassItJoined(t *testing.T) {
 // absent, and stamped when the other side stores one. Over random classes of
 // entries, some in two classes, and random writes, joins, parts stored and
 // dropped, entries leaving and holds ending, every entry the exact rule
-// names at a join is named by that join, and every entry it stamps has a
-// stamp past the write's start as soon as a hold of the write ends, unless
-// it has left since.
+// names at a join is named by that join and in the change the write hands
+// back, and every entry it stamps has a stamp past the hold's start as soon
+// as the hold ends, unless it has left since.
 func TestClassJoinMarksWhatEachSideGains(t *testing.T) {
 	t.Parallel()
 	var exact, named int
@@ -179,25 +230,12 @@ func checkClassJoinMarks(t *testing.T, seed uint64) (exact, named int) {
 		}
 		return out
 	}
-	holds := func(side *idSet[sharedResultID]) bool {
-		for id := range side.All() {
-			if c.holdsAnyPartLocked(c.resultsByID[id]) {
-				return true
-			}
-		}
-		return false
-	}
-	lends := func(side *idSet[sharedResultID]) bool {
-		for id := range side.All() {
-			if len(c.resultsByID[id].storedParts) > 0 {
-				return true
-			}
-		}
-		return false
-	}
 	for range 3 + rng.IntN(4) {
 		start := c.writes
 		wantStamped := map[sharedResultID]bool{}
+		// wantNamed are the entries the write's joins must name, in the
+		// change it hands back as in each join's own names.
+		wantNamed := map[sharedResultID]bool{}
 		// checkStamps requires, as a hold of the write ends, every entry a
 		// join of the write must stamp to be stamped.
 		checkStamps := func() {
@@ -216,30 +254,9 @@ func checkClassJoinMarks(t *testing.T, seed uint64) (exact, named int) {
 				}
 				i := rng.IntN(len(roots))
 				j := (i + 1 + rng.IntN(len(roots)-1)) % len(roots)
-				ra, rb := roots[i], roots[j]
-				dst, src := c.outputEqClassResults[ra], c.outputEqClassResults[rb]
-				wantNamed := map[sharedResultID]bool{}
-				for _, side := range []struct{ names, other *idSet[sharedResultID] }{{dst, src}, {src, dst}} {
-					otherHolds, otherLends := holds(side.other), lends(side.other)
-					for id := range side.names.All() {
-						if otherHolds {
-							wantNamed[id] = true
-						}
-						if otherLends {
-							wantStamped[id] = true
-						}
-					}
-				}
-				exact += len(wantNamed)
-				got := c.join(ra, rb)
-				named += len(got)
-				gotNamed := map[sharedResultID]bool{}
-				for _, id := range got {
-					gotNamed[id] = true
-				}
-				for id := range wantNamed {
-					require.True(t, gotNamed[id], "seed %d: entry %d gained a holder in a join, and the join doesn't name it", seed, id)
-				}
+				e, n := c.checkedJoin(t, seed, roots[i], roots[j], wantNamed, wantStamped)
+				exact += e
+				named += n
 			case op < 14:
 				ids := entries()
 				id := ids[rng.IntN(len(ids))]
@@ -259,13 +276,24 @@ func checkClassJoinMarks(t *testing.T, seed uint64) (exact, named int) {
 				c.leave(ids[rng.IntN(len(ids))])
 			default:
 				// A hold of the write ends: its stamps apply, its marks stay.
+				// Joins after it must stamp again, past it.
 				c.stampPendingLocked()
 				checkStamps()
+				start, wantStamped = c.writes, map[sharedResultID]bool{}
 			}
 		}
 		var change RemoteChange
 		c.takeChangesLocked(&change)
 		checkStamps()
+		handed := map[uint64]bool{}
+		for _, id := range change.Entries {
+			handed[id] = true
+		}
+		for id := range wantNamed {
+			if c.resultsByID[id] != nil {
+				require.True(t, handed[uint64(id)], "seed %d: entry %d gained a holder in a join, and the change handed back doesn't name it", seed, id)
+			}
+		}
 	}
 	return exact, named
 }
