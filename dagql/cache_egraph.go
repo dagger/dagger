@@ -185,7 +185,7 @@ func (c *Cache) initEgraphLocked() {
 		c.eqClassToDigests = make(map[eqClassID]*idSet[string])
 	}
 	if c.eqClassExtraDigests == nil {
-		c.eqClassExtraDigests = make(map[eqClassID]map[call.ExtraDigest]struct{})
+		c.eqClassExtraDigests = make(map[eqClassID][]call.ExtraDigest)
 	}
 	if c.inputEqClassToTerms == nil {
 		c.inputEqClassToTerms = make(map[eqClassID]*idSet[egraphTermID])
@@ -353,16 +353,8 @@ func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID, moved *[]egraphTerm
 		delete(c.eqClassToDigests, rb)
 	}
 
-	dstExtraDigests := c.eqClassExtraDigests[ra]
-	srcExtraDigests := c.eqClassExtraDigests[rb]
-	if len(srcExtraDigests) > 0 {
-		if dstExtraDigests == nil {
-			dstExtraDigests = make(map[call.ExtraDigest]struct{}, len(srcExtraDigests))
-			c.eqClassExtraDigests[ra] = dstExtraDigests
-		}
-		for extra := range srcExtraDigests {
-			dstExtraDigests[extra] = struct{}{}
-		}
+	if srcExtraDigests := c.eqClassExtraDigests[rb]; len(srcExtraDigests) > 0 {
+		c.eqClassExtraDigests[ra] = withExtraDigests(c.eqClassExtraDigests[ra], srcExtraDigests...)
 		delete(c.eqClassExtraDigests, rb)
 	}
 
@@ -1357,7 +1349,7 @@ func (c *Cache) hitTeachesNothingLocked(
 			if root == 0 {
 				continue
 			}
-			if _, ok := c.eqClassExtraDigests[root][extra]; !ok {
+			if !slices.Contains(c.eqClassExtraDigests[root], extra) {
 				return false
 			}
 		}
@@ -1967,10 +1959,6 @@ func (c *Cache) addResultExtraDigestsLocked(resID sharedResultID, frames ...*Res
 	for outputEqID := range c.outputEqClassesForResultLocked(resID) {
 		c.noteSavedClassLocked(outputEqID)
 		extras := c.eqClassExtraDigests[outputEqID]
-		if extras == nil {
-			extras = make(map[call.ExtraDigest]struct{})
-			c.eqClassExtraDigests[outputEqID] = extras
-		}
 		for _, frame := range frames {
 			if frame == nil {
 				continue
@@ -1979,11 +1967,27 @@ func (c *Cache) addResultExtraDigestsLocked(resID sharedResultID, frames ...*Res
 				if extra.Digest == "" {
 					continue
 				}
-				extras[extra] = struct{}{}
+				extras = withExtraDigests(extras, extra)
 			}
+		}
+		if len(extras) > 0 {
+			c.eqClassExtraDigests[outputEqID] = extras
 		}
 	}
 }
+
+// withExtraDigests returns extras with each of adds it lacks appended. A
+// class's extra digests are a short list, nearly always of one content
+// digest, where a Go map would take a header and a group of eight slots.
+func withExtraDigests(extras []call.ExtraDigest, adds ...call.ExtraDigest) []call.ExtraDigest {
+	for _, add := range adds {
+		if !slices.Contains(extras, add) {
+			extras = append(extras, add)
+		}
+	}
+	return extras
+}
+
 
 func (c *Cache) outputEqClassesForResultLocked(resID sharedResultID) map[eqClassID]struct{} {
 	classes := c.resultOutputEqClasses[resID]

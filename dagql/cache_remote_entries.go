@@ -1883,7 +1883,7 @@ func (c *Cache) remoteIdentityTeachesNothingLocked(entry *sharedResult, recipe, 
 		}
 	}
 	if content != "" {
-		if _, ok := c.eqClassExtraDigests[root][call.ExtraDigest{Digest: content, Label: call.ExtraDigestLabelContent}]; !ok {
+		if !slices.Contains(c.eqClassExtraDigests[root], call.ExtraDigest{Digest: content, Label: call.ExtraDigestLabelContent}) {
 			return false
 		}
 	}
@@ -1941,14 +1941,7 @@ func (c *Cache) writeRemoteIdentityLocked(ctx context.Context, entry *sharedResu
 	c.addResultOutputEqClassLocked(entry.id, outputEqID)
 	if len(extras) > 0 {
 		outputEqID = c.findEqClassLocked(outputEqID)
-		classExtras := c.eqClassExtraDigests[outputEqID]
-		if classExtras == nil {
-			classExtras = make(map[call.ExtraDigest]struct{})
-			c.eqClassExtraDigests[outputEqID] = classExtras
-		}
-		for _, extra := range extras {
-			classExtras[extra] = struct{}{}
-		}
+		c.eqClassExtraDigests[outputEqID] = withExtraDigests(c.eqClassExtraDigests[outputEqID], extras...)
 		c.noteSavedClassLocked(outputEqID)
 	}
 	if term == nil || term.Self == "" {

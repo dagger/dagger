@@ -152,15 +152,10 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			}
 			digests.Insert(row.Digest)
 			if row.Label != "" {
-				extras := c.eqClassExtraDigests[eqID]
-				if extras == nil {
-					extras = make(map[call.ExtraDigest]struct{})
-					c.eqClassExtraDigests[eqID] = extras
-				}
-				extras[call.ExtraDigest{
+				c.eqClassExtraDigests[eqID] = withExtraDigests(c.eqClassExtraDigests[eqID], call.ExtraDigest{
 					Digest: digest.Digest(row.Digest),
 					Label:  row.Label,
-				}] = struct{}{}
+				})
 			}
 		}
 

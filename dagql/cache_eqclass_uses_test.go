@@ -305,7 +305,7 @@ func testCompactEqClassesLocked(c *Cache) {
 		}
 	}
 	newEqClassToDigests := make(map[eqClassID]*idSet[string], len(oldRoots))
-	newEqClassExtraDigests := make(map[eqClassID]map[call.ExtraDigest]struct{}, len(oldRoots))
+	newEqClassExtraDigests := make(map[eqClassID][]call.ExtraDigest, len(oldRoots))
 	newEgraphDigestToClass := make(map[string]eqClassID)
 	for _, root := range oldRoots {
 		if digests := c.eqClassToDigests[root]; digests.Size() > 0 {
@@ -315,7 +315,7 @@ func testCompactEqClassesLocked(c *Cache) {
 			newEqClassToDigests[root] = digests.Clone()
 		}
 		if extras := c.eqClassExtraDigests[root]; len(extras) > 0 {
-			newEqClassExtraDigests[root] = maps.Clone(extras)
+			newEqClassExtraDigests[root] = slices.Clone(extras)
 		}
 	}
 	newInputEqClassToTerms := make(map[eqClassID]*idSet[egraphTermID])
