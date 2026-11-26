@@ -3,6 +3,7 @@ package dagql
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"slices"
 	"testing"
 	"time"
@@ -72,8 +73,10 @@ type splitPartRecipient struct {
 	ctx    context.Context
 	engine *Cache
 	srv    *Server
-	// landed are the Cloud entries whose records the engine merged.
-	landed []uint64
+	// landed are the Cloud entries whose records the engine merged, and
+	// numbers the engine's entry for each Cloud entry a merge sent it.
+	landed  []uint64
+	numbers map[uint64]uint64
 }
 
 func (test *splitPartTest) recipient(t *testing.T, cache CacheID) *splitPartRecipient {
@@ -84,7 +87,7 @@ func (test *splitPartTest) recipient(t *testing.T, cache CacheID) *splitPartReci
 			return NewResultForCall(&transferTestValue{Text: "receiver"}, receiverTestFrame("b"))
 		})
 	require.NoError(t, err)
-	return &splitPartRecipient{test: test, cache: cache, ctx: ctx, engine: engine, srv: srv}
+	return &splitPartRecipient{test: test, cache: cache, ctx: ctx, engine: engine, srv: srv, numbers: map[uint64]uint64{}}
 }
 
 // merge merges the bundle, which must commit, and records what it landed.
@@ -96,23 +99,26 @@ func (r *splitPartRecipient) merge(t *testing.T, bundle ValueBundle) {
 	for _, value := range reply.Values {
 		sent := bundle.Values[value.Ordinal-1]
 		heldTestHold(t, r.test.cloudCtx, r.test.cloud, r.cache, value.Number, sent.SenderNumber, 0)
+		r.numbers[sent.SenderNumber] = value.Number
 		if sent.Held == "" {
 			r.landed = append(r.landed, sent.SenderNumber)
 		}
 	}
 }
 
-// hits reports whether client b's call outer on its own receiver hits.
+// hits reports whether client b's call outer on its own receiver hits the
+// engine's inner. A miss runs nothing that the engine keeps.
 func (r *splitPartRecipient) hits(t *testing.T) bool {
 	t.Helper()
-	ran := false
-	_, err := r.engine.GetOrInitCall(r.ctx, "test-session", r.srv, &CallRequest{ResultCall: receiverTestCall("b"), IsPersistable: true},
-		func(context.Context) (AnyResult, error) {
-			ran = true
-			return NewResultForCall(&transferTestValue{Text: "ran again"}, receiverTestCall("b"))
-		})
+	res, err := r.engine.GetOrInitCall(r.ctx, "test-session", r.srv, &CallRequest{ResultCall: receiverTestCall("b"), IsPersistable: true},
+		func(context.Context) (AnyResult, error) { return nil, errors.New("the call missed") })
+	if err != nil {
+		return false
+	}
+	number, err := r.engine.PersistedResultID(res)
 	require.NoError(t, err)
-	return !ran
+	require.Equal(t, r.numbers[r.test.number], number, "the call hits the engine's inner")
+	return true
 }
 
 // bundle builds a bundle of roots for the recipient and checks that its

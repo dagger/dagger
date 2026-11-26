@@ -782,9 +782,11 @@ func TestStoredLowerPartLeavesTheRootWhatFitsTheLimit(t *testing.T) {
 }
 
 // The merge a split root keeps carries what its lower part leaves within the
-// limit, outputs counted once each: here the chain's records share a chain
-// of layers, which the first of them in the bundle lists, and a cut that
-// sends it ahead leaves a later one in the root's merge to list it again.
+// limit, outputs counted as that merge lists them: here the chain's records
+// share a chain of layers, which the first of them in the bundle lists, and
+// a cut that sends it ahead leaves a later one in the root's merge to list it
+// again; and the first packs the layers apart, so which pack's address the
+// merge names first depends on what it keeps.
 // For every limit under the root's whole price, the root's merge, once the
 // recipient holds the part, is priced within it with the bundle's calls.
 func TestStoredLowerPartLeavesTheRootsMergeWithinTheLimit(t *testing.T) {
@@ -817,8 +819,19 @@ func TestStoredLowerPartLeavesTheRootsMergeWithinTheLimit(t *testing.T) {
 	for i := range shared {
 		shared[i] = storedLayersTestLayer(fmt.Sprint("within-shared-", i), fmt.Sprint("shared layer ", i))
 	}
-	for _, i := range []int{1, 3, 5, 6} {
-		stored, _, err := cloud.SetStoredPart(ctx, cloudOf(chain[i]), storedLayersTestPart("snapshot", shared, nil), 0)
+	// The first of them packs the layers apart from the others: the merge
+	// that lists it first names each blob's address in its pack, and gives
+	// each later output another.
+	for k, i := range []int{1, 3, 5, 6} {
+		pack := testDigest("within-pack-b")
+		if k == 0 {
+			pack = testDigest("within-pack-a")
+		}
+		packs := map[digest.Digest]digest.Digest{}
+		for _, layer := range shared {
+			packs[layer.Descriptor.Digest] = pack
+		}
+		stored, _, err := cloud.SetStoredPart(ctx, cloudOf(chain[i]), storedLayersTestPart("snapshot", shared, packs), 0)
 		require.NoError(t, err)
 		require.True(t, stored)
 	}
