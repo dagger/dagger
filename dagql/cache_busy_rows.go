@@ -3,8 +3,6 @@ package dagql
 import (
 	"context"
 	"sync"
-
-	"github.com/dagger/dagger/engine/wcprof"
 )
 
 // busyEnds are the watches of the ends of what keeps the cache's rows busy
@@ -75,13 +73,13 @@ func (c *Cache) busyEnded(row sharedResultID) {
 // during the capture.
 func (c *Cache) BusyRows(ctx context.Context, rows []uint64) []uint64 {
 	held := make([]*sharedResult, 0, len(rows))
-	wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
+	read := c.readGraph(ctx, workRemote)
 	for _, number := range rows {
 		if res := c.resultsByID[sharedResultID(number)]; res != nil {
 			held = append(held, res)
 		}
 	}
-	c.egraphMu.RUnlock()
+	read.Unlock()
 	var busy []uint64
 	for _, res := range held {
 		if res.attachmentState() == resultAttachmentOpen {

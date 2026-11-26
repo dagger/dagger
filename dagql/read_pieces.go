@@ -1,6 +1,10 @@
 package dagql
 
-import "time"
+import (
+	"time"
+
+	"github.com/dagger/dagger/engine/wcprof"
+)
 
 // readPieceSteps is how many steps a read in pieces (readInPieces) takes in
 // one hold of egraphMu: a count, not a time, so that a read is the same on
@@ -17,6 +21,11 @@ type readPieces struct {
 	c     *Cache
 	size  int
 	steps int
+	// kind is the kind of work the read is for, and read the hold of the
+	// piece in progress: each piece is a hold of its own
+	// (ObserveGraphReadHolds).
+	kind wcprof.LockHolder
+	read wcprof.ReadHold
 	// hold, when set, bounds a piece by its time instead of its steps: a
 	// piece ends at the first step after it has held egraphMu that long
 	// (readInPiecesFor). yielded counts the times the read let egraphMu go.
@@ -33,15 +42,15 @@ type readPieces struct {
 	held bool
 }
 
-// readInPieces takes egraphMu for reading, for a read in pieces: step after
-// each step of the read, and done at its end.
-func (c *Cache) readInPieces() *readPieces {
+// readInPieces takes egraphMu for reading as kind of work, for a read in
+// pieces: step after each step of the read, and done at its end.
+func (c *Cache) readInPieces(kind wcprof.LockHolder) *readPieces {
 	size := c.readPieceSize
 	if size <= 0 {
 		size = readPieceSteps
 	}
-	c.egraphMu.RLock()
-	return &readPieces{c: c, size: size, locked: time.Now(), held: true}
+	read := c.egraphMu.RLockAs(kind)
+	return &readPieces{c: c, size: size, kind: kind, read: read, locked: time.Now(), held: true}
 }
 
 // readInPiecesFor takes egraphMu for reading, for a read in pieces each of
@@ -50,8 +59,8 @@ func (c *Cache) readInPieces() *readPieces {
 // on a busy or slow machine, and under writers that always wait, the read
 // still reads hold between two of their holds. A cache whose tests set
 // readPieceSize reads in pieces of that many steps instead.
-func (c *Cache) readInPiecesFor(hold time.Duration) *readPieces {
-	r := c.readInPieces()
+func (c *Cache) readInPiecesFor(kind wcprof.LockHolder, hold time.Duration) *readPieces {
+	r := c.readInPieces(kind)
 	if c.readPieceSize <= 0 {
 		r.hold = hold
 	}
@@ -91,7 +100,7 @@ func (r *readPieces) without(f func()) {
 	if r.c.testReadPieceYielded != nil {
 		r.c.testReadPieceYielded()
 	}
-	r.c.egraphMu.RLock()
+	r.read = r.c.egraphMu.RLockAs(r.kind)
 	r.held = true
 	r.locked = time.Now()
 	r.yielded++
@@ -117,7 +126,7 @@ func (r *readPieces) done() {
 func (r *readPieces) release() {
 	hold := time.Since(r.locked)
 	r.held = false
-	r.c.egraphMu.RUnlock()
+	r.read.Unlock()
 	if r.report != nil {
 		r.report(hold)
 	}

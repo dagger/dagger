@@ -9,10 +9,11 @@ import (
 )
 
 // cacheWork is a kind of work the cache does, for its diagnostics: the path
-// a first use of a merged record came by (FirstUseStats.Paths), and the kind
+// a first use of a merged record came by (FirstUseStats.Paths), the kind
 // of writer holding the graph lock when a lookup waits for it
-// (LookupLockWaits). Work under a context carries its kind (withCacheWork);
-// work that carries none is workOther.
+// (LookupLockWaits), and the kind of each hold of the graph lock
+// (ObserveGraphHolds, ObserveGraphReadHolds). Work under a context carries
+// its kind (withCacheWork); work that carries none is workOther.
 type cacheWork uint8
 
 const (
@@ -50,7 +51,7 @@ const (
 	// workRemote is the remote cache service's writes of engines' holdings
 	// and of the store's parts, and its collections of them, that take the
 	// graph lock themselves: those outside a hold the service took
-	// (HoldRemoteWrites).
+	// (HoldRemoteWrites); and its reads of them, and of entries' facts.
 	workRemote
 	// workBody is the body worker's installing of the stored bodies of
 	// entries a merge or a restore landed, and of the content digests
@@ -79,9 +80,9 @@ var cacheWorkNames = [numCacheWork]string{
 
 func (w cacheWork) String() string { return cacheWorkNames[w] }
 
-// graphHolders are the kinds of work, as the graph lock's writers name
-// themselves (wcprof.WriteLockAs), by cacheWork. Their names are the
-// cacheWork's.
+// graphHolders are the kinds of work, as the graph lock's holders name
+// themselves (wcprof.WriteLockAs, wcprof.ReadLockAs), by cacheWork. Their
+// names are the cacheWork's.
 var graphHolders = func() (holders [numCacheWork]wcprof.LockHolder) {
 	for w := workOther + 1; w < numCacheWork; w++ {
 		holders[w] = wcprof.NewLockHolder(w.String())
@@ -116,6 +117,20 @@ func (c *Cache) ObserveGraphHolds(f func(work wcprof.LockHolder, waited, held ti
 	return c.egraphMu.ObserveHolds(f)
 }
 
+// ObserveGraphReadHolds calls f with each hold of the graph lock for
+// reading as it ends, until the returned stop is called: the kind of work
+// it held the lock for, how long it waited to take the lock, and how long it
+// held it. The kind is the one the reader's context names
+// (wcprof.WithLockHolder), so that a caller can tell its own kinds of reads
+// apart, and otherwise the cache's kind of work, whose name is its
+// cacheWork's. A read in pieces is a hold for each piece. f runs in the
+// releasing goroutine once it has let the lock go, in many at once, so it
+// must be safe for that, and should cost little: there are many more reads
+// than writes.
+func (c *Cache) ObserveGraphReadHolds(f func(work wcprof.LockHolder, waited, held time.Duration)) (stop func()) {
+	return c.egraphMu.ObserveReadHolds(f)
+}
+
 type cacheWorkKey struct{}
 
 // withCacheWork returns ctx carrying work as its kind, unless ctx already
@@ -144,10 +159,41 @@ func (c *Cache) lockGraphFor(ctx context.Context, work cacheWork) {
 	gatherGraphLockWait(ctx, wcprof.WriteLockAs(ctx, &c.egraphMu, egraphLockIdent, graphHolders[work]))
 }
 
-// readLockGraphGathered takes the graph lock for reading, adding a wait for
-// it to the waits ctx gathers (withGraphLockWaits).
-func (c *Cache) readLockGraphGathered(ctx context.Context) {
-	gatherGraphLockWait(ctx, wcprof.ReadLockWaited(ctx, &c.egraphMu, egraphLockIdent))
+// graphReader is the kind of work a read of the graph lock under ctx is
+// for: the kind ctx names (wcprof.WithLockHolder), or else the work ctx
+// carries, or otherwise when it carries none. It looks in ctx only while
+// the lock's reads are observed (ObserveGraphReadHolds), as looking costs
+// more than the read's own take of the lock; a read that begins as an
+// observer is set can name otherwise.
+func (c *Cache) graphReader(ctx context.Context, otherwise cacheWork) wcprof.LockHolder {
+	if !c.egraphMu.ObservingReads() {
+		return graphHolders[otherwise]
+	}
+	if kind, ok := wcprof.LockHolderOf(ctx); ok {
+		return kind
+	}
+	return graphHolders[cacheWorkOf(ctx, otherwise)]
+}
+
+// readGraph takes the graph lock for reading as the work ctx names, or
+// otherwise (graphReader), and returns the hold, whose Unlock lets it go.
+func (c *Cache) readGraph(ctx context.Context, otherwise cacheWork) wcprof.ReadHold {
+	h, _ := wcprof.ReadLockAs(ctx, &c.egraphMu, egraphLockIdent, c.graphReader(ctx, otherwise))
+	return h
+}
+
+// readGraphAs takes the graph lock for reading as work, for a read with no
+// context, and returns the hold, whose Unlock lets it go.
+func (c *Cache) readGraphAs(work cacheWork) wcprof.ReadHold {
+	return c.egraphMu.RLockAs(graphHolders[work])
+}
+
+// readLockGraphGathered takes the graph lock for reading as readGraph does,
+// adding a wait for it to the waits ctx gathers (withGraphLockWaits).
+func (c *Cache) readLockGraphGathered(ctx context.Context, otherwise cacheWork) wcprof.ReadHold {
+	h, lw := wcprof.ReadLockAs(ctx, &c.egraphMu, egraphLockIdent, c.graphReader(ctx, otherwise))
+	gatherGraphLockWait(ctx, lw)
+	return h
 }
 
 // lockGraphForCtx takes the graph lock for writing as the work ctx
@@ -161,10 +207,11 @@ func (c *Cache) lockGraphForCtx(ctx context.Context, otherwise cacheWork) {
 // lookupReadLockGraph takes the graph lock for reading for a call's lookup,
 // and counts a wait for it (LookupLockWaits), adding it to the waits ctx
 // gathers too (withGraphLockWaits).
-func (c *Cache) lookupReadLockGraph(ctx context.Context) {
-	lw := wcprof.ReadLockWaited(ctx, &c.egraphMu, egraphLockIdent)
+func (c *Cache) lookupReadLockGraph(ctx context.Context) wcprof.ReadHold {
+	h, lw := wcprof.ReadLockAs(ctx, &c.egraphMu, egraphLockIdent, c.graphReader(ctx, workLookup))
 	c.countLookupWait(lw)
 	gatherGraphLockWait(ctx, lw)
+	return h
 }
 
 // lookupLockGraph takes the graph lock for writing for a call's lookup, and

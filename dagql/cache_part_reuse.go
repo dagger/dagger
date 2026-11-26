@@ -57,8 +57,8 @@ func partScopeReuseKey(path PersistedRefPath) string {
 // capturePartReuse returns row's state as a demand sees it before it probes
 // a part, for recordPartReuse to compare against once the part is opened.
 func (c *Cache) capturePartReuse(row *sharedResult) partReuse {
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workPart)
+	defer read.Unlock()
 	gate := row.partGateCell().loadOrCreate()
 	gate.mu.Lock()
 	defer gate.mu.Unlock()
@@ -69,8 +69,8 @@ func (c *Cache) capturePartReuse(row *sharedResult) partReuse {
 // complete and opened, as seen when it was probed, unless row has changed
 // since: a record must never date a reopening it didn't see.
 func (c *Cache) recordPartReuse(row *sharedResult, key string, seen partReuse) bool {
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workPart)
+	defer read.Unlock()
 	if c.resultsByID[row.id] != row {
 		return false
 	}
@@ -178,8 +178,8 @@ func (c *Cache) reuseAcquiredScope(ctx context.Context, row *sharedResult, path 
 	if err != nil {
 		return false
 	}
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workPart)
+	defer read.Unlock()
 	return c.resultsByID[row.id] == row &&
 		partReusableLocked(row, keys) &&
 		c.sessionSatisfiesResourceRequirementsLocked(session, row)

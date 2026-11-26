@@ -17,7 +17,7 @@ func TestReadInPiecesEndedBetweenPiecesLetsGoOfNothing(t *testing.T) {
 	ended := make(chan struct{})
 	go func() {
 		defer close(ended)
-		hold := c.readInPieces()
+		hold := c.readInPieces(0)
 		defer hold.done()
 		hold.step()
 	}()

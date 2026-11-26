@@ -242,9 +242,9 @@ func (c *Cache) RunLazyTask(ctx context.Context, receiver AnyResult, key LazyGro
 		return err
 	}
 	if op.sessionID != "" {
-		wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
+		read := c.readGraph(ctx, workPart)
 		allowed := c.sessionSatisfiesResourceRequirementsLocked(op.sessionID, row)
-		c.egraphMu.RUnlock()
+		read.Unlock()
 		if !allowed {
 			return fmt.Errorf("part task: session no longer satisfies installed requirements")
 		}

@@ -74,8 +74,8 @@ func (c *Cache) StartPartUploads(starts []PartStartQuery, nowUnix int64) ([]Part
 		}
 		keys[i] = key
 	}
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workPart)
+	defer read.Unlock()
 	var change RemoteChange
 	for i, q := range starts {
 		if out[i].Err == nil {
@@ -85,7 +85,7 @@ func (c *Cache) StartPartUploads(starts []PartStartQuery, nowUnix int64) ([]Part
 			c.testBatchAnswered(i)
 		}
 		if i+1 < len(starts) {
-			c.giveWayLocked()
+			c.giveWayLocked(&read)
 		}
 	}
 	slices.Sort(change.Entries)
@@ -194,8 +194,8 @@ func (c *Cache) EndPartUploads(ends []PartUpload) (RemoteChange, error) {
 		}
 		keys[i], numbers[i] = key, end.Number
 	}
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workPart)
+	defer read.Unlock()
 	change = c.classChangeLocked(numbers)
 	c.uploadsMu.Lock()
 	defer c.uploadsMu.Unlock()

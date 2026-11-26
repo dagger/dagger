@@ -175,14 +175,14 @@ func (c *Cache) prepareMergedPayloadsForSave(ctx context.Context) {
 	if c.blobBacked {
 		return
 	}
-	step := c.readLockGraphAs(ctx, "dagql.persist.prepare")
+	step := c.readLockGraphAs(ctx, "dagql.persist.prepare", workUpkeep)
 	var pending []*sharedResult
 	for _, res := range c.resultsByID {
 		if res.holdsUnpreparedPayload() {
 			pending = append(pending, res)
 		}
 	}
-	c.runlockGraphAs(step)
+	c.runlockGraphAs(&step)
 	if len(pending) == 0 {
 		return
 	}

@@ -294,7 +294,7 @@ func TestNamedReadersSpanTheirHold(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, c.CloseDiscardingPersistence()) })
 
-	step := c.readLockGraphAs(ctx, "test.read")
+	step := c.readLockGraphAs(ctx, "test.read", workOther)
 	waiterCtx, waiter := wcprof.BeginOp(ctx, wcprof.OpKindLazy, "test.writer", wcprof.OpOpts{})
 	locked := make(chan struct{})
 	go func() {
@@ -309,7 +309,7 @@ func TestNamedReadersSpanTheirHold(t *testing.T) {
 		}
 		return true
 	}, 10*time.Second, time.Millisecond, "the writer waits")
-	c.runlockGraphAs(step)
+	c.runlockGraphAs(&step)
 	<-locked
 	c.egraphMu.Unlock()
 	waiter.End(wcprof.OutcomeOK)
