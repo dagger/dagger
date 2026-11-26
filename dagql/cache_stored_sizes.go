@@ -890,6 +890,7 @@ func (c *Cache) StoredLowerPart(ctx context.Context, root uint64, nowUnix int64,
 	kind := c.graphReader(ctx, workExport)
 	cut := &storedCut{sizes: map[sharedResultID]int64{}, outputs: map[sharedResultID][]storedCutPart{}, named: map[sharedResultID]bool{}}
 	var (
+		order    []sharedResultID
 		below    []sharedResultID
 		above    []sharedResultID
 		children = map[sharedResultID][]sharedResultID{}
@@ -913,6 +914,7 @@ func (c *Cache) StoredLowerPart(ctx context.Context, root uint64, nowUnix int64,
 				continue
 			}
 			out.Carried++
+			order = append(order, entry.id)
 			deps := storedClosureChildrenLocked(entry)
 			children[entry.id] = deps
 			if !isAbove[entry.id] && slices.ContainsFunc(deps, func(id sharedResultID) bool { return isAbove[id] }) {
@@ -993,6 +995,21 @@ func (c *Cache) StoredLowerPart(ctx context.Context, root uint64, nowUnix int64,
 		}
 		ahead--
 	}
+	// Which of a blob's addresses the root's merge carries depends on the
+	// order it lists its outputs in, which the tail's growth from the end
+	// doesn't follow: the cut is checked as that merge counts it, and moved
+	// down to the first that fits.
+	if ahead < len(below) && !storedCutFits(cut, order, below, ahead, children, rows, limit-fixed-out.CallBytes) {
+		low, high := ahead+1, len(below)
+		for low < high {
+			if mid := (low + high) / 2; storedCutFits(cut, order, below, mid, children, rows, limit-fixed-out.CallBytes) {
+				high = mid
+			} else {
+				low = mid + 1
+			}
+		}
+		ahead = low
+	}
 	if ahead == 0 {
 		return out, nil
 	}
@@ -1044,6 +1061,41 @@ func (cut *storedCut) sized(res *sharedResult, bytes int64) {
 	for _, part := range res.storedParts {
 		cut.outputs[res.id] = append(cut.outputs[res.id], storedCutPart{wire: part.wire, layers: part.layers})
 	}
+}
+
+// storedCutFits reports whether root's merge, with below's first ahead
+// entries held, carries the rest within room, as that merge counts it: the
+// records of order, the bundle's, but the part's, with their outputs, in
+// that order, each layer once, a blob's address for the pack it
+// first names it in, and one more for each output that names it in
+// another; and a held row for each entry of the part that a call or one of
+// those records names.
+func storedCutFits(cut *storedCut, order, below []sharedResultID, ahead int, children map[sharedResultID][]sharedResultID, rows map[sharedResultID]int64, room int64) bool {
+	inPart := make(map[sharedResultID]bool, ahead)
+	for _, id := range below[:ahead] {
+		inPart[id] = true
+	}
+	outputs := &storedCutOutputs{layers: map[*storedLayer]bool{}, blobs: map[digest.Digest]digest.Digest{}}
+	named := map[sharedResultID]bool{}
+	for id := range cut.named {
+		if inPart[id] && !named[id] {
+			named[id] = true
+			room -= rows[id]
+		}
+	}
+	for _, id := range order {
+		if inPart[id] {
+			continue
+		}
+		room -= cut.sizes[id] + outputs.add(cut.outputs[id], true)
+		for _, dep := range children[id] {
+			if inPart[dep] && !named[dep] {
+				named[dep] = true
+				room -= rows[dep]
+			}
+		}
+	}
+	return room >= 0
 }
 
 // storedCutOutputs are the layers and blob addresses a merge lists so far,
