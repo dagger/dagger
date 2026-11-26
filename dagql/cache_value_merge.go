@@ -1635,11 +1635,11 @@ func cloneValueBundle(in ValueBundle) (ValueBundle, error) {
 		if value.storedEnvelope != nil {
 			// A stored envelope is decoded as the bundle's encoding would
 			// have carried it.
-			rec, err := decodeStoredRecord(value.storedEnvelope, 0, value.Record.ResultID, value.Record.Call)
+			rec, err := decodeStoredRecord(value.storedEnvelope, value.storedEnvelopeBytes, value.Record.ResultID, value.Record.Call)
 			if err != nil {
 				return ValueBundle{}, err
 			}
-			value.Record.Envelope, value.storedEnvelope = rec.Envelope, nil
+			value.Record.Envelope, value.storedEnvelope, value.storedEnvelopeBytes = rec.Envelope, nil, 0
 		}
 		if value.storedCall != nil {
 			// So is a stored call frame.
