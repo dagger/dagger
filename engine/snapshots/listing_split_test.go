@@ -169,6 +169,70 @@ func TestListingRebuildFailsWithoutItsContent(t *testing.T) {
 	require.Error(t, err)
 }
 
+// waitingWriterStore is a content store whose writers open only once
+// release is closed.
+type waitingWriterStore struct {
+	content.Store
+	release chan struct{}
+}
+
+func (s *waitingWriterStore) Writer(ctx context.Context, opts ...content.WriterOpt) (content.Writer, error) {
+	select {
+	case <-s.release:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	return s.Store.Writer(ctx, opts...)
+}
+
+// A differ writes a layer's tar ahead of its split: while the split waits for
+// the content store to write the layer's content blobs, the differ's writes
+// of the rest of the tar don't wait, and the listing that ends up written
+// rebuilds the tar as it would have.
+func TestListingSplitDoesNotHoldTheDiffer(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	layer := splitTestTar(t)
+	store, err := local.NewStore(t.TempDir())
+	require.NoError(t, err)
+	cs := &waitingWriterStore{Store: store, release: make(chan struct{})}
+	listingType, contentType, ok := listingMediaType(compression.Zstd)
+	require.True(t, ok)
+	compress, _ := compression.Zstd.Compress(ctx, compression.New(compression.Zstd))
+	listingCompress, contents := listingCompressor(ctx, cs, compress, contentType, "ahead-test")
+	var listingBlob bytes.Buffer
+	w, err := listingCompress(&listingBlob, listingType)
+	require.NoError(t, err)
+
+	wrote := make(chan error, 1)
+	go func() {
+		_, err := w.Write(layer)
+		wrote <- err
+	}()
+	select {
+	case err := <-wrote:
+		close(cs.release)
+		require.NoError(t, err)
+	case <-time.After(30 * time.Second):
+		close(cs.release)
+		require.NoError(t, <-wrote)
+		require.NoError(t, w.Close())
+		t.Fatal("the differ's write of the layer's tar waited for the split's content blobs")
+	}
+	require.NoError(t, w.Close())
+
+	listed := contents()
+	require.Len(t, listed, 6)
+	listing := ocispecs.Descriptor{MediaType: listingType, Digest: digest.FromBytes(listingBlob.Bytes()), Size: int64(listingBlob.Len())}
+	require.NoError(t, content.WriteBlob(ctx, store, "listing", bytes.NewReader(listingBlob.Bytes()), listing))
+	rebuilt, err := openListingTar(ctx, store, listing)
+	require.NoError(t, err)
+	got, err := io.ReadAll(rebuilt)
+	rebuilt.Close()
+	require.NoError(t, err)
+	require.Equal(t, digest.FromBytes(layer), digest.FromBytes(got), "the rebuilt tar is the layer's tar")
+}
+
 func digests(descs []ocispecs.Descriptor) []digest.Digest {
 	out := make([]digest.Digest, len(descs))
 	for i, d := range descs {
