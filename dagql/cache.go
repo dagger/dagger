@@ -2,6 +2,7 @@ package dagql
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -19,6 +20,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unique"
 	"weak"
 
 	telemetry "github.com/dagger/otel-go"
@@ -3762,8 +3764,13 @@ type sharedResult struct {
 	lastUsedAtUnixNano       int64
 	cacheUsageSizeByIdentity map[string]int64
 	cacheUsageRecordTypeByID map[string]string
-	description              string
-	recordType               string
+	// description and recordType name the entry for prune accounting and
+	// debugging: the field it was made for, or its recipe, and its record
+	// type. Most entries share them with many others, so each is held as a
+	// handle (internString): one copy of each name for the process, and a
+	// word of the entry.
+	description unique.Handle[string]
+	recordType  unique.Handle[string]
 
 	// incomingOwnershipCount is the authoritative liveness count derived from
 	// session edges, persisted edges, and result dependency edges. It is atomic
@@ -4166,10 +4173,11 @@ func (res *sharedResult) loadPayloadState() sharedResultPayloadState {
 // type name and its server, without keeping either alive. Classes carry field
 // resolvers that capture the server they were installed into (module classes
 // do), and cache entries can outlive that server by a long time, so holding
-// the class itself would keep the whole server alive.
+// the class itself would keep the whole server alive. The type name is a
+// handle (internString), as many entries share it.
 type objectClassRef struct {
 	server   weak.Pointer[Server]
-	typeName string
+	typeName unique.Handle[string]
 }
 
 func newObjectClassRef(class ObjectType) objectClassRef {
@@ -4177,13 +4185,13 @@ func newObjectClassRef(class ObjectType) objectClassRef {
 	if !ok {
 		return objectClassRef{}
 	}
-	return objectClassRef{server: bound.weakServer(), typeName: class.TypeName()}
+	return objectClassRef{server: bound.weakServer(), typeName: internString(class.TypeName())}
 }
 
 // load returns the referenced class if it is named typeName and its server
 // is still alive.
 func (ref objectClassRef) load(typeName string) (ObjectType, bool) {
-	if ref.typeName != typeName {
+	if handleString(ref.typeName) != typeName {
 		return nil, false
 	}
 	srv := ref.server.Value()
@@ -7028,9 +7036,9 @@ func (c *Cache) usageEntriesLocked(activeRoots map[sharedResultID]struct{}) []Ca
 			lastUsedAt = createdAt
 		}
 		recordTypes := cacheUsageRecordTypesFromMap(res.cacheUsageRecordTypeByID)
-		recordType := cacheUsagePrimaryRecordType(recordTypes, res.recordType)
+		recordType := cacheUsagePrimaryRecordType(recordTypes, handleString(res.recordType))
 		dagqlCall := c.cacheUsageDagqlCallLocked(res)
-		description := res.description
+		description := handleString(res.description)
 		if description == "" {
 			description = fmt.Sprintf("dagql cache result %d", resID)
 		}
@@ -7339,7 +7347,7 @@ func (c *Cache) publishUsageMeasurementsLocked(snapshot *cacheUsageSnapshot, ide
 		res.cacheUsageSizeByIdentity = sizes
 		res.cacheUsageRecordTypeByID = recordTypes
 		if types := cacheUsageRecordTypesFromMap(recordTypes); len(types) > 0 {
-			res.recordType = cacheUsagePrimaryRecordType(types, "")
+			res.recordType = internString(cacheUsagePrimaryRecordType(types, ""))
 			c.noteSavedEntryLocked(res.id)
 		}
 	}
@@ -8445,18 +8453,14 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		oc.res.createdAtUnixNano = now.UnixNano()
 	}
 	touchSharedResultLastUsed(oc.res, now.UnixNano())
-	if oc.res.recordType == "" {
-		oc.res.recordType = requestForIndex.Field
+	if oc.res.recordType == (unique.Handle[string]{}) {
+		oc.res.recordType = internString(cmp.Or(requestForIndex.Field, "dagql.unknown"))
 	}
-	if oc.res.recordType == "" {
-		oc.res.recordType = "dagql.unknown"
-	}
-	if oc.res.description == "" {
-		oc.res.description = requestForIndex.Field
-	}
-	if oc.res.description == "" {
-		if reqDig, err := requestForIndex.deriveRecipeDigest(c); err == nil {
-			oc.res.description = reqDig.String()
+	if oc.res.description == (unique.Handle[string]{}) {
+		if requestForIndex.Field != "" {
+			oc.res.description = internString(requestForIndex.Field)
+		} else if reqDig, err := requestForIndex.deriveRecipeDigest(c); err == nil {
+			oc.res.description = internString(reqDig.String())
 		}
 	}
 	if !resWasCacheBacked {

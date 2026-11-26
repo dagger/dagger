@@ -737,8 +737,8 @@ func (c *Cache) snapshotPruneStateLocked(
 				}
 			}
 			recordTypes := cacheUsageRecordTypesFromMap(res.cacheUsageRecordTypeByID)
-			recordType := cacheUsagePrimaryRecordType(recordTypes, res.recordType)
-			description := res.description
+			recordType := cacheUsagePrimaryRecordType(recordTypes, handleString(res.recordType))
+			description := handleString(res.description)
 			if description == "" {
 				description = fmt.Sprintf("dagql cache result %d", resID)
 			}

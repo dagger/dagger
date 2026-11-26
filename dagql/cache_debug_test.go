@@ -60,7 +60,7 @@ func TestDebugCacheSnapshotWithQueuedWriter(t *testing.T) {
 			second := cacheTestIntCall("second")
 			second.Receiver = &ResultCallRef{ResultID: 1}
 			c := &Cache{resultsByID: map[sharedResultID]*sharedResult{
-				1: {id: 1, resultCall: first, description: strings.Repeat("x", 256<<10)},
+				1: {id: 1, resultCall: first, description: internString(strings.Repeat("x", 256<<10))},
 				2: {id: 2, resultCall: second},
 			}}
 			var out bytes.Buffer
