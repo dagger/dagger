@@ -19,6 +19,54 @@ type idSetIndex[K comparable, V cmp.Ordered] struct {
 	many map[K]*idSet[V]
 }
 
+// idMembers are one key's members, as Members finds them, for reading with
+// one lookup: they are the key's until its members next change.
+type idMembers[V cmp.Ordered] struct {
+	one    V
+	hasOne bool
+	many   *idSet[V]
+}
+
+// Members returns k's members.
+func (x *idSetIndex[K, V]) Members(k K) idMembers[V] {
+	if only, ok := x.one[k]; ok {
+		return idMembers[V]{one: only, hasOne: true}
+	}
+	return idMembers[V]{many: x.many[k]}
+}
+
+// Size is how many members there are.
+func (m idMembers[V]) Size() int {
+	if m.hasOne {
+		return 1
+	}
+	return m.many.Size()
+}
+
+// Contains reports whether v is a member.
+func (m idMembers[V]) Contains(v V) bool {
+	if m.hasOne {
+		return m.one == v
+	}
+	return m.many.Contains(v)
+}
+
+// All yields each member once, in no order a caller may rely on.
+func (m idMembers[V]) All() iter.Seq[V] {
+	if m.hasOne {
+		return func(yield func(V) bool) { yield(m.one) }
+	}
+	return m.many.All()
+}
+
+// Items yields each member once, in ascending order.
+func (m idMembers[V]) Items() iter.Seq[V] {
+	if m.hasOne {
+		return func(yield func(V) bool) { yield(m.one) }
+	}
+	return m.many.Items()
+}
+
 // Insert adds v to k's members, and reports whether k didn't have it.
 func (x *idSetIndex[K, V]) Insert(k K, v V) bool {
 	if only, ok := x.one[k]; ok {
@@ -66,6 +114,43 @@ func (x *idSetIndex[K, V]) Remove(k K, v V) bool {
 		x.one[k] = last
 	}
 	return true
+}
+
+// Move adds every member of src to dst's members and removes src. When dst
+// has no set, src's set itself becomes dst's, so a join of a class into one
+// with fewer members copies nothing.
+func (x *idSetIndex[K, V]) Move(src, dst K) {
+	if src == dst {
+		return
+	}
+	if only, ok := x.one[src]; ok {
+		delete(x.one, src)
+		x.Insert(dst, only)
+		return
+	}
+	set := x.many[src]
+	if set == nil {
+		return
+	}
+	delete(x.many, src)
+	if dstSet := x.many[dst]; dstSet != nil {
+		dstSet.InsertAll(set)
+		return
+	}
+	if only, ok := x.one[dst]; ok {
+		delete(x.one, dst)
+		set.Insert(only)
+	}
+	x.many[dst] = set
+}
+
+// Clone returns a set of k's members of its own.
+func (x *idSetIndex[K, V]) Clone(k K) *idSet[V] {
+	out := newIDSet[V]()
+	for v := range x.All(k) {
+		out.Insert(v)
+	}
+	return out
 }
 
 // Delete removes k and all its members.
