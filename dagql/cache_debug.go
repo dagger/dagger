@@ -583,12 +583,12 @@ func (c *Cache) traceEqClassMerged(ctx context.Context, ids []eqClassID, root eq
 	})
 }
 
-func debugExtraDigestsForTrace(extras map[call.ExtraDigest]struct{}) []string {
+func debugExtraDigestsForTrace(extras []call.ExtraDigest) []string {
 	if len(extras) == 0 {
 		return nil
 	}
 	out := make([]string, 0, len(extras))
-	for extra := range extras {
+	for _, extra := range extras {
 		label := extra.Label
 		if label == "" {
 			label = "unlabeled"

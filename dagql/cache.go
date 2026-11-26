@@ -3099,7 +3099,7 @@ type Cache struct {
 	eqClassToDigests map[eqClassID]*idSet[string]
 
 	// map of eqClassID -> all labeled extra digests known to belong to that class
-	eqClassExtraDigests map[eqClassID]map[call.ExtraDigest]struct{}
+	eqClassExtraDigests map[eqClassID][]call.ExtraDigest
 
 	// map of digest -> eqClassID for the class that digest is in, if any
 	// due to the sets being disjoint, a digest is enforced to only be in one

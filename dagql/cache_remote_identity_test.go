@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 )
@@ -194,15 +193,14 @@ func egraphFactsForTest(c *Cache) string {
 	line("free", c.freeEqClassIDs)
 	line("digestToClass", c.egraphDigestToClass)
 	line("classDigests", c.eqClassToDigests)
-	// A class's empty set of extra digests is no set: every reader iterates
-	// it or asks it for one digest, and merges carry only a set that holds
-	// one. addResultExtraDigestsLocked makes an empty one for
-	// a frame without extra digests.
-	extras := make(map[eqClassID]map[call.ExtraDigest]struct{}, len(c.eqClassExtraDigests))
+	// A class's extra digests, sorted: their list keeps the order they were
+	// taught in, which a full teach may repeat in another order.
+	extras := make(map[eqClassID][]string, len(c.eqClassExtraDigests))
 	for id, set := range c.eqClassExtraDigests {
-		if len(set) > 0 {
-			extras[id] = set
+		for _, extra := range set {
+			extras[id] = append(extras[id], extra.Label+"="+extra.Digest.String())
 		}
+		slices.Sort(extras[id])
 	}
 	line("classExtras", extras)
 	line("inputTerms", c.inputEqClassToTerms)

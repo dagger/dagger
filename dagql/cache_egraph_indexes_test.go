@@ -1024,7 +1024,7 @@ func testEqClassContentsLocked(c *Cache) eqClassContents {
 	}
 	for root := range live {
 		var extras []string
-		for extra := range c.eqClassExtraDigests[root] {
+		for _, extra := range c.eqClassExtraDigests[root] {
 			extras = append(extras, extra.Label+":"+extra.Digest.String())
 		}
 		if len(extras) > 0 {

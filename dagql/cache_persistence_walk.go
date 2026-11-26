@@ -556,7 +556,7 @@ func (c *Cache) readClassLocked(rd *persistRead, id eqClassID) {
 			rows = append(rows, persistdb.MirrorEqClassDigest{EqClassID: int64(id), Digest: dig})
 		}
 	}
-	for extra := range c.eqClassExtraDigests[id] {
+	for _, extra := range c.eqClassExtraDigests[id] {
 		if extra.Digest == "" {
 			continue
 		}
