@@ -524,6 +524,31 @@ func TestStoredBundleIsBuiltAgainWhenARecordItCopiedIsReplaced(t *testing.T) {
 	require.Contains(t, string(sentRecord(t, dep).Envelope.ObjectJSON), "new dep")
 }
 
+// A prune while a stored bundle's build gives way that drops the value of an
+// entry the build walked, before its copy, has the bundle built again in one
+// hold, which finds the entry with no value. Here, read in pieces of one
+// step, R's and P's values are dropped after P's copy and before R's.
+func TestStoredBundleIsBuiltAgainWhenAValueItWalkedIsDropped(t *testing.T) {
+	t.Parallel()
+	ctx, cloud, r, _ := storedBundleTestCloudIn(t, "root", true)
+	cloud.readPieceSize = 1
+	yields := 0
+	cloud.testReadPieceYielded = func() {
+		if yields++; yields != 4 {
+			return
+		}
+		_, removed, dropped, err := cloud.removePrunedEdge(ctx, sharedResultID(r))
+		require.NoError(t, err)
+		require.True(t, removed)
+		require.Equal(t, 2, dropped)
+	}
+	got, err := cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), cloud.StoredBundlesBuiltAgain(), "built again in one hold")
+	require.Equal(t, []uint64{r}, got.NoValue, "R has no value")
+	require.Empty(t, got.Bundle.Values)
+}
+
 // A prune and a merge that fills the entry again while a stored bundle's
 // build gives way, of a value the build has already copied, have the bundle
 // built again in one hold, as a replacement does, though neither counts as
