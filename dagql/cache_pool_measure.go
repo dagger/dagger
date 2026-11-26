@@ -143,7 +143,7 @@ func (c *Cache) poolSettleLocked(res *sharedResult) {
 		}
 		c.pool.values += int(sign)
 		c.pool.bytes += sign * res.storedValueBytes()
-		c.poolBlobsLocked(res.storedBlobsLocked(), sign)
+		c.poolBlobsLocked(res.storedBlobsLocked(nil), sign)
 		for _, depID := range res.deps {
 			if dep := c.resultsByID[depID]; dep != nil {
 				dep.poolRefs += int32(sign)
@@ -156,12 +156,12 @@ func (c *Cache) poolSettleLocked(res *sharedResult) {
 // poolBlobsLocked counts blobs, an entry's distinct blobs at their sizes
 // (storedBlobsLocked), into the pool's blobs (sign 1) or out of them (sign
 // -1). Requires egraphMu for writing.
-func (c *Cache) poolBlobsLocked(blobs map[digest.Digest]int64, sign int64) {
-	for blob, size := range blobs {
+func (c *Cache) poolBlobsLocked(blobs []storedBlob, sign int64) {
+	for _, blob := range blobs {
 		if sign > 0 {
-			c.pool.add(blob, size)
+			c.pool.add(blob.digest, blob.size)
 		} else {
-			c.pool.remove(blob, size)
+			c.pool.remove(blob.digest, blob.size)
 		}
 	}
 }
@@ -205,9 +205,9 @@ func (c *Cache) changeStoredPartsLocked(res *sharedResult, change func()) {
 		change()
 		return
 	}
-	c.poolBlobsLocked(res.storedBlobsLocked(), -1)
+	c.poolBlobsLocked(res.storedBlobsLocked(nil), -1)
 	change()
-	c.poolBlobsLocked(res.storedBlobsLocked(), 1)
+	c.poolBlobsLocked(res.storedBlobsLocked(nil), 1)
 }
 
 // poolRecountLocked counts the pool's kept measure afresh from the walk, as
@@ -243,11 +243,13 @@ func (c *Cache) walkPoolLocked() walkedPool {
 			w.refs[id]++
 		}
 	}
+	var blobs []storedBlob
 	for _, res := range w.members {
 		w.measure.values++
 		w.measure.bytes += res.storedValueBytes()
-		for blob, size := range res.storedBlobsLocked() {
-			w.measure.add(blob, size)
+		blobs = res.storedBlobsLocked(blobs)
+		for _, blob := range blobs {
+			w.measure.add(blob.digest, blob.size)
 		}
 		for _, depID := range res.deps {
 			if c.resultsByID[depID] != nil {
