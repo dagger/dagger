@@ -168,3 +168,52 @@ func benchmarkChangeMarksMergePrune(b *testing.B, bundle ValueBundle, marks bool
 	b.ReportMetric(ms(holding), "commit-hold-ms")
 	b.ReportMetric(ms(pruning), "prune-ms")
 }
+
+// BenchmarkClassJoin times a join of a large class on a blob-backed cache: a
+// holding whose new entry joins, by its content digest, a class of size
+// entries that hold no part, as a commit's or a row's new entry joins the
+// class of results equal to it. It reports join-us, one such holding's
+// attach with its join and its marks handed back.
+func BenchmarkClassJoin(b *testing.B) {
+	for _, size := range []int{1_000, 10_000} {
+		b.Run(fmt.Sprintf("class=%d", size), func(b *testing.B) {
+			benchmarkClassJoin(b, size)
+		})
+	}
+}
+
+func benchmarkClassJoin(b *testing.B, size int) {
+	ctx, cloud := changeMarksBenchCloud(b, true)
+	content := testDigest("class-join-content")
+	holding := func(cache CacheID, i int) (HolderKey, RemoteHolding) {
+		recipe := testDigest(fmt.Sprintf("class-join-%s-%d", cache, i))
+		return HolderKey{Cache: cache, Number: uint64(i + 1)}, RemoteHolding{
+			Recipe: recipe, Request: recipe, Field: "field", TypeName: "Directory", ContentDigest: content,
+		}
+	}
+	for i := range size {
+		key, desc := holding("cache-class", i)
+		_, err := cloud.AttachRemoteHolding(ctx, key, desc)
+		require.NoError(b, err)
+	}
+	class, ok := cloud.EntryClassEntries(changeMarksBenchNumber(b, cloud, HolderKey{Cache: "cache-class", Number: 1}))
+	require.True(b, ok)
+	require.Len(b, class.Entries, size, "one class of size entries")
+	b.ResetTimer()
+	i := 0
+	for b.Loop() {
+		key, desc := holding("cache-join", i)
+		i++
+		_, err := cloud.AttachRemoteHolding(ctx, key, desc)
+		require.NoError(b, err)
+	}
+	b.ReportMetric(float64(b.Elapsed().Microseconds())/float64(b.N), "join-us")
+}
+
+// changeMarksBenchNumber is the entry number of a holding the cache has.
+func changeMarksBenchNumber(b *testing.B, c *Cache, key HolderKey) uint64 {
+	b.Helper()
+	held, ok := c.RemoteHoldingInfo(key)
+	require.True(b, ok)
+	return held.Number
+}
