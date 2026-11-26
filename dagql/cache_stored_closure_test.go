@@ -27,7 +27,7 @@ func TestStoredClosureListsWhatTheBundleCarries(t *testing.T) {
 	ctx, cloud, r, p := storedBundleTestCloud(t, "root")
 	calls := newReceiverCallTest(t)
 	now := time.Now().Unix()
-	heldP := &HeldBy{Cache: "cache-fresh", Also: func(number uint64) bool { return number == p }}
+	heldP := &HeldBy{Cache: "cache-fresh", Also: heldWhateverChanged(p)}
 	for _, c := range []struct {
 		name  string
 		cache *Cache
@@ -166,7 +166,7 @@ func TestStoredBundleAlsoRootsIsTheBundleBuiltAgain(t *testing.T) {
 	require.Len(t, once.Bundle.Roots, 2)
 	require.Equal(t, now+7200, once.Bundle.Roots[1].ExpiresAtUnix, "P travels as a root with its retention's expiry")
 
-	heldP := &HeldBy{Cache: "cache-fresh", Also: func(number uint64) bool { return number == p }}
+	heldP := &HeldBy{Cache: "cache-fresh", Also: heldWhateverChanged(p)}
 	plain, err := cloud.StoredBundle(ctx, []uint64{r}, now, heldP)
 	require.NoError(t, err)
 	held, err := cloud.StoredBundle(ctx, []uint64{r}, now, heldP, names(p))

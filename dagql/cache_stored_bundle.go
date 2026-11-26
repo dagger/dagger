@@ -34,6 +34,11 @@ type StoredBundleResult struct {
 	// recipient holds but not whole, which the bundle carries in full, in
 	// the order the build found them (HeldBy.Whole).
 	NotWhole []uint64
+	// Changed are, sorted, the numbers of the entries HeldBy.Also names
+	// that the bundle carries in full because a write since the position
+	// Also gives changed them: those the recipient would hold but for that
+	// write.
+	Changed []uint64
 	// Position is the cache's write count when the build read it, under the
 	// same hold: ChangedSince tells, for each entry it carries, whether a
 	// write since changed it.
@@ -69,9 +74,13 @@ type StoredBundleResult struct {
 // engine cache already holds, for StoredBundle to carry as held rows and
 // StoredSizes to price as such. An entry is held when it isn't in Not, by
 // number: the values the recipient answered stale; and it has a holding of
-// Cache that hasn't expired at the read's clock, or Also names it and its
-// value hasn't expired then: an entry the recipient holds with no holding
-// yet, such as a record of a file of the cache's bundles it merged. Only an
+// Cache that hasn't expired at the read's clock, or Also names it, its value
+// hasn't expired then, and no write since the position Also gives with it
+// changed what a stored bundle carries of it (ChangedSince): an entry the
+// recipient holds with no holding yet, such as a record of a file of the
+// cache's bundles it merged, which it holds as the file's build carried it,
+// at the build's position (StoredBundleResult.Position). Also gives an entry
+// the recipient holds whatever has changed at the largest position. Only an
 // entry with a call frame can be held: its recipe names it to the
 // recipient. Also is called under the cache's lock, from builds that may
 // run at once, so it reads only what doesn't change under it.
@@ -89,7 +98,7 @@ type StoredBundleResult struct {
 type HeldBy struct {
 	Cache CacheID
 	Not   map[uint64]bool
-	Also  func(number uint64) bool
+	Also  func(number uint64) (position uint64, ok bool)
 	Whole bool
 	// ByFile names, by the number Cache's holdings give it, an entry the
 	// recipient holds with no holding of Cache yet, as Also does by the
@@ -226,16 +235,33 @@ func (c *Cache) sendableCallsLocked(h *HeldBy, terms *namedTerms, group []*keptC
 // heldLocked reports whether the recipient holds res at nowUnix. A nil
 // HeldBy holds nothing. Requires egraphMu.
 func (h *HeldBy) heldLocked(res *sharedResult, nowUnix int64) bool {
+	held, _ := h.heldOrChangedLocked(res, nowUnix)
+	return held
+}
+
+// heldOrChangedLocked is heldLocked, and reports too, of an entry it doesn't
+// hold, whether a write alone keeps it from holding it: Also names res
+// unexpired, at a position the write came after (changedSinceLocked), and
+// no holding of Cache holds it. Requires egraphMu.
+func (h *HeldBy) heldOrChangedLocked(res *sharedResult, nowUnix int64) (held, changed bool) {
 	if h == nil || !res.hasCallFrameLocked() {
-		return false
+		return false, false
 	}
 	if h.Not[uint64(res.id)] {
-		return false
+		return false, false
 	}
-	if h.Also != nil && h.Also(uint64(res.id)) && (res.expiresAtUnix == 0 || res.expiresAtUnix > nowUnix) {
-		return true
+	if h.Also != nil && (res.expiresAtUnix == 0 || res.expiresAtUnix > nowUnix) {
+		if position, ok := h.Also(uint64(res.id)); ok {
+			if !res.changedSinceLocked(position) {
+				return true, false
+			}
+			changed = true
+		}
 	}
-	return h.holdsLocked(res, nowUnix)
+	if h.holdsLocked(res, nowUnix) {
+		return true, false
+	}
+	return false, changed
 }
 
 // holdsLocked reports whether res has a holding of h.Cache that hasn't
@@ -426,6 +452,14 @@ func (c *Cache) storedBundle(kind wcprof.LockHolder, roots []uint64, nowUnix int
 	}
 	out.Bundle, out.Donors, out.stored = build.bundle, build.donors, build.stored
 	out.Position = c.writes
+	// Those the build carries: a call's input it was asked of may have
+	// placed none.
+	for id := range build.changed {
+		if build.ordinals[id] != 0 && !build.held[id] {
+			out.Changed = append(out.Changed, uint64(id))
+		}
+	}
+	slices.Sort(out.Changed)
 	for id := range build.partial {
 		out.Partial = append(out.Partial, uint64(id))
 	}
@@ -588,6 +622,10 @@ type storedBundleBuild struct {
 	terms    *namedTerms
 	notWhole map[sharedResultID]bool
 	held     map[sharedResultID]bool
+	// changed are the entries heldBy's Also names that it doesn't hold, as
+	// a write changed them since the position Also gives
+	// (heldOrChangedLocked).
+	changed map[sharedResultID]bool
 	// rootSeen are the roots' entries, and callRoots the entries added as
 	// roots for the inputs of calls the bundle sends, callInputs their
 	// numbers, and unsendableCalls the terms it sends no call for
@@ -694,9 +732,20 @@ func (build *storedBundleBuild) alsoRoots(rootEntries []*sharedResult, alsoRoot 
 }
 
 // holdsLocked reports whether the recipient holds res, as heldBy says,
-// unless notWhole names it. Requires egraphMu.
+// unless notWhole names it, and notes res changed when a write alone keeps
+// heldBy from holding it. Requires egraphMu.
 func (build *storedBundleBuild) holdsLocked(res *sharedResult) bool {
-	return !build.notWhole[res.id] && build.heldBy.heldLocked(res, build.now)
+	if build.notWhole[res.id] {
+		return false
+	}
+	held, changed := build.heldBy.heldOrChangedLocked(res, build.now)
+	if changed {
+		if build.changed == nil {
+			build.changed = map[sharedResultID]bool{}
+		}
+		build.changed[res.id] = true
+	}
+	return held
 }
 
 // relocate rewrites a reference to an entry of the closure to its ordinal.
