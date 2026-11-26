@@ -7,6 +7,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/opencontainers/go-digest"
 )
 
 // TestMain has every merge of the package's tests decided by both the
@@ -15,8 +17,9 @@ import (
 // kept measure of its pool against a walk as the cache closes
 // (VerifyPoolMeasure), and every cache's kept uses of its classes against a
 // walk (verifyEqClassUses), and every save into a database that held
-// something against a full save at its hold (checkPersistFullSave), and fails
-// the run if any differs.
+// something against a full save at its hold (checkPersistFullSave), and every
+// frame a merge installed against the recipe the merge landed it by
+// (checkMergedRecipes), and fails the run if any differs.
 func TestMain(m *testing.M) {
 	var (
 		saves         int
@@ -34,6 +37,9 @@ func TestMain(m *testing.M) {
 		noted         int
 		unnoted       []string
 		notedChecked  time.Duration
+		recipes       int
+		recipeDrifts  []string
+		recipeChecked time.Duration
 	)
 	testPersistNotesAlways = true
 	testPersistNotes = func(_ *Cache, before, after *persistPrints) {
@@ -93,8 +99,27 @@ func TestMain(m *testing.M) {
 			saveDrifts = append(saveDrifts, err.Error())
 		}
 	}
+	testMergedRecipes = func(c *Cache, landed []mergedRecipe) {
+		at := time.Now()
+		drifts := checkMergedRecipes(c, landed)
+		took := time.Since(at)
+		mu.Lock()
+		defer mu.Unlock()
+		recipes += len(landed)
+		recipeChecked += took
+		recipeDrifts = append(recipeDrifts, drifts...)
+	}
 	code := m.Run()
 	mu.Lock()
+	if len(recipeDrifts) > 0 {
+		fmt.Fprintf(os.Stderr, "a merged frame's recipe differed from the one its merge landed it by in %d of %d installed records, checked in %s:\n", len(recipeDrifts), recipes, recipeChecked)
+		for _, d := range recipeDrifts {
+			fmt.Fprintln(os.Stderr, "  "+d)
+		}
+		code = 1
+	} else {
+		fmt.Fprintf(os.Stderr, "merged frames' recipes: %d installed records checked in %s, none differed\n", recipes, recipeChecked)
+	}
 	if len(saveDrifts) > 0 {
 		fmt.Fprintf(os.Stderr, "a save left other rows than a full save in %d of %d saves, checked in %s:\n", len(saveDrifts), saves, saveChecked)
 		for _, d := range saveDrifts {
@@ -142,4 +167,74 @@ func TestMain(m *testing.M) {
 	}
 	mu.Unlock()
 	os.Exit(code)
+}
+
+// checkMergedRecipes checks each frame a merge installed, under the commit's
+// hold of egraphMu (testMergedRecipes): that it keeps the recipe its merge
+// landed its record by, and that deriving the frame again, from the entries
+// its references name as the commit leaves them, gives that recipe. It
+// derives without the frames' memos and without taking egraphMu, and calls
+// none of the cache's test hooks, so what other tests observe of a merge
+// stays theirs. An input held in a stored body gives the recipe the body
+// keeps, as it does to a derivation. Requires egraphMu.
+func checkMergedRecipes(c *Cache, landed []mergedRecipe) []string {
+	// The walk's own memo, shared across the batch: a frame's inputs form a
+	// graph, and an input reached along two paths is hashed once.
+	derived := map[*ResultCall]digest.Digest{}
+	visiting := map[*ResultCall]bool{}
+	var derive func(frame *ResultCall) (digest.Digest, error)
+	derive = func(frame *ResultCall) (digest.Digest, error) {
+		if recipe, ok := derived[frame]; ok {
+			return recipe, nil
+		}
+		if visiting[frame] {
+			return "", fmt.Errorf("a cycle through field %q", frame.Field)
+		}
+		visiting[frame] = true
+		defer delete(visiting, frame)
+		recipe, err := frame.digestWithInputs(func(ref *ResultCallRef) (digest.Digest, error) {
+			if err := ref.Validate(); err != nil {
+				return "", err
+			}
+			if ref.Call != nil {
+				return derive(ref.Call)
+			}
+			if frame := ref.loadSharedCall(); frame != nil {
+				return derive(frame)
+			}
+			res := c.resultsByID[sharedResultID(ref.ResultID)]
+			if res == nil {
+				return "", fmt.Errorf("missing entry %d", ref.ResultID)
+			}
+			held := res.entryFrameLocked()
+			switch {
+			case held.call != nil:
+				return derive(held.call)
+			case held.body != nil:
+				return held.body.recipe, nil
+			}
+			return "", fmt.Errorf("entry %d has no frame", ref.ResultID)
+		})
+		if err != nil {
+			return "", err
+		}
+		derived[frame] = recipe
+		return recipe, nil
+	}
+	var drifts []string
+	for _, l := range landed {
+		if l.frame == nil {
+			continue
+		}
+		kept, derived, err := l.frame.derivedRecipeDigest()
+		if !derived || err != nil || kept != l.recipe {
+			drifts = append(drifts, fmt.Sprintf("field %q keeps recipe %q (derived %v, error %v), landed by %s", l.frame.Field, kept, derived, err, l.recipe))
+			continue
+		}
+		fresh, err := derive(l.frame)
+		if err != nil || fresh != l.recipe {
+			drifts = append(drifts, fmt.Sprintf("field %q derives recipe %q (error %v), landed by %s", l.frame.Field, fresh, err, l.recipe))
+		}
+	}
+	return drifts
 }
