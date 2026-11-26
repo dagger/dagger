@@ -822,9 +822,9 @@ func TestStoredSizesAllowForAddressesInTheBundlesPartOrder(t *testing.T) {
 			layers: []*storedLayer{{layer: snapshots.ExportLayer{Descriptor: ocispecs.Descriptor{Digest: blob}}, pack: testDigest(pack)}},
 		}}
 	}
-	first := &sharedResult{storedParts: map[string]storedPart{"a": in("a", "pack-a"), "b": in("b", "pack-b")}}
-	next := &sharedResult{storedParts: map[string]storedPart{"c": in("c", "pack-b")}}
-	// A map's order differs from one walk to the next: walk it many times.
+	first := &sharedResult{storedParts: storedPartList{}.with("a", in("a", "pack-a")).with("b", in("b", "pack-b"))}
+	next := &sharedResult{storedParts: storedPartList{}.with("c", in("c", "pack-b"))}
+	// The walk is in the parts' keys' order: walk it many times.
 	for range 50 {
 		walk := &storedSizeWalk{outputs: &storedOutputsSeen{layers: map[*storedLayer]bool{}, blobs: map[digest.Digest]digest.Digest{}}}
 		walk.addOutputs(first)

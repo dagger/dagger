@@ -984,13 +984,7 @@ func normalizeStoredTransfer(res *sharedResult, env *PersistedResultEnvelope, ca
 // parts, then the declared pending parts it borrows from its class through
 // the placement rule. Requires egraphMu.
 func (c *Cache) storedBundleOutputsLocked(build *storedBundleBuild, res *sharedResult) error {
-	keys := make([]string, 0, len(res.storedParts))
-	for key := range res.storedParts {
-		keys = append(keys, key)
-	}
-	slices.Sort(keys)
-	for _, key := range keys {
-		part := res.storedParts[key]
+	for _, part := range res.storedParts {
 		if err := build.addOutput(res, part.heldOffer(), part.layers, res.id); err != nil {
 			return err
 		}
@@ -1000,7 +994,7 @@ func (c *Cache) storedBundleOutputsLocked(build *storedBundleBuild, res *sharedR
 		if part.state != "pending" {
 			continue
 		}
-		if _, own := res.storedParts[key]; own {
+		if res.storedParts.has(key) {
 			continue
 		}
 		donor, part := c.storedPartDonorLocked(res, key, build.now)
@@ -1060,7 +1054,7 @@ func (c *Cache) storedPartDonorLocked(res *sharedResult, key string, now int64) 
 			if member == nil || member == res || c.resultExpiredAtLocked(member, now) {
 				continue
 			}
-			if _, ok := member.storedParts[key]; ok && (best == nil || member.id < best.id) {
+			if member.storedParts.has(key) && (best == nil || member.id < best.id) {
 				best = member
 			}
 		}
@@ -1068,7 +1062,8 @@ func (c *Cache) storedPartDonorLocked(res *sharedResult, key string, now int64) 
 	if best == nil {
 		return nil, storedPart{}
 	}
-	return best, best.storedParts[key]
+	part, _ := best.storedParts.find(key)
+	return best, part
 }
 
 // closureRowOfClassLocked maps a service entry to a row of the closure of

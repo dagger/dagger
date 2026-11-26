@@ -45,20 +45,20 @@ func storedPartTestOffer(t *testing.T, c *Cache, number uint64, address Persiste
 	defer c.egraphMu.RUnlock()
 	res := c.resultsByID[sharedResultID(number)]
 	require.NotNil(t, res, "entry %d", number)
-	part, ok := res.storedParts[key]
+	part, ok := res.storedParts.find(key)
 	require.True(t, ok, "entry %d stores no %s part", number, key)
 	return part.offer()
 }
 
 // storedPartTestOffers returns the offers of an entry's stored parts, by
 // part address key, or nil if it has none.
-func storedPartTestOffers(parts map[string]storedPart) map[string]PersistedPartOffer {
+func storedPartTestOffers(parts storedPartList) map[string]PersistedPartOffer {
 	if parts == nil {
 		return nil
 	}
 	offers := make(map[string]PersistedPartOffer, len(parts))
-	for key, part := range parts {
-		offers[key] = part.offer()
+	for _, part := range parts {
+		offers[part.key] = part.offer()
 	}
 	return offers
 }

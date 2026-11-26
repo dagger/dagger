@@ -143,7 +143,8 @@ func TestStoredPartOffersAreAsStored(t *testing.T) {
 	for name, number := range numbers {
 		key, err := partAddressKey(want[name].Address)
 		require.NoError(t, err)
-		held[name] = c.resultsByID[sharedResultID(number)].storedParts[key].layers
+		part, _ := c.resultsByID[sharedResultID(number)].storedParts.find(key)
+		held[name] = part.layers
 	}
 	c.egraphMu.RUnlock()
 	require.Same(t, held["one"][0], held["two"][0], "one base layer")
