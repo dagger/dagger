@@ -62,7 +62,7 @@ func (c *joinTestCache) entry(holds string, classes ...eqClassID) sharedResultID
 func (c *joinTestCache) join(ra, rb eqClassID) []sharedResultID {
 	dst, src := c.outputEqClassResults.Members(ra), c.outputEqClassResults.Members(rb)
 	before := len(c.changes.entries)
-	c.markJoinLocked(src, dst)
+	c.markJoinLocked(src, dst, ra)
 	named := append([]sharedResultID(nil), c.changes.entries[before:]...)
 	c.egraphParents[rb] = ra
 	for id := range src.All() {
