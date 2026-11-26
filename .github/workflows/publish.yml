@@ -135,16 +135,28 @@ jobs:
       github.repository == 'dagger/dagger' &&
       startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
+      # The job succeeds only when the dagger.io run that copies the image
+      # succeeds, so a failed copy fails this release workflow.
       - name: "Publish the engine image to Namespace"
         env:
           GH_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
           ENGINE_VERSION: ${{ github.ref_name }}
         run: |
-          gh workflow run publish-namespace-engine.yml \
-            --repo dagger/dagger.io \
-            --ref main \
-            -f engine_version="$ENGINE_VERSION"
+          set -euo pipefail
+          run="$(gh api --method POST \
+            repos/dagger/dagger.io/actions/workflows/publish-namespace-engine.yml/dispatches \
+            -f ref=main \
+            -f "inputs[engine_version]=$ENGINE_VERSION" \
+            -F return_run_details=true)"
+          run_id="$(jq -r '.workflow_run_id // empty' <<<"$run")"
+          if [ -z "$run_id" ]; then
+            echo "::error::the dispatch returned no workflow run: $run"
+            exit 1
+          fi
+          echo "Publishing to Namespace: $(jq -r .html_url <<<"$run")"
+          gh run watch "$run_id" --repo dagger/dagger.io --exit-status --interval 30
 
   # TODO: daggerize provisioning tests
   test-provision-macos:
