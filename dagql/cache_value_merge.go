@@ -700,6 +700,11 @@ type valueMergePrep struct {
 	// the record is prepared with its payload: relocation changes only
 	// reference numbers.
 	recordBytes map[uint64]int64
+	// bodies are, on a blob-backed cache, the stored bodies made of the
+	// records the early decision installs, by ordinal, each of the record
+	// whose size recordBytes holds (preparedBody): the commit installs one
+	// when it installs that record as it was measured.
+	bodies map[uint64]*preparedBody
 	// completeParts are the part keys each record but a light one proves
 	// complete, by ordinal. A part key is an address and its completeness,
 	// which the record's payload decides; relocation rewrites only reference
@@ -1241,6 +1246,12 @@ func (prep *valueMergePrep) prepareRecordPayloads(ctx context.Context, relocateR
 		if prep.recordBytes != nil {
 			prep.recordBytes[id] = p.recordBytes
 		}
+		if p.body != nil {
+			if prep.bodies == nil {
+				prep.bodies = map[uint64]*preparedBody{}
+			}
+			prep.bodies[id] = p.body
+		}
 	}
 	return nil
 }
@@ -1249,13 +1260,16 @@ func (prep *valueMergePrep) prepareRecordPayloads(ctx context.Context, relocateR
 // (prepareRecordPayload), which prepareRecordPayloads applies to the merge's
 // preparation. A record relocated to its final numbers as it was prepared
 // has the final number of each provisional number it references, in
-// numbers, and its offers at their provisional numbers too, in offers.
+// numbers, and its offers at their provisional numbers too, in offers. On a
+// blob-backed cache, body is the record's stored body, for one the early
+// decision installs (preparedBody).
 type preparedRecordPayload struct {
 	record        PersistedRecord
 	refs          []uint64
 	completeParts []string
 	declared      []declaredPart
 	recordBytes   int64
+	body          *preparedBody
 	numbers       map[uint64]sharedResultID
 	offers        []PersistedPartOffer
 }
@@ -1502,13 +1516,23 @@ func (prep *valueMergePrep) prepareRecordPayload(id uint64, relocateRecord, relo
 	ownRef := collect(relocateRecord)
 	bare := row.Record
 	bare.Envelope.PendingOffers = nil
+	// named are, on a blob-backed cache, the entries the record's child and
+	// call references name at the numbers it is relocated to, which its
+	// stored body keeps (normalizeTransferRecordRefs).
+	var named []uint64
 	// The visit reads each payload's decode from memos, and is their last
 	// reader.
 	rec, err := visitMemoEncodedReferences(bare, memos, func(ref *PersistedRef) error {
 		if err := checkDirect(ref); err != nil {
 			return fmt.Errorf("row %d: %w", id, err)
 		}
-		return ownRef(ref)
+		if err := ownRef(ref); err != nil {
+			return err
+		}
+		if prep.recordBytes != nil && ref.RecipeID == nil && ref.ResultID != 0 && (ref.Kind == PersistedRefChild || ref.Kind == PersistedRefCall) {
+			named = append(named, ref.ResultID)
+		}
+		return nil
 	})
 	if err != nil {
 		return preparedRecordPayload{}, err
@@ -1545,7 +1569,7 @@ func (prep *valueMergePrep) prepareRecordPayload(id uint64, relocateRecord, relo
 	// A blob-backed cache prepares every record so: skipKept applies to an
 	// engine only.
 	if prep.recordBytes != nil {
-		out.recordBytes = encodedRecordBytes(rec)
+		out.recordBytes, out.body = prep.storedForm(id, rec, named)
 	}
 	return out, nil
 }
@@ -1880,8 +1904,11 @@ type mergeRow struct {
 	rec      PersistedRecord
 	deps     []sharedResultID
 	firstUse *mergedFirstUse
-	// recordBytes is rec's size, on a blob-backed cache.
+	// recordBytes is rec's size, on a blob-backed cache, and body rec's
+	// stored body when the preparation made it of rec as installed
+	// (preparedBody).
 	recordBytes int64
+	body        *preparedBody
 	// offers are the record's incoming offers, and admitted those this row's
 	// selection admitted, in commit order: a later row can still supersede
 	// one for the same part. The final set per entry and part key is
@@ -2434,12 +2461,15 @@ func (prep *valueMergePrep) measuredBytes(rec PersistedRecord) int64 {
 }
 
 // keepPrerelocated keeps pre, relocated before the commit, as the record of
-// ordinal, and on the Cloud its size measured with it (measuredBytes).
+// ordinal, and on the Cloud its size measured with it (measuredBytes). A body
+// made of the record at its numbers before is no longer the record's: the
+// commit installs this one whole.
 func (prep *valueMergePrep) keepPrerelocated(ordinal uint64, pre *prerelocatedRecord, bytes int64) {
 	prep.prerelocated[ordinal] = pre
 	if prep.recordBytes != nil {
 		prep.recordBytes[ordinal] = bytes
 	}
+	delete(prep.bodies, ordinal)
 }
 
 // prerelocationDecision is the decision prerelocateMergeRows relocates by: on
@@ -2680,17 +2710,30 @@ func (c *Cache) relocateMergeRowsLocked(commit *valueMergeCommit) error {
 		// checks aren't repeated here. The offers, every row's, are checked
 		// at the final numbers with the graph (checkMergeGraphLocked).
 		row.rec = rec
-		row.recordBytes = prep.recordBytes[row.ordinal]
-		if c.blobBacked && relocated {
-			// The preparation measured the record at the numbers it gave it,
-			// and the commit installs it at others.
-			row.recordBytes = encodedRecordBytes(rec)
-		}
+		row.recordBytes, row.body = c.installedStoredForm(prep, row.ordinal, rec, relocated)
 		if !c.blobBacked {
 			row.offers = rec.Envelope.PendingOffers
 		}
 	}
 	return nil
+}
+
+// installedStoredForm returns, on a blob-backed cache, the size of rec, the
+// record the commit installs for the row of ordinal, and the body the
+// preparation made of it, if any; on an engine, none of either.
+// relocated says whether the commit relocated rec under its lock: the
+// preparation measured the record at the numbers it gave it, and made its
+// body of it so, and the commit installs it at others.
+func (c *Cache) installedStoredForm(prep *valueMergePrep, ordinal uint64, rec PersistedRecord, relocated bool) (int64, *preparedBody) {
+	switch {
+	case !c.blobBacked:
+		return 0, nil
+	case relocated:
+		return encodedRecordBytes(rec), nil
+	case c.testMergesInstallWhole:
+		return prep.recordBytes[ordinal], nil
+	}
+	return prep.recordBytes[ordinal], prep.bodies[ordinal]
 }
 
 // relocateUnpreparedRowLocked relocates, for the commit, an installed record
@@ -3148,6 +3191,9 @@ func (c *Cache) commitValueMergeLocked(ctx context.Context, commit *valueMergeCo
 		res.dependencyOwnershipRevision++
 		if err := c.bindMergedFrameLocked(res, row.action == mergeReplace || row.action == mergeStore); err != nil {
 			errs = errors.Join(errs, err)
+		}
+		if row.body != nil {
+			c.installPreparedBodyLocked(res, row.body)
 		}
 	}
 	// Requirements are recomputed one level deep, so dependencies first: in

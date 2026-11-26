@@ -1704,8 +1704,10 @@ func TestMergeValuesDecidesARecipeByItsBestRecord(t *testing.T) {
 			require.Equal(t, freshValue.Number, oldValue.Number, "one entry for the recipe")
 			require.Zero(t, freshValue.ExpiresAtUnix, "it stores the unexpired record of P'")
 			b.egraphMu.RLock()
-			stored, err := json.Marshal(b.resultsByID[sharedResultID(freshValue.Number)].persistedEnvelope)
+			// On the Cloud the record is held compressed from its commit on.
+			rec := storedTestRecordLocked(t, b.resultsByID[sharedResultID(freshValue.Number)])
 			b.egraphMu.RUnlock()
+			stored, err := json.Marshal(rec.Envelope)
 			require.NoError(t, err)
 			require.Contains(t, string(stored), "fresh value")
 			for _, value := range reply.Values {

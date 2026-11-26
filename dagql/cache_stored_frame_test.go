@@ -249,8 +249,9 @@ func TestCloudMakesAMergedRecordsBodyWhileTheGraphLockIsHeld(t *testing.T) {
 			}
 			// What is there is held compressed, as entries stored a while
 			// ago are, and the test makes the record's body itself, as the
-			// worker would.
+			// worker would of a record its merge installed whole.
 			storedTestCompress(cloud)
+			cloud.testMergesInstallWhole = true
 			reply, err := cloud.MergeValues(ctx, "cache-a", wire(t, chainJSON))
 			require.NoError(t, err)
 			require.Equal(t, tc.want, tc.landed(reply), "the record landed as the case says")
