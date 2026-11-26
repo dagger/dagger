@@ -75,7 +75,9 @@ type changeMarks struct {
 	holds []bool
 	// joined are classes, by an id of each, whose every entry a join
 	// brought a stored part to borrow, stamped when the marks are applied,
-	// as the class is then (markJoinLocked).
+	// as the class is then (markJoinLocked). A collection moves each to its
+	// root before it frees the classes that ended (freeEndedEqClassesLocked),
+	// so a class a later join joined away is stamped under its new root.
 	joined []eqClassID
 	// lending are the entries with a class mark that can lend whose stamps
 	// no write has applied yet: an entry that leaves its classes before they

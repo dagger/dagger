@@ -2483,9 +2483,11 @@ func (c *Cache) maybeResetEgraphLocked() {
 	c.freeEqClassIDs = nil
 	c.endedEqClasses = nil
 	if c.changes != nil {
-		// The classes this hold's marks walked are gone with the rest.
+		// The classes this hold's marks walked, or a join marked, are gone
+		// with the rest.
 		c.changes.left = nil
 		c.changes.leftNamed = nil
+		c.changes.joined = nil
 	}
 	c.nextEgraphTermID = 0
 	// nextSharedResultID deliberately survives the reset: numeric result IDs
