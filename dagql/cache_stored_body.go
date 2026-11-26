@@ -870,9 +870,7 @@ func decodeStoredRow(payload []byte, call *ResultCall) (*PersistedResultEnvelope
 		return nil, nil, nil, errors.New("stored row: bad header length")
 	}
 	var h storedRowHeader
-	dec := json.NewDecoder(bytes.NewReader(payload[read : read+int(n)]))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&h); err != nil {
+	if err := decodeStoredRowHeader(payload[read:read+int(n)], &h); err != nil {
 		return nil, nil, nil, fmt.Errorf("stored row header: %w", err)
 	}
 	envelope := payload[read+int(n):]
