@@ -188,7 +188,7 @@ func TestOfferNamesItsHolder(t *testing.T) {
 // take the graph lock each as a profile step of their own, though their
 // context carries no op: a session's release, a prune's measurement of
 // result sizes, its snapshot of the prune state and its removal of each
-// edge, a metadata prune's estimate and its compaction, and a save. So a
+// edge, a metadata prune's estimate and its measure after, and a save. So a
 // wait behind any of them names the step, and the step spans the hold. They
 // run on contexts only engine-wide recording reaches, so the test records
 // engine-wide and doesn't run in parallel.
@@ -245,7 +245,7 @@ func TestEnginePassesNameTheirHolder(t *testing.T) {
 		"dagql.prune.snapshot",
 		"dagql.prune.removeEdge",
 		"dagql.prune.metadataEstimate",
-		"dagql.prune.metadataCompact",
+		"dagql.prune.metadataMeasure",
 	} {
 		require.True(t, held[want], "a %s step held the graph lock (held: %v)", want, held)
 	}

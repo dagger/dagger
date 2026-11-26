@@ -438,24 +438,34 @@ filter used by lookup. An expired-but-not-yet-collected result therefore does
 not delay term cleanup. It does not opportunistically collect expired results
 or change ownership timing.
 
-### 10. `compactEqClassesLocked`
+### 10. `freeEndedEqClassesLocked`
 
 This is maintenance rather than hot-path lookup, but it matters.
 
-Union-find IDs only grow. After lots of merges and pruning, the class ID space
-can get sparse. Compaction rebuilds the live eq-class space to keep it smaller
-and more coherent.
+A class ends when its last use goes (no live term takes it as an input or
+gives it as an output, and no entry names it as an output class), when a
+union joins it into another, or when it was made and never used. The cache
+keeps each class's uses as terms and entries name it
+(`dagql/cache_eqclass_uses.go`), and the operation that ends a class notes it.
+The collector (`collectUnownedResultsLocked`), which every cache's removals go
+through, frees the noted classes that ended as it finishes:
 
-Today this runs after prune when needed, and on the Cloud's cache after
-collections. Whether it would free anything is read from the classes' uses,
-which the cache keeps as terms and entries name classes
-(`dagql/cache_eqclass_uses.go`), so a check that frees nothing walks nothing;
-a compaction walks every term and entry.
+- a dead class's digests leave `egraphDigestToClass`, and entries whose kept
+  calls take one of them drop their term grouping
+- its key leaves every table keyed by class
+- its slot goes on the free list, which the next new class takes
 
-Compaction remaps `resultOutputEqClasses` and rebuilds
-`outputEqClassResults` from the remapped forward associations before publishing
-the pair. A full e-graph reset clears both maps with `resultsByID` and the other
-derived indexes, including exact digest reverse lists and broad import markers.
+A union points the absorbed class's digests and output terms at the survivor
+as it moves its other indexes, and its repair moves the terms that took it as
+an input, so when the merge returns only the absorbed class's parent link
+names it, for an operation that still holds its number. No operation keeps a
+class number across a hold of the cache, nor across a collection within one,
+so freeing at the collector's end is safe. Live classes keep their numbers.
+
+Freeing costs what ended: one look at each noted class and a delete for each
+digest of a freed one, never a walk of the graph. A full e-graph reset clears
+every class table with `resultsByID` and the other derived indexes, including
+exact digest reverse lists and broad import markers.
 
 ## Lookup In Detail
 
@@ -599,8 +609,9 @@ When output digests or extra digests are merged:
    output eq-classes are merged too
 
 Production result/output associations therefore contain current roots. Read
-paths still normalize defensively, and compaction rebuilds both association
-directions under remapped roots.
+paths still normalize defensively. A union also points the losing root's
+digests and the terms it was the output of at the survivor, so once its repair
+is done nothing names the losing root, and the next collection frees it.
 
 That last step is the actual congruence-closure behavior.
 
@@ -679,7 +690,7 @@ Important examples:
 
 - `TreeSet`s are used for term/result indexes so iteration order is stable
 - candidate selection prefers the lowest `sharedResultID`
-- eq-class compaction remaps roots in sorted order
+- freed eq-class numbers are taken back last freed first
 - cache debug snapshots sort IDs and digests before writing
 
 This is not just nice-to-have polish. It makes:
@@ -713,10 +724,11 @@ normal miss path.
 Repair work is driven from `inputEqClassToTerms`, so merges only revisit terms
 that actually mention the merged class as an input.
 
-### Compaction Is Deferred
+### Freeing A Class Costs What Ended
 
-Eq-class slots are compacted after prune rather than continuously. That keeps
-the hot path simpler.
+A class's slot is freed by the collection that ends it, at a cost of that
+class and its digests. No hold walks the graph to free classes, however large
+the graph grows.
 
 ### Session Filtering Happens After Candidate Discovery
 
@@ -797,7 +809,7 @@ well:
    - `mergeEqClassesLocked`
    - `repairClassTermsLocked`
    - `removeResultFromEgraphLocked`
-   - `compactEqClassesLocked`
+   - `freeEndedEqClassesLocked`
 
 3. `dagql/cache_persistence_import.go`
    - `importPersistedState`

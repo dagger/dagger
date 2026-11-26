@@ -8,21 +8,20 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 )
 
-// eqClassCheckHolding is the i'th entry of a cache shaped as the Cloud's:
-// its term takes the entries before it and at half its number as inputs;
-// one in three has a content digest, which one in thirty shares with the
-// entry before it, joining their classes; and one in ten was requested
-// under another digest. Its classes leave fewer dead slots than live
-// classes, so a compaction check frees nothing.
-func eqClassCheckHolding(i int) RemoteHolding {
+// eqClassTestHolding is the i'th entry of a cache shaped as the Cloud's: its
+// term takes the entries before it and at half its number as inputs; one in
+// three has a content digest, which one in thirty shares with the entry
+// before it, joining their classes; and one in ten was requested under
+// another digest.
+func eqClassTestHolding(i int) RemoteHolding {
 	h := holdingOf("check-entry-" + strconv.Itoa(i))
 	if i > 0 {
 		h.Term.Inputs = []digest.Digest{testDigest("check-entry-" + strconv.Itoa(i-1)), testDigest("check-entry-" + strconv.Itoa(i/2))}
@@ -39,54 +38,42 @@ func eqClassCheckHolding(i int) RemoteHolding {
 	return h
 }
 
-// A collection's check of the classes' compaction that frees nothing
-// changes no state engines share: over entries whose terms take each other
-// as inputs, some joined by content and some requested under another
-// digest, with dead slots fewer than the live classes, a check made after
-// the slots grew leaves the e-graph, the entries and the free slots as they
-// were.
-func TestEqClassCheckThatFreesNothingChangesNothing(t *testing.T) {
+// A collection when no class has ended since the last one changes no state
+// engines share: over entries whose terms take each other as inputs, some
+// joined by content and some requested under another digest, a collection
+// right after the one that freed what an entry's attach ended leaves the
+// e-graph, the entries and the free slots as they were.
+func TestACollectionThatEndsNoClassChangesNothing(t *testing.T) {
 	t.Parallel()
 	ctx, cloud := storedPartTestCache(t, WithBlobStore())
-	advance := testEqClassClock(cloud)
 	const entries = 300
 	for i := range entries {
-		_, err := cloud.AttachRemoteHolding(ctx, HolderKey{"cache-a", uint64(i + 1)}, eqClassCheckHolding(i))
+		_, err := cloud.AttachRemoteHolding(ctx, HolderKey{"cache-a", uint64(i + 1)}, eqClassTestHolding(i))
 		require.NoError(t, err)
 	}
 	_, _, err := cloud.CollectRemoteHoldings(ctx, nil, nil)
 	require.NoError(t, err)
-	_, err = cloud.AttachRemoteHolding(ctx, HolderKey{"cache-a", entries + 1}, eqClassCheckHolding(entries))
+	_, err = cloud.AttachRemoteHolding(ctx, HolderKey{"cache-a", entries + 1}, eqClassTestHolding(entries))
 	require.NoError(t, err)
-	advance(eqClassCheckInterval)
-
-	cloud.egraphMu.Lock()
-	slots, live := cloud.eqClassSlotsLocked(), testLiveEqClassesLocked(cloud)
-	cloud.egraphMu.Unlock()
-	require.Greater(t, slots, live, "the cache has dead slots")
-	require.Less(t, slots, 2*live, "fewer than the live classes: the check frees nothing")
-
-	checks, before := testEqClassChecks(cloud), sharedStateOf(cloud)
 	_, _, err = cloud.CollectRemoteHoldings(ctx, nil, nil)
 	require.NoError(t, err)
-	require.Equal(t, checks+1, testEqClassChecks(cloud), "the collection checks the classes' compaction")
-	require.Equal(t, before, sharedStateOf(cloud), "the check left the e-graph as it was")
+
+	before := sharedStateOf(cloud)
+	_, _, err = cloud.CollectRemoteHoldings(ctx, nil, nil)
+	require.NoError(t, err)
+	require.Equal(t, before, sharedStateOf(cloud), "the collection left the e-graph as it was")
 }
 
-// BenchmarkEqClassCheckThatFreesNothing measures the Cloud's check of the
-// classes' compaction on caches of 43,000 entries and of 430,000, about a
-// Cloud cache's serving several pull requests at once. Each entry is held
-// by three engine caches of 165, so 1.29 million holdings at the larger
-// size. The
-// entries are eqClassCheckHolding's, whose classes leave fewer dead slots
-// than live classes. Each operation adds an entry, which grows the slots,
-// moves the checks' clock past their interval and times a collection of
-// nothing, which holds the cache's lock for the check alone. It reports the
-// checks' mean and longest time, and the compactions, which should be none.
-// It fails when the checks' mean is a millisecond or more: a check that
-// frees nothing has no reason to walk the cache, and a walk of the smaller
-// cache takes tens of milliseconds.
-func BenchmarkEqClassCheckThatFreesNothing(b *testing.B) {
+// BenchmarkCollectionThatEndsNothing measures a Cloud collection that ends
+// no class, on caches of 43,000 entries and of 430,000, about a Cloud
+// cache's serving several pull requests at once. Each entry is held by three
+// engine caches of 165, so 1.29 million holdings at the larger size. Each
+// operation adds an entry, whose new classes the collection looks at, and
+// times a collection of nothing, which holds the cache's lock for that look
+// alone. It reports the collections' mean and longest time, and fails when
+// the mean is a millisecond or more: freeing costs what ended, and a walk of
+// the smaller cache takes tens of milliseconds.
+func BenchmarkCollectionThatEndsNothing(b *testing.B) {
 	for _, entries := range []int{43_000, 430_000} {
 		b.Run("entries="+strconv.Itoa(entries), func(b *testing.B) {
 			ctx := context.Background()
@@ -96,19 +83,17 @@ func BenchmarkEqClassCheckThatFreesNothing(b *testing.B) {
 			attach := func(i int) {
 				for k := range 3 {
 					cache := CacheID(fmt.Sprint("cache-", (i+55*k)%165))
-					_, err := cloud.AttachRemoteHolding(ctx, HolderKey{cache, uint64(i + 1)}, eqClassCheckHolding(i))
+					_, err := cloud.AttachRemoteHolding(ctx, HolderKey{cache, uint64(i + 1)}, eqClassTestHolding(i))
 					require.NoError(b, err)
 				}
 			}
 			for i := range entries {
 				attach(i)
 			}
-			advance := testEqClassClock(cloud)
 			_, _, err = cloud.CollectRemoteHoldings(ctx, nil, nil)
 			require.NoError(b, err)
 			cloud.egraphMu.RLock()
-			checks, slots := cloud.eqClassChecks, cloud.eqClassSlotsLocked()
-			terms, holdings := len(cloud.egraphTerms), 0
+			slots, terms, holdings := cloud.eqClassSlotsLocked(), len(cloud.egraphTerms), 0
 			for _, state := range cloud.remoteCaches {
 				holdings += state.holdings
 			}
@@ -116,14 +101,10 @@ func BenchmarkEqClassCheckThatFreesNothing(b *testing.B) {
 			b.Logf("%d entries, %d terms, %d holdings, %d class slots", entries, terms, holdings, slots)
 
 			var total, longest time.Duration
-			compactions, n := 0, 0
+			n := 0
 			for b.Loop() {
 				attach(entries + n)
 				n++
-				advance(eqClassCheckInterval)
-				cloud.egraphMu.RLock()
-				before := cloud.eqClassSlotsLocked()
-				cloud.egraphMu.RUnlock()
 				start := time.Now()
 				_, _, err := cloud.CollectRemoteHoldings(ctx, nil, nil)
 				took := time.Since(start)
@@ -132,76 +113,57 @@ func BenchmarkEqClassCheckThatFreesNothing(b *testing.B) {
 				if took > longest {
 					longest = took
 				}
-				cloud.egraphMu.RLock()
-				if cloud.eqClassSlotsLocked() < before {
-					compactions++
-				}
-				cloud.egraphMu.RUnlock()
 			}
-			cloud.egraphMu.RLock()
-			checks = cloud.eqClassChecks - checks
-			cloud.egraphMu.RUnlock()
-			require.Equal(b, n, checks, "each collection checks")
 			mean := total / time.Duration(n)
-			b.Logf("%d checks: mean %v, longest %v; %d compactions", n, mean, longest, compactions)
-			b.ReportMetric(float64(mean.Nanoseconds())/1e6, "check-ms")
-			b.ReportMetric(float64(longest.Nanoseconds())/1e6, "longest-check-ms")
-			b.ReportMetric(float64(compactions), "compactions")
-			require.Zero(b, compactions, "the checks free nothing")
-			require.Less(b, mean, time.Millisecond, "a check that frees nothing walked the cache: %v a check", mean)
+			b.Logf("%d collections: mean %v, longest %v", n, mean, longest)
+			b.ReportMetric(float64(mean.Nanoseconds())/1e6, "collect-ms")
+			b.ReportMetric(float64(longest.Nanoseconds())/1e6, "longest-collect-ms")
+			require.Less(b, mean, time.Millisecond, "a collection that ends nothing walked the cache: %v a collection", mean)
 		})
 	}
 }
 
-// Compaction decided from the uses the cache keeps leaves the e-graph as
-// compaction decided from a walk of every term and entry did: after every
-// step of random rows of three engines, with sessions ending, engines
-// released, entries collected, the checks' clock moved past their interval
-// and classes compacted by force between them, the two caches hold every
-// digest in a class of the same number, the same free slots, the same terms
-// with the same inputs and outputs, and the same entries' output classes;
-// they have checked as often, and give the same hits for every recipe,
-// content and term. The kept uses equal a walk's in both, and over all the
-// seeds the checks compact as well as decline. The rows' calls share recipes, requests,
-// contents and term selves, so unions are frequent, a union joins classes
-// both used, a term may take one class in two positions, an entry may name
-// two classes a union joins, and a union makes terms congruent.
-func TestKeptClassUsesDecideAsAWalk(t *testing.T) {
+// Freeing each class as it ends leaves the e-graph a compaction at every
+// collection would leave, the way the cache freed classes before: after
+// every step of random rows of three engines, with sessions ending, engines
+// released and entries collected, a cache that frees the classes as they end
+// and one that compacts them by a walk of every term and entry as each
+// collection finishes hold the same digests in the same classes, the same
+// extra digests, the same terms over the same inputs and outputs and the
+// same entries' output classes, and as many class slots, and give the same
+// hits for every recipe, content and term. The kept uses equal a walk's in
+// both. The rows' calls share recipes, requests, contents and term selves,
+// so unions are frequent, a union joins classes both used, a term may take
+// one class in two positions, an entry may name two classes a union joins, a
+// union makes terms congruent, and a dead class can come back before a
+// collection.
+func TestFreeingClassesAsTheyEndMatchesACompaction(t *testing.T) {
 	t.Parallel()
-	var compacted, declined atomic.Int64
-	t.Cleanup(func() {
-		t.Logf("of the collections' checks, %d compacted and %d declined", compacted.Load(), declined.Load())
-		require.Positive(t, compacted.Load(), "a check compacts")
-		require.Positive(t, declined.Load(), "a check declines")
-	})
 	for seed := range uint64(30) {
 		t.Run(fmt.Sprint(seed), func(t *testing.T) {
 			t.Parallel()
-			c, d := checkKeptClassUsesDecideAsAWalk(t, seed)
-			compacted.Add(int64(c))
-			declined.Add(int64(d))
+			checkFreeingClassesAsTheyEndMatchesACompaction(t, seed)
 		})
 	}
 }
 
-// checkKeptClassUsesDecideAsAWalk runs one seed's steps, and returns how
-// many of the collections' checks compacted and declined.
-func checkKeptClassUsesDecideAsAWalk(t *testing.T, seed uint64) (compacted, declined int) {
+// checkFreeingClassesAsTheyEndMatchesACompaction runs one seed's steps.
+func checkFreeingClassesAsTheyEndMatchesACompaction(t *testing.T, seed uint64) {
 	rng := rand.New(rand.NewPCG(seed, seed))
 	type arm struct {
-		ctx     context.Context
-		cloud   *Cache
-		a       *cloudApplier
-		advance func(time.Duration)
+		ctx   context.Context
+		cloud *Cache
+		a     *cloudApplier
 	}
-	newArm := func(walk bool) *arm {
-		// A blob store, as the service's cache has, so that classes compact.
+	newArm := func(compact bool) *arm {
 		ctx, cloud := storedPartTestCache(t, WithBlobStore())
-		cloud.testWalkLiveClasses = walk
-		return &arm{ctx: ctx, cloud: cloud, a: newCloudApplier(t, cloud), advance: testEqClassClock(cloud)}
+		if compact {
+			cloud.testFreeEndedEqClasses = func() { testCompactEqClassesLocked(cloud) }
+		}
+		return &arm{ctx: ctx, cloud: cloud, a: newCloudApplier(t, cloud)}
 	}
-	walked, kept := newArm(true), newArm(false)
-	arms := []*arm{walked, kept}
+	compacted, freed := newArm(true), newArm(false)
+	arms := []*arm{compacted, freed}
 
 	const recipes = 30
 	pick := func(prefix string, n int) digest.Digest { return testDigest(fmt.Sprint(prefix, rng.IntN(n))) }
@@ -222,6 +184,10 @@ func checkKeptClassUsesDecideAsAWalk(t *testing.T, seed uint64) (compacted, decl
 			}
 			if len(term.Inputs) > 0 && rng.IntN(4) == 0 {
 				term.Inputs = append(term.Inputs, term.Inputs[0])
+			}
+			if rng.IntN(8) == 0 {
+				// An input with no digest, which names no class.
+				term.Inputs = append(term.Inputs, "")
 			}
 			h.Term = term
 		}
@@ -245,44 +211,23 @@ func checkKeptClassUsesDecideAsAWalk(t *testing.T, seed uint64) (compacted, decl
 		}
 		return out
 	}
-	// classes reads each arm's classes by number, without compressing a
-	// path: the walk compresses them, and the kept uses don't.
-	classes := func(c *Cache) []string {
-		c.egraphMu.RLock()
-		defer c.egraphMu.RUnlock()
-		var out []string
-		for _, dig := range slices.Sorted(maps.Keys(c.egraphDigestToClass)) {
-			out = append(out, fmt.Sprint("digest ", dig, " ", c.eqClassRootLocked(c.egraphDigestToClass[dig])))
-		}
-		roots := func(ids []eqClassID) []eqClassID {
-			out := make([]eqClassID, len(ids))
-			for i, id := range ids {
-				out[i] = c.eqClassRootLocked(id)
-			}
-			return out
-		}
-		for _, id := range slices.Sorted(maps.Keys(c.egraphTerms)) {
-			term := c.egraphTerms[id]
-			out = append(out, fmt.Sprint("term ", id, " ", term.selfDigest, " ", roots(term.inputEqIDs), " ", c.eqClassRootLocked(term.outputEqID), " ", term.termDigest))
-		}
-		for _, id := range slices.Sorted(maps.Keys(c.resultOutputEqClasses)) {
-			out = append(out, fmt.Sprint("outputs ", id, " ", slices.Sorted(slices.Values(roots(slices.Collect(c.resultOutputEqClasses[id].All()))))))
-		}
-		out = append(out, fmt.Sprint("slots ", c.eqClassSlotsLocked(), " free ", c.freeEqClassIDs, " checks ", c.eqClassChecks))
-		return out
-	}
-	slotsOf := func(c *Cache) int {
-		c.egraphMu.RLock()
-		defer c.egraphMu.RUnlock()
-		return c.eqClassSlotsLocked()
+	// classes reads each arm's classes by the digests they hold, which the
+	// two name alike whatever numbers they gave them.
+	classes := func(c *Cache) (eqClassContents, int) {
+		c.egraphMu.Lock()
+		defer c.egraphMu.Unlock()
+		return testEqClassContentsLocked(c), c.eqClassSlotsLocked()
 	}
 	compare := func(step int) {
 		t.Helper()
 		for _, arm := range arms {
 			require.NoError(t, arm.cloud.verifyEqClassUses(), "step %d", step)
 		}
-		require.Equal(t, classes(walked.cloud), classes(kept.cloud), "step %d: the classes differ", step)
-		require.Equal(t, hits(walked.cloud), hits(kept.cloud), "step %d: the hits differ", step)
+		wantClasses, wantSlots := classes(compacted.cloud)
+		gotClasses, gotSlots := classes(freed.cloud)
+		require.Equal(t, wantClasses, gotClasses, "step %d: the classes differ", step)
+		require.Equal(t, wantSlots, gotSlots, "step %d: the class slots differ", step)
+		require.Equal(t, hits(compacted.cloud), hits(freed.cloud), "step %d: the hits differ", step)
 	}
 
 	for step := range 400 {
@@ -303,25 +248,10 @@ func checkKeptClassUsesDecideAsAWalk(t *testing.T, seed uint64) (compacted, decl
 				arm.a.collect()
 			}
 			session[e]++
-		case 5:
+		case 5, 6, 7, 8, 9:
+			// A collection with nothing to collect, as each read's end runs.
 			for _, arm := range arms {
-				_, _, err := arm.cloud.CompactEqClasses(arm.ctx)
-				require.NoError(t, err)
-			}
-		case 6, 7, 8, 9:
-			// The checks' interval passes: the next collection checks, if
-			// something changed since the last check.
-			checks, slots := testEqClassChecks(kept.cloud), slotsOf(kept.cloud)
-			for _, arm := range arms {
-				arm.advance(eqClassCheckInterval)
 				arm.a.collect()
-			}
-			switch {
-			case testEqClassChecks(kept.cloud) == checks:
-			case slotsOf(kept.cloud) < slots:
-				compacted++
-			default:
-				declined++
 			}
 		default:
 			e := engines[rng.IntN(len(engines))]
@@ -336,12 +266,154 @@ func checkKeptClassUsesDecideAsAWalk(t *testing.T, seed uint64) (compacted, decl
 		}
 		compare(step)
 	}
-	kept.cloud.egraphMu.RLock()
-	unions := kept.cloud.egraphUnions
-	kept.cloud.egraphMu.RUnlock()
-	t.Logf("seed %d: %d unions; of the collections' checks, %d compacted and %d declined", seed, unions, compacted, declined)
+	freed.cloud.egraphMu.RLock()
+	unions := freed.cloud.egraphUnions
+	freed.cloud.egraphMu.RUnlock()
+	t.Logf("seed %d: %d unions", seed, unions)
 	require.Greater(t, unions, uint64(10), "the rows join classes")
-	return compacted, declined
+}
+
+// testCompactEqClassesLocked frees every class that no term and no entry
+// uses, found by a walk, and every class a union joined into another, by
+// rebuilding every table keyed by class from every live digest, term and
+// entry, as the cache's compaction did before each class was freed as it
+// ended. Live classes keep their numbers; the free slots past the highest
+// live class are trimmed. Requires egraphMu for writing.
+func testCompactEqClassesLocked(c *Cache) {
+	if len(c.egraphParents) <= 1 {
+		return
+	}
+	walked := c.walkEqClassUsesLocked()
+	oldRoots := slices.Sorted(maps.Keys(walked))
+	var highest eqClassID
+	if len(oldRoots) > 0 {
+		highest = oldRoots[len(oldRoots)-1]
+	}
+	newParents := make([]eqClassID, highest+1)
+	newRanks := make([]uint8, highest+1)
+	newUses := make([]uint32, highest+1)
+	live := make(map[eqClassID]bool, len(oldRoots))
+	for _, root := range oldRoots {
+		live[root] = true
+		newParents[root] = root
+		newRanks[root] = c.egraphRanks[root]
+	}
+	var newFree []eqClassID
+	for id := highest; id >= 1; id-- {
+		if newParents[id] == 0 {
+			newFree = append(newFree, id)
+		}
+	}
+	newEqClassToDigests := make(map[eqClassID]*idSet[string], len(oldRoots))
+	newEqClassExtraDigests := make(map[eqClassID]map[call.ExtraDigest]struct{}, len(oldRoots))
+	newEgraphDigestToClass := make(map[string]eqClassID)
+	for _, root := range oldRoots {
+		if digests := c.eqClassToDigests[root]; digests.Size() > 0 {
+			for dig := range digests.All() {
+				newEgraphDigestToClass[dig] = root
+			}
+			newEqClassToDigests[root] = digests.Clone()
+		}
+		if extras := c.eqClassExtraDigests[root]; len(extras) > 0 {
+			newEqClassExtraDigests[root] = maps.Clone(extras)
+		}
+	}
+	newInputEqClassToTerms := make(map[eqClassID]*idSet[egraphTermID])
+	newOutputEqClassToTerms := make(map[eqClassID]*idSet[egraphTermID])
+	newEgraphTermsByTermDigest := make(map[string]*idSet[egraphTermID], len(c.egraphTermsByTermDigest))
+	add := func(index map[eqClassID]*idSet[egraphTermID], id eqClassID, termID egraphTermID) {
+		set := index[id]
+		if set == nil {
+			set = newIDSet[egraphTermID]()
+			index[id] = set
+		}
+		set.Insert(termID)
+	}
+	for termID, term := range c.egraphTerms {
+		if term == nil {
+			continue
+		}
+		inputs := make([]eqClassID, 0, len(term.inputEqIDs))
+		for _, in := range term.inputEqIDs {
+			if in == 0 {
+				// An input with no digest keeps its position, as a repair
+				// keeps it.
+				inputs = append(inputs, 0)
+				continue
+			}
+			root := c.findEqClassLocked(in)
+			if !live[root] {
+				continue
+			}
+			inputs = append(inputs, root)
+			newUses[root]++
+			add(newInputEqClassToTerms, root, termID)
+		}
+		term.inputEqIDs = inputs
+		output := c.findEqClassLocked(term.outputEqID)
+		if !live[output] {
+			continue
+		}
+		term.outputEqID = output
+		newUses[output]++
+		add(newOutputEqClassToTerms, output, termID)
+		term.termDigest = calcEgraphTermDigest(term.selfDigest, term.inputEqIDs)
+		digestTerms := newEgraphTermsByTermDigest[term.termDigest]
+		if digestTerms == nil {
+			digestTerms = newIDSet[egraphTermID]()
+			newEgraphTermsByTermDigest[term.termDigest] = digestTerms
+		}
+		digestTerms.Insert(termID)
+	}
+	newResultOutputEqClasses := make(map[sharedResultID]*idSet[eqClassID], len(c.resultOutputEqClasses))
+	newOutputEqClassResults := make(map[eqClassID]*idSet[sharedResultID], len(c.outputEqClassResults))
+	for resID, outputs := range c.resultOutputEqClasses {
+		roots := newIDSet[eqClassID]()
+		for id := range outputs.All() {
+			if root := c.findEqClassLocked(id); live[root] {
+				roots.Insert(root)
+			}
+		}
+		if roots.Size() == 0 {
+			continue
+		}
+		newResultOutputEqClasses[resID] = roots
+		for root := range roots.All() {
+			newUses[root]++
+			results := newOutputEqClassResults[root]
+			if results == nil {
+				results = newIDSet[sharedResultID]()
+				newOutputEqClassResults[root] = results
+			}
+			results.Insert(resID)
+		}
+	}
+	if c.changes != nil {
+		for id := range c.changes.left {
+			if !live[id] {
+				delete(c.changes.left, id)
+			}
+		}
+		for id := range c.changes.leftNamed {
+			if !live[id] {
+				delete(c.changes.leftNamed, id)
+			}
+		}
+	}
+	c.egraphParents = newParents
+	c.egraphRanks = newRanks
+	c.egraphUses = newUses
+	c.liveEqClasses = len(oldRoots)
+	c.eqClassToDigests = newEqClassToDigests
+	c.eqClassExtraDigests = newEqClassExtraDigests
+	c.egraphDigestToClass = newEgraphDigestToClass
+	c.inputEqClassToTerms = newInputEqClassToTerms
+	c.outputEqClassToTerms = newOutputEqClassToTerms
+	c.resultOutputEqClasses = newResultOutputEqClasses
+	c.outputEqClassResults = newOutputEqClassResults
+	c.egraphTermsByTermDigest = newEgraphTermsByTermDigest
+	c.freeEqClassIDs = newFree
+	c.forgetAllCallTermsLocked()
 }
 
 // sharedStateOf is what engines share of a blob-backed cache's state, read

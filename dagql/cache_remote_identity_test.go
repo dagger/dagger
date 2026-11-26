@@ -70,8 +70,8 @@ func allocatedBytesPerRun(runs int, f func()) uint64 {
 // Whenever the check finds a row's identity already taught, teaching it in
 // full writes nothing: every structure of the e-graph is as it was. Random
 // rows of a few engines, whose calls share recipes, requests, contents and
-// term inputs, are applied with their sessions ending, entries collected and
-// classes compacted between them; after each step every live holding's row
+// term inputs, are applied with their sessions ending and entries collected,
+// which frees the classes they end; after each step every live holding's row
 // is checked, and taught in full when the check passes.
 func TestKnownRemoteIdentityWritesNothing(t *testing.T) {
 	t.Parallel()
@@ -85,7 +85,7 @@ func TestKnownRemoteIdentityWritesNothing(t *testing.T) {
 
 func checkKnownRemoteIdentityWritesNothing(t *testing.T, seed uint64) {
 	rng := rand.New(rand.NewPCG(seed, seed))
-	// A blob store, as the service's cache has, so that classes compact.
+	// A blob store, as the service's cache has.
 	ctx, cloud := storedPartTestCache(t, WithBlobStore())
 	a := newCloudApplier(t, cloud)
 	pick := func(prefix string, n int) digest.Digest {
@@ -151,8 +151,8 @@ func checkKnownRemoteIdentityWritesNothing(t *testing.T, seed uint64) {
 			session[e]++
 			a.collect()
 		case 1:
-			_, _, err := cloud.CompactEqClasses(ctx)
-			require.NoError(t, err)
+			// A collection with nothing to collect, as each read's end runs.
+			a.collect()
 		default:
 			e := engines[rng.IntN(len(engines))]
 			c := rng.IntN(len(calls))
@@ -185,8 +185,8 @@ func egraphFactsForTest(c *Cache) string {
 	line("digestToClass", c.egraphDigestToClass)
 	line("classDigests", c.eqClassToDigests)
 	// A class's empty set of extra digests is no set: every reader iterates
-	// it or asks it for one digest, and merges and compaction carry only a
-	// set that holds one. addResultExtraDigestsLocked makes an empty one for
+	// it or asks it for one digest, and merges carry only a set that holds
+	// one. addResultExtraDigestsLocked makes an empty one for
 	// a frame without extra digests.
 	extras := make(map[eqClassID]map[call.ExtraDigest]struct{}, len(c.eqClassExtraDigests))
 	for id, set := range c.eqClassExtraDigests {

@@ -265,26 +265,29 @@ func (c *Cache) ensureEqClassForDigestLocked(ctx context.Context, dig string) eq
 	return id
 }
 
-// allocEqClassLocked returns a number for a new class: the lowest that
-// compaction freed, or the next after every slot. Requires egraphMu for
-// writing, and an initialized e-graph.
+// allocEqClassLocked returns a number for a new class: the last a freed
+// class left (freeEndedEqClassesLocked), or the next after every slot. The
+// class is noted as ended until a term or an entry uses it: one made by an
+// operation that stops before using it is freed by the next collection.
+// Requires egraphMu for writing, and an initialized e-graph.
 func (c *Cache) allocEqClassLocked() eqClassID {
+	var id eqClassID
 	// While a save reads the store, a freed number isn't taken again: a
 	// number the save has read names one class until it ends.
 	if n := len(c.freeEqClassIDs); n > 0 && !c.savingLocked() {
-		id := c.freeEqClassIDs[n-1]
+		id = c.freeEqClassIDs[n-1]
 		c.freeEqClassIDs = c.freeEqClassIDs[:n-1]
-		c.noteSavedClassLocked(id)
 		c.egraphParents[id] = id
 		c.egraphRanks[id] = 0
 		c.egraphUses[id] = 0
-		return id
+	} else {
+		id = eqClassID(len(c.egraphParents))
+		c.egraphParents = append(c.egraphParents, id)
+		c.egraphRanks = append(c.egraphRanks, 0)
+		c.egraphUses = append(c.egraphUses, 0)
 	}
-	id := eqClassID(len(c.egraphParents))
 	c.noteSavedClassLocked(id)
-	c.egraphParents = append(c.egraphParents, id)
-	c.egraphRanks = append(c.egraphRanks, 0)
-	c.egraphUses = append(c.egraphUses, 0)
+	c.endedEqClasses = append(c.endedEqClasses, id)
 	return id
 }
 
@@ -328,7 +331,11 @@ func (c *Cache) unionRootsLocked(ra, rb eqClassID) (survivor, loser eqClassID) {
 // surviving root (unionRootsLocked). absorbedInputTerms reports whether the
 // union moved input terms from the losing root to the survivor, and moved,
 // unless nil, takes each live term it moved: those terms still name the
-// losing root until they are repaired.
+// losing root until they are repaired. Everything else that names the losing
+// root names the survivor once the union returns: its digests, the terms it
+// was the output of, and its entries. So once the repair is done, only its
+// parent link names it, for a number an operation still holds, and it is
+// noted for the collector to free (freeEndedEqClassesLocked).
 func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID, moved *[]egraphTermID) (root eqClassID, absorbedInputTerms bool) {
 	ra := c.findEqClassLocked(a)
 	rb := c.findEqClassLocked(b)
@@ -361,6 +368,7 @@ func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID, moved *[]egraphTerm
 		}
 		for dig := range srcDigests.All() {
 			dstDigests.Insert(dig)
+			c.egraphDigestToClass[dig] = ra
 			c.forgetCallTermsLocked(dig)
 		}
 		delete(c.eqClassToDigests, rb)
@@ -414,6 +422,10 @@ func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID, moved *[]egraphTerm
 		}
 		for termID := range srcOutputTerms.All() {
 			c.noteSavedTermLocked(termID)
+			// The term's use moved with the class's (joinEqClassUsesLocked).
+			if term := c.egraphTerms[termID]; term != nil {
+				term.outputEqID = ra
+			}
 		}
 		dstOutputTerms.InsertAll(srcOutputTerms)
 		delete(c.outputEqClassToTerms, rb)
@@ -455,6 +467,7 @@ func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID, moved *[]egraphTerm
 		}
 		delete(c.outputEqClassResults, rb)
 	}
+	c.endedEqClasses = append(c.endedEqClasses, rb)
 
 	return ra, absorbedInputTerms
 }
@@ -2545,6 +2558,12 @@ func (c *Cache) maybeResetEgraphLocked() {
 	c.entriesByRecipe = nil
 	c.remoteCaches = nil
 	c.freeEqClassIDs = nil
+	c.endedEqClasses = nil
+	if c.changes != nil {
+		// The classes this hold's marks walked are gone with the rest.
+		c.changes.left = nil
+		c.changes.leftNamed = nil
+	}
 	c.nextEgraphTermID = 0
 	// nextSharedResultID deliberately survives the reset: numeric result IDs
 	// must be engine-lifetime unique because they outlive this index (session
@@ -2553,196 +2572,4 @@ func (c *Cache) maybeResetEgraphLocked() {
 	// and term IDs never leave the index maps cleared above, so their
 	// counters can restart. Import seeds nextSharedResultID past the highest
 	// persisted ID at startup for the same reason.
-}
-
-func (c *Cache) compactEqClassesLocked(force bool) (changed bool, oldSlots int, newSlots int) {
-	return c.compactEqClassesModeLocked(force, false)
-}
-
-// compactEqClassesModeLocked is compactEqClassesLocked; with freeAll, it also
-// frees every slot when no class is live, which compactEqClassesLocked leaves.
-// It decides from the live classes the cache keeps (cache_eqclass_uses.go),
-// and walks the terms and entries only to compact.
-//
-//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
-func (c *Cache) compactEqClassesModeLocked(force, freeAll bool) (changed bool, oldSlots int, newSlots int) {
-	if len(c.egraphParents) <= 1 {
-		return false, 0, 0
-	}
-	// While a save reads the store, no slot is freed or trimmed: a number
-	// the save has read names one class until it ends.
-	if c.savingLocked() {
-		return false, c.eqClassSlotsLocked(), c.eqClassSlotsLocked()
-	}
-
-	var walked map[eqClassID]uint32
-	newSlots = c.liveEqClasses
-	if c.testWalkLiveClasses {
-		walked = c.walkEqClassUsesLocked()
-		newSlots = len(walked)
-	}
-	oldSlots = c.eqClassSlotsLocked()
-	if (newSlots == 0 && !freeAll) || oldSlots == newSlots || (!force && oldSlots < newSlots*2) {
-		return false, oldSlots, newSlots
-	}
-
-	// Every live class keeps its number, so a number names its class for as
-	// long as the class lives, outside these tables too. Every other slot is
-	// freed: a dead class, and a class joined into another, whose digests and
-	// terms are flattened onto the root below. The free slots past the
-	// highest live class are trimmed; those below it are taken again by new
-	// classes (allocEqClassLocked).
-	oldRoots := make([]eqClassID, 0, newSlots)
-	if walked != nil {
-		for root := range walked {
-			oldRoots = append(oldRoots, root)
-		}
-		slices.Sort(oldRoots)
-	} else {
-		// A slot's uses are above 0 only at a root.
-		for id, uses := range c.egraphUses {
-			if uses > 0 {
-				oldRoots = append(oldRoots, eqClassID(id))
-			}
-		}
-	}
-	var highest eqClassID
-	if len(oldRoots) > 0 {
-		highest = oldRoots[len(oldRoots)-1]
-	}
-
-	remap := make(map[eqClassID]eqClassID, len(oldRoots))
-	newParents := make([]eqClassID, highest+1)
-	newRanks := make([]uint8, highest+1)
-	// The uses are counted again from the walk below, over the terms and
-	// entries as compaction leaves them.
-	newUses := make([]uint32, highest+1)
-	for _, oldRoot := range oldRoots {
-		remap[oldRoot] = oldRoot
-		newParents[oldRoot] = oldRoot
-	}
-	// Lowest last, so allocEqClassLocked takes the lowest first.
-	newFree := make([]eqClassID, 0, int(highest)-len(oldRoots))
-	for id := highest; id >= 1; id-- {
-		if newParents[id] == 0 {
-			newFree = append(newFree, id)
-		}
-	}
-
-	newEqClassToDigests := make(map[eqClassID]*idSet[string], len(oldRoots))
-	newEqClassExtraDigests := make(map[eqClassID]map[call.ExtraDigest]struct{}, len(oldRoots))
-	liveDigests := 0
-	for _, oldRoot := range oldRoots {
-		liveDigests += c.eqClassToDigests[oldRoot].Size()
-	}
-	newEgraphDigestToClass := make(map[string]eqClassID, liveDigests)
-	for _, oldRoot := range oldRoots {
-		newRoot := remap[oldRoot]
-		if oldDigests := c.eqClassToDigests[oldRoot]; oldDigests.Size() > 0 {
-			for dig := range oldDigests.All() {
-				newEgraphDigestToClass[dig] = newRoot
-			}
-			newEqClassToDigests[newRoot] = oldDigests.Clone()
-		}
-		if oldExtras := c.eqClassExtraDigests[oldRoot]; len(oldExtras) > 0 {
-			newExtras := make(map[call.ExtraDigest]struct{}, len(oldExtras))
-			for extra := range oldExtras {
-				newExtras[extra] = struct{}{}
-			}
-			newEqClassExtraDigests[newRoot] = newExtras
-		}
-	}
-
-	newInputEqClassToTerms := make(map[eqClassID]*idSet[egraphTermID])
-	newOutputEqClassToTerms := make(map[eqClassID]*idSet[egraphTermID])
-	newEgraphTermsByTermDigest := make(map[string]*idSet[egraphTermID], len(c.egraphTermsByTermDigest))
-	for termID, term := range c.egraphTerms {
-		if term == nil {
-			continue
-		}
-		newInputEqIDs := make([]eqClassID, 0, len(term.inputEqIDs))
-		for _, inputEqID := range term.inputEqIDs {
-			root := c.findEqClassLocked(inputEqID)
-			newRoot := remap[root]
-			if newRoot == 0 {
-				continue
-			}
-			newInputEqIDs = append(newInputEqIDs, newRoot)
-			newUses[newRoot]++
-			set := newInputEqClassToTerms[newRoot]
-			if set == nil {
-				set = newIDSet[egraphTermID]()
-				newInputEqClassToTerms[newRoot] = set
-			}
-			set.Insert(termID)
-		}
-		term.inputEqIDs = newInputEqIDs
-
-		outputRoot := c.findEqClassLocked(term.outputEqID)
-		newOutputRoot := remap[outputRoot]
-		if newOutputRoot == 0 {
-			continue
-		}
-		term.outputEqID = newOutputRoot
-		newUses[newOutputRoot]++
-		outputTerms := newOutputEqClassToTerms[newOutputRoot]
-		if outputTerms == nil {
-			outputTerms = newIDSet[egraphTermID]()
-			newOutputEqClassToTerms[newOutputRoot] = outputTerms
-		}
-		outputTerms.Insert(termID)
-
-		term.termDigest = calcEgraphTermDigest(term.selfDigest, term.inputEqIDs)
-		digestTerms := newEgraphTermsByTermDigest[term.termDigest]
-		if digestTerms == nil {
-			digestTerms = newIDSet[egraphTermID]()
-			newEgraphTermsByTermDigest[term.termDigest] = digestTerms
-		}
-		digestTerms.Insert(termID)
-	}
-
-	newResultOutputEqClasses := make(map[sharedResultID]*idSet[eqClassID], len(c.resultOutputEqClasses))
-	newOutputEqClassResults := make(map[eqClassID]*idSet[sharedResultID], len(c.outputEqClassResults))
-	for resID, outputEqIDs := range c.resultOutputEqClasses {
-		newOutputEqIDs := newIDSet[eqClassID]()
-		for outputEqID := range outputEqIDs.All() {
-			root := c.findEqClassLocked(outputEqID)
-			newRoot := remap[root]
-			if newRoot != 0 {
-				newOutputEqIDs.Insert(newRoot)
-			}
-		}
-		for newOutputEqID := range newOutputEqIDs.All() {
-			newUses[newOutputEqID]++
-		}
-		if newOutputEqIDs.Size() > 0 {
-			newResultOutputEqClasses[resID] = newOutputEqIDs
-			for newOutputEqID := range newOutputEqIDs.All() {
-				results := newOutputEqClassResults[newOutputEqID]
-				if results == nil {
-					results = newIDSet[sharedResultID]()
-					newOutputEqClassResults[newOutputEqID] = results
-				}
-				results.Insert(resID)
-			}
-		}
-	}
-
-	c.egraphParents = newParents
-	c.egraphRanks = newRanks
-	c.egraphUses = newUses
-	c.liveEqClasses = len(oldRoots)
-	c.eqClassToDigests = newEqClassToDigests
-	c.eqClassExtraDigests = newEqClassExtraDigests
-	c.egraphDigestToClass = newEgraphDigestToClass
-	c.inputEqClassToTerms = newInputEqClassToTerms
-	c.outputEqClassToTerms = newOutputEqClassToTerms
-	c.resultOutputEqClasses = newResultOutputEqClasses
-	c.outputEqClassResults = newOutputEqClassResults
-	c.egraphTermsByTermDigest = newEgraphTermsByTermDigest
-	c.freeEqClassIDs = newFree
-	// Classes have new numbers, which the terms of kept calls name.
-	c.forgetAllCallTermsLocked()
-
-	return true, oldSlots, newSlots
 }

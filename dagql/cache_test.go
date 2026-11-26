@@ -7083,42 +7083,9 @@ func TestCachePruneOrderedSimulationKeepsZeroDeltaPrerequisites(t *testing.T) {
 	assert.Equal(t, int64(120), report.ReclaimedBytes)
 }
 
-func TestCompactEqClassesSkipsWhenBelowThreshold(t *testing.T) {
-	t.Parallel()
-	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "", nil, nil)
-	assert.NilError(t, err)
-	c := cacheIface
-
-	c.egraphMu.Lock()
-	c.initEgraphLocked()
-	a := c.ensureEqClassForDigestLocked(ctx, "compact-threshold-a")
-	b := c.ensureEqClassForDigestLocked(ctx, "compact-threshold-b")
-	c1 := c.ensureEqClassForDigestLocked(ctx, "compact-threshold-c")
-	_ = c.ensureEqClassForDigestLocked(ctx, "compact-threshold-dead-1")
-	_ = c.ensureEqClassForDigestLocked(ctx, "compact-threshold-dead-2")
-	c.resultsByID = map[sharedResultID]*sharedResult{
-		1: {id: 1, self: Int(1), hasValue: true, resultCall: cacheTestIntCall("compact-threshold-a")},
-		2: {id: 2, self: Int(2), hasValue: true, resultCall: cacheTestIntCall("compact-threshold-b")},
-		3: {id: 3, self: Int(3), hasValue: true, resultCall: cacheTestIntCall("compact-threshold-c")},
-	}
-	c.addResultOutputEqClassLocked(1, a)
-	c.addResultOutputEqClassLocked(2, b)
-	c.addResultOutputEqClassLocked(3, c1)
-	compacted, oldSlots, newSlots := c.compactEqClassesLocked(false)
-	forced, forcedOldSlots, forcedNewSlots := c.compactEqClassesLocked(true)
-	c.egraphMu.Unlock()
-
-	assert.Assert(t, !compacted)
-	assert.Equal(t, 5, oldSlots)
-	assert.Equal(t, 3, newSlots)
-	assert.Assert(t, forced)
-	assert.Equal(t, 5, forcedOldSlots)
-	assert.Equal(t, 3, forcedNewSlots)
-	assert.Equal(t, 4, len(c.egraphParents))
-}
-
-func TestCachePruneCompactsEqClassesAndPreservesLookup(t *testing.T) {
+// A prune's collection frees the classes it ends, and with them the ones
+// made and never used since the last collection, and what stays still hits.
+func TestCachePruneFreesEqClassesAndPreservesLookup(t *testing.T) {
 	t.Parallel()
 	baseCtx := t.Context()
 	ctxActive := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
@@ -7156,12 +7123,12 @@ func TestCachePruneCompactsEqClassesAndPreservesLookup(t *testing.T) {
 
 	assert.NilError(t, c.ReleaseSession(ctxPrunable, "prune-compact-prunable"))
 	c.egraphMu.Lock()
-	originalSlots := len(c.egraphParents)
+	originalSlots := c.eqClassSlotsLocked()
 	_ = c.ensureEqClassForDigestLocked(baseCtx, "prune-compact-dead-1")
 	_ = c.ensureEqClassForDigestLocked(baseCtx, "prune-compact-dead-2")
 	_ = c.ensureEqClassForDigestLocked(baseCtx, "prune-compact-dead-3")
 	_ = c.ensureEqClassForDigestLocked(baseCtx, "prune-compact-dead-4")
-	bloatedSlots := len(c.egraphParents)
+	bloatedSlots := c.eqClassSlotsLocked()
 	c.egraphMu.Unlock()
 	assert.Assert(t, bloatedSlots > originalSlots)
 
@@ -7170,13 +7137,13 @@ func TestCachePruneCompactsEqClassesAndPreservesLookup(t *testing.T) {
 	assert.Equal(t, 1, len(report.Entries))
 	assert.Equal(t, cacheTestSharedResultEntryID(prunableRes), report.Entries[0].ID)
 
-	c.egraphMu.RLock()
-	compactedSlots := len(c.egraphParents)
+	c.egraphMu.Lock()
+	freedSlots, liveClasses := c.eqClassSlotsLocked(), testLiveEqClassesLocked(c)
 	_, activePresent := c.resultsByID[activeShared.id]
 	_, prunablePresent := c.resultsByID[prunableShared.id]
-	c.egraphMu.RUnlock()
-	assert.Assert(t, compactedSlots < bloatedSlots)
-	assert.Assert(t, compactedSlots >= 2)
+	c.egraphMu.Unlock()
+	assert.Assert(t, freedSlots < originalSlots)
+	assert.Equal(t, liveClasses, freedSlots)
 	assert.Assert(t, activePresent)
 	assert.Assert(t, !prunablePresent)
 

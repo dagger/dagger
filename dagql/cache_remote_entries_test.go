@@ -2,18 +2,14 @@ package dagql
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"maps"
 	"math/rand/v2"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strconv"
-	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
@@ -353,9 +349,9 @@ func testRemoteHoldingDependenciesCascade(t *testing.T, terms bool) {
 // An entry that another unit owns outlives its last holding, with or without
 // terms, while other entries leave around it. It keeps its entry dependency,
 // its recipe keys, its postings and its class membership. The collection that
-// takes those holdings leaves more dead classes than live ones and compacts
-// them: the entry keeps all of that through the renumbering, and a holding
-// that stays keeps its number, recipes, postings, classes and terms. When the
+// takes those holdings frees the classes it ends: the entry keeps all of
+// that, and a holding that stays keeps its number, recipes, postings,
+// classes and terms. When the
 // unit goes, the entry and its entry dependency go, and only then, with no
 // entry left, does the e-graph reset.
 func TestRemoteEntryOutlivesItsHoldings(t *testing.T) {
@@ -364,7 +360,6 @@ func TestRemoteEntryOutlivesItsHoldings(t *testing.T) {
 		t.Run("terms="+strconv.FormatBool(terms), func(t *testing.T) {
 			t.Parallel()
 			cloud := newCloudCache(t)
-			advance := testEqClassClock(cloud)
 			a := newCloudApplier(t, cloud)
 			key, scratch, dep := HolderKey{"cache-a", 1}, HolderKey{"cache-a", 2}, HolderKey{"cache-a", 3}
 			kept := holdingOf("kept")
@@ -405,8 +400,7 @@ func TestRemoteEntryOutlivesItsHoldings(t *testing.T) {
 			cloud.egraphMu.Unlock()
 			require.NoError(t, err)
 
-			// Churn from a third engine cache leaves with them: more dead
-			// classes than live ones.
+			// Churn from a third engine cache leaves with them.
 			var churn []HolderKey
 			for i := range 40 {
 				k := HolderKey{"cache-c", uint64(i + 1)}
@@ -422,21 +416,18 @@ func TestRemoteEntryOutlivesItsHoldings(t *testing.T) {
 			stayed, ok := cloud.RemoteEntryInfo(stays)
 			require.True(t, ok)
 			cloud.egraphMu.Lock()
-			slotsBefore, checksBefore := cloud.eqClassSlotsLocked(), cloud.eqClassChecks
+			slotsBefore := cloud.eqClassSlotsLocked()
 			cloud.egraphMu.Unlock()
 
 			// Every holding leaves, and the scratch entry with its holding, in
-			// one pass that compacts the classes, an interval after the last
-			// check.
-			advance(eqClassCheckInterval)
+			// one pass that frees the classes it ends.
 			a.endSession("cache-a", "s")
 			require.Equal(t, append([]HolderKey{key, scratch, dep}, churn...), a.collect())
 			cloud.egraphMu.Lock()
-			slotsAfter, checksAfter, liveClasses := cloud.eqClassSlotsLocked(), cloud.eqClassChecks, testLiveEqClassesLocked(cloud)
+			slotsAfter, liveClasses := cloud.eqClassSlotsLocked(), testLiveEqClassesLocked(cloud)
 			cloud.egraphMu.Unlock()
-			require.Equal(t, checksBefore+1, checksAfter, "the collection checked the classes")
-			require.Less(t, slotsAfter, slotsBefore, "and compacted them")
-			require.Equal(t, liveClasses, slotsAfter, "to the live classes")
+			require.Less(t, slotsAfter, slotsBefore, "the collection freed the classes it ended")
+			require.Equal(t, liveClasses, slotsAfter, "every slot left is a live class")
 			after, ok := cloud.RemoteEntryInfo(stays)
 			require.True(t, ok, "the holding that stays resolves by its number")
 			require.Equal(t, stayed, after, "with its recipes, postings, classes and terms")
@@ -1024,7 +1015,7 @@ func TestRemoteHoldingsConcurrentReads(t *testing.T) {
 }
 
 // testLiveEqClassesLocked counts the classes that a term or an entry uses,
-// the ones compaction keeps. Requires egraphMu for writing.
+// by a walk. Requires egraphMu for writing.
 func testLiveEqClassesLocked(c *Cache) int {
 	live := map[eqClassID]struct{}{}
 	use := func(id eqClassID) {
@@ -1049,266 +1040,13 @@ func testLiveEqClassesLocked(c *Cache) int {
 	return len(live)
 }
 
-// testEqClassClock gives the cache a clock for its compaction checks that
-// only the test moves, and returns the function that moves it.
-func testEqClassClock(c *Cache) func(time.Duration) {
-	now := time.Unix(1_000_000, 0)
-	c.egraphMu.Lock()
-	c.eqClassClock = func() time.Time { return now }
-	c.egraphMu.Unlock()
-	return func(d time.Duration) {
-		c.egraphMu.Lock()
-		now = now.Add(d)
-		c.egraphMu.Unlock()
-	}
-}
-
-// testEqClassChecks returns the cache's count of compaction checks.
-func testEqClassChecks(c *Cache) int {
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
-	return c.eqClassChecks
-}
-
-// The Cloud's collection checks its classes for compaction at most once per
-// interval, and only when something changed since the last check: the class
-// slots differ, or a collection removed entries. Under churn, with holdings
-// created and collected at every one-second read, the collections check once
-// per interval, and each check leaves the slots under twice the live classes.
-func TestCollectionChecksOncePerInterval(t *testing.T) {
-	t.Parallel()
-	cloud := newCloudCache(t)
-	advance := testEqClassClock(cloud)
-	a := newCloudApplier(t, cloud)
-	for i := range 100 {
-		live := holdingOf(fmt.Sprintf("live-%d", i))
-		live.ContentDigest = testDigest(fmt.Sprintf("live-%d-content", i))
-		a.call(callRow{key: HolderKey{"cache-live", uint64(i + 1)}, session: "live", holding: live})
-	}
-	require.Empty(t, a.collect())
-
-	const rounds, perRound = 200, 5
-	compactions := 0
-	for r := range rounds {
-		advance(time.Second)
-		session := fmt.Sprintf("churn-%d", r)
-		for i := range perRound {
-			field := fmt.Sprintf("churn-%d-%d", r, i)
-			churn := holdingOf(field)
-			churn.ContentDigest = testDigest(field + "-content")
-			a.call(callRow{key: HolderKey{"cache-churn", uint64(r*perRound + i + 1)}, session: session, holding: churn})
-		}
-		a.endSession("cache-churn", session)
-		cloud.egraphMu.Lock()
-		checkedAt, checkedSlots, removed := cloud.eqClassCheckedAt, cloud.eqClassCheckedSlots, cloud.eqClassRemoved
-		checks, before, now, entries := cloud.eqClassChecks, cloud.eqClassSlotsLocked(), cloud.eqClassClock(), len(cloud.resultsByID)
-		cloud.egraphMu.Unlock()
-		require.Len(t, a.collect(), perRound)
-		cloud.egraphMu.Lock()
-		after, checksAfter, live, entriesAfter := cloud.eqClassSlotsLocked(), cloud.eqClassChecks, testLiveEqClassesLocked(cloud), len(cloud.resultsByID)
-		cloud.egraphMu.Unlock()
-		changed := before != checkedSlots || removed || entriesAfter < entries
-		if changed && now.Sub(checkedAt) >= eqClassCheckInterval {
-			require.Equal(t, checks+1, checksAfter, "round %d: the interval has passed, and something changed", r)
-			require.Less(t, after, 2*live, "round %d: the check leaves the slots under twice the live classes", r)
-		} else {
-			require.Equal(t, checks, checksAfter, "round %d: within the interval, no check", r)
-		}
-		if after < before {
-			compactions++
-		}
-	}
-	checks := testEqClassChecks(cloud)
-	require.Positive(t, compactions)
-	require.LessOrEqual(t, checks, 1+rounds/10, "one check per interval, not one per collection")
-}
-
-// A collection that compacts the classes logs it at Info, through the
-// collection's context, with the class slots before and after and how long
-// it took: the compaction walks the whole graph in the collection's hold of
-// the cache. A check that frees nothing logs nothing at Info.
-func TestCollectionLogsTheCompactionItRuns(t *testing.T) {
-	t.Parallel()
-	cloud := newCloudCache(t)
-	advance := testEqClassClock(cloud)
-	var logs offerLogs
-	ctx := logs.into(t.Context())
-	a := newCloudApplier(t, cloud)
-	for i := range 100 {
-		live := holdingOf(fmt.Sprintf("live-%d", i))
-		live.ContentDigest = testDigest(fmt.Sprintf("live-%d-content", i))
-		a.call(callRow{key: HolderKey{"cache-live", uint64(i + 1)}, session: "live", holding: live})
-	}
-	require.Empty(t, a.collect())
-
-	slots := func() int {
-		cloud.egraphMu.Lock()
-		defer cloud.egraphMu.Unlock()
-		return cloud.eqClassSlotsLocked()
-	}
-	const rounds, perRound = 200, 5
-	var compactions [][2]int
-	for r := range rounds {
-		advance(time.Second)
-		session := fmt.Sprintf("churn-%d", r)
-		for i := range perRound {
-			field := fmt.Sprintf("churn-%d-%d", r, i)
-			churn := holdingOf(field)
-			churn.ContentDigest = testDigest(field + "-content")
-			a.call(callRow{key: HolderKey{"cache-churn", uint64(r*perRound + i + 1)}, session: session, holding: churn})
-		}
-		a.endSession("cache-churn", session)
-		before := slots()
-		collected, _, err := cloud.CollectRemoteHoldings(ctx, a.candidates, nil)
-		require.NoError(t, err)
-		require.Len(t, collected, perRound)
-		a.candidates = nil
-		if after := slots(); after < before {
-			compactions = append(compactions, [2]int{before, after})
-		}
-	}
-	require.NotEmpty(t, compactions)
-	require.Greater(t, testEqClassChecks(cloud), len(compactions), "some checks freed nothing")
-
-	lines := logs.lines(t, "dagql collection compacted eq classes")
-	require.Len(t, lines, len(compactions), "one line for each compaction, and none for a check that frees nothing")
-	for i, line := range lines {
-		require.Equal(t, "INFO", line.fields["level"], line.raw)
-		require.Equal(t, json.Number(strconv.Itoa(compactions[i][0])), line.fields["oldSlots"], line.raw)
-		require.Equal(t, json.Number(strconv.Itoa(compactions[i][1])), line.fields["newSlots"], line.raw)
-		require.Contains(t, line.fields, "duration", line.raw)
-	}
-}
-
-// A collection that changes nothing never checks, however long the cache is
-// idle; the first change after that checks at the next collection.
-func TestCollectionNeverChecksWithoutChange(t *testing.T) {
-	t.Parallel()
-	cloud := newCloudCache(t)
-	advance := testEqClassClock(cloud)
-	a := newCloudApplier(t, cloud)
-	a.call(callRow{key: HolderKey{"cache-a", 1}, session: "s", holding: holdingOf("idle")})
-	require.Empty(t, a.collect())
-	checks := testEqClassChecks(cloud)
-	for range 100 {
-		advance(time.Hour)
-		require.Empty(t, a.collect())
-	}
-	require.Equal(t, checks, testEqClassChecks(cloud), "an idle cache never checks")
-
-	a.call(callRow{key: HolderKey{"cache-a", 2}, session: "s", holding: holdingOf("change")})
-	require.Empty(t, a.collect())
-	require.Equal(t, checks+1, testEqClassChecks(cloud), "a change checks once its interval has passed")
-}
-
-// Entries of different recipes with equivalent content share one class, so a
-// class's slot doesn't measure a check's cost: 100 live entries and their 100
-// terms sit in one class. Twenty one-second sessions of two holdings each,
-// created and collected, check once per interval.
-func TestCollectionChecksManyEquivalentEntriesPerInterval(t *testing.T) {
-	t.Parallel()
-	cloud := newCloudCache(t)
-	advance := testEqClassClock(cloud)
-	a := newCloudApplier(t, cloud)
-	for i := range 100 {
-		h := holdingOf(fmt.Sprintf("equivalent-%d", i))
-		h.ContentDigest = testDigest("same-content")
-		a.call(callRow{key: HolderKey{"live", uint64(i + 1)}, session: "live", holding: h})
-	}
-	require.Empty(t, a.collect())
-	cloud.egraphMu.Lock()
-	live, entries, terms := testLiveEqClassesLocked(cloud), len(cloud.resultsByID), len(cloud.egraphTerms)
-	cloud.egraphMu.Unlock()
-	require.Equal(t, 1, live)
-	require.Equal(t, 100, entries)
-	require.Equal(t, 100, terms)
-	checks := testEqClassChecks(cloud)
-	const rounds = 20
-	for round := range rounds {
-		advance(time.Second)
-		session := fmt.Sprintf("churn-%d", round)
-		for j := range 2 {
-			key := HolderKey{"churn", uint64(round*2 + j + 1)}
-			a.call(callRow{key: key, session: session, holding: holdingOf(fmt.Sprintf("fresh-%d-%d", round, j))})
-		}
-		a.endSession("churn", session)
-		require.Len(t, a.collect(), 2)
-	}
-	require.LessOrEqual(t, testEqClassChecks(cloud)-checks, rounds/10, "one check per interval: each scans the live entries and terms")
-}
-
-// Request digests that an engine's ordinary cache hits add to an entry's class
-// grow the digests a compaction copies with no new entry or term. The engine's
-// own calls produce them: a seed and 100 nested no-op calls hit the seed's
-// entry, and the Cloud applies their evidence. Twenty one-second sessions of
-// churn check once per interval, not once per session.
-func TestCollectionChecksManyRequestDigestsPerInterval(t *testing.T) {
-	t.Parallel()
-	ctx, engineCache := cacheTestEvidenceEnv(t)
-	defer cacheTestReleaseSession(t, engineCache, ctx)
-	cloud := newCloudCache(t)
-	advance := testEqClassClock(cloud)
-	a := newCloudApplier(t, cloud)
-	apply := func(req *CallRequest, res AnyResult) {
-		frame, err := res.ResultCall()
-		require.NoError(t, err)
-		recipe, err := frame.deriveRecipeDigest(engineCache)
-		require.NoError(t, err)
-		request, err := req.ResultCall.deriveRecipeDigest(engineCache)
-		require.NoError(t, err)
-		ev := req.CacheEvidence
-		h := RemoteHolding{Recipe: recipe, Request: request, Field: req.ResultCall.Field, Term: &RemoteTerm{Self: ev.SelfDigest, Inputs: ev.StructuralInputs}, TypeName: "Int"}
-		a.call(callRow{key: HolderKey{"live", uint64(res.cacheSharedResult().id)}, session: "live", holding: h})
-	}
-	seed := cacheTestIntCall("alias-seed")
-	req := cacheTestArmedRequest(seed)
-	parent, err := engineCache.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, req, ValueFunc(cacheTestIntResult(seed, 42)))
-	require.NoError(t, err)
-	apply(req, parent)
-	prev := seed
-	for i := range 100 {
-		frame := cacheTestIntCall("alias-noop")
-		frame.Receiver = &ResultCallRef{Call: prev}
-		req = cacheTestArmedRequest(frame)
-		got, err := engineCache.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, req, ValueFunc(parent))
-		require.NoError(t, err)
-		require.Same(t, parent.cacheSharedResult(), got.cacheSharedResult())
-		if i > 0 {
-			require.True(t, got.HitCache())
-		}
-		apply(req, got)
-		prev = frame
-	}
-	require.Empty(t, a.collect())
-	cloud.egraphMu.Lock()
-	entries, digests := len(cloud.resultsByID), len(cloud.egraphDigestToClass)
-	cloud.egraphMu.Unlock()
-	require.Equal(t, 1, entries)
-	require.GreaterOrEqual(t, digests, 100)
-	checks := testEqClassChecks(cloud)
-	const rounds = 20
-	for round := range rounds {
-		advance(time.Second)
-		session := fmt.Sprintf("real-churn-%d", round)
-		for j := range 2 {
-			field := fmt.Sprintf("real-churn-%d-%d", round, j)
-			a.call(callRow{key: HolderKey{"churn", uint64(round*2 + j + 1)}, session: session, holding: holdingOf(field)})
-		}
-		a.endSession("churn", session)
-		require.Len(t, a.collect(), 2)
-	}
-	require.LessOrEqual(t, testEqClassChecks(cloud)-checks, rounds/10, "one check per interval: each copies every request digest")
-}
-
 // A release with no new class, as an engine's unclean stop releases its whole
-// cache, is a change: 200 of 201 entries go within an interval of the last
-// check, and the first collection after the interval, with no candidates,
-// checks and compacts the classes to the live ones. The entry that stays keeps
-// its identity.
-func TestCollectionChecksAReleaseAfterTheInterval(t *testing.T) {
+// cache, frees the classes it ends in its own collection: 200 of 201 entries
+// go, and when the collection returns, every slot left is a live class. The
+// entry that stays keeps its identity.
+func TestAReleaseFreesTheClassesItEnds(t *testing.T) {
 	t.Parallel()
 	cloud := newCloudCache(t)
-	advance := testEqClassClock(cloud)
 	a := newCloudApplier(t, cloud)
 	keep := HolderKey{"stays", 1}
 	a.call(callRow{key: keep, session: "stays", holding: holdingOf("stays")})
@@ -1318,35 +1056,25 @@ func TestCollectionChecksAReleaseAfterTheInterval(t *testing.T) {
 	require.Empty(t, a.collect())
 	before, ok := cloud.RemoteEntryInfo(keep)
 	require.True(t, ok)
-	checks := testEqClassChecks(cloud)
 
-	advance(time.Second)
 	collected, _, err := cloud.CollectRemoteHoldings(t.Context(), cloud.ReleaseRemoteCache(t.Context(), "wiped").Candidates, nil)
 	require.NoError(t, err)
 	require.Len(t, collected, 200)
-	require.Equal(t, checks, testEqClassChecks(cloud), "within the interval, the release waits")
-
-	advance(eqClassCheckInterval)
-	collected, _, err = cloud.CollectRemoteHoldings(t.Context(), nil, nil)
-	require.NoError(t, err)
-	require.Empty(t, collected)
 	cloud.egraphMu.Lock()
 	slots, live := cloud.eqClassSlotsLocked(), testLiveEqClassesLocked(cloud)
 	cloud.egraphMu.Unlock()
-	require.Equal(t, checks+1, testEqClassChecks(cloud), "the first collection after the interval checks")
-	require.Equal(t, live, slots, "and compacts to the live classes")
+	require.Equal(t, 1, live)
+	require.Equal(t, live, slots, "the release's collection freed the classes it ended")
 	after, ok := cloud.RemoteEntryInfo(keep)
 	require.True(t, ok)
 	require.Equal(t, before, after)
 }
 
-// Gone answers remove entries too, and never check by themselves: their
-// removal counts toward the next collection's check after the interval, which
-// compacts the classes to the live ones though it collects nothing itself.
-func TestCollectionChecksGoneAnswersAfterTheInterval(t *testing.T) {
+// Gone answers remove entries through the collector too, which frees the
+// classes they end as each answer's removal finishes.
+func TestGoneAnswersFreeTheClassesTheyEnd(t *testing.T) {
 	t.Parallel()
 	cloud := newCloudCache(t)
-	advance := testEqClassClock(cloud)
 	a := newCloudApplier(t, cloud)
 	keep := HolderKey{"stays", 1}
 	a.call(callRow{key: keep, session: "stays", holding: holdingOf("stays")})
@@ -1354,36 +1082,27 @@ func TestCollectionChecksGoneAnswersAfterTheInterval(t *testing.T) {
 		a.call(callRow{key: HolderKey{"gone", uint64(i + 1)}, session: "running", holding: holdingOf(fmt.Sprintf("gone-%d", i))})
 	}
 	require.Empty(t, a.collect())
-	checks := testEqClassChecks(cloud)
 
-	advance(eqClassCheckInterval)
 	for i := range 200 {
 		_, found, err := cloud.CollectRemoteHolding(t.Context(), HolderKey{"gone", uint64(i + 1)})
 		require.NoError(t, err)
 		require.True(t, found)
 	}
-	require.Equal(t, checks, testEqClassChecks(cloud), "gone answers don't check, even after the interval")
-
-	collected, _, err := cloud.CollectRemoteHoldings(t.Context(), nil, nil)
-	require.NoError(t, err)
-	require.Empty(t, collected)
 	cloud.egraphMu.Lock()
 	slots, live := cloud.eqClassSlotsLocked(), testLiveEqClassesLocked(cloud)
 	cloud.egraphMu.Unlock()
-	require.Equal(t, checks+1, testEqClassChecks(cloud), "the next collection checks")
-	require.Equal(t, live, slots, "and compacts to the live classes")
+	require.Equal(t, 1, live)
+	require.Equal(t, live, slots, "the gone answers freed the classes they ended")
 	_, ok := cloud.RemoteEntryInfo(keep)
 	require.True(t, ok)
 }
 
 // A term over many inputs whose holdings the Cloud never saw adds one class
-// per input. Releasing that one entry is a change even though it removes only
-// one entry and one term: the first collection after the interval checks and
-// compacts the classes to the live ones.
-func TestCollectionChecksAWideTermReleaseAfterTheInterval(t *testing.T) {
+// per input. Releasing that one entry ends them all, and its collection frees
+// them.
+func TestAWideTermsReleaseFreesItsInputClasses(t *testing.T) {
 	t.Parallel()
 	cloud := newCloudCache(t)
-	advance := testEqClassClock(cloud)
 	a := newCloudApplier(t, cloud)
 	for i := range 30 {
 		a.call(callRow{key: HolderKey{"anchors", uint64(i + 1)}, session: "anchors", holding: holdingOf(fmt.Sprintf("anchor-%d", i))})
@@ -1394,19 +1113,12 @@ func TestCollectionChecksAWideTermReleaseAfterTheInterval(t *testing.T) {
 	}
 	a.call(callRow{key: HolderKey{"burst", 1}, session: "burst", holding: wide})
 	require.Empty(t, a.collect())
-	checks := testEqClassChecks(cloud)
 
-	advance(time.Second)
 	a.endSession("burst", "burst")
 	require.Len(t, a.collect(), 1)
-	require.Equal(t, checks, testEqClassChecks(cloud), "within the interval, the release waits")
-
-	advance(eqClassCheckInterval)
-	require.Empty(t, a.collect())
 	cloud.egraphMu.Lock()
 	slots, live := cloud.eqClassSlotsLocked(), testLiveEqClassesLocked(cloud)
 	cloud.egraphMu.Unlock()
-	require.Equal(t, checks+1, testEqClassChecks(cloud))
 	require.Equal(t, 30, live)
 	require.Equal(t, live, slots, "the wide term's input classes are freed")
 }
@@ -1464,38 +1176,6 @@ func TestContentDigestIsTaughtWhateverTheCount(t *testing.T) {
 	}
 }
 
-// testBlobCloud returns a blob-backed Cloud cache, the remote-cache service's
-// kind, with the compaction checks' test clock and an applier. It holds live
-// holdings of distinct content, and its first collection has checked.
-func testBlobCloud(t *testing.T, live int) (*Cache, func(time.Duration), *cloudApplier) {
-	t.Helper()
-	_, cloud := storedPartTestCache(t, WithBlobStore())
-	advance := testEqClassClock(cloud)
-	a := newCloudApplier(t, cloud)
-	for i := range live {
-		h := holdingOf(fmt.Sprintf("live-%d", i))
-		h.ContentDigest = testDigest(fmt.Sprintf("live-%d-content", i))
-		a.call(callRow{key: HolderKey{"cache-live", uint64(i + 1)}, session: "live", holding: h})
-	}
-	require.Empty(t, a.collect())
-	require.Equal(t, 1, testEqClassChecks(cloud))
-	return cloud, advance, a
-}
-
-// testEqClassCheckState is what a compaction check changes: the class slots,
-// the count of checks and when the last one ran.
-type testEqClassCheckState struct {
-	slots     int
-	checks    int
-	checkedAt time.Time
-}
-
-func testEqClassCheckStateOf(c *Cache) testEqClassCheckState {
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
-	return testEqClassCheckState{slots: c.eqClassSlotsLocked(), checks: c.eqClassChecks, checkedAt: c.eqClassCheckedAt}
-}
-
 // testDeadEqClasses adds classes known only by a digest, which no term and no
 // entry uses.
 func testDeadEqClasses(t *testing.T, c *Cache, n int) {
@@ -1506,71 +1186,10 @@ func testDeadEqClasses(t *testing.T, c *Cache, n int) {
 	}
 }
 
-// The service compacts before it forgets any engine's holdings. Right after a
-// collection, within the interval and with fewer dead classes than live ones,
-// neither of which the collection's check would compact, CompactEqClasses
-// frees every dead slot. What the live classes hold is unchanged, and the call
-// counts as a check.
-func TestCompactEqClassesForcesTheCheck(t *testing.T) {
-	t.Parallel()
-	cloud, advance, a := testBlobCloud(t, 20)
-	advance(time.Second)
-	for i := range 2 {
-		churn := holdingOf(fmt.Sprintf("churn-%d", i))
-		churn.ContentDigest = testDigest(fmt.Sprintf("churn-%d-content", i))
-		a.call(callRow{key: HolderKey{"cache-churn", uint64(i + 1)}, session: "churn", holding: churn})
-	}
-	a.endSession("cache-churn", "churn")
-	require.Len(t, a.collect(), 2)
-
-	cloud.egraphMu.Lock()
-	before, live, checks := cloud.eqClassSlotsLocked(), testLiveEqClassesLocked(cloud), cloud.eqClassChecks
-	contents := testEqClassContentsLocked(cloud)
-	cloud.egraphMu.Unlock()
-	require.Equal(t, 1, checks, "the collection within the interval didn't check")
-	require.Greater(t, before, live, "the collected holdings left dead classes")
-	require.Less(t, before, 2*live, "fewer dead classes than live ones: the unforced compaction keeps them")
-
-	oldSlots, newSlots, err := cloud.CompactEqClasses(t.Context())
-	require.NoError(t, err)
-	require.Equal(t, before, oldSlots)
-	require.Equal(t, live, newSlots)
-
-	cloud.egraphMu.Lock()
-	after, checksAfter := cloud.eqClassSlotsLocked(), cloud.eqClassChecks
-	afterContents, indexErr := testEqClassContentsLocked(cloud), cacheDerivedIndexesErrorLocked(cloud)
-	cloud.egraphMu.Unlock()
-	require.Equal(t, live, after)
-	require.NoError(t, indexErr)
-	require.Equal(t, contents, afterContents)
-	require.Equal(t, checks+1, checksAfter)
-}
-
-// A forced compaction is a check: the collection checks again only once the
-// interval since the forced call has passed, though the interval since the
-// check before it has.
-func TestCompactEqClassesRestartsTheInterval(t *testing.T) {
-	t.Parallel()
-	cloud, advance, a := testBlobCloud(t, 20)
-	advance(9 * time.Second)
-	_, _, err := cloud.CompactEqClasses(t.Context())
-	require.NoError(t, err)
-	require.Equal(t, 2, testEqClassChecks(cloud))
-
-	// A change after the forced call, for the collection to check.
-	a.call(callRow{key: HolderKey{"cache-new", 1}, session: "new", holding: holdingOf("after-force")})
-	advance(2 * time.Second)
-	require.Empty(t, a.collect())
-	require.Equal(t, 2, testEqClassChecks(cloud), "11s after the first check, 2s after the forced one: no check")
-	advance(8 * time.Second)
-	require.Empty(t, a.collect())
-	require.Equal(t, 3, testEqClassChecks(cloud), "10s after the forced check: the change is checked")
-}
-
-// With no class live, the forced compaction frees every slot, which the
-// unforced one leaves, and keeps the entries: here one entry with no class,
-// which keeps the e-graph from its reset. The next class is class 1.
-func TestCompactEqClassesFreesEverySlotWhenNoClassIsLive(t *testing.T) {
+// With no class live, a collection frees every slot, and keeps the entries:
+// here one entry with no class, which keeps the e-graph from its reset. The
+// next class takes a freed number.
+func TestACollectionFreesEverySlotWhenNoClassIsLive(t *testing.T) {
 	t.Parallel()
 	_, cloud := storedPartTestCache(t, WithBlobStore())
 	testDeadEqClasses(t, cloud, 8)
@@ -1582,10 +1201,9 @@ func TestCompactEqClassesFreesEverySlotWhenNoClassIsLive(t *testing.T) {
 	require.Equal(t, 8, before)
 	require.Zero(t, live)
 
-	oldSlots, newSlots, err := cloud.CompactEqClasses(t.Context())
+	collected, _, err := cloud.CollectRemoteHoldings(t.Context(), nil, nil)
 	require.NoError(t, err)
-	require.Equal(t, 8, oldSlots)
-	require.Zero(t, newSlots)
+	require.Empty(t, collected)
 
 	cloud.egraphMu.Lock()
 	after, digests, kept := cloud.eqClassSlotsLocked(), len(cloud.egraphDigestToClass), cloud.resultsByID[entry.id] == entry
@@ -1596,73 +1214,8 @@ func TestCompactEqClassesFreesEverySlotWhenNoClassIsLive(t *testing.T) {
 	require.Zero(t, after)
 	require.Zero(t, digests)
 	require.True(t, kept, "the entry stays")
-	require.Equal(t, eqClassID(1), next)
+	require.LessOrEqual(t, next, eqClassID(8), "the next class takes a freed number")
 	require.NoError(t, indexErr)
-}
-
-// CompactEqClasses refuses, changing nothing, on a cache without a blob store,
-// and when its context is done before the compaction starts, including while
-// it waits for the graph.
-func TestCompactEqClassesRefusesAndChangesNothing(t *testing.T) {
-	t.Parallel()
-	refuses := func(t *testing.T, c *Cache, ctx context.Context, check func(error)) {
-		t.Helper()
-		before := testEqClassCheckStateOf(c)
-		_, _, err := c.CompactEqClasses(ctx)
-		check(err)
-		require.Equal(t, before, testEqClassCheckStateOf(c))
-	}
-	t.Run("no blob store", func(t *testing.T) {
-		t.Parallel()
-		cloud := newCloudCache(t)
-		testDeadEqClasses(t, cloud, 4)
-		refuses(t, cloud, t.Context(), func(err error) { require.ErrorContains(t, err, "the cache has no blob store") })
-	})
-	t.Run("done context", func(t *testing.T) {
-		t.Parallel()
-		_, cloud := storedPartTestCache(t, WithBlobStore())
-		testDeadEqClasses(t, cloud, 4)
-		ctx, cancel := context.WithCancel(t.Context())
-		cancel()
-		refuses(t, cloud, ctx, func(err error) { require.ErrorIs(t, err, context.Canceled) })
-	})
-	t.Run("done while waiting for the graph", func(t *testing.T) {
-		t.Parallel()
-		_, cloud := storedPartTestCache(t, WithBlobStore())
-		testDeadEqClasses(t, cloud, 4)
-		before := testEqClassCheckStateOf(cloud)
-		ctx, cancel := context.WithCancel(t.Context())
-		defer cancel()
-		cloud.egraphMu.Lock()
-		locked := true
-		defer func() {
-			if locked {
-				cloud.egraphMu.Unlock()
-			}
-		}()
-		done := make(chan error, 1)
-		go func() {
-			_, _, err := cloud.CompactEqClasses(ctx)
-			done <- err
-		}()
-		blocked := false
-		for deadline := time.Now().Add(10 * time.Second); !blocked && time.Now().Before(deadline); time.Sleep(time.Millisecond) {
-			buf := make([]byte, 1<<20)
-			n := runtime.Stack(buf, true)
-			for _, stack := range strings.Split(string(buf[:n]), "\n\n") {
-				if strings.Contains(stack, "(*Cache).CompactEqClasses(") && strings.Contains(stack, "sync.(*RWMutex).Lock(") {
-					blocked = true
-					break
-				}
-			}
-		}
-		require.True(t, blocked, "CompactEqClasses waits for the graph")
-		cancel()
-		cloud.egraphMu.Unlock()
-		locked = false
-		require.ErrorIs(t, <-done, context.Canceled)
-		require.Equal(t, before, testEqClassCheckStateOf(cloud))
-	})
 }
 
 // A stored entry outlives the holdings engines had of it, and once the last

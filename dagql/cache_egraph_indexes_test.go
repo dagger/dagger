@@ -699,29 +699,30 @@ func TestCacheOutputEqClassInverseMergeThenRemoval(t *testing.T) {
 	assert.Equal(t, 0, c.Size())
 }
 
-func TestCacheOutputEqClassInverseForcedCompactionAndReset(t *testing.T) {
+func TestCacheOutputEqClassInverseFreedClassesAndReset(t *testing.T) {
 	baseCtx := t.Context()
 	c, err := NewCache(baseCtx, "", nil, nil)
 	assert.NilError(t, err)
-	ctxA := cacheTestSessionContext(baseCtx, "inverse-compact-a")
-	ctxB := cacheTestSessionContext(baseCtx, "inverse-compact-b")
-	cacheTestPublishContentResult(t, c, ctxA, "inverse-compact-a", 1, digest.FromString("inverse-compact-a"))
-	cacheTestPublishContentResult(t, c, ctxB, "inverse-compact-b", 2, digest.FromString("inverse-compact-b"))
+	ctxA := cacheTestSessionContext(baseCtx, "inverse-free-a")
+	ctxB := cacheTestSessionContext(baseCtx, "inverse-free-b")
+	cacheTestPublishContentResult(t, c, ctxA, "inverse-free-a", 1, digest.FromString("inverse-free-a"))
+	cacheTestPublishContentResult(t, c, ctxB, "inverse-free-b", 2, digest.FromString("inverse-free-b"))
 
 	c.egraphMu.Lock()
 	for i := range 8 {
-		c.ensureEqClassForDigestLocked(baseCtx, fmt.Sprintf("inverse-compact-dead-%d", i))
+		c.ensureEqClassForDigestLocked(baseCtx, fmt.Sprintf("inverse-free-dead-%d", i))
 	}
-	changed, oldSlots, newSlots := c.compactEqClassesLocked(true)
+	oldSlots := c.eqClassSlotsLocked()
+	c.freeEndedEqClassesLocked()
+	newSlots := c.eqClassSlotsLocked()
 	indexErr := cacheDerivedIndexesErrorLocked(c)
 	c.egraphMu.Unlock()
-	assert.Assert(t, changed)
 	assert.Assert(t, oldSlots > newSlots)
 	assert.NilError(t, indexErr)
 
-	assert.NilError(t, c.ReleaseSession(ctxA, "inverse-compact-a"))
+	assert.NilError(t, c.ReleaseSession(ctxA, "inverse-free-a"))
 	assertCacheDerivedIndexesConsistent(t, c)
-	assert.NilError(t, c.ReleaseSession(ctxB, "inverse-compact-b"))
+	assert.NilError(t, c.ReleaseSession(ctxB, "inverse-free-b"))
 
 	c.egraphMu.Lock()
 	outputEqClassResultsNil := c.outputEqClassResults == nil
@@ -885,7 +886,9 @@ func TestCacheBroadImportedPostingRemoval(t *testing.T) {
 	for i := range 8 {
 		f.cache.ensureEqClassForDigestLocked(f.ctx, fmt.Sprintf("broad-imported-dead-%d", i))
 	}
-	changed, oldSlots, newSlots := f.cache.compactEqClassesLocked(true)
+	oldSlots := f.cache.eqClassSlotsLocked()
+	f.cache.freeEndedEqClassesLocked()
+	newSlots := f.cache.eqClassSlotsLocked()
 	indexErr := cacheDerivedIndexesErrorLocked(f.cache)
 	f.cache.egraphMu.Unlock()
 	for resultID, state := range imported {
@@ -900,7 +903,7 @@ func TestCacheBroadImportedPostingRemoval(t *testing.T) {
 		assert.Equal(t, int64(1), state.owners, "fixture result %d does not have exactly one persisted owner", resultID)
 		assert.Equal(t, 0, state.deps, "fixture result %d unexpectedly owns dependency edges", resultID)
 	}
-	assert.Assert(t, changed, "forced compaction did not run: %d -> %d", oldSlots, newSlots)
+	assert.Assert(t, newSlots < oldSlots, "the classes that ended were not freed: %d -> %d", oldSlots, newSlots)
 	assert.NilError(t, indexErr)
 
 	pruneCtx := withMetadataPruneContext(f.ctx)
@@ -991,8 +994,8 @@ type eqClassContents struct {
 }
 
 // testEqClassContentsLocked reads the tables' contents over the classes a
-// term or an entry uses, the ones compaction keeps. Requires egraphMu for
-// writing.
+// term or an entry uses, each class named by its smallest digest. Requires
+// egraphMu for writing.
 func testEqClassContentsLocked(c *Cache) eqClassContents {
 	name := func(id eqClassID) string {
 		root := c.findEqClassLocked(id)
@@ -1041,13 +1044,13 @@ func testEqClassContentsLocked(c *Cache) eqClassContents {
 	return out
 }
 
-// Compaction frees the classes that no term and no entry uses, and keeps the
-// number of every live class: a class's number names it for as long as it
-// lives, so what holds the number outside the e-graph's own tables, such as a
-// saved row, stays right across a compaction. The numbers it frees are taken
-// again, lowest first, by the classes created after it, and the slots in use
-// count only the classes that hold one.
-func TestCompactEqClassesKeepsLiveClassNumbers(t *testing.T) {
+// Freeing the classes that ended keeps the number of every live class: a
+// class's number names it for as long as it lives, so what holds the number
+// outside the e-graph's own tables, such as a saved row, stays right. The
+// numbers it frees, the dead classes' and the class a union joined away, are
+// taken by the classes created after it before any new number, and the slots
+// in use count only the classes that hold one.
+func TestFreeingClassesKeepsLiveClassNumbers(t *testing.T) {
 	t.Parallel()
 	ctx := cacheTestContext(t.Context())
 	c, err := NewCache(ctx, "", nil, nil)
@@ -1073,63 +1076,51 @@ func TestCompactEqClassesKeepsLiveClassNumbers(t *testing.T) {
 	c.addResultOutputEqClassLocked(3, d)
 	// numbers-joined joins b's class: its digest now names b's root.
 	root := c.mergeEqClassesLocked(ctx, b, joined)
+	absorbed := joined
+	if root == joined {
+		absorbed = b
+	}
 	live := map[string]eqClassID{}
 	for _, dig := range []string{"numbers-a", "numbers-b", "numbers-joined", "numbers-d"} {
 		live[dig] = c.findEqClassLocked(c.egraphDigestToClass[dig])
 	}
 	assert.Equal(t, root, live["numbers-b"])
 	assert.Equal(t, root, live["numbers-joined"])
+	assert.Equal(t, 7, c.eqClassSlotsLocked())
 
-	changed, oldSlots, newSlots := c.compactEqClassesLocked(true)
-	assert.Assert(t, changed)
-	assert.Equal(t, 7, oldSlots)
-	assert.Equal(t, 3, newSlots)
+	c.freeEndedEqClassesLocked()
 	for dig, want := range live {
 		assert.Equal(t, want, c.egraphDigestToClass[dig], "digest %s keeps its class's number", dig)
 		assert.Equal(t, want, c.findEqClassLocked(want), "class of %s is a root under its own number", dig)
 	}
-	for _, id := range []eqClassID{dead1, dead2, dead3} {
-		assert.Equal(t, eqClassID(0), c.findEqClassLocked(id), "dead class %d is freed", id)
+	freed := []eqClassID{dead1, dead2, dead3, absorbed}
+	for _, id := range freed {
+		assert.Equal(t, eqClassID(0), c.findEqClassLocked(id), "class %d is freed", id)
 	}
 	_, deadDigest := c.egraphDigestToClass["numbers-dead-1"]
 	assert.Assert(t, !deadDigest)
 	assert.Equal(t, 3, c.eqClassSlotsLocked())
 
-	// The freed numbers below the highest live one are taken first, lowest
-	// first; the highest dead number was trimmed away, so a class created
-	// once they're taken gets the next one after the highest live class.
-	liveRoots := map[eqClassID]bool{live["numbers-a"]: true, live["numbers-b"]: true, live["numbers-d"]: true}
-	var highest eqClassID
-	for root := range liveRoots {
-		if root > highest {
-			highest = root
-		}
-	}
-	var freed []eqClassID
-	for id := eqClassID(1); id < highest; id++ {
-		if !liveRoots[id] {
-			freed = append(freed, id)
-		}
-	}
-	assert.Assert(t, len(freed) > 0)
-	slices.Sort(freed)
+	// The freed numbers are taken before any new one, which comes after
+	// every slot.
+	slots := eqClassID(len(c.egraphParents))
 	var got []eqClassID
 	for i := range freed {
 		got = append(got, c.ensureEqClassForDigestLocked(ctx, fmt.Sprintf("numbers-new-%d", i)))
 	}
+	slices.Sort(freed)
+	slices.Sort(got)
 	assert.DeepEqual(t, freed, got)
 	next := c.ensureEqClassForDigestLocked(ctx, "numbers-new-last")
-	assert.Equal(t, highest+1, next)
+	assert.Equal(t, slots, next)
 	assert.Equal(t, 3+len(freed)+1, c.eqClassSlotsLocked())
 }
 
-// Compaction frees the dead classes and rebuilds their tables at the live
-// size, the digest map included; what the tables hold is unchanged. Across a
-// forced compaction that frees dead classes, every table reads the same when
-// each class is named by its digests: which digests share a class, each
-// class's extra digests, each entry's output classes, and each term's self,
-// inputs and output. The digest map then holds exactly the live digests.
-func TestCompactEqClassesKeepsTheLiveContents(t *testing.T) {
+// Freeing the classes that ended leaves what the live classes hold as it
+// was: which digests share a class, each class's extra digests, each entry's
+// output classes, and each term's self, inputs and output, each class named
+// by its digests. The digest map then holds exactly the live digests.
+func TestFreeingClassesKeepsTheLiveContents(t *testing.T) {
 	baseCtx := t.Context()
 	c, err := NewCache(baseCtx, "", nil, nil)
 	assert.NilError(t, err)
@@ -1148,13 +1139,12 @@ func TestCompactEqClassesKeepsTheLiveContents(t *testing.T) {
 	for i := range 8 {
 		c.ensureEqClassForDigestLocked(baseCtx, fmt.Sprintf("contents-dead-%d", i))
 	}
-	before := testEqClassContentsLocked(c)
-	changed, oldSlots, newSlots := c.compactEqClassesLocked(true)
-	after := testEqClassContentsLocked(c)
+	before, oldSlots := testEqClassContentsLocked(c), c.eqClassSlotsLocked()
+	c.freeEndedEqClassesLocked()
+	after, newSlots := testEqClassContentsLocked(c), c.eqClassSlotsLocked()
 	digests := slices.Sorted(maps.Keys(c.egraphDigestToClass))
 	indexErr := cacheDerivedIndexesErrorLocked(c)
 	c.egraphMu.Unlock()
-	assert.Assert(t, changed)
 	assert.Assert(t, oldSlots > newSlots)
 	assert.NilError(t, indexErr)
 	assert.Assert(t, len(before.Terms) > 0)
