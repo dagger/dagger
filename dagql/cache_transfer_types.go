@@ -114,9 +114,11 @@ type TransferredValue struct {
 
 	// storedEnvelope is, in a bundle a blob-backed cache built, the record's
 	// envelope as the cache holds it, compressed (storedBody), in place of
-	// Record.Envelope: the bundle's encoding writes it out, and a merge of
-	// the bundle in the same process decodes it (cloneValueBundle).
-	storedEnvelope []byte
+	// Record.Envelope, and storedEnvelopeBytes its JSON's length: the
+	// bundle's encoding writes it out, and a merge of the bundle in the same
+	// process decodes it (cloneValueBundle).
+	storedEnvelope      []byte
+	storedEnvelopeBytes int64
 	// served is, on the Cloud, the run its stored record named when the
 	// bundle was built (StoredBundle), for the merged reply's holding of
 	// it (holding.served); nil when it named none. It is never sent.
@@ -170,9 +172,28 @@ func (v TransferredValue) storedJSON() (storedValueJSON, error) {
 }
 
 // EncodedSize returns the length of the JSON json.Marshal gives the value,
-// counted as it is encoded and not kept.
+// counted as it is encoded and not kept. A stored envelope and call frame
+// are not decompressed: the encoding writes each out as the cache holds it,
+// the JSON json.Marshal gave it, so each counts its JSON's length, kept
+// beside it, in place of an empty envelope's or a null call's, as a size
+// counts a body's (measureStoredValue).
 func (v *TransferredValue) EncodedSize() (int64, error) {
-	return countJSON(v)
+	if v.storedEnvelope == nil {
+		return countJSON(v)
+	}
+	bare := *v
+	bare.storedEnvelope, bare.storedEnvelopeBytes = nil, 0
+	bare.Record.Envelope = PersistedResultEnvelope{}
+	held := v.storedEnvelopeBytes - emptyEnvelopeBytes
+	if v.storedCall != nil {
+		bare.Record.Call, bare.storedCall, bare.storedCallBytes = nil, nil, 0
+		held += v.storedCallBytes - nullCallBytes
+	}
+	size, err := countJSON(&bare)
+	if err != nil {
+		return 0, err
+	}
+	return size + held, nil
 }
 
 // TransferredRecordParts are a record's parts as its sender worked them out
