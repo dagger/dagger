@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -59,9 +60,9 @@ func TestGenaiThinkingConfig(t *testing.T) {
 		return &GenaiClient{endpoint: &LLMEndpoint{ReasoningEffort: effort}}
 	}
 
-	// Empty / "none" effort yields no config.
+	// Empty / "none" effort leaves the provider's thinking defaults alone.
 	for _, effort := range []string{"", "none"} {
-		assert.Nil(t, newClient(effort).thinkingConfig(), "effort %q should disable thinking", effort)
+		assert.Nil(t, newClient(effort).thinkingConfig(), "effort %q should omit thinking configuration", effort)
 	}
 
 	// A real effort requests thought summaries and maps to Gemini's uppercase
@@ -74,6 +75,41 @@ func TestGenaiThinkingConfig(t *testing.T) {
 	cfg = newClient("low").thinkingConfig()
 	require.NotNil(t, cfg)
 	assert.Equal(t, genai.ThinkingLevelLow, cfg.ThinkingLevel)
+}
+
+func TestGenaiThinkingConfigByModel(t *testing.T) {
+	for _, model := range []string{"gemini-2.5-pro", "gemini-2.5-flash", modelDefaultGoogle, "gemini-future"} {
+		t.Run(model, func(t *testing.T) {
+			endpoint, err := new(LLMRouter).Route(model, "google")
+			require.NoError(t, err)
+			client := &GenaiClient{endpoint: endpoint}
+			for effort, budget := range map[string]int32{"low": 1024, "medium": 8192, "high": 16384, "custom": -1} {
+				endpoint.ReasoningEffort = effort
+				cfg := client.thinkingConfig()
+				require.NotNil(t, cfg)
+				assert.True(t, cfg.IncludeThoughts)
+				if model == "gemini-2.5-pro" || model == "gemini-2.5-flash" {
+					require.Equal(t, LLMReasoningBudget, endpoint.ReasoningMode)
+					require.NotNil(t, cfg.ThinkingBudget)
+					assert.Equal(t, budget, *cfg.ThinkingBudget)
+					assert.Empty(t, cfg.ThinkingLevel)
+					body, err := json.Marshal(cfg)
+					require.NoError(t, err)
+					assert.Contains(t, string(body), "thinkingBudget")
+					assert.NotContains(t, string(body), "thinkingLevel")
+				} else {
+					assert.Nil(t, cfg.ThinkingBudget)
+					assert.NotEmpty(t, cfg.ThinkingLevel)
+				}
+			}
+			for _, effort := range []string{"", "none"} {
+				endpoint.ReasoningEffort = effort
+				assert.Nil(t, client.thinkingConfig())
+			}
+		})
+	}
+	client := &GenaiClient{endpoint: &LLMEndpoint{ReasoningEffort: "high", ReasoningMode: LLMReasoningUnsupported}}
+	assert.Nil(t, client.thinkingConfig())
 }
 
 // TestGenaiThinkingRoundTrip exercises the send path: a captured thinking block

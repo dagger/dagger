@@ -461,14 +461,29 @@ func decodeThoughtSignature(signature string) []byte {
 	return sig
 }
 
-// thinkingConfig maps the endpoint's ReasoningEffort onto Gemini's thinking
-// configuration. It returns nil (thinking disabled) unless an effort is set.
-// When enabled, the level is passed straight through as Gemini's thinking_level
-// and thought summaries are requested so they can be captured and round-tripped.
+// thinkingConfig maps the endpoint's ReasoningEffort onto the model's native
+// thinking configuration. Unset/none retains the provider's default behavior
+// (omitting the config does not necessarily disable the model's thinking).
+// Known budget-only models, such as Gemini 2.5, reject thinkingLevel; newer
+// and uncatalogued models receive the requested native level.
 func (c *GenaiClient) thinkingConfig() *genai.ThinkingConfig {
 	effort := c.endpoint.ReasoningEffort
-	if effort == "" || effort == "none" {
+	if effort == "" || effort == "none" || c.endpoint.ReasoningMode == LLMReasoningUnsupported {
 		return nil
+	}
+	if c.endpoint.ReasoningMode == LLMReasoningBudget {
+		// These budgets fit both Gemini 2.5 Pro's and Flash's supported
+		// ranges. For an unrecognised effort, let Gemini budget dynamically.
+		budget := int32(-1)
+		switch effort {
+		case "low":
+			budget = 1024
+		case "medium":
+			budget = 8192
+		case "high":
+			budget = 16384
+		}
+		return &genai.ThinkingConfig{IncludeThoughts: true, ThinkingBudget: &budget}
 	}
 	return &genai.ThinkingConfig{
 		IncludeThoughts: true,

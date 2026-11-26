@@ -16,7 +16,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/cenkalti/backoff/v4"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/iancoleman/strcase"
@@ -24,6 +23,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/dagger/dagger/core/modelcatalog"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/dagui"
@@ -51,12 +51,12 @@ func init() {
 }
 
 const (
-	modelDefaultAnthropic  = anthropic.ModelClaudeSonnet4_6
-	modelDefaultGoogle     = "gemini-2.5-flash"
-	modelDefaultOpenAI     = "gpt-4.1"
-	modelDefaultCodex      = "gpt-5.5"
-	modelDefaultCopilot    = "claude-sonnet-5"
-	modelDefaultOpenRouter = "anthropic/claude-sonnet-4.6"
+	modelDefaultAnthropic  = modelcatalog.DefaultAnthropic
+	modelDefaultGoogle     = modelcatalog.DefaultGoogle
+	modelDefaultOpenAI     = modelcatalog.DefaultOpenAI
+	modelDefaultCodex      = modelcatalog.DefaultOpenAI
+	modelDefaultCopilot    = modelcatalog.DefaultCopilot
+	modelDefaultOpenRouter = modelcatalog.DefaultOpenRouter
 	modelDefaultMeta       = "llama-3.2"
 	modelDefaultMistral    = "mistral-7b-instruct"
 )
@@ -66,7 +66,7 @@ const (
 const openRouterBaseURL = "https://openrouter.ai/api/v1"
 
 // codexModelPrefix pins a model to the Codex (ChatGPT subscription) backend.
-// Current Codex models (gpt-5.5, gpt-5.4, …) no longer carry "codex" in their
+// Current Codex models (gpt-6.2-sol, gpt-6-luna, …) no longer carry "codex" in their
 // IDs, so the prefix — not the name — is what routes them to the Codex client.
 // Route strips it back off so the model still displays and is sent to the API
 // under its bare name.
@@ -1185,7 +1185,7 @@ func (q *Query) DefaultLLMRoute(ctx context.Context, provider string) (string, s
 }
 
 // SmallModelRoute resolves this conversation's current concrete route, then
-// selects that provider's configured or catalog-recommended small model. If the
+// selects that provider's configured or Dagger-default small model. If the
 // provider has neither (as with an arbitrary local or unknown provider), the
 // current concrete route is returned unchanged.
 func (llm *LLM) SmallModelRoute(ctx context.Context) (string, string, error) {

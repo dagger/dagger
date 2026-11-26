@@ -8,6 +8,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/dagger/dagger/engine"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -270,6 +271,139 @@ func TestOpenAIResponsesRequest(t *testing.T) {
 	assert.NotContains(t, payload, "include")
 }
 
+func TestOpenAINonStreamingResponses(t *testing.T) {
+	disabled := true
+	router := routerWith(t, map[string]*engine.LLMProviderConfig{
+		"openai": {DisableStreaming: &disabled, ReasoningEffort: "high"},
+	})
+	endpoint, err := router.Route("", "openai")
+	require.NoError(t, err)
+	require.Equal(t, modelDefaultOpenAI, endpoint.Model)
+	require.True(t, endpoint.usesOpenAIResponses())
+	client, err := endpoint.newClient()
+	require.NoError(t, err)
+	require.IsType(t, &OpenAIResponsesClient{}, client)
+
+	for _, tc := range []struct {
+		name, body, wantError string
+		status                int
+	}{
+		{
+			name: "complete tool and reasoning turn",
+			body: `{"id":"resp_1","status":"completed","output":[
+				{"type":"reasoning","id":"rs_1","encrypted_content":"opaque","summary":[{"type":"summary_text","text":"Thinking"}]},
+				{"type":"function_call","id":"fc_1","call_id":"call_1","name":"read","arguments":"{\"path\":\"a.go\"}"},
+				{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Hello "},{"type":"output_text","text":"world"}]}
+			],"usage":{"input_tokens":10,"input_tokens_details":{"cached_tokens":4},"output_tokens":3,"total_tokens":13}}`,
+		},
+		{name: "incomplete", body: `{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"}}`, wantError: "max_output_tokens"},
+		{name: "failed", body: `{"status":"failed","error":{"message":"provider failure"}}`, wantError: "provider failure"},
+		{name: "HTTP error", status: http.StatusBadRequest, body: `{"error":{"message":"invalid request"}}`, wantError: "invalid request"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, "/responses", r.URL.Path)
+				var payload map[string]any
+				require.NoError(t, json.NewDecoder(r.Body).Decode(&payload))
+				assert.Equal(t, modelDefaultOpenAI, payload["model"])
+				assert.NotEqual(t, true, payload["stream"])
+				assert.Len(t, payload["tools"], 1)
+				assert.Equal(t, map[string]any{"effort": "high"}, payload["reasoning"])
+				assert.Equal(t, []any{"reasoning.encrypted_content"}, payload["include"])
+				assert.EqualValues(t, 100, payload["max_output_tokens"])
+				w.Header().Set("Content-Type", "application/json")
+				if tc.status != 0 {
+					w.WriteHeader(tc.status)
+				}
+				_, _ = io.WriteString(w, tc.body)
+			}))
+			defer server.Close()
+			// Select the native client above, then redirect its HTTP request
+			// to the fixture without changing the user's transport policy.
+			ep := *endpoint
+			ep.BaseURL = server.URL
+			response, err := newOpenAIResponsesClient(&ep).SendQuery(t.Context(), llmTestHistory(),
+				[]LLMTool{{Name: "read", Schema: map[string]any{"type": "object"}}}, &LLMCallOpts{MaxTokens: 100})
+			if tc.wantError != "" {
+				require.ErrorContains(t, err, tc.wantError)
+				require.Nil(t, response)
+				return
+			}
+			require.NoError(t, err)
+			require.Len(t, response.Content, 3)
+			assert.Equal(t, LLMContentThinking, response.Content[0].Kind)
+			assert.NotEmpty(t, response.Content[0].Signature)
+			assert.Equal(t, "Thinking", response.Content[0].Text)
+			assert.Equal(t, LLMContentToolCall, response.Content[1].Kind)
+			assert.Equal(t, "call_1", response.Content[1].CallID)
+			assert.JSONEq(t, `{"path":"a.go"}`, string(response.Content[1].Arguments))
+			assert.Equal(t, "Hello world", response.Content[2].Text)
+			assert.EqualValues(t, 6, response.TokenUsage.InputTokens)
+			assert.EqualValues(t, 4, response.TokenUsage.CachedTokenReads)
+			assert.EqualValues(t, 3, response.TokenUsage.OutputTokens)
+			assert.EqualValues(t, 13, response.TokenUsage.TotalTokens)
+		})
+	}
+}
+
+func TestOpenAIResponsesPreserveInterleavedItems(t *testing.T) {
+	items := []json.RawMessage{
+		json.RawMessage(`{"type":"reasoning","id":"rs_1","encrypted_content":"opaque1","summary":[]}`),
+		json.RawMessage(`{"type":"message","id":"msg_1","role":"assistant","content":[{"type":"output_text","text":"Let me check."}]}`),
+		json.RawMessage(`{"type":"reasoning","id":"rs_2","encrypted_content":"opaque2","summary":[]}`),
+		json.RawMessage(`{"type":"function_call","id":"fc_1","call_id":"call_1","name":"read","arguments":"{}"}`),
+	}
+	response := map[string]any{"id": "resp_1", "status": "completed", "output": items}
+	for _, streaming := range []bool{false, true} {
+		name := "non-streaming"
+		if streaming {
+			name = "streaming"
+		}
+		t.Run(name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if !streaming {
+					w.Header().Set("Content-Type", "application/json")
+					require.NoError(t, json.NewEncoder(w).Encode(response))
+					return
+				}
+				w.Header().Set("Content-Type", "text/event-stream")
+				emit := func(event map[string]any) {
+					data, err := json.Marshal(event)
+					require.NoError(t, err)
+					_, _ = io.WriteString(w, "data: "+string(data)+"\n\n")
+				}
+				for i, item := range items {
+					if i == 1 {
+						emit(map[string]any{"type": "response.output_text.delta", "delta": "Let me check."})
+					}
+					emit(map[string]any{"type": "response.output_item.done", "output_index": i, "item": item})
+				}
+				emit(map[string]any{"type": "response.completed", "response": response})
+			}))
+			defer server.Close()
+			client := newOpenAIResponsesClient(&LLMEndpoint{
+				Provider: OpenAI, Model: modelDefaultOpenAI, BaseURL: server.URL, disableStreaming: !streaming,
+			})
+			got, err := client.SendQuery(t.Context(), llmTestHistory(), nil, &LLMCallOpts{})
+			require.NoError(t, err)
+			require.Len(t, got.Content, 4)
+			for i, kind := range []LLMContentBlockKind{LLMContentThinking, LLMContentText, LLMContentThinking, LLMContentToolCall} {
+				assert.Equal(t, kind, got.Content[i].Kind)
+			}
+			assert.Equal(t, "Let me check.", got.Content[1].Text)
+			_, replay, err := convertToCodexResponsesFormat([]*LLMMessage{{Role: LLMMessageRoleAssistant, Content: got.Content}})
+			require.NoError(t, err)
+			require.Len(t, replay, 4)
+			require.NotNil(t, replay[0].OfReasoning)
+			require.NotNil(t, replay[1].OfMessage)
+			require.NotNil(t, replay[2].OfReasoning)
+			require.NotNil(t, replay[3].OfFunctionCall)
+			assert.Equal(t, "rs_1", replay[0].OfReasoning.ID)
+			assert.Equal(t, "rs_2", replay[2].OfReasoning.ID)
+		})
+	}
+}
+
 func TestOpenAIEndpointUsesResponses(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
@@ -280,7 +414,11 @@ func TestOpenAIEndpointUsesResponses(t *testing.T) {
 		{"explicit OpenAI base URL", LLMEndpoint{BaseURL: "https://api.openai.com/v1"}, true},
 		{"compatible server", LLMEndpoint{BaseURL: "http://localhost:11434/v1"}, false},
 		{"azure", LLMEndpoint{BaseURL: "https://x.openai.azure.com", azureVersion: "2024-06-01"}, false},
-		{"streaming disabled", LLMEndpoint{disableStreaming: true}, false},
+		{"streaming disabled", LLMEndpoint{Model: modelDefaultOpenAI, disableStreaming: true}, true},
+		{"uncatalogued non-streaming", LLMEndpoint{Model: "custom-model", disableStreaming: true}, false},
+		{"audio non-streaming", LLMEndpoint{Model: "gpt-4o-audio-preview", disableStreaming: true}, false},
+		{"compatible non-streaming", LLMEndpoint{BaseURL: "http://localhost:11434/v1", disableStreaming: true}, false},
+		{"azure non-streaming", LLMEndpoint{BaseURL: "https://x.openai.azure.com", azureVersion: "2024-06-01", disableStreaming: true}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			assert.Equal(t, tc.want, tc.endpoint.usesOpenAIResponses())
