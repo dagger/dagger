@@ -138,10 +138,10 @@ type HeldBy struct {
 	Parts func(root uint64) bool
 	// Through, if set, names entries the recipient holds that a walk goes
 	// through rather than stopping at, as the merge of a split root walks
-	// the parts that went ahead of it: the walk reaches the entry's
-	// dependencies, as it would an entry it carries, so that the calls kept
-	// on the entry and below it go, placed on what the bundle carries or the
-	// recipient holds. Such an entry goes as a held row only when a record
+	// the parts that went ahead of it: the walk reaches the dependencies the
+	// recipient holds, going on below those Through names and stopping at
+	// the others, as at a held row, so that the calls kept on all it reaches
+	// go, placed on what the bundle carries or the recipient holds. Such an entry goes as a held row only when a record
 	// the bundle carries depends on it, or a call names it, as its value or
 	// an input: then the call alone names it, outside the roots' closure.
 	// One the recipient doesn't hold goes as any entry does. It is called
@@ -683,9 +683,9 @@ type storedBundleBuild struct {
 	current  int
 	ordinary map[sharedResultID]bool
 	// passed are the entries the recipient holds that the build went
-	// through (HeldBy.Through), in the order it reached them, each in
-	// passedSeen: one a call names goes as a held row the call alone names
-	// (nameLocked). part marks the root the build walks as a part of
+	// through (HeldBy.Through), and those it reached below them, in the
+	// order it reached them, each in passedSeen: one a record or a call
+	// names goes as a held row (nameLocked). part marks the root the build walks as a part of
 	// another root's merge (HeldBy.Parts).
 	passed     []*sharedResult
 	passedSeen map[sharedResultID]bool
@@ -791,24 +791,31 @@ func (build *storedBundleBuild) holdsLocked(res *sharedResult) bool {
 // storedBundlePassLocked goes through res, an entry the recipient holds
 // that the build goes through (HeldBy.Through), for the calls kept on it
 // and below it (storedBundleCallsLocked): res stands for its closure, as a
-// held row does, and only the dependencies the build goes through too are
+// held row does. Of its dependencies, those the recipient holds are
 // reached, each with no row until a record or a call names it
-// (nameLocked). Requires egraphMu.
+// (nameLocked), for the calls kept on them; the build goes on below those
+// it goes through, and stops at the others, as it stops at a held row.
+// Requires egraphMu.
 func (build *storedBundleBuild) storedBundlePassLocked(c *Cache, res *sharedResult) {
 	build.passedSeen[res.id] = true
 	build.passed = append(build.passed, res)
 	for _, id := range storedClosureChildrenLocked(res) {
 		child := c.resultsByID[id]
-		if child == nil || build.ordinals[id] != 0 || build.passedSeen[id] || !build.holdsLocked(child) || !build.heldBy.throughLocked(child) {
+		if child == nil || build.ordinals[id] != 0 || build.passedSeen[id] || !build.holdsLocked(child) {
 			continue
 		}
-		build.storedBundlePassLocked(c, child)
+		if build.heldBy.throughLocked(child) {
+			build.storedBundlePassLocked(c, child)
+			continue
+		}
+		build.passedSeen[id] = true
+		build.passed = append(build.passed, child)
 	}
 }
 
-// nameLocked gives res, an entry the build went through (HeldBy.Through),
-// a held row the first time a record that depends on it, or a call, as its
-// value or an input, names it. A row only a call names is reached by no
+// nameLocked gives res, an entry the build reached through what it goes
+// through (storedBundlePassLocked) with no row, a held row the first time a
+// record that depends on it, or a call, as its value or an input, names it. A row only a call names is reached by no
 // root's closure, so the recipient reads it for the call alone, as it does
 // a held input's (TransferredCall). Requires egraphMu.
 func (build *storedBundleBuild) nameLocked(res *sharedResult) {
