@@ -78,22 +78,17 @@ func (cm *snapshotManager) ImportChain(ctx context.Context, chain *ExportChain) 
 			if i >= first {
 				err = cm.fetchLayerContent(ctx, desc, chain.Provider, true, &chainLayer{owner: chain, ahead: held}, importClock{timing: chain.Timing, prof: wcprof.Enabled(ctx)})
 			}
-			if err != nil {
-				cm.dropFetch(ctx, held)
-				return err
-			}
-			cm.leaveFetch(ctx, held)
-			return nil
+			cm.dropFetch(ctx, held)
+			return err
 		}
 		// A layer that needed its bytes after all, as when its snapshot is
 		// gone, starts the downloads after it too.
 		layerImport := &chainLayer{owner: chain, ahead: held, fetched: func() { ahead.fill(ctx, i) }}
 		next, err := cm.importLayer(ctx, chain.Layers[i].Descriptor, current, chain.Provider, ImportImageOpts{}, true, chain.Timing, layerImport)
+		cm.dropFetch(ctx, held)
 		if err != nil {
-			cm.dropFetch(ctx, held)
 			return err
 		}
-		cm.leaveFetch(ctx, held)
 		if current != nil {
 			_ = current.Release(context.WithoutCancel(ctx))
 		}
@@ -235,13 +230,7 @@ func chainIDsFrom(chain *ExportChain) ([]digest.Digest, error) {
 func (cm *snapshotManager) applyChainLayer(ctx context.Context, chain *ExportChain, i int, chainID digest.Digest, held *contentFetch) (applied appliedLayer) {
 	desc := chain.Layers[i].Descriptor
 	clock := importClock{timing: &applied.timing, prof: wcprof.Enabled(ctx)}
-	defer func() {
-		if applied.err != nil {
-			cm.dropFetch(ctx, held)
-		} else {
-			cm.leaveFetch(ctx, held)
-		}
-	}()
+	defer cm.dropFetch(ctx, held)
 	if applied.err = cm.awaitLayer(ctx, chain, i); applied.err != nil {
 		return applied
 	}
