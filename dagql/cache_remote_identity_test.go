@@ -1,6 +1,7 @@
 package dagql
 
 import (
+	"cmp"
 	"fmt"
 	"math/rand/v2"
 	"runtime"
@@ -169,6 +170,15 @@ func checkKnownRemoteIdentityWritesNothing(t *testing.T, seed uint64) {
 	require.Greater(t, known, checked/4, "most rows of calls taught before are known")
 }
 
+// idSetIndexMembers returns each key's members, in order, for printing.
+func idSetIndexMembers[K comparable, V cmp.Ordered](x *idSetIndex[K, V]) map[K][]V {
+	out := make(map[K][]V, x.Len())
+	for k := range x.Keys() {
+		out[k] = slices.Collect(x.Items(k))
+	}
+	return out
+}
+
 // egraphFactsForTest prints every structure of the e-graph, with each
 // class's slot given by its root: finding a root compresses paths, which no
 // reader sees; and the marks the cache's writes have made. Requires egraphMu.
@@ -199,8 +209,8 @@ func egraphFactsForTest(c *Cache) string {
 	line("outputTerms", c.outputEqClassToTerms)
 	line("resultClasses", c.resultOutputEqClasses)
 	line("classResults", c.outputEqClassResults)
-	line("termResults", c.termResults)
-	line("resultTerms", c.resultTerms)
+	line("termResults", idSetIndexMembers(&c.termResults))
+	line("resultTerms", idSetIndexMembers(&c.resultTerms))
 	line("provenance", c.termInputProvenance)
 	terms := make(map[egraphTermID]egraphTerm, len(c.egraphTerms))
 	for id, term := range c.egraphTerms {
