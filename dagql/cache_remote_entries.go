@@ -1744,13 +1744,23 @@ func (c *Cache) forgetUnknownDependentLocked(state *remoteCacheState, cache Cach
 }
 
 // takeUnheldCandidatesLocked hands back, in change, the numbers the write
-// left named by no holding (UnheldCandidates), sorted, and clears them.
-// Requires egraphMu for writing.
+// left named by no holding (UnheldCandidates), sorted, and clears them: those
+// that, as it hands them back, still have no holding and no holding naming
+// them. A write of several parts, such as a merged reply's targets, can give
+// a number a holding, or name it again, after an earlier part let go of its
+// last naming holding. Requires egraphMu for writing.
 func (c *Cache) takeUnheldCandidatesLocked(change *RemoteChange) {
 	if len(c.unheldCandidates) == 0 {
 		return
 	}
-	change.UnheldCandidates = append(change.UnheldCandidates, c.unheldCandidates...)
+	for _, key := range c.unheldCandidates {
+		if state := c.remoteCaches[key.Cache]; state != nil {
+			if _, h := state.holdingLocked(key.Number); h != nil || len(state.unknownDependents[key.Number]) > 0 {
+				continue
+			}
+		}
+		change.UnheldCandidates = append(change.UnheldCandidates, key)
+	}
 	slices.SortFunc(change.UnheldCandidates, compareHolderKeys)
 	change.UnheldCandidates = slices.Compact(change.UnheldCandidates)
 	c.unheldCandidates = c.unheldCandidates[:0]
