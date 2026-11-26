@@ -1336,11 +1336,9 @@ func (span *Span) Parents(f func(*Span) bool) {
 }
 
 // FirstMissingAncestor returns the nearest ancestor span that was referenced
-// (as a parent) but never exported to the database -- i.e. a placeholder
-// allocated only to satisfy a child's ParentID. It returns nil when the whole
-// ancestor chain was received. This is the signal that a test case dangles
-// because intermediate spans are genuinely absent from the trace data, not
-// merely unfetched.
+// as a parent but not received in full by this DB. IsFoldedPlaceholder
+// distinguishes a known folded snapshot from an ancestor not yet observed.
+// It returns nil when the whole ancestor chain was received.
 func (span *Span) FirstMissingAncestor() *Span {
 	if span == nil {
 		return nil

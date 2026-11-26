@@ -115,6 +115,8 @@ type TestView struct {
 	// SummaryTitle overrides the "TESTS" heading for ListOnly summaries, e.g.
 	// "ORPHANED TESTS" for the section of tests severed from their checks.
 	SummaryTitle string
+	// summaryAttribution follows the styled heading, including in compact mode.
+	summaryAttribution string
 	// SummaryNote renders pre-styled lines directly beneath the heading, before
 	// the test rows -- used to explain why a section exists (e.g. the orphan
 	// warning). Subject to the same height budget as the rest of the summary.
@@ -758,7 +760,7 @@ func (tv *TestView) renderTestSummaryLines(out TermOutput, view *dagui.TestView,
 // there is room for.
 func (tv *TestView) renderTestSummaryOneLine(out TermOutput, counts dagui.TestCounts, width int) string {
 	prefix := strings.Repeat(" ", max(tv.SummaryIndent, 0))
-	line := prefix + reportHeadingLine(out, tv.AgentStyle, tv.summaryHeading())
+	line := prefix + reportHeadingLine(out, tv.AgentStyle, tv.summaryHeading()) + tv.summaryAttribution
 	if parts := renderTestCountParts(out, counts); len(parts) > 0 {
 		line += "  " + strings.Join(parts, "  ")
 	}
@@ -869,7 +871,7 @@ func (tv *TestView) renderTestSummaryCountsCompact(out TermOutput, counts dagui.
 }
 
 func (tv *TestView) renderTestSummaryHeader(out TermOutput, prefix string, width int) string {
-	heading := prefix + reportHeadingLine(out, tv.AgentStyle, tv.summaryHeading())
+	heading := prefix + reportHeadingLine(out, tv.AgentStyle, tv.summaryHeading()) + tv.summaryAttribution
 	if tv.ShowTestViewerHint && !tv.testSummaryFinal() {
 		heading += " " + renderTestViewerHint(out)
 	}
@@ -2041,7 +2043,7 @@ func (fe *frontendPretty) renderGlobalTests(ctx tuist.Context, final bool) []str
 	if final {
 		width = max(width, finalRenderTestsWidth)
 	}
-	fe.setOrphanSummary(tv, fe.orphanWarningLines(orphan))
+	fe.setOrphanSummary(tv, orphan, final)
 	lines := fe.RenderChildResult(ctx.Resize(width, limit), tv).Lines
 	if len(lines) == 0 {
 		return nil
@@ -2137,13 +2139,26 @@ func (fe *frontendPretty) orphanTestsComponent() *TestView {
 // warning on the component. When missing-ancestor cases are present the section
 // becomes "ORPHANED TESTS" and the warning renders indented beneath that
 // heading, rather than floating, headerless, above the whole section.
-func (fe *frontendPretty) setOrphanSummary(tv *TestView, warn []string) {
+func (fe *frontendPretty) setOrphanSummary(tv *TestView, orphan *dagui.TestView, final bool) {
+	warn, folded := fe.orphanWarningLines(orphan)
 	title := "TESTS"
 	if len(warn) > 0 {
 		title = "ORPHANED TESTS"
 	}
-	if tv.SummaryTitle != title {
+	var suffix string
+	if folded > 0 {
+		// Keep the count in the heading: the compact layout can omit notes.
+		status := fmt.Sprintf("%d not yet attributed (folded ancestry)", folded)
+		if final {
+			status = fmt.Sprintf("%d unattributed in this report", folded)
+		} else if fe.fold != nil && fe.fold.goneInView && !fe.fold.filling() {
+			status = fmt.Sprintf("%d with ancestry unavailable", folded)
+		}
+		suffix = " · " + status
+	}
+	if tv.SummaryTitle != title || tv.summaryAttribution != suffix {
 		tv.SummaryTitle = title
+		tv.summaryAttribution = suffix
 		tv.Update()
 	}
 	if !slices.Equal(tv.SummaryNote, warn) {
@@ -2152,36 +2167,54 @@ func (fe *frontendPretty) setOrphanSummary(tv *TestView, warn []string) {
 	}
 }
 
-// orphanWarningLines flags cases that dangle because intermediate ancestor spans
-// were never exported to the trace (Span.FirstMissingAncestor), distinguishing
-// them from tests legitimately run outside any check (which warn-free). With
-// --debug each affected case is listed with its span ID and the missing parent.
-func (fe *frontendPretty) orphanWarningLines(orphan *dagui.TestView) []string {
-	if orphan == nil || !fe.claims.anyTestCases() {
-		// No check rendered tests this pass, so the global section is the whole
-		// test view -- missing-ancestor cases aren't displaced from anything.
-		return nil
+// orphanWarningLines warns about unexported ancestors. It separately counts
+// tests whose ancestry was exported but is held only as a folded snapshot.
+// A test genuinely run outside a check needs neither qualification.
+func (fe *frontendPretty) orphanWarningLines(orphan *dagui.TestView) ([]string, int) {
+	claimed := fe.claims.anyTestCases()
+	if orphan == nil || (!claimed && fe.db.Fold() == nil) {
+		return nil, 0
 	}
+	folded := 0
 	type orphanInfo struct {
 		name   string
 		span   dagui.SpanID
 		parent dagui.SpanID
 	}
 	var missing []orphanInfo
+	scopeRoot := fe.reportTestRoot()
 	for _, node := range orphan.BySpan {
 		if node == nil || node.Kind != dagui.TestNodeCase || node.Span == nil {
 			continue
 		}
-		if anc := node.Span.FirstMissingAncestor(); anc != nil {
+		knownOwner := node.Span.CheckName != "" || node.Span.LLMTool != ""
+		for child := node.Span; child.ParentSpan != nil && child != scopeRoot; child = child.ParentSpan {
+			anc := child.ParentSpan
+			if anc.CheckName != "" || anc.LLMTool != "" {
+				knownOwner = true
+			}
+			if anc.Received {
+				continue
+			}
+			if anc.IsFoldedPlaceholder() {
+				if !knownOwner {
+					folded += node.SelfCounts().Total()
+				}
+				break
+			}
+			if !claimed {
+				break // no check rendered tests that these could be displaced from
+			}
 			name := node.FullName
 			if name == "" {
 				name = node.Name
 			}
 			missing = append(missing, orphanInfo{name: name, span: node.Span.ID, parent: anc.ID})
+			break
 		}
 	}
 	if len(missing) == 0 {
-		return nil
+		return nil, folded
 	}
 	// missing comes from map iteration; break name ties by span ID so the
 	// --debug listing is stable across renders (e.g. a retried case yields two
@@ -2211,7 +2244,7 @@ func (fe *frontendPretty) orphanWarningLines(orphan *dagui.TestView) []string {
 	} else {
 		lines = append(lines, out.String("    (run with --debug to list them)").Foreground(termenv.ANSIBrightBlack).String())
 	}
-	return lines
+	return lines, folded
 }
 
 // isFailingLeafTestCase reports whether node is a failing test case with no

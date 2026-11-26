@@ -89,6 +89,9 @@ type liveFold struct {
 	// gone is set once the store answered ErrSpanStoreGone: nothing is
 	// read back from then on, and the view says what that leaves out.
 	gone atomic.Bool
+	// goneInView is the event-loop observation of gone, after earlier fill
+	// callbacks have been dispatched. A partial answer can precede store loss.
+	goneInView bool
 	// settled is set once SettleFold returns in report mode: nothing is
 	// read back after.
 	settled bool
@@ -499,6 +502,7 @@ func (fe *frontendPretty) foldGone() bool {
 // read back: rows expanded over them, and a search that matched them, say
 // so.
 func (fe *frontendPretty) foldGoneLocked() {
+	fe.fold.goneInView = true
 	if fe.searchQuery != "" {
 		fe.searchFoldedMore, fe.searchFoldedLost = fe.readFoldedMatchesLocked(fe.searchQuery)
 		fe.refreshKeymap()
