@@ -36,8 +36,8 @@ func init() {
 
 // An entry's kept grouping follows each change to its calls and to their
 // inputs' classes: a class for an input that had none, a union that moves an
-// input's class under another root, one that leaves it the root, a
-// compaction that renumbers classes; and the entry's leaving forgets its
+// input's class under another root, one that leaves it the root, the
+// freeing of the classes that ended; and the entry's leaving forgets its
 // inputs.
 func TestKeptCallTermsFollowTheirInputsClasses(t *testing.T) {
 	t.Parallel()
@@ -82,11 +82,13 @@ func TestKeptCallTermsFollowTheirInputsClasses(t *testing.T) {
 	groups("every input's class is one", 1)
 	c.mergeEqClassesLocked(ctx, class("a"), class("f"))
 	groups("a class joins the inputs' root", 1)
-	// The entry's output keeps the inputs' class live, under a new number.
+	// The entry's output keeps the inputs' class live; the classes the
+	// unions joined into it are freed.
 	c.addResultOutputEqClassLocked(entry.id, class("a"))
-	compacted, _, _ := c.compactEqClassesLocked(true)
-	require.True(t, compacted)
-	groups("classes are renumbered", 1)
+	before := c.eqClassSlotsLocked()
+	c.freeEndedEqClassesLocked()
+	require.Less(t, c.eqClassSlotsLocked(), before)
+	groups("the classes that ended are freed", 1)
 
 	require.NotEmpty(t, c.callInputEntries)
 	c.deleteResultLocked(entry)

@@ -231,11 +231,11 @@ func forgetKept(c *Cache, entry *sharedResult, calls ...*keptCall) {
 // An entry's term index keeps what a scan of its calls would on every keep:
 // on random sequences of keeps, new classes for inputs, unions of their
 // classes, inputs the Cloud comes to store, which make a call replace its
-// term's call the Cloud can't place, drops and compactions, the entry keeps
-// the calls it keeps when each keep scans its calls, as before the index,
-// and the index agrees with a scan after every step. The sequences drop
-// the index by each of a new class, a union and a compaction, and keep
-// calls that join terms and that replace a call.
+// term's call the Cloud can't place, drops and the freeing of classes that
+// ended, the entry keeps the calls it keeps when each keep scans its calls,
+// as before the index, and the index agrees with a scan after every step.
+// The sequences drop the index by each of a new class, a union and a class
+// freed, and keep calls that join terms and that replace a call.
 func TestACallTermIndexKeepsWhatAScanKeeps(t *testing.T) {
 	t.Parallel()
 	var seen sync.Map
@@ -251,7 +251,7 @@ func TestACallTermIndexKeepsWhatAScanKeeps(t *testing.T) {
 			})
 		}
 	})
-	for _, what := range []string{"index dropped by class", "index dropped by union", "index dropped by compact", "keep joined", "keep replaced", "drop"} {
+	for _, what := range []string{"index dropped by class", "index dropped by union", "index dropped by free", "keep joined", "keep replaced", "drop"} {
 		n, ok := seen.Load(what)
 		require.True(t, ok && n.(*atomic.Int64).Load() > 0, "no sequence had a %s", what)
 	}
@@ -340,8 +340,8 @@ func callTermIndexSequence(t *testing.T, seed int64, saw func(string)) {
 			}
 		default:
 			live := pool[:rng.Intn(len(pool))]
-			kind = "compact"
-			steps = append(steps, fmt.Sprint("compact, live ", len(live)))
+			kind = "free"
+			steps = append(steps, fmt.Sprint("free, live ", len(live)))
 			do = func(s *side) any {
 				outputs := map[eqClassID]struct{}{}
 				for _, in := range live {
@@ -350,13 +350,14 @@ func callTermIndexSequence(t *testing.T, seed int64, saw func(string)) {
 					}
 				}
 				// Through the cache, which counts each class's uses as it
-				// changes, and compacts from those counts.
+				// changes, and notes the ones it ends; then the collector's
+				// freeing of them.
 				s.c.removeResultOutputEqClassesLocked(s.entry.id)
 				for root := range outputs {
 					s.c.addResultOutputEqClassLocked(s.entry.id, root)
 				}
-				compacted, _, _ := s.c.compactEqClassesLocked(true)
-				return compacted
+				s.c.freeEndedEqClassesLocked()
+				return s.c.eqClassSlotsLocked()
 			}
 		}
 		if scan.entry.keptCallsLocked() != nil {

@@ -695,8 +695,8 @@ the save's own copy, with no lock held.
 What changes under `egraphMu` held for reading is not noted, and a save reads
 it at some moment of its read, as a save under one hold did: a result's record,
 whose write count marks it, and its last use. While a save reads, no freed
-eq-class number is taken again and eq-classes are not compacted, so a number
-the save has read names one class until it ends.
+eq-class number is taken again, so a number the save has read names one
+class, or none, until it ends.
 
 The package's tests have writers note at every write, and check at each save
 that every unit that changed since the save before was noted

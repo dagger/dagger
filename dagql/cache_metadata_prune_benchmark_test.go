@@ -158,7 +158,7 @@ func benchmarkCacheMetadataFixtureLifecycle(b *testing.B, resultCount int, fixtu
 		setupHeapDelta := positiveDelta(populated.HeapAlloc, baseline.HeapAlloc)
 		reclaimedHeap := positiveDelta(populated.HeapAlloc, retained.HeapAlloc)
 		estimateDelta := positiveDelta(
-			uint64(report.AfterInitialCompaction.EstimatedBytes),
+			uint64(report.Before.EstimatedBytes),
 			uint64(report.AfterPrune.EstimatedBytes),
 		)
 		peakScratchHeapInuse := positiveDelta(peakHeapInuse, populated.HeapInuse)
@@ -175,10 +175,6 @@ func benchmarkCacheMetadataFixtureLifecycle(b *testing.B, resultCount int, fixtu
 		b.ReportMetric(float64(populated.HeapInuse), "setup-HeapInuse-B")
 		b.ReportMetric(float64(peakScratchHeapInuse), "peak-scratch-HeapInuse-B")
 		b.ReportMetric(float64(reclaimedHeap), "reclaimed-HeapAlloc-B")
-		b.ReportMetric(float64(report.InitialCompactionOldClassSlots), "initial-old-class-slots")
-		b.ReportMetric(float64(report.InitialCompactionNewClassSlots), "initial-new-class-slots")
-		b.ReportMetric(float64(report.FinalCompactionOldClassSlots), "final-old-class-slots")
-		b.ReportMetric(float64(report.FinalCompactionNewClassSlots), "final-new-class-slots")
 		b.ReportMetric(float64(report.RemovedPersistedRootCount), "removed-roots")
 		b.ReportMetric(float64(report.Duration.Nanoseconds()), "reported-pass-ns")
 		b.ReportMetric(float64(automaticLog.Len()), "automatic-log-B")
@@ -192,9 +188,10 @@ func benchmarkCacheMetadataFixtureLifecycle(b *testing.B, resultCount int, fixtu
 	}
 }
 
-// BenchmarkCacheMetadataChurn records the baseline-to-peak,
-// peak-to-session-release, and forced-compaction transitions required to
-// calibrate the class-slot coefficient. Run with -benchtime=1x.
+// BenchmarkCacheMetadataChurn records the baseline-to-peak and
+// peak-to-session-release transitions required to calibrate the class-slot
+// coefficient; the release's collection frees the classes it ends. Run with
+// -benchtime=1x.
 func BenchmarkCacheMetadataChurn(b *testing.B) {
 	const (
 		unpruneableFloor = 2_000
@@ -229,23 +226,10 @@ func BenchmarkCacheMetadataChurn(b *testing.B) {
 		afterReleaseEstimate := c.MetadataEstimate()
 		afterReleaseStats := benchmarkMetadataMemStats()
 
-		compactionStarted := time.Now()
-		c.egraphMu.Lock()
-		compacted, oldClassSlots, newClassSlots := c.compactEqClassesLocked(true)
-		c.egraphMu.Unlock()
-		compactionDuration := time.Since(compactionStarted)
-		afterCompactionEstimate := c.MetadataEstimate()
-		afterCompactionStats := benchmarkMetadataMemStats()
-		if !compacted {
-			b.Fatal("forced compaction did not compact churned class slots")
-		}
-
 		growthEstimate := absoluteDelta(uint64(peakEstimate.EstimatedBytes), uint64(floorEstimate.EstimatedBytes))
 		growthHeap := positiveDelta(peakStats.HeapAlloc, floorControl.HeapAlloc)
 		releaseEstimate := positiveDelta(uint64(peakEstimate.EstimatedBytes), uint64(afterReleaseEstimate.EstimatedBytes))
 		releaseHeap := positiveDelta(peakStats.HeapAlloc, afterReleaseStats.HeapAlloc)
-		compactionEstimate := positiveDelta(uint64(afterReleaseEstimate.EstimatedBytes), uint64(afterCompactionEstimate.EstimatedBytes))
-		compactionHeap := positiveDelta(afterReleaseStats.HeapAlloc, afterCompactionStats.HeapAlloc)
 
 		b.ReportMetric(float64(noopHeapNoise), "noop-HeapAlloc-noise-B")
 		b.ReportMetric(float64(floorEstimate.EstimatedBytes), "floor-estimated-B")
@@ -254,79 +238,16 @@ func BenchmarkCacheMetadataChurn(b *testing.B) {
 		b.ReportMetric(float64(peakStats.HeapAlloc), "peak-HeapAlloc-B")
 		b.ReportMetric(float64(afterReleaseEstimate.EstimatedBytes), "released-estimated-B")
 		b.ReportMetric(float64(afterReleaseStats.HeapAlloc), "released-HeapAlloc-B")
-		b.ReportMetric(float64(afterCompactionEstimate.EstimatedBytes), "compacted-estimated-B")
-		b.ReportMetric(float64(afterCompactionStats.HeapAlloc), "compacted-HeapAlloc-B")
-		b.ReportMetric(float64(oldClassSlots), "compaction-old-class-slots")
-		b.ReportMetric(float64(newClassSlots), "compaction-new-class-slots")
+		b.ReportMetric(float64(afterReleaseEstimate.ClassSlotCount), "released-class-slots")
 		b.ReportMetric(float64(releaseDuration.Nanoseconds()), "release-ns")
-		b.ReportMetric(float64(compactionDuration.Nanoseconds()), "compaction-ns")
 		if growthHeap > noopHeapNoise {
 			b.ReportMetric(float64(growthEstimate)/float64(growthHeap), "growth-estimate/heap")
 		}
 		if releaseHeap > noopHeapNoise {
 			b.ReportMetric(float64(releaseEstimate)/float64(releaseHeap), "release-estimate/heap")
 		}
-		if compactionHeap > noopHeapNoise {
-			b.ReportMetric(float64(compactionEstimate)/float64(compactionHeap), "compaction-estimate/heap")
-		}
 		runtime.KeepAlive(c)
 	}
-}
-
-// BenchmarkCacheMetadataSparseForcedCompaction measures the write-lock hold
-// for forced compaction of a genuinely sparse one-million-slot graph. Run with
-// -benchtime=1x in a fresh process.
-func BenchmarkCacheMetadataSparseForcedCompaction(b *testing.B) {
-	const (
-		allocatedClassSlots = 1_000_000
-		unpruneableFloor    = 2_000
-	)
-	b.ReportAllocs()
-	var totalWriteLockHold time.Duration
-	for range b.N {
-		b.StopTimer()
-		ctx := benchmarkMetadataContext(b, io.Discard)
-		c, err := NewCache(ctx, "", nil, nil)
-		if err != nil {
-			b.Fatal(err)
-		}
-		benchmarkMetadataPopulateUnpruneableFloor(b, c, ctx, unpruneableFloor)
-		benchmarkMetadataPopulateTransient(b, c, ctx, allocatedClassSlots-unpruneableFloor)
-		if err := c.ReleaseSession(ctx, "metadata-churn"); err != nil {
-			b.Fatal(err)
-		}
-
-		before := c.MetadataEstimate()
-		if before.ClassSlotCount != allocatedClassSlots {
-			b.Fatalf("allocated class slots: got %d, want %d", before.ClassSlotCount, allocatedClassSlots)
-		}
-		if before.ResultCount != unpruneableFloor {
-			b.Fatalf("live results: got %d, want %d", before.ResultCount, unpruneableFloor)
-		}
-
-		b.StartTimer()
-		c.egraphMu.Lock()
-		writeLockStarted := time.Now()
-		compacted, oldClassSlots, newClassSlots := c.compactEqClassesLocked(true)
-		c.egraphMu.Unlock()
-		totalWriteLockHold += time.Since(writeLockStarted)
-		b.StopTimer()
-		if !compacted {
-			b.Fatal("forced compaction did not compact sparse class slots")
-		}
-		if oldClassSlots != allocatedClassSlots {
-			b.Fatalf("old class slots: got %d, want %d", oldClassSlots, allocatedClassSlots)
-		}
-		if newClassSlots != unpruneableFloor {
-			b.Fatalf("new class slots: got %d, want %d", newClassSlots, unpruneableFloor)
-		}
-		after := c.MetadataEstimate()
-		b.ReportMetric(float64(oldClassSlots), "old-class-slots")
-		b.ReportMetric(float64(newClassSlots), "new-class-slots")
-		b.ReportMetric(float64(after.EstimatedBytes), "after-estimated-B")
-		runtime.KeepAlive(c)
-	}
-	b.ReportMetric(float64(totalWriteLockHold.Nanoseconds())/float64(b.N), "write-lock-hold-ns")
 }
 
 func benchmarkMetadataPopulateUnpruneableFloor(b *testing.B, c *Cache, ctx context.Context, resultCount int) {

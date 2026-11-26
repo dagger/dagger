@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"time"
 	"unique"
 
 	"github.com/dagger/dagger/dagql/call"
@@ -1486,11 +1485,7 @@ func (c *Cache) releaseRemoteCacheLocked(cache CacheID) (change RemoteChange) {
 // under the cache's lock, and must take none of the cache's. Each collected holding releases its entry's ownership
 // unit, so entries left with no holding and no other owner are collected too.
 // It returns the collected holdings' keys, sorted, and what it changed.
-//
-// It then checks whether to compact the e-graph's classes, at most once per
-// eqClassCheckInterval and only when something changed since the last check
-// (compactEqClassesAfterCollectionLocked), which frees the dead ones. Only the
-// Cloud calls it. Engines compact through prune.
+// Only the Cloud calls it.
 func (c *Cache) CollectRemoteHoldings(ctx context.Context, candidates []HolderKey, owned func(HolderKey) bool) ([]HolderKey, RemoteChange, error) {
 	c.lockGraphFor(ctx, workRemote)
 	collected, change, releases, err := c.collectRemoteHoldingsLocked(ctx, candidates, owned)
@@ -1504,7 +1499,6 @@ func (c *Cache) CollectRemoteHoldings(ctx context.Context, candidates []HolderKe
 // to run once egraphMu is released. Requires egraphMu for writing.
 func (c *Cache) collectRemoteHoldingsLocked(ctx context.Context, candidates []HolderKey, owned func(HolderKey) bool) ([]HolderKey, RemoteChange, []OnReleaseFunc, error) {
 	var change RemoteChange
-	entriesBefore := len(c.resultsByID)
 	var (
 		queue     = slices.Clone(candidates)
 		collected []HolderKey
@@ -1530,124 +1524,17 @@ func (c *Cache) collectRemoteHoldingsLocked(ctx context.Context, candidates []Ho
 		}
 	}
 	releases, err := c.collectUnownedResultsLocked(ctx, entries)
-	c.compactEqClassesAfterCollectionLocked(ctx, len(c.resultsByID) < entriesBefore)
 	c.takeChangesLocked(&change)
 	return collected, change, releases, errors.Join(rerr, err)
 }
 
 // eqClassSlotsLocked returns the class slots in use: class IDs start at 1,
-// and the slots compaction freed below the highest live class hold none.
-// Requires egraphMu.
+// and the slots of freed classes hold none. Requires egraphMu.
 func (c *Cache) eqClassSlotsLocked() int {
 	if len(c.egraphParents) == 0 {
 		return 0
 	}
 	return len(c.egraphParents) - 1 - len(c.freeEqClassIDs)
-}
-
-// eqClassCheckInterval is the least time between two of the Cloud's
-// compaction checks.
-const eqClassCheckInterval = 10 * time.Second
-
-// compactEqClassesAfterCollectionLocked runs the classes' non-forced
-// compaction, which frees the classes no term or entry uses once they are at
-// least half the slots. It runs at most once per eqClassCheckInterval, and
-// only when something changed since the last check: the class slots differ,
-// or a collection removed entries, removed telling whether this one did. A
-// reset changes the slots too.
-//
-// The check reads the slots and the live classes the cache keeps
-// (cache_eqclass_uses.go), so a check that frees nothing walks nothing and
-// changes no shared state; a compaction walks every term, entry and digest,
-// in the collection's hold of the cache, and is logged at Info through ctx
-// with how long it took: at most one line per eqClassCheckInterval.
-// The service collects at the end of
-// every read, idle or not, so a pending check runs soon after its interval.
-// At each check, the non-forced compaction frees the dead classes once they
-// reach the live ones; between checks, the dead can exceed that by the
-// classes allocated or made dead since the last check, until the first
-// collection after the interval. Requires egraphMu for writing.
-func (c *Cache) compactEqClassesAfterCollectionLocked(ctx context.Context, removed bool) {
-	if removed {
-		c.eqClassRemoved = true
-	}
-	if c.eqClassSlotsLocked() == c.eqClassCheckedSlots && !c.eqClassRemoved {
-		return
-	}
-	// A save reading the store holds compaction off: the next collection
-	// after it checks.
-	if c.savingLocked() {
-		return
-	}
-	clock := c.eqClassClock
-	if clock == nil {
-		clock = time.Now
-	}
-	now := clock()
-	if !c.eqClassCheckedAt.IsZero() && now.Sub(c.eqClassCheckedAt) < eqClassCheckInterval {
-		return
-	}
-	start := time.Now()
-	c.eqClassChecks++
-	compacted, oldSlots, newSlots := c.compactEqClassesLocked(false)
-	c.eqClassCheckedAt = now
-	c.eqClassCheckedSlots = c.eqClassSlotsLocked()
-	c.eqClassRemoved = false
-	if compacted {
-		slog.InfoContext(ctx, "dagql collection compacted eq classes",
-			"oldSlots", oldSlots,
-			"newSlots", newSlots,
-			"duration", time.Since(start))
-		return
-	}
-	slog.DebugContext(ctx, "dagql collection checked eq classes",
-		"compacted", compacted,
-		"oldSlots", oldSlots,
-		"newSlots", newSlots,
-		"duration", time.Since(start))
-}
-
-// CompactEqClasses frees, now, every class slot that no term and no entry
-// uses: the forced form of the check CollectRemoteHoldings makes
-// (compactEqClassesAfterCollectionLocked). It runs whatever the time since the
-// last check, however few classes are dead, and frees every slot when no class
-// is live. It returns the class slots before and after. It counts as that
-// check, so the next collection checks again only after eqClassCheckInterval.
-//
-// Only a blob-backed cache answers: otherwise, or when ctx is done before the
-// compaction starts, it returns an error and changes nothing. A compaction
-// that has started is not interrupted.
-func (c *Cache) CompactEqClasses(ctx context.Context) (oldSlots, newSlots int, rerr error) {
-	if !c.blobBacked {
-		return 0, 0, errors.New("compact eq classes: the cache has no blob store")
-	}
-	if err := ctx.Err(); err != nil {
-		return 0, 0, fmt.Errorf("compact eq classes: %w", err)
-	}
-	c.egraphMu.Lock()
-	defer c.egraphMu.Unlock()
-	// The context can end while another operation holds the graph.
-	if err := ctx.Err(); err != nil {
-		return 0, 0, fmt.Errorf("compact eq classes: %w", err)
-	}
-	clock := c.eqClassClock
-	if clock == nil {
-		clock = time.Now
-	}
-	now := clock()
-	start := time.Now()
-	c.eqClassChecks++
-	compacted, oldSlots, newSlots := c.compactEqClassesModeLocked(true, true)
-	c.eqClassCheckedAt = now
-	c.eqClassCheckedSlots = c.eqClassSlotsLocked()
-	c.eqClassRemoved = false
-	slog.Debug("dagql collection checked eq classes",
-		"compacted", compacted,
-		"oldSlots", oldSlots,
-		"newSlots", newSlots,
-		"duration", time.Since(start),
-		"forced", true)
-	return oldSlots, newSlots, nil
 }
 
 // removeHoldingLocked takes a holding off its entry: out of its cache's index
@@ -1692,9 +1579,7 @@ func (c *Cache) removeHoldingLocked(ctx context.Context, state *remoteCacheState
 // is released, and dagql's collection removes the entry if nothing else owns
 // it. It returns as candidates the holdings it depended on, for the next
 // CollectRemoteHoldings, which cascades; it reports false when the cache has
-// no such holding. Entries it removes count toward the next check of the
-// classes' compaction, which only CollectRemoteHoldings runs
-// (compactEqClassesAfterCollectionLocked). The candidates are change's.
+// no such holding. The candidates are change's.
 func (c *Cache) CollectRemoteHolding(ctx context.Context, key HolderKey) (RemoteChange, bool, error) {
 	change, found, err := c.CollectGoneHoldings(ctx, []HolderKey{key})
 	return change, found[0], err
@@ -1715,7 +1600,6 @@ func (c *Cache) CollectGoneHoldings(ctx context.Context, keys []HolderKey) (Remo
 		rerr       error
 	)
 	c.lockGraphFor(ctx, workRemote)
-	entriesBefore := len(c.resultsByID)
 	for i, key := range keys {
 		var deps []HolderKey
 		var err error
@@ -1727,9 +1611,6 @@ func (c *Cache) CollectGoneHoldings(ctx context.Context, keys []HolderKey) (Remo
 		rerr = errors.Join(rerr, err)
 	}
 	releases, collectErr := c.collectUnownedResultsLocked(ctx, entries)
-	if len(c.resultsByID) < entriesBefore {
-		c.eqClassRemoved = true
-	}
 	c.takeChangesLocked(&change)
 	c.egraphMu.Unlock()
 	candidates = slices.DeleteFunc(candidates, func(key HolderKey) bool { return removed[key] })

@@ -107,9 +107,9 @@ func (c *Cache) noteSavedClassLocked(id eqClassID) {
 	c.persistNotes.classes = append(c.persistNotes.classes, id)
 }
 
-// savingLocked reports whether a save is reading the store: no class number
-// is taken again meanwhile, and classes are not compacted, so that a number
-// a save has read names one class for the whole read. Requires egraphMu.
+// savingLocked reports whether a save is reading the store: no freed class
+// number is taken again meanwhile, so that a number a save has read names
+// one class, or none, for the whole read. Requires egraphMu.
 func (c *Cache) savingLocked() bool {
 	return c.persistNotes.reading
 }

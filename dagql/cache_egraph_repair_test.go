@@ -91,8 +91,8 @@ func TestUnionRepairWalksOnlyTheAbsorbedClassTerms(t *testing.T) {
 // The repair of the terms a union moved, with the survivor the class more
 // terms take as an input, leaves the e-graph as the repair of every term of
 // the survivor did, with the survivor chosen by rank: after every step of
-// random rows of three engines, with sessions ending, entries collected and
-// classes compacted between them, the two caches hold the same classes, each
+// random rows of three engines, with sessions ending and entries collected,
+// which frees the classes they end, the two caches hold the same classes, each
 // named by its digests, the same terms with the same inputs and outputs, the
 // same entries' output classes, and give the same hits for every recipe,
 // content and term. The rows' calls share recipes, requests, contents and
@@ -119,7 +119,7 @@ func checkUnionRepairMatchesWholeClassRepair(t *testing.T, seed uint64) {
 		a     *cloudApplier
 	}
 	newArm := func(whole bool) *arm {
-		// A blob store, as the service's cache has, so that classes compact.
+		// A blob store, as the service's cache has.
 		ctx, cloud := storedPartTestCache(t, WithBlobStore())
 		cloud.testRepairWholeClass = whole
 		return &arm{ctx: ctx, cloud: cloud, a: newCloudApplier(t, cloud)}
@@ -192,9 +192,9 @@ func checkUnionRepairMatchesWholeClassRepair(t *testing.T, seed uint64) {
 			}
 			session[e]++
 		case 1:
+			// A collection with nothing to collect, as each read's end runs.
 			for _, arm := range arms {
-				_, _, err := arm.cloud.CompactEqClasses(arm.ctx)
-				require.NoError(t, err)
+				arm.a.collect()
 			}
 		default:
 			e := engines[rng.IntN(len(engines))]

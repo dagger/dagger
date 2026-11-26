@@ -62,7 +62,7 @@ func TestCachePersistenceSaveWritesOnlyWhatChanged(t *testing.T) {
 
 // A Cloud's saves write only what changed, across the changes a service
 // makes: new entries, a changed last use, a stored part, a prune that empties
-// the store, a compaction of its classes, a restart. TestMain checks every one
+// the store, a collection that frees classes, a restart. TestMain checks every one
 // of these saves against a full save at its hold. It runs on several stores,
 // each with its own fingerprint seed.
 func TestCloudSavesWriteOnlyWhatChanged(t *testing.T) {
@@ -102,8 +102,6 @@ func TestCloudSavesWriteOnlyWhatChanged(t *testing.T) {
 		_, _, err = cloud.CollectRemoteHoldings(ctx, cloud.ReleaseRemoteCache(ctx, "cache-a").Candidates, nil)
 		require.NoError(t, err)
 		require.NoError(t, cloud.Checkpoint(ctx))
-		_, _, err = cloud.CompactEqClasses(ctx)
-		require.NoError(t, err)
 		storedPersistenceTestRootAndDep(t, ctx, cloud, fmt.Sprintf("fourth-%d", i))
 		require.NoError(t, cloud.Checkpoint(ctx))
 
