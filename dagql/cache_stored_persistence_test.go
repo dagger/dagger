@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -12,6 +13,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -129,6 +131,70 @@ func TestCloudSaveAndRestoreKeepThePool(t *testing.T) {
 	again, _ := mergeTestSource(t, "after-restore", "new")
 	next := storedPersistenceTestMerge(t, ctx, cloud, again)[0]
 	require.NotContains(t, before, next)
+}
+
+// A restore holds each stored part as the cache holds it (storedLayers) on
+// the cores that decode the rows, before it takes the cache's lock to build
+// the cache from them: the lock waits on no part's holding, and the parts
+// come back as they were saved.
+func TestCloudRestoreHoldsStoredPartsOutsideItsLock(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "cloud.db")
+	ctx, cloud := storedPersistenceTestCloud(t, path)
+	actx, a, asrv := transferTestCache(t)
+	r := persistedListTestResult(t, actx, a, asrv, "held-root", &transferTestValue{Text: "root"})
+	root := storedPersistenceTestMerge(t, ctx, cloud, exportTestBundle(t, actx, a, r))[0]
+	stored, _, err := cloud.SetStoredPart(ctx, root, storedPruneTestPart("snapshot", map[string]int64{"held-base": 10, "held-top": 20}), 0)
+	require.NoError(t, err)
+	require.True(t, stored)
+	before := storedPersistenceTestState(cloud)
+	require.NoError(t, cloud.Close(ctx))
+
+	var held, underLock atomic.Int32
+	ctx = cacheTestContext(t.Context())
+	cloud, err = NewCache(ctx, path, nil, nil, WithBlobStore(), func(c *Cache) {
+		c.storedLayers.testHold = func() {
+			held.Add(1)
+			if !c.egraphMu.TryLock() {
+				underLock.Add(1)
+				return
+			}
+			c.egraphMu.Unlock()
+		}
+	})
+	require.NoError(t, err)
+	defer func() { require.NoError(t, cloud.Close(ctx)) }()
+	require.Equal(t, CachePersistenceResetNone, cloud.PersistenceResetReason())
+	require.Equal(t, before, storedPersistenceTestState(cloud), "the stored parts come back as saved")
+	require.NotZero(t, held.Load(), "the restore held the saved stored part")
+	require.Zero(t, underLock.Load(), "no stored part was held under the cache's lock")
+}
+
+// A row saved without a stored record, whole, with stored parts and a run,
+// is counted at the size merge measures: its envelope as the entry keeps
+// it, without its parts, and without its run and decline mark, which the
+// import moves onto the entry.
+func TestARestoredWholeRecordIsCountedWithoutWhatTheEntryHolds(t *testing.T) {
+	t.Parallel()
+	env := &PersistedResultEnvelope{
+		Version:         persistedResultEnvelopeVersion,
+		Kind:            persistedResultKindObject,
+		TypeName:        "Directory",
+		PersistDeclined: true,
+		Run:             &RunName{Cache: "cache-a", Number: 7, Replacements: 1},
+		RunRan:          1,
+		StoredParts:     []PersistedPartOffer{storedPruneTestPart("snapshot", map[string]int64{"whole-base": 10})},
+	}
+	kept := *env
+	kept.PersistDeclined, kept.Run, kept.RunRan, kept.StoredParts = false, nil, 0, nil
+	want, err := json.Marshal(&kept)
+	require.NoError(t, err)
+
+	row := importedResultRow{env: env}
+	row.holdStoredParts(&storedLayers{})
+	require.NoError(t, row.partsErr)
+	require.Len(t, row.storedParts, 1, "the part is held")
+	require.Equal(t, len(want), row.strippedBytes)
 }
 
 // storedPersistenceTestRootAndDep merges a root with one dependency from

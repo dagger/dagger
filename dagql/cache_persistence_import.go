@@ -47,7 +47,11 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 	// The tables are independent reads of a store nothing else writes yet, so
 	// they are listed concurrently, each on its own connection.
 	lists, listCtx := errgroup.WithContext(ctx)
-	listImportedResultRows(lists, listCtx, &resultRows, c.blobBacked, c.persistSeed, c.pdb.EachMirrorResult)
+	var layers *storedLayers
+	if c.blobBacked {
+		layers = c.storedLayers
+	}
+	listImportedResultRows(lists, listCtx, &resultRows, layers, c.persistSeed, c.pdb.EachMirrorResult)
 	listMirrorRows(lists, listCtx, "eq_classes", &eqClassRows, c.pdb.ListMirrorEqClasses)
 	listMirrorRows(lists, listCtx, "eq_class_digests", &eqClassDigestRows, c.pdb.ListMirrorEqClassDigests)
 	listMirrorRows(lists, listCtx, "terms", &termRows, c.pdb.ListMirrorTerms)
@@ -236,7 +240,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				// A blob-backed cache never decodes a value: it keeps every
 				// record as it was saved, which placement copies into
 				// bundles, and takes back its stored parts.
-				if err := c.restoreStoredPartsLocked(res, env, row.callFrameBytes, row.payloadBytes); err != nil {
+				if err := c.restoreStoredPartsLocked(res, row); err != nil {
 					return fmt.Errorf("import result %d stored parts: %w", resultID, err)
 				}
 				if body := row.body; body != nil {
@@ -778,6 +782,16 @@ type importedResultRow struct {
 	// parts (decodeStoredRow).
 	body  *storedBody
 	parts *partFacts
+	// storedParts are, on a blob-backed cache, the stored parts the row's
+	// envelope saved, which decoding takes out of it, held as the cache
+	// holds them (storedLayers.part); hasStoredParts says whether it saved
+	// any. strippedBytes is the length of the envelope's JSON without them,
+	// for a row that saved no stored record (body). partsErr is the first of
+	// them that can't be held.
+	storedParts    storedPartList
+	hasStoredParts bool
+	strippedBytes  int
+	partsErr       error
 	// recordBytes fingerprints the record row as the database holds it
 	// (recordBytesPrint), and recordInputs the fields of the entry its
 	// envelope there carries (recordInputsPrint), for what the cache keeps
@@ -789,10 +803,12 @@ type importedResultRow struct {
 }
 
 // decode decodes the row's call frame and self payload, fingerprints them
-// with seed, and drops their raw bytes. Decoding reads only the row. A
+// with seed, and drops their raw bytes. Decoding reads only the row, and on
+// a blob-backed cache, whose stored layers are layers, that table. A
 // blob-backed cache's stored record is taken back as it was held, its value
-// not decoded.
-func (row *importedResultRow) decode(blobBacked bool, seed maphash.Seed) {
+// not decoded, and its stored parts are held as the cache holds them, ready
+// for the import to put on the entry.
+func (row *importedResultRow) decode(layers *storedLayers, seed maphash.Seed) {
 	row.payloadBytes = len(row.SelfPayload)
 	row.callFrameBytes = len(row.CallFrameJSON)
 	row.recordBytes = recordBytesPrint(seed, row.CallFrameJSON, row.SelfPayload)
@@ -802,7 +818,7 @@ func (row *importedResultRow) decode(blobBacked bool, seed maphash.Seed) {
 	}
 	switch {
 	case len(row.SelfPayload) == 0:
-	case blobBacked && isStoredRow(row.SelfPayload):
+	case layers != nil && isStoredRow(row.SelfPayload):
 		row.env, row.body, row.parts, row.envErr = decodeStoredRow(row.SelfPayload, row.frame)
 	default:
 		row.env = new(PersistedResultEnvelope)
@@ -813,9 +829,45 @@ func (row *importedResultRow) decode(blobBacked bool, seed maphash.Seed) {
 		// moves any onto the entry. Offers that can't be fingerprinted keep
 		// 0, so the save compares the record.
 		row.recordInputs, _ = recordInputsPrint(seed, row.env.PersistDeclined, row.env.Run, runRanBy(row.env.RunRan), row.env.PendingOffers)
+		if layers != nil {
+			row.holdStoredParts(layers)
+		}
 	}
 	row.SelfPayload = nil
 	row.CallFrameJSON = ""
+}
+
+// holdStoredParts takes the stored parts out of the row's decoded envelope
+// and holds them in layers, the cache's table, as the cache holds them,
+// with the length of the envelope's JSON as the entry keeps it, without
+// them, for a row with no stored record (restoreStoredPartsLocked).
+func (row *importedResultRow) holdStoredParts(layers *storedLayers) {
+	if len(row.env.StoredParts) == 0 {
+		return
+	}
+	parts := row.env.StoredParts
+	row.env.StoredParts = nil
+	row.hasStoredParts = true
+	for _, part := range parts {
+		key, err := partAddressKey(part.Address)
+		if err != nil {
+			row.partsErr = err
+			return
+		}
+		row.storedParts = row.storedParts.with(key, layers.part(part))
+	}
+	if row.body == nil {
+		// Without what the import moves onto the entry too, as the
+		// envelope it keeps has none of it.
+		kept := *row.env
+		kept.PersistDeclined, kept.Run, kept.RunRan = false, nil, 0
+		stripped, err := json.Marshal(&kept)
+		if err != nil {
+			row.partsErr = err
+			return
+		}
+		row.strippedBytes = len(stripped)
+	}
 }
 
 // listImportedResultRows lists the results table into dst, in the table's
@@ -824,7 +876,7 @@ func (row *importedResultRow) decode(blobBacked bool, seed maphash.Seed) {
 // decoded, so a restore never holds the whole table's bytes beside their
 // decoded form. The import loop checks the rows in order, so the error it
 // reports is the one of the first invalid row.
-func listImportedResultRows(lists *errgroup.Group, ctx context.Context, dst *[]importedResultRow, blobBacked bool, seed maphash.Seed, each func(context.Context, func(persistdb.MirrorResult) error) error) {
+func listImportedResultRows(lists *errgroup.Group, ctx context.Context, dst *[]importedResultRow, layers *storedLayers, seed maphash.Seed, each func(context.Context, func(persistdb.MirrorResult) error) error) {
 	lists.Go(func() error {
 		pending := make(chan []importedResultRow, runtime.GOMAXPROCS(0))
 		var decoders sync.WaitGroup
@@ -832,7 +884,7 @@ func listImportedResultRows(lists *errgroup.Group, ctx context.Context, dst *[]i
 			decoders.Go(func() {
 				for batch := range pending {
 					for i := range batch {
-						batch[i].decode(blobBacked, seed)
+						batch[i].decode(layers, seed)
 					}
 				}
 			})

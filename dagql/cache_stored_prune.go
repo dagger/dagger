@@ -1,10 +1,12 @@
 package dagql
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"slices"
+	"strings"
 
 	"github.com/opencontainers/go-digest"
 )
@@ -232,22 +234,31 @@ func encodedRecord(rec PersistedRecord) ([]byte, int64) {
 	return envelope, int64(len(frame) + len(envelope))
 }
 
+// storedBlob is a layer blob a stored part names, at the size it gives it.
+type storedBlob struct {
+	digest digest.Digest
+	size   int64
+}
+
 // storedBlobsLocked returns the distinct layer blobs res's stored parts name,
-// each at the largest size they give it. Requires egraphMu.
-func (res *sharedResult) storedBlobsLocked() map[digest.Digest]int64 {
-	if len(res.storedParts) == 0 {
-		return nil
-	}
-	blobs := make(map[digest.Digest]int64)
+// each at the largest size they give it, sorted by digest, in blobs, which it
+// empties first: a walk of many entries passes the same slice for each.
+// Requires egraphMu.
+func (res *sharedResult) storedBlobsLocked(blobs []storedBlob) []storedBlob {
+	blobs = blobs[:0]
 	for _, part := range res.storedParts {
 		for _, layer := range part.layers {
-			blob, size := layer.layer.Descriptor.Digest, layer.layer.Descriptor.Size
-			if seen, ok := blobs[blob]; !ok || size > seen {
-				blobs[blob] = size
-			}
+			blobs = append(blobs, storedBlob{digest: layer.layer.Descriptor.Digest, size: layer.layer.Descriptor.Size})
 		}
 	}
-	return blobs
+	if len(blobs) < 2 {
+		return blobs
+	}
+	// Each blob's largest size first, which compacting keeps.
+	slices.SortFunc(blobs, func(a, b storedBlob) int {
+		return cmp.Or(strings.Compare(string(a.digest), string(b.digest)), cmp.Compare(b.size, a.size))
+	})
+	return slices.CompactFunc(blobs, func(a, b storedBlob) bool { return a.digest == b.digest })
 }
 
 // storedBlobUsage is the disk stage's measure of a blob-backed cache: each
@@ -269,20 +280,21 @@ func (c *Cache) storedBlobUsageLocked(checker *pruneCancellationChecker) (*store
 	usage := &storedBlobUsage{byResult: map[sharedResultID][]string{}, sizes: map[string]int64{}}
 	pool := c.storedPoolLocked()
 	inPool := map[string]bool{}
+	var blobs []storedBlob
 	for id, res := range c.resultsByID {
 		if checker != nil {
 			if err := checker.check(); err != nil {
 				return nil, err
 			}
 		}
-		blobs := res.storedBlobsLocked()
+		blobs = res.storedBlobsLocked(blobs)
 		if len(blobs) == 0 || !res.hasOwnValueLocked() {
 			continue
 		}
 		_, member := pool[id]
 		identities := make([]string, 0, len(blobs))
-		for blob, size := range blobs {
-			identity := blob.String()
+		for _, blob := range blobs {
+			identity, size := blob.digest.String(), blob.size
 			identities = append(identities, identity)
 			switch seen, ok := usage.sizes[identity]; {
 			case member && !inPool[identity]:

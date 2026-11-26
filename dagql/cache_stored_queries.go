@@ -392,8 +392,10 @@ func (c *Cache) LiveBlobs() ([]digest.Digest, error) {
 	defer read.Unlock()
 	live := map[digest.Digest]struct{}{}
 	for _, res := range c.resultsByID {
-		for blob := range res.storedBlobsLocked() {
-			live[blob] = struct{}{}
+		for _, part := range res.storedParts {
+			for _, layer := range part.layers {
+				live[layer.layer.Descriptor.Digest] = struct{}{}
+			}
 		}
 	}
 	return slices.Sorted(maps.Keys(live)), nil

@@ -3,7 +3,6 @@ package dagql
 import (
 	"cmp"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -229,32 +228,25 @@ func (l storedPartList) with(key string, part storedPart) storedPartList {
 	return append(next, l[i:]...)
 }
 
-// restoreStoredPartsLocked takes a blob-backed cache's restored value's
-// stored parts out of its saved envelope, onto the entry, and sets the size
-// of its record as merge measured it: the call frame's JSON and the envelope's
-// without them. callFrameBytes and payloadBytes are the sizes of the row's
-// saved call frame and envelope. Requires egraphMu for writing.
-func (c *Cache) restoreStoredPartsLocked(res *sharedResult, env *PersistedResultEnvelope, callFrameBytes, payloadBytes int) error {
-	c.setStoredRecordBytesLocked(res, int64(callFrameBytes+payloadBytes))
-	if len(env.StoredParts) == 0 {
+// restoreStoredPartsLocked puts a blob-backed cache's restored value's
+// stored parts, which decoding its row held (importedResultRow.decode), on
+// the entry, and sets the size of its record as merge measured it: the call
+// frame's JSON and the envelope's without them. A row with a stored record
+// has that record's size set after (importPersistedState). Requires egraphMu
+// for writing.
+func (c *Cache) restoreStoredPartsLocked(res *sharedResult, row *importedResultRow) error {
+	c.setStoredRecordBytesLocked(res, int64(row.callFrameBytes+row.payloadBytes))
+	if !row.hasStoredParts {
 		return nil
 	}
-	parts := env.StoredParts
-	env.StoredParts = nil
-	var restored storedPartList
-	for _, part := range parts {
-		key, err := partAddressKey(part.Address)
-		if err != nil {
-			return err
-		}
-		restored = restored.with(key, c.storedLayers.part(part))
+	if row.partsErr != nil {
+		return row.partsErr
 	}
+	restored := row.storedParts
 	c.changeStoredPartsLocked(res, func() { res.storedParts = restored })
-	stripped, err := json.Marshal(env)
-	if err != nil {
-		return err
+	if row.body == nil {
+		c.setStoredRecordBytesLocked(res, int64(row.callFrameBytes+row.strippedBytes))
 	}
-	c.setStoredRecordBytesLocked(res, int64(callFrameBytes+len(stripped)))
 	return nil
 }
 

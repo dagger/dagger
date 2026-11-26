@@ -156,6 +156,8 @@ func (p layeredOffer) sameMeaning(q layeredOffer) bool {
 type storedLayers struct {
 	mu    sync.Mutex
 	byKey map[uint64][]weak.Pointer[storedLayer]
+	// testHold, nil but in tests, runs as hold begins.
+	testHold func()
 }
 
 // storedLayerSeed seeds the keys of every table's layers (storedLayerKey).
@@ -174,6 +176,9 @@ func (t *storedLayers) part(offer PersistedPartOffer) storedPart {
 // change it after. Its packs name its chain's layers (OfferedChain.Packs):
 // each layer keeps its own.
 func (t *storedLayers) hold(offer PersistedPartOffer) layeredOffer {
+	if t.testHold != nil {
+		t.testHold()
+	}
 	offer.Value.Platform = sharedPlatform(offer.Value.Platform)
 	if len(offer.Chain.Layers) == 0 {
 		return layeredOffer{held: offer}
