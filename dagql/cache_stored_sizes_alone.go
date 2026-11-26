@@ -344,10 +344,11 @@ func (w *aloneWalk) keptCalls() {
 			calls = append(calls, aloneSpread{at: int32(at), roots: node.reach})
 		}
 	}
-	terms := newNamedTerms(w.held)
 	for len(calls) > 0 {
 		var reached []aloneSpread
 		w.inPieces(func() {
+			// A view of the recipient's terms under this round's read.
+			terms := newNamedTerms(w.held, w.hold)
 			for _, next := range calls {
 				reached = w.choose(next, terms, reached)
 			}
@@ -370,7 +371,7 @@ func (w *aloneWalk) choose(next aloneSpread, terms *namedTerms, reached []aloneS
 		return reached
 	}
 	for _, group := range w.c.keptCallTermsLocked(res) {
-		if group = w.c.sendableCallsLocked(w.held, terms, w.hold, group); len(group) == 0 {
+		if group = w.c.sendableCallsLocked(w.held, terms, group); len(group) == 0 {
 			continue
 		}
 		for left := next.roots; left != 0; {
