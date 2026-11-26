@@ -2,6 +2,7 @@ package dagql
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"sync"
@@ -61,7 +62,7 @@ func TestMain(m *testing.M) {
 		}
 	}
 	testCacheClosing = func(c *Cache) {
-		sharedErr := lightStoredEnvelopes.verify()
+		sharedErr := errors.Join(lightStoredEnvelopes.verify(), sharedPlatforms.verify())
 		mu.Lock()
 		sharedChecks++
 		if sharedErr != nil {
