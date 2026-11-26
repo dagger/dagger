@@ -480,7 +480,9 @@ func TestLateRemoteMissesFindByEveryDigestAndByTerm(t *testing.T) {
 // A late count walks the cheaper side: the log's open misses when they are
 // fewer than half the part's entries, so that a part of thousands of entries
 // counted on a log of a few misses costs what the misses do, and the part's
-// classes when the log holds more.
+// classes when the log holds more, open or returned: a returned miss stays in
+// the log until a trim, and a small part doesn't read past as many of the
+// log's rows as it has entries.
 func TestLateRemoteMissesWalkTheSmallerSide(t *testing.T) {
 	t.Parallel()
 	ctx, c, srv, sessionID, bridge := lookupTestCache(t)
@@ -507,7 +509,15 @@ func TestLateRemoteMissesWalkTheSmallerSide(t *testing.T) {
 	require.Empty(t, c.LateRemoteMisses(time.Now(), part))
 	note(200)
 	require.Empty(t, c.LateRemoteMisses(time.Now(), part))
-	require.Equal(t, []bool{true, false}, walked, "3 misses against 100 entries walk the log; 203 walk the part")
+	bridge.lookups.mu.Lock()
+	for i := range bridge.lookups.missed {
+		bridge.lookups.missed[i].found = true
+	}
+	bridge.lookups.mu.Unlock()
+	note(2)
+	require.Empty(t, c.LateRemoteMisses(time.Now(), part))
+	require.Equal(t, []bool{true, false, false}, walked,
+		"3 misses against 100 entries walk the log; 203 walk the part; so do 2 open behind 203 returned")
 }
 
 // A part's late count reads the graph in a fixed number of holds, however

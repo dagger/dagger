@@ -376,10 +376,12 @@ func (c *Cache) LateRemoteMisses(before time.Time, entries map[uint64]struct{}) 
 // before and not yet returned, whose lookup finds one of entries: read in
 // one hold of the graph lock. It walks the cheaper side: the misses still
 // open, each looked up as a lookup would (lateMissesByLog), when they are
-// fewer than half the entries, and otherwise the classes of entries, asking
-// the log's indexes (lateMissesByPart): looking a miss up, its term made
-// again, costs about twice what walking an entry's classes does. So a count
-// costs what the lesser of its part and its log holds.
+// fewer than half the entries and found among as many of the log's rows as
+// there are entries, and otherwise the classes of entries, asking the log's
+// indexes (lateMissesByPart): looking a miss up, its term made again, costs
+// about twice what walking an entry's classes does, and the misses returned
+// stay in the log until a trim. So a count costs what the lesser of its
+// part and its log holds.
 func (c *Cache) lateMissCandidates(l *remoteLookups, before time.Time, generation, last uint64, entries map[uint64]struct{}) []loggedMiss {
 	read := c.readGraphAs(workRemote)
 	defer read.Unlock()
@@ -391,6 +393,10 @@ func (c *Cache) lateMissCandidates(l *remoteLookups, before time.Time, generatio
 	var open []loggedMiss
 	byLog, most := true, len(entries)/2
 	for i := range l.missed {
+		if i == len(entries) {
+			byLog, open = false, nil
+			break
+		}
 		m := &l.missed[i]
 		if m.seq > last {
 			break
