@@ -2836,6 +2836,11 @@ type Cache struct {
 	// testNoPrerelocation, when set, keeps a merge from relocating its
 	// records before its commit takes egraphMu.
 	testNoPrerelocation bool
+	// testMergesInstallWhole, when set, has a blob-backed cache's merge
+	// install each record whole, as it installs a record its commit
+	// relocates under egraphMu, though its preparation made the record's
+	// body (preparedBody): a test of the readers of a record held whole.
+	testMergesInstallWhole bool
 	// testNoUnchangedRows, when set, has a merge teach every kept record of
 	// the Cloud's again, as one whose entry never merged it would be
 	// (unchangedCloudRowLocked): a test compares the two.
