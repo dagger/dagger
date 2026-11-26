@@ -62,12 +62,18 @@ func TestMain(m *testing.M) {
 	if flag.Lookup("test.bench").Value.String() == "" {
 		var collections atomic.Uint64
 		testCollected = func(c *Cache) {
-			// Past 8,192 slots, terms and entries, one collection in so many
-			// is checked, so that the checks cost about as much per
-			// collection however large the e-graph grows: a test that times
-			// a cache's calls as its e-graph grows times them too.
-			size := len(c.egraphParents) + len(c.egraphTerms) + len(c.resultsByID)
-			if n := collections.Add(1); size > 8192 && n%uint64(size/32) != 0 {
+			// One collection in 8 is checked, and past 8,192 slots, terms
+			// and entries one in so many more, so that the checks cost
+			// about as much per collection however large the e-graph
+			// grows: a test that times a cache's calls as its e-graph grows
+			// times them too. The package's tests make some 480,000
+			// collections, so a gap that every test's collections leave is
+			// still checked thousands of times.
+			every := uint64(8)
+			if size := len(c.egraphParents) + len(c.egraphTerms) + len(c.resultsByID); size > 8192 && uint64(size/32) > every {
+				every = uint64(size / 32)
+			}
+			if collections.Add(1)%every != 0 {
 				return
 			}
 			at := time.Now()
