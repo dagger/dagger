@@ -1400,7 +1400,7 @@ func (c *Cache) collectRemoteHoldingsLocked(ctx context.Context, candidates []Ho
 		}
 	}
 	releases, err := c.collectUnownedResultsLocked(ctx, entries)
-	c.compactEqClassesAfterCollectionLocked(len(c.resultsByID) < entriesBefore)
+	c.compactEqClassesAfterCollectionLocked(ctx, len(c.resultsByID) < entriesBefore)
 	c.takeChangesLocked(&change)
 	return collected, change, releases, errors.Join(rerr, err)
 }
@@ -1428,14 +1428,16 @@ const eqClassCheckInterval = 10 * time.Second
 //
 // The check reads the slots and the live classes the cache keeps
 // (cache_eqclass_uses.go), so a check that frees nothing walks nothing and
-// changes no shared state; a compaction walks every term, entry and digest.
+// changes no shared state; a compaction walks every term, entry and digest,
+// in the collection's hold of the cache, and is logged at Info through ctx
+// with how long it took: at most one line per eqClassCheckInterval.
 // The service collects at the end of
 // every read, idle or not, so a pending check runs soon after its interval.
 // At each check, the non-forced compaction frees the dead classes once they
 // reach the live ones; between checks, the dead can exceed that by the
 // classes allocated or made dead since the last check, until the first
 // collection after the interval. Requires egraphMu for writing.
-func (c *Cache) compactEqClassesAfterCollectionLocked(removed bool) {
+func (c *Cache) compactEqClassesAfterCollectionLocked(ctx context.Context, removed bool) {
 	if removed {
 		c.eqClassRemoved = true
 	}
@@ -1461,7 +1463,14 @@ func (c *Cache) compactEqClassesAfterCollectionLocked(removed bool) {
 	c.eqClassCheckedAt = now
 	c.eqClassCheckedSlots = c.eqClassSlotsLocked()
 	c.eqClassRemoved = false
-	slog.Debug("dagql collection checked eq classes",
+	if compacted {
+		slog.InfoContext(ctx, "dagql collection compacted eq classes",
+			"oldSlots", oldSlots,
+			"newSlots", newSlots,
+			"duration", time.Since(start))
+		return
+	}
+	slog.DebugContext(ctx, "dagql collection checked eq classes",
 		"compacted", compacted,
 		"oldSlots", oldSlots,
 		"newSlots", newSlots,
