@@ -233,13 +233,15 @@ type preparedBody struct {
 // writes it (encodedRecordBytes) and, for a record of ordinal id the early
 // decision installs (earlyMergeRows), its stored body: the envelope JSON that
 // size counts, compressed as the body worker compresses a record, whose
-// references name named, the entries its child and call references name. The
-// preparation validated each of rec's payloads in transfer form
-// (validateMemoTransferRecordContent), its relocation changed only numbers,
-// and the Cloud's records carry no offers, so rec is the record the body
-// worker would normalize it to (normalizeStoredTransfer), and the body is the
-// one it would make. A record the early decision keeps gets none: a commit
-// that installs it all the same installs it whole.
+// references name named, the entries its child and call references name. An
+// engine sends each payload as normalizing gave it, which normalizes to itself
+// again before its references are relocated and after (PersistedTransferCodec);
+// the preparation validated each in transfer form
+// (validateMemoTransferRecordContent); a payload with no transfer codec
+// normalizes to itself; and the Cloud's records carry no offers. So rec is the
+// record the body worker would normalize it to (normalizeStoredTransfer), and
+// the body is the one it would make. A record the early decision keeps gets
+// none: a commit that installs it all the same installs it whole.
 func (prep *valueMergePrep) storedForm(id uint64, rec PersistedRecord, named []uint64) (int64, *preparedBody) {
 	envelope, size := encodedRecord(rec)
 	if envelope == nil || len(rec.Envelope.PendingOffers) > 0 || prep.early == nil {

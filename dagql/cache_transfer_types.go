@@ -369,6 +369,14 @@ const ValueBundleVersion = 13
 
 // PersistedTransferCodec operates only on encoded copies, without resolving
 // schemas, operations, result references or storage.
+//
+// NormalizeForeign gives a payload its transfer form, and ValidateForeign
+// checks that a payload is in transfer form. A payload as NormalizeForeign
+// gave it normalizes to itself again, byte for byte, and so does that
+// payload once its family's visitor has relocated its references. A
+// blob-backed cache relies on that to store a merged record as its merge
+// validated and relocated it, without normalizing it again (storedForm): an
+// engine sends each payload as NormalizeForeign gave it.
 type PersistedTransferCodec interface {
 	NormalizeForeign(PersistedPayloadVisit) (ForeignPayload, error)
 	ValidateForeign(PersistedPayloadVisit) error
