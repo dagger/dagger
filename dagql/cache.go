@@ -2931,8 +2931,11 @@ type Cache struct {
 	// storedSizeEncodes counts StoredSizes' first measurements of values.
 	storedSizeEncodes atomic.Uint64
 
-	// storedBundleBuilds counts StoredBundle's builds (StoredBundleBuilds).
-	storedBundleBuilds atomic.Uint64
+	// storedBundleBuilds counts StoredBundle's builds (StoredBundleBuilds),
+	// and storedBundlesBuiltAgain those built again in one hold
+	// (StoredBundlesBuiltAgain).
+	storedBundleBuilds      atomic.Uint64
+	storedBundlesBuiltAgain atomic.Uint64
 
 	// taughtContentQueued counts the entries queued for a frame rewrite
 	// because a span taught a content digest their frame lacked,

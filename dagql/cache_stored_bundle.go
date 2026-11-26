@@ -3,12 +3,14 @@ package dagql
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"iter"
 	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/opencontainers/go-digest"
@@ -308,14 +310,25 @@ func (h *HeldBy) holdsLocked(res *sharedResult, nowUnix int64) bool {
 }
 
 // StoredBundle builds a bundle from the entries of a blob-backed cache, the
-// Cloud's, for a merge into an engine (design 7.5). In one hold of egraphMu it
-// walks the closure of the roots, over their dependencies and the entries
-// that the owners and services of their own stored parts name, and copies
-// every record: a replacement of a stored record, which takes the lock for
-// writing, never mixes into it. Each record goes as stored, naming itself
-// and its references by the Cloud's entry numbers, with the entry's number as
-// SenderNumber and its replacement count; the rest of the bundle names rows
-// by ordinal.
+// Cloud's, for a merge into an engine (design 7.5). Under egraphMu held for
+// reading it walks the closure of the roots, over their dependencies and the
+// entries that the owners and services of their own stored parts name, and
+// copies every record, each in one hold: a replacement of a stored record,
+// which takes the lock for writing, never mixes into it. Each record goes as
+// stored, naming itself and its references by the Cloud's entry numbers, with
+// the entry's number as SenderNumber and its replacement count; the rest of
+// the bundle names rows by ordinal.
+//
+// The build gives way to what waits for egraphMu between its steps, each
+// entry it walks and each it copies (storedBundle), so a writer that comes
+// waits for one piece of it, not the whole build. A record is copied as it
+// stands when it is copied, and whatever else the build reads, as it stands
+// when the build reads it: a bundle that writes landed in carries what no
+// single hold would have seen at once, every part of it as the cache held it
+// at some moment of the build, and each record with everything it names.
+// Position is taken as the build begins, so a write during it reads as one
+// since (ChangedSince). With no write during it, the bundle is the one a
+// single hold builds.
 //
 // Outputs follow section 5.1 point 3:
 //   - an entry's own stored parts travel with its record, expired or not, as
@@ -348,7 +361,7 @@ func (c *Cache) StoredBundle(ctx context.Context, roots []uint64, nowUnix int64,
 		opt(&o)
 	}
 	out, frames, err := c.storedBundle(c.graphReader(ctx, workExport), roots, nowUnix, held, o)
-	if err != nil || len(frames) == 0 {
+	if err != nil || len(out.Bundle.Values) == 0 {
 		return out, err
 	}
 	for i := range out.Bundle.Values {
@@ -396,14 +409,57 @@ func (c *Cache) StoredBundleBuilds() uint64 {
 	return c.storedBundleBuilds.Load()
 }
 
-// storedBundle builds StoredBundle's answer in one hold of egraphMu.RLock,
-// as kind of work, with held rows' recipes left empty, and returns the
-// call frame of each held row by ordinal. A bundle without held rows is
-// validated here.
+// storedBundlePieceHold is how long a stored bundle's build holds egraphMu
+// for reading before it gives way to what waits for it (readGivingWay):
+// about as long as a pricing walk's pieces of readPieceSteps steps, which
+// the builds of a set file's parts go with. A writer that comes during a
+// build waits for at most this and one step of it, and so does every reader
+// queued behind that writer. When writers always wait, each piece costs the
+// build one writer's hold.
+const storedBundlePieceHold = 2 * time.Millisecond
+
+// errStoredBundleMoved ends a build that gave way and then found an entry
+// it walked that it can't copy as it now stands (storedBundleStandsLocked).
+var errStoredBundleMoved = errors.New("stored bundle: an entry the build walked changed while it gave way")
+
+// storedBundle builds StoredBundle's answer under egraphMu held for reading,
+// as kind of work, with held rows' recipes left empty, and returns the call
+// frame of each held row by ordinal. It reads in pieces that give way to
+// what waits for egraphMu (readGivingWay). A build that gave way and then
+// failed, as one that finds an entry it walked changed past what it can
+// copy (errStoredBundleMoved), or one a write ended otherwise, such as an
+// entry removed below another, is built again in one hold, as the cache
+// then stands: that build's answer, or its error, is the answer.
 func (c *Cache) storedBundle(kind wcprof.LockHolder, roots []uint64, nowUnix int64, held *HeldBy, opts storedBundleOptions) (StoredBundleResult, map[TransferOrdinal]entryFrame, error) {
+	read := c.readGivingWay(kind, storedBundlePieceHold)
+	out, frames, err := c.storedBundleLocked(read, roots, nowUnix, held, opts)
+	gaveWay := read.yields() > 0
+	read.done()
+	if err == nil || !gaveWay {
+		return out, frames, err
+	}
+	c.storedBundlesBuiltAgain.Add(1)
+	hold := c.egraphMu.RLockAs(kind)
+	defer hold.Unlock()
+	return c.storedBundleLocked(nil, roots, nowUnix, held, opts)
+}
+
+// StoredBundlesBuiltAgain counts the bundles StoredBundle built again in one
+// hold, as a write while the first build gave way changed what it read
+// past what it can carry (storedBundle).
+func (c *Cache) StoredBundlesBuiltAgain() uint64 {
+	return c.storedBundlesBuiltAgain.Load()
+}
+
+// storedBundleLocked builds StoredBundle's answer under read, a read in
+// pieces that holds egraphMu, giving way between the build's steps, or,
+// nil, under one hold its caller has taken (storedBundle). Requires
+// egraphMu, by read or by the caller's hold.
+func (c *Cache) storedBundleLocked(read *readPieces, roots []uint64, nowUnix int64, held *HeldBy, opts storedBundleOptions) (StoredBundleResult, map[TransferOrdinal]entryFrame, error) {
 	var out StoredBundleResult
-	read := c.egraphMu.RLockAs(kind)
-	defer read.Unlock()
+	// A write while the build gives way changes what it has read: read as
+	// the build begins, the position names every such write as one since.
+	position := c.writes
 
 	var rootEntries []*sharedResult
 	seenRoot := map[sharedResultID]bool{}
@@ -423,7 +479,7 @@ func (c *Cache) storedBundle(kind wcprof.LockHolder, roots []uint64, nowUnix int
 		return out, nil, nil
 	}
 	c.storedBundleBuilds.Add(1)
-	build, notWhole, err := c.storedBundleWholeWalkLocked(rootEntries, nowUnix, held)
+	build, notWhole, err := c.storedBundleWholeWalkLocked(rootEntries, nowUnix, held, read)
 	if err != nil {
 		return StoredBundleResult{}, nil, err
 	}
@@ -447,7 +503,13 @@ func (c *Cache) storedBundle(kind wcprof.LockHolder, roots []uint64, nowUnix int
 		build.bundle.Outputs = make([]TransferredOutput, 0, parts)
 		build.donors = make([]uint64, 0, parts)
 	}
+	// Each entry's record and its outputs are copied in one step, so in one
+	// hold: what the record declares and the outputs it has agree. The
+	// outputs go in a list of their own, so they are in the order of the
+	// entries as ever, and each borrowed part is placed over the whole
+	// closure the walk found.
 	for _, res := range build.order {
+		build.step()
 		waiting = waiting || res.waitsForTaughtContentLocked()
 		if build.held[res.id] {
 			ordinal := build.ordinals[res.id]
@@ -459,7 +521,13 @@ func (c *Cache) storedBundle(kind wcprof.LockHolder, roots []uint64, nowUnix int
 			out.Held = append(out.Held, uint64(res.id))
 			continue
 		}
+		if build.read.yields() > 0 && !c.storedBundleStandsLocked(build, res) {
+			return StoredBundleResult{}, nil, errStoredBundleMoved
+		}
 		if err := c.storedBundleValueLocked(build, res); err != nil {
+			return StoredBundleResult{}, nil, err
+		}
+		if err := c.storedBundleOutputsLocked(build, res); err != nil {
 			return StoredBundleResult{}, nil, err
 		}
 	}
@@ -473,16 +541,8 @@ func (c *Cache) storedBundle(kind wcprof.LockHolder, roots []uint64, nowUnix int
 		}
 		build.bundle.Roots = append(build.bundle.Roots, TransferredRoot{Ordinal: build.ordinals[res.id], ExpiresAtUnix: expiry})
 	}
-	for _, res := range build.order {
-		if build.held[res.id] {
-			continue
-		}
-		if err := c.storedBundleOutputsLocked(build, res); err != nil {
-			return StoredBundleResult{}, nil, err
-		}
-	}
 	out.Bundle, out.Donors, out.stored = build.bundle, build.donors, build.stored
-	out.Position = c.writes
+	out.Position = position
 	// Those the build carries: a call's input it was asked of may have
 	// placed none.
 	for id := range build.changed {
@@ -499,24 +559,59 @@ func (c *Cache) storedBundle(kind wcprof.LockHolder, roots []uint64, nowUnix int
 	for _, res := range rootEntries {
 		out.RootOwners = append(out.RootOwners, build.owners[res.id])
 	}
-	if frames == nil {
-		if err := validateStoredBundle(build.bundle, build.stored); err != nil {
-			return StoredBundleResult{}, nil, fmt.Errorf("stored bundle: %w", err)
-		}
-	}
 	return out, frames, nil
 }
 
+// storedBundleStandsLocked reports whether res, an entry the build carries
+// in full, can be copied as it stands now that the build has given way
+// since it walked res: res is still the cache's entry, with a stored record,
+// and every entry its record and its own stored parts name (what the walk
+// visits below it, storedClosureChildrenLocked) is a row the build placed
+// before it. A write while the build gave way may have replaced res's record
+// or stored a part on it that names an entry the walk didn't reach. One that
+// changed what res names only within what the build carries leaves it
+// standing, and its copy is of the record as it now stands. Requires
+// egraphMu.
+func (c *Cache) storedBundleStandsLocked(build *storedBundleBuild, res *sharedResult) bool {
+	if c.resultsByID[res.id] != res || res.noValueLocked() || res.persistedEnvelope == nil {
+		return false
+	}
+	at := build.ordinals[res.id]
+	before := func(id sharedResultID) bool {
+		ordinal := build.ordinals[id]
+		return ordinal != 0 && ordinal < at
+	}
+	for _, dep := range res.deps {
+		if !before(dep) {
+			return false
+		}
+	}
+	for _, part := range res.storedParts {
+		for _, dep := range part.held.Owner.DependencyIDs {
+			if !before(sharedResultID(dep)) {
+				return false
+			}
+		}
+		for _, service := range part.held.Value.Services {
+			if !before(sharedResultID(service.ServiceResultID)) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 // storedBundleWalkLocked walks the closures of a stored bundle's roots into
-// a new build, root by root, as StoredSizes prices them: each root's
-// closure, then the calls kept on what it added, with their inputs'
-// closures. The entries of notWhole aren't held. Requires egraphMu.
-func (c *Cache) storedBundleWalkLocked(rootEntries []*sharedResult, nowUnix int64, held *HeldBy, notWhole map[sharedResultID]bool) (*storedBundleBuild, error) {
+// a new build under read (storedBundleLocked), root by root, as StoredSizes
+// prices them: each root's closure, then the calls kept on what it added,
+// with their inputs' closures. The entries of notWhole aren't held. Requires
+// egraphMu.
+func (c *Cache) storedBundleWalkLocked(rootEntries []*sharedResult, nowUnix int64, held *HeldBy, notWhole map[sharedResultID]bool, read *readPieces) (*storedBundleBuild, error) {
 	seenRoot := make(map[sharedResultID]bool, len(rootEntries))
 	for _, res := range rootEntries {
 		seenRoot[res.id] = true
 	}
-	build := &storedBundleBuild{now: nowUnix, ordinals: map[sharedResultID]TransferOrdinal{}, heldBy: held, terms: newNamedTerms(held, nil), notWhole: notWhole, held: map[sharedResultID]bool{},
+	build := &storedBundleBuild{now: nowUnix, read: read, ordinals: map[sharedResultID]TransferOrdinal{}, heldBy: held, terms: newNamedTerms(held, read), notWhole: notWhole, held: map[sharedResultID]bool{},
 		owners: map[sharedResultID]int{}, ordinary: map[sharedResultID]bool{}, rootSeen: seenRoot, passedSeen: map[sharedResultID]bool{}}
 	build.bundle.Version = ValueBundleVersion
 	if c.identity.ID != "" {
@@ -544,19 +639,24 @@ func (c *Cache) storedBundleWalkLocked(rootEntries []*sharedResult, nowUnix int6
 // (storedBundleWalkLocked) and, with held.Whole, walks them again while the
 // build holds a held row the recipient doesn't hold whole, which then goes
 // in full, as a caller building again would walk it. It returns the last
-// build and those rows, in the order found. Requires egraphMu.
-func (c *Cache) storedBundleWholeWalkLocked(rootEntries []*sharedResult, nowUnix int64, held *HeldBy) (*storedBundleBuild, []uint64, error) {
-	build, err := c.storedBundleWalkLocked(rootEntries, nowUnix, held, nil)
+// build and those rows, in the order found. Each held row's check is a step
+// of read. Requires egraphMu.
+func (c *Cache) storedBundleWholeWalkLocked(rootEntries []*sharedResult, nowUnix int64, held *HeldBy, read *readPieces) (*storedBundleBuild, []uint64, error) {
+	build, err := c.storedBundleWalkLocked(rootEntries, nowUnix, held, nil, read)
 	if err != nil || held == nil || !held.Whole {
 		return build, nil, err
 	}
-	whole := &wholeHolds{cache: held.Cache, byFile: held.ByFile, known: map[uint64]bool{}}
+	whole := &wholeHolds{cache: held.Cache, byFile: held.ByFile, read: read, known: map[uint64]bool{}}
 	var all []uint64
 	var notWhole map[sharedResultID]bool
 	for {
 		var found []uint64
 		for _, res := range build.order {
-			if build.held[res.id] && !c.holdsWholeLocked(whole, res) {
+			if !build.held[res.id] {
+				continue
+			}
+			build.step()
+			if !c.holdsWholeLocked(whole, res) {
 				found = append(found, uint64(res.id))
 			}
 		}
@@ -570,7 +670,7 @@ func (c *Cache) storedBundleWholeWalkLocked(rootEntries []*sharedResult, nowUnix
 			notWhole[sharedResultID(number)] = true
 		}
 		all = append(all, found...)
-		if build, err = c.storedBundleWalkLocked(rootEntries, nowUnix, held, notWhole); err != nil {
+		if build, err = c.storedBundleWalkLocked(rootEntries, nowUnix, held, notWhole, read); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -578,10 +678,14 @@ func (c *Cache) storedBundleWholeWalkLocked(rootEntries []*sharedResult, nowUnix
 
 // wholeHolds is what a build has found of which holdings of one engine
 // cache have closures it holds whole (holdsWholeLocked): known has a
-// holding's answer once its whole closure was read.
+// holding's answer once its whole closure was read, since the build's read
+// last let egraphMu go, yields times: holdings change only under egraphMu
+// held for writing.
 type wholeHolds struct {
 	cache  CacheID
 	byFile func(number uint64) bool
+	read   *readPieces
+	yields int
 	known  map[uint64]bool
 }
 
@@ -590,6 +694,9 @@ type wholeHolds struct {
 // dependency no holding of the cache has and the recipient doesn't hold by
 // file (HeldBy.Whole). Requires egraphMu.
 func (c *Cache) holdsWholeLocked(whole *wholeHolds, res *sharedResult) bool {
+	if yields := whole.read.yields(); yields != whole.yields {
+		whole.known, whole.yields = map[uint64]bool{}, yields
+	}
 	for _, ref := range res.cacheHolderRefsLocked(whole.cache) {
 		if unknown, _ := c.unknownBelowLocked(whole, ref.key.Number, map[uint64]bool{}); unknown {
 			return false
@@ -640,7 +747,11 @@ func (c *Cache) unknownBelowLocked(whole *wholeHolds, number uint64, reached map
 // storedBundleBuild is a stored bundle under construction: the closure in
 // dependency order, each entry's ordinal, and the outputs' storing entries.
 type storedBundleBuild struct {
-	now      int64
+	now int64
+	// read is the build's read in pieces, which gives way to what waits for
+	// egraphMu between the build's steps (step), or nil for a build in one
+	// hold.
+	read     *readPieces
 	order    []*sharedResult
 	ordinals map[sharedResultID]TransferOrdinal
 	bundle   ValueBundle
@@ -673,8 +784,9 @@ type storedBundleBuild struct {
 	partial map[sharedResultID]bool
 	// classDonors are, by class root, the lowest-numbered unexpired entry of
 	// the class storing each part key (classDonorsLocked), each class read
-	// once in the build's hold.
+	// once since the build's read last let egraphMu go, donorYields times.
 	classDonors map[eqClassID]map[string]*sharedResult
+	donorYields int
 	// owners has, for each entry the build added, the index of the root it
 	// was asked for that added it, or whose call's input it is (current, as
 	// it's added); ordinary are those the roots' closures added, not their
@@ -698,6 +810,15 @@ type storedBundleBuild struct {
 	// layers listed under each key (storedLayer.key).
 	listed      map[*storedLayer]int
 	listedByKey map[uint64][]int
+}
+
+// step is a step of the build's read (readPieces.step): between two of them
+// the build may give way to what waits for egraphMu. A build in one hold
+// takes none. Requires egraphMu.
+func (build *storedBundleBuild) step() {
+	if build.read != nil {
+		build.read.step()
+	}
 }
 
 // listLayer returns the place of a stored layer in the bundle's list of
@@ -797,6 +918,7 @@ func (build *storedBundleBuild) holdsLocked(res *sharedResult) bool {
 // it goes through, and stops at the others, as it stops at a held row.
 // Requires egraphMu.
 func (build *storedBundleBuild) storedBundlePassLocked(c *Cache, res *sharedResult) {
+	build.step()
 	build.passedSeen[res.id] = true
 	build.passed = append(build.passed, res)
 	for _, id := range storedClosureChildrenLocked(res) {
@@ -845,11 +967,14 @@ func (build *storedBundleBuild) relocate(ref *PersistedRef) error {
 // order: its dependencies, and the entries its own stored parts' owners and
 // services name, before it. An entry the recipient holds is added alone, as
 // a held row; the build goes through one HeldBy.Through names for the
-// calls kept below it (storedBundlePassLocked). Requires egraphMu.
+// calls kept below it (storedBundlePassLocked). Each entry it visits is a
+// step of the build's read: what it read of res before giving way below it
+// is checked as res is copied (storedBundleStandsLocked). Requires egraphMu.
 func (c *Cache) storedBundleVisitLocked(build *storedBundleBuild, res *sharedResult, visiting map[sharedResultID]bool) error {
 	if build.ordinals[res.id] != 0 {
 		return nil
 	}
+	build.step()
 	if build.passedSeen[res.id] {
 		// Gone through with no row, it is reached from a record now, which
 		// names its held row.
@@ -1209,11 +1334,14 @@ func (c *Cache) storedPartDonorLocked(build *storedBundleBuild, res *sharedResul
 
 // classDonorsLocked returns, for each part key an unexpired entry of the
 // class root stores, the lowest-numbered such entry, at the build's clock.
-// A class's entries, what each stores and the build's clock don't change in
-// the build's one hold of egraphMu, so the class is read once in a build,
-// however many of its entries borrow a part: a bundle can carry thousands of
-// entries of one class. Requires egraphMu, by the build's hold.
+// A class's entries, what each stores and the build's clock don't change
+// while the build holds egraphMu, so the class is read once in each hold of
+// a build, however many of its entries borrow a part: a bundle can carry
+// thousands of entries of one class. Requires egraphMu, by the build's hold.
 func (c *Cache) classDonorsLocked(build *storedBundleBuild, root eqClassID) map[string]*sharedResult {
+	if yields := build.read.yields(); yields != build.donorYields {
+		build.classDonors, build.donorYields = nil, yields
+	}
 	if donors, ok := build.classDonors[root]; ok {
 		return donors
 	}

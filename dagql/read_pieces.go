@@ -28,8 +28,11 @@ type readPieces struct {
 	read wcprof.ReadHold
 	// hold, when set, bounds a piece by its time instead of its steps: a
 	// piece ends at the first step after it has held egraphMu that long
-	// (readInPiecesFor). yielded counts the times the read let egraphMu go.
+	// (readInPiecesFor), and, with waited, only once something waits for
+	// egraphMu (readGivingWay). yielded counts the times the read let
+	// egraphMu go.
 	hold    time.Duration
+	waited  bool
 	yielded int
 	// report, if set, is told the length of each hold, as it ends; locked
 	// is when the current one began.
@@ -67,6 +70,20 @@ func (c *Cache) readInPiecesFor(kind wcprof.LockHolder, hold time.Duration) *rea
 	return r
 }
 
+// readGivingWay takes egraphMu for reading, for a read in pieces that gives
+// way only to what waits for it: a piece ends at the first step after it
+// has held egraphMu for hold while another acquisition, a writer's or a
+// reader's queued behind one, waits for it. With nothing waiting, the read
+// keeps its one hold, and what it keeps of the cache's state for the hold,
+// such as a term's key, stays good; a writer that comes waits for at most
+// hold and one step. A cache whose tests set readPieceSize reads in pieces
+// of that many steps instead, whatever waits.
+func (c *Cache) readGivingWay(kind wcprof.LockHolder, hold time.Duration) *readPieces {
+	r := c.readInPiecesFor(kind, hold)
+	r.waited = r.hold > 0
+	return r
+}
+
 // step counts a step of the read and, after each piece's last, lets egraphMu
 // go and takes it again. It reports whether it did: the cache may have
 // changed since the read's last step, and a caller that needs one state
@@ -74,7 +91,7 @@ func (c *Cache) readInPiecesFor(kind wcprof.LockHolder, hold time.Duration) *rea
 func (r *readPieces) step() bool {
 	r.steps++
 	if r.hold > 0 {
-		if time.Since(r.locked) < r.hold {
+		if r.waited && !r.c.egraphMu.Waiting() || time.Since(r.locked) < r.hold {
 			return false
 		}
 	} else if r.steps%r.size != 0 {
