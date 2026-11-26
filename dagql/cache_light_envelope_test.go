@@ -2,6 +2,7 @@ package dagql
 
 import (
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -64,4 +65,46 @@ func TestStoredEntriesShareTheirLightEnvelopes(t *testing.T) {
 		saved++
 	}
 	require.Equal(t, entries, saved)
+}
+
+// storedBodyTestBytes are a stored body's compressed envelope and frame.
+func storedBodyTestBytes(b *storedBody) ([]byte, []byte) {
+	return b.envelope, b.frame
+}
+
+// A stored body holds its record's compressed envelope and frame, and the
+// entries its references name, in little beside their bytes: once a Cloud's
+// 1,280 stored entries' records are compressed, letting go of their bodies
+// but for their compressed bytes frees under 128 bytes an entry, what a
+// body's struct alone took when it held them in two allocations and its
+// references as eight bytes each. The Cloud is closed without its bodies
+// after, and saves nothing.
+//
+// Not parallel: it measures the process's live heap, which other tests
+// running beside it would change.
+func TestStoredBodiesHoldLittleBesideTheirBytes(t *testing.T) {
+	_, cloud, _ := storedBenchCloud(t)
+	storedLightEnvelopes(t, cloud)
+	cloud.egraphMu.Lock()
+	defer cloud.egraphMu.Unlock()
+	var held [][]byte
+	var entries []*sharedResult
+	for _, res := range cloud.resultsByID {
+		if res.stored == nil {
+			continue
+		}
+		envelope, frame := storedBodyTestBytes(res.stored)
+		require.NotEmpty(t, frame, "entry %d's body holds its frame", res.id)
+		held = append(held, envelope, frame)
+		entries = append(entries, res)
+	}
+	before := storedLayersTestLiveHeap()
+	for _, res := range entries {
+		res.stored = nil
+	}
+	freed := before - storedLayersTestLiveHeap()
+	runtime.KeepAlive(held)
+	perEntry := float64(freed) / float64(len(entries))
+	t.Logf("letting go of %d bodies but for their compressed bytes freed %d bytes, %.0f an entry", len(entries), freed, perEntry)
+	require.Less(t, perEntry, 128.0, "each body took %.0f bytes beside its compressed bytes", perEntry)
 }
