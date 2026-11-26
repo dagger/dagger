@@ -77,8 +77,8 @@ func entryFieldLocked(res *sharedResult) string {
 	switch {
 	case res == nil:
 		return ""
-	case res.description != "":
-		return res.description
+	case handleString(res.description) != "":
+		return handleString(res.description)
 	}
 	if call := res.loadResultCall(); call != nil {
 		return call.Field

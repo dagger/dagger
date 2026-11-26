@@ -368,7 +368,7 @@ func sharedStateOf(c *Cache) string {
 			taught, given = t.digests, t.given
 		}
 		fmt.Fprintf(&b, "entry %d %s: value %v %v, expires %d, run %v %v, taught %v given %d, calls %v, recipes %v, stored %d, stamp %d %v, deps %v\n",
-			id, res.description, hasValue, envelope, res.expiresAtUnix, res.run, res.runRan,
+			id, handleString(res.description), hasValue, envelope, res.expiresAtUnix, res.run, res.runRan,
 			taught, given, slices.Sorted(maps.Keys(res.keptCallsLocked())), res.recipeKeys,
 			len(res.storedParts), res.changedAt, res.stampCause, res.deps)
 	}

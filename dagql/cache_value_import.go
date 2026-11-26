@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"unique"
 
 	"github.com/opencontainers/go-digest"
 )
@@ -536,7 +537,7 @@ func checkHeldPart(output TransferredOutput, part CapturedCodecOutput) error {
 // cache goes with the preparation (dropRecordCopies).
 type transferIdentityPlan struct {
 	frame                   *ResultCall
-	description, recordType string
+	description, recordType unique.Handle[string]
 	recipe, self            digest.Digest
 	inputs                  []digest.Digest
 	provenance              []egraphInputProvenanceKind

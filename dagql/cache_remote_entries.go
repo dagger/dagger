@@ -755,7 +755,7 @@ func (c *Cache) newHoldingLocked(ctx context.Context, state *remoteCacheState, k
 	if entry == nil {
 		entry = &sharedResult{
 			id:          c.takeResultIDs(1),
-			description: desc.Field,
+			description: internString(desc.Field),
 		}
 		c.putResultLocked(entry)
 		c.indexRecipeLocked(desc.Recipe, entry)
@@ -1141,7 +1141,7 @@ func (c *Cache) applyHeldValueStateLocked(ctx context.Context, state *remoteCach
 		// its count: a union is never undone, and gating it by count would
 		// only make the class depend on arrival order. The holding's own
 		// content digest follows the count below.
-		c.teachRemoteIdentityLocked(ctx, entry, entry.description, "", "", obs.ContentDigest, nil)
+		c.teachRemoteIdentityLocked(ctx, entry, handleString(entry.description), "", "", obs.ContentDigest, nil)
 	}
 	if obs.Replacements < h.replacements {
 		return nil
@@ -2438,7 +2438,7 @@ func entryOwnFactsLocked(entry *sharedResult) (number uint64, stored bool, store
 // record and that record's expiry, its identity and its holdings. Requires
 // egraphMu.
 func (c *Cache) remoteEntryInfoLocked(entry *sharedResult) RemoteEntryInfo {
-	info := RemoteEntryInfo{Field: entry.description, At: c.handedLocked()}
+	info := RemoteEntryInfo{Field: handleString(entry.description), At: c.handedLocked()}
 	info.Number, info.Stored, info.StoredExpiresAtUnix, info.Recipes = entryFactsLocked(entry)
 	digests := map[string]struct{}{}
 	for _, dig := range c.resultIndexedDigests[entry.id] {

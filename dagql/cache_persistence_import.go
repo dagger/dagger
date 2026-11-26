@@ -223,8 +223,8 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				replacements:          uint64(row.Replacements),
 				createdAtUnixNano:     row.CreatedAtUnixNano,
 				lastUsedAtUnixNano:    row.LastUsedAtUnixNano,
-				description:           row.Description,
-				recordType:            row.RecordType,
+				description:           internString(row.Description),
+				recordType:            internString(row.RecordType),
 				persistedEnvelope:     env,
 				changedAt:             uint64(row.ChangeStamp),
 			}
