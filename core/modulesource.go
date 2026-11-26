@@ -1609,7 +1609,12 @@ func (src *ModuleSource) LoadUserDefaults(ctx context.Context) (rerr error) {
 	if err != nil {
 		return err
 	}
-	src.UserDefaults = NewEnvFile(true).WithEnvFiles(innerEnvFile, outerForName, outerForOriginalName)
+	// Of the outer lines that aren't the module's, only those its own lines
+	// name stay: the source, and its defaults with it, is saved and shared
+	// with other engines.
+	src.UserDefaults = NewEnvFile(true).
+		WithEnvFiles(innerEnvFile, outerForName, outerForOriginalName).
+		WithoutUnreferencedContext()
 	return nil
 }
 

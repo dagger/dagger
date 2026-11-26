@@ -114,6 +114,14 @@ func (ef *EnvFile) Clone() *EnvFile {
 	return &cp
 }
 
+// WithoutUnreferencedContext returns the file with only the hidden expansion
+// context its variables name (dotenv.ReferencedContext).
+func (ef *EnvFile) WithoutUnreferencedContext() *EnvFile {
+	ef = ef.Clone()
+	ef.Context = dotenv.ReferencedContext(ef.Environ, ef.Context)
+	return ef
+}
+
 // WithoutVariable removes all occurrences of the named variable
 func (ef *EnvFile) WithoutVariable(name string) *EnvFile {
 	ef = ef.Clone()
