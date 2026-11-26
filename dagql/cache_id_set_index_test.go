@@ -78,6 +78,22 @@ func TestIDSetIndexActsAsAMapOfSets(t *testing.T) {
 	}
 	check(-1)
 
+	// A key grown past the size where its set becomes a map, then shrunk to
+	// one member, holds that member in its slot again.
+	var grown idSetIndex[string, uint64]
+	for v := range uint64(idSetListMax + 1) {
+		require.True(t, grown.Insert("k", v))
+	}
+	require.NotNil(t, grown.many["k"].big, "the set became a map")
+	for v := range uint64(idSetListMax) {
+		require.True(t, grown.Remove("k", v))
+	}
+	require.NotContains(t, grown.many, "k", "the last member left the set")
+	require.Equal(t, uint64(idSetListMax), grown.one["k"], "the last member is back in its slot")
+	require.Equal(t, []uint64{idSetListMax}, slices.Collect(grown.Items("k")))
+	require.True(t, grown.Remove("k", idSetListMax))
+	require.Zero(t, grown.Len())
+
 	// A key with no members reads as empty, in an index that was never
 	// written as in one that was.
 	var empty idSetIndex[string, uint64]
