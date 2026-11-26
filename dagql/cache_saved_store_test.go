@@ -383,11 +383,11 @@ func savedStoreIndexCounts(c *Cache, say func(format string, args ...any)) {
 	for _, v := range c.outputEqClassResults {
 		ocrInner += v.Size()
 	}
-	for _, v := range c.termResults {
-		trInner += len(v)
+	for k := range c.termResults.Keys() {
+		trInner += c.termResults.Size(k)
 	}
-	for _, v := range c.resultTerms {
-		rtInner += len(v)
+	for k := range c.resultTerms.Keys() {
+		rtInner += c.resultTerms.Size(k)
 	}
 	for _, v := range c.resultIndexedDigests {
 		ridInner += len(v)
@@ -414,7 +414,7 @@ func savedStoreIndexCounts(c *Cache, say func(format string, args ...any)) {
 		c.liveEqClasses, len(c.egraphParents), len(c.egraphDigestToClass), len(c.eqClassToDigests), inner(c.eqClassToDigests), len(c.eqClassExtraDigests), len(digestStrings), savedStoreGB(uint64(digestStringBytes)))
 	say("terms %d (inputs %d); by term digest %d keys, %d ids; input class->terms %d/%d; output class->terms %d/%d; input provenance %d",
 		len(c.egraphTerms), termInputs, len(c.egraphTermsByTermDigest), termsByDigestInner, len(c.inputEqClassToTerms), inTermsInner, len(c.outputEqClassToTerms), outTermsInner, len(c.termInputProvenance))
-	say("result->classes %d/%d; class->results %d/%d; term->results %d/%d; result->terms %d/%d", len(c.resultOutputEqClasses), rocInner, len(c.outputEqClassResults), ocrInner, len(c.termResults), trInner, len(c.resultTerms), rtInner)
+	say("result->classes %d/%d; class->results %d/%d; term->results %d/%d; result->terms %d/%d", len(c.resultOutputEqClasses), rocInner, len(c.outputEqClassResults), ocrInner, c.termResults.Len(), trInner, c.resultTerms.Len(), rtInner)
 	say("digest postings %d (with a tree %d: %d ids; imported ids %d); result->indexed digests %d/%d; broadly indexed %d; restored digest groups %d/%d; call input entries %d/%d",
 		len(c.egraphResultsByDigest), postingsWithTree, postingExact, postingImported, len(c.resultIndexedDigests), ridInner, len(c.broadlyIndexedResults), len(c.restoredDigestGroups), rdgGroups, len(c.callInputEntries), cieInner)
 }
@@ -526,8 +526,8 @@ func savedStoreCompositionSteps(c *Cache, base uint64, say func(format string, a
 	step("entry<->class and entry<->term associations", func() {
 		c.resultOutputEqClasses = nil
 		c.outputEqClassResults = nil
-		c.termResults = nil
-		c.resultTerms = nil
+		c.termResults = idSetIndex[egraphTermID, sharedResultID]{}
+		c.resultTerms = idSetIndex[sharedResultID, egraphTermID]{}
 	})
 	step("terms and their indexes", func() {
 		c.egraphTerms = nil
