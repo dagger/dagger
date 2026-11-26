@@ -1560,23 +1560,21 @@ func (src *ModuleSource) outerEnvFile(ctx context.Context) (*EnvFile, string, er
 	if stat.FileType != FileTypeRegular {
 		return &EnvFile{}, "", nil
 	}
-	var envFile *EnvFile
-	if err := dag.Select(ctx, dag.Root(), &envFile,
-		dagql.Selector{Field: "host"},
-		dagql.Selector{
-			Field: "file",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: envFilePath},
-			},
-		},
-		dagql.Selector{
-			Field: "asEnvFile",
-			Args: []dagql.NamedInput{
-				{Name: "expand", Value: dagql.Opt(dagql.NewBoolean(true))},
-			},
-		},
-	); err != nil {
+	// Read the file itself rather than import it with host.file, which would
+	// keep all of it in the caller's file-sync mirror on the engine's disk:
+	// of its lines, the source keeps only the module's and those they expand
+	// from (LoadUserDefaults). The session reads one file of up to
+	// MaxFileContentsChunkSize bytes.
+	if stat.Size > engineutil.MaxFileContentsChunkSize {
+		return nil, envFilePath.String(), fmt.Errorf("outer env file %q is %d bytes, over the %d bytes the engine reads of it", envFilePath.String(), stat.Size, engineutil.MaxFileContentsChunkSize)
+	}
+	contents, err := bk.ReadCallerHostFile(ctx, envFilePath.String())
+	if err != nil {
 		return nil, envFilePath.String(), fmt.Errorf("failed to load outer env file from %q: %s", envFilePath.String(), err.Error())
+	}
+	envFile, err := NewEnvFile(true).WithContents(string(contents))
+	if err != nil {
+		return nil, envFilePath.String(), fmt.Errorf("failed to parse outer env file from %q: %w", envFilePath.String(), err)
 	}
 	return envFile, envFilePath.String(), nil
 }
@@ -1623,7 +1621,12 @@ func (src *ModuleSource) LoadUserDefaults(ctx context.Context) (rerr error) {
 	if err != nil {
 		return err
 	}
-	src.UserDefaults = NewEnvFile(true).WithEnvFiles(innerEnvFile, outerForName, outerForOriginalName)
+	// Of the outer lines that aren't the module's, only those its own lines
+	// name stay: the source, and its defaults with it, is saved and shared
+	// with other engines.
+	src.UserDefaults = NewEnvFile(true).
+		WithEnvFiles(innerEnvFile, outerForName, outerForOriginalName).
+		WithoutUnreferencedContext()
 	return nil
 }
 

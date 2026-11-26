@@ -298,9 +298,12 @@ func TestStoredSizesAloneCountABlobInTwoPacksInEachRootsOrder(t *testing.T) {
 // which for roots over one closure is that closure once a root. A writer
 // waits for one piece of its reads, never for its marks. Here each mark
 // takes the write lock, which it gets only while the walk holds no piece.
+// The Cloud's body worker is stopped before the merge: it reads the merged
+// records and installs their compressed bodies under egraphMu, and could
+// hold it as the walk marks.
 func TestStoredSizesAloneMarkRootsWithoutTheLock(t *testing.T) {
 	t.Parallel()
-	ctx, cloud, r, p := storedBundleTestCloud(t, "root")
+	ctx, cloud, r, p := storedBundleTestCloudIn(t, "root", true)
 	marks := 0
 	cloud.testStoredSizesAloneMarks = func() {
 		require.True(t, cloud.egraphMu.TryLock(), "the walk holds no piece of egraphMu as it marks")

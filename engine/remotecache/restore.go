@@ -28,11 +28,9 @@ import (
 
 // A restore merges the files the service published of a check's set
 // (protocol.Restore): the head, the check's own results and what its runs
-// used before them, and the whole set. Each file is a chain of segments
-// (protocol.SetFile), all downloaded at once as soon as its restore
-// arrives, each checked against its digest, and its parts, segment after
-// segment, are merged one at a time through the path a merge takes
-// (Adapter.RestorePart). A file's
+// used before them, and the whole set. Each file is downloaded as soon as its
+// restore arrives, checked against its digest, and its parts are merged one
+// at a time through the path a merge takes (Adapter.RestorePart). A file's
 // parts are decoded and checked for their merge (Adapter.CheckRestorePart)
 // ahead of it, each stage on a goroutine of its own, as far as a budget of
 // their encoded bytes allows (decodeAhead, checkAhead, restoreAheadBytes), so
@@ -207,9 +205,9 @@ type restoreFile struct {
 	check string
 	file  protocol.SetFile
 
-	// fetched closes once segments or err is set; nothing else writes them.
+	// fetched closes once data or err is set; nothing else writes them.
 	fetched      chan struct{}
-	segments     [][]byte
+	data         []byte
 	err          error
 	fetchStarted time.Time
 	fetchEnded   time.Time
@@ -236,8 +234,8 @@ type restoreFile struct {
 	// merge with no retention edge, and releases the holds each committed
 	// part's merge took on what it landed, kept until the file ends.
 	// entries are the entries the file's records landed on, in the file's
-	// order (protocol.RestoredFile.Entries), and placed the place of each
-	// record already among them, by Cloud number.
+	// order (protocol.RestoredFile.Entries), and placed the records already
+	// among them, by Cloud number.
 	opened     bool
 	parts      [][]byte
 	unretained [][]dagql.TransferOrdinal
@@ -247,7 +245,7 @@ type restoreFile struct {
 	releases   []func(context.Context) error
 	entries    protocol.EntryNumbers
 	complete   [][]dagql.PersistedPartAddress
-	placed     map[uint64]int
+	placed     map[uint64]struct{}
 	// fetch are each part's parts to fetch ahead once it commits.
 	fetch [][]protocol.SetFileFetch
 	// kept is how many bytes of its answer the process keeps, for a later
@@ -492,31 +490,26 @@ func (r *restorer) step(ctx context.Context, f *restoreFile) bool {
 	return false
 }
 
-// open reads each of a fetched file's segments' header and splits its
-// parts, the file's parts in the chain's order, and refuses a file with a
-// segment of another bundle version before decoding any part.
+// open reads a fetched file's header and splits its parts, and refuses a
+// file of another bundle version before decoding any part.
 func (r *restorer) open(f *restoreFile) error {
 	f.opened = true
 	f.report.FetchStarted, f.report.Fetched = f.fetchStarted, f.fetchEnded
 	if f.err != nil {
 		return f.err
 	}
-	var parts [][]byte
-	for _, segment := range f.segments {
-		header, segmentParts, err := protocol.ReadSetFile(segment)
-		if err != nil {
-			return err
-		}
-		if header.Version != dagql.ValueBundleVersion {
-			return fmt.Errorf("unsupported value bundle version %d", header.Version)
-		}
-		parts = append(parts, segmentParts...)
-		for _, part := range header.Parts {
-			f.unretained = append(f.unretained, part.Unretained)
-			f.fetch = append(f.fetch, part.Fetch)
-		}
+	header, parts, err := protocol.ReadSetFile(f.data)
+	if err != nil {
+		return err
+	}
+	if header.Version != dagql.ValueBundleVersion {
+		return fmt.Errorf("unsupported value bundle version %d", header.Version)
 	}
 	f.parts = parts
+	for _, part := range header.Parts {
+		f.unretained = append(f.unretained, part.Unretained)
+		f.fetch = append(f.fetch, part.Fetch)
+	}
 	f.report.PeakBefore = r.s.cfg.peakRSS()
 	if len(parts) > 0 {
 		f.decoded, f.taken, f.stopDecode = make(chan decodedPart, len(parts)), make(chan struct{}, len(parts)), make(chan struct{})
@@ -707,13 +700,12 @@ func (r *restorer) planFetches(ctx context.Context, fetches []protocol.SetFileFe
 }
 
 // noteEntries records, for a committed part, the entry each record it
-// carries in full landed on, in the place of the record's first appearance
-// in the file, and 0 for one its merge landed nowhere, with the parts that
-// entry had complete as the merge left it. A record carried again takes
-// what its later copy landed as, unless that landed nowhere.
+// carries in full landed on, at the record's first appearance in the file,
+// and 0 for one its merge landed nowhere, with the parts that entry had
+// complete as the merge left it.
 func (f *restoreFile) noteEntries(part dagql.ValueBundle, reply dagql.MergeReply) {
 	if f.placed == nil {
-		f.placed = map[uint64]int{}
+		f.placed = map[uint64]struct{}{}
 	}
 	landed := make(map[dagql.TransferOrdinal]dagql.MergedValue, len(reply.Values))
 	for _, value := range reply.Values {
@@ -723,17 +715,11 @@ func (f *restoreFile) noteEntries(part dagql.ValueBundle, reply dagql.MergeReply
 		if value.Held != "" {
 			continue
 		}
-		merged := landed[value.Ordinal]
-		if i, ok := f.placed[value.SenderNumber]; ok {
-			// Carried again, as a later segment carries a record that
-			// changed: its place stays, and what its later copy landed as
-			// stands for it.
-			if merged.Number != 0 {
-				f.entries[i], f.complete[i] = merged.Number, merged.Parts
-			}
+		if _, ok := f.placed[value.SenderNumber]; ok {
 			continue
 		}
-		f.placed[value.SenderNumber] = len(f.entries)
+		f.placed[value.SenderNumber] = struct{}{}
+		merged := landed[value.Ordinal]
 		f.entries = append(f.entries, merged.Number)
 		f.complete = append(f.complete, merged.Parts)
 	}
@@ -806,7 +792,7 @@ func (r *restorer) finish(f *restoreFile, err error) {
 		f.report.PeakAfter = r.s.cfg.peakRSS()
 	}
 	f.report.Complete, f.report.Error = f.result.Complete, f.result.Error
-	f.segments, f.parts, f.placed, f.complete = nil, nil, nil, nil
+	f.data, f.parts, f.placed, f.complete = nil, nil, nil, nil
 	r.release(f)
 	f.report.Ended = ended
 	reported <- f.report
@@ -941,7 +927,7 @@ func (r *restorer) fetch(f *restoreFile) {
 	read := make(chan restoreReading, 1)
 	r.s.go_(func() { read <- readRestoreWindow(arrived, r.s.adapter.CacheWork) })
 	f.fetchStarted = time.Now()
-	f.segments, f.timing, f.err = fetchSegments(r.s.ctx, r.s.cfg.getFile, f.file)
+	f.data, f.timing, f.err = r.s.cfg.getFile(r.s.ctx, f.file)
 	f.fetchEnded = time.Now()
 	f.windowStart = <-read
 	close(f.fetched)
@@ -950,40 +936,12 @@ func (r *restorer) fetch(f *restoreFile) {
 	}
 }
 
-// fetchSegments downloads a file's segments with get, all at once, and
-// returns their bytes in the chain's order, with the first segment's
-// timing. It refuses a file whose digest isn't its segments' chain, and
-// fails with the first segment that fails.
-func fetchSegments(ctx context.Context, get func(context.Context, protocol.SetFileSegment) ([]byte, fetchTiming, error), file protocol.SetFile) ([][]byte, fetchTiming, error) {
-	digests := make([]digest.Digest, len(file.Segments))
-	for i, segment := range file.Segments {
-		digests[i] = segment.Digest
-	}
-	if len(digests) == 0 || protocol.SetFileChain(digests...) != file.Digest {
-		return nil, fetchTiming{}, errors.New("fetch: the file's digest isn't its segments' chain")
-	}
-	segments := make([][]byte, len(file.Segments))
-	timings := make([]fetchTiming, len(file.Segments))
-	errs := make([]error, len(file.Segments))
-	var fetching sync.WaitGroup
-	for i, segment := range file.Segments {
-		fetching.Go(func() { segments[i], timings[i], errs[i] = get(ctx, segment) })
-	}
-	fetching.Wait()
-	for _, err := range errs {
-		if err != nil {
-			return nil, timings[0], err
-		}
-	}
-	return segments, timings[0], nil
-}
-
-// getSetFile downloads a set file's segment, failing when the store goes
-// idle longer than idle, when it isn't file.Size bytes, or when its bytes
-// aren't the ones file.Digest names. Its errors never include the address,
-// which carries a signature.
-func getSetFile(client *http.Client, idle time.Duration) func(context.Context, protocol.SetFileSegment) ([]byte, fetchTiming, error) {
-	return func(ctx context.Context, file protocol.SetFileSegment) ([]byte, fetchTiming, error) {
+// getSetFile downloads a set file, failing when the store goes idle longer
+// than idle, when it isn't file.Size bytes, or when its bytes aren't the
+// ones file.Digest names. Its errors never include the address, which
+// carries a signature.
+func getSetFile(client *http.Client, idle time.Duration) func(context.Context, protocol.SetFile) ([]byte, fetchTiming, error) {
+	return func(ctx context.Context, file protocol.SetFile) ([]byte, fetchTiming, error) {
 		// The transport may call the trace from its own goroutines.
 		var mu sync.Mutex
 		var traced fetchTiming
@@ -1037,7 +995,7 @@ func getSetFile(client *http.Client, idle time.Duration) func(context.Context, p
 			return nil, timing(), fmt.Errorf("fetch: %d bytes, the restore says %d", buf.Len(), file.Size)
 		}
 		if !verifier.Verified() {
-			return nil, timing(), errors.New("fetch: the bytes don't match the segment's digest")
+			return nil, timing(), errors.New("fetch: the bytes don't match the file's digest")
 		}
 		return buf.Bytes(), timing(), nil
 	}
