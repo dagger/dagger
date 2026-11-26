@@ -420,7 +420,7 @@ func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID, moved *[]egraphTerm
 		// and borrows the other's stored parts: the join marks, for readers
 		// and for the stamps of the bundles that borrow from the class, what
 		// that changes, walking the smaller side (markJoinLocked).
-		c.markJoinLocked(srcResults, dstResults)
+		c.markJoinLocked(srcResults, dstResults, ra)
 	}
 	if srcResults.Size() > 0 {
 		if dstResults == nil {

@@ -71,9 +71,12 @@ type changeMarks struct {
 	// holds says, for each class mark, whether the marked entry held a part
 	// for its class at the mark (holdsAnyPartLocked), or lends: whether the
 	// write can change its class mates' part answers, read before a
-	// replacement or a prune empties it. A join's mark holds nothing: the
-	// join names what it changes itself (markJoinLocked).
+	// replacement or a prune empties it.
 	holds []bool
+	// joined are classes, by an id of each, whose every entry a join
+	// brought a stored part to borrow, stamped when the marks are applied,
+	// as the class is then (markJoinLocked).
+	joined []eqClassID
 	// lending are the entries with a class mark that can lend whose stamps
 	// no write has applied yet: an entry that leaves its classes before they
 	// are applied, its class mates no longer reachable from it, lends to
@@ -124,7 +127,7 @@ func (c *Cache) markEntryClassLocked(id sharedResultID, cause StampCause) {
 		lends = true
 	}
 	c.changes.lends = append(c.changes.lends, lends)
-	holds := cause != StampJoin && (lends || res != nil && c.holdsAnyPartLocked(res))
+	holds := lends || res != nil && c.holdsAnyPartLocked(res)
 	c.changes.holds = append(c.changes.holds, holds)
 	if holds {
 		if c.changes.holding == nil {
@@ -193,22 +196,22 @@ func (c *Cache) markLeavingLocked(id sharedResultID) {
 	}
 }
 
-// markJoinLocked marks what a join of two classes' entries, a and b,
-// changes, walking only the smaller side: each side's entries now answer
-// from the other side's holders too (AvailablePart), and borrow the other
-// side's stored parts (stampEntryLocked), so what a side gains is what the
-// other side holds and stores. The smaller side's entries are named, for
-// readers, and each takes a class mark of its own, which stamps it, and,
-// for one that stores a part, every entry of its class when the marks are
-// applied: the larger side's entries are stamped exactly when the smaller
-// side brought them a part to borrow. The larger side's entries are named
-// when an entry of the smaller side holds a part. So a join costs the
-// smaller side, not the class it joins: a new entry joining a class of
-// thousands walks one entry. The smaller side's entries are named and
-// stamped though the larger side may hold and store nothing, which a reader
-// finds unchanged, and which a new entry's own marks did already. Requires
-// egraphMu for writing.
-func (c *Cache) markJoinLocked(a, b *idSet[sharedResultID]) {
+// markJoinLocked marks what a join of two classes' entries, a and b, into
+// the class joined names, changes, walking only the smaller side: each
+// side's entries now answer from the other side's holders too
+// (AvailablePart), and borrow the other side's stored parts
+// (stampEntryLocked), so what a side gains is what the other side holds and
+// stores. The smaller side's entries are named, for readers, and stamped.
+// The larger side's entries are named when an entry of the smaller side
+// holds a part, and stamped when one stores a part: joined is marked, and
+// every entry of its class is stamped when the marks are applied, once
+// however many joins marked it, and no other class an entry of the smaller
+// side is in, which gained nothing. So a join costs the smaller side, not
+// the class it joins: a new entry joining a class of thousands walks one
+// entry. The smaller side's entries are named and stamped though the larger
+// side may hold and store nothing, which a reader finds unchanged, and
+// which a new entry's own marks did already. Requires egraphMu for writing.
+func (c *Cache) markJoinLocked(a, b *idSet[sharedResultID], joined eqClassID) {
 	if c.changes == nil {
 		return
 	}
@@ -216,14 +219,19 @@ func (c *Cache) markJoinLocked(a, b *idSet[sharedResultID]) {
 	if small.Size() > large.Size() {
 		small, large = large, small
 	}
-	holds := false
+	holds, lends := false, false
 	for id := range small.All() {
 		c.changes.entries = append(c.changes.entries, id)
-		c.markEntryClassLocked(id, StampJoin)
-		if !holds {
-			res := c.resultsByID[id]
-			holds = res != nil && c.holdsAnyPartLocked(res)
+		res := c.resultsByID[id]
+		if res == nil {
+			continue
 		}
+		c.stampEntryLocked(res, StampJoin)
+		lends = lends || len(res.storedParts) > 0
+		holds = holds || c.holdsAnyPartLocked(res)
+	}
+	if lends {
+		c.changes.joined = append(c.changes.joined, joined)
 	}
 	if !holds {
 		return
@@ -266,12 +274,6 @@ func (c *Cache) takeChangesLocked(change *RemoteChange) {
 	c.stampClassMarksLocked(marks.stamped)
 	var widened map[eqClassID]struct{}
 	for i, id := range marks.classes {
-		// A join's marks are its smaller side's entries, for the stamps of
-		// the bundles that borrow from the class: the join names the entries
-		// whose answers it changes itself (markJoinLocked).
-		if marks.causes[i] == StampJoin {
-			continue
-		}
 		change.Entries = append(change.Entries, uint64(id))
 		// Widened only when the entry held a part at the mark or holds one
 		// now: otherwise the write changed no class mate's answer.
@@ -332,9 +334,9 @@ func (c *Cache) takeChangesLocked(change *RemoteChange) {
 // write to its class, each other entry's of its classes when the write can
 // change what they borrow. A class mate's bundle reads the class only to
 // borrow a stored part, so its stamp moves only when the marked entry had a
-// stored part, or the write is a stored part's own: a join marks each entry
-// of its smaller side, so one that stores a part moves the stamps of the
-// class it joined (markJoinLocked). Requires egraphMu for writing.
+// stored part, or the write is a stored part's own; and the entries of each
+// class a join brought a stored part to (markJoinLocked), applied and then
+// dropped. Requires egraphMu for writing.
 func (c *Cache) stampClassMarksLocked(from int) {
 	marks := c.changes
 	// widened has each class reached, and whether its entries' stamps moved:
@@ -370,6 +372,20 @@ func (c *Cache) stampClassMarksLocked(from int) {
 			}
 		}
 	}
+	for _, class := range marks.joined {
+		root := c.eqClassRootLocked(class)
+		if root == 0 || widened[root] {
+			continue
+		}
+		if widened == nil {
+			widened = map[eqClassID]bool{}
+		}
+		widened[root] = true
+		for member := range c.outputEqClassResults[root].All() {
+			c.stampEntryLocked(c.resultsByID[member], StampJoin|StampViaClass)
+		}
+	}
+	marks.joined = marks.joined[:0]
 }
 
 // stampPendingLocked applies, at the end of a write, or of one hold of a write,
@@ -431,8 +447,10 @@ func (c *Cache) changesPendingLocked() bool {
 // count (sharedResult.changedAt), so every bundle built before it reads res
 // as changed (ChangedSince). The writes that stamp are those a bundle reads:
 // a class mark (markEntryClassLocked: the entry's value, record, stored
-// parts or expiry, or its class, whose parts it can borrow), an entry
-// leaving its classes (markLeavingLocked), a kept call added
+// parts or expiry, or its class's, whose parts it can borrow), a join that
+// brings its class a stored part, or its own smaller class's join
+// (markJoinLocked), an entry leaving its classes (markLeavingLocked), a
+// kept call added
 // (keepCallLocked), and a frame rewritten with a taught content digest
 // (teachContentDigest). A holding added or removed, which marks its entry
 // alone (markEntryLocked), doesn't: a bundle carries no holding. It is a
