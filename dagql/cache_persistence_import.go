@@ -839,8 +839,8 @@ func (row *importedResultRow) decode(layers *storedLayers, seed maphash.Seed) {
 
 // holdStoredParts takes the stored parts out of the row's decoded envelope
 // and holds them in layers, the cache's table, as the cache holds them,
-// with the length of the envelope's JSON without them for a row with no
-// stored record (restoreStoredPartsLocked).
+// with the length of the envelope's JSON as the entry keeps it, without
+// them, for a row with no stored record (restoreStoredPartsLocked).
 func (row *importedResultRow) holdStoredParts(layers *storedLayers) {
 	if len(row.env.StoredParts) == 0 {
 		return
@@ -857,7 +857,11 @@ func (row *importedResultRow) holdStoredParts(layers *storedLayers) {
 		row.storedParts = row.storedParts.with(key, layers.part(part))
 	}
 	if row.body == nil {
-		stripped, err := json.Marshal(row.env)
+		// Without what the import moves onto the entry too, as the
+		// envelope it keeps has none of it.
+		kept := *row.env
+		kept.PersistDeclined, kept.Run, kept.RunRan = false, nil, 0
+		stripped, err := json.Marshal(&kept)
 		if err != nil {
 			row.partsErr = err
 			return
