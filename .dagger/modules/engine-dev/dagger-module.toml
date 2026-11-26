@@ -2,9 +2,9 @@ name = "engine-dev"
 include = ["../../../engine/distconsts/*.go", "../../../engine/distconsts/*.h", "../../../engine/distconsts/*.s", "../../../engine/distconsts/*.syso", "../../../engine/distconsts/go.mod", "../../../go.mod", "../../../sdk/typescript/runtime/go.mod", "../../../sdk/typescript/runtime/tsdistconsts/*.go", "../../../sdk/typescript/runtime/tsdistconsts/*.h", "../../../sdk/typescript/runtime/tsdistconsts/*.s", "../../../sdk/typescript/runtime/tsdistconsts/*.syso", "../../../util/parallel/*.go", "../../../util/parallel/*.h", "../../../util/parallel/*.s", "../../../util/parallel/*.syso", "!../../../**/*_test.go", "**/*_test.go"]
 
 [entrypoint]
-  kind = "dang"
-  source = "./internal/dagger/entrypoint"
+kind = "dang"
+source = "./internal/dagger/entrypoint"
 
 [[dependencies]]
-  name = "go"
-  source = "github.com/dagger/go@262b66dc9683ed6c2bcd55a8f5b85eff62b1c152"
+name = "go"
+source = "github.com/dagger/go@262b66dc9683ed6c2bcd55a8f5b85eff62b1c152"

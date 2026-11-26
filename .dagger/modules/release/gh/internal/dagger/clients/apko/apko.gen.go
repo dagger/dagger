@@ -699,6 +699,7 @@ type ApkoOpts struct {
 	WithoutCache bool // apko (../../main.go:33:2)
 }
 
+// Build container images from apk packages.
 func (r *Query) Apko(opts ...ApkoOpts) *Apko { // apko (../../main.go:24:1)
 	q := r.query.Select("apko")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -720,6 +721,8 @@ func (r *Query) Apko(opts ...ApkoOpts) *Apko { // apko (../../main.go:24:1)
 
 // New calls Apko on the default connection.
 // Use Connect(connection).Apko to call it on an explicit connection.
+//
+// Build container images from apk packages.
 func New(opts ...ApkoOpts) *Apko {
 	return Connect().Apko(opts...)
 }
