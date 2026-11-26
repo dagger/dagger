@@ -361,7 +361,7 @@ func savedStoreIndexCounts(c *Cache, say func(format string, args ...any)) {
 			noteString(d)
 		}
 	}
-	for d := range c.egraphResultsByDigest {
+	for d := range c.egraphResultsByDigest.Digests() {
 		noteString(d)
 	}
 	var digestStringBytes int
@@ -369,12 +369,15 @@ func savedStoreIndexCounts(c *Cache, say func(format string, args ...any)) {
 		digestStringBytes += n
 	}
 	var postingExact, postingImported, postingsWithTree int
-	for _, p := range c.egraphResultsByDigest {
-		postingImported += p.imported.Size()
-		if p.exact != nil {
+	for d := range c.egraphResultsByDigest.exact.Keys() {
+		n := c.egraphResultsByDigest.exact.Size(d)
+		if n > 1 {
 			postingsWithTree++
-			postingExact += p.exact.Size()
 		}
+		postingExact += n
+	}
+	for _, snapshot := range c.egraphResultsByDigest.imported {
+		postingImported += snapshot.Size()
 	}
 	var rocInner, ocrInner, trInner, rtInner, ridInner, termsByDigestInner, inTermsInner, outTermsInner, termInputs, rdgGroups, cieInner int
 	for _, v := range c.resultOutputEqClasses {
@@ -416,7 +419,7 @@ func savedStoreIndexCounts(c *Cache, say func(format string, args ...any)) {
 		len(c.egraphTerms), termInputs, len(c.egraphTermsByTermDigest), termsByDigestInner, len(c.inputEqClassToTerms), inTermsInner, len(c.outputEqClassToTerms), outTermsInner, len(c.termInputProvenance))
 	say("result->classes %d/%d; class->results %d/%d; term->results %d/%d; result->terms %d/%d", len(c.resultOutputEqClasses), rocInner, len(c.outputEqClassResults), ocrInner, c.termResults.Len(), trInner, c.resultTerms.Len(), rtInner)
 	say("digest postings %d (with a tree %d: %d ids; imported ids %d); result->indexed digests %d/%d; broadly indexed %d; restored digest groups %d/%d; call input entries %d/%d",
-		len(c.egraphResultsByDigest), postingsWithTree, postingExact, postingImported, len(c.resultIndexedDigests), ridInner, len(c.broadlyIndexedResults), len(c.restoredDigestGroups), rdgGroups, len(c.callInputEntries), cieInner)
+		c.egraphResultsByDigest.Len(), postingsWithTree, postingExact, postingImported, len(c.resultIndexedDigests), ridInner, len(c.broadlyIndexedResults), len(c.restoredDigestGroups), rdgGroups, len(c.callInputEntries), cieInner)
 }
 
 // savedStoreCompositionSteps lets go of each kind of thing the entries hold in
@@ -518,7 +521,7 @@ func savedStoreCompositionSteps(c *Cache, base uint64, say func(format string, a
 		c.entriesByRecipe = nil
 	})
 	step("digest postings (digest->entries) and their reverse", func() {
-		c.egraphResultsByDigest = nil
+		c.egraphResultsByDigest = digestPostings{}
 		c.resultIndexedDigests = nil
 		c.broadlyIndexedResults = nil
 		c.restoredDigestGroups = nil
