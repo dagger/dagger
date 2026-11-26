@@ -947,8 +947,18 @@ const (
 	CacheDepsAttr = "dagger.io/cache.deps"
 	// CacheRetainedAttr is "true" when the entry has a retention edge, the
 	// record that keeps it after its session, or when this call's publication
-	// adds one; absent otherwise. It states the edge at the span's end.
+	// adds one; absent otherwise. It states the edge at the span's end, from
+	// any source: this call, another call of the entry, or a merge that
+	// rooted its record. What this call itself kept is CachePersistedAttr.
 	CacheRetainedAttr = "dagger.io/cache.retained"
+	// CachePersistedAttr is "true" on a call span when the call itself kept
+	// its result past its session: its field is persistable and neither the
+	// call nor the value it returned declined to persist, so its publication
+	// or its hit gives the entry a retention edge of its own; absent
+	// otherwise. It is the call's own, where CacheRetainedAttr is the entry's
+	// state from any source: a call that keeps nothing reports the edge
+	// another gave its entry as retained, and not as persisted.
+	CachePersistedAttr = "dagger.io/cache.persisted"
 	// CacheRetentionExpiresAttr is the retention edge's expiry, in decimal
 	// Unix seconds, when retained and the edge expires.
 	CacheRetentionExpiresAttr = "dagger.io/cache.retention.expires"

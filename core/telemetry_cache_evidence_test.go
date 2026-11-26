@@ -742,7 +742,6 @@ func TestRecordCacheEvidenceCacheState(t *testing.T) {
 // entry, as retained, and does not report it as its own.
 func TestRecordCacheEvidencePersisted(t *testing.T) {
 	t.Parallel()
-	const persisted = "dagger.io/cache.persisted"
 	type call struct {
 		session     string
 		persistable bool
@@ -799,7 +798,7 @@ func TestRecordCacheEvidencePersisted(t *testing.T) {
 			got := evidenceTestCacheAttrs(t, evidenceTestEndedAttrs(t, sr, span))
 			_, retained := got[telemetryattrs.CacheRetainedAttr]
 			assert.Equal(t, tc.wantRetained, retained, "the entry's retention, from any source")
-			value, kept := got[persisted]
+			value, kept := got[telemetryattrs.CachePersistedAttr]
 			assert.Equal(t, tc.wantPersisted, kept, "whether the call itself kept its result")
 			if tc.wantPersisted {
 				assert.Equal(t, "true", value)
