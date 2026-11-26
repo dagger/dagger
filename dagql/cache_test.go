@@ -4031,8 +4031,7 @@ func TestIndexResultDigestsUsesExplicitRequestAndResponseIDs(t *testing.T) {
 		responseDigest,
 		responseExtra.Digest,
 	} {
-		postings := c.egraphResultsByDigest[dig.String()]
-		ok := postings != nil && postings.Contains(shared.id)
+		ok := c.egraphResultsByDigest.Contains(dig.String(), shared.id)
 		assert.Assert(t, ok, "expected posting for digest %s", dig)
 	}
 
@@ -4874,7 +4873,7 @@ func TestCacheTeachContentDigestPreservesAttachment(t *testing.T) {
 	shared := res.cacheSharedResult()
 	assert.Assert(t, shared != nil)
 	c.egraphMu.RLock()
-	ok := c.egraphResultsByDigest[contentDigest.String()].Contains(shared.id)
+	ok := c.egraphResultsByDigest.Contains(contentDigest.String(), shared.id)
 	c.egraphMu.RUnlock()
 	assert.Assert(t, ok)
 
@@ -5180,7 +5179,7 @@ func TestCacheReleaseRemovesRecordedDigestPostingAfterOutputClassMerge(t *testin
 	assert.NilError(t, c.ReleaseSession(ctxA, "release-eq-class-a"))
 
 	c.egraphMu.RLock()
-	_, ok = c.egraphResultsByDigest[foreignDigest.String()]
+	ok = postingHeldForTest(&c.egraphResultsByDigest, foreignDigest.String())
 	c.egraphMu.RUnlock()
 	assert.Assert(t, !ok)
 	assert.Equal(t, 1, c.Size())

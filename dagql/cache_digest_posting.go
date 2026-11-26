@@ -4,55 +4,65 @@ import (
 	"iter"
 )
 
-// resultDigestPosting combines a digest's runtime postings with a snapshot of
-// its output class at import. All digests of that class share the snapshot;
-// copying its results once per digest would take quadratic space.
+// digestPostings are, for each digest, the results posted under it: the
+// postings runtime makes, each digest's own (exact), and the snapshot of an
+// output class taken at import (imported). All digests of a restored class
+// share its snapshot; copying its results once per digest would take
+// quadratic space.
 //
-// Runtime insertions stay local to the digest. Removal is only used when a
-// result is collected globally, so it also removes the result from the shared
-// snapshot. All access is protected by Cache.egraphMu.
-type resultDigestPosting struct {
-	exact    *idSet[sharedResultID]
-	imported *idSet[sharedResultID]
+// Nearly every digest has one exact result, which exact holds in place
+// (idSetIndex). Runtime insertions stay local to the digest. Removal is only
+// used when a result is collected globally, so it also removes the result
+// from the shared snapshot. All access is protected by Cache.egraphMu.
+type digestPostings struct {
+	exact    idSetIndex[string, sharedResultID]
+	imported map[string]*idSet[sharedResultID]
 }
 
-func (p *resultDigestPosting) Contains(id sharedResultID) bool {
-	return p.imported.Contains(id) || p.exact.Contains(id)
+// Contains reports whether id is posted under dig.
+func (p *digestPostings) Contains(dig string, id sharedResultID) bool {
+	return p.imported[dig].Contains(id) || p.exact.Contains(dig, id)
 }
 
-func (p *resultDigestPosting) Insert(id sharedResultID) bool {
-	if p.Contains(id) {
+// Insert posts id under dig, and reports whether it wasn't.
+func (p *digestPostings) Insert(dig string, id sharedResultID) bool {
+	if p.imported[dig].Contains(id) {
 		return false
 	}
-	if p.exact == nil {
-		p.exact = newIDSet[sharedResultID]()
+	return p.exact.Insert(dig, id)
+}
+
+// Remove takes id from dig's postings, its snapshot's included.
+func (p *digestPostings) Remove(dig string, id sharedResultID) {
+	if snapshot := p.imported[dig]; snapshot != nil {
+		snapshot.Remove(id)
+		if snapshot.Empty() {
+			delete(p.imported, dig)
+		}
 	}
-	return p.exact.Insert(id)
+	p.exact.Remove(dig, id)
 }
 
-func (p *resultDigestPosting) Remove(id sharedResultID) {
-	p.imported.Remove(id)
-	p.exact.Remove(id)
+// Size is how many results are posted under dig.
+func (p *digestPostings) Size(dig string) int {
+	return p.imported[dig].Size() + p.exact.Size(dig)
 }
 
-func (p *resultDigestPosting) Size() int {
-	return p.imported.Size() + p.exact.Size()
+// Has reports whether any result is posted under dig.
+func (p *digestPostings) Has(dig string) bool {
+	return p.Size(dig) > 0
 }
 
-func (p *resultDigestPosting) Empty() bool {
-	return p.Size() == 0
-}
-
-// Items yields each result once. Callers sort candidates in their own set;
-// iteration order within an individual posting has no meaning.
-func (p *resultDigestPosting) Items() iter.Seq[sharedResultID] {
+// Items yields each result posted under dig once. Callers sort candidates in
+// their own set; the order within a digest's postings has no meaning.
+func (p *digestPostings) Items(dig string) iter.Seq[sharedResultID] {
 	return func(yield func(sharedResultID) bool) {
-		for id := range p.imported.All() {
+		for id := range p.imported[dig].All() {
 			if !yield(id) {
 				return
 			}
 		}
-		for id := range p.exact.All() {
+		for id := range p.exact.All(dig) {
 			if !yield(id) {
 				return
 			}
@@ -60,16 +70,43 @@ func (p *resultDigestPosting) Items() iter.Seq[sharedResultID] {
 	}
 }
 
-// importedPostingGroup retains the original memberships and posting objects.
-// Class merges do not add digests or results to an imported snapshot.
-type importedPostingGroup struct {
-	members  *idSet[sharedResultID]
-	postings []importedDigestPosting
+// Digests yields each digest with a posting once, in no order a caller may
+// rely on.
+func (p *digestPostings) Digests() iter.Seq[string] {
+	return func(yield func(string) bool) {
+		for dig := range p.exact.Keys() {
+			if !yield(dig) {
+				return
+			}
+		}
+		for dig, snapshot := range p.imported {
+			if snapshot.Empty() || p.exact.Size(dig) > 0 {
+				continue
+			}
+			if !yield(dig) {
+				return
+			}
+		}
+	}
 }
 
-type importedDigestPosting struct {
-	digest  string
-	posting *resultDigestPosting
+// Len is how many digests have a posting.
+func (p *digestPostings) Len() int {
+	n := p.exact.Len()
+	for dig, snapshot := range p.imported {
+		if !snapshot.Empty() && p.exact.Size(dig) == 0 {
+			n++
+		}
+	}
+	return n
+}
+
+// importedPostingGroup retains a restored class's original membership and
+// the digests that share it. Class merges do not add digests or results to an
+// imported snapshot.
+type importedPostingGroup struct {
+	members *idSet[sharedResultID]
+	digests []string
 }
 
 // restoreDigestPostingsLocked requires egraphMu. Capture membership at import:
@@ -77,10 +114,13 @@ type importedDigestPosting struct {
 func (c *Cache) restoreDigestPostingsLocked() {
 	// Rebuild both directions together, including when restoring more than once.
 	c.restoredDigestGroups = make(map[sharedResultID][]*importedPostingGroup, len(c.resultsByID))
+	if c.egraphResultsByDigest.imported == nil {
+		c.egraphResultsByDigest.imported = make(map[string]*idSet[sharedResultID])
+	}
 	for outputEqID, resultIDs := range c.outputEqClassResults {
 		group := &importedPostingGroup{
-			members:  resultIDs.Clone(),
-			postings: make([]importedDigestPosting, 0, c.eqClassToDigests[outputEqID].Size()),
+			members: resultIDs.Clone(),
+			digests: make([]string, 0, c.eqClassToDigests[outputEqID].Size()),
 		}
 		for resultID := range group.members.All() {
 			c.markResultBroadlyIndexedLocked(resultID)
@@ -89,9 +129,10 @@ func (c *Cache) restoreDigestPostingsLocked() {
 			}
 		}
 		for dig := range c.eqClassToDigests[outputEqID].All() {
-			posting := &resultDigestPosting{imported: group.members}
-			c.egraphResultsByDigest[dig] = posting
-			group.postings = append(group.postings, importedDigestPosting{digest: dig, posting: posting})
+			// A digest's postings become its class's snapshot alone.
+			c.egraphResultsByDigest.exact.Delete(dig)
+			c.egraphResultsByDigest.imported[dig] = group.members
+			group.digests = append(group.digests, dig)
 		}
 	}
 }
@@ -104,17 +145,13 @@ func (c *Cache) removeImportedPostingGroupsLocked(resultID sharedResultID, group
 		if !group.members.Empty() {
 			continue
 		}
-		for _, entry := range group.postings {
-			if c.egraphResultsByDigest[entry.digest] != entry.posting {
-				continue
-			}
-			// Keep later runtime postings while releasing the empty imported map.
-			entry.posting.imported = nil
-			if entry.posting.Empty() {
-				delete(c.egraphResultsByDigest, entry.digest)
+		for _, dig := range group.digests {
+			// Keep later runtime postings while releasing the empty snapshot.
+			if c.egraphResultsByDigest.imported[dig] == group.members {
+				delete(c.egraphResultsByDigest.imported, dig)
 			}
 		}
 		group.members = nil
-		group.postings = nil
+		group.digests = nil
 	}
 }
