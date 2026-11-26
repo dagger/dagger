@@ -314,7 +314,7 @@ func TestTheCloudLearnsThatARecordsRunRan(t *testing.T) {
 		cloud.egraphMu.RLock()
 		defer cloud.egraphMu.RUnlock()
 		_, h := cloud.holdingLocked(key)
-		require.False(t, h.executed, "a computation from before the drop doesn't bring a dropped value back")
+		require.False(t, h.is(heldExecuted), "a computation from before the drop doesn't bring a dropped value back")
 	})
 	t.Run("an executed call of a lazy result", func(t *testing.T) {
 		t.Parallel()

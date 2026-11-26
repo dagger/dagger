@@ -43,7 +43,7 @@ func (c *Cache) entryCanDifferWhyLocked(res *sharedResult) (bool, string) {
 		}
 	}
 	for _, ref := range res.holderRefsLocked() {
-		if follows, known := declares(ref.h.follows, ref.h.rowed); known {
+		if follows, known := declares(ref.h.is(heldFollows), ref.h.is(heldRowed)); known {
 			note(follows)
 		}
 	}
