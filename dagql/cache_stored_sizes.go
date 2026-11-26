@@ -888,53 +888,14 @@ func (c *Cache) StoredLowerPart(ctx context.Context, root uint64, nowUnix int64,
 		return out, err
 	}
 	kind := c.graphReader(ctx, workExport)
-	cut := &storedCut{sizes: map[sharedResultID]int64{}, outputs: map[sharedResultID][]storedCutPart{}, named: map[sharedResultID]bool{}}
-	var (
-		order    []sharedResultID
-		below    []sharedResultID
-		above    []sharedResultID
-		children = map[sharedResultID][]sharedResultID{}
-		rows     = map[sharedResultID]int64{}
-		fixed    int64
-		misses   []storedSizeMiss
-	)
-	func() {
-		defer c.storedSizesRLock(kind)()
-		res := c.resultsByID[sharedResultID(root)]
-		if res == nil || res.noValueLocked() {
-			return
-		}
-		walk, _ := c.storedRootWalkLocked(res, nowUnix, held, map[sharedResultID]bool{}, map[sharedResultID]bool{}, map[sharedResultID]bool{},
-			&storedOutputsSeen{layers: map[*storedLayer]bool{}, blobs: map[digest.Digest]digest.Digest{}}, nil, nil, cut)
-		misses = walk.misses
-		isAbove := map[sharedResultID]bool{res.id: true}
-		for _, entry := range walk.order {
-			if held.heldLocked(entry, nowUnix) {
-				fixed += heldRowSizeLocked(entry)
-				continue
-			}
-			out.Carried++
-			order = append(order, entry.id)
-			deps := storedClosureChildrenLocked(entry)
-			children[entry.id] = deps
-			if !isAbove[entry.id] && slices.ContainsFunc(deps, func(id sharedResultID) bool { return isAbove[id] }) {
-				isAbove[entry.id] = true
-			}
-			if isAbove[entry.id] {
-				above = append(above, entry.id)
-				continue
-			}
-			below = append(below, entry.id)
-			rows[entry.id] = heldRowSizeLocked(entry)
-		}
-		out.CallBytes = cut.callBytes
-	}()
-	if len(below) == 0 {
+	cut := c.storedCutWalk(kind, root, nowUnix, held)
+	out.Carried, out.CallBytes = len(cut.order), cut.callBytes
+	if len(cut.below) == 0 {
 		return out, nil
 	}
 	// The records not yet measured, measured as StoredSizes measures them.
-	measured := make([]storedSizeMeasure, 0, len(misses))
-	for _, miss := range misses {
+	measured := make([]storedSizeMeasure, 0, len(cut.misses))
+	for _, miss := range cut.misses {
 		m, err := c.measureStoredValue(miss)
 		if err != nil {
 			return StoredLowerPart{}, fmt.Errorf("stored lower part: entry %d: %w", miss.res.id, err)
@@ -943,80 +904,15 @@ func (c *Cache) StoredLowerPart(ctx context.Context, root uint64, nowUnix int64,
 		measured = append(measured, m)
 	}
 	c.publishStoredSizes(kind, measured)
-	// What root's merge carries beside the held rows of what held holds and
-	// the calls: the records above the part, with their outputs, each layer
-	// and address once; and a held row for each entry of the part that a call
-	// names or one of those records depends on. The tail it keeps grows from
-	// the bundle's end while that fits: a record it takes adds its outputs
-	// but what the merge lists already, needs no held row of its own, and
-	// brings held rows for those of its dependencies the part keeps.
-	rest := limit - fixed - out.CallBytes
-	outputs := &storedCutOutputs{layers: map[*storedLayer]bool{}, blobs: map[digest.Digest]digest.Digest{}}
-	needed := map[sharedResultID]bool{}
-	for id := range cut.named {
-		if row, ok := rows[id]; ok {
-			needed[id] = true
-			rest -= row
-		}
-	}
-	needs := func(id sharedResultID, inTail map[sharedResultID]bool) (bytes int64, deps []sharedResultID) {
-		for _, dep := range children[id] {
-			if row, ok := rows[dep]; ok && !inTail[dep] && !needed[dep] && !slices.Contains(deps, dep) {
-				bytes += row
-				deps = append(deps, dep)
-			}
-		}
-		return bytes, deps
-	}
-	inTail := map[sharedResultID]bool{}
-	for _, id := range above {
-		bytes, deps := needs(id, inTail)
-		rest -= cut.sizes[id] + outputs.add(cut.outputs[id], true) + bytes
-		for _, dep := range deps {
-			needed[dep] = true
-		}
-	}
-	ahead := len(below)
-	for ahead > 0 {
-		id := below[ahead-1]
-		left := rest - cut.sizes[id] - outputs.add(cut.outputs[id], false)
-		if needed[id] {
-			left += rows[id]
-		}
-		bytes, deps := needs(id, inTail)
-		if left -= bytes; left < 0 {
-			break
-		}
-		rest, inTail[id] = left, true
-		outputs.add(cut.outputs[id], true)
-		delete(needed, id)
-		for _, dep := range deps {
-			needed[dep] = true
-		}
-		ahead--
-	}
-	// Which of a blob's addresses the root's merge carries depends on the
-	// order it lists its outputs in, which the tail's growth from the end
-	// doesn't follow: the cut is checked as that merge counts it, and moved
-	// down to the first that fits.
-	if ahead < len(below) && !storedCutFits(cut, order, below, ahead, children, rows, limit-fixed-out.CallBytes) {
-		low, high := ahead+1, len(below)
-		for low < high {
-			if mid := (low + high) / 2; storedCutFits(cut, order, below, mid, children, rows, limit-fixed-out.CallBytes) {
-				high = mid
-			} else {
-				low = mid + 1
-			}
-		}
-		ahead = low
-	}
+	room := limit - cut.fixed - cut.callBytes
+	ahead := cut.settle(cut.grow(room), room)
 	if ahead == 0 {
 		return out, nil
 	}
-	part := below[:ahead]
+	part := cut.below[:ahead]
 	under := map[sharedResultID]bool{}
 	for _, id := range part {
-		for _, dep := range children[id] {
+		for _, dep := range cut.children[id] {
 			under[dep] = true
 		}
 	}
@@ -1025,7 +921,7 @@ func (c *Cache) StoredLowerPart(ctx context.Context, root uint64, nowUnix int64,
 			out.Lower = append(out.Lower, uint64(id))
 		}
 		if cut.named[id] {
-			out.NamedBytes += rows[id]
+			out.NamedBytes += cut.rows[id]
 		}
 		out.Part = append(out.Part, uint64(id))
 	}
@@ -1033,15 +929,137 @@ func (c *Cache) StoredLowerPart(ctx context.Context, root uint64, nowUnix int64,
 	return out, nil
 }
 
-// storedCut is what a walk keeps for StoredLowerPart: the size of each
-// record it carries, 0 for one not measured yet until it is
-// (storedSizeWalk.misses), and its stored parts; the encoded size of the
-// calls it chose; and the entries those calls name.
+// storedCutWalk walks root's bundle for StoredLowerPart in one hold of
+// egraphMu, as StoredSizes walks it, and keeps what its cut reads: the
+// records the bundle carries, in its order, and of those the ones above the
+// part, root and those that depend on it, and the ones below it, each with
+// its dependencies and the size of its held row; and the held rows of what
+// held holds.
+func (c *Cache) storedCutWalk(kind wcprof.LockHolder, root uint64, nowUnix int64, held *HeldBy) *storedCut {
+	cut := &storedCut{sizes: map[sharedResultID]int64{}, outputs: map[sharedResultID][]storedCutPart{}, named: map[sharedResultID]bool{},
+		children: map[sharedResultID][]sharedResultID{}, rows: map[sharedResultID]int64{}}
+	defer c.storedSizesRLock(kind)()
+	res := c.resultsByID[sharedResultID(root)]
+	if res == nil || res.noValueLocked() {
+		return cut
+	}
+	walk, _ := c.storedRootWalkLocked(res, nowUnix, held, map[sharedResultID]bool{}, map[sharedResultID]bool{}, map[sharedResultID]bool{},
+		&storedOutputsSeen{layers: map[*storedLayer]bool{}, blobs: map[digest.Digest]digest.Digest{}}, nil, nil, cut)
+	cut.misses = walk.misses
+	isAbove := map[sharedResultID]bool{res.id: true}
+	for _, entry := range walk.order {
+		if held.heldLocked(entry, nowUnix) {
+			cut.fixed += heldRowSizeLocked(entry)
+			continue
+		}
+		cut.order = append(cut.order, entry.id)
+		deps := storedClosureChildrenLocked(entry)
+		cut.children[entry.id] = deps
+		if !isAbove[entry.id] && slices.ContainsFunc(deps, func(id sharedResultID) bool { return isAbove[id] }) {
+			isAbove[entry.id] = true
+		}
+		if isAbove[entry.id] {
+			cut.above = append(cut.above, entry.id)
+			continue
+		}
+		cut.below = append(cut.below, entry.id)
+		cut.rows[entry.id] = heldRowSizeLocked(entry)
+	}
+	return cut
+}
+
+// grow returns how many of the entries below root go ahead when the tail
+// root's merge keeps grows from the bundle's end while it fits within room.
+// That merge carries the records above the part, with their outputs, each
+// layer and address once, and a held row for each entry of the part that a
+// call names or one of those records depends on. A record the tail takes
+// adds its outputs but what the merge lists already, needs no held row of
+// its own, and brings held rows for those of its dependencies the part
+// keeps.
+func (cut *storedCut) grow(room int64) int {
+	outputs := &storedCutOutputs{layers: map[*storedLayer]bool{}, blobs: map[digest.Digest]digest.Digest{}}
+	needed, inTail := map[sharedResultID]bool{}, map[sharedResultID]bool{}
+	for id := range cut.named {
+		if row, ok := cut.rows[id]; ok {
+			needed[id] = true
+			room -= row
+		}
+	}
+	needs := func(id sharedResultID) (bytes int64, deps []sharedResultID) {
+		for _, dep := range cut.children[id] {
+			if row, ok := cut.rows[dep]; ok && !inTail[dep] && !needed[dep] && !slices.Contains(deps, dep) {
+				bytes += row
+				deps = append(deps, dep)
+			}
+		}
+		return bytes, deps
+	}
+	for _, id := range cut.above {
+		bytes, deps := needs(id)
+		room -= cut.sizes[id] + outputs.add(cut.outputs[id], true) + bytes
+		for _, dep := range deps {
+			needed[dep] = true
+		}
+	}
+	ahead := len(cut.below)
+	for ; ahead > 0; ahead-- {
+		id := cut.below[ahead-1]
+		left := room - cut.sizes[id] - outputs.add(cut.outputs[id], false)
+		if needed[id] {
+			left += cut.rows[id]
+		}
+		bytes, deps := needs(id)
+		if left -= bytes; left < 0 {
+			break
+		}
+		room, inTail[id] = left, true
+		outputs.add(cut.outputs[id], true)
+		delete(needed, id)
+		for _, dep := range deps {
+			needed[dep] = true
+		}
+	}
+	return ahead
+}
+
+// settle returns ahead, grow's cut, if root's merge carries the rest within
+// room as that merge counts it (fits), or else the first cut after it that
+// fits: which of a blob's addresses the merge carries depends on the order
+// it lists its outputs in, which the tail's growth from the end doesn't
+// follow.
+func (cut *storedCut) settle(ahead int, room int64) int {
+	if ahead == len(cut.below) || cut.fits(ahead, room) {
+		return ahead
+	}
+	low, high := ahead+1, len(cut.below)
+	for low < high {
+		if mid := (low + high) / 2; cut.fits(mid, room) {
+			high = mid
+		} else {
+			low = mid + 1
+		}
+	}
+	return low
+}
+
+// storedCut is what StoredLowerPart cuts a bundle by. Its walk keeps the
+// size of each record it carries, 0 for one not measured yet until it is
+// (misses), and its stored parts; the encoded size of the calls it chose;
+// and the entries those calls name. storedCutWalk adds the records in the
+// bundle's order, those above the part and those below it, each record's
+// dependencies, the held row of each below, and the held rows of what the
+// recipient holds (fixed).
 type storedCut struct {
 	sizes     map[sharedResultID]int64
 	outputs   map[sharedResultID][]storedCutPart
 	callBytes int64
 	named     map[sharedResultID]bool
+	misses    []storedSizeMiss
+
+	order, above, below []sharedResultID
+	children            map[sharedResultID][]sharedResultID
+	rows                map[sharedResultID]int64
+	fixed               int64
 }
 
 // storedCutPart is a stored part of a record the walk carries: what it adds
@@ -1063,16 +1081,15 @@ func (cut *storedCut) sized(res *sharedResult, bytes int64) {
 	}
 }
 
-// storedCutFits reports whether root's merge, with below's first ahead
-// entries held, carries the rest within room, as that merge counts it: the
-// records of order, the bundle's, but the part's, with their outputs, in
-// that order, each layer once, a blob's address for the pack it
-// first names it in, and one more for each output that names it in
-// another; and a held row for each entry of the part that a call or one of
-// those records names.
-func storedCutFits(cut *storedCut, order, below []sharedResultID, ahead int, children map[sharedResultID][]sharedResultID, rows map[sharedResultID]int64, room int64) bool {
+// fits reports whether root's merge, with the first ahead entries below it
+// held, carries the rest within room, as that merge counts it: the records
+// the bundle carries, but the part's, with their outputs, in the bundle's
+// order, each layer once, a blob's address for the pack it first names it
+// in, and one more for each output that names it in another; and a held row
+// for each entry of the part that a call or one of those records names.
+func (cut *storedCut) fits(ahead int, room int64) bool {
 	inPart := make(map[sharedResultID]bool, ahead)
-	for _, id := range below[:ahead] {
+	for _, id := range cut.below[:ahead] {
 		inPart[id] = true
 	}
 	outputs := &storedCutOutputs{layers: map[*storedLayer]bool{}, blobs: map[digest.Digest]digest.Digest{}}
@@ -1080,18 +1097,18 @@ func storedCutFits(cut *storedCut, order, below []sharedResultID, ahead int, chi
 	for id := range cut.named {
 		if inPart[id] && !named[id] {
 			named[id] = true
-			room -= rows[id]
+			room -= cut.rows[id]
 		}
 	}
-	for _, id := range order {
+	for _, id := range cut.order {
 		if inPart[id] {
 			continue
 		}
 		room -= cut.sizes[id] + outputs.add(cut.outputs[id], true)
-		for _, dep := range children[id] {
+		for _, dep := range cut.children[id] {
 			if inPart[dep] && !named[dep] {
 				named[dep] = true
-				room -= rows[dep]
+				room -= cut.rows[dep]
 			}
 		}
 	}
