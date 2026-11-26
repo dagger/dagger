@@ -145,30 +145,68 @@ func heldTerms(h *HeldBy) map[digest.Digest][]RemoteTerm {
 	return h.named
 }
 
-// namedTermLocked reports whether kept's term is one of terms. Both keys
-// are taken now, over the classes the inputs have under this hold: a walk
-// that lets egraphMu go between entries sees classes merged meanwhile,
-// which move a class's root, and a key taken before would name the old
-// one. Requires egraphMu.
-func (c *Cache) namedTermLocked(terms map[digest.Digest][]RemoteTerm, kept *keptCall) bool {
-	candidates := terms[kept.id.self]
+// namedTerms is a walk's view of its recipient's terms: by self digest
+// (heldTerms), and, for each self digest the walk has matched a kept call
+// of in its present hold of egraphMu, the keys of the recipient's terms of
+// it (keptCallTermKeyLocked), so that matching a kept call takes one key
+// and one lookup, as a cache looks a term up by its digest. A key names the
+// roots of its inputs' classes, which a union moves, so the keys are those
+// of one hold: they are taken again once the walk has let egraphMu go
+// (readPieces.yields), or reads under another hold. A walk is one goroutine's.
+type namedTerms struct {
+	bySelf map[digest.Digest][]RemoteTerm
+	// keys are the keys of bySelf's terms, by self digest, taken under hold
+	// after it had let egraphMu go yields times; a nil hold is a walk that
+	// holds egraphMu throughout.
+	keys   map[digest.Digest]map[string]struct{}
+	hold   *readPieces
+	yields int
+}
+
+// newNamedTerms returns a walk's view of h's terms, nil when h names none.
+func newNamedTerms(h *HeldBy) *namedTerms {
+	bySelf := heldTerms(h)
+	if bySelf == nil {
+		return nil
+	}
+	return &namedTerms{bySelf: bySelf}
+}
+
+// namedTermLocked reports whether kept's term is one of terms, the walk's
+// view of its recipient's terms, under hold, the walk's present hold of
+// egraphMu. Both keys are taken over the classes the inputs have in that
+// hold: a walk that lets egraphMu go between entries sees classes merged
+// meanwhile, which move a class's root, and a key taken before would name
+// the old one. Requires egraphMu.
+func (c *Cache) namedTermLocked(terms *namedTerms, hold *readPieces, kept *keptCall) bool {
+	if terms == nil {
+		return false
+	}
+	candidates := terms.bySelf[kept.id.self]
 	if len(candidates) == 0 {
 		return false
 	}
-	key := c.keptCallTermKeyLocked(kept)
-	for _, term := range candidates {
-		if c.keptCallTermKeyLocked(&keptCall{id: callIdentity{self: term.Self, inputs: term.Inputs}}) == key {
-			return true
-		}
+	if terms.keys == nil || terms.hold != hold || terms.yields != hold.yields() {
+		terms.keys, terms.hold, terms.yields = map[digest.Digest]map[string]struct{}{}, hold, hold.yields()
 	}
-	return false
+	keys, ok := terms.keys[kept.id.self]
+	if !ok {
+		keys = make(map[string]struct{}, len(candidates))
+		for _, term := range candidates {
+			keys[c.keptCallTermKeyLocked(&keptCall{id: callIdentity{self: term.Self, inputs: term.Inputs}})] = struct{}{}
+		}
+		terms.keys[kept.id.self] = keys
+	}
+	_, ok = keys[c.keptCallTermKeyLocked(kept)]
+	return ok
 }
 
 // sendableCallsLocked returns group, the kept calls of one term, when a
 // bundle for the recipient h may send that term: h names no calls, Calls
-// names one of the group's, or the term is one of h's Terms (terms, by self
-// digest: heldTerms). Otherwise it returns nil. Requires egraphMu.
-func (c *Cache) sendableCallsLocked(h *HeldBy, terms map[digest.Digest][]RemoteTerm, group []*keptCall) []*keptCall {
+// names one of the group's, or the term is one of h's Terms (terms, the
+// walk's view of them under hold: namedTermLocked). Otherwise it returns
+// nil. Requires egraphMu.
+func (c *Cache) sendableCallsLocked(h *HeldBy, terms *namedTerms, hold *readPieces, group []*keptCall) []*keptCall {
 	if h == nil || h.Calls == nil {
 		return group
 	}
@@ -177,7 +215,7 @@ func (c *Cache) sendableCallsLocked(h *HeldBy, terms map[digest.Digest][]RemoteT
 			return group
 		}
 	}
-	if len(group) > 0 && c.namedTermLocked(terms, group[0]) {
+	if len(group) > 0 && c.namedTermLocked(terms, hold, group[0]) {
 		return group
 	}
 	return nil
@@ -411,7 +449,7 @@ func (c *Cache) storedBundleWalkLocked(rootEntries []*sharedResult, nowUnix int6
 	for _, res := range rootEntries {
 		seenRoot[res.id] = true
 	}
-	build := &storedBundleBuild{now: nowUnix, ordinals: map[sharedResultID]TransferOrdinal{}, heldBy: held, terms: heldTerms(held), notWhole: notWhole, held: map[sharedResultID]bool{},
+	build := &storedBundleBuild{now: nowUnix, ordinals: map[sharedResultID]TransferOrdinal{}, heldBy: held, terms: newNamedTerms(held), notWhole: notWhole, held: map[sharedResultID]bool{},
 		owners: map[sharedResultID]int{}, ordinary: map[sharedResultID]bool{}, rootSeen: seenRoot}
 	build.bundle.Version = ValueBundleVersion
 	if c.identity.ID != "" {
@@ -543,8 +581,9 @@ type storedBundleBuild struct {
 	// (HeldBy.Whole), and held are the closure's entries that become held
 	// rows.
 	heldBy *HeldBy
-	// terms are the recipient's named terms by self digest (heldTerms).
-	terms    map[digest.Digest][]RemoteTerm
+	// terms is the build's view of the recipient's named terms, in the
+	// build's one hold (newNamedTerms).
+	terms    *namedTerms
 	notWhole map[sharedResultID]bool
 	held     map[sharedResultID]bool
 	// rootSeen are the roots' entries, and callRoots the entries added as
