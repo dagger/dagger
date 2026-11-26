@@ -460,6 +460,70 @@ func TestStoredBundleIsBuiltAgainWhenAWriteMovesAnEntryPastItsWalk(t *testing.T)
 	require.Equal(t, string(mustTransferJSON(t, after.Bundle)), string(mustTransferJSON(t, got.Bundle)), "what a build after the write carries")
 }
 
+// A replacement while a stored bundle's build gives way that drops a
+// dependency the walk followed has the bundle built again in one hold: the
+// row the walk placed for the dependency would be outside the roots'
+// closure. Here, read in pieces of one step, R, expired, is replaced by a
+// record with no dependency after P's copy and before R's: the bundle
+// carries R's new record alone, as a build after the replacement does.
+func TestStoredBundleIsBuiltAgainWhenAReplacementDropsWhatItWalked(t *testing.T) {
+	t.Parallel()
+	ctx, cloud, r, _ := storedBundleTestCloudIn(t, "old", true)
+	mergeTestExpire(cloud, storedBundleTestEntry(cloud, r))
+	fresh, _ := mergeTestSource(t, "bundle-root", "new")
+	cloud.readPieceSize = 1
+	yields := 0
+	cloud.testReadPieceYielded = func() {
+		// The first two steps walk R and P, the third copies P, and the
+		// fourth copies R.
+		if yields++; yields != 4 {
+			return
+		}
+		_, err := cloud.MergeValues(ctx, "cache-b", fresh)
+		require.NoError(t, err)
+	}
+	got, err := cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), cloud.StoredBundlesBuiltAgain(), "built again in one hold")
+	require.Len(t, got.Bundle.Values, 1, "R alone")
+	require.Equal(t, r, got.Bundle.Values[0].SenderNumber)
+	require.Positive(t, got.Bundle.Values[0].SenderReplacements, "R's new record")
+	require.Contains(t, string(sentRecord(t, got.Bundle.Values[0]).Envelope.ObjectJSON), "new")
+}
+
+// A replacement while a stored bundle's build gives way of a record the
+// build has already copied has the bundle built again in one hold: a record
+// copied after it may name the entry for its new record, and the bundle
+// would carry the old one. Here, read in pieces of one step, P, expired, is
+// replaced in place after its copy and before R's: the bundle carries P's
+// new record, as a build after the replacement does.
+func TestStoredBundleIsBuiltAgainWhenARecordItCopiedIsReplaced(t *testing.T) {
+	t.Parallel()
+	ctx, cloud, r, p := storedBundleTestCloudIn(t, "root", true)
+	mergeTestExpire(cloud, storedBundleTestEntry(cloud, p))
+	fresh, _ := mergeTestSource(t, "bundle-dep", "new dep")
+	cloud.readPieceSize = 1
+	yields := 0
+	cloud.testReadPieceYielded = func() {
+		if yields++; yields != 4 {
+			return
+		}
+		_, err := cloud.MergeValues(ctx, "cache-b", fresh)
+		require.NoError(t, err)
+	}
+	got, err := cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), cloud.StoredBundlesBuiltAgain(), "built again in one hold")
+	var dep TransferredValue
+	for _, value := range got.Bundle.Values {
+		if value.SenderNumber == p {
+			dep = value
+		}
+	}
+	require.Positive(t, dep.SenderReplacements, "P's new record")
+	require.Contains(t, string(sentRecord(t, dep).Envelope.ObjectJSON), "new dep")
+}
+
 // A write while a stored bundle's build gives way that changes an entry the
 // build walked only within what the bundle carries leaves the build going:
 // the entry is copied as the write left it. The bundle's position is the
