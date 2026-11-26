@@ -524,6 +524,46 @@ func TestStoredBundleIsBuiltAgainWhenARecordItCopiedIsReplaced(t *testing.T) {
 	require.Contains(t, string(sentRecord(t, dep).Envelope.ObjectJSON), "new dep")
 }
 
+// A prune and a merge that fills the entry again while a stored bundle's
+// build gives way, of a value the build has already copied, have the bundle
+// built again in one hold, as a replacement does, though neither counts as
+// one. Here, read in pieces of one step, R's and P's values are dropped and
+// filled again by another engine's export after P's copy and before R's: R
+// is copied as it was filled, and the bundle would carry P's old value
+// beside it. It carries both new values, as a build after the merge does.
+func TestStoredBundleIsBuiltAgainWhenAValueItCopiedIsDroppedAndFilledAgain(t *testing.T) {
+	t.Parallel()
+	ctx, cloud, r, p := storedBundleTestCloudIn(t, "root", true)
+	actx, a, asrv := transferTestCache(t)
+	root := persistedListTestResult(t, actx, a, asrv, "bundle-root", &transferTestValue{Text: "again"})
+	dep := persistedListTestResult(t, actx, a, asrv, "bundle-dep", &transferTestValue{Text: "dep again"})
+	transferTestDependency(a, actx, root, dep)
+	again := exportTestBundle(t, actx, a, root)
+	cloud.readPieceSize = 1
+	yields := 0
+	cloud.testReadPieceYielded = func() {
+		if yields++; yields != 4 {
+			return
+		}
+		_, removed, dropped, err := cloud.removePrunedEdge(ctx, sharedResultID(r))
+		require.NoError(t, err)
+		require.True(t, removed)
+		require.Equal(t, 2, dropped)
+		reply, err := cloud.MergeValues(ctx, "cache-b", again)
+		require.NoError(t, err)
+		require.Equal(t, r, reply.Imported()[0].ResultID, "the same entry")
+	}
+	got, err := cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), cloud.StoredBundlesBuiltAgain(), "built again in one hold")
+	texts := map[uint64]string{}
+	for _, value := range got.Bundle.Values {
+		texts[value.SenderNumber] = string(sentRecord(t, value).Envelope.ObjectJSON)
+	}
+	require.Contains(t, texts[r], "again")
+	require.Contains(t, texts[p], "dep again", "P's new value")
+}
+
 // A write while a stored bundle's build gives way that changes an entry the
 // build walked only within what the bundle carries leaves the build going:
 // the entry is copied as the write left it. The bundle's position is the

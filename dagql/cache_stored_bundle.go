@@ -328,7 +328,8 @@ func (h *HeldBy) holdsLocked(res *sharedResult, nowUnix int64) bool {
 // hold: one whose walk broke, one that finds an entry it walked no longer
 // the cache's or without its stored record, one whose bundle no longer
 // checks out by its shape, as when a replacement dropped a dependency the
-// walk had followed, and one that copied a record replaced since. Position
+// walk had followed, and one that copied a record a write has changed since,
+// replaced or dropped and filled again. Position
 // is taken as the build begins, so a write during it reads as one since
 // (ChangedSince). With no write during it, the bundle is the one a single
 // hold builds.
@@ -463,8 +464,8 @@ const storedBundlePieceHold = 2 * time.Millisecond
 
 // errStoredBundleMoved ends a build that gave way and then found an entry
 // it walked that is no longer the cache's, or no longer has a stored record
-// (storedBundleStandsLocked), or a record it copied replaced since
-// (storedBundleReplacedLocked).
+// (storedBundleStandsLocked), or a record it copied changed since
+// (storedBundleCopiesChangedLocked).
 var errStoredBundleMoved = errors.New("stored bundle: an entry the build walked changed while it gave way")
 
 // storedBundleLocked builds StoredBundle's answer under read, a read in
@@ -525,7 +526,8 @@ func (c *Cache) storedBundleLocked(read *readPieces, roots []uint64, nowUnix int
 	// outputs go in a list of their own, so they are in the order of the
 	// entries as ever, and each borrowed part is placed over the whole
 	// closure the walk found.
-	for _, res := range build.order {
+	build.copied = make([]uint64, len(build.order))
+	for i, res := range build.order {
 		build.step()
 		waiting = waiting || res.waitsForTaughtContentLocked()
 		if build.held[res.id] {
@@ -541,6 +543,7 @@ func (c *Cache) storedBundleLocked(read *readPieces, roots []uint64, nowUnix int
 		if build.read.yields() > 0 && !c.storedBundleStandsLocked(res) {
 			return StoredBundleResult{}, nil, errStoredBundleMoved
 		}
+		build.copied[i] = res.transferRevision
 		if err := c.storedBundleValueLocked(build, res); err != nil {
 			return StoredBundleResult{}, nil, err
 		}
@@ -548,7 +551,7 @@ func (c *Cache) storedBundleLocked(read *readPieces, roots []uint64, nowUnix int
 			return StoredBundleResult{}, nil, err
 		}
 	}
-	if build.read.yields() > 0 && c.storedBundleReplacedLocked(build) {
+	if build.read.yields() > 0 && c.storedBundleCopiesChangedLocked(build) {
 		return StoredBundleResult{}, nil, errStoredBundleMoved
 	}
 	if waiting {
@@ -595,16 +598,18 @@ func (c *Cache) storedBundleStandsLocked(res *sharedResult) bool {
 	return c.resultsByID[res.id] == res && !res.noValueLocked() && res.persistedEnvelope != nil
 }
 
-// storedBundleReplacedLocked reports whether a write while the build gave
-// way replaced the record of an entry the build had already copied in full,
-// as a merge replaces an expired record in place: a record copied after it
-// may name the entry for its new record, as a part stored meanwhile binds
-// a service to it, and the bundle would carry the old one. It is asked once
-// every record is copied, in the build's last hold, of each value's
-// replacement count as the build copied it. Requires egraphMu.
-func (c *Cache) storedBundleReplacedLocked(build *storedBundleBuild) bool {
+// storedBundleCopiesChangedLocked reports whether a write while the build
+// gave way changed the record or value of an entry the build had already
+// copied in full: a merge that replaced it in place, or a prune that dropped
+// its value and a merge that filled it again, each of which moves the
+// entry's transfer revision. A record copied after it may name the entry
+// for its new value, as a part stored meanwhile binds a service to it, and
+// the bundle would carry the old one. It is asked once every record is
+// copied, in the build's last hold, of each entry's revision as the build
+// copied it. Requires egraphMu.
+func (c *Cache) storedBundleCopiesChangedLocked(build *storedBundleBuild) bool {
 	for i, res := range build.order {
-		if !build.held[res.id] && (c.resultsByID[res.id] != res || res.replacements != build.bundle.Values[i].SenderReplacements) {
+		if !build.held[res.id] && (c.resultsByID[res.id] != res || res.transferRevision != build.copied[i]) {
 			return true
 		}
 	}
@@ -812,6 +817,10 @@ type storedBundleBuild struct {
 	passed     []*sharedResult
 	passedSeen map[sharedResultID]bool
 	part       bool
+	// copied has, by place in order, the transfer revision of each entry
+	// the build copied in full as it copied it
+	// (storedBundleCopiesChangedLocked).
+	copied []uint64
 	// stored has, by ordinal, the declared parts of each value the build
 	// carries compressed (addStoredValue).
 	stored map[uint64][]declaredPart
