@@ -26,7 +26,7 @@ func (r *Release) GoSdkPublishCheck(
 	// +defaultPath="/.dagger/modules/go-client-dev/git-filter-callback.py"
 	callback *dagger.File,
 ) (rerr error) {
-	candidate, err := source.Head().Commit(ctx)
+	candidate, err := source.Head().CommitSHA(ctx)
 	if err != nil {
 		return err
 	}
@@ -74,7 +74,7 @@ printf '%s %s' "$seed" "$tag" > /fixture
 		{candidateRepo, releaseTag, candidate},
 		{seedRepo, "main", seed},
 	} {
-		got, err := ref.repo.Ref(ref.name).Commit(ctx)
+		got, err := ref.repo.Ref(ref.name).CommitSHA(ctx)
 		if err != nil {
 			return err
 		}
