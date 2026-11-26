@@ -148,25 +148,28 @@ func (w *listingWriter) Close() error {
 	return w.err
 }
 
-// splitBuffered is how many bytes of a layer's tar its differ may write
-// ahead of its split. The differ walks the layer and reads its files one at a
-// time, and the split stops reading the tar while it writes a file too large
-// to hold or waits for room to hold one: tied by a pipe, each waits for the
-// other. On a layer of about a hundred thousand files, 16 MiB between them
-// took about a fifth off its build, and four times as much a few points more.
+// splitBuffered is how much memory a layer's tar may take between its
+// differ and its split. The differ walks the layer and reads its files one at
+// a time, and the split stops reading the tar while it writes a file too
+// large to hold or waits for room to hold one: tied by a pipe, each waits for
+// the other. 16 MiB lets the differ read on through most of such a wait, and
+// is half what the split already holds of a layer's files (splitHeld).
 const splitBuffered = 16 << 20
 
 // splitBuffer carries a layer's tar from its differ to its split, as a pipe
-// does, holding up to max bytes written and not yet read: a Write returns
-// once its bytes are held, and waits only for room. The bytes are held in
-// pieces from layerDigestPieceBuffers, taken as writes need them and given
-// back as they are read, so a small layer's tar takes one piece. Close ends
-// the writes: reads take what is held, then io.EOF. CloseWithError ends the
-// reads: a write waiting or made after it returns its error.
+// does, in at most its size of pieces from layerDigestPieceBuffers: a Write
+// returns once its bytes are held, and waits only for room. A piece is taken
+// as a write needs it and given back once it is read, so a small layer's tar
+// takes one piece, and what a layer holds, read or not, never passes its
+// size.
+// Close ends the writes: reads take what is held, then io.EOF.
+// CloseWithError ends the reads: a write waiting or made after it returns
+// its error.
 type splitBuffer struct {
 	mu   sync.Mutex
 	cond *sync.Cond
-	max  int
+	// maxPieces is how many pieces it may hold at once.
+	maxPieces int
 	// pieces are what is held, oldest first: off bytes of the first are
 	// read, and held counts the rest of them all.
 	pieces [][]byte
@@ -176,10 +179,19 @@ type splitBuffer struct {
 	err    error
 }
 
-func newSplitBuffer(max int) *splitBuffer {
-	b := &splitBuffer{max: max}
+// newSplitBuffer returns a split buffer of size bytes, a whole number of
+// layerDigestPiece.
+func newSplitBuffer(size int) *splitBuffer {
+	b := &splitBuffer{maxPieces: max(size/layerDigestPiece, 1)}
 	b.cond = sync.NewCond(&b.mu)
 	return b
+}
+
+// room reports whether a write can go on: its last piece isn't full, or it
+// can take another.
+func (b *splitBuffer) room() bool {
+	last := len(b.pieces) - 1
+	return (last >= 0 && len(b.pieces[last]) < cap(b.pieces[last])) || len(b.pieces) < b.maxPieces
 }
 
 func (b *splitBuffer) Write(p []byte) (int, error) {
@@ -187,7 +199,7 @@ func (b *splitBuffer) Write(p []byte) (int, error) {
 	defer b.mu.Unlock()
 	n := 0
 	for len(p) > 0 {
-		for b.held >= b.max && b.err == nil {
+		for !b.room() && b.err == nil {
 			b.cond.Wait()
 		}
 		if b.err != nil {
@@ -199,7 +211,7 @@ func (b *splitBuffer) Write(p []byte) (int, error) {
 			last++
 		}
 		piece := b.pieces[last]
-		take := min(len(p), cap(piece)-len(piece), b.max-b.held)
+		take := min(len(p), cap(piece)-len(piece))
 		b.pieces[last] = append(piece, p[:take]...)
 		p = p[take:]
 		n += take
