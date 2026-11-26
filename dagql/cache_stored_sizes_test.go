@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"math"
 	"slices"
 	"strings"
 	"sync"
@@ -778,6 +779,71 @@ func TestStoredLowerPartLeavesTheRootWhatFitsTheLimit(t *testing.T) {
 	require.Equal(t, []uint64{cloudOf(chain[4])}, lower.Lower)
 	require.Len(t, lower.Part, 3)
 	require.Equal(t, 7, lower.Carried, "the root and the six above the held rows")
+}
+
+// The merge a split root keeps carries what its lower part leaves within the
+// limit, outputs counted once each: here the chain's records share a chain
+// of layers, which the first of them in the bundle lists, and a cut that
+// sends it ahead leaves a later one in the root's merge to list it again.
+// For every limit under the root's whole price, the root's merge, once the
+// recipient holds the part, is priced within it with the bundle's calls.
+func TestStoredLowerPartLeavesTheRootsMergeWithinTheLimit(t *testing.T) {
+	t.Parallel()
+	actx, a, asrv := transferTestCache(t)
+	root := persistedListTestResult(t, actx, a, asrv, "within-root", &transferTestValue{Text: "root"})
+	var chain []AnyResult
+	for i := range 8 {
+		dep := persistedListTestResult(t, actx, a, asrv, fmt.Sprint("within-dep-", i), &transferTestValue{Text: fmt.Sprint("dep ", i)})
+		if i > 0 {
+			transferTestDependency(a, actx, dep, chain[i-1])
+		}
+		chain = append(chain, dep)
+	}
+	transferTestDependency(a, actx, root, chain[7])
+	bundle := exportTestBundle(t, actx, a, root)
+	ctx, cloud := storedPartTestCache(t, WithBlobStore())
+	reply, err := cloud.MergeValues(ctx, "cache-a", bundle)
+	require.NoError(t, err)
+	number := map[sharedResultID]uint64{}
+	for _, value := range reply.Values {
+		for _, sent := range bundle.Values {
+			if sent.Ordinal == value.Ordinal {
+				number[sharedResultID(sent.SenderNumber)] = value.Number
+			}
+		}
+	}
+	cloudOf := func(res AnyResult) uint64 { return number[res.cacheSharedResult().id] }
+	shared := make([]snapshots.ExportLayer, 6)
+	for i := range shared {
+		shared[i] = storedLayersTestLayer(fmt.Sprint("within-shared-", i), fmt.Sprint("shared layer ", i))
+	}
+	for _, i := range []int{1, 3, 5, 6} {
+		stored, _, err := cloud.SetStoredPart(ctx, cloudOf(chain[i]), storedLayersTestPart("snapshot", shared, nil), 0)
+		require.NoError(t, err)
+		require.True(t, stored)
+	}
+	now := time.Now().Unix()
+	whole, err := cloud.StoredSizes(ctx, []uint64{cloudOf(root)}, now, nil)
+	require.NoError(t, err)
+	price := whole[0].Bytes + whole[0].OutputBytes
+	split := 0
+	for limit := price / 8; limit < price; limit += price / 64 {
+		lower, err := cloud.StoredLowerPart(ctx, cloudOf(root), now, nil, limit)
+		require.NoError(t, err)
+		if len(lower.Lower) == 0 {
+			continue
+		}
+		split++
+		in := func(n uint64) bool {
+			_, found := slices.BinarySearch(lower.Part, n)
+			return found
+		}
+		resume := &HeldBy{Cache: "cache-b", Also: func(n uint64) (uint64, bool) { return math.MaxUint64, in(n) }, Through: in}
+		kept, err := cloud.StoredSizes(ctx, []uint64{cloudOf(root)}, now, resume)
+		require.NoError(t, err)
+		require.LessOrEqual(t, kept[0].Bytes+kept[0].OutputBytes+lower.CallBytes, limit, "the root's merge within %d bytes, %d of the chain ahead", limit, len(lower.Part))
+	}
+	require.NotZero(t, split, "some limits split the root")
 }
 
 // A root's lower part counts the records a bundle of the root carries, its

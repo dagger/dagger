@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -153,9 +154,9 @@ func TestASplitsPartsAndItsRootsMergeGiveWhatOneMergeGives(t *testing.T) {
 	one.merge(t, whole)
 	require.True(t, one.hits(t), "one merge of R teaches the call")
 
-	// The limit R's merge carries A within, beside R, the call, the held
-	// rows it names and T's, and not T: each record's size is what
-	// StoredSizes adds for it, in the order that adds each alone.
+	// The limit R's merge carries A within, beside R, the call and the held
+	// rows of T and inner, and not T: each record's size is what StoredSizes
+	// adds for it, in the order that adds each alone.
 	order := []uint64{test.receiverNumber, test.number, test.top, test.root}
 	sizes, err := cloud.StoredSizes(ctx, order, now, nil)
 	require.NoError(t, err)
@@ -163,11 +164,11 @@ func TestASplitsPartsAndItsRootsMergeGiveWhatOneMergeGives(t *testing.T) {
 	unlimited, err := cloud.StoredLowerPart(ctx, test.root, now, nil, 1<<40)
 	require.NoError(t, err)
 	require.Empty(t, unlimited.Lower, "within the limit, nothing goes ahead")
-	// R's record names T's held row too.
+	// R's record names T's held row, and inner's call inner's.
 	cloud.egraphMu.RLock()
-	row := heldRowSizeLocked(storedBundleTestEntry(cloud, test.top))
+	row := heldRowSizeLocked(storedBundleTestEntry(cloud, test.top)) + heldRowSizeLocked(storedBundleTestEntry(cloud, test.number))
 	cloud.egraphMu.RUnlock()
-	limit := size(0) + size(3) + unlimited.CallBytes + unlimited.NamedBytes + row
+	limit := size(0) + size(3) + unlimited.CallBytes + row
 	lower, err := cloud.StoredLowerPart(ctx, test.root, now, nil, limit)
 	require.NoError(t, err)
 	require.Equal(t, []uint64{test.top}, lower.Lower, "T, over inner, goes ahead")
@@ -220,4 +221,49 @@ func TestASplitsPartsAndItsRootsMergeGiveWhatOneMergeGives(t *testing.T) {
 	call, err := json.Marshal(whole.Calls[0])
 	require.NoError(t, err)
 	require.GreaterOrEqual(t, unlimited.CallBytes, int64(len(call)))
+}
+
+// A call kept on an entry the recipient held before the split goes with the
+// root's merge too. The recipient holds inner, without A or inner's call, as
+// a merge that sent no call left it. R's lower part is then T alone: T goes
+// as a part, which reaches inner as a held row and can't place inner's
+// call. R's merge walks through T to inner, which it reaches as the held row
+// it is, and sends inner's call with A, as one merge of R would.
+func TestASplitRootsMergeSendsTheCallsOfWhatItsPartsReachHeld(t *testing.T) {
+	t.Parallel()
+	test := newSplitPartTest(t)
+	cloud, ctx, now := test.cloud, test.cloudCtx, time.Now().Unix()
+	split := test.recipient(t, "cache-held-below")
+	split.merge(t, split.bundle(t, []uint64{test.number}, &HeldBy{Cache: split.cache, Calls: func(digest.Digest) bool { return false }}))
+	require.False(t, split.hits(t), "inner, held without its call")
+	held := &HeldBy{Cache: split.cache}
+
+	order := []uint64{test.receiverNumber, test.number, test.top, test.root}
+	sizes, err := cloud.StoredSizes(ctx, order, now, nil)
+	require.NoError(t, err)
+	size := func(i int) int64 { return sizes[i].Bytes + sizes[i].OutputBytes }
+	unlimited, err := cloud.StoredLowerPart(ctx, test.root, now, held, 1<<40)
+	require.NoError(t, err)
+	cloud.egraphMu.RLock()
+	rowTop := heldRowSizeLocked(storedBundleTestEntry(cloud, test.top))
+	rowInner := heldRowSizeLocked(storedBundleTestEntry(cloud, test.number))
+	cloud.egraphMu.RUnlock()
+	limit := size(0) + size(3) + unlimited.CallBytes + rowTop + rowInner
+	lower, err := cloud.StoredLowerPart(ctx, test.root, now, held, limit)
+	require.NoError(t, err)
+	require.Equal(t, []uint64{test.top}, lower.Lower)
+	require.Equal(t, []uint64{test.top}, lower.Part, "inner, held, isn't part of it")
+
+	part := split.bundle(t, lower.Lower, &HeldBy{Cache: split.cache, Parts: func(root uint64) bool { return root == test.top }})
+	require.Empty(t, part.Calls, "T's part can't place inner's call")
+	split.merge(t, part)
+	root := split.bundle(t, []uint64{test.root}, &HeldBy{Cache: split.cache, Through: func(number uint64) bool {
+		_, found := slices.BinarySearch(lower.Part, number)
+		return found
+	}})
+	require.Len(t, root.Calls, 1, "inner's call")
+	require.NotEmpty(t, heldTestRow(t, root, test.number).Held, "inner as a held row the call names")
+	split.merge(t, root)
+	require.Contains(t, split.landed, test.receiverNumber, "A, for the call")
+	require.True(t, split.hits(t), "the call is taught")
 }
