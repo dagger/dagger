@@ -11,20 +11,21 @@ import (
 // postingHeldForTest reports whether the postings hold anything for dig,
 // an empty snapshot included.
 func postingHeldForTest(p *digestPostings, dig string) bool {
-	_, imported := p.imported[dig]
-	return imported || p.exact.Size(dig) > 0
+	_, one := p.one[dig]
+	_, rest := p.rest[dig]
+	return one || rest
 }
 
 // postingsHeldForTest is how many digests the postings hold anything for,
-// an empty snapshot included, counting a digest with both kinds twice.
+// an empty snapshot included.
 func postingsHeldForTest(p *digestPostings) int {
-	return p.exact.Len() + len(p.imported)
+	return len(p.one) + len(p.rest)
 }
 
 // postingsResetForTest reports whether the postings are as a reset leaves
 // them: holding nothing, not even an empty map.
 func postingsResetForTest(p *digestPostings) bool {
-	return p.exact.one == nil && p.exact.many == nil && p.imported == nil
+	return p.one == nil && p.rest == nil
 }
 
 func TestCacheImportedDigestPostingsRemainLocalAfterMerge(t *testing.T) {
