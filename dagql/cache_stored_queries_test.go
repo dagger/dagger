@@ -3,6 +3,7 @@ package dagql
 import (
 	"context"
 	"fmt"
+	"math"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -356,7 +357,8 @@ type batchReadTestCase struct {
 
 // batchReadsTestCases are each of the cache's batch reads, of n answers
 // each: of the part answers of the entry numbered first, of the holding key,
-// of first's entry, and of starts of first's part only to answer.
+// of first's entry, of starts of first's part only to answer, and of the
+// calls kept on first, held.
 func batchReadsTestCases(cloud *Cache, first uint64, key HolderKey, n int, now int64) []batchReadTestCase {
 	return []batchReadTestCase{
 		{"AvailableParts", func() {
@@ -393,6 +395,13 @@ func batchReadsTestCases(cloud *Cache, first uint64, key HolderKey, n int, now i
 				starts[i] = PartStartQuery{PartQuery: PartQuery{Number: first, Address: PersistedPartAddress{Part: "snapshot"}}, AnswerOnly: true}
 			}
 			cloud.StartPartUploads(starts, now)
+		}},
+		{"StoredCalls", func() {
+			numbers := make([]uint64, n)
+			for i := range numbers {
+				numbers[i] = first
+			}
+			_, _ = cloud.StoredCalls(context.Background(), numbers, now, &HeldBy{Also: func(uint64) (uint64, bool) { return math.MaxUint64, true }})
 		}},
 	}
 }
