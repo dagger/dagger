@@ -105,13 +105,24 @@ func (normalizeChildCodec) NormalizeForeign(v PersistedPayloadVisit) (ForeignPay
 		return ForeignPayload{}, err
 	}
 	if value.Normalized != 0 {
-		value.Child = value.Normalized
+		value.Child, value.Normalized = value.Normalized, 0
 	}
 	raw, err := json.Marshal(value)
 	return ForeignPayload{JSON: raw}, err
 }
 
-func (normalizeChildCodec) ValidateForeign(PersistedPayloadVisit) error { return nil }
+// ValidateForeign accepts only the normalized form, which names no child
+// but its own (PersistedTransferCodec).
+func (normalizeChildCodec) ValidateForeign(v PersistedPayloadVisit) error {
+	value := new(normalizeChildValue)
+	if err := json.Unmarshal(v.Payload, value); err != nil {
+		return err
+	}
+	if value.Normalized != 0 {
+		return fmt.Errorf("a foreign payload names its normalized child %d", value.Normalized)
+	}
+	return nil
+}
 
 func (normalizeChildCodec) MapSnapshotParts(PersistedPayloadVisit) ([]CapturedCodecOutput, error) {
 	return nil, nil

@@ -629,6 +629,11 @@ func TestRelocatedTransferPayloadsStayValid(t *testing.T) {
 		require.NoError(t, err, family.Name)
 		v.Payload = foreign.JSON
 		require.NoError(t, family.Transfer.ValidateForeign(v), family.Name)
+		// A payload validation accepts is in its normal form, relocated or
+		// not (PersistedTransferCodec).
+		again, err := family.Transfer.NormalizeForeign(v)
+		require.NoError(t, err, family.Name)
+		require.Equal(t, string(v.Payload), string(again.JSON), "%s: a normal payload normalizes to itself", family.Name)
 		moved := 0
 		relocated, err := family.Visitor.VisitPersistedReferences(v, func(ref *PersistedRef) error {
 			if ref.RecipeID == nil && ref.ResultID != 0 {
@@ -644,6 +649,9 @@ func TestRelocatedTransferPayloadsStayValid(t *testing.T) {
 		}
 		v.Payload = relocated
 		require.NoError(t, family.Transfer.ValidateForeign(v), "%s, relocated", family.Name)
+		again, err = family.Transfer.NormalizeForeign(v)
+		require.NoError(t, err, family.Name)
+		require.Equal(t, string(relocated), string(again.JSON), "%s: a relocated payload is still normal", family.Name)
 	}
 }
 
