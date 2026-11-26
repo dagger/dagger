@@ -22,10 +22,11 @@ import (
 // mate's answer, and a reader keeps no class's list of entries
 // (RemoteChange): widening every new result's mark would name a class's
 // thousands of entries each time, and the reader would ask all their part
-// answers again. A join names the smaller side's entries, and the larger
-// side's when the smaller side holds a part (markJoinLocked). Its recipes are
-// its own (markEntryLocked). Its
-// holdings are no reader's to keep (RemoteChange): a holding's arrival or
+// answers again. A join names each side's entries when the other side holds
+// a part, reading the larger side only as far as the smaller side's size,
+// and naming the smaller side where that doesn't decide (markJoinLocked).
+// Its recipes are its own (markEntryLocked). Its holdings are no reader's
+// to keep (RemoteChange): a holding's arrival or
 // removal marks the holding, not the entry. They would reach the entry's own
 // facts and part answers, and its class mates', only by turning
 // whether it has a value (noValueLocked), which never happens to an entry
@@ -203,16 +204,22 @@ func (c *Cache) markLeavingLocked(id sharedResultID) {
 // side's entries now answer from the other side's holders too
 // (AvailablePart), and borrow the other side's stored parts
 // (stampEntryLocked), so what a side gains is what the other side holds and
-// stores. The smaller side's entries are named, for readers, and stamped.
-// The larger side's entries are named when an entry of the smaller side
-// holds a part, and stamped when one stores a part: joined is marked, and
-// every entry of its class is stamped when the marks are applied, once
+// stores. The larger side's entries are named when an entry of the smaller
+// side holds a part, and stamped when one stores a part: joined is marked,
+// and every entry of its class is stamped when the marks are applied, once
 // however many joins marked it, and no other class an entry of the smaller
-// side is in, which gained nothing. So a join costs the smaller side, not
-// the class it joins: a new entry joining a class of thousands walks one
-// entry. The smaller side's entries are named and stamped though the larger
-// side may hold and store nothing, which a reader finds unchanged, and
-// which a new entry's own marks did already. Requires egraphMu for writing.
+// side is in, which gained nothing. The smaller side's entries are named
+// when the larger side holds a part, and stamped when it stores one, read
+// from as many of the larger side's entries as the smaller side has: all of
+// them when the sides are as large, as two lone entries are, and otherwise
+// until a part stored decides both. Where that read doesn't decide, the
+// smaller side is named and stamped all the same, a change a reader finds
+// it didn't need, and which a new entry's own marks make already. So
+// deciding what a join marks reads at most twice its smaller side, never
+// the class it joins: a new entry joining a class of thousands reads two
+// entries. Marking costs what it marks: the larger side's names when the
+// smaller side holds a part, and the joined class's stamps when it stores
+// one. Requires egraphMu for writing.
 func (c *Cache) markJoinLocked(a, b idMembers[sharedResultID], joined eqClassID) {
 	if c.changes == nil {
 		return
@@ -221,14 +228,33 @@ func (c *Cache) markJoinLocked(a, b idMembers[sharedResultID], joined eqClassID)
 	if small.Size() > large.Size() {
 		small, large = large, small
 	}
+	// What the larger side holds and stores, from as many of its entries as
+	// the smaller side has, or fewer once one stores a part.
+	read, largeHolds, largeLends := 0, false, false
+	for id := range large.All() {
+		if read == small.Size() || largeLends {
+			break
+		}
+		read++
+		if res := c.resultsByID[id]; res != nil {
+			largeLends = largeLends || len(res.storedParts) > 0
+			largeHolds = largeHolds || c.holdsAnyPartLocked(res)
+		}
+	}
+	whole := read == large.Size()
+	nameSmall, stampSmall := largeHolds || !whole, largeLends || !whole
 	holds, lends := false, false
 	for id := range small.All() {
-		c.changes.entries = append(c.changes.entries, id)
+		if nameSmall {
+			c.changes.entries = append(c.changes.entries, id)
+		}
 		res := c.resultsByID[id]
 		if res == nil {
 			continue
 		}
-		c.stampEntryLocked(res, StampJoin)
+		if stampSmall {
+			c.stampEntryLocked(res, StampJoin)
+		}
 		lends = lends || len(res.storedParts) > 0
 		holds = holds || c.holdsAnyPartLocked(res)
 	}
