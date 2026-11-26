@@ -257,7 +257,7 @@ func benchmarkClassJoinOfTwoClasses(b *testing.B, size int) {
 		require.NoError(b, err)
 		named += len(change.Entries)
 		b.StopTimer()
-		class, ok := cloud.EntryClassEntries(changeMarksBenchNumber(b, HolderKey{Cache: "cache-b", Number: 1}))
+		class, ok := cloud.EntryClassEntries(changeMarksBenchNumber(b, cloud, HolderKey{Cache: "cache-b", Number: 1}))
 		require.True(b, ok)
 		require.Len(b, class.Entries, 2*size, "the two classes joined")
 		b.StartTimer()
