@@ -73,20 +73,36 @@ import (
 const storedBodyLevel = zstd.SpeedDefault
 
 var (
-	storedBodyCodecOnce sync.Once
-	storedBodyEncoder   *zstd.Encoder
-	storedBodyDecoder   *zstd.Decoder
-	storedBodyCodecErr  error
+	storedBodyCodecOnce    sync.Once
+	storedBodyEncoder      *zstd.Encoder
+	storedBodyBlockEncoder *zstd.Encoder
+	storedBodyDecoder      *zstd.Decoder
+	storedBodyCodecErr     error
 )
+
+// storedBodyBlockBytes is the most JSON zstd compresses in one block, which
+// needs no history: a compression of more holds history of twice the
+// encoder's window, 8 MiB at storedBodyLevel, in the encoder's state that
+// ran it, for as long as the encoder lives, where one of a single block
+// holds only the state's tables, under 2 MB.
+const storedBodyBlockBytes = 128 << 10
 
 // storedBodyCodec returns the encoder and decoder of stored bodies, shared:
 // EncodeAll and DecodeAll may be called concurrently. The encoder compresses
 // one record at a time, since a cache's one body worker compresses, and a
-// save only what the worker hasn't yet; each concurrent encoder would hold
-// tables of its own.
+// save only what the worker hasn't yet; each concurrent compression of more
+// than one block would hold history of its own (storedBodyBlockBytes).
+// Beside it, storedBodyBlockEncoder compresses as many records of one block
+// at a time as there are cores, for a merge's preparation, which compresses
+// the records it prepares as it prepares them, on all of them (storedForm).
+// Both compress at one level, so a record compresses to the same bytes on
+// either.
 func storedBodyCodec() (*zstd.Encoder, *zstd.Decoder, error) {
 	storedBodyCodecOnce.Do(func() {
 		storedBodyEncoder, storedBodyCodecErr = zstd.NewWriter(nil, zstd.WithEncoderLevel(storedBodyLevel), zstd.WithEncoderConcurrency(1))
+		if storedBodyCodecErr == nil {
+			storedBodyBlockEncoder, storedBodyCodecErr = zstd.NewWriter(nil, zstd.WithEncoderLevel(storedBodyLevel), zstd.WithEncoderConcurrency(runtime.GOMAXPROCS(0)))
+		}
 		if storedBodyCodecErr == nil {
 			storedBodyDecoder, storedBodyCodecErr = zstd.NewReader(nil)
 		}
@@ -272,6 +288,9 @@ func compressStoredBody(raw []byte, call *ResultCall, refs []uint64) (*storedBod
 	}
 	if uint64(len(raw)) > math.MaxUint32 {
 		return nil, fmt.Errorf("stored record of %d bytes: a body holds less than 4 GiB", len(raw))
+	}
+	if len(raw) <= storedBodyBlockBytes {
+		enc = storedBodyBlockEncoder
 	}
 	// EncodeAll's own buffer has the input's capacity: the body keeps a copy
 	// of what it used.
