@@ -376,7 +376,7 @@ func BenchmarkStoredBundlePartCopies(b *testing.B) {
 	cloud.egraphMu.RLock()
 	for _, res := range order {
 		for _, part := range res.storedParts {
-			parts = append(parts, part)
+			parts = append(parts, part.storedPart)
 		}
 	}
 	cloud.egraphMu.RUnlock()

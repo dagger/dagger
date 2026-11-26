@@ -3549,7 +3549,7 @@ type sharedResult struct {
 	// blob store, by part address key, their layers the cache's
 	// (storedLayers). Only a blob-backed cache (the Cloud) sets them, in
 	// changeStoredPartsLocked. Guarded by egraphMu.
-	storedParts map[string]storedPart
+	storedParts storedPartList
 	// storedRecordBytes is the size of the record a blob-backed cache stores
 	// for the entry, as persistence writes it (encodedRecordBytes), or 0.
 	// Written through setStoredRecordBytesLocked. Guarded by egraphMu.

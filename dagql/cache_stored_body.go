@@ -656,7 +656,7 @@ func (s sharedResultPayloadState) wholeEnvelope(number uint64) (*PersistedResult
 // that changes a holder changes what its class mates answer (changeMarks).
 // Requires egraphMu.
 func (res *sharedResult) holdsPartLocked(key string) bool {
-	if _, ok := res.storedParts[key]; ok {
+	if res.storedParts.has(key) {
 		return true
 	}
 	return res.marksAbsentLocked(func(k string) bool { return k == key })

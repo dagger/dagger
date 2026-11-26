@@ -3,9 +3,7 @@ package dagql
 import (
 	"context"
 	"fmt"
-	"maps"
 	"math/bits"
-	"slices"
 
 	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/opencontainers/go-digest"
@@ -241,8 +239,7 @@ func (w *aloneWalk) reach(res *sharedResult) int32 {
 		node.miss = int32(len(w.misses))
 		w.misses = append(w.misses, storedSizeMissLocked(res))
 	}
-	for _, key := range slices.Sorted(maps.Keys(res.storedParts)) {
-		part := res.storedParts[key]
+	for _, part := range res.storedParts {
 		layers := make([]int32, len(part.layers))
 		for i, layer := range part.layers {
 			layers[i] = w.layer(layer)
