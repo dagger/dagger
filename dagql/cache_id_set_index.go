@@ -59,6 +59,14 @@ func (m idMembers[V]) All() iter.Seq[V] {
 	return m.many.All()
 }
 
+// Clone returns a set of the members of its own.
+func (m idMembers[V]) Clone() *idSet[V] {
+	if m.hasOne {
+		return idSetOf(m.one)
+	}
+	return m.many.Clone()
+}
+
 // Items yields each member once, in ascending order.
 func (m idMembers[V]) Items() iter.Seq[V] {
 	if m.hasOne {
@@ -146,11 +154,45 @@ func (x *idSetIndex[K, V]) Move(src, dst K) {
 
 // Clone returns a set of k's members of its own.
 func (x *idSetIndex[K, V]) Clone(k K) *idSet[V] {
-	out := newIDSet[V]()
-	for v := range x.All(k) {
-		out.Insert(v)
+	return x.Members(k).Clone()
+}
+
+// Rename replaces from with to among k's members, when k has members, and
+// reports whether k already had to. A key with no members is left as it is.
+func (x *idSetIndex[K, V]) Rename(k K, from, to V) (hadTo bool) {
+	if from == to {
+		return x.Contains(k, to)
 	}
-	return out
+	if only, ok := x.one[k]; ok {
+		switch only {
+		case to:
+			return true
+		case from:
+			x.one[k] = to
+			return false
+		default:
+			delete(x.one, k)
+			if x.many == nil {
+				x.many = make(map[K]*idSet[V])
+			}
+			x.many[k] = idSetOf(only, to)
+			return false
+		}
+	}
+	set := x.many[k]
+	if set == nil {
+		return false
+	}
+	set.Remove(from)
+	hadTo = !set.Insert(to)
+	if set.Size() == 1 {
+		delete(x.many, k)
+		if x.one == nil {
+			x.one = make(map[K]V)
+		}
+		x.one[k] = to
+	}
+	return hadTo
 }
 
 // Delete removes k and all its members.
@@ -210,6 +252,24 @@ func (x *idSetIndex[K, V]) Items(k K) iter.Seq[V] {
 // Len is how many keys have members.
 func (x *idSetIndex[K, V]) Len() int {
 	return len(x.one) + len(x.many)
+}
+
+// Entries yields each key that has members once, with its members, in no
+// order a caller may rely on. The caller changes no key's members while it
+// iterates.
+func (x *idSetIndex[K, V]) Entries() iter.Seq2[K, idMembers[V]] {
+	return func(yield func(K, idMembers[V]) bool) {
+		for k, only := range x.one {
+			if !yield(k, idMembers[V]{one: only, hasOne: true}) {
+				return
+			}
+		}
+		for k, set := range x.many {
+			if !yield(k, idMembers[V]{many: set}) {
+				return
+			}
+		}
+	}
 }
 
 // Keys yields each key that has members once, in no order a caller may rely

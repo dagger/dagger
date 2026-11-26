@@ -1,6 +1,7 @@
 package dagql
 
 import (
+	"cmp"
 	"maps"
 	"math/rand/v2"
 	"slices"
@@ -57,6 +58,16 @@ func TestIDSetIndexActsAsAMapOfSets(t *testing.T) {
 		case op == 0:
 			x.Delete(k)
 			delete(want, k)
+		case op == 2:
+			// A join renames one member of a key's to another.
+			to := uint64(rng.IntN(span))
+			_, hadTo := members[to]
+			require.Equal(t, hadTo, x.Rename(k, v, to), "step %d: rename %d to %d in %d", step, v, to, k)
+			// Renaming a member to itself changes nothing.
+			if len(members) > 0 && v != to {
+				delete(members, v)
+				members[to] = struct{}{}
+			}
 		case op == 1:
 			// A join moves one key's members into another's.
 			dst := uint64(rng.IntN(24))
@@ -70,7 +81,11 @@ func TestIDSetIndexActsAsAMapOfSets(t *testing.T) {
 				}
 				delete(want, k)
 			}
-			require.Equal(t, slices.Sorted(maps.Keys(want[dst])), slices.Collect(x.Clone(dst).Items()), "step %d: move %d into %d", step, k, dst)
+			clone := x.Clone(dst)
+			require.Equal(t, slices.Sorted(maps.Keys(want[dst])), slices.Collect(clone.Items()), "step %d: move %d into %d", step, k, dst)
+			// The clone is a set of its own: changing it leaves the index.
+			clone.Insert(1 << 40)
+			require.False(t, x.Contains(dst, 1<<40), "step %d: a clone shares its key's set", step)
 		case op < 9:
 			require.Equal(t, had, x.Remove(k, v), "step %d: remove %d from %d", step, v, k)
 			delete(members, v)
@@ -119,4 +134,10 @@ func TestIDSetIndexActsAsAMapOfSets(t *testing.T) {
 	require.Empty(t, slices.Collect(empty.Keys()))
 	empty.Delete("none")
 	require.Zero(t, empty.Len())
+}
+
+// idSetIndexResetForTest reports whether x is as a reset leaves it: holding
+// nothing, not even an empty map.
+func idSetIndexResetForTest[K comparable, V cmp.Ordered](x *idSetIndex[K, V]) bool {
+	return x.one == nil && x.many == nil
 }

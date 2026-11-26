@@ -344,9 +344,9 @@ func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID, moved *[]egraphTerm
 	}
 
 	// merge reverse input-term indexes
-	if c.inputEqClassToTerms.Size(rb) > 0 {
+	if srcInputTerms := c.inputEqClassToTerms.Members(rb); srcInputTerms.Size() > 0 {
 		var gone []egraphTermID
-		for termID := range c.inputEqClassToTerms.All(rb) {
+		for termID := range srcInputTerms.All() {
 			c.noteSavedTermLocked(termID)
 			if moved != nil {
 				// A term gone since it was indexed has nothing to repair:
@@ -367,8 +367,8 @@ func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID, moved *[]egraphTerm
 	}
 
 	// merge reverse output-term indexes
-	if c.outputEqClassToTerms.Size(rb) > 0 {
-		for termID := range c.outputEqClassToTerms.All(rb) {
+	if srcOutputTerms := c.outputEqClassToTerms.Members(rb); srcOutputTerms.Size() > 0 {
+		for termID := range srcOutputTerms.All() {
 			c.noteSavedTermLocked(termID)
 			// The term's use moved with the class's (joinEqClassUsesLocked).
 			if term := c.egraphTerms[termID]; term != nil {
@@ -397,14 +397,10 @@ func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID, moved *[]egraphTerm
 	if srcResults.Size() > 0 {
 		for resID := range srcResults.All() {
 			c.noteSavedEntryLocked(resID)
-			if c.resultOutputEqClasses.Size(resID) > 0 {
-				// An entry that named both classes names one now, which it
-				// uses once.
-				if c.resultOutputEqClasses.Contains(resID, ra) {
-					c.unuseEqClassLocked(ra)
-				}
-				c.resultOutputEqClasses.Remove(resID, rb)
-				c.resultOutputEqClasses.Insert(resID, ra)
+			// An entry that named both classes names one now, which it
+			// uses once.
+			if c.resultOutputEqClasses.Rename(resID, rb, ra) {
+				c.unuseEqClassLocked(ra)
 			}
 		}
 		c.outputEqClassResults.Move(rb, ra)
@@ -518,14 +514,14 @@ func (c *Cache) repairTermsLocked(ctx context.Context, termIDs []egraphTermID) [
 // repairClassTermsLocked repairs every term that takes root as an input,
 // as mergeEqClassesRepairingWholeClassLocked does.
 func (c *Cache) repairClassTermsLocked(ctx context.Context, root eqClassID) (merges []eqMergePair) {
-	n := c.inputEqClassToTerms.Size(root)
-	if n == 0 {
+	inputTerms := c.inputEqClassToTerms.Members(root)
+	if inputTerms.Size() == 0 {
 		return nil
 	}
 	traceEnabled := c.traceEnabled()
 
-	termIDs := make([]egraphTermID, 0, n)
-	for termID := range c.inputEqClassToTerms.All(root) {
+	termIDs := make([]egraphTermID, 0, inputTerms.Size())
+	for termID := range inputTerms.All() {
 		termIDs = append(termIDs, termID)
 	}
 	processedTermDigests := make(map[string]struct{}, len(termIDs))
@@ -1931,7 +1927,9 @@ func (c *Cache) mergeOutputsForTermDigestLocked(ctx context.Context, termDigest 
 		return root
 	}
 	root = c.mergeEqClassesLocked(ctx, mergeIDs...)
-	for termID := range set.Items() {
+	// The merge's repairs may have moved terms between digests: read the
+	// digest's terms as they are now.
+	for termID := range c.egraphTermsByTermDigest.Items(termDigest) {
 		term := c.egraphTerms[termID]
 		if term == nil {
 			continue
