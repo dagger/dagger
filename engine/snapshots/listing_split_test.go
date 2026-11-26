@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -231,6 +232,54 @@ func TestListingSplitDoesNotHoldTheDiffer(t *testing.T) {
 	rebuilt.Close()
 	require.NoError(t, err)
 	require.Equal(t, digest.FromBytes(layer), digest.FromBytes(got), "the rebuilt tar is the layer's tar")
+}
+
+// A split buffer holds what its writer writes, up to its max, and hands it
+// to its reader in order: a write returns once its bytes are held, one past
+// the max waits for reads to make room, the reader gets io.EOF once the
+// writer has closed and everything is read, and a reader's error ends a
+// waiting write with that error.
+func TestSplitBuffer(t *testing.T) {
+	t.Parallel()
+	data := []byte(fileBytes("buffer", 5<<20+12345))
+	b := newSplitBuffer(3 << 20)
+	n, err := b.Write(data[:3<<20])
+	require.NoError(t, err)
+	require.Equal(t, 3<<20, n)
+
+	wrote := make(chan error, 1)
+	go func() {
+		_, err := b.Write(data[3<<20:])
+		if err == nil {
+			b.Close()
+		}
+		wrote <- err
+	}()
+	select {
+	case <-wrote:
+		t.Fatal("a write past the buffer's max returned before a read made room")
+	case <-time.After(100 * time.Millisecond):
+	}
+	got, err := io.ReadAll(b)
+	require.NoError(t, err)
+	require.NoError(t, <-wrote)
+	require.Equal(t, data, got)
+	n, err = b.Read(make([]byte, 1))
+	require.Equal(t, 0, n)
+	require.ErrorIs(t, err, io.EOF)
+
+	failed := errors.New("the split failed")
+	b = newSplitBuffer(1 << 20)
+	_, err = b.Write(data[:1<<20])
+	require.NoError(t, err)
+	go func() {
+		_, err := b.Write(data[1<<20 : 2<<20])
+		wrote <- err
+	}()
+	b.CloseWithError(failed)
+	require.ErrorIs(t, <-wrote, failed)
+	_, err = b.Write(data[:1])
+	require.ErrorIs(t, err, failed)
 }
 
 func digests(descs []ocispecs.Descriptor) []digest.Digest {
