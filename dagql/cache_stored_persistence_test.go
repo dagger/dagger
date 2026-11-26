@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -167,6 +168,33 @@ func TestCloudRestoreHoldsStoredPartsOutsideItsLock(t *testing.T) {
 	require.Equal(t, before, storedPersistenceTestState(cloud), "the stored parts come back as saved")
 	require.NotZero(t, held.Load(), "the restore held the saved stored part")
 	require.Zero(t, underLock.Load(), "no stored part was held under the cache's lock")
+}
+
+// A row saved without a stored record, whole, with stored parts and a run,
+// is counted at the size merge measures: its envelope as the entry keeps
+// it, without its parts, and without its run and decline mark, which the
+// import moves onto the entry.
+func TestARestoredWholeRecordIsCountedWithoutWhatTheEntryHolds(t *testing.T) {
+	t.Parallel()
+	env := &PersistedResultEnvelope{
+		Version:         persistedResultEnvelopeVersion,
+		Kind:            persistedResultKindObject,
+		TypeName:        "Directory",
+		PersistDeclined: true,
+		Run:             &RunName{Cache: "cache-a", Number: 7, Replacements: 1},
+		RunRan:          1,
+		StoredParts:     []PersistedPartOffer{storedPruneTestPart("snapshot", map[string]int64{"whole-base": 10})},
+	}
+	kept := *env
+	kept.PersistDeclined, kept.Run, kept.RunRan, kept.StoredParts = false, nil, 0, nil
+	want, err := json.Marshal(&kept)
+	require.NoError(t, err)
+
+	row := importedResultRow{env: env}
+	row.holdStoredParts(&storedLayers{})
+	require.NoError(t, row.partsErr)
+	require.Len(t, row.storedParts, 1, "the part is held")
+	require.Equal(t, len(want), row.strippedBytes)
 }
 
 // storedPersistenceTestRootAndDep merges a root with one dependency from
