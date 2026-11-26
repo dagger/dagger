@@ -1350,14 +1350,10 @@ func (c *Cache) WriteDebugCacheSnapshot(w io.Writer) error {
 	}
 	slices.Sort(resultIDs)
 
-	resultIndexDigests := make([]string, 0, len(c.egraphResultsByDigest))
-	for dig := range c.egraphResultsByDigest {
-		resultIndexDigests = append(resultIndexDigests, dig)
-	}
-	slices.Sort(resultIndexDigests)
+	resultIndexDigests := slices.Sorted(c.egraphResultsByDigest.Digests())
 	indexedDigestsByResult := make(map[sharedResultID][]string, len(resultIDs))
 	for _, dig := range resultIndexDigests {
-		for resultID := range c.egraphResultsByDigest[dig].Items() {
+		for resultID := range c.egraphResultsByDigest.Items(dig) {
 			indexedDigestsByResult[resultID] = append(indexedDigestsByResult[resultID], dig)
 		}
 	}
@@ -1501,12 +1497,11 @@ func (c *Cache) WriteDebugCacheSnapshot(w io.Writer) error {
 
 	if err := writeArrayField("result_digest_indexes", func(writeElem func(any) error) error {
 		for _, dig := range resultIndexDigests {
-			resultSet := c.egraphResultsByDigest[dig]
-			if resultSet == nil || resultSet.Empty() {
+			if !c.egraphResultsByDigest.Has(dig) {
 				continue
 			}
-			indexedResultIDs := make([]uint64, 0, resultSet.Size())
-			for resultID := range resultSet.Items() {
+			indexedResultIDs := make([]uint64, 0, c.egraphResultsByDigest.Size(dig))
+			for resultID := range c.egraphResultsByDigest.Items(dig) {
 				indexedResultIDs = append(indexedResultIDs, uint64(resultID))
 			}
 			slices.Sort(indexedResultIDs)
