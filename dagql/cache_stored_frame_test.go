@@ -3,6 +3,7 @@ package dagql
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"log/slog"
 	"path/filepath"
 	"slices"
@@ -173,6 +174,137 @@ func TestCloudHoldsStoredFramesCompressed(t *testing.T) {
 		return true
 	}, time.Minute, 50*time.Millisecond, "the body worker drops every stored record's decoded frame")
 	requireFramesHeldCompressed(t, cloud)
+}
+
+// A frame a merge installed carries the recipe digest the merge landed it by,
+// so the Cloud's body worker makes its body without reading the cache. The
+// worker makes bodies outside the graph lock, and until it installs one the
+// entry holds its record whole and decoded. A writer holding the graph lock,
+// as writers do in turn without pause while many exports are being merged,
+// must not keep the worker from making the body: here the body is made while
+// the test holds the lock for writing, for a record whose receiver is an
+// entry an earlier merge stored and the worker compressed, as a new entry,
+// on an entry known only through holdings, and in place of an expired value.
+// The bundles reach the Cloud as an engine's message carries them.
+func TestCloudMakesAMergedRecordsBodyWhileTheGraphLockIsHeld(t *testing.T) {
+	t.Parallel()
+	receiverBundle, chainBundle := storedFrameTestChain(t, "held lock")
+	receiverJSON, chainJSON := mustTransferJSON(t, receiverBundle), mustTransferJSON(t, chainBundle)
+	wire := func(t *testing.T, raw []byte) ValueBundle {
+		var decoded ValueBundle
+		require.NoError(t, json.Unmarshal(raw, &decoded))
+		return decoded
+	}
+	open := func(t *testing.T) (context.Context, *Cache) {
+		ctx := cacheTestContext(t.Context())
+		cloud, err := NewCache(ctx, "", nil, nil, WithBlobStore())
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, cloud.CloseDiscardingPersistence()) })
+		return ctx, cloud
+	}
+	// The record's recipe, as a Cloud that stores it indexes it.
+	ctx, scratch := open(t)
+	storedPersistenceTestMerge(t, ctx, scratch, wire(t, receiverJSON))
+	storedPersistenceTestMerge(t, ctx, scratch, wire(t, chainJSON))
+	number := storedFrameTestNumber(t, scratch, "frame-chained")
+	scratch.egraphMu.RLock()
+	keys := slices.Clone(scratch.resultsByID[sharedResultID(number)].recipeKeys)
+	scratch.egraphMu.RUnlock()
+	require.NotEmpty(t, keys)
+	recipe := keys[0]
+
+	for name, tc := range map[string]struct {
+		setup  func(t *testing.T, ctx context.Context, cloud *Cache)
+		landed func(MergeReply) int
+		want   int
+	}{
+		"a new entry": {
+			// With its own dependency, which is new too.
+			landed: func(reply MergeReply) int { return reply.Rows.Created },
+			want:   2,
+		},
+		"an entry known only through holdings": {
+			setup: func(t *testing.T, ctx context.Context, cloud *Cache) {
+				_, err := cloud.AttachRemoteHolding(ctx, HolderKey{Cache: "cache-x", Number: 7}, RemoteHolding{Recipe: recipe, Field: "frame-chained"})
+				require.NoError(t, err)
+			},
+			landed: func(reply MergeReply) int { return reply.Rows.Stored },
+			want:   1,
+		},
+		"an entry whose value expired": {
+			setup: func(t *testing.T, ctx context.Context, cloud *Cache) {
+				storedPersistenceTestMerge(t, ctx, cloud, wire(t, chainJSON))
+				mergeTestExpire(cloud, storedBundleTestEntry(cloud, storedFrameTestNumber(t, cloud, "frame-chained")))
+			},
+			landed: func(reply MergeReply) int { return reply.Rows.Replaced },
+			want:   1,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			ctx, cloud := open(t)
+			storedPersistenceTestMerge(t, ctx, cloud, wire(t, receiverJSON))
+			if tc.setup != nil {
+				tc.setup(t, ctx, cloud)
+			}
+			// What is there is held compressed, as entries stored a while
+			// ago are, and the test makes the record's body itself, as the
+			// worker would.
+			storedTestCompress(cloud)
+			reply, err := cloud.MergeValues(ctx, "cache-a", wire(t, chainJSON))
+			require.NoError(t, err)
+			require.Equal(t, tc.want, tc.landed(reply), "the record landed as the case says")
+
+			receiverNumber := storedFrameTestNumber(t, cloud, "frame-receiver")
+			number := storedFrameTestNumber(t, cloud, "frame-chained")
+			cloud.egraphMu.RLock()
+			receiver := cloud.resultsByID[sharedResultID(receiverNumber)]
+			receiverBody, receiverFrame := receiver.stored, receiver.loadResultCall()
+			res := cloud.resultsByID[sharedResultID(number)]
+			env, frame, body, keys := res.persistedEnvelope, res.loadResultCall(), res.stored, slices.Clone(res.recipeKeys)
+			cloud.egraphMu.RUnlock()
+			require.NotNil(t, receiverBody)
+			require.NotNil(t, receiverBody.frame, "the receiver holds its frame compressed")
+			require.Nil(t, receiverFrame)
+			require.Nil(t, body, "the record is held whole until its body is made")
+			require.Equal(t, []digest.Digest{recipe}, keys[:min(len(keys), 1)])
+			require.NotNil(t, frame)
+			require.NotNil(t, frame.Receiver)
+			require.Equal(t, uint64(receiver.id), frame.Receiver.ResultID, "the record names the receiver by its number")
+
+			type made struct {
+				body *storedBody
+				err  error
+			}
+			done := make(chan made, 1)
+			cloud.egraphMu.Lock()
+			go func() {
+				body, err := newStoredBody(res, env, frame)
+				if err == nil {
+					body, err = body.withFrame(cloud, frame)
+				}
+				done <- made{body, err}
+			}()
+			var got made
+			select {
+			case got = <-done:
+			case <-time.After(30 * time.Second):
+			}
+			cloud.egraphMu.Unlock()
+			if got.body == nil && got.err == nil {
+				<-done
+				require.FailNow(t, "the body waited for the graph lock to be released")
+			}
+			require.NoError(t, got.err)
+			require.NotNil(t, got.body.frame, "the body holds the frame")
+			require.Equal(t, recipe, got.body.recipe, "the body keeps the recipe its entry is indexed under")
+
+			// The digest the frame carries is the one deriving it again gives.
+			fresh, err := frame.clone().deriveRecipeDigest(cloud)
+			require.NoError(t, err)
+			require.Equal(t, recipe, fresh)
+		})
+	}
 }
 
 // A Cloud whose bodies hold their frames answers exactly as one whose frames
