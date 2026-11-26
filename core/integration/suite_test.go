@@ -66,15 +66,9 @@ func BenchMiddleware() []testctx.Middleware[*testing.B] {
 }
 
 func connect(ctx context.Context, t testing.TB, opts ...dagger.ClientOpt) *dagger.Client {
-	// When the tests themselves run inside Dagger (engine-dev test), the
-	// client is a nested session (same detection as engine/client) and its
-	// log output only clutters the test spans in the TUI. On the host there
-	// is no TUI capturing engine progress, so stream the logs into the test
-	// output for debuggability.
-	logOutput := testutil.NewTWriter(t)
-	if _, nested := os.LookupEnv("DAGGER_SESSION_PORT"); nested {
-		logOutput = io.Discard
-	}
+	// Inside Dagger, the client's progress is already the test's spans; on the
+	// host, stream it into the test output for debuggability.
+	logOutput := testutil.ClientLogOutput(t)
 	opts = append([]dagger.ClientOpt{
 		dagger.WithLogOutput(logOutput),
 	}, opts...)

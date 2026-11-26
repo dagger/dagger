@@ -163,7 +163,7 @@ func TestPartSettlementRetiresReplacement(t *testing.T) {
 	transferTestOffer(t, c, ctx, receiver, first)
 	address := PersistedPartAddress{Part: "snapshot"}
 	row := receiver.cacheSharedResult()
-	gate := row.partGate.loadOrCreate()
+	gate := row.partGateCell().loadOrCreate()
 	task := &PartTaskToken{row: row, generation: 1}
 	key, _ := partAddressKey(address)
 	c.egraphMu.Lock()
@@ -173,7 +173,7 @@ func TestPartSettlementRetiresReplacement(t *testing.T) {
 	owner, err := c.newOfferOwnerLocked(ctx, record.Owner)
 	var queue []*sharedResult
 	if err == nil {
-		queue, err = c.testReplacePartOfferLocked(ctx, row, address, &partOffer{record: record, owner: owner})
+		queue, err = c.testReplacePartOfferLocked(ctx, row, address, &partOffer{layeredOffer: c.storedLayers.hold(record), owner: owner})
 	}
 	gate.mu.Unlock()
 	var callbacks []OnReleaseFunc
@@ -258,7 +258,7 @@ func TestPartSourceScanFailureReleasesWinner(t *testing.T) {
 			for _, row := range []*sharedResult{winner.cacheSharedResult(), loser.cacheSharedResult()} {
 				owner, err := c.newOfferOwnerLocked(ctx, PersistedOfferOwner{})
 				if err == nil {
-					err = c.testAttachPartOfferLocked(row, address, &partOffer{record: PersistedPartOffer{Address: address, Value: SnapshotValue{Kind: "directory"}}, owner: owner})
+					err = c.testAttachPartOfferLocked(row, address, &partOffer{layeredOffer: layeredOffer{held: PersistedPartOffer{Address: address, Value: SnapshotValue{Kind: "directory"}}}, owner: owner})
 				}
 				if err != nil {
 					setupErr = err
@@ -309,7 +309,7 @@ func TestPartNativeCompletionRetiresOffer(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			return c.testAttachPartOfferLocked(receiver.cacheSharedResult(), address, &partOffer{record: PersistedPartOffer{Address: address, Value: SnapshotValue{Kind: "directory"}}, owner: owner})
+			return c.testAttachPartOfferLocked(receiver.cacheSharedResult(), address, &partOffer{layeredOffer: layeredOffer{held: PersistedPartOffer{Address: address, Value: SnapshotValue{Kind: "directory"}}}, owner: owner})
 		})
 	}}
 	receiver = newPartsTestResult(t, c, ctx, obj)
@@ -322,7 +322,7 @@ func TestPartNativeCompletionRetiresOffer(t *testing.T) {
 	c.egraphMu.RUnlock()
 	require.Zero(t, offerCount)
 	require.Zero(t, ownerCount)
-	gate := row.partGate.loadOrCreate()
+	gate := row.partGateCell().loadOrCreate()
 	gate.mu.Lock()
 	key, _ := partAddressKey(address)
 	phase := gate.outputs[key].phase

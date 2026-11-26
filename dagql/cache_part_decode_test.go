@@ -64,19 +64,18 @@ func TestPartDecodeBeforeExternalFinish(t *testing.T) {
 	}
 	require.False(t, receipt.task.settled.Load())
 	require.Empty(t, row.loadSnapshotOwnerLinks(), "Commit changes desired intent before applied links")
-	transferDecodeHooks.Store(uint64(row.id), func(ctx context.Context, dec *PersistDecodeContext, value *transferTestValue) error {
+	onTransferDecode(t, srv, uint64(row.id), func(ctx context.Context, dec *PersistDecodeContext, value *transferTestValue) error {
 		require.True(t, dec.Imported())
 		roles, err := dec.SnapshotRoles(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []PersistedSnapshotRefLink{{Role: "snapshot", RefKey: ref.SnapshotID()}}, roles)
 		return nil
 	})
-	defer transferDecodeHooks.Delete(uint64(row.id))
 	loaded, err := c.LoadResultByResultID(ctx, "", srv, uint64(row.id))
 	require.NoError(t, err)
 	require.Equal(t, "snapshot", loaded.Unwrap().(*transferTestValue).Text)
 	require.Len(t, row.loadSnapshotOwnerLinks(), 1, "decode may synchronize leases independently")
-	gate := row.partGate.gate.Load()
+	gate := row.writerGate()
 	key, _ := partAddressKey(address)
 	gate.mu.Lock()
 	output := gate.outputs[key]
@@ -143,7 +142,7 @@ func TestReadyPartDonorBackreferenceReleasedBeforeSync(t *testing.T) {
 	require.EqualValues(t, 1, released.Load(), "Ready donor must collect before receiver bookkeeping despite donor-to-receiver backreference")
 	c.egraphMu.RLock()
 	donorCollected := c.resultsByID[donor.cacheSharedResult().id] == nil
-	_, retainsDonor := receiver.cacheSharedResult().deps[donor.cacheSharedResult().id]
+	retainsDonor := receiver.cacheSharedResult().deps.has(donor.cacheSharedResult().id)
 	c.egraphMu.RUnlock()
 	require.True(t, donorCollected)
 	require.False(t, retainsDonor)
@@ -172,7 +171,7 @@ func TestPartDecodeLosesToInstalledRevision(t *testing.T) {
 	row.imported = true
 	entered, resume := make(chan struct{}), make(chan struct{})
 	var losing, winning, calls atomic.Int32
-	transferDecodeHooks.Store(uint64(row.id), func(ctx context.Context, dec *PersistDecodeContext, value *transferTestValue) error {
+	onTransferDecode(t, srv, uint64(row.id), func(ctx context.Context, dec *PersistDecodeContext, value *transferTestValue) error {
 		require.True(t, dec.Imported())
 		if calls.Add(1) == 1 {
 			value.release = func(context.Context) error { losing.Add(1); return nil }
@@ -186,7 +185,6 @@ func TestPartDecodeLosesToInstalledRevision(t *testing.T) {
 		}
 		return nil
 	})
-	defer transferDecodeHooks.Delete(uint64(row.id))
 	loaded := make(chan AnyResult, 1)
 	errors := make(chan error, 1)
 	go func() {

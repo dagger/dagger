@@ -50,10 +50,14 @@ func init() {
 //
 // Not parallel: the live heap is the whole process's, and Go starts parallel
 // tests only once every sequential one has finished, so nothing else
-// allocates while this measures.
+// allocates while this measures. Nor is the save checked against a full one
+// (TestMain), which encodes every row again.
 func TestCachePersistenceSaveHoldsOneRowEncodingAtATime(t *testing.T) {
 	const rows = 32
 	const rowSize = 2 << 20
+	check := testPersistFullSave
+	testPersistFullSave = nil
+	defer func() { testPersistFullSave = check }()
 
 	ctx, cache, srv := persistedListTestCache(t, filepath.Join(t.TempDir(), "cache.db"))
 	values := make([]*streamSaveTestValue, rows)
@@ -132,4 +136,14 @@ func TestCachePersistenceFailedSaveKeepsPreviousSave(t *testing.T) {
 	after, err := cache.pdb.ListMirrorResults(ctx)
 	require.NoError(t, err)
 	require.Equal(t, saved, after)
+
+	// The next save compares with the store as the failed one left it, and
+	// writes what that one didn't.
+	values[last].err = nil
+	require.NoError(t, cache.persistCurrentState(ctx))
+	fixed, err := cache.pdb.ListMirrorResults(ctx)
+	require.NoError(t, err)
+	require.Len(t, fixed, len(saved))
+	require.NotEqual(t, saved, fixed)
+	require.Equal(t, len(values), cache.PersistedWritten(), "every value's record changed")
 }

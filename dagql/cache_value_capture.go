@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/bits"
 	"slices"
 	"sync"
 	"time"
@@ -174,7 +175,7 @@ func (c *Cache) holdTransferClosure(ctx context.Context, selection ValueSelectio
 	// A root whose own evaluation is in flight can't be captured now,
 	// whatever its closure holds, unless it goes as a held row: its record's
 	// copy is refused
-	// (lazyEvaluationInFlightLocked). It's left out before the walk, so
+	// (evaluationInFlightLocked). It's left out before the walk, so
 	// nothing below it is walked or copied for it: a remote cache service
 	// asks for a running root every few seconds until it isn't busy, and
 	// each capture walked and copied its whole closure only to leave it
@@ -190,10 +191,7 @@ func (c *Cache) holdTransferClosure(ctx context.Context, selection ValueSelectio
 		if res == nil {
 			continue
 		}
-		res.lazyMu.Lock()
-		err := lazyEvaluationInFlightLocked(res)
-		res.lazyMu.Unlock()
-		if err != nil {
+		if err := res.evaluationInFlight(); err != nil {
 			running[res] = blockedRow{row: res.id, kind: res.busyKind(), err: err}
 		}
 	}
@@ -230,7 +228,7 @@ func (c *Cache) holdTransferClosure(ctx context.Context, selection ValueSelectio
 			// roots are left out whatever its attachment adds later.
 			seen[res.id] = 1
 			var children []sharedResultID
-			for id := range res.deps {
+			for _, id := range res.deps {
 				children = append(children, id)
 				_ = walk(id, c.resultsByID[id])
 			}
@@ -260,7 +258,7 @@ func (c *Cache) holdTransferClosure(ctx context.Context, selection ValueSelectio
 		c.incrementIncomingOwnershipLocked(ctx, res)
 		row := &capturedTransferRow{shared: res, imported: res.imported, frame: frame, expiry: res.expiresAtUnix, replacements: res.replacements, transferRev: res.transferRevision, dependencyRev: res.dependencyOwnershipRevision, requiredRev: res.requiredSessionResourcesGen.Load()}
 		capture.rows[res.id] = row
-		for id := range res.deps {
+		for _, id := range res.deps {
 			row.deps = append(row.deps, uint64(id))
 		}
 		slices.Sort(row.deps)
@@ -284,7 +282,7 @@ func (c *Cache) holdTransferClosure(ctx context.Context, selection ValueSelectio
 		// A row's children here are its dependencies alone: a transferred
 		// record carries no offers, so neither their owners nor what those
 		// own go with it.
-		for id := range res.deps {
+		for _, id := range res.deps {
 			below(id, c.resultsByID[id])
 		}
 		if cause != nil {
@@ -540,9 +538,13 @@ func (capture *HeldCapturedClosure) checkCopied(copied []bool, blockRow func(*ca
 // of a part of it runs, as its copy does (captureHeldPersistedRecord), for a
 // held row whose record isn't read.
 func (res *sharedResult) evaluationInFlight() error {
-	res.lazyMu.Lock()
-	defer res.lazyMu.Unlock()
-	return lazyEvaluationInFlightLocked(res)
+	lz := res.lazy.Load()
+	if lz == nil {
+		return nil
+	}
+	lz.mu.Lock()
+	defer lz.mu.Unlock()
+	return lz.evaluationInFlightLocked(res.id)
 }
 
 // ownedSnapshotLinks are the snapshots res holds, as its copy names them
@@ -552,9 +554,9 @@ func (res *sharedResult) evaluationInFlight() error {
 func (res *sharedResult) ownedSnapshotLinks(visit func(PersistedSnapshotRefLink) bool) bool {
 	res.payloadMu.RLock()
 	defer res.payloadMu.RUnlock()
-	links := res.snapshotOwnerLinks
-	if res.snapshotLinkIntent != nil {
-		links = res.snapshotLinkIntent.Links
+	links, intent := res.snapshotLinksLocked()
+	if intent != nil {
+		links = intent.Links
 	}
 	for _, link := range links {
 		if visit(link) {
@@ -633,10 +635,14 @@ func (res *sharedResult) busyKind() BusyKind {
 	if res.attachmentState() != resultAttachmentClean {
 		return BusyAttaching
 	}
-	res.lazyMu.Lock()
-	defer res.lazyMu.Unlock()
-	groups := []*lazyGroupState{&res.lazyWhole}
-	for _, group := range res.lazyPartGroups {
+	lz := res.lazy.Load()
+	if lz == nil {
+		return BusyOther
+	}
+	lz.mu.Lock()
+	defer lz.mu.Unlock()
+	groups := []*lazyGroupState{&lz.whole}
+	for _, group := range lz.partGroups {
 		groups = append(groups, group)
 	}
 	kind := BusyOther
@@ -1611,7 +1617,7 @@ func (c *Cache) exportPass(ctx context.Context, selection ValueSelection, cfg co
 		return nil, err
 	}
 	// Of the known rows, the bundle carries only those something in it
-	// stands on, and the held rows on the way down to them.
+	// stands on, a needed held row linking past those on the way down.
 	keepStart := time.Now()
 	order, leftOutHeld, keptAll := capture.order, 0, ""
 	if !c.testKeepEveryKnownRow {
@@ -1639,17 +1645,19 @@ func (c *Cache) exportPass(ctx context.Context, selection ValueSelection, cfg co
 //
 // A row is needed when it is a root, a row the bundle carries in full, a
 // row an output sits on, or one named by an output's owner or services, or
-// by a full row's dependencies or its offers' owners and services. A held
-// row keeps its links only to the children something is needed at or
-// below: those on the way down to a part or a new row. The bundle then
-// carries what its roots reach through what it keeps, as a closure of its
-// roots, and a held row with nothing needed below it goes with no links,
-// standing for its closure, as a held row does in an export that selects no
-// parts. A held row's links name no dependencies of the recipient's entry:
-// the recipient keeps its own, and checks each held row the bundle carries
-// against its own copy. The rows a held row stands for this way aren't
-// checked there, so a copy of one that has expired on the recipient stays
-// so until a bundle carries the row as needed or in full.
+// by a full row's dependencies or its offers' owners and services. The
+// bundle carries the needed rows only. A held row that isn't needed goes,
+// with nothing needed below it or as a link on the way down to a part or a
+// new row: a needed held row above links past it to the needed rows below
+// (heldRowLinks), so that the bundle stays a closure of its roots, each
+// root reaching every needed row it reached. A held row with nothing needed
+// below it goes with no links, standing for its closure, as a held row does
+// in an export that selects no parts. A held row's links name no
+// dependencies of the recipient's entry: the recipient keeps its own, and
+// checks each held row the bundle carries against its own copy. The rows a
+// held row stands for this way, and those a link went past, aren't checked
+// there, so a copy of one that has expired on the recipient stays so until
+// a bundle carries the row as needed or in full.
 //
 // Ordinals are dense, so the rows kept are renumbered, with every ordinal
 // the bundle and chains name: dependencies, roots, outputs, their owners,
@@ -1767,44 +1775,244 @@ func serviceOrdinals(services []TransferredServiceBinding) []uint64 {
 }
 
 // heldRowLinks returns, by index, the links each row of bundle keeps: a row
-// in full all of its dependencies, a held row those of its children that
-// are needed or have something needed below them.
+// in full all of its dependencies, and a held row its children that are
+// needed, and links to needed rows further below it, the fewest that keep
+// each root reaching every needed row it reached in the bundle as captured.
+//
+// A held row that isn't needed, a link on the way down to something needed,
+// is then reached by nothing, and leaves the bundle. A row in full has only
+// needed children, its dependencies, so every chain of such rows starts
+// below a needed held row, and a link from one of those to the needed row
+// at the chain's bottom stands in for the chain. A held row's links are no
+// dependencies of the recipient's entry, which keeps its own
+// (keepNeededRows), so a link to a row further below says nothing a
+// recipient reads otherwise. A needed row that lost a root is linked from
+// the needed held row above it that gives it the most of the roots it lost,
+// in turn, so that the bundle's live closure (liveClosure) for any set of
+// its roots is the one it had.
+//
+// Roots are followed through dependencies alone: the Cloud drops a bundle's
+// outputs and offers before it walks the roots' closure again
+// (checkValueMerge), so a row an output's owner names has to be reached
+// through dependencies all the same, as the links it went by did.
+//
+// Each row left out keeps, as where links past it can come from, only the
+// needed held rows above it that its roots need, at most one a root, so
+// what the walk holds grows with the rows and the roots, not with the paths.
 func heldRowLinks(bundle ValueBundle, needed []bool) [][]uint64 {
 	n := len(bundle.Values)
-	// below is 1 while a row's walk is under way, 2 when nothing is needed
-	// below it, and 3 when something is.
-	below := make([]uint8, n)
-	var neededBelow func(int) bool
-	neededBelow = func(i int) bool {
-		if below[i] != 0 {
-			return below[i] == 3
-		}
-		below[i] = 1
-		found := false
-		for _, dep := range bundle.Values[i].DependencyIDs {
-			if j := bundleRowIndex(n, dep); j >= 0 && (needed[j] || neededBelow(j)) {
-				found = true
-			}
-		}
-		below[i] = 2
-		if found {
-			below[i] = 3
-		}
-		return found
-	}
 	links := make([][]uint64, n)
+	leaving := false
 	for i, v := range bundle.Values {
 		if v.Held == "" {
 			links[i] = v.DependencyIDs
 			continue
 		}
+		leaving = leaving || !needed[i]
 		for _, dep := range v.DependencyIDs {
-			if j := bundleRowIndex(n, dep); j >= 0 && (needed[j] || neededBelow(j)) {
+			if j := bundleRowIndex(n, dep); j >= 0 && needed[j] {
 				links[i] = append(links[i], dep)
 			}
 		}
 	}
+	if !leaving || len(bundle.Roots) == 0 {
+		return links
+	}
+	deps := bundleDependencyRows(bundle)
+	order, acyclic := bundleRowsTopDown(deps)
+	if !acyclic {
+		// The recipient refuses a cycle (bundleClosure); the bundle goes with
+		// every held row's links, for its check to say so.
+		for i, v := range bundle.Values {
+			if v.Held != "" {
+				links[i] = v.DependencyIDs
+			}
+		}
+		return links
+	}
+	parents := make([][]int, n)
+	for i, below := range deps {
+		for _, j := range below {
+			parents[j] = append(parents[j], i)
+		}
+	}
+	reached := newRootSets(bundle)
+	reached.pass(order, deps)
+	kept := newRootSets(bundle)
+	// via are, for each row left out, the needed held rows above it that
+	// together hold every root it was reached from.
+	via := make([][]int, n)
+	for _, i := range order {
+		var pool []int
+		for _, p := range parents[i] {
+			switch {
+			case !needed[p]:
+				pool = append(pool, via[p]...)
+			case bundle.Values[p].Held != "":
+				pool = append(pool, p)
+			}
+		}
+		if !needed[i] {
+			via[i] = kept.cover(reached, i, pool)
+			continue
+		}
+		for {
+			best := kept.bestCover(reached, i, pool)
+			if best < 0 {
+				break
+			}
+			links[best] = append(links[best], uint64(bundle.Values[i].Ordinal))
+			kept.add(i, best)
+		}
+		// The kept links pass the roots on.
+		for _, o := range links[i] {
+			if j := bundleRowIndex(n, o); j >= 0 {
+				kept.add(j, i)
+			}
+		}
+	}
+	for i, v := range bundle.Values {
+		if v.Held != "" && len(links[i]) > 1 {
+			slices.Sort(links[i])
+			links[i] = slices.Compact(links[i])
+		}
+	}
 	return links
+}
+
+// bundleDependencyRows returns, by index, each row's dependencies' rows.
+func bundleDependencyRows(bundle ValueBundle) [][]int {
+	n := len(bundle.Values)
+	rows := make([][]int, n)
+	for i, v := range bundle.Values {
+		for _, o := range v.DependencyIDs {
+			if j := bundleRowIndex(n, o); j >= 0 {
+				rows[i] = append(rows[i], j)
+			}
+		}
+	}
+	return rows
+}
+
+// rootSets are, for each row of a bundle by index, the bundle's roots it is
+// reached from, one bit a root.
+type rootSets struct {
+	words int
+	bits  []uint64
+}
+
+// newRootSets returns each row's set holding only itself, if it is a root.
+func newRootSets(bundle ValueBundle) rootSets {
+	n := len(bundle.Values)
+	sets := rootSets{words: (len(bundle.Roots) + 63) / 64}
+	sets.bits = make([]uint64, n*sets.words)
+	for k, root := range bundle.Roots {
+		if i := bundleRowIndex(n, uint64(root.Ordinal)); i >= 0 {
+			sets.bits[i*sets.words+k/64] |= 1 << (k % 64)
+		}
+	}
+	return sets
+}
+
+// row returns row i's set.
+func (sets rootSets) row(i int) []uint64 {
+	return sets.bits[i*sets.words : (i+1)*sets.words]
+}
+
+// add adds from's roots to row i's.
+func (sets rootSets) add(i, from int) {
+	to, src := sets.row(i), sets.row(from)
+	for w := range to {
+		to[w] |= src[w]
+	}
+}
+
+// pass gives each row, in order, every root of the rows it is walked from.
+func (sets rootSets) pass(order []int, walks [][]int) {
+	for _, i := range order {
+		for _, j := range walks[i] {
+			sets.add(j, i)
+		}
+	}
+}
+
+// bestCover returns, of candidates, the row that would give row i the most
+// of the roots it had in reached and lacks in sets, or -1 when none gives
+// any.
+func (sets rootSets) bestCover(reached rootSets, i int, candidates []int) int {
+	had, has := reached.row(i), sets.row(i)
+	best, bestGain := -1, 0
+	for _, a := range candidates {
+		from := sets.row(a)
+		gain := 0
+		for w := range had {
+			gain += bits.OnesCount64(had[w] &^ has[w] & from[w])
+		}
+		if gain > bestGain {
+			best, bestGain = a, gain
+		}
+	}
+	return best
+}
+
+// cover returns, of candidates, rows that together hold every root row i
+// had in reached, as sets holds them, chosen as bestCover chooses, without
+// changing row i's set: the needed rows above a row left out that a link
+// past it can come from.
+func (sets rootSets) cover(reached rootSets, i int, candidates []int) []int {
+	had := reached.row(i)
+	has := make([]uint64, sets.words)
+	var chosen []int
+	for {
+		best, bestGain := -1, 0
+		for _, a := range candidates {
+			from := sets.row(a)
+			gain := 0
+			for w := range had {
+				gain += bits.OnesCount64(had[w] &^ has[w] & from[w])
+			}
+			if gain > bestGain {
+				best, bestGain = a, gain
+			}
+		}
+		if best < 0 {
+			return chosen
+		}
+		chosen = append(chosen, best)
+		for w, b := range sets.row(best) {
+			has[w] |= b
+		}
+	}
+}
+
+// bundleRowsTopDown returns the rows of a bundle's graph, by index, each
+// before every row it goes to (walks), and whether the graph has no cycle.
+func bundleRowsTopDown(walks [][]int) ([]int, bool) {
+	n := len(walks)
+	state := make([]uint8, n)
+	order := make([]int, 0, n)
+	acyclic := true
+	var visit func(int)
+	visit = func(i int) {
+		switch state[i] {
+		case 1:
+			acyclic = false
+			return
+		case 2:
+			return
+		}
+		state[i] = 1
+		for _, j := range walks[i] {
+			visit(j)
+		}
+		state[i] = 2
+		order = append(order, i)
+	}
+	for i := range walks {
+		visit(i)
+	}
+	slices.Reverse(order)
+	return order, acyclic
 }
 
 // reachedBundleRows marks, by index, the rows of bundle its roots reach

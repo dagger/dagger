@@ -46,7 +46,7 @@ func cloudEntryOfRecipe(t *testing.T, cloud *Cache, engine *Cache, res AnyResult
 		return nil, nil
 	}
 	var deps []sharedResultID
-	for dep := range entry.deps {
+	for _, dep := range entry.deps {
 		deps = append(deps, dep)
 	}
 	return entry, deps

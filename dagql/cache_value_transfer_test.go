@@ -105,8 +105,8 @@ func (*transferTestValue) DecodePersistedObject(ctx context.Context, dec *Persis
 		value.links, err = dec.SnapshotRoles(ctx)
 	}
 	if err == nil {
-		if hook, ok := transferDecodeHooks.Load(dec.ResultID()); ok {
-			err = hook.(func(context.Context, *PersistDecodeContext, *transferTestValue) error)(ctx, dec, value)
+		if hook, ok := transferDecodeHooks.Load(transferDecodeHookKey{dec.Server(), dec.ResultID()}); ok {
+			err = hook.(transferDecodeHook)(ctx, dec, value)
 		}
 	}
 	return value, err
@@ -197,7 +197,7 @@ func transferTestCache(t testing.TB) (context.Context, *Cache, *Server) {
 	t.Cleanup(func() { require.NoError(t, c.CloseDiscardingPersistence()) })
 	return ctx, c, srv
 }
-func exportTestBundle(t *testing.T, ctx context.Context, c *Cache, roots ...AnyResult) ValueBundle {
+func exportTestBundle(t testing.TB, ctx context.Context, c *Cache, roots ...AnyResult) ValueBundle {
 	t.Helper()
 	var bundle ValueBundle
 	require.NoError(t, c.WithExportedValues(ctx, ValueSelection{Roots: roots}, config.RefConfig{}, func(_ context.Context, values *ExportedValues) error { bundle = values.Bundle; return nil }))
@@ -255,7 +255,7 @@ func cloudTestBundle(t *testing.T, ctx context.Context, c *Cache, roots ...AnyRe
 			held := c.resultsByID[sharedResultID(value.SenderNumber)].testPartOffers()
 			c.egraphMu.RUnlock()
 			for _, slot := range held {
-				copied, err := clonePartOffers([]PersistedPartOffer{slot.record})
+				copied, err := clonePartOffers([]PersistedPartOffer{slot.record()})
 				require.NoError(t, err)
 				offer := copied[0]
 				for i := range offer.Owner.DependencyIDs {
@@ -295,13 +295,9 @@ func transferTestDependency(c *Cache, ctx context.Context, parent, child AnyResu
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
 	p, d := parent.cacheSharedResult(), child.cacheSharedResult()
-	if p.deps == nil {
-		p.deps = map[sharedResultID]struct{}{}
-	}
-	if _, exists := p.deps[d.id]; exists {
+	if !p.deps.add(d.id) {
 		return
 	}
-	p.deps[d.id] = struct{}{}
 	p.dependencyOwnershipRevision++
 	c.rememberDependencyEdgeLocked(p, d)
 	c.incrementIncomingOwnershipLocked(ctx, d)
@@ -312,7 +308,7 @@ func transferTestOffer(t *testing.T, c *Cache, ctx context.Context, parent, chil
 	record := PersistedPartOffer{Address: PersistedPartAddress{Part: "snapshot"}, Value: SnapshotValue{Kind: "directory"}, Owner: PersistedOfferOwner{DependencyIDs: []uint64{uint64(child.cacheSharedResult().id)}}}
 	owner, err := c.newOfferOwnerLocked(ctx, record.Owner)
 	if err == nil {
-		err = c.testAttachPartOfferLocked(parent.cacheSharedResult(), record.Address, &partOffer{record: record, owner: owner})
+		err = c.testAttachPartOfferLocked(parent.cacheSharedResult(), record.Address, &partOffer{layeredOffer: c.storedLayers.hold(record), owner: owner})
 	}
 	c.egraphMu.Unlock()
 	require.NoError(t, err)
@@ -416,16 +412,14 @@ func TestValueTransferCapture(t *testing.T) {
 					res.storeResultCall(res.loadResultCall().clone())
 				case "busy": // Attachment is rechecked after every copy guard is released.
 					c.egraphMu.Lock()
-					res.attachDepsMu.Lock()
-					res.attachDepsWaitCh = make(chan struct{})
-					res.attachDepsMu.Unlock()
+					res.openAttachment(nil)
 					c.egraphMu.Unlock()
 				}
 			}
 			err := c.WithExportedValues(ctx, ValueSelection{Roots: []AnyResult{root}}, config.RefConfig{}, func(context.Context, *ExportedValues) error { t.Fatal("incoherent capture delivered"); return nil })
 			c.testTransferCopied = nil
 			if kind == "busy" {
-				close(res.attachDepsWaitCh)
+				res.endAttachment(nil)
 			}
 			require.ErrorIs(t, err, ErrPersistStateNotReady)
 			require.Equal(t, owners, res.incomingOwnershipCount.Load())
@@ -505,7 +499,7 @@ func TestValueTransferReferences(t *testing.T) {
 		require.NoError(t, err)
 		c.egraphMu.RLock()
 		class, known := c.egraphDigestToClass[extra.String()]
-		results := len(c.outputEqClassResults[c.eqClassRootLocked(class)])
+		results := c.outputEqClassResults[c.eqClassRootLocked(class)].Size()
 		c.egraphMu.RUnlock()
 		require.True(t, known)
 		require.Equal(t, 1, results)
@@ -607,7 +601,26 @@ func mustTransferJSON(t *testing.T, v any) []byte {
 	return raw
 }
 
+// transferDecodeHooks holds what a test runs when a transferTestValue
+// decodes, by the server it decodes for and the row it decodes. Every cache
+// numbers its rows from 1, so parallel tests share row ids; each test has a
+// server of its own.
 var transferDecodeHooks sync.Map
+
+type transferDecodeHookKey struct {
+	server   *Server
+	resultID uint64
+}
+type transferDecodeHook = func(context.Context, *PersistDecodeContext, *transferTestValue) error
+
+// onTransferDecode runs hook when row resultID decodes for srv, until the
+// test ends.
+func onTransferDecode(t testing.TB, srv *Server, resultID uint64, hook transferDecodeHook) {
+	t.Helper()
+	key := transferDecodeHookKey{srv, resultID}
+	transferDecodeHooks.Store(key, hook)
+	t.Cleanup(func() { transferDecodeHooks.Delete(key) })
+}
 
 func (v *transferTestValue) OnRelease(ctx context.Context) error {
 	if v.release != nil {
@@ -629,12 +642,12 @@ func TestValueTransferPersistenceDecodePublication(t *testing.T) {
 	var rowCleanups, losingReleases, winningReleases atomic.Int32
 	row.onRelease = joinOnRelease(row.onRelease, func(context.Context) error { rowCleanups.Add(1); return nil })
 	row.payloadMu.Lock()
-	row.snapshotOwnerLinks = []PersistedSnapshotRefLink{{Role: "snapshot", RefKey: "old-applied"}}
-	row.snapshotLinkIntent = &snapshotLinkIntent{Links: []PersistedSnapshotRefLink{}}
+	row.snapshotState().ownerLinks = []PersistedSnapshotRefLink{{Role: "snapshot", RefKey: "old-applied"}}
+	row.snapshotState().linkIntent = &snapshotLinkIntent{Links: []PersistedSnapshotRefLink{}}
 	row.payloadRevision++
 	row.payloadMu.Unlock()
 	var calls int
-	transferDecodeHooks.Store(id, func(ctx context.Context, dec *PersistDecodeContext, value *transferTestValue) error {
+	onTransferDecode(t, srv, id, func(ctx context.Context, dec *PersistDecodeContext, value *transferTestValue) error {
 		calls++
 		roles, err := dec.SnapshotRoles(ctx)
 		require.NoError(t, err)
@@ -649,7 +662,7 @@ func TestValueTransferPersistenceDecodePublication(t *testing.T) {
 			}
 			next.ObjectJSON = json.RawMessage(`{"text":"new"}`)
 			row.persistedEnvelope = &next
-			row.snapshotLinkIntent = &snapshotLinkIntent{Links: []PersistedSnapshotRefLink{{Role: "snapshot", RefKey: "new-desired"}}}
+			row.snapshotState().linkIntent = &snapshotLinkIntent{Links: []PersistedSnapshotRefLink{{Role: "snapshot", RefKey: "new-desired"}}}
 			row.payloadRevision++
 			row.payloadMu.Unlock()
 		} else {
@@ -658,7 +671,6 @@ func TestValueTransferPersistenceDecodePublication(t *testing.T) {
 		}
 		return nil
 	})
-	defer transferDecodeHooks.Delete(id)
 	loaded, err := b.LoadResultByResultID(ctx, "test-session", srv, id)
 	require.NoError(t, err)
 	require.Equal(t, "new", loaded.Unwrap().(*transferTestValue).Text)
@@ -809,7 +821,7 @@ func testValueTransferCaptureConcurrent(t *testing.T) {
 		if err == nil {
 			address := PersistedPartAddress{Part: "snapshot"}
 			var queue []*sharedResult
-			queue, err = c.testReplacePartOfferLocked(ctx, root.cacheSharedResult(), address, &partOffer{owner: owner, record: PersistedPartOffer{Address: address, Owner: owner.record, Value: SnapshotValue{Kind: "directory"}}})
+			queue, err = c.testReplacePartOfferLocked(ctx, root.cacheSharedResult(), address, &partOffer{owner: owner, layeredOffer: layeredOffer{held: PersistedPartOffer{Address: address, Owner: owner.record, Value: SnapshotValue{Kind: "directory"}}}})
 			if err == nil {
 				releases, err = c.collectUnownedResultsLocked(ctx, queue)
 			}

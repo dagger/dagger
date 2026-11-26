@@ -44,7 +44,7 @@ type OfferDisposition struct {
 func (out *OfferDisposition) noteReceiverLocked(root *sharedResult) {
 	out.Replacements = root.replacements
 	out.Deps = out.Deps[:0]
-	for dep := range root.deps {
+	for _, dep := range root.deps {
 		out.Deps = append(out.Deps, uint64(dep))
 	}
 	slices.Sort(out.Deps)
@@ -187,7 +187,7 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, item CloudPar
 		c.incrementIncomingOwnershipLocked(ctx, row)
 		capture := &offerRowCapture{row: row}
 		captures[id] = capture
-		gate := row.partGate.loadOrCreate()
+		gate := row.partGateCell().loadOrCreate()
 		gate.mu.Lock()
 		capture.gateRevision = gate.revision
 		if row == root {
@@ -197,6 +197,7 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, item CloudPar
 				// The part is the root's own, and the offer still names the
 				// root's Cloud counterpart.
 				root.noteCloudCopyLocked(item.CloudNumber, item.CloudStored, item.CloudExpiresAtUnix)
+				c.noteSavedEntryLocked(root.id)
 			}
 		}
 		gate.mu.Unlock()
@@ -259,11 +260,14 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, item CloudPar
 		return out
 	}
 	key, _ := partAddressKey(address)
+	// The offer as the cache would hold it, its layers the table's, taken
+	// before the lock.
+	held := c.storedLayers.hold(offer)
 	// A preparation hold protects references across the two E sections.
 	c.lockGraphFor(ctx, workOffer)
 	var owner *offerOwner
 	old := row.partOfferLocked(key)
-	if old != nil && sameOfferMeaning(old.record, offer) {
+	if old != nil && old.sameMeaning(held) {
 		owner = old.owner
 		c.retainOfferOwnerLocked(owner)
 	} else {
@@ -274,7 +278,7 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, item CloudPar
 		out.Outcome, out.Err = OfferInvalid, err
 		return out
 	}
-	offer.Owner.DependencyIDs = slices.Clone(owner.record.DependencyIDs)
+	held.held.Owner.DependencyIDs = slices.Clone(owner.record.DependencyIDs)
 	transferred := false
 	defer func() {
 		if transferred {
@@ -301,7 +305,7 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, item CloudPar
 		c.testOfferBeforeDecision(root)
 	}
 	c.lockGraphFor(ctx, workOffer)
-	gate := row.partGate.loadOrCreate()
+	gate := row.partGateCell().loadOrCreate()
 	gate.mu.Lock()
 	out.Outcome = offerGateOutcomeLocked(gate, address)
 	out.noteReceiverLocked(root)
@@ -323,6 +327,7 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, item CloudPar
 		// The row's gate or its record has the part, and the offer still
 		// names the row's Cloud counterpart.
 		row.noteCloudCopyLocked(item.CloudNumber, item.CloudStored, item.CloudExpiresAtUnix)
+		c.noteSavedEntryLocked(row.id)
 	}
 	var queue collectionQueue
 	// accepted is the offer this call attached, for prefetching.
@@ -344,9 +349,10 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, item CloudPar
 			// The offer names the row's Cloud counterpart, which may be a new
 			// entry, as after a service restart.
 			row.noteCloudCopyLocked(item.CloudNumber, item.CloudStored, item.CloudExpiresAtUnix)
-			if current == nil || !reflect.DeepEqual(current.record, offer) {
+			c.noteSavedEntryLocked(row.id)
+			if current == nil || !slices.Equal(current.layers, held.layers) || !reflect.DeepEqual(current.held, held.held) {
 				// Both primitives validate the owner graph before any mutation.
-				next := &partOffer{record: offer, owner: owner}
+				next := &partOffer{layeredOffer: held, owner: owner}
 				if current == nil {
 					out.Err = c.attachPartOfferLocked(row, cloudCacheID, address, next)
 				} else {
@@ -367,7 +373,7 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, item CloudPar
 		// A native caller that selected its callback before this publication must
 		// return to the acquisition dispatcher before entering the body.
 		gate.managed = true
-		row.partGate.active.Store(true)
+		row.partGateCell().active.Store(true)
 	}
 	gate.mu.Unlock()
 	callbacks, collectErr := c.collectUnownedResultsLocked(context.WithoutCancel(ctx), queue)

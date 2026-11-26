@@ -268,7 +268,7 @@ func TestPartPrefetchAheadQueueRunsAReplacementsJob(t *testing.T) {
 	f.cache.egraphMu.Lock()
 	owner, err := f.cache.newOfferOwnerLocked(f.ctx, record.Owner)
 	var callbacks []OnReleaseFunc
-	replacement := &partOffer{record: record, owner: owner}
+	replacement := &partOffer{layeredOffer: f.cache.storedLayers.hold(record), owner: owner}
 	if err == nil {
 		var queue []*sharedResult
 		queue, err = f.cache.testReplacePartOfferLocked(f.ctx, row, f.address, replacement)

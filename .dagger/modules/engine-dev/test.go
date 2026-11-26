@@ -828,6 +828,9 @@ func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string, wcp
 		WithMountedDirectory(utilDirPath, testEngineUtils).
 		WithEnvVariable("_DAGGER_TESTS_ENGINE_TAR", filepath.Join(utilDirPath, "engine.tar")).
 		WithEnvVariable("_DAGGER_TESTS_ENGINE_PLATFORM", string(devEnginePlatform)).
+		// The tests' clients can't detect that they run inside Dagger by
+		// DAGGER_SESSION_PORT, which withoutOuterSession unsets; tell them.
+		WithEnvVariable("_DAGGER_TESTS_IN_DAGGER", "1").
 		WithServiceBinding("daggerengine", devEngineSvc).
 		WithMountedCache("/run", engineRunVol).
 		WithServiceBinding("registry", registrySvc)

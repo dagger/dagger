@@ -144,7 +144,7 @@ func (c *Cache) poolSettleLocked(res *sharedResult) {
 		c.pool.values += int(sign)
 		c.pool.bytes += sign * res.storedValueBytes()
 		c.poolBlobsLocked(res.storedBlobsLocked(), sign)
-		for depID := range res.deps {
+		for _, depID := range res.deps {
 			if dep := c.resultsByID[depID]; dep != nil {
 				dep.poolRefs += int32(sign)
 				queue = append(queue, dep)
@@ -197,8 +197,10 @@ func (c *Cache) setStoredRecordBytesLocked(res *sharedResult, n int64) {
 }
 
 // changeStoredPartsLocked runs change, a write of res's stored parts, keeping
-// the pool's blobs. Requires egraphMu for writing.
+// the pool's blobs, and counts it as a write to res's saved record, which
+// holds them (recordLock). Requires egraphMu for writing.
 func (c *Cache) changeStoredPartsLocked(res *sharedResult, change func()) {
+	defer res.payloadMu.noteWrite()
 	if !res.inPool {
 		change()
 		return
@@ -247,7 +249,7 @@ func (c *Cache) walkPoolLocked() walkedPool {
 		for blob, size := range res.storedBlobsLocked() {
 			w.measure.add(blob, size)
 		}
-		for depID := range res.deps {
+		for _, depID := range res.deps {
 			if c.resultsByID[depID] != nil {
 				w.refs[depID]++
 			}

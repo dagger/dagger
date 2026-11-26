@@ -28,9 +28,12 @@ type offerOwner struct {
 	origin  sharedResultID
 	address PersistedPartAddress
 }
+
+// partOffer is a part the Cloud, or the engine's image, offers an entry, as
+// the cache holds it (layeredOffer), and its owner.
 type partOffer struct {
-	record PersistedPartOffer
-	owner  *offerOwner
+	layeredOffer
+	owner *offerOwner
 }
 type resultOwnershipChild struct {
 	result   *sharedResult
@@ -40,7 +43,7 @@ type resultOwnershipChild struct {
 
 func (c *Cache) resultOwnershipChildrenLocked(res *sharedResult) iter.Seq[resultOwnershipChild] {
 	return func(yield func(resultOwnershipChild) bool) {
-		for id := range res.deps {
+		for _, id := range res.deps {
 			if !yield(resultOwnershipChild{result: c.resultsByID[id], resultID: id}) {
 				return
 			}
@@ -75,14 +78,50 @@ func (c *Cache) newOfferOwnerLocked(ctx context.Context, record PersistedOfferOw
 	owner := &offerOwner{id: c.nextOfferOwnerID, record: PersistedOfferOwner{DependencyIDs: ids}, holds: 1, deps: deps}
 	c.offerOwners[owner.id] = owner
 	for dep := range offerOwnershipChildrenLocked(owner) {
-		if dep.offerParents == nil {
-			dep.offerParents = make(map[offerOwnerID]struct{})
+		offers := dep.offersStateLocked()
+		if offers.parents == nil {
+			offers.parents = make(map[offerOwnerID]struct{})
 		}
-		dep.offerParents[owner.id] = struct{}{}
+		offers.parents[owner.id] = struct{}{}
 		c.incrementIncomingOwnershipLocked(ctx, dep)
 	}
 	return owner, nil
 }
+
+// entryOffers are an entry's part offers' bookkeeping. An entry has them
+// only once an offer is first attached to it or an offer owner holds it
+// (sharedResult.offersStateLocked), and keeps them from then on. Guarded by
+// egraphMu.
+type entryOffers struct {
+	// revision moves when one of the row's part offers is attached,
+	// replaced or retired. Where a demand gets a part reads it (the part's
+	// source facts, partFactsLocked): an offer is a source. A transfer
+	// capture copies no offers, so an offer moves neither of the entry's
+	// transfer revisions.
+	revision uint64
+	// parents are the offer owners that hold the entry. Reverse offer
+	// ownership does not propagate lookup requirements.
+	parents map[offerOwnerID]struct{}
+}
+
+// offersStateLocked returns res's offers' bookkeeping, making it if res has
+// none. Requires egraphMu for writing.
+func (res *sharedResult) offersStateLocked() *entryOffers {
+	if res.offers == nil {
+		res.offers = &entryOffers{}
+	}
+	return res.offers
+}
+
+// offerRevisionLocked is res's offers' revision: 0 for an entry no offer
+// was ever attached to. Requires egraphMu.
+func (res *sharedResult) offerRevisionLocked() uint64 {
+	if res.offers == nil {
+		return 0
+	}
+	return res.offers.revision
+}
+
 func (c *Cache) retainOfferOwnerLocked(owner *offerOwner) {
 	if owner == nil || c.offerOwners[owner.id] != owner || owner.holds <= 0 {
 		panic("retain unregistered offer owner")
@@ -102,7 +141,9 @@ func (c *Cache) releaseOfferOwnerLocked(ctx context.Context, owner *offerOwner) 
 	var rerr error
 	for dep := range offerOwnershipChildrenLocked(owner) {
 		var err error
-		delete(dep.offerParents, owner.id)
+		if dep.offers != nil {
+			delete(dep.offers.parents, owner.id)
+		}
 		queue, err = c.decrementIncomingOwnershipLocked(ctx, dep, queue)
 		rerr = errors.Join(rerr, err)
 	}
@@ -139,14 +180,14 @@ func (c *Cache) validateOfferAttachmentLocked(res *sharedResult, address Persist
 	if offer == nil || offer.owner == nil || c.offerOwners[offer.owner.id] != offer.owner || offer.owner.holds <= offer.owner.slots {
 		return "", fmt.Errorf("offer attachment: missing preparation hold")
 	}
-	describedKey, err := partAddressKey(offer.record.Address)
+	describedKey, err := partAddressKey(offer.held.Address)
 	if err != nil || describedKey != key {
 		return "", fmt.Errorf("offer attachment: descriptor address mismatch")
 	}
-	if !slices.Equal(offer.record.Owner.DependencyIDs, offer.owner.record.DependencyIDs) {
+	if !slices.Equal(offer.held.Owner.DependencyIDs, offer.owner.record.DependencyIDs) {
 		return "", fmt.Errorf("offer attachment: owner record mismatch")
 	}
-	if err := validateOfferReferences(offer.record); err != nil {
+	if err := validateOfferReferences(offer.held); err != nil {
 		return "", err
 	}
 	seen := map[sharedResultID]bool{}
@@ -205,7 +246,8 @@ func (c *Cache) attachPartOfferLocked(res *sharedResult, from CacheID, address P
 	cloud.setPartLocked(key, heldPart{state: heldPartComplete, offer: offer})
 	offer.owner.slots++
 	offer.owner.origin, offer.owner.address = res.id, address
-	res.offerRevision++
+	res.offersStateLocked().revision++
+	c.noteSavedEntryLocked(res.id)
 	return nil
 }
 func (c *Cache) replacePartOfferLocked(ctx context.Context, res *sharedResult, address PersistedPartAddress, offer *partOffer) (collectionQueue, error) {
@@ -226,7 +268,8 @@ func (c *Cache) replacePartOfferLocked(ctx context.Context, res *sharedResult, a
 	offer.owner.slots++
 	offer.owner.origin, offer.owner.address = res.id, address
 	old.owner.slots--
-	res.offerRevision++
+	res.offersStateLocked().revision++
+	c.noteSavedEntryLocked(res.id)
 	return c.releaseOfferOwnerLocked(ctx, old.owner)
 }
 func (c *Cache) retirePartOfferLocked(ctx context.Context, res *sharedResult, address PersistedPartAddress) (collectionQueue, error) {
@@ -242,7 +285,8 @@ func (c *Cache) retirePartOfferLocked(ctx context.Context, res *sharedResult, ad
 	cloud.deletePartLocked(key)
 	c.partOfferGone(old)
 	old.owner.slots--
-	res.offerRevision++
+	res.offersStateLocked().revision++
+	c.noteSavedEntryLocked(res.id)
 	return c.releaseOfferOwnerLocked(ctx, old.owner)
 }
 
@@ -376,7 +420,7 @@ func (res *sharedResult) attachedOffersLocked() ([]PersistedPartOffer, error) {
 	slices.Sort(keys)
 	offers := make([]PersistedPartOffer, 0, len(keys))
 	for _, key := range keys {
-		offers = append(offers, res.partOfferLocked(key).record)
+		offers = append(offers, res.partOfferLocked(key).record())
 	}
 	return clonePartOffers(offers)
 }
@@ -427,7 +471,7 @@ func (c *Cache) restoreOfferOwnersLocked(ctx context.Context) error {
 				return err
 			}
 			record.Owner = owner.record
-			if err := c.attachPartOfferLocked(res, from, record.Address, &partOffer{record: record, owner: owner}); err != nil {
+			if err := c.attachPartOfferLocked(res, from, record.Address, &partOffer{layeredOffer: c.storedLayers.hold(record), owner: owner}); err != nil {
 				return err
 			}
 		}
@@ -488,7 +532,7 @@ func validateStoredOwnership(res *sharedResult) error {
 	if res.stored != nil {
 		// A record held compressed names what its body says.
 		for _, ref := range res.stored.refs {
-			if _, ok := res.deps[sharedResultID(ref)]; !ok {
+			if !res.deps.has(sharedResultID(ref)) {
 				return fmt.Errorf("result %d: reference to %d is not a direct dependency", res.id, ref)
 			}
 		}
@@ -500,7 +544,7 @@ func validateStoredOwnership(res *sharedResult) error {
 		}
 		switch ref.Kind {
 		case PersistedRefChild, PersistedRefCall:
-			if _, ok := res.deps[sharedResultID(ref.ResultID)]; !ok {
+			if !res.deps.has(sharedResultID(ref.ResultID)) {
 				return fmt.Errorf("reference %s to %d is not a direct dependency", ref.Path, ref.ResultID)
 			}
 		}

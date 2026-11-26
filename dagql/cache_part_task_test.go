@@ -22,7 +22,7 @@ func TestPartTaskBodyIsolation(t *testing.T) {
 	}}))
 	require.EqualValues(t, 0, native.Load())
 	require.EqualValues(t, 1, synthetic.Load())
-	require.False(t, receiver.cacheSharedResult().lazyEvalComplete)
+	require.False(t, receiver.cacheSharedResult().lazyState().evalComplete)
 	require.ErrorContains(t, c.RunLazyTask(ctx, receiver, "acquire:snapshot", LazyTaskSpec{}), "missing supplied body")
 	require.NoError(t, c.Evaluate(ctx, receiver))
 	require.EqualValues(t, 1, native.Load())

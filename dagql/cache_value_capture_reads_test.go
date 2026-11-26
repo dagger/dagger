@@ -432,13 +432,13 @@ func TestContentExportReadsHeldRowsOnlyForTheirParts(t *testing.T) {
 		transferTestDependency(c, ctx, a, busy)
 		transferTestDependency(c, ctx, b, calm)
 		res := busy.cacheSharedResult()
-		res.lazyMu.Lock()
-		res.lazyWhole.syncPending = true
-		res.lazyMu.Unlock()
+		res.lazyState().mu.Lock()
+		res.lazyState().whole.syncPending = true
+		res.lazyState().mu.Unlock()
 		t.Cleanup(func() {
-			res.lazyMu.Lock()
-			res.lazyWhole.syncPending = false
-			res.lazyMu.Unlock()
+			res.lazyState().mu.Lock()
+			res.lazyState().whole.syncPending = false
+			res.lazyState().mu.Unlock()
 		})
 
 		got := captureReadsRun(t, ctx, c, known, []AnyResult{a, b}, []SelectedValueOutput{{Result: a, Address: snapshot}, {Result: b, Address: snapshot}})

@@ -118,12 +118,12 @@ func (w *RemoteWrites) CollectRemoteHoldings(ctx context.Context, candidates []H
 }
 
 // ApplyMergedReply is Cache.ApplyMergedReply, in the hold.
-func (w *RemoteWrites) ApplyMergedReply(ctx context.Context, cache CacheID, sent ValueBundle, reply MergeReply) (RemoteChange, error) {
-	cloudEntries, targets, err := prepareMergedReply(cache, sent, reply)
+func (w *RemoteWrites) ApplyMergedReply(ctx context.Context, cache CacheID, sent SentBundle, reply MergeReply) (RemoteChange, error) {
+	targets, err := prepareMergedReply(cache, sent, reply)
 	if err != nil {
 		return RemoteChange{}, err
 	}
-	return w.c.applyMergedReplyLocked(ctx, cache, cloudEntries, targets, reply), nil
+	return w.c.applyMergedReplyLocked(ctx, cache, targets, reply), nil
 }
 
 // ApplyMergedReplyPiece applies the next records of a merged reply
@@ -137,7 +137,7 @@ func (w *RemoteWrites) ApplyMergedReply(ctx context.Context, cache CacheID, sent
 func (w *RemoteWrites) ApplyMergedReplyPiece(ctx context.Context, a *MergedReplyApply, stop func() bool) (change RemoteChange, done bool) {
 	defer w.c.takeChangesLocked(&change)
 	for a.next < len(a.targets) {
-		w.c.applyMergedTargetsLocked(ctx, a.cache, a.cloudEntries, a.targets[a.next:a.next+1], &change)
+		w.c.applyMergedTargetsLocked(ctx, a.cache, a.targets[a.next:a.next+1], &change)
 		a.next++
 		if a.next < len(a.targets) && stop() {
 			return change, false

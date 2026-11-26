@@ -199,7 +199,7 @@ func TestCallRecordIsKeptOnce(t *testing.T) {
 	test.attach(t, ctx, test.span(t, true, 0))
 	entry := storedBundleTestEntry(cloud, test.number)
 	cloud.egraphMu.RLock()
-	calls := len(entry.calls)
+	calls := len(entry.keptCallsLocked())
 	cloud.egraphMu.RUnlock()
 	require.Equal(t, 1, calls)
 }
@@ -217,7 +217,7 @@ func keptCallCount(cloud *Cache, number uint64) int {
 	entry := storedBundleTestEntry(cloud, number)
 	cloud.egraphMu.RLock()
 	defer cloud.egraphMu.RUnlock()
-	return len(entry.calls)
+	return len(entry.keptCallsLocked())
 }
 
 // A call keyed to the client that made it names its client in its recipe and
@@ -294,7 +294,7 @@ func TestCallRecordLeavesOutAMismatchedCall(t *testing.T) {
 	require.Equal(t, test.number, info.Number)
 	entry := storedBundleTestEntry(cloud, test.number)
 	cloud.egraphMu.RLock()
-	calls := len(entry.calls)
+	calls := len(entry.keptCallsLocked())
 	cloud.egraphMu.RUnlock()
 	require.Zero(t, calls)
 }
@@ -455,9 +455,9 @@ func TestACallOfATermItsCheckMadeIsSentThoughItsOwnCantBePlaced(t *testing.T) {
 	require.NoError(t, err)
 	entry := storedBundleTestEntry(test.cloud, test.number)
 	test.cloud.egraphMu.RLock()
-	kept := len(entry.calls)
+	kept := len(entry.keptCallsLocked())
 	keys := map[string]int{}
-	for _, call := range entry.calls {
+	for _, call := range entry.keptCallsLocked() {
 		keys[test.cloud.keptCallTermKeyLocked(call)]++
 	}
 	test.cloud.egraphMu.RUnlock()
@@ -531,7 +531,7 @@ func TestACallWhoseInputTheCloudKnowsOnlyByItsClassIsSent(t *testing.T) {
 	require.NoError(t, err)
 	entry := storedBundleTestEntry(test.cloud, test.number)
 	test.cloud.egraphMu.RLock()
-	kept := len(entry.calls)
+	kept := len(entry.keptCallsLocked())
 	test.cloud.egraphMu.RUnlock()
 	require.Equal(t, 1, kept, "the Cloud keeps B's call alone on inner")
 
@@ -655,7 +655,7 @@ func keptCallRequests(cloud *Cache, number uint64) []digest.Digest {
 	entry := storedBundleTestEntry(cloud, number)
 	cloud.egraphMu.RLock()
 	defer cloud.egraphMu.RUnlock()
-	return slices.Sorted(maps.Keys(entry.calls))
+	return slices.Sorted(maps.Keys(entry.keptCallsLocked()))
 }
 
 // A call of a term its entry keeps a call of adds nothing a bundle sends: a
@@ -894,7 +894,7 @@ func TestANamedTermsCallIsPricedThoughItsInputsClassMergesDuringTheWalk(t *testi
 	entry := storedBundleTestEntry(cloud, test.number)
 	cloud.egraphMu.RLock()
 	var term RemoteTerm
-	for _, kept := range entry.calls {
+	for _, kept := range entry.keptCallsLocked() {
 		term = RemoteTerm{Self: kept.id.self, Inputs: slices.Clone(kept.id.inputs)}
 	}
 	cloud.egraphMu.RUnlock()
@@ -1273,7 +1273,7 @@ func TestCallRecordPastExpiriesLeaveAReplacementAlone(t *testing.T) {
 	require.NoError(t, err)
 	test.attach(t, ctx, late)
 	cloud.egraphMu.RLock()
-	kept := len(entry.calls)
+	kept := len(entry.keptCallsLocked())
 	cloud.egraphMu.RUnlock()
 	require.Zero(t, kept, "neither expired call is kept")
 	require.Equal(t, expires, expiry(), "its past expiry says nothing of the fresh value")

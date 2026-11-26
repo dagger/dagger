@@ -59,7 +59,7 @@ func partScopeReuseKey(path PersistedRefPath) string {
 func (c *Cache) capturePartReuse(row *sharedResult) partReuse {
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
-	gate := row.partGate.loadOrCreate()
+	gate := row.partGateCell().loadOrCreate()
 	gate.mu.Lock()
 	defer gate.mu.Unlock()
 	return currentPartReuseLocked(row, gate)
@@ -74,7 +74,7 @@ func (c *Cache) recordPartReuse(row *sharedResult, key string, seen partReuse) b
 	if c.resultsByID[row.id] != row {
 		return false
 	}
-	gate := row.partGate.loadOrCreate()
+	gate := row.partGateCell().loadOrCreate()
 	gate.mu.Lock()
 	defer gate.mu.Unlock()
 	if !seen.sameState(currentPartReuseLocked(row, gate)) {
@@ -114,7 +114,7 @@ func (c *Cache) recordAcquiredPart(ctx context.Context, res AnyResult, address P
 // and opened at row's current state, and none of them is being written now.
 // egraphMu is held, for reading or writing; gate.mu is taken under it.
 func partReusableLocked(row *sharedResult, keys []string) bool {
-	gate := row.partGate.gate.Load()
+	gate := row.writerGate()
 	if gate == nil || len(keys) == 0 {
 		return false
 	}

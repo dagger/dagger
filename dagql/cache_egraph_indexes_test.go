@@ -60,8 +60,8 @@ func cacheOutputEqClassForwardErrorLocked(c *Cache) error {
 	}
 
 	for resID, outputEqIDs := range c.resultOutputEqClasses {
-		seenRoots := make(map[eqClassID]struct{}, len(outputEqIDs))
-		for outputEqID := range outputEqIDs {
+		seenRoots := make(map[eqClassID]struct{}, outputEqIDs.Size())
+		for outputEqID := range outputEqIDs.All() {
 			root := c.findEqClassLocked(outputEqID)
 			if outputEqID != root {
 				return fmt.Errorf("result %d has non-root output eq class %d (root %d)", resID, outputEqID, root)
@@ -72,8 +72,7 @@ func cacheOutputEqClassForwardErrorLocked(c *Cache) error {
 			}
 			seenRoots[root] = struct{}{}
 			results := c.outputEqClassResults[root]
-			_, found := results[resID]
-			if !found {
+			if !results.Contains(resID) {
 				return fmt.Errorf("result %d output eq class %d is missing inverse membership", resID, root)
 			}
 		}
@@ -90,11 +89,11 @@ func cacheOutputEqClassInverseErrorLocked(c *Cache) error {
 		if outputEqID != root {
 			return fmt.Errorf("inverse output eq-class key %d is not a root (root %d)", outputEqID, root)
 		}
-		for resID := range results {
+		for resID := range results.All() {
 			if c.resultsByID[resID] == nil {
 				return fmt.Errorf("inverse output eq class %d references missing result %d", outputEqID, resID)
 			}
-			_, found := c.resultOutputEqClasses[resID][root]
+			found := c.resultOutputEqClasses[resID].Contains(root)
 			if !found {
 				return fmt.Errorf("inverse output eq class %d result %d is missing forward membership", root, resID)
 			}
@@ -123,7 +122,7 @@ func cacheOutputEqClassSurvivorErrorLocked(c *Cache, nowUnix int64) error {
 	}
 	for root := range liveOutputRoots {
 		oldSemanticsHasUnexpiredResult := false
-		for dig := range c.eqClassToDigests[root] {
+		for dig := range c.eqClassToDigests[root].All() {
 			posting := c.egraphResultsByDigest[dig]
 			if posting == nil {
 				continue
@@ -156,7 +155,7 @@ func cacheOutputEqClassCandidatesErrorLocked(c *Cache, nowUnix int64) error {
 	for root := range c.outputEqClassResults {
 		fromPostings := newSharedResultSet()
 		var postingsExpired expirySeen
-		for dig := range c.eqClassToDigests[root] {
+		for dig := range c.eqClassToDigests[root].All() {
 			c.appendDigestResultsLocked(fromPostings, digest.Digest(dig), nowUnix, &postingsExpired)
 		}
 		fromClass := newSharedResultSet()
@@ -366,8 +365,8 @@ func TestCacheCanonicalEquivalentReadsOutputEqClassResults(t *testing.T) {
 
 			c.egraphMu.Lock()
 			root := c.eqClassRootLocked(c.egraphDigestToClass[digest.FromString("derived-index-wide-output-content").String()])
-			members := slices.Sorted(maps.Keys(c.outputEqClassResults[root]))
-			digestCount := len(c.eqClassToDigests[root])
+			members := slices.Collect(c.outputEqClassResults[root].Items())
+			digestCount := c.eqClassToDigests[root].Size()
 			_, broad := c.broadlyIndexedResults[members[0]]
 			c.egraphMu.Unlock()
 			assert.Equal(t, width, len(members))
@@ -523,12 +522,8 @@ func TestCacheOutputEqClassResultsMatchDigestPostings(t *testing.T) {
 				res.expiresAtUnix = nowUnix - 1
 				res.imported = rng.IntN(2) == 0
 			case 1:
-				failed := make(chan struct{})
-				close(failed)
-				res.attachDepsMu.Lock()
-				res.attachDepsWaitCh = failed
-				res.attachDepsErr = fmt.Errorf("generated attachment failure")
-				res.attachDepsMu.Unlock()
+				res.openAttachment(nil)
+				res.endAttachment(fmt.Errorf("generated attachment failure"))
 			}
 		}
 		for root := range c.outputEqClassResults {
@@ -540,9 +535,9 @@ func TestCacheOutputEqClassResultsMatchDigestPostings(t *testing.T) {
 			if seen.remote {
 				remoteSeen++
 			}
-			for id := range c.outputEqClassResults[root] {
+			for id := range c.outputEqClassResults[root].All() {
 				posted := 0
-				for dig := range c.eqClassToDigests[root] {
+				for dig := range c.eqClassToDigests[root].All() {
 					if posting := c.egraphResultsByDigest[dig]; posting != nil && posting.Contains(id) {
 						posted++
 					}
@@ -584,7 +579,7 @@ func TestCacheOutputEqClassInverseMixedSurvivor(t *testing.T) {
 	var outputEqID eqClassID
 	for outputEqID = range classes {
 	}
-	termCount := len(c.outputEqClassToTerms[outputEqID])
+	termCount := c.outputEqClassToTerms[outputEqID].Size()
 	c.egraphMu.Unlock()
 	assert.Equal(t, 1, classCount)
 	assert.Assert(t, termCount > 0)
@@ -592,9 +587,9 @@ func TestCacheOutputEqClassInverseMixedSurvivor(t *testing.T) {
 	assert.NilError(t, c.ReleaseSession(ctxA, "inverse-mixed-a"))
 
 	c.egraphMu.Lock()
-	_, removedPresent := c.outputEqClassResults[outputEqID][sharedA.id]
-	_, survivorPresent := c.outputEqClassResults[outputEqID][sharedB.id]
-	survivingTermCount := len(c.outputEqClassToTerms[outputEqID])
+	removedPresent := c.outputEqClassResults[outputEqID].Contains(sharedA.id)
+	survivorPresent := c.outputEqClassResults[outputEqID].Contains(sharedB.id)
+	survivingTermCount := c.outputEqClassToTerms[outputEqID].Size()
 	indexErr := cacheDerivedIndexesErrorLocked(c)
 	c.egraphMu.Unlock()
 	assert.Assert(t, !removedPresent)
@@ -630,8 +625,8 @@ func TestCacheOutputEqClassInverseExpiredOnlyDoesNotSurvive(t *testing.T) {
 	var outputEqID eqClassID
 	for outputEqID = range classes {
 	}
-	removedTermIDs := make([]egraphTermID, 0, len(c.outputEqClassToTerms[outputEqID]))
-	for termID := range c.outputEqClassToTerms[outputEqID] {
+	removedTermIDs := make([]egraphTermID, 0, c.outputEqClassToTerms[outputEqID].Size())
+	for termID := range c.outputEqClassToTerms[outputEqID].All() {
 		removedTermIDs = append(removedTermIDs, termID)
 	}
 	sharedB.expiresAtUnix = time.Now().Add(-time.Hour).Unix()
@@ -684,17 +679,17 @@ func TestCacheOutputEqClassInverseMergeThenRemoval(t *testing.T) {
 	// Exercise the idempotent result-already-in-both-roots merge case.
 	c.addResultOutputEqClassLocked(sharedA.id, rootB)
 	mergedRoot := c.mergeEqClassesLocked(baseCtx, rootA, rootB)
-	mergedA := maps.Clone(c.resultOutputEqClasses[sharedA.id])
-	mergedB := maps.Clone(c.resultOutputEqClasses[sharedB.id])
-	mergedCount := len(c.outputEqClassResults[mergedRoot])
+	mergedA := slices.Collect(c.resultOutputEqClasses[sharedA.id].Items())
+	mergedB := slices.Collect(c.resultOutputEqClasses[sharedB.id].Items())
+	mergedCount := c.outputEqClassResults[mergedRoot].Size()
 	indexErr := cacheDerivedIndexesErrorLocked(c)
 	c.egraphMu.Unlock()
 	assert.Equal(t, 1, classCountA)
 	assert.Equal(t, 1, classCountB)
 	assert.Assert(t, distinctRoots)
 	assert.Assert(t, mergedRoot != 0)
-	assert.DeepEqual(t, mergedA, map[eqClassID]struct{}{mergedRoot: {}})
-	assert.DeepEqual(t, mergedB, map[eqClassID]struct{}{mergedRoot: {}})
+	assert.DeepEqual(t, mergedA, []eqClassID{mergedRoot})
+	assert.DeepEqual(t, mergedB, []eqClassID{mergedRoot})
 	assert.Equal(t, 2, mergedCount)
 	assert.NilError(t, indexErr)
 
@@ -1001,7 +996,7 @@ type eqClassContents struct {
 func testEqClassContentsLocked(c *Cache) eqClassContents {
 	name := func(id eqClassID) string {
 		root := c.findEqClassLocked(id)
-		digests := slices.Sorted(maps.Keys(c.eqClassToDigests[root]))
+		digests := slices.Collect(c.eqClassToDigests[root].Items())
 		if len(digests) == 0 {
 			return fmt.Sprintf("<no digest: %d>", root)
 		}
@@ -1022,7 +1017,7 @@ func testEqClassContentsLocked(c *Cache) eqClassContents {
 		out.Terms[id] = append(row, name(term.outputEqID))
 	}
 	for resID, classes := range c.resultOutputEqClasses {
-		for id := range classes {
+		for id := range classes.All() {
 			live[c.findEqClassLocked(id)] = true
 			out.Outputs[resID] = append(out.Outputs[resID], name(id))
 		}

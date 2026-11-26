@@ -594,8 +594,10 @@ func isStoredRow(payload []byte) bool {
 
 // storedRowHeader is a saved stored record's header: its light envelope, with
 // the parts the cache stores and its decline mark, as an engine's saved
-// envelope carries them, the entries the body's references name, the
-// record's parts (partFacts), and the entry's change stamp.
+// envelope carries them, the entries the body's references name, and the
+// record's parts (partFacts). The entry's change stamp is saved in its results
+// row (persistdb.MirrorResult.ChangeStamp), which a stamp moved by a class mate
+// writes without writing the record.
 type storedRowHeader struct {
 	Envelope      PersistedResultEnvelope `json:"envelope"`
 	EnvelopeBytes int64                   `json:"envelopeBytes"`
@@ -603,12 +605,6 @@ type storedRowHeader struct {
 	Parts         []storedRowPart         `json:"parts,omitempty"`
 	// Complete are the parts the record proves complete (storedBody.complete).
 	Complete []PersistedPartAddress `json:"complete,omitempty"`
-	// Stamp is the entry's change stamp (sharedResult.changedAt) as the
-	// save read it, which the restored entry takes back. A row saved
-	// before rows carried it restores at zero, with its cache's write
-	// count (persistdb.MetaKeyBundleWrites), which such a store doesn't
-	// have either.
-	Stamp uint64 `json:"stamp,omitempty"`
 }
 
 type storedRowPart struct {
@@ -618,10 +614,9 @@ type storedRowPart struct {
 }
 
 // encodeStoredRow returns the saved self payload of a stored record: header
-// is its envelope as a save writes it, whose value the body holds, and stamp
-// its entry's change stamp.
-func encodeStoredRow(header *PersistedResultEnvelope, body *storedBody, parts *partFacts, stamp uint64) ([]byte, error) {
-	h := storedRowHeader{Envelope: *lightStoredEnvelope(header), EnvelopeBytes: body.envelopeBytes, Refs: body.refs, Stamp: stamp}
+// is its envelope as a save writes it, whose value the body holds.
+func encodeStoredRow(header *PersistedResultEnvelope, body *storedBody, parts *partFacts) ([]byte, error) {
+	h := storedRowHeader{Envelope: *lightStoredEnvelope(header), EnvelopeBytes: body.envelopeBytes, Refs: body.refs}
 	h.Envelope.StoredParts = header.StoredParts
 	h.Envelope.Run, h.Envelope.RunRan = header.Run, header.RunRan
 	for _, part := range parts.declaredParts() {
@@ -639,22 +634,21 @@ func encodeStoredRow(header *PersistedResultEnvelope, body *storedBody, parts *p
 
 // decodeStoredRow reads a saved stored record's self payload, as
 // encodeStoredRow writes it, with the call its row saved: its envelope as the
-// save wrote it, without its value, its body, its parts, and its entry's
-// change stamp.
-func decodeStoredRow(payload []byte, call *ResultCall) (*PersistedResultEnvelope, *storedBody, *partFacts, uint64, error) {
+// save wrote it, without its value, its body, and its parts.
+func decodeStoredRow(payload []byte, call *ResultCall) (*PersistedResultEnvelope, *storedBody, *partFacts, error) {
 	if !isStoredRow(payload) {
-		return nil, nil, nil, 0, errors.New("stored row: no mark")
+		return nil, nil, nil, errors.New("stored row: no mark")
 	}
 	payload = payload[1:]
 	n, read := binary.Uvarint(payload)
 	if read <= 0 || n > uint64(len(payload)-read) {
-		return nil, nil, nil, 0, errors.New("stored row: bad header length")
+		return nil, nil, nil, errors.New("stored row: bad header length")
 	}
 	var h storedRowHeader
 	dec := json.NewDecoder(bytes.NewReader(payload[read : read+int(n)]))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&h); err != nil {
-		return nil, nil, nil, 0, fmt.Errorf("stored row header: %w", err)
+		return nil, nil, nil, fmt.Errorf("stored row header: %w", err)
 	}
 	body := &storedBody{
 		envelope:      slices.Clone(payload[read+int(n):]),
@@ -666,7 +660,7 @@ func decodeStoredRow(payload []byte, call *ResultCall) (*PersistedResultEnvelope
 	for _, part := range h.Parts {
 		key, err := partAddressKey(part.Address)
 		if err != nil {
-			return nil, nil, nil, 0, fmt.Errorf("stored row part: %w", err)
+			return nil, nil, nil, fmt.Errorf("stored row part: %w", err)
 		}
 		parts.declared = append(parts.declared, declaredPart{key: key, address: part.Address, state: part.State, kind: part.Kind})
 	}
@@ -674,12 +668,12 @@ func decodeStoredRow(payload []byte, call *ResultCall) (*PersistedResultEnvelope
 	for _, address := range h.Complete {
 		key, err := partAddressKey(address)
 		if err != nil {
-			return nil, nil, nil, 0, fmt.Errorf("stored row complete part: %w", err)
+			return nil, nil, nil, fmt.Errorf("stored row complete part: %w", err)
 		}
 		complete = append(complete, key)
 	}
 	parts.complete = sharedPartKeys(complete)
-	return &h.Envelope, body, parts, h.Stamp, nil
+	return &h.Envelope, body, parts, nil
 }
 
 // holdRestoredFramesCompressed has each restored stored record's body hold
@@ -805,6 +799,44 @@ func (c *Cache) queueStoredBodies(entries []*sharedResult) {
 	}
 }
 
+// taughtContent are the content digests holdings' spans taught an entry of
+// a blob-backed cache, and how far its frame has taken them. An entry has
+// them only once one is taught it, or a replacement leaves it a frame's
+// to take (sharedResult.taughtStateLocked), and keeps them from then on.
+// Requires egraphMu.
+type taughtContent struct {
+	// digests are the content digests holdings' spans taught the entry
+	// (teachRemoteIdentityLocked), in the order they were taught, the last
+	// its current one. The entry's frame takes them in that order, as a run
+	// of TeachContentDigest calls leaves an engine's, so one replaced by a
+	// later one is kept as replaced-content (queueTaughtContentLocked).
+	// given is how many of them the current frame has taken, and frame
+	// counts the frames a replacement installed, which have taken none.
+	digests []digest.Digest
+	given   int
+	frame   uint64
+	// from is, for an entry with no taught digests whose record a newer one
+	// replaced, the replaced frame: the body worker reads its content
+	// digests, in order, as the entry's taught ones, which a restored entry
+	// doesn't keep (its frame does).
+	from entryFrame
+}
+
+// taughtStateLocked returns res's taught content digests, making them if
+// res has none. Requires egraphMu for writing.
+func (res *sharedResult) taughtStateLocked() *taughtContent {
+	if res.taughtContent == nil {
+		res.taughtContent = &taughtContent{}
+	}
+	return res.taughtContent
+}
+
+// pendingLocked reports whether the entry's frame has yet to take a digest
+// taught it: false for an entry with none. Requires egraphMu.
+func (t *taughtContent) pendingLocked() bool {
+	return t != nil && (t.given < len(t.digests) || t.from.ok())
+}
+
 // queueTaughtContentLocked has the body worker give res's frame the content
 // digests spans taught res that the frame hasn't taken, when res has a frame.
 // A frame known to carry each of them as its content digest takes nothing:
@@ -812,16 +844,18 @@ func (c *Cache) queueStoredBodies(entries []*sharedResult) {
 // holds is not known until it is decoded. Requires egraphMu.
 func (c *Cache) queueTaughtContentLocked(res *sharedResult) {
 	w := c.storedBodies
-	seeded := res.taughtFrom.ok()
-	if !c.blobBacked || w == nil || (res.taughtGiven == len(res.taught) && !seeded) || !res.entryFrameLocked().ok() {
+	t := res.taughtContent
+	if !c.blobBacked || w == nil || !t.pendingLocked() || !res.entryFrameLocked().ok() {
 		return
 	}
+	seeded := t.from.ok()
 	res.resultCallMu.RLock()
 	known, carried := res.frameContentKnown, res.frameContent
 	res.resultCallMu.RUnlock()
-	if !seeded && known && !slices.ContainsFunc(res.taught[res.taughtGiven:], func(d digest.Digest) bool { return d != carried }) {
-		c.taughtContentCarried.Add(uint64(len(res.taught) - res.taughtGiven))
-		res.taughtGiven = len(res.taught)
+	if !seeded && known && !slices.ContainsFunc(t.digests[t.given:], func(d digest.Digest) bool { return d != carried }) {
+		c.taughtContentCarried.Add(uint64(len(t.digests) - t.given))
+		t.given = len(t.digests)
+		c.noteSavedEntryLocked(res.id)
 		return
 	}
 	w.mu.Lock()
@@ -850,8 +884,19 @@ func (c *Cache) applyTaughtContent(entries []*sharedResult) {
 	for _, res := range entries {
 		c.adoptReplacedContent(res)
 		c.egraphMu.RLock()
-		from, frame, live := res.taughtGiven, res.taughtFrame, c.resultsByID[res.id] == res
-		pending := slices.Clone(res.taught[from:])
+		// An entry keeps its taught digests' state once it has one, so the
+		// state read here is the one checked below.
+		t := res.taughtContent
+		live := c.resultsByID[res.id] == res
+		var (
+			from    int
+			frame   uint64
+			pending []digest.Digest
+		)
+		if t != nil {
+			from, frame = t.given, t.frame
+			pending = slices.Clone(t.digests[from:])
+		}
 		c.egraphMu.RUnlock()
 		if !live || len(pending) == 0 {
 			continue
@@ -877,8 +922,9 @@ func (c *Cache) applyTaughtContent(entries []*sharedResult) {
 		// A frame a replacement installed since has taken none of them, and
 		// its queueing gives it them all. Digests taught meanwhile are
 		// given by their own queueing.
-		if res.taughtFrame == frame && res.taughtGiven == from {
-			res.taughtGiven = from + applied
+		if t.frame == frame && t.given == from {
+			t.given = from + applied
+			c.noteSavedEntryLocked(res.id)
 		}
 		c.egraphMu.Unlock()
 	}
@@ -902,12 +948,16 @@ func (c *Cache) queueRestoredTaughtContent() {
 }
 
 // adoptReplacedContent takes, as res's taught content digests, those of the
-// frame a replacement took from res when res had none (taughtFrom): its
+// frame a replacement took from res when res had none (taughtContent.from): its
 // replaced content digests in the order the frame kept them, then its
 // content digest. The frame is decoded outside egraphMu.
 func (c *Cache) adoptReplacedContent(res *sharedResult) {
 	c.egraphMu.RLock()
-	from := res.taughtFrom
+	t := res.taughtContent
+	var from entryFrame
+	if t != nil {
+		from = t.from
+	}
 	c.egraphMu.RUnlock()
 	if !from.ok() {
 		return
@@ -927,12 +977,13 @@ func (c *Cache) adoptReplacedContent(res *sharedResult) {
 	}
 	c.lockGraphFor(context.Background(), workBody)
 	defer c.egraphMu.Unlock()
-	if res.taughtFrom != from {
+	if t.from != from {
 		return
 	}
-	res.taughtFrom = entryFrame{}
+	t.from = entryFrame{}
 	// Digests taught since the replacement come after the frame's.
-	res.taught = append(run, res.taught...)
+	t.digests = append(run, t.digests...)
+	c.noteSavedEntryLocked(res.id)
 }
 
 // TaughtContentStats counts, since the cache opened, what giving entries'
@@ -980,7 +1031,7 @@ func (c *Cache) TaughtContentStats() TaughtContentStats {
 // waitsForTaughtContentLocked reports whether res's frame has yet to take a
 // content digest a span taught res. Requires egraphMu.
 func (res *sharedResult) waitsForTaughtContentLocked() bool {
-	return res.taughtGiven < len(res.taught) || res.taughtFrom.ok()
+	return res.taughtContent.pendingLocked()
 }
 
 // closeStoredBodies stops the body worker. Entries it hadn't compressed keep

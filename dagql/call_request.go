@@ -15,7 +15,7 @@ type CallRequest struct {
 
 	// ListItem marks a read of item Nth of the receiver, a cache-backed list
 	// whose value holds the item inline. Such a read is answered only by the
-	// item the receiver recorded for that position (sharedResult.listItems):
+	// item the receiver recorded for that position (listLinks):
 	// two entries of one list recipe can hold different values, and so can a
 	// transferred item whose list the cache did not take, so items matched
 	// by recipe could assemble a list that is neither.

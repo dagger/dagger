@@ -41,10 +41,10 @@ func largeKeptCallEntry(tb testing.TB, c *Cache, n int, stored bool) (*sharedRes
 		}
 		return &keptCall{id: callIdentity{field: "f", recipe: digest.FromString(fmt.Sprint("call-", i, "-", stored)), self: self, inputs: []digest.Digest{in}, witnesses: []bool{false}}}
 	}
-	entry.calls = make(map[digest.Digest]*keptCall, n)
+	entry.callsStateLocked().byRequest = make(map[digest.Digest]*keptCall, n)
 	for i := 0; i < n; i++ {
 		k := mk(i)
-		entry.calls[k.id.recipe] = k
+		entry.calls.byRequest[k.id.recipe] = k
 		c.indexKeptCallLocked(entry, k)
 	}
 	return entry, mk
@@ -82,7 +82,7 @@ func TestKeepingACallOnALargeEntryKeysItsOwnTerm(t *testing.T) {
 				keepOn(c, entry, kept)
 				require.LessOrEqual(t, keyed, 2, "keys taken to keep one call on %d", n)
 			}
-			require.Len(t, entry.calls, n+2, "two new terms kept, the old term's call not")
+			require.Len(t, entry.keptCallsLocked(), n+2, "two new terms kept, the old term's call not")
 		})
 	}
 }
@@ -214,7 +214,7 @@ func benchmarkKeepOverALargeClass(b *testing.B, n, m int, own bool) {
 		keepOn(c, entry, kept)
 	}
 	b.StopTimer()
-	if entry.calls[first.id.recipe] != first {
+	if entry.keptCallsLocked()[first.id.recipe] != first {
 		b.Fatal("the term's kept call was replaced")
 	}
 }
@@ -222,7 +222,7 @@ func benchmarkKeepOverALargeClass(b *testing.B, n, m int, own bool) {
 // forgetKept drops each of calls that entry still keeps.
 func forgetKept(c *Cache, entry *sharedResult, calls ...*keptCall) {
 	for _, kept := range calls {
-		if entry.calls[kept.id.recipe] == kept {
+		if entry.keptCallsLocked()[kept.id.recipe] == kept {
 			c.dropKeptCallLocked(entry, kept)
 		}
 	}
@@ -330,12 +330,12 @@ func callTermIndexSequence(t *testing.T, seed int64, saw func(string)) {
 			kind = "drop"
 			steps = append(steps, fmt.Sprint("drop ", pick))
 			do = func(s *side) any {
-				if len(s.entry.calls) == 0 {
+				if len(s.entry.keptCallsLocked()) == 0 {
 					return nil
 				}
-				recipes := slices.Sorted(maps.Keys(s.entry.calls))
+				recipes := slices.Sorted(maps.Keys(s.entry.keptCallsLocked()))
 				recipe := recipes[pick%len(recipes)]
-				s.c.dropKeptCallLocked(s.entry, s.entry.calls[recipe])
+				s.c.dropKeptCallLocked(s.entry, s.entry.keptCallsLocked()[recipe])
 				return recipe
 			}
 		default:
@@ -359,14 +359,16 @@ func callTermIndexSequence(t *testing.T, seed int64, saw func(string)) {
 				return compacted
 			}
 		}
-		scan.entry.callTermIndex = nil
-		indexed := index.entry.callTermIndex != nil
+		if scan.entry.keptCallsLocked() != nil {
+			scan.entry.calls.termIndex = nil
+		}
+		indexed := termIndexOf(index.entry) != nil
 		_, joined := index.c.joinedTermCallsLocked(index.entry)
-		before := slices.Sorted(maps.Keys(index.entry.calls))
+		before := slices.Sorted(maps.Keys(index.entry.keptCallsLocked()))
 		result := do(index)
 		require.Equal(t, do(scan), result, "step %d: %s", step, steps[step])
-		switch after := index.entry.calls; {
-		case indexed && index.entry.callTermIndex == nil:
+		switch after := index.entry.keptCallsLocked(); {
+		case indexed && termIndexOf(index.entry) == nil:
 			saw("index dropped by " + kind)
 		case kind == "keep" && len(joined) > 0 && len(after) <= len(before):
 			saw("keep joined")
@@ -375,11 +377,19 @@ func callTermIndexSequence(t *testing.T, seed int64, saw func(string)) {
 		case kind == "drop" && result != nil:
 			saw("drop")
 		}
-		require.Equal(t, slices.Sorted(maps.Keys(scan.entry.calls)), slices.Sorted(maps.Keys(index.entry.calls)), "step %d: %s\nsteps: %v", step, steps[step], steps)
-		if index.entry.callTermIndex != nil {
+		require.Equal(t, slices.Sorted(maps.Keys(scan.entry.keptCallsLocked())), slices.Sorted(maps.Keys(index.entry.keptCallsLocked())), "step %d: %s\nsteps: %v", step, steps[step], steps)
+		if termIndexOf(index.entry) != nil {
 			fresh, joined := index.c.joinedTermCallsLocked(index.entry)
 			require.Empty(t, joined, "step %d: %s", step, steps[step])
-			require.Equal(t, fresh, index.entry.callTermIndex, "step %d: %s", step, steps[step])
+			require.Equal(t, fresh, termIndexOf(index.entry), "step %d: %s", step, steps[step])
 		}
 	}
+}
+
+// termIndexOf is entry's call term index, or nil when it has none.
+func termIndexOf(entry *sharedResult) map[string]*keptCall {
+	if entry.keptCallsLocked() == nil {
+		return nil
+	}
+	return entry.calls.termIndex
 }

@@ -84,3 +84,42 @@ func TestCompletePartsRefusesAMalformedList(t *testing.T) {
 	_, err = UnpackCompleteParts(table, huge)
 	require.Error(t, err, "a count larger than what follows is refused before anything is made for it")
 }
+
+// Complete parts read by position name, at every position, the parts
+// UnpackCompleteParts gives it, by their indexes in the table.
+func TestPartIndexesMatchCompleteParts(t *testing.T) {
+	t.Parallel()
+	meta := dagql.PersistedPartAddress{Part: "metadata"}
+	exec := dagql.PersistedPartAddress{Part: "execMeta"}
+	nested := dagql.PersistedPartAddress{OutputPath: dagql.PersistedRefPath{}.Field("rootfs"), Part: "fs"}
+	parts := [][]dagql.PersistedPartAddress{{exec}, {meta, exec}, nil, nil, {meta}, {nested, meta}, nil, nil}
+	table, packed := PackCompleteParts(parts)
+	x, err := UnpackPartIndexes(packed, len(table), len(parts))
+	require.NoError(t, err)
+	for p := range parts {
+		var got []dagql.PersistedPartAddress
+		for _, i := range x.At(p) {
+			got = append(got, table[i])
+		}
+		require.Equal(t, parts[p], got, "position %d", p)
+	}
+	require.Empty(t, x.At(len(parts)), "past the last position")
+
+	x, err = UnpackPartIndexes(nil, 0, 5)
+	require.NoError(t, err)
+	require.Empty(t, x.At(2), "no complete part, none at any position")
+}
+
+// Packed parts read by position refuse what UnpackCompleteParts refuses,
+// and a position past the file's entries or out of order.
+func TestPartIndexesRefuseAMalformedList(t *testing.T) {
+	t.Parallel()
+	_, err := UnpackPartIndexes([]byte{0, 1, 1}, 1, 3)
+	require.Error(t, err, "index 1 of a table of 1")
+	_, err = UnpackPartIndexes([]byte{0, 2, 0}, 1, 3)
+	require.Error(t, err, "two parts announced, one given")
+	_, err = UnpackPartIndexes([]byte{3, 1, 0}, 1, 3)
+	require.Error(t, err, "position 3 of 3 entries")
+	_, err = UnpackPartIndexes([]byte{1, 1, 0, 0, 1, 0}, 1, 3)
+	require.Error(t, err, "position 1 twice")
+}

@@ -91,6 +91,88 @@ func PackCompleteParts(parts [][]dagql.PersistedPartAddress) ([]dagql.PersistedP
 // PackCompleteParts packed them.
 func UnpackCompleteParts(table []dagql.PersistedPartAddress, packed []byte) (map[int][]dagql.PersistedPartAddress, error) {
 	parts := map[int][]dagql.PersistedPartAddress{}
+	err := readCompleteParts(packed, len(table), func(position int, indexes []uint64) error {
+		addresses := make([]dagql.PersistedPartAddress, 0, len(indexes))
+		for _, i := range indexes {
+			addresses = append(addresses, table[i])
+		}
+		parts[position] = addresses
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return parts, nil
+}
+
+// PartIndexes are a restored file's complete parts (PackCompleteParts) for
+// a reader that keeps them by position: each part as its index in the
+// table, four bytes, where an unpacked address takes forty and a slice of
+// them more for each position.
+type PartIndexes struct {
+	// position p's parts are indexes[off[p]:off[p+1]]; off is nil when no
+	// position has any.
+	off     []uint32
+	indexes []uint32
+}
+
+// UnpackPartIndexes reads packed complete parts of a file's n entries, with
+// a table of tableLen addresses, by position (PartIndexes). It refuses what
+// UnpackCompleteParts refuses, a position at or past n, and positions out of
+// order.
+func UnpackPartIndexes(packed []byte, tableLen, n int) (PartIndexes, error) {
+	if len(packed) == 0 {
+		return PartIndexes{}, nil
+	}
+	count := 0
+	if err := readCompleteParts(packed, tableLen, func(position int, indexes []uint64) error {
+		if position >= n {
+			return fmt.Errorf("complete parts at position %d of %d entries", position, n)
+		}
+		count += len(indexes)
+		return nil
+	}); err != nil {
+		return PartIndexes{}, err
+	}
+	x := PartIndexes{off: make([]uint32, n+1), indexes: make([]uint32, 0, count)}
+	// off[p] is set for every p up to done.
+	done := 0
+	err := readCompleteParts(packed, tableLen, func(position int, indexes []uint64) error {
+		if position < done {
+			return fmt.Errorf("complete parts at position %d after position %d", position, done-1)
+		}
+		for ; done < position; done++ {
+			x.off[done+1] = uint32(len(x.indexes))
+		}
+		for _, i := range indexes {
+			x.indexes = append(x.indexes, uint32(i))
+		}
+		done++
+		x.off[done] = uint32(len(x.indexes))
+		return nil
+	})
+	if err != nil {
+		return PartIndexes{}, err
+	}
+	for ; done < n; done++ {
+		x.off[done+1] = uint32(len(x.indexes))
+	}
+	return x, nil
+}
+
+// At returns the table indexes of position p's parts.
+func (x PartIndexes) At(p int) []uint32 {
+	if x.off == nil || p < 0 || p+1 >= len(x.off) {
+		return nil
+	}
+	return x.indexes[x.off[p]:x.off[p+1]]
+}
+
+// readCompleteParts calls visit with each position of packed complete parts
+// (PackCompleteParts) that has any, in order, and its parts' indexes in the
+// table, which visit must not keep. It refuses a list that ends mid-record,
+// or names an index at or past tableLen.
+func readCompleteParts(packed []byte, tableLen int, visit func(position int, indexes []uint64) error) error {
 	next := func() (uint64, error) {
 		v, n := binary.Uvarint(packed)
 		if n <= 0 {
@@ -99,33 +181,36 @@ func UnpackCompleteParts(table []dagql.PersistedPartAddress, packed []byte) (map
 		packed = packed[n:]
 		return v, nil
 	}
+	var indexes []uint64
 	position := 0
 	for len(packed) > 0 {
 		delta, err := next()
 		if err != nil {
-			return nil, err
+			return err
 		}
 		position += int(delta)
 		count, err := next()
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if count > uint64(len(packed)) {
 			// Each index takes at least a byte.
-			return nil, fmt.Errorf("complete parts: %d parts announced, with %d bytes left", count, len(packed))
+			return fmt.Errorf("complete parts: %d parts announced, with %d bytes left", count, len(packed))
 		}
-		addresses := make([]dagql.PersistedPartAddress, 0, count)
+		indexes = indexes[:0]
 		for range count {
 			i, err := next()
 			if err != nil {
-				return nil, err
+				return err
 			}
-			if i >= uint64(len(table)) {
-				return nil, fmt.Errorf("complete parts: part %d of a table of %d", i, len(table))
+			if i >= uint64(tableLen) {
+				return fmt.Errorf("complete parts: part %d of a table of %d", i, tableLen)
 			}
-			addresses = append(addresses, table[i])
+			indexes = append(indexes, i)
 		}
-		parts[position] = addresses
+		if err := visit(position, indexes); err != nil {
+			return err
+		}
 	}
-	return parts, nil
+	return nil
 }

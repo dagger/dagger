@@ -380,7 +380,8 @@ func partTestAppliedLinks(res AnyResult) []PersistedSnapshotRefLink {
 	row := res.cacheSharedResult()
 	row.payloadMu.RLock()
 	defer row.payloadMu.RUnlock()
-	return cloneSnapshotRefLinks(row.snapshotOwnerLinks)
+	links, _ := row.snapshotLinksLocked()
+	return cloneSnapshotRefLinks(links)
 }
 
 func partTestHasLink(res AnyResult, refKey string) bool {

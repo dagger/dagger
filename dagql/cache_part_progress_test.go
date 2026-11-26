@@ -109,7 +109,7 @@ func TestCommitReadyPartChangedRefusals(t *testing.T) {
 		}, "commit: donor version", true, func(_, donor *sharedResult) *sharedResult { return donor }},
 		{"donor offers moved", func(c *Cache, _ *PreparedReadyPart, _, donor *sharedResult) {
 			c.egraphMu.Lock()
-			donor.offerRevision++
+			donor.offersStateLocked().revision++
 			c.egraphMu.Unlock()
 		}, "commit: donor facts changed", true, func(_, donor *sharedResult) *sharedResult { return donor }},
 		{"donor expiry alone", func(c *Cache, _ *PreparedReadyPart, _, donor *sharedResult) {
@@ -294,7 +294,7 @@ func chainLoopFixture(t *testing.T, demand *PartDemandState, arm func(c *Cache, 
 	c.egraphMu.Lock()
 	owner, err := c.newOfferOwnerLocked(ctx, record.Owner)
 	if err == nil {
-		err = c.testAttachPartOfferLocked(donor.cacheSharedResult(), address, &partOffer{record: record, owner: owner})
+		err = c.testAttachPartOfferLocked(donor.cacheSharedResult(), address, &partOffer{layeredOffer: c.storedLayers.hold(record), owner: owner})
 	}
 	c.egraphMu.Unlock()
 	require.NoError(t, err)

@@ -206,7 +206,7 @@ func debugInputProvenance(inputs []egraphInputProvenanceKind) []map[string]any {
 	out := make([]map[string]any, 0, len(inputs))
 	for _, input := range inputs {
 		out = append(out, map[string]any{
-			"kind": string(input),
+			"kind": input.String(),
 		})
 	}
 	return out
@@ -610,8 +610,8 @@ func (c *Cache) debugEqClassMergeDetails(ids []eqClassID) []map[string]any {
 		if root == 0 {
 			continue
 		}
-		digests := make([]string, 0, len(c.eqClassToDigests[root]))
-		for dig := range c.eqClassToDigests[root] {
+		digests := make([]string, 0, c.eqClassToDigests[root].Size())
+		for dig := range c.eqClassToDigests[root].All() {
 			digests = append(digests, dig)
 		}
 		slices.Sort(digests)
@@ -626,15 +626,14 @@ func (c *Cache) debugEqClassMergeDetails(ids []eqClassID) []map[string]any {
 	return out
 }
 
-func (c *Cache) debugEqClassTermIDs(terms map[egraphTermID]struct{}) []uint64 {
-	if len(terms) == 0 {
+func (c *Cache) debugEqClassTermIDs(terms *idSet[egraphTermID]) []uint64 {
+	if terms.Size() == 0 {
 		return nil
 	}
-	out := make([]uint64, 0, len(terms))
-	for termID := range terms {
+	out := make([]uint64, 0, terms.Size())
+	for termID := range terms.Items() {
 		out = append(out, uint64(termID))
 	}
-	slices.Sort(out)
 	return out
 }
 
@@ -1012,11 +1011,11 @@ func (c *Cache) DebugEGraphSnapshot() *EGraphDebugSnapshot {
 			continue
 		}
 		depIDs := make([]uint64, 0, len(res.deps))
-		for depID := range res.deps {
+		for _, depID := range res.deps {
 			depIDs = append(depIDs, uint64(depID))
 		}
 		slices.Sort(depIDs)
-		outputEqIDs := make([]uint64, 0, len(c.resultOutputEqClasses[resultID]))
+		outputEqIDs := make([]uint64, 0, c.resultOutputEqClasses[resultID].Size())
 		for outputEqID := range c.outputEqClassesForResultLocked(resultID) {
 			outputEqIDs = append(outputEqIDs, uint64(outputEqID))
 		}
@@ -1109,7 +1108,7 @@ func (c *Cache) DebugEGraphSnapshot() *EGraphDebugSnapshot {
 			inputProvenance := make([]EGraphDebugInputProvenance, 0, len(c.termInputProvenance[termID]))
 			for _, input := range c.termInputProvenance[termID] {
 				inputProvenance = append(inputProvenance, EGraphDebugInputProvenance{
-					Kind: string(input),
+					Kind: input.String(),
 				})
 			}
 			snap.ResultTerms = append(snap.ResultTerms, EGraphDebugResultTerm{
@@ -1372,12 +1371,12 @@ func (c *Cache) WriteDebugCacheSnapshot(w io.Writer) error {
 			}
 
 			depIDs := make([]uint64, 0, len(res.deps))
-			for depID := range res.deps {
+			for _, depID := range res.deps {
 				depIDs = append(depIDs, uint64(depID))
 			}
 			slices.Sort(depIDs)
 
-			outputEqIDs := make([]uint64, 0, len(c.resultOutputEqClasses[resultID]))
+			outputEqIDs := make([]uint64, 0, c.resultOutputEqClasses[resultID].Size())
 			for outputEqID := range c.outputEqClassesForResultLocked(resultID) {
 				outputEqIDs = append(outputEqIDs, uint64(outputEqID))
 			}
@@ -1567,7 +1566,7 @@ func (c *Cache) WriteDebugCacheSnapshot(w io.Writer) error {
 			for _, termID := range assocTermIDs {
 				inputProvenance := make([]EGraphDebugInputProvenance, 0, len(c.termInputProvenance[termID]))
 				for _, input := range c.termInputProvenance[termID] {
-					inputProvenance = append(inputProvenance, EGraphDebugInputProvenance{Kind: string(input)})
+					inputProvenance = append(inputProvenance, EGraphDebugInputProvenance{Kind: input.String()})
 				}
 				if err := writeElem(EGraphDebugResultTerm{
 					SharedResultID:  uint64(resultID),
