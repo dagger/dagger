@@ -740,6 +740,66 @@ func TestCollectionAsksBeforeRemovingAHolding(t *testing.T) {
 	require.Equal(t, []HolderKey{dep}, collected, "once nothing owns it")
 }
 
+// A number no holding of the cache has is owned by the holdings that name it
+// among their dependencies, which the cache counts (RemoteDependents). The
+// write that takes the last of them, a collection or a newer value's
+// dependencies, hands the number back (UnheldCandidates), for what the
+// caller keeps of it beside the holdings. One still named, or one that gains
+// a holding of its own, isn't handed back.
+func TestTheLastHoldingNamingAnUnheldNumber(t *testing.T) {
+	t.Parallel()
+	cloud := newCloudCache(t)
+	a := newCloudApplier(t, cloud)
+	engine := CacheID("cache-a")
+	first, second := HolderKey{engine, 10}, HolderKey{engine, 11}
+	shared, own := HolderKey{engine, 7}, HolderKey{engine, 8}
+	a.call(callRow{key: first, session: "s1", holding: holdingOf("first", shared.Number)})
+	a.call(callRow{key: second, session: "s2", holding: holdingOf("second", shared.Number, own.Number)})
+	require.Empty(t, a.collect())
+	require.Equal(t, 2, cloud.RemoteDependents(shared))
+	require.Equal(t, 1, cloud.RemoteDependents(own))
+
+	collectOf := func(session string) ([]HolderKey, RemoteChange) {
+		t.Helper()
+		a.endSession(engine, session)
+		collected, change, err := cloud.CollectRemoteHoldings(t.Context(), a.candidates, nil)
+		require.NoError(t, err)
+		a.candidates = nil
+		return collected, change
+	}
+	collected, change := collectOf("s1")
+	require.Equal(t, []HolderKey{first}, collected)
+	require.Empty(t, change.UnheldCandidates, "the second holding still names the shared number")
+	require.Equal(t, 1, cloud.RemoteDependents(shared))
+
+	collected, change = collectOf("s2")
+	require.Equal(t, []HolderKey{second}, collected)
+	require.Equal(t, []HolderKey{shared, own}, change.UnheldCandidates)
+	require.Zero(t, cloud.RemoteDependents(shared))
+	require.Zero(t, cloud.RemoteDependents(own))
+
+	// A newer value with other dependencies takes the old ones'.
+	third, old, next := HolderKey{engine, 12}, HolderKey{engine, 9}, HolderKey{engine, 13}
+	a.call(callRow{key: third, session: "s3", holding: holdingOf("third", old.Number)})
+	change, found, err := cloud.ApplyHeldValueState(t.Context(), third, HeldValueState{Replacements: 1, Deps: []uint64{next.Number}})
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, []HolderKey{old}, change.UnheldCandidates)
+	require.Zero(t, cloud.RemoteDependents(old))
+	require.Equal(t, 1, cloud.RemoteDependents(next))
+
+	// A number that gains a holding is owned through that holding's
+	// dependents, and its parent's collection collects it as a dependency.
+	a.call(callRow{key: next, session: "s3", holding: holdingOf("next")})
+	require.Equal(t, 1, cloud.RemoteDependents(next))
+	w := cloud.HoldRemoteWrites()
+	require.Equal(t, 1, w.RemoteDependents(next), "the same in a hold")
+	require.NoError(t, w.Release(t.Context()))
+	collected, change = collectOf("s3")
+	require.Equal(t, []HolderKey{third, next}, sortedKeys2(collected))
+	require.Empty(t, change.UnheldCandidates)
+}
+
 // A late call row of an ended session creates its holding with no hold; the
 // pass after its batch collects it unless its retention or a dependent owns
 // it.
