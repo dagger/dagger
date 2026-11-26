@@ -379,7 +379,7 @@ func (c *Cache) readEntryLocked(rd *persistRead, id sharedResultID, res *sharedR
 	var cloudStored bool
 	var cloudExpiresAtUnix int64
 	if cloud != nil {
-		cloudStored = !cloud.unstored
+		cloudStored = !cloud.is(heldUnstored)
 		cloudExpiresAtUnix = cloud.expiresAtUnix
 	}
 	row := persistdb.MirrorResult{

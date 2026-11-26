@@ -103,8 +103,8 @@ func (c *Cache) dropValueLocked(ctx context.Context, res *sharedResult) ([]*shar
 	// after the drop.
 	c.markEntryClassLocked(res.id, StampPruned)
 	for _, ref := range res.holderRefsLocked() {
-		if ref.h.executed {
-			ref.h.executed = false
+		if ref.h.is(heldExecuted) {
+			ref.h.setFlag(heldExecuted, false)
 			c.markHoldingLocked(ref.key)
 		}
 	}

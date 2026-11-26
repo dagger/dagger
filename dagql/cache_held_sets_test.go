@@ -31,8 +31,8 @@ func snapshotHeldSets(t *testing.T, cloud *Cache, key HolderKey) heldSetsSnapsho
 	_, h := cloud.holdingLocked(key)
 	require.NotNil(t, h)
 	return heldSetsSnapshot{
-		deps: h.deps, unknownDeps: h.unknownDeps, sessions: h.sessions, parts: h.parts,
-		wantDeps: slices.Clone(h.deps), wantUnknownDeps: slices.Clone(h.unknownDeps),
+		deps: h.deps, unknownDeps: h.unknownDepsLocked(), sessions: h.sessions, parts: h.parts,
+		wantDeps: slices.Clone(h.deps), wantUnknownDeps: slices.Clone(h.unknownDepsLocked()),
 		wantSessions: slices.Clone(h.sessions), wantParts: slices.Clone(h.parts),
 		facts: facts,
 		wantFacts: HoldingFacts{

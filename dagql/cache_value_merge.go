@@ -3391,10 +3391,13 @@ func (c *Cache) unchangedCloudRowLocked(commit *valueMergeCommit, row *mergeRow)
 		return false
 	}
 	key, h := row.res.cloudHoldingLocked()
-	if h == nil || h.cloudMerge == nil || key.Number != row.value.SenderNumber || h.unstored || h.expiresAtUnix != row.value.ExpiresAtUnix {
+	if h == nil {
 		return false
 	}
-	note := h.cloudMerge
+	note := h.cloudMergeLocked()
+	if note == nil || key.Number != row.value.SenderNumber || h.is(heldUnstored) || h.expiresAtUnix != row.value.ExpiresAtUnix {
+		return false
+	}
 	return commit.prep.bundle.SenderCache != "" && note.cache == commit.prep.bundle.SenderCache && note.stamp == row.value.SenderStamp && note.revision == row.res.transferRevision
 }
 
@@ -3411,10 +3414,10 @@ func (c *Cache) noteCloudMergeLocked(commit *valueMergeCommit, row *mergeRow) {
 	}
 	if commit.prep.bundle.SenderCache == "" {
 		// A Cloud cache with no identity: its stamps compare with none.
-		h.cloudMerge = nil
+		h.setCloudMergeLocked(nil)
 		return
 	}
-	h.cloudMerge = &cloudMergeNote{cache: commit.prep.bundle.SenderCache, stamp: row.value.SenderStamp, revision: row.res.transferRevision}
+	h.setCloudMergeLocked(&cloudMergeNote{cache: commit.prep.bundle.SenderCache, stamp: row.value.SenderStamp, revision: row.res.transferRevision})
 }
 
 // identityMark is what teaching an entry its identity can change, read

@@ -230,7 +230,7 @@ func TestCloudHoldingSurvivesRestart(t *testing.T) {
 			offers := row.testPartOffers()
 			restored.egraphMu.RUnlock()
 			require.Equal(t, HolderKey{Cache: cloudCacheID, Number: 42}, key)
-			require.Equal(t, !stored, cloud.unstored)
+			require.Equal(t, !stored, cloud.is(heldUnstored))
 			if stored {
 				require.Equal(t, expires, cloud.expiresAtUnix)
 			} else {
@@ -267,7 +267,7 @@ func TestImportValuesKeepsTheSendersNumber(t *testing.T) {
 	offers := row.testPartOffers()
 	b.egraphMu.RUnlock()
 	require.Equal(t, HolderKey{Cache: cloudCacheID, Number: bundle.Values[0].SenderNumber}, key)
-	require.False(t, cloud.unstored, "a merged record is stored")
+	require.False(t, cloud.is(heldUnstored), "a merged record is stored")
 	require.Equal(t, bundle.Values[0].ExpiresAtUnix, cloud.expiresAtUnix)
 	require.Len(t, offers, 1)
 
@@ -354,7 +354,7 @@ func TestOfferAlreadyCompleteRecordsTheCloudCounterpart(t *testing.T) {
 				offers := len(row.testPartOffers())
 				c.egraphMu.RUnlock()
 				require.Equal(t, HolderKey{Cache: cloudCacheID, Number: counterpart.number}, key)
-				require.Equal(t, !counterpart.stored, cloud.unstored)
+				require.Equal(t, !counterpart.stored, cloud.is(heldUnstored))
 				if !counterpart.stored {
 					expires = 0
 				}
@@ -434,7 +434,7 @@ func TestBorrowedOfferRenewsByItsOwnKey(t *testing.T) {
 	key, cloud := row.cloudHoldingLocked()
 	f.cache.egraphMu.RUnlock()
 	require.Equal(t, HolderKey{Cache: cloudCacheID, Number: 21}, key, "the holding names the counterpart, not the donor")
-	require.True(t, cloud.unstored)
+	require.True(t, cloud.is(heldUnstored))
 
 	require.NoError(t, f.run())
 	require.True(t, f.installed())
@@ -495,10 +495,10 @@ func TestOfferAlreadyCompleteOnAReferencedRowRecordsItsCounterpart(t *testing.T)
 	c.egraphMu.RUnlock()
 	require.NotNil(t, leafCloud, "the referenced row records the counterpart")
 	require.Equal(t, HolderKey{Cache: cloudCacheID, Number: 42}, leafKey)
-	require.False(t, leafCloud.unstored)
+	require.False(t, leafCloud.is(heldUnstored))
 	require.Equal(t, expires, leafCloud.expiresAtUnix)
 	require.Equal(t, HolderKey{Cache: cloudCacheID, Number: 30}, listKey, "the receiver keeps its own counterpart")
-	require.False(t, listCloud.unstored)
+	require.False(t, listCloud.is(heldUnstored))
 	require.Equal(t, listExpires, listCloud.expiresAtUnix)
 	require.Zero(t, offers, "a complete part takes no offer")
 	require.Zero(t, owners)

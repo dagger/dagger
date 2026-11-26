@@ -81,7 +81,7 @@ func TestMergeValuesKeepsAnUnexpiredEntry(t *testing.T) {
 	require.False(t, imported, "the entry keeps its own computed value")
 	require.True(t, hasValue)
 	require.Equal(t, HolderKey{Cache: cloudCacheID, Number: bundle.Values[0].SenderNumber}, key, "and learns the Cloud's copy")
-	require.False(t, cloud.unstored)
+	require.False(t, cloud.is(heldUnstored))
 }
 
 // An expired entry that nothing uses takes the record in place: it keeps its
