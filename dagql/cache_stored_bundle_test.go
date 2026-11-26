@@ -392,7 +392,8 @@ func TestStoredBundleGivesWayToAWaitingWriter(t *testing.T) {
 		started = true
 		go func() {
 			cloud.egraphMu.Lock()
-			cloud.egraphMu.Unlock()
+			defer cloud.egraphMu.Unlock()
+			// The writer has the lock.
 			close(wrote)
 		}()
 		for !cloud.egraphMu.Waiting() {
