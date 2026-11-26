@@ -288,12 +288,12 @@ func emitProgress(ctx context.Context, item string, current, total int64) {
 	rec.SetTimestamp(time.Now())
 	// explicit empty body: progress records are not log text, and an
 	// unset body does not survive the OTLP round-trip
-	rec.SetBody(log.StringValue(""))
+	rec.SetBody(attribute.StringValue(""))
 	rec.AddAttributes(
-		log.String("dagger.io/progress.item", item),
-		log.Int64("dagger.io/progress.current", current),
-		log.Int64("dagger.io/progress.total", total),
-		log.String("dagger.io/progress.unit", "bytes"),
+		attribute.String("dagger.io/progress.item", item),
+		attribute.Int64("dagger.io/progress.current", current),
+		attribute.Int64("dagger.io/progress.total", total),
+		attribute.String("dagger.io/progress.unit", "bytes"),
 	)
 	telemetry.Logger(ctx, "dagger.io/progress").Emit(ctx, rec)
 }
@@ -358,7 +358,7 @@ func (v *Viztest) RevealedSpans(ctx context.Context) (res string, rerr error) {
 			trace.WithAttributes(attribute.String("dagger.io/ui.message", "received")),
 		)
 		span.End()
-		stdio := telemetry.SpanStdio(ctx, "doesnt matter", log.String("dagger.io/content.type", "text/markdown"))
+		stdio := telemetry.SpanStdio(ctx, "doesnt matter", attribute.String("dagger.io/content.type", "text/markdown"))
 		defer stdio.Close()
 		fmt.Fprintln(stdio.Stdout, "sometimes you gotta be **bold**")
 	}()

@@ -2,9 +2,9 @@ name = "php-client-dev"
 include = []
 
 [entrypoint]
-  kind = "dang"
-  source = "./internal/dagger/entrypoint"
+kind = "dang"
+source = "./internal/dagger/entrypoint"
 
 [[dependencies]]
-  name = "go"
-  source = "github.com/dagger/go@262b66dc9683ed6c2bcd55a8f5b85eff62b1c152"
+name = "go"
+source = "github.com/dagger/go@262b66dc9683ed6c2bcd55a8f5b85eff62b1c152"

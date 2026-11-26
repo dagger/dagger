@@ -166,7 +166,7 @@ source = "dagger.io/sdk/dang@main"
 check.skip = ["generate/stale"]
 
 [modules.go-sdk]
-source = "github.com/dagger/go-sdk@v1.8.0"
+source = "github.com/dagger/go-sdk@v1.9.1"
 
 [modules.go-sdk.settings]
 lock = true
