@@ -22,6 +22,8 @@ func newJoinTestCache() *joinTestCache {
 		resultOutputEqClasses: map[sharedResultID]*idSet[eqClassID]{},
 		outputEqClassResults:  map[eqClassID]*idSet[sharedResultID]{},
 		egraphParents:         []eqClassID{0},
+		egraphRanks:           []uint8{0},
+		egraphUses:            []uint32{0},
 		changes:               &changeMarks{},
 		uploads:               map[sharedResultID]map[string]int{},
 	}}
@@ -31,6 +33,8 @@ func newJoinTestCache() *joinTestCache {
 func (c *joinTestCache) class() eqClassID {
 	class := eqClassID(len(c.egraphParents))
 	c.egraphParents = append(c.egraphParents, class)
+	c.egraphRanks = append(c.egraphRanks, 0)
+	c.egraphUses = append(c.egraphUses, 0)
 	c.outputEqClassResults[class] = newIDSet[sharedResultID]()
 	return class
 }
@@ -54,25 +58,34 @@ func (c *joinTestCache) entry(holds string, classes ...eqClassID) sharedResultID
 	for _, class := range classes {
 		c.outputEqClassResults[class].Insert(id)
 		c.resultOutputEqClasses[id].Insert(class)
+		c.useEqClassLocked(class)
 	}
 	return id
 }
 
 // join joins the classes rooted at ra and rb, ra surviving, as
-// mergeEqClassesNoRepairLocked does: the join's marks, then rb's entries
-// moved to ra. It returns the entries the join named.
+// mergeEqClassesNoRepairLocked does: the join's marks, the union and its
+// uses, rb's entries moved to ra, and rb noted as ended, for the
+// collector to free (freeEndedEqClassesLocked). It returns the entries the
+// join named.
 func (c *joinTestCache) join(ra, rb eqClassID) []sharedResultID {
 	dst, src := c.outputEqClassResults[ra], c.outputEqClassResults[rb]
 	before := len(c.changes.entries)
 	c.markJoinLocked(src, dst, ra)
 	named := append([]sharedResultID(nil), c.changes.entries[before:]...)
 	c.egraphParents[rb] = ra
+	c.joinEqClassUsesLocked(ra, rb)
 	for id := range src.All() {
 		dst.Insert(id)
-		c.resultOutputEqClasses[id].Remove(rb)
-		c.resultOutputEqClasses[id].Insert(ra)
+		classes := c.resultOutputEqClasses[id]
+		if classes.Contains(ra) {
+			c.unuseEqClassLocked(ra)
+		}
+		classes.Remove(rb)
+		classes.Insert(ra)
 	}
 	delete(c.outputEqClassResults, rb)
+	c.endedEqClasses = append(c.endedEqClasses, rb)
 	return named
 }
 
@@ -82,6 +95,7 @@ func (c *joinTestCache) leave(id sharedResultID) {
 	c.markLeavingLocked(id)
 	for class := range c.resultOutputEqClasses[id].All() {
 		c.outputEqClassResults[c.eqClassRootLocked(class)].Remove(id)
+		c.unuseEqClassLocked(class)
 	}
 	delete(c.resultOutputEqClasses, id)
 	delete(c.resultsByID, id)
@@ -112,6 +126,35 @@ func TestClassJoinStampsOnlyTheClassItJoined(t *testing.T) {
 	}
 	require.Greater(t, c.resultsByID[lender].changedAt, start, "the lender joined a class")
 	require.LessOrEqual(t, c.resultsByID[bystander].changedAt, start, "the third class gained nothing to borrow")
+}
+
+// A join that brings a stored part stamps the class it joined, also when a
+// later join of the same write joins that class away and a collection frees
+// its number before the marks are applied: the class's entries, under
+// another root by then, still gained a part to borrow. Here J1 joins a
+// lender's class and a class of borrowers, the lender's surviving; J2 joins
+// that class into a third, whose side stores nothing; the collection frees
+// the lender's class; the borrowers are stamped all the same.
+func TestClassJoinStampsTheClassItJoinedThroughALaterJoinAndACollection(t *testing.T) {
+	t.Parallel()
+	c := newJoinTestCache()
+	lenders, borrowers, third := c.class(), c.class(), c.class()
+	c.entry("stores", lenders)
+	var borrowing []sharedResultID
+	for range 5 {
+		borrowing = append(borrowing, c.entry("", borrowers))
+	}
+	c.entry("", third)
+	start := c.writes
+	c.join(lenders, borrowers)
+	c.join(third, lenders)
+	c.freeEndedEqClassesLocked()
+	require.NoError(t, c.verifyEqClassSlotsLocked())
+	var change RemoteChange
+	c.takeChangesLocked(&change)
+	for _, id := range borrowing {
+		require.Greater(t, c.resultsByID[id].changedAt, start, "entry %d can borrow the lender's part now", id)
+	}
 }
 
 // holds reports whether an entry of side holds a part (holdsAnyPartLocked).
@@ -171,7 +214,8 @@ func (c *joinTestCache) checkedJoin(t *testing.T, seed uint64, ra, rb eqClassID,
 // other side holds a part, by storing one, uploading one or marking one
 // absent, and stamped when the other side stores one. Over random classes of
 // entries, some in two classes, and random writes, joins, parts stored and
-// dropped, entries leaving and holds ending, every entry the exact rule
+// dropped, entries leaving, collections freeing the classes that ended and
+// holds ending, every entry the exact rule
 // names at a join is named by that join and in the change the write hands
 // back, and every entry it stamps has a stamp past the hold's start as soon
 // as the hold ends, unless it has left since.
@@ -274,6 +318,11 @@ func checkClassJoinMarks(t *testing.T, seed uint64) (exact, named int) {
 					continue
 				}
 				c.leave(ids[rng.IntN(len(ids))])
+			case op < 19:
+				// A collection frees the classes that ended, as it does
+				// before the write hands its marks back.
+				c.freeEndedEqClassesLocked()
+				require.NoError(t, c.verifyEqClassSlotsLocked(), "seed %d", seed)
 			default:
 				// A hold of the write ends: its stamps apply, its marks stay.
 				// Joins after it must stamp again, past it.
