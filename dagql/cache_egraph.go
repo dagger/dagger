@@ -1725,8 +1725,9 @@ func (c *Cache) teachContentDigest(ctx context.Context, shared *sharedResult, co
 		}
 		shared.storeResultCall(frame)
 		if body != nil {
-			// The new frame goes into a new body, held in it if it can be.
-			c.setStoredBodyLocked(shared, shared.persistedEnvelope, body)
+			// The new frame goes into a new body, held in it if it can be. The
+			// entry, whose record a body held, holds its light envelope.
+			c.installStoredBodyLocked(shared, shared.persistedEnvelope, shared.persistedEnvelope, body)
 		}
 		if parts != nil {
 			shared.payloadMu.Lock()

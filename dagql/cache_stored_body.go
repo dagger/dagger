@@ -576,6 +576,16 @@ func lightStoredEnvelope(env *PersistedResultEnvelope) *PersistedResultEnvelope 
 // res's already, the record being the same (partFacts). Requires egraphMu for
 // writing, or an entry no reader can reach yet.
 func (c *Cache) setStoredBodyLocked(res *sharedResult, env *PersistedResultEnvelope, body *storedBody) {
+	c.installStoredBodyLocked(res, env, sharedLightStoredEnvelope(env), body)
+}
+
+// installStoredBodyLocked is setStoredBodyLocked with light, env's light
+// envelope as the entries of its content share it (sharedLightStoredEnvelope),
+// which a caller that holds the lock for many records works out before it
+// takes the lock: the body worker, and a frame's rewrite, whose entry holds
+// its light envelope already. Requires egraphMu for writing, or an entry no
+// reader can reach yet.
+func (c *Cache) installStoredBodyLocked(res *sharedResult, env, light *PersistedResultEnvelope, body *storedBody) {
 	// A size measured for the same record and call is the body's: a value is
 	// measured the same whole or compressed, and its frame the same decoded
 	// or held in the body.
@@ -598,7 +608,7 @@ func (c *Cache) setStoredBodyLocked(res *sharedResult, env *PersistedResultEnvel
 		}
 	}
 	res.payloadMu.Lock()
-	res.persistedEnvelope = sharedLightStoredEnvelope(env)
+	res.persistedEnvelope = light
 	res.stored = body
 	res.payloadMu.Unlock()
 	if body.holdsFrame() {
@@ -839,7 +849,8 @@ func (c *Cache) holdRestoredFramesCompressed() error {
 		c.lockGraphFor(context.Background(), workBody)
 		for i, r := range batch {
 			if r.body != r.was && r.res.stored == r.was && c.resultsByID[r.res.id] == r.res {
-				c.setStoredBodyLocked(r.res, r.env, r.body)
+				// The entry holds its record's light envelope already.
+				c.installStoredBodyLocked(r.res, r.env, r.env, r.body)
 			}
 			// The old body holds the decoded frame: nothing here keeps it.
 			batch[i] = read{}
@@ -1180,10 +1191,11 @@ func (c *Cache) closeStoredBodies() {
 // readers normalize it, and report its error, as they would have.
 func (c *Cache) storeBodies(entries []*sharedResult) {
 	type read struct {
-		res  *sharedResult
-		env  *PersistedResultEnvelope
-		call *ResultCall
-		body *storedBody
+		res   *sharedResult
+		env   *PersistedResultEnvelope
+		light *PersistedResultEnvelope
+		call  *ResultCall
+		body  *storedBody
 	}
 	reads := make([]read, 0, len(entries))
 	readHold := c.readGraphAs(workBody)
@@ -1201,14 +1213,15 @@ func (c *Cache) storeBodies(entries []*sharedResult) {
 			body, err = body.withFrame(c, reads[i].call)
 		}
 		if err == nil {
-			reads[i].body = body
+			// The entry's light envelope is shared before the lock is taken.
+			reads[i].body, reads[i].light = body, sharedLightStoredEnvelope(reads[i].env)
 		}
 	}
 	c.lockGraphFor(context.Background(), workBody)
 	defer c.egraphMu.Unlock()
 	for _, r := range reads {
 		if r.body != nil && r.res.stored == nil && r.res.persistedEnvelope == r.env && r.res.loadResultCall() == r.call && c.resultsByID[r.res.id] == r.res {
-			c.setStoredBodyLocked(r.res, r.env, r.body)
+			c.installStoredBodyLocked(r.res, r.env, r.light, r.body)
 		}
 	}
 	if c.testStoredBodies != nil {
