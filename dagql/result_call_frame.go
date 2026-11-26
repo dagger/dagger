@@ -936,6 +936,20 @@ func (frame *ResultCall) recipeDigestWithVisiting(c *Cache, visiting map[sharedR
 	return frame.recipeDigest, frame.recipeDigestErr
 }
 
+// knowRecipeDigest gives the frame recipe as its recipe digest without
+// deriving it, unless it has one already: a merge's frame takes the digest
+// the merge derived for its record as it prepared it. It is set once, as a
+// derived one is.
+func (frame *ResultCall) knowRecipeDigest(recipe digest.Digest) {
+	if frame == nil || recipe == "" {
+		return
+	}
+	frame.recipeDigestOnce.Do(func() {
+		frame.recipeDigest = recipe
+		frame.recipeDigestDerived.Store(true)
+	})
+}
+
 // derivedRecipeDigest returns the frame's recipe digest, or the error
 // deriving it gave, and whether it has been derived. It never derives it, so
 // a caller holding the cache's graph lock can call it: deriving resolves an
