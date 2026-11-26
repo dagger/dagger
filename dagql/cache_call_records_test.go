@@ -882,6 +882,68 @@ func TestPricingBuildsARecipientsNamedTermsOnce(t *testing.T) {
 	require.Equal(t, int32(1), held.namedBuilds.Load(), "one index for the recipient")
 }
 
+// Matching kept calls' terms against a recipient's terms keys each of the
+// recipient's terms once in a hold of egraphMu, not once for each kept call
+// it is compared with: a set's file names thousands of terms of one self
+// digest, an entry keeps calls of that self digest from many runs, and keys
+// taken at each comparison held a single read of the lock for seconds. A
+// bundle reads in one hold, so building one for a recipient naming n terms
+// of one self digest, over an entry that keeps calls of that self digest as
+// groups terms, none of which the recipient names, takes at most n+groups
+// keys.
+func TestABundleKeysARecipientsTermsOnceInAHold(t *testing.T) {
+	t.Parallel()
+	test := newReceiverCallTest(t)
+	cloudCtx := context.Background()
+	inner, err := test.inner.cacheSharedResult().loadResultCall().deriveRecipeDigest(test.producer)
+	require.NoError(t, err)
+	// More calls of outer that returned inner, each on a receiver of its own
+	// that the Cloud has no class for: each a term of its own, all of one
+	// self digest.
+	const calls, n = 8, 16
+	var self digest.Digest
+	for i := range calls {
+		call := receiverTestCall(fmt.Sprintf("k%d", i))
+		request, err := call.deriveRecipeDigest(test.producer)
+		require.NoError(t, err)
+		self, _, err = call.selfDigestAndInputRefs(test.producer)
+		require.NoError(t, err)
+		pb, err := call.callPB(test.producer)
+		require.NoError(t, err)
+		encoded, err := pb.Encode()
+		require.NoError(t, err)
+		_, err = test.cloud.AttachRemoteHolding(cloudCtx, HolderKey{Cache: "cache-k", Number: uint64(i + 1)},
+			RemoteHolding{Recipe: inner, Request: request, Field: "outer", Call: encoded, Term: &RemoteTerm{Self: self}})
+		require.NoError(t, err)
+	}
+	entry := storedBundleTestEntry(test.cloud, test.number)
+	test.cloud.egraphMu.RLock()
+	groups := len(test.cloud.keptCallTermsLocked(entry))
+	test.cloud.egraphMu.RUnlock()
+	require.Equal(t, calls+1, groups, "inner keeps a call of each term")
+
+	// n terms of that self digest, over inputs no kept call takes.
+	terms := make([]RemoteTerm, n)
+	for i := range terms {
+		terms[i] = RemoteTerm{Self: self, Inputs: []digest.Digest{digest.FromString(fmt.Sprintf("another input %d", i))}}
+	}
+	none := func(digest.Digest) bool { return false }
+	held := &HeldBy{Calls: none, Terms: terms}
+	keyed := 0
+	test.cloud.testCallTermKeyed = func() { keyed++ }
+	// What a bundle keys for a recipient naming no terms: this package's
+	// tests check each grouping of an entry's kept calls against one built
+	// fresh (verifyKeptCallTerms), which keys each kept call.
+	_, err = test.cloud.StoredBundle(test.ctx, []uint64{test.number}, time.Now().Unix(), &HeldBy{Calls: none})
+	require.NoError(t, err)
+	checked := keyed
+	keyed = 0
+	built, err := test.cloud.StoredBundle(test.ctx, []uint64{test.number}, time.Now().Unix(), held)
+	require.NoError(t, err)
+	require.Empty(t, built.Bundle.Calls, "the recipient names none of inner's terms")
+	require.LessOrEqual(t, keyed-checked, n+groups, "each of the recipient's terms keyed once, and each kept term once")
+}
+
 // A walk that lets egraphMu go between entries prices and lists the call of
 // a term the recipient names as the bundle sends it, though the class of the
 // call's input is merged into another while the walk has let the lock go:
