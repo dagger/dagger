@@ -43,7 +43,7 @@ func TestRestoreCheckedValuesMergesAsRestoreValues(t *testing.T) {
 	now := time.Now().Unix()
 	first, err := cloud.StoredBundle(ctx, []uint64{p}, now, &HeldBy{Cache: "cache-fresh"})
 	require.NoError(t, err)
-	second, err := cloud.StoredBundle(ctx, []uint64{r}, now, &HeldBy{Cache: "cache-fresh", Also: func(number uint64) bool { return number == p }})
+	second, err := cloud.StoredBundle(ctx, []uint64{r}, now, &HeldBy{Cache: "cache-fresh", Also: heldWhateverChanged(p)})
 	require.NoError(t, err)
 	require.Equal(t, map[uint64]bool{p: true}, heldByAlsoTestHeld(second.Bundle), "the second part holds the first's record")
 

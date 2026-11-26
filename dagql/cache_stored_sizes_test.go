@@ -493,6 +493,30 @@ func TestMeasuredStoredSizesNeverMeasure(t *testing.T) {
 	require.Equal(t, measured, got, "once measured, the sizes are StoredSizes'")
 }
 
+// StoredSizesUntil measures as StoredSizes does and stops after the root its
+// caller's check ends at: it normalizes and encodes nothing of the roots
+// after it. A check that never ends it measures every root.
+func TestStoredSizesUntilMeasureNothingPastTheirEnd(t *testing.T) {
+	t.Parallel()
+	ctx, cloud, r, p := storedBundleTestCloudIn(t, "root", true)
+	var checked [][]StoredSize
+	got, err := cloud.StoredSizesUntil(ctx, []uint64{p, r}, time.Now().Unix(), nil, func(sizes []StoredSize) bool {
+		checked = append(checked, slices.Clone(sizes))
+		return true
+	})
+	require.NoError(t, err)
+	require.Len(t, got, 1, "the check ends it at P")
+	require.Equal(t, [][]StoredSize{got}, checked, "the check sees each size as it is measured")
+	require.Nil(t, storedBundleTestEntry(cloud, r).storedTransfer.Load(), "nothing of R normalized")
+
+	all, err := cloud.StoredSizes(ctx, []uint64{p, r}, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	require.Equal(t, all[:1], got, "P's size is StoredSizes'")
+	got, err = cloud.StoredSizesUntil(ctx, []uint64{p, r}, time.Now().Unix(), nil, func([]StoredSize) bool { return false })
+	require.NoError(t, err)
+	require.Equal(t, all, got)
+}
+
 // A measure that ends after the cache dropped the value it measured keeps
 // nothing: the dropped record isn't brought back onto the entry.
 func TestStoredSizesKeepNothingOfADroppedValue(t *testing.T) {

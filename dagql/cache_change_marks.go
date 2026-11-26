@@ -462,6 +462,13 @@ func (c *Cache) stampEntryLocked(res *sharedResult, cause StampCause) {
 	c.noteSavedEntryLocked(res.id)
 }
 
+// changedSinceLocked reports whether a write since position, a stored
+// bundle's, changed what a stored bundle carries of res (stampEntryLocked).
+// Requires egraphMu.
+func (res *sharedResult) changedSinceLocked(position uint64) bool {
+	return res.changedAt > position
+}
+
 // StampCause is what last changed what a stored bundle carries of an entry
 // (stampEntryLocked), for a reader's diagnostics: which write it was, and,
 // with StampViaClass, that the write was to another entry of its class.
@@ -575,7 +582,7 @@ func (c *Cache) ChangedSince(numbers []uint64, position uint64) []bool {
 		read := c.readGraphAs(workRemote)
 		for i := start; i < end; i++ {
 			res := c.resultsByID[sharedResultID(numbers[i])]
-			changed[i] = res == nil || res.changedAt > position
+			changed[i] = res == nil || res.changedSinceLocked(position)
 		}
 		read.Unlock()
 	}

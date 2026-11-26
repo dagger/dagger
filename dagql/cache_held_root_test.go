@@ -28,7 +28,7 @@ func TestAHeldRootTeachesItsKeptCall(t *testing.T) {
 	require.NoError(t, reply.Release(engineCtx))
 
 	test.attach(t, ctx, test.span(t, true, 0))
-	again, err := cloud.StoredBundle(ctx, []uint64{test.number}, now, &HeldBy{Cache: "engine", Also: func(n uint64) bool { return n == test.number }})
+	again, err := cloud.StoredBundle(ctx, []uint64{test.number}, now, &HeldBy{Cache: "engine", Also: heldWhateverChanged(test.number)})
 	require.NoError(t, err)
 	require.Len(t, again.Bundle.Values, 1)
 	require.NotEmpty(t, again.Bundle.Values[0].Held, "the root goes as a held row")
@@ -71,7 +71,7 @@ func TestAHeldRootIsRetainedOnlyIfNotLeftUnretained(t *testing.T) {
 	require.True(t, heldRootTestRetained(engine, root))
 	require.False(t, heldRootTestRetained(engine, dep), "the dependency is held below the root")
 
-	held := &HeldBy{Cache: "engine", Also: func(n uint64) bool { return n == r || n == p }}
+	held := &HeldBy{Cache: "engine", Also: heldWhateverChanged(r, p)}
 	restore := func(roots []uint64, leave bool) {
 		t.Helper()
 		b, err := cloud.StoredBundle(ctx, roots, now, held)
