@@ -304,6 +304,7 @@ func (srv *Server) restoreEvents() []telemetryattrs.EngineRestore {
 			Precheck:     int64(report.Precheck),
 			Prepare:      int64(report.Prepare),
 			Commit:       int64(report.Commit),
+			FirstPart:    unix(report.FirstPart),
 			Ended:        unix(report.Ended),
 			Window:       engineRestoreWindow(report.Window),
 		}
