@@ -3258,8 +3258,10 @@ type Cache struct {
 	// class membership: multiple results can share an output eq class, but
 	// cache lookup for a matched term should first prefer results that were
 	// actually observed for that term before falling back to equivalent outputs.
-	termResults map[egraphTermID]map[sharedResultID]egraphResultTermAssoc
-	resultTerms map[sharedResultID]map[egraphTermID]struct{}
+	// termResults holds each term's results and resultTerms each result's terms;
+	// nearly every term has one result and every result one term.
+	termResults idSetIndex[egraphTermID, sharedResultID]
+	resultTerms idSetIndex[sharedResultID, egraphTermID]
 
 	// Reverse index from any known result-associated digest to materialized results.
 	// This includes request recipe+extra digests and result recipe+extra digests.

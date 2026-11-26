@@ -3479,7 +3479,7 @@ type identityMark struct {
 
 // identityMarkLocked reads res's identity mark. Requires egraphMu.
 func (c *Cache) identityMarkLocked(res *sharedResult) identityMark {
-	mark := identityMark{unions: c.egraphUnions, nextTerm: c.nextEgraphTermID, terms: len(c.resultTerms[res.id]), postings: len(c.resultIndexedDigests[res.id])}
+	mark := identityMark{unions: c.egraphUnions, nextTerm: c.nextEgraphTermID, terms: c.resultTerms.Size(res.id), postings: len(c.resultIndexedDigests[res.id])}
 	for id := range c.resultOutputEqClasses[res.id].All() {
 		mark.extras += len(c.eqClassExtraDigests[c.eqClassRootLocked(id)])
 	}
