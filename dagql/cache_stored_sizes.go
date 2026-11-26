@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 	"time"
 
@@ -210,8 +211,8 @@ func (c *Cache) walkStoredRoot(kind wcprof.LockHolder, root sharedResultID, nowU
 // storedRootWalkLocked is walkStoredRoot's walk of res, and how many of the
 // entries it reached, first, are res's ordinary closure, letting egraphMu go
 // between entries by hold, or never with a nil hold. named are the entries
-// the walk goes through that a call has named so far in the bundle
-// (storedSizeWalk.name). With list, it sizes nothing and lists instead
+// the bundle's walks reached through what they go through, and whether a
+// record or a call has named each (storedSizeWalk.name). With list, it sizes nothing and lists instead
 // (StoredClosure), which walks through no held entry; with cut, it keeps
 // what StoredLowerPart cuts by. Requires egraphMu.
 func (c *Cache) storedRootWalkLocked(res *sharedResult, nowUnix int64, held *HeldBy, seen, ordinary, named map[sharedResultID]bool, outputs *storedOutputsSeen, hold *readPieces, list *storedClosureList, cut *storedCut) (*storedSizeWalk, int) {
@@ -301,9 +302,10 @@ type storedSizeWalk struct {
 	misses  []storedSizeMiss
 	outputs *storedOutputsSeen
 	// passed are the entries the recipient holds that the walk went
-	// through (HeldBy.Through), in the order it reached them, each in
-	// passing; named, those of the bundle a record or a call has named,
-	// each counted as a held row once.
+	// through (HeldBy.Through), and those it reached below them, in the
+	// order it reached them, each in passing. named has, for the whole
+	// bundle, each entry so reached: true once a record or a call names
+	// it, and its held row is counted.
 	passed  []*sharedResult
 	passing map[sharedResultID]bool
 	named   map[sharedResultID]bool
@@ -403,7 +405,9 @@ func (w *storedSizeWalk) visit(res *sharedResult) {
 		if w.list == nil && w.held.throughLocked(res) {
 			// A held row, as any entry the recipient holds is, that the
 			// walk goes through for the calls kept below it (pass).
-			w.name(res)
+			w.named[res.id] = true
+			w.size.Records++
+			w.size.Bytes += heldRowSizeLocked(res)
 			w.order = append(w.order, res)
 			w.pass(res)
 			return
@@ -441,7 +445,7 @@ func (w *storedSizeWalk) visit(res *sharedResult) {
 		w.order = append(w.order, res)
 		return
 	}
-	before := w.size.Bytes + w.size.OutputBytes
+	before := w.size.Bytes
 	w.size.Records++
 	w.addOutputs(res)
 	if bytes, ok := storedValueMeasuredLocked(res); ok {
@@ -449,22 +453,23 @@ func (w *storedSizeWalk) visit(res *sharedResult) {
 	} else {
 		w.misses = append(w.misses, storedSizeMissLocked(res))
 	}
-	w.cut.sized(res.id, w.size.Bytes+w.size.OutputBytes-before)
+	w.cut.sized(res, w.size.Bytes-before)
 	w.order = append(w.order, res)
 }
 
 // pass goes through res, an entry the recipient holds that the walk goes
 // through (HeldBy.Through), for the calls kept on it and below it, as
 // storedBundlePassLocked does: res stands for its closure, as a held row
-// does, and only the dependencies the walk goes through too are reached,
-// each counting nothing until a call or a record names it (name). Requires
-// egraphMu.
+// does. Of its dependencies, those the recipient holds are reached, each
+// with no row until a call or a record names it (name), for the calls kept
+// on them; the walk goes on below those it goes through, and stops at the
+// others, as a walk stops at a held row. Requires egraphMu.
 func (w *storedSizeWalk) pass(res *sharedResult) {
 	w.passed = append(w.passed, res)
 	w.passing[res.id] = true
 	for _, id := range storedClosureChildrenLocked(res) {
 		child := w.c.resultsByID[id]
-		if child == nil || w.carries(id) || !w.held.throughLocked(child) || !w.held.heldLocked(child, w.now) {
+		if child == nil || w.carries(id) || !w.held.heldLocked(child, w.now) {
 			continue
 		}
 		if w.hold != nil {
@@ -475,25 +480,33 @@ func (w *storedSizeWalk) pass(res *sharedResult) {
 		}
 		w.visited[id] = true
 		w.closure = append(w.closure, id)
-		w.pass(child)
+		if _, ok := w.named[id]; !ok {
+			w.named[id] = false
+		}
+		if w.held.throughLocked(child) {
+			w.pass(child)
+		} else {
+			w.passed = append(w.passed, child)
+			w.passing[id] = true
+		}
 	}
 }
 
-// name counts the held row of res, an entry the recipient holds that the
-// walk goes through (HeldBy.Through), the first time the bundle names it:
-// a record that depends on it, or a call, as its value or an input, which
+// name counts the held row of res, an entry the walk reached through what
+// it goes through (pass) with no row, the first time the bundle names it: a
+// record that depends on it, or a call, as its value or an input, which
 // alone names it then (storedBundleBuild.nameLocked). Requires egraphMu.
 func (w *storedSizeWalk) name(res *sharedResult) {
-	if w.list != nil || !w.held.throughLocked(res) || w.named[res.id] {
+	if w.list != nil {
+		return
+	}
+	if rowed, ok := w.named[res.id]; !ok || rowed {
 		return
 	}
 	if w.hold != nil {
 		if res = w.c.resultsByID[res.id]; res == nil {
 			return
 		}
-	}
-	if !w.held.heldLocked(res, w.now) {
-		return
 	}
 	w.named[res.id] = true
 	w.size.Records++
@@ -845,7 +858,7 @@ type StoredLowerPart struct {
 	Carried int
 	// CallBytes and NamedBytes are what the root's own merge carries beside
 	// its records, by the bundle's walk: its calls, as the message encodes
-	// them, and a held row for each entry below the root they name.
+	// them, and a held row for each entry of the part they name.
 	CallBytes, NamedBytes int64
 }
 
@@ -858,8 +871,8 @@ type StoredLowerPart struct {
 // first, but for the last ones, whose records fit within limit beside what
 // root's own merge carries anyway: root's record and those above it, held
 // rows for what held holds, the bundle's calls and the held rows they name,
-// and a held row for each entry of the part that a record it carries
-// depends on.
+// a held row for each entry of the part that a record it carries depends
+// on, and the outputs of what it carries, each layer and address once.
 // The part goes as its entries no other of them depends on, each a root of
 // its own that places calls only on what its own merge carries or the
 // recipient holds (HeldBy.Parts); root's own merge walks through the part
@@ -875,7 +888,7 @@ func (c *Cache) StoredLowerPart(ctx context.Context, root uint64, nowUnix int64,
 		return out, err
 	}
 	kind := c.graphReader(ctx, workExport)
-	cut := &storedCut{sizes: map[sharedResultID]int64{}, named: map[sharedResultID]bool{}}
+	cut := &storedCut{sizes: map[sharedResultID]int64{}, outputs: map[sharedResultID][]storedCutPart{}, named: map[sharedResultID]bool{}}
 	var (
 		below    []sharedResultID
 		above    []sharedResultID
@@ -913,9 +926,6 @@ func (c *Cache) StoredLowerPart(ctx context.Context, root uint64, nowUnix int64,
 			rows[entry.id] = heldRowSizeLocked(entry)
 		}
 		out.CallBytes = cut.callBytes
-		for id := range cut.named {
-			out.NamedBytes += rows[id]
-		}
 	}()
 	if len(below) == 0 {
 		return out, nil
@@ -931,43 +941,55 @@ func (c *Cache) StoredLowerPart(ctx context.Context, root uint64, nowUnix int64,
 		measured = append(measured, m)
 	}
 	c.publishStoredSizes(kind, measured)
-	// What root's merge carries: the records above the part, and a held row
-	// for each entry of the part one of them depends on; the tail it keeps
-	// grows from the bundle's end while that fits, each record it takes
-	// bringing held rows for those of its dependencies the part keeps.
-	rest := limit - fixed - out.CallBytes - out.NamedBytes
-	inTail, named := map[sharedResultID]bool{}, map[sharedResultID]bool{}
-	nameDeps := func(id sharedResultID) (bytes int64, deps []sharedResultID) {
+	// What root's merge carries beside the held rows of what held holds and
+	// the calls: the records above the part, with their outputs, each layer
+	// and address once; and a held row for each entry of the part that a call
+	// names or one of those records depends on. The tail it keeps grows from
+	// the bundle's end while that fits: a record it takes adds its outputs
+	// but what the merge lists already, needs no held row of its own, and
+	// brings held rows for those of its dependencies the part keeps.
+	rest := limit - fixed - out.CallBytes
+	outputs := &storedCutOutputs{layers: map[*storedLayer]bool{}, blobs: map[digest.Digest]digest.Digest{}}
+	needed := map[sharedResultID]bool{}
+	for id := range cut.named {
+		if row, ok := rows[id]; ok {
+			needed[id] = true
+			rest -= row
+		}
+	}
+	needs := func(id sharedResultID, inTail map[sharedResultID]bool) (bytes int64, deps []sharedResultID) {
 		for _, dep := range children[id] {
-			if _, ok := rows[dep]; ok && !inTail[dep] && !named[dep] && !slices.Contains(deps, dep) {
-				bytes += rows[dep]
+			if row, ok := rows[dep]; ok && !inTail[dep] && !needed[dep] && !slices.Contains(deps, dep) {
+				bytes += row
 				deps = append(deps, dep)
 			}
 		}
 		return bytes, deps
 	}
+	inTail := map[sharedResultID]bool{}
 	for _, id := range above {
-		bytes, deps := nameDeps(id)
-		rest -= cut.sizes[id] + bytes
+		bytes, deps := needs(id, inTail)
+		rest -= cut.sizes[id] + outputs.add(cut.outputs[id], true) + bytes
 		for _, dep := range deps {
-			named[dep] = true
+			needed[dep] = true
 		}
 	}
 	ahead := len(below)
 	for ahead > 0 {
 		id := below[ahead-1]
-		left := rest - cut.sizes[id]
-		if named[id] {
+		left := rest - cut.sizes[id] - outputs.add(cut.outputs[id], false)
+		if needed[id] {
 			left += rows[id]
 		}
-		bytes, deps := nameDeps(id)
+		bytes, deps := needs(id, inTail)
 		if left -= bytes; left < 0 {
 			break
 		}
 		rest, inTail[id] = left, true
-		delete(named, id)
+		outputs.add(cut.outputs[id], true)
+		delete(needed, id)
 		for _, dep := range deps {
-			named[dep] = true
+			needed[dep] = true
 		}
 		ahead--
 	}
@@ -985,27 +1007,84 @@ func (c *Cache) StoredLowerPart(ctx context.Context, root uint64, nowUnix int64,
 		if !under[id] {
 			out.Lower = append(out.Lower, uint64(id))
 		}
+		if cut.named[id] {
+			out.NamedBytes += rows[id]
+		}
 		out.Part = append(out.Part, uint64(id))
 	}
 	slices.Sort(out.Part)
 	return out, nil
 }
 
-// storedCut is what a walk keeps for StoredLowerPart: the size in the
-// message of each record it carries, a record not measured yet with only
-// its outputs' until it is (storedSizeWalk.misses); the encoded size of the
+// storedCut is what a walk keeps for StoredLowerPart: the size of each
+// record it carries, 0 for one not measured yet until it is
+// (storedSizeWalk.misses), and its stored parts; the encoded size of the
 // calls it chose; and the entries those calls name.
 type storedCut struct {
 	sizes     map[sharedResultID]int64
+	outputs   map[sharedResultID][]storedCutPart
 	callBytes int64
 	named     map[sharedResultID]bool
 }
 
-// sized notes what a record the walk carries adds to the message.
-func (cut *storedCut) sized(id sharedResultID, bytes int64) {
-	if cut != nil {
-		cut.sizes[id] = bytes
+// storedCutPart is a stored part of a record the walk carries: what it adds
+// to the message but its layers, and its layers (storedSizeWalk.addOutputs).
+type storedCutPart struct {
+	wire   int64
+	layers []*storedLayer
+}
+
+// sized notes the size of res's record, which the walk carries, and its
+// stored parts. Requires egraphMu.
+func (cut *storedCut) sized(res *sharedResult, bytes int64) {
+	if cut == nil {
+		return
 	}
+	cut.sizes[res.id] = bytes
+	for _, part := range res.storedParts {
+		cut.outputs[res.id] = append(cut.outputs[res.id], storedCutPart{wire: part.wire, layers: part.layers})
+	}
+}
+
+// storedCutOutputs are the layers and blob addresses a merge lists so far,
+// as storedOutputsSeen counts them for a walk, for StoredLowerPart's cut.
+type storedCutOutputs struct {
+	layers map[*storedLayer]bool
+	blobs  map[digest.Digest]digest.Digest
+}
+
+// add returns what parts add to the merge's message, as addOutputs counts
+// it: each part, each layer the merge doesn't list yet, and an address for
+// each blob it doesn't have one of, or names in another pack. With keep, the
+// merge lists them from then on.
+func (o *storedCutOutputs) add(parts []storedCutPart, keep bool) int64 {
+	var bytes int64
+	layers, blobs := map[*storedLayer]bool{}, map[digest.Digest]digest.Digest{}
+	for _, part := range parts {
+		bytes += part.wire
+		for _, layer := range part.layers {
+			if !o.layers[layer] && !layers[layer] {
+				layers[layer] = true
+				bytes += layer.wire
+			}
+			blob := layer.layer.Descriptor.Digest
+			pack, ok := o.blobs[blob]
+			if !ok {
+				pack, ok = blobs[blob]
+			}
+			if !ok {
+				blobs[blob] = layer.pack
+				bytes += storedBlobAddressAllowance
+			} else if pack != layer.pack {
+				bytes += storedBlobAddressAllowance
+			}
+		}
+	}
+	if keep {
+		maps.Copy(o.layers, layers)
+		maps.Copy(o.blobs, blobs)
+	}
+	return bytes
 }
 
 // storedCallEncoding is what a call a bundle sends (TransferredCall) adds
