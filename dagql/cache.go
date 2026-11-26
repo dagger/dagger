@@ -2996,6 +2996,10 @@ type Cache struct {
 	// handed them back, on a blob-backed cache only: nil on any other
 	// (cache_change_marks.go). Guarded by egraphMu.
 	changes *changeMarks
+	// unheldCandidates are the numbers the writes since the last hand-back
+	// left named by no holding (RemoteChange.UnheldCandidates), handed back
+	// with the marks. Guarded by egraphMu.
+	unheldCandidates []HolderKey
 	// uploads counts, on a blob-backed cache, the uploads of parts its
 	// reader marks in progress, by entry and part address key
 	// (StartPartUploads, EndPartUploads). Memory only, as the reader's own
