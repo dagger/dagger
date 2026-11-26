@@ -1,0 +1,15 @@
+kind: Breaking
+body: |
+  `dagger-io` no longer bundles the generated API, and requires Python 3.11 or later.
+
+  With `dagger-io` alone, `dag.container()` and `dagger.Container` no longer exist. Install `dagger-clients-core`, which depends on `dagger-io` at the same version, and call the API through `core()`:
+
+  ```python
+  from dagger_clients.core import core
+
+  await core().container().from_("alpine").with_exec(["echo", "ok"]).stdout()
+  ```
+time: 2026-11-26T18:00:00Z
+custom:
+  Author: eunomie
+  PR: "15293"

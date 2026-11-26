@@ -1,0 +1,6 @@
+kind: Added
+body: '`dagger-clients-core` is published with each release.'
+time: 2026-11-26T18:00:00Z
+custom:
+  Author: eunomie
+  PR: "15293"

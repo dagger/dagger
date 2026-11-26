@@ -24,8 +24,8 @@ const treatAlreadyPublishedAsDone = true
 
 const alreadyPublishedNote = "already published, not uploaded again"
 
-// pypiVersionURL returns the PyPI JSON API URL for a dagger-io version.
-func pypiVersionURL(pypiRepo, pypiURL, version string) (string, error) {
+// pypiVersionURL returns the PyPI JSON API URL for a version of project.
+func pypiVersionURL(pypiRepo, pypiURL, project, version string) (string, error) {
 	base := "https://pypi.org"
 	switch {
 	case pypiURL != "":
@@ -37,7 +37,7 @@ func pypiVersionURL(pypiRepo, pypiURL, version string) (string, error) {
 	case pypiRepo == "test":
 		base = "https://test.pypi.org"
 	}
-	return base + "/pypi/dagger-io/" + pep440Version(version) + "/json", nil
+	return base + "/pypi/" + project + "/" + pep440Version(version) + "/json", nil
 }
 
 var pep440PrereleaseRe = regexp.MustCompile(`^(\d+\.\d+\.\d+)-(alpha|beta|rc)\.?(\d+)$`)
@@ -120,10 +120,10 @@ func pypiHasFiles(ctx context.Context, versionURL string, files []string) (bool,
 	return true, nil
 }
 
-// pypiFiles returns the files a dagger-io release uploads to PyPI.
-func pypiFiles(version string) []string {
-	v := pep440Version(version)
-	return []string{"dagger_io-" + v + ".tar.gz", "dagger_io-" + v + "-py3-none-any.whl"}
+// pypiFiles returns the files a release of project uploads to PyPI.
+func pypiFiles(project, version string) []string {
+	name := strings.ReplaceAll(project, "-", "_") + "-" + pep440Version(version)
+	return []string{name + ".tar.gz", name + "-py3-none-any.whl"}
 }
 
 // hexHasReleaseWithDocs reports whether the Hex API at versionURL has the

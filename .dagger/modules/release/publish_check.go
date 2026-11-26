@@ -1762,17 +1762,18 @@ else:
     )
 
 pypi = [e for e in events if e.get("kind") == "pypi_publish"]
-need(len(pypi) == 2, f"expected exactly two PyPI uploads, got {len(pypi)}")
-pypi_filetypes = {e.get("filetype") for e in pypi}
-need(pypi_filetypes == {"sdist", "bdist_wheel"}, f"PyPI should upload exactly sdist and wheel, got {pypi_filetypes}")
-expected_pypi_filenames = {
-    f"dagger_io-{registry_version}.tar.gz",
-    f"dagger_io-{registry_version}-py3-none-any.whl",
-}
-pypi_filenames = {e.get("filename") for e in pypi}
-need(pypi_filenames == expected_pypi_filenames, f"PyPI upload filenames mismatch: expected {expected_pypi_filenames}, got {pypi_filenames}")
+need(len(pypi) == 4, f"expected exactly four PyPI uploads, got {len(pypi)}")
+for project in ["dagger_io", "dagger_clients_core"]:
+    uploads = [e for e in pypi if e.get("package_name", "").replace("-", "_") == project]
+    filetypes = sorted(e.get("filetype") for e in uploads)
+    need(filetypes == ["bdist_wheel", "sdist"], f"PyPI should upload exactly one sdist and one wheel of {project}, got {filetypes}")
+    filenames = {e.get("filename") for e in uploads}
+    expected_filenames = {
+        f"{project}-{registry_version}.tar.gz",
+        f"{project}-{registry_version}-py3-none-any.whl",
+    }
+    need(filenames == expected_filenames, f"PyPI upload filenames of {project} mismatch: expected {expected_filenames}, got {filenames}")
 for event in pypi:
-    need(event.get("package_name") in {"dagger-io", "dagger_io"}, f"unexpected PyPI package name: {event.get('package_name')!r}")
     need(
         event.get("package_version") == registry_version,
         f"PyPI upload version mismatch: {event.get('package_version')!r}",

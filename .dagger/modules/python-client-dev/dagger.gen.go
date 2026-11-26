@@ -216,6 +216,20 @@ func DaggerDispatch(ctx context.Context, parentJSON []byte, parentName string, f
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return (*PythonClientDev).Docs(&parent), nil
+		case "Libraries":
+			var parent PythonClientDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var version string
+			if inputArgs["version"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["version"]), &version)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg version", err))
+				}
+			}
+			return (*PythonClientDev).Libraries(&parent, version), nil
 		case "Lint":
 			var parent PythonClientDev
 			err = json.Unmarshal(parentJSON, &parent)

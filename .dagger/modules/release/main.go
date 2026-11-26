@@ -324,11 +324,17 @@ func (r *Release) Publish( //nolint:gocyclo
 				return checkError(ctx, pythonclientdev.New(r.Workspace).ReleaseDryRun())
 			},
 			published: func(ctx context.Context) (bool, error) {
-				u, err := pypiVersionURL(pypiRepo, pypiURL, strings.TrimPrefix(version, "v"))
-				if err != nil {
-					return false, err
+				for _, project := range []string{"dagger-io", "dagger-clients-core"} {
+					u, err := pypiVersionURL(pypiRepo, pypiURL, project, strings.TrimPrefix(version, "v"))
+					if err != nil {
+						return false, err
+					}
+					ok, err := pypiHasFiles(ctx, u, pypiFiles(project, strings.TrimPrefix(version, "v")))
+					if !ok || err != nil {
+						return false, err
+					}
 				}
-				return pypiHasFiles(ctx, u, pypiFiles(strings.TrimPrefix(version, "v")))
+				return true, nil
 			},
 		},
 		{
