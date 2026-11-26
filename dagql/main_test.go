@@ -2,6 +2,7 @@ package dagql
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"sync"
@@ -19,7 +20,10 @@ import (
 // walk (verifyEqClassUses), and every save into a database that held
 // something against a full save at its hold (checkPersistFullSave), and every
 // frame a merge installed against the recipe the merge landed it by
-// (checkMergedRecipes), and fails the run if any differs.
+// (checkMergedRecipes), and fails the run if any differs. It has every share
+// of a shared value, and every cache's close, check the values the caches
+// share against their keys (verifySharedValues), and fails the run if a
+// holder changed one.
 func TestMain(m *testing.M) {
 	var (
 		saves         int
@@ -40,8 +44,11 @@ func TestMain(m *testing.M) {
 		recipes       int
 		recipeDrifts  []string
 		recipeChecked time.Duration
+		sharedChecks  int
+		sharedDrifts  []string
 	)
 	testPersistNotesAlways = true
+	verifySharedValues = true
 	testPersistNotes = func(_ *Cache, before, after *persistPrints) {
 		at := time.Now()
 		err := checkPersistNotes(before, after)
@@ -55,6 +62,13 @@ func TestMain(m *testing.M) {
 		}
 	}
 	testCacheClosing = func(c *Cache) {
+		sharedErr := errors.Join(lightStoredEnvelopes.verify(), sharedPlatforms.verify())
+		mu.Lock()
+		sharedChecks++
+		if sharedErr != nil {
+			sharedDrifts = append(sharedDrifts, sharedErr.Error())
+		}
+		mu.Unlock()
 		at := time.Now()
 		classErr := c.verifyEqClassUses()
 		classTook := time.Since(at)
@@ -164,6 +178,15 @@ func TestMain(m *testing.M) {
 		code = 1
 	} else {
 		fmt.Fprintf(os.Stderr, "kept class uses: %d caches checked in %s, none differed\n", classes, classChecked)
+	}
+	if len(sharedDrifts) > 0 {
+		fmt.Fprintf(os.Stderr, "a shared value was changed by a holder, found in %d of %d checks:\n", len(sharedDrifts), sharedChecks)
+		for _, d := range sharedDrifts {
+			fmt.Fprintln(os.Stderr, "  "+d)
+		}
+		code = 1
+	} else {
+		fmt.Fprintf(os.Stderr, "shared values: %d checks, none changed\n", sharedChecks)
 	}
 	mu.Unlock()
 	os.Exit(code)

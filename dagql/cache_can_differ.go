@@ -38,7 +38,7 @@ func (c *Cache) entryCanDifferWhyLocked(res *sharedResult) (bool, string) {
 	if res.stored != nil || res.persistedEnvelope != nil {
 		if call := res.loadResultCall(); call != nil {
 			note(call.FollowsFromInputs)
-		} else if body := res.stored; body != nil && body.frame != nil {
+		} else if body := res.stored; body.holdsFrame() {
 			note(body.follows)
 		}
 	}
@@ -83,7 +83,7 @@ func entryFieldLocked(res *sharedResult) string {
 	if call := res.loadResultCall(); call != nil {
 		return call.Field
 	}
-	if body := res.stored; body != nil && body.frame != nil {
+	if body := res.stored; body.holdsFrame() {
 		if frame, err := body.decodeFrame(); err == nil && frame != nil {
 			return frame.Field
 		}

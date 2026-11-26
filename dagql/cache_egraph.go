@@ -1816,8 +1816,9 @@ func (c *Cache) teachContentDigest(ctx context.Context, shared *sharedResult, co
 		}
 		shared.storeResultCall(frame)
 		if body != nil {
-			// The new frame goes into a new body, held in it if it can be.
-			c.setStoredBodyLocked(shared, shared.persistedEnvelope, body)
+			// The new frame goes into a new body, held in it if it can be. The
+			// entry, whose record a body held, holds its light envelope.
+			c.installStoredBodyLocked(shared, shared.persistedEnvelope, shared.persistedEnvelope, body)
 		}
 		if parts != nil {
 			shared.payloadMu.Lock()
@@ -1885,8 +1886,8 @@ func frameWithContentDigest(baseFrame *ResultCall, contentDigest digest.Digest, 
 // frames are held in them, and encoded otherwise. It reads no lock.
 func frameJSONGrowth(base entryFrame, baseFrame *ResultCall, body *storedBody, frame *ResultCall) (int64, error) {
 	length := func(held *storedBody, f *ResultCall) (int64, error) {
-		if held != nil && held.frame != nil {
-			return held.frameBytes, nil
+		if held.holdsFrame() {
+			return int64(held.frameBytes), nil
 		}
 		raw, err := json.Marshal(f)
 		if err != nil {

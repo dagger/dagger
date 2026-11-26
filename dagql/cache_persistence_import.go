@@ -247,7 +247,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				if body := row.body; body != nil {
 					// As merge measured it: the call and the envelope
 					// encoded.
-					c.setStoredRecordBytesLocked(res, int64(row.callFrameBytes)+body.envelopeBytes)
+					c.setStoredRecordBytesLocked(res, int64(row.callFrameBytes)+int64(body.envelopeBytes))
 					c.setStoredBodyLocked(res, env, body)
 					res.partFacts = row.parts
 				}

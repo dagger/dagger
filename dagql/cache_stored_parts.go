@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/opencontainers/go-digest"
@@ -142,12 +142,7 @@ func (c *Cache) setStoredPartLocked(ctx context.Context, number uint64, key stri
 	if !ok {
 		return false, nil
 	}
-	c.changeStoredPartsLocked(res, func() {
-		if res.storedParts == nil {
-			res.storedParts = make(map[string]storedPart)
-		}
-		res.storedParts[key] = stored
-	})
+	c.changeStoredPartsLocked(res, func() { res.storedParts = res.storedParts.with(key, stored) })
 	c.markEntryClassLocked(res.id, StampPartStored)
 	// The Cloud serves no sessions, so there are no requirements to carry.
 	c.applyPartDependenciesLocked(ctx, res, named, nil)
@@ -179,16 +174,59 @@ func (c *Cache) storedPartDependenciesLocked(res *sharedResult, part PersistedPa
 }
 
 // storedPartsLocked returns res's stored parts, sorted by part address key,
-// for its saved envelope. Requires egraphMu.
+// for its saved envelope, in a slice of the caller's own. Requires egraphMu.
 func (res *sharedResult) storedPartsLocked() []storedPart {
 	if len(res.storedParts) == 0 {
 		return nil
 	}
 	parts := make([]storedPart, 0, len(res.storedParts))
-	for _, key := range slices.Sorted(maps.Keys(res.storedParts)) {
-		parts = append(parts, res.storedParts[key])
+	for _, part := range res.storedParts {
+		parts = append(parts, part.storedPart)
 	}
 	return parts
+}
+
+// storedPartList is an entry's stored parts, sorted by their part address
+// keys. An entry stores a few, so a sorted list of exactly its parts, each
+// beside its key, holds them in place of a map, whose slots each held a
+// pointer to a copy of its part apart. Its readers range over the parts in
+// their keys' order, and find one by its key.
+type storedPartList []keyedStoredPart
+
+// keyedStoredPart is a stored part with its part address key.
+type keyedStoredPart struct {
+	key string
+	storedPart
+}
+
+// find returns the part stored under key, if any.
+func (l storedPartList) find(key string) (storedPart, bool) {
+	i, found := slices.BinarySearchFunc(l, key, func(p keyedStoredPart, key string) int { return strings.Compare(p.key, key) })
+	if !found {
+		return storedPart{}, false
+	}
+	return l[i].storedPart, true
+}
+
+// has reports whether a part is stored under key.
+func (l storedPartList) has(key string) bool {
+	_, found := l.find(key)
+	return found
+}
+
+// with returns the list with part stored under key, in place of the part
+// stored under it, if any: the list itself then, and else a list of its own,
+// of exactly its parts.
+func (l storedPartList) with(key string, part storedPart) storedPartList {
+	i, found := slices.BinarySearchFunc(l, key, func(p keyedStoredPart, key string) int { return strings.Compare(p.key, key) })
+	if found {
+		l[i].storedPart = part
+		return l
+	}
+	next := make(storedPartList, 0, len(l)+1)
+	next = append(next, l[:i]...)
+	next = append(next, keyedStoredPart{key: key, storedPart: part})
+	return append(next, l[i:]...)
 }
 
 // restoreStoredPartsLocked takes a blob-backed cache's restored value's
@@ -203,13 +241,13 @@ func (c *Cache) restoreStoredPartsLocked(res *sharedResult, env *PersistedResult
 	}
 	parts := env.StoredParts
 	env.StoredParts = nil
-	restored := make(map[string]storedPart, len(parts))
+	var restored storedPartList
 	for _, part := range parts {
 		key, err := partAddressKey(part.Address)
 		if err != nil {
 			return err
 		}
-		restored[key] = c.storedLayers.part(part)
+		restored = restored.with(key, c.storedLayers.part(part))
 	}
 	c.changeStoredPartsLocked(res, func() { res.storedParts = restored })
 	stripped, err := json.Marshal(env)
@@ -265,27 +303,20 @@ func (c *Cache) dropStoredParts(drop func(storedPart) bool) (dropped []StoredPar
 	defer c.egraphMu.Unlock()
 	defer c.takeChangesLocked(&change)
 	for id, res := range c.resultsByID {
-		names := false
-		for _, part := range res.storedParts {
-			if names = drop(part); names {
-				break
-			}
-		}
-		if !names {
+		if !slices.ContainsFunc(res.storedParts, func(part keyedStoredPart) bool { return drop(part.storedPart) }) {
 			continue
 		}
 		c.changeStoredPartsLocked(res, func() {
-			for key, part := range res.storedParts {
-				if !drop(part) {
+			var kept storedPartList
+			for _, part := range res.storedParts {
+				if !drop(part.storedPart) {
+					kept = append(kept, part)
 					continue
 				}
-				delete(res.storedParts, key)
 				c.markEntryClassLocked(id, StampPartDropped)
 				dropped = append(dropped, StoredPart{Number: uint64(id), Address: part.address()})
 			}
-			if len(res.storedParts) == 0 {
-				res.storedParts = nil
-			}
+			res.storedParts = slices.Clip(kept)
 		})
 	}
 	slices.SortFunc(dropped, func(a, b StoredPart) int {

@@ -287,7 +287,7 @@ func (c *Cache) heldPartLocked(res *sharedResult, key string, nowUnix int64) (Pa
 		if candidate == res && c.resultExpiredAtLocked(res, nowUnix) {
 			continue
 		}
-		if _, ok := candidate.storedParts[key]; ok {
+		if candidate.storedParts.has(key) {
 			return PartAvailability{State: PartStored, Donor: uint64(candidate.id), ValidUntilUnix: validUntil}, true
 		}
 	}

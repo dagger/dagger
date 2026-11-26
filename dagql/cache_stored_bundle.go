@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"iter"
 	"slices"
 	"strings"
 	"sync"
@@ -772,25 +773,25 @@ func (c *Cache) storedBundleValueLocked(build *storedBundleBuild, res *sharedRes
 		// A body goes as it is held, compressed, and the bundle's encoding
 		// writes it out (TransferredValue.MarshalJSON), with the entry's
 		// parts of it.
-		refs, parts, complete := body.refs, res.partFacts.declaredParts(), res.partFacts.completeParts()
+		refs, parts, complete := body.refs.all(), res.partFacts.declaredParts(), res.partFacts.completeParts()
 		if build.stored == nil {
 			build.stored = map[uint64][]declaredPart{}
 		}
 		build.stored[uint64(build.ordinals[res.id])] = parts
-		if body.frame != nil {
+		if frame := body.frame(); frame != nil {
 			// So does the frame it holds, which is its transfer form.
-			if err := build.addStoredValue(res, PersistedRecord{ResultID: uint64(res.id)}, body.envelope, refs, transferredRecordParts(parts, complete)); err != nil {
+			if err := build.addStoredValue(res, PersistedRecord{ResultID: uint64(res.id)}, body.envelope(), refs, transferredRecordParts(parts, complete)); err != nil {
 				return err
 			}
 			value := &build.bundle.Values[len(build.bundle.Values)-1]
-			value.storedCall, value.storedCallBytes = body.frame, body.frameBytes
+			value.storedCall, value.storedCallBytes = frame, int64(body.frameBytes)
 			return nil
 		}
 		call, err := normalizeTransferCall(res.loadResultCall())
 		if err != nil {
 			return fmt.Errorf("stored bundle: entry %d: %w", res.id, err)
 		}
-		return build.addStoredValue(res, PersistedRecord{ResultID: uint64(res.id), Call: call}, body.envelope, refs, transferredRecordParts(parts, complete))
+		return build.addStoredValue(res, PersistedRecord{ResultID: uint64(res.id), Call: call}, body.envelope(), refs, transferredRecordParts(parts, complete))
 	}
 	kept, err := c.storedTransferLocked(res)
 	if err != nil {
@@ -805,7 +806,7 @@ func (c *Cache) storedBundleValueLocked(build *storedBundleBuild, res *sharedRes
 		return fmt.Errorf("stored bundle: entry %d: %w", res.id, err)
 	}
 	rec.Call = rec.Call.clone()
-	return build.addStoredValue(res, rec, nil, kept.refs, transferredRecordParts(kept.parts, kept.complete))
+	return build.addStoredValue(res, rec, nil, slices.Values(kept.refs), transferredRecordParts(kept.parts, kept.complete))
 }
 
 // transferredRecordParts are a stored record's parts as a bundle carries
@@ -826,8 +827,8 @@ func transferredRecordParts(declared []declaredPart, complete *partKeySet) *Tran
 // is validated by shape (validateStoredBundle), so each reference is checked
 // against the record's dependencies here, from what normalizing the record
 // found it names (refs). Requires egraphMu.
-func (build *storedBundleBuild) addStoredValue(res *sharedResult, rec PersistedRecord, storedEnvelope []byte, refs []uint64, parts *TransferredRecordParts) error {
-	for _, ref := range refs {
+func (build *storedBundleBuild) addStoredValue(res *sharedResult, rec PersistedRecord, storedEnvelope []byte, refs iter.Seq[uint64], parts *TransferredRecordParts) error {
+	for ref := range refs {
 		if !res.deps.has(sharedResultID(ref)) {
 			return fmt.Errorf("stored bundle: entry %d: reference to %d is not a direct dependency", res.id, ref)
 		}
@@ -983,13 +984,7 @@ func normalizeStoredTransfer(res *sharedResult, env *PersistedResultEnvelope, ca
 // parts, then the declared pending parts it borrows from its class through
 // the placement rule. Requires egraphMu.
 func (c *Cache) storedBundleOutputsLocked(build *storedBundleBuild, res *sharedResult) error {
-	keys := make([]string, 0, len(res.storedParts))
-	for key := range res.storedParts {
-		keys = append(keys, key)
-	}
-	slices.Sort(keys)
-	for _, key := range keys {
-		part := res.storedParts[key]
+	for _, part := range res.storedParts {
 		if err := build.addOutput(res, part.heldOffer(), part.layers, res.id); err != nil {
 			return err
 		}
@@ -999,7 +994,7 @@ func (c *Cache) storedBundleOutputsLocked(build *storedBundleBuild, res *sharedR
 		if part.state != "pending" {
 			continue
 		}
-		if _, own := res.storedParts[key]; own {
+		if res.storedParts.has(key) {
 			continue
 		}
 		donor, part := c.storedPartDonorLocked(res, key, build.now)
@@ -1059,7 +1054,7 @@ func (c *Cache) storedPartDonorLocked(res *sharedResult, key string, now int64) 
 			if member == nil || member == res || c.resultExpiredAtLocked(member, now) {
 				continue
 			}
-			if _, ok := member.storedParts[key]; ok && (best == nil || member.id < best.id) {
+			if member.storedParts.has(key) && (best == nil || member.id < best.id) {
 				best = member
 			}
 		}
@@ -1067,7 +1062,8 @@ func (c *Cache) storedPartDonorLocked(res *sharedResult, key string, now int64) 
 	if best == nil {
 		return nil, storedPart{}
 	}
-	return best, best.storedParts[key]
+	part, _ := best.storedParts.find(key)
+	return best, part
 }
 
 // closureRowOfClassLocked maps a service entry to a row of the closure of

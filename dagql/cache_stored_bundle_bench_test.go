@@ -157,6 +157,13 @@ func storedBenchPart(seed uint64) PersistedPartOffer {
 // merged, as the service receives it.
 func storedBenchCloud(b testing.TB) (context.Context, *Cache, []uint64) {
 	b.Helper()
+	return storedBenchCloudAt(b, "")
+}
+
+// storedBenchCloudAt is storedBenchCloud with the Cloud saved at path, or
+// in memory only for "".
+func storedBenchCloudAt(b testing.TB, path string) (context.Context, *Cache, []uint64) {
+	b.Helper()
 	actx := cacheTestContext(context.Background())
 	a, err := NewCache(actx, filepath.Join(b.TempDir(), "a.db"), nil, nil)
 	require.NoError(b, err)
@@ -201,7 +208,7 @@ func storedBenchCloud(b testing.TB) (context.Context, *Cache, []uint64) {
 	require.Len(b, bundle.Values, storedBenchChain+storedBenchRoots*(storedBenchOwn+1))
 
 	ctx := cacheTestContext(context.Background())
-	cloud, err := NewCache(ctx, "", nil, nil, WithBlobStore())
+	cloud, err := NewCache(ctx, path, nil, nil, WithBlobStore())
 	require.NoError(b, err)
 	b.Cleanup(func() { require.NoError(b, cloud.CloseDiscardingPersistence()) })
 	reply, err := cloud.MergeValues(ctx, "cache-a", bundle)
@@ -369,7 +376,7 @@ func BenchmarkStoredBundlePartCopies(b *testing.B) {
 	cloud.egraphMu.RLock()
 	for _, res := range order {
 		for _, part := range res.storedParts {
-			parts = append(parts, part)
+			parts = append(parts, part.storedPart)
 		}
 	}
 	cloud.egraphMu.RUnlock()

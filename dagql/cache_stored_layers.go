@@ -7,11 +7,15 @@ import (
 	"hash/maphash"
 	"runtime"
 	"slices"
+	"strconv"
+	"strings"
 	"sync"
+	"unique"
 	"weak"
 
 	"github.com/dagger/dagger/engine/snapshots"
 	"github.com/opencontainers/go-digest"
+	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 // A part's chain lists every layer from its base up, and the parts of a
@@ -43,7 +47,12 @@ type storedPart struct {
 // stores it in, if any (OfferedChain.Packs).
 type storedLayer struct {
 	layer snapshots.ExportLayer
-	pack  digest.Digest
+	// mediaType and description keep the copies of the layer's media type
+	// and description that the table's layers share: a cache's layers have a
+	// few media types and far fewer descriptions than layers, and the
+	// layer's own fields are those copies.
+	mediaType, description unique.Handle[string]
+	pack                   digest.Digest
 	// wire is the layer's entry, with its pack, in a merge's list of layers
 	// (ShareChainLayers), with its separator.
 	wire int64
@@ -165,6 +174,7 @@ func (t *storedLayers) part(offer PersistedPartOffer) storedPart {
 // change it after. Its packs name its chain's layers (OfferedChain.Packs):
 // each layer keeps its own.
 func (t *storedLayers) hold(offer PersistedPartOffer) layeredOffer {
+	offer.Value.Platform = sharedPlatform(offer.Value.Platform)
 	if len(offer.Chain.Layers) == 0 {
 		return layeredOffer{held: offer}
 	}
@@ -278,12 +288,50 @@ func (t *storedLayers) layerLocked(layer snapshots.ExportLayer, pack digest.Dige
 		}
 	}
 	held := &storedLayer{layer: layer, pack: pack, wire: storedLayerWire(storedLayerEncoding(layer, pack)), key: key}
+	held.mediaType = unique.Make(layer.Descriptor.MediaType)
+	held.description = unique.Make(layer.Description)
+	held.layer.Descriptor.MediaType, held.layer.Description = held.mediaType.Value(), held.description.Value()
 	if t.byKey == nil {
 		t.byKey = map[uint64][]weak.Pointer[storedLayer]{}
 	}
 	t.byKey[key] = append(t.byKey[key], weak.Make(held))
 	runtime.AddCleanup(held, t.forget, key)
 	return held
+}
+
+// sharedPlatforms are the platforms of the parts and offers every cache holds:
+// a cache's parts are of a few platforms, each held once for all of them.
+var sharedPlatforms = sharedValues[platformKey, ocispecs.Platform]{keyOf: platformKeyOf}
+
+// platformKey is a platform's content, as reflect.DeepEqual tells two
+// platforms apart: its features each after its length, so that no two lists
+// of features share a key, and whether it lists them at all.
+type platformKey struct {
+	architecture, os, osVersion, variant, features string
+	listsFeatures                                  bool
+}
+
+func platformKeyOf(p *ocispecs.Platform) platformKey {
+	var features strings.Builder
+	for _, feature := range p.OSFeatures {
+		features.WriteString(strconv.Itoa(len(feature)))
+		features.WriteByte(':')
+		features.WriteString(feature)
+	}
+	return platformKey{
+		architecture: p.Architecture, os: p.OS, osVersion: p.OSVersion, variant: p.Variant,
+		features: features.String(), listsFeatures: p.OSFeatures != nil,
+	}
+}
+
+// sharedPlatform returns the shared copy of platform, or nil for none. A
+// held offer's platform is never changed: a caller that changes an offer
+// copies it, platform and all (clonePartOffer).
+func sharedPlatform(platform *ocispecs.Platform) *ocispecs.Platform {
+	if platform == nil {
+		return nil
+	}
+	return sharedPlatforms.share(platformKeyOf(platform), func() *ocispecs.Platform { return clonePlatform(platform) })
 }
 
 // forget drops the key's layers that the collector has freed.

@@ -3549,7 +3549,7 @@ type sharedResult struct {
 	// blob store, by part address key, their layers the cache's
 	// (storedLayers). Only a blob-backed cache (the Cloud) sets them, in
 	// changeStoredPartsLocked. Guarded by egraphMu.
-	storedParts map[string]storedPart
+	storedParts storedPartList
 	// storedRecordBytes is the size of the record a blob-backed cache stores
 	// for the entry, as persistence writes it (encodedRecordBytes), or 0.
 	// Written through setStoredRecordBytesLocked. Guarded by egraphMu.
@@ -3561,7 +3561,8 @@ type sharedResult struct {
 	storedTransfer atomic.Pointer[storedTransferRecord]
 	// stored is, on a blob-backed cache, the entry's stored record held
 	// compressed (cache_stored_body.go), once its body is made: its
-	// persistedEnvelope then has only the envelope's small fields. Guarded
+	// persistedEnvelope is then a light envelope, which entries of its
+	// content share and nothing changes (sharedLightStoredEnvelope). Guarded
 	// by egraphMu, and set under payloadMu too.
 	stored *storedBody
 	// partFacts are, on a blob-backed cache, the parts of the entry's stored

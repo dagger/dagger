@@ -200,8 +200,9 @@ func TestStoredBundleEncodesAsItsFullChains(t *testing.T) {
 	cloud.egraphMu.RLock()
 	key, err := partAddressKey(PersistedPartAddress{Part: "snapshot"})
 	require.NoError(t, err)
-	bareHeld := cloud.resultsByID[sharedResultID(roots[4])].storedParts[key].layers[0]
-	bareEmptyHeld := cloud.resultsByID[sharedResultID(roots[5])].storedParts[key].layers[0]
+	barePart, _ := cloud.resultsByID[sharedResultID(roots[4])].storedParts.find(key)
+	bareEmptyPart, _ := cloud.resultsByID[sharedResultID(roots[5])].storedParts.find(key)
+	bareHeld, bareEmptyHeld := barePart.layers[0], bareEmptyPart.layers[0]
 	cloud.egraphMu.RUnlock()
 	require.NotSame(t, bareHeld, bareEmptyHeld, "held apart")
 	require.Equal(t, string(storedLayerEncoding(bare, "")), string(storedLayerEncoding(bareEmpty, "")), "but encoded alike")
