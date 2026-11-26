@@ -734,6 +734,79 @@ func TestRecordCacheEvidenceCacheState(t *testing.T) {
 	assert.DeepEqual(t, []string{`{"part":"fs"}`}, mapped[1].Value.AsStringSlice())
 }
 
+// A call's span says whether the call itself kept its result past its
+// session, apart from the entry's retention from any source: a persistable
+// call that ran or hit kept it, and so did neither a call whose field isn't
+// persistable nor a persistable call or hit on a value its call declined to
+// persist. A call that keeps nothing reports the edge another call gave its
+// entry, as retained, and does not report it as its own.
+func TestRecordCacheEvidencePersisted(t *testing.T) {
+	t.Parallel()
+	type call struct {
+		session     string
+		persistable bool
+		declines    bool
+	}
+	for _, tc := range []struct {
+		name          string
+		before        []call
+		call          call
+		wantOutcome   dagql.CacheOutcome
+		wantPersisted bool
+		wantRetained  bool
+	}{
+		{name: "a persistable call that ran", call: call{session: "s1", persistable: true},
+			wantOutcome: dagql.CacheOutcomeExecuted, wantPersisted: true, wantRetained: true},
+		{name: "a call that keeps nothing", call: call{session: "s1"},
+			wantOutcome: dagql.CacheOutcomeExecuted},
+		{name: "a persistable call that declined", call: call{session: "s1", persistable: true, declines: true},
+			wantOutcome: dagql.CacheOutcomeExecuted},
+		{name: "a persistable hit", before: []call{{session: "s1", persistable: true}}, call: call{session: "s2", persistable: true},
+			wantOutcome: dagql.CacheOutcomeHit, wantPersisted: true, wantRetained: true},
+		{name: "a hit that keeps nothing, on an entry another call kept", before: []call{{session: "s1", persistable: true}}, call: call{session: "s2"},
+			wantOutcome: dagql.CacheOutcomeHit, wantRetained: true},
+		{name: "a persistable hit on a value its call declined", before: []call{{session: "s1", persistable: true, declines: true}}, call: call{session: "s2", persistable: true},
+			wantOutcome: dagql.CacheOutcomeHit},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := context.Background()
+			cache, err := dagql.NewCache(ctx, "", nil, nil)
+			assert.NilError(t, err)
+			t.Cleanup(func() { assert.NilError(t, cache.CloseDiscardingPersistence()) })
+			frame := evidenceTestFrame("persisted")
+			run := func(c call, ev *dagql.CacheDecision) dagql.AnyResult {
+				t.Helper()
+				res, err := cache.GetOrInitCall(ctx, c.session, evidenceTestTypeResolver{}, &dagql.CallRequest{ResultCall: frame, CacheEvidence: ev, IsPersistable: c.persistable}, func(ctx context.Context) (dagql.AnyResult, error) {
+					if c.declines {
+						dagql.DeclinePersistence(ctx)
+					}
+					return dagql.NewResultForCall(dagql.NewInt(1), frame)
+				})
+				assert.NilError(t, err)
+				return res
+			}
+			for _, c := range tc.before {
+				run(c, nil)
+			}
+			ev := dagql.NewCacheDecision()
+			res := run(tc.call, ev)
+			assert.Equal(t, tc.wantOutcome, ev.Outcome)
+
+			sr, span := evidenceTestRecordingSpan(t)
+			span.SetAttributes(appendCacheEvidenceAttrs(ctx, nil, ev, res)...)
+			got := evidenceTestCacheAttrs(t, evidenceTestEndedAttrs(t, sr, span))
+			_, retained := got[telemetryattrs.CacheRetainedAttr]
+			assert.Equal(t, tc.wantRetained, retained, "the entry's retention, from any source")
+			value, kept := got[telemetryattrs.CachePersistedAttr]
+			assert.Equal(t, tc.wantPersisted, kept, "whether the call itself kept its result")
+			if tc.wantPersisted {
+				assert.Equal(t, "true", value)
+			}
+		})
+	}
+}
+
 // A call span carries its parts' raw sizes beside the parts, index-aligned,
 // when the state has them, as on an engine with the remote cache; without
 // them, as elsewhere, it carries none.

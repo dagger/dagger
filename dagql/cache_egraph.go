@@ -1613,6 +1613,9 @@ func (c *Cache) lookupCacheForRequestDigests(
 		// expiry captured at hit selection even if the barrier wait took long
 		// enough to cross a wall-clock second. A value its call declined to
 		// persist stays unpersisted.
+		if ev != nil {
+			ev.Persisted = !hitShared.persistDeclined
+		}
 		readHold = c.lookupReadLockGraph(ctx)
 		unchanged := hitShared.persistDeclined || c.persistedEdgeUpsertUnchangedLocked(hitShared, persistedEdgeExpiresAtUnix)
 		readHold.Unlock()
