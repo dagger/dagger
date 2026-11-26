@@ -7,6 +7,7 @@ import (
 	"hash/maphash"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"unique"
@@ -302,17 +303,24 @@ func (t *storedLayers) layerLocked(layer snapshots.ExportLayer, pack digest.Dige
 // a cache's parts are of a few platforms, each held once for all of them.
 var sharedPlatforms = sharedValues[platformKey, ocispecs.Platform]{keyOf: platformKeyOf}
 
-// platformKey is a platform's content, its features joined, and whether it
-// lists them, as reflect.DeepEqual tells two platforms apart.
+// platformKey is a platform's content, as reflect.DeepEqual tells two
+// platforms apart: its features each after its length, so that no two lists
+// of features share a key, and whether it lists them at all.
 type platformKey struct {
 	architecture, os, osVersion, variant, features string
 	listsFeatures                                  bool
 }
 
 func platformKeyOf(p *ocispecs.Platform) platformKey {
+	var features strings.Builder
+	for _, feature := range p.OSFeatures {
+		features.WriteString(strconv.Itoa(len(feature)))
+		features.WriteByte(':')
+		features.WriteString(feature)
+	}
 	return platformKey{
 		architecture: p.Architecture, os: p.OS, osVersion: p.OSVersion, variant: p.Variant,
-		features: strings.Join(p.OSFeatures, "\x00"), listsFeatures: p.OSFeatures != nil,
+		features: features.String(), listsFeatures: p.OSFeatures != nil,
 	}
 }
 

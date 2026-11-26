@@ -64,6 +64,37 @@ func TestStoredPartsShareTheirPlatformsAndLayerNames(t *testing.T) {
 	require.Equal(t, platformed.Chain.Layers, got.offer().Chain.Layers)
 }
 
+// Platforms that differ only in how their features split, or in listing one
+// empty feature or none, are held apart, each part's its own.
+func TestStoredPartsKeepPlatformsWhoseFeaturesDiffer(t *testing.T) {
+	t.Parallel()
+	ctx, cloud, batch := storedBenchCloud(t)
+	featured := []*ocispecs.Platform{
+		{OS: "windows", Architecture: "amd64", OSFeatures: []string{"a\x00b"}},
+		{OS: "windows", Architecture: "amd64", OSFeatures: []string{"a", "b"}},
+		{OS: "windows", Architecture: "amd64", OSFeatures: []string{""}},
+		{OS: "windows", Architecture: "amd64", OSFeatures: []string{}},
+		{OS: "windows", Architecture: "amd64"},
+	}
+	part := storedBenchPart(1 << 41)
+	part.Address.Part = "featured"
+	for i, platform := range featured {
+		copied, err := clonePartOffers([]PersistedPartOffer{part})
+		require.NoError(t, err)
+		copied[0].Value.Platform = clonePlatform(platform)
+		stored, _, err := cloud.SetStoredPart(ctx, batch[i], copied[0], 0)
+		require.NoError(t, err)
+		require.True(t, stored)
+	}
+	cloud.egraphMu.RLock()
+	defer cloud.egraphMu.RUnlock()
+	for i, platform := range featured {
+		got, ok := cloud.resultsByID[sharedResultID(batch[i])].storedParts.find(mustPartAddressKey(t, part.Address))
+		require.True(t, ok)
+		require.Equal(t, platform, got.offer().Value.Platform, "part %d's platform", i)
+	}
+}
+
 func mustPartAddressKey(t *testing.T, address PersistedPartAddress) string {
 	t.Helper()
 	key, err := partAddressKey(address)
