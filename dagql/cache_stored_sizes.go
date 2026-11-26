@@ -445,7 +445,7 @@ func (c *Cache) measureStoredValue(miss storedSizeMiss) (storedSizeMeasure, erro
 		// frame the body holds is measured the same way, in place of a null
 		// call.
 		var call *ResultCall
-		if miss.body.frame == nil {
+		if !miss.body.holdsFrame() {
 			var err error
 			if call, err = normalizeTransferCall(miss.call); err != nil {
 				return storedSizeMeasure{}, err
@@ -458,9 +458,9 @@ func (c *Cache) measureStoredValue(miss storedSizeMiss) (storedSizeMeasure, erro
 		if err != nil {
 			return storedSizeMeasure{}, err
 		}
-		bytes = empty - emptyEnvelopeBytes + miss.body.envelopeBytes
-		if miss.body.frame != nil {
-			bytes += miss.body.frameBytes - nullCallBytes
+		bytes = empty - emptyEnvelopeBytes + int64(miss.body.envelopeBytes)
+		if miss.body.holdsFrame() {
+			bytes += int64(miss.body.frameBytes) - nullCallBytes
 		}
 	} else {
 		var err error

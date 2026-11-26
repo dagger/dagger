@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"runtime"
 	"slices"
 	"strings"
@@ -90,29 +91,30 @@ func storedBodyCodec() (*zstd.Encoder, *zstd.Decoder, error) {
 
 // storedBody is a blob-backed cache's stored record held compressed.
 type storedBody struct {
-	// envelope is the record's envelope in transfer form, without offers,
-	// as JSON compressed with zstd, and envelopeBytes the JSON's length.
-	envelope      []byte
-	envelopeBytes int64
-	// frame is, once the body holds it, the record's call frame as JSON
-	// compressed with zstd, frameBytes the JSON's length, and recipe the
-	// frame's recipe digest. The entry then holds no decoded frame: the body
-	// is its frame (entryFrame). The JSON is the frame's transfer form, as a
-	// bundle carries it, and the frame itself, as a save writes it: a frame
-	// whose two forms differ stays decoded (withFrame).
-	frame      []byte
-	frameBytes int64
-	recipe     digest.Digest
+	// bytes are the record's envelope in transfer form, without offers, as
+	// JSON compressed with zstd (envelope), and then, once the body holds
+	// it, the record's call frame as JSON compressed with zstd (frame), in
+	// one allocation. envelopeLen is the compressed envelope's length, and
+	// envelopeBytes and frameBytes the JSONs' lengths. A body never holds a
+	// record of 4 GiB or more (compressStoredBody).
+	bytes                                  []byte
+	envelopeLen, envelopeBytes, frameBytes uint32
 	// follows is the held frame's declaration that the result follows from
 	// its inputs (ResultCall.FollowsFromInputs), kept beside it so that no
 	// reader decompresses the frame for it (entryCanDifferLocked).
 	follows bool
+	// recipe is, once the body holds the frame, the frame's recipe digest.
+	// The entry then holds no decoded frame: the body is its frame
+	// (entryFrame). The frame's JSON is its transfer form, as a bundle
+	// carries it, and the frame itself, as a save writes it: a frame whose
+	// two forms differ stays decoded (withFrame).
+	recipe digest.Digest
 	// call is, while the body holds no frame, the decoded frame the body was
 	// made with, and refs are the entries the record's child and call
 	// references name, sorted, of the record and that frame. A frame that
 	// replaces the entry's replaces its body too (teachContentDigest).
 	call *ResultCall
-	refs []uint64
+	refs storedRefs
 	// size is the entry's value's encoded size in a bundle, once StoredSizes
 	// has measured it, with what else it read.
 	size atomic.Pointer[storedValueSize]
@@ -202,9 +204,28 @@ func compressStoredBody(raw []byte, call *ResultCall, refs []uint64) (*storedBod
 	if err != nil {
 		return nil, err
 	}
+	if uint64(len(raw)) > math.MaxUint32 {
+		return nil, fmt.Errorf("stored record of %d bytes: a body holds less than 4 GiB", len(raw))
+	}
 	// EncodeAll's own buffer has the input's capacity: the body keeps a copy
 	// of what it used.
-	return &storedBody{envelope: bytes.Clone(enc.EncodeAll(raw, nil)), envelopeBytes: int64(len(raw)), call: call, refs: refs}, nil
+	envelope := bytes.Clone(enc.EncodeAll(raw, nil))
+	return &storedBody{bytes: envelope, envelopeLen: uint32(len(envelope)), envelopeBytes: uint32(len(raw)), call: call, refs: packStoredRefs(refs)}, nil
+}
+
+// envelope is the body's envelope in transfer form, compressed, which its
+// callers don't change.
+func (b *storedBody) envelope() []byte {
+	return b.bytes[:b.envelopeLen:b.envelopeLen]
+}
+
+// frame is the body's call frame, compressed, which its callers don't
+// change, or nil while the body holds none.
+func (b *storedBody) frame() []byte {
+	if int(b.envelopeLen) == len(b.bytes) {
+		return nil
+	}
+	return b.bytes[b.envelopeLen:]
 }
 
 // withFrame returns a body of b's record with call, the entry's decoded
@@ -223,7 +244,7 @@ func (b *storedBody) withFrame(c *Cache, call *ResultCall) (*storedBody, error) 
 
 // withFrameEncoded is withFrame, compressing with enc.
 func (b *storedBody) withFrameEncoded(c *Cache, call *ResultCall, enc *zstd.Encoder) (*storedBody, error) {
-	if b.frame != nil || call == nil || b.call != call {
+	if b.holdsFrame() || call == nil || b.call != call {
 		return b, nil
 	}
 	// A call a bundle's check would refuse stays decoded, for the check to
@@ -232,7 +253,7 @@ func (b *storedBody) withFrameEncoded(c *Cache, call *ResultCall, enc *zstd.Enco
 		return b, nil
 	}
 	raw, ok := storedFrameJSON(call)
-	if !ok {
+	if !ok || uint64(len(raw)) > math.MaxUint32 {
 		return b, nil
 	}
 	// A frame whose recipe can't be derived stays decoded too: its readers
@@ -241,11 +262,17 @@ func (b *storedBody) withFrameEncoded(c *Cache, call *ResultCall, enc *zstd.Enco
 	if recipeErr != nil {
 		return b, nil //nolint:nilerr // the frame stays decoded; its readers report the error
 	}
+	// The envelope and the frame go in one allocation, of exactly their
+	// bytes.
+	held := enc.EncodeAll(raw, b.envelope())
+	if uint64(len(held)) > math.MaxUint32 {
+		return b, nil
+	}
 	return &storedBody{
-		envelope:      b.envelope,
+		bytes:         slices.Clone(held),
+		envelopeLen:   b.envelopeLen,
 		envelopeBytes: b.envelopeBytes,
-		frame:         bytes.Clone(enc.EncodeAll(raw, nil)),
-		frameBytes:    int64(len(raw)),
+		frameBytes:    uint32(len(raw)),
 		recipe:        recipe,
 		follows:       call.FollowsFromInputs,
 		refs:          b.refs,
@@ -308,7 +335,10 @@ func (b *storedBody) reframe(c *Cache, id sharedResultID, frame *ResultCall) (*s
 	if err != nil {
 		return nil, nil, err
 	}
-	next := &storedBody{envelope: b.envelope, envelopeBytes: b.envelopeBytes, call: frame, refs: kept.refs}
+	// The envelope is copied, so that the new body doesn't keep the old
+	// one's frame.
+	envelope := slices.Clone(b.envelope())
+	next := &storedBody{bytes: envelope, envelopeLen: uint32(len(envelope)), envelopeBytes: b.envelopeBytes, call: frame, refs: packStoredRefs(kept.refs)}
 	next, err = next.withFrame(c, frame)
 	if err != nil {
 		return nil, nil, err
@@ -318,16 +348,22 @@ func (b *storedBody) reframe(c *Cache, id sharedResultID, frame *ResultCall) (*s
 
 // holdsFrame reports whether there is a body and it holds the frame.
 func (b *storedBody) holdsFrame() bool {
-	return b != nil && b.frame != nil
+	return b != nil && b.frame() != nil
 }
 
 // frameJSON returns the JSON of the frame the body holds, decompressed.
 func (b *storedBody) frameJSON() ([]byte, error) {
+	return storedFrameJSONOf(b.frame(), int64(b.frameBytes))
+}
+
+// storedFrameJSONOf returns the JSON of frame, a call frame compressed as a
+// body holds it, whose JSON is jsonBytes long.
+func storedFrameJSONOf(frame []byte, jsonBytes int64) ([]byte, error) {
 	_, dec, err := storedBodyCodec()
 	if err != nil {
 		return nil, err
 	}
-	raw, err := dec.DecodeAll(b.frame, make([]byte, 0, b.frameBytes))
+	raw, err := dec.DecodeAll(frame, make([]byte, 0, jsonBytes))
 	if err != nil {
 		return nil, fmt.Errorf("decompress stored call frame: %w", err)
 	}
@@ -337,7 +373,13 @@ func (b *storedBody) frameJSON() ([]byte, error) {
 // decodeFrame returns the frame the body holds, decoded: a copy of its own,
 // which nothing else holds.
 func (b *storedBody) decodeFrame() (*ResultCall, error) {
-	raw, err := b.frameJSON()
+	return decodeStoredFrame(b.frame(), int64(b.frameBytes))
+}
+
+// decodeStoredFrame returns held, a call frame compressed as a body holds
+// it, whose JSON is jsonBytes long, decoded: a copy of its own.
+func decodeStoredFrame(held []byte, jsonBytes int64) (*ResultCall, error) {
+	raw, err := storedFrameJSONOf(held, jsonBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -362,7 +404,7 @@ func (res *sharedResult) entryFrameLocked() entryFrame {
 	if call := res.loadResultCall(); call != nil {
 		return entryFrame{call: call}
 	}
-	if body := res.stored; body != nil && body.frame != nil {
+	if body := res.stored; body.holdsFrame() {
 		return entryFrame{body: body}
 	}
 	return entryFrame{}
@@ -406,11 +448,17 @@ func (f entryFrame) decode() (*ResultCall, error) {
 
 // envelopeJSON returns the body's envelope JSON, decompressed.
 func (b *storedBody) envelopeJSON() ([]byte, error) {
+	return storedEnvelopeJSON(b.envelope(), int64(b.envelopeBytes))
+}
+
+// storedEnvelopeJSON returns the JSON of envelope, an envelope compressed as a
+// body holds it, whose JSON is jsonBytes long, or 0 if not known.
+func storedEnvelopeJSON(envelope []byte, jsonBytes int64) ([]byte, error) {
 	_, dec, err := storedBodyCodec()
 	if err != nil {
 		return nil, err
 	}
-	raw, err := dec.DecodeAll(b.envelope, make([]byte, 0, b.envelopeBytes))
+	raw, err := dec.DecodeAll(envelope, make([]byte, 0, jsonBytes))
 	if err != nil {
 		return nil, fmt.Errorf("decompress stored envelope: %w", err)
 	}
@@ -420,11 +468,18 @@ func (b *storedBody) envelopeJSON() ([]byte, error) {
 // record returns the body's record of the entry with the number, decoded:
 // its envelope in transfer form and its call.
 func (b *storedBody) record(number uint64) (PersistedRecord, error) {
-	raw, err := b.envelopeJSON()
+	return decodeStoredRecord(b.envelope(), int64(b.envelopeBytes), number, b.call)
+}
+
+// decodeStoredRecord returns the record of the entry with the number whose
+// envelope is held compressed as envelope, as a body holds it, with call:
+// its envelope in transfer form, decoded.
+func decodeStoredRecord(envelope []byte, jsonBytes int64, number uint64, call *ResultCall) (PersistedRecord, error) {
+	raw, err := storedEnvelopeJSON(envelope, jsonBytes)
 	if err != nil {
 		return PersistedRecord{}, err
 	}
-	rec := PersistedRecord{ResultID: number, Call: b.call}
+	rec := PersistedRecord{ResultID: number, Call: call}
 	if err := json.Unmarshal(raw, &rec.Envelope); err != nil {
 		return PersistedRecord{}, fmt.Errorf("decode stored envelope: %w", err)
 	}
@@ -530,7 +585,7 @@ func (c *Cache) setStoredBodyLocked(res *sharedResult, env *PersistedResultEnvel
 	// measured the same whole or compressed, and its frame the same decoded
 	// or held in the body.
 	made := body.call
-	if body.frame != nil {
+	if body.holdsFrame() {
 		made = res.loadResultCall()
 	}
 	if kept := res.storedTransfer.Load(); kept != nil && kept.envelope == env && kept.call == made {
@@ -540,20 +595,27 @@ func (c *Cache) setStoredBodyLocked(res *sharedResult, env *PersistedResultEnvel
 			body.size.Store(&carried)
 		}
 	}
+	// The body's recipe digest is the entry's recipe, which the entry's
+	// recipe keys hold: one string for both.
+	if body.holdsFrame() {
+		if i := slices.Index(res.recipeKeys, body.recipe); i >= 0 {
+			body.recipe = res.recipeKeys[i]
+		}
+	}
 	res.payloadMu.Lock()
 	res.persistedEnvelope = sharedLightStoredEnvelope(env)
 	res.stored = body
 	res.payloadMu.Unlock()
-	if body.frame != nil {
+	if body.holdsFrame() {
 		// The frame is not replaced, only held otherwise: no new frame
 		// generation (dropResultCall).
 		res.dropResultCall()
 	}
 	res.storedTransfer.Store(nil)
 	if res.id != 0 && c.resultsByID[res.id] == res {
-		c.setResultPayloadBytesLocked(res, int64(len(body.envelope)))
+		c.setResultPayloadBytesLocked(res, int64(body.envelopeLen))
 	} else {
-		res.payloadBytes.Store(int64(len(body.envelope)))
+		res.payloadBytes.Store(int64(body.envelopeLen))
 	}
 }
 
@@ -670,7 +732,7 @@ type storedRowPart struct {
 // encodeStoredRow returns the saved self payload of a stored record: header
 // is its envelope as a save writes it, whose value the body holds.
 func encodeStoredRow(header *PersistedResultEnvelope, body *storedBody, parts *partFacts) ([]byte, error) {
-	h := storedRowHeader{Envelope: *lightStoredEnvelope(header), EnvelopeBytes: body.envelopeBytes, Refs: body.refs}
+	h := storedRowHeader{Envelope: *lightStoredEnvelope(header), EnvelopeBytes: int64(body.envelopeBytes), Refs: body.refs.list()}
 	h.Envelope.StoredParts = header.StoredParts
 	h.Envelope.Run, h.Envelope.RunRan = header.Run, header.RunRan
 	for _, part := range parts.declaredParts() {
@@ -681,9 +743,10 @@ func encodeStoredRow(header *PersistedResultEnvelope, body *storedBody, parts *p
 	if err != nil {
 		return nil, err
 	}
-	out := binary.AppendUvarint(append(make([]byte, 0, 1+binary.MaxVarintLen64+len(raw)+len(body.envelope)), storedRowMark), uint64(len(raw)))
+	envelope := body.envelope()
+	out := binary.AppendUvarint(append(make([]byte, 0, 1+binary.MaxVarintLen64+len(raw)+len(envelope)), storedRowMark), uint64(len(raw)))
 	out = append(out, raw...)
-	return append(out, body.envelope...), nil
+	return append(out, envelope...), nil
 }
 
 // decodeStoredRow reads a saved stored record's self payload, as
@@ -704,11 +767,16 @@ func decodeStoredRow(payload []byte, call *ResultCall) (*PersistedResultEnvelope
 	if err := dec.Decode(&h); err != nil {
 		return nil, nil, nil, fmt.Errorf("stored row header: %w", err)
 	}
+	envelope := payload[read+int(n):]
+	if uint64(len(envelope)) > math.MaxUint32 || h.EnvelopeBytes < 0 || uint64(h.EnvelopeBytes) > math.MaxUint32 {
+		return nil, nil, nil, errors.New("stored row: a body of 4 GiB or more")
+	}
 	body := &storedBody{
-		envelope:      slices.Clone(payload[read+int(n):]),
-		envelopeBytes: h.EnvelopeBytes,
+		bytes:         slices.Clone(envelope),
+		envelopeLen:   uint32(len(envelope)),
+		envelopeBytes: uint32(h.EnvelopeBytes),
 		call:          call,
-		refs:          h.Refs,
+		refs:          packStoredRefs(h.Refs),
 	}
 	parts := &partFacts{}
 	for _, part := range h.Parts {
@@ -750,7 +818,7 @@ func (c *Cache) holdRestoredFramesCompressed() error {
 	var reads []read
 	readHold := c.readGraphAs(workBody)
 	for _, res := range c.resultsByID {
-		if body := res.stored; body != nil && body.frame == nil && body.call != nil && body.call == res.loadResultCall() {
+		if body := res.stored; body != nil && !body.holdsFrame() && body.call != nil && body.call == res.loadResultCall() {
 			reads = append(reads, read{res: res, env: res.persistedEnvelope, was: body})
 		}
 	}

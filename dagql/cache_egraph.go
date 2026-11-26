@@ -1885,8 +1885,8 @@ func frameWithContentDigest(baseFrame *ResultCall, contentDigest digest.Digest, 
 // frames are held in them, and encoded otherwise. It reads no lock.
 func frameJSONGrowth(base entryFrame, baseFrame *ResultCall, body *storedBody, frame *ResultCall) (int64, error) {
 	length := func(held *storedBody, f *ResultCall) (int64, error) {
-		if held != nil && held.frame != nil {
-			return held.frameBytes, nil
+		if held.holdsFrame() {
+			return int64(held.frameBytes), nil
 		}
 		raw, err := json.Marshal(f)
 		if err != nil {
