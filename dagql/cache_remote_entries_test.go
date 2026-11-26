@@ -434,7 +434,7 @@ func TestRemoteEntryOutlivesItsHoldings(t *testing.T) {
 			cloud.egraphMu.RLock()
 			stayEntry, _ := cloud.holdingLocked(stays)
 			stayKeyed := cloud.entriesByRecipe[live.Recipe] == stayEntry.id
-			stayClassed := cloud.outputEqClassResults[cloud.eqClassRootLocked(cloud.egraphDigestToClass[live.ContentDigest.String()])].Contains(stayEntry.id)
+			stayClassed := cloud.outputEqClassResults.Contains(cloud.eqClassRootLocked(cloud.egraphDigestToClass[live.ContentDigest.String()]), stayEntry.id)
 			cloud.egraphMu.RUnlock()
 			require.True(t, stayKeyed, "by its recipe")
 			require.True(t, stayClassed, "and by its content")
@@ -451,7 +451,7 @@ func TestRemoteEntryOutlivesItsHoldings(t *testing.T) {
 			for _, dig := range []digest.Digest{kept.Recipe, kept.Request, kept.ContentDigest} {
 				keyed[dig] = cloud.entriesByRecipe[dig] == entry.id
 				class := cloud.eqClassRootLocked(cloud.egraphDigestToClass[dig.String()])
-				classed[dig] = cloud.outputEqClassResults[class].Contains(entry.id)
+				classed[dig] = cloud.outputEqClassResults.Contains(class, entry.id)
 			}
 			holdings := len(entry.holderRefsLocked())
 			for k := range cloud.holderEntriesForTest() {
@@ -1129,7 +1129,8 @@ func testLiveEqClassesLocked(c *Cache) int {
 		}
 		use(term.outputEqID)
 	}
-	for _, classes := range c.resultOutputEqClasses {
+	for key := range c.resultOutputEqClasses.Keys() {
+		classes := c.resultOutputEqClasses.Members(key)
 		for id := range classes.All() {
 			use(id)
 		}

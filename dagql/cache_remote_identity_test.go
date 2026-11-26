@@ -203,10 +203,10 @@ func egraphFactsForTest(c *Cache) string {
 		slices.Sort(extras[id])
 	}
 	line("classExtras", extras)
-	line("inputTerms", c.inputEqClassToTerms)
-	line("outputTerms", c.outputEqClassToTerms)
-	line("resultClasses", c.resultOutputEqClasses)
-	line("classResults", c.outputEqClassResults)
+	line("inputTerms", idSetIndexMembers(&c.inputEqClassToTerms))
+	line("outputTerms", idSetIndexMembers(&c.outputEqClassToTerms))
+	line("resultClasses", idSetIndexMembers(&c.resultOutputEqClasses))
+	line("classResults", idSetIndexMembers(&c.outputEqClassResults))
 	line("termResults", idSetIndexMembers(&c.termResults))
 	line("resultTerms", idSetIndexMembers(&c.resultTerms))
 	line("provenance", c.termInputProvenance)
@@ -215,8 +215,9 @@ func egraphFactsForTest(c *Cache) string {
 		terms[id] = *term
 	}
 	line("terms", terms)
-	byDigest := make(map[string][]egraphTermID, len(c.egraphTermsByTermDigest))
-	for dig, set := range c.egraphTermsByTermDigest {
+	byDigest := make(map[string][]egraphTermID, c.egraphTermsByTermDigest.Len())
+	for dig := range c.egraphTermsByTermDigest.Keys() {
+		set := c.egraphTermsByTermDigest.Members(dig)
 		byDigest[dig] = slices.Collect(set.Items())
 	}
 	line("termsByDigest", byDigest)

@@ -378,11 +378,11 @@ func savedStoreIndexCounts(c *Cache, say func(format string, args ...any)) {
 		}
 	}
 	var rocInner, ocrInner, trInner, rtInner, ridInner, termsByDigestInner, inTermsInner, outTermsInner, termInputs, rdgGroups, cieInner int
-	for _, v := range c.resultOutputEqClasses {
-		rocInner += v.Size()
+	for k := range c.resultOutputEqClasses.Keys() {
+		rocInner += c.resultOutputEqClasses.Size(k)
 	}
-	for _, v := range c.outputEqClassResults {
-		ocrInner += v.Size()
+	for k := range c.outputEqClassResults.Keys() {
+		ocrInner += c.outputEqClassResults.Size(k)
 	}
 	for k := range c.termResults.Keys() {
 		trInner += c.termResults.Size(k)
@@ -393,14 +393,14 @@ func savedStoreIndexCounts(c *Cache, say func(format string, args ...any)) {
 	for _, v := range c.resultIndexedDigests {
 		ridInner += len(v)
 	}
-	for _, v := range c.egraphTermsByTermDigest {
-		termsByDigestInner += v.Size()
+	for k := range c.egraphTermsByTermDigest.Keys() {
+		termsByDigestInner += c.egraphTermsByTermDigest.Size(k)
 	}
-	for _, v := range c.inputEqClassToTerms {
-		inTermsInner += v.Size()
+	for k := range c.inputEqClassToTerms.Keys() {
+		inTermsInner += c.inputEqClassToTerms.Size(k)
 	}
-	for _, v := range c.outputEqClassToTerms {
-		outTermsInner += v.Size()
+	for k := range c.outputEqClassToTerms.Keys() {
+		outTermsInner += c.outputEqClassToTerms.Size(k)
 	}
 	for _, term := range c.egraphTerms {
 		termInputs += len(term.inputEqIDs)
@@ -414,8 +414,8 @@ func savedStoreIndexCounts(c *Cache, say func(format string, args ...any)) {
 	say("classes: live %d, slots %d; digest->class %d; class->digests %d classes, %d digests; extra-digest classes %d; distinct digest strings %d, %.3f GB of bytes",
 		c.liveEqClasses, len(c.egraphParents), len(c.egraphDigestToClass), len(c.eqClassToDigests), inner(c.eqClassToDigests), len(c.eqClassExtraDigests), len(digestStrings), savedStoreGB(uint64(digestStringBytes)))
 	say("terms %d (inputs %d); by term digest %d keys, %d ids; input class->terms %d/%d; output class->terms %d/%d; input provenance %d",
-		len(c.egraphTerms), termInputs, len(c.egraphTermsByTermDigest), termsByDigestInner, len(c.inputEqClassToTerms), inTermsInner, len(c.outputEqClassToTerms), outTermsInner, len(c.termInputProvenance))
-	say("result->classes %d/%d; class->results %d/%d; term->results %d/%d; result->terms %d/%d", len(c.resultOutputEqClasses), rocInner, len(c.outputEqClassResults), ocrInner, c.termResults.Len(), trInner, c.resultTerms.Len(), rtInner)
+		len(c.egraphTerms), termInputs, c.egraphTermsByTermDigest.Len(), termsByDigestInner, c.inputEqClassToTerms.Len(), inTermsInner, c.outputEqClassToTerms.Len(), outTermsInner, len(c.termInputProvenance))
+	say("result->classes %d/%d; class->results %d/%d; term->results %d/%d; result->terms %d/%d", c.resultOutputEqClasses.Len(), rocInner, c.outputEqClassResults.Len(), ocrInner, c.termResults.Len(), trInner, c.resultTerms.Len(), rtInner)
 	say("digest postings %d (with a tree %d: %d ids; imported ids %d); result->indexed digests %d/%d; broadly indexed %d; restored digest groups %d/%d; call input entries %d/%d",
 		c.egraphResultsByDigest.Len(), postingsWithTree, postingExact, postingImported, len(c.resultIndexedDigests), ridInner, len(c.broadlyIndexedResults), len(c.restoredDigestGroups), rdgGroups, len(c.callInputEntries), cieInner)
 }
@@ -525,16 +525,16 @@ func savedStoreCompositionSteps(c *Cache, base uint64, say func(format string, a
 		c.restoredDigestGroups = nil
 	})
 	step("entry<->class and entry<->term associations", func() {
-		c.resultOutputEqClasses = nil
-		c.outputEqClassResults = nil
+		c.resultOutputEqClasses = idSetIndex[sharedResultID, eqClassID]{}
+		c.outputEqClassResults = idSetIndex[eqClassID, sharedResultID]{}
 		c.termResults = idSetIndex[egraphTermID, sharedResultID]{}
 		c.resultTerms = idSetIndex[sharedResultID, egraphTermID]{}
 	})
 	step("terms and their indexes", func() {
 		c.egraphTerms = nil
-		c.egraphTermsByTermDigest = nil
-		c.inputEqClassToTerms = nil
-		c.outputEqClassToTerms = nil
+		c.egraphTermsByTermDigest = idSetIndex[string, egraphTermID]{}
+		c.inputEqClassToTerms = idSetIndex[eqClassID, egraphTermID]{}
+		c.outputEqClassToTerms = idSetIndex[eqClassID, egraphTermID]{}
 		c.termInputProvenance = nil
 	})
 	step("classes: digest->class, class->digests, extras, union-find", func() {

@@ -316,7 +316,7 @@ func (c *Cache) readEntryLocked(rd *persistRead, id sharedResultID, res *sharedR
 	classes := rd.classRows[:0]
 	var classesPrint rowsPrint
 	e.classAt = int32(len(rd.ids))
-	for outputEqID := range c.resultOutputEqClasses[id].All() {
+	for outputEqID := range c.resultOutputEqClasses.All(id) {
 		outputEqID = c.eqClassRootLocked(outputEqID)
 		// Two of the entry's classes joined since name one root once.
 		if outputEqID == 0 || slices.Contains(rd.ids[e.classAt:], outputEqID) {

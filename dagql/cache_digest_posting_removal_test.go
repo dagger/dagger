@@ -1,7 +1,6 @@
 package dagql
 
 import (
-	"maps"
 	"slices"
 	"testing"
 
@@ -13,11 +12,11 @@ func TestRestoredDigestPostingRemovalKeepsRuntimePostingsAfterMerge(t *testing.T
 	defer f.close(t)
 	c := f.cache
 	c.egraphMu.Lock()
-	roots := slices.Sorted(maps.Keys(c.outputEqClassResults))
+	roots := slices.Sorted(c.outputEqClassResults.Keys())
 	assert.Equal(t, 2, len(roots))
 	first, second := roots[0], roots[1]
-	survivor := slices.Collect(c.outputEqClassResults[first].Items())[0]
-	removed := slices.Collect(c.outputEqClassResults[second].Items())
+	survivor := slices.Collect(c.outputEqClassResults.Items(first))[0]
+	removed := slices.Collect(c.outputEqClassResults.Items(second))
 	digests := slices.Collect(c.eqClassToDigests[second].Items())
 	assert.Assert(t, len(digests) > 1)
 	c.mergeEqClassesLocked(f.ctx, first, second)
@@ -47,8 +46,10 @@ func TestRestoredDigestPostingRemovalAcrossOriginalGroups(t *testing.T) {
 	c.egraphParents = []eqClassID{0, 1, 2}
 	c.eqClassToDigests[1] = idSetOf("first")
 	c.eqClassToDigests[2] = idSetOf("second")
-	c.outputEqClassResults[1] = idSetOf[sharedResultID](1, 2)
-	c.outputEqClassResults[2] = idSetOf[sharedResultID](1, 3)
+	c.outputEqClassResults.Insert(1, 1)
+	c.outputEqClassResults.Insert(1, 2)
+	c.outputEqClassResults.Insert(2, 1)
+	c.outputEqClassResults.Insert(2, 3)
 	c.restoreDigestPostingsLocked()
 	c.removeResultDigestsLocked(1, map[eqClassID]struct{}{1: {}, 2: {}})
 	assert.DeepEqual(t, slices.Sorted(c.egraphResultsByDigest.Items("first")), []sharedResultID{2})

@@ -198,9 +198,9 @@ type importedPostingGroup struct {
 func (c *Cache) restoreDigestPostingsLocked() {
 	// Rebuild both directions together, including when restoring more than once.
 	c.restoredDigestGroups = make(map[sharedResultID][]*importedPostingGroup, len(c.resultsByID))
-	for outputEqID, resultIDs := range c.outputEqClassResults {
+	for outputEqID := range c.outputEqClassResults.Keys() {
 		group := &importedPostingGroup{
-			members: resultIDs.Clone(),
+			members: c.outputEqClassResults.Clone(outputEqID),
 			digests: make([]string, 0, c.eqClassToDigests[outputEqID].Size()),
 		}
 		for resultID := range group.members.All() {

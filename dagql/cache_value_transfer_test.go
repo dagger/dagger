@@ -499,7 +499,7 @@ func TestValueTransferReferences(t *testing.T) {
 		require.NoError(t, err)
 		c.egraphMu.RLock()
 		class, known := c.egraphDigestToClass[extra.String()]
-		results := c.outputEqClassResults[c.eqClassRootLocked(class)].Size()
+		results := c.outputEqClassResults.Size(c.eqClassRootLocked(class))
 		c.egraphMu.RUnlock()
 		require.True(t, known)
 		require.Equal(t, 1, results)
