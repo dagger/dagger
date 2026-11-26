@@ -344,10 +344,11 @@ func (w *aloneWalk) keptCalls() {
 			calls = append(calls, aloneSpread{at: int32(at), roots: node.reach})
 		}
 	}
-	terms := heldTerms(w.held)
 	for len(calls) > 0 {
 		var reached []aloneSpread
 		w.inPieces(func() {
+			// A view of the recipient's terms under this round's read.
+			terms := newNamedTerms(w.held, w.hold)
 			for _, next := range calls {
 				reached = w.choose(next, terms, reached)
 			}
@@ -363,7 +364,7 @@ func (w *aloneWalk) keptCalls() {
 // roots (keptCalls), and returns reached with the entries their inputs are
 // placed by, each with the roots it adds them for. Requires egraphMu, by
 // the walk's hold.
-func (w *aloneWalk) choose(next aloneSpread, terms map[digest.Digest][]RemoteTerm, reached []aloneSpread) []aloneSpread {
+func (w *aloneWalk) choose(next aloneSpread, terms *namedTerms, reached []aloneSpread) []aloneSpread {
 	w.hold.step()
 	res := w.c.resultsByID[w.nodes[next.at].id]
 	if res == nil || len(res.keptCallsLocked()) == 0 {

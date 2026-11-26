@@ -202,7 +202,7 @@ func (c *Cache) storedRootWalkLocked(res *sharedResult, nowUnix int64, held *Hel
 	for _, id := range walk.closure {
 		mine[id] = true
 	}
-	terms := heldTerms(held)
+	terms := newNamedTerms(held, hold)
 	for i := 0; i < len(walk.order); i++ {
 		entry := walk.order[i]
 		if hold != nil {
