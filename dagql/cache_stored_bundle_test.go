@@ -142,6 +142,71 @@ func TestStoredBundleBorrowsFromAnUnexpiredMember(t *testing.T) {
 	require.Empty(t, got.Bundle.Outputs, "an expired member lends nothing")
 }
 
+// A bundle reads a class's entries for its parts' donors once in its hold,
+// not once for each entry that borrows: a set's file can carry thousands of
+// entries of one class that each declare a part only another entry of the
+// class stores, and a read of the class for each of them held one read of
+// the cache's lock for seconds. A bundle of R and more entries of its class,
+// each declaring R's part and storing none, reads R's class once, and each
+// borrows the part from the same donor, the lowest-numbered unexpired entry
+// of the class that stores it; with that one expired, from the next.
+func TestStoredBundleReadsAClassForItsDonorsOnce(t *testing.T) {
+	t.Parallel()
+	ctx, cloud, r, _ := storedBundleTestCloud(t, "root")
+	first := storedBundleTestClassMember(t, ctx, cloud, r, "bundle-member")
+	second := storedBundleTestClassMember(t, ctx, cloud, r, "bundle-other-member")
+	require.Less(t, first, second)
+	for _, donor := range []uint64{first, second} {
+		stored, _, err := cloud.SetStoredPart(ctx, donor, testLiveOffer(), 0)
+		require.NoError(t, err)
+		require.True(t, stored)
+	}
+	// More records like R, each joined to R's class by its content.
+	const borrowers = 8
+	actx, a, asrv := transferTestCache(t)
+	var results []AnyResult
+	for i := range borrowers {
+		results = append(results, persistedListTestResult(t, actx, a, asrv, fmt.Sprintf("bundle-borrower-%d", i), &transferTestValue{Text: fmt.Sprintf("borrower %d", i)}))
+	}
+	reply, err := cloud.MergeValues(ctx, "cache-d", exportTestBundle(t, actx, a, results...))
+	require.NoError(t, err)
+	roots := []uint64{r}
+	for _, imported := range reply.Imported() {
+		roots = append(roots, imported.ResultID)
+		require.NoError(t, cloud.TeachContentDigest(ctx, Result[Typed]{shared: storedBundleTestEntry(cloud, imported.ResultID)}, testDigest("bundle-class-content")))
+	}
+	require.Len(t, roots, borrowers+1)
+
+	for _, tc := range []struct {
+		name  string
+		donor uint64
+	}{
+		{"the lowest-numbered member that stores the part", first},
+		{"the next, once the lowest has expired", second},
+	} {
+		if tc.donor == second {
+			mergeTestExpire(cloud, storedBundleTestEntry(cloud, first))
+		}
+		var reads int
+		cloud.egraphMu.Lock()
+		cloud.testDonorClassRead = func() { reads++ }
+		cloud.egraphMu.Unlock()
+		got, err := cloud.StoredBundle(ctx, roots, time.Now().Unix(), nil)
+		require.NoError(t, err, tc.name)
+		var borrowed int
+		for i, output := range got.Bundle.Outputs {
+			for _, value := range got.Bundle.Values {
+				if value.Ordinal == output.Ordinal && slices.Contains(roots, value.SenderNumber) {
+					borrowed++
+					require.Equal(t, tc.donor, got.Donors[i], tc.name)
+				}
+			}
+		}
+		require.Equal(t, borrowers+1, borrowed, "%s: every entry of the class borrows its part", tc.name)
+		require.LessOrEqual(t, reads, 2, "%s: R's class is read once, and R's dependency's", tc.name)
+	}
+}
+
 // A stored bundle judges a donor's expiry at the reader's clock, not its
 // own: a member whose value expires an hour from the wall clock lends its
 // part before that moment and not from it.

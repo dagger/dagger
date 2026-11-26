@@ -601,6 +601,10 @@ type storedBundleBuild struct {
 	// (storedBundleCallsLocked), or a part of its class it couldn't place
 	// (storedBundleOutputsLocked).
 	partial map[sharedResultID]bool
+	// classDonors are, by class root, the lowest-numbered unexpired entry of
+	// the class storing each part key (classDonorsLocked), each class read
+	// once in the build's hold.
+	classDonors map[eqClassID]map[string]*sharedResult
 	// owners has, for each entry the build added, the index of the root it
 	// was asked for that added it, or whose call's input it is (current, as
 	// it's added); ordinary are those the roots' closures added, not their
@@ -997,7 +1001,7 @@ func (c *Cache) storedBundleOutputsLocked(build *storedBundleBuild, res *sharedR
 		if res.storedParts.has(key) {
 			continue
 		}
-		donor, part := c.storedPartDonorLocked(res, key, build.now)
+		donor, part := c.storedPartDonorLocked(build, res, key)
 		if donor == nil {
 			continue
 		}
@@ -1043,20 +1047,15 @@ func (build *storedBundleBuild) addOutput(res *sharedResult, part PersistedPartO
 	return nil
 }
 
-// storedPartDonorLocked returns the unexpired entry of res's class, other
-// than res, with the lowest number that stores the part, and the part.
-// Requires egraphMu.
-func (c *Cache) storedPartDonorLocked(res *sharedResult, key string, now int64) (*sharedResult, storedPart) {
+// storedPartDonorLocked returns the unexpired entry of res's class with the
+// lowest number that stores the part, and the part. res stores none under
+// key (storedBundleOutputsLocked asks only then), so the entry is another.
+// Requires egraphMu, by the build's hold.
+func (c *Cache) storedPartDonorLocked(build *storedBundleBuild, res *sharedResult, key string) (*sharedResult, storedPart) {
 	var best *sharedResult
 	for root := range c.outputEqClassRootsLocked(res.id) {
-		for id := range c.outputEqClassResults[root].All() {
-			member := c.resultsByID[id]
-			if member == nil || member == res || c.resultExpiredAtLocked(member, now) {
-				continue
-			}
-			if member.storedParts.has(key) && (best == nil || member.id < best.id) {
-				best = member
-			}
+		if donor := c.classDonorsLocked(build, root)[key]; donor != nil && (best == nil || donor.id < best.id) {
+			best = donor
 		}
 	}
 	if best == nil {
@@ -1064,6 +1063,38 @@ func (c *Cache) storedPartDonorLocked(res *sharedResult, key string, now int64) 
 	}
 	part, _ := best.storedParts.find(key)
 	return best, part
+}
+
+// classDonorsLocked returns, for each part key an unexpired entry of the
+// class root stores, the lowest-numbered such entry, at the build's clock.
+// A class's entries, what each stores and the build's clock don't change in
+// the build's one hold of egraphMu, so the class is read once in a build,
+// however many of its entries borrow a part: a bundle can carry thousands of
+// entries of one class. Requires egraphMu, by the build's hold.
+func (c *Cache) classDonorsLocked(build *storedBundleBuild, root eqClassID) map[string]*sharedResult {
+	if donors, ok := build.classDonors[root]; ok {
+		return donors
+	}
+	if c.testDonorClassRead != nil {
+		c.testDonorClassRead()
+	}
+	donors := map[string]*sharedResult{}
+	for id := range c.outputEqClassResults[root].All() {
+		member := c.resultsByID[id]
+		if member == nil || c.resultExpiredAtLocked(member, build.now) {
+			continue
+		}
+		for _, part := range member.storedParts {
+			if donor := donors[part.key]; donor == nil || member.id < donor.id {
+				donors[part.key] = member
+			}
+		}
+	}
+	if build.classDonors == nil {
+		build.classDonors = map[eqClassID]map[string]*sharedResult{}
+	}
+	build.classDonors[root] = donors
+	return donors
 }
 
 // closureRowOfClassLocked maps a service entry to a row of the closure of
