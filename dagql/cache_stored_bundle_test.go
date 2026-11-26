@@ -280,7 +280,7 @@ func TestStoredBundleBorrowsThroughThePlacementRule(t *testing.T) {
 
 // A stored bundle racing a merge that replaces an expired stored record
 // carries either the old record with its own part or the new record without
-// it, never a mix: the walk and every copy happen in one hold, and the
+// it, never a mix: a record and its outputs are copied in one hold, and the
 // replacement takes the lock for writing.
 func TestStoredBundleNeverMixesAReplacement(t *testing.T) {
 	t.Parallel()
@@ -398,7 +398,7 @@ func TestStoredBundleGivesWayToAWaitingWriter(t *testing.T) {
 		for !cloud.egraphMu.Waiting() {
 			runtime.Gosched()
 		}
-		time.Sleep(2 * time.Millisecond)
+		time.Sleep(storedBundlePieceHold)
 	}
 	between := false
 	cloud.testReadPieceYielded = func() {
@@ -414,6 +414,78 @@ func TestStoredBundleGivesWayToAWaitingWriter(t *testing.T) {
 	require.True(t, started, "the writer came during the build")
 	require.True(t, between, "the writer took the lock between two of the build's pieces")
 	<-wrote
+}
+
+// A write while a stored bundle's build gives way that has an entry the
+// build walked name an entry the walk didn't reach has the bundle built
+// again in one hold, as the cache then stands. Here, read in pieces of one
+// step, a part is stored on R after the walk of R and P and before R's copy,
+// owned by Q, outside R's closure: the bundle carries Q and the part, as a
+// build after the write does.
+func TestStoredBundleIsBuiltAgainWhenAWriteMovesAnEntryPastItsWalk(t *testing.T) {
+	t.Parallel()
+	ctx, cloud, r, _ := storedBundleTestCloudIn(t, "root", true)
+	source, _ := mergeTestSource(t, "bundle-owner", "owner")
+	reply, err := cloud.MergeValues(ctx, "cache-b", source)
+	require.NoError(t, err)
+	q := reply.Imported()[0].ResultID
+
+	cloud.readPieceSize = 1
+	yields := 0
+	cloud.testReadPieceYielded = func() {
+		// The first two steps walk R and P, and the third begins the copy.
+		if yields++; yields != 3 {
+			return
+		}
+		part := testLiveOffer()
+		part.Owner.DependencyIDs = []uint64{q}
+		stored, _, err := cloud.SetStoredPart(ctx, r, part, 0)
+		require.NoError(t, err)
+		require.True(t, stored)
+	}
+	now := time.Now().Unix()
+	got, err := cloud.StoredBundle(ctx, []uint64{r}, now, nil)
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), cloud.StoredBundlesBuiltAgain(), "built again in one hold")
+	var senders []uint64
+	for _, value := range got.Bundle.Values {
+		senders = append(senders, value.SenderNumber)
+	}
+	require.Contains(t, senders, q, "the part's owner")
+	require.Len(t, got.Bundle.Outputs, 1, "the part")
+
+	cloud.testReadPieceYielded = nil
+	after, err := cloud.StoredBundle(ctx, []uint64{r}, now, nil)
+	require.NoError(t, err)
+	require.Equal(t, string(mustTransferJSON(t, after.Bundle)), string(mustTransferJSON(t, got.Bundle)), "what a build after the write carries")
+}
+
+// A write while a stored bundle's build gives way that changes an entry the
+// build walked only within what the bundle carries leaves the build going:
+// the entry is copied as the write left it. The bundle's position is the
+// cache's as the build began, so the entry reads as changed since it
+// (ChangedSince), as the write came after. Here, read in pieces of one step,
+// a part owned by P is stored on R between R's walk and its copy.
+func TestStoredBundleCopiesAnEntryAsAWriteLeftIt(t *testing.T) {
+	t.Parallel()
+	ctx, cloud, r, p := storedBundleTestCloudIn(t, "root", true)
+	cloud.readPieceSize = 1
+	yields := 0
+	cloud.testReadPieceYielded = func() {
+		if yields++; yields != 3 {
+			return
+		}
+		part := testLiveOffer()
+		part.Owner.DependencyIDs = []uint64{p}
+		stored, _, err := cloud.SetStoredPart(ctx, r, part, 0)
+		require.NoError(t, err)
+		require.True(t, stored)
+	}
+	got, err := cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	require.Zero(t, cloud.StoredBundlesBuiltAgain(), "not built again")
+	require.Len(t, got.Bundle.Outputs, 1, "R's part, stored after R's walk")
+	require.Equal(t, []bool{true}, cloud.ChangedSince([]uint64{r}, got.Position), "R changed since the bundle's position")
 }
 
 // A stored bundle carries an entry's current record and call: a build after a
