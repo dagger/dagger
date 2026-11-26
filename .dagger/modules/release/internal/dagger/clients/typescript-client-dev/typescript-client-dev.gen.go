@@ -136,15 +136,23 @@ func (r *TypescriptClientDev) ClientLibrary() *Changeset { // typescript-client-
 // Regenerate @dagger.io/core's bindings from this repo's engine.
 //
 // The engine is the source of truth for the API the bindings describe, so they
-// are rendered from its introspection — the same introspection `clientLibrary`
-// renders sdk/typescript/src/api from, and no session is opened for either.
-// A bump of the engine changes them and `core-bindings/stale` is red until the
-// result is committed.
+// are rendered from this repo's engine and not copied from a dagger/typescript-sdk
+// release: an engine can move with nothing in that repo moving, and a copy would
+// be stale exactly then. Measured on this tree — rendering against main picked up
+// a `disk` option on temporary directories, and later a whole artifact-dimension
+// API, that a pinned copy had missed.
 //
-// client.gen.ts is rendered. connect.ts, core.ts and index.ts are hand-written
-// upstream and no renderer produces them, so they come from the pinned release.
-// package.json, package-lock.json, tsconfig.json and README.md are this repo's
-// and are left alone — the version in particular is a placeholder the release
+// The renderer comes from typescript-sdk's own codegen module, so there is no
+// second copy of its build here. The container handed to it is wired to this
+// repo's engine with `installClient`, not left to privileged nesting: the
+// generator styles identifiers through `Naming.formatIdentifiers` over the
+// session it runs in, so nesting would spell the bindings the way the *ambient*
+// engine does while the schema came from the dev engine.
+//
+// Only client.gen.ts is rendered. connect.ts, core.ts and index.ts are
+// hand-written upstream and no renderer produces them, so they come from the
+// pinned release. package.json, package-lock.json, tsconfig.json and README.md
+// are this repo's — the version in particular is a placeholder the release
 // overwrites from the tag, which is what lets a client fix ship inside one
 // engine release (1.0.0-beta.25.2 did).
 func (r *TypescriptClientDev) CoreBindings() *Changeset { // typescript-client-dev (../../:0:0)
