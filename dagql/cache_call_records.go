@@ -283,12 +283,30 @@ func (c *Cache) dropKeptCallLocked(entry *sharedResult, kept *keptCall) {
 // prices, root by root. A term none of whose calls can be placed is counted,
 // and sends nothing. Only the terms the recipient's check made are candidates
 // (HeldBy.Calls), each with all its calls: a term with none of the check's
-// calls sends nothing and isn't counted.
+// calls sends nothing and isn't counted. A root that goes as a part of
+// another root's merge (HeldBy.Parts) adds no input: it sends a call only
+// if the bundle carries or the recipient holds each of its inputs, and
+// leaves the others to that root's own merge, uncounted. The entries the
+// recipient holds that the build went through (HeldBy.Through), from
+// passedStart, are taken after the others, and one a call names goes as a
+// held row the call alone names (nameLocked).
 // Requires egraphMu.
-func (c *Cache) storedBundleCallsLocked(build *storedBundleBuild, start int) error {
-	// Entries the bundle adds for a call's inputs are visited too.
-	for i := start; i < len(build.order); i++ {
-		res := build.order[i]
+func (c *Cache) storedBundleCallsLocked(build *storedBundleBuild, start, passedStart int) error {
+	// Entries the bundle adds for a call's inputs are visited too, as are
+	// those it goes through; one it went through that a call named is in
+	// the order too, and is taken where it was gone through.
+	for i, j := start, passedStart; i < len(build.order) || j < len(build.passed); {
+		var res *sharedResult
+		if i < len(build.order) {
+			res = build.order[i]
+			i++
+			if build.passedSeen[res.id] {
+				continue
+			}
+		} else {
+			res = build.passed[j]
+			j++
+		}
 		if len(res.keptCallsLocked()) == 0 {
 			continue
 		}
@@ -296,22 +314,28 @@ func (c *Cache) storedBundleCallsLocked(build *storedBundleBuild, start int) err
 			if group = c.sendableCallsLocked(build.heldBy, build.terms, group); len(group) == 0 {
 				continue
 			}
-			chosen, places := c.placeableCallLocked(group, build.now, func(entry *sharedResult) bool {
+			has := func(entry *sharedResult) bool {
 				return build.ordinary[entry.id] || build.holdsLocked(entry)
-			})
+			}
+			chosen, places := c.placeableCallLocked(group, build.now, has)
+			if build.part && slices.ContainsFunc(places, func(place *sharedResult) bool { return place != nil && !has(place) }) {
+				continue
+			}
 			if chosen == nil {
 				build.unsendableCalls++
 				build.markPartial(res)
 				continue
 			}
+			build.nameLocked(res)
 			inputs := make([]TransferOrdinal, len(places))
-			for j, place := range places {
+			for k, place := range places {
 				if place == nil {
 					continue
 				}
 				if err := c.storedBundleVisitLocked(build, place, map[sharedResultID]bool{}); err != nil {
 					return fmt.Errorf("call %s input: %w", chosen.id.recipe, err)
 				}
+				build.nameLocked(place)
 				// A merge installs only what its roots need, so a stored
 				// input entry the roots' closures don't carry travels as a
 				// root of its own: carried below another call's input, it
@@ -323,7 +347,7 @@ func (c *Cache) storedBundleCallsLocked(build *storedBundleBuild, start int) err
 					build.callRoots = append(build.callRoots, place)
 					build.callInputs = append(build.callInputs, uint64(place.id))
 				}
-				inputs[j] = build.ordinals[place.id]
+				inputs[k] = build.ordinals[place.id]
 			}
 			build.bundle.Calls = append(build.bundle.Calls, TransferredCall{Call: chosen.encoded, Value: build.ordinals[res.id], Inputs: inputs})
 		}

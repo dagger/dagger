@@ -143,12 +143,12 @@ func TestHeldRowsAtTheReadersClock(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, whole, measured, "measured whole once the holding has expired")
 
-	_, carried, err := cloud.StoredLowerHalf(ctx, r, expiresAt-1, held)
+	lower, err := cloud.StoredLowerPart(ctx, r, expiresAt-1, held, 0)
 	require.NoError(t, err)
-	require.Equal(t, 1, carried, "the held row isn't counted before the holding expires")
-	_, carried, err = cloud.StoredLowerHalf(ctx, r, expiresAt, held)
+	require.Equal(t, 1, lower.Carried, "the held row isn't counted before the holding expires")
+	lower, err = cloud.StoredLowerPart(ctx, r, expiresAt, held, 0)
 	require.NoError(t, err)
-	require.Equal(t, 2, carried, "both records once it has expired")
+	require.Equal(t, 2, lower.Carried, "both records once it has expired")
 }
 
 // The Cloud carries an entry the recipient holds as a held row: its recipe
