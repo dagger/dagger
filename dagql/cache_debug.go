@@ -900,7 +900,7 @@ func (c *Cache) traceRecipeIDRebuildFailed(ctx context.Context, rootFrame *Resul
 			args = append(args, "cache_present", false)
 			return args
 		}
-		c.egraphMu.RLock()
+		read := c.readGraphAs(workOther)
 		res := c.resultsByID[sharedResultID(ref.ResultID)]
 		if res != nil {
 			frame := res.loadResultCall()
@@ -919,7 +919,7 @@ func (c *Cache) traceRecipeIDRebuildFailed(ctx context.Context, rootFrame *Resul
 		} else {
 			args = append(args, "cache_result_present", false)
 		}
-		c.egraphMu.RUnlock()
+		read.Unlock()
 		return args
 	})
 }
@@ -951,7 +951,7 @@ func (c *Cache) traceResultCallRefFromResultFailed(ctx context.Context, res AnyR
 		if c == nil || shared.id == 0 {
 			return args
 		}
-		c.egraphMu.RLock()
+		read := c.readGraphAs(workOther)
 		cacheRes := c.resultsByID[shared.id]
 		if cacheRes != nil {
 			frame := cacheRes.loadResultCall()
@@ -970,7 +970,7 @@ func (c *Cache) traceResultCallRefFromResultFailed(ctx context.Context, res AnyR
 		} else {
 			args = append(args, "cache_result_present", false)
 		}
-		c.egraphMu.RUnlock()
+		read.Unlock()
 		return args
 	})
 }
@@ -989,8 +989,8 @@ func (c *Cache) tracePersistedPayloadDecoded(ctx context.Context, res *sharedRes
 
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (c *Cache) DebugEGraphSnapshot() *EGraphDebugSnapshot {
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workOther)
+	defer read.Unlock()
 
 	snap := &EGraphDebugSnapshot{
 		OfferOwners:        c.debugOfferOwnersLocked(),
@@ -1160,14 +1160,14 @@ type cacheDebugCallDigests struct {
 }
 
 func (c *Cache) debugResultCallDigests() map[*ResultCall]cacheDebugCallDigests {
-	c.egraphMu.RLock()
+	read := c.readGraphAs(workOther)
 	frames := make(map[*ResultCall]cacheDebugCallDigests, len(c.resultsByID))
 	for _, res := range c.resultsByID {
 		if frame := res.loadResultCall(); frame != nil {
 			frames[frame] = cacheDebugCallDigests{}
 		}
 	}
-	c.egraphMu.RUnlock()
+	read.Unlock()
 
 	// Digest reconstruction can acquire egraphMu, so it must finish before
 	// the streamed snapshot holds that lock. These diagnostic observations
@@ -1208,14 +1208,14 @@ func (c *Cache) debugResultCallDigests() map[*ResultCall]cacheDebugCallDigests {
 // entry, as any capture would. An entry nothing owns is not read: the
 // snapshot reports its settled parts as partial.
 func (c *Cache) debugWarmCompleteParts(ctx context.Context) {
-	c.egraphMu.RLock()
+	read := c.readGraphAs(workOther)
 	rows := make([]*sharedResult, 0, len(c.resultsByID))
 	for _, res := range c.resultsByID {
 		if res.incomingOwnershipCount.Load() > 0 && !res.noValueLocked() {
 			rows = append(rows, res)
 		}
 	}
-	c.egraphMu.RUnlock()
+	read.Unlock()
 	for _, res := range rows {
 		c.completePartKeys(ctx, res)
 	}
@@ -1242,8 +1242,8 @@ func (c *Cache) WriteDebugCacheSnapshot(w io.Writer) error {
 	c.debugWarmCompleteParts(context.Background())
 	sessionResults := c.debugSessionResultsSnapshot()
 	c.callsMu.Lock()
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	readHold := c.readGraphAs(workOther)
+	defer readHold.Unlock()
 	defer c.callsMu.Unlock()
 
 	bw := bufio.NewWriterSize(w, 128<<10)

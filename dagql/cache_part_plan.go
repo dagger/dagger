@@ -146,9 +146,9 @@ func (c *Cache) servedPart(ctx context.Context, row *sharedResult, record Persis
 		if err != nil {
 			return servedPart{}, false
 		}
-		c.egraphMu.RLock()
+		read := c.readGraphAs(workPart)
 		offer := row.partOfferLocked(key)
-		c.egraphMu.RUnlock()
+		read.Unlock()
 		stats.graphHolds++
 		if offer != nil {
 			return servedPart{row: row, key: key, offer: offer}, true
@@ -171,8 +171,8 @@ func (c *Cache) servedPart(ctx context.Context, row *sharedResult, record Persis
 // resultRow is the row the cache holds as id, or nil.
 func (c *Cache) resultRow(id sharedResultID, stats *planStats) *sharedResult {
 	stats.graphHolds++
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workPart)
+	defer read.Unlock()
 	return c.resultsByID[id]
 }
 

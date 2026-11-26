@@ -93,9 +93,9 @@ func (c *Cache) owePartsReport(ctx context.Context, row *sharedResult, reported 
 	if c == nil || row == nil || c.owedPartReport == nil {
 		return
 	}
-	c.readLockGraphGathered(ctx)
+	read := c.readLockGraphGathered(ctx, workPart)
 	replacements := row.replacements
-	c.egraphMu.RUnlock()
+	read.Unlock()
 	o := &c.owedParts
 	o.mu.Lock()
 	defer o.mu.Unlock()
@@ -209,9 +209,9 @@ func (c *Cache) reportOwedParts(ctx context.Context) int {
 	var settled []owedPartReport
 	for _, report := range owed {
 		row := report.row
-		c.egraphMu.RLock()
+		readHold := c.readGraphAs(workPart)
 		held := c.resultsByID[row.id] == row && row.replacements == report.replacements
-		c.egraphMu.RUnlock()
+		readHold.Unlock()
 		if !held {
 			settled = append(settled, report)
 			continue
@@ -230,7 +230,7 @@ func (c *Cache) reportOwedParts(ctx context.Context) int {
 			settled = append(settled, report)
 			continue
 		}
-		c.egraphMu.RLock()
+		readHold = c.readGraphAs(workPart)
 		if c.resultsByID[row.id] == row && row.replacements == report.replacements {
 			deps := sortedResultIDs(row.deps)
 			for i, key := range keys {
@@ -244,7 +244,7 @@ func (c *Cache) reportOwedParts(ctx context.Context) int {
 				parts = append(parts, part)
 			}
 		}
-		c.egraphMu.RUnlock()
+		readHold.Unlock()
 		settled = append(settled, report)
 	}
 

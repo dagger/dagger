@@ -8,6 +8,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/opencontainers/go-digest"
 )
 
@@ -100,7 +101,7 @@ func (c *Cache) storedSizes(ctx context.Context, roots []uint64, nowUnix int64, 
 		if err := context.Cause(ctx); err != nil {
 			return nil, err
 		}
-		size, closure, own, misses := c.walkStoredRoot(sharedResultID(number), nowUnix, held, seen, ordinary, outputs)
+		size, closure, own, misses := c.walkStoredRoot(c.graphReader(ctx, workExport), sharedResultID(number), nowUnix, held, seen, ordinary, outputs)
 		if len(misses) > 0 && !measure {
 			sizes[i] = StoredSize{Unmeasured: true}
 			continue
@@ -114,7 +115,7 @@ func (c *Cache) storedSizes(ctx context.Context, roots []uint64, nowUnix int64, 
 			size.Bytes += m.size.bytes + senderStampBytes(miss.changedAt)
 			measured = append(measured, m)
 		}
-		c.publishStoredSizes(measured)
+		c.publishStoredSizes(c.graphReader(ctx, workExport), measured)
 		for _, id := range closure {
 			seen[id] = true
 		}
@@ -146,14 +147,14 @@ type storedSizeMiss struct {
 	changedAt uint64
 }
 
-// storedSizesRLock takes egraphMu for reading and returns its release, which
-// reports the hold to testStoredSizesHold.
-func (c *Cache) storedSizesRLock() func() {
-	c.egraphMu.RLock()
+// storedSizesRLock takes egraphMu for reading as kind of work and returns
+// its release, which reports the hold to testStoredSizesHold.
+func (c *Cache) storedSizesRLock(kind wcprof.LockHolder) func() {
+	read := c.egraphMu.RLockAs(kind)
 	locked := time.Now()
 	return func() {
 		hold := time.Since(locked)
-		c.egraphMu.RUnlock()
+		read.Unlock()
 		if c.testStoredSizesHold != nil {
 			c.testStoredSizesHold(hold)
 		}
@@ -177,8 +178,8 @@ func (c *Cache) storedSizesRLock() func() {
 // (ordinary), or the recipient (held), have its inputs, never for an input
 // another call adds. Otherwise its first stored alternative's inputs are
 // priced, which is the call a bundle that can't place it chooses too.
-func (c *Cache) walkStoredRoot(root sharedResultID, nowUnix int64, held *HeldBy, seen, ordinary map[sharedResultID]bool, outputs *storedOutputsSeen) (StoredSize, []sharedResultID, int, []storedSizeMiss) {
-	hold := c.readInPieces()
+func (c *Cache) walkStoredRoot(kind wcprof.LockHolder, root sharedResultID, nowUnix int64, held *HeldBy, seen, ordinary map[sharedResultID]bool, outputs *storedOutputsSeen) (StoredSize, []sharedResultID, int, []storedSizeMiss) {
+	hold := c.readInPieces(kind)
 	hold.report = c.testStoredSizesHold
 	defer hold.done()
 	res := c.resultsByID[root]
@@ -477,17 +478,18 @@ func (c *Cache) measureStoredValue(miss storedSizeMiss) (storedSizeMeasure, erro
 }
 
 // publishStoredSizes keeps each measure's size on its entry, in one hold of
-// egraphMu.RLock, if the entry is still in the state measured: the same
-// envelope and call, dependencies, replacement count and expiry. An entry
-// changed since then keeps nothing, so a late measure never brings back a
-// record the cache let go, nor replaces a size measured for a newer state.
+// egraphMu.RLock as kind of work, if the entry is still in the state
+// measured: the same envelope and call, dependencies, replacement count and
+// expiry. An entry changed since then keeps nothing, so a late measure never
+// brings back a record the cache let go, nor replaces a size measured for a
+// newer state.
 // The size goes on the record kept for that envelope and call: the
 // measure's own, or one a build kept meanwhile (keepStoredTransfer).
-func (c *Cache) publishStoredSizes(measured []storedSizeMeasure) {
+func (c *Cache) publishStoredSizes(kind wcprof.LockHolder, measured []storedSizeMeasure) {
 	if len(measured) == 0 {
 		return
 	}
-	defer c.storedSizesRLock()()
+	defer c.storedSizesRLock(kind)()
 	for _, m := range measured {
 		res, miss := m.miss.res, m.miss
 		if res.persistedEnvelope != miss.env || res.stored != miss.body || res.loadResultCall() != miss.call || res.dependencyOwnershipRevision != miss.dependencyRevision || res.replacements != miss.replacements || res.expiresAtUnix != miss.expiresAtUnix {
@@ -666,7 +668,7 @@ func (c *Cache) StoredClosure(ctx context.Context, roots []uint64, nowUnix int64
 		if err := context.Cause(ctx); err != nil {
 			return StoredClosureResult{}, err
 		}
-		order, closure, own := c.listStoredRoot(sharedResultID(number), nowUnix, held, seen, ordinary, list)
+		order, closure, own := c.listStoredRoot(c.graphReader(ctx, workExport), sharedResultID(number), nowUnix, held, seen, ordinary, list)
 		for _, res := range order {
 			out.Entries = append(out.Entries, StoredClosureEntry{Number: uint64(res.id), Held: list.held[res.id]})
 		}
@@ -684,8 +686,8 @@ func (c *Cache) StoredClosure(ctx context.Context, roots []uint64, nowUnix int64
 // listStoredRoot is StoredClosure's walk of one root, beyond seen, in
 // pieces: the entries it adds in the bundle's order, those it reached, and
 // how many of those, first, are the root's ordinary closure.
-func (c *Cache) listStoredRoot(root sharedResultID, nowUnix int64, held *HeldBy, seen, ordinary map[sharedResultID]bool, list *storedClosureList) ([]*sharedResult, []sharedResultID, int) {
-	hold := c.readInPieces()
+func (c *Cache) listStoredRoot(kind wcprof.LockHolder, root sharedResultID, nowUnix int64, held *HeldBy, seen, ordinary map[sharedResultID]bool, list *storedClosureList) ([]*sharedResult, []sharedResultID, int) {
+	hold := c.readInPieces(kind)
 	defer hold.done()
 	res := c.resultsByID[root]
 	if res == nil || res.noValueLocked() {
@@ -713,7 +715,7 @@ func (c *Cache) StoredLowerHalf(ctx context.Context, root uint64, nowUnix int64,
 	if err := context.Cause(ctx); err != nil {
 		return nil, 0, err
 	}
-	defer c.storedSizesRLock()()
+	defer c.storedSizesRLock(c.graphReader(ctx, workExport))()
 	res := c.resultsByID[sharedResultID(root)]
 	if res == nil || res.noValueLocked() {
 		return nil, 0, nil

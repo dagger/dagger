@@ -703,14 +703,14 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		c.egraphMu.RLock()
+		readHold := c.readGraphAs(workUpkeep)
 		results := make([]*sharedResult, 0, len(c.resultsByID))
 		for _, res := range c.resultsByID {
 			if res != nil {
 				results = append(results, res)
 			}
 		}
-		c.egraphMu.RUnlock()
+		readHold.Unlock()
 		type ownerLeaseAttach struct {
 			resultID sharedResultID
 			key      snapshotOwnerKey
@@ -948,8 +948,8 @@ func (c *Cache) updateDecodedPayloadBytes(ctx context.Context, res *sharedResult
 	if graphReadsOf(ctx).addSize(res, n, revision) {
 		return
 	}
-	c.readLockGraphGathered(ctx)
-	defer c.egraphMu.RUnlock()
+	read := c.readLockGraphGathered(ctx, workLookup)
+	defer read.Unlock()
 	res.payloadMu.RLock()
 	current := res.payloadRevision == revision
 	res.payloadMu.RUnlock()
@@ -1008,8 +1008,8 @@ func (c *Cache) decodeArmsRecipe(ctx context.Context, res *sharedResult, importe
 	if row := graphReadsOf(ctx).row(res.id); row != nil && row.res == res {
 		return !row.offered
 	}
-	c.readLockGraphGathered(ctx)
-	defer c.egraphMu.RUnlock()
+	read := c.readLockGraphGathered(ctx, workLookup)
+	defer read.Unlock()
 	return !res.hasPartOffersLocked()
 }
 

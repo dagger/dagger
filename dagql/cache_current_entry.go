@@ -271,14 +271,14 @@ func (c *Cache) releaseReplacedDependenciesLocked(ctx context.Context, replaced 
 // lookups. Deriving a recipe reads other entries' frames under egraphMu, so
 // the digests are derived first and indexed in one critical section.
 func (c *Cache) indexRestoredEntries(indexed map[sharedResultID]struct{}) error {
-	c.egraphMu.RLock()
+	read := c.readGraphAs(workUpkeep)
 	rows := make([]*sharedResult, 0, len(indexed))
 	for id := range indexed {
 		if res := c.resultsByID[id]; res != nil {
 			rows = append(rows, res)
 		}
 	}
-	c.egraphMu.RUnlock()
+	read.Unlock()
 	slices.SortFunc(rows, compareSharedResults)
 	recipes := make([]digest.Digest, len(rows))
 	for i, res := range rows {

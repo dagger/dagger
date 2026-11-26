@@ -84,8 +84,8 @@ func (c *Cache) prunePlanLabels(snapshot pruneSnapshot, plan []prunePlanEntry) m
 		}
 	}
 	labels := make(map[sharedResultID]string, len(frames))
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workUpkeep)
+	defer read.Unlock()
 	for id, frame := range frames {
 		labels[id] = c.cacheUsageDagqlCallOfLocked(frame)
 	}
@@ -418,9 +418,9 @@ func (c *Cache) prune(ctx context.Context, policies []CachePrunePolicy) (CachePr
 	// distinct blobs of its pool (cache_pool_measure.go): it measures only
 	// when a policy will act on them, to plan what to drop.
 	if c.blobBacked {
-		step := c.readLockGraphAs(ctx, "dagql.prune.decide")
+		step := c.readLockGraphAs(ctx, "dagql.prune.decide", workUpkeep)
 		used := c.pool.blobBytes
-		c.runlockGraphAs(step)
+		c.runlockGraphAs(&step)
 		if !slices.ContainsFunc(policies, func(policy CachePrunePolicy) bool {
 			target, _ := pruneTargetBytes(policy, used)
 			return target > 0
@@ -590,8 +590,8 @@ func (c *Cache) snapshotPruneStateCancelable(
 		step := c.lockGraphAs(ctx, "dagql.prune.snapshot")
 		defer c.unlockGraphAs(step)
 	} else {
-		step := c.readLockGraphAs(ctx, "dagql.prune.snapshot")
-		defer c.runlockGraphAs(step)
+		step := c.readLockGraphAs(ctx, "dagql.prune.snapshot", workUpkeep)
+		defer c.runlockGraphAs(&step)
 	}
 	if c.blobBacked {
 		var blobs *storedBlobUsage

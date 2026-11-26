@@ -9,6 +9,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/opencontainers/go-digest"
 )
 
@@ -249,7 +250,7 @@ func (c *Cache) StoredBundle(ctx context.Context, roots []uint64, nowUnix int64,
 	for _, opt := range opts {
 		opt(&o)
 	}
-	out, frames, err := c.storedBundle(roots, nowUnix, held, o)
+	out, frames, err := c.storedBundle(c.graphReader(ctx, workExport), roots, nowUnix, held, o)
 	if err != nil || len(frames) == 0 {
 		return out, err
 	}
@@ -299,12 +300,13 @@ func (c *Cache) StoredBundleBuilds() uint64 {
 }
 
 // storedBundle builds StoredBundle's answer in one hold of egraphMu.RLock,
-// with held rows' recipes left empty, and returns the call frame of each held
-// row by ordinal. A bundle without held rows is validated here.
-func (c *Cache) storedBundle(roots []uint64, nowUnix int64, held *HeldBy, opts storedBundleOptions) (StoredBundleResult, map[TransferOrdinal]entryFrame, error) {
+// as kind of work, with held rows' recipes left empty, and returns the
+// call frame of each held row by ordinal. A bundle without held rows is
+// validated here.
+func (c *Cache) storedBundle(kind wcprof.LockHolder, roots []uint64, nowUnix int64, held *HeldBy, opts storedBundleOptions) (StoredBundleResult, map[TransferOrdinal]entryFrame, error) {
 	var out StoredBundleResult
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.egraphMu.RLockAs(kind)
+	defer read.Unlock()
 
 	var rootEntries []*sharedResult
 	seenRoot := map[sharedResultID]bool{}

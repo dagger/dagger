@@ -253,8 +253,8 @@ func (c *Cache) FromImage(result AnyResult) bool {
 	if res == nil {
 		return false
 	}
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workUpkeep)
+	defer read.Unlock()
 	return fromImageLocked(res)
 }
 
@@ -272,8 +272,8 @@ func fromImageLocked(res *sharedResult) bool {
 // at start makes image holdings, so the set changes no more once the cache
 // serves.
 func (c *Cache) ImageEntries() []uint64 {
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workOther)
+	defer read.Unlock()
 	var numbers []uint64
 	for id, res := range c.resultsByID {
 		if fromImageLocked(res) {
@@ -293,8 +293,8 @@ func (c *Cache) ImageEntryByContent(contentDigest digest.Digest, typeName string
 	if contentDigest == "" {
 		return 0, errors.New("image entry by content: no digest")
 	}
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workOther)
+	defer read.Unlock()
 	candidates := newSharedResultSet()
 	c.appendDigestResultsLocked(candidates, contentDigest, time.Now().Unix(), nil)
 	for res := range candidates.Items() {

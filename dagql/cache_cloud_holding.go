@@ -171,8 +171,8 @@ func (c *Cache) HasPartOffer(res AnyResult, part PartKey) bool {
 	if err != nil {
 		return false
 	}
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workOffer)
+	defer read.Unlock()
 	return row.partOfferLocked(key) != nil
 }
 

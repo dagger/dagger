@@ -268,8 +268,8 @@ func (c *Cache) VerifyPoolMeasure() error {
 	if !c.blobBacked {
 		return nil
 	}
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workUpkeep)
+	defer read.Unlock()
 	walked := c.walkPoolLocked()
 	var errs []error
 	kept := c.pool

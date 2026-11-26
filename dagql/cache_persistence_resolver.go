@@ -82,7 +82,7 @@ func (c *Cache) sharedResultByResultID(ctx context.Context, sessionID string, re
 			}
 			return sharedResultLookup{res: row.res, requiredGenAtCheck: row.res.requiredSessionResourcesGen.Load()}, nil
 		}
-		c.readLockGraphGathered(ctx)
+		readHold := c.readLockGraphGathered(ctx, workOther)
 		res := c.resultsByID[resultID]
 		var (
 			requiredGenAtCheck uint64
@@ -92,7 +92,7 @@ func (c *Cache) sharedResultByResultID(ctx context.Context, sessionID string, re
 			requiredGenAtCheck = res.requiredSessionResourcesGen.Load()
 			noValue = res.noValueLocked()
 		}
-		c.egraphMu.RUnlock()
+		readHold.Unlock()
 		if res == nil {
 			return sharedResultLookup{}, fmt.Errorf("resolve result %d: missing shared result", resultID)
 		}
@@ -107,8 +107,8 @@ func (c *Cache) sharedResultByResultID(ctx context.Context, sessionID string, re
 	// The deferred unlock matters on panic: resolvePath recovers a panic
 	// raised in this section, and a lock left held would block every later
 	// cache operation in the engine.
-	c.readLockGraphGathered(ctx)
-	defer c.egraphMu.RUnlock()
+	readHold := c.readLockGraphGathered(ctx, workOther)
+	defer readHold.Unlock()
 	res := c.resultsByID[resultID]
 	if res == nil {
 		return sharedResultLookup{}, fmt.Errorf("resolve result %d: missing shared result", resultID)

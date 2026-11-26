@@ -7,6 +7,7 @@ import (
 	"math/bits"
 	"slices"
 
+	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/opencontainers/go-digest"
 )
 
@@ -54,7 +55,7 @@ func (c *Cache) StoredSizesAlone(ctx context.Context, roots []uint64, nowUnix in
 	if err := context.Cause(ctx); err != nil {
 		return nil, err
 	}
-	w := &aloneWalk{c: c, held: held, now: nowUnix, index: map[sharedResultID]int32{},
+	w := &aloneWalk{c: c, kind: c.graphReader(ctx, workExport), held: held, now: nowUnix, index: map[sharedResultID]int32{},
 		layerAt: map[*storedLayer]int32{}, blobAt: map[digest.Digest]int32{}, packAt: map[digest.Digest]int32{}}
 	starts := w.walk(roots)
 	measured := make([]storedSizeMeasure, 0, len(w.misses))
@@ -67,7 +68,7 @@ func (c *Cache) StoredSizesAlone(ctx context.Context, roots []uint64, nowUnix in
 		missBytes[i] = m.size.bytes + senderStampBytes(miss.changedAt)
 		measured = append(measured, m)
 	}
-	c.publishStoredSizes(measured)
+	c.publishStoredSizes(w.kind, measured)
 	sizes := make([]StoredSize, len(roots))
 	sum := &aloneSum{w: w, visited: make([]int32, len(w.nodes)), missBytes: missBytes,
 		layerSeen: make([]int32, len(w.layers)), blobSeen: make([]int32, len(w.blobAt)), blobPack: make([]int32, len(w.blobAt))}
@@ -83,7 +84,9 @@ func (c *Cache) StoredSizesAlone(ctx context.Context, roots []uint64, nowUnix in
 // by their place in nodes (index), and the values it couldn't size, which
 // are measured after it.
 type aloneWalk struct {
-	c      *Cache
+	c *Cache
+	// kind is the kind of work the walk's reads are for.
+	kind   wcprof.LockHolder
 	held   *HeldBy
 	now    int64
 	hold   *readPieces
@@ -184,7 +187,7 @@ func (w *aloneWalk) walk(roots []uint64) []int32 {
 // inPieces runs read with egraphMu held for reading in pieces, as the walk's
 // hold.
 func (w *aloneWalk) inPieces(read func()) {
-	w.hold = w.c.readInPieces()
+	w.hold = w.c.readInPieces(w.kind)
 	w.hold.report = w.c.testStoredSizesHold
 	defer w.hold.done()
 	read()

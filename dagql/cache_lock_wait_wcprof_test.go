@@ -24,7 +24,7 @@ func TestCallWaitsForEgraphLockWcprof(t *testing.T) {
 
 	c.egraphMu.Lock()
 	done := lockWaitTestCall(ctx, c, call, nil)
-	waitBlockedIn(t, "wcprof.ReadLockWaited(")
+	waitBlockedIn(t, "wcprof.ReadLockAs(")
 	c.egraphMu.Unlock()
 	require.NoError(t, <-done)
 
@@ -218,7 +218,7 @@ func TestLazyInstallSpansWaitForLocksWcprof(t *testing.T) {
 		var err error
 		endOTelLazyOp(lazySpan, nil, isResume, resultID, false, false, "", lazySpanCacheState{}, &err)
 	}()
-	waitBlockedIn(t, "wcprof.ReadLock(")
+	waitBlockedIn(t, "wcprof.ReadLockAs(")
 	c.egraphMu.Unlock()
 	<-done
 	lazyOp.End(wcprof.OutcomeOK)

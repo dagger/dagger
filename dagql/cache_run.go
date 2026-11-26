@@ -180,8 +180,8 @@ type EntryRun struct {
 // numbered number says of its run, or false when the cache has no such entry
 // or the entry stores no record that names one.
 func (c *Cache) EntryRun(number uint64) (EntryRun, bool) {
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workRemote)
+	defer read.Unlock()
 	res := c.resultsByID[sharedResultID(number)]
 	if res == nil || res.run == nil || res.noValueLocked() {
 		return EntryRun{}, false
@@ -215,8 +215,8 @@ type HoldingRun struct {
 // collects a run's own holding; one that moves that holding on to a later
 // value names only the holding.
 func (c *Cache) HoldingRuns(keys []HolderKey) []HoldingRun {
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workRemote)
+	defer read.Unlock()
 	out := make([]HoldingRun, len(keys))
 	for i, key := range keys {
 		entry, h := c.holdingLocked(key)
@@ -270,8 +270,8 @@ type NotRanRecord struct {
 // runs (RunCounts). It reads every entry under one hold of the lock for
 // reading, so a caller asks it once at a push's end, not on a hot path.
 func (c *Cache) StoredRuns() RunCounts {
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workUpkeep)
+	defer read.Unlock()
 	counts := RunCounts{NotRanRecords: []NotRanRecord{}}
 	for id, res := range c.resultsByID {
 		res.payloadMu.RLock()

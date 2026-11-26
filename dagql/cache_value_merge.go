@@ -747,9 +747,9 @@ func (e *mergeStaleError) Error() string {
 
 // staleMergeReply is the reply of a merge refused for stale held rows.
 func (c *Cache) staleMergeReply(stale []TransferOrdinal, why []string) MergeReply {
-	c.egraphMu.RLock()
+	read := c.readGraphAs(workMerge)
 	generation := c.identity.Generation
-	c.egraphMu.RUnlock()
+	read.Unlock()
 	return MergeReply{Generation: generation, EngineTimeUnixNano: time.Now().UnixNano(), Stale: stale, StaleWhy: why}
 }
 
@@ -1242,9 +1242,9 @@ func (c *Cache) earlyMergeRows(ctx context.Context, prep *valueMergePrep) *value
 		return nil
 	}
 	commit := &valueMergeCommit{prep: prep, byOrdinal: map[uint64]*mergeRow{}, now: time.Now().Unix()}
-	c.readLockGraphGathered(ctx)
+	read := c.readLockGraphGathered(ctx, workMerge)
 	c.decideMergeRowsLocked(commit)
-	c.egraphMu.RUnlock()
+	read.Unlock()
 	if commit.installsLight() {
 		return nil
 	}
@@ -1332,7 +1332,7 @@ func (prep *valueMergePrep) checkHeldRecipes() error {
 // cache.
 func (c *Cache) resolveHeldRows(ctx context.Context, prep *valueMergePrep) map[uint64]entryFrame {
 	frames := map[uint64]entryFrame{}
-	c.readLockGraphGathered(ctx)
+	read := c.readLockGraphGathered(ctx, workMerge)
 	now := time.Now().Unix()
 	for _, row := range prep.bundle.Values {
 		if row.Held == "" || prep.callOnly[uint64(row.Ordinal)] {
@@ -1354,7 +1354,7 @@ func (c *Cache) resolveHeldRows(ctx context.Context, prep *valueMergePrep) map[u
 		}
 		frames[id] = frame
 	}
-	c.egraphMu.RUnlock()
+	read.Unlock()
 	for id, frame := range frames {
 		if recipe, err := frame.recipeDigest(c); err != nil {
 			prep.markStale(TransferOrdinal(id), fmt.Sprintf("recipe: %v", err))
@@ -1525,8 +1525,8 @@ func (prep *valueMergePrep) prepareRecordPayload(id uint64, relocateRecord, relo
 func (c *Cache) keptMergeRecords(ctx context.Context, prep *valueMergePrep) map[uint64]bool {
 	kept := map[uint64]bool{}
 	now := time.Now().Unix()
-	c.readLockGraphGathered(ctx)
-	defer c.egraphMu.RUnlock()
+	read := c.readLockGraphGathered(ctx, workMerge)
+	defer read.Unlock()
 	for _, id := range prep.order {
 		if prep.held[id] {
 			continue
@@ -1709,7 +1709,7 @@ func (c *Cache) warmMergeTargetParts(ctx context.Context, prep *valueMergePrep) 
 		return
 	}
 	reader := c.completePartSizeReader()
-	c.readLockGraphGathered(ctx)
+	read := c.readLockGraphGathered(ctx, workMerge)
 	targets := make([]*sharedResult, 0, len(prep.plans))
 	seen := map[*sharedResult]bool{}
 	for _, plan := range prep.plans {
@@ -1718,7 +1718,7 @@ func (c *Cache) warmMergeTargetParts(ctx context.Context, prep *valueMergePrep) 
 			targets = append(targets, res)
 		}
 	}
-	c.egraphMu.RUnlock()
+	read.Unlock()
 	if len(targets) == 0 {
 		return
 	}
@@ -2420,9 +2420,9 @@ func (c *Cache) prerelocationDecision(ctx context.Context, prep *valueMergePrep)
 		return prep.early
 	}
 	commit := &valueMergeCommit{prep: prep, byOrdinal: map[uint64]*mergeRow{}, now: time.Now().Unix()}
-	c.readLockGraphGathered(ctx)
+	read := c.readLockGraphGathered(ctx, workMerge)
 	c.decideMergeRowsLocked(commit)
-	c.egraphMu.RUnlock()
+	read.Unlock()
 	if commit.installsLight() {
 		return nil
 	}
