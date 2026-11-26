@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -318,6 +319,101 @@ func TestStoredBundleNeverMixesAReplacement(t *testing.T) {
 		}
 		require.Equal(t, r, rootValue.SenderNumber, "the entry is replaced, never retired")
 	}
+}
+
+// storedBundleTestChain merges an export of a chain of n entries, each
+// depending on the one before, into a new Cloud cache whose records stay
+// whole, and returns the Cloud's number for the chain's top.
+func storedBundleTestChain(t *testing.T, n int) (context.Context, *Cache, uint64) {
+	t.Helper()
+	actx, a, asrv := transferTestCache(t)
+	prev := persistedListTestResult(t, actx, a, asrv, "chain-0", &transferTestValue{Text: "0"})
+	for i := 1; i < n; i++ {
+		next := persistedListTestResult(t, actx, a, asrv, fmt.Sprintf("chain-%d", i), &transferTestValue{Text: fmt.Sprint(i)})
+		transferTestDependency(a, actx, next, prev)
+		prev = next
+	}
+	bundle := exportTestBundle(t, actx, a, prev)
+	ctx, cloud := storedPartTestCache(t, WithBlobStore())
+	storedTestHoldWhole(cloud)
+	reply, err := cloud.MergeValues(ctx, "cache-a", bundle)
+	require.NoError(t, err)
+	for _, value := range reply.Values {
+		if value.Ordinal == bundle.Roots[0].Ordinal {
+			return ctx, cloud, value.Number
+		}
+	}
+	t.Fatal("the merge has no row for the chain's top")
+	return nil, nil, 0
+}
+
+// A stored bundle's build is a read in pieces: each entry it walks and each
+// it copies is a step, between which it can let egraphMu go, so that a
+// writer waits for one piece of the build rather than all of it. Read in
+// pieces of one step, a bundle of a chain of twelve entries lets the lock go
+// at least once for each entry walked and each copied, and, as nothing
+// writes meanwhile, carries what a build that never let it go carries, at
+// the same position.
+func TestStoredBundleIsAReadInPieces(t *testing.T) {
+	t.Parallel()
+	const depth = 12
+	ctx, cloud, top := storedBundleTestChain(t, depth)
+	now := time.Now().Unix()
+	held, err := cloud.StoredBundle(ctx, []uint64{top}, now, nil)
+	require.NoError(t, err)
+	require.Len(t, held.Bundle.Values, depth)
+
+	cloud.readPieceSize = 1
+	yields := 0
+	cloud.testReadPieceYielded = func() { yields++ }
+	pieces, err := cloud.StoredBundle(ctx, []uint64{top}, now, nil)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, yields, 2*depth, "a step for each entry walked and each copied")
+	require.Equal(t, held.Position, pieces.Position)
+	require.Equal(t, string(mustTransferJSON(t, held.Bundle)), string(mustTransferJSON(t, pieces.Bundle)), "what one hold carries")
+}
+
+// A stored bundle's build gives way to a writer that waits for egraphMu:
+// once it has held the lock for a piece's time with a writer waiting, it
+// lets the lock go at its next step, and the writer takes it while the
+// build is under way, not once the build ends. Here the writer comes as the
+// build copies the chain's first record, and the copy holds the lock past a
+// piece's time.
+func TestStoredBundleGivesWayToAWaitingWriter(t *testing.T) {
+	t.Parallel()
+	const depth = 12
+	ctx, cloud, top := storedBundleTestChain(t, depth)
+	wrote := make(chan struct{})
+	started := false
+	cloud.testStoredTransferNormalized = func() {
+		if started {
+			return
+		}
+		started = true
+		go func() {
+			cloud.egraphMu.Lock()
+			cloud.egraphMu.Unlock()
+			close(wrote)
+		}()
+		for !cloud.egraphMu.Waiting() {
+			runtime.Gosched()
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	between := false
+	cloud.testReadPieceYielded = func() {
+		select {
+		case <-wrote:
+			between = true
+		case <-time.After(10 * time.Second):
+		}
+	}
+	got, err := cloud.StoredBundle(ctx, []uint64{top}, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	require.Len(t, got.Bundle.Values, depth)
+	require.True(t, started, "the writer came during the build")
+	require.True(t, between, "the writer took the lock between two of the build's pieces")
+	<-wrote
 }
 
 // A stored bundle carries an entry's current record and call: a build after a
