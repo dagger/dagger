@@ -1,6 +1,7 @@
 package dagql
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 )
@@ -144,9 +145,9 @@ func (c *Cache) freeEqClassLocked(id eqClassID) {
 	}
 	delete(c.eqClassToDigests, id)
 	delete(c.eqClassExtraDigests, id)
-	delete(c.inputEqClassToTerms, id)
-	delete(c.outputEqClassToTerms, id)
-	delete(c.outputEqClassResults, id)
+	c.inputEqClassToTerms.Delete(id)
+	c.outputEqClassToTerms.Delete(id)
+	c.outputEqClassResults.Delete(id)
 	c.egraphParents[id] = 0
 	c.egraphRanks[id] = 0
 	c.noteSavedClassLocked(id)
@@ -177,8 +178,8 @@ func (c *Cache) walkEqClassUsesLocked() map[eqClassID]uint32 {
 		}
 		use(term.outputEqID)
 	}
-	for _, outputEqIDs := range c.resultOutputEqClasses {
-		for outputEqID := range outputEqIDs.All() {
+	for resID := range c.resultOutputEqClasses.Keys() {
+		for outputEqID := range c.resultOutputEqClasses.All(resID) {
 			use(outputEqID)
 		}
 	}
@@ -231,9 +232,9 @@ func (c *Cache) verifyEqClassSlotsLocked() error {
 	}
 	checkClassKeys(bad, live, "the digests table", c.eqClassToDigests)
 	checkClassKeys(bad, live, "the extra digests table", c.eqClassExtraDigests)
-	checkClassKeys(bad, live, "the input terms table", c.inputEqClassToTerms)
-	checkClassKeys(bad, live, "the output terms table", c.outputEqClassToTerms)
-	checkClassKeys(bad, live, "the class entries table", c.outputEqClassResults)
+	checkClassIndexKeys(bad, live, "the input terms table", &c.inputEqClassToTerms)
+	checkClassIndexKeys(bad, live, "the output terms table", &c.outputEqClassToTerms)
+	checkClassIndexKeys(bad, live, "the class entries table", &c.outputEqClassResults)
 	for termID, term := range c.egraphTerms {
 		if term == nil {
 			continue
@@ -248,8 +249,8 @@ func (c *Cache) verifyEqClassSlotsLocked() error {
 			bad(fmt.Sprintf("term %d's output", termID), term.outputEqID)
 		}
 	}
-	for resID, ids := range c.resultOutputEqClasses {
-		for id := range ids.All() {
+	for resID := range c.resultOutputEqClasses.Keys() {
+		for id := range c.resultOutputEqClasses.All(resID) {
 			if !live(id) {
 				bad(fmt.Sprintf("entry %d", resID), id)
 			}
@@ -291,6 +292,15 @@ func (c *Cache) eqClassSlotErrorsLocked() []error {
 
 // checkClassKeys reports to bad each key of table, named what, that is not
 // a live class.
+func checkClassIndexKeys[V cmp.Ordered](bad func(string, eqClassID), live func(eqClassID) bool, what string, table *idSetIndex[eqClassID, V]) {
+	for id := range table.Keys() {
+		if !live(id) {
+			bad(what, id)
+		}
+	}
+}
+
+// checkClassKeys is checkClassIndexKeys for a table that is a map.
 func checkClassKeys[V any](bad func(string, eqClassID), live func(eqClassID) bool, what string, table map[eqClassID]V) {
 	for id := range table {
 		if !live(id) {

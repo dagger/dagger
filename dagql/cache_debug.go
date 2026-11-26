@@ -618,14 +618,14 @@ func (c *Cache) debugEqClassMergeDetails(ids []eqClassID) []map[string]any {
 			"eq_class_id":     root,
 			"digests":         digests,
 			"extra_digests":   debugExtraDigestsForTrace(c.eqClassExtraDigests[root]),
-			"input_term_ids":  c.debugEqClassTermIDs(c.inputEqClassToTerms[root]),
-			"output_term_ids": c.debugEqClassTermIDs(c.outputEqClassToTerms[root]),
+			"input_term_ids":  c.debugEqClassTermIDs(c.inputEqClassToTerms.Members(root)),
+			"output_term_ids": c.debugEqClassTermIDs(c.outputEqClassToTerms.Members(root)),
 		})
 	}
 	return out
 }
 
-func (c *Cache) debugEqClassTermIDs(terms *idSet[egraphTermID]) []uint64 {
+func (c *Cache) debugEqClassTermIDs(terms idMembers[egraphTermID]) []uint64 {
 	if terms.Size() == 0 {
 		return nil
 	}
@@ -1014,7 +1014,7 @@ func (c *Cache) DebugEGraphSnapshot() *EGraphDebugSnapshot {
 			depIDs = append(depIDs, uint64(depID))
 		}
 		slices.Sort(depIDs)
-		outputEqIDs := make([]uint64, 0, c.resultOutputEqClasses[resultID].Size())
+		outputEqIDs := make([]uint64, 0, c.resultOutputEqClasses.Size(resultID))
 		for outputEqID := range c.outputEqClassesForResultLocked(resultID) {
 			outputEqIDs = append(outputEqIDs, uint64(outputEqID))
 		}
@@ -1371,7 +1371,7 @@ func (c *Cache) WriteDebugCacheSnapshot(w io.Writer) error {
 			}
 			slices.Sort(depIDs)
 
-			outputEqIDs := make([]uint64, 0, c.resultOutputEqClasses[resultID].Size())
+			outputEqIDs := make([]uint64, 0, c.resultOutputEqClasses.Size(resultID))
 			for outputEqID := range c.outputEqClassesForResultLocked(resultID) {
 				outputEqIDs = append(outputEqIDs, uint64(outputEqID))
 			}

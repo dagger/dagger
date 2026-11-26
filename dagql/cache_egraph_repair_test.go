@@ -236,14 +236,14 @@ func termsNameRootsErrorLocked(c *Cache) error {
 			if root := c.eqClassRootLocked(in); root != in {
 				return fmt.Errorf("term %d names class %d, under root %d", id, in, root)
 			}
-			if !c.inputEqClassToTerms[in].Contains(id) {
+			if !c.inputEqClassToTerms.Contains(in, id) {
 				return fmt.Errorf("term %d is not indexed under its input %d", id, in)
 			}
 		}
 		if dig := calcEgraphTermDigest(term.selfDigest, term.inputEqIDs); dig != term.termDigest {
 			return fmt.Errorf("term %d has digest %s, its inputs make %s", id, term.termDigest, dig)
 		}
-		if set := c.egraphTermsByTermDigest[term.termDigest]; set == nil || !set.Contains(id) {
+		if !c.egraphTermsByTermDigest.Contains(term.termDigest, id) {
 			return fmt.Errorf("term %d is not indexed under its digest", id)
 		}
 	}
@@ -375,7 +375,7 @@ func TestUnionSurvivorTakesARankAboveTheLosers(t *testing.T) {
 			used := c.ensureEqClassForDigestLocked(ctx, "used")
 			other := c.ensureEqClassForDigestLocked(ctx, "other")
 			// The used class is a term's input: it has more terms.
-			c.inputEqClassToTerms[used] = idSetOf[egraphTermID](1)
+			c.inputEqClassToTerms.Insert(used, 1)
 			c.egraphRanks[used], c.egraphRanks[other] = tc.survivor, tc.loser
 			root, _ := c.mergeEqClassesNoRepairLocked(other, used, nil)
 			require.Equal(t, used, root, "the class more terms use survives")

@@ -1,7 +1,6 @@
 package dagql
 
 import (
-	"maps"
 	"slices"
 	"testing"
 
@@ -33,12 +32,12 @@ func TestCacheImportedDigestPostingsRemainLocalAfterMerge(t *testing.T) {
 	defer f.close(t)
 	c := f.cache
 	c.egraphMu.Lock()
-	roots := slices.Sorted(maps.Keys(c.outputEqClassResults))
+	roots := slices.Sorted(c.outputEqClassResults.Keys())
 	assert.Equal(t, 2, len(roots))
 	first, second := roots[0], roots[1]
 	digests := slices.Collect(c.eqClassToDigests[first].Items())
 	assert.Assert(t, len(digests) > 1)
-	fromSecond := slices.Collect(c.outputEqClassResults[second].Items())[0]
+	fromSecond := slices.Collect(c.outputEqClassResults.Items(second))[0]
 	before := make(map[string][]sharedResultID)
 	for dig := range c.egraphResultsByDigest.Digests() {
 		before[dig] = slices.Sorted(c.egraphResultsByDigest.Items(dig))

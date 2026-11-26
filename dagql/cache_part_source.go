@@ -228,7 +228,7 @@ func (c *Cache) collectPartCandidatesWithAdmissionLocked(receiver *sharedResult,
 		}
 		if possible {
 			structural := newSharedResultSet()
-			c.appendTermSetResultsLocked(structural, c.egraphTermsByTermDigest[calcEgraphTermDigest(l.self, ids)], now, nil)
+			c.appendTermSetResultsLocked(structural, c.egraphTermsByTermDigest.Members(calcEgraphTermDigest(l.self, ids)), now, nil)
 			for row := range structural.Items() {
 				add(row, CacheHitRouteStructural)
 			}

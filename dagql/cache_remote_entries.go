@@ -1849,7 +1849,7 @@ func (c *Cache) remoteIdentityTeachesNothingLocked(entry *sharedResult, recipe, 
 	}
 	// The class the teach would merge the entry's output classes into, which
 	// addResultOutputEqClassLocked records in both directions.
-	members := c.resultOutputEqClasses[entry.id]
+	members := c.resultOutputEqClasses.Members(entry.id)
 	var root eqClassID
 	for id := range members.All() {
 		r := c.eqClassRootLocked(id)
@@ -1867,7 +1867,7 @@ func (c *Cache) remoteIdentityTeachesNothingLocked(entry *sharedResult, recipe, 
 	if !members.Contains(root) {
 		return false
 	}
-	if !c.outputEqClassResults[root].Contains(entry.id) {
+	if !c.outputEqClassResults.Contains(root, entry.id) {
 		return false
 	}
 	for _, dig := range []digest.Digest{recipe, request, content} {
@@ -1908,7 +1908,7 @@ func (c *Cache) remoteIdentityTeachesNothingLocked(entry *sharedResult, recipe, 
 	if c.termForResultByDigestLocked(entry.id, termDigest) == nil {
 		return false
 	}
-	for termID := range c.egraphTermsByTermDigest[termDigest].Items() {
+	for termID := range c.egraphTermsByTermDigest.Items(termDigest) {
 		if t := c.egraphTerms[termID]; t != nil && t.outputEqID != root {
 			return false
 		}
@@ -2335,7 +2335,7 @@ func (c *Cache) entryClassEntriesLocked(number uint64) (EntryClass, bool) {
 	class.Number, class.Stored, class.StoredExpiresAtUnix, _ = entryFactsLocked(entry)
 	entries := map[sharedResultID]struct{}{entry.id: {}}
 	for root := range c.outputEqClassRootsLocked(entry.id) {
-		for id := range c.outputEqClassResults[root].All() {
+		for id := range c.outputEqClassResults.All(root) {
 			if c.resultsByID[id] != nil {
 				entries[id] = struct{}{}
 			}
@@ -2513,7 +2513,7 @@ func (c *Cache) remoteEntryInfoLocked(entry *sharedResult) RemoteEntryInfo {
 		for dig := range c.eqClassToDigests[classID].All() {
 			classDigests[dig] = struct{}{}
 		}
-		for termID := range c.outputEqClassToTerms[classID].All() {
+		for termID := range c.outputEqClassToTerms.All(classID) {
 			if term := c.egraphTerms[termID]; term != nil {
 				info.Terms = append(info.Terms, c.portableTermLocked(term))
 			}
@@ -2661,8 +2661,8 @@ func (c *Cache) eqClassRootLocked(id eqClassID) eqClassID {
 // outputEqClassRootsLocked is outputEqClassesForResultLocked for a reader
 // holding only egraphMu.RLock.
 func (c *Cache) outputEqClassRootsLocked(resID sharedResultID) map[eqClassID]struct{} {
-	out := make(map[eqClassID]struct{}, c.resultOutputEqClasses[resID].Size())
-	for eqID := range c.resultOutputEqClasses[resID].All() {
+	out := make(map[eqClassID]struct{}, c.resultOutputEqClasses.Size(resID))
+	for eqID := range c.resultOutputEqClasses.All(resID) {
 		if root := c.eqClassRootLocked(eqID); root != 0 {
 			out[root] = struct{}{}
 		}

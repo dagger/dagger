@@ -3216,7 +3216,7 @@ type Cache struct {
 	egraphTerms map[egraphTermID]*egraphTerm
 
 	// term digest -> all terms with that digest
-	egraphTermsByTermDigest map[string]*idSet[egraphTermID]
+	egraphTermsByTermDigest idSetIndex[string, egraphTermID]
 
 	//
 	// indexes for results
@@ -3241,18 +3241,18 @@ type Cache struct {
 
 	// map of eq class -> all terms that have it as an input, needed during repair to
 	// figure out all the terms that need repair after eq class union
-	inputEqClassToTerms map[eqClassID]*idSet[egraphTermID]
+	inputEqClassToTerms idSetIndex[eqClassID, egraphTermID]
 
 	// reverse index from canonical output eq class to all terms whose outputs are
 	// currently represented by that class
-	outputEqClassToTerms map[eqClassID]*idSet[egraphTermID]
+	outputEqClassToTerms idSetIndex[eqClassID, egraphTermID]
 
 	// reverse index from materialized result to all output eq classes it is
 	// currently associated with
-	resultOutputEqClasses map[sharedResultID]*idSet[eqClassID]
+	resultOutputEqClasses idSetIndex[sharedResultID, eqClassID]
 
 	// inverse of resultOutputEqClasses, keyed by canonical output eq-class root
-	outputEqClassResults map[eqClassID]*idSet[sharedResultID]
+	outputEqClassResults idSetIndex[eqClassID, sharedResultID]
 
 	// explicit result<->term associations. These are distinct from output eq
 	// class membership: multiple results can share an output eq class, but
@@ -6913,7 +6913,7 @@ func (c *Cache) Size() int {
 	c.callsMu.Unlock()
 
 	read := c.readGraphAs(workUpkeep)
-	completedCalls := len(c.resultOutputEqClasses)
+	completedCalls := c.resultOutputEqClasses.Len()
 	read.Unlock()
 
 	// TODO: Re-implement size accounting directly from egraph state instead of
@@ -6935,7 +6935,7 @@ func (c *Cache) EntryStats() CacheEntryStats {
 	c.callsMu.Unlock()
 
 	read := c.readGraphAs(workUpkeep)
-	stats.CompletedCalls = len(c.resultOutputEqClasses)
+	stats.CompletedCalls = c.resultOutputEqClasses.Len()
 	stats.RetainedCalls = len(c.persistedEdgesByResult)
 	read.Unlock()
 
