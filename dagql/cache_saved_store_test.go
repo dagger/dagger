@@ -102,6 +102,7 @@ func TestSavedStoreComposition(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	savedStoreRestored(t, c)
 	opened := time.Since(start)
 	// Let the body worker finish what the restore queued (taught content).
 	time.Sleep(20 * time.Second)
@@ -120,6 +121,16 @@ func TestSavedStoreComposition(t *testing.T) {
 	savedStoreCompositionSteps(c, base, say)
 
 	runtime.KeepAlive(c)
+}
+
+// savedStoreRestored fails the test unless the cache restored the store it
+// was given: a cache that cannot restore a store (another schema, a failed
+// import) wipes it and starts empty, and its figures would be an empty cache's.
+func savedStoreRestored(t *testing.T, c *Cache) {
+	t.Helper()
+	if reason := c.PersistenceResetReason(); reason != CachePersistenceResetNone {
+		t.Fatalf("the saved store was not restored: the cache started empty (%s)", reason)
+	}
 }
 
 func savedStoreGB(n uint64) float64 { return float64(n) / 1e9 }
@@ -152,6 +163,7 @@ func TestSavedStoreRecords(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	savedStoreRestored(t, c)
 	time.Sleep(20 * time.Second)
 	total := savedStoreHeap() - base
 	n := len(c.resultsByID)
@@ -649,6 +661,7 @@ func TestSavedStoreTimes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	savedStoreRestored(t, c)
 	say("opened in %s", time.Since(start).Round(time.Millisecond))
 	time.Sleep(20 * time.Second)
 
