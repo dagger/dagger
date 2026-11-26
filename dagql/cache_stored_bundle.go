@@ -1049,6 +1049,9 @@ func (build *storedBundleBuild) addOutput(res *sharedResult, part PersistedPartO
 func (c *Cache) storedPartDonorLocked(res *sharedResult, key string, now int64) (*sharedResult, storedPart) {
 	var best *sharedResult
 	for root := range c.outputEqClassRootsLocked(res.id) {
+		if c.testDonorClassRead != nil {
+			c.testDonorClassRead()
+		}
 		for id := range c.outputEqClassResults[root].All() {
 			member := c.resultsByID[id]
 			if member == nil || member == res || c.resultExpiredAtLocked(member, now) {

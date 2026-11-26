@@ -2878,6 +2878,9 @@ type Cache struct {
 	// testCallTermKeyed runs each time a kept call's term key is taken
 	// (keptCallTermKeyLocked). Tests only.
 	testCallTermKeyed func()
+	// testDonorClassRead runs each time a class's entries are read for a
+	// part's donors (storedPartDonorLocked). Tests only.
+	testDonorClassRead func()
 	// testRepairWholeClass, when set, has a union keep the class of higher
 	// rank and its repair walk every term of the class that survives, as
 	// before a union kept the class more terms take as an input and its
