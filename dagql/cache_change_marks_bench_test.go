@@ -169,12 +169,13 @@ func benchmarkChangeMarksMergePrune(b *testing.B, bundle ValueBundle, marks bool
 	b.ReportMetric(ms(pruning), "prune-ms")
 }
 
-// BenchmarkClassJoin times a join of a large class on a blob-backed cache: a
-// holding whose new entry joins, by its content digest, a class of size
-// entries that hold no part, as a commit's or a row's new entry joins the
-// class of results equal to it. It reports join-us, one such holding's
-// attach with its join and its marks handed back, and named/join, the
-// entries its change names for readers.
+// BenchmarkClassJoin times a join of a large class on a blob-backed cache: an
+// entry alone in its class joins, by a content digest another engine's
+// holding of its recipe gives it, a class of size entries that hold no part,
+// as a commit's or a row's entry joins the class of results equal to it once
+// its identity is taught. It reports join-us, that holding's attach with its
+// join and its marks handed back, and named/join, the entries its change
+// names for readers.
 func BenchmarkClassJoin(b *testing.B) {
 	for _, size := range []int{1_000, 10_000} {
 		b.Run(fmt.Sprintf("class=%d", size), func(b *testing.B) {
@@ -200,16 +201,28 @@ func benchmarkClassJoin(b *testing.B, size int) {
 	class, ok := cloud.EntryClassEntries(changeMarksBenchNumber(b, cloud, HolderKey{Cache: "cache-class", Number: 1}))
 	require.True(b, ok)
 	require.Len(b, class.Entries, size, "one class of size entries")
-	b.ResetTimer()
+	var took time.Duration
 	i, named := 0, 0
 	for b.Loop() {
-		key, desc := holding("cache-join", i)
+		// A new entry, alone in its class, that another engine's holding
+		// of its recipe then gives the class's content digest: its class
+		// joins the large one.
+		b.StopTimer()
+		key, desc := holding("cache-new", i)
+		desc.ContentDigest = ""
+		_, err := cloud.AttachRemoteHolding(ctx, key, desc)
+		require.NoError(b, err)
+		_, desc = holding("cache-new", i)
+		key = HolderKey{Cache: "cache-join", Number: uint64(i + 1)}
 		i++
+		b.StartTimer()
+		start := time.Now()
 		change, err := cloud.AttachRemoteHolding(ctx, key, desc)
+		took += time.Since(start)
 		require.NoError(b, err)
 		named += len(change.Entries)
 	}
-	b.ReportMetric(float64(b.Elapsed().Microseconds())/float64(b.N), "join-us")
+	b.ReportMetric(float64(took.Microseconds())/float64(b.N), "join-us")
 	b.ReportMetric(float64(named)/float64(b.N), "named/join")
 }
 
