@@ -3260,7 +3260,7 @@ type Cache struct {
 
 	// Reverse index from any known result-associated digest to materialized results.
 	// This includes request recipe+extra digests and result recipe+extra digests.
-	egraphResultsByDigest map[string]*resultDigestPosting
+	egraphResultsByDigest digestPostings
 	// Exact reverse postings recorded for ordinary runtime results. Imported
 	// class-wide postings are deliberately omitted and marked broad instead.
 	resultIndexedDigests  map[sharedResultID][]string
