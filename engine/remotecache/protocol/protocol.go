@@ -655,14 +655,27 @@ type RestoreSet struct {
 	Whole *SetFile `json:"whole,omitempty"`
 }
 
-// SetFile is one published file of a set: the digest and size of its bytes,
-// which name it in Restored and Hello, its download address, and the
-// download addresses of the blobs and packs its parts name (AddressTable).
+// SetFile is one published file of a set: a chain of segments, each a set
+// file's bytes of its own (setfile.go), whose parts merge one segment after
+// another, in order, as one file's. A set's first file is one segment; one
+// the service builds again from the file before it keeps that file's
+// segments and adds one, which carries only the records that changed or
+// are new. Digest is the chain's (SetFileChain), which names the file in
+// Restored and Hello, Size its segments' bytes together, and Table the
+// download addresses of the blobs and packs any segment's parts name.
 type SetFile struct {
+	Digest   digest.Digest    `json:"digest"`
+	Size     int64            `json:"size"`
+	Segments []SetFileSegment `json:"segments"`
+	Table    AddressTable     `json:"table"`
+}
+
+// SetFileSegment is one segment of a set file: the digest and size of its
+// bytes, and its download address.
+type SetFileSegment struct {
 	Digest  digest.Digest     `json:"digest"`
 	Size    int64             `json:"size"`
 	Address dagql.BlobAddress `json:"address"`
-	Table   AddressTable      `json:"table"`
 }
 
 // Restored answers Restore once every file it named is done, one item per
@@ -685,12 +698,15 @@ type Restored struct {
 // Entries, set when Complete, are the engine entries the file's records
 // landed on, by the numbers the engine's rows, replies and prune events
 // name them by: one for each record the file carries in full
-// (a value with no Held), in the file's order, part by part and within a
-// part in its bundle's Values order, at its first appearance only. A record
-// that landed on no entry, such as a root that had expired, is 0.
-// CompleteParts, with PartsTable, are the parts each of those entries had
-// complete as the merge of the part that first carried its record left it
-// (PackCompleteParts): the engine's own parts for a record it kept. Both
+// (a value with no Held), in the order of its first appearance, segment by
+// segment, part by part and within a part in its bundle's Values order. A
+// record a later part carries again in full, as a later segment carries
+// one that changed, keeps its place and takes the entry its later copy
+// landed on. A record that landed on no entry, such as a root that had
+// expired, is 0. CompleteParts, with PartsTable, are the parts each of
+// those entries had complete as the merge of the record's last copy that
+// landed left it (PackCompleteParts): the engine's own parts for a record
+// it kept. Both
 // are set when Entries is, and empty when no entry has a complete part.
 // With Already, all three are what this engine process's merge of the file
 // answered, on this connection or an earlier one.
