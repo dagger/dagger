@@ -34,10 +34,10 @@ func TestThePoolsWalkMakesNoMapForEachEntry(t *testing.T) {
 
 	cloud.egraphMu.RLock()
 	walked := cloud.walkPoolLocked()
-	members := len(walked.members)
-	require.Len(t, walked.measure.blobs, len(layers), "the pool names each layer's blob once")
+	members, blobs := len(walked.members), len(walked.measure.blobs)
 	walk := testing.AllocsPerRun(10, func() { cloud.walkPoolLocked() })
 	cloud.egraphMu.RUnlock()
+	require.Equal(t, len(layers), blobs, "the pool names each layer's blob once")
 	require.GreaterOrEqual(t, members, len(roots), "every stored value is in the pool")
 	t.Logf("a walk of %d entries: %.0f allocations", members, walk)
 	require.Less(t, walk, float64(members)/2, "no map for each entry")
