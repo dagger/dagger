@@ -2,6 +2,7 @@ package dagql
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"maps"
 	"math/rand/v2"
@@ -1120,6 +1121,63 @@ func TestCollectionChecksOncePerInterval(t *testing.T) {
 	checks := testEqClassChecks(cloud)
 	require.Positive(t, compactions)
 	require.LessOrEqual(t, checks, 1+rounds/10, "one check per interval, not one per collection")
+}
+
+// A collection that compacts the classes logs it at Info, through the
+// collection's context, with the class slots before and after and how long
+// it took: the compaction walks the whole graph in the collection's hold of
+// the cache. A check that frees nothing logs nothing at Info.
+func TestCollectionLogsTheCompactionItRuns(t *testing.T) {
+	t.Parallel()
+	cloud := newCloudCache(t)
+	advance := testEqClassClock(cloud)
+	var logs offerLogs
+	ctx := logs.into(t.Context())
+	a := newCloudApplier(t, cloud)
+	for i := range 100 {
+		live := holdingOf(fmt.Sprintf("live-%d", i))
+		live.ContentDigest = testDigest(fmt.Sprintf("live-%d-content", i))
+		a.call(callRow{key: HolderKey{"cache-live", uint64(i + 1)}, session: "live", holding: live})
+	}
+	require.Empty(t, a.collect())
+
+	slots := func() int {
+		cloud.egraphMu.Lock()
+		defer cloud.egraphMu.Unlock()
+		return cloud.eqClassSlotsLocked()
+	}
+	const rounds, perRound = 200, 5
+	var compactions [][2]int
+	for r := range rounds {
+		advance(time.Second)
+		session := fmt.Sprintf("churn-%d", r)
+		for i := range perRound {
+			field := fmt.Sprintf("churn-%d-%d", r, i)
+			churn := holdingOf(field)
+			churn.ContentDigest = testDigest(field + "-content")
+			a.call(callRow{key: HolderKey{"cache-churn", uint64(r*perRound + i + 1)}, session: session, holding: churn})
+		}
+		a.endSession("cache-churn", session)
+		before := slots()
+		collected, _, err := cloud.CollectRemoteHoldings(ctx, a.candidates, nil)
+		require.NoError(t, err)
+		require.Len(t, collected, perRound)
+		a.candidates = nil
+		if after := slots(); after < before {
+			compactions = append(compactions, [2]int{before, after})
+		}
+	}
+	require.NotEmpty(t, compactions)
+	require.Greater(t, testEqClassChecks(cloud), len(compactions), "some checks freed nothing")
+
+	lines := logs.lines(t, "dagql collection compacted eq classes")
+	require.Len(t, lines, len(compactions), "one line for each compaction, and none for a check that frees nothing")
+	for i, line := range lines {
+		require.Equal(t, "INFO", line.fields["level"], line.raw)
+		require.Equal(t, json.Number(strconv.Itoa(compactions[i][0])), line.fields["oldSlots"], line.raw)
+		require.Equal(t, json.Number(strconv.Itoa(compactions[i][1])), line.fields["newSlots"], line.raw)
+		require.Contains(t, line.fields, "duration", line.raw)
+	}
 }
 
 // A collection that changes nothing never checks, however long the cache is
