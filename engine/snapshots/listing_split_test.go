@@ -4,10 +4,12 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/containerd/containerd/v2/core/content"
@@ -167,6 +169,139 @@ func TestListingRebuildFailsWithoutItsContent(t *testing.T) {
 	_, err = io.ReadAll(rebuilt)
 	rebuilt.Close()
 	require.Error(t, err)
+}
+
+// waitingWriterStore is a content store whose writers open only once
+// release is closed.
+type waitingWriterStore struct {
+	content.Store
+	release chan struct{}
+}
+
+func (s *waitingWriterStore) Writer(ctx context.Context, opts ...content.WriterOpt) (content.Writer, error) {
+	select {
+	case <-s.release:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	return s.Store.Writer(ctx, opts...)
+}
+
+// A differ writes a layer's tar ahead of its split: while the split waits for
+// the content store to write the layer's content blobs, the differ's writes
+// of the rest of the tar don't wait, and the listing that ends up written
+// rebuilds the tar as it would have.
+func TestListingSplitDoesNotHoldTheDiffer(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	layer := splitTestTar(t)
+	store, err := local.NewStore(t.TempDir())
+	require.NoError(t, err)
+	cs := &waitingWriterStore{Store: store, release: make(chan struct{})}
+	listingType, contentType, ok := listingMediaType(compression.Zstd)
+	require.True(t, ok)
+	compress, _ := compression.Zstd.Compress(ctx, compression.New(compression.Zstd))
+	listingCompress, contents := listingCompressor(ctx, cs, compress, contentType, "ahead-test")
+	var listingBlob bytes.Buffer
+	w, err := listingCompress(&listingBlob, listingType)
+	require.NoError(t, err)
+
+	wrote := make(chan error, 1)
+	go func() {
+		_, err := w.Write(layer)
+		wrote <- err
+	}()
+	select {
+	case err := <-wrote:
+		close(cs.release)
+		require.NoError(t, err)
+	case <-time.After(30 * time.Second):
+		select {
+		case err := <-wrote:
+			// It returned as the timer fired.
+			close(cs.release)
+			require.NoError(t, err)
+		default:
+			close(cs.release)
+			require.NoError(t, <-wrote)
+			require.NoError(t, w.Close())
+			t.Fatal("the differ's write of the layer's tar waited for the split's content blobs")
+		}
+	}
+	require.NoError(t, w.Close())
+
+	listed := contents()
+	require.Len(t, listed, 6)
+	listing := ocispecs.Descriptor{MediaType: listingType, Digest: digest.FromBytes(listingBlob.Bytes()), Size: int64(listingBlob.Len())}
+	require.NoError(t, content.WriteBlob(ctx, store, "listing", bytes.NewReader(listingBlob.Bytes()), listing))
+	rebuilt, err := openListingTar(ctx, store, listing)
+	require.NoError(t, err)
+	got, err := io.ReadAll(rebuilt)
+	rebuilt.Close()
+	require.NoError(t, err)
+	require.Equal(t, digest.FromBytes(layer), digest.FromBytes(got), "the rebuilt tar is the layer's tar")
+}
+
+// A split buffer holds what its writer writes in at most its size of pieces
+// and hands it to its reader in order: a write returns once its bytes are
+// held, and one that needs a piece past the size waits for a read to give
+// one back, even with less than the size unread. The reader gets io.EOF once
+// the writer has closed and everything is read, and a reader's error ends a
+// waiting write with that error.
+func TestSplitBuffer(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		data := []byte(fileBytes("buffer", 5<<20+12345))
+		b := newSplitBuffer(3 << 20)
+		n, err := b.Write(data[:3<<20])
+		require.NoError(t, err)
+		require.Equal(t, 3<<20, n)
+		// A byte read leaves its piece held, so the next byte has no room.
+		got := make([]byte, 1, len(data))
+		_, err = io.ReadFull(b, got)
+		require.NoError(t, err)
+
+		held := make(chan struct{})
+		wrote := make(chan error, 1)
+		go func() {
+			_, err := b.Write(data[3<<20 : 3<<20+1])
+			close(held)
+			if err == nil {
+				_, err = b.Write(data[3<<20+1:])
+			}
+			if err == nil {
+				b.Close()
+			}
+			wrote <- err
+		}()
+		synctest.Wait()
+		select {
+		case <-held:
+			t.Error("a byte past the buffer's pieces was held before a read gave one back")
+		default:
+		}
+		rest, err := io.ReadAll(b)
+		require.NoError(t, err)
+		require.NoError(t, <-wrote)
+		require.Equal(t, data, append(got, rest...))
+		n, err = b.Read(make([]byte, 1))
+		require.Equal(t, 0, n)
+		require.ErrorIs(t, err, io.EOF)
+
+		failed := errors.New("the split failed")
+		b = newSplitBuffer(1 << 20)
+		_, err = b.Write(data[:1<<20])
+		require.NoError(t, err)
+		go func() {
+			_, err := b.Write(data[1<<20 : 2<<20])
+			wrote <- err
+		}()
+		synctest.Wait()
+		b.CloseWithError(failed)
+		require.ErrorIs(t, <-wrote, failed)
+		_, err = b.Write(data[:1])
+		require.ErrorIs(t, err, failed)
+	})
 }
 
 func digests(descs []ocispecs.Descriptor) []digest.Digest {
