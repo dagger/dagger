@@ -55,4 +55,6 @@ func TestASharedValueChangedFailsItsCheck(t *testing.T) {
 	v.text = "changed"
 	require.Error(t, table.verify())
 	require.Panics(t, func() { table.share("a", func() *sharedValuesTestValue { return &sharedValuesTestValue{text: "a"} }) })
+	// Held to the end, so that the table can't forget it before the checks.
+	runtime.KeepAlive(v)
 }
