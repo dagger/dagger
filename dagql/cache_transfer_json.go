@@ -3,9 +3,18 @@
 package dagql
 
 import (
+	"encoding/json"
 	"encoding/json/jsontext"
 	jsonv2 "encoding/json/v2"
 )
+
+// countJSON returns the length of the JSON json.Marshal gives v, counted as
+// the encoder hands its buffer on: the JSON is never in memory whole.
+func countJSON(v any) (int64, error) {
+	var n sizeCounter
+	err := jsonv2.MarshalWrite(&n, v, json.DefaultOptionsV1())
+	return int64(n), err
+}
 
 // MarshalJSONTo writes the value into the encoder of what holds it, the
 // same JSON MarshalJSON gives: a bundle's encoder then writes each value in

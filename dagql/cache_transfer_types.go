@@ -169,6 +169,12 @@ func (v TransferredValue) storedJSON() (storedValueJSON, error) {
 	}, nil
 }
 
+// EncodedSize returns the length of the JSON json.Marshal gives the value,
+// counted as it is encoded and not kept.
+func (v *TransferredValue) EncodedSize() (int64, error) {
+	return countJSON(v)
+}
+
 // TransferredRecordParts are a record's parts as its sender worked them out
 // (TransferredValue.Parts): those it proves complete
 // (memoRecordCompletePartKeys) and those it declares absent or pending

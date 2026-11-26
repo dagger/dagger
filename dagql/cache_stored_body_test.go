@@ -2,6 +2,7 @@ package dagql
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"runtime"
@@ -30,6 +31,15 @@ func storedBodyTestExport(t *testing.T) ValueBundle {
 // from an engine's cache.
 func storedBodyTestExportOf(t *testing.T, records int) ValueBundle {
 	t.Helper()
+	return storedBodyTestExportWith(t, records, func(seed string) []transferTestField {
+		return mergeBenchBody(seed, storedBodyTestFields)
+	})
+}
+
+// storedBodyTestExportWith exports records records from an engine's cache,
+// each a value of the fields body gives for its seed.
+func storedBodyTestExportWith(t *testing.T, records int, body func(seed string) []transferTestField) ValueBundle {
+	t.Helper()
 	actx := cacheTestContext(context.Background())
 	a, err := NewCache(actx, filepath.Join(t.TempDir(), "a.db"), nil, nil)
 	require.NoError(t, err)
@@ -40,7 +50,7 @@ func storedBodyTestExportOf(t *testing.T, records int) ValueBundle {
 	var roots []AnyResult
 	for i := range records {
 		field := fmt.Sprintf("body-%d", i)
-		value := &storedBenchValue{Text: field, Fields: mergeBenchBody(field, storedBodyTestFields)}
+		value := &storedBenchValue{Text: field, Fields: body(field)}
 		frame := &ResultCall{Kind: ResultCallKindField, Field: field, Type: NewResultCallType(value.Type())}
 		res, err := a.GetOrInitCall(actx, "test-session", srv, &CallRequest{ResultCall: frame, IsPersistable: true}, func(context.Context) (AnyResult, error) {
 			return NewResultForCall(value, frame)
@@ -55,6 +65,74 @@ func storedBodyTestExportOf(t *testing.T, records int) ValueBundle {
 	}))
 	require.Len(t, bundle.Values, records)
 	return bundle
+}
+
+// A value the Cloud holds compressed counts its encoded size without
+// writing out its envelope or call frame (EncodedSize): each value's size is
+// the length of the JSON json.Marshal gives it, escapes and all, and counting
+// every value allocates a small part of what their envelopes and frames come
+// to decompressed. Counted by encoding it, a record larger than the buffer
+// an encoder keeps between uses costs its size again at every count.
+//
+// Not parallel: it counts the process's allocation, which other tests
+// running beside it would change.
+func TestStoredValueEncodedSizeWritesNothingOut(t *testing.T) {
+	// Records of about 75 KB of JSON each, over the 64 KiB a streaming
+	// encoder keeps between uses.
+	const records, fields = 20, 320
+	bundle := storedBodyTestExportWith(t, records, func(seed string) []transferTestField {
+		body := mergeBenchBody(seed, fields)
+		// Characters the encoding escapes, which a body holds escaped.
+		body[0].Description = "<b>" + seed + " & co</b>\u2028\u00e9"
+		return body
+	})
+	ctx := cacheTestContext(context.Background())
+	cloud, err := NewCache(ctx, "", nil, nil, WithBlobStore())
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, cloud.CloseDiscardingPersistence()) })
+	roots := storedPersistenceTestMerge(t, ctx, cloud, bundle)
+	storedTestCompress(cloud)
+	stored := storedBodyTestUse(t, ctx, cloud, roots)
+
+	var bodies int
+	for i := range stored.Values {
+		v := &stored.Values[i]
+		require.NotNil(t, v.storedEnvelope, "value %d's envelope is held compressed", i)
+		require.NotNil(t, v.storedCall, "value %d's call frame is held compressed", i)
+		envelope, err := storedEnvelopeJSON(v.storedEnvelope, 0)
+		require.NoError(t, err)
+		frame, err := storedFrameJSONOf(v.storedCall, v.storedCallBytes)
+		require.NoError(t, err)
+		bodies += len(envelope) + len(frame)
+		data, err := json.Marshal(v)
+		require.NoError(t, err)
+		size, err := v.EncodedSize()
+		require.NoError(t, err)
+		require.Equal(t, int64(len(data)), size, "value %d's encoded size", i)
+	}
+
+	count := func() {
+		for i := range stored.Values {
+			if _, err := stored.Values[i].EncodedSize(); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	count()
+	const runs = 5
+	var total uint64
+	for range runs {
+		runtime.GC()
+		runtime.GC()
+		var before, after runtime.MemStats
+		runtime.ReadMemStats(&before)
+		count()
+		runtime.ReadMemStats(&after)
+		total += after.TotalAlloc - before.TotalAlloc
+	}
+	allocated := float64(total) / runs
+	t.Logf("%.0f bytes allocated counting %d values whose envelopes and frames are %d bytes decompressed", allocated, len(stored.Values), bodies)
+	require.Less(t, allocated, 0.05*float64(bodies))
 }
 
 // storedBodyTestHeap is the live heap after collecting, with the body codec
