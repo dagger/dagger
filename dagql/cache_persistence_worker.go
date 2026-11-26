@@ -190,6 +190,9 @@ func (c *Cache) encodePersistedResultRow(ctx context.Context, resultSnapshot *pe
 				return fmt.Errorf("persist result %d stored record: %w", resultSnapshot.resultID, err)
 			}
 		}
+		// A light envelope is shared by the entries of its content, and
+		// names no row: the saved record names the entry's own.
+		encoding.Envelope.ResultID = uint64(resultSnapshot.resultID)
 		payload, err = encodeStoredRow(&encoding.Envelope, body, resultSnapshot.partFacts)
 	} else {
 		payload, err = json.Marshal(encoding.Envelope)

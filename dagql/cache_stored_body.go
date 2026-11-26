@@ -25,7 +25,8 @@ import (
 // in transfer form as compressed JSON (storedBody), beside the entries its
 // references name, which a bundle checks. Its persistedEnvelope keeps only
 // the envelope's small fields (lightStoredEnvelope), which tell a stored
-// value by its presence and its kind.
+// value by its presence and its kind, and which the entries whose envelopes
+// have them alike share (sharedLightStoredEnvelope).
 //
 // Every entry with a stored record keeps the record's parts too
 // (sharedResult.partFacts): those it declares absent or pending, which part
@@ -450,6 +451,58 @@ func declaredPartsOf(outputs []CapturedCodecOutput) ([]declaredPart, error) {
 	return parts, nil
 }
 
+// lightStoredEnvelopes are the light envelopes the stored entries of every
+// blob-backed cache share: one for each distinct content in use. A store
+// holds a few hundred, by the types of value it stores, for its hundreds of
+// thousands of entries. Nothing changes a light envelope once an entry holds
+// it: a record that changes is given another (setStoredBodyLocked).
+var lightStoredEnvelopes = sharedValues[lightEnvelopeKey, PersistedResultEnvelope]{keyOf: lightEnvelopeKeyOf}
+
+// lightEnvelopeKey is the content of a shared light envelope: the fields
+// lightStoredEnvelope keeps but for the row's number, which the entry holding
+// it knows, and its offers, which an envelope that has them doesn't share.
+type lightEnvelopeKey struct {
+	imported, persistDeclined bool
+	version                   int
+	kind, typeName, codec     string
+	session                   SessionResourceHandle
+	// other is set for an envelope with any other field set, which none
+	// shared is.
+	other bool
+}
+
+// lightEnvelopeContent is env's content as a light envelope keeps it.
+func lightEnvelopeContent(env *PersistedResultEnvelope) lightEnvelopeKey {
+	return lightEnvelopeKey{
+		imported: env.Imported, persistDeclined: env.PersistDeclined, version: env.Version,
+		kind: env.Kind, typeName: env.TypeName, codec: env.ObjectCodec, session: env.SessionResourceHandle,
+	}
+}
+
+// lightEnvelopeKeyOf is the key env is shared under, if it is a light
+// envelope with no row number and no offers; other is set otherwise.
+func lightEnvelopeKeyOf(env *PersistedResultEnvelope) lightEnvelopeKey {
+	key := lightEnvelopeContent(env)
+	key.other = env.ResultID != 0 || env.PendingOffers != nil || env.BoundSession != "" || env.StoredParts != nil ||
+		env.Run != nil || env.RunRan != 0 || env.ObjectJSON != nil || env.ScalarJSON != nil || env.Items != nil
+	return key
+}
+
+// sharedLightStoredEnvelope returns env's light envelope (lightStoredEnvelope)
+// as the entries with its content share it, without the row's number: a save
+// writes the entry's own (encodePersistedResultRow). An envelope with offers
+// keeps a copy of its own.
+func sharedLightStoredEnvelope(env *PersistedResultEnvelope) *PersistedResultEnvelope {
+	if len(env.PendingOffers) > 0 {
+		return lightStoredEnvelope(env)
+	}
+	return lightStoredEnvelopes.share(lightEnvelopeContent(env), func() *PersistedResultEnvelope {
+		light := lightStoredEnvelope(env)
+		light.PendingOffers, light.ResultID = nil, 0
+		return light
+	})
+}
+
 // lightStoredEnvelope is env without its value: the fields that tell a stored
 // value by its presence and its kind, and its offers.
 func lightStoredEnvelope(env *PersistedResultEnvelope) *PersistedResultEnvelope {
@@ -467,7 +520,8 @@ func lightStoredEnvelope(env *PersistedResultEnvelope) *PersistedResultEnvelope 
 }
 
 // setStoredBodyLocked makes body res's stored record: res keeps the light
-// envelope of env, and no kept transfer record. A body that holds the frame
+// envelope of env, shared with the entries of its content
+// (sharedLightStoredEnvelope), and no kept transfer record. A body that holds the frame
 // is the entry's frame: res keeps no decoded one. The record's parts are
 // res's already, the record being the same (partFacts). Requires egraphMu for
 // writing, or an entry no reader can reach yet.
@@ -487,7 +541,7 @@ func (c *Cache) setStoredBodyLocked(res *sharedResult, env *PersistedResultEnvel
 		}
 	}
 	res.payloadMu.Lock()
-	res.persistedEnvelope = lightStoredEnvelope(env)
+	res.persistedEnvelope = sharedLightStoredEnvelope(env)
 	res.stored = body
 	res.payloadMu.Unlock()
 	if body.frame != nil {
