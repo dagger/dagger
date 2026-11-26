@@ -671,12 +671,31 @@ type SetFile struct {
 }
 
 // SetFileSegment is one segment of a set file: the digest and size of its
-// bytes, and its download address.
+// bytes, its download address, and its role in the file.
 type SetFileSegment struct {
 	Digest  digest.Digest     `json:"digest"`
 	Size    int64             `json:"size"`
 	Address dagql.BlobAddress `json:"address"`
+	Role    SetFileRole       `json:"role,omitempty"`
 }
+
+// SetFileRole is what a segment is in its file. A head's first part, what
+// its check's run asks for first, is a segment of its own (SetFileFirst),
+// and what a later build of the head adds to that part, its lead
+// (SetFileLead), follows it and merges in the same turn of a restore's head
+// lane as the first part's last part: a head's first part lands in its
+// first turns, whatever else its file holds. The rest of a head as its full
+// build wrote it, built holding the first part alone, is SetFileRest, and
+// the set segment (SetFileSet) ends a file built again. Any other segment
+// has no role.
+type SetFileRole string
+
+const (
+	SetFileFirst SetFileRole = "first"
+	SetFileLead  SetFileRole = "lead"
+	SetFileRest  SetFileRole = "rest"
+	SetFileSet   SetFileRole = "set"
+)
 
 // Restored answers Restore once every file it named is done, one item per
 // file, as the restore named them, heads first. Generation and EngineTime are
@@ -693,7 +712,10 @@ type Restored struct {
 // merged nothing this time. Parts counts the parts that merged, Records the
 // records they carried, and Rows what their merges did with them.
 // FirstCommit is the engine's clock, in Unix nanoseconds, when its first
-// part committed, and Error is what stopped it, if anything did.
+// part committed; FirstPart, when the last part of a head's first part
+// committed, its segments of the roles SetFileFirst and SetFileLead, 0 for a
+// file with none or one that stopped before; and Error is what stopped it,
+// if anything did.
 //
 // Entries, set when Complete, are the engine entries the file's records
 // landed on, by the numbers the engine's rows, replies and prune events
@@ -718,6 +740,7 @@ type RestoredFile struct {
 	Records     int           `json:"records"`
 	Rows        RowCounts     `json:"rows"`
 	FirstCommit int64         `json:"firstCommit,omitempty"`
+	FirstPart   int64         `json:"firstPart,omitempty"`
 	Error       string        `json:"error,omitempty"`
 	Entries     EntryNumbers  `json:"entries,omitempty"`
 
