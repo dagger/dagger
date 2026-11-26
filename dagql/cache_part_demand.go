@@ -58,10 +58,10 @@ func (c *Cache) usesPartAcquisition(ctx context.Context, res AnyResult, row *sha
 	}
 	// Only starting to manage a gate writes; every other answer is read under
 	// the read lock.
-	c.egraphMu.RLock()
+	readHold := c.readGraphAs(workPart)
 	settled, uses := c.partAcquisitionSettledLocked(row)
 	imported := row.imported
-	c.egraphMu.RUnlock()
+	readHold.Unlock()
 	if settled {
 		return uses
 	}
@@ -324,9 +324,9 @@ func (c *Cache) demandPart(ctx context.Context, res AnyResult, address Persisted
 					if err != nil {
 						return err
 					}
-					wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
+					read := c.readGraph(ctx, workPart)
 					allowed := c.sessionSatisfiesResourceRequirementsLocked(session, row)
-					c.egraphMu.RUnlock()
+					read.Unlock()
 					if !allowed {
 						return fmt.Errorf("part demand: session no longer satisfies installed requirements")
 					}
@@ -702,10 +702,10 @@ func (c *Cache) logPartWithoutSource(ctx context.Context, row *sharedResult, add
 		key, _ := partAddressKey(address)
 		kept = keptParts(probes, route.WriteSet, key)
 	}
-	wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
+	read := c.readGraph(ctx, workPart)
 	replacements, mergedAt := row.replacements, row.merged.mergedAt()
 	dependents, more := c.mergedDependentsLocked(row, rebuildMixCountLimit)
-	c.egraphMu.RUnlock()
+	read.Unlock()
 	origin := "restored"
 	if mergedAt != 0 {
 		origin = "merged"
@@ -750,9 +750,9 @@ func (c *Cache) logRecordRunForWantOfOffers(ctx context.Context, row *sharedResu
 	if !row.imported || row.recipeRunLogged.Load() {
 		return
 	}
-	wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
+	read := c.readGraph(ctx, workPart)
 	offers, mergedAt := row.hasPartOffersLocked(), row.merged.mergedAt()
-	c.egraphMu.RUnlock()
+	read.Unlock()
 	if offers || !row.recipeRunLogged.CompareAndSwap(false, true) {
 		return
 	}

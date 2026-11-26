@@ -522,7 +522,7 @@ func (c *Cache) StampCauses(numbers []uint64) map[string]int {
 	causes := map[string]int{}
 	for start := 0; start < len(numbers); start += changedSincePiece {
 		end := min(start+changedSincePiece, len(numbers))
-		c.egraphMu.RLock()
+		read := c.readGraphAs(workRemote)
 		for _, number := range numbers[start:end] {
 			if res := c.resultsByID[sharedResultID(number)]; res == nil {
 				causes["gone"]++
@@ -530,7 +530,7 @@ func (c *Cache) StampCauses(numbers []uint64) map[string]int {
 				causes[res.stampCause.String()]++
 			}
 		}
-		c.egraphMu.RUnlock()
+		read.Unlock()
 	}
 	return causes
 }
@@ -539,8 +539,8 @@ func (c *Cache) StampCauses(numbers []uint64) map[string]int {
 // bundle built now would have it as its Position, and if it equals a
 // bundle's Position, nothing the bundle carries has changed since.
 func (c *Cache) BundlePosition() uint64 {
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workRemote)
+	defer read.Unlock()
 	return c.writes
 }
 
@@ -553,8 +553,8 @@ func (c *Cache) BundlePosition() uint64 {
 // the body worker's, moves the count on (BundlePosition). Zero for a cache
 // that restored nothing.
 func (c *Cache) RestoredPosition() uint64 {
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workRemote)
+	defer read.Unlock()
 	return c.restoredWrites
 }
 
@@ -572,12 +572,12 @@ func (c *Cache) ChangedSince(numbers []uint64, position uint64) []bool {
 	changed := make([]bool, len(numbers))
 	for start := 0; start < len(numbers); start += changedSincePiece {
 		end := min(start+changedSincePiece, len(numbers))
-		c.egraphMu.RLock()
+		read := c.readGraphAs(workRemote)
 		for i := start; i < end; i++ {
 			res := c.resultsByID[sharedResultID(numbers[i])]
 			changed[i] = res == nil || res.changedAt > position
 		}
-		c.egraphMu.RUnlock()
+		read.Unlock()
 	}
 	return changed
 }

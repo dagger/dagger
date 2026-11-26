@@ -5,6 +5,7 @@ import (
 	"maps"
 	"slices"
 
+	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/opencontainers/go-digest"
 )
 
@@ -13,8 +14,8 @@ import (
 // An entry's number stays its own across the classes' compactions, so the
 // numbers are safe to keep past the call.
 func (c *Cache) EquivalentEntries(dig string) []uint64 {
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workRemote)
+	defer read.Unlock()
 	return c.equivalentEntriesLocked(dig)
 }
 
@@ -43,8 +44,8 @@ func (c *Cache) TermEntries(self digest.Digest, inputs []digest.Digest) []uint64
 	if self == "" {
 		return nil
 	}
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workRemote)
+	defer read.Unlock()
 	return c.termEntriesLocked(self, inputs)
 }
 
@@ -144,8 +145,8 @@ func (c *Cache) AvailablePart(number uint64, address PersistedPartAddress, nowUn
 	if err != nil {
 		return PartAvailability{}, fmt.Errorf("available part: %w", err)
 	}
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workRemote)
+	defer read.Unlock()
 	return c.availablePartLocked(number, key, nowUnix)
 }
 
@@ -187,8 +188,8 @@ func (c *Cache) AvailableParts(queries []PartQuery, nowUnix int64) []PartAnswer 
 		}
 		keys[i] = key
 	}
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workRemote)
+	defer read.Unlock()
 	for i, q := range queries {
 		if out[i].Err == nil {
 			out[i].PartAvailability, out[i].Err = c.availablePartLocked(q.Number, keys[i], nowUnix)
@@ -197,32 +198,28 @@ func (c *Cache) AvailableParts(queries []PartQuery, nowUnix int64) []PartAnswer 
 			c.testBatchAnswered(i)
 		}
 		if i+1 < len(queries) {
-			c.giveWayLocked()
+			c.giveWayLocked(&read)
 		}
 	}
 	return out
 }
 
-// giveWayLocked lets egraphMu, held once for reading by a batch read, go and
-// takes it again when another acquisition waits for it, between two of the
-// batch's answers, as RemoteWrites lets its hold go between two writes: a
-// writer that comes during the batch then waits for the answer in progress,
-// not the batch, and so do the readers queued behind it. With nobody
-// waiting, the batch keeps its one hold; under steady writers it takes one
-// hold an answer. It gives way at once, however long its take waited: a
+// giveWayLocked lets egraphMu, held once for reading by a batch read as
+// read, go and takes it again when another acquisition waits for it,
+// between two of the batch's answers, as RemoteWrites lets its hold go
+// between two writes: a writer that comes during the batch then waits for
+// the answer in progress, not the batch, and so do the readers queued
+// behind it. With nobody waiting, the batch keeps its one hold; under
+// steady writers it takes one hold an answer. It gives way at once, however long its take waited: a
 // read that held the lock as long as its take waited kept a writer pending,
 // and a pending writer keeps every new reader out, which cost stopping
 // engines far more than it saved a pass. The cache can change between two
 // answers, so a batch carries no pointer across one.
-func (c *Cache) giveWayLocked() {
+func (c *Cache) giveWayLocked(read *wcprof.ReadHold) {
 	if !c.egraphMu.Waiting() {
 		return
 	}
-	c.egraphMu.RUnlock()
-	if c.testBatchGaveWay != nil {
-		c.testBatchGaveWay()
-	}
-	c.egraphMu.RLock()
+	read.Again(c.testBatchGaveWay)
 }
 
 // availablePartLocked is AvailablePart's answer for the part key of the
@@ -347,8 +344,8 @@ func (c *Cache) StoredState() (StoredState, error) {
 	if !c.blobBacked {
 		return StoredState{}, fmt.Errorf("stored state: the cache has no blob store")
 	}
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workUpkeep)
+	defer read.Unlock()
 	state := StoredState{Parts: map[uint64][]PersistedPartAddress{}}
 	for id := range c.persistedEdgesByResult {
 		if res := c.resultsByID[id]; res != nil && res.hasOwnValueLocked() {
@@ -371,8 +368,8 @@ func (c *Cache) StoredState() (StoredState, error) {
 // cache, and without keeping a copy of every entry's that has to change with
 // it.
 func (c *Cache) StoredParts(number uint64) []PersistedPartAddress {
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workRemote)
+	defer read.Unlock()
 	res := c.resultsByID[sharedResultID(number)]
 	if res == nil {
 		return nil
@@ -391,8 +388,8 @@ func (c *Cache) LiveBlobs() ([]digest.Digest, error) {
 	if !c.blobBacked {
 		return nil, fmt.Errorf("live blobs: the cache has no blob store")
 	}
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workUpkeep)
+	defer read.Unlock()
 	live := map[digest.Digest]struct{}{}
 	for _, res := range c.resultsByID {
 		for blob := range res.storedBlobsLocked() {
@@ -409,8 +406,8 @@ func (c *Cache) LivePacks() ([]digest.Digest, error) {
 	if !c.blobBacked {
 		return nil, fmt.Errorf("live packs: the cache has no blob store")
 	}
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workUpkeep)
+	defer read.Unlock()
 	live := map[digest.Digest]struct{}{}
 	for _, res := range c.resultsByID {
 		for _, part := range res.storedParts {
@@ -432,8 +429,8 @@ func (c *Cache) LivePackMembers() (map[digest.Digest]digest.Digest, error) {
 	if !c.blobBacked {
 		return nil, fmt.Errorf("live pack members: the cache has no blob store")
 	}
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workUpkeep)
+	defer read.Unlock()
 	members := map[digest.Digest]digest.Digest{}
 	for _, res := range c.resultsByID {
 		for _, part := range res.storedParts {
@@ -479,8 +476,8 @@ func (c *Cache) BlobCacheUsage() (BlobCacheUsage, error) {
 	if !c.blobBacked {
 		return BlobCacheUsage{}, fmt.Errorf("blob cache usage: the cache has no blob store")
 	}
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workUpkeep)
+	defer read.Unlock()
 	usage := BlobCacheUsage{
 		PoolValues:    c.pool.values,
 		PoolBytes:     c.pool.bytes,

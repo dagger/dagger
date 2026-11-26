@@ -133,8 +133,8 @@ func (r *graphReads) addSize(res *sharedResult, bytes int64, revision uint64) bo
 // decode names nothing.
 func (c *Cache) readGraphForDecode(ctx context.Context, root *sharedResult) *graphReads {
 	reads := &graphReads{rows: map[sharedResultID]*graphRead{}}
-	c.readLockGraphGathered(ctx)
-	defer c.egraphMu.RUnlock()
+	readHold := c.readLockGraphGathered(ctx, workLookup)
+	defer readHold.Unlock()
 	read := func(res *sharedResult) *graphRead {
 		row := &graphRead{res: res, noValue: res.noValueLocked(), offered: res.hasPartOffersLocked()}
 		reads.rows[res.id] = row
@@ -178,8 +178,8 @@ func (c *Cache) recordDecodedSizes(ctx context.Context, reads *graphReads) {
 	if len(sizes) == 0 {
 		return
 	}
-	c.readLockGraphGathered(ctx)
-	defer c.egraphMu.RUnlock()
+	read := c.readLockGraphGathered(ctx, workLookup)
+	defer read.Unlock()
 	for _, size := range sizes {
 		size.res.payloadMu.RLock()
 		current := size.res.payloadRevision == size.revision

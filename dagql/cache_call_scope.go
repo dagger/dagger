@@ -143,9 +143,9 @@ func (c *Cache) recordCallResultExpiry(ctx context.Context, scopes *CallScopes, 
 	if shared == nil {
 		return
 	}
-	c.readLockGraphGathered(ctx)
+	read := c.readLockGraphGathered(ctx, workPublication)
 	expiresAt := shared.expiresAtUnix
-	c.egraphMu.RUnlock()
+	read.Unlock()
 	scopes.recordExpiry(expiresAt)
 }
 

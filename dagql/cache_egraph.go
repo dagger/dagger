@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/dagger/dagger/util/hashutil"
 	set "github.com/hashicorp/go-set/v3"
 	"github.com/opencontainers/go-digest"
@@ -904,8 +903,8 @@ func (c *Cache) sessionStillSatisfiesResourceRequirements(ctx context.Context, s
 	if res.requiredSessionResourcesGen.Load() == requiredGenAtSelection {
 		return true
 	}
-	c.lookupReadLockGraph(ctx)
-	defer c.egraphMu.RUnlock()
+	read := c.lookupReadLockGraph(ctx)
+	defer read.Unlock()
 	return c.sessionSatisfiesResourceRequirementsLocked(sessionID, res)
 }
 
@@ -1436,10 +1435,10 @@ func (c *Cache) lookupCacheForRequest(
 	// the e-graph, and the hit's session claim changes only state with its
 	// own synchronization, so they run under the read lock and concurrent
 	// lookups do not queue behind each other.
-	c.lookupReadLockGraph(ctx)
+	readHold := c.lookupReadLockGraph(ctx)
 	retRes, hit, persistedEdgeExpiresAtUnix, needsWrite, err := c.lookupCacheForRequestLocked(ctx, sessionID, req, requestDigest, requestSelf, requestInputs, requestInputRefs, true)
 	if err != nil || (!hit && !needsWrite) {
-		c.egraphMu.RUnlock()
+		readHold.Unlock()
 		return retRes, hit, err
 	}
 	var (
@@ -1449,10 +1448,10 @@ func (c *Cache) lookupCacheForRequest(
 	)
 	if hit {
 		hitShared, trackedCount, requiredGenAtSelection, err = c.claimLookupHitLocked(ctx, sessionID, retRes)
-		c.egraphMu.RUnlock()
+		readHold.Unlock()
 	} else {
 		// The hit teaches the e-graph: look it up again under the write lock.
-		c.egraphMu.RUnlock()
+		readHold.Unlock()
 		c.lookupLockGraph(ctx)
 		retRes, hit, persistedEdgeExpiresAtUnix, _, err = c.lookupCacheForRequestLocked(ctx, sessionID, req, requestDigest, requestSelf, requestInputs, requestInputRefs, false)
 		if err == nil && hit {
@@ -1523,9 +1522,9 @@ func (c *Cache) lookupCacheForRequest(
 		// expiry captured at hit selection even if the barrier wait took long
 		// enough to cross a wall-clock second. A value its call declined to
 		// persist stays unpersisted.
-		c.lookupReadLockGraph(ctx)
+		readHold = c.lookupReadLockGraph(ctx)
 		unchanged := hitShared.persistDeclined || c.persistedEdgeUpsertUnchangedLocked(hitShared, persistedEdgeExpiresAtUnix)
-		c.egraphMu.RUnlock()
+		readHold.Unlock()
 		if !unchanged {
 			c.lookupLockGraph(ctx)
 			if !hitShared.persistDeclined {
@@ -1629,9 +1628,9 @@ func (c *Cache) teachContentDigest(ctx context.Context, shared *sharedResult, co
 		// body: it is decoded here, and replaced with the body below.
 		base := entryFrame{call: shared.loadResultCall()}
 		if base.call == nil {
-			c.egraphMu.RLock()
+			readHold := c.readGraphAs(workTeach)
 			base = shared.entryFrameLocked()
-			c.egraphMu.RUnlock()
+			readHold.Unlock()
 		}
 		baseFrame, err := base.decode()
 		if err != nil {
@@ -1681,9 +1680,9 @@ func (c *Cache) teachContentDigest(ctx context.Context, shared *sharedResult, co
 			parts *partFacts
 		)
 		if c.blobBacked {
-			c.egraphMu.RLock()
+			readHold := c.readGraphAs(workTeach)
 			env, was = shared.persistedEnvelope, shared.stored
-			c.egraphMu.RUnlock()
+			readHold.Unlock()
 			switch {
 			case was != nil:
 				if body, parts, err = was.reframe(c, shared.id, frame); err != nil {
@@ -1839,8 +1838,8 @@ func (c *Cache) resultIDForCall(ctx context.Context, frame *ResultCall) (sharedR
 		requestInputs = append(requestInputs, dig)
 	}
 
-	wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
-	defer c.egraphMu.RUnlock()
+	read := c.readGraph(ctx, workLookup)
+	defer read.Unlock()
 	match := c.lookupMatchForCallLocked(frame, requestDigest, requestSelf, requestInputs, time.Now().Unix())
 	if match.candidates == nil || match.candidates.Empty() {
 		return 0, fmt.Errorf("resolve result ID for call: no attached result for %s", requestDigest)

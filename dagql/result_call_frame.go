@@ -1367,13 +1367,13 @@ func recipeDigestForCachedResult(c *Cache, resultID sharedResultID, visiting map
 	if _, seen := visiting[resultID]; seen {
 		return "", fmt.Errorf("cycle while reconstructing recipe digest for shared result %d", resultID)
 	}
-	c.egraphMu.RLock()
+	read := c.readGraphAs(workOther)
 	res := c.resultsByID[resultID]
 	var held entryFrame
 	if res != nil {
 		held = res.entryFrameLocked()
 	}
-	c.egraphMu.RUnlock()
+	read.Unlock()
 	if res == nil {
 		return "", fmt.Errorf("missing shared result %d", resultID)
 	}
@@ -1420,13 +1420,13 @@ func contentPreferredDigestForCachedResult(c *Cache, resultID sharedResultID, vi
 	if _, seen := visiting[resultID]; seen {
 		return "", fmt.Errorf("cycle while reconstructing content-preferred digest for shared result %d", resultID)
 	}
-	c.egraphMu.RLock()
+	read := c.readGraphAs(workOther)
 	res := c.resultsByID[resultID]
 	var held entryFrame
 	if res != nil {
 		held = res.entryFrameLocked()
 	}
-	c.egraphMu.RUnlock()
+	read.Unlock()
 	if res == nil {
 		return "", fmt.Errorf("missing shared result %d", resultID)
 	}
@@ -1762,8 +1762,8 @@ func (c *Cache) resultCallByResultID(resultID sharedResultID) *ResultCall {
 	if resultID == 0 {
 		return nil
 	}
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workOther)
+	defer read.Unlock()
 	res := c.resultsByID[resultID]
 	if res == nil {
 		return nil

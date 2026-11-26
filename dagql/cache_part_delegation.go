@@ -6,8 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-
-	"github.com/dagger/dagger/engine/wcprof"
 )
 
 // The active path is per demand, independent of exhaustion and task lifetime.
@@ -216,9 +214,9 @@ func (c *Cache) demandDelegatedParent(ctx context.Context, pending *PartSourceLe
 	if err != nil {
 		return err
 	}
-	wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
+	read := c.readGraph(ctx, workPart)
 	allowed := proof.currentLocked(c, pending, proof.child)
-	c.egraphMu.RUnlock()
+	read.Unlock()
 	if !allowed {
 		return partRefused("delegation: proof not current after loading the parent")
 	}

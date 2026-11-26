@@ -1,6 +1,7 @@
 package dagql
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"testing"
@@ -67,7 +68,7 @@ func TestRemoteReadsAnswerAsTheCacheDoes(t *testing.T) {
 	remoteWritesScript(t, ctx, c)
 
 	want := remoteReadsScript(c)
-	r := c.HoldRemoteReads()
+	r := c.HoldRemoteReads(context.Background())
 	got := remoteReadsScript(r)
 	r.Release()
 	require.Equal(t, want, got)
@@ -89,7 +90,7 @@ func TestRemoteReadsReadOneMoment(t *testing.T) {
 	}
 	require.Len(t, numbers, 4)
 
-	r := c.HoldRemoteReads()
+	r := c.HoldRemoteReads(context.Background())
 	before := r.EntriesHeld(numbers, 2)
 	wrote := make(chan error, 1)
 	go func() {

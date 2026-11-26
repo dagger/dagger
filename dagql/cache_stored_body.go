@@ -694,13 +694,13 @@ func (c *Cache) holdRestoredFramesCompressed() error {
 		body *storedBody
 	}
 	var reads []read
-	c.egraphMu.RLock()
+	readHold := c.readGraphAs(workBody)
 	for _, res := range c.resultsByID {
 		if body := res.stored; body != nil && body.frame == nil && body.call != nil && body.call == res.loadResultCall() {
 			reads = append(reads, read{res: res, env: res.persistedEnvelope, was: body})
 		}
 	}
-	c.egraphMu.RUnlock()
+	readHold.Unlock()
 	if len(reads) == 0 {
 		return nil
 	}
@@ -883,7 +883,7 @@ func (c *Cache) applyTaughtContent(entries []*sharedResult) {
 	start := time.Now()
 	for _, res := range entries {
 		c.adoptReplacedContent(res)
-		c.egraphMu.RLock()
+		readHold := c.readGraphAs(workBody)
 		// An entry keeps its taught digests' state once it has one, so the
 		// state read here is the one checked below.
 		t := res.taughtContent
@@ -897,7 +897,7 @@ func (c *Cache) applyTaughtContent(entries []*sharedResult) {
 			from, frame = t.given, t.frame
 			pending = slices.Clone(t.digests[from:])
 		}
-		c.egraphMu.RUnlock()
+		readHold.Unlock()
 		if !live || len(pending) == 0 {
 			continue
 		}
@@ -952,13 +952,13 @@ func (c *Cache) queueRestoredTaughtContent() {
 // replaced content digests in the order the frame kept them, then its
 // content digest. The frame is decoded outside egraphMu.
 func (c *Cache) adoptReplacedContent(res *sharedResult) {
-	c.egraphMu.RLock()
+	read := c.readGraphAs(workBody)
 	t := res.taughtContent
 	var from entryFrame
 	if t != nil {
 		from = t.from
 	}
-	c.egraphMu.RUnlock()
+	read.Unlock()
 	if !from.ok() {
 		return
 	}
@@ -1069,13 +1069,13 @@ func (c *Cache) storeBodies(entries []*sharedResult) {
 		body *storedBody
 	}
 	reads := make([]read, 0, len(entries))
-	c.egraphMu.RLock()
+	readHold := c.readGraphAs(workBody)
 	for _, res := range entries {
 		if res.stored == nil && res.persistedEnvelope != nil && c.resultsByID[res.id] == res {
 			reads = append(reads, read{res: res, env: res.persistedEnvelope, call: res.loadResultCall()})
 		}
 	}
-	c.egraphMu.RUnlock()
+	readHold.Unlock()
 	for i := range reads {
 		body, err := newStoredBody(reads[i].res, reads[i].env, reads[i].call)
 		if err == nil {

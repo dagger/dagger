@@ -739,8 +739,8 @@ func (c *Cache) BootRestoredResults() int {
 	if c == nil {
 		return 0
 	}
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workUpkeep)
+	defer read.Unlock()
 	return c.bootRestoredResults
 }
 
@@ -750,8 +750,8 @@ func (c *Cache) PersistedResults() int {
 	if c == nil {
 		return 0
 	}
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workUpkeep)
+	defer read.Unlock()
 	return c.persistedResults
 }
 
@@ -762,8 +762,8 @@ func (c *Cache) PersistedWritten() int {
 	if c == nil {
 		return 0
 	}
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workUpkeep)
+	defer read.Unlock()
 	return c.persistedWritten
 }
 
@@ -775,8 +775,8 @@ func (c *Cache) PersistSnapshotHeld() time.Duration {
 	if c == nil {
 		return 0
 	}
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workUpkeep)
+	defer read.Unlock()
 	return c.persistSnapshotHeld
 }
 
@@ -800,8 +800,8 @@ func (c *Cache) LastSaveRead() SaveRead {
 	if c == nil {
 		return SaveRead{}
 	}
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workUpkeep)
+	defer read.Unlock()
 	w := c.persistWalk
 	return SaveRead{LongestHold: w.longest, Held: w.held, Took: w.took, Holds: w.pieces, Rounds: w.rounds, LastHoldUnits: w.last}
 }
@@ -960,9 +960,9 @@ func (c *Cache) trackSessionResult(ctx context.Context, sessionID string, res An
 		return nil
 	}
 
-	wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
+	read := c.readGraph(ctx, workDependency)
 	_, trackedCount, err := c.acquireSessionResultLocked(ctx, sessionID, shared)
-	c.egraphMu.RUnlock()
+	read.Unlock()
 	if err != nil {
 		return err
 	}
@@ -1604,9 +1604,9 @@ func (c *Cache) sessionResultInstallSpanContexts(ctx context.Context, sessionID 
 		return nil
 	}
 
-	walk := c.readLockGraphAs(ctx, "dagql.installSpans.walk")
+	walk := c.readLockGraphAs(ctx, "dagql.installSpans.walk", workOther)
 	ancestorIDs := c.installAncestorIDsLocked(resultID)
-	c.runlockGraphAs(walk)
+	c.runlockGraphAs(&walk)
 
 	wcprof.Lock(ctx, &c.sessionMu, sessionsLockIdent)
 	defer c.sessionMu.Unlock()
@@ -2068,8 +2068,8 @@ func (c *Cache) upsertPersistedEdgeLocked(ctx context.Context, res *sharedResult
 // left the cache.
 func (c *Cache) resultState(ctx context.Context, res *sharedResult, pendingEdge *pendingRetention) (CacheResultState, bool) {
 	parts, sizes := c.spanPartKeysAndSizes(ctx, res)
-	c.readLockGraphGathered(ctx)
-	defer c.egraphMu.RUnlock()
+	read := c.readLockGraphGathered(ctx, workOther)
+	defer read.Unlock()
 	if c.resultsByID[res.id] != res {
 		return CacheResultState{}, false
 	}
@@ -2526,9 +2526,9 @@ func (c *Cache) syncResultSnapshotLeasesLocked(ctx context.Context, res *sharedR
 func (c *Cache) snapshotsHeldByDependencies(ctx context.Context, res *sharedResult) map[string]struct{} {
 	deps, read := graphReadsOf(ctx).depsOf(res)
 	if !read {
-		c.readLockGraphGathered(ctx)
+		readHold := c.readLockGraphGathered(ctx, workDependency)
 		deps = c.dependencyResultsLocked(res)
-		c.egraphMu.RUnlock()
+		readHold.Unlock()
 	}
 	held := map[string]struct{}{}
 	for _, dep := range deps {
@@ -2573,14 +2573,14 @@ func (c *Cache) desiredImportedOwnerLeaseIDs(ctx context.Context) (map[string]st
 		return nil, nil
 	}
 
-	c.egraphMu.RLock()
+	read := c.readGraphAs(workUpkeep)
 	results := make([]*sharedResult, 0, len(c.resultsByID))
 	for _, res := range c.resultsByID {
 		if res != nil {
 			results = append(results, res)
 		}
 	}
-	c.egraphMu.RUnlock()
+	read.Unlock()
 
 	desired := make(map[string]struct{})
 	for _, res := range results {
@@ -2728,20 +2728,26 @@ func (c *Cache) unlockGraphAs(step Step) {
 // own, name, for a reader that may hold it long, such as a walk of the
 // graph: a writer that waits behind readers names only the readers, and the
 // step's op spans this reader's wait and hold, which a recording's analysis
-// lines up with that writer's wait. runlockGraphAs releases the lock and
-// ends the step. When nothing records, the step is empty and costs a nil
-// check.
-func (c *Cache) readLockGraphAs(ctx context.Context, name string) Step {
+// lines up with that writer's wait. Its hold is of the work ctx names, or
+// otherwise (readGraph). runlockGraphAs releases the lock and ends the step.
+// When nothing records, the step is empty and costs a nil check.
+func (c *Cache) readLockGraphAs(ctx context.Context, name string, otherwise cacheWork) graphReadStep {
 	ctx, step := BeginStep(ctx, name)
-	wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
-	return step
+	return graphReadStep{step: step, read: c.readGraph(ctx, otherwise)}
+}
+
+// graphReadStep is a hold of the graph lock for reading as a profile step
+// of its own (readLockGraphAs).
+type graphReadStep struct {
+	step Step
+	read wcprof.ReadHold
 }
 
 // runlockGraphAs releases the graph lock readLockGraphAs took as step, and
 // ends the step.
-func (c *Cache) runlockGraphAs(step Step) {
-	c.egraphMu.RUnlock()
-	step.End(nil)
+func (c *Cache) runlockGraphAs(step *graphReadStep) {
+	step.read.Unlock()
+	step.step.End(nil)
 }
 
 type Cache struct {
@@ -5437,8 +5443,8 @@ func (r Result[T]) WithSessionResourceHandle(ctx context.Context, handle Session
 		if err != nil {
 			return r, fmt.Errorf("set session resource handle on %T: current dagql cache: %w", r.Self(), err)
 		}
-		cache.egraphMu.RLock()
-		defer cache.egraphMu.RUnlock()
+		read := cache.readGraphAs(workDependency)
+		defer read.Unlock()
 
 		// Numeric result IDs are engine-lifetime unique, so a registered ID
 		// still names this exact result.
@@ -6811,9 +6817,9 @@ func (c *Cache) Size() int {
 	completedArbitrary := len(c.completedArbitraryCalls)
 	c.callsMu.Unlock()
 
-	c.egraphMu.RLock()
+	read := c.readGraphAs(workUpkeep)
 	completedCalls := len(c.resultOutputEqClasses)
-	c.egraphMu.RUnlock()
+	read.Unlock()
 
 	// TODO: Re-implement size accounting directly from egraph state instead of
 	// relying on mixed index-oriented counters.
@@ -6833,10 +6839,10 @@ func (c *Cache) EntryStats() CacheEntryStats {
 	}
 	c.callsMu.Unlock()
 
-	c.egraphMu.RLock()
+	read := c.readGraphAs(workUpkeep)
 	stats.CompletedCalls = len(c.resultOutputEqClasses)
 	stats.RetainedCalls = len(c.persistedEdgesByResult)
-	c.egraphMu.RUnlock()
+	read.Unlock()
 
 	return stats
 }
@@ -6848,8 +6854,8 @@ func (c *Cache) MetadataEstimate() CacheMetadataEstimate {
 	if c == nil {
 		return CacheMetadataEstimate{}
 	}
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workUpkeep)
+	defer read.Unlock()
 	return c.cacheMetadataEstimateLocked()
 }
 
@@ -6920,8 +6926,8 @@ func (c *Cache) UsageEntriesAll(ctx context.Context) []CacheUsageEntry {
 	if err := c.measureAllResultSizes(ctx); err != nil {
 		slog.Warn("measure cache usage", "err", err)
 	}
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workUpkeep)
+	defer read.Unlock()
 	entries := c.usageEntriesLocked(activeRoots)
 	return entries
 }

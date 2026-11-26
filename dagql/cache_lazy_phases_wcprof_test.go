@@ -119,7 +119,7 @@ func TestLazySpanCacheStateWaitsForGraphLockWcprof(t *testing.T) {
 		defer close(done)
 		c.lazySpanCacheState(evalCtx, row, nil)
 	}()
-	waitBlockedIn(t, "wcprof.ReadLock(")
+	waitBlockedIn(t, "wcprof.ReadLockAs(")
 	c.egraphMu.Unlock()
 	<-done
 	lazyOp.End(wcprof.OutcomeOK)

@@ -1199,7 +1199,7 @@ func (p *partPrefetcher) run(ctx context.Context, job *partPrefetchJob) {
 	}
 	// The job's offer is read under egraphMu, which a replacement holds to
 	// pass the job on, so the row and the job agree.
-	c.egraphMu.RLock()
+	readHold := c.readGraphAs(workPart)
 	p.mu.Lock()
 	offer := job.offer
 	p.mu.Unlock()
@@ -1213,7 +1213,7 @@ func (p *partPrefetcher) run(ctx context.Context, job *partPrefetchJob) {
 			gate.mu.Unlock()
 		}
 	}
-	c.egraphMu.RUnlock()
+	readHold.Unlock()
 	switch {
 	case !current:
 		p.log(job, "offer_gone", 0, 0, nil, time.Since(start), nil)

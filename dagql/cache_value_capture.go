@@ -508,8 +508,8 @@ func (cp *closureCopy) record(id uint64) (PersistedRecord, bool) {
 func (capture *HeldCapturedClosure) checkCopied(copied []bool, blockRow func(*capturedTransferRow, error)) {
 	c := capture.cache
 	now := time.Now().Unix()
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workExport)
+	defer read.Unlock()
 	for i, row := range capture.order {
 		if !copied[i] {
 			continue
@@ -609,9 +609,9 @@ func (capture *HeldCapturedClosure) copyLate(ctx context.Context, row *capturedT
 	if err := row.version.check(row.shared); err != nil {
 		return err
 	}
-	c.egraphMu.RLock()
+	read := c.readGraphAs(workExport)
 	moved := c.rowMovedLocked(row)
-	c.egraphMu.RUnlock()
+	read.Unlock()
 	if moved {
 		return fmt.Errorf("%w: row %d ownership changed", ErrPersistStateNotReady, row.shared.id)
 	}

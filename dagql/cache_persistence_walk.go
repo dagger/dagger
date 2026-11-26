@@ -698,7 +698,7 @@ type persistWalk struct {
 // whole store taken in that last hold.
 func (c *Cache) readStore() (rd *persistRead, walk persistWalk, nextResultID sharedResultID, writes uint64, full *persistRead, rerr error) {
 	rd = newPersistRead(&c.persistKept, c.persistSeed)
-	r := c.readInPiecesFor(persistPieceHold)
+	r := c.readInPiecesFor(graphHolders[workUpkeep], persistPieceHold)
 	r.report = func(d time.Duration) {
 		walk.held += d
 		if d > walk.longest {

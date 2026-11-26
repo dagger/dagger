@@ -1,6 +1,9 @@
 package dagql
 
 import (
+	"context"
+
+	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/opencontainers/go-digest"
 )
 
@@ -18,21 +21,20 @@ import (
 // own methods wait for a writer that waits for the hold. Only the Cloud uses
 // it, to resolve an engine's lookup of the calls its cache missed.
 type RemoteReads struct {
-	c *Cache
+	c    *Cache
+	read wcprof.ReadHold
 }
 
 // HoldRemoteReads takes the cache's lock for reading, until the returned
-// hold's Release.
-func (c *Cache) HoldRemoteReads() *RemoteReads {
-	c.egraphMu.RLock()
-	return &RemoteReads{c: c}
+// hold's Release, as the kind of work ctx names (ObserveGraphReadHolds).
+func (c *Cache) HoldRemoteReads(ctx context.Context) *RemoteReads {
+	return &RemoteReads{c: c, read: c.readGraph(ctx, workRemote)}
 }
 
 // Release ends the hold. The hold can't be used after.
 func (r *RemoteReads) Release() {
-	c := r.c
 	r.c = nil
-	c.egraphMu.RUnlock()
+	r.read.Unlock()
 }
 
 // EquivalentEntries is Cache.EquivalentEntries, in the hold.
@@ -47,7 +49,7 @@ func (r *RemoteReads) TermEntries(self digest.Digest, inputs []digest.Digest) []
 
 // EntriesHeld is Cache.EntriesHeld, in the hold, which it never gives way.
 func (r *RemoteReads) EntriesHeld(numbers []uint64, limit int) []EntryHeld {
-	return r.c.entriesHeldLocked(numbers, limit, false)
+	return r.c.entriesHeldLocked(numbers, limit, nil)
 }
 
 // CacheHoldings is Cache.CacheHoldings, in the hold.

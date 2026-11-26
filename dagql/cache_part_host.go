@@ -250,8 +250,8 @@ func (c *Cache) validateInlineBorrow(host *PartHost, req *CallRequest, val AnyRe
 	if host == nil || len(host.path) == 0 || host.cache != c || req.Receiver == nil {
 		return fmt.Errorf("invalid inline borrow")
 	}
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workPart)
+	defer read.Unlock()
 	if c.resultsByID[host.row.id] != host.row {
 		return fmt.Errorf("inline borrow owner disappeared")
 	}

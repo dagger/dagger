@@ -12,6 +12,7 @@ import (
 
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/opencontainers/go-digest"
 )
 
@@ -1922,8 +1923,8 @@ func (c *Cache) HolderClosure(key HolderKey) []HolderKey {
 			return keys
 		}
 	}
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workRemote)
+	defer read.Unlock()
 	return c.holderClosureLocked(key)
 }
 
@@ -1935,7 +1936,7 @@ const holderClosureTries = 3
 // when the cache's holdings changed between two pieces: its keys would mix
 // two states.
 func (c *Cache) holderClosureInPieces(key HolderKey) ([]HolderKey, bool) {
-	r := c.readInPieces()
+	r := c.readInPieces(graphHolders[workRemote])
 	defer r.done()
 	state := c.remoteCaches[key.Cache]
 	if state == nil {
@@ -2004,15 +2005,15 @@ func (c *Cache) holderClosureLocked(key HolderKey) []HolderKey {
 // reads in pieces, and its answer is still one state's.
 func (c *Cache) HolderGraph(cache CacheID, roots []uint64) map[uint64][]uint64 {
 	for range holderClosureTries {
-		r := c.readInPieces()
+		r := c.readInPieces(graphHolders[workRemote])
 		graph, ok := c.holderGraphLocked(cache, roots, r)
 		r.done()
 		if ok {
 			return graph
 		}
 	}
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workRemote)
+	defer read.Unlock()
 	graph, _ := c.holderGraphLocked(cache, roots, nil)
 	return graph
 }
@@ -2104,8 +2105,8 @@ type RemoteHoldingInfo struct {
 // RemoteEntryInfo returns what the cache holds for the entry of one holding,
 // read under one hold.
 func (c *Cache) RemoteEntryInfo(key HolderKey) (RemoteEntryInfo, bool) {
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workRemote)
+	defer read.Unlock()
 	entry, h := c.holdingLocked(key)
 	if h == nil {
 		return RemoteEntryInfo{}, false
@@ -2117,8 +2118,8 @@ func (c *Cache) RemoteEntryInfo(key HolderKey) (RemoteEntryInfo, bool) {
 // number, read under one hold. It reports false when the cache has no such
 // entry.
 func (c *Cache) EntryInfo(number uint64) (RemoteEntryInfo, bool) {
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workRemote)
+	defer read.Unlock()
 	return c.entryInfoLocked(number)
 }
 
@@ -2154,8 +2155,8 @@ type RemoteHeldEntry struct {
 // entry's holders or classes; it still clones and sorts all of the entry's
 // recipes, and grows with those.
 func (c *Cache) RemoteHoldingInfo(key HolderKey) (RemoteHeldEntry, bool) {
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workRemote)
+	defer read.Unlock()
 	return c.remoteHoldingInfoLocked(key)
 }
 
@@ -2164,15 +2165,15 @@ func (c *Cache) RemoteHoldingInfo(key HolderKey) (RemoteHeldEntry, bool) {
 // holding the cache doesn't have.
 func (c *Cache) RemoteHoldingInfos(keys []HolderKey) (held []RemoteHeldEntry, ok []bool) {
 	held, ok = make([]RemoteHeldEntry, len(keys)), make([]bool, len(keys))
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workRemote)
+	defer read.Unlock()
 	for i, key := range keys {
 		held[i], ok[i] = c.remoteHoldingInfoLocked(key)
 		if c.testBatchAnswered != nil {
 			c.testBatchAnswered(i)
 		}
 		if i+1 < len(keys) {
-			c.giveWayLocked()
+			c.giveWayLocked(&read)
 		}
 	}
 	return held, ok
@@ -2194,8 +2195,8 @@ func (c *Cache) remoteHoldingInfoLocked(key HolderKey) (RemoteHeldEntry, bool) {
 // describing the holding or the entry: for a caller that needs only which
 // entry a holding is on.
 func (c *Cache) HolderEntry(key HolderKey) (uint64, bool) {
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workRemote)
+	defer read.Unlock()
 	return c.holderEntryLocked(key)
 }
 
@@ -2214,8 +2215,8 @@ func (c *Cache) holderEntryLocked(key HolderKey) (uint64, bool) {
 // entry other than by the engine's own call span. It reports false when the
 // cache has no such entry, or no recipe names it.
 func (c *Cache) EntryRecipe(number uint64) (digest.Digest, bool) {
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workRemote)
+	defer read.Unlock()
 	return c.entryRecipeLocked(number)
 }
 
@@ -2246,8 +2247,8 @@ type EntryClass struct {
 // with how many engine caches hold them. It reports false when the cache has
 // no such entry.
 func (c *Cache) EntryClassEntries(number uint64) (EntryClass, bool) {
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workRemote)
+	defer read.Unlock()
 	return c.entryClassEntriesLocked(number)
 }
 
@@ -2282,8 +2283,8 @@ func (c *Cache) entryClassEntriesLocked(number uint64) (EntryClass, bool) {
 // (cacheHolderRefsLocked). An entry the cache doesn't have, or one the engine cache
 // holds nothing on, is skipped.
 func (c *Cache) CacheHoldings(cache CacheID, numbers []uint64) []RemoteHeldEntry {
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workRemote)
+	defer read.Unlock()
 	return c.cacheHoldingsLocked(cache, numbers)
 }
 
@@ -2327,18 +2328,19 @@ type EntryHeld struct {
 // it describes no holding, digest or term, so its cost grows with the
 // entries, and with their holders only when it lists their keys.
 func (c *Cache) EntriesHeld(numbers []uint64, limit int) []EntryHeld {
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
-	return c.entriesHeldLocked(numbers, limit, true)
+	read := c.readGraphAs(workRemote)
+	defer read.Unlock()
+	return c.entriesHeldLocked(numbers, limit, &read)
 }
 
 // entriesHeldLocked is EntriesHeld, giving way between two entries if
-// giveWay is set (giveWayLocked). Requires egraphMu for reading.
-func (c *Cache) entriesHeldLocked(numbers []uint64, limit int, giveWay bool) []EntryHeld {
+// giveWay, the read's hold, is set (giveWayLocked). Requires egraphMu for
+// reading.
+func (c *Cache) entriesHeldLocked(numbers []uint64, limit int, giveWay *wcprof.ReadHold) []EntryHeld {
 	out := make([]EntryHeld, 0, len(numbers))
 	for i, number := range numbers {
-		if i > 0 && giveWay {
-			c.giveWayLocked()
+		if i > 0 && giveWay != nil {
+			c.giveWayLocked(giveWay)
 		}
 		entry := c.resultsByID[sharedResultID(number)]
 		if entry == nil {
@@ -2384,12 +2386,12 @@ type EntryFacts struct {
 // descriptions reads only what an entry named by a change (RemoteChange's
 // Entries) can have changed of them.
 func (c *Cache) EntriesFacts(numbers []uint64) []EntryFacts {
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workRemote)
+	defer read.Unlock()
 	out := make([]EntryFacts, 0, len(numbers))
 	for i, number := range numbers {
 		if i > 0 {
-			c.giveWayLocked()
+			c.giveWayLocked(&read)
 		}
 		entry := c.resultsByID[sharedResultID(number)]
 		if entry == nil {
@@ -2539,8 +2541,8 @@ type HoldingFacts struct {
 // read, and the caller must not change them. It reports false when the
 // cache has no such holding.
 func (c *Cache) HoldingFacts(key HolderKey) (HoldingFacts, bool) {
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	read := c.readGraphAs(workRemote)
+	defer read.Unlock()
 	_, h := c.holdingLocked(key)
 	if h == nil {
 		return HoldingFacts{}, false
