@@ -1,6 +1,7 @@
 package dagql
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -140,12 +141,25 @@ func TestStoredValueEncodedSizeWritesNothingOut(t *testing.T) {
 func storedBodyTestHeap() int64 {
 	if enc, _, err := storedBodyCodec(); err == nil {
 		enc.EncodeAll([]byte("{}"), nil)
+		storedBodyTestWarmBlockEncoder()
 	}
 	runtime.GC()
 	runtime.GC()
 	var stats runtime.MemStats
 	runtime.ReadMemStats(&stats)
 	return int64(stats.HeapAlloc)
+}
+
+// storedBodyTestWarmBlockEncoder has each state of the block encoder
+// (storedBodyBlockEncoder), one a core, compress a record of a block, so that
+// each has made its buffers, which a state makes on its first record, before
+// a test measures the heap: the encoder hands its states out in turn, so one
+// compression a state reaches them all.
+func storedBodyTestWarmBlockEncoder() {
+	raw := bytes.Repeat([]byte(`{"field":"value"},`), 6000)
+	for range runtime.GOMAXPROCS(0) {
+		storedBodyBlockEncoder.EncodeAll(raw, nil)
+	}
 }
 
 // storedBodyTestRecordBytes is the mean size of the Cloud's records as
