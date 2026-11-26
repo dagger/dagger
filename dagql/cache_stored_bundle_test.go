@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -279,7 +280,7 @@ func TestStoredBundleBorrowsThroughThePlacementRule(t *testing.T) {
 
 // A stored bundle racing a merge that replaces an expired stored record
 // carries either the old record with its own part or the new record without
-// it, never a mix: the walk and every copy happen in one hold, and the
+// it, never a mix: a record and its outputs are copied in one hold, and the
 // replacement takes the lock for writing.
 func TestStoredBundleNeverMixesAReplacement(t *testing.T) {
 	t.Parallel()
@@ -318,6 +319,303 @@ func TestStoredBundleNeverMixesAReplacement(t *testing.T) {
 		}
 		require.Equal(t, r, rootValue.SenderNumber, "the entry is replaced, never retired")
 	}
+}
+
+// storedBundleTestChain merges an export of a chain of n entries, each
+// depending on the one before, into a new Cloud cache whose records stay
+// whole, and returns the Cloud's number for the chain's top.
+func storedBundleTestChain(t *testing.T, n int) (context.Context, *Cache, uint64) {
+	t.Helper()
+	actx, a, asrv := transferTestCache(t)
+	prev := persistedListTestResult(t, actx, a, asrv, "chain-0", &transferTestValue{Text: "0"})
+	for i := 1; i < n; i++ {
+		next := persistedListTestResult(t, actx, a, asrv, fmt.Sprintf("chain-%d", i), &transferTestValue{Text: fmt.Sprint(i)})
+		transferTestDependency(a, actx, next, prev)
+		prev = next
+	}
+	bundle := exportTestBundle(t, actx, a, prev)
+	ctx, cloud := storedPartTestCache(t, WithBlobStore())
+	storedTestHoldWhole(cloud)
+	reply, err := cloud.MergeValues(ctx, "cache-a", bundle)
+	require.NoError(t, err)
+	for _, value := range reply.Values {
+		if value.Ordinal == bundle.Roots[0].Ordinal {
+			return ctx, cloud, value.Number
+		}
+	}
+	t.Fatal("the merge has no row for the chain's top")
+	return nil, nil, 0
+}
+
+// A stored bundle's build is a read in pieces: each entry it walks and each
+// it copies is a step, between which it can let egraphMu go, so that a
+// writer waits for one piece of the build rather than all of it. Read in
+// pieces of one step, a bundle of a chain of twelve entries lets the lock go
+// at least once for each entry walked and each copied, and, as nothing
+// writes meanwhile, carries what a build that never let it go carries, at
+// the same position.
+func TestStoredBundleIsAReadInPieces(t *testing.T) {
+	t.Parallel()
+	const depth = 12
+	ctx, cloud, top := storedBundleTestChain(t, depth)
+	now := time.Now().Unix()
+	held, err := cloud.StoredBundle(ctx, []uint64{top}, now, nil)
+	require.NoError(t, err)
+	require.Len(t, held.Bundle.Values, depth)
+
+	cloud.readPieceSize = 1
+	yields := 0
+	cloud.testReadPieceYielded = func() { yields++ }
+	pieces, err := cloud.StoredBundle(ctx, []uint64{top}, now, nil)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, yields, 2*depth, "a step for each entry walked and each copied")
+	require.Equal(t, held.Position, pieces.Position)
+	require.Equal(t, string(mustTransferJSON(t, held.Bundle)), string(mustTransferJSON(t, pieces.Bundle)), "what one hold carries")
+}
+
+// A stored bundle's build gives way to a writer that waits for egraphMu:
+// once it has held the lock for a piece's time with a writer waiting, it
+// lets the lock go at its next step, and the writer takes it while the
+// build is under way, not once the build ends. Here the writer comes as the
+// build copies the chain's first record, and the copy holds the lock past a
+// piece's time.
+func TestStoredBundleGivesWayToAWaitingWriter(t *testing.T) {
+	t.Parallel()
+	const depth = 12
+	ctx, cloud, top := storedBundleTestChain(t, depth)
+	wrote := make(chan struct{})
+	started := false
+	cloud.testStoredTransferNormalized = func() {
+		if started {
+			return
+		}
+		started = true
+		go func() {
+			cloud.egraphMu.Lock()
+			defer cloud.egraphMu.Unlock()
+			// The writer has the lock.
+			close(wrote)
+		}()
+		for !cloud.egraphMu.Waiting() {
+			runtime.Gosched()
+		}
+		time.Sleep(storedBundlePieceHold)
+	}
+	between := false
+	cloud.testReadPieceYielded = func() {
+		select {
+		case <-wrote:
+			between = true
+		case <-time.After(10 * time.Second):
+		}
+	}
+	got, err := cloud.StoredBundle(ctx, []uint64{top}, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	require.Len(t, got.Bundle.Values, depth)
+	require.True(t, started, "the writer came during the build")
+	require.True(t, between, "the writer took the lock between two of the build's pieces")
+	<-wrote
+}
+
+// A write while a stored bundle's build gives way that has an entry the
+// build walked name an entry the walk didn't reach has the bundle built
+// again in one hold, as the cache then stands. Here, read in pieces of one
+// step, a part is stored on R after the walk of R and P and before R's copy,
+// owned by Q, outside R's closure: the bundle carries Q and the part, as a
+// build after the write does.
+func TestStoredBundleIsBuiltAgainWhenAWriteMovesAnEntryPastItsWalk(t *testing.T) {
+	t.Parallel()
+	ctx, cloud, r, _ := storedBundleTestCloudIn(t, "root", true)
+	source, _ := mergeTestSource(t, "bundle-owner", "owner")
+	reply, err := cloud.MergeValues(ctx, "cache-b", source)
+	require.NoError(t, err)
+	q := reply.Imported()[0].ResultID
+
+	cloud.readPieceSize = 1
+	yields := 0
+	cloud.testReadPieceYielded = func() {
+		// The first two steps walk R and P, and the third begins the copy.
+		if yields++; yields != 3 {
+			return
+		}
+		part := testLiveOffer()
+		part.Owner.DependencyIDs = []uint64{q}
+		stored, _, err := cloud.SetStoredPart(ctx, r, part, 0)
+		require.NoError(t, err)
+		require.True(t, stored)
+	}
+	now := time.Now().Unix()
+	got, err := cloud.StoredBundle(ctx, []uint64{r}, now, nil)
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), cloud.StoredBundlesBuiltAgain(), "built again in one hold")
+	var senders []uint64
+	for _, value := range got.Bundle.Values {
+		senders = append(senders, value.SenderNumber)
+	}
+	require.Contains(t, senders, q, "the part's owner")
+	require.Len(t, got.Bundle.Outputs, 1, "the part")
+
+	cloud.testReadPieceYielded = nil
+	after, err := cloud.StoredBundle(ctx, []uint64{r}, now, nil)
+	require.NoError(t, err)
+	require.Equal(t, string(mustTransferJSON(t, after.Bundle)), string(mustTransferJSON(t, got.Bundle)), "what a build after the write carries")
+}
+
+// A replacement while a stored bundle's build gives way that drops a
+// dependency the walk followed has the bundle built again in one hold: the
+// row the walk placed for the dependency would be outside the roots'
+// closure. Here, read in pieces of one step, R, expired, is replaced by a
+// record with no dependency after P's copy and before R's: the bundle
+// carries R's new record alone, as a build after the replacement does.
+func TestStoredBundleIsBuiltAgainWhenAReplacementDropsWhatItWalked(t *testing.T) {
+	t.Parallel()
+	ctx, cloud, r, _ := storedBundleTestCloudIn(t, "old", true)
+	mergeTestExpire(cloud, storedBundleTestEntry(cloud, r))
+	fresh, _ := mergeTestSource(t, "bundle-root", "new")
+	cloud.readPieceSize = 1
+	yields := 0
+	cloud.testReadPieceYielded = func() {
+		// The first two steps walk R and P, the third copies P, and the
+		// fourth copies R.
+		if yields++; yields != 4 {
+			return
+		}
+		_, err := cloud.MergeValues(ctx, "cache-b", fresh)
+		require.NoError(t, err)
+	}
+	got, err := cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), cloud.StoredBundlesBuiltAgain(), "built again in one hold")
+	require.Len(t, got.Bundle.Values, 1, "R alone")
+	require.Equal(t, r, got.Bundle.Values[0].SenderNumber)
+	require.Positive(t, got.Bundle.Values[0].SenderReplacements, "R's new record")
+	require.Contains(t, string(sentRecord(t, got.Bundle.Values[0]).Envelope.ObjectJSON), "new")
+}
+
+// A replacement while a stored bundle's build gives way of a record the
+// build has already copied has the bundle built again in one hold: a record
+// copied after it may name the entry for its new record, and the bundle
+// would carry the old one. Here, read in pieces of one step, P, expired, is
+// replaced in place after its copy and before R's: the bundle carries P's
+// new record, as a build after the replacement does.
+func TestStoredBundleIsBuiltAgainWhenARecordItCopiedIsReplaced(t *testing.T) {
+	t.Parallel()
+	ctx, cloud, r, p := storedBundleTestCloudIn(t, "root", true)
+	mergeTestExpire(cloud, storedBundleTestEntry(cloud, p))
+	fresh, _ := mergeTestSource(t, "bundle-dep", "new dep")
+	cloud.readPieceSize = 1
+	yields := 0
+	cloud.testReadPieceYielded = func() {
+		if yields++; yields != 4 {
+			return
+		}
+		_, err := cloud.MergeValues(ctx, "cache-b", fresh)
+		require.NoError(t, err)
+	}
+	got, err := cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), cloud.StoredBundlesBuiltAgain(), "built again in one hold")
+	var dep TransferredValue
+	for _, value := range got.Bundle.Values {
+		if value.SenderNumber == p {
+			dep = value
+		}
+	}
+	require.Positive(t, dep.SenderReplacements, "P's new record")
+	require.Contains(t, string(sentRecord(t, dep).Envelope.ObjectJSON), "new dep")
+}
+
+// A prune while a stored bundle's build gives way that drops the value of an
+// entry the build walked, before its copy, has the bundle built again in one
+// hold, which finds the entry with no value. Here, read in pieces of one
+// step, R's and P's values are dropped after P's copy and before R's.
+func TestStoredBundleIsBuiltAgainWhenAValueItWalkedIsDropped(t *testing.T) {
+	t.Parallel()
+	ctx, cloud, r, _ := storedBundleTestCloudIn(t, "root", true)
+	cloud.readPieceSize = 1
+	yields := 0
+	cloud.testReadPieceYielded = func() {
+		if yields++; yields != 4 {
+			return
+		}
+		_, removed, dropped, err := cloud.removePrunedEdge(ctx, sharedResultID(r))
+		require.NoError(t, err)
+		require.True(t, removed)
+		require.Equal(t, 2, dropped)
+	}
+	got, err := cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), cloud.StoredBundlesBuiltAgain(), "built again in one hold")
+	require.Equal(t, []uint64{r}, got.NoValue, "R has no value")
+	require.Empty(t, got.Bundle.Values)
+}
+
+// A prune and a merge that fills the entry again while a stored bundle's
+// build gives way, of a value the build has already copied, have the bundle
+// built again in one hold, as a replacement does, though neither counts as
+// one. Here, read in pieces of one step, R's and P's values are dropped and
+// filled again by another engine's export after P's copy and before R's: R
+// is copied as it was filled, and the bundle would carry P's old value
+// beside it. It carries both new values, as a build after the merge does.
+func TestStoredBundleIsBuiltAgainWhenAValueItCopiedIsDroppedAndFilledAgain(t *testing.T) {
+	t.Parallel()
+	ctx, cloud, r, p := storedBundleTestCloudIn(t, "root", true)
+	actx, a, asrv := transferTestCache(t)
+	root := persistedListTestResult(t, actx, a, asrv, "bundle-root", &transferTestValue{Text: "again"})
+	dep := persistedListTestResult(t, actx, a, asrv, "bundle-dep", &transferTestValue{Text: "dep again"})
+	transferTestDependency(a, actx, root, dep)
+	again := exportTestBundle(t, actx, a, root)
+	cloud.readPieceSize = 1
+	yields := 0
+	cloud.testReadPieceYielded = func() {
+		if yields++; yields != 4 {
+			return
+		}
+		_, removed, dropped, err := cloud.removePrunedEdge(ctx, sharedResultID(r))
+		require.NoError(t, err)
+		require.True(t, removed)
+		require.Equal(t, 2, dropped)
+		reply, err := cloud.MergeValues(ctx, "cache-b", again)
+		require.NoError(t, err)
+		require.Equal(t, r, reply.Imported()[0].ResultID, "the same entry")
+	}
+	got, err := cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), cloud.StoredBundlesBuiltAgain(), "built again in one hold")
+	texts := map[uint64]string{}
+	for _, value := range got.Bundle.Values {
+		texts[value.SenderNumber] = string(sentRecord(t, value).Envelope.ObjectJSON)
+	}
+	require.Contains(t, texts[r], "again")
+	require.Contains(t, texts[p], "dep again", "P's new value")
+}
+
+// A write while a stored bundle's build gives way that changes an entry the
+// build walked only within what the bundle carries leaves the build going:
+// the entry is copied as the write left it. The bundle's position is the
+// cache's as the build began, so the entry reads as changed since it
+// (ChangedSince), as the write came after. Here, read in pieces of one step,
+// a part owned by P is stored on R between R's walk and its copy.
+func TestStoredBundleCopiesAnEntryAsAWriteLeftIt(t *testing.T) {
+	t.Parallel()
+	ctx, cloud, r, p := storedBundleTestCloudIn(t, "root", true)
+	cloud.readPieceSize = 1
+	yields := 0
+	cloud.testReadPieceYielded = func() {
+		if yields++; yields != 3 {
+			return
+		}
+		part := testLiveOffer()
+		part.Owner.DependencyIDs = []uint64{p}
+		stored, _, err := cloud.SetStoredPart(ctx, r, part, 0)
+		require.NoError(t, err)
+		require.True(t, stored)
+	}
+	got, err := cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	require.Zero(t, cloud.StoredBundlesBuiltAgain(), "not built again")
+	require.Len(t, got.Bundle.Outputs, 1, "R's part, stored after R's walk")
+	require.Equal(t, []bool{true}, cloud.ChangedSince([]uint64{r}, got.Position), "R changed since the bundle's position")
 }
 
 // A stored bundle carries an entry's current record and call: a build after a

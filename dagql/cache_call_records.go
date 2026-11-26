@@ -310,6 +310,7 @@ func (c *Cache) storedBundleCallsLocked(build *storedBundleBuild, start, passedS
 		if len(res.keptCallsLocked()) == 0 {
 			continue
 		}
+		build.step()
 		for _, group := range c.keptCallTermsLocked(res) {
 			if group = c.sendableCallsLocked(build.heldBy, build.terms, group); len(group) == 0 {
 				continue
