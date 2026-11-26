@@ -42,10 +42,16 @@ const StoredSizesAloneMax = 64
 //
 // A walk in pieces that a write lands in reads each entry as the write left
 // it if it reaches it after, as StoredSizes does: with no write during it,
-// it answers what StoredSizes answers root by root.
+// it answers what StoredSizes answers root by root. A root that goes as a
+// part of another root's merge (HeldBy.Parts) is priced as StoredSizes
+// prices it, adding no input; a walk through held entries (HeldBy.Through)
+// isn't priced alone.
 func (c *Cache) StoredSizesAlone(ctx context.Context, roots []uint64, nowUnix int64, held *HeldBy) ([]StoredSize, error) {
 	if !c.blobBacked {
 		return nil, fmt.Errorf("stored sizes alone: the cache has no blob store")
+	}
+	if held != nil && held.Through != nil {
+		return nil, fmt.Errorf("stored sizes alone: a walk through held entries isn't priced alone")
 	}
 	if len(roots) > StoredSizesAloneMax {
 		return nil, fmt.Errorf("stored sizes alone: %d roots, more than %d", len(roots), StoredSizesAloneMax)
@@ -91,6 +97,9 @@ type aloneWalk struct {
 	index  map[sharedResultID]int32
 	nodes  []aloneNode
 	misses []storedSizeMiss
+	// parts are the roots that go as parts of another root's merge
+	// (HeldBy.Parts), a bit a root.
+	parts uint64
 	// layers are the layers the entries' parts name, each once, by their
 	// place in it (layerAt); a layer names its blob and its pack by their
 	// places in blobAt and packAt.
@@ -166,6 +175,9 @@ func (w *aloneWalk) walk(roots []uint64) []int32 {
 	w.inPieces(func() {
 		for i, number := range roots {
 			starts[i] = -1
+			if w.held.partLocked(sharedResultID(number)) {
+				w.parts |= uint64(1) << i
+			}
 			res := w.c.resultsByID[sharedResultID(number)]
 			if res == nil || res.noValueLocked() {
 				continue
@@ -392,6 +404,18 @@ func (w *aloneWalk) choose(next aloneSpread, terms *namedTerms, reached []aloneS
 				}
 			}
 			left &^= same
+			// The roots that are parts place the call only if each of its
+			// inputs is one they have, which those roots answer alike: else
+			// it goes with their root's own merge (HeldBy.Parts).
+			for _, place := range places {
+				if place != nil && w.mineOf(place.id)>>root&1 == 0 && !w.held.heldLocked(place, w.now) {
+					same &^= w.parts
+					break
+				}
+			}
+			if same == 0 {
+				continue
+			}
 			call := aloneCall{roots: same}
 			for _, place := range places {
 				if place == nil {

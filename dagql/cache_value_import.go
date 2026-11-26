@@ -411,9 +411,17 @@ func bundleClosure(bundle ValueBundle, rows bundleRows, edges func(id uint64, ro
 		}
 	}
 	// A row outside the roots' closure is one a call alone names, as the row
-	// placing an input (TransferredCall.Inputs): a held row, standing for the
-	// recipient's own entry, which no root needs. It is no row of the merge.
+	// placing an input (TransferredCall.Inputs), or as its value, an entry
+	// below what a split's parts landed (HeldBy.Through): a held row,
+	// standing for the recipient's own entry, which no root needs. It is no
+	// row of the merge.
 	for i, transferred := range bundle.Calls {
+		if id := uint64(transferred.Value); seen[id] == 0 {
+			if row, ok := rows.get(id); !ok || row.Held == "" {
+				return nil, fmt.Errorf("call %d: its value's row %d is outside the roots' closure and not held", i, id)
+			}
+			seen[id] = 2
+		}
 		for j, input := range transferred.Inputs {
 			id := uint64(input)
 			if id == 0 || seen[id] != 0 {

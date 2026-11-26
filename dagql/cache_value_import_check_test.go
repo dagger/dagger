@@ -72,6 +72,12 @@ func TestAStoredBundlesCheckFindsEachFault(t *testing.T) {
 		{"a row outside the roots' closure", func(b *ValueBundle, _ map[uint64][]declaredPart) {
 			b.Values = append(b.Values, TransferredValue{Ordinal: 3, SenderNumber: 9, Record: PersistedRecord{ResultID: 9}, Held: "xxh3:fedcba9876543210"})
 		}, "outside its root closure"},
+		{"a call's value outside the roots' closure, not held", func(b *ValueBundle, s map[uint64][]declaredPart) {
+			frame := &ResultCall{Kind: ResultCallKindField, Field: "outside", Type: NewResultCallType((&transferTestValue{}).Type())}
+			b.Values = append(b.Values, TransferredValue{Ordinal: 3, SenderNumber: 9, Record: PersistedRecord{ResultID: 9, Call: frame}})
+			s[3] = []declaredPart{}
+			b.Calls = []TransferredCall{{Call: "call", Value: 3}}
+		}, "call 0: its value's row 3 is outside the roots' closure and not held"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

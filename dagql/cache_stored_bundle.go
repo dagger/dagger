@@ -128,6 +128,25 @@ type HeldBy struct {
 	// matches a kept call's over the classes their inputs have when they are
 	// compared.
 	Terms []RemoteTerm
+	// Parts, if set, names the roots a bundle carries as parts of another
+	// root's merge, as a split sends them ahead of it: a walk of such a root
+	// places a call kept on what it reaches only on inputs the bundle's
+	// ordinary closures carry or the recipient holds, and adds no input of
+	// its own. A call it can't place so waits for that root's own merge,
+	// which walks through the parts (Through) and sends it. It is called
+	// under the cache's lock, as Also is.
+	Parts func(root uint64) bool
+	// Through, if set, names entries the recipient holds that a walk goes
+	// through rather than stopping at, as the merge of a split root walks
+	// the parts that went ahead of it: the walk reaches the dependencies the
+	// recipient holds, going on below those Through names and stopping at
+	// the others, as at a held row, so that the calls kept on all it reaches
+	// go, placed on what the bundle carries or the recipient holds. Such an entry goes as a held row only when a record
+	// the bundle carries depends on it, or a call names it, as its value or
+	// an input: then the call alone names it, outside the roots' closure.
+	// One the recipient doesn't hold goes as any entry does. It is called
+	// under the cache's lock, as Also is.
+	Through func(number uint64) bool
 
 	// named indexes Terms by self digest, built once for every walk of
 	// the recipient's bundles, prices and closures (heldTerms), and
@@ -230,6 +249,18 @@ func (c *Cache) sendableCallsLocked(h *HeldBy, terms *namedTerms, group []*keptC
 		return group
 	}
 	return nil
+}
+
+// partLocked reports whether root goes as a part of another root's merge
+// (Parts). Requires egraphMu.
+func (h *HeldBy) partLocked(root sharedResultID) bool {
+	return h != nil && h.Parts != nil && h.Parts(uint64(root))
+}
+
+// throughLocked reports whether a walk goes through res, if the recipient
+// holds it (Through). Requires egraphMu.
+func (h *HeldBy) throughLocked(res *sharedResult) bool {
+	return h != nil && h.Through != nil && h.Through(uint64(res.id))
 }
 
 // heldLocked reports whether the recipient holds res at nowUnix. A nil
@@ -486,7 +517,7 @@ func (c *Cache) storedBundleWalkLocked(rootEntries []*sharedResult, nowUnix int6
 		seenRoot[res.id] = true
 	}
 	build := &storedBundleBuild{now: nowUnix, ordinals: map[sharedResultID]TransferOrdinal{}, heldBy: held, terms: newNamedTerms(held, nil), notWhole: notWhole, held: map[sharedResultID]bool{},
-		owners: map[sharedResultID]int{}, ordinary: map[sharedResultID]bool{}, rootSeen: seenRoot}
+		owners: map[sharedResultID]int{}, ordinary: map[sharedResultID]bool{}, rootSeen: seenRoot, passedSeen: map[sharedResultID]bool{}}
 	build.bundle.Version = ValueBundleVersion
 	if c.identity.ID != "" {
 		build.bundle.SenderCache = c.identity.String()
@@ -494,14 +525,15 @@ func (c *Cache) storedBundleWalkLocked(rootEntries []*sharedResult, nowUnix int6
 	visiting := map[sharedResultID]bool{}
 	for i, res := range rootEntries {
 		build.current = i
-		start := len(build.order)
+		build.part = held.partLocked(res.id)
+		start, passedStart := len(build.order), len(build.passed)
 		if err := c.storedBundleVisitLocked(build, res, visiting); err != nil {
 			return nil, err
 		}
 		for _, entry := range build.order[start:] {
 			build.ordinary[entry.id] = true
 		}
-		if err := c.storedBundleCallsLocked(build, start); err != nil {
+		if err := c.storedBundleCallsLocked(build, start, passedStart); err != nil {
 			return nil, fmt.Errorf("stored bundle: %w", err)
 		}
 	}
@@ -650,6 +682,14 @@ type storedBundleBuild struct {
 	owners   map[sharedResultID]int
 	current  int
 	ordinary map[sharedResultID]bool
+	// passed are the entries the recipient holds that the build went
+	// through (HeldBy.Through), and those it reached below them, in the
+	// order it reached them, each in passedSeen: one a record or a call
+	// names goes as a held row (nameLocked). part marks the root the build walks as a part of
+	// another root's merge (HeldBy.Parts).
+	passed     []*sharedResult
+	passedSeen map[sharedResultID]bool
+	part       bool
 	// stored has, by ordinal, the declared parts of each value the build
 	// carries compressed (addStoredValue).
 	stored map[uint64][]declaredPart
@@ -748,6 +788,46 @@ func (build *storedBundleBuild) holdsLocked(res *sharedResult) bool {
 	return held
 }
 
+// storedBundlePassLocked goes through res, an entry the recipient holds
+// that the build goes through (HeldBy.Through), for the calls kept on it
+// and below it (storedBundleCallsLocked): res stands for its closure, as a
+// held row does. Of its dependencies, those the recipient holds are
+// reached, each with no row until a record or a call names it
+// (nameLocked), for the calls kept on them; the build goes on below those
+// it goes through, and stops at the others, as it stops at a held row.
+// Requires egraphMu.
+func (build *storedBundleBuild) storedBundlePassLocked(c *Cache, res *sharedResult) {
+	build.passedSeen[res.id] = true
+	build.passed = append(build.passed, res)
+	for _, id := range storedClosureChildrenLocked(res) {
+		child := c.resultsByID[id]
+		if child == nil || build.ordinals[id] != 0 || build.passedSeen[id] || !build.holdsLocked(child) {
+			continue
+		}
+		if build.heldBy.throughLocked(child) {
+			build.storedBundlePassLocked(c, child)
+			continue
+		}
+		build.passedSeen[id] = true
+		build.passed = append(build.passed, child)
+	}
+}
+
+// nameLocked gives res, an entry the build reached through what it goes
+// through (storedBundlePassLocked) with no row, a held row the first time a
+// record that depends on it, or a call, as its value or an input, names it. A row only a call names is reached by no
+// root's closure, so the recipient reads it for the call alone, as it does
+// a held input's (TransferredCall). Requires egraphMu.
+func (build *storedBundleBuild) nameLocked(res *sharedResult) {
+	if !build.passedSeen[res.id] || build.ordinals[res.id] != 0 {
+		return
+	}
+	build.held[res.id] = true
+	build.order = append(build.order, res)
+	build.ordinals[res.id] = TransferOrdinal(len(build.order))
+	build.owners[res.id] = build.current
+}
+
 // relocate rewrites a reference to an entry of the closure to its ordinal.
 func (build *storedBundleBuild) relocate(ref *PersistedRef) error {
 	if ref.RecipeID != nil || ref.ResultID == 0 {
@@ -764,9 +844,16 @@ func (build *storedBundleBuild) relocate(ref *PersistedRef) error {
 // storedBundleVisitLocked adds res's closure to the build in dependency
 // order: its dependencies, and the entries its own stored parts' owners and
 // services name, before it. An entry the recipient holds is added alone, as
-// a held row. Requires egraphMu.
+// a held row; the build goes through one HeldBy.Through names for the
+// calls kept below it (storedBundlePassLocked). Requires egraphMu.
 func (c *Cache) storedBundleVisitLocked(build *storedBundleBuild, res *sharedResult, visiting map[sharedResultID]bool) error {
 	if build.ordinals[res.id] != 0 {
+		return nil
+	}
+	if build.passedSeen[res.id] {
+		// Gone through with no row, it is reached from a record now, which
+		// names its held row.
+		build.nameLocked(res)
 		return nil
 	}
 	if visiting[res.id] {
@@ -777,6 +864,9 @@ func (c *Cache) storedBundleVisitLocked(build *storedBundleBuild, res *sharedRes
 		build.order = append(build.order, res)
 		build.ordinals[res.id] = TransferOrdinal(len(build.order))
 		build.owners[res.id] = build.current
+		if build.heldBy.throughLocked(res) {
+			build.storedBundlePassLocked(c, res)
+		}
 		return nil
 	}
 	if res.noValueLocked() || res.persistedEnvelope == nil {

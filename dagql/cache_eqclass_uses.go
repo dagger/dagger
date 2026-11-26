@@ -108,10 +108,22 @@ func (c *Cache) joinEqClassUsesLocked(ra, rb eqClassID) {
 // uses. A noted class that is live again, or already free, stays as it is.
 // The collector runs it as it finishes (collectUnownedResultsLocked): no
 // operation keeps a class number across a hold of the cache, nor across a
-// collection within one, so nothing that names a noted class outlives it.
-// It costs one look at each noted class and a delete for each digest of a
-// freed one. Requires egraphMu for writing.
+// collection within one, but the change marks' joins (changeMarks.joined),
+// which it moves first to the roots they were joined into, while the
+// parents still lead there, dropping one whose root nothing uses, which is
+// freed with nothing to stamp. So nothing that names a noted class outlives
+// it. It costs one look at each noted class and each pending join, and a
+// delete for each digest of a freed class. Requires egraphMu for writing.
 func (c *Cache) freeEndedEqClassesLocked() {
+	if c.changes != nil {
+		joined := c.changes.joined[:0]
+		for _, id := range c.changes.joined {
+			if root := c.findEqClassLocked(id); root != 0 && c.egraphUses[root] > 0 {
+				joined = append(joined, root)
+			}
+		}
+		c.changes.joined = joined
+	}
 	ended := c.endedEqClasses
 	if c.testFreeEndedEqClasses != nil {
 		c.testFreeEndedEqClasses()
@@ -259,6 +271,11 @@ func (c *Cache) verifyEqClassSlotsLocked() error {
 	if c.changes != nil {
 		checkClassKeys(bad, live, "the change marks", c.changes.left)
 		checkClassKeys(bad, live, "the change marks", c.changes.leftNamed)
+		for _, id := range c.changes.joined {
+			if !live(id) {
+				bad("the change marks' joins", id)
+			}
+		}
 	}
 	return errors.Join(errs...)
 }

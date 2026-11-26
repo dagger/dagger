@@ -384,15 +384,11 @@ func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID, moved *[]egraphTerm
 	srcResults := c.outputEqClassResults.Members(rb)
 	joinsEntries := dstResults.Size() > 0 && srcResults.Size() > 0
 	if joinsEntries {
-		// Every entry of both classes now answers from the other's holders:
-		// one mark of the union's class, for the stamps of the bundles that
-		// borrow from it, and the entries of each side whose answers that
-		// changes, for readers (markJoinLocked).
-		for resID := range srcResults.All() {
-			c.markEntryClassLocked(resID, StampJoin)
-			break
-		}
-		c.markJoinLocked(srcResults, dstResults)
+		// Every entry of both classes now answers from the other's holders
+		// and borrows the other's stored parts: the join marks, for readers
+		// and for the stamps of the bundles that borrow from the class, what
+		// that changes, walking the smaller side (markJoinLocked).
+		c.markJoinLocked(srcResults, dstResults, ra)
 	}
 	if srcResults.Size() > 0 {
 		for resID := range srcResults.All() {
@@ -2487,9 +2483,11 @@ func (c *Cache) maybeResetEgraphLocked() {
 	c.freeEqClassIDs = nil
 	c.endedEqClasses = nil
 	if c.changes != nil {
-		// The classes this hold's marks walked are gone with the rest.
+		// The classes this hold's marks walked, or a join marked, are gone
+		// with the rest.
 		c.changes.left = nil
 		c.changes.leftNamed = nil
+		c.changes.joined = nil
 	}
 	c.nextEgraphTermID = 0
 	// nextSharedResultID deliberately survives the reset: numeric result IDs

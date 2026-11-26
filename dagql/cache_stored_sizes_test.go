@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"math"
 	"slices"
 	"strings"
 	"sync"
@@ -701,12 +702,12 @@ func TestStoredSizesPriceEachPackOnce(t *testing.T) {
 	require.LessOrEqual(t, more, baseLayers*entry, "each layer's pack once, not once a part: %d bytes more for packs", more)
 }
 
-// A root's lower half is what a merge over the message limit sends ahead of
-// it, as the service's split of a refused merge does: the entries that carry
-// the first half of the records below the root, those of them that no other
-// of them depends on; never the root, and never an entry the recipient holds.
-// It also says how many records, but held rows, the root's closure carries.
-func TestStoredLowerHalfIsTheFirstHalfBelowTheRoot(t *testing.T) {
+// A root's lower part is what a merge over the message limit sends ahead of
+// it: the entries below the root but for the last ones, whose records fit
+// within the limit with the root's, those of them that no other of them
+// depends on; never the root, and never an entry the recipient holds. It
+// also says how many records, but held rows, the root's closure carries.
+func TestStoredLowerPartLeavesTheRootWhatFitsTheLimit(t *testing.T) {
 	t.Parallel()
 	actx, a, asrv := transferTestCache(t)
 	root := persistedListTestResult(t, actx, a, asrv, "half-root", &transferTestValue{Text: "root"})
@@ -733,37 +734,145 @@ func TestStoredLowerHalfIsTheFirstHalfBelowTheRoot(t *testing.T) {
 	}
 	cloudOf := func(res AnyResult) uint64 { return number[res.cacheSharedResult().id] }
 
-	lower, carried, err := cloud.StoredLowerHalf(ctx, cloudOf(root), time.Now().Unix(), nil)
+	// Each record's size is what StoredSizes adds for it, the chain's from
+	// the bottom up: a limit that fits the root and the chain's top three,
+	// and the held row of the next, which the lowest of them names.
+	now := time.Now().Unix()
+	var order []uint64
+	for _, res := range append(slices.Clone(chain), root) {
+		order = append(order, cloudOf(res))
+	}
+	sizes, err := cloud.StoredSizes(ctx, order, now, nil)
 	require.NoError(t, err)
-	require.Equal(t, []uint64{cloudOf(chain[3])}, lower, "the top of the chain's lower four")
-	require.Equal(t, 9, carried)
+	var limit int64
+	for _, i := range []int{8, 7, 6, 5} {
+		limit += sizes[i].Bytes + sizes[i].OutputBytes
+	}
+	cloud.egraphMu.RLock()
+	limit += heldRowSizeLocked(storedBundleTestEntry(cloud, cloudOf(chain[4])))
+	cloud.egraphMu.RUnlock()
+	lower, err := cloud.StoredLowerPart(ctx, cloudOf(root), now, nil, limit)
+	require.NoError(t, err)
+	require.Equal(t, []uint64{cloudOf(chain[4])}, lower.Lower, "the top of the chain's lower five")
+	require.Len(t, lower.Part, 5)
+	require.Equal(t, 9, lower.Carried)
+	all, err := cloud.StoredLowerPart(ctx, cloudOf(root), now, nil, 0)
+	require.NoError(t, err)
+	require.Equal(t, []uint64{cloudOf(chain[7])}, all.Lower, "within no limit, all below the root goes ahead")
+	none, err := cloud.StoredLowerPart(ctx, cloudOf(root), now, nil, 1<<40)
+	require.NoError(t, err)
+	require.Empty(t, none.Lower, "within the limit, nothing goes ahead")
+	require.Empty(t, none.Part)
 
 	// The recipient holds the chain's lowest two: what's below the root is
-	// the six above them, and their lower half the next three.
+	// the six above them, and with room for the held row the root's merge
+	// carries for the second, their lower part is the next three.
 	held := &HeldBy{Cache: "cache-b"}
 	for i, res := range chain[:2] {
 		heldTestHold(t, ctx, cloud, "cache-b", uint64(100+i), cloudOf(res), 0)
 	}
-	lower, carried, err = cloud.StoredLowerHalf(ctx, cloudOf(root), time.Now().Unix(), held)
+	cloud.egraphMu.RLock()
+	row := heldRowSizeLocked(storedBundleTestEntry(cloud, cloudOf(chain[1])))
+	cloud.egraphMu.RUnlock()
+	lower, err = cloud.StoredLowerPart(ctx, cloudOf(root), now, held, limit+row)
 	require.NoError(t, err)
-	require.Equal(t, []uint64{cloudOf(chain[4])}, lower)
-	require.Equal(t, 7, carried, "the root and the six above the held rows")
+	require.Equal(t, []uint64{cloudOf(chain[4])}, lower.Lower)
+	require.Len(t, lower.Part, 3)
+	require.Equal(t, 7, lower.Carried, "the root and the six above the held rows")
 }
 
-// A root's lower half counts the records a bundle of the root carries, its
+// The merge a split root keeps carries what its lower part leaves within the
+// limit, outputs counted as that merge lists them: here the chain's records
+// share a chain of layers, which the first of them in the bundle lists, and
+// a cut that sends it ahead leaves a later one in the root's merge to list it
+// again; and the first packs the layers apart, so which pack's address the
+// merge names first depends on what it keeps.
+// For every limit under the root's whole price, the root's merge, once the
+// recipient holds the part, is priced within it with the bundle's calls.
+func TestStoredLowerPartLeavesTheRootsMergeWithinTheLimit(t *testing.T) {
+	t.Parallel()
+	actx, a, asrv := transferTestCache(t)
+	root := persistedListTestResult(t, actx, a, asrv, "within-root", &transferTestValue{Text: "root"})
+	var chain []AnyResult
+	for i := range 8 {
+		dep := persistedListTestResult(t, actx, a, asrv, fmt.Sprint("within-dep-", i), &transferTestValue{Text: fmt.Sprint("dep ", i)})
+		if i > 0 {
+			transferTestDependency(a, actx, dep, chain[i-1])
+		}
+		chain = append(chain, dep)
+	}
+	transferTestDependency(a, actx, root, chain[7])
+	bundle := exportTestBundle(t, actx, a, root)
+	ctx, cloud := storedPartTestCache(t, WithBlobStore())
+	reply, err := cloud.MergeValues(ctx, "cache-a", bundle)
+	require.NoError(t, err)
+	number := map[sharedResultID]uint64{}
+	for _, value := range reply.Values {
+		for _, sent := range bundle.Values {
+			if sent.Ordinal == value.Ordinal {
+				number[sharedResultID(sent.SenderNumber)] = value.Number
+			}
+		}
+	}
+	cloudOf := func(res AnyResult) uint64 { return number[res.cacheSharedResult().id] }
+	shared := make([]snapshots.ExportLayer, 6)
+	for i := range shared {
+		shared[i] = storedLayersTestLayer(fmt.Sprint("within-shared-", i), fmt.Sprint("shared layer ", i))
+	}
+	// The first of them packs the layers apart from the others: the merge
+	// that lists it first names each blob's address in its pack, and gives
+	// each later output another.
+	for k, i := range []int{1, 3, 5, 6} {
+		pack := testDigest("within-pack-b")
+		if k == 0 {
+			pack = testDigest("within-pack-a")
+		}
+		packs := map[digest.Digest]digest.Digest{}
+		for _, layer := range shared {
+			packs[layer.Descriptor.Digest] = pack
+		}
+		stored, _, err := cloud.SetStoredPart(ctx, cloudOf(chain[i]), storedLayersTestPart("snapshot", shared, packs), 0)
+		require.NoError(t, err)
+		require.True(t, stored)
+	}
+	now := time.Now().Unix()
+	whole, err := cloud.StoredSizes(ctx, []uint64{cloudOf(root)}, now, nil)
+	require.NoError(t, err)
+	price := whole[0].Bytes + whole[0].OutputBytes
+	split := 0
+	for limit := price / 8; limit < price; limit += price / 64 {
+		lower, err := cloud.StoredLowerPart(ctx, cloudOf(root), now, nil, limit)
+		require.NoError(t, err)
+		if len(lower.Lower) == 0 {
+			continue
+		}
+		split++
+		in := func(n uint64) bool {
+			_, found := slices.BinarySearch(lower.Part, n)
+			return found
+		}
+		resume := &HeldBy{Cache: "cache-b", Also: func(n uint64) (uint64, bool) { return math.MaxUint64, in(n) }, Through: in}
+		kept, err := cloud.StoredSizes(ctx, []uint64{cloudOf(root)}, now, resume)
+		require.NoError(t, err)
+		require.LessOrEqual(t, kept[0].Bytes+kept[0].OutputBytes+lower.CallBytes, limit, "the root's merge within %d bytes, %d of the chain ahead", limit, len(lower.Part))
+	}
+	require.NotZero(t, split, "some limits split the root")
+}
+
+// A root's lower part counts the records a bundle of the root carries, its
 // kept calls' inputs included, as the split of a merge refused as over the
 // message limit counts them from the bundle: a merge split before it was
 // built and refused after is then judged against the same count. Here inner
 // has a call kept on the receiver A, which its bundle carries.
-func TestStoredLowerHalfCountsWhatABundleOfTheRootCarries(t *testing.T) {
+func TestStoredLowerPartCountsWhatABundleOfTheRootCarries(t *testing.T) {
 	t.Parallel()
 	test := newReceiverCallTest(t)
 	built, err := test.cloud.StoredBundle(test.ctx, []uint64{test.number}, time.Now().Unix(), nil)
 	require.NoError(t, err)
 	require.Len(t, built.Bundle.Calls, 1, "the bundle carries inner's call, and A for it")
-	_, carried, err := test.cloud.StoredLowerHalf(test.ctx, test.number, time.Now().Unix(), nil)
+	lower, err := test.cloud.StoredLowerPart(test.ctx, test.number, time.Now().Unix(), nil, 0)
 	require.NoError(t, err)
-	require.Equal(t, len(built.Bundle.Values), carried)
+	require.Equal(t, len(built.Bundle.Values), lower.Carried)
 }
 
 // A blob that two parts hold in different packs has two download addresses,
