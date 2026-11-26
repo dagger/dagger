@@ -111,10 +111,10 @@ func (res *sharedResult) noteCloudCopyLocked(number uint64, stored bool, expires
 		// restart: the one holding moves to it, with its offers. What the
 		// engine merged was the other entry's.
 		res.deleteHolderLocked(key)
-		h.cloudMerge = nil
+		h.setCloudMergeLocked(nil)
 	}
 	res.putHolderLocked(HolderKey{Cache: cloudCacheID, Number: number}, h)
-	h.unstored = !stored
+	h.setFlag(heldUnstored, !stored)
 	if !stored {
 		expiresAtUnix = 0
 	}

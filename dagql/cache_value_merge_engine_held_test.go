@@ -160,7 +160,7 @@ func TestCloudLearnsAnEnginesHoldingFromItsHeldRow(t *testing.T) {
 	_, rootHolding := cloud.holdingLocked(HolderKey{Cache: "engine", Number: rootNumber})
 	require.NotNil(t, rootHolding)
 	require.Contains(t, rootHolding.deps, childNumber, "the row above depends on the held row's holding")
-	require.Empty(t, rootHolding.unknownDeps)
+	require.Empty(t, rootHolding.unknownDepsLocked())
 }
 
 // heldPartTestBundles are an engine's bundles over root above out: out's own

@@ -588,7 +588,7 @@ func (c *Cache) unknownBelowLocked(whole *wholeHolds, number uint64, reached map
 		whole.known[number] = false
 		return false, true
 	}
-	unknown, final = slices.ContainsFunc(h.unknownDeps, func(dep uint64) bool {
+	unknown, final = slices.ContainsFunc(h.unknownDepsLocked(), func(dep uint64) bool {
 		return whole.byFile == nil || !whole.byFile(dep)
 	}), true
 	for _, dep := range h.deps {

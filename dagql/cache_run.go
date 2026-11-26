@@ -117,7 +117,7 @@ func (c *Cache) mergeRunLocked(prep *valueMergePrep, row *mergeRow) (RunName, ru
 // egraphMu.
 func (c *Cache) holdingRanLocked(key HolderKey, replacements uint64) bool {
 	_, h := c.holdingLocked(key)
-	return h != nil && h.ran && h.replacements == replacements
+	return h != nil && h.is(heldRan) && h.replacements == replacements
 }
 
 // noteHoldingRanLocked notes that h, the holding key of its cache's entry,
@@ -130,7 +130,7 @@ func (c *Cache) holdingRanLocked(key HolderKey, replacements uint64) bool {
 // writing.
 func (c *Cache) noteHoldingRanLocked(key HolderKey, entry *sharedResult, h *holding, replacements uint64, by runRanBy) bool {
 	if replacements == h.replacements {
-		h.ran = true
+		h.setFlag(heldRan, true)
 	}
 	if !c.blobBacked || entry == nil || entry.run == nil || entry.runRan != runNotRan {
 		return false

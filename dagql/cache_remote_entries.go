@@ -309,18 +309,18 @@ func (c *Cache) changedHoldingLocked(key HolderKey, at uint64) ChangedHolding {
 		return changed
 	}
 	changed.typeName, changed.expiresAtUnix, changed.replacements = h.typeName, h.expiresAtUnix, h.replacements
-	changed.deps, changed.unknownDeps, changed.parts = h.deps, h.unknownDeps, h.parts
-	if h.retention.retained {
+	changed.deps, changed.unknownDeps, changed.parts = h.deps, h.unknownDepsLocked(), h.parts
+	if h.retained() {
 		changed.flags |= changedRetained
-		changed.retentionExpiry = h.retention.expiresAtUnix
+		changed.retentionExpiry = h.retentionExpiresAtUnix
 	}
-	if h.executed {
+	if h.is(heldExecuted) {
 		changed.flags |= changedExecuted
 	}
-	if h.follows {
+	if h.is(heldFollows) {
 		changed.flags |= changedFollows
 	}
-	if h.rowed {
+	if h.is(heldRowed) {
 		changed.flags |= changedRowed
 	}
 	var stored bool
@@ -374,33 +374,42 @@ func (t obsTime) compare(o obsTime) int {
 	return cmp.Or(cmp.Compare(t.generation, o.generation), cmp.Compare(t.engineTime, o.engineTime))
 }
 
-// retentionRegister is a holding's retention as the latest observation left
-// it.
-type retentionRegister struct {
-	observed      bool
-	retained      bool
-	expiresAtUnix int64
-	at            obsTime
-}
-
-// observe applies one observation: the later one wins. On equal times a set
-// beats a drop, and between two sets the earlier non-zero expiry wins, so the
-// result does not depend on the order observations arrive in.
-func (r *retentionRegister) observe(retained bool, expiresAtUnix int64, at obsTime) {
+// observeRetention applies one observation of h's retention edge: the later
+// one wins. On equal times a set beats a drop, and between two sets the
+// earlier non-zero expiry wins, so the result does not depend on the order
+// observations arrive in. It reports whether the edge, or its expiry,
+// changed.
+func (h *holding) observeRetention(retained bool, expiresAtUnix int64, at obsTime) bool {
 	if !retained {
 		expiresAtUnix = 0
 	}
-	switch c := at.compare(r.at); {
-	case !r.observed || c > 0:
+	switch c := at.compare(h.retentionAt); {
+	case !h.is(heldRetentionObserved) || c > 0:
 	case c < 0:
-		return
-	case retained && !r.retained:
-	case retained && r.retained:
-		expiresAtUnix = mergeSharedResultExpiryUnix(r.expiresAtUnix, expiresAtUnix)
+		return false
+	case retained && !h.retained():
+	case retained && h.retained():
+		expiresAtUnix = mergeSharedResultExpiryUnix(h.retentionExpiresAtUnix, expiresAtUnix)
 	default:
-		return
+		return false
 	}
-	*r = retentionRegister{observed: true, retained: retained, expiresAtUnix: expiresAtUnix, at: at}
+	changed := retained != h.retained() || expiresAtUnix != h.retentionExpiresAtUnix
+	h.setFlag(heldRetentionObserved, true)
+	h.setFlag(heldRetained, retained)
+	h.retentionExpiresAtUnix, h.retentionAt = expiresAtUnix, at
+	return changed
+}
+
+// forgetRetention drops every observation of h's retention, as a release of
+// its cache does.
+func (h *holding) forgetRetention() {
+	h.setFlag(heldRetentionObserved|heldRetained, false)
+	h.retentionExpiresAtUnix, h.retentionAt = 0, obsTime{}
+}
+
+// retained reports whether the latest observation set h's retention edge.
+func (h *holding) retained() bool {
+	return h.is(heldRetained)
 }
 
 // heldPartState is how far a holding's cache has a part, in order of
@@ -427,56 +436,38 @@ type heldPart struct {
 // holding is what the cache knows about another cache's copy of an entry:
 // on the Cloud, one engine cache's copy; on an engine, the Cloud's (see
 // cloudHoldingLocked). Its sets are sorted slices that are replaced, never
-// changed in place (cache_held_sets.go). Guarded by egraphMu.
+// changed in place (cache_held_sets.go). The Cloud keeps one for every
+// entry every engine holds, so its fields are laid out to fit Go's 144-byte
+// size class: its yes-or-no facts share one byte (holdingFlags), and what
+// most holdings leave empty is held apart (holdingRare). Guarded by
+// egraphMu.
 type holding struct {
 	// replacements is the counterpart entry's replacement count that the
-	// value state describes: parts, expiresAtUnix, contentDigest and the
+	// value state describes: parts, expiresAtUnix, the content digest and the
 	// dependencies (applyHeldValueStateLocked). An engine's Cloud holding
 	// doesn't use it.
 	replacements uint64
 	// expiresAtUnix is the copy's own expiry in its cache; the earlier
 	// non-zero value wins, as the engine merges it.
 	expiresAtUnix int64
-	retention     retentionRegister
+	// retentionExpiresAtUnix and retentionAt are its retention edge as the
+	// latest observation left it (observeRetention), with heldRetained and
+	// heldRetentionObserved: the edge's expiry, 0 unless retained, and when
+	// its cache observed it.
+	retentionExpiresAtUnix int64
+	retentionAt            obsTime
 	// parts are the copy's complete and offered parts, sorted by part
 	// address key.
 	parts []heldPart
 	// deps are the dependency numbers that are holdings of this cache: each
 	// owns its dependency's holding, counted in the dependency's dependents.
+	// The numbers no holding of this cache has yet are the rare fields'
+	// (unknownDepsLocked).
 	deps []uint64
-	// unknownDeps are dependency numbers no holding of this cache has yet.
-	unknownDeps []uint64
 	// sessions are the sessions of the holding's cache that hold the copy,
 	// sorted.
 	sessions []unique.Handle[string]
-
-	typeName      unique.Handle[string]
-	contentDigest unique.Handle[string]
-	dependents    int32
-	// unstored marks an engine's Cloud holding whose Cloud entry stores no
-	// record: the Cloud offers parts it keeps for another entry of the
-	// class. That copy has no value, so it keeps no terms (5.6). An engine
-	// cache's copy always has a value.
-	unstored bool
-	// cloudMerge is, on an engine's Cloud holding, what the engine last
-	// merged of the Cloud entry's record (cloudMergeNote): nil until a merge
-	// notes it, and on every other holding.
-	cloudMerge *cloudMergeNote
-	// executed marks a holding whose cache computed the entry: a call span
-	// with executed evidence, which reached the Cloud after its latest drop
-	// (RemoteHolding.BeforeLastDrop), named it. A prune that drops the entry's value
-	// clears it on every holding of the entry, so the service takes a
-	// dropped value back only from a cache that computed it after the drop;
-	// copies from placement, and entries a cache only hit, are never
-	// flagged.
-	executed bool
-	// ran marks a holding whose cache ran its value at its replacement
-	// count: a call span with executed or joined evidence, or a lazy span
-	// that didn't install it from a Cloud offer, reported a part besides its
-	// metadata complete at that count. A higher count clears it. Unlike executed, a prune leaves it, and nothing decides by
-	// it: it tells whether the run a stored record names ran
-	// (noteHoldingRanLocked).
-	ran bool
+	typeName unique.Handle[string]
 	// served is, on the Cloud, the run of the record the Cloud last served
 	// the holding's cache for this entry (ApplyMergedReply), at the
 	// replacement count the serve describes: a copy the engine exports
@@ -484,13 +475,154 @@ type holding struct {
 	// replaces it, and a higher count drops it, so a holding keeps at most
 	// one; it goes with the holding.
 	served *servedRun
-	// follows is the declaration the holding's latest call row stamped, that
-	// the entry's result follows from its inputs
+	// rare are the fields most holdings leave empty, nil while all of them
+	// are (holdingRare).
+	rare       *holdingRare
+	dependents int32
+	flags      holdingFlags
+}
+
+// holdingFlags are a holding's yes-or-no facts.
+type holdingFlags uint8
+
+const (
+	// heldRetentionObserved marks a holding an observation of its retention
+	// edge has reached, and heldRetained one whose latest observation set it
+	// (observeRetention).
+	heldRetentionObserved holdingFlags = 1 << iota
+	heldRetained
+	// heldUnstored marks an engine's Cloud holding whose Cloud entry stores
+	// no record: the Cloud offers parts it keeps for another entry of the
+	// class. That copy has no value, so it keeps no terms (5.6). An engine
+	// cache's copy always has a value.
+	heldUnstored
+	// heldExecuted marks a holding whose cache computed the entry: a call
+	// span with executed evidence, which reached the Cloud after its latest
+	// drop (RemoteHolding.BeforeLastDrop), named it. A prune that drops the
+	// entry's value clears it on every holding of the entry, so the service
+	// takes a dropped value back only from a cache that computed it after
+	// the drop; copies from placement, and entries a cache only hit, are
+	// never flagged.
+	heldExecuted
+	// heldRan marks a holding whose cache ran its value at its replacement
+	// count: a call span with executed or joined evidence, or a lazy span
+	// that didn't install it from a Cloud offer, reported a part besides its
+	// metadata complete at that count. A higher count clears it. Unlike
+	// heldExecuted, a prune leaves it, and nothing decides by it: it tells
+	// whether the run a stored record names ran (noteHoldingRanLocked).
+	heldRan
+	// heldFollows is the declaration the holding's latest call row stamped,
+	// that the entry's result follows from its inputs
 	// (RemoteHolding.FollowsFromInputs): one of the two places the Cloud
-	// keeps it (entryCanDifferLocked). rowed marks a holding a call row has
-	// reported, whose follows says so: a merge's holding of its sender has
-	// none.
-	follows, rowed bool
+	// keeps it (entryCanDifferLocked). heldRowed marks a holding a call row
+	// has reported, whose heldFollows says so: a merge's holding of its
+	// sender has none.
+	heldFollows
+	heldRowed
+)
+
+// is reports whether h has every flag of f.
+func (h *holding) is(f holdingFlags) bool {
+	return h.flags&f == f
+}
+
+// setFlag sets or clears the flags of f on h.
+func (h *holding) setFlag(f holdingFlags, on bool) {
+	if on {
+		h.flags |= f
+	} else {
+		h.flags &^= f
+	}
+}
+
+// holdingRare are the fields of a holding that most holdings leave empty, so
+// that those pay one nil pointer for them (holding.rare): the dependency
+// numbers no holding of its cache has yet; the content digest its cache
+// reported of its value at its replacement count, so that an observation
+// repeating it teaches the entry nothing again; and, on an engine's Cloud
+// holding, what the engine last merged of the Cloud entry's record
+// (cloudMergeNote), nil until a merge notes it.
+type holdingRare struct {
+	unknownDeps   []uint64
+	contentDigest unique.Handle[string]
+	cloudMerge    *cloudMergeNote
+}
+
+// unknownDepsLocked are h's dependency numbers no holding of its cache has
+// yet, sorted: a set replaced, never changed in place. Requires egraphMu.
+func (h *holding) unknownDepsLocked() []uint64 {
+	if h.rare == nil {
+		return nil
+	}
+	return h.rare.unknownDeps
+}
+
+// setUnknownDepsLocked replaces h's unknown dependency numbers. Requires
+// egraphMu for writing.
+func (h *holding) setUnknownDepsLocked(deps []uint64) {
+	if len(deps) == 0 {
+		deps = nil
+	}
+	if h.rare == nil {
+		if deps == nil {
+			return
+		}
+		h.rare = &holdingRare{}
+	}
+	h.rare.unknownDeps = deps
+	h.tidyRareLocked()
+}
+
+// cloudMergeLocked is what the engine last merged of its Cloud holding's
+// entry's record, or nil. Requires egraphMu.
+func (h *holding) cloudMergeLocked() *cloudMergeNote {
+	if h.rare == nil {
+		return nil
+	}
+	return h.rare.cloudMerge
+}
+
+// setCloudMergeLocked replaces what the engine last merged of its Cloud
+// holding's entry's record. Requires egraphMu for writing.
+func (h *holding) setCloudMergeLocked(note *cloudMergeNote) {
+	if h.rare == nil {
+		if note == nil {
+			return
+		}
+		h.rare = &holdingRare{}
+	}
+	h.rare.cloudMerge = note
+	h.tidyRareLocked()
+}
+
+// contentDigestLocked is the content digest h's cache reported of its value
+// at its replacement count: the zero handle when none was. Requires
+// egraphMu.
+func (h *holding) contentDigestLocked() unique.Handle[string] {
+	if h.rare == nil {
+		return unique.Handle[string]{}
+	}
+	return h.rare.contentDigest
+}
+
+// setContentDigestLocked replaces h's content digest. Requires egraphMu for
+// writing.
+func (h *holding) setContentDigestLocked(content unique.Handle[string]) {
+	if h.rare == nil {
+		if content == (unique.Handle[string]{}) {
+			return
+		}
+		h.rare = &holdingRare{}
+	}
+	h.rare.contentDigest = content
+	h.tidyRareLocked()
+}
+
+// tidyRareLocked lets go of h's rare fields once all of them are empty.
+func (h *holding) tidyRareLocked() {
+	if r := h.rare; r != nil && r.unknownDeps == nil && r.contentDigest == (unique.Handle[string]{}) && r.cloudMerge == nil {
+		h.rare = nil
+	}
 }
 
 // servedRun is the run of a record the Cloud served an engine cache, at
@@ -512,7 +644,7 @@ type servedRun struct {
 func (res *sharedResult) hasUnexpiredHoldingLocked(nowUnix int64) bool {
 	for _, ref := range res.holderRefsLocked() {
 		h := ref.h
-		if h.unstored {
+		if h.is(heldUnstored) {
 			continue
 		}
 		if h.expiresAtUnix == 0 || nowUnix < h.expiresAtUnix {
@@ -523,7 +655,7 @@ func (res *sharedResult) hasUnexpiredHoldingLocked(nowUnix int64) bool {
 }
 
 func (h *holding) owned() bool {
-	return len(h.sessions) > 0 || h.retention.retained || h.dependents > 0
+	return len(h.sessions) > 0 || h.retained() || h.dependents > 0
 }
 
 // remoteCacheState is what the cache keeps for one held engine cache beside
@@ -722,12 +854,13 @@ func (c *Cache) attachRemoteHoldingLocked(ctx context.Context, key HolderKey, de
 		h.typeName = internString(desc.TypeName)
 		c.markHoldingLocked(key)
 	}
-	if desc.Executed && !desc.BeforeLastDrop && !h.executed {
-		h.executed = true
+	if desc.Executed && !desc.BeforeLastDrop && !h.is(heldExecuted) {
+		h.setFlag(heldExecuted, true)
 		c.markHoldingLocked(key)
 	}
-	if desc.CallRow && (!h.rowed || desc.FollowsFromInputs != h.follows) {
-		h.follows, h.rowed = desc.FollowsFromInputs, true
+	if desc.CallRow && (!h.is(heldRowed) || desc.FollowsFromInputs != h.is(heldFollows)) {
+		h.setFlag(heldFollows, desc.FollowsFromInputs)
+		h.setFlag(heldRowed, true)
 		c.markHoldingLocked(key)
 	}
 	touchSharedResultLastUsed(entry, desc.UsedAtUnixNano)
@@ -781,7 +914,8 @@ func (c *Cache) addHoldingLocked(ctx context.Context, state *remoteCacheState, k
 	state.holdings++
 	for _, parent := range state.unknownDependents[key.Number] {
 		if _, parentHolding := state.holdingLocked(parent); parentHolding != nil {
-			parentHolding.unknownDeps, _ = withoutNumber(parentHolding.unknownDeps, key.Number)
+			unknown, _ := withoutNumber(parentHolding.unknownDepsLocked(), key.Number)
+			parentHolding.setUnknownDepsLocked(unknown)
 			parentHolding.deps = withNumber(parentHolding.deps, key.Number)
 			c.markHoldingLocked(HolderKey{Cache: key.Cache, Number: parent})
 			h.dependents++
@@ -1005,12 +1139,10 @@ func (c *Cache) applyMergedRootsLocked(cache CacheID, reply MergeReply, change *
 		if h == nil {
 			continue
 		}
-		before := h.retention
-		h.retention.observe(root.Retained, root.RetentionExpiresAtUnix, at)
-		if h.retention.retained != before.retained || h.retention.expiresAtUnix != before.expiresAtUnix {
+		if h.observeRetention(root.Retained, root.RetentionExpiresAtUnix, at) {
 			c.markHoldingLocked(key)
 		}
-		if !h.retention.retained {
+		if !h.retained() {
 			change.Candidates = append(change.Candidates, key)
 		}
 	}
@@ -1136,7 +1268,7 @@ func (c *Cache) updateRemoteHoldingLocked(ctx context.Context, key HolderKey, up
 // keys. It returns the dropped dependencies' holdings. Requires egraphMu for
 // writing.
 func (c *Cache) applyHeldValueStateLocked(ctx context.Context, state *remoteCacheState, key HolderKey, entry *sharedResult, h *holding, obs HeldValueState, parts, offered []string) []HolderKey {
-	if obs.ContentDigest != "" && string(obs.ContentDigest) != handleString(h.contentDigest) {
+	if obs.ContentDigest != "" && string(obs.ContentDigest) != handleString(h.contentDigestLocked()) {
 		// The class learns a content digest from every observation, whatever
 		// its count: a union is never undone, and gating it by count would
 		// only make the class depend on arrival order. The holding's own
@@ -1151,11 +1283,11 @@ func (c *Cache) applyHeldValueStateLocked(ctx context.Context, state *remoteCach
 	if obs.Replacements > h.replacements {
 		changed = true
 		h.replacements = obs.Replacements
-		h.ran = false
+		h.setFlag(heldRan, false)
 		h.served = nil
 		h.parts = nil
 		h.expiresAtUnix = 0
-		h.contentDigest = unique.Handle[string]{}
+		h.setContentDigestLocked(unique.Handle[string]{})
 		kept := make(map[uint64]struct{}, len(obs.Deps))
 		for _, number := range obs.Deps {
 			kept[number] = struct{}{}
@@ -1174,13 +1306,13 @@ func (c *Cache) applyHeldValueStateLocked(ctx context.Context, state *remoteCach
 			}
 			return false
 		})
-		h.unknownDeps = keepNumbers(h.unknownDeps, func(number uint64) bool {
+		h.setUnknownDepsLocked(keepNumbers(h.unknownDepsLocked(), func(number uint64) bool {
 			if _, ok := kept[number]; ok {
 				return true
 			}
 			state.forgetUnknownDependent(number, key.Number)
 			return false
-		})
+		}))
 	}
 	if expires := mergeSharedResultExpiryUnix(h.expiresAtUnix, obs.ExpiresAtUnix); expires != h.expiresAtUnix {
 		h.expiresAtUnix = expires
@@ -1189,8 +1321,8 @@ func (c *Cache) applyHeldValueStateLocked(ctx context.Context, state *remoteCach
 	// Its content digest and offered parts are read fresh (HoldingFacts): a
 	// change to them alone names no holding. An offer never changes a
 	// complete part, which is further along.
-	if obs.ContentDigest != "" && string(obs.ContentDigest) != handleString(h.contentDigest) {
-		h.contentDigest = internString(string(obs.ContentDigest))
+	if obs.ContentDigest != "" && string(obs.ContentDigest) != handleString(h.contentDigestLocked()) {
+		h.setContentDigestLocked(internString(string(obs.ContentDigest)))
 	}
 	advanceHeldParts(h, offered, heldPartOffered)
 	if advanceHeldParts(h, parts, heldPartComplete) {
@@ -1289,12 +1421,10 @@ func (c *Cache) observeRemoteRetentionLocked(key HolderKey, obs RetentionObserva
 	if h == nil {
 		return change, fmt.Errorf("observe remote retention: %w: %s/%d", ErrUnknownHolding, key.Cache, key.Number)
 	}
-	before := h.retention
-	h.retention.observe(obs.Retained, obs.ExpiresAtUnix, obsTime{generation: obs.Generation, engineTime: obs.EngineTimeUnixNano})
-	if h.retention.retained != before.retained || h.retention.expiresAtUnix != before.expiresAtUnix {
+	if h.observeRetention(obs.Retained, obs.ExpiresAtUnix, obsTime{generation: obs.Generation, engineTime: obs.EngineTimeUnixNano}) {
 		c.markHoldingLocked(key)
 	}
-	if !h.retention.retained {
+	if !h.retained() {
 		change.Candidates = []HolderKey{key}
 	}
 	return change, nil
@@ -1335,11 +1465,11 @@ func (c *Cache) releaseRemoteCacheLocked(cache CacheID) (change RemoteChange) {
 		key, h := HolderKey{Cache: cache, Number: number}, held.h
 		// Its retention is a fact a reader keeps (HoldingFacts); the
 		// sessions holding it are read fresh.
-		if h.retention.retained {
+		if h.retained() {
 			c.markHoldingLocked(key)
 		}
 		h.sessions = nil
-		h.retention = retentionRegister{}
+		h.forgetRetention()
 		change.Candidates = append(change.Candidates, key)
 	}
 	clear(state.sessions)
@@ -1547,7 +1677,7 @@ func (c *Cache) removeHoldingLocked(ctx context.Context, state *remoteCacheState
 			deps = append(deps, depKey)
 		}
 	}
-	for _, number := range h.unknownDeps {
+	for _, number := range h.unknownDepsLocked() {
 		state.forgetUnknownDependent(number, key.Number)
 	}
 	entries, err := c.decrementIncomingOwnershipLocked(ctx, entry, entries)
@@ -1625,7 +1755,7 @@ func (c *Cache) removeGoneHoldingLocked(ctx context.Context, key HolderKey, entr
 			if parent.deps, had = withoutNumber(parent.deps, key.Number); !had {
 				continue
 			}
-			parent.unknownDeps = withNumber(parent.unknownDeps, key.Number)
+			parent.setUnknownDepsLocked(withNumber(parent.unknownDepsLocked(), key.Number))
 			c.markHoldingLocked(parentKey)
 			state.unknownDependents[key.Number] = insertNumber(state.unknownDependents[key.Number], parentKey.Number)
 		}
@@ -1683,7 +1813,7 @@ func (c *Cache) addHoldingDepsLocked(state *remoteCacheState, key HolderKey, h *
 	var known, unknown []uint64
 	seen := make(map[uint64]struct{}, len(deps))
 	for _, number := range deps {
-		if _, ok := seen[number]; ok || number == key.Number || hasNumber(h.deps, number) || hasNumber(h.unknownDeps, number) {
+		if _, ok := seen[number]; ok || number == key.Number || hasNumber(h.deps, number) || hasNumber(h.unknownDepsLocked(), number) {
 			continue
 		}
 		seen[number] = struct{}{}
@@ -1702,7 +1832,7 @@ func (c *Cache) addHoldingDepsLocked(state *remoteCacheState, key HolderKey, h *
 		state.unknownDependents[number] = insertNumber(state.unknownDependents[number], key.Number)
 	}
 	h.deps = withNumbers(h.deps, known)
-	h.unknownDeps = withNumbers(h.unknownDeps, unknown)
+	h.setUnknownDepsLocked(withNumbers(h.unknownDepsLocked(), unknown))
 }
 
 // forgetUnknownDependent removes parent from the holdings waiting for the
@@ -2470,19 +2600,19 @@ func holdingInfo(key HolderKey, h *holding) RemoteHoldingInfo {
 		HoldingFacts: HoldingFacts{
 			TypeName:          handleString(h.typeName),
 			ExpiresAtUnix:     h.expiresAtUnix,
-			Retained:          h.retention.retained,
+			Retained:          h.retained(),
 			Replacements:      h.replacements,
-			Executed:          h.executed,
-			FollowsFromInputs: h.follows,
-			CallRow:           h.rowed,
+			Executed:          h.is(heldExecuted),
+			FollowsFromInputs: h.is(heldFollows),
+			CallRow:           h.is(heldRowed),
 			Deps:              slices.Clone(h.deps),
-			UnknownDeps:       slices.Clone(h.unknownDeps),
+			UnknownDeps:       slices.Clone(h.unknownDepsLocked()),
 		},
-		ContentDigest: digest.Digest(handleString(h.contentDigest)),
+		ContentDigest: digest.Digest(handleString(h.contentDigestLocked())),
 		Dependents:    int(h.dependents),
 	}
-	if h.retention.retained {
-		info.RetentionExpiresAtUnix = h.retention.expiresAtUnix
+	if h.retained() {
+		info.RetentionExpiresAtUnix = h.retentionExpiresAtUnix
 	}
 	for _, session := range h.sessions {
 		info.Sessions = append(info.Sessions, handleString(session))
@@ -2567,16 +2697,16 @@ func holdingFactsLocked(h *holding) HoldingFacts {
 	facts := HoldingFacts{
 		TypeName:          handleString(h.typeName),
 		ExpiresAtUnix:     h.expiresAtUnix,
-		Retained:          h.retention.retained,
+		Retained:          h.retained(),
 		Replacements:      h.replacements,
-		Executed:          h.executed,
-		FollowsFromInputs: h.follows,
-		CallRow:           h.rowed,
+		Executed:          h.is(heldExecuted),
+		FollowsFromInputs: h.is(heldFollows),
+		CallRow:           h.is(heldRowed),
 		Deps:              h.deps,
-		UnknownDeps:       h.unknownDeps,
+		UnknownDeps:       h.unknownDepsLocked(),
 	}
-	if h.retention.retained {
-		facts.RetentionExpiresAtUnix = h.retention.expiresAtUnix
+	if h.retained() {
+		facts.RetentionExpiresAtUnix = h.retentionExpiresAtUnix
 	}
 	return facts
 }

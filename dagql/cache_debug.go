@@ -1231,7 +1231,7 @@ func debugPartsLocked(res *sharedResult) (complete []string, partial bool, offer
 	}
 	slices.Sort(offered)
 	if key, h := res.cloudHoldingLocked(); h != nil {
-		holding = &CacheDebugCloudHolding{Number: key.Number, Stored: !h.unstored, ExpiresAtUnix: h.expiresAtUnix}
+		holding = &CacheDebugCloudHolding{Number: key.Number, Stored: !h.is(heldUnstored), ExpiresAtUnix: h.expiresAtUnix}
 	}
 	return complete, partial, offered, holding
 }
