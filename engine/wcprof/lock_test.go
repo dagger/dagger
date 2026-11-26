@@ -61,9 +61,9 @@ func waiterInLock() bool {
 }
 
 // lockedByWriteLock matches a goroutine's stack whose sync.RWMutex Lock frame
-// is called from an RWMutex's wait (waitFor): each frame is a line naming the
-// function and a line naming its file.
-var lockedByWriteLock = regexp.MustCompile(`(?m)^sync\.\(\*RWMutex\)\.Lock\(.*\n.*\n\S*/engine/wcprof\.\(\*RWMutex\)\.waitFor\(`)
+// is called from an RWMutex's wait (wait, from waitFor): each frame is a line
+// naming the function and a line naming its file.
+var lockedByWriteLock = regexp.MustCompile(`(?m)^sync\.\(\*RWMutex\)\.Lock\(.*\n.*\n\S*/engine/wcprof\.\(\*RWMutex\)\.wait\(`)
 
 // A wait on an RWMutex names the op that held it, taken with WriteLock, and
 // when it took it; the dump writes them as the wait's holder.

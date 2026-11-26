@@ -422,6 +422,36 @@ func ReadLockWaited(ctx context.Context, m *RWMutex, ident string) LockWait {
 	return m.waitFor(ctx, ident, true)
 }
 
+// ReadLockAs acquires m for reading as kind of work, and returns the hold,
+// whose Unlock releases m and tells m's read hold observer of it
+// (ObserveReadHolds), and what ReadLockWaited returns: it waits as
+// ReadLockWaited does.
+func ReadLockAs(ctx context.Context, m *RWMutex, ident string, kind LockHolder) (ReadHold, LockWait) {
+	observed := m.readHolds.Load() != nil
+	if m.TryRLock() {
+		return m.readHold(kind, 0, observed), LockWait{}
+	}
+	lw := m.waitFor(ctx, ident, true)
+	return m.readHold(kind, lw.Waited, observed), lw
+}
+
+type lockHolderKey struct{}
+
+// WithLockHolder returns ctx naming kind as the kind of work its holds of a
+// lock are for (LockHolderOf), so that a caller can tell the code it calls
+// what it reads for: the reads of a dagql cache's lock under ctx name kind,
+// in place of the cache's own kind of work.
+func WithLockHolder(ctx context.Context, kind LockHolder) context.Context {
+	return context.WithValue(ctx, lockHolderKey{}, kind)
+}
+
+// LockHolderOf is the kind of work ctx names (WithLockHolder), and whether
+// it names one.
+func LockHolderOf(ctx context.Context) (LockHolder, bool) {
+	kind, ok := ctx.Value(lockHolderKey{}).(LockHolder)
+	return kind, ok
+}
+
 // WriteLockAs acquires m for writing as kind of work, so that a waiter it
 // keeps out can tell what it waited behind, and returns how long it waited
 // and the kind of the writer that let it in, as ReadLockWaited does. The op

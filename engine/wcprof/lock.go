@@ -73,12 +73,16 @@ type RWMutex struct {
 	holds  atomic.Pointer[func(kind LockHolder, waited, held time.Duration)]
 	heldAt int64
 	waited time.Duration
+	// readHolds, when set, sees each hold of m for reading taken with
+	// RLockAs or ReadLockAs as it ends (ObserveReadHolds).
+	readHolds atomic.Pointer[func(kind LockHolder, waited, held time.Duration)]
 }
 
 // LockHolder names the kind of work holding an RWMutex for writing, as
 // WriteLockAs gives it, so that a waiter can tell what it waited behind
-// (LockWait). A package registers its kinds with NewLockHolder. The zero
-// LockHolder is a writer that named no kind.
+// (LockWait), or for reading, as RLockAs and ReadLockAs give it, so that its
+// hold can be timed by kind (ObserveReadHolds). A package registers its kinds
+// with NewLockHolder. The zero LockHolder is a holder that named no kind.
 type LockHolder uint8
 
 // LockHolders bounds the LockHolder values, LockHolderReaders included, so
@@ -97,8 +101,8 @@ var (
 	lockHolderNameCount = 1
 )
 
-// NewLockHolder registers a kind of work that holds an RWMutex for
-// writing, named name. Call it from a package-level var, so it runs while
+// NewLockHolder registers a kind of work that holds an RWMutex, named
+// name. Call it from a package-level var, so it runs while
 // packages initialize: there are at most LockHolders-2.
 func NewLockHolder(name string) LockHolder {
 	if lockHolderNameCount == int(LockHolderReaders) {
@@ -211,6 +215,114 @@ func (m *RWMutex) endHold() {
 	}
 }
 
+// ObserveReadHolds calls f with each hold of m for reading taken with
+// RLockAs or ReadLockAs, as it ends, until the returned stop is called: the
+// kind of work its reader named, how long the reader waited to take m, and
+// how long it held m. A hold taken before f was set isn't seen, nor is one
+// taken with RLock, TryRLock or ReadLock. f runs in the releasing goroutine
+// once it has let m go, and may run in many at once. One f at a time: a
+// later call replaces an earlier one.
+func (m *RWMutex) ObserveReadHolds(f func(kind LockHolder, waited, held time.Duration)) (stop func()) {
+	m.readHolds.Store(&f)
+	return func() { m.readHolds.CompareAndSwap(&f, nil) }
+}
+
+// ObservingReads reports whether m has a read hold observer
+// (ObserveReadHolds): a reader whose kind of work costs something to find
+// finds it only then.
+func (m *RWMutex) ObservingReads() bool {
+	return m.readHolds.Load() != nil
+}
+
+// ReadHold is a hold of an RWMutex for reading that names the kind of work
+// it reads for, as RLockAs and ReadLockAs take it. Unlock ends it, and tells
+// m's read hold observer (ObserveReadHolds), if m had one as the hold began,
+// of its kind, its take's wait and its length. With no observer it reads no
+// clock but to time a take that had to wait. It is three words, so that
+// taking and ending one costs little more than RLock and RUnlock.
+type ReadHold struct {
+	m *RWMutex
+	// held is the kind of work in its low readHoldKindBits, and above them
+	// when the hold began, by holdClock, plus one, or 0 when m had no read
+	// hold observer then.
+	held uint64
+	// waited is how long the take waited.
+	waited time.Duration
+}
+
+// readHoldKindBits are the bits of a ReadHold's held that hold its kind:
+// every LockHolder is below LockHolders.
+const readHoldKindBits = 5
+
+var _ [1]struct{} = [LockHolders >> readHoldKindBits]struct{}{}
+
+// RLockAs locks m for reading as kind of work, as RLock does, and returns
+// the hold.
+func (m *RWMutex) RLockAs(kind LockHolder) ReadHold {
+	if m.readHolds.Load() == nil && m.TryRLock() {
+		return ReadHold{m: m, held: uint64(kind)}
+	}
+	return m.rlockAs(kind)
+}
+
+// rlockAs is RLockAs once m has a read hold observer, or once a try to take
+// m at once failed.
+func (m *RWMutex) rlockAs(kind LockHolder) ReadHold {
+	observed := m.readHolds.Load() != nil
+	if m.TryRLock() {
+		return m.readHold(kind, 0, observed)
+	}
+	return m.readHold(kind, m.wait(true).Waited, observed)
+}
+
+// readHold is the hold of m for reading its caller has just taken, as kind
+// of work, after waiting waited, timed when observed: when m had a read hold
+// observer as its caller began to take it. The caller looks for one before
+// it takes m, not after, where on some machines the look would wait for the
+// take's own write to m to be seen.
+func (m *RWMutex) readHold(kind LockHolder, waited time.Duration, observed bool) ReadHold {
+	h := ReadHold{m: m, held: uint64(kind), waited: waited}
+	if observed {
+		h.held |= uint64(time.Since(holdClock)+1) << readHoldKindBits
+	}
+	return h
+}
+
+// Unlock ends the hold, unlocking m for reading.
+func (h *ReadHold) Unlock() {
+	if h.held>>readHoldKindBits != 0 {
+		h.unlockObserved()
+		return
+	}
+	h.m.RUnlock()
+}
+
+// unlockObserved is Unlock for a hold m's read hold observer is to see.
+func (h *ReadHold) unlockObserved() {
+	held := time.Since(holdClock) + 1 - time.Duration(h.held>>readHoldKindBits)
+	h.m.RUnlock()
+	if f := h.m.readHolds.Load(); f != nil {
+		(*f)(h.kind(), h.waited, held)
+	}
+}
+
+// kind is the kind of work the hold names.
+func (h *ReadHold) kind() LockHolder {
+	return LockHolder(h.held & (1<<readHoldKindBits - 1))
+}
+
+// Again ends the hold and takes m for reading again, as the same kind of
+// work, running between, unless nil, while m is let go. The hold taken again
+// is a hold of its own.
+func (h *ReadHold) Again(between func()) {
+	m, kind := h.m, h.kind()
+	h.Unlock()
+	if between != nil {
+		between()
+	}
+	*h = m.RLockAs(kind)
+}
+
 // Unlock unlocks m for writing. While someone waits for m, it records for
 // them that a writer of its kind released m (released), and it tells m's
 // hold observer of the hold (ObserveHolds). It clears the kind for the
@@ -240,6 +352,16 @@ func (m *RWMutex) recordRelease() {
 // holder when the wait began and that kind. A writer marks itself after.
 func (m *RWMutex) waitFor(ctx context.Context, ident string, read bool) LockWait {
 	w := beginLockWait(ctx, m, ident)
+	lw := m.wait(read)
+	if w != nil {
+		w.holderKind = w.r.Intern(lw.Holder.String())
+	}
+	w.End()
+	return lw
+}
+
+// wait is waitFor, recording nothing.
+func (m *RWMutex) wait(read bool) LockWait {
 	m.waiting.Add(1)
 	before := m.released.Load()
 	start := time.Now()
@@ -262,10 +384,6 @@ func (m *RWMutex) waitFor(ctx context.Context, ident string, read bool) LockWait
 	default:
 		lw.Holder = LockHolderReaders
 	}
-	if w != nil {
-		w.holderKind = w.r.Intern(lw.Holder.String())
-	}
-	w.End()
 	return lw
 }
 
