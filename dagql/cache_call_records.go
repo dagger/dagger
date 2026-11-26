@@ -293,7 +293,7 @@ func (c *Cache) storedBundleCallsLocked(build *storedBundleBuild, start int) err
 			continue
 		}
 		for _, group := range c.keptCallTermsLocked(res) {
-			if group = c.sendableCallsLocked(build.heldBy, build.terms, group); len(group) == 0 {
+			if group = c.sendableCallsLocked(build.heldBy, build.terms, nil, group); len(group) == 0 {
 				continue
 			}
 			chosen, places := c.placeableCallLocked(group, build.now, func(entry *sharedResult) bool {
