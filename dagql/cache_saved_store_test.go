@@ -369,15 +369,13 @@ func savedStoreIndexCounts(c *Cache, say func(format string, args ...any)) {
 		digestStringBytes += n
 	}
 	var postingExact, postingImported, postingsWithTree int
-	for d := range c.egraphResultsByDigest.exact.Keys() {
-		n := c.egraphResultsByDigest.exact.Size(d)
-		if n > 1 {
+	postingExact = len(c.egraphResultsByDigest.one)
+	for _, p := range c.egraphResultsByDigest.rest {
+		postingImported += p.imported.Size()
+		if p.exact != nil {
 			postingsWithTree++
+			postingExact += p.exact.Size()
 		}
-		postingExact += n
-	}
-	for _, snapshot := range c.egraphResultsByDigest.imported {
-		postingImported += snapshot.Size()
 	}
 	var rocInner, ocrInner, trInner, rtInner, ridInner, termsByDigestInner, inTermsInner, outTermsInner, termInputs, rdgGroups, cieInner int
 	for _, v := range c.resultOutputEqClasses {
