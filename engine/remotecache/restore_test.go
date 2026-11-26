@@ -756,6 +756,83 @@ func TestRestoreMergesHeadsPartByPartInTurn(t *testing.T) {
 	require.Equal(t, uint64(2), conn.next(t).Re)
 }
 
+// withRoles gives a file's segments their roles, in order.
+func withRoles(file *protocol.SetFile, roles ...protocol.SetFileRole) {
+	for i, role := range roles {
+		file.Segments[i].Role = role
+	}
+}
+
+// A head's lead, what a later build adds to its first part, merges in the
+// turn of the first part's last part, so that a head's first part lands in
+// its first turns whatever else its file holds, and the head's report and
+// answer say when it landed. Here headA is a chain of its first part, its
+// lead and its rest, and headB's second part waits for headA's whole first
+// part, lead included.
+func TestRestoreMergesAHeadsLeadInTheTurnOfItsFirstPart(t *testing.T) {
+	t.Parallel()
+	adapter := newFakeAdapter()
+	release := make(chan struct{})
+	var released sync.Once
+	var mu sync.Mutex
+	commits := map[uint64]int64{}
+	adapter.restore = func(_ context.Context, part dagql.ValueBundle, _ *dagql.KnownRows) (dagql.MergeReply, error) {
+		if part.Values[0].SenderNumber == 1 {
+			<-release
+		}
+		at := time.Now()
+		mu.Lock()
+		commits[part.Values[0].SenderNumber] = at.UnixNano()
+		mu.Unlock()
+		return merged(part, at), nil
+	}
+	s, conn := restoreSession(t, adapter)
+	t.Cleanup(func() { released.Do(func() { close(release) }) })
+	files := newFileServer(t)
+	v := dagql.ValueBundleVersion
+	headZ := files.add("headZ", setFile(t, v, part(1)))
+	headA := files.addChain(map[string][]byte{
+		"firstA": setFile(t, v, part(11), part(12)),
+		"leadA":  setFile(t, v, part(13)),
+		"restA":  setFile(t, v, part(14)),
+	}, "firstA", "leadA", "restA")
+	withRoles(&headA, protocol.SetFileFirst, protocol.SetFileLead, "")
+	headB := files.addChain(map[string][]byte{
+		"firstB": setFile(t, v, part(21)),
+		"restB":  setFile(t, v, part(22)),
+	}, "firstB", "restB")
+	withRoles(&headB, protocol.SetFileFirst, "")
+
+	// headZ's merge holds the lane until headA and headB have both
+	// downloaded.
+	s.dispatch(request(t, 1, protocol.TypeRestore, restoreOf("z", &headZ, nil)))
+	require.Equal(t, []uint64{1}, seen(t, adapter, 1))
+	s.dispatch(request(t, 2, protocol.TypeRestore, restoreOf("a", &headA, nil)))
+	s.dispatch(request(t, 3, protocol.TypeRestore, restoreOf("b", &headB, nil)))
+	require.Eventually(t, func() bool { return downloaded(s.restorer, headA.Digest, headB.Digest) }, 10*time.Second, time.Millisecond)
+	released.Do(func() { close(release) })
+	require.Equal(t, []uint64{11, 21, 12, 13, 22, 14}, seen(t, adapter, 6), "headA's lead in the turn of its first part's last part, before headB's second part")
+
+	reports := map[string]RestoreReport{}
+	for range 3 {
+		report := nextReport(t, adapter)
+		reports[report.Check] = report
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	require.Equal(t, commits[13], reports["a"].FirstPart.UnixNano(), "headA's first part landed with its lead")
+	require.Equal(t, commits[21], reports["b"].FirstPart.UnixNano(), "headB's first part is its first segment")
+	require.True(t, reports["z"].FirstPart.IsZero(), "a file with no first part reports none")
+	answers := map[uint64]protocol.RestoredFile{}
+	for range 3 {
+		env := conn.next(t)
+		answers[env.Re] = decode[protocol.Restored](t, env).Files[0]
+	}
+	require.Equal(t, commits[13], answers[2].FirstPart)
+	require.Equal(t, commits[21], answers[3].FirstPart)
+	require.Zero(t, answers[1].FirstPart)
+}
+
 // A head still downloading holds up no other head: the lane merges the
 // heads it has, and a later head's first part goes once it has downloaded.
 func TestRestoreHeadDoesntWaitForAnotherHeadsDownload(t *testing.T) {
