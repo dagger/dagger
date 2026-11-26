@@ -69,7 +69,6 @@ func TestStoredEntryHoldingAnswers(t *testing.T) {
 		Stored:              true,
 		StoredExpiresAtUnix: expiry,
 		Recipes:             info.Recipes,
-		At:                  handedForTest(cloud),
 		Holding: RemoteHoldingInfo{
 			Key: rootKey,
 			HoldingFacts: HoldingFacts{

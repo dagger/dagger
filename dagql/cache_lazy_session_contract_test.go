@@ -152,13 +152,13 @@ func TestCacheLazySessionRetryContracts(t *testing.T) {
 				waitLazyRetrySignal(t, started, "contract callback")
 				synctest.Wait()
 				shared := receiver.cacheSharedResult()
-				shared.lazyState().mu.Lock()
-				attempt := shared.lazyState().groupStateLocked(group).attempt
+				shared.lazyMu.Lock()
+				attempt := shared.lazyGroupStateLocked(group).attempt
 				waiters := 0
 				if attempt != nil {
 					waiters = attempt.waiters
 				}
-				shared.lazyState().mu.Unlock()
+				shared.lazyMu.Unlock()
 				require.NotNil(t, attempt)
 				require.Equal(t, 2, waiters)
 				cancelCause := errors.New("own joiner canceled")
@@ -205,10 +205,10 @@ func TestCacheLazySessionRetryContracts(t *testing.T) {
 				}
 				require.EqualValues(t, 1, maxRunning.Load())
 				synctest.Wait()
-				shared.lazyState().mu.Lock()
+				shared.lazyMu.Lock()
 				remaining := attempt.waiters
-				current := shared.lazyState().groupStateLocked(group).attempt
-				shared.lazyState().mu.Unlock()
+				current := shared.lazyGroupStateLocked(group).attempt
+				shared.lazyMu.Unlock()
 				require.Zero(t, remaining)
 				require.Nil(t, current)
 			})

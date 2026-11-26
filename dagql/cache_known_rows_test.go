@@ -205,13 +205,13 @@ func TestRecordsOnlyExportHoldsARowWhoseRecipeOnlyALeftOutRootShares(t *testing.
 	transferTestDependency(c, ctx, b, blocker)
 	for _, r := range []AnyResult{old, blocker} {
 		res := r.cacheSharedResult()
-		res.lazyState().mu.Lock()
-		res.lazyState().whole.syncPending = true
-		res.lazyState().mu.Unlock()
+		res.lazyMu.Lock()
+		res.lazyWhole.syncPending = true
+		res.lazyMu.Unlock()
 		defer func() {
-			res.lazyState().mu.Lock()
-			res.lazyState().whole.syncPending = false
-			res.lazyState().mu.Unlock()
+			res.lazyMu.Lock()
+			res.lazyWhole.syncPending = false
+			res.lazyMu.Unlock()
 		}()
 	}
 

@@ -415,22 +415,6 @@ func TestIsIntrospectionPreservesClassification(t *testing.T) {
 			want:  true,
 		},
 		{
-			name:  "root __type",
-			frame: testResultCall("__type", dagql.String(""), nil),
-			want:  true,
-		},
-		{
-			// __type(name: $type) { fields { name } }: a field of one of the
-			// type's fields, selected as a list element
-			name: "list element descendant of __type",
-			frame: testResultCall("name", dagql.String(""), func() *dagql.ResultCall {
-				field := testResultCall("fields", dagql.String(""), testResultCall("__type", dagql.String(""), nil))
-				field.Nth = 2
-				return field
-			}()),
-			want: true,
-		},
-		{
 			name:  "descendant of plain root",
 			frame: testResultCall("name", dagql.String(""), testResultCall("plain", dagql.String(""), nil)),
 			want:  false,

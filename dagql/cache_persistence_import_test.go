@@ -621,7 +621,7 @@ func TestCachePersistenceImportFailureWipesStore(t *testing.T) {
 
 	db, q, err := prepareCacheDBs(ctx, dbPath, false)
 	assert.NilError(t, err)
-	_, err = db.Exec(`UPDATE result_records SET self_payload = x'7B6E6F742D6A736F6E'`)
+	_, err = db.Exec(`UPDATE results SET self_payload = x'7B6E6F742D6A736F6E'`)
 	assert.NilError(t, err)
 	assert.NilError(t, q.UpsertMeta(ctx, persistdb.MetaKeyCleanShutdown, "1"))
 	assert.NilError(t, closeCacheDBs(db, q))
@@ -1133,7 +1133,7 @@ func TestCachePersistenceImportedDecodeStaleReaderDoesNotLeadAfterSuccess(t *tes
 
 	// The leader is the first caller through the pre-lock hook; the stale
 	// reader is the second and parks there - after its loop-top read of
-	// the encoded payload, before it can acquire the decode state's mu - until
+	// the encoded payload, before it can acquire persistDecodeMu - until
 	// the leader has completely finished.
 	var preLockCalls atomic.Int32
 	var leadPublishes atomic.Int32
@@ -1340,7 +1340,7 @@ func cacheRequiredSessionResourcesError(c *Cache) error {
 		if res.sessionResourceHandle != "" {
 			handles[res.sessionResourceHandle] = struct{}{}
 		}
-		for _, depID := range res.deps {
+		for depID := range res.deps {
 			dep := c.resultsByID[depID]
 			if dep == nil {
 				return nil, fmt.Errorf("result %d references missing dep %d", res.id, depID)

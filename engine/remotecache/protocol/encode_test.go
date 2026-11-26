@@ -2,40 +2,13 @@ package protocol
 
 import (
 	"encoding/json"
-	"fmt"
 	"runtime"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/dagger/dagql"
 )
-
-// recordsMerge is a merge shaped as a fresh engine's placement merges are:
-// 2,000 records, each with its object's JSON and its call, over the record
-// before it.
-func recordsMerge() Merge {
-	object := json.RawMessage(`{"rootfs":{"id":"` + strings.Repeat("a", 64) + `"},"config":{"env":["PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin","GOTOOLCHAIN=auto"],"workdir":"/src","entrypoint":["/bin/sh","-c"]},"platform":"linux/arm64","mounts":[]}`)
-	bundle := dagql.ValueBundle{Version: 9, Roots: []dagql.TransferredRoot{{Ordinal: 2000}}}
-	for i := range 2000 {
-		v := dagql.TransferredValue{
-			Ordinal:      dagql.TransferOrdinal(i + 1),
-			SenderNumber: uint64(1000 + i),
-			Record: dagql.PersistedRecord{
-				ResultID: uint64(1000 + i),
-				Envelope: dagql.PersistedResultEnvelope{Version: 1, Kind: "object", TypeName: "Container", ObjectCodec: "core", ResultID: uint64(1000 + i), ObjectJSON: object},
-				Call:     &dagql.ResultCall{Kind: dagql.ResultCallKindField, Field: "withExec", EffectIDs: []string{fmt.Sprintf("effect-%d", i)}},
-			},
-			ExpiresAtUnix: 1790086400,
-		}
-		if i > 0 {
-			v.DependencyIDs = []uint64{uint64(i)}
-		}
-		bundle.Values = append(bundle.Values, v)
-	}
-	return Merge{Bundle: bundle}
-}
 
 // allocatedBy returns the bytes the heap allocated running f, on average
 // over n runs, each after two collections: encoding/json's buffer pools are

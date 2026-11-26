@@ -312,7 +312,7 @@ func (c *Cache) preparePartDependenciesLocked(receiver *sharedResult, deps []*sh
 			continue
 		}
 		seen[row.id] = true
-		for _, id := range row.deps {
+		for id := range row.deps {
 			if c.resultsByID[id] == nil {
 				return nil, fmt.Errorf("part graph: missing ancestor dependency %d", id)
 			}
@@ -325,7 +325,7 @@ func (c *Cache) preparePartDependenciesLocked(receiver *sharedResult, deps []*sh
 			req = req.Union(row.requiredSessionResources).(*set.TreeSet[SessionResourceHandle])
 		}
 		requirements[row] = req
-		for _, id := range row.depParents {
+		for id := range row.depParents {
 			parent := c.resultsByID[id]
 			if parent == nil {
 				return nil, fmt.Errorf("part graph: missing ancestor %d", id)
@@ -336,11 +336,14 @@ func (c *Cache) preparePartDependenciesLocked(receiver *sharedResult, deps []*sh
 	return requirements, nil
 }
 func (c *Cache) applyPartDependenciesLocked(ctx context.Context, receiver *sharedResult, deps []*sharedResult, requirements map[*sharedResult]*set.TreeSet[SessionResourceHandle]) {
-	c.noteSavedEntryLocked(receiver.id)
+	if receiver.deps == nil {
+		receiver.deps = map[sharedResultID]struct{}{}
+	}
 	for _, dep := range deps {
-		if !receiver.deps.add(dep.id) {
+		if _, ok := receiver.deps[dep.id]; ok {
 			continue
 		}
+		receiver.deps[dep.id] = struct{}{}
 		receiver.dependencyOwnershipRevision++
 		c.rememberDependencyEdgeLocked(receiver, dep)
 		c.incrementIncomingOwnershipLocked(ctx, dep)
@@ -549,7 +552,7 @@ func (c *Cache) CommitReadyPart(ctx context.Context, p *PreparedReadyPart) (_ *R
 	if p.beforeSyncCleanup != nil {
 		row.onRelease = joinOnRelease(row.onRelease, p.beforeSyncCleanup.release)
 	}
-	row.snapshotState().linkIntent = &snapshotLinkIntent{Links: cloneSnapshotRefLinks(p.next.SnapshotLinks)}
+	row.snapshotLinkIntent = &snapshotLinkIntent{Links: cloneSnapshotRefLinks(p.next.SnapshotLinks)}
 	if p.store == nil {
 		row.persistedEnvelope = p.published
 	} else {
@@ -557,7 +560,7 @@ func (c *Cache) CommitReadyPart(ctx context.Context, p *PreparedReadyPart) (_ *R
 	}
 	row.payloadRevision++
 	gate.managed = true
-	row.partGateCell().active.Store(true)
+	row.partGate.active.Store(true)
 	gate.revision++
 	token := p.permit.task
 	installation := gate.revision

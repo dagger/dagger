@@ -209,10 +209,10 @@ func (build *Builder) typescriptSDKFiles() *dagger.Directory {
 // what they import from dagger/go's archives, so the go command compiles none
 // of it.
 func (build *Builder) ExportDriver() *dagger.File {
-	return goBinary(releaseSource(
-		"https://github.com/dagger/golangci-lint/archive/"+consts.GolangciLintCommit+".tar.gz",
-		consts.GolangciLintChecksum,
-	).Directory("helpers/export-driver"), ".", build.platformSpec, golang.GoOpts{
+	return goBinary(core.Git("https://github.com/dagger/golangci-lint").
+		Commit(consts.GolangciLintCommit).
+		Tree().
+		Directory("helpers/export-driver"), ".", build.platformSpec, golang.GoOpts{
 		Version: consts.GolangVersion,
 	})
 }

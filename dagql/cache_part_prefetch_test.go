@@ -94,10 +94,9 @@ func TestPartPrefetchThenInstall(t *testing.T) {
 	require.Equal(t, 2, f.transport.total(), "the install made no request")
 }
 
-// A job's line gives its content requests, their summed time to first byte
-// and the longest any of them waited without progress, as an install's line
-// does: each of its two blobs' requests waits the store's delay for its
-// headers.
+// A job's line gives its content requests and their summed time to first
+// byte, as an install's line does: each of its two blobs' requests waits the
+// store's delay for its headers.
 func TestPartPrefetchRequestsAndTTFB(t *testing.T) {
 	f := newPrefetchFixture(t, true, nil)
 	f.transport.delay = 40 * time.Millisecond
@@ -108,10 +107,6 @@ func TestPartPrefetchRequestsAndTTFB(t *testing.T) {
 	ttfb := line.duration(t, "ttfb")
 	require.GreaterOrEqual(t, ttfb, 80*time.Millisecond, "each request's wait for its headers, summed")
 	require.Less(t, ttfb, line.duration(t, "duration")+80*time.Millisecond)
-	// The longest wait without progress is one request's, not the sum.
-	idle := line.duration(t, "idle_max")
-	require.GreaterOrEqual(t, idle, 40*time.Millisecond)
-	require.Less(t, idle, ttfb)
 }
 
 // A job whose offer was retired before it ran downloads nothing.
@@ -215,7 +210,7 @@ func (f *prefetchFixture) replace(t *testing.T, record PersistedPartOffer) *part
 	f.cache.egraphMu.Lock()
 	owner, err := f.cache.newOfferOwnerLocked(f.ctx, record.Owner)
 	var callbacks []OnReleaseFunc
-	next := &partOffer{layeredOffer: f.cache.storedLayers.hold(record), owner: owner}
+	next := &partOffer{record: record, owner: owner}
 	if err == nil {
 		var queue []*sharedResult
 		queue, err = f.cache.testReplacePartOfferLocked(f.ctx, row, f.address, next)
@@ -324,7 +319,7 @@ func TestPartPrefetchQueueDropDoesNotBlockRetirement(t *testing.T) {
 	release, entered := make(chan struct{}), make(chan struct{}, 1)
 	defer close(release)
 	f.prefetch.logger = slog.New(blockingHandler{release: release, entered: entered})
-	second := &partOffer{layeredOffer: f.offer.layeredOffer}
+	second := &partOffer{record: f.offer.record}
 	go f.cache.partOfferAccepted(f.ctx, f.receiver.cacheSharedResult(), f.key, second)
 	within(t, entered)
 	retired := make(chan struct{})
@@ -894,7 +889,7 @@ func TestPartPrefetchAheadKeepsSharedLayers(t *testing.T) {
 	first, second := offers[0], offers[1]
 	firstOwn, secondOwn := byOffer[first].layers[1], byOffer[second].layers[1]
 
-	next := &partOffer{layeredOffer: second.layeredOffer}
+	next := &partOffer{record: second.record}
 	c.partOfferReplaced(second, next)
 	p.mu.Lock()
 	defer p.mu.Unlock()

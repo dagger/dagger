@@ -735,7 +735,7 @@ func (ModuleSuite) TestFunctionCacheExpiry(ctx context.Context, t *testctx.T) {
 	// function's results, read once the session has ended.
 	callValue := func(ctx context.Context, t *testctx.T, name, source string) []expiry {
 		t.Helper()
-		session, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(testutil.ClientLogOutput(t)))
+		session, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(testutil.NewTWriter(t)))
 		require.NoError(t, err)
 		require.NoError(t, core.NewQuery(session).Directory().
 			WithNewFile("dagger.json", fmt.Sprintf(`{"name":%q,"engineVersion":"latest","sdk":{"source":"dang"}}`, name)).

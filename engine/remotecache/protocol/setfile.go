@@ -77,7 +77,7 @@ func EncodeSetFilePart(enc *zstd.Encoder, buf *bytes.Buffer, bundle dagql.ValueB
 		return nil, SetFilePart{}, err
 	}
 	buf.Reset()
-	if err := WriteJSON(buf, shared); err != nil {
+	if err := marshalInto(buf, shared); err != nil {
 		return nil, SetFilePart{}, err
 	}
 	part := enc.EncodeAll(buf.Bytes(), nil)

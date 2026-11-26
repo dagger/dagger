@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/slog"
@@ -1151,18 +1150,7 @@ func (s *workspaceSchema) validateGeneratedModuleConfig(
 	generated dagql.ObjectResult[*core.Workspace],
 	scopePath string,
 ) error {
-	ws := generated.Self()
-	// Look at the config files alone first: reading the whole root makes the
-	// client walk every gitignored file under it. An include cannot follow a
-	// symlinked config or match a scope path that holds glob characters, so
-	// only the whole root can report a missing config.
-	configFiles := core.CopyFilter{Include: rerootPatterns(scopePath, modules.ConfigFilenames())}
-	if root, err := s.resolveRootfs(ctx, ws, ".", configFiles, ws.ClientLocalBase()); err == nil {
-		if _, found, _ := moduleConfigInDir(ctx, &core.DirectoryStatFS{Dir: root}, scopePath); found {
-			return nil
-		}
-	}
-	root, err := s.filteredWorkspaceRootfs(ctx, ws)
+	root, err := s.filteredWorkspaceRootfs(ctx, generated.Self())
 	if err != nil {
 		return err
 	}

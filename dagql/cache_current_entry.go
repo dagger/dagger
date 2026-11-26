@@ -140,12 +140,12 @@ func (c *Cache) replaceResultValueInPlaceLocked(ctx context.Context, cur, fresh 
 	c.forgetListItemLocked(cur)
 	c.setStoredRecordBytesLocked(cur, fresh.storedRecordBytes)
 	for _, offer := range cur.partOffersLocked() {
-		more, err := c.retirePartOfferLocked(ctx, cur, offer.held.Address)
+		more, err := c.retirePartOfferLocked(ctx, cur, offer.record.Address)
 		queue = append(queue, more...)
 		rerr = errors.Join(rerr, err)
 	}
 	old := replacedValue{release: cur.onRelease}
-	for _, depID := range cur.deps {
+	for depID := range cur.deps {
 		c.forgetDependencyEdgeLocked(cur.id, depID)
 		old.deps = append(old.deps, depID)
 	}
@@ -215,34 +215,26 @@ func (c *Cache) finishValueReplacement(ctx context.Context, res *sharedResult, r
 	err := runOnReleaseFuncs(ctx, []OnReleaseFunc{release})
 
 	res.payloadMu.Lock()
-	if s := res.snapshots.Load(); s != nil {
-		s.ownerLinks = nil
-		s.linkIntent = nil
-		s.leaseCleanupRoles = nil
-	}
+	res.snapshotOwnerLinks = nil
+	res.snapshotLinkIntent = nil
+	res.snapshotLeaseCleanupRoles = nil
 	res.payloadMu.Unlock()
 	res.completeParts.Store(nil)
-	if cell := res.partGate.Load(); cell != nil {
-		cell.gate.Store(nil)
-		cell.active.Store(false)
-		cell.restoredDelegation.Store(false)
-	}
+	res.partGate.gate.Store(nil)
+	res.partGate.active.Store(false)
+	res.partGate.restoredDelegation.Store(false)
 
-	if lz := res.lazy.Load(); lz != nil {
-		lz.mu.Lock()
-		lz.whole = lazyGroupState{}
-		lz.partGroups = nil
-		lz.evalComplete = false
-		lz.mu.Unlock()
-	}
+	res.lazyMu.Lock()
+	res.lazyWhole = lazyGroupState{}
+	res.lazyPartGroups = nil
+	res.lazyEvalComplete = false
+	res.lazyMu.Unlock()
 
-	if d := res.decode.Load(); d != nil {
-		d.mu.Lock()
-		d.err = nil
-		d.retry = false
-		d.leaseSyncPending = false
-		d.mu.Unlock()
-	}
+	res.persistDecodeMu.Lock()
+	res.persistDecodeErr = nil
+	res.persistDecodeRetry = false
+	res.persistLeaseSyncPending = false
+	res.persistDecodeMu.Unlock()
 	return err
 }
 

@@ -157,7 +157,7 @@ func TestPersistedAttachedNullKeepsOwnedDependencyAndResource(t *testing.T) {
 
 	depIDs := func(shared *sharedResult) []uint64 {
 		var ids []uint64
-		for _, depID := range shared.deps {
+		for depID := range shared.deps {
 			ids = append(ids, uint64(depID))
 		}
 		return ids

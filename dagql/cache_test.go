@@ -1267,7 +1267,7 @@ func TestCacheVolatileSessionResourceInvariants(t *testing.T) {
 	c.egraphMu.Lock()
 	parentRequiresHandle := cacheTestSessionResourceSetContains(firstShared.requiredSessionResources, handle)
 	var leafShared *sharedResult
-	for _, depID := range firstShared.deps {
+	for depID := range firstShared.deps {
 		dep := c.resultsByID[depID]
 		if dep != nil && dep.sessionResourceHandle == handle {
 			leafShared = dep
@@ -3903,12 +3903,12 @@ func TestDirectDigestLookupHitsWithoutTermIndex(t *testing.T) {
 		assert.Assert(t, !firstRes.HitCache())
 
 		c.egraphMu.Lock()
-		c.inputEqClassToTerms = make(map[eqClassID]*idSet[egraphTermID])
-		c.outputEqClassToTerms = make(map[eqClassID]*idSet[egraphTermID])
+		c.inputEqClassToTerms = make(map[eqClassID]map[egraphTermID]struct{})
+		c.outputEqClassToTerms = make(map[eqClassID]map[egraphTermID]struct{})
 		c.egraphTerms = make(map[egraphTermID]*egraphTerm)
-		c.egraphTermsByTermDigest = make(map[string]*idSet[egraphTermID])
-		c.resultOutputEqClasses = make(map[sharedResultID]*idSet[eqClassID])
-		c.outputEqClassResults = make(map[eqClassID]*idSet[sharedResultID])
+		c.egraphTermsByTermDigest = make(map[string]*set.TreeSet[egraphTermID])
+		c.resultOutputEqClasses = make(map[sharedResultID]map[eqClassID]struct{})
+		c.outputEqClassResults = make(map[eqClassID]map[sharedResultID]struct{})
 		c.termInputProvenance = make(map[egraphTermID][]egraphInputProvenanceKind)
 		// The classes' uses went with the terms and the outputs.
 		clear(c.egraphUses)
@@ -3954,12 +3954,12 @@ func TestDirectDigestLookupHitsWithoutTermIndex(t *testing.T) {
 		assert.Assert(t, !firstRes.HitCache())
 
 		c.egraphMu.Lock()
-		c.inputEqClassToTerms = make(map[eqClassID]*idSet[egraphTermID])
-		c.outputEqClassToTerms = make(map[eqClassID]*idSet[egraphTermID])
+		c.inputEqClassToTerms = make(map[eqClassID]map[egraphTermID]struct{})
+		c.outputEqClassToTerms = make(map[eqClassID]map[egraphTermID]struct{})
 		c.egraphTerms = make(map[egraphTermID]*egraphTerm)
-		c.egraphTermsByTermDigest = make(map[string]*idSet[egraphTermID])
-		c.resultOutputEqClasses = make(map[sharedResultID]*idSet[eqClassID])
-		c.outputEqClassResults = make(map[eqClassID]*idSet[sharedResultID])
+		c.egraphTermsByTermDigest = make(map[string]*set.TreeSet[egraphTermID])
+		c.resultOutputEqClasses = make(map[sharedResultID]map[eqClassID]struct{})
+		c.outputEqClassResults = make(map[eqClassID]map[sharedResultID]struct{})
 		c.termInputProvenance = make(map[egraphTermID][]egraphInputProvenanceKind)
 		// The classes' uses went with the terms and the outputs.
 		clear(c.egraphUses)
@@ -5165,7 +5165,7 @@ func TestCacheReleaseRemovesRecordedDigestPostingAfterOutputClassMerge(t *testin
 	foreignEqID := c.ensureEqClassForDigestLocked(ctxA, foreignDigest.String())
 	outputEqID = c.mergeEqClassesLocked(ctxA, outputEqID, foreignEqID)
 	digestsPresent := c.eqClassToDigests[outputEqID] != nil
-	ok := c.eqClassToDigests[outputEqID].Contains(foreignDigest.String())
+	_, ok := c.eqClassToDigests[outputEqID][foreignDigest.String()]
 
 	// Removal covers production-recorded exact postings and broad imported
 	// postings, not arbitrary white-box mutations that bypass bookkeeping.
@@ -7300,7 +7300,7 @@ func TestCachePruneDoesNotProtectTermProvenanceOnlyResultFromActiveResult(t *tes
 	termID := egraphTermID(1)
 	c.egraphTerms[termID] = newEgraphTerm(termID, digest.FromString("prune-structural-root-term"), []eqClassID{provenanceEq}, rootEq)
 	c.useTermLocked(c.egraphTerms[termID])
-	c.outputEqClassToTerms[rootEq] = idSetOf(termID)
+	c.outputEqClassToTerms[rootEq] = map[egraphTermID]struct{}{termID: {}}
 	c.termInputProvenance[termID] = []egraphInputProvenanceKind{egraphInputProvenanceKindResult}
 	c.egraphMu.Unlock()
 	c.sessionMu.Lock()
@@ -7380,7 +7380,7 @@ func TestCacheAttachDependencyResults(t *testing.T) {
 	parentDependsOnChild := false
 	childIncomingOwnershipCount := int64(0)
 	if cachedParent != nil {
-		parentDependsOnChild = cachedParent.deps.has(childShared.id)
+		_, parentDependsOnChild = cachedParent.deps[childShared.id]
 	}
 	if cachedChild != nil {
 		childIncomingOwnershipCount = cachedChild.incomingOwnershipCount.Load()
@@ -7448,7 +7448,7 @@ func TestCacheAttachDependencyResultsAlreadyAttachedChild(t *testing.T) {
 	heldParent := c.resultsByID[parentShared.id]
 	parentDependsOnChild := false
 	if heldParent != nil {
-		parentDependsOnChild = heldParent.deps.has(childShared.id)
+		_, parentDependsOnChild = heldParent.deps[childShared.id]
 	}
 	c.egraphMu.RUnlock()
 	assert.Assert(t, heldChild != nil)
@@ -7500,7 +7500,7 @@ func TestCacheAddExplicitDependency(t *testing.T) {
 	parentDependsOnChild := false
 	childIncomingOwnershipCount := int64(0)
 	if cachedParent != nil {
-		parentDependsOnChild = cachedParent.deps.has(childShared.id)
+		_, parentDependsOnChild = cachedParent.deps[childShared.id]
 	}
 	if cachedChild := c.resultsByID[childShared.id]; cachedChild != nil {
 		childIncomingOwnershipCount = cachedChild.incomingOwnershipCount.Load()
@@ -8147,7 +8147,7 @@ func TestCacheAddExplicitDependencyAcceptsSessionResourceDepsAndRecomputesAncest
 	resourceRequiringShared := resourceRequiring.cacheSharedResult()
 	assert.Assert(t, resourceRequiringShared != nil && resourceRequiringShared.id != 0)
 	c.egraphMu.RLock()
-	edgeAdded := middleShared.deps.has(resourceRequiringShared.id)
+	_, edgeAdded := middleShared.deps[resourceRequiringShared.id]
 	middleRequired := cacheTestSessionResourceSetContains(middleShared.requiredSessionResources, handle)
 	topRequired := cacheTestSessionResourceSetContains(topShared.requiredSessionResources, handle)
 	middleGenAfter := middleShared.requiredSessionResourcesGen.Load()
@@ -8166,7 +8166,7 @@ func TestCacheAddExplicitDependencyAcceptsSessionResourceDepsAndRecomputesAncest
 	plainDepShared := plainDep.cacheSharedResult()
 	assert.Assert(t, plainDepShared != nil && plainDepShared.id != 0)
 	c.egraphMu.RLock()
-	retained := middleShared.deps.has(plainDepShared.id)
+	_, retained := middleShared.deps[plainDepShared.id]
 	middleGenFinal := middleShared.requiredSessionResourcesGen.Load()
 	c.egraphMu.RUnlock()
 	assert.Assert(t, retained, "requirement-free retention edge must be recorded")
@@ -8256,6 +8256,91 @@ func TestCacheAttachedDependencyResultsRequireEveryDepsSessionResources(t *testi
 
 	assert.NilError(t, c.ReleaseSession(otherCtx, "attach-many-other"))
 	cacheTestReleaseSession(t, c, ctx)
+}
+
+// A call whose key doesn't name its session can have a result for each
+// session, each built on resources only its own session holds, such as what
+// the session lent the call's work. A field the session's result holds,
+// attached after the result is published, is a field of that result, not of
+// another session's result of the same call: the session can load it by its
+// ID, as code handed the field's ID does. So too when the session bound its
+// result to itself, which publishes it under the call holding the binding.
+func TestCacheAttachedFieldBelongsToItsSessionsResult(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		// bindSecond binds the second session's result to its session.
+		bindSecond bool
+	}{
+		{name: "built on its session's resource"},
+		{name: "bound to its session", bindSecond: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			baseCtx := cacheTestContext(t.Context())
+			c, err := NewCache(baseCtx, "", nil, nil)
+			assert.NilError(t, err)
+			srv := cacheTestServer(t)
+			sessionCtx := func(session string) context.Context {
+				return ContextWithCache(engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+					ClientID:  session + "-client",
+					SessionID: session,
+				}), c)
+			}
+			resourceOf := func(session string) SessionResourceHandle {
+				return cacheTestVolatileSessionResourceHandle("FIELD_OWNER_" + session)
+			}
+
+			Fields[cacheTestQuery]{
+				NodeFunc("parent", func(ctx context.Context, _ ObjectResult[cacheTestQuery], _ struct{}) (Result[*cacheTestObject], error) {
+					md, err := engine.ClientMetadataFromContext(ctx)
+					if err != nil {
+						return Result[*cacheTestObject]{}, err
+					}
+					resource, err := cacheTestSessionResourceLeaf(ctx, resourceOf(md.SessionID))
+					if err != nil {
+						return Result[*cacheTestObject]{}, err
+					}
+					field, err := NewObjectResultForCall(&cacheTestObject{Value: 2}, srv,
+						ChildFieldCall(CurrentCall(ctx), "field", (&cacheTestObject{}).Type()))
+					if err != nil {
+						return Result[*cacheTestObject]{}, err
+					}
+					if tc.bindSecond && md.SessionID == "second" {
+						BindToSession(ctx)
+					}
+					return NewResultForCurrentCall(ctx, &cacheTestObject{
+						Value:             1,
+						dependencyResults: []AnyResult{resource, field},
+					})
+				}),
+			}.Install(srv)
+
+			fieldOf := func(session string) *call.ID {
+				t.Helper()
+				ctx := sessionCtx(session)
+				assert.NilError(t, c.BindSessionResource(ctx, session, session+"-client", resourceOf(session), "bound"))
+				var parent Result[*cacheTestObject]
+				assert.NilError(t, srv.Select(ctx, srv.Root(), &parent, Selector{Field: "parent"}))
+				id, err := parent.Self().dependencyResults[1].ID()
+				assert.NilError(t, err)
+				return id
+			}
+
+			first := fieldOf("first")
+			// The second session can't use the first's result, so its own
+			// call runs.
+			second := fieldOf("second")
+
+			_, err = srv.Load(sessionCtx("first"), first)
+			assert.NilError(t, err)
+			_, err = srv.Load(sessionCtx("second"), second)
+			assert.NilError(t, err, "a session loads the field its own result holds")
+
+			assert.NilError(t, c.ReleaseSession(sessionCtx("first"), "first"))
+			assert.NilError(t, c.ReleaseSession(sessionCtx("second"), "second"))
+		})
+	}
 }
 
 // cacheTestBlockingAttachObj holds its dependency attachment open until the
@@ -9420,7 +9505,7 @@ func TestCacheAttachmentClaimPinsTargetAgainstForeignRelease(t *testing.T) {
 	bShared := bRes.cacheSharedResult()
 	assert.Assert(t, bShared != nil && bShared.id != 0)
 	c.egraphMu.RLock()
-	childRetained := bShared.deps.has(childID)
+	_, childRetained := bShared.deps[childID]
 	c.egraphMu.RUnlock()
 	assert.Assert(t, childRetained, "the attachment must retain the original pinned child")
 

@@ -266,7 +266,7 @@ func checkKeptClassUsesDecideAsAWalk(t *testing.T, seed uint64) (compacted, decl
 			out = append(out, fmt.Sprint("term ", id, " ", term.selfDigest, " ", roots(term.inputEqIDs), " ", c.eqClassRootLocked(term.outputEqID), " ", term.termDigest))
 		}
 		for _, id := range slices.Sorted(maps.Keys(c.resultOutputEqClasses)) {
-			out = append(out, fmt.Sprint("outputs ", id, " ", slices.Sorted(slices.Values(roots(slices.Collect(c.resultOutputEqClasses[id].All()))))))
+			out = append(out, fmt.Sprint("outputs ", id, " ", slices.Sorted(slices.Values(roots(slices.Collect(maps.Keys(c.resultOutputEqClasses[id])))))))
 		}
 		out = append(out, fmt.Sprint("slots ", c.eqClassSlotsLocked(), " free ", c.freeEqClassIDs, " checks ", c.eqClassChecks))
 		return out
@@ -360,17 +360,10 @@ func sharedStateOf(c *Cache) string {
 		res.payloadMu.RLock()
 		hasValue, envelope := res.hasValue, res.persistedEnvelope != nil
 		res.payloadMu.RUnlock()
-		var (
-			taught []digest.Digest
-			given  int
-		)
-		if t := res.taughtContent; t != nil {
-			taught, given = t.digests, t.given
-		}
 		fmt.Fprintf(&b, "entry %d %s: value %v %v, expires %d, run %v %v, taught %v given %d, calls %v, recipes %v, stored %d, stamp %d %v, deps %v\n",
 			id, res.description, hasValue, envelope, res.expiresAtUnix, res.run, res.runRan,
-			taught, given, slices.Sorted(maps.Keys(res.keptCallsLocked())), res.recipeKeys,
-			len(res.storedParts), res.changedAt, res.stampCause, res.deps)
+			res.taught, res.taughtGiven, slices.Sorted(maps.Keys(res.calls)), res.recipeKeys,
+			len(res.storedParts), res.changedAt, res.stampCause, slices.Sorted(maps.Keys(res.deps)))
 	}
 	for _, recipe := range slices.Sorted(maps.Keys(c.entriesByRecipe)) {
 		fmt.Fprintf(&b, "recipe %s: %d\n", recipe, c.entriesByRecipe[recipe])
@@ -380,7 +373,7 @@ func sharedStateOf(c *Cache) string {
 		fmt.Fprintf(&b, "digest %s: class %d\n", dig, c.egraphDigestToClass[dig])
 	}
 	for _, class := range slices.Sorted(maps.Keys(c.eqClassToDigests)) {
-		fmt.Fprintf(&b, "class %d: digests %v, extras %d\n", class, slices.Collect(c.eqClassToDigests[class].Items()), len(c.eqClassExtraDigests[class]))
+		fmt.Fprintf(&b, "class %d: digests %v, extras %d\n", class, slices.Sorted(maps.Keys(c.eqClassToDigests[class])), len(c.eqClassExtraDigests[class]))
 	}
 	for _, dig := range slices.Sorted(maps.Keys(c.egraphResultsByDigest)) {
 		fmt.Fprintf(&b, "posting %s: %v\n", dig, slices.Sorted(c.egraphResultsByDigest[dig].Items()))
@@ -390,10 +383,10 @@ func sharedStateOf(c *Cache) string {
 		fmt.Fprintf(&b, "term %d: %s %v -> %d\n", id, term.selfDigest, term.inputEqIDs, term.outputEqID)
 	}
 	for _, id := range slices.Sorted(maps.Keys(c.resultOutputEqClasses)) {
-		fmt.Fprintf(&b, "outputs %d: %v\n", id, slices.Collect(c.resultOutputEqClasses[id].Items()))
+		fmt.Fprintf(&b, "outputs %d: %v\n", id, slices.Sorted(maps.Keys(c.resultOutputEqClasses[id])))
 	}
 	for _, class := range slices.Sorted(maps.Keys(c.outputEqClassResults)) {
-		fmt.Fprintf(&b, "results %d: %v\n", class, slices.Collect(c.outputEqClassResults[class].Items()))
+		fmt.Fprintf(&b, "results %d: %v\n", class, slices.Sorted(maps.Keys(c.outputEqClassResults[class])))
 	}
 	fmt.Fprintf(&b, "engine caches %v\n", slices.Sorted(maps.Keys(c.remoteCaches)))
 	return b.String()

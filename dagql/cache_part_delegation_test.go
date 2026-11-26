@@ -53,9 +53,9 @@ func TestPartDelegationProofAdmission(t *testing.T) {
 	initial := proof.currentLocked(cache, source, row)
 	input.expiresAtUnix = 1
 	expiredInput := proof.currentLocked(cache, source, row)
-	row.deps.remove(input.id)
+	delete(row.deps, input.id)
 	missingDependency := proof.currentLocked(cache, source, row)
-	row.deps.add(input.id)
+	row.deps[input.id] = struct{}{}
 	source.sessionID = ""
 	sessionless := proof.currentLocked(cache, source, row)
 	source.sessionID = session

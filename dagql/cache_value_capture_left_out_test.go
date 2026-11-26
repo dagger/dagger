@@ -80,16 +80,18 @@ func TestExportLeavesOutRootsReachingABusyRow(t *testing.T) {
 			owners := heldOwnershipCounts(rows.all())
 			attach := func() {
 				c.egraphMu.Lock()
-				res.openAttachment(nil)
+				res.attachDepsMu.Lock()
+				res.attachDepsWaitCh = make(chan struct{})
+				res.attachDepsMu.Unlock()
 				c.egraphMu.Unlock()
 			}
 			switch tc.when {
 			case "walk":
 				attach()
 			case "copy":
-				res.lazyState().mu.Lock()
-				res.lazyState().whole.syncPending = true
-				res.lazyState().mu.Unlock()
+				res.lazyMu.Lock()
+				res.lazyWhole.syncPending = true
+				res.lazyMu.Unlock()
 			case "after copy":
 				c.testTransferCopied = func(id uint64) {
 					if id == uint64(res.id) {
@@ -108,11 +110,11 @@ func TestExportLeavesOutRootsReachingABusyRow(t *testing.T) {
 			c.testTransferCopied = nil
 			switch tc.when {
 			case "walk", "after copy":
-				res.endAttachment(nil)
+				close(res.attachDepsWaitCh)
 			case "copy":
-				res.lazyState().mu.Lock()
-				res.lazyState().whole.syncPending = false
-				res.lazyState().mu.Unlock()
+				res.lazyMu.Lock()
+				res.lazyWhole.syncPending = false
+				res.lazyMu.Unlock()
 			}
 			require.NoError(t, err)
 			require.Equal(t, 1, calls)
@@ -155,17 +157,17 @@ func TestExportNamesARunningRowsKind(t *testing.T) {
 			ctx, c, srv := transferTestCache(t)
 			rows := newLeftOutTestRows(t, ctx, c, srv)
 			res := rows.shared.cacheSharedResult()
-			res.lazyState().mu.Lock()
-			res.lazyState().whole.attempt = &lazyEvalAttempt{done: make(chan struct{}), waiters: tc.waiters}
-			res.lazyState().mu.Unlock()
+			res.lazyMu.Lock()
+			res.lazyWhole.attempt = &lazyEvalAttempt{done: make(chan struct{}), waiters: tc.waiters}
+			res.lazyMu.Unlock()
 			var values *ExportedValues
 			err := c.WithExportedValues(ctx, ValueSelection{Roots: []AnyResult{rows.first, rows.ready}}, config.RefConfig{}, func(_ context.Context, exported *ExportedValues) error {
 				values = exported
 				return nil
 			})
-			res.lazyState().mu.Lock()
-			res.lazyState().whole.attempt = nil
-			res.lazyState().mu.Unlock()
+			res.lazyMu.Lock()
+			res.lazyWhole.attempt = nil
+			res.lazyMu.Unlock()
 			require.NoError(t, err)
 			require.Len(t, values.LeftOut, 1)
 			require.Len(t, values.LeftOut[0].Busy, 1)
@@ -216,13 +218,13 @@ func TestExportWithEveryRootLeftOut(t *testing.T) {
 	ctx, c, srv := transferTestCache(t)
 	rows := newLeftOutTestRows(t, ctx, c, srv)
 	res := rows.shared.cacheSharedResult()
-	res.lazyState().mu.Lock()
-	res.lazyState().whole.syncPending = true
-	res.lazyState().mu.Unlock()
+	res.lazyMu.Lock()
+	res.lazyWhole.syncPending = true
+	res.lazyMu.Unlock()
 	defer func() {
-		res.lazyState().mu.Lock()
-		res.lazyState().whole.syncPending = false
-		res.lazyState().mu.Unlock()
+		res.lazyMu.Lock()
+		res.lazyWhole.syncPending = false
+		res.lazyMu.Unlock()
 	}()
 	owners := heldOwnershipCounts(rows.all())
 	err := c.WithExportedValues(ctx, ValueSelection{Roots: []AnyResult{rows.first, rows.second}}, config.RefConfig{}, func(context.Context, *ExportedValues) error {
@@ -251,13 +253,13 @@ func TestExportLeavesOutTheOutputsOfLeftOutRoots(t *testing.T) {
 	ready := persistedListTestResult(t, ctx, c, srv, "outputs-ready", &transferTestValue{Text: "pending"})
 	busy := persistedListTestResult(t, ctx, c, srv, "outputs-busy", &transferTestValue{Text: "pending"})
 	res := busy.cacheSharedResult()
-	res.lazyState().mu.Lock()
-	res.lazyState().whole.syncPending = true
-	res.lazyState().mu.Unlock()
+	res.lazyMu.Lock()
+	res.lazyWhole.syncPending = true
+	res.lazyMu.Unlock()
 	defer func() {
-		res.lazyState().mu.Lock()
-		res.lazyState().whole.syncPending = false
-		res.lazyState().mu.Unlock()
+		res.lazyMu.Lock()
+		res.lazyWhole.syncPending = false
+		res.lazyMu.Unlock()
 	}()
 	selection := ValueSelection{
 		Roots: []AnyResult{busy, ready},
@@ -303,13 +305,13 @@ func TestExportNamesEveryBusyRowARootReaches(t *testing.T) {
 	transferTestDependency(c, ctx, one, second)
 	for _, r := range []AnyResult{first, second} {
 		res := r.cacheSharedResult()
-		res.lazyState().mu.Lock()
-		res.lazyState().whole.attempt = &lazyEvalAttempt{done: make(chan struct{}), waiters: 1}
-		res.lazyState().mu.Unlock()
+		res.lazyMu.Lock()
+		res.lazyWhole.attempt = &lazyEvalAttempt{done: make(chan struct{}), waiters: 1}
+		res.lazyMu.Unlock()
 		defer func() {
-			res.lazyState().mu.Lock()
-			res.lazyState().whole.attempt = nil
-			res.lazyState().mu.Unlock()
+			res.lazyMu.Lock()
+			res.lazyWhole.attempt = nil
+			res.lazyMu.Unlock()
 		}()
 	}
 	err := c.WithExportedValues(ctx, ValueSelection{Roots: []AnyResult{both, one}}, config.RefConfig{}, func(context.Context, *ExportedValues) error {
@@ -344,9 +346,11 @@ func TestExportLeavesOutOutputsBelowARootBlockedAtTheWalk(t *testing.T) {
 	}
 	res := busy.cacheSharedResult()
 	c.egraphMu.Lock()
-	res.openAttachment(nil)
+	res.attachDepsMu.Lock()
+	res.attachDepsWaitCh = make(chan struct{})
+	res.attachDepsMu.Unlock()
 	c.egraphMu.Unlock()
-	defer res.endAttachment(nil)
+	defer close(res.attachDepsWaitCh)
 	var values *ExportedValues
 	require.NoError(t, c.WithExportedValues(ctx, selection, config.RefConfig{}, func(_ context.Context, exported *ExportedValues) error {
 		values = exported
@@ -373,17 +377,19 @@ func TestExportWalksBelowAnAttachingRoot(t *testing.T) {
 	transferTestDependency(c, ctx, attaching, running)
 	owners := heldOwnershipCounts([]AnyResult{attaching, ready, running, other})
 	run := running.cacheSharedResult()
-	run.lazyState().mu.Lock()
-	run.lazyState().whole.attempt = &lazyEvalAttempt{done: make(chan struct{}), waiters: 1}
-	run.lazyState().mu.Unlock()
+	run.lazyMu.Lock()
+	run.lazyWhole.attempt = &lazyEvalAttempt{done: make(chan struct{}), waiters: 1}
+	run.lazyMu.Unlock()
 	defer func() {
-		run.lazyState().mu.Lock()
-		run.lazyState().whole.attempt = nil
-		run.lazyState().mu.Unlock()
+		run.lazyMu.Lock()
+		run.lazyWhole.attempt = nil
+		run.lazyMu.Unlock()
 	}()
 	res := attaching.cacheSharedResult()
 	c.egraphMu.Lock()
-	res.openAttachment(nil)
+	res.attachDepsMu.Lock()
+	res.attachDepsWaitCh = make(chan struct{})
+	res.attachDepsMu.Unlock()
 	c.egraphMu.Unlock()
 	selection := ValueSelection{Roots: []AnyResult{attaching, other}, Outputs: []SelectedValueOutput{{Result: ready, Address: PersistedPartAddress{Part: "snapshot"}}}}
 	var values *ExportedValues
@@ -391,7 +397,7 @@ func TestExportWalksBelowAnAttachingRoot(t *testing.T) {
 		values = exported
 		return nil
 	})
-	res.endAttachment(nil)
+	close(res.attachDepsWaitCh)
 	require.NoError(t, err)
 	require.Len(t, values.LeftOut, 1)
 	left := values.LeftOut[0]
@@ -424,12 +430,12 @@ func TestExportLeavesOutARunningRootBeforeItsWalk(t *testing.T) {
 		kind BusyKind
 	}{
 		{"running", func(res *sharedResult, on bool) {
-			res.lazyState().whole.attempt = nil
+			res.lazyWhole.attempt = nil
 			if on {
-				res.lazyState().whole.attempt = &lazyEvalAttempt{done: make(chan struct{}), waiters: 1}
+				res.lazyWhole.attempt = &lazyEvalAttempt{done: make(chan struct{}), waiters: 1}
 			}
 		}, BusyRunning},
-		{"sync pending", func(res *sharedResult, on bool) { res.lazyState().whole.syncPending = on }, BusyBookkeeping},
+		{"sync pending", func(res *sharedResult, on bool) { res.lazyWhole.syncPending = on }, BusyBookkeeping},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -437,9 +443,9 @@ func TestExportLeavesOutARunningRootBeforeItsWalk(t *testing.T) {
 			rows := newLeftOutTestRows(t, ctx, c, srv)
 			owners := heldOwnershipCounts(rows.all())
 			res := rows.first.cacheSharedResult()
-			res.lazyState().mu.Lock()
+			res.lazyMu.Lock()
 			tc.set(res, true)
-			res.lazyState().mu.Unlock()
+			res.lazyMu.Unlock()
 			var copied []uint64
 			c.testTransferCopied = func(id uint64) { copied = append(copied, id) }
 			var values *ExportedValues
@@ -448,9 +454,9 @@ func TestExportLeavesOutARunningRootBeforeItsWalk(t *testing.T) {
 				return nil
 			})
 			c.testTransferCopied = nil
-			res.lazyState().mu.Lock()
+			res.lazyMu.Lock()
 			tc.set(res, false)
-			res.lazyState().mu.Unlock()
+			res.lazyMu.Unlock()
 			require.NoError(t, err)
 			require.NotContains(t, copied, rowNumber(rows.shared), "nothing below the running root is copied for it")
 			require.Len(t, values.LeftOut, 1)
@@ -487,17 +493,17 @@ func TestExportHoldsAKnownRunningRoot(t *testing.T) {
 				roots = append(roots, on)
 			}
 			res := run.cacheSharedResult()
-			res.lazyState().mu.Lock()
-			res.lazyState().whole.attempt = &lazyEvalAttempt{done: make(chan struct{}), waiters: 1}
-			res.lazyState().mu.Unlock()
+			res.lazyMu.Lock()
+			res.lazyWhole.attempt = &lazyEvalAttempt{done: make(chan struct{}), waiters: 1}
+			res.lazyMu.Unlock()
 			var values *ExportedValues
 			err := c.WithExportedValues(ctx, ValueSelection{Roots: roots, Known: known}, config.RefConfig{}, func(_ context.Context, v *ExportedValues) error {
 				values = v
 				return nil
 			})
-			res.lazyState().mu.Lock()
-			res.lazyState().whole.attempt = nil
-			res.lazyState().mu.Unlock()
+			res.lazyMu.Lock()
+			res.lazyWhole.attempt = nil
+			res.lazyMu.Unlock()
 			require.NoError(t, err)
 			require.Empty(t, values.LeftOut, "nothing is left out")
 			held, _ := heldNumbers(values.Bundle)

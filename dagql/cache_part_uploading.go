@@ -247,7 +247,7 @@ func (c *Cache) classChangeLocked(numbers []uint64) RemoteChange {
 		}
 		change.Entries = append(change.Entries, number)
 		for root := range c.outputEqClassRootsLocked(id) {
-			for member := range c.outputEqClassResults[root].All() {
+			for member := range c.outputEqClassResults[root] {
 				if c.resultsByID[member] != nil {
 					change.Entries = append(change.Entries, uint64(member))
 				}

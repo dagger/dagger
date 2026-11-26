@@ -466,9 +466,9 @@ func TestEvaluatePartsOneCallRunsGroupsConcurrently(t *testing.T) {
 		// Once every concurrent attempt is retired, the result-wide state is
 		// complete regardless of which attempt reached retirement first.
 		shared := res.cacheSharedResult()
-		shared.lazyState().mu.Lock()
-		partial := shared.lazyState().partsEvaluationPartialLocked(res)
-		shared.lazyState().mu.Unlock()
+		shared.lazyMu.Lock()
+		partial := lazyPartsEvaluationPartialLocked(shared, res)
+		shared.lazyMu.Unlock()
 		if partial {
 			t.Fatal("fully evaluated parts result must not report partial work")
 		}
@@ -847,9 +847,9 @@ func TestEvaluatePartsForeignCancellationRetriesPerGroup(t *testing.T) {
 		joiner := make(chan error, 1)
 		go func() { joiner <- c.EvaluateParts(ctx, res, partsTestPartXMeta) }()
 		waitForCondition(t, func() bool {
-			shared.lazyState().mu.Lock()
-			defer shared.lazyState().mu.Unlock()
-			g := shared.lazyState().partGroups[partsTestGroupOut]
+			shared.lazyMu.Lock()
+			defer shared.lazyMu.Unlock()
+			g := shared.lazyPartGroups[partsTestGroupOut]
 			return g != nil && g.attempt != nil && g.attempt.waiters >= 1
 		}, "joiner to join the canceled attempt")
 
@@ -1007,9 +1007,8 @@ func TestPendingLazyComputationWholeGroupStoredOpen(t *testing.T) {
 			for _, stored := range []bool{false, true} {
 				shared := &sharedResult{
 					id: 1, hasValue: true,
-					self: cacheTestWholeStoredOpen{stored: stored},
+					self: cacheTestWholeStoredOpen{stored: stored}, lazyWhole: state,
 				}
-				shared.lazyState().whole = state
 				res := Result[Typed]{shared: shared}
 				if !HasPendingLazyEvaluation(res) {
 					t.Fatal("unfinished whole group must remain operational work")
@@ -1017,7 +1016,7 @@ func TestPendingLazyComputationWholeGroupStoredOpen(t *testing.T) {
 				if got := HasPendingLazyComputation(res); got != !stored {
 					t.Fatalf("stored=%v: pending computation=%v", stored, got)
 				}
-				shared.lazyState().evalComplete = true
+				shared.lazyEvalComplete = true
 				if HasPendingLazyComputation(res) || HasPendingLazyEvaluation(res) {
 					t.Fatal("completed result still reports pending")
 				}
@@ -1050,9 +1049,9 @@ func TestPendingLazyComputationPartDeliveryTask(t *testing.T) {
 				st := state
 				shared := &sharedResult{
 					id: 1, hasValue: true,
-					self: cacheTestWholeStoredOpen{stored: true},
+					self:           cacheTestWholeStoredOpen{stored: true},
+					lazyPartGroups: map[LazyGroupKey]*lazyGroupState{key: &st},
 				}
-				shared.lazyState().partGroups = map[LazyGroupKey]*lazyGroupState{key: &st}
 				res := Result[Typed]{shared: shared}
 				if !HasPendingLazyEvaluation(res) {
 					t.Fatalf("%s: an unfinished group must remain operational work", key)

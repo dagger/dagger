@@ -49,7 +49,7 @@ func startClientEngine(ctx context.Context, t *testctx.T, outer *dagger.Client, 
 
 func (e *clientEngine) connect(ctx context.Context, t *testctx.T, dir string) *dagger.Client {
 	t.Helper()
-	client, err := dagger.Connect(ctx, dagger.WithRunnerHost(e.endpoint), dagger.WithWorkdir(dir), dagger.WithLogOutput(testutil.ClientLogOutput(t)))
+	client, err := dagger.Connect(ctx, dagger.WithRunnerHost(e.endpoint), dagger.WithWorkdir(dir), dagger.WithLogOutput(testutil.NewTWriter(t)))
 	require.NoError(t, err)
 	return client
 }

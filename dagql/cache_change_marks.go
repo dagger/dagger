@@ -8,8 +8,7 @@ import (
 
 // changeMarks are the holdings and entries a blob-backed cache's writes have
 // changed since the last write handed them back (takeChangesLocked), for its
-// reader to ask again of only those (RemoteChange.Entries), or to take as the
-// write left them (RemoteChange.Holdings).
+// reader to ask again of only those (RemoteChange.Holdings and Entries).
 //
 // An entry is marked where anything a reader asks of it changes. What an
 // entry's class mates answer changes too when the entry holds a part for the
@@ -54,12 +53,6 @@ type changeMarks struct {
 	classes  []sharedResultID
 	causes   []StampCause
 	holdings []HolderKey
-	// handed counts the times marks were handed back (takeChangesLocked),
-	// since the cache was made: the count a change carries
-	// (RemoteChange.At), and a read of what a change names (RemoteHeldEntry
-	// and EntryFacts' At), so that a reader that learns of a holding both
-	// ways keeps whichever is newer.
-	handed uint64
 	// stamped counts the class marks, from the first, whose entries' stamps
 	// a write applied before handing them back (stampPendingLocked).
 	stamped int
@@ -97,7 +90,6 @@ type changeMarks struct {
 // markEntryLocked marks the entry numbered id: its own facts changed.
 // Requires egraphMu for writing.
 func (c *Cache) markEntryLocked(id sharedResultID) {
-	c.noteSavedEntryLocked(id)
 	if c.changes == nil || id == 0 {
 		return
 	}
@@ -109,7 +101,6 @@ func (c *Cache) markEntryLocked(id sharedResultID) {
 // or expiry changed, or it joined their class. Requires egraphMu for
 // writing.
 func (c *Cache) markEntryClassLocked(id sharedResultID, cause StampCause) {
-	c.noteSavedEntryLocked(id)
 	if c.changes == nil || id == 0 {
 		return
 	}
@@ -142,7 +133,7 @@ func (c *Cache) markEntryClassLocked(id sharedResultID, cause StampCause) {
 // classLendsLocked reports whether an entry of the class rooted at root
 // stores a part, which its class mates can borrow. Requires egraphMu.
 func (c *Cache) classLendsLocked(root eqClassID) bool {
-	for member := range c.outputEqClassResults[root].All() {
+	for member := range c.outputEqClassResults[root] {
 		if res := c.resultsByID[member]; res != nil && len(res.storedParts) > 0 {
 			return true
 		}
@@ -170,7 +161,7 @@ func (c *Cache) markLeavingLocked(id sharedResultID) {
 	// to keep.
 	_, held := c.changes.holding[id]
 	holds := lends || held || leaving != nil && c.holdsAnyPartLocked(leaving)
-	for eqID := range c.resultOutputEqClasses[id].All() {
+	for eqID := range c.resultOutputEqClasses[id] {
 		root := c.eqClassRootLocked(eqID)
 		if root == 0 {
 			continue
@@ -180,7 +171,7 @@ func (c *Cache) markLeavingLocked(id sharedResultID) {
 				c.changes.leftNamed = map[eqClassID]bool{}
 			}
 			c.changes.leftNamed[root] = true
-			for member := range c.outputEqClassResults[root].All() {
+			for member := range c.outputEqClassResults[root] {
 				c.changes.entries = append(c.changes.entries, member)
 			}
 		}
@@ -195,7 +186,7 @@ func (c *Cache) markLeavingLocked(id sharedResultID) {
 		if !lends {
 			continue
 		}
-		for member := range c.outputEqClassResults[root].All() {
+		for member := range c.outputEqClassResults[root] {
 			if member != id {
 				c.stampEntryLocked(c.resultsByID[member], StampLeft|StampViaClass)
 			}
@@ -209,19 +200,19 @@ func (c *Cache) markLeavingLocked(id sharedResultID) {
 // side has a holder. A new entry that holds nothing, joining a class, changes
 // no class mate's answer, and its own marks name it. Requires egraphMu for
 // writing.
-func (c *Cache) markJoinLocked(a, b *idSet[sharedResultID]) {
+func (c *Cache) markJoinLocked(a, b map[sharedResultID]struct{}) {
 	if c.changes == nil {
 		return
 	}
 	aHolds, bHolds := c.someHoldsLocked(a), c.someHoldsLocked(b)
 	for _, side := range []struct {
-		names *idSet[sharedResultID]
+		names map[sharedResultID]struct{}
 		other bool
 	}{{a, bHolds}, {b, aHolds}} {
 		if !side.other {
 			continue
 		}
-		for id := range side.names.All() {
+		for id := range side.names {
 			c.changes.entries = append(c.changes.entries, id)
 		}
 	}
@@ -229,8 +220,8 @@ func (c *Cache) markJoinLocked(a, b *idSet[sharedResultID]) {
 
 // someHoldsLocked reports whether any of the entries holds a part for its
 // class (holdsAnyPartLocked). Requires egraphMu.
-func (c *Cache) someHoldsLocked(ids *idSet[sharedResultID]) bool {
-	for id := range ids.All() {
+func (c *Cache) someHoldsLocked(ids map[sharedResultID]struct{}) bool {
+	for id := range ids {
 		if res := c.resultsByID[id]; res != nil && c.holdsAnyPartLocked(res) {
 			return true
 		}
@@ -247,20 +238,15 @@ func (c *Cache) markHoldingLocked(key HolderKey) {
 }
 
 // takeChangesLocked hands the marks back in change, sorted, and clears them:
-// each marked holding with its facts as they stand now (changedHoldingLocked),
-// each marked entry, and every entry of the classes of each class-marked
-// entry that held a part at its mark or holds one now. A write takes them at
-// its end, under the hold that made them, so each is handed back by the write
-// that made it, and a holding's facts are taken under that hold too. Each
-// hand-back raises the cache's count of them, which the change carries
-// (RemoteChange.At). Requires egraphMu for writing.
+// each marked holding and entry, and every entry of the classes of each
+// class-marked entry that held a part at its mark or holds one now. A write takes them at its end, under the hold that made
+// them, so each is handed back by the write that made it. Requires egraphMu
+// for writing.
 func (c *Cache) takeChangesLocked(change *RemoteChange) {
 	if !c.changesPendingLocked() {
 		return
 	}
 	marks := c.changes
-	marks.handed++
-	change.At = marks.handed
 	change.Entries = slices.Grow(change.Entries, len(marks.entries)+len(marks.classes))
 	for _, id := range marks.entries {
 		change.Entries = append(change.Entries, uint64(id))
@@ -282,7 +268,7 @@ func (c *Cache) takeChangesLocked(change *RemoteChange) {
 				continue
 			}
 		}
-		for eqID := range c.resultOutputEqClasses[id].All() {
+		for eqID := range c.resultOutputEqClasses[id] {
 			root := c.eqClassRootLocked(eqID)
 			if root == 0 {
 				continue
@@ -294,33 +280,16 @@ func (c *Cache) takeChangesLocked(change *RemoteChange) {
 				widened = map[eqClassID]struct{}{}
 			}
 			widened[root] = struct{}{}
-			for member := range c.outputEqClassResults[root].All() {
+			for member := range c.outputEqClassResults[root] {
 				change.Entries = append(change.Entries, uint64(member))
 			}
 		}
 	}
 	slices.Sort(change.Entries)
 	change.Entries = slices.Compact(change.Entries)
-	if len(marks.holdings) > 0 {
-		slices.SortFunc(marks.holdings, compareChangedHoldings)
-		keys := slices.Compact(marks.holdings)
-		held := make([]ChangedHolding, 0, len(change.Holdings)+len(keys))
-		// A change handed back before names a holding as it was then: this
-		// hand-back's facts replace it.
-		older := change.Holdings
-		for _, key := range keys {
-			for len(older) > 0 && compareChangedHoldings(older[0].Key, key) < 0 {
-				held = append(held, older[0])
-				older = older[1:]
-			}
-			if len(older) > 0 && older[0].Key == key {
-				older = older[1:]
-			}
-			held = append(held, c.changedHoldingLocked(key, marks.handed))
-		}
-		held = append(held, older...)
-		change.Holdings = held
-	}
+	change.Holdings = append(change.Holdings, marks.holdings...)
+	slices.SortFunc(change.Holdings, compareChangedHoldings)
+	change.Holdings = slices.CompactFunc(change.Holdings, func(a, b HolderKey) bool { return a == b })
 	marks.entries, marks.classes, marks.causes, marks.lends, marks.holds, marks.holdings = marks.entries[:0], marks.classes[:0], marks.causes[:0], marks.lends[:0], marks.holds[:0], marks.holdings[:0]
 	marks.stamped = 0
 	marks.lending = nil
@@ -346,7 +315,7 @@ func (c *Cache) stampClassMarksLocked(from int) {
 	for i := from; i < len(marks.classes); i++ {
 		id, cause := marks.classes[i], marks.causes[i]
 		c.stampEntryLocked(c.resultsByID[id], cause)
-		for eqID := range c.resultOutputEqClasses[id].All() {
+		for eqID := range c.resultOutputEqClasses[id] {
 			root := c.eqClassRootLocked(eqID)
 			if root == 0 {
 				continue
@@ -377,7 +346,7 @@ func (c *Cache) stampClassMarksLocked(from int) {
 			if !lends {
 				continue
 			}
-			for member := range c.outputEqClassResults[root].All() {
+			for member := range c.outputEqClassResults[root] {
 				if member != id {
 					c.stampEntryLocked(c.resultsByID[member], cause|StampViaClass)
 				}
@@ -418,20 +387,8 @@ func compareChangedHoldings(a, b HolderKey) int {
 // reader keeps answers from before an open. Requires egraphMu for writing.
 func (c *Cache) clearChangesLocked() {
 	if c.changes != nil {
-		// The count of hand-backs goes on: a reader orders what it learns by
-		// it.
-		*c.changes = changeMarks{handed: c.changes.handed}
+		*c.changes = changeMarks{}
 	}
-}
-
-// handedLocked is the cache's count of hand-backs of its marks (handed): a
-// read made now sees every change handed back with a count at or below it.
-// 0 on an engine's own cache, which marks nothing. Requires egraphMu.
-func (c *Cache) handedLocked() uint64 {
-	if c.changes == nil {
-		return 0
-	}
-	return c.changes.handed
 }
 
 // changesPendingLocked reports whether any mark waits to be handed back.
@@ -459,7 +416,6 @@ func (c *Cache) stampEntryLocked(res *sharedResult, cause StampCause) {
 	c.writes++
 	res.changedAt = c.writes
 	res.stampCause = cause
-	c.noteSavedEntryLocked(res.id)
 }
 
 // StampCause is what last changed what a stored bundle carries of an entry

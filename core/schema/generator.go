@@ -47,9 +47,7 @@ func (generatorSchema) sync(ctx context.Context, parent dagql.ObjectResult[*core
 		return nil, err
 	}
 	var changes dagql.ObjectResult[*core.Changeset]
-	// Running the generator is the work sync was asked for, not engine
-	// machinery: keep its span, and the function call beneath it, visible.
-	if err := srv.Select(dagql.WithNonInternalTelemetry(ctx), parent, &changes, dagql.Selector{Field: "changeset"}); err != nil {
+	if err := srv.Select(ctx, parent, &changes, dagql.Selector{Field: "changeset"}); err != nil {
 		return nil, err
 	}
 	var completed dagql.AnyResult

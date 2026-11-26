@@ -475,7 +475,7 @@ func TestApplyMergedReplyCreatesTheEngineHoldings(t *testing.T) {
 	reply, err := b.MergeValues(bctx, cloudCacheID, sent)
 	require.NoError(t, err)
 
-	change, err := cloud.ApplyMergedReply(ctx, "cache-b", sent.Sent(), reply)
+	change, err := cloud.ApplyMergedReply(ctx, "cache-b", sent, reply)
 	require.NoError(t, err)
 	require.Len(t, change.Candidates, 2)
 	collected, _, err := cloud.CollectRemoteHoldings(ctx, change.Candidates, nil)
@@ -1197,7 +1197,7 @@ func TestMergeValuesRetiresAnExpiredEntryADependentUses(t *testing.T) {
 	listID := sharedResultID(listReply.Imported()[0].ResultID)
 	b.egraphMu.RLock()
 	var depID sharedResultID
-	for _, id := range b.resultsByID[listID].deps {
+	for id := range b.resultsByID[listID].deps {
 		depID = id
 	}
 	depRow := b.resultsByID[depID]
@@ -1275,7 +1275,7 @@ func TestApplyMergedReplyThenAPruneDrop(t *testing.T) {
 	reply, err := b.MergeValues(bctx, cloudCacheID, sent)
 	require.NoError(t, err)
 	rootKey := HolderKey{Cache: "cache-b", Number: reply.Roots[0].Number}
-	change, err := cloud.ApplyMergedReply(ctx, "cache-b", sent.Sent(), reply)
+	change, err := cloud.ApplyMergedReply(ctx, "cache-b", sent, reply)
 	require.NoError(t, err)
 	collected, _, err := cloud.CollectRemoteHoldings(ctx, change.Candidates, nil)
 	require.NoError(t, err)
@@ -1298,7 +1298,7 @@ func TestApplyMergedReplyThenAPruneDrop(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, collected, 2, "the root's holding and its dependency's")
 
-	change, err = cloud.ApplyMergedReply(ctx, "cache-b", sent.Sent(), reply)
+	change, err = cloud.ApplyMergedReply(ctx, "cache-b", sent, reply)
 	require.NoError(t, err)
 	collected, _, err = cloud.CollectRemoteHoldings(ctx, change.Candidates, nil)
 	require.NoError(t, err)
@@ -1327,7 +1327,7 @@ func TestApplyMergedReplyKeepsAKeptEntrysOwnDependencies(t *testing.T) {
 	reply, err := b.MergeValues(bctx, cloudCacheID, sent)
 	require.NoError(t, err)
 
-	change, err := cloud.ApplyMergedReply(ctx, "cache-b", sent.Sent(), reply)
+	change, err := cloud.ApplyMergedReply(ctx, "cache-b", sent, reply)
 	require.NoError(t, err)
 	collected, _, err := cloud.CollectRemoteHoldings(ctx, change.Candidates, nil)
 	require.NoError(t, err)
@@ -1473,7 +1473,7 @@ func TestMergeValuesThenAPublicationRetiresAnEntryInUse(t *testing.T) {
 	b.egraphMu.RLock()
 	current := b.entriesByRecipe[recipe]
 	registered := b.resultsByID[mergedChild.id] == mergedChild
-	stillDepends := mergedRoot.deps.has(mergedChild.id)
+	_, stillDepends := mergedRoot.deps[mergedChild.id]
 	b.egraphMu.RUnlock()
 	require.Equal(t, kept.id, current, "the publication's value is the recipe's current entry")
 	require.True(t, registered, "the retired entry stays")
@@ -1774,7 +1774,7 @@ func TestMergeValuesFirstOfExpiredRecordsDecides(t *testing.T) {
 			entry := b.resultsByID[sharedResultID(oldValue.Number)]
 			var paths []string
 			for _, offer := range entry.testPartOffers() {
-				paths = append(paths, offer.held.Value.Path)
+				paths = append(paths, offer.record.Value.Path)
 			}
 			env := entry.persistedEnvelope
 			b.egraphMu.RUnlock()
@@ -1875,7 +1875,7 @@ func TestMergeValuesRefusesADependencyCycle(t *testing.T) {
 
 		cloud.egraphMu.RLock()
 		var bNumber sharedResultID
-		for _, dep := range cloud.resultsByID[aNumber].deps {
+		for dep := range cloud.resultsByID[aNumber].deps {
 			bNumber = dep
 		}
 		before, err := json.Marshal(cloud.resultsByID[bNumber].persistedEnvelope)
@@ -1885,7 +1885,7 @@ func TestMergeValuesRefusesADependencyCycle(t *testing.T) {
 		require.ErrorContains(t, err, "cycle")
 		cloud.egraphMu.RLock()
 		defer cloud.egraphMu.RUnlock()
-		require.Equal(t, resultIDSet{bNumber}, cloud.resultsByID[aNumber].deps, "the Cloud keeps A -> B")
+		require.Equal(t, map[sharedResultID]struct{}{bNumber: {}}, cloud.resultsByID[aNumber].deps, "the Cloud keeps A -> B")
 		require.Empty(t, cloud.resultsByID[bNumber].deps)
 		after, err := json.Marshal(cloud.resultsByID[bNumber].persistedEnvelope)
 		require.NoError(t, err)
@@ -2138,7 +2138,7 @@ func TestMergeValuesChecksTheOffersTheCommitLeaves(t *testing.T) {
 			b.egraphMu.RLock()
 			var paths []string
 			for _, offer := range keptX.cacheSharedResult().testPartOffers() {
-				paths = append(paths, offer.held.Value.Path)
+				paths = append(paths, offer.record.Value.Path)
 			}
 			b.egraphMu.RUnlock()
 			require.Equal(t, []string{"/new"}, paths, "X's offer was replaced")
@@ -2220,7 +2220,7 @@ func mergeTestOfferPaths(c *Cache, res *sharedResult) []string {
 	defer c.egraphMu.RUnlock()
 	var paths []string
 	for _, offer := range res.testPartOffers() {
-		paths = append(paths, offer.held.Value.Path)
+		paths = append(paths, offer.record.Value.Path)
 	}
 	slices.Sort(paths)
 	return paths
@@ -2302,7 +2302,7 @@ func TestMergeValuesRelocationKeepsReferencesWithinDependencies(t *testing.T) {
 	defer b.egraphMu.RUnlock()
 	r := b.resultsByID[sharedResultID(mergeTestValueOf(t, reply, rootOrdinal).Number)]
 	require.Len(t, r.deps, 1, "both records land on one entry")
-	for _, id := range r.deps {
+	for id := range r.deps {
 		require.Equal(t, 1, int(b.resultsByID[id].incomingOwnershipCount.Load()), "the root owns the entry once")
 	}
 	refs := 0
@@ -2357,7 +2357,7 @@ func TestMergeValuesOfferOwnerNamingOneEntryTwice(t *testing.T) {
 			offers := b.resultsByID[sharedResultID(receiver)].testPartOffers()
 			require.Len(t, offers, 1)
 			for _, offer := range offers {
-				require.Equal(t, []uint64{entry}, offer.held.Owner.DependencyIDs, "the entry once")
+				require.Equal(t, []uint64{entry}, offer.record.Owner.DependencyIDs, "the entry once")
 			}
 		})
 	}

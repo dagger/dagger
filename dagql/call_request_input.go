@@ -422,7 +422,14 @@ func handleIDFromResultCallRef(ctx context.Context, ref *ResultCallRef) (*call.I
 		return nil, fmt.Errorf("resolve result ref: %w", err)
 	}
 	if ref.Call != nil {
-		resultID, err := cache.resultIDForCall(ctx, ref.Call)
+		// The handle names the result the caller's session would be served
+		// for the call. Without a session, only a result that requires no
+		// session resources does.
+		var sessionID string
+		if md, err := engine.ClientMetadataFromContext(ctx); err == nil {
+			sessionID = md.SessionID
+		}
+		resultID, err := cache.resultIDForCall(ctx, sessionID, ref.Call)
 		if err != nil {
 			// The inline recipe has no attached result in the e-graph — e.g.
 			// a client-supplied recipe-form handle (rebuilt from telemetry)

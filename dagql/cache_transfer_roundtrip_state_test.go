@@ -39,7 +39,7 @@ func TestTransferRoundTripState(t *testing.T) {
 		reply, err := b.MergeValues(bctx, cloudCacheID, got.Bundle)
 		require.NoError(t, err)
 		require.True(t, reply.Committed)
-		_, err = cloud.ApplyMergedReply(ctx, "cache-b", got.Bundle.Sent(), reply)
+		_, err = cloud.ApplyMergedReply(ctx, "cache-b", got.Bundle, reply)
 		require.NoError(t, err)
 		return got
 	}
@@ -139,7 +139,7 @@ func roundTripStateLines(t *testing.T, name string, c *Cache) []string {
 	for _, id := range ids {
 		res := c.resultsByID[id]
 		deps := make([]sharedResultID, 0, len(res.deps))
-		for _, dep := range res.deps {
+		for dep := range res.deps {
 			deps = append(deps, dep)
 		}
 		slices.Sort(deps)

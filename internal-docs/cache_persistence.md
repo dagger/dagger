@@ -223,7 +223,6 @@ Currently used for:
 ### 2. Mirrored dagql cache graph/state
 
 - `results`
-- `result_records`
 - `eq_classes`
 - `eq_class_digests`
 - `terms`
@@ -326,10 +325,7 @@ it controls what still exists to flush at shutdown.
 
 ## Persisted Self Payloads
 
-The `result_records` table stores one `self_payload` blob per result, with its
-`call_frame_json`, apart from the result's own fields in `results`, so that a
-save that changes only those fields, such as a last use, leaves the record as
-it is.
+The `results` table stores one `self_payload` blob per result.
 
 That blob is not a raw Go serialization of the whole object. It is a structured
 `PersistedResultEnvelope` defined in `dagql/cache_persistence_self.go`.
@@ -677,71 +673,42 @@ Shutdown persistence is a two-step process:
 
 ### 1. Snapshot the in-memory state
 
-`snapshotPersistState` reads the in-memory cache and builds a detached
-`persistStateSnapshot` (`dagql/cache_persistence_walk.go`).
+`snapshotPersistState` walks the in-memory cache and builds a detached
+`persistStateSnapshot`.
 
-It reads holding `egraphMu` for reading in pieces of about 10 ms, letting it
-go between them (`readInPiecesFor`), so a writer that comes during the read
-waits for one piece, not the whole store, and so does every reader queued
-behind that writer. While a save reads, the writers of what it saves note the
-results, terms and classes they change (`noteSavedEntryLocked` and its term
-and class forms). After reading every unit, the save reads again what was
-noted, in pieces too, until what is left fits in one piece; then it reads
-again, in one last hold, what was noted since. A unit nobody noted since the
-save read it is as it was then, so what the save read is the cache as it was
-in that last hold. The closure of the persisted roots is then worked out on
-the save's own copy, with no lock held.
+This is important for performance and correctness:
 
-What changes under `egraphMu` held for reading is not noted, and a save reads
-it at some moment of its read, as a save under one hold did: a result's record,
-whose write count marks it, and its last use. While a save reads, no freed
-eq-class number is taken again and eq-classes are not compacted, so a number
-the save has read names one class until it ends.
+- it holds `egraphMu` only while copying the graph state out
+- it releases the lock before doing the expensive JSON envelope encoding and SQL
+  writes
 
-The package's tests have writers note at every write, and check at each save
-that every unit that changed since the save before was noted
-(`checkPersistNotes`).
-
-The lock is released before the expensive JSON envelope encoding and SQL
-writes, so the live cache is not held under the graph lock for the flush.
+So the live cache is not held under the graph lock for the whole flush.
 
 ### 2. Apply the snapshot to SQLite
-
-A save writes only what differs from what the database already holds. The
-cache keeps, in memory, a fingerprint of the rows the database holds for each
-result, term and class (`persistKept`, `dagql/cache_persistence_kept.go`). The
-snapshot fingerprints the rows it would write as it reads each unit, and
-copies only the units whose fingerprints moved or that the database lacks; a
-unit the database holds that the snapshot no longer reaches is deleted. A
-result's record is not encoded just to fingerprint it: a record held encoded
-changes only under its payload lock, which counts each write (`recordLock`),
-so while the count is the one its row was written at, the row is current. A
-live value is encoded and its bytes compared.
 
 `applyPersistStateSnapshot` then:
 
 1. starts a transaction
-2. deletes the rows of the units that went
-3. writes the rows of the units that changed or are new
+2. clears all mirror tables
+3. inserts the new rows
 4. commits
 
-Only once it commits does the cache replace its fingerprints, so a failed save
-leaves them describing the database as it still is. After any successful save,
-the database holds exactly what a save of the whole snapshot would have
-written; the package's tests check every save against one, taken in the save's
-last hold (`checkPersistFullSave`).
+This is a whole-snapshot rewrite, not an incremental update.
 
-The import sets the fingerprints from the rows it reads, so the first save after
-a restart writes only what changed since.
+That is another deliberate simplification:
+
+- no change-by-change persistence logic
+- no merge logic against prior on-disk state
+- just replace the whole mirrored cache snapshot in one transaction
 
 ## Result Serialization Details
 
 For each result being flushed, persistence stores:
 
-- `call_frame_json` and `self_payload`, in `result_records`
+- `call_frame_json`
+- `self_payload`
 - expiration / time metadata
 - record type / description
-- on a blob-backed cache, its change stamp
 
 It also stores separately:
 

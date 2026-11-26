@@ -203,7 +203,7 @@ func TestStoredSizesChooseCallsInTheBundlesOrder(t *testing.T) {
 			}
 			cloud.egraphMu.RUnlock()
 			require.Less(t, test.number, numbers["c"], "inner's calls come first in R's bundle")
-			require.Len(t, storedBundleTestEntry(cloud, test.number).keptCallsLocked(), 2)
+			require.Len(t, storedBundleTestEntry(cloud, test.number).calls, 2)
 
 			built, err := cloud.StoredBundle(test.ctx, []uint64{numbers["r"]}, time.Now().Unix(), nil)
 			require.NoError(t, err)
@@ -328,7 +328,7 @@ func TestStoredSizesNeverPriceLessThanTheBundle(t *testing.T) {
 		}
 	}
 	cloud.egraphMu.RUnlock()
-	require.Len(t, storedBundleTestEntry(cloud, qNumber).keptCallsLocked(), 2)
+	require.Len(t, storedBundleTestEntry(cloud, qNumber).calls, 2)
 
 	built, err := cloud.StoredBundle(a.ctx, []uint64{test.number, qNumber}, time.Now().Unix(), nil)
 	require.NoError(t, err)
@@ -817,10 +817,10 @@ func TestStoredSizesAllowForAddressesInTheBundlesPartOrder(t *testing.T) {
 	t.Parallel()
 	blob := testDigest("order-blob")
 	in := func(part, pack string) storedPart {
-		return storedPart{layeredOffer: layeredOffer{
+		return storedPart{
 			held:   PersistedPartOffer{Address: PersistedPartAddress{Part: PartKey(part)}},
 			layers: []*storedLayer{{layer: snapshots.ExportLayer{Descriptor: ocispecs.Descriptor{Digest: blob}}, pack: testDigest(pack)}},
-		}}
+		}
 	}
 	first := &sharedResult{storedParts: map[string]storedPart{"a": in("a", "pack-a"), "b": in("b", "pack-b")}}
 	next := &sharedResult{storedParts: map[string]storedPart{"c": in("c", "pack-b")}}

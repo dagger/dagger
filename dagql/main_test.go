@@ -14,14 +14,9 @@ import (
 // any merge's two decisions differ. It also checks every blob-backed cache's
 // kept measure of its pool against a walk as the cache closes
 // (VerifyPoolMeasure), and every cache's kept uses of its classes against a
-// walk (verifyEqClassUses), and every save into a database that held
-// something against a full save at its hold (checkPersistFullSave), and fails
-// the run if any differs.
+// walk (verifyEqClassUses), and fails the run if any differs.
 func TestMain(m *testing.M) {
 	var (
-		saves         int
-		saveDrifts    []string
-		saveChecked   time.Duration
 		mu            sync.Mutex
 		judged        int
 		disagreements []string
@@ -31,23 +26,7 @@ func TestMain(m *testing.M) {
 		classes       int
 		classDrifts   []string
 		classChecked  time.Duration
-		noted         int
-		unnoted       []string
-		notedChecked  time.Duration
 	)
-	testPersistNotesAlways = true
-	testPersistNotes = func(_ *Cache, before, after *persistPrints) {
-		at := time.Now()
-		err := checkPersistNotes(before, after)
-		took := time.Since(at)
-		mu.Lock()
-		defer mu.Unlock()
-		noted++
-		notedChecked += took
-		if err != nil {
-			unnoted = append(unnoted, err.Error())
-		}
-	}
 	testCacheClosing = func(c *Cache) {
 		at := time.Now()
 		classErr := c.verifyEqClassUses()
@@ -81,38 +60,8 @@ func TestMain(m *testing.M) {
 			disagreements = append(disagreements, fmt.Sprintf("merge from %s: narrowed %v, whole %v", j.From, j.Narrow, j.Whole))
 		}
 	})
-	testPersistFullSave = func(ctx context.Context, c *Cache, full *persistStateSnapshot) {
-		at := time.Now()
-		err := checkPersistFullSave(context.WithoutCancel(ctx), c, full)
-		took := time.Since(at)
-		mu.Lock()
-		defer mu.Unlock()
-		saves++
-		saveChecked += took
-		if err != nil {
-			saveDrifts = append(saveDrifts, err.Error())
-		}
-	}
 	code := m.Run()
 	mu.Lock()
-	if len(saveDrifts) > 0 {
-		fmt.Fprintf(os.Stderr, "a save left other rows than a full save in %d of %d saves, checked in %s:\n", len(saveDrifts), saves, saveChecked)
-		for _, d := range saveDrifts {
-			fmt.Fprintln(os.Stderr, "  "+d)
-		}
-		code = 1
-	} else {
-		fmt.Fprintf(os.Stderr, "saves against a full save: %d saves checked in %s, none differed\n", saves, saveChecked)
-	}
-	if len(unnoted) > 0 {
-		fmt.Fprintf(os.Stderr, "a write changed what a save writes without noting it in %d of %d saves, checked in %s:\n", len(unnoted), noted, notedChecked)
-		for _, d := range unnoted {
-			fmt.Fprintln(os.Stderr, "  "+d)
-		}
-		code = 1
-	} else {
-		fmt.Fprintf(os.Stderr, "saves against the writers' notes: %d saves checked in %s, every change noted\n", noted, notedChecked)
-	}
 	if len(disagreements) > 0 {
 		fmt.Fprintf(os.Stderr, "the narrowed and whole cycle searches disagreed on %d of %d merges:\n", len(disagreements), judged)
 		for _, d := range disagreements {

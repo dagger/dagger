@@ -81,19 +81,19 @@ func (c *Cache) usesPartAcquisition(ctx context.Context, res AnyResult, row *sha
 	defer c.egraphMu.Unlock()
 	shell := transferShellLocked(res, row)
 	equivalent := !shell && lookup.frame != nil && !row.hasPartOffersLocked() && c.hasEquivalentLocked(row, lookup)
-	gate := row.writerGate()
-	if !shell && !equivalent && !row.partDelegationRestored() && !row.hasPartOffersLocked() && gate == nil {
+	gate := row.partGate.gate.Load()
+	if !shell && !equivalent && !row.partGate.restoredDelegation.Load() && !row.hasPartOffersLocked() && gate == nil {
 		return false
 	}
 	if gate == nil {
-		gate = row.partGateCell().loadOrCreate()
+		gate = row.partGate.loadOrCreate()
 	}
 	gate.mu.Lock()
 	defer gate.mu.Unlock()
 	if gate.managed {
 		return true
 	}
-	if !shell && !equivalent && !row.partDelegationRestored() && !row.hasPartOffersLocked() {
+	if !shell && !equivalent && !row.partGate.restoredDelegation.Load() && !row.hasPartOffersLocked() {
 		return false
 	}
 	for _, group := range gate.groups {
@@ -102,7 +102,7 @@ func (c *Cache) usesPartAcquisition(ctx context.Context, res AnyResult, row *sha
 		}
 	}
 	gate.managed = true
-	row.partGateCell().active.Store(true)
+	row.partGate.active.Store(true)
 	gate.revision++
 	return true
 }
@@ -121,13 +121,9 @@ func (c *Cache) hasEquivalentLocked(row *sharedResult, lookup partLookup) bool {
 
 // lazyComplete reports whether everything res deferred is settled.
 func (res *sharedResult) lazyComplete() bool {
-	lz := res.lazy.Load()
-	if lz == nil {
-		return false
-	}
-	lz.mu.Lock()
-	defer lz.mu.Unlock()
-	return lz.evalComplete
+	res.lazyMu.Lock()
+	defer res.lazyMu.Unlock()
+	return res.lazyEvalComplete
 }
 
 // partAcquisitionSettledLocked answers usesPartAcquisition without writing
@@ -137,8 +133,8 @@ func (res *sharedResult) lazyComplete() bool {
 // would start being managed, which needs the write lock. The caller holds
 // egraphMu, for reading or writing.
 func (c *Cache) partAcquisitionSettledLocked(row *sharedResult) (settled, uses bool) {
-	noPartState := !row.imported && !row.partDelegationRestored() && !row.hasPartOffersLocked()
-	gate := row.writerGate()
+	noPartState := !row.imported && !row.partGate.restoredDelegation.Load() && !row.hasPartOffersLocked()
+	gate := row.partGate.gate.Load()
 	if gate == nil {
 		return noPartState, false
 	}
@@ -289,7 +285,7 @@ func (c *Cache) demandPart(ctx context.Context, res AnyResult, address Persisted
 				}
 				row := res.cacheSharedResult()
 				watch.again(ctx, row, address)
-				gate := row.partGateCell().loadOrCreate()
+				gate := row.partGate.loadOrCreate()
 				key, _ := partAddressKey(address)
 				gate.mu.Lock()
 				state := gate.outputs[key]
@@ -833,7 +829,7 @@ func (c *Cache) runCallForPart(ctx context.Context, res AnyResult, key string) e
 var errLazyEvaluationBusy = errors.New("part operation owns admission")
 
 func (c *Cache) joinLazyEvaluation(ctx context.Context, res AnyResult, address PersistedPartAddress) error {
-	gate := res.cacheSharedResult().partGateCell().loadOrCreate()
+	gate := res.cacheSharedResult().partGate.loadOrCreate()
 	gate.mu.Lock()
 	var token *PartTaskToken
 	for _, group := range gate.groups {

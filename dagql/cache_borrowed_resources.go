@@ -86,7 +86,7 @@ func (c *Cache) requireBorrowedSessionResourcesLocked(ctx context.Context, res *
 		if r.sessionResourceHandle != "" {
 			resources = append(resources, r)
 		}
-		for _, depID := range r.deps {
+		for depID := range r.deps {
 			if dep := c.resultsByID[depID]; dep != nil {
 				walk(dep)
 			}

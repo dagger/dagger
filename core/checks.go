@@ -73,10 +73,7 @@ func (c *Check) Run(ctx context.Context) (*Check, error) {
 		var srv *dagql.Server
 		srv, failure = CurrentDagqlServer(ctx)
 		if failure == nil {
-			// Running the generator is the check's work, not engine
-			// machinery: keep its span, and the function call beneath it,
-			// visible.
-			failure = srv.Select(dagql.WithNonInternalTelemetry(ctx), c.Generator, &changes, dagql.Selector{Field: "changeset"})
+			failure = srv.Select(ctx, c.Generator, &changes, dagql.Selector{Field: "changeset"})
 		}
 		if failure == nil {
 			var empty bool

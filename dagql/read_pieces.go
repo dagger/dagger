@@ -17,11 +17,6 @@ type readPieces struct {
 	c     *Cache
 	size  int
 	steps int
-	// hold, when set, bounds a piece by its time instead of its steps: a
-	// piece ends at the first step after it has held egraphMu that long
-	// (readInPiecesFor). yielded counts the times the read let egraphMu go.
-	hold    time.Duration
-	yielded int
 	// report, if set, is told the length of each hold, as it ends; locked
 	// is when the current one began.
 	report func(time.Duration)
@@ -44,57 +39,23 @@ func (c *Cache) readInPieces() *readPieces {
 	return &readPieces{c: c, size: size, locked: time.Now(), held: true}
 }
 
-// readInPiecesFor takes egraphMu for reading, for a read in pieces each of
-// which holds it for about hold: a piece ends at the first step after hold.
-// A writer then waits for at most one piece, however long each step takes
-// on a busy or slow machine, and under writers that always wait, the read
-// still reads hold between two of their holds. A cache whose tests set
-// readPieceSize reads in pieces of that many steps instead.
-func (c *Cache) readInPiecesFor(hold time.Duration) *readPieces {
-	r := c.readInPieces()
-	if c.readPieceSize <= 0 {
-		r.hold = hold
-	}
-	return r
-}
-
 // step counts a step of the read and, after each piece's last, lets egraphMu
 // go and takes it again. It reports whether it did: the cache may have
 // changed since the read's last step, and a caller that needs one state
 // checks for that.
 func (r *readPieces) step() bool {
 	r.steps++
-	if r.hold > 0 {
-		if time.Since(r.locked) < r.hold {
-			return false
-		}
-	} else if r.steps%r.size != 0 {
+	if r.steps%r.size != 0 {
 		return false
 	}
-	r.yield()
-	return true
-}
-
-// yield lets egraphMu go and takes it again, ending the piece in progress.
-func (r *readPieces) yield() {
-	r.without(nil)
-}
-
-// without lets egraphMu go, runs f, unless nil, with no lock held, and takes
-// egraphMu again, ending the piece in progress: for the read's own work on
-// what it has read, such as sorting it.
-func (r *readPieces) without(f func()) {
 	r.release()
-	if f != nil {
-		f()
-	}
 	if r.c.testReadPieceYielded != nil {
 		r.c.testReadPieceYielded()
 	}
 	r.c.egraphMu.RLock()
 	r.held = true
 	r.locked = time.Now()
-	r.yielded++
+	return true
 }
 
 // yields is how many times the read has let egraphMu go so far: a caller
@@ -104,7 +65,7 @@ func (r *readPieces) yields() int {
 	if r == nil {
 		return 0
 	}
-	return r.yielded
+	return r.steps / r.size
 }
 
 // done ends the read, letting egraphMu go if it holds it.

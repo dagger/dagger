@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -1037,22 +1038,21 @@ func (s *session) requestAs(ctx context.Context, id uint64, typ protocol.Type, b
 	}
 }
 
-// reply answers a request, its body encoded with its envelope in one pass
-// and compressed as it is encoded (protocol.EncodeMessage), as the service
-// encodes what it sends: an export's bundle is most of an engine's bytes
-// out. A reply over the message limit is not sent: its encoding stops at the
-// limit, the request is answered with an error reply "too large" instead,
-// which the connection survives, and the reply is reported as errTooLarge.
+// reply answers a request, its body encoded with its envelope in one pass,
+// as the service encodes what it sends: an export's bundle is most of an
+// engine's bytes out. A reply over the message limit is not sent: the
+// request is answered with an error reply "too large" instead, which the
+// connection survives, and the reply is reported as errTooLarge.
 func (s *session) reply(to protocol.Envelope, typ protocol.Type, body any) error {
-	msg, err := protocol.EncodeMessage(s.lastID.Add(1), to.ID, typ, body, s.cfg.maxMessage)
-	if errors.Is(err, protocol.ErrTooLarge) {
-		_ = s.replyError(to, errTooLarge)
-		return errTooLarge
-	}
+	data, err := protocol.EncodeEnvelope(s.lastID.Add(1), to.ID, typ, body)
 	if err != nil {
 		return s.replyError(to, err)
 	}
-	return s.writeMessage(s.ctx, msg)
+	if len(data) > s.cfg.maxMessage {
+		_ = s.replyError(to, errTooLarge)
+		return errTooLarge
+	}
+	return s.writeData(s.ctx, data)
 }
 
 // replyError answers a request with an error reply, and returns err.
@@ -1064,23 +1064,21 @@ func (s *session) replyError(to protocol.Envelope, err error) error {
 	return err
 }
 
-// write writes an envelope, as the protocol sends it (protocol.EncodeMessage):
-// the same JSON json.Marshal gives for it, compressed when it is large.
 func (s *session) write(ctx context.Context, env protocol.Envelope) error {
-	msg, err := protocol.EncodeMessage(env.ID, env.Re, env.Type, env.Body, s.cfg.maxMessage)
+	data, err := json.Marshal(env)
 	if err != nil {
 		return err
 	}
-	return s.writeMessage(ctx, msg)
+	return s.writeData(ctx, data)
 }
 
-// writeMessage writes one message. A write that fails while its own context
-// is still live ends the session. One whose context has ended belongs to
-// that request alone, such as a renewal whose read gave up while another
-// message held the writer: the connection is left to the reader, which sees
-// it fail if the library closed it mid-frame.
-func (s *session) writeMessage(ctx context.Context, msg protocol.Message) error {
-	if err := s.conn.Write(ctx, msg); err != nil {
+// writeData writes one message. A write that fails while its own context is
+// still live ends the session. One whose context has ended belongs to that
+// request alone, such as a renewal whose read gave up while another message
+// held the writer: the connection is left to the reader, which sees it fail
+// if the library closed it mid-frame.
+func (s *session) writeData(ctx context.Context, data []byte) error {
+	if err := s.conn.Write(ctx, data); err != nil {
 		if ctx.Err() == nil {
 			s.cancel(fmt.Errorf("write: %w", err))
 		}

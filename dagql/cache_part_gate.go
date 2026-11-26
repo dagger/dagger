@@ -15,10 +15,7 @@ import (
 	"github.com/dagger/dagger/engine/wcprof"
 )
 
-// PartGateCell is a row's part state: its writer gate, made on first use,
-// and what hosts and scans its parts. A row has none until one of them is
-// first needed (sharedResult.partGateCell), and keeps it from then on: a
-// pointer to its host or scan lock stays valid.
+// PartGateCell is a stable row attachment. Merely binding it allocates no gate.
 type PartGateCell struct {
 	gate               atomic.Pointer[PartWriterGate]
 	active             atomic.Bool
@@ -31,35 +28,6 @@ type PartGateCell struct {
 	// changes; concurrent scans of one row's parts would each be refused by
 	// the others' installations and scan again, about n² scans for n parts.
 	scanMu sync.Mutex
-}
-
-// partGateCell returns res's part state, making it if res has none.
-func (res *sharedResult) partGateCell() *PartGateCell {
-	if cell := res.partGate.Load(); cell != nil {
-		return cell
-	}
-	res.partGate.CompareAndSwap(nil, &PartGateCell{})
-	return res.partGate.Load()
-}
-
-// writerGate returns res's part writer gate, or nil when it has none.
-func (res *sharedResult) writerGate() *PartWriterGate {
-	if cell := res.partGate.Load(); cell != nil {
-		return cell.gate.Load()
-	}
-	return nil
-}
-
-// partGateActive reports whether res's parts are managed by its gate.
-func (res *sharedResult) partGateActive() bool {
-	cell := res.partGate.Load()
-	return cell != nil && cell.active.Load()
-}
-
-// partDelegationRestored reports whether res's part delegation was restored.
-func (res *sharedResult) partDelegationRestored() bool {
-	cell := res.partGate.Load()
-	return cell != nil && cell.restoredDelegation.Load()
 }
 
 func (cell *PartGateCell) loadOrCreate() *PartWriterGate {
@@ -337,7 +305,7 @@ func partRawSize(ctx context.Context, reader partSizeReader, desc PartDescriptor
 // settledPartKeys returns the address keys of the outputs the row's gate has
 // settled, sorted.
 func (res *sharedResult) settledPartKeys() []string {
-	gate := res.writerGate()
+	gate := res.partGate.gate.Load()
 	if gate == nil {
 		return nil
 	}
@@ -484,7 +452,7 @@ func (c *Cache) TryAcquire(ctx context.Context, receiver AnyResult, address Pers
 	if err != nil {
 		return nil, GateReselect, err
 	}
-	gate := row.partGateCell().loadOrCreate()
+	gate := row.partGate.loadOrCreate()
 	gate.mu.Lock()
 	defer gate.mu.Unlock()
 	if gate.outputs[key].phase != PartPending {
@@ -507,7 +475,7 @@ func (c *Cache) TryAcquire(ctx context.Context, receiver AnyResult, address Pers
 		}
 	}
 	gate.managed = true
-	row.partGateCell().active.Store(true)
+	row.partGate.active.Store(true)
 	return gate.newPermit(task, address, false), GateGranted, nil
 }
 func (gate *PartWriterGate) newPermit(task *PartTaskToken, address PersistedPartAddress, decision bool) *PartPermit {
@@ -551,7 +519,7 @@ func (c *Cache) PrepareOriginal(ctx context.Context, receiver AnyResult, group L
 	if err != nil {
 		return nil, GateReselect, err
 	}
-	gate := row.partGateCell().loadOrCreate()
+	gate := row.partGate.loadOrCreate()
 	gate.mu.Lock()
 	defer gate.mu.Unlock()
 	for _, current := range gate.groups {
@@ -613,7 +581,7 @@ func (c *Cache) TryAcquireForDecision(ctx context.Context, receiver AnyResult, a
 	if err != nil {
 		return nil, GateReselect, err
 	}
-	if drain == nil || drain.task != task || drain.gate != row.writerGate() || !containsPart(drain.writeSet, address) {
+	if drain == nil || drain.task != task || drain.gate != row.partGate.gate.Load() || !containsPart(drain.writeSet, address) {
 		return nil, GateReselect, fmt.Errorf("lazy: invalid decision permit")
 	}
 	gate := drain.gate
@@ -661,7 +629,7 @@ func (c *Cache) endPartTaskBody(ctx context.Context, task *PartTaskToken, succes
 	if !task.active.Swap(false) {
 		return
 	}
-	gate := task.row.writerGate()
+	gate := task.row.partGate.gate.Load()
 	if gate == nil {
 		return
 	}

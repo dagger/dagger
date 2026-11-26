@@ -45,7 +45,7 @@ func TestProfileSkipClassifier(t *testing.T) {
 		{"EnumValueTypeDef", "__withSourceMap"}, {"EnumValueTypeDef", "__withName"},
 		// Query-level introspection root fields (the root set, shared with
 		// callChainInfo).
-		{"Query", "__schema"}, {"Query", "__type"}, {"Query", "sourceMap"}, {"Query", "currentTypeDefs"},
+		{"Query", "__schema"}, {"Query", "sourceMap"}, {"Query", "currentTypeDefs"},
 		{"Query", "function"}, {"Query", "typeDef"}, {"Query", "__objectTypeDef"},
 		{"Query", "currentFunctionCall"},
 		// Internal roots: emitted, but the root call itself stays unprofiled.

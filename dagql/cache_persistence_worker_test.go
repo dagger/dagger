@@ -44,7 +44,7 @@ func TestCachePersistenceWorkerMirrorsRetainedPersistableResult(t *testing.T) {
 	assert.Equal(t, 1, rowCount)
 
 	var storedCallFrameJSON string
-	err = c.sqlDB.QueryRowContext(ctx, `SELECT call_frame_json FROM result_records WHERE result_id = ?`, sharedID).Scan(&storedCallFrameJSON)
+	err = c.sqlDB.QueryRowContext(ctx, `SELECT call_frame_json FROM results WHERE id = ?`, sharedID).Scan(&storedCallFrameJSON)
 	assert.NilError(t, err)
 	assert.Check(t, cmp.Contains(storedCallFrameJSON, `"field":"persist-worker-retained"`))
 }
@@ -188,7 +188,7 @@ func TestCachePersistenceWorkerMirrorsAuthoritativeEgraphState(t *testing.T) {
 	assert.Check(t, cmp.Equal(resultOutputEqClassesCount, 2))
 
 	var resultInputCount int
-	err = c.sqlDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM term_inputs WHERE provenance_kind = ?`, egraphInputProvenanceKindResult.String()).Scan(&resultInputCount)
+	err = c.sqlDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM term_inputs WHERE provenance_kind = ?`, string(egraphInputProvenanceKindResult)).Scan(&resultInputCount)
 	assert.NilError(t, err)
 	assert.Check(t, cmp.Equal(resultInputCount, 1))
 }
@@ -220,8 +220,7 @@ func TestCachePersistenceSnapshotOmitsSessionOnlyResult(t *testing.T) {
 	cacheTestReleaseSession(t, cacheIface, ctx)
 	assert.Equal(t, 0, c.Size())
 
-	assert.NilError(t, c.applyPersistStateSnapshot(ctx, c.sqlDB, c.pdb, &snapshot))
-	c.persistKept = snapshot.next
+	assert.NilError(t, c.applyPersistStateSnapshot(ctx, snapshot))
 
 	rows, err := c.pdb.ListMirrorResults(ctx)
 	assert.NilError(t, err)
@@ -260,8 +259,11 @@ func TestCachePersistenceSnapshotKeepsOnlyCompletePersistedRootClosures(t *testi
 	assert.NilError(t, c.AddExplicitDependency(ctx, droppedRoot, keptDep, "shared-clean-dependency"))
 
 	dirtyShared := dirtyDep.cacheSharedResult()
-	dirtyShared.openAttachment(nil)
-	dirtyShared.endAttachment(context.Canceled)
+	dirtyShared.attachDepsMu.Lock()
+	dirtyShared.attachDepsWaitCh = make(chan struct{})
+	dirtyShared.attachDepsErr = context.Canceled
+	close(dirtyShared.attachDepsWaitCh)
+	dirtyShared.attachDepsMu.Unlock()
 
 	snapshot, err := c.snapshotPersistState(ctx)
 	assert.NilError(t, err)
@@ -279,17 +281,10 @@ func TestCachePersistenceSnapshotKeepsOnlyCompletePersistedRootClosures(t *testi
 	assert.Assert(t, !dirtyDepSelected)
 	assert.Assert(t, !droppedRootSelected)
 	assert.Assert(t, !sessionOnlySelected)
-	var edges []persistdb.MirrorPersistedEdge
-	for _, result := range snapshot.results {
-		if result.edge != nil {
-			edges = append(edges, *result.edge)
-		}
-	}
-	assert.Equal(t, 1, len(edges))
-	assert.Equal(t, int64(keptRoot.cacheSharedResult().id), edges[0].ResultID)
+	assert.Equal(t, 1, len(snapshot.persistedEdges))
+	assert.Equal(t, int64(keptRoot.cacheSharedResult().id), snapshot.persistedEdges[0].ResultID)
 
-	assert.NilError(t, c.applyPersistStateSnapshot(ctx, c.sqlDB, c.pdb, &snapshot))
-	c.persistKept = snapshot.next
+	assert.NilError(t, c.applyPersistStateSnapshot(ctx, snapshot))
 	rows, err := c.sqlDB.QueryContext(ctx, `PRAGMA foreign_key_check`)
 	assert.NilError(t, err)
 	assert.Assert(t, !rows.Next(), "persisted mirror has a dangling foreign key")

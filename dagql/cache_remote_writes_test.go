@@ -20,7 +20,7 @@ type remoteWriteOps interface {
 	AddRemoteHold(context.Context, HolderKey, string) (RemoteChange, error)
 	ObserveRemoteRetention(context.Context, HolderKey, RetentionObservation) (RemoteChange, error)
 	ApplyHeldValueState(context.Context, HolderKey, HeldValueState) (RemoteChange, bool, error)
-	ApplyMergedReply(context.Context, CacheID, SentBundle, MergeReply) (RemoteChange, error)
+	ApplyMergedReply(context.Context, CacheID, ValueBundle, MergeReply) (RemoteChange, error)
 	ReleaseRemoteSession(context.Context, CacheID, string) RemoteChange
 	ReleaseRemoteCache(context.Context, CacheID) RemoteChange
 	CollectRemoteHoldings(context.Context, []HolderKey, func(HolderKey) bool) ([]HolderKey, RemoteChange, error)
@@ -114,7 +114,7 @@ func remoteWritesScript(t *testing.T, ctx context.Context, ops remoteWriteOps) [
 	// ordinal that wasn't sent.
 	c := CacheID("cache-c")
 	merge := func(name string, cache CacheID, sent ValueBundle, reply MergeReply) {
-		change, err := ops.ApplyMergedReply(ctx, cache, sent.Sent(), reply)
+		change, err := ops.ApplyMergedReply(ctx, cache, sent, reply)
 		note(name, change, err)
 	}
 	e1, _ := ops.RemoteHoldingInfo(HolderKey{a, 1})
@@ -256,7 +256,7 @@ func TestPreparedRemoteHoldingKeepsItsCall(t *testing.T) {
 	require.NoError(t, w.Release(ctx))
 	entry := storedBundleTestEntry(cloud, test.number)
 	cloud.egraphMu.RLock()
-	calls := len(entry.keptCallsLocked())
+	calls := len(entry.calls)
 	cloud.egraphMu.RUnlock()
 	require.Equal(t, 1, calls)
 }
@@ -371,9 +371,6 @@ func TestRemoteWritesApplyAMergedReplyInPieces(t *testing.T) {
 		out := map[HolderKey]RemoteHeldEntry{}
 		for _, key := range keys {
 			if held, ok := cache.RemoteHoldingInfo(key); ok {
-				// The count of hand-backs differs between a whole reply and
-				// its pieces; the holdings don't.
-				held.At = 0
 				out[key] = held
 			}
 		}
@@ -385,14 +382,14 @@ func TestRemoteWritesApplyAMergedReplyInPieces(t *testing.T) {
 
 	ctx, whole := storedPartTestCache(t, WithBlobStore())
 	sent, reply := setup(t, whole)
-	wholeChange, err := whole.ApplyMergedReply(ctx, c, sent.Sent(), reply)
+	wholeChange, err := whole.ApplyMergedReply(ctx, c, sent, reply)
 	require.NoError(t, err)
 	want := read(whole)
 	require.Len(t, want, records)
 
 	_, pieced := storedPartTestCache(t, WithBlobStore())
 	sent, reply = setup(t, pieced)
-	apply, err := PrepareMergedReply(c, sent.Sent(), reply)
+	apply, err := PrepareMergedReply(c, sent, reply)
 	require.NoError(t, err)
 	require.Equal(t, records, apply.Records())
 	var candidates []HolderKey

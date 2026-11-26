@@ -117,9 +117,9 @@ func TestLazyEmitRetryDoesNotLeakStaleWaitTarget(t *testing.T) {
 	// leader could complete first and the joiner would skip the join entirely.
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		shared.lazyState().mu.Lock()
-		joined := shared.lazyState().whole.attempt != nil && shared.lazyState().whole.attempt.waiters >= 2
-		shared.lazyState().mu.Unlock()
+		shared.lazyMu.Lock()
+		joined := shared.lazyWhole.attempt != nil && shared.lazyWhole.attempt.waiters >= 2
+		shared.lazyMu.Unlock()
 		if joined {
 			break
 		}

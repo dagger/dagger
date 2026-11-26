@@ -4370,7 +4370,7 @@ func credentials(r *http.Request) (string, string, bool) {
 		return connect(ctx, t,
 			dagger.WithRunnerHost(endpoint),
 			dagger.WithEnvironmentVariable("DOCKER_CONFIG", emptyDockerConfig),
-			dagger.WithLogOutput(testutil.ClientLogOutput(t)),
+			dagger.WithLogOutput(testutil.NewTWriter(t)),
 		)
 	}
 
@@ -7172,14 +7172,11 @@ func (ContainerSuite) TestWithMountedDirectoryCaching(ctx context.Context, t *te
 	go func() {
 		for {
 			conn, err := l.Accept()
-			if err != nil {
-				// The listener closes when the test ends; without returning,
-				// this loop would spin for the rest of the test binary's life.
-				return
+			if err == nil {
+				t.Logf("New connection from %s\n", conn.RemoteAddr().String())
+				numConnections.Add(1)
+				conn.Close()
 			}
-			t.Logf("New connection from %s\n", conn.RemoteAddr().String())
-			numConnections.Add(1)
-			conn.Close()
 		}
 	}()
 

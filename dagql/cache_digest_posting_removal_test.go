@@ -16,9 +16,9 @@ func TestRestoredDigestPostingRemovalKeepsRuntimePostingsAfterMerge(t *testing.T
 	roots := slices.Sorted(maps.Keys(c.outputEqClassResults))
 	assert.Equal(t, 2, len(roots))
 	first, second := roots[0], roots[1]
-	survivor := slices.Collect(c.outputEqClassResults[first].Items())[0]
-	removed := slices.Collect(c.outputEqClassResults[second].Items())
-	digests := slices.Collect(c.eqClassToDigests[second].Items())
+	survivor := slices.Sorted(maps.Keys(c.outputEqClassResults[first]))[0]
+	removed := slices.Sorted(maps.Keys(c.outputEqClassResults[second]))
+	digests := slices.Sorted(maps.Keys(c.eqClassToDigests[second]))
 	assert.Assert(t, len(digests) > 1)
 	c.mergeEqClassesLocked(f.ctx, first, second)
 	// A new observation applies only to this digest, even after the classes merge.
@@ -45,10 +45,10 @@ func TestRestoredDigestPostingRemovalAcrossOriginalGroups(t *testing.T) {
 	defer c.egraphMu.Unlock()
 	c.initEgraphLocked()
 	c.egraphParents = []eqClassID{0, 1, 2}
-	c.eqClassToDigests[1] = idSetOf("first")
-	c.eqClassToDigests[2] = idSetOf("second")
-	c.outputEqClassResults[1] = idSetOf[sharedResultID](1, 2)
-	c.outputEqClassResults[2] = idSetOf[sharedResultID](1, 3)
+	c.eqClassToDigests[1] = map[string]struct{}{"first": {}}
+	c.eqClassToDigests[2] = map[string]struct{}{"second": {}}
+	c.outputEqClassResults[1] = map[sharedResultID]struct{}{1: {}, 2: {}}
+	c.outputEqClassResults[2] = map[sharedResultID]struct{}{1: {}, 3: {}}
 	c.restoreDigestPostingsLocked()
 	c.removeResultDigestsLocked(1, map[eqClassID]struct{}{1: {}, 2: {}})
 	assert.DeepEqual(t, slices.Sorted(c.egraphResultsByDigest["first"].Items()), []sharedResultID{2})

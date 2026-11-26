@@ -191,9 +191,9 @@ func TestCacheMetadataPruneDependencySortCancellation(t *testing.T) {
 	t.Parallel()
 
 	const dependencyCount = pruneCancellationCheckInterval + 44
-	deps := make(resultIDSet, 0, dependencyCount)
+	deps := make(map[sharedResultID]struct{}, dependencyCount)
 	for i := 1; i <= dependencyCount; i++ {
-		deps.add(sharedResultID(i))
+		deps[sharedResultID(i)] = struct{}{}
 	}
 	c := &Cache{resultsByID: map[sharedResultID]*sharedResult{
 		dependencyCount + 1: {

@@ -29,7 +29,7 @@ func onSecondRevisionRead(object *transferTestValue, fn func()) {
 }
 
 func bumpGateRevision(c *Cache, row *sharedResult) {
-	gate := row.partGateCell().loadOrCreate()
+	gate := row.partGate.loadOrCreate()
 	c.egraphMu.Lock()
 	gate.mu.Lock()
 	gate.revision++
@@ -124,7 +124,7 @@ func TestOfferPartsPreparationWindow(t *testing.T) {
 			var copyErr error
 			if slot != nil {
 				slotOwner = slot.owner
-				records, err := clonePartOffers([]PersistedPartOffer{slot.record()})
+				records, err := clonePartOffers([]PersistedPartOffer{slot.record})
 				copyErr = err
 				if err == nil {
 					record = records[0]
@@ -260,7 +260,7 @@ func (f *settlementFixture) requireSettled(t *testing.T, firstBase, secondBase i
 	require.Equal(t, firstBase, first, "no double decrement")
 	require.Equal(t, secondBase, second, "no double decrement")
 	key, _ := partAddressKey(f.address)
-	gate := row.partGateCell().loadOrCreate()
+	gate := row.partGate.loadOrCreate()
 	gate.mu.Lock()
 	phase := gate.outputs[key].phase
 	gate.mu.Unlock()
@@ -365,7 +365,7 @@ func TestOfferSettlementReplacement(t *testing.T) {
 			out, err := f.cache.testOfferParts(f.ctx, f.receiver, []PersistedPartOffer{f.replacement()})
 			require.NoError(t, err)
 			require.Equal(t, OfferExecutionStarted, out[0].Outcome, "the retained output is not complete until a retry settles it")
-			gate := row.partGateCell().loadOrCreate()
+			gate := row.partGate.loadOrCreate()
 			gate.mu.Lock()
 			state := gate.outputs[key]
 			gate.mu.Unlock()
@@ -450,7 +450,7 @@ func TestOfferResourcesDoNotGateLookup(t *testing.T) {
 	require.True(t, f.installed())
 	require.EqualValues(t, 1, f.operation.runs.Load())
 	c.egraphMu.RLock()
-	ownsSocket := row.deps.has(sharedResultID(socketID))
+	_, ownsSocket := row.deps[sharedResultID(socketID)]
 	requiresSocket := cacheTestSessionResourceSetContains(row.requiredSessionResources, "socket")
 	c.egraphMu.RUnlock()
 	require.True(t, ownsSocket, "installed references are direct edges")
@@ -521,7 +521,7 @@ func TestRenewalShutdownDrainsOwnership(t *testing.T) {
 		for _, owner := range f.cache.offerOwners {
 			owners = append(owners, ownership{owner.slots, owner.holds})
 		}
-		gate := f.receiver.cacheSharedResult().partGateCell().loadOrCreate()
+		gate := f.receiver.cacheSharedResult().partGate.loadOrCreate()
 		gate.mu.Lock()
 		writerCount := len(gate.writers)
 		gate.mu.Unlock()

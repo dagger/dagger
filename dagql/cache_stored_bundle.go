@@ -708,7 +708,7 @@ func (c *Cache) storedBundleVisitLocked(build *storedBundleBuild, res *sharedRes
 // services name. Requires egraphMu.
 func storedClosureChildrenLocked(res *sharedResult) []sharedResultID {
 	var children []sharedResultID
-	for _, dep := range res.deps {
+	for dep := range res.deps {
 		children = append(children, dep)
 	}
 	for _, part := range res.storedParts {
@@ -786,7 +786,7 @@ func transferredRecordParts(declared []declaredPart, complete *partKeySet) *Tran
 // found it names (refs). Requires egraphMu.
 func (build *storedBundleBuild) addStoredValue(res *sharedResult, rec PersistedRecord, storedEnvelope []byte, refs []uint64, parts *TransferredRecordParts) error {
 	for _, ref := range refs {
-		if !res.deps.has(sharedResultID(ref)) {
+		if _, ok := res.deps[sharedResultID(ref)]; !ok {
 			return fmt.Errorf("stored bundle: entry %d: reference to %d is not a direct dependency", res.id, ref)
 		}
 	}
@@ -795,7 +795,7 @@ func (build *storedBundleBuild) addStoredValue(res *sharedResult, rec PersistedR
 	if res.run != nil {
 		value.served = &servedRun{run: *res.run, ran: res.runRan, known: true}
 	}
-	for _, dep := range res.deps {
+	for dep := range res.deps {
 		value.DependencyIDs = append(value.DependencyIDs, uint64(build.ordinals[dep]))
 	}
 	slices.Sort(value.DependencyIDs)
@@ -1012,7 +1012,7 @@ func (build *storedBundleBuild) addOutput(res *sharedResult, part PersistedPartO
 func (c *Cache) storedPartDonorLocked(res *sharedResult, key string, now int64) (*sharedResult, storedPart) {
 	var best *sharedResult
 	for root := range c.outputEqClassRootsLocked(res.id) {
-		for id := range c.outputEqClassResults[root].All() {
+		for id := range c.outputEqClassResults[root] {
 			member := c.resultsByID[id]
 			if member == nil || member == res || c.resultExpiredAtLocked(member, now) {
 				continue
@@ -1042,7 +1042,7 @@ func (c *Cache) closureRowOfClassLocked(service sharedResultID, ordinals map[sha
 	}
 	var best sharedResultID
 	for root := range c.outputEqClassRootsLocked(service) {
-		for id := range c.outputEqClassResults[root].All() {
+		for id := range c.outputEqClassResults[root] {
 			if ordinals[id] != 0 && (best == 0 || id < best) {
 				best = id
 			}

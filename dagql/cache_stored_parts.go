@@ -23,6 +23,7 @@ import (
 func WithBlobStore() CacheOption {
 	return func(c *Cache) {
 		c.blobBacked = true
+		c.storedLayers = &storedLayers{}
 		c.changes = &changeMarks{}
 	}
 }
@@ -110,11 +111,7 @@ func (c *Cache) SetStoredParts(ctx context.Context, parts []StoredPartWrite) (_ 
 	defer c.takeChangesLocked(&change)
 	// Admission is against the value the entry holds now, so the clock is
 	// read once the graph lock is held, not while waiting for it.
-	clock := c.storedPartClock
-	if clock == nil {
-		clock = time.Now
-	}
-	now := clock().Unix()
+	now := time.Now().Unix()
 	for i, w := range parts {
 		if ready[i] == nil {
 			continue

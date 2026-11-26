@@ -414,10 +414,6 @@ func TestStoredBundleRefusesAReferenceToAnIndirectEntry(t *testing.T) {
 	transferTestDependency(a, actx, mid, leaf)
 	bundle := exportTestBundle(t, actx, a, root)
 	ctx, cloud := storedPartTestCache(t, WithBlobStore())
-	// The test replaces R's record in place, which a build reads only while
-	// the record is whole: the body worker stops before the merge, so that it
-	// can't compress the record first.
-	storedTestHoldWhole(cloud)
 	reply, err := cloud.MergeValues(ctx, "cache-a", bundle)
 	require.NoError(t, err)
 	numbers := map[TransferOrdinal]uint64{}
@@ -492,12 +488,11 @@ func init() {
 // A stored record whose payload its codec refuses, can't map to its outputs,
 // or maps to an output with no part, is refused, though the codec normalizes
 // it: a build validates and maps each record's payloads when it normalizes
-// the record. The test replaces the record in place, which a build reads
-// only while the record is whole, so the Cloud's records stay whole.
+// the record.
 func TestStoredBundleRefusesAPayloadItsCodecRefuses(t *testing.T) {
 	t.Parallel()
 	for text, refusal := range map[string]string{"invalid": "invalid payload", "unmapped": "unmapped payload", "unaddressed": "empty part"} {
-		ctx, cloud, r, _ := storedBundleTestCloudIn(t, "root", true)
+		ctx, cloud, r, _ := storedBundleTestCloud(t, "root")
 		_, err := cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), nil)
 		require.NoError(t, err, text)
 		cloud.egraphMu.Lock()
@@ -538,7 +533,6 @@ func TestRelocatedTransferPayloadsStayValid(t *testing.T) {
 		"dagql_test.MarkBatch":     {`{"parts":["a"]}`, 0},
 		"dagql_test.PlanDelegate":  {`{"parent":7}`, 0},
 		"dagql_test.SyncDelegate":  {`{}`, 0},
-		"dagql_test.DecodeChain":   {`{"text":"relocated","child":5}`, 1},
 	}
 	for _, family := range PersistedObjectFamilies() {
 		// core's families, which this package's external tests register,
@@ -694,7 +688,7 @@ func storedPartTestDeps(c *Cache, number uint64) []uint64 {
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
 	var deps []uint64
-	for _, id := range c.resultsByID[sharedResultID(number)].deps {
+	for id := range c.resultsByID[sharedResultID(number)].deps {
 		deps = append(deps, uint64(id))
 	}
 	slices.Sort(deps)

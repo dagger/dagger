@@ -13,13 +13,13 @@ import (
 // derived as the cache derives it.
 func requirementTestRow(t *testing.T, c *Cache, id sharedResultID, handle SessionResourceHandle, deps ...*sharedResult) *sharedResult {
 	t.Helper()
-	row := &sharedResult{id: id, sessionResourceHandle: handle}
+	row := &sharedResult{id: id, sessionResourceHandle: handle, deps: map[sharedResultID]struct{}{}}
 	if c.resultsByID == nil {
 		c.resultsByID = map[sharedResultID]*sharedResult{}
 	}
 	c.resultsByID[id] = row
 	for _, dep := range deps {
-		row.deps.add(dep.id)
+		row.deps[dep.id] = struct{}{}
 		c.rememberDependencyEdgeLocked(row, dep)
 	}
 	_, err := c.recomputeRequiredSessionResourcesLocked(row)

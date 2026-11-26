@@ -27,10 +27,8 @@ import (
 	"github.com/containerd/continuity/fs"
 	"github.com/creack/pty"
 	workspacecfg "github.com/dagger/dagger/core/workspace"
-	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/util/lockfile"
 	"github.com/dagger/testctx"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -123,33 +121,12 @@ func (GeneratorsSuite) TestGenerateDoesNotUploadGitignoredFiles(ctx context.Cont
 	require.NoError(t, os.WriteFile(sdkFile, sdkCode, 0644))
 
 	var logs safeBuffer
-	sink := newAgentTraceSink(t)
-	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithWorkdir(workdir), dagger.WithLogOutput(&logs), dagger.WithVerbosity(2))...)
+	c := connect(ctx, t, dagger.WithWorkdir(workdir), dagger.WithLogOutput(&logs), dagger.WithVerbosity(2))
 	empty, err := core.NewQuery(c).CurrentWorkspace().SDK("test").Generate().IsEmpty(ctx)
 	require.NoError(t, err)
 	require.False(t, empty)
 	require.NoError(t, c.Close())
 	require.NotRegexp(t, `(?m)^\d+\s+:\s+(?:┆\s+)*\.venv(?:\s+DONE.*)?$`, logs.String(), "generate must not upload gitignored content")
-
-	// A host read without an include makes the client walk every gitignored
-	// file. Only the local SDK's context directory needs the whole root.
-	var wholeRootReads int
-	sink.read(func(db *dagui.DB) {
-		for _, span := range db.Spans.Order {
-			// A call's exec span repeats the call's name and arguments.
-			if span.Name != "Host.directory" || span.Passthrough {
-				continue
-			}
-			args := map[string]bool{}
-			for _, arg := range span.Call().GetArgs() {
-				args[arg.GetName()] = true
-			}
-			if args["gitignore"] && !args["include"] {
-				wholeRootReads++
-			}
-		}
-	})
-	require.Equal(t, 1, wholeRootReads)
 }
 
 func (GeneratorsSuite) TestGeneratorsDirectSDK(ctx context.Context, t *testctx.T) {
@@ -1731,59 +1708,6 @@ func (GeneratorsSuite) TestGeneratorArtifactEvaluation(ctx context.Context, t *t
 }`)).Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"currentWorkspace":{"artifacts":{"filterTypes":{"items":[{"value":{"changeset":{"isEmpty":false}}}]}}}}`, out)
-}
-
-// TestGeneratorChangesetSpanIsVisible covers the changeset Generator.sync
-// selects to run a generator: it's the work sync was asked for, so its span
-// is not internal, and frontends that hide internal spans don't hide the
-// generator's function beneath it. The CLI's introspection of the artifact's
-// type, which it runs beside the generator, emits no spans.
-func (GeneratorsSuite) TestGeneratorChangesetSpanIsVisible(ctx context.Context, t *testctx.T) {
-	c, sink := connectWithTrace(ctx, t)
-	fixture := artifactViewWorkspace(t, c, `type View {
-  write(ws: Workspace!): Changeset! @generate {
-    let before = ws.directory(".")
-    before.withNewFile("generated.txt", "generated\n").changes(before)
-  }
-}`).WithEnvVariable("CACHEBUSTER", rand.Text())
-
-	_, err := fixture.With(daggerExec("generate", "write", "-y")).Sync(ctx)
-	require.NoError(t, err)
-
-	require.EventuallyWithT(t, func(ct *assert.CollectT) {
-		sink.read(func(db *dagui.DB) {
-			var changesets []*dagui.Span
-			for _, span := range db.Spans.Order {
-				call := span.Call()
-				if call == nil || span.IsRunning() {
-					continue
-				}
-				if call.Field == "__type" || strings.HasPrefix(span.Name, "__Type.") || strings.HasPrefix(span.Name, "__Field.") {
-					assert.Failf(ct, "introspection span", "%s is emitted", span.Name)
-				}
-				if span.Name == "Generator.changeset" {
-					changesets = append(changesets, span)
-				}
-			}
-			if !assert.NotEmpty(ct, changesets, "the generator's changeset span") {
-				return
-			}
-			// The CLI reads the completed generator's changeset too, which
-			// runs nothing: one of them runs the function.
-			var fn bool
-			for _, changeset := range changesets {
-				assert.False(ct, changeset.Internal, "the changeset span is not internal")
-				assert.False(ct, changeset.Passthrough, "the changeset span keeps its row")
-				for _, child := range changeset.ChildSpans.Spans() {
-					if call := child.Call(); call != nil && call.Field == "write" {
-						fn = true
-						assert.False(ct, child.Internal, "the generator's function is not internal")
-					}
-				}
-			}
-			assert.True(ct, fn, "the generator's function runs beneath its changeset")
-		})
-	}, time.Minute, 100*time.Millisecond)
 }
 
 // TestClientSchemaIntrospectionJSON locks in that
