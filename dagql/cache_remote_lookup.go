@@ -331,12 +331,12 @@ func (l *remoteLookups) loggedLocked(seq uint64) *loggedMiss {
 // secret it lacks, still counts.
 //
 // It asks for the misses entries can be found by, not every miss for every
-// entry. It notes the log's last miss, then reads in one hold of the graph
-// lock what the entries are found by (lateMissKeysLocked), takes from the
-// log's indexes the misses under those digests and self digests, and makes
-// again the term of each miss that only its term could find, in the same
-// hold. So a count costs what its part costs, however many misses the
-// connection logged.
+// entry. It notes the log's last miss, then, in one hold of the graph lock,
+// walks the classes of the entries and takes from the log's indexes the
+// misses under their digests and their terms' self digests, and makes again
+// the term of each miss that only its term could find (lateMissCandidates).
+// So a count costs what its part costs, however many misses the connection
+// logged.
 func (c *Cache) LateRemoteMisses(before time.Time, entries map[uint64]struct{}) []RemoteMiss {
 	b := c.partContentSource.attachedBridge()
 	if b == nil || len(entries) == 0 {
@@ -376,78 +376,17 @@ func (c *Cache) LateRemoteMisses(before time.Time, entries map[uint64]struct{}) 
 // lateMissCandidates returns, in the order they were logged, the misses of
 // the log's connection generation, numbered up to last, queued before
 // before and not yet returned, whose lookup finds one of entries: read in
-// one hold of the graph lock, in which it takes them from the log in a hold
-// of the log's lock.
+// one hold of the graph lock. A lookup by a digest finds the entries of its
+// class (EquivalentEntries), and a lookup by a term the entries of the
+// classes its terms are outputs of (TermEntries), so it walks the classes of
+// the live ones of entries, taking from the log's indexes, in a hold of the
+// log's lock, the misses under those classes' digests and under their
+// terms' self digests. A miss found by a self digest is found if its term,
+// made again from its inputs' classes, is one of those terms.
 func (c *Cache) lateMissCandidates(l *remoteLookups, before time.Time, generation, last uint64, entries map[uint64]struct{}) []loggedMiss {
 	read := c.readGraphAs(workRemote)
 	defer read.Unlock()
-	keys := c.lateMissKeysLocked(entries)
-	if len(keys.digests) == 0 && len(keys.terms) == 0 {
-		return nil
-	}
-	var late, byTerm []loggedMiss
-	found := map[uint64]struct{}{}
-	l.mu.Lock()
-	if l.generation == generation {
-		open := func(seq uint64) *loggedMiss {
-			if seq > last {
-				return nil
-			}
-			if m := l.loggedLocked(seq); m != nil && !m.found && m.miss.At.Before(before) {
-				return m
-			}
-			return nil
-		}
-		for _, dig := range keys.digests {
-			for _, seq := range l.missedByDigest[dig] {
-				if _, ok := found[seq]; ok {
-					continue
-				}
-				if m := open(seq); m != nil {
-					found[seq] = struct{}{}
-					late = append(late, *m)
-				}
-			}
-		}
-		for self := range keys.terms {
-			for _, seq := range l.missedBySelf[self] {
-				if _, ok := found[seq]; ok {
-					continue
-				}
-				if m := open(seq); m != nil {
-					byTerm = append(byTerm, *m)
-				}
-			}
-		}
-	}
-	l.mu.Unlock()
-	for _, m := range byTerm {
-		ids, missing := c.termInputClassesLocked(m.miss.Inputs)
-		if missing >= 0 {
-			continue
-		}
-		if _, ok := keys.terms[m.miss.Self][calcEgraphTermDigest(m.miss.Self, ids)]; ok {
-			late = append(late, m)
-		}
-	}
-	slices.SortFunc(late, func(a, b loggedMiss) int { return cmp.Compare(a.seq, b.seq) })
-	return late
-}
-
-// lateMissKeys is what a lookup finds entries by: the digests of the classes
-// the entries are in, and the terms whose outputs those classes are, each
-// term's digest under its self digest.
-type lateMissKeys struct {
-	digests []string
-	terms   map[digest.Digest]map[string]struct{}
-}
-
-// lateMissKeysLocked reads what a lookup finds the live ones of entries by:
-// a lookup by a digest finds the entries of its class (EquivalentEntries),
-// and a lookup by a term the entries of the classes its terms are outputs of
-// (TermEntries). Requires egraphMu.
-func (c *Cache) lateMissKeysLocked(entries map[uint64]struct{}) lateMissKeys {
-	roots := map[eqClassID]struct{}{}
+	roots := make(map[eqClassID]struct{}, len(entries))
 	for number := range entries {
 		id := sharedResultID(number)
 		if c.resultsByID[id] == nil {
@@ -459,25 +398,68 @@ func (c *Cache) lateMissKeysLocked(entries map[uint64]struct{}) lateMissKeys {
 			}
 		}
 	}
-	keys := lateMissKeys{terms: map[digest.Digest]map[string]struct{}{}}
-	for root := range roots {
-		for dig := range c.eqClassToDigests[root].All() {
-			keys.digests = append(keys.digests, dig)
+	if len(roots) == 0 {
+		return nil
+	}
+	var late, byTerm []loggedMiss
+	// terms are the digests of the classes' terms whose self digest some
+	// logged miss names, and selves those self digests.
+	terms := map[string]struct{}{}
+	selves := map[digest.Digest]struct{}{}
+	l.mu.Lock()
+	if l.generation == generation {
+		open := func(seq uint64) (loggedMiss, bool) {
+			if seq > last {
+				return loggedMiss{}, false
+			}
+			if m := l.loggedLocked(seq); m != nil && !m.found && m.miss.At.Before(before) {
+				return *m, true
+			}
+			return loggedMiss{}, false
 		}
-		for termID := range c.outputEqClassToTerms.All(root) {
-			term := c.egraphTerms[termID]
-			if term == nil {
-				continue
+		for root := range roots {
+			for dig := range c.eqClassToDigests[root].All() {
+				for _, seq := range l.missedByDigest[dig] {
+					if m, ok := open(seq); ok {
+						late = append(late, m)
+					}
+				}
 			}
-			digests := keys.terms[term.selfDigest]
-			if digests == nil {
-				digests = map[string]struct{}{}
-				keys.terms[term.selfDigest] = digests
+			for termID := range c.outputEqClassToTerms.All(root) {
+				term := c.egraphTerms[termID]
+				if term == nil {
+					continue
+				}
+				seqs := l.missedBySelf[term.selfDigest]
+				if len(seqs) == 0 {
+					continue
+				}
+				terms[term.termDigest] = struct{}{}
+				if _, ok := selves[term.selfDigest]; ok {
+					continue
+				}
+				selves[term.selfDigest] = struct{}{}
+				for _, seq := range seqs {
+					if m, ok := open(seq); ok {
+						byTerm = append(byTerm, m)
+					}
+				}
 			}
-			digests[term.termDigest] = struct{}{}
 		}
 	}
-	return keys
+	l.mu.Unlock()
+	for _, m := range byTerm {
+		ids, missing := c.termInputClassesLocked(m.miss.Inputs)
+		if missing >= 0 {
+			continue
+		}
+		if _, ok := terms[calcEgraphTermDigest(m.miss.Self, ids)]; ok {
+			late = append(late, m)
+		}
+	}
+	// A miss can be found by more than one digest, term or both.
+	slices.SortFunc(late, func(a, b loggedMiss) int { return cmp.Compare(a.seq, b.seq) })
+	return slices.CompactFunc(late, func(a, b loggedMiss) bool { return a.seq == b.seq })
 }
 
 // TrimmedRemoteMisses returns how many misses a full log dropped before
