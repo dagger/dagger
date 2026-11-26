@@ -38,13 +38,12 @@ func TestStoredValueIsWrittenInPlace(t *testing.T) {
 	var bodies int
 	var largest int64
 	for _, v := range stored.Values {
-		body := &storedBody{envelope: v.storedEnvelope, frame: v.storedCall, frameBytes: v.storedCallBytes}
-		envelope, err := body.envelopeJSON()
+		envelope, err := storedEnvelopeJSON(v.storedEnvelope, 0)
 		require.NoError(t, err)
 		bodies += len(envelope)
 		largest = max(largest, int64(len(envelope)))
 		if v.storedCall != nil {
-			frame, err := body.frameJSON()
+			frame, err := storedFrameJSONOf(v.storedCall, v.storedCallBytes)
 			require.NoError(t, err)
 			bodies += len(frame)
 			largest = max(largest, int64(len(frame)))

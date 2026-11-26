@@ -69,7 +69,7 @@ func TestStoredEntriesShareTheirLightEnvelopes(t *testing.T) {
 
 // storedBodyTestBytes are a stored body's compressed envelope and frame.
 func storedBodyTestBytes(b *storedBody) ([]byte, []byte) {
-	return b.envelope, b.frame
+	return b.envelope(), b.frame()
 }
 
 // A stored body holds its record's compressed envelope and frame, and the

@@ -76,7 +76,7 @@ func requireFramesHeldCompressed(t *testing.T, c *Cache) {
 		stored++
 		require.Nil(t, res.loadResultCall(), "entry %d keeps no decoded frame", res.id)
 		require.NotNil(t, res.stored, "entry %d holds its record compressed", res.id)
-		require.NotNil(t, res.stored.frame, "entry %d's body holds its frame", res.id)
+		require.NotNil(t, res.stored.frame(), "entry %d's body holds its frame", res.id)
 		frame, err := res.stored.decodeFrame()
 		require.NoError(t, err)
 		recipe, err := frame.deriveRecipeDigest(nil)
