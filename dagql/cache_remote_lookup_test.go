@@ -378,24 +378,23 @@ func TestLateRemoteMissesKeepTheRecentMisses(t *testing.T) {
 	require.Equal(t, miss(remoteLookupLogCapacity).Recipe, l.missed[len(l.missed)-1].miss.Recipe, "the newest miss is kept")
 }
 
-// A trim of the log while a scan makes its candidates' terms again doesn't
-// lose the scan: a miss only its term finds, which the trim kept, is still
-// returned, once.
+// A trim of the log while a scan checks its candidates doesn't lose the
+// scan: a late miss the trim kept is still returned, once.
 func TestLateRemoteMissesSurviveATrim(t *testing.T) {
-	t.Parallel()
 	ctx, c, srv, sessionID, bridge := lookupTestCache(t)
-	entry, term := lateMissTestTermEntry(t, ctx, c, srv, sessionID, "late across a trim")
 	bridge.StartRemoteLookups()
+	frame := cacheTestIntCall("late across a trim")
+	res, err := c.GetOrInitCall(ctx, sessionID, srv, &CallRequest{ResultCall: frame.clone(), CacheReported: true}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(frame, 1), nil
+	})
+	require.NoError(t, err)
 	l := &bridge.lookups
 	// The trim lands while the scan is between its two holds of the lock:
-	// an older miss, already returned, is logged first, so the trim drops
-	// something.
-	bridge.noteRemoteMiss(RemoteMiss{Recipe: digest.FromString("old"), At: time.Now()})
+	// an older miss is added first, so the trim drops something.
 	l.mu.Lock()
-	l.missed[0].found = true
+	l.missed = append([]loggedMiss{{miss: RemoteMiss{Recipe: "xxh3:old", At: time.Now()}, found: true}}, l.missed...)
 	l.mu.Unlock()
-	bridge.noteRemoteMiss(RemoteMiss{Recipe: digest.FromString("another recipe"), Self: term.Self, Inputs: term.Inputs, At: time.Now()})
-	landed := map[uint64]struct{}{entry: {}}
+	landed := map[uint64]struct{}{uint64(res.cacheSharedResult().id): {}}
 	c.testBetweenLateMissHolds = func() {
 		l.mu.Lock()
 		l.trimMissedLocked()
@@ -403,7 +402,7 @@ func TestLateRemoteMissesSurviveATrim(t *testing.T) {
 	}
 	late := c.LateRemoteMisses(time.Now(), landed)
 	require.Len(t, late, 1)
-	require.Equal(t, digest.FromString("another recipe"), late[0].Recipe)
+	require.Equal(t, cacheTestCallDigest(frame), late[0].Recipe)
 	c.testBetweenLateMissHolds = nil
 	require.Empty(t, c.LateRemoteMisses(time.Now(), landed))
 }

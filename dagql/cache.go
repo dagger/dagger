@@ -2867,8 +2867,8 @@ type Cache struct {
 	landing     atomic.Int32
 
 	// testBetweenLateMissHolds, nil but in tests, runs between
-	// LateRemoteMisses's two holds of the lookups' lock, which it takes
-	// twice when a miss that only its term finds is in question.
+	// LateRemoteMisses's hold of the graph lock and its last hold of the
+	// lookups' lock.
 	testBetweenLateMissHolds func()
 	// testCaptureWriteLock, nil but in tests, runs as holding rows for a
 	// capture, or letting them go, is about to take egraphMu for writing.
