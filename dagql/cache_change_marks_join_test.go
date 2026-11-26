@@ -151,6 +151,25 @@ func TestClassJoinStampsTheClassItJoinedThroughALaterJoinAndACollection(t *testi
 	}
 }
 
+// A join of two classes neither of which holds a part changes no entry's
+// part answers and nothing an entry's bundle borrows: two lone entries' classes
+// joined, as rows that teach two results one content join them, leave
+// neither entry named for readers nor stamped. A reader that read either
+// again would find it as it was.
+func TestClassJoinOfClassesThatHoldNothingMarksNothing(t *testing.T) {
+	t.Parallel()
+	c := newJoinTestCache()
+	a, b := c.class(), c.class()
+	x, y := c.entry("", a), c.entry("", b)
+	start := c.writes
+	require.Empty(t, c.join(a, b), "the join names neither entry")
+	var change RemoteChange
+	c.takeChangesLocked(&change)
+	require.Empty(t, change.Entries, "the write names neither entry")
+	require.LessOrEqual(t, c.resultsByID[x].changedAt, start, "x gained nothing to borrow")
+	require.LessOrEqual(t, c.resultsByID[y].changedAt, start, "y gained nothing to borrow")
+}
+
 // holds reports whether an entry of side holds a part (holdsAnyPartLocked).
 func (c *joinTestCache) holds(side idMembers[sharedResultID]) bool {
 	for id := range side.All() {
