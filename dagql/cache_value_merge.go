@@ -3348,15 +3348,15 @@ func (c *Cache) applyMergedIdentitiesLocked(ctx context.Context, commit *valueMe
 		c.mergeSenderHoldingLocked(ctx, cloudState, commit, row, change)
 	}
 	for _, merged := range commit.prep.calls {
-		row := commit.byOrdinal[merged.value]
-		if row == nil || row.res == nil {
+		res, value, ok := c.mergedCallValueLocked(commit, merged)
+		if !ok {
 			continue
 		}
 		// The row's expiry is the earliest of its calls', the Cloud's
 		// value's own included. Once it has passed, the call has expired:
 		// as a local engine runs such a call again rather than hit, the
 		// engine isn't taught it, whatever value it holds.
-		if expires := row.value.ExpiresAtUnix; expires != 0 && expires <= commit.now {
+		if expires := value.ExpiresAtUnix; expires != 0 && expires <= commit.now {
 			continue
 		}
 		// As a local cache does when a call returns an existing entry, the
@@ -3370,15 +3370,37 @@ func (c *Cache) applyMergedIdentitiesLocked(ctx context.Context, commit *valueMe
 		if !ok {
 			continue
 		}
-		row.res.expiresAtUnix = mergeSharedResultExpiryUnix(row.res.expiresAtUnix, row.value.ExpiresAtUnix)
-		c.markEntryClassLocked(row.res.id, StampMergeExpiry)
+		res.expiresAtUnix = mergeSharedResultExpiryUnix(res.expiresAtUnix, value.ExpiresAtUnix)
+		c.markEntryClassLocked(res.id, StampMergeExpiry)
 		for i, place := range places {
 			if place != nil {
 				c.joinDigestToResultClassLocked(ctx, merged.id.inputs[i], place)
 			}
 		}
-		c.teachCallIdentityLocked(ctx, row.res, merged.id)
+		c.teachCallIdentityLocked(ctx, res, merged.id)
 	}
+}
+
+// mergedCallValueLocked returns the entry merged's value lands on, and the
+// value: a row of the roots' closure's, the entry the commit gives it; a held
+// row the call alone names (valueMergePrep.callOnly), as the Cloud sends one
+// for an entry below a split's parts (HeldBy.Through), the recipient's
+// current entry of the row's recipe, if it still holds it. It reports false
+// when the value landed nowhere: the call alone goes untaught. Requires
+// egraphMu.
+func (c *Cache) mergedCallValueLocked(commit *valueMergeCommit, merged mergedCall) (*sharedResult, *TransferredValue, bool) {
+	if row := commit.byOrdinal[merged.value]; row != nil {
+		return row.res, row.value, row.res != nil
+	}
+	value := commit.prep.index[merged.value]
+	if !commit.prep.callOnly[merged.value] || value == nil || value.Held == "" {
+		return nil, nil, false
+	}
+	res := c.currentEntryForRecipeLocked(value.Held)
+	if c.heldRowStaleLocked(res, value.ExpiresAtUnix, commit.now) || c.resultExpiredAtLocked(res, commit.now) {
+		return nil, nil, false
+	}
+	return res, value, true
 }
 
 // mergedCallPlacesLocked returns, by input of merged, the entry its row
