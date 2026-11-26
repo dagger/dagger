@@ -604,6 +604,7 @@ func TestRelocatedTransferPayloadsStayValid(t *testing.T) {
 		"dagql_test.PlanDelegate":  {`{"parent":7}`, 0},
 		"dagql_test.SyncDelegate":  {`{}`, 0},
 		"dagql_test.DecodeChain":   {`{"text":"relocated","child":5}`, 1},
+		"dagql_test.ReadPayload":   {`{"text":"relocated"}`, 0},
 	}
 	for _, family := range PersistedObjectFamilies() {
 		// core's families, which this package's external tests register,
