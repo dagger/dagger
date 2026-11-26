@@ -171,14 +171,8 @@ type CacheMetadataPruneReport struct {
 	TargetEstimatedBytes  int64
 	Triggered             bool
 
-	BeforeCompaction       CacheMetadataEstimate
-	AfterInitialCompaction CacheMetadataEstimate
-	AfterPrune             CacheMetadataEstimate
-
-	InitialCompactionOldClassSlots int
-	InitialCompactionNewClassSlots int
-	FinalCompactionOldClassSlots   int
-	FinalCompactionNewClassSlots   int
+	Before     CacheMetadataEstimate
+	AfterPrune CacheMetadataEstimate
 
 	CandidateCount                int
 	PlannedRootCount              int
@@ -2228,7 +2222,6 @@ func (c *Cache) removePrunedEdge(ctx context.Context, resultID sharedResultID) (
 	delete(c.persistedEdgesByResult, resultID)
 	c.noteSavedEntryLocked(resultID)
 	droppedAt = time.Now()
-	entriesBefore := len(c.resultsByID)
 	res = c.resultsByID[resultID]
 	if res != nil {
 		c.poolRootLocked(res, -1)
@@ -2243,10 +2236,6 @@ func (c *Cache) removePrunedEdge(ctx context.Context, resultID sharedResultID) (
 	collectReleases, collectErr := c.collectUnownedResultsLocked(ctx, queue)
 	onReleases = append(onReleases, collectReleases...)
 	rerr = errors.Join(rerr, collectErr)
-	if c.blobBacked && len(c.resultsByID) < entriesBefore {
-		// The Cloud compacts its classes on collection, not in a prune.
-		c.eqClassRemoved = true
-	}
 	// A prune drops its edges each in a hold of its own and hands its marks
 	// back once it ends: this hold's stamps apply now, while the classes the
 	// drops changed still name their entries.
@@ -2332,6 +2321,13 @@ func (c *Cache) decrementIncomingOwnershipLocked(ctx context.Context, res *share
 	return c.enqueueCollectibleResultLocked(queue, res), nil
 }
 
+// collectUnownedResultsLocked removes each result of queue that nothing owns,
+// and then each dependency that its removal leaves unowned, and returns what
+// the removed results release, to run once egraphMu is released. As it
+// finishes, it frees the classes that ended since the collector last ran
+// (freeEndedEqClassesLocked): the ones its removals left with no use, and
+// any other a union joined away or an operation made and never used.
+// Requires egraphMu for writing.
 func (c *Cache) collectUnownedResultsLocked(ctx context.Context, queue []*sharedResult) ([]OnReleaseFunc, error) {
 	if c == nil {
 		return nil, nil
@@ -2383,9 +2379,17 @@ func (c *Cache) collectUnownedResultsLocked(ctx context.Context, queue []*shared
 			rerr = errors.Join(rerr, err)
 		}
 	}
+	c.freeEndedEqClassesLocked()
+	if testCollected != nil {
+		testCollected(c)
+	}
 
 	return onReleases, rerr
 }
+
+// testCollected, set only by tests, runs as each collection finishes, under
+// its hold of egraphMu, once it has freed the classes that ended.
+var testCollected func(*Cache)
 
 func runOnReleaseFuncs(ctx context.Context, onReleases []OnReleaseFunc) error {
 	var rerr error
@@ -2962,11 +2966,10 @@ type Cache struct {
 	// repair walked only the terms it moved (mergeEqClassesLocked), so a
 	// test can compare the two.
 	testRepairWholeClass bool
-	// testWalkLiveClasses, when set, has compaction find the live classes by
-	// walking every term and every entry's output classes
-	// (walkEqClassUsesLocked), as before the cache kept their uses, so a test
-	// can compare the two.
-	testWalkLiveClasses bool
+	// testFreeEndedEqClasses, when set, frees the classes that ended in
+	// place of freeEndedEqClassesLocked, so that a test can compare it with
+	// another way of freeing them.
+	testFreeEndedEqClasses func()
 	// testStoredBodies runs after the body worker installs a batch, with the
 	// number of entries it read.
 	testStoredBodies func(int)
@@ -3148,10 +3151,13 @@ type Cache struct {
 	// indexes for eq classes, which are disjoint sets of digests considered equivalent and interchangeable
 	//
 
-	// freeEqClassIDs are the class numbers compaction freed below the highest
-	// live one, which new classes take before a new number. A slot whose
-	// parent is 0 is free.
+	// freeEqClassIDs are the numbers of the classes freed, which new classes
+	// take before a new number. A slot whose parent is 0 is free.
 	freeEqClassIDs []eqClassID
+	// endedEqClasses are the classes that may have ended since the collector
+	// last freed them: made, joined into another, or left with no use
+	// (freeEndedEqClassesLocked).
+	endedEqClasses []eqClassID
 
 	// map of eqClassID -> all digests in that class
 	eqClassToDigests map[eqClassID]*idSet[string]
@@ -3184,15 +3190,6 @@ type Cache struct {
 	// roots with any (cache_eqclass_uses.go).
 	egraphUses    []uint32
 	liveEqClasses int
-
-	// The Cloud's compaction checks (CollectRemoteHoldings): when the last
-	// check ran and the class slots it left, whether a collection has removed
-	// entries since, the clock (time.Now when nil), and a count of checks.
-	eqClassCheckedAt    time.Time
-	eqClassCheckedSlots int
-	eqClassRemoved      bool
-	eqClassClock        func() time.Time
-	eqClassChecks       int
 
 	//
 	// indexes for terms

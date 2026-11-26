@@ -3,9 +3,11 @@ package dagql
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"os"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -17,7 +19,9 @@ import (
 // any merge's two decisions differ. It also checks every blob-backed cache's
 // kept measure of its pool against a walk as the cache closes
 // (VerifyPoolMeasure), and every cache's kept uses of its classes against a
-// walk (verifyEqClassUses), and every save into a database that held
+// walk (verifyEqClassUses), every collection's classes as it finishes, which
+// must hold no class it ended (verifyEqClassSlotsLocked), and every save into
+// a database that held
 // something against a full save at its hold (checkPersistFullSave), and every
 // frame a merge installed against the recipe the merge landed it by
 // (checkMergedRecipes), and fails the run if any differs. It has every share
@@ -46,9 +50,38 @@ func TestMain(m *testing.M) {
 		recipeChecked time.Duration
 		sharedChecks  int
 		sharedDrifts  []string
+		slotChecks    int
+		slotDrifts    []string
+		slotChecked   time.Duration
 	)
 	testPersistNotesAlways = true
 	verifySharedValues = true
+	flag.Parse()
+	// The check walks the whole e-graph at every collection, which a
+	// benchmark of the collector would time.
+	if flag.Lookup("test.bench").Value.String() == "" {
+		var collections atomic.Uint64
+		testCollected = func(c *Cache) {
+			// Past 8,192 slots, terms and entries, one collection in so many
+			// is checked, so that the checks cost about as much per
+			// collection however large the e-graph grows: a test that times
+			// a cache's calls as its e-graph grows times them too.
+			size := len(c.egraphParents) + len(c.egraphTerms) + len(c.resultsByID)
+			if n := collections.Add(1); size > 8192 && n%uint64(size/32) != 0 {
+				return
+			}
+			at := time.Now()
+			err := c.verifyEqClassSlotsLocked()
+			took := time.Since(at)
+			mu.Lock()
+			defer mu.Unlock()
+			slotChecks++
+			slotChecked += took
+			if err != nil {
+				slotDrifts = append(slotDrifts, err.Error())
+			}
+		}
+	}
 	testPersistNotes = func(_ *Cache, before, after *persistPrints) {
 		at := time.Now()
 		err := checkPersistNotes(before, after)
@@ -178,6 +211,15 @@ func TestMain(m *testing.M) {
 		code = 1
 	} else {
 		fmt.Fprintf(os.Stderr, "kept class uses: %d caches checked in %s, none differed\n", classes, classChecked)
+	}
+	if len(slotDrifts) > 0 {
+		fmt.Fprintf(os.Stderr, "a collection left a class it ended, or a name of one, in %d of %d collections, checked in %s:\n", len(slotDrifts), slotChecks, slotChecked)
+		for _, d := range slotDrifts[:min(len(slotDrifts), 20)] {
+			fmt.Fprintln(os.Stderr, "  "+d)
+		}
+		code = 1
+	} else {
+		fmt.Fprintf(os.Stderr, "classes as collections leave them: %d collections checked in %s, none left a class it ended\n", slotChecks, slotChecked)
 	}
 	if len(sharedDrifts) > 0 {
 		fmt.Fprintf(os.Stderr, "a shared value was changed by a holder, found in %d of %d checks:\n", len(sharedDrifts), sharedChecks)

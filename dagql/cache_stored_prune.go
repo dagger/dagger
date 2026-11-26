@@ -172,9 +172,8 @@ func (c *Cache) dropValueLocked(ctx context.Context, res *sharedResult) ([]*shar
 // sizes, and the cache holds such layers apart (storedLayers), but the
 // store holds the blob once: a value counts it at the largest size its parts
 // give it, and the disk stage counts it once, at the largest size a value
-// of the pool gives it, whichever the stage meets first. Neither depends on the e-graph's classes, which
-// the Cloud compacts on collection (compactEqClassesAfterCollectionLocked),
-// so a prune of a blob-backed cache leaves compaction to it.
+// of the pool gives it, whichever the stage meets first. Neither depends on
+// the e-graph's classes.
 
 // storedPoolLocked returns the pool of a blob-backed cache. Requires
 // egraphMu.

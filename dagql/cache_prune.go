@@ -202,25 +202,20 @@ func (c *Cache) PruneMetadataEstimate(ctx context.Context, maximumBytes, targetB
 	}
 
 	step := c.lockGraphAs(ctx, "dagql.prune.metadataEstimate")
-	report.BeforeCompaction = c.metadataPruneEstimateLocked()
-	report.AfterInitialCompaction = report.BeforeCompaction
-	report.AfterPrune = report.BeforeCompaction
-	if report.BeforeCompaction.EstimatedBytes <= maximumBytes {
+	// Classes that ended since the last collection, joined into another or
+	// made and never used, hold no entry: they are freed before the
+	// estimate counts them, as the next collection would free them.
+	c.freeEndedEqClassesLocked()
+	report.Before = c.metadataPruneEstimateLocked()
+	report.AfterPrune = report.Before
+	if report.Before.EstimatedBytes <= maximumBytes {
 		c.unlockGraphAs(step)
 		return report, nil
 	}
 	report.Triggered = true
 	c.traceMetadataPruneStarted(ctx, maximumBytes, targetBytes)
-	if !c.blobBacked {
-		_, report.InitialCompactionOldClassSlots, report.InitialCompactionNewClassSlots = c.compactEqClassesLocked(true)
-		report.AfterInitialCompaction = c.cacheMetadataEstimateLocked()
-		report.AfterPrune = report.AfterInitialCompaction
-	}
 	c.unlockGraphAs(step)
 
-	if report.AfterInitialCompaction.EstimatedBytes <= maximumBytes {
-		return report, nil
-	}
 	if err := ctx.Err(); err != nil {
 		return report, err
 	}
@@ -231,7 +226,7 @@ func (c *Cache) PruneMetadataEstimate(ctx context.Context, maximumBytes, targetB
 	if err != nil {
 		return report, err
 	}
-	directResultBytes := metadataDirectResultBytes(report.AfterInitialCompaction)
+	directResultBytes := metadataDirectResultBytes(report.Before)
 	snapshot, err := c.snapshotPruneStateCancelable(activeRoots, pruneSnapshotMetadata, directResultBytes, checker)
 	if err != nil {
 		return report, err
@@ -254,8 +249,8 @@ func (c *Cache) PruneMetadataEstimate(ctx context.Context, maximumBytes, targetB
 	}
 	report.CandidateCount = len(candidates)
 
-	reclaimTarget := report.AfterInitialCompaction.EstimatedBytes - targetBytes
-	required := report.AfterInitialCompaction.EstimatedBytes - maximumBytes
+	reclaimTarget := report.Before.EstimatedBytes - targetBytes
+	required := report.Before.EstimatedBytes - maximumBytes
 	plan, simulatedReclaimed, simulatedCollected, err := buildPrunePlanWithAllowanceCancelable(snapshot, candidates, reclaimTarget, required, options.overshootAllowance, checker)
 	if err != nil {
 		return report, err
@@ -280,10 +275,7 @@ func (c *Cache) PruneMetadataEstimate(ctx context.Context, maximumBytes, targetB
 		}
 	}
 
-	step = c.lockGraphAs(ctx, "dagql.prune.metadataCompact")
-	if len(plan) > 0 && !c.blobBacked {
-		_, report.FinalCompactionOldClassSlots, report.FinalCompactionNewClassSlots = c.compactEqClassesLocked(true)
-	}
+	step = c.lockGraphAs(ctx, "dagql.prune.metadataMeasure")
 	report.AfterPrune = c.metadataPruneEstimateLocked()
 	c.unlockGraphAs(step)
 
@@ -313,22 +305,14 @@ func metadataPruneLog(ctx context.Context, report CacheMetadataPruneReport, err 
 		"triggered", report.Triggered,
 		"maximumEstimatedBytes", report.MaximumEstimatedBytes,
 		"targetEstimatedBytes", report.TargetEstimatedBytes,
-		"beforeEstimatedBytes", report.BeforeCompaction.EstimatedBytes,
-		"beforeResults", report.BeforeCompaction.ResultCount,
-		"beforeTerms", report.BeforeCompaction.TermCount,
-		"beforeClassSlots", report.BeforeCompaction.ClassSlotCount,
-		"afterInitialCompactionEstimatedBytes", report.AfterInitialCompaction.EstimatedBytes,
-		"afterInitialCompactionResults", report.AfterInitialCompaction.ResultCount,
-		"afterInitialCompactionTerms", report.AfterInitialCompaction.TermCount,
-		"afterInitialCompactionClassSlots", report.AfterInitialCompaction.ClassSlotCount,
+		"beforeEstimatedBytes", report.Before.EstimatedBytes,
+		"beforeResults", report.Before.ResultCount,
+		"beforeTerms", report.Before.TermCount,
+		"beforeClassSlots", report.Before.ClassSlotCount,
 		"afterPruneEstimatedBytes", report.AfterPrune.EstimatedBytes,
 		"afterPruneResults", report.AfterPrune.ResultCount,
 		"afterPruneTerms", report.AfterPrune.TermCount,
 		"afterPruneClassSlots", report.AfterPrune.ClassSlotCount,
-		"initialCompactionOldClassSlots", report.InitialCompactionOldClassSlots,
-		"initialCompactionNewClassSlots", report.InitialCompactionNewClassSlots,
-		"finalCompactionOldClassSlots", report.FinalCompactionOldClassSlots,
-		"finalCompactionNewClassSlots", report.FinalCompactionNewClassSlots,
 		"candidateCount", report.CandidateCount,
 		"plannedRootCount", report.PlannedRootCount,
 		"simulatedCollectedResultCount", report.SimulatedCollectedResultCount,
@@ -430,7 +414,6 @@ func (c *Cache) prune(ctx context.Context, policies []CachePrunePolicy) (CachePr
 	}
 
 	now := time.Now()
-	compactedNeeded := false
 	var (
 		activeRoots map[sharedResultID]struct{}
 		snapshot    pruneSnapshot
@@ -513,7 +496,6 @@ func (c *Cache) prune(ctx context.Context, policies []CachePrunePolicy) (CachePr
 			if ok {
 				c.tracePrunePersistedEdgeRemoved(ctx, policyIdx, planEntry.candidate, snapRes, planEntry.reclaimBytes)
 			}
-			compactedNeeded = true
 			policyApplied++
 			label := labels[planEntry.candidate.resultID]
 			if ok {
@@ -537,16 +519,6 @@ func (c *Cache) prune(ctx context.Context, policies []CachePrunePolicy) (CachePr
 				"appliedReclaimedBytes", policyReclaimed,
 				"policyTargetBytes", targetBytes)
 		}
-	}
-
-	if compactedNeeded && !c.blobBacked {
-		step := c.lockGraphAs(ctx, "dagql.prune.compact")
-		if compacted, oldSlots, newSlots := c.compactEqClassesLocked(false); compacted {
-			slog.Debug("dagql prune compacted eq classes",
-				"oldSlots", oldSlots,
-				"newSlots", newSlots)
-		}
-		c.unlockGraphAs(step)
 	}
 
 	if len(report.Entries) > 0 && c.snapshotGC != nil {
