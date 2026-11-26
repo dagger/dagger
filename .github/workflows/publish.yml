@@ -127,6 +127,25 @@ jobs:
           function: open-pr --to="${{ github.ref_name }}" --github-token=env://RELEASE_DAGGER_CI_TOKEN --github-assignee="${{ github.actor }}"
           module: github.com/dagger/dagger.io/infra/dagger-version-manager@main
 
+  # Copy the released engine image to the Namespace registry, so Namespace
+  # runners can start the engine of every release, pre-releases included.
+  dagger-io-publish-namespace-engine:
+    needs: publish
+    if: |
+      github.repository == 'dagger/dagger' &&
+      startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: "Publish the engine image to Namespace"
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
+          ENGINE_VERSION: ${{ github.ref_name }}
+        run: |
+          gh workflow run publish-namespace-engine.yml \
+            --repo dagger/dagger.io \
+            --ref main \
+            -f engine_version="$ENGINE_VERSION"
+
   # TODO: daggerize provisioning tests
   test-provision-macos:
     name: "Test SDK Provision / macos"
