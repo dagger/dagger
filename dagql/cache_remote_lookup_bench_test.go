@@ -23,11 +23,17 @@ import (
 // With a writer, a goroutine holds the graph lock for writing for 200 µs of
 // every 500 µs meanwhile, standing in for the engine's own calls and merges.
 // It reports the graph lock's holds for reading that one count takes.
+//
+// With one field, every logged miss is a call of one field on a receiver of
+// its own, so every one has the same self digest, and the part lands an
+// entry of that field too: every miss is one the part's terms could find,
+// the most a count can be asked to check by term.
 func BenchmarkLateRemoteMisses(b *testing.B) {
 	const partEntries = 4000
 	for _, n := range []int{1000, 4000, remoteLookupLogCapacity} {
-		for _, writer := range []bool{false, true} {
-			b.Run(fmt.Sprintf("%d misses logged, writer %v", n, writer), func(b *testing.B) {
+		for _, shape := range []string{"writer false", "writer true", "one field"} {
+			writer, oneField := shape == "writer true", shape == "one field"
+			b.Run(fmt.Sprintf("%d misses logged, %s", n, shape), func(b *testing.B) {
 				ctx := cacheTestContext(b.Context())
 				c, err := NewCache(ctx, "", nil, nil)
 				require.NoError(b, err)
@@ -44,15 +50,28 @@ func BenchmarkLateRemoteMisses(b *testing.B) {
 				// The part's entries, made before the connection serves
 				// lookups, so none of them is a logged miss.
 				landed := make(map[uint64]struct{}, partEntries)
+				var receivers []AnyResult
 				for i := range partEntries {
 					res := store(cacheTestIntCall(fmt.Sprint("landed-", i)), i, false)
 					landed[uint64(res.cacheSharedResult().id)] = struct{}{}
+					receivers = append(receivers, res)
+				}
+				if oneField {
+					res := store(&ResultCall{Kind: ResultCallKindField, Type: NewResultCallType(Int(0).Type()), Field: "missed", Receiver: &ResultCallRef{ResultID: uint64(receivers[0].cacheSharedResult().id)}}, 0, false)
+					landed[uint64(res.cacheSharedResult().id)] = struct{}{}
+					for i := partEntries; i < n+1; i++ {
+						receivers = append(receivers, store(cacheTestIntCall(fmt.Sprint("receiver-", i)), i, false))
+					}
 				}
 				bridge.StartRemoteLookups()
 				var prev AnyResult
 				for i := range n {
 					frame := &ResultCall{Kind: ResultCallKindField, Type: NewResultCallType(Int(0).Type()), Field: fmt.Sprint("missed-", i)}
-					if i%8 != 0 {
+					switch {
+					case oneField:
+						frame.Field = "missed"
+						frame.Receiver = &ResultCallRef{ResultID: uint64(receivers[i+1].cacheSharedResult().id)}
+					case i%8 != 0:
 						frame.Receiver = &ResultCallRef{ResultID: uint64(prev.cacheSharedResult().id)}
 					}
 					if i%4 == 0 {
@@ -104,5 +123,54 @@ func BenchmarkLateRemoteMisses(b *testing.B) {
 				b.ReportMetric(float64(holds.Load()), "graph-read-holds/op")
 			})
 		}
+	}
+}
+
+// BenchmarkRemoteMissLogTrim times the miss that finds the miss log full
+// (noteRemoteMiss): it trims the log, dropping the misses a part returned
+// and then the oldest quarter. Half the logged misses were returned, and
+// each names a recipe and a term, and every fourth an extra digest.
+func BenchmarkRemoteMissLogTrim(b *testing.B) {
+	ctx := cacheTestContext(b.Context())
+	c, err := NewCache(ctx, "", nil, nil)
+	require.NoError(b, err)
+	bridge, _, err := c.AttachRemoteCacheBridge()
+	require.NoError(b, err)
+	bridge.StartRemoteLookups()
+	l := &bridge.lookups
+	next := 0
+	miss := func() RemoteMiss {
+		next++
+		m := RemoteMiss{Recipe: digest.FromString(fmt.Sprint("recipe-", next)), Self: digest.FromString(fmt.Sprint("self-", next%64)), Inputs: []digest.Digest{digest.FromString(fmt.Sprint("input-", next))}, At: time.Now()}
+		if next%4 == 0 {
+			m.Extra = []digest.Digest{digest.FromString(fmt.Sprint("content-", next))}
+		}
+		return m
+	}
+	fill := func() {
+		for {
+			l.mu.Lock()
+			full := len(l.missed) >= remoteLookupLogCapacity
+			l.queue = l.queue[:0]
+			l.mu.Unlock()
+			if full {
+				break
+			}
+			bridge.noteRemoteMiss(miss())
+		}
+		l.mu.Lock()
+		for i := range l.missed {
+			if l.missed[i].seq%2 == 0 {
+				l.missed[i].found = true
+			}
+		}
+		l.mu.Unlock()
+	}
+	for b.Loop() {
+		b.StopTimer()
+		fill()
+		m := miss()
+		b.StartTimer()
+		bridge.noteRemoteMiss(m)
 	}
 }
