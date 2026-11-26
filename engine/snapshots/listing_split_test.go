@@ -216,10 +216,17 @@ func TestListingSplitDoesNotHoldTheDiffer(t *testing.T) {
 		close(cs.release)
 		require.NoError(t, err)
 	case <-time.After(30 * time.Second):
-		close(cs.release)
-		require.NoError(t, <-wrote)
-		require.NoError(t, w.Close())
-		t.Fatal("the differ's write of the layer's tar waited for the split's content blobs")
+		select {
+		case err := <-wrote:
+			// It returned as the timer fired.
+			close(cs.release)
+			require.NoError(t, err)
+		default:
+			close(cs.release)
+			require.NoError(t, <-wrote)
+			require.NoError(t, w.Close())
+			t.Fatal("the differ's write of the layer's tar waited for the split's content blobs")
+		}
 	}
 	require.NoError(t, w.Close())
 
