@@ -57,8 +57,14 @@ type moduleInstance struct {
 // selectSDK selects from the SDK object as the engine's own work
 // (core.WithEngineWork): what the SDK does to answer is the engine's
 // machinery, internal in telemetry, as the built-in SDKs' work is.
+//
+// For the same reason it runs outside any result scope. A check selection
+// narrows the collections of the artifacts it selects, but building a
+// module's runtime, types or code is not part of those artifacts: an SDK that
+// reads a collection of the selected type must see all of it.
 func (inst *moduleInstance) selectSDK(ctx context.Context, dest any, sels ...dagql.Selector) error {
-	return inst.dag.Select(core.WithEngineWork(ctx), inst.sdk, dest, sels...)
+	ctx = dagql.WithResultScope(core.WithEngineWork(ctx), nil)
+	return inst.dag.Select(ctx, inst.sdk, dest, sels...)
 }
 
 func newModuleSDK(
@@ -231,8 +237,9 @@ func sessionModuleInstance(ctx context.Context, key string, build func(context.C
 
 // newInstance serves the SDK module, configured, in a new server.
 func (sdk *module) newInstance(ctx context.Context) (*moduleInstance, error) {
-	// Making and configuring the SDK object is the engine's own work too.
-	ctx = core.WithEngineWork(ctx)
+	// Making and configuring the SDK object is the engine's own work too, and
+	// the session shares the instance: no caller's result scope applies.
+	ctx = dagql.WithResultScope(core.WithEngineWork(ctx), nil)
 	dag, err := dagql.NewServer(ctx, sdk.root)
 	if err != nil {
 		return nil, fmt.Errorf("create sdk module server: %w", err)
