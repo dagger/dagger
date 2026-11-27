@@ -51,8 +51,13 @@ func DefinitionToIDWithOptions(def *pb.Definition, img *dockerspec.DockerOCIImag
 }
 
 func definitionToID(def *pb.Definition, img *dockerspec.DockerOCIImage, opts DefinitionToIDOptions) (*call.ID, error) {
+	imgPlatform := imagePlatform(img)
 	if def == nil || len(def.Def) == 0 {
-		return applyDockerImageConfig(scratchContainerID(), img, nil)
+		ctrID, err := queryContainerID(imgPlatform)
+		if err != nil {
+			return nil, err
+		}
+		return applyDockerImageConfig(ctrID, img, nil)
 	}
 
 	dag, err := engineutil.DefToDAG(def)
@@ -60,13 +65,21 @@ func definitionToID(def *pb.Definition, img *dockerspec.DockerOCIImage, opts Def
 		return nil, fmt.Errorf("llbtodagger: parse definition: %w", err)
 	}
 	if dag == nil {
-		return applyDockerImageConfig(scratchContainerID(), img, nil)
+		ctrID, err := queryContainerID(imgPlatform)
+		if err != nil {
+			return nil, err
+		}
+		return applyDockerImageConfig(ctrID, img, nil)
 	}
 
 	for dag != nil && dag.Op != nil && dag.Op.Op == nil {
 		switch len(dag.Inputs) {
 		case 0:
-			return applyDockerImageConfig(scratchContainerID(), img, nil)
+			ctrID, err := queryContainerID(imgPlatform)
+			if err != nil {
+				return nil, err
+			}
+			return applyDockerImageConfig(ctrID, img, nil)
 		case 1:
 			dag = dag.Inputs[0]
 		default:
@@ -85,7 +98,7 @@ func definitionToID(def *pb.Definition, img *dockerspec.DockerOCIImage, opts Def
 	if err != nil {
 		return nil, err
 	}
-	ctrID, err := ensureContainerResult(id)
+	ctrID, err := ensureContainerResult(id, imgPlatform)
 	if err != nil {
 		return nil, err
 	}
@@ -174,20 +187,36 @@ func scratchDirectoryID() *call.ID {
 	return appendCall(call.New(), directoryType(), "directory")
 }
 
-func scratchContainerID() *call.ID {
-	return appendCall(call.New(), containerType(), "container")
+func imagePlatform(img *dockerspec.DockerOCIImage) *pb.Platform {
+	if img == nil || (img.OS == "" && img.Architecture == "" && img.Variant == "" && img.OSVersion == "" && len(img.OSFeatures) == 0) {
+		return nil
+	}
+	p := &pb.Platform{
+		OS:           img.OS,
+		Architecture: img.Architecture,
+		Variant:      img.Variant,
+		OSVersion:    img.OSVersion,
+	}
+	if len(img.OSFeatures) > 0 {
+		p.OSFeatures = append([]string(nil), img.OSFeatures...)
+	}
+	return p
 }
 
-func ensureContainerResult(id *call.ID) (*call.ID, error) {
+func ensureContainerResult(id *call.ID, platform *pb.Platform) (*call.ID, error) {
 	if id == nil {
-		return scratchContainerID(), nil
+		return queryContainerID(platform)
 	}
 
 	switch id.Type().NamedType() {
 	case containerType().NamedType:
 		return id, nil
 	case directoryType().NamedType:
-		return appendCall(scratchContainerID(), containerType(), "withRootfs", argID("directory", id)), nil
+		ctrID, err := queryContainerID(platform)
+		if err != nil {
+			return nil, err
+		}
+		return appendCall(ctrID, containerType(), "withRootfs", argID("directory", id)), nil
 	default:
 		return nil, fmt.Errorf("llbtodagger: top-level result type %q cannot be converted to Container", id.Type().NamedType())
 	}
