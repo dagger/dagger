@@ -631,6 +631,66 @@ func (LLMSuite) TestRecomposeFailureKeepsOldState(ctx context.Context, t *testct
 	}
 }
 
+func (LLMSuite) TestRecomposeRefreshesConstruction(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	// Configuration is constructed, not tool state: a reload re-resolves it
+	// (settings, defaults, session-bound values such as secrets) while state
+	// that tool calls recorded carries over. The module code is unchanged, so
+	// this also covers the same-implementation path.
+	const source = `
+type Swapper {
+  let state: Int! = 0
+  let label: String! = ""
+
+  new(label: String! = "unset") {
+    self.label = label
+    self
+  }
+
+  agent(base: LLM!): LLM! @agent {
+    base.withTools(currentNode)
+  }
+
+  advance: Swapper! {
+    state += 1
+    self
+  }
+
+  readConfig: String! {
+    "label: " + label + "; counter: " + toString(state)
+  }
+}
+`
+	config := func(label string) string {
+		return "[modules.swapper]\nsource = \".dagger/modules/swapper\"\n\n[modules.swapper.settings]\nlabel = \"" + label + "\"\n"
+	}
+	ws := recomposeFixture(c, source).WithNewFile("dagger.toml", config("first")).AsWorkspace()
+	script := recomposeRecordingTurn(core.NewQuery(c).LLM(), "mutate", "advance", "readConfig")
+	script = recomposeRecordingTurn(script, "unchanged", "readConfig")
+	script = recomposeRecordingTurn(script, "reconfigured", "readConfig", "advance", "readConfig")
+	model := cannedRecordingModel(ctx, t, c, script)
+	llm := composeRecomposeFixture(ctx, t, c, ws, core.NewQuery(c).LLM(core.LLMOpts{Model: model}).WithWorkspace(ws)).
+		WithPrompt("mutate").Loop()
+	transcript, err := llm.Transcript(ctx)
+	require.NoError(t, err)
+	require.Contains(t, transcript, "label: first; counter: 1")
+
+	llm, err = recomposeLLM(ctx, c, ws, llm)
+	require.NoError(t, err)
+	llm = llm.WithPrompt("unchanged").Loop()
+	transcript, err = llm.Transcript(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 2, strings.Count(transcript, "label: first; counter: 1"))
+
+	ws = ws.WithNewFile("dagger.toml", config("second"))
+	llm, err = recomposeLLM(ctx, c, ws, llm)
+	require.NoError(t, err)
+	transcript, err = llm.WithPrompt("reconfigured").Loop().Transcript(ctx)
+	require.NoError(t, err)
+	require.Contains(t, transcript, "label: second; counter: 1", "the edited setting takes effect, the counter carries over")
+	require.Contains(t, transcript, "label: second; counter: 2")
+}
+
 func (LLMSuite) TestRecomposeStateVersion(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	// The same private-map retype that TestRecomposeFailureKeepsOldState rejects,
