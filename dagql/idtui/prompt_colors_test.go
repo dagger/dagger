@@ -113,6 +113,8 @@ func TestPromptColorQueryEligibility(t *testing.T) {
 	t.Setenv("CLICOLOR_FORCE", "")
 	t.Setenv("COLORTERM", "")
 	t.Setenv("GOOGLE_CLOUD_SHELL", "")
+	// On a developer's TTY, notifications would wrap the terminal too.
+	t.Setenv(notifyEnvVar, "off")
 	for _, tc := range []struct {
 		term    string
 		profile termenv.Profile
