@@ -17,9 +17,9 @@ import (
 // recorded with Host._sshAuthSocket, as a workspace snapshot of an SSH
 // checkout is. The restored binding loads in a host-less client, which has
 // no SSH agent of its own: rather than fail with a bare "SSH_AUTH_SOCK is not
-// set", it asks the owner to lend theirs, naming the remote, never forever.
-// The restorer here is an SDK client, which cannot prompt, so the ask fails,
-// saying so.
+// set", it asks the owner to lend theirs, never forever. The restorer here is
+// an SDK client, which cannot prompt, so the ask fails, saying so and naming
+// the remote (the question itself names none: the grant is not scoped to it).
 func (AgentRestoreSuite) TestRestoredBindingAsksForSSHAgent(ctx context.Context, t *testctx.T) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()

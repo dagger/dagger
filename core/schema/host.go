@@ -123,7 +123,7 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 			Doc(`Accesses the SSH auth socket on the host and returns a socket scoped to SSH identities.`).
 			Args(
 				dagql.Arg("source").Doc(`Optional source socket to scope. If not set, uses the caller's SSH_AUTH_SOCK.`),
-				dagql.Arg("remote").Doc(`The remote the socket authenticates to, if known. A caller without an SSH agent of its own, on an agent's behalf, asks its owner to lend theirs for it.`),
+				dagql.Arg("remote").Doc(`The remote the socket authenticates to, if known. A caller without an SSH agent of its own, on an agent's behalf, asks its owner to lend theirs, prepared for this remote when the owner has no SSH_AUTH_SOCK.`),
 			),
 
 		dagql.Func("tunnel", s.tunnel).
@@ -553,8 +553,9 @@ func (s *hostSchema) socket(ctx context.Context, host dagql.ObjectResult[*core.H
 type hostSSHAuthSocketArgs struct {
 	Source dagql.Optional[core.SocketID] `name:"source"`
 	// Remote is what the agent authenticates to, when the caller knows it:
-	// an owner asked to lend its SSH agent is told, and an owner without
-	// SSH_AUTH_SOCK prepares one for it (see ownerSSHAuthSocketPath).
+	// an owner without SSH_AUTH_SOCK prepares an agent for it (see
+	// ownerSSHAuthSocketPath), and errors name it. The owner's question does
+	// not: the grant is not scoped to one remote.
 	Remote dagql.Optional[dagql.String] `name:"remote"`
 }
 

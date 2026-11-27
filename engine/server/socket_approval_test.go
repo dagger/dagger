@@ -186,8 +186,9 @@ func TestSSHAgentApproval(t *testing.T) {
 	req := s.questions.asked()[0]
 	require.Equal(t, approvalKindSSHAgent, req.Kind)
 	require.Equal(t, sshAgentApprovalSubject, req.Subject)
-	require.Equal(t, `Allow using your SSH keys to authenticate to github.com (ssh://git@github.com/org/repo.git) (requested by agent "worker", module "staff", function "Staff.gh")?`, req.Prompt)
-	require.Equal(t, `Use your SSH keys to authenticate to github.com (ssh://git@github.com/org/repo.git)?`, req.Question)
+	// The grant is not scoped to the remote, so the question names none.
+	require.Equal(t, `Allow using your SSH keys to authenticate (requested by agent "worker", module "staff", function "Staff.gh")?`, req.Prompt)
+	require.Equal(t, `Use your SSH keys to authenticate?`, req.Question)
 	require.NotEmpty(t, req.PersistentKey, "a fresh agent's module may be allowed forever")
 
 	// A forwarded agent signs for any host: the grant is the owner's
@@ -201,11 +202,9 @@ func TestSSHAgentApproval(t *testing.T) {
 }
 
 func TestSSHAgentApprovalPrompt(t *testing.T) {
-	spec := sshAgentApproval("")
-	require.Equal(t, "Allow using your SSH keys", spec.Question)
-	require.Equal(t, "Use your SSH keys", spec.Action)
-	spec = sshAgentApproval("git@github.com:org/\x1b[31mrepo.git")
-	require.Equal(t, `Allow using your SSH keys to authenticate to github.com (git@github.com:org/\x1b[31mrepo.git)`, spec.Question)
+	spec := sshAgentApproval()
+	require.Equal(t, "Allow using your SSH keys to authenticate", spec.Question)
+	require.Equal(t, "Use your SSH keys to authenticate", spec.Action)
 	require.Equal(t, sshAgentApprovalSubject, spec.Subject)
 	require.False(t, spec.Danger)
 }

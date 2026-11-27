@@ -7,7 +7,6 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/util/gitutil"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -58,22 +57,16 @@ func hostNetworkApproval(hostPort string) approvalSpec {
 }
 
 // sshAgentApproval asks the owner to let an agent authenticate with the
-// owner's SSH keys, naming the remote it authenticates to when it is known.
-// The grant is one per owner (see sshAgentApprovalSubject), not per remote.
-func sshAgentApproval(remote string) approvalSpec {
-	what := "your SSH keys"
-	if remote != "" {
-		host := remote
-		if u, err := gitutil.ParseURL(remote); err == nil && u.Host != "" {
-			host = u.Host
-		}
-		what += " to authenticate to " + literalText(host) + " (" + literalText(remote) + ")"
-	}
+// owner's SSH keys. The grant is one per owner (see sshAgentApprovalSubject),
+// not per remote, so the question names none: naming the remote that asked
+// first would suggest a scope the grant does not have. Errors still name it
+// (see sshAgentAccess).
+func sshAgentApproval() approvalSpec {
 	return approvalSpec{
 		Kind:     approvalKindSSHAgent,
 		Subject:  sshAgentApprovalSubject,
-		Question: "Allow using " + what,
-		Action:   "Use " + what,
+		Question: "Allow using your SSH keys to authenticate",
+		Action:   "Use your SSH keys to authenticate",
 	}
 }
 
@@ -123,7 +116,8 @@ func (srv *Server) AuthorizeHostNetwork(ctx context.Context, hostPort string) (*
 // _sshAuthSocket may use for a caller without one of its own, asking that
 // owner first, or nil when the calling client has a host of its own (it uses
 // its own SSH agent or none, as it always did). remote is the remote the
-// agent authenticates to, when known, for the question.
+// agent authenticates to, when known: errors name it, the question does not
+// (the grant is not scoped to it).
 //
 // As for AuthorizeHostSocket, a client without a host of its own is refused
 // when no agent is involved, and asks its owner on an agent's behalf. This is
@@ -131,7 +125,7 @@ func (srv *Server) AuthorizeHostNetwork(ctx context.Context, hostPort string) (*
 // workspace snapshot of an SSH checkout) loads again: its host-less restored
 // load asks, never allowed forever, instead of failing.
 func (srv *Server) AuthorizeSSHAgent(ctx context.Context, remote string) (*engine.ClientMetadata, error) {
-	return srv.authorizeOwnerHostAccess(ctx, sshAgentAccess(remote), sshAgentApproval(remote))
+	return srv.authorizeOwnerHostAccess(ctx, sshAgentAccess(remote), sshAgentApproval())
 }
 
 // authorizeOwnerHostAccess is the owner's approval of what (as errors name
