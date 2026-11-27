@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/signal"
 	"runtime/pprof"
 	runtimetrace "runtime/trace"
 	"slices"
@@ -493,6 +492,7 @@ func installMayCallEngineFlags(flags *pflag.FlagSet) {
 	engineFlags.BoolVarP(&shellOnError, "shell-on-error", "i", false, "Open a shell when a container exec fails (needs an interactive terminal)")
 	engineFlags.BoolVar(&shellOnError, "interactive", false, "")
 	_ = engineFlags.MarkDeprecated("interactive", "use --shell-on-error (-i) instead")
+	engineFlags.Var(&stopTimeout, "stop-timeout", "How long services and execs get to stop after an interrupt (Ctrl-C, SIGTERM) before they are killed; 0 kills them at once. Overrides stopTimeout in the user config file")
 	engineFlags.StringVar(&shellCommandOnError, "shell-command-on-error", defaultShellCommandOnError, "Command to run when --shell-on-error opens a shell")
 	engineFlags.Lookup("shell-command-on-error").Hidden = true
 	engineFlags.StringVar(&shellCommandOnError, "interactive-command", defaultShellCommandOnError, "")
@@ -1011,6 +1011,7 @@ func configureProgressOptions() {
 	opts.DotFocusField = dotFocusField
 	opts.DotShowInternal = dotShowInternal
 	opts.UsingCloudEngine = strings.HasPrefix(configuredRunnerHost(), engine.CloudRunnerHostPrefix)
+	opts.OnInterrupt = func() { interrupts.interrupt() }
 }
 
 // canOpenShellOnError reports whether the CLI can hand the terminal to a shell
@@ -1102,7 +1103,7 @@ func Main() {
 	}
 	workdir = resolvedWorkdir
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, stop := interruptSignals(context.Background())
 	exitWithCode := func(code int) {
 		stop()
 		os.Exit(code)

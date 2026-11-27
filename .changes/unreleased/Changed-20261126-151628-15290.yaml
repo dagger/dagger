@@ -1,0 +1,11 @@
+kind: Changed
+body: |
+  Interrupting the CLI (Ctrl-C, or SIGTERM) sends the run's services and the
+  execs it cancels SIGTERM, and SIGKILL to any still running after the stop
+  timeout. A second interrupt sends SIGKILL at once. The stop timeout is 10
+  seconds; set it with `--stop-timeout`, or `stopTimeout` in the user config
+  file.
+time: 2026-11-26T18:16:28Z
+custom:
+  Author: marcosnils
+  PR: "15290"

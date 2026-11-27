@@ -161,6 +161,10 @@ type daggerSession struct {
 	shutdownCh        chan struct{}
 	closeShutdownOnce sync.Once
 
+	// interrupt is the session's graceful interrupt, which its main client
+	// asks for with the interrupt endpoint.
+	interrupt *sessionInterrupt
+
 	// telemetryEnded is closed once shutdownTelemetry has written the
 	// session's last telemetry, the session-end carrier included, to the
 	// client stores.
@@ -1359,6 +1363,8 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	// session's telemetry is itself shut down here.
 	teardown := sess.phase.beginTeardown()
 
+	// Whatever is still stopping gracefully is killed: the client is gone.
+	sess.interrupt.forceStop()
 	step := teardown.beginStep("session.stopServices")
 	if err := sess.services.StopSessionServices(ctx, sess.sessionID); err != nil {
 		slog.Warn("error stopping services", "error", err)
@@ -1549,6 +1555,7 @@ func (srv *Server) getOrCreateSessionLocked(sessionID, clientID string) (*dagger
 		mainClientCallerID: clientID,
 		clientRecords:      map[string]*clientRecord{},
 		clientRuntimes:     map[string]*clientRuntime{},
+		interrupt:          newSessionInterrupt(),
 	}
 	sess.schemaBuilderMemo.Store(core.NewSchemaBuilderMemo())
 	sess.lifecycleMu.Lock()
@@ -1713,6 +1720,7 @@ func (srv *Server) initializeSessionEngineClient(ctx context.Context, sess *dagg
 	engineUtilOpts.GetRegistryResolver = srv.RegistryResolver
 	engineUtilOpts.Interactive = sess.interactive
 	engineUtilOpts.InteractiveCommand = sess.interactiveCommand
+	engineUtilOpts.GracefulStop = sess.interrupt.gracefulStop
 	engineUtilClient, err := engineutil.NewClient(ctx, &engineUtilOpts)
 	if err != nil {
 		return fmt.Errorf("failed to create session engine client: %w", err)
@@ -2884,12 +2892,16 @@ func (srv *Server) serveClientEndpoints(w http.ResponseWriter, r *http.Request, 
 	case path == engine.ShutdownEndpoint:
 		httpHandlerFunc(srv.serveShutdown, client).ServeHTTP(w, r)
 		return
+	case path == engine.InterruptEndpoint:
+		httpHandlerFunc(srv.serveInterrupt, client).ServeHTTP(w, r)
+		return
 	}
 	mux := http.NewServeMux()
 	mux.Handle(engine.SessionAttachablesEndpoint, httpHandlerFunc(srv.serveSessionAttachables, client.clientRecord))
 	mux.Handle(engine.QueryEndpoint, httpHandlerFunc(srv.serveQuery, client))
 	mux.Handle(engine.InitEndpoint, httpHandlerFunc(srv.serveInit, client))
 	mux.Handle(engine.ShutdownEndpoint, httpHandlerFunc(srv.serveShutdown, client))
+	mux.Handle(engine.InterruptEndpoint, httpHandlerFunc(srv.serveInterrupt, client))
 	mux.Handle(engine.LLMConfigEndpoint, httpHandlerFunc(srv.serveLLMConfig, client))
 	sess.endpointMu.RLock()
 	for path, handler := range sess.endpoints {
@@ -3462,6 +3474,13 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 		// want the client to see them stop. Stop errors are not surfaced
 		// (matching prior behavior), so the phase always returns nil.
 		_ = drainPhase("stop session services", func() error {
+			if sess.interrupt.interrupted() {
+				// An interrupted session's services and execs are stopping
+				// gracefully; let them, within the interrupt's deadline.
+				if err := sess.interrupt.wait(ctx); err != nil {
+					slog.Warn("graceful stops did not finish before shutdown", "error", err)
+				}
+			}
 			sess.services.StopSessionServices(ctx, sess.sessionID)
 			return nil
 		})

@@ -195,6 +195,13 @@ func withEngineAction(
 		if err != nil {
 			return cleanup.Run, err
 		}
+		// Cleanups run last first: interrupts reach the session until its
+		// close is over, so a second interrupt during the close forces it.
+		detachInterrupts := interrupts.attach(sess)
+		cleanup.Add("detach interrupts", func() error {
+			detachInterrupts()
+			return nil
+		})
 		cleanup.Add("close dagger session", sess.Close)
 		detach := cliLocalTelemetry.attach(ctx, sess)
 		traceID := dagui.TraceID{TraceID: trace.SpanContextFromContext(ctx).TraceID()}

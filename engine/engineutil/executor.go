@@ -751,14 +751,19 @@ func (k procKiller) Cleanup() {
 }
 
 // Kill will send SIGKILL to the process running inside the container.
+func (k procKiller) Kill(ctx context.Context) error {
+	return k.Signal(ctx, syscall.SIGKILL)
+}
+
+// Signal will send sig to the process running inside the container.
 // If the process was created by `runc run` then we will use `runc kill`,
-// otherwise for `runc exec` we will read the pid from a pidfile and then
-// send the signal directly that process.
-func (k procKiller) Kill(ctx context.Context) (err error) {
-	bklog.G(ctx).Tracef("sending sigkill to process in container %s", k.id)
+// which signals the container's init, otherwise for `runc exec` we will read
+// the pid from a pidfile and then send the signal directly that process.
+func (k procKiller) Signal(ctx context.Context, sig syscall.Signal) (err error) {
+	bklog.G(ctx).Tracef("sending %s to process in container %s", sig, k.id)
 	defer func() {
 		if err != nil {
-			bklog.G(ctx).Errorf("failed to kill process in container id %s: %+v", k.id, err)
+			bklog.G(ctx).Errorf("failed to send %s to process in container id %s: %+v", sig, k.id, err)
 		}
 	}()
 
@@ -769,8 +774,8 @@ func (k procKiller) Kill(ctx context.Context) (err error) {
 	defer cancel(nil)
 
 	if k.pidfile == "" {
-		// for `runc run` process we use `runc kill` to terminate the process
-		return k.runC.Kill(ctx, k.id, int(syscall.SIGKILL), nil)
+		// for `runc run` process we use `runc kill` to signal the process
+		return k.runC.Kill(ctx, k.id, int(sig), nil)
 	}
 
 	// `runc exec` will write the pidfile a few milliseconds after we
@@ -804,7 +809,7 @@ func (k procKiller) Kill(ctx context.Context) (err error) {
 		return fmt.Errorf("failed to find process for pid %d from pidfile: %w", pid, err)
 	}
 	defer process.Release()
-	return process.Signal(syscall.SIGKILL)
+	return process.Signal(sig)
 }
 
 // procHandle is to track the process so we can send signals to it
@@ -821,13 +826,14 @@ type procHandle struct {
 }
 
 // runcProcessHandle will create a procHandle that will be monitored, where
-// on ctx.Done the in-container process will receive a SIGKILL.  The returned
-// context should be used for the go-runc.(Run|Exec) invocations.  The returned
-// context will only be canceled in the case where the request context is
-// canceled and we are unable to send the SIGKILL to the in-container process.
-// The goal is to allow for runc to gracefully shutdown when the request context
-// is cancelled.
-func runcProcessHandle(ctx context.Context, killer procKiller) (*procHandle, context.Context) {
+// on ctx.Done the in-container process will receive a SIGKILL, preceded by a
+// SIGTERM when gracefulStop asks for one (see Opts.GracefulStop).  The
+// returned context should be used for the go-runc.(Run|Exec) invocations.
+// The returned context will only be canceled in the case where the request
+// context is canceled and we are unable to send the SIGKILL to the
+// in-container process. The goal is to allow for runc to gracefully shutdown
+// when the request context is cancelled.
+func runcProcessHandle(ctx context.Context, killer procKiller, gracefulStop func() (time.Time, <-chan struct{}, func())) (*procHandle, context.Context) {
 	runcCtx, cancel := context.WithCancelCause(context.Background())
 	p := &procHandle{
 		ready:    make(chan struct{}),
@@ -846,9 +852,16 @@ func runcProcessHandle(ctx context.Context, killer procKiller) (*procHandle, con
 		case <-p.ready:
 		}
 
+		terminated := false
 		for {
 			select {
 			case <-ctx.Done():
+				if !terminated {
+					terminated = true
+					if p.terminate(ctx, gracefulStop) {
+						return
+					}
+				}
 				killCtx, timeout := context.WithCancelCause(context.Background())
 				killCtx, _ = context.WithTimeoutCause(killCtx, 7*time.Second, context.DeadlineExceeded)
 				if err := p.killer.Kill(killCtx); err != nil {
@@ -881,6 +894,40 @@ func runcProcessHandle(ctx context.Context, killer procKiller) (*procHandle, con
 	}()
 
 	return p, runcCtx
+}
+
+// terminate sends the in-container process SIGTERM when gracefulStop asks
+// for a graceful stop, and waits for it to exit until the stop's deadline or
+// force. It reports whether the process exited, so no SIGKILL is needed.
+func (p *procHandle) terminate(ctx context.Context, gracefulStop func() (time.Time, <-chan struct{}, func())) bool {
+	if gracefulStop == nil {
+		return false
+	}
+	deadline, force, done := gracefulStop()
+	if deadline.IsZero() {
+		return false
+	}
+	defer done()
+	wait := time.Until(deadline)
+	if wait <= 0 {
+		return false
+	}
+	signalCtx, cancel := context.WithTimeoutCause(context.Background(), 7*time.Second, context.DeadlineExceeded)
+	err := p.killer.Signal(signalCtx, syscall.SIGTERM)
+	cancel()
+	if err != nil {
+		return false
+	}
+	bklog.G(ctx).Debugf("sent SIGTERM to process in container %s; SIGKILL in %s", p.killer.id, wait)
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case <-p.ended:
+		return true
+	case <-timer.C:
+	case <-force:
+	}
+	return false
 }
 
 // Release will free resources with a procHandle.
@@ -980,7 +1027,7 @@ var ttyDrainTimeout = 5 * time.Second
 type runcCall func(ctx context.Context, started chan<- int, io runc.IO, consoleSocket runc.ConsoleSocket, pidfile string) error
 
 func (c *Client) callWithIO(ctx context.Context, process *executor.ProcessInfo, started func(), killer procKiller, call runcCall) error {
-	runcProcess, ctx := runcProcessHandle(ctx, killer)
+	runcProcess, ctx := runcProcessHandle(ctx, killer, c.GracefulStop)
 	defer runcProcess.Release()
 
 	eg, ctx := errgroup.WithContext(ctx)

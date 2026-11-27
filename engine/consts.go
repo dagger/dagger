@@ -44,6 +44,14 @@ const (
 	ShutdownEndpoint  = "/shutdown"
 	LLMConfigEndpoint = "/llm-config"
 
+	// InterruptEndpoint asks the engine to stop a session's work gracefully:
+	// its services and the execs its cancelled requests leave get SIGTERM,
+	// then SIGKILL after InterruptStopTimeoutParam, or at once when
+	// InterruptForceParam is set.
+	InterruptEndpoint         = "/interrupt"
+	InterruptStopTimeoutParam = "stopTimeout"
+	InterruptForceParam       = "force"
+
 	// Buildkit-interpreted session keys, can't change
 	SessionIDMetaKey         = "X-Docker-Expose-Session-Uuid"
 	SessionNameMetaKey       = "X-Docker-Expose-Session-Name"

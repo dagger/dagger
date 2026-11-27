@@ -906,6 +906,46 @@ func (ss *Services) StopSessionServices(ctx context.Context, sessionID string) e
 	return err
 }
 
+// StopSessionServicesGracefully stops the services being run by the given
+// session with SIGTERM, and sends SIGKILL to any still running at deadline or
+// once force is closed. It returns when every service has exited.
+func (ss *Services) StopSessionServicesGracefully(ctx context.Context, sessionID string, deadline time.Time, force <-chan struct{}) error {
+	ss.l.Lock()
+	var svcs []*RunningService
+	for _, svc := range ss.running {
+		if svc.Key.SessionID == sessionID {
+			svcs = append(svcs, svc)
+		}
+	}
+	ss.l.Unlock()
+
+	eg := new(errgroup.Group)
+	for _, svc := range svcs {
+		eg.Go(func() error {
+			bklog.G(ctx).Debugf("stopping service %s gracefully", svc.Host)
+			termCtx, cancel := context.WithDeadlineCause(ctx, deadline, stderrors.New("service did not terminate"))
+			defer cancel()
+			go func() {
+				select {
+				case <-force:
+					cancel()
+				case <-termCtx.Done():
+				}
+			}()
+			err := ss.StopRunning(termCtx, svc, false)
+			if termCtx.Err() != nil && ctx.Err() == nil {
+				// the service didn't terminate before the deadline or force
+				err = ss.StopRunning(ctx, svc, true)
+			}
+			if err != nil {
+				return fmt.Errorf("stop %s: %w", svc.Host, err)
+			}
+			return nil
+		})
+	}
+	return eg.Wait()
+}
+
 // Detach detaches from the given service. If the service is not running, or a
 // later instance has replaced it, it is a no-op. If the service is running, it is stopped if there are no other
 // clients using it.

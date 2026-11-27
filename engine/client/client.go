@@ -230,6 +230,10 @@ type Client struct {
 	// attachables connection as part of an orderly shutdown, which must not be
 	// mistaken for a lost session.
 	closing atomic.Bool
+	// interruptStopTimeout is how long the engine gives an interrupted
+	// session's work to stop gracefully (Interrupt). Shutdown waits for it on
+	// top of its own timeout.
+	interruptStopTimeout atomic.Int64
 	// sessionLost is the cause recorded when the engine closed the session
 	// attachables connection before Close started. The engine retires the
 	// session when it does that, so every later request fails with this cause.
@@ -1118,7 +1122,7 @@ func (c *Client) CloseWithContext(ctx context.Context) (rerr error) {
 			rerr = errors.Join(err, rerr)
 		}
 	}()
-	ctx, cancel := context.WithTimeout(ctx, clientShutdownTimeout())
+	ctx, cancel := context.WithTimeout(ctx, c.shutdownTimeout())
 	defer cancel()
 	stop := context.AfterFunc(ctx, func() {
 		if c.internalCancel != nil {
@@ -1152,7 +1156,7 @@ func (c *Client) CloseWithContext(ctx context.Context) (rerr error) {
 				slog.Warn("telemetry drain failed after shutdown", "err", err)
 			}
 		case <-ctx.Done():
-			slog.Warn("telemetry drain timed out after shutdown", "timeout", clientShutdownTimeout())
+			slog.Warn("telemetry drain timed out after shutdown", "timeout", c.shutdownTimeout())
 		}
 	}
 
@@ -1705,8 +1709,47 @@ func clientShutdownTimeout() time.Duration {
 	return timeout
 }
 
+// shutdownTimeout bounds the whole shutdown: the client's shutdown timeout,
+// plus the stop timeout of an interrupted session, whose work the engine
+// stops gracefully before it shuts the session down.
+func (c *Client) shutdownTimeout() time.Duration {
+	return clientShutdownTimeout() + time.Duration(c.interruptStopTimeout.Load())
+}
+
+// Interrupt asks the engine to stop the session's work: its services and the
+// execs that its cancelled requests leave get SIGTERM, and SIGKILL after
+// stopTimeout. Call it before cancelling the requests, so the engine knows to
+// stop their execs gracefully. With force, whatever is still stopping gets
+// SIGKILL at once.
+func (c *Client) Interrupt(ctx context.Context, stopTimeout time.Duration, force bool) error {
+	query := url.Values{}
+	if force {
+		query.Set(engine.InterruptForceParam, "true")
+	} else {
+		query.Set(engine.InterruptStopTimeoutParam, stopTimeout.String())
+		if stopTimeout > 0 {
+			c.interruptStopTimeout.Store(int64(stopTimeout))
+		}
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", "http://dagger"+engine.InterruptEndpoint+"?"+query.Encode(), nil)
+	if err != nil {
+		return fmt.Errorf("new request: %w", err)
+	}
+	req.SetBasicAuth(c.engineToken(), "")
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("interrupt: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= http.StatusBadRequest {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return fmt.Errorf("interrupt: %s: %s", resp.Status, strings.TrimSpace(string(body)))
+	}
+	return nil
+}
+
 func (c *Client) shutdownServer(ctx context.Context) error {
-	ctx, cancel := context.WithTimeout(ctx, clientShutdownTimeout())
+	ctx, cancel := context.WithTimeout(ctx, c.shutdownTimeout())
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, "POST", "http://dagger"+engine.ShutdownEndpoint, nil)
 	if err != nil {
