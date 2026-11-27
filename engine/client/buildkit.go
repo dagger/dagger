@@ -17,11 +17,6 @@ import (
 	"github.com/dagger/dagger/engine/client/drivers"
 )
 
-const (
-	// TODO: deprecate in a future release
-	envDaggerCloudCachetoken = "_EXPERIMENTAL_DAGGER_CACHESERVICE_TOKEN"
-)
-
 func newBuildkitClient(ctx context.Context, remote *url.URL, connector drivers.Connector) (_ *bkclient.Client, _ *bkclient.Info, rerr error) {
 	backoffConfig := backoff.DefaultConfig
 	backoffConfig.MaxDelay = 30 * time.Second

@@ -19,6 +19,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	"go.opentelemetry.io/otel"
 
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/imageload"
 	"github.com/dagger/dagger/engine/config"
 	"github.com/dagger/dagger/engine/distconsts"
@@ -36,6 +37,8 @@ func init() {
 		podmanImageDriver,
 		finchImageDriver,
 		nerdctlImageDriver,
+		// Last, as it starts the engine in a cluster instead of on this host.
+		kubectlImageDriver,
 	)
 	register("container",
 		dockerContainerDriver,
@@ -59,6 +62,8 @@ func init() {
 
 	register("image+nerdctl", nerdctlImageDriver)
 	register("container+nerdctl", nerdctlContainerDriver)
+
+	register("image+kubectl", kubectlImageDriver)
 }
 
 var (
@@ -88,7 +93,9 @@ var (
 // logic between different container providers, but have different backend
 // commands.
 type containerBackend interface {
-	Available(ctx context.Context) (bool, error)
+	// Name identifies the backend to the user, e.g. in error messages.
+	Name() string
+	Available(ctx context.Context, u *url.URL) (bool, error)
 
 	ImagePull(ctx context.Context, image string) error
 	ImageExists(ctx context.Context, image string) (bool, error)
@@ -127,8 +134,8 @@ type imageDriver struct {
 	backend containerBackend
 }
 
-func (d *imageDriver) Available(ctx context.Context) (bool, error) {
-	return d.backend.Available(ctx)
+func (d *imageDriver) Available(ctx context.Context, u *url.URL) (bool, error) {
+	return d.backend.Available(ctx, u)
 }
 
 func (d *imageDriver) Provision(ctx context.Context, target *url.URL, opts *DriverOpts) (Connector, error) {
@@ -136,7 +143,7 @@ func (d *imageDriver) Provision(ctx context.Context, target *url.URL, opts *Driv
 
 	port, _ := strconv.Atoi(target.Query().Get("port"))
 	target, err := d.create(ctx, containerCreateOpts{
-		imageRef:      target.Host + target.Path,
+		imageRef:      defaultImageRef(target.Host + target.Path),
 		containerName: target.Query().Get("container"),
 		volumeName:    target.Query().Get("volume"),
 		cleanup:       cleanup,
@@ -317,8 +324,23 @@ type containerDriver struct {
 	backend containerBackend
 }
 
-func (d *containerDriver) Available(ctx context.Context) (bool, error) {
-	return d.backend.Available(ctx)
+func (d *containerDriver) Available(ctx context.Context, u *url.URL) (bool, error) {
+	if u.Host == "" {
+		return false, fmt.Errorf("container engine address must name a container, got %q", u.Redacted())
+	}
+
+	if available, err := d.backend.Available(ctx, u); err != nil || !available {
+		return false, err
+	}
+
+	exists, err := d.backend.ContainerExists(ctx, u.Host)
+	if err != nil {
+		return false, err
+	}
+	if !exists {
+		return false, &UnavailableError{Reason: fmt.Sprintf("%s: container %q not found", d.backend.Name(), u.Host)}
+	}
+	return true, nil
 }
 
 func (d *containerDriver) Provision(ctx context.Context, target *url.URL, opts *DriverOpts) (Connector, error) {
@@ -613,7 +635,7 @@ func engineNames(versions []string) []string {
 // CleanupOldEngines removes local engine containers while preserving the
 // versions that are expected to be used by the current command.
 func CleanupOldEngines(ctx context.Context, preserveVersions []string) error {
-	driver, err := GetDriver(ctx, "image")
+	driver, err := GetDriver(ctx, &url.URL{Scheme: "image"})
 	if err != nil {
 		return err
 	}
@@ -642,6 +664,29 @@ func (d *imageDriver) collectLeftoverEngines(ctx context.Context, additionalName
 		}
 	}
 	return filteredEngines, nil
+}
+
+// defaultImageRef fills in what imageRef leaves out: an empty ref becomes the
+// Dagger engine image, and a ref with neither a tag nor a digest gets the
+// current engine tag, so that e.g. image:// and image://my-mirror.io/engine
+// run the engine that matches the CLI. Naive dev builds have no tag, so those
+// refs are left alone (which resolves to latest).
+func defaultImageRef(imageRef string) string {
+	if imageRef == "" {
+		imageRef = engine.EngineImageRepo
+	}
+	if engine.Tag == "" || hasTagOrDigest(imageRef) {
+		return imageRef
+	}
+	return imageRef + ":" + engine.Tag
+}
+
+// hasTagOrDigest reports whether the last path element of imageRef carries a
+// tag or digest, so that a registry port ("localhost:5000/engine") is not
+// mistaken for one.
+func hasTagOrDigest(imageRef string) bool {
+	last := imageRef[strings.LastIndex(imageRef, "/")+1:]
+	return strings.ContainsAny(last, ":@")
 }
 
 func resolveImageID(imageRef string) (string, error) {
