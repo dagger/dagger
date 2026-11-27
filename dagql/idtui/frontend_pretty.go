@@ -9016,11 +9016,11 @@ func (fe *frontendPretty) checkRootCauses(root *dagui.Span) []*dagui.Span {
 // or root itself: for a check that failed on its own span, the check.
 //
 // The walk doesn't enter a module function call's plumbing (a module
-// entrypoint's span, Span.FunctionPlumbing) either. A root with no origins
-// failed with an error of its own, its function's, and an entrypoint reports
-// that failure as its process's failed exec too, which only repeats it.
-// Plumbing that fails on its own, such as a module's build, is the origin of
-// the root's error, so the walk never runs.
+// entrypoint's span, Span.FunctionPlumbing) that didn't fail either: an
+// entrypoint ends its plumbing without an error when the function failed
+// with one of its own, and reports that failure as its process's failed exec
+// too, which only repeats it. Plumbing that failed on its own, such as a
+// module's build, is walked like any other span.
 func CheckRootCauses(root *dagui.Span) []*dagui.Span {
 	if root == nil {
 		return nil
@@ -9044,9 +9044,12 @@ func CheckRootCauses(root *dagui.Span) []*dagui.Span {
 	// shown is the span that shows a failed passthrough leaf beneath it. The
 	// walk carries it rather than climbing the leaf's parents: children
 	// include cause-linked spans, whose parents can be outside root.
+	skipped := func(s *dagui.Span) bool {
+		return s != root && s.FunctionPlumbing && !s.IsFailed()
+	}
 	var walk func(s, shown *dagui.Span)
 	walk = func(s, shown *dagui.Span) {
-		if visited[s.ID] || s != root && s.FunctionPlumbing {
+		if visited[s.ID] || skipped(s) {
 			return
 		}
 		visited[s.ID] = true
@@ -9056,7 +9059,7 @@ func CheckRootCauses(root *dagui.Span) []*dagui.Span {
 			}
 			failedChild := false
 			for _, c := range s.ChildSpans.Spans() {
-				if c.IsFailedOrCausedFailure() {
+				if !skipped(c) && c.IsFailedOrCausedFailure() {
 					failedChild = true
 				}
 			}

@@ -109,6 +109,23 @@ func TestCheckRootCausesSkipPassthrough(t *testing.T) {
 		require.Equal(t, []string{"dag://?check=failing"}, names(CheckRootCauses(root)))
 	})
 
+	t.Run("failed function plumbing", func(t *testing.T) {
+		// Plumbing that failed on its own, such as a module's build, is
+		// walked: its failed exec is a cause.
+		db := dagui.NewDB()
+		plumbing := span(4, 3, "call module entrypoint", failed, false)
+		plumbing.FunctionPlumbing = true
+		db.ImportSnapshots([]dagui.SpanSnapshot{
+			check(1, "failing"),
+			span(2, 1, "Check.__run", ok, true),
+			span(3, 2, "View.__check_failing", failed, true),
+			plumbing,
+			span(5, 4, "withExec go build", failed, false),
+		})
+		root := db.Spans.Map[prettyTestSpanID(1)]
+		require.Equal(t, []string{"dag://?check=failing", "withExec go build"}, names(CheckRootCauses(root)))
+	})
+
 	t.Run("deeper origin", func(t *testing.T) {
 		db := dagui.NewDB()
 		deep := check(1, "deep")
