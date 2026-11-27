@@ -238,7 +238,7 @@ Each generator must return its own intended output. Do not return a full shared 
 
 1. Resolve the open decisions for the code being changed. Build a nested collection example with parent references and a shared results helper.
 2. Implement view state and reference replacement. Copying `Query` is insufficient; it does not contain all module objects.
-3. Preserve the view through module calls, stored ID loads, cached results, deferred execution, and later object creation. Include the view in cache keys before lookup. Preserve source objects and IDs.
+3. Preserve the view through the objects module calls receive, stored ID loads, cached results, and deferred execution. Include the view in cache keys before lookup. Preserve source objects and IDs. A module function sees the view through its receiver, its arguments and what it reaches through them; its own requests run outside the view, so collections it builds or asks other modules for are not narrowed.
 4. Migrate all `values()` callers: check, generate, start, call, and cloud execution. Preserve arguments, command settings, cancellation, concurrency limits, error reporting, and trace names.
 5. Send the full view and individual target to cloud execution. Related checks need a shared execution scope. Current remote checks use separate sessions.
 6. Remove native batch replacement and batch schema. Migrate module functions and markers. Update affected SDKs, generated clients, and documentation.
@@ -282,7 +282,7 @@ Read [engine-debugging](../../skills/engine-debugging/SKILL.md) before running t
 - **Child keys:** Can a parent subset change child keys before child filters run? Proposed rule: keep retained item paths and child keys stable. This is not enforced today.
 - **Stored data:** Proposed guidance: build commands and summaries from current keys when called. Stored commands can contain old arguments. Configuration and parent fields remain useful.
 - **Shared references:** Define how filters on different paths combine when they refer to the same collection ID. Traversal order must not decide the subset.
-- **Later objects:** Define how a new collection ID maps to the filtered dimension.
+- **Later objects:** Define how a new collection ID maps to the filtered dimension. Module code's own requests are outside the view, so this only concerns objects the engine creates while evaluating the selection.
 - **Removal filters:** Does `withoutUri` change collection state or only selection membership?
 - **Conversion failures:** `asChecks()` can fail before returning its list. Choose how the CLI retains other results and supports `--fail-fast`, which cancels remaining work after a failure. The query alone does not preserve the current behavior.
 - **API names and release:** Resolve author method conflicts. Agree on cloud delivery and compatibility for removed fields. Read [version gating](../../internal-docs/version-gating.md). Prereleases before beta.22 share one schema view. From beta.22, version gates can distinguish each prerelease.
