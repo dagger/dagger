@@ -174,17 +174,22 @@ wget -q -O- --header "Authorization: Basic $auth" --header "Content-Type: applic
 
 // runUntracedNested runs query as a nested client of c's session, whose
 // delivery route includes c's client, with no traceparent on its request.
-func runUntracedNested(ctx context.Context, t *testctx.T, c *dagger.Client, query string) string {
+// files are written to the exec's working directory, /work.
+func runUntracedNested(ctx context.Context, t *testctx.T, c *dagger.Client, query string, files map[string]string) {
 	t.Helper()
 	body := fmt.Sprintf(`{"query":%q}`, query)
-	out, err := core.NewQuery(c).Container().From(alpineImage).
+	ctr := core.NewQuery(c).Container().From(alpineImage).WithWorkdir("/work")
+	for path, contents := range files {
+		ctr = ctr.WithNewFile(path, contents)
+	}
+	out, err := ctr.
 		WithEnvVariable("CACHEBUSTER", rand.Text()).
 		WithEnvVariable("QUERY", body).
 		WithExec([]string{"sh", "-c", untracedNestedQuery}, core.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true}).
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, `"data"`)
-	return out
+	require.NotContains(t, out, `"errors"`)
 }
 
 // TestUntracedNestedMintsChain: a nested client's request without a
@@ -194,10 +199,38 @@ func runUntracedNested(ctx context.Context, t *testctx.T, c *dagger.Client, quer
 func (CallPayloadClosureSuite) TestUntracedNestedMintsChain(ctx context.Context, t *testctx.T) {
 	c, sink := connectWithTrace(ctx, t)
 	contents := rand.Text()
-	runUntracedNested(ctx, t, c, fmt.Sprintf(`{ directory { withNewFile(path: "a", contents: %q) { withNewFile(path: "b", contents: "b") { entries } } } }`, contents))
+	runUntracedNested(ctx, t, c, fmt.Sprintf(`{ directory { withNewFile(path: "a", contents: %q) { withNewFile(path: "b", contents: "b") { entries } } } }`, contents), nil)
 	runQuery(ctx, t, c, fmt.Sprintf(`{ directory { withNewFile(path: "a", contents: %q) { withNewFile(path: "b", contents: "b") { withNewFile(path: "c", contents: "c") { entries } } } } }`, contents))
 	require.NoError(t, c.Close())
 	sink.requireTraceRebuildable(ctx, t, "Directory.withNewFile")
+}
+
+// goModuleWorkspaceFiles is a workspace that pins github.com/dagger/go@v0.5.0
+// in its lock, as a checkout of dagger/dagger does. .git marks its root.
+var goModuleWorkspaceFiles = map[string]string{
+	".git/HEAD": "ref: refs/heads/main\n",
+	"dagger.toml": `[modules.golang]
+source = "github.com/dagger/go@v0.5.0"
+`,
+	"dagger.lock": `[["version","2"]]
+["","git-latest",["github.com/dagger/go",["version","v0.5.0"]],"refs/tags/v0.5.0"]
+["","git-sha",["github.com/dagger/go","refs/tags/v0.5.0"],"262b66dc9683ed6c2bcd55a8f5b85eff62b1c152"]
+`,
+}
+
+// TestUntracedLockRefreshThenModuleSource is the live failure end to end: a
+// tool's exec refreshes a workspace lock over its nested session with a bare
+// curl, no traceparent. The refresh resolves the git ref under a fresh cache
+// scope, and the parent's own traced moduleSource of the same ref then gets
+// the refresh's result back, its frame naming the scoped repository.
+func (CallPayloadClosureSuite) TestUntracedLockRefreshThenModuleSource(ctx context.Context, t *testctx.T) {
+	c, sink := connectWithTrace(ctx, t)
+	runUntracedNested(ctx, t, c,
+		`{ currentWorkspace { __withUpdatedLock(selectors: ["github.com/dagger/go"], noGenerate: true) { file(path: "dagger.lock") { contents } } } }`,
+		goModuleWorkspaceFiles)
+	runQuery(ctx, t, c, `{ moduleSource(refString: "github.com/dagger/go@v0.5.0") { moduleName } }`)
+	require.NoError(t, c.Close())
+	sink.requireTraceRebuildable(ctx, t, "GitRef.tree")
 }
 
 // TestUntracedNestedMintsGitChain is the shape of the live failure: an
@@ -205,7 +238,7 @@ func (CallPayloadClosureSuite) TestUntracedNestedMintsChain(ctx context.Context,
 // GitRef.tree names that ref as its receiver.
 func (CallPayloadClosureSuite) TestUntracedNestedMintsGitChain(ctx context.Context, t *testctx.T) {
 	c, sink := connectWithTrace(ctx, t)
-	runUntracedNested(ctx, t, c, `{ git(url: "https://github.com/dagger/go") { latest(version: "v0.5.0") { commit } } }`)
+	runUntracedNested(ctx, t, c, `{ git(url: "https://github.com/dagger/go") { latest(version: "v0.5.0") { commit } } }`, nil)
 	runQuery(ctx, t, c, `{ git(url: "https://github.com/dagger/go") { latest(version: "v0.5.0") { tree { entries } } } }`)
 	require.NoError(t, c.Close())
 	sink.requireTraceRebuildable(ctx, t, "GitRef.tree")
