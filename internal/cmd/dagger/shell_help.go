@@ -74,22 +74,26 @@ func (h *shellCallHandler) CommandsList(name string, cmds []*ShellCommand) strin
 
 // agentCommandHelp is the intentional agent surface, not a mirror of shell
 // builtins. Routing, completion, and help share it so discovery stays honest.
+//
+// conversation marks the commands that act on the conversation they were
+// submitted to (see shellCallHandler.commandTarget), whose spans are stamped as
+// that agent's work (telemetryattrs.AgentOwnerAttr); the rest are session-wide.
 var agentCommandHelp = []struct {
-	name, description string
-	advanced          bool
+	name, description      string
+	advanced, conversation bool
 }{
-	{"help", "Show available commands", false},
-	{"setup", "Connect or reconnect an AI account", false},
-	{"model", "Choose a model, optionally making it your default", false},
-	{"clear", "Start a fresh conversation", false},
-	{"logout", "Disconnect a saved AI account", false},
-	{"exit", "Leave the agent session", false},
-	{"compact", "Summarize the conversation to free up context", true},
-	{"effort", "Adjust how much reasoning the model uses", true},
-	{"history", "View the conversation history", true},
-	{"context", "Inspect what occupies the context window", true},
-	{"backfill", "Load a resumed session's whole history", true},
-	{"shell", "Switch to the Dagger shell", true},
+	{"help", "Show available commands", false, false},
+	{"setup", "Connect or reconnect an AI account", false, false},
+	{"model", "Choose a model, optionally making it your default", false, true},
+	{"clear", "Start a fresh conversation", false, true},
+	{"logout", "Disconnect a saved AI account", false, false},
+	{"exit", "Leave the agent session", false, false},
+	{"compact", "Summarize the conversation to free up context", true, true},
+	{"effort", "Adjust how much reasoning the model uses", true, true},
+	{"history", "View the conversation history", true, true},
+	{"context", "Inspect what occupies the context window", true, false},
+	{"backfill", "Load a resumed session's whole history", true, false},
+	{"shell", "Switch to the Dagger shell", true, false},
 }
 
 func agentCommandDescription(name string) (string, bool) {
@@ -99,6 +103,25 @@ func agentCommandDescription(name string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// agentCommandActsOnConversation reports whether the agent command line
+// invokes -- "/compact" in prompt mode, or its builtin ".compact" in shell
+// mode -- acts on the conversation it was submitted to.
+func agentCommandActsOnConversation(line string) bool {
+	if line == "" || (line[0] != '/' && line[0] != '.') {
+		return false
+	}
+	name := line[1:]
+	if i := strings.IndexAny(name, " \t"); i >= 0 {
+		name = name[:i]
+	}
+	for _, command := range agentCommandHelp {
+		if command.name == name {
+			return command.conversation
+		}
+	}
+	return false
 }
 
 func (h *shellCallHandler) promptHelp(args []string) (string, error) {

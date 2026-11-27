@@ -430,6 +430,10 @@ type SpanSnapshot struct {
 	AgentName       string `json:",omitempty"`
 	AgentCallDigest string `json:",omitempty"`
 
+	// AgentOwner is the AgentID of the agent a span outside any loop span
+	// was done for, such as the CLI's /compact (telemetryattrs.AgentOwnerAttr).
+	AgentOwner string `json:",omitempty"`
+
 	// AgentRewindFrom and AgentRewindTo mark a rewind marker: a message span
 	// the engine emits beneath the loop span when an agent's conversation is
 	// replaced by one of its own ancestors (inline prompt editing). From is
@@ -702,6 +706,9 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 
 	case telemetryattrs.AgentCallDigestAttr:
 		snapshot.AgentCallDigest = val.(string)
+
+	case telemetryattrs.AgentOwnerAttr:
+		snapshot.AgentOwner = val.(string)
 
 	case telemetryattrs.AgentRewindFromDigestAttr:
 		snapshot.AgentRewindFrom = val.(string)

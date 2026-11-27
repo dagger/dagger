@@ -63,6 +63,26 @@ func TestPromptSlashCommandMapping(t *testing.T) {
 	}
 }
 
+// TestAgentCommandsActingOnConversation pins which /commands are stamped with
+// the agent they were submitted to, and so render as its work rather than in
+// every agent's transcript: session-wide ones (account setup, help) must keep
+// showing in every tab.
+func TestAgentCommandsActingOnConversation(t *testing.T) {
+	for _, line := range []string{
+		"/compact", "/clear", "/history", "/model gpt-6-astra", "/effort\thigh",
+		// the same builtins typed in shell mode, after /shell
+		".compact", ".clear", ".history", ".model gpt-6-astra",
+	} {
+		require.True(t, agentCommandActsOnConversation(line), line)
+	}
+	for _, line := range []string{
+		"/help compact", "/setup", "/logout", "/context", "/backfill", "/shell", "/exit", "/notacommand",
+		".help", ".setup", ".cd ./sub", ".", "", "compact", "container | from alpine",
+	} {
+		require.False(t, agentCommandActsOnConversation(line), line)
+	}
+}
+
 func TestPromptSlashCommandCompletion(t *testing.T) {
 	h := newSlashTestHandler(t)
 	h.mode = modePrompt

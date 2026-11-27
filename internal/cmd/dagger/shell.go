@@ -509,7 +509,7 @@ func (h *shellCallHandler) BranchFromID(ctx context.Context, encodedID string, s
 		}
 		loadedLLM := core.Ref[*core.LLM](core.NewQuery(h.dag), core.ID(encodedID))
 		if err := target.Branch(ctx, loadedLLM, summary); err != nil {
-			slog.Error("failed to branch", "error", err)
+			slog.Error("failed to branch", target.logAttrs("error", err)...)
 			var detached *agentDetachedError
 			if !errors.As(err, &detached) {
 				return err
@@ -882,12 +882,21 @@ func (h *shellCallHandler) HandlePrompt(ctx context.Context, input idtui.PromptI
 	}
 
 	// Create a new span for this command
-	var span trace.Span
-	ctx, span = Tracer().Start(ctx, line,
+	spanOpts := []trace.SpanStartOption{
 		telemetry.Reveal(),
 		trace.WithAttributes(
 			attribute.String(telemetry.ContentTypeAttr, contentType),
-		))
+		),
+	}
+	if submission, ok := input.CommandTarget.(*commandSubmission); ok &&
+		submission.target != nil && agentCommandActsOnConversation(line) {
+		// A command like /compact (.compact after /shell) acts on the
+		// conversation it was submitted to, so it is that agent's work, not
+		// every agent's (see telemetryattrs.AgentOwnerAttr).
+		spanOpts = append(spanOpts, submission.target.spanOwner())
+	}
+	var span trace.Span
+	ctx, span = Tracer().Start(ctx, line, spanOpts...)
 	var telemetryErr error
 	defer telemetry.EndWithCause(span, &telemetryErr)
 	defer func() {
@@ -1201,8 +1210,11 @@ func (h *shellCallHandler) ReactToInput(ctx context.Context, ev uv.KeyPressEvent
 					Title:   "Changes",
 					Content: termenv.String("saving to checkout...").Faint().String(),
 				})
+				// No log line on failure: one would interleave into whichever
+				// transcript is focused. The save's own span records a failed
+				// export in its agent's transcript, and the bubble below
+				// reports every failure, a refused save included.
 				if err := h.llmSession.Target().ExportChanges(ctx); err != nil {
-					slog.Error("failed to export changes to local filesystem", "error", err.Error())
 					h.frontend.SetSidebarContent(idtui.SidebarSection{
 						Title:   "Changes",
 						Content: termenv.String("SAVE ERROR: " + err.Error()).Foreground(termenv.ANSIRed).String(),
@@ -1219,8 +1231,8 @@ func (h *shellCallHandler) ReactToInput(ctx context.Context, ev uv.KeyPressEvent
 					Title:   "Changes",
 					Content: termenv.String("reloading from checkout...").Faint().String(),
 				})
+				// As for ctrl+s: the reload's span and the bubble report it.
 				if err := h.llmSession.Target().ResetWorkspace(ctx); err != nil {
-					slog.Error("failed to reset agent workspace", "error", err.Error())
 					h.frontend.SetSidebarContent(idtui.SidebarSection{
 						Title:   "Changes",
 						Content: termenv.String("RESET ERROR: " + err.Error()).Foreground(termenv.ANSIRed).String(),

@@ -417,6 +417,15 @@ const (
 	// roster entry rather than fail. (string)
 	AgentCallDigestAttr = "dagger.io/agent.call.digest"
 
+	// AgentOwnerAttr names the agent (by AgentIDAttr) a span outside its loop
+	// span was done for: client-side work on one agent's conversation, such
+	// as a /compact or a save to the checkout, whose ancestry cannot say
+	// whose it is. Frontends show it as that agent's work: in its transcript,
+	// and in those of the agents its loop runs beneath (a worker's in its
+	// chief's), but not in other agents'. It is deliberately not AgentIDAttr,
+	// whose mere presence marks a loop span to the trace indexes. (string)
+	AgentOwnerAttr = "dagger.io/agent.owner"
+
 	// AgentStateAttr carries the agent's projected lifecycle state: one of
 	// the AgentState enum tokens ("IDLE", "RUNNING", "WAITING_INPUT",
 	// "PAUSED", "STOPPED", "FAILED"). (string)

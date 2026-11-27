@@ -412,6 +412,15 @@ type frontendPretty struct {
 	activeForm   *activePromptForm
 	pendingForms []*promptFormRequest
 
+	// zoomedLogSegments holds the pieces the zoomed span's logs are split
+	// into to interleave them with its top-level trees (see
+	// renderZoomedLogSegments).
+	zoomedLogSegments map[zoomedLogSegmentKey]*zoomedLogSegment
+	// interleavedLogs is, for the frame being rendered, the zoomed span's
+	// logs that renderProgressLines interleaves with the top-level trees;
+	// nil when it doesn't.
+	interleavedLogs *Vterm
+
 	// track whether we've already spawned the run function
 	spawned bool
 
@@ -1379,6 +1388,11 @@ func newWithTerminalProfile(w io.Writer, db *dagui.DB, term tuist.Terminal, prof
 		tuiTerm:            term,
 		claims:             newRenderClaims(),
 		promptColorProfile: promptProfile,
+	}
+	// Only a shell's primary span interleaves its logs with its rows (see
+	// interleavesZoomedLogs), so only its log keeps the times to split it by.
+	logs.markTimes = func(id dagui.SpanID) bool {
+		return fe.shell != nil && id == fe.primarySpan()
 	}
 	tui.AddInputListener(fe.handlePromptBackground)
 	tui.AddInputListener(fe.handleHUDKey)
@@ -4121,6 +4135,7 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 		return
 	}
 	fe.claims = newRenderClaims()
+	fe.interleavedLogs = nil
 	if !fe.finalRender {
 		// Update window dimensions before choosing the screen body. Command-owned
 		// views embed the same trace renderers, which depend on this state for
@@ -4191,7 +4206,17 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 	// progress so their claims can suppress duplicate test logs in the trace
 	// rows above them.
 	globalTestLines := fe.renderGlobalTests(ctx, false)
-	logsLines := fe.renderLogsLines("")
+	// The zoomed span's own logs read as part of what happened beneath it:
+	// where they can, they go between its rows, in the order they were
+	// logged, rather than piling up beneath them all.
+	var logsLines []string
+	if logs := fe.zoomedLogs(); logs != nil {
+		if fe.interleavesZoomedLogs(logs) {
+			fe.interleavedLogs = logs
+		} else {
+			logsLines = fe.renderLogsLines(logs, "")
+		}
+	}
 
 	// Lines the TUI renders as siblings outside this component, which are
 	// always shown and so must be reserved out of the screen height: the keymap
@@ -4998,13 +5023,128 @@ func checkBreakdownPartsFor(out TermOutput, nodes []*dagui.CheckNode) []string {
 	return renderTestCountParts(out, surfacedSpanCounts(spans))
 }
 
-// renderLogsLines returns the zoomed span's log output as lines.
-func (fe *frontendPretty) renderLogsLines(prefix string) []string {
+// zoomedLogs returns the zoomed span's logs, when the live view shows them
+// with its rows: nil when it has none, or when something else shows them.
+func (fe *frontendPretty) zoomedLogs() *Vterm {
 	fe.requestLogsOnRender(fe.ZoomedSpan)
 	logs := fe.logs.Logs[fe.ZoomedSpan]
 	if logs == nil || fe.claims.hasLog(fe.ZoomedSpan) || fe.hasShownRootError() {
 		return nil
 	}
+	return logs
+}
+
+// interleavesZoomedLogs reports whether the zoomed span's logs, which
+// zoomedLogs returned, render between its top-level trees in the order they
+// were logged (see renderZoomedLogSegments) rather than in a region of their
+// own beneath them all.
+//
+// Only flowing mode interleaves: there the logs flow into scrollback with
+// the rows around them, as they would in a terminal. A viewport-clipped
+// view crops its rows around the focused one, which would crop away the
+// newest logs; beneath the rows they keep the room reserved for them.
+//
+// Logs that can't be split by time (see Vterm.TimeRows) keep to the region
+// beneath the rows, all of them, even once some showed between the rows:
+// the zoomed span of a live session logs plain text, so this is rare.
+func (fe *frontendPretty) interleavesZoomedLogs(logs *Vterm) bool {
+	if !fe.flowingMode() || fe.rowsView == nil {
+		return false
+	}
+	_, _, ok := logs.TimeRows(nil)
+	return ok
+}
+
+// zoomedLogSegmentKey names a piece of a log: the log, and the rows of its
+// screen the piece spans.
+type zoomedLogSegmentKey struct {
+	src      *Vterm
+	from, to int
+}
+
+// zoomedLogSegment is a rendered piece of a log, as of stamp.
+type zoomedLogSegment struct {
+	stamp VtermRowsStamp
+	lines []string
+	used  bool
+}
+
+// renderZoomedLogSegments splits logs at the start time of each of trees and
+// renders the pieces: the lines logged before trees[i] started, for each i,
+// then those logged after the last one did. It returns nil for nil logs.
+func (fe *frontendPretty) renderZoomedLogSegments(logs *Vterm, trees []*SpanTreeView) [][]string {
+	if logs == nil {
+		clear(fe.zoomedLogSegments)
+		return nil
+	}
+	starts := make([]time.Time, len(trees))
+	for i, tree := range trees {
+		if span := fe.db.Spans.Map[tree.spanID]; span != nil {
+			starts[i] = span.StartTime
+		}
+	}
+	// Prefix first: the screen is laid out at the width the prefix leaves.
+	logs.SetPrefix("")
+	rows, used, ok := logs.TimeRows(starts)
+	if !ok {
+		return nil
+	}
+	if fe.zoomedLogSegments == nil {
+		fe.zoomedLogSegments = make(map[zoomedLogSegmentKey]*zoomedLogSegment)
+	}
+	// Only pieces reaching down to a row written since they rendered render
+	// again: a log mostly grows at its end, into its last piece.
+	stamp := logs.RowsStamp()
+	touchedRow, touched := logs.TakeTouchedRow()
+	segments := make([][]string, len(trees)+1)
+	from := 0
+	for i := range segments {
+		to := used
+		if i < len(rows) {
+			to = rows[i]
+		}
+		if to > from {
+			key := zoomedLogSegmentKey{src: logs, from: from, to: to}
+			seg := fe.zoomedLogSegments[key]
+			if seg == nil {
+				seg = &zoomedLogSegment{}
+				fe.zoomedLogSegments[key] = seg
+			}
+			if seg.lines == nil || seg.stamp != stamp || touched && to > touchedRow {
+				seg.lines = trimBlankTail(logs.RenderRows(from, to))
+				seg.stamp = stamp
+			}
+			seg.used = true
+			segments[i] = seg.lines
+		}
+		from = to
+	}
+	// Forget the pieces this split no longer makes.
+	for key, seg := range fe.zoomedLogSegments {
+		if !seg.used {
+			delete(fe.zoomedLogSegments, key)
+		}
+		seg.used = false
+	}
+	return segments
+}
+
+// trimBlankTail drops the blank lines ending lines: a piece of a log ends
+// with its last line's newline, not a blank line.
+func trimBlankTail(lines []string) []string {
+	for len(lines) > 0 && strings.TrimSpace(ansi.Strip(lines[len(lines)-1])) == "" {
+		lines = lines[:len(lines)-1]
+	}
+	if lines == nil {
+		return []string{}
+	}
+	return lines
+}
+
+// renderLogsLines returns the zoomed span's log output as lines, the tail
+// of it that fits a third of the screen, for logs that aren't interleaved
+// with the rows (see interleavesZoomedLogs).
+func (fe *frontendPretty) renderLogsLines(logs *Vterm, prefix string) []string {
 	// Prefix first: the screen is laid out at the width the prefix leaves.
 	logs.SetPrefix(prefix)
 	if logs.UsedHeight() == 0 {
@@ -5128,7 +5268,7 @@ func (fe *frontendPretty) recalculateViewLocked() {
 		fe.promoteGeneratorsLocked()
 	}
 	fe.syncRewindsLocked()
-	fe.rowsView = fe.db.RowsView(fe.FrontendOpts)
+	fe.rowsView = fe.db.RowsView(fe.liveTreeOpts())
 	fe.rows = fe.rowsView.Rows(fe.FrontendOpts)
 
 	// Interactive zoom: force-fetch the zoomed span's subtree so navigating
@@ -6171,6 +6311,88 @@ func withdrawStaleConversation(host *dagui.Span, old, nodes []*dagui.MessageNode
 	}
 }
 
+// liveTreeOpts is fe.FrontendOpts for walking the live tree: while the
+// promoted conversation is scoped to one agent, it keeps every OTHER agent's
+// revealed work off the host's top level.
+//
+// Promotion scopes only the messages it wires in. The host's revealed set
+// also holds whatever reveal bubbling carried up -- an agent's /compact or
+// save, a span revealed inside its loop -- and that bubbles regardless of
+// whose it is, so without this every such span lingered in every agent's
+// transcript. It filters at walk time rather than withdrawing those spans
+// from the host: bubbling re-adds a span on each of its updates, and spans
+// belonging to no agent keep showing whatever is focused.
+func (fe *frontendPretty) liveTreeOpts() dagui.FrontendOpts {
+	opts := fe.FrontendOpts
+	scope, host := fe.promotedConversationAgent, fe.promotedConversationHost
+	if scope == "" || host == nil || opts.RootFilter != nil {
+		return opts
+	}
+	opts.RootFilter = func(db *dagui.DB, zoomed *dagui.Span) []*dagui.Span {
+		if zoomed != host || !host.Passthrough {
+			return nil
+		}
+		var roots []*dagui.Span
+		for _, span := range host.RevealedSpans.Spans() {
+			// Messages are already the scope's: promotion put them there.
+			if span.LLMRole == "" && ownedByOtherAgent(db, span, scope) {
+				continue
+			}
+			roots = append(roots, span)
+		}
+		return roots
+	}
+	return opts
+}
+
+// ownedByOtherAgent reports whether span is the work of an agent other than
+// scope: some agent owns it -- a loop span encloses it, or it is stamped with
+// the agent it was done for (client-side work such as a /compact, which runs
+// outside any loop span; see telemetryattrs.AgentOwnerAttr) -- and scope's
+// loop encloses neither it nor, for a stamped span, its agent's loop. A
+// worker's work beneath the chief's loop is the chief's too, just as the
+// worker's turns are in the chief's conversation.
+func ownedByOtherAgent(db *dagui.DB, span *dagui.Span, scope string) bool {
+	owned := false
+	var loops map[string][]*dagui.Span
+	walked := map[string]bool{}
+	var enclosedByScope func(*dagui.Span) bool
+	enclosedByScope = func(span *dagui.Span) bool {
+		for cur := span; cur != nil; cur = cur.ParentSpan {
+			owner := cur.AgentOwner
+			if cur.Agent {
+				owner = cur.AgentID
+			}
+			if owner == "" {
+				continue
+			}
+			if owner == scope {
+				return true
+			}
+			owned = true
+			if cur.Agent || walked[owner] {
+				continue
+			}
+			// A stamp names its agent but not where that agent runs: carry
+			// on from its loop spans, which a chief's worker lives beneath.
+			walked[owner] = true
+			if loops == nil {
+				loops = map[string][]*dagui.Span{}
+				for _, agent := range db.Agents() {
+					loops[agent.ID] = agent.Spans
+				}
+			}
+			for _, loop := range loops[owner] {
+				if enclosedByScope(loop) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	return !enclosedByScope(span) && owned
+}
+
 // syncRewindsLocked forces every row to re-render when the set of messages
 // rewinds have abandoned changes. A row's SpanTreeView is memoized on its
 // own span's state, and a rewind changes nothing about the spans it
@@ -6555,6 +6777,24 @@ func (fe *frontendPretty) renderProgressLines(r *renderer, ctx tuist.Context, ch
 
 	// topTrees was synced by syncSpanTreeState() in recalculateViewLocked().
 
+	// The zoomed span's own logs, split at the start of each top-level tree:
+	// segment i goes before tree i, the last after them all.
+	logSegments := fe.renderZoomedLogSegments(fe.interleavedLogs, fe.topTrees)
+	// pendingLogs holds the logs to show before the next tree with lines.
+	var pendingLogs []string
+	// logBlock sets a block of logs apart from what's around it.
+	logBlock := func(before bool, logs []string, after bool) []string {
+		var block []string
+		if before {
+			block = append(block, "")
+		}
+		block = append(block, logs...)
+		if after {
+			block = append(block, "")
+		}
+		return block
+	}
+
 	// Render all top-level trees via RenderChild, assembling into allLines.
 	// We render everything (for caching), then truncate below the focused
 	// item so it stays onscreen. Content above scrolls into scrollback.
@@ -6564,9 +6804,22 @@ func (fe *frontendPretty) renderProgressLines(r *renderer, ctx tuist.Context, ch
 		childCtx := ctx
 		childCtx.Width = fe.contentWidth
 		result := fe.RenderChildResult(childCtx, treeView)
+		if i < len(logSegments) {
+			pendingLogs = append(pendingLogs, logSegments[i]...)
+		}
 
-		// Gap between top-level trees
-		if i > 0 && len(result.Lines) > 0 {
+		if len(pendingLogs) > 0 && len(result.Lines) > 0 {
+			// Logs from before this tree started, in place of its gap: they
+			// count as the gap for working out where the tree is. A tree
+			// that opens with a blank line (an assistant reply) brings its
+			// own separation; a shaded prompt card's padding isn't blank.
+			opensBlank := strings.TrimSpace(result.Lines[0]) == ""
+			block := logBlock(len(allLines) > 0, pendingLogs, !opensBlank)
+			pendingLogs = nil
+			topGapCounts[i] = len(block)
+			allLines = append(allLines, block...)
+		} else if i > 0 && len(result.Lines) > 0 {
+			// Gap between top-level trees
 			row := fe.rows.BySpan[treeView.spanID]
 			if row != nil {
 				gaps := fe.renderTreeGap(r, row, treeView.prefix.cont)
@@ -6576,6 +6829,12 @@ func (fe *frontendPretty) renderProgressLines(r *renderer, ctx tuist.Context, ch
 		}
 
 		allLines = append(allLines, result.Lines...)
+	}
+	if len(logSegments) > len(fe.topTrees) {
+		pendingLogs = append(pendingLogs, logSegments[len(fe.topTrees)]...)
+	}
+	if len(pendingLogs) > 0 {
+		allLines = append(allLines, logBlock(len(allLines) > 0, pendingLogs, false)...)
 	}
 
 	if len(allLines) == 0 {
@@ -10456,6 +10715,17 @@ type prettyLogs struct {
 	Output         TermOutput
 	Images         *kittyImages
 	tableRuleColor termenv.Color
+	// markTimes reports whether a span's log notes when each line was
+	// written, to be split by time (Vterm.MarkTime); nil for none.
+	markTimes func(dagui.SpanID) bool
+}
+
+// markTime notes, if the span's log keeps times, that what is written to it
+// next was logged when rec was.
+func (l *prettyLogs) markTime(spanID dagui.SpanID, rec sdklog.Record) {
+	if l.markTimes != nil && l.markTimes(spanID) {
+		l.spanLogs(spanID).MarkTime(logRecordTime(rec))
+	}
 }
 
 func newPrettyLogs(profile termenv.Profile, db *dagui.DB) *prettyLogs {
@@ -10523,10 +10793,12 @@ func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 			if isMedia {
 				l.spanLogs(rollUpID).WriteMedia(media, pw.Prefix+body)
 			} else {
+				l.markTime(rollUpID, log)
 				fmt.Fprint(pw, body)
 			}
 		}
 
+		l.markTime(spanID, log)
 		vterm := l.spanLogs(spanID)
 		if isMedia {
 			vterm.WriteMedia(media, body)
@@ -10547,6 +10819,14 @@ func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 		}
 	}
 	return nil
+}
+
+// logRecordTime is when a log record was emitted, or failing that observed.
+func logRecordTime(rec sdklog.Record) time.Time {
+	if t := rec.Timestamp(); !t.IsZero() {
+		return t
+	}
+	return rec.ObservedTimestamp()
 }
 
 func (l *prettyLogs) flushResolvedLogsForSpan(spanID dagui.SpanID) bool {
