@@ -2,15 +2,12 @@
 
 The generated Dagger API bindings, `dag`, and the typed `connect`.
 
-**Every `.ts` file here comes from dagger/typescript-sdk** (`library/src/core/`)
-and is produced by its `packager` module against a running engine. Do not edit
-them here: a change that is not made upstream is silently dropped the next time
-they are regenerated, and `client.gen.ts` alone is 23k lines. Their doc comments
-are written from upstream's point of view for the same reason — `index.ts`
-saying core is "published from dagger/dagger rather than from here" is correct
-where it is maintained, and rewording it here would be dropped.
+`client.gen.ts` is **generated** — 23k lines of it — by
+`typescript-client:core-bindings`, which renders this engine's schema through
+dagger/typescript-sdk's codegen. Do not edit it; `core-bindings/stale` fails
+until it matches what that renders.
 
-`package.json` and this file are not vendored; they belong to this repo.
+Everything else here is ordinary source belonging to this repo.
 
 Its **version is the engine release**, not typescript-sdk's, which is why it is
 published from here. `@dagger.io/session` is versioned independently, so

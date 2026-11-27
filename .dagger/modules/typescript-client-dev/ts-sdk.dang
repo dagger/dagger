@@ -171,12 +171,16 @@ type TypescriptClientDev {
   session it runs in, so nesting would spell the bindings the way the *ambient*
   engine does while the schema came from the dev engine.
 
-  Only client.gen.ts is rendered. connect.ts, core.ts and index.ts are
-  hand-written upstream and no renderer produces them, so they come from the
-  pinned release. package.json, package-lock.json, tsconfig.json and README.md
-  are this repo's — the version in particular is a placeholder the release
-  overwrites from the tag, which is what lets a client fix ship inside one
-  engine release (1.0.0-beta.25.2 did).
+  client.gen.ts is the only generated file; everything else in the package is
+  ordinary source here. connect.ts, core.ts and index.ts were copied from
+  typescript-sdk at a pinned tag at first, which both kept a pin alive for three
+  small hand-written files and pointed at the directory the next step deletes —
+  typescript-sdk is to depend on the published @dagger.io/core rather than carry
+  its own copy of it.
+
+  The version in package.json is a placeholder the release overwrites from the
+  tag, which is what lets a client fix ship inside one engine release
+  (1.0.0-beta.25.2 did).
   """
   pub coreBindings: Changeset! @generate {
     let engine = daggerEngine(ws: self.ws)
@@ -186,20 +190,10 @@ type TypescriptClientDev {
     )
 
     workspaceDir
-      .withDirectory(
-        corePath,
-        git("https://github.com/dagger/typescript-sdk").tag(tsSdkVersion).tree.directory("library/src/core"),
-        include: ["connect.ts", "core.ts", "index.ts"],
-      )
       .withDirectory(corePath, rendered)
       .changes(workspaceDir)
   }
 
-  """
-  The dagger/typescript-sdk release the three hand-written entry points come
-  from. Not the bindings — those are rendered above.
-  """
-  let tsSdkVersion: String! = "v1.3.0"
 
   """
   Rehearse a core release with no side effects.
