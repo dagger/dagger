@@ -22,6 +22,8 @@ dagger init
 
 This creates an empty `dagger.toml`, or uses the existing file. This file holds the workspace configuration for everyone who uses the repository.
 
+If the workspace root has an existing `.agents/skills`, `.claude/skills`, `.cursor/skills`, `.gemini/skills`, `.github/skills`, or `.opencode/skills` directory, `init` adds `dagger/SKILL.md` there. The skill explains how to use workspace checks, generators, and modules. Existing `dagger` entries and symbolic links are skipped. No skill directory is created if none exists. This also applies to non-interactive runs.
+
 In interactive mode, follow the optional setup prompts. Select modules that match your project. Then select **Install selected**.
 
 In non-interactive mode, `init` prints commands to run in order:

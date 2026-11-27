@@ -21,6 +21,7 @@ import (
 type initState struct {
 	ConfigPath string
 	Created    bool
+	SkillPaths []string
 }
 
 func runInit(cmd *cobra.Command, _ []string) error {
@@ -103,7 +104,15 @@ func initializeWorkspaceConfig(ctx context.Context, dag *dagger.Client) (*initSt
 	if err != nil {
 		return nil, err
 	}
-	return &initState{ConfigPath: configPath, Created: configFile == ""}, nil
+	root, err := currentWorkspaceExportPath(ctx, updated)
+	if err != nil {
+		return nil, err
+	}
+	skillPaths, err := installWorkspaceSkills(root)
+	if err != nil {
+		return nil, fmt.Errorf("workspace configuration is ready; skill installation failed: %w", err)
+	}
+	return &initState{ConfigPath: configPath, Created: configFile == "", SkillPaths: skillPaths}, nil
 }
 
 func printWorkspaceInitialized(cmd *cobra.Command, state *initState) error {
@@ -125,7 +134,11 @@ func workspaceInitializedMessage(state *initState) string {
 			}
 		}
 	}
-	return fmt.Sprintf("Workspace configuration %s at %s", verb, configPath)
+	message := fmt.Sprintf("Workspace configuration %s at %s", verb, configPath)
+	for _, skillPath := range state.SkillPaths {
+		message += "\nInstalled Dagger skill at " + skillPath
+	}
+	return message
 }
 
 func printWorkspaceNextSteps(cmd *cobra.Command) error {

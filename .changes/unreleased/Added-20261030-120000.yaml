@@ -1,0 +1,12 @@
+kind: Added
+body: |
+  Install a Dagger skill in existing workspace skill directories during `dagger init`.
+
+  Detect `.agents/skills`, `.claude/skills`, `.cursor/skills`, `.gemini/skills`,
+  `.github/skills`, and `.opencode/skills` at the workspace root. Add guidance
+  for checks, generators, and modules. Preserve existing Dagger skills and
+  skip symbolic links.
+time: 2026-10-30T12:00:00.000000000-07:00
+custom:
+  Author: shykes
+  PR: "14994"
