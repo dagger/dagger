@@ -15,6 +15,24 @@ type ModuleTypes {
             .withCachePolicy(FunctionCachePolicy.PER_SESSION)
         )
         .withFunction(
+          function("check_fail_exec", typeDef.withOptional(true).withKind(TypeDefKind.VOID_KIND))
+            .withDescription("A check that runs a command that fails, and lets its error propagate.")
+            .withCachePolicy(FunctionCachePolicy.PER_SESSION)
+            .withCheck
+        )
+        .withFunction(
+          function("check_fail_native", typeDef.withOptional(true).withKind(TypeDefKind.VOID_KIND))
+            .withDescription("A check that logs to stdout and stderr, then raises an error of its own.")
+            .withCachePolicy(FunctionCachePolicy.PER_SESSION)
+            .withCheck
+        )
+        .withFunction(
+          function("check_spans", typeDef.withOptional(true).withKind(TypeDefKind.VOID_KIND))
+            .withDescription("A check that runs its steps under spans of its own, one of which fails, then raises.")
+            .withCachePolicy(FunctionCachePolicy.PER_SESSION)
+            .withCheck
+        )
+        .withFunction(
           function("fail_api", typeDef.withKind(TypeDefKind.STRING_KIND))
             .withDescription("Logs a line, then reads a file that doesn't exist, and lets the error propagate.")
             .withCachePolicy(FunctionCachePolicy.PER_SESSION)

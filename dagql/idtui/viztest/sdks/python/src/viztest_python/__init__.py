@@ -1,6 +1,7 @@
 """The external Python SDK's fixture for the golden tests.
 
-Every SDK fixture has the same functions, so their goldens line up.
+Every SDK fixture has the same functions, so their goldens line up. The check
+functions are `dagger check`'s cases; see sdkCheckCases.
 """
 
 from __future__ import annotations
@@ -8,10 +9,15 @@ from __future__ import annotations
 import sys
 import time
 
+from opentelemetry import trace
+from opentelemetry.trace import Status, StatusCode
+
 import dagger
-from dagger import function, object_type
+from dagger import check, function, object_type
 from dagger_clients.core import Container, core
 from dagger_clients.sdk_dep import sdk_dep
+
+tracer = trace.get_tracer(__name__)
 
 
 def failing_exec() -> Container:
@@ -85,3 +91,29 @@ class ViztestPython:
         """Logs a line, then calls a function of a dependency whose command fails."""
         print("python function stdout", flush=True)
         return await sdk_dep().fail_exec()
+
+    @function(cache="session")
+    @check
+    def check_fail_native(self) -> None:
+        """A check that logs to stdout and stderr, then raises an error of its own."""
+        log_both()
+        raise ValueError("python check failed natively")
+
+    @function(cache="session")
+    @check
+    async def check_fail_exec(self) -> None:
+        """A check that runs a command that fails, and lets its error propagate."""
+        await failing_exec().sync()
+
+    @function(cache="session")
+    @check
+    def check_spans(self) -> None:
+        """A check that runs its steps under spans of its own, one of which fails, then raises."""
+        failed = []
+        for package in ("core", "web"):
+            with tracer.start_as_current_span(f"tsc {package}") as span:
+                if package == "web":
+                    print("web: 2 type errors", file=sys.stderr, flush=True)
+                    span.set_status(Status(StatusCode.ERROR, "2 type errors"))
+                    failed.append(package)
+        raise RuntimeError(f"type errors in {', '.join(failed)}")

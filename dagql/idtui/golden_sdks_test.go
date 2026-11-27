@@ -11,6 +11,9 @@ import (
 
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
+
+	"github.com/dagger/dagger/dagql/dagui"
 )
 
 // sdkFixture is a module of viztest/sdks, written with one of the external,
@@ -233,6 +236,91 @@ func sdkExamples() []Example {
 			NormalizeSDK: true,
 			Setup:        brokenSDKFixture(module, broken, fx.source, fx.breakage),
 		})
+	}
+	return examples
+}
+
+// sdkCheckCase is a check function SDK fixtures implement, run with
+// `dagger check` in the fixture's own workspace, viztest/sdks/checks/<lang>,
+// whose only module is the fixture.
+type sdkCheckCase struct {
+	function string
+	// the fixtures that implement it
+	langs []string
+	// what a golden can't show; see golden_checks_test.go
+	db   func(t *testctx.T, db *dagui.DB, lang string)
+	logs func(t *testctx.T, db *dagui.DB, logs []sdklog.Record, lang string)
+}
+
+// failingExecCmd is the command of the fixtures' failingExec.
+const failingExecCmd = "echo exec stdout; sleep 0.1; echo exec stderr >&2; exit 1"
+
+var sdkCheckCases = []sdkCheckCase{
+	// Logs, then fails with an error of its own: the check is the error's
+	// origin, and the logs are the check's, as a function's are its row's.
+	// Not the hidden Type.__check_<fn> span the function runs under, which
+	// rendered as a cryptic row of its own.
+	{
+		function: "check-fail-native",
+		langs:    []string{"dang", "python"},
+		db: func(t *testctx.T, db *dagui.DB, _ string) {
+			assertCheckIsOwnOrigin(t, db, "check-fail-native")
+		},
+		logs: func(t *testctx.T, db *dagui.DB, logs []sdklog.Record, lang string) {
+			assertLoggedOnCheck(t, db, logs, "check-fail-native", lang+" function stdout")
+		},
+	},
+	// Runs a withExec that fails, the error unhandled: the exec stays the
+	// origin, with its logs.
+	{
+		function: "check-fail-exec",
+		langs:    []string{"dang", "python"},
+		db: func(t *testctx.T, db *dagui.DB, _ string) {
+			assertCheckOriginIsExec(t, db, "check-fail-exec", failingExecCmd)
+		},
+	},
+	// Trace f63854c7 (typesafe-core): a Python check runs its steps under
+	// spans of its own, one of which fails, then raises. The SDK reports
+	// the error with an origin the engine gives it, the check; the spans
+	// and the logs are the check's too.
+	{
+		function: "check-spans",
+		langs:    []string{"python"},
+		db: func(t *testctx.T, db *dagui.DB, _ string) {
+			assertCheckIsOwnOrigin(t, db, "check-spans")
+			assertNotUnderCheckRun(t, db, "tsc core", "tsc web")
+		},
+		logs: func(t *testctx.T, db *dagui.DB, logs []sdklog.Record, _ string) {
+			assertLoggedOnCheck(t, db, logs, "check-spans", "web: 2 type errors")
+		},
+	},
+}
+
+// sdkCheckExamples are the golden examples of sdkCheckCases.
+func sdkCheckExamples() []Example {
+	var examples []Example
+	for _, c := range sdkCheckCases {
+		for _, lang := range c.langs {
+			ex := Example{
+				Name:         "sdks-" + lang + "-" + c.function,
+				Golden:       "sdks/" + lang + "/" + c.function,
+				Module:       "./viztest/sdks/checks/" + lang,
+				Function:     c.function,
+				Check:        true,
+				Fail:         true,
+				NormalizeSDK: true,
+				OutputTest: func(t *testctx.T, out string) {
+					require.NotContains(t, out, "__check_", "the report must not name a check's run span")
+				},
+			}
+			if c.db != nil {
+				ex.DBTest = func(t *testctx.T, db *dagui.DB) { c.db(t, db, lang) }
+			}
+			if c.logs != nil {
+				ex.LogTest = func(t *testctx.T, db *dagui.DB, logs []sdklog.Record) { c.logs(t, db, logs, lang) }
+			}
+			examples = append(examples, ex)
+		}
 	}
 	return examples
 }

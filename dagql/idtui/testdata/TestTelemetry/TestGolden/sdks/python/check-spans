@@ -1,0 +1,15 @@
+Expected stderr:
+
+CHECKS  ✘ 1 failed
+✘ dag://?check=check-spans X.Xs ERROR
+  ┃ web: 2 type errors
+  ┃ Traceback (most recent call last):
+  ┃   File "/src/sha256:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX/viztest/sdks/python/src/viztest_python/__init__.py", line XXX, in check_spans
+  ┃     raise RuntimeError(f"type errors in {', '.join(failed)}")
+  ┃ RuntimeError: type errors in web
+  ! type errors in web
+  ✘ tsc web X.Xs ERROR
+  ! 2 type errors
+
+RUN LOCALLY
+  dagger check "dag://?check=check-spans"

@@ -1,0 +1,7 @@
+# The workspace the golden tests run `dagger check` in for the python
+# fixture (see sdkCheckExamples in dagql/idtui/golden_sdks_test.go): the
+# fixture alone, so its checks are the workspace's.
+
+[modules.viztest-python]
+source = "../../python"
+main = true

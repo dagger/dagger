@@ -1,0 +1,9 @@
+Expected stderr:
+
+CHECKS  ✘ 1 failed
+✘ dag://?check=check-fail-native X.Xs ERROR
+  ┃ dang function stdout
+  ! dang check failed natively
+
+RUN LOCALLY
+  dagger check "dag://?check=check-fail-native"
