@@ -2,6 +2,7 @@ package client
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/tls"
@@ -14,6 +15,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptrace"
+	"net/textproto"
 	"net/url"
 	"os"
 	"slices"
@@ -24,6 +26,7 @@ import (
 	"time"
 
 	"github.com/Khan/genqlient/graphql"
+	"github.com/cenkalti/backoff/v4"
 	controlapi "github.com/dagger/dagger/internal/buildkit/api/services/control"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	bkauth "github.com/dagger/dagger/internal/buildkit/session/auth"
@@ -206,6 +209,10 @@ type Params struct {
 	// ProfileEBPF names the eBPF programs to profile the session with.
 	ProfileEBPF []string
 
+	// ReconnectGracePeriod is how long to reconnect for after the connection
+	// to the engine drops; the engine keeps the session that long too.
+	ReconnectGracePeriod time.Duration
+
 	// HostPolicy limits what this client does on its host for the engine.
 	// Nil serves every host request. See HostPolicy.
 	HostPolicy *HostPolicy
@@ -316,6 +323,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
 	params.SkipWorkspaceModules = false
 
 	c := &Client{Params: params}
+	c.ReconnectGracePeriod = min(c.ReconnectGracePeriod, engine.MaxReconnectGracePeriod)
 
 	if params.HostPolicy != nil {
 		c.hostPolicy, err = newHostPolicyEnforcer(params.HostPolicy)
@@ -886,16 +894,61 @@ func (c *Client) runSessionAttachables() {
 			return err
 		}
 		defer cancel(errors.New("session attachables stopped"))
-		c.sessionSrv.Run(ctx)
-		if ctx.Err() == nil && !c.closing.Load() {
+		defer c.sessionSrv.Stop()
+		for {
+			c.sessionSrv.serveConn(ctx, c.sessionSrv.Conn)
+			if ctx.Err() != nil || c.closing.Load() {
+				return nil
+			}
 			// Neither Close nor a failed init stopped the attachables: the
-			// engine closed the connection, and with it retired the session.
-			err := c.sessionLostError(time.Now())
-			c.sessionLost.Store(&err)
-			slog.Error("engine closed the session", "error", err)
+			// connection dropped, or the engine closed it and retired the session.
+			if c.ReconnectGracePeriod <= 0 {
+				c.loseSession(c.sessionLostError(time.Now()))
+				return nil
+			}
+			conn, err := c.reconnectSessionAttachables(ctx)
+			if err == nil {
+				c.sessionSrv.Conn = conn
+				continue
+			}
+			if ctx.Err() != nil || c.closing.Load() {
+				return nil
+			}
+			c.loseSession(fmt.Errorf("lost the connection to the engine and could not resume session %q: %w", c.SessionID, err))
+			return nil
 		}
-		return nil
 	})
+}
+
+func (c *Client) loseSession(err error) {
+	c.sessionLost.Store(&err)
+	slog.Error("lost the session", "error", err)
+}
+
+func (c *Client) reconnectSessionAttachables(ctx context.Context) (net.Conn, error) {
+	slog.Warn("lost the session attachables connection; reconnecting", "gracePeriod", c.ReconnectGracePeriod)
+	b := backoff.NewExponentialBackOff(
+		backoff.WithMaxInterval(2*time.Second),
+		backoff.WithMaxElapsedTime(c.ReconnectGracePeriod),
+	)
+	return backoff.RetryWithData(func() (net.Conn, error) {
+		conn, err := c.DialContext(ctx, "", "")
+		if err != nil {
+			return nil, fmt.Errorf("dial: %w", err)
+		}
+		headers := c.AppendHTTPRequestHeaders(http.Header{})
+		headers.Set(engine.ReconnectHeader, "true")
+		err = handshakeSessionAttachables(ctx, conn, headers, c.sessionSrv.MethodURLs)
+		if errors.Is(err, errSessionGone) {
+			conn.Close()
+			return nil, backoff.Permanent(err)
+		}
+		if err != nil {
+			conn.Close()
+			return nil, err
+		}
+		return conn, nil
+	}, backoff.WithContext(b, ctx))
 }
 
 // sessionLostError explains a session the engine retired by closing its
@@ -933,12 +986,25 @@ func (c *Client) HostPolicyViolation() error {
 // fails instead of hanging forever.
 var sessionAttachablesHandshakeTimeout = time.Minute
 
+var errSessionGone = errors.New("engine no longer has the session")
+
 func ConnectSessionAttachables(
 	ctx context.Context,
 	conn net.Conn,
 	headers http.Header,
 	attachables ...SessionAttachable,
-) (_ *SessionAttachablesServer, rerr error) {
+) (*SessionAttachablesServer, error) {
+	sessionSrv := NewSessionAttachablesServer(ctx, conn, attachables...)
+	if err := handshakeSessionAttachables(ctx, conn, headers, sessionSrv.MethodURLs); err != nil {
+		return nil, err
+	}
+	return sessionSrv, nil
+}
+
+// handshakeSessionAttachables asks the engine to use conn to reach the
+// session attachables with methodURLs. Once it returns, the engine is a gRPC
+// client of the attachables on conn.
+func handshakeSessionAttachables(ctx context.Context, conn net.Conn, headers http.Header, methodURLs []string) (rerr error) {
 	// The handshake reads and writes conn directly, so neither ctx nor any
 	// transport timeout reaches it. Unblock it by closing conn if ctx ends or
 	// the engine doesn't answer in time. Closing, not a deadline: conns from
@@ -956,8 +1022,7 @@ func ConnectSessionAttachables(
 		}
 	}()
 
-	sessionSrv := NewSessionAttachablesServer(ctx, conn, attachables...)
-	for _, methodURL := range sessionSrv.MethodURLs {
+	for _, methodURL := range methodURLs {
 		headers.Add(engine.SessionMethodNameMetaKey, methodURL)
 	}
 	telemetry.Propagator.Inject(ctx, propagation.HeaderCarrier(headers))
@@ -973,12 +1038,12 @@ func ConnectSessionAttachables(
 		Host:   "dagger",
 	}
 	if err := req.Write(conn); err != nil {
-		return nil, fmt.Errorf("write request: %w", err)
+		return fmt.Errorf("write request: %w", err)
 	}
 
 	resp, err := http.ReadResponse(bufio.NewReader(conn), req)
 	if err != nil {
-		return nil, fmt.Errorf("read response: %w", err)
+		return fmt.Errorf("read response: %w", err)
 	}
 	if resp.Body != nil {
 		defer resp.Body.Close()
@@ -988,17 +1053,21 @@ func ConnectSessionAttachables(
 		if resp.Body != nil {
 			respBody, _ = io.ReadAll(resp.Body)
 		}
-		return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(respBody))
+		err := fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(respBody))
+		if resp.StatusCode == http.StatusGone {
+			err = fmt.Errorf("%w: %w", errSessionGone, err)
+		}
+		return err
 	}
 
 	// We tell the server that we have fully read the response and will now switch to serving gRPC
 	// by sending a single byte ack. This prevents the server from starting to send gRPC client
 	// traffic while we are still reading the previous HTTP response.
 	if _, err := conn.Write([]byte{0}); err != nil {
-		return nil, fmt.Errorf("write ack: %w", err)
+		return fmt.Errorf("write ack: %w", err)
 	}
 
-	return sessionSrv, nil
+	return nil
 }
 
 func NewSessionAttachablesServer(ctx context.Context, conn net.Conn, attachables ...SessionAttachable) *SessionAttachablesServer {
@@ -1076,14 +1145,20 @@ func (h *healthCheckObserver) longestGap(now time.Time) time.Duration {
 }
 
 func (srv *SessionAttachablesServer) Run(ctx context.Context) {
-	defer srv.Conn.Close()
 	defer srv.Stop()
+	srv.serveConn(ctx, srv.Conn)
+}
+
+// serveConn serves the attachables on conn until ctx ends or conn closes.
+// The server can serve another connection after it, until it is stopped.
+func (srv *SessionAttachablesServer) serveConn(ctx context.Context, conn net.Conn) {
+	defer conn.Close()
 
 	doneCh := make(chan struct{})
 	go func() {
 		defer close(doneCh)
 		//nolint:staticcheck // SA1019: x/net's HTTP/2 client and server are deprecated in favor of net/http's; moving off them is its own change
-		(&http2.Server{}).ServeConn(srv.Conn, &http2.ServeConnOpts{
+		(&http2.Server{}).ServeConn(conn, &http2.ServeConnOpts{
 			Context: ctx,
 			Handler: srv.Server,
 		})
@@ -2223,6 +2298,7 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		CloudClaimID:                   cloudClaimID,
 		Profile:                        c.Profile,
 		ProfileEBPF:                    c.ProfileEBPF,
+		ReconnectGracePeriod:           c.ReconnectGracePeriod,
 	}
 	if c.primarySpan.IsValid() {
 		md.PrimaryTraceID = c.primarySpan.TraceID().String()
@@ -2277,8 +2353,9 @@ func (c *Client) newHTTPClient() *httpClient {
 				},
 			},
 		},
-		headers:     c.AppendHTTPRequestHeaders(http.Header{}),
-		secretToken: c.engineToken(),
+		headers:              c.AppendHTTPRequestHeaders(http.Header{}),
+		secretToken:          c.engineToken(),
+		reconnectGracePeriod: c.ReconnectGracePeriod,
 	}
 }
 
@@ -2302,6 +2379,11 @@ type httpClient struct {
 	inner       *http.Client
 	headers     http.Header
 	secretToken string
+	// reconnectGracePeriod > 0 makes queries resumable
+	reconnectGracePeriod time.Duration
+	// released are resumable queries the engine can forget
+	releasedMu sync.Mutex
+	released   []string
 }
 
 func (c *httpClient) Do(req *http.Request) (*http.Response, error) {
@@ -2323,7 +2405,123 @@ func (c *httpClient) Do(req *http.Request) (*http.Response, error) {
 	req.Header.Del("Connection")
 	req.Header.Del("Keep-Alive")
 
+	if c.reconnectGracePeriod > 0 && req.Method == http.MethodPost && req.URL.Path == engine.QueryEndpoint {
+		return c.doResumable(req)
+	}
 	return c.inner.Do(req)
+}
+
+// doResumable sends a query with an ID, and sends it again with the same ID
+// after its connection drops, until the reconnect grace period ends. It
+// resends only a query the engine said it has, or one that never reached the
+// connection, so the engine runs it at most once.
+func (c *httpClient) doResumable(req *http.Request) (*http.Response, error) {
+	body, err := io.ReadAll(req.Body)
+	req.Body.Close()
+	if err != nil {
+		return nil, fmt.Errorf("read request body: %w", err)
+	}
+	id := rand.Text()
+	req.Header.Set(engine.ResumableQueryHeader, id)
+	for _, released := range c.takeReleased() {
+		req.Header.Add(engine.ResumableQueryReleaseHeader, released)
+	}
+
+	b := backoff.NewExponentialBackOff(
+		backoff.WithMaxInterval(2*time.Second),
+		backoff.WithMaxElapsedTime(c.reconnectGracePeriod),
+	)
+	var acked bool
+	resp, err := backoff.RetryNotifyWithData(func() (*http.Response, error) {
+		var attempt resumableAttempt
+		resp, err := c.sendResumable(req, body, acked, &attempt)
+		switch {
+		case err == nil:
+			return resp, nil
+		case attempt.acked.Load():
+			// the engine has the query and waits a whole grace period for it again
+			acked = true
+			b.Reset()
+		case attempt.wrote.Load() && !acked:
+			// the engine may have the query, but never said it can resume it
+			return nil, backoff.Permanent(err)
+		}
+		return nil, err
+	}, backoff.WithContext(b, req.Context()), func(err error, _ time.Duration) {
+		slog.Warn("lost the connection during a query; reconnecting", "error", err)
+	})
+	if err != nil {
+		go c.releaseNow(id)
+		return nil, err
+	}
+	c.releaseLater(id)
+	return resp, nil
+}
+
+// resumableAttempt records how far one send of a resumable query got.
+type resumableAttempt struct {
+	wrote atomic.Bool
+	acked atomic.Bool
+}
+
+// sendResumable sends a resumable query once and reads its whole response, so
+// a drop while it arrives is retried too.
+func (c *httpClient) sendResumable(req *http.Request, body []byte, resend bool, attempt *resumableAttempt) (*http.Response, error) {
+	trace := &httptrace.ClientTrace{
+		WroteRequest: func(info httptrace.WroteRequestInfo) { attempt.wrote.Store(info.Err == nil) },
+		Got1xxResponse: func(code int, _ textproto.MIMEHeader) error {
+			attempt.acked.Store(code == http.StatusProcessing)
+			return nil
+		},
+	}
+	r := req.Clone(httptrace.WithClientTrace(req.Context(), trace))
+	r.Body = io.NopCloser(bytes.NewReader(body))
+	if resend {
+		r.Header.Set(engine.ReconnectHeader, "true")
+	}
+	resp, err := c.inner.Do(r)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	resp.Body = io.NopCloser(bytes.NewReader(respBody))
+	return resp, nil
+}
+
+// releaseLater has the next query tell the engine to forget the query with id.
+func (c *httpClient) releaseLater(id string) {
+	c.releasedMu.Lock()
+	defer c.releasedMu.Unlock()
+	c.released = append(c.released, id)
+}
+
+func (c *httpClient) takeReleased() []string {
+	c.releasedMu.Lock()
+	defer c.releasedMu.Unlock()
+	released := c.released
+	c.released = nil
+	return released
+}
+
+// releaseNow tells the engine to cancel and forget the query with id, which
+// the client no longer waits for.
+func (c *httpClient) releaseNow(id string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, "http://dagger"+engine.QueryEndpoint, nil)
+	if err != nil {
+		return
+	}
+	req.Header.Set(engine.ResumableQueryReleaseHeader, id)
+	resp, err := c.Do(req)
+	if err != nil {
+		return
+	}
+	resp.Body.Close()
 }
 
 func (c *httpClient) Close() error {

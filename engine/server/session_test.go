@@ -6099,3 +6099,27 @@ func TestHTTPHandlerFuncLabelsGraphQLErrorsJSON(t *testing.T) {
 		})
 	}
 }
+
+func TestMainClientDisconnectKeepsSessionForReconnectGracePeriod(t *testing.T) {
+	t.Parallel()
+
+	const grace = 300 * time.Millisecond
+	srv := newTeardownTestServer(t)
+	sess, client := newTeardownTestSession(srv, "s", "m", 1)
+	client.clientMetadata = &engine.ClientMetadata{ReconnectGracePeriod: grace}
+	releaseTeardownDrain(sess)
+
+	// disconnect, reconnect, and disconnect again: only the second
+	// disconnect's grace period counts
+	srv.releaseClientConnection(context.Background(), sess, client)
+	time.Sleep(grace / 2)
+	client.stateMu.Lock()
+	client.activeCount = 1
+	client.stateMu.Unlock()
+	srv.releaseClientConnection(context.Background(), sess, client)
+	time.Sleep(grace * 3 / 4)
+	require.Equal(t, sessionStateInitialized, sess.state.Load())
+	require.Eventually(t, func() bool {
+		return !sessionInRegistry(srv, "s") && sessionIDReleased(srv, "s")
+	}, 10*time.Second, 10*time.Millisecond)
+}

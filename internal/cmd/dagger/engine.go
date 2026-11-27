@@ -318,6 +318,7 @@ func engineConnectionParams(params client.Params) (client.Params, error) {
 		return params, errors.New("--profile-ebpf needs --profile")
 	}
 	params.ProfileEBPF = slices.Clone(profileEBPFFlag)
+	params.ReconnectGracePeriod = reconnectGracePeriod
 	return params, nil
 }
 

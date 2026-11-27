@@ -1,0 +1,6 @@
+kind: Experimental
+body: Add a hidden `--reconnect-grace-period` flag. With it, the CLI reconnects after its connection to the engine drops, and resumes the session and any query still running.
+time: 2026-11-25T02:03:03.04985438Z
+custom:
+    Author: anshulnoori
+    PR: "15270"

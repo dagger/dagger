@@ -118,7 +118,7 @@ func TestMayCallEngineFlags(t *testing.T) {
 	flags := pflag.NewFlagSet("engine", pflag.ContinueOnError)
 	installMayCallEngineFlags(flags)
 
-	expected := []string{"cloud", "engine", "interactive", "interactive-command", "profile", "profile-ebpf", "shell-command-on-error", "shell-on-error"}
+	expected := []string{"cloud", "engine", "interactive", "interactive-command", "profile", "profile-ebpf", "reconnect-grace-period", "shell-command-on-error", "shell-on-error"}
 	var count int
 	flags.VisitAll(func(*pflag.Flag) { count++ })
 	require.Equal(t, len(expected), count)

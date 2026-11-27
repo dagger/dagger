@@ -84,6 +84,7 @@ type Server struct {
 	// execs get with daggerInDaggerNewSession; built on first use.
 	newSessionGRPCOnce sync.Once
 	newSessionGRPC     *grpc.Server
+	resumableQueries   resumableQueries
 	// engineInstanceID names this engine process: a random ID created once at
 	// startup, the service.instance.id of its telemetry.
 	engineInstanceID string
