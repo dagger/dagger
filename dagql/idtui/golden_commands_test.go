@@ -119,6 +119,9 @@ func sdkCommandExamples() []Example {
 			},
 		},
 		// A generator with nothing to change.
+		//
+		// BAD: as for generate-file, the generator is named
+		// dag://?name=generateNothing.
 		Example{
 			Name:         "sdks-dang-generate-nothing",
 			Golden:       "sdks/dang/generate-nothing",
