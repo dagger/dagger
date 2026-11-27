@@ -228,7 +228,18 @@ func aroundFuncTelemetry(
 	if plumbing, ok := moduleProcessPlumbingParent(ctx, spanName, req.Field); ok {
 		startCtx = trace.ContextWithSpanContext(ctx, plumbing)
 	}
+	prev := trace.SpanContextFromContext(startCtx)
 	ctx, span := Tracer(ctx).Start(startCtx, spanName, trace.WithAttributes(attrs...))
+	// A span whose attribution goes to its caller is, for attribution, a
+	// profiling span: the caller's span is the one users see, so the call's
+	// error origin, its containers' traceparent (their logs and SDK spans)
+	// and its function's output name that span (see dagql.MarkProfilingSpan),
+	// and its end never stamps it as an origin (dagql.EndProfSpan).
+	end := telemetry.EndWithCause
+	if req.CallerAttributedTelemetry {
+		ctx = dagql.MarkProfilingSpan(ctx, prev)
+		end = dagql.EndProfSpan
+	}
 	initCacheEvidence(span, req)
 
 	// Fill any gaps in this call's recipe closure over the payload log lane.
@@ -246,7 +257,7 @@ func aroundFuncTelemetry(
 			"digest", callDigest.String(),
 		)
 
-		defer telemetry.EndWithCause(span, err)
+		defer end(span, err)
 		span.SetAttributes(callEndAttrs(ctx, span, req, res, cached)...)
 		logResult(ctx, res, req.ResultCall)
 	}

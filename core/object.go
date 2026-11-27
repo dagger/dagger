@@ -1746,11 +1746,15 @@ func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) ([]da
 		// return, so a result is kept only when the whole check passed.
 		runSpec := *field.Spec
 		runSpec.Name = checkRunFieldName(fun.Name)
-		// Its span is plumbing between the check and the function's own
-		// work: frontends show that work in its place. Without this, a failed
-		// check shows a Type.__check_<function> row, since failed spans show
-		// even when they're internal.
+		// Its span is the check function's call, which the check's own span
+		// reports: frontends show the function's work in its place. Without
+		// this, a failed check shows a Type.__check_<function> row, since
+		// failed spans show even when they're internal.
 		runSpec.PassthroughTelemetry = true
+		// For the same reason, the function's error origin, its output and
+		// its SDK's spans belong on the check's span, not on this one, which
+		// no frontend renders.
+		runSpec.CallerAttributedTelemetry = true
 		authoredFunc := field.Func
 		fields = append(fields, dagql.Field[*ModuleObject]{
 			Spec: &runSpec,

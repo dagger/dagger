@@ -1,0 +1,14 @@
+Expected stderr:
+
+CHECKS  ✘ 1 failed
+✘ dag://?check=check-fail-native X.Xs ERROR
+  ┃ python function stdout
+  ┃ python function stderr
+  ┃ Traceback (most recent call last):
+  ┃   File "/src/sha256:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX/viztest/sdks/python/src/viztest_python/__init__.py", line XXX, in check_fail_native
+  ┃     raise ValueError("python check failed natively")
+  ┃ ValueError: python check failed natively
+  ! python check failed natively
+
+RUN LOCALLY
+  dagger check "dag://?check=check-fail-native"

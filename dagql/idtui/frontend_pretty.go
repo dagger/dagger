@@ -9008,6 +9008,19 @@ func (fe *frontendPretty) checkRootCauses(root *dagui.Span) []*dagui.Span {
 
 // CheckRootCauses returns causal error origins, falling back to failed leaves.
 // It is shared by the interactive frontend and bounded inspection reports.
+//
+// A passthrough span is never a failed leaf: frontends show its children in
+// its place, and it has no row of its own. A failed passthrough leaf, such as
+// the span a module's SDK runs a check's function under, is replaced by the
+// nearest failed span above it on the walk from root that isn't passthrough,
+// or root itself: for a check that failed on its own span, the check.
+//
+// The walk doesn't enter a module function call's plumbing (a module
+// entrypoint's span, Span.FunctionPlumbing) that didn't fail either: an
+// entrypoint ends its plumbing without an error when the function failed
+// with one of its own, and reports that failure as its process's failed exec
+// too, which only repeats it. Plumbing that failed on its own, such as a
+// module's build, is walked like any other span.
 func CheckRootCauses(root *dagui.Span) []*dagui.Span {
 	if root == nil {
 		return nil
@@ -9028,9 +9041,15 @@ func CheckRootCauses(root *dagui.Span) []*dagui.Span {
 		return origins
 	}
 	visited := map[dagui.SpanID]bool{}
-	var walk func(s *dagui.Span)
-	walk = func(s *dagui.Span) {
-		if visited[s.ID] {
+	// shown is the span that shows a failed passthrough leaf beneath it. The
+	// walk carries it rather than climbing the leaf's parents: children
+	// include cause-linked spans, whose parents can be outside root.
+	skipped := func(s *dagui.Span) bool {
+		return s != root && s.FunctionPlumbing && !s.IsFailed()
+	}
+	var walk func(s, shown *dagui.Span)
+	walk = func(s, shown *dagui.Span) {
+		if visited[s.ID] || skipped(s) {
 			return
 		}
 		visited[s.ID] = true
@@ -9040,19 +9059,26 @@ func CheckRootCauses(root *dagui.Span) []*dagui.Span {
 			}
 			failedChild := false
 			for _, c := range s.ChildSpans.Spans() {
-				if c.IsFailedOrCausedFailure() {
+				if !skipped(c) && c.IsFailedOrCausedFailure() {
 					failedChild = true
 				}
 			}
 			if !failedChild && len(s.ErrorOrigins.Spans()) == 0 {
-				add(s)
+				if s.Passthrough {
+					add(shown)
+				} else {
+					add(s)
+				}
+			}
+			if !s.Passthrough {
+				shown = s
 			}
 		}
 		for _, c := range s.ChildSpans.Spans() {
-			walk(c)
+			walk(c, shown)
 		}
 	}
-	walk(root)
+	walk(root, root)
 	return origins
 }
 

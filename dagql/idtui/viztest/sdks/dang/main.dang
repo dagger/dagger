@@ -1,7 +1,8 @@
 """
 The external Dang SDK's fixture for the golden tests: every SDK fixture has
 the same functions, so their goldens line up. Dang has no process to exit,
-so there is no failExitCode, and print writes only to stdout.
+so there is no failExitCode, and print writes only to stdout. The check
+functions are `dagger check`'s cases; see sdkCheckCases.
 """
 type ViztestDang {
   """
@@ -58,6 +59,29 @@ type ViztestDang {
   callFailingDepLogged: String! @cache(policy: FunctionCachePolicy.PER_SESSION) {
     print("dang function stdout")
     sdkDep.failExec
+  }
+
+  """
+  A check that logs to stdout, then raises an error of its own.
+  """
+  checkFailNative: Void @check @cache(policy: FunctionCachePolicy.PER_SESSION) {
+    print("dang function stdout")
+    raise "dang check failed natively"
+  }
+
+  """
+  A check that raises a Dagger Error, which it returns as an SDK returns one.
+  """
+  checkReturnedError: Void @check @cache(policy: FunctionCachePolicy.PER_SESSION) {
+    raise error(message: "dang check returned an error")
+  }
+
+  """
+  A check that runs a command that fails, and lets its error propagate.
+  """
+  checkFailExec: Void @check @cache(policy: FunctionCachePolicy.PER_SESSION) {
+    failingExec.sync
+    null
   }
 
   let failingExec: Container! {

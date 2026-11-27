@@ -214,6 +214,11 @@ func beginOTelPublishResult(ctx context.Context) trace.Span {
 // user-facing (non-profiling) span reachable from the context so those
 // surfaces attribute exactly as they did before the profiling emission
 // existed.
+//
+// A call span whose field sets FieldSpec.CallerAttributedTelemetry (a check's
+// hidden __check_<fn> run field) follows the same rule: core.AroundFunc marks
+// it with MarkProfilingSpan and ends it with EndProfSpan, so the caller's span
+// is the one these surfaces name.
 
 type userFacingSpan struct {
 	// sc is the last non-profiling span that was current on this context
@@ -233,7 +238,9 @@ type userFacingSpanKey struct{}
 // prev (the span that was current before the profiling span started) — unless
 // prev is itself the previously marked profiling span, in which case the
 // earlier user-facing record is kept. Exported for the profiling-span begin
-// sites outside this package (engineutil exec.run, core service.start).
+// sites outside this package (engineutil exec.run, core service.start) and
+// for call spans whose attribution goes to their caller
+// (FieldSpec.CallerAttributedTelemetry).
 func MarkProfilingSpan(ctx context.Context, prev trace.SpanContext) context.Context {
 	uf, _ := ctx.Value(userFacingSpanKey{}).(userFacingSpan)
 	if !uf.sc.IsValid() || !uf.lastProfiling.IsValid() || prev.SpanID() != uf.lastProfiling {
@@ -265,9 +272,10 @@ func UserFacingSpanContext(ctx context.Context) trace.SpanContext {
 // unrendered span defeats the CLI's already-shown-error suppression (a
 // redundant trailing Error: block) and renders internal spans in the origin
 // sections (e.g. "✘ exec.run"). Origin-stamping stays with the user-visible
-// spans (core.AroundFunc's EndWithCause); origins already tracked in the error
-// are still linked here, exactly as EndWithCause links them, for clean OTel
-// data. Nil-safe.
+// spans (core.AroundFunc's EndWithCause, except for a caller-attributed call
+// span, which ends here; see FieldSpec.CallerAttributedTelemetry); origins
+// already tracked in the error are still linked here, exactly as EndWithCause
+// links them, for clean OTel data. Nil-safe.
 func EndProfSpan(span trace.Span, errPtr *error) {
 	if span == nil {
 		return

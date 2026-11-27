@@ -731,11 +731,12 @@ func (r ObjectResult[T]) preselect(ctx context.Context, srv *Server, sel Selecto
 			Args:           frameArgs,
 			ImplicitInputs: implicitInputs,
 		},
-		TTL:                  field.Spec.TTL,
-		DoNotCache:           field.Spec.DoNotCache != "",
-		IsPersistable:        field.Spec.IsPersistable,
-		DeduplicateTelemetry: field.Spec.DeduplicateTelemetry,
-		PassthroughTelemetry: field.Spec.PassthroughTelemetry,
+		TTL:                       field.Spec.TTL,
+		DoNotCache:                field.Spec.DoNotCache != "",
+		IsPersistable:             field.Spec.IsPersistable,
+		DeduplicateTelemetry:      field.Spec.DeduplicateTelemetry,
+		PassthroughTelemetry:      field.Spec.PassthroughTelemetry,
+		CallerAttributedTelemetry: field.Spec.CallerAttributedTelemetry,
 		// The immediate receiver's type name is free here (r is the receiver);
 		// core.AroundFunc reads it to make the static profile-skip decision without
 		// an egraphMu receiver-resolution lookup per call.
@@ -817,7 +818,8 @@ func (r ObjectResult[T]) call(
 ) (res AnyResult, err error) {
 	// NOTE: named returns are load-bearing: the telemetry done callback
 	// (core.AroundFunc -> telemetry.EndWithCause) stamps the error with the
-	// span's origin marker by writing through the error pointer, and only a
+	// span's origin marker by writing through the error pointer (unless the
+	// field is CallerAttributedTelemetry, whose span never stamps), and only a
 	// named return makes that mutation visible to the caller. With the marker
 	// propagated, ancestor spans link to the origin instead of repeating the
 	// same message, and frontends collapse the duplicates.
@@ -1143,6 +1145,14 @@ type FieldSpec struct {
 	// PassthroughTelemetry keeps this field's telemetry span available for call
 	// metadata while asking the UI to show its children in its place.
 	PassthroughTelemetry bool
+
+	// CallerAttributedTelemetry gives this field's span to its caller's
+	// user-facing span for attribution: error origins, the traceparent of
+	// containers it runs, and so their logs and SDK spans (see
+	// MarkProfilingSpan). For a field whose span no frontend renders but whose
+	// work is what the caller's span reports, such as a check's body. The span
+	// keeps its call attributes.
+	CallerAttributedTelemetry bool
 
 	// extend is used during installation to copy the spec of a previous field
 	// with the same name

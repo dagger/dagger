@@ -155,6 +155,7 @@ so in most cases you should just let it skip.`)
 	// doesn't always run, e.g. after a ctrl-C.
 	exec.Command("rm", "-rf", ".git", ".dagger", "dagger.lock").Run()
 	removeBrokenSDKFixtures()
+	removeFixtureWorkspaceLocks()
 
 	cmd := exec.Command("sh", "-c", "git init && git remote add origin git@github.com:dagger/dagger")
 	if co, err := cmd.CombinedOutput(); err != nil {
@@ -178,6 +179,7 @@ main = true
 		// dagger.lock pins the images the fixtures pull, e.g. the SDK
 		// fixtures' alpine.
 		exec.Command("rm", "-rf", ".git", ".dagger", "dagger.toml", "dagger.lock").Run()
+		removeFixtureWorkspaceLocks()
 	})
 
 	listDir := t.TempDir()
@@ -436,7 +438,7 @@ main = true
 				require.True(t, depCalled)
 			},
 		},
-	}, sdkExamples()...) {
+	}, slices.Concat(sdkExamples(), sdkCheckExamples())...) {
 		testName := ex.Name
 		goldFile := ex.Name
 		if ex.Golden != "" {
@@ -641,10 +643,11 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 	// pull an image, changes the workspace the final run uploads, so that run
 	// would miss what the warm-up cached: warm up again until the lockfile
 	// holds still.
+	lockFiles := ex.workspaceLocks()
 	for warmups := 1; ; warmups++ {
-		before := readWorkspaceLock()
+		before := readWorkspaceLocks(lockFiles)
 		warmupOnce(ctx, t, ex, daggerArgs, testEnv, s.Home, realHome)
-		if readWorkspaceLock() == before {
+		if readWorkspaceLocks(lockFiles) == before {
 			break
 		}
 		if warmups == maxWarmups {
@@ -706,11 +709,40 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 // maxWarmups bounds the warm-ups of an example whose lockfile keeps changing.
 const maxWarmups = 3
 
-// readWorkspaceLock returns the contents of the golden workspace's lockfile,
-// or "" when there is none.
-func readWorkspaceLock() string {
-	data, _ := os.ReadFile("dagger.lock")
-	return string(data)
+// workspaceLocks returns the lockfiles the workspace an example runs in can
+// write: the suite's, and for a `dagger check` or `dagger generate` in a
+// fixture workspace of its own (a Module directory with a dagger.toml, such
+// as viztest/sdks/checks/python), that workspace's, which it writes when the
+// suite's doesn't exist yet.
+func (ex Example) workspaceLocks() []string {
+	locks := []string{"dagger.lock"}
+	if (ex.Check || ex.Generate) && ex.Module != "" {
+		if _, err := os.Stat(filepath.Join(ex.Module, "dagger.toml")); err == nil {
+			locks = append(locks, filepath.Join(ex.Module, "dagger.lock"))
+		}
+	}
+	return locks
+}
+
+// readWorkspaceLocks returns the contents of lockfiles, "" for one that
+// doesn't exist.
+func readWorkspaceLocks(paths []string) string {
+	var contents []string
+	for _, path := range paths {
+		data, _ := os.ReadFile(path)
+		contents = append(contents, string(data))
+	}
+	return strings.Join(contents, "\x00")
+}
+
+// removeFixtureWorkspaceLocks removes the lockfiles of viztest's fixture
+// workspaces. The suite keeps them until it ends, so the examples of one
+// workspace share its pins.
+func removeFixtureWorkspaceLocks() {
+	locks, _ := filepath.Glob("viztest/sdks/checks/*/dagger.lock")
+	for _, lock := range locks {
+		os.Remove(lock)
+	}
 }
 
 // warmupOnce runs an example's command once, to cache what it caches, without
