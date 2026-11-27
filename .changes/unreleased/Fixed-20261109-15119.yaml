@@ -1,0 +1,12 @@
+kind: Fixed
+body: |
+  A Go or Dang module whose main object has the name of a core type, such as
+  a module named `directory` or `container`, is refused when it loads, with
+  `type "Directory" is already defined by module "daggercore"`, as modules of
+  the other SDKs already were. Before, such a module loaded, but every call
+  through it failed, and a Dang module that called the core function of the
+  same name hung.
+time: 2026-11-09T20:40:00Z
+custom:
+  Author: sipsma
+  PR: "15119"
