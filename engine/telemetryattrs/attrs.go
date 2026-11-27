@@ -1,6 +1,43 @@
 package telemetryattrs
 
 const (
+	// LLMUsageSpan records one shared RoundTripper invocation for a generation
+	// endpoint, not a logical SDK call or every wire attempt (lower transports
+	// may retry internally). Deduplicate exports by (trace ID, span ID), never
+	// by token values. It is independent of the legacy live-progress gauges.
+	// V1 token attributes are provider-reported snapshots, not deltas. Absence
+	// means unavailable; a present zero is measured. Only ended spans are records.
+	// Input/output are raw provider counts: Anthropic input excludes cache reads
+	// and writes; Chat/Responses/Google input includes cache reads. Google output
+	// excludes thoughts; the other protocols include reasoning in output.
+	// Reasoning is a separately reported subset (except Google's excluded
+	// thoughts), not an automatically additive category. Total is the provider's
+	// alternative total, NEVER another additive category. Do not sum snapshots,
+	// total, or these records with the live gauges. The schema versions these
+	// extraction and inclusion rules; no tokenizer estimates or prices are used.
+	LLMUsageSpan                = "llm.usage"
+	LLMUsageSchemaAttr          = "dagger.io/llm.usage.schema"
+	LLMUsageSchemaV1            = "1"
+	LLMUsageScopeAttr           = "dagger.io/llm.usage.scope"
+	LLMUsageInputSemanticsAttr  = "dagger.io/llm.usage.input_semantics"
+	LLMUsageOutputSemanticsAttr = "dagger.io/llm.usage.output_semantics"
+	// Completeness is final, partial, or unavailable, independently of outcome
+	// (success, error, cancelled, interrupted). Final means a terminal provider
+	// usage snapshot, not that every optional category was reported.
+	LLMUsageCompletenessAttr     = "dagger.io/llm.usage.completeness"
+	LLMUsageOutcomeAttr          = "dagger.io/llm.usage.outcome"
+	LLMUsageCacheReadTokensAttr  = "dagger.io/llm.usage.cache_read_tokens"  // #nosec G101 -- telemetry attribute key, not a credential.
+	LLMUsageCacheWriteTokensAttr = "dagger.io/llm.usage.cache_write_tokens" // #nosec G101 -- telemetry attribute key, not a credential.
+	LLMUsageReasoningTokensAttr  = "dagger.io/llm.usage.reasoning_tokens"   // #nosec G101 -- telemetry attribute key, not a credential.
+	LLMUsageTotalTokensAttr      = "dagger.io/llm.usage.total_tokens"       // #nosec G101 -- telemetry attribute key, not a credential.
+	GenAIProviderNameAttr        = "gen_ai.provider.name"
+	GenAIRequestModelAttr        = "gen_ai.request.model"
+	GenAIOperationNameAttr       = "gen_ai.operation.name"
+	LLMUsageInputTokensAttr      = "dagger.io/llm.usage.input_tokens"  // #nosec G101 -- telemetry attribute key, not a credential.
+	LLMUsageOutputTokensAttr     = "dagger.io/llm.usage.output_tokens" // #nosec G101 -- telemetry attribute key, not a credential.
+)
+
+const (
 	// GenAIAgentIDAttr and GenAIAgentNameAttr are OpenTelemetry's GenAI agent
 	// identity attributes, as semconv v1.40.0 named them. semconv v1.43.0, the
 	// version used here, no longer defines the gen_ai attributes, and the UI
