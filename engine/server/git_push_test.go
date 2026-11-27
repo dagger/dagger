@@ -105,6 +105,7 @@ func TestGitPushApprovalOwnerBoundary(t *testing.T) {
 	require.Len(t, questions.asked(), 1)
 	req := questions.asked()[0]
 	require.Equal(t, "Allow push to git@example.com:repo @ refs/heads/main"+by, req.Prompt)
+	require.Equal(t, "Push to git@example.com:repo @ refs/heads/main?", req.Question)
 	require.Equal(t, approvalKindGitPush, req.Kind)
 	require.Equal(t, remote+" @ "+ref, req.Subject)
 	require.False(t, req.Danger)
@@ -116,6 +117,7 @@ func TestGitPushApprovalOwnerBoundary(t *testing.T) {
 	require.Len(t, questions.asked(), 3, "a denial is not remembered")
 	req = questions.asked()[2]
 	require.Equal(t, "Allow force-push to git@example.com:repo @ refs/heads/main"+by, req.Prompt)
+	require.Equal(t, "Force-push to git@example.com:repo @ refs/heads/main?", req.Question)
 	require.Equal(t, approvalKindGitForcePush, req.Kind)
 	require.True(t, req.Danger)
 	_, err = srv.AuthorizeGitPush(moduleCtx, remote, "refs/heads/other", false, false)
@@ -210,12 +212,14 @@ func TestGitPushApprovalYesNoFrontend(t *testing.T) {
 func TestGitPushApprovalPrompt(t *testing.T) {
 	spec := gitPushApproval("https://example.com/\u202erepo", "refs/heads/x\x1b[31m", false)
 	require.Equal(t, `Allow push to https://example.com/\u202erepo @ refs/heads/x\x1b[31m`, spec.Question)
+	require.Equal(t, `Push to https://example.com/\u202erepo @ refs/heads/x\x1b[31m`, spec.Action)
 	require.Equal(t, `https://example.com/\u202erepo @ refs/heads/x\x1b[31m`, spec.Subject)
 	force := gitPushApproval("git@example.com:repo", "refs/heads/main", true)
 	require.Equal(t, approvalSpec{
 		Kind:     approvalKindGitForcePush,
 		Subject:  "git@example.com:repo @ refs/heads/main",
 		Question: "Allow force-push to git@example.com:repo @ refs/heads/main",
+		Action:   "Force-push to git@example.com:repo @ refs/heads/main",
 		Danger:   true,
 	}, force)
 }

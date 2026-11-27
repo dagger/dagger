@@ -22,8 +22,10 @@ const (
 // resolved destination, force or not. The ref passed check-ref-format (no
 // spaces), so the subject's " @ " separates the two unambiguously.
 func gitPushApproval(remote, ref string, force bool) approvalSpec {
-	// The TUI highlights a leading "Allow force-push" in red, so keep the
-	// wording in sync with dagql/idtui's forcePushPromptPrefix. Literal text,
+	// The TUI highlights a leading "Allow force-push" (or, in the bare
+	// action, "Force-push") in red, so keep the wording in sync with
+	// dagql/idtui's forcePushPromptPrefix and forcePushAction. The remote is
+	// the resolved destination, not what the caller passed. Literal text,
 	// escaped for terminals (including bidi/control characters), not Markdown.
 	// Neither credentials nor module-supplied prose belong here.
 	subject := literalText(remote) + " @ " + literalText(ref)
@@ -31,10 +33,12 @@ func gitPushApproval(remote, ref string, force bool) approvalSpec {
 		Kind:     approvalKindGitPush,
 		Subject:  subject,
 		Question: "Allow push to " + subject,
+		Action:   "Push to " + subject,
 	}
 	if force {
 		spec.Kind = approvalKindGitForcePush
 		spec.Question = "Allow force-push to " + subject
+		spec.Action = "Force-push to " + subject
 		spec.Danger = true
 	}
 	return spec

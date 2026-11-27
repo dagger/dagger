@@ -26,6 +26,11 @@ type AgentRosterEntry struct {
 	// advertised a call digest for it, or the handle failed to rebuild from
 	// the trace. Such an entry can be watched, not spoken to, and says so.
 	ReadOnly bool
+	// AwaitingApproval marks an agent blocked on an access request the user
+	// has not answered yet. The approval renders under the agent's tool call
+	// and never takes focus by itself, so this cue is how the user learns
+	// there is something to navigate to.
+	AwaitingApproval bool
 }
 
 // AgentRoster renders a compact list of the session's live agents as tabs — a
@@ -139,6 +144,10 @@ func (r *AgentRoster) layout(width int) (line string, tabStart, tabEnd int) {
 	col := 0
 	for i, entry := range entries {
 		label, labelColor := agentStateDisplay(entry.State)
+		if entry.AwaitingApproval {
+			// Blocked on the user: says so in place of the run state.
+			label, labelColor = IconApproval+" approval", termenv.ANSIYellow
+		}
 
 		// Jump numbers only where a jump key exists (ctrl+1…9 from the
 		// prompt, 1…9 in nav mode); beyond that the entry is still listed,
