@@ -205,6 +205,41 @@ func (CallPayloadClosureSuite) TestUntracedNestedMintsChain(ctx context.Context,
 	sink.requireTraceRebuildable(ctx, t, "Directory.withNewFile")
 }
 
+// TestUntracedNestedQueryIsTraced: a query sent bare to the nested session
+// runs under the span its exec handed the container as traceparent, so its
+// calls land, rebuildable, in the parent's trace like a propagating client's.
+func (CallPayloadClosureSuite) TestUntracedNestedQueryIsTraced(ctx context.Context, t *testctx.T) {
+	c, sink := connectWithTrace(ctx, t)
+	contents := rand.Text()
+	runUntracedNested(ctx, t, c, fmt.Sprintf(`{ directory { withNewFile(path: "nested", contents: %q) { entries } } }`, contents), nil)
+	require.NoError(t, c.Close())
+	sink.requireTraceRebuildable(ctx, t, "Container.withExec")
+
+	var traceID []byte
+	sink.read(func(db *dagui.DB) {
+		for span := range db.AllSpans() {
+			if span.Name == "Container.withExec" {
+				id := span.TraceID.TraceID
+				traceID = id[:]
+			}
+		}
+	})
+	db := sink.traceDB(ctx, t, traceID)
+	found := false
+	for span := range db.AllSpans() {
+		call := db.Calls[span.CallDigest]
+		if call.GetField() != "withNewFile" {
+			continue
+		}
+		for _, arg := range call.GetArgs() {
+			if arg.GetValue().GetString_() == contents {
+				found = true
+			}
+		}
+	}
+	require.True(t, found, "the nested query's withNewFile span must be in its parent's trace")
+}
+
 // goModuleWorkspaceFiles is a workspace that pins github.com/dagger/go@v0.5.0
 // in its lock, as a checkout of dagger/dagger does. .git marks its root.
 var goModuleWorkspaceFiles = map[string]string{
