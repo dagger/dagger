@@ -565,6 +565,12 @@ type hostSSHAuthSocketArgs struct {
 // authorization's remote: the caller's, or the SSH origin of the owner's
 // checkout, which the server reads from the owner's client, as the caller has
 // no checkout of its own.
+//
+// The remote selects keys; it does not scope the grant, which is one per
+// owner for any remote. The owner's CLI prepares an agent per remote so that
+// `ssh -G <host>` picks up the host's own IdentityFile and IdentityAgent
+// settings (1Password, Secretive, per-host keys); that the forwarded socket
+// then only signs with that host's keys is a side effect, not a boundary.
 func ownerSSHAuthSocketPath(ctx context.Context, auth *core.SSHAgentAuthorization, prepare func(ctx context.Context, remote string) (string, error)) (string, error) {
 	if auth.Owner.SSHAuthSocketPath != "" {
 		return auth.Owner.SSHAuthSocketPath, nil

@@ -62,6 +62,13 @@ func hostNetworkApproval(hostPort string) approvalSpec {
 // not per remote, so the question names none: naming the remote that asked
 // first would suggest a scope the grant does not have. Errors still name it
 // (see sshAgentAccess).
+//
+// One approval lets the owner's CLI prepare an agent for any remote an
+// approved call names (see ownerSSHAuthSocketPath). Agents are prepared per
+// remote for key selection, not as a security boundary: `ssh -G <host>` picks
+// the host's own IdentityFile and IdentityAgent settings (1Password,
+// Secretive, per-host keys). That each forwarded socket then only signs with
+// that host's keys is a side effect, not what the grant promises.
 func sshAgentApproval() approvalSpec {
 	return approvalSpec{
 		Kind:     approvalKindSSHAgent,
