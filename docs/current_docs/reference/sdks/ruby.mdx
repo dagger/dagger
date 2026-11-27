@@ -564,7 +564,7 @@ An edit to a function's body runs at once. A call builds the module's container 
 The generated entrypoint records the line of each function. An edit that moves functions up or down a file leaves the module callable, but its staleness check fails until the next `dagger generate`:
 
 ```
-✘ dag://?check=ruby-sdk/generate/stale 4.1s ERROR
+✘ ruby-sdk/generate/stale 4.1s ERROR
   ┃ diff --git a/.dagger/modules/ci-tools/sdk/entrypoint/signatures.json b/.dagger/modules/ci-tools/sdk/entrypoint/signatures.json
   ┃ ...
   ┃ -          "line": 70,
