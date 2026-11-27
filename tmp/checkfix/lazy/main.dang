@@ -3,7 +3,7 @@ type Lazycheck {
   Prints, and passes.
   """
   passing: Void @check {
-    print("passing output 1")
+    print("passing output 4")
     null
   }
 
@@ -11,7 +11,7 @@ type Lazycheck {
   Prints, then raises an error of its own.
   """
   failing: Void @check {
-    print("failing output 1")
+    print("failing output 4")
     raise "check body failed"
   }
 
@@ -19,7 +19,7 @@ type Lazycheck {
   Runs a command that fails.
   """
   deep: Void @check {
-    container.from("alpine").withExec(["sh", "-c", "echo deep 1; exit 3"]).sync
+    container.from("alpine").withExec(["sh", "-c", "echo deep 4; exit 3"]).sync
     null
   }
 }

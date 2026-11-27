@@ -1754,7 +1754,10 @@ func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) ([]da
 		// PROTOTYPE (check-lazy-eval-proto): no CallerAttributedTelemetry.
 		// The projection's Check is lazy and this field runs as its
 		// deferred work, so where the function's work is reported is up to
-		// the lazy evaluation's telemetry (dagql beginOTelLazyOp).
+		// the lazy evaluation's telemetry (dagql beginOTelLazyOp). With no
+		// span of its own, the work's user-facing span is the lazy op's
+		// consumer: the check's span.
+		runSpec.NoTelemetry = true
 		authoredFunc := field.Func
 		fields = append(fields, dagql.Field[*ModuleObject]{
 			Spec: &runSpec,
