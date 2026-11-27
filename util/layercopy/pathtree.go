@@ -87,7 +87,7 @@ func (t *PathTree) SelectedPaths(root string, filter Filter) (files, dirs []stri
 	if filter.Gitignore {
 		return nil, nil, fmt.Errorf("path tree can't apply a gitignore filter")
 	}
-	m, err := newMatcher("", filter)
+	m, err := newMatcher("", "", filter)
 	if err != nil {
 		return nil, nil, err
 	}

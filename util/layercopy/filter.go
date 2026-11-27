@@ -4,7 +4,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/dagger/dagger/internal/fsutil"
 	"github.com/dagger/dagger/util/fsxutil"
 	"github.com/moby/patternmatcher"
 )
@@ -15,6 +14,9 @@ type matcher struct {
 	include     *patternmatcher.PatternMatcher
 	exclude     *patternmatcher.PatternMatcher
 	gitignore   *fsxutil.GitignoreMatcher
+	// gitignoreRoot is the directory the gitignore rules are read in: the
+	// source's boundary, so rules above it don't apply.
+	gitignoreRoot string
 
 	// onlyPrefixIncludes is true when every include pattern is a literal path,
 	// optionally followed by a trailing glob. Then a directory that matches no
@@ -37,7 +39,10 @@ type matchState struct {
 	includeMatched bool
 }
 
-func newMatcher(_ string, filter Filter) (*matcher, error) {
+// newMatcher returns the matcher for a copy out of the source mounted at
+// root, whose boundary (see BoundedRootPath) is the directory its gitignore
+// rules are read in.
+func newMatcher(root, boundary string, filter Filter) (*matcher, error) {
 	m := &matcher{}
 	if filter.Only != nil {
 		m.only = map[string]struct{}{}
@@ -81,11 +86,12 @@ func newMatcher(_ string, filter Filter) (*matcher, error) {
 		m.exclude = pm
 	}
 	if filter.Gitignore {
-		fs, err := fsutil.NewFS("/")
+		m.gitignoreRoot = filepath.Join(root, boundary)
+		gitignore, err := fsxutil.NewGitIgnoreMatcherInRoot(m.gitignoreRoot)
 		if err != nil {
 			return nil, err
 		}
-		m.gitignore = fsxutil.NewGitIgnoreMatcher(fs)
+		m.gitignore = gitignore
 	}
 	return m, nil
 }
@@ -205,7 +211,11 @@ func (m *matcher) includePath(rel string, abs string, isDir bool, parent matchSt
 		}
 	}
 	if m.gitignore != nil {
-		ignored, err := m.gitignore.Matches(abs, isDir)
+		within, err := filepath.Rel(m.gitignoreRoot, abs)
+		if err != nil {
+			return false, state, err
+		}
+		ignored, err := m.gitignore.Matches(within, isDir)
 		if err != nil {
 			return false, state, err
 		}

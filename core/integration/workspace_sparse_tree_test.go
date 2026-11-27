@@ -342,12 +342,12 @@ func (WorkspaceSuite) TestGitWorkspaceSparseReadsMatchFullReads(ctx context.Cont
 	}
 }
 
-// TestGitWorkspaceFullReadsReachOutsideASparseRead asserts that a read of a
-// directory without a filter, a view into the whole tree, reaches what's outside
-// it, even after a filtered read of the same directory that the whole tree
-// wasn't needed for. The two directories' own files are the same, so work on
-// the first must not stand in for the second.
-func (WorkspaceSuite) TestGitWorkspaceFullReadsReachOutsideASparseRead(ctx context.Context, t *testctx.T) {
+// TestGitWorkspaceFullReadsStayInsideAfterASparseRead asserts that a read of
+// a directory without a filter, after a filtered read of the same directory
+// that the whole tree wasn't needed for, still holds only its own files: a
+// link in it leading outside it reaches nothing, while the workspace itself
+// still reads what's outside the directory.
+func (WorkspaceSuite) TestGitWorkspaceFullReadsStayInsideAfterASparseRead(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	moduleDir := "/.dagger/modules/probe"
@@ -370,10 +370,9 @@ func (WorkspaceSuite) TestGitWorkspaceFullReadsReachOutsideASparseRead(ctx conte
 			require.NoError(t, err)
 			require.Contains(t, out, "also")
 
-			out, err = workspaceQuery(ctx, t, c, ref,
+			_, err = workspaceQuery(ctx, t, c, ref,
 				fmt.Sprintf(`{currentWorkspace{directory(path: %q){file(path: "outward"){contents}}}}`, moduleDir))
-			require.NoError(t, err)
-			require.Contains(t, out, "also")
+			require.Error(t, err, "a link out of a directory read must not reach outside it")
 		})
 	}
 }

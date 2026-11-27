@@ -38,7 +38,7 @@ func (c *Copier) Copy(ctx context.Context, src Mount, srcPath, destPath string, 
 	if err != nil {
 		return err
 	}
-	m, err := newMatcher(s.root, opts.Filter)
+	m, err := newMatcher(s.root, s.boundary, opts.Filter)
 	if err != nil {
 		return err
 	}

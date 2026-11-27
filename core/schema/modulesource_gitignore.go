@@ -8,7 +8,6 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/internal/fsutil"
 	"github.com/dagger/dagger/util/fsxutil"
 )
 
@@ -38,11 +37,10 @@ func moduleIgnoreFiles(paths ...string) []string {
 
 func rejectGitignoredModulePaths(ctx context.Context, rules dagql.ObjectResult[*core.Directory], paths ...string) error {
 	return rules.Self().Mount(ctx, rules, func(root string) error {
-		fs, err := fsutil.NewFS(root)
+		matcher, err := fsxutil.NewGitIgnoreMatcherInRoot(root)
 		if err != nil {
 			return err
 		}
-		matcher := fsxutil.NewGitIgnoreMatcher(fs)
 		for _, p := range paths {
 			p = path.Clean(filepath.ToSlash(p))
 			if p == "." || !filepath.IsLocal(p) {

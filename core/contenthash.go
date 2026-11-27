@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 
 	"github.com/containerd/containerd/v2/core/mount"
-	containerdfs "github.com/containerd/continuity/fs"
 	bkcontenthash "github.com/dagger/dagger/engine/contenthash"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
@@ -46,6 +46,24 @@ func GetContentHashFromDirectory(
 	return dgst, nil
 }
 
+// DirectoryContentDigest is the content identity of the directory at dirPath
+// of snapshot: the content hash of its files and, for a subdirectory, its
+// name, which Directory.name reports and the content hash leaves out, so two
+// subdirectories with equal files under different names are not
+// interchangeable. Every operation on a directory reads only its own files
+// (see ResolveInDir), so nothing around it counts.
+func DirectoryContentDigest(ctx context.Context, snapshot bkcache.ImmutableRef, dirPath string) (digest.Digest, error) {
+	dgst, err := GetContentHashFromDirectory(ctx, snapshot, dirPath)
+	if err != nil {
+		return "", err
+	}
+	name := path.Base(path.Clean("/" + dirPath))
+	if name == "/" {
+		return dgst, nil
+	}
+	return hashutil.HashStrings("directory", dgst.String(), "name", name), nil
+}
+
 func GetContentHashFromFile(
 	ctx context.Context,
 	snapshot bkcache.ImmutableRef,
@@ -64,9 +82,9 @@ func GetContentHashFromFile(
 
 // GetContentHashFromCopySources returns the content hash of what an unfiltered
 // Dockerfile COPY of srcPath out of srcDir in snapshot copies: each path that
-// srcPath resolves to, resolving wildcards as the copy does, hashed whole
-// together with that path. A path that doesn't exist is hashed as missing,
-// for the copy to report when it runs.
+// srcPath resolves to within srcDir, resolving wildcards and a final symlink
+// as the copy does, hashed whole together with that path. A path that doesn't
+// exist is hashed as missing, for the copy to report when it runs.
 func GetContentHashFromCopySources(
 	ctx context.Context,
 	snapshot bkcache.ImmutableRef,
@@ -76,28 +94,30 @@ func GetContentHashFromCopySources(
 	if snapshot == nil {
 		return "", fmt.Errorf("failed to get copy source snapshot: nil")
 	}
-	paths := []string{srcDir}
-	missing := map[string]bool{}
+	var paths []string
+	resolved := map[string]string{}
 	err := MountRef(ctx, snapshot, func(root string, _ *mount.Mount) error {
-		if srcPath != "" {
-			srcPathWithDir := srcPath
-			if srcDir != "" && srcDir != "/" {
-				srcPathWithDir = srcDir + "/" + srcPathWithDir
-			}
-			var err error
-			paths, err = layercopy.ResolveWildcards(root, srcPathWithDir, true)
-			if err != nil {
-				return err
-			}
+		boundary, err := viewBase(root, srcDir)
+		if err != nil {
+			return err
+		}
+		paths, err = copySourcePaths(root, boundary, srcPath)
+		if err != nil {
+			return err
 		}
 		for _, p := range paths {
-			resolved, err := containerdfs.RootPath(root, p)
+			real, err := layercopy.BoundedRootPath(root, boundary, p, true)
 			if err != nil {
 				return err
 			}
-			if _, err := os.Stat(resolved); errors.Is(err, os.ErrNotExist) {
-				missing[p] = true
+			if _, err := os.Lstat(real); errors.Is(err, os.ErrNotExist) {
+				continue
 			}
+			rel, err := filepath.Rel(root, real)
+			if err != nil {
+				return err
+			}
+			resolved[p] = path.Join("/", filepath.ToSlash(rel))
 		}
 		return nil
 	}, mountRefAsReadOnly)
@@ -106,11 +126,12 @@ func GetContentHashFromCopySources(
 	}
 	parts := make([]string, 0, 2*len(paths))
 	for _, p := range paths {
-		if missing[p] {
+		real, ok := resolved[p]
+		if !ok {
 			parts = append(parts, p, "missing")
 			continue
 		}
-		dgst, err := getContentHashFromRef(ctx, snapshot, path.Join("/", p))
+		dgst, err := getContentHashFromRef(ctx, snapshot, real)
 		if err != nil {
 			return "", fmt.Errorf("failed to get content hash of %q: %w", p, err)
 		}
