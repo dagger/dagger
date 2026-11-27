@@ -23,7 +23,10 @@ import (
 func casedField[T dagql.Typed](field dagql.Field[T]) dagql.Field[T] {
 	spec := *field.Spec
 	spec.ViewFilter = core.WithinView(spec.ViewFilter, core.CasedNamesView)
-	return dagql.Field[T]{Spec: &spec, Func: field.Func}
+	// keep the rest of the field, such as an accessorField's entry for
+	// plain values
+	field.Spec = &spec
+	return field
 }
 
 // legacyField is field spelled legacy, in the views before the conventional
@@ -32,7 +35,8 @@ func legacyField[T dagql.Typed](field dagql.Field[T], legacy string) dagql.Field
 	spec := *field.Spec
 	spec.Name = legacy
 	spec.ViewFilter = core.WithinView(spec.ViewFilter, core.LegacyNamesView)
-	return dagql.Field[T]{Spec: &spec, Func: field.Func}
+	field.Spec = &spec
+	return field
 }
 
 // casedArg is arg in the views with the conventional core names.

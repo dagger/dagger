@@ -247,6 +247,23 @@ func (class Class[T]) FieldSpec(name string, view call.View) (FieldSpec, bool) {
 	return *field.Spec, true
 }
 
+// plainField returns the spec of the field name and its entry for plain
+// values of the class (see Field.plain), if it has one.
+func (class Class[T]) plainField(name string, view call.View) (FieldSpec, plainFieldFunc, bool) {
+	field, ok := class.Field(name, view)
+	if !ok || field.plain == nil {
+		return FieldSpec{}, nil, false
+	}
+	plain := field.plain
+	return *field.Spec, func(ctx context.Context, self Typed) (Typed, error) {
+		val, ok := self.(T)
+		if !ok {
+			return nil, fmt.Errorf("%s.%s: expected %T, got %T", class.TypeName(), name, val, self)
+		}
+		return plain(ctx, val)
+	}, true
+}
+
 func (class Class[T]) FieldSpecs(view call.View) []FieldSpec {
 	class.fieldsL.Lock()
 	defer class.fieldsL.Unlock()
@@ -964,9 +981,26 @@ func FuncWithDynamicInputs[T Typed, A any, R any](
 	fn FuncHandler[T, A, R],
 	cacheFn DynamicInputFunc[T, A],
 ) Field[T] {
-	return NodeFuncWithDynamicInputs(name, func(ctx context.Context, self ObjectResult[T], args A) (R, error) {
+	field, noArgs := nodeFunc(name, func(ctx context.Context, self ObjectResult[T], args A) (R, error) {
 		return fn(ctx, self.Self(), args)
 	}, cacheFn)
+	if noArgs && cacheFn == nil {
+		// fn sees only the receiver's value, so it can run on a plain value
+		// too (see Field.plain)
+		var zeroArgs A
+		field.plain = func(ctx context.Context, self T) (Typed, error) {
+			ret, err := fn(ctx, self, zeroArgs)
+			if err != nil {
+				return nil, err
+			}
+			val, err := builtinOrTyped(ret)
+			if err != nil {
+				return nil, fmt.Errorf("expected %T to be a Typed value, got %T: %w", ret, ret, err)
+			}
+			return val, nil
+		}
+	}
+	return field
 }
 
 // NodeFunc is the same as Func, except it passes the ObjectResult instead of the
@@ -983,6 +1017,17 @@ func NodeFuncWithDynamicInputs[T Typed, A any, R any](
 	fn NodeFuncHandler[T, A, R],
 	cacheFn DynamicInputFunc[T, A],
 ) Field[T] {
+	field, _ := nodeFunc(name, fn, cacheFn)
+	return field
+}
+
+// nodeFunc is NodeFuncWithDynamicInputs, also reporting whether the field
+// takes no arguments and its argument and return types are valid.
+func nodeFunc[T Typed, A any, R any](
+	name string,
+	fn NodeFuncHandler[T, A, R],
+	cacheFn DynamicInputFunc[T, A],
+) (Field[T], bool) {
 	var zeroArgs A
 	inputs, argsErr := InputSpecsForType(zeroArgs, true)
 	if argsErr != nil {
@@ -1055,7 +1100,7 @@ func NodeFuncWithDynamicInputs[T Typed, A any, R any](
 		}
 	}
 
-	return field
+	return field, argsErr == nil && returnTypeError == nil && len(inputs.raw) == 0
 }
 
 // FieldSpec is a specification for a field.
@@ -1138,6 +1183,11 @@ type FieldSpec struct {
 	// than performing meaningful work. Their telemetry spans are internal, and
 	// they skip install-span capture so they don't claim ownership of values
 	// they merely return.
+	//
+	// A Trivial field may also be resolved on an element of a list of plain
+	// values without a cache entry, a span, or a receiver result or call:
+	// its handler runs with only the receiver's value, and no CurrentCall
+	// (see Field.plain). So its handler must only read from its receiver.
 	Trivial bool
 
 	// PassthroughTelemetry keeps this field's telemetry span available for call
@@ -1692,6 +1742,16 @@ func (fields Fields[T]) Install(server *Server) {
 				}
 				return t, nil
 			},
+			plain: func(_ context.Context, self T) (Typed, error) {
+				t, found, err := getFieldValue(self, false, name)
+				if err != nil {
+					return nil, err
+				}
+				if !found {
+					return nil, fmt.Errorf("no such field: %q", name)
+				}
+				return t, nil
+			},
 		})
 	}
 	class.Install(fields...)
@@ -1734,6 +1794,18 @@ type ImplicitInput struct {
 type Field[T Typed] struct {
 	Spec *FieldSpec
 	Func func(context.Context, ObjectResult[T], map[string]Input, call.View) (AnyResult, error)
+
+	// plain resolves the field on a plain value of the receiver, with no call
+	// frame, receiver result, cache entry or span, giving its value: an
+	// AnyResult, a Typed value, or nil for a null. The server uses it, in
+	// place of Func, for a Trivial field selected on the elements of a list
+	// of plain values (see Server.plainSelections). Func and
+	// FuncWithDynamicInputs set it for fields without arguments or dynamic
+	// inputs, running the same handler, and Fields.Install for the getters
+	// it reflects from struct fields. It is on the Field, not its Spec, so a
+	// spec installed with another Func never carries it; but code replacing
+	// the Func of a Trivial field must keep its behavior.
+	plain func(ctx context.Context, self T) (Typed, error)
 }
 
 func (field Field[T]) Extend() Field[T] {
@@ -2073,6 +2145,27 @@ func getField(
 	optIn bool,
 	fieldName string,
 ) (res AnyResult, found bool, rerr error) {
+	val, found, err := getFieldValue(obj, optIn, fieldName)
+	if err != nil || !found || val == nil {
+		return nil, found, err
+	}
+	if res, ok := val.(AnyResult); ok {
+		return res, true, nil
+	}
+	retVal, err := NewResultForCurrentCall(ctx, val)
+	if err != nil {
+		return nil, false, fmt.Errorf("get field %q: %w", fieldName, err)
+	}
+	return retVal, true, nil
+}
+
+// getFieldValue is getField without making a result of the value: the
+// field's AnyResult, or its Typed value, or nil for a zero nullable field.
+func getFieldValue(
+	obj any,
+	optIn bool,
+	fieldName string,
+) (val Typed, found bool, rerr error) {
 	defer func() {
 		if err := recover(); err != nil {
 			rerr = fmt.Errorf("get field %q: %s", fieldName, err)
@@ -2097,7 +2190,7 @@ func getField(
 		fieldT := objT.Field(i)
 		if fieldT.Anonymous {
 			fieldI := objV.Field(i).Interface()
-			t, found, err := getField(ctx, fieldI, optIn, fieldName)
+			t, found, err := getFieldValue(fieldI, optIn, fieldName)
 			if err != nil {
 				return nil, false, fmt.Errorf("embedded struct %q: %w", fieldT.Name, err)
 			}
@@ -2131,13 +2224,7 @@ func getField(
 			if !t.Type().NonNull && objV.Field(i).IsZero() {
 				return nil, true, nil
 			}
-
-			retVal, err := NewResultForCurrentCall(ctx, t)
-			if err != nil {
-				return nil, false, fmt.Errorf("get field %q: %w", name, err)
-			}
-
-			return retVal, true, nil
+			return t, true, nil
 		}
 	}
 	return nil, false, nil
