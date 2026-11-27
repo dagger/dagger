@@ -49,11 +49,22 @@ func (s *workspaceSchema) loadWorkspaceSDKModule(
 		}
 	}
 
-	provider, err := sdkmodule.Load(ctx, root.Self(), sdkRef, workspaceSource, settings)
+	provider, err := sdkmodule.Load(ctx, root.Self(), sdkRef, workspaceSource, settings, workspaceSettingsUntrusted(ws))
 	if err != nil {
 		return nil, fmt.Errorf("load SDK module %q: %w", sdkRef, err)
 	}
 	return provider, nil
+}
+
+// workspaceSettingsUntrusted reports whether settings read from ws can come
+// from somewhere other than the configuration that the session loaded for its
+// client: a workspace value, or a workspace with staged edits.
+func workspaceSettingsUntrusted(ws *core.Workspace) bool {
+	if ws.IsValueWorkspace() {
+		return true
+	}
+	_, staged := ws.OverlayChanges()
+	return staged
 }
 
 func effectiveSDKModuleSettings(

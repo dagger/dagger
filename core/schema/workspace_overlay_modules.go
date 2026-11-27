@@ -194,6 +194,12 @@ func (s *workspaceSchema) workspaceOverlayModulesWithLoadFailures(
 
 // workspaceOverlayAsModule applies workspace settings and the shared legacy
 // context before instantiating a module from its resolved source.
+//
+// The settings come from a staged edit or from a workspace value, not from
+// the configuration that the session loaded for its client. Unless the module
+// is the same as the one that the session loaded under that name (see
+// sessionModuleMatches), it is marked untrusted: its object settings do not
+// resolve with that client's resources (see core.Module.UntrustedSettings).
 func (s *workspaceSchema) workspaceOverlayAsModule(
 	ctx context.Context,
 	srv *dagql.Server,
@@ -214,6 +220,15 @@ func (s *workspaceSchema) workspaceOverlayAsModule(
 	)
 	if err != nil {
 		return mod, fmt.Errorf("module %q: %w", name, err)
+	}
+	// The flag only withholds settings and .env defaults, so a module with
+	// neither needs no comparison.
+	hasDotEnv := src.Self().UserDefaults != nil && len(src.Self().UserDefaults.Environ) > 0
+	if (len(entry.Settings) > 0 || hasDotEnv) &&
+		!sessionModuleMatches(ctx, name, entry.Settings, defaultsFromDotEnv, src) {
+		asModuleArgs = append(asModuleArgs, dagql.NamedInput{
+			Name: "untrustedSettings", Value: dagql.Boolean(true),
+		})
 	}
 	if entry.LegacyDefaultPath {
 		if !legacyContextSource.Valid {
