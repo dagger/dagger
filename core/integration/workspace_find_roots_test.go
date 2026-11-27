@@ -167,3 +167,137 @@ func (WorkspaceSuite) TestWorkspaceFindRootsValidatesMarkers(ctx context.Context
 		})
 	}
 }
+
+func ignoreWorkspaceSource(c *dagger.Client, config string, extra ...func(*core.Directory) *core.Directory) *core.Directory {
+	dir := core.NewQuery(c).Directory().
+		WithNewFile("dagger.toml", config).
+		WithNewFile("go.mod", "module example.com/root\n").
+		WithNewFile("pkg/go.mod", "module example.com/pkg\n").
+		WithNewFile(".delta/worktrees/nested/go.mod", "module example.com/delta\n").
+		WithNewFile("pkg/.delta/nested/go.mod", "module example.com/pkgdelta\n").
+		WithNewFile("pkg/vendor/go.mod", "module example.com/vendor\n")
+	for _, apply := range extra {
+		dir = apply(dir)
+	}
+	return dir
+}
+
+func requireWorkspaceRootEntries(ctx context.Context, t *testctx.T, ws *core.Workspace) []string {
+	t.Helper()
+	entries, err := ws.Directory(".").Entries(ctx)
+	require.NoError(t, err)
+	require.Contains(t, entries, "pkg/")
+	require.Contains(t, entries, "go.mod")
+	require.Contains(t, entries, "dagger.toml")
+	return entries
+}
+
+// TestWorkspaceFindRootsHonorsDaggerTomlIgnore asserts that top-level ignore
+// in dagger.toml prunes findRoots and user-facing directory/file reads.
+func (WorkspaceSuite) TestWorkspaceFindRootsHonorsDaggerTomlIgnore(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ws := ignoreWorkspaceSource(c, "ignore = [\".delta\"]\n").AsWorkspace()
+
+	dirs, err := ws.FindRoots(ctx, []string{"go.mod"})
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{".", "pkg", "pkg/.delta/nested", "pkg/vendor"}, dirs)
+
+	entries := requireWorkspaceRootEntries(ctx, t, ws)
+	require.NotContains(t, entries, ".delta/")
+
+	_, err = ws.File(".delta/worktrees/nested/go.mod").Contents(ctx)
+	require.Error(t, err)
+}
+
+// TestWorkspaceFindRootsIgnoreStartSubdir asserts ignore is relative to the
+// selected config directory and rebased to the path being read: a root
+// ignore of .delta does not hide pkg/.delta, while pkg/vendor does.
+func (WorkspaceSuite) TestWorkspaceFindRootsIgnoreStartSubdir(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ws := ignoreWorkspaceSource(c, "ignore = [\".delta\", \"pkg/vendor\"]\n").AsWorkspace()
+
+	dirs, err := ws.FindRoots(ctx, []string{"go.mod"})
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{".", "pkg", "pkg/.delta/nested"}, dirs)
+
+	dirs, err = ws.FindRoots(ctx, []string{"go.mod"}, core.WorkspaceFindRootsOpts{Start: "pkg"})
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"pkg", "pkg/.delta/nested"}, dirs)
+
+	entries, err := ws.Directory("pkg").Entries(ctx)
+	require.NoError(t, err)
+	require.Contains(t, entries, ".delta/")
+	require.NotContains(t, entries, "vendor/")
+}
+
+// TestWorkspaceFindRootsIgnoreConfigInSubdir asserts ignore in a nested
+// dagger.toml is resolved from that config directory, not the workspace root.
+func (WorkspaceSuite) TestWorkspaceFindRootsIgnoreConfigInSubdir(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ws := core.NewQuery(c).Directory().
+		WithNewFile("app/dagger.toml", "ignore = [\".delta\"]\n").
+		WithNewFile("app/go.mod", "module example.com/app\n").
+		WithNewFile("app/pkg/go.mod", "module example.com/pkg\n").
+		WithNewFile("app/.delta/nested/go.mod", "module example.com/delta\n").
+		WithNewFile("go.mod", "module example.com/root\n").
+		AsWorkspace(core.DirectoryAsWorkspaceOpts{Cwd: "/app"})
+
+	dirs, err := ws.FindRoots(ctx, []string{"go.mod"})
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{".", "pkg"}, dirs)
+
+	entries, err := ws.Directory(".").Entries(ctx)
+	require.NoError(t, err)
+	require.Contains(t, entries, "pkg/")
+	require.Contains(t, entries, "go.mod")
+	require.NotContains(t, entries, ".delta/")
+}
+
+// TestWorkspaceFindRootsIgnoreGlob asserts a glob ignore hides matching
+// markers at any depth.
+func (WorkspaceSuite) TestWorkspaceFindRootsIgnoreGlob(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ws := ignoreWorkspaceSource(c, "ignore = [\"**/.generated\"]\n", func(dir *core.Directory) *core.Directory {
+		return dir.
+			WithNewFile(".generated/go.mod", "module example.com/gen\n").
+			WithNewFile("pkg/.generated/go.mod", "module example.com/pkggen\n")
+	}).AsWorkspace()
+
+	dirs, err := ws.FindRoots(ctx, []string{"go.mod"})
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{".", "pkg", "pkg/.delta/nested", "pkg/vendor", ".delta/worktrees/nested"}, dirs)
+
+	entries := requireWorkspaceRootEntries(ctx, t, ws)
+	require.NotContains(t, entries, ".generated/")
+}
+
+// TestWorkspaceFindRootsIgnoreMalformedConfig asserts a broken dagger.toml
+// adds no excludes and does not fail user-facing reads.
+func (WorkspaceSuite) TestWorkspaceFindRootsIgnoreMalformedConfig(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ws := ignoreWorkspaceSource(c, "ignore = [\n").AsWorkspace()
+
+	dirs, err := ws.FindRoots(ctx, []string{"go.mod"})
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{".", "pkg", "pkg/.delta/nested", "pkg/vendor", ".delta/worktrees/nested"}, dirs)
+
+	entries := requireWorkspaceRootEntries(ctx, t, ws)
+	require.Contains(t, entries, ".delta/")
+}
+
+// TestWorkspaceFindRootsIgnoreRemovedConfig asserts user-facing reads do
+// not fail when ConfigFile is still set but dagger.toml has been removed
+// from the overlay. Ignore is snapshotted at load, so this does not
+// require the overlay to re-parse config.
+func (WorkspaceSuite) TestWorkspaceFindRootsIgnoreRemovedConfig(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ws := ignoreWorkspaceSource(c, "ignore = [\".delta\"]\n").AsWorkspace().WithoutFile("dagger.toml")
+
+	entries, err := ws.Directory(".").Entries(ctx)
+	require.NoError(t, err)
+	require.Contains(t, entries, "go.mod")
+
+	dirs, err := ws.FindRoots(ctx, []string{"go.mod"})
+	require.NoError(t, err)
+	require.NotEmpty(t, dirs)
+}
