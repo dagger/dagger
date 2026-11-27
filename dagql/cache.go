@@ -1096,6 +1096,10 @@ func (c *Cache) captureSessionLazySpanContext(ctx context.Context, sessionID str
 	if !spanCtx.IsValid() {
 		return
 	}
+	if recordsNoLazyProducer(ctx) {
+		// PROTOTYPE: a planning call stands for no work of its own.
+		return
+	}
 	// A call the server's telemetry didn't span, such as a repeat it
 	// deduplicated or a trivial accessor, runs under the span of whatever
 	// made it, typically the client's request. That span names no call, so

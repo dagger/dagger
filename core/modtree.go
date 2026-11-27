@@ -251,7 +251,16 @@ func (node *ModTreeNode) dagqlValue(ctx context.Context, dest any, leafArgs []da
 			}
 			args = append(args, dagql.NamedInput{Name: "key", Value: key})
 		}
-		return srv.Select(dagql.WithNonInternalTelemetry(ctx), parentObjValue, dest, dagql.Selector{
+		selectCtx := dagql.WithNonInternalTelemetry(ctx)
+		if spec, ok := parentObjValue.ObjectType().FieldSpec(node.Name, srv.View); ok && fn != nil && fn.CheckReturnType.Self() != nil &&
+			spec.Type.Type().Name() == (&Check{}).Type().Name() {
+			// PROTOTYPE: planning a check selects its function's projection,
+			// which only builds the Check, and gives it its identity. The
+			// check's work runs when the check runs, so the projection
+			// reports nothing of its own.
+			selectCtx = dagql.WithUnspannedCall(selectCtx, node.Name)
+		}
+		return srv.Select(selectCtx, parentObjValue, dest, dagql.Selector{
 			Field: node.Name,
 			Args:  append(args, leafArgs...),
 		})

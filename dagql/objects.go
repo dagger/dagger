@@ -833,7 +833,11 @@ func (r ObjectResult[T]) call(
 	if field.Spec.Trivial {
 		ctx = ContextWithTrivialField(ctx)
 	}
-	if s.telemetry != nil && !field.Spec.NoTelemetry {
+	unspanned := isUnspannedCall(ctx, fieldName)
+	if unspanned {
+		ctx = withUnspannedCallDone(ctx, req.ResultCall)
+	}
+	if s.telemetry != nil && !field.Spec.NoTelemetry && !unspanned {
 		prevSpan := trace.SpanContextFromContext(ctx)
 		if wcprof.Enabled(ctx) {
 			// the call's native op ends after the telemetry below completes
