@@ -73,6 +73,14 @@ func (*mockServer) AuthorizeGitIdentity(context.Context) (GitIdentity, error) {
 	panic("unexpected AuthorizeGitIdentity")
 }
 
+func (*mockServer) AuthorizeLLM(context.Context, string) error {
+	panic("unexpected AuthorizeLLM")
+}
+
+func (*mockServer) Prompt(context.Context, *PromptRequest) (*PromptAnswer, error) {
+	panic("unexpected Prompt")
+}
+
 func (ms *mockServer) RegisterNestedClientTransport(context.Context, *engine.ClientMetadata, string) (*engine.NestedClientTransport, error) {
 	return engine.NewNestedClientTransport(nil), nil
 }

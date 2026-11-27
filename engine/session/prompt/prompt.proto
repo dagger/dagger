@@ -9,6 +9,7 @@ service Prompt {
   rpc PromptString(StringRequest) returns (StringResponse);
   rpc PromptSelect(SelectRequest) returns (SelectResponse);
   rpc PromptApproval(ApprovalRequest) returns (ApprovalResponse);
+  rpc PromptAsk(AskRequest) returns (AskResponse);
 }
 
 message BoolRequest {
@@ -104,6 +105,11 @@ message ApprovalRequest {
     // literal text: frontends that render the requester and the grant choices
     // themselves show this instead of prompt, which also names who asks
     string question = 9;
+    // keys an older client may have remembered an equivalent forever grant
+    // under (e.g. "allow_llm:<module>"): if the client remembers any of them,
+    // it answers APPROVAL_ALLOW_FOREVER without prompting. Never remembered
+    // anew: a new forever grant goes under persistent_key.
+    repeated string legacy_persistent_keys = 10;
 }
 
 enum ApprovalDecision {
@@ -115,4 +121,68 @@ enum ApprovalDecision {
 
 message ApprovalResponse {
     ApprovalDecision decision = 1;
+}
+
+// AskRequest asks the user a question on behalf of the engine or a module:
+// a yes/no answer, some text, a choice, or a secret. Like an approval, it
+// names who asks (resolved by the engine) and the call that asks, so a
+// frontend can show it where that call is rendered.
+message AskRequest {
+    // what is asked, e.g. "llm-help", "workspace-checkpoint". Frontends may
+    // style by kind.
+    string kind = 1;
+    // a (very) brief title, as literal (already escaped) text; may be empty
+    string title = 2;
+    // the message, as Markdown whose terminal control characters the engine
+    // already escaped. It never names who asks: frontends render requester.
+    string message = 3;
+    ApprovalRequester requester = 4;
+    // the call that asks, so a frontend can show the question where that
+    // call is rendered
+    string trace_id = 5;
+    string span_id = 6;
+    // if set, the client may remember the answer under this key and answer
+    // later requests with it without prompting. Never set for secrets.
+    string persistent_key = 7;
+    // the kind of answer wanted
+    oneof input {
+        AskBoolean boolean = 8;
+        AskText text = 9;
+        AskSelect select = 10;
+        AskSecret secret = 11;
+    }
+}
+
+message AskBoolean {
+    // the answer preselected for the user
+    bool default = 1;
+}
+
+message AskText {
+    // the text the input starts with
+    string default = 1;
+    // accept several lines
+    bool multiline = 2;
+}
+
+message AskSelect {
+    repeated SelectChoice choices = 1;
+    // Required: must name a choice.
+    string default_choice = 2;
+}
+
+message AskSecret {
+    // accept several lines
+    bool multiline = 1;
+}
+
+message AskResponse {
+    // the answer, of the kind asked for
+    oneof answer {
+        bool boolean = 1;
+        string text = 2;
+        // the ID of the chosen SelectChoice
+        string choice = 3;
+        bytes secret = 4;
+    }
 }
