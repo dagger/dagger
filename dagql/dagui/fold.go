@@ -1325,6 +1325,17 @@ func (f *Fold) Retain(ids ...SpanID) {
 	f.finishBatch()
 }
 
+// IsFoldedPlaceholder distinguishes a parent awaiting its folded snapshot
+// from one whose snapshot has not been observed by this DB.
+func (span *Span) IsFoldedPlaceholder() bool {
+	if span.Received || span.db == nil || span.db.fold == nil {
+		return false
+	}
+	f := span.db.fold
+	i, ok := f.lookup(span.ID)
+	return ok && f.state[i]&foldReceived != 0
+}
+
 // IsFolded reports whether span id was received and folded.
 func (f *Fold) IsFolded(id SpanID) bool {
 	if f == nil {

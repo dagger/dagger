@@ -917,6 +917,53 @@ func TestOrphanTestsSectionTitledAndWarned(t *testing.T) {
 	}
 }
 
+func TestFoldedTestAttribution(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	key := prettyTestSpanID
+	var asked []dagui.SpanID
+	db := dagui.NewDB(dagui.WithFold(dagui.FoldOptions{Load: func(ids []dagui.SpanID) { asked = append(asked, ids...) }}))
+	parent := dagui.SpanSnapshot{ID: key(3), ParentID: key(2), Name: "go test"}
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: key(1), Name: "root"},
+		{ID: key(2), ParentID: key(1), CheckName: "unit"},
+		parent,
+		{ID: key(4), ParentID: key(3), Name: "TestFailure", TestCaseName: "TestFailure", TestStatus: dagui.TestStatusFailure},
+		{ID: key(5), ParentID: key(2), TestCaseName: "TestDirect", TestStatus: dagui.TestStatusSuccess},
+		{ID: key(6), ParentID: key(1), Name: "TestStandalone", TestCaseName: "TestStandalone", TestStatus: dagui.TestStatusSuccess},
+	})
+	require.Contains(t, asked, parent.ID)
+	fe := NewWithDB(io.Discard, db)
+	fe.fold = &liveFold{}
+	render := func() string {
+		fe.claims = newRenderClaims()
+		fe.claims.claimTestCases(db.TestViewForSpan(db.Spans.Map[key(2)]))
+		return strings.Join(fe.renderGlobalTests(tuist.Context{Width: 100}, false), "\n")
+	}
+	pending := render()
+	require.Contains(t, pending, "1 not yet attributed") // not the standalone case
+	require.Contains(t, pending, "TestFailure")
+	require.NotContains(t, pending, "ORPHANED TESTS")
+	fe.fold.gone.Store(true)
+	require.Contains(t, render(), "1 not yet attributed", "the event loop has not observed store loss yet")
+	fe.foldGoneLocked()
+	fe.fold.fillQueued = true
+	require.Contains(t, render(), "1 not yet attributed", "a queued fill may still supply the ancestor")
+	fe.fold.fillQueued = false
+	unavailable := render()
+	require.Contains(t, unavailable, "1 with ancestry unavailable")
+	require.Contains(t, unavailable, "TestFailure")
+
+	// A snapshot already in transit can still arrive. Only the genuine
+	// standalone case remains in the global summary once the check claims it.
+	db.ImportSnapshotsContext(dagui.FoldFill(t.Context()), []dagui.SpanSnapshot{parent})
+	require.Equal(t, 2, db.TestViewForSpan(db.Spans.Map[key(2)]).Counts.Total())
+	settled := render()
+	require.NotContains(t, settled, "TestFailure")
+	require.NotContains(t, settled, "unavailable")
+	require.NotContains(t, settled, "not yet attributed")
+	require.Equal(t, "TESTS", fe.orphanTests.SummaryTitle)
+}
+
 func TestTraceHeaderShowsVerdict(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	start := time.Unix(100, 0)
