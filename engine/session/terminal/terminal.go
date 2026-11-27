@@ -61,8 +61,13 @@ func (s TerminalAttachable) session(srv Terminal_SessionServer, stdin io.Reader,
 	if err := s.sendReady(srv); err != nil {
 		return fmt.Errorf("sending ready: %w", err)
 	}
-	if err := s.sendSize(srv, stdout); err != nil {
-		return fmt.Errorf("sending initial size: %w", err)
+	// The size is only known when stdout is a terminal. If it isn't (e.g. the
+	// CLI's stdout is redirected to a file), skip it and let the session run
+	// with the default size instead of failing it.
+	if isTerminal(stdout) {
+		if err := s.sendSize(srv, stdout); err != nil {
+			return fmt.Errorf("sending initial size: %w", err)
+		}
 	}
 	go s.listenForResize(ctx, srv, stdout)
 	go s.forwardStdin(ctx, srv, stdin)
@@ -105,10 +110,15 @@ func (s TerminalAttachable) session(srv Terminal_SessionServer, stdin io.Reader,
 	}
 }
 
+func isTerminal(w io.Writer) bool {
+	f, ok := w.(*os.File)
+	return ok && isatty.IsTerminal(f.Fd())
+}
+
 func (s TerminalAttachable) sendSize(srv Terminal_SessionServer, stdout io.Writer) error {
 	f, ok := stdout.(*os.File)
 	if !ok || !isatty.IsTerminal(f.Fd()) {
-		return errors.New("stdin is not a terminal; cannot get terminal size")
+		return errors.New("stdout is not a terminal; cannot get terminal size")
 	}
 
 	w, h, err := term.GetSize(int(f.Fd()))
