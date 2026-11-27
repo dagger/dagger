@@ -16,7 +16,7 @@ type promptSchema struct{}
 var _ SchemaResolvers = &promptSchema{}
 
 // promptVersion is the first engine version with the prompt API.
-const promptVersion = "v1.0.0-beta.28"
+const promptVersion = "v1.0.0-beta.31"
 
 // promptExperimental marks every entry point of the prompt API, so codegen
 // flags them all.
