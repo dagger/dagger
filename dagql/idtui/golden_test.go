@@ -742,12 +742,14 @@ func readWorkspaceLocks(paths []string) string {
 }
 
 // removeFixtureWorkspaceLocks removes the lockfiles of viztest's fixture
-// workspaces. The suite keeps them until it ends, so the examples of one
-// workspace share its pins.
+// workspaces, and what generators wrote there in a run that was
+// interrupted. The suite keeps the lockfiles until it ends, so the examples
+// of one workspace share its pins.
 func removeFixtureWorkspaceLocks() {
-	locks, _ := filepath.Glob("viztest/sdks/checks/*/dagger.lock")
-	for _, lock := range locks {
-		os.Remove(lock)
+	written, _ := filepath.Glob("viztest/sdks/checks/*/dagger.lock")
+	generated, _ := filepath.Glob("viztest/sdks/checks/*/generated.txt")
+	for _, path := range append(written, generated...) {
+		os.Remove(path)
 	}
 }
 

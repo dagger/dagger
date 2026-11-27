@@ -1,8 +1,9 @@
 """
 The external Dang SDK's fixture for the golden tests: every SDK fixture has
 the same functions, so their goldens line up. Dang has no process to exit,
-so there is no failExitCode, and print writes only to stdout. The check
-functions are `dagger check`'s cases; see sdkCheckCases.
+so there is no failExitCode, and print writes only to stdout. The checks,
+collections and generators are `dagger check`'s and `dagger generate`'s
+cases; see sdkCheckCases and sdkCommandExamples.
 """
 type ViztestDang {
   """
@@ -85,7 +86,7 @@ type ViztestDang {
   }
 
   """
-  A check that logs, and passes. Cached, as a check is by default.
+  A check that logs, and passes.
   """
   checkPass: Void @check {
     print("dang check passed")

@@ -1,7 +1,8 @@
 """The external Python SDK's fixture for the golden tests.
 
 Every SDK fixture has the same functions, so their goldens line up. The check
-functions are `dagger check`'s cases; see sdkCheckCases.
+functions are `dagger check`'s cases; see sdkCheckCases and
+sdkCommandExamples.
 """
 
 from __future__ import annotations
@@ -108,7 +109,7 @@ class ViztestPython:
     @function
     @check
     def check_pass(self) -> None:
-        """A check that logs, and passes. Cached, as a function is by default."""
+        """A check that logs, and passes."""
         print("python check passed", flush=True)
 
     @function(cache="session")

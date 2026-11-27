@@ -3,6 +3,7 @@ package idtui_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -24,8 +25,7 @@ func sdkCommandExamples() []Example {
 		checks := []string{"check-pass", "check-fail-exec"}
 		// Passing and failing checks in one run, as `dagger check` runs
 		// them all: the report counts both, shows only the failure's
-		// detail, and suggests rerunning only it. The passing check is
-		// cached, as the warm-up ran it.
+		// detail, and suggests rerunning only it.
 		examples = append(examples, Example{
 			Name:         "sdks-" + lang + "-checks-mixed",
 			Golden:       "sdks/" + lang + "/checks-mixed",
@@ -137,7 +137,7 @@ const caseCheck = "cases/check"
 // summary check failed, with each item's check beneath it, only the "fail"
 // item's failing, with its own error as its origin.
 func assertCaseChecks(t *testctx.T, db *dagui.DB) {
-	var groups, items int
+	var groups, items, failed int
 	for _, span := range db.Spans.Order {
 		if span.CheckName == "" || span.IsRunning() {
 			continue
@@ -160,14 +160,17 @@ func assertCaseChecks(t *testctx.T, db *dagui.DB) {
 		}
 		require.NotNil(t, parent, "the item %s must be under its collection's summary", span.CheckName)
 		require.True(t, parent.CheckCollectionGroup, "the item %s must be under its collection's summary, not %s", span.CheckName, parent.CheckName)
-		failing := !span.CheckPassed
-		require.Equal(t, failing, span.IsFailed(), "the item %s's result", span.CheckName)
+		failing := strings.HasSuffix(span.CheckName, "=cases.fail")
+		require.Equal(t, !failing, span.CheckPassed, "the item %s's result", span.CheckName)
+		require.Equal(t, failing, span.IsFailed(), "the item %s's span", span.CheckName)
 		if failing {
+			failed++
 			require.Empty(t, spanNames(span.ErrorOrigins.Spans()), "the item %s must be its error's origin", span.CheckName)
 		}
 	}
 	require.NotZero(t, groups, "the collection must have a summary")
 	require.Equal(t, 2, items, "each item must have a check")
+	require.Equal(t, 1, failed, "only the fail item's check must fail")
 }
 
 // assertLoggedOnCheckItem checks that each item's check logs on its own span.

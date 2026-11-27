@@ -28,7 +28,7 @@ type ModuleTypes {
         )
         .withFunction(
           function("check_pass", typeDef.withOptional(true).withKind(TypeDefKind.VOID_KIND))
-            .withDescription("A check that logs, and passes. Cached, as a function is by default.")
+            .withDescription("A check that logs, and passes.")
             .withCheck
         )
         .withFunction(
