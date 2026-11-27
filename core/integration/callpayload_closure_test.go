@@ -164,18 +164,22 @@ func runQuery(ctx context.Context, t *testctx.T, c *dagger.Client, query string)
 	require.NoError(t, c.Do(ctx, &dagger.Request{Query: query}, &dagger.Response{Data: &res}))
 }
 
-// untracedNestedQuery posts $QUERY to the exec's nested session without a
-// traceparent, as a client calling with no span in its context does.
-const untracedNestedQuery = `set -e
+// bareNestedQuery posts $QUERY to the exec's nested session with a bare
+// curl-like request: no traceparent, as a script that ignores TRACEPARENT
+// sends. The engine parents such a query under the exec's span; before it
+// did, the query ran untraced, and its calls claimed payloads into no trace
+// (core.AroundFunc now also refuses that, see
+// TestAroundFuncUntracedCallClaimsNothing).
+const bareNestedQuery = `set -e
 auth=$(printf '%s:' "$DAGGER_SESSION_TOKEN" | base64 | tr -d '\n')
 wget -q -O- --header "Authorization: Basic $auth" --header "Content-Type: application/json" \
   --post-data "$QUERY" "http://127.0.0.1:$DAGGER_SESSION_PORT/query"
 `
 
-// runUntracedNested runs query as a nested client of c's session, whose
-// delivery route includes c's client, with no traceparent on its request.
-// files are written to the exec's working directory, /work.
-func runUntracedNested(ctx context.Context, t *testctx.T, c *dagger.Client, query string, files map[string]string) {
+// runBareNested runs query as a nested client of c's session, whose delivery
+// route includes c's client, with no traceparent on its request. files are
+// written to the exec's working directory, /work.
+func runBareNested(ctx context.Context, t *testctx.T, c *dagger.Client, query string, files map[string]string) {
 	t.Helper()
 	body := fmt.Sprintf(`{"query":%q}`, query)
 	ctr := core.NewQuery(c).Container().From(alpineImage).WithWorkdir("/work")
@@ -185,33 +189,33 @@ func runUntracedNested(ctx context.Context, t *testctx.T, c *dagger.Client, quer
 	out, err := ctr.
 		WithEnvVariable("CACHEBUSTER", rand.Text()).
 		WithEnvVariable("QUERY", body).
-		WithExec([]string{"sh", "-c", untracedNestedQuery}, core.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true}).
+		WithExec([]string{"sh", "-c", bareNestedQuery}, core.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true}).
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, `"data"`)
 	require.NotContains(t, out, `"errors"`)
 }
 
-// TestUntracedNestedMintsChain: a nested client's request without a
-// traceparent evaluates a chain first; then the parent client, traced, builds
-// on it. The parent's trace must carry every frame its call spans name, even
-// though the untraced request reached those calls first.
-func (CallPayloadClosureSuite) TestUntracedNestedMintsChain(ctx context.Context, t *testctx.T) {
+// TestBareNestedQueryMintsChain: a nested client's bare query evaluates a
+// chain first; then the parent client builds on it. The parent's trace must
+// carry every frame its call spans name, though the bare query reached those
+// calls first.
+func (CallPayloadClosureSuite) TestBareNestedQueryMintsChain(ctx context.Context, t *testctx.T) {
 	c, sink := connectWithTrace(ctx, t)
 	contents := rand.Text()
-	runUntracedNested(ctx, t, c, fmt.Sprintf(`{ directory { withNewFile(path: "a", contents: %q) { withNewFile(path: "b", contents: "b") { entries } } } }`, contents), nil)
+	runBareNested(ctx, t, c, fmt.Sprintf(`{ directory { withNewFile(path: "a", contents: %q) { withNewFile(path: "b", contents: "b") { entries } } } }`, contents), nil)
 	runQuery(ctx, t, c, fmt.Sprintf(`{ directory { withNewFile(path: "a", contents: %q) { withNewFile(path: "b", contents: "b") { withNewFile(path: "c", contents: "c") { entries } } } } }`, contents))
 	require.NoError(t, c.Close())
 	sink.requireTraceRebuildable(ctx, t, "Directory.withNewFile")
 }
 
-// TestUntracedNestedQueryIsTraced: a query sent bare to the nested session
-// runs under the span its exec handed the container as traceparent, so its
-// calls land, rebuildable, in the parent's trace like a propagating client's.
-func (CallPayloadClosureSuite) TestUntracedNestedQueryIsTraced(ctx context.Context, t *testctx.T) {
+// TestBareNestedQueryIsTraced: a query sent bare to the nested session runs
+// under the span its exec handed the container as traceparent, so its calls
+// land, rebuildable, in the parent's trace like a propagating client's.
+func (CallPayloadClosureSuite) TestBareNestedQueryIsTraced(ctx context.Context, t *testctx.T) {
 	c, sink := connectWithTrace(ctx, t)
 	contents := rand.Text()
-	runUntracedNested(ctx, t, c, fmt.Sprintf(`{ directory { withNewFile(path: "nested", contents: %q) { entries } } }`, contents), nil)
+	runBareNested(ctx, t, c, fmt.Sprintf(`{ directory { withNewFile(path: "nested", contents: %q) { entries } } }`, contents), nil)
 	require.NoError(t, c.Close())
 	sink.requireTraceRebuildable(ctx, t, "Container.withExec")
 
@@ -253,28 +257,17 @@ source = "github.com/dagger/go@v0.5.0"
 `,
 }
 
-// TestUntracedLockRefreshThenModuleSource is the live failure end to end: a
+// TestBareLockRefreshThenModuleSource is the live failure end to end: a
 // tool's exec refreshes a workspace lock over its nested session with a bare
 // curl, no traceparent. The refresh resolves the git ref under a fresh cache
-// scope, and the parent's own traced moduleSource of the same ref then gets
-// the refresh's result back, its frame naming the scoped repository.
-func (CallPayloadClosureSuite) TestUntracedLockRefreshThenModuleSource(ctx context.Context, t *testctx.T) {
+// scope, and the parent's own moduleSource of the same ref then gets the
+// refresh's result back, its frame naming the scoped repository.
+func (CallPayloadClosureSuite) TestBareLockRefreshThenModuleSource(ctx context.Context, t *testctx.T) {
 	c, sink := connectWithTrace(ctx, t)
-	runUntracedNested(ctx, t, c,
+	runBareNested(ctx, t, c,
 		`{ currentWorkspace { __withUpdatedLock(selectors: ["github.com/dagger/go"], noGenerate: true) { file(path: "dagger.lock") { contents } } } }`,
 		goModuleWorkspaceFiles)
 	runQuery(ctx, t, c, `{ moduleSource(refString: "github.com/dagger/go@v0.5.0") { moduleName } }`)
-	require.NoError(t, c.Close())
-	sink.requireTraceRebuildable(ctx, t, "GitRef.tree")
-}
-
-// TestUntracedNestedMintsGitChain is the shape of the live failure: an
-// untraced nested request resolves a git ref first, and the parent's traced
-// GitRef.tree names that ref as its receiver.
-func (CallPayloadClosureSuite) TestUntracedNestedMintsGitChain(ctx context.Context, t *testctx.T) {
-	c, sink := connectWithTrace(ctx, t)
-	runUntracedNested(ctx, t, c, `{ git(url: "https://github.com/dagger/go") { latest(version: "v0.5.0") { commit } } }`, nil)
-	runQuery(ctx, t, c, `{ git(url: "https://github.com/dagger/go") { latest(version: "v0.5.0") { tree { entries } } } }`)
 	require.NoError(t, c.Close())
 	sink.requireTraceRebuildable(ctx, t, "GitRef.tree")
 }
