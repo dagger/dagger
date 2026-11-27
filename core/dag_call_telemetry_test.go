@@ -312,6 +312,36 @@ func TestAroundFuncLogsRootOfNonRecordingSpan(t *testing.T) {
 	require.NotNil(t, recorder.get(rootDigest.String()))
 }
 
+// A call with no span context at all, such as one of a request that carried
+// no traceparent, emits nothing any trace's reader receives: its payload logs
+// would have no trace. So it must claim nothing and spend no span dedupe, or
+// a traced call building on the same frames later would skip them as
+// delivered (the live failure: a nested client's untraced request minted a
+// git ref, and its parent's trace could never rebuild GitRef.tree).
+func TestAroundFuncUntracedCallClaimsNothing(t *testing.T) {
+	agent, _, _ := skillsChain()
+	recorder := &payloadRecorder{}
+	provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(recorder))
+	ctx := dagql.ContextWithCache(telemetry.WithLoggerProvider(context.Background(), provider), nil)
+	payloads := &testSeenKeys{}
+	spanKeys := &testSpanSeenKeys{}
+	ctx = ContextWithQuery(ctx, &Query{Server: &payloadRoutingTestServer{
+		mockServer:   &mockServer{},
+		payloadStore: payloads,
+		spanStore:    spanKeys,
+	}})
+	rootDigest, err := agent.RecipeDigest(ctx)
+	require.NoError(t, err)
+
+	_, done := AroundFunc(ctx, &dagql.CallRequest{ResultCall: agent})
+	var callErr error
+	done(nil, false, &callErr)
+
+	require.Zero(t, recorder.emissionCount(), "an untraced call has no trace to log payloads into")
+	require.True(t, payloads.ClaimCallPayload(rootDigest.String()), "an untraced call must leave its root unclaimed")
+	require.False(t, spanKeys.LoadOrStoreTelemetrySeenKey(rootDigest.String()), "an untraced call must not spend the span dedupe")
+}
+
 // requireSpanCarriesCall asserts that one span was started for digest and
 // that its start snapshot already carried the call's frame, as clients need
 // to render the call before it ends.

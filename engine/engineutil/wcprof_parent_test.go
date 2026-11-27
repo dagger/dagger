@@ -1,11 +1,13 @@
 package engineutil
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/dagql"
@@ -42,6 +44,35 @@ func TestNestedClientRequestCarriesItsHostExec(t *testing.T) {
 	manager.otelHostExec = dagql.OTelHostExec{}
 	require.Same(t, req, manager.hostedRequest(req), "with no exec span, the request is unchanged")
 	require.False(t, dagql.OTelHostExecFromContext(req.Context()).ExecRun.IsValid())
+}
+
+// A query sent bare to the nested session (a script's curl) is parented under
+// the span the container got as its traceparent, as if the client had
+// propagated it; a client's own trace context is left alone.
+func TestNestedClientUntracedQueryInheritsTraceparent(t *testing.T) {
+	t.Parallel()
+	manager := newNestedClientTransportManager(t.Context(), &nestedTransportSessionHandler{}, &engine.ClientMetadata{SessionID: "session", ClientID: "client"}, "parent", true)
+	manager.otelHostExec = dagql.OTelHostExec{Propagated: testCallSpanContext()}
+	extract := func(req *http.Request) trace.SpanContext {
+		return trace.SpanContextFromContext(propagation.TraceContext{}.Extract(context.Background(), propagation.HeaderCarrier(req.Header)))
+	}
+
+	bare := httptest.NewRequest(http.MethodPost, engine.QueryEndpoint, nil)
+	traced := manager.tracedRequest(bare)
+	require.Equal(t, testCallSpanContext().TraceID(), extract(traced).TraceID())
+	require.Equal(t, testCallSpanContext().SpanID(), extract(traced).SpanID())
+	require.Empty(t, bare.Header.Get("traceparent"), "the original request is not modified")
+
+	own := trace.NewSpanContext(trace.SpanContextConfig{TraceID: trace.TraceID{7}, SpanID: trace.SpanID{7}, TraceFlags: trace.FlagsSampled})
+	withOwn := httptest.NewRequest(http.MethodPost, engine.QueryEndpoint, nil)
+	propagation.TraceContext{}.Inject(trace.ContextWithSpanContext(context.Background(), own), propagation.HeaderCarrier(withOwn.Header))
+	require.Same(t, withOwn, manager.tracedRequest(withOwn), "a request's own trace context wins")
+
+	other := httptest.NewRequest(http.MethodPost, "/v1/logs", nil)
+	require.Same(t, other, manager.tracedRequest(other), "only queries are parented")
+
+	manager.otelHostExec = dagql.OTelHostExec{}
+	require.Same(t, bare, manager.tracedRequest(bare), "with no propagated span, the request is unchanged")
 }
 
 // A container's telemetry exports name its exec, for the engine to stamp the

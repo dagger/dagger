@@ -114,6 +114,19 @@ func aroundFuncTelemetry(
 		// dagops are all self calls, no need to emit additional spans here
 		return ctx, dagql.NoopDone
 	}
+	if !trace.SpanContextFromContext(ctx).IsValid() {
+		// An untraced call, e.g. one of a request that carried no
+		// traceparent (serveQuery starts no span for it), has nowhere to
+		// emit to: its span would be a noop, and its payload logs would
+		// carry no trace, so nothing that reads a trace (Cloud, an
+		// archive, a resumed session) ever receives them. It must not
+		// spend the session's span dedupe or claim payloads on its route
+		// either, or the traced calls that later build on the same frames
+		// would skip them as already delivered, leaving their trace with
+		// frames it can never rebuild. A traced call that names these
+		// frames delivers them itself, in its own trace.
+		return ctx, dagql.NoopDone
+	}
 
 	base := "Unknown"
 	if receiver != nil && receiver.Type != nil {

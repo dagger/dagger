@@ -47,6 +47,7 @@ import (
 	"github.com/sourcegraph/conc/pool"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
@@ -1489,7 +1490,7 @@ func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr 
 				http.Error(resp, err.Error(), status)
 				return
 			}
-			c.SessionHandler.ServeHTTPToNestedClient(resp, transports.hostedRequest(req), transport, metadata, transports.parentClientID, false, state.nestedClientModule, state.nestedClientFunctionCall)
+			c.SessionHandler.ServeHTTPToNestedClient(resp, transports.hostedRequest(transports.tracedRequest(req)), transport, metadata, transports.parentClientID, false, state.nestedClientModule, state.nestedClientFunctionCall)
 		}),
 		Protocols: protocols,
 	}
@@ -2236,6 +2237,25 @@ func withRuntimeBoundMountsOwn(mounts []executor.Mount) []executor.Mount {
 // ownMountable is a mount source with only its own Mount.
 type ownMountable struct {
 	executor.Mountable
+}
+
+// tracedRequest is req, a query, parented under the span the container got as
+// its traceparent when req carries no trace context of its own: what a client
+// that propagates the container's TRACEPARENT would have sent. A process
+// querying the nested session bare (a script's curl) otherwise makes calls
+// with no trace, whose telemetry no reader of any trace ever receives.
+func (manager *nestedClientTransportManager) tracedRequest(req *http.Request) *http.Request {
+	propagated := manager.otelHostExec.Propagated
+	if req.URL.Path != engine.QueryEndpoint || !propagated.IsValid() {
+		return req
+	}
+	carrier := propagation.HeaderCarrier(req.Header)
+	if trace.SpanContextFromContext(telemetry.Propagator.Extract(context.Background(), carrier)).IsValid() {
+		return req
+	}
+	req = req.Clone(req.Context())
+	propagation.TraceContext{}.Inject(trace.ContextWithSpanContext(context.Background(), propagated), propagation.HeaderCarrier(req.Header))
+	return req
 }
 
 // hostedRequest is req, marked as served for a client this exec hosts, so the
