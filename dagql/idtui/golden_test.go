@@ -438,7 +438,7 @@ main = true
 				require.True(t, depCalled)
 			},
 		},
-	}, slices.Concat(sdkExamples(), sdkCheckExamples())...) {
+	}, slices.Concat(sdkExamples(), sdkCheckExamples(), sdkCommandExamples())...) {
 		testName := ex.Name
 		goldFile := ex.Name
 		if ex.Golden != "" {

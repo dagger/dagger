@@ -105,6 +105,12 @@ class ViztestPython:
         """A check that runs a command that fails, and lets its error propagate."""
         await failing_exec().sync()
 
+    @function
+    @check
+    def check_pass(self) -> None:
+        """A check that logs, and passes. Cached, as a function is by default."""
+        print("python check passed", flush=True)
+
     @function(cache="session")
     @check
     def check_spans(self) -> None:

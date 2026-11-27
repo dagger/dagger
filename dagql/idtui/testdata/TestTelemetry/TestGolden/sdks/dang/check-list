@@ -1,0 +1,33 @@
+Expected stdout:
+
+VIZTEST-DANG-CHECK-CASE  NAME                   DESCRIPTION                                                                    LINK
+cases.*                  check                  Logs the case's name, and passes unless the case is "fail".                    dag+check://cases/check
+                         checkFailExec          A check that runs a command that fails, and lets its error propagate.          dag+check://check-fail-exec
+                         checkFailNative        A check that logs to stdout, then raises an error of its own.                  dag+check://check-fail-native
+                         checkPass              A check that logs, and passes. Cached, as a check is by default.               dag+check://check-pass
+                         checkReturnedError     A check that raises a Dagger Error, which it returns as an SDK returns one.    dag+check://check-returned-error
+                         generateFile.stale     staleness check: a generator that writes a file in the directory it runs from  dag+check://generate-file/stale
+                         generateNothing.stale  staleness check: a generator with nothing to change                            dag+check://generate-nothing/stale
+noCases.*                check                  Logs the case's name, and passes unless the case is "fail".                    dag+check://no-cases/check
+
+
+Expected stderr:
+
+✔ connect X.Xs
+├╴✔ starting engine X.Xs
+├╴✔ connecting to engine X.Xs
+│ ┃ XX:XX:XX INF connected name=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local client-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx server-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx
+╰╴✔ starting session X.Xs
+
+✔ prepare artifacts X.Xs
+✔ list artifacts X.Xs
+  ✔ dag+check://cases/check X.Xs
+  ✔ dag+check://check-fail-exec X.Xs
+  ✔ dag+check://check-fail-native X.Xs
+  ✔ dag+check://check-pass X.Xs
+  ✔ dag+check://check-returned-error X.Xs
+  ✔ dag+check://generate-file/stale X.Xs
+  ✔ dag+check://generate-nothing/stale X.Xs
+  ✔ dag+check://no-cases/check X.Xs
+
+# Use --all to expand collections and list each item.
