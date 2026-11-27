@@ -52,13 +52,13 @@ func pep440Version(version string) string {
 	return m[1] + map[string]string{"alpha": "a", "beta": "b", "rc": "rc"}[m[2]] + m[3]
 }
 
-// npmVersionURL returns the registry URL for an @dagger.io/dagger version.
+// npmVersionURL returns the registry URL for an @dagger.io/core version.
 func npmVersionURL(npmRegistryURL, version string) string {
 	base := strings.TrimSuffix(npmRegistryURL, "/")
 	if base == "" {
 		base = "https://registry.npmjs.org"
 	}
-	return base + "/@dagger.io%2fdagger/" + version
+	return base + "/@dagger.io%2fcore/" + version
 }
 
 // hexVersionURL returns the Hex API URL for a dagger package version.
@@ -84,6 +84,42 @@ func registryHasVersion(ctx context.Context, versionURL string) (bool, error) {
 		return false, nil
 	}
 	return false, fmt.Errorf("GET %s: unexpected status %s", versionURL, status)
+}
+
+// npmLatestTag returns the registry's current `latest` for a package, or "" when
+// the package has none yet.
+//
+// Read from the packument rather than the version document: dist-tags live on
+// the package, and a release has to know what `latest` points at now to decide
+// whether its own version should replace it.
+func npmLatestTag(ctx context.Context, packumentURL string) (string, error) {
+	status, body, err := registryGet(ctx, packumentURL)
+	if err != nil {
+		return "", err
+	}
+	switch status {
+	case "404":
+		return "", nil
+	case "200":
+	default:
+		return "", fmt.Errorf("GET %s: unexpected status %s", packumentURL, status)
+	}
+	var doc struct {
+		DistTags map[string]string `json:"dist-tags"`
+	}
+	if err := json.Unmarshal([]byte(body), &doc); err != nil {
+		return "", fmt.Errorf("GET %s: decode packument: %w", packumentURL, err)
+	}
+	return doc.DistTags["latest"], nil
+}
+
+// npmPackumentURL returns the registry URL for the @dagger.io/core packument.
+func npmPackumentURL(npmRegistryURL string) string {
+	base := strings.TrimSuffix(npmRegistryURL, "/")
+	if base == "" {
+		base = "https://registry.npmjs.org"
+	}
+	return base + "/@dagger.io%2fcore"
 }
 
 // pypiHasFiles reports whether the PyPI JSON API at versionURL lists every

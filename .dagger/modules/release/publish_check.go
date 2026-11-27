@@ -2015,10 +2015,10 @@ func (env *publishCheckEnv) assertNpmVersion(
 		WithEnvVariable("NPM_DIST_TAG", distTag).
 		WithExec([]string{"sh", "-ec", `
 	set -eu
-	npm view "@dagger.io/dagger@$RELEASE_VERSION" --registry "http://verdaccio:4873" --json > /tmp/npm-view.json
-	npm view "@dagger.io/dagger" dist-tags \
+	npm view "@dagger.io/core@$RELEASE_VERSION" --registry "http://verdaccio:4873" --json > /tmp/npm-view.json
+	npm view "@dagger.io/core" dist-tags \
 	  --registry "http://verdaccio:4873" --json > /tmp/npm-tags.json
-	npm pack "@dagger.io/dagger@$RELEASE_VERSION" --registry "http://verdaccio:4873" --pack-destination /tmp --json > /tmp/npm-pack.json
+	npm pack "@dagger.io/core@$RELEASE_VERSION" --registry "http://verdaccio:4873" --pack-destination /tmp --json > /tmp/npm-pack.json
 	node <<'JS'
 	const fs = require("fs");
 	const childProcess = require("child_process");
@@ -2034,32 +2034,32 @@ func (env *publishCheckEnv) assertNpmVersion(
 	const version = process.env.RELEASE_VERSION;
 	const distTag = process.env.NPM_DIST_TAG;
 	const view = JSON.parse(fs.readFileSync("/tmp/npm-view.json", "utf8"));
-		need(view.name === "@dagger.io/dagger", "unexpected npm package name: " + view.name);
+		need(view.name === "@dagger.io/core", "unexpected npm package name: " + view.name);
 		need(view.version === version, "unexpected npm package version: " + view.version);
-		need(typeof view.dist?.tarball === "string" && view.dist.tarball.endsWith("@dagger.io/dagger/-/dagger-" + version + ".tgz"), "unexpected npm tarball URL: " + view.dist?.tarball);
+		need(typeof view.dist?.tarball === "string" && view.dist.tarball.endsWith("@dagger.io/core/-/core-" + version + ".tgz"), "unexpected npm tarball URL: " + view.dist?.tarball);
 		need(typeof view.dist?.integrity === "string" && view.dist.integrity.startsWith("sha512-"), "unexpected npm integrity: " + view.dist?.integrity);
 	const tags = JSON.parse(fs.readFileSync("/tmp/npm-tags.json", "utf8"));
 		need(tags[distTag] === version, "unexpected npm " + distTag + " tag: " + tags[distTag]);
 
 	const pack = JSON.parse(fs.readFileSync("/tmp/npm-pack.json", "utf8"))[0];
-		need(pack.name === "@dagger.io/dagger", "unexpected packed npm package name: " + pack.name);
+		need(pack.name === "@dagger.io/core", "unexpected packed npm package name: " + pack.name);
 		need(pack.version === version, "unexpected packed npm package version: " + pack.version);
 		const filename = "/tmp/" + pack.filename;
 		need(fs.existsSync(filename), "npm pack did not produce " + filename);
 	const listing = childProcess.execFileSync("tar", ["-tzf", filename], {encoding: "utf8"}).trim().split("\n");
 	for (const file of [
 	  "package/package.json",
-	  "package/dist/src/index.js",
-	  "package/dist/src/index.d.ts",
+	  "package/dist/index.js",
+	  "package/dist/index.d.ts",
 	]) {
 		  need(listing.includes(file), "packed npm package missing " + file);
 		}
 		childProcess.execFileSync("tar", ["-xzf", filename, "-C", "/tmp", "package/package.json"]);
 		const packageJSON = JSON.parse(fs.readFileSync("/tmp/package/package.json", "utf8"));
-		need(packageJSON.name === "@dagger.io/dagger", "packed package.json name mismatch: " + packageJSON.name);
+		need(packageJSON.name === "@dagger.io/core", "packed package.json name mismatch: " + packageJSON.name);
 		need(packageJSON.version === version, "packed package.json version mismatch: " + packageJSON.version);
-		need(packageJSON.main === "dist/src/index.js", "packed package.json main mismatch: " + packageJSON.main);
-		need(packageJSON.types === "./dist/src/index.d.ts", "packed package.json types mismatch: " + packageJSON.types);
+		need(packageJSON.main === "./dist/index.js", "packed package.json main mismatch: " + packageJSON.main);
+		need(packageJSON.types === "./dist/index.d.ts", "packed package.json types mismatch: " + packageJSON.types);
 JS
 	`}).
 		Sync(ctx)

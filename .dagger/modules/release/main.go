@@ -335,18 +335,53 @@ func (r *Release) Publish( //nolint:gocyclo
 			name: "⬢ TypeScript SDK",
 			path: "sdk/typescript/",
 			tag:  "sdk/typescript/",
-			link: "https://www.npmjs.com/package/@dagger.io/dagger/v/" + strings.TrimPrefix(version, "v"),
+			link: "https://www.npmjs.com/package/@dagger.io/core/v/" + strings.TrimPrefix(version, "v"),
 			release: func(ctx context.Context) error {
-				return typescriptclientdev.New(r.Workspace).Release(ctx, tag, typescriptclientdev.TypescriptClientDevReleaseOpts{
-					NpmToken:       npmToken,
+				npmVersion := strings.TrimPrefix(version, "v")
+				ts := typescriptclientdev.New(r.Workspace)
+				// Publish only what is not already there. npm refuses a second
+				// publish of a version, so a release re-run to repair the
+				// dist-tag below must not attempt one.
+				already, err := registryHasVersion(ctx, npmVersionURL(npmRegistryURL, npmVersion))
+				if err != nil {
+					return err
+				}
+				if !already {
+					if err := ts.ReleaseCore(ctx, tag, typescriptclientdev.TypescriptClientDevReleaseCoreOpts{
+						NpmToken:       npmToken,
+						NpmRegistryURL: npmRegistryURL,
+					}); err != nil {
+						return err
+					}
+				}
+				currentLatest, err := npmLatestTag(ctx, npmPackumentURL(npmRegistryURL))
+				if err != nil {
+					return err
+				}
+				if !shouldMoveNpmLatest(npmVersion, currentLatest) {
+					return nil
+				}
+				return ts.PromoteCoreLatest(ctx, npmVersion, npmToken, typescriptclientdev.TypescriptClientDevPromoteCoreLatestOpts{
 					NpmRegistryURL: npmRegistryURL,
 				})
 			},
 			dryRun: func(ctx context.Context) error {
-				return checkError(ctx, typescriptclientdev.New(r.Workspace).ReleaseDryRun())
+				return checkError(ctx, typescriptclientdev.New(r.Workspace).ReleaseCoreDryRun())
 			},
 			published: func(ctx context.Context) (bool, error) {
-				return registryHasVersion(ctx, npmVersionURL(npmRegistryURL, strings.TrimPrefix(version, "v")))
+				npmVersion := strings.TrimPrefix(version, "v")
+				onRegistry, err := registryHasVersion(ctx, npmVersionURL(npmRegistryURL, npmVersion))
+				if err != nil || !onRegistry {
+					return false, err
+				}
+				// Not done until `latest` is settled: a release whose publish
+				// landed and whose dist-tag move did not has to be retried,
+				// and reporting it published is what skipped the repair.
+				currentLatest, err := npmLatestTag(ctx, npmPackumentURL(npmRegistryURL))
+				if err != nil {
+					return false, err
+				}
+				return !shouldMoveNpmLatest(npmVersion, currentLatest), nil
 			},
 		},
 		{
