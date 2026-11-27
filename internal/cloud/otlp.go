@@ -517,8 +517,14 @@ func (c *OTLPClient) streamMetrics(ctx context.Context, traceID string, sink Tra
 }
 
 func (c *OTLPClient) openStream(ctx context.Context, kind, endpoint string) (*http.Response, error) {
+	return c.openRequest(ctx, kind, endpoint, otlpstream.ContentType)
+}
+
+// openRequest GETs endpoint, accepting the accept media type, and retries
+// once with a refreshed credential when the first is refused.
+func (c *OTLPClient) openRequest(ctx context.Context, kind, endpoint, accept string) (*http.Response, error) {
 	usedHeader := c.auth.currentHeader()
-	resp, err := c.requestStream(ctx, kind, endpoint, usedHeader)
+	resp, err := c.requestStream(ctx, kind, endpoint, accept, usedHeader)
 	if err != nil {
 		return nil, err
 	}
@@ -537,7 +543,7 @@ func (c *OTLPClient) openStream(ctx context.Context, kind, endpoint string) (*ht
 		return nil, errors.Join(unauthorizedErr, fmt.Errorf("refresh cloud OAuth credential: %w", err))
 	}
 
-	resp, err = c.requestStream(ctx, kind, endpoint, refreshedHeader)
+	resp, err = c.requestStream(ctx, kind, endpoint, accept, refreshedHeader)
 	if err != nil {
 		return nil, errors.Join(unauthorizedErr, fmt.Errorf("retry after refreshing authorization: %w", err))
 	}
@@ -548,13 +554,13 @@ func (c *OTLPClient) openStream(ctx context.Context, kind, endpoint string) (*ht
 	return resp, nil
 }
 
-func (c *OTLPClient) requestStream(ctx context.Context, kind, endpoint, authHeader string) (*http.Response, error) {
+func (c *OTLPClient) requestStream(ctx context.Context, kind, endpoint, accept, authHeader string) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create request for %s: %w", kind, err)
 	}
 	req.Header.Set("Authorization", authHeader)
-	req.Header.Set("Accept", otlpstream.ContentType)
+	req.Header.Set("Accept", accept)
 
 	c.stats.addRequest(kind)
 	resp, err := c.h.Do(req)
