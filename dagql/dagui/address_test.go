@@ -135,6 +135,15 @@ func TestParseAddress(t *testing.T) {
 			compact: "lint path=a&b=c go-test=*",
 		},
 		{
+			name: "absent dimension",
+			in:   "dag+check://grid/generate/stale?!cell&row=1",
+			want: &Address{Types: []string{"check"}, Kind: "check", Path: "grid/generate/stale", Dimensions: []AddressDimension{
+				{Name: "cell", Absent: true},
+				{Name: "row", Keys: []string{"1"}},
+			}},
+			compact: "grid/generate/stale !cell row=1",
+		},
+		{
 			name: "key holding a URL",
 			in:   "dag://?check=fetch&url=https://example.com/x",
 			want: &Address{Kind: "check", Path: "fetch", Dimensions: []AddressDimension{
@@ -149,6 +158,8 @@ func TestParseAddress(t *testing.T) {
 		{name: "empty address", in: "dag://"},
 		{name: "empty scheme type", in: "dag+://?check=x"},
 		{name: "bad escape", in: "dag://?check=%zz"},
+		{name: "absent dimension with a key", in: "dag://?check=x&!cell=a"},
+		{name: "absent nothing", in: "dag://?check=x&!"},
 		{name: "absolute without path separator", in: "dag://github.com/x@main"},
 	}
 	for _, tt := range tests {
@@ -260,6 +271,14 @@ func TestConstantDimensions(t *testing.T) {
 	got = ConstantDimensions([]string{
 		"dag://?check=lint&module=golang&golang-module=.",
 		"dag+check://?module=golang&name=modules.packages.tests.test&golang-package=cmd/init",
+	})
+	if !slices.Equal(got, []string{"module"}) {
+		t.Errorf("constant = %v, want [module]", got)
+	}
+	// No key and any key are different selections.
+	got = ConstantDimensions([]string{
+		"dag://?check=stale&!cell&module=grid",
+		"dag://?check=stale&cell&module=grid",
 	})
 	if !slices.Equal(got, []string{"module"}) {
 		t.Errorf("constant = %v, want [module]", got)

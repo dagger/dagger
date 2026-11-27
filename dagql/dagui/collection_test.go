@@ -115,6 +115,7 @@ func TestCollectionTableRowCells(t *testing.T) {
 		{name: "dag://?check=verify&view-package=left&view-case=Bar&tag=x&tag=y"},
 		{name: "dag://?check=verify&view-package=right&view-case=Baz&tag"},
 		{name: "dag://?check=verify&view-package=left&view-case=Foo"},
+		{name: "dag://?check=verify&view-package=right&view-case=Qux&!tag"},
 	})
 	if !slices.Equal(table.Columns, []string{"view-package", "view-case", "tag"}) {
 		t.Fatalf("columns = %v", table.Columns)
@@ -123,6 +124,7 @@ func TestCollectionTableRowCells(t *testing.T) {
 		"dag://?check=verify&view-package=left&view-case=Bar&tag=x&tag=y": {"left", "Bar", "tag ×2"},
 		"dag://?check=verify&view-package=right&view-case=Baz&tag":        {"right", "Baz", "*"},
 		"dag://?check=verify&view-package=left&view-case=Foo":             {"left", "Foo", "–"},
+		"dag://?check=verify&view-package=right&view-case=Qux&!tag":       {"right", "Qux", "–"},
 	} {
 		if row, ok := table.Row(name); !ok || !slices.Equal(row, want) {
 			t.Errorf("Row(%q) = %v, %v; want %v", name, row, ok, want)

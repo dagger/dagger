@@ -150,8 +150,9 @@ func buildCollectionTable(items []collectionItem) *CollectionTable {
 		return dim.Keys
 	}
 	varies := func(name string) bool {
+		first, _ := addrs[0].Dimension(name)
 		for i := 1; i < len(items); i++ {
-			if !slices.Equal(keysOf(i, name), keysOf(0, name)) {
+			if dim, _ := addrs[i].Dimension(name); !sameSelection(dim, first) {
 				return true
 			}
 		}

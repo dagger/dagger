@@ -46,6 +46,14 @@ type AddressDimension struct {
 	// Any reports that the dimension was given without a key, selecting
 	// any key.
 	Any bool
+	// Absent reports that the dimension was given as "!<dimension>",
+	// selecting artifacts with no key in it.
+	Absent bool
+}
+
+// sameSelection reports whether two dimensions select the same keys.
+func sameSelection(a, b AddressDimension) bool {
+	return a.Any == b.Any && a.Absent == b.Absent && slices.Equal(a.Keys, b.Keys)
 }
 
 // Segments splits the artifact path at its separators.
@@ -149,10 +157,12 @@ func (addr *Address) CompactWithout(hide []string) string {
 	return strings.Join(parts, " ")
 }
 
-// Compact prints the dimension as name=key, or name×count when it holds
-// several keys.
+// Compact prints the dimension as name=key, name×count when it holds
+// several keys, name=* for any key, or !name for none.
 func (dim AddressDimension) Compact() string {
 	switch {
+	case dim.Absent:
+		return "!" + dim.Name
 	case dim.Any || len(dim.Keys) == 0:
 		return dim.Name + "=*"
 	case len(dim.Keys) == 1:
@@ -167,6 +177,8 @@ func (dim AddressDimension) Compact() string {
 // key, "–" for none, or name ×count when it holds several keys.
 func (dim AddressDimension) Cell() string {
 	switch {
+	case dim.Absent:
+		return "–"
 	case dim.Any:
 		return "*"
 	case len(dim.Keys) == 0:
@@ -198,9 +210,12 @@ func ConstantDimensions(names []string) []string {
 	var constant []string
 	for _, name := range addrs[0].DimensionNames() {
 		first, _ := addrs[0].DimensionKeys(name)
+		firstDim, _ := addrs[0].Dimension(name)
 		same := true
 		for _, addr := range addrs[1:] {
-			if keys, ok := addr.DimensionKeys(name); !ok || !slices.Equal(keys, first) {
+			keys, ok := addr.DimensionKeys(name)
+			dim, _ := addr.Dimension(name)
+			if !ok || !slices.Equal(keys, first) || dim.Any != firstDim.Any || dim.Absent != firstDim.Absent {
 				same = false
 				break
 			}
@@ -273,7 +288,9 @@ func ParseAddress(name string) (*Address, bool) {
 			addr.Dimensions = append(addr.Dimensions, AddressDimension{Name: pair.dimension})
 		}
 		dim := &addr.Dimensions[i]
-		if pair.hasKey {
+		if pair.absent {
+			dim.Absent = true
+		} else if pair.hasKey {
 			dim.Keys = append(dim.Keys, pair.key)
 		} else {
 			dim.Any = true
@@ -329,6 +346,7 @@ type addressPair struct {
 	dimension string
 	key       string
 	hasKey    bool
+	absent    bool
 }
 
 func parseAddressQuery(query string) ([]addressPair, bool) {
@@ -339,14 +357,26 @@ func parseAddressQuery(query string) ([]addressPair, bool) {
 		}
 		name, key, hasKey := strings.Cut(raw, "=")
 		dimension, err := url.PathUnescape(name)
-		if err != nil || dimension == "" {
+		if err != nil {
 			return nil, false
 		}
-		pair := addressPair{dimension: dimension, hasKey: hasKey}
+		// Like the engine's parser: "!<dimension>" selects artifacts with
+		// no key in it.
+		dimension, absent := strings.CutPrefix(dimension, "!")
+		if dimension == "" {
+			return nil, false
+		}
+		pair := addressPair{dimension: dimension, hasKey: hasKey, absent: absent}
 		if hasKey {
 			if pair.key, err = url.PathUnescape(key); err != nil {
 				return nil, false
 			}
+		}
+		if absent {
+			if pair.key != "" {
+				return nil, false
+			}
+			pair.hasKey = false
 		}
 		pairs = append(pairs, pair)
 	}
