@@ -13,6 +13,7 @@ import (
 	"dagger/python-client-dev/internal/dagger"
 	"dagger/python-client-dev/internal/dagger/clients/dockerd"
 	enginedev "dagger/python-client-dev/internal/dagger/clients/engine-dev"
+	pythonsdk "dagger/python-client-dev/internal/dagger/clients/python-sdk"
 	"dagger/python-client-dev/internal/dagger/clients/wolfi"
 )
 
@@ -271,25 +272,19 @@ func (t PythonClientDev) Release(
 ) error {
 	version := strings.TrimPrefix(sourceTag, "sdk/python/")
 
-	var ctr *dagger.Container
 	if dryRun {
-		ctr = t.Build("0.0.0") // no default arg in Go, without self call just replicate the default value
-	} else {
-		url := pypiURL
-		if url == "" && pypiRepo == "test" {
-			url = "https://test.pypi.org/legacy/"
-		}
-		ctr = t.Publish(pypiToken, strings.TrimPrefix(version, "v"), url)
+		return pythonsdk.New().Libraries().Check(ctx, t.Libraries("0.0.0"))
 	}
-	_, err := ctr.Sync(ctx)
-	if err != nil {
-		return err
+	url := pypiURL
+	if url == "" && pypiRepo == "test" {
+		url = "https://test.pypi.org/legacy/"
 	}
-
-	return nil
+	_, err := t.Publish(pypiToken, strings.TrimPrefix(version, "v"), url).Sync(ctx)
+	return err
 }
 
-// Build the Python SDK client library package for distribution
+// Build the dagger-io distribution from sdk/python, for local use. Releases
+// publish Libraries instead.
 func (t PythonClientDev) Build(
 	// The version for the distribution package
 	// +default="0.0.0"
@@ -301,7 +296,22 @@ func (t PythonClientDev) Build(
 		WithExec(uv("build"))
 }
 
-// Publish Python SDK client library to PyPI
+// The distributions a release publishes, built by dagger/python-sdk:
+// dagger-io, the SDK library, and dagger-clients-core, the core client
+// generated from this workspace's API
+func (t PythonClientDev) Libraries(
+	// The version for the distribution packages, without a leading "v"
+	version string,
+) *dagger.Directory {
+	return pythonsdk.New().Libraries().Dist(version, enginedev.New(t.Ws).IntrospectionJSON())
+}
+
+// Libraries' sdists need uv 0.13 or later to read them. The uv 0.10 of
+// sdk/python's runtime fails on them with "malformed pax extension", so
+// Publish uploads with this uv instead.
+const librariesUvImage = "ghcr.io/astral-sh/uv:0.13.9@sha256:d3b601f0c7b118bc1753febf7c41cc80981df678445e0254284eecf84db79a7d"
+
+// Publish Libraries to PyPI
 func (t PythonClientDev) Publish(
 	// The token for the upload
 	token *dagger.Secret,
@@ -312,11 +322,14 @@ func (t PythonClientDev) Publish(
 	// +optional
 	url string,
 ) *dagger.Container {
-	ctr := t.Build(version).WithSecretVariable("UV_PUBLISH_TOKEN", token)
+	ctr := t.BaseContainer.
+		WithFile("/usr/local/bin/uv", core.NewContainer().From(librariesUvImage).File("/uv")).
+		WithMountedDirectory("dist", t.Libraries(version)).
+		WithSecretVariable("UV_PUBLISH_TOKEN", token)
 	if url != "" {
 		ctr = ctr.WithEnvVariable("UV_PUBLISH_URL", url)
 	}
-	return ctr.WithExec(uv("publish"))
+	return ctr.WithExec(uv("publish", "dist/*"))
 }
 
 // Test the publishing of the Python SDK client library to TestPyPI

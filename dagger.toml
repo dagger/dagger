@@ -353,7 +353,7 @@ targetVersion = "v1.0.0-beta.27"
 
 [sdks.go.scopes.".dagger/modules/python-client-dev"]
 is-module = true
-clients = ["./.dagger/modules/engine-dev", "./.dagger/modules/python-client-dev/dockerd", "github.com/dagger/pytest", "github.com/dagger/wolfi@fdec349f9aad840f2853bc2e6534f2555788da04"]
+clients = ["./.dagger/modules/engine-dev", "./.dagger/modules/python-client-dev/dockerd", "github.com/dagger/pytest", "github.com/dagger/wolfi@fdec349f9aad840f2853bc2e6534f2555788da04", "github.com/dagger/python-sdk@74f3075c011bd35272f1b60bd14cbeec032c8f1c"]
 
 [sdks.go.scopes.".dagger/modules/python-client-dev".settings]
 dangEntrypoint = true
