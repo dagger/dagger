@@ -1,0 +1,8 @@
+kind: Added
+body: |
+  Added a `doppler://PROJECT/CONFIG/SECRET` secret provider. It uses the
+  Doppler CLI and its existing login or `DOPPLER_TOKEN`.
+time: 2026-11-04T12:00:00Z
+custom:
+  Author: fire-ant
+  PR: ""
