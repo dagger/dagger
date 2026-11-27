@@ -16,29 +16,62 @@ type TreeFileReader func(rel string) (data []byte, found bool, err error)
 // config is the nearest dagger.toml between moduleDir and the root; with
 // none, nothing is declared.
 func DeclaredGitClients(ctx context.Context, moduleDir string, read TreeFileReader) ([]string, error) {
-	moduleDir = path.Clean(moduleDir)
-	for dir := moduleDir; ; dir = path.Dir(dir) {
+	cfg, configDir, err := governingConfig(ctx, moduleDir, read)
+	if err != nil || cfg == nil {
+		return nil, err
+	}
+	return ModuleScopeGitClients(cfg, ".")[moduleScopeIn(path.Clean(moduleDir), configDir)], nil
+}
+
+// DeclaredLocalClients reads the local clients the governing config declares
+// for the module at moduleDir, a path relative to the root of its tree, as
+// paths relative to that root. configDir is the config's directory, relative
+// to the root, or "." when there is none. The config is the nearest
+// dagger.toml between moduleDir and the root; with none, nothing is declared.
+func DeclaredLocalClients(ctx context.Context, moduleDir string, read TreeFileReader) (clients []string, configDir string, _ error) {
+	cfg, configDir, err := governingConfig(ctx, moduleDir, read)
+	if err != nil || cfg == nil {
+		return nil, ".", err
+	}
+	for _, target := range ModuleScopeLocalClients(cfg, ".")[moduleScopeIn(path.Clean(moduleDir), configDir)] {
+		clients = append(clients, path.Join(configDir, target))
+	}
+	return clients, configDir, nil
+}
+
+// governingConfig parses the nearest dagger.toml between moduleDir and the
+// root of the tree, and returns it with its directory. It returns no config
+// when there is none, or when it does not parse: such a config declares
+// nothing.
+func governingConfig(ctx context.Context, moduleDir string, read TreeFileReader) (*Config, string, error) {
+	for dir := path.Clean(moduleDir); ; dir = path.Dir(dir) {
 		data, found, err := read(path.Join(dir, ConfigFileName))
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 		if found {
-			scope := moduleDir
-			switch {
-			case dir == moduleDir:
-				scope = "."
-			case dir != ".":
-				scope = strings.TrimPrefix(moduleDir, dir+"/")
-			}
 			cfg, err := ParseConfigAt(ctx, data, ".")
 			if err != nil {
-				return nil, nil //nolint:nilerr // deliberate: a config that does not parse declares nothing
+				return nil, "", nil //nolint:nilerr // deliberate: a config that does not parse declares nothing
 			}
-			return ModuleScopeGitClients(cfg, ".")[scope], nil
+			return cfg, dir, nil
 		}
 		if dir == "." {
-			return nil, nil
+			return nil, "", nil
 		}
+	}
+}
+
+// moduleScopeIn is the module scope key for moduleDir in a config at
+// configDir, both relative to the root of the tree.
+func moduleScopeIn(moduleDir, configDir string) string {
+	switch configDir {
+	case moduleDir:
+		return "."
+	case ".":
+		return moduleDir
+	default:
+		return strings.TrimPrefix(moduleDir, configDir+"/")
 	}
 }
 
