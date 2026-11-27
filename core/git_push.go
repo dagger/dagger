@@ -29,6 +29,11 @@ type GitPushOpts struct {
 type GitPushAuthorization struct {
 	Owner  *engine.ClientMetadata
 	Remote string
+	// Lease is the exact SHA the push was authorized to expect of the remote
+	// ref (--force-with-lease), "" for none. A leased force-push may be
+	// authorized as a plain push would be, so the push must enforce this
+	// lease, and no other.
+	Lease string
 }
 
 func (opts GitPushOpts) Ref(source *gitutil.Ref) (string, error) {
@@ -92,9 +97,16 @@ func (ref *GitRef) Push(ctx context.Context, destination *RemoteGitRepository, o
 	// through the owner's rewrites, which might select a different host.
 	resolveURL := !opts.SkipDestinationRewrite && destination.AuthToken.Self() == nil &&
 		destination.AuthHeader.Self() == nil && destination.SSHAuthSocket.Self() == nil && len(destination.Services) == 0
-	authorized, err := query.AuthorizeGitPush(ctx, destination.URL.Remote(), name, opts.ExpectedRemoteSHA != "", resolveURL)
+	// A push with an expected SHA is a force-push with that lease (see
+	// runGitPush); the policy may treat it as a plain push only because the
+	// lease is enforced.
+	lease := opts.ExpectedRemoteSHA
+	authorized, err := query.AuthorizeGitPush(ctx, destination.URL.Remote(), name, lease != "", lease, resolveURL)
 	if err != nil {
 		return nil, err
+	}
+	if authorized.Lease != lease {
+		return nil, fmt.Errorf("push %s was authorized for a different lease", name)
 	}
 	owner := authorized.Owner
 	// Keep the resolved URL confined to this operation; never mutate a cached
@@ -198,7 +210,8 @@ func (ref *GitRef) Push(ctx context.Context, destination *RemoteGitRepository, o
 			)
 		} // Missing credentials are permitted for anonymous writable remotes.
 	}
-	return runGitPush(ctx, pushGit.New(gitutil.WithGitDir(tmp)), destination.URL.Remote(), name, ref.Ref.SHA, opts.ExpectedRemoteSHA)
+	// Enforce exactly the lease the push was authorized with.
+	return runGitPush(ctx, pushGit.New(gitutil.WithGitDir(tmp)), destination.URL.Remote(), name, ref.Ref.SHA, authorized.Lease)
 }
 
 func prepareGitPushSSHAuth(ctx context.Context, query *Query, owner *engine.ClientMetadata, destination *RemoteGitRepository) (string, error) {

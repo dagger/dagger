@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/charmbracelet/huh"
+	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/session/git"
 	"github.com/dagger/dagger/engine/session/prompt"
@@ -68,7 +69,12 @@ func newGitPushTestSession(t *testing.T, questions prompt.PromptServer, routing 
 		return ctx
 	}
 	return &gitPushTestSession{
-		srv:           &Server{daggerSessions: map[string]*daggerSession{"session": sess}},
+		srv: &Server{
+			daggerSessions: map[string]*daggerSession{"session": sess},
+			// No remote answers unless a test says so: every push asks as it
+			// did before default branches were told apart.
+			gitRemoteHead: func(context.Context, string) (string, error) { return "", core.ErrGitRemoteUnreachable },
+		},
 		sess:          sess,
 		owner:         owner,
 		ownerCtx:      clientContext(owner),
@@ -77,6 +83,10 @@ func newGitPushTestSession(t *testing.T, questions prompt.PromptServer, routing 
 		newClient:     newClient,
 	}
 }
+
+// testLease is the remote SHA a test's force-push expects, as
+// --force-with-lease: the only force-push the push API makes.
+const testLease = "0123456789abcdef0123456789abcdef01234567"
 
 func TestGitPushApprovalOwnerBoundary(t *testing.T) {
 	// The owner grants pushes for the session and denies force-pushes.
@@ -93,11 +103,11 @@ func TestGitPushApprovalOwnerBoundary(t *testing.T) {
 	const ref = "refs/heads/main"
 	const by = ` (requested by module "pusher")?`
 	// Direct owner use is implicit authorization, including explicit leases.
-	_, err := srv.AuthorizeGitPush(s.ownerCtx, remote, ref, true, false)
+	_, err := srv.AuthorizeGitPush(s.ownerCtx, remote, ref, true, testLease, false)
 	require.NoError(t, err)
 	require.Empty(t, questions.asked())
 	for range 2 {
-		md, err := srv.AuthorizeGitPush(moduleCtx, remote, ref, false, false)
+		md, err := srv.AuthorizeGitPush(moduleCtx, remote, ref, false, "", false)
 		require.NoError(t, err)
 		require.Equal(t, owner.clientMetadata, md.Owner)
 		require.Equal(t, remote, md.Remote)
@@ -110,7 +120,7 @@ func TestGitPushApprovalOwnerBoundary(t *testing.T) {
 	require.Equal(t, remote+" @ "+ref, req.Subject)
 	require.False(t, req.Danger)
 	for range 2 {
-		md, err := srv.AuthorizeGitPush(moduleCtx, remote, ref, true, false)
+		md, err := srv.AuthorizeGitPush(moduleCtx, remote, ref, true, testLease, false)
 		require.ErrorContains(t, err, "permission denied")
 		require.Nil(t, md)
 	}
@@ -120,7 +130,7 @@ func TestGitPushApprovalOwnerBoundary(t *testing.T) {
 	require.Equal(t, "Force-push to git@example.com:repo @ refs/heads/main?", req.Question)
 	require.Equal(t, approvalKindGitForcePush, req.Kind)
 	require.True(t, req.Danger)
-	_, err = srv.AuthorizeGitPush(moduleCtx, remote, "refs/heads/other", false, false)
+	_, err = srv.AuthorizeGitPush(moduleCtx, remote, "refs/heads/other", false, "", false)
 	require.NoError(t, err)
 	require.Len(t, questions.asked(), 4)
 	// A module-created container's nested API client is still delegated, and
@@ -129,11 +139,11 @@ func TestGitPushApprovalOwnerBoundary(t *testing.T) {
 	s.sess.clientRuntimes["nested"] = nested
 	installTestClientRecords(s.sess)
 	nestedCtx := s.clientContext(nested)
-	md, err := srv.AuthorizeGitPush(nestedCtx, remote, ref, false, false)
+	md, err := srv.AuthorizeGitPush(nestedCtx, remote, ref, false, "", false)
 	require.NoError(t, err)
 	require.Equal(t, owner.clientMetadata, md.Owner)
 	require.Equal(t, remote, md.Remote)
-	_, err = srv.AuthorizeGitPush(nestedCtx, remote, ref, true, false)
+	_, err = srv.AuthorizeGitPush(nestedCtx, remote, ref, true, testLease, false)
 	require.ErrorContains(t, err, "permission denied")
 	require.Len(t, questions.asked(), 5)
 	require.Zero(t, routing.requests, "explicit destinations must not consult owner rewrites")
@@ -145,7 +155,7 @@ func TestGitPushApprovalOwnerBoundary(t *testing.T) {
 		routing.entries = []*git.GitConfigEntry{{Key: "url." + target + ".pushinsteadof", Value: "https://example.com/"}}
 		before := len(questions.asked())
 		for range 2 {
-			authorized, err := srv.AuthorizeGitPush(nestedCtx, fetchURL, ref, false, true)
+			authorized, err := srv.AuthorizeGitPush(nestedCtx, fetchURL, ref, false, "", true)
 			require.NoError(t, err)
 			require.Equal(t, owner.clientMetadata, authorized.Owner)
 			require.Equal(t, target+"repo", authorized.Remote)
@@ -156,7 +166,7 @@ func TestGitPushApprovalOwnerBoundary(t *testing.T) {
 	for _, target := range []string{"https://sensitive-token@push.example.com/", "ssh://git:sensitive-password@push.example.com/", "https://push.example.com/?sensitive-token=", "file:///tmp/", "ext::sensitive-command "} {
 		routing.entries = []*git.GitConfigEntry{{Key: "url." + target + ".pushinsteadof", Value: "https://example.com/"}}
 		before := len(questions.asked())
-		_, err := srv.AuthorizeGitPush(nestedCtx, fetchURL, ref, false, true)
+		_, err := srv.AuthorizeGitPush(nestedCtx, fetchURL, ref, false, "", true)
 		require.Error(t, err)
 		require.NotContains(t, err.Error(), "sensitive")
 		require.Len(t, questions.asked(), before)
@@ -179,7 +189,7 @@ func TestGitPushApprovalInertClient(t *testing.T) {
 	s.sess.clientRuntimes["eval"] = eval
 	installTestClientRecords(s.sess)
 	const ref = "refs/heads/main"
-	authorized, err := s.srv.AuthorizeGitPush(s.clientContext(eval), "https://example.com/repo", ref, false, true)
+	authorized, err := s.srv.AuthorizeGitPush(s.clientContext(eval), "https://example.com/repo", ref, false, "", true)
 	require.NoError(t, err)
 	require.Equal(t, s.owner.clientMetadata, authorized.Owner, "it pushes with the owner's host")
 	require.Equal(t, "git@push.example.com:repo", authorized.Remote, "through the owner's routing")
@@ -197,11 +207,11 @@ func TestGitPushApprovalBoolPromptFallback(t *testing.T) {
 	const remote = "git@example.com:repo"
 	const ref = "refs/heads/main"
 	for range 2 {
-		md, err := s.srv.AuthorizeGitPush(s.moduleCtx, remote, ref, false, false)
+		md, err := s.srv.AuthorizeGitPush(s.moduleCtx, remote, ref, false, "", false)
 		require.NoError(t, err)
 		require.Equal(t, s.owner.clientMetadata, md.Owner)
 	}
-	_, err := s.srv.AuthorizeGitPush(s.moduleCtx, remote, ref, true, false)
+	_, err := s.srv.AuthorizeGitPush(s.moduleCtx, remote, ref, true, testLease, false)
 	require.ErrorContains(t, err, "permission denied")
 	require.Len(t, questions.requests, 2, "a yes allows for the session")
 	require.Equal(t, `Allow force-push to git@example.com:repo @ refs/heads/main (requested by module "pusher")?`, questions.requests[1].Prompt)
@@ -227,7 +237,7 @@ func TestGitPushApprovalYesNoFrontend(t *testing.T) {
 	handler := &yesHandler{}
 	s := newGitPushTestSession(t, prompt.NewPromptAttachable(handler), &pushRoutingServer{})
 	for range 3 {
-		_, err := s.srv.AuthorizeGitPush(s.moduleCtx, "git@example.com:repo", "refs/heads/main", false, false)
+		_, err := s.srv.AuthorizeGitPush(s.moduleCtx, "git@example.com:repo", "refs/heads/main", false, "", false)
 		require.NoError(t, err)
 	}
 	require.Len(t, handler.prompts, 1, "a yes allows for the session")

@@ -57,7 +57,7 @@ func (*mockServer) CurrentClientModules(context.Context) ([]WorkspaceClientModul
 	return nil, nil
 }
 
-func (*mockServer) AuthorizeGitPush(context.Context, string, string, bool, bool) (*GitPushAuthorization, error) {
+func (*mockServer) AuthorizeGitPush(context.Context, string, string, bool, string, bool) (*GitPushAuthorization, error) {
 	panic("unexpected AuthorizeGitPush")
 }
 
