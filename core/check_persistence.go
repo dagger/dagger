@@ -30,6 +30,7 @@ type persistedCheck struct {
 	Error           uint64                `json:"error,omitempty"`
 	StaleGenerator  string                `json:"staleGenerator,omitempty"`
 	StalePatch      string                `json:"stalePatch,omitempty"`
+	Planned         bool                  `json:"planned,omitempty"`
 }
 
 type persistedCheckInput struct {
@@ -78,6 +79,9 @@ func (c *Check) EncodePersistedObject(_ context.Context, enc *dagql.PersistEncod
 		Passed:          c.Passed,
 		StaleGenerator:  c.StaleGenerator,
 		StalePatch:      c.StalePatch,
+		// A planned check is stored as planned whether or not it ran: the
+		// cached run of a check is __run's result, not this one.
+		Planned: c.Planned,
 	}
 	if c.Assertion.Valid {
 		assertion := c.Assertion.Value.String()
@@ -314,6 +318,9 @@ func (*Check) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecod
 			return nil, fmt.Errorf("decode persisted check: %w", err)
 		}
 		c.Inputs = append(c.Inputs, CallInput{Name: input.Name, Value: typed})
+	}
+	if payload.Planned {
+		c = NewPlannedCheck(c)
 	}
 	return c, nil
 }

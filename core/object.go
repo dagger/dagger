@@ -1751,10 +1751,10 @@ func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) ([]da
 		// this, a failed check shows a Type.__check_<function> row, since
 		// failed spans show even when they're internal.
 		runSpec.PassthroughTelemetry = true
-		// For the same reason, the function's error origin, its output and
-		// its SDK's spans belong on the check's span, not on this one, which
-		// no frontend renders.
-		runSpec.CallerAttributedTelemetry = true
+		// PROTOTYPE (check-lazy-eval-proto): no CallerAttributedTelemetry.
+		// The projection's Check is lazy and this field runs as its
+		// deferred work, so where the function's work is reported is up to
+		// the lazy evaluation's telemetry (dagql beginOTelLazyOp).
 		authoredFunc := field.Func
 		fields = append(fields, dagql.Field[*ModuleObject]{
 			Spec: &runSpec,
@@ -1801,10 +1801,12 @@ func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) ([]da
 				sort.Slice(inputs, func(i, j int) bool { return inputs[i].Name < inputs[j].Name })
 				// Check is a core type, so any server with the core schema can
 				// wrap it.
-				return dagql.NewObjectResultForCurrentCall(ctx, installed.orCurrent(ctx), &Check{
+				// The check is planned: evaluating this result runs the
+				// function, as deferred work of this call.
+				return dagql.NewObjectResultForCurrentCall(ctx, installed.orCurrent(ctx), NewPlannedCheck(&Check{
 					Assertion: dagql.NonNull(dagql.String(fun.Description)),
 					Receiver:  receiver, Function: fun.Name, Inputs: inputs, Workspace: workspace, CacheTTL: field.Spec.TTL,
-				})
+				}))
 			},
 		})
 	}

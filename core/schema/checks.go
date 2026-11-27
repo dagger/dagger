@@ -27,6 +27,9 @@ func (s checksSchema) Install(srv *dagql.Server) {
 			CollectionItem bool `default:"false"`
 		}) (*core.Check, error) {
 			copy := check.Self().Clone()
+			// Only the planned check itself is lazy: running an
+			// addressed copy evaluates the one it was made from.
+			copy.Planned = false
 			copy.Address = args.Address
 			// Keep the artifact's identity separate from the cached check body.
 			copy.CollectionItem = args.CollectionItem
@@ -127,7 +130,15 @@ func checkFromContent(check dagql.ObjectResult[*core.Check]) bool {
 
 func (s checksSchema) run(ctx context.Context, check dagql.ObjectResult[*core.Check], _ struct{}) (dagql.ObjectResult[*core.Check], error) {
 	// Only this check is rerun, not the checks its body runs.
-	result, err := check.Self().Run(context.WithValue(ctx, checkRerunKey{}, false))
+	ctx = context.WithValue(ctx, checkRerunKey{}, false)
+	var result *core.Check
+	var err error
+	if check.Self().Planned {
+		// The function runs as the planned check's deferred work.
+		result, err = core.RunPlanned(ctx, check)
+	} else {
+		result, err = check.Self().Run(ctx)
+	}
 	if err != nil {
 		return dagql.ObjectResult[*core.Check]{}, err
 	}

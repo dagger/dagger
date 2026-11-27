@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync/atomic"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/telemetryattrs"
@@ -35,6 +36,61 @@ type Check struct {
 	Error           dagql.Nullable[dagql.ObjectResult[*Error]]
 	StaleGenerator  string
 	StalePatch      string
+
+	// Planned marks a check function's projection: a check whose function
+	// hasn't run. The result is lazy (see LazyEvalFunc): forcing it, as
+	// running the check does, runs the function through the cache's lazy
+	// evaluation, so its work is reported as deferred work of the call that
+	// planned it.
+	Planned bool
+	// ran is shared by the copies of a planned check: the function ran to
+	// success, so nothing is deferred anymore.
+	ran *atomic.Bool
+}
+
+// LazyEvalFunc runs a planned check's function. Its failure fails the
+// evaluation: a failed attempt isn't consumed, so the next request to run the
+// check runs it again, while requests that joined it share its failure.
+func (c *Check) LazyEvalFunc() dagql.LazyEvalFunc {
+	if c == nil || !c.Planned || c.Completed || c.ran == nil || c.ran.Load() {
+		return nil
+	}
+	return func(ctx context.Context) error {
+		if err := c.runFunction(ctx); err != nil {
+			return err
+		}
+		c.ran.Store(true)
+		return nil
+	}
+}
+
+// NewPlannedCheck returns a check of a function that runs when the check's
+// result is evaluated.
+func NewPlannedCheck(c *Check) *Check {
+	c.Planned = true
+	c.ran = new(atomic.Bool)
+	return c
+}
+
+// RunPlanned runs a planned check by evaluating its result, and returns its
+// outcome.
+func RunPlanned(ctx context.Context, planned dagql.ObjectResult[*Check]) (*Check, error) {
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return nil, err
+	}
+	failure := cache.Evaluate(ctx, planned)
+	c := planned.Self().Clone()
+	c.Planned, c.ran = false, nil
+	c.Completed, c.Passed = true, failure == nil
+	if failure != nil {
+		errObj, err := NewErrorFromErr(ctx, failure)
+		if err != nil {
+			return nil, err
+		}
+		c.Error = dagql.NonNull(errObj)
+	}
+	return c, nil
 }
 
 func (c *Check) ResultScope() dagql.ResultScope {
