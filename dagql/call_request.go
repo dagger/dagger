@@ -29,6 +29,11 @@ type CallRequest struct {
 	// asking the UI to show its children in its place.
 	PassthroughTelemetry bool
 
+	// CallerAttributedTelemetry gives the call span's user-facing attribution
+	// to the span that was current when it started (see
+	// FieldSpec.CallerAttributedTelemetry).
+	CallerAttributedTelemetry bool
+
 	// ReceiverTypeName is the immediate receiver's GraphQL type name, stamped
 	// lookup-free at the object call site (objects.go) from r.class.inner.Type().Name().
 	// It is request-only carrier state (never digested, never persisted) consumed by
@@ -60,15 +65,16 @@ func (req *CallRequest) Clone() *CallRequest {
 		frame = &ResultCall{}
 	}
 	return &CallRequest{
-		ResultCall:           frame,
-		ConcurrencyKey:       req.ConcurrencyKey,
-		TTL:                  req.TTL,
-		DoNotCache:           req.DoNotCache,
-		IsPersistable:        req.IsPersistable,
-		ListItem:             req.ListItem,
-		DeduplicateTelemetry: req.DeduplicateTelemetry,
-		PassthroughTelemetry: req.PassthroughTelemetry,
-		ReceiverTypeName:     req.ReceiverTypeName,
+		ResultCall:                frame,
+		ConcurrencyKey:            req.ConcurrencyKey,
+		TTL:                       req.TTL,
+		DoNotCache:                req.DoNotCache,
+		IsPersistable:             req.IsPersistable,
+		ListItem:                  req.ListItem,
+		DeduplicateTelemetry:      req.DeduplicateTelemetry,
+		PassthroughTelemetry:      req.PassthroughTelemetry,
+		CallerAttributedTelemetry: req.CallerAttributedTelemetry,
+		ReceiverTypeName:          req.ReceiverTypeName,
 		// CacheEvidence is deliberately NOT carried over: it is per-invocation
 		// state owned by the one AroundFunc-wrapped invocation that allocated
 		// it; a cloned request is a different (or internal) invocation and

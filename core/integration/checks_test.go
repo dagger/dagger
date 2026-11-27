@@ -28,6 +28,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
+	"go.opentelemetry.io/otel/trace"
 	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
 )
 
@@ -105,13 +106,31 @@ type TestCase {
 // show its children in its place, a failed check shows a cryptic
 // View.__check_failing row above its own work. The function itself, called
 // directly, keeps its span.
+//
+// The hidden field's span is the check function's call, but no frontend
+// renders it, so what the function does is attributed to the check's span:
+// an error of the function's own, raised or returned as an Error, has the
+// check as its origin, and what the function prints is the check's output
+// (trace f63854c7: a Python check's
+// traceback and origin were on DaggerverseCore.__check_allTs). An error from
+// deeper in the body keeps its own origin.
 func (ChecksSuite) TestCheckRunSpanIsPassthrough(ctx context.Context, t *testctx.T) {
 	c, sink := connectWithTrace(ctx, t)
-	fixture := artifactViewWorkspace(t, c, `type View {
-  failing: Void @check { raise "check body failed" }
-}`).WithEnvVariable("CACHEBUSTER", rand.Text())
+	nonce := rand.Text()
+	output, deepCmd := "check body output "+nonce, "echo deep "+nonce+"; exit 3"
+	fixture := artifactViewWorkspace(t, c, fmt.Sprintf(`type View {
+  failing: Void @check {
+    print(%q)
+    raise "check body failed"
+  }
+  returned: Void @check { raise error(message: "check returned an error") }
+  deep: Void @check {
+    container.from(%q).withExec(["sh", "-c", %q]).sync
+    null
+  }
+}`, output, alpineImage, deepCmd))
 
-	_, err := fixture.With(daggerExecFail("check", "failing", "--generated=false")).Sync(ctx)
+	_, err := fixture.With(daggerExecFail("check", "failing", "returned", "deep", "--generated=false")).Sync(ctx)
 	require.NoError(t, err)
 	_, err = fixture.WithExec([]string{"dagger", "api", "call", "view", "failing"}, core.ContainerWithExecOpts{
 		Expect: core.ReturnTypeAny,
@@ -144,8 +163,123 @@ func (ChecksSuite) TestCheckRunSpanIsPassthrough(ctx context.Context, t *testctx
 					assert.False(ct, fn.Passthrough, "the function's own span is not passthrough")
 				}
 			}
+			// An error the function raises, or returns as an Error, which
+			// the engine gives the function call's origin.
+			for _, name := range []string{"failing", "returned"} {
+				checks := checkSpansOf(db, name)
+				if assert.NotEmpty(ct, checks, "the %s check's span", name) {
+					for _, check := range checks {
+						assert.True(ct, check.IsFailed(), "the %s check fails", name)
+						// One naming the span itself is not recorded.
+						assert.Empty(ct, originNames(check), "the %s check is its function's error's origin", name)
+						assert.False(ct, hasErrorOriginLink(db, check, "View.__check_"+name),
+							"no error origin link to the %s check's run span", name)
+					}
+				}
+			}
+			deep := checkSpansOf(db, "deep")
+			if assert.NotEmpty(ct, deep, "the deep check's span") {
+				for _, check := range deep {
+					assert.True(ct, check.IsFailed(), "the deep check fails")
+					origins := check.ErrorOrigins.Spans()
+					if assert.Len(ct, origins, 1, "the deep check's origins: %v", originNames(check)) {
+						assert.True(ct, spanHasStringArg(origins[0], deepCmd),
+							"the deep check's origin is its exec: %s", origins[0].Name)
+					}
+					assert.False(ct, hasErrorOriginLink(db, check, "View.__check_deep"),
+						"no error origin link to the deep check's run span")
+				}
+			}
 		})
 	}, time.Minute, 100*time.Millisecond)
+
+	// What the check function prints is on the check's span itself. The sink
+	// may get a record more than once. The fixture's own exec echoes the
+	// rendered output on a span that is under neither. Logs are exported apart
+	// from spans, so they may arrive later.
+	require.EventuallyWithT(t, func(ct *assert.CollectT) {
+		owners := checkOutputOwners(sink, output)
+		if assert.NotEmpty(ct, owners, "the check's output is logged") {
+			for owner := range owners {
+				assert.True(ct, strings.HasPrefix(owner, "check ") && strings.HasSuffix(owner, "failing") && !strings.Contains(owner, " under "),
+					"the check's output is on the check's span, not %q (all: %v)", owner, owners)
+			}
+		}
+	}, time.Minute, 100*time.Millisecond)
+}
+
+// checkOutputOwners names the spans the log records holding output were
+// logged on: "check <name>" for a check's span, the span's own name for a
+// check's run span, and "<span> under <owner>" for a span beneath either.
+// Records on spans beneath neither are left out.
+func checkOutputOwners(sink *agentTraceSink, output string) map[string]bool {
+	owners := map[string]bool{}
+	_, exports := sink.capture()
+	sink.read(func(db *dagui.DB) {
+		for _, req := range exports {
+			for _, rl := range req.ResourceLogs {
+				for _, sl := range rl.ScopeLogs {
+					for _, lr := range sl.LogRecords {
+						if !strings.Contains(lr.GetBody().GetStringValue(), output) {
+							continue
+						}
+						var id trace.SpanID
+						copy(id[:], lr.SpanId)
+						span := db.Spans.Map[dagui.SpanID{SpanID: id}]
+						for owner := span; owner != nil; owner = owner.ParentSpan {
+							if owner.CheckName == "" && !strings.HasPrefix(owner.Name, "View.__check_") {
+								continue
+							}
+							name := owner.Name
+							if owner.CheckName != "" {
+								name = "check " + owner.CheckName
+							}
+							if owner != span {
+								name = span.Name + " under " + name
+							}
+							owners[name] = true
+							break
+						}
+					}
+				}
+			}
+		}
+	})
+	return owners
+}
+
+// checkSpansOf returns the finished spans of the check named name.
+func checkSpansOf(db *dagui.DB, name string) []*dagui.Span {
+	var spans []*dagui.Span
+	for _, span := range db.Spans.Order {
+		if !span.IsRunning() && (span.CheckName == name || strings.HasSuffix(span.CheckName, "/"+name) || strings.HasSuffix(span.CheckName, "="+name)) {
+			spans = append(spans, span)
+		}
+	}
+	return spans
+}
+
+// originNames names the error origins frontends show for span.
+func originNames(span *dagui.Span) []string {
+	var names []string
+	for _, origin := range span.ErrorOrigins.Spans() {
+		names = append(names, origin.Name)
+	}
+	return names
+}
+
+// hasErrorOriginLink reports whether span has an error-origin link to a span
+// named name.
+func hasErrorOriginLink(db *dagui.DB, span *dagui.Span, name string) bool {
+	for _, link := range span.Links {
+		if link.Purpose != telemetry.LinkPurposeErrorOrigin {
+			continue
+		}
+		if target := db.Spans.Map[link.SpanContext.SpanID]; target != nil && target.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 func checksTestEnv(t *testctx.T, c *dagger.Client) (*core.Container, error) {
