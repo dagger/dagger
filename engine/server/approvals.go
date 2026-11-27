@@ -41,6 +41,9 @@ type approvalSpec struct {
 	// Danger marks a destructive operation, e.g. a force-push. Frontends
 	// highlight it, and it is never offered forever.
 	Danger bool
+	// NoForever withholds the forever grant: the owner can allow the request
+	// at most for the session, e.g. running a command on the owner's host.
+	NoForever bool
 }
 
 // approvalKey is what a session grant covers: one owner letting one module
@@ -160,9 +163,10 @@ func (srv *Server) requestApproval(ctx context.Context, client, owner *clientRun
 		Requester: requester.proto(),
 		Danger:    spec.Danger,
 	}
-	// A destructive operation (e.g. a force-push) is never allowed forever:
-	// without a persistent key, the client does not offer it.
-	if !spec.Danger {
+	// A destructive operation (e.g. a force-push) or one that withholds it
+	// (e.g. running a host command) is never allowed forever: without a
+	// persistent key, the client does not offer it.
+	if !spec.Danger && !spec.NoForever {
 		req.PersistentKey = approvalPersistentKey(spec.Kind, requester.module, spec.Subject)
 	}
 	if sc := trace.SpanContextFromContext(ctx); sc.IsValid() {

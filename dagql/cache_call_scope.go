@@ -154,6 +154,10 @@ func (l *expiryLimit) load() int64 {
 // for others that expire then. Zero sets no limit. Like DeclinePersistence,
 // it must be called with the resolver's own context, and does nothing
 // outside a resolver the cache runs.
+//
+// A resolver returning a result the cache already holds (see CacheBacked)
+// publishes that very result as its own: the limit then applies to it, for
+// every call reaching it.
 func ExpireBy(ctx context.Context, expiresAtUnix int64) {
 	l, _ := ctx.Value(expiryLimitKey{}).(*expiryLimit)
 	if l == nil || expiresAtUnix == 0 {
@@ -166,4 +170,15 @@ func ExpireBy(ctx context.Context, expiresAtUnix int64) {
 			return
 		}
 	}
+}
+
+// CacheBacked reports whether r is a result the cache already holds, such as
+// one a resolver got from another call, rather than a value only its own call
+// will publish.
+func CacheBacked(r AnyResult) bool {
+	if r == nil {
+		return false
+	}
+	shared := r.cacheSharedResult()
+	return shared != nil && shared.id != 0
 }

@@ -23,6 +23,12 @@ type Secret struct {
 	NameVal        string
 	PlaintextVal   []byte `json:"-"`
 	SourceClientID string
+	// PlaintextHeld marks a URI secret whose plaintext was read once, when it
+	// was minted, and is held in PlaintextVal: reads use that value and never
+	// ask a source client again. A host secret an owner approved for an agent
+	// is minted so (see Server.AuthorizeSecret), so one approval reads the
+	// owner's host once, rather than on every later use.
+	PlaintextHeld bool
 }
 
 func (*Secret) Type() *ast.Type {
@@ -183,7 +189,7 @@ func (secret *Secret) plaintext(ctx context.Context) ([]byte, error) {
 	if secret == nil {
 		return nil, nil
 	}
-	if secret.URIVal == "" {
+	if secret.URIVal == "" || secret.PlaintextHeld {
 		return append([]byte(nil), secret.PlaintextVal...), nil
 	}
 	if secret.SourceClientID == "" {
@@ -210,7 +216,7 @@ func (secret *Secret) plaintextFromSessionResourceCandidate(ctx context.Context)
 	if secret == nil {
 		return nil, false, nil
 	}
-	if secret.URIVal == "" {
+	if secret.URIVal == "" || secret.PlaintextHeld {
 		return append([]byte(nil), secret.PlaintextVal...), false, nil
 	}
 	if secret.SourceClientID == "" {

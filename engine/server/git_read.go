@@ -20,11 +20,12 @@ const gitReadPromptPrefix = "Allow an agent to read "
 // AuthorizeGitRead returns the client whose Git credentials may authenticate
 // a read of remote, an address an agent's model supplied as a tool argument.
 //
-// The owner is the trusted caller before the first module boundary, as for
-// push. When the caller is that owner itself (the user's own conversation),
-// its credentials apply as they would to any of its reads. When a module
-// drives the agent (e.g. a worker spawned by a module), the module chose the
-// conversation, so the owner approves each remote, in its canonical spelling
+// The owner is the trusted caller before the first module or inert boundary,
+// as for push (see gitPushOwner). When the caller is that owner itself (the
+// user's own conversation), its credentials apply as they would to any of its
+// reads. When a module drives the agent (e.g. a worker spawned by a module),
+// or the agent's code runs in a host-less client (e.g. a snippet it
+// evaluates), the owner approves each remote, in its canonical spelling
 // (see canonicalGitReadRemote), for that agent and module first (see
 // requestApproval): another module, even one only named like it, asks again,
 // as the prompt naming the module implies. A denial holds only for that
