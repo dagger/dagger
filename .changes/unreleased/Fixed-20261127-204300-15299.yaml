@@ -1,0 +1,7 @@
+kind: Fixed
+body: |
+  `Directory.dockerBuild(platform: ...)` now preserves the requested target platform when the Dockerfile's final stage is `FROM scratch`
+time: 2026-11-27T20:43:00Z
+custom:
+  Author: zaidrain06
+  PR: 15299

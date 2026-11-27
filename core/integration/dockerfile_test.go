@@ -1503,3 +1503,52 @@ COPY present.txt /present.txt
 	require.NoError(t, err)
 	require.False(t, exists, "unmatched wildcard COPY should not create the destination")
 }
+
+// TestDockerBuildFromScratchPlatform verifies that Directory.dockerBuild(platform: ...)
+// preserves the requested target platform on the returned container when the final stage
+// is FROM scratch (#15264).
+func (DockerfileSuite) TestDockerBuildFromScratchPlatform(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	nativePlatform, err := sdkcore.NewQuery(c).DefaultPlatform(ctx)
+	require.NoError(t, err)
+
+	targetPlatform := sdkcore.Platform("linux/arm64")
+	if nativePlatform == targetPlatform {
+		targetPlatform = "linux/amd64"
+	}
+	require.NotEqual(t, string(nativePlatform), string(targetPlatform))
+
+	t.Run("single-stage FROM scratch", func(ctx context.Context, t *testctx.T) {
+		dir := sdkcore.NewQuery(c).Directory().
+			WithNewFile("hello", "world").
+			WithNewFile("Dockerfile", "FROM scratch\nCOPY hello /hello\n")
+
+		ctr := dir.DockerBuild(sdkcore.DirectoryDockerBuildOpts{
+			Platform: targetPlatform,
+		})
+		gotPlatform, err := ctr.Platform(ctx)
+		require.NoError(t, err)
+		require.Equal(t, targetPlatform, gotPlatform)
+
+		contents, err := ctr.File("/hello").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "world", contents)
+	})
+
+	t.Run("multi-stage build with final FROM scratch", func(ctx context.Context, t *testctx.T) {
+		dockerfile := "FROM --platform=$BUILDPLATFORM " + busyboxImage + ` AS build
+ARG TARGETARCH
+RUN printf 'target=%s' "$TARGETARCH" > /x
+FROM scratch
+COPY --from=build /x /x
+`
+		dir := sdkcore.NewQuery(c).Directory().WithNewFile("Dockerfile", dockerfile)
+		ctr := dir.DockerBuild(sdkcore.DirectoryDockerBuildOpts{
+			Platform: targetPlatform,
+		})
+		gotPlatform, err := ctr.Platform(ctx)
+		require.NoError(t, err)
+		require.Equal(t, targetPlatform, gotPlatform)
+	})
+}
