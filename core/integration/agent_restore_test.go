@@ -761,12 +761,15 @@ func (AgentRestoreSuite) TestArchiveUnsealedAfterEngineCrash(ctx context.Context
 		WithPrompt("before crash").WithResponse([]core.LLMContentBlockInput{{Kind: core.LLMContentBlockKindText, Text: "remembered before crash"}}).
 		WithPrompt("after crash").WithResponse([]core.LLMContentBlockInput{{Kind: core.LLMContentBlockKindText, Text: "continued after crash"}}))
 	original := spawnAgent(sourceCtx, t, source, spawnOpts{model: model, name: "crash-worker"})
+	sent := time.Now()
 	_, reply, err := original.sendAndWait(sourceCtx, t, "before crash")
 	require.NoError(t, err)
 	require.Equal(t, "remembered before crash", reply)
-	// The restorable checkpoint and the IDLE control record are exported
-	// separately. Wait for both before simulating the crash; otherwise the
-	// archive can correctly contain a checkpoint with no state record yet.
+	// The agent was IDLE before this turn too. Wait for the IDLE record of
+	// this turn, then for its restorable checkpoint, which is exported
+	// separately, before simulating the crash; otherwise the archive can
+	// correctly hold an earlier state.
+	sourceSink.awaitAgentRecord(sourceCtx, t, "crash-worker", "IDLE", sent)
 	node := sourceSink.awaitRestorableCapture(sourceCtx, t, 1, map[string]string{
 		"crash-worker": "IDLE",
 	}).nodes["crash-worker"]

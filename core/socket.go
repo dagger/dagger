@@ -338,9 +338,6 @@ func withSocketNetworkRecording(ctx context.Context) (context.Context, error) {
 const sshAgentIdentityTimeout = 5 * time.Second
 
 func (socket *Socket) AgentFingerprints(ctx context.Context) ([]string, error) {
-	ctx, cancel := context.WithTimeout(ctx, sshAgentIdentityTimeout)
-	defer cancel()
-
 	sockPath, cleanup, err := socket.MountSSHAgent(ctx)
 	if err != nil {
 		return nil, err
@@ -380,15 +377,20 @@ func (socket *Socket) AgentFingerprints(ctx context.Context) ([]string, error) {
 	return fingerprints, nil
 }
 
-// listSSHAgentIdentities closes the connection on cancellation because the SSH
-// agent protocol client does not accept a context. Closing it also releases the
-// client's reader goroutine and any pending identity request.
+// listSSHAgentIdentities gives the agent sshAgentIdentityTimeout to answer, from
+// when the engine connects to the mounted socket: the engine's own setup before
+// that can stall on a loaded engine, and isn't the agent's to answer for. It
+// closes the connection on cancellation because the SSH agent protocol client
+// does not accept a context. Closing it also releases the client's reader
+// goroutine and any pending identity request.
 func listSSHAgentIdentities(ctx context.Context, sockPath string) ([]*agent.Key, error) {
 	conn, err := (&net.Dialer{}).DialContext(ctx, "unix", sockPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to mounted SSH socket: %w", err)
 	}
 	defer conn.Close()
+	ctx, cancel := context.WithTimeout(ctx, sshAgentIdentityTimeout)
+	defer cancel()
 	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
 	defer stop()
 

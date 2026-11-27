@@ -560,7 +560,11 @@ func (m *PythonSdk) WithInstall() *PythonSdk {
 	// NB: Only enable bytecode compilation in `dagger call`
 	// (not `dagger init/develop`), to avoid having to remove the .pyc files
 	// before exporting the module back to the host.
-	ctr := m.Container.WithEnvVariable("UV_COMPILE_BYTECODE", "1")
+	ctr := m.Container.WithEnvVariable("UV_COMPILE_BYTECODE", "1").
+		// By default uv allows 60s for each bytecode compile worker to start and for
+		// each file to compile, and fails the install if any one takes longer. Allow
+		// more time for slow worker startup or compilation.
+		WithEnvVariable("UV_COMPILE_BYTECODE_TIMEOUT", "600")
 
 	// Support uv.lock for simple and fast project management workflow.
 	if m.UseUvLock() {
