@@ -2,14 +2,169 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"strings"
 
+	"dagger.io/dagger"
 	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
+
+// Exercise the actual nested CLI, exec transport, and interactive prompt
+// attachable together. No LLM or Cloud credentials are needed.
+func (WorkspaceSuite) TestNestedCLISnapshotApproval(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	out, err := nestedCLISnapshotApproval(ctx, t, c).
+		WithExec([]string{"python3", "/drive-console.py"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, `"contents": "approved"`)
+	require.Contains(t, out, `"contents": "created"`)
+}
+
+// A CLI that serves its own attachables in a container a module runs owns
+// its host: the module above it does not take its prompts. The session's own
+// client cannot prompt at all, so the checkpoint only completes when the
+// nested CLI is asked.
+func (WorkspaceSuite) TestNestedCLISnapshotApprovalUnderModule(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ctr, err := nestedCLISnapshotApproval(ctx, t, c).ID(ctx)
+	require.NoError(t, err)
+	mod := core.NewQuery(c).Directory().
+		WithNewFile("dagger.json", `{"name":"runner","engineVersion":"latest","sdk":{"source":"dang"}}`).
+		WithNewFile("main.dang", `
+type Runner {
+  pub run(ctr: Container!): String! {
+    ctr.withExec(["python3", "/drive-console.py"], experimentalPrivilegedNesting: true).stdout
+  }
+}
+`)
+	require.NoError(t, mod.AsModule().Serve(ctx))
+	var res struct {
+		Runner struct {
+			Run string
+		}
+	}
+	err = c.Do(ctx, &dagger.Request{
+		Query:     `query($ctr: ID!) { runner { run(ctr: $ctr) } }`,
+		Variables: map[string]any{"ctr": ctr},
+	}, &dagger.Response{Data: &res})
+	require.NoError(t, err)
+	require.Contains(t, res.Runner.Run, `"contents": "approved"`)
+	require.Contains(t, res.Runner.Run, `"contents": "created"`)
+}
+
+// nestedCLISnapshotApproval is a container whose /drive-console.py runs a
+// nested interactive CLI taking a workspace snapshot, approves its untracked
+// files on the CLI's own console, and prints the query's result.
+func nestedCLISnapshotApproval(ctx context.Context, t *testctx.T, c *dagger.Client) *core.Container {
+	changes, err := core.NewQuery(c).Directory().WithNewFile("created.txt", "created").Changes(core.NewQuery(c).Directory()).ID(ctx)
+	require.NoError(t, err)
+	query := fmt.Sprintf(`{ currentWorkspace { snapshot {
+		file(path: "untracked.txt") { contents }
+		withNewFile(path: "created.txt", contents: "created") {
+			withCommit(changes: %q, message: "nested approval", date: "2026-09-05T12:00:00Z") {
+				file(path: "created.txt") { contents }
+				git { head { targetCommit { message } } }
+			}
+		}
+	} } }`, changes)
+	return core.NewQuery(c).Container().From(alpineImage).
+		WithExec([]string{"apk", "add", "git", "python3"}).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/repo").
+		WithExec([]string{"git", "init"}).
+		WithExec([]string{"git", "config", "user.name", "Nested CLI"}).
+		WithExec([]string{"git", "config", "user.email", "nested@example.com"}).
+		WithNewFile("tracked.txt", "tracked").
+		WithExec([]string{"git", "add", "."}).
+		WithExec([]string{"git", "commit", "-m", "initial"}).
+		WithNewFile("untracked.txt", "approved").
+		WithNewFile("/query.graphql", query).
+		WithNewFile("/drive-console.py", `
+import json, os, signal, socket, subprocess, time, urllib.request
+
+with socket.socket() as listener:
+    listener.bind(("127.0.0.1", 0))
+    address = "127.0.0.1:" + str(listener.getsockname()[1])
+url = "http://" + address
+os.environ["DAGGER_TUI_CONSOLE"] = address
+screen = ""
+result = None
+with open("/stdout", "w+") as stdout, open("/stderr", "w+") as stderr:
+    cli = subprocess.Popen(["dagger", "-m", "core", "api", "query", "--doc=/query.graphql"],
+                           stdout=stdout, stderr=stderr)
+    try:
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline:
+            try:
+                with urllib.request.urlopen(url + "/screen", timeout=2) as response:
+                    screen = response.read().decode()
+            except OSError:
+                pass
+            if "Include workspace changes?" in screen:
+                break
+            if cli.poll() is not None:
+                raise AssertionError("CLI exited without prompting")
+            time.sleep(0.1)
+        else:
+            raise AssertionError("nested CLI never displayed approval")
+        def key(keys):
+            request = urllib.request.Request(url + "/key", data=keys, method="POST")
+            with urllib.request.urlopen(request, timeout=5) as response:
+                assert response.status == 200
+                return response.read().decode()
+        # The inline ask shows its question once answering it (a).
+        screen = key(b"a")
+        while "untracked.txt" not in screen and time.monotonic() < deadline:
+            time.sleep(0.1)
+            with urllib.request.urlopen(url + "/screen", timeout=5) as response:
+                screen = response.read().decode()
+        assert "untracked.txt" in screen, screen
+        # Cancel is the safe default; explicitly select Include, the first
+        # choice.
+        key(b"1")
+        # The primary span ends during console cleanup, after SIGINT. Wait
+        # for the query's result in its live logs instead of its span status.
+        with urllib.request.urlopen(url + "/spans?q=api%20query", timeout=2) as response:
+            spans = response.read().decode()
+        primary = next(line.split()[0] for line in spans.splitlines() if "api query" in line)
+        request = urllib.request.Request(url + "/zoom", data=primary.encode(), method="POST")
+        with urllib.request.urlopen(request, timeout=5) as response:
+            assert response.status == 200
+        while time.monotonic() < deadline:
+            with urllib.request.urlopen(url + "/screen", timeout=5) as response:
+                screen = response.read().decode()
+            if '"message": "nested approval"' in screen:
+                break
+            time.sleep(0.1)
+        else:
+            raise AssertionError("snapshot query never completed after approval: " + screen)
+        cli.send_signal(signal.SIGINT)  # The console stays open after completion.
+        assert cli.wait(timeout=10) == 0
+        stdout.seek(0)
+        result = json.loads(stdout.read())
+        snapshot = result["currentWorkspace"]["snapshot"]
+        assert snapshot["file"]["contents"] == "approved", result
+        commit = snapshot["withNewFile"]["withCommit"]
+        assert commit["file"]["contents"] == "created", result
+        assert commit["git"]["head"]["targetCommit"]["message"].strip() == "nested approval", result
+        print(json.dumps(result))
+    finally:
+        if cli.poll() is None:
+            cli.kill()
+            cli.wait(timeout=5)
+        if result is None:
+            stderr.seek(0)
+            print(stderr.read())
+            print(screen)
+`).
+		// Never reuse an earlier run's result: the console must answer.
+		WithEnvVariable("NONCE", rand.Text())
+}
 
 func (WorkspaceSuite) TestGitCLI(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)

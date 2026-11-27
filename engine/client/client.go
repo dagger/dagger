@@ -348,6 +348,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
 
 	defer func() {
 		if rerr != nil {
+			c.closeRequests(errors.New("Connect failed"))
 			c.internalCancel(errors.New("Connect failed"))
 			if closer, ok := c.connector.(io.Closer); ok {
 				rerr = errors.Join(rerr, closer.Close())
@@ -384,36 +385,9 @@ func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
 	defer telemetry.EndWithCause(span, &rerr)
 	slog := slog.SpanLogger(connectCtx, InstrumentationLibrary)
 
-	nestedSessionPortVal, isNestedSession := os.LookupEnv(nestedSessionPortEnv)
-	if isNestedSession {
-		if c.hostPolicy != nil {
-			// A nested client uses the host services of the session that it
-			// joins, so it cannot apply its own policy to them.
-			return nil, fmt.Errorf("a host policy cannot apply to a nested session (%s is set)", nestedSessionPortEnv)
-		}
-		nestedSessionPort, err := strconv.Atoi(nestedSessionPortVal)
-		if err != nil {
-			return nil, fmt.Errorf("parse DAGGER_SESSION_PORT: %w", err)
-		}
-		c.nestedSessionPort = nestedSessionPort
-		c.nestedSessionToken = os.Getenv("DAGGER_SESSION_TOKEN")
-		numCPUVal := os.Getenv("DAGGER_ENGINE_NUM_CPU")
-		if numCPUVal != "" {
-			numCPU, err := strconv.Atoi(numCPUVal)
-			if err != nil {
-				return nil, fmt.Errorf("parse DAGGER_ENGINE_NUM_CPU: %w", err)
-			}
-			c.numCPU = numCPU
-		}
-		c.httpClient = c.newHTTPClient()
-		if err := c.init(connectCtx); err != nil {
-			return nil, fmt.Errorf("initialize nested client: %w", err)
-		}
-		if err := c.subscribeTelemetry(connectCtx); err != nil {
-			return nil, fmt.Errorf("subscribe to telemetry: %w", err)
-		}
-		if err := c.daggerConnect(connectCtx); err != nil {
-			return nil, fmt.Errorf("failed to connect to dagger: %w", err)
+	if nestedSessionPortVal, isNestedSession := os.LookupEnv(nestedSessionPortEnv); isNestedSession {
+		if err := c.connectNested(connectCtx, nestedSessionPortVal); err != nil {
+			return nil, err
 		}
 		return c, nil
 	}
@@ -459,6 +433,62 @@ func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
 	}
 
 	return c, nil
+}
+
+// connectNested is Connect for a nested client (see NestedSession): it joins
+// the session of the exec or CLI that started this process, whose session
+// port nestedSessionPortVal names, instead of starting an engine and a
+// session of its own.
+func (c *Client) connectNested(ctx context.Context, nestedSessionPortVal string) (rerr error) {
+	if c.hostPolicy != nil {
+		// A nested client uses the host services of the session that it
+		// joins, so it cannot apply its own policy to them.
+		return fmt.Errorf("a host policy cannot apply to a nested session (%s is set)", nestedSessionPortEnv)
+	}
+	nestedSessionPort, err := strconv.Atoi(nestedSessionPortVal)
+	if err != nil {
+		return fmt.Errorf("parse DAGGER_SESSION_PORT: %w", err)
+	}
+	c.nestedSessionPort = nestedSessionPort
+	c.nestedSessionToken = os.Getenv("DAGGER_SESSION_TOKEN")
+	numCPUVal := os.Getenv("DAGGER_ENGINE_NUM_CPU")
+	if numCPUVal != "" {
+		numCPU, err := strconv.Atoi(numCPUVal)
+		if err != nil {
+			return fmt.Errorf("parse DAGGER_ENGINE_NUM_CPU: %w", err)
+		}
+		c.numCPU = numCPU
+	}
+	// The exec's bootstrap attachables serve SDKs, but cannot handle a CLI's
+	// interactive prompts. Give an interactive CLI its own channel before
+	// init seals its logical client to the bootstrap channel. Do not do this
+	// for session proxies (`dagger run`, `dagger session`, ...), which
+	// share their own client's attachables, nor for an engine that would
+	// not bind the channel to this client: only the exec's own session
+	// port, as the engine advertises it, does.
+	if port := os.Getenv(nestedSessionPortEnv); c.PromptHandler != nil &&
+		os.Getenv(engine.NestedClientIDEnv) != "" &&
+		port != "" && os.Getenv(engine.NestedClientAttachablesEnv) == port {
+		if err := c.startSession(ctx); err != nil {
+			return fmt.Errorf("start nested session: %w", err)
+		}
+		defer func() {
+			if rerr != nil {
+				c.sessionSrv.Stop()
+			}
+		}()
+	}
+	c.httpClient = c.newHTTPClient()
+	if err := c.init(ctx); err != nil {
+		return fmt.Errorf("initialize nested client: %w", err)
+	}
+	if err := c.subscribeTelemetry(ctx); err != nil {
+		return fmt.Errorf("subscribe to telemetry: %w", err)
+	}
+	if err := c.daggerConnect(ctx); err != nil {
+		return fmt.Errorf("failed to connect to dagger: %w", err)
+	}
+	return nil
 }
 
 func normalizeWorkspaceModuleLoading(loadWorkspaceModules, skipWorkspaceModules bool) (bool, error) {

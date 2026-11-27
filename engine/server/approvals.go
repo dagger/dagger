@@ -294,17 +294,22 @@ func resolveApprovalRequester(ctx context.Context, client *clientRuntime) (appro
 // caller itself, or the closest ancestor serving a module): the module whose
 // code drives the request, even from a container's nested API client. Nil
 // when no module is involved.
+//
+// The search ends where ownership starts (see ownershipChain): a module above
+// a client that owns its own host, such as one running an interactive CLI in
+// its container, does not drive what that client and its agents ask for, so
+// it is neither named to the owner nor scopes the owner's grants.
 func nearestModuleClient(client *clientRuntime) (*clientRuntime, error) {
 	if client.mod.Self() != nil {
 		return client, nil
 	}
-	parents, err := client.daggerSession.ancestorRuntimes(client.clientRecord)
+	chain, root, err := ownershipChain(client)
 	if err != nil {
 		return nil, err
 	}
-	for i := len(parents) - 1; i >= 0; i-- {
-		if parents[i].mod.Self() != nil {
-			return parents[i], nil
+	for i := len(chain) - 1; i >= root; i-- {
+		if chain[i].mod.Self() != nil {
+			return chain[i], nil
 		}
 	}
 	return nil, nil

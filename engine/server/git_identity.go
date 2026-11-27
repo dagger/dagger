@@ -23,21 +23,24 @@ const gitIdentityPromptPrefix = "Allow using your Git identity "
 // user.email at its working directory), to attribute a commit made without an
 // explicit author.
 //
-// The owner is the trusted caller before the first module or inert boundary,
-// as for push (see gitPushOwner): module and in-engine SDK clients hold no
-// host attachables of their own, and a module cannot regain its owner's by
-// spawning a nested client. A direct call from that owner shares its identity
-// as before. When an agent asks (a tool in the owner's own conversation, or a
-// module function an agent called) or a module does, the identity is the
-// owner's to share: the engine reads it first, so the prompt can show exactly
-// what is shared, and only returns it once the owner approves (see
-// requestApproval). A grant is the agent's and module's, across its
-// functions, for that identity (see gitIdentityApproval), once, for the
-// session or forever.
+// The owner is the trusted caller before the first module or inert boundary
+// below the nearest client owning its host, as for push (see gitPushOwner):
+// module and in-engine SDK clients hold no host attachables of their own, and
+// a module cannot regain its owner's by spawning a nested client. A direct
+// call from that owner shares its identity as before. When an agent asks (a
+// tool in the owner's own conversation, or a module function an agent
+// called) or a module does, the identity is the owner's to share: the engine
+// reads it first, so the prompt can show exactly what is shared, and only
+// returns it once the owner approves (see requestApproval). A grant is the
+// agent's and module's, across its functions, for that identity (see
+// gitIdentityApproval), once, for the session or forever.
 //
-// A client serving its own attachables below a module boundary (a dagger CLI
-// in a container a module runs) has its own Git config, the module's to set:
-// that identity is returned as is, as it was before approvals.
+// An interactive CLI serving its own attachables in a container a module runs
+// owns that host (see gitPushOwner): it shares its own identity, and is asked
+// to when its agents and modules ask. Another client served by its exec's
+// attachables below a module boundary (e.g. an SDK or a headless CLI in that
+// container) has the container's Git config too, the module's to set: that
+// identity is returned as is, as it was before approvals.
 //
 // An unconfigured identity has nothing to share and is returned empty without
 // asking. When the owner denies, or no answer can be had (the owner cannot

@@ -42,6 +42,16 @@ func (handler *nestedTransportSessionHandler) RegisterNestedClientTransportForEx
 	return transport, nil
 }
 
+func (handler *nestedTransportSessionHandler) RegisterNestedCLITransportForExec(
+	_ context.Context,
+	_ *engine.ClientMetadata,
+	_ string,
+) (*engine.NestedClientTransport, error) {
+	handler.registered.Add(1)
+	transport := engine.NewNestedClientTransport(func() { handler.closed.Add(1) })
+	return transport, nil
+}
+
 func (handler *nestedTransportSessionHandler) ServeHTTPToNestedClient(
 	http.ResponseWriter,
 	*http.Request,
@@ -56,6 +66,77 @@ func (handler *nestedTransportSessionHandler) ServeHTTPToNestedClient(
 }
 
 func (handler *nestedTransportSessionHandler) ServeHTTPToNewSession(http.ResponseWriter, *http.Request) {
+}
+
+type recordingNestedTransportSessionHandler struct {
+	nestedTransportSessionHandler
+	bindings map[string]string
+	parents  map[string]string
+}
+
+func (handler *recordingNestedTransportSessionHandler) RegisterNestedClientTransportForExec(
+	ctx context.Context, metadata *engine.ClientMetadata, parent, attachables string, fromExecHelper bool,
+) (*engine.NestedClientTransport, error) {
+	handler.bindings[metadata.ClientID] = attachables
+	handler.parents[metadata.ClientID] = parent
+	return handler.nestedTransportSessionHandler.RegisterNestedClientTransportForExec(ctx, metadata, parent, attachables, fromExecHelper)
+}
+
+// ownAttachables records a CLI that owns its attachables as bound to itself.
+const ownAttachables = "(own)"
+
+func (handler *recordingNestedTransportSessionHandler) RegisterNestedCLITransportForExec(
+	ctx context.Context, metadata *engine.ClientMetadata, parent string,
+) (*engine.NestedClientTransport, error) {
+	handler.bindings[metadata.ClientID] = ownAttachables
+	handler.parents[metadata.ClientID] = parent
+	return handler.nestedTransportSessionHandler.RegisterNestedCLITransportForExec(ctx, metadata, parent)
+}
+
+func TestNestedCLIRegistersOwnAttachablesWithoutRebindingSDK(t *testing.T) {
+	t.Parallel()
+	handler := &recordingNestedTransportSessionHandler{bindings: map[string]string{}, parents: map[string]string{}}
+	manager := newNestedClientTransportManager(t.Context(), handler, &engine.ClientMetadata{
+		SessionID: "sealed-session", ClientID: "bootstrap", ClientSecretToken: "sealed-secret",
+	}, "sealed-parent", false)
+	defer manager.Close()
+
+	request := func(id, path string) *engine.NestedClientTransport {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header = (engine.ClientMetadata{
+			ClientID: id, SessionID: "forged-session", ClientSecretToken: "forged-secret",
+		}).AppendToHTTPHeaders(req.Header)
+		transport, metadata, status, err := manager.transportForRequest(req)
+		require.NoError(t, err)
+		require.Zero(t, status)
+		require.Equal(t, "sealed-session", metadata.SessionID)
+		require.Equal(t, "sealed-secret", metadata.ClientSecretToken)
+		require.Equal(t, "sealed-parent", handler.parents[id])
+		return transport
+	}
+
+	cli := request("cli", engine.SessionAttachablesEndpoint)
+	require.Equal(t, ownAttachables, handler.bindings["cli"])
+	require.Same(t, cli, request("cli", engine.InitEndpoint))
+	require.Same(t, cli, request("cli", engine.SessionAttachablesEndpoint))
+	require.Equal(t, int32(1), handler.registered.Load(), "another channel must not register another identity")
+
+	sdk := request("sdk", engine.InitEndpoint)
+	require.Equal(t, "bootstrap", handler.bindings["sdk"])
+	require.Same(t, sdk, request("sdk", engine.SessionAttachablesEndpoint))
+	require.Equal(t, "bootstrap", handler.bindings["sdk"], "an existing binding cannot switch to CLI-owned attachables")
+	require.Equal(t, int32(2), handler.registered.Load())
+
+	// The exec's session helper serves the bootstrap's own channel: that
+	// does not make the bootstrap a CLI that owns its host.
+	request("bootstrap", engine.SessionAttachablesEndpoint)
+	require.Equal(t, "bootstrap", handler.bindings["bootstrap"])
+	require.Equal(t, int32(3), handler.registered.Load())
+
+	cli.Close()
+	require.Same(t, cli, request("cli", engine.SessionAttachablesEndpoint))
+	require.True(t, cli.Closed(), "a closed CLI cannot replace its channel by reclaiming its ID")
 }
 
 func TestNestedClientParentUsesHeldScopeNotContextMetadata(t *testing.T) {

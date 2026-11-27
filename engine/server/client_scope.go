@@ -50,6 +50,29 @@ func (srv *Server) RegisterNestedClientTransportForExec(
 	return srv.registerNestedClientTransport(ctx, metadata, parentClientID, attachablesClientID, fromExecHelper, false)
 }
 
+// RegisterNestedCLITransportForExec registers a nested client of an exec that
+// serves its own attachables rather than the exec bootstrap's: an interactive
+// CLI, whose first request registered them, so that it can answer prompts.
+// It owns the host they serve (the exec's container), so it is the owner its
+// own requests, and those of the modules and agents it runs, are made on
+// behalf of (see gitPushOwner): it is asked, and what it approves uses its
+// host. The executor decides this from how a fresh identity first connects,
+// never from its metadata: any process in the exec may opt in, which only
+// ever gives it authority over its own container.
+func (srv *Server) RegisterNestedCLITransportForExec(
+	ctx context.Context,
+	metadata *engine.ClientMetadata,
+	parentClientID string,
+) (*engine.NestedClientTransport, error) {
+	if metadata == nil {
+		return nil, errors.New("nested client metadata is nil")
+	}
+	return srv.registerNestedClientTransportWith(ctx, metadata, parentClientID, nestedClientRegistration{
+		attachablesClientID: metadata.ClientID,
+		ownsAttachables:     true,
+	})
+}
+
 // ExpectNestedExecAttachables records that a nested exec's session helper
 // will register attachablesClientID's attachables, starting alongside the
 // exec's command. Queries then wait for them as long as the exec runs instead
@@ -70,6 +93,21 @@ func (srv *Server) ExpectNestedExecAttachables(sessionID, attachablesClientID st
 	return fail, done, nil
 }
 
+// nestedClientRegistration is how a nested client reaches the host.
+type nestedClientRegistration struct {
+	// attachablesClientID is the client whose attachables serve it.
+	attachablesClientID string
+	// fromExecHelper says that the exec's session helper registers them.
+	fromExecHelper bool
+	// hostFromParent says that the client reaches the host the way its parent
+	// does, through the parent's attachables, instead of through
+	// attachablesClientID.
+	hostFromParent bool
+	// ownsAttachables says that the client itself registers its attachables,
+	// and owns the host they serve (see RegisterNestedCLITransportForExec).
+	ownsAttachables bool
+}
+
 // registerNestedClientTransport registers a nested client of the client whose
 // scope ctx holds. With hostFromParent, the client reaches the host the way
 // its parent does, through the parent's attachables, instead of through
@@ -81,30 +119,57 @@ func (srv *Server) registerNestedClientTransport(
 	attachablesClientID string,
 	fromExecHelper bool,
 	hostFromParent bool,
-) (_ *engine.NestedClientTransport, rerr error) {
+) (*engine.NestedClientTransport, error) {
+	return srv.registerNestedClientTransportWith(ctx, metadata, parentClientID, nestedClientRegistration{
+		attachablesClientID: attachablesClientID,
+		fromExecHelper:      fromExecHelper,
+		hostFromParent:      hostFromParent,
+	})
+}
+
+// nestedRegistrationScope validates a nested client registration's metadata
+// against its parent, and returns the parent client scope ctx holds.
+func nestedRegistrationScope(ctx context.Context, metadata *engine.ClientMetadata, parentClientID string) (engine.ClientScope, error) {
+	var none engine.ClientScope
 	if metadata == nil {
-		return nil, errors.New("nested client metadata is nil")
+		return none, errors.New("nested client metadata is nil")
 	}
 	if metadata.SessionID == "" || metadata.ClientID == "" {
-		return nil, errors.New("nested client metadata is missing session or client ID")
+		return none, errors.New("nested client metadata is missing session or client ID")
 	}
 	if parentClientID == "" {
-		return nil, errors.New("nested client transport is missing parent client ID")
+		return none, errors.New("nested client transport is missing parent client ID")
 	}
 	scope, ok := engine.ClientScopeFromContext(ctx)
 	if !ok {
-		return nil, errors.New("nested client transport requires a held parent client scope")
+		return none, errors.New("nested client transport requires a held parent client scope")
 	}
 	if scope.SessionID() != metadata.SessionID || scope.ClientID() != parentClientID {
-		return nil, fmt.Errorf(
+		return none, fmt.Errorf(
 			"parent client scope %q/%q does not match nested registration %q/%q",
 			scope.SessionID(), scope.ClientID(), metadata.SessionID, parentClientID,
 		)
 	}
 	if metadata.ClientID == parentClientID {
-		return nil, fmt.Errorf("client ancestry cycle: client %q cannot be its own parent", metadata.ClientID)
+		return none, fmt.Errorf("client ancestry cycle: client %q cannot be its own parent", metadata.ClientID)
 	}
-	telemetryUnread := nestedTelemetryUnread(metadata.ClientID, attachablesClientID, hostFromParent)
+	return scope, nil
+}
+
+// registerNestedClientTransportWith registers a nested client of the client
+// whose scope ctx holds, reaching the host as reg says.
+func (srv *Server) registerNestedClientTransportWith(
+	ctx context.Context,
+	metadata *engine.ClientMetadata,
+	parentClientID string,
+	reg nestedClientRegistration,
+) (_ *engine.NestedClientTransport, rerr error) {
+	attachablesClientID, fromExecHelper, hostFromParent := reg.attachablesClientID, reg.fromExecHelper, reg.hostFromParent
+	scope, err := nestedRegistrationScope(ctx, metadata, parentClientID)
+	if err != nil {
+		return nil, err
+	}
+	telemetryUnread := nestedTelemetryUnread(metadata.ClientID, reg)
 
 	srv.daggerSessionsMu.RLock()
 	sess := srv.daggerSessions[metadata.SessionID]
@@ -169,6 +234,11 @@ func (srv *Server) registerNestedClientTransport(
 			return nil, err
 		}
 	}
+	if reg.ownsAttachables {
+		// The client registers its own attachables, not the exec's session
+		// helper: wait for them as for any client's, not until the exec ends.
+		fromExecHelper = false
+	}
 
 	parentScope, err := scope.Delegate(engine.ClientLeaseChild, metadata.ClientID)
 	if err != nil {
@@ -196,6 +266,7 @@ func (srv *Server) registerNestedClientTransport(
 		attachablesFromExecHelper: fromExecHelper,
 		hostServiceProxyClientID:  hostServiceProxyClientID,
 		inertAttachables:          inertAttachables,
+		ownsAttachables:           reg.ownsAttachables,
 		accepting:                 true,
 		telemetryUnread:           telemetryUnread,
 	}
@@ -238,10 +309,12 @@ func (srv *Server) registerNestedClientTransport(
 // nestedTelemetryUnread reports whether nothing will read a nested client's
 // telemetry store (see clientRecord.telemetryUnread). A child client, or an
 // exec's client registered under an identity other than the exec's own, is a
-// CLI that may subscribe to its telemetry. Everything else registered as a
-// nested client never does.
-func nestedTelemetryUnread(clientID, attachablesClientID string, hostFromParent bool) bool {
-	return !hostFromParent && (attachablesClientID == "" || attachablesClientID == clientID)
+// CLI that may subscribe to its telemetry, as is an exec's client serving its
+// own attachables (an interactive CLI, see RegisterNestedCLITransportForExec).
+// Everything else registered as a nested client never does.
+func nestedTelemetryUnread(clientID string, reg nestedClientRegistration) bool {
+	return !reg.hostFromParent && !reg.ownsAttachables &&
+		(reg.attachablesClientID == "" || reg.attachablesClientID == clientID)
 }
 
 // childClient is a nested client that a client serves to its own child
