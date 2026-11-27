@@ -1526,9 +1526,13 @@ func (c *Cache) TeachContentDigest(ctx context.Context, res AnyResult, contentDi
 	}
 }
 
-// resultIDForCall finds the attached result for frame. The lookup only reads
-// the e-graph, so it holds egraphMu for reading, as a cache-hit lookup does.
-func (c *Cache) resultIDForCall(ctx context.Context, frame *ResultCall) (sharedResultID, error) {
+// resultIDForCall finds the attached result for frame that sessionID would be
+// served for it, as a lookup of the call by the session would choose it: a
+// call whose key doesn't name its session can have a result for each
+// session, built on resources only that session has bound, and what is made
+// from a result requires what it requires. The lookup only reads the
+// e-graph, so it holds egraphMu for reading, as a cache-hit lookup does.
+func (c *Cache) resultIDForCall(ctx context.Context, sessionID string, frame *ResultCall) (sharedResultID, error) {
 	if frame == nil {
 		return 0, fmt.Errorf("resolve result ID for call: nil call")
 	}
@@ -1553,13 +1557,8 @@ func (c *Cache) resultIDForCall(ctx context.Context, frame *ResultCall) (sharedR
 	wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
 	defer c.egraphMu.RUnlock()
 	match := c.lookupMatchForCallLocked(frame, requestDigest, requestSelf, requestInputs, time.Now().Unix())
-	if match.candidates == nil || match.candidates.Empty() {
-		return 0, fmt.Errorf("resolve result ID for call: no attached result for %s", requestDigest)
-	}
-	for hitRes := range match.candidates.Items() {
-		if hitRes != nil && hitRes.id != 0 {
-			return hitRes.id, nil
-		}
+	if res := c.selectLookupCandidateForSessionLocked(sessionID, match.candidates); res != nil {
+		return res.id, nil
 	}
 	return 0, fmt.Errorf("resolve result ID for call: no attached result for %s", requestDigest)
 }
