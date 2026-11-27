@@ -573,6 +573,9 @@ type Example struct {
 	FuzzyTest func(*testctx.T, string)
 	// Runs before the example, e.g. to write a fixture it needs.
 	Setup func(*testctx.T)
+	// Runs after the warm-ups, before the run the golden records, e.g. to
+	// undo what a warm-up wrote to the workspace.
+	AfterWarmup func(*testctx.T)
 	// Normalize output that renders an SDK's internals, such as its build for
 	// the default platform; see normalizeSDKOutput.
 	NormalizeSDK bool
@@ -654,6 +657,9 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 			t.Fatalf("dagger.lock still changed after %d warm-ups", maxWarmups)
 		}
 		t.Log("warm-up changed dagger.lock; warming up again")
+	}
+	if ex.AfterWarmup != nil {
+		ex.AfterWarmup(t)
 	}
 
 	cmd := exec.Command(daggerBin, daggerArgs...)
