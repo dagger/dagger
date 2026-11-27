@@ -121,8 +121,8 @@ func TestCollectionTableRowCells(t *testing.T) {
 	}
 	for name, want := range map[string][]string{
 		"dag://?check=verify&view-package=left&view-case=Bar&tag=x&tag=y": {"left", "Bar", "tag ×2"},
-		"dag://?check=verify&view-package=right&view-case=Baz&tag":       {"right", "Baz", "*"},
-		"dag://?check=verify&view-package=left&view-case=Foo":            {"left", "Foo", "–"},
+		"dag://?check=verify&view-package=right&view-case=Baz&tag":        {"right", "Baz", "*"},
+		"dag://?check=verify&view-package=left&view-case=Foo":             {"left", "Foo", "–"},
 	} {
 		if row, ok := table.Row(name); !ok || !slices.Equal(row, want) {
 			t.Errorf("Row(%q) = %v, %v; want %v", name, row, ok, want)
