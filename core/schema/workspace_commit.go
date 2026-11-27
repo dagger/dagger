@@ -2,13 +2,15 @@ package schema
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type workspaceWithCommitArgs struct {
@@ -266,44 +268,128 @@ func validateWorkspaceGitAuthor(name, email string) error {
 	return nil
 }
 
-// workspaceGitAuthor reads the calling client's effective Git configuration at
-// its working directory. Outside a checkout, Git uses system/global config.
+// workspaceGitAuthor resolves the identity of a commit made without an explicit
+// author: the owning client's effective Git configuration at its working
+// directory. Outside a checkout, Git uses system/global config.
 //
-// The effective caller is the nearest non-module ancestor client: module and
-// SDK clients run with inert session attachables (the engine denies them host
-// access by design), so a commit made from module code — an agent's commit
-// tool, for example — samples the same identity a direct CLI call would.
+// The owner is the trusted client before the first module boundary: module
+// and SDK clients run with inert session attachables (the engine denies them
+// host access by design), so a commit made from module code — an agent's
+// commit tool, for example — samples the identity of the client that called
+// it. Sharing it with an agent or a module takes the owner's approval (see
+// Server.AuthorizeGitIdentity). Unset fields default to Dagger
+// <dagger@localhost>. When the owner does not share it, the commit is made as
+// whoever asked instead (see notSharedGitAuthor).
 func workspaceGitAuthor(ctx context.Context) (string, string, error) {
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return "", "", err
 	}
-	bk, err := query.Engine(ctx)
+	identity, err := query.AuthorizeGitIdentity(ctx)
 	if err != nil {
-		return "", "", err
-	}
-	callerMD, err := query.NonModuleParentClientMetadata(ctx)
-	if err != nil {
-		return "", "", fmt.Errorf("resolve Git author client: %w", err)
-	}
-	entries, err := bk.GetGitConfig(engine.ContextWithClientMetadata(ctx, callerMD), ".")
-	if err != nil {
-		return "", "", fmt.Errorf("read Git author config: %w", err)
-	}
-	var name, email string
-	for _, entry := range entries {
-		switch strings.ToLower(entry.GetKey()) {
-		case "user.name":
-			name = entry.GetValue()
-		case "user.email":
-			email = entry.GetValue()
+		if !errors.Is(err, core.ErrGitIdentityNotShared) {
+			return "", "", fmt.Errorf("resolve Git author: %w", err)
 		}
+		// Not sharing an identity means "don't attribute this commit to me",
+		// not "don't commit": commit as whoever asked. To fail the commit
+		// instead, return the error here.
+		name, email := notSharedGitAuthor(ctx, err)
+		return name, email, nil
 	}
+	name, email := identity.Name, identity.Email
 	if name == "" {
-		name = "Dagger"
+		name = workspaceDefaultGitAuthorName
 	}
 	if email == "" {
-		email = "dagger@localhost"
+		email = workspaceDefaultGitAuthorEmail
 	}
 	return name, email, nil
+}
+
+// The identity commits are made as when the owner's is not set, or not shared
+// outside a trace.
+const (
+	workspaceDefaultGitAuthorName  = "Dagger"
+	workspaceDefaultGitAuthorEmail = "dagger@localhost"
+)
+
+// notSharedGitAuthor is who a commit is attributed to when the owner did not
+// share their Git identity (err, wrapping core.ErrGitIdentityNotShared): the
+// agent that asked, as <agent>@<trace ID>, named for the agent. Without an
+// agent, the module asking stands in for it, then "dagger". The trace ID (32
+// hex digits) ties the commit to the run that made it, where the trace shows
+// what the agent did; without a trace, the commit is made as Dagger
+// <dagger@localhost>.
+//
+// The identity names the run, so nothing carrying it may be reused for
+// another: Workspace.withCommit and withCommitsFrom are never cached, and
+// record it explicitly in the recipe they reselect with, while a module
+// function that asked is never reused at all (see
+// core.FunctionCall.MarkOwnerSecretRead).
+func notSharedGitAuthor(ctx context.Context, err error) (string, string) {
+	traceID := trace.SpanContextFromContext(ctx).TraceID()
+	if !traceID.IsValid() {
+		return workspaceDefaultGitAuthorName, workspaceDefaultGitAuthorEmail
+	}
+	var askers []string
+	var notShared *core.GitIdentityNotSharedError
+	if errors.As(err, &notShared) {
+		askers = append(askers, notShared.Agent, notShared.Module)
+	}
+	name, local := workspaceDefaultGitAuthorName, "dagger"
+	for _, asker := range askers {
+		if n := gitAuthorName(asker); n != "" {
+			name = n
+			break
+		}
+	}
+	for _, asker := range askers {
+		if l := gitEmailLocalPart(asker); l != "" {
+			local = l
+			break
+		}
+	}
+	return name, local + "@" + traceID.String()
+}
+
+// gitAuthorName is s as a commit author name: without the characters a name
+// must not hold (see validateWorkspaceGitAuthor), its whitespace collapsed.
+func gitAuthorName(s string) string {
+	s = strings.Map(func(r rune) rune {
+		switch {
+		case r == '<' || r == '>' || r == 0:
+			return -1
+		case unicode.IsSpace(r) || unicode.IsControl(r):
+			return ' '
+		}
+		return r
+	}, s)
+	return strings.Join(strings.Fields(s), " ")
+}
+
+// gitEmailLocalPart is s as an email address's local part: letters, digits,
+// '.', '_', '+' and '-', anything else replaced with '-', no leading,
+// trailing or repeated separators, at most 64 bytes.
+func gitEmailLocalPart(s string) string {
+	var b strings.Builder
+	var pending byte // the separator owed before the next kept character
+	for _, r := range s {
+		switch {
+		case r < unicode.MaxASCII && (unicode.IsLetter(r) || unicode.IsDigit(r)), r == '_', r == '+':
+			if pending != 0 && b.Len() > 0 {
+				b.WriteByte(pending)
+			}
+			pending = 0
+			b.WriteRune(r)
+		case r == '.':
+			pending = '.'
+		case pending == 0:
+			pending = '-'
+		}
+	}
+	local := b.String()
+	if len(local) > 64 {
+		local = strings.TrimRight(local[:64], ".-")
+	}
+	return local
 }
