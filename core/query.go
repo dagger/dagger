@@ -164,9 +164,10 @@ type Server interface {
 	// Host._sshAuthSocket uses for a caller that has no host of its own,
 	// once the owner approved it for the agent driving that caller; nil when
 	// the calling client has a host of its own. remote, when known, names
-	// what the agent authenticates to. Such a client is refused without an
-	// agent.
-	AuthorizeSSHAgent(ctx context.Context, remote string) (*engine.ClientMetadata, error)
+	// what the agent authenticates to; when not, the authorization names the
+	// SSH origin of the owner's checkout, if any. Such a client is refused
+	// without an agent.
+	AuthorizeSSHAgent(ctx context.Context, remote string) (*SSHAgentAuthorization, error)
 
 	// AuthorizeGitIdentity returns the Git identity (user.name, user.email)
 	// of the owning client at its working directory, for attributing a commit

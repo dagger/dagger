@@ -60,7 +60,7 @@ func (*currentTypeDefsTestServer) AuthorizeHostNetwork(context.Context, string) 
 	return nil, nil
 }
 
-func (*currentTypeDefsTestServer) AuthorizeSSHAgent(context.Context, string) (*engine.ClientMetadata, error) {
+func (*currentTypeDefsTestServer) AuthorizeSSHAgent(context.Context, string) (*core.SSHAgentAuthorization, error) {
 	return nil, nil
 }
 

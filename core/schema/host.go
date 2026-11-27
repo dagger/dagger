@@ -559,33 +559,22 @@ type hostSSHAuthSocketArgs struct {
 	Remote dagql.Optional[dagql.String] `name:"remote"`
 }
 
-// ownerSSHAuthSocketPath is the SSH agent of owner, the trusted client that
-// approved lending it (see Server.AuthorizeSSHAgent): its SSH_AUTH_SOCK, or
-// else one it prepares for remote, or for its checkout's SSH origin when the
-// remote is unknown.
-func ownerSSHAuthSocketPath(ctx context.Context, query *core.Query, owner *engine.ClientMetadata, remote string) (string, error) {
-	if owner.SSHAuthSocketPath != "" {
-		return owner.SSHAuthSocketPath, nil
+// ownerSSHAuthSocketPath is the SSH agent of the trusted client that approved
+// lending it (see Server.AuthorizeSSHAgent): its SSH_AUTH_SOCK, or else one
+// it prepares (through prepare, with the owner's metadata) for the
+// authorization's remote: the caller's, or the SSH origin of the owner's
+// checkout, which the server reads from the owner's client, as the caller has
+// no checkout of its own.
+func ownerSSHAuthSocketPath(ctx context.Context, auth *core.SSHAgentAuthorization, prepare func(ctx context.Context, remote string) (string, error)) (string, error) {
+	if auth.Owner.SSHAuthSocketPath != "" {
+		return auth.Owner.SSHAuthSocketPath, nil
 	}
-	ownerCtx := engine.ContextWithClientMetadata(ctx, owner)
-	bk, err := query.Engine(ownerCtx)
+	if auth.Remote == "" {
+		return "", errors.New("using your SSH keys: the owning client has no SSH_AUTH_SOCK, and neither the call nor the owner's checkout names an SSH remote to prepare SSH authentication for")
+	}
+	path, err := prepare(engine.ContextWithClientMetadata(ctx, auth.Owner), auth.Remote)
 	if err != nil {
-		return "", fmt.Errorf("failed to get engine client: %w", err)
-	}
-	if remote == "" {
-		if ws, err := query.CurrentWorkspace(ownerCtx); err == nil && ws != nil && ws.HostPath() != "" {
-			origin := hostCheckoutOriginURL(ownerCtx, bk, ws.HostPath())
-			if u, err := gitutil.ParseURL(origin); err == nil && u.Scheme == gitutil.SSHProtocol {
-				remote = origin
-			}
-		}
-	}
-	if remote == "" {
-		return "", errors.New("using your SSH keys: the owning client has no SSH_AUTH_SOCK, and no SSH remote is known to prepare SSH authentication for")
-	}
-	path, err := bk.PrepareGitSSHAuth(ownerCtx, remote)
-	if err != nil {
-		return "", fmt.Errorf("using your SSH keys for %q: the owning client has no SSH_AUTH_SOCK, and preparing SSH authentication through it failed: %w", remote, err)
+		return "", fmt.Errorf("using your SSH keys for %q: the owning client has no SSH_AUTH_SOCK, and preparing SSH authentication through it failed: %w", auth.Remote, err)
 	}
 	return path, nil
 }
@@ -668,18 +657,24 @@ func (s *hostSchema) sshAuthSocket(ctx context.Context, host dagql.ObjectResult[
 		// A client without a host of its own has no SSH agent it could
 		// forward: on an agent's behalf, its owner is asked to lend its own
 		// (see Server.AuthorizeSSHAgent); without an agent, it is refused.
-		owner, err := query.AuthorizeSSHAgent(ctx, remote)
+		auth, err := query.AuthorizeSSHAgent(ctx, remote)
 		if err != nil {
 			return inst, err
 		}
 		source := clientMetadata.ClientID
 		var sshAuthSocketPath string
-		if owner != nil {
-			sshAuthSocketPath, err = ownerSSHAuthSocketPath(ctx, query, owner, remote)
+		if auth != nil {
+			sshAuthSocketPath, err = ownerSSHAuthSocketPath(ctx, auth, func(ownerCtx context.Context, remote string) (string, error) {
+				bk, err := query.Engine(ownerCtx)
+				if err != nil {
+					return "", fmt.Errorf("failed to get engine client: %w", err)
+				}
+				return bk.PrepareGitSSHAuth(ownerCtx, remote)
+			})
 			if err != nil {
 				return inst, err
 			}
-			source = owner.ClientID
+			source = auth.Owner.ClientID
 		} else {
 			sshAuthSocketPath = clientMetadata.SSHAuthSocketPath
 			if sshAuthSocketPath == "" {

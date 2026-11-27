@@ -7,6 +7,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/util/gitutil"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -124,8 +125,39 @@ func (srv *Server) AuthorizeHostNetwork(ctx context.Context, hostPort string) (*
 // how a resumed agent's recipe that scoped the owner's SSH agent (e.g. a
 // workspace snapshot of an SSH checkout) loads again: its host-less restored
 // load asks, never allowed forever, instead of failing.
-func (srv *Server) AuthorizeSSHAgent(ctx context.Context, remote string) (*engine.ClientMetadata, error) {
-	return srv.authorizeOwnerHostAccess(ctx, sshAgentAccess(remote), sshAgentApproval())
+//
+// An owner without SSH_AUTH_SOCK has an agent prepared for a remote. When the
+// caller names none, as recipes recorded before _sshAuthSocket took a remote
+// do, the authorization names the SSH origin of the owner's own checkout
+// (see ownerCheckoutSSHOrigin): it is read from the owner's client here, as
+// the caller, a host-less client, has no checkout to read it from.
+func (srv *Server) AuthorizeSSHAgent(ctx context.Context, remote string) (*core.SSHAgentAuthorization, error) {
+	owner, ownerMD, err := srv.authorizeOwner(ctx, sshAgentAccess(remote), sshAgentApproval())
+	if err != nil || owner == nil {
+		return nil, err
+	}
+	if remote == "" {
+		remote = ownerCheckoutSSHOrigin(owner)
+	}
+	return &core.SSHAgentAuthorization{Owner: ownerMD, Remote: remote}, nil
+}
+
+// ownerCheckoutSSHOrigin is the origin of owner's workspace checkout, as the
+// session first loaded it (see checkoutOrigins), when it is an SSH remote; ""
+// otherwise. It is the remote the owner itself would prepare an SSH agent for
+// when snapshotting that checkout.
+func ownerCheckoutSSHOrigin(owner *clientRuntime) string {
+	owner.workspaceMu.Lock()
+	ws := owner.workspace
+	owner.workspaceMu.Unlock()
+	if ws == nil || ws.HostPath() == "" {
+		return ""
+	}
+	origin := owner.daggerSession.checkoutOrigins.get(gitPushPolicyKey{owner: ws.ClientID, remote: ws.HostPath()})
+	if u, err := gitutil.ParseURL(origin); err != nil || u.Scheme != gitutil.SSHProtocol {
+		return ""
+	}
+	return origin
 }
 
 // authorizeOwnerHostAccess is the owner's approval of what (as errors name
@@ -133,29 +165,36 @@ func (srv *Server) AuthorizeSSHAgent(ctx context.Context, remote string) (*engin
 // AuthorizeSecret asks: the owner's metadata once it approved, or nil when
 // the caller has a host of its own.
 func (srv *Server) authorizeOwnerHostAccess(ctx context.Context, what string, spec approvalSpec) (*engine.ClientMetadata, error) {
+	_, ownerMD, err := srv.authorizeOwner(ctx, what, spec)
+	return ownerMD, err
+}
+
+// authorizeOwner is authorizeOwnerHostAccess, also returning the owner's
+// client.
+func (srv *Server) authorizeOwner(ctx context.Context, what string, spec approvalSpec) (*clientRuntime, *engine.ClientMetadata, error) {
 	client, err := srv.workspaceRuntimeFromContext(ctx)
 	if err != nil {
 		// Not a client this gate can place: as the caller, exactly as
 		// without the gate.
-		return nil, nil //nolint:nilerr // see above
+		return nil, nil, nil //nolint:nilerr // see above
 	}
 	sess := client.daggerSession
 	sess.scopeMu.Lock()
 	inert := client.inertAttachables
 	sess.scopeMu.Unlock()
 	if !inert {
-		return nil, nil
+		return nil, nil, nil
 	}
 	if _, ok := core.CallerAgent(ctx); !ok {
-		return nil, fmt.Errorf("%s is denied without an agent's request: %w", what, errHostAccessDenied)
+		return nil, nil, fmt.Errorf("%s is denied without an agent's request: %w", what, errHostAccessDenied)
 	}
 	owner, _, err := gitPushOwner(client)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", what, err)
+		return nil, nil, fmt.Errorf("%s: %w", what, err)
 	}
 	ownerMD, err := sess.clientMetadataSnapshot(owner.clientRecord)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	requester := client
 	if core.IsRestoredBindingLoad(ctx) {
@@ -165,13 +204,13 @@ func (srv *Server) authorizeOwnerHostAccess(ctx context.Context, what string, sp
 	}
 	allowed, err := srv.requestApproval(ctx, requester, owner, spec)
 	if err != nil {
-		return nil, fmt.Errorf("%s requires approval: %w", what, err)
+		return nil, nil, fmt.Errorf("%s requires approval: %w", what, err)
 	}
 	if !allowed {
-		return nil, fmt.Errorf("%s was denied by the owning client", what)
+		return nil, nil, fmt.Errorf("%s was denied by the owning client", what)
 	}
 	// What the calls running here return may be derived from the owner's
 	// host, with a grant for one agent and module: none may be reused.
 	markOwnerSecretRead(client)
-	return ownerMD, nil
+	return owner, ownerMD, nil
 }

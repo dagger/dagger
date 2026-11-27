@@ -77,7 +77,7 @@ func (*mockServer) AuthorizeHostNetwork(context.Context, string) (*engine.Client
 	return nil, nil
 }
 
-func (*mockServer) AuthorizeSSHAgent(context.Context, string) (*engine.ClientMetadata, error) {
+func (*mockServer) AuthorizeSSHAgent(context.Context, string) (*SSHAgentAuthorization, error) {
 	return nil, nil
 }
 

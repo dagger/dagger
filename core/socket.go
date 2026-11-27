@@ -25,6 +25,17 @@ import (
 	"google.golang.org/grpc/metadata"
 )
 
+// SSHAgentAuthorization is an owner's approval to lend its SSH agent to a
+// caller without one of its own (Server.AuthorizeSSHAgent).
+type SSHAgentAuthorization struct {
+	// Owner is the client whose SSH agent is lent.
+	Owner *engine.ClientMetadata
+	// Remote is what the agent authenticates to, for an owner without
+	// SSH_AUTH_SOCK to prepare one for: the caller's, or else the SSH origin
+	// of the owner's checkout; "" when neither is known.
+	Remote string
+}
+
 type SocketKind string
 
 const (

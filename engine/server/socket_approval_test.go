@@ -179,9 +179,10 @@ func TestHostNetworkApprovalPrompt(t *testing.T) {
 func TestSSHAgentApproval(t *testing.T) {
 	s := newSecretTestSession(t, allowSecret(prompt.APPROVAL_ALLOW_SESSION))
 	const remote = "ssh://git@github.com/org/repo.git"
-	md, err := s.srv.AuthorizeSSHAgent(s.agentCtx(), remote)
+	auth, err := s.srv.AuthorizeSSHAgent(s.agentCtx(), remote)
 	require.NoError(t, err)
-	require.Equal(t, "owner", md.ClientID, "the owner lends its SSH agent")
+	require.Equal(t, "owner", auth.Owner.ClientID, "the owner lends its SSH agent")
+	require.Equal(t, remote, auth.Remote)
 	require.Len(t, s.questions.asked(), 1)
 	req := s.questions.asked()[0]
 	require.Equal(t, approvalKindSSHAgent, req.Kind)
@@ -194,9 +195,10 @@ func TestSSHAgentApproval(t *testing.T) {
 	// A forwarded agent signs for any host: the grant is the owner's
 	// agent, not one remote.
 	for _, other := range []string{"git@gitlab.com:org/other.git", ""} {
-		md, err := s.srv.AuthorizeSSHAgent(s.agentCtx(), other)
+		auth, err := s.srv.AuthorizeSSHAgent(s.agentCtx(), other)
 		require.NoError(t, err)
-		require.Equal(t, "owner", md.ClientID)
+		require.Equal(t, "owner", auth.Owner.ClientID)
+		require.Equal(t, other, auth.Remote, "the owner has no checkout to name a remote")
 	}
 	require.Len(t, s.questions.asked(), 1)
 }
@@ -219,9 +221,9 @@ func TestSSHAgentApprovalCauses(t *testing.T) {
 	require.Equal(t, codes.PermissionDenied, status.Code(err))
 
 	// A client with a host of its own uses its own, as always.
-	md, err := s.srv.AuthorizeSSHAgent(s.ctx(s.owner), remote)
+	auth, err := s.srv.AuthorizeSSHAgent(s.ctx(s.owner), remote)
 	require.NoError(t, err)
-	require.Nil(t, md)
+	require.Nil(t, auth)
 	require.Empty(t, s.questions.asked())
 
 	// Denied.
@@ -242,12 +244,53 @@ func TestSSHAgentApprovalRestoredBinding(t *testing.T) {
 	// never forever, naming the agent alone.
 	s := newSecretTestSession(t, allowSecret(prompt.APPROVAL_ALLOW_FOREVER))
 	for _, ctx := range s.restoredLoadCtxs() {
-		md, err := s.srv.AuthorizeSSHAgent(ctx, "ssh://git@github.com/org/repo.git")
+		auth, err := s.srv.AuthorizeSSHAgent(ctx, "ssh://git@github.com/org/repo.git")
 		require.NoError(t, err)
-		require.Equal(t, "owner", md.ClientID)
+		require.Equal(t, "owner", auth.Owner.ClientID)
 	}
 	require.Len(t, s.questions.asked(), 1, "forever is not offered, so it holds for the session")
 	req := s.questions.asked()[0]
 	require.Empty(t, req.PersistentKey)
 	require.Equal(t, &prompt.ApprovalRequester{AgentName: "worker", AgentHandle: "agent-1"}, req.Requester)
+}
+
+func TestSSHAgentApprovalRestoredBindingOwnerOrigin(t *testing.T) {
+	// A recipe recorded before _sshAuthSocket took a remote names none. Its
+	// restored load runs in a host-less client with no checkout of its own:
+	// once approved, the remote is the SSH origin of the owner's checkout,
+	// read from the owner's client, so an owner without SSH_AUTH_SOCK can
+	// prepare an agent for it.
+	s := newSecretTestSession(t, allowSecret(prompt.APPROVAL_ALLOW_SESSION))
+	const root = "/home/me/repo"
+	ws := &core.Workspace{ClientID: "owner"}
+	ws.SetHostPath(root)
+	s.owner.workspace = ws
+	key := gitPushPolicyKey{owner: "owner", remote: root}
+	for _, ctx := range s.restoredLoadCtxs() {
+		// Without a recorded origin, nothing is known.
+		auth, err := s.srv.AuthorizeSSHAgent(ctx, "")
+		require.NoError(t, err)
+		require.Equal(t, "owner", auth.Owner.ClientID)
+		require.Empty(t, auth.Remote)
+	}
+	s.sess.checkoutOrigins.record(key, func() string { return "git@github.com:me/repo.git" })
+	for _, ctx := range s.restoredLoadCtxs() {
+		auth, err := s.srv.AuthorizeSSHAgent(ctx, "")
+		require.NoError(t, err)
+		require.Equal(t, "owner", auth.Owner.ClientID)
+		require.Equal(t, "git@github.com:me/repo.git", auth.Remote)
+		// A remote the call names wins.
+		auth, err = s.srv.AuthorizeSSHAgent(ctx, "ssh://git@gitlab.com/org/other.git")
+		require.NoError(t, err)
+		require.Equal(t, "ssh://git@gitlab.com/org/other.git", auth.Remote)
+	}
+	require.Len(t, s.questions.asked(), 1, "one grant for the owner's SSH agent")
+
+	// An origin that is not an SSH remote has no agent to prepare.
+	https := newSecretTestSession(t, allowSecret(prompt.APPROVAL_ALLOW_SESSION))
+	https.owner.workspace = ws
+	https.sess.checkoutOrigins.record(key, func() string { return "https://github.com/me/repo.git" })
+	auth, err := https.srv.AuthorizeSSHAgent(https.restoredLoadCtxs()[0], "")
+	require.NoError(t, err)
+	require.Empty(t, auth.Remote)
 }
