@@ -40,6 +40,18 @@ type PromptHandler interface {
 	HandleForm(ctx context.Context, form *huh.Form) error
 }
 
+// ApprovalHandler is implemented by frontends that can ask for an approval
+// with a choice of how long the grant lasts. Frontends that only implement
+// PromptHandler (e.g. plain and dots) get a yes/no question instead, and a yes
+// allows for the session, as it did before approvals had a grant scope: never
+// forever, which takes the explicit choice only an ApprovalHandler offers.
+//
+// Unlike other prompts, approvals are not serialized by the attachable: a
+// frontend may show several at once, each where its request came from.
+type ApprovalHandler interface {
+	HandleApproval(ctx context.Context, req *ApprovalRequest) (ApprovalDecision, error)
+}
+
 func NewPromptAttachable(promptHandler PromptHandler) PromptAttachable {
 	return PromptAttachable{
 		persistence:   &PromptResponses{},
@@ -129,6 +141,65 @@ func (p PromptAttachable) PromptSelect(ctx context.Context, req *SelectRequest) 
 		return nil, status.Error(codes.Canceled, "selection canceled")
 	}
 	return &SelectResponse{Choice: *selected}, nil
+}
+
+// PromptApproval asks the user to approve an access request. A grant the user
+// made forever (under the request's persistent key) answers without asking.
+// The client only remembers forever grants; the engine remembers session ones.
+func (p PromptAttachable) PromptApproval(ctx context.Context, req *ApprovalRequest) (*ApprovalResponse, error) {
+	if req.GetPrompt() == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "Invalid input: Prompt required")
+	}
+	if key := req.GetPersistentKey(); key != "" {
+		promptMutex.Lock()
+		allowed, err := p.persistence.contains(key)
+		promptMutex.Unlock()
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "Failed to check remembered approvals: %v", err)
+		}
+		if allowed {
+			return &ApprovalResponse{Decision: APPROVAL_ALLOW_FOREVER}, nil
+		}
+	}
+	if p.promptHandler == nil {
+		return nil, status.Error(codes.FailedPrecondition, "approval requires an interactive client")
+	}
+	var decision ApprovalDecision
+	if handler, ok := p.promptHandler.(ApprovalHandler); ok {
+		var err error
+		decision, err = handler.HandleApproval(ctx, req)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "Failed to handle approval: %v", err)
+		}
+	} else {
+		// Bool prompts share one queue with the other prompts.
+		promptMutex.Lock()
+		var confirm bool
+		err := p.promptHandler.HandlePrompt(ctx, "", req.GetPrompt(), &confirm)
+		promptMutex.Unlock()
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "Failed to handle prompt: %v", err)
+		}
+		if confirm {
+			// What a yes to an approval always meant: until the session ends.
+			decision = APPROVAL_ALLOW_SESSION
+		}
+	}
+	if decision == APPROVAL_ALLOW_FOREVER {
+		key := req.GetPersistentKey()
+		if key == "" {
+			// Not offered: never widen a grant past what was asked for.
+			decision = APPROVAL_ALLOW_SESSION
+		} else {
+			promptMutex.Lock()
+			err := p.persistence.persistResponse(key)
+			promptMutex.Unlock()
+			if err != nil {
+				return nil, status.Errorf(codes.Internal, "Failed to persist approval: %v", err)
+			}
+		}
+	}
+	return &ApprovalResponse{Decision: decision}, nil
 }
 
 // SelectForm uses the same client-local form lifecycle as other interactive
@@ -245,4 +316,8 @@ func (p PromptProxy) PromptString(ctx context.Context, req *StringRequest) (*Str
 
 func (p PromptProxy) PromptSelect(ctx context.Context, req *SelectRequest) (*SelectResponse, error) {
 	return p.client.PromptSelect(grpcutil.IncomingToOutgoingContext(ctx), req)
+}
+
+func (p PromptProxy) PromptApproval(ctx context.Context, req *ApprovalRequest) (*ApprovalResponse, error) {
+	return p.client.PromptApproval(grpcutil.IncomingToOutgoingContext(ctx), req)
 }

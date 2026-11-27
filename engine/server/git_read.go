@@ -7,24 +7,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/session/prompt"
 	"github.com/dagger/dagger/util/gitutil"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
-// gitReadApprovalKey is what an owner approves: one module (see
-// gitReadRequester) driving an agent to read one repository, in its canonical
-// spelling (see canonicalGitReadRemote), with that owner's credentials.
-// Another module asks again, as the prompt naming the module implies.
-type gitReadApprovalKey struct {
-	owner, requester, remote string
-}
-
-type gitReadApprovals = gitApprovals[gitReadApprovalKey]
+const approvalKindGitRead = "git-read"
 
 // gitReadPromptPrefix starts every read approval prompt. The TUI renders it as
 // an ordinary question, and tests wait for it.
@@ -37,9 +24,24 @@ const gitReadPromptPrefix = "Allow an agent to read "
 // push. When the caller is that owner itself (the user's own conversation),
 // its credentials apply as they would to any of its reads. When a module
 // drives the agent (e.g. a worker spawned by a module), the module chose the
-// conversation, so the owner approves each remote for that module first; a
-// grant lasts for the session, a denial only for that attempt. Otherwise any
-// module could read whatever the user can, by prompting a model.
+// conversation, so the owner approves each remote, in its canonical spelling
+// (see canonicalGitReadRemote), for that agent and module first (see
+// requestApproval): another module, even one only named like it, asks again,
+// as the prompt naming the module implies. A denial holds only for that
+// attempt. Otherwise any module could read whatever the user can, by
+// prompting a model.
+//
+// What "allow once" covers: Query.git asks here once per credentialed lookup,
+// and that lookup is cached per calling client and URL as spelled
+// (gitPerClientInput, in its agent-address namespace). So a once grant lasts,
+// in effect, as long as that client's cached lookup of that spelling: the
+// same client resolving the same URL again reuses the repository without
+// asking, while another spelling or another client asks again. Either way,
+// the repository a lookup returns carries the owner's token as an explicit
+// argument, so whatever the agent derives from it (refs, trees) reads with it
+// for as long as it lives. Making the lookup per-call would not change that,
+// only ask more often and run the credential helper on every lookup, so
+// "once" means one repository handle, not one network read.
 func (srv *Server) AuthorizeGitRead(ctx context.Context, remote string) (*engine.ClientMetadata, error) {
 	// The remote is model-supplied: reject before prompting, and never echo
 	// what may hold credentials.
@@ -59,34 +61,7 @@ func (srv *Server) AuthorizeGitRead(ctx context.Context, remote string) (*engine
 	if !delegated {
 		return owner.daggerSession.clientMetadataSnapshot(owner.clientRecord)
 	}
-	requester, err := gitReadRequester(client)
-	if err != nil {
-		return nil, err
-	}
-	key := gitReadApprovalKey{
-		owner:     owner.clientID,
-		requester: resolvedModuleLoadIdentity(requester),
-		remote:    remote,
-	}
-	allowed, err := client.daggerSession.gitReadApprovals.check(ctx, key, func(ctx context.Context) (bool, error) {
-		conn, available, err := srv.SpecificClientAttachableConn(ctx, owner.clientID, core.SpecificClientAttachableConnOpts{IfAvailable: true})
-		if err != nil {
-			return false, err
-		}
-		if !available {
-			return false, fmt.Errorf("owning client is not available to approve the read")
-		}
-		response, err := prompt.NewPromptClient(conn).PromptBool(ctx, &prompt.BoolRequest{
-			Prompt: gitReadPrompt(remote, requester.Self().Name()),
-		})
-		if status.Code(err) == codes.Unimplemented {
-			return false, fmt.Errorf("owning client cannot prompt (not interactive)")
-		}
-		if err != nil {
-			return false, err
-		}
-		return response.Response, nil
-	})
+	allowed, err := srv.requestApproval(ctx, client, owner, gitReadApproval(remote))
 	if err != nil {
 		return nil, fmt.Errorf("git read with the owner's credentials requires approval: %w", err)
 	}
@@ -96,15 +71,16 @@ func (srv *Server) AuthorizeGitRead(ctx context.Context, remote string) (*engine
 	return owner.daggerSession.clientMetadataSnapshot(owner.clientRecord)
 }
 
-// gitReadPrompt asks the owner to approve a read of remote. Every value in it
-// is literal text, escaped for terminals (including bidi/control characters),
-// not Markdown: the URL is model-supplied, the module name module-supplied.
-func gitReadPrompt(remote, requester string) string {
-	var by string
-	if requester != "" {
-		by = " (requested by module " + strconv.QuoteToASCII(requester) + ")"
+// gitReadApproval asks the owner to approve a read of remote, a canonical
+// remote (see canonicalGitReadRemote). The URL is model-supplied, so it is
+// literal text, escaped for terminals (including bidi/control characters),
+// not Markdown.
+func gitReadApproval(remote string) approvalSpec {
+	return approvalSpec{
+		Kind:     approvalKindGitRead,
+		Subject:  literalText(remote),
+		Question: gitReadPromptPrefix + literalText(remote) + " with your Git credentials",
 	}
-	return fmt.Sprintf("%s%s with your Git credentials%s?", gitReadPromptPrefix, literalText(remote), by)
 }
 
 func literalText(s string) string {
@@ -135,24 +111,4 @@ func canonicalGitReadRemote(remote string) (*gitutil.GitURL, error) {
 		return nil, errInvalidGitReadRemote
 	}
 	return parsed, nil
-}
-
-// gitReadRequester returns the module nearest the caller: the one whose code
-// drives the agent asking to read. Approvals are scoped to it by its load
-// identity (source, pin and name), so another module, even one with the same
-// name, asks again.
-func gitReadRequester(client *clientRuntime) (dagql.ObjectResult[*core.Module], error) {
-	if client.mod.Self() != nil {
-		return client.mod, nil
-	}
-	parents, err := client.daggerSession.ancestorRuntimes(client.clientRecord)
-	if err != nil {
-		return dagql.ObjectResult[*core.Module]{}, err
-	}
-	for i := len(parents) - 1; i >= 0; i-- {
-		if parents[i].mod.Self() != nil {
-			return parents[i].mod, nil
-		}
-	}
-	return dagql.ObjectResult[*core.Module]{}, errors.New("no module requesting the git read")
 }
