@@ -17,14 +17,36 @@ type deniedPushServer struct {
 	calls          int
 	remote, ref    string
 	force          bool
+	lease          string
 	resolveURL     bool
+	// authorizedLease, when set, authorizes the push with that lease instead
+	// of denying it.
+	authorizedLease string
 }
 
-func (s *deniedPushServer) AuthorizeGitPush(_ context.Context, remote, ref string, force, resolveURL bool) (*GitPushAuthorization, error) {
+func (s *deniedPushServer) AuthorizeGitPush(_ context.Context, remote, ref string, force bool, lease string, resolveURL bool) (*GitPushAuthorization, error) {
 	s.calls++
-	s.remote, s.ref, s.force = remote, ref, force
+	s.remote, s.ref, s.force, s.lease = remote, ref, force, lease
 	s.resolveURL = resolveURL
+	if s.authorizedLease != "" {
+		return &GitPushAuthorization{Remote: remote, Lease: s.authorizedLease}, nil
+	}
 	return nil, errors.New("permission denied")
+}
+
+func TestGitPushRequiresTheAuthorizedLease(t *testing.T) {
+	// A leased force-push may be authorized as a plain push would be: a push
+	// enforcing another lease, or none, must not run on that authorization.
+	srv := &deniedPushServer{authorizedLease: "2222222222222222222222222222222222222222"}
+	ctx := ContextWithQuery(t.Context(), &Query{Server: srv})
+	url, err := gitutil.ParseURL("https://unreachable.invalid/repo")
+	require.NoError(t, err)
+	source := &GitRef{Ref: &gitutil.Ref{Name: "refs/heads/feature", SHA: "1111111111111111111111111111111111111111"}}
+	for _, expected := range []string{"", "3333333333333333333333333333333333333333"} {
+		_, err = source.Push(ctx, &RemoteGitRepository{URL: url}, GitPushOpts{ExpectedRemoteSHA: expected})
+		require.ErrorContains(t, err, "authorized for a different lease")
+		require.Equal(t, expected, srv.lease)
+	}
 }
 
 func TestGitPushApprovalBeforeDestinationAccess(t *testing.T) {
@@ -41,9 +63,11 @@ func TestGitPushApprovalBeforeDestinationAccess(t *testing.T) {
 			require.Equal(t, remote, srv.remote)
 			require.Equal(t, "refs/heads/main", srv.ref)
 			require.False(t, srv.force)
+			require.Empty(t, srv.lease)
 			_, err = source.Push(ctx, &RemoteGitRepository{URL: url}, GitPushOpts{ExpectedRemoteSHA: source.Ref.SHA})
 			require.ErrorContains(t, err, "permission denied")
 			require.True(t, srv.force)
+			require.Equal(t, source.Ref.SHA, srv.lease, "the lease reaches the policy")
 		})
 	}
 }

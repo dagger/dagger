@@ -40,7 +40,7 @@ func (*currentTypeDefsTestServer) SharedCloudArtifactClient(context.Context, str
 	panic("unexpected SharedCloudArtifactClient")
 }
 
-func (*currentTypeDefsTestServer) AuthorizeGitPush(context.Context, string, string, bool, bool) (*core.GitPushAuthorization, error) {
+func (*currentTypeDefsTestServer) AuthorizeGitPush(context.Context, string, string, bool, string, bool) (*core.GitPushAuthorization, error) {
 	panic("unexpected AuthorizeGitPush")
 }
 

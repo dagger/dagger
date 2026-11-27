@@ -125,8 +125,11 @@ type Server interface {
 	ModuleParentHostClientMetadata(context.Context) (*engine.ClientMetadata, error)
 
 	// AuthorizeGitPush resolves optional owner URL routing and checks permission
-	// before any destination credentials are used. Its result stays operation-local.
-	AuthorizeGitPush(context.Context, string, string, bool, bool) (*GitPushAuthorization, error)
+	// before any destination credentials are used, for a push of a ref to a
+	// remote, forced or not, with the exact SHA the remote ref must have
+	// (--force-with-lease) or "" for none. Its result stays operation-local,
+	// and is only valid for a push enforcing its Lease.
+	AuthorizeGitPush(ctx context.Context, remote, ref string, force bool, lease string, resolveURL bool) (*GitPushAuthorization, error)
 
 	// AuthorizeGitRead returns the client whose Git credentials may
 	// authenticate a read of the remote that an agent's model supplied as a

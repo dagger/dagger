@@ -49,11 +49,16 @@ func gitPushApproval(remote, ref string, force bool) approvalSpec {
 // returns the owner whose credentials it may use. A direct call by the owner
 // is its own authorization; a module's or an agent's push asks the owner
 // first, about the exact ref for the remote's default branch, a tag or any
-// other non-branch ref, and otherwise about the remote, once (see
-// git_push_policy.go).
+// other non-branch ref, or an unleased force-push, and otherwise about the
+// remote, once (see git_push_policy.go).
+//
+// lease is the exact SHA a force-push expects the remote ref to have
+// (--force-with-lease), "" for none. The authorization carries it back, and
+// is only valid for a push enforcing that same lease: the policy let a leased
+// force-push through as a plain push.
 //
 //nolint:gocyclo // keep owner routing, destination validation, and approval in one auditable flow
-func (srv *Server) AuthorizeGitPush(ctx context.Context, remote, ref string, force, resolveURL bool) (*core.GitPushAuthorization, error) {
+func (srv *Server) AuthorizeGitPush(ctx context.Context, remote, ref string, force bool, lease string, resolveURL bool) (*core.GitPushAuthorization, error) {
 	client, err := srv.executableClientFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -109,7 +114,7 @@ func (srv *Server) AuthorizeGitPush(ctx context.Context, remote, ref string, for
 		if err != nil {
 			return nil, err
 		}
-		return &core.GitPushAuthorization{Owner: md, Remote: remote}, nil
+		return &core.GitPushAuthorization{Owner: md, Remote: remote, Lease: lease}, nil
 	}
 	// Calling push directly is implicit authorization for this exact operation.
 	// Tool execution in the owner's context is not a direct user API call.
@@ -123,7 +128,7 @@ func (srv *Server) AuthorizeGitPush(ctx context.Context, remote, ref string, for
 		remoteDefault = srv.gitRemoteDefault(ctx, owner, remote)
 	}
 	spec := gitPushApproval(remote, ref, force)
-	if !gitPushNeedsRefApproval(ref, force, remoteDefault) {
+	if !gitPushNeedsRefApproval(ref, force, lease != "", remoteDefault) {
 		if srv.gitPushToOwnerOrigin(ctx, owner, remote) {
 			return authorized()
 		}

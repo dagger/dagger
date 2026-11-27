@@ -15,11 +15,12 @@ import (
 //
 // A push to a remote's default branch, or to any ref that is not a branch,
 // asks about that exact ref every time (gitPushApproval), as it is what
-// deploys, releases or otherwise matters downstream; so does any force-push
-// (see gitForcePushToOtherBranchesAsks). Plain pushes to any other branch,
-// e.g. a pull request's, are routine development: those only need the remote
-// to be approved once (gitPushRemoteApproval), unless it is the remote the
-// owner's own workspace was checked out from, which is approved already.
+// deploys, releases or otherwise matters downstream; so does a force-push
+// without a lease (see gitPushNeedsRefApproval). Plain pushes to any
+// other branch, e.g. a pull request's, and force-pushes there with a lease,
+// are routine development: those only need the remote to be approved once
+// (gitPushRemoteApproval), unless it is the remote the owner's own workspace
+// was checked out from, which is approved already.
 //
 // The remote grant cannot be dropped: approving a push also lets it use the
 // owner's credentials (its Git credential helper for HTTPS, its SSH agent for
@@ -34,8 +35,11 @@ const approvalKindGitPushRemote = "git-push-remote"
 // gitPushRemoteApproval is the approval for routine pushes to remote: to any
 // of its branches except its default one (as far as known, see
 // gitPushNeedsRefApproval), which still asks per push. The question names the
-// branches that keep asking, and whether force-pushes are included, as the
-// grant covers every other branch.
+// branches that keep asking, and that force-pushes with a lease are included,
+// as the grant covers every other branch.
+//
+// The TUI flags a dangerous question starting with "Allow force-push" (see
+// gitPushApproval); this one is not dangerous, and does not start so.
 func gitPushRemoteApproval(remote string, remoteDefault gitRemoteDefault) approvalSpec {
 	subject := literalText(remote)
 	excluded := slices.Clone(gitWellKnownDefaultBranches)
@@ -43,28 +47,16 @@ func gitPushRemoteApproval(remote string, remoteDefault gitRemoteDefault) approv
 		// The remote chose this name: literal text, like the subject.
 		excluded = append([]string{literalText(branch)}, excluded...)
 	}
-	pushes, action := "pushes and force-pushes", "Push and force-push"
-	if gitForcePushToOtherBranchesAsks {
-		pushes, action = "pushes", "Push"
-	}
 	branches := " branches other than " + strings.Join(excluded[:len(excluded)-1], ", ") + " and " + excluded[len(excluded)-1]
 	return approvalSpec{
 		Kind:    approvalKindGitPushRemote,
 		Subject: subject,
 		// Grants are keyed by the subject, not the question: an answer holds
 		// whatever the remote later reports as its default branch.
-		Question: "Allow " + pushes + " to " + subject + branches,
-		Action:   action + " to " + subject + branches,
+		Question: "Allow pushes, and force-pushes with a lease, to " + subject + branches,
+		Action:   "Push, and force-push with a lease, to " + subject + branches,
 	}
 }
-
-// gitForcePushToOtherBranchesAsks is whether a force-push to a branch that
-// is not the remote's default asks about that exact ref, as a force-push to
-// the default branch does. It does: a force-push rewrites history others may
-// have built on, so even on a pull request's branch it is asked about each
-// time, and, being destructive, never allowed forever (see gitPushApproval).
-// Plain pushes to those branches still only need the remote grant.
-const gitForcePushToOtherBranchesAsks = true
 
 // gitWellKnownDefaultBranches are asked about whatever the remote's HEAD
 // says, so that a misdetected or unknown default branch never skips asking
@@ -101,16 +93,28 @@ func gitPushRefAlwaysAsks(ref string) bool {
 	return false
 }
 
-// gitPushNeedsRefApproval is whether a delegated push of ref, forced or not,
-// asks about that exact ref rather than relying on the remote grant, given
-// what is known of the remote's default branch.
+// gitPushNeedsRefApproval is whether a delegated push of ref, forced (with a
+// lease or not) or not, asks about that exact ref rather than relying on the
+// remote grant, given what is known of the remote's default branch.
 //
 // A remote that could not be reached at all asks as before: nothing is known
 // about it. One that answered without naming its default branch (it requires
 // authentication, is empty, or does not advertise HEAD) leaves only the
 // well-known names asking: the owner's credentials are not consulted to find
 // out before the push is approved.
-func gitPushNeedsRefApproval(ref string, force bool, remote gitRemoteDefault) bool {
+//
+// A force-push to any other branch asks about the exact ref, as one to the
+// default branch does, only without a lease: it overwrites whatever the
+// branch holds, so it is asked about each time, and, being destructive, never
+// allowed forever (see gitPushApproval). Asking per ref protected several
+// people working on one branch from having their work overwritten; a lease
+// (--force-with-lease for an exact SHA) already does that, as the push fails
+// if anyone else moved the branch since. A leased force-push there is
+// therefore a plain push to the policy: covered by the remote grant, or
+// needing none to the owner's origin. The lease must be the one the push then
+// enforces: AuthorizeGitPush returns it in the authorization, and
+// core.GitRef.Push pushes with that lease.
+func gitPushNeedsRefApproval(ref string, force, leased bool, remote gitRemoteDefault) bool {
 	switch {
 	case gitPushRefAlwaysAsks(ref):
 		return true
@@ -119,7 +123,7 @@ func gitPushNeedsRefApproval(ref string, force bool, remote gitRemoteDefault) bo
 	case remote.branch != "" && strings.EqualFold(ref, remote.branch):
 		return true
 	case force:
-		return gitForcePushToOtherBranchesAsks
+		return !leased
 	default:
 		return false
 	}
