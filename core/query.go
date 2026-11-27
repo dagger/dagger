@@ -145,6 +145,21 @@ type Server interface {
 	// IsRestoredBindingLoad): no approval carries over a resume.
 	AuthorizeSecret(context.Context, string) (*engine.ClientMetadata, error)
 
+	// AuthorizeHostSocket returns the trusted owner whose host
+	// Host.unixSocket(path:) forwards its socket from, once the owner
+	// approved it for the agent driving a client that has no host of its
+	// own; nil when the calling client forwards its own host's socket, as
+	// always. Such a client is refused without an agent.
+	AuthorizeHostSocket(ctx context.Context, path string) (*engine.ClientMetadata, error)
+
+	// AuthorizeSSHAgent returns the trusted owner whose SSH agent
+	// Host._sshAuthSocket uses for a caller that has no host of its own,
+	// once the owner approved it for the agent driving that caller; nil when
+	// the calling client has a host of its own. remote, when known, names
+	// what the agent authenticates to. Such a client is refused without an
+	// agent.
+	AuthorizeSSHAgent(ctx context.Context, remote string) (*engine.ClientMetadata, error)
+
 	// AuthorizeGitIdentity returns the Git identity (user.name, user.email)
 	// of the owning client at its working directory, for attributing a commit
 	// made without an explicit author. When an agent or module asks, the owner

@@ -95,6 +95,7 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 			Doc(`Accesses the SSH auth socket on the host and returns a socket scoped to SSH identities.`).
 			Args(
 				dagql.Arg("source").Doc(`Optional source socket to scope. If not set, uses the caller's SSH_AUTH_SOCK.`),
+				dagql.Arg("remote").Doc(`The remote the socket authenticates to, if known. A caller without an SSH agent of its own, on an agent's behalf, asks its owner to lend theirs for it.`),
 			),
 
 		dagql.Func("tunnel", s.tunnel).
@@ -457,10 +458,24 @@ func (s *hostSchema) socket(ctx context.Context, host dagql.ObjectResult[*core.H
 		return inst, fmt.Errorf("failed to get client metadata: %w", err)
 	}
 
+	// Ask whose host the socket is forwarded from before minting it: a
+	// client without a host of its own is refused, unless an agent drives
+	// it and its owner approves (see Server.AuthorizeHostSocket). Without
+	// this, its handle would be minted, and only fail, silently, when an
+	// exec connects.
+	source := clientMetadata.ClientID
+	owner, err := query.AuthorizeHostSocket(ctx, args.Path)
+	if err != nil {
+		return inst, err
+	}
+	if owner != nil {
+		source = owner.ClientID
+	}
+
 	concreteVal := &core.Socket{
 		Kind:           core.SocketKindUnixOpaque,
 		URLVal:         (&url.URL{Scheme: "unix", Path: args.Path}).String(),
-		SourceClientID: clientMetadata.ClientID,
+		SourceClientID: source,
 	}
 
 	handle, err := core.HostUnixSocketHandle(ctx, query, args.Path)
@@ -497,6 +512,41 @@ func (s *hostSchema) socket(ctx context.Context, host dagql.ObjectResult[*core.H
 
 type hostSSHAuthSocketArgs struct {
 	Source dagql.Optional[core.SocketID] `name:"source"`
+	// Remote is what the agent authenticates to, when the caller knows it:
+	// an owner asked to lend its SSH agent is told, and an owner without
+	// SSH_AUTH_SOCK prepares one for it (see ownerSSHAuthSocketPath).
+	Remote dagql.Optional[dagql.String] `name:"remote"`
+}
+
+// ownerSSHAuthSocketPath is the SSH agent of owner, the trusted client that
+// approved lending it (see Server.AuthorizeSSHAgent): its SSH_AUTH_SOCK, or
+// else one it prepares for remote, or for its checkout's SSH origin when the
+// remote is unknown.
+func ownerSSHAuthSocketPath(ctx context.Context, query *core.Query, owner *engine.ClientMetadata, remote string) (string, error) {
+	if owner.SSHAuthSocketPath != "" {
+		return owner.SSHAuthSocketPath, nil
+	}
+	ownerCtx := engine.ContextWithClientMetadata(ctx, owner)
+	bk, err := query.Engine(ownerCtx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get engine client: %w", err)
+	}
+	if remote == "" {
+		if ws, err := query.CurrentWorkspace(ownerCtx); err == nil && ws != nil && ws.HostPath() != "" {
+			origin := hostCheckoutOriginURL(ownerCtx, bk, ws.HostPath())
+			if u, err := gitutil.ParseURL(origin); err == nil && u.Scheme == gitutil.SSHProtocol {
+				remote = origin
+			}
+		}
+	}
+	if remote == "" {
+		return "", errors.New("using your SSH keys: the owning client has no SSH_AUTH_SOCK, and no SSH remote is known to prepare SSH authentication for")
+	}
+	path, err := bk.PrepareGitSSHAuth(ownerCtx, remote)
+	if err != nil {
+		return "", fmt.Errorf("using your SSH keys for %q: the owning client has no SSH_AUTH_SOCK, and preparing SSH authentication through it failed: %w", remote, err)
+	}
+	return path, nil
 }
 
 // checkoutSSHAuthSocketPath stands in for SSH_AUTH_SOCK when a client without
@@ -570,20 +620,41 @@ func (s *hostSchema) sshAuthSocket(ctx context.Context, host dagql.ObjectResult[
 			return inst, errors.New("resolved source socket is nil")
 		}
 	} else {
-		sshAuthSocketPath := clientMetadata.SSHAuthSocketPath
-		if sshAuthSocketPath == "" {
-			sshAuthSocketPath, err = checkoutSSHAuthSocketPath(ctx, query, clientMetadata)
+		var remote string
+		if args.Remote.Valid {
+			remote = string(args.Remote.Value)
+		}
+		// A client without a host of its own has no SSH agent it could
+		// forward: on an agent's behalf, its owner is asked to lend its own
+		// (see Server.AuthorizeSSHAgent); without an agent, it is refused.
+		owner, err := query.AuthorizeSSHAgent(ctx, remote)
+		if err != nil {
+			return inst, err
+		}
+		source := clientMetadata.ClientID
+		var sshAuthSocketPath string
+		if owner != nil {
+			sshAuthSocketPath, err = ownerSSHAuthSocketPath(ctx, query, owner, remote)
 			if err != nil {
 				return inst, err
 			}
-		}
-		if sshAuthSocketPath == "" {
-			return inst, errors.New("SSH_AUTH_SOCK is not set")
+			source = owner.ClientID
+		} else {
+			sshAuthSocketPath = clientMetadata.SSHAuthSocketPath
+			if sshAuthSocketPath == "" {
+				sshAuthSocketPath, err = checkoutSSHAuthSocketPath(ctx, query, clientMetadata)
+				if err != nil {
+					return inst, err
+				}
+			}
+			if sshAuthSocketPath == "" {
+				return inst, errors.New("SSH_AUTH_SOCK is not set")
+			}
 		}
 		concreteVal := &core.Socket{
 			Kind:           core.SocketKindUnixOpaque,
 			URLVal:         (&url.URL{Scheme: "unix", Path: sshAuthSocketPath}).String(),
-			SourceClientID: clientMetadata.ClientID,
+			SourceClientID: source,
 		}
 		concreteSelf = concreteVal
 	}

@@ -440,8 +440,11 @@ func TestWorkspaceSnapshotScopesSSHAuth(t *testing.T) {
 				}),
 			}.Install(srv)
 			dagql.Fields[*core.Host]{
-				dagql.Func("_sshAuthSocket", func(ctx context.Context, _ *core.Host, _ struct{}) (*core.Socket, error) {
+				dagql.Func("_sshAuthSocket", func(ctx context.Context, _ *core.Host, args struct {
+					Remote dagql.Optional[dagql.String] `name:"remote"`
+				}) (*core.Socket, error) {
 					scoped = true
+					require.Equal(t, dagql.Opt(dagql.NewString(tc.remote)), args.Remote, "the remote is recorded for a resumed load to ask about")
 					caller, err := engine.ClientMetadataFromContext(ctx)
 					require.NoError(t, err)
 					require.Equal(t, "owner", caller.ClientID)

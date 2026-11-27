@@ -429,7 +429,7 @@ func (s *workspaceSchema) checkpointCapturedGitCompositionWithBase(
 	} else {
 		args := []dagql.NamedInput{{Name: "url", Value: dagql.NewString(metadata.RemoteUrl)}}
 		if remote.Scheme == gitutil.SSHProtocol {
-			sshArgs, err := checkpointSSHAuthArgs(ctx, srv)
+			sshArgs, err := checkpointSSHAuthArgs(ctx, srv, metadata.RemoteUrl)
 			if err != nil {
 				return inst, err
 			}
@@ -599,7 +599,7 @@ func (s *workspaceSchema) checkpointCapturedGitRemotes(
 	return repo, nil
 }
 
-func checkpointSSHAuthArgs(ctx context.Context, srv *dagql.Server) ([]dagql.NamedInput, error) {
+func checkpointSSHAuthArgs(ctx context.Context, srv *dagql.Server, remote string) ([]dagql.NamedInput, error) {
 	caller, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -611,10 +611,15 @@ func checkpointSSHAuthArgs(ctx context.Context, srv *dagql.Server) ([]dagql.Name
 	// Pass a scoped socket explicitly so a previously cached, unauthenticated
 	// Query.git cannot hide the prepared agent, and this capture does not
 	// authenticate unrelated reads through that same per-client cache entry.
+	// The remote is recorded with it: a resumed agent's host-less load of
+	// this recipe asks the owner to lend its SSH agent for that remote (see
+	// Host._sshAuthSocket).
 	var socket dagql.ObjectResult[*core.Socket]
 	if err := srv.Select(ctx, srv.Root(), &socket,
 		dagql.Selector{Field: "host"},
-		dagql.Selector{Field: "_sshAuthSocket"},
+		dagql.Selector{Field: "_sshAuthSocket", Args: []dagql.NamedInput{
+			{Name: "remote", Value: dagql.Opt(dagql.NewString(remote))},
+		}},
 	); err != nil {
 		return nil, fmt.Errorf("scope workspace snapshot SSH authentication: %w", err)
 	}
