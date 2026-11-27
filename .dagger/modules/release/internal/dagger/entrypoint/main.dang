@@ -46,6 +46,14 @@ type Entrypoint implements ModuleEntrypoint {
             .withArg("githubToken", typeDef.withObject("Secret").withOptional(true), sourceMap: sourceMap("changie.go", 28, 2))
         )
         .withFunction(
+          function("GoSdkPublishCheck", typeDef.withKind(TypeDefKind.VOID_KIND).withOptional(true))
+            .withDescription("Exercise the Go SDK publish of the committed history against a local git\ndestination.")
+            .withSourceMap(sourceMap("go_sdk_publish_check.go", 17, 1))
+            .withCheck
+            .withArg("source", typeDef.withObject("GitRepository").withOptional(true), description: "Repository whose HEAD is the candidate to publish. The check publishes a\ndisposable copy of its history, so commit IDs match the candidate's.", defaultPath: "/", sourceMap: sourceMap("go_sdk_publish_check.go", 23, 2))
+            .withArg("callback", typeDef.withObject("File").withOptional(true), description: "git-filter-repo callback that the Go SDK publish applies", defaultPath: "/.dagger/modules/go-client-dev/git-filter-callback.py", sourceMap: sourceMap("go_sdk_publish_check.go", 27, 2))
+        )
+        .withFunction(
           function("HelmTargetVersion", typeDef.withObject("Changeset"))
             .withDescription("Regenerate Helm chart files that reference the target Dagger Engine version.")
             .withSourceMap(sourceMap("generate.go", 51, 1))
@@ -60,12 +68,12 @@ type Entrypoint implements ModuleEntrypoint {
         .withFunction(
           function("Notify", typeDef.withKind(TypeDefKind.VOID_KIND).withOptional(true))
             .withCachePolicy(FunctionCachePolicy.PER_SESSION)
-            .withSourceMap(sourceMap("main.go", 550, 1))
-            .withArg("repository", typeDef.withKind(TypeDefKind.STRING_KIND), description: "GitHub repository URL", sourceMap: sourceMap("main.go", 553, 2))
-            .withArg("target", typeDef.withKind(TypeDefKind.STRING_KIND), description: "The target tag for the release\ne.g. sdk/typescript/v0.14.0", sourceMap: sourceMap("main.go", 556, 2))
-            .withArg("name", typeDef.withKind(TypeDefKind.STRING_KIND), description: "Name of the component to release", sourceMap: sourceMap("main.go", 558, 2))
-            .withArg("discordWebhook", typeDef.withObject("Secret").withOptional(true), description: "Discord webhook", sourceMap: sourceMap("main.go", 561, 2))
-            .withArg("dryRun", typeDef.withKind(TypeDefKind.BOOLEAN_KIND).withOptional(true), description: "Whether to perform a dry run without creating the release", sourceMap: sourceMap("main.go", 565, 2))
+            .withSourceMap(sourceMap("main.go", 554, 1))
+            .withArg("repository", typeDef.withKind(TypeDefKind.STRING_KIND), description: "GitHub repository URL", sourceMap: sourceMap("main.go", 557, 2))
+            .withArg("target", typeDef.withKind(TypeDefKind.STRING_KIND), description: "The target tag for the release\ne.g. sdk/typescript/v0.14.0", sourceMap: sourceMap("main.go", 560, 2))
+            .withArg("name", typeDef.withKind(TypeDefKind.STRING_KIND), description: "Name of the component to release", sourceMap: sourceMap("main.go", 562, 2))
+            .withArg("discordWebhook", typeDef.withObject("Secret").withOptional(true), description: "Discord webhook", sourceMap: sourceMap("main.go", 565, 2))
+            .withArg("dryRun", typeDef.withKind(TypeDefKind.BOOLEAN_KIND).withOptional(true), description: "Whether to perform a dry run without creating the release", sourceMap: sourceMap("main.go", 569, 2))
         )
         .withFunction(
           function("PhpSdkTargetVersion", typeDef.withObject("Changeset"))

@@ -46,6 +46,7 @@ var functions = []functionSpec{
 	{Name: "docsTargetVersion", Receiver: "Release", FnName: "DocsTargetVersion", Args: map[string]argumentSpec{}},
 	{Name: "elixirSdkTargetVersion", Receiver: "Release", FnName: "ElixirSdkTargetVersion", Args: map[string]argumentSpec{}},
 	{Name: "getMaintainers", Receiver: "Release", FnName: "GetMaintainers", Args: map[string]argumentSpec{"githubOrgName": {Required: true, Default: "", Encoding: "string"}, "githubToken": {Required: false, Default: "", Encoding: "string"}}},
+	{Name: "goSdkPublishCheck", Receiver: "Release", FnName: "GoSdkPublishCheck", Args: map[string]argumentSpec{"source": {Required: false, Default: "", Encoding: "string"}, "callback": {Required: false, Default: "", Encoding: "string"}}},
 	{Name: "helmTargetVersion", Receiver: "Release", FnName: "HelmTargetVersion", Args: map[string]argumentSpec{}},
 	{Name: "javaSdkTargetVersion", Receiver: "Release", FnName: "JavaSdkTargetVersion", Args: map[string]argumentSpec{}},
 	{Name: "notify", Receiver: "Release", FnName: "Notify", Args: map[string]argumentSpec{"repository": {Required: true, Default: "", Encoding: "string"}, "target": {Required: true, Default: "", Encoding: "string"}, "name": {Required: true, Default: "", Encoding: "string"}, "discordWebhook": {Required: false, Default: "", Encoding: "string"}, "dryRun": {Required: false, Default: "", Encoding: "json"}}},

@@ -16,7 +16,7 @@ output, also read `version-gating.md`.
 |---------|---------|-------------|-----------|
 | In-module bindings | `dagger develop`, `dagger call`, generated context loading | SDK-specific module source changes such as Go `internal/dagger/dagger.gen.go` | `core/schema/modulesource.go`, `core/sdk.go`, `core/sdk/*` |
 | Runtime dispatch | Module execution | Dispatch entrypoint that calls user functions | Go: `cmd/codegen/generator/go/templates/modules.go`; TypeScript: `cmd/codegen generate-entrypoint` |
-| SDK libraries | Repo SDK generation | Shipped SDK packages such as `sdk/go/core/core.gen.go` | `cmd/codegen generate-library`, `sdk/go/generate.go`, SDK-specific generators |
+| SDK libraries | Repo SDK generation | Shipped SDK packages such as `sdk/go/core/core.gen.go` | Go: `dagger-go-sdk-codegen core` from github.com/dagger/go-sdk, built at the commit that `.dagger/modules/go-client-dev` pins and run by its `generate`; `cmd/codegen generate-library` remains for comparison and rollback. TypeScript: `cmd/codegen generate-library`. Other SDKs: SDK-specific generators |
 | Generated clients | `dagger client install` / configured module clients | Client bindings for regular programs outside module runtime | `ClientGenerator`, `cmd/dagger/client.go`, `cmd/codegen generate-client` |
 
 Decide which surface you are editing before changing templates. Similar output

@@ -16,10 +16,11 @@ type GoClientDev struct { // go-client-dev (../../:0:0)
 	// field again.
 	refetchID bool
 
-	id            *ID
-	release       *Void
-	releaseDryRun *Void
-	sourcePath    *string
+	compareCodegen *string
+	id             *ID
+	release        *Void
+	releaseDryRun  *Void
+	sourcePath     *string
 }
 
 func (r *GoClientDev) WithGraphQLQuery(q *querybuilder.Selection) *GoClientDev {
@@ -29,6 +30,45 @@ func (r *GoClientDev) WithGraphQLQuery(q *querybuilder.Selection) *GoClientDev {
 		// must be reevaluated.
 		refetchID: true,
 	}
+}
+
+// GoClientDevCompareCodegenOpts contains options for GoClientDev.CompareCodegen
+type GoClientDevCompareCodegenOpts struct {
+	//
+	// Git repository of the release candidate
+	//
+	SourceRepo *GitRepository // go-client-dev (../../:0:0)
+
+	Script *File // go-client-dev (../../:0:0)
+}
+
+// Check that dagger-go-sdk-codegen generates the same core bindings as the
+// embedded cmd/codegen of a release candidate, from the same schema, and that
+// the candidate commits them
+func (r *GoClientDev) CompareCodegen(ctx context.Context, sourceTag string, expectedCommit string, schemaCapture *Directory, opts ...GoClientDevCompareCodegenOpts) (string, error) { // go-client-dev (../../:0:0)
+	assertNotNil("schemaCapture", schemaCapture)
+	if r.compareCodegen != nil {
+		return *r.compareCodegen, nil
+	}
+	q := r.query.Select("compareCodegen")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `sourceRepo` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SourceRepo) {
+			q = q.Arg("sourceRepo", opts[i].SourceRepo)
+		}
+		// `script` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Script) {
+			q = q.Arg("script", opts[i].Script)
+		}
+	}
+	q = q.Arg("sourceTag", sourceTag)
+	q = q.Arg("expectedCommit", expectedCommit)
+	q = q.Arg("schemaCapture", schemaCapture)
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // Build a container to run the go toolchain
@@ -43,6 +83,13 @@ func (r *GoClientDev) Generate() *Changeset { // go-client-dev (../../:0:0)
 	q := r.query.Select("generate")
 
 	return new(Changeset).WithGraphQLQuery(q)
+}
+
+// Build dagger-go-sdk-codegen at the pinned github.com/dagger/go-sdk commit
+func (r *GoClientDev) GoSDKCodegen() *File { // go-client-dev (../../:0:0)
+	q := r.query.Select("goSdkCodegen")
+
+	return new(File).WithGraphQLQuery(q)
 }
 
 // A unique identifier for this GoClientDev.
@@ -98,6 +145,13 @@ func (r *GoClientDev) UnmarshalJSON(bs []byte) error {
 	}
 	*r = GoClientDev{query: selectNode(Connect().QueryBuilder(), id, "GoClientDev")}
 	return nil
+}
+
+// Introspect the API of the dev engine, as a JSON file
+func (r *GoClientDev) IntrospectionJSON() *File { // go-client-dev (../../:0:0)
+	q := r.query.Select("introspectionJson")
+
+	return new(File).WithGraphQLQuery(q)
 }
 
 // GoClientDevReleaseOpts contains options for GoClientDev.Release
@@ -191,10 +245,50 @@ func (r *GoClientDev) ReleaseDryRun(ctx context.Context, opts ...GoClientDevRele
 	return q.Execute(ctx)
 }
 
+// GoClientDevSchemaCaptureOpts contains options for GoClientDev.SchemaCapture
+type GoClientDevSchemaCaptureOpts struct {
+	//
+	// Git repository of the commit
+	//
+	SourceRepo *GitRepository // go-client-dev (../../:0:0)
+
+	Script *File // go-client-dev (../../:0:0)
+}
+
+// Introspect the dev engine, and record the engine image that answered: the
+// commit stamped into its dagger-engine binary, the binary's SHA-256, the
+// digest of its root filesystem, and the manifest of the source it was built
+// from, which must have the content of the commit
+func (r *GoClientDev) SchemaCapture(commit string, opts ...GoClientDevSchemaCaptureOpts) *Directory { // go-client-dev (../../:0:0)
+	q := r.query.Select("schemaCapture")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `sourceRepo` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SourceRepo) {
+			q = q.Arg("sourceRepo", opts[i].SourceRepo)
+		}
+		// `script` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Script) {
+			q = q.Arg("script", opts[i].Script)
+		}
+	}
+	q = q.Arg("commit", commit)
+
+	return new(Directory).WithGraphQLQuery(q)
+}
+
 func (r *GoClientDev) Source() *Directory { // go-client-dev (../../:0:0)
 	q := r.query.Select("source")
 
 	return new(Directory).WithGraphQLQuery(q)
+}
+
+// Check that comparing an engine source with its commit catches changed,
+// untracked and deleted engine inputs, and ignores Git metadata, modification
+// times and paths that engine-dev does not build from
+func (r *GoClientDev) SourceDiffTest() *Check { // go-client-dev (../../:0:0)
+	q := r.query.Select("sourceDiffTest")
+
+	return new(Check).WithGraphQLQuery(q)
 }
 
 // Path of the Go SDK source within the workspace
