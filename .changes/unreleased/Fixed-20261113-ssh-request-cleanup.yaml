@@ -1,0 +1,6 @@
+kind: Fixed
+body: Release forwarded SSH connections when their request ends, even if the other end stays connected.
+time: 2026-11-13T12:02:00-08:00
+custom:
+  Author: grouville
+  PR: 15176
