@@ -92,6 +92,23 @@ func TestCheckRootCausesSkipPassthrough(t *testing.T) {
 		require.Equal(t, []string{"dag://?check=one"}, names(CheckRootCauses(root)))
 	})
 
+	t.Run("failed exec in function plumbing", func(t *testing.T) {
+		// A module entrypoint's dispatcher exec fails because the
+		// function did: it only repeats the check's own failure.
+		db := dagui.NewDB()
+		plumbing := span(4, 3, "call module entrypoint", ok, false)
+		plumbing.FunctionPlumbing = true
+		db.ImportSnapshots([]dagui.SpanSnapshot{
+			check(1, "failing"),
+			span(2, 1, "Check.__run", ok, true),
+			span(3, 2, "View.__check_failing", failed, true),
+			plumbing,
+			span(5, 4, "withExec python -m dagger.mod call", failed, false),
+		})
+		root := db.Spans.Map[prettyTestSpanID(1)]
+		require.Equal(t, []string{"dag://?check=failing"}, names(CheckRootCauses(root)))
+	})
+
 	t.Run("deeper origin", func(t *testing.T) {
 		db := dagui.NewDB()
 		deep := check(1, "deep")

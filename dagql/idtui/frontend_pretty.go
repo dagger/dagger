@@ -9014,6 +9014,13 @@ func (fe *frontendPretty) checkRootCauses(root *dagui.Span) []*dagui.Span {
 // the span a module's SDK runs a check's function under, is replaced by the
 // nearest failed span above it on the walk from root that isn't passthrough,
 // or root itself: for a check that failed on its own span, the check.
+//
+// The walk doesn't enter a module function call's plumbing (a module
+// entrypoint's span, Span.FunctionPlumbing) either. A root with no origins
+// failed with an error of its own, its function's, and an entrypoint reports
+// that failure as its process's failed exec too, which only repeats it.
+// Plumbing that fails on its own, such as a module's build, is the origin of
+// the root's error, so the walk never runs.
 func CheckRootCauses(root *dagui.Span) []*dagui.Span {
 	if root == nil {
 		return nil
@@ -9039,7 +9046,7 @@ func CheckRootCauses(root *dagui.Span) []*dagui.Span {
 	// include cause-linked spans, whose parents can be outside root.
 	var walk func(s, shown *dagui.Span)
 	walk = func(s, shown *dagui.Span) {
-		if visited[s.ID] {
+		if visited[s.ID] || s != root && s.FunctionPlumbing {
 			return
 		}
 		visited[s.ID] = true
