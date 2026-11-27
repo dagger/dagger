@@ -19,8 +19,8 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/engineutil"
+	"github.com/dagger/dagger/engine/ripgrep"
 	"github.com/dagger/dagger/engine/slog"
-	telemetry "github.com/dagger/otel-go"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"golang.org/x/mod/semver"
@@ -1712,7 +1712,14 @@ func (s *workspaceSchema) search(
 		if err != nil {
 			return nil, err
 		}
-		results, err = rootfs.Self().Search(ctx, rootfs, sourceArgs.SearchOpts, false, sourceArgs.Paths, sourceArgs.Globs)
+		opts := sourceArgs.SearchOpts
+		if len(ws.MountPoints()) > 0 {
+			// What the mounts shadow is dropped from the merge below: drop it
+			// as it's read, so it counts against neither the limit nor the
+			// budget.
+			opts.KeepPath = func(p string) bool { return !ws.MountedPath(path.Clean(p)) }
+		}
+		results, err = rootfs.Self().Search(ctx, rootfs, opts, false, sourceArgs.Paths, sourceArgs.Globs)
 		if err != nil {
 			return nil, fmt.Errorf("search: %w", err)
 		}
@@ -1737,16 +1744,39 @@ func (s *workspaceSchema) search(
 	// points, mirroring resolveReadRootfs's shadowing, and explicit search
 	// paths under mounts — withheld from the source side above — are honored
 	// here via searchDirectoryTree's post-filter.
-	if mounts, ok := ws.MountsDir(); ok {
+	if mounts, ok := ws.MountsDir(); ok && searchReachesMounts(ws, args.Paths) {
 		mountResults, err := searchDirectoryTree(ctx, mounts, args)
 		if err != nil {
 			return nil, fmt.Errorf("search: mounts: %w", err)
 		}
 		results = mergeSearchResults(results, mountResults, ws.MountedPath, args.Limit)
 	}
+	// Each side kept within the budget; together they must too.
+	if maxResults := ripgrep.DefaultMaxResults; args.Limit == nil && len(results) > maxResults {
+		unit := "lines"
+		if args.FilesOnly {
+			unit = "files"
+		}
+		return nil, fmt.Errorf("search: %w", &ripgrep.BudgetError{Unit: unit, MaxResults: maxResults})
+	}
 
-	emitSearchResults(ctx, results, args.FilesOnly)
+	core.EmitSearchResults(ctx, results, args.FilesOnly)
 	return dagql.Array[*core.SearchResult](results), nil
+}
+
+// searchReachesMounts reports whether a search of the given paths (none: the
+// whole workspace) covers any mounted content.
+func searchReachesMounts(ws *core.Workspace, paths []string) bool {
+	if len(paths) == 0 {
+		return true
+	}
+	for _, p := range paths {
+		scope := cleanSearchScope(p)
+		if ws.MountedPath(scope) || ws.HasMountsUnder(scope) {
+			return true
+		}
+	}
+	return false
 }
 
 // searchSourcePaths filters explicit search paths down to the operands the
@@ -1887,29 +1917,28 @@ func (s *workspaceSchema) overlaySearchResults(
 // searchDirectoryTree runs the search against a sparse in-engine tree (the
 // overlay's delta root or the mounts tree). The tree lacks paths that only
 // exist elsewhere in the workspace, so explicit search paths are applied as a
-// post-filter instead of being passed to ripgrep (which errors on missing
-// path operands).
+// filter of ripgrep's results instead of being passed to it (it errors on
+// missing path operands). The filter applies as they are read, before they
+// count against the limit and the search's budgets, so a large tree outside
+// the requested paths neither crowds them out nor fails the search.
+//
+// The limit applies to this side as it does to the source side. This side's
+// results win the merge (none of them is dropped by it), so capping them at
+// limit still leaves the merge as many results as the limit allows when this
+// side has that many. Which ones, like a limited ripgrep search's, depends on
+// the order ripgrep finds them in.
 func searchDirectoryTree(
 	ctx context.Context,
 	tree dagql.ObjectResult[*core.Directory],
 	args workspaceSearchArgs,
 ) ([]*core.SearchResult, error) {
 	opts := args.SearchOpts
-	opts.Limit = nil // the limit caps the merged results, not each side
-	results, err := tree.Self().Search(ctx, tree, opts, false, nil, args.Globs)
-	if err != nil {
-		return nil, err
-	}
-	if len(args.Paths) == 0 {
-		return results, nil
-	}
-	scoped := results[:0]
-	for _, r := range results {
-		if searchPathInScopes(r.FilePath, args.Paths) {
-			scoped = append(scoped, r)
+	if len(args.Paths) > 0 {
+		opts.KeepPath = func(p string) bool {
+			return searchPathInScopes(p, args.Paths)
 		}
 	}
-	return scoped, nil
+	return tree.Self().Search(ctx, tree, opts, false, nil, args.Globs)
 }
 
 // mergeSearchResults combines two sides of a workspace search with per-file
@@ -1959,24 +1988,6 @@ func searchPathInScopes(filePath string, scopes []string) bool {
 		}
 	}
 	return false
-}
-
-// emitSearchResults writes search results to the span's stdio so they show up
-// in progress output (and are visible to an LLM driving the search).
-func emitSearchResults(ctx context.Context, results []*core.SearchResult, filesOnly bool) {
-	stdio := telemetry.SpanStdio(ctx, core.InstrumentationLibrary)
-	defer stdio.Close()
-	for _, result := range results {
-		if filesOnly {
-			fmt.Fprintln(stdio.Stdout, result.FilePath)
-		} else {
-			ensureLn := result.MatchedLines
-			if !strings.HasSuffix(ensureLn, "\n") {
-				ensureLn += "\n"
-			}
-			fmt.Fprintf(stdio.Stdout, "%s:%d:%s", result.FilePath, result.LineNumber, ensureLn)
-		}
-	}
 }
 
 type workspaceGlobArgs struct {

@@ -1874,6 +1874,8 @@ export type DirectorySearchOpts = {
 
   /**
    * The text to match.
+   *
+   * A pattern matching too much fails the search: more than 2000 results without a limit, or results over about 8 MiB with or without one (see limit).
    */
   pattern: string
 
@@ -1913,7 +1915,9 @@ export type DirectorySearchOpts = {
   filesOnly?: boolean
 
   /**
-   * Limit the number of results to return
+   * Limit the number of results to return.
+   *
+   * Without a limit, a search matching more than 2000 results fails; a limit replaces that cap, truncating the results instead. Either way, a search whose results (paths, matched lines and submatches) exceed about 8 MiB fails.
    */
   limit?: number
 }
@@ -2237,7 +2241,9 @@ export type FileSearchOpts = {
   filesOnly?: boolean
 
   /**
-   * Limit the number of results to return
+   * Limit the number of results to return.
+   *
+   * Without a limit, a search matching more than 2000 results fails; a limit replaces that cap, truncating the results instead. Either way, a search whose results (paths, matched lines and submatches) exceed about 8 MiB fails.
    */
   limit?: number
   paths?: string[]
@@ -4384,6 +4390,8 @@ export type WorkspaceSearchOpts = {
 
   /**
    * The text to match.
+   *
+   * A pattern matching too much fails the search: more than 2000 results without a limit, or results over about 8 MiB with or without one (see limit).
    */
   pattern: string
 
@@ -4423,7 +4431,9 @@ export type WorkspaceSearchOpts = {
   filesOnly?: boolean
 
   /**
-   * Limit the number of results to return
+   * Limit the number of results to return.
+   *
+   * Without a limit, a search matching more than 2000 results fails; a limit replaces that cap, truncating the results instead. Either way, a search whose results (paths, matched lines and submatches) exceed about 8 MiB fails.
    */
   limit?: number
 }
@@ -9127,6 +9137,8 @@ export class Directory extends BaseClient {
    * @param opts.paths Directory or file paths to search
    * @param opts.globs Glob patterns to match (e.g., "*.md")
    * @param opts.pattern The text to match.
+   *
+   * A pattern matching too much fails the search: more than 2000 results without a limit, or results over about 8 MiB with or without one (see limit).
    * @param opts.literal Interpret the pattern as a literal string instead of a regular expression.
    * @param opts.multiline Enable searching across multiple lines.
    * @param opts.dotall Allow the . pattern to match newlines in multiline mode.
@@ -9134,7 +9146,9 @@ export class Directory extends BaseClient {
    * @param opts.skipIgnored Honor .gitignore, .ignore, and .rgignore files.
    * @param opts.skipHidden Skip hidden files (files starting with .).
    * @param opts.filesOnly Only return matching files, not lines and content
-   * @param opts.limit Limit the number of results to return
+   * @param opts.limit Limit the number of results to return.
+   *
+   * Without a limit, a search matching more than 2000 results fails; a limit replaces that cap, truncating the results instead. Either way, a search whose results (paths, matched lines and submatches) exceed about 8 MiB fails.
    */
   search = async (opts?: DirectorySearchOpts): Promise<SearchResult[]> => {
     type search = {
@@ -10900,6 +10914,8 @@ export class File extends BaseClient {
    *
    * Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
    * @param pattern The text to match.
+   *
+   * A pattern matching too much fails the search: more than 2000 results without a limit, or results over about 8 MiB with or without one (see limit).
    * @param opts.literal Interpret the pattern as a literal string instead of a regular expression.
    * @param opts.multiline Enable searching across multiple lines.
    * @param opts.dotall Allow the . pattern to match newlines in multiline mode.
@@ -10907,7 +10923,9 @@ export class File extends BaseClient {
    * @param opts.skipIgnored Honor .gitignore, .ignore, and .rgignore files.
    * @param opts.skipHidden Skip hidden files (files starting with .).
    * @param opts.filesOnly Only return matching files, not lines and content
-   * @param opts.limit Limit the number of results to return
+   * @param opts.limit Limit the number of results to return.
+   *
+   * Without a limit, a search matching more than 2000 results fails; a limit replaces that cap, truncating the results instead. Either way, a search whose results (paths, matched lines and submatches) exceed about 8 MiB fails.
    */
   search = async (
     pattern: string,
@@ -19516,6 +19534,8 @@ export class Workspace extends BaseClient {
    * @param opts.paths Directory or file paths to search
    * @param opts.globs Glob patterns to match (e.g., "*.md")
    * @param opts.pattern The text to match.
+   *
+   * A pattern matching too much fails the search: more than 2000 results without a limit, or results over about 8 MiB with or without one (see limit).
    * @param opts.literal Interpret the pattern as a literal string instead of a regular expression.
    * @param opts.multiline Enable searching across multiple lines.
    * @param opts.dotall Allow the . pattern to match newlines in multiline mode.
@@ -19523,7 +19543,9 @@ export class Workspace extends BaseClient {
    * @param opts.skipIgnored Honor .gitignore, .ignore, and .rgignore files.
    * @param opts.skipHidden Skip hidden files (files starting with .).
    * @param opts.filesOnly Only return matching files, not lines and content
-   * @param opts.limit Limit the number of results to return
+   * @param opts.limit Limit the number of results to return.
+   *
+   * Without a limit, a search matching more than 2000 results fails; a limit replaces that cap, truncating the results instead. Either way, a search whose results (paths, matched lines and submatches) exceed about 8 MiB fails.
    */
   search = async (opts?: WorkspaceSearchOpts): Promise<SearchResult[]> => {
     type search = {

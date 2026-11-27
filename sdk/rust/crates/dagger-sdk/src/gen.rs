@@ -6667,7 +6667,8 @@ pub struct DirectorySearchOpts<'a> {
     /// Enable case-insensitive matching.
     #[builder(setter(into, strip_option), default)]
     pub insensitive: Option<bool>,
-    /// Limit the number of results to return
+    /// Limit the number of results to return.
+    /// Without a limit, a search matching more than 2000 results fails; a limit replaces that cap, truncating the results instead. Either way, a search whose results (paths, matched lines and submatches) exceed about 8 MiB fails.
     #[builder(setter(into, strip_option), default)]
     pub limit: Option<isize>,
     /// Interpret the pattern as a literal string instead of a regular expression.
@@ -6939,6 +6940,8 @@ impl Directory {
     /// # Arguments
     ///
     /// * `pattern` - The text to match.
+    ///
+    /// A pattern matching too much fails the search: more than 2000 results without a limit, or results over about 8 MiB with or without one (see limit).
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn search(
         &self,
@@ -6966,6 +6969,8 @@ impl Directory {
     /// # Arguments
     ///
     /// * `pattern` - The text to match.
+    ///
+    /// A pattern matching too much fails the search: more than 2000 results without a limit, or results over about 8 MiB with or without one (see limit).
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn search_opts<'a>(
         &self,
@@ -9135,7 +9140,8 @@ pub struct FileSearchOpts<'a> {
     /// Enable case-insensitive matching.
     #[builder(setter(into, strip_option), default)]
     pub insensitive: Option<bool>,
-    /// Limit the number of results to return
+    /// Limit the number of results to return.
+    /// Without a limit, a search matching more than 2000 results fails; a limit replaces that cap, truncating the results instead. Either way, a search whose results (paths, matched lines and submatches) exceed about 8 MiB fails.
     #[builder(setter(into, strip_option), default)]
     pub limit: Option<isize>,
     /// Interpret the pattern as a literal string instead of a regular expression.
@@ -9347,6 +9353,8 @@ impl File {
     /// # Arguments
     ///
     /// * `pattern` - The text to match.
+    ///
+    /// A pattern matching too much fails the search: more than 2000 results without a limit, or results over about 8 MiB with or without one (see limit).
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn search(
         &self,
@@ -9374,6 +9382,8 @@ impl File {
     /// # Arguments
     ///
     /// * `pattern` - The text to match.
+    ///
+    /// A pattern matching too much fails the search: more than 2000 results without a limit, or results over about 8 MiB with or without one (see limit).
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn search_opts<'a>(
         &self,
@@ -19107,7 +19117,8 @@ pub struct WorkspaceSearchOpts<'a> {
     /// Enable case-insensitive matching.
     #[builder(setter(into, strip_option), default)]
     pub insensitive: Option<bool>,
-    /// Limit the number of results to return
+    /// Limit the number of results to return.
+    /// Without a limit, a search matching more than 2000 results fails; a limit replaces that cap, truncating the results instead. Either way, a search whose results (paths, matched lines and submatches) exceed about 8 MiB fails.
     #[builder(setter(into, strip_option), default)]
     pub limit: Option<isize>,
     /// Interpret the pattern as a literal string instead of a regular expression.
@@ -19804,6 +19815,8 @@ impl Workspace {
     /// # Arguments
     ///
     /// * `pattern` - The text to match.
+    ///
+    /// A pattern matching too much fails the search: more than 2000 results without a limit, or results over about 8 MiB with or without one (see limit).
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn search(
         &self,
@@ -19832,6 +19845,8 @@ impl Workspace {
     /// # Arguments
     ///
     /// * `pattern` - The text to match.
+    ///
+    /// A pattern matching too much fails the search: more than 2000 results without a limit, or results over about 8 MiB with or without one (see limit).
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn search_opts<'a>(
         &self,

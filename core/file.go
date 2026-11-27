@@ -29,6 +29,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/engineutil"
+	"github.com/dagger/dagger/engine/ripgrep"
 	telemetry "github.com/dagger/otel-go"
 )
 
@@ -1106,6 +1107,9 @@ func (file *File) WithReplaced(ctx context.Context, parent dagql.ObjectResult[*F
 		Pattern:   searchStr,
 		Literal:   true,
 		Multiline: strings.ContainsRune(searchStr, '\n'),
+		// Unbounded: every submatch counts below, and none of the results
+		// leave this function.
+		Budget: &ripgrep.Limits{},
 	}, false)
 	if err != nil {
 		return err

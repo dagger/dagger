@@ -6877,6 +6877,9 @@ class Directory(Type):
         ----------
         pattern:
             The text to match.
+            A pattern matching too much fails the search: more than 2000
+            results without a limit, or results over about 8 MiB with or
+            without one (see limit).
         paths:
             Directory or file paths to search
         globs:
@@ -6897,7 +6900,11 @@ class Directory(Type):
         files_only:
             Only return matching files, not lines and content
         limit:
-            Limit the number of results to return
+            Limit the number of results to return.
+            Without a limit, a search matching more than 2000 results fails; a
+            limit replaces that cap, truncating the results instead. Either
+            way, a search whose results (paths, matched lines and submatches)
+            exceed about 8 MiB fails.
         """
         _args = [
             Arg("pattern", pattern),
@@ -9044,6 +9051,9 @@ class File(Type):
         ----------
         pattern:
             The text to match.
+            A pattern matching too much fails the search: more than 2000
+            results without a limit, or results over about 8 MiB with or
+            without one (see limit).
         literal:
             Interpret the pattern as a literal string instead of a regular
             expression.
@@ -9060,7 +9070,11 @@ class File(Type):
         files_only:
             Only return matching files, not lines and content
         limit:
-            Limit the number of results to return
+            Limit the number of results to return.
+            Without a limit, a search matching more than 2000 results fails; a
+            limit replaces that cap, truncating the results instead. Either
+            way, a search whose results (paths, matched lines and submatches)
+            exceed about 8 MiB fails.
         paths:
         globs:
         """
@@ -19704,6 +19718,9 @@ class Workspace(Type):
         ----------
         pattern:
             The text to match.
+            A pattern matching too much fails the search: more than 2000
+            results without a limit, or results over about 8 MiB with or
+            without one (see limit).
         paths:
             Directory or file paths to search
         globs:
@@ -19724,7 +19741,11 @@ class Workspace(Type):
         files_only:
             Only return matching files, not lines and content
         limit:
-            Limit the number of results to return
+            Limit the number of results to return.
+            Without a limit, a search matching more than 2000 results fails; a
+            limit replaces that cap, truncating the results instead. Either
+            way, a search whose results (paths, matched lines and submatches)
+            exceed about 8 MiB fails.
         """
         _args = [
             Arg("pattern", pattern),

@@ -2888,7 +2888,12 @@ type Directory implements Exportable & Node & Syncer {
     """Glob patterns to match (e.g., "*.md")"""
     globs: [String!] = []
 
-    """The text to match."""
+    """
+    The text to match.
+
+    A pattern matching too much fails the search: more than 2000 results without
+    a limit, or results over about 8 MiB with or without one (see limit).
+    """
     pattern: String!
 
     """
@@ -2914,7 +2919,14 @@ type Directory implements Exportable & Node & Syncer {
     """Only return matching files, not lines and content"""
     filesOnly: Boolean = false
 
-    """Limit the number of results to return"""
+    """
+    Limit the number of results to return.
+
+    Without a limit, a search matching more than 2000 results fails; a limit
+    replaces that cap, truncating the results instead. Either way, a search
+    whose results (paths, matched lines and submatches) exceed about 8 MiB
+    fails.
+    """
     limit: Int
   ): [SearchResult!]!
 
@@ -3762,7 +3774,12 @@ type File implements Exportable & Node & Syncer {
   Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
   """
   search(
-    """The text to match."""
+    """
+    The text to match.
+
+    A pattern matching too much fails the search: more than 2000 results without
+    a limit, or results over about 8 MiB with or without one (see limit).
+    """
     pattern: String!
 
     """
@@ -3788,7 +3805,14 @@ type File implements Exportable & Node & Syncer {
     """Only return matching files, not lines and content"""
     filesOnly: Boolean = false
 
-    """Limit the number of results to return"""
+    """
+    Limit the number of results to return.
+
+    Without a limit, a search matching more than 2000 results fails; a limit
+    replaces that cap, truncating the results instead. Either way, a search
+    whose results (paths, matched lines and submatches) exceed about 8 MiB
+    fails.
+    """
     limit: Int
 
     paths: [String!] = []
@@ -7838,7 +7862,12 @@ type Workspace implements Node {
     """Glob patterns to match (e.g., "*.md")"""
     globs: [String!] = []
 
-    """The text to match."""
+    """
+    The text to match.
+
+    A pattern matching too much fails the search: more than 2000 results without
+    a limit, or results over about 8 MiB with or without one (see limit).
+    """
     pattern: String!
 
     """
@@ -7864,7 +7893,14 @@ type Workspace implements Node {
     """Only return matching files, not lines and content"""
     filesOnly: Boolean = false
 
-    """Limit the number of results to return"""
+    """
+    Limit the number of results to return.
+
+    Without a limit, a search matching more than 2000 results fails; a limit
+    replaces that cap, truncating the results instead. Either way, a search
+    whose results (paths, matched lines and submatches) exceed about 8 MiB
+    fails.
+    """
     limit: Int
   ): [SearchResult!]!
 

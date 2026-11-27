@@ -353,6 +353,15 @@ type MemoryCake {
         # attribute and intern tables (heapstat's " && "/" || " clauses).
         focus: "consumeStringValidateUTF8 && client\\.\\(\\*Client\\)\\.exportTraces|callpbv1\\.\\(\\*Call\\)\\.Decode || dagui\\.\\(\\*SpanAttributes\\)|dagui\\.\\(\\*digestTable\\)|dagui\\.\\(\\*DB\\)\\.(intern|shareAttrPairs)|dagui\\.intern",
       ),
+      Demo(
+        pr: "search",
+        title: "core: bound pathological searches",
+        fixture: "search",
+        # What the searches leave in the session: their parsed results and
+        # the dagql results wrapping each element. Their transient cost,
+        # which is what OOMs the engine, is in out/search.txt (demoSearch).
+        focus: "core\\.\\(\\*SearchOpts\\)|core\\.\\(\\*SearchResult\\)|engine/ripgrep\\.|dagql\\.\\(\\*Server\\)\\.loadNthValue",
+      ),
     ]
   }
 
@@ -585,6 +594,31 @@ type MemoryCake {
     env: [String!]! = [],
   ): Measurement! @cache(policy: FunctionCachePolicy.PerSession) {
     measure(pr: "15229", ref: ref, env: env)
+  }
+
+  """
+  Pathological searches (no PR yet): the regexp "." over a workspace OOMs
+  the engine. fixtures/search builds FILES files (default 200) of LINES
+  lines (default 200, ~64 B each: 40000 lines, 2.5 MB) and searches them
+  with each pattern in PATTERNS (". e") in each mode in MODES ("dir ws
+  host": Directory.search, a rootfs Workspace.search, and a host
+  Workspace.search whose ripgrep runs in the `dagger run` CLI). Its numbers
+  are per search, in `out.file("search.txt")`: bytes allocated (the
+  poller's own ~3 MB per poll included), peak live heap and footprint, the
+  searching CLIs' memory, results and response size. On main, Directory
+  .search "." allocates 7.1 GB and peaks at +906 MB in the engine, its CLI
+  reaches 3.7 GB RSS, and the session keeps ~+450 MB after each search; the
+  host search runs for 2 minutes, grows its CLI by 2.5 GB, then fails on
+  gRPC's 16 MiB message limit. With the search budgets every one fails
+  fast, under 1 s and +11 MB. LONG=1000000 (one 1 MB line, with FILES=0):
+  1.1 GB allocated and +263 MB on main for 2 results, +3 MB with the
+  budgets. Scale with env, e.g. ["FILES=20", "MODES=dir"].
+  """
+  demoSearch(
+    ref: String! = "main",
+    env: [String!]! = [],
+  ): Measurement! @cache(policy: FunctionCachePolicy.PerSession) {
+    measure(pr: "search", ref: ref, env: env)
   }
 
   """
