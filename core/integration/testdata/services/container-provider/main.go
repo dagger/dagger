@@ -34,6 +34,14 @@ func (m *ContainerProvider) File() *dagger.File {
 	return m.Directory().File("provided-by")
 }
 
+// Returns another file for consumers, with different contents, so a list of
+// files can be wired from two distinct functions.
+func (m *ContainerProvider) OtherFile() *dagger.File {
+	return dag.Directory().
+		WithNewFile("provided-by", "container-provider-other").
+		File("provided-by")
+}
+
 // Returns a workspace for consumers.
 func (m *ContainerProvider) Workspace() *dagger.Workspace {
 	return dag.Directory().
