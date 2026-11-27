@@ -1929,6 +1929,44 @@ func TestChecksReportLabelsAddresses(t *testing.T) {
 	}
 }
 
+// TestChecksReportLabelsEmptyKeyItem covers a collection item keyed by an
+// empty string: its row says nothing, so it is labeled by its address.
+func TestChecksReportLabelsEmptyKeyItem(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	rootID := prettyTestSpanID(10)
+	groupID := prettyTestSpanID(1)
+	start := time.Unix(100, 0)
+	item := func(id byte, name string) dagui.SpanSnapshot {
+		return dagui.SpanSnapshot{
+			ID: prettyTestSpanID(id), TraceID: prettyTestTraceID(), Name: name, ParentID: groupID,
+			StartTime: start, EndTime: start.Add(time.Second), Final: true,
+			CheckName: name, CheckPassed: true,
+		}
+	}
+	db := dagui.NewDB()
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: rootID, TraceID: prettyTestTraceID(), Name: "dagger check", StartTime: start, EndTime: start.Add(3 * time.Second), Final: true},
+		{
+			ID: groupID, TraceID: prettyTestTraceID(), Name: "verify", ParentID: rootID,
+			StartTime: start, EndTime: start.Add(2 * time.Second), Final: true,
+			CheckName: "verify", CheckPassed: true, CheckCollectionGroup: true,
+		},
+		item(2, "dag://?check=verify&parts="),
+		item(3, "dag://?check=verify&parts=a"),
+	})
+	db.SetPrimarySpan(rootID)
+	fe := NewWithDB(io.Discard, db)
+	fe.recalculateViewLocked()
+
+	r := newRenderer(fe.db, 0, fe.FrontendOpts, true)
+	report := strings.Join(fe.checksReport(tuist.Context{Width: 120}, r, false), "\n")
+	for _, want := range []string{"✔ verify parts= ", "✔ a "} {
+		if !strings.Contains(report, want) {
+			t.Errorf("missing %q in:\n%s", want, report)
+		}
+	}
+}
+
 // TestRerunSectionNamesFailedCollectionItems covers a collection grouped under
 // one check: running the group would rerun every item, so each failed item
 // gets its own local command, while the native CI re-run keeps the group.

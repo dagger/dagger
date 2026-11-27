@@ -147,8 +147,11 @@ func (fe *frontendPretty) checkStatusLine(out TermOutput, r *renderer, node *dag
 // any other name as it is.
 func (fe *frontendPretty) artifactLabel(span *dagui.Span, name string, hide []string) string {
 	if span != nil && span.CheckName == name {
-		if row, ok := fe.db.CollectionItemRow(span); ok && len(row) > 0 {
-			return strings.Join(row, " ")
+		// A row of empty keys says nothing: fall back to the address.
+		if row, ok := fe.db.CollectionItemRow(span); ok {
+			if label := strings.Join(row, " "); strings.TrimSpace(label) != "" {
+				return label
+			}
 		}
 	}
 	if addr, ok := dagui.ParseAddress(name); ok {
