@@ -752,7 +752,7 @@ dagger sdk scope list --sdk=dang --is-module
 
 ## Engine version
 
-Each module declares its required engine version with `engineVersion` in `dagger-module.toml`. The Dang SDK writes this field during generation. A manual edit can be replaced by the next generation. The value must be a concrete version (for example <code>v{daggerVersion}</code>).
+Each module declares its target engine version with `engineVersion` in `dagger-module.toml`. The Dang SDK writes this field during generation. A manual edit can be replaced by the next generation. The value must be a concrete version (for example <code>v{daggerVersion}</code>). See [SDK and engine versions](./versions.mdx) for the API a module gets.
 
 ## Workspace inputs
 

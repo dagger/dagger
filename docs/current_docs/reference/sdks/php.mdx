@@ -1028,7 +1028,7 @@ dang = "2.1"
 dagger = "v1.0.0-beta.27"
 ```
 
-This version is the SDK's target engine version. The SDK release sets it, and the module gets a new one at its next `dagger generate` after an SDK update. Generation also pins each client's schema to this version, not to the engine version the client module requires. The SDK needs an engine `v1.0.0-beta.27` or newer. On an older engine, `dagger module init` and `dagger generate` stop with a message that names the engine.
+This version is the SDK's target engine version. The SDK release sets it, and the module gets a new one at its next `dagger generate` after an SDK update. Generation also pins each client's schema to this version, not to the engine version the client module requires. The SDK needs an engine `v1.0.0-beta.27` or newer. On an older engine, `dagger module init` and `dagger generate` stop with a message that names the engine. See [SDK and engine versions](./versions.mdx).
 
 ## Checks, generators, services, directives, and ignore patterns
 

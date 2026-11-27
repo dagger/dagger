@@ -595,7 +595,7 @@ Commit the generated SDK files. Run `dagger generate` and commit the result when
 
 ## Engine version
 
-`dagger-module.toml` records the Dagger engine version your module requires (`engineVersion`). Edit that field to change the requirement. Then run `dagger generate` to refresh the bindings.
+A module on the generated entrypoint records its target engine version in `sdk/entrypoint/dang.toml`. The Python SDK release sets the target, and the `targetVersion` scope setting pins it. A module on the runtime the SDK publishes records its target as `engineVersion` in `dagger-module.toml` instead. Run `dagger generate` after a change to the SDK release or `targetVersion`. See [SDK and engine versions](./versions.mdx).
 
 ## Checks, generators, services, directives, and ignore
 
@@ -1031,7 +1031,7 @@ dagger api call python-sdk \
 
 Modules are distributed as Git repositories. There is no package registry step. Tag a release in your repo, and consumers reference the module by `host/repo[/subpath]@version`.
 
-Set `engineVersion` in `dagger-module.toml` and commit generated bindings before tagging:
+Run `dagger generate` and commit the generated bindings before tagging:
 
 ```shell template
 dagger generate
@@ -1057,7 +1057,7 @@ dagger api call -m github.com/you/your-module@v0.1.0 <function> ...
 - **`init` "didn't write any files."** `init` returns a changeset; review and apply it to write the files into your workspace.
 - **IDE has no autocompletion / `import dagger` unresolved.** The `sdk/` client must be generated and installed into an active `.venv`. Run `dagger generate` and `uv sync` / `uv pip install -e ./sdk -e .`.
 - **A dependency isn't showing up on `dag`.** Add it with `dagger module client add <ref> --sdk=python` from the module directory, then apply the changeset.
-- **Engine/API version mismatch errors after upgrading.** Edit `engineVersion` in `dagger-module.toml`, then run `dagger generate` and commit.
+- **Engine/API version mismatch errors after upgrading.** Update the Python SDK, or the `targetVersion` setting, then run `dagger generate` and commit.
 - **Wrong Python version in the runtime.** Set it with `mod config set --python-version=…` (or `.python-version`) and confirm with `mod config get`.
 - **Secrets leaking or rejected.** Type credential arguments as `dagger.Secret`, not `str`, and pass them via a provider (`env:`, `file:`, …). Dagger scrubs `Secret` values from output.
 

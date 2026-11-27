@@ -736,9 +736,9 @@ By default, Dagger still adds local-only files such as `.env` to `.gitignore`. S
 
 ## Engine version
 
-Each module declares its required engine version in the `engineVersion` field of `dagger-module.toml`. The Go SDK writes this field during generation. A manual edit can be replaced by the next generation.
+A module with a generated Dang entrypoint records its target engine version in `internal/dagger/entrypoint/dang.toml`. The Go SDK release sets the target, and the `targetVersion` scope setting pins it. A Go-runtime module records its target as `engineVersion` in `dagger-module.toml` instead. A new Go-runtime module gets the SDK's default target, and an existing one keeps its value across SDK updates.
 
-Bumping the engine version usually means the generated bindings should change too, so follow with `dagger generate`.
+Run `dagger generate` after a change to the Go SDK release, `targetVersion`, or `engineVersion`. See [SDK and engine versions](./versions.mdx).
 
 ## Checks, generators, services, directives, and ignore patterns
 
@@ -1075,7 +1075,7 @@ A Go SDK module is distributed as a Git repository. There is no build artifact t
 
 Recommended release checklist:
 
-1. **Pin the engine version.** Set `engineVersion` in `dagger-module.toml` to the oldest engine version your module supports.
+1. **Pin the target engine version.** Set the `targetVersion` scope setting so a Go SDK update does not change the module's API. A Go-runtime module needs no pin, because it keeps its `engineVersion` across SDK updates.
 2. **Commit the generated bindings.** Run `dagger generate`, review the changes, and commit the generated files with your module.
 3. **Version with Git tags.** Tag a release (for example, `v1.2.0`) and push it. Consumers can pin that version with `@v1.2.0`.
 
@@ -1105,7 +1105,7 @@ A module reference follows `[proto://]host/repo[/subpath][@version]`; the versio
 
 **Build/import errors referencing `internal/dagger` or `dag`.** The generated client is stale or missing. Regenerate as above; if `go.mod`/`go.sum` drifted, ensure they match the regenerated code (a workspace `go.work` can help your IDE here).
 
-**Engine version mismatch.** Align the module's `engineVersion` in `dagger-module.toml`, then regenerate.
+**Engine version mismatch.** Update the Go SDK, or the `targetVersion` setting, then run `dagger generate`. In a Go-runtime module, update `engineVersion` instead.
 
 ## Next steps
 
