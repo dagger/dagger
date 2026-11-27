@@ -1,0 +1,10 @@
+kind: Fixed
+body: |
+  Collection `get` and `subset` now reject a key that is not a member of
+  the collection's enum key type with the usual `invalid enum member`
+  error, instead of reporting the misspelt name as a key the collection
+  does not contain.
+time: 2026-11-07T23:35:00Z
+custom:
+  Author: santhiprakash
+  PR: 15104
