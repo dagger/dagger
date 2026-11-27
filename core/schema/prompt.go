@@ -18,6 +18,10 @@ var _ SchemaResolvers = &promptSchema{}
 // promptVersion is the first engine version with the prompt API.
 const promptVersion = "v1.0.0-beta.28"
 
+// promptExperimental marks every entry point of the prompt API, so codegen
+// flags them all.
+const promptExperimental = "Prompt APIs are likely to change."
+
 func (s *promptSchema) Install(srv *dagql.Server) {
 	view := AfterVersion(promptVersion)
 
@@ -26,6 +30,7 @@ func (s *promptSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
 		dagql.Func("prompt", s.prompt).
 			View(view).
+			Experimental(promptExperimental).
 			Doc(`Ask the user a question.`,
 				`Nothing is asked until an answer is selected from the returned Prompt, in the terminal of the client running the session, which shows who asks: the agent, module and function, as the engine knows them.`,
 				`Answers are remembered for the session, per asking module, message and kind of answer.`,
@@ -42,6 +47,7 @@ func (s *promptSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Prompt]{
 		dagql.NodeFunc("boolean", s.boolean).
 			WithInput(dagql.PerCallInput).
+			Experimental(promptExperimental).
 			Doc(`Ask for a yes or no answer.`).
 			Args(
 				dagql.Arg("default").Doc(
@@ -50,6 +56,7 @@ func (s *promptSchema) Install(srv *dagql.Server) {
 			),
 		dagql.NodeFunc("string", s.string).
 			WithInput(dagql.PerCallInput).
+			Experimental(promptExperimental).
 			Doc(`Ask for a text answer.`).
 			Args(
 				dagql.Arg("default").Doc(
@@ -59,6 +66,7 @@ func (s *promptSchema) Install(srv *dagql.Server) {
 			),
 		dagql.NodeFunc("secret", s.secret).
 			WithInput(dagql.PerCallInput).
+			Experimental(promptExperimental).
 			Doc(`Ask for a secret value, masking the user's input.`,
 				`The answer is never remembered beyond the session. When nobody can be asked (the client is not interactive), this is an error.`).
 			Args(
