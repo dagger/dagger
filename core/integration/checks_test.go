@@ -130,8 +130,13 @@ func (ChecksSuite) TestCheckRunSpanIsPassthrough(ctx context.Context, t *testctx
   }
 }`, output, alpineImage, deepCmd))
 
-	_, err := fixture.With(daggerExecFail("check", "failing", "returned", "deep", "--generated=false")).Sync(ctx)
+	report, err := fixture.With(daggerExecFail("--progress=report", "check", "failing", "returned", "deep", "--generated=false")).CombinedOutput(ctx)
 	require.NoError(t, err)
+	require.Contains(t, report, "check body failed")
+	require.Contains(t, report, output, "the failing check reports its output")
+	require.Contains(t, report, "check returned an error")
+	require.Contains(t, report, "deep "+nonce, "the deep check reports its exec's output")
+	require.NotContains(t, report, "__check_", "the report names no check's run span")
 	_, err = fixture.WithExec([]string{"dagger", "api", "call", "view", "failing"}, core.ContainerWithExecOpts{
 		Expect: core.ReturnTypeAny,
 	}).Sync(ctx)
