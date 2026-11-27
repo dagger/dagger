@@ -75,6 +75,29 @@ func (gfs *GitignoreMatcher) Matches(path string, isDir bool) (out bool, _ error
 	return matcher.Match(pathComponents, isDir), nil
 }
 
+// mayReincludeBeneath reports whether a path beneath the ignored directory dir
+// could still be re-included: a "!" rule applies to dir, or a rule file beneath
+// dir is overridden.
+func (gfs *GitignoreMatcher) mayReincludeBeneath(dir string) (bool, error) {
+	dir = strings.TrimPrefix(filepath.Clean(dir), "/")
+	patterns, err := gfs.getGitIgnorePatterns(dir)
+	if err != nil {
+		return false, err
+	}
+	for _, pattern := range patterns {
+		if _, ok := pattern.(negationPattern); ok {
+			return true, nil
+		}
+	}
+	prefix := filepath.ToSlash(dir) + "/"
+	for path := range gfs.overrides {
+		if strings.HasPrefix(path, prefix) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func (gfs *GitignoreMatcher) getGitIgnoreMatcher(dirPath string) (matcher gitignore.Matcher, rerr error) {
 	if dirPath == "" {
 		dirPath = "."
@@ -167,6 +190,11 @@ func (gfs *GitignoreMatcher) getGitIgnorePatterns(dirPath string) (patterns []gi
 	return patterns, nil
 }
 
+// negationPattern marks a "!" rule, which gitignore.Pattern does not expose.
+type negationPattern struct {
+	gitignore.Pattern
+}
+
 // parseGitIgnoreFile parses a gitignore file and returns patterns
 func parseGitIgnoreFile(reader io.Reader, domain []string) ([]gitignore.Pattern, error) {
 	var patterns []gitignore.Pattern
@@ -178,7 +206,11 @@ func parseGitIgnoreFile(reader io.Reader, domain []string) ([]gitignore.Pattern,
 			// skip empty lines and comments
 			continue
 		}
-		patterns = append(patterns, gitignore.ParsePattern(line, domain))
+		pattern := gitignore.ParsePattern(line, domain)
+		if strings.HasPrefix(line, "!") {
+			pattern = negationPattern{pattern}
+		}
+		patterns = append(patterns, pattern)
 	}
 
 	if err := scanner.Err(); err != nil {
