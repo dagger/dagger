@@ -1,0 +1,20 @@
+"""
+Runs an agent, for the host access integration tests (Server.AuthorizeHostSocket
+and Server.AuthorizeSSHAgent in engine/server/socket_approval.go).
+
+Its agent's snippets (DangEval) run in an in-engine SDK client with no host of
+its own: what they reach on the CLI's host, they reach only once the CLI
+approves.
+"""
+type Runner {
+  """
+  Spawn an agent, send it prompt, and return its transcript once the turn
+  ends.
+  """
+  run(model: String!, prompt: String!): String! @cache(policy: FunctionCachePolicy.NEVER) {
+    # @cache(Never): spawns and drives a real agent runtime.
+    let agent = llm(model: model).spawn(name: "hostbot")
+    agent.send(prompt).response
+    agent.snapshot.transcript
+  }
+}
