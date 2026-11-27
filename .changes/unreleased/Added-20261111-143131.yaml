@@ -1,0 +1,7 @@
+kind: Added
+body: |
+  `dagger api schema` prints the API schema that `dagger api query` runs against, in GraphQL schema language: the core API plus the current workspace's modules, or the module selected with `-m`.
+time: 2026-11-11T14:31:31Z
+custom:
+  Author: officialasishkumar
+  PR: "15152"
