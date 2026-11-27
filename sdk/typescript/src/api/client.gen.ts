@@ -17122,6 +17122,7 @@ export class Prompt extends BaseClient {
   /**
    * Ask for a yes or no answer.
    * @param opts.default The answer selected to begin with, and the answer when nobody can be asked (the client is not interactive).
+   * @experimental
    */
   boolean_ = async (opts?: PromptBooleanOpts): Promise<boolean> => {
     if (this._boolean) {
@@ -17140,6 +17141,7 @@ export class Prompt extends BaseClient {
    *
    * The answer is never remembered beyond the session. When nobody can be asked (the client is not interactive), this is an error.
    * @param opts.multiline Accept several lines.
+   * @experimental
    */
   secret = (opts?: PromptSecretOpts): Secret => {
     const ctx = this._ctx.select("secret", { ...opts })
@@ -17150,6 +17152,7 @@ export class Prompt extends BaseClient {
    * Ask for a text answer.
    * @param opts.default The text the answer starts with, and the answer when nobody can be asked (the client is not interactive).
    * @param opts.multiline Accept several lines.
+   * @experimental
    */
   string_ = async (opts?: PromptStringOpts): Promise<string> => {
     if (this._string) {
@@ -17582,6 +17585,7 @@ export class Client extends BaseClient {
    * @param opts.key Remember answers beyond the session under this key, in the user's configuration (prompt-answers.json in Dagger's configuration directory, where they can be removed), for the asking module only. The user is told so when asked.
    *
    * Only modules loaded from git are remembered so; secrets never are.
+   * @experimental
    */
   prompt = (message: string, opts?: ClientPromptOpts): Prompt => {
     const ctx = this._ctx.select("prompt", { message, ...opts })

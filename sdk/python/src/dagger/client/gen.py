@@ -16526,6 +16526,9 @@ class Prompt(Type):
     async def boolean(self, *, default: bool | None = False) -> bool:
         """Ask for a yes or no answer.
 
+        .. caution::
+            Experimental: Prompt APIs are likely to change.
+
         Parameters
         ----------
         default:
@@ -16584,6 +16587,9 @@ class Prompt(Type):
         The answer is never remembered beyond the session. When nobody can be
         asked (the client is not interactive), this is an error.
 
+        .. caution::
+            Experimental: Prompt APIs are likely to change.
+
         Parameters
         ----------
         multiline:
@@ -16602,6 +16608,9 @@ class Prompt(Type):
         multiline: bool | None = False,
     ) -> str:
         """Ask for a text answer.
+
+        .. caution::
+            Experimental: Prompt APIs are likely to change.
 
         Parameters
         ----------
@@ -17235,6 +17244,9 @@ class Query(Root):
         an object it returns are cached by the function call, though: a
         function returning an object built from an answer should declare a
         per-session (or never) cache policy, so another session gets its own.
+
+        .. caution::
+            Experimental: Prompt APIs are likely to change.
 
         Parameters
         ----------

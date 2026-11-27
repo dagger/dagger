@@ -19,6 +19,10 @@ defmodule Dagger.Prompt do
 
   @doc """
   Ask for a yes or no answer.
+
+  > #### Experimental {: .warning}
+  >
+  > "Prompt APIs are likely to change."
   """
   @spec boolean(t(), [{:default, boolean() | nil}]) :: {:ok, boolean()} | {:error, term()}
   def boolean(%__MODULE__{} = prompt, optional_args \\ []) do
@@ -45,6 +49,10 @@ defmodule Dagger.Prompt do
   Ask for a secret value, masking the user's input.
 
   The answer is never remembered beyond the session. When nobody can be asked (the client is not interactive), this is an error.
+
+  > #### Experimental {: .warning}
+  >
+  > "Prompt APIs are likely to change."
   """
   @spec secret(t(), [{:multiline, boolean() | nil}]) :: Dagger.Secret.t()
   def secret(%__MODULE__{} = prompt, optional_args \\ []) do
@@ -61,6 +69,10 @@ defmodule Dagger.Prompt do
 
   @doc """
   Ask for a text answer.
+
+  > #### Experimental {: .warning}
+  >
+  > "Prompt APIs are likely to change."
   """
   @spec string(t(), [{:default, String.t() | nil}, {:multiline, boolean() | nil}]) ::
           {:ok, String.t()} | {:error, term()}

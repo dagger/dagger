@@ -18743,6 +18743,8 @@ type PromptBooleanOpts struct {
 }
 
 // Ask for a yes or no answer.
+//
+// Experimental: Prompt APIs are likely to change.
 func (r *Prompt) Boolean(ctx context.Context, opts ...PromptBooleanOpts) (bool, error) {
 	if r.boolean != nil {
 		return *r.boolean, nil
@@ -18816,6 +18818,8 @@ type PromptSecretOpts struct {
 // Ask for a secret value, masking the user's input.
 //
 // The answer is never remembered beyond the session. When nobody can be asked (the client is not interactive), this is an error.
+//
+// Experimental: Prompt APIs are likely to change.
 func (r *Prompt) Secret(opts ...PromptSecretOpts) *Secret {
 	q := r.query.Select("secret")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -18840,6 +18844,8 @@ type PromptStringOpts struct {
 }
 
 // Ask for a text answer.
+//
+// Experimental: Prompt APIs are likely to change.
 func (r *Prompt) String(ctx context.Context, opts ...PromptStringOpts) (string, error) {
 	if r.string_ != nil {
 		return *r.string_, nil
@@ -19592,6 +19598,8 @@ type PromptOpts struct {
 // Answers are remembered for the session, per asking module, message and kind of answer.
 //
 // A module function that asks is never reused for another call. Calls on an object it returns are cached by the function call, though: a function returning an object built from an answer should declare a per-session (or never) cache policy, so another session gets its own.
+//
+// Experimental: Prompt APIs are likely to change.
 func (r *Query) Prompt(message string, opts ...PromptOpts) *Prompt {
 	q := r.query.Select("prompt")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -27484,6 +27492,8 @@ func NewNode(ctx context.Context, id ID) (Node, error) {
 // Answers are remembered for the session, per asking module, message and kind of answer.
 //
 // A module function that asks is never reused for another call. Calls on an object it returns are cached by the function call, though: a function returning an object built from an answer should declare a per-session (or never) cache policy, so another session gets its own.
+//
+// Experimental: Prompt APIs are likely to change.
 func NewPrompt(message string, opts ...PromptOpts) *Prompt {
 	root := initRoot()
 	return root.Prompt(message, opts...)

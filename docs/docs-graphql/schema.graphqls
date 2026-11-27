@@ -6535,7 +6535,7 @@ type Prompt implements Node {
     The answer selected to begin with, and the answer when nobody can be asked (the client is not interactive).
     """
     default: Boolean = false
-  ): Boolean! @reevaluate
+  ): Boolean! @experimental(reason: "Prompt APIs are likely to change.") @reevaluate
 
   """Ask for a text answer."""
   string(
@@ -6546,7 +6546,7 @@ type Prompt implements Node {
 
     """Accept several lines."""
     multiline: Boolean = false
-  ): String! @reevaluate
+  ): String! @experimental(reason: "Prompt APIs are likely to change.") @reevaluate
 
   """
   Ask for a secret value, masking the user's input.
@@ -6557,7 +6557,7 @@ type Prompt implements Node {
   secret(
     """Accept several lines."""
     multiline: Boolean = false
-  ): Secret! @reevaluate
+  ): Secret! @experimental(reason: "Prompt APIs are likely to change.") @reevaluate
 }
 
 """The root of the DAG."""
@@ -6806,7 +6806,7 @@ type Query implements Node {
     Only modules loaded from git are remembered so; secrets never are.
     """
     key: String
-  ): Prompt!
+  ): Prompt! @experimental(reason: "Prompt APIs are likely to change.")
 
   """Queries the host environment."""
   host: Host!
