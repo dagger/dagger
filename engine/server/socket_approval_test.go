@@ -130,6 +130,52 @@ func TestSocketApprovalPrompt(t *testing.T) {
 	require.True(t, spec.NoForever)
 }
 
+func TestHostNetworkApproval(t *testing.T) {
+	s := newSecretTestSession(t, allowSecret(prompt.APPROVAL_ALLOW_FOREVER))
+	for range 2 {
+		md, err := s.srv.AuthorizeHostNetwork(s.agentCtx(), "localhost:6060")
+		require.NoError(t, err)
+		require.Equal(t, "owner", md.ClientID, "an approved tunnel goes through the owner's machine")
+	}
+	require.Len(t, s.questions.asked(), 1, "forever is not offered, so it holds for the session")
+	req := s.questions.asked()[0]
+	require.Equal(t, approvalKindHostNetwork, req.Kind)
+	require.Equal(t, "localhost:6060", req.Subject)
+	require.Equal(t, `Allow connecting to localhost:6060 on your machine (requested by agent "worker", module "staff", function "Staff.gh")?`, req.Prompt)
+	require.Equal(t, `Connect to localhost:6060 on your machine?`, req.Question)
+	require.Empty(t, req.PersistentKey, "a host port is never allowed forever")
+	require.False(t, req.Danger)
+
+	// Another port asks again.
+	_, err := s.srv.AuthorizeHostNetwork(s.agentCtx(), "localhost:5432")
+	require.NoError(t, err)
+	require.Len(t, s.questions.asked(), 2)
+
+	// Without an agent: refused. With a host of its own: its own network.
+	_, err = s.srv.AuthorizeHostNetwork(s.ctx(s.module), "localhost:6060")
+	require.ErrorContains(t, err, `connecting to localhost:6060 on your machine is denied without an agent's request`)
+	md, err := s.srv.AuthorizeHostNetwork(s.ctx(s.owner), "localhost:6060")
+	require.NoError(t, err)
+	require.Nil(t, md)
+
+	denied := newSecretTestSession(t, allowSecret(prompt.APPROVAL_DENY))
+	_, err = denied.srv.AuthorizeHostNetwork(denied.agentCtx(), "localhost:6060")
+	require.EqualError(t, err, `connecting to localhost:6060 on your machine was denied by the owning client`)
+
+	quiet := newApprovalTestSession(t, func(*grpc.Server) {})
+	module := inert(quiet.client("module", sessionTestModuleResult(t, "staff"), nil, "owner"))
+	_, err = quiet.srv.AuthorizeHostNetwork(core.AgentToContext(quiet.ctx(module), testAgent(t, "agent-1", "worker")), "localhost:6060")
+	require.ErrorIs(t, err, errApprovalNotInteractive)
+	require.ErrorContains(t, err, `connecting to localhost:6060 on your machine requires approval`)
+}
+
+func TestHostNetworkApprovalPrompt(t *testing.T) {
+	spec := hostNetworkApproval("x\u202e\x1b[31m:1")
+	require.Equal(t, `x\u202e\x1b[31m:1`, spec.Subject)
+	require.Equal(t, `Allow connecting to x\u202e\x1b[31m:1 on your machine`, spec.Question)
+	require.True(t, spec.NoForever)
+}
+
 func TestSSHAgentApproval(t *testing.T) {
 	s := newSecretTestSession(t, allowSecret(prompt.APPROVAL_ALLOW_SESSION))
 	const remote = "ssh://git@github.com/org/repo.git"

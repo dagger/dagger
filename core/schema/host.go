@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/containerd/containerd/v2/core/content"
@@ -33,9 +35,35 @@ import (
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/util/gitutil"
+	"github.com/dagger/dagger/util/hashutil"
 )
 
 type hostSchema struct{}
+
+// inertCallerInput gives a client without a host of its own (an in-engine
+// SDK client, such as the one evaluating an agent's DangEval snippet; see
+// engine.ClientMetadata.InertAttachables) a cache key of its own, and every
+// other client the same empty one.
+//
+// Host.service is shared per session and caller module, and
+// core.CachePerCallerModule is "mainClient" for the CLI and a module-less
+// snippet alike: without this, the snippet's Host.service would be the
+// CLI's cached result, whose tunnel goes through the CLI's host, and the
+// snippet would reach the CLI's network unasked, never running the resolver
+// that asks the owner (see Server.AuthorizeHostNetwork).
+var inertCallerInput = dagql.ImplicitInput{
+	Name: "cacheInertCaller",
+	Resolver: func(ctx context.Context, _ map[string]dagql.Input) (dagql.Input, error) {
+		clientMD, err := engine.ClientMetadataFromContext(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get client metadata: %w", err)
+		}
+		if !clientMD.InertAttachables {
+			return dagql.NewString(""), nil
+		}
+		return dagql.NewString(clientMD.ClientID), nil
+	},
+}
 
 var _ SchemaResolvers = &hostSchema{}
 
@@ -119,6 +147,7 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("service", s.service).
 			WithInput(dagql.PerSessionInput).     // host services shouldn't cross sessions
 			WithInput(core.CachePerCallerModule). // services should be shared from different function calls in a module
+			WithInput(inertCallerInput).          // but never with a client that has no host of its own
 			Doc(`Creates a service that forwards traffic to a specified address via the host.`).
 			Args(
 				dagql.Arg("ports").Doc(
@@ -460,9 +489,13 @@ func (s *hostSchema) socket(ctx context.Context, host dagql.ObjectResult[*core.H
 
 	// Ask whose host the socket is forwarded from before minting it: a
 	// client without a host of its own is refused, unless an agent drives
-	// it and its owner approves (see Server.AuthorizeHostSocket). Without
-	// this, its handle would be minted, and only fail, silently, when an
-	// exec connects.
+	// it and its owner approves (see Server.AuthorizeHostSocket).
+	//
+	// The handle, and so the digest of every exec it is mounted in, is
+	// derived from the path alone, the same for every non-module client of
+	// every session on the engine: minted unasked, a guessed path would
+	// answer the agent's exec with the user's own cached results of the same
+	// recipe (e.g. `docker ps` over docker.sock) without ever connecting.
 	source := clientMetadata.ClientID
 	owner, err := query.AuthorizeHostSocket(ctx, args.Path)
 	if err != nil {
@@ -484,6 +517,13 @@ func (s *hostSchema) socket(ctx context.Context, host dagql.ObjectResult[*core.H
 	}
 	if handle == "" {
 		return inst, fmt.Errorf("failed to derive unix socket handle")
+	}
+	if owner != nil {
+		// An approval lends the owner's socket now, to this client: not the
+		// owner's results cached under its own handle, from this or any
+		// other session, which the owner was not asked about. The approved
+		// socket gets a handle of its own, unguessable and per client.
+		handle = dagql.SessionResourceHandle(hashutil.HashStrings(string(handle), "owner-approved", clientMetadata.ClientID))
 	}
 
 	handleVal := &core.Socket{
@@ -1183,14 +1223,31 @@ func (s *hostSchema) service(ctx context.Context, parent dagql.ObjectResult[*cor
 		return inst, fmt.Errorf("failed to get client metadata: %w", err)
 	}
 
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return inst, err
+	}
+
 	ports := collectInputsSlice(args.Ports)
 	socks := make([]*core.Socket, 0, len(ports))
 	for _, port := range ports {
+		hostPort := net.JoinHostPort(args.Host, strconv.Itoa(port.Backend))
+		// Ask whose machine the tunnel goes through: a client without a
+		// host of its own is refused, unless an agent drives it and its
+		// owner approves (see Server.AuthorizeHostNetwork).
+		source := clientMetadata.ClientID
+		owner, err := query.AuthorizeHostNetwork(ctx, hostPort)
+		if err != nil {
+			return inst, err
+		}
+		if owner != nil {
+			source = owner.ClientID
+		}
 		sock := &core.Socket{
 			Kind:           core.SocketKindHostIP,
-			URLVal:         (&url.URL{Scheme: port.Protocol.Network(), Host: fmt.Sprintf("%s:%d", args.Host, port.Backend)}).String(),
+			URLVal:         (&url.URL{Scheme: port.Protocol.Network(), Host: hostPort}).String(),
 			PortForwardVal: port,
-			SourceClientID: clientMetadata.ClientID,
+			SourceClientID: source,
 		}
 		socks = append(socks, sock)
 	}

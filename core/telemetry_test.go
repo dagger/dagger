@@ -73,6 +73,10 @@ func (*mockServer) AuthorizeHostSocket(context.Context, string) (*engine.ClientM
 	return nil, nil
 }
 
+func (*mockServer) AuthorizeHostNetwork(context.Context, string) (*engine.ClientMetadata, error) {
+	return nil, nil
+}
+
 func (*mockServer) AuthorizeSSHAgent(context.Context, string) (*engine.ClientMetadata, error) {
 	return nil, nil
 }

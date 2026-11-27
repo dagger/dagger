@@ -152,6 +152,13 @@ type Server interface {
 	// always. Such a client is refused without an agent.
 	AuthorizeHostSocket(ctx context.Context, path string) (*engine.ClientMetadata, error)
 
+	// AuthorizeHostNetwork returns the trusted owner whose machine
+	// Host.service tunnels connections to hostPort ("localhost:6060")
+	// through, once the owner approved it for the agent driving a client that
+	// has no host of its own; nil when the calling client tunnels through
+	// its own host, as always. Such a client is refused without an agent.
+	AuthorizeHostNetwork(ctx context.Context, hostPort string) (*engine.ClientMetadata, error)
+
 	// AuthorizeSSHAgent returns the trusted owner whose SSH agent
 	// Host._sshAuthSocket uses for a caller that has no host of its own,
 	// once the owner approved it for the agent driving that caller; nil when

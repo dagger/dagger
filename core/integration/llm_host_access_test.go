@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"dagger.io/dagger/core"
@@ -120,19 +121,24 @@ func (LLMSuite) TestAgentHostAccess(ctx context.Context, t *testctx.T) {
 		token := "host-socket-" + rand.Text()
 		sock := serveHostSocket(t, token)
 		socket := fmt.Sprintf(`address(value: %q).socket`, sock)
-		cmd := agentDangCommand(ctx, t, workdir,
-			// The CLI mounting the same socket itself first, as a
-			// workspace's settings or the user's own calls do (e.g.
-			// docker.sock), shares its handle: that lends the agent nothing.
-			fmt.Sprintf(`container | from %s | with-unix-socket /tmp/host.sock $(host | unix-socket %s) | with-exec true | stdout`, alpineImage, sock),
-			[]dangToolCall{
-				{"DangEval", map[string]string{"source": reachSocket(socket)}},
-				// In a module's scope.
-				{"DangEval", map[string]string{"at": "runner", "source": reachSocket(socket)}},
-			})
-		out, err := cmd.CombinedOutput()
+		// The user first runs, in a session of their own on the same
+		// engine, with their own host's socket, the very exec the agent's
+		// snippet builds, as with `docker ps` over docker.sock. A host
+		// socket's handle and digest derive from its path alone, the same
+		// for every non-module client in every session, and so does the
+		// exec's cache key: were the agent's socket minted unasked, that
+		// session's cached result would answer it, without a connection.
+		own := hostDaggerCommand(ctx, t, workdir, "-c",
+			fmt.Sprintf(`container | from %s | with-exec apk add socat | with-unix-socket /tmp/host.sock $(host | unix-socket %s) | with-exec -- sh -c "echo ping | socat -t 5 - UNIX-CONNECT:/tmp/host.sock" | stdout`, alpineImage, sock))
+		ownOut, err := own.CombinedOutput()
+		require.NoError(t, err, string(ownOut))
+		require.Contains(t, string(ownOut), token+" ping", "the CLI reaches its own host's socket")
+
+		out, err := agentDangCommand(ctx, t, workdir, "", []dangToolCall{
+			{"DangEval", map[string]string{"source": reachSocket(socket)}},
+		}).CombinedOutput()
 		require.NoError(t, err, string(out))
-		require.NotContains(t, string(out), token)
+		require.NotContains(t, string(out), token, "the agent reached the host socket unasked")
 		require.Contains(t, string(out), fmt.Sprintf(`access to socket %q on your machine requires approval: owning client cannot prompt (not interactive)`, sock))
 	})
 
@@ -181,6 +187,60 @@ func (LLMSuite) TestAgentHostAccess(ctx context.Context, t *testctx.T) {
 		require.NoError(t, exchange.Err(), "the exchange ran out of time")
 		stop()
 		require.Contains(t, console.output.String(), fmt.Sprintf(`access to socket %q on your machine was denied by the owning client`, sock))
+	})
+
+	t.Run("a host service the CLI uses", func(ctx context.Context, t *testctx.T) {
+		// The CLI tunnels its own host's port first, in the same session,
+		// then the agent's snippet asks for the same host service in an
+		// exec of its own. Host.service is scoped by session and caller
+		// module, both of which the CLI and a module-less snippet share:
+		// the snippet used to get the CLI's cached service, whose tunnel
+		// reached the CLI's host live. (Across sessions, the session scope
+		// already keeps them apart.)
+		token := "host-port-" + rand.Text()
+		l, err := net.Listen("tcp", "127.0.0.1:0")
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = l.Close() })
+		go func() {
+			for {
+				conn, err := l.Accept()
+				if err != nil {
+					return
+				}
+				_, _ = conn.Write([]byte(token + "\n"))
+				_ = conn.Close()
+			}
+		}()
+		port := l.Addr().(*net.TCPAddr).Port
+		svc := fmt.Sprintf("tcp://localhost:%d", port)
+		before := fmt.Sprintf(`container | from %s | with-exec apk add socat | with-service-binding h $(address %s | service) | with-exec -- socat -u TCP:h:%d - | stdout`, alpineImage, svc, port)
+		out, err := agentDangCommand(ctx, t, workdir, before, []dangToolCall{
+			{"DangEval", map[string]string{"source": fmt.Sprintf(`container.from(%q).withExec(["apk", "add", "socat"]).withEnvVariable(name: "BUST", value: %q).withServiceBinding(alias: "h", service: address(value: %q).service).withExec(["socat", "-u", "TCP:h:%d", "-"]).stdout`, alpineImage, rand.Text(), svc, port)}},
+		}).CombinedOutput()
+		require.NoError(t, err, string(out))
+		require.Contains(t, string(out), token, "the CLI reaches its own host's port")
+		start := strings.LastIndex(string(out), "[User]: reach the host")
+		require.NotEqual(t, -1, start, string(out))
+		transcript := string(out)[start:]
+		require.NotContains(t, transcript, token, "the agent reached the CLI's host port unasked")
+		require.Contains(t, transcript, fmt.Sprintf(`connecting to localhost:%d on your machine requires approval: owning client cannot prompt (not interactive)`, port))
+	})
+
+	t.Run("a host directory the CLI read", func(ctx context.Context, t *testctx.T) {
+		// The CLI reads its own host's files first, in the same session;
+		// the agent's snippet then asks for the same ones.
+		token := "host-dir-" + rand.Text()
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "token.txt"), []byte(token), 0o600))
+		before := fmt.Sprintf("host | directory %s | file token.txt | contents\nhost | file %s | contents", dir, filepath.Join(dir, "token.txt"))
+		out, err := agentDangCommand(ctx, t, workdir, before, []dangToolCall{
+			{"DangEval", map[string]string{"source": fmt.Sprintf(`address(value: %q).directory.file("token.txt").contents`, dir)}},
+			{"DangEval", map[string]string{"source": fmt.Sprintf(`address(value: %q).file.contents`, filepath.Join(dir, "token.txt"))}},
+		}).CombinedOutput()
+		require.NoError(t, err, string(out))
+		start := strings.LastIndex(string(out), "[User]: reach the host")
+		require.NotEqual(t, -1, start, string(out))
+		require.NotContains(t, string(out)[start:], token, "the agent read the CLI's host files unasked")
 	})
 
 	t.Run("other host addresses stay denied", func(ctx context.Context, t *testctx.T) {

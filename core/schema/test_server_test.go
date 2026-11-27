@@ -56,6 +56,10 @@ func (*currentTypeDefsTestServer) AuthorizeHostSocket(context.Context, string) (
 	return nil, nil
 }
 
+func (*currentTypeDefsTestServer) AuthorizeHostNetwork(context.Context, string) (*engine.ClientMetadata, error) {
+	return nil, nil
+}
+
 func (*currentTypeDefsTestServer) AuthorizeSSHAgent(context.Context, string) (*engine.ClientMetadata, error) {
 	return nil, nil
 }

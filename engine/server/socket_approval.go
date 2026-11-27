@@ -13,8 +13,9 @@ import (
 )
 
 const (
-	approvalKindSocket   = "socket"
-	approvalKindSSHAgent = "ssh-agent"
+	approvalKindSocket      = "socket"
+	approvalKindHostNetwork = "host-network"
+	approvalKindSSHAgent    = "ssh-agent"
 
 	// sshAgentApprovalSubject is the one subject an ssh-agent grant is keyed
 	// by: a forwarded agent signs for any host it is asked to, so a grant
@@ -38,6 +39,20 @@ func socketApproval(path string) approvalSpec {
 		Question:  "Allow access to socket " + strconv.QuoteToASCII(path) + " on your machine",
 		Action:    "Access socket " + strconv.QuoteToASCII(path) + " on your machine",
 		Danger:    true,
+		NoForever: true,
+	}
+}
+
+// hostNetworkApproval asks the owner to let an agent connect to hostPort
+// ("localhost:6060") from the owner's machine, tunneled through the owner
+// (Host.service): e.g. a database listening on the owner's localhost. Never
+// allowed forever. The address is shown verbatim, escaped for terminals.
+func hostNetworkApproval(hostPort string) approvalSpec {
+	return approvalSpec{
+		Kind:      approvalKindHostNetwork,
+		Subject:   literalText(hostPort),
+		Question:  "Allow connecting to " + literalText(hostPort) + " on your machine",
+		Action:    "Connect to " + literalText(hostPort) + " on your machine",
 		NoForever: true,
 	}
 }
@@ -91,6 +106,17 @@ func (srv *Server) AuthorizeHostSocket(ctx context.Context, path string) (*engin
 	return srv.authorizeOwnerHostAccess(ctx,
 		"access to socket "+strconv.QuoteToASCII(path)+" on your machine",
 		socketApproval(path))
+}
+
+// AuthorizeHostNetwork returns the trusted owner whose machine Host.service
+// tunnels connections to hostPort ("localhost:6060") through, or nil when the
+// calling client tunnels through its own host, as it always did. As for
+// AuthorizeHostSocket, a client without a host of its own is refused without
+// an agent, and asks its owner on an agent's behalf.
+func (srv *Server) AuthorizeHostNetwork(ctx context.Context, hostPort string) (*engine.ClientMetadata, error) {
+	return srv.authorizeOwnerHostAccess(ctx,
+		"connecting to "+literalText(hostPort)+" on your machine",
+		hostNetworkApproval(hostPort))
 }
 
 // AuthorizeSSHAgent returns the trusted owner whose SSH agent Host.
