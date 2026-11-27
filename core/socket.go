@@ -267,7 +267,62 @@ func (socket *Socket) forwardAgentClientFromSessionResourceCandidate(ctx context
 	return stream, false, nil
 }
 
+// checkForwardable fails when no client binding of socket could ever forward
+// it: each fails outright (e.g. a client without a host of its own is denied
+// its attachables). The mount forwards lazily, per connection, so without
+// this an exec would start, and its connections be dropped without a word.
+// A binding whose client is not available yet may be later: that is left to
+// the forward.
+func (socket *Socket) checkForwardable(ctx context.Context) error {
+	if socket == nil {
+		return errors.New("socket is nil")
+	}
+	sources := []*Socket{socket}
+	if socket.Handle != "" {
+		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+		if err != nil {
+			return fmt.Errorf("resolve session socket %q: current client metadata: %w", socket.Handle, err)
+		}
+		cache, err := dagql.EngineCache(ctx)
+		if err != nil {
+			return fmt.Errorf("resolve session socket %q: current dagql cache: %w", socket.Handle, err)
+		}
+		candidates, err := cache.ResolveSessionResourceCandidates(ctx, clientMetadata.SessionID, clientMetadata.ClientID, socket.Handle)
+		if err != nil {
+			return err
+		}
+		sources = sources[:0]
+		for _, candidate := range candidates {
+			resolved, ok := candidate.Value.(*Socket)
+			if !ok {
+				return fmt.Errorf("resolve session socket %q: bound value for client %q is %T", socket.Handle, candidate.ClientID, candidate.Value)
+			}
+			sources = append(sources, resolved)
+		}
+	}
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return err
+	}
+	var errs error
+	for _, source := range sources {
+		if source.SourceClientID == "" {
+			// Not forwarded through a client: nothing to check here.
+			return nil
+		}
+		_, _, err := query.SpecificClientAttachableConn(ctx, source.SourceClientID, SpecificClientAttachableConnOpts{IfAvailable: true})
+		if err == nil {
+			return nil
+		}
+		errs = errors.Join(errs, err)
+	}
+	return fmt.Errorf("socket cannot be forwarded: %w", errs)
+}
+
 func (socket *Socket) MountSSHAgent(ctx context.Context) (string, func() error, error) {
+	if err := socket.checkForwardable(ctx); err != nil {
+		return "", nil, err
+	}
 	ctx, err := withSocketNetworkRecording(ctx)
 	if err != nil {
 		return "", nil, fmt.Errorf("create socket network recorders: %w", err)
