@@ -1,0 +1,25 @@
+type Lazycheck {
+  """
+  Prints, and passes.
+  """
+  passing: Void @check {
+    print("passing output 1")
+    null
+  }
+
+  """
+  Prints, then raises an error of its own.
+  """
+  failing: Void @check {
+    print("failing output 1")
+    raise "check body failed"
+  }
+
+  """
+  Runs a command that fails.
+  """
+  deep: Void @check {
+    container.from("alpine").withExec(["sh", "-c", "echo deep 1; exit 3"]).sync
+    null
+  }
+}

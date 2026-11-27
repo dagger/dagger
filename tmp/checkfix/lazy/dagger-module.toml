@@ -1,0 +1,5 @@
+name = "lazycheck"
+engineVersion = "v1.0.0-beta.29"
+
+[runtime]
+  source = "dang"

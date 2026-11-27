@@ -1,0 +1,12 @@
+[modules.dang-sdk]
+source = "github.com/dagger/dang-sdk@14ba9d349167cb32b3a06f4229f534509a30ac62"
+
+[modules.lazycheck]
+source = "./lazy"
+
+[sdks.dang]
+module = "dang-sdk"
+
+[sdks.dang.scopes.lazy]
+is-module = true
+name = "lazycheck"
