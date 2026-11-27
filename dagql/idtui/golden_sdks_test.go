@@ -18,8 +18,9 @@ import (
 
 // sdkFixture is a module of viztest/sdks, written with one of the external,
 // entrypoint-style SDKs (github.com/dagger/<lang>-sdk) rather than the
-// engine's built-in runtimes. Every fixture has the same functions, so the
-// goldens of one case line up across SDKs; see viztest/sdks/go/main.go.
+// engine's built-in runtimes. Every fixture has sdkCases' functions, so the
+// goldens of one case line up across SDKs; see viztest/sdks/go/main.go. The
+// check functions of sdkCheckCases are only in the fixtures each names.
 //
 // These goldens were hand-edited to the output we WANT: no module entrypoint
 // plumbing on screen, the original failure as the origin of the outermost
@@ -268,6 +269,16 @@ var sdkCheckCases = []sdkCheckCase{
 		},
 		logs: func(t *testctx.T, db *dagui.DB, logs []sdklog.Record, lang string) {
 			assertLoggedOnCheck(t, db, logs, "check-fail-native", lang+" function stdout")
+		},
+	},
+	// Raises a Dagger Error, which the function returns as an SDK's module
+	// process returns one (FunctionCall.returnError): the engine gives it the
+	// check as its origin, not the hidden span.
+	{
+		function: "check-returned-error",
+		langs:    []string{"dang"},
+		db: func(t *testctx.T, db *dagui.DB, _ string) {
+			assertCheckIsOwnOrigin(t, db, "check-returned-error")
 		},
 	},
 	// Runs a withExec that fails, the error unhandled: the exec stays the

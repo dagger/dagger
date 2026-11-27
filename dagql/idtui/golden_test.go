@@ -179,6 +179,7 @@ main = true
 		// dagger.lock pins the images the fixtures pull, e.g. the SDK
 		// fixtures' alpine.
 		exec.Command("rm", "-rf", ".git", ".dagger", "dagger.toml", "dagger.lock").Run()
+		removeFixtureWorkspaceLocks()
 	})
 
 	listDir := t.TempDir()
@@ -643,9 +644,6 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 	// would miss what the warm-up cached: warm up again until the lockfile
 	// holds still.
 	lockFiles := ex.workspaceLocks()
-	for _, lockFile := range lockFiles[1:] {
-		t.Cleanup(func() { os.Remove(lockFile) })
-	}
 	for warmups := 1; ; warmups++ {
 		before := readWorkspaceLocks(lockFiles)
 		warmupOnce(ctx, t, ex, daggerArgs, testEnv, s.Home, realHome)
@@ -738,7 +736,8 @@ func readWorkspaceLocks(paths []string) string {
 }
 
 // removeFixtureWorkspaceLocks removes the lockfiles of viztest's fixture
-// workspaces, in case a run was interrupted before its cleanup.
+// workspaces. The suite keeps them until it ends, so the examples of one
+// workspace share its pins.
 func removeFixtureWorkspaceLocks() {
 	locks, _ := filepath.Glob("viztest/sdks/checks/*/dagger.lock")
 	for _, lock := range locks {
