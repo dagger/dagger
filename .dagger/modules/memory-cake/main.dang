@@ -312,6 +312,14 @@ type MemoryCake {
         focus: "go\\.etcd\\.io/bbolt|internal/fastbolt|\\(\\*snapshotManager\\)\\.(AttachLease|addSnapshotOwner|createOwnerLease|attachOwner\\w*)|engine/snapshots/owner_ancestry\\.go",
       ),
       Demo(
+        pr: "workspace-glob",
+        title: "core: glob workspace trees without cached items",
+        # Everything Workspace.glob's resolver allocates and leaves behind:
+        # on main, the internal Directory.glob select's results, one per
+        # matched path; on both sides, the matched paths themselves.
+        focus: "core/schema\\.\\(\\*workspaceSchema\\)\\.glob",
+      ),
+      Demo(
         pr: "15220",
         title: "clientdb: intern the span index's span IDs",
         # The span index's own structures. The span ID strings its maps
@@ -481,6 +489,26 @@ type MemoryCake {
     env: [String!]! = [],
   ): Measurement! @cache(policy: FunctionCachePolicy.PerSession) {
     measure(pr: "15232", ref: ref, env: env)
+  }
+
+  """
+  Workspace.glob on a workspace without a host path (an agent's checkout or
+  a staff worker's copy), which globs the workspace's rootfs through a
+  Directory.glob select. One session makes a FILES-file workspace (default
+  5000) with Directory.asWorkspace and runs ROUNDS rounds (default 100) of
+  one edit followed by a "**" and a "d1/*" glob; every edit is a new rootfs,
+  so every glob is new work. On main, the internal select caches one result
+  per matched path per glob (~5 KB each): ~2.5 GiB live at the defaults
+  (5.0 GiB at ROUNDS=200), ~590 MiB of it still there after the session.
+  With the fix, which globs the tree directly, 67 MiB live (37 MiB focus:
+  the paths Workspace.glob's own results keep) and 23 MiB after. Scale with
+  env, e.g. ["ROUNDS=50"].
+  """
+  demoWorkspaceGlob(
+    ref: String! = "main",
+    env: [String!]! = [],
+  ): Measurement! @cache(policy: FunctionCachePolicy.PerSession) {
+    measure(pr: "workspace-glob", ref: ref, env: env)
   }
 
   """
