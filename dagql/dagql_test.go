@@ -2800,6 +2800,87 @@ func TestContextWithSelectorViews(t *testing.T) {
 	require.Equal(t, "secondView", res.Picked)
 }
 
+// ContextWithSelectorArgs makes a query select its fields with the arguments
+// the function gives, as if it passed them. What its resolvers select in
+// turn, or query, doesn't get them.
+func TestContextWithSelectorArgs(t *testing.T) {
+	srv := newExternalDagqlServerForTest(t, Query{})
+	type liveArgs struct {
+		NoLock bool `default:"false"`
+	}
+	dagql.Fields[Query]{
+		dagql.Func("live", func(ctx context.Context, _ Query, args liveArgs) (bool, error) {
+			return args.NoLock, nil
+		}),
+		dagql.Func("other", func(ctx context.Context, _ Query, _ struct{}) (bool, error) {
+			return false, nil
+		}),
+		dagql.Func("inner", func(ctx context.Context, _ Query, _ struct{}) (bool, error) {
+			var live dagql.Boolean
+			err := srv.Select(ctx, srv.Root(), &live, dagql.Selector{Field: "live"})
+			return live.Bool(), err
+		}),
+		dagql.Func("innerQuery", func(ctx context.Context, _ Query, _ struct{}) (bool, error) {
+			res, err := srv.Query(ctx, `{ live }`, nil)
+			if err != nil {
+				return false, err
+			}
+			live, ok := res["live"].(dagql.Boolean)
+			if !ok {
+				return false, fmt.Errorf("live is %T", res["live"])
+			}
+			return live.Bool(), nil
+		}),
+	}.Install(srv)
+
+	var fills atomic.Int32
+	fill := func(_ context.Context, field *dagql.FieldSpec, view call.View, args []dagql.NamedInput) []dagql.NamedInput {
+		fills.Add(1)
+		if _, ok := field.Args.Input("noLock", view); !ok {
+			return args
+		}
+		for _, arg := range args {
+			if arg.Name == "noLock" {
+				return args
+			}
+		}
+		return append(args, dagql.NamedInput{Name: "noLock", Value: dagql.Boolean(true)})
+	}
+
+	cache, err := dagql.NewCache(context.Background(), "", nil, nil)
+	require.NoError(t, err)
+	h := dagql.NewDefaultHandler(srv)
+	newClient := func(withFill bool) *client.Client {
+		return client.New(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := engine.ContextWithClientMetadata(r.Context(), testClientMetadata())
+			ctx = dagql.ContextWithCache(ctx, cache)
+			if withFill {
+				ctx = dagql.ContextWithSelectorArgs(ctx, fill)
+			}
+			h.ServeHTTP(w, r.WithContext(ctx))
+		}))
+	}
+
+	var res struct {
+		Live       bool
+		Explicit   bool
+		Other      bool
+		Inner      bool
+		InnerQuery bool
+	}
+	req(t, newClient(true), `{ live explicit: live(noLock: false) other inner innerQuery }`, &res)
+	require.True(t, res.Live, "a selection gets the argument")
+	require.False(t, res.Explicit, "an argument the query passes is the fill's to keep")
+	require.False(t, res.Inner, "a resolver's own selection doesn't get the argument")
+	require.False(t, res.InnerQuery, "a query a resolver executes doesn't get the argument")
+	require.EqualValues(t, 5, fills.Load(), "only the query's own selections are filled")
+
+	// The argument is part of the call: a client without the fill doesn't
+	// share its result.
+	req(t, newClient(false), `{ live }`, &res)
+	require.False(t, res.Live)
+}
+
 func TestViewsIntrospection(t *testing.T) {
 	srv := newExternalDagqlServerForTest(t, Query{})
 	introspection.Install[Query](srv)

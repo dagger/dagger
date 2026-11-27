@@ -7,6 +7,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 )
 
 const workspaceLockingVersion = "v1.0.0-beta.10"
@@ -38,6 +39,53 @@ func withoutWorkspaceLookupLock(ctx context.Context) context.Context {
 func workspaceLookupLockDisabled(ctx context.Context) bool {
 	disabled, _ := ctx.Value(workspaceLookupLockDisabledKey{}).(bool)
 	return disabled
+}
+
+// noLockArgName is the argument a lookup takes to resolve live.
+const noLockArgName = "noLock"
+
+// WithLiveLookupSelections makes the queries of requests served with ctx
+// resolve their lookups live: a core field the query selects that takes
+// noLock (an image tag or git ref lookup: Container.from, the
+// GitRepository ref lookups, the Address loaders) and isn't passed it is
+// selected with noLock: true. The lookup then neither reads the workspace
+// lockfile's pin nor records a new one, and the ID it returns says so.
+//
+// It is for clients whose queries are model-written code (a DangEval
+// snippet's): they ask what a ref or tag is now, which a pin would silently
+// answer with what it was. Only the query's own selections are live: what
+// their resolvers select in turn, such as loading a module and its pinned
+// sources, keeps the lock, and so do module functions it calls, which run as
+// clients of their own. A module ref the query names (moduleSource's
+// refString, Workspace.withModule's ref) is such a module load: it resolves,
+// and is pinned, as installing it would be. A query passing noLock keeps its
+// value, and an argument a module's function declares is the module's: it is
+// never set.
+//
+// Like an explicit noLock, each such lookup resolves afresh: a snippet that
+// reads two fields of one ref sends two queries, which look it up twice.
+func WithLiveLookupSelections(ctx context.Context) context.Context {
+	return dagql.ContextWithSelectorArgs(ctx, liveLookupSelectionArgs)
+}
+
+func liveLookupSelectionArgs(_ context.Context, field *dagql.FieldSpec, view call.View, args []dagql.NamedInput) []dagql.NamedInput {
+	if field.Module != nil || field.ModuleProvider != nil {
+		return args
+	}
+	for _, arg := range args {
+		if arg.Name == noLockArgName {
+			return args
+		}
+	}
+	spec, ok := field.Args.Input(noLockArgName, view)
+	if !ok || spec.Internal {
+		return args
+	}
+	live, err := spec.Type.Decoder().DecodeInput(true)
+	if err != nil {
+		return args
+	}
+	return append(args, dagql.NamedInput{Name: noLockArgName, Value: live})
 }
 
 func withWorkspaceLookupLockRefresh(ctx context.Context) context.Context {

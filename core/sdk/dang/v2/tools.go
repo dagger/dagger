@@ -94,6 +94,15 @@ func (dangTools) Eval(ctx context.Context, env core.DangToolEnv, args core.DangE
 		if caller, ok := core.CallerAgent(ctx); ok {
 			nestedClientMetadata.CallerAgent = caller
 		}
+		// A snippet is model-written code asking what things are now: the
+		// image tags and git refs it looks up resolve live, as noLock: true
+		// asks, so the workspace lockfile neither answers them with a pin
+		// nor records one. Only the snippet's own selections are live (and
+		// those of a module scope's Dang code, which runs with it): module
+		// functions it calls run as clients of their own and keep the lock,
+		// as does what the engine selects to serve its calls, such as a
+		// module's pinned sources.
+		nestedClientMetadata.LiveLookups = true
 		// The report goes to the tool call's span, as a module function's
 		// prints go to its call's: printed output as it is printed, the
 		// rest once it is known.

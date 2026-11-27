@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/core"
+	"github.com/dagger/dagger/core/workspace"
 
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -31,6 +33,16 @@ func runDangToolCalls(ctx context.Context, t *testctx.T, c *dagger.Client, base 
 // then in the same session, its output following the transcript's.
 func runDangToolCallsThen(ctx context.Context, t *testctx.T, c *dagger.Client, base *core.Container, shell func(string) core.WithContainerFunc, setup string, calls []dangToolCall, then string) string {
 	t.Helper()
+	out, err := dangToolCallsContainer(ctx, t, c, base, shell, setup, calls, then).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "done")
+	return out
+}
+
+// dangToolCallsContainer is base after the session runDangToolCallsThen
+// runs: its stdout is the transcript, then then's output.
+func dangToolCallsContainer(ctx context.Context, t *testctx.T, c *dagger.Client, base *core.Container, shell func(string) core.WithContainerFunc, setup string, calls []dangToolCall, then string) *core.Container {
+	t.Helper()
 	const prompt = "probe some dang"
 	script := core.NewQuery(c).LLM().WithPrompt(prompt)
 	for i, call := range calls {
@@ -50,10 +62,7 @@ func runDangToolCallsThen(ctx context.Context, t *testctx.T, c *dagger.Client, b
 	if then != "" {
 		statements += "\n" + then
 	}
-	out, err := base.With(shell(statements)).Stdout(ctx)
-	require.NoError(t, err)
-	require.Contains(t, out, "done")
-	return out
+	return base.With(shell(statements))
 }
 
 // TestDangTools drives the DangCheck and DangEval builtins end to end over a
@@ -215,6 +224,83 @@ func (LLMSuite) TestDangTools(ctx context.Context, t *testctx.T) {
 		require.Contains(t, out, "pass: true")
 		require.Contains(t, out, "pass: false")
 		require.Contains(t, out, "== FAILURES ==")
+	})
+
+	t.Run("lookups resolve live", func(ctx context.Context, t *testctx.T) {
+		// A snippet asks what a ref or tag is now: the workspace lockfile's
+		// pins don't answer it, and it records none. A snippet passing
+		// noLock: false, a module function it calls and the conversation's
+		// own client keep the pins.
+		pinnedRef, err := core.NewQuery(c).Container().From("alpine:3.20").ImageRef(ctx)
+		require.NoError(t, err)
+		_, pinnedDigest, ok := strings.Cut(pinnedRef, "@")
+		require.True(t, ok, pinnedRef)
+		lock := workspace.NewLock()
+		require.NoError(t, lock.SetLookup(workspace.CoreLockNamespace, workspace.LockOperationOCISHA,
+			[]any{"docker.io/library/alpine:latest"}, pinnedDigest))
+		require.NoError(t, lock.SetLookup(workspace.CoreLockNamespace, workspace.LockOperationGitSHA,
+			[]any{lockTestGitRepoURL, "refs/heads/" + lockTestGitBranchName}, lockTestGitStaleCommit))
+		lockBytes, err := lock.Marshal()
+		require.NoError(t, err)
+
+		pinned := base.
+			WithNewFile(".dagger/modules/lookups/dagger-module.toml", "name = \"lookups\"\nengineVersion = \"latest\"\n\n[runtime]\n  source = \"dang\"\n").
+			WithNewFile(".dagger/modules/lookups/main.dang", `type Lookups {
+  pub mainCommit: String! {
+    git("`+lockTestGitRepoURL+`").branch("main").commit
+  }
+}
+`).
+			WithNewFile("dagger.toml", "[modules.notes]\nsource = \".dagger/modules/notes\"\n\n[modules.lookups]\nsource = \".dagger/modules/lookups\"\n").
+			WithNewFile(workspace.LockFileName, string(lockBytes))
+
+		const (
+			branch   = `git("` + lockTestGitRepoURL + `").branch("main").commit`
+			image    = `container.from("alpine:latest").imageRef`
+			tag      = `git("` + lockTestGitRepoURL + `").tag("` + lockTestGitTagName + `").commit`
+			optIn    = `git("` + lockTestGitRepoURL + `").branch(name: "main", noLock: false).commit`
+			function = `lookups.mainCommit`
+		)
+		var calls []dangToolCall
+		for _, source := range []string{branch, image, tag, optIn, function} {
+			calls = append(calls, dangToolCall{"DangEval", map[string]string{"source": source}})
+		}
+		after := dangToolCallsContainer(ctx, t, c, pinned, daggerShellNoMod, bind, calls,
+			// The conversation's own client, after the snippets.
+			"git "+lockTestGitRepoURL+" | branch main | commit\ncontainer | from alpine:latest | image-ref")
+		out, err := after.Stdout(ctx)
+		require.NoError(t, err)
+		// The transcript ends with the model's last reply; the control
+		// lookups' output follows.
+		end := strings.LastIndex(out, "done")
+		require.NotEqual(t, -1, end, out)
+		transcript, control := out[:end], out[end:]
+
+		// The unpinned tag lookup is recorded by nothing; the pins are kept.
+		lockAfter, err := after.File(workspace.LockFileName).Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, string(lockBytes), lockAfter, "a snippet's lookups record nothing")
+
+		result := func(source string) string {
+			t.Helper()
+			// The transcript prints the call's arguments as JSON.
+			quoted, err := json.Marshal(source)
+			require.NoError(t, err)
+			escaped := strings.Trim(string(quoted), `"`)
+			m := regexp.MustCompile(regexp.QuoteMeta(escaped) + `"\}\)\s+\[Tool result\]: String! = "([^"]*)"`).FindStringSubmatch(transcript)
+			require.NotNil(t, m, "no result for %s in:\n%s", source, transcript)
+			return m[1]
+		}
+		live := result(branch)
+		require.Regexp(t, `^[0-9a-f]{40}$`, live)
+		require.NotEqual(t, lockTestGitStaleCommit, live, "a snippet's branch lookup must not read the pin")
+		require.NotContains(t, result(image), pinnedDigest, "a snippet's tag lookup must not read the pin")
+		require.Equal(t, lockTestGitTagCommit, result(tag))
+		require.Equal(t, lockTestGitStaleCommit, result(optIn), "noLock: false keeps the pin")
+		require.Equal(t, lockTestGitStaleCommit, result(function), "a module function keeps the pin")
+
+		require.Contains(t, control, lockTestGitStaleCommit, "the conversation's client keeps the pin")
+		require.Contains(t, control, pinnedDigest, "the conversation's client keeps the pin")
 	})
 
 	t.Run("bound tool objects", func(ctx context.Context, t *testctx.T) {
