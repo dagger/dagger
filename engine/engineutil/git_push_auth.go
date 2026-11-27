@@ -11,9 +11,12 @@ import (
 // PrepareGitSSHAuth must only be called for an authorized push or a snapshot
 // of the owning client's checkout, with that client's metadata — or for the
 // SSH origin of a client's own checkout, when it replays a recipe that scoped
-// an SSH agent (Host._sshAuthSocket, e.g. when resuming a trace). Ordinary Git
-// reads must not initialize or unlock an agent. This neither registers nor
-// returns a socket handle; the caller decides how to scope the prepared socket.
+// an SSH agent (Host._sshAuthSocket, e.g. when resuming a trace) — or, with
+// the owner's metadata, for the remote a host-less agent-driven caller's
+// Host._sshAuthSocket names, once the owner approved lending its SSH agent
+// (Server.AuthorizeSSHAgent). Ordinary Git reads must not initialize or
+// unlock an agent. This neither registers nor returns a socket handle; the
+// caller decides how to scope the prepared socket.
 func (c *Client) PrepareGitSSHAuth(ctx context.Context, remote string) (string, error) {
 	md, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {

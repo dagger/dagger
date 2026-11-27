@@ -81,7 +81,8 @@ type Server interface {
 
 	// WithHostlessClient runs fn as a fresh host-less (inert) child of the
 	// client whose scope ctx holds, closed when fn returns: host access is
-	// denied there, and a secret read for an agent asks its owner.
+	// denied there, and a secret, host socket, host service or SSH agent used
+	// for an agent asks its owner.
 	WithHostlessClient(ctx context.Context, fn func(context.Context) error) error
 
 	// Stitch in the given module to the list being served to the current client

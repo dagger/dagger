@@ -1231,7 +1231,10 @@ func (s *hostSchema) service(ctx context.Context, parent dagql.ObjectResult[*cor
 	ports := collectInputsSlice(args.Ports)
 	socks := make([]*core.Socket, 0, len(ports))
 	for _, port := range ports {
-		hostPort := net.JoinHostPort(args.Host, strconv.Itoa(port.Backend))
+		// JoinHostPort brackets an IPv6 host itself: drop any the caller
+		// gave ("[::1]"), as the URL used to be spelled with them.
+		host := strings.TrimSuffix(strings.TrimPrefix(args.Host, "["), "]")
+		hostPort := net.JoinHostPort(host, strconv.Itoa(port.Backend))
 		// Ask whose machine the tunnel goes through: a client without a
 		// host of its own is refused, unless an agent drives it and its
 		// owner approves (see Server.AuthorizeHostNetwork).
