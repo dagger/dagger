@@ -1,13 +1,56 @@
 package schema
 
 import (
+	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
+	"github.com/dagger/dagger/engine"
 	"github.com/stretchr/testify/require"
 )
+
+func TestOwnerSSHAuthSocketPath(t *testing.T) {
+	t.Parallel()
+	owner := &engine.ClientMetadata{ClientID: "owner"}
+	var prepared []string
+	prepare := func(ctx context.Context, remote string) (string, error) {
+		md, err := engine.ClientMetadataFromContext(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "owner", md.ClientID, "the owner prepares its own agent")
+		prepared = append(prepared, remote)
+		return "/tmp/agent.sock", nil
+	}
+
+	// An approved restored load of a recipe without a remote, for an owner
+	// without SSH_AUTH_SOCK whose checkout has an SSH origin (named by the
+	// authorization): an agent is prepared for that origin.
+	path, err := ownerSSHAuthSocketPath(t.Context(), &core.SSHAgentAuthorization{Owner: owner, Remote: "git@github.com:me/repo.git"}, prepare)
+	require.NoError(t, err)
+	require.Equal(t, "/tmp/agent.sock", path)
+	require.Equal(t, []string{"git@github.com:me/repo.git"}, prepared)
+
+	// The owner's SSH_AUTH_SOCK needs nothing prepared.
+	path, err = ownerSSHAuthSocketPath(t.Context(), &core.SSHAgentAuthorization{
+		Owner: &engine.ClientMetadata{ClientID: "owner", SSHAuthSocketPath: "/run/ssh.sock"},
+	}, prepare)
+	require.NoError(t, err)
+	require.Equal(t, "/run/ssh.sock", path)
+	require.Len(t, prepared, 1)
+
+	// Without a remote to prepare for, it says so.
+	_, err = ownerSSHAuthSocketPath(t.Context(), &core.SSHAgentAuthorization{Owner: owner}, prepare)
+	require.ErrorContains(t, err, "no SSH_AUTH_SOCK, and neither the call nor the owner's checkout names an SSH remote")
+	require.Len(t, prepared, 1)
+
+	// A failed preparation names the remote.
+	_, err = ownerSSHAuthSocketPath(t.Context(), &core.SSHAgentAuthorization{Owner: owner, Remote: "git@github.com:me/repo.git"},
+		func(context.Context, string) (string, error) { return "", errors.New("no SSH identity files found") })
+	require.ErrorContains(t, err, `using your SSH keys for "git@github.com:me/repo.git"`)
+	require.ErrorContains(t, err, "no SSH identity files found")
+}
 
 func TestWorkspaceLockExcludePattern(t *testing.T) {
 	t.Parallel()

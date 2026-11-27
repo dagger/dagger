@@ -52,6 +52,18 @@ func (*currentTypeDefsTestServer) AuthorizeSecret(context.Context, string) (*eng
 	return nil, nil
 }
 
+func (*currentTypeDefsTestServer) AuthorizeHostSocket(context.Context, string) (*engine.ClientMetadata, error) {
+	return nil, nil
+}
+
+func (*currentTypeDefsTestServer) AuthorizeHostNetwork(context.Context, string) (*engine.ClientMetadata, error) {
+	return nil, nil
+}
+
+func (*currentTypeDefsTestServer) AuthorizeSSHAgent(context.Context, string) (*core.SSHAgentAuthorization, error) {
+	return nil, nil
+}
+
 func (*currentTypeDefsTestServer) AuthorizeGitIdentity(context.Context) (core.GitIdentity, error) {
 	panic("unexpected AuthorizeGitIdentity")
 }

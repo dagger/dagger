@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/containerd/containerd/v2/core/content"
@@ -33,9 +35,35 @@ import (
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/util/gitutil"
+	"github.com/dagger/dagger/util/hashutil"
 )
 
 type hostSchema struct{}
+
+// inertCallerInput gives a client without a host of its own (an in-engine
+// SDK client, such as the one evaluating an agent's DangEval snippet; see
+// engine.ClientMetadata.InertAttachables) a cache key of its own, and every
+// other client the same empty one.
+//
+// Host.service is shared per session and caller module, and
+// core.CachePerCallerModule is "mainClient" for the CLI and a module-less
+// snippet alike: without this, the snippet's Host.service would be the
+// CLI's cached result, whose tunnel goes through the CLI's host, and the
+// snippet would reach the CLI's network unasked, never running the resolver
+// that asks the owner (see Server.AuthorizeHostNetwork).
+var inertCallerInput = dagql.ImplicitInput{
+	Name: "cacheInertCaller",
+	Resolver: func(ctx context.Context, _ map[string]dagql.Input) (dagql.Input, error) {
+		clientMD, err := engine.ClientMetadataFromContext(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get client metadata: %w", err)
+		}
+		if !clientMD.InertAttachables {
+			return dagql.NewString(""), nil
+		}
+		return dagql.NewString(clientMD.ClientID), nil
+	},
+}
 
 var _ SchemaResolvers = &hostSchema{}
 
@@ -95,6 +123,7 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 			Doc(`Accesses the SSH auth socket on the host and returns a socket scoped to SSH identities.`).
 			Args(
 				dagql.Arg("source").Doc(`Optional source socket to scope. If not set, uses the caller's SSH_AUTH_SOCK.`),
+				dagql.Arg("remote").Doc(`The remote the socket authenticates to, if known. A caller without an SSH agent of its own, on an agent's behalf, asks its owner to lend theirs, prepared for this remote when the owner has no SSH_AUTH_SOCK.`),
 			),
 
 		dagql.Func("tunnel", s.tunnel).
@@ -118,6 +147,7 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("service", s.service).
 			WithInput(dagql.PerSessionInput).     // host services shouldn't cross sessions
 			WithInput(core.CachePerCallerModule). // services should be shared from different function calls in a module
+			WithInput(inertCallerInput).          // but never with a client that has no host of its own
 			Doc(`Creates a service that forwards traffic to a specified address via the host.`).
 			Args(
 				dagql.Arg("ports").Doc(
@@ -457,10 +487,28 @@ func (s *hostSchema) socket(ctx context.Context, host dagql.ObjectResult[*core.H
 		return inst, fmt.Errorf("failed to get client metadata: %w", err)
 	}
 
+	// Ask whose host the socket is forwarded from before minting it: a
+	// client without a host of its own is refused, unless an agent drives
+	// it and its owner approves (see Server.AuthorizeHostSocket).
+	//
+	// The handle, and so the digest of every exec it is mounted in, is
+	// derived from the path alone, the same for every non-module client of
+	// every session on the engine: minted unasked, a guessed path would
+	// answer the agent's exec with the user's own cached results of the same
+	// recipe (e.g. `docker ps` over docker.sock) without ever connecting.
+	source := clientMetadata.ClientID
+	owner, err := query.AuthorizeHostSocket(ctx, args.Path)
+	if err != nil {
+		return inst, err
+	}
+	if owner != nil {
+		source = owner.ClientID
+	}
+
 	concreteVal := &core.Socket{
 		Kind:           core.SocketKindUnixOpaque,
 		URLVal:         (&url.URL{Scheme: "unix", Path: args.Path}).String(),
-		SourceClientID: clientMetadata.ClientID,
+		SourceClientID: source,
 	}
 
 	handle, err := core.HostUnixSocketHandle(ctx, query, args.Path)
@@ -469,6 +517,13 @@ func (s *hostSchema) socket(ctx context.Context, host dagql.ObjectResult[*core.H
 	}
 	if handle == "" {
 		return inst, fmt.Errorf("failed to derive unix socket handle")
+	}
+	if owner != nil {
+		// An approval lends the owner's socket now, to this client: not the
+		// owner's results cached under its own handle, from this or any
+		// other session, which the owner was not asked about. The approved
+		// socket gets a handle of its own, unguessable and per client.
+		handle = dagql.SessionResourceHandle(hashutil.HashStrings(string(handle), "owner-approved", clientMetadata.ClientID))
 	}
 
 	handleVal := &core.Socket{
@@ -497,6 +552,37 @@ func (s *hostSchema) socket(ctx context.Context, host dagql.ObjectResult[*core.H
 
 type hostSSHAuthSocketArgs struct {
 	Source dagql.Optional[core.SocketID] `name:"source"`
+	// Remote is what the agent authenticates to, when the caller knows it:
+	// an owner without SSH_AUTH_SOCK prepares an agent for it (see
+	// ownerSSHAuthSocketPath), and errors name it. The owner's question does
+	// not: the grant is not scoped to one remote.
+	Remote dagql.Optional[dagql.String] `name:"remote"`
+}
+
+// ownerSSHAuthSocketPath is the SSH agent of the trusted client that approved
+// lending it (see Server.AuthorizeSSHAgent): its SSH_AUTH_SOCK, or else one
+// it prepares (through prepare, with the owner's metadata) for the
+// authorization's remote: the caller's, or the SSH origin of the owner's
+// checkout, which the server reads from the owner's client, as the caller has
+// no checkout of its own.
+//
+// The remote selects keys; it does not scope the grant, which is one per
+// owner for any remote. The owner's CLI prepares an agent per remote so that
+// `ssh -G <host>` picks up the host's own IdentityFile and IdentityAgent
+// settings (1Password, Secretive, per-host keys); that the forwarded socket
+// then only signs with that host's keys is a side effect, not a boundary.
+func ownerSSHAuthSocketPath(ctx context.Context, auth *core.SSHAgentAuthorization, prepare func(ctx context.Context, remote string) (string, error)) (string, error) {
+	if auth.Owner.SSHAuthSocketPath != "" {
+		return auth.Owner.SSHAuthSocketPath, nil
+	}
+	if auth.Remote == "" {
+		return "", errors.New("using your SSH keys: the owning client has no SSH_AUTH_SOCK, and neither the call nor the owner's checkout names an SSH remote to prepare SSH authentication for")
+	}
+	path, err := prepare(engine.ContextWithClientMetadata(ctx, auth.Owner), auth.Remote)
+	if err != nil {
+		return "", fmt.Errorf("using your SSH keys for %q: the owning client has no SSH_AUTH_SOCK, and preparing SSH authentication through it failed: %w", auth.Remote, err)
+	}
+	return path, nil
 }
 
 // checkoutSSHAuthSocketPath stands in for SSH_AUTH_SOCK when a client without
@@ -570,20 +656,47 @@ func (s *hostSchema) sshAuthSocket(ctx context.Context, host dagql.ObjectResult[
 			return inst, errors.New("resolved source socket is nil")
 		}
 	} else {
-		sshAuthSocketPath := clientMetadata.SSHAuthSocketPath
-		if sshAuthSocketPath == "" {
-			sshAuthSocketPath, err = checkoutSSHAuthSocketPath(ctx, query, clientMetadata)
+		var remote string
+		if args.Remote.Valid {
+			remote = string(args.Remote.Value)
+		}
+		// A client without a host of its own has no SSH agent it could
+		// forward: on an agent's behalf, its owner is asked to lend its own
+		// (see Server.AuthorizeSSHAgent); without an agent, it is refused.
+		auth, err := query.AuthorizeSSHAgent(ctx, remote)
+		if err != nil {
+			return inst, err
+		}
+		source := clientMetadata.ClientID
+		var sshAuthSocketPath string
+		if auth != nil {
+			sshAuthSocketPath, err = ownerSSHAuthSocketPath(ctx, auth, func(ownerCtx context.Context, remote string) (string, error) {
+				bk, err := query.Engine(ownerCtx)
+				if err != nil {
+					return "", fmt.Errorf("failed to get engine client: %w", err)
+				}
+				return bk.PrepareGitSSHAuth(ownerCtx, remote)
+			})
 			if err != nil {
 				return inst, err
 			}
-		}
-		if sshAuthSocketPath == "" {
-			return inst, errors.New("SSH_AUTH_SOCK is not set")
+			source = auth.Owner.ClientID
+		} else {
+			sshAuthSocketPath = clientMetadata.SSHAuthSocketPath
+			if sshAuthSocketPath == "" {
+				sshAuthSocketPath, err = checkoutSSHAuthSocketPath(ctx, query, clientMetadata)
+				if err != nil {
+					return inst, err
+				}
+			}
+			if sshAuthSocketPath == "" {
+				return inst, errors.New("SSH_AUTH_SOCK is not set")
+			}
 		}
 		concreteVal := &core.Socket{
 			Kind:           core.SocketKindUnixOpaque,
 			URLVal:         (&url.URL{Scheme: "unix", Path: sshAuthSocketPath}).String(),
-			SourceClientID: clientMetadata.ClientID,
+			SourceClientID: source,
 		}
 		concreteSelf = concreteVal
 	}
@@ -1112,14 +1225,34 @@ func (s *hostSchema) service(ctx context.Context, parent dagql.ObjectResult[*cor
 		return inst, fmt.Errorf("failed to get client metadata: %w", err)
 	}
 
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return inst, err
+	}
+
 	ports := collectInputsSlice(args.Ports)
 	socks := make([]*core.Socket, 0, len(ports))
 	for _, port := range ports {
+		// JoinHostPort brackets an IPv6 host itself: drop any the caller
+		// gave ("[::1]"), as the URL used to be spelled with them.
+		host := strings.TrimSuffix(strings.TrimPrefix(args.Host, "["), "]")
+		hostPort := net.JoinHostPort(host, strconv.Itoa(port.Backend))
+		// Ask whose machine the tunnel goes through: a client without a
+		// host of its own is refused, unless an agent drives it and its
+		// owner approves (see Server.AuthorizeHostNetwork).
+		source := clientMetadata.ClientID
+		owner, err := query.AuthorizeHostNetwork(ctx, hostPort)
+		if err != nil {
+			return inst, err
+		}
+		if owner != nil {
+			source = owner.ClientID
+		}
 		sock := &core.Socket{
 			Kind:           core.SocketKindHostIP,
-			URLVal:         (&url.URL{Scheme: port.Protocol.Network(), Host: fmt.Sprintf("%s:%d", args.Host, port.Backend)}).String(),
+			URLVal:         (&url.URL{Scheme: port.Protocol.Network(), Host: hostPort}).String(),
 			PortForwardVal: port,
-			SourceClientID: clientMetadata.ClientID,
+			SourceClientID: source,
 		}
 		socks = append(socks, sock)
 	}

@@ -904,6 +904,9 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 			}
 
 			// Scope that client's default SSH auth socket and reinvoke so it appears in the DAG.
+			// The remote is recorded with it: a recipe replayed by a client
+			// without an SSH agent of its own (a resumed agent's) asks the
+			// owner to lend theirs for it (see Host._sshAuthSocket).
 			var scopedSock dagql.ObjectResult[*core.Socket]
 			if err := srv.Select(sshSocketCtx, srv.Root(), &scopedSock,
 				dagql.Selector{
@@ -911,6 +914,9 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 				},
 				dagql.Selector{
 					Field: "_sshAuthSocket",
+					Args: []dagql.NamedInput{
+						{Name: "remote", Value: dagql.Opt(dagql.NewString(remote.String()))},
+					},
 				},
 			); err != nil {
 				return inst, fmt.Errorf("failed to select SSH auth socket: %w", err)

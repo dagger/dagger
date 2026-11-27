@@ -13,10 +13,12 @@ import (
 // WithHostlessClient runs fn as a fresh host-less child of the client whose
 // scope ctx holds: a nested client with inert attachables, like an in-engine
 // SDK client serving no module. Under it, host access (host.directory,
-// host.file, sockets, host services) is denied, and a secret read for an
-// agent asks its owner first (see AuthorizeSecret), whatever the parent could
-// read itself. The client is closed when fn returns; results evaluated under
-// it outlive it, as an in-engine SDK client's do.
+// host.file) is denied, and a secret, a host socket, a host service or the
+// SSH agent used for an agent asks its owner first (see AuthorizeSecret,
+// AuthorizeHostSocket, AuthorizeHostNetwork, AuthorizeSSHAgent), whatever the
+// parent could reach itself; without an agent, those are denied too. The
+// client is closed when fn returns; results evaluated under it outlive it, as
+// an in-engine SDK client's do.
 //
 // It is how a restored agent's bindings load (see core.LoadBoundObject):
 // nothing gains access by being resumed, so the client driving the restored

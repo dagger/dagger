@@ -81,7 +81,8 @@ type Server interface {
 
 	// WithHostlessClient runs fn as a fresh host-less (inert) child of the
 	// client whose scope ctx holds, closed when fn returns: host access is
-	// denied there, and a secret read for an agent asks its owner.
+	// denied there, and a secret, host socket, host service or SSH agent used
+	// for an agent asks its owner.
 	WithHostlessClient(ctx context.Context, fn func(context.Context) error) error
 
 	// Stitch in the given module to the list being served to the current client
@@ -144,6 +145,29 @@ type Server interface {
 	// secrets take that same approval, never allowed forever there (see
 	// IsRestoredBindingLoad): no approval carries over a resume.
 	AuthorizeSecret(context.Context, string) (*engine.ClientMetadata, error)
+
+	// AuthorizeHostSocket returns the trusted owner whose host
+	// Host.unixSocket(path:) forwards its socket from, once the owner
+	// approved it for the agent driving a client that has no host of its
+	// own; nil when the calling client forwards its own host's socket, as
+	// always. Such a client is refused without an agent.
+	AuthorizeHostSocket(ctx context.Context, path string) (*engine.ClientMetadata, error)
+
+	// AuthorizeHostNetwork returns the trusted owner whose machine
+	// Host.service tunnels connections to hostPort ("localhost:6060")
+	// through, once the owner approved it for the agent driving a client that
+	// has no host of its own; nil when the calling client tunnels through
+	// its own host, as always. Such a client is refused without an agent.
+	AuthorizeHostNetwork(ctx context.Context, hostPort string) (*engine.ClientMetadata, error)
+
+	// AuthorizeSSHAgent returns the trusted owner whose SSH agent
+	// Host._sshAuthSocket uses for a caller that has no host of its own,
+	// once the owner approved it for the agent driving that caller; nil when
+	// the calling client has a host of its own. remote, when known, names
+	// what the agent authenticates to; when not, the authorization names the
+	// SSH origin of the owner's checkout, if any. Such a client is refused
+	// without an agent.
+	AuthorizeSSHAgent(ctx context.Context, remote string) (*SSHAgentAuthorization, error)
 
 	// AuthorizeGitIdentity returns the Git identity (user.name, user.email)
 	// of the owning client at its working directory, for attributing a commit
