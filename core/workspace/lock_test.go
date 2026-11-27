@@ -181,6 +181,32 @@ func TestLockfileMergeConflictError(t *testing.T) {
 	require.NoError(t, LockfileMergeConflictError(err))
 }
 
+func TestInvalidLockfileError(t *testing.T) {
+	_, err := ParseLock([]byte(strings.Join([]string{
+		`["","oci-sha",["alpine:latest"],"sha256:deadbeef"]`,
+		`[["version","2"]]`,
+	}, "\n")))
+	require.EqualError(t, InvalidLockfileError("/repo/dagger.lock", err),
+		`invalid workspace lockfile /repo/dagger.lock: lockfile line 1: missing version header: expected [["version","2"]] before any entries; fix it, or delete it to resolve every pin again`,
+	)
+
+	_, err = ParseLock([]byte(`[["version","x"]]`))
+	require.ErrorContains(t, InvalidLockfileError("/repo/dagger.lock", err),
+		`invalid workspace lockfile /repo/dagger.lock: lockfile line 1: unsupported lockfile version "x"`,
+	)
+
+	_, err = ParseLock([]byte(`[["version","3"]]`))
+	require.EqualError(t, InvalidLockfileError("/repo/dagger.lock", err), FutureLockfileVersionError(err).Error())
+
+	_, err = ParseLock([]byte("<<<<<<< HEAD\n=======\n>>>>>>> branch\n"))
+	require.EqualError(t, InvalidLockfileError("/repo/dagger.lock", err), LockfileMergeConflictError(err).Error())
+
+	// Lockfiles from an older Dagger are replaced rather than reported.
+	_, err = ParseLock([]byte(`[["version","1"]]`))
+	require.Error(t, err)
+	require.NoError(t, InvalidLockfileError("/repo/dagger.lock", err))
+}
+
 func TestEntries(t *testing.T) {
 	lock := NewLock()
 	inputs := []any{"alpine:latest", "linux/amd64"}

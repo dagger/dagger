@@ -185,6 +185,23 @@ func LockfileMergeConflictError(err error) error {
 	return nil
 }
 
+// InvalidLockfileError returns the error to report when the lockfile at path
+// fails ParseLock. It returns nil only for a lockfile written in an older
+// format, which callers replace with a fresh lock.
+func InvalidLockfileError(path string, err error) error {
+	if versionErr := FutureLockfileVersionError(err); versionErr != nil {
+		return versionErr
+	}
+	if conflictErr := LockfileMergeConflictError(err); conflictErr != nil {
+		return conflictErr
+	}
+	var versionErr *lockfile.UnsupportedVersionError
+	if errors.As(err, &versionErr) && versionErr.IsOlder() {
+		return nil
+	}
+	return fmt.Errorf("invalid workspace lockfile %s: %w; fix it, or delete it to resolve every pin again", path, err)
+}
+
 // NewLock returns an empty workspace lock.
 func NewLock() *Lock {
 	return &Lock{file: lockfile.New()}
