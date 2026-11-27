@@ -295,7 +295,7 @@ func runSDKModuleGeneratorGraph(
 			}
 			slots <- struct{}{}
 			defer func() { <-slots }()
-			generation.changes, generation.err = s.generateSDKModuleGraphScope(ctx, input, staged, node)
+			generation.changes, generation.err = s.generateSDKModuleGraphScope(ctx, input, staged, node, base.Self())
 		}()
 	}
 
@@ -358,13 +358,14 @@ func (s *workspaceSchema) generateSDKModuleGraphScope(
 	input dagql.ObjectResult[*core.Workspace],
 	staged *stagedWorkspaceConfig,
 	node *sdkModuleGraphScope,
+	sdkBase *core.Workspace,
 ) (dagql.ObjectResult[*core.Changeset], error) {
 	var none dagql.ObjectResult[*core.Changeset]
 	selected, err := selectSDKModule(staged.Config, node.sdkName)
 	if err != nil {
 		return none, err
 	}
-	generated, err := s.generateSDKModuleScope(ctx, input, staged, selected, node.configScope, node.path, node.scope)
+	generated, err := s.generateSDKModuleScope(ctx, input, staged, selected, node.configScope, node.path, node.scope, sdkBase)
 	if err != nil {
 		return none, err
 	}
