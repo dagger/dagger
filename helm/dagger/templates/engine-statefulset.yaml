@@ -11,7 +11,7 @@ spec:
   # DO NOT RUN MORE THAN 1 REPLICA IF USING HOSTPATH.
   # Only one (1) Engine is able to hold the lock, other replicas will not be able to start.
   # If using persistent volumes, this is not an issue. Use more than 1 replica if you know that you need it.
-  replicas: 1
+  replicas: {{ .Values.engine.statefulSet.replicas }}
   podManagementPolicy: {{ .Values.engine.statefulSet.podManagementPolicy }}
   selector:
     matchLabels:
