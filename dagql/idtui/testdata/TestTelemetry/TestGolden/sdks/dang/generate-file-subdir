@@ -1,0 +1,5 @@
+Expected stderr:
+
+GENERATORS  ✔ 1 changed
+✔ generate-file X.Xs CHANGED
+  viztest/sdks/checks/dang/sub/generated.txt +1

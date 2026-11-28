@@ -179,7 +179,7 @@ func (fc *FuncCommand) selectArtifactRoot(ctx context.Context, cmd *cobra.Comman
 		return artifactSelectionError(target, items)
 	}
 
-	results, err := evaluateArtifacts(ctx, dag, artifacts, true, 0)
+	results, err := evaluateArtifacts(ctx, dag, artifacts, true, 0, nil)
 	if err != nil {
 		return err
 	}

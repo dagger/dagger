@@ -2,4 +2,4 @@ Expected stderr:
 
 GENERATORS  ✔ 1 changed
 ✔ generate-file X.Xs CHANGED
-  generated.txt +1
+  viztest/sdks/checks/dang/generated.txt +1

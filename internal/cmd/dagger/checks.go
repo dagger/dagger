@@ -110,7 +110,7 @@ func runChecks(ctx context.Context, dag *dagger.Client, ws *core.Workspace, chec
 	// We don't actually use the API for rendering results
 	// Instead, we rely on telemetry
 	// FIXME: this feels a little weird. Can we move the relevant telemetry collection in the API?
-	results, err := evaluateArtifacts(ctx, dag, checks, checksFailFast, checksParallel)
+	results, err := evaluateArtifacts(ctx, dag, checks, checksFailFast, checksParallel, nil)
 	if err != nil {
 		return err
 	}

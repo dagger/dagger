@@ -59,7 +59,11 @@ type artifactExecutionError struct {
 	Values  []struct{ Name, Value string }
 }
 
-func evaluateArtifacts(ctx context.Context, dag *dagger.Client, artifacts *core.Artifacts, failFast bool, maxConcurrency int) ([]artifactValueResult, error) {
+// evaluateArtifacts evaluates each of artifacts in a job of its own, at most
+// maxConcurrency at once. onEvaluated, when set, is called with each artifact
+// that evaluated, within its job's span, once the artifact no longer holds
+// its concurrency slot.
+func evaluateArtifacts(ctx context.Context, dag *dagger.Client, artifacts *core.Artifacts, failFast bool, maxConcurrency int, onEvaluated func(context.Context, *artifactValueResult)) ([]artifactValueResult, error) {
 	if maxConcurrency < 0 {
 		return nil, fmt.Errorf("maxConcurrency must not be negative: %d", maxConcurrency)
 	}
@@ -113,18 +117,22 @@ func evaluateArtifacts(ctx context.Context, dag *dagger.Client, artifacts *core.
 				ctx = group.context(ctx)
 				defer func() { group.finish(jobErr) }()
 			}
-			err := ctx.Err()
-			if err == nil && limit != nil && !remote {
-				err = limit.Acquire(ctx, 1)
-				if err == nil {
+			err := func() error {
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+				if limit != nil && !remote {
+					if err := limit.Acquire(ctx, 1); err != nil {
+						return err
+					}
 					defer limit.Release(1)
 				}
-			}
-			if err == nil {
-				err = evaluateArtifactItem(ctx, dag, item.ID, &results[i], &syncFields)
-			}
-			if err == nil && isGenerator {
-				reportGeneratorChanges(ctx, dag, results[i].Value)
+				return evaluateArtifactItem(ctx, dag, item.ID, &results[i], &syncFields)
+			}()
+			if err == nil && onEvaluated != nil {
+				// Past the limit: the caller's follow-up isn't the artifact's
+				// work, so it doesn't hold a slot another artifact could use.
+				onEvaluated(ctx, &results[i])
 			}
 			if err != nil {
 				if results[i].Error != nil {
@@ -537,8 +545,11 @@ func artifactListReplayArgs(cmd *cobra.Command) []string {
 // telemetryattrs.GeneratorChangesAttr): its changeset's diff stat, so the
 // report can say the generator changed files, and which. A generator that
 // changed nothing, or whose stat can't be read, gets no attribute: the stat
-// is for display, and the changeset is still applied as usual.
-func reportGeneratorChanges(ctx context.Context, dag *dagger.Client, value *artifactObjectValue) {
+// is for display, and the changeset is still applied as usual. dir is the
+// directory, from the workspace root, that the generator's changeset is
+// relative to ("" for the root), so its paths read from the root, as the
+// changes `dagger generate` applies do.
+func reportGeneratorChanges(ctx context.Context, dag *dagger.Client, value *artifactObjectValue, dir string) {
 	if value == nil || value.Type != "Generator" {
 		return
 	}
@@ -554,6 +565,14 @@ func reportGeneratorChanges(ctx context.Context, dag *dagger.Client, value *arti
 	}
 	if len(entries) == 0 {
 		return
+	}
+	if dir != "" {
+		for i := range entries {
+			entries[i].Path = dir + "/" + entries[i].Path
+			if entries[i].OldPath != "" {
+				entries[i].OldPath = dir + "/" + entries[i].OldPath
+			}
+		}
 	}
 	entries = patchpreview.Normalize(entries)
 	changes := dagui.GeneratorChanges{Files: len(entries)}
