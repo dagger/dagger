@@ -296,6 +296,18 @@ main = true
 					"generate-fail must suggest the command this example runs")
 			},
 		},
+		// So does the quoted address an agent's report suggests (see
+		// generate-fail-agent), and every report that can't name flags.
+		{
+			Name:     "generate-fail-rerun-address",
+			Function: "dag://?name=generateFail",
+			Generate: true,
+			Fail:     true,
+			FuzzyTest: func(t *testctx.T, out string) {
+				require.Contains(t, out, "✘ generate-fail ")
+				require.Contains(t, out, "boom")
+			},
+		},
 
 		// a failing staleness check must show the changes its generator would
 		// make, as a patch typed for diff highlighting, on the check's own span.

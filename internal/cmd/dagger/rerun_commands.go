@@ -15,6 +15,7 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/spf13/cobra"
+	"golang.org/x/sync/errgroup"
 )
 
 // rerunCommands holds the command lines that re-run this run's failed checks
@@ -83,16 +84,35 @@ type rerunEntry struct {
 	line        string
 }
 
-// newRerunTable lists selection's items as `dagger <cmd> -l --all
-// --format=cli` lists them, with options replayed on each line.
-func newRerunTable(ctx context.Context, dag *dagger.Client, cmd *cobra.Command, selection *core.Artifacts, options []string) (*rerunTable, error) {
+// newRerunTable lists items of selection as `dagger <cmd> -l --all
+// --format=cli` lists them, with options replayed on each line: the items
+// uris select, or with no uris, all of them. Naming an item's flags reads the
+// workspace's other paths either way, so its line is the one the whole
+// listing prints.
+func newRerunTable(ctx context.Context, dag *dagger.Client, cmd *cobra.Command, selection *core.Artifacts, uris []string, options []string) (*rerunTable, error) {
 	definitions, err := artifactDimensions(ctx, dag, selection)
 	if err != nil {
 		return nil, err
 	}
-	output, _, err := listedArtifactRows(ctx, dag, selection, cmd, definitions, false, true)
-	if err != nil {
-		return nil, err
+	var output []listedArtifact
+	if uris == nil {
+		output, _, err = listedArtifactRows(ctx, dag, selection, cmd, definitions, false, true)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		rows := make([][]listedArtifact, len(uris))
+		jobs := errgroup.Group{}
+		jobs.SetLimit(8)
+		for i, uri := range uris {
+			jobs.Go(func() error {
+				// An item that can't be listed keeps its address.
+				rows[i], _, _ = listedArtifactRows(ctx, dag, selection.FilterURI(uri), cmd, definitions, false, true)
+				return nil
+			})
+		}
+		_ = jobs.Wait()
+		output = slices.Concat(rows...)
 	}
 	output = uniqueArtifactList(output)
 	names, err := prepareArtifactOutput(ctx, dag, cmd, output, "cli")
@@ -249,13 +269,13 @@ func rerunPathMatches(full, key string) bool {
 func prepareCheckRerunCommands(ctx context.Context, dag *dagger.Client, ws *core.Workspace, checks *core.Artifacts, cmd *cobra.Command, results []artifactValueResult) {
 	rerunCommands.reset()
 	failed := failedArtifactURIs(results)
-	if len(failed) == 0 || idtui.RunningInAgent() {
+	if len(failed) == 0 || !reportNamesRerunCommands() {
 		return
 	}
 	ctx, span := Tracer().Start(ctx, "rerun commands", telemetry.Internal(), telemetry.Encapsulate())
 	defer span.End()
 	options := artifactListReplayArgs(cmd)
-	table, err := newRerunTable(ctx, dag, cmd, checks, options)
+	table, err := newRerunTable(ctx, dag, cmd, checks, failed, options)
 	if err != nil {
 		slog.Debug("failed to name the checks to re-run", "error", err)
 		return
@@ -296,7 +316,7 @@ func prepareCheckRerunCommands(ctx context.Context, dag *dagger.Client, ws *core
 		slog.Debug("failed to name the generators to re-run", "error", err)
 		return
 	}
-	generatorTable, err := newRerunTable(ctx, dag, generateCmd, generators, artifactWorkspaceOptions(options))
+	generatorTable, err := newRerunTable(ctx, dag, generateCmd, generators, nil, artifactWorkspaceOptions(options))
 	if err != nil {
 		slog.Debug("failed to name the generators to re-run", "error", err)
 		return
@@ -308,17 +328,31 @@ func prepareCheckRerunCommands(ctx context.Context, dag *dagger.Client, ws *core
 // commands that re-run the failed generators of a `dagger generate` run.
 func prepareGenerateRerunCommands(ctx context.Context, dag *dagger.Client, generators *core.Artifacts, cmd *cobra.Command, results []artifactValueResult) {
 	rerunCommands.reset()
-	if len(failedArtifactURIs(results)) == 0 || idtui.RunningInAgent() {
+	failed := failedArtifactURIs(results)
+	if len(failed) == 0 || !reportNamesRerunCommands() {
 		return
 	}
 	ctx, span := Tracer().Start(ctx, "rerun commands", telemetry.Internal(), telemetry.Encapsulate())
 	defer span.End()
-	table, err := newRerunTable(ctx, dag, cmd, generators, artifactListReplayArgs(cmd))
+	table, err := newRerunTable(ctx, dag, cmd, generators, failed, artifactListReplayArgs(cmd))
 	if err != nil {
 		slog.Debug("failed to name the generators to re-run", "error", err)
 		return
 	}
 	rerunCommands.set("generate", table)
+}
+
+// reportNamesRerunCommands reports whether this run's final report asks for
+// rerun commands: one the progress frontend renders (tty, report, or dots,
+// whose report it renders the same way), for a human, since a report for an
+// agent quotes addresses.
+func reportNamesRerunCommands() bool {
+	switch progress {
+	case "tty", "report", "dots":
+		return !idtui.RunningInAgent()
+	default:
+		return false
+	}
 }
 
 func failedArtifactURIs(results []artifactValueResult) []string {

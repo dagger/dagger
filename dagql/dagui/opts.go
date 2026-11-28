@@ -108,8 +108,9 @@ type FrontendOpts struct {
 
 	// RerunCommand, when set, gives the command line that re-runs one failed
 	// check or generator, for the "RUN LOCALLY" and "REGENERATE" sections of
-	// a report for a human: e.g. `dagger check --go-package=store
-	// --go-test=TestDatabase` rather than `dagger check "<address>"`. command
+	// a report for a human: the line `dagger <command> -l --all --format=cli`
+	// lists for the item, e.g. `dagger check --go --go-package=store
+	// --go-test=TestDatabase`, rather than `dagger check "<address>"`. command
 	// is the `dagger` command that runs it, "check" or "generate", and
 	// address is the item's name in the report: a check's name, a
 	// generator's name, or the generator a staleness check names.
