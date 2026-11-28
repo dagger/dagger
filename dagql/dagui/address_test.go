@@ -71,6 +71,12 @@ func TestParseAddress(t *testing.T) {
 			compact: "go/modules/tests go-module=./api go-test=TestHealth",
 		},
 		{
+			name:    "name column in schema case",
+			in:      "dag+check://?name=generateFile.stale",
+			want:    &Address{Types: []string{"check"}, Kind: "check", Path: "generate-file/stale"},
+			compact: "generate-file/stale",
+		},
+		{
 			name:    "name column alone",
 			in:      "dag://?name=python310.unit",
 			want:    &Address{Path: "python310/unit"},

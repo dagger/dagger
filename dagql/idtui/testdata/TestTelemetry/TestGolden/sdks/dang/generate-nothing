@@ -1,6 +1,6 @@
 Expected stderr:
 
 GENERATORS  ✔ 1 passed
-✔ generateNothing X.Xs OK
+✔ generate-nothing X.Xs OK
 
 XX:XX:XX INF no changes to apply

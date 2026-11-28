@@ -307,6 +307,10 @@ func ParseAddress(name string) (*Address, bool) {
 // its module's name if it has a single-keyed module column too, and returns
 // the pairs left. It leaves an address without a name column as it is: its
 // collection keys alone identify it.
+//
+// The name column spells fields as the schema does (generateFile.stale); the
+// path spells them in CLI case, as a path address and `dagger check -l`'s
+// links do (generate-file/stale).
 func nameAddressPath(addr *Address, pairs []addressPair) []addressPair {
 	single := func(dimension string) (int, bool) {
 		at := -1
@@ -325,7 +329,11 @@ func nameAddressPath(addr *Address, pairs []addressPair) []addressPair {
 	if !ok {
 		return pairs
 	}
-	path := strings.ReplaceAll(pairs[nameAt].key, ".", "/")
+	segments := strings.Split(pairs[nameAt].key, ".")
+	for i, segment := range segments {
+		segments[i] = kebabCase(segment)
+	}
+	path := strings.Join(segments, "/")
 	drop := []int{nameAt}
 	if moduleAt, ok := single("module"); ok {
 		addr.Module = pairs[moduleAt].key
@@ -425,7 +433,8 @@ func addressTypeKind(dimension string) string {
 	return dimension
 }
 
-// kebabCase turns a GraphQL type name like GoTest into go-test.
+// kebabCase turns a GraphQL type or field name like GoTest or generateFile
+// into go-test or generate-file.
 func kebabCase(s string) string {
 	var b strings.Builder
 	runes := []rune(s)
