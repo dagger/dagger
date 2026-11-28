@@ -79,7 +79,7 @@ func runServices(ctx context.Context, dag *dagger.Client, services *core.Artifac
 	slog.SetDefault(slog.SpanLogger(ctx, InstrumentationLibrary))
 	// Services hold their slot until they stop, so a limit would leave queued
 	// services waiting forever.
-	results, err := evaluateArtifacts(ctx, dag, services, false, 0)
+	results, err := evaluateArtifacts(ctx, dag, services, false, 0, nil)
 	if err != nil {
 		return err
 	}

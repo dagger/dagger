@@ -9,6 +9,7 @@ import (
 	"github.com/vito/tuist"
 
 	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/util/patchpreview"
 )
 
 // generatorsReport renders the GENERATORS heading plus the surfaced-generator
@@ -57,6 +58,18 @@ func (fe *frontendPretty) renderGeneratorsSection(ctx tuist.Context, r *renderer
 func (fe *frontendPretty) renderGeneratorNode(ctx tuist.Context, out TermOutput, r *renderer, node *dagui.GeneratorNode, labels artifactLabels, depth int) {
 	indent := strings.Repeat("  ", depth)
 	fmt.Fprintln(out, fe.generatorStatusLine(out, r, node, labels, indent))
+
+	// A generator that changed files lists them, with their added and
+	// removed lines: what `dagger generate` did, or would do.
+	if changes := node.Changes(); changes != nil {
+		width := 80
+		if ctx.Width > 0 {
+			width = min(width, ctx.Width-len(indent)-2)
+		}
+		for _, line := range fe.generatorChangeLines(changes, width) {
+			fmt.Fprintf(out, "%s  %s\n", indent, line)
+		}
+	}
 
 	// A failed leaf generator renders its failure inline; a failed parent
 	// defers to the failed children that explain it. Explicit error-origin
@@ -115,7 +128,7 @@ func (fe *frontendPretty) renderSpanFailureDetail(ctx tuist.Context, out TermOut
 // yellow ◐ / green ✔), label (see artifactLabel), and faint duration, at the
 // given indent.
 func (fe *frontendPretty) generatorStatusLine(out TermOutput, r *renderer, node *dagui.GeneratorNode, labels artifactLabels, indent string) string {
-	icon, color, status := surfacedSpanStatus(node.Span)
+	icon, color, status := generatorStatus(node)
 	dur := dagui.FormatDuration(node.Span.Activity.Duration(r.now))
 	return fmt.Sprintf("%s%s %s %s %s",
 		indent,
@@ -124,6 +137,35 @@ func (fe *frontendPretty) generatorStatusLine(out TermOutput, r *renderer, node 
 		out.String(dur).Faint().String(),
 		out.String(status).Foreground(color).String(),
 	)
+}
+
+// generatorChangedColor marks a generator that changed files: it succeeded,
+// so not the failure color, but did more than pass.
+const generatorChangedColor = termenv.ANSICyan
+
+// generatorStatus is surfacedSpanStatus for a generator, which reports
+// CHANGED instead of OK when it produced changes.
+func generatorStatus(node *dagui.GeneratorNode) (icon string, color termenv.Color, status string) {
+	icon, color, status = surfacedSpanStatus(node.Span)
+	if status == "OK" && node.Changes() != nil {
+		return IconSuccess, generatorChangedColor, "CHANGED"
+	}
+	return icon, color, status
+}
+
+// generatorChangeLines lists a generator's changed files as a diff stat, at
+// most width wide (see patchpreview.WriteRows).
+func (fe *frontendPretty) generatorChangeLines(changes *dagui.GeneratorChanges, width int) []string {
+	entries := make([]patchpreview.Entry, len(changes.Entries))
+	for i, change := range changes.Entries {
+		entries[i] = patchpreview.Entry{
+			Path: change.Path, OldPath: change.OldPath, Kind: change.Kind,
+			Added: change.Added, Removed: change.Removed,
+		}
+	}
+	buf := new(strings.Builder)
+	patchpreview.WriteRows(NewOutput(buf, termenv.WithProfile(fe.profile)), entries, changes.Files, max(width, 20))
+	return strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
 }
 
 // generatorLabels labels the generators listed together (see
@@ -142,13 +184,28 @@ func (fe *frontendPretty) generatorLabels(nodes []*dagui.GeneratorNode) artifact
 // with the CHECKS and TESTS headers. The nodes are the generators listed
 // directly beneath this header -- a level -- so the tally agrees with what's
 // rendered right under it.
+//
+// A generator that changed files counts as changed rather than passed, right
+// after the failed ones: what a run did comes before what it left alone.
 func generatorsHeaderLine(out TermOutput, agent bool, nodes []*dagui.GeneratorNode) string {
 	line := reportHeadingLine(out, agent, "GENERATORS")
-	spans := make([]*dagui.Span, len(nodes))
-	for i, n := range nodes {
-		spans[i] = n.Span
+	var spans []*dagui.Span
+	changed := 0
+	for _, n := range nodes {
+		if _, _, status := generatorStatus(n); status == "CHANGED" {
+			changed++
+			continue
+		}
+		spans = append(spans, n.Span)
 	}
-	for _, part := range renderTestCountParts(out, surfacedSpanCounts(spans)) {
+	counts := surfacedSpanCounts(spans)
+	parts := renderTestCountParts(out, dagui.TestCounts{Failing: counts.Failing})
+	if changed > 0 {
+		parts = append(parts, out.String(fmt.Sprintf("%s %d changed", IconSuccess, changed)).Foreground(generatorChangedColor).String())
+	}
+	counts.Failing = 0
+	parts = append(parts, renderTestCountParts(out, counts)...)
+	for _, part := range parts {
 		line += "  " + part
 	}
 	return line

@@ -33,6 +33,23 @@ func TestSummarize(t *testing.T) {
 	require.Contains(t, text, "-4")
 }
 
+// WriteRows lists the rows alone, and counts the files beyond the entries it
+// was given among the ones it doesn't list.
+func TestWriteRows(t *testing.T) {
+	entries := Normalize([]Entry{
+		{Path: "new.txt", Kind: "ADDED", Added: 1},
+		{Path: "mod.txt", Kind: "MODIFIED", Added: 1, Removed: 1},
+	})
+	var buf strings.Builder
+	out := termenv.NewOutput(&buf, termenv.WithProfile(termenv.Ascii))
+	WriteRows(out, entries, 2, 80)
+	require.Equal(t, "mod.txt +1 -1\nnew.txt +1\n", buf.String())
+
+	buf.Reset()
+	WriteRows(out, entries, 5, 80)
+	require.Equal(t, "mod.txt +1 -1\nnew.txt +1\n… and 3 more files\n", buf.String())
+}
+
 func TestSummarizeRename(t *testing.T) {
 	entries := []Entry{
 		{Path: "new.txt", OldPath: "old.txt", Kind: KindRenamed, Added: 2, Removed: 3},

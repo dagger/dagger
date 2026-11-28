@@ -2,11 +2,13 @@ package idtui
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/vito/tuist"
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
@@ -244,5 +246,72 @@ func TestGenerateReportShowsRegeneratedModules(t *testing.T) {
 		if strings.Contains(got, unwanted) {
 			t.Fatalf("final render repeats a superseded load error (%q):\n%s", unwanted, got)
 		}
+	}
+}
+
+// TestGeneratorsReportShowsChanges covers generators that produced changes:
+// each reads CHANGED, with the files it changed beneath it, and the tally
+// counts it as changed rather than passed. One with nothing to change stays
+// OK, and a failed one stays an error whatever it recorded.
+func TestGeneratorsReportShowsChanges(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	rootID := prettyTestSpanID(10)
+	start := time.Unix(100, 0)
+	gen := func(id byte, name string, changes *dagui.GeneratorChanges, failed bool) dagui.SpanSnapshot {
+		span := dagui.SpanSnapshot{
+			ID: prettyTestSpanID(id), TraceID: prettyTestTraceID(), Name: name, ParentID: rootID,
+			StartTime: start, EndTime: start.Add(time.Second), Final: true,
+			GeneratorName: name, GeneratorChanges: changes,
+		}
+		if failed {
+			span.Status = sdktrace.Status{Code: codes.Error, Description: "boom"}
+		}
+		return span
+	}
+	many := &dagui.GeneratorChanges{Files: 60, Added: 60}
+	for i := range dagui.MaxGeneratorChangeEntries {
+		many.Entries = append(many.Entries, dagui.GeneratorChange{Path: fmt.Sprintf("gen/%02d.go", i), Kind: "ADDED", Added: 1})
+	}
+	db := dagui.NewDB()
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: rootID, TraceID: prettyTestTraceID(), Name: "generate", StartTime: start, EndTime: start.Add(2 * time.Second), Final: true},
+		gen(1, "dag://?name=docs", &dagui.GeneratorChanges{Files: 2, Added: 3, Removed: 1, Entries: []dagui.GeneratorChange{
+			{Path: "docs/new.md", Kind: "ADDED", Added: 2},
+			{Path: "docs/old.md", Kind: "MODIFIED", Added: 1, Removed: 1},
+		}}, false),
+		gen(2, "dag://?name=sdk", many, false),
+		gen(3, "dag://?name=tidy", nil, false),
+	})
+	db.SetPrimarySpan(rootID)
+	fe := NewWithDB(io.Discard, db)
+	fe.recalculateViewLocked()
+
+	r := newRenderer(fe.db, 0, fe.FrontendOpts, true)
+	report := strings.Join(fe.generatorsReport(tuist.Context{Width: 120}, r, false), "\n")
+	for _, want := range []string{
+		"GENERATORS  ✔ 2 changed  ✔ 1 passed",
+		"✔ docs 1.0s CHANGED\n  docs/new.md +2\n  docs/old.md +1 -1\n",
+		"✔ sdk 1.0s CHANGED\n  gen/00.go +1\n",
+		"  … and 10 more files\n",
+		"✔ tidy 1.0s OK",
+	} {
+		if !strings.Contains(report, want) {
+			t.Errorf("missing %q in:\n%s", want, report)
+		}
+	}
+
+	// A failed generator is an error, not a change.
+	db = dagui.NewDB()
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: rootID, TraceID: prettyTestTraceID(), Name: "generate", StartTime: start, EndTime: start.Add(2 * time.Second), Final: true},
+		gen(1, "dag://?name=docs", &dagui.GeneratorChanges{Files: 1, Entries: []dagui.GeneratorChange{{Path: "docs/new.md", Kind: "ADDED"}}}, true),
+	})
+	db.SetPrimarySpan(rootID)
+	fe = NewWithDB(io.Discard, db)
+	fe.recalculateViewLocked()
+	r = newRenderer(fe.db, 0, fe.FrontendOpts, true)
+	report = strings.Join(fe.generatorsReport(tuist.Context{Width: 120}, r, false), "\n")
+	if !strings.Contains(report, "✘ docs 1.0s ERROR") || strings.Contains(report, "CHANGED") || strings.Contains(report, "docs/new.md") {
+		t.Errorf("a failed generator must report its failure only:\n%s", report)
 	}
 }

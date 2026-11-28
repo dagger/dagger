@@ -15,11 +15,17 @@ import (
 	"github.com/dagger/dagger/core/artifact"
 	"github.com/dagger/dagger/core/dagaddress"
 	"github.com/dagger/dagger/core/workspace"
+	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/dagql/idtui"
+	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/util/parallel"
+	"github.com/dagger/dagger/util/patchpreview"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/semaphore"
 )
 
@@ -53,7 +59,11 @@ type artifactExecutionError struct {
 	Values  []struct{ Name, Value string }
 }
 
-func evaluateArtifacts(ctx context.Context, dag *dagger.Client, artifacts *core.Artifacts, failFast bool, maxConcurrency int) ([]artifactValueResult, error) {
+// evaluateArtifacts evaluates each of artifacts in a job of its own, at most
+// maxConcurrency at once. onEvaluated, when set, is called with each artifact
+// that evaluated, within its job's span, once the artifact no longer holds
+// its concurrency slot.
+func evaluateArtifacts(ctx context.Context, dag *dagger.Client, artifacts *core.Artifacts, failFast bool, maxConcurrency int, onEvaluated func(context.Context, *artifactValueResult)) ([]artifactValueResult, error) {
 	if maxConcurrency < 0 {
 		return nil, fmt.Errorf("maxConcurrency must not be negative: %d", maxConcurrency)
 	}
@@ -107,15 +117,22 @@ func evaluateArtifacts(ctx context.Context, dag *dagger.Client, artifacts *core.
 				ctx = group.context(ctx)
 				defer func() { group.finish(jobErr) }()
 			}
-			err := ctx.Err()
-			if err == nil && limit != nil && !remote {
-				err = limit.Acquire(ctx, 1)
-				if err == nil {
+			err := func() error {
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+				if limit != nil && !remote {
+					if err := limit.Acquire(ctx, 1); err != nil {
+						return err
+					}
 					defer limit.Release(1)
 				}
-			}
-			if err == nil {
-				err = evaluateArtifactItem(ctx, dag, item.ID, &results[i], &syncFields)
+				return evaluateArtifactItem(ctx, dag, item.ID, &results[i], &syncFields)
+			}()
+			if err == nil && onEvaluated != nil {
+				// Past the limit: the caller's follow-up isn't the artifact's
+				// work, so it doesn't hold a slot another artifact could use.
+				onEvaluated(ctx, &results[i])
 			}
 			if err != nil {
 				if results[i].Error != nil {
@@ -522,6 +539,58 @@ func artifactListReplayArgs(cmd *cobra.Command) []string {
 		args = append(args, "--skip="+pattern)
 	}
 	return args
+}
+
+// reportGeneratorChanges records what a generator changed on its span (see
+// telemetryattrs.GeneratorChangesAttr): its changeset's diff stat, so the
+// report can say the generator changed files, and which. A generator that
+// changed nothing, or whose stat can't be read, gets no attribute: the stat
+// is for display, and the changeset is still applied as usual. dir is the
+// directory, from the workspace root, that the generator's changeset is
+// relative to ("" for the root), so its paths read from the root, as the
+// changes `dagger generate` applies do.
+func reportGeneratorChanges(ctx context.Context, dag *dagger.Client, value *artifactObjectValue, dir string) {
+	if value == nil || value.Type != "Generator" {
+		return
+	}
+	generatorSpan := trace.SpanFromContext(ctx)
+	// Reading the stat is bookkeeping, not the generator's work: keep its
+	// queries out of the generator's row.
+	statCtx, statSpan := Tracer().Start(ctx, "diff stat", telemetry.Internal(), telemetry.Encapsulate())
+	entries, err := idtui.PreviewPatch(statCtx, dag, core.Ref[*core.Generator](core.NewQuery(dag), value.ID).Changeset())
+	statSpan.End()
+	if err != nil {
+		slog.Debug("failed to read a generator's diff stat", "error", err)
+		return
+	}
+	if len(entries) == 0 {
+		return
+	}
+	if dir != "" {
+		for i := range entries {
+			entries[i].Path = dir + "/" + entries[i].Path
+			if entries[i].OldPath != "" {
+				entries[i].OldPath = dir + "/" + entries[i].OldPath
+			}
+		}
+	}
+	entries = patchpreview.Normalize(entries)
+	changes := dagui.GeneratorChanges{Files: len(entries)}
+	for i, entry := range entries {
+		changes.Added += entry.Added
+		changes.Removed += entry.Removed
+		if i < dagui.MaxGeneratorChangeEntries {
+			changes.Entries = append(changes.Entries, dagui.GeneratorChange{
+				Path: entry.Path, OldPath: entry.OldPath, Kind: entry.Kind,
+				Added: entry.Added, Removed: entry.Removed,
+			})
+		}
+	}
+	encoded, err := json.Marshal(changes)
+	if err != nil {
+		return
+	}
+	generatorSpan.SetAttributes(attribute.String(telemetryattrs.GeneratorChangesAttr, string(encoded)))
 }
 
 func reportArtifactFailureOutput(ctx context.Context, failure *artifactExecutionError) {

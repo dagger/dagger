@@ -1,6 +1,7 @@
 package dagui
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"slices"
@@ -409,6 +410,10 @@ type SpanSnapshot struct {
 	// Generator name
 	GeneratorName string `json:",omitempty"`
 
+	// GeneratorChanges is what a generator changed, when it produced
+	// changes (see telemetryattrs.GeneratorChangesAttr).
+	GeneratorChanges *GeneratorChanges `json:",omitempty"`
+
 	// Service name
 	ServiceName string `json:",omitempty"`
 
@@ -675,6 +680,12 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 
 	case telemetry.GeneratorNameAttr:
 		snapshot.GeneratorName = val.(string)
+
+	case telemetryattrs.GeneratorChangesAttr:
+		var changes GeneratorChanges
+		if err := json.Unmarshal([]byte(val.(string)), &changes); err == nil && changes.Files > 0 {
+			snapshot.GeneratorChanges = &changes
+		}
 
 	case telemetryattrs.GenerateSkippedAttr:
 		snapshot.GenerateSkipped = val.(bool)

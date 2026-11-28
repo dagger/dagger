@@ -13,6 +13,42 @@ type GeneratorNode struct {
 // failed one whenever any of its spans failed.
 func (n *GeneratorNode) Failed() bool { return n.Span.IsFailedOrCausedFailure() }
 
+// GeneratorChanges is what a `dagger generate` generator changed: its
+// changeset's diff stat, as telemetryattrs.GeneratorChangesAttr carries it on
+// the generator's span.
+type GeneratorChanges struct {
+	// Files, Added and Removed total every changed path, Entries or not.
+	Files   int `json:"files"`
+	Added   int `json:"added"`
+	Removed int `json:"removed"`
+	// Entries are the first changed paths, at most MaxGeneratorChangeEntries.
+	Entries []GeneratorChange `json:"entries,omitempty"`
+}
+
+// GeneratorChange is one changed path of a generator's changeset.
+type GeneratorChange struct {
+	Path string `json:"path"`
+	// OldPath is the path a renamed file had.
+	OldPath string `json:"oldPath,omitempty"`
+	// Kind is ADDED, MODIFIED, REMOVED or RENAMED.
+	Kind    string `json:"kind"`
+	Added   int    `json:"added,omitempty"`
+	Removed int    `json:"removed,omitempty"`
+}
+
+// MaxGeneratorChangeEntries bounds GeneratorChanges.Entries, so a generator
+// that rewrites thousands of files doesn't put them all on its span.
+const MaxGeneratorChangeEntries = 50
+
+// Changes returns what the generator changed, or nil when it produced no
+// changes, or failed.
+func (n *GeneratorNode) Changes() *GeneratorChanges {
+	if n.Failed() {
+		return nil
+	}
+	return n.Span.GeneratorChanges
+}
+
 // SurfacedGenerators returns the whole trace's `dagger generate` generator
 // runs as a tree. It is SurfacedGeneratorsForSpan relative to the trace root.
 func (db *DB) SurfacedGenerators() []*GeneratorNode {

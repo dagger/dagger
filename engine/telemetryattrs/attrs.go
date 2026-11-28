@@ -191,6 +191,16 @@ const (
 	// in place of the pre-generation load error. (bool)
 	GenerateRegeneratedAttr = "dagger.io/generate.regenerated"
 
+	// GeneratorChangesAttr carries what a `dagger generate` generator's span
+	// changed: its changeset's diff stat, one entry per changed path with its
+	// added and removed lines, and the totals over every path. Set only when
+	// the generator produced changes, whether or not they were applied, so
+	// frontends can report it as changed rather than merely OK. JSON (see
+	// dagui.GeneratorChanges): {"files":N,"added":N,"removed":N,"entries":
+	// [{"path":"...","oldPath":"...","kind":"ADDED","added":N,"removed":N}]},
+	// with at most the first 50 entries. (string)
+	GeneratorChangesAttr = "dagger.io/generator.changes"
+
 	// CheckGeneratorAttr marks a staleness check span that found its generator
 	// out of date, with the generator's dag:// address: running that generator
 	// is what fixes the check, so the TUI suggests `dagger generate` for it

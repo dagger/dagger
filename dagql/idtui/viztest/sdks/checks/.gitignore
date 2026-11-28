@@ -1,3 +1,4 @@
 /*/dagger.lock
 # what `dagger generate` writes in the golden tests (see sdkCommandExamples)
 /*/generated.txt
+/*/sub/

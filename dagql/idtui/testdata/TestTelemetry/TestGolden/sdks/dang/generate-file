@@ -1,4 +1,5 @@
 Expected stderr:
 
-GENERATORS  ✔ 1 passed
-✔ generate-file X.Xs OK
+GENERATORS  ✔ 1 changed
+✔ generate-file X.Xs CHANGED
+  viztest/sdks/checks/dang/generated.txt +1

@@ -132,10 +132,24 @@ func runGenerators(ctx context.Context, dag *dagger.Client, generators *core.Art
 		defer previewStdio.Close()
 		previewOut = previewStdio.Stderr
 	}
+	cwd, sdkGenerators, err := generatorChangesetRoots(ctx, dag)
+	if err != nil {
+		return err
+	}
+	// changesetDir is the directory, from the workspace root, that a
+	// generator's changeset is relative to.
+	changesetDir := func(uri string) string {
+		if cwd == "" || sdkGenerators[uri] {
+			return ""
+		}
+		return cwd
+	}
 	// We don't actually use the API for rendering results
 	// Instead, we rely on telemetry
 	// FIXME: this feels a little weird. Can we move the relevant telemetry collection in the API?
-	results, err := evaluateArtifacts(ctx, dag, generators, false, generateParallel)
+	results, err := evaluateArtifacts(ctx, dag, generators, false, generateParallel, func(ctx context.Context, result *artifactValueResult) {
+		reportGeneratorChanges(ctx, dag, result.Value, changesetDir(result.Artifact.URI))
+	})
 	if err != nil {
 		return err
 	}
@@ -149,34 +163,7 @@ func runGenerators(ctx context.Context, dag *dagger.Client, generators *core.Art
 		}
 		changes = append(changes, core.Ref[*core.Generator](core.NewQuery(dag), result.Value.ID).Changeset())
 	}
-	cwd, err := core.NewQuery(dag).CurrentWorkspace().Cwd(ctx)
-	if err != nil {
-		return err
-	}
-	cwd = strings.Trim(cwd, "/")
-	if cwd != "" && cwd != "." {
-		cfg, err := artifactWorkspaceConfig(ctx, core.NewQuery(dag).CurrentWorkspace())
-		if err != nil {
-			return err
-		}
-		// Installed SDK generators produce workspace-root changesets. Module
-		// generators produce changesets relative to the invocation directory.
-		var sdkPaths []string
-		for _, sdk := range cfg.SDKs {
-			sdkPaths = append(sdkPaths, cliName(sdk.Module)+"/generate")
-		}
-		sdkGenerators := map[string]bool{}
-		if len(sdkPaths) > 0 {
-			// Discovery resolves the active main, including -m overrides.
-			selected := core.NewQuery(dag).CurrentWorkspace().Artifacts(core.WorkspaceArtifactsOpts{Include: sdkPaths}).FilterTypes([]string{"Generator"})
-			uris, err := artifactURIs(ctx, dag, selected, false)
-			if err != nil {
-				return err
-			}
-			for _, uri := range uris {
-				sdkGenerators[uri] = true
-			}
-		}
+	if cwd != "" {
 		for i, changeset := range changes {
 			if sdkGenerators[results[i].Artifact.URI] {
 				continue
@@ -196,6 +183,43 @@ func runGenerators(ctx context.Context, dag *dagger.Client, generators *core.Art
 		return fmt.Errorf("%w; pass -y/--auto-apply to apply changes, or --no-apply to show them without applying", idtui.ErrNonInteractive)
 	}
 	return err
+}
+
+// generatorChangesetRoots returns where generators' changesets are rooted:
+// the invocation directory, from the workspace root ("" when it is the
+// root), which module generators' changesets are relative to, and the
+// installed SDK generators, by URI, whose changesets are relative to the
+// workspace root wherever `dagger generate` runs.
+func generatorChangesetRoots(ctx context.Context, dag *dagger.Client) (string, map[string]bool, error) {
+	cwd, err := core.NewQuery(dag).CurrentWorkspace().Cwd(ctx)
+	if err != nil {
+		return "", nil, err
+	}
+	cwd = strings.Trim(cwd, "/")
+	if cwd == "" || cwd == "." {
+		return "", nil, nil
+	}
+	cfg, err := artifactWorkspaceConfig(ctx, core.NewQuery(dag).CurrentWorkspace())
+	if err != nil {
+		return "", nil, err
+	}
+	var sdkPaths []string
+	for _, sdk := range cfg.SDKs {
+		sdkPaths = append(sdkPaths, cliName(sdk.Module)+"/generate")
+	}
+	sdkGenerators := map[string]bool{}
+	if len(sdkPaths) > 0 {
+		// Discovery resolves the active main, including -m overrides.
+		selected := core.NewQuery(dag).CurrentWorkspace().Artifacts(core.WorkspaceArtifactsOpts{Include: sdkPaths}).FilterTypes([]string{"Generator"})
+		uris, err := artifactURIs(ctx, dag, selected, false)
+		if err != nil {
+			return "", nil, err
+		}
+		for _, uri := range uris {
+			sdkGenerators[uri] = true
+		}
+	}
+	return cwd, sdkGenerators, nil
 }
 
 // Check previously unloadable modules against the complete generated tree.

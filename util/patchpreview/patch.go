@@ -45,10 +45,7 @@ func Summarize(out *termenv.Output, entries []Entry, maxWidth int) {
 		return
 	}
 
-	entries = foldRemovedDirs(entries)
-	slices.SortFunc(entries, func(a, b Entry) int {
-		return strings.Compare(a.Path, b.Path)
-	})
+	entries = Normalize(entries)
 
 	var totalAdded, totalRemoved int
 	for _, e := range entries {
@@ -56,6 +53,40 @@ func Summarize(out *termenv.Output, entries []Entry, maxWidth int) {
 		totalRemoved += e.Removed
 	}
 
+	WriteRows(out, entries, len(entries), maxWidth)
+
+	fileWord := "files"
+	if len(entries) == 1 {
+		fileWord = "file"
+	}
+	fmt.Fprintf(out, "\n%d %s changed", len(entries), fileWord)
+	if totalAdded+totalRemoved > 0 {
+		fmt.Fprint(out, ",")
+		if totalAdded > 0 {
+			out.WriteString(out.String(fmt.Sprintf(" +%d", totalAdded)).Foreground(termenv.ANSIGreen).String())
+		}
+		if totalRemoved > 0 {
+			out.WriteString(out.String(fmt.Sprintf(" -%d", totalRemoved)).Foreground(termenv.ANSIRed).String())
+		}
+		out.WriteString(" lines")
+	}
+}
+
+// Normalize prepares entries as Summarize lists them: removed files under
+// removed directories folded into a single entry, sorted by path. It may
+// reuse entries' storage.
+func Normalize(entries []Entry) []Entry {
+	entries = foldRemovedDirs(entries)
+	slices.SortFunc(entries, func(a, b Entry) int {
+		return strings.Compare(a.Path, b.Path)
+	})
+	return entries
+}
+
+// WriteRows writes Summarize's per-file rows, without its totals: at most
+// MaxEntries of entries, which Normalize has prepared, then a "… and K more
+// files" line for the rest of the total files they are the first of.
+func WriteRows(out *termenv.Output, entries []Entry, total, maxWidth int) {
 	shown := entries
 	if len(shown) > MaxEntries {
 		shown = shown[:MaxEntries]
@@ -104,28 +135,12 @@ func Summarize(out *termenv.Output, entries []Entry, maxWidth int) {
 		out.WriteString("\n")
 	}
 
-	if hidden := len(entries) - len(shown); hidden > 0 {
+	if hidden := max(total, len(entries)) - len(shown); hidden > 0 {
 		fileWord := "files"
 		if hidden == 1 {
 			fileWord = "file"
 		}
 		fmt.Fprintf(out, "… and %d more %s\n", hidden, fileWord)
-	}
-
-	fileWord := "files"
-	if len(entries) == 1 {
-		fileWord = "file"
-	}
-	fmt.Fprintf(out, "\n%d %s changed", len(entries), fileWord)
-	if totalAdded+totalRemoved > 0 {
-		fmt.Fprint(out, ",")
-		if totalAdded > 0 {
-			out.WriteString(out.String(fmt.Sprintf(" +%d", totalAdded)).Foreground(termenv.ANSIGreen).String())
-		}
-		if totalRemoved > 0 {
-			out.WriteString(out.String(fmt.Sprintf(" -%d", totalRemoved)).Foreground(termenv.ANSIRed).String())
-		}
-		out.WriteString(" lines")
 	}
 }
 
