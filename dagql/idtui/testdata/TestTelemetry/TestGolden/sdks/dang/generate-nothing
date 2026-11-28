@@ -1,0 +1,6 @@
+Expected stderr:
+
+GENERATORS  ✔ 1 passed
+✔ dag://?name=generateNothing X.Xs OK
+
+XX:XX:XX INF no changes to apply

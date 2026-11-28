@@ -438,7 +438,7 @@ main = true
 				require.True(t, depCalled)
 			},
 		},
-	}, slices.Concat(sdkExamples(), sdkCheckExamples())...) {
+	}, slices.Concat(sdkExamples(), sdkCheckExamples(), sdkCommandExamples())...) {
 		testName := ex.Name
 		goldFile := ex.Name
 		if ex.Golden != "" {
@@ -573,6 +573,9 @@ type Example struct {
 	FuzzyTest func(*testctx.T, string)
 	// Runs before the example, e.g. to write a fixture it needs.
 	Setup func(*testctx.T)
+	// Runs after the warm-ups, before the run the golden records, e.g. to
+	// undo what a warm-up wrote to the workspace.
+	AfterWarmup func(*testctx.T)
 	// Normalize output that renders an SDK's internals, such as its build for
 	// the default platform; see normalizeSDKOutput.
 	NormalizeSDK bool
@@ -655,6 +658,9 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 		}
 		t.Log("warm-up changed dagger.lock; warming up again")
 	}
+	if ex.AfterWarmup != nil {
+		ex.AfterWarmup(t)
+	}
 
 	cmd := exec.Command(daggerBin, daggerArgs...)
 	cmd.Env = append(
@@ -736,12 +742,14 @@ func readWorkspaceLocks(paths []string) string {
 }
 
 // removeFixtureWorkspaceLocks removes the lockfiles of viztest's fixture
-// workspaces. The suite keeps them until it ends, so the examples of one
-// workspace share its pins.
+// workspaces, and what generators wrote there in a run that was
+// interrupted. The suite keeps the lockfiles until it ends, so the examples
+// of one workspace share its pins.
 func removeFixtureWorkspaceLocks() {
-	locks, _ := filepath.Glob("viztest/sdks/checks/*/dagger.lock")
-	for _, lock := range locks {
-		os.Remove(lock)
+	written, _ := filepath.Glob("viztest/sdks/checks/*/dagger.lock")
+	generated, _ := filepath.Glob("viztest/sdks/checks/*/generated.txt")
+	for _, path := range append(written, generated...) {
+		os.Remove(path)
 	}
 }
 

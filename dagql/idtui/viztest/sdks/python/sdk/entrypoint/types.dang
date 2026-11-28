@@ -27,6 +27,11 @@ type ModuleTypes {
             .withCheck
         )
         .withFunction(
+          function("check_pass", typeDef.withOptional(true).withKind(TypeDefKind.VOID_KIND))
+            .withDescription("A check that logs, and passes.")
+            .withCheck
+        )
+        .withFunction(
           function("check_spans", typeDef.withOptional(true).withKind(TypeDefKind.VOID_KIND))
             .withDescription("A check that runs its steps under spans of its own, one of which fails, then raises.")
             .withCachePolicy(FunctionCachePolicy.PER_SESSION)
