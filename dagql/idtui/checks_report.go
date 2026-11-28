@@ -141,17 +141,20 @@ func (fe *frontendPretty) checkStatusLine(out TermOutput, r *renderer, node *dag
 
 // artifactLabel names a surfaced check or generator on its status line: an
 // item of a collection check by its row of the collection's table, the keys
-// that tell it apart from the other items (see dagui.CollectionTable); a DAG
-// address compactly, as its path and then its dimensions as name=key, less
-// the dimensions in hide, which every artifact listed beside it shares; and
-// any other name as it is.
+// that tell it apart from the other items (see dagui.CollectionTable), each
+// as name=key since no table heading names its column here; a DAG address
+// compactly, as its path and then its dimensions as name=key, less the
+// dimensions in hide, which every artifact listed beside it shares; and any
+// other name as it is.
 func (fe *frontendPretty) artifactLabel(span *dagui.Span, name string, hide []string) string {
 	if span != nil && span.CheckName == name {
-		// A row of empty keys says nothing: fall back to the address.
-		if row, ok := fe.db.CollectionItemRow(span); ok {
-			if label := strings.Join(row, " "); strings.TrimSpace(label) != "" {
-				return label
+		// A row with no columns says nothing: fall back to the address.
+		if dims, ok := fe.db.CollectionItemDimensions(span); ok && len(dims) > 0 {
+			parts := make([]string, len(dims))
+			for i, dim := range dims {
+				parts[i] = dim.Compact()
 			}
+			return strings.Join(parts, " ")
 		}
 	}
 	if addr, ok := dagui.ParseAddress(name); ok {

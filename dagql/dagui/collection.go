@@ -29,6 +29,21 @@ type CollectionTable struct {
 // Row returns the cells of an item's row, its keys in each column (see
 // AddressDimension.Cell), or false if the table has no such item.
 func (t *CollectionTable) Row(checkName string) ([]string, bool) {
+	dims, ok := t.RowDimensions(checkName)
+	if !ok {
+		return nil, false
+	}
+	row := make([]string, 0, len(dims))
+	for _, dim := range dims {
+		row = append(row, dim.Cell())
+	}
+	return row, true
+}
+
+// RowDimensions returns an item's row as its dimensions, one per column: a
+// column the item's address lacks is Absent. It returns false if the table
+// has no such item.
+func (t *CollectionTable) RowDimensions(checkName string) ([]AddressDimension, bool) {
 	if t == nil {
 		return nil, false
 	}
@@ -36,13 +51,15 @@ func (t *CollectionTable) Row(checkName string) ([]string, bool) {
 	if !ok {
 		return nil, false
 	}
-	row := make([]string, 0, len(t.Columns))
+	dims := make([]AddressDimension, 0, len(t.Columns))
 	for _, name := range t.Columns {
-		dim, _ := addr.Dimension(name)
-		dim.Name = name
-		row = append(row, dim.Cell())
+		dim, ok := addr.Dimension(name)
+		if !ok {
+			dim = AddressDimension{Name: name, Absent: true}
+		}
+		dims = append(dims, dim)
 	}
-	return row, true
+	return dims, true
 }
 
 // CheckCollection returns the collection group check span is, or sits
@@ -69,6 +86,20 @@ func (db *DB) CollectionItemRow(span *Span) ([]string, bool) {
 		return nil, false
 	}
 	return db.CollectionTable(group).Row(span.CheckName)
+}
+
+// CollectionItemDimensions returns the row of span, an item of a collection
+// check, as its dimensions (see CollectionTable.RowDimensions), or false if
+// it isn't one or the items' addresses don't make a table.
+func (db *DB) CollectionItemDimensions(span *Span) ([]AddressDimension, bool) {
+	if span == nil || span.CheckName == "" || span.CheckCollectionGroup {
+		return nil, false
+	}
+	group := span.CheckCollection()
+	if group == nil {
+		return nil, false
+	}
+	return db.CollectionTable(group).RowDimensions(span.CheckName)
 }
 
 // CollectionTable returns the table of the items beneath group, a collection

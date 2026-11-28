@@ -130,4 +130,9 @@ func TestCollectionTableRowCells(t *testing.T) {
 			t.Errorf("Row(%q) = %v, %v; want %v", name, row, ok, want)
 		}
 	}
+	// As dimensions, a column the item's address lacks has no key in it.
+	dims, ok := table.RowDimensions("dag://?check=verify&view-package=left&view-case=Foo")
+	if !ok || len(dims) != 3 || !dims[2].Absent || dims[2].Name != "tag" || dims[0].Compact() != "view-package=left" {
+		t.Errorf("RowDimensions = %+v, %v", dims, ok)
+	}
 }

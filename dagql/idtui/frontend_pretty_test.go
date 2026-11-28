@@ -1916,9 +1916,9 @@ func TestChecksReportLabelsAddresses(t *testing.T) {
 		"✔ lint golang-module=. ",
 		"✔ modules/test golang-module=./sdk ",
 		"✘ " + collectionGroup + " ",
-		"✘ left Bar ",
-		"✘ right Baz ",
-		"✔ left Foo ",
+		"✘ view-package=left view-case=Bar ",
+		"✘ view-package=right view-case=Baz ",
+		"✔ view-package=left view-case=Foo ",
 	} {
 		if !strings.Contains(report, want) {
 			t.Errorf("missing %q in:\n%s", want, report)
@@ -1930,7 +1930,7 @@ func TestChecksReportLabelsAddresses(t *testing.T) {
 }
 
 // TestChecksReportLabelsEmptyKeyItem covers a collection item keyed by an
-// empty string: its row says nothing, so it is labeled by its address.
+// empty string: its label still names the dimension, so it isn't blank.
 func TestChecksReportLabelsEmptyKeyItem(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	rootID := prettyTestSpanID(10)
@@ -1960,7 +1960,7 @@ func TestChecksReportLabelsEmptyKeyItem(t *testing.T) {
 
 	r := newRenderer(fe.db, 0, fe.FrontendOpts, true)
 	report := strings.Join(fe.checksReport(tuist.Context{Width: 120}, r, false), "\n")
-	for _, want := range []string{"✔ verify parts= ", "✔ a "} {
+	for _, want := range []string{"✔ parts= ", "✔ parts=a "} {
 		if !strings.Contains(report, want) {
 			t.Errorf("missing %q in:\n%s", want, report)
 		}
