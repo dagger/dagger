@@ -77,6 +77,12 @@ func TestParseAddress(t *testing.T) {
 			compact: "generate-file/stale",
 		},
 		{
+			name:    "name column with acronyms",
+			in:      "dag://?name=checkGraphQLSchema.lintSDKs.testIPv6",
+			want:    &Address{Path: "check-graphql-schema/lint-sdks/test-ipv6"},
+			compact: "check-graphql-schema/lint-sdks/test-ipv6",
+		},
+		{
 			name:    "name column alone",
 			in:      "dag://?name=python310.unit",
 			want:    &Address{Path: "python310/unit"},

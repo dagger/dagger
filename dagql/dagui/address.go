@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+
+	"github.com/dagger/dagger/engine/naming"
 )
 
 // Address is a parsed DAG address, the name `dagger check` and `dagger
@@ -351,7 +353,7 @@ func nameAddressPath(addr *Address, pairs []addressPair) []addressPair {
 	}
 	segments := strings.Split(pairs[nameAt].key, ".")
 	for i, segment := range segments {
-		segments[i] = kebabCase(segment)
+		segments[i] = cliFieldName(segment)
 	}
 	path := strings.Join(segments, "/")
 	drop := []int{nameAt}
@@ -453,8 +455,19 @@ func addressTypeKind(dimension string) string {
 	return dimension
 }
 
-// kebabCase turns a GraphQL type or field name like GoTest or generateFile
-// into go-test or generate-file.
+// cliFieldName spells a schema field name in CLI case (generateFile as
+// generate-file, checkGraphQLSchema as check-graphql-schema), by the
+// engine's naming rules, as core's Namer.CLIName does for a module of the
+// latest engine version.
+func cliFieldName(name string) string {
+	id, err := naming.Parse(name)
+	if err != nil {
+		return kebabCase(name)
+	}
+	return id.Format(naming.Kebab, naming.Uppercase)
+}
+
+// kebabCase turns a GraphQL type name like GoTest into go-test.
 func kebabCase(s string) string {
 	var b strings.Builder
 	runes := []rune(s)
