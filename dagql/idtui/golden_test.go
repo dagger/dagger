@@ -766,6 +766,11 @@ func removeFixtureWorkspaceLocks() {
 	for _, path := range append(written, generated...) {
 		os.Remove(path)
 	}
+	// the subdirectory sdks-dang-generate-file-subdir runs from
+	subdirs, _ := filepath.Glob("viztest/sdks/checks/*/sub")
+	for _, path := range subdirs {
+		os.RemoveAll(path)
+	}
 }
 
 // warmupOnce runs an example's command once, to cache what it caches, without
