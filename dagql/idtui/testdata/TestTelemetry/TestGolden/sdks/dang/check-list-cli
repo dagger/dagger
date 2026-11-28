@@ -1,0 +1,31 @@
+Expected stdout:
+
+dagger check --viztest-dang --name=checkFailExec                                                                                  # A check that runs a command that fails, and lets its error propagate.
+dagger check --viztest-dang --name=checkFailNative                                                                                # A check that logs to stdout, then raises an error of its own.
+dagger check --viztest-dang --name=checkPass                                                                                      # A check that logs, and passes.
+dagger check --viztest-dang --name=checkReturnedError                                                                             # A check that raises a Dagger Error, which it returns as an SDK returns one.
+dagger check --viztest-dang --name=generateFile.stale                                                                             # staleness check: a generator that writes a file in the directory it runs from
+dagger check --viztest-dang --name=generateNothing.stale                                                                          # staleness check: a generator with nothing to change
+dagger check 'dag+check://cases/check?type:Check=/cases/check' --viztest-dang --viztest-dang-check-case=cases.fail --name=check   # Logs the case's name, and passes unless the case is "fail".
+dagger check 'dag+check://cases/check?type:Check=/cases/check' --viztest-dang --viztest-dang-check-case=cases.pass --name=check   # Logs the case's name, and passes unless the case is "fail".
+
+
+Expected stderr:
+
+✔ connect X.Xs
+├╴✔ starting engine X.Xs
+├╴✔ connecting to engine X.Xs
+│ ┃ XX:XX:XX INF connected name=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local client-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx server-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx
+╰╴✔ starting session X.Xs
+
+✔ prepare artifacts X.Xs
+✔ list artifacts X.Xs
+  ✔ dag+check://?name=checkFailExec X.Xs
+  ✔ dag+check://?name=checkFailNative X.Xs
+  ✔ dag+check://?name=checkPass X.Xs
+  ✔ dag+check://?name=checkReturnedError X.Xs
+  ✔ dag+check://?name=generateFile.stale X.Xs
+  ✔ dag+check://?name=generateNothing.stale X.Xs
+  ✔ dag+check://?viztest-dang-check-case=cases.fail X.Xs
+  ✔ dag+check://?viztest-dang-check-case=cases.pass X.Xs
+

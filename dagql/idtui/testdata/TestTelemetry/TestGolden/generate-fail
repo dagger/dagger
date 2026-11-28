@@ -6,4 +6,4 @@ GENERATORS  ✘ 1 failed
   ! exit code: 3
 
 RUN LOCALLY
-  dagger generate "dag://?name=generateFail"
+  dagger generate --by-viztest --name=generateFail

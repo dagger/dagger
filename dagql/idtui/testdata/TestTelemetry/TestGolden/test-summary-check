@@ -25,4 +25,4 @@ CHECKS  ✘ 1 failed
     ✔ 2 passed
 
 RUN LOCALLY
-  dagger check "dag://?check=test-summary"
+  dagger check --by-viztest --name=testSummary

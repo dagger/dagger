@@ -79,6 +79,25 @@ func sdkCommandExamples() []Example {
 			NormalizeSDK: true,
 			Env:          []string{"AGENT=1"},
 		},
+		// The command check-collection suggests for its failing item runs
+		// just that item, and suggests itself again.
+		Example{
+			Name:         "sdks-dang-check-collection-rerun",
+			Golden:       "sdks/dang/check-collection-rerun",
+			Module:       workspace("dang"),
+			Function:     caseRerunArgs[0],
+			Args:         caseRerunArgs[1:],
+			Check:        true,
+			Fail:         true,
+			NormalizeSDK: true,
+			OutputTest: func(t *testctx.T, out string) {
+				require.Contains(t, out, "\n  dagger check "+caseRerunCommand+"\n")
+				require.NotContains(t, out, "cases.pass", "only the failing item runs")
+				require.Equal(t, []string{"dagger check " + caseRerunCommand},
+					goldenRerunCommands(t, "testdata/TestTelemetry/TestGolden/sdks/dang/check-collection"),
+					"check-collection must suggest the command this example runs")
+			},
+		},
 		// A collection with no items runs nothing, but was selected: the
 		// command says so, and passes.
 		Example{
@@ -98,6 +117,31 @@ func sdkCommandExamples() []Example {
 			Args:         []string{"-l"},
 			Check:        true,
 			NormalizeSDK: true,
+		},
+		// The same, as the commands that run each item. A report's RUN
+		// LOCALLY suggests exactly these: each of the check examples'
+		// commands is here.
+		Example{
+			Name:         "sdks-dang-check-list-cli",
+			Golden:       "sdks/dang/check-list-cli",
+			Module:       workspace("dang"),
+			Args:         []string{"-l", "--all", "--format=cli"},
+			Check:        true,
+			NormalizeSDK: true,
+			OutputTest: func(t *testctx.T, out string) {
+				listed := map[string]bool{}
+				for _, line := range strings.Split(out, "\n") {
+					command, _, _ := strings.Cut(line, "   # ")
+					listed[strings.TrimSpace(command)] = true
+				}
+				for _, golden := range []string{"check-collection", "checks-mixed", "check-fail-exec", "check-fail-native", "check-returned-error"} {
+					commands := goldenRerunCommands(t, filepath.Join("testdata/TestTelemetry/TestGolden/sdks/dang", golden))
+					require.NotEmpty(t, commands, "the %s example suggests a command", golden)
+					for _, command := range commands {
+						require.True(t, listed[command], "the %s example's %q must be listed", golden, command)
+					}
+				}
+			},
 		},
 		// A generator that writes a file, applied: it reads CHANGED, with
 		// the file it changed. The warm-up applies it too, so it's undone
@@ -179,6 +223,23 @@ func sdkCommandExamples() []Example {
 	)
 }
 
+// goldenRerunCommands returns the commands a golden's RUN LOCALLY section
+// suggests.
+func goldenRerunCommands(t *testctx.T, file string) []string {
+	content, err := os.ReadFile(file)
+	require.NoError(t, err)
+	_, section, _ := strings.Cut(string(content), "\nRUN LOCALLY\n")
+	var commands []string
+	for _, line := range strings.Split(section, "\n") {
+		command, ok := strings.CutPrefix(line, "  ")
+		if !ok {
+			break
+		}
+		commands = append(commands, command)
+	}
+	return commands
+}
+
 // generatorChanges returns what the named generator's span records it
 // changed, failing the test if it has no span.
 func generatorChanges(t *testctx.T, db *dagui.DB, name string) *dagui.GeneratorChanges {
@@ -193,6 +254,14 @@ func generatorChanges(t *testctx.T, db *dagui.DB, name string) *dagui.GeneratorC
 
 // caseCheck is the check of a CheckCases item, as the report names it.
 const caseCheck = "cases/check"
+
+// caseRerunArgs select the failing CheckCases item's check with flags, as
+// `dagger check -l --all --format=cli` names it: its name, check, can name
+// another path's check too, so the line starts with its exact path.
+// caseRerunCommand is them as that line quotes them.
+var caseRerunArgs = []string{"dag+check://cases/check?type:Check=/cases/check", "--viztest-dang", "--viztest-dang-check-case=cases.fail", "--name=check"}
+
+const caseRerunCommand = "'dag+check://cases/check?type:Check=/cases/check' --viztest-dang --viztest-dang-check-case=cases.fail --name=check"
 
 // assertCaseChecks checks the check-collection example: the collection's
 // summary check failed, with each item's check beneath it, only the "fail"

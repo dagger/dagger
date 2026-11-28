@@ -279,16 +279,33 @@ main = true
 		// As an AI agent sees it: an agent can't answer the apply prompt, so
 		// the rerun command says to apply (-y).
 		{Name: "generate-fail-agent", Function: "generate-fail", Generate: true, Fail: true, Env: []string{"AGENT=1"}},
-		// The rerun command the report suggests runs the generator again.
+		// The rerun command the report suggests (see generate-fail) runs the
+		// generator again, and suggests itself again.
 		{
 			Name:     "generate-fail-rerun",
+			Function: "--by-viztest",
+			Args:     []string{"--name=generateFail"},
+			Generate: true,
+			Fail:     true,
+			FuzzyTest: func(t *testctx.T, out string) {
+				require.Contains(t, out, "✘ generate-fail ")
+				require.Contains(t, out, "boom")
+				require.Contains(t, out, "\n  dagger generate --by-viztest --name=generateFail\n")
+				require.Equal(t, []string{"dagger generate --by-viztest --name=generateFail"},
+					goldenRerunCommands(t, "testdata/TestTelemetry/TestGolden/generate-fail"),
+					"generate-fail must suggest the command this example runs")
+			},
+		},
+		// So does the quoted address an agent's report suggests (see
+		// generate-fail-agent), and every report that can't name flags.
+		{
+			Name:     "generate-fail-rerun-address",
 			Function: "dag://?name=generateFail",
 			Generate: true,
 			Fail:     true,
 			FuzzyTest: func(t *testctx.T, out string) {
 				require.Contains(t, out, "✘ generate-fail ")
 				require.Contains(t, out, "boom")
-				require.Contains(t, out, `dagger generate "dag://?name=generateFail"`)
 			},
 		},
 
@@ -304,7 +321,7 @@ main = true
 				require.Contains(t, out, "+stale world")
 				require.Contains(t, out, "+brand new")
 				require.Contains(t, out, "generated files are not up to date")
-				require.Contains(t, out, `dagger generate "dag://?generator=generate-stale"`)
+				require.Contains(t, out, "dagger generate --by-viztest --name=generateStale")
 			},
 			LogTest: assertStalePatchLogged,
 		},
@@ -318,7 +335,7 @@ main = true
 			Check:    true,
 			Fail:     true,
 			FuzzyTest: func(t *testctx.T, out string) {
-				require.Contains(t, out, "dag://?check=generate-fail/stale")
+				require.Contains(t, out, "dagger check --by-viztest --name=generateFail.stale")
 				require.Contains(t, out, "boom")
 				require.NotContains(t, out, "generated files are not up to date")
 				require.NotContains(t, out, "REGENERATE")

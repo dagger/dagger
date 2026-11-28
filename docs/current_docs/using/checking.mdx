@@ -47,16 +47,16 @@ go                                    store       TestFixture   test   Run this 
 
 A row with `*` is listed even when the module found no items. If a module's rows disappear with `--all`, it found nothing to check, which usually means the project lacks the config file the module looks for, such as `.golangci.yml`.
 
-`--format=cli` prints each row as the flags that select it, and `--format=link` prints its DAG link. Add `dagger check` before a row to run it:
+`--format=cli` prints each row as the command that runs it, with the flags that select it, and `--format=link` prints its DAG link:
 
 ```shell
 dagger check -l --all --format=cli --go-package=store
 ```
 
 ```text
---go --go-package=store --check=stale            # staleness check: run go generate in this package
---go --go-package=store --go-test=TestDatabase   # Run this test.
---go --go-package=store --go-test=TestFixture    # Run this test.
+dagger check --go --go-package=store --check=stale            # staleness check: run go generate in this package
+dagger check --go --go-package=store --go-test=TestDatabase   # Run this test.
+dagger check --go --go-package=store --go-test=TestFixture    # Run this test.
 ```
 
 ## Filter checks
@@ -115,7 +115,7 @@ The same selection works as query parameters on a DAG link. Each parameter is a 
 dagger check 'dag://go/packages/tests/test?go-package=store&go-test=TestFixture'
 ```
 
-A module can run a selection together instead of one item at a time. The Go module runs the selected tests of one package with a single `go test` command, for example. Each run is named by a link. Its `check` parameter holds the shortest path that identifies the check, and the other parameters hold the keys that select the run. A run over every test in `store` names only the package. The report lists each run compactly, by the keys that tell it apart, and prints the link of each failed run. Pass the link to `dagger check` to run that selection again:
+A module can run a selection together instead of one item at a time. The Go module runs the selected tests of one package with a single `go test` command, for example. Each run is named by a link. Its `check` parameter holds the shortest path that identifies the check, and the other parameters hold the keys that select the run. A run over every test in `store` names only the package. The report lists each run compactly, by the keys that tell it apart, and prints a command that runs each failed run again. For a run of one item, it is the line `dagger check -l --all --format=cli` lists for that item: its flags, after the item's path when the flags alone could select another check. For a run of several items, such as a run over a whole package, it is the run's link:
 
 ```text
 RUN LOCALLY

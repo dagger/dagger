@@ -1863,6 +1863,44 @@ func TestRerunSectionNamesFailedGenerators(t *testing.T) {
 	}
 }
 
+// TestRerunCommandHookNamesItemsWithFlags covers FrontendOpts.RerunCommand:
+// a human's report runs each item with the command the CLI names it with,
+// in RUN LOCALLY and REGENERATE alike; an item it can't name keeps its
+// quoted address, and an agent's report always quotes addresses.
+func TestRerunCommandHookNamesItemsWithFlags(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	fe := NewWithDB(io.Discard, rerunReportDBWithGenerator(t, "dag://?generator=go/generate"))
+	fe.recalculateViewLocked()
+	type call struct{ command, address string }
+	var calls []call
+	fe.RerunCommand = func(command, address string) (string, bool) {
+		calls = append(calls, call{command, address})
+		if address == "ci:bootstrap" {
+			return "", false
+		}
+		return "dagger " + command + " --go --name=generate", true
+	}
+
+	lines := fe.renderRerunSection(nil)
+	joined := strings.Join(lines, "\n")
+	if !slices.Equal(calls, []call{{"check", "ci:bootstrap"}, {"generate", "dag://?generator=go/generate"}}) {
+		t.Fatalf("hook got %v", calls)
+	}
+	if !strings.Contains(joined, `dagger check "ci:bootstrap"`) {
+		t.Fatalf("an item the hook can't name must keep its address:\n%s", joined)
+	}
+	if !strings.Contains(joined, "dagger generate --go --name=generate") || strings.Contains(joined, `"dag://?generator=go/generate"`) {
+		t.Fatalf("REGENERATE must use the hook's command:\n%s", joined)
+	}
+
+	calls = nil
+	fe.FrontendOpts.AgentStyle = true
+	joined = strings.Join(fe.renderRerunSection(nil), "\n")
+	if len(calls) > 0 || !strings.Contains(joined, `dagger generate -y "dag://?generator=go/generate"`) {
+		t.Fatalf("an agent's report must quote addresses (hook calls %v):\n%s", calls, joined)
+	}
+}
+
 // A collection grouped under one check, as the CLI reports it: two failed
 // items and one passing item beneath the group.
 const (

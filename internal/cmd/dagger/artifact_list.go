@@ -75,7 +75,29 @@ func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *c
 	if err != nil {
 		return err
 	}
+	output, listed, err := listedArtifactRows(ctx, dag, selection, cmd, definitions, absolute, all || filtered)
+	if err != nil {
+		return err
+	}
+	format, _ := cmd.Flags().GetString("format")
+	names, err := prepareArtifactOutput(ctx, dag, cmd, output, format)
+	if err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	collapsed := len(output) < listed || slices.ContainsFunc(output, func(item listedArtifact) bool { return len(item.Presence) > 0 })
+	return reportArtifactList(ctx, cmd, output, names, collapsed)
+}
+
+// listedArtifactRows reads selection's artifacts as a listing's rows: each
+// item its own row when expand is set (--all, or a key filter), else a
+// collection's items collapsed into one row where flags can repeat. It also
+// returns how many items the rows hold.
+func listedArtifactRows(ctx context.Context, dag *dagger.Client, selection *core.Artifacts, cmd *cobra.Command, definitions artifact.Dimensions, absolute, expand bool) ([]listedArtifact, int, error) {
 	var items []listedArtifact
+	var err error
 	if collectionType := cmd.Annotations[artifactListCollection]; collectionType != "" {
 		for _, dimension := range definitions {
 			if dimension.CollectionType != collectionType {
@@ -83,17 +105,17 @@ func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *c
 			}
 			projected, err := readListedDimensionItems(ctx, dag, selection, dimension, absolute)
 			if err != nil {
-				return err
+				return nil, 0, err
 			}
 			items = append(items, projected...)
 		}
-	} else if all || filtered {
+	} else if expand {
 		items, err = readListedArtifactsMetadata(ctx, dag, selection, absolute, true)
 	} else {
 		items, err = readListedArtifactPaths(ctx, dag, selection, absolute)
 	}
 	if err != nil {
-		return err
+		return nil, 0, err
 	}
 	// Group by the full path. A projected type key can repeat across paths
 	// with different dimensions, so it only prints the group.
@@ -101,14 +123,14 @@ func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *c
 	for _, item := range items {
 		addr, err := dagaddress.Parse(item.URI)
 		if err != nil {
-			return err
+			return nil, 0, err
 		}
 		group := strings.Join(addr.Types, "+") + "\x00" + item.fullPath()
 		groups[group] = append(groups[group], item)
 	}
 	var output []listedArtifact
 	for _, group := range slices.Sorted(maps.Keys(groups)) {
-		for _, row := range artifactListRows(groups[group], all || filtered || cmd.Annotations[artifactListCollection] != "") {
+		for _, row := range artifactListRows(groups[group], expand || cmd.Annotations[artifactListCollection] != "") {
 			item := row[0]
 			item.Coordinates = listedArtifactCoordinates(row)
 			item.DimensionKeys = nil
@@ -118,22 +140,14 @@ func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *c
 			if len(row) > 1 {
 				uri, err := collapsedArtifactURI(item)
 				if err != nil {
-					return err
+					return nil, 0, err
 				}
 				item.URI = uri
 			}
 			output = append(output, item)
 		}
 	}
-	names, err := prepareArtifactOutput(ctx, dag, cmd, output)
-	if err != nil {
-		return err
-	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	collapsed := len(output) < len(items) || slices.ContainsFunc(output, func(item listedArtifact) bool { return len(item.Presence) > 0 })
-	return reportArtifactList(ctx, cmd, output, names, collapsed)
+	return output, len(items), nil
 }
 
 func collapsedArtifactURI(item listedArtifact) (string, error) {

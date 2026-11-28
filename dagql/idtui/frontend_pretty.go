@@ -4759,8 +4759,9 @@ func (fe *frontendPretty) renderSuggestionsSection(zoomed *dagui.Span) []string 
 // commit) followed by "RUN LOCALLY" ('dagger check', or 'dagger generate' for
 // a failed generator); otherwise it emits just "RUN LOCALLY". A consumer
 // with its own way to follow up (FrontendOpts.RerunSuggestion) gets its
-// section before RUN LOCALLY, which stays: its quoted addresses are what
-// re-run one item. Only outermost
+// section before RUN LOCALLY, which stays: its commands are what re-run one
+// item, each by its quoted address, or for a human by the flags the CLI
+// that ran it names it with (FrontendOpts.RerunCommand). Only outermost
 // checks are re-runnable, so sub-checks roll up to their root; a collection
 // group is the exception, since each of its items is re-runnable locally. A failed
 // staleness check also gets a "REGENERATE" section ('dagger generate' for its
@@ -4863,11 +4864,22 @@ func (fe *frontendPretty) renderRerunSection(zoomed *dagui.Span) []string {
 		return nil
 	}
 
-	// An agent can't answer generate's apply prompt, so it must be told to
-	// apply (see generateChangesetDisposition).
-	generateCmd := "dagger generate"
-	if fe.agentStyle() {
-		generateCmd += " -y"
+	// rerun is the command that re-runs one item: the caller's flag form
+	// (FrontendOpts.RerunCommand) for a human, else the item's quoted
+	// address, which always selects it. An agent can't answer generate's
+	// apply prompt, so it must be told to apply (see
+	// generateChangesetDisposition).
+	rerun := func(command, address string) string {
+		if hook := fe.RerunCommand; hook != nil && !fe.agentStyle() {
+			if line, ok := hook(command, address); ok && line != "" {
+				return line
+			}
+		}
+		base := "dagger " + command
+		if command == "generate" && fe.agentStyle() {
+			base += " -y"
+		}
+		return fmt.Sprintf("%s %q", base, address)
 	}
 
 	out := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
@@ -4896,14 +4908,14 @@ func (fe *frontendPretty) renderRerunSection(zoomed *dagui.Span) []string {
 	}
 
 	// Run the check, or the generator that failed, locally to reproduce (and
-	// then fix) the failure against your working tree. Each names its quoted
-	// address, which selects just that item.
+	// then fix) the failure against your working tree. Each selects just
+	// that item.
 	body := make([]string, 0, len(names)+len(failedGenerators))
 	for _, name := range names {
-		body = append(body, fmt.Sprintf("dagger check %q", name))
+		body = append(body, rerun("check", name))
 	}
 	for _, name := range failedGenerators {
-		body = append(body, fmt.Sprintf("%s %q", generateCmd, name))
+		body = append(body, rerun("generate", name))
 	}
 	if len(lines) > 0 {
 		lines = append(lines, "")
@@ -4914,7 +4926,7 @@ func (fe *frontendPretty) renderRerunSection(zoomed *dagui.Span) []string {
 	if len(generators) > 0 {
 		body := make([]string, 0, len(generators))
 		for _, gen := range generators {
-			body = append(body, fmt.Sprintf("%s %q", generateCmd, gen))
+			body = append(body, rerun("generate", gen))
 		}
 		if len(lines) > 0 {
 			lines = append(lines, "")

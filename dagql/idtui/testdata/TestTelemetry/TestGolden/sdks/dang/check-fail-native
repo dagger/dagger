@@ -6,4 +6,4 @@ CHECKS  ✘ 1 failed
   ! dang check failed natively
 
 RUN LOCALLY
-  dagger check "dag://?check=check-fail-native"
+  dagger check --viztest-dang --name=checkFailNative

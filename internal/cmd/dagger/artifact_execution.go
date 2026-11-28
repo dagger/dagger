@@ -531,6 +531,10 @@ func artifactListReplayArgs(cmd *cobra.Command) []string {
 	if selected {
 		args = append(args, "-W", workspace)
 	}
+	// A one-off module is part of what the command selects from.
+	if module := artifactLoadModuleArg(cmd); module != "" {
+		args = append(args, "-m", module)
+	}
 	if cmd.Flags().Changed("generated") {
 		args = append(args, "--generated="+cmd.Flag("generated").Value.String())
 	}
@@ -539,6 +543,17 @@ func artifactListReplayArgs(cmd *cobra.Command) []string {
 		args = append(args, "--skip="+pattern)
 	}
 	return args
+}
+
+// artifactLoadModuleArg returns the one-off module cmd was given with -m (or
+// its old name, --mod), or "" without one.
+func artifactLoadModuleArg(cmd *cobra.Command) string {
+	for _, name := range []string{"load-module", "mod"} {
+		if flag := cmd.Flag(name); flag != nil && flag.Changed {
+			return flag.Value.String()
+		}
+	}
+	return ""
 }
 
 // reportGeneratorChanges records what a generator changed on its span (see

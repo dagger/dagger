@@ -9,4 +9,4 @@ CHECKS  ✘ 1 failed  ✔ 1 passed
 ✔ check-pass X.Xs OK
 
 RUN LOCALLY
-  dagger check "dag://?check=check-fail-exec"
+  dagger check --viztest-dang --name=checkFailExec

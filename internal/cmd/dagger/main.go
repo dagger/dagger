@@ -1011,6 +1011,7 @@ func configureProgressOptions() {
 	opts.DotFocusField = dotFocusField
 	opts.DotShowInternal = dotShowInternal
 	opts.UsingCloudEngine = strings.HasPrefix(configuredRunnerHost(), engine.CloudRunnerHostPrefix)
+	opts.RerunCommand = rerunCommands.lookup
 }
 
 // canOpenShellOnError reports whether the CLI can hand the terminal to a shell
