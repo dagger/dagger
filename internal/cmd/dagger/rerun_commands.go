@@ -355,10 +355,13 @@ func reportNamesRerunCommands() bool {
 	}
 }
 
+// failedArtifactURIs returns the addresses of the results that failed. Not
+// of those cancelled (e.g. by --fail-fast) before they could: one that never
+// started has no row in the report to name.
 func failedArtifactURIs(results []artifactValueResult) []string {
 	var uris []string
 	for _, result := range results {
-		if result.Error != nil {
+		if result.Error != nil && result.Error.Message != context.Canceled.Error() {
 			uris = append(uris, result.Artifact.URI)
 		}
 	}

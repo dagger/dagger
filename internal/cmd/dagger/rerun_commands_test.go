@@ -1,6 +1,7 @@
 package daggercmd
 
 import (
+	"context"
 	"testing"
 
 	"github.com/dagger/dagger/core/artifact"
@@ -80,6 +81,24 @@ func TestRerunCommandsLookup(t *testing.T) {
 	commands.reset()
 	_, ok = commands.lookup("check", "dag://?module=app&check=lint")
 	require.False(t, ok, "a new run forgets the last run's items")
+}
+
+func TestFailedArtifactURIs(t *testing.T) {
+	result := func(uri, failure string) artifactValueResult {
+		var r artifactValueResult
+		r.Artifact.URI = uri
+		if failure != "" {
+			r.Error = &artifactExecutionError{Message: failure}
+		}
+		return r
+	}
+	results := []artifactValueResult{
+		result("dag://?name=pass", ""),
+		result("dag://?name=fail", "exit code: 1"),
+		// --fail-fast cancelled it before it ran.
+		result("dag://?name=cancelled", context.Canceled.Error()),
+	}
+	require.Equal(t, []string{"dag://?name=fail"}, failedArtifactURIs(results))
 }
 
 func TestArtifactListReplayLoadModule(t *testing.T) {
