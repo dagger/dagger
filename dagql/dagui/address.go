@@ -194,24 +194,6 @@ func (dim AddressDimension) CompactKeys() string {
 	return dim.Name + "=" + strings.Join(dim.Keys, ",")
 }
 
-// Cell prints the dimension as a cell of a collection table (see
-// CollectionTable), whose column heading names it: its key, "*" for any
-// key, "–" for none, or name ×count when it holds several keys.
-func (dim AddressDimension) Cell() string {
-	switch {
-	case dim.Absent:
-		return "–"
-	case dim.Any:
-		return "*"
-	case len(dim.Keys) == 0:
-		return "–"
-	case len(dim.Keys) == 1:
-		return dim.Keys[0]
-	default:
-		return dim.Name + " ×" + strconv.Itoa(len(dim.Keys))
-	}
-}
-
 // ConstantDimensions returns the dimensions all of the addresses among names
 // have the same keys in, if there are several to compare: the columns a
 // table of them would hide (dagger/dagger#15177). Names that are not

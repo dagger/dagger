@@ -32,6 +32,16 @@ func spanOf(db *DB, id byte) *Span {
 	return db.Spans.Map[testID(id)]
 }
 
+// compactRow prints a row's dimensions compactly (see
+// AddressDimension.Compact).
+func compactRow(dims []AddressDimension) []string {
+	row := make([]string, len(dims))
+	for i, dim := range dims {
+		row[i] = dim.Compact()
+	}
+	return row
+}
+
 // A collection check's items are labeled by what tells them apart: the
 // tests they ran are their tests' to show, so the package labels them.
 func TestCollectionTable(t *testing.T) {
@@ -61,13 +71,13 @@ func TestCollectionTable(t *testing.T) {
 	if !slices.Equal(table.Columns, []string{"go-package"}) {
 		t.Errorf("columns = %v, want [go-package]", table.Columns)
 	}
-	if row, ok := db.CollectionItemRow(itemA); !ok || !slices.Equal(row, []string{"pkg/a"}) {
-		t.Errorf("item row = %v, %v; want [pkg/a]", row, ok)
+	if dims, ok := db.CollectionItemDimensions(itemA); !ok || !slices.Equal(compactRow(dims), []string{"go-package=pkg/a"}) {
+		t.Errorf("item row = %v, %v; want [go-package=pkg/a]", dims, ok)
 	}
 	if itemA.CheckCollection() != group || group.CheckCollection() != group {
 		t.Error("an item and its group belong to the group")
 	}
-	if _, ok := db.CollectionItemRow(group); ok {
+	if _, ok := db.CollectionItemDimensions(group); ok {
 		t.Error("the collection itself isn't one of its items")
 	}
 	if db.CollectionTable(itemA) != nil {
@@ -88,8 +98,8 @@ func TestCollectionTableKeepsAColumn(t *testing.T) {
 		checkSnapshot(5, b, testID(2), b),
 		suiteTestSnapshot(6, "TestB", 5, "pkg/b"),
 	})
-	if row, _ := db.CollectionItemRow(spanOf(db, 3)); !slices.Equal(row, []string{"pkg/a"}) {
-		t.Errorf("item row = %v, want [pkg/a]", row)
+	if dims, _ := db.CollectionItemDimensions(spanOf(db, 3)); !slices.Equal(compactRow(dims), []string{"go-package=pkg/a"}) {
+		t.Errorf("item row = %v, want [go-package=pkg/a]", dims)
 	}
 }
 
@@ -105,12 +115,14 @@ func TestCollectionTableNeedsOnePath(t *testing.T) {
 	if table := db.CollectionTable(spanOf(db, 2)); table != nil {
 		t.Errorf("table = %+v, want none", table)
 	}
-	if _, ok := db.CollectionItemRow(spanOf(db, 3)); ok {
+	if _, ok := db.CollectionItemDimensions(spanOf(db, 3)); ok {
 		t.Error("an item of no table has no row")
 	}
 }
 
-func TestCollectionTableRowCells(t *testing.T) {
+// A row holds an item's dimension in each column: several keys, any key, or
+// none, whether the item's address says none or lacks the dimension.
+func TestCollectionTableRowDimensions(t *testing.T) {
 	table := buildCollectionTable([]collectionItem{
 		{name: "dag://?check=verify&view-package=left&view-case=Bar&tag=x&tag=y"},
 		{name: "dag://?check=verify&view-package=right&view-case=Baz&tag"},
@@ -121,18 +133,16 @@ func TestCollectionTableRowCells(t *testing.T) {
 		t.Fatalf("columns = %v", table.Columns)
 	}
 	for name, want := range map[string][]string{
-		"dag://?check=verify&view-package=left&view-case=Bar&tag=x&tag=y": {"left", "Bar", "tag ×2"},
-		"dag://?check=verify&view-package=right&view-case=Baz&tag":        {"right", "Baz", "*"},
-		"dag://?check=verify&view-package=left&view-case=Foo":             {"left", "Foo", "–"},
-		"dag://?check=verify&view-package=right&view-case=Qux&!tag":       {"right", "Qux", "–"},
+		"dag://?check=verify&view-package=left&view-case=Bar&tag=x&tag=y": {"view-package=left", "view-case=Bar", "tag×2"},
+		"dag://?check=verify&view-package=right&view-case=Baz&tag":        {"view-package=right", "view-case=Baz", "tag=*"},
+		"dag://?check=verify&view-package=left&view-case=Foo":             {"view-package=left", "view-case=Foo", "!tag"},
+		"dag://?check=verify&view-package=right&view-case=Qux&!tag":       {"view-package=right", "view-case=Qux", "!tag"},
 	} {
-		if row, ok := table.Row(name); !ok || !slices.Equal(row, want) {
-			t.Errorf("Row(%q) = %v, %v; want %v", name, row, ok, want)
+		if dims, ok := table.RowDimensions(name); !ok || !slices.Equal(compactRow(dims), want) {
+			t.Errorf("RowDimensions(%q) = %v, %v; want %v", name, compactRow(dims), ok, want)
 		}
 	}
-	// As dimensions, a column the item's address lacks has no key in it.
-	dims, ok := table.RowDimensions("dag://?check=verify&view-package=left&view-case=Foo")
-	if !ok || len(dims) != 3 || !dims[2].Absent || dims[2].Name != "tag" || dims[0].Compact() != "view-package=left" {
-		t.Errorf("RowDimensions = %+v, %v", dims, ok)
+	if _, ok := table.RowDimensions("dag://?check=other"); ok {
+		t.Error("an address that isn't an item has no row")
 	}
 }

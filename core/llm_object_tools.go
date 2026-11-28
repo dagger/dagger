@@ -1674,9 +1674,9 @@ func toolCallReportOpts() traceReportOpts {
 		// Nested work is abridged to a tail, exactly as in the flat path; the
 		// OUTPUT section carries the tool's own lines unabridged.
 		NestedLogLines: llmToolLogsMaxLines,
-		// The reader is an LLM, which has tools rather than a shell: suggest
-		// FindSpans then ReadTrace for failed checks instead of `dagger
-		// check "<name>"` commands it cannot run.
+		// The reader is an LLM, which has tools to read a trace with:
+		// suggest ReadTrace for failed checks, beside the `dagger check
+		// "<address>"` commands that re-run them.
 		SuggestReadTrace: true,
 		// A tool result is about the RESULT, not about the machinery: keep
 		// what the call surfaced (CHECKS, TESTS, SERVICES) and the OUTPUT

@@ -26,20 +26,6 @@ type CollectionTable struct {
 	Items map[string]*Address
 }
 
-// Row returns the cells of an item's row, its keys in each column (see
-// AddressDimension.Cell), or false if the table has no such item.
-func (t *CollectionTable) Row(checkName string) ([]string, bool) {
-	dims, ok := t.RowDimensions(checkName)
-	if !ok {
-		return nil, false
-	}
-	row := make([]string, 0, len(dims))
-	for _, dim := range dims {
-		row = append(row, dim.Cell())
-	}
-	return row, true
-}
-
 // RowDimensions returns an item's row as its dimensions, one per column: a
 // column the item's address lacks is Absent. It returns false if the table
 // has no such item.
@@ -74,23 +60,10 @@ func (span *Span) CheckCollection() *Span {
 	return nil
 }
 
-// CollectionItemRow returns the row of span, an item of a collection check,
-// in its collection's table (see CollectionTable), or false if it isn't one
-// or the items' addresses don't make a table.
-func (db *DB) CollectionItemRow(span *Span) ([]string, bool) {
-	if span == nil || span.CheckName == "" || span.CheckCollectionGroup {
-		return nil, false
-	}
-	group := span.CheckCollection()
-	if group == nil {
-		return nil, false
-	}
-	return db.CollectionTable(group).Row(span.CheckName)
-}
-
 // CollectionItemDimensions returns the row of span, an item of a collection
-// check, as its dimensions (see CollectionTable.RowDimensions), or false if
-// it isn't one or the items' addresses don't make a table.
+// check, in its collection's table, as its dimensions (see
+// CollectionTable.RowDimensions), or false if it isn't one or the items'
+// addresses don't make a table.
 func (db *DB) CollectionItemDimensions(span *Span) ([]AddressDimension, bool) {
 	if span == nil || span.CheckName == "" || span.CheckCollectionGroup {
 		return nil, false
