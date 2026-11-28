@@ -137,11 +137,11 @@ type traceReportOpts struct {
 	// other; see MCP.spanResult.
 	HideLogSpans map[string]bool
 
-	// SuggestReadTrace re-points the report's rerun section at trace inspection
-	// tools instead of the `dagger check "<name>"` CLI commands. Set it on
-	// every render whose reader is an LLM: use FindSpans to find a failed
-	// check's span ID, then ReadTrace for the full detail behind an abridged
-	// result. Interactive CLI rendering never sets this.
+	// SuggestReadTrace adds a SEE FULL TRACE section ahead of the report's
+	// RUN LOCALLY section: ReadTrace for each failed check's span, for the
+	// full detail behind an abridged result. RUN LOCALLY stays, with the
+	// quoted address that re-runs one item. Set it on every render whose
+	// reader is an LLM. Interactive CLI rendering never sets this.
 	SuggestReadTrace bool
 
 	// HideSpanTree drops the span tree from the report, leaving only what the

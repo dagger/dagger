@@ -3,10 +3,10 @@ Expected stderr:
 CHECKS  ✘ 1 failed  ✔ 1 passed
 ✘ cases/check X.Xs ERROR
   CHECKS  ✘ 1 failed  ✔ 1 passed
-    ✘ dag://?check=cases/check&viztest-dang-check-case=cases.fail X.Xs ERROR
+    ✘ viztest-dang-check-case=cases.fail X.Xs ERROR
       ┃ dang case fail
       ! dang case fail failed
-    ✔ dag://?check=cases/check&viztest-dang-check-case=cases.pass X.Xs OK
+    ✔ viztest-dang-check-case=cases.pass X.Xs OK
 
 RUN LOCALLY
   dagger check "dag://?check=cases/check&viztest-dang-check-case=cases.fail"

@@ -1,7 +1,7 @@
 Expected stderr:
 
 CHECKS  ✘ 1 failed
-✘ dag://?check=check-spans X.Xs ERROR
+✘ check-spans X.Xs ERROR
   ┃ web: 2 type errors
   ┃ Traceback (most recent call last):
   ┃   File "/src/sha256:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX/viztest/sdks/python/src/viztest_python/__init__.py", line XXX, in check_spans

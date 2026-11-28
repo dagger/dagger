@@ -1700,7 +1700,8 @@ main = true
 		WithNewFile("bad/main.dang", "invalid source")
 	out, err := base.With(daggerNonNestedExec("check", "--scale-out", "dag://good/verify")).CombinedOutput(ctx)
 	require.NoError(t, err, out)
-	require.Contains(t, out, "dag://?check=good/verify")
+	// The report labels a check by its path; the icon before it is colored.
+	require.Contains(t, out, " good/verify ")
 	out, err = base.With(daggerNonNestedExecFail("check", "--scale-out", "dag://good/fail")).CombinedOutput(ctx)
 	require.NoError(t, err, out)
 	require.Contains(t, out, "remote assertion")
@@ -1709,7 +1710,7 @@ main = true
 		WithNewFile("marker", "default").
 		With(daggerNonNestedExec("-m", "./good", "check", "--scale-out", "dag://verify")).CombinedOutput(ctx)
 	require.NoError(t, err, out)
-	require.Contains(t, out, "dag://?check=verify")
+	require.Contains(t, out, " verify ")
 	// The remote query must preserve explicit arguments and the selected overlay.
 	out, err = base.WithEnvVariable("_EXPERIMENTAL_DAGGER_CHECKS_SCALE_OUT", "1").
 		WithNewFile("scaleout.graphql", `{

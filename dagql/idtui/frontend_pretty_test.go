@@ -1777,21 +1777,21 @@ func TestRerunSectionSuggestsGenerateForStaleCheck(t *testing.T) {
 	}
 	fe.FrontendOpts.AgentStyle = false
 
-	// A consumer with its own vocabulary has no CLI to run either command.
+	// A consumer with tools of its own still gets the generator to run.
 	fe.RerunSuggestion = func(names []string) (string, []string) {
 		return "RE-RUN THIS CHECK", []string{"call the check tool"}
 	}
 	joined = strings.Join(fe.renderRerunSection(nil), "\n")
-	if strings.Contains(joined, "dagger generate") {
-		t.Fatalf("hooked rerun section still suggests the CLI:\n%s", joined)
+	if !strings.Contains(joined, `dagger generate "dag://?generator=go/generate"`) {
+		t.Fatalf("hooked rerun section lost the generate line:\n%s", joined)
 	}
 }
 
-// TestRerunSuggestionHookReplacesRunLocally covers the injectable rerun
-// suggestion: a headless consumer of the report (e.g. an LLM tool call result)
-// has tools rather than a `dagger` CLI, so it swaps in its own vocabulary. The
-// renderer still owns the layout.
-func TestRerunSuggestionHookReplacesRunLocally(t *testing.T) {
+// TestRerunSuggestionHookAddsSection covers the injectable rerun suggestion:
+// a headless consumer of the report (e.g. an LLM tool call result) has tools
+// of its own, so it adds its own section. RUN LOCALLY stays, for the quoted
+// address that re-runs one item. The renderer still owns the layout.
+func TestRerunSuggestionHookAddsSection(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	var gotNames []string
 	fe := NewASCIIReporterWithDB(io.Discard, rerunReportDB(t))
@@ -1813,8 +1813,53 @@ func TestRerunSuggestionHookReplacesRunLocally(t *testing.T) {
 		!strings.Contains(got, `call the check tool with name="ci:bootstrap"`) {
 		t.Fatalf("final render missing injected rerun suggestion:\n%s", got)
 	}
-	if strings.Contains(got, `dagger check "ci:bootstrap"`) || strings.Contains(got, "RUN LOCALLY") {
-		t.Fatalf("final render still suggests the CLI command:\n%s", got)
+	if !strings.Contains(got, `dagger check "ci:bootstrap"`) {
+		t.Fatalf("final render lost the address to re-run:\n%s", got)
+	}
+	if hookIdx, localIdx := strings.Index(got, "RE-RUN THIS CHECK"), strings.Index(got, "RUN LOCALLY"); localIdx < hookIdx {
+		t.Fatalf("expected the hook's section before RUN LOCALLY:\n%s", got)
+	}
+}
+
+// TestRerunSectionNamesFailedGenerators covers a failed `dagger generate`
+// generator: the report names the command that re-runs it, by its quoted
+// address, and an agent is told to apply what it generates.
+func TestRerunSectionNamesFailedGenerators(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	rootID := prettyTestSpanID(10)
+	start := time.Unix(100, 0)
+	gen := func(id byte, name string, failed bool) dagui.SpanSnapshot {
+		span := dagui.SpanSnapshot{
+			ID: prettyTestSpanID(id), TraceID: prettyTestTraceID(), Name: name, ParentID: rootID,
+			StartTime: start, EndTime: start.Add(time.Second), Final: true,
+			GeneratorName: name,
+		}
+		if failed {
+			span.Status = sdktrace.Status{Code: codes.Error}
+		}
+		return span
+	}
+	db := dagui.NewDB()
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: rootID, TraceID: prettyTestTraceID(), Name: "dagger generate", StartTime: start, EndTime: start.Add(3 * time.Second), Final: true, Status: sdktrace.Status{Code: codes.Error}},
+		gen(11, "dag://?name=generateFail", true),
+		gen(12, "dag://?name=generatePass", false),
+	})
+	db.SetPrimarySpan(rootID)
+	fe := NewWithDB(io.Discard, db)
+	fe.recalculateViewLocked()
+
+	joined := strings.Join(fe.renderRerunSection(nil), "\n")
+	if !strings.Contains(joined, "RUN LOCALLY") || !strings.Contains(joined, `dagger generate "dag://?name=generateFail"`) {
+		t.Fatalf("missing the failed generator's command:\n%s", joined)
+	}
+	if strings.Contains(joined, "generatePass") {
+		t.Fatalf("a passing generator has nothing to re-run:\n%s", joined)
+	}
+	fe.FrontendOpts.AgentStyle = true
+	joined = strings.Join(fe.renderRerunSection(nil), "\n")
+	if !strings.Contains(joined, `dagger generate -y "dag://?name=generateFail"`) {
+		t.Fatalf("agent-style generate line missing -y:\n%s", joined)
 	}
 }
 
@@ -1882,6 +1927,153 @@ func TestChecksHeaderCountsCollectionItems(t *testing.T) {
 	// The group's two failed items, plus lint and the passing item.
 	if !strings.HasPrefix(lines[0], "CHECKS") || !strings.Contains(lines[0], "2 failed") || !strings.Contains(lines[0], "2 passed") {
 		t.Fatalf("top CHECKS header = %q, want the items counted (2 failed, 2 passed)\n%s", lines[0], strings.Join(lines, "\n"))
+	}
+}
+
+// TestChecksReportLabelsAddresses covers how the CHECKS section names
+// checks: a collection's items by the keys that tell them apart, and other
+// addresses compactly, without the dimensions every check beside them shares.
+func TestChecksReportLabelsAddresses(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	rootID := prettyTestSpanID(10)
+	start := time.Unix(100, 0)
+	check := func(id byte, name string) dagui.SpanSnapshot {
+		return dagui.SpanSnapshot{
+			ID: prettyTestSpanID(id), TraceID: prettyTestTraceID(), Name: name, ParentID: rootID,
+			StartTime: start, EndTime: start.Add(time.Second), Final: true,
+			CheckName: name, CheckPassed: true,
+		}
+	}
+	spans := append([]dagui.SpanSnapshot{
+		{ID: rootID, TraceID: prettyTestTraceID(), Name: "dagger check", StartTime: start, EndTime: start.Add(3 * time.Second), Final: true},
+		check(11, "dag://?check=lint&module=golang&golang-module=."),
+		check(12, "dag+check://?module=golang&name=modules.test&golang-module=./sdk"),
+	}, collectionCheckSpans(rootID)...)
+	db := dagui.NewDB()
+	db.ImportSnapshots(spans)
+	db.SetPrimarySpan(rootID)
+	fe := NewWithDB(io.Discard, db)
+	fe.recalculateViewLocked()
+
+	r := newRenderer(fe.db, 0, fe.FrontendOpts, true)
+	report := strings.Join(fe.checksReport(tuist.Context{Width: 120}, r, false), "\n")
+	for _, want := range []string{
+		"✔ lint golang-module=. ",
+		"✔ modules/test golang-module=./sdk ",
+		"✘ " + collectionGroup + " ",
+		"✘ view-package=left view-case=Bar ",
+		"✘ view-package=right view-case=Baz ",
+		"✔ view-package=left view-case=Foo ",
+	} {
+		if !strings.Contains(report, want) {
+			t.Errorf("missing %q in:\n%s", want, report)
+		}
+	}
+	if strings.Contains(report, "dag://") || strings.Contains(report, "module=golang") {
+		t.Errorf("addresses must render compactly:\n%s", report)
+	}
+}
+
+// TestChecksReportLabelsEmptyKeyItem covers a collection item keyed by an
+// empty string: its label still names the dimension, so it isn't blank.
+func TestChecksReportLabelsEmptyKeyItem(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	rootID := prettyTestSpanID(10)
+	groupID := prettyTestSpanID(1)
+	start := time.Unix(100, 0)
+	item := func(id byte, name string) dagui.SpanSnapshot {
+		return dagui.SpanSnapshot{
+			ID: prettyTestSpanID(id), TraceID: prettyTestTraceID(), Name: name, ParentID: groupID,
+			StartTime: start, EndTime: start.Add(time.Second), Final: true,
+			CheckName: name, CheckPassed: true,
+		}
+	}
+	db := dagui.NewDB()
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: rootID, TraceID: prettyTestTraceID(), Name: "dagger check", StartTime: start, EndTime: start.Add(3 * time.Second), Final: true},
+		{
+			ID: groupID, TraceID: prettyTestTraceID(), Name: "verify", ParentID: rootID,
+			StartTime: start, EndTime: start.Add(2 * time.Second), Final: true,
+			CheckName: "verify", CheckPassed: true, CheckCollectionGroup: true,
+		},
+		item(2, "dag://?check=verify&parts="),
+		item(3, "dag://?check=verify&parts=a"),
+	})
+	db.SetPrimarySpan(rootID)
+	fe := NewWithDB(io.Discard, db)
+	fe.recalculateViewLocked()
+
+	r := newRenderer(fe.db, 0, fe.FrontendOpts, true)
+	report := strings.Join(fe.checksReport(tuist.Context{Width: 120}, r, false), "\n")
+	for _, want := range []string{"✔ parts= ", "✔ parts=a "} {
+		if !strings.Contains(report, want) {
+			t.Errorf("missing %q in:\n%s", want, report)
+		}
+	}
+}
+
+// TestChecksReportLabelsDistinct covers siblings whose compact labels would
+// read the same, counting the same number of keys: their labels list the
+// keys instead, both as a collection's items and as plain checks.
+func TestChecksReportLabelsDistinct(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	rootID := prettyTestSpanID(10)
+	groupID := prettyTestSpanID(1)
+	start := time.Unix(100, 0)
+	check := func(id byte, parent dagui.SpanID, name string) dagui.SpanSnapshot {
+		return dagui.SpanSnapshot{
+			ID: prettyTestSpanID(id), TraceID: prettyTestTraceID(), Name: name, ParentID: parent,
+			StartTime: start, EndTime: start.Add(time.Second), Final: true,
+			CheckName: name, CheckPassed: true,
+		}
+	}
+	group := check(1, rootID, "verify")
+	group.CheckCollectionGroup = true
+	db := dagui.NewDB()
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: rootID, TraceID: prettyTestTraceID(), Name: "dagger check", StartTime: start, EndTime: start.Add(3 * time.Second), Final: true},
+		group,
+		check(2, groupID, "dag://?check=verify&go-package=a&go-test=TestA&go-test=TestB"),
+		check(3, groupID, "dag://?check=verify&go-package=a&go-test=TestC&go-test=TestD"),
+		check(4, rootID, "dag://?check=lint&go-test=TestA&go-test=TestB"),
+		check(5, rootID, "dag://?check=lint&go-test=TestC&go-test=TestD"),
+	})
+	db.SetPrimarySpan(rootID)
+	fe := NewWithDB(io.Discard, db)
+	fe.recalculateViewLocked()
+
+	r := newRenderer(fe.db, 0, fe.FrontendOpts, true)
+	report := strings.Join(fe.checksReport(tuist.Context{Width: 120}, r, false), "\n")
+	for _, want := range []string{
+		"✔ go-test=TestA,TestB ",
+		"✔ go-test=TestC,TestD ",
+		"✔ lint go-test=TestA,TestB ",
+		"✔ lint go-test=TestC,TestD ",
+	} {
+		if !strings.Contains(report, want) {
+			t.Errorf("missing %q in:\n%s", want, report)
+		}
+	}
+	if strings.Contains(report, "×2") {
+		t.Errorf("labels must not collide on counts:\n%s", report)
+	}
+}
+
+// TestSiblingLabelsFallBackToNames covers siblings even their keys can't
+// tell apart: they keep their names.
+func TestSiblingLabelsFallBackToNames(t *testing.T) {
+	fe := NewWithDB(io.Discard, dagui.NewDB())
+	names := []string{"dag://?check=lint&module=a", "dag+check://lint?module=a&x"}
+	labels := fe.siblingLabels(make([]*dagui.Span, len(names)), names)
+	if got := labels.of(names[0]); got != "lint" {
+		t.Errorf("label = %q, want lint", got)
+	}
+	names = []string{"dag://?check=lint", "dag+check://lint"}
+	labels = fe.siblingLabels(make([]*dagui.Span, len(names)), names)
+	for _, name := range names {
+		if got := labels.of(name); got != name {
+			t.Errorf("label = %q, want the name %q", got, name)
+		}
 	}
 }
 

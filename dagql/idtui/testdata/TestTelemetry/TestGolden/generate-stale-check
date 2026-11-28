@@ -1,7 +1,7 @@
 Expected stderr:
 
 CHECKS  ✘ 1 failed
-✘ dag://?check=generate-stale/stale X.Xs ERROR
+✘ generate-stale/stale X.Xs ERROR
   ┃ diff --git a/greeting.txt b/greeting.txt
   ┃ index 94954ab..869f401 100644
   ┃ --- a/greeting.txt

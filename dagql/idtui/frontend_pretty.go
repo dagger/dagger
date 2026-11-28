@@ -2453,9 +2453,9 @@ type ReportRenderOpts struct {
 	// HideConversation omits the surfaced conversation, for callers rendering a summary.
 	HideConversation bool
 
-	// RerunSuggestion replaces the "RUN LOCALLY" section's heading and body,
-	// for a reader that has no `dagger` CLI to run. See
-	// dagui.FrontendOpts.RerunSuggestion; nil keeps the default CLI commands.
+	// RerunSuggestion adds a section of the caller's own before "RUN
+	// LOCALLY", for a reader with tools of its own to follow up with. See
+	// dagui.FrontendOpts.RerunSuggestion.
 	RerunSuggestion func(checkNames []string) (heading string, body []string)
 
 	// AgentStyle renders the report for an AI agent rather than a human at a
@@ -4752,18 +4752,21 @@ func (fe *frontendPretty) renderSuggestionsSection(zoomed *dagui.Span) []string 
 	return reportSectionLines(out, fe.agentStyle(), "MORE DETAILS", body)
 }
 
-// renderRerunSection prints copy-paste commands to re-run the failed checks,
-// split by intent so the two very different actions read distinctly. For a Cloud
-// trace that ran in Dagger native CI it emits a "RE-RUN IN CI" section ('dagger
-// cloud checks rerun' scoped to the trace's commit) followed by "RUN LOCALLY" ('dagger
-// check'); otherwise it emits just "RUN LOCALLY". The "RUN LOCALLY" section can
-// be overridden by FrontendOpts.RerunSuggestion, for consumers that don't have
-// a CLI to run. Only outermost
+// renderRerunSection prints copy-paste commands to re-run the failed checks
+// and generators, split by intent so the two very different actions read
+// distinctly. For a Cloud trace that ran in Dagger native CI it emits a
+// "RE-RUN IN CI" section ('dagger cloud checks rerun' scoped to the trace's
+// commit) followed by "RUN LOCALLY" ('dagger check', or 'dagger generate' for
+// a failed generator); otherwise it emits just "RUN LOCALLY". A consumer
+// with its own way to follow up (FrontendOpts.RerunSuggestion) gets its
+// section before RUN LOCALLY, which stays: its quoted addresses are what
+// re-run one item. Only outermost
 // checks are re-runnable, so sub-checks roll up to their root; a collection
 // group is the exception, since each of its items is re-runnable locally. A failed
 // staleness check also gets a "REGENERATE" section ('dagger generate' for its
 // generator), since running the generator is what fixes it. Returns nil when
-// no failed check applies. Controlled by showSuggestions at the call site.
+// no failed check or generator applies. Controlled by showSuggestions at the
+// call site.
 //
 //nolint:gocyclo // one section per rerun kind; splitting obscures the layout
 func (fe *frontendPretty) renderRerunSection(zoomed *dagui.Span) []string {
@@ -4810,7 +4813,9 @@ func (fe *frontendPretty) renderRerunSection(zoomed *dagui.Span) []string {
 			return
 		}
 		ciName := n.Name
-		if group := collectionGroupOf(n.Span); group != nil {
+		// The span's ancestors, not the surfaced tree, which a zoom into
+		// one item scopes to that item.
+		if group := n.Span.CheckCollection(); group != nil {
 			ciName = group.CheckName
 		}
 		if !seenCI[ciName] {
@@ -4853,8 +4858,16 @@ func (fe *frontendPretty) renderRerunSection(zoomed *dagui.Span) []string {
 		}
 	}
 
-	if len(names) == 0 {
+	failedGenerators := fe.rerunnableGenerators(zoomed)
+	if len(names) == 0 && len(failedGenerators) == 0 {
 		return nil
+	}
+
+	// An agent can't answer generate's apply prompt, so it must be told to
+	// apply (see generateChangesetDisposition).
+	generateCmd := "dagger generate"
+	if fe.agentStyle() {
+		generateCmd += " -y"
 	}
 
 	out := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
@@ -4871,41 +4884,37 @@ func (fe *frontendPretty) renderRerunSection(zoomed *dagui.Span) []string {
 		lines = append(lines, reportSectionLines(out, fe.agentStyle(), "RE-RUN IN CI", body)...)
 	}
 
-	// Run the check locally to reproduce (and then fix) the failure against your
-	// working tree. A caller may inject its own vocabulary here (e.g. a tool
-	// call instead of a CLI command) via FrontendOpts.RerunSuggestion.
-	heading := "RUN LOCALLY"
-	body := make([]string, 0, len(names))
+	// A caller may add its own way to follow up on the failed checks (e.g. a
+	// tool call to read their trace) via FrontendOpts.RerunSuggestion.
+	if hook := fe.RerunSuggestion; hook != nil && len(names) > 0 {
+		if heading, body := hook(names); heading != "" && len(body) > 0 {
+			if len(lines) > 0 {
+				lines = append(lines, "")
+			}
+			lines = append(lines, reportSectionLines(out, fe.agentStyle(), heading, body)...)
+		}
+	}
+
+	// Run the check, or the generator that failed, locally to reproduce (and
+	// then fix) the failure against your working tree. Each names its quoted
+	// address, which selects just that item.
+	body := make([]string, 0, len(names)+len(failedGenerators))
 	for _, name := range names {
 		body = append(body, fmt.Sprintf("dagger check %q", name))
 	}
-	if hook := fe.RerunSuggestion; hook != nil {
-		hookHeading, hookBody := hook(names)
-		if hookHeading != "" {
-			heading = hookHeading
-		}
-		body = hookBody
-		// The hook owns the vocabulary; a CLI command would be noise to it.
-		generators = nil
+	for _, name := range failedGenerators {
+		body = append(body, fmt.Sprintf("%s %q", generateCmd, name))
 	}
-	if len(body) > 0 {
-		if len(lines) > 0 {
-			lines = append(lines, "")
-		}
-		lines = append(lines, reportSectionLines(out, fe.agentStyle(), heading, body)...)
+	if len(lines) > 0 {
+		lines = append(lines, "")
 	}
+	lines = append(lines, reportSectionLines(out, fe.agentStyle(), "RUN LOCALLY", body)...)
 
-	// Run the generators whose staleness checks failed, to fix them. An agent
-	// must choose what to do with the changeset up front (see
-	// generateChangesetDisposition), so spell out applying it.
+	// Run the generators whose staleness checks failed, to fix them.
 	if len(generators) > 0 {
-		cmd := "dagger generate"
-		if fe.agentStyle() {
-			cmd += " -y"
-		}
 		body := make([]string, 0, len(generators))
 		for _, gen := range generators {
-			body = append(body, fmt.Sprintf("%s %q", cmd, gen))
+			body = append(body, fmt.Sprintf("%s %q", generateCmd, gen))
 		}
 		if len(lines) > 0 {
 			lines = append(lines, "")
@@ -4916,16 +4925,20 @@ func (fe *frontendPretty) renderRerunSection(zoomed *dagui.Span) []string {
 	return lines
 }
 
-// collectionGroupOf returns the collection group check span is, or sits
-// beneath, or nil. It walks the span's ancestors rather than the surfaced
-// tree, which a zoom into one item scopes to that item.
-func collectionGroupOf(span *dagui.Span) *dagui.Span {
-	for ; span != nil; span = span.ParentSpan {
-		if span.CheckCollectionGroup {
-			return span
+// rerunnableGenerators returns the names of the failed generators to re-run:
+// every failed outermost generator of the whole trace, or, zoomed into a
+// generator, its outermost generator if it failed.
+func (fe *frontendPretty) rerunnableGenerators(zoomed *dagui.Span) []string {
+	if zoomed != nil && zoomed.GeneratorName == "" {
+		return nil
+	}
+	var names []string
+	for _, n := range fe.reportGenerators() {
+		if n.Failed() && n.Name != "" && !slices.Contains(names, n.Name) {
+			names = append(names, n.Name)
 		}
 	}
-	return nil
+	return names
 }
 
 // outermostSurfacedCheck returns the top-level surfaced check whose subtree

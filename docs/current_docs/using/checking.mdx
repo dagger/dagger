@@ -115,10 +115,11 @@ The same selection works as query parameters on a DAG link. Each parameter is a 
 dagger check 'dag://go/packages/tests/test?go-package=store&go-test=TestFixture'
 ```
 
-A module can run a selection together instead of one item at a time. The Go module runs the selected tests of one package with a single `go test` command, for example. The report names each run by a link. Its `check` parameter holds the shortest path that identifies the check, and the other parameters hold the keys that select the run. A run over every test in `store` names only the package. Pass the link to `dagger check` to run that selection again:
+A module can run a selection together instead of one item at a time. The Go module runs the selected tests of one package with a single `go test` command, for example. Each run is named by a link. Its `check` parameter holds the shortest path that identifies the check, and the other parameters hold the keys that select the run. A run over every test in `store` names only the package. The report lists each run compactly, by the keys that tell it apart, and prints the link of each failed run. Pass the link to `dagger check` to run that selection again:
 
 ```text
-✔ dag://?check=test&go-package=store 5.3s OK
+RUN LOCALLY
+  dagger check "dag://?check=test&go-package=store"
 ```
 
 ### Select a workspace

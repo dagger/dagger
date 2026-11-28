@@ -63,7 +63,7 @@ func TestChecksReportUnreportedCheck(t *testing.T) {
 		t.Fatalf("FinalRender: %v", err)
 	}
 	got := buf.String()
-	for _, want := range []string{"1 failed", "1 not reported", "dag://?check=unreported", "NOT REPORTED"} {
+	for _, want := range []string{"1 failed", "1 not reported", "? unreported ", "NOT REPORTED"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("final render missing %q:\n%s", want, got)
 		}

@@ -43,8 +43,9 @@ func (fe *frontendPretty) renderGeneratorsSection(ctx tuist.Context, r *renderer
 
 	buf := new(strings.Builder)
 	out := NewOutput(buf, termenv.WithProfile(fe.profile))
+	labels := fe.generatorLabels(roots)
 	for _, root := range roots {
-		fe.renderGeneratorNode(ctx, out, r, root, 0)
+		fe.renderGeneratorNode(ctx, out, r, root, labels, 0)
 	}
 	return strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
 }
@@ -53,9 +54,9 @@ func (fe *frontendPretty) renderGeneratorsSection(ctx tuist.Context, r *renderer
 // status line, a failed leaf's inline error cause, and -- when it has nested
 // generators -- a nested GENERATORS header followed by the children one level
 // under it, mirroring renderCheckNode.
-func (fe *frontendPretty) renderGeneratorNode(ctx tuist.Context, out TermOutput, r *renderer, node *dagui.GeneratorNode, depth int) {
+func (fe *frontendPretty) renderGeneratorNode(ctx tuist.Context, out TermOutput, r *renderer, node *dagui.GeneratorNode, labels artifactLabels, depth int) {
 	indent := strings.Repeat("  ", depth)
-	fmt.Fprintln(out, fe.generatorStatusLine(out, r, node, indent))
+	fmt.Fprintln(out, fe.generatorStatusLine(out, r, node, labels, indent))
 
 	// A failed leaf generator renders its failure inline; a failed parent
 	// defers to the failed children that explain it. Explicit error-origin
@@ -84,8 +85,9 @@ func (fe *frontendPretty) renderGeneratorNode(ctx tuist.Context, out TermOutput,
 	if len(node.Children) > 0 {
 		subIndent := strings.Repeat("  ", depth+1)
 		fmt.Fprintf(out, "%s%s\n", subIndent, generatorsHeaderLine(out, fe.agentStyle(), node.Children))
+		childLabels := fe.generatorLabels(node.Children)
 		for _, child := range node.Children {
-			fe.renderGeneratorNode(ctx, out, r, child, depth+2)
+			fe.renderGeneratorNode(ctx, out, r, child, childLabels, depth+2)
 		}
 	}
 }
@@ -110,17 +112,29 @@ func (fe *frontendPretty) renderSpanFailureDetail(ctx tuist.Context, out TermOut
 }
 
 // generatorStatusLine renders a generator's one-line status: its icon (red ✘ /
-// yellow ◐ / green ✔), name, and faint duration, at the given indent.
-func (fe *frontendPretty) generatorStatusLine(out TermOutput, r *renderer, node *dagui.GeneratorNode, indent string) string {
+// yellow ◐ / green ✔), label (see artifactLabel), and faint duration, at the
+// given indent.
+func (fe *frontendPretty) generatorStatusLine(out TermOutput, r *renderer, node *dagui.GeneratorNode, labels artifactLabels, indent string) string {
 	icon, color, status := surfacedSpanStatus(node.Span)
 	dur := dagui.FormatDuration(node.Span.Activity.Duration(r.now))
 	return fmt.Sprintf("%s%s %s %s %s",
 		indent,
 		out.String(icon).Foreground(color).String(),
-		node.Name,
+		labels.of(node.Name),
 		out.String(dur).Faint().String(),
 		out.String(status).Foreground(color).String(),
 	)
+}
+
+// generatorLabels labels the generators listed together (see
+// siblingLabels).
+func (fe *frontendPretty) generatorLabels(nodes []*dagui.GeneratorNode) artifactLabels {
+	spans := make([]*dagui.Span, len(nodes))
+	names := make([]string, len(nodes))
+	for i, node := range nodes {
+		spans[i], names[i] = node.Span, node.Name
+	}
+	return fe.siblingLabels(spans, names)
 }
 
 // generatorsHeaderLine renders a "GENERATORS" heading with the failed/passed
@@ -177,13 +191,14 @@ func (fe *frontendPretty) generatorsRollupLines(ctx tuist.Context, r *renderer, 
 	bodyBuf := new(strings.Builder)
 	bodyOut := NewOutput(bodyBuf, termenv.WithProfile(fe.profile))
 	statuses := make([]string, 0, len(nodes))
+	labels := fe.generatorLabels(nodes)
 	detail := fe.withForkedClaims(func() {
 		for _, node := range nodes {
-			fe.renderGeneratorNode(ctx, bodyOut, r, node, 1)
+			fe.renderGeneratorNode(ctx, bodyOut, r, node, labels, 1)
 		}
 	})
 	for _, node := range nodes {
-		statuses = append(statuses, fe.generatorStatusLine(out, r, node, "  "))
+		statuses = append(statuses, fe.generatorStatusLine(out, r, node, labels, "  "))
 	}
 	lines, full := condenseRollup(out, header, bodyBuf.String(), statuses, height)
 	if full {

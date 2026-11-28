@@ -67,6 +67,18 @@ func sdkCommandExamples() []Example {
 			DBTest:  assertCaseChecks,
 			LogTest: assertLoggedOnCheckItem,
 		},
+		// The same, as an AI agent sees it: the failing item's quoted
+		// address, to re-run just it.
+		Example{
+			Name:         "sdks-dang-check-collection-agent",
+			Golden:       "sdks/dang/check-collection-agent",
+			Module:       workspace("dang"),
+			Function:     "cases/check",
+			Check:        true,
+			Fail:         true,
+			NormalizeSDK: true,
+			Env:          []string{"AGENT=1"},
+		},
 		// A collection with no items runs nothing, but was selected: the
 		// command says so, and passes.
 		Example{
@@ -90,9 +102,7 @@ func sdkCommandExamples() []Example {
 		// A generator that writes a file, applied. The warm-up applies it
 		// too, so it's undone before the run the golden records.
 		//
-		// BAD: the report says nothing of what it changed, and names the
-		// generator dag://?name=generateFile, not the
-		// dag://?generator=generate-file a staleness check suggests running.
+		// BAD: the report says nothing of what it changed.
 		Example{
 			Name:         "sdks-dang-generate-file",
 			Golden:       "sdks/dang/generate-file",
@@ -119,9 +129,6 @@ func sdkCommandExamples() []Example {
 			},
 		},
 		// A generator with nothing to change.
-		//
-		// BAD: as for generate-file, the generator is named
-		// dag://?name=generateNothing.
 		Example{
 			Name:         "sdks-dang-generate-nothing",
 			Golden:       "sdks/dang/generate-nothing",

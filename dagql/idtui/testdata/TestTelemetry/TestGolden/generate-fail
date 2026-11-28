@@ -1,6 +1,9 @@
 Expected stderr:
 
 GENERATORS  ✘ 1 failed
-✘ dag://?name=generateFail X.Xs ERROR
+✘ generate-fail X.Xs ERROR
   ┃ boom
   ! exit code: 3
+
+RUN LOCALLY
+  dagger generate "dag://?name=generateFail"

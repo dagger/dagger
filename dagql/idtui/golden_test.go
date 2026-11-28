@@ -276,6 +276,21 @@ main = true
 		// merge must surface the underlying exec error -- the failed command and
 		// its stderr -- not a bare "exit code: N" (dagger/dagger#13606).
 		{Name: "generate-fail", Function: "generate-fail", Generate: true, Fail: true},
+		// As an AI agent sees it: an agent can't answer the apply prompt, so
+		// the rerun command says to apply (-y).
+		{Name: "generate-fail-agent", Function: "generate-fail", Generate: true, Fail: true, Env: []string{"AGENT=1"}},
+		// The rerun command the report suggests runs the generator again.
+		{
+			Name:     "generate-fail-rerun",
+			Function: "dag://?name=generateFail",
+			Generate: true,
+			Fail:     true,
+			FuzzyTest: func(t *testctx.T, out string) {
+				require.Contains(t, out, "✘ generate-fail ")
+				require.Contains(t, out, "boom")
+				require.Contains(t, out, `dagger generate "dag://?name=generateFail"`)
+			},
+		},
 
 		// a failing staleness check must show the changes its generator would
 		// make, as a patch typed for diff highlighting, on the check's own span.
