@@ -15,11 +15,17 @@ import (
 	"github.com/dagger/dagger/core/artifact"
 	"github.com/dagger/dagger/core/dagaddress"
 	"github.com/dagger/dagger/core/workspace"
+	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/dagql/idtui"
+	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/util/parallel"
+	"github.com/dagger/dagger/util/patchpreview"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/semaphore"
 )
 
@@ -116,6 +122,9 @@ func evaluateArtifacts(ctx context.Context, dag *dagger.Client, artifacts *core.
 			}
 			if err == nil {
 				err = evaluateArtifactItem(ctx, dag, item.ID, &results[i], &syncFields)
+			}
+			if err == nil && isGenerator {
+				reportGeneratorChanges(ctx, dag, results[i].Value)
 			}
 			if err != nil {
 				if results[i].Error != nil {
@@ -522,6 +531,47 @@ func artifactListReplayArgs(cmd *cobra.Command) []string {
 		args = append(args, "--skip="+pattern)
 	}
 	return args
+}
+
+// reportGeneratorChanges records what a generator changed on its span (see
+// telemetryattrs.GeneratorChangesAttr): its changeset's diff stat, so the
+// report can say the generator changed files, and which. A generator that
+// changed nothing, or whose stat can't be read, gets no attribute: the stat
+// is for display, and the changeset is still applied as usual.
+func reportGeneratorChanges(ctx context.Context, dag *dagger.Client, value *artifactObjectValue) {
+	if value == nil || value.Type != "Generator" {
+		return
+	}
+	generatorSpan := trace.SpanFromContext(ctx)
+	// Reading the stat is bookkeeping, not the generator's work: keep its
+	// queries out of the generator's row.
+	statCtx, statSpan := Tracer().Start(ctx, "diff stat", telemetry.Internal(), telemetry.Encapsulate())
+	entries, err := idtui.PreviewPatch(statCtx, dag, core.Ref[*core.Generator](core.NewQuery(dag), value.ID).Changeset())
+	statSpan.End()
+	if err != nil {
+		slog.Debug("failed to read a generator's diff stat", "error", err)
+		return
+	}
+	if len(entries) == 0 {
+		return
+	}
+	entries = patchpreview.Normalize(entries)
+	changes := dagui.GeneratorChanges{Files: len(entries)}
+	for i, entry := range entries {
+		changes.Added += entry.Added
+		changes.Removed += entry.Removed
+		if i < dagui.MaxGeneratorChangeEntries {
+			changes.Entries = append(changes.Entries, dagui.GeneratorChange{
+				Path: entry.Path, OldPath: entry.OldPath, Kind: entry.Kind,
+				Added: entry.Added, Removed: entry.Removed,
+			})
+		}
+	}
+	encoded, err := json.Marshal(changes)
+	if err != nil {
+		return
+	}
+	generatorSpan.SetAttributes(attribute.String(telemetryattrs.GeneratorChangesAttr, string(encoded)))
 }
 
 func reportArtifactFailureOutput(ctx context.Context, failure *artifactExecutionError) {

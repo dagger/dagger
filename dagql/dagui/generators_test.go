@@ -1,9 +1,11 @@
 package dagui
 
 import (
+	"reflect"
 	"testing"
 	"time"
 
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
@@ -20,6 +22,29 @@ func generatorSnapshot(id byte, name string, parent SpanID, generatorName string
 		ParentID:      parent,
 		GeneratorName: generatorName,
 		Status:        sdktrace.Status{},
+	}
+}
+
+// TestGeneratorChangesAttribute covers the generator span attribute that
+// carries what it changed: decoded onto the snapshot when it names changed
+// files, and ignored when it names none or can't be decoded.
+func TestGeneratorChangesAttribute(t *testing.T) {
+	var snapshot SpanSnapshot
+	snapshot.ProcessAttribute(telemetryattrs.GeneratorChangesAttr,
+		`{"files":2,"added":3,"removed":1,"entries":[{"path":"new.md","kind":"ADDED","added":2},{"path":"b.md","oldPath":"a.md","kind":"RENAMED","added":1,"removed":1}]}`)
+	want := &GeneratorChanges{Files: 2, Added: 3, Removed: 1, Entries: []GeneratorChange{
+		{Path: "new.md", Kind: "ADDED", Added: 2},
+		{Path: "b.md", OldPath: "a.md", Kind: "RENAMED", Added: 1, Removed: 1},
+	}}
+	if !reflect.DeepEqual(snapshot.GeneratorChanges, want) {
+		t.Errorf("GeneratorChanges = %+v, want %+v", snapshot.GeneratorChanges, want)
+	}
+	for _, val := range []string{`{"files":0}`, `not json`} {
+		var snapshot SpanSnapshot
+		snapshot.ProcessAttribute(telemetryattrs.GeneratorChangesAttr, val)
+		if snapshot.GeneratorChanges != nil {
+			t.Errorf("GeneratorChanges for %q = %+v, want none", val, snapshot.GeneratorChanges)
+		}
 	}
 }
 
