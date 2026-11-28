@@ -1967,6 +1967,71 @@ func TestChecksReportLabelsEmptyKeyItem(t *testing.T) {
 	}
 }
 
+// TestChecksReportLabelsDistinct covers siblings whose compact labels would
+// read the same, counting the same number of keys: their labels list the
+// keys instead, both as a collection's items and as plain checks.
+func TestChecksReportLabelsDistinct(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	rootID := prettyTestSpanID(10)
+	groupID := prettyTestSpanID(1)
+	start := time.Unix(100, 0)
+	check := func(id byte, parent dagui.SpanID, name string) dagui.SpanSnapshot {
+		return dagui.SpanSnapshot{
+			ID: prettyTestSpanID(id), TraceID: prettyTestTraceID(), Name: name, ParentID: parent,
+			StartTime: start, EndTime: start.Add(time.Second), Final: true,
+			CheckName: name, CheckPassed: true,
+		}
+	}
+	group := check(1, rootID, "verify")
+	group.CheckCollectionGroup = true
+	db := dagui.NewDB()
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: rootID, TraceID: prettyTestTraceID(), Name: "dagger check", StartTime: start, EndTime: start.Add(3 * time.Second), Final: true},
+		group,
+		check(2, groupID, "dag://?check=verify&go-package=a&go-test=TestA&go-test=TestB"),
+		check(3, groupID, "dag://?check=verify&go-package=a&go-test=TestC&go-test=TestD"),
+		check(4, rootID, "dag://?check=lint&go-test=TestA&go-test=TestB"),
+		check(5, rootID, "dag://?check=lint&go-test=TestC&go-test=TestD"),
+	})
+	db.SetPrimarySpan(rootID)
+	fe := NewWithDB(io.Discard, db)
+	fe.recalculateViewLocked()
+
+	r := newRenderer(fe.db, 0, fe.FrontendOpts, true)
+	report := strings.Join(fe.checksReport(tuist.Context{Width: 120}, r, false), "\n")
+	for _, want := range []string{
+		"✔ go-test=TestA,TestB ",
+		"✔ go-test=TestC,TestD ",
+		"✔ lint go-test=TestA,TestB ",
+		"✔ lint go-test=TestC,TestD ",
+	} {
+		if !strings.Contains(report, want) {
+			t.Errorf("missing %q in:\n%s", want, report)
+		}
+	}
+	if strings.Contains(report, "×2") {
+		t.Errorf("labels must not collide on counts:\n%s", report)
+	}
+}
+
+// TestSiblingLabelsFallBackToNames covers siblings even their keys can't
+// tell apart: they keep their names.
+func TestSiblingLabelsFallBackToNames(t *testing.T) {
+	fe := NewWithDB(io.Discard, dagui.NewDB())
+	names := []string{"dag://?check=lint&module=a", "dag+check://lint?module=a&x"}
+	labels := fe.siblingLabels(make([]*dagui.Span, len(names)), names)
+	if got := labels.of(names[0]); got != "lint" {
+		t.Errorf("label = %q, want lint", got)
+	}
+	names = []string{"dag://?check=lint", "dag+check://lint"}
+	labels = fe.siblingLabels(make([]*dagui.Span, len(names)), names)
+	for _, name := range names {
+		if got := labels.of(name); got != name {
+			t.Errorf("label = %q, want the name %q", got, name)
+		}
+	}
+}
+
 // TestRerunSectionNamesFailedCollectionItems covers a collection grouped under
 // one check: running the group would rerun every item, so each failed item
 // gets its own local command, while the native CI re-run keeps the group.

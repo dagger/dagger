@@ -136,6 +136,17 @@ func (addr *Address) Compact() string {
 // ConstantDimensions), which say nothing about it among them. Hiding
 // "module" drops the module a name column's address folded into its path.
 func (addr *Address) CompactWithout(hide []string) string {
+	return addr.compact(hide, AddressDimension.Compact)
+}
+
+// CompactKeysWithout prints the address as CompactWithout does, but lists
+// every key of a dimension holding several (see AddressDimension.CompactKeys),
+// for artifacts that their counts alone would not tell apart.
+func (addr *Address) CompactKeysWithout(hide []string) string {
+	return addr.compact(hide, AddressDimension.CompactKeys)
+}
+
+func (addr *Address) compact(hide []string, dimension func(AddressDimension) string) string {
 	parts := []string{}
 	if addr.Workspace != "" {
 		parts = append(parts, addr.Workspace+"@"+addr.Version)
@@ -151,7 +162,7 @@ func (addr *Address) CompactWithout(hide []string) string {
 	}
 	for _, dim := range addr.Dimensions {
 		if !slices.Contains(hide, dim.Name) {
-			parts = append(parts, dim.Compact())
+			parts = append(parts, dimension(dim))
 		}
 	}
 	return strings.Join(parts, " ")
@@ -170,6 +181,15 @@ func (dim AddressDimension) Compact() string {
 	default:
 		return dim.Name + "×" + strconv.Itoa(len(dim.Keys))
 	}
+}
+
+// CompactKeys prints the dimension as Compact does, but one holding several
+// keys as name=key,key,... rather than by their count.
+func (dim AddressDimension) CompactKeys() string {
+	if dim.Any || dim.Absent || len(dim.Keys) < 2 {
+		return dim.Compact()
+	}
+	return dim.Name + "=" + strings.Join(dim.Keys, ",")
 }
 
 // Cell prints the dimension as a cell of a collection table (see

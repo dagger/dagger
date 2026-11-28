@@ -212,6 +212,16 @@ func TestAddressCompactWithout(t *testing.T) {
 	}
 }
 
+func TestAddressCompactKeysWithout(t *testing.T) {
+	addr, ok := ParseAddress("dag://?check=lint&module=golang&go-test=TestA&go-test=TestB&go-package=.&tag&!cell")
+	if !ok {
+		t.Fatal("not parsed")
+	}
+	if got, want := addr.CompactKeysWithout([]string{"module"}), "lint go-test=TestA,TestB go-package=. tag=* !cell"; got != want {
+		t.Errorf("CompactKeysWithout = %q, want %q", got, want)
+	}
+}
+
 func TestAddressSegments(t *testing.T) {
 	addr, ok := ParseAddress("dag://?check=test-split/test-base")
 	if !ok {

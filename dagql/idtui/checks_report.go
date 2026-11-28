@@ -52,9 +52,9 @@ func (fe *frontendPretty) renderChecksSection(ctx tuist.Context, r *renderer) []
 
 	buf := new(strings.Builder)
 	out := NewOutput(buf, termenv.WithProfile(fe.profile))
-	hide := constantCheckDimensions(roots)
+	labels := fe.checkLabels(roots)
 	for _, root := range roots {
-		fe.renderCheckNode(ctx, out, r, root, hide, 0)
+		fe.renderCheckNode(ctx, out, r, root, labels, 0)
 	}
 	return strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
 }
@@ -64,11 +64,11 @@ func (fe *frontendPretty) renderChecksSection(ctx tuist.Context, r *renderer) []
 // test rollup), and -- when it has sub-checks -- a nested CHECKS header followed
 // by the children one level under it. It writes to out and is shared by the
 // final report (renderChecksSection) and the live inline rollup
-// (renderInlineChecks), so both surface sub-checks identically. hide names
-// the address dimensions its siblings all share (see artifactLabel).
-func (fe *frontendPretty) renderCheckNode(ctx tuist.Context, out TermOutput, r *renderer, node *dagui.CheckNode, hide []string, depth int) {
+// (renderInlineChecks), so both surface sub-checks identically. labels holds
+// its label among its siblings (see checkLabels).
+func (fe *frontendPretty) renderCheckNode(ctx tuist.Context, out TermOutput, r *renderer, node *dagui.CheckNode, labels artifactLabels, depth int) {
 	indent := strings.Repeat("  ", depth)
-	fmt.Fprintln(out, fe.checkStatusLine(out, r, node, hide, indent))
+	fmt.Fprintln(out, fe.checkStatusLine(out, r, node, labels, indent))
 
 	// A failed leaf check renders its failure inline; a failed parent check
 	// defers to the failed children that explain it. A passing leaf check that
@@ -117,9 +117,9 @@ func (fe *frontendPretty) renderCheckNode(ctx tuist.Context, out TermOutput, r *
 	if len(node.Children) > 0 {
 		subIndent := strings.Repeat("  ", depth+1)
 		fmt.Fprintf(out, "%s%s\n", subIndent, checksHeaderLine(out, fe.agentStyle(), node.Children))
-		childHide := constantCheckDimensions(node.Children)
+		childLabels := fe.checkLabels(node.Children)
 		for _, child := range node.Children {
-			fe.renderCheckNode(ctx, out, r, child, childHide, depth+2)
+			fe.renderCheckNode(ctx, out, r, child, childLabels, depth+2)
 		}
 	}
 }
@@ -127,16 +127,70 @@ func (fe *frontendPretty) renderCheckNode(ctx tuist.Context, out TermOutput, r *
 // checkStatusLine renders a check's one-line status: its icon (red ✘ / yellow
 // ◐ / green ✔), label (see artifactLabel), and faint duration, at the given
 // indent.
-func (fe *frontendPretty) checkStatusLine(out TermOutput, r *renderer, node *dagui.CheckNode, hide []string, indent string) string {
+func (fe *frontendPretty) checkStatusLine(out TermOutput, r *renderer, node *dagui.CheckNode, labels artifactLabels, indent string) string {
 	icon, color, status := surfacedSpanStatus(node.Span)
 	dur := dagui.FormatDuration(node.Span.Activity.Duration(r.now))
 	return fmt.Sprintf("%s%s %s %s %s",
 		indent,
 		out.String(icon).Foreground(color).String(),
-		fe.artifactLabel(node.Span, node.Name, hide),
+		labels.of(node.Name),
 		out.String(dur).Faint().String(),
 		out.String(status).Foreground(color).String(),
 	)
+}
+
+// artifactLabels maps the names of checks or generators listed together, as
+// siblings, to their labels (see artifactLabel). A name it lacks labels as
+// itself.
+type artifactLabels map[string]string
+
+func (labels artifactLabels) of(name string) string {
+	if label, ok := labels[name]; ok {
+		return label
+	}
+	return name
+}
+
+// checkLabels labels the checks listed together (see siblingLabels).
+func (fe *frontendPretty) checkLabels(nodes []*dagui.CheckNode) artifactLabels {
+	spans := make([]*dagui.Span, len(nodes))
+	names := make([]string, len(nodes))
+	for i, node := range nodes {
+		spans[i], names[i] = node.Span, node.Name
+	}
+	return fe.siblingLabels(spans, names)
+}
+
+// siblingLabels labels artifacts listed together (see artifactLabel), less
+// the address dimensions they all share (see dagui.ConstantDimensions). Each
+// label tells its artifact apart from the others: where counts make labels
+// read the same (go-test×2), they list the keys instead, and where even keys
+// can't, the artifacts keep their names.
+func (fe *frontendPretty) siblingLabels(spans []*dagui.Span, names []string) artifactLabels {
+	hide := dagui.ConstantDimensions(names)
+	labels := make([]string, len(names))
+	for i, name := range names {
+		labels[i] = fe.artifactLabel(spans[i], name, hide, false)
+	}
+	for _, fallback := range []func(i int) string{
+		func(i int) string { return fe.artifactLabel(spans[i], names[i], hide, true) },
+		func(i int) string { return names[i] },
+	} {
+		seen := map[string]int{}
+		for _, label := range labels {
+			seen[label]++
+		}
+		for i, label := range labels {
+			if seen[label] > 1 {
+				labels[i] = fallback(i)
+			}
+		}
+	}
+	byName := make(artifactLabels, len(names))
+	for i, name := range names {
+		byName[name] = labels[i]
+	}
+	return byName
 }
 
 // artifactLabel names a surfaced check or generator on its status line: an
@@ -145,34 +199,31 @@ func (fe *frontendPretty) checkStatusLine(out TermOutput, r *renderer, node *dag
 // as name=key since no table heading names its column here; a DAG address
 // compactly, as its path and then its dimensions as name=key, less the
 // dimensions in hide, which every artifact listed beside it shares; and any
-// other name as it is.
-func (fe *frontendPretty) artifactLabel(span *dagui.Span, name string, hide []string) string {
+// other name as it is. With listKeys, a dimension holding several keys lists
+// them rather than their count.
+func (fe *frontendPretty) artifactLabel(span *dagui.Span, name string, hide []string, listKeys bool) string {
+	compactDim := dagui.AddressDimension.Compact
+	compactAddr := (*dagui.Address).CompactWithout
+	if listKeys {
+		compactDim = dagui.AddressDimension.CompactKeys
+		compactAddr = (*dagui.Address).CompactKeysWithout
+	}
 	if span != nil && span.CheckName == name {
 		// A row with no columns says nothing: fall back to the address.
 		if dims, ok := fe.db.CollectionItemDimensions(span); ok && len(dims) > 0 {
 			parts := make([]string, len(dims))
 			for i, dim := range dims {
-				parts[i] = dim.Compact()
+				parts[i] = compactDim(dim)
 			}
 			return strings.Join(parts, " ")
 		}
 	}
 	if addr, ok := dagui.ParseAddress(name); ok {
-		if label := addr.CompactWithout(hide); label != "" {
+		if label := compactAddr(addr, hide); label != "" {
 			return label
 		}
 	}
 	return name
-}
-
-// constantCheckDimensions returns the address dimensions the checks listed
-// together all share (see dagui.ConstantDimensions).
-func constantCheckDimensions(nodes []*dagui.CheckNode) []string {
-	names := make([]string, len(nodes))
-	for i, node := range nodes {
-		names[i] = node.Name
-	}
-	return dagui.ConstantDimensions(names)
 }
 
 // surfacedSpanStatus is the icon, color and status label for a surfaced check
@@ -540,15 +591,15 @@ func (fe *frontendPretty) checksRollupLines(ctx tuist.Context, r *renderer, chil
 
 	bodyBuf := new(strings.Builder)
 	bodyOut := NewOutput(bodyBuf, termenv.WithProfile(fe.profile))
-	hide := constantCheckDimensions(children)
+	labels := fe.checkLabels(children)
 	detail := fe.withForkedClaims(func() {
 		for _, child := range children {
-			fe.renderCheckNode(ctx, bodyOut, r, child, hide, 1)
+			fe.renderCheckNode(ctx, bodyOut, r, child, labels, 1)
 		}
 	})
 	statuses := make([]string, 0, len(children))
 	for _, child := range children {
-		statuses = append(statuses, fe.checkStatusLine(out, r, child, hide, "  "))
+		statuses = append(statuses, fe.checkStatusLine(out, r, child, labels, "  "))
 	}
 	lines, full := condenseRollup(out, header, bodyBuf.String(), statuses, height)
 	if full {
