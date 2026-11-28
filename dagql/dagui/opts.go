@@ -98,13 +98,28 @@ type FrontendOpts struct {
 	// agent that has *tools* besides a `dagger` CLI, such as one to read a
 	// failed check's trace. The renderer keeps owning the layout while the
 	// caller owns the vocabulary -- no knowledge of any particular harness or
-	// tool name belongs in the frontend. RUN LOCALLY stays: its quoted
-	// addresses are what re-run one item.
+	// tool name belongs in the frontend. RUN LOCALLY stays: its commands are
+	// what re-run one item.
 	//
 	// It is given the re-runnable (outermost, failed) check names in report
 	// order and returns the section's heading and body lines. An empty heading
 	// or body omits the section.
 	RerunSuggestion func(checkNames []string) (heading string, body []string)
+
+	// RerunCommand, when set, gives the command line that re-runs one failed
+	// check or generator, for the "RUN LOCALLY" and "REGENERATE" sections of
+	// a report for a human: e.g. `dagger check --go-package=store
+	// --go-test=TestDatabase` rather than `dagger check "<address>"`. command
+	// is the `dagger` command that runs it, "check" or "generate", and
+	// address is the item's name in the report: a check's name, a
+	// generator's name, or the generator a staleness check names.
+	//
+	// It is set by the CLI that ran the items, which knows the workspace and
+	// so the flags that select an item. It returns false where it can't name
+	// the item with flags, or knows nothing about it (e.g. a trace replayed
+	// later); the report then quotes the address, which always selects the
+	// item. A report for an AI agent always quotes the address.
+	RerunCommand func(command, address string) (line string, ok bool)
 
 	// AgentStyle renders for an AI agent rather than a human at a terminal:
 	// section headings become flat, greppable "== TITLE ==" markers instead of

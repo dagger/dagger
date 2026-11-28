@@ -9,4 +9,4 @@ CHECKS  ✘ 1 failed  ✔ 1 passed
     ✔ viztest-dang-check-case=cases.pass X.Xs OK
 
 RUN LOCALLY
-  dagger check "dag://?check=cases/check&viztest-dang-check-case=cases.fail"
+  dagger check 'dag+check://cases/check?type:Check=/cases/check' --viztest-dang --viztest-dang-check-case=cases.fail --name=check

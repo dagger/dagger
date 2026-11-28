@@ -13,8 +13,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func prepareArtifactOutput(ctx context.Context, dag *dagger.Client, cmd *cobra.Command, items []listedArtifact) (map[string]string, error) {
-	format, _ := cmd.Flags().GetString("format")
+// prepareArtifactOutput names items' flags for output in format, as cmd
+// lists them.
+func prepareArtifactOutput(ctx context.Context, dag *dagger.Client, cmd *cobra.Command, items []listedArtifact, format string) (map[string]string, error) {
 	if len(items) == 0 || format == "link" {
 		return nil, nil
 	}
@@ -42,11 +43,15 @@ func prepareArtifactOutput(ctx context.Context, dag *dagger.Client, cmd *cobra.C
 	if err != nil {
 		return nil, err
 	}
-	return prepareArtifactOutputWithSchema(cmd, items, definitions, paths)
+	return prepareArtifactOutputFormat(cmd, items, definitions, paths, format)
 }
 
 func prepareArtifactOutputWithSchema(cmd *cobra.Command, items []listedArtifact, definitions artifact.Dimensions, paths []artifactListPath) (map[string]string, error) {
 	format, _ := cmd.Flags().GetString("format")
+	return prepareArtifactOutputFormat(cmd, items, definitions, paths, format)
+}
+
+func prepareArtifactOutputFormat(cmd *cobra.Command, items []listedArtifact, definitions artifact.Dimensions, paths []artifactListPath, format string) (map[string]string, error) {
 	if len(items) == 0 || format == "link" {
 		return nil, nil
 	}

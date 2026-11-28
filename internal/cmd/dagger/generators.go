@@ -153,6 +153,7 @@ func runGenerators(ctx context.Context, dag *dagger.Client, generators *core.Art
 	if err != nil {
 		return err
 	}
+	prepareGenerateRerunCommands(ctx, dag, generators, cmd, results)
 	if err := artifactResultErrorsWithOutput(results); err != nil {
 		return err
 	}

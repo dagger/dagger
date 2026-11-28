@@ -134,6 +134,7 @@ func runChecks(ctx context.Context, dag *dagger.Client, ws *core.Workspace, chec
 	if err := validateCheckSelection(include, len(results)); err != nil {
 		return err
 	}
+	prepareCheckRerunCommands(ctx, dag, ws, checks, cmd, results)
 	if err := artifactResultErrors(results); err != nil {
 		return idtui.ExitError{OriginalCode: 1, Original: err}
 	}

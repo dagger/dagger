@@ -20,7 +20,7 @@ CHECKS  ✘ 1 failed
   ! generated files are not up to date
 
 RUN LOCALLY
-  dagger check "dag://?check=generate-stale/stale"
+  dagger check --by-viztest --name=generateStale.stale
 
 REGENERATE
-  dagger generate "dag://?generator=generate-stale"
+  dagger generate --by-viztest --name=generateStale

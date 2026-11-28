@@ -8,4 +8,4 @@ CHECKS  ✘ 1 failed
   ! exit code: 1
 
 RUN LOCALLY
-  dagger check "dag://?check=check-fail-exec"
+  dagger check --viztest-python --name=checkFailExec

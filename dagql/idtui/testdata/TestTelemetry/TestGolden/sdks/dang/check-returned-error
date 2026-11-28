@@ -5,4 +5,4 @@ CHECKS  ✘ 1 failed
   ! dang check returned an error
 
 RUN LOCALLY
-  dagger check "dag://?check=check-returned-error"
+  dagger check --viztest-dang --name=checkReturnedError

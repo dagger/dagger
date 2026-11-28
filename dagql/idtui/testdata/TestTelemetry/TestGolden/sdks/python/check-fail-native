@@ -11,4 +11,4 @@ CHECKS  ✘ 1 failed
   ! python check failed natively
 
 RUN LOCALLY
-  dagger check "dag://?check=check-fail-native"
+  dagger check --viztest-python --name=checkFailNative
