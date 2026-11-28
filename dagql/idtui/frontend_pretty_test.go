@@ -1777,21 +1777,21 @@ func TestRerunSectionSuggestsGenerateForStaleCheck(t *testing.T) {
 	}
 	fe.FrontendOpts.AgentStyle = false
 
-	// A consumer with its own vocabulary has no CLI to run either command.
+	// A consumer with tools of its own still gets the generator to run.
 	fe.RerunSuggestion = func(names []string) (string, []string) {
 		return "RE-RUN THIS CHECK", []string{"call the check tool"}
 	}
 	joined = strings.Join(fe.renderRerunSection(nil), "\n")
-	if strings.Contains(joined, "dagger generate") {
-		t.Fatalf("hooked rerun section still suggests the CLI:\n%s", joined)
+	if !strings.Contains(joined, `dagger generate "dag://?generator=go/generate"`) {
+		t.Fatalf("hooked rerun section lost the generate line:\n%s", joined)
 	}
 }
 
-// TestRerunSuggestionHookReplacesRunLocally covers the injectable rerun
-// suggestion: a headless consumer of the report (e.g. an LLM tool call result)
-// has tools rather than a `dagger` CLI, so it swaps in its own vocabulary. The
-// renderer still owns the layout.
-func TestRerunSuggestionHookReplacesRunLocally(t *testing.T) {
+// TestRerunSuggestionHookAddsSection covers the injectable rerun suggestion:
+// a headless consumer of the report (e.g. an LLM tool call result) has tools
+// of its own, so it adds its own section. RUN LOCALLY stays, for the quoted
+// address that re-runs one item. The renderer still owns the layout.
+func TestRerunSuggestionHookAddsSection(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	var gotNames []string
 	fe := NewASCIIReporterWithDB(io.Discard, rerunReportDB(t))
@@ -1813,8 +1813,53 @@ func TestRerunSuggestionHookReplacesRunLocally(t *testing.T) {
 		!strings.Contains(got, `call the check tool with name="ci:bootstrap"`) {
 		t.Fatalf("final render missing injected rerun suggestion:\n%s", got)
 	}
-	if strings.Contains(got, `dagger check "ci:bootstrap"`) || strings.Contains(got, "RUN LOCALLY") {
-		t.Fatalf("final render still suggests the CLI command:\n%s", got)
+	if !strings.Contains(got, `dagger check "ci:bootstrap"`) {
+		t.Fatalf("final render lost the address to re-run:\n%s", got)
+	}
+	if hookIdx, localIdx := strings.Index(got, "RE-RUN THIS CHECK"), strings.Index(got, "RUN LOCALLY"); localIdx < hookIdx {
+		t.Fatalf("expected the hook's section before RUN LOCALLY:\n%s", got)
+	}
+}
+
+// TestRerunSectionNamesFailedGenerators covers a failed `dagger generate`
+// generator: the report names the command that re-runs it, by its quoted
+// address, and an agent is told to apply what it generates.
+func TestRerunSectionNamesFailedGenerators(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	rootID := prettyTestSpanID(10)
+	start := time.Unix(100, 0)
+	gen := func(id byte, name string, failed bool) dagui.SpanSnapshot {
+		span := dagui.SpanSnapshot{
+			ID: prettyTestSpanID(id), TraceID: prettyTestTraceID(), Name: name, ParentID: rootID,
+			StartTime: start, EndTime: start.Add(time.Second), Final: true,
+			GeneratorName: name,
+		}
+		if failed {
+			span.Status = sdktrace.Status{Code: codes.Error}
+		}
+		return span
+	}
+	db := dagui.NewDB()
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: rootID, TraceID: prettyTestTraceID(), Name: "dagger generate", StartTime: start, EndTime: start.Add(3 * time.Second), Final: true, Status: sdktrace.Status{Code: codes.Error}},
+		gen(11, "dag://?name=generateFail", true),
+		gen(12, "dag://?name=generatePass", false),
+	})
+	db.SetPrimarySpan(rootID)
+	fe := NewWithDB(io.Discard, db)
+	fe.recalculateViewLocked()
+
+	joined := strings.Join(fe.renderRerunSection(nil), "\n")
+	if !strings.Contains(joined, "RUN LOCALLY") || !strings.Contains(joined, `dagger generate "dag://?name=generateFail"`) {
+		t.Fatalf("missing the failed generator's command:\n%s", joined)
+	}
+	if strings.Contains(joined, "generatePass") {
+		t.Fatalf("a passing generator has nothing to re-run:\n%s", joined)
+	}
+	fe.FrontendOpts.AgentStyle = true
+	joined = strings.Join(fe.renderRerunSection(nil), "\n")
+	if !strings.Contains(joined, `dagger generate -y "dag://?name=generateFail"`) {
+		t.Fatalf("agent-style generate line missing -y:\n%s", joined)
 	}
 }
 

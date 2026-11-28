@@ -67,6 +67,18 @@ func sdkCommandExamples() []Example {
 			DBTest:  assertCaseChecks,
 			LogTest: assertLoggedOnCheckItem,
 		},
+		// The same, as an AI agent sees it: the failing item's quoted
+		// address, to re-run just it.
+		Example{
+			Name:         "sdks-dang-check-collection-agent",
+			Golden:       "sdks/dang/check-collection-agent",
+			Module:       workspace("dang"),
+			Function:     "cases/check",
+			Check:        true,
+			Fail:         true,
+			NormalizeSDK: true,
+			Env:          []string{"AGENT=1"},
+		},
 		// A collection with no items runs nothing, but was selected: the
 		// command says so, and passes.
 		Example{

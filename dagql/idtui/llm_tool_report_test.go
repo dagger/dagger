@@ -340,10 +340,9 @@ func TestASCIIReporterScopedReportWithoutChecksKeepsOwnOutput(t *testing.T) {
 }
 
 // TestReportRenderOptsRerunSuggestion covers the per-render plumbing core uses
-// to swap the report's rerun vocabulary: a headless reader (an LLM tool result)
-// has tools rather than a `dagger` CLI, so the section must carry the caller's
-// lines and none of the CLI's. Interactive rendering, which leaves the hook
-// nil, keeps the default `dagger check` body (see frontend_pretty_test.go).
+// to add its own follow-up: a headless reader (an LLM tool result) has tools
+// of its own, so the report carries the caller's section, and still the
+// quoted address that re-runs the check (see frontend_pretty_test.go).
 func TestReportRenderOptsRerunSuggestion(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	fe := NewASCIIReporterWithDB(io.Discard, rerunReportDB(t))
@@ -369,8 +368,8 @@ func TestReportRenderOptsRerunSuggestion(t *testing.T) {
 		!strings.Contains(got, `FindSpans(query: "ci:bootstrap")`) {
 		t.Fatalf("report missing the injected suggestion:\n%s", got)
 	}
-	if strings.Contains(got, `dagger check "ci:bootstrap"`) || strings.Contains(got, "RUN LOCALLY") {
-		t.Fatalf("report still suggests the CLI command:\n%s", got)
+	if !strings.Contains(got, `dagger check "ci:bootstrap"`) {
+		t.Fatalf("report lost the address to re-run:\n%s", got)
 	}
 }
 
